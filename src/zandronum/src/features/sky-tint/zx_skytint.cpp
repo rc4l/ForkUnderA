@@ -111,6 +111,22 @@ double Distance2( double ax, double ay, double bx, double by )
 	return std::sqrt(( dx * dx ) + ( dy * dy ));
 }
 
+// [rc4l] Does this sector see sky, on EITHER plane?
+//
+// The floor counts as well as the ceiling. A pit or ledge open to sky below is lit from underneath,
+// which is common in hell and void maps and was ignored entirely: only the ceiling was ever tested,
+// so a walkway suspended over open sky took no light from it at all.
+//
+// One function rather than the test written out at each site, because it WAS written out four times,
+// and adding the floor to three of them would have left the fourth quietly disagreeing.
+bool SeesSky( const sector_t *sec )
+{
+	if ( sec == NULL )
+		return false;
+	return ( sec->GetTexture( sector_t::ceiling ) == skyflatnum ) ||
+		( sec->GetTexture( sector_t::floor ) == skyflatnum );
+}
+
 // Per sector: the light colour to substitute, or white for "leave this one alone". Sized to the
 // current level and cleared with it, so an index can never outlive its sector array.
 std::vector<PalEntry> g_tint;			// per SUBSECTOR: what the renderer actually draws
@@ -612,7 +628,7 @@ void SkyTint_Rebuild( )
 	std::vector<int> litSectors;
 	for ( int i = 0; i < numsectors; ++i )
 	{
-		if ( sectors[i].GetTexture( sector_t::ceiling ) == skyflatnum )
+		if ( SeesSky( &sectors[i] ))
 			litSectors.push_back( i );
 	}
 
@@ -631,7 +647,7 @@ void SkyTint_Rebuild( )
 		{
 			const subsector_t &sub = subsectors[i];
 			const sector_t *s = sub.sector;
-			if (( s == NULL ) || ( s->GetTexture( sector_t::ceiling ) != skyflatnum ))
+			if ( !SeesSky( s ))
 				continue;
 			if ( sub.numlines < 3 )
 				continue;
@@ -663,7 +679,7 @@ void SkyTint_Rebuild( )
 	for ( int i = 0; i < numsubsectors; ++i )
 	{
 		const sector_t *s = subsectors[i].sector;
-		if (( s == NULL ) || ( s->GetTexture( sector_t::ceiling ) != skyflatnum ))
+		if ( !SeesSky( s ))
 			continue;
 		// [rc4l] A coloured sector still SEEDS; how much sky light it keeps is decided at draw time by
 		// SkyShareForSectorColour. This used to skip it outright, which meant a sector the mapper had
@@ -710,7 +726,14 @@ void SkyTint_Rebuild( )
 				// sliders reach a skybox map the same way they reach a textured one. Same steps in
 				// the same order as the texture path below.
 				SkySource src;
-				src.strengthPct = cl_fua_skytint_strength;
+
+				// [rc4l] Scaled by how much light this box actually emits. A skybox sampling near
+				// black has no reliable hue to give, and normalising multiplies the few surviving
+				// bits into a confident colour: aeon13's second box sampled [6,0,2] and painted its
+				// sectors a vivid red that appears nowhere in the image, next to sectors carrying the
+				// real warm sky. See SkyConfidenceForBrightness.
+				src.strengthPct = ( cl_fua_skytint_strength *
+					SkyConfidenceForBrightness( got->second )) / 100;
 				src.tint = NormaliseBrightness( got->second );
 
 				idx = (int)sources.size( );
@@ -756,7 +779,12 @@ void SkyTint_Rebuild( )
 			// [83,64,54] and [83,56,40], so it returned 43/42/41% and was a constant with a LAB
 			// apparatus bolted on. The real asymmetry was never the scene, it was the hue, and
 			// EqualiseHuePush addresses that directly.
-			src.strengthPct = cl_fua_skytint_strength;
+			//
+			// Scaled by the RAW sky's own brightness, same as the skybox path above: a nearly black
+			// sky texture has no trustworthy hue either, and normalising amplifies whatever noise is
+			// left into a confident colour. See SkyConfidenceForBrightness.
+			src.strengthPct = ( cl_fua_skytint_strength *
+				SkyConfidenceForBrightness( raw )) / 100;
 
 			g_lastRaw.push_back( raw );
 			g_lastTints.push_back( src.tint );
@@ -800,12 +828,17 @@ void SkyTint_Rebuild( )
 			if (( ti < 0 ) || ( ti >= numsubsectors ) || ( ti == here ))
 				continue;
 
+			// [rc4l] A sector's colour does NOT stop light entering it, or crossing it on the way
+			// somewhere else. How much of the sky it keeps is decided at draw time by
+			// SkyShareForSectorColour; deciding it again here just blocked the road.
+			//
+			// This was the second half of the all-or-nothing rule and it outlived the first. With
+			// seeding fixed but this left in place, Eon Collection aeon13 still could not propagate:
+			// a cave at own[255,249,239], six percent saturated and plainly open to a lit area,
+			// reported dist=UNREACHABLE because the step into it was refused outright.
 			const sector_t *to = subsectors[ti].sector;
-			if (( to == NULL ) || ( to->ColorMap == NULL ) ||
-				(( to->ColorMap->Color.d & 0xFFFFFF ) != 0xFFFFFF ))
-			{
+			if ( to == NULL )
 				continue;
-			}
 
 			const double mx = FIXED2FLOAT(( seg.v1->x / 2 ) + ( seg.v2->x / 2 ));
 			const double my = FIXED2FLOAT(( seg.v1->y / 2 ) + ( seg.v2->y / 2 ));

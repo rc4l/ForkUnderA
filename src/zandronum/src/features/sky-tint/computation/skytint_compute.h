@@ -198,6 +198,23 @@ SkyRgb EqualiseHuePush(SkyRgb dir, int chromaPct);
 // room keeps almost none, and nothing jumps at the boundary because there is no boundary.
 int SkyShareForSectorColour(SkyRgb sectorColour);
 
+// [rc4l] How much a sky this dark deserves to be believed, as a percentage.
+//
+// NormaliseBrightness throws brightness away on purpose -- the sky says WHICH colour the light is,
+// the map's light levels say how much. That holds for a real sky and breaks down completely for a
+// nearly black one, where the few surviving bits are as much noise as signal and get multiplied up
+// into a confident, fully saturated colour.
+//
+// Measured on Eon Collection aeon13, whose second skybox sampled as [6,0,2]: scaled by 42x that
+// becomes a vivid red, and sectors lit by it wore a hue present nowhere in the actual image, right
+// beside sectors carrying the real warm sky. Same failure as a mostly-black GvH sky normalising to
+// white and switching the tint off entirely.
+//
+// So a sky is trusted in proportion to how much light it actually emits, fading to nothing as it
+// approaches black. Above the knee a normal sky is unaffected, which is the point: this must not
+// quietly dim skies that were working.
+int SkyConfidenceForBrightness(SkyRgb rawSky);
+
 // [rc4l] Propagation is by DISTANCE, not by sector count.
 //
 // It used to halve per sector crossed, which made the reach depend on how finely the mapper chopped

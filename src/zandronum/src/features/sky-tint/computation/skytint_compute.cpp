@@ -394,6 +394,29 @@ SkyRgb EqualiseHuePush(SkyRgb dir, int chromaPct)
 	return BlendFromWhite(dir, pct);
 }
 
+// [rc4l] See the header for the aeon13 skybox this exists to stop being believed.
+int SkyConfidenceForBrightness(SkyRgb rawSky)
+{
+	// Rec.709 on the raw sample: how much light this sky actually puts out, before any normalising.
+	const double lum = (0.2126 * rawSky.r) + (0.7152 * rawSky.g) + (0.0722 * rawSky.b);
+
+	// The knee. Below this the colour is not trustworthy enough to push at full; above it nothing
+	// changes at all. 24 of 255 is about a tenth of full brightness -- dark enough that a real sky
+	// is essentially never down there, and the samples that are (aeon13's [6,0,2] at luminance 1.4,
+	// a mostly-black GvH sky) are exactly the ones that were inventing colour.
+	const double kKnee = 24.0;
+	if (lum >= kKnee)
+		return 100;
+	if (lum <= 0.0)
+		return 0;
+
+	// Linear to zero, so there is no step at the knee and none at black either.
+	int pct = (int)(((lum / kKnee) * 100.0) + 0.5);
+	if (pct < 0)	pct = 0;
+	if (pct > 100)	pct = 100;
+	return pct;
+}
+
 // [rc4l] See the header for the aeon13 measurement this replaces a yes/no rule with.
 int SkyShareForSectorColour(SkyRgb sectorColour)
 {
