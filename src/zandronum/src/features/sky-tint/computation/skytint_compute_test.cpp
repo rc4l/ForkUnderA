@@ -464,6 +464,47 @@ TEST(EqualiseHuePush, StaysLinearAcrossTheWholeDialEvenForAPaleSky)
 
 // [rc4l] The rule this replaces was yes/no, and the cliff was the bug: Eon Collection aeon13 lays one
 // faint [254,194,194] wash over the whole level, which disqualified 158 of 180 sky-seeing spots.
+// [rc4l] A rendered skybox frame has the dome at the top and the box's own floor at the bottom.
+// Averaging it flat let the floor cancel the sky: Eon Collection aeon24 has a purple dome and
+// sampled [23,21,22], a near neutral grey.
+TEST(AverageSkyHemisphere, LetsTheDomeWinOverTheSkyboxFloor)
+{
+	// Purple top half, dark grey bottom half -- the aeon24 shape.
+	const int w = 4, h = 8;
+	std::vector<SkyRgb> px;
+	for (int y = 0; y < h; ++y)
+		for (int x = 0; x < w; ++x)
+			px.push_back(y < h / 2 ? SkyRgb(120, 40, 160) : SkyRgb(20, 20, 20));
+
+	const SkyRgb hemi = AverageSkyHemisphere(px, w);
+	const SkyRgb flat = AverageSky(px, w);
+
+	// The purple has to survive as purple: more red and more blue than green.
+	EXPECT_GT(hemi.r, hemi.g);
+	EXPECT_GT(hemi.b, hemi.g);
+	EXPECT_GT(hemi.b, flat.b) << "weighting upward must favour the dome over a flat mean";
+}
+
+TEST(AverageSkyHemisphere, IgnoresTheBottomRowEntirely)
+{
+	// A garish floor must not reach the answer at all.
+	const int w = 2, h = 4;
+	std::vector<SkyRgb> a, b;
+	for (int y = 0; y < h; ++y)
+		for (int x = 0; x < w; ++x)
+		{
+			a.push_back(y == h - 1 ? SkyRgb(0, 255, 0) : SkyRgb(80, 80, 200));
+			b.push_back(y == h - 1 ? SkyRgb(255, 0, 0) : SkyRgb(80, 80, 200));
+		}
+	EXPECT_EQ(AverageSkyHemisphere(a, w), AverageSkyHemisphere(b, w));
+}
+
+TEST(AverageSkyHemisphere, SurvivesNonsenseInput)
+{
+	EXPECT_EQ(SkyRgb(255, 255, 255), AverageSkyHemisphere(std::vector<SkyRgb>(), 4));
+	EXPECT_EQ(SkyRgb(255, 255, 255), AverageSkyHemisphere(std::vector<SkyRgb>(4, SkyRgb(1, 2, 3)), 0));
+}
+
 // [rc4l] A sky emitting almost no light has no hue worth believing: normalising multiplies its few
 // surviving bits into a confident colour. Eon Collection aeon13's second skybox sampled [6,0,2] and
 // painted its sectors a vivid red found nowhere in the image.

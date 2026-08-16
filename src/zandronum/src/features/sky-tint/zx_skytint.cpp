@@ -164,6 +164,9 @@ std::map<int, SkyRgb> g_skyAvgCache;
 // at 35fps reported ~70ms a notch whether the work was done or skipped entirely.
 double g_lastRebuildMs = 0.0;
 bool g_lastRebuildReusedGeometry = false;
+
+// TEMPORARY, for fua_skyboxdump: the last skybox frame that was read back.
+std::vector<SkyRgb> g_lastCanvas;
 typedef std::chrono::steady_clock PerfClockT;
 
 std::vector<double> g_geoDist;
@@ -444,18 +447,41 @@ bool ReadCanvas( std::vector<SkyRgb> &out, int &width )
 	// An all-black read means the render has not landed yet. Treated as "not ready" rather than as a
 	// black sky, because tinting the world black off a failed read would be a spectacular way to be
 	// wrong.
+	// [rc4l] FLIPPED to top-down on the way out.
+	//
+	// glGetTexImage hands back rows starting at v=0, which is the BOTTOM of the image: index 0 is the
+	// bottom-left pixel. Everything downstream reasons about "row 0 is the top", the way a sky texture
+	// reads, and the mismatch is invisible in an average -- until something weights by row.
+	//
+	// It cost exactly that: weighting the frame toward the sky dome instead weighted the skybox's
+	// FLOOR and discarded the sky, and Eon Collection aeon24 went from [23,21,22] to [12,10,11],
+	// darker and still neutral, on a box whose dome is plainly purple. The dump showed the purple
+	// sitting at the far end of the array.
 	bool anyLight = false;
-	out.clear( );
-	out.reserve( (size_t)w * h );
-	for ( int i = 0; i < w * h; ++i )
+	out.assign( (size_t)w * h, SkyRgb( 0, 0, 0 ));
+	for ( int y = 0; y < h; ++y )
 	{
-		const int r = buf[i * 4 + 0], g = buf[i * 4 + 1], b = buf[i * 4 + 2];
-		if (( r | g | b ) != 0 )
-			anyLight = true;
-		out.push_back( SkyRgb( r, g, b ));
+		const int srcRow = h - 1 - y;			// bottom-up in, top-down out
+		for ( int x = 0; x < w; ++x )
+		{
+			const int i = ( srcRow * w ) + x;
+			const int r = buf[i * 4 + 0], g = buf[i * 4 + 1], b = buf[i * 4 + 2];
+			if (( r | g | b ) != 0 )
+				anyLight = true;
+			out[( (size_t)y * w ) + x] = SkyRgb( r, g, b );
+		}
 	}
 
 	width = w;
+
+	// [rc4l] TEMPORARY: keep the last frame so fua_skyboxdump can write it out.
+	//
+	// Every question about a skybox so far has been argued from one averaged number, and the model of
+	// what that number came from has been wrong more than once. A 32x32 copy is nothing to hold and
+	// it turns "the sample looks too dark" into something anybody can look at.
+	if ( anyLight )
+		g_lastCanvas = out;
+
 	return anyLight;
 }
 
@@ -507,7 +533,45 @@ void ForgetSkyboxes( )
 	g_boxPendingFor = NULL;
 }
 
+// TEMPORARY, for fua_skyboxdump. Declared here so the CCMD below the namespace can reach it.
+const std::vector<SkyRgb> &LastCanvas( ) { return g_lastCanvas; }
+
 } // namespace
+
+// [rc4l] TEMPORARY: write the last sampled skybox frame out as text, one row per line.
+//
+// Every argument about a skybox so far has been conducted through a single averaged number, and the
+// mental model behind that number has been wrong more than once -- most recently a wide-field sample
+// of Eon Collection aeon24 that came back DARKER than the narrow one it replaced, on a box with a
+// plainly purple dome. Looking at the frame settles what the average cannot.
+//
+// Text rather than an image file: 32x32 is small enough to read, and it avoids adding an image
+// writer to a diagnostic that should not outlive the question it answers.
+CCMD( fua_skyboxdump )
+{
+	const std::vector<zx::SkyRgb> &px = zx::LastCanvas( );
+	if ( px.empty( ))
+	{
+		Printf( "skyboxdump: nothing sampled yet (no 3D skybox on this level, or not rendered)\n" );
+		return;
+	}
+
+	const int w = 32;
+	const int h = (int)( px.size( ) / w );
+	Printf( "skyboxdump: %dx%d, top row first\n", w, h );
+
+	// Every fourth row and column: 8x8 numbers is legible in a console, 32x32 is not.
+	for ( int y = 0; y < h; y += 4 )
+	{
+		FString line;
+		for ( int x = 0; x < w; x += 4 )
+		{
+			const zx::SkyRgb &p = px[( (size_t)y * w ) + x];
+			line.AppendFormat( "%3d,%3d,%3d  ", p.r, p.g, p.b );
+		}
+		Printf( "  y=%2d  %s\n", y, line.GetChars( ));
+	}
+}
 
 // [rc4l] TEMPORARY diagnostic: what does the rebuild actually see? Added chasing sky tint dying
 // after a wad reload, where the same map tints fine on a fresh launch. Delete once answered.
@@ -1313,7 +1377,9 @@ void SkyTint_FrameHook( )
 		// whether the sliders said 35/60 or 100/100. Rendering the skybox is the expensive part and
 		// still happens once; turning pixels into a colour is cheap and now happens per rebuild, the
 		// same as it does for a texture sky.
-		g_boxDone[g_boxPendingFor] = AverageSky( pixels, width );
+		// Upper-weighted, because this frame has a floor in it and a sky texture does not. See
+		// AverageSkyHemisphere.
+		g_boxDone[g_boxPendingFor] = AverageSkyHemisphere( pixels, width );
 		g_boxPendingFor = NULL;
 
 		// The table was built without this sky. Rebuild so the leaves under it stop being dark.
@@ -1336,7 +1402,24 @@ void SkyTint_FrameHook( )
 		return;
 
 	g_boxCanvas->NeedUpdate( );
-	FCanvasTextureInfo::Add( box, g_boxCanvasId, 90 );
+
+	// [rc4l] A WIDE field, not the 90 degrees this used to take.
+	//
+	// Light reaches a level from the whole sky, but this samples the box by rendering it once, from
+	// the viewpoint actor's own facing. At 90 degrees that captured whichever quarter of the box the
+	// mapper happened to aim at, so the answer depended on an authoring detail nobody set with this
+	// in mind: Eon Collection aeon24 has a plainly purple dome and sampled [23,21,22], a near neutral
+	// grey.
+	//
+	// 160 covers nearly the whole hemisphere in one pass, which is what a light measurement wants.
+	// The alternative -- rendering several times at different yaws -- means rotating this actor
+	// between frames, and it is the same actor the renderer draws the player's sky from, so the sky
+	// would visibly spin. Not worth it for an averaged colour.
+	//
+	// Rectilinear projection stretches the edges, so the periphery is over-represented relative to a
+	// true solid-angle integral. That is a known bias and an acceptable one: it is still far closer
+	// to the sky as a whole than one arbitrary quarter of it was.
+	FCanvasTextureInfo::Add( box, g_boxCanvasId, 160 );
 	g_boxPendingFor = box;
 }
 
