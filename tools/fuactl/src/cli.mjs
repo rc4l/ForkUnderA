@@ -59,6 +59,8 @@ const USAGE = `fuactl <command>
   ls                                 list registered engine instances
   reap [--kill] [--all]              prune dead; --kill SIGTERMs ORPHANS only (other sessions safe); --all kills every live instance
   launch [--map M] [--seed S] [--port P] [--token T] [--iwad W] [--skill N] [--file a.wad,b.pk3]   launch one supervised bridge instance (stays up until Ctrl-C)
+  launch-calm [same flags]           same, but nothing fights you: sv_fua_friendlymonsters is set from the command line
+                                     (so monsters placed facing the player start never get a first look) plus god+notarget+fly
   sample --pid P | --port P [--seconds N] [--engine]   hottest functions (macOS sample / Linux perf; unavailable on Windows)
   net-bw [--seed S] [--map M] [--spawn CLS] [--count N] [--seconds N]   client/server bandwidth, baseline vs perturbation
   rpc <cmd> [jsonArgs] --port P [--token T]   send one RPC to an instance and print the result
@@ -94,7 +96,20 @@ async function main() {
       console.log(`orphans=${r.orphan.length} owned(left-alone)=${r.owned.length} killed=${r.killed.length} pruned=${r.prunedCount}`);
       break;
     }
-    case "launch": {
+    case "launch":
+    case "launch-calm": {
+      // [rc4l] Two front doors on purpose. `launch` starts the game as the game: monsters hostile,
+      // player mortal, which is what you want when the thing under test IS the game.
+      // `launch-calm` starts it as somewhere to stand and look, with nothing fighting the camera.
+      //
+      // The cvar goes on the COMMAND LINE rather than being set over the bridge afterwards. By the
+      // time a bridge connection exists the level has loaded, its monsters have spawned, and the
+      // ones placed facing the player start have already seen you. Setting it as a launch parameter
+      // means it is live before P_SetupLevel, so PostBeginPlay catches every monster as it is
+      // created and none of them ever gets a first look.
+      const calm = cmd === "launch-calm";
+      const pwads = resolvePwads(flags.file) || [];
+
       // [rc4l] --port/--token/--iwad/--skill are passed through rather than dropped. launchInstance
       // has always taken them; launch forwarded only map and seed, so `--port 7777` was accepted
       // silently and then ignored, and the caller had to read the chosen port back out of stdout.
@@ -108,9 +123,38 @@ async function main() {
         skill: flags.skill != null ? Number(flags.skill) : undefined,
         // [rc4l] PWADs, comma-separated. Without this the only launchable thing was a bare IWAD, so
         // a mod could be profiled only by hosting a server first and measuring through the netcode.
-        extraArgs: resolvePwads(flags.file),
+        extraArgs: calm ? [...pwads, "+sv_fua_friendlymonsters", "1"] : pwads,
       });
       console.log(`launched pid=${inst.pid} port=${inst.port} token=${inst.token}`);
+
+      if (calm) {
+        // god/notarget/fly are per-PLAYER state, so unlike the cvar they cannot be set before a
+        // player exists. Applied once the bridge answers, which is the earliest they can be.
+        //
+        // launchInstance returns as soon as the process is spawned, well before the engine has
+        // finished starting up and opened its socket, so the first connect is refused rather than
+        // slow. Retried rather than waited out with a fixed sleep, which is either too short on a
+        // cold start or wasted time on a warm one.
+        const c = new BridgeClient();
+        for (let attempt = 0; ; attempt++) {
+          try {
+            await c.connect(inst.port, { token: inst.token, timeoutMs: 5000 });
+            break;
+          } catch (e) {
+            if (attempt >= 30) throw e;
+            await new Promise((r) => setTimeout(r, 1000));
+          }
+        }
+        await c.waitHello();
+        const on = await makeUndisturbed(c, {
+          god: !flags["no-god"],
+          notarget: !(flags["no-friendly"] || flags["no-notarget"]),
+          fly: !flags["no-fly"],
+        });
+        c.close();
+        console.log(`calm: ${Object.keys(on).filter((k) => on[k]).join(" + ") || "nothing applied"}`);
+      }
+
       console.log(`(rpc it with: fuactl rpc sim.tic --port ${inst.port} --token ${inst.token})`);
       process.on("SIGINT", async () => { await stopInstance(inst); process.exit(0); });
       await new Promise(() => {}); // stay up
