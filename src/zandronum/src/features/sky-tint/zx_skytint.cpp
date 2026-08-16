@@ -443,12 +443,42 @@ const int kBoxSampleSize = 32;
 
 FCanvasTexture *g_boxCanvas = NULL;
 FTextureID g_boxCanvasId = FNullTextureID( );
-ASkyViewpoint *g_boxPendingFor = NULL;		// registered and waiting for a frame to render it
+// [rc4l] SECTOR INDICES, not actor pointers. This crashed the game.
+//
+// These three used to hold ASkyViewpoint* across frames, on the stated assumption that a level
+// change cleared them. Nothing did: SkyTint_Clear was only ever called by wadreload, and the one
+// real guard was comparing the `subsectors` ADDRESS to spot a new level. Reload the same map and
+// the allocator hands back the same address, so the guard sees no change and every pointer from
+// the dead level survives -- into FCanvasTextureInfo::Add, which writes a GC barrier through it.
+// Reported on gvh08 under in-engine hosting, which reloads the map you are already standing on.
+//
+// A sector index cannot dangle: it is validated against numsectors, and the viewpoint actor is
+// re-resolved from the sector at the moment of use, inside the frame that uses it.
+int g_boxPendingFor = -1;					// sector registered and waiting for a frame to render it
 
-// Viewpoints still needing a sample, and the answers for the ones already done. Keyed by actor
-// pointer, which is safe only because both are cleared with the level (SkyTint_Clear).
-std::vector<ASkyViewpoint *> g_boxQueue;
-std::map<ASkyViewpoint *, SkyRgb> g_boxDone;
+// Sectors still needing a sample, and the answers for the ones already done.
+std::vector<int> g_boxQueue;
+std::map<int, SkyRgb> g_boxDone;
+
+// [rc4l] A level counter, because comparing the `subsectors` ADDRESS does not detect a reload.
+//
+// Reloading the map you are standing on frees the level's arrays and allocates them again, and the
+// allocator very often hands back the same block. The address test then reports "same level" for a
+// completely new set of sectors, and every cached index and pointer is quietly wrong. P_SetupLevel
+// bumps this through SkyTint_Clear, so a reload always reads as a change here.
+unsigned g_levelGen = 0;
+unsigned g_cachedGen = 0;
+
+bool SameLevelAsCached( ) { return g_cachedGen == g_levelGen; }
+
+// The viewpoint a sector renders, or NULL. Never stored -- callers use it and drop it.
+ASkyViewpoint *BoxOfSector( int secnum )
+{
+	if (( sectors == NULL ) || ( secnum < 0 ) || ( secnum >= numsectors ) || gl_noskyboxes )
+		return NULL;
+
+	return sectors[secnum].GetSkyBox( sector_t::ceiling );
+}
 
 // Read the canvas back off the GPU. In GL a canvas texture lives in an FBO and its CPU-side pixels
 // are never filled, so GetPixels() would hand back an empty buffer -- checked, not assumed.
@@ -548,12 +578,13 @@ void ClearTables( )
 	g_dist.clear( );
 }
 
-// Sampled skyboxes, keyed by actor pointer and therefore only valid within one level.
+// Sampled skyboxes, keyed by sector index and therefore only valid within one level.
 void ForgetSkyboxes( )
 {
 	g_boxQueue.clear( );
 	g_boxDone.clear( );
-	g_boxPendingFor = NULL;
+	g_boxPendingFor = -1;
+	g_cachedGen = g_levelGen;
 }
 
 // TEMPORARY, for fua_skyboxdump. Declared here so the CCMD below the namespace can reach it.
@@ -647,9 +678,13 @@ CCMD( fua_skytintinfo )
 
 void SkyTint_Clear( )
 {
+	// Bumped BEFORE the caches are dropped, so anything still holding the old generation reads as
+	// stale even if it runs before the next level finishes loading.
+	++g_levelGen;
+
 	ClearTables( );
 
-	// Skybox results are keyed by actor pointer, which only stays meaningful within one level. The
+	// Skybox results are keyed by sector index, which only stays meaningful within one level. The
 	// canvas texture itself is kept: it belongs to TexMan now and is reused for the next level.
 	ForgetSkyboxes( );
 }
@@ -669,10 +704,11 @@ void SkyTint_Rebuild( )
 	// same viewpoint, and spin forever rendering it. The skybox cache is dropped on a level change
 	// instead, detected below.
 	//
-	// The subsector array is the level-change signal: a new level allocates a new one, and the actor
-	// pointers the cache is keyed by belong to the level that is going away.
+	// Two independent level-change signals, because neither is sufficient alone: the generation
+	// counter catches a reload onto the same addresses, and the address catches a level swapped in
+	// by a path that never reached SkyTint_Clear.
 	static subsector_t *lastLevel = NULL;
-	if ( subsectors != lastLevel )
+	if (( subsectors != lastLevel ) || !SameLevelAsCached( ))
 	{
 		ForgetSkyboxes( );
 		lastLevel = subsectors;
@@ -835,14 +871,19 @@ void SkyTint_Rebuild( )
 			// Already sampled: it seeds like any other sky. Not yet: queue it and leave this leaf
 			// dark for now. SkyTint_FrameHook renders it and rebuilds, so it lights up a frame or
 			// two into the level rather than never.
-			std::map<ASkyViewpoint *, SkyRgb>::const_iterator got = g_boxDone.find( sky.box );
+			//
+			// Queued and cached by SECTOR, because a sector index survives a level change harmlessly
+			// and an actor pointer does not. One render still covers every sector sharing a box: the
+			// frame hook fans its answer out to all of them.
+			const int secnum = (int)( s - sectors );
+			std::map<int, SkyRgb>::const_iterator got = g_boxDone.find( secnum );
 			if ( got == g_boxDone.end( ))
 			{
 				bool queued = false;
 				for ( size_t q = 0; q < g_boxQueue.size( ); ++q )
-					if ( g_boxQueue[q] == sky.box ) { queued = true; break; }
+					if ( g_boxQueue[q] == secnum ) { queued = true; break; }
 				if ( !queued )
-					g_boxQueue.push_back( sky.box );
+					g_boxQueue.push_back( secnum );
 				continue;
 			}
 
@@ -1364,17 +1405,29 @@ void SkyTintSkyboxSamples( std::string &out )
 	out.clear( );
 	if ( g_boxDone.empty( ))
 	{
-		out = ( g_boxQueue.empty( ) && ( g_boxPendingFor == NULL )) ? "none" : "pending";
+		out = ( g_boxQueue.empty( ) && ( g_boxPendingFor < 0 )) ? "none" : "pending";
 		return;
 	}
 
 	// The RAW sample, which is what is cached. The finished tint is derived from this per rebuild, so
 	// printing that instead would only echo the current sliders back.
-	char buf[96];
-	for ( std::map<ASkyViewpoint *, SkyRgb>::const_iterator it = g_boxDone.begin( );
+	//
+	// Collapsed by colour with a count, because the cache is keyed by SECTOR: one skybox shared by
+	// 482 sectors is 482 identical entries, and printing them individually buried the rest of the
+	// diagnostic under a screen of "raw[4,4,4]".
+	std::map<int, int> perColour;		// packed rgb -> how many sectors carry it
+	for ( std::map<int, SkyRgb>::const_iterator it = g_boxDone.begin( );
 		it != g_boxDone.end( ); ++it )
 	{
-		mysnprintf( buf, sizeof( buf ), "raw[%d,%d,%d] ", it->second.r, it->second.g, it->second.b );
+		const int packed = ( it->second.r << 16 ) | ( it->second.g << 8 ) | it->second.b;
+		++perColour[packed];
+	}
+
+	char buf[96];
+	for ( std::map<int, int>::const_iterator it = perColour.begin( ); it != perColour.end( ); ++it )
+	{
+		mysnprintf( buf, sizeof( buf ), "raw[%d,%d,%d]x%d ",
+			( it->first >> 16 ) & 0xFF, ( it->first >> 8 ) & 0xFF, it->first & 0xFF, it->second );
 		out += buf;
 	}
 }
@@ -1385,13 +1438,22 @@ void SkyTint_FrameHook( )
 	// previous frame has just been rendered and is ready to read.
 	if ( !cl_fua_skytint || ( NETWORK_GetState( ) == NETSTATE_SERVER ))
 		return;
-	if (( g_boxPendingFor == NULL ) && g_boxQueue.empty( ))
+	if (( g_boxPendingFor < 0 ) && g_boxQueue.empty( ))
 		return;
 	if ( gamestate != GS_LEVEL )
 		return;
 
+	// [rc4l] The level can change between queueing a sector and getting to render it -- hosting
+	// reloads the map you are standing on. Everything queued describes the level that went away, so
+	// drop it here rather than sampling a sector that no longer means what it did.
+	if ( !SameLevelAsCached( ))
+	{
+		ForgetSkyboxes( );
+		return;
+	}
+
 	// A viewpoint registered last frame: try to read what was rendered for it.
-	if ( g_boxPendingFor != NULL )
+	if ( g_boxPendingFor >= 0 )
 	{
 		std::vector<SkyRgb> pixels;
 		int width = 0;
@@ -1408,8 +1470,20 @@ void SkyTint_FrameHook( )
 		// same as it does for a texture sky.
 		// Upper-weighted, because this frame has a floor in it and a sky texture does not. See
 		// AverageSkyHemisphere.
-		g_boxDone[g_boxPendingFor] = AverageSkyHemisphere( pixels, width );
-		g_boxPendingFor = NULL;
+		const SkyRgb sampled = AverageSkyHemisphere( pixels, width );
+
+		// Fan the answer out to every sector sharing this viewpoint, so a box used by fifty sectors
+		// costs one render rather than fifty. Both actors are resolved and compared here, in the
+		// frame that uses them, and neither is kept.
+		const ASkyViewpoint *box = BoxOfSector( g_boxPendingFor );
+		g_boxDone[g_boxPendingFor] = sampled;
+		if ( box != NULL )
+		{
+			for ( int i = 0; i < numsectors; ++i )
+				if ( BoxOfSector( i ) == box )
+					g_boxDone[i] = sampled;
+		}
+		g_boxPendingFor = -1;
 
 		// The table was built without this sky. Rebuild so the leaves under it stop being dark.
 		SkyTint_Rebuild( );
@@ -1417,8 +1491,17 @@ void SkyTint_FrameHook( )
 	}
 
 	// Nothing in flight: register the next one and let UpdateAll draw it on the following frame.
-	ASkyViewpoint *box = g_boxQueue.back( );
+	const int secnum = g_boxQueue.back( );
 	g_boxQueue.pop_back( );
+
+	// Already answered by a fan-out while this sat in the queue.
+	if ( g_boxDone.find( secnum ) != g_boxDone.end( ))
+		return;
+
+	// Resolved now, used now, dropped now. Holding this pointer between frames is what crashed the
+	// game: FCanvasTextureInfo::Add writes a GC barrier through it, and by then the actor could
+	// belong to a level that had already been freed.
+	ASkyViewpoint *box = BoxOfSector( secnum );
 	if ( box == NULL )
 		return;
 
@@ -1449,7 +1532,7 @@ void SkyTint_FrameHook( )
 	// true solid-angle integral. That is a known bias and an acceptable one: it is still far closer
 	// to the sky as a whole than one arbitrary quarter of it was.
 	FCanvasTextureInfo::Add( box, g_boxCanvasId, 160 );
-	g_boxPendingFor = box;
+	g_boxPendingFor = secnum;
 }
 
 bool SkyTint_Active( )

@@ -103,7 +103,7 @@ two players disagreeing about it costs nothing.
 
 - `gl/scene/gl_flats.cpp`, `gl_walls.cpp`, `gl_sprite.cpp`, `gl_drawinfo.cpp` -- one gated
   `zx::SkyTint_Apply` line after each `Colormap = <sector>->ColorMap`, 8 in total.
-- `p_setup.cpp` -- `SkyTint_Rebuild()` at the end of `P_SetupLevel`.
+- `p_setup.cpp` -- `SkyTint_Clear()` then `SkyTint_Rebuild()` at the end of `P_SetupLevel`.
 - `gl/scene/gl_scene.cpp` -- `SkyTint_FrameHook()` immediately after `FCanvasTextureInfo::UpdateAll()`,
   which is where a registered skybox camera has just been rendered and can be read back. Beside the
   existing `hitboxviz::BeginFrame()` hook; that file has no upstream counterpart, so it is not a
