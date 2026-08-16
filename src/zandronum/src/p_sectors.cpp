@@ -1052,3 +1052,39 @@ int side_t::GetLightLevel (bool foggy, int baselight, bool noabsolute, int *pfak
 	return baselight;
 }
 
+//===========================================================================
+//
+// [rc4l] uzdoom@238046655 -- tag access through accessors, so the storage can
+// change later without revisiting every call site. These are still one-tag
+// implementations; the multi-tag manager arrives with uzdoom@b921157f5.
+//
+//===========================================================================
+
+bool sector_t::HasTag(int checktag) const
+{
+	return tag == checktag;
+}
+
+void sector_t::SetTag(int tagnum, bool discardall)
+{
+	tag = tagnum;
+}
+
+int sector_t::GetTag() const
+{
+	return tag;
+}
+
+void sector_t::HashTags()
+{
+	int i;
+
+	for (i = numsectors; --i >= 0; )		// Initially make all slots empty.
+		sectors[i].firsttag = -1;
+	for (i = numsectors; --i >= 0; )		// Proceed from last to first sector
+	{									// so that lower sectors appear first
+		int j = (unsigned) sectors[i].tag % (unsigned) numsectors;	// Hash func
+		sectors[i].nexttag = sectors[j].firsttag;	// Prepend sector to chain
+		sectors[j].firsttag = i;
+	}
+}

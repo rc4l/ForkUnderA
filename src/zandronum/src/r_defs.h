@@ -746,6 +746,13 @@ struct sector_t
 
 	int			nexttag,firsttag;	// killough 1/30/98: improves searches for tags.
 
+	// [rc4l] uzdoom@238046655 -- every read and write of the tag goes through these, so the
+	// storage behind it can change without touching the call sites again.
+	bool HasTag(int checktag) const;
+	void SetTag(int tagnum, bool discardall = true);
+	int GetTag() const;
+	static void HashTags();
+
 	int			sky;
 	FNameNoInit	SeqName;		// Sound sequence name. Setting seqType non-negative will override this.
 
