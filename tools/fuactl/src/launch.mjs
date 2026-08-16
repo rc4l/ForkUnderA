@@ -61,13 +61,18 @@ export function engineArgs(opts = {}, configPath) {
   args.push(
     "-skill", String(opts.skill ?? 3),
     "+set", "fullscreen", "0",
-    "+set", "vid_defwidth", "640",
-    "+set", "vid_defheight", "400",
+    // [rc4l] A hands-on instance gets a window worth looking at. 640x400 is the harness size because
+    // it makes screenshot pairs cheap to diff, and it is miserable to actually play in.
+    "+set", "vid_defwidth", opts.allowOsInput ? "1280" : "640",
+    "+set", "vid_defheight", opts.allowOsInput ? "800" : "400",
     // Bridge instances are driven by the harness, never by a human at the window. Disable OS mouse
     // and joystick so a stray cursor drifting over one instance's window can't turn its view (a live
     // level grabs the mouse) and silently diverge a deterministic run from its twin. All synthetic
     // input still arrives through the bridge (input.event / input.look / input.axis), untouched.
-    "+set", "use_mouse", "0",
+    //
+    // [rc4l] ...unless the human IS the driver. use_mouse 0 would leave --play with a keyboard-only
+    // instance, which is not what "let me run around and show you" means.
+    "+set", "use_mouse", opts.allowOsInput ? "1" : "0",
     "+set", "use_joystick", "0",
     // [rc4l] m_use_mouse is deliberately LEFT ALONE. It used to be forced to 0 here to silence the
     // menu cursor, but menu.cpp:859 drops every GUI mouse event when it is 0 -- including the ones

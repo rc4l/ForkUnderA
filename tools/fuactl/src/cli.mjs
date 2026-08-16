@@ -34,7 +34,16 @@ function parseFlags(argv) {
     if (a.startsWith("--")) {
       const key = a.slice(2);
       const val = (i + 1 < argv.length && !argv[i + 1].startsWith("--")) ? argv[++i] : true;
-      flags[key] = val;
+      // [rc4l] A repeated flag accumulates instead of overwriting.
+      //
+      // Silently keeping only the last one is a trap for exactly the flags you repeat: `--cvar
+      // sv_nomonsters=1 --cvar fua_vulkan=1` launched with the renderer switch dropped on the floor
+      // and no error anywhere, which reads as "the backend did not come up" rather than "the flag
+      // never arrived". Values are joined with a comma, which is the separator --cvar and --file
+      // already split on.
+      flags[key] = (key in flags && typeof flags[key] === "string" && typeof val === "string")
+        ? `${flags[key]},${val}`
+        : val;
     } else rest.push(a);
   }
   return { flags, rest };
@@ -43,7 +52,7 @@ function parseFlags(argv) {
 const USAGE = `fuactl <command>
   ls                                 list registered engine instances
   reap [--kill] [--all]              prune dead; --kill SIGTERMs ORPHANS only (other sessions safe); --all kills every live instance
-  launch [--map M] [--seed S] [--port P] [--token T] [--iwad W] [--skill N] [--file a.wad,b.pk3] [--cvar k=v,k2=v2]   launch one supervised bridge instance (stays up until Ctrl-C)
+  launch [--map M] [--seed S] [--port P] [--token T] [--iwad W] [--skill N] [--file a.wad,b.pk3] [--cvar k=v,k2=v2] [--play]   launch one supervised bridge instance (stays up until Ctrl-C)
   sample --pid P | --port P [--seconds N] [--engine]   hottest functions (macOS sample / Linux perf; unavailable on Windows)
   net-bw [--seed S] [--map M] [--spawn CLS] [--count N] [--seconds N]   client/server bandwidth, baseline vs perturbation
   rpc <cmd> [jsonArgs] --port P [--token T]   send one RPC to an instance and print the result
@@ -88,6 +97,13 @@ async function main() {
         token: flags.token || undefined,
         iwad: flags.iwad || undefined,
         skill: flags.skill != null ? Number(flags.skill) : undefined,
+        // [rc4l] --play hands the window back to the human at the keyboard.
+        //
+        // Bridge instances are hands-off by default: the input lock drops OS keyboard and mouse at
+        // the message pump so a stray cursor over the window cannot diverge a deterministic run from
+        // its twin. That is right for measuring and useless for the case where the point IS to walk
+        // around and look at something, which until now needed the env var set by hand.
+        allowOsInput: !!flags.play,
         // [rc4l] PWADs, comma-separated. Without this the only launchable thing was a bare IWAD, so
         // a mod could be profiled only by hosting a server first and measuring through the netcode.
         extraArgs: flags.file

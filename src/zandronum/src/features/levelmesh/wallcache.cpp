@@ -42,9 +42,15 @@ static int              g_hits = 0, g_misses = 0, g_uncacheableHits = 0;
 static int g_rejPortal = 0, g_rejPoly = 0, g_rejFFloor = 0, g_rejArea = 0, g_rejOther = 0,
            g_captureOk = 0;
 int                     g_wallcacheMode = 1;
+// [rc4l] Bumped once per level load. A backend that wants to set itself up per level needs to know a
+// level happened, and "numsegs changed" is not that -- reloading the same map gives the same count.
+static int              g_levelGeneration = 0;
+
+int LevelGeneration() { return g_levelGeneration; }
 
 void AllocForLevel(int numsegs)
 {
+	g_levelGeneration++;
 	g_cache.Clear();
 	g_uncacheable.Clear();
 	if (numsegs <= 0) return;

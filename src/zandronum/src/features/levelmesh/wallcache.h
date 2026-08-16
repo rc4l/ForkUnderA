@@ -74,6 +74,9 @@ struct SegCache
 
 // Allocated per level, cleared when the level changes.
 void AllocForLevel(int numsegs);
+
+// Bumped once per level load, so a backend can notice it must set itself up again.
+int LevelGeneration();
 void FreeLevel();
 void InvalidateAll();
 
