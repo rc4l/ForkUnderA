@@ -31,7 +31,13 @@ namespace zx
 // current sky is. Called on level load and whenever one of the cl_fua_skytint_* cvars moves.
 void SkyTint_Rebuild();
 
-// Forget everything. Called when a level ends so no index outlives the sector array it refers to.
+// Forget everything, and mark the cached level stale. Called from P_SetupLevel so no index outlives
+// the sector array it refers to, and from wadreload.
+//
+// [rc4l] This comment used to claim the level-end call existed when it did not: only wadreload ever
+// called it, and the caches were left to spot a new level by comparing the `subsectors` address.
+// Reloading the same map reuses that address, so the check passed and pointers from the dead level
+// lived on into FCanvasTextureInfo::Add. That crashed gvh08 under in-engine hosting.
 void SkyTint_Clear();
 
 // [rc4l] The sky can change WITHOUT the level changing: ACS ChangeSky, the changesky console

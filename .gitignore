@@ -22,6 +22,8 @@ dist-linux/
 # Windows build outputs (windows_compile.ps1 / windows_build.ps1)
 build-win/
 dist-windows/
+# Private staging copy for automated testing (tools/fuactl/stage-mine.ps1)
+dist-mine/
 dxsdk/
 ZandroX-*-windows-x64.zip
 
