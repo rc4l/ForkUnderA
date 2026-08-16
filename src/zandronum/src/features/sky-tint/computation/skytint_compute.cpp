@@ -394,6 +394,51 @@ SkyRgb EqualiseHuePush(SkyRgb dir, int chromaPct)
 	return BlendFromWhite(dir, pct);
 }
 
+// [rc4l] See the header for why a rendered skybox frame is weighted differently from a sky texture.
+SkyRgb AverageSkyHemisphere(const std::vector<SkyRgb> &pixels, int width)
+{
+	if (pixels.empty() || width <= 0)
+		return SkyRgb(255, 255, 255);
+
+	const int height = static_cast<int>(pixels.size()) / width;
+	if (height <= 0)
+		return SkyRgb(255, 255, 255);
+
+	double lr = 0.0, lg = 0.0, lb = 0.0, total = 0.0;
+
+	for (int y = 0; y < height; ++y)
+	{
+		// Full weight overhead, exactly nothing at the bottom row. Divided by height-1 rather than
+		// height so the last row really does reach zero: over height it lands at 1/height, which is
+		// small but not none, and the floor of a skybox should not contribute at all.
+		//
+		// Linear rather than a cosine: this is choosing how much of a picture to believe, not
+		// integrating irradiance, and a straight ramp is one fewer thing to be wrong about.
+		const double w = (height == 1)
+			? 1.0
+			: (1.0 - (static_cast<double>(y) / static_cast<double>(height - 1)));
+		if (w <= 0.0)
+			continue;
+
+		for (int x = 0; x < width; ++x)
+		{
+			const SkyRgb &p = pixels[(static_cast<std::size_t>(y) * width) + x];
+
+			// Linear light, same as everywhere else here: summing sRGB bytes averages the encoding
+			// rather than the light and lands too dark.
+			lr += LinearFromSrgb(p.r) * w;
+			lg += LinearFromSrgb(p.g) * w;
+			lb += LinearFromSrgb(p.b) * w;
+			total += w;
+		}
+	}
+
+	if (total <= 0.0)
+		return SkyRgb(255, 255, 255);
+
+	return SkyRgb(SrgbFromLinear(lr / total), SrgbFromLinear(lg / total), SrgbFromLinear(lb / total));
+}
+
 // [rc4l] See the header for the aeon13 skybox this exists to stop being believed.
 int SkyConfidenceForBrightness(SkyRgb rawSky)
 {

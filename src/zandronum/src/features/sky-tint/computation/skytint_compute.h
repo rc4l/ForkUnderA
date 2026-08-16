@@ -215,6 +215,19 @@ int SkyShareForSectorColour(SkyRgb sectorColour);
 // quietly dim skies that were working.
 int SkyConfidenceForBrightness(SkyRgb rawSky);
 
+// [rc4l] Average a rendered SKYBOX frame, weighted toward what is overhead.
+//
+// A 3D skybox is a camera, not an image, so it is sampled by rendering it and averaging the result.
+// That frame is rectilinear: the middle row is the horizon, the top is the sky dome, the bottom is
+// the skybox's floor. Light arrives from the dome; the floor is a texture nobody treats as a light
+// source, and on Eon Collection aeon24 averaging all of it flat gave [23,21,22] -- a near neutral
+// grey from a box with a plainly purple top.
+//
+// Weighted linearly from full at the top row to nothing at the bottom, so the dome dominates, the
+// horizon still counts for something, and the floor drops out. Separate from AverageSky because a
+// sky TEXTURE has no floor in it and wants a different band entirely.
+SkyRgb AverageSkyHemisphere(const std::vector<SkyRgb> &pixels, int width);
+
 // [rc4l] Propagation is by DISTANCE, not by sector count.
 //
 // It used to halve per sector crossed, which made the reach depend on how finely the mapper chopped
