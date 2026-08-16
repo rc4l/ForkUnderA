@@ -60,6 +60,12 @@ size_t SkyTintTableSize();
 // same from the console.
 size_t SkyTintLitLeaves();
 
+// TEMPORARY, for fua_skytintinfo: how long the last rebuild took and whether it reused the
+// propagation. Measured inside the engine because timing console round-trips from outside reads the
+// frame rate instead: a heavy map reported ~70ms a notch whether the work ran or was skipped.
+double SkyTintLastRebuildMs();
+bool SkyTintLastRebuildReusedGeometry();
+
 // [rc4l] Once per frame, straight after FCanvasTextureInfo::UpdateAll.
 //
 // A 3D skybox is a camera, not an image, so the only way to know its colour is to render it and

@@ -35,6 +35,7 @@
 EXTERN_CVAR( Bool, gl_noskyboxes )
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <functional>
 #include <map>
@@ -141,6 +142,35 @@ std::vector<double> g_dist;
 // Shared by the rebuild's Dijkstra and the diagnostic that reads its output, so "unreachable" means
 // the same number in both places.
 const double kSkyTintInfinity = 1e30;
+
+// [rc4l] The averaged colour of each sky TEXTURE, kept across rebuilds.
+//
+// Reading and averaging a sky is the expensive half of a rebuild and its answer never changes: the
+// pixels are the same every time. It was being redone on every rebuild, and a rebuild happens on
+// every slider notch, so dragging Strength re-averaged a 256x256 sky per frame. Keyed by texture
+// index and dropped with the level, since a texture index means nothing across levels.
+std::map<int, SkyRgb> g_skyAvgCache;
+
+// [rc4l] The propagation result, kept across rebuilds for the same reason.
+//
+// The Dijkstra depends only on the level's geometry and the reach; it is completely independent of
+// Strength, Max colour and Follow room light, which are the dials a player actually drags. Measured
+// on Eon Collection aeon13 at 78ms per rebuild -- roughly three frames of hitch per notch, and the
+// cost went up when the propagation stopped being blocked by coloured sectors and started reaching
+// 2871 leaves instead of 762. Recomputing it to change a colour is pure waste.
+// [rc4l] TEMPORARY, for fua_skytintinfo: how long the last rebuild took, and whether it had to run
+// the propagation or reused it. Added because the first attempt to measure this timed console
+// round-trips from outside the engine, which on a heavy map is dominated by the frame rate: aeon13
+// at 35fps reported ~70ms a notch whether the work was done or skipped entirely.
+double g_lastRebuildMs = 0.0;
+bool g_lastRebuildReusedGeometry = false;
+typedef std::chrono::steady_clock PerfClockT;
+
+std::vector<double> g_geoDist;
+std::vector<int> g_geoLitBy;
+subsector_t *g_geoBuiltFor = NULL;		// which level's array, so a new level invalidates it
+int g_geoBuiltForReach = -1;			// reach is the one dial that DOES move the geometry
+size_t g_geoSourceCount = 0;			// litBy indexes `sources`; a different count invalidates it
 bool g_any = false;
 
 // Which sky the table above was built from, so SkyTint_SkyChanged can tell a real sky swap from the
@@ -491,6 +521,8 @@ CCMD( fua_skytintinfo )
 	Printf( "skytint: sky1texture=%d name=%s tex=%p w=%d h=%d skyflatnum=%d\n",
 		sky1texture.GetIndex( ), ( sky && sky->Name[0] ) ? sky->Name : "?", (void *)sky,
 		sky ? sky->GetWidth( ) : -1, sky ? sky->GetHeight( ) : -1, skyflatnum.GetIndex( ));
+	Printf( "skytint: rebuild=%.2fms geometry=%s\n", zx::SkyTintLastRebuildMs( ),
+		zx::SkyTintLastRebuildReusedGeometry( ) ? "reused" : "recomputed" );
 	Printf( "skytint: table=%u lit=%u any=%d skyboxleaves=%d doublesky=%d swapskies=%d sky2=%d\n",
 		(unsigned)zx::SkyTintTableSize( ), (unsigned)zx::SkyTintLitLeaves( ),
 		(int)zx::SkyTint_Active( ), zx::SkyTintSkyboxLeaves( ),
@@ -557,7 +589,26 @@ void SkyTint_Rebuild( )
 	{
 		ForgetSkyboxes( );
 		lastLevel = subsectors;
+
+		// Both caches are keyed to the level that is going away: a texture index means nothing on
+		// the next one, and the propagation describes geometry that no longer exists.
+		g_skyAvgCache.clear( );
+		g_geoDist.clear( );
+		g_geoLitBy.clear( );
+		g_geoBuiltFor = NULL;
 	}
+
+	// Timed from here, so the number reported is the work this function does and nothing else. The
+	// first attempt at this measured console round-trips from outside and was reading the frame rate.
+	const PerfClockT::time_point rebuildStart = PerfClockT::now( );
+	struct RebuildTimer
+	{
+		PerfClockT::time_point start;
+		~RebuildTimer( )
+		{
+			g_lastRebuildMs = std::chrono::duration<double, std::milli>( PerfClockT::now( ) - start ).count( );
+		}
+	} rebuildTimer = { rebuildStart };
 
 	ClearTables( );
 
@@ -622,18 +673,15 @@ void SkyTint_Rebuild( )
 	std::map<int, int> sourceOfTexture;					// texture index -> index into `sources`
 	std::map<ASkyViewpoint *, int> boxSourceIdx;		// skybox viewpoint -> index into `sources`
 
-	// [rc4l] What the tint will land on, gathered before any source is built because the strength of
-	// each source is chosen against it. Sky-ceilinged sectors only: those are the ones lit hardest and
-	// the ones a player is looking at when they judge whether the effect is too strong.
-	std::vector<int> litSectors;
-	for ( int i = 0; i < numsectors; ++i )
-	{
-		if ( SeesSky( &sectors[i] ))
-			litSectors.push_back( i );
-	}
-
-	const SkyRgb albedo = SceneAlbedo( litSectors );
-	g_lastAlbedo = albedo;
+	// [rc4l] SceneAlbedo is NOT called here any more. It reads every distinct floor texture across
+	// every lit sector and converts each pixel out of sRGB, which measured at ~65ms of a ~67ms
+	// rebuild on Eon Collection aeon13 -- the entire cost of moving a slider. The CIELAB solver that
+	// used to consume it is gone, so the only thing left reading it was one line of diagnostic
+	// output. It is computed on demand there instead.
+	//
+	// Worth recording how long that hid: the same rebuild was blamed on the Dijkstra and a cache was
+	// written for it, which turned out to save 2ms of 67. The measurement that found this one was
+	// taken inside the engine; the one that misled was a console round-trip, reading frame rate.
 
 	// [rc4l] Remember the BIGGEST sky-lit subsector's centre, so the diagnostic can hand out a place
 	// to stand. Every visual comparison made while building this feature was taken at the player
@@ -757,16 +805,28 @@ void SkyTint_Rebuild( )
 		}
 		else
 		{
-			std::vector<SkyRgb> pixels;
-			int width = 0;
-			if ( !ReadSkyForSector( s, pixels, width ))
+			// Averaged once per texture per LEVEL, not per rebuild: the pixels do not change, and
+			// this is the expensive half of the work a slider notch used to redo.
+			SkyRgb raw;
+			std::map<int, SkyRgb>::const_iterator cached = g_skyAvgCache.find( key );
+			if ( cached != g_skyAvgCache.end( ))
 			{
-				sourceOfTexture[key] = -1;		// remember the failure so we do not retry per leaf
-				continue;
+				raw = cached->second;
+			}
+			else
+			{
+				std::vector<SkyRgb> pixels;
+				int width = 0;
+				if ( !ReadSkyForSector( s, pixels, width ))
+				{
+					sourceOfTexture[key] = -1;	// remember the failure so we do not retry per leaf
+					continue;
+				}
+				raw = AverageSky( pixels, width );
+				g_skyAvgCache[key] = raw;
 			}
 
 			SkySource src;
-			const SkyRgb raw = AverageSky( pixels, width );
 			SkyRgb tint = raw;
 
 			// The sky says WHICH colour, not how much. What comes out here is a DIRECTION with peak
@@ -805,6 +865,30 @@ void SkyTint_Rebuild( )
 
 	if ( sources.empty( ))
 		return;
+
+	// [rc4l] Reuse the last propagation when nothing it depends on has moved.
+	//
+	// The Dijkstra is a function of the level's geometry and the reach, and of nothing else. Strength,
+	// Max colour and Follow room light change only the COLOUR each leaf ends up with, and those are
+	// the dials a player drags. Redoing the search for them cost 78ms a notch on aeon13.
+	//
+	// The source count is part of the key because litBy holds indices into `sources`; if a different
+	// number of skies were built this time, those indices mean something else and must not be reused.
+	const bool geometryValid =
+		( g_geoBuiltFor == subsectors ) &&
+		( g_geoBuiltForReach == (int)cl_fua_skytint_reach ) &&
+		( g_geoSourceCount == sources.size( )) &&
+		( g_geoDist.size( ) == (size_t)numsubsectors ) &&
+		( g_geoLitBy.size( ) == (size_t)numsubsectors );
+
+	g_lastRebuildReusedGeometry = geometryValid;
+	if ( geometryValid )
+	{
+		dist = g_geoDist;
+		litBy = g_geoLitBy;
+	}
+	else
+	{
 
 	while ( !queue.empty( ))
 	{
@@ -880,6 +964,14 @@ void SkyTint_Rebuild( )
 				queue.push( std::make_pair( next, ti ));
 			}
 		}
+	}
+
+	// Remember it, so the dials that only change colour do not pay for it again.
+	g_geoDist = dist;
+	g_geoLitBy = litBy;
+	g_geoBuiltFor = subsectors;
+	g_geoBuiltForReach = (int)cl_fua_skytint_reach;
+	g_geoSourceCount = sources.size( );
 	}
 
 	g_tint.assign( numsubsectors, PalEntry( 255, 255, 255 ));
@@ -1030,6 +1122,9 @@ size_t SkyTintTableSize( )
 // [rc4l] How many leaves actually carry colour, as opposed to how many the table has room for.
 // "table=3035 any=1" says a table exists and something in it is lit; it does not say whether that is
 // most of the level or one sector, and those two look identical from inside the game.
+double SkyTintLastRebuildMs( ) { return g_lastRebuildMs; }
+bool SkyTintLastRebuildReusedGeometry( ) { return g_lastRebuildReusedGeometry; }
+
 size_t SkyTintLitLeaves( )
 {
 	size_t n = 0;
@@ -1122,6 +1217,21 @@ void SkyTintHere( std::string &out )
 void SkyTintDerived( std::string &out )
 {
 	out.clear( );
+
+	// [rc4l] Computed HERE rather than during the rebuild. Reading every lit sector's floor texture
+	// and converting it out of sRGB was ~65ms of a ~67ms rebuild, paid on every slider notch, for a
+	// number nothing but this line consumes. Asking for the diagnostic is rare; moving a slider is not.
+	if ( sectors != NULL && numsectors > 0 && gamestate == GS_LEVEL )
+	{
+		std::vector<int> litSectors;
+		for ( int i = 0; i < numsectors; ++i )
+		{
+			if ( SeesSky( &sectors[i] ))
+				litSectors.push_back( i );
+		}
+		g_lastAlbedo = SceneAlbedo( litSectors );
+	}
+
 	if ( g_lastTints.empty( ))
 	{
 		out = "none";
