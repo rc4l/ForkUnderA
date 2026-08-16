@@ -183,6 +183,21 @@ SkyRgb BlendFromWhite(SkyRgb tint, int pct);
 // `dir` is expected to be NormaliseBrightness'd (peak 255). `chromaPct` is 0..100.
 SkyRgb EqualiseHuePush(SkyRgb dir, int chromaPct);
 
+// [rc4l] How much of the sky light a sector the mapper has already coloured should still receive,
+// as a percentage.
+//
+// This used to be a yes/no: ANY non-white sector colour disqualified a sector outright, so it got no
+// tint and did not light its neighbours either. The cliff that rule creates is the problem. Measured
+// on Eon Collection aeon13, where the whole level carries a single faint [254,194,194] wash: 158 of
+// 180 sky-seeing spots were excluded by a colour barely visible on screen, and the feature simply
+// switched itself off across an entire mapset.
+//
+// A mapper who lights a room hard red means it. One who lays a whisper of atmosphere over everything
+// is not vetoing sunlight. Scaling by how strongly the sector is coloured says both of those with
+// one rule and no threshold to argue about: the faint wash keeps most of its sky light, a saturated
+// room keeps almost none, and nothing jumps at the boundary because there is no boundary.
+int SkyShareForSectorColour(SkyRgb sectorColour);
+
 // [rc4l] Propagation is by DISTANCE, not by sector count.
 //
 // It used to halve per sector crossed, which made the reach depend on how finely the mapper chopped

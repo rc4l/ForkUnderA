@@ -464,8 +464,9 @@ CCMD( fua_skytintinfo )
 	Printf( "skytint: sky1texture=%d name=%s tex=%p w=%d h=%d skyflatnum=%d\n",
 		sky1texture.GetIndex( ), ( sky && sky->Name[0] ) ? sky->Name : "?", (void *)sky,
 		sky ? sky->GetWidth( ) : -1, sky ? sky->GetHeight( ) : -1, skyflatnum.GetIndex( ));
-	Printf( "skytint: table=%u any=%d skyboxleaves=%d doublesky=%d swapskies=%d sky2=%d\n",
-		(unsigned)zx::SkyTintTableSize( ), (int)zx::SkyTint_Active( ), zx::SkyTintSkyboxLeaves( ),
+	Printf( "skytint: table=%u lit=%u any=%d skyboxleaves=%d doublesky=%d swapskies=%d sky2=%d\n",
+		(unsigned)zx::SkyTintTableSize( ), (unsigned)zx::SkyTintLitLeaves( ),
+		(int)zx::SkyTint_Active( ), zx::SkyTintSkyboxLeaves( ),
 		(int)!!( level.flags & LEVEL_DOUBLESKY ), (int)!!( level.flags & LEVEL_SWAPSKIES ),
 		sky2texture.GetIndex( ));
 
@@ -653,8 +654,12 @@ void SkyTint_Rebuild( )
 		const sector_t *s = subsectors[i].sector;
 		if (( s == NULL ) || ( s->GetTexture( sector_t::ceiling ) != skyflatnum ))
 			continue;
-		// A mapper or mod that coloured this sector meant it; theirs wins and we never touch it.
-		if (( s->ColorMap == NULL ) || (( s->ColorMap->Color.d & 0xFFFFFF ) != 0xFFFFFF ))
+		// [rc4l] A coloured sector still SEEDS; how much sky light it keeps is decided at draw time by
+		// SkyShareForSectorColour. This used to skip it outright, which meant a sector the mapper had
+		// touched at all got nothing AND lit none of its neighbours. Eon Collection aeon13 lays one
+		// faint [254,194,194] wash over the whole level, and that switched the feature off across 158
+		// of 180 sky-seeing spots.
+		if ( s->ColorMap == NULL )
 			continue;
 
 		// Keyed on the front texture: two sectors showing the same sky share one average rather than
@@ -922,13 +927,14 @@ namespace
 // Asking the SECTOR keeps the reason the check is made at draw time in the first place: ACS
 // Sector_SetColor writes sector->ColorMap, and OPEN scripts run after P_SetupLevel has already built
 // the table (p_spec.cpp:1835, runNow=false), so a level coloured from ACS is still deferred to.
-bool MapperColoured( const sector_t *sec )
+// How much of the sky light this sector still receives, 0..100. See SkyShareForSectorColour.
+int SkyShareOf( const sector_t *sec )
 {
 	if (( sec == NULL ) || ( sec->ColorMap == NULL ))
-		return false;
+		return 100;
 
 	const PalEntry &c = sec->ColorMap->Color;
-	return ( c.r != 255 ) || ( c.g != 255 ) || ( c.b != 255 );
+	return SkyShareForSectorColour( SkyRgb( c.r, c.g, c.b ));
 }
 
 // Multiply a stored tint into whatever the surface already had.
@@ -941,8 +947,15 @@ void ApplyIndex( ptrdiff_t at, FColormap &cm, const sector_t *owner )
 	if ( tint.r == 255 && tint.g == 255 && tint.b == 255 )
 		return;
 
-	if ( MapperColoured( owner ))
+	// A sector the mapper coloured keeps its own character by taking less of the sky, rather than
+	// all or nothing. Faded toward white, which is the neutral multiplier, so share 0 is untouched.
+	const int share = SkyShareOf( owner );
+	if ( share <= 0 )
 		return;
+	const PalEntry shared(
+		(BYTE)( 255 - ((( 255 - tint.r ) * share ) / 100 )),
+		(BYTE)( 255 - ((( 255 - tint.g ) * share ) / 100 )),
+		(BYTE)( 255 - ((( 255 - tint.b ) * share ) / 100 )));
 
 	// [rc4l] TRIPWIRE, not a live guard: nothing in this tree sets blendfactor today. It is the
 	// sector colormap's alpha, and every producer passes alpha 0 (Static_Init uses MAKERGB, UDMF
@@ -957,9 +970,9 @@ void ApplyIndex( ptrdiff_t at, FColormap &cm, const sector_t *owner )
 
 	// Multiplied into whatever the surface already had rather than replacing it: the tint is light
 	// arriving from outside, not a repaint, so a coloured sector keeps its own character.
-	cm.LightColor.r = (BYTE)(( cm.LightColor.r * tint.r ) / 255 );
-	cm.LightColor.g = (BYTE)(( cm.LightColor.g * tint.g ) / 255 );
-	cm.LightColor.b = (BYTE)(( cm.LightColor.b * tint.b ) / 255 );
+	cm.LightColor.r = (BYTE)(( cm.LightColor.r * shared.r ) / 255 );
+	cm.LightColor.g = (BYTE)(( cm.LightColor.g * shared.g ) / 255 );
+	cm.LightColor.b = (BYTE)(( cm.LightColor.b * shared.b ) / 255 );
 }
 
 } // namespace
@@ -967,6 +980,21 @@ void ApplyIndex( ptrdiff_t at, FColormap &cm, const sector_t *owner )
 size_t SkyTintTableSize( )
 {
 	return g_tint.size( );
+}
+
+// [rc4l] How many leaves actually carry colour, as opposed to how many the table has room for.
+// "table=3035 any=1" says a table exists and something in it is lit; it does not say whether that is
+// most of the level or one sector, and those two look identical from inside the game.
+size_t SkyTintLitLeaves( )
+{
+	size_t n = 0;
+	for ( size_t i = 0; i < g_tint.size( ); ++i )
+	{
+		const PalEntry &t = g_tint[i];
+		if (( t.r != 255 ) || ( t.g != 255 ) || ( t.b != 255 ))
+			++n;
+	}
+	return n;
 }
 
 int SkyTintSkyboxLeaves( )
@@ -1018,8 +1046,20 @@ void SkyTintHere( std::string &out )
 	// even one of the 3D floor cases, rather than an ordinary sector that happens to look like one.
 	const int nff = ( sec != NULL && sec->e != NULL ) ? (int)sec->e->XFloor.ffloors.Size( ) : 0;
 
-	mysnprintf( buf, sizeof( buf ), "leaf=%d sector=%d ffloors=%d leaftint[%d,%d,%d] sectortint[%d,%d,%d]",
-		(int)li, (int)si, nff, leaf.r, leaf.g, leaf.b, secTint.r, secTint.g, secTint.b );
+	// [rc4l] Does this sector SEE sky, by the same test the seeding pass uses? An untinted leaf whose
+	// ceiling is the sky flat is a seeding bug; an untinted leaf that never sees sky is just indoors
+	// and too far from a way out. Those two need opposite fixes and look identical from in-game.
+	const int ceilSky = ( sec != NULL && sec->GetTexture( sector_t::ceiling ) == skyflatnum ) ? 1 : 0;
+	const int floorSky = ( sec != NULL && sec->GetTexture( sector_t::floor ) == skyflatnum ) ? 1 : 0;
+
+	// [rc4l] The sector's OWN colour, because a non-white one excludes it from seeding entirely -- it
+	// gets no tint and does not light its neighbours either. That rule is invisible from in-game and
+	// looks exactly like a propagation failure.
+	const PalEntry own = ( sec != NULL && sec->ColorMap != NULL ) ? sec->ColorMap->Color : PalEntry( 255, 255, 255 );
+
+	mysnprintf( buf, sizeof( buf ), "leaf=%d sector=%d ffloors=%d ceilsky=%d floorsky=%d own[%d,%d,%d] leaftint[%d,%d,%d] sectortint[%d,%d,%d]",
+		(int)li, (int)si, nff, ceilSky, floorSky, own.r, own.g, own.b,
+		leaf.r, leaf.g, leaf.b, secTint.r, secTint.g, secTint.b );
 	out = buf;
 }
 
@@ -1178,14 +1218,19 @@ void SkyTint_Apply( const sector_t *sec, FColormap &cm )
 	// after gl_flats.cpp has already folded in a 3D floor's light colour, so testing cm here would
 	// stand aside on every 3D floor. `sectors[si]` rather than `sec`, because `sec` may be a
 	// gl_FakeFlat stack copy whose ColorMap pointer is the copy's, not the level's.
-	if ( MapperColoured( &sectors[si] ))
+	const int share = SkyShareOf( &sectors[si] );
+	if ( share <= 0 )
 		return;
+	const PalEntry shared(
+		(BYTE)( 255 - ((( 255 - tint.r ) * share ) / 100 )),
+		(BYTE)( 255 - ((( 255 - tint.g ) * share ) / 100 )),
+		(BYTE)( 255 - ((( 255 - tint.b ) * share ) / 100 )));
 
 	// Multiplied into whatever the sector already had rather than replacing it: the tint is light
 	// arriving from outside, not a repaint, so a coloured sector keeps its own character.
-	cm.LightColor.r = (BYTE)(( cm.LightColor.r * tint.r ) / 255 );
-	cm.LightColor.g = (BYTE)(( cm.LightColor.g * tint.g ) / 255 );
-	cm.LightColor.b = (BYTE)(( cm.LightColor.b * tint.b ) / 255 );
+	cm.LightColor.r = (BYTE)(( cm.LightColor.r * shared.r ) / 255 );
+	cm.LightColor.g = (BYTE)(( cm.LightColor.g * shared.g ) / 255 );
+	cm.LightColor.b = (BYTE)(( cm.LightColor.b * shared.b ) / 255 );
 }
 
 } // namespace zx

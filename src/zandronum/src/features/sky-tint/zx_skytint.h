@@ -55,6 +55,11 @@ bool SkyTint_Active();
 // TEMPORARY, for the fua_skytintinfo diagnostic.
 size_t SkyTintTableSize();
 
+// TEMPORARY, for fua_skytintinfo: how many leaves actually carry colour. The table's SIZE says only
+// how many it has room for, so a level with one lit sector and one lit nearly throughout read the
+// same from the console.
+size_t SkyTintLitLeaves();
+
 // [rc4l] Once per frame, straight after FCanvasTextureInfo::UpdateAll.
 //
 // A 3D skybox is a camera, not an image, so the only way to know its colour is to render it and

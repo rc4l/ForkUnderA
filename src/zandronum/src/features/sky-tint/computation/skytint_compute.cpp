@@ -365,28 +365,57 @@ SkyRgb EqualiseHuePush(SkyRgb dir, int chromaPct)
 	if (room <= 0)
 		return SkyRgb(255, 255, 255);
 
-	// The spread being asked for, as an ABSOLUTE amount of colour rather than a fraction of this
-	// particular sky. That is what makes the push equal across hues: `room` differs wildly between
-	// directions (a near-pure red has ~254 of it, a pale green ~170), so blending by a fixed
-	// percentage gives every hue a different result, which is the bug this exists to kill.
-	const double target = (chromaPct / 100.0) * mx;
-
-	// c = target / room. A direction whose darkest channel is near zero buys its spread almost
-	// one-for-one; one sitting high has to blend much further for the same visible change.
-	int pct = (int)(((target / (double)room) * 100.0) + 0.5);
-
-	// [rc4l] Above the point where a sky's own colour runs out, it simply gives what it has.
+	// [rc4l] The request is a fraction of the colour THIS sky actually has, not of a fixed 255.
 	//
-	// Green's darkest channel sits at 85, so it cannot spread past 170 however hard it is asked,
-	// while a near-pure red reaches 254. Past that point the two stop matching and the ordering
-	// actually inverts: measured at full dial, red came out 1.39x green. There is no fixing that
-	// without inventing colour the sky does not contain, so the honest behaviour is to saturate.
-	// The dial reads as "how much colour to push", equal for every sky that can reach it, and a pale
-	// sky tops out early rather than being extrapolated into a hue it never had.
+	// An earlier version aimed at an absolute spread, on the reasoning that equal spread meant equal
+	// push. It did, and that turned out to be the wrong goal: it erases the difference between a pale
+	// sky and a saturated one, driving a washed-out sky to its own maximum exactly as hard as a
+	// vivid one. Measured on Eon Collection aeon11, whose sky is [190,238,254] at 25% saturation: it
+	// pinned at full from strength 25 upward, so the dial did nothing over most of its travel, and
+	// what landed was nearly pure red-subtraction on a warm orange map -- the colour draining out of
+	// the rock rather than sky light falling on it.
+	//
+	// Scaling to the sky's own range instead makes the dial mean one thing everywhere (a fraction of
+	// what this sky can give), keeps it linear across its whole travel on every map, and lets a pale
+	// sky tint gently -- which is what a pale sky should do.
+	//
+	// The hue inequality this was meant to solve was never `room`. It was PreserveLuminance scaling
+	// saturated tints up until they clamped, which gave green a free ride; that is gone. What is left
+	// is skies pushing in proportion to how coloured they are, which is the honest ordering.
+	int pct = chromaPct;
 	if (pct > 100)
 		pct = 100;
 
+	// `room` and `mx` are the sky's own colour range, kept because they are what `pct` is a fraction
+	// OF: BlendFromWhite by pct delivers a spread of exactly pct% of room.
+	(void)mx;
+	(void)room;
+
 	return BlendFromWhite(dir, pct);
+}
+
+// [rc4l] See the header for the aeon13 measurement this replaces a yes/no rule with.
+int SkyShareForSectorColour(SkyRgb sectorColour)
+{
+	int mx = sectorColour.r;
+	if (sectorColour.g > mx) mx = sectorColour.g;
+	if (sectorColour.b > mx) mx = sectorColour.b;
+	int mn = sectorColour.r;
+	if (sectorColour.g < mn) mn = sectorColour.g;
+	if (sectorColour.b < mn) mn = sectorColour.b;
+
+	// White, or black, or anything with no hue to it: the mapper has expressed nothing, so the sky
+	// gets the lot. Black is guarded separately because (max-min)/max is undefined at zero.
+	if (mx <= 0)
+		return 100;
+
+	// Saturation by the same (max-min)/max definition used everywhere else here, so "how coloured is
+	// this" means one thing across the feature.
+	const int sat = ((mx - mn) * 100) / mx;
+	int share = 100 - sat;
+	if (share < 0)		share = 0;
+	if (share > 100)	share = 100;
+	return share;
 }
 
 int StrengthAtDistance(int pct, double distance, double reach)
