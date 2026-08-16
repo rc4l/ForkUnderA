@@ -59,8 +59,9 @@ const USAGE = `fuactl <command>
   ls                                 list registered engine instances
   reap [--kill] [--all]              prune dead; --kill SIGTERMs ORPHANS only (other sessions safe); --all kills every live instance
   launch [--map M] [--seed S] [--port P] [--token T] [--iwad W] [--skill N] [--file a.wad,b.pk3]   launch one supervised bridge instance (stays up until Ctrl-C)
-  launch-calm [same flags]           same, but nothing fights you: sv_fua_friendlymonsters is set from the command line
-                                     (so monsters placed facing the player start never get a first look) plus god+notarget+fly
+  launch-calm [same flags]           same, but you start as a SPECTATOR with nothing fighting you: sv_fua_friendlymonsters
+                                     set from the command line (so monsters facing the player start never get a first look),
+                                     plus god+notarget+fly. --no-spectate to start embodied
   sample --pid P | --port P [--seconds N] [--engine]   hottest functions (macOS sample / Linux perf; unavailable on Windows)
   net-bw [--seed S] [--map M] [--spawn CLS] [--count N] [--seconds N]   client/server bandwidth, baseline vs perturbation
   rpc <cmd> [jsonArgs] --port P [--token T]   send one RPC to an instance and print the result
@@ -150,6 +151,9 @@ async function main() {
           god: !flags["no-god"],
           notarget: !(flags["no-friendly"] || flags["no-notarget"]),
           fly: !flags["no-fly"],
+          // Start as a spectator: no body to shoot at, and it walks through geometry, so a level is
+          // somewhere to move around and look rather than something to survive.
+          spectate: !flags["no-spectate"],
         });
         c.close();
         console.log(`calm: ${Object.keys(on).filter((k) => on[k]).join(" + ") || "nothing applied"}`);

@@ -31,20 +31,53 @@ is a **state**, not a toggle: setting it twice is setting it.
 Setting it also clears the target of anything already hunting a player and wipes sector
 `SoundTarget`s, since the flag governs what a monster targets *next*, not what it is mid-swing on.
 
-Clearing the cvar restores hostility, but only to monsters this feature made friendly — tracked with
-`STFL_FUA_WASHOSTILE`. Without that mark, turning it off would also strip `MF_FRIENDLY` from allies a
-mapper deliberately shipped (Strife, MBF-style friendly monsters).
+**Friendly is not the same as quiet.** A friendly monster still hunts, it just hunts the *other*
+monsters: it wakes, plays its see-sound and walks off to find a fight. Watching a level come alive
+around you is not what this is for, so each one is also `Deactivate()`d — the engine's own dormancy,
+which sets `MF2_DORMANT` and the `Inactive` state, or `tics = -1` when the class has none. That stops
+the state machine outright, so `A_Look` never runs again: no see-sound, no wandering.
+
+Monsters that were **already** friendly are skipped entirely rather than deactivated. They were never
+hostile to the player, and rewriting them would mean turning the cvar off makes a level's own allies
+hostile. Skipping them is also what keeps one mark bit exact: `STFL_FUA_WASHOSTILE` means "this
+feature changed both its side and its dormancy", so clearing the cvar restores both with nothing to
+guess.
 
 `CVAR_SERVERINFO` because it changes what the simulation does, so a client must not be able to
 disagree with the server about it. Not archived: it would be an unpleasant surprise to find it still
 on in a real game days later.
+
+## Savegames
+
+`MF_FRIENDLY`, `MF2_DORMANT` and `STFlags` are **all serialised** by `AActor::Serialize`, so a save
+taken while the cvar was on carries every monster back friendly and asleep. `CUSTOM_CVAR` only fires
+when the value *changes*, so loading that save with the cvar already off would restore nothing and
+hand back a permanently pacified level with no way out of it.
+
+`FriendlyMonsters_Loaded`, called on the loading side of `Serialize`, reconciles what the save
+carried against what the cvar currently says. The effect cannot outlive the session that asked for
+it. No new field is written, so **the savegame format is unchanged** and older saves load normally.
+
+## Backporting
+
+Kept deliberately small: three call sites and one enum value. `mcp_rpc.cpp` is bridge-only
+(`FUA_MCP_BRIDGE`) and carries no risk at all.
+
+- `STFL_FUA_WASHOSTILE` takes `0x40000000` out of Zandronum's `STFlags` word. `0x80000000` is still
+  free. If an upstream sync ever lands a flag on that bit, this is the collision to move, and the
+  `fua_` name makes it greppable.
+- `AActor::Serialize` and `AActor::PostBeginPlay` each gain one guarded call. The `PostBeginPlay` one
+  costs a single bool read per actor spawn when the cvar is off.
+- Everything is server-side: `ApplyTo` returns early under `NETWORK_InClientMode()`, because this
+  rewrites AI state (side, target, dormancy) and a client must not predict it. Single player is not
+  client mode, so the dev use this exists for is unaffected.
 
 ## In-place engine edits
 
 | File | Edit |
 |---|---|
 | `src/actor.h` | Added `STFL_FUA_WASHOSTILE = 0x40000000` to the `STFlags` enum. |
-| `src/p_mobj.cpp` | Include, and one `zx::FriendlyMonsters_Spawned( this )` call at the end of `AActor::PostBeginPlay`. |
+| `src/p_mobj.cpp` | Include, one `zx::FriendlyMonsters_Spawned( this )` at the end of `AActor::PostBeginPlay`, and one `zx::FriendlyMonsters_Loaded( this )` on the loading side of `AActor::Serialize`. |
 | `src/CMakeLists.txt` | `features/friendly-monsters/zx_friendlymonsters.cpp`, before `zzautozend.cpp`. |
 
 ## Driving it

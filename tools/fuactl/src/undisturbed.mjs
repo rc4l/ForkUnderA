@@ -36,7 +36,7 @@ const CHEATS = {
 
 // Cheats are per-player state and do not survive a level change, so this has to be re-applied after
 // every `map`. Cheap enough that callers should just do it unconditionally.
-export async function makeUndisturbed(c, { quietMs = 400, god = true, notarget = true, fly = true } = {}) {
+export async function makeUndisturbed(c, { quietMs = 400, god = true, notarget = true, fly = true, spectate = false } = {}) {
   const want = { god, notarget, fly };
   const applied = {};
 
@@ -64,6 +64,15 @@ export async function makeUndisturbed(c, { quietMs = 400, god = true, notarget =
     await c.rpc("console.exec", { text: "sv_fua_friendlymonsters 1" });
     await sleep(250);
     applied.friendlymonsters = true;
+  }
+
+  // Last, because it supersedes the rest: a spectator has no body to shoot at, walks through
+  // geometry and already flies. Idempotent by construction, since the CCMD returns early on
+  // "Already a spectator!" rather than toggling back to alive.
+  if (spectate) {
+    await c.rpc("console.exec", { text: "spectate" });
+    await sleep(400);
+    applied.spectate = true;
   }
 
   // A beat for anything already in flight to land or expire before the caller starts reading.
