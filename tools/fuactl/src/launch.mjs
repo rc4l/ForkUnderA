@@ -76,6 +76,17 @@ export function engineArgs(opts = {}, configPath) {
     // injects. Keeping a stray physical cursor out is the input lock's job
     // (ZANDRONUM_BRIDGE_INPUT_LOCK), not a cvar's.
   );
+
+  // [rc4l] Silent by default. These instances are launched several at a time and often left running
+  // while something else is being looked at, so a chorus of them playing music and menu blips over
+  // each other is noise nobody asked for. Pushed BEFORE extraArgs so an explicit
+  // `+snd_musicvolume 0.5` from the caller still wins -- last +set on the command line takes effect.
+  args.push(
+    "+set", "snd_musicvolume", "0",
+    "+set", "snd_sfxvolume", "0",
+    "+set", "snd_menuvolume", "0",
+  );
+
   if (opts.seed != null) args.push("-rngseed", String(opts.seed));
   if (opts.extraArgs) args.push(...opts.extraArgs);
 

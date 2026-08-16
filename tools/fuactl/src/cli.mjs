@@ -76,6 +76,8 @@ const USAGE = `fuactl <command>
                                      go there with god + fly + sv_fua_friendlymonsters on, so nothing fights you
                                      (--no-god/--no-friendly/--no-fly to opt out); --outdoors asks the engine for
                                      this level's sky-lit spot; pitch>0 looks down, so --pitch -90 is straight up
+  sky <TEXTURE> --port P             swap sky1 on the live level, so the same sky can be compared across maps
+  light --port P (--level N | --delta N | --scale F | --restore) [--sector I]   set/offset/scale sector light, or put back what loaded
   skyprobe --port P --maps M1,M2 [--strength N] [--saturation N]   sky tint per map, measured OUTDOORS: tint, light passed, dE76
   ui <action> [args] --port P [--token T]   drive the UI: read (menu as text), find <label>, nav <keys>, click <x> <y>, drag, type <text>, look --yaw D --pitch D, screenshot [name], exec <ccmd>
   mcp                                run as an MCP stdio server for agents
@@ -368,6 +370,58 @@ async function main() {
             `${Math.round(at.pitch)}  sector ${at.sector}`);
         }
       }
+      c.close();
+      break;
+    }
+    case "sky": {
+      // fuactl sky <TEXTURE> --port P
+      //
+      // Swaps sky1 on the live level. The point is isolating cause: when one map's tint reads strong
+      // and another's reads invisible, this puts the same sky on both, so the only thing that changed
+      // is the map. changesky already tells features/sky-tint the sky moved, so the table rebuilds.
+      const tex = rest[0];
+      if (!tex || !flags.port) {
+        console.error("usage: fuactl sky <TEXTURE> --port P [--token T]");
+        process.exit(2);
+      }
+      const c = new BridgeClient();
+      await c.connect(Number(flags.port), { token: flags.token || null, timeoutMs: 8000 });
+      await c.waitHello();
+      const said = [];
+      const off = c.onEvent((n, d) => { if (n === "out" && d && d.text) said.push(d.text.trim()); });
+      await c.rpc("console.exec", { text: `changesky ${tex}` });
+      await new Promise((r) => setTimeout(r, 900));
+      off();
+      // changesky prints only on failure, so silence is success. Reported either way rather than
+      // leaving a typo'd texture name to look like a sky that simply has no effect.
+      const bad = said.find((l) => /not found/i.test(l));
+      console.log(bad ? bad : `sky is now ${tex}`);
+      c.close();
+      if (bad) process.exit(1);
+      break;
+    }
+    case "light": {
+      // fuactl light --level N | --delta N | --scale F | --restore  [--sector I] --port P
+      if (!flags.port) {
+        console.error("usage: fuactl light --port P (--level N | --delta N | --scale F | --restore)\n" +
+          "                   [--sector I]   sector light: set, offset, scale, or put back what loaded");
+        process.exit(2);
+      }
+      const req = {};
+      if (flags.sector != null) req.sector = Number(flags.sector);
+      if (flags.restore) req.op = "restore";
+      else if (flags.level != null) req.level = Number(flags.level);
+      else if (flags.delta != null) req.delta = Number(flags.delta);
+      else if (flags.scale != null) req.scale = Number(flags.scale);
+      else {
+        console.error("need one of --level, --delta, --scale, --restore");
+        process.exit(2);
+      }
+      const c = new BridgeClient();
+      await c.connect(Number(flags.port), { token: flags.token || null, timeoutMs: 8000 });
+      await c.waitHello();
+      const r = await c.rpc("world.light", req);
+      console.log(`${r.sectors} sectors, light now ${r.min}..${r.max}${r.restored ? " (restored)" : ""}`);
       c.close();
       break;
     }

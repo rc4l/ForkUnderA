@@ -808,6 +808,78 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 			+ ",\"angle\":" + std::to_string( outAngle ) + ",\"pitch\":" + std::to_string( outPitch ) + "}";
 		SendOk( id, body );
 	}
+	else if ( cmd == "world.light" )
+	{
+		// [rc4l] Set, offset or scale sector light levels. A dev tool for looking at how something
+		// reads across the brightness range a level actually spans, without hunting for one map that
+		// happens to be dark and another that happens to be bright -- with one map held fixed, light
+		// is the only thing that moved, which is what makes the comparison mean anything.
+		//
+		// Not persisted anywhere: sector light IS serialised, so a save taken after this keeps it.
+		// `restore` puts back what the level loaded with, and the originals are captured lazily on
+		// the first change so the cost is nothing on a level this is never used on.
+		if ( !InLevel() )
+		{
+			SendErr( id, "not in a level" );
+			return;
+		}
+
+		static std::vector<short> original;
+		static int originalFor = -1;   // numsectors the snapshot was taken at, as a cheap staleness check
+		if (( originalFor != numsectors ) || ( original.size() != (size_t)numsectors ))
+		{
+			original.clear();
+			original.reserve( numsectors );
+			for ( int i = 0; i < numsectors; ++i )
+				original.push_back( (short)sectors[i].GetLightLevel() );
+			originalFor = numsectors;
+		}
+
+		long only = -1;
+		GetInt( args, "sector", only );
+		if (( only >= numsectors ) || ( only < -1 ))
+		{
+			SendErr( id, "sector out of range" );
+			return;
+		}
+
+		long level = 0, delta = 0;
+		double scale = 0.0;
+		const bool haveLevel   = GetInt( args, "level", level );
+		const bool haveDelta   = GetInt( args, "delta", delta );
+		const bool haveScale   = GetFloat( args, "scale", scale );
+		std::string op;
+		GetStr( args, "op", op );
+		const bool restore = ( op == "restore" );
+
+		if ( !haveLevel && !haveDelta && !haveScale && !restore )
+		{
+			SendErr( id, "need one of level, delta, scale, or op:\"restore\"" );
+			return;
+		}
+
+		const int from = ( only >= 0 ) ? (int)only : 0;
+		const int to   = ( only >= 0 ) ? (int)only + 1 : numsectors;
+		int lo = 255, hi = 0;
+		for ( int i = from; i < to; ++i )
+		{
+			int v;
+			if ( restore )        v = original[i];
+			else if ( haveLevel ) v = (int)level;
+			else if ( haveDelta ) v = sectors[i].GetLightLevel() + (int)delta;
+			else                  v = (int)(( sectors[i].GetLightLevel() * scale ) + 0.5 );
+
+			if ( v < 0 ) v = 0;
+			if ( v > 255 ) v = 255;
+			sectors[i].SetLightLevel( v );
+			if ( v < lo ) lo = v;
+			if ( v > hi ) hi = v;
+		}
+
+		std::string body = "{\"sectors\":" + I( to - from ) + ",\"min\":" + I( lo ) + ",\"max\":" + I( hi )
+			+ ",\"restored\":" + B( restore ) + "}";
+		SendOk( id, body );
+	}
 	else if ( cmd == "gl.timers" )
 	{
 		// Arm a GPU-time capture. The per-zone breakdown (opaque scene / translucent / 2D) + whole-frame
