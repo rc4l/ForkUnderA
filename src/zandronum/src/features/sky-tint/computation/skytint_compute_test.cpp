@@ -431,22 +431,71 @@ namespace
 	}
 }
 
-// [rc4l] The whole point of EqualiseHuePush: the same request produces the same channel spread
-// whatever the hue, so green stops hitting twice as hard as red for free. Measured on Speed of Doom
-// MAP01, one spot, only the sky swapped: green moved the ground 14.0, orange 10.3, red 6.6.
-TEST(EqualiseHuePush, GivesEveryHueTheSameSpread)
+// [rc4l] The dial is a fraction of what THIS sky has, so it pushes in proportion to how coloured the
+// sky is. An earlier version aimed at a fixed absolute spread; that drove a washed-out sky to its own
+// maximum as hard as a vivid one, and pinned the dial (Eon Collection aeon11, sky at 25% saturation,
+// identical output from strength 25 upward).
+TEST(EqualiseHuePush, PushesInProportionToHowColouredTheSkyIs)
 {
 	const int want = 40;
-	const int gs = SpreadOf(EqualiseHuePush(SkyRgb(118, 255, 85), want));	// SoD MAP01
-	const int rs = SpreadOf(EqualiseHuePush(SkyRgb(255, 1, 1), want));		// SoD MAP29
-	const int as = SpreadOf(EqualiseHuePush(SkyRgb(255, 99, 2), want));		// SoD MAP20
+	const SkyRgb pale(190, 238, 255);		// Eon aeon11, 25% saturated
+	const SkyRgb vivid(255, 1, 1);			// SoD MAP29, near-pure red
 
-	// Within a couple of points, which is integer rounding on a 0..255 channel, not a difference.
-	EXPECT_NEAR(gs, rs, 2) << "green " << gs << " vs red " << rs;
-	EXPECT_NEAR(gs, as, 2) << "green " << gs << " vs amber " << as;
+	EXPECT_LT(SpreadOf(EqualiseHuePush(pale, want)), SpreadOf(EqualiseHuePush(vivid, want)))
+		<< "a pale sky must tint more gently than a saturated one at the same setting";
 
-	// And it is the spread that was ASKED for, not merely a consistent wrong one.
-	EXPECT_NEAR(gs, (255 * want) / 100, 3);
+	// Each delivers pct% of its OWN range, which is what makes the dial mean one thing everywhere.
+	EXPECT_NEAR(SpreadOf(EqualiseHuePush(pale, want)), (65 * want) / 100, 2);
+	EXPECT_NEAR(SpreadOf(EqualiseHuePush(vivid, want)), (254 * want) / 100, 2);
+}
+
+// The regression aeon11 exposed: the dial has to keep moving across its whole travel, on every sky.
+TEST(EqualiseHuePush, StaysLinearAcrossTheWholeDialEvenForAPaleSky)
+{
+	const SkyRgb pale(190, 238, 255);
+	int last = -1;
+	for (int pct = 10; pct <= 100; pct += 10)
+	{
+		const int s = SpreadOf(EqualiseHuePush(pale, pct));
+		EXPECT_GT(s, last) << "strength " << pct << " gave the same push as the step below it";
+		last = s;
+	}
+}
+
+// [rc4l] The rule this replaces was yes/no, and the cliff was the bug: Eon Collection aeon13 lays one
+// faint [254,194,194] wash over the whole level, which disqualified 158 of 180 sky-seeing spots.
+TEST(SkyShareForSectorColour, LetsAFaintWashKeepMostOfItsSkyLight)
+{
+	// aeon13's actual sector colour: 24% saturated, so it keeps about three quarters.
+	EXPECT_NEAR(76, SkyShareForSectorColour(SkyRgb(254, 194, 194)), 2);
+}
+
+TEST(SkyShareForSectorColour, StandsAsideForASectorTheMapperReallyColoured)
+{
+	// A hard red room is a deliberate statement and keeps almost none of the sky.
+	EXPECT_LE(SkyShareForSectorColour(SkyRgb(255, 20, 20)), 10);
+	EXPECT_EQ(0, SkyShareForSectorColour(SkyRgb(255, 0, 0)));
+}
+
+TEST(SkyShareForSectorColour, AnUncolouredSectorTakesTheLot)
+{
+	EXPECT_EQ(100, SkyShareForSectorColour(SkyRgb(255, 255, 255)));
+	EXPECT_EQ(100, SkyShareForSectorColour(SkyRgb(128, 128, 128))) << "grey is a level, not a hue";
+	EXPECT_EQ(100, SkyShareForSectorColour(SkyRgb(0, 0, 0))) << "black has no hue and no divisor";
+}
+
+// No boundary to argue about: the share has to fall off smoothly as the sector gets more coloured,
+// which is the whole reason for preferring this over a saturation threshold.
+TEST(SkyShareForSectorColour, FallsOffSmoothlyWithNoCliff)
+{
+	int last = 101;
+	for (int drop = 0; drop <= 255; drop += 15)
+	{
+		const int share = SkyShareForSectorColour(SkyRgb(255, 255 - drop, 255 - drop));
+		EXPECT_LE(share, last);
+		EXPECT_LE(last - share, 12) << "a jump this big at drop " << drop << " is a cliff";
+		last = share;
+	}
 }
 
 TEST(EqualiseHuePush, ScalesWithTheRequestAndZeroIsOff)
