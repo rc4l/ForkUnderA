@@ -10,6 +10,7 @@
 #include "actor.h"
 #include "p_local.h"
 #include "c_cvars.h"
+#include "network.h"
 #include "r_defs.h"
 #include "r_state.h"
 
@@ -27,27 +28,42 @@ void ApplyTo( AActor *mo, bool friendly )
 	if (( mo->flags3 & MF3_ISMONSTER ) == 0 )
 		return;
 
+	// [rc4l] Server decides, client is told. This rewrites AI state (side, target, dormancy), which
+	// under client/server belongs to the server alone: a client applying it locally would be
+	// predicting a change the server may not have made yet. The cvar is CVAR_SERVERINFO, so a client
+	// still knows the value, it just does not act on it. Single player is not client mode, so the
+	// dev use this exists for is unaffected.
+	if ( NETWORK_InClientMode( ))
+		return;
+
 	if ( friendly )
 	{
-		// Remember whether this one was ALREADY friendly (a Strife ally, a mapper's own friendly
-		// monster). Turning the cvar back off must not make those hostile -- they were never ours
-		// to change, and a level that ships with allies would be quietly rewritten by the restore.
-		if (( mo->flags & MF_FRIENDLY ) == 0 )
-			mo->STFlags |= STFL_FUA_WASHOSTILE;
+		// A monster that was ALREADY friendly (a Strife ally, a mapper's own) is left completely
+		// alone: it was never hostile to the player, and rewriting it would mean turning the cvar
+		// back off makes a level's own allies hostile. Skipping it entirely is also what lets one
+		// mark bit be exact -- marked means "this feature changed both its side AND its dormancy",
+		// so the restore has nothing to guess.
+		if ( mo->flags & MF_FRIENDLY )
+			return;
 
+		mo->STFlags |= STFL_FUA_WASHOSTILE;
 		mo->flags |= MF_FRIENDLY;
 
 		// The flag governs what it will target NEXT. Anything already locked onto the player keeps
 		// chasing and firing until that pointer is cleared, which is the same gap that makes
 		// `notarget` alone insufficient.
-		if (( mo->target != NULL ) && ( mo->target->player != NULL ))
-		{
-			mo->target = NULL;
-			mo->lastenemy = NULL;
-			if ( mo->SpawnState != NULL )
-				mo->SetState( mo->SpawnState );
-		}
+		mo->target = NULL;
+		mo->lastenemy = NULL;
 		mo->LastHeard = NULL;
+
+		// And friendly is not the same as quiet. A friendly monster still hunts, it just hunts the
+		// OTHER monsters: it wakes, plays its see-sound and walks off to find a fight. Standing in
+		// a level watching it come alive around you is not what this cvar is for.
+		//
+		// Deactivate is the engine's own answer: MF2_DORMANT plus the Inactive state, or tics = -1
+		// when the class has none, which stops the state machine outright so A_Look never runs
+		// again. No looking means no see-sound and no wandering.
+		mo->Deactivate( NULL );
 	}
 	else if ( mo->STFlags & STFL_FUA_WASHOSTILE )
 	{
@@ -55,6 +71,7 @@ void ApplyTo( AActor *mo, bool friendly )
 		mo->flags &= ~MF_FRIENDLY;
 		mo->target = NULL;
 		mo->lastenemy = NULL;
+		mo->Activate( NULL );
 	}
 }
 
@@ -94,6 +111,23 @@ void FriendlyMonsters_Spawned( AActor *mo )
 {
 	if ( sv_fua_friendlymonsters )
 		ApplyTo( mo, true );
+}
+
+void FriendlyMonsters_Loaded( AActor *mo )
+{
+	if (( mo == NULL ) || (( mo->STFlags & STFL_FUA_WASHOSTILE ) == 0 ))
+		return;
+	if ( sv_fua_friendlymonsters )
+		return; // Save and cvar agree; leave it pacified.
+
+	// Undone by hand rather than through Activate(), which calls SetState during deserialisation,
+	// when the actor is not yet fully linked. Clearing dormancy and giving the state machine a tic
+	// is enough: it resumes from whatever state it was frozen in on the next run.
+	mo->STFlags &= ~STFL_FUA_WASHOSTILE;
+	mo->flags &= ~MF_FRIENDLY;
+	mo->flags2 &= ~MF2_DORMANT;
+	if ( mo->tics == -1 )
+		mo->tics = 1;
 }
 
 } // namespace zx

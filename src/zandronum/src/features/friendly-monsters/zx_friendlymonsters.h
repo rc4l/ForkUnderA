@@ -31,6 +31,15 @@ namespace zx
 // standing there when the cvar was set.
 void FriendlyMonsters_Spawned( AActor *mo );
 
+// [rc4l] Called for each actor as it comes back out of a savegame.
+//
+// MF_FRIENDLY, MF2_DORMANT and STFlags are ALL serialised (p_mobj.cpp AActor::Serialize), so a save
+// taken while the cvar was on bakes every monster friendly and asleep. CUSTOM_CVAR only fires when
+// the value CHANGES, so loading that save with the cvar already off would restore nothing and leave
+// a permanently pacified level with no way back. This reconciles what the save carried against what
+// the cvar currently says, so the effect cannot outlive the session that asked for it.
+void FriendlyMonsters_Loaded( AActor *mo );
+
 } // namespace zx
 
 #endif

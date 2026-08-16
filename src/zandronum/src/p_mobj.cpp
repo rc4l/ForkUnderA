@@ -483,6 +483,12 @@ void AActor::Serialize (FArchive &arc)
 		<< pPickupSpot
 		<< Rune;
 
+	// [rc4l] A save taken while sv_fua_friendlymonsters was on carries MF_FRIENDLY and MF2_DORMANT
+	// in the flags above. The cvar's callback only fires on CHANGE, so loading that save with the
+	// cvar already off would leave the level permanently pacified. See features/friendly-monsters.
+	if ( arc.IsLoading( ))
+		zx::FriendlyMonsters_Loaded( this );
+
 	// [MGOOOOOO] Horizontal attack extent (ProjectilePassRadius). Version-guarded so older snapshots
 	// (which never stored it) still load with the class default.
 	if (SaveVersion >= 4508)
