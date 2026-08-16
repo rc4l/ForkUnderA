@@ -63,6 +63,7 @@
 #include "gl/utility/gl_clock.h"
 #include "gl/utility/gl_convert.h"
 #include "gl/utility/gl_templates.h"
+#include "features/levelmesh/flatmesh.h"
 
 #ifdef _DEBUG
 CVAR(Int, gl_breaksec, -1, 0)
@@ -121,10 +122,14 @@ void GLFlat::SetupSubsectorLights(int pass, subsector_t * sub, int *dli)
 
 	if (dli != NULL && *dli != -1)
 	{
-		gl_RenderState.ApplyLightIndex(GLRenderer->mLights->GetIndex(*dli));
+		// [rc4l] features/levelmesh: remember what was applied, so RegisterFlatSubsector can record
+		// it without re-deriving the index from the caller's cursor.
+		mMeshLightIndex = GLRenderer->mLights->GetIndex(*dli);
+		gl_RenderState.ApplyLightIndex(mMeshLightIndex);
 		(*dli)++;
 		return;
 	}
+	mMeshLightIndex = -1;
 
 	lightdata.Clear();
 	FLightNode * node = sub->lighthead;
@@ -160,6 +165,7 @@ void GLFlat::SetupSubsectorLights(int pass, subsector_t * sub, int *dli)
 	}
 	else
 	{
+		mMeshLightIndex = d;   // [rc4l] features/levelmesh
 		gl_RenderState.ApplyLightIndex(d);
 	}
 }
@@ -170,8 +176,15 @@ void GLFlat::SetupSubsectorLights(int pass, subsector_t * sub, int *dli)
 //
 //==========================================================================
 
+EXTERN_CVAR(Bool, gl_wallmesh)
+
 void GLFlat::DrawSubsector(subsector_t * sub)
 {
+	// [rc4l] features/levelmesh: hand this subsector's plane to the mesh as well, so a backend gets
+	// floors and ceilings and not only walls. Idempotent -- a (subsector, plane) already baked at the
+	// same size overwrites in place.
+	if (gl_wallmesh) zx::levelmesh::RegisterFlatSubsector(*this, sub, ceiling);
+
 	FFlatVertex *ptr = GLRenderer->mVBO->GetBuffer();
 	if (plane.plane.a | plane.plane.b)
 	{
@@ -280,6 +293,9 @@ void GLFlat::DrawSubsectors(int pass, bool processlights, bool istrans)
 				if (gl_drawinfo->ss_renderflags[sub-subsectors]&renderflags || istrans)
 				{
 					if (processlights) SetupSubsectorLights(GLPASS_ALL, sub, &dli);
+					// [rc4l] features/levelmesh: this fast path draws straight from the sector VBO and
+					// never calls DrawSubsector, so the mesh has to be fed here too.
+					if (gl_wallmesh) zx::levelmesh::RegisterFlatSubsector(*this, sub, ceiling);
 					drawcalls.Clock();
 					glDrawArrays(GL_TRIANGLE_FAN, index, sub->numlines);
 					drawcalls.Unclock();
@@ -504,6 +520,7 @@ void GLFlat::ProcessSector(sector_t * frontsector)
 	extsector_t::xfloor &x = sector->e->XFloor;
 	this->sub=NULL;
 	dynlightindex = -1;
+	mMeshLightIndex = -1;
 
 	byte &srf = gl_drawinfo->sectorrenderflags[sector->sectornum];
 

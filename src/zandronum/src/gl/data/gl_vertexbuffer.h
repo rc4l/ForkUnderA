@@ -9,6 +9,7 @@ struct vertex_t;
 struct secplane_t;
 struct subsector_t;
 struct sector_t;
+class FMaterial;	// [rc4l] used by FSkyVertexBuffer::RenderDome; was relying on include order
 
 
 class FVertexBuffer

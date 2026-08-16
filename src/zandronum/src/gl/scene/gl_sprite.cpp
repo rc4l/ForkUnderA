@@ -60,6 +60,7 @@
 #include "gl/models/gl_models.h"
 #include "gl/shaders/gl_shader.h"
 #include "gl/textures/gl_material.h"
+#include "features/levelmesh/flatmesh.h"
 #include "gl/utility/gl_clock.h"
 #include "gl/data/gl_vertexbuffer.h"
 // [BB] New #includes.
@@ -68,6 +69,10 @@
 #include "features/sprite-roll/computation/spriteroll_compute.h"	// [rc4l]
 #include "features/damage-tint/damagetint.h"	// [rc4l] damaging-floor sprite glow
 
+EXTERN_CVAR(Bool, gl_wallmesh)
+// [rc4l] features/levelmesh: collect sprites into the per-frame dynamic stream. On by default now
+// that they no longer contaminate the static mesh -- see the call site.
+CVAR(Bool, fua_mesh_sprites, true, 0)
 CVAR(Bool, gl_usecolorblending, true, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 CVAR(Bool, gl_spritebrightfog, false, CVAR_ARCHIVE|CVAR_GLOBALCONFIG);
 CVAR(Bool, gl_sprite_blend, false, CVAR_ARCHIVE|CVAR_GLOBALCONFIG);
@@ -283,6 +288,16 @@ void GLSprite::Draw(int pass)
 			v3 = Vector(x1, z2, y1);
 			v4 = Vector(x2, z2, y2);
 		}
+
+		// [rc4l] features/levelmesh: hand this sprite to the DYNAMIC stream, which is rebuilt every
+		// frame. It used to go into the static level mesh, which looked right only because it was
+		// checked against a screenshot taken from the very camera the geometry was baked from -- a
+		// sprite quad faces one viewpoint, so the moment the player turned, every actor on the map
+		// was drawn edge-on from wherever it had first been seen.
+		//
+		// Not gated on gl_wallmesh: the dynamic stream is independent of the static mesh, and a
+		// backend wants actors even when the world geometry came from somewhere else.
+		if (fua_mesh_sprites) zx::levelmesh::RegisterSprite(*this);
 
 		FFlatVertex *ptr;
 		unsigned int offset, count;

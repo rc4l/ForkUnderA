@@ -316,6 +316,25 @@ public:
 		mColormapState = cm;
 	}
 
+	// [rc4l] features/levelmesh: read back the FINAL shading inputs after gl_SetColor/gl_SetFog.
+	//
+	// The level mesh records what the GL renderer would have sent, rather than recomputing it in the
+	// backend. Recomputing was tried and drifted: it silently dropped rellight (fake contrast),
+	// extralight, desaturation and blendfactor, and the Vulkan render came out visibly brighter and
+	// flatter than GL's with no single obvious culprit. Reading the values the engine just computed
+	// cannot drift, because there is only one computation.
+	const float *GetLightParms() const { return mLightParms; }
+	void GetColorRGB(float &r, float &g, float &b) const
+	{
+		r = mColor.vec[0]; g = mColor.vec[1]; b = mColor.vec[2];
+	}
+	void GetColorRGBA(float &r, float &g, float &b, float &a) const
+	{
+		r = mColor.vec[0]; g = mColor.vec[1]; b = mColor.vec[2]; a = mColor.vec[3];
+	}
+	bool IsFogEnabled() const { return mFogEnabled; }
+	int GetDesaturation() const { return mDesaturation; }
+
 	PalEntry GetFogColor() const
 	{
 		return mFogColor;

@@ -50,6 +50,7 @@
 #include "gl/renderer/gl_renderer.h"
 #include "gl/renderer/gl_lightdata.h"
 #include "gl/renderer/gl_renderstate.h"
+#include "features/hwrender/hud2d.h"
 #include "gl/data/gl_data.h"
 #include "gl/data/gl_vertexbuffer.h"
 #include "gl/dynlights/gl_glow.h"
@@ -215,6 +216,23 @@ void FGLRenderer::DrawPSprite (player_t * player,pspdef_t *psp,fixed_t sx, fixed
 			dtPct / 100.0f, fV2 - (fV2 - fV1) * dtCov, fV2, dtGlow);
 	}
 	gl_RenderState.Apply();
+
+	// [rc4l] features/hwrender: the weapon is already a screen-space quad -- x1/y1/x2/y2 are pixels
+	// including viewwindowx/y -- so it belongs in the 2D capture rather than the sprite stream, which
+	// carries world geometry. Recorded after Apply so the colour is the final shaded one.
+	{
+		zx::hwrender::Quad2D q;
+		q.material = tex;
+		q.x = x1; q.y = y1; q.w = x2 - x1; q.h = y2 - y1;
+		q.u1 = fU1; q.v1 = fV1; q.u2 = fU2; q.v2 = fV2;
+		gl_RenderState.GetColorRGBA(q.r, q.g, q.b, q.a);
+		q.clipL = 0; q.clipT = 0; q.clipR = 0; q.clipB = 0;
+		q.blend = 0;
+		q.translation = 0;
+		q.texMode = gl_RenderState.GetTextureMode();
+		zx::hwrender::Record2D(q);
+	}
+
 	FFlatVertex *ptr = GLRenderer->mVBO->GetBuffer();
 	ptr->Set(x1, y1, 0, fU1, fV1);
 	ptr++;

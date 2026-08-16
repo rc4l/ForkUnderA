@@ -78,6 +78,9 @@
 #include "gl/utility/gl_convert.h"
 #include "gl/utility/gl_templates.h"
 #include "features/hitboxviz/hitboxviz.h"
+#include "features/levelmesh/staticmesh.h"
+#include "features/levelmesh/levelmesh.h"
+#include "features/levelmesh/flatmesh.h"
 #include "features/fov-interp/fovinterp.h"
 #include "features/fua-caching/fua_caching.h"
 #include "mcp_glperf.h" // [rc4l] GPU render-pass timer anchors (no-op unless FUA_MCP_BRIDGE)
@@ -93,6 +96,7 @@ CVAR(Bool, gl_no_skyclear, false, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 CVAR(Float, gl_mask_threshold, 0.5f,CVAR_ARCHIVE|CVAR_GLOBALCONFIG|CVAR_DEBUGONLY)
 CVAR(Float, gl_mask_sprite_threshold, 0.5f,CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 CVAR(Bool, gl_sort_textures, false, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
+EXTERN_CVAR(Bool, gl_batch_walls)  // [rc4l] features/levelmesh wall batching
 
 EXTERN_CVAR (Int, screenblocks)
 EXTERN_CVAR (Bool, cl_capfps)
@@ -352,6 +356,11 @@ void FGLRenderer::CreateScene()
 	// collecting actors. Paired with the Draw() at the end of RenderTranslucent.
 	zx::hitboxviz::BeginFrame();
 
+	// [rc4l] features/levelmesh: last frame's dynamic geometry (sprites) is dead the moment the
+	// camera moves, so it is dropped here and rebuilt as this frame generates it.
+	zx::levelmesh::DynClear();
+	zx::levelmesh::ClearSprites();
+
 	// reset the portal manager
 	GLPortal::StartFrame();
 	PO_LinkToSubsectors();
@@ -362,7 +371,24 @@ void FGLRenderer::CreateScene()
 	for(unsigned i=0;i<portals.Size(); i++) portals[i]->glportal = NULL;
 	gl_spriteindex=0;
 	Bsp.Clock();
+	// [rc4l] features/levelmesh: a bake pass walks the ENTIRE BSP with clipping disabled, so every
+	// seg and subsector in the level lands in the static mesh. It runs for one frame and disarms
+	// itself -- the frame it runs on is slow and its draw lists are the whole level, which is fine
+	// for a bake and would be ruinous as a steady state.
+	//
+	// This is what the scale probe justified: 3.7M tris per GPU millisecond means a whole Doom level
+	// is well under a millisecond of GPU work, so the BSP walk and the clipper are spending CPU to
+	// avoid GPU time the GPU does not need saving.
+	const bool bake = zx::levelmesh::TakePendingFullBake();
+	if (bake)
+	{
+		zx::levelmesh::BeginBakePass();
+		zx::levelmesh::SetBakePassActive(true);
+		clipper.bakeAll = true;
+	}
 	gl_RenderBSPNode (nodes + numnodes - 1);
+	clipper.bakeAll = false;
+	zx::levelmesh::SetBakePassActive(false);
 	Bsp.Unclock();
 
 	// And now the crappy hacks that have to be done to avoid rendering anomalies:
@@ -370,6 +396,10 @@ void FGLRenderer::CreateScene()
 	gl_drawinfo->HandleMissingTextures();	// Missing upper/lower textures
 	gl_drawinfo->HandleHackedSubsectors();	// open sector hacks for deep water
 	gl_drawinfo->ProcessSectorStacks();		// merge visplanes of sector stacks
+
+	// [rc4l] features/levelmesh: push this frame's newly baked wall geometry to the GPU once,
+	// after the BSP walk has captured everything and before anything draws from it.
+	zx::levelmesh::MeshFlush();
 
 	ProcessAll.Unclock();
 
@@ -395,13 +425,19 @@ void FGLRenderer::RenderScene(int recursion)
 	gl_RenderState.EnableFog(true);
 	gl_RenderState.BlendFunc(GL_ONE,GL_ZERO);
 
-	if (gl_sort_textures)
+	// [rc4l] features/levelmesh wall batching merges only ADJACENT equal-state walls, so the sort is
+	// what makes it work at all -- without it the runs are one wall long and batching buys nothing.
+	// gl_sort_textures still forces the flat sorts too; batching needs only the wall lists.
+	if (gl_sort_textures || gl_batch_walls)
 	{
 		gl_drawinfo->drawlists[GLDL_PLAINWALLS].SortWalls();
-		gl_drawinfo->drawlists[GLDL_PLAINFLATS].SortFlats();
 		gl_drawinfo->drawlists[GLDL_MASKEDWALLS].SortWalls();
-		gl_drawinfo->drawlists[GLDL_MASKEDFLATS].SortFlats();
 		gl_drawinfo->drawlists[GLDL_MASKEDWALLSOFS].SortWalls();
+	}
+	if (gl_sort_textures)
+	{
+		gl_drawinfo->drawlists[GLDL_PLAINFLATS].SortFlats();
+		gl_drawinfo->drawlists[GLDL_MASKEDFLATS].SortFlats();
 	}
 
 	// if we don't have a persistently mapped buffer, we have to process all the dynamic lights up front,
@@ -553,6 +589,7 @@ void FGLRenderer::RenderTranslucent()
 // stencil, z-buffer and the projection matrix intact!
 //
 //-----------------------------------------------------------------------------
+EXTERN_CVAR(Bool, gl_batch_walls)
 EXTERN_CVAR(Bool, gl_draw_sync)
 
 void FGLRenderer::DrawScene(bool toscreen)

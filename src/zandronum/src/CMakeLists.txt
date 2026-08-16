@@ -1596,6 +1596,15 @@ add_executable( zdoom WIN32
 	features/hitboxviz/computation/boxedges_compute.cpp
 	features/hitboxviz/computation/blastrecords_compute.cpp
 	features/hitboxviz/computation/vizgate_compute.cpp
+	features/levelmesh/levelmesh.cpp
+	features/levelmesh/wallcache.cpp
+	features/hwrender/hud2d.cpp
+	features/levelmesh/staticmesh.cpp
+	features/levelmesh/flatmesh.cpp
+	features/levelmesh/computation/surfacebudget_compute.cpp
+	features/levelmesh/computation/lightband_compute.cpp
+	features/levelmesh/computation/wallbatch_compute.cpp
+	features/levelmesh/computation/wallcache_compute.cpp
 	features/fov-interp/fovinterp.cpp
 	features/fov-interp/fovcvar.cpp
 	features/quake-movement/quakemove.cpp
@@ -1831,6 +1840,32 @@ source_group("Network\\Protocol\\Generator" REGULAR_EXPRESSION "^${CMAKE_SOURCE_
 # release binaries ship without it (no remote-control surface). Enable with -DFUA_MCP_BRIDGE=ON.
 # mcp_bridge.cpp = transport/lifecycle (header-pure); mcp_rpc.cpp = typed RPC dispatch + determinism/
 # state/session handlers (engine-facing); the rest are reader/crash/input/hud backends.
+# [rc4l] Diligent (Vulkan) backend for the renderer swap -- see features/hwrender/diligent/.
+# The probe is the only consumer today; it proves the library links and a device creates in-process.
+if( FUA_DILIGENT )
+	target_sources( zdoom PRIVATE features/hwrender/diligent/dgprobe.cpp features/hwrender/diligent/dgwindow.cpp features/hwrender/diligent/dgwin32.cpp features/hwrender/diligent/dgscene.cpp features/hwrender/diligent/dgtexture.cpp )
+	# [rc4l] Diligent's RefCountedObjectImpl.hpp uses std::align_val_t (aligned new), which is C++17.
+	# The engine compiles at C++14, and raising the whole tree for one dependency is exactly the kind
+	# of change that breaks something unrelated three files away -- so the bump is confined to the one
+	# translation unit that includes Diligent headers.
+	if( MSVC )
+		set_source_files_properties( features/hwrender/diligent/dgprobe.cpp features/hwrender/diligent/dgwindow.cpp features/hwrender/diligent/dgscene.cpp features/hwrender/diligent/dgtexture.cpp PROPERTIES COMPILE_FLAGS "/std:c++17" )
+	else()
+		set_source_files_properties( features/hwrender/diligent/dgprobe.cpp features/hwrender/diligent/dgwindow.cpp features/hwrender/diligent/dgscene.cpp features/hwrender/diligent/dgtexture.cpp PROPERTIES COMPILE_FLAGS "-std=c++17" )
+	endif()
+	target_compile_definitions( zdoom PRIVATE FUA_DILIGENT PLATFORM_WIN32=1 )
+	target_link_libraries( zdoom Diligent-GraphicsEngineVk-static )
+	target_include_directories( zdoom PRIVATE
+		"${CMAKE_SOURCE_DIR}/../../deps/DiligentCore/Graphics/GraphicsEngineVulkan/interface"
+		"${CMAKE_SOURCE_DIR}/../../deps/DiligentCore/Graphics/GraphicsEngine/interface"
+		"${CMAKE_SOURCE_DIR}/../../deps/DiligentCore/Common/interface"
+		"${CMAKE_SOURCE_DIR}/../../deps/DiligentCore/Platforms/interface"
+		"${CMAKE_SOURCE_DIR}/../../deps/DiligentCore/Platforms/Win32/interface"
+		"${CMAKE_SOURCE_DIR}/../../deps/DiligentCore/Graphics/GraphicsAccessories/interface"
+		"${CMAKE_SOURCE_DIR}/../../deps/DiligentCore/Graphics/GraphicsTools/interface"
+		"${CMAKE_SOURCE_DIR}/../../deps/DiligentCore/Primitives/interface" )
+endif()
+
 if( FUA_MCP_BRIDGE )
 	target_sources( zdoom PRIVATE mcp_bridge.cpp mcp_rpc.cpp mcp_crash.cpp mcp_event.cpp mcp_renderinfo.cpp mcp_hud.cpp mcp_glperf.cpp mcp_ticprof.cpp mcp_simtrace.cpp mcp_sample.cpp )
 	target_compile_definitions( zdoom PRIVATE FUA_MCP_BRIDGE )
