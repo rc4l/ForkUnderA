@@ -12,6 +12,8 @@
 
 #include "doomtype.h"
 #include "doomstat.h"
+#include "d_player.h"					// players[], for the "here" diagnostic
+#include "p_local.h"					// R_PointInSubsector
 #include "network.h"
 #include "c_cvars.h"
 #include "c_dispatch.h"
@@ -32,6 +34,7 @@
 // skyboxes off and the renderer falls back to the texture sky.
 EXTERN_CVAR( Bool, gl_noskyboxes )
 
+#include <algorithm>
 #include <cmath>
 #include <functional>
 #include <map>
@@ -53,7 +56,10 @@ CUSTOM_CVAR( Int, cl_fua_skytint_strength, 35, CVAR_ARCHIVE | CVAR_GLOBALCONFIG 
 	else					zx::SkyTint_Rebuild( );
 }
 
-// How far a violently coloured sky may drag the light away from neutral.
+// [rc4l] A CEILING on the push, applied after the distance falloff, so a violent sky is flattened at
+// the bright end while the fade into shelter is left alone. It used to cap the sky's own saturation
+// before the tint was derived, which stopped meaning anything once the push became equal-per-hue:
+// the solve just blended further and landed in the same place. Name kept so configs survive.
 CUSTOM_CVAR( Int, cl_fua_skytint_saturation, 60, CVAR_ARCHIVE | CVAR_GLOBALCONFIG )
 {
 	if ( self < 0 )			self = 0;
@@ -71,25 +77,15 @@ CUSTOM_CVAR( Int, cl_fua_skytint_reach, 512, CVAR_ARCHIVE | CVAR_GLOBALCONFIG )
 	else						zx::SkyTint_Rebuild( );
 }
 
-// How much a narrow opening slows the light down. 0 lets a crack under a door light a room as well
-// as an archway would; higher makes the size of the gap matter more.
-CUSTOM_CVAR( Int, cl_fua_skytint_gap, 100, CVAR_ARCHIVE | CVAR_GLOBALCONFIG )
-{
-	if ( self < 0 )				self = 0;
-	else if ( self > 100 )		self = 100;
-	else						zx::SkyTint_Rebuild( );
-}
-
-// [rc4l] How much the sky's OWN brightness scales the tint. 0 keeps hue only, so a dim sky tints
-// as hard as a blazing one -- which is why a dark green sky can read as a filter over a whole map.
-// Higher lets each map's sky limit itself, which the Max colour slider cannot do because it is
-// global: turning that down to tame one map costs the tint on every map where it was already fine.
-CUSTOM_CVAR( Int, cl_fua_skytint_brightness, 0, CVAR_ARCHIVE | CVAR_GLOBALCONFIG )
-{
-	if ( self < 0 )				self = 0;
-	else if ( self > 100 )		self = 100;
-	else						zx::SkyTint_Rebuild( );
-}
+// [rc4l] Four dials were removed here after measuring them, not after arguing about them.
+//
+//   Sky area (horizon vs cosine)  landed 0.19 and 0.21 apart out of 255 on two of three skies
+//   Follow sky brightness         cut the tint 90% and 86% on the two maps it existed to separate
+//   Sky colour from (dominant)    returned white on a mostly-black sky and switched the feature off
+//   Doorway matters               a sub-dial of Indoor reach that was never verified on its own
+//
+// Every one of them is gone at its DEFAULT value, so a player who never touched them sees no change:
+// the mean, the horizon band, no brightness scaling, and openings counting in full.
 
 // [rc4l] How much a sector's OWN light level scales the tint. This is the dial that tells a dark
 // room from a bright yard, which no sky-side control can: the sky is the same for both. A dim
@@ -99,22 +95,6 @@ CUSTOM_CVAR( Int, cl_fua_skytint_lit, 0, CVAR_ARCHIVE | CVAR_GLOBALCONFIG )
 	if ( self < 0 )				self = 0;
 	else if ( self > 100 )		self = 100;
 	else						zx::SkyTint_Rebuild( );
-}
-
-// 0 = mean (faithful), 1 = dominant (the colour a person would name).
-CUSTOM_CVAR( Int, cl_fua_skytint_mode, 0, CVAR_ARCHIVE | CVAR_GLOBALCONFIG )
-{
-	if ( self < 0 )			self = 0;
-	else if ( self > 1 )	self = 1;
-	else					zx::SkyTint_Rebuild( );
-}
-
-// 0 = horizon band (what the player looks at), 1 = cosine (what actually lights a floor).
-CUSTOM_CVAR( Int, cl_fua_skytint_weight, 0, CVAR_ARCHIVE | CVAR_GLOBALCONFIG )
-{
-	if ( self < 0 )			self = 0;
-	else if ( self > 1 )	self = 1;
-	else					zx::SkyTint_Rebuild( );
 }
 
 namespace zx
@@ -147,6 +127,26 @@ FTextureID g_builtForSky2 = FNullTextureID( );
 // How many sky-seeing leaves render a 3D skybox rather than a texture. Nothing lights them yet;
 // this exists so the state is visible instead of silently absent.
 int g_skyboxLeaves = 0;
+
+// [rc4l] What the last rebuild actually derived, for the diagnostic. Reported because "the table is
+// built" and "the table is doing what you think" are different claims, and comparing two maps by
+// screenshotting them measures the viewpoint as much as the tint.
+std::vector<SkyRgb> g_lastTints;
+std::vector<SkyRgb> g_lastRaw;
+std::vector<int> g_lastStrength;
+SkyRgb g_lastAlbedo( 128, 128, 128 );
+
+// Somewhere outdoors on this level, for `warp`. See the rebuild for why this exists.
+double g_lookAtX = 0.0, g_lookAtY = 0.0;
+bool g_lookAtValid = false;
+
+// [rc4l] CIELAB units of visible change per point of the Strength slider. 100 therefore aims at a
+// dE of 12, which is "obviously a different colour" without being a costume change; 35, the default,
+// aims at about 4, around the point where a difference stops being subtle.
+//
+// This constant is where the dial's meaning now lives. It is a taste value and the only one in the
+// file, which is the trade for the slider meaning the same thing on every map.
+const double kDeltaPerPct = 0.12;
 
 // Read one texture into linear-friendly RGB, and its alpha alongside for layering. Returns false
 // when there is no usable image, which is the normal case indoors and is not an error.
@@ -208,6 +208,73 @@ struct SkySource
 
 	SkySource( ) : tint( 255, 255, 255 ), strengthPct( 0 ) { }
 };
+
+// [rc4l] What the tint is going to be multiplied INTO, averaged over the surfaces it will touch.
+//
+// This is the piece the feature never had. A tint's visible effect is not a property of the tint: it
+// is the perceptual distance between a surface and that surface tinted, and a surface the tint
+// already agrees with barely moves. Speed of Doom is the case that proves it -- MAP20's tint is more
+// saturated than MAP01's (99% against 66%) and yet it is MAP01 that overwhelms, because MAP01's tint
+// is green against brown brick while MAP20's is orange against brown brick.
+//
+// Sampled from the FLOOR flats of the sectors that will actually be lit. Floors because they are the
+// large surfaces a player sees lit from above, and because a flat is 64x64 and cheap. Distinct
+// textures are averaged once each, so a level made of six flats costs six reads however many sectors
+// it has.
+SkyRgb SceneAlbedo( const std::vector<int> &litSectors )
+{
+	std::map<int, SkyRgb> seen;
+	double lr = 0.0, lg = 0.0, lb = 0.0;
+	int counted = 0;
+
+	for ( size_t i = 0; i < litSectors.size( ); ++i )
+	{
+		const sector_t *s = &sectors[litSectors[i]];
+		const FTextureID flat = s->GetTexture( sector_t::floor );
+		const int key = flat.GetIndex( );
+
+		std::map<int, SkyRgb>::const_iterator got = seen.find( key );
+		if ( got == seen.end( ))
+		{
+			std::vector<SkyRgb> pixels;
+			std::vector<int> alpha;
+			int width = 0;
+			if ( !ReadTexture( flat, pixels, alpha, width ) || pixels.empty( ))
+			{
+				seen[key] = SkyRgb( -1, -1, -1 );		// unreadable; remembered so we skip it fast
+				continue;
+			}
+
+			// Plain linear mean over the whole flat: no row weighting, because a floor texture has no
+			// horizon and its rows mean nothing in particular.
+			double pr = 0.0, pg = 0.0, pb = 0.0;
+			for ( size_t p = 0; p < pixels.size( ); ++p )
+			{
+				pr += LinearFromSrgb( pixels[p].r );
+				pg += LinearFromSrgb( pixels[p].g );
+				pb += LinearFromSrgb( pixels[p].b );
+			}
+
+			const double n = (double)pixels.size( );
+			got = seen.insert( std::make_pair( key, SkyRgb( SrgbFromLinear( pr / n ),
+				SrgbFromLinear( pg / n ), SrgbFromLinear( pb / n )))).first;
+		}
+
+		if ( got->second.r < 0 )
+			continue;
+
+		lr += LinearFromSrgb( got->second.r );
+		lg += LinearFromSrgb( got->second.g );
+		lb += LinearFromSrgb( got->second.b );
+		++counted;
+	}
+
+	if ( counted <= 0 )
+		return SkyRgb( 128, 128, 128 );		// nothing readable: assume neutral mid-grey
+
+	return SkyRgb( SrgbFromLinear( lr / counted ), SrgbFromLinear( lg / counted ),
+		SrgbFromLinear( lb / counted ));
+}
 
 struct SectorSky
 {
@@ -299,7 +366,7 @@ ASkyViewpoint *g_boxPendingFor = NULL;		// registered and waiting for a frame to
 // Viewpoints still needing a sample, and the answers for the ones already done. Keyed by actor
 // pointer, which is safe only because both are cleared with the level (SkyTint_Clear).
 std::vector<ASkyViewpoint *> g_boxQueue;
-std::map<ASkyViewpoint *, SkySource> g_boxDone;
+std::map<ASkyViewpoint *, SkyRgb> g_boxDone;
 
 // Read the canvas back off the GPU. In GL a canvas texture lives in an FBO and its CPU-side pixels
 // are never filled, so GetPixels() would hand back an empty buffer -- checked, not assumed.
@@ -369,6 +436,10 @@ void ClearTables( )
 	g_builtForSky = FNullTextureID( );
 	g_builtForSky2 = FNullTextureID( );
 	g_skyboxLeaves = 0;
+	g_lastTints.clear( );
+	g_lastRaw.clear( );
+	g_lastStrength.clear( );
+	g_lastAlbedo = SkyRgb( 128, 128, 128 );
 }
 
 // Sampled skyboxes, keyed by actor pointer and therefore only valid within one level.
@@ -388,8 +459,10 @@ CCMD( fua_skytintinfo )
 	FTexture *sky = TexMan( sky1texture );
 	Printf( "skytint: state=%d gamestate=%d cvar=%d sectors=%d subsectors=%d\n",
 		(int)NETWORK_GetState( ), (int)gamestate, (int)(bool)cl_fua_skytint, numsectors, numsubsectors );
-	Printf( "skytint: sky1texture=%d tex=%p w=%d h=%d skyflatnum=%d\n",
-		sky1texture.GetIndex( ), (void *)sky,
+	// [rc4l] The NAME as well as the index: an index cannot be fed back to `changesky`, so comparing
+	// one map's sky against another's meant looking the texture up by hand every time.
+	Printf( "skytint: sky1texture=%d name=%s tex=%p w=%d h=%d skyflatnum=%d\n",
+		sky1texture.GetIndex( ), ( sky && sky->Name[0] ) ? sky->Name : "?", (void *)sky,
 		sky ? sky->GetWidth( ) : -1, sky ? sky->GetHeight( ) : -1, skyflatnum.GetIndex( ));
 	Printf( "skytint: table=%u any=%d skyboxleaves=%d doublesky=%d swapskies=%d sky2=%d\n",
 		(unsigned)zx::SkyTintTableSize( ), (int)zx::SkyTint_Active( ), zx::SkyTintSkyboxLeaves( ),
@@ -399,6 +472,30 @@ CCMD( fua_skytintinfo )
 	std::string boxes;
 	zx::SkyTintSkyboxSamples( boxes );
 	Printf( "skytint: skyboxes=%s\n", boxes.c_str( ));
+
+	// The colour the algorithm actually derived, raw and after shaping. This is what to compare
+	// between two maps: a screenshot measures the viewpoint as much as the tint.
+	std::string derived;
+	zx::SkyTintDerived( derived );
+	Printf( "skytint: derived=%s\n", derived.c_str( ));
+
+	// A place to stand where the sky can actually be seen. Printed as a ready-made command because
+	// judging an outdoor tint from wherever the player happens to spawn is how several measurements
+	// in this feature's history went wrong.
+	double lx = 0.0, ly = 0.0;
+	if ( zx::SkyTintOutdoorSpot( lx, ly ))
+		Printf( "skytint: outdoors: warp %d %d\n", (int)lx, (int)ly );
+	else
+		Printf( "skytint: outdoors: none found\n" );
+
+	// [rc4l] What the table holds for the leaf the player is STANDING IN, and what the sector-level
+	// answer for that same spot would be. Without this, "the tint is missing here" has two completely
+	// different causes that look identical from inside the game: the table having nothing for this
+	// leaf (propagation), or having something the renderer never draws (a draw path that misses it).
+	// Guessing between those two burned two builds on the 3D floor case.
+	std::string here;
+	zx::SkyTintHere( here );
+	Printf( "skytint: here: %s\n", here.c_str( ));
 }
 
 void SkyTint_Clear( )
@@ -447,9 +544,6 @@ void SkyTint_Rebuild( )
 
 	if ( !cl_fua_skytint || ( gamestate != GS_LEVEL ) || ( sectors == NULL ) || ( numsectors <= 0 ))
 		return;
-
-	const SkyAverage mode = ( cl_fua_skytint_mode == 1 ) ? SkyAverage::Dominant : SkyAverage::Mean;
-	const SkyWeight weight = ( cl_fua_skytint_weight == 1 ) ? SkyWeight::Cosine : SkyWeight::Horizon;
 
 	// [rc4l] Dijkstra outward from open sky over SUBSECTORS, measured in map units.
 	//
@@ -500,6 +594,60 @@ void SkyTint_Rebuild( )
 	std::map<int, int> sourceOfTexture;					// texture index -> index into `sources`
 	std::map<ASkyViewpoint *, int> boxSourceIdx;		// skybox viewpoint -> index into `sources`
 
+	// [rc4l] What the tint will land on, gathered before any source is built because the strength of
+	// each source is chosen against it. Sky-ceilinged sectors only: those are the ones lit hardest and
+	// the ones a player is looking at when they judge whether the effect is too strong.
+	std::vector<int> litSectors;
+	for ( int i = 0; i < numsectors; ++i )
+	{
+		if ( sectors[i].GetTexture( sector_t::ceiling ) == skyflatnum )
+			litSectors.push_back( i );
+	}
+
+	const SkyRgb albedo = SceneAlbedo( litSectors );
+	g_lastAlbedo = albedo;
+
+	// [rc4l] Remember the BIGGEST sky-lit subsector's centre, so the diagnostic can hand out a place
+	// to stand. Every visual comparison made while building this feature was taken at the player
+	// start, which on a lot of maps is indoors: one such pair measured a dark room at R12 G9 B7 and
+	// was nearly used as evidence about an outdoor tint. Largest leaf rather than first because a
+	// big one is more likely to be open ground than a doorstep.
+	g_lookAtValid = false;
+	{
+		double bestArea = 0.0;
+		for ( int i = 0; i < numsubsectors; ++i )
+		{
+			const subsector_t &sub = subsectors[i];
+			const sector_t *s = sub.sector;
+			if (( s == NULL ) || ( s->GetTexture( sector_t::ceiling ) != skyflatnum ))
+				continue;
+			if ( sub.numlines < 3 )
+				continue;
+
+			// Shoelace over the leaf's own edge vertices. A BSP leaf is convex, so this is its area.
+			double area = 0.0, sx = 0.0, sy = 0.0;
+			for ( DWORD k = 0; k < sub.numlines; ++k )
+			{
+				const double x1 = FIXED2FLOAT( sub.firstline[k].v1->x );
+				const double y1 = FIXED2FLOAT( sub.firstline[k].v1->y );
+				const double x2 = FIXED2FLOAT( sub.firstline[k].v2->x );
+				const double y2 = FIXED2FLOAT( sub.firstline[k].v2->y );
+				area += ( x1 * y2 ) - ( x2 * y1 );
+				sx += x1;
+				sy += y1;
+			}
+
+			area = ( area < 0.0 ) ? -area : area;
+			if ( area > bestArea )
+			{
+				bestArea = area;
+				g_lookAtX = sx / (double)sub.numlines;
+				g_lookAtY = sy / (double)sub.numlines;
+				g_lookAtValid = true;
+			}
+		}
+	}
+
 	for ( int i = 0; i < numsubsectors; ++i )
 	{
 		const sector_t *s = subsectors[i].sector;
@@ -520,7 +668,7 @@ void SkyTint_Rebuild( )
 			// Already sampled: it seeds like any other sky. Not yet: queue it and leave this leaf
 			// dark for now. SkyTint_FrameHook renders it and rebuilds, so it lights up a frame or
 			// two into the level rather than never.
-			std::map<ASkyViewpoint *, SkySource>::const_iterator got = g_boxDone.find( sky.box );
+			std::map<ASkyViewpoint *, SkyRgb>::const_iterator got = g_boxDone.find( sky.box );
 			if ( got == g_boxDone.end( ))
 			{
 				bool queued = false;
@@ -542,8 +690,15 @@ void SkyTint_Rebuild( )
 			}
 			else
 			{
+				// Derived from the cached RAW colour here, not when the skybox was rendered, so the
+				// sliders reach a skybox map the same way they reach a textured one. Same steps in
+				// the same order as the texture path below.
+				SkySource src;
+				src.strengthPct = cl_fua_skytint_strength;
+				src.tint = NormaliseBrightness( got->second );
+
 				idx = (int)sources.size( );
-				sources.push_back( got->second );
+				sources.push_back( src );
 				boxSourceIdx[sky.box] = idx;
 			}
 
@@ -572,15 +727,24 @@ void SkyTint_Rebuild( )
 			}
 
 			SkySource src;
-			SkyRgb tint = AverageSky( pixels, width, mode, weight );
+			const SkyRgb raw = AverageSky( pixels, width );
+			SkyRgb tint = raw;
 
-			// Measured BEFORE the brightness is normalised away, because afterwards there is none
-			// left to read. This is what lets a dark sky tint gently and a bright one tint hard.
-			src.strengthPct = StrengthForSky( cl_fua_skytint_strength, SkyLuminance( tint ),
-				cl_fua_skytint_brightness );
+			// The sky says WHICH colour, not how much. What comes out here is a DIRECTION with peak
+			// 255; how far to travel along it is EqualiseHuePush's job at apply time.
+			src.tint = NormaliseBrightness( tint );
 
-			tint = NormaliseBrightness( tint );			// the sky says WHICH colour, not how much
-			src.tint = ClampSaturation( tint, cl_fua_skytint_saturation );
+			// [rc4l] The CIELAB solver that used to sit here is gone. It was meant to spend more
+			// strength where a tint would show less, but its scene input came from texture albedo,
+			// which on Doom maps is brown everywhere: Speed of Doom MAP01/20/29 measured [66,58,52],
+			// [83,64,54] and [83,56,40], so it returned 43/42/41% and was a constant with a LAB
+			// apparatus bolted on. The real asymmetry was never the scene, it was the hue, and
+			// EqualiseHuePush addresses that directly.
+			src.strengthPct = cl_fua_skytint_strength;
+
+			g_lastRaw.push_back( raw );
+			g_lastTints.push_back( src.tint );
+			g_lastStrength.push_back( src.strengthPct );
 
 			which = (int)sources.size( );
 			sources.push_back( src );
@@ -597,8 +761,6 @@ void SkyTint_Rebuild( )
 
 	if ( sources.empty( ))
 		return;
-
-	const double blend = cl_fua_skytint_gap / 100.0;
 
 	while ( !queue.empty( ))
 	{
@@ -651,10 +813,9 @@ void SkyTint_Rebuild( )
 					from->ceilingplane.ZatPoint( fx, fy ) - from->floorplane.ZatPoint( fx, fy ),
 					to->ceilingplane.ZatPoint( fx, fy ) - to->floorplane.ZatPoint( fx, fy )));
 
-				// cl_fua_skytint_gap: at 0 every opening counts as wide open, at 100 a half-height
-				// gap costs twice the distance.
-				const double raw = OpeningFactor( opening, full );
-				factor = ( raw * blend ) + ( 1.0 - blend );
+				// A half-height gap costs twice the distance. This used to be scaled by a "Doorway
+				// matters" dial; it now always counts in full, which is what that dial's default did.
+				factor = OpeningFactor( opening, full );
 			}
 
 			const double step = StepCost(
@@ -698,7 +859,25 @@ void SkyTint_Rebuild( )
 		if ( strength <= 0 )
 			continue;
 
-		const SkyRgb lit = BlendFromWhite( sources[src].tint, strength );
+		// [rc4l] One call, and no luminance correction afterwards.
+		//
+		// This used to be PreserveLuminance( BlendFromWhite( tint, strength )), which scaled the
+		// result up until its luminance came back to 1.0. That is what made green hit twice as hard
+		// as red: green already passes 84% of the light so the correction barely moved it, while red
+		// passes 22%, got scaled 4.6x, clamped at 255, and arrived as a faint wash.
+		//
+		// EqualiseHuePush asks for a channel SPREAD instead, which is the same request for every hue,
+		// and solves the blend that delivers it. Nothing is scaled, so nothing clamps.
+		//
+		// Max colour is a CEILING applied here rather than a cap on the sky's own saturation earlier.
+		// Capping the direction first did nothing: the equaliser solves for a target spread, so a
+		// desaturated direction simply blended further and arrived at the same place. Capping the
+		// REQUEST works, because spread is linear in it -- and because this sits after the distance
+		// falloff, it flattens the brightest leaves while leaving the fade into shelter untouched.
+		int push = strength;
+		if ( push > cl_fua_skytint_saturation )
+			push = cl_fua_skytint_saturation;
+		const SkyRgb lit = EqualiseHuePush( sources[src].tint, push );
 		g_tint[i] = PalEntry( (BYTE)lit.r, (BYTE)lit.g, (BYTE)lit.b );
 		g_any = true;
 	}
@@ -731,8 +910,29 @@ void SkyTint_Rebuild( )
 namespace
 {
 
+// [rc4l] Did a MAPPER colour this sector, as opposed to something the renderer handed us?
+//
+// This used to be decided by reading cm.LightColor, on the stated assumption that the caller had
+// just copied it from the sector's own colormap. That assumption is false wherever 3D floors are
+// involved: gl_flats.cpp calls Colormap.CopyLightColor( light->extra_colormap ), which is the 3D
+// FLOOR's colour, not the sector's. So on every 3D floor the tint saw a non-white value, concluded a
+// mapper had painted the place, and stood aside -- measured on Eon Collection aeon07, where the
+// table held [101,101,255] for the leaf at the player start and none of it ever reached the screen.
+//
+// Asking the SECTOR keeps the reason the check is made at draw time in the first place: ACS
+// Sector_SetColor writes sector->ColorMap, and OPEN scripts run after P_SetupLevel has already built
+// the table (p_spec.cpp:1835, runNow=false), so a level coloured from ACS is still deferred to.
+bool MapperColoured( const sector_t *sec )
+{
+	if (( sec == NULL ) || ( sec->ColorMap == NULL ))
+		return false;
+
+	const PalEntry &c = sec->ColorMap->Color;
+	return ( c.r != 255 ) || ( c.g != 255 ) || ( c.b != 255 );
+}
+
 // Multiply a stored tint into whatever the surface already had.
-void ApplyIndex( ptrdiff_t at, FColormap &cm )
+void ApplyIndex( ptrdiff_t at, FColormap &cm, const sector_t *owner )
 {
 	if (( at < 0 ) || ( at >= (ptrdiff_t)g_tint.size( )))
 		return;
@@ -741,17 +941,7 @@ void ApplyIndex( ptrdiff_t at, FColormap &cm )
 	if ( tint.r == 255 && tint.g == 255 && tint.b == 255 )
 		return;
 
-	// [rc4l] "A mapper coloured this, theirs wins" has to be decided HERE, not only when the table is
-	// built, because the two happen at different times. P_SetupLevel builds the table at its line
-	// 4672, but ACS OPEN scripts are started with runNow=false (p_spec.cpp:1835) and therefore do not
-	// run until the first tic. A Sector_SetColor in an OPEN script -- which is how a lot of mods
-	// colour their levels -- lands after we have already decided to tint that sector, and the tint
-	// then multiplied into their colour instead of deferring to it.
-	//
-	// Reading cm rather than the sector costs nothing: cm.LightColor was just copied from the
-	// sector's own colormap by the caller, so a non-white value here means somebody set it, whenever
-	// they set it. That makes the rule true at every moment rather than only at level load.
-	if (( cm.LightColor.r != 255 ) || ( cm.LightColor.g != 255 ) || ( cm.LightColor.b != 255 ))
+	if ( MapperColoured( owner ))
 		return;
 
 	// [rc4l] TRIPWIRE, not a live guard: nothing in this tree sets blendfactor today. It is the
@@ -784,6 +974,90 @@ int SkyTintSkyboxLeaves( )
 	return g_skyboxLeaves;
 }
 
+bool SkyTintOutdoorSpot( double &x, double &y )
+{
+	if ( !g_lookAtValid )
+		return false;
+
+	x = g_lookAtX;
+	y = g_lookAtY;
+	return true;
+}
+
+void SkyTintHere( std::string &out )
+{
+	out.clear( );
+
+	AActor *mo = ( consoleplayer >= 0 && consoleplayer < MAXPLAYERS ) ? players[consoleplayer].mo : NULL;
+	if (( mo == NULL ) || ( subsectors == NULL ) || ( gamestate != GS_LEVEL ))
+	{
+		out = "no player";
+		return;
+	}
+
+	// The leaf under the player's feet, found the same way the renderer finds one, so this reports
+	// what would actually be drawn rather than a nearby guess.
+	const subsector_t *sub = R_PointInSubsector( mo->x, mo->y );
+	if ( sub == NULL )
+	{
+		out = "no leaf";
+		return;
+	}
+
+	char buf[192];
+	const ptrdiff_t li = sub - subsectors;
+	const sector_t *sec = sub->sector;
+	const ptrdiff_t si = ( sec != NULL ) ? ( sec - sectors ) : -1;
+
+	const bool haveLeaf = ( li >= 0 ) && ( li < (ptrdiff_t)g_tint.size( ));
+	const PalEntry leaf = haveLeaf ? g_tint[li] : PalEntry( 255, 255, 255 );
+	const bool haveSec = ( si >= 0 ) && ( si < (ptrdiff_t)g_brightestOf.size( ));
+	const PalEntry secTint = haveSec ? g_brightestOf[si] : PalEntry( 255, 255, 255 );
+
+	// ffloors is the whole point of this line: it says whether the spot being complained about is
+	// even one of the 3D floor cases, rather than an ordinary sector that happens to look like one.
+	const int nff = ( sec != NULL && sec->e != NULL ) ? (int)sec->e->XFloor.ffloors.Size( ) : 0;
+
+	mysnprintf( buf, sizeof( buf ), "leaf=%d sector=%d ffloors=%d leaftint[%d,%d,%d] sectortint[%d,%d,%d]",
+		(int)li, (int)si, nff, leaf.r, leaf.g, leaf.b, secTint.r, secTint.g, secTint.b );
+	out = buf;
+}
+
+void SkyTintDerived( std::string &out )
+{
+	out.clear( );
+	if ( g_lastTints.empty( ))
+	{
+		out = "none";
+		return;
+	}
+
+	char buf[128];
+	for ( size_t i = 0; i < g_lastTints.size( ); ++i )
+	{
+		const SkyRgb &raw = g_lastRaw[i];
+		const SkyRgb &t = g_lastTints[i];
+
+		// Saturation as (max-min)/max, the same definition ClampSaturation uses. Printed because it
+		// is the number that says how hard this sky will push a neutral wall away from grey.
+		// Written out rather than using MAX or std::max. The engine's MAX resolves to its fixed-point
+		// type here and will not convert back to int, and windows.h (via gl_system.h) defines max as a
+		// MACRO, which makes std::max fail to parse. Three comparisons are not worth fighting either.
+		int mx = t.r; if ( t.g > mx ) mx = t.g; if ( t.b > mx ) mx = t.b;
+		int mn = t.r; if ( t.g < mn ) mn = t.g; if ( t.b < mn ) mn = t.b;
+		const int sat = ( mx <= 0 ) ? 0 : ((( mx - mn ) * 100 ) / mx );
+
+		const int str = ( i < g_lastStrength.size( )) ? g_lastStrength[i] : -1;
+		mysnprintf( buf, sizeof( buf ), "raw[%d,%d,%d]->tint[%d,%d,%d] sat=%d%% solved=%d%% ",
+			raw.r, raw.g, raw.b, t.r, t.g, t.b, sat, str );
+		out += buf;
+	}
+
+	mysnprintf( buf, sizeof( buf ), "| scene[%d,%d,%d]", g_lastAlbedo.r, g_lastAlbedo.g,
+		g_lastAlbedo.b );
+	out += buf;
+}
+
 // TEMPORARY, for fua_skytintinfo: what colour did each sampled skybox come out as, and how hard
 // does it push. Without this, "the table is built" and "the table does anything" look identical.
 void SkyTintSkyboxSamples( std::string &out )
@@ -795,12 +1069,13 @@ void SkyTintSkyboxSamples( std::string &out )
 		return;
 	}
 
+	// The RAW sample, which is what is cached. The finished tint is derived from this per rebuild, so
+	// printing that instead would only echo the current sliders back.
 	char buf[96];
-	for ( std::map<ASkyViewpoint *, SkySource>::const_iterator it = g_boxDone.begin( );
+	for ( std::map<ASkyViewpoint *, SkyRgb>::const_iterator it = g_boxDone.begin( );
 		it != g_boxDone.end( ); ++it )
 	{
-		mysnprintf( buf, sizeof( buf ), "[%d,%d,%d str=%d] ", it->second.tint.r, it->second.tint.g,
-			it->second.tint.b, it->second.strengthPct );
+		mysnprintf( buf, sizeof( buf ), "raw[%d,%d,%d] ", it->second.r, it->second.g, it->second.b );
 		out += buf;
 	}
 }
@@ -824,20 +1099,15 @@ void SkyTint_FrameHook( )
 		if ( !ReadCanvas( pixels, width ))
 			return;			// not rendered yet; try again next frame
 
-		const SkyAverage mode = ( cl_fua_skytint_mode == 1 ) ? SkyAverage::Dominant : SkyAverage::Mean;
-
-		// Weighting is NOT applied here. Row weights describe where a row sits on the sky dome, and
-		// this is a camera frame of a room, not a dome: its rows mean nothing of the kind. Every
-		// pixel counts equally, which is the honest reading of "what is up there".
-		SkyRgb tint = AverageSky( pixels, width, mode, SkyWeight::Cosine );
-
-		SkySource src;
-		src.strengthPct = StrengthForSky( cl_fua_skytint_strength, SkyLuminance( tint ),
-			cl_fua_skytint_brightness );
-		tint = NormaliseBrightness( tint );
-		src.tint = ClampSaturation( tint, cl_fua_skytint_saturation );
-
-		g_boxDone[g_boxPendingFor] = src;
+		// [rc4l] The RAW average is cached, not a finished colour.
+		//
+		// Caching the finished article froze strength and saturation at whatever they were the moment
+		// the skybox happened to be rendered. A rebuild then reused that verbatim, so on a skybox map
+		// every slider in the menu did nothing: measured on gvh09 as an identical [255,29,29 str=100]
+		// whether the sliders said 35/60 or 100/100. Rendering the skybox is the expensive part and
+		// still happens once; turning pixels into a colour is cheap and now happens per rebuild, the
+		// same as it does for a texture sky.
+		g_boxDone[g_boxPendingFor] = AverageSky( pixels, width );
 		g_boxPendingFor = NULL;
 
 		// The table was built without this sky. Rebuild so the leaves under it stop being dark.
@@ -874,7 +1144,7 @@ void SkyTint_ApplySub( const subsector_t *sub, FColormap &cm )
 	if ( !g_any || ( sub == NULL ) || ( subsectors == NULL ))
 		return;
 
-	ApplyIndex( sub - subsectors, cm );
+	ApplyIndex( sub - subsectors, cm, sub->sector );
 }
 
 void SkyTint_Apply( const sector_t *sec, FColormap &cm )
@@ -886,14 +1156,29 @@ void SkyTint_Apply( const sector_t *sec, FColormap &cm )
 	// Light lives per subsector now, so pick this sector's BRIGHTEST leaf -- erring toward the lit
 	// side keeps a thing standing in a doorway from going dark, which reads worse than the reverse.
 	//
-	// gl_FakeFlat hands out pointers to STACK copies as well as to the real array, so a sector that
-	// does not live in the level's array has no leaves to look up and is left alone.
-	const ptrdiff_t si = sec - sectors;
+	// gl_FakeFlat hands out pointers to STACK copies as well as to the real array, and this used to
+	// give up whenever the pointer was not inside `sectors`. That silently dropped the tint in
+	// exactly the case a copy is made for: standing above or below a 3D floor, which is when the
+	// renderer swaps in a fake sector. On a map built out of them the effect simply vanished.
+	//
+	// The copies are whole-struct (`*dest = *sec` / memcpy in gl_fakeflat.cpp), so they carry
+	// `sectornum`, which r_defs.h keeps expressly "for comparing sector copies". Ask the sector which
+	// one it is instead of inferring it from where it happens to live.
+	ptrdiff_t si = sec - sectors;
+	if (( si < 0 ) || ( si >= (ptrdiff_t)numsectors ))
+		si = sec->sectornum;
 	if (( si < 0 ) || ( si >= (ptrdiff_t)numsectors ))
 		return;
 
 	const PalEntry &tint = g_brightestOf[si];
 	if ( tint.r == 255 && tint.g == 255 && tint.b == 255 )
+		return;
+
+	// Same rule the per-leaf path uses, decided from the sector rather than from cm: this is called
+	// after gl_flats.cpp has already folded in a 3D floor's light colour, so testing cm here would
+	// stand aside on every 3D floor. `sectors[si]` rather than `sec`, because `sec` may be a
+	// gl_FakeFlat stack copy whose ColorMap pointer is the copy's, not the level's.
+	if ( MapperColoured( &sectors[si] ))
 		return;
 
 	// Multiplied into whatever the sector already had rather than replacing it: the tint is light

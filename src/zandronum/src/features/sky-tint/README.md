@@ -19,17 +19,34 @@ that ceiling, the useful work is choosing *which* pixels to average and how, whi
 | On/off | `cl_fua_skytint` | |
 | Strength | `cl_fua_skytint_strength` | how far from white the open-sky sectors go |
 | Max colour | `cl_fua_skytint_saturation` | ceiling on saturation, so a violent sky cannot filter the level |
-| Indoor bleed | `cl_fua_skytint_bleed` | how many rooms inward the light reaches, halving each step |
-| Sky colour from | `cl_fua_skytint_mode` | Average (faithful) or Dominant (the colour a person would name) |
-| Sky area | `cl_fua_skytint_weight` | Horizon (what the player sees) or Overhead (what lights a floor) |
+| Follow room light | `cl_fua_skytint_lit` | how much a sector's own light level scales its tint |
+| Indoor reach | `cl_fua_skytint_reach` | how far inward the light travels, in map units |
 
 Averaging happens in **linear light**, not sRGB bytes. Summing gamma-encoded values averages the
 encoding rather than the light and lands too dark; `gl_texture.cpp`'s `averageColor` does exactly
 that, which is why this does not reuse it.
 
-Horizon and Overhead genuinely disagree on a sky with a coloured horizon: one is the mood the player
-sees, the other is the light a floor actually receives. That is a look choice, not a right answer,
-which is why it is a knob rather than a constant.
+## Four knobs that were removed
+
+Each was measured before being cut, and each is gone at the value its default already had, so a
+player who never touched them sees no change.
+
+**Sky area** (horizon band vs cosine-of-elevation) measured 0.19 and 0.21 apart out of 255 on two of
+the three skies tested. That is noise. It was also half of the pair that produced the failure below.
+
+**Follow sky brightness** was built to let a dark sky tint more gently than a bright one, so that
+Speed of Doom MAP01 and MAP20 would stop looking alike. Measured, it cut the tint by 90% and 86% on
+those two maps: it scaled everything down without discriminating, which the plain Strength dial
+already does more legibly. `StrengthForSectorLight` is what actually separates them.
+
+**Sky colour from** offered a dominant-colour mode that scored buckets by pixel count. A quarter of
+GSKY1 -- the sky on several GvH maps -- is near-black, so it returned `(2,2,2)`, and
+`NormaliseBrightness` turns any near-black *neutral* into pure white by plain division. White is the
+no-tint value, so the feature silently switched itself off on those maps and no slider could bring it
+back. A mean cannot fail that way: a dark region drags the average down, it cannot capture it.
+
+**Doorway matters** scaled how much a narrow opening slowed the light. It was a sub-dial of Indoor
+reach and was never verified independently of it.
 
 ## Skyboxes
 

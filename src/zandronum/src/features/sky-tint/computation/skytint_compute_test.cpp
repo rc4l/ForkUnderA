@@ -61,7 +61,7 @@ TEST(AverageSky, AveragesTheLightRatherThanItsEncoding)
 	pixels.push_back(SkyRgb(0, 0, 0));
 	pixels.push_back(SkyRgb(255, 255, 255));
 
-	const SkyRgb avg = AverageSky(pixels, 2, SkyAverage::Mean, SkyWeight::Cosine);
+	const SkyRgb avg = AverageSky(pixels, 2);
 
 	EXPECT_GT(avg.r, 180) << "an sRGB-byte mean would have said about 127";
 	EXPECT_LT(avg.r, 195);
@@ -73,30 +73,21 @@ TEST(AverageSky, AveragesTheLightRatherThanItsEncoding)
 
 TEST(RowWeight, HorizonTakesTheLowerHalfOnly)
 {
-	EXPECT_EQ(0.0, RowWeight(0, 100, SkyWeight::Horizon));
-	EXPECT_EQ(0.0, RowWeight(49, 100, SkyWeight::Horizon));
-	EXPECT_EQ(1.0, RowWeight(50, 100, SkyWeight::Horizon));
-	EXPECT_EQ(1.0, RowWeight(99, 100, SkyWeight::Horizon));
-}
-
-TEST(RowWeight, CosineFavoursTheZenithWhichIsTheOppositeEnd)
-{
-	// The disagreement the header calls out, in one assertion: what lights a floor is not what the
-	// player is looking at.
-	EXPECT_NEAR(1.0, RowWeight(0, 101, SkyWeight::Cosine), 0.001);		// straight up
-	EXPECT_NEAR(0.0, RowWeight(100, 101, SkyWeight::Cosine), 0.001);	// the horizon
-	EXPECT_NEAR(0.707, RowWeight(50, 101, SkyWeight::Cosine), 0.01);	// 45 degrees
+	EXPECT_EQ(0.0, RowWeight(0, 100));
+	EXPECT_EQ(0.0, RowWeight(49, 100));
+	EXPECT_EQ(1.0, RowWeight(50, 100));
+	EXPECT_EQ(1.0, RowWeight(99, 100));
 }
 
 TEST(RowWeight, SurvivesDegenerateGeometry)
 {
-	EXPECT_EQ(0.0, RowWeight(0, 0, SkyWeight::Cosine));
-	EXPECT_EQ(0.0, RowWeight(0, -1, SkyWeight::Horizon));
-	// A one-row sky has no gradient to sample; the single row is the zenith by definition.
-	EXPECT_NEAR(1.0, RowWeight(0, 1, SkyWeight::Cosine), 0.001);
+	EXPECT_EQ(0.0, RowWeight(0, 0));
+	EXPECT_EQ(0.0, RowWeight(0, -1));
+	// A one-row sky: row 0 is both halves, so it counts.
+	EXPECT_EQ(1.0, RowWeight(0, 1));
 	// Out-of-range rows clamp instead of reading past the image.
-	EXPECT_EQ(RowWeight(0, 10, SkyWeight::Horizon), RowWeight(-5, 10, SkyWeight::Horizon));
-	EXPECT_EQ(RowWeight(9, 10, SkyWeight::Horizon), RowWeight(99, 10, SkyWeight::Horizon));
+	EXPECT_EQ(RowWeight(0, 10), RowWeight(-5, 10));
+	EXPECT_EQ(RowWeight(9, 10), RowWeight(99, 10));
 }
 
 // ---------------------------------------------------------------- layered skies
@@ -158,72 +149,36 @@ TEST(CompositeSkyLayers, AnOpaqueFrontHidesTheBackCompletely)
 		EXPECT_TRUE(SkyRgb(1, 2, 3) == out[i]);
 }
 
-TEST(AverageSky, WeightingChoosesWhichHalfOfATwoToneSkyWins)
-{
-	// Blue above, orange below: horizon weighting must return orange, cosine must lean blue.
-	const std::vector<SkyRgb> sky = TwoTone(4, 100, SkyRgb(40, 80, 255), SkyRgb(255, 120, 40));
-
-	const SkyRgb horizon = AverageSky(sky, 4, SkyAverage::Mean, SkyWeight::Horizon);
-	EXPECT_GT(horizon.r, horizon.b) << "the band the player sees is the orange one";
-
-	const SkyRgb cosine = AverageSky(sky, 4, SkyAverage::Mean, SkyWeight::Cosine);
-	EXPECT_GT(cosine.b, horizon.b) << "weighting the zenith pulls the answer toward the blue";
-}
-
 // ---------------------------------------------------------------- dominant
-
-TEST(AverageSky, DominantPicksTheBiggerRegionInsteadOfSplittingTheDifference)
-{
-	// Three quarters dark smoke, one quarter bright fire, all in the lower band. A mean lands
-	// between the two and matches neither; dominant should name the smoke.
-	std::vector<SkyRgb> sky;
-	for (int y = 0; y < 4; ++y)
-	{
-		for (int x = 0; x < 4; ++x)
-			sky.push_back(((y >= 2) && (x == 0)) ? SkyRgb(255, 160, 40) : SkyRgb(40, 40, 48));
-	}
-
-	const SkyRgb dom = AverageSky(sky, 4, SkyAverage::Dominant, SkyWeight::Horizon);
-	EXPECT_LT(dom.r, 100) << "the smoke is the dominant colour";
-
-	const SkyRgb mean = AverageSky(sky, 4, SkyAverage::Mean, SkyWeight::Horizon);
-	EXPECT_GT(mean.r, dom.r) << "the mean is dragged toward the fire it does not match";
-}
-
-TEST(AverageSky, DominantReturnsAColourThatWasActuallyInTheSky)
-{
-	std::vector<SkyRgb> sky;
-	for (int i = 0; i < 8; ++i)
-		sky.push_back(SkyRgb(200, 100, 50));
-
-	// One bucket, one member colour: the answer must be that colour, not the bucket's centre.
-	const SkyRgb dom = AverageSky(sky, 2, SkyAverage::Dominant, SkyWeight::Cosine);
-
-	EXPECT_NEAR(200, dom.r, 2);
-	EXPECT_NEAR(100, dom.g, 2);
-	EXPECT_NEAR(50, dom.b, 2);
-}
 
 TEST(AverageSky, NothingToAverageIsWhiteRatherThanBlackOrACrash)
 {
 	// White is the identity tint, so an unanswerable sky leaves the level alone.
-	EXPECT_EQ(SkyRgb(255, 255, 255), AverageSky(std::vector<SkyRgb>(), 4, SkyAverage::Mean, SkyWeight::Horizon));
-	EXPECT_EQ(SkyRgb(255, 255, 255), AverageSky(TwoTone(2, 2, SkyRgb(1, 2, 3), SkyRgb(4, 5, 6)), 0, SkyAverage::Mean, SkyWeight::Horizon));
+	EXPECT_EQ(SkyRgb(255, 255, 255), AverageSky(std::vector<SkyRgb>(), 4));
+	EXPECT_EQ(SkyRgb(255, 255, 255), AverageSky(TwoTone(2, 2, SkyRgb(1, 2, 3), SkyRgb(4, 5, 6)), 0));
 
 	// Fewer pixels than a row: height computes to zero.
 	std::vector<SkyRgb> stub(2, SkyRgb(10, 20, 30));
-	EXPECT_EQ(SkyRgb(255, 255, 255), AverageSky(stub, 8, SkyAverage::Mean, SkyWeight::Horizon));
-	EXPECT_EQ(SkyRgb(255, 255, 255), AverageSky(stub, 8, SkyAverage::Dominant, SkyWeight::Horizon));
+	EXPECT_EQ(SkyRgb(255, 255, 255), AverageSky(stub, 8));
 }
 
-TEST(AverageSky, AWeightingThatSelectsNoRowsIsStillWhite)
+// [rc4l] The failure that removed the dominant-colour mode, kept as a regression guard. A sky that
+// is mostly near-black used to return near-black, which NormaliseBrightness turns into pure white --
+// the no-tint value -- so the feature switched itself off and no slider could bring it back. A mean
+// cannot do that: a dark region drags it darker, it cannot capture it.
+TEST(AverageSky, AMostlyBlackSkyStillReportsTheColourInIt)
 {
-	// A two-row sky under Horizon weighting: row 0 is excluded, so a one-row-high image has
-	// nothing left. Both modes must survive the empty selection.
-	std::vector<SkyRgb> onerow(4, SkyRgb(90, 90, 90));
+	std::vector<SkyRgb> sky;
+	for (int y = 0; y < 10; ++y)
+	{
+		for (int x = 0; x < 4; ++x)
+			sky.push_back((y == 8) ? SkyRgb(255, 120, 0) : SkyRgb(2, 2, 2));
+	}
 
-	EXPECT_EQ(SkyRgb(255, 255, 255), AverageSky(onerow, 8, SkyAverage::Mean, SkyWeight::Horizon));
-	EXPECT_EQ(SkyRgb(255, 255, 255), AverageSky(onerow, 8, SkyAverage::Dominant, SkyWeight::Horizon));
+	const SkyRgb avg = AverageSky(sky, 4);
+
+	EXPECT_FALSE(avg == SkyRgb(255, 255, 255)) << "white here would mean the tint silently vanished";
+	EXPECT_GT(avg.r, avg.b) << "the one band with a colour still tilts the answer warm";
 }
 
 // ---------------------------------------------------------------- shaping
@@ -242,52 +197,77 @@ TEST(NormaliseBrightness, ABlackSkyHasNoHueToOffer)
 	EXPECT_EQ(SkyRgb(255, 255, 255), NormaliseBrightness(SkyRgb(0, 0, 0)));
 }
 
-// [rc4l] The problem this answers: a DIM green sky and a blazing one normalise to the same vivid
-// hue, so a dark sky can read as a filter over the whole map. Turning Max colour down would tame it
-// but is global, costing the tint on every map where it was already fine. This is per-sky.
-TEST(SkyLuminance, ReadsADarkSkyAsDarkAndABrightOneAsBright)
-{
-	EXPECT_NEAR(0.0, SkyLuminance(SkyRgb(0, 0, 0)), 0.001);
-	EXPECT_NEAR(1.0, SkyLuminance(SkyRgb(255, 255, 255)), 0.001);
+// ---------------------------------------------------------------- luminance preservation
 
-	const double dim = SkyLuminance(SkyRgb(20, 60, 20));
-	const double bright = SkyLuminance(SkyRgb(120, 255, 120));
-	EXPECT_LT(dim, bright);
-	EXPECT_LT(dim, 0.1) << "a dark green sky must not read as bright";
+TEST(PreserveLuminance, WhiteIsAlreadyNeutralAndIsLeftAlone)
+{
+	const SkyRgb white = PreserveLuminance(SkyRgb(255, 255, 255));
+
+	EXPECT_NEAR(255, white.r, 1);
+	EXPECT_NEAR(255, white.g, 1);
+	EXPECT_NEAR(255, white.b, 1);
 }
 
-TEST(SkyLuminance, WeighsGreenHeaviestAsAnEyeDoes)
+TEST(PreserveLuminance, AnOrangeTintStopsEatingMostOfTheLight)
 {
-	// Which matters here precisely because the skies that cause trouble are the green ones.
-	EXPECT_GT(SkyLuminance(SkyRgb(0, 200, 0)), SkyLuminance(SkyRgb(200, 0, 0)));
-	EXPECT_GT(SkyLuminance(SkyRgb(0, 200, 0)), SkyLuminance(SkyRgb(0, 0, 200)));
+	// The piss-filter case, and the honest limit of fixing it with a multiply.
+	//
+	// (255,120,0) passes about 0.55 of the light, so every surface it touches comes out nearly half
+	// as dim as well as oranger. Correction cannot reach 1.0 here: red is already at 255 and cannot
+	// rise to pay for the missing green and blue, so the clamp caps recovery at about 0.83. That is
+	// still half the loss recovered, and a fully saturated tint is the worst case by construction.
+	// Going further would mean desaturating the tint, which is what the Max colour slider is for.
+	const SkyRgb before(255, 120, 0);
+	const SkyRgb after = PreserveLuminance(before);
+
+	const double passBefore = (0.2126 * before.r + 0.7152 * before.g + 0.0722 * before.b) / 255.0;
+	const double passAfter = (0.2126 * after.r + 0.7152 * after.g + 0.0722 * after.b) / 255.0;
+
+	EXPECT_NEAR(0.55, passBefore, 0.03) << "the uncorrected tint swallows nearly half the light";
+	EXPECT_GT(passAfter, passBefore + 0.2) << "correction recovers most of what the clamp allows";
+	EXPECT_NEAR(0.83, passAfter, 0.03);
 }
 
-TEST(StrengthForSky, IgnoresTheSkyAtZeroAndObeysItAtFull)
+// [rc4l] A COLOURED tint can never be fully corrected by scaling, and it is worth writing down why
+// rather than discovering it again.
+//
+// Reaching luminance 1.0 would put the largest channel at max * 255/pass. `pass` is a weighted
+// average of the three channels, so it is always at or below the largest one, which means that
+// product is always at or above 255 and the brightest channel always clamps. Only an exactly neutral
+// colour escapes. Full preservation would need the tint desaturated toward white first -- trading
+// colour for light -- and that is what the Max colour slider already does, deliberately and visibly.
+//
+// So the promise here is "recovers most of the loss", not "loses nothing".
+TEST(PreserveLuminance, AlwaysImprovesAColouredTintAndNeverMakesItWorse)
 {
-	const double dark = SkyLuminance(SkyRgb(20, 60, 20));
+	const SkyRgb tints[] = { SkyRgb(255, 120, 0), SkyRgb(200, 170, 150), SkyRgb(80, 200, 90),
+		SkyRgb(30, 30, 200), SkyRgb(255, 255, 200) };
 
-	EXPECT_EQ(40, StrengthForSky(40, dark, 0)) << "hue only: the sky's brightness is discarded";
-	EXPECT_LT(StrengthForSky(40, dark, 100), 8) << "a dark sky should barely tint at all";
-	EXPECT_EQ(40, StrengthForSky(40, 1.0, 100)) << "a white sky tints at full strength";
+	for (int i = 0; i < 5; ++i)
+	{
+		const SkyRgb after = PreserveLuminance(tints[i]);
+		const double before = (0.2126 * tints[i].r + 0.7152 * tints[i].g + 0.0722 * tints[i].b) / 255.0;
+		const double now = (0.2126 * after.r + 0.7152 * after.g + 0.0722 * after.b) / 255.0;
+
+		EXPECT_GE(now, before - 0.001) << "correction must never pass LESS light, tint " << i;
+		EXPECT_LE(now, 1.001) << "and must never invent light, tint " << i;
+	}
 }
 
-TEST(StrengthForSky, IsADialRatherThanASwitch)
+TEST(PreserveLuminance, KeepsTheHueItWasGiven)
 {
-	const double mid = 0.5;
-	const int none = StrengthForSky(40, mid, 0);
-	const int half = StrengthForSky(40, mid, 50);
-	const int full = StrengthForSky(40, mid, 100);
+	// Correcting brightness must not turn one colour into another: the channel ORDER has to survive,
+	// otherwise the sky's colour is not what lands on the walls.
+	const SkyRgb after = PreserveLuminance(SkyRgb(200, 100, 50));
 
-	EXPECT_GT(none, half);
-	EXPECT_GT(half, full) << "a map with a mid-bright sky should land in between";
+	EXPECT_GT(after.r, after.g);
+	EXPECT_GT(after.g, after.b);
 }
 
-TEST(StrengthForSky, ClampsNonsenseInsteadOfTrusting)
+TEST(PreserveLuminance, ATintThatPassesNoLightLeavesTheLevelAlone)
 {
-	EXPECT_EQ(40, StrengthForSky(40, 5.0, 100)) << "luminance above 1 is still just full";
-	EXPECT_EQ(0, StrengthForSky(40, -1.0, 100));
-	EXPECT_EQ(40, StrengthForSky(40, 1.0, 500));
+	// Black would multiply every surface to black. White is the identity, which is the safe answer.
+	EXPECT_EQ(SkyRgb(255, 255, 255), PreserveLuminance(SkyRgb(0, 0, 0)));
 }
 
 // [rc4l] The dial the sky-side ones could not be. Two maps under equally dark skies were reduced
@@ -438,6 +418,57 @@ TEST(StepCost, SaysImpassableRatherThanReturningAHugeNumber)
 {
 	EXPECT_LT(StepCost(100.0, 0.0), 0.0);
 	EXPECT_DOUBLE_EQ(0.0, StepCost(-50.0, 1.0)) << "a negative distance is no distance";
+}
+
+namespace
+{
+	// Channel spread, which is what "how much colour is being pushed" means for a multiplier.
+	int SpreadOf(SkyRgb c)
+	{
+		int mx = c.r; if (c.g > mx) mx = c.g; if (c.b > mx) mx = c.b;
+		int mn = c.r; if (c.g < mn) mn = c.g; if (c.b < mn) mn = c.b;
+		return mx - mn;
+	}
+}
+
+// [rc4l] The whole point of EqualiseHuePush: the same request produces the same channel spread
+// whatever the hue, so green stops hitting twice as hard as red for free. Measured on Speed of Doom
+// MAP01, one spot, only the sky swapped: green moved the ground 14.0, orange 10.3, red 6.6.
+TEST(EqualiseHuePush, GivesEveryHueTheSameSpread)
+{
+	const int want = 40;
+	const int gs = SpreadOf(EqualiseHuePush(SkyRgb(118, 255, 85), want));	// SoD MAP01
+	const int rs = SpreadOf(EqualiseHuePush(SkyRgb(255, 1, 1), want));		// SoD MAP29
+	const int as = SpreadOf(EqualiseHuePush(SkyRgb(255, 99, 2), want));		// SoD MAP20
+
+	// Within a couple of points, which is integer rounding on a 0..255 channel, not a difference.
+	EXPECT_NEAR(gs, rs, 2) << "green " << gs << " vs red " << rs;
+	EXPECT_NEAR(gs, as, 2) << "green " << gs << " vs amber " << as;
+
+	// And it is the spread that was ASKED for, not merely a consistent wrong one.
+	EXPECT_NEAR(gs, (255 * want) / 100, 3);
+}
+
+TEST(EqualiseHuePush, ScalesWithTheRequestAndZeroIsOff)
+{
+	const SkyRgb dir(255, 1, 1);
+	EXPECT_EQ(SkyRgb(255, 255, 255), EqualiseHuePush(dir, 0)) << "zero is off, not a faint tint";
+	EXPECT_LT(SpreadOf(EqualiseHuePush(dir, 20)), SpreadOf(EqualiseHuePush(dir, 60)));
+}
+
+TEST(EqualiseHuePush, LeavesANeutralSkyAlone)
+{
+	// A grey sky has no hue to push at any strength, so it must not invent one.
+	EXPECT_EQ(SkyRgb(255, 255, 255), EqualiseHuePush(SkyRgb(200, 200, 200), 100));
+	EXPECT_EQ(SkyRgb(255, 255, 255), EqualiseHuePush(SkyRgb(255, 255, 255), 50));
+}
+
+TEST(EqualiseHuePush, WillNotExtrapolatePastTheSkysOwnColour)
+{
+	// A barely-tinted sky tops out at its real colour rather than being pushed into a hue it never
+	// had: asking for more than it has must saturate at the sky itself, not overshoot.
+	const SkyRgb faint(255, 240, 240);
+	EXPECT_EQ(faint, EqualiseHuePush(faint, 100));
 }
 
 TEST(SkyRgb, DefaultsToBlackAndClampsWhatItIsGiven)
