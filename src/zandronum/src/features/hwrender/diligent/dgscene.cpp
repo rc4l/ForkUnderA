@@ -978,7 +978,12 @@ static void ReleaseScenePipelines()
 // sorted by texture would put the status bar behind the world and the console behind the menu.
 struct Vertex2D { float x, y, u, v, r, g, b, a, texMode; };
 
-static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_pso2D;
+// [rc4l] One 2D pipeline per blend mode: 0 alpha, 1 additive, 2 multiply.
+//
+// There used to be one, always alpha, and Quad2D::blend was recorded and then ignored -- so additive
+// 2D drew as ordinary alpha. Multiply is what a fixed colormap needs (invulnerability tints the
+// screen by multiplying it), and neither can be faked with the alpha state.
+static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_pso2D[3];
 static Diligent::RefCntAutoPtr<Diligent::IBuffer>        g_vb2D;
 static Diligent::RefCntAutoPtr<Diligent::IBuffer>        g_cb2D;
 static unsigned int g_vb2DCapacity = 0;
@@ -1032,7 +1037,7 @@ static const char *k2DPS =
 
 static bool Ensure2DPipeline()
 {
-	if (g_pso2D) return true;
+	if (g_pso2D[0]) return true;
 	auto *dev = GetDevice();
 	auto *swap = GetSwapChain();
 	if (!dev || !swap) return false;
@@ -1116,11 +1121,27 @@ static bool Ensure2DPipeline()
 	pci.PSODesc.ResourceLayout.NumImmutableSamplers = 1;
 	pci.pVS = vs;
 	pci.pPS = ps;
-	dev->CreateGraphicsPipelineState(pci, &g_pso2D);
-	if (!g_pso2D) return false;
-
-	if (auto *v = g_pso2D->GetStaticVariableByName(Diligent::SHADER_TYPE_VERTEX, "Screen"))
-		v->Set(g_cb2D);
+	for (int mode = 0; mode < 3; mode++)
+	{
+		auto &rt = pci.GraphicsPipeline.BlendDesc.RenderTargets[0];
+		rt.BlendEnable = true;
+		if (mode == 2)
+		{
+			// GL_DST_COLOR / GL_ZERO -- the screen multiplied by the blend colour.
+			rt.SrcBlend  = Diligent::BLEND_FACTOR_DEST_COLOR;
+			rt.DestBlend = Diligent::BLEND_FACTOR_ZERO;
+		}
+		else
+		{
+			rt.SrcBlend  = Diligent::BLEND_FACTOR_SRC_ALPHA;
+			rt.DestBlend = (mode == 1) ? Diligent::BLEND_FACTOR_ONE
+			                           : Diligent::BLEND_FACTOR_INV_SRC_ALPHA;
+		}
+		dev->CreateGraphicsPipelineState(pci, &g_pso2D[mode]);
+		if (!g_pso2D[mode]) return false;
+		if (auto *v = g_pso2D[mode]->GetStaticVariableByName(Diligent::SHADER_TYPE_VERTEX, "Screen"))
+			v->Set(g_cb2D);
+	}
 	return true;
 }
 
@@ -1189,7 +1210,8 @@ static void Draw2D(Diligent::IDeviceContext *ctx)
 	const Diligent::Uint64 offsets[] = { 0 };
 	ctx->SetVertexBuffers(0, 1, vbs, offsets, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
 		Diligent::SET_VERTEX_BUFFERS_FLAG_RESET);
-	ctx->SetPipelineState(g_pso2D);
+	// The pipeline is chosen per quad now, so this only primes it.
+	int curBlend = -1;
 
 	// The backend window is its own size, so the engine's scissor rects scale with the viewport.
 	const auto &sd = GetSwapChain()->GetDesc();
@@ -1201,7 +1223,13 @@ static void Draw2D(Diligent::IDeviceContext *ctx)
 	for (int i = 0; i < nq; i++)
 	{
 		const zx::hwrender::Quad2D &q = quads[i];
-		auto *srb = GetMaterialSRB(g_pso2D, q.material, q.translation);
+		const int blendMode = (q.blend >= 0 && q.blend < 3) ? q.blend : 0;
+		if (blendMode != curBlend)
+		{
+			curBlend = blendMode;
+			ctx->SetPipelineState(g_pso2D[curBlend]);
+		}
+		auto *srb = GetMaterialSRB(g_pso2D[curBlend], q.material, q.translation);
 		if (!srb) continue;
 
 		if (q.clipL != cl || q.clipT != ctp || q.clipR != cr || q.clipB != cb2)
