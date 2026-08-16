@@ -5,6 +5,7 @@
 // geometry is built and nothing renders from this yet -- see features/levelmesh/README.md.
 
 #include "features/levelmesh/levelmesh.h"
+#include "gl/data/gl_vertexbuffer.h"   // FFlatVertex, for fua_mesh_at
 #include "features/levelmesh/wallcache.h"
 #include "features/levelmesh/flatmesh.h"
 
@@ -148,6 +149,101 @@ bool ClaimSideForBake(int sideIndex)
 
 }} // namespace zx::levelmesh
 
+
+//==========================================================================
+//
+// fua_find_lines
+//
+// [rc4l] A general linedef query, so driving the engine for a test stops being guesswork.
+//
+//   fua_find_lines [key=value ...]
+//     special=N    exact action special (see actionspecials.h)
+//     door=1       any door special that does NOT need a key
+//     use=1        only lines the player can activate by pressing use
+//     cross=1      only lines triggered by walking over them
+//     tag=N        exact tag
+//     limit=N      how many to print (default 8)
+//
+// It prints a position to stand and a facing for each match, so the next two commands are
+// player.setpos and a turn. Verifying that moving geometry reaches the backend needed a door, and
+// finding one by walking the level with use held was hopeless: noclip skips doors entirely, and a
+// mis-toggle walked the player out of the map.
+//
+// Two earlier versions of this got it wrong in instructive ways. Matching on geometry -- a two-sided
+// line whose back sector has its ceiling on its floor -- is true of every closed door and also of
+// every decorative alcove and computer bank, so it warped the player nose-first into a wall of
+// panels. Matching on the door SPECIAL alone then found a door that is opened by walking over a
+// trigger line, which no amount of pressing use will budge. Activation is the field that actually
+// answers "can I open this by walking up to it and pressing use", so it is filterable here.
+//
+//==========================================================================
+
+static int FindLinesArg( FCommandLine &argv, const char *key, int fallback )
+{
+	const size_t klen = strlen( key );
+	for ( int i = 1; i < argv.argc( ); i++ )
+	{
+		const char *a = argv[i];
+		if ( strncmp( a, key, klen ) == 0 && a[klen] == '=' ) return atoi( a + klen + 1 );
+	}
+	return fallback;
+}
+
+CCMD( fua_find_lines )
+{
+	if ( lines == NULL || numlines <= 0 )
+	{
+		Printf( "no level loaded.\n" );
+		return;
+	}
+
+	const int wantSpecial = FindLinesArg( argv, "special", -1 );
+	const int wantDoor    = FindLinesArg( argv, "door",    0 );
+	const int wantUse     = FindLinesArg( argv, "use",     0 );
+	const int wantCross   = FindLinesArg( argv, "cross",   0 );
+	const int wantTag     = FindLinesArg( argv, "tag",     -1 );
+	const int limit       = FindLinesArg( argv, "limit",   8 );
+
+	int found = 0, scanned = 0;
+	for ( int i = 0; i < numlines && found < limit; i++ )
+	{
+		const line_t *ln = &lines[i];
+		if ( ln->special == 0 ) continue;
+		scanned++;
+
+		if ( wantSpecial >= 0 && ln->special != wantSpecial ) continue;
+		if ( wantTag >= 0 && ln->id != wantTag ) continue;
+		// Door_Close, Door_Open, Door_Raise, Door_Animated. Door_LockedRaise (13) is excluded on
+		// purpose: it needs a key, so it will never open for an unattended test.
+		if ( wantDoor && ln->special != 10 && ln->special != 11 && ln->special != 12 &&
+			 ln->special != 14 ) continue;
+		if ( wantUse && !( ln->activation & ( SPAC_Use | SPAC_UseThrough | SPAC_UseBack ))) continue;
+		if ( wantCross && !( ln->activation & ( SPAC_Cross | SPAC_AnyCross ))) continue;
+
+		const fixed_t mx = ( ln->v1->x + ln->v2->x ) / 2;
+		const fixed_t my = ( ln->v1->y + ln->v2->y ) / 2;
+
+		// A spot 48 units off the FRONT side -- close enough to press use, far enough to stand.
+		const double dx = FIXED2FLOAT( ln->v2->x - ln->v1->x );
+		const double dy = FIXED2FLOAT( ln->v2->y - ln->v1->y );
+		const double len = sqrt( dx * dx + dy * dy );
+		if ( len < 1.0 ) continue;
+		const double sx = FIXED2FLOAT( mx ) + ( dy / len ) * 48.0;
+		const double sy = FIXED2FLOAT( my ) - ( dx / len ) * 48.0;
+		// Facing from that spot back at the line.
+		int face = (int)( atan2( FIXED2FLOAT( my ) - sy, FIXED2FLOAT( mx ) - sx ) * 180.0 / 3.14159265 );
+		if ( face < 0 ) face += 360;
+
+		Printf( "line %d: special %d tag %d act 0x%x  mid (%d, %d)  stand (%d, %d) face %d%s\n",
+				i, ln->special, ln->id, (unsigned)ln->activation,
+				(int)FIXED2FLOAT( mx ), (int)FIXED2FLOAT( my ), (int)sx, (int)sy, face,
+				ln->locknumber ? "  [LOCKED]" : "" );
+		found++;
+	}
+
+	Printf( "fua_find_lines: %d shown, %d specialled lines scanned of %d\n", found, scanned, numlines );
+}
+
 CCMD( fua_levelmesh_bakeall )
 {
 	zx::levelmesh::ArmFullBake( );
@@ -212,4 +308,57 @@ CCMD( fua_levelmesh_stats )
 	GetRejects( rp, rpoly, rff, ra, ro, ok );
 	Printf( "  captures: %d ok, refused %d portal / %d polyobj / %d 3D-floor / %d area / %d other\n",
 			ok, rp, rpoly, rff, ra, ro );
+}
+
+//==========================================================================
+//
+// fua_mesh_at <x> <y> [radius]
+//
+// [rc4l] Every mesh piece standing near a map position, whoever registered it.
+//
+// fua_line_mesh answers "what does THIS seg hold", which was enough to prove the door's own piece
+// updated correctly -- and not enough to explain why the shut door kept rendering anyway. The piece
+// still painting it belongs to something else, and nothing in the per-seg view can see it. This walks
+// the piece list itself, so a surface that no seg admits to owning still shows up.
+//
+//==========================================================================
+
+CCMD( fua_mesh_at )
+{
+	if ( argv.argc( ) < 3 )
+	{
+		Printf( "usage: fua_mesh_at <x> <y> [radius]\n" );
+		return;
+	}
+	const float px = (float)atof( argv[1] );
+	const float py = (float)atof( argv[2] );
+	const float rad = ( argv.argc( ) > 3 ) ? (float)atof( argv[3] ) : 64.f;
+
+	int nv = 0, np = 0;
+	const FFlatVertex *verts = zx::levelmesh::MeshVertexData( nv );
+	const zx::levelmesh::MeshPiece *pieces = zx::levelmesh::MeshPieces( np );
+	if ( verts == NULL || pieces == NULL ) { Printf( "no mesh\n" ); return; }
+
+	int shown = 0;
+	for ( int i = 0; i < np; i++ )
+	{
+		const zx::levelmesh::MeshPiece &p = pieces[i];
+		if ( p.range.count == 0 ) continue;
+		float xlo = 1e9f, xhi = -1e9f, ylo = 1e9f, yhi = -1e9f, zlo = 1e9f, zhi = -1e9f;
+		bool near = false;
+		for ( unsigned v = 0; v < p.range.count && p.range.offset + v < (unsigned)nv; v++ )
+		{
+			const FFlatVertex &fv = verts[p.range.offset + v];
+			if ( fv.x < xlo ) xlo = fv.x;  if ( fv.x > xhi ) xhi = fv.x;
+			if ( fv.y < ylo ) ylo = fv.y;  if ( fv.y > yhi ) yhi = fv.y;
+			if ( fv.z < zlo ) zlo = fv.z;  if ( fv.z > zhi ) zhi = fv.z;
+			if ( fabsf( fv.x - px ) <= rad && fabsf( fv.y - py ) <= rad ) near = true;
+		}
+		if ( !near ) continue;
+		Printf( "piece %d: range %u+%u  x %.0f..%.0f  y %.0f..%.0f  height %.0f..%.0f  tex %d\n",
+				i, p.range.offset, p.range.count, xlo, xhi, ylo, yhi, zlo, zhi,
+				p.baseTex ? 1 : 0 );
+		shown++;
+	}
+	Printf( "fua_mesh_at: %d of %d pieces within %.0f of (%.0f, %.0f)\n", shown, np, rad, px, py );
 }

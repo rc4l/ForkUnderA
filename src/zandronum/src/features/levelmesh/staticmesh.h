@@ -108,6 +108,9 @@ void MeshFreeLevel();
 
 // Reserve (or reuse) a range and copy `count` triangle-list vertices into it. Returns false if the
 // buffer is full or the input is unusable, in which case the caller keeps streaming that wall.
+// Make a range draw nothing without freeing it, so a re-bake can write straight back over it.
+void MeshSquash(const MeshRange &range);
+
 bool MeshStore(MeshRange &range, const FFlatVertex *verts, int count);
 
 // Bind the mesh's vertex array for drawing. Returns false if there is nothing baked yet.
@@ -147,6 +150,18 @@ void MeshDrawIndexed(unsigned int firstIndex, unsigned int count);
 
 // Push any pending CPU-side writes to the GPU. Called once per frame before drawing.
 void MeshFlush();
+
+// [rc4l] A dirty range for a SECOND consumer, independent of MeshFlush's GL one.
+//
+// The level mesh is not as static as its name suggests: a door, lift or crusher moves a sector plane,
+// the wall cache's stamp invalidates, and BakeSeg rewrites that seg's vertices in place. The GL path
+// picks that up through MeshFlush; a foreign backend needs its own cursor, because MeshFlush clears
+// the range as it consumes it.
+//
+// Reported in mesh-vertex units, and only when the bytes ACTUALLY changed -- uncacheable segs
+// re-capture every frame and rewrite identical vertices, so a naive "was written" flag would report
+// the whole level dirty on every frame forever.
+void MeshTakeDirty(unsigned int &lo, unsigned int &hi);
 
 // Stats for fua_levelmesh_stats.
 void MeshGetStats(int &bakedPieces, int &vertices, int &bytes, int &reallocs);

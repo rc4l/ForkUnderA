@@ -13,6 +13,8 @@ import { summarizeGlTimers } from "./proto.mjs";
 import * as ui from "./ui.mjs";
 import { runBench } from "./bench.mjs";
 import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
 const num = (v) => (v != null && v !== true ? Number(v) : undefined);
 
@@ -41,7 +43,7 @@ function parseFlags(argv) {
 const USAGE = `fuactl <command>
   ls                                 list registered engine instances
   reap [--kill] [--all]              prune dead; --kill SIGTERMs ORPHANS only (other sessions safe); --all kills every live instance
-  launch [--map M] [--seed S] [--port P] [--token T] [--iwad W] [--skill N] [--file a.wad,b.pk3]   launch one supervised bridge instance (stays up until Ctrl-C)
+  launch [--map M] [--seed S] [--port P] [--token T] [--iwad W] [--skill N] [--file a.wad,b.pk3] [--cvar k=v,k2=v2]   launch one supervised bridge instance (stays up until Ctrl-C)
   sample --pid P | --port P [--seconds N] [--engine]   hottest functions (macOS sample / Linux perf; unavailable on Windows)
   net-bw [--seed S] [--map M] [--spawn CLS] [--count N] [--seconds N]   client/server bandwidth, baseline vs perturbation
   rpc <cmd> [jsonArgs] --port P [--token T]   send one RPC to an instance and print the result
@@ -51,6 +53,7 @@ const USAGE = `fuactl <command>
   capture --port P [--frames N] [--warmup M]   frametime distribution (p50/p95/p99/max, sim vs render split)
   ticprof --port P [--tics N]          per-tic sim phase split (P_Ticker / thinkers / effects / specials)
   bench --port P --scenario F.json [--runs N] [--metric total.p99_ms]   repeat a scenario, report median + spread, discard runs whose expectations failed
+  lines --port P [--special N] [--door] [--use] [--cross] [--tag N] [--limit N]   query linedefs; prints a stand position and facing for each match
   renderer-info --port P [--token T]   renderer identity + whether GL timer queries work on this driver
   ui <action> [args] --port P [--token T]   drive the UI: read (menu as text), find <label>, nav <keys>, click <x> <y>, drag, type <text>, look --yaw D --pitch D, screenshot [name], exec <ccmd>
   diligent --port P [--frames N] [--shot FILE] [--sweep DIR]   drive the Diligent (Vulkan) backend: bake the level mesh, upload geometry, optional swapchain screenshot, optional debug-view sweep (lm0..lm4.png in DIR), the matched Diligent-vs-GL benchmark, and with --scale a GPU-time probe at 1x..100x the visible geometry
@@ -89,6 +92,15 @@ async function main() {
         // a mod could be profiled only by hosting a server first and measuring through the netcode.
         extraArgs: flags.file
           ? String(flags.file).split(",").flatMap((f) => ["-file", f.trim()])
+          : undefined,
+        // [rc4l] --cvar name=value, repeatable as a comma-separated list. Applied before the map
+        // loads, which is the only time some of them take effect (sv_nomonsters being the one that
+        // matters for hands-off testing).
+        cvars: flags.cvar
+          ? Object.fromEntries(String(flags.cvar).split(",").map((kv) => {
+              const i = kv.indexOf("=");
+              return i < 0 ? [kv.trim(), "1"] : [kv.slice(0, i).trim(), kv.slice(i + 1).trim()];
+            }))
           : undefined,
       });
       console.log(`launched pid=${inst.pid} port=${inst.port} token=${inst.token}`);
@@ -230,6 +242,57 @@ async function main() {
         log: (m) => console.error(`[diligent] ${m}`),
       });
       console.error("[diligent] done -- results are in the engine log (fua_diligent_bench / fua_gl_meshbench lines)");
+      break;
+    }
+    // [rc4l] Query the level's linedefs and print the matches. The engine prints to its console, so
+    // this runs the CCMD and reads the lines back out of the instance's log -- the same shape
+    // vkcheck.sh uses. Driving the engine to a specific piece of geometry (a door, a switch, a
+    // trigger) used to mean walking the level blind; this makes it two commands.
+    case "lines": {
+      if (!flags.port) {
+        console.error("usage: fuactl lines --port P [--token T] [--special N] [--door] [--use]" +
+                      " [--cross] [--tag N] [--limit N]");
+        process.exit(2);
+      }
+      const parts = [];
+      if (flags.special != null && flags.special !== true) parts.push(`special=${flags.special}`);
+      if (flags.tag != null && flags.tag !== true) parts.push(`tag=${flags.tag}`);
+      if (flags.door) parts.push("door=1");
+      if (flags.use) parts.push("use=1");
+      if (flags.cross) parts.push("cross=1");
+      parts.push(`limit=${flags.limit && flags.limit !== true ? flags.limit : 8}`);
+
+      // launchInstance writes to <tmp>/fuactl-XXXX/engine-<port>.log; the registry does not record
+      // the path, so find the newest one for this port.
+      const logPath = (() => {
+        const tmp = os.tmpdir();
+        let best = null, bestTime = -1;
+        for (const d of fs.readdirSync(tmp)) {
+          if (!d.startsWith("fuactl-")) continue;
+          const p = path.join(tmp, d, `engine-${flags.port}.log`);
+          try {
+            const st = fs.statSync(p);
+            if (st.mtimeMs > bestTime) { bestTime = st.mtimeMs; best = p; }
+          } catch { /* not this one */ }
+        }
+        return best;
+      })();
+      const before = logPath && fs.existsSync(logPath) ? fs.statSync(logPath).size : 0;
+
+      await withUi(flags, (c) => c.rpc("console.exec", { text: `fua_find_lines ${parts.join(" ")}` }));
+      await new Promise((r) => setTimeout(r, 1200));
+
+      if (!logPath || !fs.existsSync(logPath)) {
+        console.error("no log for that instance; run the CCMD directly and read its console");
+        break;
+      }
+      const fd = fs.openSync(logPath, "r");
+      const buf = Buffer.alloc(Math.max(0, fs.statSync(logPath).size - before));
+      fs.readSync(fd, buf, 0, buf.length, before);
+      fs.closeSync(fd);
+      for (const l of buf.toString("utf8").split(/\r?\n/)) {
+        if (/^line \d+:|^fua_find_lines:|^no level loaded/.test(l)) console.log(l);
+      }
       break;
     }
     case "renderer-info": {

@@ -28,6 +28,9 @@ static TArray<FFlatVertex> g_verts;        // CPU mirror; the GPU copy is writte
 static unsigned int        g_used = 0;
 static unsigned int        g_dirtyLo = 0;  // pending upload range, in vertices
 static unsigned int        g_dirtyHi = 0;
+// [rc4l] A second, independent dirty cursor for a foreign backend -- see MeshTakeDirty.
+static unsigned int        g_bkDirtyLo = 0xffffffffu;
+static unsigned int        g_bkDirtyHi = 0;
 static unsigned int        g_vbo = 0;
 static unsigned int        g_vao = 0;
 static bool                g_full = false;
@@ -161,6 +164,62 @@ static bool EnsureBuffer()
 	return true;
 }
 
+// [rc4l] Retire a range the arena is about to abandon.
+//
+// This is the bug that kept a shut door painted across an open doorway in the Vulkan view while GL
+// showed the room behind it. A door does not merely nudge its wall's vertices: the wall's split
+// topology changes, so the re-bake asks for a different vertex count, and MeshStore hands it a fresh
+// range at the top of the arena. The vertices at the OLD offset keep the closed door, and -- the part
+// that actually bit -- the MeshPiece registered against that old offset is still in the piece list,
+// so a backend that draws the piece list draws the closed door forever. GL was unaffected because it
+// draws from the seg's own (updated) range, which is why the two renderers disagreed.
+//
+// Both halves have to go: the vertices are squashed so anything still holding the range rasterises
+// nothing, and the piece entry is dropped so the list stops mentioning it at all.
+static void RetireRange(const MeshRange &old);
+static void RetireRange(const MeshRange &old)
+{
+	if (old.count == 0 || old.offset + old.count > g_used) return;
+
+	memset(&g_verts[old.offset], 0, old.count * sizeof(FFlatVertex));
+	if (old.offset < g_dirtyLo || g_dirtyHi == 0) g_dirtyLo = old.offset;
+	if (old.offset + old.count > g_dirtyHi) g_dirtyHi = old.offset + old.count;
+	if (old.offset < g_bkDirtyLo || g_bkDirtyHi == 0) g_bkDirtyLo = old.offset;
+	if (old.offset + old.count > g_bkDirtyHi) g_bkDirtyHi = old.offset + old.count;
+
+	unsigned *found = g_pieceByOffset.CheckKey(old.offset);
+	if (found != NULL && *found < g_pieceList.Size())
+	{
+		g_pieceList[*found].range.count = 0;   // emitters skip empty pieces
+		g_pieceByOffset.Remove(old.offset);
+	}
+}
+
+// [rc4l] Make a range draw nothing while KEEPING it allocated.
+//
+// The difference from RetireRange matters more than it looks. Retiring forgets the offset, so the
+// next store bump-allocates a fresh range -- which is right when a piece changed size and the old
+// space is genuinely dead, and catastrophic when it happens every frame. Squashing a moving sector's
+// segs with the freeing version grew the arena from 5.3k vertices to 82k and the piece list from 676
+// to 13492 in twenty tics; left running it is the 47 GB leak that killed an earlier build.
+//
+// So: zero the vertices, empty the registered piece, and keep both the range and its slot in the
+// offset map, so a re-bake writes straight back over them.
+void MeshSquash(const MeshRange &range)
+{
+	if (range.count == 0 || range.offset + range.count > g_used) return;
+
+	memset(&g_verts[range.offset], 0, range.count * sizeof(FFlatVertex));
+	if (range.offset < g_dirtyLo || g_dirtyHi == 0) g_dirtyLo = range.offset;
+	if (range.offset + range.count > g_dirtyHi) g_dirtyHi = range.offset + range.count;
+	if (range.offset < g_bkDirtyLo || g_bkDirtyHi == 0) g_bkDirtyLo = range.offset;
+	if (range.offset + range.count > g_bkDirtyHi) g_bkDirtyHi = range.offset + range.count;
+
+	unsigned *found = g_pieceByOffset.CheckKey(range.offset);
+	if (found != NULL && *found < g_pieceList.Size())
+		g_pieceList[*found].range.count = 0;   // emitters skip it; the slot is reused on re-bake
+}
+
 bool MeshStore(MeshRange &range, const FFlatVertex *verts, int count)
 {
 	if (verts == NULL || count <= 0) return false;
@@ -170,13 +229,23 @@ bool MeshStore(MeshRange &range, const FFlatVertex *verts, int count)
 	// moves when its split topology does.
 	if (range.count == (unsigned int)count)
 	{
-		memcpy(&g_verts[range.offset], verts, count * sizeof(FFlatVertex));
-		if (range.offset < g_dirtyLo) g_dirtyLo = range.offset;
-		if (range.offset + count > g_dirtyHi) g_dirtyHi = range.offset + count;
+		// [rc4l] Compare before writing, so the backend's dirty range means "geometry moved" and not
+		// merely "something was re-baked". Segs that are uncacheable re-capture every single frame
+		// and rewrite byte-identical vertices; without this the backend would re-upload the entire
+		// level every frame forever.
+		const size_t bytes = count * sizeof(FFlatVertex);
+		if (memcmp(&g_verts[range.offset], verts, bytes) != 0)
+		{
+			memcpy(&g_verts[range.offset], verts, bytes);
+			if (range.offset < g_dirtyLo) g_dirtyLo = range.offset;
+			if (range.offset + count > g_dirtyHi) g_dirtyHi = range.offset + count;
+			if (range.offset < g_bkDirtyLo) g_bkDirtyLo = range.offset;
+			if (range.offset + count > g_bkDirtyHi) g_bkDirtyHi = range.offset + count;
+		}
 		return true;
 	}
 
-	if (range.count != 0) g_reallocs++;   // size changed: the old range is abandoned
+	if (range.count != 0) { g_reallocs++; RetireRange(range); }   // size changed: retire the old one
 
 	if (g_used + (unsigned int)count > kMaxVertices)
 	{
@@ -192,8 +261,18 @@ bool MeshStore(MeshRange &range, const FFlatVertex *verts, int count)
 
 	if (range.offset < g_dirtyLo || g_dirtyHi == 0) g_dirtyLo = range.offset;
 	g_dirtyHi = g_used;
+	if (range.offset < g_bkDirtyLo) g_bkDirtyLo = range.offset;
+	if (g_used > g_bkDirtyHi) g_bkDirtyHi = g_used;
 	g_pieces++;
 	return true;
+}
+
+void MeshTakeDirty(unsigned int &lo, unsigned int &hi)
+{
+	lo = g_bkDirtyLo;
+	hi = g_bkDirtyHi;
+	g_bkDirtyLo = 0xffffffffu;
+	g_bkDirtyHi = 0;
 }
 
 void MeshFlush()

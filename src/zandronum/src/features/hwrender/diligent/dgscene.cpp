@@ -65,6 +65,7 @@
 #include "doomtype.h"
 #include "i_system.h"
 #include <math.h>
+#include <algorithm>
 #include <stdio.h>
 #include "m_png.h"
 #include "doomtype.h"
@@ -154,6 +155,19 @@ struct SceneBatch
 	const void  *resolved;
 };
 static TArray<SceneBatch> g_batches;
+
+// [rc4l] Where each mesh piece landed in the backend's material-sorted vertex buffer, so geometry
+// that moves can be re-uploaded in place. See RefreshMovedGeometry.
+struct PieceMap { unsigned int meshOffset, count, vbOffset; };
+static TArray<PieceMap> g_pieceMap;
+static int g_geomUpdates = 0;
+static unsigned int g_lastDirtyLo = 0, g_lastDirtyHi = 0;
+// [rc4l] How many times the scene was rebuilt because the world moved, cumulative.
+//
+// Two matched screenshots of a lift agreed perfectly and proved nothing, because there was no way to
+// tell whether the lift had moved at all in the frames between them. A counter answers "did the
+// moving-geometry path even run" without reading pixels.
+static int g_geomRebuilds = 0;
 
 // [rc4l] One SRB per material, not one SRB re-pointed per draw.
 //
@@ -1361,38 +1375,44 @@ static bool EnsureScenePipeline(FString &err)
 	return true;
 }
 
-bool SceneUpload(FString &report)
+// [rc4l] Build the backend vertex buffer from the level mesh, and upload it.
+//
+// Called at upload AND whenever geometry moves. A door does not merely nudge its vertices: the wall
+// cache re-bakes the seg, the piece can change vertex count, and MeshStore then hands it a NEW range
+// at the top of the arena. Any map from old mesh offsets to buffer slots is stale the moment that
+// happens -- which is why patching pieces in place left the shut door painted across an open doorway.
+//
+// So the whole thing is rebuilt. That is only affordable because the material sort is no longer
+// quadratic; it runs for the handful of frames a door is actually moving, and not at all otherwise.
+static bool BuildSceneBuffer(FString &err)
 {
-	FString err;
-	// [rc4l] Size the backend's client area to the engine's screen BEFORE the window exists, so the
-	// 2D layer maps 1:1 and a GL/Vulkan screenshot pair is directly comparable. A 624x361 client area
-	// against a 640x480 2D layer squashed the HUD to 75% height and point-sampled it into mush.
-	if (screen != NULL) Fua_SetBackendWindowSize(screen->GetWidth(), screen->GetHeight());
-	if (!DiligentShowWindow(err)) { report = err; return false; }
-	if (!EnsureScenePipeline(err)) { report = err; return false; }
-
 	int srcCount = 0;
 	const FFlatVertex *src = zx::levelmesh::MeshVertexData(srcCount);
 	int npieces = 0;
 	const zx::levelmesh::MeshPiece *pieces = zx::levelmesh::MeshPieces(npieces);
 	if (src == NULL || srcCount <= 0 || pieces == NULL || npieces <= 0)
 	{
-		report = "no baked geometry -- set gl_wallmesh 1, walk the level, then retry";
+		err = "no baked geometry -- set gl_wallmesh 1, walk the level, then retry";
 		return false;
 	}
 
 	// [rc4l] Order the pieces by material, then emit their vertices in that order. The result is one
 	// contiguous run per material, so each material draws once -- instead of one draw per piece.
-	TArray<int> order;
+	//
+	// std::sort, not the selection sort this used to be. At 18000 pieces the quadratic version was
+	// ~160 million comparisons -- several seconds, tolerable exactly once at upload and completely
+	// prohibitive the moment a door made this have to run again mid-game.
+	static TArray<int> order;
+	order.Clear();
 	order.Resize(npieces);
 	for (int i = 0; i < npieces; i++) order[i] = i;
-	for (int a = 0; a + 1 < npieces; a++)
-		for (int b = a + 1; b < npieces; b++)
-			if (pieces[order[b]].material < pieces[order[a]].material)
-			{ const int t = order[a]; order[a] = order[b]; order[b] = t; }
+	std::sort(&order[0], &order[0] + npieces, [pieces](int a, int b) {
+		return pieces[a].material < pieces[b].material;
+	});
 
 	g_sceneVB.Clear();
 	g_batches.Clear();
+	g_pieceMap.Clear();
 	const void *cur = (const void *)(size_t)-1;
 	for (int i = 0; i < npieces; i++)
 	{
@@ -1416,6 +1436,7 @@ bool SceneUpload(FString &report)
 		// [rc4l] Straight from the mesh: these are the values the engine's own gl_SetColor/gl_SetFog
 		// produced for this surface at bake time. The backend re-derived them once and drifted --
 		// see CaptureShading in staticmesh.cpp.
+		const unsigned int vbStart = g_sceneVB.Size();
 		for (unsigned int v = 0; v < p.range.count; v++)
 		{
 			const FFlatVertex &sv = src[p.range.offset + v];
@@ -1434,28 +1455,54 @@ bool SceneUpload(FString &report)
 			dv.nx = p.normX; dv.ny = p.normY; dv.nz = p.normZ;
 			g_sceneVB.Push(dv);
 		}
+		// [rc4l] Remember where this piece's mesh vertices landed in the backend's own buffer, so a
+		// later change to them can be re-uploaded without re-sorting and re-emitting the whole level.
+		// The sort is O(n^2) over ~18000 pieces; doing it per frame while a door moves is not an option.
+		{
+			PieceMap pm;
+			pm.meshOffset = p.range.offset;
+			pm.count      = p.range.count;
+			pm.vbOffset   = vbStart;
+			g_pieceMap.Push(pm);
+		}
 		g_batches[g_batches.Size() - 1].count += p.range.count;
 	}
 
-	if (g_sceneVB.Size() == 0) { report = "no drawable pieces"; return false; }
+	if (g_sceneVB.Size() == 0) { err = "no drawable pieces"; return false; }
 
 	Diligent::BufferDesc bd;
 	bd.Name = "fua scene VB";
 	bd.Size = (Diligent::Uint64)g_sceneVB.Size() * sizeof(SceneVertex);
-	bd.Usage = Diligent::USAGE_IMMUTABLE;
+	// [rc4l] USAGE_DEFAULT, not IMMUTABLE. The level mesh is not as static as its name suggests:
+	// doors, lifts and crushers move sector planes, the wall cache re-bakes those segs, and the
+	// vertices change. An IMMUTABLE buffer cannot be updated at all, so every moving thing in the
+	// level was frozen in the backend's view -- a door would open in the GL window and stay shut here.
+	bd.Usage = Diligent::USAGE_DEFAULT;
 	bd.BindFlags = Diligent::BIND_VERTEX_BUFFER;
 	Diligent::BufferData bdata;
 	bdata.pData = &g_sceneVB[0];
 	bdata.DataSize = bd.Size;
 	g_vb.Release();
 	GetDevice()->CreateBuffer(bd, &bdata, &g_vb);
-	if (!g_vb) { report = "vertex buffer creation failed"; return false; }
+	if (!g_vb) { err = "vertex buffer creation failed"; return false; }
 
 	// [rc4l] Give every batch its own SRB now that the list is final. Sized once, so the RefCntAutoPtrs
 	// never move and the raw pointers handed to SceneBatch stay valid.
 	ReleaseBatchSRBs();
 	for (unsigned i = 0; i < g_batches.Size(); i++)
 		g_batches[i].srb = GetMaterialSRB(g_maskedPSO, g_batches[i].material);
+	return true;
+}
+bool SceneUpload(FString &report)
+{
+	FString err;
+	// [rc4l] Size the backend's client area to the engine's screen BEFORE the window exists, so the
+	// 2D layer maps 1:1 and a GL/Vulkan screenshot pair is directly comparable. A 624x361 client area
+	// against a 640x480 2D layer squashed the HUD to 75% height and point-sampled it into mush.
+	if (screen != NULL) Fua_SetBackendWindowSize(screen->GetWidth(), screen->GetHeight());
+	if (!DiligentShowWindow(err)) { report = err; return false; }
+	if (!EnsureScenePipeline(err)) { report = err; return false; }
+	if (!BuildSceneBuffer(err)) { report = err; return false; }
 
 	g_sceneVerts = (int)g_sceneVB.Size();
 	BuildMVP(g_mvp);
@@ -1465,6 +1512,8 @@ bool SceneUpload(FString &report)
 	// The Vulkan render came out uniformly brighter and less tinted than GL's, and three rounds of
 	// reading pixels off screenshots produced three different theories. The values are right here at
 	// bake time; printing them settles in one run what guessing did not settle in an hour.
+	int npieces = 0;
+	const zx::levelmesh::MeshPiece *pieces = zx::levelmesh::MeshPieces(npieces);
 	{
 		int lmin = 999, lmax = -1;
 		double lsum = 0;
@@ -1496,10 +1545,54 @@ bool SceneUpload(FString &report)
 	}
 	report.Format("uploaded %d verts (%.2f MB), %d pieces -> %d material batches "
 		"[lightmode %d, fogmode %d, %d%% soft-lit, %d%% fogged]",
-		g_sceneVerts, (double)bd.Size / (1024.0 * 1024.0), npieces, (int)g_batches.Size(),
+		g_sceneVerts, (double)g_sceneVB.Size() * sizeof(SceneVertex) / (1024.0 * 1024.0),
+		npieces, (int)g_batches.Size(),
 		glset.lightmode, (int)gl_fogmode,
 		softPieces * 100 / g_sceneVerts, fogPieces * 100 / g_sceneVerts);
 	return true;
+}
+
+// [rc4l] Re-upload the parts of the world that actually moved.
+//
+// Doors, lifts, crushers and rising floors change sector planes; the wall cache notices, re-bakes
+// those segs, and MeshStore rewrites their vertices in place. Only the pieces overlapping the mesh's
+// dirty range are rebuilt and uploaded -- a door costs a handful of pieces, not the 8.9 MB the whole
+// level would.
+//
+// Positions and UVs are refreshed but the batch layout is not: a piece keeps its slot in the
+// material-sorted buffer, so nothing needs re-sorting. A surface that changes its *material* mid-game
+// would need a full re-upload; nothing in Doom does that outside of animation, which is handled
+// separately by swapping the SRB.
+static void RefreshMovedGeometry(Diligent::IDeviceContext *ctx)
+{
+	if (!g_vb || g_pieceMap.Size() == 0) return;
+
+	unsigned int lo = 0, hi = 0;
+	zx::levelmesh::MeshTakeDirty(lo, hi);
+	if (hi <= lo) { g_geomUpdates = 0; return; }
+	g_lastDirtyLo = lo; g_lastDirtyHi = hi;
+
+	int srcCount = 0;
+	const FFlatVertex *src = zx::levelmesh::MeshVertexData(srcCount);
+	int npieces = 0;
+	const zx::levelmesh::MeshPiece *pieces = zx::levelmesh::MeshPieces(npieces);
+	if (src == NULL || pieces == NULL) return;
+
+	// [rc4l] Rebuild everything rather than patch the touched pieces.
+	//
+	// Patching in place was tried and is wrong: a re-baked piece can change vertex count, and
+	// MeshStore then gives it a NEW range at the top of the arena. Every offset recorded at upload
+	// time is stale from that moment, so the patch copied old vertices into the right slot and the
+	// new geometry had no slot at all -- the shut door stayed painted across an open doorway while
+	// GL showed the room behind it. The dirty range GROWING (5319 -> 5328) was the visible symptom.
+	//
+	// A full rebuild costs a sort and a buffer upload, and only happens on the frames something
+	// actually moves.
+	FString err;
+	g_geomUpdates = BuildSceneBuffer(err) ? 1 : 0;
+	g_sceneVerts = (int)g_sceneVB.Size();
+	g_geomRebuilds += g_geomUpdates;
+	(void)src; (void)pieces; (void)npieces;
 }
 
 // [rc4l] Collect every active dynamic light in the level into the shared storage buffer.
@@ -1562,6 +1655,7 @@ static void DrawSceneOnce(bool present = true, bool pump = true)
 
 	// [rc4l] Lights are collected BEFORE the constants are written -- the shader reads the count from
 	// there, so collecting afterwards would light every frame with the previous frame's count.
+	RefreshMovedGeometry(ctx);
 	CollectDynamicLights(ctx);
 
 	{
@@ -1745,6 +1839,10 @@ void DynStats(FString &report)
 	FString anim;
 	anim.Format(" | %d animation frame swaps since load | light buffer %d vec4s (~%d lights)",
 		g_animSwaps, g_lightCount * 2, g_lightCount);
+	FString geo;
+	geo.Format(" | geometry: %d scene rebuilds since load, last dirty %u..%u",
+		g_geomRebuilds, g_lastDirtyLo, g_lastDirtyHi);
+	report += geo;
 	if (g_lightBindFailed) report += " | WARNING: LightBuffer not bound";
 	report += anim;
 }

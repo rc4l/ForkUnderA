@@ -77,6 +77,12 @@ export function engineArgs(opts = {}, configPath) {
     // (ZANDRONUM_BRIDGE_INPUT_LOCK), not a cvar's.
   );
   if (opts.seed != null) args.push("-rngseed", String(opts.seed));
+  // [rc4l] Arbitrary cvars, applied BEFORE the map loads. Some only take effect at level start --
+  // sv_nomonsters is the obvious one -- so setting them over the bridge afterwards is too late and
+  // the instance comes up full of monsters shooting at whatever is being measured.
+  if (opts.cvars) {
+    for (const [k, v] of Object.entries(opts.cvars)) args.push("+set", k, String(v));
+  }
   if (opts.extraArgs) args.push(...opts.extraArgs);
 
   return args;

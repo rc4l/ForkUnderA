@@ -59,9 +59,17 @@ struct SegCache
 	GLWall          walls[kMaxCachedPieces];
 	CachedWallPiece pieces[kMaxCachedPieces];
 	int             pieceCount;
+	// [rc4l] How many pieces were in the mesh last time this seg baked.
+	//
+	// A seg does not always produce the same number of pieces: a closed door has a middle texture
+	// that an open one does not, so re-baking can leave slots occupied in the mesh that nothing
+	// writes to any more. Those slots keep their old vertices and keep drawing -- the closed door
+	// stayed painted across the doorway while the GL view showed the room beyond it. Knowing the
+	// previous count is what lets BakeSeg collapse the abandoned ones.
+	int             bakedCount;
 	WallCacheStamp  stamp;
 	bool            filled;
-	SegCache() : pieceCount(0), filled(false) {}
+	SegCache() : pieceCount(0), bakedCount(0), filled(false) {}
 };
 
 // Allocated per level, cleared when the level changes.
@@ -106,6 +114,13 @@ struct CoverageStats
 	int pieces;          // baked wall pieces
 };
 void GetCoverage(CoverageStats &out);
+
+// Drop baked geometry for any sector that moved since the last call. Runs before the BSP walk.
+void InvalidateMovedSectors();
+
+// One seg's cache state, for the fua_line_mesh dump.
+void GetSegMeshInfo(int segIndex, int &pieces, int &baked);
+void GetSegPieceRange(int segIndex, int piece, unsigned int &offset, unsigned int &count);
 
 // Why captures were refused, split by cause, plus how many succeeded.
 void GetRejects(int &portal, int &poly, int &ffloor, int &area, int &other, int &ok);
