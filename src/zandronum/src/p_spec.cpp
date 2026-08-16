@@ -275,7 +275,7 @@ int P_FindSectorFromTag (int tag, int start)
 {
 	start = start >= 0 ? sectors[start].nexttag :
 		sectors[(unsigned) tag % (unsigned) numsectors].firsttag;
-	while (start >= 0 && sectors[start].tag != tag)
+	while (start >= 0 && !sectors[start].HasTag(tag))
 		start = sectors[start].nexttag;
 	return start;
 }
@@ -2109,7 +2109,7 @@ static void P_SpawnScrollers(void)
 		if (lines[i].special == Sector_CopyScroller)
 		{
 			// don't allow copying the scroller if the sector has the same tag as it would just duplicate it.
-			if (lines[i].args[0] != lines[i].frontsector->tag)
+			if (!lines[i].frontsector->HasTag(lines[i].args[0]))
 			{
 				copyscrollers.Push(i);
 			}
@@ -2587,7 +2587,7 @@ DPusher::DPusher (DPusher::EPusher type, line_t *l, int magnitude, int angle,
 
 int DPusher::CheckForSectorMatch (EPusher type, int tag)
 {
-	if (m_Type == type && sectors[m_Affectee].tag == tag)
+	if (m_Type == type && sectors[m_Affectee].HasTag(tag))
 		return m_Affectee;
 	else
 		return -1;
