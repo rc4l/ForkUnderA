@@ -514,6 +514,11 @@ enum ActorFlag7
 	// [AK] This actor was spawned by a random spawner.
 	STFL_RANDOMSPAWNED			= 0x20000000,
 
+	// [rc4l] sv_fua_friendlymonsters made this one friendly, so turning the cvar back off should
+	// make it hostile again. Without the mark, the restore would also strip MF_FRIENDLY from
+	// monsters a mapper deliberately shipped as allies. See features/friendly-monsters/.
+	STFL_FUA_WASHOSTILE			= 0x40000000,
+
 // More flags for Skulltag... these having to do with the network.
 
 	// This object does not have a network ID.

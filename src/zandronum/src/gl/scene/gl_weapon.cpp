@@ -54,6 +54,7 @@
 #include "gl/data/gl_vertexbuffer.h"
 #include "gl/dynlights/gl_glow.h"
 #include "gl/scene/gl_drawinfo.h"
+#include "features/sky-tint/zx_skytint.h"
 #include "gl/models/gl_models.h"
 #include "gl/shaders/gl_shader.h"
 #include "gl/textures/gl_material.h"
@@ -336,10 +337,17 @@ void FGLRenderer::DrawPlayerSprites(sector_t * viewsector, bool hudModelStep)
 					lightbottom=viewsector->floorplane.ZatPoint(viewx,viewy);
 				}
 
-				if (lightbottom<player->viewz) 
+				if (lightbottom<player->viewz)
 				{
 					cm = lightlist[i].extra_colormap;
 					lightlevel = *lightlist[i].p_lightlevel;
+
+					// [rc4l] The tint belongs on this branch too. It was applied only in the `else`
+					// below, so a weapon was lit by the sky everywhere EXCEPT inside a sector with 3D
+					// floors -- which is exactly where a player notices, because the world around
+					// them is tinted and the gun in their hands is not. No nocoloredspritelighting
+					// check here: this branch is already gated on it. See features/sky-tint.
+					zx::SkyTint_Apply( fakesec, cm );
 					break;
 				}
 			}
@@ -347,6 +355,10 @@ void FGLRenderer::DrawPlayerSprites(sector_t * viewsector, bool hudModelStep)
 		else 
 		{
 			cm=fakesec->ColorMap;
+			// [rc4l] Sky-derived outdoor light, before nocoloredspritelighting gets its say -- that
+			// flag turns coloured light on the weapon OFF, so tinting after it would ignore a map
+			// that asked not to be tinted. See features/sky-tint.
+			zx::SkyTint_Apply( fakesec, cm );
 			if (glset.nocoloredspritelighting) cm.ClearColor();
 		}
 	}

@@ -62,6 +62,7 @@
 #include "v_video.h"
 #include "w_wad.h"
 #include "r_sky.h"
+#include "features/sky-tint/zx_skytint.h" // [rc4l] SkyTint_SkyChanged()
 #include "gstrings.h"
 #include "gi.h"
 #include "sc_man.h"
@@ -12649,6 +12650,9 @@ scriptwait:
 					sky2texture = level.skytexture2 = TexMan.GetTexture (sky2name, FTexture::TEX_Wall, FTextureManager::TEXMAN_Overridable|FTextureManager::TEXMAN_ReturnFirst);
 				}
 				R_InitSkyMap ();
+				// [rc4l] features/sky-tint reads sky1texture, so a mid-level ChangeSky has to say so
+				// or the walls keep the colour of a sky that is no longer overhead.
+				zx::SkyTint_SkyChanged ();
 				sp -= 2;
 
 				// [BC] If we're the server, tell clients to update their sky.

@@ -1,4 +1,4 @@
-//
+﻿//
 // mcp_rpc.cpp -- the "programmable engine" RPC dispatch for the native MCP bridge (ENGINE-FACING).
 //
 // mcp_bridge.cpp owns the socket and queue and hands each request here on the GAME THREAD (so every
@@ -750,13 +750,134 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 			return;
 		}
 		P_TeleportMove( mo, fixed_t( x ) << FRACBITS, fixed_t( y ) << FRACBITS, mo->z, true );
-		mo->z = mo->floorz;
+
+		// [rc4l] z, angle and pitch are all optional and all ABSOLUTE. Omitting z keeps the original
+		// behaviour (drop to the floor), which is what the console `warp` cheat can do and all it can
+		// do -- it is hardcoded to ONFLOORZ, so a raised viewpoint is only reachable from here.
+		double z = 0.0;
+		if ( GetFloat( args, "z", z ))
+		{
+			// Clamp into the space the pawn actually fits in, so a bad number parks the view inside
+			// geometry instead of reporting a position that renders as solid wall.
+			const fixed_t want = fixed_t( z * 65536.0 );
+			const fixed_t lo = mo->floorz;
+			fixed_t hi = mo->ceilingz - mo->height;
+			// In a gap shorter than the pawn the ceiling bound falls BELOW the floor, and clamping to
+			// it buries the view under the floor -- asking for z 200 in a low sector returned -32
+			// against a floor of -3. Where they cross, the floor wins.
+			if ( hi < lo ) hi = lo;
+			mo->z = ( want < lo ) ? lo : (( want > hi ) ? hi : want );
+		}
+		else
+		{
+			mo->z = mo->floorz;
+		}
+
+		// Degrees, with the same sign convention input.look already uses: pitch>0 looks DOWN. Assigned
+		// straight onto the pawn rather than fed through the ticcmd because those are deltas -- an
+		// absolute facing cannot be expressed as one without first knowing where you are pointing.
+		// P_PlayerThink only ever ADDS to these, so a direct write survives until real input arrives.
+		double angleDeg = 0.0, pitchDeg = 0.0;
+		if ( GetFloat( args, "angle", angleDeg ))
+		{
+			double wrapped = angleDeg - ( 360.0 * (double)(long long)( angleDeg / 360.0 ));
+			if ( wrapped < 0.0 ) wrapped += 360.0;
+			mo->angle = (angle_t)(unsigned long)( wrapped / 360.0 * 4294967296.0 );
+		}
+		if ( GetFloat( args, "pitch", pitchDeg ))
+		{
+			// Past straight up/down the view is meaningless, and the renderer is not asked to try.
+			if ( pitchDeg > 90.0 ) pitchDeg = 90.0;
+			if ( pitchDeg < -90.0 ) pitchDeg = -90.0;
+			// pitch is declared fixed_t but carries a BAM angle, and unlike `angle` it is signed
+			// (negative = up). FromSignedBits is the strong type's name for exactly that case: a
+			// plain unsigned conversion zero-extends and turns every upward pitch into a huge
+			// downward one. At +-90 the magnitude is 2^30, so int32 is not close to overflowing.
+			const int32_t bam = (int32_t)( pitchDeg / 360.0 * 4294967296.0 );
+			mo->pitch = fixed_t::FromSignedBits( (uint32_t)bam );
+		}
+
 		mo->velx = mo->vely = mo->velz = 0;
 		mo->PrevX = mo->x;
 		mo->PrevY = mo->y;
 		mo->PrevZ = mo->z;
+		const double outAngle = (double)(unsigned long)mo->angle * 360.0 / 4294967296.0;
+		const double outPitch = (double)(long long)mo->pitch * 360.0 / 4294967296.0;
 		std::string body = "{\"x\":" + I( (long long)( mo->x >> FRACBITS )) + ",\"y\":" + I( (long long)( mo->y >> FRACBITS ))
-			+ ",\"z\":" + I( (long long)( mo->z >> FRACBITS )) + ",\"sector\":" + I( (int)( mo->Sector - sectors )) + "}";
+			+ ",\"z\":" + I( (long long)( mo->z >> FRACBITS )) + ",\"sector\":" + I( (int)( mo->Sector - sectors ))
+			+ ",\"angle\":" + std::to_string( outAngle ) + ",\"pitch\":" + std::to_string( outPitch ) + "}";
+		SendOk( id, body );
+	}
+	else if ( cmd == "world.light" )
+	{
+		// [rc4l] Set, offset or scale sector light levels. A dev tool for looking at how something
+		// reads across the brightness range a level actually spans, without hunting for one map that
+		// happens to be dark and another that happens to be bright -- with one map held fixed, light
+		// is the only thing that moved, which is what makes the comparison mean anything.
+		//
+		// Not persisted anywhere: sector light IS serialised, so a save taken after this keeps it.
+		// `restore` puts back what the level loaded with, and the originals are captured lazily on
+		// the first change so the cost is nothing on a level this is never used on.
+		if ( !InLevel() )
+		{
+			SendErr( id, "not in a level" );
+			return;
+		}
+
+		static std::vector<short> original;
+		static int originalFor = -1;   // numsectors the snapshot was taken at, as a cheap staleness check
+		if (( originalFor != numsectors ) || ( original.size() != (size_t)numsectors ))
+		{
+			original.clear();
+			original.reserve( numsectors );
+			for ( int i = 0; i < numsectors; ++i )
+				original.push_back( (short)sectors[i].GetLightLevel() );
+			originalFor = numsectors;
+		}
+
+		long only = -1;
+		GetInt( args, "sector", only );
+		if (( only >= numsectors ) || ( only < -1 ))
+		{
+			SendErr( id, "sector out of range" );
+			return;
+		}
+
+		long level = 0, delta = 0;
+		double scale = 0.0;
+		const bool haveLevel   = GetInt( args, "level", level );
+		const bool haveDelta   = GetInt( args, "delta", delta );
+		const bool haveScale   = GetFloat( args, "scale", scale );
+		std::string op;
+		GetStr( args, "op", op );
+		const bool restore = ( op == "restore" );
+
+		if ( !haveLevel && !haveDelta && !haveScale && !restore )
+		{
+			SendErr( id, "need one of level, delta, scale, or op:\"restore\"" );
+			return;
+		}
+
+		const int from = ( only >= 0 ) ? (int)only : 0;
+		const int to   = ( only >= 0 ) ? (int)only + 1 : numsectors;
+		int lo = 255, hi = 0;
+		for ( int i = from; i < to; ++i )
+		{
+			int v;
+			if ( restore )        v = original[i];
+			else if ( haveLevel ) v = (int)level;
+			else if ( haveDelta ) v = sectors[i].GetLightLevel() + (int)delta;
+			else                  v = (int)(( sectors[i].GetLightLevel() * scale ) + 0.5 );
+
+			if ( v < 0 ) v = 0;
+			if ( v > 255 ) v = 255;
+			sectors[i].SetLightLevel( v );
+			if ( v < lo ) lo = v;
+			if ( v > hi ) hi = v;
+		}
+
+		std::string body = "{\"sectors\":" + I( to - from ) + ",\"min\":" + I( lo ) + ",\"max\":" + I( hi )
+			+ ",\"restored\":" + B( restore ) + "}";
 		SendOk( id, body );
 	}
 	else if ( cmd == "gl.timers" )

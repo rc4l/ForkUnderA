@@ -1494,6 +1494,7 @@ add_executable( zdoom WIN32
 	features/replay/computation/replay_compute.cpp
 	features/wadreload/zx_wadreload.cpp
 	features/playerclass-fallback/zx_playerclassfallback.cpp
+	features/friendly-monsters/zx_friendlymonsters.cpp
 	features/fua-caching/fua_caching.cpp
 	features/fua-caching/fua_warmup.cpp
 	features/iwad-registry/zx_iwadregistry.cpp
@@ -1550,6 +1551,7 @@ add_executable( zdoom WIN32
 	features/server-browser/zx_serverbrowsermenu.cpp
 	features/server-browser/zx_joinserver.cpp
 	features/global-header/zx_globalheader.cpp
+	features/menu-pin/zx_menupin.cpp
 	features/menu-focus/zx_focusglow.cpp
 	features/global-header/computation/globalheader_compute.cpp
 	features/global-header/computation/headerreach_compute.cpp
@@ -1602,6 +1604,7 @@ add_executable( zdoom WIN32
 	features/fov-interp/fovcvar.cpp
 	features/quake-movement/quakemove.cpp
 	features/quake-movement/elevatorjump.cpp
+	features/sky-tint/zx_skytint.cpp
 	zzautozend.cpp
 )
 

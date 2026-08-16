@@ -13,6 +13,7 @@
 #include "doomerrors.h"
 #include "resourcefiles/resourcefile.h"
 #include "d_main.h"   // CRestartException
+#include "features/sky-tint/zx_skytint.h"
 #include "g_level.h"  // G_DeferedInitNew
 #include "w_wad.h"    // Wads.CheckNumForName
 #include "gstrings.h"
@@ -206,6 +207,16 @@ void ResetStartupStateForRestart()
 	FUA_CachingReset();
 	P_ClearStateStringCache();
 	C_ClearCVarCache();
+
+	// 4. features/sky-tint keeps a per-SUBSECTOR colour table for the level it was built on. A
+	//    restart happens inside the same process, so that table outlives the sector and subsector
+	//    arrays it indexes: the next level then reads another map's colours at its own indices, and
+	//    since the table said "yes there is a tint" it kept saying so after leaving the map that
+	//    made it. Reported as sky tint dying on a mod's map and staying dead afterwards.
+	//
+	//    Cleared rather than rebuilt: P_SetupLevel rebuilds it for whatever loads next, and there is
+	//    no level to build it from at this point anyway.
+	zx::SkyTint_Clear();
 }
 
 ReloadResult RequestReload(const char *iwad, const TArray<FString> &pwads, const char *startMap,

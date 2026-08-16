@@ -47,6 +47,7 @@
 #include "w_wad.h"
 #include "doomdef.h"
 #include "p_local.h"
+#include "features/sky-tint/zx_skytint.h"
 #include "p_effect.h"
 #include "p_terrain.h"
 #include "nodebuild.h"
@@ -4653,6 +4654,17 @@ void P_SetupLevel (const char *lumpname, int position)
 	//	UNUSED P_ConnectSubsectors ();
 
 	R_OldBlend = 0xffffffff;
+
+	// [rc4l] Sky-derived outdoor light, recomputed for THIS level's sectors and sky. Derived state
+	// only: it is never written into the world, so it cannot reach a savegame and cannot outlive
+	// the sector array it indexes. See features/sky-tint.
+	//
+	// Cleared first. Its own header has always said this happens when a level ends, but nothing
+	// outside wadreload ever called it, so the caches were left to notice a new level by comparing
+	// the `subsectors` address -- which a reload of the same map defeats. Crashed on gvh08 under
+	// in-engine hosting.
+	zx::SkyTint_Clear( );
+	zx::SkyTint_Rebuild( );
 
 	// [RH] Remove all particles
 	P_ClearParticles ();

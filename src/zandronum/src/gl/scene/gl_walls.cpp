@@ -60,6 +60,7 @@
 #include "gl/utility/gl_geometric.h"
 #include "gl/utility/gl_templates.h"
 #include "gl/shaders/gl_shader.h"
+#include "features/sky-tint/zx_skytint.h"
 
 
 //==========================================================================
@@ -236,6 +237,11 @@ void GLWall::Put3DWall(lightlist_t * lightlist, bool translucent)
 	// relative light won't get changed here. It is constant across the entire wall.
 
 	Colormap.CopyLightColor(lightlist->extra_colormap);
+
+	// [rc4l] The SIDE of a 3D floor takes its colour from the light list and never saw the tint, so a
+	// slab in open sky had a lit top and an untinted edge. See features/sky-tint.
+	zx::SkyTint_Apply( seg->frontsector, Colormap );
+
 	if (fadewall) lightlevel=255;
 	PutWall(translucent);
 
@@ -490,6 +496,10 @@ bool GLWall::DoHorizon(seg_t * seg,sector_t * fs, vertex_t * v1,vertex_t * v2)
 				hi.colormap.LightColor = (light->extra_colormap)->Color;
 			}
 
+			// [rc4l] After the 3D floor light list, which ASSIGNS LightColor and so wiped a tint set
+			// before it. See features/sky-tint.
+			zx::SkyTint_Apply( fs, hi.colormap );
+
 			if (gl_fixedcolormap) hi.colormap.Clear();
 			horizon = &hi;
 			PutWall(0);
@@ -518,6 +528,9 @@ bool GLWall::DoHorizon(seg_t * seg,sector_t * fs, vertex_t * v1,vertex_t * v2)
 				if(!(fs->GetFlags(sector_t::floor)&PLANEF_ABSLIGHTING)) hi.lightlevel = gl_ClampLight(*light->p_lightlevel);
 				hi.colormap.LightColor = (light->extra_colormap)->Color;
 			}
+
+			// [rc4l] After the 3D floor light list, as with the ceiling horizon above.
+			zx::SkyTint_Apply( fs, hi.colormap );
 
 			if (gl_fixedcolormap) hi.colormap.Clear();
 			horizon = &hi;
@@ -1501,6 +1514,7 @@ void GLWall::Process(seg_t *seg, sector_t * frontsector, sector_t * backsector)
 	glseg.x2 = FIXED2FLOAT(v2->x);
 	glseg.y2 = FIXED2FLOAT(v2->y);
 	Colormap = frontsector->ColorMap;
+	zx::SkyTint_Apply( frontsector, Colormap );
 	flags = 0;
 	dynlightindex = UINT_MAX;
 
@@ -1770,6 +1784,7 @@ void GLWall::ProcessLowerMiniseg(seg_t *seg, sector_t * frontsector, sector_t * 
 		alpha = 1.0f;
 		RenderStyle = STYLE_Normal;
 		Colormap = frontsector->ColorMap;
+		zx::SkyTint_Apply( frontsector, Colormap );
 
 		topflat = frontsector->GetTexture(sector_t::ceiling);	// for glowing textures
 		bottomflat = frontsector->GetTexture(sector_t::floor);

@@ -67,6 +67,7 @@
 #include "c_console.h"
 #include "features/sprite-roll/computation/spriteroll_compute.h"	// [rc4l]
 #include "features/damage-tint/damagetint.h"	// [rc4l] damaging-floor sprite glow
+#include "features/sky-tint/zx_skytint.h"
 
 CVAR(Bool, gl_usecolorblending, true, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 CVAR(Bool, gl_spritebrightfog, false, CVAR_ARCHIVE|CVAR_GLOBALCONFIG);
@@ -388,6 +389,12 @@ void GLSprite::SplitSprite(sector_t * frontsector, bool translucent)
 			copySprite.lightlevel = gl_ClampLight(*lightlist[i].p_lightlevel);
 			copySprite.Colormap.CopyLightColor(lightlist[i].extra_colormap);
 
+			// [rc4l] A sprite split across a 3D floor's light boundary takes its colour from the
+			// light list, which never had the tint applied -- so a monster standing half in sky light
+			// had its lit half tinted and its other half not. Before the nocoloredspritelighting
+			// block below, so a map that asked for uncoloured sprites still gets them.
+			zx::SkyTint_Apply( frontsector, copySprite.Colormap );
+
 			if (glset.nocoloredspritelighting)
 			{
 				int v = (copySprite.Colormap.LightColor.r + copySprite.Colormap.LightColor.g + copySprite.Colormap.LightColor.b )/3;
@@ -427,6 +434,10 @@ void GLSprite::SetSpriteColor(sector_t *sector, fixed_t center_y)
 		{
 			lightlevel=*lightlist[i].p_lightlevel;
 			Colormap.CopyLightColor(lightlist[i].extra_colormap);
+
+			// [rc4l] As in SplitSprite above: the 3D floor light list is a second source of sprite
+			// colour that the tint never reached. See features/sky-tint.
+			zx::SkyTint_Apply( sector, Colormap );
 
 			if (glset.nocoloredspritelighting)
 			{
@@ -784,6 +795,7 @@ void GLSprite::Process(AActor* thing,sector_t * sector)
 	else 
 	{
 		Colormap=rendersector->ColorMap;
+		zx::SkyTint_Apply( rendersector, Colormap );
 		if (fullbright)
 		{
 			if (rendersector == &sectors[rendersector->sectornum] || in_area != area_below)	
@@ -974,11 +986,17 @@ void GLSprite::ProcessParticle (particle_t *particle, sector_t *sector)//, int s
 				break;
 			}
 		}
+
+		// [rc4l] After the 3D floor light list, which ASSIGNS LightColor outright and so wiped a tint
+		// applied before it. Same defect as the flats and the weapon sprite had: the hook went on the
+		// plain path and the 3D floor variant beside it kept its own colour. See features/sky-tint.
+		zx::SkyTint_Apply( sector, Colormap );
 	}
 	else
 	{
 		lightlevel = 255;
 		Colormap = sector->ColorMap;
+		zx::SkyTint_Apply( sector, Colormap );
 		Colormap.ClearColor();
 	}
 
