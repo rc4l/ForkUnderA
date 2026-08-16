@@ -482,6 +482,14 @@ void GLFlat::SetFrom3DFloor(F3DFloor *rover, bool top, bool underside)
 	if (rover->flags & FF_FOG) Colormap.LightColor = (light->extra_colormap)->Fade;
 	else Colormap.CopyLightColor(light->extra_colormap);
 
+	// [rc4l] The surfaces of a 3D floor were the one lit thing the sky tint never reached: this
+	// function sets their colour from the 3D floor's own light list and nothing applied the tint
+	// afterwards. On a map built out of them (Eon Collection aeon07: 2825 of 5457 leaves see sky, and
+	// the geometry is largely 3D floors) that is most of what you are looking at. Fog layers are left
+	// alone, since their colour is a fade rather than a surface lit by anything.
+	if (( rover->flags & FF_FOG ) == 0 )
+		zx::SkyTint_Apply( sector, Colormap );
+
 	alpha = rover->alpha/255.0f;
 	renderstyle = rover->flags&FF_ADDITIVETRANS? STYLE_Add : STYLE_Translucent;
 	if (plane.model->VBOHeightcheck(plane.isceiling))
@@ -536,7 +544,6 @@ void GLFlat::ProcessSector(sector_t * frontsector)
 
 		lightlevel = gl_ClampLight(frontsector->GetFloorLight());
 		Colormap=frontsector->ColorMap;
-		zx::SkyTint_Apply( frontsector, Colormap );
 		if ((stack = (frontsector->portals[sector_t::floor] != NULL)))
 		{
 			gl_drawinfo->AddFloorStack(sector);
@@ -569,6 +576,14 @@ void GLFlat::ProcessSector(sector_t * frontsector)
 
 			Colormap.CopyLightColor(light->extra_colormap);
 		}
+
+		// [rc4l] AFTER the 3D floor light list, not before it. SkyTint_Apply used to run right after
+		// `Colormap = frontsector->ColorMap` up above, and CopyLightColor then overwrote the result,
+		// so any sector carrying 3D floors silently lost its tint on the floor it was standing on.
+		// The tint MULTIPLIES into whatever is already there, so running it last layers the sky light
+		// over the mapper's own colour instead of replacing either.
+		zx::SkyTint_Apply( frontsector, Colormap );
+
 		renderstyle = STYLE_Translucent;
 		if (alpha!=0.0f) Process(frontsector, false, false);
 	}
@@ -588,8 +603,7 @@ void GLFlat::ProcessSector(sector_t * frontsector)
 
 		lightlevel = gl_ClampLight(frontsector->GetCeilingLight());
 		Colormap=frontsector->ColorMap;
-		zx::SkyTint_Apply( frontsector, Colormap );
-		if ((stack = (frontsector->portals[sector_t::ceiling] != NULL))) 
+		if ((stack = (frontsector->portals[sector_t::ceiling] != NULL)))
 		{
 			gl_drawinfo->AddCeilingStack(sector);
 			alpha = (float)(double(frontsector->GetAlpha(sector_t::ceiling))/65536.0f);
@@ -622,6 +636,10 @@ void GLFlat::ProcessSector(sector_t * frontsector)
 			}
 			Colormap.CopyLightColor(light->extra_colormap);
 		}
+
+		// [rc4l] After the 3D floor light list, for the same reason as the floor path above.
+		zx::SkyTint_Apply( frontsector, Colormap );
+
 		renderstyle = STYLE_Translucent;
 		if (alpha!=0.0f) Process(frontsector, true, false);
 	}

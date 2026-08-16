@@ -389,6 +389,12 @@ void GLSprite::SplitSprite(sector_t * frontsector, bool translucent)
 			copySprite.lightlevel = gl_ClampLight(*lightlist[i].p_lightlevel);
 			copySprite.Colormap.CopyLightColor(lightlist[i].extra_colormap);
 
+			// [rc4l] A sprite split across a 3D floor's light boundary takes its colour from the
+			// light list, which never had the tint applied -- so a monster standing half in sky light
+			// had its lit half tinted and its other half not. Before the nocoloredspritelighting
+			// block below, so a map that asked for uncoloured sprites still gets them.
+			zx::SkyTint_Apply( frontsector, copySprite.Colormap );
+
 			if (glset.nocoloredspritelighting)
 			{
 				int v = (copySprite.Colormap.LightColor.r + copySprite.Colormap.LightColor.g + copySprite.Colormap.LightColor.b )/3;
@@ -428,6 +434,10 @@ void GLSprite::SetSpriteColor(sector_t *sector, fixed_t center_y)
 		{
 			lightlevel=*lightlist[i].p_lightlevel;
 			Colormap.CopyLightColor(lightlist[i].extra_colormap);
+
+			// [rc4l] As in SplitSprite above: the 3D floor light list is a second source of sprite
+			// colour that the tint never reached. See features/sky-tint.
+			zx::SkyTint_Apply( sector, Colormap );
 
 			if (glset.nocoloredspritelighting)
 			{
@@ -964,7 +974,6 @@ void GLSprite::ProcessParticle (particle_t *particle, sector_t *sector)//, int s
 		int lightbottom;
 
 		Colormap = sector->ColorMap;
-		zx::SkyTint_Apply( sector, Colormap );
 		for(unsigned int i=0;i<lightlist.Size();i++)
 		{
 			if (i<lightlist.Size()-1) lightbottom = (int)(lightlist[i+1].plane.ZatPoint(particle->x,particle->y));
@@ -977,6 +986,11 @@ void GLSprite::ProcessParticle (particle_t *particle, sector_t *sector)//, int s
 				break;
 			}
 		}
+
+		// [rc4l] After the 3D floor light list, which ASSIGNS LightColor outright and so wiped a tint
+		// applied before it. Same defect as the flats and the weapon sprite had: the hook went on the
+		// plain path and the 3D floor variant beside it kept its own colour. See features/sky-tint.
+		zx::SkyTint_Apply( sector, Colormap );
 	}
 	else
 	{

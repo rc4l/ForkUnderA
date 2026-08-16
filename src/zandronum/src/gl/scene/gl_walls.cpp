@@ -237,6 +237,11 @@ void GLWall::Put3DWall(lightlist_t * lightlist, bool translucent)
 	// relative light won't get changed here. It is constant across the entire wall.
 
 	Colormap.CopyLightColor(lightlist->extra_colormap);
+
+	// [rc4l] The SIDE of a 3D floor takes its colour from the light list and never saw the tint, so a
+	// slab in open sky had a lit top and an untinted edge. See features/sky-tint.
+	zx::SkyTint_Apply( seg->frontsector, Colormap );
+
 	if (fadewall) lightlevel=255;
 	PutWall(translucent);
 
@@ -482,7 +487,6 @@ bool GLWall::DoHorizon(seg_t * seg,sector_t * fs, vertex_t * v1,vertex_t * v2)
 			hi.plane.GetFromSector(fs, true);
 			hi.lightlevel = gl_ClampLight(fs->GetCeilingLight());
 			hi.colormap = fs->ColorMap;
-			zx::SkyTint_Apply( fs, hi.colormap );	// [rc4l] features/sky-tint
 
 			if (fs->e->XFloor.ffloors.Size())
 			{
@@ -491,6 +495,10 @@ bool GLWall::DoHorizon(seg_t * seg,sector_t * fs, vertex_t * v1,vertex_t * v2)
 				if(!(fs->GetFlags(sector_t::ceiling)&PLANEF_ABSLIGHTING)) hi.lightlevel = gl_ClampLight(*light->p_lightlevel);
 				hi.colormap.LightColor = (light->extra_colormap)->Color;
 			}
+
+			// [rc4l] After the 3D floor light list, which ASSIGNS LightColor and so wiped a tint set
+			// before it. See features/sky-tint.
+			zx::SkyTint_Apply( fs, hi.colormap );
 
 			if (gl_fixedcolormap) hi.colormap.Clear();
 			horizon = &hi;
@@ -512,7 +520,6 @@ bool GLWall::DoHorizon(seg_t * seg,sector_t * fs, vertex_t * v1,vertex_t * v2)
 			hi.plane.GetFromSector(fs, false);
 			hi.lightlevel = gl_ClampLight(fs->GetFloorLight());
 			hi.colormap = fs->ColorMap;
-			zx::SkyTint_Apply( fs, hi.colormap );	// [rc4l] features/sky-tint
 
 			if (fs->e->XFloor.ffloors.Size())
 			{
@@ -521,6 +528,9 @@ bool GLWall::DoHorizon(seg_t * seg,sector_t * fs, vertex_t * v1,vertex_t * v2)
 				if(!(fs->GetFlags(sector_t::floor)&PLANEF_ABSLIGHTING)) hi.lightlevel = gl_ClampLight(*light->p_lightlevel);
 				hi.colormap.LightColor = (light->extra_colormap)->Color;
 			}
+
+			// [rc4l] After the 3D floor light list, as with the ceiling horizon above.
+			zx::SkyTint_Apply( fs, hi.colormap );
 
 			if (gl_fixedcolormap) hi.colormap.Clear();
 			horizon = &hi;

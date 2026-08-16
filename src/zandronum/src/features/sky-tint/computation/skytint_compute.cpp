@@ -23,15 +23,8 @@ int Clamp255(int v)
 	return v;
 }
 
-// [rc4l] The dominant-colour histogram is coarse on purpose. Fine buckets split one visual colour
-// across neighbours and the "heaviest bucket" stops meaning anything; 32 levels per channel is
-// enough to separate fire from smoke and not enough to separate fire from slightly-different fire.
-const int kBucketShift = 3;			// 256 >> 3 = 32 levels per channel
-
-int BucketOf(const SkyRgb &c)
-{
-	return (((c.r >> kBucketShift) * 32) + (c.g >> kBucketShift)) * 32 + (c.b >> kBucketShift);
-}
+// [rc4l] The coarse colour histogram that backed a dominant-colour mode used to live here. Removed
+// with the mode; see the header for the measurements.
 
 } // namespace
 
@@ -74,7 +67,7 @@ int SrgbFromLinear(double linear)
 	return Clamp255(static_cast<int>((s * 255.0) + 0.5));
 }
 
-double RowWeight(int row, int height, SkyWeight mode)
+double RowWeight(int row, int height)
 {
 	if (height <= 0)
 		return 0.0;
@@ -83,22 +76,15 @@ double RowWeight(int row, int height, SkyWeight mode)
 	if (row >= height)
 		row = height - 1;
 
-	if (mode == SkyWeight::Horizon)
-	{
-		// The lower half only. This is not the physically correct weighting and is not trying to
-		// be: it is the band a player actually looks at, so it matches the mood they see.
-		return (row >= (height / 2)) ? 1.0 : 0.0;
-	}
-
-	// Cosine of elevation. A Doom sky texture spans the dome with the TOP row at the zenith, so
-	// elevation runs from 90 degrees at row 0 down to 0 at the bottom. A horizontal surface takes
-	// light in proportion to cos(angle-from-normal), which is largest straight overhead -- the
-	// opposite end of the texture from the Horizon mode, which is exactly the disagreement the
-	// header warns about.
-	const double t = (height > 1) ? (static_cast<double>(row) / static_cast<double>(height - 1)) : 0.0;
-	const double elevation = (1.0 - t) * (3.14159265358979323846 / 2.0);
-
-	return std::sin(elevation);		// sin(elevation) == cos(angle from straight up)
+	// [rc4l] The lower half only. Not the physically correct weighting and not trying to be: it is
+	// the band a player actually looks at, so it matches the mood they see.
+	//
+	// A cosine-of-elevation alternative was offered alongside this and has been removed. It is the
+	// textbook irradiance weighting, but measured against this one it landed 0.19 and 0.21 apart out
+	// of 255 on two of the three skies tested -- noise -- while being half of a combination that
+	// switched the feature off entirely on a mod's maps. A knob nobody can see is not worth the
+	// surface it costs.
+	return (row >= (height / 2)) ? 1.0 : 0.0;
 }
 
 SkyRgb CompositeOver(SkyRgb over, int overAlpha, SkyRgb under)
@@ -157,7 +143,7 @@ std::vector<SkyRgb> CompositeSkyLayers(const std::vector<SkyRgb> &over, const st
 	return out;
 }
 
-SkyRgb AverageSky(const std::vector<SkyRgb> &pixels, int width, SkyAverage mode, SkyWeight weight)
+SkyRgb AverageSky(const std::vector<SkyRgb> &pixels, int width)
 {
 	if (pixels.empty() || (width <= 0))
 		return SkyRgb(255, 255, 255);
@@ -166,75 +152,17 @@ SkyRgb AverageSky(const std::vector<SkyRgb> &pixels, int width, SkyAverage mode,
 	if (height <= 0)
 		return SkyRgb(255, 255, 255);
 
-	if (mode == SkyAverage::Dominant)
-	{
-		// Heaviest bucket wins, weighted the same way the mean would be. Ties break on the lower
-		// bucket index so the answer does not wander between runs.
-		std::map<int, double> weightOf;
-		std::map<int, std::size_t> firstAt;
-
-		for (int y = 0; y < height; ++y)
-		{
-			const double w = RowWeight(y, height, weight);
-			if (w <= 0.0)
-				continue;
-
-			for (int x = 0; x < width; ++x)
-			{
-				const std::size_t at = (static_cast<std::size_t>(y) * width) + x;
-				const int bucket = BucketOf(pixels[at]);
-
-				weightOf[bucket] += w;
-				if (firstAt.find(bucket) == firstAt.end())
-					firstAt[bucket] = at;
-			}
-		}
-
-		if (weightOf.empty())
-			return SkyRgb(255, 255, 255);
-
-		int best = weightOf.begin()->first;
-		for (std::map<int, double>::const_iterator it = weightOf.begin(); it != weightOf.end(); ++it)
-		{
-			if (it->second > weightOf[best])
-				best = it->first;
-		}
-
-		// Average the members of the winning bucket rather than returning the bucket centre, so the
-		// answer is a colour that was actually in the sky.
-		double lr = 0.0, lg = 0.0, lb = 0.0, total = 0.0;
-		for (int y = 0; y < height; ++y)
-		{
-			const double w = RowWeight(y, height, weight);
-			if (w <= 0.0)
-				continue;
-
-			for (int x = 0; x < width; ++x)
-			{
-				const SkyRgb &p = pixels[(static_cast<std::size_t>(y) * width) + x];
-				if (BucketOf(p) != best)
-					continue;
-
-				lr += LinearFromSrgb(p.r) * w;
-				lg += LinearFromSrgb(p.g) * w;
-				lb += LinearFromSrgb(p.b) * w;
-				total += w;
-			}
-		}
-
-		if (total <= 0.0)
-			return SkyRgb(255, 255, 255);
-
-		return SkyRgb(SrgbFromLinear(lr / total), SrgbFromLinear(lg / total), SrgbFromLinear(lb / total));
-	}
-
 	// [rc4l] Mean, in LINEAR light. Summing sRGB bytes averages the encoding rather than the light
 	// and lands too dark, which is the bug this whole file exists to not repeat.
+	//
+	// Averaging is also what makes this robust in a way the removed dominant-colour mode was not: a
+	// dark region can only pull the mean darker, never capture it outright, so a mostly-black sky
+	// cannot normalise to white and switch the tint off.
 	double lr = 0.0, lg = 0.0, lb = 0.0, total = 0.0;
 
 	for (int y = 0; y < height; ++y)
 	{
-		const double w = RowWeight(y, height, weight);
+		const double w = RowWeight(y, height);
 		if (w <= 0.0)
 			continue;
 
@@ -264,33 +192,95 @@ SkyRgb NormaliseBrightness(SkyRgb colour)
 	return SkyRgb((colour.r * 255) / maxv, (colour.g * 255) / maxv, (colour.b * 255) / maxv);
 }
 
-double SkyLuminance(SkyRgb colour)
+SkyRgb PreserveLuminance(SkyRgb colour)
 {
-	// Rec. 709 weights on LINEARISED components. Green carries most of what an eye reads as
-	// brightness, which matters here precisely because the skies that cause trouble are green ones.
-	return (0.2126 * LinearFromSrgb(colour.r))
-		+ (0.7152 * LinearFromSrgb(colour.g))
-		+ (0.0722 * LinearFromSrgb(colour.b));
+	// Worked in the multiplier's own space, 0..1 per channel, because that is what the renderer will
+	// multiply a surface by. Rec.709 on the multipliers directly: this is asking "how much light does
+	// this filter pass", not "how bright is this colour", so the sRGB transfer does not belong here.
+	const double r = colour.r / 255.0;
+	const double g = colour.g / 255.0;
+	const double b = colour.b / 255.0;
+
+	const double pass = (0.2126 * r) + (0.7152 * g) + (0.0722 * b);
+	if (pass <= 0.0)
+		return SkyRgb(255, 255, 255);		// passes no light at all; leave the level alone
+
+	const double scale = 1.0 / pass;
+
+	return SkyRgb(static_cast<int>((r * scale * 255.0) + 0.5),
+		static_cast<int>((g * scale * 255.0) + 0.5),
+		static_cast<int>((b * scale * 255.0) + 0.5));
 }
 
-int StrengthForSky(int pct, double luminance, int respectPct)
+SkyLab::SkyLab()
+	: L(0.0), a(0.0), b(0.0)
 {
-	if (respectPct <= 0)
-		return pct;			// hue only, whatever the sky's brightness
+}
 
-	if (respectPct > 100)
-		respectPct = 100;
-	if (luminance < 0.0)
-		luminance = 0.0;
-	if (luminance > 1.0)
-		luminance = 1.0;
+SkyLab::SkyLab(double L, double a, double b)
+	: L(L), a(a), b(b)
+{
+}
 
-	// Blend between "ignore the sky's brightness" and "let it decide", so the control is a dial
-	// rather than a switch and a map with a mid-bright sky lands somewhere sensible.
-	const double t = respectPct / 100.0;
-	const double scale = (1.0 - t) + (t * luminance);
+namespace
+{
 
-	return static_cast<int>((pct * scale) + 0.5);
+// The CIELAB companding curve, with its linear toe near black for the same reason sRGB has one.
+double LabF(double t)
+{
+	return (t > 0.008856) ? std::pow(t, 1.0 / 3.0) : ((7.787 * t) + (16.0 / 116.0));
+}
+
+} // namespace
+
+SkyLab LabFromSrgb(SkyRgb colour)
+{
+	// sRGB -> linear -> CIEXYZ (sRGB primaries, D65) -> CIELAB.
+	const double lr = LinearFromSrgb(colour.r);
+	const double lg = LinearFromSrgb(colour.g);
+	const double lb = LinearFromSrgb(colour.b);
+
+	const double X = (0.4124 * lr) + (0.3576 * lg) + (0.1805 * lb);
+	const double Y = (0.2126 * lr) + (0.7152 * lg) + (0.0722 * lb);
+	const double Z = (0.0193 * lr) + (0.1192 * lg) + (0.9505 * lb);
+
+	// D65 white, the reference the sRGB primaries above are defined against.
+	const double fx = LabF(X / 0.95047);
+	const double fy = LabF(Y / 1.00000);
+	const double fz = LabF(Z / 1.08883);
+
+	return SkyLab((116.0 * fy) - 16.0, 500.0 * (fx - fy), 200.0 * (fy - fz));
+}
+
+double DeltaE76(SkyLab x, SkyLab y)
+{
+	const double dL = x.L - y.L, da = x.a - y.a, db = x.b - y.b;
+
+	return std::sqrt((dL * dL) + (da * da) + (db * db));
+}
+
+int StrengthForTargetDelta(SkyRgb scene, SkyRgb tint, double targetDelta, int maxPct)
+{
+	if (maxPct <= 0)
+		return 0;
+	if (targetDelta <= 0.0)
+		return 0;
+
+	// What the tint does to this scene at full strength. Multiply per channel, exactly as the
+	// renderer will.
+	const SkyRgb full(((scene.r * tint.r) / 255), ((scene.g * tint.g) / 255), ((scene.b * tint.b) / 255));
+	const double reach = DeltaE76(LabFromSrgb(scene), LabFromSrgb(full));
+	if (reach <= 0.0)
+		return maxPct;			// this tint cannot move this scene at all; nothing to scale back
+
+	if (reach <= targetDelta)
+		return maxPct;			// even at full strength it stays under the target
+
+	const int pct = static_cast<int>(((targetDelta / reach) * maxPct) + 0.5);
+	if (pct < 1)
+		return 1;				// something rather than nothing, so the feature never reads as broken
+
+	return (pct > maxPct) ? maxPct : pct;
 }
 
 int StrengthForSectorLight(int pct, int lightLevel, int respectPct)
@@ -353,6 +343,50 @@ SkyRgb BlendFromWhite(SkyRgb tint, int pct)
 		((255 * (100 - pct)) + (tint.r * pct)) / 100,
 		((255 * (100 - pct)) + (tint.g * pct)) / 100,
 		((255 * (100 - pct)) + (tint.b * pct)) / 100);
+}
+
+// [rc4l] See the header for the measurement this comes from and why the tax is charged evenly.
+SkyRgb EqualiseHuePush(SkyRgb dir, int chromaPct)
+{
+	if (chromaPct <= 0)
+		return SkyRgb(255, 255, 255);
+	if (chromaPct > 100)
+		chromaPct = 100;
+
+	int mn = dir.r;
+	if (dir.g < mn) mn = dir.g;
+	if (dir.b < mn) mn = dir.b;
+	int mx = dir.r;
+	if (dir.g > mx) mx = dir.g;
+	if (dir.b > mx) mx = dir.b;
+
+	// A neutral sky has nothing to push in any direction, at any strength.
+	const int room = mx - mn;
+	if (room <= 0)
+		return SkyRgb(255, 255, 255);
+
+	// The spread being asked for, as an ABSOLUTE amount of colour rather than a fraction of this
+	// particular sky. That is what makes the push equal across hues: `room` differs wildly between
+	// directions (a near-pure red has ~254 of it, a pale green ~170), so blending by a fixed
+	// percentage gives every hue a different result, which is the bug this exists to kill.
+	const double target = (chromaPct / 100.0) * mx;
+
+	// c = target / room. A direction whose darkest channel is near zero buys its spread almost
+	// one-for-one; one sitting high has to blend much further for the same visible change.
+	int pct = (int)(((target / (double)room) * 100.0) + 0.5);
+
+	// [rc4l] Above the point where a sky's own colour runs out, it simply gives what it has.
+	//
+	// Green's darkest channel sits at 85, so it cannot spread past 170 however hard it is asked,
+	// while a near-pure red reaches 254. Past that point the two stop matching and the ordering
+	// actually inverts: measured at full dial, red came out 1.39x green. There is no fixing that
+	// without inventing colour the sky does not contain, so the honest behaviour is to saturate.
+	// The dial reads as "how much colour to push", equal for every sky that can reach it, and a pale
+	// sky tops out early rather than being extrapolated into a hue it never had.
+	if (pct > 100)
+		pct = 100;
+
+	return BlendFromWhite(dir, pct);
 }
 
 int StrengthAtDistance(int pct, double distance, double reach)

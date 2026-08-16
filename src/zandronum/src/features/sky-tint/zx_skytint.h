@@ -74,6 +74,25 @@ void SkyTintSkyboxSamples(std::string &out);
 // this is how you find out a map has them rather than wondering why part of it stayed grey.
 int SkyTintSkyboxLeaves();
 
+// TEMPORARY, for fua_skytintinfo: what the last rebuild derived from each sky, raw and shaped, with
+// the shaped colour's saturation. The honest way to compare two maps -- screenshotting each measures
+// where the camera was standing as much as it measures the tint.
+void SkyTintDerived(std::string &out);
+
+// TEMPORARY, for fua_skytintinfo: what the table holds for the leaf the player is standing in, and
+// the sector-wide answer for the same spot. "No tint here" has two causes that are indistinguishable
+// from inside the game -- nothing in the table (propagation), or something in it the renderer never
+// draws -- and telling them apart by guessing cost two builds on the 3D floor case.
+void SkyTintHere(std::string &out);
+
+// [rc4l] The centre of the largest sky-lit BSP leaf on this level, for `warp`. False when the level
+// has no outdoor area at all.
+//
+// Exists because judging an outdoor effect from wherever the player happens to spawn is unreliable
+// and quietly so: a comparison of two maps taken at their player starts measured a dark room at
+// R12 G9 B7 on one of them and was nearly reported as evidence about the sky.
+bool SkyTintOutdoorSpot(double &x, double &y);
+
 // The sector form, for the few places the renderer knows only which sector it is drawing (sprites
 // away from a subsector, horizon portals). Takes the brightest leaf of that sector, so it errs
 // toward the lit side rather than picking an arbitrary one.
