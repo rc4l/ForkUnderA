@@ -42,6 +42,9 @@
 #include "RefCntAutoPtr.hpp"
 
 #include "features/levelmesh/staticmesh.h"
+#include "features/levelmesh/wallcache.h"   // LevelGeneration, for the per-level auto setup
+#include "features/levelmesh/levelmesh.h"   // ArmFullBake
+#include "d_main.h"                          // gamestate
 #include "features/levelmesh/flatmesh.h"
 #include "features/hwrender/hud2d.h"
 #include "v_video.h"
@@ -73,6 +76,8 @@
 // [rc4l] Declared outside the namespace: EXTERN_CVAR builds a name from the identifier, so a
 // namespace-qualified one resolves to a symbol the engine never defines and fails only at link time.
 EXTERN_CVAR(Int, gl_fogmode)
+// [rc4l] fua_vulkan turns this on itself -- see AutoSetupForLevel.
+EXTERN_CVAR(Bool, gl_wallmesh)
 EXTERN_CVAR(Float, gl_lights_size)
 EXTERN_CVAR(Float, gl_lights_intensity)
 EXTERN_CVAR(Bool, gl_lights_additive)
@@ -85,6 +90,14 @@ CVAR(Int, fua_dg_lightmode, 1, CVAR_ARCHIVE)
 // it costs a second render of the scene, and while the backend is incomplete (no sky, no HUD, no
 // dynamic lights) it is a development view, not the game.
 CVAR(Bool, fua_diligent_live, false, 0)
+// [rc4l] One switch that means "render this game in Vulkan", as opposed to the three console
+// commands and a fixed order that it used to take.
+//
+// Setting up the backend by hand was fine while the only thing anyone did with it was measure one
+// map: bake, upload, go live, in that order, from a script. It falls apart the moment you change
+// level -- the mesh is still the old map's, so the new one renders as the previous one's geometry --
+// which is exactly what browsing a wad does forty times an hour. This re-arms itself per level.
+CVAR(Bool, fua_vulkan, false, CVAR_ARCHIVE)
 
 // [rc4l] Backface culling mode for the world: 0 none, 1 back, 2 front. DEFAULT 0, measured.
 //
@@ -114,6 +127,9 @@ CVAR(Bool, fua_dg_hud, true, 0)
 // [rc4l] Dynamic lights: muzzle flashes, plasma, rocket trails, lamps.
 CVAR(Bool, fua_dg_dynlights, true, 0)
 
+// [rc4l] The camera pitch, which lives outside any header the backend already pulls in.
+extern int viewpitch;
+
 namespace zx { namespace hwrender {
 
 Diligent::IRenderDevice  *GetDevice();
@@ -124,6 +140,8 @@ Diligent::IDeviceContext *GetContext();
 Diligent::ISwapChain     *GetSwapChain();
 bool DiligentShowWindow(FString &report);
 void  Fua_PumpBackendWindow(void *hwnd);
+void  Fua_SyncBackendWindowToParent(void *hwnd);
+void  Fua_ShowBackendWindow(void *hwnd, int visible);
 void *GetBackendWindow();
 void Fua_SetBackendWindowSize(int w, int h);
 
@@ -503,13 +521,36 @@ static void BuildMVP(float *m)
 	const float a = (float)(viewangle >> ANGLETOFINESHIFT) * 2.0f * 3.14159265f / 8192.0f;
 	const float ca = cosf(a), sa = sinf(a);
 
+	// [rc4l] Pitch, derived exactly the way FGLRenderer::SetupView derives it.
+	//
+	// There was no pitch term here at all: the matrix was built from yaw alone, so looking up or down
+	// moved the engine's view and left the backend's staring at the horizon. It read as "freelook is
+	// broken" rather than "the backend ignores one axis", because everything else tracked perfectly.
+	//
+	// The pixelstretch correction is not cosmetic. The playsim treats pixels as square and the
+	// renderer does not, so the pitch the camera should use is not the pitch the actor has -- copying
+	// the raw angle would drift from GL by several degrees at the extremes, which is exactly the kind
+	// of near-miss that survives a screenshot comparison and shows up later as "the aim is off".
+	double radPitch = bam2rad((angle_t)viewpitch);
+	if (radPitch > PI) radPitch -= 2 * PI;
+	// Not clamp(): inside this namespace that resolves to the Fixed-point overload.
+	if (radPitch < -PI / 2) radPitch = -PI / 2;
+	if (radPitch >  PI / 2) radPitch =  PI / 2;
+	const double angx = cos(radPitch);
+	const double angy = sin(radPitch) * glset.pixelstretch;
+	const double alen = sqrt(angx * angx + angy * angy);
+	const float pitch = (alen > 0.0) ? (float)asin(angy / alen) : 0.0f;
+	const float cp = cosf(pitch), sp = sinf(pitch);
+
 	const float px = FIXED2FLOAT(viewx), py = FIXED2FLOAT(viewz), pz = FIXED2FLOAT(viewy);
 
 	// Column-major: v[col*4 + row].
 	float v[16] = {0};
-	v[0] =  sa;  v[4] = 0.0f;  v[8]  = -ca;   // row 0 = s = cross(up, f)
-	v[1] = 0.0f; v[5] = 1.0f;  v[9]  = 0.0f;  // row 1 = u
-	v[2] = -ca;  v[6] = 0.0f;  v[10] = -sa;   // row 2 = -f
+	// Rows 1 and 2 are the yaw-only u and -f rotated about row 0 by the pitch, which is the same
+	// composition GL does as rotate(Pitch, 1,0,0) * rotate(Yaw, 0,1,0).
+	v[0] =  sa;      v[4] = 0.0f; v[8]  = -ca;       // row 0 = s = cross(up, f), unaffected by pitch
+	v[1] =  sp * ca; v[5] = cp;   v[9]  =  sp * sa;  // row 1 = cos(p)*u + sin(p)*f
+	v[2] = -cp * ca; v[6] = sp;   v[10] = -cp * sa;  // row 2 = sin(p)*u - cos(p)*f
 	v[15] = 1.0f;
 	v[12] = -(v[0]*px + v[4]*py + v[8]*pz);
 	v[13] = -(v[1]*px + v[5]*py + v[9]*pz);
@@ -1743,6 +1784,8 @@ static void DrawSceneOnce(bool present = true, bool pump = true)
 		// 0.01 ms submission, so the benchmark pumps sparsely and a real backend would pump once
 		// per engine frame, not once per present.
 		if (pump) Fua_PumpBackendWindow(GetBackendWindow());
+		// The embedded surface follows the engine's client area, which can change at runtime.
+		Fua_SyncBackendWindowToParent(GetBackendWindow());
 	}
 }
 
@@ -1815,9 +1858,78 @@ bool SceneBench(int frames, FString &report)
 
 // [rc4l] One live frame from the current camera. See dglive.h for why the engine-side declaration
 // lives in its own header.
+// [rc4l] Bake and upload this level, once, without anyone typing anything.
+//
+// The bake does not happen when it is asked for -- ArmFullBake only sets a flag that the next
+// rendered frame acts on -- so the upload cannot follow in the same breath, and an upload with no
+// mesh behind it fails with "no baked geometry" and would leave the backend permanently blank. Hence
+// the wait: arm, let a frame or two go by, then upload.
+static bool AutoSetupForLevel()
+{
+	static int  s_gen = -1;
+	static int  s_state = 0;   // 0 arm, 1 waiting for the bake, 2 ready, 3 gave up
+	static int  s_wait = 0;
+	static int  s_tries = 0;
+
+	const int gen = zx::levelmesh::LevelGeneration();
+	if (gen != s_gen) { s_gen = gen; s_state = 0; s_wait = 0; s_tries = 0; }
+
+	switch (s_state)
+	{
+	case 0:
+		if (gamestate != GS_LEVEL) return false;
+		// [rc4l] The switch implies the level mesh. gl_wallmesh is off by default, so the first
+		// self-arming run baked nothing and reported "no baked geometry -- set gl_wallmesh 1, walk
+		// the level, then retry" -- advice aimed at a person typing commands, from a path whose whole
+		// point is that nobody is.
+		if (!gl_wallmesh) gl_wallmesh = true;
+		zx::levelmesh::ArmFullBake();
+		s_state = 1; s_wait = 0;
+		return false;
+	case 1:
+		// The bake runs on a rendered frame, and a big level needs more than one. Retry rather than
+		// give up on the first miss: giving up is permanent for the level, and the cost of being
+		// wrong is a black screen with no way back short of a restart.
+		if (++s_wait < 4) return false;
+		{
+			FString report;
+			if (SceneUpload(report))
+			{
+				s_state = 2;
+				Printf("vulkan: %s\n", report.GetChars());
+			}
+			else if (++s_tries < 8)
+			{
+				s_state = 0;   // re-arm and try again
+			}
+			else
+			{
+				s_state = 3;
+				Printf("vulkan: setup failed after %d attempts -- %s\n", s_tries, report.GetChars());
+			}
+		}
+		return s_state == 2;
+	case 2:
+		return true;
+	default:
+		return false;
+	}
+}
+
 void LiveFrame()
 {
-	if (!fua_diligent_live) return;
+	// [rc4l] fua_vulkan is the user-facing switch and sets itself up; fua_diligent_live is the manual
+	// override that assumes someone already ran the bake by hand.
+	const bool autoReady = fua_vulkan ? AutoSetupForLevel() : false;
+
+	// Uncover the GL frame underneath when the backend is off, rather than leaving the last Vulkan
+	// frame frozen over it. This is what makes turning it off an A/B toggle you can hold.
+	if (!autoReady && !fua_diligent_live)
+	{
+		Fua_ShowBackendWindow(GetBackendWindow(), 0);
+		return;
+	}
+	Fua_ShowBackendWindow(GetBackendWindow(), 1);
 	if (!g_vb || !g_scenePSO || g_sceneVerts == 0) return;
 	if (GetBackendWindow() == NULL) return;
 
