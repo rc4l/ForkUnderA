@@ -199,8 +199,9 @@ public:
 	{
 		return NULL;
 	}
-	SoundStream *OpenStream (const char *filename, int flags, int offset, int length)
+	SoundStream *OpenStream (FileReader *reader, int flags)
 	{
+		delete reader;
 		return NULL;
 	}
 
@@ -413,6 +414,11 @@ short *SoundRenderer::DecodeSample(int outlen, const void *coded, int sizebytes,
 	decoder->read((char*)samples, outlen);
 	delete decoder;
 	return samples;
+}
+
+SoundStream *SoundRenderer::OpenStream(const char *url, int flags)
+{
+	return 0;
 }
 
 SoundDecoder *SoundRenderer::CreateDecoder(FileReader *reader)

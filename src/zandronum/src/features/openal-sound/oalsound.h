@@ -139,7 +139,7 @@ public:
 
 	// Streaming sounds.
 	SoundStream *CreateStream(SoundStreamCallback callback, int buffbytes, int flags, int samplerate, void *userdata);
-	SoundStream *OpenStream(const char *filename, int flags, int offset, int length);
+	SoundStream *OpenStream(FileReader *reader, int flags);
 
 	// Starts a sound.
 	FISoundChannel *StartSound(SoundHandle sfx, float vol, int pitch, int chanflags, FISoundChannel *reuse_chan);
