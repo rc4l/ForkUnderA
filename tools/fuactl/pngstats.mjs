@@ -108,7 +108,111 @@ function diff(a, b, tol) {
   return { pct: (100 * bad) / n, mean: sum / n / 3, worstRow, worstRowPct: (100 * worstRowBad) / a.w };
 }
 
+// [rc4l] Write a PNG. Only what an 8-bit RGB image needs, which is all this ever emits.
+function writePNG(path, w, h, rgb) {
+  const raw = Buffer.alloc((w * 3 + 1) * h);
+  for (let y = 0; y < h; y++) {
+    raw[y * (w * 3 + 1)] = 0;                                  // filter: none
+    rgb.copy(raw, y * (w * 3 + 1) + 1, y * w * 3, (y + 1) * w * 3);
+  }
+  const chunk = (type, data) => {
+    const len = Buffer.alloc(4); len.writeUInt32BE(data.length);
+    const td = Buffer.concat([Buffer.from(type, "ascii"), data]);
+    const crc = Buffer.alloc(4); crc.writeUInt32BE(crc32(td) >>> 0);
+    return Buffer.concat([len, td, crc]);
+  };
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(w, 0); ihdr.writeUInt32BE(h, 4);
+  ihdr[8] = 8; ihdr[9] = 2; ihdr[10] = 0; ihdr[11] = 0; ihdr[12] = 0;
+  fs.writeFileSync(path, Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk("IHDR", ihdr), chunk("IDAT", zlib.deflateSync(raw)), chunk("IEND", Buffer.alloc(0)),
+  ]));
+}
+
+let CRC_TABLE = null;
+function crc32(buf) {
+  if (!CRC_TABLE) {
+    CRC_TABLE = new Int32Array(256);
+    for (let n = 0; n < 256; n++) {
+      let c = n;
+      for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+      CRC_TABLE[n] = c;
+    }
+  }
+  let c = 0xffffffff;
+  for (let i = 0; i < buf.length; i++) c = CRC_TABLE[(c ^ buf[i]) & 0xff] ^ (c >>> 8);
+  return c ^ 0xffffffff;
+}
+
 const [, , ...args] = process.argv;
+
+// [rc4l] Where two renders disagree, as a picture.
+//
+// A single number says the renderers differ and cannot say whether it is the sky, the floor, one
+// sprite or every wall edge -- and picking the next thing to port off a feature list is guessing.
+// The heatmap answers it directly: the shape of the bright region names the feature.
+//
+// Output is the GL render dimmed to a quarter, with disagreement added in red. Keeping the scene
+// visible underneath is the point; a bare difference mask shows bright pixels with nothing to say
+// what they are sitting on.
+if (args[0] === "--diffimg") {
+  const [aPath, bPath, outPath] = args.slice(1);
+  const a = decodePNG(aPath), b = decodePNG(bPath);
+  if (a.w !== b.w || a.h !== b.h) { console.error("size mismatch"); process.exit(1); }
+  const out = Buffer.alloc(a.w * a.h * 3);
+  for (let y = 0; y < a.h; y++) {
+    for (let x = 0; x < a.w; x++) {
+      const pa = px(a, x, y), pb = px(b, x, y);
+      const d = (Math.abs(pa[0] - pb[0]) + Math.abs(pa[1] - pb[1]) + Math.abs(pa[2] - pb[2])) / 3;
+      const i = (y * a.w + x) * 3;
+      out[i]     = Math.min(255, pa[0] * 0.25 + d * 3);
+      out[i + 1] = Math.min(255, pa[1] * 0.25);
+      out[i + 2] = Math.min(255, pa[2] * 0.25);
+    }
+  }
+  writePNG(outPath, a.w, a.h, out);
+  console.log(`wrote ${outPath}`);
+  process.exit(0);
+}
+
+// [rc4l] Is the disagreement a misalignment rather than a difference?
+//
+// Once both renderers point-sample the same textures, a sub-texel offset stops being a soft blur and
+// starts flipping whole texels, so a tiny raster or projection shift reads as a large per-pixel
+// difference spread over the whole frame -- indistinguishable, by number alone, from a real shading
+// bug. Scoring a few whole-pixel offsets tells the two apart: if the best score is at (0,0) the
+// images are aligned and the difference is real, and if it is anywhere else the geometry is landing
+// in the wrong place.
+if (args[0] === "--align") {
+  const a = decodePNG(args[1]), b = decodePNG(args[2]);
+  const R = Number(process.env.RANGE || 2);
+  // CROP restricts the search to one band of the frame, so a region with its own alignment -- the
+  // sky, which is drawn by a different pipeline from everything else -- can be measured without the
+  // walls and floor outvoting it.
+  const crop = (process.env.CROP || "0,0,1,1").split(",").map(Number);
+  const cx0 = Math.floor(crop[0] * a.w), cy0 = Math.floor(crop[1] * a.h);
+  const cx1 = Math.ceil(crop[2] * a.w),  cy1 = Math.ceil(crop[3] * a.h);
+  let best = null;
+  for (let dy = -R; dy <= R; dy++) {
+    for (let dx = -R; dx <= R; dx++) {
+      let sum = 0, n = 0;
+      for (let y = Math.max(cy0, -dy); y < Math.min(cy1, a.h - dy); y += 2) {
+        for (let x = Math.max(cx0, -dx); x < Math.min(cx1, a.w - dx); x += 2) {
+          const pa = px(a, x, y), pb = px(b, x + dx, y + dy);
+          sum += Math.abs(pa[0] - pb[0]) + Math.abs(pa[1] - pb[1]) + Math.abs(pa[2] - pb[2]);
+          n++;
+        }
+      }
+      const m = sum / n / 3;
+      if (!best || m < best.m) best = { dx, dy, m };
+    }
+  }
+  const name = args[1].split(/[\/]/).pop();
+  console.log(`${name.padEnd(24)} best offset dx=${best.dx} dy=${best.dy}  mean|d| ${best.m.toFixed(1)}`);
+  process.exit(0);
+}
+
 if (args[0] === "--diff") {
   const tol = Number(process.env.TOL || 24);
   const pairs = args.slice(1);

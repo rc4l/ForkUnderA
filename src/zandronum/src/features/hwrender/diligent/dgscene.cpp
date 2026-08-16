@@ -78,6 +78,8 @@
 EXTERN_CVAR(Int, gl_fogmode)
 // [rc4l] fua_vulkan turns this on itself -- see AutoSetupForLevel.
 EXTERN_CVAR(Bool, gl_wallmesh)
+// [rc4l] The engine's texture filter mode; the backend mirrors it. See FillSamplerFromEngine.
+EXTERN_CVAR(Int, gl_texture_filter)
 EXTERN_CVAR(Float, gl_lights_size)
 EXTERN_CVAR(Float, gl_lights_intensity)
 EXTERN_CVAR(Bool, gl_lights_additive)
@@ -947,6 +949,7 @@ static void DrawDynamic(Diligent::IDeviceContext *ctx)
 // [rc4l] Drop the pipelines and everything bound to them, so the next upload rebuilds with current
 // settings. SRBs are created from a PSO and cannot outlive it.
 static int g_builtCull = -1;
+static int g_builtFilter = -1;
 static void ReleaseScenePipelines()
 {
 	ReleaseBatchSRBs();
@@ -1233,8 +1236,37 @@ static void Draw2D(Diligent::IDeviceContext *ctx)
 	g_quads2D = nq;
 }
 
+// [rc4l] Sample textures the way the engine's own renderer is configured to, not the way that looks
+// best in isolation.
+//
+// This used to be hard-wired trilinear-with-point-mag, under a comment claiming that was "the same
+// shape the GL renderer uses". It is not: gl_texture_filter defaults to 0, which is GL_NEAREST with
+// mipmapping off -- Doom's crunchy look. Filtering the Vulkan view instead put a difference on every
+// texture detail edge in the frame, which is diffuse rather than localised and therefore reads as
+// noise rather than a bug. It dominated the GL-vs-Vulkan measurement and hid whatever real feature
+// gaps sit underneath it.
+//
+// The five modes below are TexFilter[] in gl_texture.cpp, entry for entry. Modes 0 and 2 have
+// mipmapping off, which a sampler expresses by refusing to sample past mip 0.
+static void FillSamplerFromEngine(Diligent::SamplerDesc &samp)
+{
+	const int mode = (gl_texture_filter >= 0 && gl_texture_filter <= 5) ? (int)gl_texture_filter : 0;
+	const bool magLinear = (mode == 2 || mode == 3 || mode == 4);
+	const bool minLinear = (mode == 2 || mode == 3 || mode == 4);
+	const bool mipLinear = (mode == 4 || mode == 5);
+	const bool mipmapped = (mode != 0 && mode != 2);
+
+	samp.MinFilter = minLinear ? Diligent::FILTER_TYPE_LINEAR : Diligent::FILTER_TYPE_POINT;
+	samp.MagFilter = magLinear ? Diligent::FILTER_TYPE_LINEAR : Diligent::FILTER_TYPE_POINT;
+	samp.MipFilter = mipLinear ? Diligent::FILTER_TYPE_LINEAR : Diligent::FILTER_TYPE_POINT;
+	samp.MaxLOD = mipmapped ? 1000.0f : 0.0f;
+}
+
 static bool EnsureScenePipeline(FString &err)
 {
+	// The sampler is immutable in the PSO, so a filter change means a new PSO. Cheap and rare.
+	if (g_scenePSO && g_builtFilter != (int)gl_texture_filter) ReleaseScenePipelines();
+	g_builtFilter = (int)gl_texture_filter;
 	if (g_scenePSO && g_builtCull != (int)fua_dg_cull) ReleaseScenePipelines();
 	g_builtCull = (int)fua_dg_cull;
 	if (g_scenePSO) return true;
@@ -1322,12 +1354,7 @@ static bool EnsureScenePipeline(FString &err)
 		{ Diligent::SHADER_TYPE_PIXEL, "uTex", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
 	};
 	static Diligent::SamplerDesc samp;
-	// [rc4l] Trilinear minification with point magnification -- the same shape the GL renderer uses
-	// for Doom textures: crisp texels up close, mip-filtered at distance so a long vista does not
-	// shimmer. Anisotropy would be the next step if this is ever taken further.
-	samp.MinFilter = Diligent::FILTER_TYPE_LINEAR;
-	samp.MagFilter = Diligent::FILTER_TYPE_POINT;
-	samp.MipFilter = Diligent::FILTER_TYPE_LINEAR;
+	FillSamplerFromEngine(samp);
 	samp.AddressU = Diligent::TEXTURE_ADDRESS_WRAP;
 	samp.AddressV = Diligent::TEXTURE_ADDRESS_WRAP;
 	static Diligent::ImmutableSamplerDesc samplers[] = {
