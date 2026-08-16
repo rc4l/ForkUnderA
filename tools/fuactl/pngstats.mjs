@@ -76,7 +76,52 @@ function meanRegion(img, x0, y0, x1, y1) {
   return n ? [r / n, g / n, b / n] : [0, 0, 0];
 }
 
+// [rc4l] Per-pixel agreement between two renders, because a mean cannot see shape.
+//
+// Mean colour was enough to catch brightness and palette drift and blind to everything else: a
+// mirrored world barely moves the average of a roughly symmetric corridor, and a wall left standing
+// across an open doorway moves it by a few percent. Both shipped as "matching" on the strength of a
+// mean. What actually distinguishes "the same picture" from "a different picture" is how many pixels
+// disagree and by how much.
+// Resolve one pixel to RGB whatever the colour type is -- the engine writes truecolour, the readback
+// writes truecolour, and an indexed PNG from anywhere else would otherwise diff as garbage.
+function px(img, x, y) {
+  const i = (y * img.w + x) * img.channels;
+  if (img.colorType === 3) { const q = img.data[i] * 3; return [img.palette[q], img.palette[q + 1], img.palette[q + 2]]; }
+  if (img.channels === 1 || img.channels === 2) { const v = img.data[i]; return [v, v, v]; }
+  return [img.data[i], img.data[i + 1], img.data[i + 2]];
+}
+
+function diff(a, b, tol) {
+  if (a.w !== b.w || a.h !== b.h) return null;
+  let bad = 0, sum = 0, n = 0, worstRow = -1, worstRowBad = 0;
+  for (let y = 0; y < a.h; y++) {
+    let rowBad = 0;
+    for (let x = 0; x < a.w; x++) {
+      const pa = px(a, x, y), pb = px(b, x, y);
+      const d = Math.abs(pa[0] - pb[0]) + Math.abs(pa[1] - pb[1]) + Math.abs(pa[2] - pb[2]);
+      sum += d; n++;
+      if (d > tol) { bad++; rowBad++; }
+    }
+    if (rowBad > worstRowBad) { worstRowBad = rowBad; worstRow = y; }
+  }
+  return { pct: (100 * bad) / n, mean: sum / n / 3, worstRow, worstRowPct: (100 * worstRowBad) / a.w };
+}
+
 const [, , ...args] = process.argv;
+if (args[0] === "--diff") {
+  const tol = Number(process.env.TOL || 24);
+  const pairs = args.slice(1);
+  for (let i = 0; i + 1 < pairs.length; i += 2) {
+    const a = decodePNG(pairs[i]), b = decodePNG(pairs[i + 1]);
+    const d = diff(a, b, tol);
+    const name = pairs[i].split(/[\/]/).pop();
+    if (!d) { console.log(`${name.padEnd(24)} SIZE MISMATCH ${a.w}x${a.h} vs ${b.w}x${b.h}`); continue; }
+    console.log(`${name.padEnd(24)} differ ${d.pct.toFixed(1).padStart(5)}%  mean|d| ${d.mean.toFixed(1).padStart(5)}` +
+      `  worst row y=${String(d.worstRow).padStart(3)} (${d.worstRowPct.toFixed(0)}%)`);
+  }
+  process.exit(0);
+}
 if (args.length < 1) {
   console.error("usage: node pngstats.mjs <a.png> [b.png] [x0 y0 x1 y1]  (region as 0..1 fractions)");
   process.exit(2);

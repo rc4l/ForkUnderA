@@ -10,6 +10,7 @@
 #include "i_input.h"
 #include "i_system.h"
 #include "d_event.h"
+#include "mcp_bridge.h"   // MCP_InputLocked
 #include "d_gui.h"
 #include "c_cvars.h"
 #include "doomdef.h"
@@ -200,6 +201,20 @@ void FKeyboard::AllKeysUp()
 void FKeyboard::PostKeyEvent(int key, INTBOOL down, bool foreground)
 {
 	event_t ev = { 0 };
+
+	// [rc4l] A hands-off instance drops PHYSICAL keys here, at the device, not just in the WndProc.
+	//
+	// GUIWndProcHook already refused the OS input messages, which covered menus and the console and
+	// nothing else -- gameplay keys never go through that hook. They arrive from DirectInput or raw
+	// input and land straight in D_PostEvent, so WASD kept moving a supposedly hands-off instance.
+	// That is worse than merely surprising: a test instance takes the foreground when it opens, so a
+	// keystroke aimed at another window walks the player during a measurement, and the capture is
+	// wrong in a way nothing in the results shows. Bridge-injected events call D_PostEvent directly
+	// and are untouched.
+	if ( MCP_InputLocked( ))
+	{
+		return;
+	}
 
 //	Printf("key=%02x down=%02x\n", key, down);
 	// "Merge" multiple keys that are considered to be the same. If the
