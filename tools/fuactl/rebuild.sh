@@ -30,4 +30,16 @@ fi
 powershell.exe -NoProfile -Command "Get-Process -Name forkundera -ErrorAction SilentlyContinue | Stop-Process -Force" >/dev/null 2>&1 || true
 sleep 3
 cp "$ROOT/build-win/Release/forkundera.exe" "$ROOT/dist-windows/forkundera.exe"
-echo "build ok, staged $(date -r "$ROOT/dist-windows/forkundera.exe" '+%H:%M:%S')"
+
+# [rc4l] The addon catalogue, alongside the binary, because the HOST tab reads it from progdir.
+#
+# This script only ever copied the exe, so every build it staged had no catalogue at all -- the
+# presets list drew empty and hosting read as unimplemented rather than unstaged. It is a directory
+# of small JSON manifests, so syncing it on every build costs nothing and removes a whole class of
+# "why is this feature missing" that is really "the data was never copied".
+[ -d "$ROOT/catalogue" ] || { echo "catalogue/ missing -- the HOST tab would have nothing to offer" >&2; exit 1; }
+rm -rf "$ROOT/dist-windows/catalogue"
+cp -r "$ROOT/catalogue" "$ROOT/dist-windows/catalogue"
+
+echo "build ok, staged $(date -r "$ROOT/dist-windows/forkundera.exe" '+%H:%M:%S')" \
+     "(+$(ls "$ROOT/dist-windows/catalogue" | wc -l | tr -d ' ') catalogue entries)"

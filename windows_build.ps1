@@ -237,6 +237,18 @@ if (-not (Test-Path (Join-Path $ScriptRoot "tools\mkiwad\fuamega.wad"))) {
 }
 Copy-Item (Join-Path $ScriptRoot "tools\mkiwad\fuamega.wad") $IwadDir\
 
+# [rc4l] The addon catalogue. Required rather than best-effort, exactly as in linux_compile.sh and
+# mac_compile.sh -- which both stage it, while this script did not.
+#
+# The HOST tab reads it from beside the binary (CatalogueShippedDir is progdir + "catalogue"), and a
+# missing directory is not an error there: the scan finds nothing, the presets list draws empty, and
+# hosting reads as a feature nobody implemented. Every Windows build so far shipped with nothing to
+# host, and the only symptom was an empty list.
+if (-not (Test-Path (Join-Path $ScriptRoot "catalogue"))) {
+    throw "catalogue/ missing -- the HOST tab would have nothing to offer"
+}
+Copy-Item (Join-Path $ScriptRoot "catalogue") $DistDir\ -Recurse -Force
+
 Copy-Item (Join-Path $ScriptRoot "LICENSE.txt") $DistDir\
 Copy-Item (Join-Path $ScriptRoot "THIRD-PARTY-NOTICES.txt") $DistDir\
 
