@@ -68,6 +68,29 @@ CUSTOM_CVAR( Int, cl_fua_skytint_saturation, 60, CVAR_ARCHIVE | CVAR_GLOBALCONFI
 	else					zx::SkyTint_Rebuild( );
 }
 
+// [rc4l] A FLOOR on the push: use at least this much of whatever colour the sky has.
+//
+// The counterpart to Max colour, for the opposite complaint. Since the push is a fraction of the
+// sky's OWN range, a pale sky spends most of the dial barely moving -- Eon Collection aeon11's sky is
+// 25% saturated, so even a firm setting is a gentle wash. This raises the request so a subtle sky
+// still says something.
+//
+// It cannot invent a hue. EqualiseHuePush on a neutral direction returns neutral whatever it is
+// asked for, so a grey sky stays grey at any floor; the floor only decides how much of a colour that
+// IS there gets used.
+//
+// Applied to the source's strength, BEFORE the darkness confidence and before the distance falloff.
+// Before confidence because flooring afterwards would resurrect exactly the skies the darkness guard
+// exists to disbelieve -- a near-black skybox normalising into a vivid invented colour. Before the
+// falloff because a floor on the final push would light every reachable leaf equally and flatten the
+// fade into shelter, which is the opposite of what the reach dial is for.
+CUSTOM_CVAR( Int, cl_fua_skytint_mincolour, 0, CVAR_ARCHIVE | CVAR_GLOBALCONFIG )
+{
+	if ( self < 0 )			self = 0;
+	else if ( self > 100 )	self = 100;
+	else					zx::SkyTint_Rebuild( );
+}
+
 // [rc4l] How far indoors the outdoor light reaches, in MAP UNITS -- 128 is a standard doorway's
 // width, so 512 is about four of them. Measured rather than counted in sectors, because a sector
 // count means something different on every map depending how finely it was cut up.
@@ -844,8 +867,10 @@ void SkyTint_Rebuild( )
 				// bits into a confident colour: aeon13's second box sampled [6,0,2] and painted its
 				// sectors a vivid red that appears nowhere in the image, next to sectors carrying the
 				// real warm sky. See SkyConfidenceForBrightness.
-				src.strengthPct = ( cl_fua_skytint_strength *
-					SkyConfidenceForBrightness( got->second )) / 100;
+				int want = cl_fua_skytint_strength;
+				if ( want < cl_fua_skytint_mincolour )
+					want = cl_fua_skytint_mincolour;
+				src.strengthPct = ( want * SkyConfidenceForBrightness( got->second )) / 100;
 				src.tint = NormaliseBrightness( got->second );
 
 				idx = (int)sources.size( );
@@ -907,8 +932,12 @@ void SkyTint_Rebuild( )
 			// Scaled by the RAW sky's own brightness, same as the skybox path above: a nearly black
 			// sky texture has no trustworthy hue either, and normalising amplifies whatever noise is
 			// left into a confident colour. See SkyConfidenceForBrightness.
-			src.strengthPct = ( cl_fua_skytint_strength *
-				SkyConfidenceForBrightness( raw )) / 100;
+			// Min colour raises the REQUEST, then the darkness guard still has the last word: see
+			// cl_fua_skytint_mincolour for why that order is not negotiable.
+			int want = cl_fua_skytint_strength;
+			if ( want < cl_fua_skytint_mincolour )
+				want = cl_fua_skytint_mincolour;
+			src.strengthPct = ( want * SkyConfidenceForBrightness( raw )) / 100;
 
 			g_lastRaw.push_back( raw );
 			g_lastTints.push_back( src.tint );
