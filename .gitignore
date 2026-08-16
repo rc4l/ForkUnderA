@@ -68,3 +68,6 @@ tools/mm8bdm/
 
 # [rc4l] Standalone DiligentCore build used to verify the vendored tree compiles on its own.
 build-diligent/
+
+# fuactl play session (port/token of a running instance)
+tools/fuactl/.play-session
