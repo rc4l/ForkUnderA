@@ -65,3 +65,6 @@ ZandroX-dev-*/
 
 # [rc4l] Reference material for the mkiwad manifest, not ours to redistribute.
 tools/mm8bdm/
+
+# [rc4l] Standalone DiligentCore build used to verify the vendored tree compiles on its own.
+build-diligent/

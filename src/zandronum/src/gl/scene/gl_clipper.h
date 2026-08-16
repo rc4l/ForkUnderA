@@ -67,9 +67,17 @@ public:
 
 	static int anglecache;
 
+	// [rc4l] features/levelmesh: when set, every range and box reports visible and clip ranges are
+	// never added. The BSP walk then reaches every subsector in the level instead of only the ones
+	// the viewpoint can see, which is how the whole level gets baked into the static mesh in one
+	// pass. Gating it here rather than at the seven call sites in gl_bsp.cpp keeps the traversal
+	// code -- the part that is subtle -- untouched.
+	bool bakeAll;
+
 	Clipper()
 	{
 		clipnodes=cliphead=NULL;
+		bakeAll=false;
 	}
 
 	~Clipper();
@@ -81,6 +89,7 @@ public:
 
 	bool SafeCheckRange(angle_t startAngle, angle_t endAngle)
 	{
+		if (bakeAll) return true;
 		if(startAngle > endAngle)
 		{
 			return (IsRangeVisible(startAngle, ANGLE_MAX) || IsRangeVisible(0, endAngle));
@@ -91,6 +100,7 @@ public:
 
 	void SafeAddClipRange(angle_t startangle, angle_t endangle)
 	{
+		if (bakeAll) return;
 		if(startangle > endangle)
 		{
 			// The range has to added in two parts.

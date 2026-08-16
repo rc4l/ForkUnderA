@@ -7,6 +7,7 @@ import { reap, readRegistry } from "./registry.mjs";
 import { runDeterminismCheck, runPerfAblation, runNetBandwidth, runGlTimers } from "./session.mjs";
 import { launchInstance, stopInstance, resolveEngine } from "./launch.mjs";
 import { BridgeClient } from "./client.mjs";
+import { diligentRun } from "./diligent.mjs";
 import { sampleProcess } from "./sample.mjs";
 import { summarizeGlTimers } from "./proto.mjs";
 import * as ui from "./ui.mjs";
@@ -52,6 +53,7 @@ const USAGE = `fuactl <command>
   bench --port P --scenario F.json [--runs N] [--metric total.p99_ms]   repeat a scenario, report median + spread, discard runs whose expectations failed
   renderer-info --port P [--token T]   renderer identity + whether GL timer queries work on this driver
   ui <action> [args] --port P [--token T]   drive the UI: read (menu as text), find <label>, nav <keys>, click <x> <y>, drag, type <text>, look --yaw D --pitch D, screenshot [name], exec <ccmd>
+  diligent --port P [--frames N] [--shot FILE] [--sweep DIR]   drive the Diligent (Vulkan) backend: bake the level mesh, upload geometry, optional swapchain screenshot, optional debug-view sweep (lm0..lm4.png in DIR), the matched Diligent-vs-GL benchmark, and with --scale a GPU-time probe at 1x..100x the visible geometry
   mcp                                run as an MCP stdio server for agents
 `;
 
@@ -208,6 +210,26 @@ async function main() {
       // A bench that kept nothing is a failure, not an empty result -- exit non-zero so a script notices.
       console.log(JSON.stringify(result, null, 2));
       if (!result.runs_kept) process.exit(1);
+      break;
+    }
+    case "diligent": {
+      if (!flags.port) { console.error("usage: fuactl diligent --port P [--token T] [--frames N] [--shot FILE] [--sweep DIR] [--scale]"); process.exit(2); }
+      // [rc4l] --sweep writes one shot per fua_dg_lightmode debug view into DIR, all from the same
+      // upload and the same camera, so the shaded view and the depth view are actually comparable.
+      const sweep = flags.sweep && flags.sweep !== true
+        ? [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((mode) => ({ mode, file: `${flags.sweep}/lm${mode}.png` }))
+        : [];
+      await diligentRun({
+        port: flags.port,
+        token: flags.token || null,
+        frames: flags.frames ? Number(flags.frames) : undefined,
+        shot: flags.shot || null,
+        sweep,
+        scale: !!flags.scale,
+        bakeAll: !!flags["bake-all"],
+        log: (m) => console.error(`[diligent] ${m}`),
+      });
+      console.error("[diligent] done -- results are in the engine log (fua_diligent_bench / fua_gl_meshbench lines)");
       break;
     }
     case "renderer-info": {

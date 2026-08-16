@@ -229,6 +229,91 @@ void GLWall::RenderWall(int textured, unsigned int *store)
 
 //==========================================================================
 //
+// [rc4l] features/levelmesh wall batching -- build the same fan RenderWall would emit, but into a
+// caller-supplied array instead of straight into the mapped buffer, so a run of walls can be
+// fan-expanded into one triangle-list draw. Returns the vertex count, or 0 if the fan would not fit
+// (the caller then draws that wall on its own, exactly as before).
+//
+//==========================================================================
+
+int GLWall::BuildFanVertices(FFlatVertex *out, int maxOut)
+{
+	texcoord tcs[4];
+	const bool split = (gl_seamless && seg->sidedef != NULL &&
+		!(seg->sidedef->Flags & WALLF_POLYOBJ) && !(flags & GLWF_NOSPLIT));
+
+	tcs[0] = lolft;
+	tcs[1] = uplft;
+	tcs[2] = uprgt;
+	tcs[3] = lorgt;
+
+	// [rc4l] The split helpers advance the pointer by an amount bounded only by map data, so give
+	// them the whole array and bail if they overran rather than trusting a computed bound.
+	FFlatVertex *ptr = out;
+	if (maxOut < 4) return 0;
+
+	ptr->Set(glseg.x1, zbottom[0], glseg.y1, tcs[0].u, tcs[0].v);
+	ptr++;
+	if (split && glseg.fracleft == 0) SplitLeftEdge(tcs, ptr);
+	ptr->Set(glseg.x1, ztop[0], glseg.y1, tcs[1].u, tcs[1].v);
+	ptr++;
+	if (split && !(flags & GLWF_NOSPLITUPPER)) SplitUpperEdge(tcs, ptr);
+	ptr->Set(glseg.x2, ztop[1], glseg.y2, tcs[2].u, tcs[2].v);
+	ptr++;
+	if (split && glseg.fracright == 1) SplitRightEdge(tcs, ptr);
+	ptr->Set(glseg.x2, zbottom[1], glseg.y2, tcs[3].u, tcs[3].v);
+	ptr++;
+	if (split && !(flags & GLWF_NOSPLITLOWER)) SplitLowerEdge(tcs, ptr);
+
+	const int count = (int)(ptr - out);
+	return (count <= maxOut) ? count : 0;
+}
+
+//==========================================================================
+//
+// [rc4l] The state GLWall::Draw's GLPASS_PLAIN/GLPASS_ALL arm sets before RenderWall, without the
+// draw. Kept beside that arm so the two cannot drift; anything added there must be added here.
+//
+//==========================================================================
+
+void GLWall::SetupBatchState(int pass)
+{
+	const int rel = rellight + getExtraLight();
+	gl_SetColor(lightlevel, rel, Colormap, 1.0f);
+	if (type != RENDERWALL_M2SNF) gl_SetFog(lightlevel, rel, &Colormap, false);
+	else gl_SetFog(255, 0, NULL, false);
+	gl_RenderState.EnableGlow(false);	// batched walls are never glowing; ComputeCanBatch refuses them
+	gl_RenderState.SetMaterial(gltexture, flags & 3, false, -1, false);
+	gl_RenderState.Apply();
+	gl_RenderState.ApplyLightIndex(dynlightindex);
+}
+
+//==========================================================================
+//
+// [rc4l] Everything that decides this wall's draw state, for the batching predicate.
+//
+//==========================================================================
+
+void GLWall::FillBatchKey(zx::levelmesh::WallBatchKey &out) const
+{
+	out.material      = gltexture;
+	out.clampFlags    = flags & 3;
+	out.lightLevel    = lightlevel;
+	out.relLight      = rellight;
+	out.type          = type;
+	out.lightColor    = Colormap.LightColor.d;
+	out.fadeColor     = Colormap.FadeColor.d;
+	out.desaturation  = Colormap.desaturation;
+	out.blendFactor   = Colormap.blendfactor;
+	out.dynLightIndex = dynlightindex;
+	out.glowing       = !!(flags & GLWF_GLOW);
+	// [rc4l] Mirrors the RENDERWALL_M2SNF arm of GLWall::Draw, which swaps in TM_CLAMPY for the
+	// duration of its own draw. SetupBatchState cannot reproduce a per-wall mode, so refuse it.
+	out.ownTextureMode = (type == RENDERWALL_M2SNF) && !!(flags & GLT_CLAMPY);
+}
+
+//==========================================================================
+//
 // 
 //
 //==========================================================================

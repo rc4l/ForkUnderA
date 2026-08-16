@@ -8,6 +8,11 @@ enum GLDrawItemType
 	GLDIT_WALL,
 	GLDIT_FLAT,
 	GLDIT_SPRITE,
+	// [rc4l] features/levelmesh P2b: a wall whose geometry is owned by the per-level cache rather
+	// than copied into this list. The draw item is 8 bytes instead of a ~200-byte GLWall copy --
+	// removing that copy is the whole point, since attempt 1 proved regenerating is cheap and
+	// copying is not. `index` addresses zx::levelmesh::StaticWall().
+	GLDIT_STATICWALL,
 };
 
 enum DrawListType
@@ -103,6 +108,10 @@ public:
 	}
 
 	void AddWall(GLWall * wall);
+	// [rc4l] Reference a cache-owned wall without copying it.
+	void AddStaticWall(int staticIndex);
+	// [rc4l] Resolve either kind of wall item to the GLWall it draws.
+	GLWall *WallAt(unsigned i);
 	void AddFlat(GLFlat * flat);
 	void AddSprite(GLSprite * sprite);
 	void Reset();
@@ -127,6 +136,7 @@ public:
 	void DrawSorted();
 	void Draw(int pass, bool trans = false);
 	void DrawWalls(int pass);
+	void DrawWallsIndexed(int pass);	// [rc4l] features/levelmesh state-grouped indexed path
 	void DrawFlats(int pass);
 	void DrawDecals();
 	

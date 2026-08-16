@@ -660,6 +660,7 @@ struct sector_t
 	{
 		FTextureID old = planes[pos].Texture;
 		planes[pos].Texture = tex;
+		fua_dirty++;	// [rc4l] features/levelmesh wall cache
 		if (floorclip && pos == floor && tex != old) AdjustFloorClip();
 	}
 
@@ -689,12 +690,14 @@ struct sector_t
 	void SetPlaneTexZ(int pos, fixed_t val, bool dirtify = false)
 	{
 		planes[pos].TexZ = val;
+		fua_dirty++;	// [rc4l] features/levelmesh wall cache
 		if (dirtify) SetAllVerticesDirty();
 	}
 
 	void ChangePlaneTexZ(int pos, fixed_t val)
 	{
 		planes[pos].TexZ += val;
+		fua_dirty++;	// [rc4l] features/levelmesh wall cache
 		SetAllVerticesDirty();
 	}
 
@@ -706,11 +709,13 @@ struct sector_t
 	void ChangeLightLevel(int newval)
 	{
 		lightlevel = ClampLight(lightlevel + newval);
+		fua_dirty++;	// [rc4l] features/levelmesh wall cache
 	}
 
 	void SetLightLevel(int newval)
 	{
 		lightlevel = ClampLight(newval);
+		fua_dirty++;	// [rc4l] features/levelmesh wall cache
 	}
 
 	int GetLightLevel() const
@@ -732,6 +737,13 @@ struct sector_t
 
 	// [RH] store floor and ceiling planes instead of heights
 	secplane_t	floorplane, ceilingplane;
+
+	// [rc4l] features/levelmesh: bumped whenever anything a cached wall was generated from changes
+	// on this sector. Comparing two ints replaces hashing ~18 fields per seg per frame, which cost
+	// as much as the GLWall::Process it was meant to avoid. Plane equations are written raw in
+	// dsectoreffect.cpp, but always followed by ChangePlaneTexZ on a committed move, so this
+	// catches them; a rolled-back crush never reaches it.
+	int			fua_dirty;
 
 	// [RH] give floor and ceiling even more properties
 	FDynamicColormap *ColorMap;	// [RH] Per-sector colormap
@@ -956,6 +968,7 @@ struct side_t
 	SWORD		Light;
 	BYTE		Flags;
 	int			Index;		// needed to access custom UDMF fields which are stored in loading order.
+	int			fua_dirty;	// [rc4l] features/levelmesh: bumped by any texture/offset/scale change
 
 	// [BC] Saved flags for when a map resets, or when we need to give updates
 	// to new clients connecting.
@@ -975,11 +988,13 @@ struct side_t
 	void SetTexture(int which, FTextureID tex)
 	{
 		textures[which].texture = tex;
+		fua_dirty++;	// [rc4l] features/levelmesh wall cache
 	}
 
 	void SetTextureXOffset(int which, fixed_t offset)
 	{
 		textures[which].xoffset = offset;
+		fua_dirty++;	// [rc4l] features/levelmesh wall cache
 	}
 	void SetTextureXOffset(fixed_t offset)
 	{
@@ -994,11 +1009,13 @@ struct side_t
 	void AddTextureXOffset(int which, fixed_t delta)
 	{
 		textures[which].xoffset += delta;
+		fua_dirty++;	// [rc4l] features/levelmesh wall cache
 	}
 
 	void SetTextureYOffset(int which, fixed_t offset)
 	{
 		textures[which].yoffset = offset;
+		fua_dirty++;	// [rc4l] features/levelmesh wall cache
 	}
 	void SetTextureYOffset(fixed_t offset)
 	{
@@ -1013,6 +1030,7 @@ struct side_t
 	void AddTextureYOffset(int which, fixed_t delta)
 	{
 		textures[which].yoffset += delta;
+		fua_dirty++;	// [rc4l] features/levelmesh wall cache
 	}
 
 	void SetTextureXScale(int which, fixed_t scale)

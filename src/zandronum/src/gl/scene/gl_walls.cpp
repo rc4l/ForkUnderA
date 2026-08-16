@@ -60,6 +60,7 @@
 #include "gl/utility/gl_geometric.h"
 #include "gl/utility/gl_templates.h"
 #include "gl/shaders/gl_shader.h"
+#include "features/levelmesh/wallcache.h"
 
 
 //==========================================================================
@@ -141,6 +142,7 @@ void GLWall::PutWall(bool translucent)
 		viewdistance = P_AproxDistance( ((seg->linedef->v1->x+seg->linedef->v2->x)>>1) - viewx,
 											((seg->linedef->v1->y+seg->linedef->v2->y)>>1) - viewy);
 		gl_drawinfo->drawlists[GLDL_TRANSLUCENT].AddWall(this);
+		zx::levelmesh::RecordPiece(*this, GLDL_TRANSLUCENT);	// [rc4l] features/levelmesh wall cache
 	}
 	else if (passflag[type]!=4)	// non-translucent walls
 	{
@@ -158,8 +160,12 @@ void GLWall::PutWall(bool translucent)
 			list = masked ? GLDL_MASKEDWALLS : GLDL_PLAINWALLS;
 		}
 		gl_drawinfo->drawlists[list].AddWall(this);
+		zx::levelmesh::RecordPiece(*this, list);	// [rc4l] features/levelmesh wall cache
 
 	}
+	// [rc4l] features/levelmesh: portal walls go to the portal manager, which keeps per-frame
+	// state, so a seg producing one can never be replayed from cache.
+	else if (zx::levelmesh::NotePortal(), false) { /* never taken; the call above is the point */ }
 	else switch (type)
 	{
 	case RENDERWALL_COLORLAYER:

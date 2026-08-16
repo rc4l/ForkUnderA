@@ -53,8 +53,31 @@
 #include "gl/scene/gl_wall.h"
 #include "gl/utility/gl_clock.h"
 #include "features/hitboxviz/hitboxviz.h"
+#include "features/levelmesh/wallcache.h"
+#include "features/levelmesh/levelmesh.h"
 
 EXTERN_CVAR(Bool, gl_render_segs)
+
+// [rc4l] features/levelmesh P2b experiment: reuse a seg's generated wall geometry when nothing it
+// was generated from has changed.
+//
+// Sunder MAP10: off 4.60 ms, on 4.00 ms -- ~13% faster, 98.6% hit rate, memory flat. `stat
+// rendertimes` attributes it precisely: wall Setup 0.979 -> 0.228 ms.
+//
+// Two earlier versions of this were SLOWER, and both failures are worth remembering:
+//   1. Storage grew without bound. A capture that turned out uncacheable stranded its walls, and
+//      ineligible segs were re-captured every frame, so it reached 47 GB and killed the process.
+//      Storage is now fixed per seg, so leaking is structurally impossible.
+//   2. Validity was a content hash over ~18 fields including twelve int64 multiplies. That cost
+//      about as much as the GLWall::Process it avoided, so the cache measured neutral. It is now
+//      three integer compares against sector_t::fua_dirty / side_t::fua_dirty.
+//
+// Mode 2 is a diagnostic that skips validation entirely -- it renders stale geometry, never ship it.
+namespace zx { namespace levelmesh { extern int g_wallcacheMode; } }
+CUSTOM_CVAR(Int, gl_wallcache, 1, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
+{
+	zx::levelmesh::g_wallcacheMode = self;
+}
 
 Clipper clipper;
 
@@ -119,7 +142,12 @@ static void AddLine (seg_t *seg)
 	endAngle = seg->v1->GetClipAngle();
 
 	// Back side, i.e. backface culling	- read: endAngle >= startAngle!
-	if (startAngle-endAngle<ANGLE_180)  
+	// [rc4l] features/levelmesh: not during a full-level bake. Backfacing is a property of the
+	// viewpoint, not of the geometry -- the wall a seg generates is the same either way, and the far
+	// side of a two-sided line is a different seg that is front-facing from somewhere else in the
+	// level. Culling here would bake only the half of the level facing wherever the bake happened to
+	// run from. The backend draws with CULL_MODE_NONE, so winding does not matter to it.
+	if (startAngle-endAngle<ANGLE_180 && !clipper.bakeAll)
 	{
 		return;
 	}
@@ -180,7 +208,14 @@ static void AddLine (seg_t *seg)
 
 	seg->linedef->flags |= ML_MAPPED;
 
-	if ((seg->sidedef->Flags & WALLF_POLYOBJ) || seg->linedef->validcount!=validcount) 
+	// [rc4l] features/levelmesh: a bake pass swaps the per-linedef guard for a per-SIDEDEF one.
+	// validcount would drop the second side of every two-sided line; simply bypassing it is worse,
+	// because GLWall::Process spans the whole LINEDEF and every seg fragment would then emit its own
+	// full-length copy -- eight coplanar walls where the BSP split a line eight ways, which renders
+	// as z-fighting noise. See ClaimSideForBake in levelmesh.h.
+	if ((seg->sidedef->Flags & WALLF_POLYOBJ) ||
+		(clipper.bakeAll ? zx::levelmesh::ClaimSideForBake(int(seg->sidedef - sides))
+		                 : (seg->linedef->validcount != validcount)))
 	{
 		if (!(seg->sidedef->Flags & WALLF_POLYOBJ)) seg->linedef->validcount=validcount;
 
@@ -188,9 +223,42 @@ static void AddLine (seg_t *seg)
 		{
 			SetupWall.Clock();
 
-			GLWall wall;
-			wall.sub = currentsubsector;
-			wall.Process(seg, currentsector, backsector);
+			// [rc4l] features/levelmesh: replay this seg's cached walls when its generation inputs
+			// are unchanged, otherwise regenerate and capture the result for next frame.
+			bool done = false;
+			if (gl_wallcache != 0 && !(seg->sidedef->Flags & WALLF_POLYOBJ))
+			{
+				const int segidx = int(seg - segs);
+				zx::levelmesh::WallCacheStamp stamp;
+				zx::levelmesh::WallCacheEligibility elig;
+				// [rc4l] Mode 2 skips stamp construction as well as the compare, so the cost of
+				// BuildStamp itself is isolated. Mode 1 leaves it in. Renders stale geometry.
+				if (gl_wallcache != 2)
+				{
+					zx::levelmesh::BuildStamp(seg, currentsector, backsector, stamp);
+				}
+				zx::levelmesh::BuildEligibility(seg, currentsector, backsector, elig);
+
+				if (zx::levelmesh::TryReplay(segidx, elig, stamp))
+				{
+					done = true;
+				}
+				else
+				{
+					zx::levelmesh::BeginCapture(segidx);
+					GLWall wall;
+					wall.sub = currentsubsector;
+					wall.Process(seg, currentsector, backsector);
+					zx::levelmesh::EndCapture(stamp, elig);
+					done = true;
+				}
+			}
+			if (!done)
+			{
+				GLWall wall;
+				wall.sub = currentsubsector;
+				wall.Process(seg, currentsector, backsector);
+			}
 			rendered_lines++;
 
 			SetupWall.Unclock();
@@ -378,7 +446,11 @@ static void DoSubsector(subsector_t * sub)
 	if (!sector) return;
 
 	// If the mapsections differ this subsector can't possibly be visible from the current view point
-	if (!(currentmapsection[sub->mapsection>>3] & (1 << (sub->mapsection & 7)))) return;
+	// [rc4l] features/levelmesh: a bake wants every subsector in the level, not the ones visible from
+	// wherever the bake ran. This check alone was hiding well over half of Sunder MAP10 -- the mesh
+	// stopped at 21312 pieces against ~26691 sides plus 2x10958 subsector planes.
+	if (!clipper.bakeAll &&
+		!(currentmapsection[sub->mapsection>>3] & (1 << (sub->mapsection & 7)))) return;
 
 	if (gl_drawinfo->ss_renderflags[sub-subsectors] & SSRF_SEEN)
 	{

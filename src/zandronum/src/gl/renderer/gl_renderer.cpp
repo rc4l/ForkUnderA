@@ -59,6 +59,7 @@
 #include "gl/data/gl_data.h"
 #include "gl/data/gl_vertexbuffer.h"
 #include "gl/scene/gl_drawinfo.h"
+#include "features/hwrender/hud2d.h"
 #include "gl/shaders/gl_shader.h"
 #include "gl/textures/gl_texture.h"
 #include "gl/textures/gl_translate.h"
@@ -322,16 +323,28 @@ void FGLRenderer::DrawTexture(FTexture *img, DCanvas::DrawParms &parms)
 		parms.colorOverlay = 0;
 	}
 
+	// [rc4l] features/hwrender: hoisted out of the branch below so the 2D capture can record it.
+	// Coloured text is the same glyph under a different palette remap, and a backend that ignores it
+	// renders every font in the base palette -- dim and muddy, while untranslated menu graphics look
+	// perfect. That asymmetry is what the bug looked like.
+	int translation = 0;
+	// [rc4l] The POSITIVE index, for a backend that bakes the remap into its uploaded texture.
+	//
+	// The GL path deliberately passes the index NEGATED, because it applies the remap in the shader
+	// from a palette texture. FGLBitmap::CopyPixelData only honours a positive value
+	// (`if (translation > 0)`), so handing a backend the negated one silently produces untranslated
+	// pixels -- the whole server browser rendered in the base Doom font's dark red instead of white.
+	int cpuTranslation = 0;
+
 	gl_SetRenderStyle(parms.style, !parms.masked, false);
 	if (!img->bHasCanvas)
 	{
-		int translation = 0;
 		if (!parms.alphaChannel)
 		{
 			if (parms.remap != NULL && !parms.remap->Inactive)
 			{
 				GLTranslationPalette * pal = static_cast<GLTranslationPalette*>(parms.remap->GetNative());
-				if (pal) translation = -pal->GetIndex();
+				if (pal) { translation = -pal->GetIndex(); cpuTranslation = pal->GetIndex(); }
 			}
 		}
 		gl_RenderState.SetMaterial(gltex, CLAMP_XY_NOMIP, translation, 0, !!(parms.style.Flags & STYLEF_RedIsAlpha));
@@ -400,6 +413,24 @@ void FGLRenderer::DrawTexture(FTexture *img, DCanvas::DrawParms &parms)
 	ptr->Set(x + w, y, 0, u2, v1); ptr++;
 	ptr->Set(x + w, y + h, 0, u2, v2); ptr++;
 	GLRenderer->mVBO->RenderCurrent(ptr, GL_TRIANGLE_STRIP);
+
+	// [rc4l] features/hwrender: record what this call just drew, so a foreign backend gets the HUD,
+	// the menus and the console without reimplementing DCanvas. Everything needed is already resolved
+	// here -- rect, uvs (flipped and windowed), colour with alpha, and the scissor. See hud2d.h.
+	{
+		zx::hwrender::Quad2D q;
+		q.material = gltex;
+		q.x = (float)x; q.y = (float)y; q.w = (float)w; q.h = (float)h;
+		q.u1 = u1; q.v1 = v1; q.u2 = u2; q.v2 = v2;
+		q.r = color.r / 255.f; q.g = color.g / 255.f;
+		q.b = color.b / 255.f; q.a = color.a / 255.f;
+		q.clipL = parms.lclip; q.clipT = parms.uclip;
+		q.clipR = parms.rclip; q.clipB = parms.dclip;
+		q.blend = 0;
+		q.translation = cpuTranslation;
+		q.texMode = gl_RenderState.GetTextureMode();
+		zx::hwrender::Record2D(q);
+	}
 
 	if (parms.colorOverlay)
 	{
@@ -477,6 +508,23 @@ void FGLRenderer::Dim(PalEntry color, float damount, int x1, int y1, int w, int 
 	gl_RenderState.SetColorAlpha(color, damount);
 	gl_RenderState.Apply();
 	
+	// [rc4l] features/hwrender: untextured fills matter as much as textures. This one call draws the
+	// menu's background dim AND the pill behind every menu tab -- without it the tab captions, which
+	// are DARK text meant to sit on a light pill, landed straight on the dark world and read as
+	// missing. Material NULL means "flat colour"; the backend binds its white texture.
+	{
+		zx::hwrender::Quad2D q;
+		q.material = NULL;
+		q.x = (float)x1; q.y = (float)y1; q.w = (float)w; q.h = (float)h;
+		q.u1 = 0.f; q.v1 = 0.f; q.u2 = 1.f; q.v2 = 1.f;
+		q.r = color.r / 255.f; q.g = color.g / 255.f; q.b = color.b / 255.f; q.a = damount;
+		q.clipL = 0; q.clipT = 0; q.clipR = 0; q.clipB = 0;   // no scissor
+		q.blend = 0;
+		q.translation = 0;
+		q.texMode = 0;
+		zx::hwrender::Record2D(q);
+	}
+
 	FFlatVertex *ptr = GLRenderer->mVBO->GetBuffer();
 	ptr->Set(x1, y1, 0, 0, 0); ptr++;
 	ptr->Set(x1, y1+h, 0, 0, 0); ptr++;
@@ -554,9 +602,25 @@ void FGLRenderer::Clear(int left, int top, int right, int bottom, int palcolor, 
 	}
 	*/
 	
+	// [rc4l] features/hwrender: a scissored glClear is still a filled rectangle as far as a backend
+	// is concerned. Recorded as an opaque untextured quad -- the console background and the menu
+	// backdrop come through here.
+	{
+		zx::hwrender::Quad2D q;
+		q.material = NULL;
+		q.x = (float)left; q.y = (float)top; q.w = (float)width; q.h = (float)height;
+		q.u1 = 0.f; q.v1 = 0.f; q.u2 = 1.f; q.v2 = 1.f;
+		q.r = p.r / 255.f; q.g = p.g / 255.f; q.b = p.b / 255.f; q.a = 1.f;
+		q.clipL = 0; q.clipT = 0; q.clipR = 0; q.clipB = 0;
+		q.blend = 0;
+		q.translation = 0;
+		q.texMode = 0;
+		zx::hwrender::Record2D(q);
+	}
+
 	glEnable(GL_SCISSOR_TEST);
 	glScissor(left, rt - height, width, height);
-	
+
 	glClearColor(p.r/255.0f, p.g/255.0f, p.b/255.0f, 0.f);
 	glClear(GL_COLOR_BUFFER_BIT);
 	glClearColor(0.f, 0.f, 0.f, 0.f);

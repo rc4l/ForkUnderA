@@ -49,6 +49,8 @@
 #include "gl/data/gl_data.h"
 #include "gl/data/gl_vertexbuffer.h"
 #include "gl/scene/gl_drawinfo.h"
+#include "features/levelmesh/wallcache.h"
+#include "features/levelmesh/staticmesh.h"
 #include "gl/scene/gl_portal.h"
 #include "gl/renderer/gl_lightdata.h"
 #include "gl/renderer/gl_renderstate.h"
@@ -793,13 +795,252 @@ void GLDrawList::Draw(int pass, bool trans)
 //
 //
 //==========================================================================
+// [rc4l] features/levelmesh: batch runs of identically-stated walls into one draw.
+//
+// Sunder MAP10 issues ~8250 wall draws a frame for 16,888 vertices -- about 400 ns of CPU per item
+// against 1.74 ms of total GPU, so the per-wall state set and draw call are the cost, not the
+// geometry. Walls are already sorted by material by SortWalls, so equal state arrives adjacent;
+// this collapses each run into one GL_TRIANGLES draw.
+//
+// Fans cannot simply be concatenated (a GL_TRIANGLE_FAN restarts at its own first vertex and this
+// GL floor has no primitive restart), so each fan is expanded to an independent triangle list. That
+// trades ~1.5x the vertices for 1/Nth the draw calls, which is the right way round at these counts.
+CVAR(Bool, gl_batch_walls, true, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
+
+// [rc4l] Baked ranges staged per batch before one glMultiDrawArrays.
+enum { MAX_BAKED_PER_BATCH = 4096 };
+
+// [rc4l] features/levelmesh P2c: draw walls from the persistent mesh buffer instead of streaming.
+//
+// DEFAULT OFF -- measured SLOWER than streaming on Sunder MAP10 (4.14 ms against 4.00 ms), and the
+// reason is worth keeping: batching already gives streaming ONE contiguous glDrawArrays per state
+// run, while the mesh hands the same run N scattered ranges through glMultiDrawArrays. Persistence
+// costs contiguity, and contiguity was worth more than the per-frame memcpy it saved.
+//
+// The fix is not to abandon persistent geometry -- it is to lay the buffer out BY DRAW STATE, so a
+// run is one contiguous range again. That is what Ironwail's per-texture index buffer does, and it
+// is the prerequisite for indirect draws, so this is the next step rather than a dead end.
+// [rc4l] CUSTOM so flipping it invalidates the wall cache: a seg already cached was captured with
+// baking disabled, so it has no MeshRange and would never acquire one. Without this the mesh path
+// silently draws nothing on a level that was already walked.
+CUSTOM_CVAR(Bool, gl_wallmesh, false, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
+{
+	zx::levelmesh::InvalidateAll();
+}
+
+// [rc4l] features/levelmesh: close one batch. Baked ranges draw from the persistent mesh buffer,
+// streamed vertices from the per-frame one.
+//
+// The vertex array binding is tracked across batches rather than restored after each. Binding the
+// mesh VAO and rebinding the streaming one on every batch cost more than the baked geometry saved
+// (4.19 ms against 4.00 ms for pure streaming); since nearly every wall is baked, consecutive
+// batches now share one binding and switch only when a run actually needs to stream.
+static bool s_meshVAOBound = false;
+
+static void FlushWallBatch(FFlatVertex *&ptr, const zx::levelmesh::MeshRange *baked, int nbaked)
+{
+	if (nbaked > 0)
+	{
+		if (!s_meshVAOBound && zx::levelmesh::MeshBind()) s_meshVAOBound = true;
+		if (s_meshVAOBound) zx::levelmesh::MeshDrawMulti(baked, nbaked);
+	}
+
+	// Only touch the streaming buffer when this batch actually staged vertices into it.
+	unsigned int offset, count;
+	count = GLRenderer->mVBO->GetCount(ptr, &offset);
+	if (count > 0)
+	{
+		if (s_meshVAOBound) { GLRenderer->mVBO->BindVBO(); s_meshVAOBound = false; }
+		GLRenderer->mVBO->RenderArray(GL_TRIANGLES, offset, count);
+	}
+}
+
+// Leave the streaming buffer bound for whatever draws next.
+static void EndWallBatches()
+{
+	if (s_meshVAOBound) { GLRenderer->mVBO->BindVBO(); s_meshVAOBound = false; }
+}
+
+// [rc4l] features/levelmesh P2d: the state-grouped indexed path.
+//
+// Two passes, because the index buffer has to be uploaded before anything draws from it. Pass one
+// walks the sorted list, groups it into draw-state runs and appends each baked piece's indices;
+// pass two sets state once per run and issues ONE glDrawElements over that run's contiguous index
+// span. Walls with no baked geometry fall back to their own Draw().
+//
+// The (firstIndex, count) pair each run produces is literally a DrawElementsIndirectCommand minus
+// its instance fields, which is why this is the last CPU-side step before the swap.
+void GLDrawList::DrawWallsIndexed(int pass)
+{
+	struct Run { unsigned int first, count; unsigned int item; };
+	static TArray<Run> runs;
+	static TArray<unsigned int> loose;
+	runs.Clear();
+	loose.Clear();
+
+	zx::levelmesh::MeshIndexBegin();
+
+	zx::levelmesh::WallBatchKey curkey, key;
+	bool open = false;
+	unsigned int runItem = 0;
+
+	for (unsigned i = 0; i < drawitems.Size(); i++)
+	{
+		GLWall *wp = WallAt(i);
+		if (wp == NULL) continue;
+		wp->FillBatchKey(key);
+
+		const zx::levelmesh::MeshRange *mr = (drawitems[i].rendertype == GLDIT_STATICWALL)
+			? zx::levelmesh::StaticWallRange(drawitems[i].index) : NULL;
+		if (mr == NULL || !zx::levelmesh::ComputeCanBatch(key, key))
+		{
+			loose.Push(i);
+			continue;
+		}
+
+		if (open && !zx::levelmesh::ComputeCanBatch(curkey, key))
+		{
+			Run r; zx::levelmesh::MeshIndexEndRun(r.first, r.count); r.item = runItem;
+			if (r.count) runs.Push(r);
+			open = false;
+		}
+		if (!open) { curkey = key; runItem = i; open = true; }
+
+		if (!zx::levelmesh::MeshIndexAppend(*mr)) loose.Push(i);
+	}
+	if (open)
+	{
+		Run r; zx::levelmesh::MeshIndexEndRun(r.first, r.count); r.item = runItem;
+		if (r.count) runs.Push(r);
+	}
+
+	zx::levelmesh::MeshIndexFlush();
+
+	if (runs.Size() > 0 && zx::levelmesh::MeshBind())
+	{
+		for (unsigned i = 0; i < runs.Size(); i++)
+		{
+			GLWall *w = WallAt(runs[i].item);
+			if (w == NULL) continue;
+			w->SetupBatchState(pass);
+			zx::levelmesh::MeshDrawIndexed(runs[i].first, runs[i].count);
+			vertexcount += runs[i].count;
+		}
+		GLRenderer->mVBO->BindVBO();
+	}
+
+	for (unsigned i = 0; i < loose.Size(); i++)
+	{
+		GLWall *w = WallAt(loose[i]);
+		if (w) w->Draw(pass);
+	}
+}
+
 void GLDrawList::DrawWalls(int pass)
 {
 	RenderWall.Clock();
+
+	// [rc4l] features/levelmesh: the indexed path supersedes the range path when enabled.
+	if (gl_wallmesh && (pass == GLPASS_PLAIN || pass == GLPASS_ALL))
+	{
+		DrawWallsIndexed(pass);
+		RenderWall.Unclock();
+		return;
+	}
+
+	// [rc4l] Only the opaque arms set state the way SetupBatchState reproduces. GLPASS_LIGHTSONLY
+	// collects lights and GLPASS_TRANSLUCENT needs per-wall blend setup, so both keep the old path.
+	if (!gl_batch_walls || (pass != GLPASS_PLAIN && pass != GLPASS_ALL))
+	{
+		for(unsigned i=0;i<drawitems.Size();i++)
+		{
+			GLWall *w = WallAt(i);
+			if (w) w->Draw(pass);
+		}
+		RenderWall.Unclock();
+		return;
+	}
+
+	static FFlatVertex fan[GLWall::MAX_BATCH_FAN_VERTICES];
+	static zx::levelmesh::MeshRange baked[MAX_BAKED_PER_BATCH];
+	zx::levelmesh::WallBatchKey curkey, key;
+	bool haveBatch = false;
+	FFlatVertex *ptr = NULL;
+	int batchVerts = 0;
+	int nbaked = 0;
+
 	for(unsigned i=0;i<drawitems.Size();i++)
 	{
-		walls[drawitems[i].index].Draw(pass);
+		GLWall *wp = WallAt(i);
+		if (wp == NULL) continue;
+		GLWall &w = *wp;
+		w.FillBatchKey(key);
+
+		// [rc4l] A wall that cannot join the open batch closes it first, so draw order within a
+		// run is preserved and the unbatchable wall still renders through its own Draw().
+		const bool joins = haveBatch && zx::levelmesh::ComputeCanBatch(curkey, key);
+		if (haveBatch && !joins)
+		{
+			FlushWallBatch(ptr, baked, nbaked);
+			haveBatch = false;
+		}
+
+		const int fanCount = w.BuildFanVertices(fan, GLWall::MAX_BATCH_FAN_VERTICES);
+		const int triVerts = zx::levelmesh::ComputeFanTriangleVertexCount(fanCount);
+		if (triVerts == 0 || !zx::levelmesh::ComputeCanBatch(key, key))
+		{
+			// Unbatchable (glowing, untextured, or a fan too large to stage): draw it alone.
+			w.Draw(pass);
+			continue;
+		}
+
+		// [rc4l] Cap a batch's size. The mapped buffer wraps at BUFFER_SIZE_TO_USE and RenderCurrent
+		// measures the run by pointer difference, so an unbounded batch could walk past the wrap.
+		// Flushing early costs one extra draw and keeps the write inside a single contiguous range.
+		enum { MAX_BATCH_VERTICES = 60000 };
+		if (haveBatch && batchVerts + triVerts > MAX_BATCH_VERTICES)
+		{
+			FlushWallBatch(ptr, baked, nbaked);
+			haveBatch = false;
+		}
+
+		if (!haveBatch)
+		{
+			w.SetupBatchState(pass);
+			curkey = key;
+			ptr = GLRenderer->mVBO->GetBuffer();
+			batchVerts = 0;
+			nbaked = 0;
+			haveBatch = true;
+		}
+		batchVerts += triVerts;
+
+		// [rc4l] features/levelmesh P2c: a baked wall contributes a RANGE, not vertices. Ranges go
+		// into one glMultiDrawArrays at the end of the run -- the same shape an indirect draw
+		// command takes, so this is the call a GPU culling pass would eventually be filling in.
+		const zx::levelmesh::MeshRange *mr = (gl_wallmesh && drawitems[i].rendertype == GLDIT_STATICWALL)
+			? zx::levelmesh::StaticWallRange(drawitems[i].index) : NULL;
+		if (mr != NULL && nbaked < MAX_BAKED_PER_BATCH)
+		{
+			baked[nbaked++] = *mr;
+			vertexcount += mr->count;
+			continue;
+		}
+
+		for (int t = 0; t < fanCount - 2; t++)
+		{
+			for (int c = 0; c < 3; c++)
+			{
+				*ptr = fan[zx::levelmesh::ComputeFanTriangleVertex(fanCount, t, c)];
+				ptr++;
+			}
+		}
+		vertexcount += triVerts;
 	}
+
+	if (haveBatch) FlushWallBatch(ptr, baked, nbaked);
+	EndWallBatches();
+
 	RenderWall.Unclock();
 }
 
@@ -827,7 +1068,8 @@ void GLDrawList::DrawDecals()
 {
 	for(unsigned i=0;i<drawitems.Size();i++)
 	{
-		walls[drawitems[i].index].DoDrawDecals();
+		GLWall *w = WallAt(i);
+		if (w) w->DoDrawDecals();
 	}
 }
 
@@ -841,13 +1083,31 @@ static GLDrawList * sortinfo;
 static int __cdecl diwcmp (const void *a, const void *b)
 {
 	const GLDrawItem * di1 = (const GLDrawItem *)a;
-	GLWall * w1=&sortinfo->walls[di1->index];
-
 	const GLDrawItem * di2 = (const GLDrawItem *)b;
-	GLWall * w2=&sortinfo->walls[di2->index];
+	// [rc4l] Either item may be cache-owned; resolve through the right store.
+	GLWall * w1 = (di1->rendertype == GLDIT_STATICWALL) ? zx::levelmesh::StaticWall(di1->index) : &sortinfo->walls[di1->index];
+	GLWall * w2 = (di2->rendertype == GLDIT_STATICWALL) ? zx::levelmesh::StaticWall(di2->index) : &sortinfo->walls[di2->index];
+	if (w1 == NULL || w2 == NULL) return 0;
 
-	if (w1->gltexture != w2->gltexture) return w1->gltexture - w2->gltexture;
-	return ((w1->flags & 3) - (w2->flags & 3));
+	// [rc4l] Sort by the whole batch key, not just texture and clamp flags. Batching in DrawWalls
+	// only merges *adjacent* equal-state walls, so two walls sharing a texture but differing in
+	// light or fog would otherwise interleave and break both their runs.
+	if (w1->gltexture != w2->gltexture) return w1->gltexture < w2->gltexture ? -1 : 1;
+	if ((w1->flags & 3) != (w2->flags & 3)) return (w1->flags & 3) - (w2->flags & 3);
+	if (w1->lightlevel != w2->lightlevel) return w1->lightlevel - w2->lightlevel;
+	if (w1->rellight != w2->rellight) return w1->rellight - w2->rellight;
+	if (w1->type != w2->type) return (int)w1->type - (int)w2->type;
+	if (w1->Colormap.LightColor.d != w2->Colormap.LightColor.d)
+		return w1->Colormap.LightColor.d < w2->Colormap.LightColor.d ? -1 : 1;
+	if (w1->Colormap.FadeColor.d != w2->Colormap.FadeColor.d)
+		return w1->Colormap.FadeColor.d < w2->Colormap.FadeColor.d ? -1 : 1;
+	if (w1->Colormap.desaturation != w2->Colormap.desaturation)
+		return w1->Colormap.desaturation - w2->Colormap.desaturation;
+	if (w1->Colormap.blendfactor != w2->Colormap.blendfactor)
+		return w1->Colormap.blendfactor - w2->Colormap.blendfactor;
+	if (w1->dynlightindex != w2->dynlightindex)
+		return w1->dynlightindex < w2->dynlightindex ? -1 : 1;
+	return 0;
 }
 
 static int __cdecl difcmp (const void *a, const void *b)
@@ -888,6 +1148,23 @@ void GLDrawList::SortFlats()
 void GLDrawList::AddWall(GLWall * wall)
 {
 	drawitems.Push(GLDrawItem(GLDIT_WALL,walls.Push(*wall)));
+}
+
+// [rc4l] features/levelmesh P2b: reference a cache-owned wall. No struct copy.
+void GLDrawList::AddStaticWall(int staticIndex)
+{
+	drawitems.Push(GLDrawItem(GLDIT_STATICWALL, staticIndex));
+}
+
+// [rc4l] Resolve a wall draw item whichever store owns it. Returns NULL for non-wall items so
+// callers that iterate a mixed list can skip rather than mis-index.
+GLWall *GLDrawList::WallAt(unsigned i)
+{
+	if (i >= drawitems.Size()) return NULL;
+	const GLDrawItem &di = drawitems[i];
+	if (di.rendertype == GLDIT_WALL) return &walls[di.index];
+	if (di.rendertype == GLDIT_STATICWALL) return zx::levelmesh::StaticWall(di.index);
+	return NULL;
 }
 
 //==========================================================================

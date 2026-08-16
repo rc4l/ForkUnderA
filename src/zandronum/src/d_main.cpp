@@ -68,6 +68,8 @@
 #include "w_wad.h"
 #include "features/addon-catalogue/zx_catalogue.h" // [rc4l] validated at startup, not on first use
 #include "features/crashreport/zx_crashreport.h"
+#include "features/hwrender/diligent/dglive.h"   // [rc4l] one call, no Diligent headers -- see dglive.h
+#include "features/hwrender/hud2d.h"             // [rc4l] per-frame 2D capture
 #include "features/identity/zx_identity.h"
 #include "features/updater/zx_updater.h" // [rc4l] background auto-update check
 #include "features/wad-download/zx_waddownload.h" // [rc4l] background WAD downloads
@@ -882,6 +884,11 @@ void D_Display ()
 	if (nodrawers || screen == NULL)
 		return; 				// for comparative timing / profiling
 
+	// [rc4l] features/hwrender: last frame's 2D is dead -- the HUD moves, text scrolls, menus open.
+	// Dropped here rather than after the render so that everything drawn this frame, including the
+	// console and menus which are drawn late, is captured. See hud2d.h.
+	zx::hwrender::Clear2D();
+
 	cycle_t cycles;
 	
 	cycles.Reset();
@@ -1185,6 +1192,17 @@ drawfullconsole:
 		zx::DrawJoinReadyNotice ( true );
 		FStat::PrintStat ();
 		screen->Update ();		// page flip or blit buffer
+
+		// [rc4l] features/hwrender: mirror the frame into the Diligent backend window.
+		//
+		// Until now the backend drew a snapshot taken at upload time, which is enough to benchmark
+		// and to check a screenshot but is not a renderer -- you cannot tell whether geometry, depth
+		// or the camera are right from one still frame. Driving it from the real frame loop with the
+		// live camera is what turns it into something you can walk around in and see wrong.
+		//
+		// Deliberately AFTER screen->Update: the GL frame is the one the player is playing, and the
+		// backend must not be able to stall or corrupt it.
+		zx::hwrender::LiveFrame ();
 	}
 	else
 	{

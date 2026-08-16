@@ -8,6 +8,7 @@
 #include "r_defs.h"
 #include "textures/textures.h"
 #include "gl/renderer/gl_colormap.h"
+#include "features/levelmesh/computation/wallbatch_compute.h"
 
 struct GLHorizonInfo;
 struct F3DFloor;
@@ -230,6 +231,15 @@ public:
 	void ProcessLowerMiniseg(seg_t *seg, sector_t *frontsector, sector_t *backsector);
 	void Draw(int pass);
 
+	// [rc4l] features/levelmesh wall batching. Sunder MAP10 issues ~8250 wall draws a frame for
+	// 16888 vertices, so the per-draw state set dominates; these let GLDrawList::DrawWalls set state
+	// once for a run of identically-stated walls and emit them as one triangle-list draw.
+	// Largest fan BuildFanVertices will emit; a wall needing more falls back to its own draw.
+	enum { MAX_BATCH_FAN_VERTICES = 128 };
+	void FillBatchKey(zx::levelmesh::WallBatchKey &out) const;
+	int  BuildFanVertices(FFlatVertex *out, int maxOut);
+	void SetupBatchState(int pass);
+
 	float PointOnSide(float x,float y)
 	{
 		return -((y-glseg.y1)*(glseg.x2-glseg.x1)-(x-glseg.x1)*(glseg.y2-glseg.y1));
@@ -278,6 +288,10 @@ public:
 	int vboheight;
 
 	int dynlightindex;
+	// [rc4l] features/levelmesh: the light-buffer index SetupSubsectorLights actually applied for the
+	// subsector being drawn. GLFlat::dynlightindex is a cursor into the index LIST, not a buffer
+	// index, so it is not the value a backend needs.
+	int mMeshLightIndex;
 
 	void SetupSubsectorLights(int pass, subsector_t * sub, int *dli = NULL);
 	void DrawSubsector(subsector_t * sub);
