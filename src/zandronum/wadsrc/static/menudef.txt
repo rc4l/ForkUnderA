@@ -318,22 +318,6 @@ OptionValue "OnOff"
 	1, "On"
 }
 
-// [rc4l] Sky lighting. A mean is faithful to the whole sky; a burning sky is bright fire plus dark
-// smoke and its mean is a muddy colour matching neither, which is when Dominant reads better.
-OptionValue "SkyTintModes"
-{
-	0, "Average"
-	1, "Dominant"
-}
-
-// Horizon is the band the player looks at. Overhead is what physically lights a floor. They
-// genuinely disagree on a sky with a coloured horizon, so it is a look choice, not a right answer.
-OptionValue "SkyTintWeights"
-{
-	0, "Horizon"
-	1, "Overhead"
-}
-
 OptionValue "OffOn"
 {
 	0, "On"
@@ -460,21 +444,14 @@ OptionMenu "FUASkyTintOptions"
 	StaticText " "
 	Option	"Tint from sky",			"cl_fua_skytint",				"OnOff"
 	Slider	"Strength",					"cl_fua_skytint_strength",		0.0, 100.0, 5.0, 0
+	// [rc4l] A ceiling on the push, not a cap on the sky's own saturation.
 	Slider	"Max colour",				"cl_fua_skytint_saturation",	0.0, 100.0, 5.0, 0
-	Slider	"Follow sky brightness",	"cl_fua_skytint_brightness",	0.0, 100.0, 5.0, 0
 	Slider	"Follow room light",		"cl_fua_skytint_lit",			0.0, 100.0, 5.0, 0
 	Slider	"Indoor reach",				"cl_fua_skytint_reach",			0.0, 2048.0, 64.0, 0
-	Slider	"Doorway matters",			"cl_fua_skytint_gap",			0.0, 100.0, 5.0, 0
 	StaticText " "
-	Option	"Sky colour from",			"cl_fua_skytint_mode",			"SkyTintModes"
-	Option	"Sky area",					"cl_fua_skytint_weight",		"SkyTintWeights"
-	StaticText " "
-	StaticText "Average is faithful; Dominant names the biggest colour in the sky.", 1
-	StaticText "Horizon is what you look at; Overhead is what lights a floor.", 1
-	StaticText "Follow sky brightness: let a dark sky tint gently, per map.", 1
+	StaticText "Max colour: how vivid the tint may get before it reads as a filter.", 1
 	StaticText "Follow room light: dark rooms take less tint than bright ones.", 1
 	StaticText "Indoor reach: map units the light travels in (128 = a doorway).", 1
-	StaticText "Doorway matters: how much a narrow gap slows the light down.", 1
 }
 
 // [rc4l] fov-interp: FOV and how fast the view tweens to it. Its own submenu rather than rows in
