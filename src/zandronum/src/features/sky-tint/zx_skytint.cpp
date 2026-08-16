@@ -115,6 +115,16 @@ double Distance2( double ax, double ay, double bx, double by )
 // current level and cleared with it, so an index can never outlive its sector array.
 std::vector<PalEntry> g_tint;			// per SUBSECTOR: what the renderer actually draws
 std::vector<PalEntry> g_brightestOf;	// per SECTOR: its lightest leaf, for the few sector-only callers
+
+// [rc4l] TEMPORARY, for fua_skytintinfo: the propagation distance the last rebuild settled on for
+// each leaf. Kept because "this room is not lit" has two answers -- no open path to sky at all, or a
+// path longer than the reach allows -- and raising the reach and seeing nothing change is evidence
+// for the first but not proof of it. A leaf still at infinity was never reached by any route.
+std::vector<double> g_dist;
+
+// Shared by the rebuild's Dijkstra and the diagnostic that reads its output, so "unreachable" means
+// the same number in both places.
+const double kSkyTintInfinity = 1e30;
 bool g_any = false;
 
 // Which sky the table above was built from, so SkyTint_SkyChanged can tell a real sky swap from the
@@ -440,6 +450,7 @@ void ClearTables( )
 	g_lastRaw.clear( );
 	g_lastStrength.clear( );
 	g_lastAlbedo = SkyRgb( 128, 128, 128 );
+	g_dist.clear( );
 }
 
 // Sampled skyboxes, keyed by actor pointer and therefore only valid within one level.
@@ -557,7 +568,7 @@ void SkyTint_Rebuild( )
 	// Adjacency is free: every seg carries its PartnerSeg, so leaves inside one sector are joined
 	// with no opening test at all, which is what produces the gradient indoors.
 	const double reach = (double)cl_fua_skytint_reach;
-	const double kInfinity = 1e30;
+	const double &kInfinity = kSkyTintInfinity;
 
 	if (( subsectors == NULL ) || ( numsubsectors <= 0 ))
 		return;
@@ -839,6 +850,7 @@ void SkyTint_Rebuild( )
 	}
 
 	g_tint.assign( numsubsectors, PalEntry( 255, 255, 255 ));
+	g_dist = dist;		// for the diagnostic; see g_dist's declaration
 
 	for ( int i = 0; i < numsubsectors; ++i )
 	{
@@ -1057,8 +1069,19 @@ void SkyTintHere( std::string &out )
 	// looks exactly like a propagation failure.
 	const PalEntry own = ( sec != NULL && sec->ColorMap != NULL ) ? sec->ColorMap->Color : PalEntry( 255, 255, 255 );
 
-	mysnprintf( buf, sizeof( buf ), "leaf=%d sector=%d ffloors=%d ceilsky=%d floorsky=%d own[%d,%d,%d] leaftint[%d,%d,%d] sectortint[%d,%d,%d]",
-		(int)li, (int)si, nff, ceilSky, floorSky, own.r, own.g, own.b,
+	// The propagation distance, which separates "no open path to sky" from "further than reach
+	// allows". Raising the reach and watching nothing change points at the first but does not prove
+	// it: a miscomputed opening would look identical from outside.
+	char distText[32];
+	if (( li < 0 ) || ( li >= (ptrdiff_t)g_dist.size( )))
+		mysnprintf( distText, sizeof( distText ), "?" );
+	else if ( g_dist[li] >= kSkyTintInfinity )
+		mysnprintf( distText, sizeof( distText ), "UNREACHABLE" );
+	else
+		mysnprintf( distText, sizeof( distText ), "%d", (int)( g_dist[li] + 0.5 ));
+
+	mysnprintf( buf, sizeof( buf ), "leaf=%d sector=%d ffloors=%d ceilsky=%d floorsky=%d dist=%s own[%d,%d,%d] leaftint[%d,%d,%d] sectortint[%d,%d,%d]",
+		(int)li, (int)si, nff, ceilSky, floorSky, distText, own.r, own.g, own.b,
 		leaf.r, leaf.g, leaf.b, secTint.r, secTint.g, secTint.b );
 	out = buf;
 }
