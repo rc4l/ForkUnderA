@@ -11,6 +11,8 @@ import { sampleProcess } from "./sample.mjs";
 import { summarizeGlTimers } from "./proto.mjs";
 import * as ui from "./ui.mjs";
 import { runBench } from "./bench.mjs";
+import { runSkyProbe } from "./skyprobe.mjs";
+import { makeUndisturbed, warpTo, findOutdoorSpot } from "./undisturbed.mjs";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -67,6 +69,11 @@ const USAGE = `fuactl <command>
   ticprof --port P [--tics N]          per-tic sim phase split (P_Ticker / thinkers / effects / specials)
   bench --port P --scenario F.json [--runs N] [--metric total.p99_ms]   repeat a scenario, report median + spread, discard runs whose expectations failed
   renderer-info --port P [--token T]   renderer identity + whether GL timer queries work on this driver
+  warp --port P [--x N --y N --z N] [--angle D] [--pitch D] [--outdoors] [--map M]
+                                     go there with god + fly + sv_fua_friendlymonsters on, so nothing fights you
+                                     (--no-god/--no-friendly/--no-fly to opt out); --outdoors asks the engine for
+                                     this level's sky-lit spot; pitch>0 looks down, so --pitch -90 is straight up
+  skyprobe --port P --maps M1,M2 [--strength N] [--saturation N]   sky tint per map, measured OUTDOORS: tint, light passed, dE76
   ui <action> [args] --port P [--token T]   drive the UI: read (menu as text), find <label>, nav <keys>, click <x> <y>, drag, type <text>, look --yaw D --pitch D, screenshot [name], exec <ccmd>
   mcp                                run as an MCP stdio server for agents
 `;
@@ -232,6 +239,88 @@ async function main() {
       const info = await c.rpc("renderer.info");
       c.close();
       console.log(JSON.stringify(info, null, 2));
+      break;
+    }
+    case "skyprobe": {
+      if (!flags.port || !flags.maps) {
+        console.error("usage: fuactl skyprobe --port P --maps MAP01,MAP20 [--token T] " +
+          "[--strength N] [--saturation N]");
+        process.exit(2);
+      }
+      // Screenshots land beside the engine, because that is where it writes them.
+      const enginePath = flags.engine || resolveEngine();
+      await runSkyProbe({
+        port: flags.port,
+        token: flags.token || null,
+        engine: enginePath,
+        outDir: path.dirname(enginePath),
+        maps: String(flags.maps).split(",").map((m) => m.trim()).filter(Boolean),
+        strength: flags.strength != null ? Number(flags.strength) : null,
+        saturation: flags.saturation != null ? Number(flags.saturation) : null,
+      });
+      break;
+    }
+    case "warp": {
+      // fuactl warp --port P [--x N --y N | --outdoors] [--map M]
+      //
+      // Always turns on god and notarget first. Anywhere worth warping to for a look is somewhere
+      // the level would rather you did not stand: measuring or eyeballing a spot while a room full
+      // of things shoots at you gets you muzzle flashes and blood in every frame, and eventually a
+      // death that moves the camera somewhere else entirely.
+      if (!flags.port) {
+        console.error("usage: fuactl warp --port P [--x N --y N [--z N]] [--outdoors] [--map M]\n" +
+          "                  [--angle DEG] [--pitch DEG] [--no-god] [--no-friendly] [--no-fly]");
+        process.exit(2);
+      }
+      const c = new BridgeClient();
+      await c.connect(Number(flags.port), { token: flags.token || null, timeoutMs: 8000 });
+      await c.waitHello();
+
+      if (flags.map) {
+        await c.rpc("console.exec", { text: `map ${flags.map}` });
+        await new Promise((r) => setTimeout(r, 8500));
+      }
+
+      // After the map change, not before: cheats reset with the player. All of it is on unless
+      // switched off, because the reason to warp somewhere is almost never to fight what lives there.
+      // --no-notarget is kept as a spelling of --no-friendly: pacifying the level used to be done
+      // with the notarget cheat, and that is still what a caller means when they ask for it.
+      const applied = await makeUndisturbed(c, {
+        god: !flags["no-god"],
+        notarget: !(flags["no-friendly"] || flags["no-notarget"]),
+        fly: !flags["no-fly"],
+      });
+      const on = Object.keys(applied).filter((k) => applied[k]);
+      console.log(on.length ? `${on.join(" + ")} on` : "no cheats applied");
+
+      let x = flags.x != null ? Number(flags.x) : null;
+      let y = flags.y != null ? Number(flags.y) : null;
+      if (flags.outdoors) {
+        const spot = await findOutdoorSpot(c);
+        if (!spot) {
+          console.error("no outdoor spot on this level (nothing sees sky)");
+          c.close();
+          process.exit(1);
+        }
+        x = spot.x; y = spot.y;
+      }
+
+      if (x == null || y == null) {
+        console.log("no destination given, staying put");
+      } else {
+        const at = await warpTo(c, x, y, {
+          z: flags.z != null ? Number(flags.z) : undefined,
+          angle: flags.angle != null ? Number(flags.angle) : undefined,
+          pitch: flags.pitch != null ? Number(flags.pitch) : undefined,
+        });
+        // Report where the engine put you, not where you asked to go: z gets clamped into whatever
+        // gap the pawn fits in, so the two differ whenever the destination was inside geometry.
+        if (at) {
+          console.log(`at ${at.x} ${at.y} ${at.z}  angle ${Math.round(at.angle)} pitch ` +
+            `${Math.round(at.pitch)}  sector ${at.sector}`);
+        }
+      }
+      c.close();
       break;
     }
     case "net-bw": {
