@@ -11,6 +11,7 @@
 #include "i_input.h"
 #include "i_system.h"
 #include "d_event.h"
+#include "mcp_bridge.h"   // MCP_InputLocked
 #include "d_gui.h"
 #include "c_cvars.h"
 #include "doomdef.h"
@@ -327,6 +328,11 @@ FMouse::FMouse()
 
 void FMouse::PostMouseMove(int x, int y)
 {
+	// [rc4l] Same device-level lock as the keyboard: a hands-off instance must not be steered by a
+	// cursor that happens to be over its window. use_mouse 0 already covered most of this, but the
+	// lock is the thing that means "no physical input at all", so it belongs here too.
+	if ( MCP_InputLocked( )) return;
+
 	event_t ev = { 0 };
 
 	if (m_filter)
@@ -362,6 +368,11 @@ void FMouse::PostMouseMove(int x, int y)
 
 void FMouse::WheelMoved(int axis, int wheelmove)
 {
+	// [rc4l] Same device-level lock as the keyboard: a hands-off instance must not be steered by a
+	// cursor that happens to be over its window. use_mouse 0 already covered most of this, but the
+	// lock is the thing that means "no physical input at all", so it belongs here too.
+	if ( MCP_InputLocked( )) return;
+
 	assert(axis == 0 || axis == 1);
 	event_t ev = { 0 };
 	int dir;
@@ -418,6 +429,11 @@ void FMouse::WheelMoved(int axis, int wheelmove)
 
 void FMouse::PostButtonEvent(int button, bool down)
 {
+	// [rc4l] Same device-level lock as the keyboard: a hands-off instance must not be steered by a
+	// cursor that happens to be over its window. use_mouse 0 already covered most of this, but the
+	// lock is the thing that means "no physical input at all", so it belongs here too.
+	if ( MCP_InputLocked( )) return;
+
 	event_t ev = { 0 };
 	int mask = 1 << button;
 

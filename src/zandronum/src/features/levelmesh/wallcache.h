@@ -69,7 +69,25 @@ struct SegCache
 	int             bakedCount;
 	WallCacheStamp  stamp;
 	bool            filled;
-	SegCache() : pieceCount(0), bakedCount(0), filled(false) {}
+
+	// [rc4l] pieces[] must be cleared here, not left to whatever was in the memory.
+	//
+	// MeshRange is a POD and this constructor used to skip the array entirely, which is invisible on
+	// the first level and wrong on every one after it: TArray reuses its heap block, so a new level's
+	// segs came up holding the PREVIOUS level's vertex ranges. BakeSeg then saw a nonzero count, took
+	// MeshStore's reuse-in-place path, and wrote the new wall over whatever legitimately occupied that
+	// offset in the new arena -- while never allocating space of its own. The map came up with walls
+	// missing and geometry smeared across the ones that survived, and only after a map CHANGE:
+	// launching straight into the same map was always fine, because the block started zeroed.
+	SegCache() : pieceCount(0), bakedCount(0), filled(false)
+	{
+		for (int i = 0; i < kMaxCachedPieces; i++)
+		{
+			pieces[i].list = 0;
+			pieces[i].range.offset = 0;
+			pieces[i].range.count = 0;
+		}
+	}
 };
 
 // Allocated per level, cleared when the level changes.

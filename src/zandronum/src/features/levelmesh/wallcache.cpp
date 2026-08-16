@@ -74,8 +74,18 @@ void AllocForLevel(int numsegs)
 
 	for (int i = 0; i < numsegs; i++)
 	{
+		// Belt and braces with SegCache's constructor: Resize is not guaranteed to construct a
+		// recycled slot, and a stale range here corrupts the new level's mesh rather than merely
+		// wasting a slot.
 		g_cache[i].filled = false;
 		g_cache[i].pieceCount = 0;
+		g_cache[i].bakedCount = 0;
+		for (int k = 0; k < kMaxCachedPieces; k++)
+		{
+			g_cache[i].pieces[k].list = 0;
+			g_cache[i].pieces[k].range.offset = 0;
+			g_cache[i].pieces[k].range.count = 0;
+		}
 		g_uncacheable[i] = false;
 	}
 	g_captureSeg = -1;
