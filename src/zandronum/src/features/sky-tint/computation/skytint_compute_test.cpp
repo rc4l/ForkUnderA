@@ -464,6 +464,40 @@ TEST(EqualiseHuePush, StaysLinearAcrossTheWholeDialEvenForAPaleSky)
 
 // [rc4l] The rule this replaces was yes/no, and the cliff was the bug: Eon Collection aeon13 lays one
 // faint [254,194,194] wash over the whole level, which disqualified 158 of 180 sky-seeing spots.
+// [rc4l] A sky emitting almost no light has no hue worth believing: normalising multiplies its few
+// surviving bits into a confident colour. Eon Collection aeon13's second skybox sampled [6,0,2] and
+// painted its sectors a vivid red found nowhere in the image.
+TEST(SkyConfidenceForBrightness, DoesNotBelieveANearlyBlackSky)
+{
+	EXPECT_LE(SkyConfidenceForBrightness(SkyRgb(6, 0, 2)), 10) << "aeon13's second skybox";
+	EXPECT_EQ(0, SkyConfidenceForBrightness(SkyRgb(0, 0, 0)));
+	EXPECT_LE(SkyConfidenceForBrightness(SkyRgb(1, 1, 4)), 5);
+}
+
+TEST(SkyConfidenceForBrightness, LeavesAnOrdinarySkyCompletelyAlone)
+{
+	// The skies this feature was built on must be untouched, or the guard is a silent dimmer.
+	EXPECT_EQ(100, SkyConfidenceForBrightness(SkyRgb(32, 69, 23)));		// SoD MAP01, a DARK sky
+	EXPECT_EQ(100, SkyConfidenceForBrightness(SkyRgb(177, 69, 2)));		// SoD MAP20
+	EXPECT_EQ(100, SkyConfidenceForBrightness(SkyRgb(163, 1, 1)));		// SoD MAP29
+	EXPECT_EQ(100, SkyConfidenceForBrightness(SkyRgb(190, 238, 254)));	// Eon aeon11
+	EXPECT_EQ(100, SkyConfidenceForBrightness(SkyRgb(193, 62, 26)));		// Eon aeon13 texture sky
+	EXPECT_EQ(100, SkyConfidenceForBrightness(SkyRgb(191, 64, 28)));		// aeon13's GOOD skybox
+}
+
+TEST(SkyConfidenceForBrightness, RisesSmoothlyWithNoStepAtTheKnee)
+{
+	int last = -1;
+	for (int v = 0; v <= 40; v += 2)
+	{
+		const int conf = SkyConfidenceForBrightness(SkyRgb(v, v, v));
+		EXPECT_GE(conf, last);
+		EXPECT_LE(conf - (last < 0 ? 0 : last), 15) << "a jump this big at " << v << " is a step";
+		last = conf;
+	}
+	EXPECT_EQ(100, last) << "must reach full confidence and stay there";
+}
+
 TEST(SkyShareForSectorColour, LetsAFaintWashKeepMostOfItsSkyLight)
 {
 	// aeon13's actual sector colour: 24% saturated, so it keeps about three quarters.
