@@ -328,7 +328,7 @@ static const char *kSceneVS =
 	"layout(location = 4) in vec4 aFog;\n"
 	"layout(location = 5) in float aLightIndex;\n"
 	"layout(location = 6) in vec3 aNormal;\n"
-	"layout(binding = 0) uniform Constants { mat4 uMVP; vec4 uCameraPos; vec4 uLightParams; vec4 uClipPlane; vec4 uScreen; };\n"
+	"layout(binding = 0) uniform Constants { mat4 uMVP; vec4 uCameraPos; vec4 uLightParams; vec4 uClipPlane; vec4 uScreen; vec4 uSkyColor; };\n"
 	"layout(location = 0) out vec2 vUV;\n"
 	"layout(location = 1) out vec3 vColor;\n"
 	"layout(location = 2) out vec3 vLightParm;\n"
@@ -378,7 +378,7 @@ static const char *kSceneVS =
 	"layout(location = 4) in vec4 vPixelPos;\n" \
 	"layout(location = 5) flat in int vLightIndex;\n" \
 	"layout(location = 6) in vec3 vNormal;\n" \
-	"layout(binding = 0) uniform Constants { mat4 uMVP; vec4 uCameraPos; vec4 uLightParams; vec4 uClipPlane; vec4 uScreen; };\n" \
+	"layout(binding = 0) uniform Constants { mat4 uMVP; vec4 uCameraPos; vec4 uLightParams; vec4 uClipPlane; vec4 uScreen; vec4 uSkyColor; };\n" \
 	"layout(binding = 1) uniform sampler2D uTex;\n" \
 	"layout(std430, binding = 2) readonly buffer LightBuffer { vec4 lights[]; };\n" \
 	"layout(location = 0) out vec4 outColor;\n" \
@@ -641,7 +641,7 @@ static const char *kSkyVS =
 	"layout(location = 1) in vec2 aUV;\n"
 	"layout(location = 2) in vec4 aSkyColor;\n"
 	"layout(location = 3) in float aSkyAlpha;\n"
-	"layout(binding = 0) uniform Constants { mat4 uMVP; vec4 uCameraPos; vec4 uLightParams; vec4 uClipPlane; vec4 uScreen; };\n"
+	"layout(binding = 0) uniform Constants { mat4 uMVP; vec4 uCameraPos; vec4 uLightParams; vec4 uClipPlane; vec4 uScreen; vec4 uSkyColor; };\n"
 	"layout(location = 0) out vec2 vUV;\n"
 	"layout(location = 1) out vec4 vSkyColor;\n"
 	"layout(location = 2) out float vSkyAlpha;\n"
@@ -1687,7 +1687,7 @@ static bool EnsureScenePipeline(FString &err)
 	Diligent::BufferDesc cbd;
 	cbd.Name = "fua scene constants";
 	// mat4 uMVP + vec4 uCameraPos + vec4 uLightParams + vec4 uClipPlane (mirrors) + vec4 uScreen
-	cbd.Size = sizeof(float) * 32;
+	cbd.Size = sizeof(float) * 36;
 	cbd.Usage = Diligent::USAGE_DYNAMIC;
 	cbd.BindFlags = Diligent::BIND_UNIFORM_BUFFER;
 	cbd.CPUAccessFlags = Diligent::CPU_ACCESS_WRITE;
@@ -2330,7 +2330,7 @@ static const char *kMirrorVS =
 	"#version 450\n"
 	"layout(location = 0) in vec3 aPos;\n"
 	"layout(location = 1) in vec3 aNormal;\n"
-	"layout(binding = 0) uniform Constants { mat4 uMVP; vec4 uCameraPos; vec4 uLightParams; vec4 uClipPlane; vec4 uScreen; };\n"
+	"layout(binding = 0) uniform Constants { mat4 uMVP; vec4 uCameraPos; vec4 uLightParams; vec4 uClipPlane; vec4 uScreen; vec4 uSkyColor; };\n"
 	"layout(location = 0) out vec3 vWorld;\n"
 	"layout(location = 1) out vec3 vNormal;\n"
 	"void main() {\n"
@@ -2359,7 +2359,7 @@ static const char *kMirrorPS =
 	"#version 460\n"
 	"#extension GL_EXT_ray_query : require\n"
 	"#extension GL_EXT_nonuniform_qualifier : require\n"
-	"layout(binding = 0) uniform Constants { mat4 uMVP; vec4 uCameraPos; vec4 uLightParams; vec4 uClipPlane; vec4 uScreen; };\n"
+	"layout(binding = 0) uniform Constants { mat4 uMVP; vec4 uCameraPos; vec4 uLightParams; vec4 uClipPlane; vec4 uScreen; vec4 uSkyColor; };\n"
 	"layout(binding = 1) uniform sampler2D uTex;\n"
 	"layout(binding = 2) uniform accelerationStructureEXT uTLAS;\n"
 	"layout(std430, binding = 3) readonly buffer Verts { float vtx[]; };\n"
@@ -2597,6 +2597,10 @@ static void DrawMirrorSurface(Diligent::IDeviceContext *ctx, unsigned index)
 		cb[20] = (float)g_lightCount; cb[21] = g_skyAngle; cb[22] = 0.f; cb[23] = 0.f;
 		for (int k = 0; k < 4; k++) cb[24 + k] = 0.f;
 		cb[28] = (float)g_mirrorW; cb[29] = (float)g_mirrorH; cb[30] = cb[31] = 0.f;
+		cb[32] = g_skyCapColor[0].r / 255.f;
+		cb[33] = g_skyCapColor[0].g / 255.f;
+		cb[34] = g_skyCapColor[0].b / 255.f;
+		cb[35] = 0.f;
 	}
 	if (g_mirrorTraced)
 	{
@@ -2701,6 +2705,10 @@ static void RenderMirrors(Diligent::IDeviceContext *ctx)
 			cb[20] = (float)g_lightCount; cb[21] = g_skyAngle; cb[22] = 0.f; cb[23] = 0.f;
 			for (int k = 0; k < 4; k++) cb[24 + k] = 0.f;
 			cb[28] = (float)g_mirrorW; cb[29] = (float)g_mirrorH; cb[30] = cb[31] = 0.f;
+		cb[32] = g_skyCapColor[0].r / 255.f;
+		cb[33] = g_skyCapColor[0].g / 255.f;
+		cb[34] = g_skyCapColor[0].b / 255.f;
+		cb[35] = 0.f;
 		}
 		Diligent::IBuffer *vbs[] = { g_mirrorVB };
 		const Diligent::Uint64 offsets[] = { (Diligent::Uint64)i * 36 * sizeof(float) };
@@ -2893,6 +2901,13 @@ static void DrawWorld(Diligent::IDeviceContext *ctx)
 		cb[28] = (float)GetSwapChain()->GetDesc().Width;
 		cb[29] = (float)GetSwapChain()->GetDesc().Height;
 		cb[30] = 0.f; cb[31] = 0.f;
+		// [rc4l] What a ray sees when it hits nothing. Sky ceilings are portals and are deliberately
+		// not in the mesh, so a reflection looking upward hits nothing -- and painting that black put
+		// holes in the reflected floor and sky. The sky's own cap colour is the honest answer.
+		cb[32] = g_skyCapColor[0].r / 255.f;
+		cb[33] = g_skyCapColor[0].g / 255.f;
+		cb[34] = g_skyCapColor[0].b / 255.f;
+		cb[35] = 0.f;
 	}
 
 	// [rc4l] Re-resolve animated textures.
