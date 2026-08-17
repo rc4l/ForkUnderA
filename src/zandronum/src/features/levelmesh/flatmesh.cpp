@@ -295,6 +295,12 @@ void RegisterDecal(const FFlatVertex *quad, const void *material, int translatio
 		mp.colorR *= ((alphaColor >> 16) & 0xff) / 255.f;
 		mp.colorG *= ((alphaColor >> 8) & 0xff) / 255.f;
 		mp.colorB *= (alphaColor & 0xff) / 255.f;
+		// [rc4l] An alpha-mask decal ALWAYS blends: its coverage lives in the texture's red channel,
+		// so there is no such thing as an opaque one. Classified by alpha alone an unfaded decal
+		// comes out as blend mode 0, takes the opaque pipeline, and is sampled as a colour image --
+		// which paints a bright blob where GL paints a dark burn. Only the faded ones looked right,
+		// so it read as "decals glow" rather than "the wrong shader".
+		if (mp.blendMode == 0) mp.blendMode = 1;
 	}
 	mp.sortX = sortX; mp.sortY = sortY; mp.sortZ = sortZ;
 
