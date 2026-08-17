@@ -28,6 +28,8 @@ void RegisterFlatSubsector(const GLFlat &flat, subsector_t *sub, bool ceiling);
 
 // Forget every baked flat -- called when the wall cache is invalidated, so the two stay in step.
 void ClearFlats();
+// How many flat registrations were a subsector own plane vs a 3D floor plane.
+void GetFlatStats(int &own, int &threeD);
 
 int FlatPieceCount();
 

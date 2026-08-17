@@ -437,6 +437,8 @@ inline void GLFlat::PutFlat(bool fog)
 
 void GLFlat::Process(sector_t * model, int whichplane, bool fog)
 {
+	mMeshWhichPlane = whichplane;   // [rc4l] features/levelmesh: part of the flat mesh key
+	mMeshModel = model;
 	plane.GetFromSector(model, whichplane);
 
 	if (!fog)

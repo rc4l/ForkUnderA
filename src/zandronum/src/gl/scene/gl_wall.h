@@ -292,6 +292,16 @@ public:
 	// subsector being drawn. GLFlat::dynlightindex is a cursor into the index LIST, not a buffer
 	// index, so it is not the value a backend needs.
 	int mMeshLightIndex;
+	// [rc4l] features/levelmesh: which plane of the model sector this flat came from.
+	//
+	// A 3D floor's top and bottom share a model sector and are drawn through the same subsector, so
+	// without this they collide in the mesh and overwrite each other -- the surface then alternates
+	// between the two textures every frame, which reads as a texture animating on its own.
+	int mMeshWhichPlane;
+	// [rc4l] The MODEL sector Process was called with. GLFlat::sector stays the containing sector
+	// even for a 3D floor plane, so it cannot tell one apart from the sector's own floor -- counting
+	// showed 1 registration in two million looked like a 3D floor when keyed on it.
+	const sector_t *mMeshModel;
 
 	void SetupSubsectorLights(int pass, subsector_t * sub, int *dli = NULL);
 	void DrawSubsector(subsector_t * sub);

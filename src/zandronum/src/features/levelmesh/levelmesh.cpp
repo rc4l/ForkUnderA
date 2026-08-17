@@ -318,8 +318,11 @@ CCMD( fua_levelmesh_stats )
 				( bs != NULL && bs->e != NULL && bs->e->XFloor.ffloors.Size( ) > 0 ))
 				ffSegs++;
 		}
-		Printf( "  3d floors: %d sectors, %d planes, %d segs touching them (none baked)\n",
-				ffSectors, ffPlanes, ffSegs );
+		int flatOwn = 0, flat3D = 0;
+		GetFlatStats( flatOwn, flat3D );
+		Printf( "  3d floors: %d sectors, %d planes, %d segs touching them; "
+				"flat registrations %d own / %d from 3d floors\n",
+				ffSectors, ffPlanes, ffSegs, flatOwn, flat3D );
 	}
 
 	CoverageStats cov;
