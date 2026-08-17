@@ -38,6 +38,24 @@ extern char g_lastRefusedTex[3][16];
 // [rc4l] Off would mean the engine behaves as it always has. On by default because a floor you have
 // emptied a magazine into looking untouched is the odd behaviour, not the fix.
 CVAR(Bool, fua_flat_decals, true, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
+// [rc4l] How far a mark creeps, as a multiple of the graphic's own size.
+//
+// One decal creeping from one point has exactly one budget: whatever is left after reaching a
+// surface is what that surface gets. A mark 18 units above the floor with an extent of 31 leaves the
+// ground 13, and no amount of edge-fading changes that -- it is subtraction. The graphic's size is
+// just how big someone drew the texture; the blast reaches considerably further, which is why the
+// bounding radius has always been the diagonal and a half. Spreading the picture over that reach is
+// what lets the ground get a real share while it stays ONE mark, continuous across the corner.
+//
+// 1.0 is the old behaviour, graphic-sized. Archived so it can be dialled without a rebuild.
+CVAR(Float, fua_decal_spread, 1.5f, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
+
+// The spread, guarded: a zero or negative multiplier would collapse the basis and paint the screen.
+static float DecalSpread()
+{
+	const float k = (float)fua_decal_spread;
+	return (k > 0.05f && k < 8.f) ? k : 1.f;
+}
 EXTERN_CVAR(Bool, gl_wallmesh)
 
 namespace zx { namespace levelmesh {
@@ -452,10 +470,11 @@ static void RegisterWallDecals()
 		// mark, because a graphic whose top offset is not its half-height has its content off-centre
 		// and mirroring shifts the visible blob by twice that. Measured on a BFG mark as GL at y 0.537
 		// of the frame and the backend at 0.417, about seventeen units up the wall.
+		const float k = DecalSpread();
 		if (!SetDecalBasis(pd, w.ux, w.uy, 0.f,
 		                  0.f, 0.f, w.flipV ? 1.f : -1.f,
 		                  w.nx, w.ny, 0.f,
-		                  w.halfW, w.halfH, w.halfW)) continue;
+		                  w.halfW * k, w.halfH * k, w.halfW * k)) continue;
 		pd.material = mat;
 		pd.r = lit.colorR; pd.g = lit.colorG; pd.b = lit.colorB;
 		if (w.redToAlpha)
@@ -469,7 +488,7 @@ static void RegisterWallDecals()
 		mutw.lastR = pd.r; mutw.lastG = pd.g; mutw.lastB = pd.b;
 		pd.additive = w.additive;
 		pd.redToAlpha = w.redToAlpha;
-		pd.radius = ComputeDecalReach(w.halfW, w.halfH);
+		pd.radius = ComputeDecalReach(w.halfW * k, w.halfH * k);
 
 		// [rc4l] Nothing else to place. The shader measures every surface inside the blast radius
 		// from this one point, so a corner is not a special case and there is no second box to put
@@ -700,10 +719,11 @@ void RegisterFlatDecals()
 		// mark seen from below is not the mirror of the same mark seen from above.
 		ProjectedDecal pd;
 		pd.x = d.x; pd.y = d.y; pd.z = pz;
+		const float k = DecalSpread();
 		if (!SetDecalBasis(pd, 1.f, 0.f, 0.f,
 		                  0.f, d.ceiling ? -1.f : 1.f, 0.f,
 		                  0.f, 0.f, 1.f,
-		                  hw, hh, hw)) continue;
+		                  hw * k, hh * k, hw * k)) continue;
 		pd.material = mat;
 		pd.r = lit.colorR; pd.g = lit.colorG; pd.b = lit.colorB;
 		if (d.redToAlpha)
@@ -715,7 +735,7 @@ void RegisterFlatDecals()
 		pd.a = d.alpha * fade;
 		pd.additive = d.additive;
 		pd.redToAlpha = d.redToAlpha;
-		pd.radius = ComputeDecalReach(hw, hh);
+		pd.radius = ComputeDecalReach(hw * k, hh * k);
 		g_projected.Push(pd);
 
 		g_lastX = d.x; g_lastY = d.y; g_lastZ = pz;
