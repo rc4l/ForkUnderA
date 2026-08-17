@@ -4696,7 +4696,7 @@ AActor *P_LineAttack(AActor *t1, angle_t angle, fixed_t distance,
 				if (base == NULL && puff != NULL) base = puff->DecalGenerator;
 				if (base != NULL)
 					zx::levelmesh::SpawnFlatDecal(base->GetDecal(), trace.X, trace.Y, trace.Z,
-						trace.HitType == TRACE_HitCeiling);
+						trace.HitType == TRACE_HitCeiling, trace.ffloor);
 			}
 
 			// [RH] Spawn a decal
