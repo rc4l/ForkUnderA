@@ -74,14 +74,32 @@ void ReplayAtTerm(); // joins the worker on engine shutdown (defined below)
 struct RawFrame  { std::vector<unsigned char> rgb; int w; int h; int64_t tUs; };
 struct AudioChunk { std::vector<float> pcm; int rate; int64_t tUs; };  // interleaved stereo
 
-std::thread            g_worker;
-std::mutex             g_mtx;
-std::condition_variable g_cv;
-std::deque<RawFrame>   g_queue;          // raw frames awaiting encode (bounded)
+// [rc4l] One independent recorder per RENDERER, so a side-by-side session records both.
+//
+// The recorder was a single stream fed from exactly one place -- OpenGLFrameBuffer::Swap -- so a
+// clip was always the GL view and the Vulkan window was never captured at all. Two clips of the same
+// moment from the two renderers is the most useful debugging artefact this project could have, and
+// instant replay has to work on Vulkan regardless once GL goes away.
+//
+// Each stream owns its queue, worker and encoder. Nothing is shared but the audio, which belongs to
+// the session rather than to a renderer and so rides on stream 0.
+struct Stream
+{
+	std::thread             worker;
+	std::mutex              mtx;
+	std::condition_variable cv;
+	std::deque<RawFrame>    queue;
+	std::string             saveReq;
+	bool                    stop = false;
+	bool                    running = false;   // game-thread view of worker liveness
+	const char             *tag = "";          // filename suffix; "" for the primary stream
+	bool                    takesAudio = false;
+};
+
+enum { STREAM_GL = 0, STREAM_VK = 1, STREAM_COUNT = 2 };
+Stream                 g_streams[STREAM_COUNT];
+std::mutex             g_audioMtx;
 std::deque<AudioChunk> g_audioQueue;     // captured audio awaiting encode (bounded)
-std::string            g_saveReq;        // non-empty => worker should mux a clip to this path
-bool                   g_stop = false;
-bool                   g_running = false; // game-thread view of worker liveness
 
 // worker -> game-thread result, flushed to the console on the game thread
 std::mutex             g_resMtx;
@@ -90,7 +108,14 @@ bool                   g_resOk = false;
 std::string            g_resPath;
 std::string            g_pendingInfo;   // one-shot status line (e.g. which encoder was selected)
 
-int64_t                g_lastCaptureUs = 0; // game thread only
+int64_t                g_lastCaptureUs = 0;   // game thread only
+// [rc4l] The Vulkan stream keeps its OWN capture clock.
+//
+// Sharing one clock does not work: WantsFrame() reports a frame due and SubmitFrame advances the
+// clock, so whichever renderer presents first consumes it and the other never captures anything.
+// The GL swap happens after the Vulkan present in the engine's frame, so with a shared clock the
+// Vulkan stream started zero encoders and fua_clip quietly saved one file.
+int64_t                g_lastCaptureUsVk = 0;
 
 int64_t NowUs()
 {
@@ -144,7 +169,7 @@ std::string ClipsDir()
 	return dir;
 }
 
-void WorkerLoop()
+void WorkerLoop(Stream *st)
 {
 	zx::ReplayEncoder enc;
 	bool inited = false;
@@ -158,12 +183,17 @@ void WorkerLoop()
 		std::string saveReq;
 		bool haveFrame = false, haveAudio = false;
 		{
-			std::unique_lock<std::mutex> lk(g_mtx);
-			g_cv.wait(lk, [] { return g_stop || !g_queue.empty() || !g_audioQueue.empty() || !g_saveReq.empty(); });
-			if (g_stop && g_queue.empty() && g_audioQueue.empty() && g_saveReq.empty()) break;
-			if (!g_queue.empty()) { frame = std::move(g_queue.front()); g_queue.pop_front(); haveFrame = true; }
+			std::unique_lock<std::mutex> lk(st->mtx);
+			st->cv.wait(lk, [st] { return st->stop || !st->queue.empty() || !st->saveReq.empty(); });
+			if (st->stop && st->queue.empty() && st->saveReq.empty()) break;
+			if (!st->queue.empty()) { frame = std::move(st->queue.front()); st->queue.pop_front(); haveFrame = true; }
+			saveReq.swap(st->saveReq);
+		}
+		// Audio is the session's, not a renderer's, so only the primary stream consumes it.
+		if (st->takesAudio)
+		{
+			std::lock_guard<std::mutex> lk(g_audioMtx);
 			if (!g_audioQueue.empty()) { audio = std::move(g_audioQueue.front()); g_audioQueue.pop_front(); haveAudio = true; }
-			saveReq.swap(g_saveReq);
 		}
 
 		// Audio needs the video encoder initialised first (it sets up alongside it).
@@ -212,33 +242,70 @@ void WorkerLoop()
 	enc.Shutdown();
 }
 
-void StartCapture()
+void StartStream(Stream *st)
 {
-	// Register the shutdown hook once so the worker is always joined before the process exits.
+	// Register the shutdown hook once so the workers are always joined before the process exits.
 	static bool s_termHook = false;
 	if (!s_termHook) { atterm(ReplayAtTerm); s_termHook = true; }
 
 	{
-		std::lock_guard<std::mutex> lk(g_mtx);
-		g_stop = false;
-		g_queue.clear();
-		g_audioQueue.clear();
-		g_saveReq.clear();
+		std::lock_guard<std::mutex> lk(st->mtx);
+		st->stop = false;
+		st->queue.clear();
+		st->saveReq.clear();
 	}
-	g_worker = std::thread(WorkerLoop);
-	g_running = true;
+	if (st->takesAudio) { std::lock_guard<std::mutex> lk(g_audioMtx); g_audioQueue.clear(); }
+	st->worker = std::thread(WorkerLoop, st);
+	st->running = true;
+}
+
+void StopStream(Stream *st)
+{
+	{
+		std::lock_guard<std::mutex> lk(st->mtx);
+		st->stop = true;
+	}
+	st->cv.notify_all();
+	if (st->worker.joinable()) st->worker.join();
+	st->running = false;
+}
+
+void StartCapture()
+{
+	g_streams[STREAM_GL].tag = "";
+	g_streams[STREAM_GL].takesAudio = true;
+	g_streams[STREAM_VK].tag = "_vk";
+	StartStream(&g_streams[STREAM_GL]);
 	g_lastCaptureUs = 0;
 }
 
 void StopCapture()
 {
+	for (int i = 0; i < STREAM_COUNT; i++)
+		if (g_streams[i].running) StopStream(&g_streams[i]);
+}
+
+// [rc4l] Push a frame onto one stream, starting it lazily.
+//
+// The Vulkan stream starts on its FIRST frame rather than alongside the GL one, so a session with no
+// Vulkan window never spins up a second encoder thread for nothing.
+void PushFrame(Stream *st, const unsigned char *rgbTopRow, int w, int h, int pitch)
+{
+	if (rgbTopRow == nullptr || w <= 0 || h <= 0) return;
+	if (!st->running) StartStream(st);
+
+	RawFrame f;
+	f.w = w; f.h = h; f.tUs = NowUs();
+	f.rgb.resize((size_t)w * h * 3);
+	// Copy to a top-down tightly-packed buffer (pitch may be negative for GL bottom-up readback).
+	for (int y = 0; y < h; ++y)
+		std::memcpy(f.rgb.data() + (size_t)y * w * 3, rgbTopRow + (ptrdiff_t)y * pitch, (size_t)w * 3);
+
 	{
-		std::lock_guard<std::mutex> lk(g_mtx);
-		g_stop = true;
+		std::lock_guard<std::mutex> lk(st->mtx);
+		if (st->queue.size() < 8) st->queue.push_back(std::move(f)); // bounded: drop if worker is behind
 	}
-	g_cv.notify_all();
-	if (g_worker.joinable()) g_worker.join();
-	g_running = false;
+	st->cv.notify_one();
 }
 
 // atterm hook: runs on clean engine shutdown. Idempotent (StopCapture no-ops if already stopped),
@@ -246,7 +313,7 @@ void StopCapture()
 // finishes writing rather than being truncated on quit.
 void ReplayAtTerm()
 {
-	if (g_running) StopCapture();
+	StopCapture();
 }
 
 void FlushMessages()
@@ -274,10 +341,10 @@ bool WantsFrame()
 
 	if (!cl_fua_replay)
 	{
-		if (g_running) StopCapture();
+		StopCapture();
 		return false;
 	}
-	if (!g_running) StartCapture();
+	if (!g_streams[STREAM_GL].running) StartCapture();
 
 	const int fps = int(cl_fua_replay_fps) > 0 ? int(cl_fua_replay_fps) : 30;
 	return zx::ComputeFrameDue(g_lastCaptureUs, NowUs(), fps);
@@ -285,21 +352,25 @@ bool WantsFrame()
 
 void SubmitFrame(const unsigned char *rgbTopRow, int w, int h, int pitch)
 {
-	if (!g_running || rgbTopRow == nullptr || w <= 0 || h <= 0) return;
+	if (!g_streams[STREAM_GL].running) return;
+	g_lastCaptureUs = NowUs();
+	PushFrame(&g_streams[STREAM_GL], rgbTopRow, w, h, pitch);
+}
 
-	RawFrame f;
-	f.w = w; f.h = h; f.tUs = NowUs();
-	f.rgb.resize((size_t)w * h * 3);
-	// Copy to a top-down tightly-packed buffer (pitch may be negative for GL bottom-up readback).
-	for (int y = 0; y < h; ++y)
-		std::memcpy(f.rgb.data() + (size_t)y * w * 3, rgbTopRow + (ptrdiff_t)y * pitch, (size_t)w * 3);
+bool WantsFrameVulkan()
+{
+	// No start/stop side effects here: the GL stream owns the session's lifecycle, and this only
+	// answers whether the Vulkan stream is due a frame on its own clock.
+	if (!cl_fua_replay) return false;
+	const int fps = int(cl_fua_replay_fps) > 0 ? int(cl_fua_replay_fps) : 30;
+	return zx::ComputeFrameDue(g_lastCaptureUsVk, NowUs(), fps);
+}
 
-	g_lastCaptureUs = f.tUs;
-	{
-		std::lock_guard<std::mutex> lk(g_mtx);
-		if (g_queue.size() < 8) g_queue.push_back(std::move(f)); // bounded: drop if worker is behind
-	}
-	g_cv.notify_one();
+void SubmitFrameVulkan(const unsigned char *rgbTopRow, int w, int h, int pitch)
+{
+	if (!cl_fua_replay) return;
+	g_lastCaptureUsVk = NowUs();
+	PushFrame(&g_streams[STREAM_VK], rgbTopRow, w, h, pitch);
 }
 
 bool AudioCaptureEnabled()
@@ -309,17 +380,17 @@ bool AudioCaptureEnabled()
 
 void SubmitAudio(const float *interleavedStereo, int nSamples, int sampleRate, long long tUs)
 {
-	if (!g_running || interleavedStereo == nullptr || nSamples <= 0) return;
+	if (!g_streams[STREAM_GL].running || interleavedStereo == nullptr || nSamples <= 0) return;
 	(void)tUs;   // timestamp on the capture clock (same as video) so A/V align in SaveClip
 	AudioChunk c;
 	c.rate = sampleRate;
 	c.tUs = NowUs();
 	c.pcm.assign(interleavedStereo, interleavedStereo + (size_t)nSamples * 2);
 	{
-		std::lock_guard<std::mutex> lk(g_mtx);
+		std::lock_guard<std::mutex> lk(g_audioMtx);
 		if (g_audioQueue.size() < 64) g_audioQueue.push_back(std::move(c)); // bounded
 	}
-	g_cv.notify_one();
+	g_streams[STREAM_GL].cv.notify_one();
 }
 
 } // namespace replay
@@ -334,7 +405,7 @@ CCMD(fua_clip)
 		Printf("Instant replay is off. Turn it on in Options > FUA Options, or 'cl_fua_replay 1'.\n");
 		return;
 	}
-	if (!g_running)
+	if (!g_streams[STREAM_GL].running)
 	{
 		Printf("Instant replay is warming up -- play for a moment, then try again.\n");
 		return;
@@ -352,12 +423,27 @@ CCMD(fua_clip)
 	zx::ComputeClipFilename(name, sizeof(name), stamp);
 	std::string path = ClipsDir() + "/" + name;
 
+	// [rc4l] Every live stream saves the same moment, each to its own file. In a side-by-side
+	// session that is a matched GL/Vulkan pair of the same seconds of play.
+	int saved = 0;
+	for (int i = 0; i < STREAM_COUNT; i++)
 	{
-		std::lock_guard<std::mutex> lk(g_mtx);
-		g_saveReq = path;
+		Stream &st = g_streams[i];
+		if (!st.running) continue;
+		std::string p = path;
+		if (st.tag[0] != 0)
+		{
+			const size_t dot = p.rfind('.');
+			p = (dot == std::string::npos) ? (p + st.tag) : (p.substr(0, dot) + st.tag + p.substr(dot));
+		}
+		{
+			std::lock_guard<std::mutex> lk(st.mtx);
+			st.saveReq = p;
+		}
+		st.cv.notify_one();
+		saved++;
 	}
-	g_cv.notify_one();
-	Printf("Saving replay clip...\n");
+	Printf("Saving replay clip%s...\n", saved > 1 ? "s (GL and Vulkan)" : "");
 }
 
 #else // !ZX_ENABLE_REPLAY -- FFmpeg not available; keep the command as a no-capture stub.

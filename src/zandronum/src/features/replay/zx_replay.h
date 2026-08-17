@@ -17,6 +17,18 @@ bool WantsFrame();
 // packed RGB24; pitch may be negative (OpenGL bottom-up readback). Copies out immediately.
 void SubmitFrame(const unsigned char *rgbTopRow, int w, int h, int pitch);
 
+// [rc4l] The same, from the Vulkan backend's swapchain, recorded as its OWN stream.
+//
+// fua_clip then writes one clip per live renderer -- <name>.mp4 and <name>_vk.mp4 -- so a
+// side-by-side session yields a matched pair of the same seconds of play. The Vulkan stream starts
+// lazily on its first frame, so a GL-only session never spins up a second encoder.
+//
+// The Vulkan stream keeps its OWN capture clock -- WantsFrameVulkan, not WantsFrame. Sharing one
+// does not work: WantsFrame reports a frame due and SubmitFrame consumes it, so whichever renderer
+// presents first takes it and the other captures nothing.
+bool WantsFrameVulkan();
+void SubmitFrameVulkan(const unsigned char *rgbTopRow, int w, int h, int pitch);
+
 // Experimental audio capture (cl_fua_replay_audio). AudioCaptureEnabled() is checked once by the
 // OpenAL backend at startup to decide whether to run in loopback mode; SubmitAudio() receives the
 // mixed master as interleaved stereo float (nSamples per channel) captured at time tUs.
