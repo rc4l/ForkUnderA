@@ -198,14 +198,30 @@ struct SceneBatch
 	// [rc4l] 0 opaque/alpha-tested, 1 translucent, 2 additive -- the same numbering the dynamic path
 	// uses. A translucent batch is never merged with its neighbour and is drawn in its own pass.
 	int          blend;
-	// Centroid, for sorting the translucent pass back to front each frame. Only meaningful when
-	// blend != 0; the opaque pass is sorted by material and never consults these.
+	// Centroid and surface normal, for sorting the translucent pass back to front each frame and for
+	// dropping the face pointing away from the camera. Only meaningful when blend != 0; the opaque
+	// pass is sorted by material and never consults these.
 	float        sortX, sortY, sortZ;
+	float        normX, normY, normZ;   // mesh space: (x, z-up, y)
 };
 static TArray<SceneBatch> g_batches;
 // [rc4l] Indices of the translucent batches, in build order. Small -- a level has a handful of
 // translucent surfaces, not thousands -- so re-sorting it per frame costs nothing.
 static TArray<int> g_blendBatches;
+
+// [rc4l] One dynamic draw: a contiguous span of this frame's sprite stream sharing a material, a
+// blend mode and a translation. File scope because the translucent ones are not drawn by the sprite
+// pass at all -- they are merged into the world's translucent pass and sorted against it.
+struct DynRun
+{
+	const void  *material;
+	unsigned int first, count;
+	int          blend;
+	int          translation;
+	float        cx, cy, cz;   // centroid, for the merged sort
+};
+static TArray<DynRun> g_dynRuns;
+static bool g_dynReady = false;
 
 // [rc4l] Where each mesh piece landed in the backend's material-sorted vertex buffer, so geometry
 static int g_geomUpdates = 0;
@@ -1132,22 +1148,22 @@ static void DrawSky(Diligent::IDeviceContext *ctx)
 // per GPU millisecond the upload dominates the draw by a wide margin.
 //
 // Drawn AFTER the world with the alpha-tested pipeline and normal depth, so sprites occlude and are
-// occluded correctly. Translucent render styles are not handled yet -- they need a back-to-front
-// sort and a blend state, which is the next milestone rather than something to fake here.
-static void DrawDynamic(Diligent::IDeviceContext *ctx)
+// occluded correctly. Only the opaque sprites are drawn here: the translucent ones are handed to the
+// world's translucent pass so the two sort against each other -- an item lying under a glass 3D floor
+// has to be composited before the floor, and it cannot be if sprites are a separate pass afterwards.
+static void BuildDynamic(Diligent::IDeviceContext *ctx)
 {
 	g_dynDraws = g_dynTris = 0;
 	g_dynByBlend[0] = g_dynByBlend[1] = g_dynByBlend[2] = g_dynByBlend[3] = 0;
+	g_dynReady = false;
 
 	int nverts = 0, npieces = 0;
 	const FFlatVertex *src = zx::levelmesh::DynVertices(nverts);
 	const zx::levelmesh::MeshPiece *pieces = zx::levelmesh::DynPieces(npieces);
-	if (src == NULL || nverts <= 0 || pieces == NULL || npieces <= 0) return;
+	if (src == NULL || nverts <= 0 || pieces == NULL || npieces <= 0) { g_dynRuns.Clear(); return; }
 
-	// [rc4l] A run is one draw: a contiguous span sharing a material AND a blend mode.
-	struct Run { const void *material; unsigned first, count; int blend; int translation; };
 	static TArray<SceneVertex> vb;
-	static TArray<Run> runs;
+	TArray<DynRun> &runs = g_dynRuns;
 
 	// [rc4l] Rebuild and re-upload ONCE per engine frame, not once per draw call.
 	//
@@ -1207,8 +1223,9 @@ static void DrawDynamic(Diligent::IDeviceContext *ctx)
 			// sprite would repaint every sprite batched with it.
 			if (p.material != cur || p.blendMode != curBlend || p.translation != curTrans || p.blendMode != 0)
 			{
-				Run r; r.material = p.material; r.first = vb.Size(); r.count = 0; r.blend = p.blendMode;
+				DynRun r; r.material = p.material; r.first = vb.Size(); r.count = 0; r.blend = p.blendMode;
 				r.translation = p.translation;
+				r.cx = p.sortX; r.cy = p.sortY; r.cz = p.sortZ;
 				runs.Push(r);
 				cur = p.material;
 				curBlend = p.blendMode;
@@ -1254,37 +1271,129 @@ static void DrawDynamic(Diligent::IDeviceContext *ctx)
 			Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 	}
 	if (vb.Size() == 0 || !g_dynVB) return;
+	g_dynReady = true;
+}
+
+// [rc4l] The opaque half of the sprite stream. Alpha-tested, depth written, so these behave exactly
+// like world geometry against everything drawn afterwards.
+static void DrawDynamicOpaque(Diligent::IDeviceContext *ctx)
+{
+	if (!g_dynReady) return;
 
 	Diligent::IBuffer *vbs[] = { g_dynVB };
 	const Diligent::Uint64 offsets[] = { 0 };
 	ctx->SetVertexBuffers(0, 1, vbs, offsets, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
 		Diligent::SET_VERTEX_BUFFERS_FLAG_RESET);
+	ctx->SetPipelineState(g_maskedPSO);
 
-	Diligent::IPipelineState *bound = NULL;
-	for (unsigned i = 0; i < runs.Size(); i++)
+	for (unsigned i = 0; i < g_dynRuns.Size(); i++)
 	{
-		if (runs[i].count == 0) continue;
-
-		// Blend mode 3 is the fuzz shadow; the engine draws it as a dark near-opaque overlay, and
-		// normal translucency is a fair stand-in until the fuzz shaders are ported.
-		Diligent::IPipelineState *pso =
-			(runs[i].blend == 0) ? g_maskedPSO.RawPtr() :
-			(runs[i].blend == 2) ? g_addPSO.RawPtr()    : g_transPSO.RawPtr();
-		if (!pso) continue;
-
-		auto *srb = GetMaterialSRB(pso, runs[i].material, runs[i].translation);
+		const DynRun &r = g_dynRuns[i];
+		if (r.count == 0 || r.blend != 0) continue;
+		auto *srb = GetMaterialSRB(g_maskedPSO, r.material, r.translation);
 		if (!srb) continue;
-
-		if (pso != bound) { ctx->SetPipelineState(pso); bound = pso; }
 		ctx->CommitShaderResources(srb, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 		Diligent::DrawAttribs draw;
-		draw.NumVertices = runs[i].count;
-		draw.StartVertexLocation = runs[i].first;
+		draw.NumVertices = r.count;
+		draw.StartVertexLocation = r.first;
 		draw.Flags = Diligent::DRAW_FLAG_VERIFY_ALL;
 		ctx->Draw(draw);
 		g_dynDraws++;
-		g_dynTris += runs[i].count / 3;
-		if (runs[i].blend >= 0 && runs[i].blend < 4) g_dynByBlend[runs[i].blend]++;
+		g_dynTris += r.count / 3;
+		g_dynByBlend[0]++;
+	}
+}
+
+// [rc4l] Everything that blends, world and sprites together, in one back-to-front pass.
+//
+// They cannot be two passes. A rocket box lying on the lava under a glass 3D floor has to be
+// composited BEFORE the floor is; if sprites are drawn afterwards as their own pass it paints over
+// the floor and appears to float on top of it, which is precisely what this looked like. The world's
+// contribution is a batch in the static vertex buffer and a sprite's is a run in the dynamic one, so
+// the merged list carries which buffer it came from and the pass rebinds when it crosses over --
+// a few dozen draws, so the extra binds are not worth avoiding.
+static void DrawBlended(Diligent::IDeviceContext *ctx)
+{
+	struct BlendDraw { bool dyn; unsigned first, count; int blend, translation; const void *material;
+	                   Diligent::IShaderResourceBinding *srb; float dist; };
+	static TArray<BlendDraw> list;
+	list.Clear();
+
+	const float cx = FIXED2FLOAT(viewx), cy = FIXED2FLOAT(viewy), cz = FIXED2FLOAT(viewz);
+
+	for (unsigned i = 0; i < g_blendBatches.Size(); i++)
+	{
+		const SceneBatch &b = g_batches[g_blendBatches[i]];
+		if (b.count == 0 || b.srb == NULL) continue;
+		const float dx = b.sortX - cx, dy = b.sortY - cy, dz = b.sortZ - cz;
+		// [rc4l] Drop the face pointing away from the camera.
+		//
+		// A 3D floor has a top plane and a bottom plane with opposite normals. The engine processes
+		// only the one facing the viewer, but the mesh is a CACHE: once the player has stood above and
+		// below a translucent floor, both planes are in it permanently and both draw every frame, so
+		// its alpha composites twice and it reads as far more solid than in GL. Only near-horizontal
+		// surfaces are tested -- a translucent middle texture is meant to be seen from both sides.
+		// Mesh space is (x, z-up, y), so the normal's doom-space components are (normX, normZ, normY).
+		if (b.normY > 0.9f || b.normY < -0.9f)
+			if (b.normX * -dx + b.normZ * -dy + b.normY * -dz <= 0.f) continue;
+		BlendDraw d;
+		d.dyn = false; d.first = b.first; d.count = b.count; d.blend = b.blend;
+		d.translation = 0; d.material = b.material; d.srb = b.srb;
+		d.dist = dx*dx + dy*dy + dz*dz;
+		list.Push(d);
+	}
+
+	if (g_dynReady)
+	{
+		for (unsigned i = 0; i < g_dynRuns.Size(); i++)
+		{
+			const DynRun &r = g_dynRuns[i];
+			if (r.count == 0 || r.blend == 0) continue;
+			// Blend mode 3 is the fuzz shadow; the engine draws it as a dark near-opaque overlay, and
+			// normal translucency is a fair stand-in until the fuzz shaders are ported.
+			Diligent::IPipelineState *pso = (r.blend == 2) ? g_addPSO.RawPtr() : g_transPSO.RawPtr();
+			auto *srb = GetMaterialSRB(pso, r.material, r.translation);
+			if (!srb) continue;
+			BlendDraw d;
+			d.dyn = true; d.first = r.first; d.count = r.count; d.blend = r.blend;
+			d.translation = r.translation; d.material = r.material; d.srb = srb;
+			const float dx = r.cx - cx, dy = r.cy - cy, dz = r.cz - cz;
+			d.dist = dx*dx + dy*dy + dz*dz;
+			list.Push(d);
+			g_dynDraws++;
+			g_dynTris += r.count / 3;
+			if (r.blend >= 0 && r.blend < 4) g_dynByBlend[r.blend]++;
+		}
+	}
+
+	if (list.Size() == 0) return;
+	std::sort(&list[0], &list[0] + list.Size(),
+		[](const BlendDraw &a, const BlendDraw &b) { return a.dist > b.dist; });   // farthest first
+
+	Diligent::IPipelineState *bound = NULL;
+	int boundVB = -1;
+	const Diligent::Uint64 offsets[] = { 0 };
+	for (unsigned i = 0; i < list.Size(); i++)
+	{
+		const BlendDraw &d = list[i];
+		const int want = d.dyn ? 1 : 0;
+		if (want != boundVB)
+		{
+			Diligent::IBuffer *vbs[] = { d.dyn ? g_dynVB.RawPtr() : g_vb.RawPtr() };
+			if (!vbs[0]) continue;
+			ctx->SetVertexBuffers(0, 1, vbs, offsets, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
+				Diligent::SET_VERTEX_BUFFERS_FLAG_RESET);
+			boundVB = want;
+		}
+		Diligent::IPipelineState *pso = (d.blend == 2) ? g_addPSO.RawPtr() : g_transPSO.RawPtr();
+		if (!pso) continue;
+		if (pso != bound) { ctx->SetPipelineState(pso); bound = pso; }
+		ctx->CommitShaderResources(d.srb, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+		Diligent::DrawAttribs draw;
+		draw.NumVertices = d.count;
+		draw.StartVertexLocation = d.first;
+		draw.Flags = Diligent::DRAW_FLAG_VERIFY_ALL;
+		ctx->Draw(draw);
 	}
 }
 
@@ -1903,6 +2012,7 @@ static bool BuildSceneBuffer(FString &err)
 			b.resolved = p.material;
 			b.blend = (p.blendMode == 2) ? 2 : (p.blendMode != 0 ? 1 : 0);
 			b.sortX = b.sortY = b.sortZ = 0.f;
+			b.normX = p.normX; b.normY = p.normY; b.normZ = p.normZ;
 			g_batches.Push(b);
 			if (b.blend != 0) g_blendBatches.Push((int)g_batches.Size() - 1);
 			cur = p.material;
@@ -3080,47 +3190,15 @@ static void DrawWorld(Diligent::IDeviceContext *ctx)
 		ctx->Draw(draw);
 	}
 
-	// [rc4l] The translucent surfaces of the world, after every opaque one, sorted back to front.
-	//
-	// These are 3D floors of glass or grating, translucent middle textures and the like: geometry that
-	// has to composite with whatever is behind it, so it cannot be drawn in the material-sorted opaque
-	// pass. The sort is over BATCHES, not vertices -- a level has a handful of these, so re-ordering
-	// them every frame costs nothing and the vertex buffer never has to be rebuilt when the camera
-	// moves. The blended pipelines do not write depth, so a translucent floor never occludes what is
-	// under it.
-	if (g_blendBatches.Size() > 0)
-	{
-		const float cx = FIXED2FLOAT(viewx), cy = FIXED2FLOAT(viewy), cz = FIXED2FLOAT(viewz);
-		static TArray<int> blendOrder;
-		blendOrder.Clear();
-		for (unsigned i = 0; i < g_blendBatches.Size(); i++) blendOrder.Push(g_blendBatches[i]);
-		std::sort(&blendOrder[0], &blendOrder[0] + blendOrder.Size(), [cx, cy, cz](int a, int b) {
-			const SceneBatch &ba = g_batches[a], &bb = g_batches[b];
-			const float da = (ba.sortX-cx)*(ba.sortX-cx) + (ba.sortY-cy)*(ba.sortY-cy) + (ba.sortZ-cz)*(ba.sortZ-cz);
-			const float db = (bb.sortX-cx)*(bb.sortX-cx) + (bb.sortY-cy)*(bb.sortY-cy) + (bb.sortZ-cz)*(bb.sortZ-cz);
-			return da > db;   // farthest first
-		});
+	// [rc4l] Opaque sprites next: the world has filled the depth buffer, so alpha-tested sprite quads
+	// reject most of their fragments instead of shading them.
+	BuildDynamic(ctx);
+	DrawDynamicOpaque(ctx);
 
-		Diligent::IPipelineState *bound = NULL;
-		for (unsigned i = 0; i < blendOrder.Size(); i++)
-		{
-			const SceneBatch &b = g_batches[blendOrder[i]];
-			if (b.count == 0 || b.srb == NULL) continue;
-			Diligent::IPipelineState *pso = (b.blend == 2) ? g_addPSO.RawPtr() : g_transPSO.RawPtr();
-			if (pso != bound) { ctx->SetPipelineState(pso); bound = pso; }
-			ctx->CommitShaderResources(b.srb, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-			Diligent::DrawAttribs draw;
-			draw.NumVertices = b.count;
-			draw.StartVertexLocation = b.first;
-			draw.Flags = Diligent::DRAW_FLAG_VERIFY_ALL;
-			ctx->Draw(draw);
-		}
-	}
-
-	// [rc4l] Sprites last: the world is opaque and fills the depth buffer first, so alpha-tested
-	// sprite quads reject most of their fragments instead of shading them.
-	DrawDynamic(ctx);
-
+	// [rc4l] Then everything that blends -- translucent 3D floors, translucent middle textures and
+	// translucent sprites -- in ONE back-to-front pass, so the world and the sprites sort against each
+	// other rather than being layered by which pass came last.
+	DrawBlended(ctx);
 }
 
 bool SceneBench(int frames, FString &report)
