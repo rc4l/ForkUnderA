@@ -534,7 +534,7 @@ void DumpWallDecals()
 		Printf("  %2d  at (%.1f, %.1f)  base z %.2f + upOff %.2f = %.2f\n"
 		       "      half %.1f x %.1f  radius %.1f  alpha %.2f  %s%s  tex %s\n",
 			i, w.x, w.y, base, w.upOff, base + w.upOff,
-			w.halfW, w.halfH, (w.halfW > w.halfH ? w.halfW : w.halfH), w.alpha,
+			w.halfW, w.halfH, ComputeDecalReach(w.halfW, w.halfH), w.alpha,
 			w.additive ? "additive" : "blended", w.redToAlpha ? " red-as-alpha" : "",
 			(mat && mat->tex && mat->tex->Name.Len()) ? mat->tex->Name.GetChars() : "(none)");
 	}
