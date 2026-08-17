@@ -186,6 +186,7 @@ static Diligent::RefCntAutoPtr<Diligent::IBuffer>        g_vb;
 static Diligent::RefCntAutoPtr<Diligent::IBuffer>        g_cb;
 static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_scenePSO;      // opaque, early-Z intact
 static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_maskedPSO;     // alpha-tested
+static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_maskedGBufPSO; // ...and writing normals
 static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_transPSO;      // normal translucency
 static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_addPSO;        // additive
 // [rc4l] The same four with culling forced off, for SPRITES.
@@ -214,6 +215,14 @@ static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_addDecalPSO;
 // after them -- needs its own. The world pass renders into this instead, and it is the same format
 // and size as the one it replaces, so nothing else has to change.
 static Diligent::RefCntAutoPtr<Diligent::ITexture> g_sceneDepth;
+// [rc4l] The G-buffer: the exact surface normal of whatever the world pass drew, for the decals.
+static Diligent::RefCntAutoPtr<Diligent::ITexture> g_sceneNormal;
+static Diligent::ITextureView *SceneNormalRTV();
+static Diligent::ITextureView *SceneNormalSRV();
+// True while the world is being drawn INTO the G-buffer. The camera-texture and mirror paths draw
+// the same geometry with only a colour target bound, and a pipeline that writes two attachments
+// cannot be used against one.
+static bool g_gbufBound = false;
 static Diligent::ITextureView *EnsureSceneDepth();
 Diligent::ITextureView *SceneDepthSRV();
 // The same texture as a depth target, for putting the attachment back after a pass that samples it.
@@ -605,6 +614,37 @@ static const char *kScenePS =
 // [rc4l] Translucent: no alpha test, and the texture's own alpha multiplied by the piece's. The
 // blend factors live in the pipeline, not here, so this one shader serves both the normal and the
 // additive pass -- additive differs only in its destination factor.
+// [rc4l] The world pass, writing its SURFACE NORMAL out alongside the colour.
+//
+// This is what makes a projected decal legitimate. A decal reads the depth buffer to find where a
+// surface is, and it needs to know which way that surface faces to lay a picture into it. Without a
+// normal to read it has to estimate one from neighbouring depth samples, and that estimate is wrong
+// in all the places that matter: across a silhouette it straddles two unrelated surfaces, on a
+// two-pixel sliver like the front of a low ledge there is no neighbourhood to sample, and at a
+// grazing angle it is a difference of nearly-equal large numbers. Every decal artifact reported today
+// traces back to that estimate -- a notch cut through a ledge, a mark that changed as the camera
+// moved, a scorch smeared into radial streaks.
+//
+// The estimate was never necessary. This shader has the exact normal already: it arrives per vertex
+// from the mesh, correct for walls, flats, slopes and both faces of a 3D floor. Writing it to a
+// second target costs one attachment and deletes an entire class of bug.
+//
+// It also handles moving geometry for free, which the alternative does not: a door's normal is
+// written fresh every frame from where the door actually is.
+static const char *kScenePSGBuffer =
+	"#version 450\n"
+	FUA_LIGHT_GLSL
+	"layout(location = 1) out vec4 outNormal;\n"
+	"void main() {\n"
+	"    vec4 t = texture(uTex, vUV);\n"
+	"    if (t.a < 0.5) discard;\n"
+	"    outColor = vec4(fuaShade(t.rgb), 1.0);\n"
+	/* Encoded to 0..1 because the target is 8-bit unorm. That is coarse for lighting and ample here:
+	   the decal pass uses this to lay axes into a plane and to ask how far a surface is from the
+	   impact, and neither needs better than a degree or so. */
+	"    outNormal = vec4(normalize(vNormal) * 0.5 + 0.5, 1.0);\n"
+	"}\n";
+
 static const char *kScenePSTrans =
 	"#version 450\n"
 	FUA_LIGHT_GLSL
@@ -665,30 +705,6 @@ static const char *kScenePSRedAlpha =
 // This is what the projection was for and could not do, and it is cheaper than what it replaces: no
 // unwrap, no carry, no facing fade, no join arithmetic, no per-surface companion boxes.
 #define FUA_DECAL_RADIAL \
-	"vec3 fuaWorldAt(vec2 uv, mat4 invMVP) {\n" \
-	"    float d = texture(uSceneDepth, uv).r;\n" \
-	"    vec4 w = invMVP * vec4(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0, d, 1.0);\n" \
-	"    return w.xyz / w.w;\n" \
-	"}\n" \
-	/* The surface normal, from FOUR OWN TAPS keeping the closer neighbour on each axis.
-	   dFdx/dFdy are taken across a 2x2 quad the shader does not choose, and at a silhouette its two
-	   pixels sit on different surfaces, so the normal is built across a jump in depth. Two pixels on
-	   the same surface are near each other in world space and one across a silhouette is far, so
-	   keeping the nearer neighbour means the normal always comes from the surface the fragment is
-	   actually on. A sliver too thin to have neighbours -- the front face of a low ledge -- has no
-	   usable answer, and there the mark's own facing is the right one to assume. */ \
-	"vec3 fuaSurfaceNormal(vec3 P, vec2 uv, vec2 texel, mat4 invMVP, vec3 fallback) {\n" \
-	"    vec3 xp = fuaWorldAt(uv + vec2(texel.x, 0.0), invMVP) - P;\n" \
-	"    vec3 xm = P - fuaWorldAt(uv - vec2(texel.x, 0.0), invMVP);\n" \
-	"    vec3 yp = fuaWorldAt(uv + vec2(0.0, texel.y), invMVP) - P;\n" \
-	"    vec3 ym = P - fuaWorldAt(uv - vec2(0.0, texel.y), invMVP);\n" \
-	"    vec3 dx = (dot(xp, xp) < dot(xm, xm)) ? xp : xm;\n" \
-	"    vec3 dy = (dot(yp, yp) < dot(ym, ym)) ? yp : ym;\n" \
-	"    if (dot(dx, dx) < 1e-10 || dot(dy, dy) < 1e-10) return fallback;\n" \
-	"    vec3 n = cross(dx, dy);\n" \
-	"    if (dot(n, n) < 1e-12) return fallback;\n" \
-	"    return normalize(n);\n" \
-	"}\n" \
 	/* The picture's own axes, laid into whatever surface this fragment is on. The mark's across-axis
 	   is used where it survives being turned into the plane, and its up-axis where it does not -- on
 	   a floor, "along the wall" still means something while "up the wall" does not. */ \
@@ -757,6 +773,7 @@ static const char *kDecalPS =
 	"layout(binding = 6) uniform Decal { mat4 uInvMVP; };\n"
 	"layout(binding = 1) uniform sampler2D uTex;\n"
 	"layout(binding = 7) uniform sampler2D uSceneDepth;\n"
+	"layout(binding = 8) uniform sampler2D uSceneNormal;\n"
 	"layout(location = 0) in vec3 vCentre;\n"
 	"layout(location = 1) in vec3 vAxisU;\n"
 	"layout(location = 2) in vec3 vAxisV;\n"
@@ -787,8 +804,14 @@ static const char *kDecalPS =
 	"    vec3 rel = P - vCentre;\n"
 	"    float reach = fuaDecalReach(rel, vRadius);\n"
 	"    if (reach <= 0.0) discard;\n"
-	"    vec3 nrm = fuaSurfaceNormal(P, uv, 1.0 / vec2(uScreen.x, uScreen.y), uInvMVP,\n"
-	"                               normalize(vAxisN));\n"
+	/* [rc4l] The surface's EXACT normal, read out of the G-buffer -- see kScenePSGBuffer.
+	   This used to be estimated from four depth taps, and the estimate was wrong in all the places
+	   that mattered: across a silhouette it straddled two surfaces, on a two-pixel sliver there was no
+	   neighbourhood to sample, and at a grazing angle it was a difference of nearly-equal large
+	   numbers. Alpha zero means nothing was drawn here, so there is no surface to mark. */
+	"    vec4 gbuf = texture(uSceneNormal, uv);\n"
+	"    if (gbuf.a < 0.5) discard;\n"
+	"    vec3 nrm = normalize(gbuf.xyz * 2.0 - 1.0);\n"
 	"    reach *= fuaDecalTouched(rel, nrm, vRadius);\n"
 	"    if (reach <= 0.0) discard;\n"
 	"    vec2 t = fuaDecalUV(rel, nrm, vAxisU, vAxisV, vAxisN);\n"
@@ -813,6 +836,7 @@ static const char *kDecalRedPS =
 	"layout(binding = 6) uniform Decal { mat4 uInvMVP; };\n"
 	"layout(binding = 1) uniform sampler2D uTex;\n"
 	"layout(binding = 7) uniform sampler2D uSceneDepth;\n"
+	"layout(binding = 8) uniform sampler2D uSceneNormal;\n"
 	"layout(location = 0) in vec3 vCentre;\n"
 	"layout(location = 1) in vec3 vAxisU;\n"
 	"layout(location = 2) in vec3 vAxisV;\n"
@@ -836,8 +860,14 @@ static const char *kDecalRedPS =
 	"    vec3 rel = P - vCentre;\n"
 	"    float reach = fuaDecalReach(rel, vRadius);\n"
 	"    if (reach <= 0.0) discard;\n"
-	"    vec3 nrm = fuaSurfaceNormal(P, uv, 1.0 / vec2(uScreen.x, uScreen.y), uInvMVP,\n"
-	"                               normalize(vAxisN));\n"
+	/* [rc4l] The surface's EXACT normal, read out of the G-buffer -- see kScenePSGBuffer.
+	   This used to be estimated from four depth taps, and the estimate was wrong in all the places
+	   that mattered: across a silhouette it straddled two surfaces, on a two-pixel sliver there was no
+	   neighbourhood to sample, and at a grazing angle it was a difference of nearly-equal large
+	   numbers. Alpha zero means nothing was drawn here, so there is no surface to mark. */
+	"    vec4 gbuf = texture(uSceneNormal, uv);\n"
+	"    if (gbuf.a < 0.5) discard;\n"
+	"    vec3 nrm = normalize(gbuf.xyz * 2.0 - 1.0);\n"
 	"    reach *= fuaDecalTouched(rel, nrm, vRadius);\n"
 	"    if (reach <= 0.0) discard;\n"
 	"    vec2 t = fuaDecalUV(rel, nrm, vAxisU, vAxisV, vAxisN);\n"
@@ -1798,6 +1828,7 @@ static void ReleaseScenePipelines()
 	g_skyFadePSO.Release();
 	g_scenePSO.Release();
 	g_maskedPSO.Release();
+	g_maskedGBufPSO.Release();
 	ReleaseDecalPass();
 	g_maskedNoCullPSO.Release();
 	g_transNoCullPSO.Release();
@@ -2168,7 +2199,7 @@ static bool EnsureScenePipeline(FString &err)
 	auto *swap = GetSwapChain();
 	if (!dev || !swap) { err = "no device/swapchain"; return false; }
 
-	Diligent::RefCntAutoPtr<Diligent::IShader> vs, psOpaque, psMasked, psTrans, psRedAlpha;
+	Diligent::RefCntAutoPtr<Diligent::IShader> vs, psOpaque, psMasked, psTrans, psRedAlpha, psGBuffer;
 	{
 		Diligent::ShaderCreateInfo ci;
 		ci.SourceLanguage = Diligent::SHADER_SOURCE_LANGUAGE_GLSL_VERBATIM;
@@ -2192,6 +2223,14 @@ static bool EnsureScenePipeline(FString &err)
 		ci.Desc.Name = "fua scene PS masked";
 		ci.Source = kScenePS;
 		dev->CreateShader(ci, &psMasked);
+	}
+	{
+		Diligent::ShaderCreateInfo ci;
+		ci.SourceLanguage = Diligent::SHADER_SOURCE_LANGUAGE_GLSL_VERBATIM;
+		ci.Desc.ShaderType = Diligent::SHADER_TYPE_PIXEL;
+		ci.Desc.Name = "fua scene PS masked + gbuffer";
+		ci.Source = kScenePSGBuffer;
+		dev->CreateShader(ci, &psGBuffer);
 	}
 	{
 		Diligent::ShaderCreateInfo ci;
@@ -2271,29 +2310,35 @@ static bool EnsureScenePipeline(FString &err)
 	// sprites. See g_maskedNoCullPSO.
 	// Passes 0..3 world, 4..6 sprites (no culling), 7..9 decals (no culling + depth bias).
 	// 10..11 are the alpha-mask decal variants (translucent and additive).
-	for (int pass = 0; pass < 12; pass++)
+	for (int pass = 0; pass < 13; pass++)
 	{
-		static const char *kNames[12] = { "fua scene PSO opaque", "fua scene PSO masked",
+		static const char *kNames[13] = { "fua scene PSO opaque", "fua scene PSO masked",
 		                                  "fua scene PSO translucent", "fua scene PSO additive",
 		                                  "fua sprite PSO masked", "fua sprite PSO translucent",
 		                                  "fua sprite PSO additive",
 		                                  "fua decal PSO masked", "fua decal PSO translucent",
 		                                  "fua decal PSO additive",
 		                                  "fua decal PSO redalpha translucent",
-		                                  "fua decal PSO redalpha additive" };
+		                                  "fua decal PSO redalpha additive",
+		                                  "fua scene PSO masked + gbuffer" };
 		// 4..6 and 7..9 both map onto shapes 1..3.
-		const int shape = (pass < 4) ? pass : ((pass < 7) ? pass - 3 :
-		                  ((pass < 10) ? pass - 6 : pass - 8));   // 10->2 trans, 11->3 additive
-		const bool noCull = (pass >= 4);
-		const bool decal  = (pass >= 7);
-		const bool redAlpha = (pass >= 10);
+		// [rc4l] Pass 12 is pass 1 over again with the G-buffer attached -- see kScenePSGBuffer.
+		// Only the OPAQUE world runs before the decals, and it runs through one pipeline, so this is
+		// one extra pipeline rather than a second set of twelve.
+		const bool gbuffer = (pass == 12);
+		const int shape = gbuffer ? 1 : ((pass < 4) ? pass : ((pass < 7) ? pass - 3 :
+		                  ((pass < 10) ? pass - 6 : pass - 8)));   // 10->2 trans, 11->3 additive
+		const bool noCull = (pass >= 4 && pass < 12);
+		const bool decal  = (pass >= 7 && pass < 12);
+		const bool redAlpha = (pass >= 10 && pass < 12);
 		const bool blended = (shape >= 2);
 
 		Diligent::GraphicsPipelineStateCreateInfo pci;
 		pci.PSODesc.Name = kNames[pass];
 		pci.PSODesc.PipelineType = Diligent::PIPELINE_TYPE_GRAPHICS;
-		pci.GraphicsPipeline.NumRenderTargets = 1;
+		pci.GraphicsPipeline.NumRenderTargets = gbuffer ? 2 : 1;
 		pci.GraphicsPipeline.RTVFormats[0] = swap->GetDesc().ColorBufferFormat;
+		if (gbuffer) pci.GraphicsPipeline.RTVFormats[1] = Diligent::TEX_FORMAT_RGBA8_UNORM;
 		pci.GraphicsPipeline.DSVFormat = swap->GetDesc().DepthBufferFormat;
 		pci.GraphicsPipeline.PrimitiveTopology = Diligent::PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
 		pci.GraphicsPipeline.RasterizerDesc.CullMode = noCull ? Diligent::CULL_MODE_NONE :
@@ -2331,7 +2376,7 @@ static bool EnsureScenePipeline(FString &err)
 		pci.PSODesc.ResourceLayout.ImmutableSamplers = samplers;
 		pci.PSODesc.ResourceLayout.NumImmutableSamplers = 2;
 		pci.pVS = vs;
-		pci.pPS = redAlpha ? psRedAlpha :
+		pci.pPS = gbuffer ? psGBuffer : redAlpha ? psRedAlpha :
 			(shape == 0) ? psOpaque : (shape == 1) ? psMasked : psTrans;
 
 		Diligent::RefCntAutoPtr<Diligent::IPipelineState> made;
@@ -2347,12 +2392,13 @@ static bool EnsureScenePipeline(FString &err)
 		else if (pass == 8)  g_transDecalPSO    = made;
 		else if (pass == 9)  g_addDecalPSO      = made;
 		else if (pass == 10) g_transRedAlphaPSO = made;
-		else                 g_addRedAlphaPSO   = made;
+		else if (pass == 11) g_addRedAlphaPSO   = made;
+		else                 g_maskedGBufPSO    = made;
 	}
 	if (!g_scenePSO || !g_maskedPSO || !g_transPSO || !g_addPSO ||
 		!g_maskedNoCullPSO || !g_transNoCullPSO || !g_addNoCullPSO ||
 		!g_maskedDecalPSO || !g_transDecalPSO || !g_addDecalPSO ||
-		!g_transRedAlphaPSO || !g_addRedAlphaPSO)
+		!g_transRedAlphaPSO || !g_addRedAlphaPSO || !g_maskedGBufPSO)
 	{ err = "scene pipeline creation failed"; return false; }
 
 	// [rc4l] Both stages read Constants now -- the pixel shader needs uCameraPos for radial fog.
@@ -2363,9 +2409,9 @@ static bool EnsureScenePipeline(FString &err)
 	Diligent::IPipelineState *psos[] = { g_scenePSO, g_maskedPSO, g_transPSO, g_addPSO,
 	                                     g_maskedNoCullPSO, g_transNoCullPSO, g_addNoCullPSO,
 	                                     g_maskedDecalPSO, g_transDecalPSO, g_addDecalPSO,
-	                                     g_transRedAlphaPSO, g_addRedAlphaPSO };
+	                                     g_transRedAlphaPSO, g_addRedAlphaPSO, g_maskedGBufPSO };
 	const Diligent::SHADER_TYPE stages[] = { Diligent::SHADER_TYPE_VERTEX, Diligent::SHADER_TYPE_PIXEL };
-	for (int i = 0; i < 12; i++)
+	for (int i = 0; i < 13; i++)
 	{
 		for (int s = 0; s < 2; s++)
 			if (auto *var = psos[i]->GetStaticVariableByName(stages[s], "Constants"))
@@ -2860,6 +2906,7 @@ static bool EnsureDecalPass()
 	static Diligent::ShaderResourceVariableDesc vars[] = {
 		{ Diligent::SHADER_TYPE_PIXEL, "uTex", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
 		{ Diligent::SHADER_TYPE_PIXEL, "uSceneDepth", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
+		{ Diligent::SHADER_TYPE_PIXEL, "uSceneNormal", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
 	};
 	static Diligent::SamplerDesc samp;
 	FillSamplerFromEngine(samp);
@@ -2871,6 +2918,7 @@ static bool EnsureDecalPass()
 	static Diligent::ImmutableSamplerDesc samplers[] = {
 		{ Diligent::SHADER_TYPE_PIXEL, "uTex", samp },
 		{ Diligent::SHADER_TYPE_PIXEL, "uSceneDepth", depthSamp },
+		{ Diligent::SHADER_TYPE_PIXEL, "uSceneNormal", depthSamp },
 	};
 
 	for (int pass = 0; pass < 4; pass++)
@@ -2915,9 +2963,9 @@ static bool EnsureDecalPass()
 		pci.GraphicsPipeline.InputLayout.NumElements = 7;
 		pci.PSODesc.ResourceLayout.DefaultVariableType = Diligent::SHADER_RESOURCE_VARIABLE_TYPE_STATIC;
 		pci.PSODesc.ResourceLayout.Variables = vars;
-		pci.PSODesc.ResourceLayout.NumVariables = 2;
+		pci.PSODesc.ResourceLayout.NumVariables = 3;
 		pci.PSODesc.ResourceLayout.ImmutableSamplers = samplers;
-		pci.PSODesc.ResourceLayout.NumImmutableSamplers = 2;
+		pci.PSODesc.ResourceLayout.NumImmutableSamplers = 3;
 		pci.pVS = vs;
 		pci.pPS = red ? psRed : ps;
 
@@ -2952,7 +3000,8 @@ static void DrawProjectedDecals(Diligent::IDeviceContext *ctx)
 	if (n <= 0 || decals == NULL) return;
 	if (!EnsureDecalPass()) return;
 	Diligent::ITextureView *depthSRV = SceneDepthSRV();
-	if (!depthSRV) return;
+	Diligent::ITextureView *normalSRV = SceneNormalSRV();
+	if (!depthSRV || !normalSRV) return;
 
 	float invMVP[16];
 	if (!InvertMatrix4(g_mvp, invMVP)) return;
@@ -3047,6 +3096,8 @@ static void DrawProjectedDecals(Diligent::IDeviceContext *ctx)
 		if (!srb) continue;
 		if (auto *v = srb->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "uSceneDepth"))
 			v->Set(depthSRV);
+		if (auto *v = srb->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "uSceneNormal"))
+			v->Set(normalSRV);
 		if (pso != bound) { ctx->SetPipelineState(pso); bound = pso; }
 		ctx->CommitShaderResources(srb, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 		Diligent::DrawAttribs draw;
@@ -3749,6 +3800,7 @@ static Diligent::ITextureView *EnsureSceneDepth()
 	// came out as a grid of squares across every mark, since the reconstruction is reading positions
 	// that never existed.
 	g_sceneDepth.Release();
+	g_sceneNormal.Release();
 	ReleaseMaterialSRBs();
 	Diligent::TextureDesc td;
 	td.Name = "fua scene depth";
@@ -3759,8 +3811,30 @@ static Diligent::ITextureView *EnsureSceneDepth()
 	td.BindFlags = Diligent::BIND_DEPTH_STENCIL | Diligent::BIND_SHADER_RESOURCE;
 	dev->CreateTexture(td, nullptr, &g_sceneDepth);
 	if (!g_sceneDepth) { g_sceneDepthW = g_sceneDepthH = 0; return NULL; }
+	{
+		// The G-buffer shares the depth's lifetime and size: they are read together, one fragment at
+		// a time, and a mismatch between them would be a reconstruction against the wrong surface.
+		Diligent::TextureDesc nd;
+		nd.Name = "fua scene normal";
+		nd.Type = Diligent::RESOURCE_DIM_TEX_2D;
+		nd.Width = sd.Width; nd.Height = sd.Height;
+		nd.MipLevels = 1;
+		nd.Format = Diligent::TEX_FORMAT_RGBA8_UNORM;
+		nd.BindFlags = Diligent::BIND_RENDER_TARGET | Diligent::BIND_SHADER_RESOURCE;
+		dev->CreateTexture(nd, nullptr, &g_sceneNormal);
+	}
 	g_sceneDepthW = (int)sd.Width; g_sceneDepthH = (int)sd.Height;
 	return g_sceneDepth->GetDefaultView(Diligent::TEXTURE_VIEW_DEPTH_STENCIL);
+}
+
+static Diligent::ITextureView *SceneNormalRTV()
+{
+	return g_sceneNormal ? g_sceneNormal->GetDefaultView(Diligent::TEXTURE_VIEW_RENDER_TARGET) : NULL;
+}
+
+static Diligent::ITextureView *SceneNormalSRV()
+{
+	return g_sceneNormal ? g_sceneNormal->GetDefaultView(Diligent::TEXTURE_VIEW_SHADER_RESOURCE) : NULL;
 }
 
 static Diligent::ITextureView *SceneDepthDSV()
@@ -3786,9 +3860,22 @@ static void DrawSceneOnce(bool present = true, bool pump = true)
 	auto *rtv = swap->GetCurrentBackBufferRTV();
 	Diligent::ITextureView *dsv = EnsureSceneDepth();
 	if (!dsv) dsv = swap->GetDepthBufferDSV();
-	ctx->SetRenderTargets(1, &rtv, dsv, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	// [rc4l] Colour and the G-buffer together, for the opaque world only. DrawWorld drops back to
+	// colour alone before the decals, which read the G-buffer rather than write it.
+	Diligent::ITextureView *nrm = SceneNormalRTV();
+	g_gbufBound = (nrm != NULL);
+	Diligent::ITextureView *targets[2] = { rtv, nrm };
+	ctx->SetRenderTargets(g_gbufBound ? 2 : 1, targets,
+		dsv, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 	const float clear[4] = { 0.05f, 0.06f, 0.09f, 1.0f };
 	ctx->ClearRenderTarget(rtv, clear, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	if (g_gbufBound)
+	{
+		// Zero means "nothing drew here", which decodes to a zero-length normal -- and the decal pass
+		// treats that as a surface it knows nothing about rather than one facing a particular way.
+		const float clearN[4] = { 0.5f, 0.5f, 0.5f, 0.0f };
+		ctx->ClearRenderTarget(nrm, clearN, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	}
 	ctx->ClearDepthStencil(dsv, Diligent::CLEAR_DEPTH_FLAG, 1.0f, 0,
 		Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
@@ -4022,7 +4109,7 @@ static void DrawWorld(Diligent::IDeviceContext *ctx)
 	// materials FMaterial::isMasked() calls opaque made their transparent texels paint over detail
 	// behind them. The lesson is that isMasked() answers a GL-pipeline question, not "does this
 	// texture have see-through pixels", so it cannot drive a pass split on its own.
-	ctx->SetPipelineState(g_maskedPSO);
+	ctx->SetPipelineState(g_gbufBound ? g_maskedGBufPSO : g_maskedPSO);
 
 	// [rc4l] g_drawRepeat re-draws the whole scene N times per frame.
 	//
@@ -4044,6 +4131,17 @@ static void DrawWorld(Diligent::IDeviceContext *ctx)
 		draw.StartVertexLocation = b.first;
 		draw.Flags = Diligent::DRAW_FLAG_VERIFY_ALL;
 		ctx->Draw(draw);
+	}
+
+	// [rc4l] The G-buffer is finished with: everything from here reads it or ignores it, and every
+	// pipeline after this point declares a single attachment.
+	if (g_gbufBound)
+	{
+		auto *swapNow = GetSwapChain();
+		Diligent::ITextureView *rtvNow = swapNow ? swapNow->GetCurrentBackBufferRTV() : NULL;
+		if (rtvNow) ctx->SetRenderTargets(1, &rtvNow, SceneDepthDSV(),
+			Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+		g_gbufBound = false;
 	}
 
 	// [rc4l] Decals mark surfaces, so they go with the surfaces -- after the world and before the
