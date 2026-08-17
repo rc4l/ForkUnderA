@@ -226,6 +226,15 @@ void FGLRenderer::DrawPSprite (player_t * player,pspdef_t *psp,fixed_t sx, fixed
 		q.x = x1; q.y = y1; q.w = x2 - x1; q.h = y2 - y1;
 		q.u1 = fU1; q.v1 = fV1; q.u2 = fU2; q.v2 = fV2;
 		gl_RenderState.GetColorRGBA(q.r, q.g, q.b, q.a);
+		// [rc4l] Fold in the dynamic light the shader would have added. Without it the weapon is lit
+		// by the sector alone and stays dark while its own muzzle flash lights the room.
+		{
+			float dr, dg, db;
+			gl_RenderState.GetDynLight(dr, dg, db);
+			q.r = (q.r + dr > 1.f) ? 1.f : q.r + dr;
+			q.g = (q.g + dg > 1.f) ? 1.f : q.g + dg;
+			q.b = (q.b + db > 1.f) ? 1.f : q.b + db;
+		}
 		q.clipL = 0; q.clipT = 0; q.clipR = 0; q.clipB = 0;
 		q.blend = 0;
 		q.translation = 0;

@@ -38,6 +38,7 @@
 #include "m_random.h"
 #include "doomdef.h"
 #include "p_local.h"
+#include "features/levelmesh/flatdecals.h"   // [rc4l] missile decals on floors and ceilings
 #include "p_lnspec.h"
 #include "p_effect.h"
 #include "p_terrain.h"
@@ -1738,6 +1739,27 @@ void P_ExplodeMissile (AActor *mo, line_t *line, AActor *target, bool bExplodeOn
 		// [RH] Don't explode missiles on horizon lines.
 		mo->Destroy ();
 		return;
+	}
+
+	// [rc4l] features/levelmesh: a missile that hits a FLOOR or CEILING marks it too.
+	//
+	// The branch below only fires for `line != NULL`, so a projectile exploding on the ground has
+	// never left a decal -- the same gap P_LineAttack had for hitscans, and the reason plasma marks
+	// walls but not floors while bullets now mark both. `line` is NULL for a plane hit and for an
+	// actor hit alike, so the plane is identified by where the missile came to rest.
+	if (line == NULL && target == NULL && cl_missiledecals)
+	{
+		FDecalBase *base = mo->DecalGenerator;
+		// A missile does not come to rest exactly on the plane it struck, so "did this hit the
+		// ground" is a proximity question rather than an equality one. Two units of slack; the
+		// counters below say which arm of this actually fires.
+		const fixed_t kSlack = 4 * FRACUNIT;
+		const bool onFloor = (mo->z <= mo->floorz + kSlack);
+		const bool onCeiling = (mo->z + mo->height >= mo->ceilingz - kSlack);
+		zx::levelmesh::NoteMissileImpact(base != NULL, onFloor, onCeiling);
+		if (base != NULL && (onFloor || onCeiling) && NETWORK_GetState( ) != NETSTATE_SERVER)
+			zx::levelmesh::SpawnFlatDecal(base->GetDecal(), mo->x, mo->y,
+				onCeiling ? mo->ceilingz : mo->floorz, onCeiling, NULL);
 	}
 
 	if (line != NULL && cl_missiledecals)

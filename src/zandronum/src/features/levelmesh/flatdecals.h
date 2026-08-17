@@ -35,8 +35,12 @@ namespace zx { namespace levelmesh {
 // a decal has to RIDE the surface it is stuck to, and a 3D floor moves independently of the sector
 // that contains it -- tracking the sector's floor instead would leave a decal hanging in the air the
 // moment the 3D floor it is painted on moves.
+// `shadeOverride` replaces the template's own colour when non-zero -- blood decals are shaded with
+// the bleeding actor's blood colour rather than with anything in the template.
+// `isLower` marks the decal a template names to sit UNDERNEATH it. It gets less clearance from the
+// surface so the pair has a settled order instead of two coplanar quads trading places every frame.
 void SpawnFlatDecal(const FDecalTemplate *tpl, fixed_t x, fixed_t y, fixed_t z, bool ceiling,
-                    F3DFloor *rover);
+                    F3DFloor *rover, DWORD shadeOverride = 0, bool isLower = false);
 
 // Emit this frame's flat decals into the dynamic mesh. Called once per frame beside the sprites.
 void RegisterFlatDecals();
@@ -50,6 +54,11 @@ int FlatDecalCount();
 // What the trace reported at the point decals are decided, so "the branch never ran" and "it ran
 // and the hit was a wall" stop being the same observation.
 void NoteImpact(int hitType, bool noImpactFlag, bool noDecalFlag);
+
+// Why a MISSILE impact did or did not mark a plane. Missiles reach P_ExplodeMissile, not
+// P_LineAttack, which is why plasma marked walls but never floors.
+void NoteMissileImpact(bool hasGenerator, bool onFloor, bool onCeiling);
+extern int g_missileTries, g_missileNoGen, g_missileNotPlane;
 extern int g_impactWall, g_impactFloor, g_impactCeiling, g_impactOther, g_impactSuppressed;
 extern float g_lastHitZ, g_lastPlaneSpawn, g_lastPlaneNow;
 extern bool g_lastRover;

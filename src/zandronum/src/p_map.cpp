@@ -5061,6 +5061,19 @@ void P_TraceBleed(int damage, fixed_t x, fixed_t y, fixed_t z, AActor *actor, an
 			vx, vy, vz, 172 * FRACUNIT, 0, ML_BLOCKEVERYTHING, actor,
 			bleedtrace, TRACE_NoSky))
 		{
+			// [rc4l] features/levelmesh: blood lands on FLOORS and CEILINGS too.
+			//
+			// The wall-only branch below is why shooting something standing on open ground has never
+			// left a splash on it. Same gap as P_LineAttack's and P_ExplodeMissile's.
+			if (bleedtrace.HitType == TRACE_HitFloor || bleedtrace.HitType == TRACE_HitCeiling)
+			{
+				PalEntry bc = actor->GetBloodColor();
+				if (bc != 0) { bc.r >>= 1; bc.g >>= 1; bc.b >>= 1; bc.a = 1; }
+				const FDecalTemplate *btpl = DecalLibrary.GetDecalByName(bloodType);
+				if (btpl != NULL && NETWORK_GetState( ) != NETSTATE_SERVER)
+					zx::levelmesh::SpawnFlatDecal(btpl, bleedtrace.X, bleedtrace.Y, bleedtrace.Z,
+						bleedtrace.HitType == TRACE_HitCeiling, bleedtrace.ffloor, (DWORD)bc);
+			}
 			if (bleedtrace.HitType == TRACE_HitWall)
 			{
 				PalEntry bloodcolor = actor->GetBloodColor();
@@ -5360,6 +5373,18 @@ void P_RailAttack(AActor *source, int damage, int offset_xy, fixed_t offset_z, i
 	if (railEnd.decal)
 	{
 		SpawnShootDecal(source, trace);
+	}
+	// [rc4l] features/levelmesh: and on planes, which railEnd.decal deliberately excludes because a
+	// flat could not take a wall decal. It can now.
+	else if (trace.HitType == TRACE_HitFloor || trace.HitType == TRACE_HitCeiling)
+	{
+		FDecalBase *base = NULL;
+		if (source != NULL && source->player != NULL && source->player->ReadyWeapon != NULL)
+			base = source->player->ReadyWeapon->GetDefault()->DecalGenerator;
+		if (base == NULL && source != NULL) base = source->DecalGenerator;
+		if (base != NULL && NETWORK_GetState( ) != NETSTATE_SERVER)
+			zx::levelmesh::SpawnFlatDecal(base->GetDecal(), trace.X, trace.Y, trace.Z,
+				trace.HitType == TRACE_HitCeiling, trace.ffloor);
 	}
 	if (railEnd.puff && puffclass != NULL && puffDefaults->flags3 & MF3_ALWAYSPUFF)
 	{
