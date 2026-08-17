@@ -22,12 +22,33 @@ struct FlatKey
 {
 	const subsector_t *sub;
 	bool ceiling;
+	// [rc4l] The plane's own sector, which for a 3D floor is its MODEL sector.
+	//
+	// Keying on (subsector, ceiling) alone gives one slot per subsector per side, and a sector with
+	// 3D floors draws several planes through the same subsector -- its own floor plus a top and a
+	// bottom for every 3D floor above it. They all landed in that one slot and overwrote each other,
+	// so only whichever drew last survived. dbab01 has 138 such sectors and 276 3D-floor planes.
+	//
+	// The model sector is the right discriminator rather than the plane's height: a 3D floor used as
+	// a lift changes height every tic, and keying on that would allocate a fresh range per frame and
+	// run the arena away.
+	const sector_t *model;
+	// Which plane OF that model sector: a 3D floor's top and bottom share the model, so the model
+	// alone still collides and the surface flickers between the two textures.
+	int whichPlane;
 	MeshRange range;
 };
 static TArray<FlatKey> g_flats;
 
+// [rc4l] How many registrations are 3D-floor planes rather than a subsector's own floor or ceiling.
+// Zero would mean the planes never reach the capture at all, which is a different problem from them
+// arriving and overwriting each other -- and the two look identical in a screenshot.
+static int g_flat3D = 0, g_flatOwn = 0;
+void GetFlatStats(int &own, int &threeD) { own = g_flatOwn; threeD = g_flat3D; }
+
 void ClearFlats()
 {
+	g_flat3D = g_flatOwn = 0;
 	g_flats.Clear();
 }
 
@@ -37,6 +58,8 @@ void RegisterFlatSubsector(const GLFlat &flat, subsector_t *sub, bool ceiling)
 {
 	if (sub == NULL || sub->numlines < 3) return;
 	if (flat.gltexture == NULL) return;
+	if (sub->sector != NULL && flat.mMeshModel != NULL && flat.mMeshModel != sub->sector) g_flat3D++;
+	else g_flatOwn++;
 
 	// [rc4l] Cap matches the wall path's staging array; a subsector with more edges than this is
 	// vanishingly rare and is simply left to the GL renderer.
@@ -68,12 +91,16 @@ void RegisterFlatSubsector(const GLFlat &flat, subsector_t *sub, bool ceiling)
 
 	FlatKey *slot = NULL;
 	for (unsigned i = 0; i < g_flats.Size(); i++)
-		if (g_flats[i].sub == sub && g_flats[i].ceiling == ceiling) { slot = &g_flats[i]; break; }
+		if (g_flats[i].sub == sub && g_flats[i].ceiling == ceiling &&
+			g_flats[i].model == flat.mMeshModel && g_flats[i].whichPlane == flat.mMeshWhichPlane)
+		{ slot = &g_flats[i]; break; }
 	if (slot == NULL)
 	{
 		FlatKey k;
 		k.sub = sub;
 		k.ceiling = ceiling;
+		k.model = flat.mMeshModel;
+		k.whichPlane = flat.mMeshWhichPlane;
 		k.range.offset = 0;
 		k.range.count = 0;
 		slot = &g_flats[g_flats.Push(k)];
