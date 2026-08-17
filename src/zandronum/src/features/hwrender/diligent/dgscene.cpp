@@ -502,6 +502,13 @@ static const char *kSceneVS =
 	"vec3 fuaDynLight(vec3 base) {\n" \
 	"    int n = int(uLightParams.x);\n" \
 	"    if (n <= 0) return base;\n" \
+	/* [rc4l] A zero normal means "this surface has no side", and the side test is skipped for it.
+	   A sprite is a billboard: it turns to face the camera and has no fixed facing of its own, so
+	   asking which side of it a light is on has no answer. Answering anyway -- the default normal
+	   was straight up -- lit only the fragments BELOW the light and cut the rest off along a dead
+	   straight horizontal line at the light's own height. On a rocket explosion, which carries a
+	   large light at its centre, that is a hard seam across the middle of the fireball. */ \
+	"    bool sided = dot(vNormal, vNormal) > 0.0001;\n" \
 	"    vec3 dyn = vec3(0.0);\n" \
 	"    for (int i = 0; i < n; i++) {\n" \
 	"        vec4 lp = lights[i*2];\n" \
@@ -510,7 +517,7 @@ static const char *kSceneVS =
 	/* The side test gl_GetLight does per surface: a light behind the plane does not light it.
 	   Without this the backs of walls and the room next door get lit, which reads as a scene far
 	   more saturated than GL's. */ \
-	"        if (dot(vNormal, d) <= 0.0) continue;\n" \
+	"        if (sided && dot(vNormal, d) <= 0.0) continue;\n" \
 	"        float a = max(lp.w - length(d), 0.0) / lp.w;\n" \
 	"        if (a <= 0.0) continue;\n" \
 	"        if (lc.a > 0.5) dyn -= lc.rgb * a;\n" \
@@ -679,10 +686,21 @@ static const char *kScenePSRedAlpha =
 	"    float turnU = abs(dot(nrm, axisU)) / lu;\n" \
 	"    float turnV = abs(dot(nrm, axisV)) / lv;\n" \
 	"    float carry = abs(local.z) / ln;\n" \
+	/* [rc4l] Split the carry between the axes rather than choosing one.
+	   Choosing was a hard switch on a normal that is only as good as the depth buffer it came from,
+	   and at a grazing angle the two derivatives of a reconstructed world position are differences
+	   of nearly-equal large numbers -- so the normal is noisy, the switch flips pixel to pixel and
+	   frame to frame, and the mark visibly reshapes as the camera moves. Weighting by how much the
+	   surface has turned about each axis gives the same answer wherever the answer is clear (a floor
+	   is all V, a side wall all U) and a smooth mixture where it is not, so noise in the normal moves
+	   the coordinate a little instead of jumping it. */ \
+	"    float sum = turnU + turnV;\n" \
+	"    float wu = (sum > 1e-5) ? turnU / sum : 0.0;\n" \
+	"    float wv = (sum > 1e-5) ? turnV / sum : 0.0;\n" \
 	/* sign(): keep going the way we were already going. A floor below the mark continues downwards,
 	   a ceiling above it upwards, a wall to the right rightwards. */ \
-	"    if (turnV > turnU) t.y += sign(t.y) * carry * lv;\n" \
-	"    else               t.x += sign(t.x) * carry * lu;\n" \
+	"    t.x += sign(t.x) * carry * lu * wu;\n" \
+	"    t.y += sign(t.y) * carry * lv * wv;\n" \
 	"    return t * 0.5 + 0.5;\n" \
 	"}\n"
 

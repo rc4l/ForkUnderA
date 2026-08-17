@@ -57,6 +57,10 @@ void RegisterDecal(const FFlatVertex *quad, const void *material, int translatio
 void ClearSprites();
 int SpritePieceCount();
 
+// [rc4l] Print this frame's sprite pieces -- z range, texture-coordinate range, light, resolved
+// colour, alpha, blend. See fua_sprites.
+void DumpSpriteNotes();
+
 }} // namespace zx::levelmesh
 
 #endif // ZX_FLATMESH_H

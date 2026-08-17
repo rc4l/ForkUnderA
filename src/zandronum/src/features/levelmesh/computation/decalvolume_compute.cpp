@@ -98,10 +98,21 @@ bool ComputeDecalUnwrapUV(const DecalFrame &f, const float local[3], const float
 	const float turnV = std::fabs(Dot3(nrm, f.v)) / lv;
 	const float carry = std::fabs(local[2]) / ln;
 
+	// [rc4l] Split the carry between the axes rather than choosing one.
+	//
+	// Choosing was a hard switch on a normal the shader recovers from depth derivatives, and at a
+	// grazing angle those are differences of nearly-equal large numbers. The normal is therefore
+	// noisy, the switch flipped pixel to pixel and frame to frame, and the mark visibly reshaped as
+	// the camera moved. Weighting gives the same answer wherever the answer is clear -- a floor is
+	// all V, a side wall all U -- and a smooth mixture where it is not.
+	const float sum = turnU + turnV;
+	const float wu = (sum > 1e-5f) ? turnU / sum : 0.f;
+	const float wv = (sum > 1e-5f) ? turnV / sum : 0.f;
+
 	// Keep going the way we were already going: a floor below the mark continues downwards, a ceiling
 	// above it upwards, a wall to the right rightwards.
-	if (turnV > turnU) ty += SignOrZero(ty) * carry * lv;
-	else               tx += SignOrZero(tx) * carry * lu;
+	tx += SignOrZero(tx) * carry * lu * wu;
+	ty += SignOrZero(ty) * carry * lv * wv;
 
 	outU = tx * 0.5f + 0.5f;
 	outV = ty * 0.5f + 0.5f;

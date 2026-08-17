@@ -198,6 +198,27 @@ void RegisterFlatSubsector(const GLFlat &flat, subsector_t *sub, bool ceiling)
 // [rc4l] Sprites go into the DYNAMIC stream, rebuilt every frame -- see staticmesh.h. They are
 // billboards built for one viewpoint, so they are not level geometry and must never be baked.
 static int g_spritesThisFrame = 0;
+
+// [rc4l] What each sprite piece was registered WITH, for one frame, so a seam can be read off
+// numbers instead of guessed at from a screenshot.
+//
+// A sprite is not always one quad. GLSprite::SplitSprite cuts it wherever a 3D floor's light band
+// starts, gives each piece that band's light and colormap, and draws them as separate sprites. When
+// two pieces of one explosion come out different in the backend and identical in GL, the question is
+// which of those inputs diverged -- and every candidate (light, colour, alpha, blend, the texture
+// coordinates of the cut) is a number that is already in hand right here.
+struct SpriteNote
+{
+	float z1, z2, vt, vb;
+	int   light;
+	unsigned int lightColor, fadeColor;
+	float alpha, r, g, b;
+	int   blend;
+	const void *material;
+};
+static const int kMaxSpriteNotes = 64;
+static SpriteNote g_spriteNotes[kMaxSpriteNotes];
+static int g_spriteNoteCount = 0;
 // [rc4l] What render styles sprites actually arrive with, counted rather than assumed.
 //
 // Plasma impacts came out with black holes where their bright cores should be, which is what an
@@ -220,7 +241,7 @@ void GetSpriteStyleDetail(int *dest16, int *classified4)
 	for (int i = 0; i < 4; i++) classified4[i] = g_classified[i];
 }
 
-void ClearSprites() { g_spritesThisFrame = 0; }
+void ClearSprites() { g_spritesThisFrame = 0; g_spriteNoteCount = 0; }
 int SpritePieceCount() { return g_spritesThisFrame; }
 
 void RegisterSprite(const GLSprite &spr)
@@ -266,6 +287,15 @@ void RegisterSprite(const GLSprite &spr)
 		if (da >= 0 && da < 16) g_styleDest[da]++;
 		g_styleFlagsSeen |= (int)spr.RenderStyle.Flags;
 	}
+	// [rc4l] A billboard has NO side, so it gets no normal.
+	//
+	// CaptureShading leaves a default of straight up, which is right for a flat and meaningless for a
+	// sprite: a quad that turns to face the camera has no fixed facing for a light to be in front of
+	// or behind. The backend's dynamic-light side test took the default at its word and lit only the
+	// fragments below the light, cutting the rest off along a dead straight horizontal line at the
+	// light's own height -- a hard seam across the middle of every rocket explosion, which carries a
+	// large light at its centre. Zero means "no side", and the test is skipped.
+	mp.normX = mp.normY = mp.normZ = 0.f;
 	mp.translation = spr.translation;
 	mp.alpha = spr.trans;
 	if (spr.RenderStyle.BlendOp == STYLEOP_Shadow)
@@ -283,6 +313,37 @@ void RegisterSprite(const GLSprite &spr)
 
 	DynAppend(tris, 6, mp);
 	g_spritesThisFrame++;
+
+	if (g_spriteNoteCount < kMaxSpriteNotes)
+	{
+		SpriteNote &n = g_spriteNotes[g_spriteNoteCount++];
+		n.z1 = spr.z1; n.z2 = spr.z2; n.vt = spr.vt; n.vb = spr.vb;
+		n.light = spr.lightlevel;
+		n.lightColor = spr.Colormap.LightColor.d;
+		n.fadeColor = spr.Colormap.FadeColor.d;
+		n.alpha = mp.alpha;
+		n.r = mp.colorR; n.g = mp.colorG; n.b = mp.colorB;
+		n.blend = mp.blendMode;
+		n.material = spr.gltexture;
+	}
+}
+
+// [rc4l] fua_sprites: this frame's sprite pieces, in the order they were registered.
+//
+// Pause on the frame in question first -- the list is rebuilt every frame, and an explosion lasts
+// about a quarter of a second.
+void DumpSpriteNotes()
+{
+	Printf("fua_sprites: %d piece(s) this frame (%d recorded)\n",
+		g_spritesThisFrame, g_spriteNoteCount);
+	for (int i = 0; i < g_spriteNoteCount; i++)
+	{
+		const SpriteNote &n = g_spriteNotes[i];
+		Printf("  %2d  z %8.2f..%8.2f  v %.4f..%.4f  light %3d  lit %.3f,%.3f,%.3f\n"
+		       "      alpha %.3f  blend %d  lightcol %06x  fade %06x  mat %p\n",
+			i, n.z1, n.z2, n.vt, n.vb, n.light, n.r, n.g, n.b,
+			n.alpha, n.blend, n.lightColor & 0xffffff, n.fadeColor & 0xffffff, n.material);
+	}
 }
 
 void RegisterDecal(const FFlatVertex *quad, const void *material, int translation,

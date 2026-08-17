@@ -265,6 +265,43 @@ TEST(DecalUnwrap, ReportsPastTheEndRatherThanClamping)
 	EXPECT_GT(u, 1.f);
 }
 
+TEST(DecalUnwrap, BlendsAtAnAmbiguousCornerRatherThanSnapping)
+{
+	// The normal comes from depth derivatives, which are noisy at a grazing angle. When it lands
+	// midway between the two axes the carry has to SPLIT, not pick a side: picking made the choice
+	// flip pixel to pixel and frame to frame, and a BFG mark on a column corner reshaped itself as
+	// the camera moved. Half the carry each is the answer that does not jump.
+	const DecalFrame f = WallFrame(16.f, 8.f, 24.f);
+	const float rel[3] = { 4.f, 6.f, 4.f };
+	const float diagonal[3] = { 0.70710678f, 0.f, 0.70710678f };   // 45 degrees between U and V
+	float local[3];
+	ComputeDecalLocal(f, rel, local);
+	float u, v;
+	ASSERT_TRUE(ComputeDecalUnwrapUV(f, local, diagonal, u, v));
+
+	const float carry = 6.f;   // world units through the wall
+	EXPECT_NEAR(local[0] * 0.5f + 0.5f + 0.5f * carry / 16.f * 0.5f, u, 1e-5f);
+	EXPECT_NEAR(local[1] * 0.5f + 0.5f + 0.5f * carry / 8.f * 0.5f, v, 1e-5f);
+}
+
+TEST(DecalUnwrap, IsStableUnderASmallWobbleInTheNormal)
+{
+	// The real failure was not a wrong answer, it was a jumpy one. A normal that moves by a degree
+	// must move the coordinate by about a degree's worth -- not across a branch to a different axis.
+	const DecalFrame f = WallFrame(16.f, 8.f, 24.f);
+	const float rel[3] = { 4.f, 5.f, 3.f };
+	float local[3];
+	ComputeDecalLocal(f, rel, local);
+
+	const float justUnder[3] = { 0.7132f, 0.f, 0.7009f };
+	const float justOver[3]  = { 0.7009f, 0.f, 0.7132f };
+	float u1, v1, u2, v2;
+	ASSERT_TRUE(ComputeDecalUnwrapUV(f, local, justUnder, u1, v1));
+	ASSERT_TRUE(ComputeDecalUnwrapUV(f, local, justOver, u2, v2));
+	EXPECT_NEAR(u1, u2, 0.01f);
+	EXPECT_NEAR(v1, v2, 0.01f);
+}
+
 TEST(DecalUnwrap, RefusesADegenerateFrame)
 {
 	DecalFrame f{};   // all axes zero
