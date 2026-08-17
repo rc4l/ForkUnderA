@@ -40,6 +40,8 @@
 // the search and drags in the reshaped windows headers (DWORD gets redefined). DeviceContext.h
 // already pulls in Diligent's, since it declares BeginQuery/EndQuery over IQuery.
 #include "RefCntAutoPtr.hpp"
+#include "BottomLevelAS.h"
+#include "TopLevelAS.h"
 
 #include "features/levelmesh/staticmesh.h"
 #include "features/levelmesh/wallcache.h"   // LevelGeneration, for the per-level auto setup
@@ -1821,6 +1823,9 @@ static bool EnsureScenePipeline(FString &err)
 //
 // So the whole thing is rebuilt. That is only affordable because the material sort is no longer
 // quadratic; it runs for the handful of frames a door is actually moving, and not at all otherwise.
+static bool EnsureAccelerationStructure();
+static bool RayTracingAvailable();
+
 static bool BuildSceneBuffer(FString &err)
 {
 	int srcCount = 0;
@@ -1931,6 +1936,10 @@ bool SceneUpload(FString &report)
 	if (!BuildSceneBuffer(err)) { report = err; return false; }
 
 	g_sceneVerts = (int)g_sceneVB.Size();
+	// [rc4l] The acceleration structure is built from the same buffer the raster path draws, right
+	// after it is uploaded, so there is never a version of the level that one path can see and the
+	// other cannot.
+	if (RayTracingAvailable()) EnsureAccelerationStructure();
 	BuildMVP(g_mvp);
 
 	// [rc4l] The shading inputs themselves, not just which code path they take.
@@ -2073,6 +2082,146 @@ static void CollectDynamicLights(Diligent::IDeviceContext *ctx)
 // screen-only parts -- no 2D layer, no present, no window pump. Portals and mirrors will want the
 // same seam.
 static void DrawWorld(Diligent::IDeviceContext *ctx);
+
+// [rc4l] Ray-traced reflections: the acceleration structure over the baked level.
+//
+// Why this rather than another planar pass. The planar mirror renders the whole world again per
+// mirror and can only show what a visibility list built for the PLAYER's camera contains -- so the
+// level reflects and the actors do not, and a mirror facing a mirror is impossible. A ray query
+// needs no visibility list at all: it asks the structure what is along a direction. Recursion is
+// free, the cost is proportional to the mirror's pixels rather than a full screen, and the static
+// level is already one flat vertex buffer, which is exactly what an acceleration structure wants.
+//
+// Built once per level, from the same buffer the raster path draws. If the geometry moves (a door)
+// the structure is rebuilt, which is rare and cheap next to the frame it happens on.
+static Diligent::RefCntAutoPtr<Diligent::IBottomLevelAS> g_blas;
+static Diligent::RefCntAutoPtr<Diligent::ITopLevelAS>    g_tlas;
+static Diligent::RefCntAutoPtr<Diligent::IBuffer>        g_asScratch;
+static Diligent::RefCntAutoPtr<Diligent::IBuffer>        g_tlasInstances;
+static bool g_asBuilt = false;
+static int  g_asVerts = 0;
+
+static bool RayTracingAvailable()
+{
+	auto *dev = GetDevice();
+	return dev != NULL && dev->GetDeviceInfo().Features.RayTracing;
+}
+
+void ReleaseAccelerationStructures()
+{
+	g_tlas.Release();
+	g_blas.Release();
+	g_asScratch.Release();
+	g_tlasInstances.Release();
+	g_asBuilt = false;
+	g_asVerts = 0;
+}
+
+// Build (or rebuild) the level's acceleration structure from the scene vertex buffer.
+static bool EnsureAccelerationStructure()
+{
+	if (g_asBuilt && g_asVerts == (int)g_sceneVB.Size()) return true;
+	if (!RayTracingAvailable() || !g_vb || g_sceneVB.Size() < 3) return false;
+
+	auto *dev = GetDevice();
+	auto *ctx = GetContext();
+	ReleaseAccelerationStructures();
+
+	const Diligent::Uint32 vertCount = (Diligent::Uint32)g_sceneVB.Size();
+	const Diligent::Uint32 triCount  = vertCount / 3;
+
+	Diligent::BLASTriangleDesc tri;
+	tri.GeometryName         = "level";
+	tri.MaxVertexCount       = vertCount;
+	tri.VertexValueType      = Diligent::VT_FLOAT32;
+	tri.VertexComponentCount = 3;
+	tri.MaxPrimitiveCount    = triCount;
+	tri.IndexType            = Diligent::VT_UNDEFINED;   // the mesh is already a triangle list
+
+	Diligent::BottomLevelASDesc blasDesc;
+	blasDesc.Name          = "fua level BLAS";
+	blasDesc.pTriangles    = &tri;
+	blasDesc.TriangleCount = 1;
+	dev->CreateBLAS(blasDesc, &g_blas);
+	if (!g_blas) return false;
+
+	Diligent::BufferDesc sb;
+	sb.Name          = "fua AS scratch";
+	sb.Usage         = Diligent::USAGE_DEFAULT;
+	sb.BindFlags     = Diligent::BIND_RAY_TRACING;
+	sb.Size          = g_blas->GetScratchBufferSizes().Build;
+	dev->CreateBuffer(sb, nullptr, &g_asScratch);
+	if (!g_asScratch) return false;
+
+	// The scene VB is interleaved: position is the first three floats of each SceneVertex, and the
+	// stride carries the rest. No second copy of the level is needed.
+	Diligent::BLASBuildTriangleData triData;
+	triData.GeometryName         = tri.GeometryName;
+	triData.pVertexBuffer        = g_vb;
+	triData.VertexOffset         = 0;
+	triData.VertexStride         = sizeof(SceneVertex);
+	triData.VertexCount          = vertCount;
+	triData.VertexValueType      = tri.VertexValueType;
+	triData.VertexComponentCount = tri.VertexComponentCount;
+	triData.PrimitiveCount       = triCount;
+	triData.Flags                = Diligent::RAYTRACING_GEOMETRY_FLAG_OPAQUE;
+
+	Diligent::BuildBLASAttribs blasAttribs;
+	blasAttribs.pBLAS                     = g_blas;
+	blasAttribs.pTriangleData             = &triData;
+	blasAttribs.TriangleDataCount         = 1;
+	blasAttribs.pScratchBuffer            = g_asScratch;
+	blasAttribs.BLASTransitionMode        = Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
+	blasAttribs.GeometryTransitionMode    = Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
+	blasAttribs.ScratchBufferTransitionMode = Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
+	ctx->BuildBLAS(blasAttribs);
+
+	Diligent::TopLevelASDesc tlasDesc;
+	tlasDesc.Name             = "fua level TLAS";
+	tlasDesc.MaxInstanceCount = 1;
+	tlasDesc.Flags            = Diligent::RAYTRACING_BUILD_AS_PREFER_FAST_TRACE;
+	dev->CreateTLAS(tlasDesc, &g_tlas);
+	if (!g_tlas) return false;
+
+	Diligent::BufferDesc ib;
+	ib.Name      = "fua TLAS instances";
+	ib.Usage     = Diligent::USAGE_DEFAULT;
+	ib.BindFlags = Diligent::BIND_RAY_TRACING;
+	ib.Size      = Diligent::TLAS_INSTANCE_DATA_SIZE;
+	dev->CreateBuffer(ib, nullptr, &g_tlasInstances);
+	if (!g_tlasInstances) return false;
+
+	Diligent::BufferDesc sb2 = sb;
+	sb2.Size = g_tlas->GetScratchBufferSizes().Build;
+	if (sb2.Size > sb.Size)
+	{
+		g_asScratch.Release();
+		dev->CreateBuffer(sb2, nullptr, &g_asScratch);
+		if (!g_asScratch) return false;
+	}
+
+	Diligent::TLASBuildInstanceData inst;
+	inst.InstanceName = "level";
+	inst.pBLAS        = g_blas;
+	inst.Mask         = 0xFF;
+
+	Diligent::BuildTLASAttribs tlasAttribs;
+	tlasAttribs.pTLAS                        = g_tlas;
+	tlasAttribs.pInstances                   = &inst;
+	tlasAttribs.InstanceCount                = 1;
+	tlasAttribs.pInstanceBuffer              = g_tlasInstances;
+	tlasAttribs.pScratchBuffer               = g_asScratch;
+	tlasAttribs.TLASTransitionMode           = Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
+	tlasAttribs.BLASTransitionMode           = Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
+	tlasAttribs.InstanceBufferTransitionMode = Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
+	tlasAttribs.ScratchBufferTransitionMode  = Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
+	ctx->BuildTLAS(tlasAttribs);
+
+	g_asBuilt = true;
+	g_asVerts = (int)g_sceneVB.Size();
+	Printf("vulkan: acceleration structure built -- %u triangles\n", (unsigned)triCount);
+	return true;
+}
 
 // [rc4l] Mirrors (Line_Mirror, special 182).
 //
@@ -2687,6 +2836,7 @@ bool SceneBench(int frames, FString &report)
 // the wait: arm, let a frame or two go by, then upload.
 void ReleaseCameraTargets();
 
+void ReleaseAccelerationStructures();
 static void CollectMirrors();
 
 static bool AutoSetupForLevel()
@@ -2719,6 +2869,7 @@ static bool AutoSetupForLevel()
 		ReleaseMaterials();
 		// Camera targets are keyed on FMaterial* too, and go stale for exactly the same reason.
 		ReleaseCameraTargets();
+		ReleaseAccelerationStructures();
 		CollectMirrors();
 		g_skyMaterial = NULL;
 		g_skyBuiltValid = false;
