@@ -47,6 +47,9 @@ static TArray<FlatKey> g_flats;
 // Zero would mean the planes never reach the capture at all, which is a different problem from them
 // arriving and overwriting each other -- and the two look identical in a screenshot.
 static int g_flat3D = 0, g_flatOwn = 0;
+static int g_decalsThisFrame = 0;
+int DecalsThisFrame() { return g_decalsThisFrame; }
+void ResetDecalCount() { g_decalsThisFrame = 0; }
 void GetFlatStats(int &own, int &threeD) { own = g_flatOwn; threeD = g_flat3D; }
 
 void ClearFlats()
@@ -251,6 +254,52 @@ void RegisterSprite(const GLSprite &spr)
 
 	DynAppend(tris, 6, mp);
 	g_spritesThisFrame++;
+}
+
+void RegisterDecal(const FFlatVertex *quad, const void *material, int translation,
+                   bool shadow, bool additive, float alpha,
+                   int lightlevel, int rel, const FColormap &colormap,
+                   bool redToAlpha, unsigned int alphaColor,
+                   float sortX, float sortY, float sortZ)
+{
+	if (quad == NULL || material == NULL) return;
+
+	// GL draws the decal as a 4-vertex TRIANGLE FAN, so the triangles are (0,1,2) and (0,2,3) --
+	// not the strip order the sprite path uses, which would fold the quad in half.
+	FFlatVertex tris[6];
+	tris[0] = quad[0]; tris[1] = quad[1]; tris[2] = quad[2];
+	tris[3] = quad[0]; tris[4] = quad[2]; tris[5] = quad[3];
+
+	MeshPiece mp;
+	mp.range.offset = 0;
+	mp.range.count = 0;
+	mp.material = material;
+	mp.dynLightIndex = -1;   // decal lighting is folded into the vertex colour, as with sprites
+	mp.lightLevel = lightlevel;
+	mp.lightColor = colormap.LightColor.d;
+	mp.fadeColor = colormap.FadeColor.d;
+	CaptureShading(lightlevel, rel, colormap, mp);
+
+	mp.translation = translation;
+	mp.alpha = alpha;
+	mp.blendMode = ComputeStyleBlendMode(shadow, additive, alpha);
+	// [rc4l] Coplanar with the wall it is glued to, so it needs the depth bias GL gets from
+	// glPolygonOffset. See MeshPiece::depthBias.
+	mp.depthBias = true;
+	// [rc4l] A shaded decal's texture is an alpha mask and its colour is its own AlphaColor, so the
+	// colour is folded into the vertex light here and the shader shades a white texel. GL does the
+	// same thing with SetObjectColor plus TM_REDTOALPHA.
+	mp.redToAlpha = redToAlpha;
+	if (redToAlpha)
+	{
+		mp.colorR *= ((alphaColor >> 16) & 0xff) / 255.f;
+		mp.colorG *= ((alphaColor >> 8) & 0xff) / 255.f;
+		mp.colorB *= (alphaColor & 0xff) / 255.f;
+	}
+	mp.sortX = sortX; mp.sortY = sortY; mp.sortZ = sortZ;
+
+	DynAppend(tris, 6, mp);
+	g_decalsThisFrame++;
 }
 
 }} // namespace zx::levelmesh

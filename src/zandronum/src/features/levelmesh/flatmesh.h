@@ -19,6 +19,8 @@
 struct subsector_t;
 class GLFlat;
 class GLSprite;
+struct FFlatVertex;
+struct FColormap;
 
 namespace zx { namespace levelmesh {
 
@@ -37,6 +39,17 @@ int FlatPieceCount();
 // in place -- registering a fresh range each frame would grow the buffer without bound, which is the
 // failure that killed an early version of the wall cache.
 void RegisterSprite(const GLSprite &spr);
+
+// [rc4l] One decal quad, captured where GLWall::DrawDecal emits its four vertices.
+//
+// Decals live on a sidedef's AttachedDecals list and are re-walked every frame, so they belong in
+// the DYNAMIC stream with the sprites rather than the baked mesh: no invalidation to get wrong when
+// one spawns, fades or is replaced. `quad` is four FFlatVertex in the fan order GL emits.
+void RegisterDecal(const FFlatVertex *quad, const void *material, int translation,
+                   bool shadow, bool additive, float alpha,
+                   int lightlevel, int rel, const FColormap &colormap,
+                   bool redToAlpha, unsigned int alphaColor,
+                   float sortX, float sortY, float sortZ);
 void ClearSprites();
 int SpritePieceCount();
 

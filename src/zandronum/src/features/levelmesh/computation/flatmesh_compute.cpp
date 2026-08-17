@@ -27,6 +27,13 @@ int ComputeWallBlendMode(bool inTranslucentList, bool additive, float alpha)
 	return ComputeSurfaceBlendMode(false, alpha);
 }
 
+int ComputeStyleBlendMode(bool shadow, bool additive, float alpha)
+{
+	if (shadow) return 3;
+	if (additive) return 2;
+	return ComputeSurfaceBlendMode(false, alpha);
+}
+
 float ComputeTriangleWindingZ(float ax, float ay, float bx, float by, float cx, float cy)
 {
 	return (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);

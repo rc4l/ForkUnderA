@@ -54,6 +54,9 @@
 #include "gl/textures/gl_texture.h"
 #include "gl/textures/gl_material.h"
 #include "gl/utility/gl_clock.h"
+#include "features/levelmesh/flatmesh.h"   // [rc4l] decal capture for the backend mesh
+
+EXTERN_CVAR(Bool, gl_wallmesh)
 
 struct DecalVertex
 {
@@ -328,6 +331,26 @@ void GLWall::DrawDecal(DBaseDecal *decal)
 
 	gl_RenderState.Apply();
 	FFlatVertex *ptr = GLRenderer->mVBO->GetBuffer();
+	// [rc4l] features/levelmesh: capture the same four vertices for the backend.
+	//
+	// Taken HERE rather than reconstructed, because everything above this line -- the decal's
+	// clipping against the wall's own extent, its flipping, its scaling, its light -- has already
+	// been applied to dv[]. Rebuilding a decal quad from DBaseDecal would be a second implementation
+	// of all of it.
+	FFlatVertex decalQuad[4];
+	for (i = 0; i < 4; i++) decalQuad[i].Set(dv[i].x, dv[i].z, dv[i].y, dv[i].u, dv[i].v);
+	if (gl_wallmesh)
+	{
+		const bool shadow = decal->RenderStyle.BlendOp == STYLEOP_Shadow;
+		const bool additive = decal->RenderStyle.BlendOp == STYLEOP_Add &&
+		                      decal->RenderStyle.DestAlpha == STYLEALPHA_One;
+		const bool redAlpha = !!(decal->RenderStyle.Flags & STYLEF_RedIsAlpha);
+		zx::levelmesh::RegisterDecal(decalQuad, tex, decal->Translation, shadow, additive, a,
+			light, rel, p, redAlpha, redAlpha ? (unsigned int)decal->AlphaColor : 0xffffffu,
+			(decalQuad[0].x + decalQuad[3].x) * 0.5f,
+			(decalQuad[0].z + decalQuad[3].z) * 0.5f,
+			(decalQuad[0].y + decalQuad[3].y) * 0.5f);
+	}
 	for (i = 0; i < 4; i++)
 	{
 		ptr->Set(dv[i].x, dv[i].z, dv[i].y, dv[i].u, dv[i].v);
