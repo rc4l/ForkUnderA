@@ -126,13 +126,42 @@ void RegisterFlatSubsector(const GLFlat &flat, subsector_t *sub, bool ceiling)
 	mp.fadeColor = flat.Colormap.FadeColor.d;
 	// GLFlat::Draw's GLPASS_PLAIN arm, with its `rel = getExtraLight()`.
 	CaptureShading(flat.lightlevel, getExtraLight(), flat.Colormap, mp);
+
+	// [rc4l] Flats are NOT all opaque, and 3D floors are where that shows.
+	//
+	// CaptureShading fills in alpha 1 and blend mode 0 because a sector's own floor always is one.
+	// A 3D floor is frequently not: dbab01 hangs a translucent metal grate over a lava pit, and
+	// baking it opaque drew the grate as solid lava-lit metal or let the lava beneath win outright.
+	// The same classification the sprite path uses, for the same reason.
+	mp.alpha = flat.alpha;
+	// renderstyle here is an ERenderStyle enum, not an FRenderStyle, so it is compared not inspected.
+	if (flat.renderstyle == STYLE_Add)
+		mp.blendMode = 2;
+	else if (flat.alpha < 1.f - 1.f/256.f)
+		mp.blendMode = 1;
+	else
+		mp.blendMode = 0;
+
 	// [rc4l] Base plane texture, so animated flats (nukage, lava, blood) keep flowing. The render
 	// sector is the one whose textures are actually drawn -- `sub->sector` can be faked away by
 	// deep-water and heightsec tricks.
 	{
-		const sector_t *ts = sub->render_sector ? sub->render_sector : sub->sector;
-		if (ts != NULL)
-			mp.baseTex = TexMan[ts->GetTexture(ceiling ? sector_t::ceiling : sector_t::floor)];
+		// [rc4l] The plane's OWN sector and side, which for a 3D floor is its model, not the
+		// subsector's.
+		//
+		// This took the containing sector's flat, so every 3D floor plane recorded the texture of the
+		// floor it hangs over. The animated-texture pass then re-resolves each batch from baseTex
+		// every frame and faithfully repainted the 3D floor with it -- a grate suspended over lava
+		// came out as lava, and while two planes were still sharing a slot it alternated between the
+		// two, which is what "the 3D floor is animating on its own" was.
+		const sector_t *ts = flat.mMeshModel;
+		int side = flat.mMeshWhichPlane;
+		if (ts == NULL)
+		{
+			ts = sub->render_sector ? sub->render_sector : sub->sector;
+			side = ceiling ? sector_t::ceiling : sector_t::floor;
+		}
+		if (ts != NULL) mp.baseTex = TexMan[ts->GetTexture(side)];
 	}
 	MeshRegisterPiece(mp);
 }
