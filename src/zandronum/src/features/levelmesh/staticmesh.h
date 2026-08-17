@@ -63,6 +63,12 @@ struct MeshPiece
 	// without translucency is missing plasma, fireballs, invisibility and every specter.
 	//   0 = opaque / alpha-tested   1 = normal translucent   2 = additive   3 = fuzz (shadow)
 	int           blendMode;
+	// [rc4l] Palette remap, in FMaterial::CreateTexBuffer's convention.
+	//
+	// A sprite's colours are frequently not its own: GvH recolours projectiles and class gear this
+	// way, and Doom itself recolours the player. GLSprite carries one and this never recorded it, so
+	// every sprite drew in its base palette -- a frozen mortar came out in the original fire colours.
+	int           translation;
 	float         alpha;
 	// Centre of the piece, for the back-to-front sort translucency needs. Only meaningful for
 	// dynamic pieces; blendMode 0 never gets sorted.
@@ -95,6 +101,23 @@ struct MeshPiece
 	// next door, which showed up as a scene far more saturated than GL's: a torch read
 	// (44.4, 13.7, 2.5) against GL's (39.8, 32.1, 22.1).
 	float         normX, normY, normZ;
+
+	// [rc4l] Zero-initialise. Every site fills the fields it cares about and leaves the rest, so a
+	// field added later is garbage at the sites that predate it -- which is how SegCache::pieces
+	// silently inherited the previous level's vertex ranges. A translation of garbage would remap
+	// every wall in the level to a random palette.
+	MeshPiece()
+	{
+		range.offset = range.count = 0;
+		material = NULL; baseTex = NULL;
+		lightLevel = 0; lightColor = 0; fadeColor = 0;
+		colorR = colorG = colorB = 1.f;
+		softLight = -1.f; fogDensity = 0.f; fogColor = 0; fogMode = 0; desaturation = 0;
+		blendMode = 0; translation = 0; alpha = 1.f;
+		sortX = sortY = sortZ = 0.f;
+		dynLightIndex = -1;
+		normX = normY = normZ = 0.f;
+	}
 };
 
 // [rc4l] Run the engine's own gl_SetColor/gl_SetFog for a surface and record what they produced into
