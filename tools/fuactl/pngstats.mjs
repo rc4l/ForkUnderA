@@ -372,8 +372,14 @@ if (args.length < 1) {
   console.error("usage: node pngstats.mjs <a.png> [b.png] [x0 y0 x1 y1]  (region as 0..1 fractions)");
   process.exit(2);
 }
-const region = args.length >= 6 ? args.slice(-4).map(Number) : [0.3, 0.55, 0.7, 0.8];
-const files = args.length >= 6 ? args.slice(0, -4) : args;
+// [rc4l] The region is present when the last four arguments are NUMBERS, not when there happen to be
+// six of them. The count test needed two files to work and silently treated the region of a
+// single-file call as four more filenames -- which then reported the whole frame and crashed on
+// "0.33", so a measurement that looked like it had a region never had one.
+const tail = args.slice(-4).map(Number);
+const hasRegion = args.length >= 5 && tail.every((v) => Number.isFinite(v));
+const region = hasRegion ? tail : [0.3, 0.55, 0.7, 0.8];
+const files = hasRegion ? args.slice(0, -4) : args;
 for (const f of files) {
   const img = decodePNG(f);
   const [r, g, b] = meanRegion(img, ...region);
