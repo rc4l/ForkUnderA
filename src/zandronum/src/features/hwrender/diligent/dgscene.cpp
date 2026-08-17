@@ -736,13 +736,16 @@ static const char *kDecalVS =
 	"layout(location = 3) in vec3 aAxisV;\n"     // half-extents, so the pixel shader's inside test
 	"layout(location = 4) in vec3 aAxisN;\n"     // is one dot product per axis and nothing else
 	"layout(location = 5) in vec4 aColor;\n"
+	"layout(location = 6) in vec2 aClip;\n"
 	"layout(location = 0) out vec3 vCentre;\n"
 	"layout(location = 1) out vec3 vAxisU;\n"
 	"layout(location = 2) out vec3 vAxisV;\n"
 	"layout(location = 3) out vec3 vAxisN;\n"
 	"layout(location = 4) out vec4 vColor;\n"
+	"layout(location = 5) out vec2 vClip;\n"
 	"void main() {\n"
 	"    vCentre = aCentre; vAxisU = aAxisU; vAxisV = aAxisV; vAxisN = aAxisN; vColor = aColor;\n"
+	"    vClip = aClip;\n"
 	"    gl_Position = uMVP * vec4(aPos, 1.0);\n"
 	"}\n";
 
@@ -757,6 +760,7 @@ static const char *kDecalPS =
 	"layout(location = 2) in vec3 vAxisV;\n"
 	"layout(location = 3) in vec3 vAxisN;\n"
 	"layout(location = 4) in vec4 vColor;\n"
+	"layout(location = 5) in vec2 vClip;\n"
 	"layout(location = 0) out vec4 outColor;\n"
 	FUA_DECAL_UNWRAP
 	FUA_DECAL_FACING
@@ -815,6 +819,7 @@ static const char *kDecalRedPS =
 	"layout(location = 2) in vec3 vAxisV;\n"
 	"layout(location = 3) in vec3 vAxisN;\n"
 	"layout(location = 4) in vec4 vColor;\n"
+	"layout(location = 5) in vec2 vClip;\n"
 	"layout(location = 0) out vec4 outColor;\n"
 	FUA_DECAL_UNWRAP
 	FUA_DECAL_FACING
@@ -833,6 +838,14 @@ static const char *kDecalRedPS =
 	"    vec3 rel = P - vCentre;\n"
 	"    vec3 local = vec3(dot(rel, vAxisU), dot(rel, vAxisV), dot(rel, vAxisN));\n"
 	"    if (any(greaterThan(abs(local), vec3(1.0)))) discard;\n"
+	/* [rc4l] A fold covers only ONE side of the join it continues from -- see ProjectedDecal::clipV.
+	   A fold puts its centre back inside the wall so its coordinate lines up at the join, which leaves
+	   the box straddling the wall while the surface it was made for is on one side only. A step's
+	   tread is behind the line; the room's own floor, often at exactly the same height, is in front.
+	   Painting both hands the near one the wrong part of the graphic, and that comes out as a scorch
+	   with a clean scalloped hole through it. Zero means no cut, which is every mark that is not a
+	   fold. */
+	"    if (vClip.y != 0.0 && (local.y - vClip.x) * vClip.y < 0.0) discard;\n"
 	"    vec2 t = fuaDecalUV(local, vAxisU, vAxisV, vAxisN);\n"
 	"    if (any(lessThan(t, vec2(0.0))) || any(greaterThan(t, vec2(1.0)))) discard;\n"
 	"    float facing = fuaDecalFacing(P, vAxisN);\n"
@@ -1580,7 +1593,7 @@ static void BuildDynamic(Diligent::IDeviceContext *ctx)
 			}
 			runs[runs.Size() - 1].count += p.range.count;
 		}
-		if (vb.Size() == 0) return;
+	if (vb.Size() == 0) return;
 
 		// Grow-only, and USAGE_DEFAULT + UpdateBuffer rather than a mapped dynamic buffer: this data
 		// changes once per frame, so it does not belong in the dynamic heap at all.
@@ -2044,7 +2057,7 @@ static void Draw2D(Diligent::IDeviceContext *ctx)
 			vb.Push(v[0]); vb.Push(v[1]); vb.Push(v[2]);
 			vb.Push(v[2]); vb.Push(v[1]); vb.Push(v[3]);
 		}
-		if (vb.Size() == 0) return;
+	if (vb.Size() == 0) return;
 
 		if (!g_vb2D || g_vb2DCapacity < vb.Size())
 		{
@@ -2758,7 +2771,38 @@ struct DecalVertex
 	float vx, vy, vz;
 	float nx, ny, nz;
 	float r, g, b, a;
+	float clipV, clipDir;   // a fold's one-sided cut; clipDir 0 means no cut
 };
+
+// One decal's box, as 36 vertices. Everything a box needs travels in its own vertices, which is what
+// lets two of them share a draw.
+static void AppendDecalBox(TArray<DecalVertex> &vb, const zx::levelmesh::ProjectedDecal &d,
+                           const float kCube[36][3])
+{
+	// The decal's basis arrives in MAP space (x, y, z-up); mesh space is (x, z-up, y), so each axis
+	// swaps its last two components on the way in, exactly as the centre does.
+	const float ux = d.ux, uy = d.uz, uz = d.uy;
+	const float vx = d.vx, vy = d.vz, vz = d.vy;
+	const float nx = d.nx, ny = d.nz, nz = d.ny;
+	// Multiplying an axis by the SQUARE of its half-extent undoes the pre-division and leaves the
+	// axis at its true length, which is what the corners need. A turned box is then built exactly the
+	// way an axis-aligned one is, and a wall decal costs no more than a floor decal.
+	const float uL = d.halfW * d.halfW, vL = d.halfH * d.halfH, nL = d.halfDepth * d.halfDepth;
+	for (int v = 0; v < 36; v++)
+	{
+		DecalVertex dv;
+		dv.cx = d.x; dv.cy = d.z; dv.cz = d.y;
+		dv.ux = ux; dv.uy = uy; dv.uz = uz;
+		dv.vx = vx; dv.vy = vy; dv.vz = vz;
+		dv.nx = nx; dv.ny = ny; dv.nz = nz;
+		dv.x = dv.cx + kCube[v][0] * ux * uL + kCube[v][1] * vx * vL + kCube[v][2] * nx * nL;
+		dv.y = dv.cy + kCube[v][0] * uy * uL + kCube[v][1] * vy * vL + kCube[v][2] * ny * nL;
+		dv.z = dv.cz + kCube[v][0] * uz * uL + kCube[v][1] * vz * vL + kCube[v][2] * nz * nL;
+		dv.r = d.r; dv.g = d.g; dv.b = d.b; dv.a = d.a;
+		dv.clipV = d.clipV; dv.clipDir = d.clipDir;
+		vb.Push(dv);
+	}
+}
 
 static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_decalPSO;      // normal texture
 static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_decalAddPSO;
@@ -2767,7 +2811,11 @@ static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_decalRedAddPSO;
 static Diligent::RefCntAutoPtr<Diligent::IBuffer> g_decalVB;
 static unsigned int g_decalVBCapacity = 0;
 static Diligent::RefCntAutoPtr<Diligent::IBuffer> g_decalCB;
-static int g_decalsDrawn = 0;
+static int g_decalsDrawn = 0;   // DRAW CALLS, not marks -- runs of the same state share one
+static int g_decalBoxes = 0;
+// [rc4l] How many boxes the decal pass drew, and in how many draw calls. Reported by fua_walldecals,
+// because "is this affordable" is a question about draw calls and the two numbers are rarely equal.
+void GetDecalPassStats(int &boxes, int &draws) { boxes = g_decalBoxes; draws = g_decalsDrawn; }
 
 static void ReleaseDecalPass()
 {
@@ -2814,6 +2862,7 @@ static bool EnsureDecalPass()
 		Diligent::LayoutElement{3, 0, 3, Diligent::VT_FLOAT32, false},
 		Diligent::LayoutElement{4, 0, 3, Diligent::VT_FLOAT32, false},
 		Diligent::LayoutElement{5, 0, 4, Diligent::VT_FLOAT32, false},
+		Diligent::LayoutElement{6, 0, 2, Diligent::VT_FLOAT32, false},
 	};
 	static Diligent::ShaderResourceVariableDesc vars[] = {
 		{ Diligent::SHADER_TYPE_PIXEL, "uTex", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
@@ -2870,7 +2919,7 @@ static bool EnsureDecalPass()
 			rt.BlendOpAlpha = Diligent::BLEND_OPERATION_ADD;
 		}
 		pci.GraphicsPipeline.InputLayout.LayoutElements = layout;
-		pci.GraphicsPipeline.InputLayout.NumElements = 6;
+		pci.GraphicsPipeline.InputLayout.NumElements = 7;
 		pci.PSODesc.ResourceLayout.DefaultVariableType = Diligent::SHADER_RESOURCE_VARIABLE_TYPE_STATIC;
 		pci.PSODesc.ResourceLayout.Variables = vars;
 		pci.PSODesc.ResourceLayout.NumVariables = 2;
@@ -2939,33 +2988,29 @@ static void DrawProjectedDecals(Diligent::IDeviceContext *ctx)
 	{
 		const zx::levelmesh::ProjectedDecal &d = decals[i];
 		if (d.a <= 0.f || d.material == NULL) continue;
+		// [rc4l] Extend the open run rather than starting a new one when nothing about the state
+		// changes. Everything a box needs is in its own vertices, so two boxes with the same texture
+		// and the same blend are one draw -- and a burst of fire is all one texture, so a magazine
+		// emptied into a wall costs a handful of draws instead of one per hole. Adjacent only, never
+		// reordered: these blend, and blending is order-dependent.
+		if (runs.Size() > 0)
+		{
+			DecalRun &last = runs[runs.Size() - 1];
+			if (last.material == d.material && last.additive == d.additive &&
+				last.red == d.redToAlpha && last.first + last.count == vb.Size())
+			{
+				last.count += 36;
+				AppendDecalBox(vb, d, kCube);
+				continue;
+			}
+		}
 		DecalRun r;
 		r.material = d.material; r.first = vb.Size(); r.count = 36;
 		r.additive = d.additive; r.red = d.redToAlpha;
 		runs.Push(r);
-		// The decal's basis arrives in MAP space (x, y, z-up); mesh space is (x, z-up, y), so each
-		// axis swaps its last two components on the way in, exactly as the centre does.
-		const float ux = d.ux, uy = d.uz, uz = d.uy;
-		const float vx = d.vx, vy = d.vz, vz = d.vy;
-		const float nx = d.nx, ny = d.nz, nz = d.ny;
-		// Multiplying an axis by the SQUARE of its half-extent undoes the pre-division and leaves the
-		// axis at its true length, which is what the corners need. A turned box is then built exactly
-		// the way an axis-aligned one is, and a wall decal costs no more than a floor decal.
-		const float uL = d.halfW * d.halfW, vL = d.halfH * d.halfH, nL = d.halfDepth * d.halfDepth;
-		for (int v = 0; v < 36; v++)
-		{
-			DecalVertex dv;
-			dv.cx = d.x; dv.cy = d.z; dv.cz = d.y;
-			dv.ux = ux; dv.uy = uy; dv.uz = uz;
-			dv.vx = vx; dv.vy = vy; dv.vz = vz;
-			dv.nx = nx; dv.ny = ny; dv.nz = nz;
-			dv.x = dv.cx + kCube[v][0] * ux * uL + kCube[v][1] * vx * vL + kCube[v][2] * nx * nL;
-			dv.y = dv.cy + kCube[v][0] * uy * uL + kCube[v][1] * vy * vL + kCube[v][2] * ny * nL;
-			dv.z = dv.cz + kCube[v][0] * uz * uL + kCube[v][1] * vz * vL + kCube[v][2] * nz * nL;
-			dv.r = d.r; dv.g = d.g; dv.b = d.b; dv.a = d.a;
-			vb.Push(dv);
-		}
+		AppendDecalBox(vb, d, kCube);
 	}
+	g_decalBoxes = (int)(vb.Size() / 36);
 	if (vb.Size() == 0) return;
 
 	if (!g_decalVB || g_decalVBCapacity < vb.Size())

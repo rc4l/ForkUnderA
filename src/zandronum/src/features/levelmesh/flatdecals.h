@@ -77,6 +77,18 @@ struct ProjectedDecal
 	float vx, vy, vz;          // up the surface
 	float nx, ny, nz;          // through the surface
 	float halfW, halfH, halfDepth;   // the same three extents, unscaled, to build the box corners
+	// [rc4l] A one-sided cut across the picture, for a FOLD.
+	//
+	// A fold continues a wall's mark onto the floor or ceiling it runs into, and it does that by
+	// putting its centre back inside the wall so the coordinate lines up at the join. That leaves the
+	// box straddling the wall, and the surface it was made for is only on one side of it -- a step's
+	// tread is behind the line, while the room's own floor, often at the very same height, is in
+	// front. Without this the fold paints both, and the half it was not meant for gets the wrong part
+	// of the graphic: a scorch with a clean scalloped hole through it.
+	//
+	// `clipV` is where the join falls in the picture and `clipDir` which side of it is real. Zero for
+	// clipDir means no cut, which is every decal that is not a fold.
+	float clipV, clipDir;
 	const void *material;      // FMaterial*
 	float r, g, b, a;          // colour the shader paints, alpha already faded
 	bool  additive;
