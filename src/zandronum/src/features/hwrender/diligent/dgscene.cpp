@@ -758,9 +758,22 @@ static const char *kScenePSRedAlpha =
 	   nothing; and on the floor around that column it made the crossing coordinate pass through zero
 	   at the far side, painting a second full-strength copy of the mark's MIDDLE on bare floor well
 	   away from anything that was shot. */ \
-	"        float across = abs(dot(rel, outward));\n" \
+	/* Oriented away from the hit plane, so the sign says which side of the corner this fragment is
+	   on -- in front of the wall that was hit, or round the back of it. */ \
+	"        if (dot(outward, N) < 0.0) outward = -outward;\n" \
+	"        float side = dot(rel, outward);\n" \
+	"        float across = abs(side);\n" \
 	"        float along  = dot(rel, edge);\n" \
 	"        float crossed = perp + across;\n" \
+	/* Going round the BACK of the hit wall costs the distance along the corner as well.
+	   A corner line is infinite here and is not in the map: it runs until the wall ends. Charging
+	   only the distance across it lets soot arrive on floor that is round the far side of a convex
+	   corner as cheaply as on floor directly in front -- so a mark by a pillar's edge printed a
+	   second, mirrored copy of itself on open floor beside it, at full strength.
+	   Paying the along-distance is what a walk round the end of the wall actually costs, so that
+	   copy fades out with how far past the corner it is. Directly across the corner, where along is
+	   near zero, nothing changes -- which is the case that already looked right, a mark running down
+	   a wall onto the floor beneath it, or round a pillar at its own height. */ \
 	/* Which way the picture continues, taken from the hit surface's own coordinate at the corner: the
 	   direction from the impact towards this surface lies in the hit plane, so it reads off directly
 	   against the picture's axes. */ \
@@ -777,7 +790,8 @@ static const char *kScenePSRedAlpha =
 	"            t = vec2(crossed * ((dot(dir, U) < 0.0) ? -1.0 : 1.0),\n" \
 	"                     along * ((av < 0.0) ? -1.0 : 1.0));\n" \
 	"        }\n" \
-	"        path = length(vec2(along, crossed));\n" \
+	"        path = (side >= 0.0) ? length(vec2(along, crossed))\n" \
+	"                            : (abs(along) + crossed);\n" \
 	"    } else {\n" \
 	/* No corner: this surface is the one that was hit, or parallel to it. Either way there is nothing
 	   to wrap around, so the picture lies flat and the walk is what it looks like. */ \
