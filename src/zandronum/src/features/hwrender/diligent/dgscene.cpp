@@ -1899,7 +1899,11 @@ static bool BuildSceneBuffer(FString &err)
 			dv.fogG = ((p.fogColor >> 8) & 0xff) / 255.f;
 			dv.fogB = (p.fogColor & 0xff) / 255.f;
 			dv.fogMode = (float)p.fogMode;
-			dv.lightIndex = (float)p.dynLightIndex;
+			// [rc4l] The BATCH index, which is the material index a ray hit needs to pick its own
+			// texture. This slot held a dynamic light index and has been dead since the shader
+			// started testing every light, so it costs nothing and saves a parallel per-triangle
+			// table that would have to be kept in step with the batch list by hand.
+			dv.lightIndex = (float)(g_batches.Size() - 1);
 			dv.nx = p.normX; dv.ny = p.normY; dv.nz = p.normZ;
 			g_sceneVB.Push(dv);
 		}
@@ -2354,15 +2358,18 @@ static const char *kMirrorVS =
 static const char *kMirrorPS =
 	"#version 460\n"
 	"#extension GL_EXT_ray_query : require\n"
+	"#extension GL_EXT_nonuniform_qualifier : require\n"
 	"layout(binding = 0) uniform Constants { mat4 uMVP; vec4 uCameraPos; vec4 uLightParams; vec4 uClipPlane; vec4 uScreen; };\n"
 	"layout(binding = 1) uniform sampler2D uTex;\n"
 	"layout(binding = 2) uniform accelerationStructureEXT uTLAS;\n"
 	"layout(std430, binding = 3) readonly buffer Verts { float vtx[]; };\n"
+	"layout(binding = 4) uniform sampler2D uMaterials[16];\n"
 	"layout(location = 0) in vec3 vWorld;\n"
 	"layout(location = 1) in vec3 vNormal;\n"
 	"layout(location = 0) out vec4 outColor;\n"
 	"const uint STRIDE = 19u;\n"
 	"vec3 vertColor(uint v) { uint b = v * STRIDE + 5u; return vec3(vtx[b], vtx[b + 1u], vtx[b + 2u]); }\n"
+	"vec2 vertUV(uint v)    { uint b = v * STRIDE + 3u; return vec2(vtx[b], vtx[b + 1u]); }\n"
 	"void main() {\n"
 	"    vec3 n = normalize(vNormal);\n"
 	"    vec3 eye = normalize(vWorld - uCameraPos.xyz);\n"
@@ -2377,9 +2384,14 @@ static const char *kMirrorPS =
 	"    }\n"
 	"    uint prim = uint(rayQueryGetIntersectionPrimitiveIndexEXT(rq, true));\n"
 	"    vec2 bc = rayQueryGetIntersectionBarycentricsEXT(rq, true);\n"
-	"    vec3 c = vertColor(prim * 3u) * (1.0 - bc.x - bc.y)\n"
-	"           + vertColor(prim * 3u + 1u) * bc.x\n"
-	"           + vertColor(prim * 3u + 2u) * bc.y;\n"
+	"    uint i0 = prim * 3u, i1 = i0 + 1u, i2 = i0 + 2u;\n"
+	"    float w0 = 1.0 - bc.x - bc.y;\n"
+	"    vec3 c = vertColor(i0) * w0 + vertColor(i1) * bc.x + vertColor(i2) * bc.y;\n"
+	"    vec2 uv = vertUV(i0) * w0 + vertUV(i1) * bc.x + vertUV(i2) * bc.y;\n"
+	// The material index rides in the vertex slot that used to hold a dynamic light index and has
+	// been dead since the shader started testing every light.
+	"    uint mat = uint(vtx[i0 * STRIDE + 15u] + 0.5) & 15u;\n"
+	"    c *= texture(uMaterials[nonuniformEXT(mat)], uv).rgb;\n"
 	// Distance falls off the same way the raster path's fog does, so a far reflection reads as far.
 	"    float t = rayQueryGetIntersectionTEXT(rq, true);\n"
 	"    c *= clamp(1.0 - t / 4000.0, 0.15, 1.0);\n"
@@ -2448,6 +2460,11 @@ static bool EnsureMirrorResources()
 		samp.AddressV = Diligent::TEXTURE_ADDRESS_CLAMP;
 		static Diligent::ImmutableSamplerDesc samplers[] = {
 			{ Diligent::SHADER_TYPE_PIXEL, "uTex", samp },
+			// [rc4l] uMaterials needs its own immutable sampler. A GLSL sampler2D is a COMBINED image
+			// sampler, so an array of them needs a sampler declared for the array too -- without it the
+			// binding is incomplete and the process dies inside CreateShaderResourceBinding with nothing
+			// in the log, which looks like the array size or the feature rather than a missing sampler.
+			{ Diligent::SHADER_TYPE_PIXEL, "uMaterials", samp },
 		};
 
 		Diligent::GraphicsPipelineStateCreateInfo pci;
@@ -2466,14 +2483,47 @@ static bool EnsureMirrorResources()
 		pci.PSODesc.ResourceLayout.Variables = vars;
 		pci.PSODesc.ResourceLayout.NumVariables = 3;
 		pci.PSODesc.ResourceLayout.ImmutableSamplers = samplers;
-		pci.PSODesc.ResourceLayout.NumImmutableSamplers = 1;
+		pci.PSODesc.ResourceLayout.NumImmutableSamplers = 2;
 		pci.pVS = vs; pci.pPS = ps;
 		dev->CreateGraphicsPipelineState(pci, &g_mirrorPSO);
-		if (!g_mirrorPSO) return false;
+		if (!g_mirrorPSO) { Printf("mirror: PSO failed\n"); return false; }
 		if (auto *v = g_mirrorPSO->GetStaticVariableByName(Diligent::SHADER_TYPE_VERTEX, "Constants"))
 			v->Set(g_cb);
 		if (auto *v = g_mirrorPSO->GetStaticVariableByName(Diligent::SHADER_TYPE_PIXEL, "Constants"))
 			v->Set(g_cb);
+		// [rc4l] Every material the level uses, bound once on the PIPELINE.
+		//
+		// A rasterised draw binds one material and draws its batch; a ray can land on any triangle, so
+		// the material has to be selectable inside the shader. It does not change between draws, which
+		// makes it static -- and a static array is set on the PSO, where an SRB has no slot for it.
+		// Slots past the batch list take the white placeholder: an unbound element of a descriptor
+		// array is undefined, not merely unused.
+		// [rc4l] EVERY slot bound, without exception.
+		//
+		// A descriptor array with a hole in it is not "mostly bound". Diligent copies a pipeline's
+		// static resources into a binding and takes the process down if any element is missing, with
+		// nothing in the log. So the white placeholder fills everything past the batch list AND
+		// anything whose own upload failed, and if even the placeholder is unavailable the traced
+		// path is abandoned rather than half-built.
+		{
+			auto *v = g_mirrorPSO->GetStaticVariableByName(Diligent::SHADER_TYPE_PIXEL, "uMaterials");
+			Diligent::IDeviceObject *white = GetMaterialSRV(NULL, 0);
+			if (v == nullptr || white == nullptr)
+			{
+				Printf("mirror: %s -- reflections stay untraced\n",
+					v ? "no placeholder texture" : "uMaterials not found");
+				g_mirrorPSO.Release();
+				return false;
+			}
+			for (Diligent::Uint32 mi = 0; mi < 16; mi++)   // matches uMaterials[16] in the shader
+			{
+				const void *mat = (mi < g_batches.Size()) ? g_batches[mi].resolved : NULL;
+				Diligent::IDeviceObject *obj = GetMaterialSRV(mat, 0);
+				if (obj == nullptr) obj = white;
+				v->SetArray(&obj, mi, 1);
+			}
+			Printf("mirror: %u materials bound\n", (unsigned)g_batches.Size());
+		}
 		g_mirrorSRB.Release();
 	}
 
@@ -2484,8 +2534,14 @@ static bool EnsureMirrorResources()
 	// structure is built once at upload, where there is no pass open.
 	if (!g_mirrorSRB)
 	{
-		g_mirrorPSO->CreateShaderResourceBinding(&g_mirrorSRB, true);
+		// [rc4l] InitStaticResources = false. With true, Diligent copies the pipeline's static resources
+		// into the binding at creation, and a static ARRAY with any element left unbound takes the
+		// process down rather than reporting it.
+		g_mirrorPSO->CreateShaderResourceBinding(&g_mirrorSRB, false);
 		if (!g_mirrorSRB) return false;
+		// Static resources are copied in explicitly, so a failure here is reported rather than being a
+		// silent crash inside CreateShaderResourceBinding.
+		g_mirrorPSO->InitializeStaticSRBResources(g_mirrorSRB);
 		if (auto *v = g_mirrorSRB->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "uTex"))
 			v->Set(g_mirrorColor->GetDefaultView(Diligent::TEXTURE_VIEW_SHADER_RESOURCE));
 		// The traced path is only taken if the binding actually took. A variable the shader does not
@@ -2503,6 +2559,7 @@ static bool EnsureMirrorResources()
 			{
 				v->Set(g_vb->GetDefaultView(Diligent::BUFFER_VIEW_SHADER_RESOURCE));
 			}
+
 		}
 	}
 
