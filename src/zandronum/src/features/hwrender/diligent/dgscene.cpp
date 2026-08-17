@@ -216,6 +216,8 @@ static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_addDecalPSO;
 static Diligent::RefCntAutoPtr<Diligent::ITexture> g_sceneDepth;
 static Diligent::ITextureView *EnsureSceneDepth();
 Diligent::ITextureView *SceneDepthSRV();
+// The same texture as a depth target, for putting the attachment back after a pass that samples it.
+static Diligent::ITextureView *SceneDepthDSV();
 static void ReleaseDecalPass();
 static int g_sceneDepthW = 0, g_sceneDepthH = 0;
 
@@ -662,6 +664,10 @@ static const char *kScenePSRedAlpha =
 // its normal, free and with no G-buffer. The result runs off the end of the texture when the decal is
 // used up, so the caller discards outside 0..1 rather than clamping, which would smear the edge texel
 // and reintroduce the streak by a different route.
+// This is a TRANSCRIPTION of ComputeDecalUnwrapUV in computation/decalvolume_compute.cpp, which the
+// gtest suite pins with property tests -- continuity across a join, identity on the original surface,
+// direction of travel, past-the-end. GLSL cannot be called from there, so the two have to be changed
+// together, and the tests are the description of what this must do.
 #define FUA_DECAL_UNWRAP \
 	"vec2 fuaDecalUV(vec3 P, vec3 local, vec3 axisU, vec3 axisV, vec3 axisN) {\n" \
 	"    vec3 dpx = dFdx(P), dpy = dFdy(P);\n" \
@@ -2782,7 +2788,15 @@ static bool EnsureDecalPass()
 		pci.PSODesc.PipelineType = Diligent::PIPELINE_TYPE_GRAPHICS;
 		pci.GraphicsPipeline.NumRenderTargets = 1;
 		pci.GraphicsPipeline.RTVFormats[0] = swap->GetDesc().ColorBufferFormat;
-		pci.GraphicsPipeline.DSVFormat = swap->GetDesc().DepthBufferFormat;
+		// [rc4l] NO depth attachment, which is not the same as "depth test off".
+		//
+		// This pass READS the scene depth as a texture, and it is the very texture the world pass just
+		// drew into. Leaving it attached while sampling it is a read-write hazard on the same
+		// resource: the driver is entitled to serve stale or partially-resolved tiles, and it does --
+		// it showed up as a fine diagonal hatch across any surface a decal reached, which reads
+		// exactly like z-fighting and is not. Detaching it makes the texture unambiguously a
+		// read-only input, so the PSO must declare no depth format to match.
+		pci.GraphicsPipeline.DSVFormat = Diligent::TEX_FORMAT_UNKNOWN;
 		pci.GraphicsPipeline.PrimitiveTopology = Diligent::PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
 		// [rc4l] No culling and no depth test. The camera can be inside a decal's box -- standing on
 		// the mark -- and the box must still rasterise; the shader decides what is inside from the
@@ -2914,6 +2928,15 @@ static void DrawProjectedDecals(Diligent::IDeviceContext *ctx)
 	ctx->UpdateBuffer(g_decalVB, 0, (Diligent::Uint64)vb.Size() * sizeof(DecalVertex), &vb[0],
 		Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
+	// [rc4l] Detach the depth buffer for the duration of this pass, then put it back.
+	//
+	// See the PSO: the texture this pass samples is the one still attached as the depth target, and
+	// sampling an attached resource is undefined. The passes after this one -- sprites, translucent
+	// world -- do test depth, so the attachment is restored before returning rather than left off.
+	auto *swap = GetSwapChain();
+	Diligent::ITextureView *rtv = swap ? swap->GetCurrentBackBufferRTV() : NULL;
+	if (rtv) ctx->SetRenderTargets(1, &rtv, NULL, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+
 	Diligent::IBuffer *vbs[] = { g_decalVB };
 	const Diligent::Uint64 offsets[] = { 0 };
 	ctx->SetVertexBuffers(0, 1, vbs, offsets, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
@@ -2940,6 +2963,9 @@ static void DrawProjectedDecals(Diligent::IDeviceContext *ctx)
 		ctx->Draw(draw);
 		g_decalsDrawn++;
 	}
+
+	if (rtv) ctx->SetRenderTargets(1, &rtv, SceneDepthDSV(),
+		Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 }
 
 static void DrawWorld(Diligent::IDeviceContext *ctx);
@@ -3634,6 +3660,11 @@ static Diligent::ITextureView *EnsureSceneDepth()
 	if (!g_sceneDepth) { g_sceneDepthW = g_sceneDepthH = 0; return NULL; }
 	g_sceneDepthW = (int)sd.Width; g_sceneDepthH = (int)sd.Height;
 	return g_sceneDepth->GetDefaultView(Diligent::TEXTURE_VIEW_DEPTH_STENCIL);
+}
+
+static Diligent::ITextureView *SceneDepthDSV()
+{
+	return g_sceneDepth ? g_sceneDepth->GetDefaultView(Diligent::TEXTURE_VIEW_DEPTH_STENCIL) : NULL;
 }
 
 Diligent::ITextureView *SceneDepthSRV()
