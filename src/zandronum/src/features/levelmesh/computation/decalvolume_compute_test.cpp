@@ -133,107 +133,256 @@ TEST(DecalAnchorOffset, MirrorsWhenTheGraphicIsFlipped)
 //
 // There is no camera in any of these, and that is the point. Every earlier version of this needed a
 // projection axis chosen before the surface was known, and every one of them degenerated on some
-// surface and had to be patched. Measuring each surface in its own plane from the blast's centre has
-// nothing to degenerate.
+// surface and had to be patched. Measuring the WALK from the blast's centre has nothing to
+// degenerate: being within reach along the geometry is the only condition.
+
+// ---------------------------------------------------------------------------------------------
+// The creep: where a fragment reads the picture, and how far the soot walked to reach it
+//
+// A wall mark on a wall running EAST, its face pointing north. `rel` is measured from where the
+// blast landed: x along the wall, y out through it, z up. There is no camera in any of these, which
+// is the point -- every version of this that involved the view made marks change shape as the
+// camera moved, twice.
 
 namespace {
 const float kWallNormal[3]  = { 0.f, 1.f, 0.f };   // the surface that was hit
-const float kFloorNormal[3] = { 0.f, 0.f, 1.f };
-// Chord == radius is a surface the blast landed ON: it cuts the sphere through its middle, so it
-// takes the picture at full size.
-const float kR = 32.f;
+const float kFloorNormal[3] = { 0.f, 0.f, 1.f };   // meets the wall in a horizontal corner
+const float kSideNormal[3]  = { 1.f, 0.f, 0.f };   // meets the wall in a VERTICAL corner
+
+float CreepU(const DecalFrame &f, const float rel[3], const float nrm[3])
+{
+	float u = 0, v = 0, path = 0;
+	ComputeDecalCreepUV(f, rel, nrm, u, v, path);
+	return u;
+}
+float CreepV(const DecalFrame &f, const float rel[3], const float nrm[3])
+{
+	float u = 0, v = 0, path = 0;
+	ComputeDecalCreepUV(f, rel, nrm, u, v, path);
+	return v;
+}
+float CreepPath(const DecalFrame &f, const float rel[3], const float nrm[3])
+{
+	float u = 0, v = 0, path = 0;
+	ComputeDecalCreepUV(f, rel, nrm, u, v, path);
+	return path;
+}
 }
 
-TEST(DecalSurfaceUV, PutsTheCentreOfThePictureWhereTheBlastLanded)
+TEST(DecalCreep, PutsTheCentreOfThePictureWhereTheBlastLanded)
 {
 	const DecalFrame f = WallFrame(16.f, 8.f, 16.f);
 	const float atCentre[3] = { 0.f, 0.f, 0.f };
-	float u = 0.f, v = 0.f;
-	ASSERT_TRUE(ComputeDecalSurfaceUV(f, atCentre, kWallNormal, kR, kR, u, v));
-	EXPECT_FLOAT_EQ(0.5f, u);
-	EXPECT_FLOAT_EQ(0.5f, v);
+
+	EXPECT_NEAR(0.5f, CreepU(f, atCentre, kWallNormal), 1e-5f);
+	EXPECT_NEAR(0.5f, CreepV(f, atCentre, kWallNormal), 1e-5f);
+	EXPECT_NEAR(0.f, CreepPath(f, atCentre, kWallNormal), 1e-5f);
 }
 
-TEST(DecalSurfaceUV, IsUnstretchedOnTheSurfaceThatWasHit)
+TEST(DecalCreep, IsUnstretchedOnTheSurfaceThatWasHit)
 {
-	// Half the mark's width across is half the picture across. Anything else is the mark being drawn
-	// at the wrong size on the very surface it was shot at.
+	// Half the box across is half the picture across. A mark on the wall it was made on is the case
+	// that must never acquire a correction, because every other case is measured against it.
 	const DecalFrame f = WallFrame(16.f, 8.f, 16.f);
-	const float across[3] = { 8.f, 0.f, 0.f };
-	float u, v;
-	ASSERT_TRUE(ComputeDecalSurfaceUV(f, across, kWallNormal, kR, kR, u, v));
-	EXPECT_FLOAT_EQ(0.75f, u);
-	EXPECT_FLOAT_EQ(0.5f, v);
+	const float across[3] = { 8.f, 0.f, 0.f };    // half of the 16-unit half-width
+
+	EXPECT_NEAR(0.75f, CreepU(f, across, kWallNormal), 1e-5f);
+	EXPECT_NEAR(0.5f, CreepV(f, across, kWallNormal), 1e-5f);
 }
 
-TEST(DecalSurfaceUV, IsUnstretchedOnAFloorToo)
+TEST(DecalCreep, MeasuresTheWalkAndNotTheStraightLine)
 {
-	// [rc4l] The case every plane projection got wrong.
+	// [rc4l] The whole model in one assertion.
 	//
-	// A floor met at a right angle has no movement along a wall's projection axis at all, so a
-	// projection from that axis drags one row of texels across it -- and every attempt to patch that
-	// broke somewhere else. Measured in the floor's OWN plane there is nothing to drag: eight units
-	// across the floor is a quarter of a thirty-two-unit picture, exactly as it is on the wall.
+	// A fragment on the floor 12 units below the mark and 9 out from the wall is 15 away through the
+	// air. The soot cannot fly: it goes 12 down to the corner and 9 out from it, and the picture is
+	// read at that distance. Charging the straight line instead is what let a mark reach surfaces it
+	// had no path to.
 	const DecalFrame f = WallFrame(16.f, 8.f, 16.f);
-	const float acrossFloor[3] = { 8.f, 0.f, -4.f };
-	float u, v;
-	ASSERT_TRUE(ComputeDecalSurfaceUV(f, acrossFloor, kFloorNormal, kR, kR, u, v));
-	EXPECT_FLOAT_EQ(0.75f, u);
+	const float onFloor[3] = { 0.f, 9.f, -12.f };
+
+	EXPECT_NEAR(21.f, CreepPath(f, onFloor, kFloorNormal), 1e-4f);
 }
 
-TEST(DecalSurfaceUV, CoversEveryDirectionOnAFloor)
+TEST(DecalCreep, CarriesTheAlongCoordinateStraightOverACorner)
 {
-	// A wedge of floor was left unpainted where a strip aligned to one wall could not reach round a
-	// corner. Nothing aligned to a wall decides this any more: the four compass directions on a floor
-	// all land inside the picture and none of them is a special case.
-	const DecalFrame f = WallFrame(16.f, 16.f, 16.f);
-	const float dirs[4][3] = {
-		{  8.f,  0.f, -4.f }, { -8.f,  0.f, -4.f },
-		{  0.f,  8.f, -4.f }, {  0.f, -8.f, -4.f },
-	};
-	for (int i = 0; i < 4; i++)
-	{
-		float u, v;
-		EXPECT_TRUE(ComputeDecalSurfaceUV(f, dirs[i], kFloorNormal, kR, kR, u, v))
-			<< "direction " << i;
-	}
+	// Two planes meet in a LINE. The coordinate running along that line does not change as the creep
+	// crosses it -- only the one crossing it accumulates. A fragment 8 along the wall and 8 along the
+	// floor beneath it read the same place across the picture.
+	const DecalFrame f = WallFrame(16.f, 8.f, 16.f);
+	const float onWall[3]  = { 8.f, 0.f, -4.f };
+	const float onFloor[3] = { 8.f, 4.f, -12.f };
+
+	EXPECT_NEAR(CreepU(f, onWall, kWallNormal), CreepU(f, onFloor, kFloorNormal), 1e-5f);
 }
 
-TEST(DecalSurfaceUV, DoesNotDependOnAnythingButThePointAndTheSurface)
+TEST(DecalCreep, CrossesTheOtherWayForAVerticalCorner)
 {
-	// The signature carries no camera and no screen, which is what makes "the mark follows you when
-	// you wiggle the mouse" impossible to reintroduce by accident. The same fragment on the same
-	// surface must give the same answer every time it is asked.
+	// [rc4l] Which picture axis the corner runs along decides which coordinate is which.
+	//
+	// A wall meeting a FLOOR is a horizontal corner, so the walk crosses the picture vertically. Two
+	// walls meeting is a vertical one and it crosses horizontally. Feeding both to the same axis
+	// turns the mark on its side as it wraps -- the corner looked plausible and the wrap did not.
 	const DecalFrame f = WallFrame(16.f, 8.f, 16.f);
-	const float rel[3] = { 5.f, 2.f, -3.f };
-	float u1, v1, u2, v2;
-	ComputeDecalSurfaceUV(f, rel, kFloorNormal, kR, kR, u1, v1);
-	ComputeDecalSurfaceUV(f, rel, kFloorNormal, kR, kR, u2, v2);
+	const float onFloor[3] = { 0.f, 6.f, -10.f };    // horizontal corner: V should move, U should not
+	const float onSide[3]  = { 10.f, 6.f, 0.f };     // vertical corner: U should move, V should not
+
+	EXPECT_NEAR(0.5f, CreepU(f, onFloor, kFloorNormal), 1e-5f);
+	EXPECT_GT(std::fabs(CreepV(f, onFloor, kFloorNormal) - 0.5f), 0.1f);
+
+	EXPECT_NEAR(0.5f, CreepV(f, onSide, kSideNormal), 1e-5f);
+	EXPECT_GT(std::fabs(CreepU(f, onSide, kSideNormal) - 0.5f), 0.1f);
+}
+
+TEST(DecalCreep, ReachesBothSidesOfACornerBecauseTheShadowLandsOnIt)
+{
+	// [rc4l] The distance from the corner is ABSOLUTE, and that is not a convenience.
+	//
+	// Dropping a perpendicular from the impact onto the neighbouring surface cannot move along the
+	// hit plane's normal, so its foot is always a point of the corner line -- the walk is therefore
+	// symmetric about that line. Signing it away from the hit plane instead sent the creep the wrong
+	// way round a pillar: the side faces run BACKWARDS from the corner and got nothing at all.
+	const DecalFrame f = WallFrame(16.f, 8.f, 16.f);
+	const float inFront[3] = { 10.f,  6.f, 0.f };
+	const float behind[3]  = { 10.f, -6.f, 0.f };
+
+	EXPECT_NEAR(CreepU(f, inFront, kSideNormal), CreepU(f, behind, kSideNormal), 1e-5f);
+}
+
+TEST(DecalCreep, ChargesTheWalkRoundTheBackOfACorner)
+{
+	// [rc4l] A corner line is infinite here and is not in the map: it runs until the wall ends.
+	//
+	// Charging only the crossing let soot arrive on floor round the FAR side of a convex corner as
+	// cheaply as on floor directly in front of the wall, so a mark by a pillar's edge printed a
+	// second, mirrored copy of itself on open floor beside it at full strength. Going round the back
+	// costs the distance along the corner too, so that copy fades with how far past it sits.
+	const DecalFrame f = WallFrame(16.f, 8.f, 16.f);
+	// Offset ALONG the corner as well, because that is what the extra charge is made of.
+	const float inFront[3] = { 20.f,  6.f, -10.f };
+	const float behind[3]  = { 20.f, -6.f, -10.f };
+
+	EXPECT_GT(CreepPath(f, behind, kSideNormal), CreepPath(f, inFront, kSideNormal));
+}
+
+TEST(DecalCreep, ChargesNothingExtraDirectlyAcrossTheCorner)
+{
+	// The other half of the same rule, and the reason the charge is safe to add: with no distance
+	// along the corner there is no end to walk round, so the two sides cost the same. That is the
+	// case which already looked right -- a mark running down a wall onto the floor beneath it, or
+	// wrapping a pillar at its own height -- and it must not move.
+	const DecalFrame f = WallFrame(16.f, 8.f, 16.f);
+	const float inFront[3] = { 20.f,  6.f, 0.f };
+	const float behind[3]  = { 20.f, -6.f, 0.f };
+
+	EXPECT_NEAR(CreepPath(f, inFront, kSideNormal), CreepPath(f, behind, kSideNormal), 1e-4f);
+}
+
+TEST(DecalCreep, DoesNotDependOnAnythingButThePointAndTheSurface)
+{
+	// Asked twice with the same inputs, answered the same. A mark that changes as the camera moves
+	// was reported three times, and each time the cause was a term that had no business being here.
+	const DecalFrame f = WallFrame(16.f, 8.f, 16.f);
+	const float rel[3] = { 4.f, 3.f, -7.f };
+	float u1 = 0, v1 = 0, p1 = 0, u2 = 0, v2 = 0, p2 = 0;
+
+	ComputeDecalCreepUV(f, rel, kFloorNormal, u1, v1, p1);
+	ComputeDecalCreepUV(f, rel, kFloorNormal, u2, v2, p2);
+
 	EXPECT_FLOAT_EQ(u1, u2);
 	EXPECT_FLOAT_EQ(v1, v2);
+	EXPECT_FLOAT_EQ(p1, p2);
 }
 
-TEST(DecalSurfaceUV, ReportsPastTheEdgeRatherThanClamping)
+TEST(DecalCreep, ReportsPastTheEdgeRatherThanClamping)
 {
-	// The caller must discard. Clamping repeats the edge texel for ever, which is a dragged row of
-	// texels by another route -- the artifact the whole design exists to avoid.
+	// The caller must DISCARD outside 0..1. Clamping repeats the edge texel for ever, which is the
+	// dragged row of pixels this model exists to remove, arrived at by another route.
 	const DecalFrame f = WallFrame(16.f, 8.f, 16.f);
-	const float farOut[3] = { 40.f, 0.f, 0.f };
-	float u, v;
-	EXPECT_FALSE(ComputeDecalSurfaceUV(f, farOut, kWallNormal, kR, kR, u, v));
-	EXPECT_GT(u, 1.f);
+	const float farOut[3] = { 400.f, 0.f, 0.f };
+
+	EXPECT_GT(CreepU(f, farOut, kWallNormal), 1.f);
 }
 
-TEST(DecalSurfaceUV, RefusesADegenerateFrameOrNormal)
+TEST(DecalCreep, SurvivesADegenerateFrameOrNormal)
 {
-	DecalFrame f{};
+	// Nothing here may divide by zero: a degenerate box or an absent normal has to leave the caller
+	// with a coordinate it will simply discard, not a NaN that paints the whole screen.
+	const DecalFrame bad = { { 0.f, 0.f, 0.f }, { 0.f, 0.f, 1.f }, { 0.f, 1.f, 0.f } };
 	const float rel[3] = { 1.f, 1.f, 1.f };
-	float u, v;
-	EXPECT_FALSE(ComputeDecalSurfaceUV(f, rel, kWallNormal, kR, kR, u, v));
-
-	const DecalFrame good = WallFrame(16.f, 8.f, 16.f);
 	const float noNormal[3] = { 0.f, 0.f, 0.f };
-	EXPECT_FALSE(ComputeDecalSurfaceUV(good, rel, noNormal, kR, kR, u, v));
+	float u = 0, v = 0, path = -1.f;
+
+	ComputeDecalCreepUV(bad, rel, kWallNormal, u, v, path);
+	EXPECT_EQ(0.f, path);
+
+	ComputeDecalCreepUV(WallFrame(16.f, 8.f, 16.f), rel, noNormal, u, v, path);
+	EXPECT_EQ(0.f, path);
+}
+
+// ---------------------------------------------------------------------------------------------
+// What is left of the blast after the walk
+
+TEST(DecalCreepReach, IsWholeCloseInAndGoneAtTheLimit)
+{
+	EXPECT_FLOAT_EQ(1.f, ComputeDecalCreepReach(0.f, 60.f));
+	EXPECT_FLOAT_EQ(1.f, ComputeDecalCreepReach(30.f, 60.f));   // the fade starts at half the radius
+	EXPECT_FLOAT_EQ(0.f, ComputeDecalCreepReach(60.f, 60.f));
+	EXPECT_FLOAT_EQ(0.f, ComputeDecalCreepReach(90.f, 60.f));
+}
+
+TEST(DecalCreepReach, FadesRatherThanStopping)
+{
+	// A mark with picture left when it runs out of reach must not end on a line. Monotonic, and
+	// strictly between, across the whole fade.
+	const float a = ComputeDecalCreepReach(36.f, 60.f);
+	const float b = ComputeDecalCreepReach(48.f, 60.f);
+
+	EXPECT_LT(a, 1.f);
+	EXPECT_GT(a, 0.f);
+	EXPECT_LT(b, a);
+}
+
+TEST(DecalCreepReach, IsNothingWithoutARadius)
+{
+	EXPECT_FLOAT_EQ(0.f, ComputeDecalCreepReach(1.f, 0.f));
+}
+
+// ---------------------------------------------------------------------------------------------
+// Fading, and what a decal is shaded at
+
+TEST(DecalFade, HoldsFullAlphaBeforeItStartsToDecay)
+{
+	// [rc4l] GoAway2 -- the BFG glow and the plasma flare -- holds for a second and then fades over
+	// three. A single ramp from spawn stood in for every fader here, so a glow was already at two
+	// thirds brightness the moment anyone saw it. Beside GL that reads as "much dimmer in Vulkan".
+	EXPECT_FLOAT_EQ(1.f, ComputeDecalFade(100, 35, 105, 100));
+	EXPECT_FLOAT_EQ(1.f, ComputeDecalFade(100, 35, 105, 134));
+}
+
+TEST(DecalFade, FallsLinearlyOnceItStarts)
+{
+	EXPECT_FLOAT_EQ(1.f, ComputeDecalFade(100, 35, 100, 135));
+	EXPECT_FLOAT_EQ(0.5f, ComputeDecalFade(100, 35, 100, 185));
+	EXPECT_FLOAT_EQ(0.f, ComputeDecalFade(100, 35, 100, 235));
+	EXPECT_FLOAT_EQ(0.f, ComputeDecalFade(100, 35, 100, 999));
+}
+
+TEST(DecalFade, NeverFadesWithoutAFader)
+{
+	// [rc4l] Every animator that is not a fader -- stretchers, sliders, colour changers -- leaves the
+	// alpha alone and never removes the mark. Ramping those out made permanent marks disappear.
+	EXPECT_FLOAT_EQ(1.f, ComputeDecalFade(100, 0, 0, 100000));
+}
+
+TEST(DecalShadeLight, IsFullBrightnessForAGlow)
+{
+	// [rc4l] DECALDEF marks the glows fullbright and gl_decal.cpp shades them at 255. Shading at the
+	// sector's light instead makes a glow vanish into a dark corridor while GL's stays bright. Only
+	// the SHADING is affected -- the fog still comes from the sector, or a glow would burn through
+	// smoke that dims everything around it.
+	EXPECT_EQ(255, ComputeDecalShadeLight(true, 96));
+	EXPECT_EQ(96, ComputeDecalShadeLight(false, 96));
 }
 
 TEST(DecalReach, IsNeverCloseEnoughToCutThePicture)
@@ -265,49 +414,3 @@ TEST(DecalReach, LeavesRoomForASurfaceOffToTheSide)
 // ---------------------------------------------------------------------------------------------
 // How much of the blast a surface cuts through
 
-TEST(DecalChord, IsTheWholeRadiusOnTheSurfaceThatWasHit)
-{
-	// The impact sits on that surface, so the sphere is cut through its middle. Anything less would
-	// shrink every mark in the game on the very surface it was made on.
-	EXPECT_FLOAT_EQ(60.f, ComputeDecalChord(0.f, 60.f));
-}
-
-TEST(DecalChord, ShrinksAsASurfaceRecedes)
-{
-	// A sphere's cross-section, which is the whole rule. Nothing here was picked.
-	EXPECT_FLOAT_EQ(48.f, ComputeDecalChord(36.f, 60.f));   // 3-4-5
-	EXPECT_GT(ComputeDecalChord(10.f, 60.f), ComputeDecalChord(30.f, 60.f));
-}
-
-TEST(DecalChord, IsNothingBeyondTheBlast)
-{
-	// [rc4l] The ghost scorch on the floor beneath a mark on a wall.
-	//
-	// Every surface in range used to take the picture at FULL size, centred where the impact projects
-	// onto it, faded only in alpha -- so a floor well below a wall mark got a complete second scorch
-	// out in the open. At d >= R there is no disc at all, and a full-size copy is no longer reachable.
-	EXPECT_FLOAT_EQ(0.f, ComputeDecalChord(60.f, 60.f));
-	EXPECT_FLOAT_EQ(0.f, ComputeDecalChord(90.f, 60.f));
-}
-
-TEST(DecalSurfaceUV, ShrinksThePictureWithTheChord)
-{
-	// The mark gets smaller as its surface recedes, rather than arriving whole and faint. Half the
-	// chord across is half the picture across, whatever the chord happens to be.
-	const DecalFrame f = WallFrame(16.f, 16.f, 16.f);
-	const float across[3] = { 8.f, 0.f, 0.f };
-	float uFull, vFull, uHalf, vHalf;
-	ASSERT_TRUE(ComputeDecalSurfaceUV(f, across, kWallNormal, 32.f, 32.f, uFull, vFull));
-	ASSERT_TRUE(ComputeDecalSurfaceUV(f, across, kWallNormal, 16.f, 32.f, uHalf, vHalf));
-	// Half the chord, so the same world offset is twice as far into the picture.
-	EXPECT_FLOAT_EQ(0.75f, uFull);
-	EXPECT_FLOAT_EQ(1.0f, uHalf);
-}
-
-TEST(DecalSurfaceUV, PaintsNothingWhereTheBlastDoesNotReach)
-{
-	const DecalFrame f = WallFrame(16.f, 16.f, 16.f);
-	const float rel[3] = { 1.f, 0.f, 0.f };
-	float u, v;
-	EXPECT_FALSE(ComputeDecalSurfaceUV(f, rel, kWallNormal, 0.f, 32.f, u, v));
-}

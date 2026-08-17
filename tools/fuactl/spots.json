@@ -91,6 +91,15 @@
       "angle": 329.0625,
       "pitch": -1.6699,
       "shows": "BFG mark still renders as an oval/egg here rather than a round scorch. Recorded after the contact-point anchoring fix."
+    },
+    "floor-creep-oval": {
+      "map": "MAP01",
+      "x": 179.255,
+      "y": 1633.158,
+      "z": 56,
+      "angle": 150.293,
+      "pitch": 21.9727,
+      "shows": "Aimed down at a wall/floor junction. The mark on the wall is right; where it creeps onto the FLOOR it renders as a narrow oval offset to one side instead of a continuation."
     }
   }
 }

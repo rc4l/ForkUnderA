@@ -40,22 +40,23 @@ struct DecalFrame
 // corner is further from its centre than its edge is, and a scorch came out as a disc with a hard rim
 // stamped through it. The diagonal is the least that cannot, and half again on top leaves room to
 // reach a floor or a wall standing off to the side of the impact without clipping that either.
+// [rc4l] How much of the blast is left after the walk to here, and where the picture is read.
+//
+// MUST match fuaDecalUV and fuaDecalReach in dgscene.cpp. Changing one without the other is the
+// failure this file exists to make loud, and it has happened: this file described a SPHERE cut by a
+// plane long after the shader had stopped doing that, so its tests passed while asserting behaviour
+// nothing shipped.
+//
+// The model is a walk. A mark spreads from the one point it was made at, across whatever surfaces
+// are in the way, so a fragment's coordinate is the distance the soot travelled to reach it. Two
+// planes meet in a LINE and creep wraps around that line: the coordinate running along the corner
+// carries straight over, and only the coordinate crossing it accumulates the journey -- down to the
+// corner, then out from it.
+//
+// Measuring the walk radially instead funnels every path through one point, the impact's shadow on
+// the surface, where a small patch of floor maps to a whole ring of the picture. It magnifies into
+// spikes radiating from that point, which is what "the floor creep is oddly shrinked" was.
 float ComputeDecalReach(float halfW, float halfH);
-
-// [rc4l] How much of a blast a surface actually cuts through.
-//
-// MUST match fuaDecalChord in dgscene.cpp. A sphere of radius R centred where the blast landed meets
-// a plane at distance d in a disc of radius sqrt(R*R - d*d). That single fact decides which surfaces
-// are marked and how much of each: the surface that was hit is at d = 0 and gets the whole picture,
-// a surface further off gets a smaller one, and at d >= R there is nothing to get. There is nothing
-// to tune here because there is nothing here that was chosen.
-//
-// What it replaced was chosen, and badly: every surface in range took the picture at FULL size,
-// centred where the impact projects onto it, with its alpha faded by distance. On a floor forty units
-// below a mark on a wall that is a complete second scorch out in the open. It is also why a mark made
-// ON a floor climbed its walls perfectly -- the impact sits at the join, so the copy landed there and
-// read as one mark -- while a mark made on a wall almost always looked wrong.
-float ComputeDecalChord(float distanceToSurface, float radius);
 
 // Build a frame from unit axes and the box's three half-extents. Returns false, leaving the frame
 // untouched, if any extent is zero or negative -- a degenerate box would divide by zero and paint
@@ -88,34 +89,56 @@ float ComputeDecalUpOffset(float halfH, float topOffset, bool flipY);
 // is not in the box at all.
 void ComputeDecalLocal(const DecalFrame &f, const float rel[3], float local[3]);
 
-// [rc4l] The mark's texture coordinate on WHATEVER surface a fragment turns out to be on.
+// [rc4l] Where a fragment reads the picture, and how far the soot walked to get there.
 //
-// MUST match fuaDecalUV in dgscene.cpp, which is the same arithmetic transcribed into GLSL. The
-// shader cannot be called from here, so this is the specification and that is the transcription;
-// changing one without the other is the failure this file exists to make loud.
+// `rel` is the fragment's offset from where the blast landed; `nrm` is the surface's own normal,
+// read from the G-buffer. Neither involves the camera, so neither can make a mark change as the
+// camera moves -- which it did, twice, when this was derived from the view.
 //
-// `rel` is the fragment's offset from where the blast landed and `nrm` is the surface's own normal,
-// which the shader reads out of the depth buffer. Neither involves the camera, so neither can make a
-// mark change as the camera moves.
+// Three behaviours are load-bearing and each was wrong once:
 //
-// The idea, and it is the whole design: a blast radiates from a POINT, so every surface it reaches is
-// measured in its own plane from that point. The mark's across-axis is turned into the surface to
-// keep the picture the right way up, the perpendicular completes the pair, and the coordinate is just
-// the offset along those two at the mark's own scale.
+//  - ALONG the corner carries over, ACROSS it accumulates. Feeding both to the same picture axis
+//    turns the mark on its side as it wraps: a wall meeting a floor gives a horizontal corner, so
+//    the walk crosses the picture vertically, and two walls meeting give a vertical one.
 //
-// What that buys is the absence of special cases. Projecting from a plane instead means choosing an
-// axis before the surface is known, which works on the surface that was hit and degenerates on
-// everything else -- a floor met at a right angle has no movement along the projection axis at all,
-// so a row of texels is dragged across it. Four attempts to patch around that each broke somewhere
-// new: the drag, then a black slab where the drag covered a whole box, then a hole where the slab was
-// refused, then a wedge of floor a corner-patching strip never reached. Measuring from the point has
-// none of them, and no surface in range can be missed, because being in range is the only condition.
+//  - the distance from the corner is ABSOLUTE, because the impact's own shadow lands exactly on it.
+//    Dropping a perpendicular onto the surface cannot move along the hit plane's normal, so its foot
+//    is always a point of the corner line. Signing it away from the hit plane sent the creep the
+//    wrong way round a pillar, whose side faces run backwards from the corner and got nothing.
 //
-// Returns false when the fragment is past the edge of the picture, which the caller must DISCARD
-// rather than clamp -- clamping repeats the edge texel for ever, which is a dragged row by another
-// route.
-bool ComputeDecalSurfaceUV(const DecalFrame &f, const float rel[3], const float nrm[3],
-                           float chord, float radius, float &outU, float &outV);
+//  - going round the BACK of the corner costs the distance along it as well. A corner line is
+//    infinite here and is not in the map -- it runs until the wall ends -- so charging only the
+//    crossing let soot reach floor round the far side of a convex corner as cheaply as floor in
+//    front of the wall, printing a second mirrored copy of the mark at full strength.
+//
+// Returns the picture coordinate in 0..1 through outU/outV and the walked distance through outPath.
+// A coordinate outside 0..1 must be DISCARDED rather than clamped: clamping repeats the edge texel
+// for ever, which is a dragged row by another route.
+void ComputeDecalCreepUV(const DecalFrame &f, const float rel[3], const float nrm[3],
+                         float &outU, float &outV, float &outPath);
+
+// [rc4l] What is left of the blast after walking that far. The last of it fades rather than stopping,
+// so a mark with picture left when it runs out of reach does not end on a line.
+float ComputeDecalCreepReach(float path, float radius);
+
+// [rc4l] How a decal's alpha changes with age, exactly as the engine's own fader does.
+//
+// A fader holds FULL alpha for decayStart tics and only then fades to nothing over decayTime --
+// GoAway2, which the BFG glow and the plasma flare use, is 1 second then 3. Standing in for all of
+// them with a single linear ramp from spawn ran a glow at two thirds brightness the instant it
+// appeared and removed it while the engine still had a second left to draw, which beside GL reads as
+// "the glow is much dimmer in Vulkan".
+//
+// decayTime <= 0 means the decal never fades, which is the case for every animator that is not a
+// fader: stretchers, sliders and colour changers leave the alpha alone and never remove the mark.
+float ComputeDecalFade(int spawnTic, int decayStart, int decayTime, int now);
+
+// [rc4l] The light level a decal is SHADED at, which is not always its sector's.
+//
+// DECALDEF marks the glows fullbright, and gl_decal.cpp honours it by shading at 255 with no relative
+// light -- while still fogging at the sector's own level, which is why this answers only the shading
+// half. Shading a glow at sector light instead makes it vanish into a dark corridor.
+int ComputeDecalShadeLight(bool fullbright, int sectorLight);
 
 }} // namespace zx::levelmesh
 
