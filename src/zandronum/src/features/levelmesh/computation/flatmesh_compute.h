@@ -56,6 +56,14 @@ int ComputeSurfaceBlendMode(bool additive, float alpha);
 // it from the inputs it made it from.
 int ComputeWallBlendMode(bool inTranslucentList, bool additive, float alpha);
 
+// [rc4l] Which blend mode a render STYLE needs -- sprites, decals, anything with an FRenderStyle.
+//
+// The full style matrix resolves to GL blend enums, which would then have to be mapped back into
+// another API's. These four cases are what Doom content actually uses: opaque/masked, normal
+// translucency, additive (plasma, fireballs, explosions, scorch decals) and the fuzz shadow.
+// Anything exotic lands on normal translucency -- wrong, but visible rather than invisible.
+int ComputeStyleBlendMode(bool shadow, bool additive, float alpha);
+
 // [rc4l] Twice the signed area of a triangle projected onto the horizontal plane.
 //
 // Positive and negative correspond to the two winding directions; which one is "front" is a

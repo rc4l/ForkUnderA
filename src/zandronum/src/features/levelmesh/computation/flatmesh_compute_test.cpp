@@ -318,3 +318,31 @@ TEST(FlatMeshCompute, AnAdditiveWallIsAdditiveWhicheverListItIsIn)
 	EXPECT_EQ(ComputeWallBlendMode(true, true, 1.0f), 2);
 	EXPECT_EQ(ComputeWallBlendMode(false, true, 1.0f), 2);
 }
+
+// ---- render-style blend classification -------------------------------------
+//
+// Shared by sprites and decals. A decal is a small quad glued to a wall and its style decides
+// whether a scorch mark burns the wall darker or a blood splat merely covers it.
+
+TEST(FlatMeshCompute, ShadowStyleIsFuzz)
+{
+	EXPECT_EQ(ComputeStyleBlendMode(true, false, 1.0f), 3);
+	// Shadow wins over everything, including an additive flag set at the same time.
+	EXPECT_EQ(ComputeStyleBlendMode(true, true, 0.5f), 3);
+}
+
+TEST(FlatMeshCompute, AdditiveStyleIsAdditive)
+{
+	EXPECT_EQ(ComputeStyleBlendMode(false, true, 1.0f), 2);
+}
+
+TEST(FlatMeshCompute, AnOpaqueStyleIsOpaque)
+{
+	EXPECT_EQ(ComputeStyleBlendMode(false, false, 1.0f), 0);
+}
+
+TEST(FlatMeshCompute, APartlyFadedDecalIsTranslucent)
+{
+	// Decals fade out over their lifetime, so this is the common case, not the exception.
+	EXPECT_EQ(ComputeStyleBlendMode(false, false, 0.4f), 1);
+}

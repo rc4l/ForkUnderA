@@ -193,6 +193,18 @@ static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_addPSO;        // add
 static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_maskedNoCullPSO;
 static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_transNoCullPSO;
 static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_addNoCullPSO;
+// [rc4l] And again with a depth bias, for DECALS.
+//
+// A decal is a quad glued flat against the wall it marks, exactly coplanar with it, so it z-fights
+// without help -- GL wraps its decal pass in glPolygonOffset(-1, -128) for the same reason. The bias
+// belongs in the pipeline rather than in the geometry: nudging the vertices towards the camera would
+// have to know where the camera is, which is exactly what a baked or streamed vertex must not.
+static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_maskedDecalPSO;
+static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_transDecalPSO;
+static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_addDecalPSO;
+// [rc4l] And the alpha-mask variants of the same, for shaded decals. See kScenePSRedAlpha.
+static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_transRedAlphaPSO;
+static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_addRedAlphaPSO;
 static Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding> g_srb;
 static Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding> g_srbMasked;
 static int   g_sceneVerts = 0;
@@ -236,6 +248,8 @@ struct DynRun
 	unsigned int first, count;
 	int          blend;
 	int          translation;
+	bool         depthBias;    // decals: coplanar with their wall, so they need the biased pipeline
+	bool         redAlpha;     // the texture is an alpha mask, not a colour image
 	float        cx, cy, cz;   // centroid, for the merged sort
 };
 static TArray<DynRun> g_dynRuns;
@@ -566,6 +580,21 @@ static const char *kScenePSTrans =
 	"    vec4 t = texture(uTex, vUV);\n"
 	"    if (t.a < 0.04) discard;\n"
 	"    outColor = vec4(fuaShade(t.rgb), t.a * vLightParm.z);\n"
+	"}\n";
+
+// [rc4l] The texture is an ALPHA MASK: its red channel is the shape, the colour is the vertex light.
+//
+// Shaded decals -- scorch marks, most bullet impacts -- store their silhouette in red and carry
+// their colour on the decal itself, which RegisterDecal has already folded into the vertex light.
+// Sampling one as an ordinary image reads the red channel as brightness and paints a white blob
+// where GL paints a black burn. GL reaches the same result with TM_REDTOALPHA plus an object colour.
+static const char *kScenePSRedAlpha =
+	"#version 450\n"
+	FUA_LIGHT_GLSL
+	"void main() {\n"
+	"    float a = texture(uTex, vUV).r * vLightParm.z;\n"
+	"    if (a <= 0.0) discard;\n"
+	"    outColor = vec4(fuaShade(vec3(1.0)), a);\n"
 	"}\n";
 
 // [rc4l] Column-major perspective * view, matching the GL renderer's convention in
@@ -1266,6 +1295,8 @@ static void BuildDynamic(Diligent::IDeviceContext *ctx)
 		const void *cur = (const void *)(size_t)-1;
 		int curBlend = -1;
 		int curTrans = -99999;
+		bool curBias = false;
+		bool curRed = false;
 		for (int i = 0; i < npieces; i++)
 		{
 			const zx::levelmesh::MeshPiece &p = pieces[order[i]];
@@ -1273,15 +1304,20 @@ static void BuildDynamic(Diligent::IDeviceContext *ctx)
 			// A translucent piece never merges with its neighbour: merging would reorder it.
 			// A run is one draw, so it must also break on translation -- otherwise one recoloured
 			// sprite would repaint every sprite batched with it.
-			if (p.material != cur || p.blendMode != curBlend || p.translation != curTrans || p.blendMode != 0)
+			if (p.material != cur || p.blendMode != curBlend || p.translation != curTrans ||
+				p.blendMode != 0 || p.depthBias != curBias || p.redToAlpha != curRed)
 			{
 				DynRun r; r.material = p.material; r.first = vb.Size(); r.count = 0; r.blend = p.blendMode;
 				r.translation = p.translation;
+				r.depthBias = p.depthBias;
+				r.redAlpha = p.redToAlpha;
 				r.cx = p.sortX; r.cy = p.sortY; r.cz = p.sortZ;
 				runs.Push(r);
 				cur = p.material;
 				curBlend = p.blendMode;
 				curTrans = p.translation;
+				curBias = p.depthBias;
+				curRed = p.redToAlpha;
 			}
 			for (unsigned v = 0; v < p.range.count; v++)
 			{
@@ -1337,13 +1373,17 @@ static void DrawDynamicOpaque(Diligent::IDeviceContext *ctx)
 	ctx->SetVertexBuffers(0, 1, vbs, offsets, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
 		Diligent::SET_VERTEX_BUFFERS_FLAG_RESET);
 	ctx->SetPipelineState(g_maskedNoCullPSO);
+	Diligent::IPipelineState *boundOpaque = g_maskedNoCullPSO.RawPtr();
 
 	for (unsigned i = 0; i < g_dynRuns.Size(); i++)
 	{
 		const DynRun &r = g_dynRuns[i];
 		if (r.count == 0 || r.blend != 0) continue;
-		auto *srb = GetMaterialSRB(g_maskedNoCullPSO, r.material, r.translation);
+		Diligent::IPipelineState *pso = r.depthBias ? g_maskedDecalPSO.RawPtr()
+		                                            : g_maskedNoCullPSO.RawPtr();
+		auto *srb = GetMaterialSRB(pso, r.material, r.translation);
 		if (!srb) continue;
+		if (pso != boundOpaque) { ctx->SetPipelineState(pso); boundOpaque = pso; }
 		ctx->CommitShaderResources(srb, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 		Diligent::DrawAttribs draw;
 		draw.NumVertices = r.count;
@@ -1377,7 +1417,7 @@ static void DrawDynamicOpaque(Diligent::IDeviceContext *ctx)
 static void DrawBlended(Diligent::IDeviceContext *ctx)
 {
 	struct BlendDraw { bool dyn; unsigned first, count; int blend, translation; const void *material;
-	                   Diligent::IShaderResourceBinding *srb; float dist; };
+	                   Diligent::IShaderResourceBinding *srb; float dist; bool bias, red; };
 	static TArray<BlendDraw> list;
 	list.Clear();
 
@@ -1391,6 +1431,7 @@ static void DrawBlended(Diligent::IDeviceContext *ctx)
 		BlendDraw d;
 		d.dyn = false; d.first = b.first; d.count = b.count; d.blend = b.blend;
 		d.translation = 0; d.material = b.material; d.srb = b.srb;
+		d.bias = false; d.red = false;
 		d.dist = dx*dx + dy*dy + dz*dz;
 		list.Push(d);
 	}
@@ -1403,13 +1444,18 @@ static void DrawBlended(Diligent::IDeviceContext *ctx)
 			if (r.count == 0 || r.blend == 0) continue;
 			// Blend mode 3 is the fuzz shadow; the engine draws it as a dark near-opaque overlay, and
 			// normal translucency is a fair stand-in until the fuzz shaders are ported.
-			Diligent::IPipelineState *pso = (r.blend == 2) ? g_addNoCullPSO.RawPtr()
-			                                              : g_transNoCullPSO.RawPtr();
+			Diligent::IPipelineState *pso = r.redAlpha
+				? ((r.blend == 2) ? g_addRedAlphaPSO.RawPtr() : g_transRedAlphaPSO.RawPtr())
+				: r.depthBias
+					? ((r.blend == 2) ? g_addDecalPSO.RawPtr()  : g_transDecalPSO.RawPtr())
+					: ((r.blend == 2) ? g_addNoCullPSO.RawPtr() : g_transNoCullPSO.RawPtr());
 			auto *srb = GetMaterialSRB(pso, r.material, r.translation);
 			if (!srb) continue;
 			BlendDraw d;
 			d.dyn = true; d.first = r.first; d.count = r.count; d.blend = r.blend;
 			d.translation = r.translation; d.material = r.material; d.srb = srb;
+			d.bias = r.depthBias;
+			d.red = r.redAlpha;
 			const float dx = r.cx - cx, dy = r.cy - cy, dz = r.cz - cz;
 			d.dist = dx*dx + dy*dy + dz*dz;
 			list.Push(d);
@@ -1438,9 +1484,13 @@ static void DrawBlended(Diligent::IDeviceContext *ctx)
 				Diligent::SET_VERTEX_BUFFERS_FLAG_RESET);
 			boundVB = want;
 		}
-		Diligent::IPipelineState *pso = d.dyn
-			? ((d.blend == 2) ? g_addNoCullPSO.RawPtr() : g_transNoCullPSO.RawPtr())
-			: ((d.blend == 2) ? g_addPSO.RawPtr()       : g_transPSO.RawPtr());
+		Diligent::IPipelineState *pso = !d.dyn
+			? ((d.blend == 2) ? g_addPSO.RawPtr()       : g_transPSO.RawPtr())
+			: d.red
+				? ((d.blend == 2) ? g_addRedAlphaPSO.RawPtr() : g_transRedAlphaPSO.RawPtr())
+				: d.bias
+					? ((d.blend == 2) ? g_addDecalPSO.RawPtr()  : g_transDecalPSO.RawPtr())
+					: ((d.blend == 2) ? g_addNoCullPSO.RawPtr() : g_transNoCullPSO.RawPtr());
 		if (!pso) continue;
 		if (pso != bound) { ctx->SetPipelineState(pso); bound = pso; }
 		ctx->CommitShaderResources(d.srb, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
@@ -1471,6 +1521,11 @@ static void ReleaseScenePipelines()
 	g_maskedNoCullPSO.Release();
 	g_transNoCullPSO.Release();
 	g_addNoCullPSO.Release();
+	g_maskedDecalPSO.Release();
+	g_transDecalPSO.Release();
+	g_addDecalPSO.Release();
+	g_transRedAlphaPSO.Release();
+	g_addRedAlphaPSO.Release();
 	g_transPSO.Release();
 	g_addPSO.Release();
 	g_skyBuiltValid = false;
@@ -1832,7 +1887,7 @@ static bool EnsureScenePipeline(FString &err)
 	auto *swap = GetSwapChain();
 	if (!dev || !swap) { err = "no device/swapchain"; return false; }
 
-	Diligent::RefCntAutoPtr<Diligent::IShader> vs, psOpaque, psMasked, psTrans;
+	Diligent::RefCntAutoPtr<Diligent::IShader> vs, psOpaque, psMasked, psTrans, psRedAlpha;
 	{
 		Diligent::ShaderCreateInfo ci;
 		ci.SourceLanguage = Diligent::SHADER_SOURCE_LANGUAGE_GLSL_VERBATIM;
@@ -1864,8 +1919,10 @@ static bool EnsureScenePipeline(FString &err)
 		ci.Desc.Name = "fua scene PS translucent";
 		ci.Source = kScenePSTrans;
 		dev->CreateShader(ci, &psTrans);
+		ci.Source = kScenePSRedAlpha;
+		dev->CreateShader(ci, &psRedAlpha);
 	}
-	if (!vs || !psOpaque || !psMasked || !psTrans)
+	if (!vs || !psOpaque || !psMasked || !psTrans || !psRedAlpha)
 	{ err = "scene shader compilation failed"; return false; }
 
 	Diligent::BufferDesc cbd;
@@ -1931,14 +1988,24 @@ static bool EnsureScenePipeline(FString &err)
 	// behind it instead of letting it show through.
 	// Passes 0..3 are the world's, 4..6 repeat masked/translucent/additive with culling off for
 	// sprites. See g_maskedNoCullPSO.
-	for (int pass = 0; pass < 7; pass++)
+	// Passes 0..3 world, 4..6 sprites (no culling), 7..9 decals (no culling + depth bias).
+	// 10..11 are the alpha-mask decal variants (translucent and additive).
+	for (int pass = 0; pass < 12; pass++)
 	{
-		static const char *kNames[7] = { "fua scene PSO opaque", "fua scene PSO masked",
-		                                 "fua scene PSO translucent", "fua scene PSO additive",
-		                                 "fua sprite PSO masked", "fua sprite PSO translucent",
-		                                 "fua sprite PSO additive" };
-		const int shape = (pass < 4) ? pass : pass - 3;   // 4->1 masked, 5->2 trans, 6->3 additive
+		static const char *kNames[12] = { "fua scene PSO opaque", "fua scene PSO masked",
+		                                  "fua scene PSO translucent", "fua scene PSO additive",
+		                                  "fua sprite PSO masked", "fua sprite PSO translucent",
+		                                  "fua sprite PSO additive",
+		                                  "fua decal PSO masked", "fua decal PSO translucent",
+		                                  "fua decal PSO additive",
+		                                  "fua decal PSO redalpha translucent",
+		                                  "fua decal PSO redalpha additive" };
+		// 4..6 and 7..9 both map onto shapes 1..3.
+		const int shape = (pass < 4) ? pass : ((pass < 7) ? pass - 3 :
+		                  ((pass < 10) ? pass - 6 : pass - 8));   // 10->2 trans, 11->3 additive
 		const bool noCull = (pass >= 4);
+		const bool decal  = (pass >= 7);
+		const bool redAlpha = (pass >= 10);
 		const bool blended = (shape >= 2);
 
 		Diligent::GraphicsPipelineStateCreateInfo pci;
@@ -1953,6 +2020,16 @@ static bool EnsureScenePipeline(FString &err)
 			(fua_dg_cull == 2) ? Diligent::CULL_MODE_FRONT : Diligent::CULL_MODE_NONE;
 		pci.GraphicsPipeline.DepthStencilDesc.DepthEnable = true;
 		pci.GraphicsPipeline.DepthStencilDesc.DepthWriteEnable = !blended;
+		if (decal)
+		{
+			// [rc4l] Slope-scaled dominates here. The constant term is expressed in units of the
+			// depth format's smallest resolvable difference, which for a FLOAT depth buffer varies
+			// with distance and is close to meaningless as a fixed number; the slope-scaled term
+			// scales with how obliquely the surface is viewed, which is exactly when a coplanar quad
+			// fights. GL's own decal offset is (-1, -128) in the same two roles.
+			pci.GraphicsPipeline.RasterizerDesc.DepthBias = -1;
+			pci.GraphicsPipeline.RasterizerDesc.SlopeScaledDepthBias = -128.f;
+		}
 		if (blended)
 		{
 			auto &rt = pci.GraphicsPipeline.BlendDesc.RenderTargets[0];
@@ -1973,7 +2050,8 @@ static bool EnsureScenePipeline(FString &err)
 		pci.PSODesc.ResourceLayout.ImmutableSamplers = samplers;
 		pci.PSODesc.ResourceLayout.NumImmutableSamplers = 2;
 		pci.pVS = vs;
-		pci.pPS = (shape == 0) ? psOpaque : (shape == 1) ? psMasked : psTrans;
+		pci.pPS = redAlpha ? psRedAlpha :
+			(shape == 0) ? psOpaque : (shape == 1) ? psMasked : psTrans;
 
 		Diligent::RefCntAutoPtr<Diligent::IPipelineState> made;
 		dev->CreateGraphicsPipelineState(pci, &made);
@@ -1983,10 +2061,17 @@ static bool EnsureScenePipeline(FString &err)
 		else if (pass == 3) g_addPSO    = made;
 		else if (pass == 4) g_maskedNoCullPSO = made;
 		else if (pass == 5) g_transNoCullPSO  = made;
-		else                g_addNoCullPSO    = made;
+		else if (pass == 6) g_addNoCullPSO    = made;
+		else if (pass == 7) g_maskedDecalPSO  = made;
+		else if (pass == 8)  g_transDecalPSO    = made;
+		else if (pass == 9)  g_addDecalPSO      = made;
+		else if (pass == 10) g_transRedAlphaPSO = made;
+		else                 g_addRedAlphaPSO   = made;
 	}
 	if (!g_scenePSO || !g_maskedPSO || !g_transPSO || !g_addPSO ||
-		!g_maskedNoCullPSO || !g_transNoCullPSO || !g_addNoCullPSO)
+		!g_maskedNoCullPSO || !g_transNoCullPSO || !g_addNoCullPSO ||
+		!g_maskedDecalPSO || !g_transDecalPSO || !g_addDecalPSO ||
+		!g_transRedAlphaPSO || !g_addRedAlphaPSO)
 	{ err = "scene pipeline creation failed"; return false; }
 
 	// [rc4l] Both stages read Constants now -- the pixel shader needs uCameraPos for radial fog.
@@ -1995,9 +2080,11 @@ static bool EnsureScenePipeline(FString &err)
 	// backend died on launch with "No resource is assigned to static shader variable 'Constants'" --
 	// a pipeline that is created but never has its statics bound is not a working pipeline.
 	Diligent::IPipelineState *psos[] = { g_scenePSO, g_maskedPSO, g_transPSO, g_addPSO,
-	                                     g_maskedNoCullPSO, g_transNoCullPSO, g_addNoCullPSO };
+	                                     g_maskedNoCullPSO, g_transNoCullPSO, g_addNoCullPSO,
+	                                     g_maskedDecalPSO, g_transDecalPSO, g_addDecalPSO,
+	                                     g_transRedAlphaPSO, g_addRedAlphaPSO };
 	const Diligent::SHADER_TYPE stages[] = { Diligent::SHADER_TYPE_VERTEX, Diligent::SHADER_TYPE_PIXEL };
-	for (int i = 0; i < 7; i++)
+	for (int i = 0; i < 12; i++)
 	{
 		for (int s = 0; s < 2; s++)
 			if (auto *var = psos[i]->GetStaticVariableByName(stages[s], "Constants"))

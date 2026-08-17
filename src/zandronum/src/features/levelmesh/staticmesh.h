@@ -110,6 +110,21 @@ struct MeshPiece
 	// pieces with the same value here wind the same way, which catches it without a camera.
 	bool          facesDown;
 
+	// [rc4l] Nudge this piece towards the camera in the depth test.
+	//
+	// A decal is a quad glued flat against the wall it marks, so it is exactly coplanar with it and
+	// z-fights without help. GL wraps its decal pass in glPolygonOffset(-1, -128) for this; the
+	// equivalent here is a pipeline with a depth bias, and the flag is what routes the piece to it.
+	bool          depthBias;
+
+	// [rc4l] This surface's texture is an ALPHA MASK, not a colour image.
+	//
+	// A shaded decal -- a scorch mark, most bullet impacts -- stores its shape in the red channel and
+	// takes its colour from the decal's own AlphaColor. GL routes these through TM_REDTOALPHA with an
+	// object colour. Sampled as an ordinary texture instead, the red channel reads as bright colour
+	// and a black scorch mark renders as a white blob.
+	bool          redToAlpha;
+
 	// [rc4l] Zero-initialise. Every site fills the fields it cares about and leaves the rest, so a
 	// field added later is garbage at the sites that predate it -- which is how SegCache::pieces
 	// silently inherited the previous level's vertex ranges. A translation of garbage would remap
@@ -125,7 +140,7 @@ struct MeshPiece
 		sortX = sortY = sortZ = 0.f;
 		dynLightIndex = -1;
 		normX = normY = normZ = 0.f;
-		facesDown = false;
+		facesDown = false; depthBias = false; redToAlpha = false;
 	}
 };
 
