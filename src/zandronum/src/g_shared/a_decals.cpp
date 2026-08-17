@@ -697,6 +697,11 @@ DImpactDecal *DImpactDecal::StaticCreate (const char *name, fixed_t x, fixed_t y
 // behaviour and GL does exactly the same; it is not something the backend dropped.
 namespace zx { namespace decalstats {
 int g_wallTries = 0, g_wallNoTemplate = 0, g_wallSuppressed = 0, g_wallNoSurface = 0, g_wallMade = 0;
+// [rc4l] The last refusal, in full. A count says a mark was declined; only the line and the heights
+// say WHY, and "the hit was in the open gap" is a claim until the numbers agree with it.
+int g_lastRefusedLine = -1;
+double g_lastRefusedZ = 0, g_lastRefusedBackFloor = 0, g_lastRefusedBackCeil = 0;
+bool g_lastRefusedTwoSided = false, g_lastRefusedHasMid = false;
 }}
 
 DImpactDecal *DImpactDecal::StaticCreate (const FDecalTemplate *tpl, fixed_t x, fixed_t y, fixed_t z, side_t *wall, F3DFloor * ffloor, PalEntry color)
@@ -730,6 +735,21 @@ DImpactDecal *DImpactDecal::StaticCreate (const FDecalTemplate *tpl, fixed_t x, 
 			// No texture to live on: see the note above StaticCreate. Almost always a two-sided
 			// line hit in its open middle.
 			zx::decalstats::g_wallNoSurface++;
+			// [rc4l] The engine has nowhere to put this, but the level mesh does: its decals are
+			// points with a radius rather than quads glued to a sidedef, so the mark lands at the
+			// impact and creeps onto whatever real geometry is behind it. See the definition.
+			zx::levelmesh::SpawnUnstuckWallDecal(tpl, x, y, z, wall);
+			{
+				const line_t *ld = wall->linedef;
+				zx::decalstats::g_lastRefusedLine = ld ? (int)(ld - lines) : -1;
+				zx::decalstats::g_lastRefusedZ = FIXED2DBL(z);
+				const sector_t *back = (ld && ld->sidedef[0] == wall) ? ld->frontsector : NULL;
+				if (ld) back = (ld->sidedef[0] == wall) ? ld->backsector : ld->frontsector;
+				zx::decalstats::g_lastRefusedTwoSided = (back != NULL);
+				zx::decalstats::g_lastRefusedBackFloor = back ? FIXED2DBL(back->floorplane.ZatPoint(x, y)) : 0;
+				zx::decalstats::g_lastRefusedBackCeil = back ? FIXED2DBL(back->ceilingplane.ZatPoint(x, y)) : 0;
+				zx::decalstats::g_lastRefusedHasMid = wall->GetTexture(side_t::mid).isValid();
+			}
 			return NULL;
 		}
 		zx::decalstats::g_wallMade++;

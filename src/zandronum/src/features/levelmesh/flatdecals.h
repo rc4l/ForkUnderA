@@ -55,6 +55,12 @@ void RegisterFlatDecals();
 // dies inside RealZOnWall.
 void ForgetDecals();
 
+// [rc4l] A mark for an impact the engine refused to attach to a sidedef, because the hit landed in
+// the open span of a two-sided line and there was no texture there to glue a quad to. A projected
+// decal needs no sidedef -- see the note on the definition.
+void SpawnUnstuckWallDecal(const FDecalTemplate *tpl, fixed_t x, fixed_t y, fixed_t z,
+                           const side_t *wall);
+
 // Dropped when the level changes: the records hold plane heights that mean nothing in a new map.
 void ClearFlatDecals();
 
