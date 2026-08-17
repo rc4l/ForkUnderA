@@ -77,18 +77,19 @@ struct ProjectedDecal
 	float vx, vy, vz;          // up the surface
 	float nx, ny, nz;          // through the surface
 	float halfW, halfH, halfDepth;   // the same three extents, unscaled, to build the box corners
-	// [rc4l] A one-sided cut across the picture, for a FOLD.
+	// [rc4l] Which SLICE of the picture this box owns, in local-y units.
 	//
-	// A fold continues a wall's mark onto the floor or ceiling it runs into, and it does that by
-	// putting its centre back inside the wall so the coordinate lines up at the join. That leaves the
-	// box straddling the wall, and the surface it was made for is only on one side of it -- a step's
-	// tread is behind the line, while the room's own floor, often at the very same height, is in
-	// front. Without this the fold paints both, and the half it was not meant for gets the wrong part
-	// of the graphic: a scorch with a clean scalloped hole through it.
+	// A mark near a corner is drawn by several boxes -- itself, plus a fold for each surface it runs
+	// into -- and they have to tile, not overlap. Two things go wrong without that. A fold's box
+	// straddles the wall it folded from, because its centre goes back inside the wall to make the
+	// coordinate line up, so it would also paint the surface on the near side and give it the wrong
+	// part of the graphic. And the mark itself would carry on past the join that the fold continues
+	// from, so both paint the strip either side of the corner and the double blend shows as a seam
+	// running along it.
 	//
-	// `clipV` is where the join falls in the picture and `clipDir` which side of it is real. Zero for
-	// clipDir means no cut, which is every decal that is not a fold.
-	float clipV, clipDir;
+	// So each box states the range of the picture it is responsible for, and the joins are where one
+	// hands over to the next. -1 to 1 is the whole picture, which is a mark with nothing to fold onto.
+	float vMin, vMax;
 	const void *material;      // FMaterial*
 	float r, g, b, a;          // colour the shader paints, alpha already faded
 	bool  additive;

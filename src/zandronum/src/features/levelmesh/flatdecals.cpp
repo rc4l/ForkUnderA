@@ -438,8 +438,7 @@ static void RegisterWallDecals()
 		pd.a = w.alpha * fade;
 		pd.additive = w.additive;
 		pd.redToAlpha = w.redToAlpha;
-		pd.clipV = 0.f; pd.clipDir = 0.f;   // the mark itself is never cut
-		g_projected.Push(pd);
+		pd.vMin = -1.f; pd.vMax = 1.f;   // narrowed below to whatever the folds take over
 
 		// [rc4l] FOLD the rest of the mark onto the floor or ceiling it runs into.
 		//
@@ -459,15 +458,20 @@ static void RegisterWallDecals()
 		// This is the thing GL cannot do at all, and not because of the projection: the engine has no
 		// floor decals. A scorch at the foot of a wall stops dead at the skirting in GL because there
 		// is nowhere for the rest of it to go.
-		if (!fua_decal_fold) continue;
+		if (!fua_decal_fold) { g_projected.Push(pd); continue; }
 		const float halfH = w.halfH;
 		const line_t *ld = w.wall->linedef;
-		if (ld == NULL) continue;
+		if (ld == NULL) { g_projected.Push(pd); continue; }
 		const bool frontSide = (ld->sidedef[0] == w.wall);
 		sector_t *front = frontSide ? ld->frontsector : ld->backsector;
 		sector_t *back  = frontSide ? ld->backsector  : ld->frontsector;
-		if (front == NULL) continue;
+		if (front == NULL) { g_projected.Push(pd); continue; }
 		const fixed_t fx = FLOAT2FIXED(w.x), fy = FLOAT2FIXED(w.y);
+		// The mark's own picture runs this way up the wall; a decal marked randomflipy inverts it.
+		const float vzWall = w.flipV ? 1.f : -1.f;
+		// Collected before the mark is pushed, because each fold takes a slice of the picture OFF it.
+		ProjectedDecal pending[4];
+		int nPending = 0;
 
 		// The four surfaces a wall can run into, and which way the picture folds onto each.
 		//
@@ -541,16 +545,25 @@ static void RegisterWallDecals()
 			                         0.f, 0.f, ceiling ? -1.f : 1.f,
 			                         w.halfW, halfH, kFoldDepth))
 				continue;
-			// [rc4l] Keep only the side of the join the surface is actually on -- see clipV.
-			// Where the join falls in the picture, and which way the picture runs from there.
-			fold.clipV = (-centreDir * h * vsign) / halfH;
-			fold.clipDir = (vsign * (away ? -1.f : 1.f) >= 0.f) ? 1.f : -1.f;
+			// [rc4l] The slice of the picture this fold owns, and the slice it takes off the mark.
+			//
+			// The join is one value in the picture, expressed once in the fold's frame and once in the
+			// mark's. The fold keeps everything beyond it; the mark gives up everything past it. They
+			// meet there exactly, so the two tile instead of overlapping -- and an overlap is not
+			// harmless, since these blend, so a strip painted twice comes out darker and reads as a
+			// seam running along the corner.
+			const float joinFold = (-centreDir * h * vsign) / halfH;
+			const float joinMark = ((planeZ - z) * vzWall) / halfH;
+			if ((vsign * (away ? -1.f : 1.f)) >= 0.f) { fold.vMin = joinFold; fold.vMax = 1.f; }
+			else                                      { fold.vMin = -1.f;     fold.vMax = joinFold; }
+			if (joinMark < 0.f) { if (joinMark > pd.vMin) pd.vMin = joinMark; }
+			else                { if (joinMark < pd.vMax) pd.vMax = joinMark; }
 			fold.material = pd.material;
 			fold.r = pd.r; fold.g = pd.g; fold.b = pd.b;
 			fold.a = pd.a;
 			fold.additive = pd.additive;
 			fold.redToAlpha = pd.redToAlpha;
-			g_projected.Push(fold);
+			if (nPending < 4) pending[nPending++] = fold;
 
 			if (g_foldCount < kMaxFoldNotes)
 			{
@@ -559,6 +572,10 @@ static void RegisterWallDecals()
 				fn.h = h; fn.halfH = halfH; fn.reach = halfH - h;
 			}
 		}
+
+		// The mark last of all, now that it knows how much of the picture it kept.
+		g_projected.Push(pd);
+		for (int k = 0; k < nPending; k++) g_projected.Push(pending[k]);
 	}
 }
 
@@ -630,7 +647,7 @@ void RegisterFlatDecals()
 		pd.a = d.alpha * fade;
 		pd.additive = d.additive;
 		pd.redToAlpha = d.redToAlpha;
-		pd.clipV = 0.f; pd.clipDir = 0.f;
+		pd.vMin = -1.f; pd.vMax = 1.f;
 		g_projected.Push(pd);
 
 		g_lastX = d.x; g_lastY = d.y; g_lastZ = pz;

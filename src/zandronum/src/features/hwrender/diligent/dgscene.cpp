@@ -830,8 +830,17 @@ static const char *kDecalPS =
 	   places the unwrap exists to serve got the blurriest mip and washed out. The flat projection is
 	   smooth everywhere and is the right scale to measure by; the unwrap only bends where the texture
 	   is fetched FROM, never how densely it is being sampled. */ \
-	"    float facing = (uSkyColor.w != 0.0)\n"
-	"        ? fuaDecalFacing(P, uv, 1.0 / vec2(uScreen.x, uScreen.y), uInvMVP, vAxisN) : 1.0;\n"
+	/* [rc4l] A fragment ON the plane the mark was shot at does not have to justify itself.
+	   The facing test exists to refuse surfaces that run ALONG the projection, and it answers by
+	   reconstructing a normal from neighbouring depth samples -- which needs a neighbourhood. A thin
+	   sliver of geometry, like the front face of a low ledge, is a couple of pixels tall, so both
+	   neighbours land on the floor behind it, the normal comes out of two unrelated surfaces, and the
+	   sliver is refused. That is a clean unpainted notch cut through the mark exactly where the ledge
+	   is -- and the sliver was the decal's own wall, the one surface that never needed testing.
+	   Distance through the plane says so without a neighbourhood and without a camera. */
+	"    float throughW = abs(local.z) / length(vAxisN);\n"
+	"    float facing = (throughW <= 2.0 || uSkyColor.w == 0.0) ? 1.0\n"
+	"        : fuaDecalFacing(P, uv, 1.0 / vec2(uScreen.x, uScreen.y), uInvMVP, vAxisN);\n"
 	"    if (facing <= 0.0) discard;\n"
 	"    vec2 flat_uv = local.xy * 0.5 + 0.5;\n"
 	"    vec4 texel = textureGrad(uTex, t, dFdx(flat_uv), dFdy(flat_uv));\n"
@@ -869,18 +878,26 @@ static const char *kDecalRedPS =
 	"    vec3 rel = P - vCentre;\n"
 	"    vec3 local = vec3(dot(rel, vAxisU), dot(rel, vAxisV), dot(rel, vAxisN));\n"
 	"    if (any(greaterThan(abs(local), vec3(1.0)))) discard;\n"
-	/* [rc4l] A fold covers only ONE side of the join it continues from -- see ProjectedDecal::clipV.
-	   A fold puts its centre back inside the wall so its coordinate lines up at the join, which leaves
-	   the box straddling the wall while the surface it was made for is on one side only. A step's
-	   tread is behind the line; the room's own floor, often at exactly the same height, is in front.
-	   Painting both hands the near one the wrong part of the graphic, and that comes out as a scorch
-	   with a clean scalloped hole through it. Zero means no cut, which is every mark that is not a
-	   fold. */
-	"    if (vClip.y != 0.0 && (local.y - vClip.x) * vClip.y < 0.0) discard;\n"
+	/* [rc4l] The slice of the picture this box owns -- see ProjectedDecal::vMin.
+	   A mark near a corner is drawn by several boxes, itself plus a fold per surface it runs into, and
+	   they have to tile. A fold's box straddles the wall it folded from, so unbounded it would also
+	   paint the near side and hand it the wrong part of the graphic. And the mark would carry on past
+	   the join its fold continues from, so both would paint the strip either side of the corner -- and
+	   these blend, so a strip painted twice comes out darker and reads as a seam along the corner. */
+	"    if (local.y < vClip.x || local.y > vClip.y) discard;\n"
 	"    vec2 t = fuaDecalUV(local, vAxisU, vAxisV, vAxisN);\n"
 	"    if (any(lessThan(t, vec2(0.0))) || any(greaterThan(t, vec2(1.0)))) discard;\n"
-	"    float facing = (uSkyColor.w != 0.0)\n"
-	"        ? fuaDecalFacing(P, uv, 1.0 / vec2(uScreen.x, uScreen.y), uInvMVP, vAxisN) : 1.0;\n"
+	/* [rc4l] A fragment ON the plane the mark was shot at does not have to justify itself.
+	   The facing test exists to refuse surfaces that run ALONG the projection, and it answers by
+	   reconstructing a normal from neighbouring depth samples -- which needs a neighbourhood. A thin
+	   sliver of geometry, like the front face of a low ledge, is a couple of pixels tall, so both
+	   neighbours land on the floor behind it, the normal comes out of two unrelated surfaces, and the
+	   sliver is refused. That is a clean unpainted notch cut through the mark exactly where the ledge
+	   is -- and the sliver was the decal's own wall, the one surface that never needed testing.
+	   Distance through the plane says so without a neighbourhood and without a camera. */
+	"    float throughW = abs(local.z) / length(vAxisN);\n"
+	"    float facing = (throughW <= 2.0 || uSkyColor.w == 0.0) ? 1.0\n"
+	"        : fuaDecalFacing(P, uv, 1.0 / vec2(uScreen.x, uScreen.y), uInvMVP, vAxisN);\n"
 	"    if (facing <= 0.0) discard;\n"
 	"    vec2 flat_uv = local.xy * 0.5 + 0.5;\n"
 	"    float a = textureGrad(uTex, t, dFdx(flat_uv), dFdy(flat_uv)).r * vColor.a * facing;\n"
@@ -2803,7 +2820,7 @@ struct DecalVertex
 	float vx, vy, vz;
 	float nx, ny, nz;
 	float r, g, b, a;
-	float clipV, clipDir;   // a fold's one-sided cut; clipDir 0 means no cut
+	float vMin, vMax;       // the slice of the picture this box owns
 };
 
 // One decal's box, as 36 vertices. Everything a box needs travels in its own vertices, which is what
@@ -2831,7 +2848,7 @@ static void AppendDecalBox(TArray<DecalVertex> &vb, const zx::levelmesh::Project
 		dv.y = dv.cy + kCube[v][0] * uy * uL + kCube[v][1] * vy * vL + kCube[v][2] * ny * nL;
 		dv.z = dv.cz + kCube[v][0] * uz * uL + kCube[v][1] * vz * vL + kCube[v][2] * nz * nL;
 		dv.r = d.r; dv.g = d.g; dv.b = d.b; dv.a = d.a;
-		dv.clipV = d.clipV; dv.clipDir = d.clipDir;
+		dv.vMin = d.vMin; dv.vMax = d.vMax;
 		vb.Push(dv);
 	}
 }
