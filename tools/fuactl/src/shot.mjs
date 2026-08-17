@@ -93,10 +93,21 @@ export function build({ root = "F:/ForkUnderA", cmake = null, log = console.erro
     throw new Error(r.status !== 0 ? "build failed" : "build reported success but the log contains errors");
   }
 
+  // [rc4l] Staging overwrites the exe a running instance is executing, so the instances have to go
+  // first -- and then the LOCK has to actually clear, which does not happen the moment Stop-Process
+  // returns. Copying immediately fails with EBUSY, which reads as a build failure when the build was
+  // fine and only the copy was early.
   spawnSync("powershell.exe", ["-NoProfile", "-Command",
     "Get-Process -Name forkundera -ErrorAction SilentlyContinue | Stop-Process -Force"], { encoding: "utf8" });
 
-  fs.copyFileSync(path.join(root, "build-win/Release/forkundera.exe"), path.join(root, "dist-windows/forkundera.exe"));
+  const from = path.join(root, "build-win/Release/forkundera.exe");
+  const to = path.join(root, "dist-windows/forkundera.exe");
+  let lastErr = null;
+  for (let i = 0; i < 40; i++) {
+    try { fs.copyFileSync(from, to); lastErr = null; break; }
+    catch (e) { lastErr = e; spawnSync("powershell.exe", ["-NoProfile", "-Command", "Start-Sleep -Milliseconds 250"]); }
+  }
+  if (lastErr) throw new Error(`could not stage over the running binary after 10s: ${lastErr.message}`);
 
   // [rc4l] The addon catalogue, alongside the binary, because the HOST tab reads it from progdir.
   // Staging only the exe meant every build had no catalogue at all -- the presets list drew empty
