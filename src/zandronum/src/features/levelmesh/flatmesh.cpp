@@ -84,10 +84,22 @@ void RegisterFlatSubsector(const GLFlat &flat, subsector_t *sub, bool ceiling)
 
 	const int triVerts = ComputeFanTriangleVertexCount(n);
 	if (triVerts <= 0) return;
+	// [rc4l] Wind a downward-facing plane the other way round, so back-face culling keeps it.
+	//
+	// A subsector's vertices come in one fixed order, so a floor and a ceiling built from them have
+	// the SAME winding while facing opposite directions -- and a single cull mode then deletes one of
+	// them. Enabling culling for the world removed every ceiling in the level and left the sky
+	// showing through. Which way round is decided by the plane's own normal (secplane c > 0 points
+	// up), not by the `ceiling` argument, because a 3D floor's two faces are a floor and a ceiling of
+	// the control sector and can arrive either way.
+	const bool facesDown = (flat.plane.plane.c < 0);
 	int w = 0;
 	for (int t = 0; t < n - 2; t++)
 		for (int c = 0; c < 3; c++)
-			tris[w++] = fan[ComputeFanTriangleVertex(n, t, c)];
+		{
+			const int cc = facesDown ? (2 - c) : c;
+			tris[w++] = fan[ComputeFanTriangleVertex(n, t, cc)];
+		}
 
 	FlatKey *slot = NULL;
 	for (unsigned i = 0; i < g_flats.Size(); i++)
