@@ -97,7 +97,6 @@ void FLightBuffer::Clear()
 	mIndex = 0;
 	mIndices.Clear();
 	mUploadIndex = 0;
-	mMirror.Clear();   // [rc4l] features/hwrender -- see MirrorData
 }
 
 int FLightBuffer::UploadLights(FDynLightData &data)
@@ -183,24 +182,6 @@ int FLightBuffer::UploadLights(FDynLightData &data)
 	memcpy(&copyptr[4], &data.arrays[0][0], 4 * size0*sizeof(float));
 	memcpy(&copyptr[4 + 4*size0], &data.arrays[1][0], 4 * size1*sizeof(float));
 	memcpy(&copyptr[4 + 4*(size0 + size1)], &data.arrays[2][0], 4 * size2*sizeof(float));
-
-	// [rc4l] features/hwrender: the same bytes, CPU-side, at the same index. Written from the same
-	// locals rather than read back out of the mapped buffer, because that memory is write-combined
-	// and reading it is catastrophically slow.
-	{
-		const unsigned int need = (mIndex + totalsize) * 4;
-		if (mMirror.Size() < need)
-		{
-			const unsigned int was = mMirror.Size();
-			mMirror.Resize(need);
-			for (unsigned int i = was; i < need; i++) mMirror[i] = 0.f;
-		}
-		float *m = &mMirror[mIndex * 4];
-		memcpy(&m[0], parmcnt, 4 * sizeof(float));
-		if (size0 > 0) memcpy(&m[4], &data.arrays[0][0], 4 * size0 * sizeof(float));
-		if (size1 > 0) memcpy(&m[4 + 4*size0], &data.arrays[1][0], 4 * size1 * sizeof(float));
-		if (size2 > 0) memcpy(&m[4 + 4*(size0 + size1)], &data.arrays[2][0], 4 * size2 * sizeof(float));
-	}
 
 	unsigned int bufferindex = mIndex;
 	mIndex += totalsize;
