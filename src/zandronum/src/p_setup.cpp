@@ -55,6 +55,7 @@
 #include "p_lnspec.h"
 #include "v_palette.h"
 #include "features/hitboxviz/hitboxviz.h"
+#include "features/levelmesh/flatdecals.h"
 #include "c_console.h"
 #include "c_cvars.h"
 #include "p_acs.h"
@@ -3950,6 +3951,13 @@ void P_SetupLevel (const char *lumpname, int position)
 	// [MGOOOOOO] Debug hitbox overlay: recorded explosion regions are map coordinates, so anything
 	// left over from the previous level would be drawn in the wrong place here.
 	zx::hitboxviz::ClearBlasts();
+
+	// [rc4l] Decals keep a side_t * so a mark can follow a door that moves, and every one of those
+	// points into the level about to be thrown away. Carrying them over is not a wrong position, it
+	// is a dangling pointer: the next frame's decal pass dereferences freed geometry and takes the
+	// engine down inside RealZOnWall. It survived this long only because changing level mid-session
+	// with marks on the walls is something a player does and a test never did.
+	zx::levelmesh::ForgetDecals();
 
 	level.maptype = MAPTYPE_UNKNOWN;
 	wminfo.partime = 180;

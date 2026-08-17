@@ -47,6 +47,14 @@ void SpawnFlatDecal(const FDecalTemplate *tpl, fixed_t x, fixed_t y, fixed_t z, 
 // Emit this frame's flat decals into the dynamic mesh. Called once per frame beside the sprites.
 void RegisterFlatDecals();
 
+// [rc4l] Drop every remembered decal, because the level they belong to is going away.
+//
+// A wall decal keeps a side_t * so it can follow a door that moves -- see WallDecal::wall -- and
+// those point into geometry P_SetupLevel is about to free. Keeping them across a level change is a
+// dangling pointer, not a stale position: the next frame's decal pass dereferences it and the engine
+// dies inside RealZOnWall.
+void ForgetDecals();
+
 // Dropped when the level changes: the records hold plane heights that mean nothing in a new map.
 void ClearFlatDecals();
 

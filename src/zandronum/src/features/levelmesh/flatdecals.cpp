@@ -482,6 +482,13 @@ static void RegisterWallDecals()
 	}
 }
 
+void ForgetDecals()
+{
+	g_wallNext = g_wallCount = 0;
+	g_next = g_count = 0;
+	g_projected.Clear();
+}
+
 void RegisterFlatDecals()
 {
 	g_projected.Clear();
