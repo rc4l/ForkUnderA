@@ -1700,6 +1700,16 @@ void P_ExplodeMissile (AActor *mo, line_t *line, AActor *target, bool bExplodeOn
 			return;
 		}
 	}
+	// [rc4l] Keep the direction of travel before it is thrown away.
+	//
+	// The decal code below is a hundred lines further on and by then the velocity is zero, so
+	// anything down there that needs to know which way the missile was going has to be handed it
+	// from here. PrevX/PrevY are not a substitute -- they are already synced to the final position,
+	// so the difference is zero and a trace along it goes nowhere. That silently disabled the
+	// re-anchoring of marks on lines with no texture: the trace never ran, and the dead zones stayed
+	// dead while the counter cheerfully reported no direction was available.
+	const fixed_t travelX = mo->velx, travelY = mo->vely;
+
 	mo->velx = mo->vely = mo->velz = 0;
 	mo->effects = 0;		// [RH]
 	mo->flags &= ~MF_SHOOTABLE;
@@ -1740,6 +1750,14 @@ void P_ExplodeMissile (AActor *mo, line_t *line, AActor *target, bool bExplodeOn
 		mo->Destroy ();
 		return;
 	}
+
+	// [rc4l] What the missile actually died against, counted before anything is decided.
+	//
+	// A missile marks a wall only when it explodes with a blocking LINE. It can also explode against
+	// an actor, or come to rest against nothing either branch recognises, and both of those leave no
+	// mark at all -- silently, and only in some places, which is what a "dead zone" is. Telling them
+	// apart from in front of an unmarked wall is impossible; this is one counter each.
+	zx::levelmesh::NoteMissileDeath(line != NULL, target != NULL, mo->DecalGenerator != NULL);
 
 	// [rc4l] features/levelmesh: a missile that hits a FLOOR or CEILING marks it too.
 	//
@@ -1839,7 +1857,7 @@ void P_ExplodeMissile (AActor *mo, line_t *line, AActor *target, bool bExplodeOn
 						// position is not, so the direction of travel survives. See
 						// SpawnUnstuckWallDecal, which traces the last few units along it to find the
 						// surface actually hit.
-						zx::levelmesh::SetImpactDirection( mo->x - mo->PrevX, mo->y - mo->PrevY );
+						zx::levelmesh::SetImpactDirection( travelX, travelY );
 						DImpactDecal::StaticCreate (base->GetDecal (),
 							x, y, z, line->sidedef[side], ffloor);
 						zx::levelmesh::SetImpactDirection( 0, 0 );

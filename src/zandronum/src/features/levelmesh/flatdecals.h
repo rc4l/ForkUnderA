@@ -69,6 +69,10 @@ void SpawnUnstuckWallDecal(const FDecalTemplate *tpl, fixed_t x, fixed_t y, fixe
 // the surface actually hit rather than abandoned. Zero means "not known", and nothing is traced.
 void SetImpactDirection(fixed_t dx, fixed_t dy);
 
+// [rc4l] What a missile died against: a blocking line, an actor, or neither. Only the first can mark
+// a wall, so a "dead zone" where a projectile leaves nothing is one of the other two.
+void NoteMissileDeath(bool hasLine, bool hasTarget, bool hasGenerator);
+
 // Dropped when the level changes: the records hold plane heights that mean nothing in a new map.
 void ClearFlatDecals();
 
