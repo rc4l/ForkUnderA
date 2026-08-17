@@ -203,6 +203,16 @@ static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_maskedDecalPSO;
 static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_transDecalPSO;
 static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_addDecalPSO;
 // [rc4l] And the alpha-mask variants of the same, for shaded decals. See kScenePSRedAlpha.
+// [rc4l] The scene's depth, as a texture the shaders can READ.
+//
+// The swapchain's own depth buffer is write-only from a shader's point of view, so anything that
+// wants to know how far away the world is -- projected decals first, and any screen-space effect
+// after them -- needs its own. The world pass renders into this instead, and it is the same format
+// and size as the one it replaces, so nothing else has to change.
+static Diligent::RefCntAutoPtr<Diligent::ITexture> g_sceneDepth;
+static Diligent::ITextureView *EnsureSceneDepth();
+static int g_sceneDepthW = 0, g_sceneDepthH = 0;
+
 static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_transRedAlphaPSO;
 static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_addRedAlphaPSO;
 static Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding> g_srb;
@@ -3002,7 +3012,10 @@ static void RenderMirrors(Diligent::IDeviceContext *ctx)
 
 	auto *swap = GetSwapChain();
 	auto *brtv = swap->GetCurrentBackBufferRTV();
-	auto *bdsv = swap->GetDepthBufferDSV();
+	// [rc4l] The world pass renders into our own readable depth buffer, so restoring the swapchain's
+	// here would hand the screen a depth buffer nothing has written to.
+	Diligent::ITextureView *bdsv = EnsureSceneDepth();
+	if (!bdsv) bdsv = swap->GetDepthBufferDSV();
 	Diligent::ITextureView *mrtv = g_mirrorColor->GetDefaultView(Diligent::TEXTURE_VIEW_RENDER_TARGET);
 	Diligent::ITextureView *mdsv = g_mirrorDepth->GetDefaultView(Diligent::TEXTURE_VIEW_DEPTH_STENCIL);
 
@@ -3109,13 +3122,45 @@ static void RenderMirrors(Diligent::IDeviceContext *ctx)
 	for (int i = 0; i < 16; i++) g_mvp[i] = savedMVP[i];
 }
 
+// [rc4l] Keep the readable depth buffer matched to the swapchain, recreating it when the size
+// changes. Returns NULL if it cannot be made, and every caller then falls back to the swapchain's
+// own depth buffer -- a missing screen-space effect is a better failure than a black screen.
+static Diligent::ITextureView *EnsureSceneDepth()
+{
+	auto *swap = GetSwapChain();
+	auto *dev = GetDevice();
+	if (!swap || !dev) return NULL;
+	const auto &sd = swap->GetDesc();
+	if (g_sceneDepth && g_sceneDepthW == (int)sd.Width && g_sceneDepthH == (int)sd.Height)
+		return g_sceneDepth->GetDefaultView(Diligent::TEXTURE_VIEW_DEPTH_STENCIL);
+
+	g_sceneDepth.Release();
+	Diligent::TextureDesc td;
+	td.Name = "fua scene depth";
+	td.Type = Diligent::RESOURCE_DIM_TEX_2D;
+	td.Width = sd.Width; td.Height = sd.Height;
+	td.MipLevels = 1;
+	td.Format = sd.DepthBufferFormat;
+	td.BindFlags = Diligent::BIND_DEPTH_STENCIL | Diligent::BIND_SHADER_RESOURCE;
+	dev->CreateTexture(td, nullptr, &g_sceneDepth);
+	if (!g_sceneDepth) { g_sceneDepthW = g_sceneDepthH = 0; return NULL; }
+	g_sceneDepthW = (int)sd.Width; g_sceneDepthH = (int)sd.Height;
+	return g_sceneDepth->GetDefaultView(Diligent::TEXTURE_VIEW_DEPTH_STENCIL);
+}
+
+Diligent::ITextureView *SceneDepthSRV()
+{
+	return g_sceneDepth ? g_sceneDepth->GetDefaultView(Diligent::TEXTURE_VIEW_SHADER_RESOURCE) : NULL;
+}
+
 static void DrawSceneOnce(bool present = true, bool pump = true)
 {
 	auto *ctx = GetContext();
 	auto *swap = GetSwapChain();
 
 	auto *rtv = swap->GetCurrentBackBufferRTV();
-	auto *dsv = swap->GetDepthBufferDSV();
+	Diligent::ITextureView *dsv = EnsureSceneDepth();
+	if (!dsv) dsv = swap->GetDepthBufferDSV();
 	ctx->SetRenderTargets(1, &rtv, dsv, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 	const float clear[4] = { 0.05f, 0.06f, 0.09f, 1.0f };
 	ctx->ClearRenderTarget(rtv, clear, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
@@ -3247,7 +3292,10 @@ void RenderCameraTexture(const void *material, int w, int h,
 	// Hand the screen back its own target and full viewport; the main pass assumes both.
 	auto *swap = GetSwapChain();
 	auto *brtv = swap->GetCurrentBackBufferRTV();
-	auto *bdsv = swap->GetDepthBufferDSV();
+	// [rc4l] The world pass renders into our own readable depth buffer, so restoring the swapchain's
+	// here would hand the screen a depth buffer nothing has written to.
+	Diligent::ITextureView *bdsv = EnsureSceneDepth();
+	if (!bdsv) bdsv = swap->GetDepthBufferDSV();
 	ctx->SetRenderTargets(1, &brtv, bdsv, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 	ctx->SetViewports(1, nullptr, 0, 0);
 	BuildMVP(g_mvp);
