@@ -52,31 +52,32 @@ void ClearFlatDecals();
 
 int FlatDecalCount();
 
-// [rc4l] A decal as a VOLUME rather than a quad, for the projected pass.
+// [rc4l] A mark as a BLAST, not as a quad and not as a projection from a plane.
 //
 // A quad glued to a surface has to be positioned on it, nudged off it, biased in the depth test and
-// ordered against everything nearby -- four separate ways to be subtly wrong, all of which have
-// been. A projected decal instead describes a box in the world and lets the shader paint whatever
-// surface it finds inside, read from the depth buffer. Nothing is glued to anything, so none of
-// those four questions exist.
+// ordered against everything nearby -- four ways to be subtly wrong, all of which were. It is also
+// stuck to one sidedef, so it stops at a linedef join and at the foot of a wall, and the engine has
+// no floor decals for it to continue onto.
+//
+// This describes where a blast landed and how far it reached. The backend draws a box around it,
+// finds the real surfaces inside from the depth buffer and their exact orientation from the
+// G-buffer, and measures each one IN ITS OWN PLANE from the centre. That is what makes a corner
+// unremarkable: every surface in range is parameterised at the mark's true scale, whatever angle it
+// sits at, so there is no such thing as a surface the mark fails to cover or stretches across.
+//
+// Projecting along a fixed axis instead -- which is what this was for most of a day -- degenerates on
+// any surface running along that axis, and no amount of patching fixes that. It produced, in order: a
+// dragged row of texels, a black slab where the drag covered a whole box, a hole where the slab was
+// refused, and a wedge of floor that the strip patching the corner could never reach.
 struct ProjectedDecal
 {
-	// [rc4l] The box carries an ORIENTATION, so a wall is the same case as a floor.
-	//
-	// A floor decal's box is axis-aligned; a wall's is turned to face the wall. Once the box knows
-	// which way it points, one pass draws both -- and that is worth doing, because the two problems
-	// left on wall decals are exactly the two a glued quad can't escape. They layer wrongly against
-	// the wall's own glow, and they are cut off at a linedef join, because a DBaseDecal is clipped to
-	// the sidedef it hangs on and the engine papers over it by cloning slices onto the neighbours. A
-	// projected box has no sidedef to be clipped to, so it simply carries on across the join.
-	//
-	// The axes arrive ALREADY divided by their half-extents, so a dot product against each lands in
-	// -1..1 across the box and the shader needs no division at all.
-	float x, y, z;             // centre, on the surface, in MAP space (x, y, z-up)
-	float ux, uy, uz;          // across the surface
-	float vx, vy, vz;          // up the surface
-	float nx, ny, nz;          // through the surface
-	float halfW, halfH, halfDepth;   // the same three extents, unscaled, to build the box corners
+	// The picture's own axes, ALREADY divided by their half-extents, so laying them into a surface is
+	// a bare dot product with nothing left to scale. They no longer describe a box -- only which way
+	// up the picture goes once it lands on something.
+	float x, y, z;             // where the blast landed, in MAP space (x, y, z-up)
+	float ux, uy, uz;          // across the picture
+	float vx, vy, vz;          // up the picture
+	float nx, ny, nz;          // out of the surface it was fired at
 	// [rc4l] How far the mark reaches, in every direction from where it landed.
 	//
 	// A blast does not project from a plane, it radiates from a POINT, and that is the whole of the
@@ -111,13 +112,14 @@ int GetProjectedDecals(const ProjectedDecal **out);
 // beats a per-source hook: hitscans, missiles, blood, rail, ACS and the network all end up here.
 //
 // The engine's own spread clones are deliberately NOT mirrored. They exist to carry a decal past the
-// edge of a sidedef, which is the very thing the projected box does for free.
+// edge of a sidedef, and a mark measured from where it landed has no sidedef to be stopped at.
 void SpawnWallDecal(const DBaseDecal *decal, const side_t *wall, const FDecalTemplate *tpl);
 
 // Dropped with the level, like the flat ring.
 void ClearWallDecals();
 
-// Print the live wall decals: resolved height, anchor offset, size, box depth. See fua_walldecals.
+// Print the live wall decals: resolved height, anchor offset, size, reach, and what the pass drew
+// last frame. See fua_walldecals.
 void DumpWallDecals();
 
 // Spawn/emit counters, split by cause. See fua_flatdecals.

@@ -349,11 +349,15 @@ void SpawnFlatDecal(const FDecalTemplate *tpl, fixed_t x, fixed_t y, fixed_t z, 
 	if (g_count < kMaxFlatDecals) g_count++;
 }
 
-// [rc4l] Store the box's orientation, pre-divided by its own half-extents.
+// [rc4l] Store the picture's orientation, pre-divided by its own half-extents.
 //
 // The division itself is ComputeDecalBasis, which is where the tests can reach it; this only unpacks
-// the result into the record the backend reads. The unscaled extents are kept alongside so the
-// vertex buffer can still build the eight corners.
+// the result into the record the backend reads. Pre-dividing is what makes the shader's mapping a
+// bare dot product per axis, with nothing left to scale.
+//
+// The extents themselves are not kept. They used to size a box built on the CPU; the box is now an
+// axis-aligned cube of the blast radius, expanded on the GPU from an index, and the only thing the
+// axes are still for is turning the picture the right way up on each surface it lands on.
 static bool SetDecalBasis(ProjectedDecal &pd,
                           float ux, float uy, float uz,
                           float vx, float vy, float vz,
@@ -366,7 +370,6 @@ static bool SetDecalBasis(ProjectedDecal &pd,
 	pd.ux = f.u[0]; pd.uy = f.u[1]; pd.uz = f.u[2];
 	pd.vx = f.v[0]; pd.vy = f.v[1]; pd.vz = f.v[2];
 	pd.nx = f.n[0]; pd.ny = f.n[1]; pd.nz = f.n[2];
-	pd.halfW = halfW; pd.halfH = halfH; pd.halfDepth = halfDepth;
 	return true;
 }
 
