@@ -195,8 +195,17 @@ struct SceneBatch
 	// without re-uploading geometry. NULL means "not animatable", which is most of a level.
 	const void  *baseTex;
 	const void  *resolved;
+	// [rc4l] 0 opaque/alpha-tested, 1 translucent, 2 additive -- the same numbering the dynamic path
+	// uses. A translucent batch is never merged with its neighbour and is drawn in its own pass.
+	int          blend;
+	// Centroid, for sorting the translucent pass back to front each frame. Only meaningful when
+	// blend != 0; the opaque pass is sorted by material and never consults these.
+	float        sortX, sortY, sortZ;
 };
 static TArray<SceneBatch> g_batches;
+// [rc4l] Indices of the translucent batches, in build order. Small -- a level has a handful of
+// translucent surfaces, not thousands -- so re-sorting it per frame costs nothing.
+static TArray<int> g_blendBatches;
 
 // [rc4l] Where each mesh piece landed in the backend's material-sorted vertex buffer, so geometry
 static int g_geomUpdates = 0;
@@ -1861,19 +1870,28 @@ static bool BuildSceneBuffer(FString &err)
 	order.Clear();
 	order.Resize(npieces);
 	for (int i = 0; i < npieces; i++) order[i] = i;
+	// [rc4l] Opaque first, then blended. Blending is not commutative, so a translucent surface has to
+	// be drawn after everything it shows through -- a 3D floor of grating over a lava pit reads as
+	// solid grating otherwise, which is what dbab01 looked like until this existed.
 	std::sort(&order[0], &order[0] + npieces, [pieces](int a, int b) {
+		const int ba = pieces[a].blendMode != 0, bb = pieces[b].blendMode != 0;
+		if (ba != bb) return ba < bb;
 		return pieces[a].material < pieces[b].material;
 	});
 
 	g_sceneVB.Clear();
 	g_batches.Clear();
+	g_blendBatches.Clear();
 	const void *cur = (const void *)(size_t)-1;
+	int curBlend = -1;
 	for (int i = 0; i < npieces; i++)
 	{
 		const zx::levelmesh::MeshPiece &p = pieces[order[i]];
 		if (p.range.count == 0) continue;
 
-		if (p.material != cur)
+		// A blended piece never merges with its neighbour: the translucent pass reorders batches per
+		// frame, and two pieces sharing a batch could not then be separated.
+		if (p.material != cur || p.blendMode != curBlend || p.blendMode != 0)
 		{
 			SceneBatch b;
 			b.material = p.material;
@@ -1883,8 +1901,12 @@ static bool BuildSceneBuffer(FString &err)
 			b.srb = NULL;   // filled once the batch list is final
 			b.baseTex = p.baseTex;
 			b.resolved = p.material;
+			b.blend = (p.blendMode == 2) ? 2 : (p.blendMode != 0 ? 1 : 0);
+			b.sortX = b.sortY = b.sortZ = 0.f;
 			g_batches.Push(b);
+			if (b.blend != 0) g_blendBatches.Push((int)g_batches.Size() - 1);
 			cur = p.material;
+			curBlend = p.blendMode;
 		}
 
 		// [rc4l] Straight from the mesh: these are the values the engine's own gl_SetColor/gl_SetFog
@@ -1913,7 +1935,21 @@ static bool BuildSceneBuffer(FString &err)
 			dv.nx = p.normX; dv.ny = p.normY; dv.nz = p.normZ;
 			g_sceneVB.Push(dv);
 		}
-		g_batches[g_batches.Size() - 1].count += p.range.count;
+		SceneBatch &nb = g_batches[g_batches.Size() - 1];
+		nb.count += p.range.count;
+		// The centroid the translucent pass sorts on. Averaged from the piece's own vertices rather
+		// than taken from MeshPiece::sortX, which only the dynamic path fills in.
+		if (nb.blend != 0 && p.range.count > 0)
+		{
+			float ax = 0.f, ay = 0.f, az = 0.f;
+			for (unsigned int v = 0; v < p.range.count; v++)
+			{
+				const FFlatVertex &sv = src[p.range.offset + v];
+				ax += sv.x; ay += sv.y; az += sv.z;
+			}
+			const float inv = 1.f / (float)p.range.count;
+			nb.sortX = ax * inv; nb.sortY = ay * inv; nb.sortZ = az * inv;
+		}
 	}
 
 	if (g_sceneVB.Size() == 0) { err = "no drawable pieces"; return false; }
@@ -1951,7 +1987,12 @@ static bool BuildSceneBuffer(FString &err)
 	// never move and the raw pointers handed to SceneBatch stay valid.
 	ReleaseBatchSRBs();
 	for (unsigned i = 0; i < g_batches.Size(); i++)
-		g_batches[i].srb = GetMaterialSRB(g_maskedPSO, g_batches[i].material);
+	{
+		Diligent::IPipelineState *pso =
+			(g_batches[i].blend == 0) ? g_maskedPSO.RawPtr() :
+			(g_batches[i].blend == 2) ? g_addPSO.RawPtr() : g_transPSO.RawPtr();
+		g_batches[i].srb = GetMaterialSRB(pso, g_batches[i].material);
+	}
 	return true;
 }
 bool SceneUpload(FString &report)
@@ -2016,10 +2057,10 @@ bool SceneUpload(FString &report)
 		if (g_sceneVB[i].softLight >= 0.f) softPieces++;
 		if (g_sceneVB[i].fogMode != 0.f) fogPieces++;
 	}
-	report.Format("uploaded %d verts (%.2f MB), %d pieces -> %d material batches "
+	report.Format("uploaded %d verts (%.2f MB), %d pieces -> %d material batches (%d translucent) "
 		"[lightmode %d, fogmode %d, %d%% soft-lit, %d%% fogged]",
 		g_sceneVerts, (double)g_sceneVB.Size() * sizeof(SceneVertex) / (1024.0 * 1024.0),
-		npieces, (int)g_batches.Size(),
+		npieces, (int)g_batches.Size(), (int)g_blendBatches.Size(),
 		glset.lightmode, (int)gl_fogmode,
 		softPieces * 100 / g_sceneVerts, fogPieces * 100 / g_sceneVerts);
 	return true;
@@ -2985,7 +3026,10 @@ static void DrawWorld(Diligent::IDeviceContext *ctx)
 			if (now == NULL || now == b.resolved) continue;
 			b.resolved = now;
 			g_animSwaps++;
-			if (auto *srb = GetMaterialSRB(g_maskedPSO, now)) b.srb = srb;
+			Diligent::IPipelineState *pso =
+				(b.blend == 0) ? g_maskedPSO.RawPtr() :
+				(b.blend == 2) ? g_addPSO.RawPtr() : g_transPSO.RawPtr();
+			if (auto *srb = GetMaterialSRB(pso, now)) b.srb = srb;
 		}
 	}
 
@@ -3025,7 +3069,7 @@ static void DrawWorld(Diligent::IDeviceContext *ctx)
 	for (unsigned bi = 0; bi < g_batches.Size(); bi++)
 	{
 		const SceneBatch &b = g_batches[bi];
-		if (b.count == 0 || b.srb == NULL) continue;
+		if (b.count == 0 || b.srb == NULL || b.blend != 0) continue;
 
 		ctx->CommitShaderResources(b.srb, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
@@ -3034,6 +3078,43 @@ static void DrawWorld(Diligent::IDeviceContext *ctx)
 		draw.StartVertexLocation = b.first;
 		draw.Flags = Diligent::DRAW_FLAG_VERIFY_ALL;
 		ctx->Draw(draw);
+	}
+
+	// [rc4l] The translucent surfaces of the world, after every opaque one, sorted back to front.
+	//
+	// These are 3D floors of glass or grating, translucent middle textures and the like: geometry that
+	// has to composite with whatever is behind it, so it cannot be drawn in the material-sorted opaque
+	// pass. The sort is over BATCHES, not vertices -- a level has a handful of these, so re-ordering
+	// them every frame costs nothing and the vertex buffer never has to be rebuilt when the camera
+	// moves. The blended pipelines do not write depth, so a translucent floor never occludes what is
+	// under it.
+	if (g_blendBatches.Size() > 0)
+	{
+		const float cx = FIXED2FLOAT(viewx), cy = FIXED2FLOAT(viewy), cz = FIXED2FLOAT(viewz);
+		static TArray<int> blendOrder;
+		blendOrder.Clear();
+		for (unsigned i = 0; i < g_blendBatches.Size(); i++) blendOrder.Push(g_blendBatches[i]);
+		std::sort(&blendOrder[0], &blendOrder[0] + blendOrder.Size(), [cx, cy, cz](int a, int b) {
+			const SceneBatch &ba = g_batches[a], &bb = g_batches[b];
+			const float da = (ba.sortX-cx)*(ba.sortX-cx) + (ba.sortY-cy)*(ba.sortY-cy) + (ba.sortZ-cz)*(ba.sortZ-cz);
+			const float db = (bb.sortX-cx)*(bb.sortX-cx) + (bb.sortY-cy)*(bb.sortY-cy) + (bb.sortZ-cz)*(bb.sortZ-cz);
+			return da > db;   // farthest first
+		});
+
+		Diligent::IPipelineState *bound = NULL;
+		for (unsigned i = 0; i < blendOrder.Size(); i++)
+		{
+			const SceneBatch &b = g_batches[blendOrder[i]];
+			if (b.count == 0 || b.srb == NULL) continue;
+			Diligent::IPipelineState *pso = (b.blend == 2) ? g_addPSO.RawPtr() : g_transPSO.RawPtr();
+			if (pso != bound) { ctx->SetPipelineState(pso); bound = pso; }
+			ctx->CommitShaderResources(b.srb, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+			Diligent::DrawAttribs draw;
+			draw.NumVertices = b.count;
+			draw.StartVertexLocation = b.first;
+			draw.Flags = Diligent::DRAW_FLAG_VERIFY_ALL;
+			ctx->Draw(draw);
+		}
 	}
 
 	// [rc4l] Sprites last: the world is opaque and fills the depth buffer first, so alpha-tested
