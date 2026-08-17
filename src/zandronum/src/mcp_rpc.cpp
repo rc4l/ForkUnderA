@@ -751,12 +751,32 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 		}
 		P_TeleportMove( mo, fixed_t( x ) << FRACBITS, fixed_t( y ) << FRACBITS, mo->z, true );
 		mo->z = mo->floorz;
+
+		// [rc4l] Optional facing, in degrees, 0 = east and 90 = north like every other angle a Doom
+		// tool prints. This used to be silently dropped: callers passed "angle" alongside x and y,
+		// got a success reply, and arrived pointing wherever they had been looking before. Every
+		// warp-and-compare that way faced a wall instead of the thing it was sent to look at, and the
+		// screenshots looked like a rendering bug rather than a tool that ignored an argument.
+		long angleDeg = 0;
+		if ( GetInt( args, "angle", angleDeg ))
+		{
+			mo->angle = (angle_t)( (double)angleDeg * ANGLE_90 / 90.0 );
+			if ( mo->player != NULL )
+			{
+				mo->player->mo->angle = mo->angle;
+				mo->player->cmd.ucmd.yaw = 0;
+			}
+		}
+		long pitchDeg = 0;
+		if ( GetInt( args, "pitch", pitchDeg ) && mo->player != NULL )
+			mo->pitch = (int)( (double)pitchDeg * ANGLE_90 / 90.0 );
 		mo->velx = mo->vely = mo->velz = 0;
 		mo->PrevX = mo->x;
 		mo->PrevY = mo->y;
 		mo->PrevZ = mo->z;
 		std::string body = "{\"x\":" + I( (long long)( mo->x >> FRACBITS )) + ",\"y\":" + I( (long long)( mo->y >> FRACBITS ))
-			+ ",\"z\":" + I( (long long)( mo->z >> FRACBITS )) + ",\"sector\":" + I( (int)( mo->Sector - sectors )) + "}";
+			+ ",\"z\":" + I( (long long)( mo->z >> FRACBITS )) + ",\"sector\":" + I( (int)( mo->Sector - sectors ))
+			+ ",\"angle\":" + I( (long long)( (double)mo->angle * 90.0 / ANGLE_90 )) + "}";
 		SendOk( id, body );
 	}
 	else if ( cmd == "gl.timers" )
