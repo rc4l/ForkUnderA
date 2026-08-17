@@ -166,6 +166,7 @@ namespace zx { namespace hwrender {
 
 Diligent::IRenderDevice  *GetDevice();
 Diligent::ITextureView   *GetMaterialSRV(const void *materialPtr, int translation);
+Diligent::ITextureView   *GetBrightmapSRV(const void *materialPtr);
 int MaterialCount();
 bool MaterialIsMasked(const void *materialPtr);
 Diligent::IDeviceContext *GetContext();
@@ -299,6 +300,26 @@ static Diligent::IShaderResourceBinding *GetMaterialSRB(Diligent::IPipelineState
 	{
 		if (auto *v = e.srb->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "uTex"))
 			v->Set(GetMaterialSRV(material, translation));
+		// [rc4l] Every material gets a brightmap, black when it has none, so the shader needs no
+		// flag and no second pipeline permutation. See GetBrightmapSRV.
+		//
+		// Reported once rather than assumed: an unbound sampler reads UNDEFINED, which in practice is
+		// whatever texture was bound last, and adding that to the fragment saturates every bright
+		// surface to white. "The variable was not found" and "the black texture failed to create"
+		// both produce exactly that, and neither says anything on its own.
+		{
+			auto *v = e.srb->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "uBrightmap");
+			Diligent::ITextureView *bmv = GetBrightmapSRV(material);
+			static bool reported = false;
+			if (!reported)
+			{
+				reported = true;
+				Printf("Diligent brightmap: variable %s, black texture %s\n",
+					v ? "FOUND" : "MISSING (sampler will be unbound)",
+					bmv ? "ok" : "FAILED TO CREATE");
+			}
+			if (v && bmv) v->Set(bmv);
+		}
 	}
 	g_matSRBs.Push(e);
 	return e.srb;
@@ -425,6 +446,10 @@ static const char *kSceneVS =
 	"layout(location = 6) in vec3 vNormal;\n" \
 	"layout(binding = 0) uniform Constants { mat4 uMVP; vec4 uCameraPos; vec4 uLightParams; vec4 uClipPlane; vec4 uScreen; vec4 uSkyColor; };\n" \
 	"layout(binding = 1) uniform sampler2D uTex;\n" \
+	/* [rc4l] The brightmap layer, present on EVERY material -- black where there is none.
+	   The brightmap is added to the lit colour, so black is the identity, and that removes the
+	   alternative: a per-batch flag, a branch here, and a second pipeline permutation. */ \
+	"layout(binding = 5) uniform sampler2D uBrightmap;\n" \
 	"layout(std430, binding = 2) readonly buffer LightBuffer { vec4 lights[]; };\n" \
 	"layout(location = 0) out vec4 outColor;\n" \
 	/* [rc4l] Every light, tested per fragment -- no per-surface light list at all.
@@ -500,7 +525,15 @@ static const char *kSceneVS =
 	"    else if (fogMode > 0.0)  color  = mix(vec3(0.0), color, fogfactor);\n" \
 	/* Dynamic lights add to the light COLOUR before the texture is modulated, exactly as
 	   getLightColor does -- adding after would light the black parts of a texture too. */ \
-	"    color = fuaDynLight(min(color, vec3(1.0)));\n" \
+	"    color = min(color, vec3(1.0));\n" \
+	/* [rc4l] Brightmaps add to the LIGHT, not to the finished fragment.
+	   main.fp calls ProcessLight(color) while `color` is still the light colour -- the texel is
+	   multiplied in afterwards -- so a white brightmap texel means "light this texel fully", and the
+	   surface keeps its own colour. Adding the same white to texel * color instead means "make this
+	   texel white", and a lava floor came out as a washed-out pink slab: luminance 41 -> 162 at the
+	   same camera. Right value, right texture, wrong point in the pipeline. */ \
+	"    color = min(color + texture(uBrightmap, vUV).rgb, vec3(1.0));\n" \
+	"    color = fuaDynLight(color);\n" \
 	"    vec3 frag = texel * color;\n" \
 	"    if (fogMode < 0.0) frag = mix(vFog.rgb, frag, fogfactor);\n" \
 	"    return frag;\n" \
@@ -911,6 +944,7 @@ static bool EnsureSkyPipeline()
 	};
 	static Diligent::ShaderResourceVariableDesc vars[] = {
 		{ Diligent::SHADER_TYPE_PIXEL, "uTex", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
+		{ Diligent::SHADER_TYPE_PIXEL, "uBrightmap", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
 	};
 	static Diligent::SamplerDesc samp;
 	samp.MinFilter = Diligent::FILTER_TYPE_LINEAR;
@@ -920,6 +954,7 @@ static bool EnsureSkyPipeline()
 	samp.AddressV = Diligent::TEXTURE_ADDRESS_CLAMP;   // no wrap top-to-bottom
 	static Diligent::ImmutableSamplerDesc samplers[] = {
 		{ Diligent::SHADER_TYPE_PIXEL, "uTex", samp },
+		{ Diligent::SHADER_TYPE_PIXEL, "uBrightmap", samp },
 	};
 
 	Diligent::GraphicsPipelineStateCreateInfo pci;
@@ -1553,6 +1588,7 @@ static bool Ensure2DPipeline()
 	};
 	static Diligent::ShaderResourceVariableDesc vars[] = {
 		{ Diligent::SHADER_TYPE_PIXEL, "uTex", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
+		{ Diligent::SHADER_TYPE_PIXEL, "uBrightmap", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
 	};
 	static Diligent::SamplerDesc samp;
 	// [rc4l] CLAMP, and no mips: the engine draws 2D with CLAMP_XY_NOMIP. Wrapping would bleed the
@@ -1564,6 +1600,7 @@ static bool Ensure2DPipeline()
 	samp.AddressV = Diligent::TEXTURE_ADDRESS_CLAMP;
 	static Diligent::ImmutableSamplerDesc samplers[] = {
 		{ Diligent::SHADER_TYPE_PIXEL, "uTex", samp },
+		{ Diligent::SHADER_TYPE_PIXEL, "uBrightmap", samp },
 	};
 
 	Diligent::GraphicsPipelineStateCreateInfo pci;
@@ -1874,6 +1911,7 @@ static bool EnsureScenePipeline(FString &err)
 
 	static Diligent::ShaderResourceVariableDesc vars[] = {
 		{ Diligent::SHADER_TYPE_PIXEL, "uTex", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
+		{ Diligent::SHADER_TYPE_PIXEL, "uBrightmap", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
 	};
 	static Diligent::SamplerDesc samp;
 	FillSamplerFromEngine(samp);
@@ -1881,6 +1919,7 @@ static bool EnsureScenePipeline(FString &err)
 	samp.AddressV = Diligent::TEXTURE_ADDRESS_WRAP;
 	static Diligent::ImmutableSamplerDesc samplers[] = {
 		{ Diligent::SHADER_TYPE_PIXEL, "uTex", samp },
+		{ Diligent::SHADER_TYPE_PIXEL, "uBrightmap", samp },
 	};
 
 	// [rc4l] Four pipelines over the same vertex layout and resources:
@@ -1930,9 +1969,9 @@ static bool EnsureScenePipeline(FString &err)
 		pci.GraphicsPipeline.InputLayout.NumElements = 7;
 		pci.PSODesc.ResourceLayout.DefaultVariableType = Diligent::SHADER_RESOURCE_VARIABLE_TYPE_STATIC;
 		pci.PSODesc.ResourceLayout.Variables = vars;
-		pci.PSODesc.ResourceLayout.NumVariables = 1;
+		pci.PSODesc.ResourceLayout.NumVariables = 2;
 		pci.PSODesc.ResourceLayout.ImmutableSamplers = samplers;
-		pci.PSODesc.ResourceLayout.NumImmutableSamplers = 1;
+		pci.PSODesc.ResourceLayout.NumImmutableSamplers = 2;
 		pci.pVS = vs;
 		pci.pPS = (shape == 0) ? psOpaque : (shape == 1) ? psMasked : psTrans;
 

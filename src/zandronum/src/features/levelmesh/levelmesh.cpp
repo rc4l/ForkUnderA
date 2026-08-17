@@ -715,6 +715,16 @@ CCMD( fua_look )
 			p.lightLevel, p.colorR, p.colorG, p.colorB, p.fogDensity, p.fogMode,
 			bt ? ( bt->Name.Len( ) ? bt->Name.GetChars( ) : "(THE NULL TEXTURE)" ) : "(none)",
 			bt && ( bt->isFullbright( ) || bt->isGlowing( ) ) ? "  [fullbright/glowing]" : "" );
+	// [rc4l] Whether this surface has a brightmap, and whether the backend is therefore adding one.
+	// "The feature is ported" and "this particular texture uses it" are different claims, and only
+	// the second one can be checked by looking at a screenshot of this wall.
+	if ( p.material != NULL )
+	{
+		FMaterial *m = (FMaterial *)p.material;
+		Printf( "        brightmap: %s\n",
+				( m->tex != NULL && m->tex->gl_info.Brightmap != NULL )
+					? m->tex->gl_info.Brightmap->Name.GetChars( ) : "none (adds black)" );
+	}
 }
 
 CCMD( fua_mesh_verify )

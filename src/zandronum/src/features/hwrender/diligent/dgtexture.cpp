@@ -92,6 +92,68 @@ static Diligent::ITextureView *EnsureWhite()
 }
 
 // Upload one FMaterial into a Diligent texture, or return the cached view.
+Diligent::ITextureView *GetMaterialSRV(const void *materialPtr, int translation);
+
+// [rc4l] A 1x1 BLACK texture, which is what "this material has no brightmap" looks like.
+//
+// The brightmap shader ADDS its texel to the lit colour, so black is the identity and every
+// material can be given a brightmap unconditionally. That removes the alternative -- a per-batch
+// "has brightmap" flag, a branch in the shader, and a second pipeline permutation -- in exchange
+// for one 4-byte texture.
+static Diligent::RefCntAutoPtr<Diligent::ITexture> g_black;
+static Diligent::ITextureView *EnsureBlack()
+{
+	if (!g_black)
+	{
+		auto *dev = GetDevice();
+		if (!dev) return NULL;
+		const unsigned char px[4] = { 0, 0, 0, 0 };
+		Diligent::TextureDesc td;
+		td.Name = "fua brightmap none";
+		td.Type = Diligent::RESOURCE_DIM_TEX_2D;
+		td.Width = 1; td.Height = 1; td.MipLevels = 1;
+		td.Format = Diligent::TEX_FORMAT_RGBA8_UNORM;
+		td.BindFlags = Diligent::BIND_SHADER_RESOURCE;
+		td.Usage = Diligent::USAGE_IMMUTABLE;
+		Diligent::TextureSubResData sub;
+		sub.pData = px;
+		sub.Stride = 4;
+		Diligent::TextureData data;
+		data.pSubResources = &sub;
+		data.NumSubresources = 1;
+		dev->CreateTexture(td, &data, &g_black);
+		if (!g_black) return NULL;
+	}
+	return g_black->GetDefaultView(Diligent::TEXTURE_VIEW_SHADER_RESOURCE);
+}
+
+// [rc4l] The brightmap layer of a material, or black when it has none.
+//
+// GZDoom attaches one in FMaterial's constructor: CreateDefaultBrightmap fills gl_info.Brightmap
+// from the texture's fullbright-marked texels or from a GLDEFS `brightmap` lump, and the material
+// then takes shader index 3. Reading gl_info.Brightmap is reading the decision the engine already
+// made rather than re-deriving which texels ought to glow -- see the divergence-triage skill.
+//
+// The brightmap is uploaded by handing it back through the ordinary material path, so it shares the
+// cache, the format handling and the mip generation, and there is no second upload path to keep in
+// step with the first.
+Diligent::ITextureView *GetBrightmapSRV(const void *materialPtr)
+{
+	if (materialPtr == NULL) return EnsureBlack();
+	FMaterial *mat = (FMaterial *)materialPtr;
+	if (mat->tex == NULL || mat->tex->gl_info.Brightmap == NULL) return EnsureBlack();
+	FMaterial *bm = FMaterial::ValidateTexture(mat->tex->gl_info.Brightmap, false);
+	if (bm == NULL || bm == mat) return EnsureBlack();
+	Diligent::ITextureView *srv = GetMaterialSRV(bm, 0);
+	// [rc4l] GetMaterialSRV falls back to WHITE when it cannot produce a texture -- a sane default
+	// for a base layer, and catastrophic for a brightmap, which is ADDED to the lit fragment. A white
+	// brightmap saturates the surface to solid white, which is what a warped or canvas-backed
+	// brightmap did here. Failure has to mean black, so the fallback is checked for by identity
+	// rather than trusted to be harmless.
+	if (srv == NULL || srv == EnsureWhite()) return EnsureBlack();
+	return srv;
+}
+
 Diligent::ITextureView *GetMaterialSRV(const void *materialPtr, int translation)
 {
 	// [rc4l] Normalise the translation exactly as FGLTexture::Bind does, because the number arrives
