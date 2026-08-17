@@ -38,6 +38,8 @@
 
 namespace zx { namespace hwrender {
 
+Diligent::ITextureView *GetCameraSRV(const void *material);
+
 Diligent::IRenderDevice *GetDevice();
 Diligent::IDeviceContext *GetContext();
 
@@ -115,8 +117,18 @@ Diligent::ITextureView *GetMaterialSRV(const void *materialPtr, int translation)
 
 	FMaterial *mat = (FMaterial *)materialPtr;
 	int w = 0, h = 0;
-	// [rc4l] createexpanded=false: the expanded border exists for GL's clamp behaviour on sprites and
-	// would shift the UVs the mesh already baked.
+	// [rc4l] A camera texture resolves to the view the backend rendered for it, not to its bytes.
+	//
+	// It has no static pixels -- the engine renders into it every frame -- so CreateTexBuffer returns
+	// whatever its buffer holds, which is noise. RenderCameraTexture draws the same view into a real
+	// render target; this is where that target gets used. Nothing is cached: the view changes every
+	// frame, and the target is reused in place.
+	if (mat->tex != NULL && mat->tex->bHasCanvas)
+	{
+		Diligent::ITextureView *cam = GetCameraSRV(materialPtr);
+		if (cam != NULL) return cam;
+	}
+
 	// [rc4l] Say when a texture is not a plain image.
 	//
 	// A camera texture (bHasCanvas) has no static pixels at all -- the engine RENDERS into it every
@@ -124,7 +136,7 @@ Diligent::ITextureView *GetMaterialSRV(const void *materialPtr, int translation)
 	// That is the red/blue noise on gvh06's teleporter and the flat slab on gvh07's monitor. A warped
 	// texture (bWarped) is a shader effect this backend does not run either. Both are reported once
 	// so they stop being mysteries and start being a list.
-	if (mat->tex != NULL && (mat->tex->bHasCanvas || mat->tex->bWarped))
+	if (mat->tex != NULL && mat->tex->bWarped)
 	{
 		static TArray<const void *> reported;
 		bool seen = false;
@@ -134,10 +146,12 @@ Diligent::ITextureView *GetMaterialSRV(const void *materialPtr, int translation)
 			reported.Push(materialPtr);
 			Printf("vulkan texture: %s is %s -- not implemented, will render wrong\n",
 				(mat->tex->Name != NULL) ? mat->tex->Name : "?",
-				mat->tex->bHasCanvas ? "a camera/canvas texture" : "warp-shaded");
+				"warp-shaded");
 		}
 	}
 
+	// [rc4l] createexpanded=false: the expanded border exists for GL's clamp behaviour on sprites and
+	// would shift the UVs the mesh already baked.
 	unsigned char *buf = mat->CreateTexBuffer(translation, w, h, true, false);
 	if (buf == NULL || w <= 0 || h <= 0)
 	{
