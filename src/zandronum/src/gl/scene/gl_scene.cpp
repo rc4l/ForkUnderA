@@ -86,6 +86,7 @@
 #include "features/fov-interp/fovinterp.h"
 #include "features/fua-caching/fua_caching.h"
 #include "mcp_glperf.h" // [rc4l] GPU render-pass timer anchors (no-op unless FUA_MCP_BRIDGE)
+#include "features/levelmesh/flatdecals.h"   // [rc4l] decals on floors and ceilings
 
 //==========================================================================
 //
@@ -362,6 +363,10 @@ void FGLRenderer::CreateScene()
 	// camera moves, so it is dropped here and rebuilt as this frame generates it.
 	zx::levelmesh::DynClear();
 	zx::levelmesh::ClearSprites();
+	// [rc4l] features/levelmesh: flat decals are re-emitted every frame like sprites, but from a
+	// persistent list rather than from what the BSP walk happens to reach -- they follow their
+	// sector's plane, so a decal on a lift rides it instead of hanging where it was shot.
+	zx::levelmesh::RegisterFlatDecals();
 
 	// [rc4l] features/levelmesh: geometry whose sector moved is no longer valid, and this has to run
 	// BEFORE the BSP walk so anything still visible re-bakes in the same frame. See

@@ -4,6 +4,7 @@
 #include "gl/system/gl_system.h"
 #include "features/levelmesh/wallcache.h"
 #include "features/levelmesh/flatmesh.h"
+#include "features/levelmesh/flatdecals.h"
 #include "features/levelmesh/levelmesh.h"
 #include "features/levelmesh/computation/flatmesh_compute.h"
 
@@ -265,6 +266,7 @@ void InvalidateAll()
 	// [rc4l] Flats share the same mesh, so they invalidate together or a backend sees a half-stale world.
 	zx::levelmesh::ClearFlats();
 	zx::levelmesh::ClearSprites();
+	zx::levelmesh::ClearFlatDecals();
 }
 
 bool IsCapturing()
