@@ -64,6 +64,7 @@ const USAGE = `fuactl <command>
   ticprof --port P [--tics N]          per-tic sim phase split (P_Ticker / thinkers / effects / specials)
   bench --port P --scenario F.json [--runs N] [--metric total.p99_ms]   repeat a scenario, report median + spread, discard runs whose expectations failed
   lines --port P [--special N] [--door] [--use] [--cross] [--tag N] [--limit N]   query linedefs; prints a stand position and facing for each match
+  here --port P [--token T] [--save NAME] [--note TEXT]   the live camera (position + facing, full precision) and what the crosshair is on; --save records it in spots.json as a named repro
   renderer-info --port P [--token T]   renderer identity + whether GL timer queries work on this driver
   ui <action> [args] --port P [--token T]   drive the UI: read (menu as text), find <label>, nav <keys>, click <x> <y>, drag, type <text>, look --yaw D --pitch D, screenshot [name], exec <ccmd>
   diligent --port P [--frames N] [--shot FILE] [--sweep DIR]   drive the Diligent (Vulkan) backend: bake the level mesh, upload geometry, optional swapchain screenshot, optional debug-view sweep (lm0..lm4.png in DIR), the matched Diligent-vs-GL benchmark, and with --scale a GPU-time probe at 1x..100x the visible geometry
@@ -356,6 +357,44 @@ async function main() {
       for (const l of buf.toString("utf8").split(/\r?\n/)) {
         if (/^line \d+:|^fua_find_lines:|^no level loaded/.test(l)) console.log(l);
       }
+      break;
+    }
+    // [rc4l] `fuactl here` -- the live camera, in the units a capture takes.
+    //
+    // A bug report is a camera: a place someone was standing and a direction they were looking. Every
+    // other route to one loses the precision that decides whether the repro lands on the step being
+    // described or the step above it. Coordinates read off a screenshot are integers; the direction
+    // vector fua_look prints is rounded to two decimals, which at three hundred units is fifteen
+    // units of miss. The same reported fault got reproduced in three slightly wrong places before
+    // this existed.
+    //
+    // Read-only, so it is safe against an instance somebody is playing -- which is the point. The
+    // person who found the fault should not have to stop and read numbers off their own screen.
+    //
+    //   fuactl here --port P                 print it, with a ready-made shot.sh line
+    //   fuactl here --port P --save NAME     ...and record it in spots.json as a named repro
+    case "here": {
+      if (!flags.port) { console.error("usage: fuactl here --port P [--token T] [--save NAME] [--note TEXT]"); process.exit(2); }
+      const c = new BridgeClient();
+      await c.connect(Number(flags.port), { token: flags.token || null });
+      await c.waitHello();
+      const cam = await c.rpc("player.camera");
+      c.close();
+      const n = (v) => Number(v).toFixed(3).replace(/\.?0+$/, "");
+      const line = [cam.x, cam.y, cam.z, cam.yaw, cam.pitch].map(n).join(" ");
+      if (flags.save) {
+        const p = new URL("../spots.json", import.meta.url);
+        const db = JSON.parse(fs.readFileSync(p, "utf8"));
+        db.spots[flags.save] = Object.assign({}, db.spots[flags.save], {
+          map: cam.map, x: cam.x, y: cam.y, z: cam.z, angle: cam.yaw, pitch: cam.pitch,
+          shows: flags.note || (db.spots[flags.save] && db.spots[flags.save].shows) ||
+                 "recorded from a live session",
+        });
+        fs.writeFileSync(p, JSON.stringify(db, null, 2) + "\n");
+        console.error(`saved spot ${flags.save}`);
+      }
+      console.log(JSON.stringify(cam, null, 2));
+      console.error(`\n  bash shot.sh <tag> ${line}`);
       break;
     }
     case "renderer-info": {

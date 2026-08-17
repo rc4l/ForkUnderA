@@ -630,6 +630,9 @@ CCMD( fua_look )
 
 	const float ox = FIXED2FLOAT( viewx ), oy = FIXED2FLOAT( viewy ), oz = FIXED2FLOAT( viewz );
 	Printf( "fua_look: from (%.0f, %.0f, %.0f) dir (%.2f, %.2f, %.2f)\n", ox, oy, oz, dx, dy, dz );
+	// The camera itself is NOT printed here. It belongs to the bridge, not to a mesh diagnostic:
+	// see the player.camera RPC and `fuactl here`, which answer it in the units setpos takes and to
+	// enough decimals to replay onto the same texel.
 
 	// --- what the engine says is there ---------------------------------------------------------
 	{

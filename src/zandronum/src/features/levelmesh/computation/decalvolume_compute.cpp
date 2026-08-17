@@ -85,17 +85,30 @@ bool ComputeDecalUnwrapUV(const DecalFrame &f, const float local[3], float &outU
 
 	if (carry > 0.f)
 	{
-		// Dead centre with a distance to carry: the direction to continue in is genuinely undefined,
-		// and any answer would paint the middle texel of the mark across the whole depth of the box --
-		// which is the black slab. Report it past the end instead, so the caller discards.
-		if (r < 1e-4f) { outU = -1.f; outV = -1.f; return false; }
+		// [rc4l] A mark may only wrap over a join it reaches near its own EDGE.
+		//
+		// This is the black slab, and it took three goes to state properly. An orthographic projection
+		// simply cannot parameterise a surface that runs along its own axis: everything about that
+		// surface's extent maps to no movement across the picture, so whatever coordinate is handed
+		// back, some row or column of texels gets dragged along it. Where the join is out at the rim
+		// that hardly shows -- the picture is nearly used up, a sliver of its edge continues past the
+		// corner, and it reads exactly like a scorch creeping round. Where the join cuts through the
+		// MIDDLE of the mark, the same arithmetic drags the middle of the graphic -- solid black on a
+		// scorch -- across the whole face of the box, and the decal's own bounding box gets drawn as a
+		// hard-edged black quad standing in the world.
+		//
+		// The two cases differ by exactly one number: how far the coordinate has to be pushed compared
+		// with how far out it already was. Refusing to push a fragment further than its own radius
+		// keeps every wrap that looks right and drops every one that cannot. It also subsumes the
+		// centre of the mark, where the radius is zero and no direction exists -- nothing there can be
+		// carried at all, which is the correct answer and not a special case.
+		const float scale = (r > 0.f)
+			? (std::fabs(tx / r) * lu + std::fabs(ty / r) * lv)
+			: (lu > lv ? lu : lv);
+		const float push = carry * scale;
+		if (!(push < r)) { outU = -1.f; outV = -1.f; return false; }
 
-		// How many box units one world unit is worth, along the direction this fragment lies in. A
-		// decal is rarely square, so the two axes convert differently and the mix follows the
-		// direction of travel.
-		const float dirx = tx / r, diry = ty / r;
-		const float scale = std::fabs(dirx) * lu + std::fabs(diry) * lv;
-		const float grow = (r + carry * scale) / r;
+		const float grow = (r + push) / r;
 		outU = tx * grow * 0.5f + 0.5f;
 		outV = ty * grow * 0.5f + 0.5f;
 	}

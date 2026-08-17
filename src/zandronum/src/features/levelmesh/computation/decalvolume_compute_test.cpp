@@ -195,7 +195,7 @@ TEST(DecalUnwrap, CarriesOutwardByTheDistanceTravelled)
 	// coordinate unchanged here, and that unchanging coordinate IS the dragged column of texels.
 	const DecalFrame f = WallFrame(16.f, 8.f, 24.f);
 	const float onSurface[3] = { 0.f, 0.f, -4.f };   // t = (0, -0.5)
-	const float carried[3]   = { 0.f, 4.f, -4.f };   // same place, 4 units through
+	const float carried[3]   = { 0.f, 3.f, -4.f };   // same place, 3 units through
 	float ls[3], lc[3];
 	ComputeDecalLocal(f, onSurface, ls);
 	ComputeDecalLocal(f, carried, lc);
@@ -204,7 +204,7 @@ TEST(DecalUnwrap, CarriesOutwardByTheDistanceTravelled)
 	ASSERT_TRUE(ComputeDecalUnwrapUV(f, ls, us, vs));
 	ASSERT_TRUE(ComputeDecalUnwrapUV(f, lc, uc, vc));
 	EXPECT_FLOAT_EQ(us, uc);                          // straight out is not sideways
-	EXPECT_NEAR(vs - (4.f / 8.f) * 0.5f, vc, 1e-5f);  // 4 world units of an 8-unit half-height
+	EXPECT_NEAR(vs - (3.f / 8.f) * 0.5f, vc, 1e-5f);  // 3 world units of an 8-unit half-height
 }
 
 TEST(DecalUnwrap, CarriesTheOtherWayAboveTheCentre)
@@ -288,7 +288,7 @@ TEST(DecalUnwrap, DeeperBoxDoesNotChangeTheScaleOfTheCarry)
 {
 	// The box's depth decides how FAR the wrap reaches, never how fast the picture moves. Mixing the
 	// two up made the same corner look different for a big decal and a small one.
-	const float rel[3] = { 0.f, 4.f, -4.f };
+	const float rel[3] = { 0.f, 3.f, -4.f };
 	float u1, v1, u2, v2, l1[3], l2[3];
 
 	const DecalFrame shallow = WallFrame(16.f, 8.f, 24.f);
@@ -300,4 +300,29 @@ TEST(DecalUnwrap, DeeperBoxDoesNotChangeTheScaleOfTheCarry)
 
 	EXPECT_NEAR(v1, v2, 1e-5f);
 	EXPECT_NEAR(u1, u2, 1e-5f);
+}
+
+TEST(DecalUnwrap, WillNotPushAFragmentFurtherThanItsOwnRadius)
+{
+	// [rc4l] The black slab again, off centre this time.
+	//
+	// Refusing only the exact centre was not enough. A surface that turns THROUGH the middle of a mark
+	// -- a step tread level with the decal's waist -- has fragments a little way out from the centre
+	// and a long way through the plane, and pushing those still drags the middle of the graphic across
+	// the whole face of the box. The rule that separates a wrap which looks right from one that cannot
+	// is how far the coordinate must move against how far out it already was.
+	const DecalFrame f = WallFrame(16.f, 8.f, 33.f);
+	float u, v;
+
+	// Two units out, sixteen units through: a long way to push a fragment that was barely off centre.
+	const float deep[3] = { 2.f, 16.f, 0.f };
+	float ld[3];
+	ComputeDecalLocal(f, deep, ld);
+	EXPECT_FALSE(ComputeDecalUnwrapUV(f, ld, u, v));
+
+	// The same fragment with only a little to carry is a wrap, and still paints.
+	const float shallow[3] = { 2.f, 1.f, 0.f };
+	float ls[3];
+	ComputeDecalLocal(f, shallow, ls);
+	EXPECT_TRUE(ComputeDecalUnwrapUV(f, ls, u, v));
 }

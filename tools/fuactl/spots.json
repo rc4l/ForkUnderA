@@ -55,6 +55,15 @@
       "pitch": 10,
       "shows": "The walkable top surface of a 3D floor, missing in Vulkan so you see down into the pit below it. Regression from winding flats by the plane normal: a 3D floor's top surface is the control sector's CEILING plane, so its normal points down while the surface is seen from above.",
       "correct": "The dark 3D floor surface spans the room at the same height as in GL, hiding the pit below."
+    },
+    "bfg-stairs-slab": {
+      "map": "MAP01",
+      "x": -66,
+      "y": 914,
+      "z": 8,
+      "angle": 89.4,
+      "pitch": 0,
+      "shows": "Fire a BFG straight ahead from here, then warp to (-64, 1150, 60) facing 90 and sweep the pitch. The mark lands on a platform's side face with the tread only eight units above its centre -- the join cuts through the MIDDLE of the mark, which an orthographic box projection cannot parameterise. It used to paint the middle of the scorch across the whole face of the box: a hard-edged black quad on the floor, reported as z-fighting."
     }
   }
 }

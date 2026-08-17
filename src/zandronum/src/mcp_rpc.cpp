@@ -364,7 +364,7 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 			"\"sim.tic\",\"sim.hash\",\"sim.seed\",\"sim.pause\",\"sim.resume\",\"sim.step\",\"sim.cheatat\",\"sim.pauseat\",\"sim.rngdump\",\"sim.trace\","
 			"\"sim.snapshot\",\"sim.restore\",\"state.player\",\"state.actors\",\"input.event\",\"input.axis\",\"input.look\","
 			"\"perf.capture\",\"perf.ticprof\",\"perf.counters\",\"net.bandwidth\",\"gl.timers\",\"renderer.info\","
-			"\"world.sectors\",\"player.setpos\""
+			"\"world.sectors\",\"player.setpos\",\"player.camera\""
 			"],\"events\":[\"out\",\"stepped\",\"perf\",\"glperf\",\"ticprof\",\"trace\"]}" );
 	}
 	else if ( cmd == "console.exec" )
@@ -723,6 +723,44 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 		arr += "]";
 		SendOk( id, "{\"count\":" + I( n ) + ",\"sectors\":" + arr + "}" );
 	}
+	else if ( cmd == "player.camera" )
+	{
+		// [rc4l] Where the player is and what they are looking at, in the units setpos takes.
+		//
+		// A bug report is a camera. Every other route to one loses the precision that decides whether
+		// a repro lands on the step someone is describing or the step above it: coordinates read off a
+		// screenshot are integers, and fua_look's direction vector is rounded to two decimals, which
+		// at three hundred units is fifteen units of miss. Reproducing the same reported fault in
+		// three slightly wrong places is what this is for.
+		//
+		// Read-only, so it is safe against an instance somebody is playing -- which is the point. The
+		// person who found the fault should not have to stop and read numbers off their own screen.
+		if ( !InLevel() )
+		{
+			SendErr( id, "not in a level" );
+			return;
+		}
+		AActor *mo = ( consoleplayer >= 0 && consoleplayer < MAXPLAYERS ) ? players[consoleplayer].mo : NULL;
+		if ( mo == NULL )
+		{
+			SendErr( id, "no player pawn" );
+			return;
+		}
+		const double yaw = (double)mo->angle * 360.0 / 4294967296.0;
+		// Positive is DOWNWARD, matching both the actor's own convention and setpos's.
+		const double pitch = (double)(signed int)mo->pitch * 360.0 / 4294967296.0;
+		const sector_t *sec = mo->Sector;
+		FString out;
+		out.Format( "{\"x\":%.3f,\"y\":%.3f,\"z\":%.3f,\"yaw\":%.4f,\"pitch\":%.4f,"
+					"\"viewz\":%.3f,\"floorz\":%.3f,\"ceilingz\":%.3f,\"sector\":%d,"
+					"\"map\":\"%s\"}",
+					FIXED2FLOAT( mo->x ), FIXED2FLOAT( mo->y ), FIXED2FLOAT( mo->z ),
+					yaw, pitch,
+					FIXED2FLOAT( viewz ), FIXED2FLOAT( mo->floorz ), FIXED2FLOAT( mo->ceilingz ),
+					sec != NULL ? (int)( sec - sectors ) : -1,
+					level.MapName.GetChars() );
+		SendOk( id, out.GetChars() );
+	}
 	else if ( cmd == "player.setpos" )
 	{
 		// Teleport the console player to (x, y) map units, snapped to the floor. Dev tool for
@@ -757,19 +795,25 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 		// got a success reply, and arrived pointing wherever they had been looking before. Every
 		// warp-and-compare that way faced a wall instead of the thing it was sent to look at, and the
 		// screenshots looked like a rendering bug rather than a tool that ignored an argument.
-		long angleDeg = 0;
-		if ( GetInt( args, "angle", angleDeg ))
+		// [rc4l] FRACTIONAL degrees. These were whole numbers, which is coarser than it sounds: at
+		// three hundred units a degree of yaw is five units of miss, and a reported fault that lives
+		// on one step riser reproduces on the next one along. player.camera reports four decimals so
+		// a camera can be recorded and replayed onto the same texel; taking integers here would throw
+		// that away at the last step. Accepts "angle" or "yaw" for the same thing, since half the
+		// callers already wrote one and half the other.
+		double angleDeg = 0;
+		if ( GetFloat( args, "angle", angleDeg ) || GetFloat( args, "yaw", angleDeg ))
 		{
-			mo->angle = (angle_t)( (double)angleDeg * ANGLE_90 / 90.0 );
+			mo->angle = (angle_t)( angleDeg * 4294967296.0 / 360.0 );
 			if ( mo->player != NULL )
 			{
 				mo->player->mo->angle = mo->angle;
 				mo->player->cmd.ucmd.yaw = 0;
 			}
 		}
-		long pitchDeg = 0;
-		if ( GetInt( args, "pitch", pitchDeg ) && mo->player != NULL )
-			mo->pitch = (int)( (double)pitchDeg * ANGLE_90 / 90.0 );
+		double pitchDeg = 0;
+		if ( GetFloat( args, "pitch", pitchDeg ) && mo->player != NULL )
+			mo->pitch = (int)( pitchDeg * 4294967296.0 / 360.0 );
 		mo->velx = mo->vely = mo->velz = 0;
 		mo->PrevX = mo->x;
 		mo->PrevY = mo->y;
