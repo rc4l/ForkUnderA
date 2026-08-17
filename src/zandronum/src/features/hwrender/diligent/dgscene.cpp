@@ -634,18 +634,54 @@ static const char *kScenePSRedAlpha =
 //
 // The box is drawn with depth test OFF and culling OFF so it works from inside as well as outside --
 // walking over a decal must not make it vanish.
+// [rc4l] How much of the decal a surface is entitled to.
+//
+// The box paints ANY surface inside it, and that generosity is what makes the pass work on stairs,
+// slopes and 3D floors -- but taken literally it also paints surfaces that run edge-on to the
+// projection, and those get a single column of texels dragged across them. That is what a rocket
+// scorch smearing down onto the floor, a BFG mark streaking round a right-angled corner, and a
+// bullet hole stretching off a box edge all are: the same surface, the same column, one artifact.
+//
+// So the surface has to be asked which way it faces. There is no normal in the depth buffer, but the
+// reconstructed world position has one in its derivatives -- neighbouring pixels of the same surface
+// span it, so their cross product is its normal, for free and with no G-buffer.
+//
+// Two terms. `facing` throws away anything more than about seventy degrees off the projection and
+// eases the last thirty in, so a slope or a shallow corner still takes the mark whole and a wall met
+// at a right angle takes none of it. `depth` fades with distance THROUGH the surface, so what does
+// survive at an angle dies out instead of ending in a hard line. Together they are the difference
+// between a mark that follows the geometry and one that is sprayed along the view of it.
+//
+// fwidth guards the seam: at a silhouette edge the two derivatives straddle unrelated surfaces and
+// the cross product is meaningless, so a normal built across a jump in depth is not trusted.
+#define FUA_DECAL_REACH \
+	"float fuaDecalReach(vec3 P, float throughDepth, vec3 axisN) {\n" \
+	"    vec3 dpx = dFdx(P), dpy = dFdy(P);\n" \
+	"    if (dot(dpx, dpx) < 1e-12 || dot(dpy, dpy) < 1e-12) return 0.0;\n" \
+	"    vec3 nrm = normalize(cross(dpx, dpy));\n" \
+	"    float facing = abs(dot(nrm, normalize(axisN)));\n" \
+	"    float k = smoothstep(0.34, 0.62, facing);\n" \
+	"    if (k <= 0.0) return 0.0;\n" \
+	"    float fall = 1.0 - throughDepth * throughDepth;\n" \
+	"    return k * fall * fall;\n" \
+	"}\n"
+
 static const char *kDecalVS =
 	"#version 450\n"
 	"layout(binding = 0) uniform Constants { mat4 uMVP; vec4 uCameraPos; vec4 uLightParams; vec4 uClipPlane; vec4 uScreen; vec4 uSkyColor; };\n"
 	"layout(location = 0) in vec3 aPos;\n"       // box corner, already in world space
 	"layout(location = 1) in vec3 aCentre;\n"
-	"layout(location = 2) in vec3 aExtent;\n"
-	"layout(location = 3) in vec4 aColor;\n"
+	"layout(location = 2) in vec3 aAxisU;\n"     // the box's three axes, pre-divided by their
+	"layout(location = 3) in vec3 aAxisV;\n"     // half-extents, so the pixel shader's inside test
+	"layout(location = 4) in vec3 aAxisN;\n"     // is one dot product per axis and nothing else
+	"layout(location = 5) in vec4 aColor;\n"
 	"layout(location = 0) out vec3 vCentre;\n"
-	"layout(location = 1) out vec3 vExtent;\n"
-	"layout(location = 2) out vec4 vColor;\n"
+	"layout(location = 1) out vec3 vAxisU;\n"
+	"layout(location = 2) out vec3 vAxisV;\n"
+	"layout(location = 3) out vec3 vAxisN;\n"
+	"layout(location = 4) out vec4 vColor;\n"
 	"void main() {\n"
-	"    vCentre = aCentre; vExtent = aExtent; vColor = aColor;\n"
+	"    vCentre = aCentre; vAxisU = aAxisU; vAxisV = aAxisV; vAxisN = aAxisN; vColor = aColor;\n"
 	"    gl_Position = uMVP * vec4(aPos, 1.0);\n"
 	"}\n";
 
@@ -656,9 +692,12 @@ static const char *kDecalPS =
 	"layout(binding = 1) uniform sampler2D uTex;\n"
 	"layout(binding = 7) uniform sampler2D uSceneDepth;\n"
 	"layout(location = 0) in vec3 vCentre;\n"
-	"layout(location = 1) in vec3 vExtent;\n"
-	"layout(location = 2) in vec4 vColor;\n"
+	"layout(location = 1) in vec3 vAxisU;\n"
+	"layout(location = 2) in vec3 vAxisV;\n"
+	"layout(location = 3) in vec3 vAxisN;\n"
+	"layout(location = 4) in vec4 vColor;\n"
 	"layout(location = 0) out vec4 outColor;\n"
+	FUA_DECAL_REACH
 	"void main() {\n"
 	"    vec2 uv = gl_FragCoord.xy / vec2(uScreen.x, uScreen.y);\n"
 	"    float d = texture(uSceneDepth, uv).r;\n"
@@ -674,14 +713,22 @@ static const char *kDecalPS =
 	"    vec4 clip = vec4(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0, d, 1.0);\n"
 	"    vec4 world = uInvMVP * clip;\n"
 	"    vec3 P = world.xyz / world.w;\n"
-	/* Inside the box? The box is axis-aligned, because a flat decal lies on a horizontal plane. */
-	"    vec3 local = (P - vCentre) / vExtent;\n"
+	/* Inside the box? The axes arrive already divided by their half-extents, so each dot product
+	   lands in -1..1 across the box. A wall's basis is turned to face the wall and a flat's is
+	   axis-aligned, and that is the ONLY difference between them -- which is why wall decals moved
+	   onto this pass too. A quad glued to a sidedef gets clipped at the linedef join, and the engine
+	   papers over that by cloning slices onto the neighbouring walls; a box has no sidedef to be
+	   clipped to and simply carries on. */
+	"    vec3 rel = P - vCentre;\n"
+	"    vec3 local = vec3(dot(rel, vAxisU), dot(rel, vAxisV), dot(rel, vAxisN));\n"
 	"    if (any(greaterThan(abs(local), vec3(1.0)))) discard;\n"
-	/* Project onto the surface: x and y across it, height ignored. That is what makes the mark
-	   follow a step or a slope instead of hanging in the air over it. */
-	"    vec2 t = local.xz * 0.5 + 0.5;\n"
+	/* Across and up the surface; the depth through it is ignored. That is what makes a mark follow a
+	   step, a slope, or the far side of a corner rather than stopping at it. */
+	"    vec2 t = local.xy * 0.5 + 0.5;\n"
+	"    float reach = fuaDecalReach(P, local.z, vAxisN);\n"
+	"    if (reach <= 0.0) discard;\n"
 	"    vec4 texel = texture(uTex, t);\n"
-	"    outColor = vec4(texel.rgb * vColor.rgb, texel.a * vColor.a);\n"
+	"    outColor = vec4(texel.rgb * vColor.rgb, texel.a * vColor.a * reach);\n"
 	"}\n";
 
 // The alpha-mask variant: the silhouette is in the red channel and the colour is the decal's own.
@@ -692,9 +739,12 @@ static const char *kDecalRedPS =
 	"layout(binding = 1) uniform sampler2D uTex;\n"
 	"layout(binding = 7) uniform sampler2D uSceneDepth;\n"
 	"layout(location = 0) in vec3 vCentre;\n"
-	"layout(location = 1) in vec3 vExtent;\n"
-	"layout(location = 2) in vec4 vColor;\n"
+	"layout(location = 1) in vec3 vAxisU;\n"
+	"layout(location = 2) in vec3 vAxisV;\n"
+	"layout(location = 3) in vec3 vAxisN;\n"
+	"layout(location = 4) in vec4 vColor;\n"
 	"layout(location = 0) out vec4 outColor;\n"
+	FUA_DECAL_REACH
 	"void main() {\n"
 	"    vec2 uv = gl_FragCoord.xy / vec2(uScreen.x, uScreen.y);\n"
 	"    float d = texture(uSceneDepth, uv).r;\n"
@@ -707,10 +757,13 @@ static const char *kDecalRedPS =
 	"    vec4 clip = vec4(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0, d, 1.0);\n"
 	"    vec4 world = uInvMVP * clip;\n"
 	"    vec3 P = world.xyz / world.w;\n"
-	"    vec3 local = (P - vCentre) / vExtent;\n"
+	"    vec3 rel = P - vCentre;\n"
+	"    vec3 local = vec3(dot(rel, vAxisU), dot(rel, vAxisV), dot(rel, vAxisN));\n"
 	"    if (any(greaterThan(abs(local), vec3(1.0)))) discard;\n"
-	"    vec2 t = local.xz * 0.5 + 0.5;\n"
-	"    float a = texture(uTex, t).r * vColor.a;\n"
+	"    vec2 t = local.xy * 0.5 + 0.5;\n"
+	"    float reach = fuaDecalReach(P, local.z, vAxisN);\n"
+	"    if (reach <= 0.0) discard;\n"
+	"    float a = texture(uTex, t).r * vColor.a * reach;\n"
 	"    if (a <= 0.0) discard;\n"
 	"    outColor = vec4(vColor.rgb, a);\n"
 	"}\n";
@@ -2622,7 +2675,15 @@ static bool InvertMatrix4(const float *m, float *out)
 	return true;
 }
 
-struct DecalVertex { float x, y, z; float cx, cy, cz; float ex, ey, ez; float r, g, b, a; };
+struct DecalVertex
+{
+	float x, y, z;       // one corner of the box, mesh space
+	float cx, cy, cz;    // its centre
+	float ux, uy, uz;    // and its three axes, each pre-divided by its own half-extent
+	float vx, vy, vz;
+	float nx, ny, nz;
+	float r, g, b, a;
+};
 
 static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_decalPSO;      // normal texture
 static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_decalAddPSO;
@@ -2675,7 +2736,9 @@ static bool EnsureDecalPass()
 		Diligent::LayoutElement{0, 0, 3, Diligent::VT_FLOAT32, false},
 		Diligent::LayoutElement{1, 0, 3, Diligent::VT_FLOAT32, false},
 		Diligent::LayoutElement{2, 0, 3, Diligent::VT_FLOAT32, false},
-		Diligent::LayoutElement{3, 0, 4, Diligent::VT_FLOAT32, false},
+		Diligent::LayoutElement{3, 0, 3, Diligent::VT_FLOAT32, false},
+		Diligent::LayoutElement{4, 0, 3, Diligent::VT_FLOAT32, false},
+		Diligent::LayoutElement{5, 0, 4, Diligent::VT_FLOAT32, false},
 	};
 	static Diligent::ShaderResourceVariableDesc vars[] = {
 		{ Diligent::SHADER_TYPE_PIXEL, "uTex", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
@@ -2724,7 +2787,7 @@ static bool EnsureDecalPass()
 			rt.BlendOpAlpha = Diligent::BLEND_OPERATION_ADD;
 		}
 		pci.GraphicsPipeline.InputLayout.LayoutElements = layout;
-		pci.GraphicsPipeline.InputLayout.NumElements = 4;
+		pci.GraphicsPipeline.InputLayout.NumElements = 6;
 		pci.PSODesc.ResourceLayout.DefaultVariableType = Diligent::SHADER_RESOURCE_VARIABLE_TYPE_STATIC;
 		pci.PSODesc.ResourceLayout.Variables = vars;
 		pci.PSODesc.ResourceLayout.NumVariables = 2;
@@ -2797,15 +2860,25 @@ static void DrawProjectedDecals(Diligent::IDeviceContext *ctx)
 		r.material = d.material; r.first = vb.Size(); r.count = 36;
 		r.additive = d.additive; r.red = d.redToAlpha;
 		runs.Push(r);
-		// Mesh space is (x, z-up, y), so the box's Y extent is the one through the surface.
+		// The decal's basis arrives in MAP space (x, y, z-up); mesh space is (x, z-up, y), so each
+		// axis swaps its last two components on the way in, exactly as the centre does.
+		const float ux = d.ux, uy = d.uz, uz = d.uy;
+		const float vx = d.vx, vy = d.vz, vz = d.vy;
+		const float nx = d.nx, ny = d.nz, nz = d.ny;
+		// Multiplying an axis by the SQUARE of its half-extent undoes the pre-division and leaves the
+		// axis at its true length, which is what the corners need. A turned box is then built exactly
+		// the way an axis-aligned one is, and a wall decal costs no more than a floor decal.
+		const float uL = d.halfW * d.halfW, vL = d.halfH * d.halfH, nL = d.halfDepth * d.halfDepth;
 		for (int v = 0; v < 36; v++)
 		{
 			DecalVertex dv;
 			dv.cx = d.x; dv.cy = d.z; dv.cz = d.y;
-			dv.ex = d.halfW; dv.ey = d.halfDepth; dv.ez = d.halfH;
-			dv.x = dv.cx + kCube[v][0] * dv.ex;
-			dv.y = dv.cy + kCube[v][1] * dv.ey;
-			dv.z = dv.cz + kCube[v][2] * dv.ez;
+			dv.ux = ux; dv.uy = uy; dv.uz = uz;
+			dv.vx = vx; dv.vy = vy; dv.vz = vz;
+			dv.nx = nx; dv.ny = ny; dv.nz = nz;
+			dv.x = dv.cx + kCube[v][0] * ux * uL + kCube[v][1] * vx * vL + kCube[v][2] * nx * nL;
+			dv.y = dv.cy + kCube[v][0] * uy * uL + kCube[v][1] * vy * vL + kCube[v][2] * ny * nL;
+			dv.z = dv.cz + kCube[v][0] * uz * uL + kCube[v][1] * vz * vL + kCube[v][2] * nz * nL;
 			dv.r = d.r; dv.g = d.g; dv.b = d.b; dv.a = d.a;
 			vb.Push(dv);
 		}

@@ -339,7 +339,12 @@ void GLWall::DrawDecal(DBaseDecal *decal)
 	// of all of it.
 	FFlatVertex decalQuad[4];
 	for (i = 0; i < 4; i++) decalQuad[i].Set(dv[i].x, dv[i].z, dv[i].y, dv[i].u, dv[i].v);
-	if (gl_wallmesh)
+	// [rc4l] An impact decal is drawn by the projected pass instead, so it must not be captured
+	// here as well or the same mark is painted twice -- once projected, once as this quad, with the
+	// quad bringing back every problem the projection was for. Decals placed BY THE MAP still come
+	// through: they are authored to sit on one sidedef, they never spread, and nothing about them
+	// layers badly, so the quad is the right shape for them.
+	if (gl_wallmesh && !decal->IsKindOf(RUNTIME_CLASS(DImpactDecal)))
 	{
 		const bool shadow = decal->RenderStyle.BlendOp == STYLEOP_Shadow;
 		const bool additive = decal->RenderStyle.BlendOp == STYLEOP_Add &&

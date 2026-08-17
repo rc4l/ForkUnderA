@@ -706,6 +706,16 @@ DImpactDecal *DImpactDecal::StaticCreate (const FDecalTemplate *tpl, fixed_t x, 
 			decal->SetShade (color.r, color.g, color.b);
 		}
 
+		// [rc4l] features/levelmesh: mirror it into the projected decal pass.
+		//
+		// Here rather than at any of the call sites: everything that marks a wall -- hitscans,
+		// missiles, blood, rail, ACS, the network -- funnels through this one function, and by this
+		// line the decal has settled its texture, scale, shade and position. The lower decal a
+		// template names has already recursed through the same line, so it is covered too. Spread
+		// clones are deliberately left out; they exist to carry a decal past the edge of a sidedef,
+		// which is what the projected box does for nothing.
+		zx::levelmesh::SpawnWallDecal (decal, wall, tpl);
+
 		if (!cl_spreaddecals || !decal->PicNum.isValid())
 		{
 			return decal;

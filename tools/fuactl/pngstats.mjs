@@ -276,10 +276,15 @@ if (args[0] === "--blob") {
               `(darkest ${take} px, mean lum ${(lum[0][0]).toFixed(1)})`);
   process.exit(0);
 }
+// [rc4l] GAIN brightens the crop. Doom rooms are frequently near-black, and a decal a metre wide can
+// sit at rgb 12,10,10 on a floor at 8,7,7 -- present, correct, and invisible in a screenshot. Turning
+// the light amplifier on instead is not a substitute: it is a GL colormap the backend does not
+// implement, so it lights one window and not the other, which is worse than dark.
 if (args[0] === "--crop") {
   const a = decodePNG(args[1]);
   const f = args.slice(3, 7).map(Number);
   const z = Number(args[7] || 4);
+  const gain = Number(process.env.GAIN || 1);
   const x0 = Math.floor(f[0] * a.w), y0 = Math.floor(f[1] * a.h);
   const x1 = Math.ceil(f[2] * a.w),  y1 = Math.ceil(f[3] * a.h);
   const w = (x1 - x0) * z, h = (y1 - y0) * z;
@@ -288,10 +293,10 @@ if (args[0] === "--crop") {
     for (let x = 0; x < w; x++) {
       const p0 = px(a, x0 + Math.floor(x / z), y0 + Math.floor(y / z));
       const o = (y * w + x) * 3;
-      out[o] = p0[0]; out[o + 1] = p0[1]; out[o + 2] = p0[2];
+      for (let c = 0; c < 3; c++) out[o + c] = Math.min(255, Math.round(p0[c] * gain));
     }
   writePNG(args[2], w, h, out);
-  console.log(`wrote ${args[2]} ${w}x${h} (${z}x of ${x1 - x0}x${y1 - y0})`);
+  console.log(`wrote ${args[2]} ${w}x${h} (${z}x of ${x1 - x0}x${y1 - y0}${gain !== 1 ? `, gain ${gain}` : ""})`);
   process.exit(0);
 }
 if (args[0] === "--diff") {

@@ -24,7 +24,9 @@
 #include "textures/textures.h"
 
 class FDecalTemplate;
+class DBaseDecal;
 struct F3DFloor;
+struct side_t;
 
 namespace zx { namespace levelmesh {
 
@@ -59,18 +61,44 @@ int FlatDecalCount();
 // those four questions exist.
 struct ProjectedDecal
 {
-	float x, y, z;             // centre, on the surface
-	float halfW, halfH;        // extent across the surface, in map units
-	float halfDepth;           // how far through the surface the box reaches
+	// [rc4l] The box carries an ORIENTATION, so a wall is the same case as a floor.
+	//
+	// A floor decal's box is axis-aligned; a wall's is turned to face the wall. Once the box knows
+	// which way it points, one pass draws both -- and that is worth doing, because the two problems
+	// left on wall decals are exactly the two a glued quad can't escape. They layer wrongly against
+	// the wall's own glow, and they are cut off at a linedef join, because a DBaseDecal is clipped to
+	// the sidedef it hangs on and the engine papers over it by cloning slices onto the neighbours. A
+	// projected box has no sidedef to be clipped to, so it simply carries on across the join.
+	//
+	// The axes arrive ALREADY divided by their half-extents, so a dot product against each lands in
+	// -1..1 across the box and the shader needs no division at all.
+	float x, y, z;             // centre, on the surface, in MAP space (x, y, z-up)
+	float ux, uy, uz;          // across the surface
+	float vx, vy, vz;          // up the surface
+	float nx, ny, nz;          // through the surface
+	float halfW, halfH, halfDepth;   // the same three extents, unscaled, to build the box corners
 	const void *material;      // FMaterial*
 	float r, g, b, a;          // colour the shader paints, alpha already faded
 	bool  additive;
 	bool  redToAlpha;          // the texture is an alpha mask, not a colour image
-	bool  ceiling;             // which way the surface faces, so V runs the right way
 };
 
 // This frame's projected decals. Rebuilt by RegisterFlatDecals.
 int GetProjectedDecals(const ProjectedDecal **out);
+
+// [rc4l] Mirror a WALL decal into the projected pass.
+//
+// Called once the engine has finished building its own DImpactDecal, so this inherits every decision
+// it already made -- which template won, whether the wall accepts decals at all, the shade a bleeding
+// actor asked for, the final scale. Reading them off the finished object beats re-deriving them and
+// beats a per-source hook: hitscans, missiles, blood, rail, ACS and the network all end up here.
+//
+// The engine's own spread clones are deliberately NOT mirrored. They exist to carry a decal past the
+// edge of a sidedef, which is the very thing the projected box does for free.
+void SpawnWallDecal(const DBaseDecal *decal, const side_t *wall, const FDecalTemplate *tpl);
+
+// Dropped with the level, like the flat ring.
+void ClearWallDecals();
 
 // Spawn/emit counters, split by cause. See fua_flatdecals.
 // What the trace reported at the point decals are decided, so "the branch never ran" and "it ran
