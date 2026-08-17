@@ -1324,11 +1324,11 @@ static void BuildDynamic(Diligent::IDeviceContext *ctx)
 		{
 			const zx::levelmesh::MeshPiece &p = pieces[order[i]];
 			if (p.range.count == 0) continue;
-			// A translucent piece never merges with its neighbour: merging would reorder it.
-			// A run is one draw, so it must also break on translation -- otherwise one recoloured
-			// sprite would repaint every sprite batched with it.
-			if (p.material != cur || p.blendMode != curBlend || p.translation != curTrans ||
-				p.blendMode != 0 || p.depthBias != curBias || p.redToAlpha != curRed)
+			// [rc4l] Every dynamic piece is its own run.
+			//
+			// Sprites are all drawn in one back-to-front pass now, the way GL does it, so any two
+			// merged into a shared run could no longer be ordered against each other. There are a few
+			// hundred sprites in a busy frame, so the batching this gives up is not worth having.
 			{
 				DynRun r; r.material = p.material; r.first = vb.Size(); r.count = 0; r.blend = p.blendMode;
 				r.translation = p.translation;
@@ -1336,11 +1336,6 @@ static void BuildDynamic(Diligent::IDeviceContext *ctx)
 				r.redAlpha = p.redToAlpha;
 				r.cx = p.sortX; r.cy = p.sortY; r.cz = p.sortZ;
 				runs.Push(r);
-				cur = p.material;
-				curBlend = p.blendMode;
-				curTrans = p.translation;
-				curBias = p.depthBias;
-				curRed = p.redToAlpha;
 			}
 			for (unsigned v = 0; v < p.range.count; v++)
 			{
@@ -1464,9 +1459,16 @@ static void DrawBlended(Diligent::IDeviceContext *ctx)
 		for (unsigned i = 0; i < g_dynRuns.Size(); i++)
 		{
 			const DynRun &r = g_dynRuns[i];
-			if (r.count == 0 || r.blend == 0) continue;
+			if (r.count == 0) continue;
 			// Blend mode 3 is the fuzz shadow; the engine draws it as a dark near-opaque overlay, and
 			// normal translucency is a fair stand-in until the fuzz shaders are ported.
+			// [rc4l] blend 0 takes the TRANSLUCENT pipeline, not the masked one.
+			//
+			// An alpha-1 sprite blends identically to an opaque draw and discards its transparent
+			// texels just the same, but it does not write depth -- which is the whole point. GL's
+			// sprites live in one sorted list with depth writes off, and splitting them into an
+			// opaque depth-writing pass let an alpha-tested impact sprite occlude the additive glow
+			// behind it: black holes where a plasma burst's bright core should be.
 			Diligent::IPipelineState *pso = r.redAlpha
 				? ((r.blend == 2) ? g_addRedAlphaPSO.RawPtr() : g_transRedAlphaPSO.RawPtr())
 				: r.depthBias
@@ -3439,10 +3441,9 @@ static void DrawWorld(Diligent::IDeviceContext *ctx)
 		ctx->Draw(draw);
 	}
 
-	// [rc4l] Opaque sprites next: the world has filled the depth buffer, so alpha-tested sprite quads
-	// reject most of their fragments instead of shading them.
+	// [rc4l] Sprites are built here but ALL of them draw in the sorted pass below, never in an
+	// opaque one. See DrawBlended.
 	BuildDynamic(ctx);
-	DrawDynamicOpaque(ctx);
 
 	// [rc4l] Then everything that blends -- translucent 3D floors, translucent middle textures and
 	// translucent sprites -- in ONE back-to-front pass, so the world and the sprites sort against each

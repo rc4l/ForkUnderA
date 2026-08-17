@@ -198,6 +198,27 @@ void RegisterFlatSubsector(const GLFlat &flat, subsector_t *sub, bool ceiling)
 // [rc4l] Sprites go into the DYNAMIC stream, rebuilt every frame -- see staticmesh.h. They are
 // billboards built for one viewpoint, so they are not level geometry and must never be baked.
 static int g_spritesThisFrame = 0;
+// [rc4l] What render styles sprites actually arrive with, counted rather than assumed.
+//
+// Plasma impacts came out with black holes where their bright cores should be, which is what an
+// ADDITIVE or SUBTRACTIVE sprite looks like when it is drawn with ordinary alpha blending: its dark
+// texels paint dark instead of adding nothing. Guessing which styles a mod uses is how the last
+// four of these went; this counts them.
+static int g_styleOps[16];
+static int g_styleFlagsSeen = 0;
+static int g_styleDest[16];
+static int g_classified[4];
+void GetSpriteStyleStats(int *ops, int &flags)
+{
+	for (int i = 0; i < 16; i++) ops[i] = g_styleOps[i];
+	flags = g_styleFlagsSeen;
+}
+
+void GetSpriteStyleDetail(int *dest16, int *classified4)
+{
+	for (int i = 0; i < 16; i++) dest16[i] = g_styleDest[i];
+	for (int i = 0; i < 4; i++) classified4[i] = g_classified[i];
+}
 
 void ClearSprites() { g_spritesThisFrame = 0; }
 int SpritePieceCount() { return g_spritesThisFrame; }
@@ -238,6 +259,13 @@ void RegisterSprite(const GLSprite &spr)
 	// mapped back into Diligent's. These four cases cover what Doom content uses: opaque/masked,
 	// normal translucency, additive (plasma, fireballs, explosions) and the fuzz shadow. Anything
 	// exotic falls into normal translucency, which is wrong but visible rather than invisible.
+	{
+		const int op = (int)spr.RenderStyle.BlendOp;
+		if (op >= 0 && op < 16) g_styleOps[op]++;
+		const int da = (int)spr.RenderStyle.DestAlpha;
+		if (da >= 0 && da < 16) g_styleDest[da]++;
+		g_styleFlagsSeen |= (int)spr.RenderStyle.Flags;
+	}
 	mp.translation = spr.translation;
 	mp.alpha = spr.trans;
 	if (spr.RenderStyle.BlendOp == STYLEOP_Shadow)
@@ -249,6 +277,7 @@ void RegisterSprite(const GLSprite &spr)
 	else
 		mp.blendMode = 0;
 
+	if (mp.blendMode >= 0 && mp.blendMode < 4) g_classified[mp.blendMode]++;
 	// Sprite centre, for the back-to-front sort.
 	mp.sortX = spr.x; mp.sortY = spr.y; mp.sortZ = spr.z;
 

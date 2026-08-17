@@ -727,6 +727,32 @@ CCMD( fua_look )
 	}
 }
 
+//==========================================================================
+//
+// fua_spritestyles
+//
+// [rc4l] Which render styles the sprites in this session actually use.
+//
+// A sprite whose style is not handled is drawn with ordinary alpha blending, and an additive or
+// subtractive effect then paints its dark texels dark -- black holes where a plasma impact's bright
+// core should be. Which styles a given mod reaches for is a question about content, not about the
+// renderer, so it is counted rather than assumed.
+//
+//==========================================================================
+
+CCMD( fua_spritestyles )
+{
+	static const char *kOp[16] = { "None", "Add", "Sub", "RevSub", "Fuzz", "FuzzOrAdd",
+	                               "FuzzOrSub", "FuzzOrRevSub", "?8", "Shadow", "?10", "?11",
+	                               "?12", "?13", "?14", "?15" };
+	int ops[16], flags = 0;
+	zx::levelmesh::GetSpriteStyleStats( ops, flags );
+	Printf( "sprite render styles since load:\n" );
+	for ( int i = 0; i < 16; i++ )
+		if ( ops[i] > 0 ) Printf( "  %-12s %d\n", kOp[i], ops[i] );
+	Printf( "  style flags seen: 0x%x\n", flags );
+}
+
 CCMD( fua_mesh_verify )
 {
 	int nv = 0, np = 0;
