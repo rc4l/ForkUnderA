@@ -1,0 +1,21 @@
+{
+  "about": "Named cameras that reproduce a specific rendering fault, so a check is a name rather than four numbers pasted from a screenshot. `bash shot.sh <tag> --spot <name>` warps here and captures the GL/Vulkan pair.",
+
+  "spots": {
+    "dbab02-flatswap": {
+      "map": "dbab02",
+      "wad": "eoncollection_vol-1_b2.pk3,eonweapons_rc8.5t.pk3,zandrospree2rc2.pk3",
+      "x": 87, "y": -1456, "z": -24, "angle": 134, "pitch": 10,
+      "shows": "A lava floor in the fire corridor that renders as a completely different flat -- green foliage on orange -- in the Vulkan backend and correctly in GL. Reported as 'the triangulation isn't working and random textures get filled-in'; it is the animated-texture re-resolve repainting a batch that merged two different base textures.",
+      "correct": "The floor is dark red lava with bright yellow veins, matching GL."
+    },
+
+    "dbab01-glassfloor": {
+      "map": "dbab01",
+      "wad": "eoncollection_vol-1_b2.pk3,eonweapons_rc8.5t.pk3,zandrospree2rc2.pk3",
+      "x": 700, "y": 192, "z": 120, "angle": 180, "pitch": 40,
+      "shows": "Looking down into the lava pit at a translucent 3D floor. The grate reads as more solid in Vulkan than in GL.",
+      "correct": "The lava beneath shows through at the same strength as GL, and a pickup lying on the floor sits on it rather than through it."
+    }
+  }
+}

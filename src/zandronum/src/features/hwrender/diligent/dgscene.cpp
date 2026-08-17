@@ -1982,16 +1982,25 @@ static bool BuildSceneBuffer(FString &err)
 	// [rc4l] Opaque first, then blended. Blending is not commutative, so a translucent surface has to
 	// be drawn after everything it shows through -- a 3D floor of grating over a lava pit reads as
 	// solid grating otherwise, which is what dbab01 looked like until this existed.
+	//
+	// The secondary key is baseTex, and it is not cosmetic. Two surfaces with DIFFERENT base textures
+	// can resolve to the SAME material at bake time, because an animation is at some frame when the
+	// mesh is built: a lava floor showing frame 2 and another animated flat also showing frame 2 are
+	// one FMaterial. Merged into one batch, they then get re-resolved every frame from whichever
+	// baseTex the batch happened to record, and the other surface is repainted with a texture that has
+	// nothing to do with it -- which is a lava floor turning into green foliage, at dbab02-flatswap.
 	std::sort(&order[0], &order[0] + npieces, [pieces](int a, int b) {
 		const int ba = pieces[a].blendMode != 0, bb = pieces[b].blendMode != 0;
 		if (ba != bb) return ba < bb;
-		return pieces[a].material < pieces[b].material;
+		if (pieces[a].material != pieces[b].material) return pieces[a].material < pieces[b].material;
+		return pieces[a].baseTex < pieces[b].baseTex;
 	});
 
 	g_sceneVB.Clear();
 	g_batches.Clear();
 	g_blendBatches.Clear();
 	const void *cur = (const void *)(size_t)-1;
+	const void *curBase = (const void *)(size_t)-1;
 	int curBlend = -1;
 	for (int i = 0; i < npieces; i++)
 	{
@@ -1999,8 +2008,9 @@ static bool BuildSceneBuffer(FString &err)
 		if (p.range.count == 0) continue;
 
 		// A blended piece never merges with its neighbour: the translucent pass reorders batches per
-		// frame, and two pieces sharing a batch could not then be separated.
-		if (p.material != cur || p.blendMode != curBlend || p.blendMode != 0)
+		// frame, and two pieces sharing a batch could not then be separated. A batch also breaks on
+		// baseTex, because the animation pass re-resolves the whole batch from that one pointer.
+		if (p.material != cur || p.baseTex != curBase || p.blendMode != curBlend || p.blendMode != 0)
 		{
 			SceneBatch b;
 			b.material = p.material;
@@ -2016,6 +2026,7 @@ static bool BuildSceneBuffer(FString &err)
 			g_batches.Push(b);
 			if (b.blend != 0) g_blendBatches.Push((int)g_batches.Size() - 1);
 			cur = p.material;
+			curBase = p.baseTex;
 			curBlend = p.blendMode;
 		}
 
