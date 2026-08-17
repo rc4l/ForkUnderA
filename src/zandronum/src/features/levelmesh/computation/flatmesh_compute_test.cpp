@@ -346,3 +346,55 @@ TEST(FlatMeshCompute, APartlyFadedDecalIsTranslucent)
 	// Decals fade out over their lifetime, so this is the common case, not the exception.
 	EXPECT_EQ(ComputeStyleBlendMode(false, false, 0.4f), 1);
 }
+
+// [rc4l] The normal has to face the side the surface is SEEN from, not the way its plane points.
+//
+// This is the winding bug's quieter twin. A wound-away surface disappears and someone reports it
+// within a minute; a normal facing away just never takes a dynamic light, which is indistinguishable
+// from a light being out of range. It shipped as a corridor ceiling on dbab02 that GL lit and the
+// backend did not.
+
+TEST(FlatNormal, AnOrdinarySurfaceIsLeftAlone)
+{
+	// A sector floor's plane points up and is seen from above; a sector ceiling's points down and is
+	// seen from below. Neither needs touching, and touching either would break every lit room.
+	EXPECT_FALSE(ComputeFlatNormalFlipped(/*viewedFromBelow=*/false, /*planeUp=*/1.f));
+	EXPECT_FALSE(ComputeFlatNormalFlipped(/*viewedFromBelow=*/true,  /*planeUp=*/-1.f));
+}
+
+TEST(FlatNormal, A3DFloorsSurfacesAreFlipped)
+{
+	// A 3D floor is modelled from a control sector turned upside down: the walkable TOP is that
+	// sector's ceiling plane, pointing down while you stand on it, and the UNDERSIDE is its floor
+	// plane, pointing up while you look at it from below. Both disagree with the side they are seen
+	// from, and both must be turned round.
+	EXPECT_TRUE(ComputeFlatNormalFlipped(/*viewedFromBelow=*/false, /*planeUp=*/-1.f));
+	EXPECT_TRUE(ComputeFlatNormalFlipped(/*viewedFromBelow=*/true,  /*planeUp=*/1.f));
+}
+
+TEST(FlatNormal, AgreesWithTheWindingForTheSameSurface)
+{
+	// The two decisions answer the same question -- which side is this surface presented from -- so
+	// they must never disagree. When they did, a surface was drawn facing you and lit as though it
+	// were facing away.
+	for (int below = 0; below < 2; below++)
+		for (int up = -1; up <= 1; up += 2)
+		{
+			const bool flipped = ComputeFlatNormalFlipped(below != 0, (float)up);
+			const bool pointsDown = (up < 0) != flipped;
+			EXPECT_EQ(below != 0, pointsDown)
+				<< "seen from " << (below ? "below" : "above") << ", plane up " << up;
+			// And both decisions depend on the SIDE alone, never on the plane -- which is the whole
+			// content of the bug they share.
+			EXPECT_EQ(ComputeFlatWindingReversed(below != 0),
+			          ComputeFlatWindingReversed(pointsDown));
+		}
+}
+
+TEST(FlatNormal, LeavesAVerticalPlaneAlone)
+{
+	// Not a flat at all, and its vertical component is zero -- flipping on the sign of a rounding
+	// error would make the answer depend on which way the last bit fell.
+	EXPECT_FALSE(ComputeFlatNormalFlipped(false, 0.f));
+	EXPECT_FALSE(ComputeFlatNormalFlipped(true, 0.f));
+}

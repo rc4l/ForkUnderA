@@ -708,11 +708,21 @@ CCMD( fua_look )
 	Printf( "  mesh: piece %d at %.0f away, range %u+%u\n"
 			"        blend %s, alpha %.3f, seen-from-%s\n"
 			"        light %d, rgb %.2f,%.2f,%.2f, fog %.2f mode %d\n"
+			// [rc4l] The normal is what the dynamic-light SIDE TEST reads, and it is invisible in a
+			// screenshot: a surface facing the wrong way is simply never lit, which looks exactly like
+			// a light that is out of range. Mesh space is (x, z-up, y), so the middle component is the
+			// vertical one -- +1 for a surface seen from above, -1 from below.
+			"        normal (%.2f, %.2f, %.2f)%s\n"
 			"        baseTex %s%s\n",
 			bestPiece, bestT, p.range.offset, p.range.count,
 			kBlend[( p.blendMode >= 0 && p.blendMode < 4 ) ? p.blendMode : 0], p.alpha,
 			p.facesDown ? "below" : "above",
 			p.lightLevel, p.colorR, p.colorG, p.colorB, p.fogDensity, p.fogMode,
+			p.normX, p.normY, p.normZ,
+			// A surface whose normal disagrees with the side it is SEEN from can never take a dynamic
+			// light, because every light in the room is behind it.
+			( ( p.facesDown && p.normY > 0.01f ) || ( !p.facesDown && p.normY < -0.01f ) )
+				? "   <-- points AWAY from the side it is seen from" : "",
 			bt ? ( bt->Name.Len( ) ? bt->Name.GetChars( ) : "(THE NULL TEXTURE)" ) : "(none)",
 			bt && ( bt->isFullbright( ) || bt->isGlowing( ) ) ? "  [fullbright/glowing]" : "" );
 	// [rc4l] Whether this surface has a brightmap, and whether the backend is therefore adding one.

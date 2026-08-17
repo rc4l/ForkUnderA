@@ -67,7 +67,18 @@ void CaptureShading(int lightlevel, int rellight, const FColormap &cm, MeshPiece
 	out.sortX = out.sortY = out.sortZ = 0.f;
 	out.baseTex = NULL;
 	out.dynLightIndex = -1;
-	out.normX = 0.f; out.normY = 1.f; out.normZ = 0.f;
+	// [rc4l] The NORMAL is deliberately not touched here.
+	//
+	// This function captures SHADING, and a normal is geometry. It used to default to straight up,
+	// which quietly undid whatever the caller had already worked out: flatmesh.cpp computes a flat's
+	// normal from its plane and then calls this, so every flat in the level shipped with a normal of
+	// (0, +1, 0) regardless of which way it faced. Floors were right by accident. Ceilings were
+	// upside down, so the backend's dynamic-light side test found every light in the room behind them
+	// and lit none of them -- a corridor ceiling on dbab02 took no plasma light at all while GL lit
+	// it, and nothing about that looks like a normal being wrong.
+	//
+	// Callers that HAVE a side set one. Callers that do not -- a sprite is a billboard -- leave it at
+	// MeshPiece's zero, which the shader reads as "no side" and skips the test for.
 }
 
 // ---------------------------------------------------------------------------

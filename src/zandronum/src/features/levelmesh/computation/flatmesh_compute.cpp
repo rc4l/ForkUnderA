@@ -12,6 +12,13 @@ bool ComputeFlatWindingReversed(bool viewedFromBelow)
 	return viewedFromBelow;
 }
 
+bool ComputeFlatNormalFlipped(bool viewedFromBelow, float planeUp)
+{
+	if (planeUp > 0.f) return viewedFromBelow;
+	if (planeUp < 0.f) return !viewedFromBelow;
+	return false;   // vertical plane: not a flat, and its sign means nothing
+}
+
 int ComputeSurfaceBlendMode(bool additive, float alpha)
 {
 	if (additive) return 2;
