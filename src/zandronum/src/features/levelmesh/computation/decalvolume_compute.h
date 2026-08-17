@@ -33,6 +33,15 @@ struct DecalFrame
 	float n[3];   // through the surface
 };
 
+// [rc4l] How far the blast reaches, which must never be near enough to cut the picture.
+//
+// The sphere exists to bound how far through SPACE a mark carries, not to shape it -- the graphic's
+// own alpha does that. Sized at the picture's half-width it cut the corners off, because a rectangle's
+// corner is further from its centre than its edge is, and a scorch came out as a disc with a hard rim
+// stamped through it. The diagonal is the least that cannot, and half again on top leaves room to
+// reach a floor or a wall standing off to the side of the impact without clipping that either.
+float ComputeDecalReach(float halfW, float halfH);
+
 // Build a frame from unit axes and the box's three half-extents. Returns false, leaving the frame
 // untouched, if any extent is zero or negative -- a degenerate box would divide by zero and paint
 // the whole screen.

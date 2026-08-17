@@ -692,6 +692,25 @@ static const char *kScenePSRedAlpha =
 	/* The picture's own axes, laid into whatever surface this fragment is on. The mark's across-axis
 	   is used where it survives being turned into the plane, and its up-axis where it does not -- on
 	   a floor, "along the wall" still means something while "up the wall" does not. */ \
+	/* [rc4l] How much of the mark survives at this distance from where it landed.
+	   The sphere bounds how far through SPACE a mark carries; the graphic's own alpha is what shapes
+	   it. Sized at the picture's half-width the sphere cut the corners off instead -- a rectangle's
+	   corner is further from its centre than its edge is -- and a scorch came out as a disc with a
+	   hard rim stamped through it. The radius is the picture's diagonal and half again, so on the
+	   surface that was hit the sphere is nowhere near the picture, and the last quarter of it fades
+	   rather than ends, so a surface standing off to one side cannot show a rim either. */ \
+	"float fuaDecalReach(vec3 rel, float radius) {\n" \
+	"    return 1.0 - smoothstep(0.75, 1.0, length(rel) / radius);\n" \
+	"}\n" \
+	/* [rc4l] A smooth stand-in for the coordinate, used ONLY to pick a mip level.
+	   A shader reads level of detail from how fast the texture coordinate changes between neighbouring
+	   pixels, and the real one is built from a surface normal that changes abruptly at every edge --
+	   so the mip jumped about and the mark came out blocky in patches. This is the same coordinate
+	   without the normal in it: wrong where a surface turns, which does not matter, and smooth
+	   everywhere, which is all a mip level needs. */ \
+	"vec2 fuaDecalRefUV(vec3 rel, vec3 axisU, vec3 axisV) {\n" \
+	"    return vec2(dot(rel, axisU), dot(rel, axisV)) * 0.5 + 0.5;\n" \
+	"}\n" \
 	"vec2 fuaDecalUV(vec3 rel, vec3 nrm, vec3 axisU, vec3 axisV, vec3 axisN) {\n" \
 	"    vec3 U = normalize(axisU), V = normalize(axisV), N = normalize(axisN);\n" \
 	"    vec3 su = U - nrm * dot(nrm, U);\n" \
@@ -763,7 +782,8 @@ static const char *kDecalPS =
 	   impossible for a surface in range to be missed -- a box aligned to one wall left a wedge
 	   of floor uncovered wherever the floor wrapped round a corner at an angle to it. */
 	"    vec3 rel = P - vCentre;\n"
-	"    if (dot(rel, rel) > vRadius * vRadius) discard;\n"
+	"    float reach = fuaDecalReach(rel, vRadius);\n"
+	"    if (reach <= 0.0) discard;\n"
 	"    vec3 nrm = fuaSurfaceNormal(P, uv, 1.0 / vec2(uScreen.x, uScreen.y), uInvMVP,\n"
 	"                               normalize(vAxisN));\n"
 	"    vec2 t = fuaDecalUV(rel, nrm, vAxisU, vAxisV, vAxisN);\n"
@@ -771,8 +791,9 @@ static const char *kDecalPS =
 	   ever -- a dragged row of texels by another route, which is the artifact all of this
 	   exists to avoid. */
 	"    if (any(lessThan(t, vec2(0.0))) || any(greaterThan(t, vec2(1.0)))) discard;\n"
-	"    vec4 texel = texture(uTex, t);\n"
-	"    outColor = vec4(texel.rgb * vColor.rgb, texel.a * vColor.a);\n"
+	"    vec4 texel = textureGrad(uTex, t, dFdx(fuaDecalRefUV(rel, vAxisU, vAxisV)),\n"
+	"                                      dFdy(fuaDecalRefUV(rel, vAxisU, vAxisV)));\n"
+	"    outColor = vec4(texel.rgb * vColor.rgb, texel.a * vColor.a * reach);\n"
 	"}\n";
 
 // The alpha-mask variant: the silhouette is in the red channel and the colour is the decal's own.
@@ -803,12 +824,14 @@ static const char *kDecalRedPS =
 	"    vec4 world = uInvMVP * clip;\n"
 	"    vec3 P = world.xyz / world.w;\n"
 	"    vec3 rel = P - vCentre;\n"
-	"    if (dot(rel, rel) > vRadius * vRadius) discard;\n"
+	"    float reach = fuaDecalReach(rel, vRadius);\n"
+	"    if (reach <= 0.0) discard;\n"
 	"    vec3 nrm = fuaSurfaceNormal(P, uv, 1.0 / vec2(uScreen.x, uScreen.y), uInvMVP,\n"
 	"                               normalize(vAxisN));\n"
 	"    vec2 t = fuaDecalUV(rel, nrm, vAxisU, vAxisV, vAxisN);\n"
 	"    if (any(lessThan(t, vec2(0.0))) || any(greaterThan(t, vec2(1.0)))) discard;\n"
-	"    float a = texture(uTex, t).r * vColor.a;\n"
+	"    float a = textureGrad(uTex, t, dFdx(fuaDecalRefUV(rel, vAxisU, vAxisV)),\n"
+	"                                   dFdy(fuaDecalRefUV(rel, vAxisU, vAxisV))).r * vColor.a * reach;\n"
 	"    if (a <= 0.0) discard;\n"
 	"    outColor = vec4(vColor.rgb, a);\n"
 	"}\n";

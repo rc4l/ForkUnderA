@@ -231,3 +231,28 @@ TEST(DecalSurfaceUV, RefusesADegenerateFrameOrNormal)
 	const float noNormal[3] = { 0.f, 0.f, 0.f };
 	EXPECT_FALSE(ComputeDecalSurfaceUV(good, rel, noNormal, u, v));
 }
+
+TEST(DecalReach, IsNeverCloseEnoughToCutThePicture)
+{
+	// [rc4l] The hard circular rim.
+	//
+	// The sphere bounds how far through space a mark carries; the graphic's own alpha is what shapes
+	// it. Sized at the picture's half-width the sphere cut the corners off instead -- a rectangle's
+	// corner is further from its centre than its edge is -- and a rocket scorch came out as a disc
+	// with a rim stamped through it. Whatever else this returns, it must clear the diagonal.
+	const float cases[4][2] = { { 16.f, 8.f }, { 8.f, 16.f }, { 31.f, 31.f }, { 2.f, 2.5f } };
+	for (int i = 0; i < 4; i++)
+	{
+		const float hw = cases[i][0], hh = cases[i][1];
+		const float diagonal = std::sqrt(hw * hw + hh * hh);
+		EXPECT_GT(ComputeDecalReach(hw, hh), diagonal)
+			<< "half-extents " << hw << " x " << hh;
+	}
+}
+
+TEST(DecalReach, LeavesRoomForASurfaceOffToTheSide)
+{
+	// A mark reaches a floor or a wall that stands off to one side of the impact, and the sphere has
+	// to clear that too or it clips the far half of it. Half the picture again is the margin.
+	EXPECT_FLOAT_EQ(std::sqrt(16.f * 16.f + 8.f * 8.f) * 1.5f, ComputeDecalReach(16.f, 8.f));
+}
