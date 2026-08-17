@@ -77,19 +77,23 @@ struct ProjectedDecal
 	float vx, vy, vz;          // up the surface
 	float nx, ny, nz;          // through the surface
 	float halfW, halfH, halfDepth;   // the same three extents, unscaled, to build the box corners
-	// [rc4l] Which SLICE of the picture this box owns, in local-y units.
+	// [rc4l] How far the mark reaches, in every direction from where it landed.
 	//
-	// A mark near a corner is drawn by several boxes -- itself, plus a fold for each surface it runs
-	// into -- and they have to tile, not overlap. Two things go wrong without that. A fold's box
-	// straddles the wall it folded from, because its centre goes back inside the wall to make the
-	// coordinate line up, so it would also paint the surface on the near side and give it the wrong
-	// part of the graphic. And the mark itself would carry on past the join that the fold continues
-	// from, so both paint the strip either side of the corner and the double blend shows as a seam
-	// running along it.
+	// A blast does not project from a plane, it radiates from a POINT, and that is the whole of the
+	// difference. Projecting from a plane means asking every surface to be parameterised by an axis
+	// chosen before the surface was known, which works on the surface that was hit and degenerates on
+	// everything else -- a floor met at a right angle gets one row of texels dragged across it,
+	// because the projection has no way to express movement along its own axis. Every attempt to
+	// paper over that failed in a different place: dragged rows, then a black slab where the drag
+	// covered the whole box, then a hole where the slab was refused, then a wedge of floor that the
+	// strip patching it round the corner never reached.
 	//
-	// So each box states the range of the picture it is responsible for, and the joins are where one
-	// hands over to the next. -1 to 1 is the whole picture, which is a mark with nothing to fold onto.
-	float vMin, vMax;
+	// Radiating from the point has none of those. Each surface inside the radius is measured in ITS
+	// OWN plane from the blast's centre, so each gets a mapping at the mark's true scale with nothing
+	// degenerate about it, and there is no such thing as a surface the mark fails to cover -- if it is
+	// in range it is parameterised, whatever angle it sits at. Corners come out looking like soot
+	// that travelled, because that is what the arithmetic is describing.
+	float radius;
 	const void *material;      // FMaterial*
 	float r, g, b, a;          // colour the shader paints, alpha already faded
 	bool  additive;
