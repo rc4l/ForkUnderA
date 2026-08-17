@@ -137,7 +137,7 @@ CVAR(Bool, fua_dg_mirrors, true, 0)
 // [rc4l] Ray-traced reflections. OFF by default while the traced draw is still being brought up:
 // the planar path works, and a backend that crashes the process is worse than one that reflects
 // only the level geometry.
-CVAR(Bool, fua_dg_rtmirrors, false, 0)
+CVAR(Bool, fua_dg_rtmirrors, false, CVAR_ARCHIVE)
 
 // [rc4l] Re-resolve animated textures per frame. See the loop in DrawSceneOnce.
 CVAR(Bool, fua_dg_animate, true, 0)
@@ -2686,7 +2686,19 @@ static void RenderMirrors(Diligent::IDeviceContext *ctx)
 	// [rc4l] With ray tracing there is no reflection pass at all: the mirror's own fragment shader
 	// traces, so this collapses to drawing the surfaces. The planar path below stays for adapters
 	// without ray tracing, where the alternative is no reflection at all.
+	// [rc4l] Which path this build is taking, said once. The fallback is automatic -- an adapter
+	// without ray tracing, or with the cvar off, gets the planar reflection instead of nothing -- and
+	// a silent fallback is indistinguishable from a broken feature.
 	const bool traced = g_mirrorTraced;
+	{
+		static int said = -1;
+		if (said != (int)traced)
+		{
+			said = (int)traced;
+			Printf("vulkan mirrors: %s
+", traced ? "ray traced" : "planar (no ray tracing)");
+		}
+	}
 
 	for (unsigned i = 0; i < g_mirrors.Size(); i++)
 	{
