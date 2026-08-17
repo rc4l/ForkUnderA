@@ -23,6 +23,10 @@
 // than the CVAR defined in gl_drawinfo.cpp, and only the linker would notice.
 EXTERN_CVAR(Bool, gl_wallmesh)
 EXTERN_CVAR(Int, gl_fogmode)
+// [rc4l] The animated-texture re-resolve on replay, as a switch, so its cost can be A/B'd from the
+// console instead of from two builds. Off renders stale animation frames -- a measurement aid, not
+// a setting anyone should turn off.
+CVAR(Bool, gl_wallcache_anim, true, 0)
 
 namespace zx { namespace levelmesh {
 
@@ -38,6 +42,10 @@ static TArray<bool>     g_uncacheable;   // sticky: this seg produced a portal, 
 static int              g_captureSeg = -1;
 static bool             g_sawPortal = false;
 static int              g_hits = 0, g_misses = 0, g_uncacheableHits = 0;
+// [rc4l] How many replayed walls came back with a DIFFERENT material than the one they were
+// captured with -- which is the count of animated wall textures the cache would otherwise have
+// frozen. Zero means the re-resolve below is dead weight; nonzero is the bug, measured.
+static int              g_animRefresh = 0;
 // [rc4l] Why captures fail, split by cause. See EndCapture.
 static int g_rejPortal = 0, g_rejPoly = 0, g_rejFFloor = 0, g_rejArea = 0, g_rejOther = 0,
            g_captureOk = 0;
@@ -345,6 +353,37 @@ bool TryReplay(int segIndex, const WallCacheEligibility &e, const WallCacheStamp
 
 	for (int i = 0; i < sc.pieceCount; i++)
 	{
+		// [rc4l] Re-resolve the texture before replaying, because the cache freezes it otherwise.
+		//
+		// A replayed GLWall carries the FMaterial it was captured with, and the stamp is built from
+		// geometry and lighting generation counters -- an ANIMDEFS frame change moves none of them.
+		// So a cached wall kept drawing frame 1 forever: LAVFALL1..4 on dbab02 was a still image in
+		// GL while the Vulkan backend, which re-resolves every batch from its base texture each
+		// frame, animated it correctly. The cache was making the GL renderer WRONG, not just fast.
+		//
+		// Only the three ordinary sidedef parts map cleanly, the same three BakeSeg resolves; 3D
+		// floor and special walls are left alone and keep whatever they were captured with.
+		GLWall &w = sc.walls[i];
+		if (gl_wallcache_anim && w.gltexture != NULL && w.seg != NULL && w.seg->sidedef != NULL)
+		{
+			const side_t *sd = w.seg->sidedef;
+			int part = -1;
+			switch (w.type)
+			{
+			case RENDERWALL_TOP:    part = side_t::top; break;
+			case RENDERWALL_BOTTOM: part = side_t::bottom; break;
+			case RENDERWALL_M1S:
+			case RENDERWALL_M2S:
+			case RENDERWALL_M2SNF:  part = side_t::mid; break;
+			default: break;
+			}
+			if (part >= 0)
+			{
+				// The same call gl_walls.cpp makes: translate == true is what follows the animation.
+				FMaterial *now = FMaterial::ValidateTexture(sd->GetTexture(part), false, true);
+				if (now != NULL && now != w.gltexture) { w.gltexture = now; g_animRefresh++; }
+			}
+		}
 		// [rc4l] An 8-byte reference, not a struct copy -- this is the change attempt 1 was missing.
 		gl_drawinfo->drawlists[sc.pieces[i].list].AddStaticWall(PackWallRef(segIndex, i));
 	}
@@ -384,9 +423,12 @@ void GetStats(int &hits, int &misses, int &uncacheable)
 	uncacheable = g_uncacheableHits;
 }
 
+int GetAnimRefreshes() { return g_animRefresh; }
+
 void ResetStats()
 {
 	g_hits = g_misses = g_uncacheableHits = 0;
+	g_animRefresh = 0;
 }
 
 void GetRejects(int &portal, int &poly, int &ffloor, int &area, int &other, int &ok)
@@ -494,6 +536,7 @@ CCMD( fua_wallcache_stats )
 	if ( total > 0 )
 		Printf( "  hit rate %.1f%%, uncacheable %.1f%%\n",
 				100.0 * hits / total, 100.0 * uncacheable / total );
+	Printf( "  animated texture refreshes on replay: %d\n", zx::levelmesh::GetAnimRefreshes( ) );
 	zx::levelmesh::ResetStats( );
 }
 

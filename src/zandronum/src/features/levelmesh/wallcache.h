@@ -118,6 +118,9 @@ void BuildEligibility(const seg_t *seg, const sector_t *frontsector, const secto
 
 // Stats for fua_levelmesh_stats / tuning.
 void GetStats(int &hits, int &misses, int &uncacheable);
+
+// [rc4l] Replayed walls whose material changed under them -- animated textures the cache froze.
+int GetAnimRefreshes();
 void ResetStats();
 
 // [rc4l] How much of the level the wall mesh actually holds, as opposed to how much it could.
