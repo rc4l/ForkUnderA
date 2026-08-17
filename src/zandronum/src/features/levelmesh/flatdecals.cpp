@@ -23,7 +23,7 @@
 #include "c_dispatch.h"
 #include "c_console.h"
 
-namespace zx { namespace hwrender { void GetDecalPassStats(int &boxes, int &draws); }}
+namespace zx { namespace hwrender { void GetDecalPassStats(int &boxes, int &draws); const char *GetDecalPassBail(); }}
 
 // [rc4l] Off would mean the engine behaves as it always has. On by default because a floor you have
 // emptied a magazine into looking untouched is the odd behaviour, not the fix.
@@ -541,6 +541,11 @@ void DumpWallDecals()
 	{
 		int boxes = 0, draws = 0;
 		zx::hwrender::GetDecalPassStats(boxes, draws);
+		// [rc4l] Both counts, because "nothing is on screen" has two halves. The registered count is
+		// what this module handed the backend this frame; the drawn count is what the backend kept.
+		// A gap between them is the backend's, and everything missing from the registered count went
+		// before that -- an expired ring entry, a texture that would not resolve, a wall gone NULL.
+		Printf("  registered this frame: %d\n", (int)g_projected.Size());
 		Printf("  drawn last frame: %d boxes in %d draw calls\n", boxes, draws);
 	}
 }

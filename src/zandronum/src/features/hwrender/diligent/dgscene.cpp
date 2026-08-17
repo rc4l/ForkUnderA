@@ -704,65 +704,98 @@ static const char *kScenePSRedAlpha =
 //
 // This is what the projection was for and could not do, and it is cheaper than what it replaces: no
 // unwrap, no carry, no facing fade, no join arithmetic, no per-surface companion boxes.
+// [rc4l] A mark CREEPS OUT FROM THE ONE POINT IT WAS MADE AT, across whatever it meets.
+//
+// A rocket touches the world in exactly one place. Everything the mark does after that is soot
+// spreading outward from there, over whatever surfaces happen to be in the way -- so the only
+// question a fragment has to answer is HOW FAR IT IS FROM THAT POINT ALONG THE GEOMETRY, and the
+// picture is read at that distance.
+//
+// Measuring straight-line distance through space instead is what every earlier version did, and it is
+// wrong in a way that produces a fresh artifact per situation. Each surface would ask "how far is the
+// impact from me?" and re-centre a whole copy of the picture on itself, so a floor below a mark on a
+// wall got a second complete scorch with its own middle, and a staircase got the same picture stamped
+// down every tread. Then each of those needed its own correction -- a fade by distance, a size scaled
+// by the sphere's cross-section -- and each correction had a number in it that someone had to choose.
+//
+// Path distance needs none of that. To reach a floor forty units below a wall mark you travel forty
+// units down the wall and then out across the floor, so by the time you are on the floor you are
+// already near the outer edge of the picture: a fringe that runs out, never a new centre. A corner is
+// unremarkable for the same reason -- the distance is continuous across it, so the picture simply
+// keeps going. And "how much of the blast got here" stops being a separate question, because a
+// surface only ever receives whatever is left of the picture after the walk to it.
+//
+// The walk is approximated the obvious way: out to the surface along its own normal, then across it.
+// That is exact for the surface that was hit (nothing to travel) and for a right-angled corner, which
+// between them are nearly every case in a Doom map.
 #define FUA_DECAL_RADIAL \
-	/* The picture's own axes, laid into whatever surface this fragment is on. The mark's across-axis \
-	   is used where it survives being turned into the plane, and its up-axis where it does not -- on \
+	/* The picture's own axes, laid into whatever surface this fragment is on. The mark's across-axis
+	   is used where it survives being turned into the plane, and its up-axis where it does not -- on
 	   a floor, "along the wall" still means something while "up the wall" does not. */ \
-	/* [rc4l] How much of the mark a surface gets, which is a question about a SPHERE AND A PLANE. \
- \
-	   A blast of radius R centred at C meets a plane at distance d in a disc of radius sqrt(R*R-d*d). \
-	   Everything about which surfaces are marked, and how much of each, falls out of that -- there is \
-	   nothing here to tune, because there is nothing here that was chosen. \
- \
-	   What it replaces was chosen, and wrongly. Every surface in range was given the picture at FULL \
-	   size, centred where the impact projects onto it, with its alpha faded by distance. On the \
-	   surface that was hit that is right. On a floor forty units below a mark on a wall it is a \
-	   complete second scorch, sitting out in the open with its own middle -- not a blast continuing \
-	   round a corner, just the same picture stamped twice. That is why a mark made ON a floor climbs \
-	   its walls perfectly (the impact is at the join, so the copy lands there and reads as one mark) \
-	   while a mark made on a wall almost always looks wrong (the impact is well above the floor, so \
-	   the copy lands well away from it). \
- \
-	   Scaling the picture by the chord instead means the mark shrinks as the surface recedes and is \
-	   simply gone at d >= R. A ghost at full size is not reachable from here. */ \
-	"float fuaDecalChord(float d, float radius) {\n" \
-	"    float k = radius * radius - d * d;\n" \
-	"    return (k <= 0.0) ? 0.0 : sqrt(k);\n" \
-	"}\n" \
-	/* The last of the disc fades rather than ending, so the rim of the intersection is never a hard \
-	   edge -- the graphic usually runs out first, and where it does not this is what stops a line. */ \
-	"float fuaDecalReach(vec3 rel, vec3 nrm, float radius) {\n" \
-	"    float chord = fuaDecalChord(abs(dot(rel, nrm)), radius);\n" \
-	"    if (chord <= 0.0) return 0.0;\n" \
-	"    float acrossSq = dot(rel, rel) - dot(rel, nrm) * dot(rel, nrm);\n" \
-	"    float rim = 1.0 - smoothstep(0.75, 1.0, sqrt(max(acrossSq, 0.0)) / chord);\n" \
-	/* And fainter the less of the blast a surface catches. A staircase puts several treads inside one
-	   blast, and sized alone they came out as a stack of near-identical stamps -- the same picture
-	   repeated down the steps rather than one burn thinning out. The chord is already the answer: a
-	   surface the blast barely clips catches barely any of it, and one it landed on catches all. */ \
-	"    return rim * (chord / radius);\n" \
-	"}\n" \
-	"vec2 fuaDecalUV(vec3 rel, vec3 nrm, vec3 axisU, vec3 axisV, vec3 axisN, float chord,\n" \
-	"                float radius) {\n" \
+	"vec2 fuaDecalUV(vec3 rel, vec3 nrm, vec3 axisU, vec3 axisV, vec3 axisN, out float path) {\n" \
 	"    vec3 U = normalize(axisU), V = normalize(axisV), N = normalize(axisN);\n" \
-	"    vec3 su = U - nrm * dot(nrm, U);\n" \
-	"    if (dot(su, su) < 0.05) su = V - nrm * dot(nrm, V);\n" \
-	"    if (dot(su, su) < 0.05) su = N - nrm * dot(nrm, N);\n" \
-	"    su = normalize(su);\n" \
-	"    vec3 sv = cross(nrm, su);\n" \
-	/* Which of the two perpendiculars is "up the picture". On the surface that was hit this is the \
-	   mark's own V; on a floor, where V lies along the normal and decides nothing, the tie is broken \
-	   by pointing away from the surface that was hit. Both are fixed in world space, so neither can \
-	   change as the camera moves. */ \
-	"    if (dot(sv, V) - dot(sv, N) < 0.0) sv = -sv;\n" \
-	/* Scaled by how much of the blast this surface actually cuts through: the picture is full size on \
-	   the surface that was hit and shrinks to nothing as a surface recedes, which is the sphere's own \
-	   cross-section and not a decision. */ \
-	"    float shrink = chord / radius;\n" \
-	"    if (shrink <= 0.0) return vec2(-1.0);\n" \
-	"    return vec2(dot(rel, su) * length(axisU), dot(rel, sv) * length(axisV))\n" \
-	"           / shrink * 0.5 + 0.5;\n" \
+	/* Where the soot got to, measured as the walk it took to get here.
+	   Two planes meet in a LINE, and creep wraps around that line: the coordinate running ALONG the
+	   corner carries straight over it, and only the coordinate CROSSING it accumulates the journey --
+	   down to the corner, then out from it.
+	   Measuring the walk radially instead funnels every path through a single point, the impact's
+	   shadow on this surface, and there a small patch of floor maps to a whole ring of the picture. It
+	   magnifies into spikes radiating from that point, which is the shrunken, spiky floor creep. */ \
+	"    float sd = dot(rel, nrm);\n" \
+	"    float perp = abs(sd);\n" \
+	"    vec3 edge = cross(N, nrm);\n" \
+	"    float edgeLen = length(edge);\n" \
+	"    vec2 t;\n" \
+	"    if (edgeLen > 0.05) {\n" \
+	"        edge /= edgeLen;\n" \
+	"        vec3 outward = cross(nrm, edge);\n" \
+	/* ABSOLUTE distance from the corner, because the impact's own shadow lands exactly ON it.
+	   Dropping the perpendicular from the impact onto this surface cannot move along the hit plane's
+	   normal, so its foot is always a point of the corner line -- and the walk is therefore symmetric
+	   about that line, with both sides equally far.
+	   Signing it instead, away from the hit plane, is wrong in both directions at once. It sends the
+	   creep the wrong way round a column, where the side faces run BACKWARDS from the corner and got
+	   nothing; and on the floor around that column it made the crossing coordinate pass through zero
+	   at the far side, painting a second full-strength copy of the mark's MIDDLE on bare floor well
+	   away from anything that was shot. */ \
+	"        float across = abs(dot(rel, outward));\n" \
+	"        float along  = dot(rel, edge);\n" \
+	"        float crossed = perp + across;\n" \
+	/* Which way the picture continues, taken from the hit surface's own coordinate at the corner: the
+	   direction from the impact towards this surface lies in the hit plane, so it reads off directly
+	   against the picture's axes. */ \
+	"        vec3 dir = nrm * sign(sd);\n" \
+	/* And which picture axis the corner runs along, which decides which of the two coordinates is
+	   which. A wall meeting a floor gives a HORIZONTAL corner, so the walk crosses the picture
+	   vertically; two walls meeting give a VERTICAL one and it crosses horizontally. Feeding both to
+	   the same axis turns the mark on its side as it goes round. */ \
+	"        float au = dot(edge, U), av = dot(edge, V);\n" \
+	"        if (abs(au) >= abs(av)) {\n" \
+	"            t = vec2(along * ((au < 0.0) ? -1.0 : 1.0),\n" \
+	"                     crossed * ((dot(dir, V) < 0.0) ? -1.0 : 1.0));\n" \
+	"        } else {\n" \
+	"            t = vec2(crossed * ((dot(dir, U) < 0.0) ? -1.0 : 1.0),\n" \
+	"                     along * ((av < 0.0) ? -1.0 : 1.0));\n" \
+	"        }\n" \
+	"        path = length(vec2(along, crossed));\n" \
+	"    } else {\n" \
+	/* No corner: this surface is the one that was hit, or parallel to it. Either way there is nothing
+	   to wrap around, so the picture lies flat and the walk is what it looks like. */ \
+	"        vec3 su = U - nrm * dot(nrm, U);\n" \
+	"        if (dot(su, su) < 0.05) su = V - nrm * dot(nrm, V);\n" \
+	"        su = normalize(su);\n" \
+	"        vec3 sv = cross(nrm, su);\n" \
+	"        if (dot(sv, V) - dot(sv, N) < 0.0) sv = -sv;\n" \
+	"        t = vec2(dot(rel, su), dot(rel, sv));\n" \
+	"        path = length(t) + perp;\n" \
+	"    }\n" \
+	"    return vec2(t.x * length(axisU), t.y * length(axisV)) * 0.5 + 0.5;\n" \
 	"}\n" \
+	/* The last of the creep fades rather than stopping, so a mark that still has picture left when it
+	   runs out of reach does not end on a line. The graphic's own alpha usually gets there first. */ \
+	"float fuaDecalReach(float path, float radius) {\n" \
+	"    return 1.0 - smoothstep(0.5, 1.0, path / radius);\n" \
+	"}\n"
 
 // [rc4l] A mark covers exactly the pixels its blast could possibly reach, and each one ONCE.
 //
@@ -877,10 +910,10 @@ static const char *kDecalPS =
 	"    vec4 gbuf = texture(uSceneNormal, uv);\n"
 	"    if (gbuf.a < 0.5) discard;\n"
 	"    vec3 nrm = normalize(gbuf.xyz * 2.0 - 1.0);\n"
-	"    float reach = fuaDecalReach(rel, nrm, vRadius);\n"
+	"    float path;\n"
+	"    vec2 t = fuaDecalUV(rel, nrm, vAxisU, vAxisV, vAxisN, path);\n"
+	"    float reach = fuaDecalReach(path, vRadius);\n"
 	"    if (reach <= 0.0) discard;\n"
-	"    vec2 t = fuaDecalUV(rel, nrm, vAxisU, vAxisV, vAxisN,\n"
-	"                        fuaDecalChord(abs(dot(rel, nrm)), vRadius), vRadius);\n"
 	/* Past the end of the picture. Clamped instead of dropped, the edge texel would repeat for
 	   ever -- a dragged row of texels by another route, which is the artifact all of this
 	   exists to avoid. */
@@ -933,10 +966,10 @@ static const char *kDecalRedPS =
 	"    vec4 gbuf = texture(uSceneNormal, uv);\n"
 	"    if (gbuf.a < 0.5) discard;\n"
 	"    vec3 nrm = normalize(gbuf.xyz * 2.0 - 1.0);\n"
-	"    float reach = fuaDecalReach(rel, nrm, vRadius);\n"
+	"    float path;\n"
+	"    vec2 t = fuaDecalUV(rel, nrm, vAxisU, vAxisV, vAxisN, path);\n"
+	"    float reach = fuaDecalReach(path, vRadius);\n"
 	"    if (reach <= 0.0) discard;\n"
-	"    vec2 t = fuaDecalUV(rel, nrm, vAxisU, vAxisV, vAxisN,\n"
-	"                        fuaDecalChord(abs(dot(rel, nrm)), vRadius), vRadius);\n"
 	"    if (any(lessThan(t, vec2(0.0))) || any(greaterThan(t, vec2(1.0)))) discard;\n"
 	"    float a = textureLod(uTex, t, 0.0).r * vColor.a * reach;\n"
 	"    if (a <= 0.0) discard;\n"
@@ -2895,7 +2928,12 @@ static int g_decalsDrawn = 0;   // DRAW CALLS, not marks -- runs of the same sta
 static int g_decalBoxes = 0;
 // [rc4l] How many boxes the decal pass drew, and in how many draw calls. Reported by fua_walldecals,
 // because "is this affordable" is a question about draw calls and the two numbers are rarely equal.
+// [rc4l] Why nothing was drawn, not just that nothing was. The pass has six ways to give up before
+// it submits anything and they all look identical from outside -- an unmarked wall -- so a count of
+// zero on its own costs a rebuild with a printf in it every time. This is that printf, kept.
+static const char *g_decalBail = "";
 void GetDecalPassStats(int &boxes, int &draws) { boxes = g_decalBoxes; draws = g_decalsDrawn; }
+const char *GetDecalPassBail() { return g_decalBail; }
 
 static void ReleaseDecalPass()
 {
@@ -3050,14 +3088,16 @@ static void DrawProjectedDecals(Diligent::IDeviceContext *ctx)
 	g_decalBoxes = 0;
 	const zx::levelmesh::ProjectedDecal *decals = NULL;
 	const int n = zx::levelmesh::GetProjectedDecals(&decals);
-	if (n <= 0 || decals == NULL) return;
-	if (!EnsureDecalPass()) return;
+	g_decalBail = "";
+	if (n <= 0 || decals == NULL) { g_decalBail = "nothing registered"; return; }
+	if (!EnsureDecalPass()) { g_decalBail = "pipeline would not build"; return; }
 	Diligent::ITextureView *depthSRV = SceneDepthSRV();
 	Diligent::ITextureView *normalSRV = SceneNormalSRV();
-	if (!depthSRV || !normalSRV) return;
+	if (!depthSRV) { g_decalBail = "no scene depth"; return; }
+	if (!normalSRV) { g_decalBail = "no scene normal"; return; }
 
 	float invMVP[16];
-	if (!InvertMatrix4(g_mvp, invMVP)) return;
+	if (!InvertMatrix4(g_mvp, invMVP)) { g_decalBail = "view matrix not invertible"; return; }
 	{
 		Diligent::MapHelper<float> cb(ctx, g_decalCB, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD);
 		for (int i = 0; i < 16; i++) cb[i] = invMVP[i];
@@ -3082,27 +3122,49 @@ static void DrawProjectedDecals(Diligent::IDeviceContext *ctx)
 		if (d.a <= 0.f || d.material == NULL) continue;
 		order.Push((unsigned)i);
 	}
-	if (order.Size() == 0) return;
+	if (order.Size() == 0) { g_decalBail = "every mark filtered out (no texture, or faded to nothing)"; return; }
 
-	// A stable sort by state. Decals blend, so order matters where two overlap -- and within one
-	// group the original order is kept, which is as much as the old path guaranteed anyway.
-	for (unsigned a = 1; a < order.Size(); a++)
+	// [rc4l] Stable, and ordered by WHEN each group's first mark arrived -- not by material pointer.
+	//
+	// Grouping is free to reorder marks that do not overlap, but two marks in the same place blend, so
+	// between those the order is the picture. Sorting on the material POINTER decided that order by
+	// wherever the allocator happened to put two textures, which is both arbitrary and stable enough to
+	// look deliberate: a scorch sat on top of its own glow every time, and would have sat under it on
+	// the next run.
+	//
+	// The engine already answers this. A decal template creates its LOWER decal first, so arrival order
+	// says scorch-then-glow, and keeping it only requires that groups be ranked by their EARLIEST
+	// member rather than by their address. Pairs then stay in the order they were made -- all the
+	// scorches, then all the glows -- while still collapsing to one draw per texture.
+	static TArray<unsigned> rank;
+	rank.Clear();
+	for (unsigned a = 0; a < order.Size(); a++)
 	{
-		const unsigned key = order[a];
-		const zx::levelmesh::ProjectedDecal &kd = decals[key];
-		unsigned b = a;
-		while (b > 0)
+		const zx::levelmesh::ProjectedDecal &d = decals[order[a]];
+		unsigned r = 0;
+		for (; r < rank.Size(); r++)
 		{
-			const zx::levelmesh::ProjectedDecal &pd = decals[order[b - 1]];
-			const bool later = (pd.material > kd.material) ||
-				(pd.material == kd.material && ((int)pd.additive > (int)kd.additive ||
-				((int)pd.additive == (int)kd.additive && (int)pd.redToAlpha > (int)kd.redToAlpha)));
-			if (!later) break;
-			order[b] = order[b - 1];
-			b--;
+			const zx::levelmesh::ProjectedDecal &f = decals[order[rank[r]]];
+			if (f.material == d.material && f.additive == d.additive && f.redToAlpha == d.redToAlpha)
+				break;
 		}
-		order[b] = key;
+		if (r == rank.Size()) rank.Push(a);
 	}
+
+	// Stable by rank, so marks within a group keep the order they arrived in as well.
+	static TArray<unsigned> sorted;
+	sorted.Clear();
+	for (unsigned r = 0; r < rank.Size(); r++)
+	{
+		const zx::levelmesh::ProjectedDecal &f = decals[order[rank[r]]];
+		for (unsigned a = 0; a < order.Size(); a++)
+		{
+			const zx::levelmesh::ProjectedDecal &d = decals[order[a]];
+			if (f.material == d.material && f.additive == d.additive && f.redToAlpha == d.redToAlpha)
+				sorted.Push(order[a]);
+		}
+	}
+	order = sorted;
 
 	for (unsigned k = 0; k < order.Size(); k++)
 	{
@@ -3136,9 +3198,9 @@ static void DrawProjectedDecals(Diligent::IDeviceContext *ctx)
 		inst.Push(rec);
 	}
 	g_decalBoxes = (int)inst.Size();
-	if (g_decalBoxes == 0) return;
+	if (g_decalBoxes == 0) { g_decalBail = "no instances built"; return; }
 
-	if (!g_decalInstBuf) return;
+	if (!g_decalInstBuf) { g_decalBail = "no instance buffer"; return; }
 	if (inst.Size() > g_decalInstCapacity) inst.Resize(g_decalInstCapacity);
 	ctx->UpdateBuffer(g_decalInstBuf, 0, (Diligent::Uint64)inst.Size() * sizeof(DecalInstance),
 		&inst[0], Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
