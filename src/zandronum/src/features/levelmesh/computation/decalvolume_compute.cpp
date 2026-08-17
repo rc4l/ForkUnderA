@@ -19,25 +19,6 @@ float Length3(const float a[3])
 	return std::sqrt(Dot3(a, a));
 }
 
-// [rc4l] Which way to carry, ramped through the middle rather than switched.
-//
-// The direction wanted is "the way we were already going", which is sign(t) -- and sign() jumps. A
-// fragment a hair either side of the decal's centre line would get +carry or -carry, tearing the
-// coordinate in two down the middle of every mark on anything but a flat surface. Worse than it
-// looks, because a shader picks its mip level from the DERIVATIVE of this coordinate: a jump reads
-// as an enormous derivative, the smallest mip is chosen, and the mark goes pale and streaky along
-// the tear.
-//
-// Ramping over a narrow band gives up a little accuracy exactly where the carry contributes least
-// -- near the centre line, where there is barely any distance to carry -- and buys continuity.
-const float kCarryRampBand = 0.12f;
-
-float CarryDirection(float t)
-{
-	const float d = t / kCarryRampBand;
-	return (d > 1.f) ? 1.f : ((d < -1.f) ? -1.f : d);
-}
-
 } // namespace
 
 float ComputeDecalBoxDepth(float halfW, float halfH)
@@ -91,40 +72,38 @@ void ComputeDecalLocal(const DecalFrame &f, const float rel[3], float local[3])
 	local[2] = Dot3(rel, f.n);
 }
 
-bool ComputeDecalUnwrapUV(const DecalFrame &f, const float local[3], const float nrm[3],
-                          float &outU, float &outV)
+bool ComputeDecalUnwrapUV(const DecalFrame &f, const float local[3], float &outU, float &outV)
 {
-	float tx = local[0], ty = local[1];
-
-	// The axes arrive divided by their half-extents, so the ratio of two lengths converts a distance
-	// measured in one axis's units into another's.
+	// The axes arrive divided by their half-extents, so a length here converts a world distance into
+	// the box units the texture coordinate is measured in.
 	const float lu = Length3(f.u), lv = Length3(f.v), ln = Length3(f.n);
 	if (!(lu > 0.f) || !(lv > 0.f) || !(ln > 0.f)) return false;
 
-	// Which axis has the surface turned about? A surface turned about V -- a wall met round a
-	// vertical corner -- has a normal with a component along U, and vice versa.
-	const float turnU = std::fabs(Dot3(nrm, f.u)) / lu;
-	const float turnV = std::fabs(Dot3(nrm, f.v)) / lv;
-	const float carry = std::fabs(local[2]) / ln;
+	const float tx = local[0], ty = local[1];
+	const float r = std::sqrt(tx * tx + ty * ty);
+	const float carry = std::fabs(local[2]) / ln;   // world units through the plane
 
-	// [rc4l] Split the carry between the axes rather than choosing one.
-	//
-	// Choosing was a hard switch on a normal the shader recovers from depth derivatives, and at a
-	// grazing angle those are differences of nearly-equal large numbers. The normal is therefore
-	// noisy, the switch flipped pixel to pixel and frame to frame, and the mark visibly reshaped as
-	// the camera moved. Weighting gives the same answer wherever the answer is clear -- a floor is
-	// all V, a side wall all U -- and a smooth mixture where it is not.
-	const float sum = turnU + turnV;
-	const float wu = (sum > 1e-5f) ? turnU / sum : 0.f;
-	const float wv = (sum > 1e-5f) ? turnV / sum : 0.f;
+	if (carry > 0.f)
+	{
+		// Dead centre with a distance to carry: the direction to continue in is genuinely undefined,
+		// and any answer would paint the middle texel of the mark across the whole depth of the box --
+		// which is the black slab. Report it past the end instead, so the caller discards.
+		if (r < 1e-4f) { outU = -1.f; outV = -1.f; return false; }
 
-	// Keep going the way we were already going: a floor below the mark continues downwards, a ceiling
-	// above it upwards, a wall to the right rightwards.
-	tx += CarryDirection(local[0]) * carry * lu * wu;
-	ty += CarryDirection(local[1]) * carry * lv * wv;
-
-	outU = tx * 0.5f + 0.5f;
-	outV = ty * 0.5f + 0.5f;
+		// How many box units one world unit is worth, along the direction this fragment lies in. A
+		// decal is rarely square, so the two axes convert differently and the mix follows the
+		// direction of travel.
+		const float dirx = tx / r, diry = ty / r;
+		const float scale = std::fabs(dirx) * lu + std::fabs(diry) * lv;
+		const float grow = (r + carry * scale) / r;
+		outU = tx * grow * 0.5f + 0.5f;
+		outV = ty * grow * 0.5f + 0.5f;
+	}
+	else
+	{
+		outU = tx * 0.5f + 0.5f;
+		outV = ty * 0.5f + 0.5f;
+	}
 	return outU >= 0.f && outU <= 1.f && outV >= 0.f && outV <= 1.f;
 }
 

@@ -81,20 +81,30 @@ void ComputeDecalLocal(const DecalFrame &f, const float rel[3], float local[3]);
 // shader cannot be called from here, so this is the specification and that is the transcription;
 // changing one without the other is the failure this file exists to make loud.
 //
-// `local` is the point in box units (from ComputeDecalLocal) and `nrm` is the surface's unit normal,
-// which the shader reconstructs from the derivatives of the world position.
+// `local` is the point in box units (from ComputeDecalLocal): x and y across the decal, z through it.
 //
 // The idea: `local.z` is how far the surface has moved through the plane the decal was shot at, and
-// around a corner that distance is exactly the distance travelled along the new surface away from
-// the join. Adding it to whichever texture axis the surface turned about continues the picture
-// across the join at its own scale -- seamless and unstretched -- and it costs nothing on the
-// original surface, where that distance is zero.
+// around a corner that distance is exactly the distance travelled along the new surface away from the
+// join. Pushing the coordinate that much further OUT FROM THE CENTRE continues the picture across the
+// join at its own scale -- seamless, unstretched -- and costs nothing on the original surface, where
+// the distance is zero.
+//
+// Radially, not per-axis. Two earlier versions added the distance to whichever axis the surface had
+// turned about, which needed the surface normal, and the normal has to be recovered from depth
+// derivatives -- noisy at grazing angles, so the choice of axis flickered and the mark visibly
+// reshaped as the camera moved. Worse, the direction to go had to come from sign(), which jumps at
+// the centre line: a hard switch tore the coordinate in two down the middle of the mark, and softening
+// the switch instead left the centre with no carry at all, so a surface deep inside the box kept
+// sampling the middle texel and painted the box's own faces as a black slab. Going outward from the
+// centre has neither problem. The direction is simply where the fragment already is, which is
+// continuous everywhere; and at the exact centre the scaling diverges, which puts the coordinate past
+// the end of the picture and DISCARDS it -- the one place with no answer is the one place nothing is
+// drawn. It needs no normal, so the wobble is gone with it.
 //
 // Returns false when the point is past the end of the picture, which the caller must DISCARD rather
-// than clamp: clamping repeats the edge texel for ever, which is the dragged column again by another
-// route.
-bool ComputeDecalUnwrapUV(const DecalFrame &f, const float local[3], const float nrm[3],
-                          float &outU, float &outV);
+// than clamp: clamping repeats the edge texel for ever, which is a dragged column of texels by
+// another route -- the artifact this whole scheme exists to remove.
+bool ComputeDecalUnwrapUV(const DecalFrame &f, const float local[3], float &outU, float &outV);
 
 }} // namespace zx::levelmesh
 

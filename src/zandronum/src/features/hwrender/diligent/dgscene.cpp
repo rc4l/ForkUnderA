@@ -649,69 +649,42 @@ static const char *kScenePSRedAlpha =
 // surface were flat. That is right on the surface the decal was shot at, and on anything gently
 // angled to it -- a slope, a step, a 3D floor -- which is what the pass is for. It is badly wrong the
 // moment a surface turns edge-on to the projection: the coordinate stops changing in the direction
-// you are travelling, so one column of texels is dragged along it. A rocket scorch streaking down
-// onto the floor, a BFG mark smeared round a right angle, a bullet hole stretched off a box edge --
-// all the same artifact, the same column.
+// you are travelling, so one column of texels is dragged along it.
 //
-// The temptation is to throw those surfaces away by their normal. That kills the artifact and the
-// feature with it: a mark shot into the join of a floor and a wall SHOULD carry onto both, and a mark
-// near a linedef join should carry onto the next wall, which is the whole reason wall decals came to
-// this pass. Discarding gives back the hard edge the quad already had.
+// Discarding those surfaces by their normal would kill the artifact and the feature with it: a mark
+// shot into the join of a floor and a wall SHOULD carry onto both. So unwrap instead of clipping.
+// `local.z` is how far the surface has moved THROUGH the plane the decal was shot at, and around a
+// corner that distance is exactly the distance travelled along the new surface away from the join.
+// Pushing the coordinate that much further OUT FROM THE CENTRE continues the picture across the join
+// at its own scale, and costs nothing on the original surface where the distance is zero.
 //
-// So unwrap instead of clipping. `c` is how far the surface has moved THROUGH the plane the decal was
-// shot at, and around a corner that distance is exactly the distance travelled along the new surface
-// away from the join. Adding it to whichever texture axis the surface turned about continues the
-// picture across the join at its own scale, seamlessly and unstretched:
+// Radially, not per-axis. Two earlier versions added the distance to whichever axis the surface had
+// turned about, which needed a surface normal recovered from depth derivatives -- noisy at grazing
+// angles, so the choice flickered and the mark reshaped as the camera moved. And the direction to go
+// came from sign(), which jumps at the centre line: switching tore the coordinate in two down the
+// middle of the mark, and softening the switch left the centre with no carry at all, so a surface
+// deep inside the box kept sampling the middle texel and painted the box's own faces as a black slab.
+// Outward from the centre has neither problem -- the direction is where the fragment already is, and
+// at the exact centre the scaling diverges, which discards. No normal, so no derivatives, so no
+// wobble, and the pass got cheaper.
 //
-//     on the wall   : c = 0            -> the coordinate is the flat one, unchanged
-//     onto the floor: b = -h, c = -d   -> t.y = -(h + d), the mark carrying on past the corner
-//
-// Which axis turned is read off the surface normal, which the reconstructed world position already
-// carries in its derivatives -- neighbouring pixels of one surface span it, so their cross product is
-// its normal, free and with no G-buffer. The result runs off the end of the texture when the decal is
-// used up, so the caller discards outside 0..1 rather than clamping, which would smear the edge texel
-// and reintroduce the streak by a different route.
 // This is a TRANSCRIPTION of ComputeDecalUnwrapUV in computation/decalvolume_compute.cpp, which the
-// gtest suite pins with property tests -- continuity across a join, identity on the original surface,
-// direction of travel, past-the-end. GLSL cannot be called from there, so the two have to be changed
-// together, and the tests are the description of what this must do.
+// gtest suite pins with property tests. GLSL cannot be called from there, so the two have to be
+// changed together, and the tests are the description of what this must do.
 #define FUA_DECAL_UNWRAP \
-	"vec2 fuaDecalUV(vec3 P, vec3 local, vec3 axisU, vec3 axisV, vec3 axisN) {\n" \
-	"    vec3 dpx = dFdx(P), dpy = dFdy(P);\n" \
-	"    vec3 nrm = normalize(cross(dpx, dpy));\n" \
+	"vec2 fuaDecalUV(vec3 local, vec3 axisU, vec3 axisV, vec3 axisN) {\n" \
 	"    vec2 t = local.xy;\n" \
-	/* The axes arrive divided by their half-extents, so the ratio of two lengths converts a
-	   distance measured in one axis's units into another's. */ \
-	"    float lu = length(axisU), lv = length(axisV), ln = length(axisN);\n" \
-	"    float turnU = abs(dot(nrm, axisU)) / lu;\n" \
-	"    float turnV = abs(dot(nrm, axisV)) / lv;\n" \
-	"    float carry = abs(local.z) / ln;\n" \
-	/* [rc4l] Split the carry between the axes rather than choosing one.
-	   Choosing was a hard switch on a normal that is only as good as the depth buffer it came from,
-	   and at a grazing angle the two derivatives of a reconstructed world position are differences
-	   of nearly-equal large numbers -- so the normal is noisy, the switch flips pixel to pixel and
-	   frame to frame, and the mark visibly reshapes as the camera moves. Weighting by how much the
-	   surface has turned about each axis gives the same answer wherever the answer is clear (a floor
-	   is all V, a side wall all U) and a smooth mixture where it is not, so noise in the normal moves
-	   the coordinate a little instead of jumping it. */ \
-	"    float sum = turnU + turnV;\n" \
-	"    float wu = (sum > 1e-5) ? turnU / sum : 0.0;\n" \
-	"    float wv = (sum > 1e-5) ? turnV / sum : 0.0;\n" \
-	/* [rc4l] Which WAY to continue -- ramped through the middle, not switched.
-	   Keep going the way we were already going: a floor below the mark continues downwards, a
-	   ceiling above it upwards, a wall to the right rightwards. sign() says that, and says it with a
-	   jump: a fragment a hair either side of the decal's centre line gets +carry or -carry, so the
-	   coordinate tears in two down the middle wherever the surface is not flat. That is the hard
-	   line down a scorch on a step, and it is worse than it looks, because the hardware picks a
-	   mip level from the DERIVATIVE of this coordinate -- a jump reads as an enormous derivative,
-	   the smallest mip is chosen, and the decal turns pale and streaky along the tear. "It lightens
-	   up when you walk towards it" is that, seen from close enough for the tear to cover pixels.
-	   Ramping over a narrow band costs a little accuracy exactly where the carry is smallest and
-	   makes the coordinate continuous, which is what both problems actually needed. */ \
-	"    vec2 dir = clamp(t / 0.12, -1.0, 1.0);\n" \
-	"    t.x += dir.x * carry * lu * wu;\n" \
-	"    t.y += dir.y * carry * lv * wv;\n" \
-	"    return t * 0.5 + 0.5;\n" \
+	/* The axes arrive divided by their half-extents, so a length converts a world distance into the
+	   box units the texture coordinate is measured in. */ \
+	"    float carry = abs(local.z) * (1.0 / length(axisN));\n" \
+	"    if (carry <= 0.0) return t * 0.5 + 0.5;\n" \
+	"    float r = length(t);\n" \
+	/* Dead centre with a distance to carry: no direction to continue in, and any answer paints the
+	   middle texel of the mark across the whole depth of the box. Sent past the end so it discards. */ \
+	"    if (r < 1e-4) return vec2(-1.0);\n" \
+	"    vec2 dirn = t / r;\n" \
+	"    float scale = abs(dirn.x) * length(axisU) + abs(dirn.y) * length(axisV);\n" \
+	"    return t * ((r + carry * scale) / r) * 0.5 + 0.5;\n" \
 	"}\n"
 
 static const char *kDecalVS =
@@ -772,7 +745,7 @@ static const char *kDecalPS =
 	"    if (any(greaterThan(abs(local), vec3(1.0)))) discard;\n"
 	/* Across and up the surface; the depth through it is ignored. That is what makes a mark follow a
 	   step, a slope, or the far side of a corner rather than stopping at it. */
-	"    vec2 t = fuaDecalUV(P, local, vAxisU, vAxisV, vAxisN);\n"
+	"    vec2 t = fuaDecalUV(local, vAxisU, vAxisV, vAxisN);\n"
 	/* Past the end of the picture. Clamping here would repeat the edge texel for ever, which is the
 	   dragged column again by another route, so the fragment is dropped instead. */
 	"    if (any(lessThan(t, vec2(0.0))) || any(greaterThan(t, vec2(1.0)))) discard;\n"
@@ -816,7 +789,7 @@ static const char *kDecalRedPS =
 	"    vec3 rel = P - vCentre;\n"
 	"    vec3 local = vec3(dot(rel, vAxisU), dot(rel, vAxisV), dot(rel, vAxisN));\n"
 	"    if (any(greaterThan(abs(local), vec3(1.0)))) discard;\n"
-	"    vec2 t = fuaDecalUV(P, local, vAxisU, vAxisV, vAxisN);\n"
+	"    vec2 t = fuaDecalUV(local, vAxisU, vAxisV, vAxisN);\n"
 	"    if (any(lessThan(t, vec2(0.0))) || any(greaterThan(t, vec2(1.0)))) discard;\n"
 	"    vec2 flat_uv = local.xy * 0.5 + 0.5;\n"
 	"    float a = textureGrad(uTex, t, dFdx(flat_uv), dFdy(flat_uv)).r * vColor.a;\n"
