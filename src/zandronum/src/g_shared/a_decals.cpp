@@ -45,6 +45,7 @@
 #include "colormatcher.h"
 #include "v_palette.h"
 #include "farchive.h"
+#include "features/levelmesh/flatdecals.h"   // [rc4l] decals on floors and ceilings
 
 static fixed_t DecalWidth, DecalLeft, DecalRight;
 static fixed_t SpreadZ;
@@ -793,6 +794,17 @@ DBaseDecal *ShootDecal(const FDecalTemplate *tpl, AActor *basisactor, sector_t *
 	Trace(x, y, z, sec,
 		finecosine[angle], finesine[angle], 0,
 		tracedist, 0, 0, NULL, trace, TRACE_NoSky);
+
+	// [rc4l] features/levelmesh: the ACS/DECORATE SpawnDecal path marks planes too.
+	//
+	// The last of the wall-only decal sites. A script that paints a mark on the ground got nothing at
+	// all before this, which is indistinguishable from the script being wrong.
+	if (trace.HitType == TRACE_HitFloor || trace.HitType == TRACE_HitCeiling)
+	{
+		zx::levelmesh::SpawnFlatDecal(tpl, trace.X, trace.Y, trace.Z,
+			trace.HitType == TRACE_HitCeiling, trace.ffloor);
+		return NULL;   // no DBaseDecal exists for a plane; the mark lives in the flat decal list
+	}
 
 	if (trace.HitType == TRACE_HitWall)
 	{

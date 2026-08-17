@@ -76,6 +76,8 @@
 #include "chat.h"
 #include "mcp_ticprof.h" // [ForkUnderA] per-tic sim profiler anchors (no-op unless FUA_MCP_BRIDGE)
 #include "mcp_simtrace.h" // [ForkUnderA] sim tracer tic boundary (no-op unless FUA_MCP_BRIDGE)
+#include "features/levelmesh/flatdecals.h"   // [rc4l] decals on floors and ceilings
+#include "decallib.h"                        // [rc4l] DecalLibrary, to resolve a decal by name
 
 EXTERN_CVAR (Int, disableautosave)
 EXTERN_CVAR (Int, autosavecount)
@@ -2343,6 +2345,15 @@ void Net_DoCommand (int type, BYTE **stream, int player)
 					DImpactDecal::StaticCreate (s,
 						trace.X, trace.Y, trace.Z,
 						trace.Line->sidedef[trace.Side], NULL);
+				}
+				// [rc4l] features/levelmesh: and on planes, so a decal another player painted on the
+				// ground arrives here as well. Looked up by name because that is what the wire carries.
+				else if (trace.HitType == TRACE_HitFloor || trace.HitType == TRACE_HitCeiling)
+				{
+					const FDecalTemplate *tpl = DecalLibrary.GetDecalByName (s);
+					if (tpl != NULL)
+						zx::levelmesh::SpawnFlatDecal (tpl, trace.X, trace.Y, trace.Z,
+							trace.HitType == TRACE_HitCeiling, trace.ffloor);
 				}
 			}
 		}
