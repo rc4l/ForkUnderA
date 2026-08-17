@@ -125,14 +125,26 @@ void *Fua_CreateBackendWindow(const char *title, int w, int h)
 		NULL, NULL, GetModuleHandle(NULL), NULL);
 	if (hwnd != NULL)
 	{
-		// Beside the engine's window rather than on top of it: the whole point is seeing both at once.
-		HWND fg = GetForegroundWindow();
-		RECT fr;
-		if (fg != NULL && fg != hwnd && GetWindowRect(fg, &fr))
+		// [rc4l] Beside the ENGINE's window, and clamped onto the desktop.
+		//
+		// This used to anchor to GetForegroundWindow(), which at creation time is whatever the user
+		// happened to be looking at -- usually a maximised editor. Placing the window eight pixels
+		// past its right edge put it entirely off-screen, so the side-by-side build looked exactly
+		// like the embedded one: a single window, with the second one sitting in nowhere.
+		const int w = rc.right - rc.left, h = rc.bottom - rc.top;
+		int x = 40, y = 40;
+		RECT er;
+		if (Window != NULL && GetWindowRect(Window, &er)) { x = er.right + 8; y = er.top; }
+
+		RECT work;
+		if (SystemParametersInfo(SPI_GETWORKAREA, 0, &work, 0))
 		{
-			SetWindowPos(hwnd, HWND_TOP, fr.right + 8, fr.top,
-				0, 0, SWP_NOSIZE | SWP_NOACTIVATE);
+			if (x + w > work.right)  x = work.right - w;    // no room to the right: overlap instead
+			if (y + h > work.bottom) y = work.bottom - h;
+			if (x < work.left) x = work.left;
+			if (y < work.top)  y = work.top;
 		}
+		SetWindowPos(hwnd, HWND_TOP, x, y, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE);
 	}
 	return (void *)hwnd;
 }
