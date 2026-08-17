@@ -83,6 +83,7 @@ static_assert(ZX_TRACE_HitActor == TRACE_HitActor, "TRACE_Hit mirror out of sync
 #include "d_netinf.h"
 #include "v_video.h"
 #include "features/ripper/computation/ripper_compute.h"	// [MGOOOOOO] rip budget decisions
+#include "features/levelmesh/flatdecals.h"   // [rc4l] decals on floors and ceilings
 
 // [MGOOOOOO] Collects a ripping projectile's DECORATE-authored budget for the pure decision
 // helpers. All-zero (the default) means unlimited, so a ripper that sets none of these resolves
@@ -4676,6 +4677,27 @@ AActor *P_LineAttack(AActor *t1, angle_t angle, fixed_t distance,
 			// [CK] If we don't want decals, stop before entering.
 			if ( NETWORK_InClientMode() && cl_hitscandecalhack == false ) 
 				return NULL;
+
+			// [rc4l] features/levelmesh: mark FLOORS and CEILINGS too.
+			//
+			// The branch below only fires for TRACE_HitWall, because a Doom decal is a wall object --
+			// DBaseDecal hangs off a sidedef and is positioned along a linedef. Shooting the floor has
+			// always left it unmarked. These records live outside DBaseDecal entirely; see
+			// features/levelmesh/flatdecals.h.
+			zx::levelmesh::NoteImpact((int)trace.HitType, !!(flags & LAF_NOIMPACTDECAL),
+				puffDefaults != NULL && !!(puffDefaults->flags7 & MF7_NODECAL));
+			if ((trace.HitType == TRACE_HitFloor || trace.HitType == TRACE_HitCeiling) &&
+				!(flags & LAF_NOIMPACTDECAL) && !(puffDefaults->flags7 & MF7_NODECAL))
+			{
+				FDecalBase *base = NULL;
+				if (t1->player != NULL && t1->player->ReadyWeapon != NULL)
+					base = t1->player->ReadyWeapon->GetDefault()->DecalGenerator;
+				if (base == NULL) base = t1->DecalGenerator;
+				if (base == NULL && puff != NULL) base = puff->DecalGenerator;
+				if (base != NULL)
+					zx::levelmesh::SpawnFlatDecal(base->GetDecal(), trace.X, trace.Y, trace.Z,
+						trace.HitType == TRACE_HitCeiling);
+			}
 
 			// [RH] Spawn a decal
 			if (trace.HitType == TRACE_HitWall && trace.Line->special != Line_Horizon && !(flags & LAF_NOIMPACTDECAL) && !(puffDefaults->flags7 & MF7_NODECAL))
