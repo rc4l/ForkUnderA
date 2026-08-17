@@ -2695,8 +2695,7 @@ static void RenderMirrors(Diligent::IDeviceContext *ctx)
 		if (said != (int)traced)
 		{
 			said = (int)traced;
-			Printf("vulkan mirrors: %s
-", traced ? "ray traced" : "planar (no ray tracing)");
+			Printf("vulkan mirrors: %s\n", traced ? "ray traced" : "planar (no ray tracing)");
 		}
 	}
 
