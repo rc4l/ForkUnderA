@@ -95,6 +95,31 @@ static const secplane_t *DecalPlane(const sector_t *sec, F3DFloor *rover, bool c
 	return ceiling ? &sec->ceilingplane : &sec->floorplane;
 }
 
+// [rc4l] A wall decal, kept as a box with a fixed orientation.
+//
+// Unlike a flat decal there is nothing to re-sample per frame: a wall does not rise and fall the way
+// a lift's floor does, so the basis worked out at spawn stays true. The ring is separate from the
+// flat one only because the records genuinely differ -- this one has no plane to ride and no rover.
+struct WallDecal
+{
+	float      x, y, z;              // centre, map space
+	float      ux, uy;               // along the wall, unit; V is always straight up
+	float      nx, ny;               // out of the wall, unit
+	bool       flipV;                // the graphic is drawn mirrored top to bottom
+	FTextureID pic;
+	float      halfW, halfH;
+	float      alpha;
+	DWORD      shadeColor;
+	bool       redToAlpha;
+	bool       additive;
+	int        light;
+	FColormap  cm;
+	int        spawnTic;
+	bool       fades;
+};
+static WallDecal g_wall[kMaxFlatDecals];
+static int g_wallNext = 0, g_wallCount = 0;
+
 static FlatDecal g_decals[kMaxFlatDecals];
 // This frame's decals expressed as volumes, for the projected pass. Rebuilt every frame from the
 // same records, so nothing about spawning or fading changes.
@@ -143,6 +168,95 @@ void ClearFlatDecals()
 {
 	g_count = 0;
 	g_next = 0;
+	ClearWallDecals();
+}
+
+void ClearWallDecals()
+{
+	g_wallCount = 0;
+	g_wallNext = 0;
+}
+
+void SpawnWallDecal(const DBaseDecal *decal, const side_t *wall, const FDecalTemplate *tpl)
+{
+	if (!fua_flat_decals || decal == NULL || wall == NULL) return;
+	if (!decal->PicNum.isValid()) return;
+	const line_t *ld = wall->linedef;
+	if (ld == NULL) return;
+
+	// Along the wall, and out of it. The 2D normal of a line is its direction turned a quarter turn;
+	// which of the two quarter turns is the outward one depends on the side the decal stuck to.
+	const float dx = FIXED2FLOAT(ld->dx), dy = FIXED2FLOAT(ld->dy);
+	const float len = sqrtf(dx * dx + dy * dy);
+	if (len <= 0.f) return;
+	const float ux = dx / len, uy = dy / len;
+	const bool back = (ld->sidedef[1] == wall);
+	const float nx = back ? -uy :  uy;
+	const float ny = back ?  ux : -ux;
+
+	FMaterial *mat = FMaterial::ValidateTexture(decal->PicNum, true, true);
+	if (mat == NULL) return;
+	const float sx = FIXED2FLOAT(decal->ScaleX), sy = FIXED2FLOAT(decal->ScaleY);
+	const float halfW = mat->TextureWidth() * sx * 0.5f;
+	const float halfH = mat->TextureHeight() * sy * 0.5f;
+	if (halfW <= 0.f || halfH <= 0.f) return;
+
+	fixed_t dxpos, dypos;
+	const_cast<DBaseDecal *>(decal)->GetXY(const_cast<side_t *>(wall), dxpos, dypos);
+
+	// [rc4l] From the decal's ANCHOR to the centre of its box.
+	//
+	// GetXY and GetRealZ give the point the graphic hangs from, not the middle of it, and the two are
+	// only the same when the graphic's offsets happen to sit at its middle. gl_decal.cpp works the
+	// same corner out as `pixpos - leftoffset` and `zpos + topoffset - height`; this is the middle of
+	// that, so a decal that is offset in its lump lands where GL puts it rather than half a graphic
+	// away. The flips swap which edge the offset is measured from.
+	const bool flipX = !!(decal->RenderFlags & RF_XFLIP);
+	const bool flipY = !!(decal->RenderFlags & RF_YFLIP);
+	const float leftOff = mat->GetLeftOffset() * sx;
+	const float topOff  = mat->GetTopOffset()  * sy;
+	const float alongOff = halfW - (flipX ? (halfW * 2.f - leftOff) : leftOff);
+	const float upOff = (flipY ? (halfH * 2.f - topOff) : topOff) - halfH;
+
+	WallDecal &w = g_wall[g_wallNext];
+	w.x = FIXED2FLOAT(dxpos) + ux * alongOff;
+	w.y = FIXED2FLOAT(dypos) + uy * alongOff;
+	// GetRealZ resolves the RF_RELATIVE flags -- a decal on a door track is stored relative to the
+	// plane that moves it, and its stored Z alone is meaningless.
+	w.z = FIXED2FLOAT(decal->GetRealZ(wall)) + upOff;
+	// A flipped graphic is drawn mirrored; turning the axis round is the same thing and costs the
+	// shader nothing.
+	w.ux = flipX ? -ux : ux; w.uy = flipX ? -uy : uy;
+	w.flipV = flipY;
+	w.nx = nx; w.ny = ny;
+	w.pic = decal->PicNum;
+	w.halfW = halfW; w.halfH = halfH;
+	w.alpha = FIXED2FLOAT(decal->Alpha);
+	if (w.alpha <= 0.f || w.alpha > 1.f) w.alpha = 1.f;
+	w.shadeColor = decal->AlphaColor & 0xffffff;
+	w.redToAlpha = !!(decal->RenderStyle.Flags & STYLEF_RedIsAlpha);
+	w.additive = decal->RenderStyle.BlendOp == STYLEOP_Add &&
+	             decal->RenderStyle.DestAlpha == STYLEALPHA_One;
+
+	// Lit once, by the sector behind the wall face, with the sidedef's own relative light. A wall
+	// decal cannot change sectors the way a thing can, so there is nothing to re-read per frame.
+	const sector_t *sec = wall->sector;
+	w.light = wall->GetLightLevel(false, sec ? sec->lightlevel : 255, true);
+	w.cm.Clear();
+	if (sec != NULL && sec->ColorMap != NULL)
+	{
+		w.cm.LightColor = sec->ColorMap->Color;
+		w.cm.FadeColor = sec->ColorMap->Fade;
+		w.cm.desaturation = sec->ColorMap->Desaturate;
+	}
+
+	w.spawnTic = level.maptime;
+	// An animated decal is a temporary one -- see the flat ring. Without this the plasma glow, which
+	// is additive, would sit at full brightness on the wall forever.
+	w.fades = (tpl != NULL && tpl->Animator != NULL);
+
+	g_wallNext = (g_wallNext + 1) % kMaxFlatDecals;
+	if (g_wallCount < kMaxFlatDecals) g_wallCount++;
 }
 
 void SpawnFlatDecal(const FDecalTemplate *tpl, fixed_t x, fixed_t y, fixed_t z, bool ceiling,
@@ -221,10 +335,78 @@ void SpawnFlatDecal(const FDecalTemplate *tpl, fixed_t x, fixed_t y, fixed_t z, 
 	if (g_count < kMaxFlatDecals) g_count++;
 }
 
+// [rc4l] Store the box's orientation, pre-divided by its own half-extents.
+//
+// Doing the division here rather than in the shader is what makes the inside test a bare dot product
+// per axis: `dot(P - centre, axis)` already comes out in -1..1 across the box. The unscaled extents
+// are kept alongside so the vertex buffer can still build the eight corners.
+static void SetDecalBasis(ProjectedDecal &pd,
+                          float ux, float uy, float uz,
+                          float vx, float vy, float vz,
+                          float nx, float ny, float nz,
+                          float halfW, float halfH, float halfDepth)
+{
+	pd.ux = ux / halfW;  pd.uy = uy / halfW;  pd.uz = uz / halfW;
+	pd.vx = vx / halfH;  pd.vy = vy / halfH;  pd.vz = vz / halfH;
+	pd.nx = nx / halfDepth; pd.ny = ny / halfDepth; pd.nz = nz / halfDepth;
+	pd.halfW = halfW; pd.halfH = halfH; pd.halfDepth = halfDepth;
+}
+
+// [rc4l] How far a wall decal's box reaches THROUGH the wall.
+//
+// Shallower than a flat's, because the depth axis is horizontal here and a Doom wall is often the
+// only thing between two rooms; reaching too far would print the mark on the far side. Sixteen is
+// still enough to carry a mark round an inside corner onto the wall it meets.
+static const float kWallDecalDepth = 16.f;
+
+static void RegisterWallDecals()
+{
+	for (int i = 0; i < g_wallCount; i++)
+	{
+		const WallDecal &w = g_wall[i];
+		FMaterial *mat = FMaterial::ValidateTexture(w.pic, true, true);
+		if (mat == NULL) continue;
+
+		float fade = 1.f;
+		if (w.fades)
+		{
+			const int age = level.maptime - w.spawnTic;
+			if (age >= kFadeTics) continue;
+			if (age > 0) fade = 1.f - (float)age / (float)kFadeTics;
+		}
+
+		MeshPiece lit;
+		CaptureShading(w.light, getExtraLight(), const_cast<FColormap &>(w.cm), lit);
+
+		ProjectedDecal pd;
+		pd.x = w.x; pd.y = w.y; pd.z = w.z;
+		// U runs along the wall, V straight up, N out of its face. That is the whole difference from a
+		// flat -- and it is the only difference, which is the point of carrying a basis at all.
+		SetDecalBasis(pd, w.ux, w.uy, 0.f,
+		                  0.f, 0.f, w.flipV ? -1.f : 1.f,
+		                  w.nx, w.ny, 0.f,
+		                  w.halfW, w.halfH, kWallDecalDepth);
+		pd.material = mat;
+		pd.r = lit.colorR; pd.g = lit.colorG; pd.b = lit.colorB;
+		if (w.redToAlpha)
+		{
+			pd.r *= ((w.shadeColor >> 16) & 0xff) / 255.f;
+			pd.g *= ((w.shadeColor >> 8) & 0xff) / 255.f;
+			pd.b *= (w.shadeColor & 0xff) / 255.f;
+		}
+		pd.a = w.alpha * fade;
+		pd.additive = w.additive;
+		pd.redToAlpha = w.redToAlpha;
+		g_projected.Push(pd);
+	}
+}
+
 void RegisterFlatDecals()
 {
 	g_projected.Clear();
-	if (!fua_flat_decals || g_count == 0) return;
+	if (!fua_flat_decals) return;
+	RegisterWallDecals();
+	if (g_count == 0) return;
 
 	g_emitted = 0;
 	for (int i = 0; i < g_count; i++)
@@ -268,17 +450,24 @@ void RegisterFlatDecals()
 		MeshPiece lit;
 		CaptureShading(light, getExtraLight(), cm, lit);
 
-		ProjectedDecal pd;
-		pd.x = d.x; pd.y = d.y; pd.z = pz;
-		pd.halfW = hw; pd.halfH = hh;
-		// [rc4l] How far through the surface the box reaches.
+		// [rc4l] The last number is how far THROUGH the surface the box reaches.
 		//
 		// Everything outside the box is discarded, so this is what decides how much of a decal
 		// survives: at eight units a mark on anything but dead-flat ground came out clipped, because
 		// the surface wandered out of the box within the decal's own width. Twenty-four is about
 		// three quarters of a step -- deep enough to keep a mark whole across a slope or a small
-		// ledge, shallow enough that it cannot reach the floor below or the ceiling above.
-		pd.halfDepth = 24.f;
+		// ledge, shallow enough that it cannot reach the floor below or the ceiling above. It is also
+		// what lets a mark shot into a corner creep up the adjoining wall instead of stopping dead at
+		// the join, since the wall is inside the box for its first twenty-four units.
+		//
+		// A flat's basis is the world's: U east, V north, N up. Ceilings read V the other way, so a
+		// mark seen from below is not the mirror of the same mark seen from above.
+		ProjectedDecal pd;
+		pd.x = d.x; pd.y = d.y; pd.z = pz;
+		SetDecalBasis(pd, 1.f, 0.f, 0.f,
+		                  0.f, d.ceiling ? -1.f : 1.f, 0.f,
+		                  0.f, 0.f, 1.f,
+		                  hw, hh, 24.f);
 		pd.material = mat;
 		pd.r = lit.colorR; pd.g = lit.colorG; pd.b = lit.colorB;
 		if (d.redToAlpha)
@@ -290,7 +479,6 @@ void RegisterFlatDecals()
 		pd.a = d.alpha * fade;
 		pd.additive = d.additive;
 		pd.redToAlpha = d.redToAlpha;
-		pd.ceiling = d.ceiling;
 		g_projected.Push(pd);
 
 		g_lastX = d.x; g_lastY = d.y; g_lastZ = pz;
