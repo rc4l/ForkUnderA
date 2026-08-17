@@ -42,10 +42,17 @@ if [ -n "$X" ]; then
 fi
 
 node src/cli.mjs rpc sim.pause '{}' --port "$PORT" --token "$TOK" >/dev/null 2>&1
-sleep 1
-node src/cli.mjs ui screenshot "sweep/${TAG}_gl" --port "$PORT" --token "$TOK" >/dev/null 2>&1
-sleep 1
-node src/cli.mjs ui exec "fua_diligent_shot $OUT/${TAG}_vk.png" --port "$PORT" --token "$TOK" >/dev/null 2>&1
-sleep 2
+
+# [rc4l] Wait for the FILE, not for a guess about how long the engine takes to write it. These were
+# fixed sleeps totalling seven seconds a capture, which is most of a capture.
+shot() {
+  local want="$1"; shift
+  rm -f "$want"
+  node src/cli.mjs "$@" --port "$PORT" --token "$TOK" >/dev/null 2>&1
+  for _ in $(seq 40); do [ -s "$want" ] && return 0; sleep 0.25; done
+  echo "no $want after 10s" >&2; return 1
+}
+shot "$OUT/${TAG}_gl.png" ui screenshot "sweep/${TAG}_gl" || true
+shot "$OUT/${TAG}_vk.png" ui exec "fua_diligent_shot $OUT/${TAG}_vk.png" || true
 node pngstats.mjs --diff "$OUT/${TAG}_gl.png" "$OUT/${TAG}_vk.png"
 node src/cli.mjs rpc sim.resume '{}' --port "$PORT" --token "$TOK" >/dev/null 2>&1 || true
