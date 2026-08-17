@@ -480,14 +480,20 @@ static const char *kScenePSTrans =
 
 // [rc4l] Column-major perspective * view, matching the GL renderer's convention in
 // FGLRenderer::SetProjection/SetViewMatrix: X east, Y up, Z south, with the pixel-stretch flip.
+// [rc4l] fovOverride/aspectOverride are for camera textures, which are rarely the screen's shape and
+// carry their own field of view. Zero means "use the screen's", which is every ordinary frame.
+static float g_fovOverride = 0.f, g_aspectOverride = 0.f;
+
 static void BuildMVP(float *m)
 {
-	const float fovY = 74.0f * 3.14159265f / 180.0f;
+	float fovY = 74.0f * 3.14159265f / 180.0f;
+	if (g_fovOverride > 0.f) fovY = g_fovOverride;
 	// [rc4l] From the swapchain, not a constant. A hard-coded 16:10 meant the backend framed the
 	// world differently from the engine window, so a screenshot pair could never be compared
 	// pixel-for-pixel -- the same screen position was a different part of the level in each.
 	float aspect = 16.0f / 10.0f;
-	if (auto *swap = GetSwapChain())
+	if (g_aspectOverride > 0.f) aspect = g_aspectOverride;
+	else if (auto *swap = GetSwapChain())
 	{
 		const auto &sd = swap->GetDesc();
 		if (sd.Height > 0) aspect = (float)sd.Width / (float)sd.Height;
@@ -2051,6 +2057,14 @@ static void CollectDynamicLights(Diligent::IDeviceContext *ctx)
 	}
 }
 
+// [rc4l] Everything that draws the WORLD, with the render target already bound and cleared.
+//
+// Split out of DrawSceneOnce so the same code can draw into something other than the screen. A camera
+// texture is the same world from a different viewpoint, so it wants exactly this and none of the
+// screen-only parts -- no 2D layer, no present, no window pump. Portals and mirrors will want the
+// same seam.
+static void DrawWorld(Diligent::IDeviceContext *ctx);
+
 static void DrawSceneOnce(bool present = true, bool pump = true)
 {
 	auto *ctx = GetContext();
@@ -2064,6 +2078,144 @@ static void DrawSceneOnce(bool present = true, bool pump = true)
 	ctx->ClearDepthStencil(dsv, Diligent::CLEAR_DEPTH_FLAG, 1.0f, 0,
 		Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
+	DrawWorld(ctx);
+
+	// [rc4l] 2D last, over everything, with depth off entirely -- it is the frame's top layer.
+	Draw2D(ctx);
+
+	if (present)
+	{
+		swap->Present(0);
+		// [rc4l] The Win32 message pump is NOT free -- PeekMessage on a window with pending paint
+		// work costs more than the draw at these scales. Pumping every frame put 1.5 ms into a
+		// 0.01 ms submission, so the benchmark pumps sparsely and a real backend would pump once
+		// per engine frame, not once per present.
+		if (pump) Fua_PumpBackendWindow(GetBackendWindow());
+		// The embedded surface follows the engine's client area, which can change at runtime.
+		Fua_SyncBackendWindowToParent(GetBackendWindow());
+	}
+}
+
+// [rc4l] Camera textures: the world, rendered from somewhere else, into a texture.
+//
+// A camera texture has no pixels of its own -- the engine renders into it every frame -- so reading
+// its bytes returns whatever the buffer happens to hold. That was the red/blue noise on gvh06's
+// teleporter and the flat slab on gvh07's monitor: the same bug wearing two faces.
+//
+// Nothing here is specific to cameras. It is the world drawn with a different view matrix into a
+// different target, which is also what a portal, a mirror and a skybox each need, so this is the
+// seam those get built on rather than a one-off.
+struct CameraTarget
+{
+	const void *material;
+	int w, h;
+	Diligent::RefCntAutoPtr<Diligent::ITexture> color, depth;
+	Diligent::ITextureView *rtv, *dsv, *srv;
+};
+static TArray<CameraTarget *> g_cameraTargets;
+
+static CameraTarget *GetCameraTarget(const void *material, int w, int h)
+{
+	for (unsigned i = 0; i < g_cameraTargets.Size(); i++)
+	{
+		CameraTarget *c = g_cameraTargets[i];
+		if (c->material == material && c->w == w && c->h == h) return c;
+	}
+	auto *dev = GetDevice();
+	auto *swap = GetSwapChain();
+	if (!dev || !swap || w <= 0 || h <= 0) return NULL;
+
+	CameraTarget *c = new CameraTarget();
+	c->material = material; c->w = w; c->h = h;
+	c->rtv = c->dsv = c->srv = NULL;
+
+	Diligent::TextureDesc td;
+	td.Name = "fua camera colour";
+	td.Type = Diligent::RESOURCE_DIM_TEX_2D;
+	td.Width = (Diligent::Uint32)w; td.Height = (Diligent::Uint32)h;
+	td.Format = swap->GetDesc().ColorBufferFormat;
+	td.BindFlags = Diligent::BIND_RENDER_TARGET | Diligent::BIND_SHADER_RESOURCE;
+	dev->CreateTexture(td, nullptr, &c->color);
+
+	Diligent::TextureDesc dd = td;
+	dd.Name = "fua camera depth";
+	dd.Format = swap->GetDesc().DepthBufferFormat;
+	dd.BindFlags = Diligent::BIND_DEPTH_STENCIL;
+	dev->CreateTexture(dd, nullptr, &c->depth);
+
+	if (!c->color || !c->depth) { delete c; return NULL; }
+	c->rtv = c->color->GetDefaultView(Diligent::TEXTURE_VIEW_RENDER_TARGET);
+	c->srv = c->color->GetDefaultView(Diligent::TEXTURE_VIEW_SHADER_RESOURCE);
+	c->dsv = c->depth->GetDefaultView(Diligent::TEXTURE_VIEW_DEPTH_STENCIL);
+	g_cameraTargets.Push(c);
+	return c;
+}
+
+// The rendered view for a canvas material, or NULL if it has never been rendered.
+Diligent::ITextureView *GetCameraSRV(const void *material)
+{
+	for (unsigned i = 0; i < g_cameraTargets.Size(); i++)
+		if (g_cameraTargets[i]->material == material) return g_cameraTargets[i]->srv;
+	return NULL;
+}
+
+// [rc4l] Render one camera texture. Called from FGLInterface::RenderTextureView, once per visible
+// camera per frame, with the viewpoint the engine picked.
+//
+// The viewpoint arrives by temporarily standing the global camera somewhere else. BuildMVP reads
+// viewx/viewy/viewz/viewangle/viewpitch because every other caller wants the player's view; swapping
+// them around this call is smaller and less error-prone than threading a viewpoint through the
+// matrix builder and every one of its callers, and they are restored before anything else can look.
+void RenderCameraTexture(const void *material, int w, int h,
+                         int px, int py, int pz, unsigned int pangle, int ppitch, float fovDeg)
+{
+	if (!GetDevice() || !g_vb || !g_scenePSO) return;
+	CameraTarget *cam = GetCameraTarget(material, w, h);
+	if (!cam) return;
+
+	auto *ctx = GetContext();
+
+	const fixed_t sx = viewx, sy = viewy, sz = viewz;
+	const angle_t sa = viewangle;
+	const int sp = viewpitch;
+	viewx = px; viewy = py; viewz = pz; viewangle = pangle; viewpitch = ppitch;
+	g_fovOverride = fovDeg * 3.14159265f / 180.0f;
+	g_aspectOverride = (h > 0) ? (float)w / (float)h : 1.f;
+	BuildMVP(g_mvp);
+	g_fovOverride = g_aspectOverride = 0.f;
+	viewx = sx; viewy = sy; viewz = sz; viewangle = sa; viewpitch = sp;
+
+	Diligent::ITextureView *rtv = cam->rtv;
+	ctx->SetRenderTargets(1, &rtv, cam->dsv, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	Diligent::Viewport vp;
+	vp.TopLeftX = 0; vp.TopLeftY = 0;
+	vp.Width = (float)w; vp.Height = (float)h;
+	vp.MinDepth = 0.f; vp.MaxDepth = 1.f;
+	ctx->SetViewports(1, &vp, (Diligent::Uint32)w, (Diligent::Uint32)h);
+	const float clear[4] = { 0.05f, 0.06f, 0.09f, 1.0f };
+	ctx->ClearRenderTarget(rtv, clear, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	ctx->ClearDepthStencil(cam->dsv, Diligent::CLEAR_DEPTH_FLAG, 1.0f, 0,
+		Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+
+	DrawWorld(ctx);
+
+	// Hand the screen back its own target and full viewport; the main pass assumes both.
+	auto *swap = GetSwapChain();
+	auto *brtv = swap->GetCurrentBackBufferRTV();
+	auto *bdsv = swap->GetDepthBufferDSV();
+	ctx->SetRenderTargets(1, &brtv, bdsv, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	ctx->SetViewports(1, nullptr, 0, 0);
+	BuildMVP(g_mvp);
+}
+
+void ReleaseCameraTargets()
+{
+	for (unsigned i = 0; i < g_cameraTargets.Size(); i++) delete g_cameraTargets[i];
+	g_cameraTargets.Clear();
+}
+
+static void DrawWorld(Diligent::IDeviceContext *ctx)
+{
 	// [rc4l] Lights are collected BEFORE the constants are written -- the shader reads the count from
 	// there, so collecting afterwards would light every frame with the previous frame's count.
 	RefreshMovedGeometry(ctx);
@@ -2153,20 +2305,6 @@ static void DrawSceneOnce(bool present = true, bool pump = true)
 	// sprite quads reject most of their fragments instead of shading them.
 	DrawDynamic(ctx);
 
-	// [rc4l] 2D last, over everything, with depth off entirely -- it is the frame's top layer.
-	Draw2D(ctx);
-
-	if (present)
-	{
-		swap->Present(0);
-		// [rc4l] The Win32 message pump is NOT free -- PeekMessage on a window with pending paint
-		// work costs more than the draw at these scales. Pumping every frame put 1.5 ms into a
-		// 0.01 ms submission, so the benchmark pumps sparsely and a real backend would pump once
-		// per engine frame, not once per present.
-		if (pump) Fua_PumpBackendWindow(GetBackendWindow());
-		// The embedded surface follows the engine's client area, which can change at runtime.
-		Fua_SyncBackendWindowToParent(GetBackendWindow());
-	}
 }
 
 bool SceneBench(int frames, FString &report)
@@ -2244,6 +2382,8 @@ bool SceneBench(int frames, FString &report)
 // rendered frame acts on -- so the upload cannot follow in the same breath, and an upload with no
 // mesh behind it fails with "no baked geometry" and would leave the backend permanently blank. Hence
 // the wait: arm, let a frame or two go by, then upload.
+void ReleaseCameraTargets();
+
 static bool AutoSetupForLevel()
 {
 	static int  s_gen = -1;
@@ -2272,6 +2412,8 @@ static bool AutoSetupForLevel()
 		ReleaseMaterialSRBs();
 		for (unsigned int b = 0; b < g_batches.Size(); b++) g_batches[b].srb = NULL;
 		ReleaseMaterials();
+		// Camera targets are keyed on FMaterial* too, and go stale for exactly the same reason.
+		ReleaseCameraTargets();
 		g_skyMaterial = NULL;
 		g_skyBuiltValid = false;
 		// [rc4l] The switch implies the level mesh. gl_wallmesh is off by default, so the first

@@ -52,6 +52,14 @@ struct Quad2D
 	float       lx2, ly2;
 };
 
+// [rc4l] Render one camera texture: the world from another viewpoint, into the backend's own target.
+//
+// This is the one thing a backend cannot get by replaying what the engine captured. A camera texture
+// is GL-rendered into a GL texture, which Diligent cannot read, so it has to draw the view itself.
+// Same machinery a portal, a mirror or a skybox needs.
+void RenderCameraTexture(const void *material, int w, int h,
+                         int px, int py, int pz, unsigned int pangle, int ppitch, float fovDeg);
+
 // [rc4l] The sky's fade layer: a translucent sheet in the sector's fade colour that GL draws over
 // the sky after the dome. Set every frame the sky portal runs, zeroed when it should not be drawn.
 void SetSkyFog(int r, int g, int b, float a);

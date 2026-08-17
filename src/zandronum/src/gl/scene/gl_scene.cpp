@@ -1376,6 +1376,19 @@ void FGLInterface::RenderTextureView (FCanvasTexture *tex, AActor *Viewpoint, in
 
 	GLRenderer->RenderViewpoint(Viewpoint, &bounds, FOV, (float)width/height, (float)width/height, false, false);
 
+	// [rc4l] features/hwrender: render the same view into the backend's own target.
+	//
+	// A camera texture is GL-rendered into a GL texture, which a foreign backend cannot read, so this
+	// is the one case where replaying the engine's capture is not an option -- the backend has to
+	// draw it. Same viewpoint, same field of view, its own texture.
+	if (Viewpoint != NULL)
+	{
+		zx::hwrender::RenderCameraTexture(gltex, width, height,
+			(int)Viewpoint->x, (int)Viewpoint->y,
+			(int)(Viewpoint->z + (Viewpoint->height >> 1)),
+			(unsigned int)Viewpoint->angle, 0, (float)FOV);
+	}
+
 	if (!usefb)
 	{
 		glFlush();
