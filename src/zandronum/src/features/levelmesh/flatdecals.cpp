@@ -23,9 +23,18 @@
 #include "c_dispatch.h"
 #include "c_console.h"
 
+namespace zx { namespace hwrender { void GetDecalPassStats(int &boxes, int &draws); }}
+
 // [rc4l] Off would mean the engine behaves as it always has. On by default because a floor you have
 // emptied a magazine into looking untouched is the odd behaviour, not the fix.
 CVAR(Bool, fua_flat_decals, true, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
+// [rc4l] The fold onto an adjoining floor or ceiling, separately switchable.
+//
+// Not a preference so much as a probe. A mark near a corner is drawn by up to three boxes and it is
+// not obvious from looking at it which one painted what -- twice now a ring on a floor has been
+// attributed to the wrong one. Turning the folds off and re-capturing the same frozen frame answers
+// it in seconds, which is the only reason it needs to exist.
+CVAR(Bool, fua_decal_fold, true, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
 EXTERN_CVAR(Bool, gl_wallmesh)
 
 namespace zx { namespace levelmesh {
@@ -369,8 +378,20 @@ static bool SetDecalBasis(ProjectedDecal &pd,
 }
 
 
+// [rc4l] Which folds fired this frame, and off what. See fua_walldecals.
+//
+// A fold is decided from four plane heights and a sign, and every one of those has been wrong once.
+// Reading the decision back is the difference between "the mark has a hole in it" -- which was
+// reported as z-fighting, twice -- and "the fold for the room's floor fired at h 32 with 1 unit of
+// reach, so the thing painting that ring is something else".
+struct FoldNote { int decal, which; float planeZ, markZ, h, halfH, reach; };
+static const int kMaxFoldNotes = 32;
+static FoldNote g_foldNotes[kMaxFoldNotes];
+static int g_foldCount = 0;
+
 static void RegisterWallDecals()
 {
+	g_foldCount = 0;
 	for (int i = 0; i < g_wallCount; i++)
 	{
 		const WallDecal &w = g_wall[i];
@@ -417,7 +438,120 @@ static void RegisterWallDecals()
 		pd.a = w.alpha * fade;
 		pd.additive = w.additive;
 		pd.redToAlpha = w.redToAlpha;
+		pd.clipV = 0.f; pd.clipDir = 0.f;   // the mark itself is never cut
 		g_projected.Push(pd);
+
+		// [rc4l] FOLD the rest of the mark onto the floor or ceiling it runs into.
+		//
+		// A projection cannot stretch a picture round a right angle -- see fuaDecalFacing; whatever
+		// coordinate it hands a surface running along its own axis, some part of the graphic gets
+		// dragged across it. But nothing says one mark has to be one projection. The part of the
+		// graphic that falls past the floor is drawn again by a SECOND box, laid on the floor and
+		// aimed straight down, so it sits square to the surface it is on and cannot stretch at all.
+		//
+		// The two are placed to be one picture folded at the corner rather than two marks near each
+		// other. On the wall the mark's own coordinate reaches h/halfH at the floor, where h is how
+		// far the centre is above it; the companion continues from exactly there, so its centre goes
+		// h BEHIND the wall face and its texture axis runs out into the room. What is left of the
+		// graphic then lands on the floor at the same scale, starting at the value the wall stopped
+		// on. Fold it the other way for a ceiling.
+		//
+		// This is the thing GL cannot do at all, and not because of the projection: the engine has no
+		// floor decals. A scorch at the foot of a wall stops dead at the skirting in GL because there
+		// is nowhere for the rest of it to go.
+		if (!fua_decal_fold) continue;
+		const float halfH = w.halfH;
+		const line_t *ld = w.wall->linedef;
+		if (ld == NULL) continue;
+		const bool frontSide = (ld->sidedef[0] == w.wall);
+		sector_t *front = frontSide ? ld->frontsector : ld->backsector;
+		sector_t *back  = frontSide ? ld->backsector  : ld->frontsector;
+		if (front == NULL) continue;
+		const fixed_t fx = FLOAT2FIXED(w.x), fy = FLOAT2FIXED(w.y);
+
+		// The four surfaces a wall can run into, and which way the picture folds onto each.
+		//
+		// Two belong to the room the mark faces -- its floor below and its ceiling above -- and the
+		// rest of the graphic folds OUT into the room. Two belong to the sector behind the line: a
+		// step's tread is the back sector's floor, and the underside of a lintel is its ceiling, and
+		// on those the picture folds AWAY from the viewer instead. The step case is the one that
+		// matters most, because a mark on a riser is exactly what someone shooting at a staircase
+		// makes, and stopping it at the nose of the step is what looked wrong.
+		//
+		// `h` is how far the mark's centre is from the plane, and it has to be less than the mark's
+		// own half-height or there is nothing left of the graphic by the time it arrives.
+		struct Fold { const sector_t *sec; bool ceiling; bool away; };
+		const Fold folds[4] = {
+			{ front, false, false },   // the room's floor
+			{ front, true,  false },   // the room's ceiling
+			{ back,  false, true  },   // a step's tread
+			{ back,  true,  true  },   // the underside of a lintel
+		};
+
+		for (int fi = 0; fi < 4; fi++)
+		{
+			const sector_t *fs = folds[fi].sec;
+			if (fs == NULL) continue;
+			const bool ceiling = folds[fi].ceiling;
+			const bool away = folds[fi].away;
+			const float planeZ = FIXED2FLOAT(ceiling ? fs->ceilingplane.ZatPoint(fx, fy)
+			                                         : fs->floorplane.ZatPoint(fx, fy));
+			// A near surface is reached by going UP the graphic for a ceiling and DOWN for a floor,
+			// except on the far side of the line where a tread is above and a lintel below.
+			const float h = (ceiling != away) ? (planeZ - z) : (z - planeZ);
+			if (!(h > 0.f) || h >= halfH) continue;
+
+			// The centre goes h along the wall's normal -- back through the face for a surface in
+			// this room, forward past it for one behind the line -- so the coordinate the wall ended
+			// on is the one the fold starts from. Most of the box is then inside solid geometry; only
+			// the leftover (halfH - h) of the graphic reaches across the surface, which is exactly
+			// what is left of it.
+			const float centreDir = away ? 1.f : -1.f;
+			// Which way the picture runs from there. It follows the SURFACE, not the side of the line:
+			// a floor continues the wall's picture along the outward normal and a ceiling continues it
+			// back against that normal, whichever sector the plane belongs to. And it follows the
+			// wall's own V, which a decal marked randomflipy inverts -- miss that and the fold is
+			// mirrored, so the middle of the graphic lands out on the floor and its transparent edge
+			// lands at the join. That reads as a scorch with a clean hole punched through it.
+			const float vsign = ceiling ? -1.f : 1.f;
+
+			ProjectedDecal fold;
+			fold.x = w.x + w.nx * h * centreDir;
+			fold.y = w.y + w.ny * h * centreDir;
+			fold.z = planeZ;
+			// [rc4l] A fold's box hugs the plane it was made for -- unlike the mark's own box, which
+			// is deep so it can follow a slope or a step underneath it.
+			//
+			// A fold exists to paint ONE surface, the one it is laid on, and a deep box reaches other
+			// planes as well: on a staircase the fold made for the room's floor also covered the
+			// tread forty units above it, forty units through its own plane. The unwrap then refuses
+			// the middle of that -- a fragment cannot be pushed further than its own radius -- and
+			// paints the outside, which comes out as a scorch with a clean scalloped hole through it.
+			// That was reported as z-fighting too, and it is not that either.
+			const float kFoldDepth = 8.f;
+			if (!SetDecalBasis(fold, w.ux, w.uy, 0.f,
+			                         vsign * w.nx, vsign * w.ny, 0.f,
+			                         0.f, 0.f, ceiling ? -1.f : 1.f,
+			                         w.halfW, halfH, kFoldDepth))
+				continue;
+			// [rc4l] Keep only the side of the join the surface is actually on -- see clipV.
+			// Where the join falls in the picture, and which way the picture runs from there.
+			fold.clipV = (-centreDir * h * vsign) / halfH;
+			fold.clipDir = (vsign * (away ? -1.f : 1.f) >= 0.f) ? 1.f : -1.f;
+			fold.material = pd.material;
+			fold.r = pd.r; fold.g = pd.g; fold.b = pd.b;
+			fold.a = pd.a;
+			fold.additive = pd.additive;
+			fold.redToAlpha = pd.redToAlpha;
+			g_projected.Push(fold);
+
+			if (g_foldCount < kMaxFoldNotes)
+			{
+				FoldNote &fn = g_foldNotes[g_foldCount++];
+				fn.decal = i; fn.which = fi; fn.planeZ = planeZ; fn.markZ = z;
+				fn.h = h; fn.halfH = halfH; fn.reach = halfH - h;
+			}
+		}
 	}
 }
 
@@ -489,6 +623,7 @@ void RegisterFlatDecals()
 		pd.a = d.alpha * fade;
 		pd.additive = d.additive;
 		pd.redToAlpha = d.redToAlpha;
+		pd.clipV = 0.f; pd.clipDir = 0.f;
 		g_projected.Push(pd);
 
 		g_lastX = d.x; g_lastY = d.y; g_lastZ = pz;
@@ -524,6 +659,20 @@ void DumpWallDecals()
 			w.halfW, w.halfH, ComputeDecalBoxDepth(w.halfW, w.halfH), w.alpha,
 			w.additive ? "additive" : "blended", w.redToAlpha ? " red-as-alpha" : "",
 			(mat && mat->tex && mat->tex->Name.Len()) ? mat->tex->Name.GetChars() : "(none)");
+	}
+	{
+		int boxes = 0, draws = 0;
+		zx::hwrender::GetDecalPassStats(boxes, draws);
+		Printf("  drawn last frame: %d boxes in %d draw calls\n", boxes, draws);
+	}
+	static const char *kWhich[4] = { "room floor", "room ceiling", "step tread", "lintel under" };
+	Printf("  folds this frame: %d\n", g_foldCount);
+	for (int i = 0; i < g_foldCount; i++)
+	{
+		const FoldNote &f = g_foldNotes[i];
+		Printf("    decal %d -> %-12s  plane z %.1f  mark z %.1f  h %.1f of halfH %.1f"
+		       "  reaches %.1f units\n",
+			f.decal, kWhich[f.which & 3], f.planeZ, f.markZ, f.h, f.halfH, f.reach);
 	}
 }
 
