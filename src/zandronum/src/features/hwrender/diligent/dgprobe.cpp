@@ -16,6 +16,7 @@
 // byte-identical and carries no Apache-2.0 dependency.
 
 #include "c_dispatch.h"
+#include "c_cvars.h"
 #include "c_console.h"
 
 #ifdef FUA_DILIGENT
@@ -41,9 +42,18 @@ static Diligent::RefCntAutoPtr<Diligent::IDeviceContext> g_context;
 // [rc4l] Route Diligent's own diagnostics to the engine console. Without this a shader that fails to
 // compile reports only "failed" and the actual glslang error is invisible -- which cost a build/run
 // cycle the first time it happened.
+// [rc4l] Diligent's INFO messages are off by default, because they are not for us.
+//
+// They report normal driver bookkeeping -- swapchain present mode, memory pages, and a full dump of
+// every Vulkan extension the device supports -- and they drown the engine console. Warnings and
+// errors always come through: a shader that fails to compile must not be silent, which is the whole
+// reason this callback exists.
+CVAR(Bool, fua_dg_verbose, false, 0)
+
 static void DiligentDebugMessage(Diligent::DEBUG_MESSAGE_SEVERITY sev, const Diligent::Char *msg,
                                  const Diligent::Char *func, const Diligent::Char *file, int line)
 {
+	if (sev == Diligent::DEBUG_MESSAGE_SEVERITY_INFO && !fua_dg_verbose) return;
 	const char *tag = (sev == Diligent::DEBUG_MESSAGE_SEVERITY_ERROR ||
 	                   sev == Diligent::DEBUG_MESSAGE_SEVERITY_FATAL_ERROR) ? "ERROR" :
 	                  (sev == Diligent::DEBUG_MESSAGE_SEVERITY_WARNING) ? "warn" : "info";
