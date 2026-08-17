@@ -275,6 +275,20 @@ void RenderDome(FMaterial * tex, float x_offset, float y_offset, bool mirror, in
 		gl_RenderState.SetMaterial(tex, CLAMP_NONE, 0, -1, false);
 		texw = tex->TextureWidth();
 		texh = tex->TextureHeight();
+		// [rc4l] What the ENGINE thinks the sky is. The Diligent dome derives its transform from
+		// sky1texture and came out with a different height than this, which is the whole reason its
+		// horizon sits wrong on maps with a non-stock sky. Printed once per change, not per frame.
+		{
+			static int lastW = -1, lastH = -1;
+			if (texw != lastW || texh != lastH)
+			{
+				lastW = texw; lastH = texh;
+				Printf("gl sky: %s %dx%d skyoffset %d%s\n",
+					(tex->tex != NULL && tex->tex->Name != NULL) ? tex->tex->Name : "?",
+					texw, texh, tex->tex ? tex->tex->SkyOffset : 0,
+					(tex->tex && tex->tex->gl_info.bSkybox) ? " [skybox]" : "");
+			}
+		}
 		gl_RenderState.EnableModelMatrix(true);
 
 		gl_RenderState.mModelMatrix.loadIdentity();
