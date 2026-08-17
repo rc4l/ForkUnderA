@@ -88,7 +88,7 @@ struct MeshPiece
 	const void   *baseTex;
 
 	// [rc4l] Index into the dynamic light buffer for this surface, or -1 for none. The buffer is a
-	// per-frame CPU mirror of what the engine uploaded -- see FLightBuffer::MirrorData. Muzzle
+	// index into the light list the backend collects each frame. Muzzle
 	// flashes, plasma, rocket trails and every lamp in a mod come through here; without it the world
 	// is lit only by its sector light and looks flat and static.
 	int           dynLightIndex;

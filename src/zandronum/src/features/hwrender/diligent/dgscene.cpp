@@ -130,15 +130,6 @@ CVAR(Int, fua_dg_cull, 0, CVAR_ARCHIVE)
 // with it on, "missing world geometry" and "correctly visible sky" look identical. Turning it off
 // leaves holes against the clear colour, which is unambiguous.
 CVAR(Bool, fua_dg_sky, true, 0)
-// [rc4l] Two knobs on the sky dome's model transform, for finding the right values by measurement.
-//
-// Three separate attempts to derive this transform from RenderDome by reading it produced three
-// wrong answers. The transform is a composition of a translate and a scale whose order and units are
-// easy to get subtly wrong, and the symptom -- the horizon sitting a little high or low -- is one
-// the eye forgives and a per-pixel diff does not. Scanning these against the GL render finds the
-// truth in one run; they exist to be zeroed again once it is found.
-CVAR(Float, fua_dg_skyty, 0.f, 0)
-CVAR(Float, fua_dg_skysy, 1.f, 0)
 
 // [rc4l] Re-resolve animated textures per frame. See the loop in DrawSceneOnce.
 CVAR(Bool, fua_dg_animate, true, 0)
@@ -197,9 +188,6 @@ struct SceneBatch
 static TArray<SceneBatch> g_batches;
 
 // [rc4l] Where each mesh piece landed in the backend's material-sorted vertex buffer, so geometry
-// that moves can be re-uploaded in place. See RefreshMovedGeometry.
-struct PieceMap { unsigned int meshOffset, count, vbOffset; };
-static TArray<PieceMap> g_pieceMap;
 static int g_geomUpdates = 0;
 static unsigned int g_lastDirtyLo = 0, g_lastDirtyHi = 0;
 // [rc4l] How many times the scene was rebuilt because the world moved, cumulative.
@@ -748,8 +736,6 @@ static void BuildSkyDome(int texw, int texh)
 		modelScaleY = 1.2f * 1.17f;
 		vscale = (texh > 0) ? 240.f / texh : 1.f;
 	}
-	modelTransY += fua_dg_skyty;
-	modelScaleY *= fua_dg_skysy;
 	const float xscale = texw > 0 ? 1024.f / texw : 1.f;
 
 	TArray<SkyVertexData> verts;
@@ -914,9 +900,6 @@ static bool EnsureSkyPipeline()
 static void EnsureSky()
 {
 	if (!EnsureSkyPipeline()) return;
-	static float lastTy = 0.f, lastSy = 1.f;
-	if (lastTy != (float)fua_dg_skyty || lastSy != (float)fua_dg_skysy)
-	{ lastTy = fua_dg_skyty; lastSy = fua_dg_skysy; g_skyBuiltValid = false; }
 	// [rc4l] TexMan(id), not TexMan[id]. The subscript returns the texture as authored; the call
 	// applies the animation translation, which is what the engine's own sky path uses.
 	//
@@ -1851,7 +1834,6 @@ static bool BuildSceneBuffer(FString &err)
 
 	g_sceneVB.Clear();
 	g_batches.Clear();
-	g_pieceMap.Clear();
 	const void *cur = (const void *)(size_t)-1;
 	for (int i = 0; i < npieces; i++)
 	{
@@ -1893,16 +1875,6 @@ static bool BuildSceneBuffer(FString &err)
 			dv.lightIndex = (float)p.dynLightIndex;
 			dv.nx = p.normX; dv.ny = p.normY; dv.nz = p.normZ;
 			g_sceneVB.Push(dv);
-		}
-		// [rc4l] Remember where this piece's mesh vertices landed in the backend's own buffer, so a
-		// later change to them can be re-uploaded without re-sorting and re-emitting the whole level.
-		// The sort is O(n^2) over ~18000 pieces; doing it per frame while a door moves is not an option.
-		{
-			PieceMap pm;
-			pm.meshOffset = p.range.offset;
-			pm.count      = p.range.count;
-			pm.vbOffset   = vbStart;
-			g_pieceMap.Push(pm);
 		}
 		g_batches[g_batches.Size() - 1].count += p.range.count;
 	}
@@ -2004,7 +1976,7 @@ bool SceneUpload(FString &report)
 // separately by swapping the SRB.
 static void RefreshMovedGeometry(Diligent::IDeviceContext *ctx)
 {
-	if (!g_vb || g_pieceMap.Size() == 0) return;
+	if (!g_vb || g_sceneVB.Size() == 0) return;
 
 	unsigned int lo = 0, hi = 0;
 	zx::levelmesh::MeshTakeDirty(lo, hi);
