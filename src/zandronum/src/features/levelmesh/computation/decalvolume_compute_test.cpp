@@ -327,3 +327,44 @@ TEST(DecalUnwrap, DeeperBoxDoesNotChangeTheScaleOfTheCarry)
 	EXPECT_NEAR(v1, v2, 1e-5f);
 	EXPECT_NEAR(u1, u2, 1e-5f);
 }
+
+TEST(DecalUnwrap, IsContinuousThroughTheCentreLine)
+{
+	// The direction to carry in used to be sign(), which jumps: two fragments a hair either side of
+	// the centre line got opposite carries and the coordinate tore in two down the middle. That tear
+	// is a visible line through every mark on a step -- and it also wrecks the mip level, since a
+	// shader reads level of detail from how fast this coordinate changes, so the tear went pale and
+	// streaky as well. Continuity here is what fixes both.
+	const DecalFrame f = WallFrame(16.f, 8.f, 24.f);
+	float prevU = 0.f, prevV = 0.f;
+	bool have = false;
+	for (float x = -3.f; x <= 3.f; x += 0.25f)
+	{
+		const float rel[3] = { x, 6.f, 1.f };   // 6 units through the wall: a real carry
+		float local[3];
+		ComputeDecalLocal(f, rel, local);
+		float u, v;
+		ComputeDecalUnwrapUV(f, local, kUp, u, v);
+		if (have)
+		{
+			// A quarter of a unit of travel must not move the coordinate by more than the carry
+			// itself could account for. Across sign()'s jump this was the full 2*carry at once.
+			EXPECT_LT(std::fabs(u - prevU), 0.05f) << "at x=" << x;
+			EXPECT_LT(std::fabs(v - prevV), 0.30f) << "at x=" << x;
+		}
+		prevU = u; prevV = v; have = true;
+	}
+}
+
+TEST(DecalUnwrap, StillReachesFullCarryAwayFromTheCentreLine)
+{
+	// The ramp must not quietly shorten the wrap. Well outside the band the carry is undiminished,
+	// which is what keeps a mark continuous across a join at its own scale.
+	const DecalFrame f = WallFrame(16.f, 8.f, 24.f);
+	const float rel[3] = { 0.f, 2.f, -3.f };   // t.y = -0.375, far outside the ramp band
+	float local[3];
+	ComputeDecalLocal(f, rel, local);
+	float u, v;
+	ASSERT_TRUE(ComputeDecalUnwrapUV(f, local, kUp, u, v));
+	EXPECT_NEAR(local[1] * 0.5f + 0.5f - (2.f / 8.f) * 0.5f, v, 1e-5f);
+}

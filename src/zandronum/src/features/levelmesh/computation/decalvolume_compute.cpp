@@ -19,14 +19,23 @@ float Length3(const float a[3])
 	return std::sqrt(Dot3(a, a));
 }
 
-// GLSL's sign(), which returns 0 at 0 -- not std::copysign, which returns +1 there and would make a
-// point exactly on the decal's midline carry in an arbitrary direction. Zero is the honest answer:
-// a point on the midline has no direction to continue in, so it stays where it is.
-float SignOrZero(float x)
+// [rc4l] Which way to carry, ramped through the middle rather than switched.
+//
+// The direction wanted is "the way we were already going", which is sign(t) -- and sign() jumps. A
+// fragment a hair either side of the decal's centre line would get +carry or -carry, tearing the
+// coordinate in two down the middle of every mark on anything but a flat surface. Worse than it
+// looks, because a shader picks its mip level from the DERIVATIVE of this coordinate: a jump reads
+// as an enormous derivative, the smallest mip is chosen, and the mark goes pale and streaky along
+// the tear.
+//
+// Ramping over a narrow band gives up a little accuracy exactly where the carry contributes least
+// -- near the centre line, where there is barely any distance to carry -- and buys continuity.
+const float kCarryRampBand = 0.12f;
+
+float CarryDirection(float t)
 {
-	if (x > 0.f) return 1.f;
-	if (x < 0.f) return -1.f;
-	return 0.f;
+	const float d = t / kCarryRampBand;
+	return (d > 1.f) ? 1.f : ((d < -1.f) ? -1.f : d);
 }
 
 } // namespace
@@ -111,8 +120,8 @@ bool ComputeDecalUnwrapUV(const DecalFrame &f, const float local[3], const float
 
 	// Keep going the way we were already going: a floor below the mark continues downwards, a ceiling
 	// above it upwards, a wall to the right rightwards.
-	tx += SignOrZero(tx) * carry * lu * wu;
-	ty += SignOrZero(ty) * carry * lv * wv;
+	tx += CarryDirection(local[0]) * carry * lu * wu;
+	ty += CarryDirection(local[1]) * carry * lv * wv;
 
 	outU = tx * 0.5f + 0.5f;
 	outV = ty * 0.5f + 0.5f;

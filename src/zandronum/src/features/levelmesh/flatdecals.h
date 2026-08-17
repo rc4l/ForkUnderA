@@ -100,6 +100,9 @@ void SpawnWallDecal(const DBaseDecal *decal, const side_t *wall, const FDecalTem
 // Dropped with the level, like the flat ring.
 void ClearWallDecals();
 
+// Print the live wall decals: resolved height, anchor offset, size, box depth. See fua_walldecals.
+void DumpWallDecals();
+
 // Spawn/emit counters, split by cause. See fua_flatdecals.
 // What the trace reported at the point decals are decided, so "the branch never ran" and "it ran
 // and the hit was a wall" stop being the same observation.

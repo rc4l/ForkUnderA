@@ -11,6 +11,7 @@
 #include "r_defs.h"
 #include "r_state.h"
 #include "decallib.h"
+#include "a_sharedglobal.h"   // DBaseDecal::RealZOnWall
 #include "p_local.h"
 #include "g_level.h"   // level.maptime, for decal fade
 #include "gl/data/gl_vertexbuffer.h"   // FFlatVertex
@@ -103,7 +104,18 @@ static const secplane_t *DecalPlane(const sector_t *sec, F3DFloor *rover, bool c
 // flat one only because the records genuinely differ -- this one has no plane to ride and no rover.
 struct WallDecal
 {
-	float      x, y, z;              // centre, map space
+	float      x, y;                 // centre, map space; the height is re-asked every frame
+	// [rc4l] What the height is measured FROM, rather than the height.
+	//
+	// A decal's stored Z is relative to a plane whenever RF_RELMASK is set, and that plane moves: a
+	// door track, the front of a lift. Resolving it once at spawn left the mark hanging in the air
+	// where the door used to be, while GL -- which re-resolves every time it draws -- carried its
+	// copy up with the door. So the wall, the raw Z and the flags are kept, and the question is asked
+	// again each frame through the same function the engine uses.
+	const side_t *wall;
+	fixed_t    rawZ;
+	DWORD      renderFlags;
+	float      upOff;                // anchor-to-centre, added after the height is resolved
 	float      ux, uy;               // along the wall, unit; V is always straight up
 	float      nx, ny;               // out of the wall, unit
 	bool       flipV;                // the graphic is drawn mirrored top to bottom
@@ -220,9 +232,10 @@ void SpawnWallDecal(const DBaseDecal *decal, const side_t *wall, const FDecalTem
 	WallDecal &w = g_wall[g_wallNext];
 	w.x = FIXED2FLOAT(dxpos) + ux * alongOff;
 	w.y = FIXED2FLOAT(dypos) + uy * alongOff;
-	// GetRealZ resolves the RF_RELATIVE flags -- a decal on a door track is stored relative to the
-	// plane that moves it, and its stored Z alone is meaningless.
-	w.z = FIXED2FLOAT(decal->GetRealZ(wall)) + upOff;
+	w.wall = wall;
+	w.rawZ = decal->Z;
+	w.renderFlags = decal->RenderFlags;
+	w.upOff = upOff;
 	// A flipped graphic is drawn mirrored; turning the axis round is the same thing and costs the
 	// shader nothing.
 	w.ux = flipX ? -ux : ux; w.uy = flipX ? -uy : uy;
@@ -375,12 +388,22 @@ static void RegisterWallDecals()
 		MeshPiece lit;
 		CaptureShading(w.light, getExtraLight(), const_cast<FColormap &>(w.cm), lit);
 
+		// Asked again, not remembered: see WallDecal::wall. A door moving takes its decals with it.
+		if (w.wall == NULL) continue;
+		const float z = FIXED2FLOAT(DBaseDecal::RealZOnWall(w.wall, w.rawZ, w.renderFlags)) + w.upOff;
+
 		ProjectedDecal pd;
-		pd.x = w.x; pd.y = w.y; pd.z = w.z;
-		// U runs along the wall, V straight up, N out of its face. That is the whole difference from a
-		// flat -- and it is the only difference, which is the point of carrying a basis at all.
+		pd.x = w.x; pd.y = w.y; pd.z = z;
+		// U runs along the wall, N out of its face, and V DOWN it -- because a texture's v does.
+		//
+		// Doom's v runs from the TOP of a graphic downwards: gl_decal.cpp gives the quad's top vertices
+		// GetVT and its bottom ones GetVB. Running V upwards instead samples every wall decal upside
+		// down, which on a roughly symmetric scorch is nearly invisible in shape -- and still MOVES the
+		// mark, because a graphic whose top offset is not its half-height has its content off-centre
+		// and mirroring shifts the visible blob by twice that. Measured on a BFG mark as GL at y 0.537
+		// of the frame and the backend at 0.417, about seventeen units up the wall.
 		if (!SetDecalBasis(pd, w.ux, w.uy, 0.f,
-		                  0.f, 0.f, w.flipV ? -1.f : 1.f,
+		                  0.f, 0.f, w.flipV ? 1.f : -1.f,
 		                  w.nx, w.ny, 0.f,
 		                  w.halfW, w.halfH, ComputeDecalBoxDepth(w.halfW, w.halfH))) continue;
 		pd.material = mat;
@@ -478,7 +501,38 @@ void RegisterFlatDecals()
 	}
 }
 
+// [rc4l] The wall decals, as numbers.
+//
+// A template can name a LOWER decal -- the black scorch under a plasma or BFG glow -- and the pair is
+// meant to sit concentric. When they visibly do not, the question is which of the four inputs
+// separated them: the resolved height, the anchor-to-centre offset the graphic's own top offset
+// implies, the half-height, or the box depth that decides how far each carries round a corner. All
+// four are here, and none of them can be read off a screenshot.
+void DumpWallDecals()
+{
+	Printf("wall decals: %d live\n", g_wallCount);
+	const int show = (g_wallCount < 8) ? g_wallCount : 8;
+	for (int i = g_wallCount - show; i < g_wallCount; i++)
+	{
+		const WallDecal &w = g_wall[i];
+		const float base = (w.wall != NULL)
+			? FIXED2FLOAT(DBaseDecal::RealZOnWall(w.wall, w.rawZ, w.renderFlags)) : 0.f;
+		FMaterial *mat = FMaterial::ValidateTexture(w.pic, true, true);
+		Printf("  %2d  at (%.1f, %.1f)  base z %.2f + upOff %.2f = %.2f\n"
+		       "      half %.1f x %.1f  boxDepth %.1f  alpha %.2f  %s%s  tex %s\n",
+			i, w.x, w.y, base, w.upOff, base + w.upOff,
+			w.halfW, w.halfH, ComputeDecalBoxDepth(w.halfW, w.halfH), w.alpha,
+			w.additive ? "additive" : "blended", w.redToAlpha ? " red-as-alpha" : "",
+			(mat && mat->tex && mat->tex->Name.Len()) ? mat->tex->Name.GetChars() : "(none)");
+	}
+}
+
 }} // namespace zx::levelmesh
+
+CCMD( fua_walldecals )
+{
+	zx::levelmesh::DumpWallDecals( );
+}
 
 //==========================================================================
 //
