@@ -80,6 +80,8 @@ EXTERN_CVAR(Int, gl_fogmode)
 EXTERN_CVAR(Bool, gl_wallmesh)
 // [rc4l] The engine's texture filter mode; the backend mirrors it. See FillSamplerFromEngine.
 EXTERN_CVAR(Int, gl_texture_filter)
+// [rc4l] The sky's own vertical nudge, both the per-texture one and the global testing cvar.
+EXTERN_CVAR(Float, skyoffset)
 EXTERN_CVAR(Float, gl_lights_size)
 EXTERN_CVAR(Float, gl_lights_intensity)
 EXTERN_CVAR(Bool, gl_lights_additive)
@@ -119,6 +121,15 @@ CVAR(Int, fua_dg_cull, 0, CVAR_ARCHIVE)
 // with it on, "missing world geometry" and "correctly visible sky" look identical. Turning it off
 // leaves holes against the clear colour, which is unambiguous.
 CVAR(Bool, fua_dg_sky, true, 0)
+// [rc4l] Two knobs on the sky dome's model transform, for finding the right values by measurement.
+//
+// Three separate attempts to derive this transform from RenderDome by reading it produced three
+// wrong answers. The transform is a composition of a translate and a scale whose order and units are
+// easy to get subtly wrong, and the symptom -- the horizon sitting a little high or low -- is one
+// the eye forgives and a per-pixel diff does not. Scanning these against the GL render finds the
+// truth in one run; they exist to be zeroed again once it is found.
+CVAR(Float, fua_dg_skyty, 0.f, 0)
+CVAR(Float, fua_dg_skysy, 1.f, 0)
 
 // [rc4l] Re-resolve animated textures per frame. See the loop in DrawSceneOnce.
 CVAR(Bool, fua_dg_animate, true, 0)
@@ -612,8 +623,13 @@ static const char *kSkyPS =
 	"layout(location = 0) out vec4 outColor;\n"
 	"void main() { outColor = vec4(texture(uTex, vUV).rgb, 1.0); }\n";
 
-static void SkyVertexAt(int r, int c, int rows, int cols, bool yflip, float yscale,
-	float xscale, SkyVertexData &out)
+// [rc4l] One sky dome vertex, with RenderDome's model and texture transforms folded in.
+//
+// modelScaleY/modelTransY are the model matrix (which moves the dome in world space) and vscale is
+// the texture matrix's V scale. These are three separate things in the engine and were one here,
+// which only works for the short skies Doom itself ships.
+static void SkyVertexAt(int r, int c, int rows, int cols, bool yflip, float modelScaleY,
+	float modelTransY, float xscale, float vscale, SkyVertexData &out)
 {
 	const float maxSideAngle = 60.0f * 3.14159265f / 180.0f;   // ANGLE_180/3
 	const float scale = 10000.0f;
@@ -628,22 +644,59 @@ static void SkyVertexAt(int r, int c, int rows, int cols, bool yflip, float ysca
 	float z = realRadius * sinf(topAngle);
 	if (r != rows) y += 300.0f;
 
-	out.x = -x;                       // Doom mirrors the sky horizontally
-	out.y = y * yscale - 1250.0f;     // RenderDome's translate+scale, baked in
+	// [rc4l] Only the vertex negation, NOT RenderDome's additional -180 degree Y rotation.
+	//
+	// Composing both (which leaves x alone and negates z) was tried and measured worse -- 18.5 against
+	// 16.7 on gvh04 -- so the rotation is evidently already accounted for by the view basis this
+	// backend uses. Recorded because it is the obvious "fix" to try, and it is wrong.
+	out.x = -x;
+	out.y = (y - 1.0f) * modelScaleY + modelTransY;   // RenderDome's scale-then-translate
 	out.z = z;
 	out.u = (-(float)c / cols) * xscale;
-	out.v = yflip ? (1.0f + (float)(rows - r) / rows) : ((float)r / rows);
+	out.v = (yflip ? (1.0f + (float)(rows - r) / rows) : ((float)r / rows)) * vscale;
 }
+
+// The current sky texture's SkyOffset, captured in EnsureSky where the FTexture is in hand.
+static int g_skyTexOffset = 0;
 
 static void BuildSkyDome(int texw, int texh)
 {
-	const int rows = 4, cols = 32;
+	const int rows = 4, cols = 128;
 
-	// RenderDome's per-height cases. Doom's own skies are 256x128, which lands in the middle branch.
-	float yscale = 1.0f;
-	if (texh < 128)      yscale = 128 / 230.f;
-	else if (texh < 200) yscale = texh / 230.f;
-	else if (texh <= 240) yscale = texh / 230.f;
+	// [rc4l] RenderDome's four height cases, in full.
+	//
+	// Only the short-sky branch was implemented, and the -1250 world translate that goes with it was
+	// applied unconditionally. Doom's own skies are 256x128 so they land in that branch and looked
+	// right, which is exactly why this survived: every stock map agreed with GL. A mod with a TALL
+	// sky -- Ghouls vs Humans among them -- takes one of the other two branches, where both the scale
+	// and the translate are different, and its sky came out showing the wrong band of the texture.
+	//
+	// A tall sky also needs the texture matrix's V scale, which is a separate thing from the model
+	// matrix's Y scale and was not represented here at all.
+	const float skyoffsetfactor = 57.f;
+	float modelScaleY = 1.f, modelTransY = 0.f, vscale = 1.f;
+	if (texh < 128)
+	{
+		modelTransY = -1250.f; modelScaleY = 128 / 230.f;
+		vscale = (texh > 0) ? (float)(128 / texh) : 1.f;   // integer division, as upstream
+	}
+	else if (texh < 200)
+	{
+		modelTransY = -1250.f; modelScaleY = texh / 230.f;
+	}
+	else if (texh <= 240)
+	{
+		modelTransY = (200 - texh + g_skyTexOffset + skyoffset) * skyoffsetfactor;
+		modelScaleY = 1.f + ((texh - 200.f) / 200.f) * 1.17f;
+	}
+	else
+	{
+		modelTransY = (-40 + g_skyTexOffset + skyoffset) * skyoffsetfactor;
+		modelScaleY = 1.2f * 1.17f;
+		vscale = (texh > 0) ? 240.f / texh : 1.f;
+	}
+	modelTransY += fua_dg_skyty;
+	modelScaleY *= fua_dg_skysy;
 	const float xscale = texw > 0 ? 1024.f / texw : 1.f;
 
 	TArray<SkyVertexData> verts;
@@ -655,10 +708,10 @@ static void BuildSkyDome(int texw, int texh)
 			for (int c = 0; c < cols; c++)
 			{
 				SkyVertexData q[4];
-				SkyVertexAt(r,     c,     rows, cols, yflip, yscale, xscale, q[0]);
-				SkyVertexAt(r + 1, c,     rows, cols, yflip, yscale, xscale, q[1]);
-				SkyVertexAt(r,     c + 1, rows, cols, yflip, yscale, xscale, q[2]);
-				SkyVertexAt(r + 1, c + 1, rows, cols, yflip, yscale, xscale, q[3]);
+				SkyVertexAt(r,     c,     rows, cols, yflip, modelScaleY, modelTransY, xscale, vscale, q[0]);
+				SkyVertexAt(r + 1, c,     rows, cols, yflip, modelScaleY, modelTransY, xscale, vscale, q[1]);
+				SkyVertexAt(r,     c + 1, rows, cols, yflip, modelScaleY, modelTransY, xscale, vscale, q[2]);
+				SkyVertexAt(r + 1, c + 1, rows, cols, yflip, modelScaleY, modelTransY, xscale, vscale, q[3]);
 				verts.Push(q[0]); verts.Push(q[1]); verts.Push(q[2]);
 				verts.Push(q[2]); verts.Push(q[1]); verts.Push(q[3]);
 			}
@@ -757,12 +810,23 @@ static bool EnsureSkyPipeline()
 static void EnsureSky()
 {
 	if (!EnsureSkyPipeline()) return;
+	static float lastTy = 0.f, lastSy = 1.f;
+	if (lastTy != (float)fua_dg_skyty || lastSy != (float)fua_dg_skysy)
+	{ lastTy = fua_dg_skyty; lastSy = fua_dg_skysy; g_skyBuiltValid = false; }
 	if (g_skyBuiltValid && g_skyBuiltFor == sky1texture.GetIndex()) return;
 
 	FTextureID id = sky1texture;
 	FMaterial *mat = id.isValid() ? FMaterial::ValidateTexture(TexMan[id], false) : NULL;
 	if (mat == NULL) { g_skyBuiltValid = false; return; }
 
+	g_skyTexOffset = (mat->tex != NULL) ? mat->tex->SkyOffset : 0;
+	// [rc4l] Say what the sky actually IS. Three rounds of reasoning about which height branch the
+	// dome should take were spent without once checking whether the engine draws a dome at all --
+	// a skybox goes through RenderBox instead, and no amount of dome arithmetic will match it.
+	Printf("vulkan sky: %s %dx%d skyoffset %d%s\n",
+		(mat->tex != NULL && mat->tex->Name != NULL) ? mat->tex->Name : "?",
+		mat->TextureWidth(), mat->TextureHeight(), g_skyTexOffset,
+		(mat->tex != NULL && mat->tex->gl_info.bSkybox) ? "  [SKYBOX -- not implemented]" : "");
 	BuildSkyDome(mat->TextureWidth(), mat->TextureHeight());
 	g_skyMaterial = mat;
 	if (auto *v = g_skySRB->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "uTex"))
