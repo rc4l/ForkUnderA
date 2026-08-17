@@ -366,8 +366,21 @@ static Diligent::IShaderResourceBinding *GetMaterialSRB(Diligent::IPipelineState
 	return e.srb;
 }
 
+// [rc4l] Freeing these means forgetting every RAW copy of them as well.
+//
+// Each scene batch caches the pointer its material resolved to, once, when the batch list is built
+// -- so the batches outlive this call and go on pointing at bindings that have been released.
+// Committing one is a use-after-free, and it is reached by resizing or MINIMISING the window: that
+// resizes the swapchain, which recreates the scene depth and normal textures, which comes through
+// here. The engine died in CommitShaderResources every time, from inside the ordinary opaque loop,
+// which reads as a driver fault rather than as our own dangling pointer.
+//
+// Nulling them is enough because the draw loop re-resolves a batch whose binding has gone.
+static void ForgetBatchSRBs();
+
 static void ReleaseMaterialSRBs()
 {
+	ForgetBatchSRBs();
 	for (unsigned i = 0; i < g_matSRBs.Size(); i++)
 		if (g_matSRBs[i].srb) g_matSRBs[i].srb->Release();
 	g_matSRBs.Clear();
@@ -2719,6 +2732,12 @@ static bool BuildSceneBuffer(FString &err)
 	}
 	return true;
 }
+// See ReleaseMaterialSRBs. The batches keep raw copies of bindings they do not own.
+static void ForgetBatchSRBs()
+{
+	for (unsigned i = 0; i < g_batches.Size(); i++) g_batches[i].srb = NULL;
+}
+
 bool SceneUpload(FString &report)
 {
 	FString err;
@@ -4005,6 +4024,15 @@ static void DrawSceneOnce(bool present = true, bool pump = true)
 	auto *ctx = GetContext();
 	auto *swap = GetSwapChain();
 
+	// [rc4l] A minimised window has a zero-sized swapchain, and there is nothing to draw into it.
+	// Carrying on means asking the device for 0x0 textures, which fails, and then rendering against
+	// the null views that come back.
+	if (!ctx || !swap) return;
+	{
+		const auto &sd = swap->GetDesc();
+		if (sd.Width == 0 || sd.Height == 0) return;
+	}
+
 	auto *rtv = swap->GetCurrentBackBufferRTV();
 	Diligent::ITextureView *dsv = EnsureSceneDepth();
 	if (!dsv) dsv = swap->GetDepthBufferDSV();
@@ -4269,8 +4297,12 @@ static void DrawWorld(Diligent::IDeviceContext *ctx)
 	for (int rep = 0; rep < g_drawRepeat; rep++)
 	for (unsigned bi = 0; bi < g_batches.Size(); bi++)
 	{
-		const SceneBatch &b = g_batches[bi];
-		if (b.count == 0 || b.srb == NULL || b.blend != 0) continue;
+		SceneBatch &b = g_batches[bi];
+		if (b.count == 0 || b.blend != 0) continue;
+		// Re-resolve rather than skip: a binding dropped by a resize would otherwise leave that
+		// material missing from the world until the next upload.
+		if (b.srb == NULL) b.srb = GetMaterialSRB(g_maskedPSO.RawPtr(), b.material);
+		if (b.srb == NULL) continue;
 
 		ctx->CommitShaderResources(b.srb, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
