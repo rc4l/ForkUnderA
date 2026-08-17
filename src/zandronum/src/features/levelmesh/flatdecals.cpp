@@ -273,10 +273,12 @@ void RegisterFlatDecals()
 		pd.halfW = hw; pd.halfH = hh;
 		// [rc4l] How far through the surface the box reaches.
 		//
-		// Deep enough to survive the surface being a little away from where the decal was recorded --
-		// a sloped floor, a step, a lift caught mid-move -- and shallow enough that it cannot reach
-		// the floor below or the ceiling above. Eight units is about a quarter of a step.
-		pd.halfDepth = 8.f;
+		// Everything outside the box is discarded, so this is what decides how much of a decal
+		// survives: at eight units a mark on anything but dead-flat ground came out clipped, because
+		// the surface wandered out of the box within the decal's own width. Twenty-four is about
+		// three quarters of a step -- deep enough to keep a mark whole across a slope or a small
+		// ledge, shallow enough that it cannot reach the floor below or the ceiling above.
+		pd.halfDepth = 24.f;
 		pd.material = mat;
 		pd.r = lit.colorR; pd.g = lit.colorG; pd.b = lit.colorB;
 		if (d.redToAlpha)
