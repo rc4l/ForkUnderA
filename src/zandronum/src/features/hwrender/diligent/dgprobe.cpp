@@ -84,11 +84,30 @@ bool ProbeVulkan(FString &report)
 	}
 
 	Diligent::EngineVkCreateInfo ci;
+	// [rc4l] Ask for ray tracing as OPTIONAL, never as required.
+	//
+	// Inline ray queries are what a mirror actually wants: no visibility list, recursion for free,
+	// and cost proportional to the mirror's pixels rather than a full-screen pass per mirror. But an
+	// RT-capable GPU cannot be assumed, and requesting a feature the device lacks fails device
+	// creation outright -- which would turn "no reflections on old hardware" into "the backend does
+	// not start". OPTIONAL means the device comes up either way and the code asks afterwards.
+	ci.Features.RayTracing = Diligent::DEVICE_FEATURE_STATE_OPTIONAL;
 	factory->CreateDeviceAndContextsVk(ci, &g_device, &g_context);
 	if (!g_device)
 	{
 		report = "CreateDeviceAndContextsVk failed -- no usable Vulkan device.";
 		return false;
+	}
+
+	// [rc4l] Say whether inline ray tracing is actually available, and at what capability. Building a
+	// reflection path on an assumption about the device is how a backend ends up failing on someone
+	// else's machine with no clue why.
+	{
+		const auto &f = g_device->GetDeviceInfo().Features;
+		const auto &rt = g_device->GetAdapterInfo().RayTracing;
+		Printf("Diligent: ray tracing %s (max recursion %u, caps 0x%x)\n",
+			f.RayTracing ? "AVAILABLE" : "unavailable",
+			(unsigned)rt.MaxRecursionDepth, (unsigned)rt.CapFlags);
 	}
 
 	const auto &info = g_device->GetDeviceInfo();
