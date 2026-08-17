@@ -702,14 +702,17 @@ static const char *kScenePSRedAlpha =
 	"float fuaDecalReach(vec3 rel, float radius) {\n" \
 	"    return 1.0 - smoothstep(0.75, 1.0, length(rel) / radius);\n" \
 	"}\n" \
-	/* [rc4l] A smooth stand-in for the coordinate, used ONLY to pick a mip level.
-	   A shader reads level of detail from how fast the texture coordinate changes between neighbouring
-	   pixels, and the real one is built from a surface normal that changes abruptly at every edge --
-	   so the mip jumped about and the mark came out blocky in patches. This is the same coordinate
-	   without the normal in it: wrong where a surface turns, which does not matter, and smooth
-	   everywhere, which is all a mip level needs. */ \
-	"vec2 fuaDecalRefUV(vec3 rel, vec3 axisU, vec3 axisV) {\n" \
-	"    return vec2(dot(rel, axisU), dot(rel, axisV)) * 0.5 + 0.5;\n" \
+	/* [rc4l] How far this surface is from where the blast actually LANDED, along its own normal.
+	   Being inside the sphere is not the same as having been touched. A surface's distance from the
+	   impact measured perpendicular to itself is nearly zero on the thing that was hit and on anything
+	   folding round its corner, and large on a floor that merely happens to lie within the radius --
+	   and a floor is exactly what gets caught out, because a mark's picture is laid into each surface
+	   from the impact's own position, so a distant floor gets a full copy of it stamped directly
+	   underneath. That is a BFG's glow appearing on the ground below a column with the scorch left up
+	   on the wall: the glow's graphic is larger, so its sphere reached a floor the scorch's did not,
+	   and nothing was asking whether the blast had reached it. */ \
+	"float fuaDecalTouched(vec3 rel, vec3 nrm, float radius) {\n" \
+	"    return 1.0 - smoothstep(radius * 0.15, radius * 0.6, abs(dot(rel, nrm)));\n" \
 	"}\n" \
 	"vec2 fuaDecalUV(vec3 rel, vec3 nrm, vec3 axisU, vec3 axisV, vec3 axisN) {\n" \
 	"    vec3 U = normalize(axisU), V = normalize(axisV), N = normalize(axisN);\n" \
@@ -786,13 +789,20 @@ static const char *kDecalPS =
 	"    if (reach <= 0.0) discard;\n"
 	"    vec3 nrm = fuaSurfaceNormal(P, uv, 1.0 / vec2(uScreen.x, uScreen.y), uInvMVP,\n"
 	"                               normalize(vAxisN));\n"
+	"    reach *= fuaDecalTouched(rel, nrm, vRadius);\n"
+	"    if (reach <= 0.0) discard;\n"
 	"    vec2 t = fuaDecalUV(rel, nrm, vAxisU, vAxisV, vAxisN);\n"
 	/* Past the end of the picture. Clamped instead of dropped, the edge texel would repeat for
 	   ever -- a dragged row of texels by another route, which is the artifact all of this
 	   exists to avoid. */
 	"    if (any(lessThan(t, vec2(0.0))) || any(greaterThan(t, vec2(1.0)))) discard;\n"
-	"    vec4 texel = textureGrad(uTex, t, dFdx(fuaDecalRefUV(rel, vAxisU, vAxisV)),\n"
-	"                                      dFdy(fuaDecalRefUV(rel, vAxisU, vAxisV)));\n"
+	/* [rc4l] A fixed mip level, not one derived from how fast the coordinate is changing.
+	   Everything about the mark's coordinate is per-fragment -- it is built from a surface normal read
+	   out of the depth buffer -- so its derivatives are only as steady as that normal, and any
+	   unsteadiness lands straight on the mip level, which shows up as blocks rather than as blur. A
+	   decal covers a few hundred pixels and is nearly always magnified, so there is very little to
+	   gain from a mip chain here and a whole class of artifact to lose. */
+	"    vec4 texel = textureLod(uTex, t, 0.0);\n"
 	"    outColor = vec4(texel.rgb * vColor.rgb, texel.a * vColor.a * reach);\n"
 	"}\n";
 
@@ -828,10 +838,11 @@ static const char *kDecalRedPS =
 	"    if (reach <= 0.0) discard;\n"
 	"    vec3 nrm = fuaSurfaceNormal(P, uv, 1.0 / vec2(uScreen.x, uScreen.y), uInvMVP,\n"
 	"                               normalize(vAxisN));\n"
+	"    reach *= fuaDecalTouched(rel, nrm, vRadius);\n"
+	"    if (reach <= 0.0) discard;\n"
 	"    vec2 t = fuaDecalUV(rel, nrm, vAxisU, vAxisV, vAxisN);\n"
 	"    if (any(lessThan(t, vec2(0.0))) || any(greaterThan(t, vec2(1.0)))) discard;\n"
-	"    float a = textureGrad(uTex, t, dFdx(fuaDecalRefUV(rel, vAxisU, vAxisV)),\n"
-	"                                   dFdy(fuaDecalRefUV(rel, vAxisU, vAxisV))).r * vColor.a * reach;\n"
+	"    float a = textureLod(uTex, t, 0.0).r * vColor.a * reach;\n"
 	"    if (a <= 0.0) discard;\n"
 	"    outColor = vec4(vColor.rgb, a);\n"
 	"}\n";
@@ -3730,7 +3741,15 @@ static Diligent::ITextureView *EnsureSceneDepth()
 	if (g_sceneDepth && g_sceneDepthW == (int)sd.Width && g_sceneDepthH == (int)sd.Height)
 		return g_sceneDepth->GetDefaultView(Diligent::TEXTURE_VIEW_DEPTH_STENCIL);
 
+	// [rc4l] Every cached binding of the OLD depth texture goes with it.
+	//
+	// The decal pass samples this texture through a shader resource binding that is cached per
+	// material and reused across frames. Resizing the window recreates the texture underneath those
+	// bindings, and whatever they then resolve to is not the depth of the frame being drawn -- which
+	// came out as a grid of squares across every mark, since the reconstruction is reading positions
+	// that never existed.
 	g_sceneDepth.Release();
+	ReleaseMaterialSRBs();
 	Diligent::TextureDesc td;
 	td.Name = "fua scene depth";
 	td.Type = Diligent::RESOURCE_DIM_TEX_2D;
