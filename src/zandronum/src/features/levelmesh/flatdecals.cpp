@@ -523,7 +523,25 @@ void ForgetDecals()
 int g_lastSettleHit = -1;
 float g_lastSettleDist = 0.f;
 
+static int g_deathLine = 0, g_deathActor = 0, g_deathNeither = 0, g_deathNoGen = 0;
+void NoteMissileDeath(bool hasLine, bool hasTarget, bool hasGenerator)
+{
+	if (!hasGenerator) g_deathNoGen++;
+	if (hasLine) g_deathLine++;
+	else if (hasTarget) g_deathActor++;
+	else g_deathNeither++;
+}
+
 static fixed_t g_impactDirX = 0, g_impactDirY = 0;
+// [rc4l] What the re-anchoring trace found, because "the mark did not move" has three causes --
+// no direction known, traced and hit nothing, or hit something that was not a wall -- and they need
+// different fixes.
+int g_lastAnchorHit = -2, g_lastAnchorLine = -1;
+float g_lastAnchorDist = 0.f;
+// [rc4l] Split by whether the spawner told us which way the shot was going. The BFG makes marks from
+// its BALL, not from the forty spray tracers that follow, so a run where every unstuck spawn came in
+// without a direction means the ball's own decal never reached here and something else did.
+int g_unstuckWithDir = 0, g_unstuckNoDir = 0;
 void SetImpactDirection(fixed_t dx, fixed_t dy) { g_impactDirX = dx; g_impactDirY = dy; }
 
 void SpawnUnstuckWallDecal(const FDecalTemplate *tpl, fixed_t x, fixed_t y, fixed_t z,
@@ -531,6 +549,13 @@ void SpawnUnstuckWallDecal(const FDecalTemplate *tpl, fixed_t x, fixed_t y, fixe
 {
 	if (!fua_flat_decals || tpl == NULL || wall == NULL) return;
 	if (!tpl->PicNum.isValid()) return;
+	// [rc4l] Only for a shot whose direction we know, which in practice means a PROJECTILE.
+	//
+	// The BFG marks the wall with its BALL. The forty spray tracers that follow are damage, not
+	// marks, and letting them through here painted the wall with whichever tracer happened to be
+	// refused last -- measured at the reported camera as nine unstuck spawns, none of them the ball.
+	// The direction doubles as the test because only the missile path supplies one.
+	if (g_impactDirX == 0 && g_impactDirY == 0) return;
 	const line_t *ld = wall->linedef;
 	if (ld == NULL) return;
 
@@ -567,6 +592,10 @@ void SpawnUnstuckWallDecal(const FDecalTemplate *tpl, fixed_t x, fixed_t y, fixe
 	// which is no worse than before.
 	fixed_t mx = x, my = y, mz = z;
 	const side_t *anchor = wall;
+	g_lastAnchorHit = -2;   // -2 = no direction known, so nothing was traced at all
+	if (g_impactDirX != 0 || g_impactDirY != 0) g_unstuckWithDir++; else g_unstuckNoDir++;
+	g_lastAnchorDist = 0.f;
+	g_lastAnchorLine = -1;
 	if (g_impactDirX != 0 || g_impactDirY != 0)
 	{
 		const double dx = FIXED2DBL(g_impactDirX), dy = FIXED2DBL(g_impactDirY);
@@ -579,14 +608,17 @@ void SpawnUnstuckWallDecal(const FDecalTemplate *tpl, fixed_t x, fixed_t y, fixe
 			const fixed_t back = 2 * FRACUNIT;
 			FTraceResults res;
 			sector_t *sec = P_PointInSector(x - FixedMul(vx, back), y - FixedMul(vy, back));
+			g_lastAnchorHit = -1;   // -1 = traced and found nothing
 			if (sec != NULL &&
 				Trace(x - FixedMul(vx, back), y - FixedMul(vy, back), z, sec,
-				      vx, vy, 0, 64 * FRACUNIT, 0, 0, NULL, res, TRACE_NoSky) &&
-				res.HitType == TRACE_HitWall && res.Line != NULL)
+				      vx, vy, 0, 64 * FRACUNIT, 0, 0, NULL, res, TRACE_NoSky))
 			{
-				side_t *hit = res.Line->sidedef[res.Side];
-				if (hit != NULL && hit->linedef != NULL)
+				g_lastAnchorHit = (int)res.HitType;
+				g_lastAnchorDist = FIXED2FLOAT(res.Distance);
+				side_t *hit = (res.Line != NULL) ? res.Line->sidedef[res.Side] : NULL;
+				if (res.HitType == TRACE_HitWall && hit != NULL && hit->linedef != NULL)
 				{
+					g_lastAnchorLine = (int)(hit->linedef - lines);
 					mx = res.X; my = res.Y; mz = res.Z;
 					anchor = hit;
 				}
@@ -790,6 +822,18 @@ void DumpWallDecals()
 				zx::decalstats::g_lastRefusedTex[0], zx::decalstats::g_lastRefusedTex[1],
 				zx::decalstats::g_lastRefusedTex[2]);
 		}
+		// [rc4l] "The mark did not move" has three causes -- no direction was known, the trace found
+		// nothing, or it hit something that was not a wall -- and each needs a different fix.
+		// [rc4l] A missile marks a wall only when it explodes with a blocking LINE. Dying against an
+		// actor, or against neither, leaves nothing -- silently, and only in some places, which is
+		// exactly what a dead zone looks like from in front of an unmarked wall.
+		Printf("  missile deaths: %d on a line, %d on an actor, %d on neither, %d with no generator\n",
+			g_deathLine, g_deathActor, g_deathNeither, g_deathNoGen);
+		Printf("  unstuck spawns: %d with a direction, %d without\n",
+			g_unstuckWithDir, g_unstuckNoDir);
+		Printf("  re-anchor trace: result %d at %.1f units, landed on line %d "
+		       "(-2 no direction, -1 found nothing, 3 hit a wall)\n",
+			g_lastAnchorHit, g_lastAnchorDist, g_lastAnchorLine);
 		Printf("  registered this frame: %d\n", (int)g_projected.Size());
 		Printf("  drawn last frame: %d boxes in %d draw calls\n", boxes, draws);
 	}

@@ -82,6 +82,15 @@
       "angle": 207.9492,
       "pitch": -2.9883,
       "shows": "Flying, aimed exactly at a horizontal linedef seam on the green pillar. A BFG hit lands on the line and leaves no decal at all."
+    },
+    "oval-mark": {
+      "map": "MAP01",
+      "x": 785.932,
+      "y": 607.492,
+      "z": 72,
+      "angle": 329.0625,
+      "pitch": -1.6699,
+      "shows": "BFG mark still renders as an oval/egg here rather than a round scorch. Recorded after the contact-point anchoring fix."
     }
   }
 }
