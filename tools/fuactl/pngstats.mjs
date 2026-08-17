@@ -305,33 +305,12 @@ if (args[0] === "--crop") {
 // is -- which is the only thing that identifies what drew it. Reading the profile and its biggest
 // jumps turns "somewhere below the middle" into a row number and then into a world height.
 //   node pngstats.mjs --rows in.png [x0 x1] [topN]
-// [rc4l] The difference between two frames, as a picture.
+// [rc4l] Per-row luminance, and the rows where it STEPS.
 //
-// --diff gives a percentage and --diffblob a centroid, and neither answers "what SHAPE is the
-// difference" -- which is the question whenever one renderer has an artifact the other does not. A
-// seam, a band, a halo and a wholesale shift all score about the same and look nothing alike.
-//   node pngstats.mjs --diffimg a.png b.png out.png [gain] [x0 y0 x1 y1] [zoom]
-if (args[0] === "--diffimg") {
-  const a = decodePNG(args[1]), b = decodePNG(args[2]);
-  if (a.w !== b.w || a.h !== b.h) { console.log("SIZE MISMATCH"); process.exit(2); }
-  const gain = Number(args[4] || 4);
-  const f = args.length >= 9 ? args.slice(5, 9).map(Number) : [0, 0, 1, 1];
-  const z = Number(args[9] || 1);
-  const x0 = Math.floor(f[0] * a.w), y0 = Math.floor(f[1] * a.h);
-  const x1 = Math.ceil(f[2] * a.w),  y1 = Math.ceil(f[3] * a.h);
-  const w = (x1 - x0) * z, h = (y1 - y0) * z;
-  const out = Buffer.alloc(w * h * 3);
-  for (let y = 0; y < h; y++)
-    for (let x = 0; x < w; x++) {
-      const sx = x0 + Math.floor(x / z), sy = y0 + Math.floor(y / z);
-      const pa = px(a, sx, sy), pb = px(b, sx, sy);
-      const o = (y * w + x) * 3;
-      for (let c = 0; c < 3; c++) out[o + c] = Math.min(255, Math.abs(pa[c] - pb[c]) * gain);
-    }
-  writePNG(args[3], w, h, out);
-  console.log(`wrote ${args[3]} ${w}x${h} (gain ${gain})`);
-  process.exit(0);
-}
+// A seam across a sprite is a horizontal discontinuity, and the eye can see one but not say where it
+// is -- which is the only thing that identifies what drew it. Reading the profile and its biggest
+// jumps turns "somewhere below the middle" into a row number and then into a world height.
+//   node pngstats.mjs --rows in.png [x0 x1] [topN]
 if (args[0] === "--rows") {
   const a = decodePNG(args[1]);
   const fx0 = args.length >= 4 ? Number(args[2]) : 0.35;
