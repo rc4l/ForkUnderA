@@ -132,11 +132,14 @@ CVAR(Int, fua_dg_cull, 0, CVAR_ARCHIVE)
 // with it on, "missing world geometry" and "correctly visible sky" look identical. Turning it off
 // leaves holes against the clear colour, which is unambiguous.
 CVAR(Bool, fua_dg_sky, true, 0)
-// [rc4l] Planar mirror reflections. Off drops back to a hole, which is what it looked like before.
-CVAR(Bool, fua_dg_mirrors, true, 0)
-// [rc4l] Ray-traced reflections. OFF by default while the traced draw is still being brought up:
-// the planar path works, and a backend that crashes the process is worse than one that reflects
-// only the level geometry.
+// [rc4l] Reflections are ALWAYS on; this only picks how they are produced.
+//
+//   on  -- ray traced: one ray per mirror pixel against the level's acceleration structure
+//   off -- planar: the world re-rendered from the reflected camera into a screen-sized target
+//
+// There is no switch for mirrors themselves. A mirror with no reflection is a hole in the wall, not
+// a cheaper mirror, so "off" was never a state worth being able to reach. It also falls back on its
+// own: an adapter without ray tracing gets the planar path whatever this says.
 CVAR(Bool, fua_dg_rtmirrors, false, CVAR_ARCHIVE)
 
 // [rc4l] Re-resolve animated textures per frame. See the loop in DrawSceneOnce.
@@ -2666,7 +2669,7 @@ static void DrawMirrorSurface(Diligent::IDeviceContext *ctx, unsigned index)
 // Render each mirror's reflection and draw its surface. Called after the world, before the 2D layer.
 static void RenderMirrors(Diligent::IDeviceContext *ctx)
 {
-	if (!fua_dg_mirrors || g_mirrors.Size() == 0) return;
+	if (g_mirrors.Size() == 0) return;
 	if (!g_mirrorPSO || !g_mirrorSRB || !g_mirrorVB)
 	{
 		if (!EnsureMirrorResources()) return;
