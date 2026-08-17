@@ -41,6 +41,15 @@ struct Quad2D
 	// only a coverage mask and the vertex colour supplies RGB -- multiplying by the texel instead
 	// renders the whole font muddy and dark.
 	int         texMode;
+	// [rc4l] What this record IS: 0 a textured/solid rect, 1 a line from (x,y) to (lx2,ly2).
+	//
+	// The automap is drawn with GL_LINES through FGLRenderer::DrawLine, not with DrawTexture, so a
+	// capture that only understood rects recorded the background and none of the map -- the automap
+	// came up as a flat fill. A line cannot be expressed as an axis-aligned rect because it is
+	// diagonal, and it cannot go in a separate list either: 2D is painter's algorithm, and lines
+	// interleave with the text drawn over them.
+	int         kind;
+	float       lx2, ly2;
 };
 
 // Drop last frame's list. Called once at the top of D_Display, before anything draws.
