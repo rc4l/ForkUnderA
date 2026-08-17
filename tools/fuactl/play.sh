@@ -75,12 +75,15 @@ node src/cli.mjs "${ARGS[@]}" >"$TASK" 2>&1 &
 LAUNCH=$!
 trap 'kill $LAUNCH 2>/dev/null || true' EXIT
 
-for _ in $(seq 60); do grep -q 'token=' "$TASK" 2>/dev/null && break; sleep 2; done
+# [rc4l] Poll fast. The engine reaches a playable level in about four seconds; every second beyond
+# that used to be this script sleeping. Measured after wondering why a launch "took ninety seconds":
+# it did not, the waiting did.
+for _ in $(seq 400); do grep -q 'token=' "$TASK" 2>/dev/null && break; sleep 0.25; done
 TOK=$(grep -o 'token=[a-f0-9]*' "$TASK" | cut -d= -f2)
 [ -n "$TOK" ] || { echo "launch failed:"; tail -20 "$TASK"; exit 1; }
-for _ in $(seq 40); do
+for _ in $(seq 200); do
   node src/cli.mjs rpc sim.tic --port "$PORT" --token "$TOK" 2>/dev/null | grep -q '"inlevel": true' && break
-  sleep 3
+  sleep 0.4
 done
 
 printf 'PORT=%s
@@ -92,8 +95,8 @@ E() { node src/cli.mjs ui exec "$1" --port "$PORT" --token "$TOK" >/dev/null 2>&
 # [rc4l] freelook is OFF in a stock Doom config, and every bridge instance gets a fresh one, so a
 # play session came up unable to look up or down at all. Not the backend's fault, but indistinguishable
 # from it at the window.
-E "freelook 1" 1
-E "god" 1
+E "freelook 1" 0.2
+E "god" 0.2
 
 LOG=$(ls -t /c/Users/anann/AppData/Local/Temp/fuactl-*/engine-"$PORT".log | head -1)
 grep -nE "uploaded|coverage:" "$LOG" | tail -3

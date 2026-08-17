@@ -2363,7 +2363,7 @@ static const char *kMirrorPS =
 	"layout(binding = 1) uniform sampler2D uTex;\n"
 	"layout(binding = 2) uniform accelerationStructureEXT uTLAS;\n"
 	"layout(std430, binding = 3) readonly buffer Verts { float vtx[]; };\n"
-	"layout(binding = 4) uniform sampler2D uMaterials[16];\n"
+	"layout(binding = 4) uniform sampler2D uMaterials[128];\n"
 	"layout(location = 0) in vec3 vWorld;\n"
 	"layout(location = 1) in vec3 vNormal;\n"
 	"layout(location = 0) out vec4 outColor;\n"
@@ -2390,7 +2390,7 @@ static const char *kMirrorPS =
 	"    vec2 uv = vertUV(i0) * w0 + vertUV(i1) * bc.x + vertUV(i2) * bc.y;\n"
 	// The material index rides in the vertex slot that used to hold a dynamic light index and has
 	// been dead since the shader started testing every light.
-	"    uint mat = uint(vtx[i0 * STRIDE + 15u] + 0.5) & 15u;\n"
+	"    uint mat = uint(vtx[i0 * STRIDE + 15u] + 0.5) & 127u;\n"
 	"    c *= texture(uMaterials[nonuniformEXT(mat)], uv).rgb;\n"
 	// Distance falls off the same way the raster path's fog does, so a far reflection reads as far.
 	"    float t = rayQueryGetIntersectionTEXT(rq, true);\n"
@@ -2515,7 +2515,7 @@ static bool EnsureMirrorResources()
 				g_mirrorPSO.Release();
 				return false;
 			}
-			for (Diligent::Uint32 mi = 0; mi < 16; mi++)   // matches uMaterials[16] in the shader
+			for (Diligent::Uint32 mi = 0; mi < 128; mi++)   // matches uMaterials[128] in the shader
 			{
 				const void *mat = (mi < g_batches.Size()) ? g_batches[mi].resolved : NULL;
 				Diligent::IDeviceObject *obj = GetMaterialSRV(mat, 0);
