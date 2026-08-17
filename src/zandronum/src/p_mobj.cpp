@@ -1825,8 +1825,24 @@ void P_ExplodeMissile (AActor *mo, line_t *line, AActor *target, bool bExplodeOn
 					// [BC] Servers don't need to spawn decals.
 					if ( NETWORK_GetState( ) != NETSTATE_SERVER )
 					{
+						// [rc4l] Which way the missile was going, for the case where this line turns
+						// out to have no texture to hold a mark.
+						//
+						// The blocking line is not always the surface you can see. A projectile has a
+						// radius, so it can be stopped by one face of a corner while the face it
+						// visibly struck is the neighbour -- measured on MAP01, blocked by line 288
+						// whose far endpoint IS the first vertex of line 152, the face under the
+						// crosshair. Line 288 is open at that height and carries no middle texture,
+						// so the engine has nothing to glue a decal to and makes none at all.
+						//
+						// The velocity is already zeroed by the time we get here, but the previous
+						// position is not, so the direction of travel survives. See
+						// SpawnUnstuckWallDecal, which traces the last few units along it to find the
+						// surface actually hit.
+						zx::levelmesh::SetImpactDirection( mo->x - mo->PrevX, mo->y - mo->PrevY );
 						DImpactDecal::StaticCreate (base->GetDecal (),
 							x, y, z, line->sidedef[side], ffloor);
+						zx::levelmesh::SetImpactDirection( 0, 0 );
 					}
 				}
 			}

@@ -702,6 +702,11 @@ int g_wallTries = 0, g_wallNoTemplate = 0, g_wallSuppressed = 0, g_wallNoSurface
 int g_lastRefusedLine = -1;
 double g_lastRefusedZ = 0, g_lastRefusedBackFloor = 0, g_lastRefusedBackCeil = 0;
 bool g_lastRefusedTwoSided = false, g_lastRefusedHasMid = false;
+// Where the line IS, and what is drawn on it. "The blast landed on real geometry" and "the engine
+// found no texture to put a mark on" cannot both be true, and only the line itself can say which.
+double g_lastRefusedV1[2] = { 0, 0 }, g_lastRefusedV2[2] = { 0, 0 };
+double g_lastRefusedHit[2] = { 0, 0 };
+char g_lastRefusedTex[3][16] = { "", "", "" };   // top, mid, bottom of the side that was hit
 }}
 
 DImpactDecal *DImpactDecal::StaticCreate (const FDecalTemplate *tpl, fixed_t x, fixed_t y, fixed_t z, side_t *wall, F3DFloor * ffloor, PalEntry color)
@@ -749,6 +754,23 @@ DImpactDecal *DImpactDecal::StaticCreate (const FDecalTemplate *tpl, fixed_t x, 
 				zx::decalstats::g_lastRefusedBackFloor = back ? FIXED2DBL(back->floorplane.ZatPoint(x, y)) : 0;
 				zx::decalstats::g_lastRefusedBackCeil = back ? FIXED2DBL(back->ceilingplane.ZatPoint(x, y)) : 0;
 				zx::decalstats::g_lastRefusedHasMid = wall->GetTexture(side_t::mid).isValid();
+				if (ld != NULL)
+				{
+					zx::decalstats::g_lastRefusedV1[0] = FIXED2DBL(ld->v1->x);
+					zx::decalstats::g_lastRefusedV1[1] = FIXED2DBL(ld->v1->y);
+					zx::decalstats::g_lastRefusedV2[0] = FIXED2DBL(ld->v2->x);
+					zx::decalstats::g_lastRefusedV2[1] = FIXED2DBL(ld->v2->y);
+				}
+				zx::decalstats::g_lastRefusedHit[0] = FIXED2DBL(x);
+				zx::decalstats::g_lastRefusedHit[1] = FIXED2DBL(y);
+				static const int tiers[3] = { side_t::top, side_t::mid, side_t::bottom };
+				for (int ti = 0; ti < 3; ti++)
+				{
+					FTexture *t = TexMan[wall->GetTexture(tiers[ti])];
+					const char *n = (t != NULL && t->Name.Len()) ? t->Name.GetChars() : "-";
+					strncpy(zx::decalstats::g_lastRefusedTex[ti], n, 15);
+					zx::decalstats::g_lastRefusedTex[ti][15] = 0;
+				}
 			}
 			return NULL;
 		}
