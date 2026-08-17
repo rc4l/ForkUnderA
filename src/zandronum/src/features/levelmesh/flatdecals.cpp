@@ -499,7 +499,14 @@ static void RegisterWallDecals()
 			// A near surface is reached by going UP the graphic for a ceiling and DOWN for a floor,
 			// except on the far side of the line where a tread is above and a lintel below.
 			const float h = (ceiling != away) ? (planeZ - z) : (z - planeZ);
-			if (!(h > 0.f) || h >= halfH) continue;
+			// [rc4l] The mark has to REACH the plane, which is not the same as overhanging it.
+			//
+			// This asked for h > 0, meaning the centre had to be clear of the plane before anything
+			// would fold. That is the wrong half of the condition: a mark whose centre sits AT floor
+			// level -- which is where a shot fired from standing height at a low step lands -- has its
+			// entire lower half below the floor and everything to gain from folding, and got nothing.
+			// What matters is only whether the plane falls inside the mark's own height.
+			if (!(h < halfH) || !(h > -halfH)) continue;
 
 			// The centre goes h along the wall's normal -- back through the face for a surface in
 			// this room, forward past it for one behind the line -- so the coordinate the wall ended

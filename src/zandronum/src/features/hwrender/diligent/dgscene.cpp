@@ -161,6 +161,13 @@ CVAR(Bool, fua_dg_animate, true, 0)
 CVAR(Bool, fua_dg_hud, true, 0)
 
 // [rc4l] Dynamic lights: muzzle flashes, plasma, rocket trails, lamps.
+// [rc4l] The decal facing fade, which is the ONLY view-dependent term in the decal shader.
+//
+// It reads a surface normal out of the derivatives of a reconstructed world position, and anything
+// screen-space can make a mark change as the camera moves. Since the fold now paints perpendicular
+// surfaces properly on their own boxes, the fade may not be earning its keep any more -- this is how
+// to find out without rebuilding, by toggling it on one frozen frame.
+CVAR(Bool, fua_decal_facing, true, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
 CVAR(Bool, fua_dg_dynlights, true, 0)
 
 // [rc4l] The camera pitch, which lives outside any header the backend already pulls in.
@@ -693,11 +700,34 @@ static const char *kScenePSRedAlpha =
 // the mesh's own triangles and give each one real texture coordinates. The level mesh already holds
 // what that would need. Until then this is the honest boundary of the technique rather than a fudge
 // that looks right from one camera and not the next.
+// [rc4l] The normal comes from FOUR OWN TAPS of the depth buffer, not from dFdx/dFdy.
+//
+// Screen-space derivatives are computed across a 2x2 quad the shader does not choose, and at a
+// silhouette the two pixels of that quad sit on different surfaces -- so the normal is built across
+// a jump in depth and comes out meaningless. At a grazing angle it is worse: the derivative is a
+// difference of two nearly-equal large numbers, which is where the precision goes. The mark then
+// changes as the camera moves, which is the one thing a mark on a wall must never do.
+//
+// Sampling both neighbours on each axis and keeping the CLOSER one fixes both. Two pixels on the
+// same surface are near each other in world space; one across a silhouette is far. Picking the near
+// side means the normal is always built from the surface the fragment is actually on. This is the
+// standard fix for reconstructing a normal from depth and it is worth its four extra taps here,
+// where the pass covers a few hundred pixels rather than the frame.
 #define FUA_DECAL_FACING \
-	"float fuaDecalFacing(vec3 P, vec3 axisN) {\n" \
-	"    vec3 dpx = dFdx(P), dpy = dFdy(P);\n" \
-	"    if (dot(dpx, dpx) < 1e-12 || dot(dpy, dpy) < 1e-12) return 0.0;\n" \
-	"    vec3 nrm = normalize(cross(dpx, dpy));\n" \
+	"vec3 fuaWorldAt(vec2 uv, mat4 invMVP) {\n" \
+	"    float d = texture(uSceneDepth, uv).r;\n" \
+	"    vec4 w = invMVP * vec4(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0, d, 1.0);\n" \
+	"    return w.xyz / w.w;\n" \
+	"}\n" \
+	"float fuaDecalFacing(vec3 P, vec2 uv, vec2 texel, mat4 invMVP, vec3 axisN) {\n" \
+	"    vec3 xp = fuaWorldAt(uv + vec2(texel.x, 0.0), invMVP) - P;\n" \
+	"    vec3 xm = P - fuaWorldAt(uv - vec2(texel.x, 0.0), invMVP);\n" \
+	"    vec3 yp = fuaWorldAt(uv + vec2(0.0, texel.y), invMVP) - P;\n" \
+	"    vec3 ym = P - fuaWorldAt(uv - vec2(0.0, texel.y), invMVP);\n" \
+	"    vec3 dx = (dot(xp, xp) < dot(xm, xm)) ? xp : xm;\n" \
+	"    vec3 dy = (dot(yp, yp) < dot(ym, ym)) ? yp : ym;\n" \
+	"    if (dot(dx, dx) < 1e-12 || dot(dy, dy) < 1e-12) return 0.0;\n" \
+	"    vec3 nrm = normalize(cross(dx, dy));\n" \
 	"    return smoothstep(0.30, 0.65, abs(dot(nrm, normalize(axisN))));\n" \
 	"}\n"
 
@@ -800,7 +830,8 @@ static const char *kDecalPS =
 	   places the unwrap exists to serve got the blurriest mip and washed out. The flat projection is
 	   smooth everywhere and is the right scale to measure by; the unwrap only bends where the texture
 	   is fetched FROM, never how densely it is being sampled. */ \
-	"    float facing = fuaDecalFacing(P, vAxisN);\n"
+	"    float facing = (uSkyColor.w != 0.0)\n"
+	"        ? fuaDecalFacing(P, uv, 1.0 / vec2(uScreen.x, uScreen.y), uInvMVP, vAxisN) : 1.0;\n"
 	"    if (facing <= 0.0) discard;\n"
 	"    vec2 flat_uv = local.xy * 0.5 + 0.5;\n"
 	"    vec4 texel = textureGrad(uTex, t, dFdx(flat_uv), dFdy(flat_uv));\n"
@@ -848,7 +879,8 @@ static const char *kDecalRedPS =
 	"    if (vClip.y != 0.0 && (local.y - vClip.x) * vClip.y < 0.0) discard;\n"
 	"    vec2 t = fuaDecalUV(local, vAxisU, vAxisV, vAxisN);\n"
 	"    if (any(lessThan(t, vec2(0.0))) || any(greaterThan(t, vec2(1.0)))) discard;\n"
-	"    float facing = fuaDecalFacing(P, vAxisN);\n"
+	"    float facing = (uSkyColor.w != 0.0)\n"
+	"        ? fuaDecalFacing(P, uv, 1.0 / vec2(uScreen.x, uScreen.y), uInvMVP, vAxisN) : 1.0;\n"
 	"    if (facing <= 0.0) discard;\n"
 	"    vec2 flat_uv = local.xy * 0.5 + 0.5;\n"
 	"    float a = textureGrad(uTex, t, dFdx(flat_uv), dFdy(flat_uv)).r * vColor.a * facing;\n"
@@ -3596,7 +3628,7 @@ static void DrawMirrorSurface(Diligent::IDeviceContext *ctx, unsigned index)
 		cb[32] = g_skyCapColor[0].r / 255.f;
 		cb[33] = g_skyCapColor[0].g / 255.f;
 		cb[34] = g_skyCapColor[0].b / 255.f;
-		cb[35] = 0.f;
+		cb[35] = fua_decal_facing ? 1.f : 0.f;
 	}
 	if (g_mirrorTraced)
 	{
@@ -3718,7 +3750,7 @@ static void RenderMirrors(Diligent::IDeviceContext *ctx)
 		cb[32] = g_skyCapColor[0].r / 255.f;
 		cb[33] = g_skyCapColor[0].g / 255.f;
 		cb[34] = g_skyCapColor[0].b / 255.f;
-		cb[35] = 0.f;
+		cb[35] = fua_decal_facing ? 1.f : 0.f;
 		}
 		Diligent::IBuffer *vbs[] = { g_mirrorVB };
 		const Diligent::Uint64 offsets[] = { (Diligent::Uint64)i * 36 * sizeof(float) };
@@ -3971,7 +4003,7 @@ static void DrawWorld(Diligent::IDeviceContext *ctx)
 		cb[32] = g_skyCapColor[0].r / 255.f;
 		cb[33] = g_skyCapColor[0].g / 255.f;
 		cb[34] = g_skyCapColor[0].b / 255.f;
-		cb[35] = 0.f;
+		cb[35] = fua_decal_facing ? 1.f : 0.f;
 	}
 
 	// [rc4l] Re-resolve animated textures.
