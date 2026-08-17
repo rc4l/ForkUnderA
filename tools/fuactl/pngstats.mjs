@@ -223,6 +223,59 @@ if (args[0] === "--align") {
 // [rc4l] Cut a region out and magnify it, because an artefact three pixels wide is invisible in a
 // 640x480 frame and obvious at 4x. Fractions, like every other region argument here.
 //   node pngstats.mjs --crop in.png out.png x0 y0 x1 y1 [zoom]
+// [rc4l] Where the darkest thing in a region is, as a fraction of the frame.
+//
+// A decal on a dim floor is a dark blob and nothing else in the crop is, so its centroid is a
+// number rather than an impression -- which is what "does it stay put when the camera moves" needs.
+// Two frames from different camera angles should move the blob by the same amount they move
+// everything else; a blob that does not move is stuck to the screen.
+//   node pngstats.mjs --blob in.png [x0 y0 x1 y1]
+// [rc4l] Where two frames differ most, as a fraction of the frame.
+//
+// --blob finds the darkest thing, which on a near-black floor is not reliably the decal at all.
+// Diffing against the same camera BEFORE the decal existed isolates it exactly: whatever changed is
+// the decal and nothing else. That is what makes "does it stay anchored when the camera moves" a
+// measurement rather than a squint.
+//   node pngstats.mjs --diffblob before.png after.png [x0 y0 x1 y1]
+if (args[0] === "--diffblob") {
+  const a = decodePNG(args[1]), b = decodePNG(args[2]);
+  if (a.w !== b.w || a.h !== b.h) { console.log("SIZE MISMATCH"); process.exit(0); }
+  const f = args.length >= 7 ? args.slice(3, 7).map(Number) : [0, 0, 1, 1];
+  const x0 = Math.floor(f[0] * a.w), y0 = Math.floor(f[1] * a.h);
+  const x1 = Math.ceil(f[2] * a.w),  y1 = Math.ceil(f[3] * a.h);
+  const diffs = [];
+  for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
+    const pa = px(a, x, y), pb = px(b, x, y);
+    const d = Math.abs(pa[0]-pb[0]) + Math.abs(pa[1]-pb[1]) + Math.abs(pa[2]-pb[2]);
+    if (d > 8) diffs.push([d, x, y]);
+  }
+  if (diffs.length === 0) { console.log("no difference"); process.exit(0); }
+  diffs.sort((p, q) => q[0] - p[0]);
+  const take = Math.max(1, Math.floor(diffs.length * 0.5));
+  let sx = 0, sy = 0;
+  for (let i = 0; i < take; i++) { sx += diffs[i][1]; sy += diffs[i][2]; }
+  console.log(`changed at x ${(sx / take / a.w).toFixed(4)} y ${(sy / take / a.h).toFixed(4)} ` +
+              `(${diffs.length} px changed)`);
+  process.exit(0);
+}
+if (args[0] === "--blob") {
+  const a = decodePNG(args[1]);
+  const f = args.length >= 6 ? args.slice(2, 6).map(Number) : [0, 0, 1, 1];
+  const x0 = Math.floor(f[0] * a.w), y0 = Math.floor(f[1] * a.h);
+  const x1 = Math.ceil(f[2] * a.w),  y1 = Math.ceil(f[3] * a.h);
+  const lum = [];
+  for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
+    const p0 = px(a, x, y);
+    lum.push([0.299 * p0[0] + 0.587 * p0[1] + 0.114 * p0[2], x, y]);
+  }
+  lum.sort((p, q) => p[0] - q[0]);
+  const take = Math.max(1, Math.floor(lum.length * 0.02));   // darkest 2%
+  let sx = 0, sy = 0;
+  for (let i = 0; i < take; i++) { sx += lum[i][1]; sy += lum[i][2]; }
+  console.log(`blob at x ${(sx / take / a.w).toFixed(4)} y ${(sy / take / a.h).toFixed(4)} ` +
+              `(darkest ${take} px, mean lum ${(lum[0][0]).toFixed(1)})`);
+  process.exit(0);
+}
 if (args[0] === "--crop") {
   const a = decodePNG(args[1]);
   const f = args.slice(3, 7).map(Number);
