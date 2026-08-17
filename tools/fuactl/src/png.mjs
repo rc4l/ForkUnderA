@@ -152,7 +152,13 @@ function crc32(buf) {
   return c ^ 0xffffffff;
 }
 
-const [, , ...args] = process.argv;
+// [rc4l] The dispatch, as a function rather than a module that reads process.argv on import.
+//
+// This lived beside fuactl as its own script, which meant every capture that wanted a number ran a
+// SECOND tool by hand -- and the two drifted: pngstats grew a --diffimg and an --align that fuactl
+// knew nothing about, and both were duplicated by someone who could not see them from the CLI.
+// One tool, one surface: `fuactl png <mode> ...`.
+export function png(args) {
 
 // [rc4l] Where two renders disagree, as a picture.
 //
@@ -366,4 +372,6 @@ for (const f of files) {
   console.log(
     `${f.padEnd(46)} ${img.w}x${img.h}  mean rgb ${r.toFixed(1)},${g.toFixed(1)},${b.toFixed(1)}` +
     `  lum ${lum.toFixed(1)}  hue r/b ${(r / Math.max(b, 0.01)).toFixed(2)}`);
+}
+
 }

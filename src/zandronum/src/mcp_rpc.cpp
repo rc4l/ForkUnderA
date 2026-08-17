@@ -775,8 +775,12 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 			SendErr( id, "single-player instances only" );
 			return;
 		}
-		long x = 0, y = 0;
-		if ( !GetInt( args, "x", x ) || !GetInt( args, "y", y ))
+		// [rc4l] FRACTIONAL map units, for the same reason the angle is fractional. Whole units put a
+		// camera up to half a unit off the one being reproduced, which at any distance is enough to
+		// frame a different texel of the thing under examination -- and player.camera reports three
+		// decimals, so a position recorded from a live session could not be replayed exactly.
+		double x = 0, y = 0;
+		if ( !GetFloat( args, "x", x ) || !GetFloat( args, "y", y ))
 		{
 			SendErr( id, "need x and y (map units)" );
 			return;
@@ -787,7 +791,29 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 			SendErr( id, "no player pawn" );
 			return;
 		}
-		P_TeleportMove( mo, fixed_t( x ) << FRACBITS, fixed_t( y ) << FRACBITS, mo->z, true );
+		// [rc4l] Refuse a destination the player could not stand in, rather than forcing it.
+		//
+		// This forced the move unconditionally, which is a noclip with extra steps: a warp to a spot
+		// inside a wall succeeded, reported success, and left the camera embedded in geometry looking
+		// at the inside of a column. A whole grid probe went through solid rock that way and reported
+		// every cell as reachable. Worse, the shots taken from those cameras look like renderer faults
+		// -- surfaces missing, geometry inside out -- when they are only a camera somewhere no camera
+		// can be, so they cost a diagnosis each.
+		//
+		// Callers that genuinely need the old behaviour ask for it; everyone else gets told the spot
+		// is solid and keeps their previous position, which is recoverable.
+		long force = 0;
+		GetInt( args, "force", force );
+		const fixed_t fx = FLOAT2FIXED( x ), fy = FLOAT2FIXED( y );
+		// P_TeleportMove is not the check: teleports deliberately ignore blocking lines, so it
+		// happily lands the player inside a wall and returns true. P_CheckPosition is the one that
+		// answers whether a body of this radius fits there.
+		if ( force == 0 && !P_CheckPosition( mo, fx, fy ))
+		{
+			SendErr( id, "that spot is solid or occupied -- pass force:1 to go there anyway" );
+			return;
+		}
+		P_TeleportMove( mo, fx, fy, mo->z, true );
 		mo->z = mo->floorz;
 
 		// [rc4l] Optional facing, in degrees, 0 = east and 90 = north like every other angle a Doom
@@ -818,10 +844,15 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 		mo->PrevX = mo->x;
 		mo->PrevY = mo->y;
 		mo->PrevZ = mo->z;
-		std::string body = "{\"x\":" + I( (long long)( mo->x >> FRACBITS )) + ",\"y\":" + I( (long long)( mo->y >> FRACBITS ))
-			+ ",\"z\":" + I( (long long)( mo->z >> FRACBITS )) + ",\"sector\":" + I( (int)( mo->Sector - sectors ))
-			+ ",\"angle\":" + I( (long long)( (double)mo->angle * 90.0 / ANGLE_90 )) + "}";
-		SendOk( id, body );
+		// Reported back at the precision it was asked for, so a caller can confirm it landed
+		// where it meant to rather than half a unit away.
+		FString body;
+		body.Format( "{\"x\":%.3f,\"y\":%.3f,\"z\":%.3f,\"sector\":%d,\"angle\":%.4f,\"pitch\":%.4f}",
+			FIXED2FLOAT( mo->x ), FIXED2FLOAT( mo->y ), FIXED2FLOAT( mo->z ),
+			(int)( mo->Sector - sectors ),
+			(double)mo->angle * 360.0 / 4294967296.0,
+			(double)(signed int)mo->pitch * 360.0 / 4294967296.0 );
+		SendOk( id, body.GetChars() );
 	}
 	else if ( cmd == "gl.timers" )
 	{

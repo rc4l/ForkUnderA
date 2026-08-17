@@ -12,9 +12,15 @@ import { sampleProcess } from "./sample.mjs";
 import { summarizeGlTimers } from "./proto.mjs";
 import * as ui from "./ui.mjs";
 import { runBench } from "./bench.mjs";
+import * as cap from "./capture.mjs";
+import { play } from "./play.mjs";
+import * as shot from "./shot.mjs";
+import * as sweepMod from "./sweep.mjs";
+import { png } from "./png.mjs";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const num = (v) => (v != null && v !== true ? Number(v) : undefined);
 
@@ -68,6 +74,14 @@ const USAGE = `fuactl <command>
   renderer-info --port P [--token T]   renderer identity + whether GL timer queries work on this driver
   ui <action> [args] --port P [--token T]   drive the UI: read (menu as text), find <label>, nav <keys>, click <x> <y>, drag, type <text>, look --yaw D --pitch D, screenshot [name], exec <ccmd>
   diligent --port P [--frames N] [--shot FILE] [--sweep DIR]   drive the Diligent (Vulkan) backend: bake the level mesh, upload geometry, optional swapchain screenshot, optional debug-view sweep (lm0..lm4.png in DIR), the matched Diligent-vs-GL benchmark, and with --scale a GPU-time probe at 1x..100x the visible geometry
+  play [--port P] [--map M] [--file a.pk3,b.pk3] [--preset ID --variant V] [--gl] [--side-by-side] [--rt] [--monsters] [--lock]   a build to walk around in, Vulkan live in the window; stays up until Ctrl-C
+  build [--root DIR]                 compile the engine and stage it, failing loudly instead of staging a stale binary
+  shot <tag> [--port P] [--spot NAME | --at x,y,z --face yaw,pitch]   matched GL/Vulkan pair from a running instance, one camera, sim frozen
+  mark --port P --tag T --at x,y,z --face yaw,pitch [--weapon W] [--map M]   fire at a junction, find the mark, and capture a GL/Vulkan pair of it
+  sweep [--maps "MAP01 MAP07"] [--port P]   matched pairs across several maps, ranked by how much the renderers disagree
+  doorshot <tag> [--port P] [--at x,y,z --face yaw] [--mid TICS]   a door caught MID-SWING in both renderers, plus a before pair
+  look [--port P] [--at x,y,z --face yaw,pitch]   what the crosshair is on and what the level mesh holds for it
+  png <mode> ...                     pixel arithmetic on captures: --diff, --diffimg, --align, --crop, --rows, --blob
   mcp                                run as an MCP stdio server for agents
 `;
 
@@ -310,7 +324,7 @@ async function main() {
     }
     // [rc4l] Query the level's linedefs and print the matches. The engine prints to its console, so
     // this runs the CCMD and reads the lines back out of the instance's log -- the same shape
-    // vkcheck.sh uses. Driving the engine to a specific piece of geometry (a door, a switch, a
+    // `fuactl doorshot` uses. Driving the engine to a specific piece of geometry (a door, a switch, a
     // trigger) used to mean walking the level blind; this makes it two commands.
     case "lines": {
       if (!flags.port) {
@@ -371,7 +385,7 @@ async function main() {
     // Read-only, so it is safe against an instance somebody is playing -- which is the point. The
     // person who found the fault should not have to stop and read numbers off their own screen.
     //
-    //   fuactl here --port P                 print it, with a ready-made shot.sh line
+    //   fuactl here --port P                 print it, with a ready-made capture line
     //   fuactl here --port P --save NAME     ...and record it in spots.json as a named repro
     case "here": {
       if (!flags.port) { console.error("usage: fuactl here --port P [--token T] [--save NAME] [--note TEXT]"); process.exit(2); }
@@ -380,8 +394,6 @@ async function main() {
       await c.waitHello();
       const cam = await c.rpc("player.camera");
       c.close();
-      const n = (v) => Number(v).toFixed(3).replace(/\.?0+$/, "");
-      const line = [cam.x, cam.y, cam.z, cam.yaw, cam.pitch].map(n).join(" ");
       if (flags.save) {
         const p = new URL("../spots.json", import.meta.url);
         const db = JSON.parse(fs.readFileSync(p, "utf8"));
@@ -394,7 +406,180 @@ async function main() {
         console.error(`saved spot ${flags.save}`);
       }
       console.log(JSON.stringify(cam, null, 2));
-      console.error(`\n  bash shot.sh <tag> ${line}`);
+      console.error(`\n  fuactl shot <tag> --at ${cam.x},${cam.y},${cam.z} --face ${cam.yaw},${cam.pitch}`);
+      break;
+    }
+    // [rc4l] `fuactl png <mode> ...` -- the pixel arithmetic, on the same surface as everything else.
+    case "png": { png(rest); break; }
+    // [rc4l] `fuactl look` -- what the crosshair is on, and what the mesh holds for it.
+    case "look": {
+      const session = (!flags.port && shot.readSession(path.resolve(process.cwd(), ".play-session"))) || null;
+      const port = Number(flags.port || (session && session.port));
+      if (!port) { console.error("no --port and no .play-session -- nothing running"); process.exit(2); }
+      const c = new BridgeClient();
+      await c.connect(port, { token: flags.token || (session && session.token) || null });
+      await c.waitHello();
+      try {
+        let at = null;
+        if (flags.at) {
+          const [x, y, z] = String(flags.at).split(",").map(Number);
+          const [yaw, pitch] = String(flags.face || "0,0").split(",").map(Number);
+          at = { x, y, z, angle: yaw, pitch };
+        }
+        process.stdout.write(await sweepMod.look(c, at));
+      } finally { c.close(); }
+      break;
+    }
+    // [rc4l] `fuactl sweep` -- matched pairs across several maps, so the next thing to fix is the
+    // worst number rather than the most interesting-sounding entry on a feature list.
+    case "sweep": {
+      const maps = flags.maps ? String(flags.maps).split(/[,\s]+/).filter(Boolean) : undefined;
+      const pairs = await sweepMod.sweep({ maps, port: flags.port ? Number(flags.port) : undefined });
+      if (pairs.length) png(["--diff", ...pairs.flatMap((p) => [p.gl, p.vk])]);
+      break;
+    }
+    // [rc4l] `fuactl doorshot` -- a door caught mid-swing, which is the only state that shows
+    // whether moving geometry is tracked. A still level cannot answer it.
+    case "doorshot": {
+      const session = (!flags.port && shot.readSession(path.resolve(process.cwd(), ".play-session"))) || null;
+      const port = Number(flags.port || (session && session.port));
+      if (!port) { console.error("no --port and no .play-session -- nothing running"); process.exit(2); }
+      const c = new BridgeClient();
+      await c.connect(port, { token: flags.token || (session && session.token) || null });
+      await c.waitHello();
+      try {
+        let at;
+        if (flags.at) {
+          const [x, y, z] = String(flags.at).split(",").map(Number);
+          at = { x, y, z, angle: Number(String(flags.face || "90,0").split(",")[0]) };
+        }
+        const out = await sweepMod.doorShot(c, rest[0] || "door", {
+          at, engineBin: resolveEngine(),
+          midTics: flags.mid ? Number(flags.mid) : undefined,
+        });
+        console.log(JSON.stringify(out, null, 2));
+      } finally { c.close(); }
+      break;
+    }
+    // [rc4l] `fuactl build` -- compile and stage, failing loudly rather than staging nothing.
+    case "build": {
+      const r = shot.build({ root: flags.root || undefined });
+      const when = new Date(fs.statSync(r.staged).mtime).toTimeString().slice(0, 8);
+      console.log(`build ok, staged ${when} (+${r.entries} catalogue entries)`);
+      break;
+    }
+    // [rc4l] `fuactl shot` -- a matched GL/Vulkan pair from an ALREADY RUNNING instance.
+    //
+    // Every check used to relaunch the engine: a minute and a half of loading pk3s, baking the level
+    // and uploading, for a two-second capture. The engine does not need restarting to answer "what
+    // does this look like now" -- only to pick up a new binary.
+    //
+    //   fuactl shot <tag> [--port P --token T] [--spot NAME | --at x,y,z --face yaw,pitch]
+    //
+    // With no port it uses the running play session. With no camera it captures where the player is
+    // standing, which is the case where someone has walked to the thing and wants it recorded.
+    case "shot": {
+      const tag = rest[0] || "shot";
+      const session = (!flags.port && shot.readSession(path.resolve(process.cwd(), ".play-session"))) || null;
+      const port = Number(flags.port || (session && session.port));
+      const token = flags.token || (session && session.token) || null;
+      if (!port) { console.error("no --port and no .play-session -- nothing running"); process.exit(2); }
+
+      let at = null;
+      if (flags.spot) {
+        at = shot.readSpot(new URL("../spots.json", import.meta.url), String(flags.spot));
+        console.error(`spot ${flags.spot}: ${at.shows || ""}`);
+      } else if (flags.at) {
+        const [x, y, z] = String(flags.at).split(",").map(Number);
+        const [yaw, pitch] = String(flags.face || "0,0").split(",").map(Number);
+        at = { x, y, z, angle: yaw, pitch };
+      }
+
+      const c = new BridgeClient();
+      await c.connect(port, { token });
+      await c.waitHello();
+      try {
+        const out = await shot.shotPair(c, tag, { at, engineBin: flags.engine || resolveEngine() });
+        console.log(JSON.stringify(out, null, 2));
+        if (!out.gl || !out.vk) process.exitCode = 1;
+      } finally { c.close(); }
+      break;
+    }
+    // [rc4l] `fuactl play` -- a build to walk around in, with the Vulkan view live in the window.
+    //
+    //   fuactl play [--port P] [--map M] [--iwad W] [--file a.pk3,b.pk3] [--preset ID --variant V]
+    //               [--gl] [--side-by-side] [--rt] [--monsters] [--lock]
+    //
+    // Stays up until Ctrl-C, and writes the port and token to .play-session so a capture taken
+    // later can find this instance without depending on a pipe still existing.
+    case "play": {
+      const sessionFile = path.resolve(process.cwd(), ".play-session");
+      const inst = await play({
+        port: flags.port ? Number(flags.port) : undefined,
+        map: flags.map, iwad: flags.iwad, file: flags.file,
+        preset: flags.preset, variant: flags.variant,
+        catalogueDir: path.resolve(fileURLToPath(new URL(".", import.meta.url)), "../../../catalogue"),
+        storeDir: path.join(process.env.LOCALAPPDATA || os.tmpdir(), "ForkUnderA/pwads"),
+        gl: !!flags.gl, sideBySide: !!flags["side-by-side"], rt: !!flags.rt,
+        monsters: !!flags.monsters, lock: !!flags.lock,
+        sessionFile,
+      });
+      // [rc4l] The world contract, printed. Each of these has silently invalidated a measurement,
+      // and none of them announces itself when it is wrong -- so it is a line here, at launch,
+      // rather than something discovered later by the failure it caused.
+      for (const ch of inst.world.cheats) {
+        console.log(`  ${ch.on ? "on " : "???"} ${ch.command}${ch.flipped ? "   (it was off; flipped back)" : ""}`);
+      }
+      for (const cv of inst.world.cvars) {
+        console.log(`  ${cv.ok ? "ok " : "BAD"} ${cv.name} = ${cv.actual}${cv.ok ? "" : `   (wanted ${cv.expected})`}`);
+      }
+      console.log(`\n  ready -- the window is showing the ${flags.gl ? "GL" : "VULKAN"} render.`);
+      if (!flags.lock) console.log("  mouse and keyboard work normally. walking into unbaked areas bakes them in as you go.");
+      console.log(`  fua_vulkan 0 / 1 in the console is a live A/B against GL.\n`);
+      console.log(`  PORT=${inst.port} TOKEN=${inst.token}   (also in ${sessionFile})`);
+      console.log(`  capture a pair:  fuactl shot <tag> --port ${inst.port} --token ${inst.token}`);
+      console.log(`\n  ctrl-C here to quit.`);
+      process.on("SIGINT", async () => { await stopInstance(inst); process.exit(0); });
+      await new Promise(() => {});
+      break;
+    }
+    // [rc4l] `fuactl mark` -- shoot something, then look at what it left.
+    //
+    // The check this replaces was five manual steps and it was manual every time, so it got run at a
+    // slightly different camera each round and the rounds could not be compared. Worse, it kept
+    // being re-improvised as a one-off shell script, which is how the same three mistakes -- level
+    // not reset, monsters left on, camera forced inside a wall -- each shipped more than once.
+    //
+    // The point of aiming at a JUNCTION rather than a flat wall is that flat walls have never been
+    // the problem: a decal only has to decide anything where two surfaces meet.
+    //
+    //   fuactl mark --port P --tag T --at x,y,z --face yaw,pitch [--weapon W] [--map M]
+    case "mark": {
+      if (!flags.port || !flags.at || !flags.face) {
+        console.error("usage: fuactl mark --port P --tag T --at x,y,z --face yaw,pitch [--weapon W] [--map M] [--back N] [--up N]");
+        process.exit(2);
+      }
+      const [x, y, z] = String(flags.at).split(",").map(Number);
+      const [yaw, pitch] = String(flags.face).split(",").map(Number);
+      const weapon = flags.weapon || "RocketLauncher";
+      const tag = flags.tag || "mark";
+      const c = new BridgeClient();
+      await c.connect(Number(flags.port), { token: flags.token || null });
+      await c.waitHello();
+      try {
+        await cap.sandbox(c, { map: flags.map || "MAP01" });
+        await cap.fire(c, { x, y, z, yaw, pitch, weapon });
+        const mark = await cap.findMark(c);
+        if (!mark) { console.log(JSON.stringify({ tag, weapon, marked: false })); break; }
+        const cam = await cap.placeCamera(c, mark, yaw, {
+          back: flags.back ? Number(flags.back) : undefined,
+          up: flags.up ? Number(flags.up) : undefined,
+        });
+        if (!cam) { console.log(JSON.stringify({ tag, weapon, mark, camera: null })); break; }
+        await cap.waitTics(c, 6);
+        const shots = await cap.pair(c, tag, { engineBin: flags.engine || resolveEngine() });
+        console.log(JSON.stringify({ tag, weapon, mark, camera: cam, ...shots }, null, 2));
+      } finally { c.close(); }
       break;
     }
     case "renderer-info": {
