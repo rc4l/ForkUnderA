@@ -45,14 +45,20 @@ struct FlatDecal
 	DWORD      shadeColor;
 	bool       redToAlpha;
 	bool       additive;
-	int        sectorIndex;   // whose light this takes
 	// [rc4l] The surface this decal is stuck to, which is NOT always the sector's own plane.
 	//
 	// A shot landing on a 3D floor must ride that 3D floor: it moves independently of the sector
 	// containing it, so tracking the sector's plane would leave the decal hanging in the air the
 	// moment a 3D-floor lift moved. NULL means the sector's own plane.
 	F3DFloor  *rover;
-	float      planeZAtSpawn; // where that plane was when the decal was made
+	// [rc4l] The plane's height as the RENDER sees it, sampled on this decal's first frame.
+	//
+	// Not sampled at spawn. Measured on dbab02: the same P_PointInSector lookup answers 128 during
+	// P_LineAttack and 0 during the frame -- the engine moves planes about while tracing 3D floor
+	// collision -- so a height captured in the game tic is not comparable with one read in the
+	// renderer, and subtracting them teleported every decal by the difference.
+	float      planeZ;
+	bool       planeSampled;
 };
 
 // The plane a decal is stuck to: its 3D floor's if it has one, otherwise its sector's.
@@ -85,6 +91,8 @@ void NoteImpact(int hitType, bool noImpactFlag, bool noDecalFlag)
 	else if (hitType == TRACE_HitWall) g_impactWall++;
 	else g_impactOther++;
 }
+float g_lastHitZ=0, g_lastPlaneSpawn=0, g_lastPlaneNow=0;
+bool g_lastRover=false;
 float g_lastX=0, g_lastY=0, g_lastZ=0, g_lastHW=0, g_lastHH=0, g_lastAlpha=0;
 bool g_lastRed=false;
 unsigned int g_lastShade=0;
@@ -150,9 +158,9 @@ void SpawnFlatDecal(const FDecalTemplate *tpl, fixed_t x, fixed_t y, fixed_t z, 
 	d.redToAlpha = !!(tpl->RenderStyle.Flags & STYLEF_RedIsAlpha);
 	d.additive = tpl->RenderStyle.BlendOp == STYLEOP_Add &&
 	             tpl->RenderStyle.DestAlpha == STYLEALPHA_One;
-	d.sectorIndex = int(sec - sectors);
 	d.rover = rover;
-	d.planeZAtSpawn = FIXED2FLOAT(DecalPlane(sec, rover, ceiling)->ZatPoint(x, y));
+	d.planeZ = 0.f;
+	d.planeSampled = false;
 
 	g_next = (g_next + 1) % kMaxFlatDecals;
 	if (g_count < kMaxFlatDecals) g_count++;
@@ -182,13 +190,27 @@ void RegisterFlatDecals()
 		// still at 0, so the decal was drawn 192 units underneath the surface it marked and was
 		// invisible. Tracking the DELTA keeps the decal where the bullet hit and still lets it ride a
 		// lift, which is the only reason to consult the plane at all.
-		if (d.sectorIndex < 0 || d.sectorIndex >= numsectors) continue;
-		const sector_t *sec = &sectors[d.sectorIndex];
+		// [rc4l] Look the sector up the SAME way it was looked up at spawn.
+		//
+		// This used to store `sec - sectors` and index the array back. Measured on dbab02: the plane
+		// read 128 when the shot landed and 0 when the frame drew -- the same call, two answers, so
+		// the sector coming back was not the sector that went in. P_PointInSector is what
+		// SpawnFlatDecal uses, so using it here too makes the two agree by construction rather than
+		// by an index that has to survive a round trip.
+		sector_t *sec = P_PointInSector(FLOAT2FIXED(d.x), FLOAT2FIXED(d.y));
+		if (sec == NULL) continue;
 		const secplane_t *plane = DecalPlane(sec, d.rover, d.ceiling);
 		const float planeNow = FIXED2FLOAT(plane->ZatPoint(FLOAT2FIXED(d.x), FLOAT2FIXED(d.y)));
+		// First frame this decal is drawn: that is when its surface height becomes comparable with
+		// every later frame's.
+		FlatDecal &mut = g_decals[i];
+		if (!mut.planeSampled) { mut.planeZ = planeNow; mut.planeSampled = true; }
 		// The depth-bias pipeline handles the coplanar fight; the offset only keeps the quad on the
 		// correct SIDE of the plane, so a decal is never swallowed by the surface it marks.
-		const float pz = ComputeDecalHeight(d.z, d.planeZAtSpawn, planeNow, d.ceiling, 0.05f);
+		// [rc4l] One unit of tolerance: a plane that was within a unit of the hit when the shot landed is
+		// the surface it landed on; anything further away is a different surface and must not drag the
+		// decal with it.
+		const float pz = ComputeDecalHeight(d.z, mut.planeZ, planeNow, d.ceiling, 0.05f, 1.0f);
 
 		FFlatVertex quad[4];
 		// Wound so the decal faces the side it was shot from: a floor decal is seen from above and a
@@ -226,6 +248,8 @@ void RegisterFlatDecals()
 		// reporting the oldest made every check look like nothing had spawned.
 		{
 			g_lastX = d.x; g_lastY = d.y; g_lastZ = pz;
+			g_lastHitZ = d.z; g_lastPlaneSpawn = mut.planeZ; g_lastPlaneNow = planeNow;
+			g_lastRover = (d.rover != NULL);
 			g_lastHW = hw; g_lastHH = hh;
 			g_lastAlpha = d.alpha; g_lastRed = d.redToAlpha;
 			g_lastShade = d.shadeColor; g_lastLight = light;
@@ -267,4 +291,8 @@ CCMD( fua_flatdecals )
 			zx::levelmesh::g_lastHW, zx::levelmesh::g_lastHH, zx::levelmesh::g_lastAlpha,
 			zx::levelmesh::g_lastRed ? 1 : 0, zx::levelmesh::g_lastShade & 0xffffff,
 			zx::levelmesh::g_lastLight );
+	Printf( "  placement: hit z %.1f, plane %.1f -> %.1f (delta %.1f), drawn at %.1f, on a 3D floor %d\n",
+			zx::levelmesh::g_lastHitZ, zx::levelmesh::g_lastPlaneSpawn, zx::levelmesh::g_lastPlaneNow,
+			zx::levelmesh::g_lastPlaneNow - zx::levelmesh::g_lastPlaneSpawn,
+			zx::levelmesh::g_lastZ, zx::levelmesh::g_lastRover ? 1 : 0 );
 }

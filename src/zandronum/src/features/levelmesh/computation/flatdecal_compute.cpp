@@ -12,10 +12,18 @@ bool ComputeDecalUsesTopPlane(bool hitCeiling)
 	return !hitCeiling;
 }
 
-float ComputeDecalHeight(float hitZ, float planeZAtSpawn, float planeZNow, bool ceiling,
-                         float offset)
+bool ComputeDecalTracksPlane(float hitZ, float planeZAtSpawn, float tolerance)
 {
-	return hitZ + (planeZNow - planeZAtSpawn) + (ceiling ? -offset : offset);
+	const float d = hitZ - planeZAtSpawn;
+	return (d < 0.f ? -d : d) <= tolerance;
+}
+
+float ComputeDecalHeight(float hitZ, float planeZAtSpawn, float planeZNow, bool ceiling,
+                         float offset, float trackTolerance)
+{
+	const float travelled = ComputeDecalTracksPlane(hitZ, planeZAtSpawn, trackTolerance)
+		? (planeZNow - planeZAtSpawn) : 0.f;
+	return hitZ + travelled + (ceiling ? -offset : offset);
 }
 
 }} // namespace zx::levelmesh
