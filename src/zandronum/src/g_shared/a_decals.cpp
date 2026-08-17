@@ -312,6 +312,18 @@ FTextureID DBaseDecal::StickToWall (side_t *wall, fixed_t x, fixed_t y, F3DFloor
 
 fixed_t DBaseDecal::GetRealZ (const side_t *wall) const
 {
+	return RealZOnWall (wall, Z, RenderFlags);
+}
+
+// [rc4l] The same answer without a decal object, because the backend needs it EVERY FRAME.
+//
+// A decal's stored Z is relative to a plane whenever RF_RELMASK is set, and that plane moves: a door
+// track, a lift's front. The engine re-resolves it each time it draws, so GL's decals ride doors for
+// free. The backend keeps its own record of the mark and was resolving this once, at spawn -- so its
+// decals stayed where the door had been. Splitting the lookup out is what lets it ask again without
+// holding a pointer to a thinker that may since have been destroyed.
+fixed_t DBaseDecal::RealZOnWall (const side_t *wall, fixed_t z, DWORD renderFlags)
+{
 	const line_t *line = wall->linedef;
 	const sector_t *front, *back;
 
@@ -330,36 +342,36 @@ fixed_t DBaseDecal::GetRealZ (const side_t *wall) const
 		back = front;
 	}
 
-	switch (RenderFlags & RF_RELMASK)
+	switch (renderFlags & RF_RELMASK)
 	{
 	default:
-		return Z;
+		return z;
 	case RF_RELUPPER:
 		if (line->flags & ML_DONTPEGTOP)
 		{
-			return Z + front->GetPlaneTexZ(sector_t::ceiling);
+			return z + front->GetPlaneTexZ(sector_t::ceiling);
 		}
 		else
 		{
-			return Z + back->GetPlaneTexZ(sector_t::ceiling);
+			return z + back->GetPlaneTexZ(sector_t::ceiling);
 		}
 	case RF_RELLOWER:
 		if (line->flags & ML_DONTPEGBOTTOM)
 		{
-			return Z + front->GetPlaneTexZ(sector_t::ceiling);
+			return z + front->GetPlaneTexZ(sector_t::ceiling);
 		}
 		else
 		{
-			return Z + back->GetPlaneTexZ(sector_t::floor);
+			return z + back->GetPlaneTexZ(sector_t::floor);
 		}
 	case RF_RELMID:
 		if (line->flags & ML_DONTPEGBOTTOM)
 		{
-			return Z + front->GetPlaneTexZ(sector_t::floor);
+			return z + front->GetPlaneTexZ(sector_t::floor);
 		}
 		else
 		{
-			return Z + front->GetPlaneTexZ(sector_t::ceiling);
+			return z + front->GetPlaneTexZ(sector_t::ceiling);
 		}
 	}
 }

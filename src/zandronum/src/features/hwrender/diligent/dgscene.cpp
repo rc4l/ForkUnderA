@@ -697,10 +697,20 @@ static const char *kScenePSRedAlpha =
 	"    float sum = turnU + turnV;\n" \
 	"    float wu = (sum > 1e-5) ? turnU / sum : 0.0;\n" \
 	"    float wv = (sum > 1e-5) ? turnV / sum : 0.0;\n" \
-	/* sign(): keep going the way we were already going. A floor below the mark continues downwards,
-	   a ceiling above it upwards, a wall to the right rightwards. */ \
-	"    t.x += sign(t.x) * carry * lu * wu;\n" \
-	"    t.y += sign(t.y) * carry * lv * wv;\n" \
+	/* [rc4l] Which WAY to continue -- ramped through the middle, not switched.
+	   Keep going the way we were already going: a floor below the mark continues downwards, a
+	   ceiling above it upwards, a wall to the right rightwards. sign() says that, and says it with a
+	   jump: a fragment a hair either side of the decal's centre line gets +carry or -carry, so the
+	   coordinate tears in two down the middle wherever the surface is not flat. That is the hard
+	   line down a scorch on a step, and it is worse than it looks, because the hardware picks a
+	   mip level from the DERIVATIVE of this coordinate -- a jump reads as an enormous derivative,
+	   the smallest mip is chosen, and the decal turns pale and streaky along the tear. "It lightens
+	   up when you walk towards it" is that, seen from close enough for the tear to cover pixels.
+	   Ramping over a narrow band costs a little accuracy exactly where the carry is smallest and
+	   makes the coordinate continuous, which is what both problems actually needed. */ \
+	"    vec2 dir = clamp(t / 0.12, -1.0, 1.0);\n" \
+	"    t.x += dir.x * carry * lu * wu;\n" \
+	"    t.y += dir.y * carry * lv * wv;\n" \
 	"    return t * 0.5 + 0.5;\n" \
 	"}\n"
 
@@ -766,7 +776,14 @@ static const char *kDecalPS =
 	/* Past the end of the picture. Clamping here would repeat the edge texel for ever, which is the
 	   dragged column again by another route, so the fragment is dropped instead. */
 	"    if (any(lessThan(t, vec2(0.0))) || any(greaterThan(t, vec2(1.0)))) discard;\n"
-	"    vec4 texel = texture(uTex, t);\n"
+	/* [rc4l] Mip level from the FLAT coordinate, not the unwrapped one.
+	   texture() derives its level of detail from how fast the coordinate changes between neighbouring
+	   pixels, and an unwrapped coordinate changes fast wherever the surface turns -- so the very
+	   places the unwrap exists to serve got the blurriest mip and washed out. The flat projection is
+	   smooth everywhere and is the right scale to measure by; the unwrap only bends where the texture
+	   is fetched FROM, never how densely it is being sampled. */ \
+	"    vec2 flat_uv = local.xy * 0.5 + 0.5;\n"
+	"    vec4 texel = textureGrad(uTex, t, dFdx(flat_uv), dFdy(flat_uv));\n"
 	"    outColor = vec4(texel.rgb * vColor.rgb, texel.a * vColor.a);\n"
 	"}\n";
 
@@ -801,7 +818,8 @@ static const char *kDecalRedPS =
 	"    if (any(greaterThan(abs(local), vec3(1.0)))) discard;\n"
 	"    vec2 t = fuaDecalUV(P, local, vAxisU, vAxisV, vAxisN);\n"
 	"    if (any(lessThan(t, vec2(0.0))) || any(greaterThan(t, vec2(1.0)))) discard;\n"
-	"    float a = texture(uTex, t).r * vColor.a;\n"
+	"    vec2 flat_uv = local.xy * 0.5 + 0.5;\n"
+	"    float a = textureGrad(uTex, t, dFdx(flat_uv), dFdy(flat_uv)).r * vColor.a;\n"
 	"    if (a <= 0.0) discard;\n"
 	"    outColor = vec4(vColor.rgb, a);\n"
 	"}\n";
