@@ -86,6 +86,25 @@ fix, a rebuild, and the reporter's next screenshot showing the same thing.
 When it does reproduce, check it is *the same* fault and not a cousin. Compare against the
 reporter's artefact directly. Same shape, same place, same conditions.
 
+## 4a. Hold the world still before you measure it
+
+A repro is a camera and a piece of state, and anything in the simulation that moves either one
+turns two captures seconds apart into two different experiments. In a game that means the
+monsters: they shove the player off the recorded position between the A and the B shot, and
+they can kill outright, so a comparison pair comes back as a death screen with the fault
+nowhere in it. Both happened here before it was worth writing down.
+
+Whatever the equivalent is in the system under test -- other agents, background jobs, a
+retrying queue -- disable it in the repro rather than working around it in the reading. It is
+usually three commands and it removes the entire class:
+
+    god          # nothing can damage the observer
+    notarget     # nothing comes looking
+    kill monsters
+
+The general rule: the only thing allowed to differ between two captures is the one variable
+being compared. Everything else is held, not averaged over.
+
 ## 5. When the report says "it is X", treat X as a symptom name, not a diagnosis
 
 People name what a thing looks like, and the name carries a cause with it. In this repo a

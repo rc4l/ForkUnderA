@@ -55,9 +55,6 @@ export function engineArgs(opts = {}, configPath) {
   // into that ini and break the user's real mouse. A fresh file starts from engine defaults, which is
   // identical across instances and never touches the user's config.
   args.push("-config", configPath);
-  // A client joins a server with +connect (and no local map); otherwise start in a local map.
-  if (opts.connect) args.push("+connect", opts.connect);
-  else args.push("+map", opts.map || "MAP01");
   args.push(
     "-skill", String(opts.skill ?? 3),
     "+set", "fullscreen", "0",
@@ -89,6 +86,24 @@ export function engineArgs(opts = {}, configPath) {
     for (const [k, v] of Object.entries(opts.cvars)) args.push("+set", k, String(v));
   }
   if (opts.extraArgs) args.push(...opts.extraArgs);
+
+  // [rc4l] The map goes LAST, because the engine runs `+` commands in the order they appear.
+  //
+  // This used to sit above the cvars, directly under a comment promising they were applied first.
+  // They were not: +map ran, the level spawned, and only then did sv_nomonsters arrive -- so every
+  // instance came up full of monsters despite being asked for none, including the hands-on build.
+  // Monsters shove the player off a recorded position and shoot whatever is being measured, which
+  // is the one thing a measurement instance must not have.
+  if (opts.connect) args.push("+connect", opts.connect);
+  else args.push("+map", opts.map || "MAP01");
+
+  // [rc4l] ...and anything that only means something once a level EXISTS goes after it.
+  //
+  // Cheats are the case: `god` acts on a player pawn, so issued before the map it is either
+  // ignored or applied to nothing. That is the mirror of the cvar bug above -- same command line,
+  // opposite ordering requirement -- so both sides are stated here rather than left to whoever
+  // adds the next argument.
+  for (const c of opts.postMap || []) args.push(`+${c}`);
 
   return args;
 }

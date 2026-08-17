@@ -763,7 +763,7 @@ wrong, and the resulting hunt for a lighting bug found nothing because there was
 Fixes: pick channel order from `bd.Format`; force `ColorBufferFormat = RGBA8_UNORM` to match the
 engine's own framebuffer.
 
-Measured after the fix (mean RGB over the same patch, `tools/fuactl/pngstats.mjs`):
+Measured after the fix (mean RGB over the same patch, `fuactl png --diff`):
 
 | region | GL | Diligent |
 |---|---|---|
@@ -813,13 +813,21 @@ translations, warp and brightmap shaders, and taking over the engine's own windo
 
 ### Tooling added, because guessing cost more than measuring
 
-- `tools/fuactl/rebuild.sh` — builds and stages, failing loudly. Two measurements were taken against
-  a **stale binary** because the build ran inside a PowerShell one-liner ending in `Copy-Item`, so the
-  shell's exit status came from the copy and a compile error scrolled past as ordinary output.
-- `tools/fuactl/vkcheck.sh` — launch, full bake, upload, matched GL/Vulkan screenshot pair, stats, and
-  (with `BENCH=1`) the benchmarks. Benchmarks run *inside* it because its exit trap kills the instance.
-- `tools/fuactl/pngstats.mjs` — mean RGB over a region of a PNG. Turned "it looks brighter" into
-  "same hue, 3.8x magnitude, R and B transposed", which named the bug immediately.
+All of it is `fuactl` subcommands. It was eight shell scripts beside the tool for a while, which put
+the paths a human actually uses in the one place with no tests — the argument-ordering bug that
+shipped a "no monsters" build full of monsters lived there, under a comment claiming the opposite —
+and every check needing a shape the eight did not have got improvised as a ninth.
+`tools/fuactl/test/capture.test.mjs` now fails if a `.sh` reappears in that directory.
+
+- `fuactl build` — builds and stages, failing loudly. Two measurements were taken against a **stale
+  binary** because the build ran inside a shell one-liner ending in a copy, so the exit status came
+  from the copy and a compile error scrolled past as ordinary output.
+- `fuactl shot` / `fuactl sweep` / `fuactl doorshot` — matched GL/Vulkan pairs from one camera: at a
+  named spot, across several maps, or with a door caught mid-swing (the only state that shows whether
+  moving geometry is tracked at all).
+- `fuactl mark` — fire at a junction, find where the mark actually landed, and capture a pair of it.
+- `fuactl png` — mean RGB over a region of a PNG. Turned "it looks brighter" into "same hue, 3.8x
+  magnitude, R and B transposed", which named the bug immediately.
 - `fua_dg_lightmode` debug views: 0 flat, 1 full, 2 depth, 3 depth contours, 4 vertex colour,
   5 fog factor, 6 fog colour, 7 view depth, 8 fog density, 9 fog mode sign, 10 raw texel.
 - `fua_levelmesh_stats` now reports mesh coverage and why captures were refused.
@@ -1173,5 +1181,5 @@ left and a corridor on the right, a mirror is unmissable:
 | left quarter (monster) | 40.3, 2.7, 1.9 | 39.6, 3.7, 3.0 |
 | right quarter (corridor) | 18.6, 15.1, 9.8 | 18.5, 15.0, 9.7 |
 
-Mirrored, the left quarter would have read as corridor and the right as monster. `pngstats.mjs` takes
+Mirrored, the left quarter would have read as corridor and the right as monster. `fuactl png` takes
 a region precisely so this kind of check is one command.

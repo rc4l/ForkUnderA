@@ -1,5 +1,5 @@
 {
-  "about": "Named cameras that reproduce a specific rendering fault, so a check is a name rather than four numbers pasted from a screenshot. `bash shot.sh <tag> --spot <name>` warps here and captures the GL/Vulkan pair.",
+  "about": "Named cameras that reproduce a specific rendering fault, so a check is a name rather than four numbers pasted from a screenshot. `fuactl shot <tag> --spot <name>` warps here and captures the GL/Vulkan pair.",
   "spots": {
     "dbab02-flatswap": {
       "map": "dbab02",

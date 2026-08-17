@@ -111,6 +111,23 @@ test("seed and map reach the command line, and a client connects instead of load
   assert.equal(client.includes("+map"), false, "a joining client must not also load a local map");
 });
 
+test("cvars are set BEFORE the map loads, not after it", () => {
+  // [rc4l] The engine runs `+` arguments in the order given, and a level-start cvar set after +map
+  // does nothing to the level already standing. sv_nomonsters is the one that bites: an instance
+  // asked for no monsters came up full of them, and they shove the player off the position a repro
+  // was recorded at and shoot whatever is being measured.
+  //
+  // A comment above the cvar loop claimed this ordering for a long time while the code did the
+  // opposite, so it is asserted here rather than described there.
+  const args = engineArgs({ map: "MAP07", cvars: { sv_nomonsters: 1, fua_vulkan: 1 } }, "x.ini");
+
+  for (const key of ["sv_nomonsters", "fua_vulkan"]) {
+    const at = args.indexOf(key);
+    assert.notEqual(at, -1, `${key} never reached the command line`);
+    assert.ok(at < args.indexOf("+map"), `${key} is set after +map, so the level never sees it`);
+  }
+});
+
 test("resolveEngine names every path it tried when it finds nothing", () => {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "fuactl-resolve-")));
 
