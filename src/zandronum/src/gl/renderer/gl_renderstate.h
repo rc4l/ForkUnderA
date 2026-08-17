@@ -293,6 +293,16 @@ public:
 		mDynColor.Set(r, g, b, 0);
 	}
 
+	// [rc4l] features/hwrender: the dynamic light the SHADER adds, which GetColorRGBA does not see.
+	//
+	// gl_SetDynSpriteLight puts a sprite's dynamic light here as a uniform and main.fp adds it after
+	// the vertex colour, so a HUD weapon captured by its vertex colour alone arrives unlit -- the
+	// muzzle flash lit the weapon in GL and left it dark in the backend.
+	void GetDynLight(float &r, float &g, float &b) const
+	{
+		r = mDynColor.vec[0]; g = mDynColor.vec[1]; b = mDynColor.vec[2];
+	}
+
 	void SetObjectColor(PalEntry pe)
 	{
 		mObjectColor = pe;

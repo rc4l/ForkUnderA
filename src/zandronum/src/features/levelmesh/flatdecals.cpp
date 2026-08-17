@@ -11,6 +11,7 @@
 #include "r_state.h"
 #include "decallib.h"
 #include "p_local.h"
+#include "g_level.h"   // level.maptime, for decal fade
 #include "gl/data/gl_vertexbuffer.h"   // FFlatVertex
 #include "gl/data/gl_data.h"           // getExtraLight
 #include "gl/textures/gl_material.h"
@@ -59,7 +60,26 @@ struct FlatDecal
 	// renderer, and subtracting them teleported every decal by the difference.
 	float      planeZ;
 	bool       planeSampled;
+	// [rc4l] When it was made, and whether it is meant to be permanent.
+	//
+	// A decal template can carry an FDecalAnimator -- a fader, a stretcher -- and DImpactDecal runs
+	// it so the mark changes and usually disappears. Ignoring it left a plasma scorch, which is
+	// ADDITIVE, sitting at full brightness on the floor forever: a glowing white blob that never
+	// went away. A decal with no animator is permanent, exactly as a bullet hole should be.
+	int        spawnTic;
+	bool       fades;
+	// [rc4l] How far off the surface this one sits.
+	//
+	// A template's lower decal and the decal above it land at the same point with the same height,
+	// and two coplanar quads at an identical distance have no settled order -- the sort swapped them
+	// frame to frame and the scorch flickered through the glow. Giving the lower one less clearance
+	// separates them once and for all, which is also what "lower" means.
+	float      clearance;
 };
+
+// How long an animated decal takes to fade out. The engine's own faders vary; this is one length for
+// all of them, which is wrong in detail and much closer than "never".
+static const int kFadeTics = 105;   // three seconds at 35 tics
 
 // The plane a decal is stuck to: its 3D floor's if it has one, otherwise its sector's.
 static const secplane_t *DecalPlane(const sector_t *sec, F3DFloor *rover, bool ceiling)
@@ -91,6 +111,13 @@ void NoteImpact(int hitType, bool noImpactFlag, bool noDecalFlag)
 	else if (hitType == TRACE_HitWall) g_impactWall++;
 	else g_impactOther++;
 }
+int g_missileTries = 0, g_missileNoGen = 0, g_missileNotPlane = 0;
+void NoteMissileImpact(bool hasGenerator, bool onFloor, bool onCeiling)
+{
+	g_missileTries++;
+	if (!hasGenerator) { g_missileNoGen++; return; }
+	if (!onFloor && !onCeiling) g_missileNotPlane++;
+}
 float g_lastHitZ=0, g_lastPlaneSpawn=0, g_lastPlaneNow=0;
 bool g_lastRover=false;
 float g_lastX=0, g_lastY=0, g_lastZ=0, g_lastHW=0, g_lastHH=0, g_lastAlpha=0;
@@ -111,12 +138,29 @@ void ClearFlatDecals()
 }
 
 void SpawnFlatDecal(const FDecalTemplate *tpl, fixed_t x, fixed_t y, fixed_t z, bool ceiling,
-                    F3DFloor *rover)
+                    F3DFloor *rover, DWORD shadeOverride, bool isLower)
 {
 	g_spawnTries++;
 	if (!fua_flat_decals) return;
 	if (tpl == NULL) { g_spawnNoTemplate++; return; }
 	if (!tpl->PicNum.isValid()) { g_spawnNoTexture++; return; }
+
+	// [rc4l] Place the LOWER decal first, exactly as DImpactDecal::StaticCreate does.
+	//
+	// A decal template can name another to sit underneath it, and that is how a plasma mark works:
+	// the bright scorch on top carries an animator and fades, while the dark burn beneath has none
+	// and stays. Skipping it meant the glow faded away and left clean floor -- the mark that is
+	// supposed to survive was never placed at all.
+	//
+	// The colour is only inherited when the two templates agree on their own, matching the engine:
+	// a custom colour meant for the top decal has no business tinting the burn under it.
+	if (tpl->LowerDecal != NULL)
+	{
+		const FDecalTemplate *low = tpl->LowerDecal->GetDecal();
+		if (low != NULL && low != tpl)
+			SpawnFlatDecal(low, x, y, z, ceiling, rover,
+				(tpl->ShadeColor == low->ShadeColor) ? shadeOverride : 0, true);
+	}
 
 	sector_t *sec = P_PointInSector(x, y);
 	if (sec == NULL) { g_spawnNoSector++; return; }
@@ -154,13 +198,16 @@ void SpawnFlatDecal(const FDecalTemplate *tpl, fixed_t x, fixed_t y, fixed_t z, 
 	// Alpha is stored as (actor->alpha >> 1), so it runs 0..32768 rather than 0..65536.
 	d.alpha = tpl->Alpha / 32768.f;
 	if (d.alpha <= 0.f || d.alpha > 1.f) d.alpha = 1.f;
-	d.shadeColor = tpl->ShadeColor;
+	d.shadeColor = (shadeOverride != 0) ? shadeOverride : tpl->ShadeColor;
 	d.redToAlpha = !!(tpl->RenderStyle.Flags & STYLEF_RedIsAlpha);
 	d.additive = tpl->RenderStyle.BlendOp == STYLEOP_Add &&
 	             tpl->RenderStyle.DestAlpha == STYLEALPHA_One;
 	d.rover = rover;
 	d.planeZ = 0.f;
 	d.planeSampled = false;
+	d.spawnTic = level.maptime;
+	d.clearance = isLower ? 0.02f : 0.06f;
+	d.fades = (tpl->Animator != NULL);
 
 	g_next = (g_next + 1) % kMaxFlatDecals;
 	if (g_count < kMaxFlatDecals) g_count++;
@@ -176,6 +223,15 @@ void RegisterFlatDecals()
 		const FlatDecal &d = g_decals[i];
 		FMaterial *mat = FMaterial::ValidateTexture(d.pic, true, true);
 		if (mat == NULL) continue;
+
+		// Animated decals fade and go. Everything else stays.
+		float fade = 1.f;
+		if (d.fades)
+		{
+			const int age = level.maptime - d.spawnTic;
+			if (age >= kFadeTics) continue;
+			if (age > 0) fade = 1.f - (float)age / (float)kFadeTics;
+		}
 
 		// Half-extents in map units. A decal graphic is authored at 1 unit per texel like a sprite.
 		const float hw = mat->TextureWidth() * d.scaleX * 0.5f;
@@ -210,7 +266,7 @@ void RegisterFlatDecals()
 		// [rc4l] One unit of tolerance: a plane that was within a unit of the hit when the shot landed is
 		// the surface it landed on; anything further away is a different surface and must not drag the
 		// decal with it.
-		const float pz = ComputeDecalHeight(d.z, mut.planeZ, planeNow, d.ceiling, 0.05f, 1.0f);
+		const float pz = ComputeDecalHeight(d.z, mut.planeZ, planeNow, d.ceiling, d.clearance, 1.0f);
 
 		FFlatVertex quad[4];
 		// Wound so the decal faces the side it was shot from: a floor decal is seen from above and a
@@ -238,7 +294,7 @@ void RegisterFlatDecals()
 		cm.desaturation = sec->ColorMap->Desaturate;
 		const int light = d.ceiling ? sec->GetCeilingLight() : sec->GetFloorLight();
 
-		RegisterDecal(quad, mat, 0, false, d.additive, d.alpha,
+		RegisterDecal(quad, mat, 0, false, d.additive, d.alpha * fade,
 			light, getExtraLight(), cm,
 			d.redToAlpha, d.redToAlpha ? (unsigned int)d.shadeColor : 0xffffffu,
 			d.x, d.y, pz);
@@ -285,6 +341,9 @@ CCMD( fua_flatdecals )
 			zx::levelmesh::g_impactWall, zx::levelmesh::g_impactFloor,
 			zx::levelmesh::g_impactCeiling, zx::levelmesh::g_impactOther,
 			zx::levelmesh::g_impactSuppressed );
+	Printf( "  missile impacts: %d seen, %d with no decal generator, %d not on a plane\n",
+			zx::levelmesh::g_missileTries, zx::levelmesh::g_missileNoGen,
+			zx::levelmesh::g_missileNotPlane );
 	Printf( "  first emitted: at (%.0f, %.0f, %.1f) half-size %.1f x %.1f, alpha %.2f, "
 			"redToAlpha %d, shade %06x, light %d\n",
 			zx::levelmesh::g_lastX, zx::levelmesh::g_lastY, zx::levelmesh::g_lastZ,

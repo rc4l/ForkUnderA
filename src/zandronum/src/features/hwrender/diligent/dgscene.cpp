@@ -1491,8 +1491,17 @@ static void DrawBlended(Diligent::IDeviceContext *ctx)
 	}
 
 	if (list.Size() == 0) return;
+	// [rc4l] Farthest first, and DETERMINISTIC on a tie.
+	//
+	// std::sort is not stable, so two draws at the same distance -- a decal and the one a template
+	// puts underneath it, landing at the same point -- traded places between frames and flickered
+	// through each other. Falling back to the buffer offset makes equal distances resolve the same
+	// way every frame.
 	std::sort(&list[0], &list[0] + list.Size(),
-		[](const BlendDraw &a, const BlendDraw &b) { return a.dist > b.dist; });   // farthest first
+		[](const BlendDraw &a, const BlendDraw &b) {
+			if (a.dist != b.dist) return a.dist > b.dist;
+			return a.first < b.first;
+		});
 
 	Diligent::IPipelineState *bound = NULL;
 	int boundVB = -1;
