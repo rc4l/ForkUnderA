@@ -419,9 +419,7 @@ static void RegisterWallDecals()
 		pd.a = w.alpha * fade;
 		pd.additive = w.additive;
 		pd.redToAlpha = w.redToAlpha;
-		// [rc4l] How far the blast reached. Sized from the mark itself: the picture runs out at its
-		// own half-width or half-height, so anything past the larger of the two is nothing anyway.
-		pd.radius = (w.halfW > w.halfH) ? w.halfW : w.halfH;
+		pd.radius = ComputeDecalReach(w.halfW, w.halfH);
 
 		// [rc4l] Nothing else to place. The shader measures every surface inside the blast radius
 		// from this one point, so a corner is not a special case and there is no second box to put
@@ -500,7 +498,7 @@ void RegisterFlatDecals()
 		pd.a = d.alpha * fade;
 		pd.additive = d.additive;
 		pd.redToAlpha = d.redToAlpha;
-		pd.radius = (hw > hh) ? hw : hh;
+		pd.radius = ComputeDecalReach(hw, hh);
 		g_projected.Push(pd);
 
 		g_lastX = d.x; g_lastY = d.y; g_lastZ = pz;

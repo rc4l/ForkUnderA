@@ -28,6 +28,11 @@ void Cross3(const float a[3], const float b[3], float out[3])
 
 } // namespace
 
+float ComputeDecalReach(float halfW, float halfH)
+{
+	return std::sqrt(halfW * halfW + halfH * halfH) * 1.5f;
+}
+
 bool ComputeDecalBasis(const float axisU[3], const float axisV[3], const float axisN[3],
                        float halfW, float halfH, float halfDepth, DecalFrame &out)
 {
