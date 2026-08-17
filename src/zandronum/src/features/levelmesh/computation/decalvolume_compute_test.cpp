@@ -139,6 +139,9 @@ TEST(DecalAnchorOffset, MirrorsWhenTheGraphicIsFlipped)
 namespace {
 const float kWallNormal[3]  = { 0.f, 1.f, 0.f };   // the surface that was hit
 const float kFloorNormal[3] = { 0.f, 0.f, 1.f };
+// Chord == radius is a surface the blast landed ON: it cuts the sphere through its middle, so it
+// takes the picture at full size.
+const float kR = 32.f;
 }
 
 TEST(DecalSurfaceUV, PutsTheCentreOfThePictureWhereTheBlastLanded)
@@ -146,7 +149,7 @@ TEST(DecalSurfaceUV, PutsTheCentreOfThePictureWhereTheBlastLanded)
 	const DecalFrame f = WallFrame(16.f, 8.f, 16.f);
 	const float atCentre[3] = { 0.f, 0.f, 0.f };
 	float u = 0.f, v = 0.f;
-	ASSERT_TRUE(ComputeDecalSurfaceUV(f, atCentre, kWallNormal, u, v));
+	ASSERT_TRUE(ComputeDecalSurfaceUV(f, atCentre, kWallNormal, kR, kR, u, v));
 	EXPECT_FLOAT_EQ(0.5f, u);
 	EXPECT_FLOAT_EQ(0.5f, v);
 }
@@ -158,7 +161,7 @@ TEST(DecalSurfaceUV, IsUnstretchedOnTheSurfaceThatWasHit)
 	const DecalFrame f = WallFrame(16.f, 8.f, 16.f);
 	const float across[3] = { 8.f, 0.f, 0.f };
 	float u, v;
-	ASSERT_TRUE(ComputeDecalSurfaceUV(f, across, kWallNormal, u, v));
+	ASSERT_TRUE(ComputeDecalSurfaceUV(f, across, kWallNormal, kR, kR, u, v));
 	EXPECT_FLOAT_EQ(0.75f, u);
 	EXPECT_FLOAT_EQ(0.5f, v);
 }
@@ -174,7 +177,7 @@ TEST(DecalSurfaceUV, IsUnstretchedOnAFloorToo)
 	const DecalFrame f = WallFrame(16.f, 8.f, 16.f);
 	const float acrossFloor[3] = { 8.f, 0.f, -4.f };
 	float u, v;
-	ASSERT_TRUE(ComputeDecalSurfaceUV(f, acrossFloor, kFloorNormal, u, v));
+	ASSERT_TRUE(ComputeDecalSurfaceUV(f, acrossFloor, kFloorNormal, kR, kR, u, v));
 	EXPECT_FLOAT_EQ(0.75f, u);
 }
 
@@ -191,7 +194,8 @@ TEST(DecalSurfaceUV, CoversEveryDirectionOnAFloor)
 	for (int i = 0; i < 4; i++)
 	{
 		float u, v;
-		EXPECT_TRUE(ComputeDecalSurfaceUV(f, dirs[i], kFloorNormal, u, v)) << "direction " << i;
+		EXPECT_TRUE(ComputeDecalSurfaceUV(f, dirs[i], kFloorNormal, kR, kR, u, v))
+			<< "direction " << i;
 	}
 }
 
@@ -203,8 +207,8 @@ TEST(DecalSurfaceUV, DoesNotDependOnAnythingButThePointAndTheSurface)
 	const DecalFrame f = WallFrame(16.f, 8.f, 16.f);
 	const float rel[3] = { 5.f, 2.f, -3.f };
 	float u1, v1, u2, v2;
-	ComputeDecalSurfaceUV(f, rel, kFloorNormal, u1, v1);
-	ComputeDecalSurfaceUV(f, rel, kFloorNormal, u2, v2);
+	ComputeDecalSurfaceUV(f, rel, kFloorNormal, kR, kR, u1, v1);
+	ComputeDecalSurfaceUV(f, rel, kFloorNormal, kR, kR, u2, v2);
 	EXPECT_FLOAT_EQ(u1, u2);
 	EXPECT_FLOAT_EQ(v1, v2);
 }
@@ -216,7 +220,7 @@ TEST(DecalSurfaceUV, ReportsPastTheEdgeRatherThanClamping)
 	const DecalFrame f = WallFrame(16.f, 8.f, 16.f);
 	const float farOut[3] = { 40.f, 0.f, 0.f };
 	float u, v;
-	EXPECT_FALSE(ComputeDecalSurfaceUV(f, farOut, kWallNormal, u, v));
+	EXPECT_FALSE(ComputeDecalSurfaceUV(f, farOut, kWallNormal, kR, kR, u, v));
 	EXPECT_GT(u, 1.f);
 }
 
@@ -225,11 +229,11 @@ TEST(DecalSurfaceUV, RefusesADegenerateFrameOrNormal)
 	DecalFrame f{};
 	const float rel[3] = { 1.f, 1.f, 1.f };
 	float u, v;
-	EXPECT_FALSE(ComputeDecalSurfaceUV(f, rel, kWallNormal, u, v));
+	EXPECT_FALSE(ComputeDecalSurfaceUV(f, rel, kWallNormal, kR, kR, u, v));
 
 	const DecalFrame good = WallFrame(16.f, 8.f, 16.f);
 	const float noNormal[3] = { 0.f, 0.f, 0.f };
-	EXPECT_FALSE(ComputeDecalSurfaceUV(good, rel, noNormal, u, v));
+	EXPECT_FALSE(ComputeDecalSurfaceUV(good, rel, noNormal, kR, kR, u, v));
 }
 
 TEST(DecalReach, IsNeverCloseEnoughToCutThePicture)
@@ -257,53 +261,53 @@ TEST(DecalReach, LeavesRoomForASurfaceOffToTheSide)
 	EXPECT_FLOAT_EQ(std::sqrt(16.f * 16.f + 8.f * 8.f) * 1.5f, ComputeDecalReach(16.f, 8.f));
 }
 
+
 // ---------------------------------------------------------------------------------------------
-// Whether the blast reached this surface at all
+// How much of the blast a surface cuts through
 
-TEST(DecalTouched, IsWholeOnTheSurfaceThatWasHit)
+TEST(DecalChord, IsTheWholeRadiusOnTheSurfaceThatWasHit)
 {
-	// The impact sits ON that surface, so its distance from it, measured perpendicular to it, is
-	// nothing. Anything less than full here would dim every mark in the game at its own centre.
-	const float onSurface[3] = { 12.f, 0.f, -5.f };   // entirely in the plane
-	const float nrm[3] = { 0.f, 1.f, 0.f };
-	EXPECT_FLOAT_EQ(1.f, ComputeDecalTouched(onSurface, nrm, 60.f));
+	// The impact sits on that surface, so the sphere is cut through its middle. Anything less would
+	// shrink every mark in the game on the very surface it was made on.
+	EXPECT_FLOAT_EQ(60.f, ComputeDecalChord(0.f, 60.f));
 }
 
-TEST(DecalTouched, IsWholeJustRoundACorner)
+TEST(DecalChord, ShrinksAsASurfaceRecedes)
 {
-	// A floor a few units below a mark is the corner wrap, and it has to survive intact -- that is
-	// the whole feature. Six units against a sixty-unit blast is plainly touched.
-	const float nearFloor[3] = { 10.f, 4.f, -6.f };
-	const float up[3] = { 0.f, 0.f, 1.f };
-	EXPECT_FLOAT_EQ(1.f, ComputeDecalTouched(nearFloor, up, 60.f));
+	// A sphere's cross-section, which is the whole rule. Nothing here was picked.
+	EXPECT_FLOAT_EQ(48.f, ComputeDecalChord(36.f, 60.f));   // 3-4-5
+	EXPECT_GT(ComputeDecalChord(10.f, 60.f), ComputeDecalChord(30.f, 60.f));
 }
 
-TEST(DecalTouched, IsNothingOnAFloorTheBlastNeverReached)
+TEST(DecalChord, IsNothingBeyondTheBlast)
 {
-	// [rc4l] The glow on the ground under a column.
+	// [rc4l] The ghost scorch on the floor beneath a mark on a wall.
 	//
-	// A mark's picture is laid into each surface from the impact's own position, so a floor far below
-	// gets a FULL COPY stamped directly underneath rather than a faint edge -- being inside the radius
-	// was the only condition, and a larger graphic has a larger radius. So a BFG's glow appeared on
-	// the ground with its scorch left up on the wall. Distance from the impact, perpendicular to the
-	// surface, is what tells those apart.
-	const float farFloor[3] = { 5.f, 5.f, -50.f };
-	const float up[3] = { 0.f, 0.f, 1.f };
-	EXPECT_FLOAT_EQ(0.f, ComputeDecalTouched(farFloor, up, 60.f));
+	// Every surface in range used to take the picture at FULL size, centred where the impact projects
+	// onto it, faded only in alpha -- so a floor well below a wall mark got a complete second scorch
+	// out in the open. At d >= R there is no disc at all, and a full-size copy is no longer reachable.
+	EXPECT_FLOAT_EQ(0.f, ComputeDecalChord(60.f, 60.f));
+	EXPECT_FLOAT_EQ(0.f, ComputeDecalChord(90.f, 60.f));
 }
 
-TEST(DecalTouched, FallsOffWithDistanceAndNeverRises)
+TEST(DecalSurfaceUV, ShrinksThePictureWithTheChord)
 {
-	// A fade, not a switch: a hard cut would pop the mark on and off as a surface moved, and the
-	// distance it is cut at is a judgement rather than a fact.
-	const float up[3] = { 0.f, 0.f, 1.f };
-	float previous = 2.f;
-	for (float drop = 0.f; drop <= 60.f; drop += 2.f)
-	{
-		const float rel[3] = { 0.f, 0.f, -drop };
-		const float got = ComputeDecalTouched(rel, up, 60.f);
-		EXPECT_LE(got, previous + 1e-6f) << "at " << drop << " units below";
-		previous = got;
-	}
-	EXPECT_FLOAT_EQ(0.f, previous);
+	// The mark gets smaller as its surface recedes, rather than arriving whole and faint. Half the
+	// chord across is half the picture across, whatever the chord happens to be.
+	const DecalFrame f = WallFrame(16.f, 16.f, 16.f);
+	const float across[3] = { 8.f, 0.f, 0.f };
+	float uFull, vFull, uHalf, vHalf;
+	ASSERT_TRUE(ComputeDecalSurfaceUV(f, across, kWallNormal, 32.f, 32.f, uFull, vFull));
+	ASSERT_TRUE(ComputeDecalSurfaceUV(f, across, kWallNormal, 16.f, 32.f, uHalf, vHalf));
+	// Half the chord, so the same world offset is twice as far into the picture.
+	EXPECT_FLOAT_EQ(0.75f, uFull);
+	EXPECT_FLOAT_EQ(1.0f, uHalf);
+}
+
+TEST(DecalSurfaceUV, PaintsNothingWhereTheBlastDoesNotReach)
+{
+	const DecalFrame f = WallFrame(16.f, 16.f, 16.f);
+	const float rel[3] = { 1.f, 0.f, 0.f };
+	float u, v;
+	EXPECT_FALSE(ComputeDecalSurfaceUV(f, rel, kWallNormal, 0.f, 32.f, u, v));
 }

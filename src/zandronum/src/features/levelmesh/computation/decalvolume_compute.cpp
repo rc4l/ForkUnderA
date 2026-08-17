@@ -28,20 +28,10 @@ void Cross3(const float a[3], const float b[3], float out[3])
 
 } // namespace
 
-// GLSL's smoothstep, so the specification and its transcription cannot drift on the curve itself.
-float SmoothStep(float edge0, float edge1, float x)
+float ComputeDecalChord(float distanceToSurface, float radius)
 {
-	if (!(edge1 > edge0)) return (x < edge0) ? 0.f : 1.f;
-	float t = (x - edge0) / (edge1 - edge0);
-	if (t < 0.f) t = 0.f;
-	if (t > 1.f) t = 1.f;
-	return t * t * (3.f - 2.f * t);
-}
-
-float ComputeDecalTouched(const float rel[3], const float nrm[3], float radius)
-{
-	if (!(radius > 0.f)) return 0.f;
-	return 1.f - SmoothStep(radius * 0.15f, radius * 0.6f, std::fabs(Dot3(rel, nrm)));
+	const float k = radius * radius - distanceToSurface * distanceToSurface;
+	return (k <= 0.f) ? 0.f : std::sqrt(k);
 }
 
 float ComputeDecalReach(float halfW, float halfH)
@@ -95,8 +85,12 @@ void ComputeDecalLocal(const DecalFrame &f, const float rel[3], float local[3])
 }
 
 bool ComputeDecalSurfaceUV(const DecalFrame &f, const float rel[3], const float nrm[3],
-                           float &outU, float &outV)
+                           float chord, float radius, float &outU, float &outV)
 {
+	// The picture shrinks with the disc the blast cuts in this surface: whole where it landed, gone
+	// where the sphere no longer reaches. Without this a receding surface took a full-size copy.
+	if (!(radius > 0.f) || !(chord > 0.f)) return false;
+	const float shrink = chord / radius;
 	const float lu = Length3(f.u), lv = Length3(f.v), ln = Length3(f.n);
 	if (!(lu > 0.f) || !(lv > 0.f) || !(ln > 0.f)) return false;
 	if (!(Length3(nrm) > 0.f)) return false;
@@ -133,8 +127,8 @@ bool ComputeDecalSurfaceUV(const DecalFrame &f, const float rel[3], const float 
 	if (Dot3(sv, V) - Dot3(sv, N) < 0.f)
 		for (int i = 0; i < 3; i++) sv[i] = -sv[i];
 
-	outU = Dot3(rel, su) * lu * 0.5f + 0.5f;
-	outV = Dot3(rel, sv) * lv * 0.5f + 0.5f;
+	outU = Dot3(rel, su) * lu / shrink * 0.5f + 0.5f;
+	outV = Dot3(rel, sv) * lv / shrink * 0.5f + 0.5f;
 	return outU >= 0.f && outU <= 1.f && outV >= 0.f && outV <= 1.f;
 }
 

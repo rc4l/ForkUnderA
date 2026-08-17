@@ -705,45 +705,59 @@ static const char *kScenePSRedAlpha =
 // This is what the projection was for and could not do, and it is cheaper than what it replaces: no
 // unwrap, no carry, no facing fade, no join arithmetic, no per-surface companion boxes.
 #define FUA_DECAL_RADIAL \
-	/* The picture's own axes, laid into whatever surface this fragment is on. The mark's across-axis
-	   is used where it survives being turned into the plane, and its up-axis where it does not -- on
+	/* The picture's own axes, laid into whatever surface this fragment is on. The mark's across-axis \
+	   is used where it survives being turned into the plane, and its up-axis where it does not -- on \
 	   a floor, "along the wall" still means something while "up the wall" does not. */ \
-	/* [rc4l] How much of the mark survives at this distance from where it landed.
-	   The sphere bounds how far through SPACE a mark carries; the graphic's own alpha is what shapes
-	   it. Sized at the picture's half-width the sphere cut the corners off instead -- a rectangle's
-	   corner is further from its centre than its edge is -- and a scorch came out as a disc with a
-	   hard rim stamped through it. The radius is the picture's diagonal and half again, so on the
-	   surface that was hit the sphere is nowhere near the picture, and the last quarter of it fades
-	   rather than ends, so a surface standing off to one side cannot show a rim either. */ \
-	"float fuaDecalReach(vec3 rel, float radius) {\n" \
-	"    return 1.0 - smoothstep(0.75, 1.0, length(rel) / radius);\n" \
+	/* [rc4l] How much of the mark a surface gets, which is a question about a SPHERE AND A PLANE. \
+ \
+	   A blast of radius R centred at C meets a plane at distance d in a disc of radius sqrt(R*R-d*d). \
+	   Everything about which surfaces are marked, and how much of each, falls out of that -- there is \
+	   nothing here to tune, because there is nothing here that was chosen. \
+ \
+	   What it replaces was chosen, and wrongly. Every surface in range was given the picture at FULL \
+	   size, centred where the impact projects onto it, with its alpha faded by distance. On the \
+	   surface that was hit that is right. On a floor forty units below a mark on a wall it is a \
+	   complete second scorch, sitting out in the open with its own middle -- not a blast continuing \
+	   round a corner, just the same picture stamped twice. That is why a mark made ON a floor climbs \
+	   its walls perfectly (the impact is at the join, so the copy lands there and reads as one mark) \
+	   while a mark made on a wall almost always looks wrong (the impact is well above the floor, so \
+	   the copy lands well away from it). \
+ \
+	   Scaling the picture by the chord instead means the mark shrinks as the surface recedes and is \
+	   simply gone at d >= R. A ghost at full size is not reachable from here. */ \
+	"float fuaDecalChord(float d, float radius) {\n" \
+	"    float k = radius * radius - d * d;\n" \
+	"    return (k <= 0.0) ? 0.0 : sqrt(k);\n" \
 	"}\n" \
-	/* [rc4l] How far this surface is from where the blast actually LANDED, along its own normal.
-	   Being inside the sphere is not the same as having been touched. A surface's distance from the
-	   impact measured perpendicular to itself is nearly zero on the thing that was hit and on anything
-	   folding round its corner, and large on a floor that merely happens to lie within the radius --
-	   and a floor is exactly what gets caught out, because a mark's picture is laid into each surface
-	   from the impact's own position, so a distant floor gets a full copy of it stamped directly
-	   underneath. That is a BFG's glow appearing on the ground below a column with the scorch left up
-	   on the wall: the glow's graphic is larger, so its sphere reached a floor the scorch's did not,
-	   and nothing was asking whether the blast had reached it. */ \
-	"float fuaDecalTouched(vec3 rel, vec3 nrm, float radius) {\n" \
-	"    return 1.0 - smoothstep(radius * 0.15, radius * 0.6, abs(dot(rel, nrm)));\n" \
+	/* The last of the disc fades rather than ending, so the rim of the intersection is never a hard \
+	   edge -- the graphic usually runs out first, and where it does not this is what stops a line. */ \
+	"float fuaDecalReach(vec3 rel, vec3 nrm, float radius) {\n" \
+	"    float chord = fuaDecalChord(abs(dot(rel, nrm)), radius);\n" \
+	"    if (chord <= 0.0) return 0.0;\n" \
+	"    float acrossSq = dot(rel, rel) - dot(rel, nrm) * dot(rel, nrm);\n" \
+	"    return 1.0 - smoothstep(0.75, 1.0, sqrt(max(acrossSq, 0.0)) / chord);\n" \
 	"}\n" \
-	"vec2 fuaDecalUV(vec3 rel, vec3 nrm, vec3 axisU, vec3 axisV, vec3 axisN) {\n" \
+	"vec2 fuaDecalUV(vec3 rel, vec3 nrm, vec3 axisU, vec3 axisV, vec3 axisN, float chord,\n" \
+	"                float radius) {\n" \
 	"    vec3 U = normalize(axisU), V = normalize(axisV), N = normalize(axisN);\n" \
 	"    vec3 su = U - nrm * dot(nrm, U);\n" \
 	"    if (dot(su, su) < 0.05) su = V - nrm * dot(nrm, V);\n" \
 	"    if (dot(su, su) < 0.05) su = N - nrm * dot(nrm, N);\n" \
 	"    su = normalize(su);\n" \
 	"    vec3 sv = cross(nrm, su);\n" \
-	/* Which of the two perpendiculars is "up the picture". On the surface that was hit this is the
-	   mark's own V; on a floor, where V lies along the normal and decides nothing, the tie is broken
-	   by pointing away from the surface that was hit. Both are fixed in world space, so neither can
+	/* Which of the two perpendiculars is "up the picture". On the surface that was hit this is the \
+	   mark's own V; on a floor, where V lies along the normal and decides nothing, the tie is broken \
+	   by pointing away from the surface that was hit. Both are fixed in world space, so neither can \
 	   change as the camera moves. */ \
 	"    if (dot(sv, V) - dot(sv, N) < 0.0) sv = -sv;\n" \
-	"    return vec2(dot(rel, su) * length(axisU), dot(rel, sv) * length(axisV)) * 0.5 + 0.5;\n" \
-	"}\n"
+	/* Scaled by how much of the blast this surface actually cuts through: the picture is full size on \
+	   the surface that was hit and shrinks to nothing as a surface recedes, which is the sphere's own \
+	   cross-section and not a decision. */ \
+	"    float shrink = chord / radius;\n" \
+	"    if (shrink <= 0.0) return vec2(-1.0);\n" \
+	"    return vec2(dot(rel, su) * length(axisU), dot(rel, sv) * length(axisV))\n" \
+	"           / shrink * 0.5 + 0.5;\n" \
+	"}\n" \
 
 // [rc4l] The decal's box, built ON THE GPU from nothing but two indices.
 //
@@ -824,19 +838,19 @@ static const char *kDecalPS =
 	   impossible for a surface in range to be missed -- a box aligned to one wall left a wedge
 	   of floor uncovered wherever the floor wrapped round a corner at an angle to it. */
 	"    vec3 rel = P - vCentre;\n"
-	"    float reach = fuaDecalReach(rel, vRadius);\n"
-	"    if (reach <= 0.0) discard;\n"
 	/* [rc4l] The surface's EXACT normal, read out of the G-buffer -- see kScenePSGBuffer.
 	   This used to be estimated from four depth taps, and the estimate was wrong in all the places
 	   that mattered: across a silhouette it straddled two surfaces, on a two-pixel sliver there was no
 	   neighbourhood to sample, and at a grazing angle it was a difference of nearly-equal large
-	   numbers. Alpha zero means nothing was drawn here, so there is no surface to mark. */
+	   numbers. Alpha zero means nothing was drawn here, so there is no surface to mark.
+	   It is read FIRST because everything after it is a question about this surface. */
 	"    vec4 gbuf = texture(uSceneNormal, uv);\n"
 	"    if (gbuf.a < 0.5) discard;\n"
 	"    vec3 nrm = normalize(gbuf.xyz * 2.0 - 1.0);\n"
-	"    reach *= fuaDecalTouched(rel, nrm, vRadius);\n"
+	"    float reach = fuaDecalReach(rel, nrm, vRadius);\n"
 	"    if (reach <= 0.0) discard;\n"
-	"    vec2 t = fuaDecalUV(rel, nrm, vAxisU, vAxisV, vAxisN);\n"
+	"    vec2 t = fuaDecalUV(rel, nrm, vAxisU, vAxisV, vAxisN,\n"
+	"                        fuaDecalChord(abs(dot(rel, nrm)), vRadius), vRadius);\n"
 	/* Past the end of the picture. Clamped instead of dropped, the edge texel would repeat for
 	   ever -- a dragged row of texels by another route, which is the artifact all of this
 	   exists to avoid. */
@@ -880,19 +894,19 @@ static const char *kDecalRedPS =
 	"    vec4 world = uInvMVP * clip;\n"
 	"    vec3 P = world.xyz / world.w;\n"
 	"    vec3 rel = P - vCentre;\n"
-	"    float reach = fuaDecalReach(rel, vRadius);\n"
-	"    if (reach <= 0.0) discard;\n"
 	/* [rc4l] The surface's EXACT normal, read out of the G-buffer -- see kScenePSGBuffer.
 	   This used to be estimated from four depth taps, and the estimate was wrong in all the places
 	   that mattered: across a silhouette it straddled two surfaces, on a two-pixel sliver there was no
 	   neighbourhood to sample, and at a grazing angle it was a difference of nearly-equal large
-	   numbers. Alpha zero means nothing was drawn here, so there is no surface to mark. */
+	   numbers. Alpha zero means nothing was drawn here, so there is no surface to mark.
+	   It is read FIRST because everything after it is a question about this surface. */
 	"    vec4 gbuf = texture(uSceneNormal, uv);\n"
 	"    if (gbuf.a < 0.5) discard;\n"
 	"    vec3 nrm = normalize(gbuf.xyz * 2.0 - 1.0);\n"
-	"    reach *= fuaDecalTouched(rel, nrm, vRadius);\n"
+	"    float reach = fuaDecalReach(rel, nrm, vRadius);\n"
 	"    if (reach <= 0.0) discard;\n"
-	"    vec2 t = fuaDecalUV(rel, nrm, vAxisU, vAxisV, vAxisN);\n"
+	"    vec2 t = fuaDecalUV(rel, nrm, vAxisU, vAxisV, vAxisN,\n"
+	"                        fuaDecalChord(abs(dot(rel, nrm)), vRadius), vRadius);\n"
 	"    if (any(lessThan(t, vec2(0.0))) || any(greaterThan(t, vec2(1.0)))) discard;\n"
 	"    float a = textureLod(uTex, t, 0.0).r * vColor.a * reach;\n"
 	"    if (a <= 0.0) discard;\n"
@@ -2950,10 +2964,22 @@ static bool EnsureDecalPass()
 		// read-only input, so the PSO must declare no depth format to match.
 		pci.GraphicsPipeline.DSVFormat = Diligent::TEX_FORMAT_UNKNOWN;
 		pci.GraphicsPipeline.PrimitiveTopology = Diligent::PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-		// [rc4l] No culling and no depth test. The camera can be inside a decal's box -- standing on
-		// the mark -- and the box must still rasterise; the shader decides what is inside from the
-		// depth buffer, so the box's own depth means nothing.
-		pci.GraphicsPipeline.RasterizerDesc.CullMode = Diligent::CULL_MODE_NONE;
+		// [rc4l] BACK faces only, and no depth test.
+		//
+		// No depth test because the shader decides what is inside from the depth buffer, so the box's
+		// own depth means nothing -- and the camera can be inside a box, standing on a mark, where a
+		// depth test would throw the whole thing away.
+		//
+		// But culling nothing was wrong. A cube is closed, so with nothing culled every pixel inside
+		// its silhouette is shaded TWICE -- once through the near face, once through the far one --
+		// and the mark is blended over itself. That is why our scorches read denser than GL's, which I
+		// had blamed on the blend mode. It also made a mark get LIGHTER as you walked up to it: once
+		// the camera is inside the box the near faces are behind you, one layer is lost, and the
+		// doubling quietly stops.
+		//
+		// Keeping the far faces rather than the near ones is what makes both cases the same: the far
+		// side of a box is in front of the camera whether the camera is outside it or in it.
+		pci.GraphicsPipeline.RasterizerDesc.CullMode = Diligent::CULL_MODE_FRONT;
 		pci.GraphicsPipeline.DepthStencilDesc.DepthEnable = false;
 		pci.GraphicsPipeline.DepthStencilDesc.DepthWriteEnable = false;
 		{
