@@ -3776,6 +3776,14 @@ static void CaptureReplayFrame(Diligent::IDeviceContext *ctx, Diligent::ISwapCha
 	const int write = g_replayIndex;
 	const int read = g_replayIndex ^ 1;
 
+	// [rc4l] Unbind the render targets before copying FROM the back buffer.
+	//
+	// Copying a texture that is still bound as a render target makes Diligent unbind it for you and
+	// say so, every single frame -- 1719 pairs of info messages in one short session, 94% of the
+	// engine log. This is the fix the message itself asks for, and doing it here costs nothing:
+	// the capture runs immediately before Present, so nothing draws afterwards.
+	ctx->SetRenderTargets(0, nullptr, nullptr, Diligent::RESOURCE_STATE_TRANSITION_MODE_NONE);
+
 	Diligent::CopyTextureAttribs cta;
 	cta.pSrcTexture = backTex;
 	cta.SrcTextureTransitionMode = Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
@@ -3846,6 +3854,10 @@ bool SceneScreenshot(const char *path, FString &report)
 
 	auto *backTex = swap->GetCurrentBackBufferRTV()->GetTexture();
 	const auto &bd = backTex->GetDesc();
+
+	// Same as the replay path: unbind before copying from the back buffer, or Diligent does it for
+	// us and logs about it.
+	ctx->SetRenderTargets(0, nullptr, nullptr, Diligent::RESOURCE_STATE_TRANSITION_MODE_NONE);
 
 	Diligent::TextureDesc sd;
 	sd.Name = "fua readback";
