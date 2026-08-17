@@ -93,6 +93,9 @@ struct FCanvasTextureInfo
 	static void EmptyList ();
 	static void Serialize (FArchive &arc);
 	static void Mark();
+	// [rc4l] Read-only access for fua_cameras: whether a camera texture has a viewpoint at all is
+	// the difference between "the backend cannot draw it" and "the map never wired it".
+	static FCanvasTextureInfo *GetList() { return List; }
 
 	// [BC]
 	static void UpdateToClient( ULONG ulClient );

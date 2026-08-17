@@ -1232,3 +1232,32 @@ void FCanvasTextureInfo::UpdateToClient( ULONG ulClient )
 		// silently resolves to the WRONG texture, which is worse than one it cannot find.
 		SERVERCOMMANDS_SetCameraToTexture( pProbe->Viewpoint, pProbe->Texture->Name.GetChars(), pProbe->FOV, ulClient, SVCF_ONLYTHISCLIENT );
 }
+
+//==========================================================================
+//
+// fua_cameras
+//
+// [rc4l] What is actually registered as a camera texture, and whether it has a viewpoint.
+//
+// A camera texture that renders black has two completely different explanations: the backend cannot
+// draw it, or the map never pointed a camera at it. Only the second is the map working as intended,
+// and a screenshot cannot tell them apart. Cameras are wired by ACS (SetCameraToTexture), not by a
+// linedef, so this reads the registry rather than the map.
+//
+//==========================================================================
+
+CCMD( fua_cameras )
+{
+	int n = 0;
+	for ( FCanvasTextureInfo *probe = FCanvasTextureInfo::GetList( ); probe != NULL; probe = probe->Next )
+	{
+		const char *name = ( probe->Texture != NULL ) ? probe->Texture->Name : "?";
+		Printf( "camera %d: texture %s, viewpoint %s, fov %d, needsupdate %s\n",
+				n, name,
+				( probe->Viewpoint != NULL ) ? probe->Viewpoint->GetClass( )->TypeName.GetChars( ) : "NONE",
+				probe->FOV,
+				( probe->Texture != NULL ) ? "yes" : "no" );
+		n++;
+	}
+	Printf( "fua_cameras: %d camera texture(s) registered\n", n );
+}
