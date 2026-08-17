@@ -684,9 +684,27 @@ DImpactDecal *DImpactDecal::StaticCreate (const char *name, fixed_t x, fixed_t y
 	return NULL;
 }
 
+// [rc4l] Why a shot left no mark, counted at the only place that knows.
+//
+// A wall with no decal on it looks the same whether the engine declined to make one or the renderer
+// failed to draw it, and those are opposite investigations. The counters below name the reason, so
+// `fua_walldecals` can answer it instead of a screenshot being argued over.
+//
+// The one that surprises people is `noSurface`. StickToWall has to pick a texture for the mark to
+// live on, and on a TWO-SIDED line -- a line connecting two sectors -- it looks for the upper or the
+// lower section. A hit that lands in the open gap between them, the doorway or window itself, is on
+// no texture at all, so it returns a null texture id and there is no decal. That is vanilla
+// behaviour and GL does exactly the same; it is not something the backend dropped.
+namespace zx { namespace decalstats {
+int g_wallTries = 0, g_wallNoTemplate = 0, g_wallSuppressed = 0, g_wallNoSurface = 0, g_wallMade = 0;
+}}
+
 DImpactDecal *DImpactDecal::StaticCreate (const FDecalTemplate *tpl, fixed_t x, fixed_t y, fixed_t z, side_t *wall, F3DFloor * ffloor, PalEntry color)
 {
 	DImpactDecal *decal = NULL;
+	zx::decalstats::g_wallTries++;
+	if (tpl == NULL || cl_maxdecals <= 0) zx::decalstats::g_wallNoTemplate++;
+	else if (wall->Flags & WALLF_NOAUTODECALS) zx::decalstats::g_wallSuppressed++;
 	if (tpl != NULL && cl_maxdecals > 0 && !(wall->Flags & WALLF_NOAUTODECALS))
 	{
 		if (tpl->LowerDecal)
@@ -709,8 +727,12 @@ DImpactDecal *DImpactDecal::StaticCreate (const FDecalTemplate *tpl, fixed_t x, 
 
 		if (!decal->StickToWall (wall, x, y, ffloor).isValid())
 		{
+			// No texture to live on: see the note above StaticCreate. Almost always a two-sided
+			// line hit in its open middle.
+			zx::decalstats::g_wallNoSurface++;
 			return NULL;
 		}
+		zx::decalstats::g_wallMade++;
 
 		tpl->ApplyToDecal (decal, wall);
 		if (color != 0)

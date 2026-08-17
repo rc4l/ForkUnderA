@@ -24,6 +24,11 @@
 #include "c_console.h"
 
 namespace zx { namespace hwrender { void GetDecalPassStats(int &boxes, int &draws); const char *GetDecalPassBail(); }}
+// Counted in a_decals.cpp, where the engine decides whether a shot gets a mark at all -- which is
+// upstream of anything this module or the backend does with one.
+namespace zx { namespace decalstats {
+extern int g_wallTries, g_wallNoTemplate, g_wallSuppressed, g_wallNoSurface, g_wallMade;
+}}
 
 // [rc4l] Off would mean the engine behaves as it always has. On by default because a floor you have
 // emptied a magazine into looking untouched is the odd behaviour, not the fix.
@@ -607,6 +612,15 @@ void DumpWallDecals()
 		// what this module handed the backend this frame; the drawn count is what the backend kept.
 		// A gap between them is the backend's, and everything missing from the registered count went
 		// before that -- an expired ring entry, a texture that would not resolve, a wall gone NULL.
+		// [rc4l] Spawned vs drawn, because an unmarked wall has two completely different causes and
+		// they need opposite investigations. `no surface` is the engine declining: StickToWall found
+		// no texture for the mark to live on, which on a two-sided line means the hit landed in the
+		// open gap between its upper and lower sections. GL does the same -- that mark never existed,
+		// so looking for it in the backend is looking in the wrong place.
+		Printf("  spawn attempts: %d made, %d no surface (two-sided line's open gap), "
+		       "%d no template, %d suppressed by the wall\n",
+			zx::decalstats::g_wallMade, zx::decalstats::g_wallNoSurface,
+			zx::decalstats::g_wallNoTemplate, zx::decalstats::g_wallSuppressed);
 		Printf("  registered this frame: %d\n", (int)g_projected.Size());
 		Printf("  drawn last frame: %d boxes in %d draw calls\n", boxes, draws);
 	}
