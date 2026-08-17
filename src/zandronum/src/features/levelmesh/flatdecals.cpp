@@ -96,6 +96,14 @@ static const secplane_t *DecalPlane(const sector_t *sec, F3DFloor *rover, bool c
 }
 
 static FlatDecal g_decals[kMaxFlatDecals];
+// This frame's decals expressed as volumes, for the projected pass. Rebuilt every frame from the
+// same records, so nothing about spawning or fading changes.
+static TArray<ProjectedDecal> g_projected;
+int GetProjectedDecals(const ProjectedDecal **out)
+{
+	*out = g_projected.Size() ? &g_projected[0] : NULL;
+	return (int)g_projected.Size();
+}
 // [rc4l] Split by cause: "the floor branch never ran" and "it ran and the template was empty" look
 // identical from in front of an unmarked floor.
 int g_impactWall = 0, g_impactFloor = 0, g_impactCeiling = 0, g_impactOther = 0,
@@ -215,7 +223,8 @@ void SpawnFlatDecal(const FDecalTemplate *tpl, fixed_t x, fixed_t y, fixed_t z, 
 
 void RegisterFlatDecals()
 {
-	if (!fua_flat_decals || !gl_wallmesh || g_count == 0) return;
+	g_projected.Clear();
+	if (!fua_flat_decals || g_count == 0) return;
 
 	g_emitted = 0;
 	for (int i = 0; i < g_count; i++)
@@ -233,83 +242,61 @@ void RegisterFlatDecals()
 			if (age > 0) fade = 1.f - (float)age / (float)kFadeTics;
 		}
 
-		// Half-extents in map units. A decal graphic is authored at 1 unit per texel like a sprite.
 		const float hw = mat->TextureWidth() * d.scaleX * 0.5f;
 		const float hh = mat->TextureHeight() * d.scaleY * 0.5f;
 		if (hw <= 0.f || hh <= 0.f) continue;
 
-		// [rc4l] Draw at the height it was SHOT, moved by however far its sector's plane has since
-		// travelled.
-		//
-		// Reading the height straight off the sector plane instead was wrong in the common case: a
-		// shot that lands on a 3D floor reports a hit height of 192 while the sector's own floor is
-		// still at 0, so the decal was drawn 192 units underneath the surface it marked and was
-		// invisible. Tracking the DELTA keeps the decal where the bullet hit and still lets it ride a
-		// lift, which is the only reason to consult the plane at all.
-		// [rc4l] Look the sector up the SAME way it was looked up at spawn.
-		//
-		// This used to store `sec - sectors` and index the array back. Measured on dbab02: the plane
-		// read 128 when the shot landed and 0 when the frame drew -- the same call, two answers, so
-		// the sector coming back was not the sector that went in. P_PointInSector is what
-		// SpawnFlatDecal uses, so using it here too makes the two agree by construction rather than
-		// by an index that has to survive a round trip.
 		sector_t *sec = P_PointInSector(FLOAT2FIXED(d.x), FLOAT2FIXED(d.y));
 		if (sec == NULL) continue;
+
 		const secplane_t *plane = DecalPlane(sec, d.rover, d.ceiling);
 		const float planeNow = FIXED2FLOAT(plane->ZatPoint(FLOAT2FIXED(d.x), FLOAT2FIXED(d.y)));
-		// First frame this decal is drawn: that is when its surface height becomes comparable with
-		// every later frame's.
 		FlatDecal &mut = g_decals[i];
 		if (!mut.planeSampled) { mut.planeZ = planeNow; mut.planeSampled = true; }
-		// The depth-bias pipeline handles the coplanar fight; the offset only keeps the quad on the
-		// correct SIDE of the plane, so a decal is never swallowed by the surface it marks.
-		// [rc4l] One unit of tolerance: a plane that was within a unit of the hit when the shot landed is
-		// the surface it landed on; anything further away is a different surface and must not drag the
-		// decal with it.
-		const float pz = ComputeDecalHeight(d.z, mut.planeZ, planeNow, d.ceiling, d.clearance, 1.0f);
-
-		FFlatVertex quad[4];
-		// Wound so the decal faces the side it was shot from: a floor decal is seen from above and a
-		// ceiling decal from below, exactly the distinction the flat mesh makes for its own planes.
-		if (!d.ceiling)
-		{
-			quad[0].Set(d.x - hw, pz, d.y - hh, 0.f, 0.f);
-			quad[1].Set(d.x + hw, pz, d.y - hh, 1.f, 0.f);
-			quad[2].Set(d.x + hw, pz, d.y + hh, 1.f, 1.f);
-			quad[3].Set(d.x - hw, pz, d.y + hh, 0.f, 1.f);
-		}
-		else
-		{
-			quad[0].Set(d.x - hw, pz, d.y + hh, 0.f, 1.f);
-			quad[1].Set(d.x + hw, pz, d.y + hh, 1.f, 1.f);
-			quad[2].Set(d.x + hw, pz, d.y - hh, 1.f, 0.f);
-			quad[3].Set(d.x - hw, pz, d.y - hh, 0.f, 0.f);
-		}
+		// No clearance offset: a projected decal is a VOLUME centred on the surface, not a quad that
+		// has to be lifted clear of it.
+		const float pz = ComputeDecalHeight(d.z, mut.planeZ, planeNow, d.ceiling, 0.f, 1.0f);
 
 		// Lit by the sector it sits in, like the plane under it.
+		const int light = d.ceiling ? sec->GetCeilingLight() : sec->GetFloorLight();
 		FColormap cm;
 		cm.Clear();
 		cm.LightColor = sec->ColorMap->Color;
 		cm.FadeColor = sec->ColorMap->Fade;
 		cm.desaturation = sec->ColorMap->Desaturate;
-		const int light = d.ceiling ? sec->GetCeilingLight() : sec->GetFloorLight();
 
-		RegisterDecal(quad, mat, 0, false, d.additive, d.alpha * fade,
-			light, getExtraLight(), cm,
-			d.redToAlpha, d.redToAlpha ? (unsigned int)d.shadeColor : 0xffffffu,
-			d.x, d.y, pz);
-		// [rc4l] The first decal's actual numbers, so "it is not being drawn" can be told apart from
-		// "it is being drawn somewhere I am not looking, or at zero size, or in black on black".
-		// The LAST one emitted, not the first: the ring holds older decals ahead of the newest, and
-		// reporting the oldest made every check look like nothing had spawned.
+		MeshPiece lit;
+		CaptureShading(light, getExtraLight(), cm, lit);
+
+		ProjectedDecal pd;
+		pd.x = d.x; pd.y = d.y; pd.z = pz;
+		pd.halfW = hw; pd.halfH = hh;
+		// [rc4l] How far through the surface the box reaches.
+		//
+		// Deep enough to survive the surface being a little away from where the decal was recorded --
+		// a sloped floor, a step, a lift caught mid-move -- and shallow enough that it cannot reach
+		// the floor below or the ceiling above. Eight units is about a quarter of a step.
+		pd.halfDepth = 8.f;
+		pd.material = mat;
+		pd.r = lit.colorR; pd.g = lit.colorG; pd.b = lit.colorB;
+		if (d.redToAlpha)
 		{
-			g_lastX = d.x; g_lastY = d.y; g_lastZ = pz;
-			g_lastHitZ = d.z; g_lastPlaneSpawn = mut.planeZ; g_lastPlaneNow = planeNow;
-			g_lastRover = (d.rover != NULL);
-			g_lastHW = hw; g_lastHH = hh;
-			g_lastAlpha = d.alpha; g_lastRed = d.redToAlpha;
-			g_lastShade = d.shadeColor; g_lastLight = light;
+			pd.r *= ((d.shadeColor >> 16) & 0xff) / 255.f;
+			pd.g *= ((d.shadeColor >> 8) & 0xff) / 255.f;
+			pd.b *= (d.shadeColor & 0xff) / 255.f;
 		}
+		pd.a = d.alpha * fade;
+		pd.additive = d.additive;
+		pd.redToAlpha = d.redToAlpha;
+		pd.ceiling = d.ceiling;
+		g_projected.Push(pd);
+
+		g_lastX = d.x; g_lastY = d.y; g_lastZ = pz;
+		g_lastHitZ = d.z; g_lastPlaneSpawn = mut.planeZ; g_lastPlaneNow = planeNow;
+		g_lastRover = (d.rover != NULL);
+		g_lastHW = hw; g_lastHH = hh;
+		g_lastAlpha = pd.a; g_lastRed = d.redToAlpha;
+		g_lastShade = d.shadeColor; g_lastLight = light;
 		g_emitted++;
 	}
 }
