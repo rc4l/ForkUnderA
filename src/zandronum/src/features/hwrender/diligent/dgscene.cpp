@@ -666,7 +666,12 @@ static const char *kDecalPS =
 	"    if (d >= 1.0) discard;\n"
 	/* Reconstruct the world position of whatever the depth buffer says is here. Clip space is
 	   x,y in -1..1 and z in 0..1, which is the Vulkan convention this backend's projection uses. */
-	"    vec4 clip = vec4(uv * 2.0 - 1.0, d, 1.0);\n"
+	/* [rc4l] Y is flipped between the framebuffer and clip space.
+	   gl_FragCoord.y counts DOWN from the top while clip-space y runs up, so reconstructing
+	   without the flip mirrors the world position vertically -- and because the error grows with
+	   distance from the centre of the screen, the decal appeared to slide about as the camera
+	   turned. "It follows the camera" is what a mirrored reconstruction looks like. */
+	"    vec4 clip = vec4(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0, d, 1.0);\n"
 	"    vec4 world = uInvMVP * clip;\n"
 	"    vec3 P = world.xyz / world.w;\n"
 	/* Inside the box? The box is axis-aligned, because a flat decal lies on a horizontal plane. */
@@ -694,7 +699,12 @@ static const char *kDecalRedPS =
 	"    vec2 uv = gl_FragCoord.xy / vec2(uScreen.x, uScreen.y);\n"
 	"    float d = texture(uSceneDepth, uv).r;\n"
 	"    if (d >= 1.0) discard;\n"
-	"    vec4 clip = vec4(uv * 2.0 - 1.0, d, 1.0);\n"
+	/* [rc4l] Y is flipped between the framebuffer and clip space.
+	   gl_FragCoord.y counts DOWN from the top while clip-space y runs up, so reconstructing
+	   without the flip mirrors the world position vertically -- and because the error grows with
+	   distance from the centre of the screen, the decal appeared to slide about as the camera
+	   turned. "It follows the camera" is what a mirrored reconstruction looks like. */
+	"    vec4 clip = vec4(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0, d, 1.0);\n"
 	"    vec4 world = uInvMVP * clip;\n"
 	"    vec3 P = world.xyz / world.w;\n"
 	"    vec3 local = (P - vCentre) / vExtent;\n"
