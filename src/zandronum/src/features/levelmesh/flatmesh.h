@@ -40,6 +40,10 @@ int FlatPieceCount();
 // failure that killed an early version of the wall cache.
 void RegisterSprite(const GLSprite &spr);
 
+// Sprite render styles seen since load, indexed by STYLEOP_*. See fua_spritestyles.
+void GetSpriteStyleStats(int *ops16, int &flagsSeen);
+void GetSpriteStyleDetail(int *dest16, int *classified4);
+
 // [rc4l] One decal quad, captured where GLWall::DrawDecal emits its four vertices.
 //
 // Decals live on a sidedef's AttachedDecals list and are re-walked every frame, so they belong in
