@@ -61,6 +61,14 @@ void ForgetDecals();
 void SpawnUnstuckWallDecal(const FDecalTemplate *tpl, fixed_t x, fixed_t y, fixed_t z,
                            const side_t *wall);
 
+// [rc4l] Which way the projectile was travelling when it hit, set around the decal spawn.
+//
+// The blocking line is not always the surface you can see: a projectile has a radius, so it can be
+// stopped by one face of a corner while the face it visibly struck is the neighbour. When the
+// blocking line has no texture to hold a mark, this direction is what lets the mark be placed on
+// the surface actually hit rather than abandoned. Zero means "not known", and nothing is traced.
+void SetImpactDirection(fixed_t dx, fixed_t dy);
+
 // Dropped when the level changes: the records hold plane heights that mean nothing in a new map.
 void ClearFlatDecals();
 

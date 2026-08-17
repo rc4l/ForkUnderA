@@ -31,6 +31,8 @@ extern int g_wallTries, g_wallNoTemplate, g_wallSuppressed, g_wallNoSurface, g_w
 extern int g_lastRefusedLine;
 extern double g_lastRefusedZ, g_lastRefusedBackFloor, g_lastRefusedBackCeil;
 extern bool g_lastRefusedTwoSided, g_lastRefusedHasMid;
+extern double g_lastRefusedV1[2], g_lastRefusedV2[2], g_lastRefusedHit[2];
+extern char g_lastRefusedTex[3][16];
 }}
 
 // [rc4l] Off would mean the engine behaves as it always has. On by default because a floor you have
@@ -517,6 +519,13 @@ void ForgetDecals()
 // mark is made at the impact and creeps onto the real geometry behind, which is where the blast
 // visibly landed. Nothing is attached to the offending line, so nothing rides it if it moves; the
 // height is simply where the blast was.
+// What the settling trace found last time, so a mark that did not move can say why.
+int g_lastSettleHit = -1;
+float g_lastSettleDist = 0.f;
+
+static fixed_t g_impactDirX = 0, g_impactDirY = 0;
+void SetImpactDirection(fixed_t dx, fixed_t dy) { g_impactDirX = dx; g_impactDirY = dy; }
+
 void SpawnUnstuckWallDecal(const FDecalTemplate *tpl, fixed_t x, fixed_t y, fixed_t z,
                            const side_t *wall)
 {
@@ -533,8 +542,6 @@ void SpawnUnstuckWallDecal(const FDecalTemplate *tpl, fixed_t x, fixed_t y, fixe
 	}
 
 	float along[2], outward[2];
-	if (!ComputeWallDecalAxes(FIXED2FLOAT(ld->dx), FIXED2FLOAT(ld->dy),
-	                          ld->sidedef[1] == wall, along, outward)) return;
 
 	FMaterial *mat = FMaterial::ValidateTexture(tpl->PicNum, true, true);
 	if (mat == NULL) return;
@@ -545,15 +552,60 @@ void SpawnUnstuckWallDecal(const FDecalTemplate *tpl, fixed_t x, fixed_t y, fixe
 	const float halfH = mat->TextureHeight() * sy * 0.5f;
 	if (halfW <= 0.f || halfH <= 0.f) return;
 
+	// [rc4l] Anchor the mark to the surface actually hit, not to the line that stopped the ball.
+	//
+	// Those differ at a corner. A projectile has a radius, so it can be blocked by one face while
+	// the face it visibly struck is the neighbour -- measured at the reported camera: blocked by
+	// line 288, whose far endpoint is the first vertex of line 152, the face under the crosshair.
+	// Line 288 is open at that height and carries no middle texture, which is exactly why the engine
+	// refused; hanging the mark on it anyway puts the picture on a surface that is not drawn, and the
+	// creep then has to cross to the real face and is charged for the distance. That came out as a
+	// narrow vertical streak, aspect 0.40 where a scorch should be near 1.
+	//
+	// So carry on the last few units along the ball's own path and take the surface it meets --
+	// position, and the basis with it. If nothing is there, the mark stays where the engine put it,
+	// which is no worse than before.
+	fixed_t mx = x, my = y, mz = z;
+	const side_t *anchor = wall;
+	if (g_impactDirX != 0 || g_impactDirY != 0)
+	{
+		const double dx = FIXED2DBL(g_impactDirX), dy = FIXED2DBL(g_impactDirY);
+		const double len = sqrt(dx * dx + dy * dy);
+		if (len > 0.01)
+		{
+			const fixed_t vx = FLOAT2FIXED(dx / len);
+			const fixed_t vy = FLOAT2FIXED(dy / len);
+			// Start a whisker back so the trace does not immediately re-hit the line it starts on.
+			const fixed_t back = 2 * FRACUNIT;
+			FTraceResults res;
+			sector_t *sec = P_PointInSector(x - FixedMul(vx, back), y - FixedMul(vy, back));
+			if (sec != NULL &&
+				Trace(x - FixedMul(vx, back), y - FixedMul(vy, back), z, sec,
+				      vx, vy, 0, 64 * FRACUNIT, 0, 0, NULL, res, TRACE_NoSky) &&
+				res.HitType == TRACE_HitWall && res.Line != NULL)
+			{
+				side_t *hit = res.Line->sidedef[res.Side];
+				if (hit != NULL && hit->linedef != NULL)
+				{
+					mx = res.X; my = res.Y; mz = res.Z;
+					anchor = hit;
+				}
+			}
+		}
+	}
+	ld = anchor->linedef;
+	if (!ComputeWallDecalAxes(FIXED2FLOAT(ld->dx), FIXED2FLOAT(ld->dy),
+	                          ld->sidedef[1] == anchor, along, outward)) return;
+
 	WallDecal &w = g_wall[g_wallNext];
-	w.x = FIXED2FLOAT(x);
-	w.y = FIXED2FLOAT(y);
+	w.x = FIXED2FLOAT(mx);
+	w.y = FIXED2FLOAT(my);
 	// No sidedef to be relative to: this one keeps the height it was made at.
 	w.wall = NULL;
 	w.rawZ = 0;
 	w.renderFlags = 0;
 	w.upOff = 0.f;
-	w.fixedZ = FIXED2FLOAT(z);
+	w.fixedZ = FIXED2FLOAT(mz);
 	w.ux = along[0]; w.uy = along[1];
 	w.nx = outward[0]; w.ny = outward[1];
 	w.flipV = false;
@@ -568,8 +620,8 @@ void SpawnUnstuckWallDecal(const FDecalTemplate *tpl, fixed_t x, fixed_t y, fixe
 	             tpl->RenderStyle.DestAlpha == STYLEALPHA_One;
 	w.renderFlags = tpl->RenderFlags & RF_FULLBRIGHT;
 
-	const sector_t *sec = wall->sector;
-	w.light = wall->GetLightLevel(false, sec ? sec->lightlevel : 255, true);
+	const sector_t *sec = anchor->sector;
+	w.light = anchor->GetLightLevel(false, sec ? sec->lightlevel : 255, true);
 	w.cm.Clear();
 	if (sec != NULL && sec->ColorMap != NULL)
 	{
@@ -724,6 +776,19 @@ void DumpWallDecals()
 				zx::decalstats::g_lastRefusedBackFloor, zx::decalstats::g_lastRefusedBackCeil,
 				zx::decalstats::g_lastRefusedTwoSided ? 1 : 0,
 				zx::decalstats::g_lastRefusedHasMid ? 1 : 0);
+		}
+		// [rc4l] Where the refusing line actually IS, and what is drawn on it. "The blast landed on
+		// real geometry" and "the engine found no texture to hold a mark" cannot both be true, and
+		// only the line's own endpoints and textures can say which of them is wrong.
+		if (zx::decalstats::g_lastRefusedLine >= 0)
+		{
+			Printf("      line runs (%.0f, %.0f) -> (%.0f, %.0f); hit at (%.1f, %.1f)\n"
+			       "      textures top '%s' mid '%s' bottom '%s'\n",
+				zx::decalstats::g_lastRefusedV1[0], zx::decalstats::g_lastRefusedV1[1],
+				zx::decalstats::g_lastRefusedV2[0], zx::decalstats::g_lastRefusedV2[1],
+				zx::decalstats::g_lastRefusedHit[0], zx::decalstats::g_lastRefusedHit[1],
+				zx::decalstats::g_lastRefusedTex[0], zx::decalstats::g_lastRefusedTex[1],
+				zx::decalstats::g_lastRefusedTex[2]);
 		}
 		Printf("  registered this frame: %d\n", (int)g_projected.Size());
 		Printf("  drawn last frame: %d boxes in %d draw calls\n", boxes, draws);

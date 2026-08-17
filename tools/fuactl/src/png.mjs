@@ -282,6 +282,37 @@ if (args[0] === "--blob") {
               `(darkest ${take} px, mean lum ${(lum[0][0]).toFixed(1)})`);
   process.exit(0);
 }
+// [rc4l] How WIDE and how TALL a mark is, not just where it is.
+//
+// "It looks egg-shaped" and "it looks fine" are the same screenshot argued over twice, and the blob
+// centroid above cannot settle it -- a stretched mark and a round one at the same place have the
+// same centroid. This takes the same darkest-2% set and reports its extent and aspect, so a mark
+// that renders taller than it is wide is a number.
+//
+//   fuactl png --extent in.png [x0 y0 x1 y1]
+if (args[0] === "--extent") {
+  const a = decodePNG(args[1]);
+  const f = args.length >= 6 ? args.slice(2, 6).map(Number) : [0, 0, 1, 1];
+  const x0 = Math.floor(f[0] * a.w), y0 = Math.floor(f[1] * a.h);
+  const x1 = Math.ceil(f[2] * a.w),  y1 = Math.ceil(f[3] * a.h);
+  const lum = [];
+  for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
+    const p0 = px(a, x, y);
+    lum.push([0.299 * p0[0] + 0.587 * p0[1] + 0.114 * p0[2], x, y]);
+  }
+  lum.sort((p, q) => p[0] - q[0]);
+  const take = Math.max(1, Math.floor(lum.length * 0.02));
+  let lo = [1e9, 1e9], hi = [-1e9, -1e9];
+  for (let i = 0; i < take; i++) {
+    lo[0] = Math.min(lo[0], lum[i][1]); hi[0] = Math.max(hi[0], lum[i][1]);
+    lo[1] = Math.min(lo[1], lum[i][2]); hi[1] = Math.max(hi[1], lum[i][2]);
+  }
+  const w = hi[0] - lo[0] + 1, h = hi[1] - lo[1] + 1;
+  console.log(`${args[1].split(/[\/]/).pop().padEnd(28)} dark extent ${w}x${h} px  ` +
+              `aspect ${(w / h).toFixed(3)} (1.0 = round; <1 taller than wide)`);
+  process.exit(0);
+}
+
 // [rc4l] GAIN brightens the crop. Doom rooms are frequently near-black, and a decal a metre wide can
 // sit at rgb 12,10,10 on a floor at 8,7,7 -- present, correct, and invisible in a screenshot. Turning
 // the light amplifier on instead is not a substitute: it is a GL colormap the backend does not
