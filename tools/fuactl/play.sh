@@ -56,7 +56,13 @@ if [ -n "${PRESET:-}" ]; then
   ' "$PRESET" "${VARIANT:-}") || exit 1
 fi
 
-ARGS=(launch --port "$PORT" --iwad "$IWAD" --map "$MAP" --play)
+# [rc4l] LOCK=1 launches WITHOUT --play, so the instance ignores real keyboard and mouse.
+#
+# My own test launches must use it. A hands-on instance takes the foreground and reads the mouse, so
+# a stray movement while I am capturing both perturbs the measurement and yanks the user's cursor
+# into a game they did not ask to be playing.
+ARGS=(launch --port "$PORT" --iwad "$IWAD" --map "$MAP")
+[ -n "${LOCK:-}" ] || ARGS+=(--play)
 [ -n "${GL:-}" ] || ARGS+=(--cvar fua_vulkan=1)
 # [rc4l] SIDEBYSIDE=1 gives the backend its own window next to the engine's instead of embedding it,
 # so both renderers are on screen at once. Easier to point at a difference than toggling and trying
