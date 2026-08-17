@@ -55,6 +55,7 @@ const USAGE = `fuactl <command>
   launch [--map M] [--seed S] [--port P] [--token T] [--iwad W] [--skill N] [--file a.wad,b.pk3] [--cvar k=v,k2=v2] [--play]   launch one supervised bridge instance (stays up until Ctrl-C)
   sample --pid P | --port P [--seconds N] [--engine]   hottest functions (macOS sample / Linux perf; unavailable on Windows)
   net-bw [--seed S] [--map M] [--spawn CLS] [--count N] [--seconds N]   client/server bandwidth, baseline vs perturbation
+  cycle --port P [--token T] [--count N] [--settle MS]   advance the map rotation N times, confirming intermissions
   rpc <cmd> [jsonArgs] --port P [--token T]   send one RPC to an instance and print the result
   session [--instances N] [--seed S] [--map M] [--tics T]   run the determinism + desync check
   perf-ab [--seed S] [--map M] [--spawn CLS] [--count N] [--frames F]   deterministic perf ablation (baseline vs perturbation, causal ms delta + sim/render verdict)
@@ -123,6 +124,52 @@ async function main() {
       console.log(`(rpc it with: fuactl rpc sim.tic --port ${inst.port} --token ${inst.token})`);
       process.on("SIGINT", async () => { await stopInstance(inst); process.exit(0); });
       await new Promise(() => {}); // stay up
+      break;
+    }
+    // [rc4l] Advance the map rotation N times, confirming each intermission.
+    //
+    // Written because driving this by hand kept stalling. `nextmap` does not change level: it ends
+    // the current one into an intermission that waits for a keypress, so a script that fires nextmap
+    // and then polls for a new level waits forever. And a bug that only appears after several map
+    // changes -- the material cache serving a dead level's textures -- cannot be reached any other
+    // way: launching straight into the map that looks broken renders it perfectly.
+    //
+    // The advance is detected from leveltime going backwards, which is exact and needs nothing
+    // parsed out of a log.
+    //
+    //   fuactl cycle --port P --token T [--count N] [--settle MS]
+    case "cycle": {
+      if (!flags.port) { console.error("usage: fuactl cycle --port P [--token T] [--count N]"); process.exit(2); }
+      const count = num(flags.count) ?? 1;
+      const settle = num(flags.settle) ?? 4000;
+      const nap = (ms) => new Promise((r) => setTimeout(r, ms));
+      await withUi(flags, async (c) => {
+        for (let i = 0; i < count; i++) {
+          // [rc4l] Unwrap whichever shape the rpc returns, and never trust one signal.
+          const tic = async () => { const r = await c.rpc("sim.tic"); return r && r.result ? r.result : r; };
+          const before = (await tic()).leveltime ?? 0;
+          let sawIntermission = false;
+          await c.rpc("console.exec", { text: "nextmap" });
+          let ok = false;
+          for (let t = 0; t < 60 && !ok; t++) {
+            await nap(1000);
+            const st = await tic();
+            if (!st.inlevel) sawIntermission = true;
+            // Either the clock went backwards (new level) or we left the level and came back.
+            if (st.inlevel && ((st.leveltime ?? 0) < before || sawIntermission)) { ok = true; break; }
+            // Still on the intermission, which waits to be dismissed. It watches the PLAYER's
+            // buttons (BT_USE/BT_ATTACK), not the menu, so a menu key never reaches it -- that is
+            // what stalled the first version of this at the very first map.
+            await c.rpc("console.exec", { text: "+use" }).catch(() => {});
+            await nap(120);
+            await c.rpc("console.exec", { text: "-use" }).catch(() => {});
+          }
+          if (!ok) { console.error(`cycle: stalled after ${i} of ${count}`); process.exit(1); }
+          await nap(settle);
+          console.log(`cycle ${i + 1}/${count}`);
+        }
+        return { cycled: count };
+      });
       break;
     }
     case "rpc": {

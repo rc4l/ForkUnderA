@@ -82,6 +82,8 @@ EXTERN_CVAR(Bool, gl_wallmesh)
 EXTERN_CVAR(Int, gl_texture_filter)
 // [rc4l] The sky's own vertical nudge, both the per-texture one and the global testing cvar.
 EXTERN_CVAR(Float, skyoffset)
+
+namespace zx { namespace hwrender { void ReleaseMaterials(); }}
 EXTERN_CVAR(Float, gl_lights_size)
 EXTERN_CVAR(Float, gl_lights_intensity)
 EXTERN_CVAR(Bool, gl_lights_additive)
@@ -862,27 +864,42 @@ static void EnsureSky()
 	static float lastTy = 0.f, lastSy = 1.f;
 	if (lastTy != (float)fua_dg_skyty || lastSy != (float)fua_dg_skysy)
 	{ lastTy = fua_dg_skyty; lastSy = fua_dg_skysy; g_skyBuiltValid = false; }
-	if (g_skyBuiltValid && g_skyBuiltFor == sky1texture.GetIndex()) return;
-
+	// [rc4l] TexMan(id), not TexMan[id]. The subscript returns the texture as authored; the call
+	// applies the animation translation, which is what the engine's own sky path uses.
+	//
+	// GvH's skies are animated sequences, so with the subscript the backend pinned frame one forever
+	// while GL cycled: the engine reported drawing SKY_F049 and this drew SKY_F001. It reads as
+	// "the wrong sky for this map" rather than "a frozen animation", because the frames of a
+	// cloudscape do not look like frames of anything -- they just look like a different sky.
 	FTextureID id = sky1texture;
-	FMaterial *mat = id.isValid() ? FMaterial::ValidateTexture(TexMan[id], false) : NULL;
+	FTexture *raw = id.isValid() ? TexMan(id) : NULL;
+	FMaterial *mat = raw ? FMaterial::ValidateTexture(raw, false) : NULL;
 	if (mat == NULL) { g_skyBuiltValid = false; return; }
+
+	// [rc4l] Keyed on the RESOLVED material, so an animation frame counts as a change -- and only the
+	// binding is redone when the geometry cannot have moved. An animated sky advances several times a
+	// second; rebuilding a 128-column dome and reuploading it that often would be pure waste.
+	if (g_skyBuiltValid && g_skyMaterial == (const void *)mat) return;
+	const bool sameShape = g_skyBuiltValid && g_skyBuiltFor == mat->TextureHeight();
+	g_skyBuiltFor = mat->TextureHeight();
 
 	g_skyTexOffset = (mat->tex != NULL) ? mat->tex->SkyOffset : 0;
 	g_skyCapColor[0] = (mat->tex != NULL) ? mat->tex->GetSkyCapColor(false) : PalEntry(0);
 	g_skyCapColor[1] = (mat->tex != NULL) ? mat->tex->GetSkyCapColor(true)  : PalEntry(0);
-	// [rc4l] Say what the sky actually IS. Three rounds of reasoning about which height branch the
-	// dome should take were spent without once checking whether the engine draws a dome at all --
-	// a skybox goes through RenderBox instead, and no amount of dome arithmetic will match it.
-	Printf("vulkan sky: %s %dx%d skyoffset %d%s\n",
-		(mat->tex != NULL && mat->tex->Name != NULL) ? mat->tex->Name : "?",
-		mat->TextureWidth(), mat->TextureHeight(), g_skyTexOffset,
-		(mat->tex != NULL && mat->tex->gl_info.bSkybox) ? "  [SKYBOX -- not implemented]" : "");
-	BuildSkyDome(mat->TextureWidth(), mat->TextureHeight());
+	// [rc4l] Say what the sky actually IS, once per genuinely new texture rather than per animation
+	// frame. Comparing this line against the engine's own is what identified both the skybox that is
+	// unimplemented and the animation that was frozen.
+	if (!sameShape)
+	{
+		Printf("vulkan sky: %s %dx%d skyoffset %d%s\n",
+			(mat->tex != NULL && mat->tex->Name != NULL) ? mat->tex->Name : "?",
+			mat->TextureWidth(), mat->TextureHeight(), g_skyTexOffset,
+			(mat->tex != NULL && mat->tex->gl_info.bSkybox) ? "  [SKYBOX -- not implemented]" : "");
+	}
+	if (!sameShape) BuildSkyDome(mat->TextureWidth(), mat->TextureHeight());
 	g_skyMaterial = mat;
 	if (auto *v = g_skySRB->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "uTex"))
 		v->Set(GetMaterialSRV(g_skyMaterial, 0));
-	g_skyBuiltFor = id.GetIndex();
 	g_skyBuiltValid = true;
 }
 
@@ -2066,6 +2083,22 @@ static bool AutoSetupForLevel()
 	{
 	case 0:
 		if (gamestate != GS_LEVEL) return false;
+		// [rc4l] Drop everything keyed on a pointer the old level owned.
+		//
+		// The texture cache and the material SRBs are keyed on raw FMaterial*, and ReleaseMaterials
+		// was never called from anywhere -- so they survived every map change for the life of the
+		// process. That is fine until the engine frees a level's materials and the allocator hands
+		// the same addresses to a new level's, at which point the cache serves the PREVIOUS map's
+		// texture for a material that merely happens to live where the old one did. It needs several
+		// map changes to show up, which is exactly how it was found: a map that renders correctly on
+		// its own came up with black and wrong surfaces after cycling through the rotation to reach
+		// it. SRBs reference the textures, so they go first.
+		ReleaseBatchSRBs();
+		ReleaseMaterialSRBs();
+		for (unsigned int b = 0; b < g_batches.Size(); b++) g_batches[b].srb = NULL;
+		ReleaseMaterials();
+		g_skyMaterial = NULL;
+		g_skyBuiltValid = false;
 		// [rc4l] The switch implies the level mesh. gl_wallmesh is off by default, so the first
 		// self-arming run baked nothing and reported "no baked geometry -- set gl_wallmesh 1, walk
 		// the level, then retry" -- advice aimed at a person typing commands, from a path whose whole
