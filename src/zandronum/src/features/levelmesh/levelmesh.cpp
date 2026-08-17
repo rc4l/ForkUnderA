@@ -753,6 +753,19 @@ CCMD( fua_spritestyles )
 	Printf( "  style flags seen: 0x%x\n", flags );
 }
 
+// [rc4l] Every sprite piece registered on the current frame.
+//
+// A sprite is not always one quad -- GLSprite::SplitSprite cuts it wherever a 3D floor's light band
+// begins and gives each piece that band's light and colormap. When two pieces of one explosion come
+// out visibly different in the backend and identical in GL, this says which input diverged instead
+// of leaving it to be inferred from a screenshot.
+//
+// Pause first: the list is rebuilt every frame and an explosion lasts about a quarter of a second.
+CCMD( fua_sprites )
+{
+	zx::levelmesh::DumpSpriteNotes();
+}
+
 CCMD( fua_mesh_verify )
 {
 	int nv = 0, np = 0;
