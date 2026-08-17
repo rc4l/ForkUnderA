@@ -64,6 +64,15 @@
       "angle": 89.4,
       "pitch": 0,
       "shows": "Fire a BFG straight ahead from here, then warp to (-64, 1150, 60) facing 90 and sweep the pitch. The mark lands on a platform's side face with the tread only eight units above its centre -- the join cuts through the MIDDLE of the mark, which an orthographic box projection cannot parameterise. It used to paint the middle of the scorch across the whole face of the box: a hard-edged black quad on the floor, reported as z-fighting."
+    },
+    "bfg-glow-on-floor": {
+      "map": "MAP01",
+      "x": -48.243,
+      "y": 819.448,
+      "z": 56,
+      "angle": 50.0977,
+      "pitch": 17.8418,
+      "shows": "BFG at a column. The green glow (BFGLITE) appears detached on the floor well below the black scorch, which stops on the column. The glow's graphic is larger, so its blast radius reaches a floor the scorch's does not -- and nothing was measuring how far a surface is from where the blast actually landed, only whether it was inside the sphere."
     }
   }
 }

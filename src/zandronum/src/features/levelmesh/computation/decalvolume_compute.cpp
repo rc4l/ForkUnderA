@@ -28,6 +28,22 @@ void Cross3(const float a[3], const float b[3], float out[3])
 
 } // namespace
 
+// GLSL's smoothstep, so the specification and its transcription cannot drift on the curve itself.
+float SmoothStep(float edge0, float edge1, float x)
+{
+	if (!(edge1 > edge0)) return (x < edge0) ? 0.f : 1.f;
+	float t = (x - edge0) / (edge1 - edge0);
+	if (t < 0.f) t = 0.f;
+	if (t > 1.f) t = 1.f;
+	return t * t * (3.f - 2.f * t);
+}
+
+float ComputeDecalTouched(const float rel[3], const float nrm[3], float radius)
+{
+	if (!(radius > 0.f)) return 0.f;
+	return 1.f - SmoothStep(radius * 0.15f, radius * 0.6f, std::fabs(Dot3(rel, nrm)));
+}
+
 float ComputeDecalReach(float halfW, float halfH)
 {
 	return std::sqrt(halfW * halfW + halfH * halfH) * 1.5f;

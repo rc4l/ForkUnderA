@@ -42,6 +42,19 @@ struct DecalFrame
 // reach a floor or a wall standing off to the side of the impact without clipping that either.
 float ComputeDecalReach(float halfW, float halfH);
 
+// [rc4l] Whether the blast actually REACHED this surface, as against merely being inside its radius.
+//
+// MUST match fuaDecalTouched in dgscene.cpp. A surface's distance from the impact measured
+// perpendicular to ITSELF is nearly zero on the thing that was hit and on anything folding round its
+// corner, and large on a floor that only happens to lie within the radius. A floor is what gets caught
+// out, because the mark's picture is laid into each surface from the impact's own position -- so a
+// distant floor gets a full copy stamped directly underneath rather than nothing at all. That is a
+// BFG's glow appearing on the ground below a column with its scorch left up on the wall: the glow's
+// graphic is larger, so its radius reached a floor the scorch's did not.
+//
+// Returns 1 where the blast plainly landed, 0 where it plainly did not, and a fade between.
+float ComputeDecalTouched(const float rel[3], const float nrm[3], float radius);
+
 // Build a frame from unit axes and the box's three half-extents. Returns false, leaving the frame
 // untouched, if any extent is zero or negative -- a degenerate box would divide by zero and paint
 // the whole screen.

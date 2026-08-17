@@ -256,3 +256,54 @@ TEST(DecalReach, LeavesRoomForASurfaceOffToTheSide)
 	// to clear that too or it clips the far half of it. Half the picture again is the margin.
 	EXPECT_FLOAT_EQ(std::sqrt(16.f * 16.f + 8.f * 8.f) * 1.5f, ComputeDecalReach(16.f, 8.f));
 }
+
+// ---------------------------------------------------------------------------------------------
+// Whether the blast reached this surface at all
+
+TEST(DecalTouched, IsWholeOnTheSurfaceThatWasHit)
+{
+	// The impact sits ON that surface, so its distance from it, measured perpendicular to it, is
+	// nothing. Anything less than full here would dim every mark in the game at its own centre.
+	const float onSurface[3] = { 12.f, 0.f, -5.f };   // entirely in the plane
+	const float nrm[3] = { 0.f, 1.f, 0.f };
+	EXPECT_FLOAT_EQ(1.f, ComputeDecalTouched(onSurface, nrm, 60.f));
+}
+
+TEST(DecalTouched, IsWholeJustRoundACorner)
+{
+	// A floor a few units below a mark is the corner wrap, and it has to survive intact -- that is
+	// the whole feature. Six units against a sixty-unit blast is plainly touched.
+	const float nearFloor[3] = { 10.f, 4.f, -6.f };
+	const float up[3] = { 0.f, 0.f, 1.f };
+	EXPECT_FLOAT_EQ(1.f, ComputeDecalTouched(nearFloor, up, 60.f));
+}
+
+TEST(DecalTouched, IsNothingOnAFloorTheBlastNeverReached)
+{
+	// [rc4l] The glow on the ground under a column.
+	//
+	// A mark's picture is laid into each surface from the impact's own position, so a floor far below
+	// gets a FULL COPY stamped directly underneath rather than a faint edge -- being inside the radius
+	// was the only condition, and a larger graphic has a larger radius. So a BFG's glow appeared on
+	// the ground with its scorch left up on the wall. Distance from the impact, perpendicular to the
+	// surface, is what tells those apart.
+	const float farFloor[3] = { 5.f, 5.f, -50.f };
+	const float up[3] = { 0.f, 0.f, 1.f };
+	EXPECT_FLOAT_EQ(0.f, ComputeDecalTouched(farFloor, up, 60.f));
+}
+
+TEST(DecalTouched, FallsOffWithDistanceAndNeverRises)
+{
+	// A fade, not a switch: a hard cut would pop the mark on and off as a surface moved, and the
+	// distance it is cut at is a judgement rather than a fact.
+	const float up[3] = { 0.f, 0.f, 1.f };
+	float previous = 2.f;
+	for (float drop = 0.f; drop <= 60.f; drop += 2.f)
+	{
+		const float rel[3] = { 0.f, 0.f, -drop };
+		const float got = ComputeDecalTouched(rel, up, 60.f);
+		EXPECT_LE(got, previous + 1e-6f) << "at " << drop << " units below";
+		previous = got;
+	}
+	EXPECT_FLOAT_EQ(0.f, previous);
+}
