@@ -16,6 +16,12 @@
 #include "doomtype.h"
 #include "r_defs.h"
 #include "r_state.h"      // sides, numsides, sectors, numsectors, subsectors, numsubsectors
+#include "r_utility.h"    // viewx/viewy/viewz, for fua_look
+#include "p_trace.h"      // Trace, so fua_look can say what the ENGINE thinks is there
+#include "d_player.h"     // players, consoleplayer
+#include "tables.h"       // finesine/finecosine
+#include "textures/textures.h"
+#include "gl/textures/gl_material.h"   // FMaterial::GetTransparent, for fua_find_lines transparent=1
 
 namespace zx { namespace levelmesh {
 
@@ -205,12 +211,31 @@ CCMD( fua_find_lines )
 	const int wantCross   = FindLinesArg( argv, "cross",   0 );
 	const int wantTag     = FindLinesArg( argv, "tag",     -1 );
 	const int limit       = FindLinesArg( argv, "limit",   8 );
+	// [rc4l] transparent=1 finds lines whose middle texture has partial alpha -- panes of glass,
+	// grates, force fields. Those are exactly the surfaces the mesh handles differently from the
+	// solid ones, and finding one meant asking someone to walk the level and take a screenshot.
+	const int wantTrans   = FindLinesArg( argv, "transparent", 0 );
 
 	int found = 0, scanned = 0;
 	for ( int i = 0; i < numlines && found < limit; i++ )
 	{
 		const line_t *ln = &lines[i];
-		if ( ln->special == 0 ) continue;
+		// A transparent midtexture usually carries no special at all, so that filter replaces the
+		// has-a-special requirement rather than adding to it.
+		if ( wantTrans )
+		{
+			bool anyTrans = false;
+			for ( int sd = 0; sd < 2 && !anyTrans; sd++ )
+			{
+				if ( ln->sidedef[sd] == NULL ) continue;
+				FTextureID mid = ln->sidedef[sd]->GetTexture( side_t::mid );
+				if ( !mid.isValid( ) ) continue;
+				FMaterial *m = FMaterial::ValidateTexture( mid, false, true );
+				if ( m != NULL && m->GetTransparent( ) ) anyTrans = true;
+			}
+			if ( !anyTrans ) continue;
+		}
+		else if ( ln->special == 0 ) continue;
 		scanned++;
 
 		if ( wantSpecial >= 0 && ln->special != wantSpecial ) continue;
@@ -567,6 +592,130 @@ CCMD( fua_mesh_dupes )
 // Prints one line per violated invariant and a final PASS/FAIL that a script can grep for.
 //
 //==========================================================================
+
+//==========================================================================
+//
+// fua_look
+//
+// [rc4l] What is the surface I am looking at, and what does the mesh hold for it?
+//
+// Written after the fourth round of "here is a screenshot of a wall that looks wrong" -> guess at a
+// cause -> rebuild -> ask the user to walk back there. The question every one of those rounds was
+// really asking is "what does the mesh say about THIS surface", and nothing could answer it: the
+// mesh only holds what has been walked past, so a fresh instance at the spawn cannot be interrogated
+// about a pane of glass somewhere across the level, and the aggregate counters cannot single one
+// surface out of four thousand.
+//
+// So: cast the crosshair ray, find the nearest mesh triangle it hits, and print everything the mesh
+// knows about that piece -- material, base texture by NAME, blend mode, alpha, light, fog, winding
+// side. Also runs the ENGINE's own trace alongside, because "the engine says there is a linedef here
+// and the mesh has nothing" and "both agree and the blend mode is wrong" are different bugs that
+// look identical from the outside.
+//
+//==========================================================================
+
+CCMD( fua_look )
+{
+	if ( players[consoleplayer].mo == NULL ) { Printf( "no player\n" ); return; }
+	AActor *mo = players[consoleplayer].mo;
+
+	// The direction a shot would take: the engine's own convention, so this cannot disagree with
+	// where the player is actually aiming.
+	const angle_t ang = mo->angle;
+	const angle_t pit = (angle_t)mo->pitch;
+	const float ca = FIXED2FLOAT( finecosine[pit >> ANGLETOFINESHIFT] );
+	const float dx = ca * FIXED2FLOAT( finecosine[ang >> ANGLETOFINESHIFT] );
+	const float dy = ca * FIXED2FLOAT( finesine[ang >> ANGLETOFINESHIFT] );
+	const float dz = -FIXED2FLOAT( finesine[pit >> ANGLETOFINESHIFT] );
+
+	const float ox = FIXED2FLOAT( viewx ), oy = FIXED2FLOAT( viewy ), oz = FIXED2FLOAT( viewz );
+	Printf( "fua_look: from (%.0f, %.0f, %.0f) dir (%.2f, %.2f, %.2f)\n", ox, oy, oz, dx, dy, dz );
+
+	// --- what the engine says is there ---------------------------------------------------------
+	{
+		FTraceResults res;
+		if ( Trace( viewx, viewy, viewz, mo->Sector,
+					FLOAT2FIXED( dx ), FLOAT2FIXED( dy ), FLOAT2FIXED( dz ),
+					8192 * FRACUNIT, 0, ML_BLOCKEVERYTHING, mo, res ) )
+		{
+			const char *what = ( res.HitType == TRACE_HitWall ) ? "wall" :
+							   ( res.HitType == TRACE_HitFloor ) ? "floor" :
+							   ( res.HitType == TRACE_HitCeiling ) ? "ceiling" :
+							   ( res.HitType == TRACE_HitActor ) ? "actor" : "nothing";
+			Printf( "  engine: %s at (%.0f, %.0f, %.0f), %.0f away", what,
+					FIXED2FLOAT( res.X ), FIXED2FLOAT( res.Y ), FIXED2FLOAT( res.Z ),
+					FIXED2FLOAT( res.Distance ) );
+			if ( res.Line != NULL )
+				Printf( ", linedef %d side %d tier %d", (int)( res.Line - lines ), (int)res.Side,
+						(int)res.Tier );
+			if ( res.ffloor != NULL ) Printf( ", 3D FLOOR" );
+			Printf( "\n" );
+		}
+		else Printf( "  engine: trace hit nothing\n" );
+	}
+
+	// --- what the mesh holds there --------------------------------------------------------------
+	int nv = 0, np = 0;
+	const FFlatVertex *verts = zx::levelmesh::MeshVertexData( nv );
+	const zx::levelmesh::MeshPiece *pieces = zx::levelmesh::MeshPieces( np );
+	if ( verts == NULL || pieces == NULL ) { Printf( "  mesh: EMPTY\n" ); return; }
+
+	int bestPiece = -1;
+	float bestT = 1e30f;
+	for ( int i = 0; i < np; i++ )
+	{
+		const zx::levelmesh::MeshPiece &p = pieces[i];
+		if ( p.range.count < 3 ) continue;
+		for ( unsigned v = 0; v + 2 < p.range.count; v += 3 )
+		{
+			if ( p.range.offset + v + 2 >= (unsigned)nv ) break;
+			const FFlatVertex &a = verts[p.range.offset + v];
+			const FFlatVertex &b = verts[p.range.offset + v + 1];
+			const FFlatVertex &c = verts[p.range.offset + v + 2];
+			// Moller-Trumbore. Two-sided on purpose: a surface facing away is still a surface, and
+			// "the piece is there but wound the wrong way" is exactly one of the bugs this is for.
+			const float e1x = b.x - a.x, e1y = b.y - a.y, e1z = b.z - a.z;
+			const float e2x = c.x - a.x, e2y = c.y - a.y, e2z = c.z - a.z;
+			const float px = dy * e2z - dz * e2y;
+			const float py = dz * e2x - dx * e2z;
+			const float pz = dx * e2y - dy * e2x;
+			const float det = e1x * px + e1y * py + e1z * pz;
+			if ( det > -1e-6f && det < 1e-6f ) continue;
+			const float inv = 1.f / det;
+			const float tx = ox - a.x, ty = oy - a.y, tz = oz - a.z;
+			const float u = ( tx * px + ty * py + tz * pz ) * inv;
+			if ( u < 0.f || u > 1.f ) continue;
+			const float qx = ty * e1z - tz * e1y;
+			const float qy = tz * e1x - tx * e1z;
+			const float qz = tx * e1y - ty * e1x;
+			const float vv = ( dx * qx + dy * qy + dz * qz ) * inv;
+			if ( vv < 0.f || u + vv > 1.f ) continue;
+			const float t = ( e2x * qx + e2y * qy + e2z * qz ) * inv;
+			if ( t > 0.5f && t < bestT ) { bestT = t; bestPiece = i; }
+		}
+	}
+
+	if ( bestPiece < 0 )
+	{
+		Printf( "  mesh: NOTHING along that ray -- the surface is not baked. Walk to it, or it is "
+				"refused by the wall cache (fua_wallcache_census).\n" );
+		return;
+	}
+
+	const zx::levelmesh::MeshPiece &p = pieces[bestPiece];
+	static const char *kBlend[4] = { "opaque/alpha-tested", "translucent", "additive", "fuzz" };
+	FTexture *bt = (FTexture *)p.baseTex;
+	Printf( "  mesh: piece %d at %.0f away, range %u+%u\n"
+			"        blend %s, alpha %.3f, seen-from-%s\n"
+			"        light %d, rgb %.2f,%.2f,%.2f, fog %.2f mode %d\n"
+			"        baseTex %s%s\n",
+			bestPiece, bestT, p.range.offset, p.range.count,
+			kBlend[( p.blendMode >= 0 && p.blendMode < 4 ) ? p.blendMode : 0], p.alpha,
+			p.facesDown ? "below" : "above",
+			p.lightLevel, p.colorR, p.colorG, p.colorB, p.fogDensity, p.fogMode,
+			bt ? ( bt->Name.Len( ) ? bt->Name.GetChars( ) : "(THE NULL TEXTURE)" ) : "(none)",
+			bt && ( bt->isFullbright( ) || bt->isGlowing( ) ) ? "  [fullbright/glowing]" : "" );
+}
 
 CCMD( fua_mesh_verify )
 {
