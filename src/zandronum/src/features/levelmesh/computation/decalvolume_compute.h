@@ -33,17 +33,6 @@ struct DecalFrame
 	float n[3];   // through the surface
 };
 
-// [rc4l] How far THROUGH its surface a decal's box should reach.
-//
-// This is the room the mark has to carry round a corner. Past a join a decal continues for at most
-// its own remaining width or height before the unwrap runs out of texture, so the box is sized from
-// the mark: smaller cuts the wrap short, larger only reaches surfaces the unwrap then discards.
-//
-// The floor of 24 is for a small graphic on a flat: a bullet hole is a few units across, and its box
-// still has to be deep enough to stay on a floor that steps or slopes underneath it. At eight, marks
-// on anything but dead-flat ground came out clipped.
-float ComputeDecalBoxDepth(float halfW, float halfH);
-
 // Build a frame from unit axes and the box's three half-extents. Returns false, leaving the frame
 // untouched, if any extent is zero or negative -- a degenerate box would divide by zero and paint
 // the whole screen.
@@ -75,36 +64,34 @@ float ComputeDecalUpOffset(float halfH, float topOffset, bool flipY);
 // is not in the box at all.
 void ComputeDecalLocal(const DecalFrame &f, const float rel[3], float local[3]);
 
-// [rc4l] The texture coordinate, UNWRAPPED around whatever corner the surface turns at.
+// [rc4l] The mark's texture coordinate on WHATEVER surface a fragment turns out to be on.
 //
 // MUST match fuaDecalUV in dgscene.cpp, which is the same arithmetic transcribed into GLSL. The
 // shader cannot be called from here, so this is the specification and that is the transcription;
 // changing one without the other is the failure this file exists to make loud.
 //
-// `local` is the point in box units (from ComputeDecalLocal): x and y across the decal, z through it.
+// `rel` is the fragment's offset from where the blast landed and `nrm` is the surface's own normal,
+// which the shader reads out of the depth buffer. Neither involves the camera, so neither can make a
+// mark change as the camera moves.
 //
-// The idea: `local.z` is how far the surface has moved through the plane the decal was shot at, and
-// around a corner that distance is exactly the distance travelled along the new surface away from the
-// join. Pushing the coordinate that much further OUT FROM THE CENTRE continues the picture across the
-// join at its own scale -- seamless, unstretched -- and costs nothing on the original surface, where
-// the distance is zero.
+// The idea, and it is the whole design: a blast radiates from a POINT, so every surface it reaches is
+// measured in its own plane from that point. The mark's across-axis is turned into the surface to
+// keep the picture the right way up, the perpendicular completes the pair, and the coordinate is just
+// the offset along those two at the mark's own scale.
 //
-// Radially, not per-axis. Two earlier versions added the distance to whichever axis the surface had
-// turned about, which needed the surface normal, and the normal has to be recovered from depth
-// derivatives -- noisy at grazing angles, so the choice of axis flickered and the mark visibly
-// reshaped as the camera moved. Worse, the direction to go had to come from sign(), which jumps at
-// the centre line: a hard switch tore the coordinate in two down the middle of the mark, and softening
-// the switch instead left the centre with no carry at all, so a surface deep inside the box kept
-// sampling the middle texel and painted the box's own faces as a black slab. Going outward from the
-// centre has neither problem. The direction is simply where the fragment already is, which is
-// continuous everywhere; and at the exact centre the scaling diverges, which puts the coordinate past
-// the end of the picture and DISCARDS it -- the one place with no answer is the one place nothing is
-// drawn. It needs no normal, so the wobble is gone with it.
+// What that buys is the absence of special cases. Projecting from a plane instead means choosing an
+// axis before the surface is known, which works on the surface that was hit and degenerates on
+// everything else -- a floor met at a right angle has no movement along the projection axis at all,
+// so a row of texels is dragged across it. Four attempts to patch around that each broke somewhere
+// new: the drag, then a black slab where the drag covered a whole box, then a hole where the slab was
+// refused, then a wedge of floor a corner-patching strip never reached. Measuring from the point has
+// none of them, and no surface in range can be missed, because being in range is the only condition.
 //
-// Returns false when the point is past the end of the picture, which the caller must DISCARD rather
-// than clamp: clamping repeats the edge texel for ever, which is a dragged column of texels by
-// another route -- the artifact this whole scheme exists to remove.
-bool ComputeDecalUnwrapUV(const DecalFrame &f, const float local[3], float &outU, float &outV);
+// Returns false when the fragment is past the edge of the picture, which the caller must DISCARD
+// rather than clamp -- clamping repeats the edge texel for ever, which is a dragged row by another
+// route.
+bool ComputeDecalSurfaceUV(const DecalFrame &f, const float rel[3], const float nrm[3],
+                           float &outU, float &outV);
 
 }} // namespace zx::levelmesh
 

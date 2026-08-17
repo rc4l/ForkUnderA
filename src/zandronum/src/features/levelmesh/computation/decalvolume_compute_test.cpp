@@ -38,23 +38,6 @@ DecalFrame WallFrame(float halfW, float halfH, float halfD)
 // ---------------------------------------------------------------------------------------------
 // The box
 
-TEST(DecalBoxDepth, NeverShallowerThanAStep)
-{
-	// A bullet hole is a few units across, and its box still has to survive a floor that steps or
-	// slopes under it. At eight, marks on anything but dead-flat ground came out clipped.
-	EXPECT_FLOAT_EQ(24.f, ComputeDecalBoxDepth(2.f, 3.f));
-	EXPECT_FLOAT_EQ(24.f, ComputeDecalBoxDepth(0.f, 0.f));
-}
-
-TEST(DecalBoxDepth, GrowsWithTheMarkSoItCanCarryRoundACorner)
-{
-	// Past a join a decal continues for at most its own remaining width or height, so the box is
-	// sized from the larger of the two. Smaller would cut the wrap short.
-	EXPECT_FLOAT_EQ(64.f, ComputeDecalBoxDepth(64.f, 10.f));
-	EXPECT_FLOAT_EQ(64.f, ComputeDecalBoxDepth(10.f, 64.f));
-	EXPECT_FLOAT_EQ(80.f, ComputeDecalBoxDepth(80.f, 80.f));
-}
-
 TEST(DecalBasis, RejectsADegenerateBox)
 {
 	const float u[3] = { 1.f, 0.f, 0.f }, v[3] = { 0.f, 0.f, 1.f }, n[3] = { 0.f, 1.f, 0.f };
@@ -143,186 +126,108 @@ TEST(DecalAnchorOffset, MirrorsWhenTheGraphicIsFlipped)
 }
 
 // ---------------------------------------------------------------------------------------------
-// The unwrap
+// The mapping
 //
-// A wall decal 32 wide and 16 tall on a wall running east, its face pointing north. `rel` is measured
-// from the mark's centre: x along the wall, y out through it, z up.
+// A wall mark 32 wide and 16 tall on a wall running east, its face pointing north. `rel` is measured
+// from where the blast landed: x along the wall, y out through it, z up.
 //
-// Note there is no surface normal here any more. Two earlier versions needed one, to decide which
-// axis a surface had turned about, and it had to be recovered from depth derivatives -- noisy at
-// grazing angles, so the answer flickered and the mark reshaped as the camera moved. Carrying
-// outward from the centre instead needs only where the fragment already is.
+// There is no camera in any of these, and that is the point. Every earlier version of this needed a
+// projection axis chosen before the surface was known, and every one of them degenerated on some
+// surface and had to be patched. Measuring each surface in its own plane from the blast's centre has
+// nothing to degenerate.
 
-TEST(DecalUnwrap, ChangesNothingOnTheSurfaceItWasShotAt)
+namespace {
+const float kWallNormal[3]  = { 0.f, 1.f, 0.f };   // the surface that was hit
+const float kFloorNormal[3] = { 0.f, 0.f, 1.f };
+}
+
+TEST(DecalSurfaceUV, PutsTheCentreOfThePictureWhereTheBlastLanded)
 {
-	// local.z is zero there, so there is nothing to carry. If this ever stops holding, every decal in
-	// the game shifts, which is worth one assertion.
-	const DecalFrame f = WallFrame(16.f, 8.f, 24.f);
-	const float rel[3] = { 8.f, 0.f, -4.f };
-	float local[3];
-	ComputeDecalLocal(f, rel, local);
+	const DecalFrame f = WallFrame(16.f, 8.f, 16.f);
+	const float atCentre[3] = { 0.f, 0.f, 0.f };
 	float u = 0.f, v = 0.f;
-	ASSERT_TRUE(ComputeDecalUnwrapUV(f, local, u, v));
-	EXPECT_FLOAT_EQ(local[0] * 0.5f + 0.5f, u);
-	EXPECT_FLOAT_EQ(local[1] * 0.5f + 0.5f, v);
+	ASSERT_TRUE(ComputeDecalSurfaceUV(f, atCentre, kWallNormal, u, v));
+	EXPECT_FLOAT_EQ(0.5f, u);
+	EXPECT_FLOAT_EQ(0.5f, v);
 }
 
-TEST(DecalUnwrap, DoesNotPaintTheCentreTexelThroughTheWholeBox)
+TEST(DecalSurfaceUV, IsUnstretchedOnTheSurfaceThatWasHit)
 {
-	// [rc4l] The black slab, which is what a BFG mark on a staircase looked like.
-	//
-	// A fragment at the mark's centre line but far THROUGH the plane has no direction to continue in.
-	// Answering anyway paints it with the middle texel of the graphic -- and the middle of a scorch is
-	// solid black -- so the decal's box was drawn as a hard-edged black quad standing in the world,
-	// complete with visible faces. There is no right answer at the centre; there is only the right
-	// thing to do, which is draw nothing.
-	const DecalFrame f = WallFrame(16.f, 8.f, 24.f);
-	float u = 0.f, v = 0.f;
-	for (float through = 1.f; through <= 20.f; through += 1.f)
-	{
-		const float rel[3] = { 0.f, through, 0.f };
-		float local[3];
-		ComputeDecalLocal(f, rel, local);
-		EXPECT_FALSE(ComputeDecalUnwrapUV(f, local, u, v))
-			<< "painted at " << through << " units through the plane, dead centre";
-	}
-}
-
-TEST(DecalUnwrap, CarriesOutwardByTheDistanceTravelled)
-{
-	// Four units further through the plane is four units further into the picture -- the same scale as
-	// the surface it was shot at, which is what "unstretched" means. A plain projection would leave the
-	// coordinate unchanged here, and that unchanging coordinate IS the dragged column of texels.
-	const DecalFrame f = WallFrame(16.f, 8.f, 24.f);
-	const float onSurface[3] = { 0.f, 0.f, -4.f };   // t = (0, -0.5)
-	const float carried[3]   = { 0.f, 3.f, -4.f };   // same place, 3 units through
-	float ls[3], lc[3];
-	ComputeDecalLocal(f, onSurface, ls);
-	ComputeDecalLocal(f, carried, lc);
-
-	float us, vs, uc, vc;
-	ASSERT_TRUE(ComputeDecalUnwrapUV(f, ls, us, vs));
-	ASSERT_TRUE(ComputeDecalUnwrapUV(f, lc, uc, vc));
-	EXPECT_FLOAT_EQ(us, uc);                          // straight out is not sideways
-	EXPECT_NEAR(vs - (3.f / 8.f) * 0.5f, vc, 1e-5f);  // 3 world units of an 8-unit half-height
-}
-
-TEST(DecalUnwrap, CarriesTheOtherWayAboveTheCentre)
-{
-	// Above the mark the continuation is upward, below it downward, and neither needs to be told which
-	// -- the direction is where the fragment already is. Sharing one rule is what keeps a decal shot at
-	// the top of a wall from folding back on itself.
-	const DecalFrame f = WallFrame(16.f, 8.f, 24.f);
-	const float above[3] = { 0.f, 2.f, 4.f };
-	float local[3];
-	ComputeDecalLocal(f, above, local);
+	// Half the mark's width across is half the picture across. Anything else is the mark being drawn
+	// at the wrong size on the very surface it was shot at.
+	const DecalFrame f = WallFrame(16.f, 8.f, 16.f);
+	const float across[3] = { 8.f, 0.f, 0.f };
 	float u, v;
-	ASSERT_TRUE(ComputeDecalUnwrapUV(f, local, u, v));
-	EXPECT_GT(v, local[1] * 0.5f + 0.5f);
+	ASSERT_TRUE(ComputeDecalSurfaceUV(f, across, kWallNormal, u, v));
+	EXPECT_FLOAT_EQ(0.75f, u);
+	EXPECT_FLOAT_EQ(0.5f, v);
 }
 
-TEST(DecalUnwrap, CarriesSidewaysForAVerticalCorner)
+TEST(DecalSurfaceUV, IsUnstretchedOnAFloorToo)
 {
-	// A wall met round a vertical corner is reached by travelling ACROSS, and the same rule covers it
-	// with no case of its own. Putting the distance on the wrong axis is the smear this replaced.
-	const DecalFrame f = WallFrame(16.f, 8.f, 24.f);
-	const float sideways[3] = { 10.f, 5.f, 0.f };
-	float local[3];
-	ComputeDecalLocal(f, sideways, local);
-	float u, v;
-	ASSERT_TRUE(ComputeDecalUnwrapUV(f, local, u, v));
-	EXPECT_FLOAT_EQ(0.5f, v);                        // dead level: stays level
-	EXPECT_GT(u, local[0] * 0.5f + 0.5f);            // carried further across
-}
-
-TEST(DecalUnwrap, IsContinuousEverywhereItPaints)
-{
-	// [rc4l] The seam, and the pale streak that came with it.
+	// [rc4l] The case every plane projection got wrong.
 	//
-	// The direction used to come from sign(), which jumps: two fragments a hair either side of the
-	// centre line got opposite answers and the coordinate tore in two down the middle. That tear is a
-	// visible line through a mark on a step -- and it also wrecks the mip level, because a shader reads
-	// level of detail from how fast this coordinate changes, so the tear went pale and streaky as well.
-	// Sweeping across the centre must move the coordinate smoothly, or not paint at all.
-	const DecalFrame f = WallFrame(16.f, 8.f, 24.f);
-	float prevU = 0.f, prevV = 0.f;
-	bool have = false;
-	for (float x = -6.f; x <= 6.f; x += 0.25f)
+	// A floor met at a right angle has no movement along a wall's projection axis at all, so a
+	// projection from that axis drags one row of texels across it -- and every attempt to patch that
+	// broke somewhere else. Measured in the floor's OWN plane there is nothing to drag: eight units
+	// across the floor is a quarter of a thirty-two-unit picture, exactly as it is on the wall.
+	const DecalFrame f = WallFrame(16.f, 8.f, 16.f);
+	const float acrossFloor[3] = { 8.f, 0.f, -4.f };
+	float u, v;
+	ASSERT_TRUE(ComputeDecalSurfaceUV(f, acrossFloor, kFloorNormal, u, v));
+	EXPECT_FLOAT_EQ(0.75f, u);
+}
+
+TEST(DecalSurfaceUV, CoversEveryDirectionOnAFloor)
+{
+	// A wedge of floor was left unpainted where a strip aligned to one wall could not reach round a
+	// corner. Nothing aligned to a wall decides this any more: the four compass directions on a floor
+	// all land inside the picture and none of them is a special case.
+	const DecalFrame f = WallFrame(16.f, 16.f, 16.f);
+	const float dirs[4][3] = {
+		{  8.f,  0.f, -4.f }, { -8.f,  0.f, -4.f },
+		{  0.f,  8.f, -4.f }, {  0.f, -8.f, -4.f },
+	};
+	for (int i = 0; i < 4; i++)
 	{
-		const float rel[3] = { x, 6.f, -3.f };   // 6 units through the wall: a real carry
-		float local[3];
-		ComputeDecalLocal(f, rel, local);
 		float u, v;
-		if (!ComputeDecalUnwrapUV(f, local, u, v)) { have = false; continue; }
-		if (have)
-		{
-			EXPECT_LT(std::fabs(u - prevU), 0.06f) << "at x=" << x;
-			EXPECT_LT(std::fabs(v - prevV), 0.06f) << "at x=" << x;
-		}
-		prevU = u; prevV = v; have = true;
+		EXPECT_TRUE(ComputeDecalSurfaceUV(f, dirs[i], kFloorNormal, u, v)) << "direction " << i;
 	}
 }
 
-TEST(DecalUnwrap, ReportsPastTheEndRatherThanClamping)
+TEST(DecalSurfaceUV, DoesNotDependOnAnythingButThePointAndTheSurface)
 {
-	// The caller must discard. Clamping repeats the edge texel for ever, which is a dragged column of
-	// texels by another route -- the artifact this whole scheme exists to remove.
-	const DecalFrame f = WallFrame(16.f, 8.f, 24.f);
+	// The signature carries no camera and no screen, which is what makes "the mark follows you when
+	// you wiggle the mouse" impossible to reintroduce by accident. The same fragment on the same
+	// surface must give the same answer every time it is asked.
+	const DecalFrame f = WallFrame(16.f, 8.f, 16.f);
+	const float rel[3] = { 5.f, 2.f, -3.f };
+	float u1, v1, u2, v2;
+	ComputeDecalSurfaceUV(f, rel, kFloorNormal, u1, v1);
+	ComputeDecalSurfaceUV(f, rel, kFloorNormal, u2, v2);
+	EXPECT_FLOAT_EQ(u1, u2);
+	EXPECT_FLOAT_EQ(v1, v2);
+}
+
+TEST(DecalSurfaceUV, ReportsPastTheEdgeRatherThanClamping)
+{
+	// The caller must discard. Clamping repeats the edge texel for ever, which is a dragged row of
+	// texels by another route -- the artifact the whole design exists to avoid.
+	const DecalFrame f = WallFrame(16.f, 8.f, 16.f);
 	const float farOut[3] = { 40.f, 0.f, 0.f };
-	float local[3];
-	ComputeDecalLocal(f, farOut, local);
 	float u, v;
-	EXPECT_FALSE(ComputeDecalUnwrapUV(f, local, u, v));
+	EXPECT_FALSE(ComputeDecalSurfaceUV(f, farOut, kWallNormal, u, v));
 	EXPECT_GT(u, 1.f);
 }
 
-TEST(DecalUnwrap, RefusesADegenerateFrame)
+TEST(DecalSurfaceUV, RefusesADegenerateFrameOrNormal)
 {
-	DecalFrame f{};   // all axes zero
-	const float local[3] = { 0.f, 0.f, 0.f };
+	DecalFrame f{};
+	const float rel[3] = { 1.f, 1.f, 1.f };
 	float u, v;
-	EXPECT_FALSE(ComputeDecalUnwrapUV(f, local, u, v));
-}
+	EXPECT_FALSE(ComputeDecalSurfaceUV(f, rel, kWallNormal, u, v));
 
-TEST(DecalUnwrap, DeeperBoxDoesNotChangeTheScaleOfTheCarry)
-{
-	// The box's depth decides how FAR the wrap reaches, never how fast the picture moves. Mixing the
-	// two up made the same corner look different for a big decal and a small one.
-	const float rel[3] = { 0.f, 3.f, -4.f };
-	float u1, v1, u2, v2, l1[3], l2[3];
-
-	const DecalFrame shallow = WallFrame(16.f, 8.f, 24.f);
-	const DecalFrame deep    = WallFrame(16.f, 8.f, 96.f);
-	ComputeDecalLocal(shallow, rel, l1);
-	ComputeDecalLocal(deep, rel, l2);
-	ASSERT_TRUE(ComputeDecalUnwrapUV(shallow, l1, u1, v1));
-	ASSERT_TRUE(ComputeDecalUnwrapUV(deep, l2, u2, v2));
-
-	EXPECT_NEAR(v1, v2, 1e-5f);
-	EXPECT_NEAR(u1, u2, 1e-5f);
-}
-
-TEST(DecalUnwrap, WillNotPushAFragmentFurtherThanItsOwnRadius)
-{
-	// [rc4l] The black slab again, off centre this time.
-	//
-	// Refusing only the exact centre was not enough. A surface that turns THROUGH the middle of a mark
-	// -- a step tread level with the decal's waist -- has fragments a little way out from the centre
-	// and a long way through the plane, and pushing those still drags the middle of the graphic across
-	// the whole face of the box. The rule that separates a wrap which looks right from one that cannot
-	// is how far the coordinate must move against how far out it already was.
-	const DecalFrame f = WallFrame(16.f, 8.f, 33.f);
-	float u, v;
-
-	// Two units out, sixteen units through: a long way to push a fragment that was barely off centre.
-	const float deep[3] = { 2.f, 16.f, 0.f };
-	float ld[3];
-	ComputeDecalLocal(f, deep, ld);
-	EXPECT_FALSE(ComputeDecalUnwrapUV(f, ld, u, v));
-
-	// The same fragment with only a little to carry is a wrap, and still paints.
-	const float shallow[3] = { 2.f, 1.f, 0.f };
-	float ls[3];
-	ComputeDecalLocal(f, shallow, ls);
-	EXPECT_TRUE(ComputeDecalUnwrapUV(f, ls, u, v));
+	const DecalFrame good = WallFrame(16.f, 8.f, 16.f);
+	const float noNormal[3] = { 0.f, 0.f, 0.f };
+	EXPECT_FALSE(ComputeDecalSurfaceUV(good, rel, noNormal, u, v));
 }

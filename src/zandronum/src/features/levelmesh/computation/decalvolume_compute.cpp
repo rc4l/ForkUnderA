@@ -19,13 +19,14 @@ float Length3(const float a[3])
 	return std::sqrt(Dot3(a, a));
 }
 
-} // namespace
-
-float ComputeDecalBoxDepth(float halfW, float halfH)
+void Cross3(const float a[3], const float b[3], float out[3])
 {
-	const float reach = (halfW > halfH) ? halfW : halfH;
-	return (reach > 24.f) ? reach : 24.f;
+	out[0] = a[1] * b[2] - a[2] * b[1];
+	out[1] = a[2] * b[0] - a[0] * b[2];
+	out[2] = a[0] * b[1] - a[1] * b[0];
 }
+
+} // namespace
 
 bool ComputeDecalBasis(const float axisU[3], const float axisV[3], const float axisN[3],
                        float halfW, float halfH, float halfDepth, DecalFrame &out)
@@ -72,51 +73,47 @@ void ComputeDecalLocal(const DecalFrame &f, const float rel[3], float local[3])
 	local[2] = Dot3(rel, f.n);
 }
 
-bool ComputeDecalUnwrapUV(const DecalFrame &f, const float local[3], float &outU, float &outV)
+bool ComputeDecalSurfaceUV(const DecalFrame &f, const float rel[3], const float nrm[3],
+                           float &outU, float &outV)
 {
-	// The axes arrive divided by their half-extents, so a length here converts a world distance into
-	// the box units the texture coordinate is measured in.
 	const float lu = Length3(f.u), lv = Length3(f.v), ln = Length3(f.n);
 	if (!(lu > 0.f) || !(lv > 0.f) || !(ln > 0.f)) return false;
+	if (!(Length3(nrm) > 0.f)) return false;
 
-	const float tx = local[0], ty = local[1];
-	const float r = std::sqrt(tx * tx + ty * ty);
-	const float carry = std::fabs(local[2]) / ln;   // world units through the plane
+	float U[3], V[3], N[3];
+	for (int i = 0; i < 3; i++) { U[i] = f.u[i] / lu; V[i] = f.v[i] / lv; N[i] = f.n[i] / ln; }
 
-	if (carry > 0.f)
+	// The mark's across-axis, laid into this surface. Where it lies along the surface's own normal
+	// there is nothing left of it to lay -- on a floor, "along the wall" still means something while
+	// "up the wall" does not -- so the next axis is tried in turn.
+	float su[3];
+	const float dU = Dot3(nrm, U);
+	for (int i = 0; i < 3; i++) su[i] = U[i] - nrm[i] * dU;
+	if (Dot3(su, su) < 0.05f)
 	{
-		// [rc4l] A mark may only wrap over a join it reaches near its own EDGE.
-		//
-		// This is the black slab, and it took three goes to state properly. An orthographic projection
-		// simply cannot parameterise a surface that runs along its own axis: everything about that
-		// surface's extent maps to no movement across the picture, so whatever coordinate is handed
-		// back, some row or column of texels gets dragged along it. Where the join is out at the rim
-		// that hardly shows -- the picture is nearly used up, a sliver of its edge continues past the
-		// corner, and it reads exactly like a scorch creeping round. Where the join cuts through the
-		// MIDDLE of the mark, the same arithmetic drags the middle of the graphic -- solid black on a
-		// scorch -- across the whole face of the box, and the decal's own bounding box gets drawn as a
-		// hard-edged black quad standing in the world.
-		//
-		// The two cases differ by exactly one number: how far the coordinate has to be pushed compared
-		// with how far out it already was. Refusing to push a fragment further than its own radius
-		// keeps every wrap that looks right and drops every one that cannot. It also subsumes the
-		// centre of the mark, where the radius is zero and no direction exists -- nothing there can be
-		// carried at all, which is the correct answer and not a special case.
-		const float scale = (r > 0.f)
-			? (std::fabs(tx / r) * lu + std::fabs(ty / r) * lv)
-			: (lu > lv ? lu : lv);
-		const float push = carry * scale;
-		if (!(push < r)) { outU = -1.f; outV = -1.f; return false; }
-
-		const float grow = (r + push) / r;
-		outU = tx * grow * 0.5f + 0.5f;
-		outV = ty * grow * 0.5f + 0.5f;
+		const float dV = Dot3(nrm, V);
+		for (int i = 0; i < 3; i++) su[i] = V[i] - nrm[i] * dV;
 	}
-	else
+	if (Dot3(su, su) < 0.05f)
 	{
-		outU = tx * 0.5f + 0.5f;
-		outV = ty * 0.5f + 0.5f;
+		const float dN = Dot3(nrm, N);
+		for (int i = 0; i < 3; i++) su[i] = N[i] - nrm[i] * dN;
 	}
+	const float suLen = Length3(su);
+	if (!(suLen > 0.f)) return false;
+	for (int i = 0; i < 3; i++) su[i] /= suLen;
+
+	float sv[3];
+	Cross3(nrm, su, sv);
+	// Which of the two perpendiculars is "up the picture". On the surface that was hit this is the
+	// mark's own V; on a floor, where V lies along the normal and decides nothing, the tie is broken
+	// by pointing away from the surface that was hit. Both are fixed in world space, so the answer
+	// cannot depend on where anyone is standing.
+	if (Dot3(sv, V) - Dot3(sv, N) < 0.f)
+		for (int i = 0; i < 3; i++) sv[i] = -sv[i];
+
+	outU = Dot3(rel, su) * lu * 0.5f + 0.5f;
+	outV = Dot3(rel, sv) * lv * 0.5f + 0.5f;
 	return outU >= 0.f && outU <= 1.f && outV >= 0.f && outV <= 1.f;
 }
 

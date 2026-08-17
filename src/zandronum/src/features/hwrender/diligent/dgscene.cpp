@@ -161,13 +161,6 @@ CVAR(Bool, fua_dg_animate, true, 0)
 CVAR(Bool, fua_dg_hud, true, 0)
 
 // [rc4l] Dynamic lights: muzzle flashes, plasma, rocket trails, lamps.
-// [rc4l] The decal facing fade, which is the ONLY view-dependent term in the decal shader.
-//
-// It reads a surface normal out of the derivatives of a reconstructed world position, and anything
-// screen-space can make a mark change as the camera moves. Since the fold now paints perpendicular
-// surfaces properly on their own boxes, the fade may not be earning its keep any more -- this is how
-// to find out without rebuilding, by toggling it on one frozen frame.
-CVAR(Bool, fua_decal_facing, true, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
 CVAR(Bool, fua_dg_dynlights, true, 0)
 
 // [rc4l] The camera pitch, which lives outside any header the backend already pulls in.
@@ -650,111 +643,68 @@ static const char *kScenePSRedAlpha =
 //
 // The box is drawn with depth test OFF and culling OFF so it works from inside as well as outside --
 // walking over a decal must not make it vanish.
-// [rc4l] The decal's texture coordinate, UNWRAPPED around whatever corner it meets.
+// [rc4l] The mark's texture coordinate, measured from where the blast LANDED.
 //
-// A plain box projection paints any surface inside it with the coordinate it would have if the
-// surface were flat. That is right on the surface the decal was shot at, and on anything gently
-// angled to it -- a slope, a step, a 3D floor -- which is what the pass is for. It is badly wrong the
-// moment a surface turns edge-on to the projection: the coordinate stops changing in the direction
-// you are travelling, so one column of texels is dragged along it.
+// A blast does not project from a plane, it radiates from a point, and everything that went wrong
+// before came from pretending otherwise. Projecting from a plane asks every surface to be
+// parameterised by an axis chosen before the surface was known. That works on the surface that was
+// hit and degenerates on every other one: a floor met at a right angle has no movement at all along
+// the projection axis, so one row of texels is dragged across it. Four attempts to paper over that
+// each failed somewhere new -- the drag itself, then a black slab where the drag covered the whole
+// box, then a hole where the slab was refused, then a wedge of floor that the strip patching the
+// corner never reached, because a strip runs parallel to one wall and a floor wraps round at an
+// angle.
 //
-// Discarding those surfaces by their normal would kill the artifact and the feature with it: a mark
-// shot into the join of a floor and a wall SHOULD carry onto both. So unwrap instead of clipping.
-// `local.z` is how far the surface has moved THROUGH the plane the decal was shot at, and around a
-// corner that distance is exactly the distance travelled along the new surface away from the join.
-// Pushing the coordinate that much further OUT FROM THE CENTRE continues the picture across the join
-// at its own scale, and costs nothing on the original surface where the distance is zero.
+// Measured from the point instead, each surface is parameterised in ITS OWN plane. The normal comes
+// out of the depth buffer, the mark's across-axis is turned into that plane to keep the picture the
+// right way up, and the coordinate is the fragment's offset from the blast centre along those two.
+// Nothing is degenerate at any angle, so there is no surface the mark fails to cover: if it is inside
+// the radius it is parameterised, whatever it is. Corners look like soot that travelled because that
+// is precisely what is being described -- the same blast, measured on each thing it reached.
 //
-// Radially, not per-axis. Two earlier versions added the distance to whichever axis the surface had
-// turned about, which needed a surface normal recovered from depth derivatives -- noisy at grazing
-// angles, so the choice flickered and the mark reshaped as the camera moved. And the direction to go
-// came from sign(), which jumps at the centre line: switching tore the coordinate in two down the
-// middle of the mark, and softening the switch left the centre with no carry at all, so a surface
-// deep inside the box kept sampling the middle texel and painted the box's own faces as a black slab.
-// Outward from the centre has neither problem -- the direction is where the fragment already is, and
-// at the exact centre the scaling diverges, which discards. No normal, so no derivatives, so no
-// wobble, and the pass got cheaper.
-//
-// This is a TRANSCRIPTION of ComputeDecalUnwrapUV in computation/decalvolume_compute.cpp, which the
-// gtest suite pins with property tests. GLSL cannot be called from there, so the two have to be
-// changed together, and the tests are the description of what this must do.
-// [rc4l] How much of the mark a surface is entitled to, by how squarely it faces the projection.
-//
-// The unwrap carries a mark across a join by pushing its coordinate outward, and that works while the
-// join is out near the mark's rim: the picture is nearly used up, a sliver of its edge continues past
-// the corner, and it reads exactly like a scorch creeping round. It cannot work when the surface runs
-// ALONG the projection axis. Everything about such a surface's extent maps to no movement across the
-// picture, so whatever coordinate is handed back, some part of the graphic is dragged along it -- and
-// when the join cuts through the MIDDLE of the mark, what gets dragged is the middle, which on a
-// scorch is solid black. That is the hard-edged black quad standing in the world: not z-fighting, not
-// the depth buffer, just an orthographic projection asked a question it has no answer to.
-//
-// So the answer is none of it, faded in rather than switched, using the surface normal the
-// reconstructed world position carries in its derivatives. A slope, a step seen at an angle and a 3D
-// floor's edge all still take the mark whole. A surface at a right angle takes nothing, which is what
-// GL does anyway. Fading rather than cutting matters because that normal is only as good as the depth
-// it came from -- at a grazing angle the derivatives are differences of nearly-equal large numbers --
-// so noise moves the alpha a little instead of popping the mark in and out.
-//
-// Wrapping properly round a right angle needs a decal built from the GEOMETRY: clip the box against
-// the mesh's own triangles and give each one real texture coordinates. The level mesh already holds
-// what that would need. Until then this is the honest boundary of the technique rather than a fudge
-// that looks right from one camera and not the next.
-// [rc4l] The normal comes from FOUR OWN TAPS of the depth buffer, not from dFdx/dFdy.
-//
-// Screen-space derivatives are computed across a 2x2 quad the shader does not choose, and at a
-// silhouette the two pixels of that quad sit on different surfaces -- so the normal is built across
-// a jump in depth and comes out meaningless. At a grazing angle it is worse: the derivative is a
-// difference of two nearly-equal large numbers, which is where the precision goes. The mark then
-// changes as the camera moves, which is the one thing a mark on a wall must never do.
-//
-// Sampling both neighbours on each axis and keeping the CLOSER one fixes both. Two pixels on the
-// same surface are near each other in world space; one across a silhouette is far. Picking the near
-// side means the normal is always built from the surface the fragment is actually on. This is the
-// standard fix for reconstructing a normal from depth and it is worth its four extra taps here,
-// where the pass covers a few hundred pixels rather than the frame.
-#define FUA_DECAL_FACING \
+// This is what the projection was for and could not do, and it is cheaper than what it replaces: no
+// unwrap, no carry, no facing fade, no join arithmetic, no per-surface companion boxes.
+#define FUA_DECAL_RADIAL \
 	"vec3 fuaWorldAt(vec2 uv, mat4 invMVP) {\n" \
 	"    float d = texture(uSceneDepth, uv).r;\n" \
 	"    vec4 w = invMVP * vec4(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0, d, 1.0);\n" \
 	"    return w.xyz / w.w;\n" \
 	"}\n" \
-	"float fuaDecalFacing(vec3 P, vec2 uv, vec2 texel, mat4 invMVP, vec3 axisN) {\n" \
+	/* The surface normal, from FOUR OWN TAPS keeping the closer neighbour on each axis.
+	   dFdx/dFdy are taken across a 2x2 quad the shader does not choose, and at a silhouette its two
+	   pixels sit on different surfaces, so the normal is built across a jump in depth. Two pixels on
+	   the same surface are near each other in world space and one across a silhouette is far, so
+	   keeping the nearer neighbour means the normal always comes from the surface the fragment is
+	   actually on. A sliver too thin to have neighbours -- the front face of a low ledge -- has no
+	   usable answer, and there the mark's own facing is the right one to assume. */ \
+	"vec3 fuaSurfaceNormal(vec3 P, vec2 uv, vec2 texel, mat4 invMVP, vec3 fallback) {\n" \
 	"    vec3 xp = fuaWorldAt(uv + vec2(texel.x, 0.0), invMVP) - P;\n" \
 	"    vec3 xm = P - fuaWorldAt(uv - vec2(texel.x, 0.0), invMVP);\n" \
 	"    vec3 yp = fuaWorldAt(uv + vec2(0.0, texel.y), invMVP) - P;\n" \
 	"    vec3 ym = P - fuaWorldAt(uv - vec2(0.0, texel.y), invMVP);\n" \
 	"    vec3 dx = (dot(xp, xp) < dot(xm, xm)) ? xp : xm;\n" \
 	"    vec3 dy = (dot(yp, yp) < dot(ym, ym)) ? yp : ym;\n" \
-	"    if (dot(dx, dx) < 1e-12 || dot(dy, dy) < 1e-12) return 0.0;\n" \
-	"    vec3 nrm = normalize(cross(dx, dy));\n" \
-	"    return smoothstep(0.30, 0.65, abs(dot(nrm, normalize(axisN))));\n" \
-	"}\n"
-
-#define FUA_DECAL_UNWRAP \
-	"vec2 fuaDecalUV(vec3 local, vec3 axisU, vec3 axisV, vec3 axisN) {\n" \
-	"    vec2 t = local.xy;\n" \
-	/* The axes arrive divided by their half-extents, so a length converts a world distance into the
-	   box units the texture coordinate is measured in. */ \
-	"    float carry = abs(local.z) * (1.0 / length(axisN));\n" \
-	"    if (carry <= 0.0) return t * 0.5 + 0.5;\n" \
-	"    float r = length(t);\n" \
-	/* [rc4l] A mark may only wrap over a join it reaches near its own EDGE.
-	   An orthographic projection cannot parameterise a surface running along its own axis: that
-	   surface's extent maps to no movement across the picture, so some row of texels is dragged
-	   along it whatever coordinate is handed back. At the rim that hardly shows -- the picture is
-	   nearly used up and a sliver of its edge continues past the corner, which reads exactly like a
-	   scorch creeping round. Through the MIDDLE of the mark the same arithmetic drags the middle of
-	   the graphic, solid black on a scorch, across the whole face of the box: the decal's own box,
-	   drawn as a hard-edged black quad standing in the world. The two differ by how far the
-	   coordinate must be pushed against how far out it already was, so refusing to push a fragment
-	   further than its own radius keeps every wrap that looks right and drops every one that cannot.
-	   It covers the centre too, where the radius is zero and no direction exists. */ \
-	"    vec2 dirn = (r > 0.0) ? t / r : vec2(1.0, 0.0);\n" \
-	"    float scale = abs(dirn.x) * length(axisU) + abs(dirn.y) * length(axisV);\n" \
-	"    float push = carry * scale;\n" \
-	"    if (!(push < r)) return vec2(-1.0);\n" \
-	"    return t * ((r + push) / r) * 0.5 + 0.5;\n" \
+	"    if (dot(dx, dx) < 1e-10 || dot(dy, dy) < 1e-10) return fallback;\n" \
+	"    vec3 n = cross(dx, dy);\n" \
+	"    if (dot(n, n) < 1e-12) return fallback;\n" \
+	"    return normalize(n);\n" \
+	"}\n" \
+	/* The picture's own axes, laid into whatever surface this fragment is on. The mark's across-axis
+	   is used where it survives being turned into the plane, and its up-axis where it does not -- on
+	   a floor, "along the wall" still means something while "up the wall" does not. */ \
+	"vec2 fuaDecalUV(vec3 rel, vec3 nrm, vec3 axisU, vec3 axisV, vec3 axisN) {\n" \
+	"    vec3 U = normalize(axisU), V = normalize(axisV), N = normalize(axisN);\n" \
+	"    vec3 su = U - nrm * dot(nrm, U);\n" \
+	"    if (dot(su, su) < 0.05) su = V - nrm * dot(nrm, V);\n" \
+	"    if (dot(su, su) < 0.05) su = N - nrm * dot(nrm, N);\n" \
+	"    su = normalize(su);\n" \
+	"    vec3 sv = cross(nrm, su);\n" \
+	/* Which of the two perpendiculars is "up the picture". On the surface that was hit this is the
+	   mark's own V; on a floor, where V lies along the normal and decides nothing, the tie is broken
+	   by pointing away from the surface that was hit. Both are fixed in world space, so neither can
+	   change as the camera moves. */ \
+	"    if (dot(sv, V) - dot(sv, N) < 0.0) sv = -sv;\n" \
+	"    return vec2(dot(rel, su) * length(axisU), dot(rel, sv) * length(axisV)) * 0.5 + 0.5;\n" \
 	"}\n"
 
 static const char *kDecalVS =
@@ -766,16 +716,16 @@ static const char *kDecalVS =
 	"layout(location = 3) in vec3 aAxisV;\n"     // half-extents, so the pixel shader's inside test
 	"layout(location = 4) in vec3 aAxisN;\n"     // is one dot product per axis and nothing else
 	"layout(location = 5) in vec4 aColor;\n"
-	"layout(location = 6) in vec2 aClip;\n"
+	"layout(location = 6) in float aRadius;\n"
 	"layout(location = 0) out vec3 vCentre;\n"
 	"layout(location = 1) out vec3 vAxisU;\n"
 	"layout(location = 2) out vec3 vAxisV;\n"
 	"layout(location = 3) out vec3 vAxisN;\n"
 	"layout(location = 4) out vec4 vColor;\n"
-	"layout(location = 5) out vec2 vClip;\n"
+	"layout(location = 5) out float vRadius;\n"
 	"void main() {\n"
 	"    vCentre = aCentre; vAxisU = aAxisU; vAxisV = aAxisV; vAxisN = aAxisN; vColor = aColor;\n"
-	"    vClip = aClip;\n"
+	"    vRadius = aRadius;\n"
 	"    gl_Position = uMVP * vec4(aPos, 1.0);\n"
 	"}\n";
 
@@ -790,10 +740,9 @@ static const char *kDecalPS =
 	"layout(location = 2) in vec3 vAxisV;\n"
 	"layout(location = 3) in vec3 vAxisN;\n"
 	"layout(location = 4) in vec4 vColor;\n"
-	"layout(location = 5) in vec2 vClip;\n"
+	"layout(location = 5) in float vRadius;\n"
 	"layout(location = 0) out vec4 outColor;\n"
-	FUA_DECAL_UNWRAP
-	FUA_DECAL_FACING
+	FUA_DECAL_RADIAL
 	"void main() {\n"
 	"    vec2 uv = gl_FragCoord.xy / vec2(uScreen.x, uScreen.y);\n"
 	"    float d = texture(uSceneDepth, uv).r;\n"
@@ -809,42 +758,21 @@ static const char *kDecalPS =
 	"    vec4 clip = vec4(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0, d, 1.0);\n"
 	"    vec4 world = uInvMVP * clip;\n"
 	"    vec3 P = world.xyz / world.w;\n"
-	/* Inside the box? The axes arrive already divided by their half-extents, so each dot product
-	   lands in -1..1 across the box. A wall's basis is turned to face the wall and a flat's is
-	   axis-aligned, and that is the ONLY difference between them -- which is why wall decals moved
-	   onto this pass too. A quad glued to a sidedef gets clipped at the linedef join, and the engine
-	   papers over that by cloning slices onto the neighbouring walls; a box has no sidedef to be
-	   clipped to and simply carries on. */
+	/* Inside the blast? A sphere, not a box: the mark reaches the same distance in every
+	   direction from where it landed. That is what a blast does, and it is what makes it
+	   impossible for a surface in range to be missed -- a box aligned to one wall left a wedge
+	   of floor uncovered wherever the floor wrapped round a corner at an angle to it. */
 	"    vec3 rel = P - vCentre;\n"
-	"    vec3 local = vec3(dot(rel, vAxisU), dot(rel, vAxisV), dot(rel, vAxisN));\n"
-	"    if (any(greaterThan(abs(local), vec3(1.0)))) discard;\n"
-	/* Across and up the surface; the depth through it is ignored. That is what makes a mark follow a
-	   step, a slope, or the far side of a corner rather than stopping at it. */
-	"    vec2 t = fuaDecalUV(local, vAxisU, vAxisV, vAxisN);\n"
-	/* Past the end of the picture. Clamping here would repeat the edge texel for ever, which is the
-	   dragged column again by another route, so the fragment is dropped instead. */
+	"    if (dot(rel, rel) > vRadius * vRadius) discard;\n"
+	"    vec3 nrm = fuaSurfaceNormal(P, uv, 1.0 / vec2(uScreen.x, uScreen.y), uInvMVP,\n"
+	"                               normalize(vAxisN));\n"
+	"    vec2 t = fuaDecalUV(rel, nrm, vAxisU, vAxisV, vAxisN);\n"
+	/* Past the end of the picture. Clamped instead of dropped, the edge texel would repeat for
+	   ever -- a dragged row of texels by another route, which is the artifact all of this
+	   exists to avoid. */
 	"    if (any(lessThan(t, vec2(0.0))) || any(greaterThan(t, vec2(1.0)))) discard;\n"
-	/* [rc4l] Mip level from the FLAT coordinate, not the unwrapped one.
-	   texture() derives its level of detail from how fast the coordinate changes between neighbouring
-	   pixels, and an unwrapped coordinate changes fast wherever the surface turns -- so the very
-	   places the unwrap exists to serve got the blurriest mip and washed out. The flat projection is
-	   smooth everywhere and is the right scale to measure by; the unwrap only bends where the texture
-	   is fetched FROM, never how densely it is being sampled. */ \
-	/* [rc4l] A fragment ON the plane the mark was shot at does not have to justify itself.
-	   The facing test exists to refuse surfaces that run ALONG the projection, and it answers by
-	   reconstructing a normal from neighbouring depth samples -- which needs a neighbourhood. A thin
-	   sliver of geometry, like the front face of a low ledge, is a couple of pixels tall, so both
-	   neighbours land on the floor behind it, the normal comes out of two unrelated surfaces, and the
-	   sliver is refused. That is a clean unpainted notch cut through the mark exactly where the ledge
-	   is -- and the sliver was the decal's own wall, the one surface that never needed testing.
-	   Distance through the plane says so without a neighbourhood and without a camera. */
-	"    float throughW = abs(local.z) / length(vAxisN);\n"
-	"    float facing = (throughW <= 2.0 || uSkyColor.w == 0.0) ? 1.0\n"
-	"        : fuaDecalFacing(P, uv, 1.0 / vec2(uScreen.x, uScreen.y), uInvMVP, vAxisN);\n"
-	"    if (facing <= 0.0) discard;\n"
-	"    vec2 flat_uv = local.xy * 0.5 + 0.5;\n"
-	"    vec4 texel = textureGrad(uTex, t, dFdx(flat_uv), dFdy(flat_uv));\n"
-	"    outColor = vec4(texel.rgb * vColor.rgb, texel.a * vColor.a * facing);\n"
+	"    vec4 texel = texture(uTex, t);\n"
+	"    outColor = vec4(texel.rgb * vColor.rgb, texel.a * vColor.a);\n"
 	"}\n";
 
 // The alpha-mask variant: the silhouette is in the red channel and the colour is the decal's own.
@@ -859,10 +787,9 @@ static const char *kDecalRedPS =
 	"layout(location = 2) in vec3 vAxisV;\n"
 	"layout(location = 3) in vec3 vAxisN;\n"
 	"layout(location = 4) in vec4 vColor;\n"
-	"layout(location = 5) in vec2 vClip;\n"
+	"layout(location = 5) in float vRadius;\n"
 	"layout(location = 0) out vec4 outColor;\n"
-	FUA_DECAL_UNWRAP
-	FUA_DECAL_FACING
+	FUA_DECAL_RADIAL
 	"void main() {\n"
 	"    vec2 uv = gl_FragCoord.xy / vec2(uScreen.x, uScreen.y);\n"
 	"    float d = texture(uSceneDepth, uv).r;\n"
@@ -876,31 +803,12 @@ static const char *kDecalRedPS =
 	"    vec4 world = uInvMVP * clip;\n"
 	"    vec3 P = world.xyz / world.w;\n"
 	"    vec3 rel = P - vCentre;\n"
-	"    vec3 local = vec3(dot(rel, vAxisU), dot(rel, vAxisV), dot(rel, vAxisN));\n"
-	"    if (any(greaterThan(abs(local), vec3(1.0)))) discard;\n"
-	/* [rc4l] The slice of the picture this box owns -- see ProjectedDecal::vMin.
-	   A mark near a corner is drawn by several boxes, itself plus a fold per surface it runs into, and
-	   they have to tile. A fold's box straddles the wall it folded from, so unbounded it would also
-	   paint the near side and hand it the wrong part of the graphic. And the mark would carry on past
-	   the join its fold continues from, so both would paint the strip either side of the corner -- and
-	   these blend, so a strip painted twice comes out darker and reads as a seam along the corner. */
-	"    if (local.y < vClip.x || local.y > vClip.y) discard;\n"
-	"    vec2 t = fuaDecalUV(local, vAxisU, vAxisV, vAxisN);\n"
+	"    if (dot(rel, rel) > vRadius * vRadius) discard;\n"
+	"    vec3 nrm = fuaSurfaceNormal(P, uv, 1.0 / vec2(uScreen.x, uScreen.y), uInvMVP,\n"
+	"                               normalize(vAxisN));\n"
+	"    vec2 t = fuaDecalUV(rel, nrm, vAxisU, vAxisV, vAxisN);\n"
 	"    if (any(lessThan(t, vec2(0.0))) || any(greaterThan(t, vec2(1.0)))) discard;\n"
-	/* [rc4l] A fragment ON the plane the mark was shot at does not have to justify itself.
-	   The facing test exists to refuse surfaces that run ALONG the projection, and it answers by
-	   reconstructing a normal from neighbouring depth samples -- which needs a neighbourhood. A thin
-	   sliver of geometry, like the front face of a low ledge, is a couple of pixels tall, so both
-	   neighbours land on the floor behind it, the normal comes out of two unrelated surfaces, and the
-	   sliver is refused. That is a clean unpainted notch cut through the mark exactly where the ledge
-	   is -- and the sliver was the decal's own wall, the one surface that never needed testing.
-	   Distance through the plane says so without a neighbourhood and without a camera. */
-	"    float throughW = abs(local.z) / length(vAxisN);\n"
-	"    float facing = (throughW <= 2.0 || uSkyColor.w == 0.0) ? 1.0\n"
-	"        : fuaDecalFacing(P, uv, 1.0 / vec2(uScreen.x, uScreen.y), uInvMVP, vAxisN);\n"
-	"    if (facing <= 0.0) discard;\n"
-	"    vec2 flat_uv = local.xy * 0.5 + 0.5;\n"
-	"    float a = textureGrad(uTex, t, dFdx(flat_uv), dFdy(flat_uv)).r * vColor.a * facing;\n"
+	"    float a = texture(uTex, t).r * vColor.a;\n"
 	"    if (a <= 0.0) discard;\n"
 	"    outColor = vec4(vColor.rgb, a);\n"
 	"}\n";
@@ -2820,7 +2728,7 @@ struct DecalVertex
 	float vx, vy, vz;
 	float nx, ny, nz;
 	float r, g, b, a;
-	float vMin, vMax;       // the slice of the picture this box owns
+	float radius;           // how far the mark reaches from where it landed
 };
 
 // One decal's box, as 36 vertices. Everything a box needs travels in its own vertices, which is what
@@ -2833,10 +2741,12 @@ static void AppendDecalBox(TArray<DecalVertex> &vb, const zx::levelmesh::Project
 	const float ux = d.ux, uy = d.uz, uz = d.uy;
 	const float vx = d.vx, vy = d.vz, vz = d.vy;
 	const float nx = d.nx, ny = d.nz, nz = d.ny;
-	// Multiplying an axis by the SQUARE of its half-extent undoes the pre-division and leaves the
-	// axis at its true length, which is what the corners need. A turned box is then built exactly the
-	// way an axis-aligned one is, and a wall decal costs no more than a floor decal.
-	const float uL = d.halfW * d.halfW, vL = d.halfH * d.halfH, nL = d.halfDepth * d.halfDepth;
+	// [rc4l] An AXIS-ALIGNED cube of the blast radius, not a box turned to face the surface that was
+	// hit. The shape only has to contain the sphere the shader tests against, and a cube containing
+	// that sphere is the same cube whichever way the mark is turned -- so nothing about the geometry
+	// has to know, and nothing about it can leave a corner of the world outside it. The axes still
+	// travel with the vertices, but only to orient the PICTURE.
+	const float R = d.radius;
 	for (int v = 0; v < 36; v++)
 	{
 		DecalVertex dv;
@@ -2844,11 +2754,11 @@ static void AppendDecalBox(TArray<DecalVertex> &vb, const zx::levelmesh::Project
 		dv.ux = ux; dv.uy = uy; dv.uz = uz;
 		dv.vx = vx; dv.vy = vy; dv.vz = vz;
 		dv.nx = nx; dv.ny = ny; dv.nz = nz;
-		dv.x = dv.cx + kCube[v][0] * ux * uL + kCube[v][1] * vx * vL + kCube[v][2] * nx * nL;
-		dv.y = dv.cy + kCube[v][0] * uy * uL + kCube[v][1] * vy * vL + kCube[v][2] * ny * nL;
-		dv.z = dv.cz + kCube[v][0] * uz * uL + kCube[v][1] * vz * vL + kCube[v][2] * nz * nL;
+		dv.x = dv.cx + kCube[v][0] * R;
+		dv.y = dv.cy + kCube[v][1] * R;
+		dv.z = dv.cz + kCube[v][2] * R;
 		dv.r = d.r; dv.g = d.g; dv.b = d.b; dv.a = d.a;
-		dv.vMin = d.vMin; dv.vMax = d.vMax;
+		dv.radius = d.radius;
 		vb.Push(dv);
 	}
 }
@@ -2911,7 +2821,7 @@ static bool EnsureDecalPass()
 		Diligent::LayoutElement{3, 0, 3, Diligent::VT_FLOAT32, false},
 		Diligent::LayoutElement{4, 0, 3, Diligent::VT_FLOAT32, false},
 		Diligent::LayoutElement{5, 0, 4, Diligent::VT_FLOAT32, false},
-		Diligent::LayoutElement{6, 0, 2, Diligent::VT_FLOAT32, false},
+		Diligent::LayoutElement{6, 0, 1, Diligent::VT_FLOAT32, false},
 	};
 	static Diligent::ShaderResourceVariableDesc vars[] = {
 		{ Diligent::SHADER_TYPE_PIXEL, "uTex", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
@@ -3645,7 +3555,7 @@ static void DrawMirrorSurface(Diligent::IDeviceContext *ctx, unsigned index)
 		cb[32] = g_skyCapColor[0].r / 255.f;
 		cb[33] = g_skyCapColor[0].g / 255.f;
 		cb[34] = g_skyCapColor[0].b / 255.f;
-		cb[35] = fua_decal_facing ? 1.f : 0.f;
+		cb[35] = 0.f;
 	}
 	if (g_mirrorTraced)
 	{
@@ -3767,7 +3677,7 @@ static void RenderMirrors(Diligent::IDeviceContext *ctx)
 		cb[32] = g_skyCapColor[0].r / 255.f;
 		cb[33] = g_skyCapColor[0].g / 255.f;
 		cb[34] = g_skyCapColor[0].b / 255.f;
-		cb[35] = fua_decal_facing ? 1.f : 0.f;
+		cb[35] = 0.f;
 		}
 		Diligent::IBuffer *vbs[] = { g_mirrorVB };
 		const Diligent::Uint64 offsets[] = { (Diligent::Uint64)i * 36 * sizeof(float) };
@@ -4020,7 +3930,7 @@ static void DrawWorld(Diligent::IDeviceContext *ctx)
 		cb[32] = g_skyCapColor[0].r / 255.f;
 		cb[33] = g_skyCapColor[0].g / 255.f;
 		cb[34] = g_skyCapColor[0].b / 255.f;
-		cb[35] = fua_decal_facing ? 1.f : 0.f;
+		cb[35] = 0.f;
 	}
 
 	// [rc4l] Re-resolve animated textures.
