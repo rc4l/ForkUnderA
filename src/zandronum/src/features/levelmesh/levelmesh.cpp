@@ -5,6 +5,7 @@
 // geometry is built and nothing renders from this yet -- see features/levelmesh/README.md.
 
 #include "features/levelmesh/levelmesh.h"
+#include "r_sky.h"   // skyflatnum, for fua_find_sky
 #include "gl/data/gl_vertexbuffer.h"   // FFlatVertex, for fua_mesh_at
 #include "features/levelmesh/wallcache.h"
 #include "features/levelmesh/flatmesh.h"
@@ -361,4 +362,74 @@ CCMD( fua_mesh_at )
 		shown++;
 	}
 	Printf( "fua_mesh_at: %d of %d pieces within %.0f of (%.0f, %.0f)\n", shown, np, rad, px, py );
+}
+
+//==========================================================================
+//
+// fua_find_sky [limit=N]
+//
+// [rc4l] The biggest open-air sectors in the level, largest first.
+//
+// Checking the sky meant spawning in, turning on noclip, running forwards for a few seconds and
+// hoping to end up outdoors. That is not a test -- it depends on which way the spawn faces and what
+// is in front of it, and on these maps the spawn is INDOORS, so it repeatedly compared two ceilings,
+// agreed to within a point, and reported the sky as fixed while it was a black disc. This finds
+// somewhere the sky is actually visible and prints a spot to stand.
+//
+//==========================================================================
+
+CCMD( fua_find_sky )
+{
+	if ( sectors == NULL || numsectors <= 0 )
+	{
+		Printf( "no level loaded.\n" );
+		return;
+	}
+	const int limit = FindLinesArg( argv, "limit", 5 );
+
+	struct Cand { int sec; double area; double cx, cy; };
+	TArray<Cand> cands;
+	for ( int i = 0; i < numsectors; i++ )
+	{
+		const sector_t *sec = &sectors[i];
+		if ( sec->GetTexture( sector_t::ceiling ) != skyflatnum ) continue;
+		if ( sec->linecount <= 0 ) continue;
+
+		double minx = 1e30, maxx = -1e30, miny = 1e30, maxy = -1e30;
+		for ( int k = 0; k < sec->linecount; k++ )
+		{
+			const line_t *ln = sec->lines[k];
+			const double xs[2] = { FIXED2FLOAT( ln->v1->x ), FIXED2FLOAT( ln->v2->x ) };
+			const double ys[2] = { FIXED2FLOAT( ln->v1->y ), FIXED2FLOAT( ln->v2->y ) };
+			for ( int q = 0; q < 2; q++ )
+			{
+				if ( xs[q] < minx ) minx = xs[q];
+				if ( xs[q] > maxx ) maxx = xs[q];
+				if ( ys[q] < miny ) miny = ys[q];
+				if ( ys[q] > maxy ) maxy = ys[q];
+			}
+		}
+		Cand c;
+		c.sec = i;
+		c.area = ( maxx - minx ) * ( maxy - miny );
+		c.cx = ( minx + maxx ) * 0.5;
+		c.cy = ( miny + maxy ) * 0.5;
+		cands.Push( c );
+	}
+
+	// Largest first: the biggest opening is the one where the sky fills the most of the view.
+	for ( unsigned a = 0; a + 1 < cands.Size( ); a++ )
+		for ( unsigned b = a + 1; b < cands.Size( ); b++ )
+			if ( cands[b].area > cands[a].area ) { Cand t = cands[a]; cands[a] = cands[b]; cands[b] = t; }
+
+	int shown = 0;
+	for ( unsigned i = 0; i < cands.Size( ) && shown < limit; i++, shown++ )
+	{
+		Printf( "sky sector %d: area %.0f  stand (%d, %d)  floor %d\n",
+				cands[i].sec, cands[i].area, (int)cands[i].cx, (int)cands[i].cy,
+				(int)FIXED2FLOAT( sectors[cands[i].sec].floorplane.ZatPoint(
+					FLOAT2FIXED( cands[i].cx ), FLOAT2FIXED( cands[i].cy ) ) ) );
+	}
+	Printf( "fua_find_sky: %d of %d sky sectors, %d sectors total\n",
+			shown, (int)cands.Size( ), numsectors );
 }
