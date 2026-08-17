@@ -130,6 +130,8 @@ CVAR(Int, fua_dg_cull, 0, CVAR_ARCHIVE)
 // with it on, "missing world geometry" and "correctly visible sky" look identical. Turning it off
 // leaves holes against the clear colour, which is unambiguous.
 CVAR(Bool, fua_dg_sky, true, 0)
+// [rc4l] Planar mirror reflections. Off drops back to a hole, which is what it looked like before.
+CVAR(Bool, fua_dg_mirrors, true, 0)
 
 // [rc4l] Re-resolve animated textures per frame. See the loop in DrawSceneOnce.
 CVAR(Bool, fua_dg_animate, true, 0)
@@ -320,7 +322,7 @@ static const char *kSceneVS =
 	"layout(location = 4) in vec4 aFog;\n"
 	"layout(location = 5) in float aLightIndex;\n"
 	"layout(location = 6) in vec3 aNormal;\n"
-	"layout(binding = 0) uniform Constants { mat4 uMVP; vec4 uCameraPos; vec4 uLightParams; };\n"
+	"layout(binding = 0) uniform Constants { mat4 uMVP; vec4 uCameraPos; vec4 uLightParams; vec4 uClipPlane; vec4 uScreen; };\n"
 	"layout(location = 0) out vec2 vUV;\n"
 	"layout(location = 1) out vec3 vColor;\n"
 	"layout(location = 2) out vec3 vLightParm;\n"
@@ -370,7 +372,7 @@ static const char *kSceneVS =
 	"layout(location = 4) in vec4 vPixelPos;\n" \
 	"layout(location = 5) flat in int vLightIndex;\n" \
 	"layout(location = 6) in vec3 vNormal;\n" \
-	"layout(binding = 0) uniform Constants { mat4 uMVP; vec4 uCameraPos; vec4 uLightParams; };\n" \
+	"layout(binding = 0) uniform Constants { mat4 uMVP; vec4 uCameraPos; vec4 uLightParams; vec4 uClipPlane; vec4 uScreen; };\n" \
 	"layout(binding = 1) uniform sampler2D uTex;\n" \
 	"layout(std430, binding = 2) readonly buffer LightBuffer { vec4 lights[]; };\n" \
 	"layout(location = 0) out vec4 outColor;\n" \
@@ -438,6 +440,10 @@ static const char *kSceneVS =
 	"    if (dbg == 7.0) return vec3(clamp(vPixelPos.w / 2000.0, 0.0, 1.0));\n" \
 	"    if (dbg == 8.0) return vec3(clamp(-vLightParm.y * 20000.0, 0.0, 1.0));\n" \
 	"    if (dbg == 9.0) return vec3(fogMode > 0.0 ? 1.0 : 0.0, fogMode < 0.0 ? 1.0 : 0.0, 0.0);\n" \
+	/* [rc4l] Mirror clipping. Everything on the far side of the mirror plane is behind the glass and
+	   must not appear in the reflection -- without this the wall the mirror hangs on renders first
+	   from the reflected camera and fills the whole reflection. w == 0 means no mirror is active. */ \
+	"    if (uClipPlane.w != 0.0 && dot(vPixelPos.xyz, uClipPlane.xyz) + uClipPlane.w < 0.0) discard;\n" \
 	"    vec3 color = vColor;\n" \
 	"    if (vLightParm.x >= 0.0) color *= 1.0 - R_DoomLightingEquation(vLightParm.x, gl_FragCoord.z);\n" \
 	"    else if (fogMode > 0.0)  color  = mix(vec3(0.0), color, fogfactor);\n" \
@@ -629,7 +635,7 @@ static const char *kSkyVS =
 	"layout(location = 1) in vec2 aUV;\n"
 	"layout(location = 2) in vec4 aSkyColor;\n"
 	"layout(location = 3) in float aSkyAlpha;\n"
-	"layout(binding = 0) uniform Constants { mat4 uMVP; vec4 uCameraPos; vec4 uLightParams; };\n"
+	"layout(binding = 0) uniform Constants { mat4 uMVP; vec4 uCameraPos; vec4 uLightParams; vec4 uClipPlane; vec4 uScreen; };\n"
 	"layout(location = 0) out vec2 vUV;\n"
 	"layout(location = 1) out vec4 vSkyColor;\n"
 	"layout(location = 2) out float vSkyAlpha;\n"
@@ -705,6 +711,8 @@ static int g_skyTexOffset = 0;
 static PalEntry g_skyCapColor[2];
 // Radians, recomputed per frame: -180 degrees (RenderDome's constant) plus the scroll offset.
 static float g_skyAngle = 0.f;
+// Mirror clip plane in mesh space (nx, ny, nz, d); all zero disables it.
+static float g_clipPlane[4] = { 0.f, 0.f, 0.f, 0.f };
 
 static void BuildSkyDome(int texw, int texh)
 {
@@ -1672,7 +1680,8 @@ static bool EnsureScenePipeline(FString &err)
 
 	Diligent::BufferDesc cbd;
 	cbd.Name = "fua scene constants";
-	cbd.Size = sizeof(float) * 24;   // mat4 uMVP + vec4 uCameraPos + vec4 uLightParams
+	// mat4 uMVP + vec4 uCameraPos + vec4 uLightParams + vec4 uClipPlane (mirrors) + vec4 uScreen
+	cbd.Size = sizeof(float) * 32;
 	cbd.Usage = Diligent::USAGE_DYNAMIC;
 	cbd.BindFlags = Diligent::BIND_UNIFORM_BUFFER;
 	cbd.CPUAccessFlags = Diligent::CPU_ACCESS_WRITE;
@@ -2065,6 +2074,280 @@ static void CollectDynamicLights(Diligent::IDeviceContext *ctx)
 // same seam.
 static void DrawWorld(Diligent::IDeviceContext *ctx);
 
+// [rc4l] Mirrors (Line_Mirror, special 182).
+//
+// A mirror is a portal, and the wall cache refuses any seg that produces one, so nothing is baked
+// where a mirror is: the backend drew a hole and you saw the sky dome through it. The geometry is
+// therefore built here, straight from the linedef, rather than expected from the mesh.
+//
+// The reflection is planar: put the camera through the mirror, render the world into a screen-sized
+// target, then draw the mirror's quad sampling that target at the SAME screen position. That works
+// because the reflected camera keeps the main camera's projection, so a point on the mirror surface
+// lands on exactly the pixel showing what it reflects -- no second projection to get wrong, and no
+// per-mirror texture coordinates.
+struct MirrorSurface
+{
+	float v[6][3];        // two triangles, mesh space (x, z-up, y)
+	float nx, ny, d;      // plane in MAP space (nx*x + ny*y = d), for reflecting the camera
+};
+static TArray<MirrorSurface> g_mirrors;
+static Diligent::RefCntAutoPtr<Diligent::IBuffer> g_mirrorVB;
+static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_mirrorPSO;
+static Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding> g_mirrorSRB;
+static Diligent::RefCntAutoPtr<Diligent::ITexture> g_mirrorColor, g_mirrorDepth;
+static int g_mirrorW = 0, g_mirrorH = 0;
+
+static void CollectMirrors()
+{
+	g_mirrors.Clear();
+	g_mirrorVB.Release();
+	if (lines == NULL) return;
+
+	for (int i = 0; i < numlines; i++)
+	{
+		const line_t *ln = &lines[i];
+		// 182 is Line_Mirror (actionspecials.h). Named rather than included: that header is a macro
+		// table that only expands correctly in the two files set up for it.
+		if (ln->special != 182 || ln->frontsector == NULL) continue;
+
+		const float x1 = FIXED2FLOAT(ln->v1->x), y1 = FIXED2FLOAT(ln->v1->y);
+		const float x2 = FIXED2FLOAT(ln->v2->x), y2 = FIXED2FLOAT(ln->v2->y);
+		const float zf1 = FIXED2FLOAT(ln->frontsector->floorplane.ZatPoint(ln->v1->x, ln->v1->y));
+		const float zc1 = FIXED2FLOAT(ln->frontsector->ceilingplane.ZatPoint(ln->v1->x, ln->v1->y));
+		const float zf2 = FIXED2FLOAT(ln->frontsector->floorplane.ZatPoint(ln->v2->x, ln->v2->y));
+		const float zc2 = FIXED2FLOAT(ln->frontsector->ceilingplane.ZatPoint(ln->v2->x, ln->v2->y));
+
+		const float dx = x2 - x1, dy = y2 - y1;
+		const float len = sqrtf(dx * dx + dy * dy);
+		if (len < 0.001f) continue;
+
+		MirrorSurface m;
+		// Mesh space is (x, z-up, y), the same swap the level mesh uses.
+		const float a[3] = { x1, zf1, y1 }, b[3] = { x1, zc1, y1 };
+		const float c[3] = { x2, zf2, y2 }, e[3] = { x2, zc2, y2 };
+		const float *tri[6] = { a, b, c, c, b, e };
+		for (int k = 0; k < 6; k++)
+			for (int q = 0; q < 3; q++) m.v[k][q] = tri[k][q];
+
+		m.nx = dy / len; m.ny = -dx / len;
+		m.d = m.nx * x1 + m.ny * y1;
+		g_mirrors.Push(m);
+	}
+	if (g_mirrors.Size() > 0)
+		Printf("vulkan: %d mirror surface(s)\n", (int)g_mirrors.Size());
+}
+
+static const char *kMirrorVS =
+	"#version 450\n"
+	"layout(location = 0) in vec3 aPos;\n"
+	"layout(binding = 0) uniform Constants { mat4 uMVP; vec4 uCameraPos; vec4 uLightParams; vec4 uClipPlane; vec4 uScreen; };\n"
+	"void main() { gl_Position = uMVP * vec4(aPos, 1.0); }\n";
+
+// Sampled by SCREEN position, not by any texture coordinate of the mirror's own: the reflection was
+// rendered with this frame's projection, so the pixel under this fragment already IS what this point
+// of the mirror reflects.
+static const char *kMirrorPS =
+	"#version 450\n"
+	"layout(binding = 0) uniform Constants { mat4 uMVP; vec4 uCameraPos; vec4 uLightParams; vec4 uClipPlane; vec4 uScreen; };\n"
+	"layout(binding = 1) uniform sampler2D uTex;\n"
+	"layout(location = 0) out vec4 outColor;\n"
+	"void main() { outColor = vec4(texture(uTex, gl_FragCoord.xy / uScreen.xy).rgb, 1.0); }\n";
+
+static bool EnsureMirrorResources()
+{
+	auto *dev = GetDevice();
+	auto *swap = GetSwapChain();
+	if (!dev || !swap) return false;
+	const int w = (int)swap->GetDesc().Width, h = (int)swap->GetDesc().Height;
+
+	if (!g_mirrorColor || g_mirrorW != w || g_mirrorH != h)
+	{
+		g_mirrorColor.Release(); g_mirrorDepth.Release(); g_mirrorSRB.Release();
+		Diligent::TextureDesc td;
+		td.Name = "fua mirror colour";
+		td.Type = Diligent::RESOURCE_DIM_TEX_2D;
+		td.Width = (Diligent::Uint32)w; td.Height = (Diligent::Uint32)h;
+		td.Format = swap->GetDesc().ColorBufferFormat;
+		td.BindFlags = Diligent::BIND_RENDER_TARGET | Diligent::BIND_SHADER_RESOURCE;
+		dev->CreateTexture(td, nullptr, &g_mirrorColor);
+		Diligent::TextureDesc dd = td;
+		dd.Name = "fua mirror depth";
+		dd.Format = swap->GetDesc().DepthBufferFormat;
+		dd.BindFlags = Diligent::BIND_DEPTH_STENCIL;
+		dev->CreateTexture(dd, nullptr, &g_mirrorDepth);
+		if (!g_mirrorColor || !g_mirrorDepth) return false;
+		g_mirrorW = w; g_mirrorH = h;
+	}
+
+	if (!g_mirrorPSO)
+	{
+		Diligent::RefCntAutoPtr<Diligent::IShader> vs, ps;
+		{
+			Diligent::ShaderCreateInfo ci;
+			ci.SourceLanguage = Diligent::SHADER_SOURCE_LANGUAGE_GLSL_VERBATIM;
+			ci.Desc.ShaderType = Diligent::SHADER_TYPE_VERTEX;
+			ci.Desc.Name = "fua mirror VS"; ci.Source = kMirrorVS;
+			dev->CreateShader(ci, &vs);
+		}
+		{
+			Diligent::ShaderCreateInfo ci;
+			ci.SourceLanguage = Diligent::SHADER_SOURCE_LANGUAGE_GLSL_VERBATIM;
+			ci.Desc.ShaderType = Diligent::SHADER_TYPE_PIXEL;
+			ci.Desc.Name = "fua mirror PS"; ci.Source = kMirrorPS;
+			dev->CreateShader(ci, &ps);
+		}
+		if (!vs || !ps) return false;
+
+		Diligent::LayoutElement layout[] = {
+			Diligent::LayoutElement{0, 0, 3, Diligent::VT_FLOAT32, false},
+		};
+		static Diligent::ShaderResourceVariableDesc vars[] = {
+			{ Diligent::SHADER_TYPE_PIXEL, "uTex", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
+		};
+		static Diligent::SamplerDesc samp;
+		samp.MinFilter = Diligent::FILTER_TYPE_LINEAR;
+		samp.MagFilter = Diligent::FILTER_TYPE_LINEAR;
+		samp.MipFilter = Diligent::FILTER_TYPE_POINT;
+		samp.AddressU = Diligent::TEXTURE_ADDRESS_CLAMP;
+		samp.AddressV = Diligent::TEXTURE_ADDRESS_CLAMP;
+		static Diligent::ImmutableSamplerDesc samplers[] = {
+			{ Diligent::SHADER_TYPE_PIXEL, "uTex", samp },
+		};
+
+		Diligent::GraphicsPipelineStateCreateInfo pci;
+		pci.PSODesc.Name = "fua mirror PSO";
+		pci.PSODesc.PipelineType = Diligent::PIPELINE_TYPE_GRAPHICS;
+		pci.GraphicsPipeline.NumRenderTargets = 1;
+		pci.GraphicsPipeline.RTVFormats[0] = swap->GetDesc().ColorBufferFormat;
+		pci.GraphicsPipeline.DSVFormat = swap->GetDesc().DepthBufferFormat;
+		pci.GraphicsPipeline.PrimitiveTopology = Diligent::PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+		pci.GraphicsPipeline.RasterizerDesc.CullMode = Diligent::CULL_MODE_NONE;
+		pci.GraphicsPipeline.DepthStencilDesc.DepthEnable = true;
+		pci.GraphicsPipeline.DepthStencilDesc.DepthWriteEnable = true;
+		pci.GraphicsPipeline.InputLayout.LayoutElements = layout;
+		pci.GraphicsPipeline.InputLayout.NumElements = 1;
+		pci.PSODesc.ResourceLayout.DefaultVariableType = Diligent::SHADER_RESOURCE_VARIABLE_TYPE_STATIC;
+		pci.PSODesc.ResourceLayout.Variables = vars;
+		pci.PSODesc.ResourceLayout.NumVariables = 1;
+		pci.PSODesc.ResourceLayout.ImmutableSamplers = samplers;
+		pci.PSODesc.ResourceLayout.NumImmutableSamplers = 1;
+		pci.pVS = vs; pci.pPS = ps;
+		dev->CreateGraphicsPipelineState(pci, &g_mirrorPSO);
+		if (!g_mirrorPSO) return false;
+		if (auto *v = g_mirrorPSO->GetStaticVariableByName(Diligent::SHADER_TYPE_VERTEX, "Constants"))
+			v->Set(g_cb);
+		if (auto *v = g_mirrorPSO->GetStaticVariableByName(Diligent::SHADER_TYPE_PIXEL, "Constants"))
+			v->Set(g_cb);
+		g_mirrorSRB.Release();
+	}
+
+	if (!g_mirrorSRB)
+	{
+		g_mirrorPSO->CreateShaderResourceBinding(&g_mirrorSRB, true);
+		if (!g_mirrorSRB) return false;
+		if (auto *v = g_mirrorSRB->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "uTex"))
+			v->Set(g_mirrorColor->GetDefaultView(Diligent::TEXTURE_VIEW_SHADER_RESOURCE));
+	}
+
+	if (!g_mirrorVB && g_mirrors.Size() > 0)
+	{
+		TArray<float> verts;
+		for (unsigned i = 0; i < g_mirrors.Size(); i++)
+			for (int k = 0; k < 6; k++)
+				for (int q = 0; q < 3; q++) verts.Push(g_mirrors[i].v[k][q]);
+		Diligent::BufferDesc bd;
+		bd.Name = "fua mirror VB";
+		bd.Size = (Diligent::Uint64)verts.Size() * sizeof(float);
+		bd.Usage = Diligent::USAGE_IMMUTABLE;
+		bd.BindFlags = Diligent::BIND_VERTEX_BUFFER;
+		Diligent::BufferData bdata;
+		bdata.pData = &verts[0];
+		bdata.DataSize = bd.Size;
+		dev->CreateBuffer(bd, &bdata, &g_mirrorVB);
+		if (!g_mirrorVB) return false;
+	}
+	return g_mirrors.Size() == 0 || g_mirrorVB.RawPtr() != nullptr;
+}
+
+// Render each mirror's reflection and draw its surface. Called after the world, before the 2D layer.
+static void RenderMirrors(Diligent::IDeviceContext *ctx)
+{
+	if (!fua_dg_mirrors || g_mirrors.Size() == 0) return;
+	if (!EnsureMirrorResources()) return;
+
+	auto *swap = GetSwapChain();
+	auto *brtv = swap->GetCurrentBackBufferRTV();
+	auto *bdsv = swap->GetDepthBufferDSV();
+	Diligent::ITextureView *mrtv = g_mirrorColor->GetDefaultView(Diligent::TEXTURE_VIEW_RENDER_TARGET);
+	Diligent::ITextureView *mdsv = g_mirrorDepth->GetDefaultView(Diligent::TEXTURE_VIEW_DEPTH_STENCIL);
+
+	const fixed_t sx = viewx, sy = viewy, sz = viewz;
+	const angle_t sa = viewangle;
+	float savedMVP[16];
+	for (int i = 0; i < 16; i++) savedMVP[i] = g_mvp[i];
+
+	for (unsigned i = 0; i < g_mirrors.Size(); i++)
+	{
+		const MirrorSurface &m = g_mirrors[i];
+
+		// Reflect the camera through the mirror plane. Position mirrors across the plane; the facing
+		// reflects as 2*mirrorAngle - viewangle, which is the same rotation expressed in Doom's
+		// integer angles rather than as a matrix.
+		const float px = FIXED2FLOAT(sx), py = FIXED2FLOAT(sy);
+		const float dist = m.nx * px + m.ny * py - m.d;
+		const float rx = px - 2.f * dist * m.nx;
+		const float ry = py - 2.f * dist * m.ny;
+
+		const float mirrorAng = atan2f(-m.nx, m.ny);   // the line's own direction
+		const float camAng = (float)(sa >> ANGLETOFINESHIFT) * 2.f * 3.14159265f / 8192.f;
+		const float refAng = 2.f * mirrorAng - camAng;
+
+		viewx = FLOAT2FIXED(rx); viewy = FLOAT2FIXED(ry); viewz = sz;
+		viewangle = (angle_t)(refAng / (2.f * 3.14159265f) * 4294967296.0);
+		BuildMVP(g_mvp);
+		viewx = sx; viewy = sy; viewz = sz; viewangle = sa;
+
+		// Clip to the mirror's own plane, in MESH space: x and z there are the map's x and y.
+		g_clipPlane[0] = m.nx; g_clipPlane[1] = 0.f; g_clipPlane[2] = m.ny;
+		g_clipPlane[3] = -m.d;
+		if (g_clipPlane[3] == 0.f) g_clipPlane[3] = 0.0001f;   // w == 0 means "off"
+
+		ctx->SetRenderTargets(1, &mrtv, mdsv, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+		const float clear[4] = { 0.05f, 0.06f, 0.09f, 1.0f };
+		ctx->ClearRenderTarget(mrtv, clear, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+		ctx->ClearDepthStencil(mdsv, Diligent::CLEAR_DEPTH_FLAG, 1.0f, 0,
+			Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+		DrawWorld(ctx);
+
+		// Back to the screen, with the real camera, and draw this mirror's surface.
+		g_clipPlane[0] = g_clipPlane[1] = g_clipPlane[2] = g_clipPlane[3] = 0.f;
+		for (int k = 0; k < 16; k++) g_mvp[k] = savedMVP[k];
+		ctx->SetRenderTargets(1, &brtv, bdsv, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+		{
+			Diligent::MapHelper<float> cb(ctx, g_cb, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD);
+			for (int k = 0; k < 16; k++) cb[k] = g_mvp[k];
+			cb[16] = FIXED2FLOAT(viewx); cb[17] = FIXED2FLOAT(viewz);
+			cb[18] = FIXED2FLOAT(viewy); cb[19] = (float)(int)fua_dg_lightmode;
+			cb[20] = (float)g_lightCount; cb[21] = g_skyAngle; cb[22] = 0.f; cb[23] = 0.f;
+			for (int k = 0; k < 4; k++) cb[24 + k] = 0.f;
+			cb[28] = (float)g_mirrorW; cb[29] = (float)g_mirrorH; cb[30] = cb[31] = 0.f;
+		}
+		Diligent::IBuffer *vbs[] = { g_mirrorVB };
+		const Diligent::Uint64 offsets[] = { (Diligent::Uint64)i * 18 * sizeof(float) };
+		ctx->SetVertexBuffers(0, 1, vbs, offsets, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
+			Diligent::SET_VERTEX_BUFFERS_FLAG_RESET);
+		ctx->SetPipelineState(g_mirrorPSO);
+		ctx->CommitShaderResources(g_mirrorSRB, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+		Diligent::DrawAttribs d;
+		d.NumVertices = 6;
+		d.Flags = Diligent::DRAW_FLAG_VERIFY_ALL;
+		ctx->Draw(d);
+	}
+
+	viewx = sx; viewy = sy; viewz = sz; viewangle = sa;
+	for (int i = 0; i < 16; i++) g_mvp[i] = savedMVP[i];
+}
+
 static void DrawSceneOnce(bool present = true, bool pump = true)
 {
 	auto *ctx = GetContext();
@@ -2079,6 +2362,7 @@ static void DrawSceneOnce(bool present = true, bool pump = true)
 		Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
 	DrawWorld(ctx);
+	RenderMirrors(ctx);
 
 	// [rc4l] 2D last, over everything, with depth off entirely -- it is the frame's top layer.
 	Draw2D(ctx);
@@ -2231,6 +2515,14 @@ static void DrawWorld(Diligent::IDeviceContext *ctx)
 		// [rc4l] The sky rotation for this frame: RenderDome's -180 degrees plus the scroll.
 		cb[21] = g_skyAngle;
 		cb[22] = 0.f; cb[23] = 0.f;
+		// [rc4l] uClipPlane: while a mirror's reflection renders, everything on the FAR side of the
+		// mirror -- the wall it hangs on and the rooms behind it -- sits between the reflected camera
+		// and the scene and would occlude the entire reflection. w == 0 disables it, which is every
+		// ordinary pass.
+		for (int ci = 0; ci < 4; ci++) cb[24 + ci] = g_clipPlane[ci];
+		cb[28] = (float)GetSwapChain()->GetDesc().Width;
+		cb[29] = (float)GetSwapChain()->GetDesc().Height;
+		cb[30] = 0.f; cb[31] = 0.f;
 	}
 
 	// [rc4l] Re-resolve animated textures.
@@ -2384,6 +2676,8 @@ bool SceneBench(int frames, FString &report)
 // the wait: arm, let a frame or two go by, then upload.
 void ReleaseCameraTargets();
 
+static void CollectMirrors();
+
 static bool AutoSetupForLevel()
 {
 	static int  s_gen = -1;
@@ -2414,6 +2708,7 @@ static bool AutoSetupForLevel()
 		ReleaseMaterials();
 		// Camera targets are keyed on FMaterial* too, and go stale for exactly the same reason.
 		ReleaseCameraTargets();
+		CollectMirrors();
 		g_skyMaterial = NULL;
 		g_skyBuiltValid = false;
 		// [rc4l] The switch implies the level mesh. gl_wallmesh is off by default, so the first
