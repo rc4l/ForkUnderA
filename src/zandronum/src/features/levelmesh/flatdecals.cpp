@@ -352,12 +352,20 @@ static void SetDecalBasis(ProjectedDecal &pd,
 	pd.halfW = halfW; pd.halfH = halfH; pd.halfDepth = halfDepth;
 }
 
-// [rc4l] How far a wall decal's box reaches THROUGH the wall.
+// [rc4l] How far a decal's box reaches THROUGH the surface it was shot at.
 //
-// Shallower than a flat's, because the depth axis is horizontal here and a Doom wall is often the
-// only thing between two rooms; reaching too far would print the mark on the far side. Sixteen is
-// still enough to carry a mark round an inside corner onto the wall it meets.
-static const float kWallDecalDepth = 16.f;
+// This is the room the mark has to carry round a corner, so it is sized from the mark: a decal that
+// runs off a join continues for at most its own remaining width or height, and the shader unwraps
+// exactly that far before running out of texture. Sizing it smaller cuts the wrap short; sizing it
+// larger only reaches surfaces the unwrap then discards for being past the end of the picture.
+//
+// The floor of 24 is for the flat case with a small graphic: a bullet hole is a few units across, and
+// its box still has to be deep enough to stay on a floor that steps or slopes underneath it.
+static float DecalBoxDepth(float halfW, float halfH)
+{
+	const float reach = (halfW > halfH) ? halfW : halfH;
+	return (reach > 24.f) ? reach : 24.f;
+}
 
 static void RegisterWallDecals()
 {
@@ -385,7 +393,7 @@ static void RegisterWallDecals()
 		SetDecalBasis(pd, w.ux, w.uy, 0.f,
 		                  0.f, 0.f, w.flipV ? -1.f : 1.f,
 		                  w.nx, w.ny, 0.f,
-		                  w.halfW, w.halfH, kWallDecalDepth);
+		                  w.halfW, w.halfH, DecalBoxDepth(w.halfW, w.halfH));
 		pd.material = mat;
 		pd.r = lit.colorR; pd.g = lit.colorG; pd.b = lit.colorB;
 		if (w.redToAlpha)
@@ -450,16 +458,6 @@ void RegisterFlatDecals()
 		MeshPiece lit;
 		CaptureShading(light, getExtraLight(), cm, lit);
 
-		// [rc4l] The last number is how far THROUGH the surface the box reaches.
-		//
-		// Everything outside the box is discarded, so this is what decides how much of a decal
-		// survives: at eight units a mark on anything but dead-flat ground came out clipped, because
-		// the surface wandered out of the box within the decal's own width. Twenty-four is about
-		// three quarters of a step -- deep enough to keep a mark whole across a slope or a small
-		// ledge, shallow enough that it cannot reach the floor below or the ceiling above. It is also
-		// what lets a mark shot into a corner creep up the adjoining wall instead of stopping dead at
-		// the join, since the wall is inside the box for its first twenty-four units.
-		//
 		// A flat's basis is the world's: U east, V north, N up. Ceilings read V the other way, so a
 		// mark seen from below is not the mirror of the same mark seen from above.
 		ProjectedDecal pd;
@@ -467,7 +465,7 @@ void RegisterFlatDecals()
 		SetDecalBasis(pd, 1.f, 0.f, 0.f,
 		                  0.f, d.ceiling ? -1.f : 1.f, 0.f,
 		                  0.f, 0.f, 1.f,
-		                  hw, hh, 24.f);
+		                  hw, hh, DecalBoxDepth(hw, hh));
 		pd.material = mat;
 		pd.r = lit.colorR; pd.g = lit.colorG; pd.b = lit.colorB;
 		if (d.redToAlpha)

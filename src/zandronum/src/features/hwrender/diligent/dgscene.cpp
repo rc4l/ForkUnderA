@@ -634,36 +634,50 @@ static const char *kScenePSRedAlpha =
 //
 // The box is drawn with depth test OFF and culling OFF so it works from inside as well as outside --
 // walking over a decal must not make it vanish.
-// [rc4l] How much of the decal a surface is entitled to.
+// [rc4l] The decal's texture coordinate, UNWRAPPED around whatever corner it meets.
 //
-// The box paints ANY surface inside it, and that generosity is what makes the pass work on stairs,
-// slopes and 3D floors -- but taken literally it also paints surfaces that run edge-on to the
-// projection, and those get a single column of texels dragged across them. That is what a rocket
-// scorch smearing down onto the floor, a BFG mark streaking round a right-angled corner, and a
-// bullet hole stretching off a box edge all are: the same surface, the same column, one artifact.
+// A plain box projection paints any surface inside it with the coordinate it would have if the
+// surface were flat. That is right on the surface the decal was shot at, and on anything gently
+// angled to it -- a slope, a step, a 3D floor -- which is what the pass is for. It is badly wrong the
+// moment a surface turns edge-on to the projection: the coordinate stops changing in the direction
+// you are travelling, so one column of texels is dragged along it. A rocket scorch streaking down
+// onto the floor, a BFG mark smeared round a right angle, a bullet hole stretched off a box edge --
+// all the same artifact, the same column.
 //
-// So the surface has to be asked which way it faces. There is no normal in the depth buffer, but the
-// reconstructed world position has one in its derivatives -- neighbouring pixels of the same surface
-// span it, so their cross product is its normal, for free and with no G-buffer.
+// The temptation is to throw those surfaces away by their normal. That kills the artifact and the
+// feature with it: a mark shot into the join of a floor and a wall SHOULD carry onto both, and a mark
+// near a linedef join should carry onto the next wall, which is the whole reason wall decals came to
+// this pass. Discarding gives back the hard edge the quad already had.
 //
-// Two terms. `facing` throws away anything more than about seventy degrees off the projection and
-// eases the last thirty in, so a slope or a shallow corner still takes the mark whole and a wall met
-// at a right angle takes none of it. `depth` fades with distance THROUGH the surface, so what does
-// survive at an angle dies out instead of ending in a hard line. Together they are the difference
-// between a mark that follows the geometry and one that is sprayed along the view of it.
+// So unwrap instead of clipping. `c` is how far the surface has moved THROUGH the plane the decal was
+// shot at, and around a corner that distance is exactly the distance travelled along the new surface
+// away from the join. Adding it to whichever texture axis the surface turned about continues the
+// picture across the join at its own scale, seamlessly and unstretched:
 //
-// fwidth guards the seam: at a silhouette edge the two derivatives straddle unrelated surfaces and
-// the cross product is meaningless, so a normal built across a jump in depth is not trusted.
-#define FUA_DECAL_REACH \
-	"float fuaDecalReach(vec3 P, float throughDepth, vec3 axisN) {\n" \
+//     on the wall   : c = 0            -> the coordinate is the flat one, unchanged
+//     onto the floor: b = -h, c = -d   -> t.y = -(h + d), the mark carrying on past the corner
+//
+// Which axis turned is read off the surface normal, which the reconstructed world position already
+// carries in its derivatives -- neighbouring pixels of one surface span it, so their cross product is
+// its normal, free and with no G-buffer. The result runs off the end of the texture when the decal is
+// used up, so the caller discards outside 0..1 rather than clamping, which would smear the edge texel
+// and reintroduce the streak by a different route.
+#define FUA_DECAL_UNWRAP \
+	"vec2 fuaDecalUV(vec3 P, vec3 local, vec3 axisU, vec3 axisV, vec3 axisN) {\n" \
 	"    vec3 dpx = dFdx(P), dpy = dFdy(P);\n" \
-	"    if (dot(dpx, dpx) < 1e-12 || dot(dpy, dpy) < 1e-12) return 0.0;\n" \
 	"    vec3 nrm = normalize(cross(dpx, dpy));\n" \
-	"    float facing = abs(dot(nrm, normalize(axisN)));\n" \
-	"    float k = smoothstep(0.34, 0.62, facing);\n" \
-	"    if (k <= 0.0) return 0.0;\n" \
-	"    float fall = 1.0 - throughDepth * throughDepth;\n" \
-	"    return k * fall * fall;\n" \
+	"    vec2 t = local.xy;\n" \
+	/* The axes arrive divided by their half-extents, so the ratio of two lengths converts a
+	   distance measured in one axis's units into another's. */ \
+	"    float lu = length(axisU), lv = length(axisV), ln = length(axisN);\n" \
+	"    float turnU = abs(dot(nrm, axisU)) / lu;\n" \
+	"    float turnV = abs(dot(nrm, axisV)) / lv;\n" \
+	"    float carry = abs(local.z) / ln;\n" \
+	/* sign(): keep going the way we were already going. A floor below the mark continues downwards,
+	   a ceiling above it upwards, a wall to the right rightwards. */ \
+	"    if (turnV > turnU) t.y += sign(t.y) * carry * lv;\n" \
+	"    else               t.x += sign(t.x) * carry * lu;\n" \
+	"    return t * 0.5 + 0.5;\n" \
 	"}\n"
 
 static const char *kDecalVS =
@@ -697,7 +711,7 @@ static const char *kDecalPS =
 	"layout(location = 3) in vec3 vAxisN;\n"
 	"layout(location = 4) in vec4 vColor;\n"
 	"layout(location = 0) out vec4 outColor;\n"
-	FUA_DECAL_REACH
+	FUA_DECAL_UNWRAP
 	"void main() {\n"
 	"    vec2 uv = gl_FragCoord.xy / vec2(uScreen.x, uScreen.y);\n"
 	"    float d = texture(uSceneDepth, uv).r;\n"
@@ -724,11 +738,12 @@ static const char *kDecalPS =
 	"    if (any(greaterThan(abs(local), vec3(1.0)))) discard;\n"
 	/* Across and up the surface; the depth through it is ignored. That is what makes a mark follow a
 	   step, a slope, or the far side of a corner rather than stopping at it. */
-	"    vec2 t = local.xy * 0.5 + 0.5;\n"
-	"    float reach = fuaDecalReach(P, local.z, vAxisN);\n"
-	"    if (reach <= 0.0) discard;\n"
+	"    vec2 t = fuaDecalUV(P, local, vAxisU, vAxisV, vAxisN);\n"
+	/* Past the end of the picture. Clamping here would repeat the edge texel for ever, which is the
+	   dragged column again by another route, so the fragment is dropped instead. */
+	"    if (any(lessThan(t, vec2(0.0))) || any(greaterThan(t, vec2(1.0)))) discard;\n"
 	"    vec4 texel = texture(uTex, t);\n"
-	"    outColor = vec4(texel.rgb * vColor.rgb, texel.a * vColor.a * reach);\n"
+	"    outColor = vec4(texel.rgb * vColor.rgb, texel.a * vColor.a);\n"
 	"}\n";
 
 // The alpha-mask variant: the silhouette is in the red channel and the colour is the decal's own.
@@ -744,7 +759,7 @@ static const char *kDecalRedPS =
 	"layout(location = 3) in vec3 vAxisN;\n"
 	"layout(location = 4) in vec4 vColor;\n"
 	"layout(location = 0) out vec4 outColor;\n"
-	FUA_DECAL_REACH
+	FUA_DECAL_UNWRAP
 	"void main() {\n"
 	"    vec2 uv = gl_FragCoord.xy / vec2(uScreen.x, uScreen.y);\n"
 	"    float d = texture(uSceneDepth, uv).r;\n"
@@ -760,10 +775,9 @@ static const char *kDecalRedPS =
 	"    vec3 rel = P - vCentre;\n"
 	"    vec3 local = vec3(dot(rel, vAxisU), dot(rel, vAxisV), dot(rel, vAxisN));\n"
 	"    if (any(greaterThan(abs(local), vec3(1.0)))) discard;\n"
-	"    vec2 t = local.xy * 0.5 + 0.5;\n"
-	"    float reach = fuaDecalReach(P, local.z, vAxisN);\n"
-	"    if (reach <= 0.0) discard;\n"
-	"    float a = texture(uTex, t).r * vColor.a * reach;\n"
+	"    vec2 t = fuaDecalUV(P, local, vAxisU, vAxisV, vAxisN);\n"
+	"    if (any(lessThan(t, vec2(0.0))) || any(greaterThan(t, vec2(1.0)))) discard;\n"
+	"    float a = texture(uTex, t).r * vColor.a;\n"
 	"    if (a <= 0.0) discard;\n"
 	"    outColor = vec4(vColor.rgb, a);\n"
 	"}\n";
