@@ -2458,13 +2458,24 @@ static bool EnsureMirrorResources()
 		samp.MipFilter = Diligent::FILTER_TYPE_POINT;
 		samp.AddressU = Diligent::TEXTURE_ADDRESS_CLAMP;
 		samp.AddressV = Diligent::TEXTURE_ADDRESS_CLAMP;
+		// [rc4l] The material array WRAPS; the reflection target does not.
+		//
+		// They shared one sampler, and it clamped. A wall's UVs stay near 0..1 so it looked right,
+		// but a floor tiles its flat across the whole sector -- UVs run past 20 -- and clamping
+		// smeared every one of them into a stretched edge colour. In a reflection that reads as an
+		// untextured floor, which is indistinguishable from a missing texture until you notice the
+		// walls beside it are fine.
+		static Diligent::SamplerDesc matSamp = samp;
+		matSamp.AddressU = Diligent::TEXTURE_ADDRESS_WRAP;
+		matSamp.AddressV = Diligent::TEXTURE_ADDRESS_WRAP;
+
 		static Diligent::ImmutableSamplerDesc samplers[] = {
 			{ Diligent::SHADER_TYPE_PIXEL, "uTex", samp },
 			// [rc4l] uMaterials needs its own immutable sampler. A GLSL sampler2D is a COMBINED image
 			// sampler, so an array of them needs a sampler declared for the array too -- without it the
 			// binding is incomplete and the process dies inside CreateShaderResourceBinding with nothing
 			// in the log, which looks like the array size or the feature rather than a missing sampler.
-			{ Diligent::SHADER_TYPE_PIXEL, "uMaterials", samp },
+			{ Diligent::SHADER_TYPE_PIXEL, "uMaterials", matSamp },
 		};
 
 		Diligent::GraphicsPipelineStateCreateInfo pci;
@@ -2515,14 +2526,20 @@ static bool EnsureMirrorResources()
 				g_mirrorPSO.Release();
 				return false;
 			}
+			unsigned fellBack = 0;
 			for (Diligent::Uint32 mi = 0; mi < 128; mi++)   // matches uMaterials[128] in the shader
 			{
 				const void *mat = (mi < g_batches.Size()) ? g_batches[mi].resolved : NULL;
 				Diligent::IDeviceObject *obj = GetMaterialSRV(mat, 0);
 				if (obj == nullptr) obj = white;
+				if (mi < g_batches.Size() && obj == white) fellBack++;
 				v->SetArray(&obj, mi, 1);
 			}
-			Printf("mirror: %u materials bound\n", (unsigned)g_batches.Size());
+			// [rc4l] Count how many came back as the white placeholder. A reflection showing flat white
+			// surfaces looks the same whether the texture failed to upload or the index is wrong, and
+			// this separates the two without reading it off a screenshot.
+			Printf("mirror: %u materials bound, %u fell back to white\n",
+				(unsigned)g_batches.Size(), fellBack);
 		}
 		g_mirrorSRB.Release();
 	}
