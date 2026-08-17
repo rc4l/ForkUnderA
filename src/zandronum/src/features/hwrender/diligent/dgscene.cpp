@@ -2298,12 +2298,23 @@ static void RenderMirrors(Diligent::IDeviceContext *ctx)
 		const float rx = px - 2.f * dist * m.nx;
 		const float ry = py - 2.f * dist * m.ny;
 
-		const float mirrorAng = atan2f(-m.nx, m.ny);   // the line's own direction
+		// The line's own direction. n = (dy, -dx)/len, so the direction is (-ny, nx) -- getting this
+		// backwards is invisible on an axis-aligned mirror, where the two answers differ by exactly
+		// 360 degrees, and wrong on every other one.
+		const float mirrorAng = atan2f(m.nx, -m.ny);
 		const float camAng = (float)(sa >> ANGLETOFINESHIFT) * 2.f * 3.14159265f / 8192.f;
-		const float refAng = 2.f * mirrorAng - camAng;
+		const float TWOPI = 2.f * 3.14159265f;
+
+		// [rc4l] Wrap before converting. 2*mirrorAngle - camAngle is negative for a large share of
+		// camera angles, and converting a negative double to angle_t -- an UNSIGNED type -- is
+		// undefined. It came out as a direction unrelated to the reflection and lurching as the player
+		// turned, which reads as the mirror tracking the camera rather than reflecting it.
+		float refAng = 2.f * mirrorAng - camAng;
+		refAng = fmodf(refAng, TWOPI);
+		if (refAng < 0.f) refAng += TWOPI;
 
 		viewx = FLOAT2FIXED(rx); viewy = FLOAT2FIXED(ry); viewz = sz;
-		viewangle = (angle_t)(refAng / (2.f * 3.14159265f) * 4294967296.0);
+		viewangle = (angle_t)(refAng / TWOPI * 4294967296.0);
 		BuildMVP(g_mvp);
 		viewx = sx; viewy = sy; viewz = sz; viewangle = sa;
 
