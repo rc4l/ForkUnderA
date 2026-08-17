@@ -44,6 +44,17 @@
       "pitch": 15,
       "shows": "Diagonal hatched z-fighting on the rock face ahead in the Vulkan backend, absent in GL. Reported as happening in many places, so it is likely a depth-precision or duplicate-geometry problem rather than one bad surface.",
       "correct": "The rock face is a single stable texture from every angle, as in GL."
+    },
+    "dbab02-3dfloortop": {
+      "map": "dbab02",
+      "wad": "eoncollection_vol-1_b2.pk3,eonweapons_rc8.5t.pk3,zandrospree2rc2.pk3",
+      "x": 719,
+      "y": -162,
+      "z": 192,
+      "angle": 76,
+      "pitch": 10,
+      "shows": "The walkable top surface of a 3D floor, missing in Vulkan so you see down into the pit below it. Regression from winding flats by the plane normal: a 3D floor's top surface is the control sector's CEILING plane, so its normal points down while the surface is seen from above.",
+      "correct": "The dark 3D floor surface spans the room at the same height as in GL, hiding the pit below."
     }
   }
 }
