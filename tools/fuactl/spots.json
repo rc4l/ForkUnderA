@@ -73,6 +73,15 @@
       "angle": 50.0977,
       "pitch": 17.8418,
       "shows": "BFG at a column. The green glow (BFGLITE) appears detached on the floor well below the black scorch, which stops on the column. The glow's graphic is larger, so its blast radius reaches a floor the scorch's does not -- and nothing was measuring how far a surface is from where the blast actually landed, only whether it was inside the sphere."
+    },
+    "no-decal-seam": {
+      "map": "MAP01",
+      "x": 814.088,
+      "y": 602.226,
+      "z": 72,
+      "angle": 207.9492,
+      "pitch": -2.9883,
+      "shows": "Flying, aimed exactly at a horizontal linedef seam on the green pillar. A BFG hit lands on the line and leaves no decal at all."
     }
   }
 }

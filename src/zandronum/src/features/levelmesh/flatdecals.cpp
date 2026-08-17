@@ -28,6 +28,9 @@ namespace zx { namespace hwrender { void GetDecalPassStats(int &boxes, int &draw
 // upstream of anything this module or the backend does with one.
 namespace zx { namespace decalstats {
 extern int g_wallTries, g_wallNoTemplate, g_wallSuppressed, g_wallNoSurface, g_wallMade;
+extern int g_lastRefusedLine;
+extern double g_lastRefusedZ, g_lastRefusedBackFloor, g_lastRefusedBackCeil;
+extern bool g_lastRefusedTwoSided, g_lastRefusedHasMid;
 }}
 
 // [rc4l] Off would mean the engine behaves as it always has. On by default because a floor you have
@@ -148,6 +151,10 @@ struct WallDecal
 	fixed_t    rawZ;
 	DWORD      renderFlags;
 	float      upOff;                // anchor-to-centre, added after the height is resolved
+	// [rc4l] The height to use when there is no wall to ask -- see SpawnUnstuckWallDecal. A mark
+	// made against a line that cannot hold one has no sidedef to be relative to, so its height is
+	// simply where the blast happened and does not move.
+	float      fixedZ;
 	float      ux, uy;               // along the wall, unit; V is always straight up
 	float      nx, ny;               // out of the wall, unit
 	bool       flipV;                // the graphic is drawn mirrored top to bottom
@@ -445,9 +452,11 @@ static void RegisterWallDecals()
 		MeshPiece lit;
 		CaptureDecalShading(!!(w.renderFlags & RF_FULLBRIGHT), w.light, w.cm, lit);
 
-		// Asked again, not remembered: see WallDecal::wall. A door moving takes its decals with it.
-		if (w.wall == NULL) continue;
-		const float z = FIXED2FLOAT(DBaseDecal::RealZOnWall(w.wall, w.rawZ, w.renderFlags)) + w.upOff;
+		// Asked again, not remembered: see WallDecal::wall. A door moving takes its decals with it --
+		// unless there is no wall to ask, in which case the mark keeps the height it was made at.
+		const float z = (w.wall != NULL)
+			? FIXED2FLOAT(DBaseDecal::RealZOnWall(w.wall, w.rawZ, w.renderFlags)) + w.upOff
+			: w.fixedZ;
 
 		ProjectedDecal pd;
 		pd.x = w.x; pd.y = w.y; pd.z = z;
@@ -492,6 +501,89 @@ void ForgetDecals()
 	g_wallNext = g_wallCount = 0;
 	g_next = g_count = 0;
 	g_projected.Clear();
+}
+
+// [rc4l] A mark for a hit the engine could not attach to anything.
+//
+// DBaseDecal::StickToWall has to pick a TEXTURE for a decal to live on, and on a two-sided line it
+// only ever looks at the upper and lower sections. A hit landing in the open span between them --
+// against an impassable line with nothing drawn on it, which is what stops a projectile short of the
+// wall behind it -- has no texture, so the engine makes no decal at all and neither renderer has
+// anything to draw. Measured on MAP01: line 288, hit at z 108.6, back sector open from 56 to 240,
+// no middle texture. The blast is plainly visible against the pillar behind, and it left nothing.
+//
+// That limit belongs to a decal that is a QUAD glued to a sidedef. Ours is not: it is a point with a
+// radius, and the shader finds whatever surfaces are near it. So there is no reason to refuse -- the
+// mark is made at the impact and creeps onto the real geometry behind, which is where the blast
+// visibly landed. Nothing is attached to the offending line, so nothing rides it if it moves; the
+// height is simply where the blast was.
+void SpawnUnstuckWallDecal(const FDecalTemplate *tpl, fixed_t x, fixed_t y, fixed_t z,
+                           const side_t *wall)
+{
+	if (!fua_flat_decals || tpl == NULL || wall == NULL) return;
+	if (!tpl->PicNum.isValid()) return;
+	const line_t *ld = wall->linedef;
+	if (ld == NULL) return;
+
+	// The lower decal first, exactly as StaticCreate does -- the dark burn under a bright glow.
+	if (tpl->LowerDecal != NULL)
+	{
+		const FDecalTemplate *low = tpl->LowerDecal->GetDecal();
+		if (low != NULL && low != tpl) SpawnUnstuckWallDecal(low, x, y, z, wall);
+	}
+
+	float along[2], outward[2];
+	if (!ComputeWallDecalAxes(FIXED2FLOAT(ld->dx), FIXED2FLOAT(ld->dy),
+	                          ld->sidedef[1] == wall, along, outward)) return;
+
+	FMaterial *mat = FMaterial::ValidateTexture(tpl->PicNum, true, true);
+	if (mat == NULL) return;
+	float sx = FIXED2FLOAT(tpl->ScaleX), sy = FIXED2FLOAT(tpl->ScaleY);
+	if (sx <= 0.f) sx = 1.f;
+	if (sy <= 0.f) sy = 1.f;
+	const float halfW = mat->TextureWidth() * sx * 0.5f;
+	const float halfH = mat->TextureHeight() * sy * 0.5f;
+	if (halfW <= 0.f || halfH <= 0.f) return;
+
+	WallDecal &w = g_wall[g_wallNext];
+	w.x = FIXED2FLOAT(x);
+	w.y = FIXED2FLOAT(y);
+	// No sidedef to be relative to: this one keeps the height it was made at.
+	w.wall = NULL;
+	w.rawZ = 0;
+	w.renderFlags = 0;
+	w.upOff = 0.f;
+	w.fixedZ = FIXED2FLOAT(z);
+	w.ux = along[0]; w.uy = along[1];
+	w.nx = outward[0]; w.ny = outward[1];
+	w.flipV = false;
+	w.pic = tpl->PicNum;
+	w.halfW = halfW; w.halfH = halfH;
+	// Alpha is stored as (actor->alpha >> 1), so it runs 0..32768 rather than 0..65536.
+	w.alpha = tpl->Alpha / 32768.f;
+	if (w.alpha <= 0.f || w.alpha > 1.f) w.alpha = 1.f;
+	w.shadeColor = tpl->ShadeColor & 0xffffff;
+	w.redToAlpha = !!(tpl->RenderStyle.Flags & STYLEF_RedIsAlpha);
+	w.additive = tpl->RenderStyle.BlendOp == STYLEOP_Add &&
+	             tpl->RenderStyle.DestAlpha == STYLEALPHA_One;
+	w.renderFlags = tpl->RenderFlags & RF_FULLBRIGHT;
+
+	const sector_t *sec = wall->sector;
+	w.light = wall->GetLightLevel(false, sec ? sec->lightlevel : 255, true);
+	w.cm.Clear();
+	if (sec != NULL && sec->ColorMap != NULL)
+	{
+		w.cm.LightColor = sec->ColorMap->Color;
+		w.cm.FadeColor = sec->ColorMap->Fade;
+		w.cm.desaturation = sec->ColorMap->Desaturate;
+	}
+	w.fade.startTic = level.maptime;
+	w.fade.decayStart = w.fade.decayTime = 0;
+	GetDecalFadeTiming(tpl->Animator, w.fade.decayStart, w.fade.decayTime);
+	w.lastR = w.lastG = w.lastB = 0.f;
+
+	g_wallNext = (g_wallNext + 1) % kMaxFlatDecals;
+	if (g_wallCount < kMaxFlatDecals) g_wallCount++;
 }
 
 void RegisterFlatDecals()
@@ -585,7 +677,7 @@ void DumpWallDecals()
 	{
 		const WallDecal &w = g_wall[i];
 		const float base = (w.wall != NULL)
-			? FIXED2FLOAT(DBaseDecal::RealZOnWall(w.wall, w.rawZ, w.renderFlags)) : 0.f;
+			? FIXED2FLOAT(DBaseDecal::RealZOnWall(w.wall, w.rawZ, w.renderFlags)) : w.fixedZ;
 		FMaterial *mat = FMaterial::ValidateTexture(w.pic, true, true);
 		// [rc4l] The RESOLVED colour, not only the inputs that went into it.
 		//
@@ -621,6 +713,18 @@ void DumpWallDecals()
 		       "%d no template, %d suppressed by the wall\n",
 			zx::decalstats::g_wallMade, zx::decalstats::g_wallNoSurface,
 			zx::decalstats::g_wallNoTemplate, zx::decalstats::g_wallSuppressed);
+		// [rc4l] The last refusal in full, because a count only says a mark was declined. "The hit
+		// landed in the open gap of a two-sided line" stays a claim until these numbers agree with
+		// it -- the hit height sitting between the back sector's floor and ceiling.
+		if (zx::decalstats::g_lastRefusedLine >= 0)
+		{
+			Printf("  last refusal: line %d, hit z %.1f, back sector %.1f..%.1f, two-sided %d, "
+			       "mid texture %d\n",
+				zx::decalstats::g_lastRefusedLine, zx::decalstats::g_lastRefusedZ,
+				zx::decalstats::g_lastRefusedBackFloor, zx::decalstats::g_lastRefusedBackCeil,
+				zx::decalstats::g_lastRefusedTwoSided ? 1 : 0,
+				zx::decalstats::g_lastRefusedHasMid ? 1 : 0);
+		}
 		Printf("  registered this frame: %d\n", (int)g_projected.Size());
 		Printf("  drawn last frame: %d boxes in %d draw calls\n", boxes, draws);
 	}
