@@ -28,12 +28,6 @@ void Cross3(const float a[3], const float b[3], float out[3])
 
 } // namespace
 
-float ComputeDecalChord(float distanceToSurface, float radius)
-{
-	const float k = radius * radius - distanceToSurface * distanceToSurface;
-	return (k <= 0.f) ? 0.f : std::sqrt(k);
-}
-
 float ComputeDecalReach(float halfW, float halfH)
 {
 	return std::sqrt(halfW * halfW + halfH * halfH) * 1.5f;
@@ -84,52 +78,116 @@ void ComputeDecalLocal(const DecalFrame &f, const float rel[3], float local[3])
 	local[2] = Dot3(rel, f.n);
 }
 
-bool ComputeDecalSurfaceUV(const DecalFrame &f, const float rel[3], const float nrm[3],
-                           float chord, float radius, float &outU, float &outV)
+void ComputeDecalCreepUV(const DecalFrame &f, const float rel[3], const float nrm[3],
+                         float &outU, float &outV, float &outPath)
 {
-	// The picture shrinks with the disc the blast cuts in this surface: whole where it landed, gone
-	// where the sphere no longer reaches. Without this a receding surface took a full-size copy.
-	if (!(radius > 0.f) || !(chord > 0.f)) return false;
-	const float shrink = chord / radius;
+	outU = outV = 0.5f;
+	outPath = 0.f;
 	const float lu = Length3(f.u), lv = Length3(f.v), ln = Length3(f.n);
-	if (!(lu > 0.f) || !(lv > 0.f) || !(ln > 0.f)) return false;
-	if (!(Length3(nrm) > 0.f)) return false;
+	if (!(lu > 0.f) || !(lv > 0.f) || !(ln > 0.f)) return;
+	if (!(Length3(nrm) > 0.f)) return;
 
 	float U[3], V[3], N[3];
 	for (int i = 0; i < 3; i++) { U[i] = f.u[i] / lu; V[i] = f.v[i] / lv; N[i] = f.n[i] / ln; }
 
-	// The mark's across-axis, laid into this surface. Where it lies along the surface's own normal
-	// there is nothing left of it to lay -- on a floor, "along the wall" still means something while
-	// "up the wall" does not -- so the next axis is tried in turn.
-	float su[3];
-	const float dU = Dot3(nrm, U);
-	for (int i = 0; i < 3; i++) su[i] = U[i] - nrm[i] * dU;
-	if (Dot3(su, su) < 0.05f)
-	{
-		const float dV = Dot3(nrm, V);
-		for (int i = 0; i < 3; i++) su[i] = V[i] - nrm[i] * dV;
-	}
-	if (Dot3(su, su) < 0.05f)
-	{
-		const float dN = Dot3(nrm, N);
-		for (int i = 0; i < 3; i++) su[i] = N[i] - nrm[i] * dN;
-	}
-	const float suLen = Length3(su);
-	if (!(suLen > 0.f)) return false;
-	for (int i = 0; i < 3; i++) su[i] /= suLen;
+	const float sd = Dot3(rel, nrm);
+	const float perp = (sd < 0.f) ? -sd : sd;
 
-	float sv[3];
-	Cross3(nrm, su, sv);
-	// Which of the two perpendiculars is "up the picture". On the surface that was hit this is the
-	// mark's own V; on a floor, where V lies along the normal and decides nothing, the tie is broken
-	// by pointing away from the surface that was hit. Both are fixed in world space, so the answer
-	// cannot depend on where anyone is standing.
-	if (Dot3(sv, V) - Dot3(sv, N) < 0.f)
-		for (int i = 0; i < 3; i++) sv[i] = -sv[i];
+	float edge[3];
+	Cross3(N, nrm, edge);
+	const float edgeLen = Length3(edge);
 
-	outU = Dot3(rel, su) * lu / shrink * 0.5f + 0.5f;
-	outV = Dot3(rel, sv) * lv / shrink * 0.5f + 0.5f;
-	return outU >= 0.f && outU <= 1.f && outV >= 0.f && outV <= 1.f;
+	float t[2];
+	if (edgeLen > 0.05f)
+	{
+		for (int i = 0; i < 3; i++) edge[i] /= edgeLen;
+		float outward[3];
+		Cross3(nrm, edge, outward);
+		// Oriented away from the hit plane, so the sign says which side of the corner this is on.
+		if (Dot3(outward, N) < 0.f)
+			for (int i = 0; i < 3; i++) outward[i] = -outward[i];
+
+		const float side = Dot3(rel, outward);
+		const float across = (side < 0.f) ? -side : side;
+		const float along = Dot3(rel, edge);
+		const float crossed = perp + across;
+
+		// Which way the picture continues, taken from the hit surface's own coordinate at the corner.
+		float dir[3];
+		const float sgn = (sd < 0.f) ? -1.f : 1.f;
+		for (int i = 0; i < 3; i++) dir[i] = nrm[i] * sgn;
+
+		const float au = Dot3(edge, U), av = Dot3(edge, V);
+		const float aau = (au < 0.f) ? -au : au;
+		const float aav = (av < 0.f) ? -av : av;
+		if (aau >= aav)
+		{
+			t[0] = along * ((au < 0.f) ? -1.f : 1.f);
+			t[1] = crossed * ((Dot3(dir, V) < 0.f) ? -1.f : 1.f);
+		}
+		else
+		{
+			t[0] = crossed * ((Dot3(dir, U) < 0.f) ? -1.f : 1.f);
+			t[1] = along * ((av < 0.f) ? -1.f : 1.f);
+		}
+		// Round the BACK of the corner the only route is past its end, which costs the along-distance.
+		outPath = (side >= 0.f)
+			? std::sqrt(along * along + crossed * crossed)
+			: (((along < 0.f) ? -along : along) + crossed);
+	}
+	else
+	{
+		// No corner: this surface is the one that was hit, or parallel to it. The picture lies flat.
+		float su[3];
+		const float dU = Dot3(nrm, U);
+		for (int i = 0; i < 3; i++) su[i] = U[i] - nrm[i] * dU;
+		if (Dot3(su, su) < 0.05f)
+		{
+			const float dV = Dot3(nrm, V);
+			for (int i = 0; i < 3; i++) su[i] = V[i] - nrm[i] * dV;
+		}
+		const float suLen = Length3(su);
+		if (!(suLen > 0.f)) return;
+		for (int i = 0; i < 3; i++) su[i] /= suLen;
+
+		float sv[3];
+		Cross3(nrm, su, sv);
+		if (Dot3(sv, V) - Dot3(sv, N) < 0.f)
+			for (int i = 0; i < 3; i++) sv[i] = -sv[i];
+
+		t[0] = Dot3(rel, su);
+		t[1] = Dot3(rel, sv);
+		outPath = std::sqrt(t[0] * t[0] + t[1] * t[1]) + perp;
+	}
+
+	outU = t[0] * lu * 0.5f + 0.5f;
+	outV = t[1] * lv * 0.5f + 0.5f;
+}
+
+float ComputeDecalCreepReach(float path, float radius)
+{
+	if (!(radius > 0.f)) return 0.f;
+	// smoothstep(0.5, 1.0, path / radius), inverted -- the same curve the shader uses.
+	const float x = path / radius;
+	if (x <= 0.5f) return 1.f;
+	if (x >= 1.0f) return 0.f;
+	const float u = (x - 0.5f) / 0.5f;
+	return 1.f - u * u * (3.f - 2.f * u);
+}
+
+float ComputeDecalFade(int spawnTic, int decayStart, int decayTime, int now)
+{
+	if (decayTime <= 0) return 1.f;
+	const int age = now - spawnTic;
+	if (age < decayStart) return 1.f;
+	const int into = age - decayStart;
+	if (into >= decayTime) return 0.f;
+	return 1.f - (float)into / (float)decayTime;
+}
+
+int ComputeDecalShadeLight(bool fullbright, int sectorLight)
+{
+	return fullbright ? 255 : sectorLight;
 }
 
 }} // namespace zx::levelmesh

@@ -50,33 +50,15 @@ namespace zx { namespace levelmesh {
 // how long someone stands still holding the trigger.
 static const int kMaxFlatDecals = 256;
 
-// [rc4l] The engine's own fade curve, not an approximation of it.
-//
-// This was a single 105-tic linear ramp applied to every animated decal. Every fader in the game
-// disagrees with it: GoAway2, which the BFG glow and the plasma flare use, holds FULL alpha for a
-// second and only then fades over three. The approximation therefore started dimming a glow the
-// instant it appeared -- two thirds brightness by the time anyone saw it -- and removed it while the
-// engine still had a second of it left to draw. Beside GL that reads as "the glow is much dimmer in
-// Vulkan", which is how it was reported.
-//
-// A decal whose animator is not a fader is not faded at all: stretchers, sliders and colour changers
-// leave the alpha alone and never remove the mark, so ramping them out made permanent marks vanish.
+// [rc4l] When a decal was made and how it disappears. The curve itself is ComputeDecalFade, in
+// computation/, so it can be argued with directly instead of through a rebuild and a walk back to
+// the same corner -- and so a change to it fails a test rather than a screenshot.
 struct DecalFade
 {
 	int  startTic;      // when the decal was made
 	int  decayStart;    // tics of full alpha after that
 	int  decayTime;     // tics from there to nothing; 0 means it never fades
 };
-
-static float DecalFadeAmount(const DecalFade &f, int now)
-{
-	if (f.decayTime <= 0) return 1.f;
-	const int age = now - f.startTic;
-	if (age < f.decayStart) return 1.f;
-	const int into = age - f.decayStart;
-	if (into >= f.decayTime) return 0.f;
-	return 1.f - (float)into / (float)f.decayTime;
-}
 
 struct FlatDecal
 {
@@ -434,7 +416,7 @@ static void CaptureDecalShading(bool fullbright, int light, const FColormap &cm,
 	CaptureShading(light, getExtraLight(), cm, out);
 	if (!fullbright) return;
 	MeshPiece bright;
-	CaptureShading(255, 0, cm, bright);
+	CaptureShading(ComputeDecalShadeLight(true, light), 0, cm, bright);
 	out.colorR = bright.colorR;
 	out.colorG = bright.colorG;
 	out.colorB = bright.colorB;
@@ -448,7 +430,7 @@ static void RegisterWallDecals()
 		FMaterial *mat = FMaterial::ValidateTexture(w.pic, true, true);
 		if (mat == NULL) continue;
 
-		const float fade = DecalFadeAmount(w.fade, level.maptime);
+		const float fade = ComputeDecalFade(w.fade.startTic, w.fade.decayStart, w.fade.decayTime, level.maptime);
 		if (fade <= 0.f) continue;
 
 		MeshPiece lit;
@@ -685,7 +667,7 @@ void RegisterFlatDecals()
 		if (mat == NULL) continue;
 
 		// Animated decals fade and go. Everything else stays.
-		const float fade = DecalFadeAmount(d.fade, level.maptime);
+		const float fade = ComputeDecalFade(d.fade.startTic, d.fade.decayStart, d.fade.decayTime, level.maptime);
 		if (fade <= 0.f) continue;
 
 		const float hw = mat->TextureWidth() * d.scaleX * 0.5f;
@@ -779,7 +761,7 @@ void DumpWallDecals()
 			fb ? " FULLBRIGHT" : "",
 			(mat && mat->tex && mat->tex->Name.Len()) ? mat->tex->Name.GetChars() : "(none)",
 			w.light, cr, cg, cb, w.shadeColor & 0xffffff,
-			DecalFadeAmount(w.fade, level.maptime));
+			ComputeDecalFade(w.fade.startTic, w.fade.decayStart, w.fade.decayTime, level.maptime));
 	}
 	{
 		int boxes = 0, draws = 0;
