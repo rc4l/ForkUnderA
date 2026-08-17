@@ -77,7 +77,7 @@ const USAGE = `fuactl <command>
   play [--port P] [--map M] [--file a.pk3,b.pk3] [--preset ID --variant V] [--gl] [--side-by-side] [--rt] [--monsters] [--lock]   a build to walk around in, Vulkan live in the window; stays up until Ctrl-C
   build [--root DIR]                 compile the engine and stage it, failing loudly instead of staging a stale binary
   shot <tag> [--port P] [--spot NAME | --at x,y,z --face yaw,pitch]   matched GL/Vulkan pair from a running instance, one camera, sim frozen
-  mark --port P --tag T --at x,y,z --face yaw,pitch [--weapon W] [--map M]   fire at a junction, find the mark, and capture a GL/Vulkan pair of it
+  mark --port P --tag T --at x,y,z --face yaw,pitch [--weapon W] [--map M] [--after TICS]   fire at a junction, find the mark, and capture a GL/Vulkan pair of it (--after catches transient decals before they fade)
   sweep [--maps "MAP01 MAP07"] [--port P]   matched pairs across several maps, ranked by how much the renderers disagree
   doorshot <tag> [--port P] [--at x,y,z --face yaw] [--mid TICS]   a door caught MID-SWING in both renderers, plus a before pair
   look [--port P] [--at x,y,z --face yaw,pitch]   what the crosshair is on and what the level mesh holds for it
@@ -410,7 +410,13 @@ async function main() {
       break;
     }
     // [rc4l] `fuactl png <mode> ...` -- the pixel arithmetic, on the same surface as everything else.
-    case "png": { png(rest); break; }
+    case "png": {
+      // [rc4l] RAW argv, not the parsed flags. png's modes are spelled `--crop`, `--diff`, `--rows`,
+      // which parseFlags reads as flags -- so it swallowed the mode AND the filename after it, and
+      // png saw a list starting with a fraction. Its own parser wants the words as typed.
+      png(process.argv.slice(3));
+      break;
+    }
     // [rc4l] `fuactl look` -- what the crosshair is on, and what the mesh holds for it.
     case "look": {
       const session = (!flags.port && shot.readSession(path.resolve(process.cwd(), ".play-session"))) || null;
@@ -568,7 +574,7 @@ async function main() {
       await c.waitHello();
       try {
         await cap.sandbox(c, { map: flags.map || "MAP01" });
-        await cap.fire(c, { x, y, z, yaw, pitch, weapon });
+        await cap.fire(c, { x, y, z, yaw, pitch, weapon, settleTics: flags.after ? Number(flags.after) : undefined });
         const mark = await cap.findMark(c);
         if (!mark) { console.log(JSON.stringify({ tag, weapon, marked: false })); break; }
         const cam = await cap.placeCamera(c, mark, yaw, {
@@ -577,7 +583,9 @@ async function main() {
         });
         if (!cam) { console.log(JSON.stringify({ tag, weapon, mark, camera: null })); break; }
         await cap.waitTics(c, 6);
-        const shots = await cap.pair(c, tag, { engineBin: flags.engine || resolveEngine() });
+        // shotPair, not a second capture path: it PAUSES the sim between the two halves, which is
+        // the only way a fading decal appears in both.
+        const shots = await shot.shotPair(c, tag, { engineBin: flags.engine || resolveEngine() });
         console.log(JSON.stringify({ tag, weapon, mark, camera: cam, ...shots }, null, 2));
       } finally { c.close(); }
       break;

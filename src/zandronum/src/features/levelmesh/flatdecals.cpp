@@ -40,6 +40,34 @@ namespace zx { namespace levelmesh {
 // how long someone stands still holding the trigger.
 static const int kMaxFlatDecals = 256;
 
+// [rc4l] The engine's own fade curve, not an approximation of it.
+//
+// This was a single 105-tic linear ramp applied to every animated decal. Every fader in the game
+// disagrees with it: GoAway2, which the BFG glow and the plasma flare use, holds FULL alpha for a
+// second and only then fades over three. The approximation therefore started dimming a glow the
+// instant it appeared -- two thirds brightness by the time anyone saw it -- and removed it while the
+// engine still had a second of it left to draw. Beside GL that reads as "the glow is much dimmer in
+// Vulkan", which is how it was reported.
+//
+// A decal whose animator is not a fader is not faded at all: stretchers, sliders and colour changers
+// leave the alpha alone and never remove the mark, so ramping them out made permanent marks vanish.
+struct DecalFade
+{
+	int  startTic;      // when the decal was made
+	int  decayStart;    // tics of full alpha after that
+	int  decayTime;     // tics from there to nothing; 0 means it never fades
+};
+
+static float DecalFadeAmount(const DecalFade &f, int now)
+{
+	if (f.decayTime <= 0) return 1.f;
+	const int age = now - f.startTic;
+	if (age < f.decayStart) return 1.f;
+	const int into = age - f.decayStart;
+	if (into >= f.decayTime) return 0.f;
+	return 1.f - (float)into / (float)f.decayTime;
+}
+
 struct FlatDecal
 {
 	float      x, y, z;
@@ -64,14 +92,15 @@ struct FlatDecal
 	// renderer, and subtracting them teleported every decal by the difference.
 	float      planeZ;
 	bool       planeSampled;
-	// [rc4l] When it was made, and whether it is meant to be permanent.
+	// [rc4l] When it was made, and how it is meant to disappear -- see DecalFade.
 	//
-	// A decal template can carry an FDecalAnimator -- a fader, a stretcher -- and DImpactDecal runs
-	// it so the mark changes and usually disappears. Ignoring it left a plasma scorch, which is
-	// ADDITIVE, sitting at full brightness on the floor forever: a glowing white blob that never
-	// went away. A decal with no animator is permanent, exactly as a bullet hole should be.
-	int        spawnTic;
-	bool       fades;
+	// A decal template can carry an FDecalAnimator, and DImpactDecal runs it so the mark changes and
+	// usually goes. Ignoring it left a plasma scorch, which is ADDITIVE, at full brightness on the
+	// floor forever: a glowing white blob that never went away.
+	DecalFade  fade;
+	// Marked fullbright in DECALDEF: shaded at 255 rather than at the sector's light. See
+	// CaptureDecalShading -- without it a glow disappears into a dark room.
+	bool       fullbright;
 	// [rc4l] How far off the surface this one sits.
 	//
 	// A template's lower decal and the decal above it land at the same point with the same height,
@@ -80,10 +109,6 @@ struct FlatDecal
 	// separates them once and for all, which is also what "lower" means.
 	float      clearance;
 };
-
-// How long an animated decal takes to fade out. The engine's own faders vary; this is one length for
-// all of them, which is wrong in detail and much closer than "never".
-static const int kFadeTics = 105;   // three seconds at 35 tics
 
 // The plane a decal is stuck to: its 3D floor's if it has one, otherwise its sector's.
 static const secplane_t *DecalPlane(const sector_t *sec, F3DFloor *rover, bool ceiling)
@@ -129,8 +154,11 @@ struct WallDecal
 	bool       additive;
 	int        light;
 	FColormap  cm;
-	int        spawnTic;
-	bool       fades;
+	DecalFade  fade;
+	// [rc4l] The colour this decal was last handed to the backend with, kept only so the dump can
+	// print it. Resolving it on demand instead means calling gl_SetColor from a console command,
+	// which mutates the render state outside a frame -- that took the engine down.
+	float      lastR, lastG, lastB;
 };
 static WallDecal g_wall[kMaxFlatDecals];
 static int g_wallNext = 0, g_wallCount = 0;
@@ -264,10 +292,11 @@ void SpawnWallDecal(const DBaseDecal *decal, const side_t *wall, const FDecalTem
 		w.cm.desaturation = sec->ColorMap->Desaturate;
 	}
 
-	w.spawnTic = level.maptime;
+	w.fade.startTic = level.maptime;
+	w.fade.decayStart = w.fade.decayTime = 0;
 	// An animated decal is a temporary one -- see the flat ring. Without this the plasma glow, which
 	// is additive, would sit at full brightness on the wall forever.
-	w.fades = (tpl != NULL && tpl->Animator != NULL);
+	if (tpl != NULL) GetDecalFadeTiming(tpl->Animator, w.fade.decayStart, w.fade.decayTime);
 
 	g_wallNext = (g_wallNext + 1) % kMaxFlatDecals;
 	if (g_wallCount < kMaxFlatDecals) g_wallCount++;
@@ -341,9 +370,11 @@ void SpawnFlatDecal(const FDecalTemplate *tpl, fixed_t x, fixed_t y, fixed_t z, 
 	d.rover = rover;
 	d.planeZ = 0.f;
 	d.planeSampled = false;
-	d.spawnTic = level.maptime;
+	d.fade.startTic = level.maptime;
+	d.fade.decayStart = d.fade.decayTime = 0;
 	d.clearance = isLower ? 0.02f : 0.06f;
-	d.fades = (tpl->Animator != NULL);
+	GetDecalFadeTiming(tpl->Animator, d.fade.decayStart, d.fade.decayTime);
+	d.fullbright = !!(tpl->RenderFlags & RF_FULLBRIGHT);
 
 	g_next = (g_next + 1) % kMaxFlatDecals;
 	if (g_count < kMaxFlatDecals) g_count++;
@@ -374,6 +405,27 @@ static bool SetDecalBasis(ProjectedDecal &pd,
 }
 
 
+// [rc4l] A FULLBRIGHT decal takes its colour from nothing and its fog from the sector it is in.
+//
+// DECALDEF marks the glows fullbright -- BFGLITE, the plasma flare -- and gl_decal.cpp honours it by
+// shading at light 255 with no relative light, while still fogging at the sector's own level. Both
+// halves matter: shading a glow at sector light makes it vanish into a dark corridor, which is what
+// a BFG mark looked like beside GL's, and fogging it at 255 would leave it bright through smoke that
+// dims everything around it.
+//
+// CaptureShading takes ONE light level for both, so getting GL's answer means asking it twice and
+// keeping the colour from the bright call.
+static void CaptureDecalShading(bool fullbright, int light, const FColormap &cm, MeshPiece &out)
+{
+	CaptureShading(light, getExtraLight(), cm, out);
+	if (!fullbright) return;
+	MeshPiece bright;
+	CaptureShading(255, 0, cm, bright);
+	out.colorR = bright.colorR;
+	out.colorG = bright.colorG;
+	out.colorB = bright.colorB;
+}
+
 static void RegisterWallDecals()
 {
 	for (int i = 0; i < g_wallCount; i++)
@@ -382,16 +434,11 @@ static void RegisterWallDecals()
 		FMaterial *mat = FMaterial::ValidateTexture(w.pic, true, true);
 		if (mat == NULL) continue;
 
-		float fade = 1.f;
-		if (w.fades)
-		{
-			const int age = level.maptime - w.spawnTic;
-			if (age >= kFadeTics) continue;
-			if (age > 0) fade = 1.f - (float)age / (float)kFadeTics;
-		}
+		const float fade = DecalFadeAmount(w.fade, level.maptime);
+		if (fade <= 0.f) continue;
 
 		MeshPiece lit;
-		CaptureShading(w.light, getExtraLight(), const_cast<FColormap &>(w.cm), lit);
+		CaptureDecalShading(!!(w.renderFlags & RF_FULLBRIGHT), w.light, w.cm, lit);
 
 		// Asked again, not remembered: see WallDecal::wall. A door moving takes its decals with it.
 		if (w.wall == NULL) continue;
@@ -420,6 +467,8 @@ static void RegisterWallDecals()
 			pd.b *= (w.shadeColor & 0xff) / 255.f;
 		}
 		pd.a = w.alpha * fade;
+		WallDecal &mutw = g_wall[i];
+		mutw.lastR = pd.r; mutw.lastG = pd.g; mutw.lastB = pd.b;
 		pd.additive = w.additive;
 		pd.redToAlpha = w.redToAlpha;
 		pd.radius = ComputeDecalReach(w.halfW, w.halfH);
@@ -448,13 +497,8 @@ void RegisterFlatDecals()
 		if (mat == NULL) continue;
 
 		// Animated decals fade and go. Everything else stays.
-		float fade = 1.f;
-		if (d.fades)
-		{
-			const int age = level.maptime - d.spawnTic;
-			if (age >= kFadeTics) continue;
-			if (age > 0) fade = 1.f - (float)age / (float)kFadeTics;
-		}
+		const float fade = DecalFadeAmount(d.fade, level.maptime);
+		if (fade <= 0.f) continue;
 
 		const float hw = mat->TextureWidth() * d.scaleX * 0.5f;
 		const float hh = mat->TextureHeight() * d.scaleY * 0.5f;
@@ -480,7 +524,7 @@ void RegisterFlatDecals()
 		cm.desaturation = sec->ColorMap->Desaturate;
 
 		MeshPiece lit;
-		CaptureShading(light, getExtraLight(), cm, lit);
+		CaptureDecalShading(d.fullbright, light, cm, lit);
 
 		// A flat's basis is the world's: U east, V north, N up. Ceilings read V the other way, so a
 		// mark seen from below is not the mirror of the same mark seen from above.
@@ -531,12 +575,23 @@ void DumpWallDecals()
 		const float base = (w.wall != NULL)
 			? FIXED2FLOAT(DBaseDecal::RealZOnWall(w.wall, w.rawZ, w.renderFlags)) : 0.f;
 		FMaterial *mat = FMaterial::ValidateTexture(w.pic, true, true);
+		// [rc4l] The RESOLVED colour, not only the inputs that went into it.
+		//
+		// "the glow is too dim" cannot be told apart from "the shade is wrong", "the sector light is
+		// wrong" or "fullbright was not honoured" by looking at a screenshot, and each of those was
+		// guessed at in turn. This is the number the shader actually receives.
+		const bool fb = !!(w.renderFlags & RF_FULLBRIGHT);
+		const float cr = w.lastR, cg = w.lastG, cb = w.lastB;
 		Printf("  %2d  at (%.1f, %.1f)  base z %.2f + upOff %.2f = %.2f\n"
-		       "      half %.1f x %.1f  radius %.1f  alpha %.2f  %s%s  tex %s\n",
+		       "      half %.1f x %.1f  radius %.1f  alpha %.2f  %s%s%s  tex %s\n"
+		       "      light %d -> rgb %.2f,%.2f,%.2f  (shade %06x)\n",
 			i, w.x, w.y, base, w.upOff, base + w.upOff,
 			w.halfW, w.halfH, ComputeDecalReach(w.halfW, w.halfH), w.alpha,
 			w.additive ? "additive" : "blended", w.redToAlpha ? " red-as-alpha" : "",
-			(mat && mat->tex && mat->tex->Name.Len()) ? mat->tex->Name.GetChars() : "(none)");
+			fb ? " FULLBRIGHT" : "",
+			(mat && mat->tex && mat->tex->Name.Len()) ? mat->tex->Name.GetChars() : "(none)",
+			w.light, cr, cg, cb, w.shadeColor & 0xffffff,
+			DecalFadeAmount(w.fade, level.maptime));
 	}
 	{
 		int boxes = 0, draws = 0;

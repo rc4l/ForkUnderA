@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { parseMark, viewpoint, SANDBOX, HOLD_TICS } from "../src/capture.mjs";
+import { parseMark, viewpoint, SANDBOX, HOLD_TICS, ticOf } from "../src/capture.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 // This tool's own directory -- NOT tools/, which holds unrelated CI tripwires that drive nothing.
@@ -96,4 +96,14 @@ test("there is exactly one way to drive the engine, and it is this CLI", () => {
   // subcommand and delete it, not to widen the list.
   const strays = fs.readdirSync(fuactlDir).filter((f) => f.endsWith(".sh"));
   assert.deepEqual(strays, [], `drive the engine through fuactl, not: ${strays.join(", ")}`);
+});
+
+test("the tic counter is read from gametic, and a missing one is an error not a NaN", () => {
+  // [rc4l] This field name was guessed, and a guess that misses produces NaN rather than a failure:
+  // the wait then never advanced and every capture died with an unexplained 30-second timeout.
+  // leveltime is the wrong one regardless -- it restarts at zero on a map change, so a wait spanning
+  // one sits forever watching a counter that went backwards.
+  assert.equal(ticOf({ gametic: 3088, leveltime: 714, inlevel: true }), 3088);
+  assert.throws(() => ticOf({ leveltime: 714 }), /gametic/);
+  assert.throws(() => ticOf(null), /gametic/);
 });

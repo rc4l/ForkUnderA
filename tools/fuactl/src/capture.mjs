@@ -15,7 +15,6 @@
 // are only testable apart.
 import fs from "node:fs";
 import path from "node:path";
-import * as ui from "./ui.mjs";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -66,9 +65,22 @@ export async function waitTics(c, n, { timeoutMs = 30000 } = {}) {
   }
 }
 
+// [rc4l] `gametic`, and specifically not `leveltime`.
+//
+// The field name was guessed here at first, and a guess that misses yields NaN rather than an error:
+// the wait then never advanced and every capture died with "waited 30000ms and never got there".
+// gametic is also the one that survives a map change -- leveltime restarts at zero, so a wait
+// spanning `map MAP01` would sit forever watching a counter that had gone backwards.
+export function ticOf(reply) {
+  // Not `Number(reply && reply.gametic)`: a null reply short-circuits to null, and Number(null) is
+  // ZERO, so a dead connection would have read as "the game is at tic 0" and waited forever.
+  const n = reply == null ? NaN : Number(reply.gametic);
+  if (!Number.isFinite(n)) throw new Error(`sim.tic had no gametic: ${JSON.stringify(reply)}`);
+  return n;
+}
+
 async function tic(c) {
-  const r = await c.rpc("sim.tic", {});
-  return Number(r && (r.tic ?? r.tics ?? r.value ?? r));
+  return ticOf(await c.rpc("sim.tic", {}));
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -112,41 +124,26 @@ export async function sandbox(c, { map = null, vulkan = true } = {}) {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Capturing
-// ---------------------------------------------------------------------------------------------
-
-// A matched pair from ONE camera: the Vulkan backend and GL, with nothing moving in between.
-export async function pair(c, tag, { engineBin, outDir = "F:/ForkUnderA/dist-windows/sweep" } = {}) {
-  const vk = path.posix.join(outDir, `${tag}_vk.png`);
-  for (const f of [vk, path.posix.join(outDir, `${tag}_gl.png`)]) {
-    try { fs.rmSync(f, { force: true }); } catch { /* not there is fine */ }
-  }
-  await exec(c, `fua_diligent_shot ${vk}`);
-  await waitTics(c, 8);
-  await exec(c, "fua_vulkan 0");
-  await waitTics(c, 8);
-  const gl = await ui.screenshot(c, engineBin, `sweep/${tag}_gl`);
-  await waitTics(c, 8);
-  await exec(c, "fua_vulkan 1");
-  await waitTics(c, 4);
-  return { vk, gl: gl.path };
-}
-
-// ---------------------------------------------------------------------------------------------
 // Making a mark, and finding it again
 // ---------------------------------------------------------------------------------------------
 
 // The BFG spends about a second winding up before the ball leaves; a rocket is gone on the next tic.
 export const HOLD_TICS = (weapon) => (/BFG/i.test(weapon) ? 110 : 8);
 
-export async function fire(c, { x, y, z, yaw, pitch, weapon = "RocketLauncher" }) {
+// [rc4l] settleTics is how long the mark is allowed to age before anyone looks at it.
+//
+// Not a constant, because some decals are TRANSIENT. The BFG's green glow is `animator GoAway2` in
+// DECALDEF -- it fades over about three seconds and is gone -- so a capture that waits a comfortable
+// 120 tics for everything to settle photographs a wall with only the black scorch on it and reports
+// the glow as missing when it was merely over. The scorch is permanent and does not care.
+export async function fire(c, { x, y, z, yaw, pitch, weapon = "RocketLauncher", settleTics = 120 }) {
   await c.rpc("player.setpos", { x, y, z, angle: yaw, pitch });
   await exec(c, `use ${weapon}`);
   await waitTics(c, 25);
   await exec(c, "+attack", { quietMs: 60 });
   await waitTics(c, HOLD_TICS(weapon));
   await exec(c, "-attack", { quietMs: 60 });
-  await waitTics(c, 120);   // the projectile flies, lands, and its decals settle
+  await waitTics(c, settleTics);
 }
 
 // [rc4l] Read the newest mark out of what the decal dumps printed. Pure, so it is testable.
