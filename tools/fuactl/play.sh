@@ -33,6 +33,29 @@ TASK=$(mktemp -u)
 # three console commands in a fixed order from down here, which worked exactly once: change map and
 # the mesh was still the old one's, so the new level rendered as the previous level's geometry.
 # GL=1 launches the same build on the GL renderer for an A/B.
+# [rc4l] PRESET/VARIANT resolve a catalogue entry to its file list, so playing what the HOST tab
+# offers does not mean copying six pk3 paths out of a JSON file by hand.
+#
+#   PRESET=gvh VARIANT=lod MAP=gvh04 bash play.sh
+#
+# Files come from the same download store the catalogue itself uses, so anything already fetched
+# through the HOST tab just works. A missing file is named rather than silently dropped: a wad list
+# that is quietly one short loads a map with no textures and looks like a renderer bug.
+if [ -n "${PRESET:-}" ]; then
+  WAD=$(node -e '
+    const fs=require("fs"),path=require("path");
+    const id=process.argv[1], want=process.argv[2];
+    const d=JSON.parse(fs.readFileSync(path.resolve("../../catalogue",id,"addon.json"),"utf8"));
+    const v=want ? d.variants.find(x=>x.id===want) : (d.variants.find(x=>x.default)||d.variants[0]);
+    if(!v){console.error("no such variant: "+want);process.exit(1);}
+    const dir=process.env.LOCALAPPDATA+"/ForkUnderA/pwads";
+    const out=[],missing=[];
+    for(const f of (v.files||[])){const p=path.join(dir,f.name);(fs.existsSync(p)?out:missing).push(p);}
+    if(missing.length){console.error("missing, fetch with fua_download: "+missing.join(" "));process.exit(1);}
+    process.stdout.write(out.join(","));
+  ' "$PRESET" "${VARIANT:-}") || exit 1
+fi
+
 ARGS=(launch --port "$PORT" --iwad "$IWAD" --map "$MAP" --play)
 [ -n "${GL:-}" ] || ARGS+=(--cvar fua_vulkan=1)
 [ -n "${WAD:-}" ] && ARGS+=(--file "$WAD")

@@ -594,7 +594,15 @@ static void BuildMVP(float *m)
 // Drawn first with depth test and depth write OFF, so it fills the frame and the world paints over
 // it. That is exactly Doom's rule -- sky is whatever is behind everything else -- and it means sky
 // flats need no special handling at all: nothing is drawn there, so the sky survives.
-struct SkyVertexData { float x, y, z, u, v; };
+// [rc4l] r,g,b,useTex carry the sky CAP.
+//
+// The dome only spans 60 degrees of elevation; above that there is a hole, and GZDoom fills it with
+// a flat-coloured fan in the sky texture's average top colour (GetSkyCapColor). Without it the hole
+// showed the backend's clear colour -- a dark navy disc straight overhead, which is what "the very
+// top of the sky is missing the coloured thing GL has" was.
+//
+// useTex is 1 for the textured dome and 0 for the caps, so one pipeline draws both.
+struct SkyVertexData { float x, y, z, u, v, r, g, b, useTex; };
 
 static Diligent::RefCntAutoPtr<Diligent::IBuffer>        g_skyVB;
 static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_skyPSO;
@@ -608,20 +616,27 @@ static const char *kSkyVS =
 	"#version 450\n"
 	"layout(location = 0) in vec3 aPos;\n"
 	"layout(location = 1) in vec2 aUV;\n"
+	"layout(location = 2) in vec4 aSkyColor;\n"
 	"layout(binding = 0) uniform Constants { mat4 uMVP; vec4 uCameraPos; vec4 uLightParams; };\n"
 	"layout(location = 0) out vec2 vUV;\n"
+	"layout(location = 1) out vec4 vSkyColor;\n"
 	"void main() {\n"
 	// Centred on the camera, so the dome is effectively at infinity.
 	"    gl_Position = uMVP * vec4(aPos + uCameraPos.xyz, 1.0);\n"
 	"    vUV = aUV;\n"
+	"    vSkyColor = aSkyColor;\n"
 	"}\n";
 
 static const char *kSkyPS =
 	"#version 450\n"
 	"layout(location = 0) in vec2 vUV;\n"
+	"layout(location = 1) in vec4 vSkyColor;\n"
 	"layout(binding = 1) uniform sampler2D uTex;\n"
 	"layout(location = 0) out vec4 outColor;\n"
-	"void main() { outColor = vec4(texture(uTex, vUV).rgb, 1.0); }\n";
+	// vSkyColor.a selects: 1 takes the texture (the dome), 0 takes the flat colour (the caps).
+	"void main() {\n"
+	"    outColor = vec4(mix(vSkyColor.rgb, texture(uTex, vUV).rgb, vSkyColor.a), 1.0);\n"
+	"}\n";
 
 // [rc4l] One sky dome vertex, with RenderDome's model and texture transforms folded in.
 //
@@ -658,6 +673,8 @@ static void SkyVertexAt(int r, int c, int rows, int cols, bool yflip, float mode
 
 // The current sky texture's SkyOffset, captured in EnsureSky where the FTexture is in hand.
 static int g_skyTexOffset = 0;
+// [0] top cap, [1] bottom cap -- GetSkyCapColor(false/true), captured where the FTexture is in hand.
+static PalEntry g_skyCapColor[2];
 
 static void BuildSkyDome(int texw, int texh)
 {
@@ -712,8 +729,39 @@ static void BuildSkyDome(int texw, int texh)
 				SkyVertexAt(r + 1, c,     rows, cols, yflip, modelScaleY, modelTransY, xscale, vscale, q[1]);
 				SkyVertexAt(r,     c + 1, rows, cols, yflip, modelScaleY, modelTransY, xscale, vscale, q[2]);
 				SkyVertexAt(r + 1, c + 1, rows, cols, yflip, modelScaleY, modelTransY, xscale, vscale, q[3]);
+				for (int k = 0; k < 4; k++) { q[k].r = q[k].g = q[k].b = 1.f; q[k].useTex = 1.f; }
 				verts.Push(q[0]); verts.Push(q[1]); verts.Push(q[2]);
 				verts.Push(q[2]); verts.Push(q[1]); verts.Push(q[3]);
+			}
+		}
+
+		// [rc4l] Cap the hole the dome leaves.
+		//
+		// The dome only reaches 60 degrees of elevation, so straight up there is nothing -- and what
+		// showed through was the backend's clear colour, a dark navy disc overhead on every open map.
+		// GZDoom fills it with a flat fan in the sky texture's own average edge colour, which is why
+		// GL has "the coloured thing at the very top" and this did not.
+		//
+		// The fan is over the row-1 ring, matching RenderDome's RenderRow(GL_TRIANGLE_FAN, ...), and
+		// is emitted as a triangle list because that is what the rest of this buffer is.
+		{
+			const PalEntry cap = g_skyCapColor[hemi ? 1 : 0];
+			SkyVertexData centre;
+			SkyVertexAt(1, 0, rows, cols, yflip, modelScaleY, modelTransY, xscale, vscale, centre);
+			for (int c = 1; c < cols; c++)
+			{
+				SkyVertexData a, b;
+				SkyVertexAt(1, c,     rows, cols, yflip, modelScaleY, modelTransY, xscale, vscale, a);
+				SkyVertexAt(1, c + 1, rows, cols, yflip, modelScaleY, modelTransY, xscale, vscale, b);
+				SkyVertexData tri[3] = { centre, a, b };
+				for (int k = 0; k < 3; k++)
+				{
+					tri[k].r = cap.r / 255.f; tri[k].g = cap.g / 255.f; tri[k].b = cap.b / 255.f;
+					tri[k].useTex = 0.f;
+					// Flat disc: the cap is a lid, not part of the dome's curve.
+					tri[k].y = centre.y;
+				}
+				verts.Push(tri[0]); verts.Push(tri[1]); verts.Push(tri[2]);
 			}
 		}
 	}
@@ -762,6 +810,7 @@ static bool EnsureSkyPipeline()
 	Diligent::LayoutElement layout[] = {
 		Diligent::LayoutElement{0, 0, 3, Diligent::VT_FLOAT32, false},
 		Diligent::LayoutElement{1, 0, 2, Diligent::VT_FLOAT32, false},
+		Diligent::LayoutElement{2, 0, 4, Diligent::VT_FLOAT32, false},
 	};
 	static Diligent::ShaderResourceVariableDesc vars[] = {
 		{ Diligent::SHADER_TYPE_PIXEL, "uTex", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
@@ -788,7 +837,7 @@ static bool EnsureSkyPipeline()
 	pci.GraphicsPipeline.DepthStencilDesc.DepthEnable = false;
 	pci.GraphicsPipeline.DepthStencilDesc.DepthWriteEnable = false;
 	pci.GraphicsPipeline.InputLayout.LayoutElements = layout;
-	pci.GraphicsPipeline.InputLayout.NumElements = 2;
+	pci.GraphicsPipeline.InputLayout.NumElements = 3;
 	pci.PSODesc.ResourceLayout.DefaultVariableType = Diligent::SHADER_RESOURCE_VARIABLE_TYPE_STATIC;
 	pci.PSODesc.ResourceLayout.Variables = vars;
 	pci.PSODesc.ResourceLayout.NumVariables = 1;
@@ -820,6 +869,8 @@ static void EnsureSky()
 	if (mat == NULL) { g_skyBuiltValid = false; return; }
 
 	g_skyTexOffset = (mat->tex != NULL) ? mat->tex->SkyOffset : 0;
+	g_skyCapColor[0] = (mat->tex != NULL) ? mat->tex->GetSkyCapColor(false) : PalEntry(0);
+	g_skyCapColor[1] = (mat->tex != NULL) ? mat->tex->GetSkyCapColor(true)  : PalEntry(0);
 	// [rc4l] Say what the sky actually IS. Three rounds of reasoning about which height branch the
 	// dome should take were spent without once checking whether the engine draws a dome at all --
 	// a skybox goes through RenderBox instead, and no amount of dome arithmetic will match it.
@@ -1237,10 +1288,28 @@ static void Draw2D(Diligent::IDeviceContext *ctx)
 		{
 			const zx::hwrender::Quad2D &q = quads[i];
 			Vertex2D v[4];
+			if (q.kind == 1)
+			{
+				// [rc4l] A line, widened into a quad along its own perpendicular. Doing it here rather
+				// than with a line topology keeps every 2D record in one buffer and one draw order,
+				// which is what a painter's-algorithm layer needs.
+				const float dx = q.lx2 - q.x, dy = q.ly2 - q.y;
+				const float len = sqrtf(dx * dx + dy * dy);
+				const float nx = (len > 0.0001f) ? (-dy / len) * 0.5f : 0.5f;
+				const float ny = (len > 0.0001f) ? ( dx / len) * 0.5f : 0.0f;
+				v[0].x = q.x   + nx; v[0].y = q.y   + ny;
+				v[1].x = q.x   - nx; v[1].y = q.y   - ny;
+				v[2].x = q.lx2 + nx; v[2].y = q.ly2 + ny;
+				v[3].x = q.lx2 - nx; v[3].y = q.ly2 - ny;
+				for (int k = 0; k < 4; k++) { v[k].u = 0.f; v[k].v = 0.f; }
+			}
+			else
+			{
 			v[0].x = q.x;       v[0].y = q.y;       v[0].u = q.u1; v[0].v = q.v1;
 			v[1].x = q.x;       v[1].y = q.y + q.h; v[1].u = q.u1; v[1].v = q.v2;
 			v[2].x = q.x + q.w; v[2].y = q.y;       v[2].u = q.u2; v[2].v = q.v1;
 			v[3].x = q.x + q.w; v[3].y = q.y + q.h; v[3].u = q.u2; v[3].v = q.v2;
+			}
 			for (int k = 0; k < 4; k++)
 			{ v[k].r = q.r; v[k].g = q.g; v[k].b = q.b; v[k].a = q.a; v[k].texMode = (float)q.texMode; }
 			vb.Push(v[0]); vb.Push(v[1]); vb.Push(v[2]);

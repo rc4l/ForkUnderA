@@ -471,7 +471,18 @@ void FGLRenderer::DrawLine(int x1, int y1, int x2, int y2, int palcolor, uint32 
 	ptr->Set(x1, y1, 0, 0, 0); ptr++;
 	ptr->Set(x2, y2, 0, 0, 0); ptr++;
 	GLRenderer->mVBO->RenderCurrent(ptr, GL_LINES);
-	
+
+	// [rc4l] features/hwrender: the automap is made of these, and a backend that only replays rects
+	// drew its background and nothing else.
+	{
+		zx::hwrender::Quad2D q;
+		memset(&q, 0, sizeof(q));
+		q.kind = 1;
+		q.x = (float)x1; q.y = (float)y1; q.lx2 = (float)x2; q.ly2 = (float)y2;
+		q.r = p.r / 255.f; q.g = p.g / 255.f; q.b = p.b / 255.f; q.a = 1.f;
+		zx::hwrender::Record2D(q);
+	}
+
 	gl_RenderState.EnableTexture(true);
 }
 
@@ -490,6 +501,14 @@ void FGLRenderer::DrawPixel(int x1, int y1, int palcolor, uint32 color)
 	FFlatVertex *ptr = GLRenderer->mVBO->GetBuffer();
 	ptr->Set(x1, y1, 0, 0, 0); ptr++;
 	GLRenderer->mVBO->RenderCurrent(ptr, GL_POINTS);
+
+	{
+		zx::hwrender::Quad2D q;
+		memset(&q, 0, sizeof(q));
+		q.x = (float)x1; q.y = (float)y1; q.w = 1.f; q.h = 1.f;
+		q.r = p.r / 255.f; q.g = p.g / 255.f; q.b = p.b / 255.f; q.a = 1.f;
+		zx::hwrender::Record2D(q);
+	}
 
 	gl_RenderState.EnableTexture(true);
 }
