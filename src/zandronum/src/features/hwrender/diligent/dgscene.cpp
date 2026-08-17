@@ -518,7 +518,7 @@ static const char *kSceneVS =
 	"    float index = (59.0/31.0 - L) - (scale * 232.0/31.0 - 232.0/31.0);\n" \
 	"    return clamp(index, min_L, 1.0);\n" \
 	"}\n" \
-	"vec3 fuaShade(vec3 texel) {\n" \
+	"vec3 fuaShadeEx(vec3 texel, bool wantDynLight) {\n" \
 	"    float dbg = uCameraPos.w;\n" \
 	"    if (dbg == 2.0) return vec3(gl_FragCoord.z);\n" \
 	"    if (dbg == 3.0) return vec3(fract(gl_FragCoord.z * 64.0));\n" \
@@ -557,11 +557,18 @@ static const char *kSceneVS =
 	   texel white", and a lava floor came out as a washed-out pink slab: luminance 41 -> 162 at the
 	   same camera. Right value, right texture, wrong point in the pipeline. */ \
 	"    color = min(color + texture(uBrightmap, vUV).rgb, vec3(1.0));\n" \
-	"    color = fuaDynLight(color);\n" \
+	/* [rc4l] Dynamic lights are optional, because a SHADED DECAL must not take them.
+	   Its colour is its own -- a scorch mark is black -- and that colour arrives folded into the
+	   vertex light, so a black decal has vColor 0 and the dynamic light term is then the ONLY thing
+	   left in it. Firing a weapon lit every burn mark in the room with the muzzle flash's colour.
+	   GL never has this problem: it applies the decal's colour as an OBJECT COLOUR that multiplies
+	   the finished fragment, and zero times anything is still zero. */ \
+	"    if (wantDynLight) color = fuaDynLight(color);\n" \
 	"    vec3 frag = texel * color;\n" \
 	"    if (fogMode < 0.0) frag = mix(vFog.rgb, frag, fogfactor);\n" \
 	"    return frag;\n" \
-	"}\n"
+	"}\n" \
+	"vec3 fuaShade(vec3 texel) { return fuaShadeEx(texel, true); }\n"
 
 // [rc4l] Opaque: no discard, so early-Z survives and overdrawn fragments are never shaded.
 static const char *kScenePSOpaque =
@@ -604,7 +611,10 @@ static const char *kScenePSRedAlpha =
 	"void main() {\n"
 	"    float a = texture(uTex, vUV).r * vLightParm.z;\n"
 	"    if (a <= 0.0) discard;\n"
-	"    outColor = vec4(fuaShade(vec3(1.0)), a);\n"
+	// No dynamic lights: see fuaShadeEx. A scorch mark is black, so its vertex colour is zero, and
+	// the dynamic light term would be the only thing left in it -- every burn mark in the room lit
+	// up with the muzzle flash's colour when the weapon fired.
+	"    outColor = vec4(fuaShadeEx(vec3(1.0), false), a);\n"
 	"}\n";
 
 // [rc4l] Column-major perspective * view, matching the GL renderer's convention in

@@ -24,12 +24,19 @@
 #include "textures/textures.h"
 
 class FDecalTemplate;
+struct F3DFloor;
 
 namespace zx { namespace levelmesh {
 
 // Mark a floor or ceiling at (x, y) on the plane through z. `ceiling` says which way it faces, and
 // decides both the winding and which way the quad is nudged off the plane.
-void SpawnFlatDecal(const FDecalTemplate *tpl, fixed_t x, fixed_t y, fixed_t z, bool ceiling);
+//
+// `rover` is the 3D floor the shot landed on, or NULL for the sector's own plane. It matters because
+// a decal has to RIDE the surface it is stuck to, and a 3D floor moves independently of the sector
+// that contains it -- tracking the sector's floor instead would leave a decal hanging in the air the
+// moment the 3D floor it is painted on moves.
+void SpawnFlatDecal(const FDecalTemplate *tpl, fixed_t x, fixed_t y, fixed_t z, bool ceiling,
+                    F3DFloor *rover);
 
 // Emit this frame's flat decals into the dynamic mesh. Called once per frame beside the sprites.
 void RegisterFlatDecals();
@@ -48,7 +55,8 @@ extern float g_lastX, g_lastY, g_lastZ, g_lastHW, g_lastHH, g_lastAlpha;
 extern bool g_lastRed;
 extern unsigned int g_lastShade;
 extern int g_lastLight;
-extern int g_spawnTries, g_spawnNoTemplate, g_spawnNoTexture, g_spawnNoSector, g_emitted;
+extern int g_spawnTries, g_spawnNoTemplate, g_spawnNoTexture, g_spawnNoSector,
+           g_spawnNoSurface, g_emitted;
 
 }} // namespace zx::levelmesh
 

@@ -13,6 +13,7 @@
 #include "gl/data/gl_vertexbuffer.h"   // FFlatVertex
 #include "gl/data/gl_data.h"           // getExtraLight
 #include "gl/textures/gl_material.h"
+#include "p_3dfloors.h"
 #include "p_trace.h"                   // ETraceResult, for NoteImpact
 #include "c_cvars.h"
 #include "c_dispatch.h"
@@ -43,9 +44,29 @@ struct FlatDecal
 	DWORD      shadeColor;
 	bool       redToAlpha;
 	bool       additive;
-	int        sectorIndex;   // whose light this takes, and whose plane it must follow
-	float      planeZAtSpawn; // where that plane was when the decal was made -- see RegisterFlatDecals
+	int        sectorIndex;   // whose light this takes
+	// [rc4l] The surface this decal is stuck to, which is NOT always the sector's own plane.
+	//
+	// A shot landing on a 3D floor must ride that 3D floor: it moves independently of the sector
+	// containing it, so tracking the sector's plane would leave the decal hanging in the air the
+	// moment a 3D-floor lift moved. NULL means the sector's own plane.
+	F3DFloor  *rover;
+	float      planeZAtSpawn; // where that plane was when the decal was made
 };
+
+// The plane a decal is stuck to: its 3D floor's if it has one, otherwise its sector's.
+static const secplane_t *DecalPlane(const sector_t *sec, F3DFloor *rover, bool ceiling)
+{
+	if (rover != NULL)
+	{
+		// A 3D floor's walkable top surface is its BOTTOM planeref, because the control sector is
+		// modelled upside down -- the same inversion that made 3D floor tops vanish when the flat
+		// mesh wound them by their plane normal.
+		const F3DFloor::planeref &pr = ceiling ? rover->top : rover->bottom;
+		if (pr.plane != NULL) return pr.plane;
+	}
+	return ceiling ? &sec->ceilingplane : &sec->floorplane;
+}
 
 static FlatDecal g_decals[kMaxFlatDecals];
 // [rc4l] Split by cause: "the floor branch never ran" and "it ran and the template was empty" look
@@ -67,7 +88,8 @@ float g_lastX=0, g_lastY=0, g_lastZ=0, g_lastHW=0, g_lastHH=0, g_lastAlpha=0;
 bool g_lastRed=false;
 unsigned int g_lastShade=0;
 int g_lastLight=0;
-int g_spawnTries = 0, g_spawnNoTemplate = 0, g_spawnNoTexture = 0, g_spawnNoSector = 0, g_emitted = 0;
+int g_spawnTries = 0, g_spawnNoTemplate = 0, g_spawnNoTexture = 0, g_spawnNoSector = 0,
+    g_spawnNoSurface = 0, g_emitted = 0;
 static int g_count = 0;   // how many slots are live, up to kMaxFlatDecals
 static int g_next = 0;    // where the next one goes
 
@@ -79,7 +101,8 @@ void ClearFlatDecals()
 	g_next = 0;
 }
 
-void SpawnFlatDecal(const FDecalTemplate *tpl, fixed_t x, fixed_t y, fixed_t z, bool ceiling)
+void SpawnFlatDecal(const FDecalTemplate *tpl, fixed_t x, fixed_t y, fixed_t z, bool ceiling,
+                    F3DFloor *rover)
 {
 	g_spawnTries++;
 	if (!fua_flat_decals) return;
@@ -88,6 +111,25 @@ void SpawnFlatDecal(const FDecalTemplate *tpl, fixed_t x, fixed_t y, fixed_t z, 
 
 	sector_t *sec = P_PointInSector(x, y);
 	if (sec == NULL) { g_spawnNoSector++; return; }
+
+	// [rc4l] Honour the surface's own refusal, exactly as the wall path does.
+	//
+	// ANIMDEFS marks every animated texture bNoDecals unless it says `allowdecals`, and
+	// DBaseDecal::StaticCreate drops the decal when the wall texture has that flag. A decal glued to
+	// a flowing nukage floor would sit still while the texture moved underneath it, which is why the
+	// rule exists -- and it has to hold on floors for the same reason it holds on walls.
+	{
+		const sector_t *ts = sec;
+		int side = ceiling ? sector_t::ceiling : sector_t::floor;
+		if (rover != NULL && rover->model != NULL)
+		{
+			ts = rover->model;
+			const F3DFloor::planeref &pr = ceiling ? rover->top : rover->bottom;
+			side = pr.isceiling ? sector_t::ceiling : sector_t::floor;
+		}
+		FTexture *surf = TexMan[ts->GetTexture(side)];
+		if (surf == NULL || surf->bNoDecals) { g_spawnNoSurface++; return; }
+	}
 
 	FlatDecal &d = g_decals[g_next];
 	d.x = FIXED2FLOAT(x);
@@ -108,10 +150,8 @@ void SpawnFlatDecal(const FDecalTemplate *tpl, fixed_t x, fixed_t y, fixed_t z, 
 	d.additive = tpl->RenderStyle.BlendOp == STYLEOP_Add &&
 	             tpl->RenderStyle.DestAlpha == STYLEALPHA_One;
 	d.sectorIndex = int(sec - sectors);
-	{
-		const secplane_t &pl = ceiling ? sec->ceilingplane : sec->floorplane;
-		d.planeZAtSpawn = FIXED2FLOAT(pl.ZatPoint(x, y));
-	}
+	d.rover = rover;
+	d.planeZAtSpawn = FIXED2FLOAT(DecalPlane(sec, rover, ceiling)->ZatPoint(x, y));
 
 	g_next = (g_next + 1) % kMaxFlatDecals;
 	if (g_count < kMaxFlatDecals) g_count++;
@@ -143,8 +183,8 @@ void RegisterFlatDecals()
 		// lift, which is the only reason to consult the plane at all.
 		if (d.sectorIndex < 0 || d.sectorIndex >= numsectors) continue;
 		const sector_t *sec = &sectors[d.sectorIndex];
-		const secplane_t &plane = d.ceiling ? sec->ceilingplane : sec->floorplane;
-		const float planeNow = FIXED2FLOAT(plane.ZatPoint(FLOAT2FIXED(d.x), FLOAT2FIXED(d.y)));
+		const secplane_t *plane = DecalPlane(sec, d.rover, d.ceiling);
+		const float planeNow = FIXED2FLOAT(plane->ZatPoint(FLOAT2FIXED(d.x), FLOAT2FIXED(d.y)));
 		const float pz = d.z + (planeNow - d.planeZAtSpawn);
 
 		// The depth-bias pipeline handles the coplanar fight; this offset only keeps the quad on the
@@ -183,7 +223,8 @@ void RegisterFlatDecals()
 			d.x, d.y, pz);
 		// [rc4l] The first decal's actual numbers, so "it is not being drawn" can be told apart from
 		// "it is being drawn somewhere I am not looking, or at zero size, or in black on black".
-		if (g_emitted == 0)
+		// The LAST one emitted, not the first: the ring holds older decals ahead of the newest, and
+		// reporting the oldest made every check look like nothing had spawned.
 		{
 			g_lastX = d.x; g_lastY = d.y; g_lastZ = pz;
 			g_lastHW = hw; g_lastHH = hh;
@@ -216,7 +257,7 @@ CCMD( fua_flatdecals )
 			zx::levelmesh::g_spawnNoTemplate + zx::levelmesh::g_spawnNoTexture +
 				zx::levelmesh::g_spawnNoSector,
 			zx::levelmesh::g_spawnNoTemplate, zx::levelmesh::g_spawnNoTexture,
-			zx::levelmesh::g_spawnNoSector, zx::levelmesh::g_emitted );
+			zx::levelmesh::g_spawnNoSector + zx::levelmesh::g_spawnNoSurface, zx::levelmesh::g_emitted );
 	Printf( "  impacts seen: wall %d, floor %d, ceiling %d, other %d, suppressed %d\n",
 			zx::levelmesh::g_impactWall, zx::levelmesh::g_impactFloor,
 			zx::levelmesh::g_impactCeiling, zx::levelmesh::g_impactOther,
