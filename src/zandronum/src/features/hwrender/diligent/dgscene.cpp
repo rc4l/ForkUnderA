@@ -940,7 +940,7 @@ static void DrawDynamic(Diligent::IDeviceContext *ctx)
 	if (src == NULL || nverts <= 0 || pieces == NULL || npieces <= 0) return;
 
 	// [rc4l] A run is one draw: a contiguous span sharing a material AND a blend mode.
-	struct Run { const void *material; unsigned first, count; int blend; };
+	struct Run { const void *material; unsigned first, count; int blend; int translation; };
 	static TArray<SceneVertex> vb;
 	static TArray<Run> runs;
 
@@ -992,17 +992,22 @@ static void DrawDynamic(Diligent::IDeviceContext *ctx)
 		runs.Clear();
 		const void *cur = (const void *)(size_t)-1;
 		int curBlend = -1;
+		int curTrans = -99999;
 		for (int i = 0; i < npieces; i++)
 		{
 			const zx::levelmesh::MeshPiece &p = pieces[order[i]];
 			if (p.range.count == 0) continue;
 			// A translucent piece never merges with its neighbour: merging would reorder it.
-			if (p.material != cur || p.blendMode != curBlend || p.blendMode != 0)
+			// A run is one draw, so it must also break on translation -- otherwise one recoloured
+			// sprite would repaint every sprite batched with it.
+			if (p.material != cur || p.blendMode != curBlend || p.translation != curTrans || p.blendMode != 0)
 			{
 				Run r; r.material = p.material; r.first = vb.Size(); r.count = 0; r.blend = p.blendMode;
+				r.translation = p.translation;
 				runs.Push(r);
 				cur = p.material;
 				curBlend = p.blendMode;
+				curTrans = p.translation;
 			}
 			for (unsigned v = 0; v < p.range.count; v++)
 			{
@@ -1062,7 +1067,7 @@ static void DrawDynamic(Diligent::IDeviceContext *ctx)
 			(runs[i].blend == 2) ? g_addPSO.RawPtr()    : g_transPSO.RawPtr();
 		if (!pso) continue;
 
-		auto *srb = GetMaterialSRB(pso, runs[i].material);
+		auto *srb = GetMaterialSRB(pso, runs[i].material, runs[i].translation);
 		if (!srb) continue;
 
 		if (pso != bound) { ctx->SetPipelineState(pso); bound = pso; }

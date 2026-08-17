@@ -157,6 +157,7 @@ void RegisterSprite(const GLSprite &spr)
 	// mapped back into Diligent's. These four cases cover what Doom content uses: opaque/masked,
 	// normal translucency, additive (plasma, fireballs, explosions) and the fuzz shadow. Anything
 	// exotic falls into normal translucency, which is wrong but visible rather than invisible.
+	mp.translation = spr.translation;
 	mp.alpha = spr.trans;
 	if (spr.RenderStyle.BlendOp == STYLEOP_Shadow)
 		mp.blendMode = 3;
