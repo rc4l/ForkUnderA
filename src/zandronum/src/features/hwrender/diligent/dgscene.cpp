@@ -671,6 +671,36 @@ static const char *kScenePSRedAlpha =
 // This is a TRANSCRIPTION of ComputeDecalUnwrapUV in computation/decalvolume_compute.cpp, which the
 // gtest suite pins with property tests. GLSL cannot be called from there, so the two have to be
 // changed together, and the tests are the description of what this must do.
+// [rc4l] How much of the mark a surface is entitled to, by how squarely it faces the projection.
+//
+// The unwrap carries a mark across a join by pushing its coordinate outward, and that works while the
+// join is out near the mark's rim: the picture is nearly used up, a sliver of its edge continues past
+// the corner, and it reads exactly like a scorch creeping round. It cannot work when the surface runs
+// ALONG the projection axis. Everything about such a surface's extent maps to no movement across the
+// picture, so whatever coordinate is handed back, some part of the graphic is dragged along it -- and
+// when the join cuts through the MIDDLE of the mark, what gets dragged is the middle, which on a
+// scorch is solid black. That is the hard-edged black quad standing in the world: not z-fighting, not
+// the depth buffer, just an orthographic projection asked a question it has no answer to.
+//
+// So the answer is none of it, faded in rather than switched, using the surface normal the
+// reconstructed world position carries in its derivatives. A slope, a step seen at an angle and a 3D
+// floor's edge all still take the mark whole. A surface at a right angle takes nothing, which is what
+// GL does anyway. Fading rather than cutting matters because that normal is only as good as the depth
+// it came from -- at a grazing angle the derivatives are differences of nearly-equal large numbers --
+// so noise moves the alpha a little instead of popping the mark in and out.
+//
+// Wrapping properly round a right angle needs a decal built from the GEOMETRY: clip the box against
+// the mesh's own triangles and give each one real texture coordinates. The level mesh already holds
+// what that would need. Until then this is the honest boundary of the technique rather than a fudge
+// that looks right from one camera and not the next.
+#define FUA_DECAL_FACING \
+	"float fuaDecalFacing(vec3 P, vec3 axisN) {\n" \
+	"    vec3 dpx = dFdx(P), dpy = dFdy(P);\n" \
+	"    if (dot(dpx, dpx) < 1e-12 || dot(dpy, dpy) < 1e-12) return 0.0;\n" \
+	"    vec3 nrm = normalize(cross(dpx, dpy));\n" \
+	"    return smoothstep(0.30, 0.65, abs(dot(nrm, normalize(axisN))));\n" \
+	"}\n"
+
 #define FUA_DECAL_UNWRAP \
 	"vec2 fuaDecalUV(vec3 local, vec3 axisU, vec3 axisV, vec3 axisN) {\n" \
 	"    vec2 t = local.xy;\n" \
@@ -679,12 +709,22 @@ static const char *kScenePSRedAlpha =
 	"    float carry = abs(local.z) * (1.0 / length(axisN));\n" \
 	"    if (carry <= 0.0) return t * 0.5 + 0.5;\n" \
 	"    float r = length(t);\n" \
-	/* Dead centre with a distance to carry: no direction to continue in, and any answer paints the
-	   middle texel of the mark across the whole depth of the box. Sent past the end so it discards. */ \
-	"    if (r < 1e-4) return vec2(-1.0);\n" \
-	"    vec2 dirn = t / r;\n" \
+	/* [rc4l] A mark may only wrap over a join it reaches near its own EDGE.
+	   An orthographic projection cannot parameterise a surface running along its own axis: that
+	   surface's extent maps to no movement across the picture, so some row of texels is dragged
+	   along it whatever coordinate is handed back. At the rim that hardly shows -- the picture is
+	   nearly used up and a sliver of its edge continues past the corner, which reads exactly like a
+	   scorch creeping round. Through the MIDDLE of the mark the same arithmetic drags the middle of
+	   the graphic, solid black on a scorch, across the whole face of the box: the decal's own box,
+	   drawn as a hard-edged black quad standing in the world. The two differ by how far the
+	   coordinate must be pushed against how far out it already was, so refusing to push a fragment
+	   further than its own radius keeps every wrap that looks right and drops every one that cannot.
+	   It covers the centre too, where the radius is zero and no direction exists. */ \
+	"    vec2 dirn = (r > 0.0) ? t / r : vec2(1.0, 0.0);\n" \
 	"    float scale = abs(dirn.x) * length(axisU) + abs(dirn.y) * length(axisV);\n" \
-	"    return t * ((r + carry * scale) / r) * 0.5 + 0.5;\n" \
+	"    float push = carry * scale;\n" \
+	"    if (!(push < r)) return vec2(-1.0);\n" \
+	"    return t * ((r + push) / r) * 0.5 + 0.5;\n" \
 	"}\n"
 
 static const char *kDecalVS =
@@ -719,6 +759,7 @@ static const char *kDecalPS =
 	"layout(location = 4) in vec4 vColor;\n"
 	"layout(location = 0) out vec4 outColor;\n"
 	FUA_DECAL_UNWRAP
+	FUA_DECAL_FACING
 	"void main() {\n"
 	"    vec2 uv = gl_FragCoord.xy / vec2(uScreen.x, uScreen.y);\n"
 	"    float d = texture(uSceneDepth, uv).r;\n"
@@ -755,9 +796,11 @@ static const char *kDecalPS =
 	   places the unwrap exists to serve got the blurriest mip and washed out. The flat projection is
 	   smooth everywhere and is the right scale to measure by; the unwrap only bends where the texture
 	   is fetched FROM, never how densely it is being sampled. */ \
+	"    float facing = fuaDecalFacing(P, vAxisN);\n"
+	"    if (facing <= 0.0) discard;\n"
 	"    vec2 flat_uv = local.xy * 0.5 + 0.5;\n"
 	"    vec4 texel = textureGrad(uTex, t, dFdx(flat_uv), dFdy(flat_uv));\n"
-	"    outColor = vec4(texel.rgb * vColor.rgb, texel.a * vColor.a);\n"
+	"    outColor = vec4(texel.rgb * vColor.rgb, texel.a * vColor.a * facing);\n"
 	"}\n";
 
 // The alpha-mask variant: the silhouette is in the red channel and the colour is the decal's own.
@@ -774,6 +817,7 @@ static const char *kDecalRedPS =
 	"layout(location = 4) in vec4 vColor;\n"
 	"layout(location = 0) out vec4 outColor;\n"
 	FUA_DECAL_UNWRAP
+	FUA_DECAL_FACING
 	"void main() {\n"
 	"    vec2 uv = gl_FragCoord.xy / vec2(uScreen.x, uScreen.y);\n"
 	"    float d = texture(uSceneDepth, uv).r;\n"
@@ -791,8 +835,10 @@ static const char *kDecalRedPS =
 	"    if (any(greaterThan(abs(local), vec3(1.0)))) discard;\n"
 	"    vec2 t = fuaDecalUV(local, vAxisU, vAxisV, vAxisN);\n"
 	"    if (any(lessThan(t, vec2(0.0))) || any(greaterThan(t, vec2(1.0)))) discard;\n"
+	"    float facing = fuaDecalFacing(P, vAxisN);\n"
+	"    if (facing <= 0.0) discard;\n"
 	"    vec2 flat_uv = local.xy * 0.5 + 0.5;\n"
-	"    float a = textureGrad(uTex, t, dFdx(flat_uv), dFdy(flat_uv)).r * vColor.a;\n"
+	"    float a = textureGrad(uTex, t, dFdx(flat_uv), dFdy(flat_uv)).r * vColor.a * facing;\n"
 	"    if (a <= 0.0) discard;\n"
 	"    outColor = vec4(vColor.rgb, a);\n"
 	"}\n";
