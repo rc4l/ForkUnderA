@@ -147,13 +147,26 @@ void RegisterFlatSubsector(const GLFlat &flat, subsector_t *sub, bool ceiling)
 	mp.material = flat.gltexture;
 	mp.dynLightIndex = flat.mMeshLightIndex;
 	// [rc4l] Plane normal, mapped into the mesh's (x, z-up, y) space: a secplane is
-	// a*x + b*y + c*z + d = 0 with z up, so (a, b, c) becomes (a, c, b) here. A floor gives
-	// (0, +1, 0) and a ceiling (0, -1, 0), which is exactly the side test the lights need.
+	// a*x + b*y + c*z + d = 0 with z up, so (a, b, c) becomes (a, c, b) here.
+	//
+	// Then turned to face the side the surface is SEEN from, which is not always the way its plane
+	// points. A 3D floor's underside is the control sector's floor plane, so its normal points up
+	// while the surface is looked at from below -- and the backend's dynamic-light side test then
+	// finds every light in the room behind it and lights none of them. Same trap as the winding, one
+	// step further on, and quieter: a surface facing the wrong way is simply never lit, which looks
+	// exactly like a light that is out of range. Measured on dbab02 as a corridor ceiling that took
+	// no plasma light at all while GL lit it.
 	{
 		const secplane_t &pl = flat.plane.plane;
 		const float nx = FIXED2FLOAT(pl.a), ny = FIXED2FLOAT(pl.b), nz = FIXED2FLOAT(pl.c);
 		const float len = sqrtf(nx*nx + ny*ny + nz*nz);
-		if (len > 0.0001f) { mp.normX = nx / len; mp.normY = nz / len; mp.normZ = ny / len; }
+		if (len > 0.0001f)
+		{
+			const float sign = ComputeFlatNormalFlipped(ceiling, nz / len) ? -1.f : 1.f;
+			mp.normX = sign * nx / len;
+			mp.normY = sign * nz / len;
+			mp.normZ = sign * ny / len;
+		}
 	}
 	mp.lightLevel = flat.lightlevel;
 	mp.lightColor = flat.Colormap.LightColor.d;

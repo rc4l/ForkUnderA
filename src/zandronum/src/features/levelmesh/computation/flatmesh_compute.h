@@ -35,6 +35,18 @@ namespace zx { namespace levelmesh {
 // principled and culled exactly those surfaces.
 bool ComputeFlatWindingReversed(bool viewedFromBelow);
 
+// [rc4l] Must this flat's NORMAL be flipped to face the side it is seen from?
+//
+// The same trap as the winding, one step further on, and it fails even more quietly. A secplane's
+// normal describes the plane, not the surface: a 3D floor's underside is the control sector's FLOOR
+// plane, so its normal points up while the surface is seen from below. Taken as given, the backend's
+// dynamic-light side test then finds every light in the room BEHIND that surface and lights none of
+// them -- which is indistinguishable, in a screenshot, from a light that is simply out of range.
+//
+// `planeUp` is the plane normal's vertical component. Zero is a vertical plane, which cannot be a
+// flat and is left alone rather than flipped on the sign of a rounding error.
+bool ComputeFlatNormalFlipped(bool viewedFromBelow, float planeUp);
+
 // [rc4l] Which blend mode a surface with this render style and alpha needs.
 //
 //   0 opaque / alpha-tested   1 normal translucent   2 additive
