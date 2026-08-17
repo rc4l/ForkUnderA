@@ -5,6 +5,7 @@
 // geometry is built and nothing renders from this yet -- see features/levelmesh/README.md.
 
 #include "features/levelmesh/levelmesh.h"
+#include "features/levelmesh/computation/flatmesh_compute.h"
 #include "r_sky.h"   // skyflatnum, for fua_find_sky
 #include "gl/data/gl_vertexbuffer.h"   // FFlatVertex, for fua_mesh_at
 #include "features/levelmesh/wallcache.h"
@@ -394,7 +395,7 @@ CCMD( fua_mesh_at )
 				i, p.range.offset, p.range.count, xlo, xhi, ylo, yhi, zlo, zhi,
 				p.lightLevel, p.colorR, p.colorG, p.colorB, p.fogDensity, p.fogMode,
 				p.baseTex ? ((FTexture *)p.baseTex)->Name.GetChars() : "NONE",
-				p.planeFacing ? 1 : 0 );
+				p.facesDown ? 1 : 0 );
 		// [rc4l] Whether the engine considers this texture fullbright or glowing, alongside what we
 		// baked for it. GLDEFS `glow { flats { ... } }` sets BOTH flags, and GLFlat::Process turns
 		// isFullbright() into lightlevel 255 -- so a glow flat baked at the sector's own light level
@@ -545,9 +546,155 @@ CCMD( fua_mesh_dupes )
 		(void)a;
 		Printf( "  first overlap: pieces %d and %d, %s material, %s\n", ovA, ovB,
 				pieces[ovA].material == pieces[ovB].material ? "same" : "different",
-				pieces[ovA].planeFacing || pieces[ovB].planeFacing ? "3D floor plane involved"
-																   : "neither is a 3D floor plane" );
+				pieces[ovA].facesDown || pieces[ovB].facesDown ? "a downward-facing surface involved"
+																   : "both seen from above" );
 	}
+}
+
+//==========================================================================
+//
+// fua_mesh_verify
+//
+// [rc4l] Assert what must be TRUE of the mesh, rather than compare what it looks like.
+//
+// Every rendering fault found on dbab02 violated a property of the baked data that is checkable
+// without a camera, a GPU or a human: a texture that resolved to the null texture, a flat wound the
+// wrong way for the side it is drawn from, two coplanar surfaces claiming the same space. Each was
+// found by computing exactly such a property AFTER someone pointed at a screenshot. This computes
+// them first, and because it needs no rendering it can be run over every map in the catalogue
+// instead of the handful anyone walks through.
+//
+// Prints one line per violated invariant and a final PASS/FAIL that a script can grep for.
+//
+//==========================================================================
+
+CCMD( fua_mesh_verify )
+{
+	int nv = 0, np = 0;
+	const FFlatVertex *verts = zx::levelmesh::MeshVertexData( nv );
+	const zx::levelmesh::MeshPiece *pieces = zx::levelmesh::MeshPieces( np );
+	if ( verts == NULL || pieces == NULL || np == 0 )
+	{
+		Printf( "fua_mesh_verify: FAIL (no mesh -- set gl_wallmesh 1 and bake first)\n" );
+		return;
+	}
+
+	int failures = 0, live = 0;
+
+	// --- 1. Every piece must name a base texture ------------------------------------------------
+	//
+	// A null baseTex is not merely "does not animate": the pointer is non-null and points at the
+	// engine's null texture, whose id translates to itself, so the animation pass re-resolves it
+	// every frame to no change and the surface silently freezes. It printed as "baseTex yes" for a
+	// week. The NAME is what makes it visible, so the name is what gets asserted.
+	int noBase = 0, nullBase = 0;
+	for ( int i = 0; i < np; i++ )
+	{
+		if ( pieces[i].range.count == 0 ) continue;
+		live++;
+		FTexture *bt = (FTexture *)pieces[i].baseTex;
+		if ( bt == NULL ) { noBase++; continue; }
+		if ( bt->Name.Len( ) == 0 ) nullBase++;
+	}
+	if ( nullBase > 0 )
+	{
+		Printf( "  FAIL base-texture: %d of %d pieces resolve to the NULL texture "
+				"(they will render once and never animate)\n", nullBase, live );
+		failures++;
+	}
+
+	// --- 2. Flats must wind consistently for the side they are viewed from ----------------------
+	//
+	// Back-face culling deletes a flat wound the wrong way, silently and completely -- every ceiling
+	// in the level, or every 3D floor top. The convention itself does not matter here, only that it
+	// is applied consistently: all pieces seen from above must wind one way and all pieces seen from
+	// below the other. A mixture is the bug, whichever way round the convention happens to be.
+	int upPos = 0, upNeg = 0, downPos = 0, downNeg = 0;
+	for ( int i = 0; i < np; i++ )
+	{
+		const zx::levelmesh::MeshPiece &p = pieces[i];
+		if ( p.range.count < 3 ) continue;
+		// Only near-horizontal surfaces: a wall's winding says nothing about up and down.
+		if ( p.normY < 0.9f && p.normY > -0.9f ) continue;
+		const FFlatVertex &a = verts[p.range.offset];
+		const FFlatVertex &b = verts[p.range.offset + 1];
+		const FFlatVertex &c = verts[p.range.offset + 2];
+		// z component of (b-a) x (c-a): the winding's own idea of which way the triangle faces.
+		const float nz = zx::levelmesh::ComputeTriangleWindingZ( a.x, a.y, b.x, b.y, c.x, c.y );
+		if ( fabsf( nz ) < 0.0001f ) continue;   // degenerate, e.g. a squashed piece
+		if ( p.facesDown ) { if ( nz > 0 ) downPos++; else downNeg++; }
+		else               { if ( nz > 0 ) upPos++;   else upNeg++; }
+	}
+	const int upMix = MIN( upPos, upNeg ), downMix = MIN( downPos, downNeg );
+	if ( upMix > 0 || downMix > 0 )
+	{
+		Printf( "  FAIL winding: seen-from-above %d/%d split, seen-from-below %d/%d split "
+				"(a consistent convention would be 0 on one side of each)\n",
+				upPos, upNeg, downPos, downNeg );
+		failures++;
+	}
+	// And the two groups must be OPPOSITE, or culling keeps one and drops the other.
+	const bool upIsPos = upPos >= upNeg, downIsPos = downPos >= downNeg;
+	if ( ( upPos + upNeg ) > 0 && ( downPos + downNeg ) > 0 && upIsPos == downIsPos )
+	{
+		Printf( "  FAIL winding: surfaces seen from above and from below wind the SAME way, "
+				"so back-face culling cannot keep both\n" );
+		failures++;
+	}
+
+	// --- 3. No two coplanar pieces may claim the same area --------------------------------------
+	//
+	// Coplanar quads built from different vertices do not agree on depth to the last bit, so the
+	// rasteriser stipples between them. This is how the mesh holding both sides of every two-sided
+	// line was found; the count was 1799 pairs on dbab02 before back-face culling.
+	int overlaps = 0;
+	{
+		typedef zx::levelmesh::MeshBox Box;
+		TArray<Box> box;
+		for ( int i = 0; i < np; i++ )
+		{
+			const zx::levelmesh::MeshPiece &p = pieces[i];
+			if ( p.range.count == 0 ) continue;
+			Box b = { 1e9f, -1e9f, 1e9f, -1e9f, 1e9f, -1e9f };
+			for ( unsigned v = 0; v < p.range.count && p.range.offset + v < (unsigned)nv; v++ )
+			{
+				const FFlatVertex &fv = verts[p.range.offset + v];
+				if ( fv.x < b.x0 ) b.x0 = fv.x;  if ( fv.x > b.x1 ) b.x1 = fv.x;
+				if ( fv.y < b.y0 ) b.y0 = fv.y;  if ( fv.y > b.y1 ) b.y1 = fv.y;
+				if ( fv.z < b.z0 ) b.z0 = fv.z;  if ( fv.z > b.z1 ) b.z1 = fv.z;
+			}
+			box.Push( b );
+		}
+		const float kEps = 0.05f;
+		for ( unsigned i = 0; i < box.Size( ); i++ )
+			for ( unsigned j = i + 1; j < box.Size( ); j++ )
+			{
+				if ( zx::levelmesh::ComputeCoplanarOverlap( box[i], box[j], kEps ) ) overlaps++;
+			}
+	}
+
+	// --- 4. Blend mode and alpha must agree -----------------------------------------------------
+	//
+	// A piece marked opaque while carrying alpha < 1 renders solid; the reverse renders a solid
+	// surface through the sorted translucent pass for nothing. Both were live: flats were baked
+	// unconditionally opaque while a translucent grate hung over a lava pit.
+	int blendMismatch = 0;
+	for ( int i = 0; i < np; i++ )
+	{
+		const zx::levelmesh::MeshPiece &p = pieces[i];
+		if ( p.range.count == 0 ) continue;
+		const bool seeThrough = p.alpha < 1.f - 1.f / 256.f;
+		if ( seeThrough && p.blendMode == 0 ) blendMismatch++;
+	}
+	if ( blendMismatch > 0 )
+	{
+		Printf( "  FAIL blend: %d pieces carry alpha < 1 but are marked opaque\n", blendMismatch );
+		failures++;
+	}
+
+	Printf( "fua_mesh_verify: %s  (%d live pieces, %d without a base texture, "
+			"%d coplanar overlapping pairs)\n",
+			failures ? "FAIL" : "PASS", live, noBase, overlaps );
 }
 
 CCMD( fua_find_sky )

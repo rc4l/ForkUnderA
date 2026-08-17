@@ -5,6 +5,7 @@
 #include "features/levelmesh/flatmesh.h"
 #include "features/levelmesh/staticmesh.h"
 #include "features/levelmesh/computation/wallbatch_compute.h"
+#include "features/levelmesh/computation/flatmesh_compute.h"
 
 #include "r_defs.h"
 #include "r_state.h"
@@ -96,7 +97,7 @@ void RegisterFlatSubsector(const GLFlat &flat, subsector_t *sub, bool ceiling)
 	// down while the surface is seen from above, and the normal rule culled exactly those. See
 	// GLFlat::ProcessSector, which sets ceiling=true for the pass that draws 3D floor faces from
 	// below and ceiling=false for the pass that draws them from above.
-	const bool facesDown = ceiling;
+	const bool facesDown = ComputeFlatWindingReversed(ceiling);
 	int w = 0;
 	for (int t = 0; t < n - 2; t++)
 		for (int c = 0; c < 3; c++)
@@ -150,18 +151,11 @@ void RegisterFlatSubsector(const GLFlat &flat, subsector_t *sub, bool ceiling)
 	// baking it opaque drew the grate as solid lava-lit metal or let the lava beneath win outright.
 	// The same classification the sprite path uses, for the same reason.
 	mp.alpha = flat.alpha;
-	// [rc4l] A 3D floor plane is one FACE, and only the side it points at may be drawn. See
-	// MeshPiece::planeFacing: the top and bottom of a thin grate sit on top of each other in the
-	// mesh and z-fight, which is the flicker that appears when the view moves and never appears in
-	// GL, because GL only ever processes the face turned towards the viewer.
-	mp.planeFacing = (sub->sector != NULL && flat.mMeshModel != NULL && flat.mMeshModel != sub->sector);
+	// Which side this surface is viewed from, kept so fua_mesh_verify can check the winding above
+	// rather than take it on trust. See MeshPiece::facesDown.
+	mp.facesDown = facesDown;
 	// renderstyle here is an ERenderStyle enum, not an FRenderStyle, so it is compared not inspected.
-	if (flat.renderstyle == STYLE_Add)
-		mp.blendMode = 2;
-	else if (flat.alpha < 1.f - 1.f/256.f)
-		mp.blendMode = 1;
-	else
-		mp.blendMode = 0;
+	mp.blendMode = ComputeSurfaceBlendMode(flat.renderstyle == STYLE_Add, flat.alpha);
 
 	// [rc4l] Base plane texture, so animated flats (nukage, lava, blood) keep flowing.
 	//
