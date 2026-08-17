@@ -717,6 +717,8 @@ static int g_skyTexOffset = 0;
 static PalEntry g_skyCapColor[2];
 // Radians, recomputed per frame: -180 degrees (RenderDome's constant) plus the scroll offset.
 static float g_skyAngle = 0.f;
+// The dome's texture scales, so a ray that misses samples the sky the same way the dome draws it.
+static float g_skyXScale = 4.f, g_skyVScale = 1.f;
 // Mirror clip plane in mesh space (nx, ny, nz, d); all zero disables it.
 static float g_clipPlane[4] = { 0.f, 0.f, 0.f, 0.f };
 
@@ -757,6 +759,7 @@ static void BuildSkyDome(int texw, int texh)
 		vscale = (texh > 0) ? 240.f / texh : 1.f;
 	}
 	const float xscale = texw > 0 ? 1024.f / texw : 1.f;
+	g_skyXScale = xscale; g_skyVScale = vscale;
 
 	TArray<SkyVertexData> verts;
 	for (int hemi = 0; hemi < 2; hemi++)
@@ -2364,6 +2367,7 @@ static const char *kMirrorPS =
 	"layout(binding = 2) uniform accelerationStructureEXT uTLAS;\n"
 	"layout(std430, binding = 3) readonly buffer Verts { float vtx[]; };\n"
 	"layout(binding = 4) uniform sampler2D uMaterials[128];\n"
+	"layout(binding = 5) uniform sampler2D uSky;\n"
 	"layout(location = 0) in vec3 vWorld;\n"
 	"layout(location = 1) in vec3 vNormal;\n"
 	"layout(location = 0) out vec4 outColor;\n"
@@ -2378,8 +2382,20 @@ static const char *kMirrorPS =
 	// Nudged off the surface, or the mirror hits itself at t = 0.
 	"    rayQueryInitializeEXT(rq, uTLAS, gl_RayFlagsOpaqueEXT, 0xFF, vWorld + n * 0.5, 0.1, dir, 20000.0);\n"
 	"    while (rayQueryProceedEXT(rq)) {}\n"
+	// [rc4l] A miss means the ray left the level, and what is out there is the sky.
+	//
+	// Sky ceilings are portals and deliberately not mesh geometry, so upward rays SHOULD miss. Paint
+	// that black and the reflection grows holes where the sky is; paint it the sky's average colour
+	// and you get a flat patch that reads as the sky not being reflected at all. Sampling the sky
+	// texture by ray direction, with the dome's own scale and rotation, is the only one of the three
+	// that reflects a sky.
 	"    if (rayQueryGetIntersectionTypeEXT(rq, true) == gl_RayQueryCommittedIntersectionNoneEXT) {\n"
-	"        outColor = vec4(0.0, 0.0, 0.0, 1.0);\n"
+	"        vec3 d = normalize(dir);\n"
+	"        float el = asin(clamp(d.y, -1.0, 1.0));\n"
+	"        float su = (atan(d.z, d.x) + uLightParams.y) / 6.28318531;\n"
+	// The dome spans the horizon to 60 degrees over its texture, so map elevation the same way.
+	"        float sv = clamp((1.0472 - el) / 1.0472, 0.0, 1.0);\n"
+	"        outColor = vec4(texture(uSky, vec2(su * uScreen.z, sv * uScreen.w)).rgb, 1.0);\n"
 	"        return;\n"
 	"    }\n"
 	"    uint prim = uint(rayQueryGetIntersectionPrimitiveIndexEXT(rq, true));\n"
@@ -2451,6 +2467,7 @@ static bool EnsureMirrorResources()
 			{ Diligent::SHADER_TYPE_PIXEL, "uTex", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
 			{ Diligent::SHADER_TYPE_PIXEL, "uTLAS", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
 			{ Diligent::SHADER_TYPE_PIXEL, "Verts", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
+			{ Diligent::SHADER_TYPE_PIXEL, "uSky", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
 		};
 		static Diligent::SamplerDesc samp;
 		samp.MinFilter = Diligent::FILTER_TYPE_LINEAR;
@@ -2476,6 +2493,7 @@ static bool EnsureMirrorResources()
 			// binding is incomplete and the process dies inside CreateShaderResourceBinding with nothing
 			// in the log, which looks like the array size or the feature rather than a missing sampler.
 			{ Diligent::SHADER_TYPE_PIXEL, "uMaterials", matSamp },
+			{ Diligent::SHADER_TYPE_PIXEL, "uSky", samp },
 		};
 
 		Diligent::GraphicsPipelineStateCreateInfo pci;
@@ -2492,9 +2510,9 @@ static bool EnsureMirrorResources()
 		pci.GraphicsPipeline.InputLayout.NumElements = 2;
 		pci.PSODesc.ResourceLayout.DefaultVariableType = Diligent::SHADER_RESOURCE_VARIABLE_TYPE_STATIC;
 		pci.PSODesc.ResourceLayout.Variables = vars;
-		pci.PSODesc.ResourceLayout.NumVariables = 3;
+		pci.PSODesc.ResourceLayout.NumVariables = 4;
 		pci.PSODesc.ResourceLayout.ImmutableSamplers = samplers;
-		pci.PSODesc.ResourceLayout.NumImmutableSamplers = 2;
+		pci.PSODesc.ResourceLayout.NumImmutableSamplers = 3;
 		pci.pVS = vs; pci.pPS = ps;
 		dev->CreateGraphicsPipelineState(pci, &g_mirrorPSO);
 		if (!g_mirrorPSO) { Printf("mirror: PSO failed\n"); return false; }
@@ -2576,6 +2594,15 @@ static bool EnsureMirrorResources()
 			{
 				v->Set(g_vb->GetDefaultView(Diligent::BUFFER_VIEW_SHADER_RESOURCE));
 			}
+			// [rc4l] The sky, resolved here rather than reused from EnsureSky: that runs mid-frame with
+			// a render pass open, and this may have to upload the texture.
+			if (auto *v2 = g_mirrorSRB->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "uSky"))
+			{
+				FTexture *rawSky = sky1texture.isValid() ? TexMan(sky1texture) : NULL;
+				FMaterial *skyMat = rawSky ? FMaterial::ValidateTexture(rawSky, false) : NULL;
+				Diligent::IDeviceObject *srv = GetMaterialSRV(skyMat, 0);
+				v2->Set(srv ? srv : GetMaterialSRV(NULL, 0));
+			}
 
 		}
 	}
@@ -2613,7 +2640,7 @@ static void DrawMirrorSurface(Diligent::IDeviceContext *ctx, unsigned index)
 		cb[18] = FIXED2FLOAT(viewy); cb[19] = (float)(int)fua_dg_lightmode;
 		cb[20] = (float)g_lightCount; cb[21] = g_skyAngle; cb[22] = 0.f; cb[23] = 0.f;
 		for (int k = 0; k < 4; k++) cb[24 + k] = 0.f;
-		cb[28] = (float)g_mirrorW; cb[29] = (float)g_mirrorH; cb[30] = cb[31] = 0.f;
+		cb[28] = (float)g_mirrorW; cb[29] = (float)g_mirrorH; cb[30] = g_skyXScale; cb[31] = g_skyVScale;
 		cb[32] = g_skyCapColor[0].r / 255.f;
 		cb[33] = g_skyCapColor[0].g / 255.f;
 		cb[34] = g_skyCapColor[0].b / 255.f;
@@ -2721,7 +2748,7 @@ static void RenderMirrors(Diligent::IDeviceContext *ctx)
 			cb[18] = FIXED2FLOAT(viewy); cb[19] = (float)(int)fua_dg_lightmode;
 			cb[20] = (float)g_lightCount; cb[21] = g_skyAngle; cb[22] = 0.f; cb[23] = 0.f;
 			for (int k = 0; k < 4; k++) cb[24 + k] = 0.f;
-			cb[28] = (float)g_mirrorW; cb[29] = (float)g_mirrorH; cb[30] = cb[31] = 0.f;
+			cb[28] = (float)g_mirrorW; cb[29] = (float)g_mirrorH; cb[30] = g_skyXScale; cb[31] = g_skyVScale;
 		cb[32] = g_skyCapColor[0].r / 255.f;
 		cb[33] = g_skyCapColor[0].g / 255.f;
 		cb[34] = g_skyCapColor[0].b / 255.f;
@@ -2917,7 +2944,7 @@ static void DrawWorld(Diligent::IDeviceContext *ctx)
 		for (int ci = 0; ci < 4; ci++) cb[24 + ci] = g_clipPlane[ci];
 		cb[28] = (float)GetSwapChain()->GetDesc().Width;
 		cb[29] = (float)GetSwapChain()->GetDesc().Height;
-		cb[30] = 0.f; cb[31] = 0.f;
+		cb[30] = g_skyXScale; cb[31] = g_skyVScale;
 		// [rc4l] What a ray sees when it hits nothing. Sky ceilings are portals and are deliberately
 		// not in the mesh, so a reflection looking upward hits nothing -- and painting that black put
 		// holes in the reflected floor and sky. The sky's own cap colour is the honest answer.
