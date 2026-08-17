@@ -92,12 +92,18 @@ function px(img, x, y) {
   return [img.data[i], img.data[i + 1], img.data[i + 2]];
 }
 
+// [rc4l] CROP applies here too, as fractions "x0,y0,x1,y1". Asking "did the wall change" while the
+// floor and the weapon sprite are in the same frame gets answered by whichever covers more pixels --
+// which is how "GL is animating now" nearly got signed off on a floor that was already animating.
 function diff(a, b, tol) {
   if (a.w !== b.w || a.h !== b.h) return null;
+  const c = (process.env.CROP || "0,0,1,1").split(",").map(Number);
+  const x0 = Math.floor(c[0] * a.w), y0 = Math.floor(c[1] * a.h);
+  const x1 = Math.ceil(c[2] * a.w),  y1 = Math.ceil(c[3] * a.h);
   let bad = 0, sum = 0, n = 0, worstRow = -1, worstRowBad = 0;
-  for (let y = 0; y < a.h; y++) {
+  for (let y = y0; y < y1; y++) {
     let rowBad = 0;
-    for (let x = 0; x < a.w; x++) {
+    for (let x = x0; x < x1; x++) {
       const pa = px(a, x, y), pb = px(b, x, y);
       const d = Math.abs(pa[0] - pb[0]) + Math.abs(pa[1] - pb[1]) + Math.abs(pa[2] - pb[2]);
       sum += d; n++;
@@ -105,7 +111,8 @@ function diff(a, b, tol) {
     }
     if (rowBad > worstRowBad) { worstRowBad = rowBad; worstRow = y; }
   }
-  return { pct: (100 * bad) / n, mean: sum / n / 3, worstRow, worstRowPct: (100 * worstRowBad) / a.w };
+  return { pct: (100 * bad) / n, mean: sum / n / 3, worstRow,
+           worstRowPct: (100 * worstRowBad) / Math.max(1, x1 - x0) };
 }
 
 // [rc4l] Write a PNG. Only what an 8-bit RGB image needs, which is all this ever emits.
