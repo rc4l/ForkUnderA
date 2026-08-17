@@ -611,7 +611,13 @@ static void BuildMVP(float *m)
 // top of the sky is missing the coloured thing GL has" was.
 //
 // useTex is 1 for the textured dome and 0 for the caps, so one pipeline draws both.
-struct SkyVertexData { float x, y, z, u, v, r, g, b, useTex; };
+// [rc4l] alpha is separate from useTex because the dome's TOP ROW is translucent.
+//
+// GZDoom gives row 0 a vertex colour with zero alpha (SkyVertex: `r == 0 ? 0xffffff : 0xffffffff`),
+// so the texture fades out toward the zenith and blends into the flat cap underneath. Without it the
+// cap meets the dome at a hard circular seam -- a black disc stamped on the sky, which is what kept
+// getting reported as missing fog.
+struct SkyVertexData { float x, y, z, u, v, r, g, b, useTex, alpha; };
 
 static Diligent::RefCntAutoPtr<Diligent::IBuffer>        g_skyVB;
 static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_skyPSO;
@@ -628,9 +634,11 @@ static const char *kSkyVS =
 	"layout(location = 0) in vec3 aPos;\n"
 	"layout(location = 1) in vec2 aUV;\n"
 	"layout(location = 2) in vec4 aSkyColor;\n"
+	"layout(location = 3) in float aSkyAlpha;\n"
 	"layout(binding = 0) uniform Constants { mat4 uMVP; vec4 uCameraPos; vec4 uLightParams; };\n"
 	"layout(location = 0) out vec2 vUV;\n"
 	"layout(location = 1) out vec4 vSkyColor;\n"
+	"layout(location = 2) out float vSkyAlpha;\n"
 	"void main() {\n"
 	// Centred on the camera, so the dome is effectively at infinity.
 	//
@@ -643,12 +651,14 @@ static const char *kSkyVS =
 	"    gl_Position = uMVP * vec4(p + uCameraPos.xyz, 1.0);\n"
 	"    vUV = aUV;\n"
 	"    vSkyColor = aSkyColor;\n"
+	"    vSkyAlpha = aSkyAlpha;\n"
 	"}\n";
 
 static const char *kSkyPS =
 	"#version 450\n"
 	"layout(location = 0) in vec2 vUV;\n"
 	"layout(location = 1) in vec4 vSkyColor;\n"
+	"layout(location = 2) in float vSkyAlpha;\n"
 	"layout(binding = 1) uniform sampler2D uTex;\n"
 	"layout(location = 0) out vec4 outColor;\n"
 	// vSkyColor.a selects: 1 takes the texture (the dome), 0 takes the flat colour (the caps).
@@ -659,7 +669,7 @@ static const char *kSkyPS =
 	//  <0  flat colour, alpha = -a -- the sky fade layer GL draws over the whole sky
 	"    float sel = max(vSkyColor.a, 0.0);\n"
 	"    float al = vSkyColor.a < 0.0 ? -vSkyColor.a : 1.0;\n"
-	"    outColor = vec4(mix(vSkyColor.rgb, texture(uTex, vUV).rgb, sel), al);\n"
+	"    outColor = vec4(mix(vSkyColor.rgb, texture(uTex, vUV).rgb, sel), al * vSkyAlpha);\n"
 	"}\n";
 
 // [rc4l] One sky dome vertex, with RenderDome's model and texture transforms folded in.
@@ -772,6 +782,7 @@ static void BuildSkyDome(int texw, int texh)
 				{
 					tri[k].r = cap.r / 255.f; tri[k].g = cap.g / 255.f; tri[k].b = cap.b / 255.f;
 					tri[k].useTex = 0.f;
+					tri[k].alpha = 1.f;
 					tri[k].y = centre.y;   // a lid, not part of the dome's curve
 				}
 				verts.Push(tri[0]); verts.Push(tri[1]); verts.Push(tri[2]);
@@ -787,7 +798,10 @@ static void BuildSkyDome(int texw, int texh)
 				SkyVertexAt(r + 1, c,     rows, cols, yflip, modelScaleY, modelTransY, xscale, vscale, q[1]);
 				SkyVertexAt(r,     c + 1, rows, cols, yflip, modelScaleY, modelTransY, xscale, vscale, q[2]);
 				SkyVertexAt(r + 1, c + 1, rows, cols, yflip, modelScaleY, modelTransY, xscale, vscale, q[3]);
+				// Row 0 is the zenith edge and fades out, exactly as SkyVertex's vertex colour does.
 				for (int k = 0; k < 4; k++) { q[k].r = q[k].g = q[k].b = 1.f; q[k].useTex = 1.f; }
+				q[0].alpha = q[2].alpha = (r == 0) ? 0.f : 1.f;
+				q[1].alpha = q[3].alpha = 1.f;
 				verts.Push(q[0]); verts.Push(q[1]); verts.Push(q[2]);
 				verts.Push(q[2]); verts.Push(q[1]); verts.Push(q[3]);
 			}
@@ -839,6 +853,7 @@ static bool EnsureSkyPipeline()
 		Diligent::LayoutElement{0, 0, 3, Diligent::VT_FLOAT32, false},
 		Diligent::LayoutElement{1, 0, 2, Diligent::VT_FLOAT32, false},
 		Diligent::LayoutElement{2, 0, 4, Diligent::VT_FLOAT32, false},
+		Diligent::LayoutElement{3, 0, 1, Diligent::VT_FLOAT32, false},
 	};
 	static Diligent::ShaderResourceVariableDesc vars[] = {
 		{ Diligent::SHADER_TYPE_PIXEL, "uTex", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
@@ -864,8 +879,19 @@ static bool EnsureSkyPipeline()
 	// The sky is behind everything: never tested, never written.
 	pci.GraphicsPipeline.DepthStencilDesc.DepthEnable = false;
 	pci.GraphicsPipeline.DepthStencilDesc.DepthWriteEnable = false;
+	// Blended, so the dome's fading top row composites over the cap drawn beneath it.
+	{
+		auto &rt = pci.GraphicsPipeline.BlendDesc.RenderTargets[0];
+		rt.BlendEnable = true;
+		rt.SrcBlend  = Diligent::BLEND_FACTOR_SRC_ALPHA;
+		rt.DestBlend = Diligent::BLEND_FACTOR_INV_SRC_ALPHA;
+		rt.BlendOp = Diligent::BLEND_OPERATION_ADD;
+		rt.SrcBlendAlpha = Diligent::BLEND_FACTOR_ONE;
+		rt.DestBlendAlpha = Diligent::BLEND_FACTOR_INV_SRC_ALPHA;
+		rt.BlendOpAlpha = Diligent::BLEND_OPERATION_ADD;
+	}
 	pci.GraphicsPipeline.InputLayout.LayoutElements = layout;
-	pci.GraphicsPipeline.InputLayout.NumElements = 3;
+	pci.GraphicsPipeline.InputLayout.NumElements = 4;
 	pci.PSODesc.ResourceLayout.DefaultVariableType = Diligent::SHADER_RESOURCE_VARIABLE_TYPE_STATIC;
 	pci.PSODesc.ResourceLayout.Variables = vars;
 	pci.PSODesc.ResourceLayout.NumVariables = 1;
@@ -918,9 +944,11 @@ static void EnsureSky()
 	// unimplemented and the animation that was frozen.
 	if (!sameShape)
 	{
-		Printf("vulkan sky: %s %dx%d skyoffset %d%s\n",
+		Printf("vulkan sky: %s %dx%d skyoffset %d  cap %d,%d,%d / %d,%d,%d%s\n",
 			(mat->tex != NULL && mat->tex->Name != NULL) ? mat->tex->Name : "?",
 			mat->TextureWidth(), mat->TextureHeight(), g_skyTexOffset,
+			g_skyCapColor[0].r, g_skyCapColor[0].g, g_skyCapColor[0].b,
+			g_skyCapColor[1].r, g_skyCapColor[1].g, g_skyCapColor[1].b,
 			(mat->tex != NULL && mat->tex->gl_info.bSkybox) ? "  [SKYBOX -- not implemented]" : "");
 	}
 	if (!sameShape) BuildSkyDome(mat->TextureWidth(), mat->TextureHeight());
@@ -989,6 +1017,7 @@ static bool EnsureSkyFadePipeline()
 		Diligent::LayoutElement{0, 0, 3, Diligent::VT_FLOAT32, false},
 		Diligent::LayoutElement{1, 0, 2, Diligent::VT_FLOAT32, false},
 		Diligent::LayoutElement{2, 0, 4, Diligent::VT_FLOAT32, false},
+		Diligent::LayoutElement{3, 0, 1, Diligent::VT_FLOAT32, false},
 	};
 	Diligent::GraphicsPipelineStateCreateInfo pci;
 	pci.PSODesc.Name = "fua sky fade PSO";
@@ -1011,7 +1040,7 @@ static bool EnsureSkyFadePipeline()
 		rt.BlendOpAlpha = Diligent::BLEND_OPERATION_ADD;
 	}
 	pci.GraphicsPipeline.InputLayout.LayoutElements = layout;
-	pci.GraphicsPipeline.InputLayout.NumElements = 3;
+	pci.GraphicsPipeline.InputLayout.NumElements = 4;
 	dev->CreateGraphicsPipelineState(pci, &g_skyFadePSO);
 	return g_skyFadePSO.RawPtr() != nullptr;
 }
@@ -1032,6 +1061,7 @@ static void DrawSkyFade(Diligent::IDeviceContext *ctx)
 		v[i].u = 0.f; v[i].v = 0.f;
 		v[i].r = fr; v[i].g = fg; v[i].b = fb;
 		v[i].useTex = -fa;   // the fade VS negates it back into an alpha
+		v[i].alpha = 1.f;
 	}
 
 	if (!g_skyFadeVB)
