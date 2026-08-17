@@ -147,27 +147,20 @@ void RegisterFlatSubsector(const GLFlat &flat, subsector_t *sub, bool ceiling)
 	else
 		mp.blendMode = 0;
 
-	// [rc4l] Base plane texture, so animated flats (nukage, lava, blood) keep flowing. The render
-	// sector is the one whose textures are actually drawn -- `sub->sector` can be faked away by
-	// deep-water and heightsec tricks.
-	{
-		// [rc4l] The plane's OWN sector and side, which for a 3D floor is its model, not the
-		// subsector's.
-		//
-		// This took the containing sector's flat, so every 3D floor plane recorded the texture of the
-		// floor it hangs over. The animated-texture pass then re-resolves each batch from baseTex
-		// every frame and faithfully repainted the 3D floor with it -- a grate suspended over lava
-		// came out as lava, and while two planes were still sharing a slot it alternated between the
-		// two, which is what "the 3D floor is animating on its own" was.
-		const sector_t *ts = flat.mMeshModel;
-		int side = flat.mMeshWhichPlane;
-		if (ts == NULL)
-		{
-			ts = sub->render_sector ? sub->render_sector : sub->sector;
-			side = ceiling ? sector_t::ceiling : sector_t::floor;
-		}
-		if (ts != NULL) mp.baseTex = TexMan[ts->GetTexture(side)];
-	}
+	// [rc4l] Base plane texture, so animated flats (nukage, lava, blood) keep flowing.
+	//
+	// Straight off the plane the engine resolved, NOT re-derived from a sector and a plane index.
+	// Deriving it took two wrong answers in a row: first the containing sector's flat, so every 3D
+	// floor plane recorded the texture of the floor it hangs over and got repainted with it; then the
+	// model sector's, which is wrong for a 3D floor because F3DFloor::top and ::bottom are planerefs
+	// that carry their OWN texture and can name a different sector than the rover's model. On dbab02
+	// that resolved to the null texture, whose id translates to itself, so the lava under the 3D
+	// floor rendered correctly and then never animated again -- while the strip of the same floor
+	// outside the 3D floor's footprint animated fine, because that piece took the simple path.
+	//
+	// plane.texture is what GLFlat::Process itself fed to ValidateTexture, so by construction it is
+	// the base id of the texture actually being drawn, in every case, with no cases to enumerate.
+	mp.baseTex = TexMan[flat.plane.texture];
 	MeshRegisterPiece(mp);
 }
 

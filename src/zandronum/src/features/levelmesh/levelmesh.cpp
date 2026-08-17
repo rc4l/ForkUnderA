@@ -385,9 +385,27 @@ CCMD( fua_mesh_at )
 			if ( fabsf( fv.x - px ) <= rad && fabsf( fv.y - py ) <= rad ) near = true;
 		}
 		if ( !near ) continue;
-		Printf( "piece %d: range %u+%u  x %.0f..%.0f  y %.0f..%.0f  height %.0f..%.0f  tex %d\n",
+		// [rc4l] The SHADING as well as the geometry. "The lava is dimmer than GL and does not
+		// animate" are both answered by what was BAKED rather than by what the screen shows: no
+		// baseTex means the animation pass skips this piece entirely, and the light level and colour
+		// say whether a fullbright texture was captured as fullbright.
+		Printf( "piece %d: range %u+%u  x %.0f..%.0f  y %.0f..%.0f  height %.0f..%.0f\n"
+				"          light %d  rgb %.2f,%.2f,%.2f  fog %.2f mode %d  baseTex %s  face %d\n",
 				i, p.range.offset, p.range.count, xlo, xhi, ylo, yhi, zlo, zhi,
-				p.baseTex ? 1 : 0 );
+				p.lightLevel, p.colorR, p.colorG, p.colorB, p.fogDensity, p.fogMode,
+				p.baseTex ? ((FTexture *)p.baseTex)->Name.GetChars() : "NONE",
+				p.planeFacing ? 1 : 0 );
+		// [rc4l] Whether the engine considers this texture fullbright or glowing, alongside what we
+		// baked for it. GLDEFS `glow { flats { ... } }` sets BOTH flags, and GLFlat::Process turns
+		// isFullbright() into lightlevel 255 -- so a glow flat baked at the sector's own light level
+		// is a captured value that disagrees with the engine, not a shading formula that differs.
+		if ( p.baseTex != NULL )
+		{
+			FTexture *bt = (FTexture *)p.baseTex;
+			if ( bt->isFullbright() || bt->isGlowing() )
+				Printf( "          ENGINE SAYS: fullbright %d glowing %d\n",
+						bt->isFullbright() ? 1 : 0, bt->isGlowing() ? 1 : 0 );
+		}
 		shown++;
 	}
 	Printf( "fua_mesh_at: %d of %d pieces within %.0f of (%.0f, %.0f)\n", shown, np, rad, px, py );
