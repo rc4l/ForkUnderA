@@ -1827,6 +1827,7 @@ static bool EnsureScenePipeline(FString &err)
 //
 // So the whole thing is rebuilt. That is only affordable because the material sort is no longer
 // quadratic; it runs for the handful of frames a door is actually moving, and not at all otherwise.
+static bool EnsureMirrorResources();
 static bool EnsureAccelerationStructure();
 static void ReleaseMirrorBinding();
 
@@ -1920,7 +1921,15 @@ static bool BuildSceneBuffer(FString &err)
 	// process dies on a later submit with nothing in the log. Vertex buffer first -- the raster path
 	// still draws from this exact buffer.
 	bd.BindFlags = Diligent::BIND_VERTEX_BUFFER;
-	if (RayTracingAvailable()) bd.BindFlags |= Diligent::BIND_RAY_TRACING;
+	if (RayTracingAvailable())
+	{
+		// Also readable as storage: a ray query returns a primitive index, so the shader has to fetch
+		// the triangle's own vertices to shade it. One float per element keeps the GLSL side a plain
+		// float array instead of matching a struct layout across two languages.
+		bd.BindFlags |= Diligent::BIND_RAY_TRACING | Diligent::BIND_SHADER_RESOURCE;
+		bd.Mode = Diligent::BUFFER_MODE_STRUCTURED;
+		bd.ElementByteStride = sizeof(float);
+	}
 	Diligent::BufferData bdata;
 	bdata.pData = &g_sceneVB[0];
 	bdata.DataSize = bd.Size;
@@ -1952,7 +1961,13 @@ bool SceneUpload(FString &report)
 	// other cannot.
 	// Only when something will actually trace against it: an acceleration structure over 17k
 	// triangles is not free to build, and nothing else in the frame reads it.
-	if (fua_dg_rtmirrors && RayTracingAvailable()) EnsureAccelerationStructure();
+	if (fua_dg_rtmirrors && RayTracingAvailable())
+	{
+		EnsureAccelerationStructure();
+		// [rc4l] And the mirror bindings, here rather than mid-frame: creating them touches textures
+		// and acceleration structures, and neither is valid inside a render pass.
+		EnsureMirrorResources();
+	}
 	BuildMVP(g_mvp);
 
 	// [rc4l] The shading inputs themselves, not just which code path they take.
@@ -2327,18 +2342,27 @@ static const char *kMirrorVS =
 // mirror's camera; recursion becomes possible; and the work is proportional to the mirror's pixels
 // rather than a full-screen scene pass per mirror.
 //
-// This first version shades the hit by distance. That is deliberately not pretty: it proves the
-// structure, the ray direction and the binding are all correct before any material work, which is
-// exactly the stage where a wrong answer can hide behind a plausible-looking picture.
+// Shading the hit is the whole difficulty. A ray query returns a primitive index and barycentrics,
+// not a shaded fragment, so the shader has to fetch that triangle itself. The scene vertex buffer is
+// bound as storage and indexed directly: 19 floats per vertex, three vertices per primitive, with the
+// baked per-vertex lighting at offset 5. That lighting is what gl_SetColor produced at bake time, so
+// a reflection is lit by the engine's own numbers rather than by a second implementation of them.
+//
+// Not textured yet: a texture would need the material for that triangle, which means bindless. The
+// lit flat colour is the honest intermediate -- it proves the fetch and the interpolation before the
+// binding work that would hide a mistake in either.
 static const char *kMirrorPS =
 	"#version 460\n"
 	"#extension GL_EXT_ray_query : require\n"
 	"layout(binding = 0) uniform Constants { mat4 uMVP; vec4 uCameraPos; vec4 uLightParams; vec4 uClipPlane; vec4 uScreen; };\n"
 	"layout(binding = 1) uniform sampler2D uTex;\n"
 	"layout(binding = 2) uniform accelerationStructureEXT uTLAS;\n"
+	"layout(std430, binding = 3) readonly buffer Verts { float vtx[]; };\n"
 	"layout(location = 0) in vec3 vWorld;\n"
 	"layout(location = 1) in vec3 vNormal;\n"
 	"layout(location = 0) out vec4 outColor;\n"
+	"const uint STRIDE = 19u;\n"
+	"vec3 vertColor(uint v) { uint b = v * STRIDE + 5u; return vec3(vtx[b], vtx[b + 1u], vtx[b + 2u]); }\n"
 	"void main() {\n"
 	"    vec3 n = normalize(vNormal);\n"
 	"    vec3 eye = normalize(vWorld - uCameraPos.xyz);\n"
@@ -2351,9 +2375,15 @@ static const char *kMirrorPS =
 	"        outColor = vec4(0.0, 0.0, 0.0, 1.0);\n"
 	"        return;\n"
 	"    }\n"
+	"    uint prim = uint(rayQueryGetIntersectionPrimitiveIndexEXT(rq, true));\n"
+	"    vec2 bc = rayQueryGetIntersectionBarycentricsEXT(rq, true);\n"
+	"    vec3 c = vertColor(prim * 3u) * (1.0 - bc.x - bc.y)\n"
+	"           + vertColor(prim * 3u + 1u) * bc.x\n"
+	"           + vertColor(prim * 3u + 2u) * bc.y;\n"
+	// Distance falls off the same way the raster path's fog does, so a far reflection reads as far.
 	"    float t = rayQueryGetIntersectionTEXT(rq, true);\n"
-	"    float g = clamp(1.0 - t / 2000.0, 0.05, 1.0);\n"
-	"    outColor = vec4(vec3(g), 1.0);\n"
+	"    c *= clamp(1.0 - t / 4000.0, 0.15, 1.0);\n"
+	"    outColor = vec4(c, 1.0);\n"
 	"}\n";
 
 static bool EnsureMirrorResources()
@@ -2408,6 +2438,7 @@ static bool EnsureMirrorResources()
 		static Diligent::ShaderResourceVariableDesc vars[] = {
 			{ Diligent::SHADER_TYPE_PIXEL, "uTex", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
 			{ Diligent::SHADER_TYPE_PIXEL, "uTLAS", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
+			{ Diligent::SHADER_TYPE_PIXEL, "Verts", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
 		};
 		static Diligent::SamplerDesc samp;
 		samp.MinFilter = Diligent::FILTER_TYPE_LINEAR;
@@ -2433,7 +2464,7 @@ static bool EnsureMirrorResources()
 		pci.GraphicsPipeline.InputLayout.NumElements = 2;
 		pci.PSODesc.ResourceLayout.DefaultVariableType = Diligent::SHADER_RESOURCE_VARIABLE_TYPE_STATIC;
 		pci.PSODesc.ResourceLayout.Variables = vars;
-		pci.PSODesc.ResourceLayout.NumVariables = 2;
+		pci.PSODesc.ResourceLayout.NumVariables = 3;
 		pci.PSODesc.ResourceLayout.ImmutableSamplers = samplers;
 		pci.PSODesc.ResourceLayout.NumImmutableSamplers = 1;
 		pci.pVS = vs; pci.pPS = ps;
@@ -2467,6 +2498,10 @@ static bool EnsureMirrorResources()
 			{
 				v->Set(g_tlas);
 				g_mirrorTraced = true;
+			}
+			if (auto *v = g_mirrorSRB->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "Verts"))
+			{
+				v->Set(g_vb->GetDefaultView(Diligent::BUFFER_VIEW_SHADER_RESOURCE));
 			}
 		}
 	}
@@ -2527,7 +2562,10 @@ static void DrawMirrorSurface(Diligent::IDeviceContext *ctx, unsigned index)
 static void RenderMirrors(Diligent::IDeviceContext *ctx)
 {
 	if (!fua_dg_mirrors || g_mirrors.Size() == 0) return;
-	if (!EnsureMirrorResources()) return;
+	if (!g_mirrorPSO || !g_mirrorSRB || !g_mirrorVB)
+	{
+		if (!EnsureMirrorResources()) return;
+	}
 
 	auto *swap = GetSwapChain();
 	auto *brtv = swap->GetCurrentBackBufferRTV();

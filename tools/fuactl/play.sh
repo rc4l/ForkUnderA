@@ -62,6 +62,10 @@ ARGS=(launch --port "$PORT" --iwad "$IWAD" --map "$MAP" --play)
 # so both renderers are on screen at once. Easier to point at a difference than toggling and trying
 # to remember what the other one looked like.
 [ -n "${SIDEBYSIDE:-}" ] && ARGS+=(--cvar fua_dg_embed=0)
+# [rc4l] RT=1 turns on ray-traced reflections. It has to be set at LAUNCH, not from the console: the
+# acceleration structure is built at scene upload, which has already happened by the time a level is
+# playable, so setting it later leaves nothing for the rays to hit.
+[ -n "${RT:-}" ] && ARGS+=(--cvar fua_dg_rtmirrors=1)
 [ -n "${WAD:-}" ] && ARGS+=(--file "$WAD")
 # God on and monsters off by default: being shot at halfway through showing me a texture seam is
 # pure friction. MONSTERS=1 puts them back when the thing to look at IS a monster sprite.
