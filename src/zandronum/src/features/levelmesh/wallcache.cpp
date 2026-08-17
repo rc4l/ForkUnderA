@@ -188,22 +188,29 @@ void BakeSeg(int segIndex)
 		MeshPiece mp;
 		mp.range = sc.pieces[i].range;
 		mp.material = sc.walls[i].gltexture;
-		// [rc4l] A wall is not always opaque: two-sided middle textures, and the 3D floor sides that
-		// go with a translucent 3D floor, carry the rover's alpha. Baking them opaque draws a pane of
-		// coloured glass as a solid wall.
+		mp.lightLevel = sc.walls[i].lightlevel;
+		mp.lightColor = sc.walls[i].Colormap.LightColor.d;
+		mp.fadeColor = sc.walls[i].Colormap.FadeColor.d;
+		CaptureWallShading(sc.walls[i], mp);
+
+		// [rc4l] AFTER CaptureShading, which resets alpha to 1 and blendMode to 0 on the way past.
+		//
+		// Setting them before it is silently undone, and the surface renders opaque with no sign
+		// anything was captured -- which is precisely how a pane of glass survived a fix that was
+		// otherwise correct. The flat path already had this ordering; the wall path did not, and the
+		// two were written a day apart.
+		//
+		// A wall is not always opaque: two-sided middle textures carry the LINEDEF's alpha, and the
+		// sides of a translucent 3D floor carry the rover's. The draw list the engine chose is what
+		// settles it -- a frosted-glass texture keeps alpha 1 and hides its transparency in the
+		// texture's own alpha channel.
 		mp.alpha = sc.walls[i].alpha;
-		// The draw list the engine chose, not the wall's alpha, is what says this needs blending --
-		// a frosted-glass middle texture keeps alpha 1 and carries its transparency in the texture.
 		{
 			const int list = sc.pieces[i].list;
 			const bool trans = (list == GLDL_TRANSLUCENT || list == GLDL_TRANSLUCENTBORDER);
 			mp.blendMode = ComputeWallBlendMode(trans, sc.walls[i].RenderStyle == STYLE_Add,
 			                                    sc.walls[i].alpha);
 		}
-		mp.lightLevel = sc.walls[i].lightlevel;
-		mp.lightColor = sc.walls[i].Colormap.LightColor.d;
-		mp.fadeColor = sc.walls[i].Colormap.FadeColor.d;
-		CaptureWallShading(sc.walls[i], mp);
 		mp.dynLightIndex = sc.walls[i].dynlightindex;
 
 		// [rc4l] Wall normal: perpendicular to the seg's horizontal direction, in mesh space
