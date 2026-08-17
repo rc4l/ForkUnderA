@@ -132,19 +132,34 @@ void *Fua_CreateBackendWindow(const char *title, int w, int h)
 		// past its right edge put it entirely off-screen, so the side-by-side build looked exactly
 		// like the embedded one: a single window, with the second one sitting in nowhere.
 		const int w = rc.right - rc.left, h = rc.bottom - rc.top;
-		int x = 40, y = 40;
-		RECT er;
-		if (Window != NULL && GetWindowRect(Window, &er)) { x = er.right + 8; y = er.top; }
-
 		RECT work;
-		if (SystemParametersInfo(SPI_GETWORKAREA, 0, &work, 0))
+		if (!SystemParametersInfo(SPI_GETWORKAREA, 0, &work, 0))
+		{ work.left = work.top = 0; work.right = 1920; work.bottom = 1080; }
+
+		// [rc4l] Make room by moving the ENGINE window, rather than overlapping and hoping.
+		//
+		// Clamping this window into the work area was not enough: if the engine window sits anywhere
+		// but the far left, the two overlap, and the moment the player clicks the game window -- which
+		// they must, to play -- it comes forward and hides the one they wanted to compare against. The
+		// second window looked "down" while it was rendering perfectly behind the first.
+		int y = work.top;
+		RECT er;
+		if (Window != NULL && GetWindowRect(Window, &er))
 		{
-			if (x + w > work.right)  x = work.right - w;    // no room to the right: overlap instead
-			if (y + h > work.bottom) y = work.bottom - h;
-			if (x < work.left) x = work.left;
-			if (y < work.top)  y = work.top;
+			const int ew = er.right - er.left;
+			if (er.left + ew + 8 + w > work.right)
+				SetWindowPos(Window, NULL, work.left, work.top, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+			if (GetWindowRect(Window, &er)) y = er.top;
 		}
-		SetWindowPos(hwnd, HWND_TOP, x, y, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE);
+		int x = (Window != NULL) ? er.right + 8 : work.left;
+		if (x + w > work.right) x = work.right - w;
+		if (x < work.left) x = work.left;
+		if (y + h > work.bottom) y = work.bottom - h;
+		if (y < work.top) y = work.top;
+
+		// TOPMOST, not TOP: this window never takes focus (WS_EX_NOACTIVATE), so it cannot steal
+		// input, and staying above the game window is the entire point of a side-by-side build.
+		SetWindowPos(hwnd, HWND_TOPMOST, x, y, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE);
 	}
 	return (void *)hwnd;
 }
