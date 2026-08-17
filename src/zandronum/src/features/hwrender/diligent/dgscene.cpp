@@ -745,26 +745,48 @@ static const char *kScenePSRedAlpha =
 	"    return vec2(dot(rel, su) * length(axisU), dot(rel, sv) * length(axisV)) * 0.5 + 0.5;\n" \
 	"}\n"
 
+// [rc4l] The decal's box, built ON THE GPU from nothing but two indices.
+//
+// There is no vertex buffer. gl_VertexIndex picks a corner of a unit cube out of a constant table and
+// gl_InstanceIndex picks which mark it belongs to, out of a storage buffer the CPU fills with one
+// small record per mark. Every decal on screen is then a handful of instanced draws -- one per
+// texture and blend mode -- instead of one draw each.
+//
+// The reason to do it this way is CPU, which is what this renderer is short of. Building the boxes
+// here meant writing thirty-six vertices of twenty floats per mark EVERY FRAME: about 190 KB a frame
+// once a fight has left seventy marks on the walls, all of it recomputed from data that had not
+// changed. The instance record is ninety-six bytes, so the same seventy marks cost six kilobytes and
+// no arithmetic at all.
 static const char *kDecalVS =
 	"#version 450\n"
 	"layout(binding = 0) uniform Constants { mat4 uMVP; vec4 uCameraPos; vec4 uLightParams; vec4 uClipPlane; vec4 uScreen; vec4 uSkyColor; };\n"
-	"layout(location = 0) in vec3 aPos;\n"       // box corner, already in world space
-	"layout(location = 1) in vec3 aCentre;\n"
-	"layout(location = 2) in vec3 aAxisU;\n"     // the box's three axes, pre-divided by their
-	"layout(location = 3) in vec3 aAxisV;\n"     // half-extents, so the pixel shader's inside test
-	"layout(location = 4) in vec3 aAxisN;\n"     // is one dot product per axis and nothing else
-	"layout(location = 5) in vec4 aColor;\n"
-	"layout(location = 6) in float aRadius;\n"
+	/* One record per mark: where it landed, which way its picture is turned, how far it reaches, and
+	   what colour to paint. Read-only storage, so the vertex stage can index it freely. */
+	"struct DecalRec { vec4 centre; vec4 axisU; vec4 axisV; vec4 axisN; vec4 color; };\n"
+	"layout(std430, binding = 9) readonly buffer Decals { DecalRec decals[]; };\n"
 	"layout(location = 0) out vec3 vCentre;\n"
 	"layout(location = 1) out vec3 vAxisU;\n"
 	"layout(location = 2) out vec3 vAxisV;\n"
 	"layout(location = 3) out vec3 vAxisN;\n"
 	"layout(location = 4) out vec4 vColor;\n"
 	"layout(location = 5) out float vRadius;\n"
+	/* The eight corners of a cube as thirty-six indices. An axis-aligned box is all the geometry a
+	   radial mark needs -- it only has to contain the sphere the pixel stage tests against, and a cube
+	   containing that sphere is the same cube however the mark is turned. */
+	"const vec3 kCorner[8] = vec3[8](\n"
+	"    vec3(-1,-1,-1), vec3( 1,-1,-1), vec3( 1, 1,-1), vec3(-1, 1,-1),\n"
+	"    vec3(-1,-1, 1), vec3( 1,-1, 1), vec3( 1, 1, 1), vec3(-1, 1, 1));\n"
+	"const int kIndex[36] = int[36](\n"
+	"    0,1,2, 0,2,3,  4,6,5, 4,7,6,  0,3,7, 0,7,4,\n"
+	"    1,5,6, 1,6,2,  0,4,5, 0,5,1,  3,2,6, 3,6,7);\n"
 	"void main() {\n"
-	"    vCentre = aCentre; vAxisU = aAxisU; vAxisV = aAxisV; vAxisN = aAxisN; vColor = aColor;\n"
-	"    vRadius = aRadius;\n"
-	"    gl_Position = uMVP * vec4(aPos, 1.0);\n"
+	"    DecalRec d = decals[gl_InstanceIndex];\n"
+	"    vCentre = d.centre.xyz;\n"
+	"    vRadius = d.centre.w;\n"
+	"    vAxisU = d.axisU.xyz; vAxisV = d.axisV.xyz; vAxisN = d.axisN.xyz;\n"
+	"    vColor = d.color;\n"
+	"    vec3 corner = d.centre.xyz + kCorner[kIndex[gl_VertexIndex]] * d.centre.w;\n"
+	"    gl_Position = uMVP * vec4(corner, 1.0);\n"
 	"}\n";
 
 static const char *kDecalPS =
@@ -2800,55 +2822,30 @@ static bool InvertMatrix4(const float *m, float *out)
 	return true;
 }
 
-struct DecalVertex
+// [rc4l] One record per mark, read by the vertex stage -- see kDecalVS.
+//
+// This replaces thirty-six vertices of twenty floats built on the CPU every frame. Same information,
+// a thirtieth of the bytes, and no arithmetic: the GPU expands it into a box itself.
+//
+// std140 layout, so the members are vec4-aligned deliberately rather than by accident. The radius
+// rides in centre.w because it is needed in the vertex stage to size the box and in the pixel stage
+// to bound the blast, and a vec4 costs the same as a vec3.
+struct DecalInstance
 {
-	float x, y, z;       // one corner of the box, mesh space
-	float cx, cy, cz;    // its centre
-	float ux, uy, uz;    // and its three axes, each pre-divided by its own half-extent
-	float vx, vy, vz;
-	float nx, ny, nz;
-	float r, g, b, a;
-	float radius;           // how far the mark reaches from where it landed
+	float centre[4];   // xyz = where it landed, w = how far it reaches
+	float axisU[4];    // the picture's axes, each divided by its own half-extent
+	float axisV[4];
+	float axisN[4];
+	float color[4];    // rgb and alpha, already lit and faded
 };
-
-// One decal's box, as 36 vertices. Everything a box needs travels in its own vertices, which is what
-// lets two of them share a draw.
-static void AppendDecalBox(TArray<DecalVertex> &vb, const zx::levelmesh::ProjectedDecal &d,
-                           const float kCube[36][3])
-{
-	// The decal's basis arrives in MAP space (x, y, z-up); mesh space is (x, z-up, y), so each axis
-	// swaps its last two components on the way in, exactly as the centre does.
-	const float ux = d.ux, uy = d.uz, uz = d.uy;
-	const float vx = d.vx, vy = d.vz, vz = d.vy;
-	const float nx = d.nx, ny = d.nz, nz = d.ny;
-	// [rc4l] An AXIS-ALIGNED cube of the blast radius, not a box turned to face the surface that was
-	// hit. The shape only has to contain the sphere the shader tests against, and a cube containing
-	// that sphere is the same cube whichever way the mark is turned -- so nothing about the geometry
-	// has to know, and nothing about it can leave a corner of the world outside it. The axes still
-	// travel with the vertices, but only to orient the PICTURE.
-	const float R = d.radius;
-	for (int v = 0; v < 36; v++)
-	{
-		DecalVertex dv;
-		dv.cx = d.x; dv.cy = d.z; dv.cz = d.y;
-		dv.ux = ux; dv.uy = uy; dv.uz = uz;
-		dv.vx = vx; dv.vy = vy; dv.vz = vz;
-		dv.nx = nx; dv.ny = ny; dv.nz = nz;
-		dv.x = dv.cx + kCube[v][0] * R;
-		dv.y = dv.cy + kCube[v][1] * R;
-		dv.z = dv.cz + kCube[v][2] * R;
-		dv.r = d.r; dv.g = d.g; dv.b = d.b; dv.a = d.a;
-		dv.radius = d.radius;
-		vb.Push(dv);
-	}
-}
 
 static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_decalPSO;      // normal texture
 static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_decalAddPSO;
 static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_decalRedPSO;   // alpha-mask texture
 static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_decalRedAddPSO;
-static Diligent::RefCntAutoPtr<Diligent::IBuffer> g_decalVB;
-static unsigned int g_decalVBCapacity = 0;
+static Diligent::RefCntAutoPtr<Diligent::IBuffer> g_decalInstBuf;
+static Diligent::IBufferView *g_decalInstSRV = NULL;
+static unsigned int g_decalInstCapacity = 0;
 static Diligent::RefCntAutoPtr<Diligent::IBuffer> g_decalCB;
 static int g_decalsDrawn = 0;   // DRAW CALLS, not marks -- runs of the same state share one
 static int g_decalBoxes = 0;
@@ -2860,8 +2857,9 @@ static void ReleaseDecalPass()
 {
 	g_decalPSO.Release(); g_decalAddPSO.Release();
 	g_decalRedPSO.Release(); g_decalRedAddPSO.Release();
-	g_decalVB.Release(); g_decalCB.Release();
-	g_decalVBCapacity = 0;
+	g_decalInstBuf.Release(); g_decalCB.Release();
+	g_decalInstSRV = NULL;
+	g_decalInstCapacity = 0;
 }
 
 static bool EnsureDecalPass()
@@ -2882,6 +2880,24 @@ static bool EnsureDecalPass()
 	dev->CreateShader(ci, &psRed);
 	if (!vs || !ps || !psRed) return false;
 
+	if (!g_decalInstBuf)
+	{
+		// [rc4l] One record per mark, for the whole frame. Sized for the decal ring's own cap, so it
+		// is allocated once and never grows -- a static shader variable cannot be rebound between the
+		// draws that use it without re-binding it on every pipeline.
+		g_decalInstCapacity = 1024;
+		Diligent::BufferDesc bd;
+		bd.Name = "fua decal instances";
+		bd.Size = (Diligent::Uint64)g_decalInstCapacity * sizeof(DecalInstance);
+		bd.Usage = Diligent::USAGE_DEFAULT;
+		bd.BindFlags = Diligent::BIND_SHADER_RESOURCE;
+		bd.Mode = Diligent::BUFFER_MODE_STRUCTURED;
+		bd.ElementByteStride = sizeof(DecalInstance);
+		dev->CreateBuffer(bd, nullptr, &g_decalInstBuf);
+		if (!g_decalInstBuf) { g_decalInstCapacity = 0; return false; }
+		g_decalInstSRV = g_decalInstBuf->GetDefaultView(Diligent::BUFFER_VIEW_SHADER_RESOURCE);
+	}
+
 	if (!g_decalCB)
 	{
 		Diligent::BufferDesc bd;
@@ -2894,15 +2910,6 @@ static bool EnsureDecalPass()
 		if (!g_decalCB) return false;
 	}
 
-	Diligent::LayoutElement layout[] = {
-		Diligent::LayoutElement{0, 0, 3, Diligent::VT_FLOAT32, false},
-		Diligent::LayoutElement{1, 0, 3, Diligent::VT_FLOAT32, false},
-		Diligent::LayoutElement{2, 0, 3, Diligent::VT_FLOAT32, false},
-		Diligent::LayoutElement{3, 0, 3, Diligent::VT_FLOAT32, false},
-		Diligent::LayoutElement{4, 0, 3, Diligent::VT_FLOAT32, false},
-		Diligent::LayoutElement{5, 0, 4, Diligent::VT_FLOAT32, false},
-		Diligent::LayoutElement{6, 0, 1, Diligent::VT_FLOAT32, false},
-	};
 	static Diligent::ShaderResourceVariableDesc vars[] = {
 		{ Diligent::SHADER_TYPE_PIXEL, "uTex", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
 		{ Diligent::SHADER_TYPE_PIXEL, "uSceneDepth", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
@@ -2959,8 +2966,7 @@ static bool EnsureDecalPass()
 			rt.DestBlendAlpha = Diligent::BLEND_FACTOR_INV_SRC_ALPHA;
 			rt.BlendOpAlpha = Diligent::BLEND_OPERATION_ADD;
 		}
-		pci.GraphicsPipeline.InputLayout.LayoutElements = layout;
-		pci.GraphicsPipeline.InputLayout.NumElements = 7;
+		// No input layout: the box is built from gl_VertexIndex and the mark from gl_InstanceIndex.
 		pci.PSODesc.ResourceLayout.DefaultVariableType = Diligent::SHADER_RESOURCE_VARIABLE_TYPE_STATIC;
 		pci.PSODesc.ResourceLayout.Variables = vars;
 		pci.PSODesc.ResourceLayout.NumVariables = 3;
@@ -2977,6 +2983,7 @@ static bool EnsureDecalPass()
 			const Diligent::SHADER_TYPE stage = st ? Diligent::SHADER_TYPE_PIXEL : Diligent::SHADER_TYPE_VERTEX;
 			if (auto *v = made->GetStaticVariableByName(stage, "Constants")) v->Set(g_cb);
 			if (auto *v = made->GetStaticVariableByName(stage, "Decal")) v->Set(g_decalCB);
+			if (auto *v = made->GetStaticVariableByName(stage, "Decals")) v->Set(g_decalInstSRV);
 		}
 		if (pass == 0) g_decalPSO = made;
 		else if (pass == 1) g_decalAddPSO = made;
@@ -2995,6 +3002,7 @@ static bool EnsureDecalPass()
 static void DrawProjectedDecals(Diligent::IDeviceContext *ctx)
 {
 	g_decalsDrawn = 0;
+	g_decalBoxes = 0;
 	const zx::levelmesh::ProjectedDecal *decals = NULL;
 	const int n = zx::levelmesh::GetProjectedDecals(&decals);
 	if (n <= 0 || decals == NULL) return;
@@ -3010,89 +3018,103 @@ static void DrawProjectedDecals(Diligent::IDeviceContext *ctx)
 		for (int i = 0; i < 16; i++) cb[i] = invMVP[i];
 	}
 
-	// The 36 vertices of a unit cube, as a triangle list.
-	static const float kCube[36][3] = {
-		{-1,-1,-1},{ 1,-1,-1},{ 1, 1,-1}, {-1,-1,-1},{ 1, 1,-1},{-1, 1,-1},
-		{-1,-1, 1},{ 1, 1, 1},{ 1,-1, 1}, {-1,-1, 1},{-1, 1, 1},{ 1, 1, 1},
-		{-1,-1,-1},{-1, 1,-1},{-1, 1, 1}, {-1,-1,-1},{-1, 1, 1},{-1,-1, 1},
-		{ 1,-1,-1},{ 1, 1, 1},{ 1, 1,-1}, { 1,-1,-1},{ 1,-1, 1},{ 1, 1, 1},
-		{-1,-1,-1},{ 1,-1, 1},{ 1,-1,-1}, {-1,-1,-1},{-1,-1, 1},{ 1,-1, 1},
-		{-1, 1,-1},{ 1, 1,-1},{ 1, 1, 1}, {-1, 1,-1},{ 1, 1, 1},{-1, 1, 1},
-	};
-
-	static TArray<DecalVertex> vb;
-	struct DecalRun { const void *material; unsigned first, count; bool additive, red; };
-	static TArray<DecalRun> runs;
-	vb.Clear();
-	runs.Clear();
+	// [rc4l] Grouped by the only two things that genuinely force a new draw: the texture and the
+	// blend. Everything else about a mark travels in its own instance record, so a hundred marks
+	// sharing a scorch graphic are one draw of a hundred instances. Sorted rather than merged only
+	// where adjacent, which is what limited the old path -- a scorch and its glow alternate, so
+	// consecutive marks almost never matched and seventy of them cost fifty-five draws.
+	struct Group { const void *material; bool additive, red; unsigned first, count; };
+	static TArray<DecalInstance> inst;
+	static TArray<Group> groups;
+	static TArray<unsigned> order;
+	inst.Clear();
+	groups.Clear();
+	order.Clear();
 
 	for (int i = 0; i < n; i++)
 	{
 		const zx::levelmesh::ProjectedDecal &d = decals[i];
 		if (d.a <= 0.f || d.material == NULL) continue;
-		// [rc4l] Extend the open run rather than starting a new one when nothing about the state
-		// changes. Everything a box needs is in its own vertices, so two boxes with the same texture
-		// and the same blend are one draw -- and a burst of fire is all one texture, so a magazine
-		// emptied into a wall costs a handful of draws instead of one per hole. Adjacent only, never
-		// reordered: these blend, and blending is order-dependent.
-		if (runs.Size() > 0)
+		order.Push((unsigned)i);
+	}
+	if (order.Size() == 0) return;
+
+	// A stable sort by state. Decals blend, so order matters where two overlap -- and within one
+	// group the original order is kept, which is as much as the old path guaranteed anyway.
+	for (unsigned a = 1; a < order.Size(); a++)
+	{
+		const unsigned key = order[a];
+		const zx::levelmesh::ProjectedDecal &kd = decals[key];
+		unsigned b = a;
+		while (b > 0)
 		{
-			DecalRun &last = runs[runs.Size() - 1];
-			if (last.material == d.material && last.additive == d.additive &&
-				last.red == d.redToAlpha && last.first + last.count == vb.Size())
+			const zx::levelmesh::ProjectedDecal &pd = decals[order[b - 1]];
+			const bool later = (pd.material > kd.material) ||
+				(pd.material == kd.material && ((int)pd.additive > (int)kd.additive ||
+				((int)pd.additive == (int)kd.additive && (int)pd.redToAlpha > (int)kd.redToAlpha)));
+			if (!later) break;
+			order[b] = order[b - 1];
+			b--;
+		}
+		order[b] = key;
+	}
+
+	for (unsigned k = 0; k < order.Size(); k++)
+	{
+		const zx::levelmesh::ProjectedDecal &d = decals[order[k]];
+		if (groups.Size() == 0)
+		{
+			Group g; g.material = d.material; g.additive = d.additive; g.red = d.redToAlpha;
+			g.first = 0; g.count = 0;
+			groups.Push(g);
+		}
+		else
+		{
+			Group &last = groups[groups.Size() - 1];
+			if (last.material != d.material || last.additive != d.additive || last.red != d.redToAlpha)
 			{
-				last.count += 36;
-				AppendDecalBox(vb, d, kCube);
-				continue;
+				Group g; g.material = d.material; g.additive = d.additive; g.red = d.redToAlpha;
+				g.first = inst.Size(); g.count = 0;
+				groups.Push(g);
 			}
 		}
-		DecalRun r;
-		r.material = d.material; r.first = vb.Size(); r.count = 36;
-		r.additive = d.additive; r.red = d.redToAlpha;
-		runs.Push(r);
-		AppendDecalBox(vb, d, kCube);
-	}
-	g_decalBoxes = (int)(vb.Size() / 36);
-	if (vb.Size() == 0) return;
+		groups[groups.Size() - 1].count++;
 
-	if (!g_decalVB || g_decalVBCapacity < vb.Size())
-	{
-		g_decalVBCapacity = vb.Size() + vb.Size() / 2 + 256;
-		Diligent::BufferDesc bd;
-		bd.Name = "fua decal VB";
-		bd.Size = (Diligent::Uint64)g_decalVBCapacity * sizeof(DecalVertex);
-		bd.Usage = Diligent::USAGE_DEFAULT;
-		bd.BindFlags = Diligent::BIND_VERTEX_BUFFER;
-		g_decalVB.Release();
-		GetDevice()->CreateBuffer(bd, nullptr, &g_decalVB);
-		if (!g_decalVB) { g_decalVBCapacity = 0; return; }
+		// The basis arrives in MAP space (x, y, z-up); mesh space is (x, z-up, y), so each axis swaps
+		// its last two components on the way in, exactly as the centre does.
+		DecalInstance rec;
+		rec.centre[0] = d.x; rec.centre[1] = d.z; rec.centre[2] = d.y; rec.centre[3] = d.radius;
+		rec.axisU[0] = d.ux; rec.axisU[1] = d.uz; rec.axisU[2] = d.uy; rec.axisU[3] = 0.f;
+		rec.axisV[0] = d.vx; rec.axisV[1] = d.vz; rec.axisV[2] = d.vy; rec.axisV[3] = 0.f;
+		rec.axisN[0] = d.nx; rec.axisN[1] = d.nz; rec.axisN[2] = d.ny; rec.axisN[3] = 0.f;
+		rec.color[0] = d.r; rec.color[1] = d.g; rec.color[2] = d.b; rec.color[3] = d.a;
+		inst.Push(rec);
 	}
-	ctx->UpdateBuffer(g_decalVB, 0, (Diligent::Uint64)vb.Size() * sizeof(DecalVertex), &vb[0],
-		Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	g_decalBoxes = (int)inst.Size();
+	if (g_decalBoxes == 0) return;
 
-	// [rc4l] Detach the depth buffer for the duration of this pass, then put it back.
-	//
-	// See the PSO: the texture this pass samples is the one still attached as the depth target, and
-	// sampling an attached resource is undefined. The passes after this one -- sprites, translucent
-	// world -- do test depth, so the attachment is restored before returning rather than left off.
+	if (!g_decalInstBuf) return;
+	if (inst.Size() > g_decalInstCapacity) inst.Resize(g_decalInstCapacity);
+	ctx->UpdateBuffer(g_decalInstBuf, 0, (Diligent::Uint64)inst.Size() * sizeof(DecalInstance),
+		&inst[0], Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+
+	// [rc4l] The depth buffer comes off the render target for this pass -- it is being READ.
+	// Sampling a texture that is simultaneously attached is undefined, and the driver serves stale
+	// tiles: a fine diagonal hatch across every surface a decal reached, which reads exactly like
+	// z-fighting and is not. The passes after this one test depth, so it goes back on.
 	auto *swap = GetSwapChain();
 	Diligent::ITextureView *rtv = swap ? swap->GetCurrentBackBufferRTV() : NULL;
 	if (rtv) ctx->SetRenderTargets(1, &rtv, NULL, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
-	Diligent::IBuffer *vbs[] = { g_decalVB };
-	const Diligent::Uint64 offsets[] = { 0 };
-	ctx->SetVertexBuffers(0, 1, vbs, offsets, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
-		Diligent::SET_VERTEX_BUFFERS_FLAG_RESET);
-
 	Diligent::IPipelineState *bound = NULL;
-	for (unsigned i = 0; i < runs.Size(); i++)
+	for (unsigned gi = 0; gi < groups.Size(); gi++)
 	{
-		const DecalRun &r = runs[i];
-		Diligent::IPipelineState *pso = r.red
-			? (r.additive ? g_decalRedAddPSO.RawPtr() : g_decalRedPSO.RawPtr())
-			: (r.additive ? g_decalAddPSO.RawPtr()    : g_decalPSO.RawPtr());
+		const Group &g = groups[gi];
+		Diligent::IPipelineState *pso = g.red
+			? (g.additive ? g_decalRedAddPSO.RawPtr() : g_decalRedPSO.RawPtr())
+			: (g.additive ? g_decalAddPSO.RawPtr()    : g_decalPSO.RawPtr());
 		if (!pso) continue;
-		auto *srb = GetMaterialSRB(pso, r.material, 0);
+		auto *srb = GetMaterialSRB(pso, g.material, 0);
 		if (!srb) continue;
 		if (auto *v = srb->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "uSceneDepth"))
 			v->Set(depthSRV);
@@ -3100,9 +3122,14 @@ static void DrawProjectedDecals(Diligent::IDeviceContext *ctx)
 			v->Set(normalSRV);
 		if (pso != bound) { ctx->SetPipelineState(pso); bound = pso; }
 		ctx->CommitShaderResources(srb, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+
+		// No vertex buffer at all: the box comes out of gl_VertexIndex and the mark out of
+		// gl_InstanceIndex. See kDecalVS.
 		Diligent::DrawAttribs draw;
-		draw.NumVertices = r.count;
-		draw.StartVertexLocation = r.first;
+		draw.NumVertices = 36;
+		draw.NumInstances = g.count;
+		draw.StartVertexLocation = 0;
+		draw.FirstInstanceLocation = g.first;
 		draw.Flags = Diligent::DRAW_FLAG_VERIFY_ALL;
 		ctx->Draw(draw);
 		g_decalsDrawn++;
@@ -3506,7 +3533,7 @@ static bool EnsureMirrorResources()
 		pci.GraphicsPipeline.InputLayout.NumElements = 2;
 		pci.PSODesc.ResourceLayout.DefaultVariableType = Diligent::SHADER_RESOURCE_VARIABLE_TYPE_STATIC;
 		pci.PSODesc.ResourceLayout.Variables = vars;
-		pci.PSODesc.ResourceLayout.NumVariables = 4;
+		pci.PSODesc.ResourceLayout.NumVariables = 3;
 		pci.PSODesc.ResourceLayout.ImmutableSamplers = samplers;
 		pci.PSODesc.ResourceLayout.NumImmutableSamplers = 3;
 		pci.pVS = vs; pci.pPS = ps;
