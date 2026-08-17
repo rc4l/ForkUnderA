@@ -51,6 +51,8 @@ int FlatDecalCount();
 // and the hit was a wall" stop being the same observation.
 void NoteImpact(int hitType, bool noImpactFlag, bool noDecalFlag);
 extern int g_impactWall, g_impactFloor, g_impactCeiling, g_impactOther, g_impactSuppressed;
+extern float g_lastHitZ, g_lastPlaneSpawn, g_lastPlaneNow;
+extern bool g_lastRover;
 extern float g_lastX, g_lastY, g_lastZ, g_lastHW, g_lastHH, g_lastAlpha;
 extern bool g_lastRed;
 extern unsigned int g_lastShade;
