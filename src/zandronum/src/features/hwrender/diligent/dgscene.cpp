@@ -97,6 +97,10 @@ EXTERN_CVAR(Bool, gl_lights_additive)
 // [rc4l] 0 flat multiply (pre-lighting-port behaviour), 1 the ported equation, 2 depth as grey,
 // 3 depth contours, 4 vertex colour only. Live per frame -- no rebake needed to switch.
 CVAR(Int, fua_dg_lightmode, 1, CVAR_ARCHIVE)
+// [rc4l] Show what the decal pass computes instead of the mark: 1 = picture coordinate, 2 = walked
+// distance over reach, 3 = the surface normal it read. Every term that can discard a fragment leaves
+// the same evidence -- no mark -- so telling them apart otherwise means changing one and rebuilding.
+CVAR(Int, fua_dg_decaldebug, 0, 0)
 
 // [rc4l] Mirror every engine frame into the backend window, from the live camera. Off by default:
 // it costs a second render of the scene, and while the backend is incomplete (no sky, no HUD, no
@@ -891,7 +895,7 @@ static const char *kDecalVS =
 static const char *kDecalPS =
 	"#version 450\n"
 	"layout(binding = 0) uniform Constants { mat4 uMVP; vec4 uCameraPos; vec4 uLightParams; vec4 uClipPlane; vec4 uScreen; vec4 uSkyColor; };\n"
-	"layout(binding = 6) uniform Decal { mat4 uInvMVP; };\n"
+	"layout(binding = 6) uniform Decal { mat4 uInvMVP; vec4 uDecalDebug; };\n"
 	"layout(binding = 1) uniform sampler2D uTex;\n"
 	"layout(binding = 7) uniform sampler2D uSceneDepth;\n"
 	"layout(binding = 8) uniform sampler2D uSceneNormal;\n"
@@ -939,6 +943,16 @@ static const char *kDecalPS =
 	/* Past the end of the picture. Clamped instead of dropped, the edge texel would repeat for
 	   ever -- a dragged row of texels by another route, which is the artifact all of this
 	   exists to avoid. */
+	/* [rc4l] What the pass is actually computing, on demand. 1 = the picture coordinate, 2 = how far
+	   the soot walked as a fraction of its reach, 3 = the surface normal it read. A mark that stops
+	   somewhere looks identical whichever term stopped it, so without this the only way to tell them
+	   apart is to change one and rebuild. */ \
+	"    if (uDecalDebug.x > 0.5) {\n" \
+	"        if (uDecalDebug.x < 1.5) outColor = vec4(fract(t), 0.0, 1.0);\n" \
+	"        else if (uDecalDebug.x < 2.5) outColor = vec4(vec3(path / max(vRadius, 1.0)), 1.0);\n" \
+	"        else outColor = vec4(nrm * 0.5 + 0.5, 1.0);\n" \
+	"        return;\n" \
+	"    }\n" \
 	"    if (any(lessThan(t, vec2(0.0))) || any(greaterThan(t, vec2(1.0)))) discard;\n"
 	/* [rc4l] A fixed mip level, not one derived from how fast the coordinate is changing.
 	   Everything about the mark's coordinate is per-fragment -- it is built from a surface normal read
@@ -954,7 +968,7 @@ static const char *kDecalPS =
 static const char *kDecalRedPS =
 	"#version 450\n"
 	"layout(binding = 0) uniform Constants { mat4 uMVP; vec4 uCameraPos; vec4 uLightParams; vec4 uClipPlane; vec4 uScreen; vec4 uSkyColor; };\n"
-	"layout(binding = 6) uniform Decal { mat4 uInvMVP; };\n"
+	"layout(binding = 6) uniform Decal { mat4 uInvMVP; vec4 uDecalDebug; };\n"
 	"layout(binding = 1) uniform sampler2D uTex;\n"
 	"layout(binding = 7) uniform sampler2D uSceneDepth;\n"
 	"layout(binding = 8) uniform sampler2D uSceneNormal;\n"
@@ -992,6 +1006,16 @@ static const char *kDecalRedPS =
 	"    vec2 t = fuaDecalUV(rel, nrm, vAxisU, vAxisV, vAxisN, path);\n"
 	"    float reach = fuaDecalReach(path, vRadius);\n"
 	"    if (reach <= 0.0) discard;\n"
+	/* [rc4l] What the pass is actually computing, on demand. 1 = the picture coordinate, 2 = how far
+	   the soot walked as a fraction of its reach, 3 = the surface normal it read. A mark that stops
+	   somewhere looks identical whichever term stopped it, so without this the only way to tell them
+	   apart is to change one and rebuild. */ \
+	"    if (uDecalDebug.x > 0.5) {\n" \
+	"        if (uDecalDebug.x < 1.5) outColor = vec4(fract(t), 0.0, 1.0);\n" \
+	"        else if (uDecalDebug.x < 2.5) outColor = vec4(vec3(path / max(vRadius, 1.0)), 1.0);\n" \
+	"        else outColor = vec4(nrm * 0.5 + 0.5, 1.0);\n" \
+	"        return;\n" \
+	"    }\n" \
 	"    if (any(lessThan(t, vec2(0.0))) || any(greaterThan(t, vec2(1.0)))) discard;\n"
 	"    float a = textureLod(uTex, t, 0.0).r * vColor.a * reach;\n"
 	"    if (a <= 0.0) discard;\n"
@@ -3012,7 +3036,11 @@ static bool EnsureDecalPass()
 	{
 		Diligent::BufferDesc bd;
 		bd.Name = "fua decal constants";
-		bd.Size = 16 * sizeof(float);   // the inverse view-projection
+		// The inverse view-projection, plus a debug selector -- see fua_dg_decaldebug. A mark that is
+		// being cut somewhere cannot be diagnosed from the outside: every term that can discard a
+		// fragment produces the same result, an absent mark, and guessing which one cost several
+		// rounds. Showing the terms is one uniform.
+		bd.Size = 20 * sizeof(float);
 		bd.Usage = Diligent::USAGE_DYNAMIC;
 		bd.BindFlags = Diligent::BIND_UNIFORM_BUFFER;
 		bd.CPUAccessFlags = Diligent::CPU_ACCESS_WRITE;
@@ -3129,6 +3157,8 @@ static void DrawProjectedDecals(Diligent::IDeviceContext *ctx)
 	{
 		Diligent::MapHelper<float> cb(ctx, g_decalCB, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD);
 		for (int i = 0; i < 16; i++) cb[i] = invMVP[i];
+		cb[16] = (float)fua_dg_decaldebug;
+		cb[17] = cb[18] = cb[19] = 0.f;
 	}
 
 	// [rc4l] Grouped by the only two things that genuinely force a new draw: the texture and the
