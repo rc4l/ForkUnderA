@@ -735,7 +735,12 @@ static const char *kScenePSRedAlpha =
 	"    float chord = fuaDecalChord(abs(dot(rel, nrm)), radius);\n" \
 	"    if (chord <= 0.0) return 0.0;\n" \
 	"    float acrossSq = dot(rel, rel) - dot(rel, nrm) * dot(rel, nrm);\n" \
-	"    return 1.0 - smoothstep(0.75, 1.0, sqrt(max(acrossSq, 0.0)) / chord);\n" \
+	"    float rim = 1.0 - smoothstep(0.75, 1.0, sqrt(max(acrossSq, 0.0)) / chord);\n" \
+	/* And fainter the less of the blast a surface catches. A staircase puts several treads inside one
+	   blast, and sized alone they came out as a stack of near-identical stamps -- the same picture
+	   repeated down the steps rather than one burn thinning out. The chord is already the answer: a
+	   surface the blast barely clips catches barely any of it, and one it landed on catches all. */ \
+	"    return rim * (chord / radius);\n" \
 	"}\n" \
 	"vec2 fuaDecalUV(vec3 rel, vec3 nrm, vec3 axisU, vec3 axisV, vec3 axisN, float chord,\n" \
 	"                float radius) {\n" \
