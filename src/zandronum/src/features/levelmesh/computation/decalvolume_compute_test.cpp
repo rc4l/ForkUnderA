@@ -272,33 +272,32 @@ TEST(DecalCreep, ReachesBothSidesOfACornerBecauseTheShadowLandsOnIt)
 	EXPECT_NEAR(CreepU(f, inFront, kSideNormal), CreepU(f, behind, kSideNormal), 1e-5f);
 }
 
-TEST(DecalCreep, ChargesTheWalkRoundTheBackOfACorner)
+TEST(DecalCreep, DoesNotCutAwayGroundOnTheFarSideOfACorner)
 {
-	// [rc4l] A corner line is infinite here and is not in the map: it runs until the wall ends.
+	// [rc4l] The missing quadrant.
 	//
-	// Charging only the crossing let soot arrive on floor round the FAR side of a convex corner as
-	// cheaply as on floor directly in front of the wall, so a mark by a pillar's edge printed a
-	// second, mirrored copy of itself on open floor beside it at full strength. Going round the back
-	// costs the distance along the corner too, so that copy fades with how far past it sits.
+	// Going round the back of a corner was made to cost the distance ALONG it as well, to stop a mark
+	// beside a pillar printing a mirrored copy of itself on open floor. It also charged floor that is
+	// plainly reachable: at a corner, ground on the far side of the wall's plane exceeded the mark's
+	// reach and was DISCARDED, taking a whole quadrant of the mark with it and leaving a hard edge
+	// through the middle of a scorch. A fold decides where the picture is read; it must not also
+	// decide how far the soot walked.
 	const DecalFrame f = WallFrame(16.f, 8.f, 16.f);
-	// Offset ALONG the corner as well, because that is what the extra charge is made of.
 	const float inFront[3] = { 20.f,  6.f, -10.f };
 	const float behind[3]  = { 20.f, -6.f, -10.f };
 
-	EXPECT_GT(CreepPath(f, behind, kSideNormal), CreepPath(f, inFront, kSideNormal));
+	EXPECT_NEAR(CreepPath(f, inFront, kSideNormal), CreepPath(f, behind, kSideNormal), 1e-4f);
 }
 
-TEST(DecalCreep, ChargesNothingExtraDirectlyAcrossTheCorner)
+TEST(DecalCreep, StillRunsOutOfReachWithDistance)
 {
-	// The other half of the same rule, and the reason the charge is safe to add: with no distance
-	// along the corner there is no end to walk round, so the two sides cost the same. That is the
-	// case which already looked right -- a mark running down a wall onto the floor beneath it, or
-	// wrapping a pillar at its own height -- and it must not move.
+	// The other half: dropping the charge must not make everything reachable. Distance still costs,
+	// it is just measured as a walk rather than as a fold.
 	const DecalFrame f = WallFrame(16.f, 8.f, 16.f);
-	const float inFront[3] = { 20.f,  6.f, 0.f };
-	const float behind[3]  = { 20.f, -6.f, 0.f };
+	const float near_[3] = { 4.f, 4.f, -6.f };
+	const float far_[3]  = { 60.f, 4.f, -6.f };
 
-	EXPECT_NEAR(CreepPath(f, inFront, kSideNormal), CreepPath(f, behind, kSideNormal), 1e-4f);
+	EXPECT_GT(CreepPath(f, far_, kFloorNormal), CreepPath(f, near_, kFloorNormal));
 }
 
 TEST(DecalCreep, DoesNotDependOnAnythingButThePointAndTheSurface)
