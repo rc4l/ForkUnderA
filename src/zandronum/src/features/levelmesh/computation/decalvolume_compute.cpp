@@ -103,12 +103,11 @@ void ComputeDecalCreepUV(const DecalFrame &f, const float rel[3], const float nr
 		for (int i = 0; i < 3; i++) edge[i] /= edgeLen;
 		float outward[3];
 		Cross3(nrm, edge, outward);
-		// Oriented away from the hit plane, so the sign says which side of the corner this is on.
-		if (Dot3(outward, N) < 0.f)
-			for (int i = 0; i < 3; i++) outward[i] = -outward[i];
-
-		const float side = Dot3(rel, outward);
-		const float across = (side < 0.f) ? -side : side;
+		// Absolute, because the impact's own shadow lands exactly on the corner line: dropping a
+		// perpendicular onto this surface cannot move along the hit plane's normal, so the walk is
+		// symmetric about that line and both sides of it are equally far.
+		const float acrossRaw = Dot3(rel, outward);
+		const float across = (acrossRaw < 0.f) ? -acrossRaw : acrossRaw;
 		const float along = Dot3(rel, edge);
 		const float crossed = perp + across;
 
@@ -130,10 +129,11 @@ void ComputeDecalCreepUV(const DecalFrame &f, const float rel[3], const float nr
 			t[0] = crossed * ((Dot3(dir, U) < 0.f) ? -1.f : 1.f);
 			t[1] = along * ((av < 0.f) ? -1.f : 1.f);
 		}
-		// Round the BACK of the corner the only route is past its end, which costs the along-distance.
-		outPath = (side >= 0.f)
-			? std::sqrt(along * along + crossed * crossed)
-			: (((along < 0.f) ? -along : along) + crossed);
+		// The distance in the UNFOLDED plane, which is what keeps the join continuous. Summing the
+		// legs instead -- down, then along -- overcounts, because the walk is a diagonal rather than
+		// two sides of a right angle. Nothing extra is charged for arriving round the back of the
+		// corner: that discarded ground which is plainly reachable and cut a quadrant out of the mark.
+		outPath = std::sqrt(along * along + crossed * crossed);
 	}
 	else
 	{
