@@ -5,6 +5,7 @@
 #include "features/levelmesh/flatdecals.h"
 #include "features/levelmesh/flatmesh.h"
 #include "features/levelmesh/staticmesh.h"
+#include "features/levelmesh/computation/flatdecal_compute.h"
 
 #include "r_defs.h"
 #include "r_state.h"
@@ -59,10 +60,10 @@ static const secplane_t *DecalPlane(const sector_t *sec, F3DFloor *rover, bool c
 {
 	if (rover != NULL)
 	{
-		// A 3D floor's walkable top surface is its BOTTOM planeref, because the control sector is
-		// modelled upside down -- the same inversion that made 3D floor tops vanish when the flat
-		// mesh wound them by their plane normal.
-		const F3DFloor::planeref &pr = ceiling ? rover->top : rover->bottom;
+		// [rc4l] See ComputeDecalUsesTopPlane. F3DFloor::top is the CONTROL sector's ceiling plane,
+		// so the surface you stand on is `top` -- this was implemented the other way round, with a
+		// comment explaining the inversion backwards.
+		const F3DFloor::planeref &pr = ComputeDecalUsesTopPlane(ceiling) ? rover->top : rover->bottom;
 		if (pr.plane != NULL) return pr.plane;
 	}
 	return ceiling ? &sec->ceilingplane : &sec->floorplane;
@@ -124,7 +125,7 @@ void SpawnFlatDecal(const FDecalTemplate *tpl, fixed_t x, fixed_t y, fixed_t z, 
 		if (rover != NULL && rover->model != NULL)
 		{
 			ts = rover->model;
-			const F3DFloor::planeref &pr = ceiling ? rover->top : rover->bottom;
+			const F3DFloor::planeref &pr = ComputeDecalUsesTopPlane(ceiling) ? rover->top : rover->bottom;
 			side = pr.isceiling ? sector_t::ceiling : sector_t::floor;
 		}
 		FTexture *surf = TexMan[ts->GetTexture(side)];
@@ -185,28 +186,26 @@ void RegisterFlatDecals()
 		const sector_t *sec = &sectors[d.sectorIndex];
 		const secplane_t *plane = DecalPlane(sec, d.rover, d.ceiling);
 		const float planeNow = FIXED2FLOAT(plane->ZatPoint(FLOAT2FIXED(d.x), FLOAT2FIXED(d.y)));
-		const float pz = d.z + (planeNow - d.planeZAtSpawn);
-
-		// The depth-bias pipeline handles the coplanar fight; this offset only keeps the quad on the
-		// correct SIDE of the plane, so a floor decal is never swallowed by the floor itself.
-		const float bias = d.ceiling ? -0.05f : 0.05f;
+		// The depth-bias pipeline handles the coplanar fight; the offset only keeps the quad on the
+		// correct SIDE of the plane, so a decal is never swallowed by the surface it marks.
+		const float pz = ComputeDecalHeight(d.z, d.planeZAtSpawn, planeNow, d.ceiling, 0.05f);
 
 		FFlatVertex quad[4];
 		// Wound so the decal faces the side it was shot from: a floor decal is seen from above and a
 		// ceiling decal from below, exactly the distinction the flat mesh makes for its own planes.
 		if (!d.ceiling)
 		{
-			quad[0].Set(d.x - hw, pz + bias, d.y - hh, 0.f, 0.f);
-			quad[1].Set(d.x + hw, pz + bias, d.y - hh, 1.f, 0.f);
-			quad[2].Set(d.x + hw, pz + bias, d.y + hh, 1.f, 1.f);
-			quad[3].Set(d.x - hw, pz + bias, d.y + hh, 0.f, 1.f);
+			quad[0].Set(d.x - hw, pz, d.y - hh, 0.f, 0.f);
+			quad[1].Set(d.x + hw, pz, d.y - hh, 1.f, 0.f);
+			quad[2].Set(d.x + hw, pz, d.y + hh, 1.f, 1.f);
+			quad[3].Set(d.x - hw, pz, d.y + hh, 0.f, 1.f);
 		}
 		else
 		{
-			quad[0].Set(d.x - hw, pz + bias, d.y + hh, 0.f, 1.f);
-			quad[1].Set(d.x + hw, pz + bias, d.y + hh, 1.f, 1.f);
-			quad[2].Set(d.x + hw, pz + bias, d.y - hh, 1.f, 0.f);
-			quad[3].Set(d.x - hw, pz + bias, d.y - hh, 0.f, 0.f);
+			quad[0].Set(d.x - hw, pz, d.y + hh, 0.f, 1.f);
+			quad[1].Set(d.x + hw, pz, d.y + hh, 1.f, 1.f);
+			quad[2].Set(d.x + hw, pz, d.y - hh, 1.f, 0.f);
+			quad[3].Set(d.x - hw, pz, d.y - hh, 0.f, 0.f);
 		}
 
 		// Lit by the sector it sits in, like the plane under it.
