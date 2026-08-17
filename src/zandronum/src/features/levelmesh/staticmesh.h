@@ -102,15 +102,13 @@ struct MeshPiece
 	// (44.4, 13.7, 2.5) against GL's (39.8, 32.1, 22.1).
 	float         normX, normY, normZ;
 
-	// [rc4l] This piece is one FACE of a 3D floor, so only the side its normal points at may be drawn.
+	// [rc4l] This surface is seen from BELOW: a ceiling, or the underside of a 3D floor.
 	//
-	// A 3D floor is two planes, a top and a bottom, and the engine processes only whichever faces the
-	// viewer. The mesh is a cache and ends up holding both, permanently -- and a decorative grate or
-	// bridge is often only a few units thick, or exactly zero, so the pair sit on top of each other
-	// and z-fight. The flicker as the view moves is the depth test changing its mind, and GL never
-	// shows it because GL never draws both. Only 3D floor planes are marked: an ordinary sector floor
-	// has no opposite face to fight with.
-	bool          planeFacing;
+	// Recorded so the winding can be verified rather than trusted. Back-face culling deletes any flat
+	// whose triangles wind the wrong way for the side it is viewed from, and that failure is silent
+	// and total -- every ceiling in the level, or every 3D floor top. fua_mesh_verify checks that all
+	// pieces with the same value here wind the same way, which catches it without a camera.
+	bool          facesDown;
 
 	// [rc4l] Zero-initialise. Every site fills the fields it cares about and leaves the rest, so a
 	// field added later is garbage at the sites that predate it -- which is how SegCache::pieces
@@ -127,7 +125,7 @@ struct MeshPiece
 		sortX = sortY = sortZ = 0.f;
 		dynLightIndex = -1;
 		normX = normY = normZ = 0.f;
-		planeFacing = false;
+		facesDown = false;
 	}
 };
 

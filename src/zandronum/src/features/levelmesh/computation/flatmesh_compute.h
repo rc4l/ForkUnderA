@@ -1,0 +1,83 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 rc4l
+//
+// [rc4l] The decisions the flat mesh makes about a surface, pulled out where they can be tested.
+//
+// Every one of these shipped wrong at least once, and each failure was silent and total rather than
+// noisy and partial -- which is exactly the shape a unit test catches and a screenshot does not:
+//
+//   * winding    -- a flat wound the wrong way for the side it is viewed from is DELETED by back-face
+//                   culling. Getting this wrong removed every ceiling in the level, and getting it
+//                   wrong a second way removed every 3D floor's walkable top surface. Neither
+//                   produced an error; both produced a room with a hole in it.
+//   * blend      -- a translucent surface classified opaque renders solid. A grate over a lava pit
+//                   came out as solid metal.
+//   * overlap    -- two coplanar surfaces claiming the same area do not agree on depth to the last
+//                   bit, so the rasteriser stipples between them. 1799 such pairs existed before
+//                   anyone noticed, because the artefact is only visible at certain angles.
+//
+// Engine-free and header-pure: flatmesh.cpp and the fua_mesh_verify diagnostic are the glue.
+
+#ifndef ZX_FLATMESH_COMPUTE_H
+#define ZX_FLATMESH_COMPUTE_H
+
+namespace zx { namespace levelmesh {
+
+// [rc4l] Must this flat's triangles be wound in reverse?
+//
+// A subsector's vertices arrive in one fixed order, so a floor and a ceiling built from them have
+// the SAME winding while facing opposite directions. Exactly one of the two has to be reversed or a
+// single cull mode deletes it.
+//
+// The argument is which SIDE the surface is viewed from, not which way its plane's normal points.
+// Those differ: a 3D floor's walkable top surface is the control sector's ceiling plane, so its
+// normal points down while the surface is seen from above. Winding by the normal looked more
+// principled and culled exactly those surfaces.
+bool ComputeFlatWindingReversed(bool viewedFromBelow);
+
+// [rc4l] Which blend mode a surface with this render style and alpha needs.
+//
+//   0 opaque / alpha-tested   1 normal translucent   2 additive
+//
+// The alpha threshold is one 8-bit step: Doom expresses translucency in 0..255, so anything at or
+// above 255/256 is opaque and rounding it any other way makes fully-opaque surfaces take the sorted
+// translucent path for nothing.
+int ComputeSurfaceBlendMode(bool additive, float alpha);
+
+// [rc4l] Twice the signed area of a triangle projected onto the horizontal plane.
+//
+// Positive and negative correspond to the two winding directions; which one is "front" is a
+// rasteriser convention and deliberately NOT decided here. What matters, and what the verifier
+// checks, is that surfaces viewed from the same side all agree.
+//
+// Returns 0 for a degenerate triangle -- squashed pieces are legitimate (a retired range is zeroed
+// in place) and must not be read as a winding error.
+float ComputeTriangleWindingZ(float ax, float ay, float bx, float by, float cx, float cy);
+
+// An axis-aligned bound, in map units. Degenerate on the axis a flat surface is flat in.
+struct MeshBox
+{
+	float x0, x1, y0, y1, z0, z1;
+};
+
+// [rc4l] Do these two surfaces lie in the same plane AND claim overlapping area in it?
+//
+// Both conditions are needed. Two surfaces that merely touch along an edge are ordinary level
+// geometry -- every floor in a level shares edges with its neighbours -- so the overlap has to be
+// wide in at least two axes before it counts. Without that, the predicate flags most of the map and
+// reports nothing.
+bool ComputeCoplanarOverlap(const MeshBox &a, const MeshBox &b, float eps);
+
+// [rc4l] Is the winding convention applied consistently across the level?
+//
+// Given, for surfaces viewed from above and from below, how many wind each way: the convention holds
+// when each group is internally unanimous AND the two groups are opposite. Anything else means
+// back-face culling keeps some surfaces and drops others that should be equally visible.
+//
+// A group with no members at all is vacuously fine -- a level with no ceilings is not a bug.
+bool ComputeWindingConsistent(int fromAbovePositive, int fromAboveNegative,
+                              int fromBelowPositive, int fromBelowNegative);
+
+}} // namespace zx::levelmesh
+
+#endif // ZX_FLATMESH_COMPUTE_H
