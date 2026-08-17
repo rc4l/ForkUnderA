@@ -296,6 +296,32 @@ CCMD( fua_levelmesh_stats )
 
 	// [rc4l] What the mesh actually holds right now, next to what the level could give it. The gap
 	// between the two is the honest ceiling on a draw-the-whole-level renderer.
+	// [rc4l] How much 3D-floor geometry the level has, and how much of it the mesh could ever hold.
+	//
+	// A seg touching a 3D floor is marked uncacheable, and 3D floor PLANES are drawn by a per-frame,
+	// per-subsector, view-dependent walk in GLFlat::ProcessSector -- so none of it is baked. Counting
+	// it is the difference between "3D floors are missing" and knowing how much is missing.
+	{
+		int ffSectors = 0, ffPlanes = 0, ffSegs = 0;
+		for ( int i = 0; i < numsectors; i++ )
+		{
+			if ( sectors[i].e == NULL ) continue;
+			const unsigned n = sectors[i].e->XFloor.ffloors.Size( );
+			if ( n == 0 ) continue;
+			ffSectors++;
+			ffPlanes += (int)n * 2;   // each 3D floor contributes a top and a bottom plane
+		}
+		for ( int i = 0; i < numsegs; i++ )
+		{
+			const sector_t *fs = segs[i].frontsector, *bs = segs[i].backsector;
+			if (( fs != NULL && fs->e != NULL && fs->e->XFloor.ffloors.Size( ) > 0 ) ||
+				( bs != NULL && bs->e != NULL && bs->e->XFloor.ffloors.Size( ) > 0 ))
+				ffSegs++;
+		}
+		Printf( "  3d floors: %d sectors, %d planes, %d segs touching them (none baked)\n",
+				ffSectors, ffPlanes, ffSegs );
+	}
+
 	CoverageStats cov;
 	GetCoverage( cov );
 	Printf( "  coverage: %d/%d drawable segs baked (%.1f%%; %d segs total incl. minisegs), "
