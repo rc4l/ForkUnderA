@@ -49,4 +49,19 @@ void GetScreen2D(int &w, int &h)
 	h = g_screenH;
 }
 
+
+// [rc4l] The sky fade layer. Lives here rather than in the backend because the value comes from the
+// GL scene layer, and this file is already the one place both sides can see.
+static float g_skyFog[4] = { 0.f, 0.f, 0.f, 0.f };
+
+void SetSkyFog(int r, int g, int b, float a)
+{
+	g_skyFog[0] = r / 255.f; g_skyFog[1] = g / 255.f; g_skyFog[2] = b / 255.f; g_skyFog[3] = a;
+}
+
+void GetSkyFog(float &r, float &g, float &b, float &a)
+{
+	r = g_skyFog[0]; g = g_skyFog[1]; b = g_skyFog[2]; a = g_skyFog[3];
+}
+
 }} // namespace zx::hwrender

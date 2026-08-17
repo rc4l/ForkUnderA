@@ -25,6 +25,11 @@
 // zx::hwrender::Window, which nothing defines, and only the linker notices.
 extern HWND Window;
 
+// [rc4l] Defined in dgscene.cpp, where the cvars live. Declared rather than included because this TU
+// deliberately never sees a Diligent header.
+namespace zx { namespace hwrender { bool Fua_WantEmbeddedWindow(); }}
+using zx::hwrender::Fua_WantEmbeddedWindow;
+
 namespace zx { namespace hwrender {
 
 static LRESULT CALLBACK DgWndProc(HWND h, UINT msg, WPARAM w, LPARAM l)
@@ -87,7 +92,7 @@ void *Fua_CreateBackendWindow(const char *title, int w, int h)
 	//
 	// This is also the first half of taking the window over properly: what is left is stopping the GL
 	// frame underneath, which cannot happen until the backend covers portals and 3D floors.
-	if (Window != NULL)
+	if (Window != NULL && Fua_WantEmbeddedWindow())
 	{
 		RECT cr;
 		GetClientRect(Window, &cr);

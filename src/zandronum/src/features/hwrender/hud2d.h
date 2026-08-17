@@ -52,6 +52,11 @@ struct Quad2D
 	float       lx2, ly2;
 };
 
+// [rc4l] The sky's fade layer: a translucent sheet in the sector's fade colour that GL draws over
+// the sky after the dome. Set every frame the sky portal runs, zeroed when it should not be drawn.
+void SetSkyFog(int r, int g, int b, float a);
+void GetSkyFog(float &r, float &g, float &b, float &a);
+
 // Drop last frame's list. Called once at the top of D_Display, before anything draws.
 void Clear2D();
 

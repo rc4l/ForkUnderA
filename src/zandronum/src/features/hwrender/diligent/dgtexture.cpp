@@ -33,6 +33,7 @@
 #include "RefCntAutoPtr.hpp"
 
 #include "gl/textures/gl_material.h"
+#include "gl/textures/gl_translate.h"   // GLTranslationPalette
 #include "tarray.h"
 
 namespace zx { namespace hwrender {
@@ -91,6 +92,18 @@ static Diligent::ITextureView *EnsureWhite()
 // Upload one FMaterial into a Diligent texture, or return the cached view.
 Diligent::ITextureView *GetMaterialSRV(const void *materialPtr, int translation)
 {
+	// [rc4l] Normalise the translation exactly as FGLTexture::Bind does, because the number arrives
+	// in one of two different namespaces and they are indistinguishable by sign alone at the call
+	// site that consumes it.
+	//
+	// Negative means "already a GLTranslationPalette index, negate it". Positive means "a game
+	// translation" -- an actor's thing->Translation -- which has to be looked up to get the internal
+	// index. Feeding a game translation straight to CreateTexBuffer indexes the palette array with a
+	// number from the wrong namespace, and the sprite comes out as scattered rainbow pixels, which is
+	// what capturing GLSprite::translation without this did.
+	if (translation <= 0) translation = -translation;
+	else translation = GLTranslationPalette::GetInternalTranslation(translation);
+
 	if (materialPtr == NULL) return EnsureWhite();
 
 	for (unsigned i = 0; i < g_textures.Size(); i++)
@@ -104,6 +117,27 @@ Diligent::ITextureView *GetMaterialSRV(const void *materialPtr, int translation)
 	int w = 0, h = 0;
 	// [rc4l] createexpanded=false: the expanded border exists for GL's clamp behaviour on sprites and
 	// would shift the UVs the mesh already baked.
+	// [rc4l] Say when a texture is not a plain image.
+	//
+	// A camera texture (bHasCanvas) has no static pixels at all -- the engine RENDERS into it every
+	// frame -- so asking CreateTexBuffer for its bytes returns whatever the buffer happens to hold.
+	// That is the red/blue noise on gvh06's teleporter and the flat slab on gvh07's monitor. A warped
+	// texture (bWarped) is a shader effect this backend does not run either. Both are reported once
+	// so they stop being mysteries and start being a list.
+	if (mat->tex != NULL && (mat->tex->bHasCanvas || mat->tex->bWarped))
+	{
+		static TArray<const void *> reported;
+		bool seen = false;
+		for (unsigned i = 0; i < reported.Size(); i++) if (reported[i] == materialPtr) { seen = true; break; }
+		if (!seen)
+		{
+			reported.Push(materialPtr);
+			Printf("vulkan texture: %s is %s -- not implemented, will render wrong\n",
+				(mat->tex->Name != NULL) ? mat->tex->Name : "?",
+				mat->tex->bHasCanvas ? "a camera/canvas texture" : "warp-shaded");
+		}
+	}
+
 	unsigned char *buf = mat->CreateTexBuffer(translation, w, h, true, false);
 	if (buf == NULL || w <= 0 || h <= 0)
 	{

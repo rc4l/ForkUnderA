@@ -58,6 +58,10 @@ fi
 
 ARGS=(launch --port "$PORT" --iwad "$IWAD" --map "$MAP" --play)
 [ -n "${GL:-}" ] || ARGS+=(--cvar fua_vulkan=1)
+# [rc4l] SIDEBYSIDE=1 gives the backend its own window next to the engine's instead of embedding it,
+# so both renderers are on screen at once. Easier to point at a difference than toggling and trying
+# to remember what the other one looked like.
+[ -n "${SIDEBYSIDE:-}" ] && ARGS+=(--cvar fua_dg_embed=0)
 [ -n "${WAD:-}" ] && ARGS+=(--file "$WAD")
 # God on and monsters off by default: being shot at halfway through showing me a texture seam is
 # pure friction. MONSTERS=1 puts them back when the thing to look at IS a monster sprite.
