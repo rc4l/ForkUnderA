@@ -1,29 +1,49 @@
 {
   "about": "Named cameras that reproduce a specific rendering fault, so a check is a name rather than four numbers pasted from a screenshot. `bash shot.sh <tag> --spot <name>` warps here and captures the GL/Vulkan pair.",
-
   "spots": {
     "dbab02-flatswap": {
       "map": "dbab02",
       "wad": "eoncollection_vol-1_b2.pk3,eonweapons_rc8.5t.pk3,zandrospree2rc2.pk3",
-      "x": 87, "y": -1456, "z": -24, "angle": 134, "pitch": 10,
+      "x": 87,
+      "y": -1456,
+      "z": -24,
+      "angle": 134,
+      "pitch": 10,
       "shows": "A lava floor in the fire corridor that renders as a completely different flat -- green foliage on orange -- in the Vulkan backend and correctly in GL. Reported as 'the triangulation isn't working and random textures get filled-in'; it is the animated-texture re-resolve repainting a batch that merged two different base textures.",
       "correct": "The floor is dark red lava with bright yellow veins, matching GL."
     },
-
     "dbab02-missinggrate": {
       "map": "dbab02",
       "wad": "eoncollection_vol-1_b2.pk3,eonweapons_rc8.5t.pk3,zandrospree2rc2.pk3",
-      "x": 437, "y": -1063, "z": 16, "angle": 4, "pitch": 12,
+      "x": 437,
+      "y": -1063,
+      "z": 16,
+      "angle": 4,
+      "pitch": 12,
       "shows": "A metal grate 3D floor spanning a lava pit. GL draws the grate and its side beams; Vulkan draws nothing at all and you see straight down to the lava. It comes and goes as the view turns, so it is a coverage problem, not a shading one.",
       "correct": "The grate and the beams between its top and bottom planes are present, as in GL."
     },
-
     "dbab01-glassfloor": {
       "map": "dbab01",
       "wad": "eoncollection_vol-1_b2.pk3,eonweapons_rc8.5t.pk3,zandrospree2rc2.pk3",
-      "x": 700, "y": 192, "z": 120, "angle": 180, "pitch": 40,
+      "x": 700,
+      "y": 192,
+      "z": 120,
+      "angle": 180,
+      "pitch": 40,
       "shows": "Looking down into the lava pit at a translucent 3D floor. The grate reads as more solid in Vulkan than in GL.",
       "correct": "The lava beneath shows through at the same strength as GL, and a pickup lying on the floor sits on it rather than through it."
+    },
+    "dbab02-zfight": {
+      "map": "dbab02",
+      "wad": "eoncollection_vol-1_b2.pk3,eonweapons_rc8.5t.pk3,zandrospree2rc2.pk3",
+      "x": 3,
+      "y": -1256,
+      "z": -24,
+      "angle": 13,
+      "pitch": 15,
+      "shows": "Diagonal hatched z-fighting on the rock face ahead in the Vulkan backend, absent in GL. Reported as happening in many places, so it is likely a depth-precision or duplicate-geometry problem rather than one bad surface.",
+      "correct": "The rock face is a single stable texture from every angle, as in GL."
     }
   }
 }

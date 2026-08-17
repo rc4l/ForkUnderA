@@ -220,6 +220,27 @@ if (args[0] === "--align") {
   process.exit(0);
 }
 
+// [rc4l] Cut a region out and magnify it, because an artefact three pixels wide is invisible in a
+// 640x480 frame and obvious at 4x. Fractions, like every other region argument here.
+//   node pngstats.mjs --crop in.png out.png x0 y0 x1 y1 [zoom]
+if (args[0] === "--crop") {
+  const a = decodePNG(args[1]);
+  const f = args.slice(3, 7).map(Number);
+  const z = Number(args[7] || 4);
+  const x0 = Math.floor(f[0] * a.w), y0 = Math.floor(f[1] * a.h);
+  const x1 = Math.ceil(f[2] * a.w),  y1 = Math.ceil(f[3] * a.h);
+  const w = (x1 - x0) * z, h = (y1 - y0) * z;
+  const out = Buffer.alloc(w * h * 3);
+  for (let y = 0; y < h; y++)
+    for (let x = 0; x < w; x++) {
+      const p0 = px(a, x0 + Math.floor(x / z), y0 + Math.floor(y / z));
+      const o = (y * w + x) * 3;
+      out[o] = p0[0]; out[o + 1] = p0[1]; out[o + 2] = p0[2];
+    }
+  writePNG(args[2], w, h, out);
+  console.log(`wrote ${args[2]} ${w}x${h} (${z}x of ${x1 - x0}x${y1 - y0})`);
+  process.exit(0);
+}
 if (args[0] === "--diff") {
   const tol = Number(process.env.TOL || 24);
   const pairs = args.slice(1);
