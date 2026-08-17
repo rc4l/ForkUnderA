@@ -10,6 +10,14 @@
       "correct": "The floor is dark red lava with bright yellow veins, matching GL."
     },
 
+    "dbab02-missinggrate": {
+      "map": "dbab02",
+      "wad": "eoncollection_vol-1_b2.pk3,eonweapons_rc8.5t.pk3,zandrospree2rc2.pk3",
+      "x": 437, "y": -1063, "z": 16, "angle": 4, "pitch": 12,
+      "shows": "A metal grate 3D floor spanning a lava pit. GL draws the grate and its side beams; Vulkan draws nothing at all and you see straight down to the lava. It comes and goes as the view turns, so it is a coverage problem, not a shading one.",
+      "correct": "The grate and the beams between its top and bottom planes are present, as in GL."
+    },
+
     "dbab01-glassfloor": {
       "map": "dbab01",
       "wad": "eoncollection_vol-1_b2.pk3,eonweapons_rc8.5t.pk3,zandrospree2rc2.pk3",

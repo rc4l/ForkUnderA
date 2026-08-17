@@ -121,6 +121,10 @@ void GetStats(int &hits, int &misses, int &uncacheable);
 
 // [rc4l] Replayed walls whose material changed under them -- animated textures the cache froze.
 int GetAnimRefreshes();
+
+// [rc4l] Per-seg census: what became of this seg (see the SEG_* enum) and whether it baked anything.
+int  SegFate(int segIndex);
+bool SegHasBakedGeometry(int segIndex);
 void ResetStats();
 
 // [rc4l] How much of the level the wall mesh actually holds, as opposed to how much it could.

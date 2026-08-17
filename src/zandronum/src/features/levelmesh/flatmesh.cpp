@@ -134,6 +134,11 @@ void RegisterFlatSubsector(const GLFlat &flat, subsector_t *sub, bool ceiling)
 	// baking it opaque drew the grate as solid lava-lit metal or let the lava beneath win outright.
 	// The same classification the sprite path uses, for the same reason.
 	mp.alpha = flat.alpha;
+	// [rc4l] A 3D floor plane is one FACE, and only the side it points at may be drawn. See
+	// MeshPiece::planeFacing: the top and bottom of a thin grate sit on top of each other in the
+	// mesh and z-fight, which is the flicker that appears when the view moves and never appears in
+	// GL, because GL only ever processes the face turned towards the viewer.
+	mp.planeFacing = (sub->sector != NULL && flat.mMeshModel != NULL && flat.mMeshModel != sub->sector);
 	// renderstyle here is an ERenderStyle enum, not an FRenderStyle, so it is compared not inspected.
 	if (flat.renderstyle == STYLE_Add)
 		mp.blendMode = 2;

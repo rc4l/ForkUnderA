@@ -102,6 +102,16 @@ struct MeshPiece
 	// (44.4, 13.7, 2.5) against GL's (39.8, 32.1, 22.1).
 	float         normX, normY, normZ;
 
+	// [rc4l] This piece is one FACE of a 3D floor, so only the side its normal points at may be drawn.
+	//
+	// A 3D floor is two planes, a top and a bottom, and the engine processes only whichever faces the
+	// viewer. The mesh is a cache and ends up holding both, permanently -- and a decorative grate or
+	// bridge is often only a few units thick, or exactly zero, so the pair sit on top of each other
+	// and z-fight. The flicker as the view moves is the depth test changing its mind, and GL never
+	// shows it because GL never draws both. Only 3D floor planes are marked: an ordinary sector floor
+	// has no opposite face to fight with.
+	bool          planeFacing;
+
 	// [rc4l] Zero-initialise. Every site fills the fields it cares about and leaves the rest, so a
 	// field added later is garbage at the sites that predate it -- which is how SegCache::pieces
 	// silently inherited the previous level's vertex ranges. A translation of garbage would remap
@@ -117,6 +127,7 @@ struct MeshPiece
 		sortX = sortY = sortZ = 0.f;
 		dynLightIndex = -1;
 		normX = normY = normZ = 0.f;
+		planeFacing = false;
 	}
 };
 
