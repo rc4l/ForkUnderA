@@ -78,6 +78,34 @@ bool ComputeCoplanarOverlap(const MeshBox &a, const MeshBox &b, float eps);
 bool ComputeWindingConsistent(int fromAbovePositive, int fromAboveNegative,
                               int fromBelowPositive, int fromBelowNegative);
 
+// [rc4l] Everything gl_SetPlaneTextureRotation applies to a flat's texture coordinates.
+//
+// The mesh baked UVs as (x/64, -y/64) and stopped there, which is only correct for an unoffset,
+// unscaled, unrotated 64x64 flat. GL builds a texture matrix from all five of these, so scrolling
+// floors did not scroll -- and, less visibly and far more widely, every flat whose texture is not
+// 64x64 tiled at the wrong rate, because the 64/size term compensating for that lives in the same
+// matrix. Nobody reported the second one; it reads as "the texture looks slightly off".
+struct PlaneUVTransform
+{
+	float xoffs, yoffs;        // map units; what a scroller animates
+	float xscale, yscale;      // 1 = unscaled
+	float angleDegrees;        // the plane's own angle, NOT pre-negated
+	float texWidth, texHeight; // in texels; the 64x64 assumption this replaces
+	bool  hasCanvas;           // a camera texture is stored upside down, so its V scale is negated
+};
+
+// A transform that changes nothing, for a plain 64x64 flat.
+PlaneUVTransform ComputeIdentityPlaneUV();
+
+// [rc4l] Map a world position to texture coordinates for a flat.
+//
+// Mirrors gl_SetPlaneTextureRotation's matrix exactly, including its order. That matrix is built by
+// post-multiplication, so the transforms apply to the coordinate in the REVERSE of the order they
+// are written: rotate, then the 64/size correction, then the offset, then the plane's own scale.
+// Applying them in the written order looks equally reasonable and puts scrolled or rotated flats in
+// the wrong place.
+void ComputePlaneUV(float px, float py, const PlaneUVTransform &t, float &u, float &v);
+
 }} // namespace zx::levelmesh
 
 #endif // ZX_FLATMESH_COMPUTE_H
