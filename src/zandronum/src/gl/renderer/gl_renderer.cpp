@@ -427,7 +427,10 @@ void FGLRenderer::DrawTexture(FTexture *img, DCanvas::DrawParms &parms)
 		q.clipL = parms.lclip; q.clipT = parms.uclip;
 		q.clipR = parms.rclip; q.clipB = parms.dclip;
 		q.blend = 0;
-		q.translation = cpuTranslation;
+		// [rc4l] Negated: the backend normalises with the same rule FGLTexture::Bind uses, where a
+		// negative value means "already an internal palette index". Handing it the positive form
+		// would make it treat this as a game translation and convert something already converted.
+		q.translation = -cpuTranslation;
 		q.texMode = gl_RenderState.GetTextureMode();
 		zx::hwrender::Record2D(q);
 	}

@@ -50,6 +50,7 @@
 #include "gl/renderer/gl_renderstate.h"
 #include "gl/scene/gl_drawinfo.h"
 #include "gl/scene/gl_portal.h"
+#include "features/hwrender/hud2d.h"
 #include "gl/shaders/gl_shader.h"
 #include "gl/textures/gl_bitmap.h"
 #include "gl/textures/gl_texture.h"
@@ -537,10 +538,17 @@ void GLSkyPortal::DrawContents()
 			RenderDome(origin->texture[1], origin->x_offset[1], origin->y_offset, false, FSkyVertexBuffer::SKYMODE_SECONDLAYER);
 		}
 
+		// [rc4l] features/hwrender: the sky's fade layer, which a backend has no way to derive.
+		//
+		// It is a translucent sheet in the sector's fade colour drawn over the whole sky, and without
+		// it a foggy map's sky reads as a black hole where GL has haze. Recorded whether or not it is
+		// drawn, so turning it off also reaches the backend.
+		zx::hwrender::SetSkyFog(0, 0, 0, 0.f);
 		if (skyfog>0 && gl_fixedcolormap == CM_DEFAULT && (origin->fadecolor & 0xffffff) != 0)
 		{
 			PalEntry FadeColor = origin->fadecolor;
 			FadeColor.a = clamp<int>(skyfog, 0, 255);
+			zx::hwrender::SetSkyFog(FadeColor.r, FadeColor.g, FadeColor.b, FadeColor.a / 255.f);
 
 			gl_RenderState.EnableTexture(false);
 			gl_RenderState.SetObjectColor(FadeColor);

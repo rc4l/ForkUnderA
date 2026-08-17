@@ -83,7 +83,7 @@ EXTERN_CVAR(Int, gl_texture_filter)
 // [rc4l] The sky's own vertical nudge, both the per-texture one and the global testing cvar.
 EXTERN_CVAR(Float, skyoffset)
 
-namespace zx { namespace hwrender { void ReleaseMaterials(); }}
+namespace zx { namespace hwrender { void ReleaseMaterials(); void GetSkyFog(float&,float&,float&,float&); }}
 EXTERN_CVAR(Float, gl_lights_size)
 EXTERN_CVAR(Float, gl_lights_intensity)
 EXTERN_CVAR(Bool, gl_lights_additive)
@@ -104,6 +104,13 @@ CVAR(Bool, fua_diligent_live, false, 0)
 // level -- the mesh is still the old map's, so the new one renders as the previous one's geometry --
 // which is exactly what browsing a wad does forty times an hour. This re-arms itself per level.
 CVAR(Bool, fua_vulkan, false, CVAR_ARCHIVE)
+// [rc4l] Embed the backend in the engine's window (the default), or give it one of its own beside it.
+//
+// Embedded is how you PLAY in Vulkan: input goes to the parent as normal and the only pixels are the
+// backend's. A separate window is how you SHOW someone a difference -- both renderers on screen at
+// once, same camera, no toggling back and forth and trying to remember what the other one looked
+// like. Read once, when the window is created.
+CVAR(Bool, fua_dg_embed, true, CVAR_ARCHIVE)
 
 // [rc4l] Backface culling mode for the world: 0 none, 1 back, 2 front. DEFAULT 0, measured.
 //
@@ -608,6 +615,8 @@ struct SkyVertexData { float x, y, z, u, v, r, g, b, useTex; };
 
 static Diligent::RefCntAutoPtr<Diligent::IBuffer>        g_skyVB;
 static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_skyPSO;
+static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_skyFadePSO;
+static Diligent::RefCntAutoPtr<Diligent::IBuffer>        g_skyFadeVB;
 static Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding> g_skySRB;
 static int          g_skyVerts = 0;
 static const void  *g_skyMaterial = NULL;
@@ -624,7 +633,14 @@ static const char *kSkyVS =
 	"layout(location = 1) out vec4 vSkyColor;\n"
 	"void main() {\n"
 	// Centred on the camera, so the dome is effectively at infinity.
-	"    gl_Position = uMVP * vec4(aPos + uCameraPos.xyz, 1.0);\n"
+	//
+	// [rc4l] The sky also SCROLLS. GLSkyInfo::x_offset carries mSky1Pos, which advances with
+	// wall-clock time, and RenderDome folds it into the dome's Y rotation together with its constant
+	// -180. Baking that into the vertices would mean rebuilding the buffer every frame, so it comes
+	// in as an angle and is applied here.
+	"    float sa = sin(uLightParams.y), ca = cos(uLightParams.y);\n"
+	"    vec3 p = vec3(aPos.x * ca + aPos.z * sa, aPos.y, -aPos.x * sa + aPos.z * ca);\n"
+	"    gl_Position = uMVP * vec4(p + uCameraPos.xyz, 1.0);\n"
 	"    vUV = aUV;\n"
 	"    vSkyColor = aSkyColor;\n"
 	"}\n";
@@ -637,7 +653,13 @@ static const char *kSkyPS =
 	"layout(location = 0) out vec4 outColor;\n"
 	// vSkyColor.a selects: 1 takes the texture (the dome), 0 takes the flat colour (the caps).
 	"void main() {\n"
-	"    outColor = vec4(mix(vSkyColor.rgb, texture(uTex, vUV).rgb, vSkyColor.a), 1.0);\n"
+	// [rc4l] vSkyColor.a does three jobs, so the fade layer needs no extra vertex attribute:
+	//   1  textured, opaque -- the dome
+	//   0  flat colour, opaque -- the caps
+	//  <0  flat colour, alpha = -a -- the sky fade layer GL draws over the whole sky
+	"    float sel = max(vSkyColor.a, 0.0);\n"
+	"    float al = vSkyColor.a < 0.0 ? -vSkyColor.a : 1.0;\n"
+	"    outColor = vec4(mix(vSkyColor.rgb, texture(uTex, vUV).rgb, sel), al);\n"
 	"}\n";
 
 // [rc4l] One sky dome vertex, with RenderDome's model and texture transforms folded in.
@@ -677,6 +699,8 @@ static void SkyVertexAt(int r, int c, int rows, int cols, bool yflip, float mode
 static int g_skyTexOffset = 0;
 // [0] top cap, [1] bottom cap -- GetSkyCapColor(false/true), captured where the FTexture is in hand.
 static PalEntry g_skyCapColor[2];
+// Radians, recomputed per frame: -180 degrees (RenderDome's constant) plus the scroll offset.
+static float g_skyAngle = 0.f;
 
 static void BuildSkyDome(int texw, int texh)
 {
@@ -722,30 +746,18 @@ static void BuildSkyDome(int texw, int texh)
 	for (int hemi = 0; hemi < 2; hemi++)
 	{
 		const bool yflip = (hemi == 1);
-		for (int r = 0; r < rows; r++)
-		{
-			for (int c = 0; c < cols; c++)
-			{
-				SkyVertexData q[4];
-				SkyVertexAt(r,     c,     rows, cols, yflip, modelScaleY, modelTransY, xscale, vscale, q[0]);
-				SkyVertexAt(r + 1, c,     rows, cols, yflip, modelScaleY, modelTransY, xscale, vscale, q[1]);
-				SkyVertexAt(r,     c + 1, rows, cols, yflip, modelScaleY, modelTransY, xscale, vscale, q[2]);
-				SkyVertexAt(r + 1, c + 1, rows, cols, yflip, modelScaleY, modelTransY, xscale, vscale, q[3]);
-				for (int k = 0; k < 4; k++) { q[k].r = q[k].g = q[k].b = 1.f; q[k].useTex = 1.f; }
-				verts.Push(q[0]); verts.Push(q[1]); verts.Push(q[2]);
-				verts.Push(q[2]); verts.Push(q[1]); verts.Push(q[3]);
-			}
-		}
 
-		// [rc4l] Cap the hole the dome leaves.
+		// [rc4l] Cap the hole the dome leaves -- BEFORE the strips, which is what RenderDome does.
 		//
-		// The dome only reaches 60 degrees of elevation, so straight up there is nothing -- and what
-		// showed through was the backend's clear colour, a dark navy disc overhead on every open map.
-		// GZDoom fills it with a flat fan in the sky texture's own average edge colour, which is why
-		// GL has "the coloured thing at the very top" and this did not.
+		// The dome only reaches 60 degrees of elevation, so straight up there is nothing, and what
+		// showed through was the backend's clear colour: a dark navy disc overhead on every open map.
+		// GZDoom fills it with a flat fan in the sky texture's own average edge colour.
 		//
-		// The fan is over the row-1 ring, matching RenderDome's RenderRow(GL_TRIANGLE_FAN, ...), and
-		// is emitted as a triangle list because that is what the rest of this buffer is.
+		// The order is not incidental. The cap is a flat lid at row 1's height, so from the centre it
+		// subtends everything from 45 degrees up -- it overlaps the textured 45-to-60 band rather than
+		// merely abutting it. Drawn afterwards, with no depth test on the sky, it painted flat colour
+		// over a third of the visible sky: a huge black disc where GL has cloud. Drawn first, the
+		// strips cover it back up and only the part above the dome remains.
 		{
 			const PalEntry cap = g_skyCapColor[hemi ? 1 : 0];
 			SkyVertexData centre;
@@ -760,10 +772,24 @@ static void BuildSkyDome(int texw, int texh)
 				{
 					tri[k].r = cap.r / 255.f; tri[k].g = cap.g / 255.f; tri[k].b = cap.b / 255.f;
 					tri[k].useTex = 0.f;
-					// Flat disc: the cap is a lid, not part of the dome's curve.
-					tri[k].y = centre.y;
+					tri[k].y = centre.y;   // a lid, not part of the dome's curve
 				}
 				verts.Push(tri[0]); verts.Push(tri[1]); verts.Push(tri[2]);
+			}
+		}
+
+		for (int r = 0; r < rows; r++)
+		{
+			for (int c = 0; c < cols; c++)
+			{
+				SkyVertexData q[4];
+				SkyVertexAt(r,     c,     rows, cols, yflip, modelScaleY, modelTransY, xscale, vscale, q[0]);
+				SkyVertexAt(r + 1, c,     rows, cols, yflip, modelScaleY, modelTransY, xscale, vscale, q[1]);
+				SkyVertexAt(r,     c + 1, rows, cols, yflip, modelScaleY, modelTransY, xscale, vscale, q[2]);
+				SkyVertexAt(r + 1, c + 1, rows, cols, yflip, modelScaleY, modelTransY, xscale, vscale, q[3]);
+				for (int k = 0; k < 4; k++) { q[k].r = q[k].g = q[k].b = 1.f; q[k].useTex = 1.f; }
+				verts.Push(q[0]); verts.Push(q[1]); verts.Push(q[2]);
+				verts.Push(q[2]); verts.Push(q[1]); verts.Push(q[3]);
 			}
 		}
 	}
@@ -848,6 +874,17 @@ static bool EnsureSkyPipeline()
 	pci.pVS = vs;
 	pci.pPS = ps;
 	dev->CreateGraphicsPipelineState(pci, &g_skyPSO);
+
+	// [rc4l] The same pipeline with blending, for the sky's fade layer.
+	{
+		auto &rt = pci.GraphicsPipeline.BlendDesc.RenderTargets[0];
+		rt.BlendEnable = true;
+		rt.SrcBlend  = Diligent::BLEND_FACTOR_SRC_ALPHA;
+		rt.DestBlend = Diligent::BLEND_FACTOR_INV_SRC_ALPHA;
+		rt.BlendOp = Diligent::BLEND_OPERATION_ADD;
+		pci.PSODesc.Name = "fua sky fade PSO";
+		dev->CreateGraphicsPipelineState(pci, &g_skyFadePSO);
+	}
 	if (!g_skyPSO) return false;
 
 	if (auto *v = g_skyPSO->GetStaticVariableByName(Diligent::SHADER_TYPE_VERTEX, "Constants"))
@@ -903,6 +940,59 @@ static void EnsureSky()
 	g_skyBuiltValid = true;
 }
 
+// [rc4l] The sky's fade layer: a translucent sheet in the sector's fade colour, over the sky and
+// under the world.
+//
+// GL draws this and this backend did not, so a foggy map's sky came out as a black hole where GL had
+// haze -- reported as "fog missing". The geometry is a full-screen triangle in clip space rather than
+// anything dome-shaped, because it covers the sky exactly the way GL's viewpoint-hugging fog object
+// does, and the world draws over it afterwards.
+static void DrawSkyFade(Diligent::IDeviceContext *ctx)
+{
+	float fr, fg, fb, fa;
+	zx::hwrender::GetSkyFog(fr, fg, fb, fa);
+	if (fa <= 0.f || !g_skyFadePSO) return;
+
+	// Clip space directly: uMVP is bypassed by placing the vertices at w=1 already projected. The
+	// vertex shader still multiplies, so instead this rides the dome's own transform by sitting far
+	// away and facing the camera -- simpler to just reuse the sky VB's shader with a huge quad.
+	SkyVertexData v[6];
+	const float R = 60000.f, H = 60000.f;
+	const float px[6] = { -R, -R,  R,  R, -R,  R };
+	const float pz[6] = { -R,  R, -R,  R,  R, -R };
+	for (int i = 0; i < 6; i++)
+	{
+		v[i].x = px[i]; v[i].y = H; v[i].z = pz[i];
+		v[i].u = 0.f; v[i].v = 0.f;
+		v[i].r = fr; v[i].g = fg; v[i].b = fb;
+		v[i].useTex = -fa;   // negative: flat colour, alpha = -a. See the sky pixel shader.
+	}
+
+	if (!g_skyFadeVB)
+	{
+		Diligent::BufferDesc bd;
+		bd.Name = "fua sky fade VB";
+		bd.Size = sizeof(v);
+		bd.Usage = Diligent::USAGE_DEFAULT;
+		bd.BindFlags = Diligent::BIND_VERTEX_BUFFER;
+		GetDevice()->CreateBuffer(bd, nullptr, &g_skyFadeVB);
+		if (!g_skyFadeVB) return;
+	}
+	ctx->UpdateBuffer(g_skyFadeVB, 0, sizeof(v), v,
+		Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+
+	Diligent::IBuffer *vbs[] = { g_skyFadeVB };
+	const Diligent::Uint64 offsets[] = { 0 };
+	ctx->SetVertexBuffers(0, 1, vbs, offsets, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
+		Diligent::SET_VERTEX_BUFFERS_FLAG_RESET);
+	ctx->SetPipelineState(g_skyFadePSO);
+	ctx->CommitShaderResources(g_skySRB, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	Diligent::DrawAttribs d;
+	d.NumVertices = 6;
+	d.Flags = Diligent::DRAW_FLAG_VERIFY_ALL;
+	ctx->Draw(d);
+}
+
 static void DrawSky(Diligent::IDeviceContext *ctx)
 {
 	if (!g_skyBuiltValid || !g_skyVB || !g_skyPSO || g_skyVerts == 0) return;
@@ -918,6 +1008,8 @@ static void DrawSky(Diligent::IDeviceContext *ctx)
 	draw.NumVertices = (Diligent::Uint32)g_skyVerts;
 	draw.Flags = Diligent::DRAW_FLAG_VERIFY_ALL;
 	ctx->Draw(draw);
+
+	DrawSkyFade(ctx);
 }
 
 // [rc4l] Draw this frame's dynamic geometry -- sprites.
@@ -1096,6 +1188,7 @@ static void ReleaseScenePipelines()
 	g_srbMasked.Release();
 	g_skySRB.Release();
 	g_skyPSO.Release();
+	g_skyFadePSO.Release();
 	g_scenePSO.Release();
 	g_maskedPSO.Release();
 	g_transPSO.Release();
@@ -1915,7 +2008,10 @@ static void DrawSceneOnce(bool present = true, bool pump = true)
 		// [rc4l] Same axis swap the vertices get: the mesh is (x, z-up, y).
 		cb[16] = FIXED2FLOAT(viewx); cb[17] = FIXED2FLOAT(viewz);
 		cb[18] = FIXED2FLOAT(viewy); cb[19] = (float)(int)fua_dg_lightmode;
-		cb[20] = (float)g_lightCount; cb[21] = 0.f; cb[22] = 0.f; cb[23] = 0.f;
+		cb[20] = (float)g_lightCount;
+		// [rc4l] The sky rotation for this frame: RenderDome's -180 degrees plus the scroll.
+		cb[21] = g_skyAngle;
+		cb[22] = 0.f; cb[23] = 0.f;
 	}
 
 	// [rc4l] Re-resolve animated textures.
@@ -1940,7 +2036,14 @@ static void DrawSceneOnce(bool present = true, bool pump = true)
 	}
 
 	// [rc4l] Sky first, with depth off, so the world paints over whatever it does not cover.
-	if (fua_dg_sky) { EnsureSky(); DrawSky(ctx); }
+	if (fua_dg_sky)
+	{
+		// mSky1Pos is in degrees and advances with gl_frameMS, so it must be read every frame.
+		const float scroll = (GLRenderer != NULL) ? GLRenderer->mSky1Pos : 0.f;
+		g_skyAngle = (-180.0f + scroll) * 3.14159265f / 180.0f;
+		EnsureSky();
+		DrawSky(ctx);
+	}
 
 	Diligent::IBuffer *vbs[] = { g_vb };
 	const Diligent::Uint64 offsets[] = { 0 };
@@ -2141,6 +2244,9 @@ static bool AutoSetupForLevel()
 		return false;
 	}
 }
+
+// [rc4l] Read by dgwin32.cpp when it creates the window; see fua_dg_embed.
+bool Fua_WantEmbeddedWindow() { return !!fua_dg_embed; }
 
 void LiveFrame()
 {
