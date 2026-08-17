@@ -425,6 +425,131 @@ CCMD( fua_mesh_at )
 //
 //==========================================================================
 
+//==========================================================================
+//
+// fua_mesh_dupes
+//
+// [rc4l] Does the mesh hold the same surface twice?
+//
+// Z-fighting the GL renderer does not have is either a depth-precision problem or a duplicate-
+// geometry one, and those want opposite fixes. The depth buffer here is D32_FLOAT against a
+// 5..65536 frustum, which is better precision than GL's, so this asks the other question: how many
+// pieces have byte-identical vertices to another piece. One surface drawn twice from two ranges is
+// two sets of triangles the rasteriser has to break a tie between.
+//
+//==========================================================================
+
+CCMD( fua_mesh_dupes )
+{
+	int nv = 0, np = 0;
+	const FFlatVertex *verts = zx::levelmesh::MeshVertexData( nv );
+	const zx::levelmesh::MeshPiece *pieces = zx::levelmesh::MeshPieces( np );
+	if ( verts == NULL || pieces == NULL ) { Printf( "no mesh\n" ); return; }
+
+	// Key on the vertex data itself, quantised to 1/16 of a map unit so a re-bake that lands on a
+	// slightly different float still counts as the same surface -- which is the case that fights.
+	TMap<QWORD, int> seen;
+	int dupes = 0, live = 0;
+	int firstA = -1, firstB = -1;
+	for ( int i = 0; i < np; i++ )
+	{
+		const zx::levelmesh::MeshPiece &p = pieces[i];
+		if ( p.range.count == 0 ) continue;
+		live++;
+		QWORD h = 1469598103934665603ULL;
+		for ( unsigned v = 0; v < p.range.count && p.range.offset + v < (unsigned)nv; v++ )
+		{
+			const FFlatVertex &fv = verts[p.range.offset + v];
+			const int q[3] = { (int)(fv.x * 16.f), (int)(fv.y * 16.f), (int)(fv.z * 16.f) };
+			for ( int k = 0; k < 3; k++ ) { h ^= (QWORD)q[k]; h *= 1099511628211ULL; }
+		}
+		int *prev = seen.CheckKey( h );
+		if ( prev != NULL )
+		{
+			dupes++;
+			if ( firstA < 0 ) { firstA = *prev; firstB = i; }
+		}
+		else seen.Insert( h, i );
+	}
+	Printf( "fua_mesh_dupes: %d of %d live pieces duplicate another piece's geometry (%.1f%%)\n",
+			dupes, live, live ? 100.0 * dupes / live : 0.0 );
+	if ( firstA >= 0 )
+		Printf( "  first pair: pieces %d and %d, ranges %u+%u and %u+%u%s\n",
+				firstA, firstB, pieces[firstA].range.offset, pieces[firstA].range.count,
+				pieces[firstB].range.offset, pieces[firstB].range.count,
+				pieces[firstA].material == pieces[firstB].material ? ", SAME material" :
+					", different materials" );
+
+	// [rc4l] Exact duplicates are the easy case. What actually fights is two pieces sharing a PLANE
+	// and overlapping in it -- a 3D floor's side wall over the sector wall behind it, or two segs
+	// that both claim the same span. Neither is a byte-identical copy, so the hash above cannot see
+	// them. Bounding boxes, degenerate on the axis the surface is flat in, catch both.
+	int overlaps = 0, ovA = -1, ovB = -1;
+	struct Box { float x0, x1, y0, y1, z0, z1; };
+	TArray<Box> box;
+	TArray<int> idx;
+	for ( int i = 0; i < np; i++ )
+	{
+		const zx::levelmesh::MeshPiece &p = pieces[i];
+		if ( p.range.count == 0 ) continue;
+		Box b = { 1e9f, -1e9f, 1e9f, -1e9f, 1e9f, -1e9f };
+		for ( unsigned v = 0; v < p.range.count && p.range.offset + v < (unsigned)nv; v++ )
+		{
+			const FFlatVertex &fv = verts[p.range.offset + v];
+			if ( fv.x < b.x0 ) b.x0 = fv.x;  if ( fv.x > b.x1 ) b.x1 = fv.x;
+			if ( fv.y < b.y0 ) b.y0 = fv.y;  if ( fv.y > b.y1 ) b.y1 = fv.y;
+			if ( fv.z < b.z0 ) b.z0 = fv.z;  if ( fv.z > b.z1 ) b.z1 = fv.z;
+		}
+		box.Push( b ); idx.Push( i );
+	}
+	const float kEps = 0.05f;
+	for ( unsigned i = 0; i < box.Size( ); i++ )
+		for ( unsigned j = i + 1; j < box.Size( ); j++ )
+		{
+			const Box &a = box[i], &b = box[j];
+			// Must overlap in all three axes, allowing for the flat axis being a single value.
+			if ( a.x1 < b.x0 - kEps || b.x1 < a.x0 - kEps ) continue;
+			if ( a.y1 < b.y0 - kEps || b.y1 < a.y0 - kEps ) continue;
+			if ( a.z1 < b.z0 - kEps || b.z1 < a.z0 - kEps ) continue;
+			// And both must be flat in the SAME axis, with the same value there: that is coplanar.
+			const bool ax = (a.x1 - a.x0) < kEps && (b.x1 - b.x0) < kEps;
+			const bool ay = (a.y1 - a.y0) < kEps && (b.y1 - b.y0) < kEps;
+			const bool az = (a.z1 - a.z0) < kEps && (b.z1 - b.z0) < kEps;
+			if ( !ax && !ay && !az ) continue;
+			// Zero-area overlap in the remaining axes is just two surfaces meeting at an edge.
+			const float ox = MIN( a.x1, b.x1 ) - MAX( a.x0, b.x0 );
+			const float oy = MIN( a.y1, b.y1 ) - MAX( a.y0, b.y0 );
+			const float oz = MIN( a.z1, b.z1 ) - MAX( a.z0, b.z0 );
+			int wide = 0;
+			if ( ox > kEps ) wide++;
+			if ( oy > kEps ) wide++;
+			if ( oz > kEps ) wide++;
+			if ( wide < 2 ) continue;
+			overlaps++;
+			if ( ovA < 0 ) { ovA = idx[i]; ovB = idx[j]; }
+			// Print the first few with their actual extents. A count on its own is only as good as
+			// the predicate that produced it, and this predicate is easy to get subtly wrong -- two
+			// surfaces meeting at an edge are not an overlap, and a detector that says they are would
+			// report most of a level.
+			if ( overlaps <= 6 )
+				Printf( "    #%d: piece %d [%.0f..%.0f, %.0f..%.0f, %.0f..%.0f] vs %d "
+						"[%.0f..%.0f, %.0f..%.0f, %.0f..%.0f]  overlap %.1f x %.1f x %.1f  %s\n",
+						overlaps, idx[i], a.x0, a.x1, a.y0, a.y1, a.z0, a.z1,
+						idx[j], b.x0, b.x1, b.y0, b.y1, b.z0, b.z1, ox, oy, oz,
+						pieces[idx[i]].material == pieces[idx[j]].material ? "same mat" : "diff mat" );
+		}
+	Printf( "  coplanar overlapping pairs: %d\n", overlaps );
+	if ( ovA >= 0 )
+	{
+		const Box &a = box[0];
+		(void)a;
+		Printf( "  first overlap: pieces %d and %d, %s material, %s\n", ovA, ovB,
+				pieces[ovA].material == pieces[ovB].material ? "same" : "different",
+				pieces[ovA].planeFacing || pieces[ovB].planeFacing ? "3D floor plane involved"
+																   : "neither is a 3D floor plane" );
+	}
+}
+
 CCMD( fua_find_sky )
 {
 	if ( sectors == NULL || numsectors <= 0 )

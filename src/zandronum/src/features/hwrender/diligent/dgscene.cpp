@@ -126,7 +126,15 @@ CVAR(Bool, fua_dg_embed, true, CVAR_ARCHIVE)
 // Making this work means normalising winding at bake time (reverse the fan for ceilings, and check
 // walls the same way), which is worth doing -- it would halve flat fragment work -- but it is an
 // optimisation, not a prerequisite. The cvar stays so the experiment is one command away.
-CVAR(Int, fua_dg_cull, 0, CVAR_ARCHIVE)
+// [rc4l] Backface culling for the WORLD, on by default.
+//
+// The level mesh holds both sides of every two-sided line, because it is a cache and the BSP shows
+// it each side eventually. Coplanar quads with different vertices do not agree on depth to the last
+// bit, so wherever two such walls overlap the rasteriser stipples between them -- 1799 coplanar
+// overlapping pairs on dbab02, and a checkerboard seam down a rock face that GL never shows. Each
+// side's wall faces into its own sector, so culling back faces drops exactly the one that should not
+// be visible. 0 none, 1 back, 2 front (front is a diagnostic: it should show the level inside out).
+CVAR(Int, fua_dg_cull, 1, CVAR_ARCHIVE)
 
 // [rc4l] Draw the sky. Off is a diagnostic: the sky fills every pixel the world does not cover, so
 // with it on, "missing world geometry" and "correctly visible sky" look identical. Turning it off
@@ -175,6 +183,15 @@ static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_scenePSO;      // opa
 static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_maskedPSO;     // alpha-tested
 static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_transPSO;      // normal translucency
 static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_addPSO;        // additive
+// [rc4l] The same four with culling forced off, for SPRITES.
+//
+// Backface culling is right for the world and wrong for billboards: a sprite quad is built facing
+// the camera and nothing guarantees its winding survives every view angle, so a world-wide cull mode
+// would silently eat some of them. The world's setting must not be able to reach them, so they get
+// their own pipelines rather than a promise that the winding works out.
+static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_maskedNoCullPSO;
+static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_transNoCullPSO;
+static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_addNoCullPSO;
 static Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding> g_srb;
 static Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding> g_srbMasked;
 static int   g_sceneVerts = 0;
@@ -1287,13 +1304,13 @@ static void DrawDynamicOpaque(Diligent::IDeviceContext *ctx)
 	const Diligent::Uint64 offsets[] = { 0 };
 	ctx->SetVertexBuffers(0, 1, vbs, offsets, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
 		Diligent::SET_VERTEX_BUFFERS_FLAG_RESET);
-	ctx->SetPipelineState(g_maskedPSO);
+	ctx->SetPipelineState(g_maskedNoCullPSO);
 
 	for (unsigned i = 0; i < g_dynRuns.Size(); i++)
 	{
 		const DynRun &r = g_dynRuns[i];
 		if (r.count == 0 || r.blend != 0) continue;
-		auto *srb = GetMaterialSRB(g_maskedPSO, r.material, r.translation);
+		auto *srb = GetMaterialSRB(g_maskedNoCullPSO, r.material, r.translation);
 		if (!srb) continue;
 		ctx->CommitShaderResources(srb, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 		Diligent::DrawAttribs draw;
@@ -1374,7 +1391,8 @@ static void DrawBlended(Diligent::IDeviceContext *ctx)
 			if (r.count == 0 || r.blend == 0) continue;
 			// Blend mode 3 is the fuzz shadow; the engine draws it as a dark near-opaque overlay, and
 			// normal translucency is a fair stand-in until the fuzz shaders are ported.
-			Diligent::IPipelineState *pso = (r.blend == 2) ? g_addPSO.RawPtr() : g_transPSO.RawPtr();
+			Diligent::IPipelineState *pso = (r.blend == 2) ? g_addNoCullPSO.RawPtr()
+			                                              : g_transNoCullPSO.RawPtr();
 			auto *srb = GetMaterialSRB(pso, r.material, r.translation);
 			if (!srb) continue;
 			BlendDraw d;
@@ -1408,7 +1426,9 @@ static void DrawBlended(Diligent::IDeviceContext *ctx)
 				Diligent::SET_VERTEX_BUFFERS_FLAG_RESET);
 			boundVB = want;
 		}
-		Diligent::IPipelineState *pso = (d.blend == 2) ? g_addPSO.RawPtr() : g_transPSO.RawPtr();
+		Diligent::IPipelineState *pso = d.dyn
+			? ((d.blend == 2) ? g_addNoCullPSO.RawPtr() : g_transNoCullPSO.RawPtr())
+			: ((d.blend == 2) ? g_addPSO.RawPtr()       : g_transPSO.RawPtr());
 		if (!pso) continue;
 		if (pso != bound) { ctx->SetPipelineState(pso); bound = pso; }
 		ctx->CommitShaderResources(d.srb, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
@@ -1436,6 +1456,9 @@ static void ReleaseScenePipelines()
 	g_skyFadePSO.Release();
 	g_scenePSO.Release();
 	g_maskedPSO.Release();
+	g_maskedNoCullPSO.Release();
+	g_transNoCullPSO.Release();
+	g_addNoCullPSO.Release();
 	g_transPSO.Release();
 	g_addPSO.Release();
 	g_skyBuiltValid = false;
@@ -1890,11 +1913,17 @@ static bool EnsureScenePipeline(FString &err)
 	//   3 additive      src-alpha / one, likewise
 	// Blended geometry must not write depth, or a nearer translucent sprite would occlude the one
 	// behind it instead of letting it show through.
-	for (int pass = 0; pass < 4; pass++)
+	// Passes 0..3 are the world's, 4..6 repeat masked/translucent/additive with culling off for
+	// sprites. See g_maskedNoCullPSO.
+	for (int pass = 0; pass < 7; pass++)
 	{
-		static const char *kNames[4] = { "fua scene PSO opaque", "fua scene PSO masked",
-		                                 "fua scene PSO translucent", "fua scene PSO additive" };
-		const bool blended = (pass >= 2);
+		static const char *kNames[7] = { "fua scene PSO opaque", "fua scene PSO masked",
+		                                 "fua scene PSO translucent", "fua scene PSO additive",
+		                                 "fua sprite PSO masked", "fua sprite PSO translucent",
+		                                 "fua sprite PSO additive" };
+		const int shape = (pass < 4) ? pass : pass - 3;   // 4->1 masked, 5->2 trans, 6->3 additive
+		const bool noCull = (pass >= 4);
+		const bool blended = (shape >= 2);
 
 		Diligent::GraphicsPipelineStateCreateInfo pci;
 		pci.PSODesc.Name = kNames[pass];
@@ -1903,7 +1932,7 @@ static bool EnsureScenePipeline(FString &err)
 		pci.GraphicsPipeline.RTVFormats[0] = swap->GetDesc().ColorBufferFormat;
 		pci.GraphicsPipeline.DSVFormat = swap->GetDesc().DepthBufferFormat;
 		pci.GraphicsPipeline.PrimitiveTopology = Diligent::PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-		pci.GraphicsPipeline.RasterizerDesc.CullMode =
+		pci.GraphicsPipeline.RasterizerDesc.CullMode = noCull ? Diligent::CULL_MODE_NONE :
 			(fua_dg_cull == 1) ? Diligent::CULL_MODE_BACK :
 			(fua_dg_cull == 2) ? Diligent::CULL_MODE_FRONT : Diligent::CULL_MODE_NONE;
 		pci.GraphicsPipeline.DepthStencilDesc.DepthEnable = true;
@@ -1913,7 +1942,7 @@ static bool EnsureScenePipeline(FString &err)
 			auto &rt = pci.GraphicsPipeline.BlendDesc.RenderTargets[0];
 			rt.BlendEnable = true;
 			rt.SrcBlend  = Diligent::BLEND_FACTOR_SRC_ALPHA;
-			rt.DestBlend = (pass == 3) ? Diligent::BLEND_FACTOR_ONE
+			rt.DestBlend = (shape == 3) ? Diligent::BLEND_FACTOR_ONE
 			                           : Diligent::BLEND_FACTOR_INV_SRC_ALPHA;
 			rt.BlendOp = Diligent::BLEND_OPERATION_ADD;
 			rt.SrcBlendAlpha  = Diligent::BLEND_FACTOR_ONE;
@@ -1928,23 +1957,31 @@ static bool EnsureScenePipeline(FString &err)
 		pci.PSODesc.ResourceLayout.ImmutableSamplers = samplers;
 		pci.PSODesc.ResourceLayout.NumImmutableSamplers = 1;
 		pci.pVS = vs;
-		pci.pPS = (pass == 0) ? psOpaque : (pass == 1) ? psMasked : psTrans;
+		pci.pPS = (shape == 0) ? psOpaque : (shape == 1) ? psMasked : psTrans;
 
 		Diligent::RefCntAutoPtr<Diligent::IPipelineState> made;
 		dev->CreateGraphicsPipelineState(pci, &made);
 		if (pass == 0)      g_scenePSO  = made;
 		else if (pass == 1) g_maskedPSO = made;
 		else if (pass == 2) g_transPSO  = made;
-		else                g_addPSO    = made;
+		else if (pass == 3) g_addPSO    = made;
+		else if (pass == 4) g_maskedNoCullPSO = made;
+		else if (pass == 5) g_transNoCullPSO  = made;
+		else                g_addNoCullPSO    = made;
 	}
-	if (!g_scenePSO || !g_maskedPSO || !g_transPSO || !g_addPSO)
+	if (!g_scenePSO || !g_maskedPSO || !g_transPSO || !g_addPSO ||
+		!g_maskedNoCullPSO || !g_transNoCullPSO || !g_addNoCullPSO)
 	{ err = "scene pipeline creation failed"; return false; }
 
 	// [rc4l] Both stages read Constants now -- the pixel shader needs uCameraPos for radial fog.
 	// A stage that declares the block but never gets it bound reads garbage rather than failing.
-	Diligent::IPipelineState *psos[] = { g_scenePSO, g_maskedPSO, g_transPSO, g_addPSO };
+	// [rc4l] The sprite pipelines belong in here too. They were left out when they were added and the
+	// backend died on launch with "No resource is assigned to static shader variable 'Constants'" --
+	// a pipeline that is created but never has its statics bound is not a working pipeline.
+	Diligent::IPipelineState *psos[] = { g_scenePSO, g_maskedPSO, g_transPSO, g_addPSO,
+	                                     g_maskedNoCullPSO, g_transNoCullPSO, g_addNoCullPSO };
 	const Diligent::SHADER_TYPE stages[] = { Diligent::SHADER_TYPE_VERTEX, Diligent::SHADER_TYPE_PIXEL };
-	for (int i = 0; i < 4; i++)
+	for (int i = 0; i < 7; i++)
 	{
 		for (int s = 0; s < 2; s++)
 			if (auto *var = psos[i]->GetStaticVariableByName(stages[s], "Constants"))

@@ -148,6 +148,12 @@ bool DiligentShowWindow(FString &report)
 		Diligent::Win32NativeWindow win(g_hwnd);
 		factory->CreateSwapChainVk(GetDevice(), GetContext(), scd, win, &g_swap);
 		if (!g_swap) { report = "CreateSwapChainVk failed"; return false; }
+		// [rc4l] Say what depth format we actually got. Z-fighting the GL renderer does not have is
+		// first a question about depth precision, and "Diligent probably defaults to D32" is not an
+		// answer -- a 16-bit depth buffer against a 5..65536 frustum would fight everywhere.
+		Printf("Diligent swapchain: color %d, depth %d (%dx%d)\n",
+			(int)g_swap->GetDesc().ColorBufferFormat, (int)g_swap->GetDesc().DepthBufferFormat,
+			(int)g_swap->GetDesc().Width, (int)g_swap->GetDesc().Height);
 	}
 
 	if (!EnsurePipeline(err)) { report = err; return false; }
