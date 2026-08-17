@@ -40,7 +40,7 @@ function parseFlags(argv) {
 const USAGE = `fuactl <command>
   ls                                 list registered engine instances
   reap [--kill] [--all]              prune dead; --kill SIGTERMs ORPHANS only (other sessions safe); --all kills every live instance
-  launch [--map M] [--seed S] [--port P] [--token T] [--iwad W] [--skill N] [--file a.wad,b.pk3]   launch one supervised bridge instance (stays up until Ctrl-C)
+  launch [--map M] [--seed S] [--port P] [--token T] [--iwad W] [--skill N] [--file a.wad,b.pk3] [--arg "-host,+sv_hostname,X"]   launch one supervised bridge instance (stays up until Ctrl-C)
   sample --pid P | --port P [--seconds N] [--engine]   hottest functions (macOS sample / Linux perf; unavailable on Windows)
   net-bw [--seed S] [--map M] [--spawn CLS] [--count N] [--seconds N]   client/server bandwidth, baseline vs perturbation
   rpc <cmd> [jsonArgs] --port P [--token T]   send one RPC to an instance and print the result
@@ -52,6 +52,7 @@ const USAGE = `fuactl <command>
   bench --port P --scenario F.json [--runs N] [--metric total.p99_ms]   repeat a scenario, report median + spread, discard runs whose expectations failed
   renderer-info --port P [--token T]   renderer identity + whether GL timer queries work on this driver
   ui <action> [args] --port P [--token T]   drive the UI: read (menu as text), find <label>, nav <keys>, click <x> <y>, drag, type <text>, look --yaw D --pitch D, screenshot [name], exec <ccmd>
+  browser --port P [--token T] [--wait S] [--expect-lan] [--expect-country XXX]   refresh the server browser and report what it sees (LAN vs registry, country)
   mcp                                run as an MCP stdio server for agents
 `;
 
@@ -85,9 +86,12 @@ async function main() {
         skill: flags.skill != null ? Number(flags.skill) : undefined,
         // [rc4l] PWADs, comma-separated. Without this the only launchable thing was a bare IWAD, so
         // a mod could be profiled only by hosting a server first and measuring through the netcode.
-        extraArgs: flags.file
-          ? String(flags.file).split(",").flatMap((f) => ["-file", f.trim()])
-          : undefined,
+        // [rc4l] --arg passes raw engine arguments through (repeat with commas), so a harness can
+        // start a host, a dedicated server or any other mode without inventing a flag per mode.
+        extraArgs: [
+          ...(flags.file ? String(flags.file).split(",").flatMap((f) => ["-file", f.trim()]) : []),
+          ...(flags.arg ? String(flags.arg).split(",").map((a) => a.trim()) : []),
+        ],
       });
       console.log(`launched pid=${inst.pid} port=${inst.port} token=${inst.token}`);
       console.log(`(rpc it with: fuactl rpc sim.tic --port ${inst.port} --token ${inst.token})`);
@@ -258,6 +262,43 @@ async function main() {
         }
       });
       console.log(JSON.stringify(r, null, 2));
+      break;
+    }
+    case "browser": {
+      // End-to-end check of server discovery: refresh both paths, wait for replies, and report
+      // what the browser actually holds. --expect-lan / --expect-country turn it into an
+      // assertion that exits non-zero, so it can gate a release the same way a test would.
+      if (!flags.port) { console.error("usage: fuactl browser --port P [--token T] [--wait S] [--expect-lan] [--expect-country USA]"); process.exit(2); }
+      const waitS = flags.wait != null ? Number(flags.wait) : 12;
+      const c = new BridgeClient();
+      await c.connect(Number(flags.port), { token: flags.token || null });
+      await c.waitHello();
+      await c.rpc("browser.refresh");
+      let list = { servers: [], count: 0 };
+      const deadline = Date.now() + waitS * 1000;
+      // Poll rather than sleep once: LAN replies land in milliseconds, registry ones take a round trip.
+      while (Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 1000));
+        list = await c.rpc("browser.list", {}, 15000);
+        if (list.count > 0 && Date.now() > deadline - (waitS - 4) * 1000) break;
+      }
+      c.close();
+      const lan = list.servers.filter((x) => x.lan);
+      const net = list.servers.filter((x) => !x.lan);
+      console.log(JSON.stringify({ count: list.count, lan: lan.length, internet: net.length, servers: list.servers }, null, 2));
+      let failed = false;
+      if (flags["expect-lan"] && lan.length === 0) { console.error("FAIL: expected at least one LAN server, saw none"); failed = true; }
+      if (flags["expect-country"]) {
+        const want = String(flags["expect-country"]).toUpperCase();
+        // Match either the code the server reported or the flag the browser resolved, since a
+        // server whose own lookup failed reports nothing and the client geolocates it instead.
+        const matches = (x) => [x.country, x.flag].some((v) => (v || "").toUpperCase() === want);
+        if (!net.some(matches)) {
+          console.error(`FAIL: expected a non-LAN server with country/flag ${want}; saw ${JSON.stringify(net.map((x) => x.flag || x.country || null))}`);
+          failed = true;
+        }
+      }
+      if (failed) process.exit(1);
       break;
     }
     case "mcp": {

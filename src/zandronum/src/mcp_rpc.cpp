@@ -33,6 +33,8 @@
 #include "mcp_glperf.h"
 #include "mcp_ticprof.h"
 #include "mcp_simtrace.h"
+#include "features/server-browser/browser.h"
+#include "network.h"
 #include "mcp_sample.h"
 #include "textures/textures.h"
 #include "features/damage-tint/damagetint.h"
@@ -361,7 +363,7 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 	{
 		SendOk( id, "{\"commands\":["
 			"\"ping\",\"capabilities\",\"console.exec\","
-			"\"sim.tic\",\"sim.hash\",\"sim.seed\",\"sim.pause\",\"sim.resume\",\"sim.step\",\"sim.cheatat\",\"sim.pauseat\",\"sim.rngdump\",\"sim.trace\","
+			"\"sim.tic\",\"sim.hash\",\"sim.seed\",\"sim.pause\",\"sim.resume\",\"sim.step\",\"sim.cheatat\",\"sim.pauseat\",\"browser.refresh\",\"browser.list\",\"sim.rngdump\",\"sim.trace\","
 			"\"sim.snapshot\",\"sim.restore\",\"state.player\",\"state.actors\",\"input.event\",\"input.axis\",\"input.look\","
 			"\"perf.capture\",\"perf.ticprof\",\"perf.counters\",\"net.bandwidth\",\"gl.timers\",\"renderer.info\","
 			"\"world.sectors\",\"player.setpos\""
@@ -457,6 +459,49 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 			*c->out += "{\"c\":" + I( (long long)crc ) + ",\"i\":" + I( (long long)idx ) + ",\"u\":" + I( (long long)u0 ) + "}";
 		}, &ctx );
 		body += "],\"leveltime\":" + I( level.time ) + "}";
+		SendOk( id, body );
+	}
+	else if ( cmd == "browser.refresh" )
+	{
+		// Ask both halves of the browser: the LAN broadcast and the federated registry. A
+		// driver polls browser.list afterwards until the replies land.
+		BROWSER_RefreshListedServers();
+		BROWSER_QueryServerRegistry();
+		SendOk( id, "{\"refreshing\":true}" );
+	}
+	else if ( cmd == "browser.list" )
+	{
+		// The browser's current server list as data, including the two things the console dump
+		// leaves out: whether the entry arrived by LAN broadcast, and the country the registry
+		// (or the server) reported for it. Those are exactly what an end-to-end check of
+		// "does my server appear, and does it appear the right way" has to assert on.
+		std::string body = "{\"servers\":[";
+		int n = 0;
+		for ( ULONG i = 0; i < MAX_BROWSER_SERVERS; ++i )
+		{
+			if ( !BROWSER_IsActive( i ) )
+				continue;
+			if ( n ) body += ",";
+			std::string name, addr, country;
+			JsonEscape( std::string( BROWSER_GetHostName( i ) ? BROWSER_GetHostName( i ) : "" ), name );
+			JsonEscape( std::string( BROWSER_GetAddress( i ).ToString() ), addr );
+			JsonEscape( std::string( BROWSER_GetCountryCode( i ) ? BROWSER_GetCountryCode( i ) : "" ), country );
+			body += "{\"name\":\"" + name + "\",\"address\":\"" + addr + "\"";
+			body += ",\"lan\":" + B( BROWSER_IsLAN( i ) );
+			// The reported code is blank whenever a server's own lookup failed (it sends XIP), and
+			// the browser then resolves the flag from the address itself. Report both: the claim
+			// and the flag actually drawn, or an assertion tests the wrong one.
+			std::string flag;
+			const char *fromindex = NETWORK_GetCountryCodeFromIndex( BROWSER_GetCountryIndex( i ), true );
+			JsonEscape( std::string( fromindex ? fromindex : "" ), flag );
+			body += ",\"country\":\"" + country + "\"";
+			body += ",\"flag\":\"" + flag + "\"";
+			body += ",\"countryIndex\":" + I( (long long)BROWSER_GetCountryIndex( i ) );
+			body += ",\"players\":" + I( BROWSER_GetNumPlayers( i ) );
+			body += ",\"ping\":" + I( BROWSER_GetPing( i ) ) + "}";
+			++n;
+		}
+		body += "],\"count\":" + I( n ) + "}";
 		SendOk( id, body );
 	}
 	else if ( cmd == "sim.pauseat" )
