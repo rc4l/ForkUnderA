@@ -108,6 +108,22 @@ Diligent::ITextureView *GetMaterialSRV(const void *materialPtr, int translation)
 
 	if (materialPtr == NULL) return EnsureWhite();
 
+	// [rc4l] Canvas textures are resolved BEFORE the cache, and never enter it.
+	//
+	// This check used to sit after the cache lookup, which made it useless: on the first frame the
+	// camera has not been rendered yet, so the lookup missed, execution fell through to
+	// CreateTexBuffer, and the noise it returned was cached forever. Every later call hit that entry
+	// and never reached the camera at all. A camera's view changes every frame, so it has no business
+	// in a cache keyed on identity in the first place.
+	{
+		FMaterial *canvas = (FMaterial *)materialPtr;
+		if (canvas->tex != NULL && canvas->tex->bHasCanvas)
+		{
+			Diligent::ITextureView *cam = GetCameraSRV(materialPtr);
+			return cam ? cam : EnsureWhite();
+		}
+	}
+
 	for (unsigned i = 0; i < g_textures.Size(); i++)
 		if (g_textures[i].material == materialPtr && g_textures[i].translation == translation)
 			return g_textures[i].srv;
@@ -117,18 +133,6 @@ Diligent::ITextureView *GetMaterialSRV(const void *materialPtr, int translation)
 
 	FMaterial *mat = (FMaterial *)materialPtr;
 	int w = 0, h = 0;
-	// [rc4l] A camera texture resolves to the view the backend rendered for it, not to its bytes.
-	//
-	// It has no static pixels -- the engine renders into it every frame -- so CreateTexBuffer returns
-	// whatever its buffer holds, which is noise. RenderCameraTexture draws the same view into a real
-	// render target; this is where that target gets used. Nothing is cached: the view changes every
-	// frame, and the target is reused in place.
-	if (mat->tex != NULL && mat->tex->bHasCanvas)
-	{
-		Diligent::ITextureView *cam = GetCameraSRV(materialPtr);
-		if (cam != NULL) return cam;
-	}
-
 	// [rc4l] Say when a texture is not a plain image.
 	//
 	// A camera texture (bHasCanvas) has no static pixels at all -- the engine RENDERS into it every
