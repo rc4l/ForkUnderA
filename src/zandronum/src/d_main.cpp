@@ -3019,7 +3019,14 @@ void D_DoomMain (void)
 		// [rc4l] iwad_man is created earlier now (uzdoom@dfda74ffe moved it ahead of M_LoadDefaults,
 		// which needs it to generate the autoload sections), so this only fills it in if that did
 		// not already happen. The registration above still lands before any searching.
-		if (iwad_man == NULL) iwad_man = new FIWadManager;
+		// [rc4l] A restart arrives here with no manager (see the delete at the end of the loop),
+		// and a fresh one has no IWADINFO in it -- FindIWAD reads those tables, so parse before
+		// asking. The first boot path does this above, ahead of M_LoadDefaults.
+		if (iwad_man == NULL)
+		{
+			iwad_man = new FIWadManager;
+			iwad_man->ParseIWadInfos(basewad);
+		}
 		const FIWADInfo *iwad_info = iwad_man->FindIWAD(allwads, iwad, basewad);
 		gameinfo.gametype = iwad_info->gametype;
 		gameinfo.flags = iwad_info->flags;
@@ -3376,6 +3383,12 @@ void D_DoomMain (void)
 		FBaseCVar::EnableNoSet ();
 
 		delete iwad_man;	// now we won't need this anymore
+		// [rc4l] ...and the restart path comes back around to the `if (iwad_man == NULL)` test
+		// above, so the pointer has to say it is gone. Leaving it dangling meant a restart
+		// (wad_reload, hosting from the catalogue, joining a server) ran FindIWAD against freed
+		// memory: the tables read back as garbage sizes and the first name it touched was not a
+		// string any more. That is the crash on the second trip through D_DoomMain.
+		iwad_man = NULL;
 
 		// [RH] Run any saved commands from the command line or autoexec.cfg now.
 		gamestate = GS_FULLCONSOLE;

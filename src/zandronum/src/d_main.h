@@ -137,7 +137,11 @@ class FIWadManager
 	void CheckLumpName(const char *name);
 	int GetIWadInfo();
 	int ScanIWAD (const char *iwad);
-	int CheckIWAD (const char *doomwaddir, WadStuff *wads);
+	// [rc4l] numwadslots = entries the caller allocated in `wads`. Scanning a candidate file
+	// parses its IWADINFO, which can PUSH new entries into mIWadNames/mIWads while this loop is
+	// running, so the loop must be bounded by the caller's allocation and not by a table that
+	// grows underneath it (that read past the end and crashed on restart -- see d_iwad.cpp).
+	int CheckIWAD (const char *doomwaddir, WadStuff *wads, unsigned int numwadslots);
 	int IdentifyVersion (TArray<FString> &wadfiles, const char *iwad, const char *zdoom_wad);
 public:
 	void ParseIWadInfos(const char *fn);
