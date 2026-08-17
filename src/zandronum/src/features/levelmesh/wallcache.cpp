@@ -192,8 +192,14 @@ void BakeSeg(int segIndex)
 		// go with a translucent 3D floor, carry the rover's alpha. Baking them opaque draws a pane of
 		// coloured glass as a solid wall.
 		mp.alpha = sc.walls[i].alpha;
-		mp.blendMode = ComputeSurfaceBlendMode(sc.walls[i].RenderStyle == STYLE_Add,
-		                                       sc.walls[i].alpha);
+		// The draw list the engine chose, not the wall's alpha, is what says this needs blending --
+		// a frosted-glass middle texture keeps alpha 1 and carries its transparency in the texture.
+		{
+			const int list = sc.pieces[i].list;
+			const bool trans = (list == GLDL_TRANSLUCENT || list == GLDL_TRANSLUCENTBORDER);
+			mp.blendMode = ComputeWallBlendMode(trans, sc.walls[i].RenderStyle == STYLE_Add,
+			                                    sc.walls[i].alpha);
+		}
 		mp.lightLevel = sc.walls[i].lightlevel;
 		mp.lightColor = sc.walls[i].Colormap.LightColor.d;
 		mp.fadeColor = sc.walls[i].Colormap.FadeColor.d;

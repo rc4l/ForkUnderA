@@ -44,6 +44,18 @@ bool ComputeFlatWindingReversed(bool viewedFromBelow);
 // translucent path for nothing.
 int ComputeSurfaceBlendMode(bool additive, float alpha);
 
+// [rc4l] Which blend mode a WALL needs.
+//
+// A wall's own alpha is not the whole story, and using it alone drew a pane of frosted glass as a
+// solid white slab. A two-sided middle texture carries its transparency in the TEXTURE's alpha
+// channel while the wall's alpha stays 1, and the alpha-tested opaque pass turns every partially
+// transparent texel fully opaque. What actually knows is the draw list the engine routed the wall
+// into: GLDL_TRANSLUCENT means "this needs blending", whatever the numbers say.
+//
+// Same lesson as the flat winding: use the decision the engine already made rather than re-deriving
+// it from the inputs it made it from.
+int ComputeWallBlendMode(bool inTranslucentList, bool additive, float alpha);
+
 // [rc4l] Twice the signed area of a triangle projected onto the horizontal plane.
 //
 // Positive and negative correspond to the two winding directions; which one is "front" is a

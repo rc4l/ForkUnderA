@@ -289,3 +289,32 @@ TEST(FlatMeshCompute, AZeroSizedTextureFallsBackToSixtyFour)
 	EXPECT_FLOAT_EQ(u, 1.0f);
 	EXPECT_FLOAT_EQ(v, -1.0f);
 }
+
+// ---- wall blend classification ---------------------------------------------
+//
+// A pane of frosted glass rendered as a solid white slab: its transparency lives in the texture's
+// alpha channel, so the wall's own alpha is 1 and an alpha-based rule calls it opaque.
+
+TEST(FlatMeshCompute, AWallInTheTranslucentListBlendsEvenAtFullAlpha)
+{
+	// This is the frosted glass. Alpha says opaque; the engine's own routing says otherwise, and the
+	// engine is right.
+	EXPECT_EQ(ComputeWallBlendMode(true, false, 1.0f), 1);
+}
+
+TEST(FlatMeshCompute, AnOrdinaryWallIsOpaque)
+{
+	EXPECT_EQ(ComputeWallBlendMode(false, false, 1.0f), 0);
+}
+
+TEST(FlatMeshCompute, AWallWithLowAlphaBlendsWithoutBeingInTheList)
+{
+	// A 3D floor's side inherits the rover's alpha and is not necessarily routed as translucent.
+	EXPECT_EQ(ComputeWallBlendMode(false, false, 0.5f), 1);
+}
+
+TEST(FlatMeshCompute, AnAdditiveWallIsAdditiveWhicheverListItIsIn)
+{
+	EXPECT_EQ(ComputeWallBlendMode(true, true, 1.0f), 2);
+	EXPECT_EQ(ComputeWallBlendMode(false, true, 1.0f), 2);
+}

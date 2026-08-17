@@ -20,6 +20,13 @@ int ComputeSurfaceBlendMode(bool additive, float alpha)
 	return (alpha < 1.f - 1.f / 256.f) ? 1 : 0;
 }
 
+int ComputeWallBlendMode(bool inTranslucentList, bool additive, float alpha)
+{
+	if (additive) return 2;
+	if (inTranslucentList) return 1;
+	return ComputeSurfaceBlendMode(false, alpha);
+}
+
 float ComputeTriangleWindingZ(float ax, float ay, float bx, float by, float cx, float cy)
 {
 	return (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
