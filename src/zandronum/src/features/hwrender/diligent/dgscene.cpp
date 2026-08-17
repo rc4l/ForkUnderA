@@ -203,6 +203,9 @@ struct SceneBatch
 	// pass is sorted by material and never consults these.
 	float        sortX, sortY, sortZ;
 	float        normX, normY, normZ;   // mesh space: (x, z-up, y)
+	// [rc4l] This batch is one face of a 3D floor: draw it only from the side its normal points at.
+	// See MeshPiece::planeFacing.
+	bool         planeFacing;
 };
 static TArray<SceneBatch> g_batches;
 // [rc4l] Indices of the translucent batches, in build order. Small -- a level has a handful of
@@ -1304,6 +1307,26 @@ static void DrawDynamicOpaque(Diligent::IDeviceContext *ctx)
 	}
 }
 
+// [rc4l] Is this batch's surface turned towards the camera?
+//
+// Mesh space is (x, z-up, y), so the normal's doom-space components are (normX, normZ, normY) and
+// the centroid is already in doom space. Used for 3D floor planes, whose opposite face is in the
+// mesh too and would otherwise z-fight with them, and for translucent horizontal surfaces, whose
+// opposite face would otherwise composite a second time and double the alpha.
+static int g_planeCulled = 0;
+// [rc4l] The facing test as a switch, so "the surface is missing" can be told apart from "the
+// surface is being culled" without a rebuild. Off draws both faces of every 3D floor, which
+// z-fights -- a diagnostic, not a setting.
+CVAR(Bool, fua_dg_planecull, true, 0)
+static bool PlaneFacesCamera(const SceneBatch &b)
+{
+	if (!fua_dg_planecull) return true;
+	const float dx = FIXED2FLOAT(viewx) - b.sortX;
+	const float dy = FIXED2FLOAT(viewy) - b.sortY;
+	const float dz = FIXED2FLOAT(viewz) - b.sortZ;
+	return b.normX * dx + b.normZ * dy + b.normY * dz > 0.f;
+}
+
 // [rc4l] Everything that blends, world and sprites together, in one back-to-front pass.
 //
 // They cannot be two passes. A rocket box lying on the lava under a glass 3D floor has to be
@@ -1334,8 +1357,8 @@ static void DrawBlended(Diligent::IDeviceContext *ctx)
 		// its alpha composites twice and it reads as far more solid than in GL. Only near-horizontal
 		// surfaces are tested -- a translucent middle texture is meant to be seen from both sides.
 		// Mesh space is (x, z-up, y), so the normal's doom-space components are (normX, normZ, normY).
-		if (b.normY > 0.9f || b.normY < -0.9f)
-			if (b.normX * -dx + b.normZ * -dy + b.normY * -dz <= 0.f) continue;
+		if (b.planeFacing || b.normY > 0.9f || b.normY < -0.9f)
+			if (!PlaneFacesCamera(b)) continue;
 		BlendDraw d;
 		d.dyn = false; d.first = b.first; d.count = b.count; d.blend = b.blend;
 		d.translation = 0; d.material = b.material; d.srb = b.srb;
@@ -1993,7 +2016,8 @@ static bool BuildSceneBuffer(FString &err)
 		const int ba = pieces[a].blendMode != 0, bb = pieces[b].blendMode != 0;
 		if (ba != bb) return ba < bb;
 		if (pieces[a].material != pieces[b].material) return pieces[a].material < pieces[b].material;
-		return pieces[a].baseTex < pieces[b].baseTex;
+		if (pieces[a].baseTex != pieces[b].baseTex) return pieces[a].baseTex < pieces[b].baseTex;
+		return (int)pieces[a].planeFacing < (int)pieces[b].planeFacing;
 	});
 
 	g_sceneVB.Clear();
@@ -2010,7 +2034,9 @@ static bool BuildSceneBuffer(FString &err)
 		// A blended piece never merges with its neighbour: the translucent pass reorders batches per
 		// frame, and two pieces sharing a batch could not then be separated. A batch also breaks on
 		// baseTex, because the animation pass re-resolves the whole batch from that one pointer.
-		if (p.material != cur || p.baseTex != curBase || p.blendMode != curBlend || p.blendMode != 0)
+		// A face-culled piece is its own batch: the test is per surface, and a batch is one draw.
+		if (p.material != cur || p.baseTex != curBase || p.blendMode != curBlend || p.blendMode != 0 ||
+			p.planeFacing)
 		{
 			SceneBatch b;
 			b.material = p.material;
@@ -2023,6 +2049,7 @@ static bool BuildSceneBuffer(FString &err)
 			b.blend = (p.blendMode == 2) ? 2 : (p.blendMode != 0 ? 1 : 0);
 			b.sortX = b.sortY = b.sortZ = 0.f;
 			b.normX = p.normX; b.normY = p.normY; b.normZ = p.normZ;
+			b.planeFacing = p.planeFacing;
 			g_batches.Push(b);
 			if (b.blend != 0) g_blendBatches.Push((int)g_batches.Size() - 1);
 			cur = p.material;
@@ -2060,7 +2087,7 @@ static bool BuildSceneBuffer(FString &err)
 		nb.count += p.range.count;
 		// The centroid the translucent pass sorts on. Averaged from the piece's own vertices rather
 		// than taken from MeshPiece::sortX, which only the dynamic path fills in.
-		if (nb.blend != 0 && p.range.count > 0)
+		if ((nb.blend != 0 || nb.planeFacing) && p.range.count > 0)
 		{
 			float ax = 0.f, ay = 0.f, az = 0.f;
 			for (unsigned int v = 0; v < p.range.count; v++)
@@ -2178,10 +2205,13 @@ bool SceneUpload(FString &report)
 		if (g_sceneVB[i].softLight >= 0.f) softPieces++;
 		if (g_sceneVB[i].fogMode != 0.f) fogPieces++;
 	}
-	report.Format("uploaded %d verts (%.2f MB), %d pieces -> %d material batches (%d translucent) "
+	int facingBatches = 0;
+	for (unsigned i = 0; i < g_batches.Size(); i++) if (g_batches[i].planeFacing) facingBatches++;
+	report.Format("uploaded %d verts (%.2f MB), %d pieces -> %d material batches (%d translucent, "
+		"%d one-sided 3D floor planes) "
 		"[lightmode %d, fogmode %d, %d%% soft-lit, %d%% fogged]",
 		g_sceneVerts, (double)g_sceneVB.Size() * sizeof(SceneVertex) / (1024.0 * 1024.0),
-		npieces, (int)g_batches.Size(), (int)g_blendBatches.Size(),
+		npieces, (int)g_batches.Size(), (int)g_blendBatches.Size(), facingBatches,
 		glset.lightmode, (int)gl_fogmode,
 		softPieces * 100 / g_sceneVerts, fogPieces * 100 / g_sceneVerts);
 	return true;
@@ -3191,6 +3221,7 @@ static void DrawWorld(Diligent::IDeviceContext *ctx)
 	{
 		const SceneBatch &b = g_batches[bi];
 		if (b.count == 0 || b.srb == NULL || b.blend != 0) continue;
+		if (b.planeFacing && !PlaneFacesCamera(b)) { g_planeCulled++; continue; }
 
 		ctx->CommitShaderResources(b.srb, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 

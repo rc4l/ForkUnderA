@@ -46,6 +46,14 @@ static int              g_hits = 0, g_misses = 0, g_uncacheableHits = 0;
 // captured with -- which is the count of animated wall textures the cache would otherwise have
 // frozen. Zero means the re-resolve below is dead weight; nonzero is the bug, measured.
 static int              g_animRefresh = 0;
+// [rc4l] Why each seg ended up as it did, ONE entry per seg rather than one per capture attempt.
+//
+// The reject counters below count attempts, and a refused seg re-captures every frame, so they say
+// 541713 3D-floor rejects on a map with 1317 segs touching a 3D floor. That number cannot answer
+// "how much of the level is missing and because of what", which is the only question that matters
+// when a grate is absent from the Vulkan view. This can.
+enum { SEG_UNSEEN = 0, SEG_OK, SEG_PORTAL, SEG_POLY, SEG_FFLOOR, SEG_AREA, SEG_OTHER };
+static TArray<unsigned char> g_segFate;
 // [rc4l] Why captures fail, split by cause. See EndCapture.
 static int g_rejPortal = 0, g_rejPoly = 0, g_rejFFloor = 0, g_rejArea = 0, g_rejOther = 0,
            g_captureOk = 0;
@@ -64,6 +72,9 @@ void AllocForLevel(int numsegs)
 	if (numsegs <= 0) return;
 	g_cache.Resize(numsegs);
 	g_uncacheable.Resize(numsegs);
+	g_segFate.Clear();
+	g_segFate.Resize(numsegs);
+	for (int i = 0; i < numsegs; i++) g_segFate[i] = SEG_UNSEEN;
 	g_sectorDirty.Clear();
 	g_sectorSegs.Clear();
 	if (numsectors > 0)
@@ -293,16 +304,17 @@ void EndCapture(const WallCacheStamp &stamp, const WallCacheEligibility &e)
 	if (g_sawPortal)
 	{
 		g_rejPortal++;
+		if ((unsigned)idx < g_segFate.Size()) g_segFate[idx] = SEG_PORTAL;
 		refuse = true;
 	}
 	else if (!ComputeIsCacheable(e))
 	{
 		// [rc4l] Which rule fired, not just that one did -- the bake reaches only a fraction of the
 		// level and "it is the eligibility check" is not actionable without knowing which clause.
-		if (e.isPolyobject)  g_rejPoly++;
-		else if (e.hasFFloors) g_rejFFloor++;
-		else if (e.inArea)     g_rejArea++;
-		else                   g_rejOther++;
+		if (e.isPolyobject)  { g_rejPoly++;   if ((unsigned)idx < g_segFate.Size()) g_segFate[idx] = SEG_POLY; }
+		else if (e.hasFFloors) { g_rejFFloor++; if ((unsigned)idx < g_segFate.Size()) g_segFate[idx] = SEG_FFLOOR; }
+		else if (e.inArea)     { g_rejArea++;   if ((unsigned)idx < g_segFate.Size()) g_segFate[idx] = SEG_AREA; }
+		else                   { g_rejOther++;  if ((unsigned)idx < g_segFate.Size()) g_segFate[idx] = SEG_OTHER; }
 		refuse = true;
 	}
 
@@ -331,6 +343,7 @@ void EndCapture(const WallCacheStamp &stamp, const WallCacheEligibility &e)
 	}
 
 	g_captureOk++;
+	if ((unsigned)idx < g_segFate.Size()) g_segFate[idx] = SEG_OK;
 	g_cache[idx].stamp = stamp;
 	g_cache[idx].filled = true;
 	BakeSeg(idx);
@@ -425,6 +438,24 @@ void GetStats(int &hits, int &misses, int &uncacheable)
 
 int GetAnimRefreshes() { return g_animRefresh; }
 
+// [rc4l] For fua_wallcache_census: what became of this seg, and does it have geometry a backend
+// could actually draw. bakedCount is the honest test -- a seg can be "cached" and still have baked
+// nothing if every piece it produced was refused by MeshStore.
+int SegFate(int segIndex)
+{
+	if (segIndex < 0 || (unsigned)segIndex >= g_segFate.Size()) return 0;
+	return g_segFate[segIndex];
+}
+
+bool SegHasBakedGeometry(int segIndex)
+{
+	if (segIndex < 0 || (unsigned)segIndex >= g_cache.Size()) return false;
+	const SegCache &sc = g_cache[segIndex];
+	for (int i = 0; i < sc.bakedCount && i < kMaxCachedPieces; i++)
+		if (sc.pieces[i].range.count > 0) return true;
+	return false;
+}
+
 void ResetStats()
 {
 	g_hits = g_misses = g_uncacheableHits = 0;
@@ -490,6 +521,17 @@ void InvalidateMovedSectors()
 			if ((unsigned)idx >= g_cache.Size()) continue;
 			SegCache &sc = g_cache[idx];
 			sc.filled = false;   // force a re-capture when the BSP next reaches it
+			// [rc4l] Re-arm the once-per-seg bake, or squashing this geometry destroys it forever.
+			//
+			// EndCapture bakes a refused seg only on the false->true edge of g_uncacheable, because a
+			// refused seg re-captures every single frame and baking it every frame would burn the
+			// arena. But g_uncacheable is sticky and nothing ever cleared it, so a seg that had
+			// already been refused once -- which is every 3D floor and everything under sky -- got
+			// its ranges squashed here and then never re-baked. On dbab02 a switch raises a platform,
+			// and the 16-unit-thick grate over the lava pit next to it vanished from the Vulkan view
+			// permanently while GL kept drawing it. Clearing the flag makes the next capture bake
+			// exactly once more, which is the same budget the first bake had.
+			g_uncacheable[idx] = false;
 			// Squash, not release: the range stays allocated so the re-bake writes back over it.
 			// Freeing here re-allocates every frame the sector moves and the arena runs away.
 			for (int i = 0; i < kMaxCachedPieces; i++)
@@ -525,6 +567,50 @@ void GetSegPieceRange(int segIndex, int piece, unsigned int &offset, unsigned in
 // measuring nothing at all, which is exactly the trap the first two attempts fell into.
 //
 //==========================================================================
+
+//==========================================================================
+//
+// fua_wallcache_census
+//
+// [rc4l] One line per OUTCOME, counting segs -- not capture attempts.
+//
+// A grate went missing from the Vulkan view and the available numbers were 541713 3D-floor rejects
+// against 1317 segs that touch a 3D floor, because a refused seg re-captures every frame. Attempt
+// counts cannot say how much of the level is absent or why. This walks every seg once and reports
+// what became of it, and how many actually have baked geometry, which is the number that decides
+// whether the backend can draw it.
+//
+//==========================================================================
+
+CCMD( fua_wallcache_census )
+{
+	int fate[7] = { 0, 0, 0, 0, 0, 0, 0 };
+	int bakedBy[7] = { 0, 0, 0, 0, 0, 0, 0 };
+	int drawable = 0, ffloorSegs = 0, ffloorBaked = 0;
+	for ( int i = 0; i < numsegs; i++ )
+	{
+		if ( segs[i].sidedef == NULL || segs[i].linedef == NULL ) continue;   // miniseg
+		drawable++;
+		const int f = zx::levelmesh::SegFate( i );
+		const bool baked = zx::levelmesh::SegHasBakedGeometry( i );
+		fate[f]++;
+		if ( baked ) bakedBy[f]++;
+		const sector_t *fs = segs[i].frontsector, *bs = segs[i].backsector;
+		const bool touches3d = ( fs != NULL && fs->e != NULL && fs->e->XFloor.ffloors.Size() > 0 ) ||
+		                       ( bs != NULL && bs->e != NULL && bs->e->XFloor.ffloors.Size() > 0 );
+		if ( touches3d ) { ffloorSegs++; if ( baked ) ffloorBaked++; }
+	}
+	static const char *kName[7] = { "never captured", "cached", "portal", "polyobject",
+	                                "3D floor", "heightsec area", "other" };
+	Printf( "wallcache census over %d drawable segs:\n", drawable );
+	for ( int i = 0; i < 7; i++ )
+		if ( fate[i] > 0 )
+			Printf( "  %-15s %5d segs (%4.1f%%), %5d with baked geometry (%4.1f%% of them)\n",
+					kName[i], fate[i], 100.0 * fate[i] / MAX( 1, drawable ),
+					bakedBy[i], 100.0 * bakedBy[i] / MAX( 1, fate[i] ) );
+	Printf( "  segs touching a 3D floor: %d, of which %d have baked geometry (%.1f%%)\n",
+			ffloorSegs, ffloorBaked, 100.0 * ffloorBaked / MAX( 1, ffloorSegs ) );
+}
 
 CCMD( fua_wallcache_stats )
 {
