@@ -92,6 +92,16 @@ bool ProbeVulkan(FString &report)
 	// creation outright -- which would turn "no reflections on old hardware" into "the backend does
 	// not start". OPTIONAL means the device comes up either way and the code asks afterwards.
 	ci.Features.RayTracing = Diligent::DEVICE_FEATURE_STATE_OPTIONAL;
+	// [rc4l] And the features a traced reflection needs to pick its own texture.
+	//
+	// A rasterised draw binds one material and draws its batch; a ray can land on any triangle in the
+	// level, so the material must be selectable from inside the shader -- which is an indexed array of
+	// samplers. Both of these default to DISABLED, and using a sampler array without them killed the
+	// process on launch with nothing in the log, which reads as "bindless does not work" rather than
+	// "bindless was never asked for".
+	ci.Features.BindlessResources = Diligent::DEVICE_FEATURE_STATE_OPTIONAL;
+	ci.Features.ShaderResourceStaticArrays = Diligent::DEVICE_FEATURE_STATE_OPTIONAL;
+	ci.Features.ShaderResourceRuntimeArrays = Diligent::DEVICE_FEATURE_STATE_OPTIONAL;
 	factory->CreateDeviceAndContextsVk(ci, &g_device, &g_context);
 	if (!g_device)
 	{
@@ -105,9 +115,11 @@ bool ProbeVulkan(FString &report)
 	{
 		const auto &f = g_device->GetDeviceInfo().Features;
 		const auto &rt = g_device->GetAdapterInfo().RayTracing;
-		Printf("Diligent: ray tracing %s (max recursion %u, caps 0x%x)\n",
+		Printf("Diligent: ray tracing %s (max recursion %u, caps 0x%x), bindless %s, sampler arrays %s\n",
 			f.RayTracing ? "AVAILABLE" : "unavailable",
-			(unsigned)rt.MaxRecursionDepth, (unsigned)rt.CapFlags);
+			(unsigned)rt.MaxRecursionDepth, (unsigned)rt.CapFlags,
+			f.BindlessResources ? "yes" : "no",
+			f.ShaderResourceStaticArrays ? "yes" : "no");
 	}
 
 	const auto &info = g_device->GetDeviceInfo();
