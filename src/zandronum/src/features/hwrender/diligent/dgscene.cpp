@@ -1481,6 +1481,15 @@ static void DrawBlended(Diligent::IDeviceContext *ctx)
 			d.translation = r.translation; d.material = r.material; d.srb = srb;
 			d.bias = r.depthBias;
 			d.red = r.redAlpha;
+			// [rc4l] A decal sorts as very slightly FARTHER than it is.
+			//
+			// It is paint on a surface, so anything standing in front of that surface must be drawn
+			// over it. A flamethrower's fire sprite hovers a few units above the floor it is scorching
+			// and can easily sit at almost the same distance as the mark, and with a plain
+			// farthest-first sort the decal then lands second and buries the sprite. Two percent is
+			// proportional, so it only ever decides a near-coincident pair and never reorders anything
+			// genuinely in front of or behind.
+			if (r.depthBias) d.dist *= 1.02f;
 			const float dx = r.cx - cx, dy = r.cy - cy, dz = r.cz - cz;
 			d.dist = dx*dx + dy*dy + dz*dz;
 			list.Push(d);
@@ -1500,6 +1509,16 @@ static void DrawBlended(Diligent::IDeviceContext *ctx)
 	std::sort(&list[0], &list[0] + list.Size(),
 		[](const BlendDraw &a, const BlendDraw &b) {
 			if (a.dist != b.dist) return a.dist > b.dist;
+			// [rc4l] At equal distance, ADDITIVE draws last.
+			//
+			// Additive blending only ever brightens, so nothing can meaningfully be drawn over it --
+			// but it can very easily be drawn UNDER something and lost. A decal pair lands at exactly
+			// one point: a dark scorch and the glow that belongs on top of it. Ordered by capture
+			// alone the scorch could land second and bury the glow, which is what "the scorch is
+			// overriding the glow" was. Additive last is order-independent for the additive draws
+			// themselves, so this costs nothing and settles the pair.
+			const int aa = (a.blend == 2) ? 1 : 0, ba = (b.blend == 2) ? 1 : 0;
+			if (aa != ba) return aa < ba;
 			return a.first < b.first;
 		});
 
