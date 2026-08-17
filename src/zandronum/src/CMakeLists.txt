@@ -1607,6 +1607,7 @@ add_executable( zdoom WIN32
 	features/levelmesh/computation/wallbatch_compute.cpp
 	features/levelmesh/computation/flatmesh_compute.cpp
 	features/levelmesh/computation/flatdecal_compute.cpp
+	features/levelmesh/computation/decalvolume_compute.cpp
 	features/levelmesh/computation/wallcache_compute.cpp
 	features/fov-interp/fovinterp.cpp
 	features/fov-interp/fovcvar.cpp

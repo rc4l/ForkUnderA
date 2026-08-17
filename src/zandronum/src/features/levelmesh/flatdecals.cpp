@@ -6,6 +6,7 @@
 #include "features/levelmesh/flatmesh.h"
 #include "features/levelmesh/staticmesh.h"
 #include "features/levelmesh/computation/flatdecal_compute.h"
+#include "features/levelmesh/computation/decalvolume_compute.h"
 
 #include "r_defs.h"
 #include "r_state.h"
@@ -186,13 +187,11 @@ void SpawnWallDecal(const DBaseDecal *decal, const side_t *wall, const FDecalTem
 
 	// Along the wall, and out of it. The 2D normal of a line is its direction turned a quarter turn;
 	// which of the two quarter turns is the outward one depends on the side the decal stuck to.
-	const float dx = FIXED2FLOAT(ld->dx), dy = FIXED2FLOAT(ld->dy);
-	const float len = sqrtf(dx * dx + dy * dy);
-	if (len <= 0.f) return;
-	const float ux = dx / len, uy = dy / len;
-	const bool back = (ld->sidedef[1] == wall);
-	const float nx = back ? -uy :  uy;
-	const float ny = back ?  ux : -ux;
+	float along[2], outward[2];
+	if (!ComputeWallDecalAxes(FIXED2FLOAT(ld->dx), FIXED2FLOAT(ld->dy),
+	                          ld->sidedef[1] == wall, along, outward)) return;
+	const float ux = along[0], uy = along[1];
+	const float nx = outward[0], ny = outward[1];
 
 	FMaterial *mat = FMaterial::ValidateTexture(decal->PicNum, true, true);
 	if (mat == NULL) return;
@@ -215,8 +214,8 @@ void SpawnWallDecal(const DBaseDecal *decal, const side_t *wall, const FDecalTem
 	const bool flipY = !!(decal->RenderFlags & RF_YFLIP);
 	const float leftOff = mat->GetLeftOffset() * sx;
 	const float topOff  = mat->GetTopOffset()  * sy;
-	const float alongOff = halfW - (flipX ? (halfW * 2.f - leftOff) : leftOff);
-	const float upOff = (flipY ? (halfH * 2.f - topOff) : topOff) - halfH;
+	const float alongOff = ComputeDecalAlongOffset(halfW, leftOff, flipX);
+	const float upOff = ComputeDecalUpOffset(halfH, topOff, flipY);
 
 	WallDecal &w = g_wall[g_wallNext];
 	w.x = FIXED2FLOAT(dxpos) + ux * alongOff;
@@ -337,35 +336,25 @@ void SpawnFlatDecal(const FDecalTemplate *tpl, fixed_t x, fixed_t y, fixed_t z, 
 
 // [rc4l] Store the box's orientation, pre-divided by its own half-extents.
 //
-// Doing the division here rather than in the shader is what makes the inside test a bare dot product
-// per axis: `dot(P - centre, axis)` already comes out in -1..1 across the box. The unscaled extents
-// are kept alongside so the vertex buffer can still build the eight corners.
-static void SetDecalBasis(ProjectedDecal &pd,
+// The division itself is ComputeDecalBasis, which is where the tests can reach it; this only unpacks
+// the result into the record the backend reads. The unscaled extents are kept alongside so the
+// vertex buffer can still build the eight corners.
+static bool SetDecalBasis(ProjectedDecal &pd,
                           float ux, float uy, float uz,
                           float vx, float vy, float vz,
                           float nx, float ny, float nz,
                           float halfW, float halfH, float halfDepth)
 {
-	pd.ux = ux / halfW;  pd.uy = uy / halfW;  pd.uz = uz / halfW;
-	pd.vx = vx / halfH;  pd.vy = vy / halfH;  pd.vz = vz / halfH;
-	pd.nx = nx / halfDepth; pd.ny = ny / halfDepth; pd.nz = nz / halfDepth;
+	const float au[3] = { ux, uy, uz }, av[3] = { vx, vy, vz }, an[3] = { nx, ny, nz };
+	DecalFrame f;
+	if (!ComputeDecalBasis(au, av, an, halfW, halfH, halfDepth, f)) return false;
+	pd.ux = f.u[0]; pd.uy = f.u[1]; pd.uz = f.u[2];
+	pd.vx = f.v[0]; pd.vy = f.v[1]; pd.vz = f.v[2];
+	pd.nx = f.n[0]; pd.ny = f.n[1]; pd.nz = f.n[2];
 	pd.halfW = halfW; pd.halfH = halfH; pd.halfDepth = halfDepth;
+	return true;
 }
 
-// [rc4l] How far a decal's box reaches THROUGH the surface it was shot at.
-//
-// This is the room the mark has to carry round a corner, so it is sized from the mark: a decal that
-// runs off a join continues for at most its own remaining width or height, and the shader unwraps
-// exactly that far before running out of texture. Sizing it smaller cuts the wrap short; sizing it
-// larger only reaches surfaces the unwrap then discards for being past the end of the picture.
-//
-// The floor of 24 is for the flat case with a small graphic: a bullet hole is a few units across, and
-// its box still has to be deep enough to stay on a floor that steps or slopes underneath it.
-static float DecalBoxDepth(float halfW, float halfH)
-{
-	const float reach = (halfW > halfH) ? halfW : halfH;
-	return (reach > 24.f) ? reach : 24.f;
-}
 
 static void RegisterWallDecals()
 {
@@ -390,10 +379,10 @@ static void RegisterWallDecals()
 		pd.x = w.x; pd.y = w.y; pd.z = w.z;
 		// U runs along the wall, V straight up, N out of its face. That is the whole difference from a
 		// flat -- and it is the only difference, which is the point of carrying a basis at all.
-		SetDecalBasis(pd, w.ux, w.uy, 0.f,
+		if (!SetDecalBasis(pd, w.ux, w.uy, 0.f,
 		                  0.f, 0.f, w.flipV ? -1.f : 1.f,
 		                  w.nx, w.ny, 0.f,
-		                  w.halfW, w.halfH, DecalBoxDepth(w.halfW, w.halfH));
+		                  w.halfW, w.halfH, ComputeDecalBoxDepth(w.halfW, w.halfH))) continue;
 		pd.material = mat;
 		pd.r = lit.colorR; pd.g = lit.colorG; pd.b = lit.colorB;
 		if (w.redToAlpha)
@@ -462,10 +451,10 @@ void RegisterFlatDecals()
 		// mark seen from below is not the mirror of the same mark seen from above.
 		ProjectedDecal pd;
 		pd.x = d.x; pd.y = d.y; pd.z = pz;
-		SetDecalBasis(pd, 1.f, 0.f, 0.f,
+		if (!SetDecalBasis(pd, 1.f, 0.f, 0.f,
 		                  0.f, d.ceiling ? -1.f : 1.f, 0.f,
 		                  0.f, 0.f, 1.f,
-		                  hw, hh, DecalBoxDepth(hw, hh));
+		                  hw, hh, ComputeDecalBoxDepth(hw, hh))) continue;
 		pd.material = mat;
 		pd.r = lit.colorR; pd.g = lit.colorG; pd.b = lit.colorB;
 		if (d.redToAlpha)
