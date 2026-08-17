@@ -134,6 +134,10 @@ CVAR(Int, fua_dg_cull, 0, CVAR_ARCHIVE)
 CVAR(Bool, fua_dg_sky, true, 0)
 // [rc4l] Planar mirror reflections. Off drops back to a hole, which is what it looked like before.
 CVAR(Bool, fua_dg_mirrors, true, 0)
+// [rc4l] Ray-traced reflections. OFF by default while the traced draw is still being brought up:
+// the planar path works, and a backend that crashes the process is worse than one that reflects
+// only the level geometry.
+CVAR(Bool, fua_dg_rtmirrors, false, 0)
 
 // [rc4l] Re-resolve animated textures per frame. See the loop in DrawSceneOnce.
 CVAR(Bool, fua_dg_animate, true, 0)
@@ -1824,6 +1828,8 @@ static bool EnsureScenePipeline(FString &err)
 // So the whole thing is rebuilt. That is only affordable because the material sort is no longer
 // quadratic; it runs for the handful of frames a door is actually moving, and not at all otherwise.
 static bool EnsureAccelerationStructure();
+static void ReleaseMirrorBinding();
+
 static bool RayTracingAvailable();
 
 static bool BuildSceneBuffer(FString &err)
@@ -1909,7 +1915,12 @@ static bool BuildSceneBuffer(FString &err)
 	// vertices change. An IMMUTABLE buffer cannot be updated at all, so every moving thing in the
 	// level was frozen in the backend's view -- a door would open in the GL window and stay shut here.
 	bd.Usage = Diligent::USAGE_DEFAULT;
+	// [rc4l] BIND_RAY_TRACING as well, when the device has it. A buffer handed to BuildBLAS as
+	// geometry must declare that use at creation; without it the build appears to succeed and the
+	// process dies on a later submit with nothing in the log. Vertex buffer first -- the raster path
+	// still draws from this exact buffer.
 	bd.BindFlags = Diligent::BIND_VERTEX_BUFFER;
+	if (RayTracingAvailable()) bd.BindFlags |= Diligent::BIND_RAY_TRACING;
 	Diligent::BufferData bdata;
 	bdata.pData = &g_sceneVB[0];
 	bdata.DataSize = bd.Size;
@@ -1939,7 +1950,9 @@ bool SceneUpload(FString &report)
 	// [rc4l] The acceleration structure is built from the same buffer the raster path draws, right
 	// after it is uploaded, so there is never a version of the level that one path can see and the
 	// other cannot.
-	if (RayTracingAvailable()) EnsureAccelerationStructure();
+	// Only when something will actually trace against it: an acceleration structure over 17k
+	// triangles is not free to build, and nothing else in the frame reads it.
+	if (fua_dg_rtmirrors && RayTracingAvailable()) EnsureAccelerationStructure();
 	BuildMVP(g_mvp);
 
 	// [rc4l] The shading inputs themselves, not just which code path they take.
@@ -2115,6 +2128,7 @@ void ReleaseAccelerationStructures()
 	g_tlasInstances.Release();
 	g_asBuilt = false;
 	g_asVerts = 0;
+	ReleaseMirrorBinding();   // the mirror SRB holds a reference to the TLAS
 }
 
 // Build (or rebuild) the level's acceleration structure from the scene vertex buffer.
@@ -2236,7 +2250,7 @@ static bool EnsureAccelerationStructure()
 // per-mirror texture coordinates.
 struct MirrorSurface
 {
-	float v[6][3];        // two triangles, mesh space (x, z-up, y)
+	float v[6][6];        // two triangles: position then normal, mesh space (x, z-up, y)
 	float nx, ny, d;      // plane in MAP space (nx*x + ny*y = d), for reflecting the camera
 };
 static TArray<MirrorSurface> g_mirrors;
@@ -2245,6 +2259,8 @@ static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_mirrorPSO;
 static Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding> g_mirrorSRB;
 static Diligent::RefCntAutoPtr<Diligent::ITexture> g_mirrorColor, g_mirrorDepth;
 static int g_mirrorW = 0, g_mirrorH = 0;
+// True once the TLAS is genuinely bound to the mirror shader; false means use the planar path.
+static bool g_mirrorTraced = false;
 
 static void CollectMirrors()
 {
@@ -2271,12 +2287,17 @@ static void CollectMirrors()
 		if (len < 0.001f) continue;
 
 		MirrorSurface m;
-		// Mesh space is (x, z-up, y), the same swap the level mesh uses.
+		// Mesh space is (x, z-up, y), the same swap the level mesh uses. Six floats per vertex:
+		// position, then the surface normal the ray query reflects the eye ray about.
 		const float a[3] = { x1, zf1, y1 }, b[3] = { x1, zc1, y1 };
 		const float c[3] = { x2, zf2, y2 }, e[3] = { x2, zc2, y2 };
 		const float *tri[6] = { a, b, c, c, b, e };
+		const float mnx = dy / len, mnz = -dx / len;
 		for (int k = 0; k < 6; k++)
+		{
 			for (int q = 0; q < 3; q++) m.v[k][q] = tri[k][q];
+			m.v[k][3] = mnx; m.v[k][4] = 0.f; m.v[k][5] = mnz;
+		}
 
 		m.nx = dy / len; m.ny = -dx / len;
 		m.d = m.nx * x1 + m.ny * y1;
@@ -2289,18 +2310,51 @@ static void CollectMirrors()
 static const char *kMirrorVS =
 	"#version 450\n"
 	"layout(location = 0) in vec3 aPos;\n"
+	"layout(location = 1) in vec3 aNormal;\n"
 	"layout(binding = 0) uniform Constants { mat4 uMVP; vec4 uCameraPos; vec4 uLightParams; vec4 uClipPlane; vec4 uScreen; };\n"
-	"void main() { gl_Position = uMVP * vec4(aPos, 1.0); }\n";
+	"layout(location = 0) out vec3 vWorld;\n"
+	"layout(location = 1) out vec3 vNormal;\n"
+	"void main() {\n"
+	"    vWorld = aPos;\n"
+	"    vNormal = aNormal;\n"
+	"    gl_Position = uMVP * vec4(aPos, 1.0);\n"
+	"}\n";
 
-// Sampled by SCREEN position, not by any texture coordinate of the mirror's own: the reflection was
-// rendered with this frame's projection, so the pixel under this fragment already IS what this point
-// of the mirror reflects.
+// [rc4l] The reflection, traced rather than re-rendered.
+//
+// One ray per mirror pixel: reflect the eye ray about the surface and ask the acceleration structure
+// what it hits. No visibility list is involved, so actors will appear without one being built for the
+// mirror's camera; recursion becomes possible; and the work is proportional to the mirror's pixels
+// rather than a full-screen scene pass per mirror.
+//
+// This first version shades the hit by distance. That is deliberately not pretty: it proves the
+// structure, the ray direction and the binding are all correct before any material work, which is
+// exactly the stage where a wrong answer can hide behind a plausible-looking picture.
 static const char *kMirrorPS =
-	"#version 450\n"
+	"#version 460\n"
+	"#extension GL_EXT_ray_query : require\n"
 	"layout(binding = 0) uniform Constants { mat4 uMVP; vec4 uCameraPos; vec4 uLightParams; vec4 uClipPlane; vec4 uScreen; };\n"
 	"layout(binding = 1) uniform sampler2D uTex;\n"
+	"layout(binding = 2) uniform accelerationStructureEXT uTLAS;\n"
+	"layout(location = 0) in vec3 vWorld;\n"
+	"layout(location = 1) in vec3 vNormal;\n"
 	"layout(location = 0) out vec4 outColor;\n"
-	"void main() { outColor = vec4(texture(uTex, gl_FragCoord.xy / uScreen.xy).rgb, 1.0); }\n";
+	"void main() {\n"
+	"    vec3 n = normalize(vNormal);\n"
+	"    vec3 eye = normalize(vWorld - uCameraPos.xyz);\n"
+	"    vec3 dir = reflect(eye, n);\n"
+	"    rayQueryEXT rq;\n"
+	// Nudged off the surface, or the mirror hits itself at t = 0.
+	"    rayQueryInitializeEXT(rq, uTLAS, gl_RayFlagsOpaqueEXT, 0xFF, vWorld + n * 0.5, 0.1, dir, 20000.0);\n"
+	"    while (rayQueryProceedEXT(rq)) {}\n"
+	"    if (rayQueryGetIntersectionTypeEXT(rq, true) == gl_RayQueryCommittedIntersectionNoneEXT) {\n"
+	"        outColor = vec4(0.0, 0.0, 0.0, 1.0);\n"
+	"        return;\n"
+	"    }\n"
+	"    float t = rayQueryGetIntersectionTEXT(rq, true);\n"
+	"    float g = clamp(1.0 - t / 2000.0, 0.05, 1.0);\n"
+	"    outColor = vec4(vec3(g), 1.0);\n"
+	"}\n";
 
 static bool EnsureMirrorResources()
 {
@@ -2349,9 +2403,11 @@ static bool EnsureMirrorResources()
 
 		Diligent::LayoutElement layout[] = {
 			Diligent::LayoutElement{0, 0, 3, Diligent::VT_FLOAT32, false},
+			Diligent::LayoutElement{1, 0, 3, Diligent::VT_FLOAT32, false},
 		};
 		static Diligent::ShaderResourceVariableDesc vars[] = {
 			{ Diligent::SHADER_TYPE_PIXEL, "uTex", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
+			{ Diligent::SHADER_TYPE_PIXEL, "uTLAS", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
 		};
 		static Diligent::SamplerDesc samp;
 		samp.MinFilter = Diligent::FILTER_TYPE_LINEAR;
@@ -2374,10 +2430,10 @@ static bool EnsureMirrorResources()
 		pci.GraphicsPipeline.DepthStencilDesc.DepthEnable = true;
 		pci.GraphicsPipeline.DepthStencilDesc.DepthWriteEnable = true;
 		pci.GraphicsPipeline.InputLayout.LayoutElements = layout;
-		pci.GraphicsPipeline.InputLayout.NumElements = 1;
+		pci.GraphicsPipeline.InputLayout.NumElements = 2;
 		pci.PSODesc.ResourceLayout.DefaultVariableType = Diligent::SHADER_RESOURCE_VARIABLE_TYPE_STATIC;
 		pci.PSODesc.ResourceLayout.Variables = vars;
-		pci.PSODesc.ResourceLayout.NumVariables = 1;
+		pci.PSODesc.ResourceLayout.NumVariables = 2;
 		pci.PSODesc.ResourceLayout.ImmutableSamplers = samplers;
 		pci.PSODesc.ResourceLayout.NumImmutableSamplers = 1;
 		pci.pVS = vs; pci.pPS = ps;
@@ -2390,12 +2446,29 @@ static bool EnsureMirrorResources()
 		g_mirrorSRB.Release();
 	}
 
+	// [rc4l] Only CHECK for the structure here; never build it.
+	//
+	// BuildBLAS/BuildTLAS are not valid inside a render pass, and this runs mid-frame with render
+	// targets bound -- calling them here killed the process outright with no message in the log. The
+	// structure is built once at upload, where there is no pass open.
 	if (!g_mirrorSRB)
 	{
 		g_mirrorPSO->CreateShaderResourceBinding(&g_mirrorSRB, true);
 		if (!g_mirrorSRB) return false;
 		if (auto *v = g_mirrorSRB->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "uTex"))
 			v->Set(g_mirrorColor->GetDefaultView(Diligent::TEXTURE_VIEW_SHADER_RESOURCE));
+		// The traced path is only taken if the binding actually took. A variable the shader does not
+		// declare, or a structure that failed to build, means falling back rather than committing an
+		// SRB with a hole in it.
+		g_mirrorTraced = false;
+		if (g_tlas && fua_dg_rtmirrors)
+		{
+			if (auto *v = g_mirrorSRB->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "uTLAS"))
+			{
+				v->Set(g_tlas);
+				g_mirrorTraced = true;
+			}
+		}
 	}
 
 	if (!g_mirrorVB && g_mirrors.Size() > 0)
@@ -2403,7 +2476,7 @@ static bool EnsureMirrorResources()
 		TArray<float> verts;
 		for (unsigned i = 0; i < g_mirrors.Size(); i++)
 			for (int k = 0; k < 6; k++)
-				for (int q = 0; q < 3; q++) verts.Push(g_mirrors[i].v[k][q]);
+				for (int q = 0; q < 6; q++) verts.Push(g_mirrors[i].v[k][q]);
 		Diligent::BufferDesc bd;
 		bd.Name = "fua mirror VB";
 		bd.Size = (Diligent::Uint64)verts.Size() * sizeof(float);
@@ -2416,6 +2489,38 @@ static bool EnsureMirrorResources()
 		if (!g_mirrorVB) return false;
 	}
 	return g_mirrors.Size() == 0 || g_mirrorVB.RawPtr() != nullptr;
+}
+
+// Draw one mirror's surface. Shared by both paths: with ray tracing the shader traces from here, and
+// without it the surface samples the reflection rendered a moment earlier.
+static void ReleaseMirrorBinding() { g_mirrorSRB.Release(); g_mirrorTraced = false; }
+
+static void DrawMirrorSurface(Diligent::IDeviceContext *ctx, unsigned index)
+{
+	{
+		Diligent::MapHelper<float> cb(ctx, g_cb, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD);
+		for (int k = 0; k < 16; k++) cb[k] = g_mvp[k];
+		cb[16] = FIXED2FLOAT(viewx); cb[17] = FIXED2FLOAT(viewz);
+		cb[18] = FIXED2FLOAT(viewy); cb[19] = (float)(int)fua_dg_lightmode;
+		cb[20] = (float)g_lightCount; cb[21] = g_skyAngle; cb[22] = 0.f; cb[23] = 0.f;
+		for (int k = 0; k < 4; k++) cb[24 + k] = 0.f;
+		cb[28] = (float)g_mirrorW; cb[29] = (float)g_mirrorH; cb[30] = cb[31] = 0.f;
+	}
+	if (g_mirrorTraced)
+	{
+		static bool said = false;
+		if (!said) { said = true; Printf("vulkan: tracing mirror reflections\n"); }
+	}
+	Diligent::IBuffer *vbs[] = { g_mirrorVB };
+	const Diligent::Uint64 offsets[] = { (Diligent::Uint64)index * 36 * sizeof(float) };
+	ctx->SetVertexBuffers(0, 1, vbs, offsets, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
+		Diligent::SET_VERTEX_BUFFERS_FLAG_RESET);
+	ctx->SetPipelineState(g_mirrorPSO);
+	ctx->CommitShaderResources(g_mirrorSRB, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	Diligent::DrawAttribs d;
+	d.NumVertices = 6;
+	d.Flags = Diligent::DRAW_FLAG_VERIFY_ALL;
+	ctx->Draw(d);
 }
 
 // Render each mirror's reflection and draw its surface. Called after the world, before the 2D layer.
@@ -2435,9 +2540,19 @@ static void RenderMirrors(Diligent::IDeviceContext *ctx)
 	float savedMVP[16];
 	for (int i = 0; i < 16; i++) savedMVP[i] = g_mvp[i];
 
+	// [rc4l] With ray tracing there is no reflection pass at all: the mirror's own fragment shader
+	// traces, so this collapses to drawing the surfaces. The planar path below stays for adapters
+	// without ray tracing, where the alternative is no reflection at all.
+	const bool traced = g_mirrorTraced;
+
 	for (unsigned i = 0; i < g_mirrors.Size(); i++)
 	{
 		const MirrorSurface &m = g_mirrors[i];
+		if (traced)
+		{
+			DrawMirrorSurface(ctx, i);
+			continue;
+		}
 
 		// Reflect the camera through the mirror plane. Position mirrors across the plane; the facing
 		// reflects as 2*mirrorAngle - viewangle, which is the same rotation expressed in Doom's
@@ -2493,7 +2608,7 @@ static void RenderMirrors(Diligent::IDeviceContext *ctx)
 			cb[28] = (float)g_mirrorW; cb[29] = (float)g_mirrorH; cb[30] = cb[31] = 0.f;
 		}
 		Diligent::IBuffer *vbs[] = { g_mirrorVB };
-		const Diligent::Uint64 offsets[] = { (Diligent::Uint64)i * 18 * sizeof(float) };
+		const Diligent::Uint64 offsets[] = { (Diligent::Uint64)i * 36 * sizeof(float) };
 		ctx->SetVertexBuffers(0, 1, vbs, offsets, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
 			Diligent::SET_VERTEX_BUFFERS_FLAG_RESET);
 		ctx->SetPipelineState(g_mirrorPSO);
