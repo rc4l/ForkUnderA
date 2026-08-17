@@ -50,6 +50,28 @@ void ClearFlatDecals();
 
 int FlatDecalCount();
 
+// [rc4l] A decal as a VOLUME rather than a quad, for the projected pass.
+//
+// A quad glued to a surface has to be positioned on it, nudged off it, biased in the depth test and
+// ordered against everything nearby -- four separate ways to be subtly wrong, all of which have
+// been. A projected decal instead describes a box in the world and lets the shader paint whatever
+// surface it finds inside, read from the depth buffer. Nothing is glued to anything, so none of
+// those four questions exist.
+struct ProjectedDecal
+{
+	float x, y, z;             // centre, on the surface
+	float halfW, halfH;        // extent across the surface, in map units
+	float halfDepth;           // how far through the surface the box reaches
+	const void *material;      // FMaterial*
+	float r, g, b, a;          // colour the shader paints, alpha already faded
+	bool  additive;
+	bool  redToAlpha;          // the texture is an alpha mask, not a colour image
+	bool  ceiling;             // which way the surface faces, so V runs the right way
+};
+
+// This frame's projected decals. Rebuilt by RegisterFlatDecals.
+int GetProjectedDecals(const ProjectedDecal **out);
+
 // Spawn/emit counters, split by cause. See fua_flatdecals.
 // What the trace reported at the point decals are decided, so "the branch never ran" and "it ran
 // and the hit was a wall" stop being the same observation.

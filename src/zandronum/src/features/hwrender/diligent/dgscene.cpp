@@ -73,6 +73,7 @@
 #include <algorithm>
 #include <stdio.h>
 #include "m_png.h"
+#include "features/levelmesh/flatdecals.h"   // [rc4l] projected decals
 #include "doomtype.h"
 #ifdef ZX_ENABLE_REPLAY
 #include "features/replay/zx_replay.h"   // [rc4l] the Vulkan instant-replay stream
@@ -214,6 +215,8 @@ static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_addDecalPSO;
 // and size as the one it replaces, so nothing else has to change.
 static Diligent::RefCntAutoPtr<Diligent::ITexture> g_sceneDepth;
 static Diligent::ITextureView *EnsureSceneDepth();
+Diligent::ITextureView *SceneDepthSRV();
+static void ReleaseDecalPass();
 static int g_sceneDepthW = 0, g_sceneDepthH = 0;
 
 static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_transRedAlphaPSO;
@@ -618,6 +621,88 @@ static const char *kScenePSRedAlpha =
 	// the dynamic light term would be the only thing left in it -- every burn mark in the room lit
 	// up with the muzzle flash's colour when the weapon fired.
 	"    outColor = vec4(fuaShadeEx(vec3(1.0), false), a);\n"
+	"}\n";
+
+
+// [rc4l] PROJECTED DECALS.
+//
+// A decal is a box in the world. The pass draws that box, reads the scene depth under each of its
+// fragments, reconstructs where the world surface actually is, and paints it if it falls inside.
+// Nothing is glued to a surface, so none of the questions a glued quad forces even exist: no
+// coplanar z-fighting, no clearance offset, no depth bias, no ordering against the surface it marks.
+// It also lands correctly on stairs, slopes and 3D floors, which a flat quad never can.
+//
+// The box is drawn with depth test OFF and culling OFF so it works from inside as well as outside --
+// walking over a decal must not make it vanish.
+static const char *kDecalVS =
+	"#version 450\n"
+	"layout(binding = 0) uniform Constants { mat4 uMVP; vec4 uCameraPos; vec4 uLightParams; vec4 uClipPlane; vec4 uScreen; vec4 uSkyColor; };\n"
+	"layout(location = 0) in vec3 aPos;\n"       // box corner, already in world space
+	"layout(location = 1) in vec3 aCentre;\n"
+	"layout(location = 2) in vec3 aExtent;\n"
+	"layout(location = 3) in vec4 aColor;\n"
+	"layout(location = 0) out vec3 vCentre;\n"
+	"layout(location = 1) out vec3 vExtent;\n"
+	"layout(location = 2) out vec4 vColor;\n"
+	"void main() {\n"
+	"    vCentre = aCentre; vExtent = aExtent; vColor = aColor;\n"
+	"    gl_Position = uMVP * vec4(aPos, 1.0);\n"
+	"}\n";
+
+static const char *kDecalPS =
+	"#version 450\n"
+	"layout(binding = 0) uniform Constants { mat4 uMVP; vec4 uCameraPos; vec4 uLightParams; vec4 uClipPlane; vec4 uScreen; vec4 uSkyColor; };\n"
+	"layout(binding = 6) uniform Decal { mat4 uInvMVP; };\n"
+	"layout(binding = 1) uniform sampler2D uTex;\n"
+	"layout(binding = 7) uniform sampler2D uSceneDepth;\n"
+	"layout(location = 0) in vec3 vCentre;\n"
+	"layout(location = 1) in vec3 vExtent;\n"
+	"layout(location = 2) in vec4 vColor;\n"
+	"layout(location = 0) out vec4 outColor;\n"
+	"void main() {\n"
+	"    vec2 uv = gl_FragCoord.xy / vec2(uScreen.x, uScreen.y);\n"
+	"    float d = texture(uSceneDepth, uv).r;\n"
+	/* Nothing was drawn here -- the far plane. There is no surface to paint. */
+	"    if (d >= 1.0) discard;\n"
+	/* Reconstruct the world position of whatever the depth buffer says is here. Clip space is
+	   x,y in -1..1 and z in 0..1, which is the Vulkan convention this backend's projection uses. */
+	"    vec4 clip = vec4(uv * 2.0 - 1.0, d, 1.0);\n"
+	"    vec4 world = uInvMVP * clip;\n"
+	"    vec3 P = world.xyz / world.w;\n"
+	/* Inside the box? The box is axis-aligned, because a flat decal lies on a horizontal plane. */
+	"    vec3 local = (P - vCentre) / vExtent;\n"
+	"    if (any(greaterThan(abs(local), vec3(1.0)))) discard;\n"
+	/* Project onto the surface: x and y across it, height ignored. That is what makes the mark
+	   follow a step or a slope instead of hanging in the air over it. */
+	"    vec2 t = local.xz * 0.5 + 0.5;\n"
+	"    vec4 texel = texture(uTex, t);\n"
+	"    outColor = vec4(texel.rgb * vColor.rgb, texel.a * vColor.a);\n"
+	"}\n";
+
+// The alpha-mask variant: the silhouette is in the red channel and the colour is the decal's own.
+static const char *kDecalRedPS =
+	"#version 450\n"
+	"layout(binding = 0) uniform Constants { mat4 uMVP; vec4 uCameraPos; vec4 uLightParams; vec4 uClipPlane; vec4 uScreen; vec4 uSkyColor; };\n"
+	"layout(binding = 6) uniform Decal { mat4 uInvMVP; };\n"
+	"layout(binding = 1) uniform sampler2D uTex;\n"
+	"layout(binding = 7) uniform sampler2D uSceneDepth;\n"
+	"layout(location = 0) in vec3 vCentre;\n"
+	"layout(location = 1) in vec3 vExtent;\n"
+	"layout(location = 2) in vec4 vColor;\n"
+	"layout(location = 0) out vec4 outColor;\n"
+	"void main() {\n"
+	"    vec2 uv = gl_FragCoord.xy / vec2(uScreen.x, uScreen.y);\n"
+	"    float d = texture(uSceneDepth, uv).r;\n"
+	"    if (d >= 1.0) discard;\n"
+	"    vec4 clip = vec4(uv * 2.0 - 1.0, d, 1.0);\n"
+	"    vec4 world = uInvMVP * clip;\n"
+	"    vec3 P = world.xyz / world.w;\n"
+	"    vec3 local = (P - vCentre) / vExtent;\n"
+	"    if (any(greaterThan(abs(local), vec3(1.0)))) discard;\n"
+	"    vec2 t = local.xz * 0.5 + 0.5;\n"
+	"    float a = texture(uTex, t).r * vColor.a;\n"
+	"    if (a <= 0.0) discard;\n"
+	"    outColor = vec4(vColor.rgb, a);\n"
 	"}\n";
 
 // [rc4l] Column-major perspective * view, matching the GL renderer's convention in
@@ -1571,6 +1656,7 @@ static void ReleaseScenePipelines()
 	g_skyFadePSO.Release();
 	g_scenePSO.Release();
 	g_maskedPSO.Release();
+	ReleaseDecalPass();
 	g_maskedNoCullPSO.Release();
 	g_transNoCullPSO.Release();
 	g_addNoCullPSO.Release();
@@ -2497,6 +2583,268 @@ static void CollectDynamicLights(Diligent::IDeviceContext *ctx)
 // texture is the same world from a different viewpoint, so it wants exactly this and none of the
 // screen-only parts -- no 2D layer, no present, no window pump. Portals and mirrors will want the
 // same seam.
+
+// [rc4l] Invert a 4x4. Needed once a frame to turn a depth sample back into a world position.
+static bool InvertMatrix4(const float *m, float *out)
+{
+	float inv[16];
+	inv[0]  =  m[5]*m[10]*m[15] - m[5]*m[11]*m[14] - m[9]*m[6]*m[15] + m[9]*m[7]*m[14] + m[13]*m[6]*m[11] - m[13]*m[7]*m[10];
+	inv[4]  = -m[4]*m[10]*m[15] + m[4]*m[11]*m[14] + m[8]*m[6]*m[15] - m[8]*m[7]*m[14] - m[12]*m[6]*m[11] + m[12]*m[7]*m[10];
+	inv[8]  =  m[4]*m[9]*m[15]  - m[4]*m[11]*m[13] - m[8]*m[5]*m[15] + m[8]*m[7]*m[13] + m[12]*m[5]*m[11] - m[12]*m[7]*m[9];
+	inv[12] = -m[4]*m[9]*m[14]  + m[4]*m[10]*m[13] + m[8]*m[5]*m[14] - m[8]*m[6]*m[13] - m[12]*m[5]*m[10] + m[12]*m[6]*m[9];
+	inv[1]  = -m[1]*m[10]*m[15] + m[1]*m[11]*m[14] + m[9]*m[2]*m[15] - m[9]*m[3]*m[14] - m[13]*m[2]*m[11] + m[13]*m[3]*m[10];
+	inv[5]  =  m[0]*m[10]*m[15] - m[0]*m[11]*m[14] - m[8]*m[2]*m[15] + m[8]*m[3]*m[14] + m[12]*m[2]*m[11] - m[12]*m[3]*m[10];
+	inv[9]  = -m[0]*m[9]*m[15]  + m[0]*m[11]*m[13] + m[8]*m[1]*m[15] - m[8]*m[3]*m[13] - m[12]*m[1]*m[11] + m[12]*m[3]*m[9];
+	inv[13] =  m[0]*m[9]*m[14]  - m[0]*m[10]*m[13] - m[8]*m[1]*m[14] + m[8]*m[2]*m[13] + m[12]*m[1]*m[10] - m[12]*m[2]*m[9];
+	inv[2]  =  m[1]*m[6]*m[15]  - m[1]*m[7]*m[14]  - m[5]*m[2]*m[15] + m[5]*m[3]*m[14] + m[13]*m[2]*m[7]  - m[13]*m[3]*m[6];
+	inv[6]  = -m[0]*m[6]*m[15]  + m[0]*m[7]*m[14]  + m[4]*m[2]*m[15] - m[4]*m[3]*m[14] - m[12]*m[2]*m[7]  + m[12]*m[3]*m[6];
+	inv[10] =  m[0]*m[5]*m[15]  - m[0]*m[7]*m[13]  - m[4]*m[1]*m[15] + m[4]*m[3]*m[13] + m[12]*m[1]*m[7]  - m[12]*m[3]*m[5];
+	inv[14] = -m[0]*m[5]*m[14]  + m[0]*m[6]*m[13]  + m[4]*m[1]*m[14] - m[4]*m[2]*m[13] - m[12]*m[1]*m[6]  + m[12]*m[2]*m[5];
+	inv[3]  = -m[1]*m[6]*m[11]  + m[1]*m[7]*m[10]  + m[5]*m[2]*m[11] - m[5]*m[3]*m[10] - m[9]*m[2]*m[7]   + m[9]*m[3]*m[6];
+	inv[7]  =  m[0]*m[6]*m[11]  - m[0]*m[7]*m[10]  - m[4]*m[2]*m[11] + m[4]*m[3]*m[10] + m[8]*m[2]*m[7]   - m[8]*m[3]*m[6];
+	inv[11] = -m[0]*m[5]*m[11]  + m[0]*m[7]*m[9]   + m[4]*m[1]*m[11] - m[4]*m[3]*m[9]  - m[8]*m[1]*m[7]   + m[8]*m[3]*m[5];
+	inv[15] =  m[0]*m[5]*m[10]  - m[0]*m[6]*m[9]   - m[4]*m[1]*m[10] + m[4]*m[2]*m[9]  + m[8]*m[1]*m[6]   - m[8]*m[2]*m[5];
+
+	float det = m[0]*inv[0] + m[1]*inv[4] + m[2]*inv[8] + m[3]*inv[12];
+	if (det > -1e-12f && det < 1e-12f) return false;
+	det = 1.0f / det;
+	for (int i = 0; i < 16; i++) out[i] = inv[i] * det;
+	return true;
+}
+
+struct DecalVertex { float x, y, z; float cx, cy, cz; float ex, ey, ez; float r, g, b, a; };
+
+static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_decalPSO;      // normal texture
+static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_decalAddPSO;
+static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_decalRedPSO;   // alpha-mask texture
+static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_decalRedAddPSO;
+static Diligent::RefCntAutoPtr<Diligent::IBuffer> g_decalVB;
+static unsigned int g_decalVBCapacity = 0;
+static Diligent::RefCntAutoPtr<Diligent::IBuffer> g_decalCB;
+static int g_decalsDrawn = 0;
+
+static void ReleaseDecalPass()
+{
+	g_decalPSO.Release(); g_decalAddPSO.Release();
+	g_decalRedPSO.Release(); g_decalRedAddPSO.Release();
+	g_decalVB.Release(); g_decalCB.Release();
+	g_decalVBCapacity = 0;
+}
+
+static bool EnsureDecalPass()
+{
+	if (g_decalPSO) return true;
+	auto *dev = GetDevice();
+	auto *swap = GetSwapChain();
+	if (!dev || !swap) return false;
+
+	Diligent::ShaderCreateInfo ci;
+	ci.SourceLanguage = Diligent::SHADER_SOURCE_LANGUAGE_GLSL_VERBATIM;
+	Diligent::RefCntAutoPtr<Diligent::IShader> vs, ps, psRed;
+	ci.Desc.ShaderType = Diligent::SHADER_TYPE_VERTEX;   ci.Desc.Name = "fua decal VS"; ci.Source = kDecalVS;
+	dev->CreateShader(ci, &vs);
+	ci.Desc.ShaderType = Diligent::SHADER_TYPE_PIXEL;    ci.Desc.Name = "fua decal PS"; ci.Source = kDecalPS;
+	dev->CreateShader(ci, &ps);
+	ci.Desc.Name = "fua decal PS redalpha"; ci.Source = kDecalRedPS;
+	dev->CreateShader(ci, &psRed);
+	if (!vs || !ps || !psRed) return false;
+
+	if (!g_decalCB)
+	{
+		Diligent::BufferDesc bd;
+		bd.Name = "fua decal constants";
+		bd.Size = 16 * sizeof(float);   // the inverse view-projection
+		bd.Usage = Diligent::USAGE_DYNAMIC;
+		bd.BindFlags = Diligent::BIND_UNIFORM_BUFFER;
+		bd.CPUAccessFlags = Diligent::CPU_ACCESS_WRITE;
+		dev->CreateBuffer(bd, nullptr, &g_decalCB);
+		if (!g_decalCB) return false;
+	}
+
+	Diligent::LayoutElement layout[] = {
+		Diligent::LayoutElement{0, 0, 3, Diligent::VT_FLOAT32, false},
+		Diligent::LayoutElement{1, 0, 3, Diligent::VT_FLOAT32, false},
+		Diligent::LayoutElement{2, 0, 3, Diligent::VT_FLOAT32, false},
+		Diligent::LayoutElement{3, 0, 4, Diligent::VT_FLOAT32, false},
+	};
+	static Diligent::ShaderResourceVariableDesc vars[] = {
+		{ Diligent::SHADER_TYPE_PIXEL, "uTex", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
+		{ Diligent::SHADER_TYPE_PIXEL, "uSceneDepth", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
+	};
+	static Diligent::SamplerDesc samp;
+	FillSamplerFromEngine(samp);
+	samp.AddressU = Diligent::TEXTURE_ADDRESS_CLAMP;
+	samp.AddressV = Diligent::TEXTURE_ADDRESS_CLAMP;
+	static Diligent::SamplerDesc depthSamp;
+	depthSamp.MinFilter = depthSamp.MagFilter = depthSamp.MipFilter = Diligent::FILTER_TYPE_POINT;
+	depthSamp.AddressU = depthSamp.AddressV = Diligent::TEXTURE_ADDRESS_CLAMP;
+	static Diligent::ImmutableSamplerDesc samplers[] = {
+		{ Diligent::SHADER_TYPE_PIXEL, "uTex", samp },
+		{ Diligent::SHADER_TYPE_PIXEL, "uSceneDepth", depthSamp },
+	};
+
+	for (int pass = 0; pass < 4; pass++)
+	{
+		static const char *kNames[4] = { "fua decal PSO", "fua decal PSO additive",
+		                                 "fua decal PSO redalpha", "fua decal PSO redalpha additive" };
+		const bool additive = (pass & 1) != 0;
+		const bool red = (pass & 2) != 0;
+
+		Diligent::GraphicsPipelineStateCreateInfo pci;
+		pci.PSODesc.Name = kNames[pass];
+		pci.PSODesc.PipelineType = Diligent::PIPELINE_TYPE_GRAPHICS;
+		pci.GraphicsPipeline.NumRenderTargets = 1;
+		pci.GraphicsPipeline.RTVFormats[0] = swap->GetDesc().ColorBufferFormat;
+		pci.GraphicsPipeline.DSVFormat = swap->GetDesc().DepthBufferFormat;
+		pci.GraphicsPipeline.PrimitiveTopology = Diligent::PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+		// [rc4l] No culling and no depth test. The camera can be inside a decal's box -- standing on
+		// the mark -- and the box must still rasterise; the shader decides what is inside from the
+		// depth buffer, so the box's own depth means nothing.
+		pci.GraphicsPipeline.RasterizerDesc.CullMode = Diligent::CULL_MODE_NONE;
+		pci.GraphicsPipeline.DepthStencilDesc.DepthEnable = false;
+		pci.GraphicsPipeline.DepthStencilDesc.DepthWriteEnable = false;
+		{
+			auto &rt = pci.GraphicsPipeline.BlendDesc.RenderTargets[0];
+			rt.BlendEnable = true;
+			rt.SrcBlend  = Diligent::BLEND_FACTOR_SRC_ALPHA;
+			rt.DestBlend = additive ? Diligent::BLEND_FACTOR_ONE : Diligent::BLEND_FACTOR_INV_SRC_ALPHA;
+			rt.BlendOp = Diligent::BLEND_OPERATION_ADD;
+			rt.SrcBlendAlpha  = Diligent::BLEND_FACTOR_ONE;
+			rt.DestBlendAlpha = Diligent::BLEND_FACTOR_INV_SRC_ALPHA;
+			rt.BlendOpAlpha = Diligent::BLEND_OPERATION_ADD;
+		}
+		pci.GraphicsPipeline.InputLayout.LayoutElements = layout;
+		pci.GraphicsPipeline.InputLayout.NumElements = 4;
+		pci.PSODesc.ResourceLayout.DefaultVariableType = Diligent::SHADER_RESOURCE_VARIABLE_TYPE_STATIC;
+		pci.PSODesc.ResourceLayout.Variables = vars;
+		pci.PSODesc.ResourceLayout.NumVariables = 2;
+		pci.PSODesc.ResourceLayout.ImmutableSamplers = samplers;
+		pci.PSODesc.ResourceLayout.NumImmutableSamplers = 2;
+		pci.pVS = vs;
+		pci.pPS = red ? psRed : ps;
+
+		Diligent::RefCntAutoPtr<Diligent::IPipelineState> made;
+		dev->CreateGraphicsPipelineState(pci, &made);
+		if (!made) return false;
+		for (int st = 0; st < 2; st++)
+		{
+			const Diligent::SHADER_TYPE stage = st ? Diligent::SHADER_TYPE_PIXEL : Diligent::SHADER_TYPE_VERTEX;
+			if (auto *v = made->GetStaticVariableByName(stage, "Constants")) v->Set(g_cb);
+			if (auto *v = made->GetStaticVariableByName(stage, "Decal")) v->Set(g_decalCB);
+		}
+		if (pass == 0) g_decalPSO = made;
+		else if (pass == 1) g_decalAddPSO = made;
+		else if (pass == 2) g_decalRedPSO = made;
+		else g_decalRedAddPSO = made;
+	}
+	return !!g_decalPSO;
+}
+
+// [rc4l] Draw this frame's projected decals.
+//
+// Runs AFTER the world and before the sprites: a decal marks a surface, so it belongs with the
+// surfaces, and anything standing in front of one must be drawn over it. That is the whole of the
+// ordering problem, and it is settled by which pass a thing is in rather than by sorting a decal
+// against every sprite in the room.
+static void DrawProjectedDecals(Diligent::IDeviceContext *ctx)
+{
+	g_decalsDrawn = 0;
+	const zx::levelmesh::ProjectedDecal *decals = NULL;
+	const int n = zx::levelmesh::GetProjectedDecals(&decals);
+	if (n <= 0 || decals == NULL) return;
+	if (!EnsureDecalPass()) return;
+	Diligent::ITextureView *depthSRV = SceneDepthSRV();
+	if (!depthSRV) return;
+
+	float invMVP[16];
+	if (!InvertMatrix4(g_mvp, invMVP)) return;
+	{
+		Diligent::MapHelper<float> cb(ctx, g_decalCB, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD);
+		for (int i = 0; i < 16; i++) cb[i] = invMVP[i];
+	}
+
+	// The 36 vertices of a unit cube, as a triangle list.
+	static const float kCube[36][3] = {
+		{-1,-1,-1},{ 1,-1,-1},{ 1, 1,-1}, {-1,-1,-1},{ 1, 1,-1},{-1, 1,-1},
+		{-1,-1, 1},{ 1, 1, 1},{ 1,-1, 1}, {-1,-1, 1},{-1, 1, 1},{ 1, 1, 1},
+		{-1,-1,-1},{-1, 1,-1},{-1, 1, 1}, {-1,-1,-1},{-1, 1, 1},{-1,-1, 1},
+		{ 1,-1,-1},{ 1, 1, 1},{ 1, 1,-1}, { 1,-1,-1},{ 1,-1, 1},{ 1, 1, 1},
+		{-1,-1,-1},{ 1,-1, 1},{ 1,-1,-1}, {-1,-1,-1},{-1,-1, 1},{ 1,-1, 1},
+		{-1, 1,-1},{ 1, 1,-1},{ 1, 1, 1}, {-1, 1,-1},{ 1, 1, 1},{-1, 1, 1},
+	};
+
+	static TArray<DecalVertex> vb;
+	struct DecalRun { const void *material; unsigned first, count; bool additive, red; };
+	static TArray<DecalRun> runs;
+	vb.Clear();
+	runs.Clear();
+
+	for (int i = 0; i < n; i++)
+	{
+		const zx::levelmesh::ProjectedDecal &d = decals[i];
+		if (d.a <= 0.f || d.material == NULL) continue;
+		DecalRun r;
+		r.material = d.material; r.first = vb.Size(); r.count = 36;
+		r.additive = d.additive; r.red = d.redToAlpha;
+		runs.Push(r);
+		// Mesh space is (x, z-up, y), so the box's Y extent is the one through the surface.
+		for (int v = 0; v < 36; v++)
+		{
+			DecalVertex dv;
+			dv.cx = d.x; dv.cy = d.z; dv.cz = d.y;
+			dv.ex = d.halfW; dv.ey = d.halfDepth; dv.ez = d.halfH;
+			dv.x = dv.cx + kCube[v][0] * dv.ex;
+			dv.y = dv.cy + kCube[v][1] * dv.ey;
+			dv.z = dv.cz + kCube[v][2] * dv.ez;
+			dv.r = d.r; dv.g = d.g; dv.b = d.b; dv.a = d.a;
+			vb.Push(dv);
+		}
+	}
+	if (vb.Size() == 0) return;
+
+	if (!g_decalVB || g_decalVBCapacity < vb.Size())
+	{
+		g_decalVBCapacity = vb.Size() + vb.Size() / 2 + 256;
+		Diligent::BufferDesc bd;
+		bd.Name = "fua decal VB";
+		bd.Size = (Diligent::Uint64)g_decalVBCapacity * sizeof(DecalVertex);
+		bd.Usage = Diligent::USAGE_DEFAULT;
+		bd.BindFlags = Diligent::BIND_VERTEX_BUFFER;
+		g_decalVB.Release();
+		GetDevice()->CreateBuffer(bd, nullptr, &g_decalVB);
+		if (!g_decalVB) { g_decalVBCapacity = 0; return; }
+	}
+	ctx->UpdateBuffer(g_decalVB, 0, (Diligent::Uint64)vb.Size() * sizeof(DecalVertex), &vb[0],
+		Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+
+	Diligent::IBuffer *vbs[] = { g_decalVB };
+	const Diligent::Uint64 offsets[] = { 0 };
+	ctx->SetVertexBuffers(0, 1, vbs, offsets, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
+		Diligent::SET_VERTEX_BUFFERS_FLAG_RESET);
+
+	Diligent::IPipelineState *bound = NULL;
+	for (unsigned i = 0; i < runs.Size(); i++)
+	{
+		const DecalRun &r = runs[i];
+		Diligent::IPipelineState *pso = r.red
+			? (r.additive ? g_decalRedAddPSO.RawPtr() : g_decalRedPSO.RawPtr())
+			: (r.additive ? g_decalAddPSO.RawPtr()    : g_decalPSO.RawPtr());
+		if (!pso) continue;
+		auto *srb = GetMaterialSRB(pso, r.material, 0);
+		if (!srb) continue;
+		if (auto *v = srb->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "uSceneDepth"))
+			v->Set(depthSRV);
+		if (pso != bound) { ctx->SetPipelineState(pso); bound = pso; }
+		ctx->CommitShaderResources(srb, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+		Diligent::DrawAttribs draw;
+		draw.NumVertices = r.count;
+		draw.StartVertexLocation = r.first;
+		draw.Flags = Diligent::DRAW_FLAG_VERIFY_ALL;
+		ctx->Draw(draw);
+		g_decalsDrawn++;
+	}
+}
+
 static void DrawWorld(Diligent::IDeviceContext *ctx);
 
 // [rc4l] Ray-traced reflections: the acceleration structure over the baked level.
@@ -3468,6 +3816,11 @@ static void DrawWorld(Diligent::IDeviceContext *ctx)
 		draw.Flags = Diligent::DRAW_FLAG_VERIFY_ALL;
 		ctx->Draw(draw);
 	}
+
+	// [rc4l] Decals mark surfaces, so they go with the surfaces -- after the world and before the
+	// sprites. Anything standing in front of a decal is then drawn over it because it is in a LATER
+	// pass, which is a fact about the frame rather than something a sort has to rediscover.
+	DrawProjectedDecals(ctx);
 
 	// [rc4l] Sprites are built here but ALL of them draw in the sorted pass below, never in an
 	// opaque one. See DrawBlended.
