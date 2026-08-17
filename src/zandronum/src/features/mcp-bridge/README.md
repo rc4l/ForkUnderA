@@ -80,6 +80,13 @@ hello    {"t":"hello","engine":"forkundera","bridge":"2.0.0","pid":N,"caps":[...
   disarmed). `total` is the whole `G_Ticker` including net-command execution, so a cheat like
   `kill monsters` shows up in the tic that runs it. Combine with `sim.pause` + `sim.step` to dissect
   a specific tic — this is how the kill-storm tic train was decomposed without external samplers.
+- **Server discovery**: `browser.refresh` kicks both halves of a browser refresh (LAN broadcast and
+  the federated registry); `browser.list` returns the browser's servers as data -- name, address,
+  `lan`, the reported `country`, the resolved `flag` and its index, players, ping. The console's
+  `dumpserverlist` prints none of the discovery fields, which is why this exists. Assert on `flag`:
+  a server whose own GeoIP lookup failed reports `XIP` and the browser geolocates it from the
+  address instead, leaving `country` empty by design. Driven by `fuactl browser` and the
+  `server-discovery-e2e` skill.
 - **GPU profiling**: `renderer.info` → vendor/renderer/GL version + whether GL timer queries work on this
   driver. `gl.timers {frames,warmup}` → async `glperf` event with **per-pass GPU milliseconds** — opaque
   `scene`, `translucent` (the usual fill-rate/overdraw killer), `hud2d`, plus the whole-frame `total`
