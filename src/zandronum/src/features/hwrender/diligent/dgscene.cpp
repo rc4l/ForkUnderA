@@ -759,18 +759,29 @@ static const char *kScenePSRedAlpha =
 	"           / shrink * 0.5 + 0.5;\n" \
 	"}\n" \
 
-// [rc4l] The decal's box, built ON THE GPU from nothing but two indices.
+// [rc4l] A mark covers exactly the pixels its blast could possibly reach, and each one ONCE.
 //
-// There is no vertex buffer. gl_VertexIndex picks a corner of a unit cube out of a constant table and
-// gl_InstanceIndex picks which mark it belongs to, out of a storage buffer the CPU fills with one
-// small record per mark. Every decal on screen is then a handful of instanced draws -- one per
-// texture and blend mode -- instead of one draw each.
+// There is no vertex buffer and no box. gl_InstanceIndex picks a mark out of a storage buffer the CPU
+// fills with one small record each, and the vertex stage works out where that mark's sphere lands on
+// screen and emits a quad over just that. Every mark on screen is then a handful of instanced draws,
+// one per texture and blend mode.
 //
-// The reason to do it this way is CPU, which is what this renderer is short of. Building the boxes
-// here meant writing thirty-six vertices of twenty floats per mark EVERY FRAME: about 190 KB a frame
-// once a fight has left seventy marks on the walls, all of it recomputed from data that had not
-// changed. The instance record is ninety-six bytes, so the same seventy marks cost six kilobytes and
-// no arithmetic at all.
+// A BOX was the obvious geometry and it is a trap, from either side. A cube is closed, so drawing it
+// whole shades every pixel inside its silhouette TWICE -- once through the near face and once through
+// the far one -- and the mark is blended over itself, which is why the cores came out solid black.
+// Culling one side fixes that and breaks something else: whichever side is kept, walking close enough
+// puts the camera inside the box, the near faces go behind the camera or through the near plane, and
+// the mark disappears entirely. Both choices were tried and both failed, in opposite places.
+//
+// Screen bounds have neither problem, because there is no solid to be inside of. The quad is emitted
+// in clip space directly, so nothing about it can be clipped by the near plane or culled by winding,
+// and one quad is one layer from anywhere. Deciding what to shade from a bounding volume rather than
+// by drawing that volume is what a deferred pass wants in any case.
+//
+// The CPU cost is nil either way, which is what matters most here -- this renderer is short of CPU,
+// not GPU. Building boxes host-side meant thirty-six vertices of twenty floats per mark EVERY FRAME,
+// about 190 KB a frame once a fight has left seventy marks on the walls, recomputed from data that
+// had not changed since the trigger was pulled. The instance record is eighty bytes.
 static const char *kDecalVS =
 	"#version 450\n"
 	"layout(binding = 0) uniform Constants { mat4 uMVP; vec4 uCameraPos; vec4 uLightParams; vec4 uClipPlane; vec4 uScreen; vec4 uSkyColor; };\n"
@@ -784,23 +795,37 @@ static const char *kDecalVS =
 	"layout(location = 3) out vec3 vAxisN;\n"
 	"layout(location = 4) out vec4 vColor;\n"
 	"layout(location = 5) out float vRadius;\n"
-	/* The eight corners of a cube as thirty-six indices. An axis-aligned box is all the geometry a
-	   radial mark needs -- it only has to contain the sphere the pixel stage tests against, and a cube
-	   containing that sphere is the same cube however the mark is turned. */
 	"const vec3 kCorner[8] = vec3[8](\n"
 	"    vec3(-1,-1,-1), vec3( 1,-1,-1), vec3( 1, 1,-1), vec3(-1, 1,-1),\n"
 	"    vec3(-1,-1, 1), vec3( 1,-1, 1), vec3( 1, 1, 1), vec3(-1, 1, 1));\n"
-	"const int kIndex[36] = int[36](\n"
-	"    0,1,2, 0,2,3,  4,6,5, 4,7,6,  0,3,7, 0,7,4,\n"
-	"    1,5,6, 1,6,2,  0,4,5, 0,5,1,  3,2,6, 3,6,7);\n"
+	"const vec2 kQuad[6] = vec2[6](\n"
+	"    vec2(0,0), vec2(1,0), vec2(1,1), vec2(0,0), vec2(1,1), vec2(0,1));\n"
 	"void main() {\n"
 	"    DecalRec d = decals[gl_InstanceIndex];\n"
 	"    vCentre = d.centre.xyz;\n"
 	"    vRadius = d.centre.w;\n"
 	"    vAxisU = d.axisU.xyz; vAxisV = d.axisV.xyz; vAxisN = d.axisN.xyz;\n"
 	"    vColor = d.color;\n"
-	"    vec3 corner = d.centre.xyz + kCorner[kIndex[gl_VertexIndex]] * d.centre.w;\n"
-	"    gl_Position = uMVP * vec4(corner, 1.0);\n"
+	/* Where this mark's sphere lands on screen. The eight corners of its bounding cube are projected
+	   and the extremes kept -- conservative, which is all a bound has to be. */
+	"    vec2 lo = vec2( 1e9), hi = vec2(-1e9);\n"
+	"    bool whole = false;\n"
+	/* Close enough to be inside the sphere, or straddling the plane through the camera, and there are
+	   no honest screen bounds to compute -- so take the whole screen and let the pixel stage decide.
+	   This is the case that made a box vanish, and here it costs a few wasted fragments. */
+	"    if (distance(uCameraPos.xyz, d.centre.xyz) < d.centre.w * 1.05) whole = true;\n"
+	"    for (int i = 0; i < 8 && !whole; i++) {\n"
+	"        vec4 cp = uMVP * vec4(d.centre.xyz + kCorner[i] * d.centre.w, 1.0);\n"
+	"        if (cp.w <= 0.0001) { whole = true; break; }\n"
+	"        vec2 ndc = cp.xy / cp.w;\n"
+	"        lo = min(lo, ndc); hi = max(hi, ndc);\n"
+	"    }\n"
+	"    if (whole) { lo = vec2(-1.0); hi = vec2(1.0); }\n"
+	"    lo = max(lo, vec2(-1.0)); hi = min(hi, vec2(1.0));\n"
+	/* Straight to clip space. Depth is unused -- the pass neither tests nor writes it -- so the quad
+	   sits at the near plane and nothing can clip it away. */
+	"    vec2 q = kQuad[gl_VertexIndex];\n"
+	"    gl_Position = vec4(mix(lo, hi, q), 0.0, 1.0);\n"
 	"}\n";
 
 static const char *kDecalPS =
@@ -2964,22 +2989,11 @@ static bool EnsureDecalPass()
 		// read-only input, so the PSO must declare no depth format to match.
 		pci.GraphicsPipeline.DSVFormat = Diligent::TEX_FORMAT_UNKNOWN;
 		pci.GraphicsPipeline.PrimitiveTopology = Diligent::PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-		// [rc4l] BACK faces only, and no depth test.
-		//
-		// No depth test because the shader decides what is inside from the depth buffer, so the box's
-		// own depth means nothing -- and the camera can be inside a box, standing on a mark, where a
-		// depth test would throw the whole thing away.
-		//
-		// But culling nothing was wrong. A cube is closed, so with nothing culled every pixel inside
-		// its silhouette is shaded TWICE -- once through the near face, once through the far one --
-		// and the mark is blended over itself. That is why our scorches read denser than GL's, which I
-		// had blamed on the blend mode. It also made a mark get LIGHTER as you walked up to it: once
-		// the camera is inside the box the near faces are behind you, one layer is lost, and the
-		// doubling quietly stops.
-		//
-		// Keeping the far faces rather than the near ones is what makes both cases the same: the far
-		// side of a box is in front of the camera whether the camera is outside it or in it.
-		pci.GraphicsPipeline.RasterizerDesc.CullMode = Diligent::CULL_MODE_FRONT;
+		// [rc4l] Nothing to cull and no depth to test. The geometry is a screen-space quad over the
+		// mark's own bounds -- see kDecalVS -- so it has no inside to be caught in and no winding to
+		// judge, and each pixel is visited exactly once from anywhere. Depth is irrelevant because the
+		// shader finds the surface in the depth BUFFER; the quad's own depth means nothing.
+		pci.GraphicsPipeline.RasterizerDesc.CullMode = Diligent::CULL_MODE_NONE;
 		pci.GraphicsPipeline.DepthStencilDesc.DepthEnable = false;
 		pci.GraphicsPipeline.DepthStencilDesc.DepthWriteEnable = false;
 		{
@@ -3152,7 +3166,7 @@ static void DrawProjectedDecals(Diligent::IDeviceContext *ctx)
 		// No vertex buffer at all: the box comes out of gl_VertexIndex and the mark out of
 		// gl_InstanceIndex. See kDecalVS.
 		Diligent::DrawAttribs draw;
-		draw.NumVertices = 36;
+		draw.NumVertices = 6;
 		draw.NumInstances = g.count;
 		draw.StartVertexLocation = 0;
 		draw.FirstInstanceLocation = g.first;
