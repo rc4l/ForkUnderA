@@ -199,3 +199,93 @@ TEST(FlatMeshCompute, AnAbsentGroupIsVacuouslyConsistent)
 	EXPECT_TRUE(ComputeWindingConsistent(0, 0, 0, 830));
 	EXPECT_TRUE(ComputeWindingConsistent(0, 0, 0, 0));
 }
+
+// ---- plane texture transform -----------------------------------------------
+//
+// The mesh baked (x/64, -y/64) and stopped, so scrolling floors did not scroll. The same matrix
+// carries four other things, and the widest of them is silent: any flat whose texture is not 64x64
+// tiled at the wrong rate everywhere, in every map, and reads as "the texture looks slightly off".
+
+TEST(FlatMeshCompute, IdentityTransformIsThePlainMapping)
+{
+	float u = 0, v = 0;
+	ComputePlaneUV(128.f, 256.f, ComputeIdentityPlaneUV(), u, v);
+	EXPECT_FLOAT_EQ(u, 128.f / 64.f);
+	EXPECT_FLOAT_EQ(v, -256.f / 64.f);   // V runs the other way
+}
+
+TEST(FlatMeshCompute, A128WideTextureTilesAtHalfTheRate)
+{
+	// The bug nobody reported: without the 64/width term a 128-wide flat tiles twice as fast as GL.
+	PlaneUVTransform t = ComputeIdentityPlaneUV();
+	t.texWidth = 128.f;
+	t.texHeight = 128.f;
+	float u = 0, v = 0;
+	ComputePlaneUV(128.f, 128.f, t, u, v);
+	EXPECT_FLOAT_EQ(u, 1.0f);    // 128 units across a 128-texel texture is exactly one tile
+	EXPECT_FLOAT_EQ(v, -1.0f);
+}
+
+TEST(FlatMeshCompute, OffsetIsInTextureWidthsNotMapUnits)
+{
+	// A scrolling floor animates xoffs. Half a 64-texel texture is 0.5 in UV; half a 128-texel one
+	// is the same 0.5 for twice the map distance, which is why the divisor is the texture size.
+	PlaneUVTransform t = ComputeIdentityPlaneUV();
+	t.xoffs = 32.f;
+	float u = 0, v = 0;
+	ComputePlaneUV(0.f, 0.f, t, u, v);
+	EXPECT_FLOAT_EQ(u, 0.5f);
+
+	t = ComputeIdentityPlaneUV();
+	t.texWidth = 128.f;
+	t.xoffs = 64.f;
+	ComputePlaneUV(0.f, 0.f, t, u, v);
+	EXPECT_FLOAT_EQ(u, 0.5f);
+}
+
+TEST(FlatMeshCompute, ScaleAppliesAfterTheOffset)
+{
+	// Order matters and is easy to get backwards: the plane's own scale multiplies the ALREADY
+	// offset coordinate. Scaling first would move a scrolled floor to the wrong place.
+	PlaneUVTransform t = ComputeIdentityPlaneUV();
+	t.xoffs = 32.f;      // 0.5 in UV
+	t.xscale = 2.f;
+	float u = 0, v = 0;
+	ComputePlaneUV(0.f, 0.f, t, u, v);
+	EXPECT_FLOAT_EQ(u, 1.0f);   // (0 + 0.5) * 2, not 0 * 2 + 0.5
+}
+
+TEST(FlatMeshCompute, RotationTurnsTheTextureAndIsNegated)
+{
+	// GL negates the plane angle before building the matrix, so a 90-degree plane angle rotates the
+	// coordinate by -90. Taking the sign from the map instead flips every rotated flat.
+	PlaneUVTransform t = ComputeIdentityPlaneUV();
+	t.angleDegrees = 90.f;
+	float u = 0, v = 0;
+	ComputePlaneUV(64.f, 0.f, t, u, v);   // untransformed this is (1, 0)
+	EXPECT_NEAR(u, 0.f, 1e-5f);
+	EXPECT_NEAR(v, -1.f, 1e-5f);          // rotated by -90, not +90
+}
+
+TEST(FlatMeshCompute, ACanvasTextureHasItsVScaleNegated)
+{
+	// A camera texture is stored upside down; GL compensates in this same matrix.
+	PlaneUVTransform t = ComputeIdentityPlaneUV();
+	t.hasCanvas = true;
+	float u = 0, v = 0;
+	ComputePlaneUV(0.f, 64.f, t, u, v);
+	EXPECT_FLOAT_EQ(v, 1.0f);   // would be -1 without the negation
+}
+
+TEST(FlatMeshCompute, AZeroSizedTextureFallsBackToSixtyFour)
+{
+	// Division by a zero texture size would put infinities in the vertex buffer, where they are
+	// silent until an entire batch renders as nothing.
+	PlaneUVTransform t = ComputeIdentityPlaneUV();
+	t.texWidth = 0.f;
+	t.texHeight = 0.f;
+	float u = 0, v = 0;
+	ComputePlaneUV(64.f, 64.f, t, u, v);
+	EXPECT_FLOAT_EQ(u, 1.0f);
+	EXPECT_FLOAT_EQ(v, -1.0f);
+}

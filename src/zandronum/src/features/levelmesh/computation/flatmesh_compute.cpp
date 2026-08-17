@@ -3,6 +3,8 @@
 
 #include "features/levelmesh/computation/flatmesh_compute.h"
 
+#include <math.h>
+
 namespace zx { namespace levelmesh {
 
 bool ComputeFlatWindingReversed(bool viewedFromBelow)
@@ -62,6 +64,54 @@ bool ComputeWindingConsistent(int fromAbovePositive, int fromAboveNegative,
 
 	// And the two must be opposite, or one cull mode cannot keep both.
 	return (fromAbovePositive > 0) != (fromBelowPositive > 0);
+}
+
+PlaneUVTransform ComputeIdentityPlaneUV()
+{
+	PlaneUVTransform t;
+	t.xoffs = t.yoffs = 0.f;
+	t.xscale = t.yscale = 1.f;
+	t.angleDegrees = 0.f;
+	t.texWidth = t.texHeight = 64.f;
+	t.hasCanvas = false;
+	return t;
+}
+
+void ComputePlaneUV(float px, float py, const PlaneUVTransform &t, float &u, float &v)
+{
+	// The untransformed mapping: one texture per 64 map units, V running the other way.
+	float uu = px / 64.f;
+	float vv = -py / 64.f;
+
+	// A zero-sized texture would divide by zero; treat it as the 64x64 default rather than produce
+	// infinities that propagate silently into the vertex buffer.
+	const float tw = (t.texWidth  > 0.f) ? t.texWidth  : 64.f;
+	const float th = (t.texHeight > 0.f) ? t.texHeight : 64.f;
+
+	// 1. Rotate. GL negates the plane's angle before handing it to the matrix.
+	if (t.angleDegrees != 0.f)
+	{
+		const float a = -t.angleDegrees * 3.14159265358979323846f / 180.f;
+		const float ca = cosf(a), sa = sinf(a);
+		const float ru = uu * ca - vv * sa;
+		const float rv = uu * sa + vv * ca;
+		uu = ru; vv = rv;
+	}
+
+	// 2. Correct for the texture's real size, which the /64 above assumed was 64.
+	uu *= 64.f / tw;
+	vv *= 64.f / th;
+
+	// 3. Offset, in texture widths. This is the term a scrolling floor animates.
+	uu += t.xoffs / tw;
+	vv += t.yoffs / th;
+
+	// 4. The plane's own scale. A canvas texture is stored upside down, so its V scale is negated.
+	uu *= t.xscale;
+	vv *= t.hasCanvas ? -t.yscale : t.yscale;
+
+	u = uu;
+	v = vv;
 }
 
 }} // namespace zx::levelmesh

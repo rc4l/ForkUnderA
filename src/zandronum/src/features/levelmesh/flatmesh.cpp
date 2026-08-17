@@ -12,6 +12,8 @@
 #include "gl/scene/gl_wall.h"
 #include "gl/data/gl_vertexbuffer.h"
 #include "gl/data/gl_data.h"   // getExtraLight
+#include "gl/textures/gl_material.h"   // FMaterial::TextureWidth, for the plane UV transform
+#include "gl/utility/gl_convert.h"      // ANGLE_TO_FLOAT
 #include "tarray.h"
 
 namespace zx { namespace levelmesh {
@@ -69,18 +71,30 @@ void RegisterFlatSubsector(const GLFlat &flat, subsector_t *sub, bool ceiling)
 	const int n = (int)sub->numlines;
 	if (n > GLWall::MAX_BATCH_FAN_VERTICES) return;
 
-	// Mirrors GLFlat::DrawSubsector, including the sloped/flat split and the /64 uv convention.
+	// Mirrors GLFlat::DrawSubsector for the positions, and gl_SetPlaneTextureRotation for the texture
+	// coordinates -- which this used to skip entirely, baking the bare (x/64, -y/64) that is only
+	// right for an unoffset, unscaled, unrotated 64x64 flat.
 	const secplane_t &p = flat.plane.plane;
 	const bool sloped = (p.a | p.b) != 0;
 	const float zc = sloped ? 0.0f : (FIXED2FLOAT(p.Zat0()) + flat.dz);
+
+	PlaneUVTransform uvt = ComputeIdentityPlaneUV();
+	uvt.xoffs = FIXED2FLOAT(flat.plane.xoffs);
+	uvt.yoffs = FIXED2FLOAT(flat.plane.yoffs);
+	uvt.xscale = FIXED2FLOAT(flat.plane.xscale);
+	uvt.yscale = FIXED2FLOAT(flat.plane.yscale);
+	uvt.angleDegrees = ANGLE_TO_FLOAT(flat.plane.angle);
+	uvt.texWidth = (float)flat.gltexture->TextureWidth();
+	uvt.texHeight = (float)flat.gltexture->TextureHeight();
+	uvt.hasCanvas = flat.gltexture->tex->bHasCanvas;
+
 	for (int k = 0; k < n; k++)
 	{
 		vertex_t *vt = sub->firstline[k].v1;
 		fan[k].x = vt->fx;
 		fan[k].y = vt->fy;
 		fan[k].z = sloped ? (float)(p.ZatPoint(vt->fx, vt->fy) + flat.dz) : zc;
-		fan[k].u = vt->fx / 64.f;
-		fan[k].v = -vt->fy / 64.f;
+		ComputePlaneUV(vt->fx, vt->fy, uvt, fan[k].u, fan[k].v);
 	}
 
 	const int triVerts = ComputeFanTriangleVertexCount(n);

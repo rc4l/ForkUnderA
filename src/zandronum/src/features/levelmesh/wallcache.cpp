@@ -5,6 +5,7 @@
 #include "features/levelmesh/wallcache.h"
 #include "features/levelmesh/flatmesh.h"
 #include "features/levelmesh/levelmesh.h"
+#include "features/levelmesh/computation/flatmesh_compute.h"
 
 #include "r_defs.h"
 #include "r_state.h"
@@ -187,6 +188,12 @@ void BakeSeg(int segIndex)
 		MeshPiece mp;
 		mp.range = sc.pieces[i].range;
 		mp.material = sc.walls[i].gltexture;
+		// [rc4l] A wall is not always opaque: two-sided middle textures, and the 3D floor sides that
+		// go with a translucent 3D floor, carry the rover's alpha. Baking them opaque draws a pane of
+		// coloured glass as a solid wall.
+		mp.alpha = sc.walls[i].alpha;
+		mp.blendMode = ComputeSurfaceBlendMode(sc.walls[i].RenderStyle == STYLE_Add,
+		                                       sc.walls[i].alpha);
 		mp.lightLevel = sc.walls[i].lightlevel;
 		mp.lightColor = sc.walls[i].Colormap.LightColor.d;
 		mp.fadeColor = sc.walls[i].Colormap.FadeColor.d;
@@ -264,15 +271,20 @@ void BeginCapture(int segIndex)
 void RecordPiece(const GLWall &wall, int list)
 {
 	if (g_captureSeg < 0) return;
-	// [rc4l] Translucent walls go through GLDrawList's BSP sorter, which indexes the per-frame
-	// walls[] array directly in a dozen places (SortWallIntoPlane, SortWallIntoWall, DoDrawSorted...)
-	// and would read garbage for a cache-owned item. Splitting them off is a much larger change than
-	// this experiment justifies, so a seg producing one is simply never cached.
+	// [rc4l] A translucent wall may be BAKED but must never be REPLAYED.
+	//
+	// GLDrawList's BSP sorter indexes the per-frame walls[] array directly in a dozen places
+	// (SortWallIntoPlane, SortWallIntoWall, DoDrawSorted...) and would read garbage for a cache-owned
+	// item, so replaying one into a GL draw list is not safe. This used to `return` before storing
+	// it, which kept GL correct and also meant the geometry never reached the mesh at all -- so the
+	// Vulkan backend had no translucent walls anywhere, in any map. The give-away was sitting in its
+	// own upload report for weeks: "51 material batches (0 translucent)" on a map full of them.
+	//
+	// Marking the seg uncacheable is what keeps GL safe: TryReplay refuses it forever, so GL keeps
+	// processing the seg itself every frame, exactly as before. EndCapture still bakes the seg once,
+	// and now the translucent piece is in it.
 	if (list == GLDL_TRANSLUCENT || list == GLDL_TRANSLUCENTBORDER)
-	{
-		g_sawPortal = true;   // reuses the sticky uncacheable path
-		return;
-	}
+		g_sawPortal = true;   // reuses the sticky uncacheable path -- but keep the piece
 	// [rc4l] Written into the seg's own fixed slots -- re-capture overwrites, never appends, so a
 	// flickering-light sector cannot strand geometry. Overflowing the slots gives up on the seg.
 	SegCache &sc = g_cache[g_captureSeg];
