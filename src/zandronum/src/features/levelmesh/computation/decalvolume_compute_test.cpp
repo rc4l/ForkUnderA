@@ -216,6 +216,29 @@ TEST(DecalCreep, CarriesTheAlongCoordinateStraightOverACorner)
 	EXPECT_NEAR(CreepU(f, onWall, kWallNormal), CreepU(f, onFloor, kFloorNormal), 1e-5f);
 }
 
+TEST(DecalCreep, IsContinuousAcrossTheJoinItself)
+{
+	// [rc4l] The picture must not jump where the wall meets the floor.
+	//
+	// Reported as a mark that renders correctly on the wall and then becomes "this weird oval shape"
+	// on the floor, detached from it. If the crossing coordinate disagrees at the join, the two
+	// halves read different parts of the graphic and no amount of tuning either side will join them.
+	//
+	// A mark 18 above the floor: the fragment at the very bottom of the wall and the fragment at the
+	// very start of the floor are the same place, so they must read the same texel.
+	const DecalFrame f = WallFrame(16.f, 8.f, 16.f);
+	const float atWallBase[3] = { 5.f, 0.f, -18.f };   // on the wall, level with the floor
+	const float atFloorEdge[3] = { 5.f, 0.f, -18.f };  // on the floor, hard against the wall
+
+	float uw = 0, vw = 0, pw = 0, uf = 0, vf = 0, pf = 0;
+	ComputeDecalCreepUV(f, atWallBase, kWallNormal, uw, vw, pw);
+	ComputeDecalCreepUV(f, atFloorEdge, kFloorNormal, uf, vf, pf);
+
+	EXPECT_NEAR(uw, uf, 1e-4f) << "the along-coordinate must not shift at the join";
+	EXPECT_NEAR(vw, vf, 1e-4f) << "the crossing coordinate must not jump at the join";
+	EXPECT_NEAR(pw, pf, 1e-4f) << "the walk to the join is the same distance from either side";
+}
+
 TEST(DecalCreep, CrossesTheOtherWayForAVerticalCorner)
 {
 	// [rc4l] Which picture axis the corner runs along decides which coordinate is which.

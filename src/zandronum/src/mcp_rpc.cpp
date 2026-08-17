@@ -814,7 +814,18 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 			return;
 		}
 		P_TeleportMove( mo, fx, fy, mo->z, true );
-		mo->z = mo->floorz;
+		// [rc4l] Stand on the floor, unless the caller asked for a specific height.
+		//
+		// Snapping is right for reproducing where somebody was standing, and wrong for looking at
+		// something from ABOVE -- which is the view that settles whether a mark creeping from a wall
+		// onto the floor actually lands under itself. There was no way to get a camera up there, so
+		// that check was being made from eye level at a shallow angle, where a smear and a correct
+		// continuation look the same.
+		double atZ = 0;
+		if ( GetFloat( args, "z", atZ ) && atZ > FIXED2DBL( mo->floorz ) )
+			mo->z = FLOAT2FIXED( atZ );
+		else
+			mo->z = mo->floorz;
 
 		// [rc4l] Optional facing, in degrees, 0 = east and 90 = north like every other angle a Doom
 		// tool prints. This used to be silently dropped: callers passed "angle" alongside x and y,
