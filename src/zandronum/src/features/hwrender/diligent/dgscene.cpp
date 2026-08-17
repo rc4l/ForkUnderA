@@ -74,6 +74,9 @@
 #include <stdio.h>
 #include "m_png.h"
 #include "doomtype.h"
+#ifdef ZX_ENABLE_REPLAY
+#include "features/replay/zx_replay.h"   // [rc4l] the Vulkan instant-replay stream
+#endif
 
 // [rc4l] Declared outside the namespace: EXTERN_CVAR builds a name from the identifier, so a
 // namespace-qualified one resolves to a symbol the engine never defines and fails only at link time.
@@ -3163,6 +3166,11 @@ Diligent::ITextureView *SceneDepthSRV()
 	return g_sceneDepth ? g_sceneDepth->GetDefaultView(Diligent::TEXTURE_VIEW_SHADER_RESOURCE) : NULL;
 }
 
+#ifdef ZX_ENABLE_REPLAY
+// Defined below, beside the readback machinery it owns.
+static void CaptureReplayFrame(Diligent::IDeviceContext *ctx, Diligent::ISwapChain *swap);
+#endif
+
 static void DrawSceneOnce(bool present = true, bool pump = true)
 {
 	auto *ctx = GetContext();
@@ -3182,6 +3190,15 @@ static void DrawSceneOnce(bool present = true, bool pump = true)
 
 	// [rc4l] 2D last, over everything, with depth off entirely -- it is the frame's top layer.
 	Draw2D(ctx);
+
+#ifdef ZX_ENABLE_REPLAY
+	// [rc4l] Instant replay: hand this frame to the Vulkan recorder stream before presenting.
+	//
+	// Present flips to the next swapchain image, after which the current back buffer's contents are
+	// undefined -- reading it afterwards gave a convincing all-black PNG the first time
+	// SceneScreenshot did it. So the copy has to happen here.
+	if (present) CaptureReplayFrame(ctx, swap);
+#endif
 
 	if (present)
 	{
@@ -3704,6 +3721,108 @@ bool SceneScale(int frames, FString &report)
 // Screen-grabbing the backend window is not a verification: it captures whatever is in front of it,
 // which on a busy desktop is another window entirely. Reading the actual backbuffer is the only way
 // to prove the render is correct, and it is also how a CI check would do it.
+#ifdef ZX_ENABLE_REPLAY
+// [rc4l] Per-frame swapchain readback for the instant replay, double-buffered.
+//
+// Two staging textures, alternating: this frame is copied into one while the OTHER -- copied a frame
+// ago and therefore long since complete -- is mapped and read. That is the same trick the GL path
+// plays with its pair of PBOs, and for the same reason: mapping the texture you just wrote forces a
+// WaitForIdle, which turns a 0.03 ms frame into a pipeline stall. SceneScreenshot can afford that
+// because it happens once; thirty times a second it would be the most expensive thing in the frame.
+//
+// The first frame after startup reads a staging texture nothing has been copied into yet, so the
+// pair is not consumed until both have been written once.
+static Diligent::RefCntAutoPtr<Diligent::ITexture> g_replayStaging[2];
+static int g_replayStagingW = 0, g_replayStagingH = 0;
+static int g_replayIndex = 0;
+static bool g_replayPrimed = false;
+
+static void ReleaseReplayStaging()
+{
+	g_replayStaging[0].Release();
+	g_replayStaging[1].Release();
+	g_replayStagingW = g_replayStagingH = 0;
+	g_replayIndex = 0;
+	g_replayPrimed = false;
+}
+
+static void CaptureReplayFrame(Diligent::IDeviceContext *ctx, Diligent::ISwapChain *swap)
+{
+	if (!zx::replay::WantsFrameVulkan()) return;
+
+	auto *dev = GetDevice();
+	if (!dev || !ctx || !swap) return;
+	auto *backTex = swap->GetCurrentBackBufferRTV()->GetTexture();
+	if (!backTex) return;
+	const auto &bd = backTex->GetDesc();
+
+	if (!g_replayStaging[0] || g_replayStagingW != (int)bd.Width || g_replayStagingH != (int)bd.Height)
+	{
+		ReleaseReplayStaging();
+		Diligent::TextureDesc sd;
+		sd.Name = "fua replay readback";
+		sd.Type = Diligent::RESOURCE_DIM_TEX_2D;
+		sd.Width = bd.Width; sd.Height = bd.Height;
+		sd.Format = bd.Format;
+		sd.Usage = Diligent::USAGE_STAGING;
+		sd.CPUAccessFlags = Diligent::CPU_ACCESS_READ;
+		sd.BindFlags = Diligent::BIND_NONE;
+		sd.MipLevels = 1;
+		for (int i = 0; i < 2; i++) dev->CreateTexture(sd, nullptr, &g_replayStaging[i]);
+		if (!g_replayStaging[0] || !g_replayStaging[1]) { ReleaseReplayStaging(); return; }
+		g_replayStagingW = (int)bd.Width; g_replayStagingH = (int)bd.Height;
+	}
+
+	const int write = g_replayIndex;
+	const int read = g_replayIndex ^ 1;
+
+	Diligent::CopyTextureAttribs cta;
+	cta.pSrcTexture = backTex;
+	cta.SrcTextureTransitionMode = Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
+	cta.pDstTexture = g_replayStaging[write];
+	cta.DstTextureTransitionMode = Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
+	ctx->CopyTexture(cta);
+
+	if (g_replayPrimed)
+	{
+		Diligent::MappedTextureSubresource mapped;
+		// DO_NOT_WAIT: if last frame's copy is somehow still in flight, skip this frame rather than
+		// stall. A dropped capture frame is invisible; a stall is not.
+		ctx->MapTextureSubresource(g_replayStaging[read], 0, 0, Diligent::MAP_READ,
+			Diligent::MAP_FLAG_DO_NOT_WAIT, nullptr, mapped);
+		if (mapped.pData != nullptr)
+		{
+			const int w = g_replayStagingW, h = g_replayStagingH;
+			// Channel order from the FORMAT, never assumed -- a hard-coded BGRA swap once created a
+			// red/blue inversion that still looked like a plausible Doom scene, just cooler.
+			const bool bgra = (bd.Format == Diligent::TEX_FORMAT_BGRA8_UNORM ||
+			                   bd.Format == Diligent::TEX_FORMAT_BGRA8_UNORM_SRGB);
+			const int ri = bgra ? 2 : 0, bi = bgra ? 0 : 2;
+
+			static TArray<unsigned char> rgb;
+			rgb.Resize((unsigned)(w * h * 3));
+			for (int y = 0; y < h; y++)
+			{
+				const unsigned char *srcRow = (const unsigned char *)mapped.pData + (size_t)y * mapped.Stride;
+				unsigned char *dstRow = &rgb[0] + (size_t)y * w * 3;
+				for (int x = 0; x < w; x++)
+				{
+					dstRow[x*3+0] = srcRow[x*4+ri];
+					dstRow[x*3+1] = srcRow[x*4+1];
+					dstRow[x*3+2] = srcRow[x*4+bi];
+				}
+			}
+			ctx->UnmapTextureSubresource(g_replayStaging[read], 0, 0);
+			// Already top-down, so a positive pitch.
+			zx::replay::SubmitFrameVulkan(&rgb[0], w, h, w * 3);
+		}
+	}
+
+	g_replayIndex = read;
+	g_replayPrimed = true;
+}
+#endif // ZX_ENABLE_REPLAY
+
 bool SceneScreenshot(const char *path, FString &report)
 {
 	if (!g_vb || !g_scenePSO) { report = "call fua_diligent_scene first"; return false; }
