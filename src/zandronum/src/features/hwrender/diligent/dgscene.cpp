@@ -875,16 +875,6 @@ static bool EnsureSkyPipeline()
 	pci.pPS = ps;
 	dev->CreateGraphicsPipelineState(pci, &g_skyPSO);
 
-	// [rc4l] The same pipeline with blending, for the sky's fade layer.
-	{
-		auto &rt = pci.GraphicsPipeline.BlendDesc.RenderTargets[0];
-		rt.BlendEnable = true;
-		rt.SrcBlend  = Diligent::BLEND_FACTOR_SRC_ALPHA;
-		rt.DestBlend = Diligent::BLEND_FACTOR_INV_SRC_ALPHA;
-		rt.BlendOp = Diligent::BLEND_OPERATION_ADD;
-		pci.PSODesc.Name = "fua sky fade PSO";
-		dev->CreateGraphicsPipelineState(pci, &g_skyFadePSO);
-	}
 	if (!g_skyPSO) return false;
 
 	if (auto *v = g_skyPSO->GetStaticVariableByName(Diligent::SHADER_TYPE_VERTEX, "Constants"))
@@ -944,28 +934,104 @@ static void EnsureSky()
 // under the world.
 //
 // GL draws this and this backend did not, so a foggy map's sky came out as a black hole where GL had
-// haze -- reported as "fog missing". The geometry is a full-screen triangle in clip space rather than
-// anything dome-shaped, because it covers the sky exactly the way GL's viewpoint-hugging fog object
-// does, and the world draws over it afterwards.
+// haze -- reported as "fog missing".
+//
+// It gets its own shader pair rather than riding the dome's. GL's version is four triangles a single
+// unit across, drawn with depth clamping so that a shape entirely inside the near plane still covers
+// the screen. Reproducing that by placing world-space geometry is fighting the projection: the first
+// attempt put a horizontal sheet 60000 units overhead, which is a ceiling rather than something that
+// encloses the camera, and covered nothing but the top of the frame. A quad written straight into
+// clip space is what the thing actually is.
+static const char *kSkyFadeVS =
+	"#version 450\n"
+	"layout(location = 0) in vec3 aPos;\n"
+	"layout(location = 1) in vec2 aUV;\n"
+	"layout(location = 2) in vec4 aSkyColor;\n"
+	"layout(location = 0) out vec4 vFade;\n"
+	"void main() {\n"
+	"    vFade = vec4(aSkyColor.rgb, -aSkyColor.a);\n"
+	"    gl_Position = vec4(aPos.xy, 0.0, 1.0);\n"
+	"}\n";
+
+static const char *kSkyFadePS =
+	"#version 450\n"
+	"layout(location = 0) in vec4 vFade;\n"
+	"layout(location = 0) out vec4 outColor;\n"
+	"void main() { outColor = vFade; }\n";
+
+static bool EnsureSkyFadePipeline()
+{
+	if (g_skyFadePSO) return true;
+	auto *dev = GetDevice();
+	auto *swap = GetSwapChain();
+	if (!dev || !swap) return false;
+
+	Diligent::RefCntAutoPtr<Diligent::IShader> vs, ps;
+	{
+		Diligent::ShaderCreateInfo ci;
+		ci.SourceLanguage = Diligent::SHADER_SOURCE_LANGUAGE_GLSL_VERBATIM;
+		ci.Desc.ShaderType = Diligent::SHADER_TYPE_VERTEX;
+		ci.Desc.Name = "fua sky fade VS";
+		ci.Source = kSkyFadeVS;
+		dev->CreateShader(ci, &vs);
+	}
+	{
+		Diligent::ShaderCreateInfo ci;
+		ci.SourceLanguage = Diligent::SHADER_SOURCE_LANGUAGE_GLSL_VERBATIM;
+		ci.Desc.ShaderType = Diligent::SHADER_TYPE_PIXEL;
+		ci.Desc.Name = "fua sky fade PS";
+		ci.Source = kSkyFadePS;
+		dev->CreateShader(ci, &ps);
+	}
+	if (!vs || !ps) return false;
+
+	Diligent::LayoutElement layout[] = {
+		Diligent::LayoutElement{0, 0, 3, Diligent::VT_FLOAT32, false},
+		Diligent::LayoutElement{1, 0, 2, Diligent::VT_FLOAT32, false},
+		Diligent::LayoutElement{2, 0, 4, Diligent::VT_FLOAT32, false},
+	};
+	Diligent::GraphicsPipelineStateCreateInfo pci;
+	pci.PSODesc.Name = "fua sky fade PSO";
+	pci.PSODesc.PipelineType = Diligent::PIPELINE_TYPE_GRAPHICS;
+	pci.GraphicsPipeline.NumRenderTargets = 1;
+	pci.GraphicsPipeline.RTVFormats[0] = swap->GetDesc().ColorBufferFormat;
+	pci.GraphicsPipeline.DSVFormat = swap->GetDesc().DepthBufferFormat;
+	pci.GraphicsPipeline.PrimitiveTopology = Diligent::PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+	pci.GraphicsPipeline.RasterizerDesc.CullMode = Diligent::CULL_MODE_NONE;
+	pci.GraphicsPipeline.DepthStencilDesc.DepthEnable = false;
+	pci.GraphicsPipeline.DepthStencilDesc.DepthWriteEnable = false;
+	{
+		auto &rt = pci.GraphicsPipeline.BlendDesc.RenderTargets[0];
+		rt.BlendEnable = true;
+		rt.SrcBlend  = Diligent::BLEND_FACTOR_SRC_ALPHA;
+		rt.DestBlend = Diligent::BLEND_FACTOR_INV_SRC_ALPHA;
+		rt.BlendOp = Diligent::BLEND_OPERATION_ADD;
+		rt.SrcBlendAlpha = Diligent::BLEND_FACTOR_ONE;
+		rt.DestBlendAlpha = Diligent::BLEND_FACTOR_INV_SRC_ALPHA;
+		rt.BlendOpAlpha = Diligent::BLEND_OPERATION_ADD;
+	}
+	pci.GraphicsPipeline.InputLayout.LayoutElements = layout;
+	pci.GraphicsPipeline.InputLayout.NumElements = 3;
+	dev->CreateGraphicsPipelineState(pci, &g_skyFadePSO);
+	return g_skyFadePSO.RawPtr() != nullptr;
+}
+
 static void DrawSkyFade(Diligent::IDeviceContext *ctx)
 {
 	float fr, fg, fb, fa;
 	zx::hwrender::GetSkyFog(fr, fg, fb, fa);
-	if (fa <= 0.f || !g_skyFadePSO) return;
+	if (fa <= 0.f) return;
+	if (!EnsureSkyFadePipeline()) return;
 
-	// Clip space directly: uMVP is bypassed by placing the vertices at w=1 already projected. The
-	// vertex shader still multiplies, so instead this rides the dome's own transform by sitting far
-	// away and facing the camera -- simpler to just reuse the sky VB's shader with a huge quad.
 	SkyVertexData v[6];
-	const float R = 60000.f, H = 60000.f;
-	const float px[6] = { -R, -R,  R,  R, -R,  R };
-	const float pz[6] = { -R,  R, -R,  R,  R, -R };
+	const float qx[6] = { -1.f, -1.f,  1.f,  1.f, -1.f,  1.f };
+	const float qy[6] = { -1.f,  1.f, -1.f,  1.f,  1.f, -1.f };
 	for (int i = 0; i < 6; i++)
 	{
-		v[i].x = px[i]; v[i].y = H; v[i].z = pz[i];
+		v[i].x = qx[i]; v[i].y = qy[i]; v[i].z = 0.f;
 		v[i].u = 0.f; v[i].v = 0.f;
 		v[i].r = fr; v[i].g = fg; v[i].b = fb;
-		v[i].useTex = -fa;   // negative: flat colour, alpha = -a. See the sky pixel shader.
+		v[i].useTex = -fa;   // the fade VS negates it back into an alpha
 	}
 
 	if (!g_skyFadeVB)
@@ -986,7 +1052,6 @@ static void DrawSkyFade(Diligent::IDeviceContext *ctx)
 	ctx->SetVertexBuffers(0, 1, vbs, offsets, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
 		Diligent::SET_VERTEX_BUFFERS_FLAG_RESET);
 	ctx->SetPipelineState(g_skyFadePSO);
-	ctx->CommitShaderResources(g_skySRB, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 	Diligent::DrawAttribs d;
 	d.NumVertices = 6;
 	d.Flags = Diligent::DRAW_FLAG_VERIFY_ALL;
