@@ -174,14 +174,28 @@ void BakeSeg(int segIndex)
 	{
 		const int fanCount = sc.walls[i].BuildFanVertices(fan, GLWall::MAX_BATCH_FAN_VERTICES);
 		const int triVerts = ComputeFanTriangleVertexCount(fanCount);
-		if (triVerts <= 0) { sc.pieces[i].range.count = 0; continue; }
+		// [rc4l] Give the range back before forgetting it, or the piece registered against it is
+		// orphaned: it stays in the piece list drawing the geometry that was there, and the next
+		// successful store allocates a FRESH range -- so the surface ends up in the list twice.
+		//
+		// Zeroing the count also disables the retire inside MeshStore, which only fires when the count
+		// is non-zero. Two ways of saying "this is empty now" that do not agree is what left 13% of
+		// live pieces duplicating another piece's geometry.
+		if (triVerts <= 0) { MeshRetireRange(sc.pieces[i].range); sc.pieces[i].range.count = 0; continue; }
 
 		int w = 0;
 		for (int t = 0; t < fanCount - 2; t++)
 			for (int c = 0; c < 3; c++)
 				tris[w++] = fan[ComputeFanTriangleVertex(fanCount, t, c)];
 
-		if (!MeshStore(sc.pieces[i].range, tris, w)) { sc.pieces[i].range.count = 0; continue; }
+		// MeshStore has already retired the old range if it reallocated; if it FAILED there is nothing
+		// stored, and the same reasoning as above applies to whatever was there before.
+		if (!MeshStore(sc.pieces[i].range, tris, w))
+		{
+			MeshRetireRange(sc.pieces[i].range);
+			sc.pieces[i].range.count = 0;
+			continue;
+		}
 
 		// [rc4l] Register the shading state alongside the geometry, so a backend can group and draw
 		// without ever seeing a GLWall.

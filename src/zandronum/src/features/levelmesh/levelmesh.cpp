@@ -862,6 +862,9 @@ CCMD( fua_mesh_verify )
 	{
 		typedef zx::levelmesh::MeshBox Box;
 		TArray<Box> box;
+		// [rc4l] Box index is NOT piece index: empty pieces are skipped. Keep the mapping, or every
+		// detail line below describes a different piece than the one that overlapped.
+		TArray<int> pieceOf;
 		for ( int i = 0; i < np; i++ )
 		{
 			const zx::levelmesh::MeshPiece &p = pieces[i];
@@ -874,7 +877,7 @@ CCMD( fua_mesh_verify )
 				if ( fv.y < b.y0 ) b.y0 = fv.y;  if ( fv.y > b.y1 ) b.y1 = fv.y;
 				if ( fv.z < b.z0 ) b.z0 = fv.z;  if ( fv.z > b.z1 ) b.z1 = fv.z;
 			}
-			box.Push( b );
+			box.Push( b ); pieceOf.Push( i );
 		}
 		const float kEps = 0.05f;
 		// [rc4l] Say WHICH pairs, not just how many.
@@ -893,12 +896,13 @@ CCMD( fua_mesh_verify )
 				overlaps++;
 				if ( shown < 8 )
 				{
-					const zx::levelmesh::MeshPiece &pa = pieces[i];
-					const zx::levelmesh::MeshPiece &pb = pieces[j];
-					Printf( "  overlap %d: pieces %u/%u  %s material  light %d/%d  facesDown %d/%d  verts %u/%u\n",
-						shown, i, j, pa.material == pb.material ? "same" : "different",
+					const zx::levelmesh::MeshPiece &pa = pieces[pieceOf[i]];
+					const zx::levelmesh::MeshPiece &pb = pieces[pieceOf[j]];
+					Printf( "  overlap %d: pieces %u/%u  %s material  light %d/%d  facesDown %d/%d  verts %u/%u  at y %.1f/%.1f  x %.0f..%.0f  z %.0f..%.0f\n",
+						shown, pieceOf[i], pieceOf[j], pa.material == pb.material ? "same" : "different",
 						pa.dynLightIndex, pb.dynLightIndex, (int)pa.facesDown, (int)pb.facesDown,
-						pa.range.count, pb.range.count );
+						pa.range.count, pb.range.count,
+							box[i].y0, box[j].y0, box[i].x0, box[i].x1, box[i].z0, box[i].z1 );
 					shown++;
 				}
 			}
