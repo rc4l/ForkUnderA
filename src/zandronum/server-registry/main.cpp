@@ -56,6 +56,8 @@
 // [rc4l] Who may be introduced to whom, and why a refusal is answered rather than dropped.
 #include "features/server-hosting/computation/punchbroker_compute.h"
 #include "features/federated-server-registry/computation/reachcookie_compute.h"
+// [rc4l] Whether same-identity listings really are one server, or a collision to refuse.
+#include "features/federated-server-registry/computation/servergroup_compute.h"
 #include <sstream>
 #include <map>
 #include <set>
@@ -373,9 +375,20 @@ std::string SERVERREGISTRY_IssueReachCookie( const NETADDRESS_s &Address )
 	return entry.Cookie;
 }
 
-// Whether this address really was issued this cookie. Consumed on success, so one cookie buys one
-// probe and a replay earns nothing.
-bool SERVERREGISTRY_ClaimReachCookie( const NETADDRESS_s &Address, const std::string &Cookie )
+// Whether this address really was issued this cookie.
+//
+// [rc4l] `bConsume` decides whether the cookie survives, and the two callers genuinely differ.
+//
+// A reach probe consumes: one cookie buys one probe, so a replay earns nothing and cannot be turned
+// into a packet cannon. A PUNCH must not, because a launcher refreshing its list asks about several
+// servers at once and IssueReachCookie deliberately hands a repeat asker the SAME cookie -- so
+// consuming it meant the first punch of a sweep worked and every other one was told its cookie was
+// wrong. That was visible in production as a stream of refusals from ordinary clients.
+//
+// Not consuming is safe here because of what the cookie proves: that whoever holds it receives mail
+// at that address. That fact does not get less true with reuse, and it stays bounded by the rate
+// limit (kMaxPunchesPerWindow) and by expiry.
+bool SERVERREGISTRY_ClaimReachCookie( const NETADDRESS_s &Address, const std::string &Cookie, bool bConsume )
 {
 	ExpireReachCookies( g_lCurrentTime );
 
@@ -386,7 +399,9 @@ bool SERVERREGISTRY_ClaimReachCookie( const NETADDRESS_s &Address, const std::st
 	{
 		if ( g_ReachCookies[i].Address.Compare( Address ) && ( g_ReachCookies[i].Cookie == Cookie ))
 		{
-			g_ReachCookies.erase( g_ReachCookies.begin() + i );
+			if ( bConsume )
+				g_ReachCookies.erase( g_ReachCookies.begin() + i );
+
 			return true;
 		}
 	}
@@ -479,15 +494,19 @@ static void SERVERREGISTRY_SendServerGroupsToLauncher( const NETADDRESS_s &Addre
 				bSamePort = false;
 		}
 
-		if (( v4 != 1 ) || ( v6 != 1 ) || ( bSamePort == false ))
+		const zx::GroupVerdict Verdict = zx::DecideServerGroup( v4, v6, bSamePort );
+
+		if ( zx::GroupNeedsReport( Verdict ))
 		{
-			// Said out loud, because from the operator's side this looks like nothing at all: their
-			// servers simply keep appearing twice while somebody else's works.
+			// Said out loud, because from the operator's side a wrongly merged server looks like
+			// nothing at all: their listing simply is not there, with nothing to explain it.
 			printf( "! Registry id collision: %u entries claim one id (%d v4, %d v6%s). Not grouping them.\n",
 				static_cast<unsigned int>( it->second.size() ), v4, v6,
 				bSamePort ? "" : ", differing ports" );
-			continue;
 		}
+
+		if ( zx::ShouldSendGroup( Verdict ) == false )
+			continue;
 
 		// 2 bytes of header plus each address; the same accounting the block loop above does, for the
 		// same reason -- a packet over the limit is dropped whole and takes the list terminator with it.
@@ -885,7 +904,8 @@ void SERVERREGISTRY_ParseCommands( BYTESTREAM_s *pByteStream )
 
 			// Second leg. The echo proves the sender is really at this address, because the cookie
 			// only ever went there.
-			if ( SERVERREGISTRY_ClaimReachCookie( AddressFrom, cookie ) == false )
+			// Consumed: one cookie, one probe, so a replay cannot turn this into a packet cannon.
+			if ( SERVERREGISTRY_ClaimReachCookie( AddressFrom, cookie, true ) == false )
 				return;
 
 			// A port of zero, or one we would not dial, is not worth a packet.
@@ -946,7 +966,9 @@ void SERVERREGISTRY_ParseCommands( BYTESTREAM_s *pByteStream )
 				return;
 			}
 
-			const bool bProven = SERVERREGISTRY_ClaimReachCookie( AddressFrom, cookie );
+			// NOT consumed. A launcher refreshing its list asks about several servers at once and was
+			// handed the same cookie for each, so consuming it refused every punch after the first.
+			const bool bProven = SERVERREGISTRY_ClaimReachCookie( AddressFrom, cookie, false );
 
 			// Find the server, if we know it at all. A malformed or unknown address simply fails to
 			// match, which lands on the same refusal as anything else we have not verified.
