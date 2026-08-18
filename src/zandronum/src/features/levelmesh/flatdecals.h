@@ -101,6 +101,11 @@ struct ProjectedDecal
 	// a bare dot product with nothing left to scale. They no longer describe a box -- only which way
 	// up the picture goes once it lands on something.
 	float x, y, z;             // where the blast landed, in MAP space (x, y, z-up)
+	// [rc4l] Where the wall this landed on ENDS, either side of the blast, along the picture's
+	// across-axis. Without it the shader unfolds about an edge it assumes is infinite; in the map
+	// that edge stops at a corner, and a path crossing it beyond the end does not exist. Zero span
+	// means unknown, and the plain single hinge stands.
+	float alongMin, alongMax;
 	float ux, uy, uz;          // across the picture
 	float vx, vy, vz;          // up the picture
 	float nx, ny, nz;          // out of the surface it was fired at

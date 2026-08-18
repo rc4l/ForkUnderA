@@ -101,6 +101,16 @@ CVAR(Int, fua_dg_lightmode, 1, CVAR_ARCHIVE)
 // distance over reach, 3 = the surface normal it read. Every term that can discard a fragment leaves
 // the same evidence -- no mark -- so telling them apart otherwise means changing one and rebuilding.
 CVAR(Int, fua_dg_decaldebug, 0, 0)
+// [rc4l] How a mark spends its picture when it crosses onto another surface.
+//
+// 0 -- CONTROL. The picture is spent going there: the far surface gets extent minus distance, which
+//      for a rocket scorch 20.8 units above a floor is 0.7 units of ground. Seamless, and starved.
+// 1 -- the far surface gets the picture spread over the sphere's cross-section instead, so it is
+//      measured from the join rather than from what is left. Fills the ground; the pattern then
+//      advances at a different rate either side of the join, which is a visible seam.
+// Option A -- letting the mark reach as far as the blast does -- is fua_decal_spread, since it is a
+// property of the mark rather than of the crossing.
+CVAR(Int, fua_dg_decalmode, 0, CVAR_ARCHIVE)
 
 // [rc4l] Mirror every engine frame into the backend window, from the live camera. Off by default:
 // it costs a second render of the scene, and while the backend is incomplete (no sky, no HUD, no
@@ -749,7 +759,7 @@ static const char *kScenePSRedAlpha =
 	/* The picture's own axes, laid into whatever surface this fragment is on. The mark's across-axis
 	   is used where it survives being turned into the plane, and its up-axis where it does not -- on
 	   a floor, "along the wall" still means something while "up the wall" does not. */ \
-	"vec2 fuaDecalUV(vec3 rel, vec3 nrm, vec3 axisU, vec3 axisV, vec3 axisN, out float path) {\n" \
+	"vec2 fuaDecalUV(vec3 rel, vec3 nrm, vec3 axisU, vec3 axisV, vec3 axisN, vec2 span, out float path) {\n" \
 	"    vec3 U = normalize(axisU), V = normalize(axisV), N = normalize(axisN);\n" \
 	/* Where the soot got to, measured as the walk it took to get here.
 	   Two planes meet in a LINE, and creep wraps around that line: the coordinate running ALONG the
@@ -777,7 +787,29 @@ static const char *kScenePSRedAlpha =
 	   away from anything that was shot. */ \
 	"        float across = abs(dot(rel, outward));\n" \
 	"        float along  = dot(rel, edge);\n" \
+	/* [rc4l] The creep belongs to ONE wall -- the one that was hit -- and stops where that wall does.
+	   Unfolding measures a fragment from the hit wall's plane about the edge the two surfaces share,
+	   and that edge is a segment: it runs out at the corner. Past the end the fragment is being
+	   measured from a plane that is no longer there, which is what smeared marks along a corner and
+	   put a mirrored copy of one on the ground beside a pillar. There is no honest coordinate out
+	   there without knowing the next wall, so the mark simply ends at the corner rather than guessing
+	   -- which is also what it looks like: soot spreading over the wall it hit and the ground beneath
+	   that wall, and not round the bend. Zero span means the extent is unknown and nothing is cut. */ \
+	"        if (span.y > span.x && (along < span.x || along > span.y)) {\n" \
+	"            path = 1e9;\n" \
+	"            return vec2(-1.0);\n" \
+	"        }\n" \
+	/* Mode 1 spends the remaining picture over the sphere's cross-section rather than over what is
+	   left after reaching here -- the far surface then gets sqrt(extent^2 - distance^2) of ground
+	   instead of extent minus distance. It meets the join at the same value, so the mark does not
+	   jump; it advances at a different rate either side of it, which is the seam. */ \
 	"        float crossed = perp + across;\n" \
+	"        if (uDecalDebug.y > 0.5) {\n" \
+	"            float halfH2 = 1.0 / max(length(axisV), 1e-6);\n" \
+	"            float on = sqrt(max(halfH2 * halfH2 - perp * perp, 0.0));\n" \
+	"            crossed = (on > 1e-4) ? (perp + (halfH2 - perp) * (across / on))\n" \
+	"                                  : (halfH2 + across);\n" \
+	"        }\n" \
 	/* Which way the picture continues, taken from the hit surface's own coordinate at the corner: the
 	   direction from the impact towards this surface lies in the hit plane, so it reads off directly
 	   against the picture's axes. */ \
@@ -859,6 +891,7 @@ static const char *kDecalVS =
 	"layout(location = 3) out vec3 vAxisN;\n"
 	"layout(location = 4) out vec4 vColor;\n"
 	"layout(location = 5) out float vRadius;\n"
+	"layout(location = 6) out vec2 vWallSpan;\n"
 	"const vec3 kCorner[8] = vec3[8](\n"
 	"    vec3(-1,-1,-1), vec3( 1,-1,-1), vec3( 1, 1,-1), vec3(-1, 1,-1),\n"
 	"    vec3(-1,-1, 1), vec3( 1,-1, 1), vec3( 1, 1, 1), vec3(-1, 1, 1));\n"
@@ -869,6 +902,7 @@ static const char *kDecalVS =
 	"    vCentre = d.centre.xyz;\n"
 	"    vRadius = d.centre.w;\n"
 	"    vAxisU = d.axisU.xyz; vAxisV = d.axisV.xyz; vAxisN = d.axisN.xyz;\n"
+	"    vWallSpan = vec2(d.axisU.w, d.axisV.w);\n"
 	"    vColor = d.color;\n"
 	/* Where this mark's sphere lands on screen. The eight corners of its bounding cube are projected
 	   and the extremes kept -- conservative, which is all a bound has to be. */
@@ -905,6 +939,7 @@ static const char *kDecalPS =
 	"layout(location = 3) in vec3 vAxisN;\n"
 	"layout(location = 4) in vec4 vColor;\n"
 	"layout(location = 5) in float vRadius;\n"
+	"layout(location = 6) in vec2 vWallSpan;\n"
 	"layout(location = 0) out vec4 outColor;\n"
 	FUA_DECAL_RADIAL
 	"void main() {\n"
@@ -937,7 +972,7 @@ static const char *kDecalPS =
 	"    if (gbuf.a < 0.5) discard;\n"
 	"    vec3 nrm = normalize(gbuf.xyz * 2.0 - 1.0);\n"
 	"    float path;\n"
-	"    vec2 t = fuaDecalUV(rel, nrm, vAxisU, vAxisV, vAxisN, path);\n"
+	"    vec2 t = fuaDecalUV(rel, nrm, vAxisU, vAxisV, vAxisN, vWallSpan, path);\n"
 	"    float reach = fuaDecalReach(path, vRadius);\n"
 	"    if (reach <= 0.0) discard;\n"
 	/* Past the end of the picture. Clamped instead of dropped, the edge texel would repeat for
@@ -984,6 +1019,7 @@ static const char *kDecalRedPS =
 	"layout(location = 3) in vec3 vAxisN;\n"
 	"layout(location = 4) in vec4 vColor;\n"
 	"layout(location = 5) in float vRadius;\n"
+	"layout(location = 6) in vec2 vWallSpan;\n"
 	"layout(location = 0) out vec4 outColor;\n"
 	FUA_DECAL_RADIAL
 	"void main() {\n"
@@ -1009,7 +1045,7 @@ static const char *kDecalRedPS =
 	"    if (gbuf.a < 0.5) discard;\n"
 	"    vec3 nrm = normalize(gbuf.xyz * 2.0 - 1.0);\n"
 	"    float path;\n"
-	"    vec2 t = fuaDecalUV(rel, nrm, vAxisU, vAxisV, vAxisN, path);\n"
+	"    vec2 t = fuaDecalUV(rel, nrm, vAxisU, vAxisV, vAxisN, vWallSpan, path);\n"
 	"    float reach = fuaDecalReach(path, vRadius);\n"
 	"    if (reach <= 0.0) discard;\n"
 	/* [rc4l] What the pass is actually computing, on demand. 1 = the picture coordinate, 2 = how far
@@ -2974,7 +3010,8 @@ static bool InvertMatrix4(const float *m, float *out)
 struct DecalInstance
 {
 	float centre[4];   // xyz = where it landed, w = how far it reaches
-	float axisU[4];    // the picture's axes, each divided by its own half-extent
+	float axisU[4];    // the picture's axes, each divided by its own half-extent;
+	                   // U.w and V.w carry where the hit wall ends either side of the blast
 	float axisV[4];
 	float axisN[4];
 	float color[4];    // rgb and alpha, already lit and faded
@@ -3170,6 +3207,7 @@ static void DrawProjectedDecals(Diligent::IDeviceContext *ctx)
 		Diligent::MapHelper<float> cb(ctx, g_decalCB, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD);
 		for (int i = 0; i < 16; i++) cb[i] = invMVP[i];
 		cb[16] = (float)fua_dg_decaldebug;
+		cb[17] = (float)fua_dg_decalmode;
 		cb[17] = cb[18] = cb[19] = 0.f;
 	}
 
@@ -3261,8 +3299,8 @@ static void DrawProjectedDecals(Diligent::IDeviceContext *ctx)
 		// its last two components on the way in, exactly as the centre does.
 		DecalInstance rec;
 		rec.centre[0] = d.x; rec.centre[1] = d.z; rec.centre[2] = d.y; rec.centre[3] = d.radius;
-		rec.axisU[0] = d.ux; rec.axisU[1] = d.uz; rec.axisU[2] = d.uy; rec.axisU[3] = 0.f;
-		rec.axisV[0] = d.vx; rec.axisV[1] = d.vz; rec.axisV[2] = d.vy; rec.axisV[3] = 0.f;
+		rec.axisU[0] = d.ux; rec.axisU[1] = d.uz; rec.axisU[2] = d.uy; rec.axisU[3] = d.alongMin;
+		rec.axisV[0] = d.vx; rec.axisV[1] = d.vz; rec.axisV[2] = d.vy; rec.axisV[3] = d.alongMax;
 		rec.axisN[0] = d.nx; rec.axisN[1] = d.nz; rec.axisN[2] = d.ny; rec.axisN[3] = 0.f;
 		rec.color[0] = d.r; rec.color[1] = d.g; rec.color[2] = d.b; rec.color[3] = d.a;
 		inst.Push(rec);
