@@ -50,6 +50,7 @@
 #include "networkheaders.h"
 #include "networkshared.h"
 #include "features/net/computation/v6mapped_compute.h"
+#include "features/net/computation/v6prefix_compute.h" // [rc4l] v6 bans are prefixes, not wildcards
 #include <sstream>
 #include <errno.h>
 #include <iostream>
@@ -1132,6 +1133,11 @@ bool IPFileParser::parseNextLine( FILE *pFile, IPADDRESSBAN_s &IP, ULONG &BanIdx
 	lPosition = 0;
 	szIP[0] = 0;
 
+	// [rc4l] The caller reuses one entry across lines, so a v6 rule read on line 3 would still be
+	// flagged v6 on line 4 and matched against sixteen stale bytes.
+	IP.bIsV6 = false;
+	IP.iPrefixBits = 0;
+
 	char curChar = fgetc( pFile );
 
 	// Skip whitespace.
@@ -1147,10 +1153,69 @@ bool IPFileParser::parseNextLine( FILE *pFile, IPADDRESSBAN_s &IP, ULONG &BanIdx
 
 	while ( 1 )
 	{
+		// [rc4l] A bracketed token is an IPv6 rule, and the brackets are what make it readable at all:
+		// this loop ends an address at ':', which is every second character of a v6 literal, and at
+		// '/', which is how a prefix length is written. Both would cut the address in half.
+		//
+		// Brackets rather than a new file: the format already carries expiry in <> and a reason after
+		// ':', so one more delimiter keeps every existing v4 line byte-identical and needs no
+		// migration. It is also the convention NETADDRESS_s already prints v6 in.
+		//
+		//     [2001:db8::/64]<01/02/2027 15:04>:name:reason
+		if (( lPosition == 0 ) && ( curChar == '[' ))
+		{
+			curChar = fgetc( pFile );
+			while (( curChar != ']' ) && ( curChar != '\r' ) && ( curChar != '\n' ) && ( curChar != -1 ))
+			{
+				szIP[lPosition++] = curChar;
+				szIP[lPosition] = 0;
+				if ( lPosition == 256 )
+					return ( false );
+				curChar = fgetc( pFile );
+			}
+
+			// Step past the ']' so the loop sees whatever terminator follows it. An unterminated
+			// bracket falls through with curChar already on the newline, and the parse below fails
+			// the line rather than swallowing the rest of the file.
+			if ( curChar == ']' )
+				curChar = fgetc( pFile );
+			continue;
+		}
+
 		if ( curChar == '\r' || curChar == '\n' || curChar == ':' || curChar == '<' || curChar == '/' || curChar == -1 )
 		{
 			if ( lPosition > 0 )
 			{
+				// [rc4l] Tried before the v4 forms, because it is the only one that can succeed on a
+				// v6 token: SetFromString truncates at the first colon, which turns "2001:db8::/64"
+				// into "2001" and then rejects it for having no periods -- a silent wrong answer if it
+				// ever got the first look.
+				if ( zx::ParseV6Prefix( szIP, IP.abPrefix6, &IP.iPrefixBits ))
+				{
+					if ( BanIdx == _listLength )
+					{
+						sprintf( _errorMessage, "parseNextLine: WARNING! Maximum number of IPs (%d) exceeded!\n", _listLength );
+						return ( false );
+					}
+
+					IP.bIsV6 = true;
+					IP.szIP.Clear();
+
+					if ( curChar == '<' )
+					{
+						IP.tExpirationDate = readExpirationDate( pFile );
+						curChar = fgetc( pFile );
+						continue;
+					}
+
+					BanIdx++;
+					if ( curChar == ':' )
+						readReason( pFile, IP.szComment, 128 );
+					else
+						IP.szComment[0] = 0;
+					return ( true );
+				}
+
 				if ( IP.szIP.SetFromString( szIP ))
 				{
 					if ( BanIdx == _listLength )
@@ -1364,6 +1429,12 @@ ULONG IPList::getFirstMatchingEntryIndex( const IPStringArray &szAddress ) const
 {
 	for ( ULONG ulIdx = 0; ulIdx < _ipVector.size(); ulIdx++ )
 	{
+		// [rc4l] Skip v6 rules: they are prefixes and this caller only has four decimal fields, so
+		// there is nothing here that could match one. Without the skip an empty szIP on a v6 entry
+		// would be compared field-wise against a wildcard rule and could match by accident.
+		if ( _ipVector[ulIdx].bIsV6 )
+			continue;
+
 		if ( szAddress.Matches ( _ipVector[ulIdx].szIP ) )
 		{
 			return ( ulIdx );
@@ -1375,8 +1446,28 @@ ULONG IPList::getFirstMatchingEntryIndex( const IPStringArray &szAddress ) const
 
 //*****************************************************************************
 //
+// [rc4l] The address-shaped entry point, and the one that can answer for both families.
+//
+// It used to flatten straight to IPStringArray, which refuses IPv6 -- so every v6 peer arrived here
+// as a cleared array that matches nothing and was unbannable. That was deliberate and safe (the
+// alternative was flattening them all to 0.0.0.0 and banning strangers together), but it was always
+// meant to be temporary.
 ULONG IPList::getFirstMatchingEntryIndex( const NETADDRESS_s &Address ) const
 {
+	if ( Address.bIsIPv6 )
+	{
+		for ( ULONG ulIdx = 0; ulIdx < _ipVector.size(); ulIdx++ )
+		{
+			if ( _ipVector[ulIdx].bIsV6 == false )
+				continue;
+
+			if ( zx::V6AddressInPrefix( Address.abIP6, _ipVector[ulIdx].abPrefix6, _ipVector[ulIdx].iPrefixBits ))
+				return ( ulIdx );
+		}
+
+		return ( size() );
+	}
+
 	IPStringArray szAddress;
 	szAddress.SetFrom ( Address );
 	return getFirstMatchingEntryIndex( szAddress );
@@ -1393,9 +1484,9 @@ bool IPList::isIPInList( const IPStringArray &szAddress ) const
 //
 bool IPList::isIPInList( const NETADDRESS_s &Address ) const
 {
-	IPStringArray szAddress;
-	szAddress.SetFrom ( Address );
-	return isIPInList( szAddress );
+	// Through the address overload, not the string one: that is where the v6 half lives, and going
+	// via IPStringArray would silently drop every v6 peer back to unbannable.
+	return ( getFirstMatchingEntryIndex ( Address ) != size() );
 }
 
 //*****************************************************************************
@@ -1423,6 +1514,9 @@ IPADDRESSBAN_s IPList::getEntry( const ULONG ulIdx ) const
 		ZeroBan.szIP.SetToZeroes();
 		ZeroBan.szComment[0] = 0;
 		ZeroBan.tExpirationDate = 0;
+		ZeroBan.bIsV6 = false;
+		ZeroBan.iPrefixBits = 0;
+		memset( ZeroBan.abPrefix6, 0, sizeof( ZeroBan.abPrefix6 ));
 
 		return ( ZeroBan );
 	}
@@ -1466,7 +1560,17 @@ std::string IPList::getEntryAsString( const ULONG ulIdx, bool bIncludeComment, b
 	if ( ulIdx < _ipVector.size() )
 	{
 		// Address.
-		entryStream << _ipVector[ulIdx].szIP;
+		if ( _ipVector[ulIdx].bIsV6 )
+		{
+			// [rc4l] Bracketed, because this string is written to the ban file AND sent to servers on
+			// the wire, and both are read back by a parser that ends an address at ':'. An unbracketed
+			// v6 rule would be re-read as its first group and silently become a different ban.
+			char szPrefix[48];
+			if ( zx::FormatV6Prefix( _ipVector[ulIdx].abPrefix6, _ipVector[ulIdx].iPrefixBits, szPrefix, sizeof( szPrefix )))
+				entryStream << "[" << szPrefix << "]";
+		}
+		else
+			entryStream << _ipVector[ulIdx].szIP;
 
 		// Expiration date.
 		if ( bIncludeExpiration && _ipVector[ulIdx].tExpirationDate != 0 && _ipVector[ulIdx].tExpirationDate != -1 )
@@ -1542,6 +1646,8 @@ void IPList::addEntry( const IPStringArray &szAddress, const char *pszPlayerName
 
 	// Add the entry and comment into memory.
 	IPADDRESSBAN_s newIPEntry;
+	newIPEntry.bIsV6 = false;
+	newIPEntry.iPrefixBits = 0;
 	newIPEntry.szIP.copyFrom ( szAddress );
 	strncpy( newIPEntry.szComment, PlayerNameAndComment.c_str(), 127 );
 	newIPEntry.szComment[127] = 0;
@@ -1587,10 +1693,124 @@ void IPList::addEntry( const IPStringArray &szAddress, const char *pszPlayerName
 
 //*****************************************************************************
 //
+ULONG IPList::doesV6EntryExist( const unsigned char *prefix, int bits ) const
+{
+	for ( ULONG ulIdx = 0; ulIdx < _ipVector.size( ); ulIdx++ )
+	{
+		if ( _ipVector[ulIdx].bIsV6 == false )
+			continue;
+
+		if (( _ipVector[ulIdx].iPrefixBits == bits ) && ( memcmp( _ipVector[ulIdx].abPrefix6, prefix, 16 ) == 0 ))
+			return ( ulIdx );
+	}
+
+	return ( static_cast<ULONG>( _ipVector.size( )));
+}
+
+//*****************************************************************************
+//
+void IPList::addV6Entry( const unsigned char *prefix, int bits, const char *pszPlayerName, const char *pszComment, std::string &Message, time_t tExpiration )
+{
+	std::stringstream messageStream;
+	char szPrefix[48];
+
+	if ( zx::FormatV6Prefix( prefix, bits, szPrefix, sizeof( szPrefix )) == false )
+	{
+		Message = "Invalid IPv6 prefix.\n";
+		return;
+	}
+
+	std::string PlayerNameAndComment;
+	if ( pszPlayerName && strlen( pszPlayerName ))
+		PlayerNameAndComment = pszPlayerName;
+	if ( pszComment && pszComment[0] )
+	{
+		std::string Comment = pszComment;
+		const char CharsToRemove[] = "\n\r";
+		for ( const char *p = CharsToRemove; *p != '\0'; ++p )
+			Comment.erase( std::remove( Comment.begin( ), Comment.end( ), *p ), Comment.end( ));
+
+		if ( Comment.empty( ) == false )
+		{
+			if ( PlayerNameAndComment.empty( ) == false )
+				PlayerNameAndComment += ":";
+			PlayerNameAndComment += Comment;
+		}
+	}
+
+	ULONG ulIdx = doesV6EntryExist( prefix, bits );
+	if ( ulIdx != _ipVector.size( ))
+	{
+		messageStream << "[" << szPrefix << "] already exists in \"" << _filename << "\"";
+		if (( _ipVector[ulIdx].tExpirationDate != tExpiration )
+			|| ( strnicmp( _ipVector[ulIdx].szComment, PlayerNameAndComment.c_str( ), 127 )))
+		{
+			messageStream << ". Just updating the expiration date and reason.\n";
+			_ipVector[ulIdx].tExpirationDate = tExpiration;
+			strncpy( _ipVector[ulIdx].szComment, PlayerNameAndComment.c_str( ), 127 );
+			_ipVector[ulIdx].szComment[127] = 0;
+			rewriteListToFile( );
+		}
+		else
+			messageStream << " with same expiration and reason.\n";
+
+		Message = messageStream.str( );
+		return;
+	}
+
+	IPADDRESSBAN_s newIPEntry;
+	newIPEntry.bIsV6 = true;
+	newIPEntry.iPrefixBits = bits;
+	memcpy( newIPEntry.abPrefix6, prefix, 16 );
+	newIPEntry.szIP.Clear( );
+	strncpy( newIPEntry.szComment, PlayerNameAndComment.c_str( ), 127 );
+	newIPEntry.szComment[127] = 0;
+	newIPEntry.tExpirationDate = tExpiration;
+	_ipVector.push_back( newIPEntry );
+
+	// [rc4l] Rewrite rather than append. The v4 path appends one line because it can build that line
+	// from the address it was handed; here the line comes from getEntryAsString, which reads the entry
+	// back out of the vector, so the entry has to be in the vector first. Rewriting is also what keeps
+	// one formatter responsible for every rule on disk.
+	if ( rewriteListToFile( ))
+		messageStream << "[" << szPrefix << "] added to \"" << _filename << "\".\n";
+	else
+		messageStream << "IPList::addV6Entry: could not write " << _filename << ": " << _error << "\n";
+
+	Message = messageStream.str( );
+}
+
+//*****************************************************************************
+//
 void IPList::addEntry( const char *pszIPAddress, const char *pszPlayerName, const char *pszComment, std::string &Message, time_t tExpiration )
 {
 	NETADDRESS_s	BanAddress;
 	IPStringArray	szStringBan;
+
+	// [rc4l] v6 first: a v6 literal reaching SetFromString is truncated at its first colon, which
+	// would either fail confusingly or -- for something like "2001:1.2.3.4" -- succeed as the wrong
+	// thing entirely. Accepts both the file's bracketed form and what a person types into addban.
+	{
+		unsigned char prefix[16];
+		int bits = 0;
+		const char *pszCandidate = pszIPAddress;
+		std::string Unbracketed;
+
+		if ( pszCandidate && ( pszCandidate[0] == '[' ))
+		{
+			Unbracketed = pszCandidate + 1;
+			const size_t closing = Unbracketed.find( ']' );
+			if ( closing != std::string::npos )
+				Unbracketed.resize( closing );
+			pszCandidate = Unbracketed.c_str( );
+		}
+
+		if ( pszCandidate && zx::ParseV6Prefix( pszCandidate, prefix, &bits ))
+		{
+			addV6Entry( prefix, bits, pszPlayerName, pszComment, Message, tExpiration );
+			return;
+		}
+	}
 
 	if ( szStringBan.SetFromString( pszIPAddress ))
 		addEntry( szStringBan, pszPlayerName, pszComment, Message, tExpiration );
@@ -1649,6 +1869,42 @@ void IPList::removeEntry( const IPStringArray &szAddress, std::string &Message )
 void IPList::removeEntry( const char *pszIPAddress, std::string &Message )
 {
 	IPStringArray szStringBan;
+
+	// [rc4l] The mirror of addEntry's v6 branch. A ban you can add and cannot delete is worse than one
+	// you cannot add: the rule is live and the only way off the list is editing the file by hand.
+	{
+		unsigned char prefix[16];
+		int bits = 0;
+		const char *pszCandidate = pszIPAddress;
+		std::string Unbracketed;
+
+		if ( pszCandidate && ( pszCandidate[0] == '[' ))
+		{
+			Unbracketed = pszCandidate + 1;
+			const size_t closing = Unbracketed.find( ']' );
+			if ( closing != std::string::npos )
+				Unbracketed.resize( closing );
+			pszCandidate = Unbracketed.c_str( );
+		}
+
+		if ( pszCandidate && zx::ParseV6Prefix( pszCandidate, prefix, &bits ))
+		{
+			std::stringstream messageStream;
+			messageStream << "[" << pszCandidate << "]";
+
+			const ULONG entryIdx = doesV6EntryExist( prefix, bits );
+			if ( entryIdx < _ipVector.size( ))
+			{
+				removeEntry( entryIdx );
+				messageStream << " removed from \"" << _filename << "\".\n";
+			}
+			else
+				messageStream << " not found in \"" << _filename << "\".\n";
+
+			Message = messageStream.str( );
+			return;
+		}
+	}
 
 	if ( szStringBan.SetFromString( pszIPAddress ))
 		removeEntry( szStringBan, Message );

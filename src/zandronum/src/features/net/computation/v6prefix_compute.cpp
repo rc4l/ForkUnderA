@@ -214,4 +214,70 @@ bool ParseV6Prefix( const char *text, unsigned char *prefix, int *bits )
 	return true;
 }
 
+//*****************************************************************************
+//
+bool FormatV6Prefix( const unsigned char *prefix, int bits, char *out, int outSize )
+{
+	if (( prefix == 0 ) || ( out == 0 ) || ( outSize < 48 ))
+		return false;
+
+	// Same range rule as the matcher: a length outside 0..128 is a broken rule, and writing one back
+	// to disk would make the breakage permanent.
+	if (( bits < 0 ) || ( bits > 128 ))
+		return false;
+
+	unsigned short groups[8];
+	for ( int i = 0; i < 8; ++i )
+		groups[i] = static_cast<unsigned short>(( prefix[i * 2] << 8 ) | prefix[i * 2 + 1] );
+
+	// Longest run of zero groups, which is the one "::" replaces. Runs of one are left alone: RFC 5952
+	// forbids compressing a single group, and more practically "::" for one group reads as an
+	// abbreviation of an unknown number of them.
+	int bestStart = -1, bestLen = 0;
+	int runStart = -1, runLen = 0;
+	for ( int i = 0; i < 8; ++i )
+	{
+		if ( groups[i] == 0 )
+		{
+			if ( runStart < 0 ) { runStart = i; runLen = 0; }
+			runLen++;
+			if ( runLen > bestLen ) { bestLen = runLen; bestStart = runStart; }
+		}
+		else
+		{
+			runStart = -1; runLen = 0;
+		}
+	}
+	if ( bestLen < 2 ) { bestStart = -1; bestLen = 0; }
+
+	// "::" carries BOTH of its colons, and the group after it then writes none. Letting the
+	// neighbouring groups supply a colon each is the obvious way to do this and produces "1:2:3:/48"
+	// for a trailing run, because there is no neighbour on that side to supply the second one.
+	char body[46];
+	int written = 0;
+	bool suppressSeparator = true;	// nothing precedes the first thing written
+	body[0] = 0;
+
+	for ( int i = 0; i < 8; )
+	{
+		if ( i == bestStart )
+		{
+			written += snprintf( body + written, sizeof( body ) - written, "::" );
+			i += bestLen;
+			suppressSeparator = true;
+			continue;
+		}
+
+		if ( suppressSeparator == false )
+			written += snprintf( body + written, sizeof( body ) - written, ":" );
+
+		written += snprintf( body + written, sizeof( body ) - written, "%x", groups[i] );
+		suppressSeparator = false;
+		++i;
+	}
+
+	snprintf( out, outSize, "%s/%d", body, bits );
+	return true;
+}
+
 } // namespace zx
