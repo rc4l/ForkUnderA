@@ -339,12 +339,13 @@ void GLWall::DrawDecal(DBaseDecal *decal)
 	// of all of it.
 	FFlatVertex decalQuad[4];
 	for (i = 0; i < 4; i++) decalQuad[i].Set(dv[i].x, dv[i].z, dv[i].y, dv[i].u, dv[i].v);
-	// [rc4l] An impact decal is drawn by the projected pass instead, so it must not be captured
-	// here as well or the same mark is painted twice -- once projected, once as this quad, with the
-	// quad bringing back every problem the projection was for. Decals placed BY THE MAP still come
-	// through: they are authored to sit on one sidedef, they never spread, and nothing about them
-	// layers badly, so the quad is the right shape for them.
-	if (gl_wallmesh && !decal->IsKindOf(RUNTIME_CLASS(DImpactDecal)))
+	// [rc4l] Every decal GL draws, the backend draws, and by the same four vertices.
+	//
+	// Impact decals were excluded here once, while a separate projected pass drew them; when that
+	// pass was removed the exclusion stayed behind and Vulkan simply stopped showing scorch marks
+	// while GL kept showing them. A capture gate that names one subclass has to be deleted with
+	// whatever it was feeding.
+	if (gl_wallmesh)
 	{
 		const bool shadow = decal->RenderStyle.BlendOp == STYLEOP_Shadow;
 		const bool additive = decal->RenderStyle.BlendOp == STYLEOP_Add &&
