@@ -808,12 +808,26 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 		// P_TeleportMove is not the check: teleports deliberately ignore blocking lines, so it
 		// happily lands the player inside a wall and returns true. P_CheckPosition is the one that
 		// answers whether a body of this radius fits there.
+		// [rc4l] Read the height FIRST, because everything below depends on which one is used.
+		//
+		// With a 3D floor there is no single "the floor" at an (x, y): floorz is the slab's top if the
+		// actor is above it and the real floor if it is below. Both the fit check and the teleport
+		// resolve that from the actor's CURRENT z, so asking to stand under a 3D floor while the pawn
+		// is above one was answered with the slab -- the requested height was then discarded for being
+		// below "the floor", and the camera arrived on the roof of the very thing it was sent beneath.
+		// A spot recorded from a live session under a walkway could not be replayed at all.
+		double atZ = 0;
+		const bool haveZ = GetFloat( args, "z", atZ );
+		const fixed_t oldZ = mo->z;
+		if ( haveZ ) mo->z = FLOAT2FIXED( atZ );
+
 		if ( force == 0 && !P_CheckPosition( mo, fx, fy ))
 		{
+			mo->z = oldZ;   // refused, so leave the pawn exactly as it was
 			SendErr( id, "that spot is solid or occupied -- pass force:1 to go there anyway" );
 			return;
 		}
-		P_TeleportMove( mo, fx, fy, mo->z, true );
+		P_TeleportMove( mo, fx, fy, mo->z, true );   // mo->z is the requested height by now
 		// [rc4l] Stand on the floor, unless the caller asked for a specific height.
 		//
 		// Snapping is right for reproducing where somebody was standing, and wrong for looking at
@@ -821,8 +835,9 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 		// onto the floor actually lands under itself. There was no way to get a camera up there, so
 		// that check was being made from eye level at a shallow angle, where a smear and a correct
 		// continuation look the same.
-		double atZ = 0;
-		if ( GetFloat( args, "z", atZ ) && atZ > FIXED2DBL( mo->floorz ) )
+		// Now that the move has resolved the floor AT that height, a requested z above it stands, and
+		// one below it means "put me on the ground here" rather than "ignore what I asked for".
+		if ( haveZ && atZ > FIXED2DBL( mo->floorz ) )
 			mo->z = FLOAT2FIXED( atZ );
 		else
 			mo->z = mo->floorz;
