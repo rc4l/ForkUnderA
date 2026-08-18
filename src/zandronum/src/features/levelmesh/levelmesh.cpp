@@ -877,10 +877,30 @@ CCMD( fua_mesh_verify )
 			box.Push( b );
 		}
 		const float kEps = 0.05f;
+		// [rc4l] Say WHICH pairs, not just how many.
+		//
+		// A count cannot be acted on: two coplanar pieces are a real fight if they are the same surface
+		// twice and harmless if they are neighbours whose bounding boxes merely touch, and the count
+		// does not say which. What distinguishes them is printed instead -- the material, the side each
+		// is seen from, and above all whether they carry the SAME dynamic light. Two copies shaded
+		// identically are invisible; it is the pair that disagrees about its light that appears the
+		// moment a dynamic light reaches the surface, which is exactly when the stripes were reported.
+		int shown = 0;
 		for ( unsigned i = 0; i < box.Size( ); i++ )
 			for ( unsigned j = i + 1; j < box.Size( ); j++ )
 			{
-				if ( zx::levelmesh::ComputeCoplanarOverlap( box[i], box[j], kEps ) ) overlaps++;
+				if ( !zx::levelmesh::ComputeCoplanarOverlap( box[i], box[j], kEps ) ) continue;
+				overlaps++;
+				if ( shown < 8 )
+				{
+					const zx::levelmesh::MeshPiece &pa = pieces[i];
+					const zx::levelmesh::MeshPiece &pb = pieces[j];
+					Printf( "  overlap %d: pieces %u/%u  %s material  light %d/%d  facesDown %d/%d  verts %u/%u\n",
+						shown, i, j, pa.material == pb.material ? "same" : "different",
+						pa.dynLightIndex, pb.dynLightIndex, (int)pa.facesDown, (int)pb.facesDown,
+						pa.range.count, pb.range.count );
+					shown++;
+				}
 			}
 	}
 
