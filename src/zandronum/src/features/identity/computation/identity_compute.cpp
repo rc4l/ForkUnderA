@@ -116,9 +116,9 @@ std::string ClientAuthKeyPath(const std::string &configRoot, int instance)
 	// documentation names. Numbering from the second keeps that stable however many clients they
 	// happen to open.
 	if (instance <= 0)
-		return dir + "client-auth.key";
+		return dir + "client-account-auth.key";
 
-	return dir + "client-auth." + IntToString(instance + 1) + ".key";
+	return dir + "client-account-auth." + IntToString(instance + 1) + ".key";
 }
 
 std::string ServerAuthKeyPath(const std::string &configRoot)
@@ -126,7 +126,7 @@ std::string ServerAuthKeyPath(const std::string &configRoot)
 	if (configRoot.empty())
 		return std::string();
 
-	return WithoutTrailingSlash(configRoot) + "/identity/server-auth.key";
+	return WithoutTrailingSlash(configRoot) + "/identity/server-account-auth.key";
 }
 
 std::string IdentityRootUnder(const std::string &base)
