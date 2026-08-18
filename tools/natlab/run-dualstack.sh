@@ -74,7 +74,9 @@ start_engine host "-host +set sv_hostname DUALSTACK-HOST +set sv_fua_serverregis
 say "Starting the client engine..."
 start_engine client ""
 
-fua() { local peer="$1"; shift; dc exec -T "$peer" node /fuactl/src/cli.mjs "$@" --port 27800 --token natlab; }
+# [rc4l] Under a timeout, because a container whose networking is broken makes exec HANG rather than
+# fail, and a hang inside a retry loop consumes the whole job and reports as a timeout.
+fua() { local peer="$1"; shift; timeout 60 dc exec -T "$peer" node /fuactl/src/cli.mjs "$@" --port 27800 --token natlab; }
 
 say "Waiting for both bridges..."
 for peer in host client; do
@@ -131,29 +133,26 @@ say "PASS: one server, listed twice by the registry, shown once to the player."
 # nothing else -- a v6-only player reached no registry and saw an empty browser with no error. That
 # is invisible on any dual-stack machine, which is every machine we own, so it can only be caught
 # here by taking the IPv4 address away.
-# [rc4l] Every step here is under `timeout`, because taking an address away from a container can wedge
-# the exec session itself -- and a wedged step burns the whole job and reports as exit 143, which says
-# nothing about the thing being tested.
+# [rc4l] The client that never had an IPv4 address at all, which is the only honest way to test a
+# v6-only player: a dual-stack machine can always fall back, so nothing short of the address being
+# absent from the start proves anything.
 say "[4/4] a client with NO IPv4 still finds the server..."
 
-timeout 30 dc exec -T client sh -lc 'ip addr del 203.0.113.30/24 dev $(ip -o -4 addr show | awk "/203.0.113/ {print \$2; exit}") 2>/dev/null; ip -o -4 addr show | grep -q 203.0.113 && exit 1; exit 0' \
-    || fail "could not take IPv4 away from the client, so this case would prove nothing"
+timeout 30 dc exec -T client6 sh -lc 'ip -o -4 addr show | grep -q "inet 1\|inet 2" && exit 1; exit 0' \
+    || fail "client6 has an IPv4 address, so this case would prove nothing"
 
-# It has to be restarted: the engine resolved and bound while it still had IPv4.
-timeout 30 dc exec -T client sh -lc 'pkill -f forkundera || true'
-sleep 3
-start_engine client ""
+start_engine client6 ""
 
 ok6=0
 for _ in $(seq 1 45); do
-    if fua client rpc sim.tic >/dev/null 2>&1; then ok6=1; break; fi
+    if fua client6 rpc sim.tic >/dev/null 2>&1; then ok6=1; break; fi
     sleep 2
 done
 [ "$ok6" = "1" ] || fail "the v6-only client never opened its bridge"
 
 found6=0
 for _ in $(seq 1 20); do
-    if fua client browser --wait 12 2>/dev/null | grep -q 'DUALSTACK-HOST'; then found6=1; break; fi
+    if fua client6 browser --wait 12 2>/dev/null | grep -q 'DUALSTACK-HOST'; then found6=1; break; fi
     sleep 3
 done
 [ "$found6" = "1" ] || fail "a client with no IPv4 could not reach the registry, so it saw nothing"
