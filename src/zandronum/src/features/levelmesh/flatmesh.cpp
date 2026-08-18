@@ -443,6 +443,26 @@ void RegisterDecalTriangles(const FFlatVertex *tris, int count, const void *mate
 	// [rc4l] A shaded decal's texture is an alpha mask and its colour is its own AlphaColor, so the
 	// colour is folded into the vertex light here and the shader shades a white texel. GL does the
 	// same thing with SetObjectColor plus TM_REDTOALPHA.
+	// [rc4l] The dynamic light the SHADER would have added, folded in BEFORE the decal's own colour.
+	//
+	// gl_SetDynSpriteLight hands a decal's dynamic light to GL as a uniform, so a capture that takes
+	// the vertex colour alone arrives unlit -- the same hole the HUD weapon had, where a muzzle flash
+	// lit the room and left the weapon dark.
+	//
+	// Before, not after, because that is where GL puts it. main.fp computes
+	// (texel * uObjectColor) * (vertexLight + dynLight): the decal's own colour multiplies the whole
+	// lit result, dynamic light included. Adding it afterwards instead makes the decal colour scale
+	// only the sector light, and a SCORCH MARK is the case that exposes the difference -- its colour
+	// is black, so the multiply gives zero and the added light is then the entire fragment. Every
+	// burn mark in the room lit up in the colour of whatever light reached it. Multiplied instead,
+	// black stays black however bright the room gets, which is what GL draws.
+	if (dynLight != NULL)
+	{
+		mp.colorR = (mp.colorR + dynLight[0] > 1.f) ? 1.f : mp.colorR + dynLight[0];
+		mp.colorG = (mp.colorG + dynLight[1] > 1.f) ? 1.f : mp.colorG + dynLight[1];
+		mp.colorB = (mp.colorB + dynLight[2] > 1.f) ? 1.f : mp.colorB + dynLight[2];
+	}
+
 	mp.redToAlpha = redToAlpha;
 	if (redToAlpha)
 	{
@@ -463,19 +483,6 @@ void RegisterDecalTriangles(const FFlatVertex *tris, int count, const void *mate
 	// fade colour tints light that should simply get weaker with distance: in a fogged room a BFG's
 	// glow came out carrying the fog's colour in Vulkan and clean in GL.
 	if (additive) mp.fadeColor = 0;
-
-	// [rc4l] The dynamic light the SHADER would have added, folded in here.
-	//
-	// gl_SetDynSpriteLight hands a decal's dynamic light to GL as a uniform and main.fp ADDS it after
-	// the vertex colour, so a capture that takes the vertex colour alone arrives unlit -- the same
-	// hole the HUD weapon had, where a muzzle flash lit the room and left the weapon dark. Added
-	// after the alpha-mask colour rather than before, because that is the order GL adds it in.
-	if (dynLight != NULL)
-	{
-		mp.colorR = (mp.colorR + dynLight[0] > 1.f) ? 1.f : mp.colorR + dynLight[0];
-		mp.colorG = (mp.colorG + dynLight[1] > 1.f) ? 1.f : mp.colorG + dynLight[1];
-		mp.colorB = (mp.colorB + dynLight[2] > 1.f) ? 1.f : mp.colorB + dynLight[2];
-	}
 
 	mp.sortX = sortX; mp.sortY = sortY; mp.sortZ = sortZ;
 
