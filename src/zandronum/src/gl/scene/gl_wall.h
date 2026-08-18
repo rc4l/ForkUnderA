@@ -166,7 +166,6 @@ private:
 	void PutWall(bool translucent);
 	void CheckTexturePosition();
 
-	void SetupLights();
 	bool PrepareLight(texcoord * tcs, ADynamicLight * light);
 	void RenderWall(int textured, unsigned int *store = NULL);
 
@@ -236,6 +235,15 @@ public:
 	// once for a run of identically-stated walls and emit them as one triangle-list draw.
 	// Largest fan BuildFanVertices will emit; a wall needing more falls back to its own draw.
 	enum { MAX_BATCH_FAN_VERTICES = 128 };
+	// [rc4l] Public because BATCHING has to call it, where Draw() used to.
+	//
+	// SetupLights is what fills dynlightindex, and on the GLPASS_ALL path -- the one every machine
+	// with persistently mapped buffers takes -- the only caller was GLWall::Draw. A batched wall
+	// never reaches Draw, so it kept the UINT_MAX that PutWall left behind and told the shader it
+	// had no lights. It also has to run BEFORE FillBatchKey, since the light index is part of the
+	// batch key: computed afterwards, walls with different lights would group together and the run
+	// would apply one wall's lights to all of them.
+	void SetupLights();
 	void FillBatchKey(zx::levelmesh::WallBatchKey &out) const;
 	int  BuildFanVertices(FFlatVertex *out, int maxOut);
 	void SetupBatchState(int pass);

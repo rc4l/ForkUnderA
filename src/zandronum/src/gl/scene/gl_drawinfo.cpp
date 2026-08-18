@@ -888,6 +888,16 @@ void GLDrawList::DrawWallsIndexed(int pass)
 	{
 		GLWall *wp = WallAt(i);
 		if (wp == NULL) continue;
+		// [rc4l] The lights this wall receives, which nothing else on this path computes.
+		//
+		// GLPASS_ALL means "draw it lit", and GLWall::Draw answers that by calling SetupLights
+		// first. Batching replaced Draw with SetupBatchState, which applies dynlightindex but never
+		// fills it -- so every batched wall passed UINT_MAX and came out with no dynamic light at
+		// all. Flats were untouched because DrawFlats still draws them one at a time, which is why
+		// a torch lit the floor under it and left the wall behind it dark.
+		//
+		// Before FillBatchKey, because dynlightindex is part of the key.
+		if (pass == GLPASS_ALL) wp->SetupLights();
 		wp->FillBatchKey(key);
 
 		const zx::levelmesh::MeshRange *mr = (drawitems[i].rendertype == GLDIT_STATICWALL)
@@ -974,6 +984,8 @@ void GLDrawList::DrawWalls(int pass)
 		GLWall *wp = WallAt(i);
 		if (wp == NULL) continue;
 		GLWall &w = *wp;
+		// See DrawWallsIndexed: same omission, same fix, on the path that stages vertices.
+		if (pass == GLPASS_ALL) w.SetupLights();
 		w.FillBatchKey(key);
 
 		// [rc4l] A wall that cannot join the open batch closes it first, so draw order within a
