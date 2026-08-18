@@ -310,15 +310,14 @@ void GLWall::DrawDecal(DBaseDecal *decal)
 	// captured quad. It is a UNIFORM that main.fp adds after the vertex colour, so a capture that
 	// reads the vertex colour alone gets a decal lit by the sector and nothing else -- lit in GL,
 	// flat in the backend, in exactly the rooms where a decal is most visible.
-	// [rc4l] Where the decal IS, which both the light lookup and the sort want.
-	fixed_t decalX, decalY;
-	decal->GetXY(seg->sidedef, decalX, decalY);
 	float decalDyn[3] = { 0.f, 0.f, 0.f };
 	bool haveDecalDyn = false;
 	if (gl_lights && GLRenderer->mLightCount && !gl_fixedcolormap && gl_light_sprites)
 	{
 		// Note: This should be replaced with proper shader based lighting.
-		gl_SetDynSpriteLight(NULL, decalX, decalY, zpos, sub);
+		fixed_t x, y;
+		decal->GetXY(seg->sidedef, x, y);
+		gl_SetDynSpriteLight(NULL, x, y, zpos, sub);
 		gl_RenderState.GetDynLight(decalDyn[0], decalDyn[1], decalDyn[2]);
 		haveDecalDyn = true;
 		if (fua_decal_lightlog)
@@ -379,19 +378,9 @@ void GLWall::DrawDecal(DBaseDecal *decal)
 		const bool redAlpha = !!(decal->RenderStyle.Flags & STYLEF_RedIsAlpha);
 		zx::levelmesh::RegisterDecal(decalQuad, tex, decal->Translation, shadow, additive, a,
 			light, rel, p, redAlpha, redAlpha ? (unsigned int)decal->AlphaColor : 0xffffffu,
-			// [rc4l] Sorted by the IMPACT POINT, not by the middle of the clipped quad.
-			//
-			// The translucent pass orders by distance and settles equal distances by capture order,
-			// which is what puts a `lowerdecal` pair the right way up: scorch first, then the glow that
-			// belongs over it. That only works if the pair actually IS equidistant, and taking the
-			// centre of each quad meant it was not -- the two are clipped to the wall separately, so a
-			// BFG mark logged 800,9,140 for its scorch against 800,0,135 for its lightning. A few units
-			// is enough to decide the sort, so from one side the glow came out farther, was drawn first,
-			// and the black scorch landed on top of it; from the other side the same pair was fine.
-			//
-			// Both decals of a pair are stuck at one point, so that point is the same number for both
-			// and the tie-break gets to do its job. Mesh space is (x, height, north).
-			FIXED2FLOAT(decalX), FIXED2FLOAT(zpos), FIXED2FLOAT(decalY),
+			(decalQuad[0].x + decalQuad[3].x) * 0.5f,
+			(decalQuad[0].z + decalQuad[3].z) * 0.5f,
+			(decalQuad[0].y + decalQuad[3].y) * 0.5f,
 			haveDecalDyn ? decalDyn : NULL);
 	}
 	for (i = 0; i < 4; i++)
