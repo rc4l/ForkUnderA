@@ -87,7 +87,7 @@ for peer in host client; do
 done
 
 # The announce runs on a 30s cycle, and the second one only happens if the AAAA resolved.
-say "[1/3] the registry holds this server under BOTH families..."
+say "[1/4] the registry holds this server under BOTH families..."
 both=0
 for _ in $(seq 1 25); do
     v4=$( dc logs registry 2>&1 | grep -c "Adding 203.0.113.20" || true )
@@ -97,12 +97,12 @@ for _ in $(seq 1 25); do
 done
 [ "$both" = "1" ] || fail "the registry did not receive one announce per family -- the IPv6 announce is not arriving"
 
-say "[2/3] the registry did not call it a collision..."
+say "[2/4] the registry did not call it a collision..."
 if dc logs registry 2>&1 | grep -qi "Registry id collision"; then
     fail "one server's two announces were treated as a collision, so they will never be grouped"
 fi
 
-say "[3/3] the client shows ONE row for it..."
+say "[3/4] the client shows ONE row for it..."
 ok=0
 for _ in $(seq 1 20); do
     rows="$( fua client browser --wait 12 2>/dev/null || true )"
@@ -124,3 +124,35 @@ if [ "$ok" != "1" ]; then
 fi
 
 say "PASS: one server, listed twice by the registry, shown once to the player."
+
+# [rc4l] And the case that has no unit test anywhere: a player with no IPv4 at all.
+#
+# The client resolved its registry with gethostbyname/AF_INET, so it asked for an A record and
+# nothing else -- a v6-only player reached no registry and saw an empty browser with no error. That
+# is invisible on any dual-stack machine, which is every machine we own, so it can only be caught
+# here by taking the IPv4 address away.
+say "[4/4] a client with NO IPv4 still finds the server..."
+
+dc exec -T client sh -lc 'ip addr del 203.0.113.30/24 dev $(ip -o -4 addr show | awk "/203.0.113/ {print \$2; exit}") 2>/dev/null; ip -o -4 addr show | grep -q 203.0.113 && exit 1; exit 0' \
+    || fail "could not take IPv4 away from the client, so this case would prove nothing"
+
+# It has to be restarted: the engine resolved and bound while it still had IPv4.
+dc exec -T client sh -lc 'pkill -f forkundera || true'
+sleep 3
+start_engine client ""
+
+ok6=0
+for _ in $(seq 1 45); do
+    if fua client rpc sim.tic >/dev/null 2>&1; then ok6=1; break; fi
+    sleep 2
+done
+[ "$ok6" = "1" ] || fail "the v6-only client never opened its bridge"
+
+found6=0
+for _ in $(seq 1 20); do
+    if fua client browser --wait 12 2>/dev/null | grep -q 'DUALSTACK-HOST'; then found6=1; break; fi
+    sleep 3
+done
+[ "$found6" = "1" ] || fail "a client with no IPv4 could not reach the registry, so it saw nothing"
+
+say "PASS: a client with no IPv4 reached the registry and found the server."
