@@ -339,9 +339,10 @@ void RegisterSprite(const GLSprite &spr)
 	{
 		float dyn[3] = { 0.f, 0.f, 0.f };
 		gl_RenderState.GetDynLight(dyn[0], dyn[1], dyn[2]);
-		mp.colorR = (mp.colorR + dyn[0] > 1.f) ? 1.f : mp.colorR + dyn[0];
-		mp.colorG = (mp.colorG + dyn[1] > 1.f) ? 1.f : mp.colorG + dyn[1];
-		mp.colorB = (mp.colorB + dyn[2] > 1.f) ? 1.f : mp.colorB + dyn[2];
+		// Carried, not folded: it has to survive the lighting equation the shader applies to vColor,
+		// which is where GL adds it too. Mixed into the colour it would be attenuated by distance and
+		// by how dark the sector is, and a bonus in a dark room came out a quarter dimmer than GL's.
+		mp.dynR = dyn[0]; mp.dynG = dyn[1]; mp.dynB = dyn[2];
 	}
 
 	// [rc4l] Classify the render style into the handful of blends a backend actually needs.
