@@ -1012,6 +1012,69 @@ CCMD( fua_mesh_verify )
 			failures ? "FAIL" : "PASS", live, noBase, overlaps );
 }
 
+//==========================================================================
+//
+// fua_find_3dfloors
+//
+// [rc4l] Where in this level is there a 3D floor to stand on?
+//
+// Searching linedefs for Sector_Set3DFloor does not work: P_Spawn3DFloors consumes the special at
+// level load and clears it, so a map full of them reports none. The 3D floors themselves live on
+// the sector, so this asks the sector.
+//
+// Prints a spot to stand ON each one, because that is what a test needs -- a floor decal is placed
+// at the actor's floorz, and the whole question about 3D floors is whether floorz lands on the
+// surface you are standing on or on the real sector floor below it.
+//
+//==========================================================================
+
+CCMD( fua_find_3dfloors )
+{
+	if ( sectors == NULL || numsectors <= 0 ) { Printf( "no level loaded.\n" ); return; }
+	const int limit = FindLinesArg( argv, "limit", 6 );
+
+	int shown = 0, total = 0;
+	for ( int i = 0; i < numsectors && shown < limit; i++ )
+	{
+		sector_t *sec = &sectors[i];
+		if ( sec->e == NULL ) continue;
+		const unsigned n = sec->e->XFloor.ffloors.Size( );
+		if ( n == 0 ) continue;
+		total++;
+
+		double minx = 1e30, maxx = -1e30, miny = 1e30, maxy = -1e30;
+		for ( int k = 0; k < sec->linecount; k++ )
+		{
+			const line_t *ln = sec->lines[k];
+			const double xs[2] = { FIXED2FLOAT( ln->v1->x ), FIXED2FLOAT( ln->v2->x ) };
+			const double ys[2] = { FIXED2FLOAT( ln->v1->y ), FIXED2FLOAT( ln->v2->y ) };
+			for ( int q = 0; q < 2; q++ )
+			{
+				if ( xs[q] < minx ) minx = xs[q];  if ( xs[q] > maxx ) maxx = xs[q];
+				if ( ys[q] < miny ) miny = ys[q];  if ( ys[q] > maxy ) maxy = ys[q];
+			}
+		}
+		const double cx = ( minx + maxx ) * 0.5, cy = ( miny + maxy ) * 0.5;
+
+		for ( unsigned f = 0; f < n; f++ )
+		{
+			F3DFloor *r = sec->e->XFloor.ffloors[f];
+			if ( r == NULL || r->top.plane == NULL ) continue;
+			// ::top is the CONTROL sector's ceiling plane, which is the surface walked on -- a control
+			// sector is modelled upside down. Getting that backwards is what once left decals floating.
+			// secplane_t has a double overload, and cx/cy are doubles, so take the double answer
+			// rather than round-tripping through fixed point to print it.
+			const double topz = r->top.plane->ZatPoint( cx, cy );
+			const double botz = r->bottom.plane != NULL ? r->bottom.plane->ZatPoint( cx, cy ) : 0.0;
+			Printf( "sector %d 3D floor %u/%u: top %.0f bottom %.0f  flags 0x%x  stand (%.0f, %.0f, %.0f)\n",
+				i, f + 1, n, topz, botz, (unsigned)r->flags,
+				cx, cy, topz );
+		}
+		shown++;
+	}
+	Printf( "fua_find_3dfloors: %d sector(s) shown, %d with 3D floors, of %d\n", shown, total, numsectors );
+}
+
 CCMD( fua_find_sky )
 {
 	if ( sectors == NULL || numsectors <= 0 )
