@@ -487,32 +487,6 @@ bool Identity_SharedSession( const Bytes &ourPrivate, const Bytes &theirPublic, 
 namespace
 {
 
-void RemoveEmptyDir( const std::string &path )
-{
-#ifdef _WIN32
-	_rmdir( path.c_str( ));
-#else
-	rmdir( path.c_str( ));
-#endif
-}
-
-// [rc4l] Where a build before this one put the keys, which is what the migration moves from.
-//
-// M_GetLegacyConfigPath rather than M_GetConfigPath, because the latter now answers "wherever the
-// config lives today", which for a fresh install is the folder we are migrating INTO. Asking it
-// would have pointed the migration at its own destination and quietly found nothing to move.
-std::string LegacyRoot( void )
-{
-	FString path = M_GetLegacyConfigPath( false );
-	FixPathSeperator( path );
-
-	const long slash = path.LastIndexOf( '/' );
-	if ( slash > 0 )
-		path.Truncate( slash );
-
-	return IdentityRootUnder( std::string( path.GetChars( )));
-}
-
 } // namespace
 
 std::string Identity_ConfigRoot( void )
@@ -520,67 +494,6 @@ std::string Identity_ConfigRoot( void )
 	// [rc4l] The same folder the IWAD store uses, so a player's account and their games sit
 	// together rather than in two unrelated corners of the profile.
 	return std::string( M_GetFuaUserPath( ).GetChars( ));
-}
-
-// [rc4l] Move keys written by a build that kept them beside the config file.
-//
-// That put a portable install's accounts next to the exe and a normal one's in a doubled
-// ForkUnderA/ForkUnderA, so neither matched the other and copying the folder moved the player's
-// identity with it. One shared folder per user replaces both.
-//
-// Moved rather than left behind, because the root is where an account IS: reading a new folder
-// without bringing the keys would hand every existing player a new identity and orphan whatever
-// they had earned.
-void Identity_MigrateLegacyRoot( void )
-{
-	const std::string legacy = LegacyRoot( );
-	const std::string current = Identity_ConfigRoot( );
-
-	if ( legacy.empty( ) || current.empty( ) || ( legacy == current ))
-		return;
-
-	const std::string fromDir = legacy + "/identity";
-	const std::string toDir = current + "/identity";
-
-	if ( !DirEntryExists( fromDir.c_str( )))
-		return;
-
-	CreatePath( toDir.c_str( ));
-
-	int moved = 0;
-	for ( int instance = -1; instance < kMaxLocalInstances; ++instance )
-	{
-		// [rc4l] Minus one is the server key, and the rest are this machine's client keys.
-		const std::string leaf = ( instance < 0 )
-			? ServerAuthKeyPath( "x" ).substr( 1 )
-			: ClientAuthKeyPath( "x", instance ).substr( 1 );
-
-		const std::string from = legacy + leaf;
-		const std::string to = current + leaf;
-
-		// Never over a key already in the new folder, so a live account beats a leftover one.
-		if ( !FileExists( from.c_str( )) || FileExists( to.c_str( )))
-			continue;
-
-		if ( rename( from.c_str( ), to.c_str( )) == 0 )
-			moved++;
-	}
-
-	if ( moved > 0 )
-		Printf( "Identity: moved %d key file(s) into the shared folder for this user.\n", moved );
-
-	// [rc4l] The lock sentinels are remade wherever they are needed, so the old folder can go and
-	// stop looking like somewhere accounts still live.
-	for ( int instance = 0; instance < kMaxLocalInstances; ++instance )
-	{
-		const std::string stale = legacy + ClientAuthKeyPath( "x", instance ).substr( 1 ) + ".lock";
-		remove( stale.c_str( ));
-	}
-
-	// Only when empty, which these refuse to be if anything else was put there. Not remove(),
-	// which will not take a directory on Windows.
-	RemoveEmptyDir( fromDir );
-	RemoveEmptyDir( legacy );
 }
 
 } // namespace zx
