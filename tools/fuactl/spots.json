@@ -100,6 +100,17 @@
       "angle": 150.293,
       "pitch": 21.9727,
       "shows": "Aimed down at a wall/floor junction. The mark on the wall is right; where it creeps onto the FLOOR it renders as a narrow oval offset to one side instead of a continuation."
+    },
+    "dynlight-armor": {
+      "map": "MAP01",
+      "x": 160.473,
+      "y": 1222.25,
+      "z": 8,
+      "angle": 57.832,
+      "pitch": 50.2734,
+      "needs": "noclip on, or the armor bonus is picked up on the way in; a dynamic light source lighting the floor",
+      "shows": "Four faults met here, all fixed and all worth re-checking. The floor under the light banded in horizontal stripes in Vulkan (a light sitting exactly on the plane it lit, decided per fragment); GL left walls unlit by any dynamic light (batched walls never had their lights set up); a scorch mark rendered in the light's colour instead of black; and Vulkan lit the armor bonus with the bonus's OWN light, which DONTLIGHTSELF says must not happen.",
+      "correct": "The floor under the light is smooth in both renderers, walls take the light, a burn mark stays black however bright the room is, and the armor bonus sits DARK in the green pool it is casting -- GL is the reference for that last one, not the other way round."
     }
   }
 }

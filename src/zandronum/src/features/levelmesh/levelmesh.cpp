@@ -475,12 +475,28 @@ CCMD( fua_mesh_dupes )
 	// Key on the vertex data itself, quantised to 1/16 of a map unit so a re-bake that lands on a
 	// slightly different float still counts as the same surface -- which is the case that fights.
 	TMap<QWORD, int> seen;
-	int dupes = 0, live = 0;
+	int dupes = 0, live = 0, squashed = 0;
 	int firstA = -1, firstB = -1;
 	for ( int i = 0; i < np; i++ )
 	{
 		const zx::levelmesh::MeshPiece &p = pieces[i];
 		if ( p.range.count == 0 ) continue;
+		// [rc4l] A SQUASHED piece is not a duplicate, however identical it looks.
+		//
+		// BakeSeg collapses a piece a seg no longer produces by rewriting its vertices to all zeros --
+		// it cannot free the range, so it makes it rasterise nothing. Every squashed piece is therefore
+		// byte-identical to every other, and hashing the vertex data counts them all as duplicates of
+		// each other. They draw nothing and fight nothing; counting them made this number useless and
+		// sent a hunt for duplicate GEOMETRY after what is really just retired space.
+		{
+			bool degenerate = true;
+			for ( unsigned v = 0; v < p.range.count && p.range.offset + v < (unsigned)nv; v++ )
+			{
+				const FFlatVertex &fv = verts[p.range.offset + v];
+				if ( fv.x != 0.f || fv.y != 0.f || fv.z != 0.f ) { degenerate = false; break; }
+			}
+			if ( degenerate ) { squashed++; continue; }
+		}
 		live++;
 		QWORD h = 1469598103934665603ULL;
 		for ( unsigned v = 0; v < p.range.count && p.range.offset + v < (unsigned)nv; v++ )
@@ -497,8 +513,8 @@ CCMD( fua_mesh_dupes )
 		}
 		else seen.Insert( h, i );
 	}
-	Printf( "fua_mesh_dupes: %d of %d live pieces duplicate another piece's geometry (%.1f%%)\n",
-			dupes, live, live ? 100.0 * dupes / live : 0.0 );
+	Printf( "fua_mesh_dupes: %d of %d live pieces duplicate another piece's geometry (%.1f%%), %d squashed\n",
+			dupes, live, live ? 100.0 * dupes / live : 0.0, squashed );
 	if ( firstA >= 0 )
 		Printf( "  first pair: pieces %d and %d, ranges %u+%u and %u+%u%s\n",
 				firstA, firstB, pieces[firstA].range.offset, pieces[firstA].range.count,
