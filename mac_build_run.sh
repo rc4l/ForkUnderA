@@ -43,21 +43,8 @@ status() { printf '\033[32m==> %s\033[0m\n' "$*"; }
 warn()   { printf '\033[33mwarning: %s\033[0m\n' "$*"; }
 die()    { printf '\033[31mBUILD-RUN FAILED: %s\033[0m\n' "$*" >&2; exit 1; }
 
-# [rc4l] "Are these two files identical?" -- and crucially, able to say "I could not tell".
-#
-# This used to be a bare `cmp -s a b`, which conflates two very different answers: cmp exits 1 when
-# the files DIFFER and >1 when it could not compare them at all. A cmp that is killed (SIGKILL from a
-# sandbox or the OOM killer exits 137) therefore read as "stale copy slipped through", and the script
-# died on a mismatch that did not exist.
-#
-# That mattered more than a wrong message, because dying here skips the re-sign at the end of the
-# sync. The bundle is then left holding a fresh executable under the OLD signature, and macOS
-# SIGKILLs that on launch with NO output whatsoever -- which looks exactly like the engine crashing
-# at startup. Diagnosing it cost most of a session; the file compare was the last place anyone would
-# look.
-#
-# So: prefer a hash (no huge reads held in one process, and it can print WHAT differed), fall back to
-# cmp, and distinguish "different" from "could not compare".
+# [rc4l] Are these two files identical, and able to say "I could not tell" -- cmp exits 1 for
+# different and >1 for could-not-compare, and conflating them killed the re-sign below.
 # Returns 0 = identical, 1 = genuinely different, 2 = could not determine.
 same_file() {
     local a="$1" b="$2"
@@ -75,10 +62,8 @@ same_file() {
     return 2
 }
 
-# Re-seal the bundle. Refreshing the executable invalidates the app's signature, and an invalidated
-# signature is not a warning at runtime -- it is a silent SIGKILL. Called on the success path and
-# before every die AFTER the copy, so a failed verification never leaves an unlaunchable bundle
-# behind as well as a bad message.
+# [rc4l] Re-seal the bundle, because an invalidated signature is not a warning at runtime but a
+# silent SIGKILL.
 reseal_bundle() {
     command -v codesign >/dev/null 2>&1 || return 0
     codesign --force --deep --sign - "$APP" >/dev/null 2>&1 \
@@ -165,9 +150,8 @@ done
 # compares above ran first).
 reseal_bundle
 
-# [rc4l] And prove it took. An invalid signature is the one failure that produces no output at all --
-# the app is SIGKILLed before it prints a line -- so it must be caught HERE rather than looking like
-# a startup crash later.
+# [rc4l] Prove it took, since an invalid signature produces no output at all and would otherwise look
+# like a startup crash.
 if command -v codesign >/dev/null 2>&1; then
     codesign -v "$MACOS/forkundera" >/dev/null 2>&1 \
         || die "the staged binary's signature is invalid -- macOS would SIGKILL it on launch with no output. Run ./mac_compile.sh to rebuild the bundle."
