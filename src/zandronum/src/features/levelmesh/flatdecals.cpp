@@ -273,8 +273,8 @@ void SpawnWallDecal(const DBaseDecal *decal, const side_t *wall, const FDecalTem
 	const bool flipY = !!(decal->RenderFlags & RF_YFLIP);
 	const float leftOff = mat->GetLeftOffset() * sx;
 	const float topOff  = mat->GetTopOffset()  * sy;
-	const float alongOff = ComputeDecalAlongOffset(halfW, leftOff, flipX);
-	const float upOff = ComputeDecalUpOffset(halfH, topOff, flipY);
+	const float alongOff = ComputeDecalAlongOffset(halfW, leftOff);
+	const float upOff = ComputeDecalUpOffset(halfH, topOff);
 
 	WallDecal &w = g_wall[g_wallNext];
 	w.x = FIXED2FLOAT(dxpos) + ux * alongOff;
