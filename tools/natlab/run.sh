@@ -202,6 +202,15 @@ if [ "$found" != "1" ]; then
         say "PASS (expected): punch defeated by symmetric NAT, client still responsive."
         exit 0
     fi
+    # [rc4l] Before blaming discovery, check the harness is even alive -- a client whose engine died
+    # or whose bridge stopped answering looks exactly like a server that was never found.
+    if ! fua client rpc sim.tic >/dev/null 2>&1; then
+        fail "HARNESS: the client's bridge stopped answering, so this run says nothing about discovery"
+    fi
+    if ! fua host rpc sim.tic >/dev/null 2>&1; then
+        fail "HARNESS: the host's bridge stopped answering, so this run says nothing about discovery"
+    fi
+
     fail "the client never saw the server in the registry-backed list"
 fi
 [ -n "$target" ] || fail "found the server in the list but could not read its address back"
