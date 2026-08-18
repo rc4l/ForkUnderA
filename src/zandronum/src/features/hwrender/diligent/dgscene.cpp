@@ -948,7 +948,13 @@ static const char *kDecalPS =
 	   somewhere looks identical whichever term stopped it, so without this the only way to tell them
 	   apart is to change one and rebuild. */ \
 	"    if (uDecalDebug.x > 0.5) {\n" \
-	"        if (uDecalDebug.x < 1.5) outColor = vec4(fract(t), 0.0, 1.0);\n" \
+	/* Out of range shown as BLUE rather than wrapped. fract() made every value outside 0..1 look like
+	   a legal one, so a coordinate running off the picture was indistinguishable from one sitting in
+	   the middle of it -- which is exactly the thing being looked for. */ \
+	"        if (uDecalDebug.x < 1.5) {\n" \
+	"            bool off = any(lessThan(t, vec2(0.0))) || any(greaterThan(t, vec2(1.0)));\n" \
+	"            outColor = off ? vec4(0.0, 0.0, 1.0, 1.0) : vec4(t, 0.0, 1.0);\n" \
+	"        }\n" \
 	"        else if (uDecalDebug.x < 2.5) outColor = vec4(vec3(path / max(vRadius, 1.0)), 1.0);\n" \
 	"        else outColor = vec4(nrm * 0.5 + 0.5, 1.0);\n" \
 	"        return;\n" \
@@ -1011,7 +1017,13 @@ static const char *kDecalRedPS =
 	   somewhere looks identical whichever term stopped it, so without this the only way to tell them
 	   apart is to change one and rebuild. */ \
 	"    if (uDecalDebug.x > 0.5) {\n" \
-	"        if (uDecalDebug.x < 1.5) outColor = vec4(fract(t), 0.0, 1.0);\n" \
+	/* Out of range shown as BLUE rather than wrapped. fract() made every value outside 0..1 look like
+	   a legal one, so a coordinate running off the picture was indistinguishable from one sitting in
+	   the middle of it -- which is exactly the thing being looked for. */ \
+	"        if (uDecalDebug.x < 1.5) {\n" \
+	"            bool off = any(lessThan(t, vec2(0.0))) || any(greaterThan(t, vec2(1.0)));\n" \
+	"            outColor = off ? vec4(0.0, 0.0, 1.0, 1.0) : vec4(t, 0.0, 1.0);\n" \
+	"        }\n" \
 	"        else if (uDecalDebug.x < 2.5) outColor = vec4(vec3(path / max(vRadius, 1.0)), 1.0);\n" \
 	"        else outColor = vec4(nrm * 0.5 + 0.5, 1.0);\n" \
 	"        return;\n" \
