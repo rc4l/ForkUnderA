@@ -74,10 +74,10 @@ const USAGE = `fuactl <command>
   renderer-info --port P [--token T]   renderer identity + whether GL timer queries work on this driver
   ui <action> [args] --port P [--token T]   drive the UI: read (menu as text), find <label>, nav <keys>, click <x> <y>, drag, type <text>, look --yaw D --pitch D, screenshot [name], exec <ccmd>
   diligent --port P [--frames N] [--shot FILE] [--sweep DIR]   drive the Diligent (Vulkan) backend: bake the level mesh, upload geometry, optional swapchain screenshot, optional debug-view sweep (lm0..lm4.png in DIR), the matched Diligent-vs-GL benchmark, and with --scale a GPU-time probe at 1x..100x the visible geometry
-  play [--port P] [--map M] [--file a.pk3,b.pk3] [--preset ID --variant V] [--gl] [--side-by-side] [--rt] [--monsters] [--lock]   a build to walk around in, Vulkan live in the window; stays up until Ctrl-C
+  play [--restart] [--port P] [--map M] [--file a.pk3,b.pk3] [--preset ID --variant V] [--gl] [--side-by-side] [--rt] [--monsters] [--lock]   a build to walk around in, Vulkan live in the window; stays up until Ctrl-C
   build [--root DIR]                 compile the engine and stage it, failing loudly instead of staging a stale binary
   shot <tag> [--port P] [--spot NAME | --at x,y,z --face yaw,pitch]   matched GL/Vulkan pair from a running instance, one camera, sim frozen
-  shoot --port P --tag T --at x,y,z --face yaw,pitch [--look x,y,z] [--weapon W] [--map M] [--after TICS]   fire at a junction and capture a GL/Vulkan pair (--look frames a point, --after catches transient effects before they fade)
+  shoot [--port P] --tag T --at x,y,z --face yaw,pitch [--look x,y,z] [--weapon W] [--map M] [--after TICS]   fire at a junction and capture a GL/Vulkan pair (--look frames a point, --after catches transient effects before they fade)
   sweep [--maps "MAP01 MAP07"] [--port P]   matched pairs across several maps, ranked by how much the renderers disagree
   doorshot <tag> [--port P] [--at x,y,z --face yaw] [--mid TICS]   a door caught MID-SWING in both renderers, plus a before pair
   look [--port P] [--at x,y,z --face yaw,pitch]   what the crosshair is on and what the level mesh holds for it
@@ -520,6 +520,24 @@ async function main() {
     // later can find this instance without depending on a pipe still existing.
     case "play": {
       const sessionFile = path.resolve(process.cwd(), ".play-session");
+      // [rc4l] --restart: quit whatever this session file points at before launching.
+      //
+      // Every engine change needs the instance replaced, and doing that by hand is where the two
+      // instances come from: the old one still holding the port, the new one silently falling back
+      // to another, and a capture then taken from whichever answered. One flag, one instance.
+      if (flags.restart) {
+        const prev = shot.readSession(sessionFile);
+        if (prev && prev.port) {
+          try {
+            const old = new BridgeClient();
+            await old.connect(Number(prev.port), { token: prev.token || null });
+            await old.waitHello();
+            await old.rpc("console.exec", { text: "quit" }).catch(() => {});
+            old.close();
+            console.error(`stopped the instance on port ${prev.port}`);
+          } catch { /* nothing was listening: already gone */ }
+        }
+      }
       const inst = await play({
         port: flags.port ? Number(flags.port) : undefined,
         map: flags.map, iwad: flags.iwad, file: flags.file,
@@ -565,8 +583,11 @@ async function main() {
     //
     //   fuactl shoot --port P --tag T --at x,y,z --face yaw,pitch [--look x,y,z] [--weapon W] [--map M]
     case "shoot": {
-      if (!flags.port || !flags.at || !flags.face) {
-        console.error("usage: fuactl shoot --port P --tag T --at x,y,z --face yaw,pitch [--look x,y,z] [--weapon W] [--map M] [--back N] [--up N] [--after TICS]");
+      const shootSession = (!flags.port && shot.readSession(path.resolve(process.cwd(), ".play-session"))) || null;
+      const shootPort = flags.port ? Number(flags.port) : (shootSession ? Number(shootSession.port) : 0);
+      const shootToken = flags.token || (shootSession ? shootSession.token : null);
+      if (!shootPort || !flags.at || !flags.face) {
+        console.error("usage: fuactl shoot [--port P] --tag T --at x,y,z --face yaw,pitch [--look x,y,z] [--weapon W] [--map M] [--back N] [--up N] [--after TICS]");
         process.exit(2);
       }
       const [x, y, z] = String(flags.at).split(",").map(Number);
@@ -574,7 +595,7 @@ async function main() {
       const weapon = flags.weapon || "RocketLauncher";
       const tag = flags.tag || "shot";
       const c = new BridgeClient();
-      await c.connect(Number(flags.port), { token: flags.token || null });
+      await c.connect(shootPort, { token: shootToken });
       await c.waitHello();
       try {
         await cap.sandbox(c, { map: flags.map || "MAP01" });

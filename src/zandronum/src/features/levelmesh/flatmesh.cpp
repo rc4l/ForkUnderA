@@ -365,13 +365,30 @@ void RegisterDecal(const FFlatVertex *quad, const void *material, int translatio
                    bool redToAlpha, unsigned int alphaColor,
                    float sortX, float sortY, float sortZ)
 {
-	if (quad == NULL || material == NULL) return;
+	if (quad == NULL) return;
 
 	// GL draws the decal as a 4-vertex TRIANGLE FAN, so the triangles are (0,1,2) and (0,2,3) --
 	// not the strip order the sprite path uses, which would fold the quad in half.
 	FFlatVertex tris[6];
 	tris[0] = quad[0]; tris[1] = quad[1]; tris[2] = quad[2];
 	tris[3] = quad[0]; tris[4] = quad[2]; tris[5] = quad[3];
+
+	RegisterDecalTriangles(tris, 6, material, translation, shadow, additive, alpha,
+		lightlevel, rel, colormap, redToAlpha, alphaColor, sortX, sortY, sortZ);
+}
+
+// [rc4l] The same piece, for a mark that is not a quad.
+//
+// A projected decal is whatever geometry fell inside its box, clipped -- three vertices or thirty,
+// spread over a wall and the floor under it. Everything below the vertex list is identical to the
+// glued quad's, and it stayed identical by being one function rather than two that drift.
+void RegisterDecalTriangles(const FFlatVertex *tris, int count, const void *material, int translation,
+                            bool shadow, bool additive, float alpha,
+                            int lightlevel, int rel, const FColormap &colormap,
+                            bool redToAlpha, unsigned int alphaColor,
+                            float sortX, float sortY, float sortZ)
+{
+	if (tris == NULL || count < 3 || material == NULL) return;
 
 	MeshPiece mp;
 	mp.range.offset = 0;
@@ -407,7 +424,7 @@ void RegisterDecal(const FFlatVertex *quad, const void *material, int translatio
 	}
 	mp.sortX = sortX; mp.sortY = sortY; mp.sortZ = sortZ;
 
-	DynAppend(tris, 6, mp);
+	DynAppend(tris, count, mp);
 	g_decalsThisFrame++;
 }
 

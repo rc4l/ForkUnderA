@@ -105,6 +105,16 @@ struct FDecalAnimator
 	virtual ~FDecalAnimator ();
 	virtual DThinker *CreateThinker (DBaseDecal *actor, side_t *wall) const = 0;
 
+	// [rc4l] How this animator will fade a decal, asked directly rather than by type-testing.
+	//
+	// A dynamic_cast looked like the natural way to spot a fader, and it takes the engine down: this
+	// is built without RTTI, so __RTDynamicCast throws __non_rtti_object on the first decal spawned
+	// -- fire one rocket, lose the engine. A virtual costs a pointer and cannot be got wrong.
+	//
+	// Only a projected decal with no engine decal behind it needs this: a mark on a floor, where
+	// vanilla creates nothing to read an alpha from. See zx::levelmesh::SpawnProjectedDecalHere.
+	virtual bool GetFadeTiming (int &decayStartTics, int &decayTimeTics) const { (void)decayStartTics; (void)decayTimeTics; return false; }
+
 	FName Name;
 };
 
@@ -136,6 +146,12 @@ struct FDecalFaderAnim : public FDecalAnimator
 {
 	FDecalFaderAnim (const char *name) : FDecalAnimator (name) {}
 	DThinker *CreateThinker (DBaseDecal *actor, side_t *wall) const;
+	bool GetFadeTiming (int &decayStartTics, int &decayTimeTics) const
+	{
+		decayStartTics = DecayStart;
+		decayTimeTics = DecayTime;
+		return true;
+	}
 
 	int DecayStart;
 	int DecayTime;
@@ -1186,6 +1202,17 @@ void DDecalFader::Tick ()
 		int fadeDistance = TimeToEndDecay - TimeToStartDecay;
 		TheDecal->Alpha = Scale (StartTrans, distanceToEnd, fadeDistance);
 	}
+}
+
+// [rc4l] A fader's timing, for a mark that has to fade itself.
+//
+// Only faders answer. The other animators -- stretchers, sliders, colour changers -- do not remove
+// the decal or touch its alpha, so there is nothing here for them, and pretending otherwise faded
+// out marks that are meant to be permanent.
+bool GetDecalFadeTiming (const FDecalAnimator *anim, int &decayStartTics, int &decayTimeTics)
+{
+	if (anim == NULL) return false;
+	return anim->GetFadeTiming (decayStartTics, decayTimeTics);
 }
 
 DThinker *FDecalFaderAnim::CreateThinker (DBaseDecal *actor, side_t *wall) const

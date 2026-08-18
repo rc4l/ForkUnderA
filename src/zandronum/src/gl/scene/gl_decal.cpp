@@ -69,6 +69,8 @@ struct DecalVertex
 //
 //
 //==========================================================================
+EXTERN_CVAR(Bool, fua_projdecals)
+
 void GLWall::DrawDecal(DBaseDecal *decal)
 {
 	line_t * line=seg->linedef;
@@ -339,13 +341,17 @@ void GLWall::DrawDecal(DBaseDecal *decal)
 	// of all of it.
 	FFlatVertex decalQuad[4];
 	for (i = 0; i < 4; i++) decalQuad[i].Set(dv[i].x, dv[i].z, dv[i].y, dv[i].u, dv[i].v);
-	// [rc4l] Every decal GL draws, the backend draws, and by the same four vertices.
+	// [rc4l] Every decal GL draws, the backend draws -- unless something else is already drawing it.
 	//
-	// Impact decals were excluded here once, while a separate projected pass drew them; when that
-	// pass was removed the exclusion stayed behind and Vulkan simply stopped showing scorch marks
-	// while GL kept showing them. A capture gate that names one subclass has to be deleted with
-	// whatever it was feeding.
-	if (gl_wallmesh)
+	// With fua_projdecals on, an impact decal reaches the mesh as a PROJECTION cut from the geometry
+	// it landed on, so capturing the quad as well would paint the same mark twice, the second time in
+	// the shape the projection exists to replace. Decals placed BY THE MAP are not projected -- they
+	// are authored to sit on one sidedef and never spread -- so they always come through here.
+	//
+	// The gate is a cvar and not a constant because that is what makes the two comparable: flip
+	// fua_projdecals in the console and the same mark is drawn the other way, in the same frame.
+	const bool projected = fua_projdecals && decal->IsKindOf(RUNTIME_CLASS(DImpactDecal));
+	if (gl_wallmesh && !projected)
 	{
 		const bool shadow = decal->RenderStyle.BlendOp == STYLEOP_Shadow;
 		const bool additive = decal->RenderStyle.BlendOp == STYLEOP_Add &&

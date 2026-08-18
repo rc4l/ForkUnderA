@@ -85,6 +85,7 @@
 #include "features/hwrender/hud2d.h"
 #include "features/fov-interp/fovinterp.h"
 #include "features/fua-caching/fua_caching.h"
+#include "features/levelmesh/projdecals.h"   // [rc4l] projected mesh decals
 #include "mcp_glperf.h" // [rc4l] GPU render-pass timer anchors (no-op unless FUA_MCP_BRIDGE)
 
 //==========================================================================
@@ -362,6 +363,10 @@ void FGLRenderer::CreateScene()
 	// camera moves, so it is dropped here and rebuilt as this frame generates it.
 	zx::levelmesh::DynClear();
 	zx::levelmesh::ClearSprites();
+	// [rc4l] features/levelmesh: projected decals are re-emitted every frame like sprites, from a
+	// list of their own rather than from what the BSP walk happens to reach. Their geometry was cut
+	// once, at the impact; what changes per frame is only the alpha the engine has faded them to.
+	zx::levelmesh::RegisterProjectedDecals();
 	// [rc4l] features/levelmesh: geometry whose sector moved is no longer valid, and this has to run
 	// BEFORE the BSP walk so anything still visible re-bakes in the same frame. See
 	// InvalidateMovedSectors -- a door's far face is never walked, so without this it kept the
