@@ -57,6 +57,7 @@
 #include "features/server-hosting/computation/punchbroker_compute.h"
 #include "features/federated-server-registry/computation/reachcookie_compute.h"
 #include <sstream>
+#include <map>
 #include <set>
 // [rc4l] The reach-cookie table. Named rather than leaned on transitively -- this builds on GCC in a
 // container as well as MSVC, and the two disagree about what <set> drags in.
@@ -421,6 +422,100 @@ void SERVERREGISTRY_RequestServerVerification( const SERVER_s &Server )
 }
 //*****************************************************************************
 //
+// [rc4l] Tell a launcher which of the addresses it just received are the same server.
+//
+// One server announces once per family from one socket, so the registry sees two entries and, until
+// now, so did every player: the same server listed twice, once per address. It cannot be worked out
+// from the addresses themselves -- two addresses being one machine is exactly what a stranger would
+// claim to have their row merged with somebody else's -- so it is carried by the id each server
+// derives from its own secret, and that id never leaves this daemon.
+//
+// Written after the server list and before its terminator, and only for a launcher that asked. The
+// list is positional, so an older client meeting SRSC_SERVERGROUP would read what follows as
+// addresses.
+static void SERVERREGISTRY_SendServerGroupsToLauncher( const NETADDRESS_s &AddressFrom,
+	unsigned long &ulPacketNum, unsigned long &ulSizeOfPacket, unsigned long ulMaxPacketSize )
+{
+	std::map<std::string, std::vector<NETADDRESS_s> > Groups;
+
+	for ( std::set<SERVER_s, SERVERCompFunc>::const_iterator it = g_Servers.begin(); it != g_Servers.end(); ++it )
+	{
+		if ( it->RegistryId.empty() )
+			continue;
+
+		if (( it->bEnforcesBanList == false ) && ( g_bHideBanIgnoringServers == true ))
+			continue;
+
+		Groups[it->RegistryId].push_back( it->Address );
+	}
+
+	for ( std::map<std::string, std::vector<NETADDRESS_s> >::const_iterator it = Groups.begin(); it != Groups.end(); ++it )
+	{
+		// One address is not a group. Saying so anyway would be a packet per server for no reason.
+		if ( it->second.size() < 2 )
+			continue;
+
+		// [rc4l] WHAT A REAL GROUP LOOKS LIKE, and refusing anything else.
+		//
+		// A dual-stack server announces from ONE socket, so it can only ever produce exactly two
+		// entries -- one IPv4, one IPv6 -- on the same port. Anything else means two different
+		// servers arrived at the same id, which happens for real: copy a machine image and you copy
+		// server-account-auth.key with it, so a clone on the same port derives the same id. An
+		// attacker who observed an announce could replay one too.
+		//
+		// Merging those would hide somebody's server, so the guard fails the SAFE way: no grouping,
+		// two rows, which is exactly what players see today. A wrongly-merged row is invisible; a
+		// duplicate row is merely untidy.
+		int v4 = 0, v6 = 0;
+		bool bSamePort = true;
+		for ( size_t i = 0; i < it->second.size(); ++i )
+		{
+			if ( it->second[i].bIsIPv6 )
+				v6++;
+			else
+				v4++;
+
+			if ( it->second[i].usPort != it->second[0].usPort )
+				bSamePort = false;
+		}
+
+		if (( v4 != 1 ) || ( v6 != 1 ) || ( bSamePort == false ))
+		{
+			// Said out loud, because from the operator's side this looks like nothing at all: their
+			// servers simply keep appearing twice while somebody else's works.
+			printf( "! Registry id collision: %u entries claim one id (%d v4, %d v6%s). Not grouping them.\n",
+				static_cast<unsigned int>( it->second.size() ), v4, v6,
+				bSamePort ? "" : ", differing ports" );
+			continue;
+		}
+
+		// 2 bytes of header plus each address; the same accounting the block loop above does, for the
+		// same reason -- a packet over the limit is dropped whole and takes the list terminator with it.
+		const unsigned long ulGroupSize = 2 + ( 19 * it->second.size() );
+
+		if ( ulSizeOfPacket + ulGroupSize > ulMaxPacketSize - 1 )
+		{
+			g_MessageBuffer.ByteStream.WriteByte( SRSC_ENDSERVERLISTPART );
+			NETWORK_LaunchPacket( &g_MessageBuffer, AddressFrom );
+
+			g_MessageBuffer.Clear();
+			++ulPacketNum;
+			ulSizeOfPacket = 5;
+			g_MessageBuffer.ByteStream.WriteLong( SRSC_BEGINSERVERLISTPART );
+			g_MessageBuffer.ByteStream.WriteByte( ulPacketNum );
+		}
+
+		ulSizeOfPacket += ulGroupSize;
+
+		g_MessageBuffer.ByteStream.WriteByte( SRSC_SERVERGROUP );
+		g_MessageBuffer.ByteStream.WriteByte( static_cast<int>( it->second.size() ));
+		for ( size_t i = 0; i < it->second.size(); ++i )
+			it->second[i].WriteToStream( &g_MessageBuffer.ByteStream );
+	}
+}
+
+//*****************************************************************************
+//
 void SERVERREGISTRY_SendServerIPToLauncher( const NETADDRESS_s &Address, BYTESTREAM_s *pByteStream )
 {
 	// Tell the launcher the IP of this server on the list.
@@ -607,6 +702,13 @@ void SERVERREGISTRY_ParseCommands( BYTESTREAM_s *pByteStream )
 			// must never instruct something that cannot answer.
 			newServer.bSupportsPunch = ( pByteStream->ReadByte() > 0 );
 
+			// [rc4l] And the id it groups its own two listings by, appended after that byte on the
+			// same terms: absent from anything older, and absent means "do not group me".
+			{
+				const char *pszId = pByteStream->ReadString();
+				newServer.RegistryId = ( pszId != NULL ) ? pszId : "";
+			}
+
 			std::set<SERVER_s, SERVERCompFunc>::iterator currentServer = g_Servers.find ( newServer );
 
 			// This is a new server; add it to the list.
@@ -680,6 +782,7 @@ void SERVERREGISTRY_ParseCommands( BYTESTREAM_s *pByteStream )
 					// [BB] The server possibly changed the ban setting, so update it.
 					currentServer->bEnforcesBanList = newServer.bEnforcesBanList;
 					currentServer->bSupportsPunch = newServer.bSupportsPunch;
+					currentServer->RegistryId = newServer.RegistryId;
 				}
 			}
 
@@ -955,6 +1058,8 @@ void SERVERREGISTRY_ParseCommands( BYTESTREAM_s *pByteStream )
 				return;
 			}
 
+			bool bWantsServerGroups = false;
+
 			// [BB] The launcher only sends the protocol version with LAUNCHER_SERVERREGISTRY_CHALLENGE.
 			if ( lCommand == LAUNCHER_SERVERREGISTRY_CHALLENGE )
 			{
@@ -967,6 +1072,12 @@ void SERVERREGISTRY_ParseCommands( BYTESTREAM_s *pByteStream )
 					NETWORK_LaunchPacket( &g_MessageBuffer, AddressFrom );
 					return;
 				}
+
+				// [rc4l] One optional trailing byte: does this launcher understand being told which
+				// addresses are one server? Absent on everything older, and absent must mean no --
+				// the list is positional, so an opcode an old client does not know would be read as
+				// an address and corrupt the rest of the packet.
+				bWantsServerGroups = ( pByteStream->ReadByte() > 0 );
 			}
 
 			printf( "-> Sending server list to %s.\n", AddressFrom.ToString() );
@@ -1042,6 +1153,10 @@ void SERVERREGISTRY_ParseCommands( BYTESTREAM_s *pByteStream )
 					SERVERREGISTRY_SendServerIPBlockToLauncher ( serverAddress, serverPortList, &g_MessageBuffer.ByteStream );
 				}
 				g_MessageBuffer.ByteStream.WriteByte( 0 ); // [BB] Terminate SRSC_SERVERBLOCK by sending 0 ports.
+
+				if ( bWantsServerGroups )
+					SERVERREGISTRY_SendServerGroupsToLauncher( AddressFrom, ulPacketNum, ulSizeOfPacket, ulMaxPacketSize );
+
 				g_MessageBuffer.ByteStream.WriteByte( SRSC_ENDSERVERLIST );
 				NETWORK_LaunchPacket( &g_MessageBuffer, AddressFrom );
 				return;

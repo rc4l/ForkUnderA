@@ -104,6 +104,15 @@ enum
 	// instead of sitting out a timeout to discover what the registry already knew.
 	SRSC_PUNCHRESULT,
 
+	// [rc4l] "These addresses are one server." Sent after the list, and ONLY to a client that said it
+	// understands this -- the list format is positional, so an older client meeting an opcode it does
+	// not know would read the rest of the packet as addresses.
+	//
+	// Carries addresses and never the id they were grouped by. The id is derived from a server's
+	// secret precisely so that nobody can announce with somebody else's and have their listing merged
+	// away, and publishing it would hand that ability to everyone.
+	SRSC_SERVERGROUP,
+
 	// [rc4l] Written in the verdict slot of SRSC_PUNCHRESULT to mean "this is the cookie leg,
 	// echo it back" rather than a decision. Negative so it can never collide with a PunchVerdict,
 	// which is an enum counting up from zero.

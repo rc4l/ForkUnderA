@@ -228,6 +228,15 @@ typedef struct
 	bool			bFirstChallengeSent;
 	LONG			lPunchLedMS;
 
+	// [rc4l] The other address this same server is listed under, when the registry told us so.
+	//
+	// A dual-stack host announces once per family from one socket, so the registry holds two entries
+	// for it and, without this, a player sees the same server twice. It cannot be worked out locally:
+	// two addresses being one machine is precisely what somebody would claim in order to have their
+	// row merged with a rival's, which is why it is only ever believed from the registry.
+	bool			bHasGroupPeer;
+	NETADDRESS_s	GroupPeer;
+
 	// [rc4l] This server answered, and we hid it because it runs a different build.
 	//
 	// Kept separately because the hiding is done by setting AS_INACTIVE, which is also what an empty
@@ -375,6 +384,13 @@ void			BROWSER_PunchKnockFrom( const NETADDRESS_s &From );
 // which is what a simultaneous open means. This verdict arrives from the registry at the moment it
 // instructs the server, so it is the best clock either side has.
 void			BROWSER_PunchBrokered( void );
+
+// [rc4l] The registry saying two addresses are one server, so the browser can show one row.
+//
+// Only the registry may say this. It knows because both announces carried an id the server derived
+// from its own secret; nothing on this side could tell, and anything that guessed would be a way to
+// make somebody else's server disappear.
+void			BROWSER_MarkSameServer( const NETADDRESS_s &First, const NETADDRESS_s &Second );
 
 // [rc4l] Per-row version of the fact BROWSER_GetNumHumanPlayers already uses in aggregate.
 bool			BROWSER_IsPlayerBot( ULONG ulServer, ULONG ulPlayer );

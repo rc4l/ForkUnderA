@@ -218,6 +218,35 @@ bool LoadOrCreate( const std::string &path, const char *what, zx::KeyPair &out )
 namespace zx
 {
 
+std::string Identity_ServerRegistryId( int port )
+{
+	// No identity means no grouping, which is the right answer rather than an invented id: an id
+	// derived from nothing would be the same on every such server and merge them all into one row.
+	if ( g_ServerKey.privateKey.empty( ) || ( port <= 0 ))
+		return std::string( );
+
+	static const char kTag[] = "FUA-REGISTRY-ID-v1";
+
+	char szPort[16];
+	snprintf( szPort, sizeof( szPort ), "%d", port );
+
+	SHA256_CTX ctx;
+	SHA256_Init( &ctx );
+	SHA256_Update( &ctx, kTag, sizeof( kTag ) - 1 );
+
+	// [rc4l] The SECRET, not the public key. The public half is handed to every player who joins, so
+	// hashing it would produce an id anyone could recompute and then claim as their own -- and the
+	// only thing this id does is decide which listings get merged together.
+	SHA256_Update( &ctx, &g_ServerKey.privateKey[0], g_ServerKey.privateKey.size( ));
+	SHA256_Update( &ctx, szPort, strlen( szPort ));
+
+	Bytes digest;
+	digest.resize( 32 );
+	SHA256_Final( &digest[0], &ctx );
+
+	return ToHex( digest );
+}
+
 bool Identity_RandomBytes( size_t count, Bytes &out )
 {
 	out.resize( count );
