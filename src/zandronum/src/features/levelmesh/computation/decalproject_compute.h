@@ -74,14 +74,6 @@ struct DecalBox
 bool BuildDecalBasis(const float vel[3], const float surfN[3], float maxSkewCos,
                      float outRight[3], float outUp[3], float outAxis[3]);
 
-// [rc4l] Can this surface have been sprayed from that direction?
-//
-// dot(n, axis) is negative when the surface faces the incoming projectile. `minFacing` is how
-// square-on it has to be: 0 accepts everything up to exactly edge-on, which lets a wall perfectly
-// parallel to the projection contribute a zero-area sliver of stretched texture. A small positive
-// value drops those.
-bool AcceptSurfaceForDecal(const float n[3], const float axis[3], float minFacing);
-
 // [rc4l] Where the box is centred, given where Doom stopped the projectile.
 //
 // A missile is an AXIS-ALIGNED BOX in Doom, not a point, so it explodes with its centre up to
@@ -113,75 +105,14 @@ void DecalOriginFromImpact(const float pos[3], const float axis[3], float radius
 void ComputeDecalBoxDepth(float size, float cosTheta, float spreadFraction,
                           float &outNear, float &outFar);
 
-// [rc4l] Clip a convex polygon to the box, in box-local coordinates.
+// [rc4l] Mirror the picture, by negating the axis it is read along.
 //
-// Input is world-space points; output is (u, v, w) triples where u and v are along right and up and
-// w is along axis, all relative to origin. Sutherland-Hodgman against the six slabs, so the result
-// stays convex and the caller can fan-triangulate it.
-//
-// Returns the number of output points, or 0 if the polygon is entirely outside. `outXYZW` must have
-// room for at least (count + 6) * 3 floats: each plane can add at most one vertex.
-int ClipPolygonToDecalBox(const float *worldPoly, int count, const DecalBox &box,
-                          float *outLocal, int maxOut);
-
-// [rc4l] Cut an already-clipped polygon into one slice of depth.
-//
-// Depth is the direction of travel, so a surface lying ALONG the projection -- the floor in front of
-// a wall that was just marked, the far face of a corner -- covers the whole range of it, and the
-// box's own limit then ends that surface's share in a dead straight line across open floor. A mark
-// does not end in a straight line; it runs out.
-//
-// Slicing lets each slice be drawn at its own strength, so the run-out is a ramp rather than an
-// edge. It is per-slice and not per-fragment because a mesh piece is the smallest thing that can
-// carry an alpha, and a handful of slices is enough at the sizes decals actually are.
-//
-// Input and output are both box-local (u, v, w). Returns the number of points, 0 if this slice is
-// empty. `out` needs room for count + 2 points.
-int ClipLocalPolygonToDepthBand(const float *local, int count, float wLo, float wHi,
-                                float *out, int maxOut);
-
-// [rc4l] How much of the blast is left this far from where it landed.
-//
-// Full strength anywhere inside the picture's own radius, so the surface that was actually hit is
-// never touched -- its mark is the picture, at the size the decal says, and fading it would be
-// second-guessing the artist. Beyond that the mark is reaching onto geometry the picture does not
-// itself cover, and it runs out smoothly by `outerRadius`.
-//
-// Radial rather than per-surface: a fade that is constant across each surface puts a visible STEP
-// down the middle of a corner, because the two faces take different constants. Distance from the
-// impact is continuous across a corner, so the ramp is too.
-float DecalRadialFade(const float local[3], float pictureRadius, float outerRadius);
-
-// [rc4l] Turn the picture's axes into the plane of the surface being marked.
-//
-// Reading the picture by projecting it flat along the direction of travel puts the angle of the hit
-// into the mark, which is the point -- but on a surface nearly edge-on to that direction it also
-// spreads the graphic by 1/cos(theta), and a grazing hit smears into a streak. Laying the axes into
-// the surface instead makes the mark advance with REAL distance from the impact, so it cannot
-// stretch however oblique the hit was.
-//
-// Whichever axis better survives being turned into the plane is the one kept; the other is rebuilt
-// square to it, which is what stops a surface facing along one of the picture's axes from collapsing
-// the mark into a line.
-//
-// THE HANDEDNESS IS NOT FREE TO CHOOSE. BuildDecalBasis leaves up = cross(axis, right), so for a
-// head-on hit -- where the surface normal is exactly -axis -- the rebuild has to reproduce those same
-// two axes. Get the sign backwards and the picture is mirrored, which on a symmetric scorch is
-// completely invisible and on an asymmetric one is a mark nobody can place. That is why the head-on
-// case is a test rather than a comment.
-void LayPictureIntoSurface(const float right[3], const float up[3], const float axis[3],
-                           const float surfaceNormal[3], float outU[3], float outV[3]);
-
-// [rc4l] The picture coordinate of a box-local point. 0..1 across the box, whatever it landed on.
-void DecalUV(const float local[3], const DecalBox &box, float &u, float &v);
-
-// [rc4l] Mirror the picture without moving it.
-//
-// DECALDEF's randomflipx/randomflipy mirror the graphic. Flipping by negating the offset of the
-// quad instead -- which an earlier version did -- MOVES the mark to the other side of the impact,
-// so a BFG's scorch and its glow, flipped independently, ended up as two marks side by side. Doing
-// it in the texture coordinate cannot move anything.
-void DecalFlipUV(bool flipX, bool flipY, float &u, float &v);
+// DECALDEF's randomflipx/randomflipy exist so repeated marks do not look stamped. Flipping the AXIS
+// is the whole of it: the box is symmetric, so negating `right` mirrors the picture across its own
+// centre and moves nothing. An earlier version flipped by negating the quad's offset from the
+// impact instead, which MOVED the mark -- a BFG's scorch and its glow flipped independently and
+// ended up as two marks side by side.
+void ApplyDecalFlip(bool flipX, bool flipY, float right[3], float up[3]);
 
 }} // namespace zx::levelmesh
 
