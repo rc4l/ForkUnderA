@@ -2,20 +2,6 @@
 # Copyright (C) 2026 rc4l
 
 # [rc4l] Does a player behind one router actually reach a server behind another?
-#
-# Nothing else in CI answers that. The unit tests cover the punch DECISIONS (punchbroker_compute has
-# 32 of them) and the build jobs prove the code compiles, but neither puts a packet through a NAT.
-# The only test that did was a person with a laptop on a phone hotspot, run by hand and therefore
-# never per release.
-#
-# Runs as its own job so it costs nothing in wall-clock next to the platform builds, and gates
-# release.yml so a regression in discovery or hole punching cannot ship. It is a REQUIRED check for
-# publishing and advisory nowhere: a broken punch is invisible to every other signal we have, which
-# is exactly why it must not be the check people wave through.
-#
-# Only Linux, and that is not a limitation to fix: the code under test is the shared engine
-# networking, and the test needs network namespaces, which is a Linux capability rather than a
-# platform coverage question.
 
 name: NAT lab
 
@@ -32,9 +18,7 @@ jobs:
       matrix:
         include:
           # [rc4l] The permissive host router: its mapping accepts anyone, so the joiner's ordinary
-          # challenge already reaches it. This case proves DISCOVERY end to end -- listed, found,
-          # joined, confirmed by the server -- and deliberately proves nothing about punching, since
-          # the punch is not what carried the packet.
+          # challenge already reaches it.
           - host_nat: fullcone
             client_nat: portrestricted
           # The common home router on both ends, and the hard case: whichever packet lands on the far
@@ -62,8 +46,7 @@ jobs:
             libopenal-dev libsndfile1-dev libmpg123-dev
 
       # [rc4l] The bridge is what makes this assertable: without it the lab could only watch
-      # processes stay alive, which is true of a client that never connected. Built here rather than
-      # reused from the release artifacts precisely BECAUSE releases must not carry the bridge.
+      # processes stay alive, which is true of a client that never connected.
       - name: Build the engine with the control bridge
         run: ZX_MCP_BRIDGE=1 ./linux_compile.sh --no-package
 

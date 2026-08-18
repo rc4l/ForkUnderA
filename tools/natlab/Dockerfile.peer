@@ -1,25 +1,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 rc4l
 
-# [rc4l] A peer in the NAT lab: the real engine, plus just enough to run it with no screen and drive
-# it from a script.
-#
-# The engine is COPIED IN already built rather than compiled here. The lab is testing network
-# behaviour, and a compile inside the lab image would add five minutes to every iteration of a test
-# that is not about compiling.
-#
-# Both peers use the SAME image and the same binary. The server is that binary with -host; the client
-# is that binary without it. Using a SERVERONLY build for the host half would have been smaller and
-# would have quietly stopped testing the thing under test: the punch is answered by code that only
-# the full build's client half ever calls.
-# [rc4l] MUST match the glibc of whatever built the binary, which is the CI runner (ubuntu-latest,
-# 24.04). Copying a prebuilt engine into an older base is how you get
-#
-#     /engine/forkundera: /lib/x86_64-linux-gnu/libc.so.6: version `GLIBC_2.38' not found
-#
-# and an engine that never reaches its first line, reported as "never opened its bridge". The release
-# tarball is built on 22.04 deliberately (older glibc runs on more distros); this image is not a
-# release artifact and has the opposite requirement.
+# [rc4l] A peer in the NAT lab: the real engine, plus just enough to run it with no screen and
+# drive it from a script.
 FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive

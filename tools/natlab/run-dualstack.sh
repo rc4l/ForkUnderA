@@ -3,20 +3,6 @@
 # Copyright (C) 2026 rc4l
 
 # [rc4l] Prove that one server listed under two addresses shows up as ONE row.
-#
-# WHY THIS EXISTS. A server announces once per family from a single socket, so the registry legitimately
-# holds two entries for it, and without grouping every dual-stack server appears twice. Nothing else in
-# CI can catch that, because nothing else can make an IPv6 announce happen: it requires a registry whose
-# hostname carries both an A and an AAAA record, which no deployed registry has.
-#
-# That gap has already cost real bugs, all of which were invisible rather than loud:
-#
-#   * the IPv6 announce went to a byte-swapped port and had never once arrived, on any build;
-#   * a registry named by an IPv6 address was dropped from the list in silence;
-#   * grouping and its collision guard had never executed at all.
-#
-# The failures this asserts against are all silent by nature, which is exactly why they need a machine
-# watching for them rather than a person remembering to look.
 
 set -euo pipefail
 

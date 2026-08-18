@@ -2,15 +2,6 @@
 # Copyright (C) 2026 rc4l
 
 # [rc4l] The dedupe fixture: one server, two families, one row.
-#
-# Deliberately NOT the NAT topology. Dedupe has nothing to do with traversal -- it is about a server
-# announcing once per family from one socket and the registry recognising the two listings as one
-# machine. Routing that through masquerading routers would add NAT66 to a test that does not need it
-# and would fail for reasons that have nothing to do with what is being checked.
-#
-# What it does need, and what nothing else in this repo provides, is a registry HOSTNAME that resolves
-# to both an A and an AAAA record -- because that is the only thing that makes an engine send the
-# second announce at all. extra_hosts supplies both.
 
 services:
   registry:

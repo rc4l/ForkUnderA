@@ -3,20 +3,6 @@
 # Copyright (C) 2026 rc4l
 
 # [rc4l] Prove that two players behind two different routers can find each other and connect.
-#
-# WHAT THIS REPLACES. The only honest way to test this used to be two machines on two real networks
-# -- in practice a laptop on a phone hotspot, run by hand, once, by someone who remembered. That is
-# not a gate, it is a ritual, and it cannot run per release. Everything here exists so the answer
-# arrives from CI instead.
-#
-# WHAT MAKES IT A REAL TEST. Neither peer can reach the other. They are on `internal: true` networks
-# behind masquerading routers that drop unsolicited inbound (see router.sh). So a connection that
-# succeeds could only have been carried by the mechanism under test. The most valuable line in this
-# whole directory is the DROP rule; if it ever stops applying, every assertion below keeps passing
-# and stops meaning anything, which is why assert_nat_is_real runs FIRST and fails the run if the
-# fixture has gone soft.
-#
-# Usage:  ./run.sh [--host-nat portrestricted|symmetric] [--client-nat ...] [--keep]
 
 set -euo pipefail
 
@@ -71,10 +57,7 @@ dump_diagnostics() {
     echo "--- host engine log (punch) ---"
     dc exec -T host sh -lc 'grep -iE "punch|registry" /tmp/engine.log | tail -20' 2>&1 || true
 
-    # [rc4l] Counters, not inference. If both sides fire a punch and the joiner still cannot get in,
-    # the only question left is whether the router dropped the packet -- and the DROP rule's own
-    # counter answers it, while conntrack shows whether the mapping the punch was supposed to create
-    # actually exists and in which direction.
+    # [rc4l] Counters, not inference.
     for r in router_host router_client; do
         echo "--- $r: FORWARD chain (watch the DROP counter) ---"
         dc exec -T "$r" iptables -L FORWARD -n -v 2>&1 || true
@@ -203,10 +186,7 @@ target=""
 for _ in $(seq 1 20); do
     listing="$( fua client browser --wait 12 2>/dev/null || true )"
     if echo "$listing" | grep -q 'NATLAB-HOST'; then
-        # [rc4l] Take the address the BROWSER holds rather than naming one here. Behind masquerade the
-        # host's port is whatever its router chose, and the registry recorded the address the announce
-        # arrived from -- so a hardcoded "router:10666" is a guess that happens to be right only while
-        # the NAT preserves the port. It is also what a player does: they click the row.
+        # [rc4l] Take the address the BROWSER holds rather than naming one here.
         target="$( echo "$listing" | grep -A 2 'NATLAB-HOST' | grep -oE '"address": *"[^"]+"' | head -1 | sed 's/.*"address": *"//; s/"$//' )"
         found=1
         break
@@ -214,9 +194,7 @@ for _ in $(seq 1 20); do
     sleep 3
 done
 if [ "$found" != "1" ]; then
-    # [rc4l] Under symmetric NAT this is the CORRECT outcome, not a failure. The server's row never
-    # answers because the punch cannot land, so the name never arrives. Demanding it here would be
-    # demanding that the internet work differently.
+    # [rc4l] Under symmetric NAT this is the CORRECT outcome, not a failure.
     if [ "$EXPECT_PUNCH" = "0" ]; then
         say "expected: symmetric NAT means the server's row never answers, so it stays nameless."
         fua client rpc sim.tic >/dev/null 2>&1 \
