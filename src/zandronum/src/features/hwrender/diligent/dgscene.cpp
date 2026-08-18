@@ -543,13 +543,22 @@ static const char *kSceneVS =
 	"vec3 fuaDynLight(vec3 base) {\n" \
 	"    int n = int(uLightParams.x);\n" \
 	"    if (n <= 0) return base;\n" \
-	/* [rc4l] A zero normal means "this surface has no side", and the side test is skipped for it.
-	   A sprite is a billboard: it turns to face the camera and has no fixed facing of its own, so
-	   asking which side of it a light is on has no answer. Answering anyway -- the default normal
-	   was straight up -- lit only the fragments BELOW the light and cut the rest off along a dead
-	   straight horizontal line at the light's own height. On a rocket explosion, which carries a
-	   large light at its centre, that is a hard seam across the middle of the fireball. */ \
-	"    bool sided = dot(vPlane.xyz, vPlane.xyz) > 0.0001;\n" \
+	/* [rc4l] A zero normal means the CPU already did this piece's dynamic lighting -- take none here.
+
+	   Sprites carry no normal, because a billboard turns to face the camera and has no side for a
+	   light to be in front of or behind. That much was already true; what it also means is that a
+	   sprite's dynamic light does not come from this loop at all. gl_SetDynSpriteLight computes it
+	   on the CPU and RegisterSprite folds the result into the vertex colour, so adding the lights
+	   again here counts them twice AND ignores everything that function knows.
+
+	   DONTLIGHTSELF is what makes that visible. An item does not light itself: gl_SetDynSpriteLight
+	   skips a light whose target is the actor being lit, so Freedoom MAP01's armor bonus is supposed
+	   to sit DARK in the green pool its own glow throws on the floor. GL draws it that way. This loop
+	   knows nothing of owners, lit it with its own light, and the sprite came out green: 48.7 against
+	   GL's 15.4 in the green channel, with the floor beneath it agreeing in both.
+
+	   So the marker now carries its full meaning -- no side, and no light from here. */ \
+	"    if (dot(vPlane.xyz, vPlane.xyz) <= 0.0001) return base;\n" \
 	"    vec3 dyn = vec3(0.0);\n" \
 	"    for (int i = 0; i < n; i++) {\n" \
 	"        vec4 lp = lights[i*2];\n" \
@@ -564,7 +573,7 @@ static const char *kSceneVS =
 	   is the same quantity, computed from numbers that do not vary across the face. A light lying
 	   exactly in the plane gives exactly zero and is KEPT, which is what gl_flats.cpp does: it drops
 	   a light only when the plane is strictly on the wrong side of it. */ \
-	"        if (sided && dot(vPlane.xyz, lp.xyz) - vPlane.w < 0.0) continue;\n" \
+	"        if (dot(vPlane.xyz, lp.xyz) - vPlane.w < 0.0) continue;\n" \
 	"        float a = max(lp.w - length(d), 0.0) / lp.w;\n" \
 	"        if (a <= 0.0) continue;\n" \
 	"        if (lc.a > 0.5) dyn -= lc.rgb * a;\n" \
@@ -2633,11 +2642,19 @@ CCMD( fua_dg_lights )
 		const float radius = light->GetRadius( ) * gl_lights_size;
 		if ( radius <= 0.f ) continue;
 		const float lz = FIXED2FLOAT( light->z );
-		Printf( "light %d: pos %.1f, %.1f, %.1f  radius %.0f  rgb %d,%d,%d%s  dz-from-floor %+.2f%s",
+		// [rc4l] DONTLIGHTSELF decides whether GL or the backend is the one in the wrong when an
+		// item carrying its own glow comes out unlit. gl_SetDynSpriteLight skips a light whose
+		// target is the very actor being lit when the flag is set, so an armor bonus standing in a
+		// green pool of its OWN making is supposed to stay dark -- and a renderer that lights it is
+		// the one that needs fixing, not the one that does not.
+		Printf( "light %d: pos %.1f, %.1f, %.1f  radius %.0f  rgb %d,%d,%d%s  dz-from-floor %+.2f  "
+				"owner %s%s%s",
 			n, FIXED2FLOAT( light->x ), FIXED2FLOAT( light->y ), lz, radius,
 			light->GetRed( ), light->GetGreen( ), light->GetBlue( ),
 			light->IsSubtractive( ) ? " SUBTRACTIVE" : "",
 			lz - floorz,
+			( light->target != NULL ) ? light->target->GetClass( )->TypeName.GetChars( ) : "none",
+			( light->flags4 & MF4_DONTLIGHTSELF ) ? " DONTLIGHTSELF" : "",
 			( fabsf( lz - floorz ) < 1.f ) ? "   <-- ON THE FLOOR PLANE\n" : "\n" );
 		n++;
 	}
