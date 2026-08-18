@@ -31,7 +31,11 @@ WAN_IF="${NAT_WAN_IF:-eth0}"
 echo "router: flavour=$FLAVOUR wan=$WAN_IF"
 
 # Forwarding is off by default in the container's netns; without this the box is a wall, not a router.
-sysctl -w net.ipv4.ip_forward=1 >/dev/null
+# compose sets it too, and whichever gets there first is fine -- but a read-only /proc/sys must not
+# take the container down, so this is best-effort and the check below is what actually decides.
+sysctl -w net.ipv4.ip_forward=1 >/dev/null 2>&1 || true
+[ "$(cat /proc/sys/net/ipv4/ip_forward 2>/dev/null || echo 0)" = "1" ] \
+    || { echo "router: ip_forward is off and could not be set -- this box would silently be a wall" >&2; exit 1; }
 
 case "$FLAVOUR" in
     symmetric)
