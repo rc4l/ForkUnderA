@@ -89,10 +89,8 @@ if [ "${ZX_WITH_SYMBOLS:-0}" = "1" ]; then
              -DCMAKE_EXE_LINKER_FLAGS=-Wl,--build-id )
 fi
 
-# [rc4l] Dev-only in-engine MCP control bridge, same opt-in as mac_compile.sh (ZX_MCP_BRIDGE=1). OFF
-# by default so release builds carry no remote-control surface. The NAT lab needs it on both peers:
-# driving and asserting from OUTSIDE the engine is the only way an automated test can say "this
-# client actually connected" rather than "the process is still running".
+# [rc4l] Dev-only in-engine MCP control bridge, same opt-in as mac_compile.sh (ZX_MCP_BRIDGE=1), off
+# by default so release builds carry no remote-control surface.
 BRIDGE_ARGS=( -DFUA_MCP_BRIDGE=OFF )
 if [ "${ZX_MCP_BRIDGE:-0}" = "1" ]; then
   BRIDGE_ARGS=( -DFUA_MCP_BRIDGE=ON )

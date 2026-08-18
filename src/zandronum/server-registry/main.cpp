@@ -379,19 +379,8 @@ std::string SERVERREGISTRY_IssueReachCookie( const NETADDRESS_s &Address )
 	return entry.Cookie;
 }
 
-// Whether this address really was issued this cookie.
-//
-// [rc4l] `bConsume` decides whether the cookie survives, and the two callers genuinely differ.
-//
-// A reach probe consumes: one cookie buys one probe, so a replay earns nothing and cannot be turned
-// into a packet cannon. A PUNCH must not, because a launcher refreshing its list asks about several
-// servers at once and IssueReachCookie deliberately hands a repeat asker the SAME cookie -- so
-// consuming it meant the first punch of a sweep worked and every other one was told its cookie was
-// wrong. That was visible in production as a stream of refusals from ordinary clients.
-//
-// Not consuming is safe here because of what the cookie proves: that whoever holds it receives mail
-// at that address. That fact does not get less true with reuse, and it stays bounded by the rate
-// limit (kMaxPunchesPerWindow) and by expiry.
+// [rc4l] Whether this address really was issued this cookie, with the purpose deciding whether it
+// survives -- see cookieclaim_compute for why a probe consumes and a punch must not.
 bool SERVERREGISTRY_ClaimReachCookie( const NETADDRESS_s &Address, const std::string &Cookie,
 	zx::CookiePurpose Purpose )
 {
@@ -444,17 +433,8 @@ void SERVERREGISTRY_RequestServerVerification( const SERVER_s &Server )
 }
 //*****************************************************************************
 //
-// [rc4l] Tell a launcher which of the addresses it just received are the same server.
-//
-// One server announces once per family from one socket, so the registry sees two entries and, until
-// now, so did every player: the same server listed twice, once per address. It cannot be worked out
-// from the addresses themselves -- two addresses being one machine is exactly what a stranger would
-// claim to have their row merged with somebody else's -- so it is carried by the id each server
-// derives from its own secret, and that id never leaves this daemon.
-//
-// Written after the server list and before its terminator, and only for a launcher that asked. The
-// list is positional, so an older client meeting SRSC_SERVERGROUP would read what follows as
-// addresses.
+// [rc4l] Tell a launcher which addresses are the same server, carried by an id each server derives
+// from its own secret so that nobody can claim somebody else's.
 static void SERVERREGISTRY_SendServerGroupsToLauncher( const NETADDRESS_s &AddressFrom,
 	unsigned long &ulPacketNum, unsigned long &ulSizeOfPacket, unsigned long ulMaxPacketSize )
 {
@@ -477,17 +457,8 @@ static void SERVERREGISTRY_SendServerGroupsToLauncher( const NETADDRESS_s &Addre
 		if ( it->second.size() < 2 )
 			continue;
 
-		// [rc4l] WHAT A REAL GROUP LOOKS LIKE, and refusing anything else.
-		//
-		// A dual-stack server announces from ONE socket, so it can only ever produce exactly two
-		// entries -- one IPv4, one IPv6 -- on the same port. Anything else means two different
-		// servers arrived at the same id, which happens for real: copy a machine image and you copy
-		// server-account-auth.key with it, so a clone on the same port derives the same id. An
-		// attacker who observed an announce could replay one too.
-		//
-		// Merging those would hide somebody's server, so the guard fails the SAFE way: no grouping,
-		// two rows, which is exactly what players see today. A wrongly-merged row is invisible; a
-		// duplicate row is merely untidy.
+		// [rc4l] A real group is exactly one v4 and one v6 on one port, and anything else means two
+		// servers reached the same id -- which a copied machine image does honestly.
 		int v4 = 0, v6 = 0;
 		bool bSamePort = true;
 		for ( size_t i = 0; i < it->second.size(); ++i )
@@ -505,8 +476,8 @@ static void SERVERREGISTRY_SendServerGroupsToLauncher( const NETADDRESS_s &Addre
 
 		if ( zx::GroupNeedsReport( Verdict ))
 		{
-			// Said out loud, because from the operator's side a wrongly merged server looks like
-			// nothing at all: their listing simply is not there, with nothing to explain it.
+			// [rc4l] Said out loud, since a wrongly merged server looks like nothing at all to its
+			// operator.
 			printf( "! Registry id collision: %u entries claim one id (%d v4, %d v6%s). Not grouping them.\n",
 				static_cast<unsigned int>( it->second.size() ), v4, v6,
 				bSamePort ? "" : ", differing ports" );
@@ -515,8 +486,7 @@ static void SERVERREGISTRY_SendServerGroupsToLauncher( const NETADDRESS_s &Addre
 		if ( zx::ShouldSendGroup( Verdict ) == false )
 			continue;
 
-		// 2 bytes of header plus each address; the same accounting the block loop above does, for the
-		// same reason -- a packet over the limit is dropped whole and takes the list terminator with it.
+		// [rc4l] A packet over the limit is dropped whole and takes the list terminator with it.
 		const unsigned long ulGroupSize = 2 + ( 19 * it->second.size() );
 
 		if ( ulSizeOfPacket + ulGroupSize > ulMaxPacketSize - 1 )
@@ -729,13 +699,12 @@ void SERVERREGISTRY_ParseCommands( BYTESTREAM_s *pByteStream )
 			// must never instruct something that cannot answer.
 			newServer.bSupportsPunch = zx::AnnounceFlagFromByte( pByteStream->ReadByte() );
 
-			// [rc4l] And the id it groups its own two listings by, appended after that byte on the
-			// same terms: absent from anything older, and absent means "do not group me".
+			// [rc4l] The id it groups its own listings by, absent meaning "do not group me".
 			{
 				const char *pszId = pByteStream->ReadString();
 
-				// Refused unless it is exactly the shape this engine writes. The id decides which
-				// listings get merged, so a truncated or foreign value would hide a server.
+				// [rc4l] Refused unless exactly the shape this engine writes, since a bad id hides a
+				// server.
 				newServer.RegistryId = zx::AnnounceIdIsGroupable( pszId ) ? pszId : "";
 			}
 
@@ -915,7 +884,7 @@ void SERVERREGISTRY_ParseCommands( BYTESTREAM_s *pByteStream )
 
 			// Second leg. The echo proves the sender is really at this address, because the cookie
 			// only ever went there.
-			// Consumed: one cookie, one probe, so a replay cannot turn this into a packet cannon.
+			// [rc4l] Consumed: one cookie, one probe, so a replay is not a packet cannon.
 			if ( SERVERREGISTRY_ClaimReachCookie( AddressFrom, cookie, zx::CookiePurpose::ReachProbe ) == false )
 				return;
 
@@ -977,8 +946,8 @@ void SERVERREGISTRY_ParseCommands( BYTESTREAM_s *pByteStream )
 				return;
 			}
 
-			// NOT consumed. A launcher refreshing its list asks about several servers at once and was
-			// handed the same cookie for each, so consuming it refused every punch after the first.
+			// [rc4l] Not consumed, since a sweep asks about several servers with the one cookie it was
+			// given.
 			const bool bProven = SERVERREGISTRY_ClaimReachCookie( AddressFrom, cookie, zx::CookiePurpose::Punch );
 
 			// Find the server, if we know it at all. A malformed or unknown address simply fails to
@@ -1106,10 +1075,8 @@ void SERVERREGISTRY_ParseCommands( BYTESTREAM_s *pByteStream )
 					return;
 				}
 
-				// [rc4l] One optional trailing byte: does this launcher understand being told which
-				// addresses are one server? Absent on everything older, and absent must mean no --
-				// the list is positional, so an opcode an old client does not know would be read as
-				// an address and corrupt the rest of the packet.
+				// [rc4l] Whether this launcher understands being told which addresses are one server,
+				// absent meaning no because the list is positional.
 				bWantsServerGroups = ( pByteStream->ReadByte() > 0 );
 			}
 
