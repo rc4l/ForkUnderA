@@ -31,7 +31,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # The common home router on both ends: this one must pass.
+          # [rc4l] The permissive host router: its mapping accepts anyone, so the joiner's ordinary
+          # challenge already reaches it. This case proves DISCOVERY end to end -- listed, found,
+          # joined, confirmed by the server -- and deliberately proves nothing about punching, since
+          # the punch is not what carried the packet.
+          - host_nat: fullcone
+            client_nat: portrestricted
+          # The common home router on both ends, and the hard case: whichever packet lands on the far
+          # router first takes the tuple the other side's outbound needs. Kept in the matrix because
+          # it is where a real improvement would show up.
           - host_nat: portrestricted
             client_nat: portrestricted
           # Carrier-grade / symmetric on the host side. Punching cannot work here and the lab asserts

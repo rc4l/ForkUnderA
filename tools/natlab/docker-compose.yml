@@ -40,6 +40,9 @@ services:
       # Which side is the internet, by address rather than by interface name -- Docker does not
       # promise that the first network listed becomes eth0.
       NAT_WAN_PREFIX: "203.0.113."
+      # Only used by the fullcone flavour, which forwards the game port inward.
+      NAT_LAN_PEER: 192.168.241.20
+      NAT_GAME_PORT: "10666"
     networks:
       pub:
         ipv4_address: 203.0.113.2
