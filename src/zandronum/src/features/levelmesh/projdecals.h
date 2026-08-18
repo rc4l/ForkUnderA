@@ -77,6 +77,36 @@ void SpawnProjectedDecalOnLine(const FDecalTemplate *tpl, fixed_t x, fixed_t y, 
 // The engine is destroying this decal -- drop whatever was projected for it.
 void ForgetProjectedDecal(DBaseDecal *owner);
 
+// [rc4l] One mark, as the BACKEND needs it: a box and what to paint in it.
+//
+// The mesh path cuts the geometry inside this box into triangles on the CPU. The deferred path does
+// not cut anything at all -- it draws the box, reads the depth and normal the world already wrote,
+// and paints whatever surface is in there, per fragment. Same box, same arithmetic behind it; the
+// difference is only where the question is answered.
+//
+// Everything here is in MESH space (x, z-up, y), because that is the space the backend draws in.
+struct GpuDecal
+{
+	float centre[3];
+	float right[3];      // the picture's axes, each divided by its own half-extent, so the box
+	float up[3];         // test is |dot(rel, right)| <= 1
+	float axis[3];       // unit, pointing the way the projectile went
+	float halfW, halfH;  // in world units, for the run-out radius
+	float near_, far_;   // how far the box reaches either side of the contact point
+	float r, g, b, a;
+	const void  *material;
+	bool         redToAlpha;
+	bool         additive;
+	bool         fullbright;
+};
+
+// [rc4l] This frame's marks, in the order they were made.
+//
+// Order is the picture where two marks overlap -- a scorch and the glow that belongs on top of it --
+// and arrival order is the engine's own answer, because a template creates its LOWER decal first.
+// Returns the count and points `out` at the array, which is rebuilt each frame and owned here.
+int GetProjectedDecalsGpu(const GpuDecal **out);
+
 // [rc4l] Emit this frame's projected decals into the dynamic mesh. Called from CreateScene, beside
 // the sprites, because like sprites they are re-emitted every frame rather than baked.
 void RegisterProjectedDecals();

@@ -69,7 +69,7 @@ struct DecalVertex
 //
 //
 //==========================================================================
-EXTERN_CVAR(Bool, fua_projdecals)
+EXTERN_CVAR(Int, fua_decalmode)
 
 void GLWall::DrawDecal(DBaseDecal *decal)
 {
@@ -343,14 +343,14 @@ void GLWall::DrawDecal(DBaseDecal *decal)
 	for (i = 0; i < 4; i++) decalQuad[i].Set(dv[i].x, dv[i].z, dv[i].y, dv[i].u, dv[i].v);
 	// [rc4l] Every decal GL draws, the backend draws -- unless something else is already drawing it.
 	//
-	// With fua_projdecals on, an impact decal reaches the mesh as a PROJECTION cut from the geometry
-	// it landed on, so capturing the quad as well would paint the same mark twice, the second time in
-	// the shape the projection exists to replace. Decals placed BY THE MAP are not projected -- they
-	// are authored to sit on one sidedef and never spread -- so they always come through here.
+	// In either projected mode an impact decal reaches the backend as a PROJECTION, so capturing the
+	// quad as well would paint the same mark twice, the second time in the shape the projection exists
+	// to replace. Decals placed BY THE MAP are never projected -- they are authored to sit on one
+	// sidedef and never spread -- so they always come through here.
 	//
-	// The gate is a cvar and not a constant because that is what makes the two comparable: flip
-	// fua_projdecals in the console and the same mark is drawn the other way, in the same frame.
-	const bool projected = fua_projdecals && decal->IsKindOf(RUNTIME_CLASS(DImpactDecal));
+	// The gate is a cvar and not a constant because that is what makes the modes comparable: change
+	// fua_decalmode in the console and the same mark is drawn the other way, in the same frame.
+	const bool projected = (fua_decalmode != 0) && decal->IsKindOf(RUNTIME_CLASS(DImpactDecal));
 	if (gl_wallmesh && !projected)
 	{
 		const bool shadow = decal->RenderStyle.BlendOp == STYLEOP_Shadow;
