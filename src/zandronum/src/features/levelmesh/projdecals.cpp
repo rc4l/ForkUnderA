@@ -357,16 +357,29 @@ void NormalFromLine(line_t *line, float out[3])
 // travel, because the impact point itself sits ON the surface that was hit and a trace beginning
 // inside a wall answers nothing; stopped a little short, because the destination IS a surface and
 // arriving at it is not being blocked by it.
-bool BlockedFromImpact(const DecalBox &box, const float eye[3], const float *local, int n)
+bool BlockedFromImpact(const DecalBox &box, const float eye[3], const float hitNormal[3],
+                       const float surfaceNormal[3], const float *local, int n)
 {
 	float cu = 0.f, cv = 0.f, cw = 0.f;
 	for (int i = 0; i < n; i++) { cu += local[i*3 + 0]; cv += local[i*3 + 1]; cw += local[i*3 + 2]; }
 	cu /= (float)n; cv /= (float)n; cw /= (float)n;
 
+	// [rc4l] Both ends are lifted OFF their surfaces before the ray is drawn between them.
+	//
+	// A mark on a floor asks about geometry that is also floor, so without this the ray runs a couple
+	// of units above the ground, parallel to it, for its whole length -- and grazes it. Whichever
+	// triangles it happened to clip were reported blocked, and since the floor is offered up one
+	// subsector triangle at a time, what came back was a hard-edged fan of accepted and rejected
+	// wedges radiating from the impact. It reads exactly like invisible walls standing around the
+	// blast, which is how it was reported.
+	//
+	// Four units is under the smallest step in a Doom map and far enough clear of a plane that a ray
+	// running alongside one cannot touch it.
+	const float kLift = 4.f;
 	const float target[3] = {
-		box.origin[0] + box.right[0]*cu + box.up[0]*cv + box.axis[0]*cw,
-		box.origin[1] + box.right[1]*cu + box.up[1]*cv + box.axis[1]*cw,
-		box.origin[2] + box.right[2]*cu + box.up[2]*cv + box.axis[2]*cw,
+		box.origin[0] + box.right[0]*cu + box.up[0]*cv + box.axis[0]*cw + surfaceNormal[0]*kLift,
+		box.origin[1] + box.right[1]*cu + box.up[1]*cv + box.axis[1]*cw + surfaceNormal[1]*kLift,
+		box.origin[2] + box.right[2]*cu + box.up[2]*cv + box.axis[2]*cw + surfaceNormal[2]*kLift,
 	};
 	// [rc4l] Traced from where the PROJECTILE was, not from the box's origin.
 	//
@@ -379,9 +392,9 @@ bool BlockedFromImpact(const DecalBox &box, const float eye[3], const float *loc
 	// The missile's own last position cannot be inside anything, because it was there.
 	const float kBackOff = 2.f, kStopShort = 2.f;
 	const float start[3] = {
-		eye[0] - box.axis[0]*kBackOff,
-		eye[1] - box.axis[1]*kBackOff,
-		eye[2] - box.axis[2]*kBackOff,
+		eye[0] - box.axis[0]*kBackOff + hitNormal[0]*kLift,
+		eye[1] - box.axis[1]*kBackOff + hitNormal[1]*kLift,
+		eye[2] - box.axis[2]*kBackOff + hitNormal[2]*kLift,
 	};
 
 	float dir[3] = { target[0] - start[0], target[1] - start[1], target[2] - start[2] };
@@ -583,7 +596,7 @@ void BuildProjection(const MarkStyle &style, DBaseDecal *owner, int fadeStart, i
 		const int n = ClipPolygonToDecalBox(c.poly, c.count, box, localBuf, 64);
 		if (n < 3) continue;
 
-		if (fua_projdecal_occlude && BlockedFromImpact(box, pos, localBuf, n)) continue;
+		if (fua_projdecal_occlude && BlockedFromImpact(box, pos, surfN, c.normal, localBuf, n)) continue;
 
 		// How squarely the blast met this surface. 1 is head-on, and the surface that was actually
 		// hit is normally at or near it; a wall the projection merely grazes is near 0.
