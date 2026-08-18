@@ -1,28 +1,27 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 rc4l
 //
-// [rc4l] PROJECTED MESH DECALS -- a mark is printed onto real geometry, not glued to one sidedef.
+// [rc4l] PROJECTED DECALS -- a mark is a box in the world, resolved per fragment.
 //
 // At the moment of impact a box is built around the contact point, oriented along the direction the
-// projectile was travelling. Everything inside that box -- wall segments, floors, ceilings, the far
-// side of a corner -- is clipped against it, and the pieces that come back are the decal. They are
-// ordinary triangles with ordinary texture coordinates, drawn by the same path that draws every
-// other decal quad.
+// projectile was travelling. Nothing is cut and nothing is glued: the backend draws the box, reads
+// the depth and normal the world has already written, and paints whatever surface is inside it.
 //
-// What that buys, over the glued quad Doom has always used:
+// What that buys over the glued quad Doom has always used:
 //
-//   * A mark that runs onto the floor under it, or round a corner, is ONE projection covering both
-//     surfaces. Nothing has to decide where the mark carries over, so there is no seam to get
-//     wrong -- the two pieces end at the same place because they were cut by the same box.
-//   * The angle of the shot is in the picture. A rocket arriving at a slant leaves a slanted mark.
-//   * The blocking line does not have to be the visible one. Doom stops a missile when its bounding
-//     BOX touches a line, so a shot into a corner is often stopped by a line that carries no
-//     texture, and the engine then makes no decal at all -- the reported "no decal when hitting
-//     connecting lines". A box does not care which line stopped the projectile; it prints on
-//     whatever geometry is inside it.
+//   * A mark spanning a corner is ONE projection covering both faces, so there is no seam to get
+//     wrong -- nothing has to decide where the mark carries over.
+//   * The angle of the shot is in the picture. A projectile arriving at a slant leaves a slanted
+//     mark, and how squarely it arrived fades it, per fragment.
+//   * A rocket that lands on the GROUND leaves a scorch. Doom has never done this: a glued quad
+//     needs a sidedef and a floor has none.
+//   * The line that stopped the projectile does not have to be the one you can see. Doom stops a
+//     missile when its bounding BOX touches a line, so a shot into a corner is often blocked by a
+//     neighbour that carries no texture, and the engine then makes no decal at all -- the reported
+//     "no decal when hitting connecting lines".
 //
-// The arithmetic lives in computation/decalproject_compute.h, where it is tested. This file is the
-// glue: gathering candidate surfaces from the map, and re-emitting the clipped result each frame.
+// The arithmetic lives in computation/decalproject_compute.h, where it is tested. This file keeps
+// the marks and ages them; features/hwrender/diligent/dgdecals.cpp draws them.
 
 #ifndef ZX_PROJDECALS_H
 #define ZX_PROJDECALS_H
@@ -46,43 +45,41 @@ void ClearImpactContext();
 
 // [rc4l] Build the projection for a decal the engine has just created.
 //
-// Called with the engine's own decal so that the two stay in step: the engine's thinker owns the
-// fade, the lifetime and the `cl_maxdecals` recycling, and this reads the alpha off it every frame
-// rather than reimplementing any of that. When the engine destroys the decal, ForgetProjectedDecal
-// takes the projection with it.
+// Called with the engine's own decal so the two stay in step: the engine's thinker owns the fade,
+// the lifetime and the cl_maxdecals recycling, and this reads the alpha off it every frame rather
+// than reimplementing any of it. ForgetProjectedDecal takes the projection when the decal goes.
 void SpawnProjectedDecal(DBaseDecal *owner, const FDecalTemplate *tpl,
                          fixed_t x, fixed_t y, fixed_t z, line_t *hitLine);
 
-// [rc4l] A mark where the engine makes none at all.
+// [rc4l] A mark where the engine makes none at all: on a floor or ceiling, which Doom never decals.
 //
-// Doom only decals WALLS: P_ExplodeMissile spawns one when the missile died against a line, and a
-// rocket that lands on the ground leaves nothing. There is no engine decal to own such a mark, so
-// this one owns itself -- it carries the template's alpha and, if the template fades, the fader's
-// own timing, read once at spawn from the animator that would have run.
+// No owner, so it fades from the template's own animator, and it walks the `lowerdecal` chain that
+// StaticCreate would otherwise have walked -- without which a BFG leaves its glow with no scorch.
 void SpawnProjectedDecalHere(const FDecalTemplate *tpl, fixed_t x, fixed_t y, fixed_t z,
                              const float surfaceNormal[3]);
 
 // [rc4l] A mark on a wall the engine REFUSED to decal.
 //
-// DBaseDecal::StickToWall has to pick a texture for the mark to live on, and when the hit lands in
-// the open span of a two-sided line there is none -- so it returns a null texture id and vanilla
-// makes no decal at all. That is the reported "no decal when hitting connecting lines": aim at the
-// seam between two linedefs and the shot leaves nothing.
-//
-// A projection does not need a texture to live on, only geometry to be cut from, and that is still
-// there. Same mark, no owner, so it fades from the template's own animator.
+// StickToWall has to pick a texture for the mark to live on, and when the hit lands in the open span
+// of a two-sided line there is none -- so it returns a null texture id and vanilla makes no decal at
+// all. A projection needs geometry, not a texture, and the geometry is still there.
 void SpawnProjectedDecalOnLine(const FDecalTemplate *tpl, fixed_t x, fixed_t y, fixed_t z,
                                line_t *hitLine);
 
 // The engine is destroying this decal -- drop whatever was projected for it.
 void ForgetProjectedDecal(DBaseDecal *owner);
 
+// Age every mark by one frame and drop the ones that are over. Called once a frame from CreateScene,
+// whatever the mode is: a mark's lifetime is not the renderer's business.
+void UpdateProjectedDecals();
+
+// Everything, on level change: these are positions in a map that is about to stop existing.
+void ClearProjectedDecals();
+
+// How many marks are live. See fua_projdecals_stats.
+int GetProjectedDecalCount();
+
 // [rc4l] One mark, as the BACKEND needs it: a box and what to paint in it.
-//
-// The mesh path cuts the geometry inside this box into triangles on the CPU. The deferred path does
-// not cut anything at all -- it draws the box, reads the depth and normal the world already wrote,
-// and paints whatever surface is in there, per fragment. Same box, same arithmetic behind it; the
-// difference is only where the question is answered.
 //
 // Everything here is in MESH space (x, z-up, y), because that is the space the backend draws in.
 struct GpuDecal
@@ -106,20 +103,6 @@ struct GpuDecal
 // and arrival order is the engine's own answer, because a template creates its LOWER decal first.
 // Returns the count and points `out` at the array, which is rebuilt each frame and owned here.
 int GetProjectedDecalsGpu(const GpuDecal **out);
-
-// [rc4l] Emit this frame's projected decals into the dynamic mesh. Called from CreateScene, beside
-// the sprites, because like sprites they are re-emitted every frame rather than baked.
-void RegisterProjectedDecals();
-
-// Everything, on level change: the geometry these were clipped against is about to stop existing.
-void ClearProjectedDecals();
-
-// How many marks have been cut short by the surface cap since this level loaded. A cap that bites
-// ends a mark in a straight line, which looks like every other kind of cut -- so it is counted.
-int GetProjectedDecalTruncations();
-
-// How many projections are live, and how many triangles they came to. See fua_projdecals_stats.
-void GetProjectedDecalStats(int &decals, int &triangles);
 
 }} // namespace zx::levelmesh
 

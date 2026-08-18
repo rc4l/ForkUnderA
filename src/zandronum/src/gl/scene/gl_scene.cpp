@@ -363,10 +363,10 @@ void FGLRenderer::CreateScene()
 	// camera moves, so it is dropped here and rebuilt as this frame generates it.
 	zx::levelmesh::DynClear();
 	zx::levelmesh::ClearSprites();
-	// [rc4l] features/levelmesh: projected decals are re-emitted every frame like sprites, from a
-	// list of their own rather than from what the BSP walk happens to reach. Their geometry was cut
-	// once, at the impact; what changes per frame is only the alpha the engine has faded them to.
-	zx::levelmesh::RegisterProjectedDecals();
+	// [rc4l] features/levelmesh: age the marks by a frame. They are DRAWN by the backend, from their
+	// boxes, so nothing is emitted here -- but their lifetimes are the simulation's business and not
+	// the renderer's, and this is the one place that runs every frame in every mode.
+	zx::levelmesh::UpdateProjectedDecals();
 	// [rc4l] features/levelmesh: geometry whose sector moved is no longer valid, and this has to run
 	// BEFORE the BSP walk so anything still visible re-bakes in the same frame. See
 	// InvalidateMovedSectors -- a door's far face is never walked, so without this it kept the
