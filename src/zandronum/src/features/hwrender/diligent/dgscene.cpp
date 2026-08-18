@@ -795,7 +795,12 @@ static const char *kScenePSRedAlpha =
 	   there without knowing the next wall, so the mark simply ends at the corner rather than guessing
 	   -- which is also what it looks like: soot spreading over the wall it hit and the ground beneath
 	   that wall, and not round the bend. Zero span means the extent is unknown and nothing is cut. */ \
-	"        if (span.y > span.x && (along < span.x || along > span.y)) {\n" \
+	/* ...but only onto FLATS. A vertical corner between two walls is a real hinge and the mark has
+	   every business wrapping round it -- bounding that as well stopped marks wrapping walls at all,
+	   which was working. It is the ground where the mirrored copy shows up, because that is the
+	   surface which continues past the wall's end. */ \
+	"        bool ontoFlat = abs(nrm.y) > 0.7;\n" \
+	"        if (ontoFlat && span.y > span.x && (along < span.x || along > span.y)) {\n" \
 	"            path = 1e9;\n" \
 	"            return vec2(-1.0);\n" \
 	"        }\n" \
