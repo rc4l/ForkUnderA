@@ -893,11 +893,30 @@ void SERVER_SERVERREGISTRY_Tick( void )
 		g_AddressServerRegistryV6 );
 	if ( g_bServerRegistryV6Valid )
 	{
+		// [rc4l] Copy the port FIELD, do not put it back through SetPort.
+		//
+		// usPort is stored in network order and SetPort converts into network order, so passing one
+		// to the other byte-swapped it a second time: 15300 (0x3bc4) went out as 0xc43b, 50235. Every
+		// IPv6 announce this engine has ever sent went to a port nothing was listening on, which is
+		// unfalsifiable in the field because a datagram into the void reports success at the sender
+		// and leaves no trace at the receiver. It only surfaced against a local registry, where the
+		// announce could be watched arriving on one family and not the other.
 		if ( g_AddressServerRegistryV6.usPort == 0 )
-			g_AddressServerRegistryV6.SetPort( g_AddressServerRegistry.usPort );
+			g_AddressServerRegistryV6.usPort = g_AddressServerRegistry.usPort;
 
 		NETWORK_LaunchPacket( &g_ServerRegistryBuffer, g_AddressServerRegistryV6 );
 		server_registry_Evidence( true ).bAnnounceSent = true;
+
+		// [rc4l] Which address the second announce actually went to, under `developer 1`.
+		//
+		// "We resolved a v6 registry and sent to it" and "the registry received it" are different
+		// claims, and the gap between them is invisible from either end: the sender reports success
+		// for a packet that left, and a registry that never got one has nothing to log.
+		DPrintf( "Server registry: IPv6 announce -> %s\n", g_AddressServerRegistryV6.ToString( ));
+	}
+	else
+	{
+		DPrintf( "Server registry: no IPv6 address for %s, so no IPv6 announce.\n", *fua_serverregistry_host );
 	}
 }
 

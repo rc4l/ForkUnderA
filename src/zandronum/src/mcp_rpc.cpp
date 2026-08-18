@@ -515,6 +515,10 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 			body += ",\"country\":\"" + country + "\"";
 			body += ",\"flag\":\"" + flag + "\"";
 			body += ",\"countryIndex\":" + I( (long long)BROWSER_GetCountryIndex( i ) );
+			// [rc4l] Whether a PLAYER would see this row. A dual-stack server is listed twice by the
+			// registry and collapsed to one row for display, so a check asserting on what the browser
+			// HOLDS would miss the collapse entirely and pass whether or not it happened.
+			body += ",\"listed\":" + B( BROWSER_IsListable( i ) );
 			body += ",\"players\":" + I( BROWSER_GetNumPlayers( i ) );
 			body += ",\"ping\":" + I( BROWSER_GetPing( i ) ) + "}";
 			++n;
