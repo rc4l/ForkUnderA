@@ -355,8 +355,6 @@ TEST(ServerRegistryList, SkippedEntriesAreReportedRatherThanVanishing)
 {
 	// The silence here is what hid the IPv6 parsing bug: the entry disappeared, the client fell back
 	// to its built-in list, and everything looked healthy.
-	// An unclosed bracket, which is exactly the shape of the mistake this exists to surface: someone
-	// typing an IPv6 address by hand and getting it slightly wrong.
 	std::vector<std::string> skipped;
 	const std::vector<zx::ServerRegistryEntry> entries =
 		zx::ParseServerRegistryList( "good.example.net\n[2001:db8::1 my registry\ngood2.example.net\n", &skipped );
@@ -382,8 +380,7 @@ TEST(ServerRegistryList, TheReportIsOptional)
 TEST(ServerRegistryList, TheCsvPathReportsWhatItSkippedToo)
 {
 	// The cvar path, which is the one a player actually edits -- and the one whose silence hid the
-	// IPv6 address bug. Covered separately from the line-based parser because they are separate
-	// loops, and a report that only worked for the file would have been no help at all.
+	// IPv6 address bug.
 	std::vector<std::string> skipped;
 	const std::vector<zx::ServerRegistryEntry> entries =
 		zx::ParseServerRegistryCSV( "good.example.net,[2001:db8::1,other.example.net", &skipped );

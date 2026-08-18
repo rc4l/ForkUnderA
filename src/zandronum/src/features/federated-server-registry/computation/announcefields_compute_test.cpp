@@ -15,8 +15,7 @@ std::string Hex( size_t length, char c = 'a' ) { return std::string( length, c )
 
 TEST(AnnounceFields, AnExhaustedStreamIsFalseRatherThanTrue)
 {
-	// The whole compatibility story. ReadByte gives -1 when the packet ended, and "-1 != 0" would
-	// grant a capability to every server built before that capability existed.
+	// The whole compatibility story.
 	EXPECT_FALSE( AnnounceFlagFromByte( -1 ));
 	EXPECT_FALSE( AnnounceFlagFromByte( 0 ));
 	EXPECT_TRUE( AnnounceFlagFromByte( 1 ));

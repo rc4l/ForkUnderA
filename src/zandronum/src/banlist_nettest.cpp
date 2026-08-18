@@ -116,8 +116,8 @@ TEST(BanList, AV6BanDoesNotBanV4AndTheOtherWayAround)
 
 TEST(BanList, AWildcardV4RuleDoesNotSwallowV6Addresses)
 {
-	// 0.0.0.* style rules match on empty fields if a v6 address is ever flattened into one, so this is
-	// the specific accident being prevented rather than a general tidiness check.
+	// 0.0.0.* style rules match on empty fields if a v6 address is ever flattened into one, so this
+	// is the specific accident being prevented rather than a general tidiness check.
 	BanFile file( "*.*.*.*\n" );
 	IPList list;
 	ASSERT_TRUE( list.clearAndLoadFromFile( file.path( )));
@@ -151,8 +151,7 @@ TEST(BanList, AV6RuleSurvivesBeingWrittenAndReadAgain)
 
 TEST(BanList, AV6RuleIsWrittenBracketedSoTheParserCanReadItBack)
 {
-	// The bracket is not decoration: the parser ends an address at ':' and at '/'. Without it the rule
-	// on disk would read back as its first group.
+	// The bracket is not decoration: the parser ends an address at ':' and at '/'.
 	BanFile file( "" );
 	std::string message;
 	IPList list;
@@ -226,8 +225,7 @@ TEST(BanList, AV6RuleWithAnExpiryAndAReasonParses)
 
 TEST(BanList, ABrokenV6RuleIsDroppedRatherThanGuessedAt)
 {
-	// A length is mandatory. Reading a bare address as /0 would ban everybody, and that has to be
-	// impossible by omission rather than merely unlikely.
+	// A length is mandatory.
 	BanFile file( "[2001:db8::]\n[nonsense]\n1.2.3.4\n" );
 	IPList list;
 	ASSERT_TRUE( list.clearAndLoadFromFile( file.path( )));
@@ -238,9 +236,7 @@ TEST(BanList, ABrokenV6RuleIsDroppedRatherThanGuessedAt)
 
 TEST(BanList, BanningEveryoneIsPossibleButOnlyWhenSpeltOut)
 {
-	// "::/0" means every v6 address, and it is accepted BECAUSE the length was written down. The
-	// refusal that matters is the accidental one -- a bare "::" is rejected rather than read as /0 --
-	// so the difference between one household and the whole internet is never an omission.
+	// "::/0" means every v6 address, and it is accepted BECAUSE the length was written down.
 	BanFile file( "[::/0]\n" );
 	IPList list;
 	ASSERT_TRUE( list.clearAndLoadFromFile( file.path( )));
@@ -263,8 +259,7 @@ TEST(BanList, AnUnterminatedBracketDoesNotEatTheRestOfTheFile)
 TEST(BanList, TheAsteriskSpellingWorksInTheBanFileToo)
 {
 	// "2001:db8:*" is the notation the v4 list already taught people, and a v6 group is 16 bits, so
-	// two groups then a star is a /32. Worth asserting HERE and not only in the compute unit: the
-	// file has its own tokenizer, and this spelling contains neither a slash nor a length.
+	// two groups then a star is a /32.
 	BanFile file( "[2001:db8:*]:by star\n" );
 	IPList list;
 	ASSERT_TRUE( list.clearAndLoadFromFile( file.path( )));
@@ -276,8 +271,7 @@ TEST(BanList, TheAsteriskSpellingWorksInTheBanFileToo)
 
 TEST(BanList, AStarRuleIsSavedAsASlashRuleAndStillMeansTheSame)
 {
-	// One spelling on disk, so a reader never has to handle two. The rule must not widen or narrow on
-	// the way through.
+	// One spelling on disk, so a reader never has to handle two.
 	BanFile file( "" );
 	std::string message;
 	IPList list;
@@ -294,8 +288,7 @@ TEST(BanList, AStarRuleIsSavedAsASlashRuleAndStillMeansTheSame)
 
 TEST(BanList, ABareAsteriskIsNotAcceptedAsAV6Rule)
 {
-	// It would mean everybody. The v4 list spells that "*.*.*.*" and means every v4 address; there is
-	// no v6 equivalent by accident.
+	// It would mean everybody.
 	BanFile file( "[*]\n1.2.3.4\n" );
 	IPList list;
 	ASSERT_TRUE( list.clearAndLoadFromFile( file.path( )));
