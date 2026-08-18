@@ -115,15 +115,15 @@ TEST(AccountName, ExactlyEnoughDigestIsAccepted)
 TEST(IdentityPaths, TheFirstInstanceGetsThePlainName)
 {
 	// The file a player is told to back up must be the one the documentation names.
-	EXPECT_EQ(std::string(kRoot) + "/identity/client-auth.key", ClientAuthKeyPath(kRoot, 0));
+	EXPECT_EQ(std::string(kRoot) + "/identity/client-account-auth.key", ClientAuthKeyPath(kRoot, 0));
 }
 
 TEST(IdentityPaths, FurtherInstancesAreNumberedFromTwo)
 {
 	// A second client on one machine cannot share the first one's account: the server refuses a
 	// duplicate, because a duplicate normally means somebody has your key.
-	EXPECT_EQ(std::string(kRoot) + "/identity/client-auth.2.key", ClientAuthKeyPath(kRoot, 1));
-	EXPECT_EQ(std::string(kRoot) + "/identity/client-auth.3.key", ClientAuthKeyPath(kRoot, 2));
+	EXPECT_EQ(std::string(kRoot) + "/identity/client-account-auth.2.key", ClientAuthKeyPath(kRoot, 1));
+	EXPECT_EQ(std::string(kRoot) + "/identity/client-account-auth.3.key", ClientAuthKeyPath(kRoot, 2));
 }
 
 TEST(IdentityPaths, ANegativeInstanceIsTheFirstOne)
@@ -135,7 +135,7 @@ TEST(IdentityPaths, TheServerKeyIsOnePerMachine)
 {
 	// One per machine rather than per server, so an operator running several offers one account
 	// namespace across all of them and one shared database.
-	EXPECT_EQ(std::string(kRoot) + "/identity/server-auth.key", ServerAuthKeyPath(kRoot));
+	EXPECT_EQ(std::string(kRoot) + "/identity/server-account-auth.key", ServerAuthKeyPath(kRoot));
 }
 
 TEST(IdentityPaths, ATrailingSeparatorDoesNotDoubleUp)
