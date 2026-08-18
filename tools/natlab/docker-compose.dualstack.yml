@@ -36,6 +36,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.peer
+    # [rc4l] Only so the v6-only case can remove this container's own IPv4 address.
+    cap_add: [NET_ADMIN]
     extra_hosts:
       - "registry.natlab:203.0.113.10"
       - "registry.natlab:fd00:cafe:1::10"
