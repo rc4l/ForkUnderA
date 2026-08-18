@@ -187,3 +187,21 @@ TEST(QueryPunchLead, TheChallengeIsSentOnlyOnce)
 {
 	EXPECT_FALSE( zx::FirstChallengeDue( true, true, 10000 ));
 }
+
+TEST(QueryPunchLead, FirstContactWithAnInternetServerLeadsWhenBudgetRemains)
+{
+	// Leading on a later sweep is too late: the entry the first challenge created is refreshed by
+	// every retry, so the tuple stays taken for as long as the joiner keeps talking.
+	EXPECT_TRUE( zx::ShouldPunchOnFirstContact( false, true ));
+}
+
+TEST(QueryPunchLead, FirstContactOnTheLanStillNeverPunches)
+{
+	EXPECT_FALSE( zx::ShouldPunchOnFirstContact( true, true ));
+}
+
+TEST(QueryPunchLead, FirstContactYieldsWhenTheBudgetIsGone)
+{
+	// The known-unreachable rows take theirs first; these are the speculative ones.
+	EXPECT_FALSE( zx::ShouldPunchOnFirstContact( false, false ));
+}

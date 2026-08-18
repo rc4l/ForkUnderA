@@ -74,6 +74,20 @@ QueryPunchStep StepQueryPunch(int elapsedMs, bool punchEligible, bool punchReque
 // answer, and one wasted round trip per unreachable server is cheaper than a punch for everyone.
 bool ShouldPunchBeforeFirstChallenge(bool lan, bool knownUnreachable, bool punchBudgetLeft);
 
+// Whether a row nobody has tried yet should ALSO lead with a punch, once the known-unreachable rows
+// have taken their share of the budget.
+//
+// THE POISONING IS PERMANENT while the joiner keeps talking. The conntrack entry the first challenge
+// creates on the host's router is refreshed by every retry, so it never ages out during a sweep and
+// the tuple stays taken -- which means leading on the SECOND sweep is already too late. The only
+// moment a lead can help is before the first challenge is ever sent, so first contact has to take it
+// when there is budget spare.
+//
+// Ordered behind the known-unreachable rows deliberately: they are the ones certain to need it, and
+// a server that answers is forgotten immediately, so the budget drains toward the servers with a
+// problem rather than the first four rows in the list.
+bool ShouldPunchOnFirstContact(bool lan, bool punchBudgetLeft);
+
 // Whether the held-back first challenge is now due. `punchLedMs` is time since the punch was asked
 // for. Returns false when this row did not lead with a punch, since then the challenge already went.
 bool FirstChallengeDue(bool punchLed, bool firstChallengeSent, int punchLedMs);
