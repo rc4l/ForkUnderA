@@ -47,6 +47,21 @@ services:
         ipv6_address: fd00:cafe:1::30
     command: ["sleep", "infinity"]
 
+  # [rc4l] A client that never had an IPv4 address, rather than one we amputate at runtime: taking an
+  # address off a running container breaks it underneath the exec sessions already using it, which
+  # hangs rather than fails.
+  client6:
+    image: fua-natlab-peer
+    build:
+      context: .
+      dockerfile: Dockerfile.peer
+    extra_hosts:
+      - "registry.natlab:fd00:cafe:1::10"
+    networks:
+      v6only:
+        ipv6_address: fd00:cafe:2::30
+    command: ["sleep", "infinity"]
+
 networks:
   dual:
     enable_ipv6: true
@@ -54,3 +69,10 @@ networks:
       config:
         - subnet: 203.0.113.0/24
         - subnet: fd00:cafe:1::/64
+  # [rc4l] IPv6 only, which is the whole point: a client here cannot fall back to IPv4 because there
+  # is no IPv4 to fall back to.
+  v6only:
+    enable_ipv6: true
+    ipam:
+      config:
+        - subnet: fd00:cafe:2::/64
