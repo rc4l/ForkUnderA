@@ -16,6 +16,10 @@
 #include "gl/utility/gl_convert.h"      // ANGLE_TO_FLOAT
 #include "tarray.h"
 
+// [rc4l] Print every new flat-mesh key. See RegisterFlatSubsector: a key that misses when it should
+// have hit is a surface about to be stored, and drawn, twice.
+CVAR(Bool, fua_flat_keylog, false, 0)
+
 namespace zx { namespace levelmesh {
 
 // [rc4l] Keyed on (subsector, plane) so a subsector's floor and ceiling are each baked once. The
@@ -55,6 +59,24 @@ void GetFlatStats(int &own, int &threeD) { own = g_flatOwn; threeD = g_flat3D; }
 void ClearFlats()
 {
 	g_flat3D = g_flatOwn = 0;
+
+	// [rc4l] Give the ranges back before forgetting the keys that own them.
+	//
+	// Clearing the key table alone forgets WHERE each flat lives without telling the mesh, so the
+	// next registration misses its key, MeshStore bump-allocates a fresh range, and
+	// MeshRegisterPiece -- which dedupes by range OFFSET -- appends a second piece instead of
+	// replacing the first. The old piece is still in the list and still points at valid geometry, so
+	// every re-registered flat ends up drawn twice, coplanar with itself.
+	//
+	// Two identical copies are invisible: same texture, same light, same depth. They appear the
+	// moment the copies are shaded DIFFERENTLY -- which is what a dynamic light does -- and then the
+	// pair fights for the depth buffer in bands following the contours of constant depth. On a floor
+	// seen from above those contours are horizontal, which is why it was reported as horizontal
+	// stripes across a lit floor, and only ever under a light.
+	//
+	// InvalidateAll calls this and a gl_wallmesh toggle calls InvalidateAll, so the world's flats
+	// were duplicated on every toggle -- including every time a test harness set gl_wallmesh 1.
+	for (unsigned i = 0; i < g_flats.Size(); i++) MeshRetireRange(g_flats[i].range);
 	g_flats.Clear();
 }
 
@@ -138,6 +160,18 @@ void RegisterFlatSubsector(const GLFlat &flat, subsector_t *sub, bool ceiling)
 		k.range.offset = 0;
 		k.range.count = 0;
 		slot = &g_flats[g_flats.Push(k)];
+		// [rc4l] Say when a NEW flat slot is created, and with what key.
+		//
+		// A slot that should have been found and was not is a duplicate surface: the same floor stored
+		// twice under two keys, drawn twice, fighting for the depth buffer. The key is four fields and
+		// the count says nothing about which of them disagreed, so it is printed.
+		if ( fua_flat_keylog )
+		{
+			Printf( "flatkey NEW: sub %d  ceiling %d  model %d  whichPlane %d  (slots %u)\n",
+				sub ? (int)(sub - subsectors) : -1, (int)ceiling,
+				flat.mMeshModel ? (int)(flat.mMeshModel - sectors) : -1,
+				flat.mMeshWhichPlane, g_flats.Size() );
+		}
 	}
 
 	if (!MeshStore(slot->range, tris, w)) return;

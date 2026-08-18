@@ -400,6 +400,16 @@ void MeshDrawIndexed(unsigned int firstIndex, unsigned int count)
 		(const void *)(size_t)(firstIndex * sizeof(unsigned int)));
 }
 
+// [rc4l] Retire a range from OUTSIDE this file: blank the vertices and drop the piece that owns it.
+//
+// Anything that keeps its own table of ranges has to be able to give one back, or the piece list
+// keeps drawing geometry its owner has forgotten. See ClearFlats, which forgot exactly that and left
+// a second copy of every flat behind it.
+void MeshRetireRange(const MeshRange &range)
+{
+	RetireRange(range);
+}
+
 void MeshRegisterPiece(const MeshPiece &piece)
 {
 	if (piece.range.count == 0) return;

@@ -219,6 +219,10 @@ void MeshGetStats(int &bakedPieces, int &vertices, int &bytes, int &reallocs);
 const FFlatVertex *MeshVertexData(int &count);
 
 // [rc4l] Every baked piece, in bake order. A backend groups these by material itself.
+// [rc4l] Give a range back: its vertices are blanked and the piece registered against it is dropped.
+// A table of ranges that is cleared without retiring them leaves those pieces in the list forever.
+void MeshRetireRange(const MeshRange &range);
+
 void MeshRegisterPiece(const MeshPiece &piece);
 const MeshPiece *MeshPieces(int &count);
 void MeshClearPieces();
