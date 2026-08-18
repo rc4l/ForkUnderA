@@ -2143,21 +2143,50 @@ void BROWSER_QueryAllServers( void )
 		g_BrowserServerList[ulIdx].bPunchLed = false;
 		g_BrowserServerList[ulIdx].bFirstChallengeSent = false;
 		g_BrowserServerList[ulIdx].lPunchLedMS = 0;
+	}
 
-		// [rc4l] A server we already failed to reach punches BEFORE it is spoken to, and its
-		// challenge waits (see browser.h and querypunch_compute.h). Sending the challenge first is
-		// what breaks the punch: the host's router tracks that dropped packet and the host's own
-		// punch then cannot reuse the tuple, so the hole opens on a port nobody is knocking on.
-		if ( zx::ShouldPunchBeforeFirstChallenge( g_BrowserServerList[ulIdx].bLAN,
-				browser_IsKnownUnreachable( g_BrowserServerList[ulIdx].Address ),
-				g_lPunchesThisSweep < kMaxPunchesPerSweep )
-			&& zx::PunchRequestFor( g_BrowserServerList[ulIdx].Address, true ))
+	// [rc4l] TWO PASSES, and the order between them is the whole design.
+	//
+	// A row that leads with a punch sends nothing until the punch has had its head start, because a
+	// challenge sent first is what takes the tuple the host's punch needs (browser.h). The budget is
+	// small, so it goes to the rows known to need it BEFORE the speculative ones -- otherwise the
+	// first four rows in the list spend it whether or not they were ever unreachable.
+	for ( int pass = 0; pass < 2; ++pass )
+	{
+		for ( ulIdx = 0; ulIdx < MAX_BROWSER_SERVERS; ulIdx++ )
 		{
+			if (( g_BrowserServerList[ulIdx].ulActiveState != AS_WAITINGFORREPLY )
+				|| g_BrowserServerList[ulIdx].bPunchLed )
+			{
+				continue;
+			}
+
+			const bool bBudget = ( g_lPunchesThisSweep < kMaxPunchesPerSweep );
+			const bool bWant = ( pass == 0 )
+				? zx::ShouldPunchBeforeFirstChallenge( g_BrowserServerList[ulIdx].bLAN,
+					browser_IsKnownUnreachable( g_BrowserServerList[ulIdx].Address ), bBudget )
+				: zx::ShouldPunchOnFirstContact( g_BrowserServerList[ulIdx].bLAN, bBudget );
+
+			if ( bWant == false )
+				continue;
+
+			if ( zx::PunchRequestFor( g_BrowserServerList[ulIdx].Address, true ) == false )
+				continue;
+
 			g_BrowserServerList[ulIdx].bPunchRequested = true;
 			g_BrowserServerList[ulIdx].bPunchLed = true;
 			g_BrowserServerList[ulIdx].lPunchLedMS = I_MSTime( );
 			g_lPunchesThisSweep++;
-			continue;	// the challenge follows once the punch has had its head start
+		}
+	}
+
+	// Everything that did not lead speaks now, exactly as it always did.
+	for ( ulIdx = 0; ulIdx < MAX_BROWSER_SERVERS; ulIdx++ )
+	{
+		if (( g_BrowserServerList[ulIdx].ulActiveState != AS_WAITINGFORREPLY )
+			|| g_BrowserServerList[ulIdx].bPunchLed )
+		{
+			continue;
 		}
 
 		browser_QueryServer( ulIdx );

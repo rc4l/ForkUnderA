@@ -52,6 +52,14 @@ bool ShouldPunchBeforeFirstChallenge(bool lan, bool knownUnreachable, bool punch
 	return knownUnreachable && punchBudgetLeft;
 }
 
+bool ShouldPunchOnFirstContact(bool lan, bool punchBudgetLeft)
+{
+	if (lan)
+		return false;
+
+	return punchBudgetLeft;
+}
+
 bool FirstChallengeDue(bool punchLed, bool firstChallengeSent, int punchLedMs)
 {
 	if (!punchLed || firstChallengeSent)
