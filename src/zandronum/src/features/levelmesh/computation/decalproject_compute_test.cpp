@@ -506,6 +506,75 @@ TEST(DecalProject, TheRunOutIsContinuousAROUNDACorner)
 }
 
 // ---------------------------------------------------------------------------------------------
+// Laying the picture into the surface
+// ---------------------------------------------------------------------------------------------
+
+TEST(DecalProject, AHeadOnHitLaysDownTheSameAxesItStartedWith)
+{
+	// [rc4l] The mirror test, and the reason this function is not just a comment in a shader.
+	//
+	// For a head-on hit the surface normal is exactly -axis, so turning the picture into the surface
+	// must give back the axes it was handed. Building the second axis with the cross product the
+	// other way round returns its NEGATIVE instead -- the picture mirrored -- which on a symmetric
+	// scorch mark is completely invisible. It shipped that way and was caught by a pixel comparison,
+	// not by looking.
+	const float vel[3] = { 1.f, 0.f, 0.f };
+	const float wallN[3] = { -1.f, 0.f, 0.f };
+	float right[3], up[3], axis[3];
+	BuildDecalBasis(vel, wallN, kNoSkewLimit, right, up, axis);
+
+	const float surfaceN[3] = { -axis[0], -axis[1], -axis[2] };
+	float lu[3], lv[3];
+	LayPictureIntoSurface(right, up, axis, surfaceN, lu, lv);
+
+	for (int i = 0; i < 3; i++)
+	{
+		EXPECT_NEAR(lu[i], right[i], 1e-4f) << "across-axis, component " << i;
+		EXPECT_NEAR(lv[i], up[i], 1e-4f) << "up-axis, component " << i;
+	}
+}
+
+TEST(DecalProject, TheLaidAxesLieInTheSurfaceAndStayOrthonormal)
+{
+	// A grazing hit on a wall the shot merely brushes: the axes must come back perpendicular to that
+	// wall's normal, or the picture is being read partly through the wall.
+	const float vel[3] = { 0.9f, 0.42f, -0.1f };
+	const float hitN[3] = { -1.f, 0.f, 0.f };
+	float right[3], up[3], axis[3];
+	BuildDecalBasis(vel, hitN, kNoSkewLimit, right, up, axis);
+
+	const float grazed[3] = { 0.f, -1.f, 0.f };   // the neighbouring wall, nearly edge-on to the shot
+	float lu[3], lv[3];
+	LayPictureIntoSurface(right, up, axis, grazed, lu, lv);
+
+	EXPECT_NEAR(Len3(lu), 1.f, 1e-4f);
+	EXPECT_NEAR(Len3(lv), 1.f, 1e-4f);
+	EXPECT_NEAR(Dot(lu, lv), 0.f, 1e-4f);
+	EXPECT_NEAR(Dot(lu, grazed), 0.f, 1e-4f) << "the across-axis must lie IN the surface";
+	EXPECT_NEAR(Dot(lv, grazed), 0.f, 1e-4f) << "and so must the up-axis";
+}
+
+TEST(DecalProject, ASurfaceFacingAlongOnePictureAxisDoesNotCollapseTheMark)
+{
+	// If the surface normal is parallel to the picture's across-axis, that axis has nothing left once
+	// it is turned into the plane. Taking it anyway would divide by nearly zero and smear the mark
+	// into a line; the other axis survives and the first is rebuilt square to it.
+	const float vel[3] = { 0.f, 1.f, 0.f };
+	const float wallN[3] = { 0.f, -1.f, 0.f };
+	float right[3], up[3], axis[3];
+	BuildDecalBasis(vel, wallN, kNoSkewLimit, right, up, axis);
+
+	float alongRight[3] = { right[0], right[1], right[2] };
+	float lu[3], lv[3];
+	LayPictureIntoSurface(right, up, axis, alongRight, lu, lv);
+
+	EXPECT_NEAR(Len3(lu), 1.f, 1e-4f);
+	EXPECT_NEAR(Len3(lv), 1.f, 1e-4f);
+	EXPECT_NEAR(Dot(lu, lv), 0.f, 1e-4f);
+	EXPECT_NEAR(Dot(lu, alongRight), 0.f, 1e-3f);
+}
+
+// ---------------------------------------------------------------------------------------------
 // The texture coordinate
 // ---------------------------------------------------------------------------------------------
 

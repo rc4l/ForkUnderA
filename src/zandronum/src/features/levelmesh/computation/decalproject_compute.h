@@ -152,6 +152,26 @@ int ClipLocalPolygonToDepthBand(const float *local, int count, float wLo, float 
 // impact is continuous across a corner, so the ramp is too.
 float DecalRadialFade(const float local[3], float pictureRadius, float outerRadius);
 
+// [rc4l] Turn the picture's axes into the plane of the surface being marked.
+//
+// Reading the picture by projecting it flat along the direction of travel puts the angle of the hit
+// into the mark, which is the point -- but on a surface nearly edge-on to that direction it also
+// spreads the graphic by 1/cos(theta), and a grazing hit smears into a streak. Laying the axes into
+// the surface instead makes the mark advance with REAL distance from the impact, so it cannot
+// stretch however oblique the hit was.
+//
+// Whichever axis better survives being turned into the plane is the one kept; the other is rebuilt
+// square to it, which is what stops a surface facing along one of the picture's axes from collapsing
+// the mark into a line.
+//
+// THE HANDEDNESS IS NOT FREE TO CHOOSE. BuildDecalBasis leaves up = cross(axis, right), so for a
+// head-on hit -- where the surface normal is exactly -axis -- the rebuild has to reproduce those same
+// two axes. Get the sign backwards and the picture is mirrored, which on a symmetric scorch is
+// completely invisible and on an asymmetric one is a mark nobody can place. That is why the head-on
+// case is a test rather than a comment.
+void LayPictureIntoSurface(const float right[3], const float up[3], const float axis[3],
+                           const float surfaceNormal[3], float outU[3], float outV[3]);
+
 // [rc4l] The picture coordinate of a box-local point. 0..1 across the box, whatever it landed on.
 void DecalUV(const float local[3], const DecalBox &box, float &u, float &v);
 

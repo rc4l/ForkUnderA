@@ -292,6 +292,37 @@ float DecalRadialFade(const float local[3], float pictureRadius, float outerRadi
 	return 1.f - t * t * (3.f - 2.f * t);
 }
 
+void LayPictureIntoSurface(const float right[3], const float up[3], const float axis[3],
+                           const float surfaceNormal[3], float outU[3], float outV[3])
+{
+	(void)axis;
+	float n[3]; Copy3(surfaceNormal, n);
+	if (Normalise3(n) <= 0.f) { Copy3(right, outU); Copy3(up, outV); return; }
+
+	float su[3], sv[3];
+	RejectFrom(right, n, su);
+	RejectFrom(up, n, sv);
+	const float lu = std::sqrt(Dot3(su, su));
+	const float lv = std::sqrt(Dot3(sv, sv));
+
+	if (lu >= lv)
+	{
+		Normalise3(su);
+		// sv = su x n, NOT n x su: with n = -axis and up = cross(axis, right), only this order gives
+		// the up-axis back rather than its negative.
+		Cross3(su, n, sv);
+		Normalise3(sv);
+	}
+	else
+	{
+		Normalise3(sv);
+		Cross3(n, sv, su);
+		Normalise3(su);
+	}
+	Copy3(su, outU);
+	Copy3(sv, outV);
+}
+
 void DecalUV(const float local[3], const DecalBox &box, float &u, float &v)
 {
 	u = (box.halfW > 1e-6f) ? (local[0] / (2.0f * box.halfW) + 0.5f) : 0.5f;

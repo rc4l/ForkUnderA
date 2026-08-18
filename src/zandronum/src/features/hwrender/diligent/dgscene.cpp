@@ -905,7 +905,42 @@ static const char *kDeferredDecalPS =
 	   pillar prints a second, mirrored copy of the mark on the face nobody shot at. */
 	"    float facing = -dot(nrm, vAxisN);\n"
 	"    if (facing < 0.05) discard;\n"
-	"    vec2 t = vec2(u * 0.5 + 0.5, 0.5 - v * 0.5);\n"
+	/* [rc4l] STRETCH. The picture is read along the direction of travel, so on a surface that is
+	   nearly edge-on to that direction, walking a long way along the wall barely advances u -- the
+	   graphic spreads by 1/cos(theta), and the skew clamp still permits nearly three times.
+	
+	   uDecalDebug.z picks how the picture is laid down:
+	
+	   0 PLANAR -- projected flat along the shot. The angle of the hit is visible in the mark, which
+	     is the point, but a grazing hit smears.
+	
+	   1 SURFACE-LAID -- the picture's axes are turned into the plane of whatever surface this
+	     fragment is on, so the mark advances with REAL distance from the impact and cannot stretch.
+	     Every surface reads the same picture about the same centre, so a corner shows two halves of
+	     one graphic rather than two copies, and the shot direction still decides which way the
+	     picture is turned.
+	
+	   The two are identical for a head-on hit -- there the surface plane IS the projection plane --
+	   which is the check that says the second is a re-derivation of the first and not a new mark. */
+	"    float pu = u, pv = v;\n"
+	"    if (uDecalDebug.z > 0.5) {\n"
+	"        vec3 du = vAxisU * hw;\n"
+	"        vec3 dv = vAxisV * hh;\n"
+	"        vec3 su = du - nrm * dot(du, nrm);\n"
+	"        vec3 sv = dv - nrm * dot(dv, nrm);\n"
+	"        float lu = length(su), lv = length(sv);\n"
+	/* [rc4l] The handedness is not free to guess. BuildDecalBasis leaves up = cross(axis, right),
+	   and for a head-on hit the surface normal IS -axis -- so cross(nrm, su) comes out as MINUS up
+	   and the picture is mirrored. Both branches had that sign, which a symmetric scorch hides
+	   completely; the head-on check is what showed it, because the two modes have to agree there
+	   exactly and were 17.6%% apart. */
+	"        if (lu >= lv) { su = su / max(lu, 1e-6); sv = normalize(cross(su, nrm)); }\n"
+	"        else          { sv = sv / max(lv, 1e-6); su = normalize(cross(nrm, sv)); }\n"
+	"        pu = dot(rel, su) / hw;\n"
+	"        pv = dot(rel, sv) / hh;\n"
+	"        if (abs(pu) > 1.0 || abs(pv) > 1.0) discard;\n"
+	"    }\n"
+	"    vec2 t = vec2(pu * 0.5 + 0.5, 0.5 - pv * 0.5);\n"
 	/* [rc4l] uDecalDebug.z pins every mark to slot zero, which is the one experiment that tells
 	   a bad INDEX from a bad BINDING apart: if the mark appears when pinned, the array is bound
 	   and the index is wrong; if it stays blank, nothing is bound and the index is innocent. */
@@ -3821,9 +3856,9 @@ void ReleaseCameraTargets()
 // discard a fragment produces the same result on screen, and guessing which one cost several rounds.
 CVAR(Int, fua_dg_decaldebug, 0, 0)
 
-// [rc4l] Pin every mark to the first texture slot. See the pixel shader: it separates a wrong
-// index from an unbound array, which look identical on screen.
-CVAR(Bool, fua_dg_decalslot0, false, 0)
+// [rc4l] How the picture is laid onto a surface: 0 projected flat along the shot, 1 turned into the
+// surface's own plane so it advances with real distance and cannot stretch. See the pixel shader.
+CVAR(Bool, fua_decal_surfaceuv, true, CVAR_ARCHIVE)
 
 // [rc4l] One record per mark, read by the vertex stage -- see kDeferredDecalVS.
 struct DeferredDecalInstance
@@ -4034,7 +4069,7 @@ static void DrawDeferredDecals(Diligent::IDeviceContext *ctx)
 		for (int i = 0; i < 16; i++) cb[i] = invMVP[i];
 		cb[16] = (float)fua_dg_decaldebug;
 		cb[17] = (float)fua_decal_anglefade;
-		cb[18] = (float)fua_dg_decalslot0;
+		cb[18] = fua_decal_surfaceuv ? 1.f : 0.f;
 		cb[19] = fua_decal_hemisphere ? 1.f : 0.f;
 	}
 
