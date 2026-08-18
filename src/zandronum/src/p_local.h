@@ -436,6 +436,14 @@ struct FCheckPosition
 	bool			floatok;
 	bool			FromPMove;
 	line_t			*ceilingline;
+	// [rc4l] ...and the line that raised the FLOOR, which had no counterpart.
+	//
+	// A missile that will not climb a step is stopped by whichever line raised tm.floorz, and the
+	// only record of a constraining line was the ceiling one. So the missile was reported as having
+	// hit whatever line happened to be visited LAST -- BlockingLine is assigned by every clause that
+	// narrows the box, and iteration continues past a block, so the last writer won. A mark was then
+	// offered to a line the missile never touched.
+	line_t			*floorline;
 	AActor			*stepthing;
 	// [RH] These are used by PIT_CheckThing and P_XYMovement to apply
 	// ripping damage once per tic instead of once per move.

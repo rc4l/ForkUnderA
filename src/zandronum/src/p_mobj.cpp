@@ -1694,6 +1694,12 @@ bool AActor::Massacre ()
 
 void P_ExplodeMissile (AActor *mo, line_t *line, AActor *target, bool bExplodeOnClient ) // [RK] Added bExplodeOnClient
 {
+	// [rc4l] TEMPORARY: what line the explosion was handed, and where it came from.
+	if ( fua_decal_log && mo != NULL )
+		Printf( "explode: line %d  BlockingLine %d\n",
+			line != NULL ? (int)( line - lines ) : -1,
+			mo->BlockingLine != NULL ? (int)( mo->BlockingLine - lines ) : -1,
+			-1 );
 	if (mo->flags3 & MF3_EXPLOCOUNT)
 	{
 		if (++mo->special2 < mo->special1)
