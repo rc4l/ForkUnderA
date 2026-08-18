@@ -3,44 +3,14 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { parseMark, viewpoint, SANDBOX, HOLD_TICS, ticOf } from "../src/capture.mjs";
+import { viewpoint, SANDBOX, HOLD_TICS, ticOf } from "../src/capture.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 // This tool's own directory -- NOT tools/, which holds unrelated CI tripwires that drive nothing.
 const fuactlDir = path.resolve(here, "..");
 
-test("the newest wall mark wins, and its resolved height is the one used", () => {
-  // The dump prints oldest first; a capture aimed at the second-newest mark frames the wrong blob.
-  const dump = [
-    "wall decals: 3 live",
-    "   5  at (64.0, 960.0)  base z 88.00 + upOff 0.00 = 88.00",
-    "      half 31.0 x 31.0  radius 65.8  alpha 1.00  blended red-as-alpha  tex BFGSCRC1",
-    "   6  at (12.5, 1664.0)  base z 88.00 + upOff -11.00 = 77.00",
-    "      half 46.5 x 46.0  radius 98.1  alpha 1.00  blended red-as-alpha  tex BFGLITE1",
-  ].join("\n");
-
-  assert.deepEqual(parseMark(dump), { x: 12.5, y: 1664, z: 77, on: "wall" });
-});
-
-test("a flat decal at the origin means NO flat decal, not one at the map origin", () => {
-  // [rc4l] The flat dump's counters are never reset, so its position line keeps its last value
-  // forever and reads (0, 0, 0) when nothing has ever been emitted. Believing it aimed a camera at
-  // the map origin, which produced a screenshot of empty space that was read as missing geometry.
-  const dump = [
-    "flat decals: 0 live, 0 spawn attempts",
-    "  first emitted: at (0, 0, 0.0) half-size 0.0 x 0.0, alpha 0.00, redToAlpha 0, shade 000000, light 0",
-  ].join("\n");
-
-  assert.equal(parseMark(dump), null);
-});
-
-test("a real flat mark is used when there is no wall mark", () => {
-  const dump = "  first emitted: at (-64, 1150, 56.0) half-size 16.0 x 16.0, alpha 1.00";
-  assert.deepEqual(parseMark(dump), { x: -64, y: 1150, z: 56, on: "flat" });
-});
-
-test("the viewing camera stands back ALONG the firing direction and looks down at the mark", () => {
-  // Facing east (yaw 0): the camera must end up west of the mark, above it, pitched down.
+test("the viewing camera stands back ALONG the firing direction and looks down at the target", () => {
+  // Facing east (yaw 0): the camera must end up west of the target, above it, pitched down.
   const v = viewpoint({ x: 100, y: 0, z: 50 }, 0, { back: 100, up: 100 });
 
   assert.ok(Math.abs(v.x - 0) < 1e-6, "camera should be back along -x");
@@ -78,7 +48,7 @@ test("the sandbox holds still, aims freely, and does not set freelook to the bit
 
 test("the BFG is held long enough to actually fire", () => {
   // It winds up for about a second before the ball leaves. Releasing on the next tic, as a rocket
-  // does, produces a capture of an unmarked wall and a report that decals stopped working.
+  // does, produces a capture of a wall the shot never reached and a report that the weapon is broken.
   assert.ok(HOLD_TICS("BFG9000") > 35);
   assert.ok(HOLD_TICS("RocketLauncher") < 35);
 });

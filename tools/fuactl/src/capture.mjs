@@ -10,7 +10,7 @@
 // no second way to drive the engine. A check that needs something new adds a function here and a
 // subcommand in cli.mjs, where it gets a name, a test, and a chance of being used again.
 //
-// The pure parts -- deciding where a camera goes, reading a mark out of console output -- are
+// The pure parts -- deciding where a camera goes, reading a number out of console output -- are
 // separated from the I/O deliberately, because those are the parts that have been wrong and they
 // are only testable apart.
 import fs from "node:fs";
@@ -25,13 +25,13 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // [rc4l] Run a console command and RETURN WHAT IT PRINTED.
 //
 // console.exec answers {"executed":true} and nothing else, so every command whose whole purpose is
-// to print -- fua_walldecals, fua_flatdecals, a cvar query -- had to be read back by tailing the
-// engine's log file off disk and guessing which lines were new. That guess is what made a tool
-// report a decal at the map origin: it matched a stale line from a previous frame.
+// to print -- a stats dump, a cvar query -- had to be read back by tailing the engine's log file off
+// disk and guessing which lines were new. That guess is what made a tool report a position at the
+// map origin: it matched a stale line from a previous frame.
 //
 // The engine already tees console output to the bridge as `out` events, so the answer is simply to
 // listen while the command runs. Quiet time rather than a fixed sleep, because a dump of two
-// hundred decals arrives over several frames and a fixed wait either truncates it or wastes a
+// hundred lines arrives over several frames and a fixed wait either truncates it or wastes a
 // second on every one-line command.
 export async function exec(c, text, { quietMs = 220, maxMs = 4000 } = {}) {
   let out = "";
@@ -91,7 +91,7 @@ async function tic(c) {
 //
 // They are applied together, always, because the failures they cause do not look like the cvar that
 // caused them: freelook off looks like a weapon that will not aim down, monsters on look like a
-// renderer drawing a decal in the wrong place after the player got shoved four units sideways
+// renderer drawing geometry in the wrong place after the player got shoved four units sideways
 // between the two halves of a pair.
 export const SANDBOX = [
   // Nothing damages, chases or shoves the observer. A monster moves the camera between the two
@@ -114,9 +114,9 @@ export const SANDBOX = [
   "give weapons", "give ammo",
 ];
 
-// Reset to a known level and hold it still. A fresh level per capture because decals accumulate for
-// the whole level: the second capture in a session contains the first one's marks too, and there is
-// no telling afterwards which blob was being judged.
+// Reset to a known level and hold it still. A fresh level per capture because what a shot leaves
+// behind accumulates for the whole level: the second capture in a session contains the first one's
+// leavings too, and there is no telling afterwards which one was being judged.
 export async function sandbox(c, { map = null, vulkan = true } = {}) {
   if (map) { await exec(c, `map ${map}`); await waitTics(c, 35); }
   for (const cmd of SANDBOX) await exec(c, cmd, { quietMs: 60 });
@@ -124,18 +124,18 @@ export async function sandbox(c, { map = null, vulkan = true } = {}) {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Making a mark, and finding it again
+// Firing, and framing what you want to look at
 // ---------------------------------------------------------------------------------------------
 
 // The BFG spends about a second winding up before the ball leaves; a rocket is gone on the next tic.
 export const HOLD_TICS = (weapon) => (/BFG/i.test(weapon) ? 110 : 8);
 
-// [rc4l] settleTics is how long the mark is allowed to age before anyone looks at it.
+// [rc4l] settleTics is how long the world is allowed to age before anyone looks at it.
 //
-// Not a constant, because some decals are TRANSIENT. The BFG's green glow is `animator GoAway2` in
-// DECALDEF -- it fades over about three seconds and is gone -- so a capture that waits a comfortable
-// 120 tics for everything to settle photographs a wall with only the black scorch on it and reports
-// the glow as missing when it was merely over. The scorch is permanent and does not care.
+// Not a constant, because some of what a shot leaves behind is TRANSIENT: anything on a fader is
+// over within a few seconds, so a capture that waits a comfortable 120 tics for everything to
+// settle photographs a wall after the thing it was meant to show has already gone, and reports it
+// missing when it was merely over.
 export async function fire(c, { x, y, z, yaw, pitch, weapon = "RocketLauncher", settleTics = 120 }) {
   await c.rpc("player.setpos", { x, y, z, angle: yaw, pitch });
   await exec(c, `use ${weapon}`);
@@ -146,42 +146,18 @@ export async function fire(c, { x, y, z, yaw, pitch, weapon = "RocketLauncher", 
   await waitTics(c, settleTics);
 }
 
-// [rc4l] Read the newest mark out of what the decal dumps printed. Pure, so it is testable.
+// [rc4l] Where to stand to look at a point. Pure, because the arithmetic has been wrong twice.
 //
-// The wall dump lists the newest entries last. The flat dump's counters are never reset, so its
-// "first emitted" line keeps its last value forever -- an all-zero position there means no flat
-// decal has ever been emitted, not one at the map origin. Taking it literally aimed a camera into
-// the void and produced a screenshot of nothing that read as a missing-geometry fault.
-export function parseMark(consoleText) {
-  let mark = null;
-  for (const line of String(consoleText).split(/\r?\n/)) {
-    const wall = line.match(/at \(([-\d.]+), ([-\d.]+)\)\s+base z [-\d.]+ \+ upOff [-\d.]+ = ([-\d.]+)/);
-    if (wall) { mark = { x: +wall[1], y: +wall[2], z: +wall[3], on: "wall" }; continue; }
-    const flat = line.match(/first emitted: at \(([-\d.]+), ([-\d.]+), ([-\d.]+)\)/);
-    if (flat && !(+flat[1] === 0 && +flat[2] === 0)) {
-      mark = { x: +flat[1], y: +flat[2], z: +flat[3], on: "flat" };
-    }
-  }
-  return mark;
-}
-
-export async function findMark(c) {
-  const text = (await exec(c, "fua_walldecals")) + "\n" + (await exec(c, "fua_flatdecals"));
-  return parseMark(text);
-}
-
-// [rc4l] Where to stand to look at a mark. Pure, because the arithmetic has been wrong twice.
-//
-// Backing off along the firing direction and rising a little puts the mark in frame at an angle
+// Backing off along the firing direction and rising a little puts the target in frame at an angle
 // that shows how it sits ACROSS a junction rather than flat on one face, which is the whole point
 // of looking at it. `frac` shrinks the standoff for the retry when the full one is inside a wall.
-export function viewpoint(mark, yaw, { back = 112, up = 56, frac = 1 } = {}) {
+export function viewpoint(target, yaw, { back = 112, up = 56, frac = 1 } = {}) {
   const b = back * frac, u = up * frac;
   const r = (yaw * Math.PI) / 180;
   return {
-    x: mark.x - b * Math.cos(r),
-    y: mark.y - b * Math.sin(r),
-    z: mark.z + u,
+    x: target.x - b * Math.cos(r),
+    y: target.y - b * Math.sin(r),
+    z: target.z + u,
     yaw,
     pitch: (Math.atan2(u, b) * 180) / Math.PI,   // positive pitch looks DOWN
   };
@@ -193,9 +169,9 @@ export function viewpoint(mark, yaw, { back = 112, up = 56, frac = 1 } = {}) {
 // means the standoff put the camera inside geometry. Forcing it instead photographs the inside of a
 // wall, and shots taken that way look exactly like missing geometry -- they have cost a diagnosis
 // each. Closing in keeps the same viewing angle and only shortens the distance.
-export async function placeCamera(c, mark, yaw, opts = {}) {
+export async function placeCamera(c, target, yaw, opts = {}) {
   for (const frac of [1, 0.75, 0.55, 0.4, 0.28]) {
-    const v = viewpoint(mark, yaw, { ...opts, frac });
+    const v = viewpoint(target, yaw, { ...opts, frac });
     try {
       await c.rpc("player.setpos", { x: v.x, y: v.y, z: v.z, angle: v.yaw, pitch: v.pitch });
       return { ...v, frac };
