@@ -141,6 +141,23 @@ void DecalOriginFromImpact(const float pos[3], const float axis[3], float radius
 	for (int i = 0; i < 3; i++) outOrigin[i] = pos[i] + axis[i] * radius;
 }
 
+void ComputeDecalBoxDepth(float size, float cosTheta, float spreadFraction,
+                          float &outNear, float &outFar)
+{
+	if (size < 0.f) size = 0.f;
+	// A projection running along the surface has no finite depth. The skew clamp keeps real hits
+	// well clear of this, so the floor is a guard rather than a behaviour.
+	const float kMinCos = 0.2f;
+	if (cosTheta < kMinCos) cosTheta = kMinCos;
+	if (cosTheta > 1.f) cosTheta = 1.f;
+
+	const float slant = size * std::sqrt(1.f - cosTheta * cosTheta) / cosTheta;
+	const float spread = size * ((spreadFraction > 0.f) ? spreadFraction : 0.f);
+
+	outNear = (slant > spread) ? slant : spread;
+	outFar = slant + 4.f;
+}
+
 int ClipPolygonToDecalBox(const float *worldPoly, int count, const DecalBox &box,
                           float *outLocal, int maxOut)
 {

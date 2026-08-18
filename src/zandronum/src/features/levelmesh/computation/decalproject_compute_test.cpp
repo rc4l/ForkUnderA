@@ -341,6 +341,62 @@ TEST(DecalProject, TheCornerCase)
 }
 
 // ---------------------------------------------------------------------------------------------
+// How deep the box has to be
+// ---------------------------------------------------------------------------------------------
+
+TEST(DecalProject, ASquareOnHitNeedsNoDepthBeyondTheSpread)
+{
+	// Nothing is slanted, so the only depth is the reach that lets the mark carry onto the floor in
+	// front of the wall. Ask for none and there is none.
+	float near_ = 0.f, far_ = 0.f;
+
+	ComputeDecalBoxDepth(20.f, 1.f, 0.6f, near_, far_);
+
+	EXPECT_NEAR(near_, 12.f, 1e-4f);
+	EXPECT_NEAR(far_, 4.f, 1e-4f) << "forward only far enough not to print through a thin wall";
+}
+
+TEST(DecalProject, ATiltedHitGetsEXACTLYTheDepthItsOwnSlantNeeds)
+{
+	// [rc4l] The bug this pins down: a 45-degree hit lays its picture across a band of depth as deep
+	// as the picture is big, and a shallower box cuts a straight edge through the middle of the mark.
+	// It came out as a hard-edged wedge of scorch beside a corner, which reads as a rendering fault
+	// rather than as a clip, and cost a round of guessing before the numbers were printed.
+	const float size = 20.f, cos45 = 0.70710678f;
+	float near_ = 0.f, far_ = 0.f;
+
+	ComputeDecalBoxDepth(size, cos45, 0.6f, near_, far_);
+
+	EXPECT_NEAR(near_, size, 1e-3f) << "tan(45) is 1, so the slant is the picture's own size";
+	EXPECT_GE(far_, size) << "and it slants BOTH ways from the contact point";
+}
+
+TEST(DecalProject, TheSlantWinsWhenItIsDeeperThanTheSpread)
+{
+	float shallowNear = 0.f, shallowFar = 0.f, steepNear = 0.f, steepFar = 0.f;
+
+	ComputeDecalBoxDepth(20.f, 0.95f, 0.6f, shallowNear, shallowFar);   // barely tilted
+	ComputeDecalBoxDepth(20.f, 0.40f, 0.6f, steepNear, steepFar);       // strongly tilted
+
+	EXPECT_GT(steepNear, shallowNear);
+	EXPECT_GT(steepFar, shallowFar);
+	EXPECT_NEAR(shallowNear, 12.f, 1e-4f) << "a barely tilted hit still gets the spread";
+}
+
+TEST(DecalProject, AProjectionAlongTheSurfaceIsFlooredRatherThanInfinite)
+{
+	// tan goes to infinity as the hit flattens out. The skew clamp keeps real hits away from this,
+	// but a guard here is what stops a bad caller asking for a box the size of the map.
+	float near_ = 0.f, far_ = 0.f;
+
+	ComputeDecalBoxDepth(20.f, 0.f, 0.6f, near_, far_);
+
+	EXPECT_LT(near_, 200.f);
+	EXPECT_GT(near_, 0.f);
+	EXPECT_TRUE(near_ == near_) << "and never a NaN";
+}
+
+// ---------------------------------------------------------------------------------------------
 // The texture coordinate
 // ---------------------------------------------------------------------------------------------
 

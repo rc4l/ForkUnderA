@@ -93,6 +93,26 @@ bool AcceptSurfaceForDecal(const float n[3], const float axis[3], float minFacin
 // case disappears rather than being special-cased.
 void DecalOriginFromImpact(const float pos[3], const float axis[3], float radius, float outOrigin[3]);
 
+// [rc4l] How deep the box has to be, which is not a free choice.
+//
+// A tilted projection lands its picture on a SLANTED band of depth: move one unit up the picture and
+// the surface it lands on is tan(theta) further away, where theta is the angle between the
+// projection and the surface it hit. Over the whole picture that band is size*tan(theta) either side
+// of the contact point, so a box any shallower SLICES ITS OWN MARK with a straight edge -- which is
+// what a hard-edged wedge of scorch beside a corner turns out to be, every time.
+//
+// `spreadFraction` is the extra reach on the near side, as a fraction of the picture's size: the
+// depth a square-on hit needs in order to carry onto the floor in front of the wall or round a
+// corner, where the slant demands nothing. The far side gets only the slant plus a small margin,
+// because the only thing that side does is decide whether a mark prints through a thin wall into
+// the next room.
+//
+// `cosTheta` is the cosine between the projection and the surface normal, clamped by the caller's
+// skew limit; zero would be a projection running exactly along the surface, which has no finite
+// answer, so it is floored here rather than trusted.
+void ComputeDecalBoxDepth(float size, float cosTheta, float spreadFraction,
+                          float &outNear, float &outFar);
+
 // [rc4l] Clip a convex polygon to the box, in box-local coordinates.
 //
 // Input is world-space points; output is (u, v, w) triples where u and v are along right and up and

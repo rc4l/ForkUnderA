@@ -424,27 +424,10 @@ void BuildProjection(const MarkStyle &style, DBaseDecal *owner, int fadeStart, i
 	box.halfW = halfW;
 	box.halfH = halfH;
 
-	// [rc4l] How deep the box has to be before it stops cutting its own picture.
-	//
-	// A tilted projection lands its picture on a SLANTED band of depth: move a unit up the picture
-	// and the surface it lands on is tan(theta) further away, where theta is the angle between the
-	// projection and the surface it hit. Over the whole picture that band is size*tan(theta) either
-	// side of the contact point, and a box any shallower than that slices the mark with a straight
-	// edge -- which is what a hard-edged wedge of scorch beside a corner turned out to be.
-	//
-	// So the depth is not a free choice: it is whatever the skew of THIS hit demands, and the cvar
-	// only sets the floor under it -- the extra reach that lets a mark carry onto the floor in front
-	// of a wall, or round a corner, when the hit was square-on and needs no slant at all.
+	// The depth is not a free choice -- see ComputeDecalBoxDepth, where it is stated and tested.
 	const float size = (halfW > halfH) ? halfW : halfH;
-	float cosTheta = -(axis[0]*surfN[0] + axis[1]*surfN[1] + axis[2]*surfN[2]);
-	if (cosTheta < 0.2f) cosTheta = 0.2f;       // the skew clamp keeps real hits well above this
-	if (cosTheta > 1.f) cosTheta = 1.f;
-	const float slant = size * sqrtf(1.f - cosTheta*cosTheta) / cosTheta;
-	const float spread = size * ((fua_projdecal_depth > 0.f) ? (float)fua_projdecal_depth : 0.6f);
-	box.near_ = (slant > spread) ? slant : spread;
-	// Forward only as far as the slant needs, plus a little. A mark must not print through a thin
-	// wall onto whatever is in the next room, and that is the only thing this side of the box does.
-	box.far_  = slant + 4.f;
+	const float cosTheta = -(axis[0]*surfN[0] + axis[1]*surfN[1] + axis[2]*surfN[2]);
+	ComputeDecalBoxDepth(size, cosTheta, (float)fua_projdecal_depth, box.near_, box.far_);
 
 	TArray<Candidate> candidates;
 	GatherCandidates(box, candidates);
