@@ -806,7 +806,19 @@ static const char *kScenePSRedAlpha =
 	   left after reaching here -- the far surface then gets sqrt(extent^2 - distance^2) of ground
 	   instead of extent minus distance. It meets the join at the same value, so the mark does not
 	   jump; it advances at a different rate either side of it, which is the seam. */ \
+	/* [rc4l] Crossing onto a FLAT, the picture reaches as far as its DIAGONAL, not its half-height.
+	   The depth a floor gets is extent minus the height the mark sits at, and dividing that by the
+	   half-height is what made it so little: a scorch of 33 landing 18 up leaves the ground 15
+	   units, which is where it stopped. Nothing was blocking it -- the same shot 6 units lower
+	   crosses the same ground easily. The picture is square, so it genuinely extends to 46.7 in the
+	   direction it is being read, and using that gives the ground 28.7 units instead.
+	   Only the crossing direction on flats is affected, so the wall keeps its size and its rate. */ \
 	"        float crossed = perp + across;\n" \
+	"        if (abs(nrm.y) > 0.7) {\n" \
+	"            float hW = 1.0 / max(length(axisU), 1e-6);\n" \
+	"            float hH = 1.0 / max(length(axisV), 1e-6);\n" \
+	"            crossed *= hH / max(length(vec2(hW, hH)), 1e-4);\n" \
+	"        }\n" \
 	"        if (uDecalDebug.y > 0.5) {\n" \
 	"            float halfH2 = 1.0 / max(length(axisV), 1e-6);\n" \
 	"            float on = sqrt(max(halfH2 * halfH2 - perp * perp, 0.0));\n" \
