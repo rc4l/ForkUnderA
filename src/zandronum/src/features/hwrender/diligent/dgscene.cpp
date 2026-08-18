@@ -1454,6 +1454,12 @@ static void BuildDynamic(Diligent::IDeviceContext *ctx)
 				const bool ta = pa.blendMode != 0, tb = pb.blendMode != 0;
 				if (ta != tb)            swap = tb < ta;                       // opaque before blended
 				else if (!ta)            swap = pb.material < pa.material;     // opaque: by material
+				// [rc4l] Decals keep the order they were registered in, and the buffer layout is what
+				// carries that to the draw: the translucent pass orders decals by their vertex offset,
+				// so if they are laid out by distance here that is the order it gets, whatever it asks
+				// for. Both halves are needed; either alone leaves the marks distance-ordered.
+				else if (pa.depthBias && pb.depthBias)
+				                         swap = order[b] < order[a];           // decals: as registered
 				else                     swap = key[order[b]] > key[order[a]]; // blended: far first
 				if (swap) { const int t = order[a]; order[a] = order[b]; order[b] = t; }
 			}
@@ -1642,7 +1648,8 @@ static void DrawBlended(Diligent::IDeviceContext *ctx)
 			// assignment that overwrote it, so the rule had never once applied. A bias that is dead
 			// looks exactly like a bias that is too small -- the pair it was meant to settle simply
 			// keeps trading places -- which is the worst way for a fix to fail.
-			if (r.depthBias) d.dist *= 1.02f;
+			// [rc4l] The 1.02 nudge is gone: a decal no longer sorts by distance at all, so there is
+			// nothing for it to bias. See the comparator.
 			list.Push(d);
 			g_dynDraws++;
 			g_dynTris += r.count / 3;
@@ -1659,6 +1666,20 @@ static void DrawBlended(Diligent::IDeviceContext *ctx)
 	// way every frame.
 	std::sort(&list[0], &list[0] + list.Size(),
 		[](const BlendDraw &a, const BlendDraw &b) {
+			// [rc4l] DECALS FIRST, in the order they were made -- they are not sorted by distance.
+			//
+			// GL draws a decal as part of the wall it is stuck to, in the order the decals were created,
+			// and that happens before anything translucent. Sorting them by distance instead scrambles
+			// them against each other: a plasma burst lands several marks a unit or two apart, each a
+			// black scorch with an additive glow, and the scorch belonging to a NEARER impact then sorts
+			// after -- and paints over -- the glow of the one beside it. The additive-last rule below
+			// cannot help, because it only settles draws at the same distance and these are not.
+			//
+			// Drawing them before the translucent sprites is the same order GL uses and removes the
+			// reason the 1.02 distance bias existed: a sprite hovering just off a scorched floor is now
+			// drawn after the mark because it is a sprite, not because its distance was nudged.
+			if (a.bias != b.bias) return a.bias;
+			if (a.bias) return a.first < b.first;
 			if (a.dist != b.dist) return a.dist > b.dist;
 			// [rc4l] At equal distance, ADDITIVE draws last.
 			//
