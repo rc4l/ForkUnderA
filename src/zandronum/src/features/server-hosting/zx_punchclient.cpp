@@ -155,6 +155,13 @@ void PunchResultArrived( int verdict )
 
 	if ( pszWhy != NULL )
 		DPrintf( "Hole punch: %s.\n", pszWhy );
+
+	// [rc4l] A brokered punch is the starting gun for any challenge the browser is holding back. The
+	// server is being told to open at this instant, so this is the one moment when our packet and its
+	// packet are both in flight and neither has landed on the other's router to take the tuple the
+	// other needs. See BROWSER_PunchBrokered.
+	if ( static_cast<PunchVerdict>( verdict ) == PunchVerdict::Broker )
+		BROWSER_PunchBrokered( );
 }
 
 void PunchRequestForced( const NETADDRESS_s &server )
