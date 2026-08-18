@@ -8,8 +8,7 @@ namespace zx
 
 CookieClaim DecideCookieClaim(bool found, CookiePurpose purpose)
 {
-	// Nothing matched, so nothing is proved and nothing is destroyed. Destroying on a failed claim
-	// would let anyone cancel a stranger's cookie by guessing at it.
+	// [rc4l] Destroying on a failed claim would let anyone cancel a stranger's cookie by guessing.
 	if (!found)
 		return CookieClaim(false, false);
 

@@ -8,8 +8,7 @@ namespace zx
 
 bool AnnounceFlagFromByte(int raw)
 {
-	// Strictly positive. Not "!= 0", which would read the -1 of an exhausted stream as true and grant
-	// a capability to every server too old to have claimed it.
+	// [rc4l] Strictly positive, since "!= 0" would read the -1 of an exhausted stream as true.
 	return (raw > 0);
 }
 
@@ -36,8 +35,8 @@ bool AnnounceIdIsGroupable(const char *id)
 			return false;
 	}
 
-	// Exactly a SHA-256 in hex. A shorter one is a truncated read and a longer one is not ours, and
-	// either would be a way to have listings merged that are not one server.
+	// [rc4l] Exactly a SHA-256 in hex, since a shorter one is a truncated read and a longer one is
+	// not ours.
 	return (length == 64);
 }
 
