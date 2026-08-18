@@ -71,7 +71,7 @@ void SetImpactDirection(fixed_t dx, fixed_t dy);
 
 // [rc4l] What a missile died against: a blocking line, an actor, or neither. Only the first can mark
 // a wall, so a "dead zone" where a projectile leaves nothing is one of the other two.
-void NoteMissileDeath(bool hasLine, bool hasTarget, bool hasGenerator);
+void NoteMissileDeath(bool hasLine, bool hasTarget, bool hasGenerator, double z, double floorZ);
 
 // Dropped when the level changes: the records hold plane heights that mean nothing in a new map.
 void ClearFlatDecals();

@@ -1757,7 +1757,8 @@ void P_ExplodeMissile (AActor *mo, line_t *line, AActor *target, bool bExplodeOn
 	// an actor, or come to rest against nothing either branch recognises, and both of those leave no
 	// mark at all -- silently, and only in some places, which is what a "dead zone" is. Telling them
 	// apart from in front of an unmarked wall is impossible; this is one counter each.
-	zx::levelmesh::NoteMissileDeath(line != NULL, target != NULL, mo->DecalGenerator != NULL);
+	zx::levelmesh::NoteMissileDeath(line != NULL, target != NULL, mo->DecalGenerator != NULL,
+		FIXED2DBL(mo->z), FIXED2DBL(mo->floorz));
 
 	// [rc4l] features/levelmesh: a missile that hits a FLOOR or CEILING marks it too.
 	//
