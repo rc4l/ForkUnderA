@@ -146,11 +146,8 @@ static	const LONG		kMaxPunchesPerSweep = 4;
 
 //*****************************************************************************
 //
-// [rc4l] Addresses that went unanswered, so the NEXT sweep can punch before it speaks.
-//
-// A ring, and deliberately small: this is a hint about which servers need help, not a database. The
-// worst case of forgetting one is that it costs a wasted challenge and is remembered again a moment
-// later, which is exactly what happens today for every one of them.
+// [rc4l] Addresses that went unanswered, a small ring because this is a hint about which servers need
+// help rather than a database.
 #define MAX_REMEMBERED_UNREACHABLE 32
 static	NETADDRESS_s	g_UnreachableAddresses[MAX_REMEMBERED_UNREACHABLE];
 static	ULONG			g_ulUnreachableNext = 0;
@@ -162,8 +159,7 @@ static bool browser_IsKnownUnreachable( const NETADDRESS_s &Address )
 		if ( g_UnreachableAddresses[ulIdx].usPort == 0 )
 			continue;
 
-		// CompareNoPort, because a punch may have re-aimed the row at the port its NAT really opened;
-		// it is the same machine and the same reason it needed help.
+		// [rc4l] CompareNoPort, since a punch may have re-aimed the row at the port its NAT opened.
 		if ( g_UnreachableAddresses[ulIdx].CompareNoPort( Address ))
 			return true;
 	}
@@ -182,8 +178,7 @@ static void browser_RememberUnreachable( const NETADDRESS_s &Address )
 
 static void browser_ForgetUnreachable( const NETADDRESS_s &Address )
 {
-	// It answered. Whatever was wrong is not wrong now, and continuing to spend punches on it would
-	// take budget from a server that still needs one.
+	// [rc4l] It answered, so spending more punches on it would starve one that still needs them.
 	for ( ULONG ulIdx = 0; ulIdx < MAX_REMEMBERED_UNREACHABLE; ulIdx++ )
 	{
 		if ( g_UnreachableAddresses[ulIdx].CompareNoPort( Address ))
@@ -382,13 +377,8 @@ bool BROWSER_IsListable( ULONG ulServer )
 	if (( ulState != AS_ACTIVE ) && ( ulState != AS_VERSIONMISMATCH ))
 		return ( false );
 
-	// [rc4l] One server, one row. The registry told us this row and another are the same machine
-	// reached two ways, so show the IPv6 one and hide the IPv4 one.
-	//
-	// Conditional on the survivor having ANSWERED, which is what makes this safe for a player with no
-	// IPv6 at all: their v6 row never becomes active, so nothing is hidden and they keep the v4 row
-	// they can actually use. Hiding on the registry's word alone would delete servers from the list of
-	// everyone whose ISP has not caught up.
+	// [rc4l] One server, one row, hidden only once the v6 row has ANSWERED so a player with no IPv6
+	// keeps the row they can actually use.
 	if ( g_BrowserServerList[ulServer].bHasGroupPeer && ( g_BrowserServerList[ulServer].Address.bIsIPv6 == false ))
 	{
 		const LONG lPeer = browser_GetListIDByAddress( g_BrowserServerList[ulServer].GroupPeer );
@@ -830,10 +820,7 @@ void BROWSER_QueryTick( void )
 		{
 			g_BrowserServerList[ulIdx].ulActiveState = AS_TIMEDOUT;
 
-			// [rc4l] Remember it, so the next sweep punches for this one BEFORE it challenges. That
-			// ordering is the difference between a hole that opens where we are knocking and one that
-			// opens on a rewritten port, and it can only be applied to a server already known to need
-			// it -- which is what this row just became.
+			// [rc4l] Remember it, so the next sweep punches before it challenges.
 			if ( g_BrowserServerList[ulIdx].bLAN == false )
 				browser_RememberUnreachable( g_BrowserServerList[ulIdx].Address );
 		}
@@ -1367,9 +1354,8 @@ bool BROWSER_GetServerList( BYTESTREAM_s *pByteStream )
 
 		case SRSC_SERVERGROUP:
 			{
-				// [rc4l] The registry saying these addresses are one server, which nothing on this
-				// side could work out: two addresses being one machine is exactly what a stranger
-				// would claim in order to have their row merged with somebody else's.
+				// [rc4l] Believed only from the registry, since claiming to be somebody else's machine
+				// is how you would hide their row.
 				const int count = pByteStream->ReadByte();
 
 				NETADDRESS_s first;
@@ -1971,9 +1957,8 @@ static void browser_SendServerRegistryQuery( void )
 	g_ServerRegistryBuffer.ByteStream.WriteLong( LAUNCHER_SERVERREGISTRY_CHALLENGE );
 	g_ServerRegistryBuffer.ByteStream.WriteShort( SERVERREGISTRY_VERSION );
 
-	// [rc4l] And say we can be told which addresses are one server, so a dual-stack host is one row
-	// rather than two. Opt-in rather than always-on because the list is positional: a registry cannot
-	// send SRSC_SERVERGROUP to a client that would read it as an address.
+	// [rc4l] Say we understand grouping, opt-in because the list is positional and an older client
+	// would read the new opcode as an address.
 	g_ServerRegistryBuffer.ByteStream.WriteByte( 1 );
 
 	for ( unsigned int i = 0; i < g_ServerRegistryAddresses.Size( ); ++i )
@@ -2183,14 +2168,11 @@ void BROWSER_MarkSameServer( const NETADDRESS_s &First, const NETADDRESS_s &Seco
 	const LONG lFirst = browser_GetListIDByAddress( First );
 	const LONG lSecond = browser_GetListIDByAddress( Second );
 
-	// Both rows have to exist. The group block arrives after the addresses in the same response, so
-	// they normally do -- but a row dropped for any reason must not leave the other pointing at
-	// nothing, which is why IsListable re-checks the peer rather than trusting the flag.
+	// [rc4l] Both rows must exist, and IsListable re-checks the peer rather than trusting the flag.
 	if (( lFirst < 0 ) || ( lSecond < 0 ) || ( lFirst == lSecond ))
 		return;
 
-	// Both directions, because either row may be the one asked about first, and the answer has to be
-	// the same whichever way round it is looked at.
+	// [rc4l] Both directions, since either row may be asked about first.
 	g_BrowserServerList[lFirst].bHasGroupPeer = true;
 	g_BrowserServerList[lFirst].GroupPeer = Second;
 	g_BrowserServerList[lSecond].bHasGroupPeer = true;
@@ -2201,10 +2183,7 @@ void BROWSER_MarkSameServer( const NETADDRESS_s &First, const NETADDRESS_s &Seco
 //
 void BROWSER_PunchBrokered( void )
 {
-	// Every held row, not the one this verdict belongs to: the result carries a verdict and no
-	// address, and a sweep holds at most kMaxPunchesPerSweep of them anyway. Releasing all four one
-	// registry round trip early beats holding the right one until a timer that is wrong on every
-	// network -- the fallback in BROWSER_QueryTick still covers a verdict that never arrives.
+	// [rc4l] Every held row, because the verdict carries no address and a sweep holds at most four.
 	for ( ULONG ulIdx = 0; ulIdx < MAX_BROWSER_SERVERS; ulIdx++ )
 	{
 		if (( g_BrowserServerList[ulIdx].ulActiveState != AS_WAITINGFORREPLY )
@@ -2237,12 +2216,8 @@ void BROWSER_QueryAllServers( void )
 		g_BrowserServerList[ulIdx].lPunchLedMS = 0;
 	}
 
-	// [rc4l] TWO PASSES, and the order between them is the whole design.
-	//
-	// A row that leads with a punch sends nothing until the punch has had its head start, because a
-	// challenge sent first is what takes the tuple the host's punch needs (browser.h). The budget is
-	// small, so it goes to the rows known to need it BEFORE the speculative ones -- otherwise the
-	// first four rows in the list spend it whether or not they were ever unreachable.
+	// [rc4l] Two passes so the small budget goes to rows known to need a punch before speculative
+	// ones, or the first four rows in the list spend it regardless.
 	for ( int pass = 0; pass < 2; ++pass )
 	{
 		for ( ulIdx = 0; ulIdx < MAX_BROWSER_SERVERS; ulIdx++ )
@@ -2272,7 +2247,7 @@ void BROWSER_QueryAllServers( void )
 		}
 	}
 
-	// Everything that did not lead speaks now, exactly as it always did.
+	// [rc4l] Everything that did not lead speaks now, exactly as it always did.
 	for ( ulIdx = 0; ulIdx < MAX_BROWSER_SERVERS; ulIdx++ )
 	{
 		if (( g_BrowserServerList[ulIdx].ulActiveState != AS_WAITINGFORREPLY )

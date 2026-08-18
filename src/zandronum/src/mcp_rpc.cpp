@@ -136,9 +136,8 @@ namespace
 	std::string I( long long v ) { return std::to_string( v ); }
 	std::string B( bool v )      { return v ? "true" : "false"; }
 
-	// A stable token per listing state, so a test can match on the state rather than on the English
-	// sentence DescribeListing returns -- that sentence is written for a player reading a console and
-	// is free to be reworded.
+	// [rc4l] A stable token per state, so a test matches on that rather than on English that is free
+	// to be reworded.
 	const char *HostDiagStateToken( zx::ListingState state )
 	{
 		switch ( state )
@@ -515,9 +514,8 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 			body += ",\"country\":\"" + country + "\"";
 			body += ",\"flag\":\"" + flag + "\"";
 			body += ",\"countryIndex\":" + I( (long long)BROWSER_GetCountryIndex( i ) );
-			// [rc4l] Whether a PLAYER would see this row. A dual-stack server is listed twice by the
-			// registry and collapsed to one row for display, so a check asserting on what the browser
-			// HOLDS would miss the collapse entirely and pass whether or not it happened.
+			// [rc4l] Whether a PLAYER would see this row, since asserting on what the browser holds
+			// would miss the collapse entirely.
 			body += ",\"listed\":" + B( BROWSER_IsListable( i ) );
 			body += ",\"players\":" + I( BROWSER_GetNumPlayers( i ) );
 			body += ",\"ping\":" + I( BROWSER_GetPing( i ) ) + "}";
@@ -528,10 +526,8 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 	}
 	else if ( cmd == "net.clients" )
 	{
-		// How many peers actually got in. This is the assertion the NAT lab is built around: a punch
-		// that "worked" is only proven by somebody being connected at the far end of it, and every
-		// cheaper signal (the process is alive, the browser row appeared, no error was logged) is
-		// true of a connection that never happened.
+		// [rc4l] How many peers actually got in, which is the only signal a connection that never
+		// happened cannot produce.
 		if ( NETWORK_GetState() != NETSTATE_SERVER ) { SendErr( id, "net.clients requires a server" ); return; }
 		std::string body = "{\"connected\":" + I( (long long)SERVER_CalcNumConnectedClients() );
 		body += ",\"players\":" + I( (long long)SERVER_CountPlayers( false ) ) + "}";
@@ -539,13 +535,8 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 	}
 	else if ( cmd == "net.hostdiag" )
 	{
-		// The registry's own testimony about whether this server is reachable, per family.
-		//
-		// This is the machine-readable half of the fua_hostdiag console command, and it exists so a
-		// reachability check can be ASSERTED on rather than eyeballed: browser.list cannot answer it,
-		// because a host's own public row is fabricated from its LAN row and lights up either way.
-		// The field that matters is `reachable` -- it is true only because something outside this
-		// machine reached in.
+		// [rc4l] The machine-readable half of fua_hostdiag, so a reachability check can be asserted on
+		// rather than eyeballed.
 		std::string body = "{\"hosting\":" + B( NETWORK_GetState() == NETSTATE_SERVER );
 		body += ",\"port\":" + I( (long long)NETWORK_GetLocalPort() );
 
@@ -564,34 +555,21 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 				JsonEscape( std::string( zx::DescribeListing( proof.state ) ), describe );
 
 				body += std::string( fam ? ",\"ipv6\":{" : "\"ipv4\":{" );
-				// `possible` false means this family has nowhere to announce TO (the registry has no
-				// AAAA record), so an absent listing is expected. Without it a caller reads a
-				// permanently unverified v6 family as a fault and chases a bug that is not there.
+				// [rc4l] False means this family has nowhere to announce to, so an absent listing is
+				// expected rather than a fault.
 				body += "\"possible\":" + B( possible );
 				body += ",\"state\":\"" + std::string( HostDiagStateToken( proof.state ) ) + "\"";
 				body += ",\"verified\":" + B( verified );
 				body += ",\"secondsSinceVerified\":" + I( proof.secondsSinceVerified );
-				// Nothing to attend to when the family was never possible: that state is expected, and
-				// flagging it makes a report contradict its own `possible` field.
+				// [rc4l] Nothing to attend to when the family was never possible.
 				body += ",\"needsAttention\":" + B( possible && zx::ListingNeedsAttention( proof.state ) );
 				body += ",\"describe\":\"" + describe + "\"}";
 			}
 			body += "}";
 		}
 
-		// [rc4l] `registryReplied` is what the verification ACTUALLY proves, and it is less than it
-		// sounds: the announce we sent opened a NAT mapping toward the registry, so its reply comes
-		// back through that mapping however closed the port is to everybody else. The registry's own
-		// source says so (server-registry/main.cpp, RequestServerVerification).
-		//
-		// So `reachable` is null rather than a boolean. We do not know, we cannot know from here, and
-		// the previous version of this claimed true -- which told a player behind an unforwarded
-		// router that strangers could join them. Reporting "unknown" is worth more than a confident
-		// wrong answer, and the NAT lab is what caught this by asserting the opposite.
-		//
-		// Making it knowable needs a probe from a source the server never sent to, which cannot be
-		// done registry-side alone (SERVER_SERVERREGISTRY_IsAddress compares the port, so a packet
-		// from any other port of the registry's is dropped before it is handled).
+		// [rc4l] `reachable` is null because the verification arrives through the mapping our own
+		// announce opened, so it proves nothing about anyone else reaching us.
 		body += ",\"registryReplied\":" + B( registryReplied );
 		body += ",\"reachable\":null";
 		body += ",\"reachableNote\":\"the registry's reply arrives through the NAT mapping our own announce opened, so it does not prove strangers can reach us\"";

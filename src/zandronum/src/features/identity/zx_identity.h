@@ -63,22 +63,10 @@ bool Identity_Verify( const Bytes &publicKey, const std::string &message, const 
 // Where the key files live, which is one folder per user shared by every copy of the engine.
 std::string Identity_ConfigRoot( void );
 
-// [rc4l] What the registry knows this server as, so it can tell that one server's IPv4 and IPv6
-// listings are one server rather than two.
+// [rc4l] What the registry knows this server as, derived from its secret and its port so thirty
+// servers on one box get thirty unguessable ids with no new file.
 //
-// Derived rather than stored: SHA-256 over a domain tag, the server's own secret, and the port. That
-// makes it unique without a new file to manage -- an operator running thirty servers on one box gets
-// thirty different ids for free, because a port cannot collide with itself on one machine.
-//
-// The SECRET is an input, which is what makes the id unguessable. That matters because the id is the
-// only thing tying two listings together: if it could be guessed, anyone could announce with somebody
-// else's id and have their server merged away. It is therefore never published -- the registry uses
-// it to group entries and tells clients only which addresses are grouped.
-//
-// Not ban-grade and never to be used as such. It changes when the port changes, so it is a hint about
-// sameness within a listing, not an identity anybody is accountable for. Player bans stay on IP.
-//
-// Empty when this build has no server identity, which is how a caller says "do not group me".
+// [rc4l] Never ban-grade: it changes with the port, and player bans stay on IP.
 std::string Identity_ServerRegistryId( int port );
 
 // Cryptographically strong random bytes for nonces, never rand().
