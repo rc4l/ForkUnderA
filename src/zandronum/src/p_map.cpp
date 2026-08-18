@@ -46,6 +46,7 @@
 #include "features/mbf21/computation/damage_groups_compute.h"
 #include "features/hitboxviz/hitboxviz.h"
 #include "p_trace.h"
+EXTERN_CVAR (Bool, fua_decal_log)
 #include "p_3dmidtex.h"
 #include "computation/rail_puff_compute.h"
 
@@ -796,7 +797,10 @@ static int untouched(line_t *ld, FCheckPosition &tm)
 //
 //==========================================================================
 
+
 static // killough 3/26/98: make static
+
+
 bool PIT_CheckLine(line_t *ld, const FBoundingBox &box, FCheckPosition &tm)
 {
 	bool rail = false;
@@ -979,6 +983,7 @@ bool PIT_CheckLine(line_t *ld, const FBoundingBox &box, FCheckPosition &tm)
 		tm.floorpic = open.floorpic;
 		tm.touchmidtex = open.touchmidtex;
 		tm.abovemidtex = open.abovemidtex;
+		tm.floorline = ld;   // [rc4l] which line this was, for the step check in P_TryMove
 		tm.thing->BlockingLine = ld;
 	}
 	else if (open.bottom == tm.floorz)
@@ -1672,6 +1677,7 @@ bool P_CheckPosition(AActor *thing, fixed_t x, fixed_t y, FCheckPosition &tm, bo
 
 	newsec = P_PointInSector(x, y);
 	tm.ceilingline = thing->BlockingLine = NULL;
+	tm.floorline = NULL;
 
 	// The base floor / ceiling is from the subsector that contains the point.
 	// Any contacted lines the step closer together will adjust them.
@@ -2571,6 +2577,25 @@ bool P_TryMove(AActor *thing, fixed_t x, fixed_t y,
 	return true;
 
 pushline:
+	// [rc4l] A missile is about to explode here, so name the line it actually ran into.
+	//
+	// BlockingLine is assigned by every clause that narrows the movement box, and PIT_CheckLine
+	// keeps iterating after one has, so it ends up holding whichever line was visited LAST rather
+	// than the one that stopped anything. P_ExplodeMissile is handed it and the decal is offered to
+	// its sidedef, so the mark goes to a line the missile never touched -- on dbab02 a plasma ball
+	// stopped by a wall was reported against an invisible sector divider nine units in front of it,
+	// which carries no texture at any height, so vanilla made no mark at all while bullets marked
+	// the wall behind it perfectly well.
+	//
+	// Decided here because this is the one exit every failed move passes through, with both
+	// candidates in hand: whichever plane the missile is outside of is the one it hit.
+	if ((thing->flags & MF_MISSILE) && !(thing->flags & MF_NOCLIP))
+	{
+		if (thing->z < tm.floorz && tm.floorline != NULL)
+			thing->BlockingLine = tm.floorline;
+		else if (thing->z + thing->height > tm.ceilingz && tm.ceilingline != NULL)
+			thing->BlockingLine = tm.ceilingline;
+	}
 	thing->flags6 &= ~MF6_INTRYMOVE;
 /*
 	// [RH] Don't activate anything if just predicting
