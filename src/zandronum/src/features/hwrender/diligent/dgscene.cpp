@@ -799,30 +799,20 @@ static const char *kScenePSRedAlpha =
 	   the ground is the only surface that continues past a wall's end to be mirrored onto. */ \
 	"        if (dot(outward, N) < 0.0) outward = -outward;\n" \
 	"        float side = dot(rel, outward);\n" \
-	"        if (abs(nrm.y) > 0.7 && side < 0.0) { path = 1e9; return vec2(-1.0); }\n" \
 	"        float across = abs(side);\n" \
 	"        float along  = dot(rel, edge);\n" \
+	/* ...but only where it is genuinely INSIDE the wall. Ground behind the wall's plane and within
+	   the stretch the wall occupies is buried in solid geometry and nobody can see it. Ground behind
+	   the plane and PAST the wall's end is round the corner, on open floor a player walks over, and
+	   the soot reaches it by going round rather than through -- refusing that is what left the mark
+	   cut off at the corner. */ \
+	"        bool inWall = span.y > span.x && along >= span.x && along <= span.y;\n" \
+	"        if (abs(nrm.y) > 0.7 && side < 0.0 && inWall) { path = 1e9; return vec2(-1.0); }\n" \
 	/* Mode 1 spends the remaining picture over the sphere's cross-section rather than over what is
 	   left after reaching here -- the far surface then gets sqrt(extent^2 - distance^2) of ground
 	   instead of extent minus distance. It meets the join at the same value, so the mark does not
 	   jump; it advances at a different rate either side of it, which is the seam. */ \
-	/* [rc4l] Crossing onto a FLAT, the picture reaches as far as its DIAGONAL, not its half-height.
-	   The depth a floor gets is extent minus the height the mark sits at, and dividing that by the
-	   half-height is what made it so little: a scorch of 33 landing 18 up leaves the ground 15
-	   units, which is where it stopped. Nothing was blocking it -- the same shot 6 units lower
-	   crosses the same ground easily. The picture is square, so it genuinely extends to 46.7 in the
-	   direction it is being read, and using that gives the ground 28.7 units instead.
-	   Both directions on the ground get it, so the spread grows sideways along the wall as well as
-	   outward from it -- soot from one point does not stop at the mark's own width. Walls are left
-	   alone entirely, so a mark keeps its size on the surface it was made on. */ \
 	"        float crossed = perp + across;\n" \
-	"        if (abs(nrm.y) > 0.7) {\n" \
-	"            float hW = 1.0 / max(length(axisU), 1e-6);\n" \
-	"            float hH = 1.0 / max(length(axisV), 1e-6);\n" \
-	"            float rD = max(length(vec2(hW, hH)), 1e-4);\n" \
-	"            crossed *= hH / rD;\n" \
-	"            along   *= hW / rD;\n" \
-	"        }\n" \
 	"        if (uDecalDebug.y > 0.5) {\n" \
 	"            float halfH2 = 1.0 / max(length(axisV), 1e-6);\n" \
 	"            float on = sqrt(max(halfH2 * halfH2 - perp * perp, 0.0));\n" \
