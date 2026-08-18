@@ -2956,6 +2956,21 @@ static void CollectMirrors()
 		Printf("vulkan: %d mirror surface(s)\n", (int)g_mirrors.Size());
 }
 
+// [rc4l] Re-scan for mirror lines after one has been created at runtime. See the fua_dg_mirrors
+// CCMD, which lives outside this namespace and so cannot reach the statics above.
+int RecollectMirrors()
+{
+	// [rc4l] The surface list only. The SRB is deliberately LEFT ALONE.
+	//
+	// It holds the acceleration structure, the vertex buffer, the sky and the material array --
+	// nothing per-mirror -- so a new surface list does not invalidate it. Releasing it from here
+	// took the process down: this runs from the console, which is not a safe moment to drop a
+	// binding the next frame may already be using. CollectMirrors releases the mirror vertex
+	// buffer, which IS per-surface, and that one is rebuilt on demand.
+	CollectMirrors();
+	return (int)g_mirrors.Size();
+}
+
 static const char *kMirrorVS =
 	"#version 450\n"
 	"layout(location = 0) in vec3 aPos;\n"
@@ -3137,9 +3152,20 @@ static bool EnsureMirrorResources()
 		pci.GraphicsPipeline.InputLayout.NumElements = 2;
 		pci.PSODesc.ResourceLayout.DefaultVariableType = Diligent::SHADER_RESOURCE_VARIABLE_TYPE_STATIC;
 		pci.PSODesc.ResourceLayout.Variables = vars;
-		pci.PSODesc.ResourceLayout.NumVariables = 3;
+		// [rc4l] COUNTED FROM THE ARRAY, because a hand-written count silently retypes a variable.
+		//
+		// This said 3 while vars[] held 4. The fourth is uSky, so uSky was never registered as mutable
+		// and fell through to DefaultVariableType, which is STATIC. A static variable is assigned on
+		// the PSO; this code assigns uSky on the SRB, where GetVariableByName returns null for one --
+		// so the assignment did nothing at all, quietly, and the binding went out with a hole in it.
+		// Diligent then refused it with "No resource is assigned to static shader variable 'uSky'"
+		// and the whole descriptor set was invalid, which is what made the material array next to it
+		// sample white. That reads as bindless being broken, and bindless was fine: the same run
+		// reports "41 materials bound, 0 fell back to white".
+		pci.PSODesc.ResourceLayout.NumVariables = (Diligent::Uint32)(sizeof(vars) / sizeof(vars[0]));
 		pci.PSODesc.ResourceLayout.ImmutableSamplers = samplers;
-		pci.PSODesc.ResourceLayout.NumImmutableSamplers = 3;
+		pci.PSODesc.ResourceLayout.NumImmutableSamplers =
+			(Diligent::Uint32)(sizeof(samplers) / sizeof(samplers[0]));
 		pci.pVS = vs; pci.pPS = ps;
 		dev->CreateGraphicsPipelineState(pci, &g_mirrorPSO);
 		if (!g_mirrorPSO) { Printf("mirror: PSO failed\n"); return false; }
@@ -4289,6 +4315,17 @@ bool SceneScreenshot(const char *path, FString &report)
 
 }} // namespace zx::hwrender
 
+// [rc4l] Re-scan the level for mirror lines, for when one has just been made.
+//
+// CollectMirrors runs when a level is armed and never again, which is correct for a map -- a
+// linedef special does not change by itself. It does change when fua_make_mirror changes it, and
+// without this the backend keeps drawing that wall as a solid one while GL is already reflecting
+// in it. The traced reflection had no other way to be reached, which is most of why it went
+// untested for so long.
+CCMD( fua_dg_mirrors )
+{
+	Printf( "fua_dg_mirrors: %d mirror surface(s)\n", zx::hwrender::RecollectMirrors( ) );
+}
 CCMD( fua_diligent_scene )
 {
 	FString report;
