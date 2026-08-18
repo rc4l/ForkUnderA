@@ -25,7 +25,7 @@ services:
       dockerfile: Dockerfile.registry
     networks:
       pub:
-        ipv4_address: 192.168.240.10
+        ipv4_address: 203.0.113.10
 
   router_host:
     image: fua-natlab-router
@@ -39,10 +39,10 @@ services:
       NAT_FLAVOUR: ${NAT_FLAVOUR_HOST:-portrestricted}
       # Which side is the internet, by address rather than by interface name -- Docker does not
       # promise that the first network listed becomes eth0.
-      NAT_WAN_PREFIX: "192.168.240."
+      NAT_WAN_PREFIX: "203.0.113."
     networks:
       pub:
-        ipv4_address: 192.168.240.2
+        ipv4_address: 203.0.113.2
       lan_host:
         ipv4_address: 192.168.241.2
 
@@ -56,10 +56,10 @@ services:
       net.ipv4.ip_forward: 1
     environment:
       NAT_FLAVOUR: ${NAT_FLAVOUR_CLIENT:-portrestricted}
-      NAT_WAN_PREFIX: "192.168.240."
+      NAT_WAN_PREFIX: "203.0.113."
     networks:
       pub:
-        ipv4_address: 192.168.240.3
+        ipv4_address: 203.0.113.3
       lan_client:
         ipv4_address: 192.168.242.2
 
@@ -98,10 +98,21 @@ services:
         ipv4_address: 192.168.242.20
     command: ["sleep", "infinity"]
 
+# [rc4l] `pub` is 203.0.113.0/24 (TEST-NET-3) and MUST NOT be a private range.
+#
+# It was 192.168.240.0/24, which broke the exact mechanism under test without breaking anything
+# visible: zx_punchclient's IsLocalAddress refuses to ask for a punch toward an RFC1918 target, on the
+# entirely correct grounds that two machines in the same house need no introduction. So the client
+# quietly declined to punch, the server never opened a hole, and the run failed at "the client never
+# saw the server" -- which reads as a discovery bug.
+#
+# The lesson generalises: a fixture pretending to be the internet has to look like the internet to the
+# code's own definitions, not just to the topology diagram. The LANs stay 192.168.x on purpose --
+# those are supposed to be private.
 networks:
   pub:
     ipam:
-      config: [{ subnet: 192.168.240.0/24 }]
+      config: [{ subnet: 203.0.113.0/24 }]
   lan_host:
     internal: true
     ipam:
