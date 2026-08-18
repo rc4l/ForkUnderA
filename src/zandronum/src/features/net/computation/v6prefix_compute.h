@@ -43,15 +43,8 @@ bool V6AddressInPrefix( const unsigned char *address, const unsigned char *prefi
 // differ by an omission is one where the dangerous reading happens by accident. Say the number.
 bool ParseV6Prefix( const char *text, unsigned char *prefix, int *bits );
 
-// Render `prefix`/`bits` back to "2001:db8::/64" into `out` (needs 48 bytes; INET6_ADDRSTRLEN is 46
-// plus "/128").
-//
-// MUST round-trip through ParseV6Prefix, and that is the whole requirement: a ban list is read back
-// by the same parser that wrote it, and a rule that survives a save as something subtly wider is a
-// ban that grows on disk. So this emits the slash form only -- never the star spelling, which exists
-// to be typed rather than to be stored.
-//
-// False when `bits` is out of range, rather than writing a rule that cannot be read back.
+// [rc4l] Render `prefix`/`bits` back to "2001:db8::/64" in `out` (48 bytes), which MUST round-trip
+// through ParseV6Prefix or a rule widens every time the ban file is saved.
 bool FormatV6Prefix( const unsigned char *prefix, int bits, char *out, int outSize );
 
 } // namespace zx

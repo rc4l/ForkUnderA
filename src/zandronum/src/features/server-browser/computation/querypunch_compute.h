@@ -41,20 +41,8 @@ const int kQueryPunchResendMs[3] = { 2500, 4000, 5500 };
 const int kQueryPunchTimeoutMs = 7000;
 const int kQueryPlainTimeoutMs = 4000;
 
-// [rc4l] How long to hold the FIRST challenge back while the punch goes ahead of it, for a row we
-// already know needs one.
-//
-// THE QUERY POISONS THE HOLE. This is not a tuning detail, it is the reason the punch was failing
-// outright, and it took packet counters in the NAT lab to see it. The joiner's first challenge lands
-// on the host's router as an unsolicited packet, and the router tracks it even though it drops it --
-// so the tuple (hostPublic:port <-> joiner:port) is now taken. When the host is then told to punch at
-// that same joiner, its NAT cannot reuse that tuple and rewrites the source port, so the hole opens
-// somewhere the joiner is not knocking. The joiner cannot follow it either: a knock from a port it
-// never sent to is dropped by its OWN NAT before ShouldAdoptPunchKnock is ever consulted.
-//
-// So the punch has to go FIRST, and the challenge has to wait for it. 600ms covers a registry round
-// trip and the first punch packet with room to spare, and it costs nothing on a server that would
-// have answered anyway -- those are not punch-eligible in the first place.
+// [rc4l] How long to hold the first challenge back while the punch goes ahead of it, because a
+// challenge sent first is tracked by the host's router and takes the tuple the punch then needs.
 const int kQueryPunchLeadMs = 600;
 
 // Decide for one slot. `elapsedMs` is time since the FIRST challenge went out (resends must not
@@ -65,31 +53,15 @@ const int kQueryPunchLeadMs = 600;
 QueryPunchStep StepQueryPunch(int elapsedMs, bool punchEligible, bool punchRequested,
 	int resendsSent);
 
-// Whether a row that is about to be challenged for the FIRST time should punch before it speaks.
-//
-// `knownUnreachable` is the caller's memory that this exact address went unanswered on an earlier
-// sweep. Only those lead with a punch: doing it for every listed server would spend the sweep's
-// budget on servers that were going to answer anyway, and starve the ones that need it. A server
-// that has never been tried gets the ordinary challenge first, which is right -- most of them
-// answer, and one wasted round trip per unreachable server is cheaper than a punch for everyone.
+// [rc4l] Whether a row about to be challenged for the first time should punch before it speaks,
+// limited to servers already known unreachable so the small budget is not spent on the rest.
 bool ShouldPunchBeforeFirstChallenge(bool lan, bool knownUnreachable, bool punchBudgetLeft);
 
-// Whether a row nobody has tried yet should ALSO lead with a punch, once the known-unreachable rows
-// have taken their share of the budget.
-//
-// THE POISONING IS PERMANENT while the joiner keeps talking. The conntrack entry the first challenge
-// creates on the host's router is refreshed by every retry, so it never ages out during a sweep and
-// the tuple stays taken -- which means leading on the SECOND sweep is already too late. The only
-// moment a lead can help is before the first challenge is ever sent, so first contact has to take it
-// when there is budget spare.
-//
-// Ordered behind the known-unreachable rows deliberately: they are the ones certain to need it, and
-// a server that answers is forgotten immediately, so the budget drains toward the servers with a
-// problem rather than the first four rows in the list.
+// [rc4l] Whether an untried row should also lead, because the poisoning is refreshed by every retry
+// and so leading on a later sweep is already too late.
 bool ShouldPunchOnFirstContact(bool lan, bool punchBudgetLeft);
 
-// Whether the held-back first challenge is now due. `punchLedMs` is time since the punch was asked
-// for. Returns false when this row did not lead with a punch, since then the challenge already went.
+// [rc4l] Whether the held-back first challenge is now due, false for a row that never led.
 bool FirstChallengeDue(bool punchLed, bool firstChallengeSent, int punchLedMs);
 
 // Whether a punch knock -- an unsolicited packet from the server we asked the registry to punch --

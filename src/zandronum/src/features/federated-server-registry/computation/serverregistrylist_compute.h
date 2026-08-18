@@ -41,15 +41,8 @@ bool IsValidServerRegistryHost( const std::string &host );
 // Parse the whole file. Bad lines are skipped, not fatal. Duplicate hosts are collapsed, keeping the
 // first occurrence, so a fetched list that repeats an entry cannot produce a doubled browser.
 // An empty result means "nothing usable here" -- callers must not commit it over a good cached list.
-// [rc4l] `skippedOut`, when given, collects the entries that were thrown away.
-//
-// Skipping a bad line rather than failing the file is right -- one typo must not cost a player every
-// registry they have. But it was SILENT, and that silence hid a real bug: a registry named by an IPv6
-// address was dropped by a parser that could not read one, and the client fell back to its built-in
-// list looking perfectly healthy. Two IPv6 tests "passed" that way.
-//
-// Collected rather than logged line by line, so the caller can say "3 entries skipped: x, y, z" once
-// instead of turning a mistyped file into a wall of console.
+// [rc4l] `skippedOut` collects what was thrown away, because skipping in silence is how a registry
+// named by an IPv6 address vanished while the browser looked healthy.
 std::vector<ServerRegistryEntry> ParseServerRegistryList( const std::string &text,
 	std::vector<std::string> *skippedOut = 0 );
 

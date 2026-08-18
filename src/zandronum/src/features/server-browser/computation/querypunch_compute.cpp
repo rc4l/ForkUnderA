@@ -44,8 +44,7 @@ QueryPunchStep StepQueryPunch(int elapsedMs, bool punchEligible, bool punchReque
 
 bool ShouldPunchBeforeFirstChallenge(bool lan, bool knownUnreachable, bool punchBudgetLeft)
 {
-	// A machine on our own LAN is reached without crossing a router, so there is no hole to open and
-	// nothing a punch could improve.
+	// [rc4l] A LAN machine crosses no router, so there is no hole to open.
 	if (lan)
 		return false;
 
