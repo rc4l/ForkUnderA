@@ -230,6 +230,68 @@ int ClipPolygonToDecalBox(const float *worldPoly, int count, const DecalBox &box
 	return n;
 }
 
+int ClipLocalPolygonToDepthBand(const float *local, int count, float wLo, float wHi,
+                                float *out, int maxOut)
+{
+	if (count < 3 || maxOut < 3 || wHi <= wLo) return 0;
+
+	const int kMaxPoints = 72;
+	float buf[2][kMaxPoints * 3];
+	int cur = 0, n = (count < kMaxPoints) ? count : kMaxPoints;
+	for (int i = 0; i < n * 3; i++) buf[cur][i] = local[i];
+
+	// Two planes, both on w: keep wLo <= w <= wHi.
+	const float sign[2] = { 1.f, -1.f };
+	const float limit[2] = { wHi, -wLo };
+	for (int s = 0; s < 2 && n > 0; s++)
+	{
+		const float *in = buf[cur];
+		float *dst = buf[cur ^ 1];
+		int m = 0;
+		for (int i = 0; i < n; i++)
+		{
+			const float *a = in + i*3;
+			const float *b = in + ((i + 1) % n)*3;
+			const float da = sign[s] * a[2] - limit[s];
+			const float db = sign[s] * b[2] - limit[s];
+			const bool aIn = (da <= 0.f), bIn = (db <= 0.f);
+			if (aIn && m < kMaxPoints)
+			{
+				dst[m*3 + 0] = a[0]; dst[m*3 + 1] = a[1]; dst[m*3 + 2] = a[2];
+				m++;
+			}
+			if (aIn != bIn && m < kMaxPoints)
+			{
+				const float t = da / (da - db);
+				dst[m*3 + 0] = a[0] + (b[0] - a[0]) * t;
+				dst[m*3 + 1] = a[1] + (b[1] - a[1]) * t;
+				dst[m*3 + 2] = a[2] + (b[2] - a[2]) * t;
+				m++;
+			}
+		}
+		cur ^= 1;
+		n = m;
+		if (n < 3) return 0;
+	}
+
+	if (n > maxOut) n = maxOut;
+	for (int i = 0; i < n * 3; i++) out[i] = buf[cur][i];
+	return n;
+}
+
+float DecalRadialFade(const float local[3], float pictureRadius, float outerRadius)
+{
+	const float r = std::sqrt(local[0]*local[0] + local[1]*local[1] + local[2]*local[2]);
+	if (r <= pictureRadius) return 1.f;
+	if (outerRadius <= pictureRadius) return 0.f;
+	if (r >= outerRadius) return 0.f;
+
+	// Smoothstep, so the ramp leaves the picture's edge flat instead of with a crease in it -- a
+	// linear run-out has a visible line where it starts, which is the artefact being removed.
+	const float t = (r - pictureRadius) / (outerRadius - pictureRadius);
+	return 1.f - t * t * (3.f - 2.f * t);
+}
+
 void DecalUV(const float local[3], const DecalBox &box, float &u, float &v)
 {
 	u = (box.halfW > 1e-6f) ? (local[0] / (2.0f * box.halfW) + 0.5f) : 0.5f;

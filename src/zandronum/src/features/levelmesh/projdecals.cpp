@@ -13,6 +13,8 @@
 #include "decallib.h"
 #include "doomstat.h"
 #include "m_random.h"
+#include "p_local.h"
+#include "p_trace.h"
 #include "c_cvars.h"
 #include "c_dispatch.h"
 #include "tarray.h"
@@ -62,6 +64,20 @@ CVAR(Float, fua_projdecal_falloff, 0.0f, CVAR_ARCHIVE)
 // a depth plane, a picture stretched across a grazing wall, and a picture whose texture simply looks
 // like that are the same handful of dark pixels. The numbers say which.
 CVAR(Bool, fua_projdecal_debug, false, 0)
+
+// [rc4l] How many slices of depth a surface's share is drawn in.
+//
+// One is no ramp at all: the far end of a mark reaching across a floor stops in a straight line
+// where the box ends. More slices is a smoother run-out for more pieces; four is enough to read as
+// a fade at the size decals actually are.
+CVAR(Int, fua_projdecal_bands, 4, CVAR_ARCHIVE)
+
+// [rc4l] Whether a mark has to be VISIBLE from where the blast landed.
+//
+// Without this a box that pokes through a wall prints on whatever is on the other side of it, and a
+// scorch appears in the next room with the wall it came through still solid between them. On by
+// default; off is only useful for seeing what the box would have covered.
+CVAR(Bool, fua_projdecal_occlude, true, CVAR_ARCHIVE)
 
 // [rc4l] Its own RNG stream, not pr_decal(), because a projection must not change what the engine
 // rolls. Sharing one would make the game desync against a demo or another client the moment a
@@ -322,6 +338,61 @@ void NormalFromLine(line_t *line, float out[3])
 	}
 }
 
+// [rc4l] Could the blast actually SEE this piece of geometry?
+//
+// The box is a volume, and a volume does not stop at walls: a mark near a corner reaches through it
+// and prints on the far side, so a scorch turns up in the next room with the wall it came through
+// still solid in between. Nothing in the clip can notice that -- the geometry really is inside the
+// box -- so the question has to be asked of the map.
+//
+// One trace from the impact to the middle of the piece. Started a little back along the direction of
+// travel, because the impact point itself sits ON the surface that was hit and a trace beginning
+// inside a wall answers nothing; stopped a little short, because the destination IS a surface and
+// arriving at it is not being blocked by it.
+bool BlockedFromImpact(const DecalBox &box, const float eye[3], const float *local, int n)
+{
+	float cu = 0.f, cv = 0.f, cw = 0.f;
+	for (int i = 0; i < n; i++) { cu += local[i*3 + 0]; cv += local[i*3 + 1]; cw += local[i*3 + 2]; }
+	cu /= (float)n; cv /= (float)n; cw /= (float)n;
+
+	const float target[3] = {
+		box.origin[0] + box.right[0]*cu + box.up[0]*cv + box.axis[0]*cw,
+		box.origin[1] + box.right[1]*cu + box.up[1]*cv + box.axis[1]*cw,
+		box.origin[2] + box.right[2]*cu + box.up[2]*cv + box.axis[2]*cw,
+	};
+	// [rc4l] Traced from where the PROJECTILE was, not from the box's origin.
+	//
+	// The origin has been advanced along the direction of travel by the projectile's radius, to put
+	// the box on the geometry rather than short of it -- which means it is usually a few units INSIDE
+	// the wall that was hit. A trace starting inside a wall is answering a different question, and
+	// the answer it gives is "blocked": every piece of floor in front of the wall was rejected as
+	// invisible, and the mark stopped dead at the skirting board.
+	//
+	// The missile's own last position cannot be inside anything, because it was there.
+	const float kBackOff = 2.f, kStopShort = 2.f;
+	const float start[3] = {
+		eye[0] - box.axis[0]*kBackOff,
+		eye[1] - box.axis[1]*kBackOff,
+		eye[2] - box.axis[2]*kBackOff,
+	};
+
+	float dir[3] = { target[0] - start[0], target[1] - start[1], target[2] - start[2] };
+	const float dist = sqrtf(Dot3(dir, dir));
+	if (dist <= kStopShort) return false;      // right here: nothing can be in the way
+	dir[0] /= dist; dir[1] /= dist; dir[2] /= dist;
+
+	sector_t *sec = P_PointInSector(FLOAT2FIXED(start[0]), FLOAT2FIXED(start[1]));
+	if (sec == NULL) return false;
+
+	FTraceResults res;
+	const bool hit = Trace(FLOAT2FIXED(start[0]), FLOAT2FIXED(start[1]), FLOAT2FIXED(start[2]), sec,
+		FLOAT2FIXED(dir[0]), FLOAT2FIXED(dir[1]), FLOAT2FIXED(dir[2]),
+		FLOAT2FIXED(dist - kStopShort),
+		0,          // no actor blocks a mark: a monster standing in front of a wall is not the wall
+		0, NULL, res, TRACE_NoSky);
+	return hit && res.HitType != TRACE_HitNone;
+}
+
 // ---------------------------------------------------------------------------------------------
 // Turning a clipped polygon into mesh vertices
 // ---------------------------------------------------------------------------------------------
@@ -460,7 +531,19 @@ void BuildProjection(const MarkStyle &style, DBaseDecal *owner, int fadeStart, i
 	decal.sortY = box.origin[2];
 	decal.sortZ = box.origin[1];
 
+	// [rc4l] Where the picture stops being the picture and starts being reach.
+	//
+	// Inside its own radius a mark is exactly what the decal says it is. Beyond that it is spilling
+	// onto geometry the picture never covered -- the floor running away from a wall, the far face of
+	// a corner -- and that is the part that has to run out rather than end.
+	const float pictureRadius = sqrtf(halfW*halfW + halfH*halfH);
+	const float outerRadius = pictureRadius + box.near_;
+	int bandCount = (int)fua_projdecal_bands;
+	if (bandCount < 1) bandCount = 1;
+	if (bandCount > 8) bandCount = 8;
+
 	float localBuf[64 * 3];
+	float bandBuf[72 * 3];
 	for (unsigned i = 0; i < candidates.Size(); i++)
 	{
 		const Candidate &c = candidates[i];
@@ -469,41 +552,80 @@ void BuildProjection(const MarkStyle &style, DBaseDecal *owner, int fadeStart, i
 		const int n = ClipPolygonToDecalBox(c.poly, c.count, box, localBuf, 64);
 		if (n < 3) continue;
 
+		if (fua_projdecal_occlude && BlockedFromImpact(box, pos, localBuf, n)) continue;
+
 		// How squarely the blast met this surface. 1 is head-on, and the surface that was actually
 		// hit is normally at or near it; a wall the projection merely grazes is near 0.
 		float facing = -Dot3(c.normal, axis);
 		if (facing > 1.f) facing = 1.f;
 		if (facing < 0.f) facing = 0.f;
+		// Blended towards 1 by the cvar, and OFF by default: a per-surface fade is constant across
+		// each face, so at a corner the two halves take different constants and a step appears down
+		// the join. The radial run-out below does this job continuously instead.
+		float surfaceStrength = 1.f - (float)fua_projdecal_falloff * (1.f - facing);
+		if (surfaceStrength < 0.f) surfaceStrength = 0.f;
 
-		DecalPatch patch;
-		patch.lightLevel = decal.fullbright ? 255 : (c.lightFrom ? c.lightFrom->lightlevel : 192);
-		// [rc4l] Blended towards 1 by the cvar, and OFF by default.
-		//
-		// Fading a surface's share by the cosine is what a spray physically does, and it is wrong
-		// here for a reason worth keeping: the fade is constant across each surface, so at a corner
-		// the two halves of one mark take different strengths and a hard seam appears exactly down
-		// the join -- the seam this system exists to remove. It is per-surface because that is the
-		// only granularity a mesh piece has; per-fragment it would be right.
-		patch.strength = 1.f - (float)fua_projdecal_falloff * (1.f - facing);
-		if (patch.strength < 0.f) patch.strength = 0.f;
-		patch.colormap.Clear();
-		if (c.lightFrom != NULL && c.lightFrom->ColorMap != NULL) patch.colormap = c.lightFrom->ColorMap;
-
-		EmitPatch(localBuf, n, box, c.normal, flipX, flipY, mat, patch);
-		if (fua_projdecal_debug)
+		// How far this piece runs through the depth of the box. A surface facing the projection
+		// squarely barely moves through it and needs one slice; one lying along it crosses the whole
+		// range and is where the ramp is actually needed.
+		float wLo = 1e9f, wHi = -1e9f;
+		for (int k = 0; k < n; k++)
 		{
-			float lo[3] = { 1e9f, 1e9f, 1e9f }, hi[3] = { -1e9f, -1e9f, -1e9f };
-			for (int k = 0; k < n; k++)
-				for (int a = 0; a < 3; a++)
-				{
-					if (localBuf[k*3 + a] < lo[a]) lo[a] = localBuf[k*3 + a];
-					if (localBuf[k*3 + a] > hi[a]) hi[a] = localBuf[k*3 + a];
-				}
-			Printf("  surface n (%.2f, %.2f, %.2f)  facing %.2f  strength %.2f  u %.1f..%.1f  v %.1f..%.1f  w %.1f..%.1f  %d verts\n",
-				c.normal[0], c.normal[1], c.normal[2], facing, patch.strength,
-				lo[0], hi[0], lo[1], hi[1], lo[2], hi[2], n);
+			if (localBuf[k*3 + 2] < wLo) wLo = localBuf[k*3 + 2];
+			if (localBuf[k*3 + 2] > wHi) wHi = localBuf[k*3 + 2];
 		}
-		if (patch.tris.Size() >= 3) decal.patches.Push(patch);
+		const float span = wHi - wLo;
+		int slices = 1;
+		if (span > 1.f && outerRadius > pictureRadius)
+		{
+			slices = (int)(span / ((outerRadius - pictureRadius) / (float)bandCount)) + 1;
+			if (slices > bandCount) slices = bandCount;
+			if (slices < 1) slices = 1;
+		}
+
+		for (int b = 0; b < slices; b++)
+		{
+			const float lo = wLo + span * (float)b / (float)slices;
+			const float hi = (b + 1 == slices) ? wHi : (wLo + span * (float)(b + 1) / (float)slices);
+
+			const float *piece = localBuf;
+			int pieceCount = n;
+			if (slices > 1)
+			{
+				pieceCount = ClipLocalPolygonToDepthBand(localBuf, n, lo - 0.001f, hi + 0.001f, bandBuf, 72);
+				if (pieceCount < 3) continue;
+				piece = bandBuf;
+			}
+
+			// The strength of a slice is the strength at its middle. Sampling one point per slice is
+			// what makes this affordable, and the slices are small enough that the ramp reads as a
+			// ramp rather than as steps.
+			float mid[3] = { 0.f, 0.f, 0.f };
+			for (int k = 0; k < pieceCount; k++)
+			{
+				mid[0] += piece[k*3 + 0]; mid[1] += piece[k*3 + 1]; mid[2] += piece[k*3 + 2];
+			}
+			mid[0] /= (float)pieceCount; mid[1] /= (float)pieceCount; mid[2] /= (float)pieceCount;
+
+			const float reach = DecalRadialFade(mid, pictureRadius, outerRadius);
+			const float strength = surfaceStrength * reach;
+			if (strength <= 0.01f) continue;
+
+			DecalPatch patch;
+			patch.lightLevel = decal.fullbright ? 255 : (c.lightFrom ? c.lightFrom->lightlevel : 192);
+			patch.strength = strength;
+			patch.colormap.Clear();
+			if (c.lightFrom != NULL && c.lightFrom->ColorMap != NULL) patch.colormap = c.lightFrom->ColorMap;
+
+			EmitPatch(piece, pieceCount, box, c.normal, flipX, flipY, mat, patch);
+			if (patch.tris.Size() >= 3) decal.patches.Push(patch);
+
+			if (fua_projdecal_debug)
+			{
+				Printf("  surface n (%.2f, %.2f, %.2f)  facing %.2f  slice %d/%d  w %.1f..%.1f  strength %.2f  %d verts\n",
+					c.normal[0], c.normal[1], c.normal[2], facing, b + 1, slices, lo, hi, strength, pieceCount);
+			}
+		}
 	}
 
 	if (decal.patches.Size() == 0) return;
