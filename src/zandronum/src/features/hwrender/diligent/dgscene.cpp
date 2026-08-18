@@ -169,6 +169,7 @@ extern int viewpitch;
 // inside zx::hwrender: a cvar lives in the global namespace, and an EXTERN_CVAR inside a namespace
 // declares a DIFFERENT symbol that links against nothing.
 EXTERN_CVAR(Int, fua_decalmode)
+EXTERN_CVAR(Float, fua_projdecal_depth)
 // [rc4l] ANGLE FADE: how much a surface met at a slant loses.
 //
 // Its own cvar, and not the mesh path's falloff, because the two are the same idea at different
@@ -868,14 +869,25 @@ static const char *kDeferredDecalPS =
 	   beside a corner, a straight edge across open floor -- because a plane that cuts geometry cuts
 	   the picture with it.
 	
-	   1 is a HEMISPHERE about the contact point, opening back towards the shooter. A sphere has no
-	   planes, so it cannot cut a straight edge into anything; the reach is the same in every
-	   direction, which is what a blast is; and one radius replaces near, far, slant and spread. The
-	   forward tolerance is small but not zero -- the surface that was hit sits at w just past zero
-	   and has to be inside its own mark. */
-	"    float r = length(rel);\n"
+	   1 is an ELLIPSOID about the contact point, opening back towards the shooter. It has no planes,
+	   so it cannot cut a straight edge into anything, and its reach is bounded by one number instead
+	   of four.
+	
+	   Its SHAPE is the decal's own, and comes free: u and v are already divided by the picture's
+	   half-extents, so a unit sphere measured in (u, v) is an ellipsoid in the world with exactly the
+	   picture's proportions. A mark authored 64 by 16 then reaches four times as far across as it
+	   does up, which is what its own graphic says it should do -- where a plain radius would have
+	   given it a round reach that its picture never asked for. Depth is normalised by the picture's
+	   corner radius, so a wide, short mark still reaches far enough forward to turn a corner.
+	
+	   The forward tolerance stays: the surface that was hit sits at w just past zero and has to be
+	   inside its own mark. */
+	"    float hw = 1.0 / max(length(vAxisU), 1e-6);\n"
+	"    float hh = 1.0 / max(length(vAxisV), 1e-6);\n"
+	"    float cr = sqrt(hw*hw + hh*hh);\n"
+	"    float e = length(vec3(u, v, w / max(cr, 1e-6)));\n"
 	"    if (uDecalDebug.w > 0.5) {\n"
-	"        if (r > vParams.z) discard;\n"
+	"        if (e > vParams.z) discard;\n"
 	"        if (w > vParams.y) discard;\n"
 	"    } else {\n"
 	"        if (w < -vParams.x || w > vParams.y) discard;\n"
@@ -918,13 +930,14 @@ static const char *kDeferredDecalPS =
 	   reaching onto geometry the picture never covered and it runs out smoothly.
 	   Radial, so it does not know a corner is there -- which is why there is no step at one. This is
 	   the same rule the mesh path applies in slices, done properly. */
-	/* The picture's own corner radius, recovered from the axes: they arrive divided by their
-	   half-extents, so the length of one is the reciprocal of the other. Cheaper than another
-	   slot in the record, and it cannot fall out of step with the axes it is derived from. */
-	"    float hw = 1.0 / max(length(vAxisU), 1e-6);\n"
-	"    float hh = 1.0 / max(length(vAxisV), 1e-6);\n"
-	"    float inner = sqrt(hw*hw + hh*hh);\n"
-	"    if (vParams.z > inner) a *= 1.0 - smoothstep(inner, vParams.z, r);\n"
+	/* [rc4l] The run-out, per fragment, measured in the SAME normalised units as the volume.
+	   One inside the picture, sqrt(2) at its corners -- so nothing inside the graphic fades and the
+	   mark on the surface that was actually hit is exactly what the decal says it is. Beyond that it
+	   is reaching onto geometry the picture never covered, and it runs out by vParams.z, which is
+	   where the volume ends too: the fade reaches zero exactly where the cut happens, so the boundary
+	   cannot be seen. That coincidence is the point -- the box could never manage it, because its
+	   planes sat wherever the depth arithmetic put them. */
+	"    a *= 1.0 - smoothstep(1.41421356, max(vParams.z, 1.41421357), e);\n"
 	"    if (a <= 0.004) discard;\n"
 	/* 1 shows the picture coordinate, 2 the mask that came out of the texture, 3 how squarely the
 	   surface was met. A mark that is wrong looks the same whichever of the three is at fault. */
@@ -4075,9 +4088,16 @@ static void DrawDeferredDecals(Diligent::IDeviceContext *ctx)
 		inst.color[0] = d.r; inst.color[1] = d.g; inst.color[2] = d.b; inst.color[3] = d.a;
 		inst.params[0] = d.near_;
 		inst.params[1] = d.far_;
-		// Where the run-out ends: the picture's own corner radius plus the box's reach behind it.
-		// Inside the corner radius nothing fades, which is stated in the shader.
-		inst.params[2] = sqrtf(d.halfW*d.halfW + d.halfH*d.halfH) + d.near_;
+		// [rc4l] How far the mark reaches, as a MULTIPLE of its own picture rather than a distance.
+		//
+		// The shader measures in units of the picture's half-extents, so this one number is an
+		// ellipsoid with the decal's own proportions: 1 is the edge of the graphic, sqrt(2) its
+		// corners, and anything past that is the mark spilling onto geometry the picture never
+		// covered. Scaling a decal in DECALDEF therefore scales its reach with it, in each axis
+		// separately -- which is what "the volume should follow the scale" has to mean for a decal
+		// that is not square.
+		const float spread = (fua_projdecal_depth > 0.f) ? (float)fua_projdecal_depth : 0.f;
+		inst.params[2] = 1.41421356f * (1.f + spread);
 		inst.params[3] = d.redToAlpha ? 1.f : 0.f;
 		if (d.additive) { instAdd.Push(inst); matAdd.Push(d.material); }
 		else { instAlpha.Push(inst); matAlpha.Push(d.material); }
