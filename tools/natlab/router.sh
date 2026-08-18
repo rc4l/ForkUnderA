@@ -26,9 +26,25 @@
 set -eu
 
 FLAVOUR="${NAT_FLAVOUR:-portrestricted}"
-WAN_IF="${NAT_WAN_IF:-eth0}"
 
-echo "router: flavour=$FLAVOUR wan=$WAN_IF"
+# [rc4l] Find the WAN side by its ADDRESS, never by its name.
+#
+# This box is on two networks, and Docker does not promise which one becomes eth0 -- the order it
+# attaches them is not the order they are written in compose. Assuming eth0 was the internet side gave
+# a router that masqueraded its own LAN and dropped everything arriving from the internet: outbound
+# died, and the failure surfaced as "the client cannot reach the registry", which sounds like the
+# registry's problem and is not.
+WAN_PREFIX="${NAT_WAN_PREFIX:?NAT_WAN_PREFIX must name the public subnet, e.g. 192.168.240.}"
+WAN_IF="$( ip -o -4 addr show | awk -v p="$WAN_PREFIX" '$4 ~ ("^" p) { print $2; exit }' )"
+
+if [ -z "$WAN_IF" ]; then
+    echo "router: no interface holds an address in $WAN_PREFIX -- this box cannot reach the internet side" >&2
+    ip -o -4 addr show >&2
+    exit 1
+fi
+
+echo "router: flavour=$FLAVOUR wan=$WAN_IF (prefix $WAN_PREFIX)"
+ip -o -4 addr show
 
 # Forwarding is off by default in the container's netns; without this the box is a wall, not a router.
 # compose sets it too, and whichever gets there first is fine -- but a read-only /proc/sys must not
