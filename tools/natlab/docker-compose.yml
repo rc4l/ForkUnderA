@@ -1,21 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 rc4l
 
-# [rc4l] The topology, which is the entire fixture. Three networks, and the two peers share none of
-# them:
-#
-#     host  --[ lan_host ]--  router_host  --\
-#                                             >--[ pub ]--  registry
-#     client --[ lan_client ]-- router_client -/
-#
-# `pub` is the internet. Neither peer is on it. Each reaches it only through its own router, which
-# masquerades outbound and drops unsolicited inbound -- so the host is listed and unreachable, which
-# is precisely the situation every player behind a home router is in and the situation the punch
-# exists to solve.
-#
-# internal: true on the LANs is load-bearing. Without it Docker attaches its own default bridge with
-# a working route to everything, both peers become mutually reachable, and every assertion passes
-# while testing nothing. A test that cannot fail is the failure.
+# [rc4l] The topology, which is the entire fixture.
 
 services:
   registry:
@@ -66,13 +52,7 @@ services:
       lan_client:
         ipv4_address: 192.168.242.2
 
-  # [rc4l] The routers sit at .2, not .1. Docker reserves .1 on every user-defined network as the
-  # bridge's own gateway address, so a container asking for it fails the whole `up` with "Address
-  # already in use" -- which reads like a subnet clash and is not one.
-  #
-  # [rc4l] The peers get NET_ADMIN only to replace their default route with their router. Compose
-  # gives every container a route to its own networks and nothing else useful, so without this the
-  # host would have no path to the registry at all and the lab would test a disconnected machine.
+  # [rc4l] The routers sit at .2, not .1.
   host:
     image: fua-natlab-peer
     build:
@@ -102,16 +82,6 @@ services:
     command: ["sleep", "infinity"]
 
 # [rc4l] `pub` is 203.0.113.0/24 (TEST-NET-3) and MUST NOT be a private range.
-#
-# It was 192.168.240.0/24, which broke the exact mechanism under test without breaking anything
-# visible: zx_punchclient's IsLocalAddress refuses to ask for a punch toward an RFC1918 target, on the
-# entirely correct grounds that two machines in the same house need no introduction. So the client
-# quietly declined to punch, the server never opened a hole, and the run failed at "the client never
-# saw the server" -- which reads as a discovery bug.
-#
-# The lesson generalises: a fixture pretending to be the internet has to look like the internet to the
-# code's own definitions, not just to the topology diagram. The LANs stay 192.168.x on purpose --
-# those are supposed to be private.
 networks:
   pub:
     ipam:
