@@ -216,24 +216,14 @@ typedef struct
 	bool			bPunchRequested;
 	LONG			lPunchResendsSent;
 
-	// [rc4l] This row punched BEFORE it spoke, and its first challenge is being held back until the
-	// punch has had time to land (kQueryPunchLeadMs).
-	//
-	// The ordering is the whole point. A first challenge sent ahead of the punch lands on the host's
-	// router as unsolicited traffic, which the router tracks even as it drops it -- taking the exact
-	// tuple the host's punch then needs, so the hole opens on a rewritten port where nobody is
-	// knocking. Proven with conntrack in tools/natlab; the punch was firing correctly on every hop
-	// and still could not be used.
+	// [rc4l] This row punched before it spoke, because a challenge sent first is tracked by the host's
+	// router even as it drops it and takes the very tuple the punch then needs.
 	bool			bPunchLed;
 	bool			bFirstChallengeSent;
 	LONG			lPunchLedMS;
 
-	// [rc4l] The other address this same server is listed under, when the registry told us so.
-	//
-	// A dual-stack host announces once per family from one socket, so the registry holds two entries
-	// for it and, without this, a player sees the same server twice. It cannot be worked out locally:
-	// two addresses being one machine is precisely what somebody would claim in order to have their
-	// row merged with a rival's, which is why it is only ever believed from the registry.
+	// [rc4l] The other address this server is listed under, believed only from the registry because
+	// claiming to be somebody else's machine is how you would hide their row.
 	bool			bHasGroupPeer;
 	NETADDRESS_s	GroupPeer;
 
@@ -371,25 +361,12 @@ void			BROWSER_RecheckServer( ULONG ulServer );
 // address, which is the one that actually works.
 void			BROWSER_PunchKnockFrom( const NETADDRESS_s &From );
 
-// [rc4l] The registry has just told a server to open for us, so send the challenges we were holding
-// back -- NOW, while the server's punch is still in flight.
-//
-// The timing is the point and it is narrow at both ends. Send too early and our challenge reaches the
-// server's router first, where it is dropped but tracked, taking the tuple the server's punch then
-// needs. Send too late and the punch has already landed on OUR router, where the same thing happens
-// in reverse and our challenge leaves from a rewritten port the server is not expecting. Both were
-// observed in tools/natlab, in that order.
-//
-// The only interval that works is the one where both packets are in flight and neither has landed,
-// which is what a simultaneous open means. This verdict arrives from the registry at the moment it
-// instructs the server, so it is the best clock either side has.
+// [rc4l] Send the held challenges now, while the server's punch is in flight, because whichever
+// packet lands first takes the tuple the other one needs.
 void			BROWSER_PunchBrokered( void );
 
-// [rc4l] The registry saying two addresses are one server, so the browser can show one row.
-//
-// Only the registry may say this. It knows because both announces carried an id the server derived
-// from its own secret; nothing on this side could tell, and anything that guessed would be a way to
-// make somebody else's server disappear.
+// [rc4l] The registry saying two addresses are one server, which only it can know and which nothing
+// here may guess at.
 void			BROWSER_MarkSameServer( const NETADDRESS_s &First, const NETADDRESS_s &Second );
 
 // [rc4l] Per-row version of the fact BROWSER_GetNumHumanPlayers already uses in aggregate.

@@ -750,21 +750,13 @@ static void server_registry_TickPunches( void );
 
 //*****************************************************************************
 //
-// [rc4l] What the registry has actually told us, so "is my server visible to anyone else?" has an
-// answer on the hosting machine.
-//
-// DecideListingProof already owns the verdict and explains at length why nothing local counts as
-// evidence. This is only the evidence it decides from, so every field here is something that
-// HAPPENED to us, never something we concluded.
-//
-// Per family, because a dual-stack host is two listings to the registry and the interesting failure
-// is asymmetric: the v4 announce goes out and is never verified (carrier NAT), while the v6 one is.
-// One merged verdict would average those into a shrug, which is the one answer nobody can act on.
+// [rc4l] What the registry actually did, kept per family because the interesting failure is
+// asymmetric: a v4 announce unverified behind carrier NAT while the v6 one is verified.
 struct RegistryEvidence_t
 {
 	bool			bAnnounceSent;		// we got an announce onto the wire
 	bool			bAnswerReceived;	// the registry has spoken to us at all
-	bool			bVerified;			// it reached us from outside, unprompted
+	bool			bVerified;			// it answered us, which is less than it sounds
 	unsigned int	ulMsVerified;		// when, by I_MSTime
 
 	RegistryEvidence_t( ) : bAnnounceSent( false ), bAnswerReceived( false ), bVerified( false ),
@@ -778,22 +770,14 @@ static RegistryEvidence_t &server_registry_Evidence( bool bIPv6 )
 	return g_RegistryEvidence[bIPv6 ? 1 : 0];
 }
 
-// [rc4l] How long a verification still means something.
-//
-// Generous on purpose, and the reason is a property of the registry rather than a guess: it verifies
-// a server ONCE, when it adds it, and does not ask again while the heartbeats keep coming. So the age
-// of a verification on a healthy long-running server grows without bound and says nothing bad. What a
-// short window would do is turn every server that has been up for an hour amber, which trains people
-// to ignore the light -- the exact failure the staleness rule exists to prevent. A server that stops
-// heartbeating is dropped after 60s and re-verified when it comes back, so a genuinely broken
-// forward still loses its green the next time it matters.
+// [rc4l] Generous because the registry verifies a server once when it adds it, so a healthy server's
+// verification ages without bound and a short window would turn every long-lived host amber.
 #define SERVERREGISTRY_VERIFICATION_STALE_MS	( 15 * 60 * 1000 )
 
 //*****************************************************************************
 //
-// [rc4l] Whether an IPv6 announce is even possible: it needs the registry to have an AAAA record.
-// Without one there is nothing to announce TO, so a v6 listing that never appears is the expected
-// outcome rather than a fault, and a report that cannot say so reads as a permanent failure.
+// [rc4l] Whether an IPv6 announce is possible at all, since without an AAAA record on the registry a
+// missing v6 listing is expected rather than broken.
 bool SERVER_SERVERREGISTRY_HasV6Registry( void )
 {
 	return g_bServerRegistryV6Valid;
@@ -809,10 +793,7 @@ zx::ListingProof SERVER_SERVERREGISTRY_GetListingProof( bool bIPv6 )
 	const int iMsSinceVerified = evidence.bVerified
 		? static_cast<int>( I_MSTime( ) - evidence.ulMsVerified ) : -1;
 
-	// [rc4l] `listed` is the registry having spoken to us at all, because it only ever talks to
-	// servers it is holding -- a packet from it IS the listing. There is deliberately no "you are
-	// listed" message in the protocol to wait for, so inventing one to feel more certain here would
-	// just mean reporting NeverAnnounced forever.
+	// [rc4l] A packet from the registry IS the listing, since it only ever talks to servers it holds.
 	return zx::DecideListingProof( evidence.bAnnounceSent, evidence.bAnswerReceived,
 		evidence.bAnswerReceived, evidence.bVerified, iMsSinceVerified,
 		SERVERREGISTRY_VERIFICATION_STALE_MS );
@@ -870,13 +851,8 @@ void SERVER_SERVERREGISTRY_Tick( void )
 	// something that will never answer.
 	g_ServerRegistryBuffer.ByteStream.WriteByte( 1 );
 
-	// [rc4l] And who we are, so the registry can tell that the two announces below -- one per family,
-	// from one socket -- are ONE server rather than two.
-	//
-	// Appended after the punch byte for the same reason that was appended: a registry that predates
-	// this reads the packet exactly as it always did and stops before it. Derived from this server's
-	// secret and its port (Identity_ServerRegistryId), so it costs no new file and cannot be guessed
-	// by somebody wanting their server merged with this one.
+	// [rc4l] Who we are, so the registry can tell our two announces are one server, appended last so a
+	// registry that predates it simply stops reading before this.
 	g_ServerRegistryBuffer.ByteStream.WriteString(
 		zx::Identity_ServerRegistryId( NETWORK_GetLocalPort( )).c_str( ));
 
@@ -893,25 +869,16 @@ void SERVER_SERVERREGISTRY_Tick( void )
 		g_AddressServerRegistryV6 );
 	if ( g_bServerRegistryV6Valid )
 	{
-		// [rc4l] Copy the port FIELD, do not put it back through SetPort.
-		//
-		// usPort is stored in network order and SetPort converts into network order, so passing one
-		// to the other byte-swapped it a second time: 15300 (0x3bc4) went out as 0xc43b, 50235. Every
-		// IPv6 announce this engine has ever sent went to a port nothing was listening on, which is
-		// unfalsifiable in the field because a datagram into the void reports success at the sender
-		// and leaves no trace at the receiver. It only surfaced against a local registry, where the
-		// announce could be watched arriving on one family and not the other.
+		// [rc4l] Copy the port FIELD rather than putting it back through SetPort, which converts into
+		// network order a second time and sent every IPv6 announce to 50235 instead of 15300.
 		if ( g_AddressServerRegistryV6.usPort == 0 )
 			g_AddressServerRegistryV6.usPort = g_AddressServerRegistry.usPort;
 
 		NETWORK_LaunchPacket( &g_ServerRegistryBuffer, g_AddressServerRegistryV6 );
 		server_registry_Evidence( true ).bAnnounceSent = true;
 
-		// [rc4l] Which address the second announce actually went to, under `developer 1`.
-		//
-		// "We resolved a v6 registry and sent to it" and "the registry received it" are different
-		// claims, and the gap between them is invisible from either end: the sender reports success
-		// for a packet that left, and a registry that never got one has nothing to log.
+		// [rc4l] Where the second announce actually went, because "we sent it" and "they got it" are
+		// different claims and the gap between them is invisible from either end.
 		DPrintf( "Server registry: IPv6 announce -> %s\n", g_AddressServerRegistryV6.ToString( ));
 	}
 	else
@@ -1296,9 +1263,8 @@ static void server_registry_SendPunch( const NETADDRESS_s &Target )
 	g_ServerRegistryBuffer.ByteStream.WriteLong( SERVERREGISTRY_PUNCH );
 	NETWORK_LaunchPacket( &g_ServerRegistryBuffer, Target );
 
-	// [rc4l] The packet whose only job is to leave. Worth saying out loud under `developer 1`,
-	// because "the hole was opened" and "the joiner still could not get in" are different failures
-	// with the same symptom, and nothing else distinguishes them from this side.
+	// [rc4l] The packet whose only job is to leave, logged because "the hole opened" and "the joiner
+	// still could not get in" are different failures with the same symptom.
 	DPrintf( "Hole punch: opened toward %s.\n", Target.ToString( ));
 }
 
@@ -1363,16 +1329,12 @@ static void server_registry_TickPunches( void )
 // which is why this becomes an entry the tick walks rather than a loop here.
 void SERVER_SERVERREGISTRY_HandlePunchRequest( BYTESTREAM_s *pByteStream )
 {
-	// [rc4l] Being asked to punch is itself proof the registry is holding us: it only instructs
-	// servers on its list. Not proof of REACHABILITY though -- that is what the verification is, and
-	// this deliberately does not touch bVerified. A server can be brokering punches all day precisely
-	// because nobody can reach it directly.
+	// [rc4l] Proof the registry holds us, but deliberately not proof of reachability: a server brokers
+	// punches precisely because nobody can reach it directly.
 	server_registry_Evidence( NETWORK_GetFromAddress( ).bIsIPv6 ).bAnswerReceived = true;
 
-	// [rc4l] The punch is four hops -- client asks, registry brokers, server opens, client retries --
-	// and the middle two used to be silent on this side. The registry logs its half, so a broken punch
-	// showed a registry cheerfully brokering into a void with no way to tell whether the server ever
-	// heard it. Under `developer 1` this says it did.
+	// [rc4l] The registry logs its half, so without this a broken punch looked like brokering into a
+	// void with no way to tell whether the server heard it.
 	DPrintf( "Hole punch: the registry asked us to open for a joiner.\n" );
 
 	const char *pszTarget = pByteStream->ReadString();
@@ -1440,10 +1402,8 @@ void SERVER_SERVERREGISTRY_HandleVerificationRequest( BYTESTREAM_s *pByteStream 
 	// with no probe to write and no service to depend on.
 	zx::HostChildAnnounceReachable( );
 
-	// [rc4l] And the same proof, kept per family and with its age, for fua_hostdiag to report. The
-	// family of the SENDER is the family that was verified: the registry answers an announce on the
-	// address it arrived from, so a v6 verification is proof about the v6 listing and says nothing
-	// whatever about the v4 one.
+	// [rc4l] Recorded against the SENDER's family, since the registry answers on the address the
+	// announce arrived from and says nothing about the other one.
 	{
 		RegistryEvidence_t &evidence = server_registry_Evidence( NETWORK_GetFromAddress( ).bIsIPv6 );
 		evidence.bAnswerReceived = true;
@@ -1522,20 +1482,8 @@ CCMD( fua_landiag )
 
 //*****************************************************************************
 //
-// [rc4l] The companion to fua_landiag, for the failure people actually report: "my server shows up
-// on LAN but not in the public list".
-//
-// That report is two different bugs wearing one description, and they need opposite advice:
-//
-//   1. The server really is unreachable. The announce goes out, the registry cannot get back in, and
-//      nobody anywhere can join. The evidence is a listing that never becomes verified.
-//   2. The server is fine and the HOST cannot see it, because their own router will not send their
-//      public address back to their own LAN (hairpin NAT). Everyone else sees it normally.
-//
-// Nothing on the browser screen tells these apart -- listingproof_compute.h explains why the public
-// row is fabricated from the LAN row and the ping on it is a loopback -- so a host stares at a row
-// that looks alive and concludes the registry is broken. This prints the registry's own testimony
-// instead, per family, and names hairpin explicitly when the evidence says the server is fine.
+// [rc4l] For "my server shows on LAN but not publicly", which is two opposite faults wearing one
+// description and cannot be told apart from the browser screen.
 static void server_registry_PrintFamilyDiag( const char *pszLabel, bool bIPv6, bool bPossible,
 	const char *pszImpossibleReason )
 {
@@ -1588,11 +1536,8 @@ CCMD( fua_hostdiag )
 	const bool bAnyVerified = ( SERVER_SERVERREGISTRY_GetListingProof( false ).state == zx::ListingState::ListedVerified )
 		|| ( SERVER_SERVERREGISTRY_GetListingProof( true ).state == zx::ListingState::ListedVerified );
 
-	// [rc4l] Deliberately does NOT say "other people can reach this server", which is what this used
-	// to say and could not support. The registry's reply travels back through the NAT mapping our own
-	// announce opened, so it arrives whether or not the port is open to anyone else -- the registry's
-	// own source says as much where it sends the packet. Saying otherwise told players behind an
-	// unforwarded router that strangers could join them.
+	// [rc4l] Deliberately does not claim players can join, because the registry's reply comes back
+	// through the mapping our own announce opened and arrives from behind a closed port too.
 	if ( bAnyVerified )
 	{
 		Printf( TEXTCOLOR_GREEN "  The registry is listing this server and can talk to it." TEXTCOLOR_NORMAL "\n" );
