@@ -74,7 +74,9 @@ start_engine host "-host +set sv_hostname DUALSTACK-HOST +set sv_fua_serverregis
 say "Starting the client engine..."
 start_engine client ""
 
-fua() { local peer="$1"; shift; dc exec -T "$peer" node /fuactl/src/cli.mjs "$@" --port 27800 --token natlab; }
+# [rc4l] Under a timeout, because a container whose networking is broken makes exec HANG rather than
+# fail, and a hang inside a retry loop consumes the whole job and reports as a timeout.
+fua() { local peer="$1"; shift; timeout 60 dc exec -T "$peer" node /fuactl/src/cli.mjs "$@" --port 27800 --token natlab; }
 
 say "Waiting for both bridges..."
 for peer in host client; do
@@ -87,7 +89,7 @@ for peer in host client; do
 done
 
 # The announce runs on a 30s cycle, and the second one only happens if the AAAA resolved.
-say "[1/3] the registry holds this server under BOTH families..."
+say "[1/4] the registry holds this server under BOTH families..."
 both=0
 for _ in $(seq 1 25); do
     v4=$( dc logs registry 2>&1 | grep -c "Adding 203.0.113.20" || true )
@@ -97,12 +99,12 @@ for _ in $(seq 1 25); do
 done
 [ "$both" = "1" ] || fail "the registry did not receive one announce per family -- the IPv6 announce is not arriving"
 
-say "[2/3] the registry did not call it a collision..."
+say "[2/4] the registry did not call it a collision..."
 if dc logs registry 2>&1 | grep -qi "Registry id collision"; then
     fail "one server's two announces were treated as a collision, so they will never be grouped"
 fi
 
-say "[3/3] the client shows ONE row for it..."
+say "[3/4] the client shows ONE row for it..."
 ok=0
 for _ in $(seq 1 20); do
     rows="$( fua client browser --wait 12 2>/dev/null || true )"
@@ -124,3 +126,35 @@ if [ "$ok" != "1" ]; then
 fi
 
 say "PASS: one server, listed twice by the registry, shown once to the player."
+
+# [rc4l] And the case that has no unit test anywhere: a player with no IPv4 at all.
+#
+# The client resolved its registry with gethostbyname/AF_INET, so it asked for an A record and
+# nothing else -- a v6-only player reached no registry and saw an empty browser with no error. That
+# is invisible on any dual-stack machine, which is every machine we own, so it can only be caught
+# here by taking the IPv4 address away.
+# [rc4l] The client that never had an IPv4 address at all, which is the only honest way to test a
+# v6-only player: a dual-stack machine can always fall back, so nothing short of the address being
+# absent from the start proves anything.
+say "[4/4] a client with NO IPv4 still finds the server..."
+
+timeout 30 dc exec -T client6 sh -lc 'ip -o -4 addr show | grep -q "inet 1\|inet 2" && exit 1; exit 0' \
+    || fail "client6 has an IPv4 address, so this case would prove nothing"
+
+start_engine client6 ""
+
+ok6=0
+for _ in $(seq 1 45); do
+    if fua client6 rpc sim.tic >/dev/null 2>&1; then ok6=1; break; fi
+    sleep 2
+done
+[ "$ok6" = "1" ] || fail "the v6-only client never opened its bridge"
+
+found6=0
+for _ in $(seq 1 20); do
+    if fua client6 browser --wait 12 2>/dev/null | grep -q 'DUALSTACK-HOST'; then found6=1; break; fi
+    sleep 3
+done
+[ "$found6" = "1" ] || fail "a client with no IPv4 could not reach the registry, so it saw nothing"
+
+say "PASS: a client with no IPv4 reached the registry and found the server."
