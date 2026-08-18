@@ -74,6 +74,13 @@ bool ComputeDecalBasis(const float axisU[3], const float axisV[3], const float a
 // Returns false for a zero-length linedef, which a malformed map can contain.
 bool ComputeWallDecalAxes(float dx, float dy, bool backSide, float along[2], float normal[2]);
 
+// [rc4l] How far a wall runs either side of a point on it, along the picture's across-axis. The edge
+// a decal unfolds about is a segment, not an infinite line, and a path crossing it past the end does
+// not exist -- that is what has to bend round the corner instead.
+void ComputeWallAlongExtent(float v1x, float v1y, float v2x, float v2y,
+                            float atX, float atY, float alongX, float alongY,
+                            float &outMin, float &outMax);
+
 // [rc4l] From a decal's ANCHOR to the centre of its box, along the surface.
 //
 // The engine positions a decal by the point its graphic hangs from, not by the middle of it, and the

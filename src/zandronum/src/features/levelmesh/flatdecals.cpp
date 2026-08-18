@@ -492,6 +492,16 @@ static void RegisterWallDecals()
 		pd.additive = w.additive;
 		pd.redToAlpha = w.redToAlpha;
 		pd.radius = ComputeDecalReach(w.halfW * k, w.halfH * k);
+		// A mark rescued onto a surface the engine would not hold has no sidedef -- see
+		// SpawnUnstuckWallDecal -- so there is no wall whose ends could bound its creep.
+		pd.alongMin = pd.alongMax = 0.f;
+		if (w.wall != NULL && w.wall->linedef != NULL)
+		{
+			const line_t *ld = w.wall->linedef;
+			ComputeWallAlongExtent(FIXED2FLOAT(ld->v1->x), FIXED2FLOAT(ld->v1->y),
+			                       FIXED2FLOAT(ld->v2->x), FIXED2FLOAT(ld->v2->y),
+			                       w.x, w.y, w.ux, w.uy, pd.alongMin, pd.alongMax);
+		}
 
 		// [rc4l] Nothing else to place. The shader measures every surface inside the blast radius
 		// from this one point, so a corner is not a special case and there is no second box to put
@@ -742,6 +752,7 @@ void RegisterFlatDecals()
 		pd.additive = d.additive;
 		pd.redToAlpha = d.redToAlpha;
 		pd.radius = ComputeDecalReach(hw * k, hh * k);
+		pd.alongMin = pd.alongMax = 0.f;   // a flat has no wall whose end could matter
 		g_projected.Push(pd);
 
 		g_lastX = d.x; g_lastY = d.y; g_lastZ = pz;

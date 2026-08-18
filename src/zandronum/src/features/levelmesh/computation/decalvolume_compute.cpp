@@ -59,6 +59,16 @@ bool ComputeWallDecalAxes(float dx, float dy, bool backSide, float along[2], flo
 	return true;
 }
 
+void ComputeWallAlongExtent(float v1x, float v1y, float v2x, float v2y,
+                            float atX, float atY, float alongX, float alongY,
+                            float &outMin, float &outMax)
+{
+	const float a1 = (v1x - atX) * alongX + (v1y - atY) * alongY;
+	const float a2 = (v2x - atX) * alongX + (v2y - atY) * alongY;
+	outMin = (a1 < a2) ? a1 : a2;
+	outMax = (a1 < a2) ? a2 : a1;
+}
+
 float ComputeDecalAlongOffset(float halfW, float leftOffset, bool flipX)
 {
 	const float fromLeft = flipX ? (halfW * 2.f - leftOffset) : leftOffset;
