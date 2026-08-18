@@ -45,8 +45,7 @@ TEST(ServerGroup, MoreThanTwoIsACollision)
 
 TEST(ServerGroup, TheRightFamiliesOnDifferentPortsIsRefusedToo)
 {
-	// Also impossible from one socket. Kept distinct from Collision because it points at a different
-	// cause: one key reused on a second server rather than a whole machine duplicated.
+	// Also impossible from one socket.
 	EXPECT_EQ(GroupVerdict::PortMismatch, DecideServerGroup(1, 1, false));
 	EXPECT_FALSE(ShouldSendGroup(DecideServerGroup(1, 1, false)));
 }
@@ -71,7 +70,7 @@ TEST(ServerGroup, OnlyTheImpossibleShapesAreWorthTellingTheOperator)
 TEST(ServerGroup, TheFailureDirectionIsAlwaysTowardsShowingBothRows)
 {
 	// The property that matters more than any single case: nothing but the exact dual-stack shape is
-	// ever merged. A duplicate row is untidy; a wrongly merged one is invisible to its owner.
+	// ever merged.
 	for (int v4 = 0; v4 <= 3; ++v4)
 	{
 		for (int v6 = 0; v6 <= 3; ++v6)

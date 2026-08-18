@@ -152,8 +152,7 @@ TEST(QueryPunchLead, AKnownUnreachableInternetServerPunchesFirst)
 
 TEST(QueryPunchLead, AServerThatHasNeverBeenTriedJustAsks)
 {
-	// Most listed servers answer. Leading with a punch for all of them would spend the sweep's budget
-	// on the ones that never needed it and starve the ones that do.
+	// Most listed servers answer.
 	EXPECT_FALSE( zx::ShouldPunchBeforeFirstChallenge( false, false, true ));
 }
 

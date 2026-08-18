@@ -317,8 +317,7 @@ TEST(V6PrefixFormat, RoundTripsThroughTheParser)
 
 TEST(V6PrefixFormat, TheStarSpellingIsNormalisedToASlash)
 {
-	// The star exists to be typed. Storing it would mean the file carries two spellings of the same
-	// rule and a reader has to handle both forever.
+	// The star exists to be typed.
 	EXPECT_EQ( "2001:db8::/32", Format( "2001:db8:*" ));
 }
 

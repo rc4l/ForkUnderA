@@ -575,8 +575,7 @@ TEST(AddressPort, APortSurvivesBeingSetAndPrinted) {
 }
 
 TEST(AddressPort, TheStoredFieldIsNetworkOrderSoSetPortMustNotBeFedItBack) {
-    // Pins the trap directly. usPort holds network order, so passing it to SetPort -- which converts
-    // host to network -- swaps a second time and lands somewhere else entirely.
+    // Pins the trap directly.
     NETADDRESS_s a{};
     a.SetPort(15300);
 
@@ -592,8 +591,8 @@ TEST(AddressPort, TheStoredFieldIsNetworkOrderSoSetPortMustNotBeFedItBack) {
 }
 
 TEST(AddressPort, EveryPortRoundTripsThroughSetPortAndBack) {
-    // The whole range rather than one value, because a byte-swap is invisible for a palindrome like
-    // 0x3c3c and this class of bug hides in exactly that gap.
+    // The whole range rather than one value, because a byte-swap is invisible for a palindrome
+    // like 0x3c3c and this class of bug hides in exactly that gap.
     const USHORT ports[] = { 1, 80, 10666, 10667, 15300, 27015, 49152, 65535 };
 
     for (size_t i = 0; i < sizeof(ports) / sizeof(ports[0]); ++i) {

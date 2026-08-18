@@ -9,8 +9,8 @@ using namespace zx;
 
 TEST(CookieClaim, AProbeConsumesItsCookie)
 {
-	// One cookie buys one probe, because a probe makes the registry send a packet at an address and
-	// a replayable one turns it into a packet cannon.
+	// One cookie buys one probe, because a probe makes the registry send a packet at an address and a
+	// replayable one turns it into a packet cannon.
 	const CookieClaim claim = DecideCookieClaim( true, CookiePurpose::ReachProbe );
 	EXPECT_TRUE( claim.accepted );
 	EXPECT_TRUE( claim.consume );
@@ -18,9 +18,7 @@ TEST(CookieClaim, AProbeConsumesItsCookie)
 
 TEST(CookieClaim, APunchDoesNotConsumeItsCookie)
 {
-	// THE BUG THIS UNIT EXISTS FOR. A launcher refreshing its list asks about several servers at
-	// once and is handed the same cookie for each, so consuming it made the first punch of a sweep
-	// work and refused every one after it.
+	// THE BUG THIS UNIT EXISTS FOR.
 	const CookieClaim claim = DecideCookieClaim( true, CookiePurpose::Punch );
 	EXPECT_TRUE( claim.accepted );
 	EXPECT_FALSE( claim.consume );
