@@ -17,18 +17,24 @@
 
 #include <math.h>
 
-// [rc4l] Which of the two ways a mark can be drawn is in use.
+// [rc4l] Which of the two ways a mark can be drawn is in use. DEFAULT 0: the glued quad.
 //
 //   0  the glued quad Doom has always drawn, captured into the mesh as four vertices. GL draws this
-//      shape too, so it is the only mode where the two renderers agree exactly.
+//      shape too, so it is the only mode where the two renderers agree exactly -- and the only one
+//      where a mark is the size and shape the artist authored.
 //   1  drawn as the mark's own BOX and resolved per fragment against the depth and normal the world
 //      already wrote. No geometry is made for a mark at all.
 //
-// There was a third for a while, which cut the geometry inside the box into triangles on the CPU. It
-// worked, and it is gone, because a triangle is the smallest thing that can carry an alpha -- so
-// every fade it did was in slices, and every join between two surfaces was a place where two
-// constants met. The same arithmetic per fragment costs less and has no seams to get wrong.
-CVAR(Int, fua_decalmode, 1, CVAR_ARCHIVE)
+// Mode 1 is OFF by default because a box projection stretches its picture by 1/cos on anything it
+// does not meet square-on, and nothing removes that -- the levers only move it around. On a big
+// blast mark spanning a corner the trade can be worth it; on a bullet chip or a plasma scorch, a few
+// units across and never spanning anything, the stretch is the only thing the projection adds. The
+// common case is small marks, so the common case decides the default.
+//
+// There was a third mode for a while, which cut the geometry inside the box into triangles on the
+// CPU. It is gone: a triangle is the smallest thing that can carry an alpha, so every fade it did
+// was in slices and every join between two surfaces was two constants meeting.
+CVAR(Int, fua_decalmode, 0, CVAR_ARCHIVE)
 
 // [rc4l] The most oblique a mark is allowed to be, as the cosine of the angle off head-on.
 //
