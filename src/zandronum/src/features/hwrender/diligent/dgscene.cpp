@@ -812,12 +812,16 @@ static const char *kScenePSRedAlpha =
 	   units, which is where it stopped. Nothing was blocking it -- the same shot 6 units lower
 	   crosses the same ground easily. The picture is square, so it genuinely extends to 46.7 in the
 	   direction it is being read, and using that gives the ground 28.7 units instead.
-	   Only the crossing direction on flats is affected, so the wall keeps its size and its rate. */ \
+	   Both directions on the ground get it, so the spread grows sideways along the wall as well as
+	   outward from it -- soot from one point does not stop at the mark's own width. Walls are left
+	   alone entirely, so a mark keeps its size on the surface it was made on. */ \
 	"        float crossed = perp + across;\n" \
 	"        if (abs(nrm.y) > 0.7) {\n" \
 	"            float hW = 1.0 / max(length(axisU), 1e-6);\n" \
 	"            float hH = 1.0 / max(length(axisV), 1e-6);\n" \
-	"            crossed *= hH / max(length(vec2(hW, hH)), 1e-4);\n" \
+	"            float rD = max(length(vec2(hW, hH)), 1e-4);\n" \
+	"            crossed *= hH / rD;\n" \
+	"            along   *= hW / rD;\n" \
 	"        }\n" \
 	"        if (uDecalDebug.y > 0.5) {\n" \
 	"            float halfH2 = 1.0 / max(length(axisV), 1e-6);\n" \
