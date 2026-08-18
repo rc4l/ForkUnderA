@@ -381,7 +381,7 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 	{
 		SendOk( id, "{\"commands\":["
 			"\"ping\",\"capabilities\",\"console.exec\","
-			"\"sim.tic\",\"sim.hash\",\"sim.seed\",\"sim.pause\",\"sim.resume\",\"sim.step\",\"sim.cheatat\",\"sim.pauseat\",\"browser.refresh\",\"browser.list\",\"net.hostdiag\",\"sim.rngdump\",\"sim.trace\","
+			"\"sim.tic\",\"sim.hash\",\"sim.seed\",\"sim.pause\",\"sim.resume\",\"sim.step\",\"sim.cheatat\",\"sim.pauseat\",\"browser.refresh\",\"browser.list\",\"net.hostdiag\",\"net.clients\",\"sim.rngdump\",\"sim.trace\","
 			"\"sim.snapshot\",\"sim.restore\",\"state.player\",\"state.actors\",\"input.event\",\"input.axis\",\"input.look\","
 			"\"perf.capture\",\"perf.ticprof\",\"perf.counters\",\"net.bandwidth\",\"gl.timers\",\"renderer.info\","
 			"\"world.sectors\",\"player.setpos\""
@@ -520,6 +520,17 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 			++n;
 		}
 		body += "],\"count\":" + I( n ) + "}";
+		SendOk( id, body );
+	}
+	else if ( cmd == "net.clients" )
+	{
+		// How many peers actually got in. This is the assertion the NAT lab is built around: a punch
+		// that "worked" is only proven by somebody being connected at the far end of it, and every
+		// cheaper signal (the process is alive, the browser row appeared, no error was logged) is
+		// true of a connection that never happened.
+		if ( NETWORK_GetState() != NETSTATE_SERVER ) { SendErr( id, "net.clients requires a server" ); return; }
+		std::string body = "{\"connected\":" + I( (long long)SERVER_CalcNumConnectedClients() );
+		body += ",\"players\":" + I( (long long)SERVER_CountPlayers( false ) ) + "}";
 		SendOk( id, body );
 	}
 	else if ( cmd == "net.hostdiag" )

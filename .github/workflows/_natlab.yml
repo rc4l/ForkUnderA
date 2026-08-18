@@ -1,0 +1,69 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 rc4l
+
+# [rc4l] Does a player behind one router actually reach a server behind another?
+#
+# Nothing else in CI answers that. The unit tests cover the punch DECISIONS (punchbroker_compute has
+# 32 of them) and the build jobs prove the code compiles, but neither puts a packet through a NAT.
+# The only test that did was a person with a laptop on a phone hotspot, run by hand and therefore
+# never per release.
+#
+# Runs as its own job so it costs nothing in wall-clock next to the platform builds, and gates
+# release.yml so a regression in discovery or hole punching cannot ship. It is a REQUIRED check for
+# publishing and advisory nowhere: a broken punch is invisible to every other signal we have, which
+# is exactly why it must not be the check people wave through.
+#
+# Only Linux, and that is not a limitation to fix: the code under test is the shared engine
+# networking, and the test needs network namespaces, which is a Linux capability rather than a
+# platform coverage question.
+
+name: NAT lab
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+jobs:
+  natlab:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The common home router on both ends: this one must pass.
+          - host_nat: portrestricted
+            client_nat: portrestricted
+          # Carrier-grade / symmetric on the host side. Punching cannot work here and the lab asserts
+          # the degradation is clean rather than asserting success -- so a change that makes a failed
+          # punch hang the client is caught, which is the failure players would actually feel.
+          - host_nat: symmetric
+            client_nat: portrestricted
+    name: natlab (${{ matrix.host_nat }} <- ${{ matrix.client_nat }})
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build python3 pkg-config \
+            libssl-dev libopus-dev zlib1g-dev libbz2-dev libjpeg-dev \
+            libsdl2-dev libgl1-mesa-dev libglu1-mesa-dev libglew-dev libgme-dev \
+            libopenal-dev libsndfile1-dev libmpg123-dev
+
+      # [rc4l] The bridge is what makes this assertable: without it the lab could only watch
+      # processes stay alive, which is true of a client that never connected. Built here rather than
+      # reused from the release artifacts precisely BECAUSE releases must not carry the bridge.
+      - name: Build the engine with the control bridge
+        run: ZX_MCP_BRIDGE=1 ./linux_compile.sh --no-package
+
+      - name: Run the NAT lab
+        run: tools/natlab/run.sh --host-nat ${{ matrix.host_nat }} --client-nat ${{ matrix.client_nat }}
+
+      - name: Collect logs on failure
+        if: failure()
+        run: |
+          echo "See the diagnostics dumped by run.sh above."
+          docker ps -a || true
