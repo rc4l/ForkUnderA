@@ -81,6 +81,7 @@ const USAGE = `fuactl <command>
   sweep [--maps "MAP01 MAP07"] [--port P]   matched pairs across several maps, ranked by how much the renderers disagree
   doorshot <tag> [--port P] [--at x,y,z --face yaw] [--mid TICS]   a door caught MID-SWING in both renderers, plus a before pair
   look [--port P] [--at x,y,z --face yaw,pitch]   what the crosshair is on and what the level mesh holds for it
+  line <index> | --at X,Y [--radius R]   what a linedef IS: blocking flags, front/back sector heights, and which tier carries a texture over which span of height -- the three things that decide whether a mark can exist there. --at finds every line near a point, which is what tells two lines in the same place apart.
   png <mode> ...                     pixel arithmetic on captures: --diff, --diffimg, --align, --crop, --rows, --blob
   mcp                                run as an MCP stdio server for agents
 `;
@@ -418,6 +419,35 @@ async function main() {
       break;
     }
     // [rc4l] `fuactl look` -- what the crosshair is on, and what the mesh holds for it.
+    // [rc4l] `fuactl line` -- what the engine thinks a linedef is.
+    //
+    // A wall that takes bullets and refuses rockets, a decal with nowhere to go, a projectile
+    // stopping in mid-air: all three are answered by a line's flags and its tier spans, and none
+    // of them could be asked from a running game.
+    case "line": {
+      const session = (!flags.port && shot.readSession(path.resolve(process.cwd(), ".play-session"))) || null;
+      const port = Number(flags.port || (session && session.port));
+      if (!port) { console.error("no --port and no .play-session -- nothing running"); process.exit(2); }
+      const c = new BridgeClient();
+      await c.connect(port, { token: flags.token || (session && session.token) || null });
+      await c.waitHello();
+      try {
+        let cmd;
+        if (flags.at) {
+          const [x, y] = String(flags.at).split(",").map(Number);
+          cmd = `fua_lines_at ${x} ${y} ${flags.radius || 32}`;
+        } else {
+          const idx = process.argv[3];
+          if (idx === undefined || idx.startsWith("--")) {
+            console.error("usage: fuactl line <index> | fuactl line --at X,Y [--radius R]");
+            process.exit(2);
+          }
+          cmd = `fua_line ${Number(idx)}`;
+        }
+        process.stdout.write(await cap.exec(c, cmd, { quietMs: 500, maxMs: 20000 }));
+      } finally { c.close(); }
+      break;
+    }
     case "look": {
       const session = (!flags.port && shot.readSession(path.resolve(process.cwd(), ".play-session"))) || null;
       const port = Number(flags.port || (session && session.port));

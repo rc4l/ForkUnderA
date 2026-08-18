@@ -39,6 +39,7 @@
 #include "doomdef.h"
 #include "p_local.h"
 #include "features/levelmesh/projdecals.h"   // [rc4l] projected mesh decals
+EXTERN_CVAR (Bool, fua_decal_log)
 #include "p_lnspec.h"
 #include "p_effect.h"
 #include "p_terrain.h"
@@ -1837,8 +1838,19 @@ void P_ExplodeMissile (AActor *mo, line_t *line, AActor *target, bool bExplodeOn
 					// [BC] Servers don't need to spawn decals.
 					if ( NETWORK_GetState( ) != NETSTATE_SERVER )
 					{
-						DImpactDecal::StaticCreate (base->GetDecal (),
+						// [rc4l] Whether a MISSILE managed to stick a mark, and where it tried.
+						//
+						// A missile decals from its own z, not from a traced hit point, so it can land in the
+						// open span of a two-sided line -- between the textures -- where StickToWall has
+						// nothing to stick to and vanilla makes no decal at all. A hitscan aimed at the same
+						// wall stops exactly on a texture and marks it, so the wall looks like it takes some
+						// weapons and refuses others.
+						DBaseDecal *fuaMade = DImpactDecal::StaticCreate (base->GetDecal (),
 							x, y, z, line->sidedef[side], ffloor);
+						if (fua_decal_log)
+							Printf ("missile decal: z %.1f  line %d side %d  ffloor %d  -> %s\n",
+								FIXED2FLOAT (z), (int)(line - lines), side, ffloor != NULL ? 1 : 0,
+								fuaMade != NULL ? "stuck" : "REFUSED (nothing to stick to at that height)");
 						zx::levelmesh::ClearImpactContext ();
 					}
 				}
