@@ -80,6 +80,22 @@ and never went away:
 If a network test fails in a way that keeps moving rather than disappearing, suspect the fixture's
 notion of time before suspecting the protocol.
 
+## The dual-stack case
+
+`run-dualstack.sh` is a separate fixture for a separate question: a server announces once per family
+from one socket, so the registry holds two entries and every dual-stack server would appear twice.
+
+Deliberately no NAT — dedupe has nothing to do with traversal, and routing it through masquerading
+routers would add NAT66 to a test that would then fail for unrelated reasons. What it does need, and
+what nothing else in this repo has, is a registry **hostname carrying both an A and an AAAA record**;
+that is the only thing that makes an engine send the second announce at all. `extra_hosts` supplies
+both.
+
+It exists because everything on that path failed silently. The IPv6 announce went to a byte-swapped
+port and had never once arrived on any build; a registry named by an IPv6 address was dropped from
+the list without a word; grouping and its collision guard had never run. None of those produce an
+error message, which is precisely why a machine has to check them.
+
 ## The matrix
 
 | host NAT | what a pass means |

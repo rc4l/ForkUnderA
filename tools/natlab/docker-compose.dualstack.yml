@@ -1,0 +1,63 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 rc4l
+
+# [rc4l] The dedupe fixture: one server, two families, one row.
+#
+# Deliberately NOT the NAT topology. Dedupe has nothing to do with traversal -- it is about a server
+# announcing once per family from one socket and the registry recognising the two listings as one
+# machine. Routing that through masquerading routers would add NAT66 to a test that does not need it
+# and would fail for reasons that have nothing to do with what is being checked.
+#
+# What it does need, and what nothing else in this repo provides, is a registry HOSTNAME that resolves
+# to both an A and an AAAA record -- because that is the only thing that makes an engine send the
+# second announce at all. extra_hosts supplies both.
+
+services:
+  registry:
+    image: fua-natlab-registry
+    build:
+      context: ../..
+      dockerfile: Dockerfile.registry
+    networks:
+      dual:
+        ipv4_address: 203.0.113.10
+        ipv6_address: fd00:cafe:1::10
+
+  host:
+    image: fua-natlab-peer
+    build:
+      context: .
+      dockerfile: Dockerfile.peer
+    # Both records under one name. The engine resolves the A itself and asks for the AAAA separately,
+    # so a name carrying only one of them produces only one announce and the test would pass by
+    # accident with nothing to group.
+    extra_hosts:
+      - "registry.natlab:203.0.113.10"
+      - "registry.natlab:fd00:cafe:1::10"
+    networks:
+      dual:
+        ipv4_address: 203.0.113.20
+        ipv6_address: fd00:cafe:1::20
+    command: ["sleep", "infinity"]
+
+  client:
+    image: fua-natlab-peer
+    build:
+      context: .
+      dockerfile: Dockerfile.peer
+    extra_hosts:
+      - "registry.natlab:203.0.113.10"
+      - "registry.natlab:fd00:cafe:1::10"
+    networks:
+      dual:
+        ipv4_address: 203.0.113.30
+        ipv6_address: fd00:cafe:1::30
+    command: ["sleep", "infinity"]
+
+networks:
+  dual:
+    enable_ipv6: true
+    ipam:
+      config:
+        - subnet: 203.0.113.0/24
+        - subnet: fd00:cafe:1::/64

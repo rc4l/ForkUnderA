@@ -1,0 +1,140 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 rc4l
+
+# [rc4l] Prove that one server listed under two addresses shows up as ONE row.
+#
+# WHY THIS EXISTS. A server announces once per family from a single socket, so the registry legitimately
+# holds two entries for it, and without grouping every dual-stack server appears twice. Nothing else in
+# CI can catch that, because nothing else can make an IPv6 announce happen: it requires a registry whose
+# hostname carries both an A and an AAAA record, which no deployed registry has.
+#
+# That gap has already cost real bugs, all of which were invisible rather than loud:
+#
+#   * the IPv6 announce went to a byte-swapped port and had never once arrived, on any build;
+#   * a registry named by an IPv6 address was dropped from the list in silence;
+#   * grouping and its collision guard had never executed at all.
+#
+# The failures this asserts against are all silent by nature, which is exactly why they need a machine
+# watching for them rather than a person remembering to look.
+
+set -euo pipefail
+
+cd "$(dirname "${BASH_SOURCE[0]}")"
+ROOT="$(cd ../.. && pwd)"
+
+KEEP=0
+[ "${1:-}" = "--keep" ] && KEEP=1
+
+say()  { printf '\033[32m==> %s\033[0m\n' "$*"; }
+fail() { printf '\033[31mDUALSTACK FAILED: %s\033[0m\n' "$*" >&2; dump; exit 1; }
+
+COMPOSE="docker compose -f docker-compose.dualstack.yml -p natlab-dual"
+dc() { $COMPOSE "$@"; }
+
+dump() {
+    echo "--- registry: what it holds ---"
+    dc logs registry 2>&1 | grep -iE "adding|collision" | tail -12 || true
+    echo "--- host: announces ---"
+    dc exec -T host sh -lc 'grep -iE "announce|registry" /tmp/engine.log | tail -12' 2>&1 || true
+    echo "--- client: rows ---"
+    dc exec -T client node /fuactl/src/cli.mjs rpc browser.list --port 27800 --token natlab 2>&1 | tail -30 || true
+}
+
+cleanup() { [ "$KEEP" = "1" ] || dc down -v --remove-orphans >/dev/null 2>&1 || true; }
+trap cleanup EXIT
+
+say "Staging engine + fuactl..."
+ENGINE_SRC="${NATLAB_ENGINE_DIR:-$ROOT/build-linux}"
+[ -x "$ENGINE_SRC/forkundera" ] || fail "no engine at $ENGINE_SRC/forkundera"
+
+rm -rf engine fuactl && mkdir -p engine
+cp "$ENGINE_SRC/forkundera" engine/
+cp "$ENGINE_SRC"/*.pk3 engine/ 2>/dev/null || fail "no pk3s beside the engine binary"
+IWAD="${NATLAB_IWAD:-$ROOT/build-linux/freedoom2.wad}"
+[ -f "$IWAD" ] || IWAD="$(find "$ROOT" -maxdepth 3 -name 'freedoom2.wad' -print -quit 2>/dev/null || true)"
+[ -f "$IWAD" ] || fail "no IWAD found; set NATLAB_IWAD"
+cp "$IWAD" engine/iwad.wad
+cp -R "$ROOT/tools/fuactl" fuactl
+
+say "Starting..."
+dc build --quiet
+dc up -d --force-recreate
+
+# The fixture is only meaningful if the registry really is reachable both ways. A name that silently
+# resolves to one family would make this whole run a very slow way of testing IPv4.
+say "Verifying the fixture: the registry answers on BOTH families..."
+dc exec -T host sh -lc 'ping -c1 -W2 203.0.113.10 >/dev/null 2>&1' \
+    || fail "host cannot reach the registry over IPv4"
+dc exec -T host sh -lc 'ping6 -c1 -W2 fd00:cafe:1::10 >/dev/null 2>&1 || ping -6 -c1 -W2 fd00:cafe:1::10 >/dev/null 2>&1' \
+    || fail "host cannot reach the registry over IPv6 -- the fixture is single-stack and proves nothing"
+
+start_engine() { # $1=peer  $2=extra args
+    dc exec -d -T "$1" sh -lc "
+        Xvfb :99 -screen 0 640x480x24 >/tmp/xvfb.log 2>&1 &
+        sleep 2
+        DISPLAY=:99 ZANDRONUM_BRIDGE_PORT=27800 ZANDRONUM_BRIDGE_TOKEN=natlab \
+        /engine/forkundera -iwad /engine/iwad.wad -nosound +map MAP01 \
+            +set developer 1 \
+            +set fua_serverregistry_host registry.natlab \
+            +set cl_fua_serverregistry_list registry.natlab \
+            +set cl_fua_serverregistrylist_fetch 0 \
+            $2 >/tmp/engine.log 2>&1 &
+    "
+}
+
+say "Starting the host engine..."
+start_engine host "-host +set sv_hostname DUALSTACK-HOST +set sv_fua_serverregistry_announce 1 +set sv_fua_serverregistry_enforcebans 1"
+say "Starting the client engine..."
+start_engine client ""
+
+fua() { local peer="$1"; shift; dc exec -T "$peer" node /fuactl/src/cli.mjs "$@" --port 27800 --token natlab; }
+
+say "Waiting for both bridges..."
+for peer in host client; do
+    ok=0
+    for _ in $(seq 1 45); do
+        if fua "$peer" rpc sim.tic >/dev/null 2>&1; then ok=1; break; fi
+        sleep 2
+    done
+    [ "$ok" = "1" ] || fail "$peer engine never opened its bridge"
+done
+
+# The announce runs on a 30s cycle, and the second one only happens if the AAAA resolved.
+say "[1/3] the registry holds this server under BOTH families..."
+both=0
+for _ in $(seq 1 25); do
+    v4=$( dc logs registry 2>&1 | grep -c "Adding 203.0.113.20" || true )
+    v6=$( dc logs registry 2>&1 | grep -c "Adding \[fd00:cafe:1::20\]" || true )
+    if [ "$v4" -ge 1 ] && [ "$v6" -ge 1 ]; then both=1; break; fi
+    sleep 3
+done
+[ "$both" = "1" ] || fail "the registry did not receive one announce per family -- the IPv6 announce is not arriving"
+
+say "[2/3] the registry did not call it a collision..."
+if dc logs registry 2>&1 | grep -qi "Registry id collision"; then
+    fail "one server's two announces were treated as a collision, so they will never be grouped"
+fi
+
+say "[3/3] the client shows ONE row for it..."
+ok=0
+for _ in $(seq 1 20); do
+    rows="$( fua client browser --wait 12 2>/dev/null || true )"
+    held=$( echo "$rows" | grep -c '"name": "DUALSTACK-HOST"' || true )
+    shown=$( echo "$rows" | python3 -c "
+import json,sys
+try: d=json.load(sys.stdin)
+except Exception: print(0); raise SystemExit
+print(sum(1 for s in d.get('servers',[]) if s.get('name')=='DUALSTACK-HOST' and s.get('listed')))" 2>/dev/null || echo 0 )
+
+    if [ "$held" -ge 2 ] && [ "$shown" = "1" ]; then ok=1; break; fi
+    sleep 3
+done
+
+if [ "$ok" != "1" ]; then
+    echo "held=$held shown=$shown" >&2
+    [ "${held:-0}" -lt 2 ] && fail "the client never held both addresses, so there was nothing to collapse"
+    fail "the client holds both addresses but shows $shown rows -- dedupe did not collapse them"
+fi
+
+say "PASS: one server, listed twice by the registry, shown once to the player."
