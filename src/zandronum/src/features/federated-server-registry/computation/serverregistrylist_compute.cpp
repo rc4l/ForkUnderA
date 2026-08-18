@@ -58,33 +58,110 @@ bool IsValidLabel( const std::string &label )
 	return true;
 }
 
+// [rc4l] An IPv6 literal, judged loosely: hex digits and colons, at least two colons so it cannot be
+// confused with "name:port".
+//
+// Loose on purpose. This decides whether to HAND the text to a resolver, and the resolver is the
+// thing that actually knows what a valid address is -- duplicating inet_pton here would give two
+// answers to one question and eventually disagree.
+bool LooksLikeV6Literal( const std::string &host )
+{
+	int colons = 0;
+
+	for ( std::string::size_type i = 0; i < host.size( ); ++i )
+	{
+		const char c = host[i];
+
+		if ( c == ':' )
+		{
+			colons++;
+			continue;
+		}
+
+		const bool hex = (( c >= '0' ) && ( c <= '9' )) || (( c >= 'a' ) && ( c <= 'f' ))
+			|| (( c >= 'A' ) && ( c <= 'F' ));
+		if ( !hex )
+			return false;
+	}
+
+	return ( colons >= 2 );
+}
+
+// One place that decides what a port is, so the bracketed and unbracketed forms cannot drift apart.
+bool ParsePort( const std::string &digits, int &out )
+{
+	if ( digits.empty( ) || digits.size( ) > 5 )
+		return false;
+
+	int value = 0;
+	for ( std::string::size_type i = 0; i < digits.size( ); ++i )
+	{
+		if ( digits[i] < '0' || digits[i] > '9' )
+			return false;
+		value = value * 10 + ( digits[i] - '0' );
+	}
+
+	if ( value < 1 || value > 65535 )
+		return false;
+
+	out = value;
+	return true;
+}
+
 // Split "<host>[:port]". Returns false (skip the entry) on anything we cannot make sense of, rather
 // than guessing -- a mistyped port silently becoming the default would be a confusing way to fail.
 bool ParseHostPort( const std::string &token, ServerRegistryEntry &out )
 {
-	const std::string::size_type colon = token.rfind( ':' );
 	std::string host = token;
 	int port = 0;
+
+	// [rc4l] BRACKETS FIRST, because the split below looks for the last colon and a v6 address is
+	// mostly colons. "[2001:db8::1]:15300" would split at the port colon and leave "[2001:db8::1]",
+	// which then fails the hostname rules; a bare "2001:db8::1" would be cut at its own last colon
+	// and turn into a different address entirely. Both simply vanished from the list.
+	if ( !token.empty( ) && ( token[0] == '[' ))
+	{
+		const std::string::size_type close = token.find( ']' );
+		if ( close == std::string::npos )
+			return false;
+
+		host = token.substr( 1, close - 1 );
+
+		const std::string rest = token.substr( close + 1 );
+		if ( !rest.empty( ) )
+		{
+			if ( rest[0] != ':' )
+				return false;
+
+			if ( !ParsePort( rest.substr( 1 ), port ) )
+				return false;
+		}
+
+		if ( !LooksLikeV6Literal( host ) )
+			return false;
+
+		out.host = host;
+		out.port = port;
+		return true;
+	}
+
+	// An unbracketed v6 literal carries no port, since there would be no way to tell one from the
+	// address's own last group.
+	if ( LooksLikeV6Literal( token ) )
+	{
+		out.host = token;
+		out.port = 0;
+		return true;
+	}
+
+	const std::string::size_type colon = token.rfind( ':' );
 
 	if ( colon != std::string::npos )
 	{
 		host = token.substr( 0, colon );
 
-		const std::string digits = token.substr( colon + 1 );
-		if ( digits.empty( ) || digits.size( ) > 5 )
+		if ( !ParsePort( token.substr( colon + 1 ), port ) )
 			return false;
-
-		int value = 0;
-		for ( std::string::size_type i = 0; i < digits.size( ); ++i )
-		{
-			if ( digits[i] < '0' || digits[i] > '9' )
-				return false;
-			value = value * 10 + ( digits[i] - '0' );
-		}
-		if ( value < 1 || value > 65535 )
-			return false;
-
-		port = value;
 	}
 
 	if ( !IsValidServerRegistryHost( host ) )
@@ -116,6 +193,11 @@ bool IsValidServerRegistryHost( const std::string &host )
 	// 253 is the DNS limit on a presentation-format name; anything longer cannot resolve anyway.
 	if ( host.empty( ) || host.size( ) > 253 )
 		return false;
+
+	// A v6 literal is not a DNS name and must not be walked label by label -- every colon would fail
+	// the label rules and the address would be rejected as a malformed hostname.
+	if ( LooksLikeV6Literal( host ) )
+		return true;
 
 	std::string::size_type start = 0;
 	for ( ;; )
