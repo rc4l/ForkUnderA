@@ -70,6 +70,12 @@ jobs:
       - name: Run the NAT lab
         run: tools/natlab/run.sh --host-nat ${{ matrix.host_nat }} --client-nat ${{ matrix.client_nat }}
 
+      # [rc4l] Dedupe, once, rather than per NAT flavour: it has nothing to do with traversal, and
+      # running it three times would treble the wall clock to assert the same thing.
+      - name: Prove a dual-stack server is one row
+        if: matrix.host_nat == 'portrestricted'
+        run: tools/natlab/run-dualstack.sh
+
       - name: Collect logs on failure
         if: failure()
         run: |
