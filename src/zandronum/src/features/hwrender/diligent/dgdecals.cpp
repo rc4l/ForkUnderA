@@ -26,16 +26,16 @@
 
 EXTERN_CVAR(Int, fua_decalmode)
 
-// [rc4l] ANGLE FADE: how much a surface met at a slant loses.
+// [rc4l] ASPECT CORRECTION: how much of the projection's stretch to undo, 0 to 1.
 //
-// Soot lands in proportion to the cosine of the angle it arrives at, the same reason a lamp at a
-// grazing angle lights a wall less. This is per FRAGMENT, read from the same normal buffer the
-// surface itself wrote, so it varies continuously across a corner and there is no seam to make --
-// which is exactly what the CPU-clipped version of this could not do, because there the fade was
-// constant across each surface and a corner took two different constants.
+// A planar projection lands its picture on a tilted surface stretched by 1/cos. Correcting it means
+// reading the picture in the receiving surface's own plane, which keeps the graphic square -- and
+// which is a function of that surface's normal, so it KINKS where the normal jumps, at a corner.
+// Straight projection has no kink and stretches instead. The two are the same degree of freedom, so
+// this is a dial and not a decision.
 //
-// 0 leaves every surface at full strength; 1 is the plain cosine.
-CVAR(Float, fua_decal_anglefade, 0.65f, CVAR_ARCHIVE)
+// 0 is the pure projection everything before this was tuned around; 1 keeps the aspect everywhere.
+CVAR(Float, fua_decal_aspect, 0.0f, CVAR_ARCHIVE)
 
 namespace zx { namespace hwrender {
 
@@ -154,10 +154,8 @@ static const char *kDeferredDecalPS =
 	/* Into the picture's own axes. U and V arrive divided by their half-extents, so the picture is
 	   whatever falls in -1..1; N is unit, so the depth test is in world units and asymmetric -- the
 	   box reaches further back towards the shooter than forward through the surface. */
-	"    float u = dot(rel, vAxisU);\n"
-	"    float v = dot(rel, vAxisV);\n"
+	/* The depth slab first, which needs nothing but the projection axis. */
 	"    float w = dot(rel, vAxisN);\n"
-	"    if (abs(u) > 1.0 || abs(v) > 1.0) discard;\n"
 	"    if (w < -vParams.x || w > vParams.y) discard;\n"
 	/* [rc4l] The surface's EXACT normal, out of the G-buffer. Estimating it from four depth taps was
 	   wrong in every place that mattered: across a silhouette it straddled two surfaces, on a
@@ -166,12 +164,38 @@ static const char *kDeferredDecalPS =
 	"    vec4 gbuf = texture(uSceneNormal, uv);\n"
 	"    if (gbuf.a < 0.5) discard;\n"
 	"    vec3 nrm = normalize(gbuf.xyz * 2.0 - 1.0);\n"
-	/* A surface facing away from the projectile cannot have been sprayed by it. Without this a pillar
-	   prints a second, mirrored copy of the mark on the face nobody shot at. */
 	/* A surface facing away from the projectile cannot have been sprayed by it. Without this a
 	   pillar prints a second, mirrored copy of the mark on the face nobody shot at. */
 	"    float facing = -dot(nrm, vAxisN);\n"
 	"    if (facing < 0.05) discard;\n"
+	/* [rc4l] ASPECT CORRECTION, per fragment -- uDecalDebug.w between 0 and 1.
+	
+	   A planar projection lands its picture on a tilted surface stretched by 1/cos: correct for a
+	   slide projector, and a smear on a decal. The fix is to read the picture in the SURFACE's own
+	   plane instead -- project the picture's axes onto it and restore their length, so a unit of
+	   picture is a unit of surface however the surface is turned.
+	
+	   It cannot be free, and the cost is worth stating: this is a function of the NORMAL, and the
+	   normal jumps at a corner, so a mark spanning one gets a kink in its picture there. Straight
+	   projection has no kink and stretches instead. There is no third option -- the two properties
+	   are the same degree of freedom -- so it is a dial rather than a decision, and 0 is the shape
+	   the earlier work was tuned around. */
+	"    vec3 rAx = vAxisU, uAx = vAxisV;\n"
+	"    if (uDecalDebug.w > 0.001) {\n"
+	"        vec3 rS = vAxisU - nrm * dot(vAxisU, nrm);\n"
+	"        vec3 uS = vAxisV - nrm * dot(vAxisV, nrm);\n"
+	"        float lr = length(rS), lu = length(uS);\n"
+	/* Edge-on to one of the picture's own axes there is nothing left to renormalise, and the
+	   correction would divide by nothing. Keep the uncorrected axis, which is what it degenerates
+	   to anyway. */
+	"        if (lr > 1e-4) rS *= length(vAxisU) / lr; else rS = vAxisU;\n"
+	"        if (lu > 1e-4) uS *= length(vAxisV) / lu; else uS = vAxisV;\n"
+	"        rAx = mix(vAxisU, rS, uDecalDebug.w);\n"
+	"        uAx = mix(vAxisV, uS, uDecalDebug.w);\n"
+	"    }\n"
+	"    float u = dot(rel, rAx);\n"
+	"    float v = dot(rel, uAx);\n"
+	"    if (abs(u) > 1.0 || abs(v) > 1.0) discard;\n"
 	"    vec2 t = vec2(u * 0.5 + 0.5, 0.5 - v * 0.5);\n"
 	/* [rc4l] uDecalDebug.z pins every mark to slot zero, which is the one experiment that tells
 	   a bad INDEX from a bad BINDING apart: if the mark appears when pinned, the array is bound
@@ -183,15 +207,6 @@ static const char *kDeferredDecalPS =
 	"    bool redAlpha = vParams.w > 0.5;\n"
 	"    float mask = redAlpha ? texel.r : texel.a;\n"
 	"    float a = mask * vColor.a;\n"
-	/* [rc4l] ANGLE FADE: how squarely the blast met this surface.
-	   Soot lands in proportion to the cosine of the angle it arrives at, the same reason a lamp at a
-	   grazing angle lights a wall less. The mesh path has this too and has it turned OFF, because
-	   there the fade is constant across each surface -- so at a corner the two faces take different
-	   constants and a hard step appears down the join. Here it is a per-FRAGMENT quantity read from
-	   the same normal buffer the surface itself wrote, so it varies continuously across a corner and
-	   there is no seam to make. This is the version of the idea that actually works.
-	   uDecalDebug.y is the strength: 0 leaves every surface at full, 1 is the plain cosine. */
-	"    a *= mix(1.0, facing, clamp(uDecalDebug.y, 0.0, 1.0));\n"
 	/* [rc4l] The run-out, per fragment. Inside the picture's own radius nothing fades, so the mark on
 	   the surface that was actually hit is exactly what the decal says it is; beyond that the mark is
 	   reaching onto geometry the picture never covered and it runs out smoothly.
@@ -425,9 +440,9 @@ void DrawDeferredDecals(Diligent::IDeviceContext *ctx)
 		Diligent::MapHelper<float> cb(ctx, g_ddCB, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD);
 		for (int i = 0; i < 16; i++) cb[i] = invMVP[i];
 		cb[16] = (float)fua_dg_decaldebug;
-		cb[17] = (float)fua_decal_anglefade;
+		cb[17] = 0.f;   // was the angle fade; removed
 		cb[18] = 0.f;
-		cb[19] = 0.f;
+		cb[19] = (float)fua_decal_aspect;
 	}
 
 	// [rc4l] Every graphic this frame needs, gathered into ONE array the shader indexes per mark.
