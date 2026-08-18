@@ -257,3 +257,94 @@ TEST( MergeServerRegistryLists, DuplicatesWithinOneSideAreCollapsedToo )
 	ASSERT_EQ( got.size( ), 1u );
 	EXPECT_EQ( got[0].port, 1 );
 }
+
+// --- IPv6 registry addresses ----------------------------------------------------------------------
+//
+// The split below used to look for the LAST colon, which is fatal for an address made mostly of
+// colons: "[2001:db8::1]:15300" kept its brackets and failed the hostname rules, and a bare
+// "2001:db8::1" was cut at its own last group and became a different address. Either way the entry
+// silently vanished from the list, which is how two IPv6 tests appeared to pass while every packet
+// went over IPv4.
+
+TEST(ServerRegistryList, ABracketedV6AddressKeepsItsPort)
+{
+	const std::vector<zx::ServerRegistryEntry> entries =
+		zx::ParseServerRegistryList( "[2001:db8::1]:15300\n" );
+
+	ASSERT_EQ( 1u, entries.size( ));
+	EXPECT_EQ( "2001:db8::1", entries[0].host ) << "the brackets are notation, not part of the address";
+	EXPECT_EQ( 15300, entries[0].port );
+}
+
+TEST(ServerRegistryList, ABracketedV6AddressWithoutAPortTakesTheDefault)
+{
+	const std::vector<zx::ServerRegistryEntry> entries =
+		zx::ParseServerRegistryList( "[2001:db8::1]\n" );
+
+	ASSERT_EQ( 1u, entries.size( ));
+	EXPECT_EQ( "2001:db8::1", entries[0].host );
+	EXPECT_EQ( 0, entries[0].port ) << "zero means the caller applies the default";
+}
+
+TEST(ServerRegistryList, ABareV6AddressIsNotCutAtItsLastColon)
+{
+	// The exact old failure: rfind(':') turned this into "2001:db8:" plus a nonsense port.
+	const std::vector<zx::ServerRegistryEntry> entries =
+		zx::ParseServerRegistryList( "2001:db8::1\n" );
+
+	ASSERT_EQ( 1u, entries.size( ));
+	EXPECT_EQ( "2001:db8::1", entries[0].host );
+	EXPECT_EQ( 0, entries[0].port );
+}
+
+TEST(ServerRegistryList, AHostnameWithAPortStillSplitsAsItAlwaysDid)
+{
+	const std::vector<zx::ServerRegistryEntry> entries =
+		zx::ParseServerRegistryList( "registry.example.net:15300\n" );
+
+	ASSERT_EQ( 1u, entries.size( ));
+	EXPECT_EQ( "registry.example.net", entries[0].host );
+	EXPECT_EQ( 15300, entries[0].port );
+}
+
+TEST(ServerRegistryList, AnUnclosedBracketIsRefusedRatherThanGuessedAt)
+{
+	EXPECT_TRUE( zx::ParseServerRegistryList( "[2001:db8::1\n" ).empty( ));
+}
+
+TEST(ServerRegistryList, RubbishAfterTheBracketIsRefused)
+{
+	// Anything but ":port" after the closing bracket is malformed, and guessing at it would be a
+	// registry nobody meant to name.
+	EXPECT_TRUE( zx::ParseServerRegistryList( "[2001:db8::1]junk\n" ).empty( ));
+	EXPECT_TRUE( zx::ParseServerRegistryList( "[2001:db8::1]:notaport\n" ).empty( ));
+	EXPECT_TRUE( zx::ParseServerRegistryList( "[2001:db8::1]:99999\n" ).empty( ));
+}
+
+TEST(ServerRegistryList, BracketsMustContainSomethingV6Shaped)
+{
+	// Brackets are not a way to smuggle a hostname past the label rules.
+	EXPECT_TRUE( zx::ParseServerRegistryList( "[registry.example.net]:15300\n" ).empty( ));
+	EXPECT_TRUE( zx::ParseServerRegistryList( "[]\n" ).empty( ));
+}
+
+TEST(ServerRegistryList, AV6AddressAndAHostnameCanShareOneList)
+{
+	const std::vector<zx::ServerRegistryEntry> entries =
+		zx::ParseServerRegistryList( "registry.example.net\n[2001:db8::1]:15300\n" );
+
+	ASSERT_EQ( 2u, entries.size( ));
+	EXPECT_EQ( "registry.example.net", entries[0].host );
+	EXPECT_EQ( "2001:db8::1", entries[1].host );
+	EXPECT_EQ( 15300, entries[1].port );
+}
+
+TEST(ServerRegistryList, AHostnameIsStillNotMistakenForAnAddress)
+{
+	// The v6 test is "hex and colons", and a name that happens to be all hex characters must still be
+	// treated as a name -- it has no colons, so it cannot be one.
+	const std::vector<zx::ServerRegistryEntry> entries = zx::ParseServerRegistryList( "abcdef\n" );
+
+	ASSERT_EQ( 1u, entries.size( ));
+	EXPECT_EQ( "abcdef", entries[0].host );
+}
