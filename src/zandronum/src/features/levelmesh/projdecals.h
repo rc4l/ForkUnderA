@@ -84,6 +84,10 @@ void RegisterProjectedDecals();
 // Everything, on level change: the geometry these were clipped against is about to stop existing.
 void ClearProjectedDecals();
 
+// How many marks have been cut short by the surface cap since this level loaded. A cap that bites
+// ends a mark in a straight line, which looks like every other kind of cut -- so it is counted.
+int GetProjectedDecalTruncations();
+
 // How many projections are live, and how many triangles they came to. See fua_projdecals_stats.
 void GetProjectedDecalStats(int &decals, int &triangles);
 

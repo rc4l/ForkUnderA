@@ -150,10 +150,18 @@ struct MarkStyle
 
 TArray<ProjDecal> g_decals;
 
-// A mark that lands in a hall of columns can touch a lot of geometry. These are not tuning knobs;
-// they are the point past which something has gone wrong and the frame is worth more than the mark.
-const unsigned kMaxPatchesPerDecal = 48;
+// [rc4l] The point past which something has gone wrong and the frame is worth more than the mark.
+//
+// Not a tuning knob, and deliberately far above what a mark needs: it used to be 48, which a single
+// BFG on an ordinary floor came within three of, and a cap that bites mid-gather drops whatever it
+// had not reached yet -- so the mark ends in a straight line along a subsector boundary. That is
+// indistinguishable from every other way a mark can be cut off, which is why g_capBit counts it and
+// fua_projdecals_stats prints it rather than letting it happen quietly.
+const unsigned kMaxPatchesPerDecal = 192;
 const unsigned kMaxVertsPerPatch   = 96;
+
+// How many marks have been truncated by the cap since the level loaded. See fua_projdecals_stats.
+int g_capBit = 0;
 
 inline float Dot3(const float a[3], const float b[3]) { return a[0]*b[0] + a[1]*b[1] + a[2]*b[2]; }
 
@@ -469,8 +477,20 @@ namespace {
 // `surfN` is the surface that stopped the projectile, which answers the two questions the direction
 // of travel cannot: which way to face when there is no usable velocity, and which way to tilt a
 // grazing hit back towards square-on.
+// [rc4l] `advance` is how far short of the surface the caller's point is.
+//
+// A projectile is an axis-aligned BOX in Doom, so a missile stopped by a wall has its centre a
+// radius short of it and the box has to be pushed forward to sit on the geometry. A hit on a FLOOR
+// is not like that at all: the missile comes to rest exactly on the plane, and the caller passes the
+// plane's own height, so there is nothing to close -- pushing anyway drives the box a full radius
+// THROUGH the floor, and the floor then falls outside its own mark's box.
+//
+// That is not a subtle error at small sizes. A plasma ball has a radius of 13 and its scorch is 15
+// units across, so the whole picture ended up underground: the marks were built, every surface was
+// clipped away, and the count came back zero -- plasma left nothing on floors while rockets, whose
+// mark is big enough to survive being shoved, still did.
 void BuildProjection(const MarkStyle &style, DBaseDecal *owner, int fadeStart, int fadeTime,
-                     fixed_t x, fixed_t y, fixed_t z, const float surfN[3])
+                     fixed_t x, fixed_t y, fixed_t z, const float surfN[3], float advance)
 {
 	FTexture *texture = TexMan[style.pic];
 	if (texture == NULL) return;
@@ -490,19 +510,30 @@ void BuildProjection(const MarkStyle &style, DBaseDecal *owner, int fadeStart, i
 
 	DecalBox box;
 	const float pos[3] = { FIXED2FLOAT(x), FIXED2FLOAT(y), FIXED2FLOAT(z) };
-	DecalOriginFromImpact(pos, axis, g_impact.valid ? g_impact.radius : 0.f, box.origin);
+	DecalOriginFromImpact(pos, axis, advance, box.origin);
 	for (int i = 0; i < 3; i++) { box.right[i] = right[i]; box.up[i] = up[i]; box.axis[i] = axis[i]; }
 	box.halfW = halfW;
 	box.halfH = halfH;
 
-	// The depth is not a free choice -- see ComputeDecalBoxDepth, where it is stated and tested.
-	const float size = (halfW > halfH) ? halfW : halfH;
+	// [rc4l] The depth is measured from the picture's CORNER, not from its half-width.
+	//
+	// A square picture reaches sqrt(2) further at its corners than along its axes, and the depth a
+	// tilted projection needs is proportional to how far out the picture goes. Using the half-width
+	// left the corners a third short of the depth they needed, so the box sliced them off -- a
+	// straight edge cutting across a scorch on the floor, which is not a shading fault and not the
+	// texture running out, it is the mark being cut off. Reported twice before the numbers were
+	// printed and the slant turned out to be 18 units where the corners wanted 25.
+	//
+	// tan(theta) times the corner radius is an upper bound on how far the picture's own footprint can
+	// travel through the depth of the box, so nothing inside the picture can be cut by it.
+	const float cornerRadius = sqrtf(halfW*halfW + halfH*halfH);
 	const float cosTheta = -(axis[0]*surfN[0] + axis[1]*surfN[1] + axis[2]*surfN[2]);
-	ComputeDecalBoxDepth(size, cosTheta, (float)fua_projdecal_depth, box.near_, box.far_);
+	ComputeDecalBoxDepth(cornerRadius, cosTheta, (float)fua_projdecal_depth, box.near_, box.far_);
 
 	TArray<Candidate> candidates;
 	GatherCandidates(box, candidates);
 	if (candidates.Size() == 0) return;
+	if (candidates.Size() >= kMaxPatchesPerDecal) g_capBit++;
 
 	if (fua_projdecal_debug)
 	{
@@ -536,7 +567,7 @@ void BuildProjection(const MarkStyle &style, DBaseDecal *owner, int fadeStart, i
 	// Inside its own radius a mark is exactly what the decal says it is. Beyond that it is spilling
 	// onto geometry the picture never covered -- the floor running away from a wall, the far face of
 	// a corner -- and that is the part that has to run out rather than end.
-	const float pictureRadius = sqrtf(halfW*halfW + halfH*halfH);
+	const float pictureRadius = cornerRadius;
 	const float outerRadius = pictureRadius + box.near_;
 	int bandCount = (int)fua_projdecal_bands;
 	if (bandCount < 1) bandCount = 1;
@@ -675,13 +706,13 @@ void SpawnProjectedDecal(DBaseDecal *owner, const FDecalTemplate *tpl,
 	style.renderFlags = owner->RenderFlags;
 
 	// No fade of its own: the owner has one, and reading it is always right.
-	BuildProjection(style, owner, -1, 0, x, y, z, surfN);
+	BuildProjection(style, owner, -1, 0, x, y, z, surfN, g_impact.valid ? g_impact.radius : 0.f);
 }
 
 namespace {
 
 void SpawnFromTemplate(const FDecalTemplate *tpl, fixed_t x, fixed_t y, fixed_t z,
-                       const float surfaceNormal[3])
+                       const float surfaceNormal[3], float advance)
 {
 	if (!fua_projdecals || tpl == NULL) return;
 
@@ -707,7 +738,7 @@ void SpawnFromTemplate(const FDecalTemplate *tpl, fixed_t x, fixed_t y, fixed_t 
 	int fadeStart = -1, fadeTime = 0;
 	if (!GetDecalFadeTiming(tpl->Animator, fadeStart, fadeTime)) fadeStart = -1;
 
-	BuildProjection(style, NULL, fadeStart, fadeTime, x, y, z, surfaceNormal);
+	BuildProjection(style, NULL, fadeStart, fadeTime, x, y, z, surfaceNormal, advance);
 }
 
 } // namespace
@@ -715,7 +746,36 @@ void SpawnFromTemplate(const FDecalTemplate *tpl, fixed_t x, fixed_t y, fixed_t 
 void SpawnProjectedDecalHere(const FDecalTemplate *tpl, fixed_t x, fixed_t y, fixed_t z,
                              const float surfaceNormal[3])
 {
-	SpawnFromTemplate(tpl, x, y, z, surfaceNormal);
+	// [rc4l] A mark is often TWO decals, and this path has to spawn both itself.
+	//
+	// DECALDEF's `lowerdecal` puts one graphic underneath another: the BFG's mark is a green glow
+	// with a black scorch beneath it, and a rocket's is a scorch with its own darker underlay.
+	// DImpactDecal::StaticCreate walks that chain, so a mark on a WALL gets both -- it recurses, and
+	// the hook that mirrors each decal into a projection is inside the recursion.
+	//
+	// A mark on a FLOOR never goes near StaticCreate: Doom does not decal floors at all, so this
+	// path is handed the generator's template directly and has to do the walk. Without it exactly
+	// one of the two graphics appears -- which showed up as a BFG leaving its glow on the ground
+	// with no scorch under it.
+	//
+	// Lowest first, so it is emitted first and drawn underneath, which is the order StaticCreate
+	// uses. The depth limit is a cycle guard: a template chain is map data and can be malformed.
+	const FDecalTemplate *chain[8];
+	int depth = 0;
+	for (const FDecalTemplate *t = tpl; t != NULL && depth < 8; depth++)
+	{
+		chain[depth] = t;
+		if (t->LowerDecal == NULL) { depth++; break; }
+		const FDecalTemplate *lower = t->LowerDecal->GetDecal();
+		if (lower == t) { depth++; break; }
+		t = lower;
+	}
+
+	for (int i = depth - 1; i >= 0; i--)
+	{
+		// Zero: the caller passes the plane's own height, which IS the contact point.
+		SpawnFromTemplate(chain[i], x, y, z, surfaceNormal, 0.f);
+	}
 }
 
 void SpawnProjectedDecalOnLine(const FDecalTemplate *tpl, fixed_t x, fixed_t y, fixed_t z,
@@ -723,7 +783,7 @@ void SpawnProjectedDecalOnLine(const FDecalTemplate *tpl, fixed_t x, fixed_t y, 
 {
 	float surfN[3];
 	NormalFromLine(hitLine, surfN);
-	SpawnFromTemplate(tpl, x, y, z, surfN);
+	SpawnFromTemplate(tpl, x, y, z, surfN, g_impact.valid ? g_impact.radius : 0.f);
 }
 
 void ForgetProjectedDecal(DBaseDecal *owner)
@@ -799,8 +859,11 @@ void RegisterProjectedDecals()
 void ClearProjectedDecals()
 {
 	g_decals.Clear();
+	g_capBit = 0;
 	ClearImpactContext();
 }
+
+int GetProjectedDecalTruncations() { return g_capBit; }
 
 void GetProjectedDecalStats(int &decals, int &triangles)
 {
@@ -817,5 +880,6 @@ CCMD(fua_projdecals_stats)
 {
 	int decals = 0, tris = 0;
 	zx::levelmesh::GetProjectedDecalStats(decals, tris);
-	Printf("projected decals: %d live, %d triangles\n", decals, tris);
+	Printf("projected decals: %d live, %d triangles, %d truncated by the surface cap\n",
+		decals, tris, zx::levelmesh::GetProjectedDecalTruncations());
 }
