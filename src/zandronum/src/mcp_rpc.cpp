@@ -35,6 +35,7 @@
 #include "mcp_simtrace.h"
 #include "features/server-browser/browser.h"
 #include "network.h"
+#include "sv_main.h" // [rc4l] SERVER_SERVERREGISTRY_GetListingProof, for net.hostdiag
 #include "mcp_sample.h"
 #include "textures/textures.h"
 #include "features/damage-tint/damagetint.h"
@@ -134,6 +135,22 @@ namespace
 
 	std::string I( long long v ) { return std::to_string( v ); }
 	std::string B( bool v )      { return v ? "true" : "false"; }
+
+	// [rc4l] A stable token per state, so a test matches on that rather than on English that is free
+	// to be reworded.
+	const char *HostDiagStateToken( zx::ListingState state )
+	{
+		switch ( state )
+		{
+		case zx::ListingState::NeverAnnounced:   return "never_announced";
+		case zx::ListingState::AwaitingAnswer:   return "awaiting_answer";
+		case zx::ListingState::Refused:          return "refused";
+		case zx::ListingState::ListedUnverified: return "listed_unverified";
+		case zx::ListingState::ListedVerified:   return "listed_verified";
+		case zx::ListingState::ListedStale:      return "listed_stale";
+		}
+		return "unknown";
+	}
 
 	bool InLevel() { return gamestate == GS_LEVEL; }
 
@@ -363,7 +380,7 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 	{
 		SendOk( id, "{\"commands\":["
 			"\"ping\",\"capabilities\",\"console.exec\","
-			"\"sim.tic\",\"sim.hash\",\"sim.seed\",\"sim.pause\",\"sim.resume\",\"sim.step\",\"sim.cheatat\",\"sim.pauseat\",\"browser.refresh\",\"browser.list\",\"sim.rngdump\",\"sim.trace\","
+			"\"sim.tic\",\"sim.hash\",\"sim.seed\",\"sim.pause\",\"sim.resume\",\"sim.step\",\"sim.cheatat\",\"sim.pauseat\",\"browser.refresh\",\"browser.list\",\"net.hostdiag\",\"net.clients\",\"sim.rngdump\",\"sim.trace\","
 			"\"sim.snapshot\",\"sim.restore\",\"state.player\",\"state.actors\",\"input.event\",\"input.axis\",\"input.look\","
 			"\"perf.capture\",\"perf.ticprof\",\"perf.counters\",\"net.bandwidth\",\"gl.timers\",\"renderer.info\","
 			"\"world.sectors\",\"player.setpos\""
@@ -497,11 +514,66 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 			body += ",\"country\":\"" + country + "\"";
 			body += ",\"flag\":\"" + flag + "\"";
 			body += ",\"countryIndex\":" + I( (long long)BROWSER_GetCountryIndex( i ) );
+			// [rc4l] Whether a PLAYER would see this row, since asserting on what the browser holds
+			// would miss the collapse entirely.
+			body += ",\"listed\":" + B( BROWSER_IsListable( i ) );
 			body += ",\"players\":" + I( BROWSER_GetNumPlayers( i ) );
 			body += ",\"ping\":" + I( BROWSER_GetPing( i ) ) + "}";
 			++n;
 		}
 		body += "],\"count\":" + I( n ) + "}";
+		SendOk( id, body );
+	}
+	else if ( cmd == "net.clients" )
+	{
+		// [rc4l] How many peers actually got in, which is the only signal a connection that never
+		// happened cannot produce.
+		if ( NETWORK_GetState() != NETSTATE_SERVER ) { SendErr( id, "net.clients requires a server" ); return; }
+		std::string body = "{\"connected\":" + I( (long long)SERVER_CalcNumConnectedClients() );
+		body += ",\"players\":" + I( (long long)SERVER_CountPlayers( false ) ) + "}";
+		SendOk( id, body );
+	}
+	else if ( cmd == "net.hostdiag" )
+	{
+		// [rc4l] The machine-readable half of fua_hostdiag, so a reachability check can be asserted on
+		// rather than eyeballed.
+		std::string body = "{\"hosting\":" + B( NETWORK_GetState() == NETSTATE_SERVER );
+		body += ",\"port\":" + I( (long long)NETWORK_GetLocalPort() );
+
+		bool registryReplied = false;
+		if ( NETWORK_GetState() == NETSTATE_SERVER )
+		{
+			body += ",\"families\":{";
+			for ( int fam = 0; fam < 2; ++fam )
+			{
+				const zx::ListingProof proof = SERVER_SERVERREGISTRY_GetListingProof( fam == 1 );
+				const bool verified = ( proof.state == zx::ListingState::ListedVerified );
+				const bool possible = ( fam == 0 ) || SERVER_SERVERREGISTRY_HasV6Registry();
+				registryReplied = registryReplied || verified;
+
+				std::string describe;
+				JsonEscape( std::string( zx::DescribeListing( proof.state ) ), describe );
+
+				body += std::string( fam ? ",\"ipv6\":{" : "\"ipv4\":{" );
+				// [rc4l] False means this family has nowhere to announce to, so an absent listing is
+				// expected rather than a fault.
+				body += "\"possible\":" + B( possible );
+				body += ",\"state\":\"" + std::string( HostDiagStateToken( proof.state ) ) + "\"";
+				body += ",\"verified\":" + B( verified );
+				body += ",\"secondsSinceVerified\":" + I( proof.secondsSinceVerified );
+				// [rc4l] Nothing to attend to when the family was never possible.
+				body += ",\"needsAttention\":" + B( possible && zx::ListingNeedsAttention( proof.state ) );
+				body += ",\"describe\":\"" + describe + "\"}";
+			}
+			body += "}";
+		}
+
+		// [rc4l] `reachable` is null because the verification arrives through the mapping our own
+		// announce opened, so it proves nothing about anyone else reaching us.
+		body += ",\"registryReplied\":" + B( registryReplied );
+		body += ",\"reachable\":null";
+		body += ",\"reachableNote\":\"the registry's reply arrives through the NAT mapping our own announce opened, so it does not prove strangers can reach us\"";
+		body += "}";
 		SendOk( id, body );
 	}
 	else if ( cmd == "sim.pauseat" )

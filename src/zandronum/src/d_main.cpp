@@ -3010,8 +3010,6 @@ void D_DoomMain (void)
 		// [rc4l] Anonymous accounts: load or create this machine's identity before any join can
 		// need it, so the handshake itself never touches the disk.
 		{
-			zx::Identity_MigrateLegacyRoot( );
-
 			const std::string identityRoot = zx::Identity_ConfigRoot( );
 			zx::Identity_InitClientHere( identityRoot.c_str( ));
 		}

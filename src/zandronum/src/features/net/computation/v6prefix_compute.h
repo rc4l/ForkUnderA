@@ -43,6 +43,10 @@ bool V6AddressInPrefix( const unsigned char *address, const unsigned char *prefi
 // differ by an omission is one where the dangerous reading happens by accident. Say the number.
 bool ParseV6Prefix( const char *text, unsigned char *prefix, int *bits );
 
+// [rc4l] Render `prefix`/`bits` back to "2001:db8::/64" in `out` (48 bytes), which MUST round-trip
+// through ParseV6Prefix or a rule widens every time the ban file is saved.
+bool FormatV6Prefix( const unsigned char *prefix, int bits, char *out, int outSize );
+
 } // namespace zx
 
 #endif // ZX_V6PREFIX_COMPUTE_H

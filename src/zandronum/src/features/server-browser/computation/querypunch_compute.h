@@ -41,6 +41,10 @@ const int kQueryPunchResendMs[3] = { 2500, 4000, 5500 };
 const int kQueryPunchTimeoutMs = 7000;
 const int kQueryPlainTimeoutMs = 4000;
 
+// [rc4l] How long to hold the first challenge back while the punch goes ahead of it, because a
+// challenge sent first is tracked by the host's router and takes the tuple the punch then needs.
+const int kQueryPunchLeadMs = 600;
+
 // Decide for one slot. `elapsedMs` is time since the FIRST challenge went out (resends must not
 // restamp it, or the ladder never advances). `punchEligible` is the caller's whole verdict --
 // "this is a registry-listed internet server and the punch budget allows one more" -- so the
@@ -48,6 +52,17 @@ const int kQueryPlainTimeoutMs = 4000;
 // are per-slot state the caller keeps between calls.
 QueryPunchStep StepQueryPunch(int elapsedMs, bool punchEligible, bool punchRequested,
 	int resendsSent);
+
+// [rc4l] Whether a row about to be challenged for the first time should punch before it speaks,
+// limited to servers already known unreachable so the small budget is not spent on the rest.
+bool ShouldPunchBeforeFirstChallenge(bool lan, bool knownUnreachable, bool punchBudgetLeft);
+
+// [rc4l] Whether an untried row should also lead, because the poisoning is refreshed by every retry
+// and so leading on a later sweep is already too late.
+bool ShouldPunchOnFirstContact(bool lan, bool punchBudgetLeft);
+
+// [rc4l] Whether the held-back first challenge is now due, false for a row that never led.
+bool FirstChallengeDue(bool punchLed, bool firstChallengeSent, int punchLedMs);
 
 // Whether a punch knock -- an unsolicited packet from the server we asked the registry to punch --
 // may re-aim a waiting browser slot at the knock's source. Under endpoint-dependent (carrier) NAT

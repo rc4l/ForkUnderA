@@ -216,6 +216,17 @@ typedef struct
 	bool			bPunchRequested;
 	LONG			lPunchResendsSent;
 
+	// [rc4l] This row punched before it spoke, because a challenge sent first is tracked by the host's
+	// router even as it drops it and takes the very tuple the punch then needs.
+	bool			bPunchLed;
+	bool			bFirstChallengeSent;
+	LONG			lPunchLedMS;
+
+	// [rc4l] The other address this server is listed under, believed only from the registry because
+	// claiming to be somebody else's machine is how you would hide their row.
+	bool			bHasGroupPeer;
+	NETADDRESS_s	GroupPeer;
+
 	// [rc4l] This server answered, and we hid it because it runs a different build.
 	//
 	// Kept separately because the hiding is done by setting AS_INACTIVE, which is also what an empty
@@ -349,6 +360,14 @@ void			BROWSER_RecheckServer( ULONG ulServer );
 // waiting slot at it and re-send the challenge immediately. Joins then use the same corrected
 // address, which is the one that actually works.
 void			BROWSER_PunchKnockFrom( const NETADDRESS_s &From );
+
+// [rc4l] Send the held challenges now, while the server's punch is in flight, because whichever
+// packet lands first takes the tuple the other one needs.
+void			BROWSER_PunchBrokered( void );
+
+// [rc4l] The registry saying two addresses are one server, which only it can know and which nothing
+// here may guess at.
+void			BROWSER_MarkSameServer( const NETADDRESS_s &First, const NETADDRESS_s &Second );
 
 // [rc4l] Per-row version of the fact BROWSER_GetNumHumanPlayers already uses in aggregate.
 bool			BROWSER_IsPlayerBot( ULONG ulServer, ULONG ulPlayer );

@@ -78,6 +78,8 @@
 #include "features/server-hosting/zx_hosting.h" // [rc4l] tell the game that started us we are reachable
 #include "features/server-hosting/computation/punchbroker_compute.h" // [rc4l] how many punches, and when
 #include "features/federated-server-registry/computation/lanbroadcast_compute.h" // [rc4l] LAN subnet broadcast
+#include "features/federated-server-registry/computation/listingproof_compute.h" // [rc4l] is anyone outside seeing us
+#include "features/identity/zx_identity.h" // [rc4l] the id the registry groups our two listings by
 
 // [rc4l] Its own switch, not `developer`, so turning on LAN tracing does not also unleash every other
 // subsystem's developer chatter. Off by default; when on, the server logs each announce it sends and
@@ -145,9 +147,20 @@ static bool server_registry_ResolveV6( const char *pszHost, NETADDRESS_s &Out )
 	if (( getaddrinfo( szName, NULL, &hints, &pResult ) != 0 ) || ( pResult == NULL ))
 		return false;
 
-	Out.LoadFromSocketAddress( *pResult->ai_addr );
+	// [rc4l] Refuse a v4-mapped answer, since asking for AF_INET6 with no AAAA record hands back
+	// ::ffff:a.b.c.d and every dual-stack host would then announce twice over IPv4.
+	bool bIsRealV6 = false;
+	if ( pResult->ai_addr->sa_family == AF_INET6 )
+	{
+		const struct sockaddr_in6 *pAddr6 = reinterpret_cast<const struct sockaddr_in6 *>( pResult->ai_addr );
+		bIsRealV6 = ( IN6_IS_ADDR_V4MAPPED( &pAddr6->sin6_addr ) == 0 );
+	}
+
+	if ( bIsRealV6 )
+		Out.LoadFromSocketAddress( *pResult->ai_addr );
+
 	freeaddrinfo( pResult );
-	return true;
+	return bIsRealV6;
 }
 
 // Message buffer for sending messages to the server registry.
@@ -730,6 +743,57 @@ static void server_registry_TickPunches( void );
 
 //*****************************************************************************
 //
+// [rc4l] What the registry actually did, kept per family because the interesting failure is
+// asymmetric: a v4 announce unverified behind carrier NAT while the v6 one is verified.
+struct RegistryEvidence_t
+{
+	bool			bAnnounceSent;		// we got an announce onto the wire
+	bool			bAnswerReceived;	// the registry has spoken to us at all
+	bool			bVerified;			// it answered us, which is less than it sounds
+	unsigned int	ulMsVerified;		// when, by I_MSTime
+
+	RegistryEvidence_t( ) : bAnnounceSent( false ), bAnswerReceived( false ), bVerified( false ),
+		ulMsVerified( 0 ) { }
+};
+
+static RegistryEvidence_t g_RegistryEvidence[2];	// [0] IPv4, [1] IPv6
+
+static RegistryEvidence_t &server_registry_Evidence( bool bIPv6 )
+{
+	return g_RegistryEvidence[bIPv6 ? 1 : 0];
+}
+
+// [rc4l] Generous because the registry verifies a server once when it adds it, so a healthy server's
+// verification ages without bound and a short window would turn every long-lived host amber.
+#define SERVERREGISTRY_VERIFICATION_STALE_MS	( 15 * 60 * 1000 )
+
+//*****************************************************************************
+//
+// [rc4l] Whether an IPv6 announce is possible at all, since without an AAAA record on the registry a
+// missing v6 listing is expected rather than broken.
+bool SERVER_SERVERREGISTRY_HasV6Registry( void )
+{
+	return g_bServerRegistryV6Valid;
+}
+
+//*****************************************************************************
+//
+// [rc4l] The one honest answer to "can other people see my server", per family.
+zx::ListingProof SERVER_SERVERREGISTRY_GetListingProof( bool bIPv6 )
+{
+	const RegistryEvidence_t &evidence = server_registry_Evidence( bIPv6 );
+
+	const int iMsSinceVerified = evidence.bVerified
+		? static_cast<int>( I_MSTime( ) - evidence.ulMsVerified ) : -1;
+
+	// [rc4l] A packet from the registry IS the listing, since it only ever talks to servers it holds.
+	return zx::DecideListingProof( evidence.bAnnounceSent, evidence.bAnswerReceived,
+		evidence.bAnswerReceived, evidence.bVerified, iMsSinceVerified,
+		SERVERREGISTRY_VERIFICATION_STALE_MS );
+}
+
+//*****************************************************************************
+//
 void SERVER_SERVERREGISTRY_Tick( void )
 {
 	while (( g_lStoredQueryIPHead != g_lStoredQueryIPTail ) && ( gametic >= g_StoredQueryIPs[g_lStoredQueryIPHead].lNextAllowedGametic ))
@@ -780,8 +844,14 @@ void SERVER_SERVERREGISTRY_Tick( void )
 	// something that will never answer.
 	g_ServerRegistryBuffer.ByteStream.WriteByte( 1 );
 
+	// [rc4l] Who we are, so the registry can tell our two announces are one server, appended last so a
+	// registry that predates it simply stops reading before this.
+	g_ServerRegistryBuffer.ByteStream.WriteString(
+		zx::Identity_ServerRegistryId( NETWORK_GetLocalPort( )).c_str( ));
+
 	// Send the server registry our packet.
 	NETWORK_LaunchPacket( &g_ServerRegistryBuffer, g_AddressServerRegistry );
+	server_registry_Evidence( false ).bAnnounceSent = true;
 
 	// [rc4l] And the same announce over IPv6, when the registry has an AAAA record and our socket
 	// can speak v6. The registry keys a server on the address the announce ARRIVES from, so this is
@@ -792,10 +862,21 @@ void SERVER_SERVERREGISTRY_Tick( void )
 		g_AddressServerRegistryV6 );
 	if ( g_bServerRegistryV6Valid )
 	{
+		// [rc4l] Copy the port FIELD rather than putting it back through SetPort, which converts into
+		// network order a second time and sent every IPv6 announce to 50235 instead of 15300.
 		if ( g_AddressServerRegistryV6.usPort == 0 )
-			g_AddressServerRegistryV6.SetPort( g_AddressServerRegistry.usPort );
+			g_AddressServerRegistryV6.usPort = g_AddressServerRegistry.usPort;
 
 		NETWORK_LaunchPacket( &g_ServerRegistryBuffer, g_AddressServerRegistryV6 );
+		server_registry_Evidence( true ).bAnnounceSent = true;
+
+		// [rc4l] Where the second announce actually went, because "we sent it" and "they got it" are
+		// different claims and the gap between them is invisible from either end.
+		DPrintf( "Server registry: IPv6 announce -> %s\n", g_AddressServerRegistryV6.ToString( ));
+	}
+	else
+	{
+		DPrintf( "Server registry: no IPv6 address for %s, so no IPv6 announce.\n", *fua_serverregistry_host );
 	}
 }
 
@@ -1174,6 +1255,10 @@ static void server_registry_SendPunch( const NETADDRESS_s &Target )
 	g_ServerRegistryBuffer.Clear();
 	g_ServerRegistryBuffer.ByteStream.WriteLong( SERVERREGISTRY_PUNCH );
 	NETWORK_LaunchPacket( &g_ServerRegistryBuffer, Target );
+
+	// [rc4l] The packet whose only job is to leave, logged because "the hole opened" and "the joiner
+	// still could not get in" are different failures with the same symptom.
+	DPrintf( "Hole punch: opened toward %s.\n", Target.ToString( ));
 }
 
 //*****************************************************************************
@@ -1237,6 +1322,14 @@ static void server_registry_TickPunches( void )
 // which is why this becomes an entry the tick walks rather than a loop here.
 void SERVER_SERVERREGISTRY_HandlePunchRequest( BYTESTREAM_s *pByteStream )
 {
+	// [rc4l] Proof the registry holds us, but deliberately not proof of reachability: a server brokers
+	// punches precisely because nobody can reach it directly.
+	server_registry_Evidence( NETWORK_GetFromAddress( ).bIsIPv6 ).bAnswerReceived = true;
+
+	// [rc4l] The registry logs its half, so without this a broken punch looked like brokering into a
+	// void with no way to tell whether the server heard it.
+	DPrintf( "Hole punch: the registry asked us to open for a joiner.\n" );
+
 	const char *pszTarget = pByteStream->ReadString();
 	if (( pszTarget == NULL ) || ( pszTarget[0] == 0 ))
 		return;
@@ -1301,6 +1394,15 @@ void SERVER_SERVERREGISTRY_HandleVerificationRequest( BYTESTREAM_s *pByteStream 
 	// So a game that started us learns its answer as a side effect of the listing it already wanted,
 	// with no probe to write and no service to depend on.
 	zx::HostChildAnnounceReachable( );
+
+	// [rc4l] Recorded against the SENDER's family, since the registry answers on the address the
+	// announce arrived from and says nothing about the other one.
+	{
+		RegistryEvidence_t &evidence = server_registry_Evidence( NETWORK_GetFromAddress( ).bIsIPv6 );
+		evidence.bAnswerReceived = true;
+		evidence.bVerified = true;
+		evidence.ulMsVerified = I_MSTime( );
+	}
 
 	g_ServerRegistryBuffer.Clear();
 	g_ServerRegistryBuffer.ByteStream.WriteLong( SERVER_SERVERREGISTRY_VERIFICATION );
@@ -1369,6 +1471,83 @@ CCMD( fua_landiag )
 	Printf( "  sv_broadcast:        %s\n", sv_broadcast ? "on" : "off" );
 	if ( g_LocalAddress.bIsIPv6 || ( g_LocalAddress.abIP[0] == 127 ))
 		Printf( TEXTCOLOR_YELLOW "  note: local address is loopback/v6 -- other machines on the LAN will not see this server.\n" );
+}
+
+//*****************************************************************************
+//
+// [rc4l] For "my server shows on LAN but not publicly", which is two opposite faults wearing one
+// description and cannot be told apart from the browser screen.
+static void server_registry_PrintFamilyDiag( const char *pszLabel, bool bIPv6, bool bPossible,
+	const char *pszImpossibleReason )
+{
+	if ( bPossible == false )
+	{
+		Printf( "  %-6s %s\n", pszLabel, pszImpossibleReason );
+		return;
+	}
+
+	const zx::ListingProof Proof = SERVER_SERVERREGISTRY_GetListingProof( bIPv6 );
+	const char *pszColor = zx::ListingNeedsAttention( Proof.state ) ? TEXTCOLOR_YELLOW : TEXTCOLOR_GREEN;
+
+	if ( Proof.secondsSinceVerified >= 0 )
+	{
+		Printf( "  %-6s %s%s" TEXTCOLOR_NORMAL " (last verified %ds ago)\n", pszLabel, pszColor,
+			zx::DescribeListing( Proof.state ), Proof.secondsSinceVerified );
+	}
+	else
+	{
+		Printf( "  %-6s %s%s" TEXTCOLOR_NORMAL "\n", pszLabel, pszColor,
+			zx::DescribeListing( Proof.state ));
+	}
+}
+
+CCMD( fua_hostdiag )
+{
+	Printf( "Public listing diagnostics:\n" );
+
+	if ( NETWORK_GetState( ) != NETSTATE_SERVER )
+	{
+		Printf( TEXTCOLOR_YELLOW "  not hosting -- there is nothing to announce. Start a server first.\n" );
+		return;
+	}
+
+	if ( sv_fua_serverregistry_announce == false )
+	{
+		Printf( TEXTCOLOR_YELLOW "  sv_fua_serverregistry_announce is off -- this server is deliberately unlisted.\n" );
+		return;
+	}
+
+	Printf( "  registry:   %s\n", *fua_serverregistry_host );
+
+	server_registry_PrintFamilyDiag( "IPv4:", false, true, "" );
+	server_registry_PrintFamilyDiag( "IPv6:", true, g_bServerRegistryV6Valid,
+		TEXTCOLOR_YELLOW "the registry has no IPv6 address, so no IPv6 announce is possible." TEXTCOLOR_NORMAL );
+
+	// [rc4l] The whole reason this command exists. Said whenever ANY family is verified, because at
+	// that point the server is provably reachable from outside and the host's own browser is the only
+	// thing claiming otherwise.
+	const bool bAnyVerified = ( SERVER_SERVERREGISTRY_GetListingProof( false ).state == zx::ListingState::ListedVerified )
+		|| ( SERVER_SERVERREGISTRY_GetListingProof( true ).state == zx::ListingState::ListedVerified );
+
+	// [rc4l] Deliberately does not claim players can join, because the registry's reply comes back
+	// through the mapping our own announce opened and arrives from behind a closed port too.
+	if ( bAnyVerified )
+	{
+		Printf( TEXTCOLOR_GREEN "  The registry is listing this server and can talk to it." TEXTCOLOR_NORMAL "\n" );
+		Printf( "  That is not proof players can join: the registry's reply comes back through the\n"
+			"  connection this server opened to it, so it arrives even from behind a closed port.\n"
+			"  To be sure, have somebody outside your network join, or forward UDP %d.\n",
+			NETWORK_GetLocalPort( ));
+		Printf( "  If the server is missing from your OWN browser but others can join it, that is your\n"
+			"  router refusing to send your public address back to your own network (hairpin NAT).\n"
+			"  Join it by its LAN address.\n" );
+	}
+	else
+	{
+		Printf( TEXTCOLOR_YELLOW "  The registry has not answered this server yet." TEXTCOLOR_NORMAL " If that persists past a\n"
+			"  minute, the announce is not getting out: check sv_fua_serverregistry_announce and\n"
+			"  fua_serverregistry_host.\n" );
+	}
 }
 
 // Name of this server on launchers.

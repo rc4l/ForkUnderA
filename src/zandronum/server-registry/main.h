@@ -105,6 +105,10 @@ typedef struct
 	// [BB] Number that we send the server along with our verification request.
 	__int32 ServerVerificationInt;
 
+	// [rc4l] What this server calls itself, never sent on, because publishing an id derived from its
+	// secret would let anyone have somebody else's listing merged away.
+	mutable std::string	RegistryId;
+
 } SERVER_s;
 
 #endif	// __MAIN_H__

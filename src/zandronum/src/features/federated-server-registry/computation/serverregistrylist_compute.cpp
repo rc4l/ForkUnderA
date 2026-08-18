@@ -58,33 +58,104 @@ bool IsValidLabel( const std::string &label )
 	return true;
 }
 
+// [rc4l] An IPv6 literal judged loosely, since this only decides what to hand a resolver and the
+// resolver is what actually knows a valid address.
+bool LooksLikeV6Literal( const std::string &host )
+{
+	int colons = 0;
+
+	for ( std::string::size_type i = 0; i < host.size( ); ++i )
+	{
+		const char c = host[i];
+
+		if ( c == ':' )
+		{
+			colons++;
+			continue;
+		}
+
+		const bool hex = (( c >= '0' ) && ( c <= '9' )) || (( c >= 'a' ) && ( c <= 'f' ))
+			|| (( c >= 'A' ) && ( c <= 'F' ));
+		if ( !hex )
+			return false;
+	}
+
+	return ( colons >= 2 );
+}
+
+// [rc4l] One place that decides what a port is, so the two forms cannot drift apart.
+bool ParsePort( const std::string &digits, int &out )
+{
+	if ( digits.empty( ) || digits.size( ) > 5 )
+		return false;
+
+	int value = 0;
+	for ( std::string::size_type i = 0; i < digits.size( ); ++i )
+	{
+		if ( digits[i] < '0' || digits[i] > '9' )
+			return false;
+		value = value * 10 + ( digits[i] - '0' );
+	}
+
+	if ( value < 1 || value > 65535 )
+		return false;
+
+	out = value;
+	return true;
+}
+
 // Split "<host>[:port]". Returns false (skip the entry) on anything we cannot make sense of, rather
 // than guessing -- a mistyped port silently becoming the default would be a confusing way to fail.
 bool ParseHostPort( const std::string &token, ServerRegistryEntry &out )
 {
-	const std::string::size_type colon = token.rfind( ':' );
 	std::string host = token;
 	int port = 0;
+
+	// [rc4l] Brackets first, because the split below takes the last colon and a v6 address is mostly
+	// colons.
+	if ( !token.empty( ) && ( token[0] == '[' ))
+	{
+		const std::string::size_type close = token.find( ']' );
+		if ( close == std::string::npos )
+			return false;
+
+		host = token.substr( 1, close - 1 );
+
+		const std::string rest = token.substr( close + 1 );
+		if ( !rest.empty( ) )
+		{
+			if ( rest[0] != ':' )
+				return false;
+
+			if ( !ParsePort( rest.substr( 1 ), port ) )
+				return false;
+		}
+
+		if ( !LooksLikeV6Literal( host ) )
+			return false;
+
+		out.host = host;
+		out.port = port;
+		return true;
+	}
+
+	// [rc4l] An unbracketed literal carries no port, there being no way to tell one from its own last
+	// group.
+	if ( LooksLikeV6Literal( token ) )
+	{
+		out.host = token;
+		out.port = 0;
+		return true;
+	}
+
+	const std::string::size_type colon = token.rfind( ':' );
 
 	if ( colon != std::string::npos )
 	{
 		host = token.substr( 0, colon );
 
-		const std::string digits = token.substr( colon + 1 );
-		if ( digits.empty( ) || digits.size( ) > 5 )
+		if ( !ParsePort( token.substr( colon + 1 ), port ) )
 			return false;
-
-		int value = 0;
-		for ( std::string::size_type i = 0; i < digits.size( ); ++i )
-		{
-			if ( digits[i] < '0' || digits[i] > '9' )
-				return false;
-			value = value * 10 + ( digits[i] - '0' );
-		}
-		if ( value < 1 || value > 65535 )
-			return false;
-
-		port = value;
 	}
 
 	if ( !IsValidServerRegistryHost( host ) )
@@ -117,6 +188,10 @@ bool IsValidServerRegistryHost( const std::string &host )
 	if ( host.empty( ) || host.size( ) > 253 )
 		return false;
 
+	// [rc4l] A v6 literal must not be walked label by label, since every colon fails the label rules.
+	if ( LooksLikeV6Literal( host ) )
+		return true;
+
 	std::string::size_type start = 0;
 	for ( ;; )
 	{
@@ -134,7 +209,8 @@ bool IsValidServerRegistryHost( const std::string &host )
 	}
 }
 
-std::vector<ServerRegistryEntry> ParseServerRegistryList( const std::string &text )
+std::vector<ServerRegistryEntry> ParseServerRegistryList( const std::string &text,
+	std::vector<std::string> *skippedOut )
 {
 	std::vector<ServerRegistryEntry> out;
 
@@ -168,6 +244,11 @@ std::vector<ServerRegistryEntry> ParseServerRegistryList( const std::string &tex
 				entry.name = Trim( line.substr( split ) );
 				AppendUnique( out, entry );
 			}
+			else if ( skippedOut != 0 )
+			{
+				// [rc4l] The token, not the whole line, since the display name is not what failed.
+				skippedOut->push_back( line.substr( 0, split ));
+			}
 		}
 
 		if ( nl == std::string::npos )
@@ -178,7 +259,8 @@ std::vector<ServerRegistryEntry> ParseServerRegistryList( const std::string &tex
 	return out;
 }
 
-std::vector<ServerRegistryEntry> ParseServerRegistryCSV( const std::string &csv )
+std::vector<ServerRegistryEntry> ParseServerRegistryCSV( const std::string &csv,
+	std::vector<std::string> *skippedOut )
 {
 	std::vector<ServerRegistryEntry> out;
 
@@ -195,6 +277,8 @@ std::vector<ServerRegistryEntry> ParseServerRegistryCSV( const std::string &csv 
 		ServerRegistryEntry entry;
 		if ( !token.empty( ) && ParseHostPort( token, entry ) )
 			AppendUnique( out, entry );
+		else if ( !token.empty( ) && ( skippedOut != 0 ))
+			skippedOut->push_back( token );
 
 		if ( comma == std::string::npos )
 			break;

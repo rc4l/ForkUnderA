@@ -120,6 +120,13 @@ jobs:
   # [rc4l] A clang-tidy job here used to gate publish, holding it ~13 minutes after every other job
   # was green. Deleted in 50d64db.
 
+  # [rc4l] Two players behind two routers must still be able to reach each other, reported rather than
+  # gated until the lab is proven deterministic -- it has failed and passed on identical code, and a
+  # gate that is wrong half the time only teaches people to click through it.
+  natlab:
+    if: github.ref_type == 'tag' || (inputs.release && github.ref_name == github.event.repository.default_branch)
+    uses: ./.github/workflows/_natlab.yml
+
   # [rc4l] The three platform builds live in _build.yml so test-and-build.yml runs the same ones on PRs.
   build:
     needs: setup

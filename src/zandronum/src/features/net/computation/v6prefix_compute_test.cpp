@@ -3,6 +3,7 @@
 
 #include <gtest/gtest.h>
 #include <cstring>
+#include <string>
 
 #include "features/net/computation/v6prefix_compute.h"
 
@@ -261,4 +262,103 @@ TEST(V6Prefix, MoreGroupsThanFitAroundADoubleColonIsRefused)
 	// Five before and four after is nine, and "::" still has to stand for at least one more. The whole
 	// point of the shorthand is that it replaces groups, so a rule leaving no room for it is malformed.
 	EXPECT_FALSE( Rule( "1:2:3:4:5::6:7:8:9/64" ).ok );
+}
+
+// --- FormatV6Prefix ------------------------------------------------------------------------------
+//
+// The property that matters is the round trip: a ban list is written by this and read back by
+// ParseV6Prefix, so anything that does not survive the trip is a rule that changes meaning when the
+// file is saved.
+
+namespace
+{
+
+std::string Format( const char *rule )
+{
+	Rule r( rule );
+	if ( !r.ok )
+		return "<unparseable>";
+
+	char out[48];
+	if ( !FormatV6Prefix( r.prefix, r.bits, out, sizeof( out )))
+		return "<unformattable>";
+
+	return std::string( out );
+}
+
+// Parse, format, parse again, and require both parses to agree byte for byte.
+bool RoundTrips( const char *rule )
+{
+	Rule first( rule );
+	if ( !first.ok )
+		return false;
+
+	char out[48];
+	if ( !FormatV6Prefix( first.prefix, first.bits, out, sizeof( out )))
+		return false;
+
+	Rule second( out );
+	if ( !second.ok )
+		return false;
+
+	return ( first.bits == second.bits ) && ( memcmp( first.prefix, second.prefix, 16 ) == 0 );
+}
+
+} // namespace
+
+TEST(V6PrefixFormat, RoundTripsThroughTheParser)
+{
+	EXPECT_TRUE( RoundTrips( "2001:db8::/32" ));
+	EXPECT_TRUE( RoundTrips( "2001:db8:1234:5678::/64" ));
+	EXPECT_TRUE( RoundTrips( "fe80::1/128" ));
+	EXPECT_TRUE( RoundTrips( "::/0" ));
+	EXPECT_TRUE( RoundTrips( "1:2:3:4:5:6:7:8/128" ));
+}
+
+TEST(V6PrefixFormat, TheStarSpellingIsNormalisedToASlash)
+{
+	// The star exists to be typed.
+	EXPECT_EQ( "2001:db8::/32", Format( "2001:db8:*" ));
+}
+
+TEST(V6PrefixFormat, TheLongestZeroRunIsCompressed)
+{
+	EXPECT_EQ( "2001:db8::/32", Format( "2001:db8:0:0:0:0:0:0/32" ));
+	EXPECT_EQ( "::/0", Format( "0:0:0:0:0:0:0:0/0" ));
+}
+
+TEST(V6PrefixFormat, ASingleZeroGroupIsNotCompressed)
+{
+	// RFC 5952 forbids it, and "::" standing for exactly one group reads as an unknown number of them.
+	EXPECT_EQ( "1:0:2:3:4:5:6:7/128", Format( "1:0:2:3:4:5:6:7/128" ));
+}
+
+TEST(V6PrefixFormat, ATrailingZeroRunCompressesWithoutADanglingColon)
+{
+	EXPECT_EQ( "1:2:3::/48", Format( "1:2:3:0:0:0:0:0/48" ));
+	EXPECT_TRUE( RoundTrips( "1:2:3:0:0:0:0:0/48" ));
+}
+
+TEST(V6PrefixFormat, ALeadingZeroRunCompresses)
+{
+	EXPECT_EQ( "::1:2/128", Format( "0:0:0:0:0:0:1:2/128" ));
+	EXPECT_TRUE( RoundTrips( "0:0:0:0:0:0:1:2/128" ));
+}
+
+TEST(V6PrefixFormat, AnOutOfRangeLengthIsRefusedRatherThanWritten)
+{
+	unsigned char prefix[16] = { 0 };
+	char out[48];
+	EXPECT_FALSE( FormatV6Prefix( prefix, -1, out, sizeof( out )));
+	EXPECT_FALSE( FormatV6Prefix( prefix, 129, out, sizeof( out )));
+}
+
+TEST(V6PrefixFormat, ARefusedFormatNeedsNoBuffer)
+{
+	// A buffer too small to hold the longest possible rule is refused up front rather than truncated:
+	// a truncated ban rule still parses, and parses as something else.
+	unsigned char prefix[16] = { 0 };
+	char tiny[8];
+	EXPECT_FALSE( FormatV6Prefix( prefix, 64, tiny, sizeof( tiny )));
+	EXPECT_FALSE( FormatV6Prefix( 0, 64, tiny, 48 ));
 }

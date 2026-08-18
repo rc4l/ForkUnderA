@@ -23,6 +23,13 @@ jobs:
   test:
     uses: ./.github/workflows/_test.yml
 
+  # [rc4l] Deliberately NOT `needs: test`. It builds its own engine and shares nothing with the other
+  # jobs, so making it wait would add its runtime to the pipeline instead of hiding it behind the
+  # platform builds. It answers the one question nothing else here asks: can two players behind two
+  # different routers actually reach each other.
+  natlab:
+    uses: ./.github/workflows/_natlab.yml
+
   # [rc4l] A clang-tidy job ran here and gated publish in release.yml. Deleted in 50d64db, which
   # has the measurements. .clang-tidy stays for editors and clangd.
 

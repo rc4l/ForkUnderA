@@ -1,0 +1,81 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 rc4l
+
+# [rc4l] Does a player behind one router actually reach a server behind another?
+
+name: NAT lab
+
+on:
+  workflow_call:
+  workflow_dispatch:
+    inputs:
+      # [rc4l] Repeat the lab N times on one commit, so a flake rate can be MEASURED rather than
+      # argued about -- a single red run says nothing about whether a change helped.
+      runs:
+        description: "How many times to run each case"
+        default: "1"
+        required: false
+
+jobs:
+  natlab:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # [rc4l] The permissive host router: its mapping accepts anyone, so the joiner's ordinary
+          # challenge already reaches it.
+          - host_nat: fullcone
+            client_nat: portrestricted
+          # The common home router on both ends, and the hard case: whichever packet lands on the far
+          # router first takes the tuple the other side's outbound needs. Kept in the matrix because
+          # it is where a real improvement would show up.
+          - host_nat: portrestricted
+            client_nat: portrestricted
+          # Carrier-grade / symmetric on the host side. Punching cannot work here and the lab asserts
+          # the degradation is clean rather than asserting success -- so a change that makes a failed
+          # punch hang the client is caught, which is the failure players would actually feel.
+          - host_nat: symmetric
+            client_nat: portrestricted
+    name: natlab (${{ matrix.host_nat }} <- ${{ matrix.client_nat }})
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build python3 pkg-config \
+            libssl-dev libopus-dev zlib1g-dev libbz2-dev libjpeg-dev \
+            libsdl2-dev libgl1-mesa-dev libglu1-mesa-dev libglew-dev libgme-dev \
+            libopenal-dev libsndfile1-dev libmpg123-dev
+
+      # [rc4l] The bridge is what makes this assertable: without it the lab could only watch
+      # processes stay alive, which is true of a client that never connected.
+      - name: Build the engine with the control bridge
+        run: ZX_MCP_BRIDGE=1 ./linux_compile.sh --no-package
+
+      - name: Run the NAT lab
+        run: |
+          fails=0
+          for i in $(seq 1 ${{ github.event.inputs.runs || 1 }}); do
+            echo "::group::run $i"
+            tools/natlab/run.sh --host-nat ${{ matrix.host_nat }} --client-nat ${{ matrix.client_nat }} || fails=$((fails+1))
+            echo "::endgroup::"
+          done
+          echo "FLAKE RATE: $fails failures out of ${{ github.event.inputs.runs || 1 }}"
+          [ "$fails" = "0" ]
+
+      # [rc4l] Dedupe, once, rather than per NAT flavour: it has nothing to do with traversal, and
+      # running it three times would treble the wall clock to assert the same thing.
+      - name: Prove a dual-stack server is one row
+        if: matrix.host_nat == 'portrestricted'
+        run: tools/natlab/run-dualstack.sh
+
+      - name: Collect logs on failure
+        if: failure()
+        run: |
+          echo "See the diagnostics dumped by run.sh above."
+          docker ps -a || true
