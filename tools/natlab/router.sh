@@ -34,7 +34,7 @@ FLAVOUR="${NAT_FLAVOUR:-portrestricted}"
 # a router that masqueraded its own LAN and dropped everything arriving from the internet: outbound
 # died, and the failure surfaced as "the client cannot reach the registry", which sounds like the
 # registry's problem and is not.
-WAN_PREFIX="${NAT_WAN_PREFIX:?NAT_WAN_PREFIX must name the public subnet, e.g. 192.168.240.}"
+WAN_PREFIX="${NAT_WAN_PREFIX:?NAT_WAN_PREFIX must name the public subnet, e.g. 203.0.113.}"
 WAN_IF="$( ip -o -4 addr show | awk -v p="$WAN_PREFIX" '$4 ~ ("^" p) { print $2; exit }' )"
 
 if [ -z "$WAN_IF" ]; then

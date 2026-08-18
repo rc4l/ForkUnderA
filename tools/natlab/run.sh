@@ -96,7 +96,7 @@ say "Verifying the fixture: the peers must NOT be able to reach each other..."
 if dc exec -T client sh -lc 'ping -c1 -W2 192.168.241.20 >/dev/null 2>&1'; then
     fail "client can ping the host directly -- the NAT isolation is not in effect, so this lab proves nothing"
 fi
-dc exec -T client sh -lc 'ping -c1 -W2 192.168.240.10 >/dev/null 2>&1' \
+dc exec -T client sh -lc 'ping -c1 -W2 203.0.113.10 >/dev/null 2>&1' \
     || fail "client cannot reach the registry -- the lab is broken in the other direction"
 say "Fixture OK: peers isolated, registry reachable from both."
 
@@ -104,7 +104,7 @@ say "Fixture OK: peers isolated, registry reachable from both."
 # Xvfb because the client half initialises GL before reaching its main loop; nothing here looks at a
 # frame. -nosound keeps the sim's RNG stream clean and drops an entire class of container audio
 # failures that have nothing to do with networking.
-REG=192.168.240.10
+REG=203.0.113.10
 start_engine() { # $1=peer  $2=extra args
     dc exec -d -T "$1" sh -lc "
         Xvfb :99 -screen 0 640x480x24 >/tmp/xvfb.log 2>&1 &
@@ -179,7 +179,19 @@ for _ in $(seq 1 20); do
     fi
     sleep 3
 done
-[ "$found" = "1" ] || fail "the client never saw the server in the registry-backed list"
+if [ "$found" != "1" ]; then
+    # [rc4l] Under symmetric NAT this is the CORRECT outcome, not a failure. The server's row never
+    # answers because the punch cannot land, so the name never arrives. Demanding it here would be
+    # demanding that the internet work differently.
+    if [ "$EXPECT_PUNCH" = "0" ]; then
+        say "expected: symmetric NAT means the server's row never answers, so it stays nameless."
+        fua client rpc sim.tic >/dev/null 2>&1 \
+            || fail "the client is wedged after a punch that could not land -- a failed punch must never take the game with it"
+        say "PASS (expected): punch defeated by symmetric NAT, client still responsive."
+        exit 0
+    fi
+    fail "the client never saw the server in the registry-backed list"
+fi
 [ -n "$target" ] || fail "found the server in the list but could not read its address back"
 say "    the registry holds it at $target"
 
