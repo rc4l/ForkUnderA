@@ -1454,7 +1454,37 @@ static void BuildDynamic(Diligent::IDeviceContext *ctx)
 				const bool ta = pa.blendMode != 0, tb = pb.blendMode != 0;
 				if (ta != tb)            swap = tb < ta;                       // opaque before blended
 				else if (!ta)            swap = pb.material < pa.material;     // opaque: by material
-				else                     swap = key[order[b]] > key[order[a]]; // blended: far first
+				// [rc4l] TIES KEEP THE ORDER THEY WERE REGISTERED IN, which is the order GL drew them.
+				//
+				// This is a selection sort, and a selection sort is not stable: when a farther piece swaps
+				// past two pieces of equal distance, it reverses those two. A decal pair from DECALDEF's
+				// `lowerdecal` -- a plasma mark is a black scorch with a blue glow over it -- sits at one
+				// point, so both have exactly the same key, and which way round they came out depended on
+				// whether some unrelated decal elsewhere happened to swap through them. That is why it was
+				// wrong on one wall and right on the next, with nothing to tell them apart.
+				//
+				// The index breaks the tie, and it is the right tie-break rather than merely a consistent
+				// one: dynamic pieces are registered in the order GL draws them, StaticCreate having walked
+				// the chain lowest-first, so keeping that order reproduces GL's compositing exactly.
+				// [rc4l] DECALS GO IN THE ORDER THEY WERE MADE, not by distance.
+				//
+				// GL never distance-sorts decals: it draws a wall and draws that wall's decals in the
+				// order they were created, so a `lowerdecal` pair composites lower-first every time. Here
+				// they were going through the translucency sort, and two decals of one pair do NOT have
+				// the same sort position -- each quad is clipped to the wall separately, so their centres
+				// differ by a few units. A BFG mark logged 800,9,140 for the scorch and 800,0,135 for the
+				// lightning, which from one camera makes the lightning the farther of the two; it was then
+				// drawn first and the black scorch went on top of the glow that belongs over it. From a
+				// camera on the other side the same pair came out right, which is why it looked like some
+				// walls and not others.
+				//
+				// depthBias is set by RegisterDecalTriangles and by nothing else, so it identifies them.
+				// Sprites keep the distance sort, which is what they need and what decals never did.
+				else if (pa.depthBias && pb.depthBias)
+				                         swap = order[b] < order[a];           // decals: as registered
+				else if (key[order[b]] != key[order[a]])
+				                         swap = key[order[b]] > key[order[a]]; // blended: far first
+				else                     swap = order[b] < order[a];           // ties: as registered
 				if (swap) { const int t = order[a]; order[a] = order[b]; order[b] = t; }
 			}
 
