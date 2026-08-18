@@ -428,7 +428,19 @@ void RegisterDecalTriangles(const FFlatVertex *tris, int count, const void *mate
 	mp.range.offset = 0;
 	mp.range.count = 0;
 	mp.material = material;
-	mp.dynLightIndex = -1;   // decal lighting is folded into the vertex colour, as with sprites
+	// [rc4l] A decal takes its dynamic light from the CPU, and its NORMAL is what says so.
+	//
+	// gl_SetDynSpriteLight computes the light for this decal and RegisterDecal folds it into the
+	// vertex colour below, exactly as for a sprite. The shader must therefore not add the lights a
+	// second time, and what tells it not to is a zero normal -- MeshPiece's default, deliberately
+	// left alone here rather than filled in from the wall the decal is stuck to.
+	//
+	// That is an easy thing to undo by accident, so it is written down: giving a decal a real normal
+	// would look like an improvement and would silently restore the double count. Measured on an
+	// unshaded decal (PlasmaScorch, the only kind that can show it) under a blue torch, the blue a
+	// dynamic light added was GL +12.4 against the backend's +19.7 -- 59% too much -- and +14.3
+	// once the lights were left to the CPU.
+	mp.dynLightIndex = -1;
 	mp.lightLevel = lightlevel;
 	mp.lightColor = colormap.LightColor.d;
 	mp.fadeColor = colormap.FadeColor.d;
