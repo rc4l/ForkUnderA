@@ -1265,6 +1265,11 @@ static void server_registry_SendPunch( const NETADDRESS_s &Target )
 	g_ServerRegistryBuffer.Clear();
 	g_ServerRegistryBuffer.ByteStream.WriteLong( SERVERREGISTRY_PUNCH );
 	NETWORK_LaunchPacket( &g_ServerRegistryBuffer, Target );
+
+	// [rc4l] The packet whose only job is to leave. Worth saying out loud under `developer 1`,
+	// because "the hole was opened" and "the joiner still could not get in" are different failures
+	// with the same symptom, and nothing else distinguishes them from this side.
+	DPrintf( "Hole punch: opened toward %s.\n", Target.ToString( ));
 }
 
 //*****************************************************************************
@@ -1333,6 +1338,12 @@ void SERVER_SERVERREGISTRY_HandlePunchRequest( BYTESTREAM_s *pByteStream )
 	// this deliberately does not touch bVerified. A server can be brokering punches all day precisely
 	// because nobody can reach it directly.
 	server_registry_Evidence( NETWORK_GetFromAddress( ).bIsIPv6 ).bAnswerReceived = true;
+
+	// [rc4l] The punch is four hops -- client asks, registry brokers, server opens, client retries --
+	// and the middle two used to be silent on this side. The registry logs its half, so a broken punch
+	// showed a registry cheerfully brokering into a void with no way to tell whether the server ever
+	// heard it. Under `developer 1` this says it did.
+	DPrintf( "Hole punch: the registry asked us to open for a joiner.\n" );
 
 	const char *pszTarget = pByteStream->ReadString();
 	if (( pszTarget == NULL ) || ( pszTarget[0] == 0 ))

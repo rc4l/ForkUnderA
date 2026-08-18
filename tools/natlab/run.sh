@@ -58,7 +58,12 @@ dump_diagnostics() {
     echo "--- registry: what it holds ---"
     dc logs registry 2>&1 | grep -iE "adding|verif" | tail -10 || true
 
-    echo "--- client: what its browser holds ---"
+    echo "--- client: what its browser holds (after a fresh refresh) ---"
+    # Refresh first. Rows expire, and by the time a failing assertion gives up its retries the list
+    # has usually emptied -- which reads as "the client never knew about the server" when in fact it
+    # knew, asked, and timed out.
+    dc exec -T client node /fuactl/src/cli.mjs rpc browser.refresh --port 27800 --token natlab >/dev/null 2>&1 || true
+    sleep 6
     dc exec -T client node /fuactl/src/cli.mjs rpc browser.list --port 27800 --token natlab 2>&1 | tail -40 || true
 
     echo "--- client engine log (punch) ---"
