@@ -71,6 +71,19 @@ dump_diagnostics() {
     echo "--- host engine log (punch) ---"
     dc exec -T host sh -lc 'grep -iE "punch|registry" /tmp/engine.log | tail -20' 2>&1 || true
 
+    # [rc4l] Counters, not inference. If both sides fire a punch and the joiner still cannot get in,
+    # the only question left is whether the router dropped the packet -- and the DROP rule's own
+    # counter answers it, while conntrack shows whether the mapping the punch was supposed to create
+    # actually exists and in which direction.
+    for r in router_host router_client; do
+        echo "--- $r: FORWARD chain (watch the DROP counter) ---"
+        dc exec -T "$r" iptables -L FORWARD -n -v 2>&1 || true
+        echo "--- $r: NAT table ---"
+        dc exec -T "$r" iptables -t nat -L POSTROUTING -n -v 2>&1 || true
+        echo "--- $r: conntrack (game ports) ---"
+        dc exec -T "$r" sh -lc 'conntrack -L 2>/dev/null | grep -E "1066[67]" | head -20' 2>&1 || true
+    done
+
     echo "--- router_host log ---"; dc logs --tail 20 router_host 2>&1 || true
     echo "--- host engine log (tail) ---"; dc exec -T host   sh -lc 'tail -30 /tmp/engine.log' 2>&1 || true
     echo "--- client engine log (tail) ---"; dc exec -T client sh -lc 'tail -30 /tmp/engine.log' 2>&1 || true
