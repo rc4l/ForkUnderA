@@ -53,7 +53,31 @@ sysctl -w net.ipv4.ip_forward=1 >/dev/null 2>&1 || true
 [ "$(cat /proc/sys/net/ipv4/ip_forward 2>/dev/null || echo 0)" = "1" ] \
     || { echo "router: ip_forward is off and could not be set -- this box would silently be a wall" >&2; exit 1; }
 
+# [rc4l] Internet-like latency, and it is not decoration.
+#
+# NAT traversal is a race: each side must get its outbound packet away before the other side's packet
+# lands, because whichever lands first creates the tracked entry that takes the tuple the other one
+# needs. On a 0ms link that race is unwinnable -- the far side's packet arrives before the engine's
+# next tic, every time -- so a lab with no latency tests a timing regime that does not exist and
+# condemns a mechanism that works on the real internet.
+#
+# 25ms each way is an ordinary domestic round trip.
+tc qdisc add dev "$WAN_IF" root netem delay "${NAT_LATENCY_MS:-25}ms" 2>/dev/null \
+    || echo "router: WARNING could not add latency; the punch race will be unrealistically tight" >&2
+
 case "$FLAVOUR" in
+    fullcone)
+        # [rc4l] The permissive router: an endpoint-INDEPENDENT mapping, where anything arriving at
+        # the mapped port is delivered inside regardless of who sent it.
+        #
+        # Modelled with a DNAT of the game port, which is the honest way to say what such a router
+        # does. Note what this case does and does not prove: with a mapping this permissive the
+        # joiner's ordinary challenge already gets in and the punch is never what carried it. It is
+        # here to show discovery works for the easy half of the world, NOT as evidence about punching.
+        iptables -t nat -A POSTROUTING -o "$WAN_IF" -j MASQUERADE
+        iptables -t nat -A PREROUTING -i "$WAN_IF" -p udp --dport "${NAT_GAME_PORT:-10666}" \
+            -j DNAT --to-destination "${NAT_LAN_PEER:?fullcone needs NAT_LAN_PEER}:${NAT_GAME_PORT:-10666}"
+        ;;
     symmetric)
         # --random-fully allocates a fresh source port per flow rather than preserving the internal
         # one, so two flows from the same internal port to different destinations get different
@@ -73,6 +97,12 @@ esac
 # fixture: delete it and every assertion below still "passes" while proving nothing, because the
 # packets would simply be routed in. A punch works by making the joiner's traffic ESTABLISHED from
 # this table's point of view, so RELATED,ESTABLISHED is exactly the door it opens.
+# A DNAT'd packet (fullcone) is NEW in the FORWARD chain, so it needs its own way through -- the
+# ESTABLISHED rule below only covers replies to traffic that already left.
+if [ "$FLAVOUR" = "fullcone" ]; then
+    iptables -A FORWARD -i "$WAN_IF" -p udp --dport "${NAT_GAME_PORT:-10666}" -j ACCEPT
+fi
+
 iptables -A FORWARD -i "$WAN_IF" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
 iptables -A FORWARD -i "$WAN_IF" -j DROP
 
