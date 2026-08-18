@@ -131,13 +131,16 @@ say "PASS: one server, listed twice by the registry, shown once to the player."
 # nothing else -- a v6-only player reached no registry and saw an empty browser with no error. That
 # is invisible on any dual-stack machine, which is every machine we own, so it can only be caught
 # here by taking the IPv4 address away.
+# [rc4l] Every step here is under `timeout`, because taking an address away from a container can wedge
+# the exec session itself -- and a wedged step burns the whole job and reports as exit 143, which says
+# nothing about the thing being tested.
 say "[4/4] a client with NO IPv4 still finds the server..."
 
-dc exec -T client sh -lc 'ip addr del 203.0.113.30/24 dev $(ip -o -4 addr show | awk "/203.0.113/ {print \$2; exit}") 2>/dev/null; ip -o -4 addr show | grep -q 203.0.113 && exit 1; exit 0' \
+timeout 30 dc exec -T client sh -lc 'ip addr del 203.0.113.30/24 dev $(ip -o -4 addr show | awk "/203.0.113/ {print \$2; exit}") 2>/dev/null; ip -o -4 addr show | grep -q 203.0.113 && exit 1; exit 0' \
     || fail "could not take IPv4 away from the client, so this case would prove nothing"
 
 # It has to be restarted: the engine resolved and bound while it still had IPv4.
-dc exec -T client sh -lc 'pkill -f forkundera || true'
+timeout 30 dc exec -T client sh -lc 'pkill -f forkundera || true'
 sleep 3
 start_engine client ""
 
