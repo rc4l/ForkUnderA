@@ -62,6 +62,18 @@ void SpawnProjectedDecal(DBaseDecal *owner, const FDecalTemplate *tpl,
 void SpawnProjectedDecalHere(const FDecalTemplate *tpl, fixed_t x, fixed_t y, fixed_t z,
                              const float surfaceNormal[3]);
 
+// [rc4l] A mark on a wall the engine REFUSED to decal.
+//
+// DBaseDecal::StickToWall has to pick a texture for the mark to live on, and when the hit lands in
+// the open span of a two-sided line there is none -- so it returns a null texture id and vanilla
+// makes no decal at all. That is the reported "no decal when hitting connecting lines": aim at the
+// seam between two linedefs and the shot leaves nothing.
+//
+// A projection does not need a texture to live on, only geometry to be cut from, and that is still
+// there. Same mark, no owner, so it fades from the template's own animator.
+void SpawnProjectedDecalOnLine(const FDecalTemplate *tpl, fixed_t x, fixed_t y, fixed_t z,
+                               line_t *hitLine);
+
 // The engine is destroying this decal -- drop whatever was projected for it.
 void ForgetProjectedDecal(DBaseDecal *owner);
 

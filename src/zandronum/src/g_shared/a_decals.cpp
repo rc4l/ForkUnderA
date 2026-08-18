@@ -715,6 +715,14 @@ DImpactDecal *DImpactDecal::StaticCreate (const FDecalTemplate *tpl, fixed_t x, 
 
 		if (!decal->StickToWall (wall, x, y, ffloor).isValid())
 		{
+			// [rc4l] features/levelmesh: the engine has nowhere to put this mark, but the world does.
+			//
+			// StickToWall fails when the hit lands in the OPEN SPAN of a two-sided line: there is no
+			// texture there to glue a quad to, so vanilla makes nothing. Aiming at the seam between
+			// two linedefs therefore leaves no mark at all, which is not obviously a rule -- it looks
+			// like the weapon missed. A projection is cut from geometry rather than glued to a
+			// texture, so it has everything it needs.
+			zx::levelmesh::SpawnProjectedDecalOnLine (tpl, x, y, z, wall != NULL ? wall->linedef : NULL);
 			return NULL;
 		}
 

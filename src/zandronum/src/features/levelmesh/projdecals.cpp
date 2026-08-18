@@ -27,6 +27,8 @@
 // 1 projects onto the geometry inside a box; 0 falls back to the glued quad the GL renderer draws,
 // which is the same shape in both backends. Keeping the old path a cvar away is what makes "is this
 // better?" a question anyone can answer in one console command rather than a rebuild.
+EXTERN_CVAR (Int, cl_maxdecals)
+
 CVAR(Bool, fua_projdecals, true, CVAR_ARCHIVE)
 
 // How square-on a surface must be to the projection to receive any of it. Edge-on surfaces would
@@ -302,6 +304,24 @@ void GatherCandidates(const DecalBox &box, TArray<Candidate> &out)
 	}
 }
 
+// [rc4l] The face of the line that was hit, pointing at the side the projectile came from.
+//
+// Which side matters: a mark is only visible from the side it was made on, and the basis uses this
+// to decide where to face when the projectile had no usable direction of its own.
+void NormalFromLine(line_t *line, float out[3])
+{
+	out[0] = 0.f; out[1] = 0.f; out[2] = 1.f;
+	if (line == NULL) return;
+	const float dx = FIXED2FLOAT(line->dx), dy = FIXED2FLOAT(line->dy);
+	const float len = sqrtf(dx*dx + dy*dy);
+	if (len < 1e-4f) return;
+	out[0] = dy / len; out[1] = -dx / len; out[2] = 0.f;
+	if (g_impact.valid && Dot3(out, g_impact.vel) > 0.f)
+	{
+		out[0] = -out[0]; out[1] = -out[1];
+	}
+}
+
 // ---------------------------------------------------------------------------------------------
 // Turning a clipped polygon into mesh vertices
 // ---------------------------------------------------------------------------------------------
@@ -505,6 +525,27 @@ void BuildProjection(const MarkStyle &style, DBaseDecal *owner, int fadeStart, i
 
 	if (decal.patches.Size() == 0) return;
 	g_decals.Push(decal);
+
+	// [rc4l] Retire the oldest ownerless mark once there are too many.
+	//
+	// The ones with an owner are already limited: cl_maxdecals recycles the engine's decals and each
+	// takes its projection with it. A floor scorch has no owner and nothing to recycle it, so without
+	// this a long session accumulates them until the level ends -- permanent geometry, growing, that
+	// the frame has to walk every time. The same cvar sets the limit, because it is the same
+	// question the player was answering when they set it.
+	if (cl_maxdecals > 0)
+	{
+		unsigned ownerless = 0;
+		for (unsigned i = 0; i < g_decals.Size(); i++) if (g_decals[i].owner == NULL) ownerless++;
+		while (ownerless > (unsigned)cl_maxdecals)
+		{
+			for (unsigned i = 0; i < g_decals.Size(); i++)
+			{
+				if (g_decals[i].owner == NULL) { g_decals.Delete(i); break; }
+			}
+			ownerless--;
+		}
+	}
 }
 
 } // namespace
@@ -515,22 +556,8 @@ void SpawnProjectedDecal(DBaseDecal *owner, const FDecalTemplate *tpl,
 	(void)tpl;
 	if (!fua_projdecals || owner == NULL) return;
 
-	// The wall that stopped it. Its normal is perpendicular to the line, facing the side the
-	// projectile was on -- which is the side the mark is visible from.
-	float surfN[3] = { 0.f, 0.f, 1.f };
-	if (hitLine != NULL)
-	{
-		const float dx = FIXED2FLOAT(hitLine->dx), dy = FIXED2FLOAT(hitLine->dy);
-		const float len = sqrtf(dx*dx + dy*dy);
-		if (len > 1e-4f)
-		{
-			surfN[0] = dy / len; surfN[1] = -dx / len; surfN[2] = 0.f;
-			if (g_impact.valid && Dot3(surfN, g_impact.vel) > 0.f)
-			{
-				surfN[0] = -surfN[0]; surfN[1] = -surfN[1];
-			}
-		}
-	}
+	float surfN[3];
+	NormalFromLine(hitLine, surfN);
 
 	MarkStyle style;
 	style.pic = owner->PicNum;
@@ -546,8 +573,10 @@ void SpawnProjectedDecal(DBaseDecal *owner, const FDecalTemplate *tpl,
 	BuildProjection(style, owner, -1, 0, x, y, z, surfN);
 }
 
-void SpawnProjectedDecalHere(const FDecalTemplate *tpl, fixed_t x, fixed_t y, fixed_t z,
-                             const float surfaceNormal[3])
+namespace {
+
+void SpawnFromTemplate(const FDecalTemplate *tpl, fixed_t x, fixed_t y, fixed_t z,
+                       const float surfaceNormal[3])
 {
 	if (!fua_projdecals || tpl == NULL) return;
 
@@ -574,6 +603,22 @@ void SpawnProjectedDecalHere(const FDecalTemplate *tpl, fixed_t x, fixed_t y, fi
 	if (!GetDecalFadeTiming(tpl->Animator, fadeStart, fadeTime)) fadeStart = -1;
 
 	BuildProjection(style, NULL, fadeStart, fadeTime, x, y, z, surfaceNormal);
+}
+
+} // namespace
+
+void SpawnProjectedDecalHere(const FDecalTemplate *tpl, fixed_t x, fixed_t y, fixed_t z,
+                             const float surfaceNormal[3])
+{
+	SpawnFromTemplate(tpl, x, y, z, surfaceNormal);
+}
+
+void SpawnProjectedDecalOnLine(const FDecalTemplate *tpl, fixed_t x, fixed_t y, fixed_t z,
+                               line_t *hitLine)
+{
+	float surfN[3];
+	NormalFromLine(hitLine, surfN);
+	SpawnFromTemplate(tpl, x, y, z, surfN);
 }
 
 void ForgetProjectedDecal(DBaseDecal *owner)
