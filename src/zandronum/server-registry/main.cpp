@@ -60,6 +60,8 @@
 #include "features/federated-server-registry/computation/servergroup_compute.h"
 // [rc4l] Whether a claim destroys the cookie, which differs by what it is claimed for.
 #include "features/federated-server-registry/computation/cookieclaim_compute.h"
+// [rc4l] The optional trailing fields, where an exhausted read must mean "old server".
+#include "features/federated-server-registry/computation/announcefields_compute.h"
 #include <sstream>
 #include <map>
 #include <set>
@@ -717,20 +719,24 @@ void SERVERREGISTRY_ParseCommands( BYTESTREAM_s *pByteStream )
 			const int temp = pByteStream->ReadByte();
 			newServer.bEnforcesBanList = ( temp != 0 );
 			newServer.bNewFormatServer = ( temp != -1 );
-			newServer.iServerRevision = ( ( pByteStream->pbStreamEnd - pByteStream->pbStream ) >= 4 ) ? pByteStream->ReadLong() : pByteStream->ReadShort();
+			newServer.iServerRevision = zx::AnnounceUsesLongRevision( static_cast<int>( pByteStream->pbStreamEnd - pByteStream->pbStream ))
+				? pByteStream->ReadLong() : pByteStream->ReadShort();
 
 			// [rc4l] One optional trailing byte: can this server punch a hole when we ask it to?
 			//
 			// Same trick the ban flag above uses. ReadByte returns -1 on an exhausted stream, so a
 			// server built before this says nothing and lands on false, which is exactly right: we
 			// must never instruct something that cannot answer.
-			newServer.bSupportsPunch = ( pByteStream->ReadByte() > 0 );
+			newServer.bSupportsPunch = zx::AnnounceFlagFromByte( pByteStream->ReadByte() );
 
 			// [rc4l] And the id it groups its own two listings by, appended after that byte on the
 			// same terms: absent from anything older, and absent means "do not group me".
 			{
 				const char *pszId = pByteStream->ReadString();
-				newServer.RegistryId = ( pszId != NULL ) ? pszId : "";
+
+				// Refused unless it is exactly the shape this engine writes. The id decides which
+				// listings get merged, so a truncated or foreign value would hide a server.
+				newServer.RegistryId = zx::AnnounceIdIsGroupable( pszId ) ? pszId : "";
 			}
 
 			std::set<SERVER_s, SERVERCompFunc>::iterator currentServer = g_Servers.find ( newServer );
