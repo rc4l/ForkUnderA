@@ -216,6 +216,18 @@ typedef struct
 	bool			bPunchRequested;
 	LONG			lPunchResendsSent;
 
+	// [rc4l] This row punched BEFORE it spoke, and its first challenge is being held back until the
+	// punch has had time to land (kQueryPunchLeadMs).
+	//
+	// The ordering is the whole point. A first challenge sent ahead of the punch lands on the host's
+	// router as unsolicited traffic, which the router tracks even as it drops it -- taking the exact
+	// tuple the host's punch then needs, so the hole opens on a rewritten port where nobody is
+	// knocking. Proven with conntrack in tools/natlab; the punch was firing correctly on every hop
+	// and still could not be used.
+	bool			bPunchLed;
+	bool			bFirstChallengeSent;
+	LONG			lPunchLedMS;
+
 	// [rc4l] This server answered, and we hid it because it runs a different build.
 	//
 	// Kept separately because the hiding is done by setting AS_INACTIVE, which is also what an empty
