@@ -111,7 +111,16 @@ static const char *kDeferredDecalVS =
 	/* Ride the plane: the stored height is an offset from it, so this is where the mark is NOW. */ \
 	"    vec3 c = d.centre.xyz;\n"
 	"    int aSec = int(d.anchor.x);\n"
-	"    if (aSec >= 0) c.y = planes[aSec][int(d.anchor.y)] + d.anchor.z;\n"
+	/* The plane EQUATION, evaluated where this mark actually is. A single height per sector is
+	   only right for a level plane: on a slope the mark stores its offset from the plane at ITS
+	   OWN point, so reading the height at the sector centre puts it out by the tilt across the
+	   sector -- tens of units here. A big scorch survived that because its box is deep enough to
+	   still catch the floor; a bullet puff, a plasma mark and the BFG's own glow all missed and
+	   vanished. Ax + By + Cz + D = 0, so z = -(Ax + By + D)/C, and w carries 1/C. */ \
+	"    if (aSec >= 0) {\n"
+	"        vec4 pl = planes[aSec * 2 + int(d.anchor.y)];\n"
+	"        c.y = -(pl.x * c.x + pl.y * c.z + pl.z) * pl.w + d.anchor.z;\n"
+	"    }\n"
 	"    vCentre = c;\n"
 	"    vAxisU = d.axisU.xyz; vAxisV = d.axisV.xyz; vAxisN = d.axisN.xyz;\n"
 	"    vColor = d.color;\n"
@@ -371,11 +380,11 @@ static bool EnsureDeferredDecalPass()
 		g_ddPlaneCapacity = (numsectors > 0) ? numsectors : 1;
 		Diligent::BufferDesc bd;
 		bd.Name = "fua decal sector planes";
-		bd.Size = (Diligent::Uint64)g_ddPlaneCapacity * 16;
+		bd.Size = (Diligent::Uint64)g_ddPlaneCapacity * 32;   // floor and ceiling equations
 		bd.Usage = Diligent::USAGE_DEFAULT;
 		bd.BindFlags = Diligent::BIND_SHADER_RESOURCE;
 		bd.Mode = Diligent::BUFFER_MODE_STRUCTURED;
-		bd.ElementByteStride = 16;
+		bd.ElementByteStride = 16;   // one vec4; two per sector
 		dev->CreateBuffer(bd, nullptr, &g_ddPlaneBuf);
 		if (!g_ddPlaneBuf) { g_ddPlaneCapacity = 0; g_ddBail = "plane buffer creation failed"; return false; }
 		g_ddPlaneSRV = g_ddPlaneBuf->GetDefaultView(Diligent::BUFFER_VIEW_SHADER_RESOURCE);
@@ -595,19 +604,25 @@ void DrawDeferredDecals(Diligent::IDeviceContext *ctx)
 	if (g_ddPlaneBuf && numsectors > 0)
 	{
 		static TArray<float> planeData;
-		planeData.Resize((unsigned)numsectors * 4);
+		planeData.Resize((unsigned)numsectors * 8);
 		for (int si = 0; si < numsectors; si++)
 		{
 			const sector_t &sec = sectors[si];
-			// Sampled at the sector's own centre: a mark stores its offset from the plane AT ITS OWN
-			// POINT, so for a level plane this is exact, and for a sloped one it is off by the slope
-			// across the sector. Slopes that MOVE are the only case that misses, and they are rare.
-			planeData[si*4+0] = FIXED2FLOAT(sec.floorplane.ZatPoint(sec.soundorg[0], sec.soundorg[1]));
-			planeData[si*4+1] = FIXED2FLOAT(sec.ceilingplane.ZatPoint(sec.soundorg[0], sec.soundorg[1]));
-			planeData[si*4+2] = 0.f;
-			planeData[si*4+3] = 0.f;
+			// [rc4l] The plane EQUATION, not a height. secplane_t is Ax + By + Cz + D = 0 in fixed
+			// point, so the float form is z = -(Ax + By + D)/C and 1/C is stored ready to multiply.
+			// Storing a height instead only works for a level plane, and got every small mark on a
+			// slope placed far enough off the surface to disappear.
+			const secplane_t *pl[2] = { &sec.floorplane, &sec.ceilingplane };
+			for (int q = 0; q < 2; q++)
+			{
+				const float C = FIXED2FLOAT(pl[q]->c);
+				planeData[si*8 + q*4 + 0] = FIXED2FLOAT(pl[q]->a);
+				planeData[si*8 + q*4 + 1] = FIXED2FLOAT(pl[q]->b);
+				planeData[si*8 + q*4 + 2] = FIXED2FLOAT(pl[q]->d);
+				planeData[si*8 + q*4 + 3] = (C != 0.f) ? (1.f / C) : 0.f;
+			}
 		}
-		ctx->UpdateBuffer(g_ddPlaneBuf, 0, (Diligent::Uint64)numsectors * 16, &planeData[0],
+		ctx->UpdateBuffer(g_ddPlaneBuf, 0, (Diligent::Uint64)numsectors * 32, &planeData[0],
 			Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 	}
 
