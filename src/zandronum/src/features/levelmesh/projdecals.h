@@ -40,6 +40,19 @@ namespace zx { namespace levelmesh {
 // way back to the missile, so the direction has to be carried across. Set it around the spawn and
 // clear it afterwards; an unset context means "no direction available", which is a real case (a
 // hitscan puff, a decal placed by a script) and produces a head-on projection.
+// [rc4l] Is the projected-decal machinery doing anything this frame?
+//
+// Two switches reach it and they are not the same question. fua_decalmode turns projection on for
+// WALLS, where it replaces the glued quad and brings that trade with it. fua_decal_flats turns it
+// on for FLOORS AND CEILINGS, where there is nothing to replace -- Doom never marked a floor at
+// all, because a glued quad needs a sidedef to be glued to and a floor has none.
+//
+// Everything downstream -- the store, the update, the GPU list, the deferred pass -- runs if
+// EITHER is on, so it is asked here once rather than spelled out at each of the four places that
+// need it. Those four had already been written out by hand, and a count written by hand is how the
+// mirror PSO lost a variable.
+bool ProjectedDecalsActive();
+
 void SetImpactContext(fixed_t velX, fixed_t velY, fixed_t velZ, fixed_t radius);
 void ClearImpactContext();
 

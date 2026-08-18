@@ -35,6 +35,15 @@
 // CPU. It is gone: a triangle is the smallest thing that can carry an alpha, so every fade it did
 // was in slices and every join between two surfaces was two constants meeting.
 CVAR(Int, fua_decalmode, 0, CVAR_ARCHIVE)
+// [rc4l] Marks on floors and ceilings, which Doom itself never makes.
+//
+// Independent of fua_decalmode on purpose. Projection on a WALL is a trade: it replaces a quad
+// that was already right, buying continuity round a corner at the cost of stretching a mark at a
+// grazing angle -- which is why walls went back to the quad. On a FLOOR there is no trade to lose.
+// The alternative there is no mark at all, and the projection is at its best on one: aimed
+// straight down the surface normal, where nothing is grazing it.
+CVAR(Bool, fua_decal_flats, true, CVAR_ARCHIVE)
+
 
 // [rc4l] The most oblique a mark is allowed to be, as the cosine of the angle off head-on.
 //
@@ -69,6 +78,10 @@ EXTERN_CVAR(Int, cl_maxdecals)
 static FRandom pr_projdecal ("ProjDecal");
 
 namespace zx { namespace levelmesh {
+
+// [rc4l] See projdecals.h: one answer for the four places that ask.
+bool ProjectedDecalsActive() { return fua_decalmode != 0 || fua_decal_flats; }
+
 
 namespace {
 
@@ -250,7 +263,9 @@ void BuildProjection(const MarkStyle &style, DBaseDecal *owner, int fadeStart, i
 void SpawnFromTemplate(const FDecalTemplate *tpl, fixed_t x, fixed_t y, fixed_t z,
                        const float surfaceNormal[3], float advance)
 {
-	if (fua_decalmode == 0 || tpl == NULL) return;
+	// [rc4l] No mode test here: the two callers disagree about which switch applies. A wall mark
+	// needs fua_decalmode, a floor mark needs fua_decal_flats, and each asks for itself.
+	if (tpl == NULL) return;
 
 	MarkStyle style;
 	style.pic = tpl->PicNum;
@@ -325,6 +340,9 @@ void SpawnProjectedDecal(DBaseDecal *owner, const FDecalTemplate *tpl,
 void SpawnProjectedDecalHere(const FDecalTemplate *tpl, fixed_t x, fixed_t y, fixed_t z,
                              const float surfaceNormal[3])
 {
+	// The floor/ceiling case, and the only one fua_decal_flats admits on its own -- nothing else in
+	// the engine marks a flat.
+	if (!ProjectedDecalsActive()) return;
 	// [rc4l] A mark is often TWO decals, and this path has to spawn both itself.
 	//
 	// DECALDEF's `lowerdecal` puts one graphic underneath another: the BFG's mark is a green glow
@@ -354,6 +372,9 @@ void SpawnProjectedDecalHere(const FDecalTemplate *tpl, fixed_t x, fixed_t y, fi
 void SpawnProjectedDecalOnLine(const FDecalTemplate *tpl, fixed_t x, fixed_t y, fixed_t z,
                                line_t *hitLine)
 {
+	// A WALL mark, so it takes the wall switch. fua_decal_flats must not put projections back onto
+	// walls by a side door: that stretching is what sent walls back to the glued quad.
+	if (fua_decalmode == 0) return;
 	float surfN[3];
 	NormalFromLine(hitLine, surfN);
 	SpawnFromTemplate(tpl, x, y, z, surfN, g_impact.valid ? g_impact.radius : 0.f);
@@ -428,7 +449,7 @@ void UpdateProjectedDecals()
 int GetProjectedDecalsGpu(const GpuDecal **out)
 {
 	g_gpuDecals.Clear();
-	if (fua_decalmode == 0) { if (out) *out = NULL; return 0; }
+	if (!ProjectedDecalsActive()) { if (out) *out = NULL; return 0; }
 
 	for (unsigned i = 0; i < g_decals.Size(); i++)
 	{

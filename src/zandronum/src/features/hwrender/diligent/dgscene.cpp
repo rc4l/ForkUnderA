@@ -3821,7 +3821,7 @@ static void DrawWorld(Diligent::IDeviceContext *ctx)
 	// [rc4l] Decals mark surfaces, so they go with the surfaces -- after the world and before the
 	// sprites. Anything standing in front of a mark is then drawn over it because it is in a LATER
 	// pass, which is a fact about the frame rather than something a sort has to rediscover.
-	if (fua_decalmode != 0) DrawDeferredDecals(ctx);
+	if (zx::levelmesh::ProjectedDecalsActive()) DrawDeferredDecals(ctx);
 
 	// [rc4l] Sprites are built here but ALL of them draw in the sorted pass below, never in an
 	// opaque one. See DrawBlended.
