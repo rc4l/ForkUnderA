@@ -2129,6 +2129,28 @@ bool BROWSER_WaitingForServerRegistryResponse( void )
 
 //*****************************************************************************
 //
+void BROWSER_PunchBrokered( void )
+{
+	// Every held row, not the one this verdict belongs to: the result carries a verdict and no
+	// address, and a sweep holds at most kMaxPunchesPerSweep of them anyway. Releasing all four one
+	// registry round trip early beats holding the right one until a timer that is wrong on every
+	// network -- the fallback in BROWSER_QueryTick still covers a verdict that never arrives.
+	for ( ULONG ulIdx = 0; ulIdx < MAX_BROWSER_SERVERS; ulIdx++ )
+	{
+		if (( g_BrowserServerList[ulIdx].ulActiveState != AS_WAITINGFORREPLY )
+			|| ( g_BrowserServerList[ulIdx].bPunchLed == false )
+			|| g_BrowserServerList[ulIdx].bFirstChallengeSent )
+		{
+			continue;
+		}
+
+		browser_QueryServer( ulIdx );
+		g_BrowserServerList[ulIdx].bFirstChallengeSent = true;
+	}
+}
+
+//*****************************************************************************
+//
 void BROWSER_QueryAllServers( void )
 {
 	ULONG	ulIdx;

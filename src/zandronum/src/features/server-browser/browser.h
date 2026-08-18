@@ -362,6 +362,20 @@ void			BROWSER_RecheckServer( ULONG ulServer );
 // address, which is the one that actually works.
 void			BROWSER_PunchKnockFrom( const NETADDRESS_s &From );
 
+// [rc4l] The registry has just told a server to open for us, so send the challenges we were holding
+// back -- NOW, while the server's punch is still in flight.
+//
+// The timing is the point and it is narrow at both ends. Send too early and our challenge reaches the
+// server's router first, where it is dropped but tracked, taking the tuple the server's punch then
+// needs. Send too late and the punch has already landed on OUR router, where the same thing happens
+// in reverse and our challenge leaves from a rewritten port the server is not expecting. Both were
+// observed in tools/natlab, in that order.
+//
+// The only interval that works is the one where both packets are in flight and neither has landed,
+// which is what a simultaneous open means. This verdict arrives from the registry at the moment it
+// instructs the server, so it is the best clock either side has.
+void			BROWSER_PunchBrokered( void );
+
 // [rc4l] Per-row version of the fact BROWSER_GetNumHumanPlayers already uses in aggregate.
 bool			BROWSER_IsPlayerBot( ULONG ulServer, ULONG ulPlayer );
 // [rc4l] Did the server send player rows at all? A server that withheld them and one that is empty
