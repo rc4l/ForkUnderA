@@ -129,15 +129,6 @@ std::string ServerAuthKeyPath(const std::string &configRoot)
 	return WithoutTrailingSlash(configRoot) + "/identity/server-account-auth.key";
 }
 
-std::string IdentityRootUnder(const std::string &base)
-{
-	const std::string dir = WithoutTrailingSlash(base);
-	if (dir.empty())
-		return std::string();
-
-	return dir + "/" + kIdentityFolder;
-}
-
 std::string ClientProofMessage(const std::string &sessionIdHex, const std::string &serverKeyHex)
 {
 	// Separated by a character that cannot appear in hex, so no two different field pairs can ever

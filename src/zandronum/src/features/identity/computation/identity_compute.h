@@ -39,12 +39,6 @@ std::string ClientAuthKeyPath(const std::string &configRoot, int instance);
 // several servers offers one account namespace across all of them.
 std::string ServerAuthKeyPath(const std::string &configRoot);
 
-// [rc4l] The folder the keys live under, given a base directory.
-//
-// Called with the per-user base to get the real one, and with the old config directory to get the
-// folder a build before this one wrote to, which is what the migration moves from.
-std::string IdentityRootUnder(const std::string &base);
-
 // [rc4l] The bytes a client signs to prove it holds the key, which carry THREE things and drop any
 // of them at their peril:
 //

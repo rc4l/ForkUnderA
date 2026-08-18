@@ -63,9 +63,6 @@ bool Identity_Verify( const Bytes &publicKey, const std::string &message, const 
 // Where the key files live, which is one folder per user shared by every copy of the engine.
 std::string Identity_ConfigRoot( void );
 
-// Move keys out of the per-install folder a build before this one wrote them to.
-void Identity_MigrateLegacyRoot( void );
-
 // Cryptographically strong random bytes for nonces, never rand().
 bool Identity_RandomBytes( size_t count, Bytes &out );
 
