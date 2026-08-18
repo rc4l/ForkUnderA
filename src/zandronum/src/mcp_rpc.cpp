@@ -545,7 +545,7 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 		std::string body = "{\"hosting\":" + B( NETWORK_GetState() == NETSTATE_SERVER );
 		body += ",\"port\":" + I( (long long)NETWORK_GetLocalPort() );
 
-		bool reachable = false;
+		bool registryReplied = false;
 		if ( NETWORK_GetState() == NETSTATE_SERVER )
 		{
 			body += ",\"families\":{";
@@ -554,7 +554,7 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 				const zx::ListingProof proof = SERVER_SERVERREGISTRY_GetListingProof( fam == 1 );
 				const bool verified = ( proof.state == zx::ListingState::ListedVerified );
 				const bool possible = ( fam == 0 ) || SERVER_SERVERREGISTRY_HasV6Registry();
-				reachable = reachable || verified;
+				registryReplied = registryReplied || verified;
 
 				std::string describe;
 				JsonEscape( std::string( zx::DescribeListing( proof.state ) ), describe );
@@ -575,12 +575,23 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 			body += "}";
 		}
 
-		body += ",\"reachable\":" + B( reachable );
-		// [rc4l] Reachable from outside, so if the host cannot see its own server the fault is the
-		// host's router declining to hairpin -- not the server, and not the registry. Naming it here
-		// is the entire point of the command: that case and a genuinely dead forward look identical
-		// on the browser screen.
-		body += ",\"hairpinSuspected\":" + B( reachable ) + "}";
+		// [rc4l] `registryReplied` is what the verification ACTUALLY proves, and it is less than it
+		// sounds: the announce we sent opened a NAT mapping toward the registry, so its reply comes
+		// back through that mapping however closed the port is to everybody else. The registry's own
+		// source says so (server-registry/main.cpp, RequestServerVerification).
+		//
+		// So `reachable` is null rather than a boolean. We do not know, we cannot know from here, and
+		// the previous version of this claimed true -- which told a player behind an unforwarded
+		// router that strangers could join them. Reporting "unknown" is worth more than a confident
+		// wrong answer, and the NAT lab is what caught this by asserting the opposite.
+		//
+		// Making it knowable needs a probe from a source the server never sent to, which cannot be
+		// done registry-side alone (SERVER_SERVERREGISTRY_IsAddress compares the port, so a packet
+		// from any other port of the registry's is dropped before it is handled).
+		body += ",\"registryReplied\":" + B( registryReplied );
+		body += ",\"reachable\":null";
+		body += ",\"reachableNote\":\"the registry's reply arrives through the NAT mapping our own announce opened, so it does not prove strangers can reach us\"";
+		body += "}";
 		SendOk( id, body );
 	}
 	else if ( cmd == "sim.pauseat" )
