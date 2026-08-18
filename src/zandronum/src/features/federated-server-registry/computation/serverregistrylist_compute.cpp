@@ -58,12 +58,8 @@ bool IsValidLabel( const std::string &label )
 	return true;
 }
 
-// [rc4l] An IPv6 literal, judged loosely: hex digits and colons, at least two colons so it cannot be
-// confused with "name:port".
-//
-// Loose on purpose. This decides whether to HAND the text to a resolver, and the resolver is the
-// thing that actually knows what a valid address is -- duplicating inet_pton here would give two
-// answers to one question and eventually disagree.
+// [rc4l] An IPv6 literal judged loosely, since this only decides what to hand a resolver and the
+// resolver is what actually knows a valid address.
 bool LooksLikeV6Literal( const std::string &host )
 {
 	int colons = 0;
@@ -87,7 +83,7 @@ bool LooksLikeV6Literal( const std::string &host )
 	return ( colons >= 2 );
 }
 
-// One place that decides what a port is, so the bracketed and unbracketed forms cannot drift apart.
+// [rc4l] One place that decides what a port is, so the two forms cannot drift apart.
 bool ParsePort( const std::string &digits, int &out )
 {
 	if ( digits.empty( ) || digits.size( ) > 5 )
@@ -115,10 +111,8 @@ bool ParseHostPort( const std::string &token, ServerRegistryEntry &out )
 	std::string host = token;
 	int port = 0;
 
-	// [rc4l] BRACKETS FIRST, because the split below looks for the last colon and a v6 address is
-	// mostly colons. "[2001:db8::1]:15300" would split at the port colon and leave "[2001:db8::1]",
-	// which then fails the hostname rules; a bare "2001:db8::1" would be cut at its own last colon
-	// and turn into a different address entirely. Both simply vanished from the list.
+	// [rc4l] Brackets first, because the split below takes the last colon and a v6 address is mostly
+	// colons.
 	if ( !token.empty( ) && ( token[0] == '[' ))
 	{
 		const std::string::size_type close = token.find( ']' );
@@ -145,8 +139,8 @@ bool ParseHostPort( const std::string &token, ServerRegistryEntry &out )
 		return true;
 	}
 
-	// An unbracketed v6 literal carries no port, since there would be no way to tell one from the
-	// address's own last group.
+	// [rc4l] An unbracketed literal carries no port, there being no way to tell one from its own last
+	// group.
 	if ( LooksLikeV6Literal( token ) )
 	{
 		out.host = token;
@@ -194,8 +188,7 @@ bool IsValidServerRegistryHost( const std::string &host )
 	if ( host.empty( ) || host.size( ) > 253 )
 		return false;
 
-	// A v6 literal is not a DNS name and must not be walked label by label -- every colon would fail
-	// the label rules and the address would be rejected as a malformed hostname.
+	// [rc4l] A v6 literal must not be walked label by label, since every colon fails the label rules.
 	if ( LooksLikeV6Literal( host ) )
 		return true;
 
@@ -253,8 +246,7 @@ std::vector<ServerRegistryEntry> ParseServerRegistryList( const std::string &tex
 			}
 			else if ( skippedOut != 0 )
 			{
-				// The token, not the whole line: the display name after it is not what failed, and
-				// quoting it back would bury the part the reader has to fix.
+				// [rc4l] The token, not the whole line, since the display name is not what failed.
 				skippedOut->push_back( line.substr( 0, split ));
 			}
 		}

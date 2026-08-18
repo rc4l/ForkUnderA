@@ -221,8 +221,7 @@ bool FormatV6Prefix( const unsigned char *prefix, int bits, char *out, int outSi
 	if (( prefix == 0 ) || ( out == 0 ) || ( outSize < 48 ))
 		return false;
 
-	// Same range rule as the matcher: a length outside 0..128 is a broken rule, and writing one back
-	// to disk would make the breakage permanent.
+	// [rc4l] A length outside 0..128 is a broken rule, and writing it back would make that permanent.
 	if (( bits < 0 ) || ( bits > 128 ))
 		return false;
 
@@ -230,9 +229,7 @@ bool FormatV6Prefix( const unsigned char *prefix, int bits, char *out, int outSi
 	for ( int i = 0; i < 8; ++i )
 		groups[i] = static_cast<unsigned short>(( prefix[i * 2] << 8 ) | prefix[i * 2 + 1] );
 
-	// Longest run of zero groups, which is the one "::" replaces. Runs of one are left alone: RFC 5952
-	// forbids compressing a single group, and more practically "::" for one group reads as an
-	// abbreviation of an unknown number of them.
+	// [rc4l] The longest zero run is the one "::" replaces, runs of one left alone per RFC 5952.
 	int bestStart = -1, bestLen = 0;
 	int runStart = -1, runLen = 0;
 	for ( int i = 0; i < 8; ++i )
@@ -250,9 +247,8 @@ bool FormatV6Prefix( const unsigned char *prefix, int bits, char *out, int outSi
 	}
 	if ( bestLen < 2 ) { bestStart = -1; bestLen = 0; }
 
-	// "::" carries BOTH of its colons, and the group after it then writes none. Letting the
-	// neighbouring groups supply a colon each is the obvious way to do this and produces "1:2:3:/48"
-	// for a trailing run, because there is no neighbour on that side to supply the second one.
+	// [rc4l] "::" carries both of its colons, since letting neighbours supply one produces "1:2:3:/48"
+	// for a trailing run.
 	char body[46];
 	int written = 0;
 	bool suppressSeparator = true;	// nothing precedes the first thing written
