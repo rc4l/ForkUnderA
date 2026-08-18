@@ -1500,6 +1500,7 @@ add_executable( zdoom WIN32
 	features/identity/zx_identity.cpp
 	features/identity/zx_identitynet.cpp
 	features/net/zx_httpsget.cpp
+	features/net/zx_resolve.cpp
 	features/net/zx_httpfile.cpp
 	features/net/zx_httpfile_win.cpp
 	features/wad-library/zx_wadlibrary.cpp

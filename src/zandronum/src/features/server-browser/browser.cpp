@@ -55,6 +55,7 @@
 #include "features/server-browser/computation/querypunch_compute.h"   // [rc4l] punch-on-query schedule
 #include "features/server-browser/computation/rowlifetime_compute.h"  // [rc4l] what keeps a row mortal
 #include "features/server-browser/computation/rowstep_compute.h"      // [rc4l] what to do with a row
+#include "features/net/zx_resolve.h"                            // [rc4l] the registry's AAAA
 #include "features/server-hosting/zx_punchclient.h"                   // [rc4l] PunchRequestFor
 #include "features/launcher-protocol/computation/segmentreassembly_compute.h"
 #include "features/server-hosting/zx_hosting.h" // [rc4l] which rows are the server WE started
@@ -86,6 +87,10 @@ static	SERVER_t		g_BrowserServerList[MAX_BROWSER_SERVERS];
 // whole network no matter which server registry each server chose to live on. Reading a list of
 // addresses carries no authority, so fanning it out costs nothing.
 static	TArray<NETADDRESS_s>	g_ServerRegistryAddresses;
+
+// [rc4l] The registry address that last answered, so a punch is asked of a family we know works.
+static	NETADDRESS_s	g_LastAnsweringRegistry;
+static	bool			g_bHaveAnsweringRegistry = false;
 
 // [rc4l] What became of each registry in the list, kept so the browser can SHOW it.
 //
@@ -993,7 +998,9 @@ bool BROWSER_GetServerRegistryAddress( NETADDRESS_s &out )
 	if ( g_ServerRegistryAddresses.Size( ) == 0 )
 		return false;
 
-	out = g_ServerRegistryAddresses[0];
+	// [rc4l] The one that answered, since holding two families means [0] is no longer a statement
+	// about which of them this client can actually reach.
+	out = g_bHaveAnsweringRegistry ? g_LastAnsweringRegistry : g_ServerRegistryAddresses[0];
 	return true;
 }
 
@@ -1004,6 +1011,14 @@ bool BROWSER_GetServerRegistryAddress( NETADDRESS_s &out )
 // Deliberately the WHOLE list, because browser_QueryServerRegistries sends to the whole list. Judging
 // a reply by one address, or by the server-side announce cvar, meant we could send to a registry and
 // then throw its answer away.
+void BROWSER_NoteRegistryAnswered( const NETADDRESS_s &address )
+{
+	g_LastAnsweringRegistry = address;
+	g_bHaveAnsweringRegistry = true;
+}
+
+//*****************************************************************************
+//
 bool BROWSER_IsServerRegistryAddress( const NETADDRESS_s &address )
 {
 	for ( unsigned int i = 0; i < g_ServerRegistryAddresses.Size( ); ++i )
@@ -1323,6 +1338,9 @@ bool BROWSER_GetServerList( BYTESTREAM_s *pByteStream )
 
 	// This one answered, whatever the others are doing.
 	browser_NoteRegistryStatus( NETWORK_GetFromAddress( ), zx::RegistryStatus::Ok );
+
+	// [rc4l] And it is the family a punch should be asked of, since it is the one proven to reach us.
+	BROWSER_NoteRegistryAnswered( NETWORK_GetFromAddress( ));
 
 	while ( true )
 	{
@@ -1936,6 +1954,15 @@ static void browser_ResolveServerRegistries( void )
 		// [rc4l] The parser already split any ":port" off the host, so an entry either carries its own
 		// port or takes the default. LoadFromString never sees a port here.
 		address.SetPort( entries[i].port != 0 ? static_cast<USHORT>( entries[i].port ) : g_usServerRegistryPort );
+
+		// [rc4l] And the AAAA, because LoadFromString above asks only for an A record -- which is why
+		// a client with no IPv4 at all could not reach any registry and saw an empty browser.
+		NETADDRESS_s v6;
+		if ( zx::ResolveHostV6( entries[i].host.c_str( ), v6 ))
+		{
+			v6.SetPort( entries[i].port != 0 ? static_cast<USHORT>( entries[i].port ) : g_usServerRegistryPort );
+			g_ServerRegistryAddresses.Push( v6 );
+		}
 
 		state.address = address;
 		state.bResolved = true;

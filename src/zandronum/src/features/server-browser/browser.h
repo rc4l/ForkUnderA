@@ -363,6 +363,9 @@ void			BROWSER_PunchKnockFrom( const NETADDRESS_s &From );
 
 // [rc4l] Send the held challenges now, while the server's punch is in flight, because whichever
 // packet lands first takes the tuple the other one needs.
+// [rc4l] Remember which registry address answered, so a punch is asked of a family that works.
+void			BROWSER_NoteRegistryAnswered( const NETADDRESS_s &address );
+
 void			BROWSER_PunchBrokered( void );
 
 // [rc4l] The registry saying two addresses are one server, which only it can know and which nothing
