@@ -58,6 +58,7 @@
 #include "s_sndseq.h"
 #include "r_data/sprites.h"
 #include "network/packetarchive.h"
+#include "features/federated-server-registry/computation/listingproof_compute.h" // [rc4l] zx::ListingProof, header-pure
 #include <list>
 #include <queue>
 
@@ -766,6 +767,13 @@ void		SERVER_SERVERREGISTRY_Broadcast( void );
 void		SERVER_SERVERREGISTRY_SendServerInfo( NETADDRESS_s Address, ULONG ulFlags, ULONG ulTime, ULONG ulFlags2, bool bBroadcasting, bool bSegmentedResponse );
 const char	*SERVER_SERVERREGISTRY_GetGameName( void );
 bool SERVER_SERVERREGISTRY_IsAddress( const NETADDRESS_s &Address );
+// [rc4l] What the registry itself has told us about this server's visibility, per family. The only
+// honest answer available on the hosting machine; see listingproof_compute.h for why nothing local
+// counts. `bIPv6` false asks about the IPv4 listing.
+zx::ListingProof SERVER_SERVERREGISTRY_GetListingProof( bool bIPv6 );
+// [rc4l] False when the registry has no AAAA record, in which case an absent IPv6 listing is
+// expected rather than broken.
+bool SERVER_SERVERREGISTRY_HasV6Registry( void );
 void		SERVER_SERVERREGISTRY_HandleVerificationRequest( BYTESTREAM_s *pByteStream );
 
 // [rc4l] Send a packet at a joiner who cannot reach us, so our own router will accept the
