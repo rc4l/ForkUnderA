@@ -31,7 +31,18 @@
 // better?" a question anyone can answer in one console command rather than a rebuild.
 EXTERN_CVAR (Int, cl_maxdecals)
 
-CVAR(Bool, fua_projdecals, true, CVAR_ARCHIVE)
+// [rc4l] Which of the three ways a mark can be drawn is in use.
+//
+//   0  the glued quad Doom has always drawn, captured into the mesh as four vertices. GL draws this
+//      shape too, so it is the only mode where the two renderers agree exactly.
+//   1  cut out of the geometry inside the mark's box, on the CPU, at the moment it is made.
+//   2  drawn as the box itself and resolved per FRAGMENT against the depth and normal the world
+//      already wrote -- no clipping, no slices, no per-piece alpha.
+//
+// All three at once, switchable in the console, because "is this better?" is a question about one
+// frame and answering it by rebuilding is how nine rounds of adjustment happened.
+CVAR(Int, fua_decalmode, 1, CVAR_ARCHIVE)
+
 
 // How square-on a surface must be to the projection to receive any of it. Edge-on surfaces would
 // take a zero-area sliver of infinitely stretched texture.
@@ -121,8 +132,18 @@ struct ProjDecal
 	int                fadeStart;   // tics of full alpha; -1 when this never fades
 	int                fadeTime;
 	float              baseAlpha;
+	float              currentAlpha;   // this frame's, from UpdateProjectedDecals
 
 	TArray<DecalPatch> patches;
+
+	// [rc4l] The box itself, kept whether or not anything was cut out of it.
+	//
+	// The mesh path throws it away once the triangles exist; the deferred path draws it every frame.
+	// Keeping it always means the two modes are the same mark seen two ways, and switching between
+	// them mid-level does not need the marks respawned.
+	DecalBox           box;
+	int                lightLevel;
+
 	FTextureID         pic;
 	int                translation;
 	unsigned int       alphaColor;
@@ -164,6 +185,8 @@ const unsigned kMaxVertsPerPatch   = 96;
 int g_capBit = 0;
 
 inline float Dot3(const float a[3], const float b[3]) { return a[0]*b[0] + a[1]*b[1] + a[2]*b[2]; }
+
+void StoreDecal(const ProjDecal &incoming);
 
 // ---------------------------------------------------------------------------------------------
 // Gathering the geometry a box could possibly touch
@@ -485,6 +508,8 @@ void ClearImpactContext()
 
 namespace {
 
+void StoreDecal(const ProjDecal &incoming);
+
 // [rc4l] Cut a mark out of the world and keep it. The one place a projection is built.
 //
 // `surfN` is the surface that stopped the projectile, which answers the two questions the direction
@@ -574,6 +599,8 @@ void BuildProjection(const MarkStyle &style, DBaseDecal *owner, int fadeStart, i
 	decal.sortX = box.origin[0];
 	decal.sortY = box.origin[2];
 	decal.sortZ = box.origin[1];
+	decal.box = box;
+	decal.lightLevel = 255;
 
 	// [rc4l] Where the picture stops being the picture and starts being reach.
 	//
@@ -585,6 +612,14 @@ void BuildProjection(const MarkStyle &style, DBaseDecal *owner, int fadeStart, i
 	int bandCount = (int)fua_projdecal_bands;
 	if (bandCount < 1) bandCount = 1;
 	if (bandCount > 8) bandCount = 8;
+
+	if (fua_decalmode == 2)
+	{
+		// Nothing to cut. The box is the mark, and the pixel stage decides what is inside it -- so
+		// the whole gather, clip, slice and emit below is work this mode does not do at all.
+		StoreDecal(decal);
+		return;
+	}
 
 	float localBuf[64 * 3];
 	float bandBuf[72 * 3];
@@ -673,15 +708,20 @@ void BuildProjection(const MarkStyle &style, DBaseDecal *owner, int fadeStart, i
 	}
 
 	if (decal.patches.Size() == 0) return;
-	g_decals.Push(decal);
+	StoreDecal(decal);
+}
 
-	// [rc4l] Retire the oldest ownerless mark once there are too many.
-	//
-	// The ones with an owner are already limited: cl_maxdecals recycles the engine's decals and each
-	// takes its projection with it. A floor scorch has no owner and nothing to recycle it, so without
-	// this a long session accumulates them until the level ends -- permanent geometry, growing, that
-	// the frame has to walk every time. The same cvar sets the limit, because it is the same
-	// question the player was answering when they set it.
+// [rc4l] Keep a mark, and retire the oldest ownerless one once there are too many.
+//
+// The ones with an owner are already limited: cl_maxdecals recycles the engine's decals and each
+// takes its projection with it. A floor scorch has no owner and nothing to recycle it, so without
+// this a long session accumulates them until the level ends -- growing, and walked every frame. The
+// same cvar sets the limit, because it is the same question the player was answering when they set
+// it.
+void StoreDecal(const ProjDecal &incoming)
+{
+	g_decals.Push(incoming);
+
 	if (cl_maxdecals > 0)
 	{
 		unsigned ownerless = 0;
@@ -703,7 +743,7 @@ void SpawnProjectedDecal(DBaseDecal *owner, const FDecalTemplate *tpl,
                          fixed_t x, fixed_t y, fixed_t z, line_t *hitLine)
 {
 	(void)tpl;
-	if (!fua_projdecals || owner == NULL) return;
+	if (fua_decalmode == 0 || owner == NULL) return;
 
 	float surfN[3];
 	NormalFromLine(hitLine, surfN);
@@ -727,7 +767,7 @@ namespace {
 void SpawnFromTemplate(const FDecalTemplate *tpl, fixed_t x, fixed_t y, fixed_t z,
                        const float surfaceNormal[3], float advance)
 {
-	if (!fua_projdecals || tpl == NULL) return;
+	if (fua_decalmode == 0 || tpl == NULL) return;
 
 	MarkStyle style;
 	style.pic = tpl->PicNum;
@@ -808,14 +848,17 @@ void ForgetProjectedDecal(DBaseDecal *owner)
 	}
 }
 
-void RegisterProjectedDecals()
+// [rc4l] Age every mark by one frame, and drop the ones that are over.
+//
+// Separate from drawing them, because it has to happen in every mode: the deferred path emits no
+// geometry at all, and if the ageing lived inside the emitter then switching to it would leave every
+// transient mark in the level frozen at the alpha it had when the mode changed.
+void UpdateProjectedDecals()
 {
-	if (!fua_projdecals) return;
-
 	for (unsigned i = 0; i < g_decals.Size(); )
 	{
 		ProjDecal &d = g_decals[i];
-		float alpha;
+		d.currentAlpha = 0.f;
 
 		if (d.owner != NULL)
 		{
@@ -823,32 +866,46 @@ void RegisterProjectedDecals()
 			// and an earlier version that copied the fade curve instead ran a glow at two thirds
 			// brightness the instant it appeared and had it gone while the engine still had a
 			// second of it left. Beside GL that reads as "the glow is dimmer in Vulkan".
-			if (d.owner->RenderFlags & RF_INVISIBLE) { i++; continue; }
-			alpha = FIXED2FLOAT(d.owner->Alpha);
-		}
-		else
-		{
-			// Nothing else is going to fade this one. Full alpha until the decay starts, then down
-			// to nothing over the decay time -- the fader's own curve, from its own numbers.
-			alpha = d.baseAlpha;
-			if (d.fadeStart >= 0)
-			{
-				const int age = gametic - d.spawnTic;
-				if (age >= d.fadeStart)
-				{
-					const int into = age - d.fadeStart;
-					if (d.fadeTime <= 0 || into >= d.fadeTime)
-					{
-						// Over. Drop it rather than draw nothing forever.
-						g_decals.Delete(i);
-						continue;
-					}
-					alpha *= 1.f - (float)into / (float)d.fadeTime;
-				}
-			}
+			if (!(d.owner->RenderFlags & RF_INVISIBLE)) d.currentAlpha = FIXED2FLOAT(d.owner->Alpha);
+			i++;
+			continue;
 		}
 
+		// Nothing else is going to fade this one. Full alpha until the decay starts, then down to
+		// nothing over the decay time -- the fader's own curve, from its own numbers.
+		float alpha = d.baseAlpha;
+		if (d.fadeStart >= 0)
+		{
+			const int age = gametic - d.spawnTic;
+			if (age >= d.fadeStart)
+			{
+				const int into = age - d.fadeStart;
+				if (d.fadeTime <= 0 || into >= d.fadeTime)
+				{
+					// Over. Drop it rather than draw nothing forever.
+					g_decals.Delete(i);
+					continue;
+				}
+				alpha *= 1.f - (float)into / (float)d.fadeTime;
+			}
+		}
+		d.currentAlpha = alpha;
 		i++;
+	}
+}
+
+void RegisterProjectedDecals()
+{
+	UpdateProjectedDecals();
+
+	// Only the mesh mode has geometry to emit. Mode 2 draws its boxes in the backend instead, and
+	// mode 0 has no projections at all.
+	if (fua_decalmode != 1) return;
+
+	for (unsigned i = 0; i < g_decals.Size(); i++)
+	{
+		ProjDecal &d = g_decals[i];
+		const float alpha = d.currentAlpha;
 		if (alpha <= 0.f) continue;
 
 		FTexture *texture = TexMan[d.pic];
@@ -876,6 +933,77 @@ void ClearProjectedDecals()
 	ClearImpactContext();
 }
 
+namespace {
+TArray<GpuDecal> g_gpuDecals;
+}
+
+// [rc4l] The live marks, described for the backend, rebuilt each frame.
+//
+// Rebuilt rather than kept in step, because the only thing that changes per frame is the alpha and
+// there is no bookkeeping cheaper than reading it. Marks are listed in the order they were made,
+// which is the order they must be drawn in: a decal template creates its LOWER decal first, so
+// arrival order says scorch and then the glow that belongs on top of it.
+int GetProjectedDecalsGpu(const GpuDecal **out)
+{
+	g_gpuDecals.Clear();
+
+	for (unsigned i = 0; i < g_decals.Size(); i++)
+	{
+		const ProjDecal &d = g_decals[i];
+		const float alpha = d.currentAlpha;
+		if (alpha <= 0.004f) continue;
+
+		FTexture *texture = TexMan[d.pic];
+		if (texture == NULL) continue;
+		FMaterial *mat = FMaterial::ValidateTexture(texture, true);
+		if (mat == NULL) continue;
+
+		GpuDecal g;
+		// Into MESH space: (x, z-up, y). Doing it here keeps the shader free of the convention.
+		const DecalBox &b = d.box;
+		g.centre[0] = b.origin[0]; g.centre[1] = b.origin[2]; g.centre[2] = b.origin[1];
+		// Divided by the half-extent, so the box test in the shader is a comparison against one.
+		const float iw = (b.halfW > 0.001f) ? 1.f / b.halfW : 0.f;
+		const float ih = (b.halfH > 0.001f) ? 1.f / b.halfH : 0.f;
+		g.right[0] = b.right[0]*iw; g.right[1] = b.right[2]*iw; g.right[2] = b.right[1]*iw;
+		g.up[0]    = b.up[0]*ih;    g.up[1]    = b.up[2]*ih;    g.up[2]    = b.up[1]*ih;
+		g.axis[0]  = b.axis[0];     g.axis[1]  = b.axis[2];     g.axis[2]  = b.axis[1];
+		g.halfW = b.halfW; g.halfH = b.halfH;
+		g.near_ = b.near_; g.far_ = b.far_;
+
+		// [rc4l] A shaded decal's texture is an alpha MASK and its colour is its own AlphaColor. Sampled
+		// as an ordinary image the red channel reads as brightness and a black burn paints white.
+		g.redToAlpha = d.redToAlpha;
+		g.additive = d.additive;
+		g.fullbright = d.fullbright;
+		if (d.redToAlpha)
+		{
+			g.r = ((d.alphaColor >> 16) & 0xff) / 255.f;
+			g.g = ((d.alphaColor >> 8) & 0xff) / 255.f;
+			g.b = (d.alphaColor & 0xff) / 255.f;
+		}
+		else
+		{
+			g.r = g.g = g.b = 1.f;
+		}
+		g.a = alpha;
+		g.material = mat;
+
+		if (fua_projdecal_debug)
+		{
+			Printf("gpudecal %u: half %.1f x %.1f  depth -%.1f..+%.1f  axis (%.2f, %.2f, %.2f)  "
+				"alpha %.2f  %s  %s  mat %p\n",
+				i, g.halfW, g.halfH, g.near_, g.far_, g.axis[0], g.axis[1], g.axis[2], g.a,
+				g.redToAlpha ? "red-as-alpha" : "colour", g.additive ? "additive" : "blended", mat);
+		}
+
+		g_gpuDecals.Push(g);
+	}
+
+	if (out) *out = g_gpuDecals.Size() ? &g_gpuDecals[0] : NULL;
+	return (int)g_gpuDecals.Size();
+}
+
 int GetProjectedDecalTruncations() { return g_capBit; }
 
 void GetProjectedDecalStats(int &decals, int &triangles)
@@ -889,10 +1017,22 @@ void GetProjectedDecalStats(int &decals, int &triangles)
 
 }} // namespace zx::levelmesh
 
+namespace zx { namespace hwrender {
+void GetDeferredDecalStats(int &boxes, int &draws, int &textures, int &slots, const char **bail);
+}}
+
 CCMD(fua_projdecals_stats)
 {
 	int decals = 0, tris = 0;
 	zx::levelmesh::GetProjectedDecalStats(decals, tris);
+	{
+		int boxes = 0, draws = 0, textures = 0, slots = 0;
+		(void)slots;
+		const char *bail = "";
+		zx::hwrender::GetDeferredDecalStats(boxes, draws, textures, slots, &bail);
+		Printf("deferred pass: %d boxes in %d draws, %d textures%s%s\n",
+			boxes, draws, textures, (bail && *bail) ? ", stopped: " : "", (bail && *bail) ? bail : "");
+	}
 	Printf("projected decals: %d live, %d triangles, %d truncated by the surface cap\n",
 		decals, tris, zx::levelmesh::GetProjectedDecalTruncations());
 }
