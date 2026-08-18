@@ -96,6 +96,13 @@ port and had never once arrived on any build; a registry named by an IPv6 addres
 the list without a word; grouping and its collision guard had never run. None of those produce an
 error message, which is precisely why a machine has to check them.
 
+### The v6-only client
+
+The last assertion takes the client's IPv4 address away and restarts it. That case exists because the
+bug it guards against is invisible on any machine we own: the client resolved its registry with an
+IPv4-only lookup, so a player with no IPv4 reached no registry and saw an empty browser with no
+error. Every developer machine is dual-stack, so nothing short of removing the address finds it.
+
 ## The matrix
 
 | host NAT | what a pass means |
