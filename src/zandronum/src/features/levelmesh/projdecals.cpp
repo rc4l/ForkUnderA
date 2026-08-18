@@ -30,9 +30,16 @@
 // constants met. The same arithmetic per fragment costs less and has no seams to get wrong.
 CVAR(Int, fua_decalmode, 1, CVAR_ARCHIVE)
 
-// The most oblique a mark is allowed to be, as the cosine of the angle off head-on. A projectile
-// arriving nearly parallel to a wall would otherwise smear a mark the length of the corridor.
-CVAR(Float, fua_projdecal_maxskew, 0.35f, CVAR_ARCHIVE)
+// [rc4l] The most oblique a mark is allowed to be, as the cosine of the angle off head-on.
+//
+// This is the stretch knob, and the cheapest one: a planar projection lands its picture on the
+// surface stretched by 1/cos, so capping the tilt caps the stretch -- 0.7 is 45 degrees and 1.41x,
+// where the old 0.35 was 70 degrees and 2.9x, which is a visible smear. It costs nothing else,
+// because the projection stays a single plane and so stays continuous across a corner.
+//
+// 1.0 removes the tilt altogether: every mark lands square-on, perfectly round, and the direction
+// the shot came from stops showing in the picture.
+CVAR(Float, fua_projdecal_maxskew, 0.7f, CVAR_ARCHIVE)
 
 // [rc4l] How far the box reaches BEHIND the contact point, as a fraction of the picture's size.
 //
