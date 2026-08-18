@@ -180,6 +180,13 @@ EXTERN_CVAR(Int, fua_decalmode)
 // 0 leaves every surface at full strength; 1 is the plain cosine.
 CVAR(Float, fua_decal_anglefade, 0.65f, CVAR_ARCHIVE)
 
+// [rc4l] The shape of the volume that decides what a mark covers.
+//
+// 0 a box, 1 a hemisphere about the contact point. The hemisphere has no planes to cut a straight
+// edge with, which is the failure mode the box kept producing, and it needs one radius where the
+// box needs four numbers. Both are here because the only honest comparison is the same frame.
+CVAR(Bool, fua_decal_hemisphere, true, CVAR_ARCHIVE)
+
 namespace zx { namespace hwrender {
 
 Diligent::IRenderDevice  *GetDevice();
@@ -848,8 +855,31 @@ static const char *kDeferredDecalPS =
 	"    float u = dot(rel, vAxisU);\n"
 	"    float v = dot(rel, vAxisV);\n"
 	"    float w = dot(rel, vAxisN);\n"
+	/* The picture is always read by PLANAR projection along the travel axis -- that is what keeps a
+	   mark looking like the graphic the artist drew. A sphere has no parameterisation that suits a
+	   flat scorch: lat/long about the axis distorts a square picture and puts a pole exactly where
+	   the mark is densest, and "angle around the axis, distance along the surface" is the creep model
+	   that failed. The volume decides WHERE the picture applies; it does not decide how it is read. */
 	"    if (abs(u) > 1.0 || abs(v) > 1.0) discard;\n"
-	"    if (w < -vParams.x || w > vParams.y) discard;\n"
+	/* [rc4l] Which VOLUME says what is inside the mark. uDecalDebug.w picks it.
+	
+	   0 is a box: two slabs across the picture and one through its depth. Every hard-edged artefact
+	   this pass has ever produced was one of those depth planes cutting the mark -- a wedge of scorch
+	   beside a corner, a straight edge across open floor -- because a plane that cuts geometry cuts
+	   the picture with it.
+	
+	   1 is a HEMISPHERE about the contact point, opening back towards the shooter. A sphere has no
+	   planes, so it cannot cut a straight edge into anything; the reach is the same in every
+	   direction, which is what a blast is; and one radius replaces near, far, slant and spread. The
+	   forward tolerance is small but not zero -- the surface that was hit sits at w just past zero
+	   and has to be inside its own mark. */
+	"    float r = length(rel);\n"
+	"    if (uDecalDebug.w > 0.5) {\n"
+	"        if (r > vParams.z) discard;\n"
+	"        if (w > vParams.y) discard;\n"
+	"    } else {\n"
+	"        if (w < -vParams.x || w > vParams.y) discard;\n"
+	"    }\n"
 	/* [rc4l] The surface's EXACT normal, out of the G-buffer. Estimating it from four depth taps was
 	   wrong in every place that mattered: across a silhouette it straddled two surfaces, on a
 	   two-pixel sliver there was no neighbourhood to sample, and at a grazing angle it was a
@@ -891,7 +921,6 @@ static const char *kDeferredDecalPS =
 	/* The picture's own corner radius, recovered from the axes: they arrive divided by their
 	   half-extents, so the length of one is the reciprocal of the other. Cheaper than another
 	   slot in the record, and it cannot fall out of step with the axes it is derived from. */
-	"    float r = length(rel);\n"
 	"    float hw = 1.0 / max(length(vAxisU), 1e-6);\n"
 	"    float hh = 1.0 / max(length(vAxisV), 1e-6);\n"
 	"    float inner = sqrt(hw*hw + hh*hh);\n"
@@ -3993,7 +4022,7 @@ static void DrawDeferredDecals(Diligent::IDeviceContext *ctx)
 		cb[16] = (float)fua_dg_decaldebug;
 		cb[17] = (float)fua_decal_anglefade;
 		cb[18] = (float)fua_dg_decalslot0;
-		cb[19] = 0.f;
+		cb[19] = fua_decal_hemisphere ? 1.f : 0.f;
 	}
 
 	// [rc4l] Every graphic this frame needs, gathered into ONE array the shader indexes per mark.
