@@ -58,6 +58,8 @@
 #include "features/federated-server-registry/computation/reachcookie_compute.h"
 // [rc4l] Whether same-identity listings really are one server, or a collision to refuse.
 #include "features/federated-server-registry/computation/servergroup_compute.h"
+// [rc4l] Whether a claim destroys the cookie, which differs by what it is claimed for.
+#include "features/federated-server-registry/computation/cookieclaim_compute.h"
 #include <sstream>
 #include <map>
 #include <set>
@@ -388,7 +390,8 @@ std::string SERVERREGISTRY_IssueReachCookie( const NETADDRESS_s &Address )
 // Not consuming is safe here because of what the cookie proves: that whoever holds it receives mail
 // at that address. That fact does not get less true with reuse, and it stays bounded by the rate
 // limit (kMaxPunchesPerWindow) and by expiry.
-bool SERVERREGISTRY_ClaimReachCookie( const NETADDRESS_s &Address, const std::string &Cookie, bool bConsume )
+bool SERVERREGISTRY_ClaimReachCookie( const NETADDRESS_s &Address, const std::string &Cookie,
+	zx::CookiePurpose Purpose )
 {
 	ExpireReachCookies( g_lCurrentTime );
 
@@ -399,14 +402,16 @@ bool SERVERREGISTRY_ClaimReachCookie( const NETADDRESS_s &Address, const std::st
 	{
 		if ( g_ReachCookies[i].Address.Compare( Address ) && ( g_ReachCookies[i].Cookie == Cookie ))
 		{
-			if ( bConsume )
+			const zx::CookieClaim Claim = zx::DecideCookieClaim( true, Purpose );
+
+			if ( Claim.consume )
 				g_ReachCookies.erase( g_ReachCookies.begin() + i );
 
-			return true;
+			return Claim.accepted;
 		}
 	}
 
-	return false;
+	return zx::DecideCookieClaim( false, Purpose ).accepted;
 }
 
 //*****************************************************************************
@@ -905,7 +910,7 @@ void SERVERREGISTRY_ParseCommands( BYTESTREAM_s *pByteStream )
 			// Second leg. The echo proves the sender is really at this address, because the cookie
 			// only ever went there.
 			// Consumed: one cookie, one probe, so a replay cannot turn this into a packet cannon.
-			if ( SERVERREGISTRY_ClaimReachCookie( AddressFrom, cookie, true ) == false )
+			if ( SERVERREGISTRY_ClaimReachCookie( AddressFrom, cookie, zx::CookiePurpose::ReachProbe ) == false )
 				return;
 
 			// A port of zero, or one we would not dial, is not worth a packet.
@@ -968,7 +973,7 @@ void SERVERREGISTRY_ParseCommands( BYTESTREAM_s *pByteStream )
 
 			// NOT consumed. A launcher refreshing its list asks about several servers at once and was
 			// handed the same cookie for each, so consuming it refused every punch after the first.
-			const bool bProven = SERVERREGISTRY_ClaimReachCookie( AddressFrom, cookie, false );
+			const bool bProven = SERVERREGISTRY_ClaimReachCookie( AddressFrom, cookie, zx::CookiePurpose::Punch );
 
 			// Find the server, if we know it at all. A malformed or unknown address simply fails to
 			// match, which lands on the same refusal as anything else we have not verified.
