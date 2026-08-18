@@ -151,11 +151,15 @@ for _ in $(seq 1 20); do
 done
 [ "$listed" = "1" ] || fail "the host never became listed -- its announce is not reaching the registry"
 
-# (b) ...and is NOT verified, because nothing can reach back in. This asserts the NAT is doing its
-#     job AND that our own diagnostic tells the truth about it rather than flattering the host.
-say "[2/4] host is listed but NOT reachable (the NAT is real)..."
+# (b) ...and must NOT claim to be reachable, because nothing here can prove that.
+#
+# This assertion has already earned its place. It used to fail, and the diagnostic was wrong rather
+# than the lab: the registry's verification reply travels back through the NAT mapping the announce
+# opened, so it arrives however closed the port is to everyone else, and reporting that as "reachable"
+# told players behind an unforwarded router that strangers could join them.
+say "[2/4] host does not claim reachability it cannot prove..."
 if fua host rpc net.hostdiag | grep -q '"reachable": *true'; then
-    fail "the host reports reachable from behind a NAT with no forward -- either the fixture leaks or hostdiag lies"
+    fail "the host claims reachable from behind a NAT with no forward -- nothing available to it can support that claim"
 fi
 
 # (c) The client finds the server through the registry, not by LAN broadcast (they share no LAN).

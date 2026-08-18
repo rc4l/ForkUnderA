@@ -53,7 +53,7 @@ const USAGE = `fuactl <command>
   renderer-info --port P [--token T]   renderer identity + whether GL timer queries work on this driver
   ui <action> [args] --port P [--token T]   drive the UI: read (menu as text), find <label>, nav <keys>, click <x> <y>, drag, type <text>, look --yaw D --pitch D, screenshot [name], exec <ccmd>
   browser --port P [--token T] [--wait S] [--expect-lan] [--expect-country XXX]   refresh the server browser and report what it sees (LAN vs registry, country)
-  hostdiag --port P [--token T] [--wait S] [--expect-reachable]                   ask the registry whether THIS server is reachable from outside (per family)
+  hostdiag --port P [--token T] [--wait S] [--expect-listed]           ask the registry whether THIS server is reachable from outside (per family)
   mcp                                run as an MCP stdio server for agents
 `;
 
@@ -310,23 +310,27 @@ async function main() {
       //
       // --wait polls, because verification arrives on the registry's schedule (announce every 30s),
       // so the honest answer to "is it reachable" is simply not available in the first second.
-      if (!flags.port) { console.error("usage: fuactl hostdiag --port P [--token T] [--wait S] [--expect-reachable]"); process.exit(2); }
+      if (!flags.port) { console.error("usage: fuactl hostdiag --port P [--token T] [--wait S] [--expect-listed]"); process.exit(2); }
       const waitS = flags.wait != null ? Number(flags.wait) : 0;
       const c = new BridgeClient();
       await c.connect(Number(flags.port), { token: flags.token || null });
       await c.waitHello();
       let diag = await c.rpc("net.hostdiag");
       const deadline = Date.now() + waitS * 1000;
-      while (!diag.reachable && Date.now() < deadline) {
+      while (!diag.registryReplied && Date.now() < deadline) {
         await new Promise((r) => setTimeout(r, 2000));
         diag = await c.rpc("net.hostdiag");
       }
       c.close();
       console.log(JSON.stringify(diag, null, 2));
       if (!diag.hosting) console.error("note: not hosting, so there is nothing to be listed as");
-      else if (diag.reachable) console.error("reachable from outside; if it is missing from your OWN browser that is hairpin NAT, not a fault");
-      if (flags["expect-reachable"] && !diag.reachable) {
-        console.error("FAIL: expected the registry to have verified this server, it has not");
+      else if (diag.registryReplied) {
+        // Deliberately not "you are reachable". The registry's reply comes back through the mapping
+        // this server's own announce opened, so it arrives from behind a closed port too.
+        console.error("the registry is listing this server and can talk to it; that is NOT proof players can join");
+      }
+      if (flags["expect-listed"] && !diag.registryReplied) {
+        console.error("FAIL: expected the registry to be answering this server, it is not");
         process.exit(1);
       }
       break;

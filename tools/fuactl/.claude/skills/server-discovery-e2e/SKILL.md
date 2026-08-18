@@ -47,19 +47,26 @@ from the address itself. `country` blank with `flag` set is normal and correct.
 ## Is the host itself reachable? Ask the host, not the browser
 
 ```sh
-node src/cli.mjs hostdiag --port <hostPort> --token <hostToken> --wait 60 --expect-reachable
+node src/cli.mjs hostdiag --port <hostPort> --token <hostToken> --wait 60 --expect-listed
 ```
 
 This is a different question from `browser`, and the browser genuinely cannot answer it: a host's
 own public row is **fabricated** from its LAN row so the list does not flicker, and the ping on it
 is a loopback. The row lights up whether or not anybody outside could reach you.
 
-`hostdiag` reports the registry's own testimony instead — it sends an unsolicited verification from
-outside, and our answering it is the proof. Fields: `reachable` (the one that matters), per-family
-`families.ipv4` / `families.ipv6` each with a `state` token, and `hairpinSuspected`.
+`hostdiag` reports the registry's own testimony instead: `registryReplied` (the registry is listing
+this server and can talk to it) plus per-family `families.ipv4` / `families.ipv6`, each with a
+`state` token.
 
-Use `--wait`: verification arrives on the 30-second announce cycle, so an unverified reading in the
-first seconds means "not yet", not "broken".
+**`reachable` is deliberately `null`, and do not report it as anything else.** The registry's
+verification reply travels back through the NAT mapping the server's own announce opened, so it
+arrives even from behind a completely closed port. It proves a mapping, not reachability. An earlier
+version of this claimed `true` there and told players behind unforwarded routers that strangers
+could join them; the NAT lab caught it. Proving reachability needs a probe from a source the server
+never sent to, which does not exist yet.
+
+Use `--wait`: the registry answers on the 30-second announce cycle, so a silent reading in the first
+seconds means "not yet", not "broken".
 
 ## Known limit worth stating in any report
 
@@ -68,9 +75,10 @@ a client on the same machine, even though the LAN entry appears immediately. Ann
 30-second cycle and are silent on success, so absence in the list is not evidence the announce
 failed.
 
-Do not report that as a failure, and do not report it as inconclusive either — run `hostdiag`,
-which answers it directly. If it says `reachable`, the server is fine and its absence from the local
-browser is the host's router declining to hairpin; say that rather than "could not verify".
+Run `hostdiag`, which at least separates "the announce never got out" from "the registry has us".
+What it cannot tell you is whether a stranger could join — say so plainly rather than upgrading
+`registryReplied` into a reachability claim. The only proof available today is somebody outside the
+network actually joining, which is what `tools/natlab` automates.
 
 **IPv6 caveat as of 2026-08:** the deployed registry `registry.cantstopscrolling.net` has an A
 record only. The engine resolves the registry's AAAA itself before sending the second announce, so

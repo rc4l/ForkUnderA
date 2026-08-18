@@ -1547,18 +1547,27 @@ CCMD( fua_hostdiag )
 	const bool bAnyVerified = ( SERVER_SERVERREGISTRY_GetListingProof( false ).state == zx::ListingState::ListedVerified )
 		|| ( SERVER_SERVERREGISTRY_GetListingProof( true ).state == zx::ListingState::ListedVerified );
 
+	// [rc4l] Deliberately does NOT say "other people can reach this server", which is what this used
+	// to say and could not support. The registry's reply travels back through the NAT mapping our own
+	// announce opened, so it arrives whether or not the port is open to anyone else -- the registry's
+	// own source says as much where it sends the packet. Saying otherwise told players behind an
+	// unforwarded router that strangers could join them.
 	if ( bAnyVerified )
 	{
-		Printf( TEXTCOLOR_GREEN "  Other people can reach this server." TEXTCOLOR_NORMAL "\n" );
-		Printf( "  If it is missing from your OWN browser, that is your router refusing to send your\n"
-			"  public address back to your own network (hairpin NAT). It is not a fault in the server\n"
-			"  and players outside your network are unaffected. Join it by its LAN address.\n" );
+		Printf( TEXTCOLOR_GREEN "  The registry is listing this server and can talk to it." TEXTCOLOR_NORMAL "\n" );
+		Printf( "  That is not proof players can join: the registry's reply comes back through the\n"
+			"  connection this server opened to it, so it arrives even from behind a closed port.\n"
+			"  To be sure, have somebody outside your network join, or forward UDP %d.\n",
+			NETWORK_GetLocalPort( ));
+		Printf( "  If the server is missing from your OWN browser but others can join it, that is your\n"
+			"  router refusing to send your public address back to your own network (hairpin NAT).\n"
+			"  Join it by its LAN address.\n" );
 	}
 	else
 	{
-		Printf( TEXTCOLOR_YELLOW "  Not confirmed reachable." TEXTCOLOR_NORMAL " If this persists past a minute, the port is not\n"
-			"  reaching this machine: forward UDP %d, or let the host panel try UPnP.\n",
-			NETWORK_GetLocalPort( ));
+		Printf( TEXTCOLOR_YELLOW "  The registry has not answered this server yet." TEXTCOLOR_NORMAL " If that persists past a\n"
+			"  minute, the announce is not getting out: check sv_fua_serverregistry_announce and\n"
+			"  fua_serverregistry_host.\n" );
 	}
 }
 
