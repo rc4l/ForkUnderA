@@ -15,6 +15,7 @@
 #include "gl/textures/gl_material.h"   // FMaterial::TextureWidth, for the plane UV transform
 #include "gl/utility/gl_convert.h"      // ANGLE_TO_FLOAT
 #include "tarray.h"
+#include "gl/renderer/gl_renderstate.h"   // gl_RenderState.GetDynLight, for the sprite light fold
 
 // [rc4l] Print every new flat-mesh key. See RegisterFlatSubsector: a key that misses when it should
 // have hit is a surface about to be stored, and drawn, twice.
@@ -312,14 +313,36 @@ void RegisterSprite(const GLSprite &spr)
 	mp.range.offset = 0;
 	mp.range.count = 0;
 	mp.material = spr.gltexture;
-	// [rc4l] GLSprite has no light index -- sprite lighting is folded into its vertex colour by
-	// gl_SetDynSpriteLight before the draw, so it is already in colorR/G/B.
+	// [rc4l] GLSprite has no light index. Its dynamic light is computed per actor on the CPU and
+	// folded into the vertex colour below -- see the fold after CaptureShading, which is what makes
+	// that true. It was asserted here before it was done, and sprites went dark when the shader
+	// stopped adding lights for them on the strength of this comment.
 	mp.dynLightIndex = -1;
 	mp.lightLevel = spr.lightlevel;
 	mp.lightColor = spr.Colormap.LightColor.d;
 	mp.fadeColor = spr.Colormap.FadeColor.d;
 	// GLSprite::Draw's own `rel`: fullbright sprites take no extra light.
 	CaptureShading(spr.lightlevel, spr.fullbright ? 0 : getExtraLight(), spr.Colormap, mp);
+
+	// [rc4l] The dynamic light GL worked out for this actor, folded in here.
+	//
+	// gl_SetDynSpriteLight runs just before this and leaves its answer in the render state, where
+	// main.fp picks it up as a uniform and ADDS it after the vertex colour. CaptureShading reads
+	// only gl_SetColor, so the captured colour is the sector light and nothing else -- a sprite
+	// standing in a green pool came out grey while GL drew it green.
+	//
+	// Taking it from the render state rather than walking the light list again is the whole point:
+	// that function has already applied gl_light_sprites, and DONTLIGHTSELF, which is why an item is
+	// not lit by the glow it carries itself. A shader loop over every light in the level knows none
+	// of that, and lit each armor bonus with its own light until it was stopped.
+	if (!spr.fullbright)
+	{
+		float dyn[3] = { 0.f, 0.f, 0.f };
+		gl_RenderState.GetDynLight(dyn[0], dyn[1], dyn[2]);
+		mp.colorR = (mp.colorR + dyn[0] > 1.f) ? 1.f : mp.colorR + dyn[0];
+		mp.colorG = (mp.colorG + dyn[1] > 1.f) ? 1.f : mp.colorG + dyn[1];
+		mp.colorB = (mp.colorB + dyn[2] > 1.f) ? 1.f : mp.colorB + dyn[2];
+	}
 
 	// [rc4l] Classify the render style into the handful of blends a backend actually needs.
 	//
