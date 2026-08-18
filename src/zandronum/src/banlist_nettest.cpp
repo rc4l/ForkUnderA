@@ -259,3 +259,47 @@ TEST(BanList, AnUnterminatedBracketDoesNotEatTheRestOfTheFile)
 
 	EXPECT_TRUE( list.isIPInList( Addr( "1.2.3.4" ))) << "the line after a malformed one must still load";
 }
+
+TEST(BanList, TheAsteriskSpellingWorksInTheBanFileToo)
+{
+	// "2001:db8:*" is the notation the v4 list already taught people, and a v6 group is 16 bits, so
+	// two groups then a star is a /32. Worth asserting HERE and not only in the compute unit: the
+	// file has its own tokenizer, and this spelling contains neither a slash nor a length.
+	BanFile file( "[2001:db8:*]:by star\n" );
+	IPList list;
+	ASSERT_TRUE( list.clearAndLoadFromFile( file.path( )));
+	ASSERT_EQ( 1u, list.size( ));
+
+	EXPECT_TRUE( list.isIPInList( Addr( "[2001:db8:dead::1]" )));
+	EXPECT_FALSE( list.isIPInList( Addr( "[2001:db9::1]" )));
+}
+
+TEST(BanList, AStarRuleIsSavedAsASlashRuleAndStillMeansTheSame)
+{
+	// One spelling on disk, so a reader never has to handle two. The rule must not widen or narrow on
+	// the way through.
+	BanFile file( "" );
+	std::string message;
+	IPList list;
+	ASSERT_TRUE( list.clearAndLoadFromFile( file.path( )));
+	list.addEntry( "2001:db8:*", NULL, NULL, message, 0 );
+
+	EXPECT_NE( std::string::npos, file.readBack( ).find( "[2001:db8::/32]" )) << "wrote: " << file.readBack( );
+
+	IPList reloaded;
+	ASSERT_TRUE( reloaded.clearAndLoadFromFile( file.path( )));
+	EXPECT_TRUE( reloaded.isIPInList( Addr( "[2001:db8:1::1]" )));
+	EXPECT_FALSE( reloaded.isIPInList( Addr( "[2001:db9::1]" )));
+}
+
+TEST(BanList, ABareAsteriskIsNotAcceptedAsAV6Rule)
+{
+	// It would mean everybody. The v4 list spells that "*.*.*.*" and means every v4 address; there is
+	// no v6 equivalent by accident.
+	BanFile file( "[*]\n1.2.3.4\n" );
+	IPList list;
+	ASSERT_TRUE( list.clearAndLoadFromFile( file.path( )));
+
+	EXPECT_FALSE( list.isIPInList( Addr( "[2001:db8::1]" )));
+	EXPECT_TRUE( list.isIPInList( Addr( "1.2.3.4" )));
+}
