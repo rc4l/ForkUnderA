@@ -35,6 +35,7 @@
 #include "mcp_simtrace.h"
 #include "features/server-browser/browser.h"
 #include "network.h"
+#include "sv_main.h" // [rc4l] SERVER_SERVERREGISTRY_GetListingProof, for net.hostdiag
 #include "mcp_sample.h"
 #include "textures/textures.h"
 #include "features/damage-tint/damagetint.h"
@@ -134,6 +135,23 @@ namespace
 
 	std::string I( long long v ) { return std::to_string( v ); }
 	std::string B( bool v )      { return v ? "true" : "false"; }
+
+	// A stable token per listing state, so a test can match on the state rather than on the English
+	// sentence DescribeListing returns -- that sentence is written for a player reading a console and
+	// is free to be reworded.
+	const char *HostDiagStateToken( zx::ListingState state )
+	{
+		switch ( state )
+		{
+		case zx::ListingState::NeverAnnounced:   return "never_announced";
+		case zx::ListingState::AwaitingAnswer:   return "awaiting_answer";
+		case zx::ListingState::Refused:          return "refused";
+		case zx::ListingState::ListedUnverified: return "listed_unverified";
+		case zx::ListingState::ListedVerified:   return "listed_verified";
+		case zx::ListingState::ListedStale:      return "listed_stale";
+		}
+		return "unknown";
+	}
 
 	bool InLevel() { return gamestate == GS_LEVEL; }
 
@@ -363,7 +381,7 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 	{
 		SendOk( id, "{\"commands\":["
 			"\"ping\",\"capabilities\",\"console.exec\","
-			"\"sim.tic\",\"sim.hash\",\"sim.seed\",\"sim.pause\",\"sim.resume\",\"sim.step\",\"sim.cheatat\",\"sim.pauseat\",\"browser.refresh\",\"browser.list\",\"sim.rngdump\",\"sim.trace\","
+			"\"sim.tic\",\"sim.hash\",\"sim.seed\",\"sim.pause\",\"sim.resume\",\"sim.step\",\"sim.cheatat\",\"sim.pauseat\",\"browser.refresh\",\"browser.list\",\"net.hostdiag\",\"sim.rngdump\",\"sim.trace\","
 			"\"sim.snapshot\",\"sim.restore\",\"state.player\",\"state.actors\",\"input.event\",\"input.axis\",\"input.look\","
 			"\"perf.capture\",\"perf.ticprof\",\"perf.counters\",\"net.bandwidth\",\"gl.timers\",\"renderer.info\","
 			"\"world.sectors\",\"player.setpos\""
@@ -502,6 +520,56 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 			++n;
 		}
 		body += "],\"count\":" + I( n ) + "}";
+		SendOk( id, body );
+	}
+	else if ( cmd == "net.hostdiag" )
+	{
+		// The registry's own testimony about whether this server is reachable, per family.
+		//
+		// This is the machine-readable half of the fua_hostdiag console command, and it exists so a
+		// reachability check can be ASSERTED on rather than eyeballed: browser.list cannot answer it,
+		// because a host's own public row is fabricated from its LAN row and lights up either way.
+		// The field that matters is `reachable` -- it is true only because something outside this
+		// machine reached in.
+		std::string body = "{\"hosting\":" + B( NETWORK_GetState() == NETSTATE_SERVER );
+		body += ",\"port\":" + I( (long long)NETWORK_GetLocalPort() );
+
+		bool reachable = false;
+		if ( NETWORK_GetState() == NETSTATE_SERVER )
+		{
+			body += ",\"families\":{";
+			for ( int fam = 0; fam < 2; ++fam )
+			{
+				const zx::ListingProof proof = SERVER_SERVERREGISTRY_GetListingProof( fam == 1 );
+				const bool verified = ( proof.state == zx::ListingState::ListedVerified );
+				const bool possible = ( fam == 0 ) || SERVER_SERVERREGISTRY_HasV6Registry();
+				reachable = reachable || verified;
+
+				std::string describe;
+				JsonEscape( std::string( zx::DescribeListing( proof.state ) ), describe );
+
+				body += std::string( fam ? ",\"ipv6\":{" : "\"ipv4\":{" );
+				// `possible` false means this family has nowhere to announce TO (the registry has no
+				// AAAA record), so an absent listing is expected. Without it a caller reads a
+				// permanently unverified v6 family as a fault and chases a bug that is not there.
+				body += "\"possible\":" + B( possible );
+				body += ",\"state\":\"" + std::string( HostDiagStateToken( proof.state ) ) + "\"";
+				body += ",\"verified\":" + B( verified );
+				body += ",\"secondsSinceVerified\":" + I( proof.secondsSinceVerified );
+				// Nothing to attend to when the family was never possible: that state is expected, and
+				// flagging it makes a report contradict its own `possible` field.
+				body += ",\"needsAttention\":" + B( possible && zx::ListingNeedsAttention( proof.state ) );
+				body += ",\"describe\":\"" + describe + "\"}";
+			}
+			body += "}";
+		}
+
+		body += ",\"reachable\":" + B( reachable );
+		// [rc4l] Reachable from outside, so if the host cannot see its own server the fault is the
+		// host's router declining to hairpin -- not the server, and not the registry. Naming it here
+		// is the entire point of the command: that case and a genuinely dead forward look identical
+		// on the browser screen.
+		body += ",\"hairpinSuspected\":" + B( reachable ) + "}";
 		SendOk( id, body );
 	}
 	else if ( cmd == "sim.pauseat" )

@@ -78,6 +78,7 @@
 #include "features/server-hosting/zx_hosting.h" // [rc4l] tell the game that started us we are reachable
 #include "features/server-hosting/computation/punchbroker_compute.h" // [rc4l] how many punches, and when
 #include "features/federated-server-registry/computation/lanbroadcast_compute.h" // [rc4l] LAN subnet broadcast
+#include "features/federated-server-registry/computation/listingproof_compute.h" // [rc4l] is anyone outside seeing us
 
 // [rc4l] Its own switch, not `developer`, so turning on LAN tracing does not also unleash every other
 // subsystem's developer chatter. Off by default; when on, the server logs each announce it sends and
@@ -145,9 +146,27 @@ static bool server_registry_ResolveV6( const char *pszHost, NETADDRESS_s &Out )
 	if (( getaddrinfo( szName, NULL, &hints, &pResult ) != 0 ) || ( pResult == NULL ))
 		return false;
 
-	Out.LoadFromSocketAddress( *pResult->ai_addr );
+	// [rc4l] REFUSE A V4-MAPPED ANSWER. Asking for AF_INET6 does not mean you get IPv6: with no AAAA
+	// record, macOS (and glibc under AI_V4MAPPED) hands back ::ffff:a.b.c.d, which resolves fine,
+	// compares fine, and sends fine -- as IPv4, down the dual-stack socket, to the address we already
+	// announced to a line earlier.
+	//
+	// So the failure was silent and doubly wrong: every dual-stack host announced twice over v4, and
+	// the second "IPv6" listing could never be answered on v6 because it was never on v6. Caught by
+	// fua_hostdiag reporting a v6 listing stuck at AwaitingAnswer forever against a registry that has
+	// no AAAA record at all.
+	bool bIsRealV6 = false;
+	if ( pResult->ai_addr->sa_family == AF_INET6 )
+	{
+		const struct sockaddr_in6 *pAddr6 = reinterpret_cast<const struct sockaddr_in6 *>( pResult->ai_addr );
+		bIsRealV6 = ( IN6_IS_ADDR_V4MAPPED( &pAddr6->sin6_addr ) == 0 );
+	}
+
+	if ( bIsRealV6 )
+		Out.LoadFromSocketAddress( *pResult->ai_addr );
+
 	freeaddrinfo( pResult );
-	return true;
+	return bIsRealV6;
 }
 
 // Message buffer for sending messages to the server registry.
@@ -730,6 +749,76 @@ static void server_registry_TickPunches( void );
 
 //*****************************************************************************
 //
+// [rc4l] What the registry has actually told us, so "is my server visible to anyone else?" has an
+// answer on the hosting machine.
+//
+// DecideListingProof already owns the verdict and explains at length why nothing local counts as
+// evidence. This is only the evidence it decides from, so every field here is something that
+// HAPPENED to us, never something we concluded.
+//
+// Per family, because a dual-stack host is two listings to the registry and the interesting failure
+// is asymmetric: the v4 announce goes out and is never verified (carrier NAT), while the v6 one is.
+// One merged verdict would average those into a shrug, which is the one answer nobody can act on.
+struct RegistryEvidence_t
+{
+	bool			bAnnounceSent;		// we got an announce onto the wire
+	bool			bAnswerReceived;	// the registry has spoken to us at all
+	bool			bVerified;			// it reached us from outside, unprompted
+	unsigned int	ulMsVerified;		// when, by I_MSTime
+
+	RegistryEvidence_t( ) : bAnnounceSent( false ), bAnswerReceived( false ), bVerified( false ),
+		ulMsVerified( 0 ) { }
+};
+
+static RegistryEvidence_t g_RegistryEvidence[2];	// [0] IPv4, [1] IPv6
+
+static RegistryEvidence_t &server_registry_Evidence( bool bIPv6 )
+{
+	return g_RegistryEvidence[bIPv6 ? 1 : 0];
+}
+
+// [rc4l] How long a verification still means something.
+//
+// Generous on purpose, and the reason is a property of the registry rather than a guess: it verifies
+// a server ONCE, when it adds it, and does not ask again while the heartbeats keep coming. So the age
+// of a verification on a healthy long-running server grows without bound and says nothing bad. What a
+// short window would do is turn every server that has been up for an hour amber, which trains people
+// to ignore the light -- the exact failure the staleness rule exists to prevent. A server that stops
+// heartbeating is dropped after 60s and re-verified when it comes back, so a genuinely broken
+// forward still loses its green the next time it matters.
+#define SERVERREGISTRY_VERIFICATION_STALE_MS	( 15 * 60 * 1000 )
+
+//*****************************************************************************
+//
+// [rc4l] Whether an IPv6 announce is even possible: it needs the registry to have an AAAA record.
+// Without one there is nothing to announce TO, so a v6 listing that never appears is the expected
+// outcome rather than a fault, and a report that cannot say so reads as a permanent failure.
+bool SERVER_SERVERREGISTRY_HasV6Registry( void )
+{
+	return g_bServerRegistryV6Valid;
+}
+
+//*****************************************************************************
+//
+// [rc4l] The one honest answer to "can other people see my server", per family.
+zx::ListingProof SERVER_SERVERREGISTRY_GetListingProof( bool bIPv6 )
+{
+	const RegistryEvidence_t &evidence = server_registry_Evidence( bIPv6 );
+
+	const int iMsSinceVerified = evidence.bVerified
+		? static_cast<int>( I_MSTime( ) - evidence.ulMsVerified ) : -1;
+
+	// [rc4l] `listed` is the registry having spoken to us at all, because it only ever talks to
+	// servers it is holding -- a packet from it IS the listing. There is deliberately no "you are
+	// listed" message in the protocol to wait for, so inventing one to feel more certain here would
+	// just mean reporting NeverAnnounced forever.
+	return zx::DecideListingProof( evidence.bAnnounceSent, evidence.bAnswerReceived,
+		evidence.bAnswerReceived, evidence.bVerified, iMsSinceVerified,
+		SERVERREGISTRY_VERIFICATION_STALE_MS );
+}
+
+//*****************************************************************************
+//
 void SERVER_SERVERREGISTRY_Tick( void )
 {
 	while (( g_lStoredQueryIPHead != g_lStoredQueryIPTail ) && ( gametic >= g_StoredQueryIPs[g_lStoredQueryIPHead].lNextAllowedGametic ))
@@ -782,6 +871,7 @@ void SERVER_SERVERREGISTRY_Tick( void )
 
 	// Send the server registry our packet.
 	NETWORK_LaunchPacket( &g_ServerRegistryBuffer, g_AddressServerRegistry );
+	server_registry_Evidence( false ).bAnnounceSent = true;
 
 	// [rc4l] And the same announce over IPv6, when the registry has an AAAA record and our socket
 	// can speak v6. The registry keys a server on the address the announce ARRIVES from, so this is
@@ -796,6 +886,7 @@ void SERVER_SERVERREGISTRY_Tick( void )
 			g_AddressServerRegistryV6.SetPort( g_AddressServerRegistry.usPort );
 
 		NETWORK_LaunchPacket( &g_ServerRegistryBuffer, g_AddressServerRegistryV6 );
+		server_registry_Evidence( true ).bAnnounceSent = true;
 	}
 }
 
@@ -1237,6 +1328,12 @@ static void server_registry_TickPunches( void )
 // which is why this becomes an entry the tick walks rather than a loop here.
 void SERVER_SERVERREGISTRY_HandlePunchRequest( BYTESTREAM_s *pByteStream )
 {
+	// [rc4l] Being asked to punch is itself proof the registry is holding us: it only instructs
+	// servers on its list. Not proof of REACHABILITY though -- that is what the verification is, and
+	// this deliberately does not touch bVerified. A server can be brokering punches all day precisely
+	// because nobody can reach it directly.
+	server_registry_Evidence( NETWORK_GetFromAddress( ).bIsIPv6 ).bAnswerReceived = true;
+
 	const char *pszTarget = pByteStream->ReadString();
 	if (( pszTarget == NULL ) || ( pszTarget[0] == 0 ))
 		return;
@@ -1301,6 +1398,17 @@ void SERVER_SERVERREGISTRY_HandleVerificationRequest( BYTESTREAM_s *pByteStream 
 	// So a game that started us learns its answer as a side effect of the listing it already wanted,
 	// with no probe to write and no service to depend on.
 	zx::HostChildAnnounceReachable( );
+
+	// [rc4l] And the same proof, kept per family and with its age, for fua_hostdiag to report. The
+	// family of the SENDER is the family that was verified: the registry answers an announce on the
+	// address it arrived from, so a v6 verification is proof about the v6 listing and says nothing
+	// whatever about the v4 one.
+	{
+		RegistryEvidence_t &evidence = server_registry_Evidence( NETWORK_GetFromAddress( ).bIsIPv6 );
+		evidence.bAnswerReceived = true;
+		evidence.bVerified = true;
+		evidence.ulMsVerified = I_MSTime( );
+	}
 
 	g_ServerRegistryBuffer.Clear();
 	g_ServerRegistryBuffer.ByteStream.WriteLong( SERVER_SERVERREGISTRY_VERIFICATION );
@@ -1369,6 +1477,89 @@ CCMD( fua_landiag )
 	Printf( "  sv_broadcast:        %s\n", sv_broadcast ? "on" : "off" );
 	if ( g_LocalAddress.bIsIPv6 || ( g_LocalAddress.abIP[0] == 127 ))
 		Printf( TEXTCOLOR_YELLOW "  note: local address is loopback/v6 -- other machines on the LAN will not see this server.\n" );
+}
+
+//*****************************************************************************
+//
+// [rc4l] The companion to fua_landiag, for the failure people actually report: "my server shows up
+// on LAN but not in the public list".
+//
+// That report is two different bugs wearing one description, and they need opposite advice:
+//
+//   1. The server really is unreachable. The announce goes out, the registry cannot get back in, and
+//      nobody anywhere can join. The evidence is a listing that never becomes verified.
+//   2. The server is fine and the HOST cannot see it, because their own router will not send their
+//      public address back to their own LAN (hairpin NAT). Everyone else sees it normally.
+//
+// Nothing on the browser screen tells these apart -- listingproof_compute.h explains why the public
+// row is fabricated from the LAN row and the ping on it is a loopback -- so a host stares at a row
+// that looks alive and concludes the registry is broken. This prints the registry's own testimony
+// instead, per family, and names hairpin explicitly when the evidence says the server is fine.
+static void server_registry_PrintFamilyDiag( const char *pszLabel, bool bIPv6, bool bPossible,
+	const char *pszImpossibleReason )
+{
+	if ( bPossible == false )
+	{
+		Printf( "  %-6s %s\n", pszLabel, pszImpossibleReason );
+		return;
+	}
+
+	const zx::ListingProof Proof = SERVER_SERVERREGISTRY_GetListingProof( bIPv6 );
+	const char *pszColor = zx::ListingNeedsAttention( Proof.state ) ? TEXTCOLOR_YELLOW : TEXTCOLOR_GREEN;
+
+	if ( Proof.secondsSinceVerified >= 0 )
+	{
+		Printf( "  %-6s %s%s" TEXTCOLOR_NORMAL " (last verified %ds ago)\n", pszLabel, pszColor,
+			zx::DescribeListing( Proof.state ), Proof.secondsSinceVerified );
+	}
+	else
+	{
+		Printf( "  %-6s %s%s" TEXTCOLOR_NORMAL "\n", pszLabel, pszColor,
+			zx::DescribeListing( Proof.state ));
+	}
+}
+
+CCMD( fua_hostdiag )
+{
+	Printf( "Public listing diagnostics:\n" );
+
+	if ( NETWORK_GetState( ) != NETSTATE_SERVER )
+	{
+		Printf( TEXTCOLOR_YELLOW "  not hosting -- there is nothing to announce. Start a server first.\n" );
+		return;
+	}
+
+	if ( sv_fua_serverregistry_announce == false )
+	{
+		Printf( TEXTCOLOR_YELLOW "  sv_fua_serverregistry_announce is off -- this server is deliberately unlisted.\n" );
+		return;
+	}
+
+	Printf( "  registry:   %s\n", *fua_serverregistry_host );
+
+	server_registry_PrintFamilyDiag( "IPv4:", false, true, "" );
+	server_registry_PrintFamilyDiag( "IPv6:", true, g_bServerRegistryV6Valid,
+		TEXTCOLOR_YELLOW "the registry has no IPv6 address, so no IPv6 announce is possible." TEXTCOLOR_NORMAL );
+
+	// [rc4l] The whole reason this command exists. Said whenever ANY family is verified, because at
+	// that point the server is provably reachable from outside and the host's own browser is the only
+	// thing claiming otherwise.
+	const bool bAnyVerified = ( SERVER_SERVERREGISTRY_GetListingProof( false ).state == zx::ListingState::ListedVerified )
+		|| ( SERVER_SERVERREGISTRY_GetListingProof( true ).state == zx::ListingState::ListedVerified );
+
+	if ( bAnyVerified )
+	{
+		Printf( TEXTCOLOR_GREEN "  Other people can reach this server." TEXTCOLOR_NORMAL "\n" );
+		Printf( "  If it is missing from your OWN browser, that is your router refusing to send your\n"
+			"  public address back to your own network (hairpin NAT). It is not a fault in the server\n"
+			"  and players outside your network are unaffected. Join it by its LAN address.\n" );
+	}
+	else
+	{
+		Printf( TEXTCOLOR_YELLOW "  Not confirmed reachable." TEXTCOLOR_NORMAL " If this persists past a minute, the port is not\n"
+			"  reaching this machine: forward UDP %d, or let the host panel try UPnP.\n",
+			NETWORK_GetLocalPort( ));
+	}
 }
 
 // Name of this server on launchers.
