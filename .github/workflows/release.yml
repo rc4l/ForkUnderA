@@ -120,6 +120,17 @@ jobs:
   # [rc4l] A clang-tidy job here used to gate publish, holding it ~13 minutes after every other job
   # was green. Deleted in 50d64db.
 
+  # [rc4l] Two players behind two routers must still be able to reach each other. Gated on the same
+  # condition as the suite, and for the same reason: it is a stable-release gate, and an experimental
+  # build exists to get a binary to a tester rather than to prove the network works.
+  #
+  # Multiplayer discovery is the one area where every other signal in this pipeline is silent -- the
+  # code compiles, the units pass, the game boots, and nobody can join. That is why this blocks
+  # publishing rather than reporting.
+  natlab:
+    if: github.ref_type == 'tag' || (inputs.release && github.ref_name == github.event.repository.default_branch)
+    uses: ./.github/workflows/_natlab.yml
+
   # [rc4l] The three platform builds live in _build.yml so test-and-build.yml runs the same ones on PRs.
   build:
     needs: setup
@@ -135,12 +146,13 @@ jobs:
   # experimental builds — without it, a skipped dependency would skip publish too. The build
   # must always have succeeded; the suite must have passed only on the stable path.
   publish:
-    needs: [setup, test, build]
+    needs: [setup, test, natlab, build]
     if: >-
       always()
       && needs.setup.outputs.publish == 'true'
       && needs.build.result == 'success'
       && (needs.setup.outputs.channel == 'experimental' || needs.test.result == 'success')
+      && (needs.setup.outputs.channel == 'experimental' || needs.natlab.result == 'success')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
