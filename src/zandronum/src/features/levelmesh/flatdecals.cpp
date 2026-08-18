@@ -47,8 +47,11 @@ CVAR(Bool, fua_flat_decals, true, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
 // bounding radius has always been the diagonal and a half. Spreading the picture over that reach is
 // what lets the ground get a real share while it stays ONE mark, continuous across the corner.
 //
-// 1.0 is the old behaviour, graphic-sized. Archived so it can be dialled without a rebuild.
-CVAR(Float, fua_decal_spread, 1.5f, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
+// DEFAULT 1.0: the mark is the size of its graphic and nothing is scaled. Growing every mark to feed
+// the ground was the wrong trade -- the wall mark is right as it is, and making it half again bigger
+// everywhere to fix the floor is paying for one surface with every other. Left as a knob because
+// "how far should a blast creep" is worth being able to look at, not because 1.5 is wanted.
+CVAR(Float, fua_decal_spread, 1.0f, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
 
 // The spread, guarded: a zero or negative multiplier would collapse the basis and paint the screen.
 static float DecalSpread()
@@ -525,8 +528,11 @@ int g_lastSettleHit = -1;
 float g_lastSettleDist = 0.f;
 
 static int g_deathLine = 0, g_deathActor = 0, g_deathNeither = 0, g_deathNoGen = 0;
-void NoteMissileDeath(bool hasLine, bool hasTarget, bool hasGenerator)
+double g_lastMissileZ = 0, g_lastMissileFloor = 0;
+void NoteMissileDeath(bool hasLine, bool hasTarget, bool hasGenerator, double z, double floorZ)
 {
+	g_lastMissileZ = z;
+	g_lastMissileFloor = floorZ;
 	if (!hasGenerator) g_deathNoGen++;
 	if (hasLine) g_deathLine++;
 	else if (hasTarget) g_deathActor++;
@@ -829,6 +835,11 @@ void DumpWallDecals()
 		// [rc4l] A missile marks a wall only when it explodes with a blocking LINE. Dying against an
 		// actor, or against neither, leaves nothing -- silently, and only in some places, which is
 		// exactly what a dead zone looks like from in front of an unmarked wall.
+		// [rc4l] Where the blast actually WAS, beside where the mark ended up. A mark centred well
+		// above the impact cannot creep down to a floor however good the creep is -- it has nothing
+		// left by the time it gets there, and that is arithmetic rather than a shader problem.
+		Printf("  last missile died at z %.1f, floor %.1f (%.1f above it)\n",
+			g_lastMissileZ, g_lastMissileFloor, g_lastMissileZ - g_lastMissileFloor);
 		Printf("  missile deaths: %d on a line, %d on an actor, %d on neither, %d with no generator\n",
 			g_deathLine, g_deathActor, g_deathNeither, g_deathNoGen);
 		Printf("  unstuck spawns: %d with a direction, %d without\n",
