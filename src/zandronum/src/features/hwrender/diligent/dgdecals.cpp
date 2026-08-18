@@ -18,6 +18,9 @@
 #include "features/hwrender/diligent/dgshared.h"
 #include "features/levelmesh/projdecals.h"
 
+#include "r_defs.h"                  // sector_t
+#include "r_state.h"                 // sectors, numsectors
+#include "m_fixed.h"                 // FIXED2FLOAT
 #include "c_cvars.h"
 #include "tarray.h"
 #include "templates.h"
@@ -79,8 +82,18 @@ static const char *kDeferredDecalVS =
 	"layout(binding = 0) uniform Constants { mat4 uMVP; vec4 uCameraPos; vec4 uLightParams; vec4 uClipPlane; vec4 uScreen; vec4 uSkyColor; };\n"
 	/* One record per mark: where it landed, which way its picture is turned, how far it reaches,
 	   what to paint, and which texture to paint it with. */
-	"struct DecalRec { vec4 centre; vec4 axisU; vec4 axisV; vec4 axisN; vec4 color; vec4 params; };\n"
+	"struct DecalRec { vec4 centre; vec4 axisU; vec4 axisV; vec4 axisN; vec4 color; vec4 params; vec4 anchor; };\n"
 	"layout(std430, binding = 9) readonly buffer Decals { DecalRec decals[]; };\n"
+	/* [rc4l] Every sector's floor and ceiling height, refreshed once a frame.
+
+	   A projected mark is cut from geometry, which is what lets it mark a floor and also why it does
+	   not follow one: hold a fixed world height and a mark on a lift stays behind as the lift rises.
+	   So a mark stores an OFFSET from a named plane and reads the plane's height here.
+
+	   Read on the GPU rather than folded in by the CPU so the cost follows the number of SECTORS,
+	   not the number of marks: the decal records stop changing once made, and only this small table
+	   is rewritten. Ten thousand marks cost the same as ten. */ \
+	"layout(std430, binding = 10) readonly buffer Planes { vec4 planes[]; };\n"
 	"layout(location = 0) out vec3 vCentre;\n"
 	"layout(location = 1) out vec3 vAxisU;\n"
 	"layout(location = 2) out vec3 vAxisV;\n"
@@ -95,7 +108,11 @@ static const char *kDeferredDecalVS =
 	"    vec2(0,0), vec2(1,0), vec2(1,1), vec2(0,0), vec2(1,1), vec2(0,1));\n"
 	"void main() {\n"
 	"    DecalRec d = decals[gl_InstanceIndex];\n"
-	"    vCentre = d.centre.xyz;\n"
+	/* Ride the plane: the stored height is an offset from it, so this is where the mark is NOW. */ \
+	"    vec3 c = d.centre.xyz;\n"
+	"    int aSec = int(d.anchor.x);\n"
+	"    if (aSec >= 0) c.y = planes[aSec][int(d.anchor.y)] + d.anchor.z;\n"
+	"    vCentre = c;\n"
 	"    vAxisU = d.axisU.xyz; vAxisV = d.axisV.xyz; vAxisN = d.axisN.xyz;\n"
 	"    vColor = d.color;\n"
 	"    vParams = d.params;\n"
@@ -109,9 +126,9 @@ static const char *kDeferredDecalVS =
 	/* Inside the box, or straddling the plane through the camera, and there are no honest screen
 	   bounds to compute -- so take the whole screen and let the pixel stage decide. This is the case
 	   that made a box vanish when you stood in it. */
-	"    if (distance(uCameraPos.xyz, d.centre.xyz) < reach * 1.75) whole = true;\n"
+	"    if (distance(uCameraPos.xyz, c) < reach * 1.75) whole = true;\n"
 	"    for (int i = 0; i < 8 && !whole; i++) {\n"
-	"        vec4 cp = uMVP * vec4(d.centre.xyz + kCorner[i] * reach, 1.0);\n"
+	"        vec4 cp = uMVP * vec4(c + kCorner[i] * reach, 1.0);\n"
 	"        if (cp.w <= 0.0001) { whole = true; break; }\n"
 	"        vec2 ndc = cp.xy / cp.w;\n"
 	"        lo = min(lo, ndc); hi = max(hi, ndc);\n"
@@ -273,6 +290,9 @@ struct DeferredDecalInstance
 	float axisN[4];    // xyz unit, the way the projectile was going
 	float color[4];    // rgb tint and alpha, already faded
 	float params[4];   // near, far, run-out radius, red-as-alpha flag
+	// [rc4l] Which sector plane this mark rides: (sector, 0 floor / 1 ceiling, height above it).
+	// sector < 0 means it rides nothing, which is every mark on a wall.
+	float anchor[4];
 };
 
 static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_ddPSO;      // ordinary blend
@@ -281,6 +301,14 @@ static Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding> g_ddSRB;
 static Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding> g_ddAddSRB;
 static Diligent::RefCntAutoPtr<Diligent::IBuffer> g_ddInstBuf;
 static Diligent::IBufferView *g_ddInstSRV = NULL;
+// [rc4l] One record per sector: (floor height, ceiling height, unused, unused).
+//
+// Rewritten once a frame, which is the whole point -- the decal records themselves become static
+// once made, so a mark riding a lift costs nothing per mark. Sized to the level and reallocated
+// only when the level changes.
+static Diligent::RefCntAutoPtr<Diligent::IBuffer> g_ddPlaneBuf;
+static Diligent::IBufferView *g_ddPlaneSRV = NULL;
+static int g_ddPlaneCapacity = 0;
 static unsigned int g_ddCapacity = 0;
 static Diligent::RefCntAutoPtr<Diligent::IBuffer> g_ddCB;
 static int g_ddDrawn = 0, g_ddBoxes = 0, g_ddTextures = 0;
@@ -333,6 +361,24 @@ static bool EnsureDeferredDecalPass()
 		dev->CreateBuffer(bd, nullptr, &g_ddInstBuf);
 		if (!g_ddInstBuf) { g_ddCapacity = 0; g_ddBail = "instance buffer creation failed"; return false; }
 		g_ddInstSRV = g_ddInstBuf->GetDefaultView(Diligent::BUFFER_VIEW_SHADER_RESOURCE);
+	}
+
+	// [rc4l] The plane table, sized to the level.
+	if (!g_ddPlaneBuf || g_ddPlaneCapacity < numsectors)
+	{
+		g_ddPlaneBuf.Release();
+		g_ddPlaneSRV = NULL;
+		g_ddPlaneCapacity = (numsectors > 0) ? numsectors : 1;
+		Diligent::BufferDesc bd;
+		bd.Name = "fua decal sector planes";
+		bd.Size = (Diligent::Uint64)g_ddPlaneCapacity * 16;
+		bd.Usage = Diligent::USAGE_DEFAULT;
+		bd.BindFlags = Diligent::BIND_SHADER_RESOURCE;
+		bd.Mode = Diligent::BUFFER_MODE_STRUCTURED;
+		bd.ElementByteStride = 16;
+		dev->CreateBuffer(bd, nullptr, &g_ddPlaneBuf);
+		if (!g_ddPlaneBuf) { g_ddPlaneCapacity = 0; g_ddBail = "plane buffer creation failed"; return false; }
+		g_ddPlaneSRV = g_ddPlaneBuf->GetDefaultView(Diligent::BUFFER_VIEW_SHADER_RESOURCE);
 	}
 
 	if (!g_ddCB)
@@ -417,6 +463,7 @@ static bool EnsureDeferredDecalPass()
 			if (auto *v = made->GetStaticVariableByName(stage, "Constants")) v->Set(SceneConstantsCB());
 			if (auto *v = made->GetStaticVariableByName(stage, "Decal")) v->Set(g_ddCB);
 			if (auto *v = made->GetStaticVariableByName(stage, "Decals")) v->Set(g_ddInstSRV);
+			if (auto *v = made->GetStaticVariableByName(stage, "Planes")) v->Set(g_ddPlaneSRV);
 		}
 		if (additive) g_ddAddPSO = made; else g_ddPSO = made;
 	}
@@ -516,6 +563,11 @@ void DrawDeferredDecals(Diligent::IDeviceContext *ctx)
 		// Inside the corner radius nothing fades, which is stated in the shader.
 		inst.params[2] = sqrtf(d.halfW*d.halfW + d.halfH*d.halfH) + d.near_;
 		inst.params[3] = d.redToAlpha ? 1.f : 0.f;
+		// [rc4l] The plane this mark rides, straight from the record that made it.
+		inst.anchor[0] = (float)d.anchorSector;
+		inst.anchor[1] = (float)d.anchorPlane;
+		inst.anchor[2] = d.anchorOffset;
+		inst.anchor[3] = 0.f;
 		if (d.additive) { instAdd.Push(inst); matAdd.Push(d.material); }
 		else { instAlpha.Push(inst); matAlpha.Push(d.material); }
 	}
@@ -537,6 +589,28 @@ void DrawDeferredDecals(Diligent::IDeviceContext *ctx)
 	for (unsigned i = 0; i < instAlpha.Size(); i++) { all.Push(instAlpha[i]); matOf.Push(matAlpha[i]); }
 	for (unsigned i = 0; i < instAdd.Size(); i++) { all.Push(instAdd[i]); matOf.Push(matAdd[i]); }
 	if (all.Size() > g_ddCapacity) all.Resize(g_ddCapacity);
+	// [rc4l] Refresh the plane heights. O(sectors), and nothing here depends on how many marks
+	// exist -- which is the reason the anchor is resolved on the GPU rather than folded into every
+	// decal record by the CPU.
+	if (g_ddPlaneBuf && numsectors > 0)
+	{
+		static TArray<float> planeData;
+		planeData.Resize((unsigned)numsectors * 4);
+		for (int si = 0; si < numsectors; si++)
+		{
+			const sector_t &sec = sectors[si];
+			// Sampled at the sector's own centre: a mark stores its offset from the plane AT ITS OWN
+			// POINT, so for a level plane this is exact, and for a sloped one it is off by the slope
+			// across the sector. Slopes that MOVE are the only case that misses, and they are rare.
+			planeData[si*4+0] = FIXED2FLOAT(sec.floorplane.ZatPoint(sec.soundorg[0], sec.soundorg[1]));
+			planeData[si*4+1] = FIXED2FLOAT(sec.ceilingplane.ZatPoint(sec.soundorg[0], sec.soundorg[1]));
+			planeData[si*4+2] = 0.f;
+			planeData[si*4+3] = 0.f;
+		}
+		ctx->UpdateBuffer(g_ddPlaneBuf, 0, (Diligent::Uint64)numsectors * 16, &planeData[0],
+			Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	}
+
 	ctx->UpdateBuffer(g_ddInstBuf, 0, (Diligent::Uint64)all.Size() * sizeof(DeferredDecalInstance),
 		&all[0], Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
