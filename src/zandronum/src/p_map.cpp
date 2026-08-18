@@ -126,6 +126,7 @@ CVAR(Bool, cl_doautoaim, false, CVAR_ARCHIVE)
 
 static void CheckForPushSpecial(line_t *line, int side, AActor *mobj, bool windowcheck);
 static void SpawnShootDecal(AActor *t1, const FTraceResults &trace);
+static void SpawnShootDecalOnFlat(AActor *t1, const FTraceResults &trace);
 static void SpawnDeepSplash(AActor *t1, const FTraceResults &trace, AActor *puff,
 	fixed_t vx, fixed_t vy, fixed_t vz, fixed_t shootz, bool ffloor = false);
 
@@ -4679,36 +4680,50 @@ AActor *P_LineAttack(AActor *t1, angle_t angle, fixed_t distance,
 				return NULL;
 
 			// [RH] Spawn a decal
-			if (trace.HitType == TRACE_HitWall && trace.Line->special != Line_Horizon && !(flags & LAF_NOIMPACTDECAL) && !(puffDefaults->flags7 & MF7_NODECAL))
+			// [rc4l] features/levelmesh: ...and on a FLOOR or CEILING, which this refused outright.
+			//
+			// The test was TRACE_HitWall alone, so no hitscan weapon could mark a flat however it was
+			// aimed -- a chaingun emptied into the ground left it spotless while a rocket scorched it.
+			// Doom itself never marked flats, because a glued quad needs a sidedef and a floor has none;
+			// a projection does not, and the missile path already takes that route from P_ExplodeMissile.
+			// This is the same mark from the other kind of shot.
+			//
+			// Which generator to use is decided ONCE and then dispatched, rather than the branch being
+			// written out twice: the wall arm below is the original chain unchanged, and the flat arm
+			// cannot drift away from it because there is only one copy of the decision.
+			const bool fuaHitWall = ( trace.HitType == TRACE_HitWall && trace.Line->special != Line_Horizon );
+			const bool fuaHitFlat = ( trace.HitType == TRACE_HitFloor || trace.HitType == TRACE_HitCeiling );
+			if ((fuaHitWall || fuaHitFlat) && !(flags & LAF_NOIMPACTDECAL) && !(puffDefaults->flags7 & MF7_NODECAL))
 			{
+				AActor *decalSource;
 				// [TN] If the actor or weapon has a decal defined, use that one.
 				if (t1->DecalGenerator != NULL ||
 					(t1->player != NULL && t1->player->ReadyWeapon != NULL && t1->player->ReadyWeapon->DecalGenerator != NULL))
 				{
 					// [ZK] If puff has FORCEDECAL set, do not use the weapon's decal
 					if (puffDefaults->flags7 & MF7_FORCEDECAL && puff != NULL && puff->DecalGenerator)
-						SpawnShootDecal(puff, trace);
+						decalSource = puff;
 					else
-						SpawnShootDecal(t1, trace);
+						decalSource = t1;
 				}
-
 				// Else, look if the bulletpuff has a decal defined.
 				else if (puff != NULL && puff->DecalGenerator)
 				{
-					SpawnShootDecal(puff, trace);
+					decalSource = puff;
 				}
-
 				// [BB] Clients dont' spawn the puff, so we have to look if the default puff has a decal defined.
 				else if( NETWORK_InClientMode()
 							&& pufftype && (GetDefaultByType (pufftype) != NULL) && GetDefaultByType (pufftype)->DecalGenerator)
 				{
-					SpawnShootDecal (GetDefaultByType (pufftype), trace);
+					decalSource = GetDefaultByType (pufftype);
 				}
-
 				else
 				{
-					SpawnShootDecal(t1, trace);
+					decalSource = t1;
 				}
+
+				if (fuaHitWall) SpawnShootDecal(decalSource, trace);
+				else            SpawnShootDecalOnFlat(decalSource, trace);
 			}
 			else if (puff != NULL &&
 				trace.CrossedWater == NULL &&
@@ -7345,6 +7360,38 @@ void P_CreateSecNodeList(AActor *thing, fixed_t x, fixed_t y)
 //
 //
 //==========================================================================
+// [rc4l] features/levelmesh: the same shot, landing on a floor or a ceiling.
+//
+// Separate from SpawnShootDecal rather than a branch inside it, because that one reaches straight
+// for trace.Line->sidedef and a flat hit has no line at all. It goes to the projected path, which
+// is what can mark a surface with nothing to glue a quad to; SpawnProjectedDecalHere decides for
+// itself whether marks on flats are switched on.
+static void SpawnShootDecalOnFlat(AActor *t1, const FTraceResults &trace)
+{
+	// [BC] Servers don't need to spawn decals.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		return;
+
+	FDecalBase *decalbase = NULL;
+	if (t1->player != NULL && t1->player->ReadyWeapon != NULL)
+		decalbase = t1->player->ReadyWeapon->GetDefault()->DecalGenerator;
+	else
+		decalbase = t1->DecalGenerator;
+	if (decalbase == NULL)
+		return;
+
+	// The direction the shot was travelling, so the mark is laid the way it was fired rather than
+	// square-on. Radius zero: a trace stops exactly on the surface and needs no advancing.
+	zx::levelmesh::SetImpactContext(trace.X - t1->x, trace.Y - t1->y,
+		trace.Z - (t1->z + (t1->height >> 1)), 0);
+	// A floor is seen from above and a ceiling from below, which is the whole of the difference.
+	const float up[3]   = { 0.f, 0.f,  1.f };
+	const float down[3] = { 0.f, 0.f, -1.f };
+	zx::levelmesh::SpawnProjectedDecalHere(decalbase->GetDecal(), trace.X, trace.Y, trace.Z,
+		(trace.HitType == TRACE_HitCeiling) ? down : up);
+	zx::levelmesh::ClearImpactContext();
+}
+
 
 void SpawnShootDecal(AActor *t1, const FTraceResults &trace)
 {
