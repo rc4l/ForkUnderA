@@ -53,7 +53,7 @@ void RegisterDecal(const FFlatVertex *quad, const void *material, int translatio
                    bool shadow, bool additive, float alpha,
                    int lightlevel, int rel, const FColormap &colormap,
                    bool redToAlpha, unsigned int alphaColor,
-                   float sortX, float sortY, float sortZ);
+                   float sortX, float sortY, float sortZ, const float *dynLight);
 
 // [rc4l] The same, for a mark whose shape is not a quad: a projected decal, clipped to whatever
 // geometry it landed on. `tris` is a triangle LIST, so count is a multiple of three.
@@ -61,7 +61,7 @@ void RegisterDecalTriangles(const FFlatVertex *tris, int count, const void *mate
                             bool shadow, bool additive, float alpha,
                             int lightlevel, int rel, const FColormap &colormap,
                             bool redToAlpha, unsigned int alphaColor,
-                            float sortX, float sortY, float sortZ);
+                            float sortX, float sortY, float sortZ, const float *dynLight);
 void ClearSprites();
 int SpritePieceCount();
 

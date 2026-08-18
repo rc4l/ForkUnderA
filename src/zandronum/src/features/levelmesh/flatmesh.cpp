@@ -363,7 +363,7 @@ void RegisterDecal(const FFlatVertex *quad, const void *material, int translatio
                    bool shadow, bool additive, float alpha,
                    int lightlevel, int rel, const FColormap &colormap,
                    bool redToAlpha, unsigned int alphaColor,
-                   float sortX, float sortY, float sortZ)
+                   float sortX, float sortY, float sortZ, const float *dynLight)
 {
 	if (quad == NULL) return;
 
@@ -374,7 +374,7 @@ void RegisterDecal(const FFlatVertex *quad, const void *material, int translatio
 	tris[3] = quad[0]; tris[4] = quad[2]; tris[5] = quad[3];
 
 	RegisterDecalTriangles(tris, 6, material, translation, shadow, additive, alpha,
-		lightlevel, rel, colormap, redToAlpha, alphaColor, sortX, sortY, sortZ);
+		lightlevel, rel, colormap, redToAlpha, alphaColor, sortX, sortY, sortZ, dynLight);
 }
 
 // [rc4l] The same piece, for a mark that is not a quad.
@@ -386,7 +386,7 @@ void RegisterDecalTriangles(const FFlatVertex *tris, int count, const void *mate
                             bool shadow, bool additive, float alpha,
                             int lightlevel, int rel, const FColormap &colormap,
                             bool redToAlpha, unsigned int alphaColor,
-                            float sortX, float sortY, float sortZ)
+                            float sortX, float sortY, float sortZ, const float *dynLight)
 {
 	if (tris == NULL || count < 3 || material == NULL) return;
 
@@ -422,6 +422,27 @@ void RegisterDecalTriangles(const FFlatVertex *tris, int count, const void *mate
 		// so it read as "decals glow" rather than "the wrong shader".
 		if (mp.blendMode == 0) mp.blendMode = 1;
 	}
+	// [rc4l] An ADDITIVE decal is not fogged, because GL does not fog one either.
+	//
+	// GLWall::DrawDecal forces the fog colour to black for the duration of an additive draw and puts
+	// it back afterwards. Additive blending only ever brightens, so fogging one toward the sector's
+	// fade colour tints light that should simply get weaker with distance: in a fogged room a BFG's
+	// glow came out carrying the fog's colour in Vulkan and clean in GL.
+	if (additive) mp.fadeColor = 0;
+
+	// [rc4l] The dynamic light the SHADER would have added, folded in here.
+	//
+	// gl_SetDynSpriteLight hands a decal's dynamic light to GL as a uniform and main.fp ADDS it after
+	// the vertex colour, so a capture that takes the vertex colour alone arrives unlit -- the same
+	// hole the HUD weapon had, where a muzzle flash lit the room and left the weapon dark. Added
+	// after the alpha-mask colour rather than before, because that is the order GL adds it in.
+	if (dynLight != NULL)
+	{
+		mp.colorR = (mp.colorR + dynLight[0] > 1.f) ? 1.f : mp.colorR + dynLight[0];
+		mp.colorG = (mp.colorG + dynLight[1] > 1.f) ? 1.f : mp.colorG + dynLight[1];
+		mp.colorB = (mp.colorB + dynLight[2] > 1.f) ? 1.f : mp.colorB + dynLight[2];
+	}
+
 	mp.sortX = sortX; mp.sortY = sortY; mp.sortZ = sortZ;
 
 	DynAppend(tris, count, mp);

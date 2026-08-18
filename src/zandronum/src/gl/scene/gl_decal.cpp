@@ -299,12 +299,20 @@ void GLWall::DrawDecal(DBaseDecal *decal)
 	}
 
 	// calculate dynamic light effect.
+	// [rc4l] features/levelmesh: whatever this puts in the render state has to travel with the
+	// captured quad. It is a UNIFORM that main.fp adds after the vertex colour, so a capture that
+	// reads the vertex colour alone gets a decal lit by the sector and nothing else -- lit in GL,
+	// flat in the backend, in exactly the rooms where a decal is most visible.
+	float decalDyn[3] = { 0.f, 0.f, 0.f };
+	bool haveDecalDyn = false;
 	if (gl_lights && GLRenderer->mLightCount && !gl_fixedcolormap && gl_light_sprites)
 	{
 		// Note: This should be replaced with proper shader based lighting.
 		fixed_t x, y;
 		decal->GetXY(seg->sidedef, x, y);
 		gl_SetDynSpriteLight(NULL, x, y, zpos, sub);
+		gl_RenderState.GetDynLight(decalDyn[0], decalDyn[1], decalDyn[2]);
+		haveDecalDyn = true;
 	}
 
 	// alpha color only has an effect when using an alpha texture.
@@ -361,7 +369,8 @@ void GLWall::DrawDecal(DBaseDecal *decal)
 			light, rel, p, redAlpha, redAlpha ? (unsigned int)decal->AlphaColor : 0xffffffu,
 			(decalQuad[0].x + decalQuad[3].x) * 0.5f,
 			(decalQuad[0].z + decalQuad[3].z) * 0.5f,
-			(decalQuad[0].y + decalQuad[3].y) * 0.5f);
+			(decalQuad[0].y + decalQuad[3].y) * 0.5f,
+			haveDecalDyn ? decalDyn : NULL);
 	}
 	for (i = 0; i < 4; i++)
 	{
