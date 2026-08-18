@@ -37,6 +37,14 @@ EXTERN_CVAR(Int, fua_decalmode)
 // 0 is the pure projection everything before this was tuned around; 1 keeps the aspect everywhere.
 CVAR(Float, fua_decal_aspect, 0.0f, CVAR_ARCHIVE)
 
+// [rc4l] How square-on a surface must be to receive any of the mark. See the pixel shader.
+//
+// It is the stretch limit as much as the facing test: 1/cos is the stretch, so 0.25 caps it at 4x
+// and refuses anything flatter. Lower lets the mark reach further round a corner and onto a floor,
+// at the price of the streaks that reach brings with it; higher keeps only the surfaces the blast
+// genuinely faced.
+CVAR(Float, fua_decal_minfacing, 0.25f, CVAR_ARCHIVE)
+
 namespace zx { namespace hwrender {
 
 // ---------------------------------------------------------------------------
@@ -164,10 +172,19 @@ static const char *kDeferredDecalPS =
 	"    vec4 gbuf = texture(uSceneNormal, uv);\n"
 	"    if (gbuf.a < 0.5) discard;\n"
 	"    vec3 nrm = normalize(gbuf.xyz * 2.0 - 1.0);\n"
-	/* A surface facing away from the projectile cannot have been sprayed by it. Without this a
-	   pillar prints a second, mirrored copy of the mark on the face nobody shot at. */
+	/* [rc4l] How square-on a surface must be to receive any of the mark, as a cosine.
+	
+	   Two jobs in one number. Below zero a surface faces AWAY from the projectile and cannot have
+	   been sprayed by it -- without that a pillar prints a mirrored copy of the mark on the face
+	   nobody shot at. Above zero it is the STRETCH limit: a planar projection lands its picture on a
+	   surface stretched by 1/cos, so a floor nearly edge-on to a horizontal shot is stretched ten or
+	   twenty times and its texels come out as long straight streaks running away from the corner.
+	
+	   No correction fixes that case -- a surface parallel to the projection has no picture on it to
+	   correct, the mapping is genuinely infinite -- so the only honest answers are to fade it out or
+	   to refuse it. This refuses it. uDecalDebug.y is the cosine; 0.25 is about 75 degrees. */
 	"    float facing = -dot(nrm, vAxisN);\n"
-	"    if (facing < 0.05) discard;\n"
+	"    if (facing < uDecalDebug.y) discard;\n"
 	/* [rc4l] ASPECT CORRECTION, per fragment -- uDecalDebug.w between 0 and 1.
 	
 	   A planar projection lands its picture on a tilted surface stretched by 1/cos: correct for a
@@ -440,7 +457,7 @@ void DrawDeferredDecals(Diligent::IDeviceContext *ctx)
 		Diligent::MapHelper<float> cb(ctx, g_ddCB, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD);
 		for (int i = 0; i < 16; i++) cb[i] = invMVP[i];
 		cb[16] = (float)fua_dg_decaldebug;
-		cb[17] = 0.f;   // was the angle fade; removed
+		cb[17] = (float)fua_decal_minfacing;
 		cb[18] = 0.f;
 		cb[19] = (float)fua_decal_aspect;
 	}
