@@ -1144,6 +1144,49 @@ CCMD( fua_mesh_verify )
 //
 //==========================================================================
 
+//==========================================================================
+//
+// fua_move_sector
+//
+// [rc4l] Move a sector plane, so behaviour that only shows on MOVING geometry can be tested.
+//
+// Lifts and doors are the only things that move a floor or ceiling, and a map that happens to
+// contain neither cannot exercise any of it -- dbab02 has 1652 linedefs and two specials, and
+// doom2 MAP01 has no lift at all. So there was no way to check that a decal rides a floor, that
+// the wall cache notices a plane changing, or that a 3D floor updates, short of finding a map
+// with the right special in the right place and hoping.
+//
+// Moves it directly rather than triggering a special: a special needs a tag, an activation type
+// and a player standing in the right spot, none of which a test wants. This is the state a lift
+// would put the sector in, arrived at in one step.
+//
+//==========================================================================
+
+CCMD( fua_move_sector )
+{
+	if ( sectors == NULL || numsectors <= 0 ) { Printf( "no level loaded.\n" ); return; }
+	if ( argv.argc( ) < 4 )
+	{
+		Printf( "usage: fua_move_sector <index> <floor|ceiling> <delta>\n" );
+		return;
+	}
+	const int idx = atoi( argv[1] );
+	if ( idx < 0 || idx >= numsectors ) { Printf( "sector %d out of range (0..%d)\n", idx, numsectors - 1 ); return; }
+	const bool ceiling = ( argv[2][0] == 'c' || argv[2][0] == 'C' );
+	const fixed_t delta = FLOAT2FIXED( (float)atof( argv[3] ) );
+
+	sector_t *sec = &sectors[idx];
+	const int part = ceiling ? (int)sector_t::ceiling : (int)sector_t::floor;
+	const fixed_t before = sec->GetPlaneTexZ( part );
+	// [rc4l] Both the plane and its texture Z, which is what every reader actually consults --
+	// moving one without the other leaves the surface drawn at the old height.
+	sec->SetPlaneTexZ( part, before + delta );
+	if ( ceiling ) sec->ceilingplane.ChangeHeight( delta );
+	else           sec->floorplane.ChangeHeight( delta );
+	Printf( "fua_move_sector: sector %d %s %.0f -> %.0f\n", idx, ceiling ? "ceiling" : "floor",
+		FIXED2FLOAT( before ), FIXED2FLOAT( sec->GetPlaneTexZ( part ) ) );
+}
+
 CCMD( fua_find_3dfloors )
 {
 	if ( sectors == NULL || numsectors <= 0 ) { Printf( "no level loaded.\n" ); return; }

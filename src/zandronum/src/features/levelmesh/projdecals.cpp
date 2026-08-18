@@ -6,6 +6,8 @@
 #include "features/levelmesh/computation/decalproject_compute.h"
 
 #include "r_defs.h"
+#include "p_local.h"                 // P_PointInSector, for the plane a mark rides
+#include "r_state.h"                 // sectors
 #include "a_sharedglobal.h"          // DBaseDecal
 #include "decallib.h"
 #include "doomstat.h"                // gametic
@@ -117,6 +119,11 @@ struct ProjDecal
 	bool         redToAlpha;
 	bool         additive;
 	bool         fullbright;
+
+	// [rc4l] See GpuDecal: the plane this mark rides, and its height above it.
+	int          anchorSector;
+	int          anchorPlane;
+	float        anchorOffset;
 };
 
 TArray<ProjDecal> g_decals;
@@ -255,6 +262,32 @@ void BuildProjection(const MarkStyle &style, DBaseDecal *owner, int fadeStart, i
 		Printf("projdecal: half %.1f x %.1f  depth -%.1f..+%.1f  axis (%.2f, %.2f, %.2f)  vel %s\n",
 			box.halfW, box.halfH, box.near_, box.far_, axis[0], axis[1], axis[2],
 			g_impact.valid ? "yes" : "none");
+	}
+
+	// [rc4l] Anchor the mark to the plane it landed on, if it landed on one.
+	//
+	// Only a FLAT hit has a plane to ride: the normal is vertical, so the surface is the sector's
+	// floor or ceiling and which one is the sign of that normal. A wall projection is left
+	// unanchored -- there is no single plane under it, and a projection paints whatever its box
+	// finds, so the honest anchor is the surface at the point of impact and nothing else.
+	{
+		decal.anchorSector = -1;
+		decal.anchorPlane = 0;
+		decal.anchorOffset = 0.f;
+		const float upness = surfN[2];
+		if (upness > 0.7f || upness < -0.7f)
+		{
+			sector_t *sec = P_PointInSector(x, y);
+			if (sec != NULL)
+			{
+				const int plane = (upness > 0.f) ? 0 : 1;
+				const fixed_t planeZ = (plane == 0)
+					? sec->floorplane.ZatPoint(x, y) : sec->ceilingplane.ZatPoint(x, y);
+				decal.anchorSector = (int)(sec - sectors);
+				decal.anchorPlane = plane;
+				decal.anchorOffset = FIXED2FLOAT(z) - FIXED2FLOAT(planeZ);
+			}
+		}
 	}
 
 	StoreDecal(decal);
@@ -472,6 +505,9 @@ int GetProjectedDecalsGpu(const GpuDecal **out)
 		g.up[0]    = b.up[0]*ih;    g.up[1]    = b.up[2]*ih;    g.up[2]    = b.up[1]*ih;
 		g.axis[0]  = b.axis[0];     g.axis[1]  = b.axis[2];     g.axis[2]  = b.axis[1];
 		g.halfW = b.halfW; g.halfH = b.halfH;
+		g.anchorSector = d.anchorSector;
+		g.anchorPlane  = d.anchorPlane;
+		g.anchorOffset = d.anchorOffset;
 		g.near_ = b.near_; g.far_ = b.far_;
 
 		// [rc4l] A shaded decal's texture is an alpha MASK and its colour is its own AlphaColor.

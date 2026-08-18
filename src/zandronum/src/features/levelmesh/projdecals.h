@@ -105,6 +105,22 @@ struct GpuDecal
 	float near_, far_;   // how far the box reaches either side of the contact point
 	float r, g, b, a;
 	const void  *material;
+	// [rc4l] What this mark is stuck to, so it can ride a floor that moves.
+	//
+	// A projection is cut from geometry rather than glued to a texture, which is what lets it mark a
+	// floor at all -- and it is also why it does not follow one. Holding a fixed world height, a mark
+	// on a lift stays behind as the lift rises. So the height is stored as an OFFSET from a named
+	// sector plane instead, and the plane's current height is looked up when the mark is drawn.
+	//
+	// The lookup is on the GPU: the shader reads a small per-sector table rather than the CPU
+	// rewriting every decal every frame. That keeps the cost proportional to the number of SECTORS
+	// that moved rather than to the number of marks in the level, so the decal records stop changing
+	// after they are made.
+	//
+	// anchorSector < 0 means no anchor: a mark on a wall, which has no plane to ride.
+	int          anchorSector;
+	int          anchorPlane;    // 0 floor, 1 ceiling
+	float        anchorOffset;   // world height at spawn, minus that plane's height there
 	bool         redToAlpha;
 	bool         additive;
 	bool         fullbright;
