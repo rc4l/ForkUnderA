@@ -147,15 +147,8 @@ static bool server_registry_ResolveV6( const char *pszHost, NETADDRESS_s &Out )
 	if (( getaddrinfo( szName, NULL, &hints, &pResult ) != 0 ) || ( pResult == NULL ))
 		return false;
 
-	// [rc4l] REFUSE A V4-MAPPED ANSWER. Asking for AF_INET6 does not mean you get IPv6: with no AAAA
-	// record, macOS (and glibc under AI_V4MAPPED) hands back ::ffff:a.b.c.d, which resolves fine,
-	// compares fine, and sends fine -- as IPv4, down the dual-stack socket, to the address we already
-	// announced to a line earlier.
-	//
-	// So the failure was silent and doubly wrong: every dual-stack host announced twice over v4, and
-	// the second "IPv6" listing could never be answered on v6 because it was never on v6. Caught by
-	// fua_hostdiag reporting a v6 listing stuck at AwaitingAnswer forever against a registry that has
-	// no AAAA record at all.
+	// [rc4l] Refuse a v4-mapped answer, since asking for AF_INET6 with no AAAA record hands back
+	// ::ffff:a.b.c.d and every dual-stack host would then announce twice over IPv4.
 	bool bIsRealV6 = false;
 	if ( pResult->ai_addr->sa_family == AF_INET6 )
 	{

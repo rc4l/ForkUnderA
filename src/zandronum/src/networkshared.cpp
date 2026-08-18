@@ -1133,8 +1133,7 @@ bool IPFileParser::parseNextLine( FILE *pFile, IPADDRESSBAN_s &IP, ULONG &BanIdx
 	lPosition = 0;
 	szIP[0] = 0;
 
-	// [rc4l] The caller reuses one entry across lines, so a v6 rule read on line 3 would still be
-	// flagged v6 on line 4 and matched against sixteen stale bytes.
+	// [rc4l] The caller reuses one entry across lines, so a stale v6 flag would match stale bytes.
 	IP.bIsV6 = false;
 	IP.iPrefixBits = 0;
 
@@ -1153,15 +1152,8 @@ bool IPFileParser::parseNextLine( FILE *pFile, IPADDRESSBAN_s &IP, ULONG &BanIdx
 
 	while ( 1 )
 	{
-		// [rc4l] A bracketed token is an IPv6 rule, and the brackets are what make it readable at all:
-		// this loop ends an address at ':', which is every second character of a v6 literal, and at
-		// '/', which is how a prefix length is written. Both would cut the address in half.
-		//
-		// Brackets rather than a new file: the format already carries expiry in <> and a reason after
-		// ':', so one more delimiter keeps every existing v4 line byte-identical and needs no
-		// migration. It is also the convention NETADDRESS_s already prints v6 in.
-		//
-		//     [2001:db8::/64]<01/02/2027 15:04>:name:reason
+		// [rc4l] A bracketed token is an IPv6 rule, bracketed because this loop ends an address at
+		// ':' and '/', both of which a v6 prefix is full of.
 		if (( lPosition == 0 ) && ( curChar == '[' ))
 		{
 			curChar = fgetc( pFile );
@@ -1174,9 +1166,8 @@ bool IPFileParser::parseNextLine( FILE *pFile, IPADDRESSBAN_s &IP, ULONG &BanIdx
 				curChar = fgetc( pFile );
 			}
 
-			// Step past the ']' so the loop sees whatever terminator follows it. An unterminated
-			// bracket falls through with curChar already on the newline, and the parse below fails
-			// the line rather than swallowing the rest of the file.
+			// [rc4l] Step past the ']' so the loop sees the terminator, an unterminated bracket
+			// failing its own line rather than the rest of the file.
 			if ( curChar == ']' )
 				curChar = fgetc( pFile );
 			continue;
@@ -1186,10 +1177,7 @@ bool IPFileParser::parseNextLine( FILE *pFile, IPADDRESSBAN_s &IP, ULONG &BanIdx
 		{
 			if ( lPosition > 0 )
 			{
-				// [rc4l] Tried before the v4 forms, because it is the only one that can succeed on a
-				// v6 token: SetFromString truncates at the first colon, which turns "2001:db8::/64"
-				// into "2001" and then rejects it for having no periods -- a silent wrong answer if it
-				// ever got the first look.
+				// [rc4l] Tried before the v4 forms, which would truncate a v6 token at its first colon.
 				if ( zx::ParseV6Prefix( szIP, IP.abPrefix6, &IP.iPrefixBits ))
 				{
 					if ( BanIdx == _listLength )
@@ -1429,9 +1417,7 @@ ULONG IPList::getFirstMatchingEntryIndex( const IPStringArray &szAddress ) const
 {
 	for ( ULONG ulIdx = 0; ulIdx < _ipVector.size(); ulIdx++ )
 	{
-		// [rc4l] Skip v6 rules: they are prefixes and this caller only has four decimal fields, so
-		// there is nothing here that could match one. Without the skip an empty szIP on a v6 entry
-		// would be compared field-wise against a wildcard rule and could match by accident.
+		// [rc4l] Skip v6 rules, or an empty szIP would match a wildcard rule by accident.
 		if ( _ipVector[ulIdx].bIsV6 )
 			continue;
 
@@ -1446,12 +1432,8 @@ ULONG IPList::getFirstMatchingEntryIndex( const IPStringArray &szAddress ) const
 
 //*****************************************************************************
 //
-// [rc4l] The address-shaped entry point, and the one that can answer for both families.
-//
-// It used to flatten straight to IPStringArray, which refuses IPv6 -- so every v6 peer arrived here
-// as a cleared array that matches nothing and was unbannable. That was deliberate and safe (the
-// alternative was flattening them all to 0.0.0.0 and banning strangers together), but it was always
-// meant to be temporary.
+// [rc4l] The entry point that answers for both families, where a v6 peer used to arrive as a cleared
+// array that matched nothing and was therefore unbannable.
 ULONG IPList::getFirstMatchingEntryIndex( const NETADDRESS_s &Address ) const
 {
 	if ( Address.bIsIPv6 )
@@ -1484,8 +1466,7 @@ bool IPList::isIPInList( const IPStringArray &szAddress ) const
 //
 bool IPList::isIPInList( const NETADDRESS_s &Address ) const
 {
-	// Through the address overload, not the string one: that is where the v6 half lives, and going
-	// via IPStringArray would silently drop every v6 peer back to unbannable.
+	// [rc4l] Through the address overload, since the string one drops every v6 peer.
 	return ( getFirstMatchingEntryIndex ( Address ) != size() );
 }
 
@@ -1562,9 +1543,8 @@ std::string IPList::getEntryAsString( const ULONG ulIdx, bool bIncludeComment, b
 		// Address.
 		if ( _ipVector[ulIdx].bIsV6 )
 		{
-			// [rc4l] Bracketed, because this string is written to the ban file AND sent to servers on
-			// the wire, and both are read back by a parser that ends an address at ':'. An unbracketed
-			// v6 rule would be re-read as its first group and silently become a different ban.
+			// [rc4l] Bracketed, or a parser that ends an address at ':' re-reads the rule as its first
+			// group and silently makes it a different ban.
 			char szPrefix[48];
 			if ( zx::FormatV6Prefix( _ipVector[ulIdx].abPrefix6, _ipVector[ulIdx].iPrefixBits, szPrefix, sizeof( szPrefix )))
 				entryStream << "[" << szPrefix << "]";
@@ -1768,10 +1748,8 @@ void IPList::addV6Entry( const unsigned char *prefix, int bits, const char *pszP
 	newIPEntry.tExpirationDate = tExpiration;
 	_ipVector.push_back( newIPEntry );
 
-	// [rc4l] Rewrite rather than append. The v4 path appends one line because it can build that line
-	// from the address it was handed; here the line comes from getEntryAsString, which reads the entry
-	// back out of the vector, so the entry has to be in the vector first. Rewriting is also what keeps
-	// one formatter responsible for every rule on disk.
+	// [rc4l] Rewrite rather than append, since the line comes from getEntryAsString and so the entry
+	// must be in the vector first.
 	if ( rewriteListToFile( ))
 		messageStream << "[" << szPrefix << "] added to \"" << _filename << "\".\n";
 	else
@@ -1870,8 +1848,8 @@ void IPList::removeEntry( const char *pszIPAddress, std::string &Message )
 {
 	IPStringArray szStringBan;
 
-	// [rc4l] The mirror of addEntry's v6 branch. A ban you can add and cannot delete is worse than one
-	// you cannot add: the rule is live and the only way off the list is editing the file by hand.
+	// [rc4l] The mirror of addEntry's v6 branch, because a ban you cannot delete leaves editing the
+	// file by hand as the only way off it.
 	{
 		unsigned char prefix[16];
 		int bits = 0;
