@@ -8,7 +8,6 @@ using zx::AccountNameFromDigest;
 using zx::ClientAuthKeyPath;
 using zx::ClientProofMessage;
 using zx::FromHex;
-using zx::IdentityRootUnder;
 using zx::ServerAuthKeyPath;
 using zx::ServerProofMessage;
 using zx::ToHex;
@@ -115,15 +114,15 @@ TEST(AccountName, ExactlyEnoughDigestIsAccepted)
 TEST(IdentityPaths, TheFirstInstanceGetsThePlainName)
 {
 	// The file a player is told to back up must be the one the documentation names.
-	EXPECT_EQ(std::string(kRoot) + "/identity/client-auth.key", ClientAuthKeyPath(kRoot, 0));
+	EXPECT_EQ(std::string(kRoot) + "/identity/client-account-auth.key", ClientAuthKeyPath(kRoot, 0));
 }
 
 TEST(IdentityPaths, FurtherInstancesAreNumberedFromTwo)
 {
 	// A second client on one machine cannot share the first one's account: the server refuses a
 	// duplicate, because a duplicate normally means somebody has your key.
-	EXPECT_EQ(std::string(kRoot) + "/identity/client-auth.2.key", ClientAuthKeyPath(kRoot, 1));
-	EXPECT_EQ(std::string(kRoot) + "/identity/client-auth.3.key", ClientAuthKeyPath(kRoot, 2));
+	EXPECT_EQ(std::string(kRoot) + "/identity/client-account-auth.2.key", ClientAuthKeyPath(kRoot, 1));
+	EXPECT_EQ(std::string(kRoot) + "/identity/client-account-auth.3.key", ClientAuthKeyPath(kRoot, 2));
 }
 
 TEST(IdentityPaths, ANegativeInstanceIsTheFirstOne)
@@ -135,7 +134,7 @@ TEST(IdentityPaths, TheServerKeyIsOnePerMachine)
 {
 	// One per machine rather than per server, so an operator running several offers one account
 	// namespace across all of them and one shared database.
-	EXPECT_EQ(std::string(kRoot) + "/identity/server-auth.key", ServerAuthKeyPath(kRoot));
+	EXPECT_EQ(std::string(kRoot) + "/identity/server-account-auth.key", ServerAuthKeyPath(kRoot));
 }
 
 TEST(IdentityPaths, ATrailingSeparatorDoesNotDoubleUp)
@@ -195,36 +194,3 @@ TEST(ProofMessage, ADifferentServerIsADifferentMessage)
 	EXPECT_NE(ClientProofMessage("session", "keyA"), ClientProofMessage("session", "keyB"));
 }
 
-// ---------------------------------------------------------------- where the keys live
-
-TEST(IdentityRoot, HangsOffWhateverBaseItIsGiven)
-{
-	EXPECT_EQ("C:/Users/x/AppData/Local/ForkUnderA",
-		IdentityRootUnder("C:/Users/x/AppData/Local"));
-	EXPECT_EQ("/home/x/.config/ForkUnderA", IdentityRootUnder("/home/x/.config"));
-}
-
-TEST(IdentityRoot, ATrailingSeparatorOfEitherKindDoesNotDoubleUp)
-{
-	EXPECT_EQ(IdentityRootUnder("/home/x/.config"), IdentityRootUnder("/home/x/.config/"));
-	EXPECT_EQ(IdentityRootUnder("D:/Games/Fua"), IdentityRootUnder("D:/Games/Fua\\"));
-}
-
-TEST(IdentityRoot, NoBaseMeansNoRoot)
-{
-	// How a caller whose OS would not say where the user's folder is refuses to invent one.
-	EXPECT_EQ("", IdentityRootUnder(""));
-	EXPECT_EQ("", IdentityRootUnder("/"));
-	EXPECT_EQ("", IdentityRootUnder("\\\\"));
-}
-
-TEST(IdentityRoot, TheSameCallNamesTheOldFolderToMigrateFrom)
-{
-	// One function for both, since the old rule was this same append against the config directory.
-	// The migration runs exactly when the two disagree.
-	const std::string current = IdentityRootUnder("C:/Users/x/AppData/Local");
-	const std::string legacy = IdentityRootUnder("D:/Games/Fua");
-
-	EXPECT_NE(current, legacy);
-	EXPECT_EQ("D:/Games/Fua/ForkUnderA", legacy);
-}

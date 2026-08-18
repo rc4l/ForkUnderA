@@ -144,6 +144,48 @@ static	int				g_lServerRegistryAttempts;
 static	LONG			g_lPunchesThisSweep;
 static	const LONG		kMaxPunchesPerSweep = 4;
 
+//*****************************************************************************
+//
+// [rc4l] Addresses that went unanswered, a small ring because this is a hint about which servers need
+// help rather than a database.
+#define MAX_REMEMBERED_UNREACHABLE 32
+static	NETADDRESS_s	g_UnreachableAddresses[MAX_REMEMBERED_UNREACHABLE];
+static	ULONG			g_ulUnreachableNext = 0;
+
+static bool browser_IsKnownUnreachable( const NETADDRESS_s &Address )
+{
+	for ( ULONG ulIdx = 0; ulIdx < MAX_REMEMBERED_UNREACHABLE; ulIdx++ )
+	{
+		if ( g_UnreachableAddresses[ulIdx].usPort == 0 )
+			continue;
+
+		// [rc4l] CompareNoPort, since a punch may have re-aimed the row at the port its NAT opened.
+		if ( g_UnreachableAddresses[ulIdx].CompareNoPort( Address ))
+			return true;
+	}
+
+	return false;
+}
+
+static void browser_RememberUnreachable( const NETADDRESS_s &Address )
+{
+	if ( browser_IsKnownUnreachable( Address ))
+		return;
+
+	g_UnreachableAddresses[g_ulUnreachableNext] = Address;
+	g_ulUnreachableNext = ( g_ulUnreachableNext + 1 ) % MAX_REMEMBERED_UNREACHABLE;
+}
+
+static void browser_ForgetUnreachable( const NETADDRESS_s &Address )
+{
+	// [rc4l] It answered, so spending more punches on it would starve one that still needs them.
+	for ( ULONG ulIdx = 0; ulIdx < MAX_REMEMBERED_UNREACHABLE; ulIdx++ )
+	{
+		if ( g_UnreachableAddresses[ulIdx].CompareNoPort( Address ))
+			g_UnreachableAddresses[ulIdx].Clear( );
+	}
+}
+
 // [rc4l] Four seconds, not the second and a half this started as.
 //
 // A server registry flood-blocks a repeat launcher challenge from the same address for 3 seconds and
@@ -332,7 +374,23 @@ bool BROWSER_IsListable( ULONG ulServer )
 		return ( false );
 
 	const ULONG ulState = g_BrowserServerList[ulServer].ulActiveState;
-	return (( ulState == AS_ACTIVE ) || ( ulState == AS_VERSIONMISMATCH ));
+	if (( ulState != AS_ACTIVE ) && ( ulState != AS_VERSIONMISMATCH ))
+		return ( false );
+
+	// [rc4l] One server, one row, hidden only once the v6 row has ANSWERED so a player with no IPv6
+	// keeps the row they can actually use.
+	if ( g_BrowserServerList[ulServer].bHasGroupPeer && ( g_BrowserServerList[ulServer].Address.bIsIPv6 == false ))
+	{
+		const LONG lPeer = browser_GetListIDByAddress( g_BrowserServerList[ulServer].GroupPeer );
+
+		if (( lPeer >= 0 ) && g_BrowserServerList[lPeer].Address.bIsIPv6
+			&& ( g_BrowserServerList[lPeer].ulActiveState == AS_ACTIVE ))
+		{
+			return ( false );
+		}
+	}
+
+	return ( true );
 }
 
 //*****************************************************************************
@@ -761,6 +819,19 @@ void BROWSER_QueryTick( void )
 		else if ( act.markTimedOut )
 		{
 			g_BrowserServerList[ulIdx].ulActiveState = AS_TIMEDOUT;
+
+			// [rc4l] Remember it, so the next sweep punches before it challenges.
+			if ( g_BrowserServerList[ulIdx].bLAN == false )
+				browser_RememberUnreachable( g_BrowserServerList[ulIdx].Address );
+		}
+
+		// [rc4l] The held-back first challenge, once the punch has had its head start.
+		if ( zx::FirstChallengeDue( g_BrowserServerList[ulIdx].bPunchLed,
+				g_BrowserServerList[ulIdx].bFirstChallengeSent,
+				static_cast<int>( lNow - g_BrowserServerList[ulIdx].lPunchLedMS )))
+		{
+			browser_QueryServer( ulIdx );
+			g_BrowserServerList[ulIdx].bFirstChallengeSent = true;
 		}
 	}
 }
@@ -1040,6 +1111,8 @@ void BROWSER_ClearServerList( void )
 		g_BrowserServerList[ulIdx].bRefreshing = false;
 		g_BrowserServerList[ulIdx].lRefreshMS = 0;
 		g_BrowserServerList[ulIdx].lRecheckMisses = 0;
+		g_BrowserServerList[ulIdx].bHasGroupPeer = false;
+		g_BrowserServerList[ulIdx].GroupPeer.Clear();
 
 		g_BrowserServerList[ulIdx].Address.Clear();
 
@@ -1202,6 +1275,12 @@ void BROWSER_AddServerToList( const NETADDRESS_s &Address )
 			g_BrowserServerList[lExisting].lMSTime = 0;
 			g_BrowserServerList[lExisting].bPunchRequested = false;
 			g_BrowserServerList[lExisting].lPunchResendsSent = 0;
+
+			// [rc4l] The lead state too, or a row that once held a challenge is skipped as
+			// already-led and refused as already-sent, and is never challenged again.
+			g_BrowserServerList[lExisting].bPunchLed = false;
+			g_BrowserServerList[lExisting].bFirstChallengeSent = false;
+			g_BrowserServerList[lExisting].lPunchLedMS = 0;
 		}
 		return;
 	}
@@ -1276,6 +1355,26 @@ bool BROWSER_GetServerList( BYTESTREAM_s *pByteStream )
 					}
 				}
 
+			}
+			break;
+
+		case SRSC_SERVERGROUP:
+			{
+				// [rc4l] Believed only from the registry, since claiming to be somebody else's machine
+				// is how you would hide their row.
+				const int count = pByteStream->ReadByte();
+
+				NETADDRESS_s first;
+				for ( int i = 0; i < count; ++i )
+				{
+					NETADDRESS_s address;
+					address.ReadFromStream( pByteStream );
+
+					if ( i == 0 )
+						first = address;
+					else
+						BROWSER_MarkSameServer( first, address );
+				}
 			}
 			break;
 
@@ -1376,6 +1475,11 @@ void BROWSER_ParseServerQuery( BYTESTREAM_s *pByteStream, bool bLAN )
 
 	// This server is now active.
 	g_BrowserServerList[lServer].ulActiveState = AS_ACTIVE;
+
+	// [rc4l] It answered, so stop treating it as needing a punch ahead of every challenge. Leaving it
+	// remembered would spend the sweep's small budget on a server that is reachable and starve one
+	// that is not.
+	browser_ForgetUnreachable( g_BrowserServerList[lServer].Address );
 
 	// [rc4l] ONE MACHINE, TWO ROWS, ONE ANSWER.
 	//
@@ -1859,6 +1963,10 @@ static void browser_SendServerRegistryQuery( void )
 	g_ServerRegistryBuffer.ByteStream.WriteLong( LAUNCHER_SERVERREGISTRY_CHALLENGE );
 	g_ServerRegistryBuffer.ByteStream.WriteShort( SERVERREGISTRY_VERSION );
 
+	// [rc4l] Say we understand grouping, opt-in because the list is positional and an older client
+	// would read the new opcode as an address.
+	g_ServerRegistryBuffer.ByteStream.WriteByte( 1 );
+
 	for ( unsigned int i = 0; i < g_ServerRegistryAddresses.Size( ); ++i )
 		NETWORK_LaunchPacket( &g_ServerRegistryBuffer, g_ServerRegistryAddresses[i] );
 
@@ -2061,6 +2169,43 @@ bool BROWSER_WaitingForServerRegistryResponse( void )
 
 //*****************************************************************************
 //
+void BROWSER_MarkSameServer( const NETADDRESS_s &First, const NETADDRESS_s &Second )
+{
+	const LONG lFirst = browser_GetListIDByAddress( First );
+	const LONG lSecond = browser_GetListIDByAddress( Second );
+
+	// [rc4l] Both rows must exist, and IsListable re-checks the peer rather than trusting the flag.
+	if (( lFirst < 0 ) || ( lSecond < 0 ) || ( lFirst == lSecond ))
+		return;
+
+	// [rc4l] Both directions, since either row may be asked about first.
+	g_BrowserServerList[lFirst].bHasGroupPeer = true;
+	g_BrowserServerList[lFirst].GroupPeer = Second;
+	g_BrowserServerList[lSecond].bHasGroupPeer = true;
+	g_BrowserServerList[lSecond].GroupPeer = First;
+}
+
+//*****************************************************************************
+//
+void BROWSER_PunchBrokered( void )
+{
+	// [rc4l] Every held row, because the verdict carries no address and a sweep holds at most four.
+	for ( ULONG ulIdx = 0; ulIdx < MAX_BROWSER_SERVERS; ulIdx++ )
+	{
+		if (( g_BrowserServerList[ulIdx].ulActiveState != AS_WAITINGFORREPLY )
+			|| ( g_BrowserServerList[ulIdx].bPunchLed == false )
+			|| g_BrowserServerList[ulIdx].bFirstChallengeSent )
+		{
+			continue;
+		}
+
+		browser_QueryServer( ulIdx );
+		g_BrowserServerList[ulIdx].bFirstChallengeSent = true;
+	}
+}
+
+//*****************************************************************************
+//
 void BROWSER_QueryAllServers( void )
 {
 	ULONG	ulIdx;
@@ -2069,8 +2214,56 @@ void BROWSER_QueryAllServers( void )
 
 	for ( ulIdx = 0; ulIdx < MAX_BROWSER_SERVERS; ulIdx++ )
 	{
-		if ( g_BrowserServerList[ulIdx].ulActiveState == AS_WAITINGFORREPLY )
-			browser_QueryServer( ulIdx );
+		if ( g_BrowserServerList[ulIdx].ulActiveState != AS_WAITINGFORREPLY )
+			continue;
+
+		g_BrowserServerList[ulIdx].bPunchLed = false;
+		g_BrowserServerList[ulIdx].bFirstChallengeSent = false;
+		g_BrowserServerList[ulIdx].lPunchLedMS = 0;
+	}
+
+	// [rc4l] Two passes so the small budget goes to rows known to need a punch before speculative
+	// ones, or the first four rows in the list spend it regardless.
+	for ( int pass = 0; pass < 2; ++pass )
+	{
+		for ( ulIdx = 0; ulIdx < MAX_BROWSER_SERVERS; ulIdx++ )
+		{
+			if (( g_BrowserServerList[ulIdx].ulActiveState != AS_WAITINGFORREPLY )
+				|| g_BrowserServerList[ulIdx].bPunchLed )
+			{
+				continue;
+			}
+
+			const bool bBudget = ( g_lPunchesThisSweep < kMaxPunchesPerSweep );
+			const bool bWant = ( pass == 0 )
+				? zx::ShouldPunchBeforeFirstChallenge( g_BrowserServerList[ulIdx].bLAN,
+					browser_IsKnownUnreachable( g_BrowserServerList[ulIdx].Address ), bBudget )
+				: zx::ShouldPunchOnFirstContact( g_BrowserServerList[ulIdx].bLAN, bBudget );
+
+			if ( bWant == false )
+				continue;
+
+			if ( zx::PunchRequestFor( g_BrowserServerList[ulIdx].Address, true ) == false )
+				continue;
+
+			g_BrowserServerList[ulIdx].bPunchRequested = true;
+			g_BrowserServerList[ulIdx].bPunchLed = true;
+			g_BrowserServerList[ulIdx].lPunchLedMS = I_MSTime( );
+			g_lPunchesThisSweep++;
+		}
+	}
+
+	// [rc4l] Everything that did not lead speaks now, exactly as it always did.
+	for ( ulIdx = 0; ulIdx < MAX_BROWSER_SERVERS; ulIdx++ )
+	{
+		if (( g_BrowserServerList[ulIdx].ulActiveState != AS_WAITINGFORREPLY )
+			|| g_BrowserServerList[ulIdx].bPunchLed )
+		{
+			continue;
+		}
+
+		browser_QueryServer( ulIdx );
+		g_BrowserServerList[ulIdx].bFirstChallengeSent = true;
 	}
 }
 

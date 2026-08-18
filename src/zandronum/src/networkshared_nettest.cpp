@@ -548,3 +548,61 @@ TEST(WireAddress, ComparePortSensitivity) {
     EXPECT_FALSE(a.Compare(b));             // different port -> not equal
     EXPECT_TRUE(a.CompareNoPort(b));        // ... but same host
 }
+
+// --- port byte order, and v4 peers on a v6 socket --------------------------------------------------
+//
+// [rc4l] These exist because of a bug that was invisible to every test we had and could not be seen
+// in the field either.
+//
+// usPort is stored in NETWORK order while SetPort converts INTO network order, so feeding one to the
+// other swapped it twice: the registry's 15300 (0x3bc4) went out as 0xc43b, 50235. Every IPv6
+// announce this engine ever sent went to a port nothing was listening on, and a datagram into the
+// void reports success at the sender and leaves no trace at the receiver.
+//
+// They run on Windows, macOS and Linux in the ordinary test job, which is the point: byte order is
+// exactly where the three platforms are most likely to differ, and none of this needs a network, a
+// firewall or a GPU. The v4-mapped half of the same story is covered by v6mapped_compute, which can
+// hold the byte pattern without dragging socket headers into a shimmed test target.
+
+TEST(AddressPort, APortSurvivesBeingSetAndPrinted) {
+    // The assertion that would have caught it: what you set is what goes out.
+    NETADDRESS_s a{};
+    a.LoadFromString("1.2.3.4");
+    a.SetPort(15300);
+
+    EXPECT_NE(std::string::npos, std::string(a.ToString()).find(":15300"))
+        << "got " << a.ToString() << " -- a doubly byte-swapped 15300 reads as 50235";
+}
+
+TEST(AddressPort, TheStoredFieldIsNetworkOrderSoSetPortMustNotBeFedItBack) {
+    // Pins the trap directly.
+    NETADDRESS_s a{};
+    a.SetPort(15300);
+
+    NETADDRESS_s doubled{};
+    doubled.SetPort(a.usPort);
+
+    EXPECT_NE(a.usPort, doubled.usPort)
+        << "if these are equal the double swap is a no-op and this test cannot protect anything";
+
+    NETADDRESS_s copied{};
+    copied.usPort = a.usPort;
+    EXPECT_EQ(a.usPort, copied.usPort) << "copying the field is the correct way to carry a port over";
+}
+
+TEST(AddressPort, EveryPortRoundTripsThroughSetPortAndBack) {
+    // The whole range rather than one value, because a byte-swap is invisible for a palindrome
+    // like 0x3c3c and this class of bug hides in exactly that gap.
+    const USHORT ports[] = { 1, 80, 10666, 10667, 15300, 27015, 49152, 65535 };
+
+    for (size_t i = 0; i < sizeof(ports) / sizeof(ports[0]); ++i) {
+        NETADDRESS_s a{};
+        a.LoadFromString("1.2.3.4");
+        a.SetPort(ports[i]);
+
+        char expected[16];
+        snprintf(expected, sizeof(expected), ":%u", static_cast<unsigned>(ports[i]));
+        EXPECT_NE(std::string::npos, std::string(a.ToString()).find(expected))
+            << "port " << ports[i] << " printed as " << a.ToString();
+    }
+}

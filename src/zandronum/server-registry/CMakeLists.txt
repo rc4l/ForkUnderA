@@ -51,8 +51,17 @@ add_executable( forkundera-server-registry
 	# [rc4l] Who may hold a reach cookie, and how many. Registry-only, since the registry is the one
 	# handing them out.
 	${ZAN_DIR}/features/federated-server-registry/computation/reachcookie_compute.cpp
+	# [rc4l] The dual-stack grouping rule, which only the registry applies.
+	${ZAN_DIR}/features/federated-server-registry/computation/servergroup_compute.cpp
+	# [rc4l] Reading the optional tail of an announce, where "absent" means the old behaviour.
+	${ZAN_DIR}/features/federated-server-registry/computation/announcefields_compute.cpp
+	# [rc4l] Whether presenting a cookie destroys it, which differs by what it is being presented FOR.
+	${ZAN_DIR}/features/federated-server-registry/computation/cookieclaim_compute.cpp
 	# [rc4l] networkshared.cpp unmaps ::ffff:a.b.c.d through this, so the registry needs it too.
 	${ZAN_DIR}/features/net/computation/v6mapped_compute.cpp
+	# [rc4l] And matches v6 bans through this one. The registry reads the same ban files and answers
+	# the same isIPInList question, so a v6 rule has to mean the same thing on both sides of the wire.
+	${ZAN_DIR}/features/net/computation/v6prefix_compute.cpp
 	${ZAN_DIR}/networkshared.cpp
 	${ZAN_DIR}/platform.cpp
 	${ZAN_DIR}/huffman/bitreader.cpp 

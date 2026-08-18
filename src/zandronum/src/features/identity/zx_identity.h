@@ -63,8 +63,11 @@ bool Identity_Verify( const Bytes &publicKey, const std::string &message, const 
 // Where the key files live, which is one folder per user shared by every copy of the engine.
 std::string Identity_ConfigRoot( void );
 
-// Move keys out of the per-install folder a build before this one wrote them to.
-void Identity_MigrateLegacyRoot( void );
+// [rc4l] What the registry knows this server as, derived from its secret and its port so thirty
+// servers on one box get thirty unguessable ids with no new file.
+//
+// [rc4l] Never ban-grade: it changes with the port, and player bans stay on IP.
+std::string Identity_ServerRegistryId( int port );
 
 // Cryptographically strong random bytes for nonces, never rand().
 bool Identity_RandomBytes( size_t count, Bytes &out );

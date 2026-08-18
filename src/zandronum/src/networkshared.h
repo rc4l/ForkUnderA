@@ -104,6 +104,13 @@ enum
 	// instead of sitting out a timeout to discover what the registry already knew.
 	SRSC_PUNCHRESULT,
 
+	// [rc4l] "These addresses are one server", sent only to a client that said it understands the
+	// opcode, since the list is positional and an older one would read it as an address.
+	//
+	// [rc4l] Carries addresses and never the id, which is derived from a server's secret so that
+	// publishing it would let anyone have somebody else's listing merged away.
+	SRSC_SERVERGROUP,
+
 	// [rc4l] Written in the verdict slot of SRSC_PUNCHRESULT to mean "this is the cookie leg,
 	// echo it back" rather than a decision. Negative so it can never collide with a PunchVerdict,
 	// which is an enum counting up from zero.
@@ -256,17 +263,10 @@ struct BYTESTREAM_s;
 //
 //==========================================================================
 
-// [rc4l] STILL IPv4 ONLY, deliberately and temporarily.
+// [rc4l] IPv4 only by design, since v6 rules are prefixes and live beside these on IPADDRESSBAN_s.
 //
-// Four decimal octets, so a ban can be written 1.2.3.* and matched a field at a time. v6 does not
-// fit that shape: it has eight groups, and the thing people ban is a /64 prefix, which is a length
-// rather than a wildcard. Replacing this means storing a prefix and a length and rewriting the ban
-// FILE, which is a format change and wants deciding rather than inventing halfway through a socket
-// migration.
-//
-// Until then SetFrom refuses a v6 address rather than flattening one into 0.0.0.0, so a v6 player is
-// unbannable here instead of being wrongly matched against somebody else's rule. That is the safe
-// direction of the two, and it is the whole reason this note exists rather than a silent gap.
+// [rc4l] SetFrom still refuses v6, which now keeps the v4 path from answering a v6 question rather
+// than making v6 players unbannable.
 class IPStringArray
 {
 private:
@@ -414,6 +414,12 @@ struct IPADDRESSBAN_s
 {
 	// The IP address in char form (can be a number or a wildcard).
 	IPStringArray szIP;
+
+	// [rc4l] A v6 rule instead when bIsV6, a prefix rather than a pattern because an ISP hands a
+	// household a /64 and a household is what gets banned.
+	bool			bIsV6;
+	unsigned char	abPrefix6[16];
+	int				iPrefixBits;
 
 	// Comment regarding the banned address.
 	char		szComment[128];
@@ -587,6 +593,9 @@ public:
 	time_t			getEntryExpiration( const NETADDRESS_s &Address ) const; // [RC]
 	void			addEntry( const IPStringArray &szAddress, const char *pszPlayerName, const char *pszComment, std::string &Message, time_t tExpiration );
 	void			addEntry( const char *pszIPAddress, const char *pszPlayerName, const char *pszComment, std::string &Message, time_t tExpiration );
+	// [rc4l] The v6 half, taking a parsed prefix so only v6prefix_compute decides what a rule means.
+	void			addV6Entry( const unsigned char *prefix, int bits, const char *pszPlayerName, const char *pszComment, std::string &Message, time_t tExpiration );
+	ULONG			doesV6EntryExist( const unsigned char *prefix, int bits ) const;
 	void			removeEntry( const IPStringArray &szAddress, std::string &Message );
 	void			removeEntry( const char *pszIPAddress, std::string &Message );
 	void			removeEntry( ULONG ulEntryIdx ); // [RC]

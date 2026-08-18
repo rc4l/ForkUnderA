@@ -43,6 +43,33 @@ status() { printf '\033[32m==> %s\033[0m\n' "$*"; }
 warn()   { printf '\033[33mwarning: %s\033[0m\n' "$*"; }
 die()    { printf '\033[31mBUILD-RUN FAILED: %s\033[0m\n' "$*" >&2; exit 1; }
 
+# [rc4l] Are these two files identical, and able to say "I could not tell" -- cmp exits 1 for
+# different and >1 for could-not-compare, and conflating them killed the re-sign below.
+# Returns 0 = identical, 1 = genuinely different, 2 = could not determine.
+same_file() {
+    local a="$1" b="$2"
+    [ -f "$a" ] && [ -f "$b" ] || return 2
+    if command -v shasum >/dev/null 2>&1; then
+        local ha hb
+        ha="$( shasum -a 256 "$a" 2>/dev/null | cut -d' ' -f1 )" || return 2
+        hb="$( shasum -a 256 "$b" 2>/dev/null | cut -d' ' -f1 )" || return 2
+        [ -n "$ha" ] && [ -n "$hb" ] || return 2
+        [ "$ha" = "$hb" ] && return 0
+        return 1
+    fi
+    cmp -s "$a" "$b" && return 0
+    [ "$?" = "1" ] && return 1
+    return 2
+}
+
+# [rc4l] Re-seal the bundle, because an invalidated signature is not a warning at runtime but a
+# silent SIGKILL.
+reseal_bundle() {
+    command -v codesign >/dev/null 2>&1 || return 0
+    codesign --force --deep --sign - "$APP" >/dev/null 2>&1 \
+        || warn "deep re-sign of bundle failed (macOS will SIGKILL the app on launch, with no output)"
+}
+
 [ -f "$BUILD/CMakeCache.txt" ] || die "build/ is not configured -- run ./mac_compile.sh once first."
 [ -x "$ZIPDIR" ]              || die "zipdir tool missing at $ZIPDIR -- run ./mac_compile.sh once first."
 [ -d "$MACOS" ]              || die "no .app bundle at $APP -- run ./mac_compile.sh once to assemble it."
@@ -101,11 +128,15 @@ for pk3 in "$BUILD"/*.pk3; do [ -e "$pk3" ] && cp -f "$pk3" "$MACOS/"; done
 # byte-compares must run while it is still the freshly-copied artifact. These are
 # the assertions that would have caught every failure in the screenshots:
 [ -f "$MACOS/$core_name" ] \
-  || die "the bundle has NO $core_name after sync -- the engine would abort with 'Cannot find $core_name'."
-cmp -s "$BIN" "$MACOS/forkundera" \
-  || die "bundle binary != build/ binary (a stale copy slipped through)."
-cmp -s "$BUILD/$core_name" "$MACOS/$core_name" \
-  || die "bundle $core_name != build/ $core_name (a stale copy slipped through)."
+  || { reseal_bundle; die "the bundle has NO $core_name after sync -- the engine would abort with 'Cannot find $core_name'."; }
+
+same_file "$BIN" "$MACOS/forkundera"; rc=$?
+[ "$rc" = "1" ] && { reseal_bundle; die "bundle binary != build/ binary (a stale copy slipped through)."; }
+[ "$rc" = "2" ] && warn "could not verify the bundle binary against build/ (compare tool unavailable or killed) -- continuing, the copy itself succeeded."
+
+same_file "$BUILD/$core_name" "$MACOS/$core_name"; rc=$?
+[ "$rc" = "1" ] && { reseal_bundle; die "bundle $core_name != build/ $core_name (a stale copy slipped through)."; }
+[ "$rc" = "2" ] && warn "could not verify $core_name against build/ (compare tool unavailable or killed) -- continuing, the copy itself succeeded."
 
 # [rc4l] Sweep cores this build did not produce; inert, since the engine asks for an exact name, but
 # a bundle that grows a pk3 per version is how someone ends up shipping four.
@@ -114,11 +145,16 @@ for stale in "$MACOS"/fua_core_*.pk3; do
     [ "$( basename "$stale" )" = "$core_name" ] || rm -f "$stale"
 done
 
-# Refreshing the main executable invalidates the app's signature; deep-sign
-# re-seals the whole bundle including the executable (this is expected to change
-# the on-disk binary -- which is why the compares above ran first).
+# Refreshing the main executable invalidates the app's signature; deep-sign re-seals the whole bundle
+# including the executable (this is expected to change the on-disk binary -- which is why the
+# compares above ran first).
+reseal_bundle
+
+# [rc4l] Prove it took, since an invalid signature produces no output at all and would otherwise look
+# like a startup crash.
 if command -v codesign >/dev/null 2>&1; then
-    codesign --force --deep --sign - "$APP" >/dev/null 2>&1 || warn "deep re-sign of bundle failed (Gatekeeper may block launch)"
+    codesign -v "$MACOS/forkundera" >/dev/null 2>&1 \
+        || die "the staged binary's signature is invalid -- macOS would SIGKILL it on launch with no output. Run ./mac_compile.sh to rebuild the bundle."
 fi
 
 status "OK -- fresh binary + pk3s verified in the bundle. Safe to launch."

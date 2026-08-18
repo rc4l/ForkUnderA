@@ -257,3 +257,147 @@ TEST( MergeServerRegistryLists, DuplicatesWithinOneSideAreCollapsedToo )
 	ASSERT_EQ( got.size( ), 1u );
 	EXPECT_EQ( got[0].port, 1 );
 }
+
+// --- IPv6 registry addresses ----------------------------------------------------------------------
+//
+// The split below used to look for the LAST colon, which is fatal for an address made mostly of
+// colons: "[2001:db8::1]:15300" kept its brackets and failed the hostname rules, and a bare
+// "2001:db8::1" was cut at its own last group and became a different address. Either way the entry
+// silently vanished from the list, which is how two IPv6 tests appeared to pass while every packet
+// went over IPv4.
+
+TEST(ServerRegistryList, ABracketedV6AddressKeepsItsPort)
+{
+	const std::vector<zx::ServerRegistryEntry> entries =
+		zx::ParseServerRegistryList( "[2001:db8::1]:15300\n" );
+
+	ASSERT_EQ( 1u, entries.size( ));
+	EXPECT_EQ( "2001:db8::1", entries[0].host ) << "the brackets are notation, not part of the address";
+	EXPECT_EQ( 15300, entries[0].port );
+}
+
+TEST(ServerRegistryList, ABracketedV6AddressWithoutAPortTakesTheDefault)
+{
+	const std::vector<zx::ServerRegistryEntry> entries =
+		zx::ParseServerRegistryList( "[2001:db8::1]\n" );
+
+	ASSERT_EQ( 1u, entries.size( ));
+	EXPECT_EQ( "2001:db8::1", entries[0].host );
+	EXPECT_EQ( 0, entries[0].port ) << "zero means the caller applies the default";
+}
+
+TEST(ServerRegistryList, ABareV6AddressIsNotCutAtItsLastColon)
+{
+	// The exact old failure: rfind(':') turned this into "2001:db8:" plus a nonsense port.
+	const std::vector<zx::ServerRegistryEntry> entries =
+		zx::ParseServerRegistryList( "2001:db8::1\n" );
+
+	ASSERT_EQ( 1u, entries.size( ));
+	EXPECT_EQ( "2001:db8::1", entries[0].host );
+	EXPECT_EQ( 0, entries[0].port );
+}
+
+TEST(ServerRegistryList, AHostnameWithAPortStillSplitsAsItAlwaysDid)
+{
+	const std::vector<zx::ServerRegistryEntry> entries =
+		zx::ParseServerRegistryList( "registry.example.net:15300\n" );
+
+	ASSERT_EQ( 1u, entries.size( ));
+	EXPECT_EQ( "registry.example.net", entries[0].host );
+	EXPECT_EQ( 15300, entries[0].port );
+}
+
+TEST(ServerRegistryList, AnUnclosedBracketIsRefusedRatherThanGuessedAt)
+{
+	EXPECT_TRUE( zx::ParseServerRegistryList( "[2001:db8::1\n" ).empty( ));
+}
+
+TEST(ServerRegistryList, RubbishAfterTheBracketIsRefused)
+{
+	// Anything but ":port" after the closing bracket is malformed, and guessing at it would be a
+	// registry nobody meant to name.
+	EXPECT_TRUE( zx::ParseServerRegistryList( "[2001:db8::1]junk\n" ).empty( ));
+	EXPECT_TRUE( zx::ParseServerRegistryList( "[2001:db8::1]:notaport\n" ).empty( ));
+	EXPECT_TRUE( zx::ParseServerRegistryList( "[2001:db8::1]:99999\n" ).empty( ));
+}
+
+TEST(ServerRegistryList, BracketsMustContainSomethingV6Shaped)
+{
+	// Brackets are not a way to smuggle a hostname past the label rules.
+	EXPECT_TRUE( zx::ParseServerRegistryList( "[registry.example.net]:15300\n" ).empty( ));
+	EXPECT_TRUE( zx::ParseServerRegistryList( "[]\n" ).empty( ));
+}
+
+TEST(ServerRegistryList, AV6AddressAndAHostnameCanShareOneList)
+{
+	const std::vector<zx::ServerRegistryEntry> entries =
+		zx::ParseServerRegistryList( "registry.example.net\n[2001:db8::1]:15300\n" );
+
+	ASSERT_EQ( 2u, entries.size( ));
+	EXPECT_EQ( "registry.example.net", entries[0].host );
+	EXPECT_EQ( "2001:db8::1", entries[1].host );
+	EXPECT_EQ( 15300, entries[1].port );
+}
+
+TEST(ServerRegistryList, AHostnameIsStillNotMistakenForAnAddress)
+{
+	// The v6 test is "hex and colons", and a name that happens to be all hex characters must still be
+	// treated as a name -- it has no colons, so it cannot be one.
+	const std::vector<zx::ServerRegistryEntry> entries = zx::ParseServerRegistryList( "abcdef\n" );
+
+	ASSERT_EQ( 1u, entries.size( ));
+	EXPECT_EQ( "abcdef", entries[0].host );
+}
+
+// --- saying what was thrown away -------------------------------------------------------------------
+
+TEST(ServerRegistryList, SkippedEntriesAreReportedRatherThanVanishing)
+{
+	// The silence here is what hid the IPv6 parsing bug: the entry disappeared, the client fell back
+	// to its built-in list, and everything looked healthy.
+	std::vector<std::string> skipped;
+	const std::vector<zx::ServerRegistryEntry> entries =
+		zx::ParseServerRegistryList( "good.example.net\n[2001:db8::1 my registry\ngood2.example.net\n", &skipped );
+
+	EXPECT_EQ( 2u, entries.size( ));
+	ASSERT_EQ( 1u, skipped.size( ));
+	EXPECT_EQ( "[2001:db8::1", skipped[0] ) << "the token that failed, not the display name after it";
+}
+
+TEST(ServerRegistryList, NothingSkippedMeansAnEmptyReport)
+{
+	std::vector<std::string> skipped;
+	zx::ParseServerRegistryList( "good.example.net\n# a comment\n\n", &skipped );
+	EXPECT_TRUE( skipped.empty( )) << "comments and blank lines are not failures";
+}
+
+TEST(ServerRegistryList, TheReportIsOptional)
+{
+	// Every existing caller passes nothing, and must keep working unchanged.
+	EXPECT_EQ( 1u, zx::ParseServerRegistryList( "good.example.net\n" ).size( ));
+}
+
+TEST(ServerRegistryList, TheCsvPathReportsWhatItSkippedToo)
+{
+	// The cvar path, which is the one a player actually edits -- and the one whose silence hid the
+	// IPv6 address bug.
+	std::vector<std::string> skipped;
+	const std::vector<zx::ServerRegistryEntry> entries =
+		zx::ParseServerRegistryCSV( "good.example.net,[2001:db8::1,other.example.net", &skipped );
+
+	EXPECT_EQ( 2u, entries.size( ));
+	ASSERT_EQ( 1u, skipped.size( ));
+	EXPECT_EQ( "[2001:db8::1", skipped[0] );
+}
+
+TEST(ServerRegistryList, TheHostValidatorAcceptsAV6LiteralDirectly)
+{
+	// The parsers reach v6 by their own route, so this branch is only reachable through the public
+	// validator -- which is exactly why it needs asserting: a caller checking a host before storing
+	// it would otherwise reject every IPv6 registry, since a colon fails every DNS label rule.
+	EXPECT_TRUE( zx::IsValidServerRegistryHost( "2001:db8::1" ));
+	EXPECT_TRUE( zx::IsValidServerRegistryHost( "fd00:fa:2::10" ));
+
+	EXPECT_TRUE( zx::IsValidServerRegistryHost( "registry.example.net" )) << "names still work";
+	EXPECT_FALSE( zx::IsValidServerRegistryHost( "2001:db8::zzzz" )) << "not hex, so not an address";
+}

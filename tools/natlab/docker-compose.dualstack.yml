@@ -1,0 +1,54 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 rc4l
+
+# [rc4l] The dedupe fixture: one server, two families, one row.
+
+services:
+  registry:
+    image: fua-natlab-registry
+    build:
+      context: ../..
+      dockerfile: Dockerfile.registry
+    networks:
+      dual:
+        ipv4_address: 203.0.113.10
+        ipv6_address: fd00:cafe:1::10
+
+  host:
+    image: fua-natlab-peer
+    build:
+      context: .
+      dockerfile: Dockerfile.peer
+    # Both records under one name. The engine resolves the A itself and asks for the AAAA separately,
+    # so a name carrying only one of them produces only one announce and the test would pass by
+    # accident with nothing to group.
+    extra_hosts:
+      - "registry.natlab:203.0.113.10"
+      - "registry.natlab:fd00:cafe:1::10"
+    networks:
+      dual:
+        ipv4_address: 203.0.113.20
+        ipv6_address: fd00:cafe:1::20
+    command: ["sleep", "infinity"]
+
+  client:
+    image: fua-natlab-peer
+    build:
+      context: .
+      dockerfile: Dockerfile.peer
+    extra_hosts:
+      - "registry.natlab:203.0.113.10"
+      - "registry.natlab:fd00:cafe:1::10"
+    networks:
+      dual:
+        ipv4_address: 203.0.113.30
+        ipv6_address: fd00:cafe:1::30
+    command: ["sleep", "infinity"]
+
+networks:
+  dual:
+    enable_ipv6: true
+    ipam:
+      config:
+        - subnet: 203.0.113.0/24
+        - subnet: fd00:cafe:1::/64

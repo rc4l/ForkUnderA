@@ -56,7 +56,14 @@
 // [rc4l] Who may be introduced to whom, and why a refusal is answered rather than dropped.
 #include "features/server-hosting/computation/punchbroker_compute.h"
 #include "features/federated-server-registry/computation/reachcookie_compute.h"
+// [rc4l] Whether same-identity listings really are one server, or a collision to refuse.
+#include "features/federated-server-registry/computation/servergroup_compute.h"
+// [rc4l] Whether a claim destroys the cookie, which differs by what it is claimed for.
+#include "features/federated-server-registry/computation/cookieclaim_compute.h"
+// [rc4l] The optional trailing fields, where an exhausted read must mean "old server".
+#include "features/federated-server-registry/computation/announcefields_compute.h"
 #include <sstream>
+#include <map>
 #include <set>
 // [rc4l] The reach-cookie table. Named rather than leaned on transitively -- this builds on GCC in a
 // container as well as MSVC, and the two disagree about what <set> drags in.
@@ -372,9 +379,10 @@ std::string SERVERREGISTRY_IssueReachCookie( const NETADDRESS_s &Address )
 	return entry.Cookie;
 }
 
-// Whether this address really was issued this cookie. Consumed on success, so one cookie buys one
-// probe and a replay earns nothing.
-bool SERVERREGISTRY_ClaimReachCookie( const NETADDRESS_s &Address, const std::string &Cookie )
+// [rc4l] Whether this address really was issued this cookie, with the purpose deciding whether it
+// survives -- see cookieclaim_compute for why a probe consumes and a punch must not.
+bool SERVERREGISTRY_ClaimReachCookie( const NETADDRESS_s &Address, const std::string &Cookie,
+	zx::CookiePurpose Purpose )
 {
 	ExpireReachCookies( g_lCurrentTime );
 
@@ -385,12 +393,16 @@ bool SERVERREGISTRY_ClaimReachCookie( const NETADDRESS_s &Address, const std::st
 	{
 		if ( g_ReachCookies[i].Address.Compare( Address ) && ( g_ReachCookies[i].Cookie == Cookie ))
 		{
-			g_ReachCookies.erase( g_ReachCookies.begin() + i );
-			return true;
+			const zx::CookieClaim Claim = zx::DecideCookieClaim( true, Purpose );
+
+			if ( Claim.consume )
+				g_ReachCookies.erase( g_ReachCookies.begin() + i );
+
+			return Claim.accepted;
 		}
 	}
 
-	return false;
+	return zx::DecideCookieClaim( false, Purpose ).accepted;
 }
 
 //*****************************************************************************
@@ -419,6 +431,85 @@ void SERVERREGISTRY_RequestServerVerification( const SERVER_s &Server )
 	// from anything but the client that asked.
 	NETWORK_LaunchPacket( &g_MessageBuffer, Server.Address );
 }
+//*****************************************************************************
+//
+// [rc4l] Tell a launcher which addresses are the same server, carried by an id each server derives
+// from its own secret so that nobody can claim somebody else's.
+static void SERVERREGISTRY_SendServerGroupsToLauncher( const NETADDRESS_s &AddressFrom,
+	unsigned long &ulPacketNum, unsigned long &ulSizeOfPacket, unsigned long ulMaxPacketSize )
+{
+	std::map<std::string, std::vector<NETADDRESS_s> > Groups;
+
+	for ( std::set<SERVER_s, SERVERCompFunc>::const_iterator it = g_Servers.begin(); it != g_Servers.end(); ++it )
+	{
+		if ( it->RegistryId.empty() )
+			continue;
+
+		if (( it->bEnforcesBanList == false ) && ( g_bHideBanIgnoringServers == true ))
+			continue;
+
+		Groups[it->RegistryId].push_back( it->Address );
+	}
+
+	for ( std::map<std::string, std::vector<NETADDRESS_s> >::const_iterator it = Groups.begin(); it != Groups.end(); ++it )
+	{
+		// One address is not a group. Saying so anyway would be a packet per server for no reason.
+		if ( it->second.size() < 2 )
+			continue;
+
+		// [rc4l] A real group is exactly one v4 and one v6 on one port, and anything else means two
+		// servers reached the same id -- which a copied machine image does honestly.
+		int v4 = 0, v6 = 0;
+		bool bSamePort = true;
+		for ( size_t i = 0; i < it->second.size(); ++i )
+		{
+			if ( it->second[i].bIsIPv6 )
+				v6++;
+			else
+				v4++;
+
+			if ( it->second[i].usPort != it->second[0].usPort )
+				bSamePort = false;
+		}
+
+		const zx::GroupVerdict Verdict = zx::DecideServerGroup( v4, v6, bSamePort );
+
+		if ( zx::GroupNeedsReport( Verdict ))
+		{
+			// [rc4l] Said out loud, since a wrongly merged server looks like nothing at all to its
+			// operator.
+			printf( "! Registry id collision: %u entries claim one id (%d v4, %d v6%s). Not grouping them.\n",
+				static_cast<unsigned int>( it->second.size() ), v4, v6,
+				bSamePort ? "" : ", differing ports" );
+		}
+
+		if ( zx::ShouldSendGroup( Verdict ) == false )
+			continue;
+
+		// [rc4l] A packet over the limit is dropped whole and takes the list terminator with it.
+		const unsigned long ulGroupSize = 2 + ( 19 * it->second.size() );
+
+		if ( ulSizeOfPacket + ulGroupSize > ulMaxPacketSize - 1 )
+		{
+			g_MessageBuffer.ByteStream.WriteByte( SRSC_ENDSERVERLISTPART );
+			NETWORK_LaunchPacket( &g_MessageBuffer, AddressFrom );
+
+			g_MessageBuffer.Clear();
+			++ulPacketNum;
+			ulSizeOfPacket = 5;
+			g_MessageBuffer.ByteStream.WriteLong( SRSC_BEGINSERVERLISTPART );
+			g_MessageBuffer.ByteStream.WriteByte( ulPacketNum );
+		}
+
+		ulSizeOfPacket += ulGroupSize;
+
+		g_MessageBuffer.ByteStream.WriteByte( SRSC_SERVERGROUP );
+		g_MessageBuffer.ByteStream.WriteByte( static_cast<int>( it->second.size() ));
+		for ( size_t i = 0; i < it->second.size(); ++i )
+			it->second[i].WriteToStream( &g_MessageBuffer.ByteStream );
+	}
+}
+
 //*****************************************************************************
 //
 void SERVERREGISTRY_SendServerIPToLauncher( const NETADDRESS_s &Address, BYTESTREAM_s *pByteStream )
@@ -598,14 +689,24 @@ void SERVERREGISTRY_ParseCommands( BYTESTREAM_s *pByteStream )
 			const int temp = pByteStream->ReadByte();
 			newServer.bEnforcesBanList = ( temp != 0 );
 			newServer.bNewFormatServer = ( temp != -1 );
-			newServer.iServerRevision = ( ( pByteStream->pbStreamEnd - pByteStream->pbStream ) >= 4 ) ? pByteStream->ReadLong() : pByteStream->ReadShort();
+			newServer.iServerRevision = zx::AnnounceUsesLongRevision( static_cast<int>( pByteStream->pbStreamEnd - pByteStream->pbStream ))
+				? pByteStream->ReadLong() : pByteStream->ReadShort();
 
 			// [rc4l] One optional trailing byte: can this server punch a hole when we ask it to?
 			//
 			// Same trick the ban flag above uses. ReadByte returns -1 on an exhausted stream, so a
 			// server built before this says nothing and lands on false, which is exactly right: we
 			// must never instruct something that cannot answer.
-			newServer.bSupportsPunch = ( pByteStream->ReadByte() > 0 );
+			newServer.bSupportsPunch = zx::AnnounceFlagFromByte( pByteStream->ReadByte() );
+
+			// [rc4l] The id it groups its own listings by, absent meaning "do not group me".
+			{
+				const char *pszId = pByteStream->ReadString();
+
+				// [rc4l] Refused unless exactly the shape this engine writes, since a bad id hides a
+				// server.
+				newServer.RegistryId = zx::AnnounceIdIsGroupable( pszId ) ? pszId : "";
+			}
 
 			std::set<SERVER_s, SERVERCompFunc>::iterator currentServer = g_Servers.find ( newServer );
 
@@ -680,6 +781,7 @@ void SERVERREGISTRY_ParseCommands( BYTESTREAM_s *pByteStream )
 					// [BB] The server possibly changed the ban setting, so update it.
 					currentServer->bEnforcesBanList = newServer.bEnforcesBanList;
 					currentServer->bSupportsPunch = newServer.bSupportsPunch;
+					currentServer->RegistryId = newServer.RegistryId;
 				}
 			}
 
@@ -782,7 +884,8 @@ void SERVERREGISTRY_ParseCommands( BYTESTREAM_s *pByteStream )
 
 			// Second leg. The echo proves the sender is really at this address, because the cookie
 			// only ever went there.
-			if ( SERVERREGISTRY_ClaimReachCookie( AddressFrom, cookie ) == false )
+			// [rc4l] Consumed: one cookie, one probe, so a replay is not a packet cannon.
+			if ( SERVERREGISTRY_ClaimReachCookie( AddressFrom, cookie, zx::CookiePurpose::ReachProbe ) == false )
 				return;
 
 			// A port of zero, or one we would not dial, is not worth a packet.
@@ -843,7 +946,9 @@ void SERVERREGISTRY_ParseCommands( BYTESTREAM_s *pByteStream )
 				return;
 			}
 
-			const bool bProven = SERVERREGISTRY_ClaimReachCookie( AddressFrom, cookie );
+			// [rc4l] Not consumed, since a sweep asks about several servers with the one cookie it was
+			// given.
+			const bool bProven = SERVERREGISTRY_ClaimReachCookie( AddressFrom, cookie, zx::CookiePurpose::Punch );
 
 			// Find the server, if we know it at all. A malformed or unknown address simply fails to
 			// match, which lands on the same refusal as anything else we have not verified.
@@ -955,6 +1060,8 @@ void SERVERREGISTRY_ParseCommands( BYTESTREAM_s *pByteStream )
 				return;
 			}
 
+			bool bWantsServerGroups = false;
+
 			// [BB] The launcher only sends the protocol version with LAUNCHER_SERVERREGISTRY_CHALLENGE.
 			if ( lCommand == LAUNCHER_SERVERREGISTRY_CHALLENGE )
 			{
@@ -967,6 +1074,10 @@ void SERVERREGISTRY_ParseCommands( BYTESTREAM_s *pByteStream )
 					NETWORK_LaunchPacket( &g_MessageBuffer, AddressFrom );
 					return;
 				}
+
+				// [rc4l] Whether this launcher understands being told which addresses are one server,
+				// absent meaning no because the list is positional.
+				bWantsServerGroups = ( pByteStream->ReadByte() > 0 );
 			}
 
 			printf( "-> Sending server list to %s.\n", AddressFrom.ToString() );
@@ -1042,6 +1153,10 @@ void SERVERREGISTRY_ParseCommands( BYTESTREAM_s *pByteStream )
 					SERVERREGISTRY_SendServerIPBlockToLauncher ( serverAddress, serverPortList, &g_MessageBuffer.ByteStream );
 				}
 				g_MessageBuffer.ByteStream.WriteByte( 0 ); // [BB] Terminate SRSC_SERVERBLOCK by sending 0 ports.
+
+				if ( bWantsServerGroups )
+					SERVERREGISTRY_SendServerGroupsToLauncher( AddressFrom, ulPacketNum, ulSizeOfPacket, ulMaxPacketSize );
+
 				g_MessageBuffer.ByteStream.WriteByte( SRSC_ENDSERVERLIST );
 				NETWORK_LaunchPacket( &g_MessageBuffer, AddressFrom );
 				return;

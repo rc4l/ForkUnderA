@@ -35,6 +35,9 @@ const TOOLS = [
   { name: "renderer_info", description: "Renderer identity (vendor/renderer/GL version) + whether GL timer queries are usable on this driver, so you know if gl_timers will return real numbers.",
     inputSchema: { type: "object", required: ["port"], properties: {
       port: { type: "number" }, token: { type: "string" } } } },
+  { name: "host_diag", description: "Is THIS server reachable from outside? Reports the registry's own verification, per IP family, plus whether a missing row in the host's own browser is just hairpin NAT. The local browser cannot answer this: a host's public row is fabricated from its LAN row and lights up either way. Verification arrives on the registry's 30s announce cycle, so use waitSeconds.",
+    inputSchema: { type: "object", required: ["port"], properties: {
+      port: { type: "number" }, token: { type: "string" }, waitSeconds: { type: "number" } } } },
   { name: "rpc", description: "Send one raw RPC to an instance and return the result.",
     inputSchema: { type: "object", required: ["port", "cmd"], properties: {
       port: { type: "number" }, token: { type: "string" }, cmd: { type: "string" }, args: { type: "object" } } } },
@@ -88,6 +91,17 @@ async function callTool(name, a = {}) {
     case "perf_ablation": return runPerfAblation({ seed: a.seed, map: a.map, spawn: a.spawn, count: a.count, frames: a.frames });
     case "gl_timers": return runGlTimers({ port: a.port, token: a.token, frames: a.frames, warmup: a.warmup });
     case "renderer_info": return withClient(a.port, a.token, (c) => c.rpc("renderer.info"));
+    case "host_diag": return withClient(a.port, a.token, async (c) => {
+      // Poll rather than answer once: an unverified reading in the first seconds means "not yet",
+      // not "broken", and reporting that as a failure is how a working server gets misdiagnosed.
+      let diag = await c.rpc("net.hostdiag");
+      const deadline = Date.now() + (Number(a.waitSeconds) || 0) * 1000;
+      while (!diag.reachable && Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 2000));
+        diag = await c.rpc("net.hostdiag");
+      }
+      return diag;
+    });
     case "rpc": return withClient(a.port, a.token, (c) => c.rpc(a.cmd, a.args));
     case "ui_menu_nav": return withClient(a.port, a.token, async (c) => { await menuNav(c, a.steps); return { navigated: a.steps }; });
     case "ui_click": return withClient(a.port, a.token, async (c) => {
