@@ -41,7 +41,7 @@ services:
       pub:
         ipv4_address: 192.168.240.2
       lan_host:
-        ipv4_address: 192.168.241.1
+        ipv4_address: 192.168.241.2
 
   router_client:
     image: fua-natlab-router
@@ -57,8 +57,12 @@ services:
       pub:
         ipv4_address: 192.168.240.3
       lan_client:
-        ipv4_address: 192.168.242.1
+        ipv4_address: 192.168.242.2
 
+  # [rc4l] The routers sit at .2, not .1. Docker reserves .1 on every user-defined network as the
+  # bridge's own gateway address, so a container asking for it fails the whole `up` with "Address
+  # already in use" -- which reads like a subnet clash and is not one.
+  #
   # [rc4l] The peers get NET_ADMIN only to replace their default route with their router. Compose
   # gives every container a route to its own networks and nothing else useful, so without this the
   # host would have no path to the registry at all and the lab would test a disconnected machine.
@@ -70,7 +74,7 @@ services:
     cap_add: [NET_ADMIN]
     depends_on: [router_host, registry]
     environment:
-      PEER_GATEWAY: 192.168.241.1
+      PEER_GATEWAY: 192.168.241.2
     networks:
       lan_host:
         ipv4_address: 192.168.241.20
@@ -84,7 +88,7 @@ services:
     cap_add: [NET_ADMIN]
     depends_on: [router_client, registry]
     environment:
-      PEER_GATEWAY: 192.168.242.1
+      PEER_GATEWAY: 192.168.242.2
     networks:
       lan_client:
         ipv4_address: 192.168.242.20
