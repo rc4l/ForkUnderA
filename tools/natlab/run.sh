@@ -93,10 +93,10 @@ done
 # later assertion is vacuous, and a vacuously passing network test is worse than no test: it is a
 # green check that says the punch works when the punch never ran.
 say "Verifying the fixture: the peers must NOT be able to reach each other..."
-if dc exec -T client sh -lc 'ping -c1 -W2 10.81.0.20 >/dev/null 2>&1'; then
+if dc exec -T client sh -lc 'ping -c1 -W2 192.168.241.20 >/dev/null 2>&1'; then
     fail "client can ping the host directly -- the NAT isolation is not in effect, so this lab proves nothing"
 fi
-dc exec -T client sh -lc 'ping -c1 -W2 10.80.0.10 >/dev/null 2>&1' \
+dc exec -T client sh -lc 'ping -c1 -W2 192.168.240.10 >/dev/null 2>&1' \
     || fail "client cannot reach the registry -- the lab is broken in the other direction"
 say "Fixture OK: peers isolated, registry reachable from both."
 
@@ -104,7 +104,7 @@ say "Fixture OK: peers isolated, registry reachable from both."
 # Xvfb because the client half initialises GL before reaching its main loop; nothing here looks at a
 # frame. -nosound keeps the sim's RNG stream clean and drops an entire class of container audio
 # failures that have nothing to do with networking.
-REG=10.80.0.10
+REG=192.168.240.10
 start_engine() { # $1=peer  $2=extra args
     dc exec -d -T "$1" sh -lc "
         Xvfb :99 -screen 0 640x480x24 >/tmp/xvfb.log 2>&1 &
@@ -170,7 +170,7 @@ done
 # (d) The proof. Connect, and assert from the SERVER that somebody is actually in -- the only signal
 #     that cannot be produced by a connection which did not happen.
 say "[4/4] client connects, and the server confirms it..."
-fua client ui exec "connect 10.80.0.2:10666" >/dev/null 2>&1 || true
+fua client ui exec "connect 192.168.240.2:10666" >/dev/null 2>&1 || true
 connected=0
 for _ in $(seq 1 25); do
     if fua host rpc net.clients | grep -qE '"connected": *[1-9]'; then connected=1; break; fi

@@ -25,7 +25,7 @@ services:
       dockerfile: Dockerfile.registry
     networks:
       pub:
-        ipv4_address: 10.80.0.10
+        ipv4_address: 192.168.240.10
 
   router_host:
     image: fua-natlab-router
@@ -39,9 +39,9 @@ services:
       NAT_FLAVOUR: ${NAT_FLAVOUR_HOST:-portrestricted}
     networks:
       pub:
-        ipv4_address: 10.80.0.2
+        ipv4_address: 192.168.240.2
       lan_host:
-        ipv4_address: 10.81.0.1
+        ipv4_address: 192.168.241.1
 
   router_client:
     image: fua-natlab-router
@@ -55,9 +55,9 @@ services:
       NAT_FLAVOUR: ${NAT_FLAVOUR_CLIENT:-portrestricted}
     networks:
       pub:
-        ipv4_address: 10.80.0.3
+        ipv4_address: 192.168.240.3
       lan_client:
-        ipv4_address: 10.82.0.1
+        ipv4_address: 192.168.242.1
 
   # [rc4l] The peers get NET_ADMIN only to replace their default route with their router. Compose
   # gives every container a route to its own networks and nothing else useful, so without this the
@@ -70,10 +70,10 @@ services:
     cap_add: [NET_ADMIN]
     depends_on: [router_host, registry]
     environment:
-      PEER_GATEWAY: 10.81.0.1
+      PEER_GATEWAY: 192.168.241.1
     networks:
       lan_host:
-        ipv4_address: 10.81.0.20
+        ipv4_address: 192.168.241.20
     command: ["sleep", "infinity"]
 
   client:
@@ -84,21 +84,21 @@ services:
     cap_add: [NET_ADMIN]
     depends_on: [router_client, registry]
     environment:
-      PEER_GATEWAY: 10.82.0.1
+      PEER_GATEWAY: 192.168.242.1
     networks:
       lan_client:
-        ipv4_address: 10.82.0.20
+        ipv4_address: 192.168.242.20
     command: ["sleep", "infinity"]
 
 networks:
   pub:
     ipam:
-      config: [{ subnet: 10.80.0.0/24 }]
+      config: [{ subnet: 192.168.240.0/24 }]
   lan_host:
     internal: true
     ipam:
-      config: [{ subnet: 10.81.0.0/24 }]
+      config: [{ subnet: 192.168.241.0/24 }]
   lan_client:
     internal: true
     ipam:
-      config: [{ subnet: 10.82.0.0/24 }]
+      config: [{ subnet: 192.168.242.0/24 }]
