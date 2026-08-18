@@ -79,6 +79,7 @@
 #include "features/server-hosting/computation/punchbroker_compute.h" // [rc4l] how many punches, and when
 #include "features/federated-server-registry/computation/lanbroadcast_compute.h" // [rc4l] LAN subnet broadcast
 #include "features/federated-server-registry/computation/listingproof_compute.h" // [rc4l] is anyone outside seeing us
+#include "features/identity/zx_identity.h" // [rc4l] the id the registry groups our two listings by
 
 // [rc4l] Its own switch, not `developer`, so turning on LAN tracing does not also unleash every other
 // subsystem's developer chatter. Off by default; when on, the server logs each announce it sends and
@@ -868,6 +869,16 @@ void SERVER_SERVERREGISTRY_Tick( void )
 	// lets a punch request against an older server be refused instantly rather than instructing
 	// something that will never answer.
 	g_ServerRegistryBuffer.ByteStream.WriteByte( 1 );
+
+	// [rc4l] And who we are, so the registry can tell that the two announces below -- one per family,
+	// from one socket -- are ONE server rather than two.
+	//
+	// Appended after the punch byte for the same reason that was appended: a registry that predates
+	// this reads the packet exactly as it always did and stops before it. Derived from this server's
+	// secret and its port (Identity_ServerRegistryId), so it costs no new file and cannot be guessed
+	// by somebody wanting their server merged with this one.
+	g_ServerRegistryBuffer.ByteStream.WriteString(
+		zx::Identity_ServerRegistryId( NETWORK_GetLocalPort( )).c_str( ));
 
 	// Send the server registry our packet.
 	NETWORK_LaunchPacket( &g_ServerRegistryBuffer, g_AddressServerRegistry );

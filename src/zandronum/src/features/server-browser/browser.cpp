@@ -379,7 +379,28 @@ bool BROWSER_IsListable( ULONG ulServer )
 		return ( false );
 
 	const ULONG ulState = g_BrowserServerList[ulServer].ulActiveState;
-	return (( ulState == AS_ACTIVE ) || ( ulState == AS_VERSIONMISMATCH ));
+	if (( ulState != AS_ACTIVE ) && ( ulState != AS_VERSIONMISMATCH ))
+		return ( false );
+
+	// [rc4l] One server, one row. The registry told us this row and another are the same machine
+	// reached two ways, so show the IPv6 one and hide the IPv4 one.
+	//
+	// Conditional on the survivor having ANSWERED, which is what makes this safe for a player with no
+	// IPv6 at all: their v6 row never becomes active, so nothing is hidden and they keep the v4 row
+	// they can actually use. Hiding on the registry's word alone would delete servers from the list of
+	// everyone whose ISP has not caught up.
+	if ( g_BrowserServerList[ulServer].bHasGroupPeer && ( g_BrowserServerList[ulServer].Address.bIsIPv6 == false ))
+	{
+		const LONG lPeer = browser_GetListIDByAddress( g_BrowserServerList[ulServer].GroupPeer );
+
+		if (( lPeer >= 0 ) && g_BrowserServerList[lPeer].Address.bIsIPv6
+			&& ( g_BrowserServerList[lPeer].ulActiveState == AS_ACTIVE ))
+		{
+			return ( false );
+		}
+	}
+
+	return ( true );
 }
 
 //*****************************************************************************
@@ -1103,6 +1124,8 @@ void BROWSER_ClearServerList( void )
 		g_BrowserServerList[ulIdx].bRefreshing = false;
 		g_BrowserServerList[ulIdx].lRefreshMS = 0;
 		g_BrowserServerList[ulIdx].lRecheckMisses = 0;
+		g_BrowserServerList[ulIdx].bHasGroupPeer = false;
+		g_BrowserServerList[ulIdx].GroupPeer.Clear();
 
 		g_BrowserServerList[ulIdx].Address.Clear();
 
@@ -1339,6 +1362,27 @@ bool BROWSER_GetServerList( BYTESTREAM_s *pByteStream )
 					}
 				}
 
+			}
+			break;
+
+		case SRSC_SERVERGROUP:
+			{
+				// [rc4l] The registry saying these addresses are one server, which nothing on this
+				// side could work out: two addresses being one machine is exactly what a stranger
+				// would claim in order to have their row merged with somebody else's.
+				const int count = pByteStream->ReadByte();
+
+				NETADDRESS_s first;
+				for ( int i = 0; i < count; ++i )
+				{
+					NETADDRESS_s address;
+					address.ReadFromStream( pByteStream );
+
+					if ( i == 0 )
+						first = address;
+					else
+						BROWSER_MarkSameServer( first, address );
+				}
 			}
 			break;
 
@@ -1927,6 +1971,11 @@ static void browser_SendServerRegistryQuery( void )
 	g_ServerRegistryBuffer.ByteStream.WriteLong( LAUNCHER_SERVERREGISTRY_CHALLENGE );
 	g_ServerRegistryBuffer.ByteStream.WriteShort( SERVERREGISTRY_VERSION );
 
+	// [rc4l] And say we can be told which addresses are one server, so a dual-stack host is one row
+	// rather than two. Opt-in rather than always-on because the list is positional: a registry cannot
+	// send SRSC_SERVERGROUP to a client that would read it as an address.
+	g_ServerRegistryBuffer.ByteStream.WriteByte( 1 );
+
 	for ( unsigned int i = 0; i < g_ServerRegistryAddresses.Size( ); ++i )
 		NETWORK_LaunchPacket( &g_ServerRegistryBuffer, g_ServerRegistryAddresses[i] );
 
@@ -2125,6 +2174,27 @@ unsigned int BROWSER_GetServerRegistryCount( void )
 bool BROWSER_WaitingForServerRegistryResponse( void )
 {
 	return ( g_bWaitingForServerRegistryResponse );
+}
+
+//*****************************************************************************
+//
+void BROWSER_MarkSameServer( const NETADDRESS_s &First, const NETADDRESS_s &Second )
+{
+	const LONG lFirst = browser_GetListIDByAddress( First );
+	const LONG lSecond = browser_GetListIDByAddress( Second );
+
+	// Both rows have to exist. The group block arrives after the addresses in the same response, so
+	// they normally do -- but a row dropped for any reason must not leave the other pointing at
+	// nothing, which is why IsListable re-checks the peer rather than trusting the flag.
+	if (( lFirst < 0 ) || ( lSecond < 0 ) || ( lFirst == lSecond ))
+		return;
+
+	// Both directions, because either row may be the one asked about first, and the answer has to be
+	// the same whichever way round it is looked at.
+	g_BrowserServerList[lFirst].bHasGroupPeer = true;
+	g_BrowserServerList[lFirst].GroupPeer = Second;
+	g_BrowserServerList[lSecond].bHasGroupPeer = true;
+	g_BrowserServerList[lSecond].GroupPeer = First;
 }
 
 //*****************************************************************************

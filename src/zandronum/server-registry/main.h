@@ -105,6 +105,14 @@ typedef struct
 	// [BB] Number that we send the server along with our verification request.
 	__int32 ServerVerificationInt;
 
+	// [rc4l] What this server calls itself, so its IPv4 and IPv6 listings can be recognised as one
+	// server. Empty for anything that predates it, which simply is not grouped.
+	//
+	// NEVER SENT ON. It is derived from the server's own secret, and that is the only reason a
+	// stranger cannot announce with somebody else's id and have their listing merged away. Publishing
+	// it would hand that ability to anyone who asked for the list.
+	mutable std::string	RegistryId;
+
 } SERVER_s;
 
 #endif	// __MAIN_H__
