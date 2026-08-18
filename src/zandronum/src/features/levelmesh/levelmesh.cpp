@@ -198,6 +198,122 @@ static int FindLinesArg( FCommandLine &argv, const char *key, int fallback )
 	return fallback;
 }
 
+//==========================================================================
+//
+// fua_line / fua_lines_at
+//
+// [rc4l] Everything about a linedef, and which linedefs are near a point.
+//
+// Written after an argument about a wall that took bullets and refused plasma. The crosshair
+// reported one linedef and the exploding missile reported another, and there was no way from a
+// running game to ask what either of them WAS -- whether a line blocks projectiles but not
+// hitscans, which of its tiers carry a texture, or what span of height each tier actually covers.
+// All three decide whether a mark can exist, and all three were being guessed at.
+//
+// fua_lines_at is the one that settles "these are two different lines in the same place", which
+// is invisible from a screenshot and obvious the moment both are printed side by side.
+//
+//==========================================================================
+
+static void PrintOneLine( int idx )
+{
+	const line_t *ln = &lines[idx];
+	const sector_t *fs = ln->frontsector, *bs = ln->backsector;
+
+	Printf( "line %d: (%.0f, %.0f) -> (%.0f, %.0f)  special %d tag %d\n", idx,
+		FIXED2FLOAT( ln->v1->x ), FIXED2FLOAT( ln->v1->y ),
+		FIXED2FLOAT( ln->v2->x ), FIXED2FLOAT( ln->v2->y ), ln->special, ln->args[0] );
+
+	// [rc4l] The flags that decide what gets through. BLOCKPROJECTILE is the one that makes a line
+	// stop a rocket and pass a bullet, which looks exactly like a wall refusing one weapon.
+	FString f;
+	if ( ln->flags & ML_BLOCKING )        f += "BLOCKING ";
+	if ( ln->flags & ML_BLOCKEVERYTHING ) f += "BLOCKEVERYTHING ";
+	if ( ln->flags & ML_BLOCKPROJECTILE ) f += "BLOCKPROJECTILE ";
+	if ( ln->flags & ML_BLOCK_PLAYERS )   f += "BLOCK_PLAYERS ";
+	if ( ln->flags & ML_TWOSIDED )        f += "TWOSIDED ";
+	if ( ln->flags & ML_RAILING )         f += "RAILING ";
+	if ( ln->flags & ML_3DMIDTEX )        f += "3DMIDTEX ";
+	Printf( "  flags 0x%08x  %s\n", (unsigned)ln->flags, f.Len( ) ? f.GetChars( ) : "(none)" );
+
+	if ( fs != NULL )
+		Printf( "  front sector %d: floor %.0f ceiling %.0f\n", (int)( fs - sectors ),
+			FIXED2FLOAT( fs->GetPlaneTexZ( sector_t::floor ) ),
+			FIXED2FLOAT( fs->GetPlaneTexZ( sector_t::ceiling ) ) );
+	if ( bs != NULL )
+		Printf( "  back  sector %d: floor %.0f ceiling %.0f\n", (int)( bs - sectors ),
+			FIXED2FLOAT( bs->GetPlaneTexZ( sector_t::floor ) ),
+			FIXED2FLOAT( bs->GetPlaneTexZ( sector_t::ceiling ) ) );
+	else
+		Printf( "  back  sector: NONE (one-sided)\n" );
+
+	// [rc4l] What each tier covers IN WORLD HEIGHT, not just whether a texture is named.
+	//
+	// A decal is glued to a tier and stored relative to that tier's texture, so a height with no
+	// tier over it is a height where no mark can exist. Printing the spans says immediately whether
+	// a given impact height had anywhere to go.
+	for ( int sd = 0; sd < 2; sd++ )
+	{
+		const side_t *side = ln->sidedef[sd];
+		if ( side == NULL ) continue;
+		const char *names[3] = { "top", "mid", "bottom" };
+		const int tiers[3] = { side_t::top, side_t::mid, side_t::bottom };
+		Printf( "  side %d (sector %d):\n", sd, (int)( side->sector - sectors ) );
+		for ( int t = 0; t < 3; t++ )
+		{
+			FTextureID tid = side->GetTexture( tiers[t] );
+			FTexture *tx = tid.isValid( ) ? TexMan[tid] : NULL;
+			Printf( "    %-6s %-10s", names[t], tx ? tx->Name.GetChars( ) : "-" );
+			if ( fs != NULL && bs != NULL )
+			{
+				const float ff = FIXED2FLOAT( fs->GetPlaneTexZ( sector_t::floor ) );
+				const float fc = FIXED2FLOAT( fs->GetPlaneTexZ( sector_t::ceiling ) );
+				const float bf = FIXED2FLOAT( bs->GetPlaneTexZ( sector_t::floor ) );
+				const float bc = FIXED2FLOAT( bs->GetPlaneTexZ( sector_t::ceiling ) );
+				if ( t == 0 )      Printf( "  covers %.0f..%.0f", bc < fc ? bc : fc, bc < fc ? fc : bc );
+				else if ( t == 2 ) Printf( "  covers %.0f..%.0f", ff < bf ? ff : bf, ff < bf ? bf : ff );
+				else               Printf( "  open span %.0f..%.0f", ff > bf ? ff : bf, fc < bc ? fc : bc );
+			}
+			Printf( "\n" );
+		}
+	}
+}
+
+CCMD( fua_line )
+{
+	if ( lines == NULL || numlines <= 0 ) { Printf( "no level loaded.\n" ); return; }
+	if ( argv.argc( ) < 2 ) { Printf( "usage: fua_line <index>\n" ); return; }
+	const int idx = atoi( argv[1] );
+	if ( idx < 0 || idx >= numlines ) { Printf( "line %d out of range (0..%d)\n", idx, numlines - 1 ); return; }
+	PrintOneLine( idx );
+}
+
+CCMD( fua_lines_at )
+{
+	if ( lines == NULL || numlines <= 0 ) { Printf( "no level loaded.\n" ); return; }
+	if ( argv.argc( ) < 3 ) { Printf( "usage: fua_lines_at <x> <y> [radius]\n" ); return; }
+	const float px = (float)atof( argv[1] ), py = (float)atof( argv[2] );
+	const float rad = ( argv.argc( ) > 3 ) ? (float)atof( argv[3] ) : 32.f;
+
+	int shown = 0;
+	for ( int i = 0; i < numlines; i++ )
+	{
+		const line_t *ln = &lines[i];
+		// distance from the point to the SEGMENT, so a long line counts only where it passes near
+		const float x1 = FIXED2FLOAT( ln->v1->x ), y1 = FIXED2FLOAT( ln->v1->y );
+		const float x2 = FIXED2FLOAT( ln->v2->x ), y2 = FIXED2FLOAT( ln->v2->y );
+		const float dx = x2 - x1, dy = y2 - y1;
+		const float len2 = dx * dx + dy * dy;
+		float t = ( len2 > 0.0001f ) ? ( ( px - x1 ) * dx + ( py - y1 ) * dy ) / len2 : 0.f;
+		if ( t < 0.f ) t = 0.f; else if ( t > 1.f ) t = 1.f;
+		const float qx = x1 + t * dx - px, qy = y1 + t * dy - py;
+		if ( qx * qx + qy * qy > rad * rad ) continue;
+		PrintOneLine( i );
+		shown++;
+	}
+	Printf( "fua_lines_at: %d line(s) within %.0f of (%.0f, %.0f)\n", shown, rad, px, py );
+}
+
 CCMD( fua_find_lines )
 {
 	if ( lines == NULL || numlines <= 0 )

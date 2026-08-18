@@ -21,6 +21,10 @@
 // have hit is a surface about to be stored, and drawn, twice.
 CVAR(Bool, fua_flat_keylog, false, 0)
 
+// [rc4l] At FILE scope, not inside the namespace: p_mobj.cpp externs it to say whether a missile
+// managed to stick its mark, and a namespaced cvar is a different symbol that will not link.
+CVAR(Bool, fua_decal_log, false, 0)
+
 namespace zx { namespace levelmesh {
 
 // [rc4l] Keyed on (subsector, plane) so a subsector's floor and ceiling are each baked once. The
@@ -445,7 +449,6 @@ void RegisterDecal(const FFlatVertex *quad, const void *material, int translatio
 // Two decals of a `lowerdecal` pair land at the same point and have to composite in the order GL
 // drew them. When they come out wrong there is nothing on screen to say which of the two it is,
 // what blend each took, or whether they even reached the backend -- so this prints it.
-CVAR(Bool, fua_decal_log, false, 0)
 
 void RegisterDecalTriangles(const FFlatVertex *tris, int count, const void *material, int translation,
                             bool shadow, bool additive, float alpha,
