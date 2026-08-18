@@ -378,3 +378,29 @@ TEST(ServerRegistryList, TheReportIsOptional)
 	// Every existing caller passes nothing, and must keep working unchanged.
 	EXPECT_EQ( 1u, zx::ParseServerRegistryList( "good.example.net\n" ).size( ));
 }
+
+TEST(ServerRegistryList, TheCsvPathReportsWhatItSkippedToo)
+{
+	// The cvar path, which is the one a player actually edits -- and the one whose silence hid the
+	// IPv6 address bug. Covered separately from the line-based parser because they are separate
+	// loops, and a report that only worked for the file would have been no help at all.
+	std::vector<std::string> skipped;
+	const std::vector<zx::ServerRegistryEntry> entries =
+		zx::ParseServerRegistryCSV( "good.example.net,[2001:db8::1,other.example.net", &skipped );
+
+	EXPECT_EQ( 2u, entries.size( ));
+	ASSERT_EQ( 1u, skipped.size( ));
+	EXPECT_EQ( "[2001:db8::1", skipped[0] );
+}
+
+TEST(ServerRegistryList, TheHostValidatorAcceptsAV6LiteralDirectly)
+{
+	// The parsers reach v6 by their own route, so this branch is only reachable through the public
+	// validator -- which is exactly why it needs asserting: a caller checking a host before storing
+	// it would otherwise reject every IPv6 registry, since a colon fails every DNS label rule.
+	EXPECT_TRUE( zx::IsValidServerRegistryHost( "2001:db8::1" ));
+	EXPECT_TRUE( zx::IsValidServerRegistryHost( "fd00:fa:2::10" ));
+
+	EXPECT_TRUE( zx::IsValidServerRegistryHost( "registry.example.net" )) << "names still work";
+	EXPECT_FALSE( zx::IsValidServerRegistryHost( "2001:db8::zzzz" )) << "not hex, so not an address";
+}
