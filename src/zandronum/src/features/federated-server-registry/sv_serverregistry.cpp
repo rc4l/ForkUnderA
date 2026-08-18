@@ -79,6 +79,7 @@
 #include "features/server-hosting/computation/punchbroker_compute.h" // [rc4l] how many punches, and when
 #include "features/federated-server-registry/computation/lanbroadcast_compute.h" // [rc4l] LAN subnet broadcast
 #include "features/federated-server-registry/computation/listingproof_compute.h" // [rc4l] is anyone outside seeing us
+#include "features/net/zx_resolve.h" // [rc4l] the registry's AAAA, which LoadFromString cannot find
 #include "features/identity/zx_identity.h" // [rc4l] the id the registry groups our two listings by
 
 // [rc4l] Its own switch, not `developer`, so turning on LAN tracing does not also unleash every other
@@ -127,41 +128,6 @@ static	bool				g_bServerRegistryV6Valid = false;
 // [rc4l] Resolve the AAAA record of `pszHost` (which may carry a :port suffix that a v6 LOOKUP
 // must not see). Returns false when the name has no v6 address, which is the common case and not
 // an error.
-static bool server_registry_ResolveV6( const char *pszHost, NETADDRESS_s &Out )
-{
-	char szName[512];
-	strncpy( szName, pszHost, sizeof szName - 1 );
-	szName[sizeof szName - 1] = 0;
-
-	// Strip a trailing :port exactly as LoadFromString does; a bare hostname has no colons.
-	char *pszColon = strchr( szName, ':' );
-	if ( pszColon != NULL )
-		*pszColon = 0;
-
-	struct addrinfo hints;
-	struct addrinfo *pResult = NULL;
-	memset( &hints, 0, sizeof hints );
-	hints.ai_family = AF_INET6;
-	hints.ai_socktype = SOCK_DGRAM;
-
-	if (( getaddrinfo( szName, NULL, &hints, &pResult ) != 0 ) || ( pResult == NULL ))
-		return false;
-
-	// [rc4l] Refuse a v4-mapped answer, since asking for AF_INET6 with no AAAA record hands back
-	// ::ffff:a.b.c.d and every dual-stack host would then announce twice over IPv4.
-	bool bIsRealV6 = false;
-	if ( pResult->ai_addr->sa_family == AF_INET6 )
-	{
-		const struct sockaddr_in6 *pAddr6 = reinterpret_cast<const struct sockaddr_in6 *>( pResult->ai_addr );
-		bIsRealV6 = ( IN6_IS_ADDR_V4MAPPED( &pAddr6->sin6_addr ) == 0 );
-	}
-
-	if ( bIsRealV6 )
-		Out.LoadFromSocketAddress( *pResult->ai_addr );
-
-	freeaddrinfo( pResult );
-	return bIsRealV6;
-}
 
 // Message buffer for sending messages to the server registry.
 static	NETBUFFER_s			g_ServerRegistryBuffer;
@@ -858,7 +824,7 @@ void SERVER_SERVERREGISTRY_Tick( void )
 	// what gets an IPv6-native host (cellular especially: real public v6, unreachable carrier-NAT
 	// v4) listed under an address other players can actually reach. Same packet, second family --
 	// to the registry these are simply two servers, one per address, which is exactly the truth.
-	g_bServerRegistryV6Valid = server_registry_ResolveV6( fua_serverregistry_host,
+	g_bServerRegistryV6Valid = zx::ResolveHostV6( fua_serverregistry_host,
 		g_AddressServerRegistryV6 );
 	if ( g_bServerRegistryV6Valid )
 	{
