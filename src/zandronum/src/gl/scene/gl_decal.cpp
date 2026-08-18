@@ -58,6 +58,13 @@
 
 EXTERN_CVAR(Bool, gl_wallmesh)
 
+// [rc4l] What a decal actually receives from the dynamic lights, per draw.
+//
+// "Decals should not be lit" and "decals are not being lit" look identical on screen, and only one
+// of them is a bug. This says which: whether the decal is a shaded alpha mask (whose own colour
+// multiplies the light, so a black one can never brighten) and what light reached it.
+CVAR(Bool, fua_decal_lightlog, false, 0)
+
 struct DecalVertex
 {
 	float x,y,z;
@@ -313,6 +320,10 @@ void GLWall::DrawDecal(DBaseDecal *decal)
 		gl_SetDynSpriteLight(NULL, x, y, zpos, sub);
 		gl_RenderState.GetDynLight(decalDyn[0], decalDyn[1], decalDyn[2]);
 		haveDecalDyn = true;
+		if (fua_decal_lightlog)
+			Printf("decal %s: shaded %d  alphaColor %06x  dynLight %.3f %.3f %.3f\n",
+				texture ? texture->Name.GetChars() : "?", decal->RenderStyle.Flags & STYLEF_RedIsAlpha ? 1 : 0,
+				(unsigned)decal->AlphaColor & 0xffffff, decalDyn[0], decalDyn[1], decalDyn[2]);
 	}
 
 	// alpha color only has an effect when using an alpha texture.
