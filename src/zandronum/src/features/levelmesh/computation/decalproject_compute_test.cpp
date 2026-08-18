@@ -397,6 +397,115 @@ TEST(DecalProject, AProjectionAlongTheSurfaceIsFlooredRatherThanInfinite)
 }
 
 // ---------------------------------------------------------------------------------------------
+// Running out instead of stopping dead
+// ---------------------------------------------------------------------------------------------
+
+TEST(DecalProject, ASliceKeepsOnlyItsOwnDepth)
+{
+	// A floor stretching away from the wall spans the whole depth of the box. Sliced, each piece can
+	// be drawn at its own strength -- which is the difference between a mark that runs out and a mark
+	// that ends in a straight line across open floor.
+	const float floorStrip[12] = {
+		-10.f, 0.f, -30.f,
+		 10.f, 0.f, -30.f,
+		 10.f, 0.f,   0.f,
+		-10.f, 0.f,   0.f,
+	};
+	float out[72 * 3];
+
+	const int n = ClipLocalPolygonToDepthBand(floorStrip, 4, -20.f, -10.f, out, 72);
+
+	ASSERT_GE(n, 3);
+	for (int i = 0; i < n; i++)
+	{
+		EXPECT_GE(out[i*3 + 2], -20.f - 1e-4f);
+		EXPECT_LE(out[i*3 + 2], -10.f + 1e-4f);
+	}
+}
+
+TEST(DecalProject, SlicesCoverTheWholePolygonBetweenThem)
+{
+	// No gaps and no overlaps: a strip cut into pieces has to add back up, or the ramp has holes in
+	// it and the holes are visible as bands of bare wall.
+	const float strip[12] = {
+		-10.f, 0.f, -40.f,  10.f, 0.f, -40.f,  10.f, 0.f, 0.f,  -10.f, 0.f, 0.f,
+	};
+	float out[72 * 3];
+	float lowest = 1e9f, highest = -1e9f;
+	int slicesWithArea = 0;
+
+	for (int k = 0; k < 4; k++)
+	{
+		const float lo = -40.f + 10.f * k, hi = lo + 10.f;
+		const int n = ClipLocalPolygonToDepthBand(strip, 4, lo, hi, out, 72);
+		if (n < 3) continue;
+		slicesWithArea++;
+		for (int i = 0; i < n; i++)
+		{
+			lowest = std::fmin(lowest, out[i*3 + 2]);
+			highest = std::fmax(highest, out[i*3 + 2]);
+		}
+	}
+
+	EXPECT_EQ(slicesWithArea, 4);
+	EXPECT_NEAR(lowest, -40.f, 1e-3f);
+	EXPECT_NEAR(highest, 0.f, 1e-3f);
+}
+
+TEST(DecalProject, ASliceOutsideThePolygonIsEmpty)
+{
+	const float strip[12] = {
+		-10.f, 0.f, -5.f,  10.f, 0.f, -5.f,  10.f, 0.f, 0.f,  -10.f, 0.f, 0.f,
+	};
+	float out[72 * 3];
+
+	EXPECT_EQ(ClipLocalPolygonToDepthBand(strip, 4, -40.f, -20.f, out, 72), 0);
+}
+
+TEST(DecalProject, TheSurfaceThatWasHitIsNeverFaded)
+{
+	// [rc4l] The mark on the wall you shot is the picture, at the size the decal asked for. Fading it
+	// would be second-guessing the artist, and it is also the case that must not change when the
+	// run-out is added, or every mark in the game gets quietly weaker.
+	const float centre[3] = { 0.f, 0.f, 0.f };
+	const float edgeOfPicture[3] = { 12.f, 16.f, 0.f };   // radius 20, exactly the picture's own
+
+	EXPECT_NEAR(DecalRadialFade(centre, 20.f, 60.f), 1.f, 1e-6f);
+	EXPECT_NEAR(DecalRadialFade(edgeOfPicture, 20.f, 60.f), 1.f, 1e-6f);
+}
+
+TEST(DecalProject, ReachingBeyondThePictureRunsOutSmoothly)
+{
+	const float justOutside[3] = { 0.f, 0.f, -21.f };
+	const float halfway[3] = { 0.f, 0.f, -40.f };
+	const float atTheLimit[3] = { 0.f, 0.f, -60.f };
+	const float beyond[3] = { 0.f, 0.f, -90.f };
+
+	const float a = DecalRadialFade(justOutside, 20.f, 60.f);
+	const float b = DecalRadialFade(halfway, 20.f, 60.f);
+
+	EXPECT_LT(a, 1.f);
+	EXPECT_GT(a, 0.9f) << "and it leaves the picture's edge gently, not with a crease";
+	EXPECT_LT(b, a);
+	EXPECT_NEAR(DecalRadialFade(atTheLimit, 20.f, 60.f), 0.f, 1e-6f);
+	EXPECT_NEAR(DecalRadialFade(beyond, 20.f, 60.f), 0.f, 1e-6f);
+}
+
+TEST(DecalProject, TheRunOutIsContinuousAROUNDACorner)
+{
+	// [rc4l] The seam this replaces: fading per SURFACE gives each face of a corner its own constant,
+	// so a step appears exactly down the join. Distance from the impact does not know a corner is
+	// there, so two points either side of one get near-identical strength.
+	const float onTheWall[3] = { 0.f, -24.9f, -0.5f };
+	const float onTheFloor[3] = { 0.f, -25.0f, -0.6f };
+
+	const float wall = DecalRadialFade(onTheWall, 20.f, 60.f);
+	const float floor = DecalRadialFade(onTheFloor, 20.f, 60.f);
+
+	EXPECT_NEAR(wall, floor, 0.02f) << "no step where the two surfaces meet";
+}
+
+// ---------------------------------------------------------------------------------------------
 // The texture coordinate
 // ---------------------------------------------------------------------------------------------
 

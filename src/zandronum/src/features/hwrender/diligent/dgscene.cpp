@@ -1575,6 +1575,8 @@ static void DrawBlended(Diligent::IDeviceContext *ctx)
 			d.translation = r.translation; d.material = r.material; d.srb = srb;
 			d.bias = r.depthBias;
 			d.red = r.redAlpha;
+			const float dx = r.cx - cx, dy = r.cy - cy, dz = r.cz - cz;
+			d.dist = dx*dx + dy*dy + dz*dz;
 			// [rc4l] A decal sorts as very slightly FARTHER than it is.
 			//
 			// It is paint on a surface, so anything standing in front of that surface must be drawn
@@ -1583,9 +1585,12 @@ static void DrawBlended(Diligent::IDeviceContext *ctx)
 			// farthest-first sort the decal then lands second and buries the sprite. Two percent is
 			// proportional, so it only ever decides a near-coincident pair and never reorders anything
 			// genuinely in front of or behind.
+			//
+			// AFTER the distance is computed, which it was not: the multiply sat one line above the
+			// assignment that overwrote it, so the rule had never once applied. A bias that is dead
+			// looks exactly like a bias that is too small -- the pair it was meant to settle simply
+			// keeps trading places -- which is the worst way for a fix to fail.
 			if (r.depthBias) d.dist *= 1.02f;
-			const float dx = r.cx - cx, dy = r.cy - cy, dz = r.cz - cz;
-			d.dist = dx*dx + dy*dy + dz*dz;
 			list.Push(d);
 			g_dynDraws++;
 			g_dynTris += r.count / 3;

@@ -124,6 +124,34 @@ void ComputeDecalBoxDepth(float size, float cosTheta, float spreadFraction,
 int ClipPolygonToDecalBox(const float *worldPoly, int count, const DecalBox &box,
                           float *outLocal, int maxOut);
 
+// [rc4l] Cut an already-clipped polygon into one slice of depth.
+//
+// Depth is the direction of travel, so a surface lying ALONG the projection -- the floor in front of
+// a wall that was just marked, the far face of a corner -- covers the whole range of it, and the
+// box's own limit then ends that surface's share in a dead straight line across open floor. A mark
+// does not end in a straight line; it runs out.
+//
+// Slicing lets each slice be drawn at its own strength, so the run-out is a ramp rather than an
+// edge. It is per-slice and not per-fragment because a mesh piece is the smallest thing that can
+// carry an alpha, and a handful of slices is enough at the sizes decals actually are.
+//
+// Input and output are both box-local (u, v, w). Returns the number of points, 0 if this slice is
+// empty. `out` needs room for count + 2 points.
+int ClipLocalPolygonToDepthBand(const float *local, int count, float wLo, float wHi,
+                                float *out, int maxOut);
+
+// [rc4l] How much of the blast is left this far from where it landed.
+//
+// Full strength anywhere inside the picture's own radius, so the surface that was actually hit is
+// never touched -- its mark is the picture, at the size the decal says, and fading it would be
+// second-guessing the artist. Beyond that the mark is reaching onto geometry the picture does not
+// itself cover, and it runs out smoothly by `outerRadius`.
+//
+// Radial rather than per-surface: a fade that is constant across each surface puts a visible STEP
+// down the middle of a corner, because the two faces take different constants. Distance from the
+// impact is continuous across a corner, so the ramp is too.
+float DecalRadialFade(const float local[3], float pictureRadius, float outerRadius);
+
 // [rc4l] The picture coordinate of a box-local point. 0..1 across the box, whatever it landed on.
 void DecalUV(const float local[3], const DecalBox &box, float &u, float &v);
 
