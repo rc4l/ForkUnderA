@@ -45,7 +45,6 @@
 #include "colormatcher.h"
 #include "v_palette.h"
 #include "farchive.h"
-#include "features/levelmesh/flatdecals.h"   // [rc4l] decals on floors and ceilings
 
 static fixed_t DecalWidth, DecalLeft, DecalRight;
 static fixed_t SpreadZ;
@@ -684,37 +683,9 @@ DImpactDecal *DImpactDecal::StaticCreate (const char *name, fixed_t x, fixed_t y
 	return NULL;
 }
 
-// [rc4l] Why a shot left no mark, counted at the only place that knows.
-//
-// A wall with no decal on it looks the same whether the engine declined to make one or the renderer
-// failed to draw it, and those are opposite investigations. The counters below name the reason, so
-// `fua_walldecals` can answer it instead of a screenshot being argued over.
-//
-// The one that surprises people is `noSurface`. StickToWall has to pick a texture for the mark to
-// live on, and on a TWO-SIDED line -- a line connecting two sectors -- it looks for the upper or the
-// lower section. A hit that lands in the open gap between them, the doorway or window itself, is on
-// no texture at all, so it returns a null texture id and there is no decal. That is vanilla
-// behaviour and GL does exactly the same; it is not something the backend dropped.
-namespace zx { namespace decalstats {
-int g_wallTries = 0, g_wallNoTemplate = 0, g_wallSuppressed = 0, g_wallNoSurface = 0, g_wallMade = 0;
-// [rc4l] The last refusal, in full. A count says a mark was declined; only the line and the heights
-// say WHY, and "the hit was in the open gap" is a claim until the numbers agree with it.
-int g_lastRefusedLine = -1;
-double g_lastRefusedZ = 0, g_lastRefusedBackFloor = 0, g_lastRefusedBackCeil = 0;
-bool g_lastRefusedTwoSided = false, g_lastRefusedHasMid = false;
-// Where the line IS, and what is drawn on it. "The blast landed on real geometry" and "the engine
-// found no texture to put a mark on" cannot both be true, and only the line itself can say which.
-double g_lastRefusedV1[2] = { 0, 0 }, g_lastRefusedV2[2] = { 0, 0 };
-double g_lastRefusedHit[2] = { 0, 0 };
-char g_lastRefusedTex[3][16] = { "", "", "" };   // top, mid, bottom of the side that was hit
-}}
-
 DImpactDecal *DImpactDecal::StaticCreate (const FDecalTemplate *tpl, fixed_t x, fixed_t y, fixed_t z, side_t *wall, F3DFloor * ffloor, PalEntry color)
 {
 	DImpactDecal *decal = NULL;
-	zx::decalstats::g_wallTries++;
-	if (tpl == NULL || cl_maxdecals <= 0) zx::decalstats::g_wallNoTemplate++;
-	else if (wall->Flags & WALLF_NOAUTODECALS) zx::decalstats::g_wallSuppressed++;
 	if (tpl != NULL && cl_maxdecals > 0 && !(wall->Flags & WALLF_NOAUTODECALS))
 	{
 		if (tpl->LowerDecal)
@@ -737,44 +708,8 @@ DImpactDecal *DImpactDecal::StaticCreate (const FDecalTemplate *tpl, fixed_t x, 
 
 		if (!decal->StickToWall (wall, x, y, ffloor).isValid())
 		{
-			// No texture to live on: see the note above StaticCreate. Almost always a two-sided
-			// line hit in its open middle.
-			zx::decalstats::g_wallNoSurface++;
-			// [rc4l] The engine has nowhere to put this, but the level mesh does: its decals are
-			// points with a radius rather than quads glued to a sidedef, so the mark lands at the
-			// impact and creeps onto whatever real geometry is behind it. See the definition.
-			zx::levelmesh::SpawnUnstuckWallDecal(tpl, x, y, z, wall);
-			{
-				const line_t *ld = wall->linedef;
-				zx::decalstats::g_lastRefusedLine = ld ? (int)(ld - lines) : -1;
-				zx::decalstats::g_lastRefusedZ = FIXED2DBL(z);
-				const sector_t *back = (ld && ld->sidedef[0] == wall) ? ld->frontsector : NULL;
-				if (ld) back = (ld->sidedef[0] == wall) ? ld->backsector : ld->frontsector;
-				zx::decalstats::g_lastRefusedTwoSided = (back != NULL);
-				zx::decalstats::g_lastRefusedBackFloor = back ? FIXED2DBL(back->floorplane.ZatPoint(x, y)) : 0;
-				zx::decalstats::g_lastRefusedBackCeil = back ? FIXED2DBL(back->ceilingplane.ZatPoint(x, y)) : 0;
-				zx::decalstats::g_lastRefusedHasMid = wall->GetTexture(side_t::mid).isValid();
-				if (ld != NULL)
-				{
-					zx::decalstats::g_lastRefusedV1[0] = FIXED2DBL(ld->v1->x);
-					zx::decalstats::g_lastRefusedV1[1] = FIXED2DBL(ld->v1->y);
-					zx::decalstats::g_lastRefusedV2[0] = FIXED2DBL(ld->v2->x);
-					zx::decalstats::g_lastRefusedV2[1] = FIXED2DBL(ld->v2->y);
-				}
-				zx::decalstats::g_lastRefusedHit[0] = FIXED2DBL(x);
-				zx::decalstats::g_lastRefusedHit[1] = FIXED2DBL(y);
-				static const int tiers[3] = { side_t::top, side_t::mid, side_t::bottom };
-				for (int ti = 0; ti < 3; ti++)
-				{
-					FTexture *t = TexMan[wall->GetTexture(tiers[ti])];
-					const char *n = (t != NULL && t->Name.Len()) ? t->Name.GetChars() : "-";
-					strncpy(zx::decalstats::g_lastRefusedTex[ti], n, 15);
-					zx::decalstats::g_lastRefusedTex[ti][15] = 0;
-				}
-			}
 			return NULL;
 		}
-		zx::decalstats::g_wallMade++;
 
 		tpl->ApplyToDecal (decal, wall);
 		if (color != 0)
@@ -784,14 +719,6 @@ DImpactDecal *DImpactDecal::StaticCreate (const FDecalTemplate *tpl, fixed_t x, 
 
 		// [rc4l] features/levelmesh: mirror it into the projected decal pass.
 		//
-		// Here rather than at any of the call sites: everything that marks a wall -- hitscans,
-		// missiles, blood, rail, ACS, the network -- funnels through this one function, and by this
-		// line the decal has settled its texture, scale, shade and position. The lower decal a
-		// template names has already recursed through the same line, so it is covered too. Spread
-		// clones are deliberately left out; they exist to carry a decal past the edge of a sidedef,
-		// which is what the projected box does for nothing.
-		zx::levelmesh::SpawnWallDecal (decal, wall, tpl);
-
 		if (!cl_spreaddecals || !decal->PicNum.isValid())
 		{
 			return decal;
@@ -880,17 +807,6 @@ DBaseDecal *ShootDecal(const FDecalTemplate *tpl, AActor *basisactor, sector_t *
 	Trace(x, y, z, sec,
 		finecosine[angle], finesine[angle], 0,
 		tracedist, 0, 0, NULL, trace, TRACE_NoSky);
-
-	// [rc4l] features/levelmesh: the ACS/DECORATE SpawnDecal path marks planes too.
-	//
-	// The last of the wall-only decal sites. A script that paints a mark on the ground got nothing at
-	// all before this, which is indistinguishable from the script being wrong.
-	if (trace.HitType == TRACE_HitFloor || trace.HitType == TRACE_HitCeiling)
-	{
-		zx::levelmesh::SpawnFlatDecal(tpl, trace.X, trace.Y, trace.Z,
-			trace.HitType == TRACE_HitCeiling, trace.ffloor);
-		return NULL;   // no DBaseDecal exists for a plane; the mark lives in the flat decal list
-	}
 
 	if (trace.HitType == TRACE_HitWall)
 	{

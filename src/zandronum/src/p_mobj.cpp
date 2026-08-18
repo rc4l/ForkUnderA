@@ -38,7 +38,6 @@
 #include "m_random.h"
 #include "doomdef.h"
 #include "p_local.h"
-#include "features/levelmesh/flatdecals.h"   // [rc4l] missile decals on floors and ceilings
 #include "p_lnspec.h"
 #include "p_effect.h"
 #include "p_terrain.h"
@@ -1700,16 +1699,6 @@ void P_ExplodeMissile (AActor *mo, line_t *line, AActor *target, bool bExplodeOn
 			return;
 		}
 	}
-	// [rc4l] Keep the direction of travel before it is thrown away.
-	//
-	// The decal code below is a hundred lines further on and by then the velocity is zero, so
-	// anything down there that needs to know which way the missile was going has to be handed it
-	// from here. PrevX/PrevY are not a substitute -- they are already synced to the final position,
-	// so the difference is zero and a trace along it goes nowhere. That silently disabled the
-	// re-anchoring of marks on lines with no texture: the trace never ran, and the dead zones stayed
-	// dead while the counter cheerfully reported no direction was available.
-	const fixed_t travelX = mo->velx, travelY = mo->vely;
-
 	mo->velx = mo->vely = mo->velz = 0;
 	mo->effects = 0;		// [RH]
 	mo->flags &= ~MF_SHOOTABLE;
@@ -1749,36 +1738,6 @@ void P_ExplodeMissile (AActor *mo, line_t *line, AActor *target, bool bExplodeOn
 		// [RH] Don't explode missiles on horizon lines.
 		mo->Destroy ();
 		return;
-	}
-
-	// [rc4l] What the missile actually died against, counted before anything is decided.
-	//
-	// A missile marks a wall only when it explodes with a blocking LINE. It can also explode against
-	// an actor, or come to rest against nothing either branch recognises, and both of those leave no
-	// mark at all -- silently, and only in some places, which is what a "dead zone" is. Telling them
-	// apart from in front of an unmarked wall is impossible; this is one counter each.
-	zx::levelmesh::NoteMissileDeath(line != NULL, target != NULL, mo->DecalGenerator != NULL,
-		FIXED2DBL(mo->z), FIXED2DBL(mo->floorz));
-
-	// [rc4l] features/levelmesh: a missile that hits a FLOOR or CEILING marks it too.
-	//
-	// The branch below only fires for `line != NULL`, so a projectile exploding on the ground has
-	// never left a decal -- the same gap P_LineAttack had for hitscans, and the reason plasma marks
-	// walls but not floors while bullets now mark both. `line` is NULL for a plane hit and for an
-	// actor hit alike, so the plane is identified by where the missile came to rest.
-	if (line == NULL && target == NULL && cl_missiledecals)
-	{
-		FDecalBase *base = mo->DecalGenerator;
-		// A missile does not come to rest exactly on the plane it struck, so "did this hit the
-		// ground" is a proximity question rather than an equality one. Two units of slack; the
-		// counters below say which arm of this actually fires.
-		const fixed_t kSlack = 4 * FRACUNIT;
-		const bool onFloor = (mo->z <= mo->floorz + kSlack);
-		const bool onCeiling = (mo->z + mo->height >= mo->ceilingz - kSlack);
-		zx::levelmesh::NoteMissileImpact(base != NULL, onFloor, onCeiling);
-		if (base != NULL && (onFloor || onCeiling) && NETWORK_GetState( ) != NETSTATE_SERVER)
-			zx::levelmesh::SpawnFlatDecal(base->GetDecal(), mo->x, mo->y,
-				onCeiling ? mo->ceilingz : mo->floorz, onCeiling, NULL);
 	}
 
 	if (line != NULL && cl_missiledecals)
@@ -1844,24 +1803,8 @@ void P_ExplodeMissile (AActor *mo, line_t *line, AActor *target, bool bExplodeOn
 					// [BC] Servers don't need to spawn decals.
 					if ( NETWORK_GetState( ) != NETSTATE_SERVER )
 					{
-						// [rc4l] Which way the missile was going, for the case where this line turns
-						// out to have no texture to hold a mark.
-						//
-						// The blocking line is not always the surface you can see. A projectile has a
-						// radius, so it can be stopped by one face of a corner while the face it
-						// visibly struck is the neighbour -- measured on MAP01, blocked by line 288
-						// whose far endpoint IS the first vertex of line 152, the face under the
-						// crosshair. Line 288 is open at that height and carries no middle texture,
-						// so the engine has nothing to glue a decal to and makes none at all.
-						//
-						// The velocity is already zeroed by the time we get here, but the previous
-						// position is not, so the direction of travel survives. See
-						// SpawnUnstuckWallDecal, which traces the last few units along it to find the
-						// surface actually hit.
-						zx::levelmesh::SetImpactDirection( travelX, travelY );
 						DImpactDecal::StaticCreate (base->GetDecal (),
 							x, y, z, line->sidedef[side], ffloor);
-						zx::levelmesh::SetImpactDirection( 0, 0 );
 					}
 				}
 			}

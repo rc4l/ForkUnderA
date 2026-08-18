@@ -83,7 +83,6 @@ static_assert(ZX_TRACE_HitActor == TRACE_HitActor, "TRACE_Hit mirror out of sync
 #include "d_netinf.h"
 #include "v_video.h"
 #include "features/ripper/computation/ripper_compute.h"	// [MGOOOOOO] rip budget decisions
-#include "features/levelmesh/flatdecals.h"   // [rc4l] decals on floors and ceilings
 
 // [MGOOOOOO] Collects a ripping projectile's DECORATE-authored budget for the pure decision
 // helpers. All-zero (the default) means unlimited, so a ripper that sets none of these resolves
@@ -4678,27 +4677,6 @@ AActor *P_LineAttack(AActor *t1, angle_t angle, fixed_t distance,
 			if ( NETWORK_InClientMode() && cl_hitscandecalhack == false ) 
 				return NULL;
 
-			// [rc4l] features/levelmesh: mark FLOORS and CEILINGS too.
-			//
-			// The branch below only fires for TRACE_HitWall, because a Doom decal is a wall object --
-			// DBaseDecal hangs off a sidedef and is positioned along a linedef. Shooting the floor has
-			// always left it unmarked. These records live outside DBaseDecal entirely; see
-			// features/levelmesh/flatdecals.h.
-			zx::levelmesh::NoteImpact((int)trace.HitType, !!(flags & LAF_NOIMPACTDECAL),
-				puffDefaults != NULL && !!(puffDefaults->flags7 & MF7_NODECAL));
-			if ((trace.HitType == TRACE_HitFloor || trace.HitType == TRACE_HitCeiling) &&
-				!(flags & LAF_NOIMPACTDECAL) && !(puffDefaults->flags7 & MF7_NODECAL))
-			{
-				FDecalBase *base = NULL;
-				if (t1->player != NULL && t1->player->ReadyWeapon != NULL)
-					base = t1->player->ReadyWeapon->GetDefault()->DecalGenerator;
-				if (base == NULL) base = t1->DecalGenerator;
-				if (base == NULL && puff != NULL) base = puff->DecalGenerator;
-				if (base != NULL)
-					zx::levelmesh::SpawnFlatDecal(base->GetDecal(), trace.X, trace.Y, trace.Z,
-						trace.HitType == TRACE_HitCeiling, trace.ffloor);
-			}
-
 			// [RH] Spawn a decal
 			if (trace.HitType == TRACE_HitWall && trace.Line->special != Line_Horizon && !(flags & LAF_NOIMPACTDECAL) && !(puffDefaults->flags7 & MF7_NODECAL))
 			{
@@ -5063,17 +5041,6 @@ void P_TraceBleed(int damage, fixed_t x, fixed_t y, fixed_t z, AActor *actor, an
 		{
 			// [rc4l] features/levelmesh: blood lands on FLOORS and CEILINGS too.
 			//
-			// The wall-only branch below is why shooting something standing on open ground has never
-			// left a splash on it. Same gap as P_LineAttack's and P_ExplodeMissile's.
-			if (bleedtrace.HitType == TRACE_HitFloor || bleedtrace.HitType == TRACE_HitCeiling)
-			{
-				PalEntry bc = actor->GetBloodColor();
-				if (bc != 0) { bc.r >>= 1; bc.g >>= 1; bc.b >>= 1; bc.a = 1; }
-				const FDecalTemplate *btpl = DecalLibrary.GetDecalByName(bloodType);
-				if (btpl != NULL && NETWORK_GetState( ) != NETSTATE_SERVER)
-					zx::levelmesh::SpawnFlatDecal(btpl, bleedtrace.X, bleedtrace.Y, bleedtrace.Z,
-						bleedtrace.HitType == TRACE_HitCeiling, bleedtrace.ffloor, (DWORD)bc);
-			}
 			if (bleedtrace.HitType == TRACE_HitWall)
 			{
 				PalEntry bloodcolor = actor->GetBloodColor();
@@ -5376,16 +5343,6 @@ void P_RailAttack(AActor *source, int damage, int offset_xy, fixed_t offset_z, i
 	}
 	// [rc4l] features/levelmesh: and on planes, which railEnd.decal deliberately excludes because a
 	// flat could not take a wall decal. It can now.
-	else if (trace.HitType == TRACE_HitFloor || trace.HitType == TRACE_HitCeiling)
-	{
-		FDecalBase *base = NULL;
-		if (source != NULL && source->player != NULL && source->player->ReadyWeapon != NULL)
-			base = source->player->ReadyWeapon->GetDefault()->DecalGenerator;
-		if (base == NULL && source != NULL) base = source->DecalGenerator;
-		if (base != NULL && NETWORK_GetState( ) != NETSTATE_SERVER)
-			zx::levelmesh::SpawnFlatDecal(base->GetDecal(), trace.X, trace.Y, trace.Z,
-				trace.HitType == TRACE_HitCeiling, trace.ffloor);
-	}
 	if (railEnd.puff && puffclass != NULL && puffDefaults->flags3 & MF3_ALWAYSPUFF)
 	{
 		// [rc4l] Ported from qzandronum@d33dacfb1ca1dfa3eef1989b1e5c6d5f8443ddce: pull the endpoint puff

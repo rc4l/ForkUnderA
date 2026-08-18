@@ -77,7 +77,7 @@ const USAGE = `fuactl <command>
   play [--port P] [--map M] [--file a.pk3,b.pk3] [--preset ID --variant V] [--gl] [--side-by-side] [--rt] [--monsters] [--lock]   a build to walk around in, Vulkan live in the window; stays up until Ctrl-C
   build [--root DIR]                 compile the engine and stage it, failing loudly instead of staging a stale binary
   shot <tag> [--port P] [--spot NAME | --at x,y,z --face yaw,pitch]   matched GL/Vulkan pair from a running instance, one camera, sim frozen
-  mark --port P --tag T --at x,y,z --face yaw,pitch [--weapon W] [--map M] [--after TICS]   fire at a junction, find the mark, and capture a GL/Vulkan pair of it (--after catches transient decals before they fade)
+  shoot --port P --tag T --at x,y,z --face yaw,pitch [--look x,y,z] [--weapon W] [--map M] [--after TICS]   fire at a junction and capture a GL/Vulkan pair (--look frames a point, --after catches transient effects before they fade)
   sweep [--maps "MAP01 MAP07"] [--port P]   matched pairs across several maps, ranked by how much the renderers disagree
   doorshot <tag> [--port P] [--at x,y,z --face yaw] [--mid TICS]   a door caught MID-SWING in both renderers, plus a before pair
   look [--port P] [--at x,y,z --face yaw,pitch]   what the crosshair is on and what the level mesh holds for it
@@ -549,7 +549,7 @@ async function main() {
       await new Promise(() => {});
       break;
     }
-    // [rc4l] `fuactl mark` -- shoot something, then look at what it left.
+    // [rc4l] `fuactl shoot` -- fire from a given spot, then photograph the result in both backends.
     //
     // The check this replaces was five manual steps and it was manual every time, so it got run at a
     // slightly different camera each round and the rounds could not be compared. Worse, it kept
@@ -557,36 +557,43 @@ async function main() {
     // not reset, monsters left on, camera forced inside a wall -- each shipped more than once.
     //
     // The point of aiming at a JUNCTION rather than a flat wall is that flat walls have never been
-    // the problem: a decal only has to decide anything where two surfaces meet.
+    // the problem: rendering only has to decide anything where two surfaces meet.
     //
-    //   fuactl mark --port P --tag T --at x,y,z --face yaw,pitch [--weapon W] [--map M]
-    case "mark": {
+    // --look is where the camera is then pointed. It is given rather than discovered, because the
+    // shooter cannot know where its own shot landed without the engine telling it, and a tool that
+    // guesses that point has photographed the wrong wall before.
+    //
+    //   fuactl shoot --port P --tag T --at x,y,z --face yaw,pitch [--look x,y,z] [--weapon W] [--map M]
+    case "shoot": {
       if (!flags.port || !flags.at || !flags.face) {
-        console.error("usage: fuactl mark --port P --tag T --at x,y,z --face yaw,pitch [--weapon W] [--map M] [--back N] [--up N]");
+        console.error("usage: fuactl shoot --port P --tag T --at x,y,z --face yaw,pitch [--look x,y,z] [--weapon W] [--map M] [--back N] [--up N] [--after TICS]");
         process.exit(2);
       }
       const [x, y, z] = String(flags.at).split(",").map(Number);
       const [yaw, pitch] = String(flags.face).split(",").map(Number);
       const weapon = flags.weapon || "RocketLauncher";
-      const tag = flags.tag || "mark";
+      const tag = flags.tag || "shot";
       const c = new BridgeClient();
       await c.connect(Number(flags.port), { token: flags.token || null });
       await c.waitHello();
       try {
         await cap.sandbox(c, { map: flags.map || "MAP01" });
         await cap.fire(c, { x, y, z, yaw, pitch, weapon, settleTics: flags.after ? Number(flags.after) : undefined });
-        const mark = await cap.findMark(c);
-        if (!mark) { console.log(JSON.stringify({ tag, weapon, marked: false })); break; }
-        const cam = await cap.placeCamera(c, mark, yaw, {
-          back: flags.back ? Number(flags.back) : undefined,
-          up: flags.up ? Number(flags.up) : undefined,
-        });
-        if (!cam) { console.log(JSON.stringify({ tag, weapon, mark, camera: null })); break; }
-        await cap.waitTics(c, 6);
+        let camera = { x, y, z, yaw, pitch, frac: 1 };
+        if (flags.look) {
+          const [lx, ly, lz] = String(flags.look).split(",").map(Number);
+          const cam = await cap.placeCamera(c, { x: lx, y: ly, z: lz }, yaw, {
+            back: flags.back ? Number(flags.back) : undefined,
+            up: flags.up ? Number(flags.up) : undefined,
+          });
+          if (!cam) { console.log(JSON.stringify({ tag, weapon, camera: null })); break; }
+          camera = cam;
+          await cap.waitTics(c, 6);
+        }
         // shotPair, not a second capture path: it PAUSES the sim between the two halves, which is
-        // the only way a fading decal appears in both.
+        // the only way anything transient appears in both.
         const shots = await shot.shotPair(c, tag, { engineBin: flags.engine || resolveEngine() });
-        console.log(JSON.stringify({ tag, weapon, mark, camera: cam, ...shots }, null, 2));
+        console.log(JSON.stringify({ tag, weapon, camera, ...shots }, null, 2));
       } finally { c.close(); }
       break;
     }
