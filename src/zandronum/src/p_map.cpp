@@ -39,6 +39,7 @@
 
 #include "doomdef.h"
 #include "p_local.h"
+#include "features/levelmesh/projdecals.h"   // [rc4l] projected mesh decals
 #include "p_lnspec.h"
 #include "p_effect.h"
 #include "p_terrain.h"
@@ -7363,8 +7364,20 @@ void SpawnShootDecal(AActor *t1, const FTraceResults &trace)
 	}
 	if (decalbase != NULL)
 	{
+		// [rc4l] features/levelmesh: which way the shot was going, for the projected mark.
+		//
+		// A hitscan has no velocity to capture -- it is a trace, not a thing -- but it has the same
+		// information: the line from the shooter's eye to where it landed. Without it every bullet
+		// hole is projected square-on to the wall whatever angle it was fired from, which is what a
+		// glued quad does and is the behaviour this replaces.
+		//
+		// The radius is zero, unlike a missile's: a trace stops exactly ON the surface, so the
+		// contact point needs no advancing.
+		zx::levelmesh::SetImpactContext(trace.X - t1->x, trace.Y - t1->y,
+			trace.Z - (t1->z + (t1->height >> 1)), 0);
 		DImpactDecal::StaticCreate(decalbase->GetDecal(),
 			trace.X, trace.Y, trace.Z, trace.Line->sidedef[trace.Side], trace.ffloor);
+		zx::levelmesh::ClearImpactContext();
 	}
 }
 
