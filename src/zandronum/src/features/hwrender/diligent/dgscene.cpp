@@ -785,25 +785,23 @@ static const char *kScenePSRedAlpha =
 	   nothing; and on the floor around that column it made the crossing coordinate pass through zero
 	   at the far side, painting a second full-strength copy of the mark's MIDDLE on bare floor well
 	   away from anything that was shot. */ \
-	"        float across = abs(dot(rel, outward));\n" \
+	/* [rc4l] Soot cannot get BEHIND the wall it hit, and that is the whole of the corner problem.
+	   The distance across a corner was taken as an ABSOLUTE, which mirrors the picture about the
+	   corner line. Directly behind the wall that mirror is buried in solid geometry and nobody sees
+	   it; round a convex corner it lands on open ground at full strength, reading as a second mark
+	   originating on the neighbouring wall.
+	   Dropping the half that is behind the wall removes that second origin and nothing else.
+	   Bounding the creep by where the wall ENDS removes it too, and takes far too much with it: the
+	   mark then stops dead at a sector boundary on flat, continuous ground, and stops wrapping walls
+	   entirely.
+	   Only FLATS are tested. A vertical corner between two walls is a real hinge -- both faces are
+	   the same wall's neighbours whichever way the fold is taken -- so a mark carries round it, and
+	   the ground is the only surface that continues past a wall's end to be mirrored onto. */ \
+	"        if (dot(outward, N) < 0.0) outward = -outward;\n" \
+	"        float side = dot(rel, outward);\n" \
+	"        if (abs(nrm.y) > 0.7 && side < 0.0) { path = 1e9; return vec2(-1.0); }\n" \
+	"        float across = abs(side);\n" \
 	"        float along  = dot(rel, edge);\n" \
-	/* [rc4l] The creep belongs to ONE wall -- the one that was hit -- and stops where that wall does.
-	   Unfolding measures a fragment from the hit wall's plane about the edge the two surfaces share,
-	   and that edge is a segment: it runs out at the corner. Past the end the fragment is being
-	   measured from a plane that is no longer there, which is what smeared marks along a corner and
-	   put a mirrored copy of one on the ground beside a pillar. There is no honest coordinate out
-	   there without knowing the next wall, so the mark simply ends at the corner rather than guessing
-	   -- which is also what it looks like: soot spreading over the wall it hit and the ground beneath
-	   that wall, and not round the bend. Zero span means the extent is unknown and nothing is cut. */ \
-	/* ...but only onto FLATS. A vertical corner between two walls is a real hinge and the mark has
-	   every business wrapping round it -- bounding that as well stopped marks wrapping walls at all,
-	   which was working. It is the ground where the mirrored copy shows up, because that is the
-	   surface which continues past the wall's end. */ \
-	"        bool ontoFlat = abs(nrm.y) > 0.7;\n" \
-	"        if (ontoFlat && span.y > span.x && (along < span.x || along > span.y)) {\n" \
-	"            path = 1e9;\n" \
-	"            return vec2(-1.0);\n" \
-	"        }\n" \
 	/* Mode 1 spends the remaining picture over the sphere's cross-section rather than over what is
 	   left after reaching here -- the far surface then gets sqrt(extent^2 - distance^2) of ground
 	   instead of extent minus distance. It meets the join at the same value, so the mark does not
