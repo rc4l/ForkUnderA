@@ -437,6 +437,7 @@ struct SceneVertex
 	float fogMode;      // uFogEnabled: 0 off, +gl_fogmode plain, -gl_fogmode coloured
 	float lightIndex;   // unused now the shader tests every light; kept for the vertex layout
 	float nx, ny, nz;   // surface normal, for the dynamic-light side test
+	float dynR, dynG, dynB;   // light computed on the CPU, added AFTER the lighting equation
 };
 static TArray<SceneVertex> g_sceneVB;
 
@@ -451,6 +452,7 @@ static const char *kSceneVS =
 	"layout(location = 4) in vec4 aFog;\n"
 	"layout(location = 5) in float aLightIndex;\n"
 	"layout(location = 6) in vec3 aNormal;\n"
+	"layout(location = 7) in vec3 aDynLight;\n"
 	"layout(binding = 0) uniform Constants { mat4 uMVP; vec4 uCameraPos; vec4 uLightParams; vec4 uClipPlane; vec4 uScreen; vec4 uSkyColor; };\n"
 	"layout(location = 0) out vec2 vUV;\n"
 	"layout(location = 1) out vec3 vColor;\n"
@@ -460,6 +462,7 @@ static const char *kSceneVS =
 	"layout(location = 5) flat out int vLightIndex;\n"
 	"layout(location = 6) out vec3 vNormal;\n"
 	"layout(location = 7) flat out vec4 vPlane;\n"
+	"layout(location = 8) out vec3 vDynLight;\n"
 	"void main() {\n"
 	"    vec4 clip = uMVP * vec4(aPos, 1.0);\n"
 	"    gl_Position = clip;\n"
@@ -472,6 +475,7 @@ static const char *kSceneVS =
 	// projection's -1 in the w row copies eye-space -z straight through.
 	"    vPixelPos = vec4(aPos, clip.w);\n"
 	"    vLightIndex = int(aLightIndex);\n"
+	"    vDynLight = aDynLight;\n"
 	"    vNormal = aNormal;\n"
 	// [rc4l] The surface PLANE, flat: its normal and its distance from the origin.
 	//
@@ -517,6 +521,7 @@ static const char *kSceneVS =
 	"layout(location = 5) flat in int vLightIndex;\n" \
 	"layout(location = 6) in vec3 vNormal;\n" \
 	"layout(location = 7) flat in vec4 vPlane;\n" \
+	"layout(location = 8) in vec3 vDynLight;\n" \
 	"layout(binding = 0) uniform Constants { mat4 uMVP; vec4 uCameraPos; vec4 uLightParams; vec4 uClipPlane; vec4 uScreen; vec4 uSkyColor; };\n" \
 	"layout(binding = 1) uniform sampler2D uTex;\n" \
 	/* [rc4l] The brightmap layer, present on EVERY material -- black where there is none.
@@ -558,7 +563,7 @@ static const char *kSceneVS =
 	   GL's 15.4 in the green channel, with the floor beneath it agreeing in both.
 
 	   So the marker now carries its full meaning -- no side, and no light from here. */ \
-	"    if (dot(vPlane.xyz, vPlane.xyz) <= 0.0001) return base;\n" \
+	"    if (dot(vPlane.xyz, vPlane.xyz) <= 0.0001) return clamp(base + vDynLight, 0.0, 1.4);\n" \
 	"    vec3 dyn = vec3(0.0);\n" \
 	"    for (int i = 0; i < n; i++) {\n" \
 	"        vec4 lp = lights[i*2];\n" \
@@ -1493,6 +1498,7 @@ static void BuildDynamic(Diligent::IDeviceContext *ctx)
 				dv.fogMode = (float)p.fogMode;
 			dv.lightIndex = (float)p.dynLightIndex;
 			dv.nx = p.normX; dv.ny = p.normY; dv.nz = p.normZ;
+			dv.dynR = p.dynR; dv.dynG = p.dynG; dv.dynB = p.dynB;
 				vb.Push(dv);
 			}
 			runs[runs.Size() - 1].count += p.range.count;
@@ -2173,6 +2179,7 @@ static bool EnsureScenePipeline(FString &err)
 		Diligent::LayoutElement{4, 0, 4, Diligent::VT_FLOAT32, false},
 		Diligent::LayoutElement{5, 0, 1, Diligent::VT_FLOAT32, false},
 		Diligent::LayoutElement{6, 0, 3, Diligent::VT_FLOAT32, false},   // surface normal
+		Diligent::LayoutElement{7, 0, 3, Diligent::VT_FLOAT32, false},   // CPU dynamic light
 	};
 
 	static Diligent::ShaderResourceVariableDesc vars[] = {
@@ -2258,7 +2265,13 @@ static bool EnsureScenePipeline(FString &err)
 			rt.BlendOpAlpha = Diligent::BLEND_OPERATION_ADD;
 		}
 		pci.GraphicsPipeline.InputLayout.LayoutElements = layout;
-		pci.GraphicsPipeline.InputLayout.NumElements = 7;
+		// [rc4l] Counted from the array. Written by hand this said 7 while layout[] held 8, so the
+		// last attribute went unregistered and Diligent sized the vertex from the elements it knew --
+		// 76 bytes for an 88-byte vertex. Every attribute after the first then read from the wrong
+		// place and the world came apart into coloured shards. Same shape as the mirror PSO's
+		// NumVariables, one file over.
+		pci.GraphicsPipeline.InputLayout.NumElements =
+			(Diligent::Uint32)(sizeof(layout) / sizeof(layout[0]));
 		pci.PSODesc.ResourceLayout.DefaultVariableType = Diligent::SHADER_RESOURCE_VARIABLE_TYPE_STATIC;
 		pci.PSODesc.ResourceLayout.Variables = vars;
 		pci.PSODesc.ResourceLayout.NumVariables = 2;
@@ -2433,6 +2446,7 @@ static bool BuildSceneBuffer(FString &err)
 			// table that would have to be kept in step with the batch list by hand.
 			dv.lightIndex = (float)(g_batches.Size() - 1);
 			dv.nx = p.normX; dv.ny = p.normY; dv.nz = p.normZ;
+			dv.dynR = p.dynR; dv.dynG = p.dynG; dv.dynB = p.dynB;
 			g_sceneVB.Push(dv);
 		}
 		SceneBatch &nb = g_batches[g_batches.Size() - 1];
@@ -3013,7 +3027,7 @@ static const char *kMirrorPS =
 	"layout(location = 0) in vec3 vWorld;\n"
 	"layout(location = 1) in vec3 vNormal;\n"
 	"layout(location = 0) out vec4 outColor;\n"
-	"const uint STRIDE = 19u;\n"
+	"const uint STRIDE = 22u;   // grew with SceneVertex; every offset below is from the front\n"
 	"vec3 vertColor(uint v) { uint b = v * STRIDE + 5u; return vec3(vtx[b], vtx[b + 1u], vtx[b + 2u]); }\n"
 	"vec2 vertUV(uint v)    { uint b = v * STRIDE + 3u; return vec2(vtx[b], vtx[b + 1u]); }\n"
 	"void main() {\n"

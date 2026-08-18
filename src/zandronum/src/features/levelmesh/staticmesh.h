@@ -102,6 +102,15 @@ struct MeshPiece
 	// (44.4, 13.7, 2.5) against GL's (39.8, 32.1, 22.1).
 	float         normX, normY, normZ;
 
+	// [rc4l] Light this piece was given ON THE CPU, added after the lighting equation.
+	//
+	// A sprite's dynamic light is worked out per actor by gl_SetDynSpriteLight, not by the shader's
+	// loop, and where it is added matters as much as what it is. GL adds it AFTER the distance
+	// equation has scaled the sector light; folding it into the vertex colour instead puts it before,
+	// so the equation attenuates it and a lit item in a dark room comes out dimmer than GL's. It is
+	// therefore carried separately rather than mixed into colorR/G/B.
+	float         dynR, dynG, dynB;
+
 	// [rc4l] This surface is seen from BELOW: a ceiling, or the underside of a 3D floor.
 	//
 	// Recorded so the winding can be verified rather than trusted. Back-face culling deletes any flat
@@ -140,6 +149,7 @@ struct MeshPiece
 		sortX = sortY = sortZ = 0.f;
 		dynLightIndex = -1;
 		normX = normY = normZ = 0.f;
+		dynR = dynG = dynB = 0.f;
 		facesDown = false; depthBias = false; redToAlpha = false;
 	}
 };
