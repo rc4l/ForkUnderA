@@ -44,6 +44,11 @@ class FScanner;
 class FDecalTemplate;
 struct FDecalAnimator;
 
+// [rc4l] How a decal with this animator will fade: full alpha until decayStartTics after spawn,
+// then linearly to nothing over decayTimeTics. False when the animator is not a fader, which means
+// the decal's alpha is never touched and it is never removed.
+bool GetDecalFadeTiming (const FDecalAnimator *anim, int &decayStartTics, int &decayTimeTics);
+
 struct PClass;
 class DBaseDecal;
 struct side_t;

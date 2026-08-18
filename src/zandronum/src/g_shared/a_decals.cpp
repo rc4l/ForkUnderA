@@ -39,6 +39,7 @@
 #include "v_video.h"
 #include "p_trace.h"
 #include "decallib.h"
+#include "features/levelmesh/projdecals.h"   // [rc4l] projected mesh decals
 #include "statnums.h"
 #include "c_dispatch.h"
 #include "d_net.h"
@@ -107,6 +108,12 @@ DBaseDecal::DBaseDecal (const DBaseDecal *basis)
 
 void DBaseDecal::Destroy ()
 {
+	// [rc4l] features/levelmesh: the projection is owned by this decal, so it goes when this goes.
+	//
+	// Not a nicety: cl_maxdecals recycles the oldest decals as new ones are made, and a projection
+	// left behind would keep drawing a mark whose owner no longer exists -- and would be read off a
+	// freed pointer for its alpha.
+	zx::levelmesh::ForgetProjectedDecal (this);
 	Remove ();
 	Super::Destroy ();
 }
@@ -719,6 +726,12 @@ DImpactDecal *DImpactDecal::StaticCreate (const FDecalTemplate *tpl, fixed_t x, 
 
 		// [rc4l] features/levelmesh: mirror it into the projected decal pass.
 		//
+		// After ApplyToDecal, because that is where the decal gets its texture, its scale, its
+		// colour and its flips -- everything the projection needs in order to know what it is
+		// printing. The engine's decal stays the owner: it holds the fade, the lifetime and the
+		// cl_maxdecals recycling, and the projection reads its alpha rather than repeating any of it.
+		zx::levelmesh::SpawnProjectedDecal(decal, tpl, x, y, z, wall != NULL ? wall->linedef : NULL);
+
 		if (!cl_spreaddecals || !decal->PicNum.isValid())
 		{
 			return decal;

@@ -55,6 +55,7 @@
 #include "p_lnspec.h"
 #include "v_palette.h"
 #include "features/hitboxviz/hitboxviz.h"
+#include "features/levelmesh/projdecals.h"   // [rc4l] projected mesh decals
 #include "c_console.h"
 #include "c_cvars.h"
 #include "p_acs.h"
@@ -3950,6 +3951,12 @@ void P_SetupLevel (const char *lumpname, int position)
 	// [MGOOOOOO] Debug hitbox overlay: recorded explosion regions are map coordinates, so anything
 	// left over from the previous level would be drawn in the wrong place here.
 	zx::hitboxviz::ClearBlasts();
+
+	// [rc4l] features/levelmesh: a projected decal is triangles cut out of THIS level's geometry, so
+	// none of it means anything in the next one. The engine's own decals are destroyed with their
+	// thinkers and take their projections with them, but that runs on a different path from a fresh
+	// load, and a stale projection draws a mark in mid-air at map coordinates from another level.
+	zx::levelmesh::ClearProjectedDecals();
 
 	level.maptype = MAPTYPE_UNKNOWN;
 	wminfo.partime = 180;
