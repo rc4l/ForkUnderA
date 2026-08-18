@@ -50,10 +50,25 @@ COMPOSE="docker compose"
 dc() { $COMPOSE "$@"; }
 
 dump_diagnostics() {
-    echo "--- registry log ---";    dc logs --tail 40 registry 2>&1 || true
+    # [rc4l] The punch lines are the point, and a plain tail buries them: the registry prints one
+    # "Sending server list" per query, which is several per second, so forty lines of tail is forty
+    # lines of the least interesting thing it does.
+    echo "--- registry: punch decisions ---"
+    dc logs registry 2>&1 | grep -i "punch" | tail -20 || echo "(the registry logged no punch activity at all)"
+    echo "--- registry: what it holds ---"
+    dc logs registry 2>&1 | grep -iE "adding|verif" | tail -10 || true
+
+    echo "--- client: what its browser holds ---"
+    dc exec -T client node /fuactl/src/cli.mjs rpc browser.list --port 27800 --token natlab 2>&1 | tail -40 || true
+
+    echo "--- client engine log (punch) ---"
+    dc exec -T client sh -lc 'grep -iE "punch|registry" /tmp/engine.log | tail -20' 2>&1 || true
+    echo "--- host engine log (punch) ---"
+    dc exec -T host sh -lc 'grep -iE "punch|registry" /tmp/engine.log | tail -20' 2>&1 || true
+
     echo "--- router_host log ---"; dc logs --tail 20 router_host 2>&1 || true
-    echo "--- host engine log ---"; dc exec -T host   sh -lc 'tail -60 /tmp/engine.log' 2>&1 || true
-    echo "--- client engine log ---"; dc exec -T client sh -lc 'tail -60 /tmp/engine.log' 2>&1 || true
+    echo "--- host engine log (tail) ---"; dc exec -T host   sh -lc 'tail -30 /tmp/engine.log' 2>&1 || true
+    echo "--- client engine log (tail) ---"; dc exec -T client sh -lc 'tail -30 /tmp/engine.log' 2>&1 || true
 }
 
 cleanup() { [ "$KEEP" = "1" ] || dc down -v --remove-orphans >/dev/null 2>&1 || true; }
@@ -111,6 +126,7 @@ start_engine() { # $1=peer  $2=extra args
         sleep 2
         DISPLAY=:99 ZANDRONUM_BRIDGE_PORT=27800 ZANDRONUM_BRIDGE_TOKEN=natlab \
         /engine/forkundera -iwad /engine/iwad.wad -nosound +map MAP01 \
+            +set developer 1 \
             +set fua_serverregistry_host $REG \
             +set cl_fua_serverregistry_list $REG \
             +set cl_fua_serverregistrylist_fetch 0 \
