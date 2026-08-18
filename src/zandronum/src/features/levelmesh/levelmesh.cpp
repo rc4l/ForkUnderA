@@ -18,6 +18,7 @@
 #include "r_state.h"      // sides, numsides, sectors, numsectors, subsectors, numsubsectors
 #include "r_utility.h"    // viewx/viewy/viewz, for fua_look
 #include "p_trace.h"      // Trace, so fua_look can say what the ENGINE thinks is there
+#include "p_lnspec.h"    // Line_Mirror, for fua_make_mirror
 #include "d_player.h"     // players, consoleplayer
 #include "tables.h"       // finesine/finecosine
 #include "textures/textures.h"
@@ -630,6 +631,69 @@ CCMD( fua_mesh_dupes )
 //
 //==========================================================================
 
+//==========================================================================
+//
+// fua_make_mirror
+//
+// [rc4l] Turn the wall under the crosshair into a mirror.
+//
+// The traced reflection path had no way to be exercised: a mirror is linedef special 182 and no
+// stock Doom map contains one, so testing it meant authoring a wad. A renderer feature that cannot
+// be reached from a running game does not get tested, and this one was not -- its texture lookup
+// had been left sampling white with nobody able to look at it.
+//
+// Single-sided walls only, which is what GLWall::Process requires: RENDERWALL_M1S is the only type
+// it promotes to RENDERWALL_MIRROR. Pointing at a window and getting nothing would otherwise read
+// as the mirror code failing rather than as the wall being the wrong kind.
+//
+//==========================================================================
+
+EXTERN_CVAR( Bool, gl_mirrors )
+
+CCMD( fua_make_mirror )
+{
+	if ( players[consoleplayer].mo == NULL ) { Printf( "no player\n" ); return; }
+	AActor *mo = players[consoleplayer].mo;
+
+	const angle_t ang = mo->angle;
+	const angle_t pit = (angle_t)mo->pitch;
+	const float ca = FIXED2FLOAT( finecosine[pit >> ANGLETOFINESHIFT] );
+	const float dx = ca * FIXED2FLOAT( finecosine[ang >> ANGLETOFINESHIFT] );
+	const float dy = ca * FIXED2FLOAT( finesine[ang >> ANGLETOFINESHIFT] );
+	const float dz = -FIXED2FLOAT( finesine[pit >> ANGLETOFINESHIFT] );
+
+	FTraceResults res;
+	if ( !Trace( viewx, viewy, viewz, mo->Sector,
+				FLOAT2FIXED( dx ), FLOAT2FIXED( dy ), FLOAT2FIXED( dz ),
+				8192 * FRACUNIT, 0, ML_BLOCKEVERYTHING, mo, res )
+		|| res.HitType != TRACE_HitWall || res.Line == NULL )
+	{
+		Printf( "fua_make_mirror: not looking at a wall\n" );
+		return;
+	}
+
+	line_t *ln = res.Line;
+	const int idx = (int)( ln - lines );
+	if ( ln->sidedef[1] != NULL )
+	{
+		Printf( "fua_make_mirror: linedef %d is two-sided -- only single-sided walls mirror\n", idx );
+		return;
+	}
+
+	ln->special = Line_Mirror;
+	// [rc4l] The wall cache has to be told, because a linedef special is not part of its stamp.
+	//
+	// A cached seg is replayed without running GLWall::Process again, so the wall keeps the type it
+	// was captured with and never becomes RENDERWALL_MIRROR -- and its baked geometry keeps sitting
+	// in front of the mirror surface, which is why the reflection appeared in GL and not in the
+	// backend. No map needs this: a real mirror carries its special at load, before anything is
+	// captured. Only changing one at runtime does, which is this command.
+	zx::levelmesh::InvalidateAll( );
+	if ( !gl_mirrors ) gl_mirrors = true;
+	Printf( "fua_make_mirror: linedef %d is now a mirror (gl_mirrors %d)\n"
+			"  GL reflects in it immediately; run fua_dg_mirrors for the Vulkan backend to see it\n",
+			idx, gl_mirrors ? 1 : 0 );
+}
 CCMD( fua_look )
 {
 	if ( players[consoleplayer].mo == NULL ) { Printf( "no player\n" ); return; }

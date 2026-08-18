@@ -80,7 +80,29 @@ bool ProbeVulkan(FString &report)
 {
 	if (g_device)
 	{
-		report = "Diligent Vulkan device already created.";
+		// [rc4l] Report on the device that EXISTS rather than refusing.
+		//
+		// The features line is printed once, when the device is created, which is during startup --
+		// before anything can connect to read it. So the one question this command exists to answer
+		// ("does this GPU do bindless?") was the one it could not answer, and re-probing cannot help:
+		// the device is already up and creating a second one is not what is being asked.
+		{
+			const auto &f = g_device->GetDeviceInfo( ).Features;
+			const auto &rt = g_device->GetAdapterInfo( ).RayTracing;
+			const auto &ad = g_device->GetAdapterInfo( );
+			report.Format( "Diligent Vulkan device already created\n"
+				"  adapter: %s\n"
+				"  ray tracing: %s (max recursion %u, caps 0x%x)\n"
+				"  bindless resources: %s\n"
+				"  shader resource static arrays: %s\n"
+				"  shader resource runtime arrays: %s",
+				ad.Description,
+				f.RayTracing ? "AVAILABLE" : "unavailable",
+				(unsigned)rt.MaxRecursionDepth, (unsigned)rt.CapFlags,
+				f.BindlessResources ? "yes" : "NO",
+				f.ShaderResourceStaticArrays ? "yes" : "NO",
+				f.ShaderResourceRuntimeArrays ? "yes" : "NO" );
+		}
 		return true;
 	}
 
