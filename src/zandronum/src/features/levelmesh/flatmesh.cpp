@@ -440,6 +440,13 @@ void RegisterDecal(const FFlatVertex *quad, const void *material, int translatio
 // A projected decal is whatever geometry fell inside its box, clipped -- three vertices or thirty,
 // spread over a wall and the floor under it. Everything below the vertex list is identical to the
 // glued quad's, and it stayed identical by being one function rather than two that drift.
+// [rc4l] Say what each decal was captured AS, in the order it was captured.
+//
+// Two decals of a `lowerdecal` pair land at the same point and have to composite in the order GL
+// drew them. When they come out wrong there is nothing on screen to say which of the two it is,
+// what blend each took, or whether they even reached the backend -- so this prints it.
+CVAR(Bool, fua_decal_log, false, 0)
+
 void RegisterDecalTriangles(const FFlatVertex *tris, int count, const void *material, int translation,
                             bool shadow, bool additive, float alpha,
                             int lightlevel, int rel, const FColormap &colormap,
@@ -521,6 +528,12 @@ void RegisterDecalTriangles(const FFlatVertex *tris, int count, const void *mate
 	if (additive) mp.fadeColor = 0;
 
 	mp.sortX = sortX; mp.sortY = sortY; mp.sortZ = sortZ;
+
+	if (fua_decal_log)
+		Printf("decal: %s  blend %d  redToAlpha %d  light %d  rgb %.2f,%.2f,%.2f  alpha %.2f  "
+			   "sort %.0f,%.0f,%.0f\n",
+			material ? "tex" : "none", mp.blendMode, mp.redToAlpha ? 1 : 0, mp.lightLevel,
+			mp.colorR, mp.colorG, mp.colorB, mp.alpha, mp.sortX, mp.sortY, mp.sortZ);
 
 	DynAppend(tris, count, mp);
 	g_decalsThisFrame++;
