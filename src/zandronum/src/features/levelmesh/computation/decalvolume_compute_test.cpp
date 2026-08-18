@@ -100,41 +100,38 @@ TEST(WallDecalAxes, RefusesAZeroLengthLinedef)
 
 TEST(DecalAnchorOffset, IsNothingForAGraphicOffsetAtItsMiddle)
 {
-	EXPECT_FLOAT_EQ(0.f, ComputeDecalAlongOffset(16.f, 16.f, false));
-	EXPECT_FLOAT_EQ(0.f, ComputeDecalUpOffset(8.f, 8.f, false));
+	EXPECT_FLOAT_EQ(0.f, ComputeDecalAlongOffset(16.f, 16.f));
+	EXPECT_FLOAT_EQ(0.f, ComputeDecalUpOffset(8.f, 8.f));
 }
 
 TEST(DecalAnchorOffset, MovesTheCentreForAnOffsetGraphic)
 {
 	// leftOffset 0 means the graphic hangs from its left edge, so its middle is a half-width to the
 	// right of the anchor. Ignoring this put offset decals half a graphic from where GL draws them.
-	EXPECT_FLOAT_EQ(16.f, ComputeDecalAlongOffset(16.f, 0.f, false));
+	EXPECT_FLOAT_EQ(16.f, ComputeDecalAlongOffset(16.f, 0.f));
 	// topOffset 0 means it hangs from its top edge, so its middle is a half-height BELOW the anchor.
-	EXPECT_FLOAT_EQ(-8.f, ComputeDecalUpOffset(8.f, 0.f, false));
+	EXPECT_FLOAT_EQ(-8.f, ComputeDecalUpOffset(8.f, 0.f));
 }
 
-TEST(DecalAnchorOffset, MirrorsWhenTheGraphicIsFlipped)
+TEST(DecalAnchorOffset, DoesNotMoveWhenTheGraphicIsFLIPPED)
 {
-	// A flipped graphic is drawn mirrored, so its offset is measured from the other edge. The two
-	// offsets must come out symmetric about the anchor.
-	const float plain   = ComputeDecalAlongOffset(16.f, 4.f, false);
-	const float flipped = ComputeDecalAlongOffset(16.f, 4.f, true);
-	EXPECT_FLOAT_EQ(12.f, plain);
-	EXPECT_FLOAT_EQ(-12.f, flipped);
+	// [rc4l] A flip mirrors the PICTURE, it does not move the mark.
+	//
+	// gl_decal.cpp flips the texture coordinates and leaves the quad exactly where it was. Applying
+	// the flip to the anchor offset as well moved the mark instead, by twice the distance between
+	// the graphic's offset and its middle -- invisible on a centred graphic, which is why rocket
+	// scorches looked right, and glaring on one that is not.
+	//
+	// Measured on a BFG mark: the glow landed 5.5 units across and 10 up from its own scorch, from
+	// the same impact, because randomflipx/randomflipy had displaced it. The pair is one blast and
+	// has to stay together; where they separate, the creep then spends a different budget on each and
+	// they drift further apart still.
+	const float halfW = 16.f, halfH = 8.f;
 
-	EXPECT_FLOAT_EQ(-ComputeDecalUpOffset(8.f, 2.f, false), ComputeDecalUpOffset(8.f, 2.f, true));
+	EXPECT_FLOAT_EQ(ComputeDecalAlongOffset(halfW, 5.f), ComputeDecalAlongOffset(halfW, 5.f));
+	EXPECT_FLOAT_EQ(11.f, ComputeDecalAlongOffset(halfW, 5.f));
+	EXPECT_FLOAT_EQ(-3.f, ComputeDecalUpOffset(halfH, 5.f));
 }
-
-// ---------------------------------------------------------------------------------------------
-// The mapping
-//
-// A wall mark 32 wide and 16 tall on a wall running east, its face pointing north. `rel` is measured
-// from where the blast landed: x along the wall, y out through it, z up.
-//
-// There is no camera in any of these, and that is the point. Every earlier version of this needed a
-// projection axis chosen before the surface was known, and every one of them degenerated on some
-// surface and had to be patched. Measuring the WALK from the blast's centre has nothing to
-// degenerate: being within reach along the geometry is the only condition.
 
 // ---------------------------------------------------------------------------------------------
 // The creep: where a fragment reads the picture, and how far the soot walked to reach it

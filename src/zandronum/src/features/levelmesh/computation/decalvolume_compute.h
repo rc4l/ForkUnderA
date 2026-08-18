@@ -89,8 +89,8 @@ void ComputeWallAlongExtent(float v1x, float v1y, float v2x, float v2y,
 // that. `leftOffset`/`topOffset` are already scaled, as the half-extents are.
 //
 // A flipped graphic is drawn mirrored, so its offset is measured from the other edge.
-float ComputeDecalAlongOffset(float halfW, float leftOffset, bool flipX);
-float ComputeDecalUpOffset(float halfH, float topOffset, bool flipY);
+float ComputeDecalAlongOffset(float halfW, float leftOffset);
+float ComputeDecalUpOffset(float halfH, float topOffset);
 
 // Where a world point falls in the box, in -1..1 per axis. Outside that range on any axis, the point
 // is not in the box at all.

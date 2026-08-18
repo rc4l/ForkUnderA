@@ -69,16 +69,14 @@ void ComputeWallAlongExtent(float v1x, float v1y, float v2x, float v2y,
 	outMax = (a1 < a2) ? a2 : a1;
 }
 
-float ComputeDecalAlongOffset(float halfW, float leftOffset, bool flipX)
+float ComputeDecalAlongOffset(float halfW, float leftOffset)
 {
-	const float fromLeft = flipX ? (halfW * 2.f - leftOffset) : leftOffset;
-	return halfW - fromLeft;
+	return halfW - leftOffset;
 }
 
-float ComputeDecalUpOffset(float halfH, float topOffset, bool flipY)
+float ComputeDecalUpOffset(float halfH, float topOffset)
 {
-	const float fromTop = flipY ? (halfH * 2.f - topOffset) : topOffset;
-	return fromTop - halfH;
+	return topOffset - halfH;
 }
 
 void ComputeDecalLocal(const DecalFrame &f, const float rel[3], float local[3])
