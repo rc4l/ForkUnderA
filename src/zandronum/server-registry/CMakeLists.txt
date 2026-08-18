@@ -53,6 +53,9 @@ add_executable( forkundera-server-registry
 	${ZAN_DIR}/features/federated-server-registry/computation/reachcookie_compute.cpp
 	# [rc4l] networkshared.cpp unmaps ::ffff:a.b.c.d through this, so the registry needs it too.
 	${ZAN_DIR}/features/net/computation/v6mapped_compute.cpp
+	# [rc4l] And matches v6 bans through this one. The registry reads the same ban files and answers
+	# the same isIPInList question, so a v6 rule has to mean the same thing on both sides of the wire.
+	${ZAN_DIR}/features/net/computation/v6prefix_compute.cpp
 	${ZAN_DIR}/networkshared.cpp
 	${ZAN_DIR}/platform.cpp
 	${ZAN_DIR}/huffman/bitreader.cpp 
