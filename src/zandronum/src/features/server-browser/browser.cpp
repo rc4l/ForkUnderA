@@ -1275,6 +1275,12 @@ void BROWSER_AddServerToList( const NETADDRESS_s &Address )
 			g_BrowserServerList[lExisting].lMSTime = 0;
 			g_BrowserServerList[lExisting].bPunchRequested = false;
 			g_BrowserServerList[lExisting].lPunchResendsSent = 0;
+
+			// [rc4l] The lead state too, or a row that once held a challenge is skipped as
+			// already-led and refused as already-sent, and is never challenged again.
+			g_BrowserServerList[lExisting].bPunchLed = false;
+			g_BrowserServerList[lExisting].bFirstChallengeSent = false;
+			g_BrowserServerList[lExisting].lPunchLedMS = 0;
 		}
 		return;
 	}
