@@ -216,7 +216,8 @@ bool IsValidServerRegistryHost( const std::string &host )
 	}
 }
 
-std::vector<ServerRegistryEntry> ParseServerRegistryList( const std::string &text )
+std::vector<ServerRegistryEntry> ParseServerRegistryList( const std::string &text,
+	std::vector<std::string> *skippedOut )
 {
 	std::vector<ServerRegistryEntry> out;
 
@@ -250,6 +251,12 @@ std::vector<ServerRegistryEntry> ParseServerRegistryList( const std::string &tex
 				entry.name = Trim( line.substr( split ) );
 				AppendUnique( out, entry );
 			}
+			else if ( skippedOut != 0 )
+			{
+				// The token, not the whole line: the display name after it is not what failed, and
+				// quoting it back would bury the part the reader has to fix.
+				skippedOut->push_back( line.substr( 0, split ));
+			}
 		}
 
 		if ( nl == std::string::npos )
@@ -260,7 +267,8 @@ std::vector<ServerRegistryEntry> ParseServerRegistryList( const std::string &tex
 	return out;
 }
 
-std::vector<ServerRegistryEntry> ParseServerRegistryCSV( const std::string &csv )
+std::vector<ServerRegistryEntry> ParseServerRegistryCSV( const std::string &csv,
+	std::vector<std::string> *skippedOut )
 {
 	std::vector<ServerRegistryEntry> out;
 
@@ -277,6 +285,8 @@ std::vector<ServerRegistryEntry> ParseServerRegistryCSV( const std::string &csv 
 		ServerRegistryEntry entry;
 		if ( !token.empty( ) && ParseHostPort( token, entry ) )
 			AppendUnique( out, entry );
+		else if ( !token.empty( ) && ( skippedOut != 0 ))
+			skippedOut->push_back( token );
 
 		if ( comma == std::string::npos )
 			break;

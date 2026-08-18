@@ -348,3 +348,33 @@ TEST(ServerRegistryList, AHostnameIsStillNotMistakenForAnAddress)
 	ASSERT_EQ( 1u, entries.size( ));
 	EXPECT_EQ( "abcdef", entries[0].host );
 }
+
+// --- saying what was thrown away -------------------------------------------------------------------
+
+TEST(ServerRegistryList, SkippedEntriesAreReportedRatherThanVanishing)
+{
+	// The silence here is what hid the IPv6 parsing bug: the entry disappeared, the client fell back
+	// to its built-in list, and everything looked healthy.
+	// An unclosed bracket, which is exactly the shape of the mistake this exists to surface: someone
+	// typing an IPv6 address by hand and getting it slightly wrong.
+	std::vector<std::string> skipped;
+	const std::vector<zx::ServerRegistryEntry> entries =
+		zx::ParseServerRegistryList( "good.example.net\n[2001:db8::1 my registry\ngood2.example.net\n", &skipped );
+
+	EXPECT_EQ( 2u, entries.size( ));
+	ASSERT_EQ( 1u, skipped.size( ));
+	EXPECT_EQ( "[2001:db8::1", skipped[0] ) << "the token that failed, not the display name after it";
+}
+
+TEST(ServerRegistryList, NothingSkippedMeansAnEmptyReport)
+{
+	std::vector<std::string> skipped;
+	zx::ParseServerRegistryList( "good.example.net\n# a comment\n\n", &skipped );
+	EXPECT_TRUE( skipped.empty( )) << "comments and blank lines are not failures";
+}
+
+TEST(ServerRegistryList, TheReportIsOptional)
+{
+	// Every existing caller passes nothing, and must keep working unchanged.
+	EXPECT_EQ( 1u, zx::ParseServerRegistryList( "good.example.net\n" ).size( ));
+}
