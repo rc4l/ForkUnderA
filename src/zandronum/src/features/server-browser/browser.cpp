@@ -144,6 +144,53 @@ static	int				g_lServerRegistryAttempts;
 static	LONG			g_lPunchesThisSweep;
 static	const LONG		kMaxPunchesPerSweep = 4;
 
+//*****************************************************************************
+//
+// [rc4l] Addresses that went unanswered, so the NEXT sweep can punch before it speaks.
+//
+// A ring, and deliberately small: this is a hint about which servers need help, not a database. The
+// worst case of forgetting one is that it costs a wasted challenge and is remembered again a moment
+// later, which is exactly what happens today for every one of them.
+#define MAX_REMEMBERED_UNREACHABLE 32
+static	NETADDRESS_s	g_UnreachableAddresses[MAX_REMEMBERED_UNREACHABLE];
+static	ULONG			g_ulUnreachableNext = 0;
+
+static bool browser_IsKnownUnreachable( const NETADDRESS_s &Address )
+{
+	for ( ULONG ulIdx = 0; ulIdx < MAX_REMEMBERED_UNREACHABLE; ulIdx++ )
+	{
+		if ( g_UnreachableAddresses[ulIdx].usPort == 0 )
+			continue;
+
+		// CompareNoPort, because a punch may have re-aimed the row at the port its NAT really opened;
+		// it is the same machine and the same reason it needed help.
+		if ( g_UnreachableAddresses[ulIdx].CompareNoPort( Address ))
+			return true;
+	}
+
+	return false;
+}
+
+static void browser_RememberUnreachable( const NETADDRESS_s &Address )
+{
+	if ( browser_IsKnownUnreachable( Address ))
+		return;
+
+	g_UnreachableAddresses[g_ulUnreachableNext] = Address;
+	g_ulUnreachableNext = ( g_ulUnreachableNext + 1 ) % MAX_REMEMBERED_UNREACHABLE;
+}
+
+static void browser_ForgetUnreachable( const NETADDRESS_s &Address )
+{
+	// It answered. Whatever was wrong is not wrong now, and continuing to spend punches on it would
+	// take budget from a server that still needs one.
+	for ( ULONG ulIdx = 0; ulIdx < MAX_REMEMBERED_UNREACHABLE; ulIdx++ )
+	{
+		if ( g_UnreachableAddresses[ulIdx].CompareNoPort( Address ))
+			g_UnreachableAddresses[ulIdx].Clear( );
+	}
+}
+
 // [rc4l] Four seconds, not the second and a half this started as.
 //
 // A server registry flood-blocks a repeat launcher challenge from the same address for 3 seconds and
@@ -761,6 +808,22 @@ void BROWSER_QueryTick( void )
 		else if ( act.markTimedOut )
 		{
 			g_BrowserServerList[ulIdx].ulActiveState = AS_TIMEDOUT;
+
+			// [rc4l] Remember it, so the next sweep punches for this one BEFORE it challenges. That
+			// ordering is the difference between a hole that opens where we are knocking and one that
+			// opens on a rewritten port, and it can only be applied to a server already known to need
+			// it -- which is what this row just became.
+			if ( g_BrowserServerList[ulIdx].bLAN == false )
+				browser_RememberUnreachable( g_BrowserServerList[ulIdx].Address );
+		}
+
+		// [rc4l] The held-back first challenge, once the punch has had its head start.
+		if ( zx::FirstChallengeDue( g_BrowserServerList[ulIdx].bPunchLed,
+				g_BrowserServerList[ulIdx].bFirstChallengeSent,
+				static_cast<int>( lNow - g_BrowserServerList[ulIdx].lPunchLedMS )))
+		{
+			browser_QueryServer( ulIdx );
+			g_BrowserServerList[ulIdx].bFirstChallengeSent = true;
 		}
 	}
 }
@@ -1376,6 +1439,11 @@ void BROWSER_ParseServerQuery( BYTESTREAM_s *pByteStream, bool bLAN )
 
 	// This server is now active.
 	g_BrowserServerList[lServer].ulActiveState = AS_ACTIVE;
+
+	// [rc4l] It answered, so stop treating it as needing a punch ahead of every challenge. Leaving it
+	// remembered would spend the sweep's small budget on a server that is reachable and starve one
+	// that is not.
+	browser_ForgetUnreachable( g_BrowserServerList[lServer].Address );
 
 	// [rc4l] ONE MACHINE, TWO ROWS, ONE ANSWER.
 	//
@@ -2069,8 +2137,31 @@ void BROWSER_QueryAllServers( void )
 
 	for ( ulIdx = 0; ulIdx < MAX_BROWSER_SERVERS; ulIdx++ )
 	{
-		if ( g_BrowserServerList[ulIdx].ulActiveState == AS_WAITINGFORREPLY )
-			browser_QueryServer( ulIdx );
+		if ( g_BrowserServerList[ulIdx].ulActiveState != AS_WAITINGFORREPLY )
+			continue;
+
+		g_BrowserServerList[ulIdx].bPunchLed = false;
+		g_BrowserServerList[ulIdx].bFirstChallengeSent = false;
+		g_BrowserServerList[ulIdx].lPunchLedMS = 0;
+
+		// [rc4l] A server we already failed to reach punches BEFORE it is spoken to, and its
+		// challenge waits (see browser.h and querypunch_compute.h). Sending the challenge first is
+		// what breaks the punch: the host's router tracks that dropped packet and the host's own
+		// punch then cannot reuse the tuple, so the hole opens on a port nobody is knocking on.
+		if ( zx::ShouldPunchBeforeFirstChallenge( g_BrowserServerList[ulIdx].bLAN,
+				browser_IsKnownUnreachable( g_BrowserServerList[ulIdx].Address ),
+				g_lPunchesThisSweep < kMaxPunchesPerSweep )
+			&& zx::PunchRequestFor( g_BrowserServerList[ulIdx].Address, true ))
+		{
+			g_BrowserServerList[ulIdx].bPunchRequested = true;
+			g_BrowserServerList[ulIdx].bPunchLed = true;
+			g_BrowserServerList[ulIdx].lPunchLedMS = I_MSTime( );
+			g_lPunchesThisSweep++;
+			continue;	// the challenge follows once the punch has had its head start
+		}
+
+		browser_QueryServer( ulIdx );
+		g_BrowserServerList[ulIdx].bFirstChallengeSent = true;
 	}
 }
 
