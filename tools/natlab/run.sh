@@ -161,16 +161,28 @@ fi
 # (c) The client finds the server through the registry, not by LAN broadcast (they share no LAN).
 say "[3/4] client discovers the server through the registry..."
 found=0
+target=""
 for _ in $(seq 1 20); do
-    if fua client browser --wait 12 2>/dev/null | grep -q 'NATLAB-HOST'; then found=1; break; fi
+    listing="$( fua client browser --wait 12 2>/dev/null || true )"
+    if echo "$listing" | grep -q 'NATLAB-HOST'; then
+        # [rc4l] Take the address the BROWSER holds rather than naming one here. Behind masquerade the
+        # host's port is whatever its router chose, and the registry recorded the address the announce
+        # arrived from -- so a hardcoded "router:10666" is a guess that happens to be right only while
+        # the NAT preserves the port. It is also what a player does: they click the row.
+        target="$( echo "$listing" | grep -A 2 'NATLAB-HOST' | grep -oE '"address": *"[^"]+"' | head -1 | sed 's/.*"address": *"//; s/"$//' )"
+        found=1
+        break
+    fi
     sleep 3
 done
 [ "$found" = "1" ] || fail "the client never saw the server in the registry-backed list"
+[ -n "$target" ] || fail "found the server in the list but could not read its address back"
+say "    the registry holds it at $target"
 
 # (d) The proof. Connect, and assert from the SERVER that somebody is actually in -- the only signal
 #     that cannot be produced by a connection which did not happen.
-say "[4/4] client connects, and the server confirms it..."
-fua client ui exec "connect 192.168.240.2:10666" >/dev/null 2>&1 || true
+say "[4/4] client connects to $target, and the server confirms it..."
+fua client ui exec "connect $target" >/dev/null 2>&1 || true
 connected=0
 for _ in $(seq 1 25); do
     if fua host rpc net.clients | grep -qE '"connected": *[1-9]'; then connected=1; break; fi
