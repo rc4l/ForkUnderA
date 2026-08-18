@@ -104,13 +104,11 @@ enum
 	// instead of sitting out a timeout to discover what the registry already knew.
 	SRSC_PUNCHRESULT,
 
-	// [rc4l] "These addresses are one server." Sent after the list, and ONLY to a client that said it
-	// understands this -- the list format is positional, so an older client meeting an opcode it does
-	// not know would read the rest of the packet as addresses.
+	// [rc4l] "These addresses are one server", sent only to a client that said it understands the
+	// opcode, since the list is positional and an older one would read it as an address.
 	//
-	// Carries addresses and never the id they were grouped by. The id is derived from a server's
-	// secret precisely so that nobody can announce with somebody else's and have their listing merged
-	// away, and publishing it would hand that ability to everyone.
+	// [rc4l] Carries addresses and never the id, which is derived from a server's secret so that
+	// publishing it would let anyone have somebody else's listing merged away.
 	SRSC_SERVERGROUP,
 
 	// [rc4l] Written in the verdict slot of SRSC_PUNCHRESULT to mean "this is the cookie leg,
@@ -265,17 +263,10 @@ struct BYTESTREAM_s;
 //
 //==========================================================================
 
-// [rc4l] IPv4 only, and now permanently so BY DESIGN rather than pending work.
+// [rc4l] IPv4 only by design, since v6 rules are prefixes and live beside these on IPADDRESSBAN_s.
 //
-// Four decimal octets, so a ban can be written 1.2.3.* and matched a field at a time. v6 never fitted
-// that shape -- not because it has eight groups, but because the thing people ban is a /64, which is
-// a length rather than a wildcard. So v6 rules live beside these as a prefix and a bit count on
-// IPADDRESSBAN_s, matched by v6prefix_compute, and this class was left alone.
-//
-// SetFrom still refuses a v6 address rather than flattening one into 0.0.0.0. That refusal used to
-// mean a v6 player was unbannable; it now means the v4 path cannot accidentally answer a v6 question,
-// because the address overload of getFirstMatchingEntryIndex takes v6 addresses down the prefix path
-// before this class is ever reached.
+// [rc4l] SetFrom still refuses v6, which now keeps the v4 path from answering a v6 question rather
+// than making v6 players unbannable.
 class IPStringArray
 {
 private:
@@ -424,12 +415,8 @@ struct IPADDRESSBAN_s
 	// The IP address in char form (can be a number or a wildcard).
 	IPStringArray szIP;
 
-	// [rc4l] A v6 rule instead, when bIsV6. The two live side by side rather than in a union, because
-	// a union here would make "which one is valid" a thing every reader has to get right, and the
-	// cost of sixteen idle bytes per entry is nothing next to a ban list that matches the wrong field.
-	//
-	// A v6 ban is a PREFIX, not a pattern: an ISP hands a household a /64 and a household is what gets
-	// banned. See v6prefix_compute.h -- this struct only carries what that unit decides on.
+	// [rc4l] A v6 rule instead when bIsV6, a prefix rather than a pattern because an ISP hands a
+	// household a /64 and a household is what gets banned.
 	bool			bIsV6;
 	unsigned char	abPrefix6[16];
 	int				iPrefixBits;
@@ -606,8 +593,7 @@ public:
 	time_t			getEntryExpiration( const NETADDRESS_s &Address ) const; // [RC]
 	void			addEntry( const IPStringArray &szAddress, const char *pszPlayerName, const char *pszComment, std::string &Message, time_t tExpiration );
 	void			addEntry( const char *pszIPAddress, const char *pszPlayerName, const char *pszComment, std::string &Message, time_t tExpiration );
-	// [rc4l] The v6 half. Takes an already-parsed prefix rather than text, so there is exactly one
-	// place that decides what a v6 rule means (v6prefix_compute) and no second spelling of the parse.
+	// [rc4l] The v6 half, taking a parsed prefix so only v6prefix_compute decides what a rule means.
 	void			addV6Entry( const unsigned char *prefix, int bits, const char *pszPlayerName, const char *pszComment, std::string &Message, time_t tExpiration );
 	ULONG			doesV6EntryExist( const unsigned char *prefix, int bits ) const;
 	void			removeEntry( const IPStringArray &szAddress, std::string &Message );
