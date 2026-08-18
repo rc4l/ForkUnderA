@@ -8,6 +8,13 @@ name: NAT lab
 on:
   workflow_call:
   workflow_dispatch:
+    inputs:
+      # [rc4l] Repeat the lab N times on one commit, so a flake rate can be MEASURED rather than
+      # argued about -- a single red run says nothing about whether a change helped.
+      runs:
+        description: "How many times to run each case"
+        default: "1"
+        required: false
 
 jobs:
   natlab:
@@ -51,7 +58,15 @@ jobs:
         run: ZX_MCP_BRIDGE=1 ./linux_compile.sh --no-package
 
       - name: Run the NAT lab
-        run: tools/natlab/run.sh --host-nat ${{ matrix.host_nat }} --client-nat ${{ matrix.client_nat }}
+        run: |
+          fails=0
+          for i in $(seq 1 ${{ github.event.inputs.runs || 1 }}); do
+            echo "::group::run $i"
+            tools/natlab/run.sh --host-nat ${{ matrix.host_nat }} --client-nat ${{ matrix.client_nat }} || fails=$((fails+1))
+            echo "::endgroup::"
+          done
+          echo "FLAKE RATE: $fails failures out of ${{ github.event.inputs.runs || 1 }}"
+          [ "$fails" = "0" ]
 
       # [rc4l] Dedupe, once, rather than per NAT flavour: it has nothing to do with traversal, and
       # running it three times would treble the wall clock to assert the same thing.

@@ -184,7 +184,13 @@ say "[3/4] client discovers the server through the registry..."
 found=0
 target=""
 for _ in $(seq 1 20); do
-    listing="$( fua client browser --wait 12 2>/dev/null || true )"
+    # [rc4l] Keep the error, do not swallow it: a failing fuactl command looks exactly like a server
+    # that was never found, and "|| true" hid whether the refresh even happened.
+    listing="$( fua client browser --wait 12 2>/tmp/browser.err )" || browser_rc=$?
+    if [ -n "${browser_rc:-}" ] && [ "${browser_rc:-0}" != "0" ]; then
+        echo "    browser command exited $browser_rc: $( dc exec -T client sh -lc 'true' >/dev/null 2>&1 && cat /tmp/browser.err 2>/dev/null | tail -3 )" >&2
+        browser_rc=""
+    fi
     if echo "$listing" | grep -q 'NATLAB-HOST'; then
         # [rc4l] Take the address the BROWSER holds rather than naming one here.
         target="$( echo "$listing" | grep -A 2 'NATLAB-HOST' | grep -oE '"address": *"[^"]+"' | head -1 | sed 's/.*"address": *"//; s/"$//' )"
