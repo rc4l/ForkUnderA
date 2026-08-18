@@ -459,6 +459,7 @@ static const char *kSceneVS =
 	"layout(location = 4) out vec4 vPixelPos;\n"
 	"layout(location = 5) flat out int vLightIndex;\n"
 	"layout(location = 6) out vec3 vNormal;\n"
+	"layout(location = 7) flat out vec4 vPlane;\n"
 	"void main() {\n"
 	"    vec4 clip = uMVP * vec4(aPos, 1.0);\n"
 	"    gl_Position = clip;\n"
@@ -472,6 +473,20 @@ static const char *kSceneVS =
 	"    vPixelPos = vec4(aPos, clip.w);\n"
 	"    vLightIndex = int(aLightIndex);\n"
 	"    vNormal = aNormal;\n"
+	// [rc4l] The surface PLANE, flat: its normal and its distance from the origin.
+	//
+	// Whether a light reaches a surface is a property of the SURFACE, not of the fragment -- one
+	// answer for the whole face. Asking it per fragment means asking it of an interpolated
+	// position, and the rasteriser returns a world height on a flat floor that wobbles in the last
+	// thousandth of a unit. That is harmless until a light sits exactly ON the plane it lights, and
+	// then the wobble is the entire answer: the test flips from fragment to fragment and the floor
+	// comes out in hard horizontal stripes of lit and unlit. Freedoom MAP01 has such a light at the
+	// map start -- a green one at z 8.0 on a floor at 8.0 -- which is how this was found.
+	//
+	// Interpolating nothing removes the wobble rather than hiding it under a tolerance: every
+	// vertex of a planar face gives the same dot(n, p), so the flat value is that number exactly and
+	// the test is identical across the face however far away or however oblique it is.
+	"    vPlane = vec4(aNormal, dot(aNormal, aPos));\n"
 	"}\n";
 
 // [rc4l] The engine's real lighting, ported.
@@ -501,6 +516,7 @@ static const char *kSceneVS =
 	"layout(location = 4) in vec4 vPixelPos;\n" \
 	"layout(location = 5) flat in int vLightIndex;\n" \
 	"layout(location = 6) in vec3 vNormal;\n" \
+	"layout(location = 7) flat in vec4 vPlane;\n" \
 	"layout(binding = 0) uniform Constants { mat4 uMVP; vec4 uCameraPos; vec4 uLightParams; vec4 uClipPlane; vec4 uScreen; vec4 uSkyColor; };\n" \
 	"layout(binding = 1) uniform sampler2D uTex;\n" \
 	/* [rc4l] The brightmap layer, present on EVERY material -- black where there is none.
@@ -533,7 +549,7 @@ static const char *kSceneVS =
 	   was straight up -- lit only the fragments BELOW the light and cut the rest off along a dead
 	   straight horizontal line at the light's own height. On a rocket explosion, which carries a
 	   large light at its centre, that is a hard seam across the middle of the fireball. */ \
-	"    bool sided = dot(vNormal, vNormal) > 0.0001;\n" \
+	"    bool sided = dot(vPlane.xyz, vPlane.xyz) > 0.0001;\n" \
 	"    vec3 dyn = vec3(0.0);\n" \
 	"    for (int i = 0; i < n; i++) {\n" \
 	"        vec4 lp = lights[i*2];\n" \
@@ -542,7 +558,13 @@ static const char *kSceneVS =
 	/* The side test gl_GetLight does per surface: a light behind the plane does not light it.
 	   Without this the backs of walls and the room next door get lit, which reads as a scene far
 	   more saturated than GL's. */ \
-	"        if (sided && dot(vNormal, d) <= 0.0) continue;\n" \
+	/* [rc4l] ...and the same test read off the plane instead of the fragment.
+
+	   dot(n, lightPos) - planeD is dot(n, lightPos - fragPos) for any fragment ON the plane, so this
+	   is the same quantity, computed from numbers that do not vary across the face. A light lying
+	   exactly in the plane gives exactly zero and is KEPT, which is what gl_flats.cpp does: it drops
+	   a light only when the plane is strictly on the wrong side of it. */ \
+	"        if (sided && dot(vPlane.xyz, lp.xyz) - vPlane.w < 0.0) continue;\n" \
 	"        float a = max(lp.w - length(d), 0.0) / lp.w;\n" \
 	"        if (a <= 0.0) continue;\n" \
 	"        if (lc.a > 0.5) dyn -= lc.rgb * a;\n" \
@@ -567,6 +589,15 @@ static const char *kSceneVS =
 	"    if (dbg == 11.0) return fuaDynLight(vec3(0.0));\n" \
 	"    if (dbg == 12.0) return vec3(uLightParams.x / 16.0);\n" \
 	"    if (dbg == 13.0) return vec3(lights[0].w / 256.0);\n" \
+	/* [rc4l] 14: the surface NORMAL, 15: whether the interpolated world height holds still.
+
+	   fuaDynLight decides whether a light reaches a surface with a SIGN TEST on the interpolated
+	   world position, and a sign test is only as trustworthy as its inputs. On a floor the world
+	   height is the same number at every fragment, so 15 has to come out flat black. Anything else
+	   is the rasteriser handing back a height that wobbles -- and a light sitting AT that height
+	   then switches on and off from fragment to fragment as the wobble crosses it. */ \
+	"    if (dbg == 14.0) return vNormal * 0.5 + 0.5;\n" \
+	"    if (dbg == 15.0) return vec3(fract(vPixelPos.y * 64.0));\n" \
 	"    if (dbg == 0.0) return texel * vColor;\n" \
 	"    float fogMode = vFog.a;\n" \
 	"    float fogdist = 0.0, fogfactor = 0.0;\n" \
@@ -2575,6 +2606,43 @@ static void RefreshMovedGeometry(Diligent::IDeviceContext *ctx)
 	(void)src; (void)pieces; (void)npieces;
 }
 
+//==========================================================================
+//
+// fua_dg_lights
+//
+// [rc4l] Every dynamic light the backend can see, with the numbers the shader actually tests.
+//
+// The shader decides whether a light reaches a surface by comparing the light against the
+// surface plane, so a light sitting exactly ON a plane is the one case where that comparison has
+// no right answer -- and a floor lit by such a light is at the mercy of the last bit of an
+// interpolated coordinate. Height is printed against the player floor for that reason: it is the
+// difference, not the absolute position, that says whether a light is in that state.
+//
+//==========================================================================
+
+CCMD( fua_dg_lights )
+{
+	const float floorz = ( players[consoleplayer].mo != NULL )
+		? FIXED2FLOAT( players[consoleplayer].mo->floorz ) : 0.f;
+	int n = 0;
+	TThinkerIterator<ADynamicLight> it( STAT_DLIGHT );
+	ADynamicLight *light;
+	while ( ( light = it.Next( ) ) != NULL )
+	{
+		if ( !light->IsActive( ) ) continue;
+		const float radius = light->GetRadius( ) * gl_lights_size;
+		if ( radius <= 0.f ) continue;
+		const float lz = FIXED2FLOAT( light->z );
+		Printf( "light %d: pos %.1f, %.1f, %.1f  radius %.0f  rgb %d,%d,%d%s  dz-from-floor %+.2f%s",
+			n, FIXED2FLOAT( light->x ), FIXED2FLOAT( light->y ), lz, radius,
+			light->GetRed( ), light->GetGreen( ), light->GetBlue( ),
+			light->IsSubtractive( ) ? " SUBTRACTIVE" : "",
+			lz - floorz,
+			( fabsf( lz - floorz ) < 1.f ) ? "   <-- ON THE FLOOR PLANE\n" : "\n" );
+		n++;
+	}
+	Printf( "fua_dg_lights: %d active, player floor %.1f\n", n, floorz );
+}
 // [rc4l] Collect every active dynamic light in the level into the shared storage buffer.
 //
 // Rebuilt every frame -- lights move, spawn and die. See fuaDynLight in the shader for why there is
