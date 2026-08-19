@@ -85,6 +85,7 @@
 #include "features/server-hosting/zx_reachprobe.h" // [rc4l] and says whether the internet can reach it
 #include "features/server-hosting/computation/hoststatus_compute.h"
 #include "features/server-hosting/computation/hostport_compute.h" // [rc4l] which port the check asks about
+#include "features/server-browser/computation/mapselect_compute.h"	// [rc4l] and whether a bulk map change does anything
 #include "features/server-browser/computation/toolgrid_compute.h"	// [rc4l] and the 2x2 settings grid
 #include "features/server-hosting/computation/hostfocus_compute.h"
 #include "features/server-hosting/computation/hostsettings_compute.h"	// [rc4l] and what a preset folder may carry
@@ -763,6 +764,12 @@ enum class DialogAction
 	ResetFlags,
 	ResetMaps,
 	ResetGameplay,
+
+	// [rc4l] Putting every map back into the rotation, or taking every one out. Asked for the same
+	// reason a reset is -- a curated rotation is work with no undo -- and asked ONLY when the press
+	// would actually change the list; see computation/mapselect_compute.
+	SelectAllMaps,
+	DeselectAllMaps,
 };
 
 struct BrowserDialog
@@ -804,7 +811,10 @@ static bool DialogIsDestructive( DialogAction action )
 	return ( action == DialogAction::DeleteCustom ) ||
 		( action == DialogAction::ResetFlags ) ||
 		( action == DialogAction::ResetMaps ) ||
-		( action == DialogAction::ResetGameplay );
+		( action == DialogAction::ResetGameplay ) ||
+		// [rc4l] Emptying the rotation throws the curation away; filling it back up does not, so
+		// only the one that destroys work wears the red answer.
+		( action == DialogAction::DeselectAllMaps );
 }
 
 // What is typed into the dialog's field, edited by the same rules as the search box.
@@ -1867,6 +1877,19 @@ struct NewMapEntry
 };
 
 static	std::vector<NewMapEntry>	g_NewMaps;
+
+// [rc4l] WHERE THE KEYBOARD IS INSIDE THE MAP BOX, as one value rather than a bool per region.
+//
+// The box grew a footer worth reaching: DONE, RESET and the two bulk buttons. Escape still means
+// DONE and Backspace still means RESET, so nothing anybody had learned stopped working -- but the
+// two new ones needed a route, and a second shortcut key each would have been two more things to
+// know. Down off the last row goes to the footer, up comes back, the way every other region on
+// these screens hands over at its edge.
+enum class MapsFocus { List, Footer };
+
+static	MapsFocus			g_NewMapFocus = MapsFocus::List;
+static	int					g_NewMapFootSel = 0;
+static	int					g_NewMapFootHot = -1;
 static	FString				g_NewMapsKey;
 static	int					g_NewMapSel = 0;
 static	int					g_NewMapScroll = 0;
@@ -3598,6 +3621,22 @@ public:
 			}
 			break;
 
+		case DialogAction::SelectAllMaps:
+			if ( bAffirmative )
+			{
+				NewSetAllMapsIn( true );
+				NewSay( "Every map in" );
+			}
+			break;
+
+		case DialogAction::DeselectAllMaps:
+			if ( bAffirmative )
+			{
+				NewSetAllMapsIn( false );
+				NewSay( "Every map out" );
+			}
+			break;
+
 		// [rc4l] Re-applying the MODE is the reset: NewSetGameMode writes this mode's skill, its
 		// limits, its clock and its teams, which is the whole of what this box shows. Doing it that
 		// way rather than listing the cvars again means the defaults live in one place and the
@@ -4015,7 +4054,8 @@ public:
 	//
 	// A named tint rather than a second bool beside `warn`: two bools at a call site say nothing
 	// about which combinations mean anything, and three of the four here mean nothing at all.
-	enum class ButtonTint { Neutral, Warn, Cool };
+	// [rc4l] Go is the affirmative one: the button that finishes what you came to do.
+	enum class ButtonTint { Neutral, Warn, Cool, Go };
 
 	void DrawRoundedButton( int vx, int vy, int vw, int vh, const char *label, bool lit,
 		ButtonTint tint = ButtonTint::Neutral )
@@ -4024,21 +4064,25 @@ public:
 
 		const bool warn = ( tint == ButtonTint::Warn );
 		const bool cool = ( tint == ButtonTint::Cool );
+		const bool go = ( tint == ButtonTint::Go );
 
-		// Warm pushes red, cool pushes blue, and the untinted one stays grey.
+		// Warm pushes red, cool pushes blue, go pushes green, and the untinted one stays grey.
 		const int warmTop = warn ? base + 30 : base;
 		const int warmBot = warn ? base + 15 : base / 2;
 		const int coolTop = cool ? base + 40 : base;
 		const int coolBot = cool ? base + 25 : base / 2;
+		const int greenTop = go ? base + 40 : base;
+		const int greenBot = go ? base + 25 : base / 2;
 
-		const zx::PanelColor topCol = { static_cast<BYTE>( warmTop ), static_cast<BYTE>( base ),
+		const zx::PanelColor topCol = { static_cast<BYTE>( warmTop ), static_cast<BYTE>( greenTop ),
 			static_cast<BYTE>( coolTop ), 220 };
-		const zx::PanelColor botCol = { static_cast<BYTE>( warmBot ), static_cast<BYTE>( base / 2 ),
+		const zx::PanelColor botCol = { static_cast<BYTE>( warmBot ), static_cast<BYTE>( greenBot ),
 			static_cast<BYTE>( coolBot ), 235 };
 
 		DrawRoundedPanel( vx, vy, vw, vh, topCol, botCol, 4 );
 
-		const EColorRange textCol = warn ? CR_ORANGE : ( lit ? CR_WHITE : CR_GRAY );
+		const EColorRange textCol = warn ? CR_ORANGE
+			: ( go ? CR_GREEN : ( lit ? CR_WHITE : CR_GRAY ));
 
 		const int textY = vy + ( vh - SmallFont->GetHeight( )) / 2 + 1;
 		screen->DrawText( SmallFont, textCol,
@@ -7926,6 +7970,44 @@ public:
 	// and clickable in another.
 	void DrawBoxFootButtons( )
 	{
+		// [rc4l] The map box has four of these and a focus cursor to walk them, so it draws its own
+		// row rather than bending the pair below into a shape it was not written for.
+		if ( g_NewModal == NewModal::Maps )
+		{
+			const bool bFocused = ( g_NewMapFocus == MapsFocus::Footer );
+
+			for ( int i = 0; i < NewMapFootCount( ); ++i )
+			{
+				const bool lit = ( g_NewMapFootHot == i ) || ( bFocused && ( g_NewMapFootSel == i ));
+
+				// DONE is the affirmative one and wears the green; the rest only ask.
+				DrawRoundedButton( NewMapFootLeft( i ), NewBigButtonTop( ), NewMapFootW( ),
+					SB_DLG_BTN_H, NewMapFootLabel( i ), lit,
+					( i == 0 ) ? ButtonTint::Go : ButtonTint::Neutral );
+
+				if ( bFocused && ( g_NewMapFootSel == i ))
+				{
+					FocusAnchor( zx::BrowserFocus::Host, NewMapFootLeft( i ) - 5,
+						NewBigButtonTop( ) + SB_DLG_BTN_H / 2 );
+				}
+			}
+
+			static const char *const kTips[] = {
+				"Close this box  (Escape)",
+				"Put every map into the rotation, keeping the order",
+				"Take every map out, keeping them listed and in order",
+				"Put every map back, in the order the files give  (Backspace)",
+			};
+
+			for ( int i = 0; i < NewMapFootCount( ); ++i )
+			{
+				serverbrowser_Tip( NewMapFootLeft( i ), NewBigButtonTop( ), NewMapFootW( ),
+					SB_DLG_BTN_H, kTips[i] );
+			}
+
+			return;
+		}
+
 		DrawRoundedButton( NewBigDoneLeft( ), NewBigButtonTop( ), NewBigBtnW( ), SB_DLG_BTN_H,
 			"DONE", g_NewIwadConfirmHot );
 
@@ -7978,6 +8060,43 @@ public:
 	// [rc4l] The question, asked the same way from the mouse and the keyboard so the two cannot come
 	// to mean different things. Says WHAT goes rather than "are you sure": a player who has just
 	// spent a while in here deserves to be told which afternoon they are about to lose.
+	// [rc4l] Every map in, or every map out. The ORDER is left alone: neither button reorders, and a
+	// rotation somebody has arranged should not be shuffled by a press that was about membership.
+	void NewSetAllMapsIn( bool bIn )
+	{
+		for ( size_t i = 0; i < g_NewMaps.size( ); ++i )
+			g_NewMaps[i].bIn = bIn;
+	}
+
+	// [rc4l] Asked only when the answer could be no. A confirmation for a press that would change
+	// nothing is a question with one honest answer, and asking it is how people learn to dismiss the
+	// box without reading -- which is the habit that makes it worthless on the press that matters.
+	void NewAskSelectAllMaps( )
+	{
+		if ( !zx::ComputeSelectAllChanges( NewMapsInCount( ),
+			static_cast<int>( g_NewMaps.size( ))))
+		{
+			return;
+		}
+
+		ShowDialog( DialogAction::SelectAllMaps, "Put every map in?",
+			"Every map goes into the rotation. The order they are in is kept.",
+			"Select all", 's', "Keep", 'k' );
+	}
+
+	void NewAskDeselectAllMaps( )
+	{
+		if ( !zx::ComputeDeselectAllChanges( NewMapsInCount( ),
+			static_cast<int>( g_NewMaps.size( ))))
+		{
+			return;
+		}
+
+		ShowDialog( DialogAction::DeselectAllMaps, "Take every map out?",
+			"The rotation is emptied. The maps stay listed, and the order they are in is kept.",
+			"Deselect all", 'd', "Keep", 'k' );
+	}
+
 	void NewAskReset( )
 	{
 		if ( g_NewModal == NewModal::Flags )
@@ -8335,6 +8454,11 @@ public:
 		{
 			g_NewModal = NewModal::Maps;
 
+			// The cursor starts in the list every time the box is opened, so it never comes up on a
+			// footer button somebody last pressed a session ago.
+			g_NewMapFocus = MapsFocus::List;
+			g_NewMapFootSel = 0;
+
 			// [rc4l] The files are read HERE, on the press, and only when they have changed since
 			// the last read. Not at startup, not while the tab is drawn, and not per frame: this
 			// opens files off disk, and the one moment somebody is willing to wait for that is the
@@ -8638,6 +8762,45 @@ public:
 	int NewBigDoneLeft( )	{ return NewBigButtonLeft( ) - ( NewBoxHasReset( ) ? 44 : 0 ); }
 	int NewBigResetLeft( )	{ return NewBigButtonLeft( ) + 44; }
 	int NewBigBtnW( )		{ return 80; }
+
+	// [rc4l] THE MAP BOX'S FOOTER, which is four buttons rather than two.
+	//
+	// Laid out as one centred row instead of hung off NewBigButtonLeft like the pair above: with
+	// four of them, offsets from a centre point stop being readable and start being arithmetic
+	// nobody can check by eye.
+	int NewMapFootCount( )	{ return 4; }
+	int NewMapFootW( )		{ return 92; }
+	int NewMapFootGap( )	{ return 8; }
+
+	int NewMapFootRowW( )
+	{
+		return NewMapFootCount( ) * NewMapFootW( ) +
+			( NewMapFootCount( ) - 1 ) * NewMapFootGap( );
+	}
+
+	int NewMapFootLeft( int i )
+	{
+		const int centre = ( NewBigModalLeft( ) + NewBigModalRight( )) / 2;
+		return centre - NewMapFootRowW( ) / 2 + i * ( NewMapFootW( ) + NewMapFootGap( ));
+	}
+
+	// In the order they are drawn, which is the order the keyboard walks them.
+	const char *NewMapFootLabel( int i )
+	{
+		static const char *const kLabels[] = { "DONE", "SELECT ALL", "DESELECT ALL", "RESET" };
+		return kLabels[zx::ComputeClampedSelection( i, NewMapFootCount( ))];
+	}
+
+	void NewMapFootPress( int i )
+	{
+		switch ( zx::ComputeClampedSelection( i, NewMapFootCount( )))
+		{
+		case 0:		g_NewModal = NewModal::None; break;
+		case 1:		NewAskSelectAllMaps( ); break;
+		case 2:		NewAskDeselectAllMaps( ); break;
+		default:	NewAskReset( ); break;
+		}
+	}
 
 	// [rc4l] A box to type a number into, and what separates two of them in the footer.
 	//
@@ -9759,7 +9922,11 @@ public:
 			FString foot;
 			foot.Format( "Starts on %s", NewFirstMapIn( ).c_str( ));
 
-			screen->DrawText( SmallFont, CR_DARKGRAY, left, NewBigButtonTop( ) + 4, foot,
+			// [rc4l] ABOVE the buttons, not beside them. It shared the footer's line while that line
+			// held two buttons centred with room to spare; four of them reach across it, and DONE
+			// ended up drawn straight over the words.
+			screen->DrawText( SmallFont, CR_DARKGRAY, left,
+				NewBigButtonTop( ) - SmallFont->GetHeight( ) - 3, foot,
 				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true,
 				TAG_DONE );
 		}
@@ -9802,6 +9969,7 @@ public:
 		g_NewMapBtnHot = -1;
 		g_NewIwadConfirmHot = false;
 		g_NewBoxResetHot = false;
+		g_NewMapFootHot = -1;
 
 		const int left = NewBigContentLeft( );
 		const int right = NewBigContentRight( );
@@ -9816,24 +9984,35 @@ public:
 			return true;
 		}
 
-		if ( BoxResetMouse( type, x, y ))
-			return true;
-
+		// [rc4l] The whole footer, in the order it is drawn -- one loop rather than a rect per
+		// button, so the row the pointer hits cannot drift from the row the eye sees.
 		{
-			const int bx = NewBigDoneLeft( );
 			const int by = NewBigButtonTop( );
 
-			if (( x >= serverbrowser_ToScreenX( bx )) &&
-				( x < serverbrowser_ToScreenX( bx + NewBigBtnW( ))) &&
-				( y >= serverbrowser_ToScreenY( by )) &&
-				( y < serverbrowser_ToScreenY( by + SB_DLG_BTN_H )))
+			for ( int i = 0; i < NewMapFootCount( ); ++i )
 			{
-				g_NewIwadConfirmHot = true;
+				const int bx = NewMapFootLeft( i );
+
+				if (( x < serverbrowser_ToScreenX( bx )) ||
+					( x >= serverbrowser_ToScreenX( bx + NewMapFootW( ))) ||
+					( y < serverbrowser_ToScreenY( by )) ||
+					( y >= serverbrowser_ToScreenY( by + SB_DLG_BTN_H )))
+				{
+					continue;
+				}
+
+				g_NewMapFootHot = i;
+
 				if ( type == MOUSE_Release )
 				{
-					g_NewModal = NewModal::None;
+					// The cursor follows the pointer, so the keyboard carries on from where the
+					// click left it -- the same rule every other row of buttons here follows.
+					g_NewMapFocus = MapsFocus::Footer;
+					g_NewMapFootSel = i;
+					NewMapFootPress( i );
 					S_Sound( CHAN_VOICE | CHAN_UI, "menu/choose", snd_menuvolume, ATTN_NONE );
 				}
+
 				return true;
 			}
 		}
@@ -9909,18 +10088,63 @@ public:
 	// meant reaching for the mouse in the middle of arranging a rotation with the arrows.
 	bool NewMapsMenuKey( int mkey )
 	{
+		// [rc4l] The footer owns the keys while the cursor is on it. Up goes back to the list, left
+		// and right walk the row, and Enter presses what is under the cursor -- the same alphabet
+		// every other row of buttons on these screens uses.
+		if ( g_NewMapFocus == MapsFocus::Footer )
+		{
+			if ( mkey == MKEY_Up )
+			{
+				g_NewMapFocus = MapsFocus::List;
+				S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+				return true;
+			}
+
+			if (( mkey == MKEY_Left ) || ( mkey == MKEY_Right ))
+			{
+				const int next = zx::ComputeClampedSelection(
+					g_NewMapFootSel + (( mkey == MKEY_Left ) ? -1 : 1 ), NewMapFootCount( ));
+
+				if ( next != g_NewMapFootSel )
+				{
+					g_NewMapFootSel = next;
+					S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+				}
+				return true;
+			}
+
+			if ( mkey == MKEY_Enter )
+			{
+				NewMapFootPress( g_NewMapFootSel );
+				return true;
+			}
+
+			return true;		// nothing else on the footer answers a key
+		}
+
 		if ( g_NewMaps.empty( ))
 			return true;
 
 		if (( mkey == MKEY_Up ) || ( mkey == MKEY_Down ))
 		{
-			const int next = g_NewMapSel + (( mkey == MKEY_Up ) ? -1 : 1 );
-
-			if (( next >= 0 ) && ( next < static_cast<int>( g_NewMaps.size( ))))
+			// Down off the last row is the footer, which is the only thing under the list.
+			switch ( zx::ComputeListStep( g_NewMapSel, static_cast<int>( g_NewMaps.size( )),
+				( mkey == MKEY_Up ) ? -1 : 1 ))
 			{
-				g_NewMapSel = next;
+			case zx::ListStep::Move:
+				g_NewMapSel += ( mkey == MKEY_Up ) ? -1 : 1;
 				g_NewMapRevealSel = true;
 				S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+				break;
+
+			case zx::ListStep::LeaveDown:
+				g_NewMapFocus = MapsFocus::Footer;
+				g_NewMapFootSel = 0;
+				S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+				break;
+
+			case zx::ListStep::LeaveUp:
+				break;			// the top of the list is the top of the box
 			}
 
 			return true;
@@ -13174,6 +13398,28 @@ public:
 	//
 	// Up and down move within a region; left and right move BETWEEN them, which is the only mapping
 	// that works when the regions are laid out in two columns and one of them is a text field.
+	// [rc4l] Where RIGHT goes from the left column: the load order beside it, or the foot when that
+	// order is empty and has no row to land on. Written once because three controls and a text field
+	// all need the same answer, and the field reaches it by a different road -- see the search box's
+	// FieldKey::Right, which the menu machinery never translates for it.
+	void NewRightOutOfColumn( )
+	{
+		if ( zx::ComputeRightExitFromList( g_NewOrder.empty( ) == false )
+			== zx::RightExit::LoadOrder )
+		{
+			g_NewFocus = NewFocus::Order;
+			g_NewOrderSel = 0;			// the topmost row, which is the one the eye is on
+			g_NewOrderBtnSel = 0;
+		}
+		else
+		{
+			g_NewFocus = NewFocus::Buttons;
+			g_NewButtonSel = kNewButtonPlay;
+		}
+
+		S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+	}
+
 	bool NewNavigate( zx::NavKey key )
 	{
 		// [rc4l] The modal takes every arrow while it is up. Letting one through would move the
@@ -13416,28 +13662,13 @@ public:
 				return true;
 			}
 
-			// [rc4l] RIGHT OUT OF THE WAD LIST, which is the direction the load order is in.
-			//
-			// It was swallowed while how that side got reached was being reconsidered, which left the
-			// list a region you could only leave downwards. Where it lands is
-			// computation/toolgrid_compute's answer, because an empty load order has no row to land
-			// on and falling into one would be focus on something not drawn.
-			if ( g_NewFocus == NewFocus::Wads )
+			// [rc4l] RIGHT out of the left column, from ANY of the three controls stacked in it.
+			// The load order is to the right of all of them, and a key that worked on one row and
+			// did nothing on the two above it is the column disagreeing with itself.
+			if (( g_NewFocus == NewFocus::Iwads ) || ( g_NewFocus == NewFocus::Search ) ||
+				( g_NewFocus == NewFocus::Wads ))
 			{
-				if ( zx::ComputeRightExitFromList( g_NewOrder.empty( ) == false )
-					== zx::RightExit::LoadOrder )
-				{
-					g_NewFocus = NewFocus::Order;
-					g_NewOrderSel = 0;			// the topmost row, which is the one the eye is on
-					g_NewOrderBtnSel = 0;
-				}
-				else
-				{
-					g_NewFocus = NewFocus::Buttons;
-					g_NewButtonSel = kNewButtonPlay;
-				}
-
-				S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+				NewRightOutOfColumn( );
 				return true;
 			}
 
@@ -13758,7 +13989,9 @@ public:
 		{
 			zx::TextInput next = g_NewSearch;
 
-			switch ( EditTextField( next, ev, 48, false, false, false ))
+			// [rc4l] Right may leave this box: the load order is over there, the same as it is
+			// from the wad row below it.
+			switch ( EditTextField( next, ev, 48, false, false, true ))
 			{
 			case FieldKey::Escape:
 				// Out of the box, not out of the browser.
@@ -13792,11 +14025,17 @@ public:
 				}
 				return true;
 
+			// [rc4l] The caret has run out to the right, so the key means what it means everywhere
+			// else in this column. It used to be handed back and then LOST: this box owns the raw
+			// keys while it has focus, so nothing downstream ever turned it into a menu key.
+			case FieldKey::Right:
+				NewRightOutOfColumn( );
+				return true;
+
 			// Not a key at all -- above all the mouse, which reaches a menu through this same
 			// Responder and must be allowed past.
 			case FieldKey::Unclaimed:
 			case FieldKey::Left:
-			case FieldKey::Right:
 				return false;
 			}
 
@@ -18084,8 +18323,13 @@ public:
 
 			// And the CUSTOM tab's search box, for the reason the wad search needed it: backspace
 			// has to reach the field rather than becoming a menu key on the way.
+			//
+			// [rc4l] ONLY WHILE THE HOST REGION ACTUALLY HAS THE KEYBOARD. Without that test the box
+			// went on claiming every raw key after focus had left it for the sub-tabs, so nothing was
+			// translated into a menu key and the arrows stopped working entirely -- the screen looked
+			// alive and answered nothing.
 			|| (( g_Tab == BrowserTab::Host ) && ( g_HostKind == HostKind::Custom ) &&
-				( g_CustomFocus == CustomFocus::Search ));
+				( g_Focus == zx::BrowserFocus::Host ) && ( g_CustomFocus == CustomFocus::Search ));
 
 		return ( bInAField == false ) || g_Dialog.open || g_Notice.IsNotEmpty( );
 	}
