@@ -46,8 +46,17 @@ async function waitForFile(p, { timeoutMs = 10000 } = {}) {
 }
 
 // One camera, both renderers, sim frozen in between so nothing can move.
+// [rc4l] `frozen` runs console commands INSIDE the paused window, and returns what they said.
+//
+// Anything asked afterwards describes a different world. The pair is captured with the sim paused and
+// the sim is resumed before this returns, so a `fua_dg_lights` on the next line reports where the
+// projectiles are BY THEN -- several tics of flight later. That cost a long stretch of wrong
+// reasoning: the light positions printed beside a screenshot pair were not the positions in it, and a
+// light recorded as sitting ten units above the floor had been mid-flight when the shutter opened.
+// Whatever state a capture is to be read against has to be read in the same frozen frame as the
+// capture.
 export async function shotPair(c, tag, {
-  at = null, engineBin, outDir = "F:/ForkUnderA/dist-windows/sweep",
+  at = null, engineBin, outDir = "F:/ForkUnderA/dist-windows/sweep", frozen = [],
 } = {}) {
   if (at) {
     await c.rpc("sim.resume", {}).catch(() => {});
@@ -66,8 +75,11 @@ export async function shotPair(c, tag, {
   await exec(c, `fua_diligent_shot ${vk}`);
   const gotVk = await waitForFile(vk);
 
+  const said = [];
+  for (const cmd of frozen) said.push(await exec(c, cmd));
+
   await c.rpc("sim.resume", {}).catch(() => {});
-  return { gl: gotGl ? gl : null, vk: gotVk ? vk : null };
+  return { gl: gotGl ? gl : null, vk: gotVk ? vk : null, frozen: said };
 }
 
 // [rc4l] Build the engine and stage it, failing LOUDLY.
