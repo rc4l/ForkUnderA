@@ -1371,6 +1371,12 @@ CCMD( fua_whereis )
 //
 ULONG NETWORK_GetCountryIndexFromAddress( NETADDRESS_s Address )
 {
+	// [rc4l] An IPv6 address has no country here yet, and saying so is the point: every lookup below
+	// is IPv4, and abIP is zeroed for a v6 address, so it would resolve 0.0.0.0 and draw whichever
+	// flag sorts first -- a confident wrong country rather than none.
+	if ( Address.bIsIPv6 )
+		return COUNTRYINDEX_UNKNOWN;
+
 	const char *addressString = Address.ToStringNoPort();
 
 	// [AK] IP addresses ranging between 172.16.0.0 to 172.31.255.255 are also
