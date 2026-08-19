@@ -3913,7 +3913,17 @@ static void DrawWorld(Diligent::IDeviceContext *ctx)
 	// [rc4l] Decals mark surfaces, so they go with the surfaces -- after the world and before the
 	// sprites. Anything standing in front of a mark is then drawn over it because it is in a LATER
 	// pass, which is a fact about the frame rather than something a sort has to rediscover.
-	if (fua_decalmode != 0) DrawDeferredDecals(ctx);
+	// [rc4l] The SAME question the spawn side asks, which it was not.
+	//
+	// A mark is made when ProjectedDecalsActive() says so -- fua_decalmode for walls OR
+	// fua_decal_flats for floors and ceilings -- and was drawn only when fua_decalmode was set. So
+	// with the default decalmode a floor mark was built, stored, aged and faded, and never once
+	// drawn: fua_projdecals_stats reported ten live decals against a pass that ran zero boxes in
+	// zero draws. fua_decal_flats could not produce a visible mark on its own, which is the whole
+	// of what that switch is for.
+	//
+	// Two gates on one feature will drift; there is now one, and both sides call it.
+	if (zx::levelmesh::ProjectedDecalsActive()) DrawDeferredDecals(ctx);
 
 	// [rc4l] Sprites are built here but ALL of them draw in the sorted pass below, never in an
 	// opaque one. See DrawBlended.
