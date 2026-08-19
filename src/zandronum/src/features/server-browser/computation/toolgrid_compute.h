@@ -86,13 +86,17 @@ ListStep ComputeListStep(int sel, int count, int step);
 //
 // LEFT off the leftmost button is the settings grid, which sits on the same line in the other
 // column -- the foot is the bottom right of the screen and that is genuinely what is beside it.
-// UP is the load order above it, unless the order is empty, in which case there is nothing there to
-// hold focus and the key carries on to the grid.
+//
+// UP is the load order above it. An EMPTY order has no row to hold focus, and the answer then is the
+// IWAD row rather than the settings grid: with nothing loaded there is nothing to play, so the way
+// out of the foot is the top of the screen where a setup starts, not the box of settings for a
+// server that cannot be started yet.
 enum class FootExit
 {
 	StayOnRow,		// the caller moves along the row itself
 	SettingsGrid,
 	LoadOrder,
+	IwadRow,
 };
 
 FootExit ComputeFootExit(GridKey key, int sel, bool bLoadOrderHasRows);

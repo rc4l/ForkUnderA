@@ -174,10 +174,25 @@ TEST(ToolGrid, LeftElsewhereOnTheFootJustWalksTheRow)
 }
 
 // Up must not walk into a load order with nothing in it -- that is where focus was being lost.
-TEST(ToolGrid, UpFromTheFootSkipsAnEmptyLoadOrder)
+TEST(ToolGrid, UpFromTheFootReachesTheLoadOrderWhenThereIsOne)
 {
 	EXPECT_EQ(FootExit::LoadOrder, ComputeFootExit(GridKey::Up, 0, true));
-	EXPECT_EQ(FootExit::SettingsGrid, ComputeFootExit(GridKey::Up, 0, false));
+	EXPECT_EQ(FootExit::LoadOrder, ComputeFootExit(GridKey::Up, 1, true));
+}
+
+// With nothing loaded there is nothing to play, so the way out of the foot is the top of the screen
+// rather than the settings for a server that cannot be started yet.
+TEST(ToolGrid, UpFromTheFootWithAnEmptyOrderGoesToTheIwadRow)
+{
+	EXPECT_EQ(FootExit::IwadRow, ComputeFootExit(GridKey::Up, 0, false));
+	EXPECT_EQ(FootExit::IwadRow, ComputeFootExit(GridKey::Up, 1, false));
+}
+
+// LEFT is unchanged by any of that: the grid is beside the foot whatever the order holds.
+TEST(ToolGrid, LeftOffTheFootIsTheGridWhateverTheOrderHolds)
+{
+	EXPECT_EQ(FootExit::SettingsGrid, ComputeFootExit(GridKey::Left, 0, true));
+	EXPECT_EQ(FootExit::SettingsGrid, ComputeFootExit(GridKey::Left, 0, false));
 }
 
 TEST(ToolGrid, TheFootKeepsRightAndDownToItself)
