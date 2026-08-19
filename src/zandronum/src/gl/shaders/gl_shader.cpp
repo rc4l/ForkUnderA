@@ -70,15 +70,32 @@ bool FShader::Load(const char * name, const char * vert_prog_lump, const char * 
 	static char buffer[10000];
 	FString error;
 
-	int i_lump = Wads.CheckNumForFullName("shaders/glsl/shaderdefs.i");
+	// [rc4l] Core shaders come from OUR pk3 and nowhere else, ported from upstream 5a4a5a17d and
+	// 03c8fd995.
+	//
+	// Lump lookup answers with the last file to define a name, so a mod shipping its own
+	// shaders/glsl/main.fp silently replaces the engine's. That is not hypothetical: a crash report
+	// (GlitchTip 31) came from a mod doing exactly that with a 2016-era copy, which our "#version
+	// 140" preamble then rejected -- gl_Color is REMOVED at 140, not merely deprecated -- and the
+	// engine died with I_FatalError before the title screen.
+	//
+	// The mod was not trying to replace an engine file; back when it was written its copy and the
+	// engine's were the same vintage, so shipping one looked harmless. Pinning is what stops a mod
+	// aging into a crash.
+	//
+	// File 0 is our own pk3: "zdoom.pk3 must always be the first file loaded and the IWAD second"
+	// (d_iwad.cpp), which is also why IWAD_FILENUM is 1.
+	const int coreFile = 0;
+
+	int i_lump = Wads.CheckNumForFullName("shaders/glsl/shaderdefs.i", coreFile);
 	if (i_lump == -1) I_Error("Unable to load 'shaders/glsl/shaderdefs.i'");
 	FMemLump i_data = Wads.ReadLump(i_lump);
 
-	int vp_lump = Wads.CheckNumForFullName(vert_prog_lump);
+	int vp_lump = Wads.CheckNumForFullName(vert_prog_lump, coreFile);
 	if (vp_lump == -1) I_Error("Unable to load '%s'", vert_prog_lump);
 	FMemLump vp_data = Wads.ReadLump(vp_lump);
 
-	int fp_lump = Wads.CheckNumForFullName(frag_prog_lump);
+	int fp_lump = Wads.CheckNumForFullName(frag_prog_lump, coreFile);
 	if (fp_lump == -1) I_Error("Unable to load '%s'", frag_prog_lump);
 	FMemLump fp_data = Wads.ReadLump(fp_lump);
 
@@ -133,7 +150,10 @@ bool FShader::Load(const char * name, const char * vert_prog_lump, const char * 
 	{
 		if (*proc_prog_lump != '#')
 		{
-			int pp_lump = Wads.CheckNumForFullName(proc_prog_lump);
+			// [rc4l] Ours first, so a mod cannot override a CORE logic module by name; anything we
+			// do not ship is a genuine mod shader and is looked up normally. Upstream 03c8fd995.
+			int pp_lump = Wads.CheckNumForFullName(proc_prog_lump, coreFile);
+			if (pp_lump == -1) pp_lump = Wads.CheckNumForFullName(proc_prog_lump);
 			if (pp_lump == -1) I_Error("Unable to load '%s'", proc_prog_lump);
 			FMemLump pp_data = Wads.ReadLump(pp_lump);
 
@@ -149,7 +169,7 @@ bool FShader::Load(const char * name, const char * vert_prog_lump, const char * 
 
 			if (pp_data.GetString().IndexOf("ProcessLight") < 0)
 			{
-				int pl_lump = Wads.CheckNumForFullName("shaders/glsl/func_defaultlight.fp");
+				int pl_lump = Wads.CheckNumForFullName("shaders/glsl/func_defaultlight.fp", coreFile);
 				if (pl_lump == -1) I_Error("Unable to load '%s'", "shaders/glsl/func_defaultlight.fp");
 				FMemLump pl_data = Wads.ReadLump(pl_lump);
 				fp_comb << "\n" << pl_data.GetString().GetChars();
