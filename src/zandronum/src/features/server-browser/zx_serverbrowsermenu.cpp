@@ -5580,15 +5580,22 @@ public:
 			const HostPillGeom geom = HostPillGeometry( SB_HOST_RCOL_LEFT, groups[g] );
 			const zx::RemixPick pick = zx::PickRemix( choices, HostRemixWanted( groups[g].id ));
 
+			// [rc4l] FROM THE CURSOR, and it moves the cursor -- the same rule left and right follow.
+			//
+			// This walked from the CHOSEN pill and committed what it landed on, so up and down still
+			// selected as they moved and, on a wrapped axis, started from somewhere the marker was
+			// not. Half the row navigated one way and half the other, which is worse than either.
+			const int from = HostPillCursorFor( row, pick.index, static_cast<int>( choices.size( )));
+
 			const zx::PillMove to = zx::MovePillVertically( geom.layout, geom.widths, geom.gap,
-				( pick.index >= 0 ) ? pick.index : 0, dir );
+				from, dir );
 
 			if ( to.leaves )
 				return false;
 
-			if ( to.index != pick.index )
+			if ( to.index != from )
 			{
-				HostSetRemixWanted( groups[g].id, choices[to.index].id );
+				g_HostPillCursor = to.index;
 				S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
 			}
 
