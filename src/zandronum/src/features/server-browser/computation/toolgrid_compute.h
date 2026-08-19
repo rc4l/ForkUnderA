@@ -68,6 +68,36 @@ enum class RightExit
 
 RightExit ComputeRightExitFromList(bool bLoadOrderHasRows);
 
+// [rc4l] WHERE UP AND DOWN GO INSIDE A MODAL, which is a body and a row of buttons under it.
+//
+// Every box on the hosting screens is that shape -- the map rotation, FLAGS, GAMEPLAY, the SERVER
+// box -- and every one of them got it wrong in its own way: some clamped at the top so the footer
+// could not be reached at all, some clamped at the bottom, and the one that did hand over did it in
+// only one direction. A box you can enter and not leave by the same key you entered with is the
+// same bug wearing four coats.
+//
+// So it is one rule: the body and the footer are a LOOP. Off either end of the body is the footer,
+// off either end of the footer is the body, and which end you arrive at is the one nearest where
+// you came from. A body with nothing in it is not somewhere focus may sit, so the footer keeps the
+// key rather than handing it to an empty list.
+enum class ModalRegion
+{
+	Body,
+	Footer,
+};
+
+struct ModalPos
+{
+	ModalRegion region;
+	int index;
+
+	ModalPos() : region(ModalRegion::Body), index(0) {}
+	ModalPos(ModalRegion r, int i) : region(r), index(i) {}
+};
+
+// `step` is -1 for up and +1 for down.
+ModalPos ComputeModalStep(ModalPos pos, int bodyCount, int footCount, int step);
+
 // [rc4l] Walking a vertical list that has somewhere to go off either end.
 //
 // A list that only ever clamps is a region the keyboard can enter and not leave, which is the same

@@ -1916,8 +1916,8 @@ static	int					g_NewMapClickRow = -1;
 static	int					g_NewMapClickTime = -1000;
 
 static	MapsFocus			g_NewMapFocus = MapsFocus::List;
-static	int					g_NewMapFootSel = 0;
-static	int					g_NewMapFootHot = -1;
+static	int					g_ModalFootSel = 0;
+static	int					g_ModalFootHot = -1;
 static	FString				g_NewMapsKey;
 static	int					g_NewMapSel = 0;
 static	int					g_NewMapScroll = 0;
@@ -8078,98 +8078,66 @@ public:
 	// and clickable in another.
 	void DrawBoxFootButtons( )
 	{
-		// [rc4l] The map box has four of these and a focus cursor to walk them, so it draws its own
-		// row rather than bending the pair below into a shape it was not written for.
-		if ( g_NewModal == NewModal::Maps )
+		// [rc4l] ONE ROW FOR EVERY BOX. It was a map-box row plus a hand-placed DONE/RESET pair for
+		// the others, which is how those two ended up with no keyboard: only the row had a cursor.
+		const bool bFocused = ( g_NewMapFocus == MapsFocus::Footer );
+
+		for ( int i = 0; i < ModalFootCount( ); ++i )
 		{
-			const bool bFocused = ( g_NewMapFocus == MapsFocus::Footer );
+			const bool lit = ( g_ModalFootHot == i ) || ( bFocused && ( g_ModalFootSel == i ));
 
-			for ( int i = 0; i < NewMapFootCount( ); ++i )
+			// DONE is the affirmative one and wears the green; the rest only ask.
+			DrawRoundedButton( ModalFootLeft( i ), NewBigButtonTop( ), ModalFootW( ),
+				SB_DLG_BTN_H, ModalFootLabel( i ), lit,
+				( i == 0 ) ? ButtonTint::Go : ButtonTint::Neutral );
+
+			if ( bFocused && ( g_ModalFootSel == i ))
 			{
-				const bool lit = ( g_NewMapFootHot == i ) || ( bFocused && ( g_NewMapFootSel == i ));
-
-				// DONE is the affirmative one and wears the green; the rest only ask.
-				DrawRoundedButton( NewMapFootLeft( i ), NewBigButtonTop( ), NewMapFootW( ),
-					SB_DLG_BTN_H, NewMapFootLabel( i ), lit,
-					( i == 0 ) ? ButtonTint::Go : ButtonTint::Neutral );
-
-				if ( bFocused && ( g_NewMapFootSel == i ))
-				{
-					FocusAnchor( zx::BrowserFocus::Host, NewMapFootLeft( i ) - 5,
-						NewBigButtonTop( ) + SB_DLG_BTN_H / 2 );
-				}
+				FocusAnchor( zx::BrowserFocus::Host, ModalFootLeft( i ) - 5,
+					NewBigButtonTop( ) + SB_DLG_BTN_H / 2 );
 			}
 
-			static const char *const kTips[] = {
-				"Close this box  (Escape)",
-				"Put every map into the rotation, keeping the order",
-				"Take every map out, keeping them listed and in order",
-				"Put every map back, in the order the files give  (Backspace)",
-			};
-
-			for ( int i = 0; i < NewMapFootCount( ); ++i )
-			{
-				serverbrowser_Tip( NewMapFootLeft( i ), NewBigButtonTop( ), NewMapFootW( ),
-					SB_DLG_BTN_H, kTips[i] );
-			}
-
-			return;
+			serverbrowser_Tip( ModalFootLeft( i ), NewBigButtonTop( ), ModalFootW( ),
+				SB_DLG_BTN_H, ModalFootTip( i ));
 		}
-
-		DrawRoundedButton( NewBigDoneLeft( ), NewBigButtonTop( ), NewBigBtnW( ), SB_DLG_BTN_H,
-			"DONE", g_NewIwadConfirmHot );
-
-		if ( !NewBoxHasReset( ))
-			return;
-
-		// Neutral: this one only ASKS. The red belongs on the answer, and the confirmation's own
-		// affirmative wears it -- see DialogIsDestructive.
-		DrawRoundedButton( NewBigResetLeft( ), NewBigButtonTop( ), NewBigBtnW( ), SB_DLG_BTN_H,
-			"RESET", g_NewBoxResetHot );
-
-		// [rc4l] One line per box. This was a two-way choice between maps and flags, which left
-		// GAMEPLAY -- added later -- being told about flags it does not show.
-		const char *tip = "Put every flag back to what a new setup starts with  (Backspace)";
-
-		if ( g_NewModal == NewModal::Maps )
-			tip = "Put every map back, in the order the files give  (Backspace)";
-		else if ( g_NewModal == NewModal::Gameplay )
-			tip = "Put these settings back to what this mode starts with  (Backspace)";
-
-		serverbrowser_Tip( NewBigResetLeft( ), NewBigButtonTop( ), NewBigBtnW( ), SB_DLG_BTN_H, tip );
 	}
 
-	// The RESET button's own hit test, shared by both boxes for the same reason the drawing is.
-	// Returns true when the click belonged to it.
-	bool BoxResetMouse( int type, int x, int y )
+	// [rc4l] The footer's hit test, shared by every box for the same reason the drawing is: two of
+	// them would be two things to move whenever the row does. Returns true when the click was its.
+	bool ModalFootMouse( int type, int x, int y )
 	{
-		if ( !NewBoxHasReset( ))
-			return false;
-
-		const int bx = NewBigResetLeft( );
 		const int by = NewBigButtonTop( );
 
-		if (( x < serverbrowser_ToScreenX( bx )) ||
-			( x >= serverbrowser_ToScreenX( bx + NewBigBtnW( ))) ||
-			( y < serverbrowser_ToScreenY( by )) ||
-			( y >= serverbrowser_ToScreenY( by + SB_DLG_BTN_H )))
+		for ( int i = 0; i < ModalFootCount( ); ++i )
 		{
-			return false;
+			const int bx = ModalFootLeft( i );
+
+			if (( x < serverbrowser_ToScreenX( bx )) ||
+				( x >= serverbrowser_ToScreenX( bx + ModalFootW( ))) ||
+				( y < serverbrowser_ToScreenY( by )) ||
+				( y >= serverbrowser_ToScreenY( by + SB_DLG_BTN_H )))
+			{
+				continue;
+			}
+
+			g_ModalFootHot = i;
+
+			if ( type == MOUSE_Release )
+			{
+				// The cursor follows the pointer, so the keyboard carries on from where the click
+				// left it -- the same rule every other row of buttons here follows.
+				g_NewMapFocus = MapsFocus::Footer;
+				g_ModalFootSel = i;
+				ModalFootPress( i );
+				S_Sound( CHAN_VOICE | CHAN_UI, "menu/choose", snd_menuvolume, ATTN_NONE );
+			}
+
+			return true;
 		}
 
-		g_NewBoxResetHot = true;
-
-		if ( type == MOUSE_Release )
-			NewAskReset( );
-
-		return true;
+		return false;
 	}
 
-	// [rc4l] The question, asked the same way from the mouse and the keyboard so the two cannot come
-	// to mean different things. Says WHAT goes rather than "are you sure": a player who has just
-	// spent a while in here deserves to be told which afternoon they are about to lose.
-	// [rc4l] Every map in, or every map out. The ORDER is left alone: neither button reorders, and a
-	// rotation somebody has arranged should not be shuffled by a press that was about membership.
 	void NewSetAllMapsIn( bool bIn )
 	{
 		for ( size_t i = 0; i < g_NewMaps.size( ); ++i )
@@ -8565,7 +8533,7 @@ public:
 			// The cursor starts in the list every time the box is opened, so it never comes up on a
 			// footer button somebody last pressed a session ago.
 			g_NewMapFocus = MapsFocus::List;
-			g_NewMapFootSel = 0;
+			g_ModalFootSel = 0;
 			g_NewMapBtnSel = 0;
 
 			// [rc4l] The files are read HERE, on the press, and only when they have changed since
@@ -8577,8 +8545,11 @@ public:
 		else
 			g_NewModal = NewModal::Gameplay;
 
-		// The cursor starts at the top of whichever box this is, and the view with it.
+		// The cursor starts at the top of whichever box this is, and the view with it -- and in the
+		// BODY, never on a footer button somebody last pressed.
 		g_NewBoxSel = 0;
+		g_NewMapFocus = MapsFocus::List;
+		g_ModalFootSel = 0;
 		BoxRevealSel( );
 
 		g_NewFlagEditing = -1;
@@ -8872,43 +8843,98 @@ public:
 	int NewBigResetLeft( )	{ return NewBigButtonLeft( ) + 44; }
 	int NewBigBtnW( )		{ return 80; }
 
-	// [rc4l] THE MAP BOX'S FOOTER, which is four buttons rather than two.
+	// [rc4l] THE MODAL FOOTER, shared by every box on this tab that has one.
 	//
-	// Laid out as one centred row instead of hung off NewBigButtonLeft like the pair above: with
-	// four of them, offsets from a centre point stop being readable and start being arithmetic
-	// nobody can check by eye.
-	int NewMapFootCount( )	{ return 4; }
-	int NewMapFootW( )		{ return 92; }
-	int NewMapFootGap( )	{ return 8; }
-
-	int NewMapFootRowW( )
+	// It began as the map box's four buttons and stayed there, which left FLAGS and GAMEPLAY with a
+	// DONE and a RESET the keyboard could not reach: pressing up at the top of those lists did
+	// nothing, because there was nothing above them to go to. One footer, one cursor, one set of
+	// rules, so all three boxes answer a key the same way.
+	//
+	// Laid out as one centred row rather than hung off NewBigButtonLeft: past two buttons, offsets
+	// from a centre point stop being readable and start being arithmetic nobody can check by eye.
+	int ModalFootCount( )
 	{
-		return NewMapFootCount( ) * NewMapFootW( ) +
-			( NewMapFootCount( ) - 1 ) * NewMapFootGap( );
+		if ( g_NewModal == NewModal::Maps )
+			return 4;
+
+		return NewBoxHasReset( ) ? 2 : 1;
 	}
 
-	int NewMapFootLeft( int i )
+	int ModalFootW( )		{ return ( g_NewModal == NewModal::Maps ) ? 92 : 80; }
+	int ModalFootGap( )		{ return 8; }
+
+	int ModalFootRowW( )
+	{
+		return ModalFootCount( ) * ModalFootW( ) + ( ModalFootCount( ) - 1 ) * ModalFootGap( );
+	}
+
+	int ModalFootLeft( int i )
 	{
 		const int centre = ( NewBigModalLeft( ) + NewBigModalRight( )) / 2;
-		return centre - NewMapFootRowW( ) / 2 + i * ( NewMapFootW( ) + NewMapFootGap( ));
+		return centre - ModalFootRowW( ) / 2 + i * ( ModalFootW( ) + ModalFootGap( ));
 	}
 
-	// In the order they are drawn, which is the order the keyboard walks them.
-	const char *NewMapFootLabel( int i )
+	// In the order they are drawn, which is the order the keyboard walks them. DONE is first on every
+	// box, so a cursor arriving at the footer always lands on the way out.
+	const char *ModalFootLabel( int i )
 	{
-		static const char *const kLabels[] = { "DONE", "SELECT ALL", "DESELECT ALL", "RESET" };
-		return kLabels[zx::ComputeClampedSelection( i, NewMapFootCount( ))];
-	}
-
-	void NewMapFootPress( int i )
-	{
-		switch ( zx::ComputeClampedSelection( i, NewMapFootCount( )))
+		if ( g_NewModal == NewModal::Maps )
 		{
-		case 0:		g_NewModal = NewModal::None; break;
-		case 1:		NewAskSelectAllMaps( ); break;
-		case 2:		NewAskDeselectAllMaps( ); break;
-		default:	NewAskReset( ); break;
+			static const char *const kMaps[] = { "DONE", "SELECT ALL", "DESELECT ALL", "RESET" };
+			return kMaps[zx::ComputeClampedSelection( i, 4 )];
 		}
+
+		return ( i == 1 ) ? "RESET" : "DONE";
+	}
+
+	const char *ModalFootTip( int i )
+	{
+		if ( g_NewModal == NewModal::Maps )
+		{
+			static const char *const kMaps[] = {
+				"Close this box  (Escape)",
+				"Put every map into the rotation, keeping the order",
+				"Take every map out, keeping them listed and in order",
+				"Put every map back, in the order the files give  (Backspace)",
+			};
+			return kMaps[zx::ComputeClampedSelection( i, 4 )];
+		}
+
+		if ( i == 1 )
+		{
+			return ( g_NewModal == NewModal::Gameplay )
+				? "Put these settings back to what this mode starts with  (Backspace)"
+				: "Put every flag back to what a new setup starts with  (Backspace)";
+		}
+
+		return "Close this box  (Escape)";
+	}
+
+	void ModalFootPress( int i )
+	{
+		const int at = zx::ComputeClampedSelection( i, ModalFootCount( ));
+
+		if ( g_NewModal == NewModal::Maps )
+		{
+			switch ( at )
+			{
+			case 0:		g_NewModal = NewModal::None; break;
+			case 1:		NewAskSelectAllMaps( ); break;
+			case 2:		NewAskDeselectAllMaps( ); break;
+			default:	NewAskReset( ); break;
+			}
+			return;
+		}
+
+		if ( at == 1 )
+		{
+			NewAskReset( );
+			return;
+		}
+
+		EndSettingEdit( );
+		g_NewModal = NewModal::None;
+		g_NewFlagEditing = -1;
 	}
 
 	// [rc4l] A box to type a number into, and what separates two of them in the footer.
@@ -9588,6 +9614,12 @@ public:
 
 		if ( mkey == MKEY_Enter )
 		{
+			if ( g_NewMapFocus == MapsFocus::Footer )
+			{
+				ModalFootPress( g_ModalFootSel );
+				return true;
+			}
+
 			BoxActivate( items[g_NewBoxSel] );
 			BoxRevealSel( );
 			return true;
@@ -9621,7 +9653,60 @@ public:
 			}
 		}
 
+		// [rc4l] The footer owns the keys while the cursor is on it, exactly as it does on the map
+		// box. Up and down step the same loop; left and right walk the row.
+		if ( g_NewMapFocus == MapsFocus::Footer )
+		{
+			if (( mkey == MKEY_Left ) || ( mkey == MKEY_Right ))
+			{
+				const int next = zx::ComputeClampedSelection(
+					g_ModalFootSel + (( mkey == MKEY_Left ) ? -1 : 1 ), ModalFootCount( ));
+
+				if ( next != g_ModalFootSel )
+				{
+					g_ModalFootSel = next;
+					S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+				}
+				return true;
+			}
+
+			const zx::ModalPos to = zx::ComputeModalStep(
+				zx::ModalPos( zx::ModalRegion::Footer, g_ModalFootSel ),
+				static_cast<int>( items.size( )), ModalFootCount( ),
+				( mkey == MKEY_Up ) ? -1 : 1 );
+
+			if ( to.region == zx::ModalRegion::Body )
+			{
+				g_NewMapFocus = MapsFocus::List;
+				g_NewBoxSel = zx::ComputeClampedSelection( to.index,
+					static_cast<int>( items.size( )));
+				BoxRevealSel( );
+			}
+
+			S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+			return true;
+		}
+
 		const int moved = BoxMove( items, g_NewBoxSel, mkey );
+
+		// [rc4l] BoxMove clamps, so a vertical key that moved nothing means the cursor is at an edge
+		// of the body -- and off either edge is the footer. Without this the top and bottom of these
+		// lists were dead ends and DONE and RESET could not be reached by keyboard at all.
+		if (( moved == g_NewBoxSel ) && (( mkey == MKEY_Up ) || ( mkey == MKEY_Down )))
+		{
+			const zx::ModalPos to = zx::ComputeModalStep(
+				zx::ModalPos( zx::ModalRegion::Body, g_NewBoxSel ),
+				static_cast<int>( items.size( )), ModalFootCount( ),
+				( mkey == MKEY_Up ) ? -1 : 1 );
+
+			if ( to.region == zx::ModalRegion::Footer )
+			{
+				g_NewMapFocus = MapsFocus::Footer;
+				g_ModalFootSel = to.index;
+				S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+				return true;
+			}
+		}
 
 		if ( moved != g_NewBoxSel )
 		{
@@ -10031,11 +10116,13 @@ public:
 			FString foot;
 			foot.Format( "Starts on %s", NewFirstMapIn( ).c_str( ));
 
-			// [rc4l] ABOVE the buttons, not beside them. It shared the footer's line while that line
-			// held two buttons centred with room to spare; four of them reach across it, and DONE
-			// ended up drawn straight over the words.
-			screen->DrawText( SmallFont, CR_DARKGRAY, left,
-				NewBigButtonTop( ) - SmallFont->GetHeight( ) - 3, foot,
+			// [rc4l] TOP RIGHT, on the heading's own line. Under the list it sat on whatever the
+			// last row was once the rotation filled the box, and above the buttons it was in the
+			// way of the four that are there now. The heading line is the one place on this box
+			// that is never a row.
+			screen->DrawText( SmallFont, CR_DARKGRAY,
+				NewBigContentRight( ) - SmallFont->StringWidth( foot ),
+				NewBigModalTop( ) + SB_NEW_MODAL_PAD, foot,
 				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true,
 				TAG_DONE );
 		}
@@ -10078,7 +10165,7 @@ public:
 		g_NewMapBtnHot = -1;
 		g_NewIwadConfirmHot = false;
 		g_NewBoxResetHot = false;
-		g_NewMapFootHot = -1;
+		g_ModalFootHot = -1;
 
 		const int left = NewBigContentLeft( );
 		const int right = NewBigContentRight( );
@@ -10098,27 +10185,27 @@ public:
 		{
 			const int by = NewBigButtonTop( );
 
-			for ( int i = 0; i < NewMapFootCount( ); ++i )
+			for ( int i = 0; i < ModalFootCount( ); ++i )
 			{
-				const int bx = NewMapFootLeft( i );
+				const int bx = ModalFootLeft( i );
 
 				if (( x < serverbrowser_ToScreenX( bx )) ||
-					( x >= serverbrowser_ToScreenX( bx + NewMapFootW( ))) ||
+					( x >= serverbrowser_ToScreenX( bx + ModalFootW( ))) ||
 					( y < serverbrowser_ToScreenY( by )) ||
 					( y >= serverbrowser_ToScreenY( by + SB_DLG_BTN_H )))
 				{
 					continue;
 				}
 
-				g_NewMapFootHot = i;
+				g_ModalFootHot = i;
 
 				if ( type == MOUSE_Release )
 				{
 					// The cursor follows the pointer, so the keyboard carries on from where the
 					// click left it -- the same rule every other row of buttons here follows.
 					g_NewMapFocus = MapsFocus::Footer;
-					g_NewMapFootSel = i;
-					NewMapFootPress( i );
+					g_ModalFootSel = i;
+					ModalFootPress( i );
 					S_Sound( CHAN_VOICE | CHAN_UI, "menu/choose", snd_menuvolume, ATTN_NONE );
 				}
 
@@ -10222,9 +10309,21 @@ public:
 		// every other row of buttons on these screens uses.
 		if ( g_NewMapFocus == MapsFocus::Footer )
 		{
-			if ( mkey == MKEY_Up )
+			if (( mkey == MKEY_Up ) || ( mkey == MKEY_Down ))
 			{
-				g_NewMapFocus = MapsFocus::List;
+				const zx::ModalPos to = zx::ComputeModalStep(
+					zx::ModalPos( zx::ModalRegion::Footer, g_ModalFootSel ),
+					static_cast<int>( g_NewMaps.size( )), ModalFootCount( ),
+					( mkey == MKEY_Up ) ? -1 : 1 );
+
+				if ( to.region == zx::ModalRegion::Body )
+				{
+					g_NewMapFocus = MapsFocus::List;
+					g_NewMapSel = to.index;
+					g_NewMapBtnSel = 0;
+					g_NewMapRevealSel = true;
+				}
+
 				S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
 				return true;
 			}
@@ -10232,11 +10331,11 @@ public:
 			if (( mkey == MKEY_Left ) || ( mkey == MKEY_Right ))
 			{
 				const int next = zx::ComputeClampedSelection(
-					g_NewMapFootSel + (( mkey == MKEY_Left ) ? -1 : 1 ), NewMapFootCount( ));
+					g_ModalFootSel + (( mkey == MKEY_Left ) ? -1 : 1 ), ModalFootCount( ));
 
-				if ( next != g_NewMapFootSel )
+				if ( next != g_ModalFootSel )
 				{
-					g_NewMapFootSel = next;
+					g_ModalFootSel = next;
 					S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
 				}
 				return true;
@@ -10244,7 +10343,7 @@ public:
 
 			if ( mkey == MKEY_Enter )
 			{
-				NewMapFootPress( g_NewMapFootSel );
+				ModalFootPress( g_ModalFootSel );
 				return true;
 			}
 
@@ -10256,12 +10355,21 @@ public:
 
 		if (( mkey == MKEY_Up ) || ( mkey == MKEY_Down ))
 		{
-			// Down off the last row is the footer, which is the only thing under the list.
-			switch ( zx::ComputeListStep( g_NewMapSel, static_cast<int>( g_NewMaps.size( )),
-				( mkey == MKEY_Up ) ? -1 : 1 ))
+			// [rc4l] Off EITHER end of the list is the footer -- computation/toolgrid_compute's
+			// ComputeModalStep, the same loop FLAGS and GAMEPLAY walk.
+			const zx::ModalPos to = zx::ComputeModalStep(
+				zx::ModalPos( zx::ModalRegion::Body, g_NewMapSel ),
+				static_cast<int>( g_NewMaps.size( )), ModalFootCount( ),
+				( mkey == MKEY_Up ) ? -1 : 1 );
+
+			if ( to.region == zx::ModalRegion::Footer )
 			{
-			case zx::ListStep::Move:
-				g_NewMapSel += ( mkey == MKEY_Up ) ? -1 : 1;
+				g_NewMapFocus = MapsFocus::Footer;
+				g_ModalFootSel = to.index;
+			}
+			else
+			{
+				g_NewMapSel = to.index;
 				g_NewMapRevealSel = true;
 
 				// [rc4l] ARRIVING AT A ROW PUTS THE CURSOR BACK ON ITS TICK.
@@ -10274,20 +10382,9 @@ public:
 				// selection with the map, and resetting there would make reordering by keyboard cost
 				// a Right press per step.
 				g_NewMapBtnSel = 0;
-
-				S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
-				break;
-
-			case zx::ListStep::LeaveDown:
-				g_NewMapFocus = MapsFocus::Footer;
-				g_NewMapFootSel = 0;
-				S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
-				break;
-
-			case zx::ListStep::LeaveUp:
-				break;			// the top of the list is the top of the box
 			}
 
+			S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
 			return true;
 		}
 
@@ -13175,6 +13272,8 @@ public:
 	// than a copy of it.
 	bool SettingsBoxMouse( NewModal which, int type, int x, int y )
 	{
+		g_ModalFootHot = -1;
+
 		g_NewBoxHot = -1;
 		g_NewFlagFieldHot = -1;
 		g_NewIwadConfirmHot = false;
@@ -13198,29 +13297,11 @@ public:
 			return true;
 		}
 
-		if ( BoxResetMouse( type, x, y ))
+		// The whole footer, through the one hit test every box on this tab shares.
+		if ( ModalFootMouse( type, x, y ))
 			return true;
 
-		// DONE, which sits below the content where nothing else claims a click.
 		{
-			const int bx = NewBigDoneLeft( );
-			const int by = NewBigButtonTop( );
-
-			if (( x >= serverbrowser_ToScreenX( bx )) &&
-				( x < serverbrowser_ToScreenX( bx + NewBigBtnW( ))) &&
-				( y >= serverbrowser_ToScreenY( by )) &&
-				( y < serverbrowser_ToScreenY( by + SB_DLG_BTN_H )))
-			{
-				g_NewIwadConfirmHot = true;
-				if ( type == MOUSE_Release )
-				{
-					EndSettingEdit( );
-					g_NewModal = NewModal::None;
-					g_NewFlagEditing = -1;
-					S_Sound( CHAN_VOICE | CHAN_UI, "menu/choose", snd_menuvolume, ATTN_NONE );
-				}
-				return true;
-			}
 		}
 
 		if ( FlagFooterMouse( type, x, y, footFields ))
@@ -13726,7 +13807,10 @@ public:
 					break;
 
 				case zx::ListStep::LeaveUp:
-					g_NewFocus = NewFocus::Wads;
+					// [rc4l] The IWAD row, which is the top of the screen. Going back to the wad
+					// rows put the keyboard in the middle of the other column, which reads as the
+					// key jumping sideways rather than up.
+					g_NewFocus = NewFocus::Iwads;
 					break;
 
 				case zx::ListStep::LeaveDown:
@@ -19016,9 +19100,13 @@ public:
 			}
 			else if ( g_HostKind == HostKind::Custom )
 			{
-				// The list when there is one; its buttons when the tab is empty, because an empty
-				// list is not a place focus may sit.
-				g_CustomFocus = CustomEntries( ).empty( ) ? CustomFocus::Buttons : CustomFocus::List;
+				// [rc4l] The SEARCH BOX, which is the topmost control on this tab -- landing on the
+				// list skipped it, so coming down from the tabs started half way in exactly as the
+				// NEW tab did before its IWAD row was made the landing.
+				//
+				// Its buttons when the tab is empty: there is no search worth focusing on a list
+				// that cannot be filtered, and an empty list is not a place focus may sit.
+				g_CustomFocus = CustomEntries( ).empty( ) ? CustomFocus::Buttons : CustomFocus::Search;
 				g_CustomBtnSel = 0;
 			}
 			else

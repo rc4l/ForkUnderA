@@ -440,12 +440,17 @@ HostNavResult BoxNav(HostFocusPos pos, HostNavKey key)
 
 } // namespace
 
-TEST(HostFocusNoList, UpOffTheFirstFieldStaysPutInsteadOfLeavingForAListThatIsNotThere)
+// [rc4l] The box is a modal and a modal is a loop: off the top of its fields is the foot, which is
+// the button that closes it. Staying put made the first field a dead end.
+TEST(HostFocusNoList, UpOffTheFirstFieldReachesTheFootWhenThereIsNoList)
 {
-	const HostNavResult r = BoxNav(Field(0), HostNavKey::Up);
+	EXPECT_EQ(HostSlot::Action, BoxNav(Field(0), HostNavKey::Up).pos.slot);
+}
 
-	EXPECT_EQ(HostSlot::Field, r.pos.slot);
-	EXPECT_EQ(0, r.pos.field);
+// With a list beside it, the catalogue form still crosses to the list rather than to its foot.
+TEST(HostFocus, UpOffTheFirstFieldStillReachesTheListWhenThereIsOne)
+{
+	EXPECT_EQ(HostSlot::List, Nav(Field(0), HostNavKey::Up).pos.slot);
 }
 
 TEST(HostFocusNoList, LeftOffTheFootStaysOnTheFoot)

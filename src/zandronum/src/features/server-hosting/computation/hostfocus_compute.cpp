@@ -155,7 +155,13 @@ HostNavResult ComputeHostNav(HostFocusPos pos, HostNavKey key, int fieldCount,
 			if (pos.field > 0)
 				out.pos = HostFocusPos(HostSlot::Field, pos.field - 1);
 			else
-				out.pos = ListOr(hasList, pos);		// back across to the list, or stay when there is none
+			{
+				// [rc4l] Off the top of the fields is the list when there is one, and the FOOT when
+				// there is not -- the SERVER box is a modal, and a modal is a loop: its top row
+				// hands the key to the button that closes it, the same as every box on the NEW tab.
+				// It used to stay put, which made the first field a dead end.
+				out.pos = ListOr(hasList, Foot());
+			}
 			return out;
 		}
 

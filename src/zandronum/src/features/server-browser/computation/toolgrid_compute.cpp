@@ -78,4 +78,33 @@ FootExit ComputeFootExit(GridKey key, int sel, bool bLoadOrderHasRows)
 	return FootExit::StayOnRow;
 }
 
+ModalPos ComputeModalStep(ModalPos pos, int bodyCount, int footCount, int step)
+{
+	if (footCount <= 0)
+		footCount = 1;			// every box has at least a way out
+
+	const int dir = (step < 0) ? -1 : 1;
+
+	if (pos.region == ModalRegion::Footer)
+	{
+		// Off the footer is the body, at the end nearest the key: up meets its last row, down its
+		// first. An empty body has no row to meet, so the footer keeps the key.
+		if (bodyCount <= 0)
+			return pos;
+
+		return ModalPos(ModalRegion::Body, (dir < 0) ? (bodyCount - 1) : 0);
+	}
+
+	if (bodyCount <= 0)
+		return ModalPos(ModalRegion::Footer, 0);
+
+	const int next = pos.index + dir;
+	if ((next >= 0) && (next < bodyCount))
+		return ModalPos(ModalRegion::Body, next);
+
+	// Off either end of the body is the footer, and DONE is first on every box, so this is always
+	// the way out rather than whichever button happened to be under the cursor last.
+	return ModalPos(ModalRegion::Footer, 0);
+}
+
 } // namespace zx
