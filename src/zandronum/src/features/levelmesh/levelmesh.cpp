@@ -19,6 +19,7 @@
 #include "r_utility.h"    // viewx/viewy/viewz, for fua_look
 #include "p_trace.h"      // Trace, so fua_look can say what the ENGINE thinks is there
 #include "p_lnspec.h"    // Line_Mirror, for fua_make_mirror
+#include "gl/dynlights/gl_dynlight.h"   // ADynamicLight, for fua_light
 #include "d_player.h"     // players, consoleplayer
 #include "tables.h"       // finesine/finecosine
 #include "textures/textures.h"
@@ -1104,6 +1105,39 @@ CCMD( fua_mesh_verify )
 			}
 	}
 
+	// --- 4. A world surface must carry a normal -------------------------------------------------
+	//
+	// [rc4l] A zero normal is not "no data", it is a MESSAGE, and only a sprite is entitled to send
+	// it. The backend reads it as "the CPU has already done this surface's dynamic lighting, take
+	// none from the light loop" -- correct for a billboard, which has no side for a light to be in
+	// front of, and catastrophic for a wall or a floor, which then takes NO dynamic light at all.
+	//
+	// It is worth a check of its own because of how it fails: the surface still has its texture and
+	// its sector light, so it looks completely normal until a dynamic light arrives, and then it is
+	// the one patch of floor the plasma does not reach -- a hard straight edge along the piece's own
+	// boundary, in Vulkan only, which is precisely what a side test being wrong looks like. Hunting
+	// that difference through screenshots cost hours; the mesh can simply say so.
+	int zeroNorm = 0, zeroSprite = 0;
+	for ( int i = 0; i < np; i++ )
+	{
+		const zx::levelmesh::MeshPiece &p = pieces[i];
+		if ( p.range.count == 0 ) continue;
+		const float len2 = p.normX * p.normX + p.normY * p.normY + p.normZ * p.normZ;
+		if ( len2 > 0.0001f ) continue;
+		// A sprite is the one piece allowed to have none: it is a billboard and has no fixed side.
+		if ( p.blendMode != 0 || p.translation != 0 ) { zeroSprite++; continue; }
+		if ( zeroNorm < 6 )
+			Printf( "  no-normal piece %d: %u verts, facesDown %d, depthBias %d, light %d\n",
+				i, p.range.count, (int)p.facesDown, (int)p.depthBias, p.dynLightIndex );
+		zeroNorm++;
+	}
+	if ( zeroNorm > 0 )
+	{
+		Printf( "  FAIL normals: %d of %d pieces carry no normal, so they take no dynamic light\n",
+			zeroNorm, live );
+		failures++;
+	}
+
 	// --- 4. Blend mode and alpha must agree -----------------------------------------------------
 	//
 	// A piece marked opaque while carrying alpha < 1 renders solid; the reverse renders a solid
@@ -1161,6 +1195,94 @@ CCMD( fua_mesh_verify )
 // would put the sector in, arrived at in one step.
 //
 //==========================================================================
+
+//==========================================================================
+//
+// fua_light / fua_light_clear
+//
+// [rc4l] A dynamic light that HOLDS STILL, so two renderers can be compared on one.
+//
+// Every light a map hands you is attached to something that moves or expires: a plasma ball flies,
+// a rocket explodes, a muzzle flash lasts two tics. Comparing GL against Vulkan on one of those
+// means comparing two instances that fired at slightly different moments, from slightly different
+// places, with the light somewhere else in each -- and every difference in the picture is then
+// arguably just that. Chasing a reported hard edge in the Vulkan dynamic lighting stalled on
+// exactly this: the pair never showed the same light twice.
+//
+// So: spawn a plain ADynamicLight at a stated point and leave it there. Same position, same radius,
+// same colour, in both instances, for as many frames as the test needs.
+//
+// usage: fua_light <radius> [r g b] [dz]      -- at the player, dz above the floor (default 16)
+//        fua_light <radius> <r> <g> <b> <x> <y> <z>
+//        fua_light_clear
+//
+//==========================================================================
+
+CCMD( fua_light )
+{
+	if ( sectors == NULL || numsectors <= 0 ) { Printf( "no level loaded.\n" ); return; }
+	if ( argv.argc( ) < 2 )
+	{
+		Printf( "usage: fua_light <radius> [r g b] [dz]  |  fua_light <radius> <r> <g> <b> <x> <y> <z>\n" );
+		return;
+	}
+
+	const int radius = atoi( argv[1] );
+	const int r = ( argv.argc( ) > 4 ) ? atoi( argv[2] ) : 255;
+	const int g = ( argv.argc( ) > 4 ) ? atoi( argv[3] ) : 255;
+	const int b = ( argv.argc( ) > 4 ) ? atoi( argv[4] ) : 255;
+
+	fixed_t x, y, z;
+	if ( argv.argc( ) >= 8 )
+	{
+		x = FLOAT2FIXED( (float)atof( argv[5] ) );
+		y = FLOAT2FIXED( (float)atof( argv[6] ) );
+		z = FLOAT2FIXED( (float)atof( argv[7] ) );
+	}
+	else
+	{
+		AActor *pmo = players[consoleplayer].mo;
+		if ( pmo == NULL ) { Printf( "no player to place the light at.\n" ); return; }
+		const float dz = ( argv.argc( ) == 6 ) ? (float)atof( argv[5] ) : 16.f;
+		x = pmo->x;
+		y = pmo->y;
+		z = pmo->Sector->floorplane.ZatPoint( x, y ) + FLOAT2FIXED( dz );
+	}
+
+	ADynamicLight *lt = Spawn<ADynamicLight>( x, y, z, NO_REPLACE );
+	if ( lt == NULL ) { Printf( "could not spawn the light.\n" ); return; }
+	// [rc4l] BeginPlay has already run by the time Spawn returns and it reads args, so the intensity
+	// is written to m_intensity as well as to args. Tick copies m_intensity[0] into the current
+	// intensity and GetRadius doubles it, which is why the radius asked for is halved going in.
+	lt->args[LIGHT_RED]   = clamp<int>( r, 0, 255 );
+	lt->args[LIGHT_GREEN] = clamp<int>( g, 0, 255 );
+	lt->args[LIGHT_BLUE]  = clamp<int>( b, 0, 255 );
+	lt->args[LIGHT_INTENSITY] = radius / 2;
+	lt->args[LIGHT_SECONDARY_INTENSITY] = radius / 2;
+	lt->m_intensity[0] = radius / 2;
+	lt->m_intensity[1] = radius / 2;
+	lt->lighttype = PointLight;   // steady, with no cycler to make it breathe
+	lt->Activate( NULL );
+	lt->UpdateLocation( );
+	Printf( "fua_light: radius %d rgb %d,%d,%d at (%.0f, %.0f, %.0f)\n", radius,
+		lt->args[LIGHT_RED], lt->args[LIGHT_GREEN], lt->args[LIGHT_BLUE],
+		FIXED2FLOAT( x ), FIXED2FLOAT( y ), FIXED2FLOAT( z ) );
+}
+
+CCMD( fua_light_clear )
+{
+	TThinkerIterator<ADynamicLight> it( STAT_DLIGHT );
+	ADynamicLight *lt;
+	TArray<ADynamicLight *> doomed;
+	while ( ( lt = it.Next( ) ) != NULL )
+	{
+		// Only the ones standing on their own: a light OWNED by an actor belongs to that actor, and
+		// taking it out from under its owner is not this command's business.
+		if ( !lt->IsOwned( ) ) doomed.Push( lt );
+	}
+	for ( unsigned k = 0; k < doomed.Size( ); k++ ) doomed[k]->Destroy( );
+	Printf( "fua_light_clear: removed %d free-standing light(s)\n", doomed.Size( ) );
+}
 
 CCMD( fua_move_sector )
 {

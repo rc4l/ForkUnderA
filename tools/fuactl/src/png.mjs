@@ -160,6 +160,44 @@ function crc32(buf) {
 // One tool, one surface: `fuactl png <mode> ...`.
 export function png(args) {
 
+// [rc4l] What did ONE THING change? BEFORE minus AFTER, per pixel, amplified.
+//
+// --diffimg answers "where do these two pictures disagree", which is the right question for GL
+// against Vulkan. It is the wrong question for "what does this light actually contribute", because
+// the lit picture is dominated by the texture underneath and a light that is subtly wrong looks
+// exactly like a light that is right. Subtracting the unlit frame from the lit one leaves only the
+// light -- and then the SHAPE of what is left is readable: a smooth pool is a light behaving, and a
+// straight edge across a flat floor is a surface being culled that should not be.
+//
+// Run it once per renderer and the two results are directly comparable, which a screenshot pair of
+// a moving projectile never is.
+//
+// usage: fuactl png --sub <before.png> <after.png> <out.png> [gain]
+if (args[0] === "--sub") {
+  const [aPath, bPath, outPath, gainArg] = args.slice(1);
+  const gain = Number(gainArg) || 1;
+  const a = decodePNG(aPath), b = decodePNG(bPath);
+  if (a.w !== b.w || a.h !== b.h) { console.error("size mismatch"); process.exit(1); }
+  const out = Buffer.alloc(a.w * a.h * 3);
+  let sum = 0, peak = 0;
+  for (let y = 0; y < a.h; y++) {
+    for (let x = 0; x < a.w; x++) {
+      const pa = px(a, x, y), pb = px(b, x, y);
+      const i = (y * a.w + x) * 3;
+      for (let ch = 0; ch < 3; ch++) {
+        // Clamped at zero: a light can only ADD, so anything negative is noise and reads better as
+        // black than as a second, meaningless signal.
+        const d = Math.max(0, pb[ch] - pa[ch]) * gain;
+        out[i + ch] = Math.min(255, d);
+        sum += d; if (d > peak) peak = d;
+      }
+    }
+  }
+  writePNG(outPath, a.w, a.h, out);
+  console.log(`${outPath} mean ${(sum / (a.w * a.h * 3)).toFixed(2)} peak ${peak.toFixed(0)}`);
+  process.exit(0);
+}
+
 // [rc4l] Where two renders disagree, as a picture.
 //
 // A single number says the renderers differ and cannot say whether it is the sky, the floor, one

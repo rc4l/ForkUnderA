@@ -171,6 +171,8 @@ export async function play(opts = {}) {
     // capture is running both perturbs the measurement and yanks the user's cursor into a game they
     // did not ask to be playing.
     allowOsInput: !opts.lock,
+    // [rc4l] --res, forwarded. Without this it was accepted and silently dropped.
+    width: opts.width, height: opts.height,
     extraArgs: files.flatMap((f) => ["-file", f]),
     cvars: playCvars(opts),
   });

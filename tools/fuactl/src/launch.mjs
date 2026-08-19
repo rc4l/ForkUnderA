@@ -47,6 +47,52 @@ export function freePort() {
 // The engine command line for one instance, given the per-instance config path. Split out from the
 // spawn so the argument list is testable without starting a process -- the cvars here decide what a
 // harness run can and cannot do, and one wrong value is invisible until a drive silently no-ops.
+// [rc4l] What size this instance renders at, in ONE place.
+//
+// A harness capture is only comparable to what someone reports if it frames the same thing, and
+// framing is aspect ratio: at an identical camera a 4:3 window and a 16:10 one show different
+// slices of the world. Reproducing a report at 640x480 against a 1280x800 window therefore looks
+// like the wrong position even when x, y, z, yaw and pitch match to three decimals -- which cost
+// several rounds of "that is not where I was standing", and it was the tool, not the position.
+//
+// opts.width/height override; otherwise a hands-on instance gets a window worth playing in and a
+// locked one gets a quarter of it -- the SAME SHAPE, at half the width in each direction.
+//
+// The shape is the part that matters and the part that was wrong. A locked instance rendered
+// 640x480 while a hands-on one rendered 1280x800: 4:3 against 16:10. At an identical camera those
+// two show different amounts of the world sideways, so a capture reproducing a report framed a
+// visibly different scene -- and the conclusion drawn from that, repeatedly, was that the POSITION
+// was wrong. It was the aspect ratio.
+//
+// 1024x640 rather than a smaller 16:10 size because the engine SNAPS to a mode it knows: asking
+// for 640x400 gets 640x480 back, silently, and the ini then says one thing while the captures say
+// another. Verified by reading the size out of the PNG, which is the only claim worth believing.
+export function resolutionOf(opts = {}) {
+  return {
+    w: Number(opts.width) || (opts.allowOsInput ? 1280 : 1024),
+    h: Number(opts.height) || (opts.allowOsInput ? 800 : 640),
+  };
+}
+
+// [rc4l] Seed the per-instance ini, because +set is too late for the video mode.
+//
+// vid_defwidth and vid_defheight are CVAR_GLOBALCONFIG: the engine reads them out of the ini while
+// initialising video, which happens BEFORE the +set commands on the command line are executed. So
+// passing them as +set silently did nothing -- the harness asked for 640x400 for months and always
+// got 640x480, the engine default, and nobody noticed because both are small and 4:3.
+export function writeInstanceIni(configPath, opts = {}) {
+  const { w, h } = resolutionOf(opts);
+  const body = [
+    "[GlobalSettings]",
+    `vid_defwidth=${w}`,
+    `vid_defheight=${h}`,
+    "fullscreen=false",
+    "",
+  ].join("\n");
+  fs.writeFileSync(configPath, body, "utf8");
+  return { w, h };
+}
+
 export function engineArgs(opts = {}, configPath) {
   const args = ["-iwad", opts.iwad || "freedoom2.wad"];
   // Isolated config, per instance. Without -config the engine reads AND writes the user's shared
@@ -60,8 +106,9 @@ export function engineArgs(opts = {}, configPath) {
     "+set", "fullscreen", "0",
     // [rc4l] A hands-on instance gets a window worth looking at. 640x400 is the harness size because
     // it makes screenshot pairs cheap to diff, and it is miserable to actually play in.
-    "+set", "vid_defwidth", opts.allowOsInput ? "1280" : "640",
-    "+set", "vid_defheight", opts.allowOsInput ? "800" : "400",
+    // [rc4l] Still passed, but the ini below is what actually decides it -- see writeInstanceIni.
+    "+set", "vid_defwidth", String(resolutionOf(opts).w),
+    "+set", "vid_defheight", String(resolutionOf(opts).h),
     // Bridge instances are driven by the harness, never by a human at the window. Disable OS mouse
     // and joystick so a stray cursor drifting over one instance's window can't turn its view (a live
     // level grabs the mouse) and silently diverge a deterministic run from its twin. All synthetic
@@ -116,7 +163,10 @@ export async function launchInstance(opts = {}) {
   const token = opts.token || crypto.randomBytes(12).toString("hex");
   const logDir = opts.logDir || fs.mkdtempSync(path.join(os.tmpdir(), "fuactl-"));
   const log = path.join(logDir, `engine-${port}.log`);
-  const args = engineArgs(opts, path.join(logDir, "fua-bridge.ini"));
+  const iniPath = path.join(logDir, "fua-bridge.ini");
+  // Written BEFORE the engine starts, or the video mode is already chosen by the time it is read.
+  writeInstanceIni(iniPath, opts);
+  const args = engineArgs(opts, iniPath);
 
   const proc = spawn(bin, args, {
     cwd: dir,

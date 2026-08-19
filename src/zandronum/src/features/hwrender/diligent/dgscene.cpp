@@ -97,6 +97,17 @@ EXTERN_CVAR(Bool, gl_lights_additive)
 // [rc4l] 0 flat multiply (pre-lighting-port behaviour), 1 the ported equation, 2 depth as grey,
 // 3 depth contours, 4 vertex colour only. Live per frame -- no rebake needed to switch.
 CVAR(Int, fua_dg_lightmode, 1, CVAR_ARCHIVE)
+// [rc4l] Which side test the dynamic lights use: 0 none, 1 off the plane, 2 off the fragment.
+//
+// gl_flats.cpp drops a light whose plane is on the wrong side of it, and this is that test -- but it
+// has two forms that agree only when vPlane really is the plane under the fragment. Being able to
+// switch between them, and to turn the test off, is what separates "that light is out of range" from
+// "that surface is being culled by a plane that is not its own": the two look the same in a
+// screenshot, and the difference is a hard straight edge across a lit floor.
+// Deliberately NOT archived: a debug knob left at 0 in someone's ini would silently disable the
+// side test for good, and the symptom -- lights reaching the backs of walls -- reads as a porting
+// bug rather than as a setting. It starts right every time.
+CVAR(Int, fua_dg_sidetest, 1, 0)
 // [rc4l] Mirror every engine frame into the backend window, from the live camera. Off by default:
 // it costs a second render of the scene, and while the backend is incomplete (no sky, no HUD, no
 // dynamic lights) it is a development view, not the game.
@@ -578,7 +589,13 @@ static const char *kSceneVS =
 	   is the same quantity, computed from numbers that do not vary across the face. A light lying
 	   exactly in the plane gives exactly zero and is KEPT, which is what gl_flats.cpp does: it drops
 	   a light only when the plane is strictly on the wrong side of it. */ \
-	"        if (dot(vPlane.xyz, lp.xyz) - vPlane.w < 0.0) continue;\n" \
+	/* [rc4l] uLightParams.z picks WHICH form: 1 the plane, 2 the fragment, 0 no test at all.
+	   The two are identical algebra for a fragment lying on the plane, so they can disagree only when
+	   the plane carried in vPlane is not the plane the fragment is actually on -- which is exactly the
+	   failure worth being able to see. 0 is the control: it says what the test is costing. */ \
+	"        float side = (uLightParams.z > 1.5) ? dot(vPlane.xyz, lp.xyz - vPixelPos.xyz)\n" \
+	"                                           : dot(vPlane.xyz, lp.xyz) - vPlane.w;\n" \
+	"        if (uLightParams.z > 0.5 && side < 0.0) continue;\n" \
 	"        float a = max(lp.w - length(d), 0.0) / lp.w;\n" \
 	"        if (a <= 0.0) continue;\n" \
 	"        if (lc.a > 0.5) dyn -= lc.rgb * a;\n" \
@@ -612,6 +629,16 @@ static const char *kSceneVS =
 	   then switches on and off from fragment to fragment as the wobble crosses it. */ \
 	"    if (dbg == 14.0) return vNormal * 0.5 + 0.5;\n" \
 	"    if (dbg == 15.0) return vec3(fract(vPixelPos.y * 64.0));\n" \
+	/* [rc4l] 16: the side test's own verdict for light 0. Green kept, red culled, black no light.
+	   A surface that is lit when it should not be says either "the test disagreed with me" or "the
+	   test never ran on this surface", and no picture of the finished shading can tell those apart --
+	   both look like an evenly lit floor. This shows the branch actually taken, per pixel. */ \
+	"    if (dbg == 16.0) {\n" \
+	"        if (int(uLightParams.x) <= 0) return vec3(0.0);\n" \
+	"        if (dot(vPlane.xyz, vPlane.xyz) <= 0.0001) return vec3(0.0, 0.0, 1.0);\n" \
+	"        float sd = dot(vPlane.xyz, lights[0].xyz) - vPlane.w;\n" \
+	"        return vec3((sd < 0.0) ? 1.0 : 0.0, (sd < 0.0) ? 0.0 : 1.0, uLightParams.z * 0.25);\n" \
+	"    }\n" \
 	"    if (dbg == 0.0) return texel * vColor;\n" \
 	"    float fogMode = vFog.a;\n" \
 	"    float fogdist = 0.0, fogfactor = 0.0;\n" \
@@ -3326,7 +3353,7 @@ static void DrawMirrorSurface(Diligent::IDeviceContext *ctx, unsigned index)
 		for (int k = 0; k < 16; k++) cb[k] = g_mvp[k];
 		cb[16] = FIXED2FLOAT(viewx); cb[17] = FIXED2FLOAT(viewz);
 		cb[18] = FIXED2FLOAT(viewy); cb[19] = (float)(int)fua_dg_lightmode;
-		cb[20] = (float)g_lightCount; cb[21] = g_skyAngle; cb[22] = 0.f; cb[23] = 0.f;
+		cb[20] = (float)g_lightCount; cb[21] = g_skyAngle; cb[22] = (float)(int)fua_dg_sidetest; cb[23] = 0.f;
 		for (int k = 0; k < 4; k++) cb[24 + k] = 0.f;
 		cb[28] = (float)g_mirrorW; cb[29] = (float)g_mirrorH; cb[30] = g_skyXScale; cb[31] = g_skyVScale;
 		cb[32] = g_skyCapColor[0].r / 255.f;
@@ -3448,7 +3475,7 @@ static void RenderMirrors(Diligent::IDeviceContext *ctx)
 			for (int k = 0; k < 16; k++) cb[k] = g_mvp[k];
 			cb[16] = FIXED2FLOAT(viewx); cb[17] = FIXED2FLOAT(viewz);
 			cb[18] = FIXED2FLOAT(viewy); cb[19] = (float)(int)fua_dg_lightmode;
-			cb[20] = (float)g_lightCount; cb[21] = g_skyAngle; cb[22] = 0.f; cb[23] = 0.f;
+			cb[20] = (float)g_lightCount; cb[21] = g_skyAngle; cb[22] = (float)(int)fua_dg_sidetest; cb[23] = 0.f;
 			for (int k = 0; k < 4; k++) cb[24 + k] = 0.f;
 			cb[28] = (float)g_mirrorW; cb[29] = (float)g_mirrorH; cb[30] = g_skyXScale; cb[31] = g_skyVScale;
 		cb[32] = g_skyCapColor[0].r / 255.f;
@@ -3749,7 +3776,7 @@ static void DrawWorld(Diligent::IDeviceContext *ctx)
 		cb[20] = (float)g_lightCount;
 		// [rc4l] The sky rotation for this frame: RenderDome's -180 degrees plus the scroll.
 		cb[21] = g_skyAngle;
-		cb[22] = 0.f; cb[23] = 0.f;
+		cb[22] = (float)(int)fua_dg_sidetest; cb[23] = 0.f;
 		// [rc4l] uClipPlane: while a mirror's reflection renders, everything on the FAR side of the
 		// mirror -- the wall it hangs on and the rooms behind it -- sits between the reflected camera
 		// and the scene and would occlude the entire reflection. w == 0 disables it, which is every
