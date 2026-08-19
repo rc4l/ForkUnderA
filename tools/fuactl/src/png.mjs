@@ -160,6 +160,36 @@ function crc32(buf) {
 // One tool, one surface: `fuactl png <mode> ...`.
 export function png(args) {
 
+// [rc4l] Does this region have SHAPE, or is it one flat value?
+//
+// A mean cannot tell a decal from the rectangle it lives in: a mark and a solid block of its own
+// average colour have the same mean. That is not a hypothetical -- projected marks rendered as
+// solid boxes for as long as the pass ran, because an undefined mip selection handed back the 1x1
+// level, and every check that looked at brightness agreed with it.
+//
+// The spread does tell them apart. A mark has near-black and near-white in it; a flat wash has
+// neither. Reported as min, max and mean so a threshold can be written against the spread.
+//
+// usage: fuactl png --range <file.png> [x0 y0 x1 y1]   (fractions, default the whole image)
+if (args[0] === "--range") {
+  const a = decodePNG(args[1]);
+  const f = args.length >= 6 ? args.slice(2, 6).map(Number) : [0, 0, 1, 1];
+  const x0 = Math.floor(f[0] * a.w), y0 = Math.floor(f[1] * a.h);
+  const x1 = Math.ceil(f[2] * a.w),  y1 = Math.ceil(f[3] * a.h);
+  let lo = 255, hi = 0, sum = 0, n = 0;
+  for (let y = y0; y < y1; y++) {
+    for (let x = x0; x < x1; x++) {
+      const p = px(a, x, y);
+      const v = (p[0] + p[1] + p[2]) / 3;
+      if (v < lo) lo = v;
+      if (v > hi) hi = v;
+      sum += v; n++;
+    }
+  }
+  console.log(`min ${lo.toFixed(1)} max ${hi.toFixed(1)} spread ${(hi - lo).toFixed(1)} mean ${(sum / Math.max(n, 1)).toFixed(2)}`);
+  process.exit(0);
+}
+
 // [rc4l] What did ONE THING change? BEFORE minus AFTER, per pixel, amplified.
 //
 // --diffimg answers "where do these two pictures disagree", which is the right question for GL
