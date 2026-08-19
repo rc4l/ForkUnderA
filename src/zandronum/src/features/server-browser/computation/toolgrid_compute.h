@@ -68,6 +68,35 @@ enum class RightExit
 
 RightExit ComputeRightExitFromList(bool bLoadOrderHasRows);
 
+// [rc4l] Walking a vertical list that has somewhere to go off either end.
+//
+// A list that only ever clamps is a region the keyboard can enter and not leave, which is the same
+// bug as focus landing on something undrawn wearing different clothes -- and an EMPTY list is not
+// enterable at all, so it hands the key straight on rather than swallowing it.
+enum class ListStep
+{
+	Move,		// stay in the list, one row along
+	LeaveUp,
+	LeaveDown,
+};
+
+ListStep ComputeListStep(int sel, int count, int step);
+
+// [rc4l] Where the foot's row of buttons hands the keyboard on.
+//
+// LEFT off the leftmost button is the settings grid, which sits on the same line in the other
+// column -- the foot is the bottom right of the screen and that is genuinely what is beside it.
+// UP is the load order above it, unless the order is empty, in which case there is nothing there to
+// hold focus and the key carries on to the grid.
+enum class FootExit
+{
+	StayOnRow,		// the caller moves along the row itself
+	SettingsGrid,
+	LoadOrder,
+};
+
+FootExit ComputeFootExit(GridKey key, int sel, bool bLoadOrderHasRows);
+
 } // namespace zx
 
 #endif // ZX_TOOLGRID_COMPUTE_H

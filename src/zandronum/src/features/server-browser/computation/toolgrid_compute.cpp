@@ -53,4 +53,29 @@ RightExit ComputeRightExitFromList(bool bLoadOrderHasRows)
 	return bLoadOrderHasRows ? RightExit::LoadOrder : RightExit::Foot;
 }
 
+ListStep ComputeListStep(int sel, int count, int step)
+{
+	// Nothing to stand on: the key belongs to whatever is that way.
+	if (count <= 0)
+		return (step < 0) ? ListStep::LeaveUp : ListStep::LeaveDown;
+
+	const int next = sel + step;
+	if ((next >= 0) && (next < count))
+		return ListStep::Move;
+
+	return (step < 0) ? ListStep::LeaveUp : ListStep::LeaveDown;
+}
+
+FootExit ComputeFootExit(GridKey key, int sel, bool bLoadOrderHasRows)
+{
+	if (key == GridKey::Left)
+		return (sel <= 0) ? FootExit::SettingsGrid : FootExit::StayOnRow;
+
+	if (key == GridKey::Up)
+		return bLoadOrderHasRows ? FootExit::LoadOrder : FootExit::SettingsGrid;
+
+	// Right along the row, and down off the bottom of the screen: the caller's own business.
+	return FootExit::StayOnRow;
+}
+
 } // namespace zx

@@ -123,3 +123,65 @@ TEST(ToolGrid, RightOutOfTheListSkipsAnEmptyLoadOrder)
 {
 	EXPECT_EQ(RightExit::Foot, ComputeRightExitFromList(false));
 }
+
+// ---------------------------------------------------------------- walking a list with exits
+
+using zx::ComputeListStep;
+using zx::ListStep;
+
+TEST(ToolGrid, AListWalksItsOwnRowsFirst)
+{
+	EXPECT_EQ(ListStep::Move, ComputeListStep(0, 3, 1));
+	EXPECT_EQ(ListStep::Move, ComputeListStep(1, 3, 1));
+	EXPECT_EQ(ListStep::Move, ComputeListStep(2, 3, -1));
+}
+
+// The bug this exists for: clamping at both ends is a region the keyboard cannot leave.
+TEST(ToolGrid, EitherEndOfAListLeavesItRatherThanClamping)
+{
+	EXPECT_EQ(ListStep::LeaveUp, ComputeListStep(0, 3, -1));
+	EXPECT_EQ(ListStep::LeaveDown, ComputeListStep(2, 3, 1));
+}
+
+// An empty list is not somewhere focus may sit, so it never swallows the key.
+TEST(ToolGrid, AnEmptyListIsPassedStraightThrough)
+{
+	EXPECT_EQ(ListStep::LeaveUp, ComputeListStep(0, 0, -1));
+	EXPECT_EQ(ListStep::LeaveDown, ComputeListStep(0, 0, 1));
+}
+
+// A single row has no neighbours, so both directions leave.
+TEST(ToolGrid, ASingleRowLeavesInBothDirections)
+{
+	EXPECT_EQ(ListStep::LeaveUp, ComputeListStep(0, 1, -1));
+	EXPECT_EQ(ListStep::LeaveDown, ComputeListStep(0, 1, 1));
+}
+
+// ---------------------------------------------------------------- leaving the foot
+
+using zx::ComputeFootExit;
+using zx::FootExit;
+
+TEST(ToolGrid, LeftOffTheLeftmostFootButtonReachesTheSettingsGrid)
+{
+	EXPECT_EQ(FootExit::SettingsGrid, ComputeFootExit(GridKey::Left, 0, true));
+	EXPECT_EQ(FootExit::SettingsGrid, ComputeFootExit(GridKey::Left, 0, false));
+}
+
+TEST(ToolGrid, LeftElsewhereOnTheFootJustWalksTheRow)
+{
+	EXPECT_EQ(FootExit::StayOnRow, ComputeFootExit(GridKey::Left, 1, true));
+}
+
+// Up must not walk into a load order with nothing in it -- that is where focus was being lost.
+TEST(ToolGrid, UpFromTheFootSkipsAnEmptyLoadOrder)
+{
+	EXPECT_EQ(FootExit::LoadOrder, ComputeFootExit(GridKey::Up, 0, true));
+	EXPECT_EQ(FootExit::SettingsGrid, ComputeFootExit(GridKey::Up, 0, false));
+}
+
+TEST(ToolGrid, TheFootKeepsRightAndDownToItself)
+{
+	EXPECT_EQ(FootExit::StayOnRow, ComputeFootExit(GridKey::Right, 0, true));
+	EXPECT_EQ(FootExit::StayOnRow, ComputeFootExit(GridKey::Down, 0, false));
+}
