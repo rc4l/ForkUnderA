@@ -13228,19 +13228,45 @@ public:
 			}
 			else if ( g_NewFocus == NewFocus::Buttons )
 			{
-				// The bottom row of the screen: up is the load order above it.
+				// [rc4l] Up is the load order above it -- unless there is nothing in it, which used
+				// to be walked into anyway: the orb vanished onto a region with no row to mark and
+				// DOWN could not get back, because an empty order had nothing to step off either.
 				if ( step < 0 )
-					g_NewFocus = NewFocus::Order;
+				{
+					if ( zx::ComputeFootExit( zx::GridKey::Up, g_NewButtonSel,
+						g_NewOrder.empty( ) == false ) == zx::FootExit::LoadOrder )
+					{
+						g_NewFocus = NewFocus::Order;
+						g_NewOrderSel = static_cast<int>( g_NewOrder.size( )) - 1;
+					}
+					else
+					{
+						g_NewFocus = NewFocus::Tools;
+						g_NewToolSel = SB_NEW_TOOL_COUNT - 1;
+					}
+				}
 			}
 			else
 			{
-				const int count = static_cast<int>( g_NewOrder.size( ));
-				const int next = g_NewOrderSel + step;
-
-				if (( next >= 0 ) && ( next < count ))
+				// [rc4l] The load order, which was a trap: it clamped at both ends, so once the
+				// keyboard was in it neither direction could leave. Down is the foot beneath it and
+				// up is the wad list beside it, which is where everything else on this screen goes.
+				switch ( zx::ComputeListStep( g_NewOrderSel,
+					static_cast<int>( g_NewOrder.size( )), step ))
 				{
-					g_NewOrderSel = next;
+				case zx::ListStep::Move:
+					g_NewOrderSel += step;
 					g_NewOrderRevealSel = true;
+					break;
+
+				case zx::ListStep::LeaveUp:
+					g_NewFocus = NewFocus::Wads;
+					break;
+
+				case zx::ListStep::LeaveDown:
+					g_NewFocus = NewFocus::Buttons;
+					g_NewButtonSel = kNewButtonPlay;
+					break;
 				}
 			}
 
@@ -13278,11 +13304,19 @@ public:
 			}
 			else if ( g_NewFocus == NewFocus::Buttons )
 			{
-				if ( g_NewButtonSel > 0 )
+				// [rc4l] Off the leftmost button is the settings grid, which shares this line in the
+				// other column. It used to be a dead key, so PLAY NOW -- which everything to its left
+				// now sends the keyboard to -- was somewhere you could arrive and not come back from.
+				if ( zx::ComputeFootExit( zx::GridKey::Left, g_NewButtonSel,
+					g_NewOrder.empty( ) == false ) == zx::FootExit::SettingsGrid )
 				{
-					g_NewButtonSel--;
-					S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+					g_NewFocus = NewFocus::Tools;
+					g_NewToolSel = SB_NEW_TOOL_COUNT - 1;
 				}
+				else
+					g_NewButtonSel--;
+
+				S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
 			}
 			return true;
 
@@ -18484,12 +18518,14 @@ public:
 		// flew straight past it into the form and the sub-tabs became unreachable by keyboard. You
 		// could not get to CUSTOM or NEW without a mouse.
 		//
-		// CUSTOM is left out because it has no screen to enter yet.
+		// [rc4l] CUSTOM used to be left out, on the note that it had no screen to enter yet. It has
+		// had one for a while -- a list, a search box and a row of buttons, all of them navigable
+		// once reached -- so the exclusion had quietly become the reason none of that could be
+		// reached by keyboard at all.
 		const bool bAboveTheForm = ( g_Focus == zx::BrowserFocus::SubTabs ) ||
 			( g_Focus == zx::BrowserFocus::Search );
 
-		if (( g_Tab == BrowserTab::Host ) && ( g_HostKind != HostKind::Custom )
-			&& ( key == zx::NavKey::Down ) && bAboveTheForm )
+		if (( g_Tab == BrowserTab::Host ) && ( key == zx::NavKey::Down ) && bAboveTheForm )
 		{
 			SetFocus( zx::BrowserFocus::Host );
 
@@ -18497,6 +18533,13 @@ public:
 			if ( g_HostKind == HostKind::New )
 			{
 				g_NewFocus = NewFocus::Wads;
+			}
+			else if ( g_HostKind == HostKind::Custom )
+			{
+				// The list when there is one; its buttons when the tab is empty, because an empty
+				// list is not a place focus may sit.
+				g_CustomFocus = CustomEntries( ).empty( ) ? CustomFocus::Buttons : CustomFocus::List;
+				g_CustomBtnSel = 0;
 			}
 			else
 			{
