@@ -29,37 +29,20 @@ namespace zx { namespace hwrender {
 struct TranslucentDraw
 {
 	float    distSq;        // squared distance from the camera to this draw's centre
-	float    cx, cy, cz;    // that centre, so two marks on ONE spot can be told from two on two walls
 	int      blend;         // 0 opaque/alpha-tested, 1 translucent, 2 additive, 3 fuzz
 	bool     decal;         // paint on a surface: coplanar with it, and depth-biased to win against it
 	unsigned first;         // vertex offset, which is creation order: older marks have smaller ones
 };
 
-// Two decals nearer than this are treated as marks on ONE spot.
-//
-// Inside it they overlap and their order is visible; beyond it they cannot overlap and their order
-// cannot matter. A decal is at most 64 units across, so that is the radius.
-extern const float kCoincidentDecalRadius;
-
-// A decal sorts as very slightly FARTHER than it is.
-//
-// It is paint on a surface, so anything standing in front of that surface must be drawn over it. A
-// fire sprite hovering a few units above the floor it is scorching sits at almost the same distance
-// as the mark, and a plain farthest-first sort then lands the decal second and buries the sprite.
-// Proportional, so it only ever decides a near-coincident pair and never reorders anything genuinely
-// in front or behind.
-extern const float kDecalDistanceNudge;
-
-// Apply that nudge. Callers must use this when FILLING the list, not when comparing: the value has
-// to be in the field the comparator reads, and a version that multiplied one line above the
-// assignment that overwrote it meant the rule had never applied at all.
-float ComputeSortDistance(float distSq, bool decal);
 
 // Strict weak ordering: true when `a` must be drawn BEFORE `b`.
 //
-// Farthest first, except that two marks on one spot are ordered by what they are -- additive last,
-// because additive blending only brightens and so can only be lost by being buried, then oldest
-// first so a fresh scorch covers an old one.
+// Decals first, as a stage, because that is what they are -- paint on the surfaces the world pass
+// just drew, finished before anything standing in front of them. Within the stage: additive last,
+// then oldest first, which is the sidedef attachment order GL walks. Everything else back to front.
+//
+// The distances of two coplanar quads differ only by where each centre falls, so ordering marks
+// against each other by distance answers a question the numbers cannot actually settle.
 bool ComputeDrawsBefore(const TranslucentDraw &a, const TranslucentDraw &b);
 
 } }   // namespace zx::hwrender
