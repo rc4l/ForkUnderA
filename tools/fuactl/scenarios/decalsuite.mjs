@@ -118,5 +118,45 @@ for (const [weapon, slot, pitch, tics] of [['Chaingun', 4, 50, 25], ['RocketLaun
   console.log(`shape ${weapon.padEnd(16)} mask spread ${spread.toFixed(0)}  ${spread > 8
     ? 'ok, the mark has shape' : 'FAIL: flat wash -- the mark is painting its whole box'}`);
 }
+// [rc4l] TWO GRAPHICS IN ONE FRAME must be drawn with their own textures.
+//
+// This is the case the reporter found and the one every other check here missed: fire plasma about
+// the place, swap to the BFG, mark a floor, and the BFG's mark came out wearing the plasma's
+// picture. Nothing above notices -- a mark IS present, it has shape, and it sits where it should.
+// Only its graphic is another mark's.
+//
+// The count of distinct textures the pass binds is the tell, and it needs no picture: two weapons
+// whose marks use four graphics between them must report four. It read two while the fault was
+// live, because a mutable shader variable binds once and every run after the first kept the first
+// run's texture.
+{
+  await cap.sandbox(c, { map: 'dbab04' });
+  await cap.exec(c, 'r_drawplayersprites 0');
+  await arm('PlasmaRifle', 6);
+  const at = { x: spot.x, y: spot.y, z: spot.z, angle: spot.yaw, pitch: 66 };
+  await c.rpc('player.setpos', at);
+  await cap.waitTics(c, 6);
+  await cap.exec(c, '+attack');
+  await cap.waitTics(c, 6);
+  await cap.exec(c, '-attack');
+  await cap.waitTics(c, 40);
+
+  await arm('BFG9000', 7);
+  await c.rpc('player.setpos', at);
+  await cap.waitTics(c, 6);
+  await cap.exec(c, '+attack');
+  await cap.waitTics(c, 2);
+  await cap.exec(c, '-attack');
+  // A BFG ball is slow: it needs about 55 tics to reach a floor. Reading sooner finds no mark at
+  // all, which is why several attempts to reproduce this by hand came back empty.
+  await cap.waitTics(c, 60);
+
+  const stats = String(await cap.exec(c, 'fua_projdecals_stats'));
+  const textures = Number(stats.match(/(\d+) textures/)?.[1] ?? 0);
+  const pics = new Set([...stats.matchAll(/mark \d+: (\S+)/g)].map((m) => m[1]));
+  console.log(`mixed    ${textures} textures bound for ${pics.size} graphics [${[...pics].join(' ')}]  ` +
+    `${textures >= pics.size && pics.size >= 2 ? 'ok' : 'FAIL: marks are sharing a texture'}`);
+}
+
 await cap.exec(c, 'r_drawplayersprites 1');
 c.close();

@@ -37,9 +37,6 @@
 #include "tarray.h"
 #include "c_cvars.h"
 
-// [rc4l] Its own switch: the decal pass's lives inside a namespace, and a texture question
-// outlives the decal investigation that prompted it anyway.
-CVAR(Int, fua_dg_texdebug, 0, 0)
 
 
 namespace zx { namespace hwrender {
@@ -225,28 +222,6 @@ Diligent::ITextureView *GetMaterialSRV(const void *materialPtr, int translation)
 	// [rc4l] createexpanded=false: the expanded border exists for GL's clamp behaviour on sprites and
 	// would shift the UVs the mesh already baked.
 	unsigned char *buf = mat->CreateTexBuffer(translation, w, h, true, false);
-
-	// [rc4l] What actually came back, per channel.
-	//
-	// "The mask reads 1 everywhere" has two halves and only one of them is the shader's: either the
-	// sampling is wrong, or the bytes uploaded were already flat. Reasoning about the difference
-	// between this call and the one GL makes went round in circles for an afternoon; the four ranges
-	// settle it in one line, and they also expose a channel-order mistake, which looks identical to
-	// a flat texture whenever the graphic happens to be grey.
-	if (fua_dg_texdebug > 0 && buf != NULL && w > 0 && h > 0)
-	{
-		unsigned char lo[4] = { 255, 255, 255, 255 }, hi[4] = { 0, 0, 0, 0 };
-		for (int i = 0; i < w * h; i++)
-			for (int ch = 0; ch < 4; ch++)
-			{
-				const unsigned char v = buf[i * 4 + ch];
-				if (v < lo[ch]) lo[ch] = v;
-				if (v > hi[ch]) hi[ch] = v;
-			}
-		Printf("texbuffer %s %dx%d trans %d: [0] %d..%d  [1] %d..%d  [2] %d..%d  [3] %d..%d\n",
-			(mat->tex != NULL && mat->tex->Name != NULL) ? mat->tex->Name : "?", w, h, translation,
-			lo[0], hi[0], lo[1], hi[1], lo[2], hi[2], lo[3], hi[3]);
-	}
 
 	if (buf == NULL || w <= 0 || h <= 0)
 	{

@@ -65,7 +65,7 @@ CVAR(Float, fua_decal_minfacing, 0.25f, CVAR_ARCHIVE)
 namespace zx { namespace hwrender {
 
 // ---------------------------------------------------------------------------
-// Deferred decals, with one texture array
+// Deferred decals
 // ---------------------------------------------------------------------------
 //
 // [rc4l] A mark is drawn as its own BOX, and resolved per fragment against the depth and normal the
@@ -77,19 +77,25 @@ namespace zx { namespace hwrender {
 // two surfaces is a place where two constants meet. Here the fade is a length in the pixel stage,
 // which is continuous everywhere including across a corner, and costs nothing to make smooth.
 //
-// One array of textures, indexed per instance, so every mark in the level is one draw call whatever
-// graphic it uses -- rather than one draw per texture, which is what a scorch and its glow
-// alternating turned into seventy marks and fifty-five draws. That is the bindless part: the index
-// travels in the instance record and the sampler array is bound once.
-// [rc4l] How many different decal graphics one draw can reach.
+// [rc4l] ONE DRAW PER GRAPHIC. This was a sampler array once, and the array is why.
 //
-// The article's version is unbounded -- a runtime-sized array with descriptor indexing -- and this is
-// the same idea with a ceiling on it, because a fixed array needs only ShaderResourceStaticArrays
-// where an unbounded one needs the full bindless path, and a Doom level uses tens of decal graphics
-// rather than thousands. If a level ever exceeds this the marks past it fall back to the first slot
-// rather than vanishing, and fua_dg_decalstats says it happened.
-#define FUA_DECAL_TEXTURES     64
-#define FUA_DECAL_TEXTURES_STR "64"
+// The idea was one draw for the whole level: an array of textures indexed per instance, with the
+// index riding in the decal record. It never worked, and it failed in the shape that costs most --
+// marks reading slot zero drew correctly and everything past it sampled the white padding, so a mark
+// appeared as a solid rectangle in its own colour and read, convincingly, as a broken texture.
+//
+// The cause was not the array. uTex was declared MUTABLE, and a mutable shader variable is bound
+// once per binding object: SetArray filled element zero and dropped the rest, silently. The same
+// mistake then survived the rewrite to per-run binding, where rebinding between draws did not take
+// either, and marks came out wearing the previous graphic's picture -- fire plasma, swap to the BFG,
+// and the BFG's scorch is a plasma scorch. It is DYNAMIC now, which is the type that may be rebound
+// between draws, and the array is gone with it.
+//
+// So: instances are grouped by graphic -- they are appended in slot-assignment order, so a run ends
+// where the slot changes -- and each run is one draw with the sampler bound the way every other pass
+// in this backend binds one. Tens of draws a frame, because a Doom level has tens of decal graphics.
+// The slot number still rides in the record; it is what finds the runs.
+#define FUA_DECAL_TEXTURES     64   // only sizes the slot report in the debug output
 
 static const char *kDeferredDecalVS =
 	"#version 450\n"
@@ -262,14 +268,7 @@ static const char *kDeferredDecalPS =
 	"    float v = dot(rel, uAx);\n"
 	"    if (abs(u) > 1.0 || abs(v) > 1.0) discard;\n"
 	"    vec2 t = vec2(u * 0.5 + 0.5, 0.5 - v * 0.5);\n"
-	/* [rc4l] uDecalDebug.z pins every mark to slot zero, which is the one experiment that tells
-	   a bad INDEX from a bad BINDING apart: if the mark appears when pinned, the array is bound
-	   and the index is wrong; if it stays blank, nothing is bound and the index is innocent. */
-	/* [rc4l] The slot travels in the instance record, so one draw covers every graphic.
-	   nonuniformEXT because the index differs BETWEEN INSTANCES of the same draw, which is the
-	   whole point of it -- without the qualifier that is undefined behaviour, and it shows up as
-	   marks wearing each other's textures depending on how the driver batches waves. */ \
-	/* [rc4l] The gradients are taken BEFORE the array is indexed, and handed over explicitly.
+		/* [rc4l] The gradients are taken BEFORE the array is indexed, and handed over explicitly.
 
 	   texture() picks its mip from screen-space derivatives, and those are only defined when the
 	   whole quad agrees on which sampler it is reading. Here it does not: the slot varies BETWEEN
@@ -354,11 +353,6 @@ static const char *kDeferredDecalPS =
 // mark that is being cut somewhere says WHERE rather than merely being absent. Every term that can
 // discard a fragment produces the same result on screen, and guessing which one cost several rounds.
 CVAR(Int, fua_dg_decaldebug, 0, 0)
-
-// [rc4l] Pin every mark to the first texture slot. See the pixel shader: it separates a wrong
-// index from an unbound array, which look identical on screen.
-CVAR(Bool, fua_dg_decalslot0, false, 0)
-
 
 // [rc4l] One record per mark, read by the vertex stage -- see kDeferredDecalVS.
 struct DeferredDecalInstance
@@ -596,14 +590,7 @@ void DrawDeferredDecals(Diligent::IDeviceContext *ctx)
 		for (int i = 0; i < 16; i++) cb[i] = invMVP[i];
 		cb[16] = (float)fua_dg_decaldebug;
 		cb[17] = (float)fua_decal_minfacing;
-		// [rc4l] fua_dg_decalslot0, which was declared and then never read.
-		//
-		// This pins every mark to texture slot zero, and it is the one experiment that separates "the
-		// graphic is wrong" from "the mark is sampling the wrong slot" -- a mask that is 1 across the
-		// whole quad is what BOTH look like, because an out-of-range slot lands on the white padding
-		// the array is filled with. Hardcoded to zero here, the knob answered every question with
-		// silence, and its absence looked exactly like a knob that was on and telling the truth.
-		cb[18] = fua_dg_decalslot0 ? 1.f : 0.f;
+		cb[18] = 0.f;
 		cb[19] = (float)fua_decal_aspect;
 	}
 
@@ -635,8 +622,6 @@ void DrawDeferredDecals(Diligent::IDeviceContext *ctx)
 			if (mats[m] == d.material && matTrans[m] == d.translation) { slot = (int)m; break; }
 		if (slot < 0)
 		{
-			if (mats.Size() >= FUA_DECAL_TEXTURES) slot = 0;   // over the ceiling: see FUA_DECAL_TEXTURES
-			else
 			{
 				// [rc4l] A shaded mark asks for its texture the way GL asks for it.
 				//
@@ -741,7 +726,6 @@ void DrawDeferredDecals(Diligent::IDeviceContext *ctx)
 
 	// Pad the array: an unbound slot in a sampler array reads as undefined, and the shader may index
 	// any of them from any instance in the draw.
-	while (views.Size() < FUA_DECAL_TEXTURES) views.Push(fallback);
 
 	// [rc4l] Ordinary blend first, additive second. Additive only ever brightens, so nothing can
 	// meaningfully be drawn over it and it can very easily be drawn under something and lost -- a
