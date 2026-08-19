@@ -573,7 +573,26 @@ static const char *kSceneVS =
 	   is the same quantity, computed from numbers that do not vary across the face. A light lying
 	   exactly in the plane gives exactly zero and is KEPT, which is what gl_flats.cpp does: it drops
 	   a light only when the plane is strictly on the wrong side of it. */ \
-	"        if (dot(vPlane.xyz, lp.xyz) - vPlane.w < 0.0) continue;\n" \
+	/* [rc4l] ...and a light sitting exactly ON the plane is KEPT, which needs slack to survive.
+
+	   gl_flats.cpp drops a light only when the plane is STRICTLY above it, so a light exactly in the
+	   plane stays -- and Doom puts lights exactly in planes constantly. A projectile that dies on a
+	   floor comes to rest ON it, so its z equals the plane there to the last bit of fixed point:
+	   measured on dbab04 as a plasma ball at -59.053 under a floor plane of -59.053. GL keeps that
+	   light. This test computes the same quantity in floats, from a normalised normal and a plane
+	   constant built out of vertex coordinates in the thousands, so the exact zero arrives as a few
+	   thousandths either side of it -- and on the wrong side an entire surface is culled at once.
+
+	   That is what the reported hard cut-off was. Every plasma bolt landing on that floor lit the
+	   walkway above and left the floor it was resting on completely black, along a dead straight line
+	   at the piece boundary, in Vulkan only. GL 30.6 against Vulkan 0.0 over the same rectangle of
+	   the same frozen frame.
+
+	   The slack is a tenth of a map unit: thousands of times the float error being covered, and far
+	   below anything a player could see -- a light a tenth of a unit behind a surface lights it now.
+	   It is not an attempt to place the boundary exactly, which floats cannot do; it is to keep the
+	   case Doom actually produces on the same side of it as GL. */ \
+	"        if (dot(vPlane.xyz, lp.xyz) - vPlane.w < -0.1) continue;\n" \
 	"        float a = max(lp.w - length(d), 0.0) / lp.w;\n" \
 	"        if (a <= 0.0) continue;\n" \
 	"        if (lc.a > 0.5) dyn -= lc.rgb * a;\n" \
@@ -2656,6 +2675,22 @@ CCMD( fua_dg_lights )
 			( light->target != NULL ) ? light->target->GetClass( )->TypeName.GetChars( ) : "none",
 			( light->flags4 & MF4_DONTLIGHTSELF ) ? " DONTLIGHTSELF" : "",
 			( fabsf( lz - floorz ) < 1.f ) ? "   <-- ON THE FLOOR PLANE\n" : "\n" );
+
+		// [rc4l] What GL DECIDES about this light, on the floor the player is standing on.
+		//
+		// gl_flats.cpp drops a light when the plane, evaluated at the LIGHT's x and y, is above it:
+		// that one comparison decides whether a whole surface is lit or not lit, and there is no
+		// middle. So when GL lights a floor and the port does not, the question is never "how much"
+		// but "which side of this number did each of them land on" -- and reading the number off a
+		// screenshot means bisecting a light's height by hand, ten captures at a time. It is right
+		// here, in the engine, exactly as gl_flats.cpp computes it.
+		if ( players[consoleplayer].mo != NULL && players[consoleplayer].mo->Sector != NULL )
+		{
+			const sector_t *sec = players[consoleplayer].mo->Sector;
+			const float ph = FIXED2FLOAT( sec->floorplane.ZatPoint( light->x, light->y ) );
+			Printf( "          floor plane under the light %.3f vs light z %.3f -> GL %s\n",
+				ph, lz, ( ph > lz ) ? "DROPS it" : "keeps it" );
+		}
 		n++;
 	}
 	Printf( "fua_dg_lights: %d active, player floor %.1f\n", n, floorz );
