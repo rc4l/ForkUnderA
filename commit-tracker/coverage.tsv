@@ -7002,7 +7002,7 @@ f9f5e458248b2fbb8cb4d7a72650e210903f2cef	2017-01-22T19:12:44Z	- memset the entir
 68c3f42a53f9f1ae1678884e0425f57efaf5d7a5	2017-01-23T00:10:40Z	- no more Simplify for global constants as well.	pending		/
 f720073b317c45d1da8f1cca2ad34345c551b12f	2017-01-23T00:37:43Z	- removed all code that was only there to implement the broken Simplifier that just got removed.	pending		/
 517733a04e8a7dcc64959fba5f1d73b8af56d626	2017-01-23T00:39:31Z	Merge branch 'clangfix' of https://github.com/edward-san/zdoom	pending		/
-5a4a5a17db9c612f5265d19aaa5dd22ae408cf34	2017-01-23T00:56:15Z	- added core lump checks for ZScript. - load internal shaders only from file 0. This does not contain aborts, like most of the other checks,but it will now refuse to load any core shader file from anything but gzdoom.pk3.	pending		/
+5a4a5a17db9c612f5265d19aaa5dd22ae408cf34	2017-01-23T00:56:15Z	- added core lump checks for ZScript. - load internal shaders only from file 0. This does not contain aborts, like most of the other checks,but it will now refuse to load any core shader file from anything but gzdoom.pk3.	adapted	Shader half only: core shaders now load from file 0 so a mod cannot replace main.fp. The ZScript core-lump checks do not apply, we have no ZScript.	6dfd3607
 03226e5a0ac540a036d5f0b294de53860de2f9c3	2017-01-23T05:17:25Z	Merge https://github.com/coelckers/gzdoom	pending		/
 d0565cafbda90c6280ef27381c9242aa832e90df	2017-01-23T09:19:26Z	Fixed compilation error with GCC/Clang	pending		/
 db4c5e090d80756b0ad5f306c9947877b2740613	2017-01-23T11:18:30Z	Fixed incorrect armor given by cheats	pending		/
@@ -15447,7 +15447,7 @@ d15f450fef3038e56a144fcc799bb1571d6d612d	2021-08-21T10:29:24Z	- implemented MBF'
 ac48518abcc8ac2024b3a32f0cd7d5638d44328f	2021-08-21T10:37:23Z	- merged SuggestMissileAttack back into P_CheckMissileRange.	pending		/
 854e11a9de37a1cddf9662ca49f3a068995d19e5	2021-08-21T10:44:36Z	- made CheckMeleeRange a normal function again.	pending		/
 dfd51ec6d523fc8e7d15a3cc9dc59f121cb6c592	2021-08-22T14:36:10Z	- added missing MBF21 Dehacked keys "blood color" and "dropped item".	pending		/
-03c8fd995669f1c9d881acbd9446e6a81164ab05	2021-08-24T08:24:23Z	- block user overrides for the logic module of core fragment shaders.	pending		/
+03c8fd995669f1c9d881acbd9446e6a81164ab05	2021-08-24T08:24:23Z	- block user overrides for the logic module of core fragment shaders.	ported	proc_prog_lump tries file 0 first, then falls back, so GLDEFS HardwareShader mods still resolve.	6dfd3607
 4bd617187bbde59e8b796723969c90f63f78d20f	2021-08-24T08:34:28Z	- fixed crash on getting location description without a level	pending		/
 196a4c0b3691c4481539772e23c818399d6cc597	2021-08-24T09:48:07Z	- added a modified version of MBF's stay-on-lift feature.	pending		/
 c2a2e08f051528f3efcdb9fed894b7fe5287f589	2021-08-24T13:50:30Z	- exported STAYONLIFT flag.	pending		/
