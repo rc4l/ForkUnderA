@@ -6,27 +6,27 @@ A registry is a phone book. Servers write themselves into it, players read it, a
 stateDiagram-v2
     direction TB
 
-    state "Listed as one row" as Listed
+    state "1. The server announces itself" as Announcing
+    state "2. Proving the address is real" as Proving
+    state "3. Listed, one row per server" as Listed
+    state "4. Punching through both routers" as Punching
+    state "Playing" as Joined
+    state "Never listed" as Dropped
+    state "Unreachable" as Refused
 
-    [*] --> Silent
-
-    Silent --> Proving : announces over IPv4 through the router and<br/>IPv6 through the firewall, and the registry<br/>answers with a random number
-    Proving --> Silent : the number never returns,<br/>so the address was forged
-    Proving --> Listed : the number returns from the same address,<br/>and both carry one key and one port
-    Listed --> Silent : announcing stops
-
+    Announcing --> Proving : over IPv4 through the router,<br/>IPv6 through the firewall
+    Proving --> Dropped : the number never comes back
+    Proving --> Listed : the number comes back<br/>from the same address
     Listed --> Joined : the player reaches it directly
-    Listed --> Punching : no reply, so the registry<br/>brokers a knock
-    Punching --> Joined : a packet lands while<br/>the opening still holds
+    Listed --> Punching : no reply, because a home<br/>router keeps no door open
+    Punching --> Joined : both sides send outward at once,<br/>until one lands while the far end holds
     Punching --> Refused : a fresh port per destination,<br/>so forward the port instead
-
-    Joined --> [*]
-    Refused --> [*]
 
     classDef good fill:#dcfce7,stroke:#16a34a,color:#14532d
     classDef bad fill:#fee2e2,stroke:#dc2626,color:#7f1d1d
     classDef live fill:#dbeafe,stroke:#2563eb,color:#1e3a8a
     class Joined good
+    class Dropped bad
     class Refused bad
     class Listed live
 ```
