@@ -2077,11 +2077,11 @@ static int serverbrowser_TipWrapWidth( )
 	return SB_VIRT_W / 3 - 8;
 }
 
-// [rc4l] What a row says about the file behind it: its full name, then where that file came from.
-static FString serverbrowser_PathTip( const char *name, zx::PathTipState state,
-	const std::string &path )
+// [rc4l] What a row says about the file behind it: where that file came from. Not headed with the
+// name -- the row draws it, and the path ends with it.
+static FString serverbrowser_PathTip( zx::PathTipState state, const std::string &path )
 {
-	return zx::ComputePathTip( name, state, path, serverbrowser_TipWrapWidth( ),
+	return zx::ComputePathTip( state, path, serverbrowser_TipWrapWidth( ),
 		serverbrowser_MeasureText, NULL ).c_str( );
 }
 
@@ -10999,7 +10999,7 @@ public:
 			// hand -- `file` above -- so the only thing that was missing is somewhere to put it.
 			serverbrowser_Tip( SB_HOST_LIST_LEFT - 4, rowY,
 				SB_NEW_WADS_RIGHT - SB_HOST_LIST_LEFT + 4, SB_NEW_ROW_H,
-				serverbrowser_PathTip( file.name.c_str( ), zx::PathTipState::Found, file.path ));
+				serverbrowser_PathTip( zx::PathTipState::Found, file.path ));
 
 			DrawNewRowHighlight( SB_HOST_LIST_LEFT - 4, SB_NEW_WADS_RIGHT, rowY, bSel,
 				( row == g_NewWadHot ));
@@ -11252,8 +11252,7 @@ public:
 			// rectangle that contains the pointer, so whatever draws last wins the hover.
 			serverbrowser_Tip( SB_HOST_RCOL_LEFT - 4, rowY,
 				SB_HOST_RCOL_RIGHT - SB_HOST_RCOL_LEFT + 4, SB_NEW_ROW_H,
-				serverbrowser_PathTip( g_NewOrder[row].name.c_str( ), zx::PathTipState::Found,
-					g_NewOrder[row].path ));
+				serverbrowser_PathTip( zx::PathTipState::Found, g_NewOrder[row].path ));
 
 			DrawOrderRow( SB_HOST_RCOL_LEFT, SB_HOST_RCOL_RIGHT, rowY, row,
 				g_NewOrder[row].name.c_str( ), bSel, ( row == g_NewOrderHot ), btnHot,
@@ -11831,20 +11830,17 @@ public:
 			{
 			case ResolveState::Found:
 				CustomDetailItem( out, entry.files[i].name.c_str( ), "", CR_GRAY,
-					serverbrowser_PathTip( entry.files[i].name.c_str( ),
-						zx::PathTipState::Found, path ).GetChars( ));
+					serverbrowser_PathTip( zx::PathTipState::Found, path ).GetChars( ));
 				break;
 
 			case ResolveState::Missing:
 				CustomDetailItem( out, entry.files[i].name.c_str( ), "MISSING", CR_ORANGE,
-					serverbrowser_PathTip( entry.files[i].name.c_str( ),
-						zx::PathTipState::Missing, "" ).GetChars( ));
+					serverbrowser_PathTip( zx::PathTipState::Missing, "" ).GetChars( ));
 				break;
 
 			default:
 				CustomDetailItem( out, entry.files[i].name.c_str( ), "...", CR_DARKGRAY,
-					serverbrowser_PathTip( entry.files[i].name.c_str( ),
-						zx::PathTipState::Pending, "" ).GetChars( ));
+					serverbrowser_PathTip( zx::PathTipState::Pending, "" ).GetChars( ));
 				break;
 			}
 		}

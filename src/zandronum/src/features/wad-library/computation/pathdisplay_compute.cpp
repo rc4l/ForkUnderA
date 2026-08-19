@@ -128,41 +128,35 @@ std::vector<std::string> ComputeWrappedPath(const std::string &path, int maxWidt
 	return out;
 }
 
-std::string ComputePathTip(const std::string &name, PathTipState state, const std::string &path,
+std::string ComputePathTip(PathTipState state, const std::string &path,
                            int maxWidth, PathMeasureFn measure, void *ctx)
 {
-	std::string out = name;
-
 	switch (state)
 	{
 	case PathTipState::Pending:
-		out += "\n";
-		out += kPathPendingText;
-		return out;
+		return kPathPendingText;
 
 	case PathTipState::Missing:
-		out += "\n";
-		out += kPathMissingText;
-		return out;
+		return kPathMissingText;
 
 	default:
 		break;
 	}
 
 	// [rc4l] Found, but with nothing to show: a resolver that reports success and hands back no path
-	// is a bug elsewhere, and a tooltip that silently says only the name would hide it. Say the same
-	// thing the missing case says, because from here the two are indistinguishable.
+	// is a bug elsewhere, and an empty tooltip -- which is no tooltip at all, the renderer drops it --
+	// would hide it. Say what the missing case says, because from here the two are indistinguishable.
 	const std::vector<std::string> lines = ComputeWrappedPath(path, maxWidth, measure, ctx);
 	if (lines.empty())
-	{
-		out += "\n";
-		out += kPathMissingText;
-		return out;
-	}
+		return kPathMissingText;
+
+	std::string out;
 
 	for (size_t i = 0; i < lines.size(); ++i)
 	{
-		out += "\n";
+		if (i != 0)
+			out += "\n";
+
 		out += lines[i];
 	}
 
