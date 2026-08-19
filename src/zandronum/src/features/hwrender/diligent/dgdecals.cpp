@@ -152,16 +152,25 @@ static const char *kDeferredDecalVS =
 
 static const char *kDeferredDecalPS =
 	"#version 450\n"
+	"#extension GL_EXT_nonuniform_qualifier : require\n"
 	"layout(binding = 0) uniform Constants { mat4 uMVP; vec4 uCameraPos; vec4 uLightParams; vec4 uClipPlane; vec4 uScreen; vec4 uSkyColor; };\n"
 	"layout(binding = 6) uniform Decal { mat4 uInvMVP; vec4 uDecalDebug; };\n"
 	"layout(binding = 7) uniform sampler2D uSceneDepth;\n"
 	"layout(binding = 8) uniform sampler2D uSceneNormal;\n"
-	/* [rc4l] ONE texture, and the pass groups its marks by it.
-	   An array indexed per instance -- the bindless form -- would make the whole level a single
-	   draw, and the array binds and reflects its 64 slots without complaint here but every
-	   element samples white, so it is parked rather than shipped half-working. Grouping costs a
-	   draw per graphic, which on a Doom level is a handful. */
-	"layout(binding = 1) uniform sampler2D uTex;\n"
+	/* [rc4l] An ARRAY, indexed per instance, so the level is two draws whatever it is wearing.
+
+	   This was tried once and parked, with the note that the array bound and reflected its 64 slots
+	   without complaint and every element sampled white. The reason was the BINDING, not the index.
+	   The draw loop reached this pass through GetMaterialSRB, which binds uTex with a scalar Set --
+	   right for a lone sampler, and against an array a binding of element 0 alone with 1..63 left
+	   undefined. Undefined reads white, so every slot but the first came back white and the indexing
+	   was blamed for it.
+
+	   The pass owns its binding now and sets the whole array with SetArray. uDecalDebug.z still pins
+	   every mark to slot zero, which is the experiment that tells a bad index from a bad binding
+	   apart: pinned and visible means the array is bound and the index is wrong; pinned and blank
+	   means nothing is bound and the index was never the problem. */
+	"layout(binding = 1) uniform sampler2D uTex[" FUA_DECAL_TEXTURES_STR "];\n"
 	"layout(location = 0) in vec3 vCentre;\n"
 	"layout(location = 1) in vec3 vAxisU;\n"
 	"layout(location = 2) in vec3 vAxisV;\n"
@@ -243,7 +252,12 @@ static const char *kDeferredDecalPS =
 	/* [rc4l] uDecalDebug.z pins every mark to slot zero, which is the one experiment that tells
 	   a bad INDEX from a bad BINDING apart: if the mark appears when pinned, the array is bound
 	   and the index is wrong; if it stays blank, nothing is bound and the index is innocent. */
-	"    vec4 texel = texture(uTex, t);\n"
+	/* [rc4l] The slot travels in the instance record, so one draw covers every graphic.
+	   nonuniformEXT because the index differs BETWEEN INSTANCES of the same draw, which is the
+	   whole point of it -- without the qualifier that is undefined behaviour, and it shows up as
+	   marks wearing each other's textures depending on how the driver batches waves. */ \
+	"    int slot = (uDecalDebug.z > 0.5) ? 0 : vTex;\n"
+	"    vec4 texel = texture(uTex[nonuniformEXT(slot)], t);\n"
 	/* A shaded decal's texture is an alpha MASK: the red channel is the shape and the colour comes
 	   from the decal itself. Sampled as an ordinary image the red channel reads as brightness and a
 	   black burn paints a white blob. */
@@ -634,45 +648,49 @@ void DrawDeferredDecals(Diligent::IDeviceContext *ctx)
 	Diligent::ITextureView *rtv = swap ? swap->GetCurrentBackBufferRTV() : NULL;
 	if (rtv) ctx->SetRenderTargets(1, &rtv, NULL, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
-	// [rc4l] Grouped by texture and blend, which are the only two things that force a new draw.
+	// [rc4l] TWO draws for the whole level, whatever it is wearing.
 	//
-	// Everything else about a mark travels in its own instance record, so a hundred marks sharing a
-	// scorch graphic are one draw of a hundred instances. The groups keep ARRIVAL order rather than
-	// being sorted by material pointer: order is the picture where two marks overlap, and a decal
-	// template creates its LOWER decal first, so arrival order already says scorch and then glow.
-	// Sorting on the pointer instead decides that by wherever the allocator put two textures, which
-	// is arbitrary and stable enough to look deliberate.
+	// The instance record has carried its texture slot all along and the shader now indexes the
+	// sampler array with it, so a draw no longer has to be one material wide. What is left that can
+	// force a break is the BLEND MODE, because that is fixed-function state and not something an
+	// instance can choose: ordinary marks first, additive over them. The array is built alpha-then-
+	// additive above, so those two groups are already contiguous.
+	//
+	// Measured on dbab04 with a plasma load: 43 marks were 21 draws, and are now 2. It matters
+	// because this renderer is CPU-bound -- roughly 4 ms of CPU against 1.7 ms of GPU -- so a draw
+	// call is spent from the scarce budget and the pixels the box shades are spent from the spare
+	// one. The trade only goes one way.
 	const unsigned alphaCount = (instAlpha.Size() > all.Size()) ? all.Size() : instAlpha.Size();
-	unsigned first = 0;
-	while (first < all.Size())
+	for (int pass = 0; pass < 2; pass++)
 	{
-		const bool additive = (first >= alphaCount);
-		const void *mat = matOf[first];
-		unsigned last = first + 1;
-		while (last < all.Size() && matOf[last] == mat && ((last >= alphaCount) == additive)) last++;
+		const bool additive = (pass == 1);
+		const unsigned first = additive ? alphaCount : 0;
+		const unsigned count = additive ? (all.Size() - alphaCount) : alphaCount;
+		if (count == 0) continue;
 
 		Diligent::IPipelineState *pso = additive ? g_ddAddPSO.RawPtr() : g_ddPSO.RawPtr();
-		if (pso)
-		{
-			auto *srb = GetMaterialSRB(pso, mat, 0);
-			if (srb)
-			{
-				if (auto *v = srb->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "uSceneDepth")) v->Set(depthSRV);
-				if (auto *v = srb->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "uSceneNormal")) v->Set(normalSRV);
-				ctx->SetPipelineState(pso);
-				ctx->CommitShaderResources(srb, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+		Diligent::IShaderResourceBinding *srb = additive ? g_ddAddSRB.RawPtr() : g_ddSRB.RawPtr();
+		if (!pso || !srb) continue;
 
-				Diligent::DrawAttribs draw;
-				draw.NumVertices = 6;
-				draw.NumInstances = last - first;
-				draw.StartVertexLocation = 0;
-				draw.FirstInstanceLocation = first;
-				draw.Flags = Diligent::DRAW_FLAG_VERIFY_ALL;
-				ctx->Draw(draw);
-				g_ddDrawn++;
-			}
-		}
-		first = last;
+		// [rc4l] EVERY slot, every frame. A descriptor array with a hole in it is not "mostly bound":
+		// Diligent takes the process down when a binding is committed with an element missing, and the
+		// padding above is what guarantees there is something to put in each one.
+		if (auto *v = srb->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "uTex"))
+			v->SetArray(&views[0], 0, FUA_DECAL_TEXTURES);
+		if (auto *v = srb->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "uSceneDepth")) v->Set(depthSRV);
+		if (auto *v = srb->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "uSceneNormal")) v->Set(normalSRV);
+
+		ctx->SetPipelineState(pso);
+		ctx->CommitShaderResources(srb, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+
+		Diligent::DrawAttribs draw;
+		draw.NumVertices = 6;
+		draw.NumInstances = count;
+		draw.StartVertexLocation = 0;
+		draw.FirstInstanceLocation = first;
+		draw.Flags = Diligent::DRAW_FLAG_VERIFY_ALL;
+		ctx->Draw(draw);
+		g_ddDrawn++;
 	}
 
 
