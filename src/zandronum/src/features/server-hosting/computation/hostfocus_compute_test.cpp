@@ -19,7 +19,7 @@ const int kFields = 4;
 
 HostNavResult Nav(HostFocusPos pos, HostNavKey key, bool hasFields = true, bool hasToggle = true)
 {
-	return ComputeHostNav(pos, key, kFields, hasFields, hasToggle, 0, false);
+	return ComputeHostNav(pos, key, kFields, hasFields, hasToggle, 0, false, true);
 }
 
 HostFocusPos Field(int i) { return HostFocusPos(HostSlot::Field, i); }
@@ -108,8 +108,8 @@ TEST(HostFocus, AFieldGivingLeftBackLandsWhereTheActionDoes)
 {
 	// [rc4l] The field decides WHEN left stops being the caret's; this decides WHERE it goes. Pinned
 	// together so the two ways out of the right column cannot come to disagree.
-	EXPECT_EQ(HostSlot::List, zx::HostLeftOfTheForm().slot);
-	EXPECT_EQ(Nav(Action(), HostNavKey::Left).pos.slot, zx::HostLeftOfTheForm().slot);
+	EXPECT_EQ(HostSlot::List, zx::HostLeftOfTheForm(true).slot);
+	EXPECT_EQ(Nav(Action(), HostNavKey::Left).pos.slot, zx::HostLeftOfTheForm(true).slot);
 }
 
 TEST(HostFocus, DownFromTheFootGoesNowhereRatherThanWrapping)
@@ -180,26 +180,26 @@ TEST(HostFocus, WithTheSettingsShutThereAreNoFieldsToWalk)
 
 TEST(HostFocus, ClampCorrectsWhatCannotBeThere)
 {
-	EXPECT_EQ(HostSlot::Action, ClampHostFocus(Field(0), kFields, false, true, 0, false).slot);
-	EXPECT_EQ(HostSlot::Action, ClampHostFocus(Vis(), kFields, false, true, 0, false).slot);
-	EXPECT_EQ(HostSlot::Action, ClampHostFocus(Toggle(), kFields, true, false, 0, false).slot);
+	EXPECT_EQ(HostSlot::Action, ClampHostFocus(Field(0), kFields, false, true, 0, false, true).slot);
+	EXPECT_EQ(HostSlot::Action, ClampHostFocus(Vis(), kFields, false, true, 0, false, true).slot);
+	EXPECT_EQ(HostSlot::Action, ClampHostFocus(Toggle(), kFields, true, false, 0, false, true).slot);
 
 	// A field index past the end is the same kind of stale.
-	EXPECT_EQ(0, ClampHostFocus(Field(99), kFields, true, true, 0, false).field);
-	EXPECT_EQ(0, ClampHostFocus(Field(-3), kFields, true, true, 0, false).field);
+	EXPECT_EQ(0, ClampHostFocus(Field(99), kFields, true, true, 0, false, true).field);
+	EXPECT_EQ(0, ClampHostFocus(Field(-3), kFields, true, true, 0, false, true).field);
 
 	// Valid positions are left exactly alone.
-	EXPECT_EQ(HostSlot::Field, ClampHostFocus(Field(2), kFields, true, true, 0, false).slot);
-	EXPECT_EQ(2, ClampHostFocus(Field(2), kFields, true, true, 0, false).field);
-	EXPECT_EQ(HostSlot::Toggle, ClampHostFocus(Toggle(), kFields, true, true, 0, false).slot);
+	EXPECT_EQ(HostSlot::Field, ClampHostFocus(Field(2), kFields, true, true, 0, false, true).slot);
+	EXPECT_EQ(2, ClampHostFocus(Field(2), kFields, true, true, 0, false, true).field);
+	EXPECT_EQ(HostSlot::Toggle, ClampHostFocus(Toggle(), kFields, true, true, 0, false, true).slot);
 }
 
 TEST(HostFocus, NoFieldsAtAllStillLeavesSomewhereToStand)
 {
 	// A form with its boxes counted as zero must not put focus on a field that cannot exist.
-	EXPECT_EQ(HostSlot::Action, ClampHostFocus(Field(0), 0, true, true, 0, false).slot);
-	EXPECT_EQ(HostSlot::List, ComputeHostNav(Vis(), HostNavKey::Up, 0, true, true, 0, false).pos.slot);
-	EXPECT_EQ(HostSlot::List, ComputeHostNav(Action(), HostNavKey::Up, 0, true, true, 0, false).pos.slot);
+	EXPECT_EQ(HostSlot::Action, ClampHostFocus(Field(0), 0, true, true, 0, false, true).slot);
+	EXPECT_EQ(HostSlot::List, ComputeHostNav(Vis(), HostNavKey::Up, 0, true, true, 0, false, true).pos.slot);
+	EXPECT_EQ(HostSlot::List, ComputeHostNav(Action(), HostNavKey::Up, 0, true, true, 0, false, true).pos.slot);
 }
 
 // ---------------------------------------------------------------- coming back
@@ -246,7 +246,7 @@ TEST(HostFocus, OnePositionCannotNameTwoThings)
 			const HostFocusPos to = Nav(starts[s], keys[k]).pos;
 
 			// Whatever it lands on is one slot, and one that exists.
-			EXPECT_EQ(to.slot, ClampHostFocus(to, kFields, true, true, 0, false).slot);
+			EXPECT_EQ(to.slot, ClampHostFocus(to, kFields, true, true, 0, false, true).slot);
 
 			if (to.slot == HostSlot::Field)
 			{
@@ -265,7 +265,7 @@ namespace
 // The panel face: settings shut, so no fields and no visibility row, and `n` rows of controls.
 HostNavResult Panel(HostFocusPos pos, HostNavKey key, int n)
 {
-	return ComputeHostNav(pos, key, kFields, false, true, n, false);
+	return ComputeHostNav(pos, key, kFields, false, true, n, false, true);
 }
 
 HostFocusPos Game(int i)
@@ -283,7 +283,7 @@ TEST(HostFocus, RightOffTheListEntersTheGameplayPanelWhenTheFormIsShut)
 	EXPECT_EQ(0, Panel(HostFocusPos(HostSlot::List, 0), HostNavKey::Right, 3).pos.field);
 
 	EXPECT_EQ(HostSlot::Field,
-		ComputeHostNav(HostFocusPos(HostSlot::List, 0), HostNavKey::Right, kFields, true, true, 3, false).pos.slot);
+		ComputeHostNav(HostFocusPos(HostSlot::List, 0), HostNavKey::Right, kFields, true, true, 3, false, true).pos.slot);
 }
 
 TEST(HostFocus, AnExperienceWithNothingToDecideSendsRightToTheFoot)
@@ -346,16 +346,16 @@ TEST(HostFocus, AGameplayRowThatIsNoLongerThereIsCorrected)
 {
 	// The panel changes underneath a focus that was legitimate: opening the settings replaces it,
 	// and choosing a different experience can leave fewer rows than there were.
-	EXPECT_EQ(HostSlot::Action, ClampHostFocus(Game(0), kFields, false, true, 0, false).slot);
-	EXPECT_EQ(HostSlot::Action, ClampHostFocus(Game(0), kFields, true, true, 3, false).slot)
+	EXPECT_EQ(HostSlot::Action, ClampHostFocus(Game(0), kFields, false, true, 0, false, true).slot);
+	EXPECT_EQ(HostSlot::Action, ClampHostFocus(Game(0), kFields, true, true, 3, false, true).slot)
 		<< "the form replaces the panel, so a gameplay row cannot be current while it is open";
-	EXPECT_EQ(0, ClampHostFocus(Game(9), kFields, false, true, 3, false).field);
-	EXPECT_EQ(0, ClampHostFocus(Game(-2), kFields, false, true, 3, false).field);
+	EXPECT_EQ(0, ClampHostFocus(Game(9), kFields, false, true, 3, false, true).field);
+	EXPECT_EQ(0, ClampHostFocus(Game(-2), kFields, false, true, 3, false, true).field);
 }
 
 TEST(HostFocus, AValidGameplayRowIsLeftAlone)
 {
-	const HostFocusPos pos = ClampHostFocus(Game(2), kFields, false, true, 3, false);
+	const HostFocusPos pos = ClampHostFocus(Game(2), kFields, false, true, 3, false, true);
 
 	EXPECT_EQ(HostSlot::Gameplay, pos.slot);
 	EXPECT_EQ(2, pos.field);
@@ -371,7 +371,7 @@ HostFocusPos Copy() { return HostFocusPos(HostSlot::Copy, 0); }
 // The ordinary form with COPY TO NEW under the visibility row.
 HostNavResult CopyNav(HostFocusPos pos, HostNavKey key)
 {
-	return ComputeHostNav(pos, key, kFields, true, true, 0, true);
+	return ComputeHostNav(pos, key, kFields, true, true, 0, true, true);
 }
 
 } // namespace
@@ -415,8 +415,8 @@ TEST(HostFocus, ACopyButtonThatIsNoLongerOfferedIsCorrected)
 {
 	// It comes and goes with what is on disk, not only with the panel: switching to an experience
 	// whose files are missing takes it away underneath a focus that was on it a frame ago.
-	EXPECT_EQ(HostSlot::Action, ClampHostFocus(Copy(), kFields, true, true, 0, false).slot);
-	EXPECT_EQ(HostSlot::Copy, ClampHostFocus(Copy(), kFields, true, true, 0, true).slot);
+	EXPECT_EQ(HostSlot::Action, ClampHostFocus(Copy(), kFields, true, true, 0, false, true).slot);
+	EXPECT_EQ(HostSlot::Copy, ClampHostFocus(Copy(), kFields, true, true, 0, true, true).slot);
 }
 
 TEST(HostFocus, NavigatingFromAStaleCopyPositionStartsFromSomethingReal)
@@ -424,4 +424,89 @@ TEST(HostFocus, NavigatingFromAStaleCopyPositionStartsFromSomethingReal)
 	// ComputeHostNav clamps before it answers, so a key pressed on the frame it vanished behaves
 	// like one pressed on the foot rather than moving from a place that is not there.
 	EXPECT_EQ(HostSlot::Toggle, Nav(Copy(), HostNavKey::Right).pos.slot);
+}
+
+// ---------------------------------------------------------------- the SERVER box, which has no list
+
+namespace
+{
+
+// [rc4l] The box CUSTOM and NEW open: the four fields and the visibility row, one DONE button on the
+// foot, and nothing above them.
+HostNavResult BoxNav(HostFocusPos pos, HostNavKey key)
+{
+	return ComputeHostNav(pos, key, kFields, true, false, 0, false, false);
+}
+
+} // namespace
+
+TEST(HostFocusNoList, UpOffTheFirstFieldStaysPutInsteadOfLeavingForAListThatIsNotThere)
+{
+	const HostNavResult r = BoxNav(Field(0), HostNavKey::Up);
+
+	EXPECT_EQ(HostSlot::Field, r.pos.slot);
+	EXPECT_EQ(0, r.pos.field);
+}
+
+TEST(HostFocusNoList, LeftOffTheFootStaysOnTheFoot)
+{
+	EXPECT_EQ(HostSlot::Action, BoxNav(Action(), HostNavKey::Left).pos.slot);
+	EXPECT_EQ(HostSlot::Action, zx::HostLeftOfTheForm(false).slot);
+}
+
+// The column still walks: this is the same form, only its top and bottom differ.
+TEST(HostFocusNoList, TheColumnStillWalksDownToTheFoot)
+{
+	HostFocusPos at = Field(0);
+
+	for (int i = 1; i < kFields; ++i)
+	{
+		at = BoxNav(at, HostNavKey::Down).pos;
+		EXPECT_EQ(HostSlot::Field, at.slot);
+		EXPECT_EQ(i, at.field);
+	}
+
+	at = BoxNav(at, HostNavKey::Down).pos;
+	EXPECT_EQ(HostSlot::Visibility, at.slot);
+
+	at = BoxNav(at, HostNavKey::Down).pos;
+	EXPECT_EQ(HostSlot::Action, at.slot);
+}
+
+TEST(HostFocusNoList, UpFromTheFootReturnsToTheVisibilityRow)
+{
+	EXPECT_EQ(HostSlot::Visibility, BoxNav(Action(), HostNavKey::Up).pos.slot);
+}
+
+// A focus left on the list by the panel underneath must be corrected, not honoured.
+TEST(HostFocusNoList, AFocusOnTheListIsCorrectedWhenThereIsNoList)
+{
+	EXPECT_EQ(HostSlot::Action, ClampHostFocus(List(), kFields, true, false, 0, false, false).slot);
+	EXPECT_EQ(HostSlot::List, ClampHostFocus(List(), kFields, true, false, 0, false, true).slot);
+}
+
+// Coming back from Away has to land somewhere that exists either way.
+TEST(HostFocusNoList, ComingBackFromAwayLandsOnTheFootRatherThanAMissingList)
+{
+	EXPECT_EQ(HostSlot::Action,
+		ComputeHostNav(HostFocusPos(HostSlot::Away, 0), HostNavKey::Down, kFields, true, false, 0,
+			false, false).pos.slot);
+	EXPECT_EQ(HostSlot::List,
+		ComputeHostNav(HostFocusPos(HostSlot::Away, 0), HostNavKey::Down, kFields, true, false, 0,
+			false, true).pos.slot);
+}
+
+// [rc4l] Up off the visibility row with no fields drawn: the other crossing that named the list.
+TEST(HostFocusNoList, UpOffTheVisibilityRowWithNoFieldsStaysPut)
+{
+	EXPECT_EQ(HostSlot::Visibility,
+		ComputeHostNav(Vis(), HostNavKey::Up, 0, true, false, 0, false, false).pos.slot);
+}
+
+// [rc4l] And the gameplay panel's, which no box draws but the unit still has to answer.
+TEST(HostFocusNoList, UpOffTheFirstGameplayRowStaysPutWithNoList)
+{
+	EXPECT_EQ(HostSlot::Gameplay,
+		ComputeHostNav(HostFocusPos(HostSlot::Gameplay, 0), HostNavKey::Up, kFields, false, false, 3,
+			false, false).pos.slot);
 }
