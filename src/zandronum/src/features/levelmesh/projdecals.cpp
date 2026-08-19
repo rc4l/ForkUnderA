@@ -36,6 +36,8 @@
 // There was a third mode for a while, which cut the geometry inside the box into triangles on the
 // CPU. It is gone: a triangle is the smallest thing that can carry an alpha, so every fade it did
 // was in slices and every join between two surfaces was two constants meeting.
+EXTERN_CVAR(Bool, fua_decal_log)   // the mesh path's switch; one switch for one question
+
 CVAR(Int, fua_decalmode, 0, CVAR_ARCHIVE)
 // [rc4l] Marks on floors and ceilings, which Doom itself never makes.
 //
@@ -205,9 +207,9 @@ void BuildProjection(const MarkStyle &style, DBaseDecal *owner, int fadeStart, i
                      fixed_t x, fixed_t y, fixed_t z, const float surfN[3], float advance)
 {
 	FTexture *texture = TexMan[style.pic];
-	if (texture == NULL) return;
+	if (texture == NULL) { if (fua_decal_log) Printf("  mark dropped: no texture\n"); return; }
 	FMaterial *mat = FMaterial::ValidateTexture(texture, true);
-	if (mat == NULL) return;
+	if (mat == NULL) { if (fua_decal_log) Printf("  mark dropped: no material\n"); return; }
 
 	// A missing context is a real case -- a decal placed by a script, a puff with no direction -- and
 	// it is spelled "no velocity", which BuildDecalBasis turns into a head-on projection.
@@ -218,7 +220,14 @@ void BuildProjection(const MarkStyle &style, DBaseDecal *owner, int fadeStart, i
 
 	const float halfW = mat->TextureWidth()  * FIXED2FLOAT(style.scaleX) * 0.5f;
 	const float halfH = mat->TextureHeight() * FIXED2FLOAT(style.scaleY) * 0.5f;
-	if (halfW < 0.5f || halfH < 0.5f) return;
+	if (halfW < 0.5f || halfH < 0.5f)
+	{
+		if (fua_decal_log)
+			Printf("  mark dropped: box %.2fx%.2f from %dx%d at scale %.3f,%.3f\n",
+				halfW, halfH, mat->TextureWidth(), mat->TextureHeight(),
+				FIXED2FLOAT(style.scaleX), FIXED2FLOAT(style.scaleY));
+		return;
+	}
 
 	// [rc4l] The flips, applied to the AXES rather than to a texture coordinate.
 	//
@@ -398,6 +407,23 @@ void SpawnProjectedDecalHere(const FDecalTemplate *tpl, fixed_t x, fixed_t y, fi
 		t = lower;
 	}
 
+	// [rc4l] What the chain actually came out as.
+	//
+	// A mark that is missing and a mark that was never asked for look the same everywhere downstream,
+	// and the draw-side debug cannot tell them apart because it only ever sees what survived. This is
+	// the one place that knows how many templates the chain had and which pictures they name.
+	if (fua_decal_log)
+	{
+		FString names;
+		for (int i = 0; i < depth; i++)
+		{
+			FTexture *t = TexMan[chain[i]->PicNum];
+			names += (i ? ", " : "");
+			names += (t != NULL && t->Name != NULL) ? t->Name : "?";
+		}
+		Printf("projected chain: %d deep [%s]\n", depth, names.GetChars());
+	}
+
 	// Zero advance: the caller passes the plane's own height, which IS the contact point.
 	for (int i = depth - 1; i >= 0; i--) SpawnFromTemplate(chain[i], x, y, z, surfaceNormal, 0.f);
 }
@@ -536,6 +562,20 @@ int GetProjectedDecalsGpu(const GpuDecal **out)
 	return (int)g_gpuDecals.Size();
 }
 
+// [rc4l] Name the marks that exist, with the alpha that decides whether they are drawn.
+void PrintProjectedDecals(int limit)
+{
+	for (unsigned i = 0; i < g_decals.Size() && (int)i < limit; i++)
+	{
+		const ProjDecal &d = g_decals[i];
+		FTexture *t = TexMan[d.pic];
+		Printf("  mark %u: %s alpha %.3f (base %.3f), fade %d/%d, age %d, owner %s\n",
+			i, (t != NULL && t->Name != NULL) ? t->Name : "?",
+			d.currentAlpha, d.baseAlpha, d.fadeStart, d.fadeTime, gametic - d.spawnTic,
+			(d.owner != NULL) ? "yes" : "no");
+	}
+}
+
 int GetProjectedDecalCount() { return (int)g_decals.Size(); }
 
 }} // namespace zx::levelmesh
@@ -552,4 +592,12 @@ CCMD(fua_projdecals_stats)
 	Printf("projected decals: %d live\n", zx::levelmesh::GetProjectedDecalCount());
 	Printf("deferred pass: %d boxes in %d draws, %d textures%s%s\n",
 		boxes, draws, textures, (bail && *bail) ? ", stopped: " : "", (bail && *bail) ? bail : "");
+
+	// [rc4l] The marks themselves, because "10 live" cannot say WHICH ten.
+	//
+	// A mark that is made and then never drawn is invisible to every other instrument here: the
+	// spawn side reports it created one, the draw side reports what survived, and the difference
+	// between those two numbers is the whole question when a glow goes missing while the scorch
+	// beneath it stays. Alpha is the usual answer, so alpha is printed.
+	zx::levelmesh::PrintProjectedDecals(12);
 }

@@ -92,6 +92,9 @@ void ClearProjectedDecals();
 // How many marks are live. See fua_projdecals_stats.
 int GetProjectedDecalCount();
 
+// Name every live mark, with the alpha that decides whether it is drawn at all.
+void PrintProjectedDecals(int limit);
+
 // [rc4l] One mark, as the BACKEND needs it: a box and what to paint in it.
 //
 // Everything here is in MESH space (x, z-up, y), because that is the space the backend draws in.
