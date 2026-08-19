@@ -69,6 +69,7 @@
 #include "features/addon-catalogue/zx_catalogue.h"
 #include "features/wad-library/zx_wadlibrary.h"
 #include "features/wad-library/computation/loadorder_compute.h"
+#include "features/wad-library/computation/pathdisplay_compute.h"
 #include "features/addon-catalogue/computation/hostplan_compute.h"
 #include "features/wad-download/computation/iwadallow_compute.h"
 #include "features/addon-catalogue/computation/iwadpick_compute.h"
@@ -2060,6 +2061,28 @@ static void serverbrowser_Tip( int x, int y, int w, int h, const char *text )
 	tip.h = h;
 	tip.text = text;
 	g_Tips.Push( tip );
+}
+
+// [rc4l] The font, for a unit that must not know about fonts. See pathdisplay_compute.h.
+static int serverbrowser_MeasureText( const char *text, void * )
+{
+	return SmallFont->StringWidth( text );
+}
+
+// The width a tooltip actually wraps at, less the padding its box adds either side. Wrapping a path
+// any wider than this hands V_BreakLines a line it will break again, in the one place a path must
+// not be broken: on a space inside a folder somebody put a space in.
+static int serverbrowser_TipWrapWidth( )
+{
+	return SB_VIRT_W / 3 - 8;
+}
+
+// [rc4l] What a row says about the file behind it: its full name, then where that file came from.
+static FString serverbrowser_PathTip( const char *name, zx::PathTipState state,
+	const std::string &path )
+{
+	return zx::ComputePathTip( name, state, path, serverbrowser_TipWrapWidth( ),
+		serverbrowser_MeasureText, NULL ).c_str( );
 }
 
 // [rc4l] Everything registered so far, forgotten. Called by a modal as it starts drawing.
@@ -10970,6 +10993,14 @@ public:
 			const zx::LibraryFile &file = files[rows[row].index];
 			const bool bSel = ( row == g_NewWadSel );
 
+			// [rc4l] WHERE THIS COPY IS. The row draws a name and a size, and on a collection with
+			// the same wad in three folders that is three identical rows and an x3 telling the
+			// player duplicates exist without saying where any of them are. The path is already in
+			// hand -- `file` above -- so the only thing that was missing is somewhere to put it.
+			serverbrowser_Tip( SB_HOST_LIST_LEFT - 4, rowY,
+				SB_NEW_WADS_RIGHT - SB_HOST_LIST_LEFT + 4, SB_NEW_ROW_H,
+				serverbrowser_PathTip( file.name.c_str( ), zx::PathTipState::Found, file.path ));
+
 			DrawNewRowHighlight( SB_HOST_LIST_LEFT - 4, SB_NEW_WADS_RIGHT, rowY, bSel,
 				( row == g_NewWadHot ));
 
@@ -11216,6 +11247,14 @@ public:
 			// The maps list dropped them for the same reason. The read-only list in the CUSTOM tab's
 			// maps box keeps its numbers, because there the position is all it has -- nothing can be
 			// moved, so nothing demonstrates the order.
+			// [rc4l] Registered BEFORE the row draws, so the three buttons on it can register
+			// their own over the top: the lookup walks the list backwards and takes the last
+			// rectangle that contains the pointer, so whatever draws last wins the hover.
+			serverbrowser_Tip( SB_HOST_RCOL_LEFT - 4, rowY,
+				SB_HOST_RCOL_RIGHT - SB_HOST_RCOL_LEFT + 4, SB_NEW_ROW_H,
+				serverbrowser_PathTip( g_NewOrder[row].name.c_str( ), zx::PathTipState::Found,
+					g_NewOrder[row].path ));
+
 			DrawOrderRow( SB_HOST_RCOL_LEFT, SB_HOST_RCOL_RIGHT, rowY, row,
 				g_NewOrder[row].name.c_str( ), bSel, ( row == g_NewOrderHot ), btnHot,
 				( row == 0 ), ( row + 1 == static_cast<int>( g_NewOrder.size( ))), false );
@@ -11667,6 +11706,11 @@ public:
 		FString value;			// Item: right-aligned
 		EColorRange colour;
 
+		// [rc4l] What the line says on hover, or empty for the lines that have nothing to add. The
+		// FILES rows use it to say which copy of a file this preset would actually load, which the
+		// bare name they draw cannot: the preset stores a name and an md5, never a path.
+		FString tip;
+
 		DetailLine() : kind(Blank), colour(CR_GRAY) {}
 	};
 
@@ -11696,7 +11740,7 @@ public:
 	// A label on the left and its value on the right, which is what makes a column of numbers
 	// readable: the eye runs down the right edge rather than hunting along each line.
 	void CustomDetailItem( std::vector<DetailLine> &out, const char *label, const char *value,
-		EColorRange colour )
+		EColorRange colour, const char *tip = NULL )
 	{
 		DetailLine line;
 		line.kind = DetailLine::Item;
@@ -11704,6 +11748,9 @@ public:
 			SmallFont->StringWidth( value ) - 12 );
 		line.value = value;
 		line.colour = colour;
+
+		if ( tip != NULL )
+			line.tip = tip;
 
 		out.push_back( line );
 	}
@@ -11774,18 +11821,30 @@ public:
 		{
 			// Three states, not two: saying MISSING about a file nobody has looked at yet is the
 			// same lie the rows used to tell, one column over.
-			switch ( CustomResolve( entry.files[i].name, entry.files[i].md5 ))
+			// [rc4l] The path comes back from the SAME call that decides the colour, rather than
+			// from a second lookup: two lookups are two chances to disagree about which copy this
+			// preset would load, and the disagreement would show as a row coloured found with a
+			// tooltip pointing somewhere else.
+			std::string path;
+
+			switch ( CustomResolve( entry.files[i].name, entry.files[i].md5, &path ))
 			{
 			case ResolveState::Found:
-				CustomDetailItem( out, entry.files[i].name.c_str( ), "", CR_GRAY );
+				CustomDetailItem( out, entry.files[i].name.c_str( ), "", CR_GRAY,
+					serverbrowser_PathTip( entry.files[i].name.c_str( ),
+						zx::PathTipState::Found, path ).GetChars( ));
 				break;
 
 			case ResolveState::Missing:
-				CustomDetailItem( out, entry.files[i].name.c_str( ), "MISSING", CR_ORANGE );
+				CustomDetailItem( out, entry.files[i].name.c_str( ), "MISSING", CR_ORANGE,
+					serverbrowser_PathTip( entry.files[i].name.c_str( ),
+						zx::PathTipState::Missing, "" ).GetChars( ));
 				break;
 
 			default:
-				CustomDetailItem( out, entry.files[i].name.c_str( ), "...", CR_DARKGRAY );
+				CustomDetailItem( out, entry.files[i].name.c_str( ), "...", CR_DARKGRAY,
+					serverbrowser_PathTip( entry.files[i].name.c_str( ),
+						zx::PathTipState::Pending, "" ).GetChars( ));
 				break;
 			}
 		}
@@ -11871,6 +11930,14 @@ public:
 					MAX( 1, serverbrowser_ToScreenX( SB_HOST_RCOL_RIGHT ) - rx ),
 					MAX( 1, serverbrowser_ToScreenY( y + lineH / 2 + 1 ) - ry ));
 				continue;
+			}
+
+			// [rc4l] Registered from the DRAW, like every other tooltip here, so a line scrolled
+			// out of the column stops being hoverable at the same moment it stops being visible.
+			if ( line.tip.IsNotEmpty( ))
+			{
+				serverbrowser_Tip( SB_HOST_RCOL_LEFT, y, SB_HOST_RCOL_RIGHT - SB_HOST_RCOL_LEFT,
+					lineH, line.tip.GetChars( ));
 			}
 
 			screen->DrawText( SmallFont,
