@@ -5,11 +5,11 @@ A registry is a phone book. Servers write themselves into it, players read it, a
 ```mermaid
 flowchart TB
 
-    subgraph R["① Registration"]
+    subgraph R["Server Registry and Game Server handshake"]
         direction LR
-        R1["Server"] -->|"announces on UDP 15300,<br/>over IPv4 and IPv6"| R2["Registry"]
-        R2 -->|"challenges with a nonce"| R3["Server echoes it from<br/>the same endpoint"]
-        R3 --> R4(["Listing verified"])
+        R1["Game Server"] -->|"announces on UDP 15300,<br/>over IPv4 and IPv6"| R2["Server Registry"]
+        R2 -->|"sends a random value"| R3["Game Server<br/>sends its back"]
+        R3 --> R4(["Game Server is verified on the Server Registry"])
     end
 
     subgraph Q["② Discovery"]
