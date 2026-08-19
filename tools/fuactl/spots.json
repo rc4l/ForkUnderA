@@ -129,6 +129,15 @@
       "angle": 87.8906,
       "pitch": -4.834,
       "shows": "plasma scorch drawn over its own glow"
+    },
+    "scorch_through_flash": {
+      "map": "dbab04",
+      "x": -1166.816,
+      "y": -36.056,
+      "z": 24,
+      "angle": 69.7852,
+      "pitch": 1.9336,
+      "shows": "scorch visible through the plasma flash on VK, not GL"
     }
   }
 }
