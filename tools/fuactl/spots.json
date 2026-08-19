@@ -120,6 +120,15 @@
       "angle": 17.2266,
       "pitch": 12.041,
       "shows": "GL/VK dynamic light cut-off, plasma on the walkway wall"
+    },
+    "decal_layer_spot": {
+      "map": "dbab04",
+      "x": -1327.916,
+      "y": -47.758,
+      "z": 61.304,
+      "angle": 87.8906,
+      "pitch": -4.834,
+      "shows": "plasma scorch drawn over its own glow"
     }
   }
 }

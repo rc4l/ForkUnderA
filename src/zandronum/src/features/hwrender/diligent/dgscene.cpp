@@ -97,6 +97,18 @@ EXTERN_CVAR(Bool, gl_lights_additive)
 // [rc4l] 0 flat multiply (pre-lighting-port behaviour), 1 the ported equation, 2 depth as grey,
 // 3 depth contours, 4 vertex colour only. Live per frame -- no rebake needed to switch.
 CVAR(Int, fua_dg_lightmode, 1, CVAR_ARCHIVE)
+// [rc4l] Dump the ORDER the translucent pass actually draws in, for one frame.
+//
+// Everything about a decal landing on the wrong side of a sprite is decided by one comparator, and
+// nothing about the finished picture says what that comparator concluded -- "the scorch is over the
+// glow" and "the glow is under the scorch" are the same screenshot. Two attempts at this were made
+// by reading pictures and both were wrong. The list itself is one Printf away.
+static bool g_dumpBlendOrder = false;
+CCMD( fua_dg_blendorder )
+{
+	g_dumpBlendOrder = true;
+	Printf( "fua_dg_blendorder: dumping the next translucent pass\n" );
+}
 // [rc4l] Mirror every engine frame into the backend window, from the live camera. Off by default:
 // it costs a second render of the scene, and while the backend is incomplete (no sky, no HUD, no
 // dynamic lights) it is a development view, not the game.
@@ -1594,7 +1606,9 @@ static void DrawDynamicOpaque(Diligent::IDeviceContext *ctx)
 static void DrawBlended(Diligent::IDeviceContext *ctx)
 {
 	struct BlendDraw { bool dyn; unsigned first, count; int blend, translation; const void *material;
-	                   Diligent::IShaderResourceBinding *srb; float dist; bool bias, red; };
+	                   Diligent::IShaderResourceBinding *srb; float dist; bool bias, red;
+	                   float cx, cy, cz; };   // the centre too: distance alone cannot tell two
+	                                          // marks on ONE spot from two marks on two walls
 	static TArray<BlendDraw> list;
 	list.Clear();
 
@@ -1609,6 +1623,7 @@ static void DrawBlended(Diligent::IDeviceContext *ctx)
 		d.dyn = false; d.first = b.first; d.count = b.count; d.blend = b.blend;
 		d.translation = 0; d.material = b.material; d.srb = b.srb;
 		d.bias = false; d.red = false;
+		d.cx = b.sortX; d.cy = b.sortY; d.cz = b.sortZ;
 		d.dist = dx*dx + dy*dy + dz*dz;
 		list.Push(d);
 	}
@@ -1641,6 +1656,7 @@ static void DrawBlended(Diligent::IDeviceContext *ctx)
 			d.bias = r.depthBias;
 			d.red = r.redAlpha;
 			const float dx = r.cx - cx, dy = r.cy - cy, dz = r.cz - cz;
+			d.cx = r.cx; d.cy = r.cy; d.cz = r.cz;
 			d.dist = dx*dx + dy*dy + dz*dz;
 			// [rc4l] A decal sorts as very slightly FARTHER than it is.
 			//
@@ -1672,6 +1688,32 @@ static void DrawBlended(Diligent::IDeviceContext *ctx)
 	// way every frame.
 	std::sort(&list[0], &list[0] + list.Size(),
 		[](const BlendDraw &a, const BlendDraw &b) {
+			// [rc4l] Two marks on the SAME SPOT are ordered by what they are, never by distance.
+			//
+			// One plasma bolt leaves two decals at one point: a black scorch and the additive glow that
+			// belongs on top of it. They are paint on one wall, so their distances differ only by where
+			// each quad's centre happens to fall -- 22546 against 22367 here, a fifth of a percent -- and
+			// farthest-first therefore drew the glow FIRST and painted the scorch over it. Which is the
+			// whole complaint: a black hole punched through the middle of the glow.
+			//
+			// There was already a rule for this, additive-draws-last, and it asked for the two distances
+			// to be EXACTLY equal. Coplanar quads with different centres never are, so it had never once
+			// fired -- and two attempts at fixing this by reading screenshots changed nothing, because
+			// the picture cannot say which of the two was drawn second.
+			//
+			// Proximity, not distance: within one decal's width the two overlap and their order is
+			// visible, beyond it they cannot overlap and their order cannot matter. Additive last, then
+			// oldest first so a fresh scorch lands on top of an old one.
+			if (a.bias && b.bias)
+			{
+				const float dx = a.cx - b.cx, dy = a.cy - b.cy, dz = a.cz - b.cz;
+				if (dx*dx + dy*dy + dz*dz < 64.f * 64.f)
+				{
+					const int aAdd = (a.blend == 2) ? 1 : 0, bAdd = (b.blend == 2) ? 1 : 0;
+					if (aAdd != bAdd) return aAdd < bAdd;
+					return a.first < b.first;
+				}
+			}
 			if (a.dist != b.dist) return a.dist > b.dist;
 			// [rc4l] At equal distance, ADDITIVE draws last.
 			//
@@ -1685,6 +1727,21 @@ static void DrawBlended(Diligent::IDeviceContext *ctx)
 			if (aa != ba) return aa < ba;
 			return a.first < b.first;
 		});
+
+	if (g_dumpBlendOrder)
+	{
+		g_dumpBlendOrder = false;
+		Printf( "translucent pass, in draw order (first drawn = furthest back):\n" );
+		const unsigned from = (list.Size() > 40) ? list.Size() - 40 : 0;   // the NEAREST 40; the far end is scenery
+		for (unsigned i = from; i < list.Size(); i++)
+		{
+			const BlendDraw &d = list[i];
+			Printf( "  %2u  dist %9.0f  %s  blend %d%s%s  verts %u at %u\n", i, d.dist,
+				d.dyn ? "dyn " : "batch", d.blend,
+				d.bias ? "  DECAL" : "", d.red ? " redToAlpha" : "", d.count, d.first );
+		}
+		Printf( "  %u draws total\n", list.Size() );
+	}
 
 	Diligent::IPipelineState *bound = NULL;
 	int boundVB = -1;
