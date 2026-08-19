@@ -49,6 +49,7 @@
 #include "d_main.h"                          // gamestate
 #include "features/levelmesh/flatmesh.h"
 #include "features/levelmesh/projdecals.h"   // [rc4l] the marks the decal pass draws
+#include "features/hwrender/computation/decalorder_compute.h"   // the draw order, tested off-engine
 #include "features/hwrender/hud2d.h"
 #include "v_video.h"
 #include "gl/renderer/gl_renderer.h"
@@ -1658,20 +1659,8 @@ static void DrawBlended(Diligent::IDeviceContext *ctx)
 			const float dx = r.cx - cx, dy = r.cy - cy, dz = r.cz - cz;
 			d.cx = r.cx; d.cy = r.cy; d.cz = r.cz;
 			d.dist = dx*dx + dy*dy + dz*dz;
-			// [rc4l] A decal sorts as very slightly FARTHER than it is.
-			//
-			// It is paint on a surface, so anything standing in front of that surface must be drawn
-			// over it. A flamethrower's fire sprite hovers a few units above the floor it is scorching
-			// and can easily sit at almost the same distance as the mark, and with a plain
-			// farthest-first sort the decal then lands second and buries the sprite. Two percent is
-			// proportional, so it only ever decides a near-coincident pair and never reorders anything
-			// genuinely in front of or behind.
-			//
-			// AFTER the distance is computed, which it was not: the multiply sat one line above the
-			// assignment that overwrote it, so the rule had never once applied. A bias that is dead
-			// looks exactly like a bias that is too small -- the pair it was meant to settle simply
-			// keeps trading places -- which is the worst way for a fix to fail.
-			if (r.depthBias) d.dist *= 1.02f;
+			// [rc4l] See decalorder_compute.h for why a decal sorts as farther than it is.
+			d.dist = zx::hwrender::ComputeSortDistance(d.dist, r.depthBias);
 			list.Push(d);
 			g_dynDraws++;
 			g_dynTris += r.count / 3;
@@ -1686,46 +1675,22 @@ static void DrawBlended(Diligent::IDeviceContext *ctx)
 	// puts underneath it, landing at the same point -- traded places between frames and flickered
 	// through each other. Falling back to the buffer offset makes equal distances resolve the same
 	// way every frame.
+	// [rc4l] The rule itself lives in decalorder_compute, where it is unit-tested.
+	//
+	// Three layering faults shipped from this comparator -- a scorch over its own glow, a scorch over
+	// the impact flash, a decal over a sprite -- and each was fixed by aiming another epsilon at the
+	// pair that happened to be on screen. None could be checked without playing the game, because a
+	// picture cannot say which of two draws landed second. As a function over stated inputs it can:
+	// the rule that required two distances to be EXACTLY equal, and therefore never once fired, fails
+	// a test written with the real numbers off a real wall.
 	std::sort(&list[0], &list[0] + list.Size(),
 		[](const BlendDraw &a, const BlendDraw &b) {
-			// [rc4l] Two marks on the SAME SPOT are ordered by what they are, never by distance.
-			//
-			// One plasma bolt leaves two decals at one point: a black scorch and the additive glow that
-			// belongs on top of it. They are paint on one wall, so their distances differ only by where
-			// each quad's centre happens to fall -- 22546 against 22367 here, a fifth of a percent -- and
-			// farthest-first therefore drew the glow FIRST and painted the scorch over it. Which is the
-			// whole complaint: a black hole punched through the middle of the glow.
-			//
-			// There was already a rule for this, additive-draws-last, and it asked for the two distances
-			// to be EXACTLY equal. Coplanar quads with different centres never are, so it had never once
-			// fired -- and two attempts at fixing this by reading screenshots changed nothing, because
-			// the picture cannot say which of the two was drawn second.
-			//
-			// Proximity, not distance: within one decal's width the two overlap and their order is
-			// visible, beyond it they cannot overlap and their order cannot matter. Additive last, then
-			// oldest first so a fresh scorch lands on top of an old one.
-			if (a.bias && b.bias)
-			{
-				const float dx = a.cx - b.cx, dy = a.cy - b.cy, dz = a.cz - b.cz;
-				if (dx*dx + dy*dy + dz*dz < 64.f * 64.f)
-				{
-					const int aAdd = (a.blend == 2) ? 1 : 0, bAdd = (b.blend == 2) ? 1 : 0;
-					if (aAdd != bAdd) return aAdd < bAdd;
-					return a.first < b.first;
-				}
-			}
-			if (a.dist != b.dist) return a.dist > b.dist;
-			// [rc4l] At equal distance, ADDITIVE draws last.
-			//
-			// Additive blending only ever brightens, so nothing can meaningfully be drawn over it --
-			// but it can very easily be drawn UNDER something and lost. A decal pair lands at exactly
-			// one point: a dark scorch and the glow that belongs on top of it. Ordered by capture
-			// alone the scorch could land second and bury the glow, which is what "the scorch is
-			// overriding the glow" was. Additive last is order-independent for the additive draws
-			// themselves, so this costs nothing and settles the pair.
-			const int aa = (a.blend == 2) ? 1 : 0, ba = (b.blend == 2) ? 1 : 0;
-			if (aa != ba) return aa < ba;
-			return a.first < b.first;
+			zx::hwrender::TranslucentDraw da, db;
+			da.distSq = a.dist; da.cx = a.cx; da.cy = a.cy; da.cz = a.cz;
+			da.blend = a.blend; da.decal = a.bias; da.first = a.first;
+			db.distSq = b.dist; db.cx = b.cx; db.cy = b.cy; db.cz = b.cz;
+			db.blend = b.blend; db.decal = b.bias; db.first = b.first;
+			return zx::hwrender::ComputeDrawsBefore(da, db);
 		});
 
 	if (g_dumpBlendOrder)
