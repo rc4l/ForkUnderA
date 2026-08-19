@@ -40,7 +40,19 @@ EXTERN_CVAR(Int, fua_decalmode)
 // this is a dial and not a decision.
 //
 // 0 is the pure projection everything before this was tuned around; 1 keeps the aspect everywhere.
-CVAR(Float, fua_decal_aspect, 0.0f, CVAR_ARCHIVE)
+//
+// [rc4l] Defaults to 1 now, because the only marks projected by default are on FLOORS and CEILINGS.
+//
+// A bolt meets a floor at whatever angle it was travelling, and 1/cos of a shallow angle is a long
+// smear: fua_decal_minfacing caps it at 4x, so a 64-unit scorch could be drawn 256 units long. That
+// is what "that does not look like a BFG mark" was -- the right graphic, the right size in one axis,
+// and stretched down the shot's direction in the other.
+//
+// The argument for 0 was the KINK: aspect correction reads the picture in the receiving surface's
+// own plane, so it steps where the normal steps, at a corner. A mark on a floor stays on one plane
+// and has no corner to step at, and walls do not come through here unless fua_decalmode is turned
+// on -- so the case the kink was feared for is the case this default does not touch.
+CVAR(Float, fua_decal_aspect, 1.0f, CVAR_ARCHIVE)
 
 // [rc4l] How square-on a surface must be to receive any of the mark. See the pixel shader.
 //
@@ -645,12 +657,13 @@ void DrawDeferredDecals(Diligent::IDeviceContext *ctx)
 				if (fua_dg_decaldebug > 0)
 				{
 					FMaterial *fm2 = (FMaterial *)d.material;
-					Printf("decal tex %s %dx%d: slot %u, redToAlpha %d, additive %d, "
+					Printf("decal tex %s %dx%d box %.0fx%.0f near %.0f far %.0f: slot %u, redToAlpha %d, additive %d, "
 						"rgba %.2f %.2f %.2f %.2f, basePalette %d, canvas %d, warp %d, complex %d, "
 						"translation %d%s\n",
 						(fm2 && fm2->tex && fm2->tex->Name != NULL) ? fm2->tex->Name : "?",
 						(fm2 && fm2->tex) ? fm2->tex->GetWidth() : -1,
 						(fm2 && fm2->tex) ? fm2->tex->GetHeight() : -1,
+						d.halfW, d.halfH, d.near_, d.far_,
 						mats.Size(), d.redToAlpha ? 1 : 0, d.additive ? 1 : 0,
 						d.r, d.g, d.b, d.a,
 						(fm2 && fm2->tex && fm2->tex->UseBasePalette()) ? 1 : 0,

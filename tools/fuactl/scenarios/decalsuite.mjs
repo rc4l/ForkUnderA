@@ -102,12 +102,13 @@ for (const [weapon, pitch, tics] of [['ChaingunE', 50, 25], ['RocketLauncherE', 
   const spread = Number(out.match(/spread ([\d.]+)/)?.[1] ?? 0);
   // [rc4l] The window sits INSIDE the mark on purpose, and the bar is low on purpose.
   //
-  // A flat wash reads exactly 0 there -- that is what "the mark is its own box" means. A real mark
-  // reads a hundred and up, even in the dense middle of a BFG scorch where the graphic is at its
-  // most solid. Anything between is the interesting case and should be looked at, so the bar sits
-  // just above nothing rather than near the top: a bigger number would fail marks that are fine and
-  // teach whoever runs this to ignore it.
-  console.log(`shape ${weapon.padEnd(16)} mask spread ${spread.toFixed(0)}  ${spread > 40
+  // A flat wash reads EXACTLY 0 there -- every pixel the same value is what "the mark is painting
+  // its own box" means, and that is the only thing this has to catch. Real marks read anywhere from
+  // the low tens to 250-odd depending on how much of the graphic's dense middle the window lands in,
+  // and that number moves whenever the mark's size changes: correcting the projection's stretch took
+  // the BFG's from 139 to 42 without anything being wrong. So the bar sits just above nothing. A bar
+  // placed near a real reading fails marks that are fine, and a check that cries wolf gets ignored.
+  console.log(`shape ${weapon.padEnd(16)} mask spread ${spread.toFixed(0)}  ${spread > 8
     ? 'ok, the mark has shape' : 'FAIL: flat wash -- the mark is painting its whole box'}`);
 }
 await cap.exec(c, 'r_drawplayersprites 1');
