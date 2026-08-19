@@ -56,6 +56,7 @@
 #include "features/server-browser/computation/rowlifetime_compute.h"  // [rc4l] what keeps a row mortal
 #include "features/server-browser/computation/rowstep_compute.h"      // [rc4l] what to do with a row
 #include "features/net/zx_resolve.h"                            // [rc4l] the registry's AAAA
+#include "features/server-browser/computation/registrymemory_compute.h"
 #include "features/server-hosting/zx_punchclient.h"                   // [rc4l] PunchRequestFor
 #include "features/launcher-protocol/computation/segmentreassembly_compute.h"
 #include "features/server-hosting/zx_hosting.h" // [rc4l] which rows are the server WE started
@@ -91,6 +92,10 @@ static	TArray<NETADDRESS_s>	g_ServerRegistryAddresses;
 // [rc4l] The registry address that last answered, so a punch is asked of a family we know works.
 static	NETADDRESS_s	g_LastAnsweringRegistry;
 static	bool			g_bHaveAnsweringRegistry = false;
+
+// [rc4l] Which registry listed which server. A static, which survives the join reload because
+// RequestReload unwinds inside the same process; see registrymemory_compute.h.
+static	zx::RegistryMemory	g_ServerRegistryMemory;
 
 // [rc4l] What became of each registry in the list, kept so the browser can SHOW it.
 //
@@ -1019,6 +1024,24 @@ void BROWSER_NoteRegistryAnswered( const NETADDRESS_s &address )
 
 //*****************************************************************************
 //
+void BROWSER_NoteServerRegistry( const NETADDRESS_s &server, const NETADDRESS_s &registry )
+{
+	g_ServerRegistryMemory.Remember( server.ToString( ), registry.ToString( ));
+}
+
+//*****************************************************************************
+//
+bool BROWSER_GetRegistryForServer( const NETADDRESS_s &server, NETADDRESS_s &out )
+{
+	std::string remembered;
+	if ( g_ServerRegistryMemory.Recall( server.ToString( ), remembered ) == false )
+		return false;
+
+	return out.LoadFromString( remembered.c_str( ));
+}
+
+//*****************************************************************************
+//
 bool BROWSER_IsServerRegistryAddress( const NETADDRESS_s &address )
 {
 	for ( unsigned int i = 0; i < g_ServerRegistryAddresses.Size( ); ++i )
@@ -1355,6 +1378,10 @@ bool BROWSER_GetServerList( BYTESTREAM_s *pByteStream )
 				serverAddress.ReadFromStream ( pByteStream );
 
 				BROWSER_AddServerToList ( serverAddress );
+
+				// [rc4l] Whose list this arrived on, because only that registry can introduce
+				// anybody to it -- see registrymemory_compute.h.
+				BROWSER_NoteServerRegistry( serverAddress, NETWORK_GetFromAddress( ));
 			}
 			break;
 
@@ -1370,6 +1397,7 @@ bool BROWSER_GetServerList( BYTESTREAM_s *pByteStream )
 					{
 						serverAddress.usPort = htons( pByteStream->ReadShort());
 						BROWSER_AddServerToList ( serverAddress );
+						BROWSER_NoteServerRegistry( serverAddress, NETWORK_GetFromAddress( ));
 					}
 				}
 

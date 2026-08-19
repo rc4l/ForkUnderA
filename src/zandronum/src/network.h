@@ -292,6 +292,7 @@ enum TeamScoreType
 // [AK] The country index that indicates a LAN connection.
 #define COUNTRYINDEX_LAN	UCHAR_MAX
 
+
 // [BB] 5 = 1 + 4 (SVC_HEADER + packet number)
 const int PACKET_HEADER_SIZE = 5;
 

@@ -64,6 +64,7 @@
 #include "announcer.h"
 #include "features/server-browser/browser.h"
 #include "features/server-hosting/zx_punchclient.h"
+#include "features/server-browser/computation/reconnect_compute.h"
 #include "features/server-browser/computation/replyrouting_compute.h"
 #include "features/server-browser/zx_joinserver.h" // [rc4l] a failed join lands in the browser
 #include "features/server-hosting/zx_hosting.h" // [rc4l] admin on a server we started ourselves
@@ -10002,11 +10003,22 @@ CCMD( reconnect )
 		CLIENT_QuitNetworkGame( NULL );
 	
 	// Store the address of the server we were on.
-	if ( g_AddressLastConnected.IsSet() == false )
+	const zx::ReconnectAction ReconnectPlan = zx::DecideReconnect( g_AddressLastConnected.IsSet( ));
+
+	if ( zx::ReconnectConnects( ReconnectPlan ) == false )
 	{
 		Printf( "Unknown IP for last server. Use \"connect <server ip>\".\n" );
 		return;
 	}
+
+	// [rc4l] Ask the server's router to let us back in, exactly as joining from the browser does.
+	//
+	// Without this a reconnect only worked while the mapping the original join opened was still
+	// alive, which is tens of seconds, so anyone who dropped from a server behind a router had to go
+	// back to the browser to be introduced again. Asking cannot delay or refuse the connection
+	// below; if it fails we end where the old behaviour ended.
+	if ( ReconnectPlan == zx::ReconnectAction::AskThenConnect )
+		zx::PunchRequestFor( g_AddressLastConnected, true );
 
 	// Put the game in client mode.
 	NETWORK_SetState( NETSTATE_CLIENT );

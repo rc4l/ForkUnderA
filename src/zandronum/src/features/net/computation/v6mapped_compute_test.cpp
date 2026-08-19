@@ -194,3 +194,106 @@ TEST(V6Mapped, WrappingNullIsSafe)
 
 	MakeV4MappedV6( four, 0 );
 }
+
+namespace
+{
+
+// A 16-byte address from its leading bytes, zero-filled after.
+void Addr( unsigned char *out, const unsigned char *lead, int leadLen )
+{
+	memset( out, 0, 16 );
+	memcpy( out, lead, leadLen );
+}
+
+} // namespace
+
+TEST( IsLocalV6, LinkLocalIsLocal )
+{
+	// fe80::/10, which is what a peer on the same LAN announces itself as.
+	unsigned char addr[16];
+	const unsigned char lead[2] = { 0xfe, 0x80 };
+	Addr( addr, lead, 2 );
+	EXPECT_TRUE( IsLocalV6( addr ));
+
+	// The whole /10, not just fe80::/16 -- febf:: is the last address in it.
+	const unsigned char top[2] = { 0xfe, 0xbf };
+	Addr( addr, top, 2 );
+	EXPECT_TRUE( IsLocalV6( addr ));
+}
+
+TEST( IsLocalV6, UniqueLocalIsLocalAcrossBothHalvesOfThePrefix )
+{
+	// fc00::/7 covers fc and fd. Reading only fd00::/8 -- the half in use today -- would leave a
+	// hole the day fc00::/8 is assigned.
+	unsigned char addr[16];
+
+	const unsigned char fd[1] = { 0xfd };
+	Addr( addr, fd, 1 );
+	EXPECT_TRUE( IsLocalV6( addr ));
+
+	const unsigned char fc[1] = { 0xfc };
+	Addr( addr, fc, 1 );
+	EXPECT_TRUE( IsLocalV6( addr ));
+}
+
+TEST( IsLocalV6, LoopbackAndUnspecifiedAreLocal )
+{
+	unsigned char addr[16];
+
+	memset( addr, 0, 16 );
+	EXPECT_TRUE( IsLocalV6( addr )) << "::";
+
+	addr[15] = 1;
+	EXPECT_TRUE( IsLocalV6( addr )) << "::1";
+}
+
+TEST( IsLocalV6, AnOrdinaryAddressIsNotLocal )
+{
+	// The one that matters: a real server must not be labelled LAN and lose its flag.
+	unsigned char addr[16];
+	const unsigned char lead[4] = { 0x20, 0x01, 0x0d, 0xb8 };
+	Addr( addr, lead, 4 );
+	EXPECT_FALSE( IsLocalV6( addr ));
+
+	const unsigned char google[4] = { 0x26, 0x07, 0xf8, 0xb0 };
+	Addr( addr, google, 4 );
+	EXPECT_FALSE( IsLocalV6( addr ));
+}
+
+TEST( IsLocalV6, NeighboursOfTheLocalPrefixesAreNotLocal )
+{
+	// fb and fe00 sit either side of the two ranges, and an off-by-one in the masks shows up here.
+	unsigned char addr[16];
+
+	const unsigned char fb[1] = { 0xfb };
+	Addr( addr, fb, 1 );
+	EXPECT_FALSE( IsLocalV6( addr ));
+
+	const unsigned char fe[2] = { 0xfe, 0x00 };
+	Addr( addr, fe, 2 );
+	EXPECT_FALSE( IsLocalV6( addr ));
+
+	// fec0:: was site-local, deprecated in 2004 and outside fe80::/10.
+	const unsigned char fec0[2] = { 0xfe, 0xc0 };
+	Addr( addr, fec0, 2 );
+	EXPECT_FALSE( IsLocalV6( addr ));
+}
+
+TEST( IsLocalV6, SomethingJustPastLoopbackIsNotLocal )
+{
+	// ::2 shares fifteen bytes with ::1 and is not loopback; the all-zero walk must check the last
+	// byte rather than stopping when it runs out of zeroes.
+	unsigned char addr[16];
+	memset( addr, 0, 16 );
+	addr[15] = 2;
+	EXPECT_FALSE( IsLocalV6( addr ));
+
+	memset( addr, 0, 16 );
+	addr[7] = 1;
+	EXPECT_FALSE( IsLocalV6( addr ));
+}
+
+TEST( IsLocalV6, NullIsRefusedRatherThanRead )
+{
+	EXPECT_FALSE( IsLocalV6( 0 ));
+}

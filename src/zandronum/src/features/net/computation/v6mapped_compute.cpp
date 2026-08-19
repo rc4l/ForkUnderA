@@ -47,4 +47,28 @@ void MakeV4MappedV6( const unsigned char *four, unsigned char *sixteen )
 		sixteen[12 + i] = four[i];
 }
 
+bool IsLocalV6( const unsigned char *sixteen )
+{
+	if ( sixteen == 0 )
+		return false;
+
+	// fe80::/10 -- link-local, and the only one of these a real peer turns up with.
+	if (( sixteen[0] == 0xfe ) && (( sixteen[1] & 0xc0 ) == 0x80 ))
+		return true;
+
+	// fc00::/7 -- unique local. Both halves are counted: fc00::/8 is unassigned today, but reading
+	// only fd00::/8 would leave a hole the day it is.
+	if (( sixteen[0] & 0xfe ) == 0xfc )
+		return true;
+
+	// :: and ::1 differ in one byte, so they are one test.
+	for ( int i = 0; i < 15; ++i )
+	{
+		if ( sixteen[i] != 0 )
+			return false;
+	}
+
+	return ( sixteen[15] <= 1 );
+}
+
 } // namespace zx

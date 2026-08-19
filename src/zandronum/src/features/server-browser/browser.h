@@ -366,6 +366,13 @@ void			BROWSER_PunchKnockFrom( const NETADDRESS_s &From );
 // [rc4l] Remember which registry address answered, so a punch is asked of a family that works.
 void			BROWSER_NoteRegistryAnswered( const NETADDRESS_s &address );
 
+// [rc4l] Record that `registry` listed `server`, so a later punch for it is asked of a registry that
+// can answer about it rather than of whichever one replied most recently.
+void			BROWSER_NoteServerRegistry( const NETADDRESS_s &server, const NETADDRESS_s &registry );
+
+// [rc4l] The registry that listed `server`, if we were ever told.
+bool			BROWSER_GetRegistryForServer( const NETADDRESS_s &server, NETADDRESS_s &out );
+
 void			BROWSER_PunchBrokered( void );
 
 // [rc4l] The registry saying two addresses are one server, which only it can know and which nothing
