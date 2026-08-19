@@ -292,8 +292,6 @@ enum TeamScoreType
 // [AK] The country index that indicates a LAN connection.
 #define COUNTRYINDEX_LAN	UCHAR_MAX
 
-// [rc4l] No country could be determined, which for now is every IPv6 address: the lookups are all v4.
-#define COUNTRYINDEX_UNKNOWN	( UCHAR_MAX - 1 )
 
 // [BB] 5 = 1 + 4 (SVC_HEADER + packet number)
 const int PACKET_HEADER_SIZE = 5;

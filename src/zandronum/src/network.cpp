@@ -80,6 +80,7 @@
 #include "../GeoIP/GeoIP.h"
 #include "w_wad.h" // [rc4l] the shipped country table is a lump in zandronum.pk3
 #include "features/server-browser/computation/geoiptable_compute.h"
+#include "features/net/computation/v6mapped_compute.h"
 
 #include "c_console.h"
 #include "c_dispatch.h"
@@ -1371,11 +1372,36 @@ CCMD( fua_whereis )
 //
 ULONG NETWORK_GetCountryIndexFromAddress( NETADDRESS_s Address )
 {
-	// [rc4l] An IPv6 address has no country here yet, and saying so is the point: every lookup below
-	// is IPv4, and abIP is zeroed for a v6 address, so it would resolve 0.0.0.0 and draw whichever
-	// flag sorts first -- a confident wrong country rather than none.
+	// [rc4l] A v6 address is answered from our own table, because every lookup below is IPv4.
+	//
+	// abIP is zeroed while bIsIPv6 is set, so the v4 path would resolve 0.0.0.0 and draw whichever
+	// flag sorts first -- a confident wrong country rather than none. The system database is not
+	// consulted even where one exists: g_GeoIPDB is opened from GeoIP.dat, which is v4-only, and the
+	// v6 ranges live in a separate GeoIPv6.dat that we never open. Asking it about a v6 address would
+	// be asking the wrong file.
 	if ( Address.bIsIPv6 )
-		return COUNTRYINDEX_UNKNOWN;
+	{
+		// A v4-mapped address is a v4 address wearing a hat; it belongs on the v4 path, not in the
+		// v6 half of the table, which has no ::ffff:0:0/96 ranges in it.
+		if ( zx::IsV4MappedV6( Address.abIP6 ))
+		{
+			NETADDRESS_s Unmapped = Address;
+			Unmapped.bIsIPv6 = false;
+			zx::ExtractMappedV4( Address.abIP6, Unmapped.abIP );
+			return NETWORK_GetCountryIndexFromAddress( Unmapped );
+		}
+
+		if ( zx::IsLocalV6( Address.abIP6 ))
+			return COUNTRYINDEX_LAN;
+
+		network_EnsureFuaGeoTable( );
+
+		char v6code[3];
+		if ( zx::GeoCodeForIndex( g_FuaGeoTable, zx::GeoLookupCodeIndexV6( g_FuaGeoTable, Address.abIP6 ), v6code ) == false )
+			return 0;
+
+		return network_FuaCountryIndexFromAlpha2( v6code );
+	}
 
 	const char *addressString = Address.ToStringNoPort();
 

@@ -42,6 +42,14 @@ void ExtractMappedV4( const unsigned char *sixteen, unsigned char *four );
 // Writes `four` into `sixteen` as ::ffff:a.b.c.d (RFC 4291).
 void MakeV4MappedV6( const unsigned char *four, unsigned char *sixteen );
 
+// [rc4l] Whether `sixteen` is an address no country owns, which is the v6 spelling of the
+// 10./192.168./127. test the browser already applies before reaching for a flag.
+//
+// Covers ::1 and :: (loopback and unspecified), fe80::/10 (link-local, what a LAN peer announces),
+// and fc00::/7 (unique local, the closest thing v6 has to RFC 1918). A country lookup on any of them
+// would miss and draw nothing anyway; naming them LAN is what makes the browser say so.
+bool IsLocalV6( const unsigned char *sixteen );
+
 } // namespace zx
 
 #endif // ZX_V6MAPPED_COMPUTE_H
