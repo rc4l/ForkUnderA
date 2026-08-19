@@ -1667,6 +1667,19 @@ enum { kHostVisGlobal = 0, kHostVisLocal = 1, kHostVisCount = 2 };
 // you to it. A checkbox row is navigated and then committed, like every other one.
 static	int				g_HostVisCursor = kHostVisGlobal;
 
+// [rc4l] WHICH PILL THE KEYBOARD IS POINTING AT on the focused gameplay axis, which is not the same
+// question as which one is chosen.
+//
+// Left and right used to set the value as they moved, so there was no way to look along an axis
+// without changing it -- arrowing past BRUTAL DOOM to read what was next had already chosen it, and
+// nothing could be inspected without being selected. The visibility row was fixed the same way and
+// for the same reason: a one-of-N row is navigated and then committed.
+//
+// The row it belongs to is remembered with it, so moving to another axis starts the cursor on that
+// axis's own answer rather than on an index left over from the last one.
+static	int				g_HostPillCursor = 0;
+static	int				g_HostPillCursorRow = -1;
+
 // True once the form has been filled from the CVARs that remember it, so a visit to the tab does not
 // wipe what was typed on the last one.
 static	bool			g_HostFormLoaded = false;
@@ -5608,6 +5621,66 @@ public:
 	// The row registry says what the row IS; this says what a step does to each kind. Both kinds go
 	// through the very same call the mouse makes -- HostSliderSet for a track, HostSetRemixWanted for
 	// an axis -- so a key and a click cannot come to mean different things.
+	// [rc4l] The cursor for one axis, started from that axis's current answer the first time the
+	// keyboard arrives on it. Written once because the draw and the arrows must not disagree about
+	// where the marker is.
+	int HostPillCursorFor( int row, int chosenIndex, int count )
+	{
+		if ( count <= 0 )
+			return 0;
+
+		if ( g_HostPillCursorRow != row )
+		{
+			g_HostPillCursorRow = row;
+			g_HostPillCursor = ( chosenIndex >= 0 ) ? chosenIndex : 0;
+		}
+
+		return clamp( g_HostPillCursor, 0, count - 1 );
+	}
+
+	// [rc4l] What ENTER means on a gameplay row: take the pill the cursor is on. A slider has nothing
+	// to commit -- its arrows already moved it -- so it answers false and the caller carries on.
+	bool PressHostGameplayRow( int row )
+	{
+		if (( row < 0 ) || ( row >= HostGameplayRowCount( )))
+			return false;
+
+		const HostGameFocusRow &at = g_HostGameFocusRows[row];
+		if ( at.bSlider )
+			return false;
+
+		const std::vector<zx::CatalogueEntry> &entries = zx::CatalogueLoad( );
+		if (( g_HostEntrySel < 0 ) || ( g_HostEntrySel >= static_cast<int>( entries.size( ))))
+			return false;
+
+		const zx::AddonEntry &addon = entries[g_HostEntrySel].addon;
+		const std::vector<zx::RemixGroup> groups = zx::GroupRemixes( HostOfferedRemixes( addon ));
+
+		for ( size_t g = 0; g < groups.size( ); ++g )
+		{
+			if ( groups[g].id != at.id )
+				continue;
+
+			const std::vector<zx::AddonRemix> &choices = groups[g].choices;
+			if ( choices.empty( ))
+				return false;
+
+			// A locked axis is not pressable by the mouse either; the keyboard must not be the one
+			// way round it.
+			if (( groups[g].id == kHostMixGroup ) && HostWeaponsPlan( addon ).mixLocked )
+				return false;
+
+			const zx::RemixPick pick = zx::PickRemix( choices, HostRemixWanted( groups[g].id ));
+			const int at2 = HostPillCursorFor( row, pick.index, static_cast<int>( choices.size( )));
+
+			HostSetRemixWanted( groups[g].id, choices[at2].id );
+			S_Sound( CHAN_VOICE | CHAN_UI, "menu/choose", snd_menuvolume, ATTN_NONE );
+			return true;
+		}
+
+		return false;
+	}
+
 	void StepHostGameplayRow( int row, int step )
 	{
 		if (( row < 0 ) || ( row >= HostGameplayRowCount( )) || ( step == 0 ))
@@ -5661,15 +5734,17 @@ public:
 			if (( groups[g].id == kHostMixGroup ) && HostWeaponsPlan( addon ).mixLocked )
 				return;
 
+			// [rc4l] The CURSOR moves; the choice does not. Enter is what takes the one under it --
+			// see PressHostGameplayRow, and the visibility row for the same split.
 			const zx::RemixPick pick = zx::PickRemix( choices, HostRemixWanted( groups[g].id ));
 
 			const int count = static_cast<int>( choices.size( ));
-			const int from = ( pick.index >= 0 ) ? pick.index : 0;
+			const int from = HostPillCursorFor( row, pick.index, count );
 			const int to = clamp( from + step, 0, count - 1 );
 
 			if ( to != from )
 			{
-				HostSetRemixWanted( groups[g].id, choices[to].id );
+				g_HostPillCursor = to;
 				S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
 			}
 			return;
@@ -12809,8 +12884,10 @@ public:
 		DrawRoundedButton( NewSaveLeft( ), SB_NEW_BTN_Y, NewSaveWidth( ), SB_HOST_BTN_H, "SAVE",
 			g_NewSaveHot || bSaveFocus );
 
+		// Green for the same reason DONE wears it in the map box: it is the button that finishes
+		// what the screen is for, and the ones beside it only prepare or save.
 		DrawRoundedButton( NewPlayLeft( ), SB_NEW_BTN_Y, NewPlayWidth( ), SB_HOST_BTN_H,
-			"PLAY NOW!", g_NewButtonHot || bPlayFocus );
+			"PLAY NOW!", g_NewButtonHot || bPlayFocus, ButtonTint::Go );
 
 		if ( bSaveFocus )
 			FocusAnchor( zx::BrowserFocus::Host, NewSaveLeft( ) - 5, SB_NEW_BTN_Y + SB_HOST_BTN_H / 2 );
@@ -15440,6 +15517,13 @@ public:
 			const zx::RemixPick pick = zx::PickRemix( choices,
 				bAxisLocked ? std::string( ) : HostRemixWanted( groups[g].id ));
 
+			// Only the focused axis has a cursor to draw, and asking for it here is what keeps the
+			// marker and the arrows agreeing about where it is.
+			const int pillCursor = bAxisFocused
+				? HostPillCursorFor( static_cast<int>( g_HostGameFocusRows.Size( )) - 1, pick.index,
+					static_cast<int>( choices.size( )))
+				: -1;
+
 			// [rc4l] The label sits on the FIRST row of pills rather than above them, which is a line
 			// back per axis. Wrapped rows hang under the pills, not under the label, so the block
 			// still reads as one thing.
@@ -15526,10 +15610,12 @@ public:
 						DrawGameplayPill( px, y - 1, pw, SB_HOST_GAME_ROW_H,
 							choices[i].name.c_str( ), bOn, bHot, bLocked );
 
-						// [rc4l] The glow sits on the pill that is ON, not at the head of the row. That
-						// is where the answer is, and it is what makes left and right read as moving
-						// the marker along the axis rather than as changing something elsewhere.
-						if ( bAxisFocused && bOn )
+						// [rc4l] The glow sits on the pill the KEYBOARD is on, which is not always the
+						// one that is chosen. It used to sit on the chosen one, which read correctly
+						// only because moving the marker also moved the choice -- and that was the
+						// bug: nothing on the axis could be looked at without being selected. The
+						// chosen pill still shows as lit, so both facts are on screen at once.
+						if ( bAxisFocused && ( static_cast<int>( i ) == pillCursor ))
 							FocusAnchor( zx::BrowserFocus::Host, px - 5, y + SB_HOST_GAME_ROW_H / 2 );
 
 						if ( !choices[i].summary.empty( ))
@@ -19346,6 +19432,13 @@ public:
 					}
 					else
 						PressHostAction( );		// the list's enter is "host this one"
+				}
+				else if ( HostOnGameplay( ))
+				{
+					// A pill takes the choice; a slider has nothing to take, so the key falls
+					// through to the walk below exactly as it did before.
+					if ( !PressHostGameplayRow( HostGameplayFocus( )))
+						NavigateHostFocus( zx::HostNavKey::Down );
 				}
 				else if ( HostOnVisibility( ))
 					PressHostVisibility( );
