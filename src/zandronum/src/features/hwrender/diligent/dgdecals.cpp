@@ -154,7 +154,6 @@ static const char *kDeferredDecalVS =
 
 static const char *kDeferredDecalPS =
 	"#version 450\n"
-	"#extension GL_EXT_nonuniform_qualifier : require\n"
 	"layout(binding = 0) uniform Constants { mat4 uMVP; vec4 uCameraPos; vec4 uLightParams; vec4 uClipPlane; vec4 uScreen; vec4 uSkyColor; };\n"
 	"layout(binding = 6) uniform Decal { mat4 uInvMVP; vec4 uDecalDebug; };\n"
 	"layout(binding = 7) uniform sampler2D uSceneDepth;\n"
@@ -172,7 +171,7 @@ static const char *kDeferredDecalPS =
 	   every mark to slot zero, which is the experiment that tells a bad index from a bad binding
 	   apart: pinned and visible means the array is bound and the index is wrong; pinned and blank
 	   means nothing is bound and the index was never the problem. */
-	"layout(binding = 1) uniform sampler2D uTex[" FUA_DECAL_TEXTURES_STR "];\n"
+	"layout(binding = 1) uniform sampler2D uTex;\n"
 	"layout(location = 0) in vec3 vCentre;\n"
 	"layout(location = 1) in vec3 vAxisU;\n"
 	"layout(location = 2) in vec3 vAxisV;\n"
@@ -258,7 +257,6 @@ static const char *kDeferredDecalPS =
 	   nonuniformEXT because the index differs BETWEEN INSTANCES of the same draw, which is the
 	   whole point of it -- without the qualifier that is undefined behaviour, and it shows up as
 	   marks wearing each other's textures depending on how the driver batches waves. */ \
-	"    int slot = (uDecalDebug.z > 0.5) ? 0 : vTex;\n"
 	/* [rc4l] The gradients are taken BEFORE the array is indexed, and handed over explicitly.
 
 	   texture() picks its mip from screen-space derivatives, and those are only defined when the
@@ -277,10 +275,29 @@ static const char *kDeferredDecalPS =
 	   dFdx/dFdy of t are uniform control flow, so they are well defined; textureGrad then uses them
 	   instead of guessing, and mipmapping still works. */ \
 	"    vec2 tdx = dFdx(t), tdy = dFdy(t);\n"
-	"    vec4 texel = textureGrad(uTex[nonuniformEXT(slot)], t, tdx, tdy);\n"
+	"    vec4 texel = textureGrad(uTex, t, tdx, tdy);\n"
 	/* A shaded decal's texture is an alpha MASK: the red channel is the shape and the colour comes
 	   from the decal itself. Sampled as an ordinary image the red channel reads as brightness and a
 	   black burn paints a white blob. */
+	/* [rc4l] 4 and 5 show the TEXEL itself -- colour, then alpha -- and they answer BEFORE anything
+	   can discard the fragment, which the later debug views cannot: by the time those run, every
+	   transparent part of the graphic is already gone, so a flat mark and a correct one look equally
+	   solid. Every other view shows a term derived from the texel, and when a mark reads flat the
+	   question is precisely which of the two is at fault: the bytes, or what was made of them.
+
+	   The sampler is the only thing left that still knows. Reading the bytes on the CPU does not
+	   answer it -- the upload is a hundred frames past by the time anyone asks and the cache answers
+	   instead, and asking FMaterial for the buffer a second time returns nothing at all. */ \
+	/* 6 asks the same sampler for mip ZERO explicitly. If 4 is flat and 6 is not, the bytes are fine
+	   and the level being read is the fault; if both are flat, the texture really did upload flat. */ \
+	/* 7 shows the SLOT this mark is reading, as a shade: 0 black, 1 a quarter grey, and so on. The
+	   CPU says which slot it wrote into every record; this says which one arrived. */ \
+	"    if (uDecalDebug.x > 3.5) {\n"
+	"        if (uDecalDebug.x > 6.5) outColor = vec4(vec3(float(vTex) * 0.25), 1.0);\n"
+	"        else if (uDecalDebug.x > 5.5) outColor = vec4(textureLod(uTex, t, 0.0).rgb, 1.0);\n"
+	"        else outColor = (uDecalDebug.x < 4.5) ? vec4(texel.rgb, 1.0) : vec4(vec3(texel.a), 1.0);\n"
+	"        return;\n"
+	"    }\n"
 	"    bool redAlpha = vParams.w > 0.5;\n"
 	"    float mask = redAlpha ? texel.r : texel.a;\n"
 	"    float a = mask * vColor.a;\n"
@@ -300,6 +317,12 @@ static const char *kDeferredDecalPS =
 	"    if (a <= 0.004) discard;\n"
 	/* 1 shows the picture coordinate, 2 the mask that came out of the texture, 3 how squarely the
 	   surface was met. A mark that is wrong looks the same whichever of the three is at fault. */
+	/* [rc4l] 4 and 5 show the TEXEL itself -- colour, then alpha -- before anything is done with it.
+	   Every other view shows a term derived from it, and when a mark reads flat the question is
+	   which: the bytes, or what was made of them. Reading the bytes on the CPU does not answer it
+	   either, twice over -- the upload is a hundred frames past by the time anyone asks and the cache
+	   answers instead, and asking FMaterial for the buffer again returns nothing at all. The sampler
+	   is the only thing that still knows. */ \
 	"    if (uDecalDebug.x > 0.5) {\n"
 	"        if (uDecalDebug.x < 1.5) outColor = vec4(fract(t), 0.0, 1.0);\n"
 	"        else if (uDecalDebug.x < 2.5) outColor = vec4(vec3(mask), 1.0);\n"
@@ -323,6 +346,7 @@ CVAR(Int, fua_dg_decaldebug, 0, 0)
 // [rc4l] Pin every mark to the first texture slot. See the pixel shader: it separates a wrong
 // index from an unbound array, which look identical on screen.
 CVAR(Bool, fua_dg_decalslot0, false, 0)
+
 
 // [rc4l] One record per mark, read by the vertex stage -- see kDeferredDecalVS.
 struct DeferredDecalInstance
@@ -621,12 +645,18 @@ void DrawDeferredDecals(Diligent::IDeviceContext *ctx)
 				if (fua_dg_decaldebug > 0)
 				{
 					FMaterial *fm2 = (FMaterial *)d.material;
-					Printf("decal tex %s: slot %u, redToAlpha %d, additive %d, rgba %.2f %.2f %.2f %.2f, "
-						"basePalette %d, translation %d%s\n",
+					Printf("decal tex %s %dx%d: slot %u, redToAlpha %d, additive %d, "
+						"rgba %.2f %.2f %.2f %.2f, basePalette %d, canvas %d, warp %d, complex %d, "
+						"translation %d%s\n",
 						(fm2 && fm2->tex && fm2->tex->Name != NULL) ? fm2->tex->Name : "?",
+						(fm2 && fm2->tex) ? fm2->tex->GetWidth() : -1,
+						(fm2 && fm2->tex) ? fm2->tex->GetHeight() : -1,
 						mats.Size(), d.redToAlpha ? 1 : 0, d.additive ? 1 : 0,
 						d.r, d.g, d.b, d.a,
 						(fm2 && fm2->tex && fm2->tex->UseBasePalette()) ? 1 : 0,
+						(fm2 && fm2->tex && fm2->tex->bHasCanvas) ? 1 : 0,
+						(fm2 && fm2->tex && fm2->tex->bWarped) ? 1 : 0,
+						(fm2 && fm2->tex && fm2->tex->bComplex) ? 1 : 0,
 						(int)trans, (srv == GetMaterialSRV(NULL, 0)) ? "  <-- WHITE FALLBACK" : "");
 				}
 				slot = (int)mats.Size();
@@ -756,25 +786,39 @@ void DrawDeferredDecals(Diligent::IDeviceContext *ctx)
 		Diligent::IShaderResourceBinding *srb = additive ? g_ddAddSRB.RawPtr() : g_ddSRB.RawPtr();
 		if (!pso || !srb) continue;
 
-		// [rc4l] EVERY slot, every frame. A descriptor array with a hole in it is not "mostly bound":
-		// Diligent takes the process down when a binding is committed with an element missing, and the
-		// padding above is what guarantees there is something to put in each one.
-		if (auto *v = srb->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "uTex"))
-			v->SetArray(&views[0], 0, FUA_DECAL_TEXTURES);
+		auto *vTexVar = srb->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "uTex");
 		if (auto *v = srb->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "uSceneDepth")) v->Set(depthSRV);
 		if (auto *v = srb->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "uSceneNormal")) v->Set(normalSRV);
-
 		ctx->SetPipelineState(pso);
-		ctx->CommitShaderResources(srb, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
-		Diligent::DrawAttribs draw;
-		draw.NumVertices = 6;
-		draw.NumInstances = count;
-		draw.StartVertexLocation = 0;
-		draw.FirstInstanceLocation = first;
-		draw.Flags = Diligent::DRAW_FLAG_VERIFY_ALL;
-		ctx->Draw(draw);
-		g_ddDrawn++;
+		// [rc4l] One draw per RUN of marks that share a graphic.
+		//
+		// The instances are already grouped: they were appended in the order the slots were assigned,
+		// so marks with the same texture sit together and a run is found by walking until the slot
+		// changes. Rebinding the sampler between runs is what every other pass in this backend does,
+		// and it is the thing the array was meant to avoid -- but a mark drawn with the right graphic
+		// and one extra draw call beats a mark drawn with the wrong one.
+		unsigned i = first;
+		while (i < first + count)
+		{
+			const int slot = (int)all[i].centre[3];
+			unsigned run = 1;
+			while (i + run < first + count && (int)all[i + run].centre[3] == slot) run++;
+
+			if (vTexVar)
+				vTexVar->Set((slot >= 0 && (unsigned)slot < views.Size()) ? views[slot] : fallback);
+			ctx->CommitShaderResources(srb, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+
+			Diligent::DrawAttribs draw;
+			draw.NumVertices = 6;
+			draw.NumInstances = run;
+			draw.StartVertexLocation = 0;
+			draw.FirstInstanceLocation = i;
+			draw.Flags = Diligent::DRAW_FLAG_VERIFY_ALL;
+			ctx->Draw(draw);
+			g_ddDrawn++;
+			i += run;
+		}
 	}
 
 

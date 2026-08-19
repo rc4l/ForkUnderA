@@ -73,22 +73,25 @@ for (const [name, r] of rows) {
 // render as solid boxes, for as long as the pass ran at default settings, and none of these numbers
 // noticed. The mask the shader itself computes does: a real mark has near-black and near-white in
 // it, and a flat wash has neither.
-{
-  await cap.exec(c, 'give ChaingunE');
-  await cap.exec(c, 'use ChaingunE');
+// [rc4l] Every weapon, not one of them. A bullet mark is small and its graphic is nearly solid
+// anyway, so it was the one mark that looked plausible while the BFG's painted a slab the size of a
+// room -- and checking only the chaingun is exactly how that shipped.
+for (const [weapon, pitch, tics] of [['ChaingunE', 50, 25], ['RocketLauncherE', 70, 3], ['BFGE', 70, 3]]) {
+  await cap.exec(c, 'give ' + weapon);
+  await cap.exec(c, 'use ' + weapon);
   await cap.waitTics(c, 22);
-  const at = { x: spot.x, y: spot.y, z: spot.z, angle: spot.yaw, pitch: 50 };
+  const at = { x: spot.x, y: spot.y, z: spot.z, angle: spot.yaw, pitch };
   await c.rpc('player.setpos', at);
   await cap.waitTics(c, 8);
   await cap.exec(c, '+attack');
-  await cap.waitTics(c, 25);
+  await cap.waitTics(c, tics);
   await cap.exec(c, '-attack');
-  await cap.waitTics(c, 50);
+  await cap.waitTics(c, 60);
   await c.rpc('player.setpos', at);
   await cap.waitTics(c, 4);
   await c.rpc('sim.pause', {}).catch(() => {});
   await cap.exec(c, 'fua_dg_decaldebug 2');
-  const f = `${S}/shape_vk.png`;
+  const f = `${S}/shape_${weapon}_vk.png`;
   try { fs.rmSync(f, { force: true }); } catch { /* fine */ }
   await cap.exec(c, `fua_diligent_shot ${f}`);
   for (let i = 0; i < 80 && !fs.existsSync(f); i++) await new Promise((r) => setTimeout(r, 100));
@@ -97,8 +100,15 @@ for (const [name, r] of rows) {
   const out = spawnSync(process.execPath, [CLI, 'png', '--range', f, '0.40', '0.30', '0.60', '0.50'],
     { encoding: 'utf8' }).stdout || '';
   const spread = Number(out.match(/spread ([\d.]+)/)?.[1] ?? 0);
-  console.log(`shape    mask spread ${spread.toFixed(0)}  ${spread > 200 ? 'ok, the mark has shape'
-    : 'FAIL: flat wash -- the mark is painting its whole box'}`);
+  // [rc4l] The window sits INSIDE the mark on purpose, and the bar is low on purpose.
+  //
+  // A flat wash reads exactly 0 there -- that is what "the mark is its own box" means. A real mark
+  // reads a hundred and up, even in the dense middle of a BFG scorch where the graphic is at its
+  // most solid. Anything between is the interesting case and should be looked at, so the bar sits
+  // just above nothing rather than near the top: a bigger number would fail marks that are fine and
+  // teach whoever runs this to ignore it.
+  console.log(`shape ${weapon.padEnd(16)} mask spread ${spread.toFixed(0)}  ${spread > 40
+    ? 'ok, the mark has shape' : 'FAIL: flat wash -- the mark is painting its whole box'}`);
 }
 await cap.exec(c, 'r_drawplayersprites 1');
 c.close();
