@@ -239,3 +239,74 @@ TEST( RegistryStatus, ABackwardsClockDoesNotClearIt )
 	EXPECT_EQ( zx::RegistryStatus::Throttled,
 		zx::AgeRegistryStatus( zx::RegistryStatus::Throttled, -1, kThrottleClearMs ));
 }
+
+// ---------------------------------------------------------------- what a new answer replaces
+
+using zx::ComputeRecordedStatus;
+
+// The whole reason this exists: the second query of a pair gets refused, and used to undo the first.
+TEST(RegistryStatus, AThrottleDoesNotUnseatAnOk)
+{
+	EXPECT_EQ(RegistryStatus::Ok,
+		ComputeRecordedStatus(RegistryStatus::Ok, RegistryStatus::Throttled));
+}
+
+// A registry that can refuse us is a registry that is up, which is better news than silence.
+TEST(RegistryStatus, AThrottleReplacesAFailure)
+{
+	EXPECT_EQ(RegistryStatus::Throttled,
+		ComputeRecordedStatus(RegistryStatus::NoAnswer, RegistryStatus::Throttled));
+	EXPECT_EQ(RegistryStatus::Throttled,
+		ComputeRecordedStatus(RegistryStatus::LookupFailed, RegistryStatus::Throttled));
+	EXPECT_EQ(RegistryStatus::Throttled,
+		ComputeRecordedStatus(RegistryStatus::Pending, RegistryStatus::Throttled));
+	EXPECT_EQ(RegistryStatus::Throttled,
+		ComputeRecordedStatus(RegistryStatus::Throttled, RegistryStatus::Throttled));
+}
+
+// Everything else is simply the newer fact, including bad news arriving on top of good.
+TEST(RegistryStatus, AnyOtherAnswerIsTheOneThatCounts)
+{
+	EXPECT_EQ(RegistryStatus::NoAnswer,
+		ComputeRecordedStatus(RegistryStatus::Ok, RegistryStatus::NoAnswer));
+	EXPECT_EQ(RegistryStatus::Banned,
+		ComputeRecordedStatus(RegistryStatus::Ok, RegistryStatus::Banned));
+	EXPECT_EQ(RegistryStatus::Version,
+		ComputeRecordedStatus(RegistryStatus::Throttled, RegistryStatus::Version));
+	EXPECT_EQ(RegistryStatus::Ok,
+		ComputeRecordedStatus(RegistryStatus::NoAnswer, RegistryStatus::Ok));
+	EXPECT_EQ(RegistryStatus::Ok,
+		ComputeRecordedStatus(RegistryStatus::Ok, RegistryStatus::Ok));
+}
+
+// [rc4l] Pending is the absence of news, so it never speaks for the registry.
+TEST(RegistryStatusTest, PendingDefersToWhatWeLastHeard)
+{
+	using namespace zx;
+	EXPECT_EQ(RegistryStatus::Ok,
+		ComputeKnownStatus(RegistryStatus::Pending, RegistryStatus::Ok));
+	EXPECT_EQ(RegistryStatus::NoAnswer,
+		ComputeKnownStatus(RegistryStatus::Pending, RegistryStatus::NoAnswer));
+	EXPECT_EQ(RegistryStatus::Pending,
+		ComputeKnownStatus(RegistryStatus::Pending, RegistryStatus::Pending));
+}
+
+// A real verdict speaks for itself; the older one is not consulted.
+TEST(RegistryStatusTest, AVerdictOutranksTheOneBeforeIt)
+{
+	using namespace zx;
+	EXPECT_EQ(RegistryStatus::Throttled,
+		ComputeKnownStatus(RegistryStatus::Throttled, RegistryStatus::Ok));
+	EXPECT_EQ(RegistryStatus::Ok,
+		ComputeKnownStatus(RegistryStatus::Ok, RegistryStatus::NoAnswer));
+}
+
+// [rc4l] The whole sequence the player saw: an answer, then asking again, then a refusal.
+TEST(RegistryStatusTest, ARefusalAfterAnAnswerKeepsTheAnswer)
+{
+	using namespace zx;
+	const RegistryStatus prior = RegistryStatus::Ok;			// the background query answered
+	const RegistryStatus current = RegistryStatus::Pending;		// opening the browser asked again
+	EXPECT_EQ(RegistryStatus::Ok, ComputeRecordedStatus(
+		ComputeKnownStatus(current, prior), RegistryStatus::Throttled));
+}
