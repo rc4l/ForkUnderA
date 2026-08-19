@@ -566,10 +566,11 @@ void DrawDeferredDecals(Diligent::IDeviceContext *ctx)
 	// and its glow alternate, so seventy marks came to fifty-five draws. The slot travels in the
 	// instance record and nothing has to be sorted to keep it.
 	static TArray<const void *> mats;
+	static TArray<int> matTrans;
 	static TArray<Diligent::IDeviceObject *> views;
 	static TArray<DeferredDecalInstance> instAlpha, instAdd;
 	static TArray<const void *> matAlpha, matAdd, matOf;
-	mats.Clear(); views.Clear(); instAlpha.Clear(); instAdd.Clear();
+	mats.Clear(); matTrans.Clear(); views.Clear(); instAlpha.Clear(); instAdd.Clear();
 	matAlpha.Clear(); matAdd.Clear(); matOf.Clear();
 
 	Diligent::IDeviceObject *fallback = GetMaterialSRV(NULL, 0);
@@ -578,8 +579,12 @@ void DrawDeferredDecals(Diligent::IDeviceContext *ctx)
 		const zx::levelmesh::GpuDecal &d = decals[i];
 		if (d.a <= 0.004f || d.material == NULL) continue;
 
+		// [rc4l] Keyed on the material AND its translation, because one graphic under two remaps is
+		// two different pictures. Keyed on the material alone, the second remap silently reuses the
+		// first one's slot.
 		int slot = -1;
-		for (unsigned m = 0; m < mats.Size(); m++) if (mats[m] == d.material) { slot = (int)m; break; }
+		for (unsigned m = 0; m < mats.Size(); m++)
+			if (mats[m] == d.material && matTrans[m] == d.translation) { slot = (int)m; break; }
 		if (slot < 0)
 		{
 			if (mats.Size() >= FUA_DECAL_TEXTURES) slot = 0;   // over the ceiling: see FUA_DECAL_TEXTURES
@@ -592,7 +597,14 @@ void DrawDeferredDecals(Diligent::IDeviceContext *ctx)
 				// the red channel the mark's shape. Asked for with translation 0 instead, the red
 				// channel is just how red the graphic is -- near 1 across a pale scorch -- so the mask
 				// reads 1 everywhere and the mark paints its whole box solid.
-				int trans = 0;
+				// [rc4l] The mark's OWN remap, which this pass never asked for.
+				//
+				// gl_decal.cpp binds with decal->Translation and the wall path carries it too; only
+				// here was it hardcoded to zero, so the mark drew whatever the untranslated graphic
+				// happens to be. For the BFG's scorch that is a flat mask, and the mark painted its
+				// whole box in one colour -- while the same texture on a wall, asked for with its
+				// translation, came out as soot.
+				int trans = d.translation;
 				if (d.redToAlpha)
 				{
 					FMaterial *fm = (FMaterial *)d.material;
@@ -619,6 +631,7 @@ void DrawDeferredDecals(Diligent::IDeviceContext *ctx)
 				}
 				slot = (int)mats.Size();
 				mats.Push(d.material);
+				matTrans.Push(d.translation);
 				views.Push(srv);
 			}
 		}

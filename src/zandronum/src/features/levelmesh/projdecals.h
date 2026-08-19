@@ -105,6 +105,14 @@ struct GpuDecal
 	float near_, far_;   // how far the box reaches either side of the contact point
 	float r, g, b, a;
 	const void  *material;
+	// [rc4l] The palette remap this mark is drawn with, which the renderer has to ask for BY NAME.
+	//
+	// gl_decal.cpp binds the decal material with decal->Translation, and the wall path carries it
+	// too. This record simply did not have the field, so the deferred pass asked for translation 0
+	// and got whatever the untranslated graphic happens to be -- for the BFG scorch that is a flat
+	// mask, so the mark painted its whole box in one colour while the same texture on a wall, asked
+	// for with its translation, came out as soot.
+	int          translation;
 	// [rc4l] What this mark is stuck to, so it can ride a floor that moves.
 	//
 	// A projection is cut from geometry rather than glued to a texture, which is what lets it mark a

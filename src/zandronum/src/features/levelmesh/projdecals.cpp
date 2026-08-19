@@ -514,6 +514,7 @@ int GetProjectedDecalsGpu(const GpuDecal **out)
 		// Sampled as an ordinary image the red channel reads as brightness and a black burn paints
 		// white; multiplied into the tint, a green glow times (mask, 0, 0) is black.
 		g.redToAlpha = d.redToAlpha;
+		g.translation = d.translation;
 		g.additive = d.additive;
 		g.fullbright = d.fullbright;
 		if (d.redToAlpha)
