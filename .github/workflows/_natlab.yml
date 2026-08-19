@@ -85,7 +85,10 @@ jobs:
     # a failing check, so it would block every merge while proving nothing.
     #
     # Run it with: gh workflow run _natlab.yml --ref main
-    if: github.event_name == 'workflow_dispatch'
+    #
+    # Keyed on the workflow NAME, not the event: a called workflow inherits its caller's event, so
+    # "workflow_dispatch" was also true inside a dispatched release and let this job fail one.
+    if: github.workflow == 'NAT lab'
     name: dualstack (dedupe + v6-only client)
 
     steps:
