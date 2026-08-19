@@ -1771,7 +1771,9 @@ static	GAMEMODE_e			g_NewGameMode = GAMEMODE_COOPERATIVE;
 
 // [rc4l] The CUSTOM tab's own state: the presets read from disk, the search over them, and where
 // the cursor is. Three regions, walked the same way the NEW screen's are.
-enum class CustomFocus { Search, List, Buttons };
+// [rc4l] Maps is the rotation button in the detail column. It had no slot, so the one control on
+// that side of the screen could only ever be pressed with a mouse.
+enum class CustomFocus { Search, List, Maps, Buttons };
 
 static	std::vector<zx::CustomEntry>	g_CustomAll;
 static	bool				g_CustomLoaded = false;
@@ -5219,11 +5221,13 @@ public:
 				const int here = HostSelectedRow( rows );
 				const int next = (( here >= 0 ) ? here : 0 ) + r.rowStep;
 
-				// Up off the first row is the one edge that leaves, back to the tabs. Down off the
-				// last simply stops, the same as the server list.
+				// [rc4l] Up off the first row leaves, to the SUB-tabs -- the row this screen hangs
+				// from and the one the keyboard came down through. It went to the tab row above
+				// them, which skipped PRESETS/CUSTOM/NEW entirely and read as the focus jumping to
+				// HOST for no reason. Down off the last simply stops, the same as the server list.
 				if ( next < 0 )
 				{
-					SetFocus( zx::BrowserFocus::Tabs );
+					SetFocus( zx::BrowserFocus::SubTabs );
 					return;
 				}
 
@@ -11431,9 +11435,19 @@ public:
 		FString maps;
 		maps.Format( "MAPS  (%d)", static_cast<int>( chosen->maps.size( )));
 
+		const bool bMapsFocused = ( g_CustomFocus == CustomFocus::Maps ) &&
+			( g_Focus == zx::BrowserFocus::Host ) && !g_CustomMapsOpen;
+
 		DrawRoundedButton( SB_HOST_RCOL_LEFT, CustomMapsBtnTop( ),
 			SB_HOST_RCOL_RIGHT - SB_HOST_RCOL_LEFT, CustomMapsBtnH( ), maps.GetChars( ),
-			g_CustomMapsHot );
+			g_CustomMapsHot || bMapsFocused );
+
+		// The orb marks it the same way it marks every other control on this tab.
+		if ( bMapsFocused )
+		{
+			FocusAnchor( zx::BrowserFocus::Host, SB_HOST_RCOL_LEFT - 5,
+				CustomMapsBtnTop( ) + CustomMapsBtnH( ) / 2 );
+		}
 
 		serverbrowser_Tip( SB_HOST_RCOL_LEFT, CustomMapsBtnTop( ),
 			SB_HOST_RCOL_RIGHT - SB_HOST_RCOL_LEFT, CustomMapsBtnH( ),
@@ -12000,6 +12014,11 @@ public:
 				else
 					g_CustomFocus = CustomFocus::Buttons;
 			}
+			else if ( g_CustomFocus == CustomFocus::Maps )
+			{
+				// Down is the row of buttons under it; up is the list it was reached from.
+				g_CustomFocus = ( step > 0 ) ? CustomFocus::Buttons : CustomFocus::List;
+			}
 			else if ( step < 0 )
 			{
 				g_CustomFocus = CustomFocus::List;
@@ -12011,6 +12030,28 @@ public:
 
 		case zx::NavKey::Left:
 		case zx::NavKey::Right:
+			// [rc4l] The detail column is to the RIGHT of the list, and the rotation button is the
+			// only thing in it a key can press. Left comes back.
+			if ( g_CustomFocus == CustomFocus::List )
+			{
+				if (( key == zx::NavKey::Right ) && ( CustomSelected( ) != NULL ))
+				{
+					g_CustomFocus = CustomFocus::Maps;
+					S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+				}
+				return true;
+			}
+
+			if ( g_CustomFocus == CustomFocus::Maps )
+			{
+				if ( key == zx::NavKey::Left )
+				{
+					g_CustomFocus = CustomFocus::List;
+					S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+				}
+				return true;
+			}
+
 			if ( g_CustomFocus == CustomFocus::Buttons )
 			{
 				const int next = zx::ComputeClampedSelection(
@@ -13450,7 +13491,7 @@ public:
 				return true;
 
 			static const CustomFocus kOrder[] = { CustomFocus::Search, CustomFocus::List,
-				CustomFocus::Buttons };
+				CustomFocus::Maps, CustomFocus::Buttons };
 			const int count = static_cast<int>( countof( kOrder ));
 
 			int at = 0;
@@ -13482,6 +13523,10 @@ public:
 			return true;
 
 		case FieldKey::Up:
+			// [rc4l] Out of the screen, to the sub-tab row above it. Swallowed, this box was the top
+			// of CUSTOM and had no way back to the tabs at all.
+			SetFocus( zx::BrowserFocus::SubTabs );
+			S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
 			return true;
 
 		case FieldKey::Handled:
@@ -18565,7 +18610,10 @@ public:
 			// Each screen has its own idea of where the keyboard should land first.
 			if ( g_HostKind == HostKind::New )
 			{
-				g_NewFocus = NewFocus::Wads;
+				// [rc4l] The IWAD row, which is the topmost control on the screen. Landing on the
+				// wad list skipped the two controls above it, so coming DOWN from the tabs started
+				// half way in and the way back up read as the key having jumped.
+				g_NewFocus = NewFocus::Iwads;
 			}
 			else if ( g_HostKind == HostKind::Custom )
 			{
@@ -18795,6 +18843,14 @@ public:
 
 			if ( g_CustomFocus == CustomFocus::Buttons )
 				CustomPressButton( g_CustomBtnSel );
+			else if ( g_CustomFocus == CustomFocus::Maps )
+			{
+				// The same thing the click does -- see the mouse handler for why the box takes the
+				// keyboard with it.
+				g_CustomMapsOpen = true;
+				g_CustomMapsScroll = 0;
+				S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+			}
 			else
 				CustomPlay( );		// on a row, Enter is what the row is for
 
@@ -19012,6 +19068,15 @@ public:
 					S_Sound( CHAN_VOICE | CHAN_UI, "menu/choose", snd_menuvolume, ATTN_NONE );
 				return true;
 			}
+
+			// [rc4l] ENTER ON THE SUB-TAB ROW MEANS "GO IN", not "do the thing this screen is for".
+			//
+			// It fell through to the generic handler below, which reads the list behind the tabs and
+			// acted on it -- so pressing Enter while merely FOCUSED on NEW started hosting whatever
+			// happened to be selected, and the same on CUSTOM and PRESETS. Enter on a tab you are
+			// standing on can only sensibly mean the same as Down.
+			if (( g_Focus == zx::BrowserFocus::SubTabs ) && ( g_Tab == BrowserTab::Host ))
+				return Navigate( zx::NavKey::Down, total );
 
 			if (( g_Focus == zx::BrowserFocus::Tabs ) || ( g_Focus == zx::BrowserFocus::Search ))
 			{
