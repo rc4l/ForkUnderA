@@ -72,7 +72,7 @@ FootExit ComputeFootExit(GridKey key, int sel, bool bLoadOrderHasRows)
 		return (sel <= 0) ? FootExit::SettingsGrid : FootExit::StayOnRow;
 
 	if (key == GridKey::Up)
-		return bLoadOrderHasRows ? FootExit::LoadOrder : FootExit::SettingsGrid;
+		return bLoadOrderHasRows ? FootExit::LoadOrder : FootExit::IwadRow;
 
 	// Right along the row, and down off the bottom of the screen: the caller's own business.
 	return FootExit::StayOnRow;

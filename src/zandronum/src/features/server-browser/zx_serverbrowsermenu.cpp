@@ -8484,6 +8484,7 @@ public:
 			// footer button somebody last pressed a session ago.
 			g_NewMapFocus = MapsFocus::List;
 			g_NewMapFootSel = 0;
+			g_NewMapBtnSel = 0;
 
 			// [rc4l] The files are read HERE, on the press, and only when they have changed since
 			// the last read. Not at startup, not while the tab is drawn, and not per frame: this
@@ -10180,6 +10181,18 @@ public:
 			case zx::ListStep::Move:
 				g_NewMapSel += ( mkey == MKEY_Up ) ? -1 : 1;
 				g_NewMapRevealSel = true;
+
+				// [rc4l] ARRIVING AT A ROW PUTS THE CURSOR BACK ON ITS TICK.
+				//
+				// The three row buttons share one cursor, so a single Right pressed pages ago left
+				// it parked on the up-arrow -- and Enter on every row after that MOVED the map
+				// instead of switching it, which is not what Enter on a list row means.
+				//
+				// Reset on ARRIVAL only, not whenever the selection changes: a move carries the
+				// selection with the map, and resetting there would make reordering by keyboard cost
+				// a Right press per step.
+				g_NewMapBtnSel = 0;
+
 				S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
 				break;
 
@@ -13597,6 +13610,10 @@ public:
 				// [rc4l] Up is the load order above it -- unless there is nothing in it, which used
 				// to be walked into anyway: the orb vanished onto a region with no row to mark and
 				// DOWN could not get back, because an empty order had nothing to step off either.
+				//
+				// With nothing loaded the answer is the IWAD row, not the settings grid: there is
+				// nothing to play yet, so the way out of the foot is the top of the screen where a
+				// setup starts rather than the settings for a server that cannot be started.
 				if ( step < 0 )
 				{
 					if ( zx::ComputeFootExit( zx::GridKey::Up, g_NewButtonSel,
@@ -13607,8 +13624,7 @@ public:
 					}
 					else
 					{
-						g_NewFocus = NewFocus::Tools;
-						g_NewToolSel = SB_NEW_TOOL_COUNT - 1;
+						g_NewFocus = NewFocus::Iwads;
 					}
 				}
 			}
