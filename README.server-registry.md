@@ -6,26 +6,22 @@ A registry is a phone book. Servers write themselves into it, players read it, a
 stateDiagram-v2
     direction TB
 
+    state "Listed as one row" as Listed
+
     [*] --> Silent
 
-    Silent --> Announced : hosting begins, and the server says so<br/>down both internets at once
-    Announced --> Proving : the registry replies with a random number
-    Proving --> Silent : it never comes back, so the address<br/>was a forgery
-    Proving --> Listed : it comes back from the same address,<br/>which only the real occupant could manage
-    Listed --> Silent : the server stops announcing
+    Silent --> Proving : announces over IPv4 through the router and<br/>IPv6 through the firewall, and the registry<br/>answers with a random number
+    Proving --> Silent : the number never returns,<br/>so the address was forged
+    Proving --> Listed : the number returns from the same address,<br/>and both carry one key and one port
+    Listed --> Silent : announcing stops
 
-    Listed --> Joined : a player reaches the server directly
-    Listed --> Knocking : a player gets no reply, because a home<br/>router keeps no door open
-
-    Knocking --> Punching : the registry tells the server who is<br/>arriving, and from where
-    Punching --> Joined : both sides send outward at once, each<br/>opening its own router, until a packet<br/>lands while the far opening still holds
-    Punching --> Refused : the router hands out a fresh port per<br/>destination, so the opening is never<br/>the one aimed at
+    Listed --> Joined : the player reaches it directly
+    Listed --> Punching : no reply, so the registry<br/>brokers a knock
+    Punching --> Joined : a packet lands while<br/>the opening still holds
+    Punching --> Refused : a fresh port per destination,<br/>so forward the port instead
 
     Joined --> [*]
     Refused --> [*]
-
-    note right of Listed : IPv4 leaves through the router, IPv6 through<br/>the firewall. Two addresses sharing a key and<br/>a port are one server and draw one row.
-    note right of Refused : Symmetric NAT, common on mobile.<br/>Port forwarding is the certain answer.
 
     classDef good fill:#dcfce7,stroke:#16a34a,color:#14532d
     classDef bad fill:#fee2e2,stroke:#dc2626,color:#7f1d1d
