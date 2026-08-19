@@ -473,7 +473,19 @@ static bool EnsureDeferredDecalPass()
 	}
 
 	static Diligent::ShaderResourceVariableDesc vars[] = {
-		{ Diligent::SHADER_TYPE_PIXEL, "uTex", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
+		// [rc4l] DYNAMIC, not MUTABLE, because this one is rebound BETWEEN DRAWS.
+		//
+		// The distinction is the whole of two bugs. A MUTABLE variable is bound once per binding
+		// object; setting it again after resources have been committed does not take, silently. So
+		// every run after the first kept the first run's texture, and each mark drew with whichever
+		// graphic happened to be bound first -- which reads exactly as "it is backfilling the last
+		// decal I used". Fire plasma, swap to the BFG, and the BFG's mark comes out wearing the
+		// plasma's picture.
+		//
+		// It also explains the array this replaced: SetArray on a MUTABLE variable bound element
+		// zero and quietly dropped the rest, which is why slot 0 always drew correctly and nothing
+		// past it ever did.
+		{ Diligent::SHADER_TYPE_PIXEL, "uTex", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC },
 		{ Diligent::SHADER_TYPE_PIXEL, "uSceneDepth", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
 		{ Diligent::SHADER_TYPE_PIXEL, "uSceneNormal", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
 	};

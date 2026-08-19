@@ -31,10 +31,19 @@ await c.waitHello();
 await cap.sandbox(c, { map: 'dbab04' });
 await cap.exec(c, 'r_drawplayersprites 0');
 
-async function burst(weapon, pitch, tics, settle) {
-  await cap.exec(c, 'give ' + weapon);
-  await cap.exec(c, 'use ' + weapon);
+// [rc4l] Selected by SLOT, and given under both names.
+//
+// The names differ between the stock game and a weapon mod, and `give` on a name that does not
+// exist fails quietly -- so with the mod absent every case here fired whatever was already in hand
+// and the suite reported four passes for one weapon. A slot number means the same thing in both.
+async function arm(weapon, slot) {
+  for (const n of [weapon, weapon + 'E']) await cap.exec(c, 'give ' + n);
+  await cap.exec(c, 'slot ' + slot);
   await cap.waitTics(c, 22);
+}
+
+async function burst(weapon, slot, pitch, tics, settle) {
+  await arm(weapon, slot);
   const at = { x: spot.x, y: spot.y, z: spot.z, angle: spot.yaw, pitch };
   await c.rpc('player.setpos', at);
   await cap.waitTics(c, 8);
@@ -55,12 +64,12 @@ async function burst(weapon, pitch, tics, settle) {
 
 const rows = [];
 // A mark on the floor, and on the ceiling, with everything transient long gone.
-rows.push(['floor  ', await burst('ChaingunE', 70, 18, 55)]);
-rows.push(['ceiling', await burst('ChaingunE', -70, 18, 55)]);
+rows.push(['floor  ', await burst('Chaingun', 4, 70, 18, 55)]);
+rows.push(['ceiling', await burst('Chaingun', 4, -70, 18, 55)]);
 // A wall mark, settled: scorch plus its glow.
-rows.push(['wall   ', await burst('PlasmaRifleE', 2, 16, 45)]);
+rows.push(['wall   ', await burst('PlasmaRifle', 6, 2, 16, 45)]);
 // And mid-burst, where the flash must not be cut into by the mark under it.
-rows.push(['flash  ', await burst('PlasmaRifleE', 2, 14, 0)]);
+rows.push(['flash  ', await burst('PlasmaRifle', 6, 2, 14, 0)]);
 
 for (const [name, r] of rows) {
   console.log(`${name}  VK ${r.vk.toFixed(2).padStart(6)}   GL ${r.gl.toFixed(2).padStart(6)}   ${r.stats}`);
@@ -76,17 +85,15 @@ for (const [name, r] of rows) {
 // [rc4l] Every weapon, not one of them. A bullet mark is small and its graphic is nearly solid
 // anyway, so it was the one mark that looked plausible while the BFG's painted a slab the size of a
 // room -- and checking only the chaingun is exactly how that shipped.
-for (const [weapon, pitch, tics] of [['ChaingunE', 50, 25], ['RocketLauncherE', 70, 3], ['BFGE', 70, 3]]) {
-  await cap.exec(c, 'give ' + weapon);
-  await cap.exec(c, 'use ' + weapon);
-  await cap.waitTics(c, 22);
+for (const [weapon, slot, pitch, tics] of [['Chaingun', 4, 50, 25], ['RocketLauncher', 5, 70, 3], ['BFG', 7, 70, 3]]) {
+  await arm(weapon === 'BFG' ? 'BFG9000' : weapon, slot);
   const at = { x: spot.x, y: spot.y, z: spot.z, angle: spot.yaw, pitch };
   await c.rpc('player.setpos', at);
   await cap.waitTics(c, 8);
   await cap.exec(c, '+attack');
   await cap.waitTics(c, tics);
   await cap.exec(c, '-attack');
-  await cap.waitTics(c, 60);
+  await cap.waitTics(c, slot === 4 ? 60 : 70);
   await c.rpc('player.setpos', at);
   await cap.waitTics(c, 4);
   await c.rpc('sim.pause', {}).catch(() => {});
