@@ -18,7 +18,7 @@ flowchart TB
 
     subgraph Q["Game Server Discovery"]
         direction LR
-          Q1["Client browser"] -->|"queries every registry it knows,<br/>over each family available"| Q2["Server registries<br/>(one or more)"]
+          Q1["Client browser"] -->|"queries every server registry it knows about"| Q2["Server registries<br/>(one or more)"]
           Q2 -->|"returns the IPv4 and IPv6<br/>addresses it holds"| Q1
           Q1 -->|"queries each address directly"| WWW["Game servers"]
           WWW -->|"respond with data (name, wads, etc)"| Q1
