@@ -1532,7 +1532,9 @@ add_executable( zdoom WIN32
 	features/net/computation/v6prefix_compute.cpp
 	features/server-hosting/computation/punchbroker_compute.cpp
 	features/server-hosting/zx_punchclient.cpp
+	features/server-browser/computation/toolgrid_compute.cpp
 	features/server-hosting/computation/hostfocus_compute.cpp
+	features/server-hosting/computation/hostsettings_compute.cpp
 	features/server-hosting/computation/reachprobe_compute.cpp
 	features/server-hosting/zx_reachprobe.cpp
 	features/addon-catalogue/zx_catalogue.cpp
