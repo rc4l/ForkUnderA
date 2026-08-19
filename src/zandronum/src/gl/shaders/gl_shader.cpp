@@ -65,6 +65,51 @@
 //
 //==========================================================================
 
+//==========================================================================
+//
+// [rc4l] Resolve a core shader from OUR pk3, and say so when a mod tried to replace it.
+//
+// The pinning is silent by design -- the shader still loads, the game still runs -- but silence is
+// how the mod author never finds out and the player blames the engine for an effect that stopped
+// working. So the override is named once, with the file it came from.
+//
+// Once per lump, because Load runs for every material shader and a line per compile would bury it.
+//
+//==========================================================================
+
+static int gl_CoreShaderLump(const char *name)
+{
+	const int coreFile = 0;
+	const int core = Wads.CheckNumForFullName(name, coreFile);
+	const int winner = Wads.CheckNumForFullName(name);
+
+	if ((core != -1) && (winner != -1) && (winner != core))
+	{
+		static TArray<FString> reported;
+		bool seen = false;
+
+		for (unsigned int i = 0; i < reported.Size(); i++)
+		{
+			if (reported[i].CompareNoCase(name) == 0)
+			{
+				seen = true;
+				break;
+			}
+		}
+
+		if (seen == false)
+		{
+			reported.Push(name);
+			Printf(TEXTCOLOR_YELLOW "%s in %s is being ignored: it replaces a core engine shader, "
+				"which is no longer allowed because an outdated copy stops the game from starting. "
+				"Custom shaders declared in GLDEFS are unaffected.\n",
+				name, Wads.GetWadName(Wads.GetLumpFile(winner)));
+		}
+	}
+
+	return core;
+}
+
 bool FShader::Load(const char * name, const char * vert_prog_lump, const char * frag_prog_lump, const char * proc_prog_lump, const char * defines)
 {
 	static char buffer[10000];
@@ -83,19 +128,15 @@ bool FShader::Load(const char * name, const char * vert_prog_lump, const char * 
 	// engine's were the same vintage, so shipping one looked harmless. Pinning is what stops a mod
 	// aging into a crash.
 	//
-	// File 0 is our own pk3: "zdoom.pk3 must always be the first file loaded and the IWAD second"
-	// (d_iwad.cpp), which is also why IWAD_FILENUM is 1.
-	const int coreFile = 0;
-
-	int i_lump = Wads.CheckNumForFullName("shaders/glsl/shaderdefs.i", coreFile);
+	int i_lump = gl_CoreShaderLump("shaders/glsl/shaderdefs.i");
 	if (i_lump == -1) I_Error("Unable to load 'shaders/glsl/shaderdefs.i'");
 	FMemLump i_data = Wads.ReadLump(i_lump);
 
-	int vp_lump = Wads.CheckNumForFullName(vert_prog_lump, coreFile);
+	int vp_lump = gl_CoreShaderLump(vert_prog_lump);
 	if (vp_lump == -1) I_Error("Unable to load '%s'", vert_prog_lump);
 	FMemLump vp_data = Wads.ReadLump(vp_lump);
 
-	int fp_lump = Wads.CheckNumForFullName(frag_prog_lump, coreFile);
+	int fp_lump = gl_CoreShaderLump(frag_prog_lump);
 	if (fp_lump == -1) I_Error("Unable to load '%s'", frag_prog_lump);
 	FMemLump fp_data = Wads.ReadLump(fp_lump);
 
@@ -152,7 +193,7 @@ bool FShader::Load(const char * name, const char * vert_prog_lump, const char * 
 		{
 			// [rc4l] Ours first, so a mod cannot override a CORE logic module by name; anything we
 			// do not ship is a genuine mod shader and is looked up normally. Upstream 03c8fd995.
-			int pp_lump = Wads.CheckNumForFullName(proc_prog_lump, coreFile);
+			int pp_lump = gl_CoreShaderLump(proc_prog_lump);
 			if (pp_lump == -1) pp_lump = Wads.CheckNumForFullName(proc_prog_lump);
 			if (pp_lump == -1) I_Error("Unable to load '%s'", proc_prog_lump);
 			FMemLump pp_data = Wads.ReadLump(pp_lump);
@@ -169,7 +210,7 @@ bool FShader::Load(const char * name, const char * vert_prog_lump, const char * 
 
 			if (pp_data.GetString().IndexOf("ProcessLight") < 0)
 			{
-				int pl_lump = Wads.CheckNumForFullName("shaders/glsl/func_defaultlight.fp", coreFile);
+				int pl_lump = gl_CoreShaderLump("shaders/glsl/func_defaultlight.fp");
 				if (pl_lump == -1) I_Error("Unable to load '%s'", "shaders/glsl/func_defaultlight.fp");
 				FMemLump pl_data = Wads.ReadLump(pl_lump);
 				fp_comb << "\n" << pl_data.GetString().GetChars();
