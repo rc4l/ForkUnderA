@@ -1011,6 +1011,32 @@ bool BROWSER_GetServerRegistryAddress( NETADDRESS_s &out )
 
 //*****************************************************************************
 //
+// [rc4l] A registry address of a PARTICULAR family, for the one question that has to be asked of
+// both: can anyone out there reach this port.
+//
+// The registry probes back to whatever address it saw the request arrive from, so the family a reach
+// test exercises is decided by the address we send it to -- and BROWSER_GetServerRegistryAddress
+// hands back whichever family last answered, which makes that choice arbitrary. Asking for a family
+// by name is what lets the probe try v4, and then v6, rather than one of them by accident.
+bool BROWSER_GetServerRegistryAddressForFamily( bool bIPv6, NETADDRESS_s &out )
+{
+	if ( g_ServerRegistryAddresses.Size( ) == 0 )
+		browser_ResolveServerRegistries( );
+
+	for ( unsigned int i = 0; i < g_ServerRegistryAddresses.Size( ); i++ )
+	{
+		if ( g_ServerRegistryAddresses[i].bIsIPv6 == bIPv6 )
+		{
+			out = g_ServerRegistryAddresses[i];
+			return true;
+		}
+	}
+
+	return false;
+}
+
+//*****************************************************************************
+//
 // [rc4l] See browser.h. Whether a packet came from a registry this client actually talks to.
 //
 // Deliberately the WHOLE list, because browser_QueryServerRegistries sends to the whole list. Judging
