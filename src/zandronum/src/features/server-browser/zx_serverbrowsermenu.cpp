@@ -11950,7 +11950,18 @@ public:
 		const std::vector<int> rows = CustomRows( );
 
 		if ( CustomEntries( ).empty( ))
-			return true;		// one button, nothing to walk
+		{
+			// [rc4l] One button and nothing to walk -- but UP still has to get out, or an empty tab
+			// is a room with the door painted on: focus lands on CREATE ONE HERE and every key after
+			// that does nothing, including the one that would reach the tabs again.
+			if ( key == zx::NavKey::Up )
+			{
+				SetFocus( zx::BrowserFocus::SubTabs );
+				S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+			}
+
+			return true;
+		}
 
 		switch ( key )
 		{
@@ -11962,7 +11973,17 @@ public:
 			if ( g_CustomFocus == CustomFocus::Search )
 			{
 				if ( step > 0 )
+				{
 					g_CustomFocus = CustomFocus::List;
+				}
+				else
+				{
+					// [rc4l] The same way out this screen's top row needs, for the same reason the
+					// NEW tab's IWAD row needs it: the tabs are up there and nothing else is.
+					SetFocus( zx::BrowserFocus::SubTabs );
+					S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+					return true;
+				}
 			}
 			else if ( g_CustomFocus == CustomFocus::List )
 			{
@@ -13187,7 +13208,19 @@ public:
 			if ( g_NewFocus == NewFocus::Iwads )
 			{
 				if ( step > 0 )
+				{
 					g_NewFocus = NewFocus::Search;
+				}
+				else
+				{
+					// [rc4l] Off the TOP of the screen is the sub-tab row, which is how the keyboard
+					// got in. Up did nothing here, so the IWAD row was a place you could reach and
+					// then not leave -- with the tabs above it unreachable, there was no way back to
+					// PRESETS or CUSTOM without a mouse.
+					SetFocus( zx::BrowserFocus::SubTabs );
+					S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+					return true;
+				}
 			}
 			else if ( g_NewFocus == NewFocus::Search )
 			{
