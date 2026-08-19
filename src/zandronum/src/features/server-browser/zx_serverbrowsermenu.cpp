@@ -1887,6 +1887,12 @@ static	std::vector<NewMapEntry>	g_NewMaps;
 // these screens hands over at its edge.
 enum class MapsFocus { List, Footer };
 
+// [rc4l] The last completed click on a map row, for spotting a double one. Its own pair rather than
+// the browser list's: two lists open at once would otherwise share a "last row", and a click in one
+// would arm a double in the other.
+static	int					g_NewMapClickRow = -1;
+static	int					g_NewMapClickTime = -1000;
+
 static	MapsFocus			g_NewMapFocus = MapsFocus::List;
 static	int					g_NewMapFootSel = 0;
 static	int					g_NewMapFootHot = -1;
@@ -10060,6 +10066,26 @@ public:
 			{
 				g_NewMapSel = row;
 				g_NewMapRevealSel = true;
+
+				// [rc4l] A DOUBLE click on the row switches the map in or out -- the same act as the
+				// tick at its left end, reached the way a list row is usually acted on. The interval
+				// is timed here because ZDoom's menu system has no double-click event; see
+				// SB_DOUBLECLICK_TICS, whose window this shares so both lists feel the same.
+				const int now = static_cast<int>( DMenu::MenuTime );
+				const bool bDouble = ( g_NewMapClickRow == row ) &&
+					(( now - g_NewMapClickTime ) < SB_DOUBLECLICK_TICS );
+
+				g_NewMapClickRow = row;
+				g_NewMapClickTime = now;
+
+				if ( bDouble )
+				{
+					// The cursor goes to the tick as well, so the keyboard carries on from what the
+					// pointer just did rather than from wherever it had been left.
+					g_NewMapBtnSel = 0;
+					NewMapToggle( row );
+					g_NewMapClickRow = -1;		// a third click starts a new pair, not a second double
+				}
 			}
 
 			return true;
