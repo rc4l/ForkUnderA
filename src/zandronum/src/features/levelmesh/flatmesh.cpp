@@ -3,6 +3,7 @@
 
 #include "gl/system/gl_system.h"
 #include "features/levelmesh/flatmesh.h"
+#include "features/hwrender/computation/lightside_compute.h"   // the plane bake, tested off-engine
 #include "features/levelmesh/staticmesh.h"
 #include "features/levelmesh/computation/wallbatch_compute.h"
 #include "features/levelmesh/computation/flatmesh_compute.h"
@@ -197,15 +198,15 @@ void RegisterFlatSubsector(const GLFlat &flat, subsector_t *sub, bool ceiling)
 	// no plasma light at all while GL lit it.
 	{
 		const secplane_t &pl = flat.plane.plane;
-		const float nx = FIXED2FLOAT(pl.a), ny = FIXED2FLOAT(pl.b), nz = FIXED2FLOAT(pl.c);
-		const float len = sqrtf(nx*nx + ny*ny + nz*nz);
-		if (len > 0.0001f)
-		{
-			const float sign = ComputeFlatNormalFlipped(ceiling, nz / len) ? -1.f : 1.f;
-			mp.normX = sign * nx / len;
-			mp.normY = sign * nz / len;
-			mp.normZ = sign * ny / len;
-		}
+		// [rc4l] Baked through lightside_compute, where the derivation is unit-tested against
+		// gl_flats.cpp's own form of the same test. The two have to agree exactly, including for a
+		// light lying ON the surface, and they did not.
+		zx::hwrender::SecPlaneF sp;
+		sp.a = FIXED2FLOAT(pl.a); sp.b = FIXED2FLOAT(pl.b);
+		sp.c = FIXED2FLOAT(pl.c); sp.d = FIXED2FLOAT(pl.d);
+		float n[3];
+		zx::hwrender::ComputeMeshPlane(sp, ceiling, n, NULL);
+		mp.normX = n[0]; mp.normY = n[1]; mp.normZ = n[2];
 	}
 	mp.lightLevel = flat.lightlevel;
 	mp.lightColor = flat.Colormap.LightColor.d;
