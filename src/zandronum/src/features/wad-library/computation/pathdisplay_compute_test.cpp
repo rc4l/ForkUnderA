@@ -141,37 +141,37 @@ TEST(PathDisplayTest, ARelativePathIsWrappedToo)
 //
 // The tip body.
 
-TEST(PathDisplayTest, TheTipNamesTheFileThenSaysWhereItIs)
+// [rc4l] The path alone. The row already draws the name, and the path ends with it, so a heading
+// would print the same word twice within two lines of itself.
+TEST(PathDisplayTest, TheTipIsThePathAndNothingElse)
 {
-	const std::string tip = ComputePathTip("av.wad", PathTipState::Found, "/wads/av.wad", 40,
+	const std::string tip = ComputePathTip(PathTipState::Found, "/wads/av.wad", 40,
 		Monospace, NULL);
 
-	EXPECT_EQ("av.wad\n/wads/av.wad", tip);
+	EXPECT_EQ("/wads/av.wad", tip);
 }
 
 TEST(PathDisplayTest, APendingResolveSaysSoRatherThanNothing)
 {
-	const std::string tip = ComputePathTip("av.wad", PathTipState::Pending, "", 40, Monospace, NULL);
-	EXPECT_EQ("av.wad\nLooking...", tip);
+	EXPECT_EQ("Looking...", ComputePathTip(PathTipState::Pending, "", 40, Monospace, NULL));
 }
 
 TEST(PathDisplayTest, AMissingFileSaysWhyThereIsNoPath)
 {
-	const std::string tip = ComputePathTip("av.wad", PathTipState::Missing, "", 40, Monospace, NULL);
-	EXPECT_EQ("av.wad\nNot on this machine", tip);
+	EXPECT_EQ("Not on this machine",
+		ComputePathTip(PathTipState::Missing, "", 40, Monospace, NULL));
 }
 
-// [rc4l] Found with no path is a bug elsewhere; the tip must not quietly hide it by showing a name
-// and nothing else.
+// [rc4l] Found with no path is a bug elsewhere; an empty tip is no tip at all, which would hide it.
 TEST(PathDisplayTest, FoundWithNoPathIsTreatedAsMissing)
 {
-	const std::string tip = ComputePathTip("av.wad", PathTipState::Found, "", 40, Monospace, NULL);
-	EXPECT_EQ("av.wad\nNot on this machine", tip);
+	EXPECT_EQ("Not on this machine",
+		ComputePathTip(PathTipState::Found, "", 40, Monospace, NULL));
 }
 
 TEST(PathDisplayTest, ALongPathArrivesAsSeveralLines)
 {
-	const std::string tip = ComputePathTip("av.wad", PathTipState::Found,
+	const std::string tip = ComputePathTip(PathTipState::Found,
 		"/Users/talhataj/Documents/GZDoom/wads/doom/av.wad", 16, Monospace, NULL);
 
 	int newlines = 0;
@@ -181,6 +181,15 @@ TEST(PathDisplayTest, ALongPathArrivesAsSeveralLines)
 			++newlines;
 	}
 
-	EXPECT_GT(newlines, 1);
-	EXPECT_EQ("av.wad", tip.substr(0, 6));
+	EXPECT_GT(newlines, 0);
+
+	// Nothing is dropped, and no heading is added: strip the breaks and the path is back.
+	std::string rejoined;
+	for (size_t i = 0; i < tip.size(); ++i)
+	{
+		if (tip[i] != '\n')
+			rejoined += tip[i];
+	}
+
+	EXPECT_EQ("/Users/talhataj/Documents/GZDoom/wads/doom/av.wad", rejoined);
 }

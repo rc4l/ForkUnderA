@@ -62,12 +62,13 @@ typedef int (*PathMeasureFn)(const char *text, void *ctx);
 std::vector<std::string> ComputeWrappedPath(const std::string &path, int maxWidth,
                                             PathMeasureFn measure, void *ctx);
 
-// [rc4l] The whole tooltip body for one row: what the file is called, then where it came from.
+// [rc4l] The whole tooltip body for one row: where the file came from, and nothing else.
 //
-// The name is repeated even though the row already draws it, because the row draws it TRUNCATED to
-// whatever space was left after the size -- and on the lists this is for, the part that gets cut is
-// the end, which is the part that distinguishes doom2-v1.9.wad from doom2-v1.666.wad.
-std::string ComputePathTip(const std::string &name, PathTipState state, const std::string &path,
+// Deliberately NOT headed with the filename. The row already draws that, and the last component of
+// the path is the filename again -- so a heading would be the same word twice, once at the top and
+// once at the end of the very next line. A row whose name was truncated to fit still gets it in
+// full, because the path ends with it.
+std::string ComputePathTip(PathTipState state, const std::string &path,
                            int maxWidth, PathMeasureFn measure, void *ctx);
 
 } // namespace zx
