@@ -26,11 +26,11 @@ flowchart TB
           Q1 -->|"sad path <br/>(banned, bad version, etc)"| E3(["Row hidden"])
     end
 
-    subgraph A["③ IPv4, port forwarded"]
-        direction LR
-        A1["Client"] -->|"unsolicited inbound,<br/>permitted by the forward"| A2["Server"]
-        A2 --> A3(["Direct connection"])
-    end
+    subgraph A["Client connects to a Game Server. Scenario A: IPv4, port forwarded"]                                               
+          direction LR                                                                                                                                                 
+          A1["Client"] -->|"unsolicited inbound,<br/>permitted by the forward"| A2["Server"]                                                                           
+          A2 --> A3(["Direct connection"])                                                                                                                             
+      end    
 
     subgraph B["④ IPv4 behind NAT"]
         direction LR
