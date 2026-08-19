@@ -5,44 +5,60 @@ A registry is a phone book. Servers write themselves into it, players read it, a
 ```mermaid
 flowchart TB
 
-    subgraph L["① Getting listed"]
+    subgraph R["① Registration"]
         direction LR
-        L1["Your server"] -->|"announces over IPv4<br/>and over IPv6"| L2["Registry"]
-        L2 -->|"sends back a<br/>random number"| L3["Your server<br/>returns it"]
-        L3 --> L4(["Listed, one row"])
+        R1["Server"] -->|"announces on UDP 15300,<br/>over IPv4 and IPv6"| R2["Registry"]
+        R2 -->|"challenges with a nonce"| R3["Server echoes it from<br/>the same endpoint"]
+        R3 --> R4(["Listing verified"])
     end
 
-    subgraph F["② Finding it"]
+    subgraph Q["② Discovery"]
         direction LR
-        F1["A player"] -->|"asks for the list"| F2["Registry"]
-        F2 -->|"every server it holds"| F3(["One row each, both<br/>addresses collapsed"])
+        Q1["Client"] -->|"resolves A and AAAA,<br/>queries both"| Q2["Registry"]
+        Q2 -->|"returns the server list"| Q3["Client collapses the dual-stack<br/>pair on server key and port"]
+        Q3 --> Q4(["One row per server"])
     end
 
-    subgraph D["③ Joining, the easy way"]
+    subgraph A["③ IPv4, port forwarded"]
         direction LR
-        D1["The player"] -->|"knocks"| D2["Your server"]
-        D2 -->|"answers"| D3(["Playing"])
+        A1["Client"] -->|"unsolicited inbound,<br/>permitted by the forward"| A2["Server"]
+        A2 --> A3(["Direct connection"])
     end
 
-    subgraph P["④ Joining through a router"]
+    subgraph B["④ IPv4 behind NAT"]
         direction LR
-        P1["The player"] -->|"knocks, no answer"| P2["Registry"]
-        P2 -->|"tells the server<br/>who is coming"| P3["Both sides send<br/>outward at once"]
-        P3 -->|"one lands while the<br/>far side is still open"| P4(["Playing"])
-        P3 -->|"the router changes<br/>port every time"| P5(["Forward the port"])
+        B1["Client"] -->|"no inbound mapping exists,<br/>so the datagram is dropped"| B2["Registry brokers<br/>a rendezvous"]
+        B2 -->|"simultaneous open"| B3["Both endpoints emit outbound,<br/>each creating its own mapping"]
+        B3 --> B4(["Connection established"])
     end
 
-    L ~~~ F
-    F ~~~ D
-    D ~~~ P
+    subgraph C["⑤ IPv6, stateful firewall"]
+        direction LR
+        C1["Client"] -->|"global address, no NAT, but<br/>unsolicited inbound is dropped"| C2["Registry brokers<br/>a rendezvous"]
+        C2 -->|"outbound creates<br/>firewall state"| C3(["Connection established"])
+    end
 
-    classDef ok fill:#dcfce7,stroke:#16a34a,color:#14532d
-    classDef warn fill:#fef3c7,stroke:#d97706,color:#78350f
-    class L4,F3,D3,P4 ok
-    class P5 warn
+    subgraph S["⑥ Symmetric NAT"]
+        direction LR
+        S1["Client"] -->|"mapping is allocated<br/>per destination"| S2["The punched port is never<br/>the one the peer targets"]
+        S2 --> S3(["Port forwarding required"])
+    end
 
-    style L fill:#f8fafc,stroke:#cbd5e1,color:#0f172a
-    style F fill:#f8fafc,stroke:#cbd5e1,color:#0f172a
-    style D fill:#f8fafc,stroke:#cbd5e1,color:#0f172a
-    style P fill:#f8fafc,stroke:#cbd5e1,color:#0f172a
+    R ~~~ Q
+    Q ~~~ A
+    A ~~~ B
+    B ~~~ C
+    C ~~~ S
+
+    classDef ok fill:none,stroke:#16a34a,stroke-width:2px
+    classDef warn fill:none,stroke:#d97706,stroke-width:2px
+    class R4,Q4,A3,B4,C3 ok
+    class S3 warn
+
+    style R fill:none,stroke:#94a3b8
+    style Q fill:none,stroke:#94a3b8
+    style A fill:none,stroke:#94a3b8
+    style B fill:none,stroke:#94a3b8
+    style C fill:none,stroke:#94a3b8
+    style S fill:none,stroke:#94a3b8
 ```
