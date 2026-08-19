@@ -259,7 +259,25 @@ static const char *kDeferredDecalPS =
 	   whole point of it -- without the qualifier that is undefined behaviour, and it shows up as
 	   marks wearing each other's textures depending on how the driver batches waves. */ \
 	"    int slot = (uDecalDebug.z > 0.5) ? 0 : vTex;\n"
-	"    vec4 texel = texture(uTex[nonuniformEXT(slot)], t);\n"
+	/* [rc4l] The gradients are taken BEFORE the array is indexed, and handed over explicitly.
+
+	   texture() picks its mip from screen-space derivatives, and those are only defined when the
+	   whole quad agrees on which sampler it is reading. Here it does not: the slot varies BETWEEN
+	   INSTANCES of one draw, which is the entire point of the array, so the implicit LOD is undefined
+	   and a driver is free to answer with the smallest mip. That is a 1x1 texel -- the graphic's
+	   average colour, stretched over the mark's whole box -- so every mark painted its own bounding
+	   rectangle in a flat wash. A pale graphic gave a white box and a dark one gave a black box.
+
+	   It looked exactly like a wrong texture, and survived being read as one for a long time: the
+	   mask came out 1 across the quad, the picture coordinate was a clean 0..1, the slots were in
+	   range and the textures were real. What separated it was pinning every mark to slot zero --
+	   which makes the index uniform, and the marks came back. Not a different texture: the same
+	   texture, sampled at a mip the driver was entitled to pick.
+
+	   dFdx/dFdy of t are uniform control flow, so they are well defined; textureGrad then uses them
+	   instead of guessing, and mipmapping still works. */ \
+	"    vec2 tdx = dFdx(t), tdy = dFdy(t);\n"
+	"    vec4 texel = textureGrad(uTex[nonuniformEXT(slot)], t, tdx, tdy);\n"
 	/* A shaded decal's texture is an alpha MASK: the red channel is the shape and the colour comes
 	   from the decal itself. Sampled as an ordinary image the red channel reads as brightness and a
 	   black burn paints a white blob. */
