@@ -22,7 +22,6 @@ TranslucentDraw Mark(float distSq, int blend, unsigned first)
 {
 	TranslucentDraw d;
 	d.distSq = distSq;
-	d.cx = -1324.f; d.cy = 94.f; d.cz = 64.f;
 	d.blend = blend;
 	d.decal = true;
 	d.first = first;
@@ -33,7 +32,6 @@ TranslucentDraw Sprite(float distSq, int blend, unsigned first)
 {
 	TranslucentDraw d;
 	d.distSq = distSq;
-	d.cx = -1324.f; d.cy = 94.f; d.cz = 64.f;
 	d.blend = blend;
 	d.decal = false;
 	d.first = first;
@@ -85,15 +83,48 @@ TEST(DecalOrderCompute, TwoScorchesOnOneSpotGoOldestFirst)
 	EXPECT_FALSE(ComputeDrawsBefore(newer, older));
 }
 
-// ---- marks that are not on one spot ----------------------------------------
+// ---- marks from DIFFERENT bolts that still overlap on screen ---------------
+//
+// The coincidence radius answered a scorch against its OWN glow and nothing else. Continuous fire
+// puts marks all over a wall, and a scorch from one bolt overlaps the glow of another while sitting
+// far enough away to be ordered by distance instead -- so it lands second and eats a hole in it.
+// Reported as a dark ring inside the white flash, in Vulkan only, on a wall being hosed with plasma.
 
-TEST(DecalOrderCompute, MarksOnDifferentWallsGoFarthestFirst)
+TEST(DecalOrderCompute, AScorchNeverLandsOnTopOfAGlowEvenFromADifferentBolt)
 {
-	// Beyond a decal's own width two marks cannot overlap, so the general rule applies again and the
-	// far one is drawn first. Without this, blend would decide the order of every decal in the level.
-	TranslucentDraw near = Mark(1000.f, 1, 4);
-	TranslucentDraw far  = Mark(9000.f, 2, 8);
-	far.cx += 4000.f;
+	const TranslucentDraw glow   = Mark(8529.f, 2, 96);    // another bolt's glow, farther off
+	const TranslucentDraw scorch = Mark(8011.f, 1, 108);   // this bolt's scorch, NEARER, so ordering
+	                                                       // by distance would draw it last
+	EXPECT_TRUE(ComputeDrawsBefore(scorch, glow));
+	EXPECT_FALSE(ComputeDrawsBefore(glow, scorch));
+}
+
+TEST(DecalOrderCompute, MarksOnOneWallOrderByAgeNotByDistance)
+{
+	// GL walks a sidedef's attached decals in list order and draws them all with that wall, so on one
+	// surface the order is creation order. Distance between two coplanar quads is an artefact of
+	// where each centre falls and says nothing about which was laid down first.
+	const TranslucentDraw older = Mark(3000.f, 1, 12);
+	const TranslucentDraw newer = Mark(9000.f, 1, 48);
+	EXPECT_TRUE(ComputeDrawsBefore(older, newer));
+}
+
+// ---- a mark is paint on a surface, so nothing in front of it is a mark -----
+
+TEST(DecalOrderCompute, EveryDecalIsDrawnBeforeEverySprite)
+{
+	// GL cannot get this wrong: decals are drawn as passengers of the wall they are glued to, in an
+	// earlier pass than sprites entirely. Here it has to be stated.
+	const TranslucentDraw nearMark   = Mark(1000.f, 1, 4);
+	const TranslucentDraw farSprite  = Sprite(90000.f, 2, 8);
+	EXPECT_TRUE(ComputeDrawsBefore(nearMark, farSprite));
+	EXPECT_FALSE(ComputeDrawsBefore(farSprite, nearMark));
+}
+
+TEST(DecalOrderCompute, SpritesStillGoFarthestFirstAmongThemselves)
+{
+	const TranslucentDraw near = Sprite(1000.f, 2, 4);
+	const TranslucentDraw far  = Sprite(9000.f, 1, 8);
 	EXPECT_TRUE(ComputeDrawsBefore(far, near));
 }
 
@@ -102,26 +133,13 @@ TEST(DecalOrderCompute, MarksOnDifferentWallsGoFarthestFirst)
 // The impact flash sits at the point of the mark it just made. Drawn under the mark, the scorch
 // shows through the flash -- reported on continuous fire.
 
-TEST(DecalOrderCompute, ADecalSortsFartherThanASpriteAtTheSamePoint)
-{
-	const float raw = 10000.f;
-	EXPECT_GT(ComputeSortDistance(raw, true), ComputeSortDistance(raw, false));
-}
-
 TEST(DecalOrderCompute, TheFlashIsDrawnOverTheMarkItJustMade)
 {
-	const float raw = 10000.f;
-	const TranslucentDraw mark  = Mark(ComputeSortDistance(raw, true), 1, 6);
-	const TranslucentDraw flash = Sprite(ComputeSortDistance(raw, false), 2, 42);
+	// At the same point, which is where the flash always is: it is standing on the mark it just made.
+	const TranslucentDraw mark  = Mark(10000.f, 1, 6);
+	const TranslucentDraw flash = Sprite(10000.f, 2, 42);
 	EXPECT_TRUE(ComputeDrawsBefore(mark, flash));
 	EXPECT_FALSE(ComputeDrawsBefore(flash, mark));
-}
-
-TEST(DecalOrderCompute, TheNudgeOnlyDecidesNearCoincidentPairs)
-{
-	// Proportional and small: it must never reorder something genuinely in front of or behind.
-	EXPECT_LT(ComputeSortDistance(1000.f, true), ComputeSortDistance(2000.f, false));
-	EXPECT_GT(ComputeSortDistance(2000.f, true), ComputeSortDistance(1000.f, false));
 }
 
 // ---- the comparator itself has to be legal ---------------------------------

@@ -1659,8 +1659,6 @@ static void DrawBlended(Diligent::IDeviceContext *ctx)
 			const float dx = r.cx - cx, dy = r.cy - cy, dz = r.cz - cz;
 			d.cx = r.cx; d.cy = r.cy; d.cz = r.cz;
 			d.dist = dx*dx + dy*dy + dz*dz;
-			// [rc4l] See decalorder_compute.h for why a decal sorts as farther than it is.
-			d.dist = zx::hwrender::ComputeSortDistance(d.dist, r.depthBias);
 			list.Push(d);
 			g_dynDraws++;
 			g_dynTris += r.count / 3;
@@ -1686,10 +1684,8 @@ static void DrawBlended(Diligent::IDeviceContext *ctx)
 	std::sort(&list[0], &list[0] + list.Size(),
 		[](const BlendDraw &a, const BlendDraw &b) {
 			zx::hwrender::TranslucentDraw da, db;
-			da.distSq = a.dist; da.cx = a.cx; da.cy = a.cy; da.cz = a.cz;
-			da.blend = a.blend; da.decal = a.bias; da.first = a.first;
-			db.distSq = b.dist; db.cx = b.cx; db.cy = b.cy; db.cz = b.cz;
-			db.blend = b.blend; db.decal = b.bias; db.first = b.first;
+			da.distSq = a.dist; da.blend = a.blend; da.decal = a.bias; da.first = a.first;
+			db.distSq = b.dist; db.blend = b.blend; db.decal = b.bias; db.first = b.first;
 			return zx::hwrender::ComputeDrawsBefore(da, db);
 		});
 

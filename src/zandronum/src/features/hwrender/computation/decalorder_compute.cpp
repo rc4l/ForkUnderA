@@ -5,44 +5,47 @@
 
 namespace zx { namespace hwrender {
 
-const float kCoincidentDecalRadius = 64.f;
-const float kDecalDistanceNudge    = 1.02f;
 
-float ComputeSortDistance(float distSq, bool decal)
-{
-	return decal ? distSq * kDecalDistanceNudge : distSq;
-}
 
 static bool IsAdditive(const TranslucentDraw &d) { return d.blend == 2; }
 
-static bool SameSpot(const TranslucentDraw &a, const TranslucentDraw &b)
-{
-	const float dx = a.cx - b.cx, dy = a.cy - b.cy, dz = a.cz - b.cz;
-	return dx * dx + dy * dy + dz * dz < kCoincidentDecalRadius * kCoincidentDecalRadius;
-}
-
 bool ComputeDrawsBefore(const TranslucentDraw &a, const TranslucentDraw &b)
 {
-	// [rc4l] Two marks on the SAME SPOT are ordered by what they are, never by distance.
+	// [rc4l] A decal is a STAGE, not a distance. This is the whole of the fix.
 	//
-	// One plasma bolt leaves two decals at one point: a black scorch and the additive glow that
-	// belongs on top of it. They are paint on one wall, so their distances differ only by where each
-	// quad's centre happens to fall -- 22546 against 22367 on the wall this was reported from, a
-	// fifth of a percent -- and farthest-first therefore drew the glow first and painted the scorch
-	// over it.
-	if (a.decal && b.decal && SameSpot(a, b))
+	// GL never sorts a decal against anything: its renderer draws each wall's decals as passengers of
+	// the wall they are glued to, walking the sidedef's attached list, in a pass that finishes before
+	// sprites begin. Position in the order comes from what a thing IS.
+	//
+	// Reconstructing that from distance is what has failed three times, and it fails in a way that
+	// looks like bad luck rather than a wrong rule: two coplanar quads differ in distance only by
+	// where each centre happens to fall, so which of a scorch and a glow lands second depends on the
+	// geometry of the pair. Answering it for the pair on screen -- a nudge, an exact-equality
+	// tie-break, a coincidence radius -- fixes that pair and leaves the next one. Continuous fire
+	// found the next one immediately: a scorch from one bolt overlapping the glow of another, too far
+	// apart to be called coincident, ordered by distance, and eating a dark ring out of the middle of
+	// the flash.
+	//
+	// So the stage decides, and inside it the order is GL's: additive last, because additive blending
+	// only brightens and so can only be lost by being buried, then oldest first, which is the
+	// attachment order GL walks.
+	const bool aDecal = a.decal, bDecal = b.decal;
+	if (aDecal != bDecal) return aDecal;
+
+	if (aDecal)
 	{
 		if (IsAdditive(a) != IsAdditive(b)) return !IsAdditive(a);
 		return a.first < b.first;
 	}
 
+	// Everything else is back to front, as it was.
 	if (a.distSq != b.distSq) return a.distSq > b.distSq;
 
 	// [rc4l] At equal distance, additive still draws last, and then the buffer offset decides.
 	//
-	// std::sort is not stable, so two draws at one distance -- a decal and the one a template puts
-	// underneath it -- traded places between frames and flickered through each other. Falling back to
-	// creation order makes equal distances resolve the same way every frame.
+	// std::sort is not stable, so two draws at one distance traded places between frames and
+	// flickered through each other. Falling back to creation order makes equal distances resolve the
+	// same way every frame.
 	if (IsAdditive(a) != IsAdditive(b)) return !IsAdditive(a);
 	return a.first < b.first;
 }
