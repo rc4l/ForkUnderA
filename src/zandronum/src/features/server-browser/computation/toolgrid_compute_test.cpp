@@ -200,3 +200,74 @@ TEST(ToolGrid, TheFootKeepsRightAndDownToItself)
 	EXPECT_EQ(FootExit::StayOnRow, ComputeFootExit(GridKey::Right, 0, true));
 	EXPECT_EQ(FootExit::StayOnRow, ComputeFootExit(GridKey::Down, 0, false));
 }
+
+// ---------------------------------------------------------------- a modal is a loop
+
+using zx::ComputeModalStep;
+using zx::ModalPos;
+using zx::ModalRegion;
+
+namespace
+{
+
+ModalPos Body(int i) { return ModalPos(ModalRegion::Body, i); }
+ModalPos Foot(int i) { return ModalPos(ModalRegion::Footer, i); }
+
+ModalPos Step(ModalPos p, int step) { return ComputeModalStep(p, 5, 4, step); }
+
+} // namespace
+
+TEST(ModalStep, TheBodyWalksItsOwnRowsFirst)
+{
+	EXPECT_EQ(ModalRegion::Body, Step(Body(0), 1).region);
+	EXPECT_EQ(1, Step(Body(0), 1).index);
+	EXPECT_EQ(2, Step(Body(3), -1).index);
+}
+
+// The bug this exists for: the top of a list used to be a dead end.
+TEST(ModalStep, OffTheTopOfTheBodyIsTheFooter)
+{
+	EXPECT_EQ(ModalRegion::Footer, Step(Body(0), -1).region);
+	EXPECT_EQ(0, Step(Body(0), -1).index);
+}
+
+TEST(ModalStep, OffTheBottomOfTheBodyIsTheFooterToo)
+{
+	EXPECT_EQ(ModalRegion::Footer, Step(Body(4), 1).region);
+	EXPECT_EQ(0, Step(Body(4), 1).index);
+}
+
+// Coming back lands at the end nearest the key, so the loop reads the same in both directions.
+TEST(ModalStep, OffTheFooterIsTheEndOfTheBodyNearestTheKey)
+{
+	EXPECT_EQ(ModalRegion::Body, Step(Foot(0), -1).region);
+	EXPECT_EQ(4, Step(Foot(0), -1).index);
+
+	EXPECT_EQ(ModalRegion::Body, Step(Foot(0), 1).region);
+	EXPECT_EQ(0, Step(Foot(0), 1).index);
+}
+
+// One press each way returns to where it started, which is what makes it a loop rather than a walk.
+TEST(ModalStep, TheLoopClosesInBothDirections)
+{
+	EXPECT_EQ(0, Step(Step(Body(0), -1), 1).index);
+	EXPECT_EQ(ModalRegion::Body, Step(Step(Body(0), -1), 1).region);
+
+	EXPECT_EQ(ModalRegion::Body, Step(Step(Body(4), 1), -1).region);
+	EXPECT_EQ(4, Step(Step(Body(4), 1), -1).index);
+}
+
+// An empty body is not somewhere focus may sit, so the footer keeps the key either way.
+TEST(ModalStep, AnEmptyBodyLeavesTheKeyOnTheFooter)
+{
+	EXPECT_EQ(ModalRegion::Footer, ComputeModalStep(Foot(0), 0, 2, -1).region);
+	EXPECT_EQ(ModalRegion::Footer, ComputeModalStep(Foot(0), 0, 2, 1).region);
+	EXPECT_EQ(ModalRegion::Footer, ComputeModalStep(Body(0), 0, 2, -1).region);
+}
+
+// A box with only a DONE is still a loop; footCount is corrected rather than trusted.
+TEST(ModalStep, ABoxWithOneButtonStillLoops)
+{
+	EXPECT_EQ(ModalRegion::Footer, ComputeModalStep(Body(0), 3, 1, -1).region);
+	EXPECT_EQ(ModalRegion::Body, ComputeModalStep(Foot(0), 3, 0, 1).region);
+}
