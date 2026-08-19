@@ -21,6 +21,8 @@
 #include "r_defs.h"                  // sector_t
 #include "r_state.h"                 // sectors, numsectors
 #include "m_fixed.h"                 // FIXED2FLOAT
+#include "r_data/r_translate.h"       // TRANSLATION, for the alpha-texture rule
+#include "gl/textures/gl_material.h"    // FMaterial::tex, to ask whether it uses the base palette
 #include "c_cvars.h"
 #include "tarray.h"
 #include "templates.h"
@@ -528,7 +530,14 @@ void DrawDeferredDecals(Diligent::IDeviceContext *ctx)
 		for (int i = 0; i < 16; i++) cb[i] = invMVP[i];
 		cb[16] = (float)fua_dg_decaldebug;
 		cb[17] = (float)fua_decal_minfacing;
-		cb[18] = 0.f;
+		// [rc4l] fua_dg_decalslot0, which was declared and then never read.
+		//
+		// This pins every mark to texture slot zero, and it is the one experiment that separates "the
+		// graphic is wrong" from "the mark is sampling the wrong slot" -- a mask that is 1 across the
+		// whole quad is what BOTH look like, because an out-of-range slot lands on the white padding
+		// the array is filled with. Hardcoded to zero here, the knob answered every question with
+		// silence, and its absence looked exactly like a knob that was on and telling the truth.
+		cb[18] = fua_dg_decalslot0 ? 1.f : 0.f;
 		cb[19] = (float)fua_decal_aspect;
 	}
 
@@ -558,15 +567,38 @@ void DrawDeferredDecals(Diligent::IDeviceContext *ctx)
 			if (mats.Size() >= FUA_DECAL_TEXTURES) slot = 0;   // over the ceiling: see FUA_DECAL_TEXTURES
 			else
 			{
-				Diligent::IDeviceObject *srv = GetMaterialSRV(d.material, 0);
+				// [rc4l] A shaded mark asks for its texture the way GL asks for it.
+				//
+				// gl_renderstate.h sets a special translation for an alpha texture whose graphic uses
+				// the base palette: the colour INDEX becomes the alpha directly, which is what makes
+				// the red channel the mark's shape. Asked for with translation 0 instead, the red
+				// channel is just how red the graphic is -- near 1 across a pale scorch -- so the mask
+				// reads 1 everywhere and the mark paints its whole box solid.
+				int trans = 0;
+				if (d.redToAlpha)
+				{
+					FMaterial *fm = (FMaterial *)d.material;
+					if (fm != NULL && fm->tex != NULL && fm->tex->UseBasePalette())
+						trans = TRANSLATION(TRANSLATION_Standard, 8);
+				}
+				Diligent::IDeviceObject *srv = GetMaterialSRV(d.material, trans);
 				if (!srv) continue;
 				// [rc4l] Say when a mark's texture came back as the WHITE fallback.
 				//
 				// GetMaterialSRV answers white for anything it cannot produce, which is the right default
 				// and an invisible failure: a mask of 1 everywhere paints the mark's whole box solid, and
 				// that looks like a clipping fault, a blend fault or a UV fault in turn.
-				if (fua_dg_decaldebug > 0 && srv == GetMaterialSRV(NULL, 0))
-					Printf("decal texture fell back to WHITE for material %p\n", d.material);
+				if (fua_dg_decaldebug > 0)
+				{
+					FMaterial *fm2 = (FMaterial *)d.material;
+					Printf("decal tex %s: slot %u, redToAlpha %d, additive %d, rgba %.2f %.2f %.2f %.2f, "
+						"basePalette %d, translation %d%s\n",
+						(fm2 && fm2->tex && fm2->tex->Name != NULL) ? fm2->tex->Name : "?",
+						mats.Size(), d.redToAlpha ? 1 : 0, d.additive ? 1 : 0,
+						d.r, d.g, d.b, d.a,
+						(fm2 && fm2->tex && fm2->tex->UseBasePalette()) ? 1 : 0,
+						(int)trans, (srv == GetMaterialSRV(NULL, 0)) ? "  <-- WHITE FALLBACK" : "");
+				}
 				slot = (int)mats.Size();
 				mats.Push(d.material);
 				views.Push(srv);
@@ -593,6 +625,27 @@ void DrawDeferredDecals(Diligent::IDeviceContext *ctx)
 		inst.anchor[3] = 0.f;
 		if (d.additive) { instAdd.Push(inst); matAdd.Push(d.material); }
 		else { instAlpha.Push(inst); matAlpha.Push(d.material); }
+	}
+
+	if (fua_dg_decaldebug > 0)
+	{
+		// [rc4l] What slot each mark actually asks for, against how many were filled.
+		//
+		// A mask of 1 across the whole quad has two causes that look identical -- the graphic is
+		// wrong, or the mark is reading a slot nothing was put in, which is the white padding. The
+		// range says which, and it is two numbers.
+		int lo = 1 << 30, hi = -1;
+		for (unsigned i = 0; i < instAlpha.Size(); i++)
+		{
+			const int s = (int)instAlpha[i].centre[3];
+			if (s < lo) lo = s;  if (s > hi) hi = s;
+		}
+		for (unsigned i = 0; i < instAdd.Size(); i++)
+		{
+			const int s = (int)instAdd[i].centre[3];
+			if (s < lo) lo = s;  if (s > hi) hi = s;
+		}
+		Printf("decal slots used %d..%d, %u filled of %d\n", lo, hi, mats.Size(), FUA_DECAL_TEXTURES);
 	}
 
 	const unsigned total = instAlpha.Size() + instAdd.Size();
