@@ -823,6 +823,15 @@ static	zx::TextInput	g_DialogInput;
 // Which button the pointer is over, so hover lights it as it does everywhere else.
 static	int				g_DialogHot = -1;
 
+// [rc4l] WHERE THE KEYBOARD WAS WHEN THE QUESTION WENT UP, so closing it puts the keyboard back.
+//
+// Closing used to hand focus to the server list unconditionally, which is a region that is not even
+// drawn while the HOST tab is showing -- so answering "reset the map list?" or "take every map out?"
+// left the orb pointing at nothing and the arrows walking a list behind two modals. Every dialog
+// this browser raises from the hosting screens had it; the map box's new buttons only made it easy
+// to notice.
+static	zx::BrowserFocus	g_DialogReturnFocus = zx::BrowserFocus::Rows;
+
 // [rc4l] The top row picks WHAT YOU ARE DOING; the row under it picks which servers.
 //
 // These used to be one row of three: PUBLIC, PRIVATE, HOST. Hosting is not a filter on a list of
@@ -3547,6 +3556,11 @@ public:
 
 		g_DialogInput = zx::ClearInput( );
 		g_DialogHot = -1;
+
+		// Guarded, so a dialog raised from a dialog cannot record the dialog as the way back.
+		if ( g_Focus != zx::BrowserFocus::Dialog )
+			g_DialogReturnFocus = g_Focus;
+
 		SetFocus( zx::BrowserFocus::Dialog );
 
 		S_Sound( CHAN_VOICE | CHAN_UI, "menu/choose", snd_menuvolume, ATTN_NONE );
@@ -3574,6 +3588,10 @@ public:
 
 		g_DialogInput = zx::ClearInput( );
 		g_DialogHot = -1;
+
+		if ( g_Focus != zx::BrowserFocus::Dialog )
+			g_DialogReturnFocus = g_Focus;
+
 		SetFocus( zx::BrowserFocus::Dialog );
 
 		S_Sound( CHAN_VOICE | CHAN_UI, "menu/invalid", snd_menuvolume, ATTN_NONE );
@@ -3741,7 +3759,9 @@ public:
 		g_Dialog = BrowserDialog( );
 		g_DialogInput = zx::ClearInput( );
 		g_DialogHot = -1;
-		SetFocus( zx::BrowserFocus::Rows );
+
+		// Back where it came from, which is the only answer that is right on more than one tab.
+		SetFocus( g_DialogReturnFocus );
 	}
 
 	//*************************************************************************
