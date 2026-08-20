@@ -31,10 +31,18 @@ thing being retired.
 
 ## What is here
 
+Engine-free and tested off-engine, all of it, because "what does this sidedef look like" is
+answerable without a camera, a level or a screenshot — and every answer that has to be checked by
+looking at a picture costs a day the first time it is wrong.
+
 - `computation/wallgeom_compute` — the vertical spans a sidedef contributes: upper, lower, middle.
-  Engine-free and tested off-engine, because "what does this sidedef look like" is answerable without
-  a camera, a level or a screenshot, and every answer that has to be checked by looking at a picture
-  costs a day the first time it is wrong.
+- `computation/walluv_compute` — where the picture sits on them: the coordinate along the line, the
+  coordinate down from the pegging reference, and the reference itself.
+- `computation/planegeom_compute` — the same questions for a floor or a ceiling: height at a point,
+  sloped or not, which side it is seen from, and the normal that follows the viewed side rather than
+  the plane.
+- `surfaceverify.cpp` — `fua_surface_verify`, which compares all of it against what the capture
+  recorded, on a real level.
 
 ## Where it stands, measured
 
@@ -67,11 +75,15 @@ visible input saying 128.
 
 ## What comes next, in order
 
-1. UV derivation for those spans — pegging, offsets, scaling.
-2. The plane equivalent, which is mostly `flatmesh_compute` moved here and renamed for what it is.
-3. Slopes, which stop being a special case once a plane is a plane.
-4. Wiring: the mesh builds from map data, and the capture path is what handles the cases the
-   derivation has not learned yet, rather than the other way round.
+1. Close the peg-condition subset and the MAP16 fence category — both listed above with their
+   numbers, both reproducible with one command.
+2. Wiring: the mesh builds from map data, and the capture path handles only the cases the derivation
+   has not learned yet, rather than the other way round. The ladders are what say when a case is
+   ready to move across.
+3. Shading — light level, colormap, fog — which the capture currently takes from GL through
+   `CaptureShading` and which a derivation would have to answer for itself. That one is deliberately
+   last: it is the part where a second implementation drifted before, and it is why `CaptureShading`
+   exists at all.
 
 `GLWall::Process` is a thousand lines of accumulated cases. It gets replaced one answerable question
 at a time, and every question keeps its answer in a test — not by a rewrite that has to be right
