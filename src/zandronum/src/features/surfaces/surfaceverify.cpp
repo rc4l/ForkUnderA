@@ -275,7 +275,7 @@ CCMD( fua_surface_verify )
 				const bool haveTex = MiddleTextureOf( &segs[s], texH, pegBottom, rowOfs, pegF, pegC );
 				const WallPart opening = ComputeMiddlePart( h );
 				Printf( "      line %d: front %.0f..%.0f back %.0f..%.0f | opening %.0f..%.0f | "
-					"tex %s (%s %dx%d) h %.1f peg %d rowofs %.1f | scale %.3f | flags %08x\n",
+					"tex %s (%s %dx%d) h %.1f peg %d rowofs %.1f | pegZ %.1f/%.1f | scale %.3f | flags %08x\n",
 					segs[s].linedef ? (int)( segs[s].linedef - lines ) : -1,
 					h.frontFloor, h.frontCeiling, h.backFloor, h.backCeiling,
 					opening.bottom, opening.top, haveTex ? "yes" : "none",
@@ -285,9 +285,54 @@ CCMD( fua_surface_verify )
 						TexMan( segs[s].sidedef->GetTexture( side_t::mid ) )->GetWidth( ) : 0,
 					TexMan( segs[s].sidedef->GetTexture( side_t::mid ) ) ?
 						TexMan( segs[s].sidedef->GetTexture( side_t::mid ) )->GetHeight( ) : 0,
-					texH, (int)pegBottom, rowOfs,
+					texH, (int)pegBottom, rowOfs, pegF, pegC,
 					FIXED2FLOAT( segs[s].sidedef->GetTextureYScale( side_t::mid ) ),
 					segs[s].linedef ? (unsigned)segs[s].linedef->flags : 0u );
+				// [rc4l] Every piece the capture holds for this seg, raw.
+				//
+				// A span that disagrees with what DoMidTexture reads like means the piece is not the quad
+				// that function produced -- so the next question is what the capture actually stored, and
+				// that is answerable only by printing it rather than by reasoning about the code that was
+				// supposed to have produced it.
+				// [rc4l] A fake floor or ceiling -- Transfer_Heights, which is how Doom does deep water --
+				// clips wall geometry to itself, and nothing in the sidedef or the sector planes says so.
+				{
+					const sector_t *hf = segs[s].frontsector ? segs[s].frontsector->GetHeightSec() : NULL;
+					const sector_t *hb = segs[s].backsector ? segs[s].backsector->GetHeightSec() : NULL;
+					Printf( "      heightsec: front %s%s back %s%s\n",
+						hf ? "yes " : "no", hf ? "" : "", hb ? "yes" : "no", "" );
+					if ( hf ) Printf( "        front fake floor %.1f ceiling %.1f\n",
+						FIXED2FLOAT( hf->floorplane.ZatPoint( segs[s].v1->x, segs[s].v1->y ) ),
+						FIXED2FLOAT( hf->ceilingplane.ZatPoint( segs[s].v1->x, segs[s].v1->y ) ) );
+					if ( hb ) Printf( "        back fake floor %.1f ceiling %.1f\n",
+						FIXED2FLOAT( hb->floorplane.ZatPoint( segs[s].v1->x, segs[s].v1->y ) ),
+						FIXED2FLOAT( hb->ceilingplane.ZatPoint( segs[s].v1->x, segs[s].v1->y ) ) );
+				}
+				// [rc4l] The texture coordinate info both ways, because the disagreement is a height and
+				// every candidate for it lives in this struct.
+				{
+					FMaterial *m1 = FMaterial::ValidateTexture( segs[s].sidedef->GetTexture( side_t::mid ), false, true );
+					FMaterial *m2 = FMaterial::ValidateTexture( segs[s].sidedef->GetTexture( side_t::mid ), true, true );
+					FTexCoordInfo t1, t2;
+					if ( m1 ) m1->GetTexCoordInfo( &t1, segs[s].sidedef->GetTextureXScale( side_t::mid ),
+						segs[s].sidedef->GetTextureYScale( side_t::mid ) );
+					if ( m2 ) m2->GetTexCoordInfo( &t2, segs[s].sidedef->GetTextureXScale( side_t::mid ),
+						segs[s].sidedef->GetTextureYScale( side_t::mid ) );
+					Printf( "      tci: plain h %d scaleY %.3f | expanded h %d scaleY %.3f | worldpan %d\n",
+						m1 ? t1.mRenderHeight : -1, m1 ? FIXED2FLOAT( t1.mScaleY ) : 0.f,
+						m2 ? t2.mRenderHeight : -1, m2 ? FIXED2FLOAT( t2.mScaleY ) : 0.f,
+						m1 ? (int)t1.mWorldPanning : -1,
+						FIXED2FLOAT( segs[s].v1->x / 2 + segs[s].v2->x / 2 ),
+						FIXED2FLOAT( segs[s].v1->y / 2 + segs[s].v2->y / 2 ) );
+				}
+				for ( int q = 0; q < pieces; q++ )
+				{
+					const GLWall *pw = zx::levelmesh::CachedPiece( s, q );
+					if ( pw == NULL ) continue;
+					Printf( "      piece %d: type %d z %.1f..%.1f / %.1f..%.1f flags %02x alpha %.2f\n",
+						q, (int)pw->type, pw->zbottom[0], pw->ztop[0], pw->zbottom[1], pw->ztop[1],
+						(unsigned)pw->flags, pw->alpha );
+				}
 				shown++;
 			}
 		}
