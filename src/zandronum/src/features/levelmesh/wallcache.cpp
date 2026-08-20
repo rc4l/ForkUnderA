@@ -265,6 +265,21 @@ void BakeSeg(int segIndex)
 	}
 }
 
+int CachedSegCount() { return (int)g_cache.Size(); }
+
+int CachedPieceCount(int segIndex)
+{
+	if ((unsigned)segIndex >= g_cache.Size()) return 0;
+	return g_cache[segIndex].filled ? g_cache[segIndex].pieceCount : 0;
+}
+
+const GLWall *CachedPiece(int segIndex, int piece)
+{
+	if ((unsigned)segIndex >= g_cache.Size()) return NULL;
+	if (piece < 0 || piece >= g_cache[segIndex].pieceCount) return NULL;
+	return &g_cache[segIndex].walls[piece];
+}
+
 GLWall *StaticWall(int packedIndex)
 {
 	if (packedIndex < 0) return NULL;

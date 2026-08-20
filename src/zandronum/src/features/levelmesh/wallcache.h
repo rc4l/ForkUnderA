@@ -48,6 +48,15 @@ GLWall *StaticWall(int packedIndex);
 // The baked geometry range for the same reference, or NULL if that piece is not baked.
 const MeshRange *StaticWallRange(int packedIndex);
 
+// [rc4l] Walk what was captured, so a derivation can be checked against it.
+//
+// features/surfaces is working out surfaces from the map instead of transcribing what GL made of
+// it, and the only honest way to promote that over the capture is to check it against the capture
+// on real maps, piece by piece. Read-only: the verifier looks, it does not bake.
+int CachedSegCount();
+int CachedPieceCount(int segIndex);
+const GLWall *CachedPiece(int segIndex, int piece);
+
 // Bake a captured seg's pieces into the persistent buffer. Called after a successful capture.
 void BakeSeg(int segIndex);
 

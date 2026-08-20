@@ -10,9 +10,9 @@
 
 #include <gtest/gtest.h>
 
-#include "features/levelmesh/computation/wallgeom_compute.h"
+#include "features/surfaces/computation/wallgeom_compute.h"
 
-using namespace zx::levelmesh;
+using namespace zx::surfaces;
 
 namespace {
 
@@ -140,4 +140,37 @@ TEST(WallGeom, InvertedSectorProducesNothing)
 	if (low.present) EXPECT_GT(low.top, low.bottom);
 	if (up.present) EXPECT_GT(up.top, up.bottom);
 	EXPECT_FALSE(ComputeMiddlePart(inverted).present);   // floor above ceiling: no opening
+}
+
+// [rc4l] A sector squeezed past itself, which is what fua_surface_verify found on two real maps.
+//
+// A door mid-move, a crusher down, a lift whose ceiling has dropped below its own floor: the sector
+// reports a ceiling BELOW its floor. Taken literally the upper texture hangs down through the
+// doorway into space the lower texture already covers -- 28 pieces on dbab01 and 13 on dbab04
+// disagreed with the capture exactly that way, every one of them by the gap between the two.
+TEST(WallGeom, UpperStopsAtTheBackFloorWhenTheSectorIsInverted)
+{
+	// Back sector closed past itself: ceiling 256, floor 336.
+	const WallHeights h = TwoSided(16.f, 464.f, 336.f, 256.f);
+	const WallPart up = ComputeUpperPart(h);
+	ASSERT_TRUE(up.present);
+	EXPECT_FLOAT_EQ(336.f, up.bottom);   // the back FLOOR, not the back ceiling
+	EXPECT_FLOAT_EQ(464.f, up.top);
+}
+
+TEST(WallGeom, LowerStopsAtTheBackCeilingWhenTheSectorIsInverted)
+{
+	const WallHeights h = TwoSided(16.f, 464.f, 336.f, 256.f);
+	const WallPart low = ComputeLowerPart(h);
+	ASSERT_TRUE(low.present);
+	EXPECT_FLOAT_EQ(16.f, low.bottom);
+	EXPECT_FLOAT_EQ(256.f, low.top);     // the back CEILING, not the back floor
+}
+
+// The ordinary case must not move: a normal window still reads its own two planes.
+TEST(WallGeom, TheClampDoesNothingToAnOrdinarySector)
+{
+	const WallHeights h = TwoSided(0.f, 128.f, 48.f, 96.f);
+	EXPECT_FLOAT_EQ(96.f, ComputeUpperPart(h).bottom);
+	EXPECT_FLOAT_EQ(48.f, ComputeLowerPart(h).top);
 }
