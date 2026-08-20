@@ -437,6 +437,7 @@ static unsigned int g_clusterCapacity = 0;     // cells
 static unsigned int g_lightIndexCapacity = 0;  // entries
 static int g_clusterCells = 0;                 // cells actually in use this frame
 static int g_clusterRefs = 0;                  // light-in-cell entries this frame, for the stats
+static int g_clusterTruncated = 0;             // cells that did not fit, this frame
 static bool g_clusterBindFailed = false;
 
 // The lights of this frame as the shader will see them: eight floats each, position (x, z, y),
@@ -2288,7 +2289,10 @@ static bool EnsureScenePipeline(FString &err)
 	}
 	if (!g_lightIndexBuf)
 	{
-		g_lightIndexCapacity = 262144;
+		// [rc4l] A million entries, 4 MB, because a quarter of that was not enough and the shortfall
+		// was invisible. 4096 lights spread over a map bin to ~385k entries; 262144 truncated that
+		// and the picture went 85% wrong with nothing but a number in a stats line to say so.
+		g_lightIndexCapacity = 1048576;
 		Diligent::BufferDesc ibd;
 		ibd.Name = "fua cluster light indices";
 		ibd.Size = (Diligent::Uint64)g_lightIndexCapacity * 4;
@@ -2881,6 +2885,7 @@ static void BuildLightClusters(Diligent::IDeviceContext *ctx)
 {
 	g_clusterCells = 0;
 	g_clusterRefs = 0;
+	g_clusterTruncated = 0;
 	if (!fua_dg_clusters || !g_clusterBuf || !g_lightIndexBuf || g_lightCount <= 0) return;
 
 	auto *swap = GetSwapChain();
@@ -2915,13 +2920,40 @@ static void BuildLightClusters(Diligent::IDeviceContext *ctx)
 					counts[zx::hwrender::ComputeClusterIndex(grid, x, y, z)]++;
 	}
 
+	// [rc4l] A ceiling per CELL, not a ceiling on the buffer.
+	//
+	// Bounding the total is what a buffer needs; bounding each cell is what a picture needs. Left to
+	// run out of buffer, the cells that happen to come last lose everything -- black rectangles in
+	// whatever part of the world sorted late -- and 4096 lights packed round the camera made 85% of
+	// the frame disagree that way. Capping each cell instead drops only the excess in the cells that
+	// are genuinely overloaded, and 3840 cells at 256 apiece cannot overrun a million entries, so the
+	// buffer limit stops being reachable at all.
+	//
+	// 256 lights reaching one cell is already far past anything a map does; the packed stress field
+	// is the only thing that has ever hit it.
+	enum { kMaxLightsPerCell = 256 };
+	for (int i = 0; i < cells; i++)
+		if (counts[i] > (unsigned)kMaxLightsPerCell) { counts[i] = kMaxLightsPerCell; g_clusterTruncated++; }
+
 	// The prefix sum, and the ceiling that keeps a pathological frame from running off the buffer.
 	offsets.Resize((unsigned)cells);
 	unsigned int total = 0;
 	for (int i = 0; i < cells; i++)
 	{
 		offsets[i] = total;
-		if (total + counts[i] > g_lightIndexCapacity) counts[i] = 0;   // drop rather than overrun
+		// [rc4l] Overflow TRUNCATES this cell and says so. It does not empty it.
+		//
+		// Emptying a cell removes every light from a patch of the world at once, which is a black
+		// rectangle rather than a dim one -- and when this first ran it dropped enough cells to make
+		// 85% of the frame disagree with the brute-force path, reported by nothing louder than a
+		// number in a stats line. Keeping what fits degrades the picture gently; the flag is what
+		// makes the degradation visible, because a renderer that silently draws something else is
+		// worse than one that stops.
+		if (total + counts[i] > g_lightIndexCapacity)
+		{
+			counts[i] = (g_lightIndexCapacity > total) ? (g_lightIndexCapacity - total) : 0;
+			g_clusterTruncated++;
+		}
 		total += counts[i];
 	}
 
@@ -4304,6 +4336,12 @@ void DynStats(FString &report)
 		g_clusterCells, g_clusterRefs,
 		g_clusterCells > 0 ? (float)g_clusterRefs / (float)g_clusterCells : 0.f);
 	report += clusters;
+	if (g_clusterTruncated > 0)
+	{
+		FString trunc;
+		trunc.Format(" | WARNING: cluster index buffer full, %d cells truncated", g_clusterTruncated);
+		report += trunc;
+	}
 	if (g_clusterBindFailed) report += " | WARNING: ClusterTable not bound";
 	if (g_lightBindFailed) report += " | WARNING: LightBuffer not bound";
 	report += anim;
