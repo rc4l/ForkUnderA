@@ -193,7 +193,11 @@ CCMD( fua_surface_verify )
 	// disagreement about a HEIGHT is a wall that is the wrong size, while a disagreement about
 	// EXISTENCE is a wall that is missing or a wall that is not there at all.
 	int missing = 0;
-	int uvChecked = 0, uvAgreed = 0, uvShown = 0;
+	int uvChecked = 0, uvAgreed = 0, uvShown = 0, uvSwapped = 0, uvPegFlip = 0;
+	// Which PART the peg flip explains, because "the flag is inverted" is only actionable once it
+	// says for which of the three it is inverted.
+	int uvFlipByType[5] = { 0, 0, 0, 0, 0 };
+	int uvFlipSky = 0, uvFlipTallTex = 0;
 
 	const int segCount = zx::levelmesh::CachedSegCount( );
 	for ( int s = 0; s < segCount; s++ )
@@ -381,7 +385,52 @@ CCMD( fua_surface_verify )
 							const float wantV = ComputeWallV( first->ztop[0], texTop, (float)th );
 							uvChecked++;
 							if ( fabsf( wantV - first->uplft.v ) <= 0.01f ) uvAgreed++;
-							else if ( uvShown < 4 )
+							else
+							{
+								// [rc4l] Does it agree with the sides the other way round?
+								//
+								// The numbers on dbab04 said one disagreeing lower was aligned as though the
+								// seg front and back were swapped. That is a hypothesis with an obvious test,
+								// and counting the pieces it explains beats another round of reasoning about the
+								// formula: if it is most of them, the gap is a question about which sidedef a
+								// piece was recorded against, not about alignment at all.
+								const sector_t *sf = rb ? rb : rf, *sb = rf;
+								float sCeil, sFloor;
+								if ( kTypeOf[slot] == RENDERWALL_TOP )
+								{
+									sCeil = FIXED2FLOAT( sf->GetPlaneTexZ( sector_t::ceiling ) );
+									sFloor = FIXED2FLOAT( sb->GetPlaneTexZ( sector_t::ceiling ) );
+								}
+								else if ( kTypeOf[slot] == RENDERWALL_BOTTOM )
+								{
+									sCeil = FIXED2FLOAT( sb->GetPlaneTexZ( sector_t::floor ) );
+									sFloor = FIXED2FLOAT( sf->GetPlaneTexZ( sector_t::floor ) );
+								}
+								else
+								{
+									sCeil = FIXED2FLOAT( sf->GetPlaneTexZ( sector_t::ceiling ) );
+									sFloor = FIXED2FLOAT( sf->GetPlaneTexZ( sector_t::floor ) );
+								}
+								const float swapTop = ComputeTextureTop( sCeil, sFloor, (float)th, pegged, rowOfs, 0.f );
+								const float unpegTop = ComputeTextureTop( sCeil, sFloor, (float)th, !pegged, rowOfs, 0.f );
+								if ( fabsf( ComputeWallV( first->ztop[0], swapTop, (float)th ) - first->uplft.v ) <= 0.01f )
+									uvSwapped++;
+								else if ( fabsf( ComputeWallV( first->ztop[0], unpegTop, (float)th ) - first->uplft.v ) <= 0.01f )
+									{
+										uvPegFlip++; uvFlipByType[slot]++;
+										// [rc4l] Sky is the branch DoTexture treats separately, so it is the first
+										// thing to count rather than the fifth thing to guess.
+										const bool skyCeil = rf->GetTexture( sector_t::ceiling ) == skyflatnum ||
+											( rb && rb->GetTexture( sector_t::ceiling ) == skyflatnum );
+										const bool skyFloor = rf->GetTexture( sector_t::floor ) == skyflatnum ||
+											( rb && rb->GetTexture( sector_t::floor ) == skyflatnum );
+										if ( skyCeil || skyFloor ) uvFlipSky++;
+										// ...and whether the texture is taller than the part it is on, which is the
+										// only situation where the two peggings differ at all.
+										if ( (float)th > ( wantTop - wantBottom ) ) uvFlipTallTex++;
+									}
+							}
+							if ( uvShown < 4 && fabsf( wantV - first->uplft.v ) > 0.01f )
 							{
 								// [rc4l] GL's own reference, recovered from the coordinates it produced.
 								//
@@ -486,8 +535,12 @@ CCMD( fua_surface_verify )
 	Printf( "fua_surface_verify on %s: %d of %d captured pieces agree (%.1f%%)\n",
 		level.MapName.GetChars( ), agreed, checked,
 		checked ? 100.0 * agreed / checked : 0.0 );
-	Printf( "  alignment: %d of %d agree (%.1f%%)\n", uvAgreed, uvChecked,
-		uvChecked ? 100.0 * uvAgreed / uvChecked : 0.0 );
+	Printf( "  alignment: %d of %d agree (%.1f%%); +%d with the sides swapped, +%d with the peg flipped\n",
+		uvAgreed, uvChecked, uvChecked ? 100.0 * uvAgreed / uvChecked : 0.0, uvSwapped, uvPegFlip );
+	Printf( "    peg flips by part: upper %d, lower %d, middle-1s %d, middle %d, middle-nofog %d\n",
+		uvFlipByType[0], uvFlipByType[1], uvFlipByType[2], uvFlipByType[3], uvFlipByType[4] );
+	Printf( "    of those flips: %d touch sky, %d have a texture taller than the part\n",
+		uvFlipSky, uvFlipTallTex );
 	Printf( "  %d skipped as sloped, %d skipped as another surface type, %d the derivation does not place at all\n",
 		skippedSloped, skippedType, missing );
 }
