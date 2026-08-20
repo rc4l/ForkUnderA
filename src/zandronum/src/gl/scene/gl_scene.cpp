@@ -608,6 +608,28 @@ void FGLRenderer::DrawScene(bool toscreen)
 {
 	static int recursion=0;
 
+	// [rc4l] STANDALONE: the backend draws the world and GL stops deriving it.
+	//
+	// Everything below this line is GL working out what the world looks like from here -- the BSP
+	// walk, a GLWall built per visible seg, the clipper, the draw lists. The backend does not need
+	// any of it: its geometry is resident and its frame is a matrix upload and a batch loop, which
+	// measures 0.25 ms of submit and 0.15 ms of GPU on Sunder MAP16 against roughly 7 ms of this.
+	//
+	// So with fua_dg_standalone the whole derivation is skipped. What GL still supplies is named in
+	// zx::hwrender::StandaloneActive(): a level that has been fully baked once, and sprites and
+	// moving geometry, which are not yet fed from anywhere else. It is a switch and it is off by
+	// default, because a mode that drops moving doors is not a default.
+	if (zx::hwrender::StandaloneActive())
+	{
+		if (!gl_draw_sync && toscreen)
+		{
+			All.Unclock();
+			static_cast<OpenGLFrameBuffer*>(screen)->Swap();
+			All.Clock();
+		}
+		return;
+	}
+
 	CreateScene();
 	GLRenderer->mCurrentPortal = NULL;	// this must be reset before any portal recursion takes place.
 

@@ -185,6 +185,23 @@ CVAR(Bool, fua_dg_dynlights, true, 0)
 // binning pass and the shader, which is the one failure mode this design has.
 CVAR(Bool, fua_dg_clusters, true, 0)
 
+// [rc4l] Cut the cord: the backend renders and GL stops deriving the scene.
+//
+// GL walks the BSP, builds a GLWall per visible seg and fills draw lists every frame; the backend
+// renders from geometry that is already resident. On Sunder MAP16 that is ~7 ms of GL working out
+// a picture the backend draws in 0.4. This switch stops GL doing it.
+//
+// Off by default, and honestly so: what GL still supplies here is baking geometry the player has
+// not seen (solved by baking the level once when this turns on), sprites, and re-baking sectors
+// that move (both still missing). Until those are fed from somewhere else this measures the
+// ceiling rather than being a way to play. StandaloneActive() reports whether it is really
+// carrying the frame, which is not the same as the cvar being set.
+CVAR(Bool, fua_dg_standalone, false, CVAR_ARCHIVE)
+
+// Set once the level has been baked under standalone -- the bake itself needs GL frames.
+static bool g_standaloneBaked = false;
+static int  g_standaloneArmed = 0;
+
 // [rc4l] The shader spells 64 and 24 out, because a GLSL string cannot read a C++ constant. This is
 // the tie: change the grid and the build stops until the shader has been changed with it. A tile
 // size that disagrees between the binning pass and the lookup is a grid where every cell holds the
@@ -4551,11 +4568,39 @@ static bool AutoSetupForLevel()
 // [rc4l] Read by dgwin32.cpp when it creates the window; see fua_dg_embed.
 bool Fua_WantEmbeddedWindow() { return !!fua_dg_embed; }
 
+// [rc4l] Is the standalone path actually carrying the frame?
+//
+// Three things must be true and the cvar is one of them: the backend has to be up, the level has to
+// have been baked (a bake runs inside GL's BSP walk, so the first frames after switching are still
+// GL frames), and there has to be geometry. Anything else and GL keeps the frame -- falling back
+// silently is right here, because the alternative is a black screen.
+bool StandaloneActive()
+{
+	if (!fua_dg_standalone || !fua_vulkan) return false;
+	if (!g_standaloneBaked || !g_vb || g_sceneVerts == 0) return false;
+	return true;
+}
+
 void LiveFrame()
 {
 	// [rc4l] fua_vulkan is the user-facing switch and sets itself up; fua_diligent_live is the manual
 	// override that assumes someone already ran the bake by hand.
 	const bool autoReady = fua_vulkan ? AutoSetupForLevel() : false;
+
+	// [rc4l] Bake the level the moment standalone is asked for, because from then on nothing else
+	// will: the bake runs inside GL's BSP walk, and that walk is what this mode stops. Armed rather
+	// than run here, and only once per switch-on.
+	if (fua_dg_standalone && autoReady && !g_standaloneBaked)
+	{
+		if (g_standaloneArmed == 0)
+		{
+			zx::levelmesh::ArmFullBake();
+			Printf("standalone: baking the level once, then GL stops deriving the scene.\n");
+			Printf("standalone: sprites and moving geometry are NOT fed in this mode yet.\n");
+		}
+		if (++g_standaloneArmed > 3) g_standaloneBaked = true;   // a frame to bake, one to upload
+	}
+	if (!fua_dg_standalone) { g_standaloneBaked = false; g_standaloneArmed = 0; }
 
 	// Uncover the GL frame underneath when the backend is off, rather than leaving the last Vulkan
 	// frame frozen over it. This is what makes turning it off an A/B toggle you can hold.

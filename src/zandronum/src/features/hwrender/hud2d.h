@@ -71,6 +71,11 @@ void Clear2D();
 // Record one quad. Cheap and allocation-free after the first few frames.
 void Record2D(const Quad2D &q);
 
+// [rc4l] True while the backend is carrying the frame on its own and GL should not derive the
+// scene. See fua_dg_standalone: the cvar asks for it, this says whether it is actually happening --
+// the level has to have been baked first, and that bake needs GL frames to run in.
+bool StandaloneActive();
+
 // This frame's quads, in submission order -- which IS the draw order, because 2D is painter's
 // algorithm all the way down and reordering it would put the status bar behind the world.
 const Quad2D *Quads2D(int &count);
