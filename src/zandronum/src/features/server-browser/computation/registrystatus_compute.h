@@ -98,6 +98,34 @@ std::string RegistryTooltip(const std::string &host, int port, RegistryStatus st
 // less true.
 RegistryStatus AgeRegistryStatus(RegistryStatus current, int msSinceRecorded, int throttleClearMs);
 
+// [rc4l] What to keep when a new answer arrives about a registry we already have a verdict for.
+//
+// Nearly always the new one -- it is the more recent fact. The exception is being THROTTLED on top
+// of an OK, and that exception is the whole reason this exists.
+//
+// "You asked again too soon" is not a fact about reachability. It is a fact about our own timing,
+// and the registry had to be alive and listening to say it at all. Letting it replace an Ok threw
+// away the one piece of proof we had, and everything downstream read that as trouble: the header
+// tab has no Ok to be green about so it drops to LAN-only orange, and the throttle then decays to
+// Pending and is expired to NoAnswer -- a registry marked unreachable while its own server list is
+// still on the screen.
+//
+// It is a real sequence, not a hypothetical: the background query answers a few seconds after
+// launch, opening the browser asks again inside the registry's three-second cooldown, and the
+// second answer used to undo the first. Every time.
+// [rc4l] What we last actually HEARD from a registry, as opposed to what its row currently says.
+//
+// Asking again sets every row to Pending before a single reply is back, so `status` in the window
+// between the question and the answer is not news -- it is the absence of news. Judging an arriving
+// refusal against it therefore compares the refusal to nothing at all, which is how a registry that
+// answered a second ago still ends up amber.
+//
+// Pending is the only status that means "no verdict yet"; every other one is something the registry
+// told us, so it speaks for itself and `prior` is not consulted.
+RegistryStatus ComputeKnownStatus(RegistryStatus current, RegistryStatus prior);
+
+RegistryStatus ComputeRecordedStatus(RegistryStatus current, RegistryStatus incoming);
+
 } // namespace zx
 
 #endif // ZX_REGISTRYSTATUS_COMPUTE_H

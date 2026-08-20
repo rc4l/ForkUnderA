@@ -315,6 +315,10 @@ LONG			BROWSER_GetPlayerSpectating( ULONG ulServer, ULONG ulPlayer );
 // packets at a port we opened for two seconds.
 bool			BROWSER_GetServerRegistryAddress( NETADDRESS_s &out );
 
+// [rc4l] A registry address of one family, so a question whose answer differs per family can ask
+// both -- see the reach probe, where the family tested is decided by the address we send to.
+bool			BROWSER_GetServerRegistryAddressForFamily( bool bIPv6, NETADDRESS_s &out );
+
 // [rc4l] Whether a reply came from a registry this client actually queries.
 //
 // The receive path used to judge that by fua_serverregistry_host, which is the SERVER's announce

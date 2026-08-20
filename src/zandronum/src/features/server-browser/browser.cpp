@@ -48,6 +48,7 @@
 //
 //-----------------------------------------------------------------------------
 
+#include <map>
 #include "networkheaders.h"
 #include "features/server-browser/browser.h"
 #include "features/server-browser/computation/launcherfields_compute.h"
@@ -114,6 +115,13 @@ struct SERVERREGISTRYSTATE_s
 	// [rc4l] When `status` was recorded. Only THROTTLED reads it, to know when the registry has
 	// stopped ignoring us; every other status is a finished verdict that time does not change.
 	ULONG				ulStatusMS;
+
+	// [rc4l] The last thing this registry actually TOLD us, kept across the wipe that starts every
+	// query. `status` cannot carry it: asking again sets every row back to Pending, and the whole
+	// table is rebuilt from the list besides, so by the time a reply lands there is nothing left to
+	// compare it against. Without this, a refusal arriving after a successful answer looks like the
+	// first news we ever had, and the row that was green a second ago goes amber and then red.
+	zx::RegistryStatus	priorStatus;
 };
 
 static	std::vector<SERVERREGISTRYSTATE_s>	g_ServerRegistryStates;
@@ -287,7 +295,12 @@ static void browser_NoteRegistryStatus( const NETADDRESS_s &from, zx::RegistrySt
 	{
 		if ( g_ServerRegistryStates[i].bResolved && g_ServerRegistryStates[i].address.Compare( from ))
 		{
-			g_ServerRegistryStates[i].status = status;
+			// [rc4l] What survives is computation/registrystatus_compute's answer: a throttle does
+			// not unseat an Ok, because "you asked too soon" says nothing about reachability.
+			g_ServerRegistryStates[i].status = zx::ComputeRecordedStatus(
+				zx::ComputeKnownStatus( g_ServerRegistryStates[i].status,
+					g_ServerRegistryStates[i].priorStatus ),
+				status );
 			g_ServerRegistryStates[i].ulStatusMS = I_MSTime( );
 			return;
 		}
@@ -1007,6 +1020,32 @@ bool BROWSER_GetServerRegistryAddress( NETADDRESS_s &out )
 	// about which of them this client can actually reach.
 	out = g_bHaveAnsweringRegistry ? g_LastAnsweringRegistry : g_ServerRegistryAddresses[0];
 	return true;
+}
+
+//*****************************************************************************
+//
+// [rc4l] A registry address of a PARTICULAR family, for the one question that has to be asked of
+// both: can anyone out there reach this port.
+//
+// The registry probes back to whatever address it saw the request arrive from, so the family a reach
+// test exercises is decided by the address we send it to -- and BROWSER_GetServerRegistryAddress
+// hands back whichever family last answered, which makes that choice arbitrary. Asking for a family
+// by name is what lets the probe try v4, and then v6, rather than one of them by accident.
+bool BROWSER_GetServerRegistryAddressForFamily( bool bIPv6, NETADDRESS_s &out )
+{
+	if ( g_ServerRegistryAddresses.Size( ) == 0 )
+		browser_ResolveServerRegistries( );
+
+	for ( unsigned int i = 0; i < g_ServerRegistryAddresses.Size( ); i++ )
+	{
+		if ( g_ServerRegistryAddresses[i].bIsIPv6 == bIPv6 )
+		{
+			out = g_ServerRegistryAddresses[i];
+			return true;
+		}
+	}
+
+	return false;
 }
 
 //*****************************************************************************
@@ -1949,6 +1988,15 @@ void BROWSER_ParseServerQuery( BYTESTREAM_s *pByteStream, bool bLAN )
 // of querying several.
 static void browser_ResolveServerRegistries( void )
 {
+	// [rc4l] What each registry last told us, saved before the table goes. Keyed on the host as
+	// written, which is the one part of a row that survives a re-resolve unchanged.
+	std::map<std::string, zx::RegistryStatus> priorByHost;
+	for ( size_t i = 0; i < g_ServerRegistryStates.size( ); ++i )
+	{
+		const SERVERREGISTRYSTATE_s &old = g_ServerRegistryStates[i];
+		priorByHost[old.host] = zx::ComputeKnownStatus( old.status, old.priorStatus );
+	}
+
 	g_ServerRegistryAddresses.Clear();
 	g_ServerRegistryStates.clear();
 
@@ -1970,6 +2018,10 @@ static void browser_ResolveServerRegistries( void )
 		state.bResolved = false;
 		state.status = zx::RegistryStatus::LookupFailed;
 		state.ulStatusMS = I_MSTime( );
+
+		const std::map<std::string, zx::RegistryStatus>::const_iterator prior =
+			priorByHost.find( state.host );
+		state.priorStatus = ( prior != priorByHost.end( )) ? prior->second : zx::RegistryStatus::Pending;
 
 		NETADDRESS_s address;
 		if ( address.LoadFromString( entries[i].host.c_str( )) == false )
@@ -2483,6 +2535,26 @@ static void browser_QueryServer( ULONG ulServer )
 //*****************************************************************************
 //
 
+// [rc4l] What each registry is currently saying, as text.
+//
+// The screen shows this as a three-pixel colour bar with the detail on hover, which is fine to
+// glance at and impossible to diagnose with: "it went green then orange then red" is a sequence
+// nobody can screenshot in time, and the bar cannot be read by a script at all. Five different
+// places write these statuses, so when they disagree the only way to see which one did it is to
+// print the field itself.
+CCMD( dumpregistries )
+{
+	for ( size_t i = 0; i < g_ServerRegistryStates.size( ); ++i )
+	{
+		const SERVERREGISTRYSTATE_s &state = g_ServerRegistryStates[i];
+		Printf( "REGISTRY %s:%d now=%s prior=%s age=%dms\n", state.host.c_str( ), state.port,
+			zx::RegistryStatusCode( state.status ), zx::RegistryStatusCode( state.priorStatus ),
+			(int)( I_MSTime( ) - state.ulStatusMS ));
+	}
+}
+
+//*****************************************************************************
+//
 CCMD( dumpserverlist )
 {
 	ULONG	ulIdx;
