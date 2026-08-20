@@ -1199,26 +1199,6 @@ CCMD( fua_mesh_verify )
 //==========================================================================
 
 //==========================================================================
-//
-// fua_light / fua_light_clear
-//
-// [rc4l] A dynamic light that HOLDS STILL, so two renderers can be compared on one.
-//
-// Every light a map hands you is attached to something that moves or expires: a plasma ball flies,
-// a rocket explodes, a muzzle flash lasts two tics. Comparing GL against Vulkan on one of those
-// means comparing two instances that fired at slightly different moments, from slightly different
-// places, with the light somewhere else in each -- and every difference in the picture is then
-// arguably just that. Chasing a reported hard edge in the Vulkan dynamic lighting stalled on
-// exactly this: the pair never showed the same light twice.
-//
-// So: spawn a plain ADynamicLight at a stated point and leave it there. Same position, same radius,
-// same colour, in both instances, for as many frames as the test needs.
-//
-// usage: fua_light <radius> [r g b] [dz]      -- at the player, dz above the floor (default 16)
-//        fua_light <radius> <r> <g> <b> <x> <y> <z>
-//        fua_light_clear
-//
-//==========================================================================
 
 //==========================================================================
 //
@@ -1276,12 +1256,18 @@ CCMD( fua_decals )
 //
 // GL lights a wall by walking side_t::lighthead, a list of nodes each pointing at a light. The
 // light itself is a thinker and dies on its own schedule; the node is unlinked separately, by
-// ADynamicLight::UnlinkLight and by LinkLight's mark-and-sweep. Those two can disagree, and when
-// they do the symptom is a surface still being lit by something that no longer exists -- while
-// every instrument that starts from the thinker list reports nothing at all, because there IS
-// nothing at all. fua_dg_lights says "0 active" and the wall stays blue.
+// ADynamicLight::UnlinkLight and by LinkLight's mark-and-sweep. Nothing guarantees the two agree,
+// and if they ever stop agreeing no instrument that starts from the thinker list can say so --
+// there would be nothing in it to report. So this walks the lists themselves.
 //
-// So this walks the lists instead, and says which nodes have no light behind them.
+// It was written to catch a blue pool that stayed on a wall after a plasma bolt died, on the
+// theory that a node had outlived its light. It had not: every state of that fault reads 0
+// orphaned. That answer is why the CCMD is still here -- ruling the lists out is what left the
+// cached WALL as the only thing that could still be holding the light, and it was (see
+// walllight_compute.h). An instrument that reliably says "not here" is worth keeping.
+//
+// Dormant is reported separately and is not a fault: Deactivate keeps its nodes deliberately and
+// both draw paths test MF2_DORMANT. Counting those as broken read 64 leaks on a healthy level.
 //
 //==========================================================================
 
@@ -1329,19 +1315,26 @@ CCMD( fua_lightnodes )
 
 //==========================================================================
 //
-// fua_decals
+// fua_light / fua_light_clear
 //
-// [rc4l] Every decal the ENGINE is holding, which is not the same as what either renderer draws.
+// [rc4l] A dynamic light that HOLDS STILL, so two renderers can be compared on one.
 //
-// Both renderers filter: GL skips a decal flagged invisible, the mesh path skips it too and also
-// reads its alpha off the engine's own object. So counting what a renderer registered answers
-// "what got drawn", and the question that keeps coming up is the other one -- what is still THERE.
-// A mark that should have faded and been destroyed, but has not been, is invisible to every
-// instrument that starts from the draw.
+// Every light a map hands you is attached to something that moves or expires: a plasma ball flies,
+// a rocket explodes, a muzzle flash lasts two tics. Comparing GL against Vulkan on one of those
+// means comparing two instances that fired at slightly different moments, from slightly different
+// places, with the light somewhere else in each -- and every difference in the picture is then
+// arguably just that. Chasing a reported hard edge in the Vulkan dynamic lighting stalled on
+// exactly this: the pair never showed the same light twice.
 //
-// Walks the sidedefs, because that is where a glued decal lives: side_t::AttachedDecals, threaded
-// on DBaseDecal::WallNext.
+// So: spawn a plain ADynamicLight at a stated point and leave it there. Same position, same radius,
+// same colour, in both instances, for as many frames as the test needs.
 //
+// usage: fua_light <radius> [r g b] [dz]      -- at the player, dz above the floor (default 16)
+//        fua_light <radius> <r> <g> <b> <x> <y> <z>
+//        fua_light_clear
+//
+//==========================================================================
+
 CCMD( fua_light )
 {
 	if ( sectors == NULL || numsectors <= 0 ) { Printf( "no level loaded.\n" ); return; }
