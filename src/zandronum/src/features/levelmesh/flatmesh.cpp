@@ -28,6 +28,49 @@ CVAR(Bool, fua_decal_log, false, 0)
 
 namespace zx { namespace levelmesh {
 
+// [rc4l] The state a stored flat was built from, so an unchanged one can be left alone.
+//
+// Compared field by field rather than by memcmp: a struct with padding compares unequal on bytes
+// nothing ever wrote, and the failure would be a cache that silently never hits -- which looks
+// exactly like no cache at all, and is what this is being added to fix.
+//
+// dynLightIndex is deliberately NOT here. It is written into the piece and into the vertex stream,
+// and the backend has not read it since the shader started testing every light for itself (see
+// dgscene.cpp, "unused now the shader tests every light"). It also changes most frames, so
+// including it would mean the cache never hits. If anything ever starts reading it again, it
+// belongs in this stamp on the same day.
+struct FlatStamp
+{
+	fixed_t pa, pb, pc, pd;          // the plane itself: moves when the floor does
+	float   dz;
+	fixed_t xoffs, yoffs, xscale, yscale;
+	angle_t angle;
+	const void *material;            // FMaterial: changes when an animated flat advances
+	const void *baseTex;
+	int     lightLevel;
+	int     extraLight;
+	DWORD   lightColor, fadeColor;
+	int     desaturation, blendFactor;
+	fixed_t alpha;
+	int     renderStyle;
+
+	bool operator==(const FlatStamp &o) const
+	{
+		return pa == o.pa && pb == o.pb && pc == o.pc && pd == o.pd && dz == o.dz
+			&& xoffs == o.xoffs && yoffs == o.yoffs && xscale == o.xscale && yscale == o.yscale
+			&& angle == o.angle && material == o.material && baseTex == o.baseTex
+			&& lightLevel == o.lightLevel && extraLight == o.extraLight
+			&& lightColor == o.lightColor && fadeColor == o.fadeColor
+			&& desaturation == o.desaturation && blendFactor == o.blendFactor
+			&& alpha == o.alpha && renderStyle == o.renderStyle;
+	}
+};
+
+// How often the flat cache answered without rebuilding anything. Printed by fua_wallcache_stats,
+// because a cache nobody can see the hit rate of is a cache nobody can tell has stopped working.
+static int g_flatHits = 0, g_flatRebuilds = 0;
+void GetFlatCacheStats(int &hits, int &rebuilds) { hits = g_flatHits; rebuilds = g_flatRebuilds; }
+
 // [rc4l] Keyed on (subsector, plane) so a subsector's floor and ceiling are each baked once. The
 // range is kept so a re-bake at the same size overwrites in place, exactly like the wall path --
 // which is what stops a moving sector from growing the buffer forever.
@@ -52,6 +95,17 @@ struct FlatKey
 	MeshRange range;
 	// [rc4l] Next slot for the same subsector. See g_flatHead.
 	int next;
+
+	// [rc4l] Everything the stored geometry and the stored piece were built from.
+	//
+	// Walls have had a cache since the beginning; flats never got one, so every visible flat was
+	// rebuilt from scratch every frame -- its vertices recomputed, its UVs run through a rotation,
+	// its triangles restaged and memcpy'd into the mesh. Sunder MAP16 does that 3406 times a frame.
+	//
+	// A floor changes when it MOVES, when its texture animates, or when the light on it changes.
+	// The rest of the time the answer is the one already in the buffer.
+	FlatStamp stamp;
+	bool stamped;
 };
 static TArray<FlatKey> g_flats;
 
@@ -110,6 +164,83 @@ void RegisterFlatSubsector(const GLFlat &flat, subsector_t *sub, bool ceiling)
 	if (sub->sector != NULL && flat.mMeshModel != NULL && flat.mMeshModel != sub->sector) g_flat3D++;
 	else g_flatOwn++;
 
+	// The subsector's own chain, not every flat in the level.
+	const int subIndex = (int)(sub - subsectors);
+	if ((unsigned)subIndex >= g_flatHead.Size())
+	{
+		const unsigned was = g_flatHead.Size();
+		g_flatHead.Resize((unsigned)numsubsectors > 0 ? (unsigned)numsubsectors : (unsigned)subIndex + 1);
+		for (unsigned i = was; i < g_flatHead.Size(); i++) g_flatHead[i] = -1;
+	}
+
+	FlatKey *slot = NULL;
+	for (int i = g_flatHead[subIndex]; i >= 0; i = g_flats[i].next)
+		if (g_flats[i].ceiling == ceiling && g_flats[i].model == flat.mMeshModel &&
+			g_flats[i].whichPlane == flat.mMeshWhichPlane)
+		{ slot = &g_flats[i]; break; }
+	if (slot == NULL)
+	{
+		FlatKey k;
+		k.sub = sub;
+		k.ceiling = ceiling;
+		k.model = flat.mMeshModel;
+		k.whichPlane = flat.mMeshWhichPlane;
+		k.range.offset = 0;
+		k.range.count = 0;
+		k.next = g_flatHead[subIndex];
+		k.stamped = false;
+		const unsigned pushed = g_flats.Push(k);
+		g_flatHead[subIndex] = (int)pushed;
+		slot = &g_flats[pushed];
+		// [rc4l] Say when a NEW flat slot is created, and with what key.
+		//
+		// A slot that should have been found and was not is a duplicate surface: the same floor stored
+		// twice under two keys, drawn twice, fighting for the depth buffer. The key is four fields and
+		// the count says nothing about which of them disagreed, so it is printed.
+		if ( fua_flat_keylog )
+		{
+			Printf( "flatkey NEW: sub %d  ceiling %d  model %d  whichPlane %d  (slots %u)\n",
+				sub ? (int)(sub - subsectors) : -1, (int)ceiling,
+				flat.mMeshModel ? (int)(flat.mMeshModel - sectors) : -1,
+				flat.mMeshWhichPlane, g_flats.Size() );
+		}
+	}
+
+
+	// [rc4l] Has anything this flat is made of actually changed?
+	//
+	// Everything below rebuilds the surface from scratch: a vertex per edge, a rotation per vertex,
+	// a triangle fan staged and copied into the mesh, then a piece rebuilt and re-registered. A floor
+	// changes when it moves, when its texture animates, or when the light on it changes -- and the
+	// rest of the time all of that arrives at the bytes already sitting in the buffer.
+	FlatStamp now;
+	{
+		const secplane_t &pl = flat.plane.plane;
+		now.pa = pl.a; now.pb = pl.b; now.pc = pl.c; now.pd = pl.d;
+		now.dz = flat.dz;
+		now.xoffs = flat.plane.xoffs; now.yoffs = flat.plane.yoffs;
+		now.xscale = flat.plane.xscale; now.yscale = flat.plane.yscale;
+		now.angle = flat.plane.angle;
+		now.material = flat.gltexture;
+		now.baseTex = TexMan[flat.plane.texture];
+		now.lightLevel = flat.lightlevel;
+		now.extraLight = getExtraLight();
+		now.lightColor = flat.Colormap.LightColor.d;
+		now.fadeColor = flat.Colormap.FadeColor.d;
+		now.desaturation = flat.Colormap.desaturation;
+		now.blendFactor = flat.Colormap.blendfactor;
+		now.alpha = FLOAT2FIXED(flat.alpha);
+		now.renderStyle = (int)flat.renderstyle;
+	}
+	if (slot->stamped && slot->range.count > 0 && slot->stamp == now)
+	{
+		// The piece is still in the mesh's list from the last time it was registered -- pieces are
+		// keyed by range offset and replaced rather than appended, so nothing needs saying again.
+		g_flatHits++;
+		return;
+	}
+	g_flatRebuilds++;
+
 	// [rc4l] Cap matches the wall path's staging array; a subsector with more edges than this is
 	// vanishingly rare and is simply left to the GL renderer.
 	static FFlatVertex fan[GLWall::MAX_BATCH_FAN_VERTICES];
@@ -165,47 +296,6 @@ void RegisterFlatSubsector(const GLFlat &flat, subsector_t *sub, bool ceiling)
 			const int cc = facesDown ? (2 - c) : c;
 			tris[w++] = fan[ComputeFanTriangleVertex(n, t, cc)];
 		}
-
-	// The subsector's own chain, not every flat in the level.
-	const int subIndex = (int)(sub - subsectors);
-	if ((unsigned)subIndex >= g_flatHead.Size())
-	{
-		const unsigned was = g_flatHead.Size();
-		g_flatHead.Resize((unsigned)numsubsectors > 0 ? (unsigned)numsubsectors : (unsigned)subIndex + 1);
-		for (unsigned i = was; i < g_flatHead.Size(); i++) g_flatHead[i] = -1;
-	}
-
-	FlatKey *slot = NULL;
-	for (int i = g_flatHead[subIndex]; i >= 0; i = g_flats[i].next)
-		if (g_flats[i].ceiling == ceiling && g_flats[i].model == flat.mMeshModel &&
-			g_flats[i].whichPlane == flat.mMeshWhichPlane)
-		{ slot = &g_flats[i]; break; }
-	if (slot == NULL)
-	{
-		FlatKey k;
-		k.sub = sub;
-		k.ceiling = ceiling;
-		k.model = flat.mMeshModel;
-		k.whichPlane = flat.mMeshWhichPlane;
-		k.range.offset = 0;
-		k.range.count = 0;
-		k.next = g_flatHead[subIndex];
-		const unsigned pushed = g_flats.Push(k);
-		g_flatHead[subIndex] = (int)pushed;
-		slot = &g_flats[pushed];
-		// [rc4l] Say when a NEW flat slot is created, and with what key.
-		//
-		// A slot that should have been found and was not is a duplicate surface: the same floor stored
-		// twice under two keys, drawn twice, fighting for the depth buffer. The key is four fields and
-		// the count says nothing about which of them disagreed, so it is printed.
-		if ( fua_flat_keylog )
-		{
-			Printf( "flatkey NEW: sub %d  ceiling %d  model %d  whichPlane %d  (slots %u)\n",
-				sub ? (int)(sub - subsectors) : -1, (int)ceiling,
-				flat.mMeshModel ? (int)(flat.mMeshModel - sectors) : -1,
-				flat.mMeshWhichPlane, g_flats.Size() );
-		}
-	}
 
 	if (!MeshStore(slot->range, tris, w)) return;
 
@@ -269,6 +359,10 @@ void RegisterFlatSubsector(const GLFlat &flat, subsector_t *sub, bool ceiling)
 	// the base id of the texture actually being drawn, in every case, with no cases to enumerate.
 	mp.baseTex = TexMan[flat.plane.texture];
 	MeshRegisterPiece(mp);
+
+	// Only now: a stamp recorded before the store would claim a surface that never made it in.
+	slot->stamp = now;
+	slot->stamped = true;
 }
 
 // ---------------------------------------------------------------------------

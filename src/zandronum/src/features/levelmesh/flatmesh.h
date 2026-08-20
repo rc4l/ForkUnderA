@@ -28,6 +28,10 @@ namespace zx { namespace levelmesh {
 // (subsector, plane) already baked at the same geometry is skipped.
 void RegisterFlatSubsector(const GLFlat &flat, subsector_t *sub, bool ceiling);
 
+// [rc4l] How often a visible flat was left alone rather than rebuilt. A cache whose hit rate
+// nobody can see is a cache nobody can tell has stopped working.
+void GetFlatCacheStats(int &hits, int &rebuilds);
+
 // Forget every baked flat -- called when the wall cache is invalidated, so the two stay in step.
 void ClearFlats();
 // How many flat registrations were a subsector own plane vs a 3D floor plane.
