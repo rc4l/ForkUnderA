@@ -209,6 +209,19 @@ CVAR(Bool, fua_dg_standalone, false, CVAR_ARCHIVE)
 // what per-piece indirect draws with bindless materials would give (#4), and what a spatial batch
 // sort would give at the cost of more draws. The number to beat is recorded above.
 CVAR(Bool, fua_dg_cullbatches, false, 0)
+
+// [rc4l] Bindless materials: every texture in the level reachable from one descriptor set.
+//
+// With this on, the world does not bind a material per batch. Each vertex already carries a material
+// SLOT -- the field that used to hold a dynamic light index and has been dead since the shader
+// started testing every light -- and the fragment shader picks its own texture out of an array.
+//
+// The point is not the array. It is that the per-material shader resource binding goes away, and
+// with it the reason a batch has to span the level: a batch exists to share one material binding, so
+// batches can only be culled or drawn indirectly once nothing is bound per batch. See
+// docs/bindless-attempt-notes.md for the ceiling the first attempt hit doing these in the wrong
+// order.
+CVAR(Bool, fua_dg_bindless, true, CVAR_ARCHIVE)
 static int g_batchesCulled = 0, g_batchesDrawn = 0;
 
 // Set once the level has been baked under standalone -- the bake itself needs GL frames.
@@ -440,6 +453,186 @@ Diligent::IShaderResourceBinding *GetMaterialSRB(Diligent::IPipelineState *pso,
 	return e.srb;
 }
 
+// [rc4l] The material slot table: the level's textures, numbered.
+//
+// Slot 0 is always the white placeholder, so an overflow or an unresolvable material draws white
+// rather than drawing whatever happens to be in slot 0.
+//
+// Keyed on (material, translation) for the same reason GetMaterialSRV is: a translated sprite is a
+// different image of the same material, and giving them one slot paints the marine's armour on his
+// twin.
+// [rc4l] 512, and the number is not arbitrary.
+//
+// Sunder MAP16 uses 198 materials, so 256 is close enough to the cap to be a trap. The cost is
+// slots x 13 pipelines = 6656 combined-image-sampler descriptors, and the ceiling this hit before
+// -- 64 slots x 149 per-material bindings = 9536 worked, 128 x 149 = 19072 killed the device --
+// puts the limit above 9.5k. 6656 sits under it with room, and does not move when a level has more
+// materials, which is the whole difference between this shape and the one that failed.
+enum { kMaterialSlots = 512 };
+static_assert(kMaterialSlots == 512, "FUA_MAT_SLOTS_STR must say the same number");
+
+struct MatSlot { const void *material; int translation; };
+static TArray<MatSlot> g_matSlotTable;
+static bool g_matSlotOverflow = false;
+// The static array copied into the pipelines is only as fresh as the last fill. Anything that
+// changes what a slot should point at -- a new material, an animated texture reaching its next
+// frame -- raises this, and the next frame refills and rebuilds the world bindings.
+static bool g_matSlotsDirty = true;
+
+static void ResetMaterialSlots()
+{
+	g_matSlotTable.Clear();
+	MatSlot white; white.material = NULL; white.translation = 0;
+	g_matSlotTable.Push(white);
+	g_matSlotOverflow = false;
+	g_matSlotsDirty = true;
+}
+
+int MaterialSlotFor(const void *material, int translation)
+{
+	if (g_matSlotTable.Size() == 0) ResetMaterialSlots();
+	for (unsigned i = 0; i < g_matSlotTable.Size(); i++)
+		if (g_matSlotTable[i].material == material && g_matSlotTable[i].translation == translation)
+			return (int)i;
+	if (g_matSlotTable.Size() >= (unsigned)kMaterialSlots)
+	{
+		// Loud, once: a level past the slot count draws its extra materials white, and white walls
+		// with no message is the kind of thing that gets diagnosed as a texture-loading fault.
+		if (!g_matSlotOverflow)
+			Printf("Diligent bindless: more than %d materials on this level -- falling back to a binding per material"
+				"\n", (int)kMaterialSlots);
+		g_matSlotOverflow = true;
+		return 0;
+	}
+	MatSlot e; e.material = material; e.translation = translation;
+	g_matSlotTable.Push(e);
+	g_matSlotsDirty = true;
+	return (int)g_matSlotTable.Size() - 1;
+}
+
+int MaterialSlotCount() { return (int)g_matSlotTable.Size(); }
+
+// [rc4l] ONE binding per pipeline, which is the whole point.
+//
+// A STATIC shader variable is copied into every SRB made from the pipeline, and this backend makes
+// one SRB per (pipeline, material) -- so a 256-slot array bound the old way would cost 256 times the
+// material count in descriptors and take the device down. Bindless replaces those bindings rather
+// than joining them: with the array in place there is nothing left that varies per material, so
+// thirteen bindings serve the whole world. See docs/bindless-attempt-notes.md.
+static Diligent::IPipelineState *g_worldPSOs[13] = { 0 };
+static Diligent::IShaderResourceBinding *g_worldSRBs[13] = { 0 };
+static bool g_bindlessReady = false;
+// What the scene pixel shader said it declares, recorded at creation so the question can be asked
+// later -- pipeline setup happens before anything is listening on the console.
+static FString g_scenePSResources;
+
+static void ReleaseWorldSRBs()
+{
+	for (int i = 0; i < 13; i++)
+		if (g_worldSRBs[i]) { g_worldSRBs[i]->Release(); g_worldSRBs[i] = NULL; }
+}
+
+// [rc4l] Assign the material array on the PIPELINE's static variables.
+//
+// Diligent files uMaterials as static -- it refuses an unassigned element by that name -- but does
+// not enumerate it in GetStaticVariableCount(SHADER_TYPE_PIXEL), so it is looked up rather than
+// walked. The stage list is tried in turn because an implicit signature can file a resource under a
+// combined stage mask rather than the one that declared it, and guessing wrong reads exactly like
+// the shader having dropped the declaration.
+static bool FillMaterialArrayStatic(Diligent::IPipelineState *pso)
+{
+	if (!pso) return false;
+	const Diligent::SHADER_TYPE tries[] = { Diligent::SHADER_TYPE_PIXEL, Diligent::SHADER_TYPE_ALL_GRAPHICS,
+	                                        Diligent::SHADER_TYPE_UNKNOWN };
+	Diligent::IShaderResourceVariable *v = NULL;
+	for (int t = 0; t < 3 && v == NULL; t++)
+		v = pso->GetStaticVariableByName(tries[t], "uMaterials");
+	Diligent::IDeviceObject *white = GetMaterialSRV(NULL, 0);
+	if (v == NULL || white == NULL)
+	{
+		static bool said = false;
+		if (!said)
+		{
+			said = true;
+			Printf("Diligent bindless: %s on %s; the shader declared:%s" "\n",
+				v ? "no white placeholder texture" : "uMaterials is not a static variable under any stage mask",
+				pso->GetDesc().Name ? pso->GetDesc().Name : "?", g_scenePSResources.GetChars());
+		}
+		return false;
+	}
+	for (Diligent::Uint32 i = 0; i < (Diligent::Uint32)kMaterialSlots; i++)
+	{
+		Diligent::IDeviceObject *obj = NULL;
+		if (i < g_matSlotTable.Size())
+			obj = GetMaterialSRV(g_matSlotTable[i].material, g_matSlotTable[i].translation);
+		if (obj == NULL) obj = white;
+		v->SetArray(&obj, i, 1);
+	}
+	return true;
+}
+
+// [rc4l] Rebuild when the table changed, and only then.
+//
+// Animated textures raise the flag about four times a second, not sixty, so this is not a per-frame
+// cost. It runs before anything is recorded into a command buffer, because re-filling a binding the
+// GPU is still reading is a use-after-free with a very confusing symptom.
+static void RefreshBindless()
+{
+	if (!g_matSlotsDirty) return;
+	g_matSlotsDirty = false;
+	g_bindlessReady = false;
+	ReleaseWorldSRBs();
+	for (int i = 0; i < 13; i++)
+	{
+		if (!g_worldPSOs[i]) return;
+		// [rc4l] The array is a STATIC variable -- Diligent says so itself when an element is left
+		// unassigned -- so it is assigned on the PIPELINE, before any binding is made from it. A
+		// binding copies the statics as they stand at that moment, so the order is not optional.
+		// A pipeline whose shader never mentions the array has it stripped, and that is not a
+		// failure -- it just cannot be served by one binding. It keeps its per-material ones.
+		if (!FillMaterialArrayStatic(g_worldPSOs[i])) continue;
+		g_worldPSOs[i]->CreateShaderResourceBinding(&g_worldSRBs[i], true);
+		if (!g_worldSRBs[i]) { ReleaseWorldSRBs(); return; }
+		// uTex and uBrightmap are still declared and still mutable. The shader does not read them
+		// while the array is live, but an unassigned sampler is undefined rather than unused.
+		Diligent::IDeviceObject *white = GetMaterialSRV(NULL, 0);
+		if (auto *v = g_worldSRBs[i]->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "uTex"))
+			v->Set(white);
+		if (auto *v = g_worldSRBs[i]->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "uBrightmap"))
+		{
+			Diligent::IDeviceObject *bm = GetBrightmapSRV(NULL);
+			v->Set(bm ? bm : white);
+		}
+	}
+	g_bindlessReady = true;
+	static bool announced = false;
+	if (!announced)
+	{
+		announced = true;
+		Printf("Diligent bindless: %d materials in %d slots, 13 bindings for the whole world" "\n",
+			MaterialSlotCount(), (int)kMaterialSlots);
+	}
+}
+
+// [rc4l] A level with more materials than slots gives the whole thing up, rather than drawing the
+// extras white.
+//
+// The overflow path has to be the SAFE one, because it is the one nobody tests: a map big enough to
+// reach it is by definition a map that was not to hand. Falling back to per-material bindings costs
+// a little submit time on one level; drawing white walls costs a bug report that looks like a
+// texture-loading fault.
+bool BindlessActive() { return fua_dg_bindless && g_bindlessReady && !g_matSlotOverflow; }
+
+// The binding to commit for a draw on this pipeline, or NULL if bindless is not carrying it.
+static Diligent::IShaderResourceBinding *WorldSRB(Diligent::IPipelineState *pso)
+{
+	if (!BindlessActive()) return NULL;
+	for (int i = 0; i < 13; i++)
+		if (g_worldPSOs[i] == pso) return g_worldSRBs[i];
+	return NULL;
+}
+
+
 // [rc4l] Freeing these means forgetting every RAW copy of them as well.
 //
 // Each scene batch caches the pointer its material resolved to, once, when the batch list is built
@@ -606,7 +799,13 @@ static const char *kSceneVS =
 // makes the debug views free (no resize, no extra binding) so they can stay in the shipped shader.
 // Two silent-failure bugs this port survived were caught only by looking at a picture; being able to
 // ask the shader what it thinks depth and colour are is worth the three lines.
+// Must match kMaterialSlots. A GLSL string cannot read a C++ constant, so the two are tied by the
+// static_assert below and by nothing else -- a mismatch is a fatal at pipeline setup, one message
+// per unassigned element.
+#define FUA_MAT_SLOTS_STR "512"
+
 #define FUA_LIGHT_GLSL \
+	"#extension GL_EXT_nonuniform_qualifier : require\n" \
 	"layout(location = 0) in vec2 vUV;\n" \
 	"layout(location = 1) in vec3 vColor;\n" \
 	"layout(location = 2) in vec3 vLightParm;\n" \
@@ -621,6 +820,22 @@ static const char *kSceneVS =
 	   The brightmap is added to the lit colour, so black is the identity, and that removes the
 	   alternative: a per-batch flag, a branch here, and a second pipeline permutation. */ \
 	"layout(binding = 5) uniform sampler2D uBrightmap;\n" \
+	/* [rc4l] Every material in the level, reachable from one descriptor set.
+
+	   uSkyColor.w carries the live slot count, so zero means "use the bound texture" and the whole
+	   thing switches from one constant, with no second pipeline and no shader permutation. The index
+	   is vLightIndex -- the vertex field that used to hold a dynamic light index and has been dead
+	   since this shader started testing every light -- so bindless costs no vertex bytes.
+
+	   nonuniformEXT is not decoration: neighbouring fragments in one quad can sit on different
+	   surfaces with different slots, and without it the index is assumed uniform across the wave
+	   and the whole quad samples whichever one won. */ \
+	"layout(binding = 8) uniform sampler2D uMaterials[" FUA_MAT_SLOTS_STR "];\n" \
+	"vec4 fuaTexel(vec2 uv) {\n" \
+	"    if (uSkyColor.w > 0.5 && vLightIndex > 0)\n" \
+	"        return texture(uMaterials[nonuniformEXT(vLightIndex)], uv);\n" \
+	"    return texture(uTex, uv);\n" \
+	"}\n" \
 	"layout(std430, binding = 2) readonly buffer LightBuffer { vec4 lights[]; };\n" \
 	/* [rc4l] The cluster grid: (offset, count) per cell, and the runs those point into. */ \
 	"layout(std430, binding = 6) readonly buffer ClusterTable { uvec2 clusterCells[]; };\n" \
@@ -805,14 +1020,14 @@ static const char *kScenePSOpaque =
 	"#version 450\n"
 	FUA_LIGHT_GLSL
 	"void main() {\n"
-	"    outColor = vec4(fuaShade(texture(uTex, vUV).rgb), 1.0);\n"
+	"    outColor = vec4(fuaShade(fuaTexel(vUV).rgb), 1.0);\n"
 	"}\n";
 
 static const char *kScenePS =
 	"#version 450\n"
 	FUA_LIGHT_GLSL
 	"void main() {\n"
-	"    vec4 t = texture(uTex, vUV);\n"
+	"    vec4 t = fuaTexel(vUV);\n"
 	"    if (t.a < 0.5) discard;\n"
 	"    outColor = vec4(fuaShade(t.rgb), 1.0);\n"
 	"}\n";
@@ -842,7 +1057,7 @@ static const char *kScenePSGBuffer =
 	FUA_LIGHT_GLSL
 	"layout(location = 1) out vec4 outNormal;\n"
 	"void main() {\n"
-	"    vec4 t = texture(uTex, vUV);\n"
+	"    vec4 t = fuaTexel(vUV);\n"
 	"    if (t.a < 0.5) discard;\n"
 	"    outColor = vec4(fuaShade(t.rgb), 1.0);\n"
 	/* Encoded to 0..1 because the target is 8-bit unorm. That is coarse for lighting and ample here:
@@ -855,7 +1070,7 @@ static const char *kScenePSTrans =
 	"#version 450\n"
 	FUA_LIGHT_GLSL
 	"void main() {\n"
-	"    vec4 t = texture(uTex, vUV);\n"
+	"    vec4 t = fuaTexel(vUV);\n"
 	"    if (t.a < 0.04) discard;\n"
 	"    outColor = vec4(fuaShade(t.rgb), t.a * vLightParm.z);\n"
 	"}\n";
@@ -870,7 +1085,7 @@ static const char *kScenePSRedAlpha =
 	"#version 450\n"
 	FUA_LIGHT_GLSL
 	"void main() {\n"
-	"    float a = texture(uTex, vUV).r * vLightParm.z;\n"
+	"    float a = fuaTexel(vUV).r * vLightParm.z;\n"
 	"    if (a <= 0.0) discard;\n"
 	// No dynamic lights: see fuaShadeEx. A scorch mark is black, so its vertex colour is zero, and
 	// the dynamic light term would be the only thing left in it -- every burn mark in the room lit
@@ -1641,7 +1856,10 @@ static void BuildDynamic(Diligent::IDeviceContext *ctx)
 				dv.fogG = ((p.fogColor >> 8) & 0xff) / 255.f;
 				dv.fogB = (p.fogColor & 0xff) / 255.f;
 				dv.fogMode = (float)p.fogMode;
-			dv.lightIndex = (float)p.dynLightIndex;
+			// Same field, same meaning, so a sprite picks its own texture out of the array exactly as a
+			// wall does -- and a translated sprite gets its own slot, because a translation is a
+			// different image of the same material.
+			dv.lightIndex = (float)MaterialSlotFor(p.material, p.translation);
 			dv.nx = p.normX; dv.ny = p.normY; dv.nz = p.normZ;
 				vb.Push(dv);
 			}
@@ -1689,7 +1907,8 @@ static void DrawDynamicOpaque(Diligent::IDeviceContext *ctx)
 		if (r.count == 0 || r.blend != 0) continue;
 		Diligent::IPipelineState *pso = r.depthBias ? g_maskedDecalPSO.RawPtr()
 		                                            : g_maskedNoCullPSO.RawPtr();
-		auto *srb = GetMaterialSRB(pso, r.material, r.translation);
+		auto *srb = WorldSRB(pso);
+		if (!srb) srb = GetMaterialSRB(pso, r.material, r.translation);
 		if (!srb) continue;
 		if (pso != boundOpaque) { ctx->SetPipelineState(pso); boundOpaque = pso; }
 		ctx->CommitShaderResources(srb, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
@@ -1736,7 +1955,8 @@ static void DrawBlended(Diligent::IDeviceContext *ctx)
 	for (unsigned i = 0; i < g_blendBatches.Size(); i++)
 	{
 		const SceneBatch &b = g_batches[g_blendBatches[i]];
-		if (b.count == 0 || b.srb == NULL) continue;
+		if (b.count == 0) continue;
+		if (b.srb == NULL && !BindlessActive()) continue;
 		const float dx = b.sortX - cx, dy = b.sortY - cy, dz = b.sortZ - cz;
 		BlendDraw d;
 		d.dyn = false; d.first = b.first; d.count = b.count; d.blend = b.blend;
@@ -1767,7 +1987,8 @@ static void DrawBlended(Diligent::IDeviceContext *ctx)
 				: r.depthBias
 					? ((r.blend == 2) ? g_addDecalPSO.RawPtr()  : g_transDecalPSO.RawPtr())
 					: ((r.blend == 2) ? g_addNoCullPSO.RawPtr() : g_transNoCullPSO.RawPtr());
-			auto *srb = GetMaterialSRB(pso, r.material, r.translation);
+			auto *srb = WorldSRB(pso);
+			if (!srb) srb = GetMaterialSRB(pso, r.material, r.translation);
 			if (!srb) continue;
 			BlendDraw d;
 			d.dyn = true; d.first = r.first; d.count = r.count; d.blend = r.blend;
@@ -1846,7 +2067,12 @@ static void DrawBlended(Diligent::IDeviceContext *ctx)
 					: ((d.blend == 2) ? g_addNoCullPSO.RawPtr() : g_transNoCullPSO.RawPtr());
 		if (!pso) continue;
 		if (pso != bound) { ctx->SetPipelineState(pso); bound = pso; }
-		ctx->CommitShaderResources(d.srb, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+		// The pipeline is only known here -- the pass sorts by distance, not by material -- so this is
+		// where the per-pipeline binding can be asked for.
+		Diligent::IShaderResourceBinding *srb = WorldSRB(pso);
+		if (!srb) srb = d.srb;
+		if (!srb) continue;
+		ctx->CommitShaderResources(srb, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 		Diligent::DrawAttribs draw;
 		draw.NumVertices = d.count;
 		draw.StartVertexLocation = d.first;
@@ -2268,6 +2494,22 @@ static bool EnsureScenePipeline(FString &err)
 		ci.Source = kScenePS;
 		dev->CreateShader(ci, &psMasked);
 	}
+	// [rc4l] Ask the SHADER what it declared, before any pipeline has an opinion about it.
+	// "Not in the pipeline resource list" has two very different causes -- the shader never declared
+	// it, or the layout classified it somewhere else -- and only the shader can tell them apart.
+	if (psMasked)
+	{
+		FString names;
+		for (Diligent::Uint32 r = 0; r < psMasked->GetResourceCount(); r++)
+		{
+			Diligent::ShaderResourceDesc d;
+			psMasked->GetResourceDesc(r, d);
+			names += " "; names += d.Name;
+			if (d.ArraySize > 1) { names += "["; names.AppendFormat("%u", d.ArraySize); names += "]"; }
+		}
+		g_scenePSResources = names;
+		Printf("Diligent scene PS declares (%u):%s\n", psMasked->GetResourceCount(), names.GetChars());
+	}
 	{
 		Diligent::ShaderCreateInfo ci;
 		ci.SourceLanguage = Diligent::SHADER_SOURCE_LANGUAGE_GLSL_VERBATIM;
@@ -2376,6 +2618,14 @@ static bool EnsureScenePipeline(FString &err)
 	static Diligent::ImmutableSamplerDesc samplers[] = {
 		{ Diligent::SHADER_TYPE_PIXEL, "uTex", samp },
 		{ Diligent::SHADER_TYPE_PIXEL, "uBrightmap", samp },
+		// [rc4l] The material array needs its own, and this is not optional.
+		//
+		// A GLSL sampler2D is a COMBINED image sampler, so an ARRAY of them needs a sampler
+		// declared for the array too. Without one the variable does not reach the pipeline's
+		// resource list at all -- GetStaticVariableByName returns null and the pixel statics are
+		// Constants, LightBuffer and the two cluster buffers, with no sign that a sampler array
+		// was ever declared. That reads as the shader having dropped it.
+		{ Diligent::SHADER_TYPE_PIXEL, "uMaterials", samp },
 	};
 
 	// [rc4l] Four pipelines over the same vertex layout and resources:
@@ -2453,7 +2703,8 @@ static bool EnsureScenePipeline(FString &err)
 		pci.PSODesc.ResourceLayout.Variables = vars;
 		pci.PSODesc.ResourceLayout.NumVariables = 2;
 		pci.PSODesc.ResourceLayout.ImmutableSamplers = samplers;
-		pci.PSODesc.ResourceLayout.NumImmutableSamplers = 2;
+		pci.PSODesc.ResourceLayout.NumImmutableSamplers =
+			(Diligent::Uint32)(sizeof(samplers) / sizeof(samplers[0]));
 		pci.pVS = vs;
 		pci.pPS = gbuffer ? psGBuffer : redAlpha ? psRedAlpha :
 			(shape == 0) ? psOpaque : (shape == 1) ? psMasked : psTrans;
@@ -2490,6 +2741,12 @@ static bool EnsureScenePipeline(FString &err)
 	                                     g_maskedDecalPSO, g_transDecalPSO, g_addDecalPSO,
 	                                     g_transRedAlphaPSO, g_addRedAlphaPSO, g_maskedGBufPSO };
 	const Diligent::SHADER_TYPE stages[] = { Diligent::SHADER_TYPE_VERTEX, Diligent::SHADER_TYPE_PIXEL };
+	// [rc4l] Remembered as a list, because every later question about these thirteen -- fill the
+	// material array, make one binding each, find the binding for a pipeline -- is a loop over
+	// them, and a hand-written list of "the world pipelines" missed five of them once already.
+	ReleaseWorldSRBs();
+	for (int i = 0; i < 13; i++) g_worldPSOs[i] = psos[i];
+	g_matSlotsDirty = true;
 	for (int i = 0; i < 13; i++)
 	{
 		for (int s = 0; s < 2; s++)
@@ -2541,7 +2798,7 @@ static bool RayTracingAvailable();
 // same geometry, different lighting, and only on the frames something moved. Kept as one function
 // so the question cannot arise.
 static void EmitPieceVertex(const zx::levelmesh::MeshPiece &p, const FFlatVertex &sv,
-	unsigned int batchIndex, SceneVertex &dv)
+	unsigned int /*batchIndex*/, SceneVertex &dv)
 {
 	dv.x = sv.x; dv.y = sv.z; dv.z = sv.y;   // FFlatVertex stores x, z(up), y
 	dv.u = sv.u; dv.v = sv.v;
@@ -2553,7 +2810,13 @@ static void EmitPieceVertex(const zx::levelmesh::MeshPiece &p, const FFlatVertex
 	dv.fogG = ((p.fogColor >> 8) & 0xff) / 255.f;
 	dv.fogB = (p.fogColor & 0xff) / 255.f;
 	dv.fogMode = (float)p.fogMode;
-	dv.lightIndex = (float)batchIndex;
+	// [rc4l] The material SLOT, which is what this field carries now.
+	//
+	// It held a dynamic light index, then a batch index for the traced mirror, and it is a material
+	// slot because that is the one of the three that both the raster and the traced path want: a
+	// batch index only identifies a texture by accident, since a level has more batches than
+	// materials and the mirror had to mask it to 127 and hope.
+	dv.lightIndex = (float)MaterialSlotFor(p.material, 0);
 	dv.nx = p.normX; dv.ny = p.normY; dv.nz = p.normZ;
 }
 
@@ -2628,6 +2891,12 @@ static bool BuildSceneBuffer(FString &err)
 	g_batches.Clear();
 	g_blendBatches.Clear();
 	g_vbSlots.Clear();
+	// [rc4l] The slot table belongs to the level's geometry, so it is rebuilt with it.
+	//
+	// Kept across a re-upload it would keep every retired material and run the level past the slot
+	// count -- and the symptom of that is walls quietly turning white on the third map rather than
+	// anything that looks like a table filling up.
+	ResetMaterialSlots();
 	const void *cur = (const void *)(size_t)-1;
 	const void *curBase = (const void *)(size_t)-1;
 	int curBlend = -1;
@@ -3641,7 +3910,7 @@ static const char *kMirrorPS =
 	"layout(binding = 1) uniform sampler2D uTex;\n"
 	"layout(binding = 2) uniform accelerationStructureEXT uTLAS;\n"
 	"layout(std430, binding = 3) readonly buffer Verts { float vtx[]; };\n"
-	"layout(binding = 4) uniform sampler2D uMaterials[128];\n"
+	"layout(binding = 4) uniform sampler2D uMaterials[" FUA_MAT_SLOTS_STR "];\n"
 	"layout(binding = 5) uniform sampler2D uSky;\n"
 	"layout(location = 0) in vec3 vWorld;\n"
 	"layout(location = 1) in vec3 vNormal;\n"
@@ -3681,7 +3950,10 @@ static const char *kMirrorPS =
 	"    vec2 uv = vertUV(i0) * w0 + vertUV(i1) * bc.x + vertUV(i2) * bc.y;\n"
 	// The material index rides in the vertex slot that used to hold a dynamic light index and has
 	// been dead since the shader started testing every light.
-	"    uint mat = uint(vtx[i0 * STRIDE + 15u] + 0.5) & 127u;\n"
+	// [rc4l] The MATERIAL slot, shared with the raster path -- it used to be a batch index masked to
+	// 127, which on any level with more than 128 batches reflected the wrong texture and could not
+	// say so.
+	"    uint mat = uint(vtx[i0 * STRIDE + 15u] + 0.5) & 511u;\n"
 	"    c *= texture(uMaterials[nonuniformEXT(mat)], uv).rgb;\n"
 	// Distance falls off the same way the raster path's fog does, so a far reflection reads as far.
 	"    float t = rayQueryGetIntersectionTEXT(rq, true);\n"
@@ -3831,19 +4103,20 @@ static bool EnsureMirrorResources()
 				return false;
 			}
 			unsigned fellBack = 0;
-			for (Diligent::Uint32 mi = 0; mi < 128; mi++)   // matches uMaterials[128] in the shader
+			for (Diligent::Uint32 mi = 0; mi < (Diligent::Uint32)kMaterialSlots; mi++)
 			{
-				const void *mat = (mi < g_batches.Size()) ? g_batches[mi].resolved : NULL;
-				Diligent::IDeviceObject *obj = GetMaterialSRV(mat, 0);
+				const void *mat = (mi < g_matSlotTable.Size()) ? g_matSlotTable[mi].material : NULL;
+				const int tr = (mi < g_matSlotTable.Size()) ? g_matSlotTable[mi].translation : 0;
+				Diligent::IDeviceObject *obj = GetMaterialSRV(mat, tr);
 				if (obj == nullptr) obj = white;
-				if (mi < g_batches.Size() && obj == white) fellBack++;
+				if (mi < g_matSlotTable.Size() && mat != NULL && obj == white) fellBack++;
 				v->SetArray(&obj, mi, 1);
 			}
 			// [rc4l] Count how many came back as the white placeholder. A reflection showing flat white
 			// surfaces looks the same whether the texture failed to upload or the index is wrong, and
 			// this separates the two without reading it off a screenshot.
 			Printf("mirror: %u materials bound, %u fell back to white\n",
-				(unsigned)g_batches.Size(), fellBack);
+				(unsigned)g_matSlotTable.Size(), fellBack);
 		}
 		g_mirrorSRB.Release();
 	}
@@ -4364,6 +4637,9 @@ static void DrawWorld(Diligent::IDeviceContext *ctx)
 	g_phase.geometry.Clock();  RefreshMovedGeometry(ctx);   g_phase.geometry.Unclock();
 	g_phase.lights.Clock();    CollectDynamicLights(ctx);   g_phase.lights.Unclock();
 	g_phase.clusters.Clock();  BuildLightClusters(ctx);     g_phase.clusters.Unclock();
+	// [rc4l] Before anything is recorded: rebuilding a binding that a command buffer already holds is
+	// a use-after-free, and this only does work on the frames the material table actually changed.
+	if (fua_dg_bindless) RefreshBindless();
 	g_phase.constants.Clock();
 
 	{
@@ -4391,7 +4667,10 @@ static void DrawWorld(Diligent::IDeviceContext *ctx)
 		cb[32] = g_skyCapColor[0].r / 255.f;
 		cb[33] = g_skyCapColor[0].g / 255.f;
 		cb[34] = g_skyCapColor[0].b / 255.f;
-		cb[35] = 0.f;
+		// [rc4l] The bindless switch, and the whole of it: nonzero means the fragment picks its own
+		// material out of the array, zero means it samples whatever is bound. One float, no second
+		// pipeline, and an A/B that can be flipped between two frames of the same scene.
+		cb[35] = BindlessActive() ? (float)MaterialSlotCount() : 0.f;
 	}
 
 	g_phase.constants.Unclock();
@@ -4462,12 +4741,21 @@ static void DrawWorld(Diligent::IDeviceContext *ctx)
 		SceneBatch &b = g_batches[bi];
 		if (b.count == 0 || b.blend != 0) continue;
 		if (fua_dg_cullbatches && !BatchOnScreen(b, g_mvp)) { g_batchesCulled++; continue; }
-		// Re-resolve rather than skip: a binding dropped by a resize would otherwise leave that
-		// material missing from the world until the next upload.
-		if (b.srb == NULL) b.srb = GetMaterialSRB(g_maskedPSO.RawPtr(), b.material);
-		if (b.srb == NULL) continue;
+		// [rc4l] One binding for the whole pass when the array is carrying the materials. This is the
+		// cost the culling experiment could not remove: 166 batches were 0.445 ms of submit on Sunder
+		// MAP16, almost all of it committing a different descriptor set per batch.
+		Diligent::IShaderResourceBinding *srb =
+			WorldSRB(g_gbufBound ? g_maskedGBufPSO.RawPtr() : g_maskedPSO.RawPtr());
+		if (srb == NULL)
+		{
+			// Re-resolve rather than skip: a binding dropped by a resize would otherwise leave that
+			// material missing from the world until the next upload.
+			if (b.srb == NULL) b.srb = GetMaterialSRB(g_maskedPSO.RawPtr(), b.material);
+			srb = b.srb;
+		}
+		if (srb == NULL) continue;
 
-		ctx->CommitShaderResources(b.srb, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+		ctx->CommitShaderResources(srb, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
 		Diligent::DrawAttribs draw;
 		draw.NumVertices = b.count;
