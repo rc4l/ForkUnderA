@@ -182,26 +182,26 @@ ClusterRange ComputeLightClustersFromMVP(const ClusterGrid &g, const float mvp[1
 	out.z0 = ComputeSliceForDepth(g, (minW < g.zNear) ? g.zNear : minW);
 	out.z1 = ComputeSliceForDepth(g, maxW);
 
-	// [rc4l] A light crossing the camera plane claims the whole screen at that depth.
+	// [rc4l] A light crossing the camera plane is projected ONTO the near plane, not handed the
+	// whole screen.
 	//
 	// Dividing by a w at or below zero mirrors the projection: the corner lands on the opposite side
-	// of the screen, the min/max come out inverted, and the light ends up lighting the wall behind
-	// the player instead of the one in front. Rather than clip the box -- which is the exact solution
-	// and the one with the case analysis nobody gets right -- such a light is given every tile. It is
-	// a plasma bolt going past your ear: it really is lighting most of what you can see.
-	if (minW < g.zNear)
-	{
-		out.x0 = 0; out.x1 = g.tilesX - 1;
-		out.y0 = 0; out.y1 = g.tilesY - 1;
-		out.empty = false;
-		return out;
-	}
-
+	// of the screen, the extents come back inverted, and the light ends up claiming cells behind the
+	// player. Giving such a light every tile avoids that and is correct, but it is expensive in the
+	// case Doom produces constantly -- a projectile a few hundred units away with a 96-unit radius --
+	// and it measured at 94 cells per light on a map-wide field, roughly eight times what the
+	// geometry needs.
+	//
+	// Clamping each corner's w to the near plane instead keeps the sign of its x and y and asks where
+	// that corner would land at the nearest depth the grid describes. A light truly wrapped around
+	// the camera still spreads across the screen and still gets everything; one merely close to it
+	// gets the part of the screen it is actually near.
 	float minNdcX = 1e30f, maxNdcX = -1e30f, minNdcY = 1e30f, maxNdcY = -1e30f;
 	for (int i = 0; i < 8; i++)
 	{
-		const float ndcX = cx[i] / cw[i];
-		const float ndcY = cy[i] / cw[i];
+		const float w = (cw[i] < g.zNear) ? g.zNear : cw[i];
+		const float ndcX = cx[i] / w;
+		const float ndcY = cy[i] / w;
 		if (ndcX < minNdcX) minNdcX = ndcX;
 		if (ndcX > maxNdcX) maxNdcX = ndcX;
 		if (ndcY < minNdcY) minNdcY = ndcY;

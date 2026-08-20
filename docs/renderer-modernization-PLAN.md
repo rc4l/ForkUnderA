@@ -146,11 +146,16 @@ a comparator — five sources, no authority. `decalorder_compute` exists and onl
 **Accepts when:** every ordering decision in the frame comes from that one function, and the decal
 suite passes on both renderers with the glued path compiled out.
 
-## Phase 4 — shadows, and retiring the GL path
+## Phase 4 — shadows
 
 - Shadow maps for dynamic lights (impossible today: a per-surface light list has nowhere to put a
   visibility query), then RT shadows on the BVH the mirrors already maintain.
-- GL demoted from oracle to fallback, then removed once parity tolerances hold across the suite.
+
+**GL stays.** Retiring it was in this phase and has been taken out deliberately: it is the only
+independent check on everything above, and every phase here is measured by rendering the same frozen
+frame both ways. A renderer with no second opinion is one where a plausible-looking mistake has
+nothing to run into. It goes when it is costing more than it is telling us, and that is a decision to
+make with the evidence of the phases in hand, not now.
 
 ## How every phase is measured
 
