@@ -25,7 +25,7 @@
 #ifndef ZX_WALLGEOM_COMPUTE_H
 #define ZX_WALLGEOM_COMPUTE_H
 
-namespace zx { namespace levelmesh {
+namespace zx { namespace surfaces {
 
 // The four plane heights a sidedef sits between, in map units.
 //
@@ -66,6 +66,18 @@ WallPart ComputeLowerPart(const WallHeights &h);
 // outside).
 WallPart ComputeMiddlePart(const WallHeights &h);
 
+// [rc4l] The middle texture of a TWO-SIDED line, which hangs rather than fills.
+//
+// ComputeMiddlePart gives the opening -- the gap between the sectors. A middle texture placed in
+// that gap is not the gap: it is its own height, hung from the top of the opening or from the
+// bottom when the line is unpegged-bottom, shifted by the sidedef row offset, and clipped to the
+// opening. Treating the two as the same thing turns an 8-unit grate into a 208-unit wall, which is
+// what fua_surface_verify found on dbab02 -- 93 pieces, all of them two-sided middles.
+//
+// texHeight of 0 or a one-sided line falls back to the opening, which is what those are.
+WallPart ComputeMiddleTexturePart(const WallHeights &h, float texHeight, bool pegBottom,
+	float rowOffset);
+
 // [rc4l] Is there anything to draw here at all?
 //
 // Answered separately because "no parts" and "one part of zero height" are different states and the
@@ -73,6 +85,6 @@ WallPart ComputeMiddlePart(const WallHeights &h);
 // its slot in the mesh so the geometry can come back when the sector moves.
 bool ComputeSideHasGeometry(const WallHeights &h);
 
-}} // namespace zx::levelmesh
+}} // namespace zx::surfaces
 
 #endif // ZX_WALLGEOM_COMPUTE_H
