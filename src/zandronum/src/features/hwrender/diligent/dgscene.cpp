@@ -221,7 +221,13 @@ CVAR(Bool, fua_dg_cullbatches, false, 0)
 // batches can only be culled or drawn indirectly once nothing is bound per batch. See
 // docs/bindless-attempt-notes.md for the ceiling the first attempt hit doing these in the wrong
 // order.
-CVAR(Bool, fua_dg_bindless, true, CVAR_ARCHIVE)
+//
+// OFF by default, and the reason is dbab04. Sunder MAP10 and MAP16 and dbab01 all render
+// pixel-identical with it on -- 0.0% over the world region, against controls that also read 0.0% --
+// and MAP16 goes from 165 draw calls at 0.69 ms to one at 0.50. dbab04 draws almost every surface
+// with some other surface's texture. Whatever that is, it is a level-shaped difference and not a
+// pipeline one, and it is not going on by default until it is understood.
+CVAR(Bool, fua_dg_bindless, false, CVAR_ARCHIVE)
 // Sprites and decals on the shared binding as well. Off: see WorldSRB.
 CVAR(Bool, fua_dg_bindless_dyn, false, 0)
 static int g_batchesCulled = 0, g_batchesDrawn = 0;
@@ -475,7 +481,12 @@ Diligent::IShaderResourceBinding *GetMaterialSRB(Diligent::IPipelineState *pso,
 enum { kMaterialSlots = 512 };
 static_assert(kMaterialSlots == 512, "FUA_MAT_SLOTS_STR must say the same number");
 
-struct MatSlot { const void *material; int translation; };
+// [rc4l] `resolved` is what the slot actually POINTS AT, which is not always what it is keyed on.
+//
+// An animated texture keeps one FMaterial as its identity and swaps which image that resolves to
+// every eight tics. The old path re-pointed the batch's binding; here the slot's contents change
+// and its key does not, so the geometry never has to know that nukage flows.
+struct MatSlot { const void *material; int translation; const void *resolved; };
 static TArray<MatSlot> g_matSlotTable;
 static bool g_matSlotOverflow = false;
 // The static array copied into the pipelines is only as fresh as the last fill. Anything that
@@ -488,7 +499,7 @@ static int g_matSlotRetries = 0;
 static void ResetMaterialSlots()
 {
 	g_matSlotTable.Clear();
-	MatSlot white; white.material = NULL; white.translation = 0;
+	MatSlot white; white.material = NULL; white.translation = 0; white.resolved = NULL;
 	g_matSlotTable.Push(white);
 	g_matSlotOverflow = false;
 	g_matSlotRetries = 0;
@@ -511,7 +522,7 @@ int MaterialSlotFor(const void *material, int translation)
 		g_matSlotOverflow = true;
 		return 0;
 	}
-	MatSlot e; e.material = material; e.translation = translation;
+	MatSlot e; e.material = material; e.translation = translation; e.resolved = material;
 	g_matSlotTable.Push(e);
 	g_matSlotsDirty = true;
 	return (int)g_matSlotTable.Size() - 1;
@@ -578,18 +589,14 @@ static bool FillMaterialArrayStatic(Diligent::IPipelineState *pso)
 	{
 		Diligent::IDeviceObject *obj = NULL;
 		if (i < g_matSlotTable.Size())
-			obj = GetMaterialSRV(g_matSlotTable[i].material, g_matSlotTable[i].translation);
+			obj = GetMaterialSRV(g_matSlotTable[i].resolved, g_matSlotTable[i].translation);
 		// [rc4l] A slot that came back WHITE for a real material is not filled, it is wrong.
 		//
 		// GetMaterialSRV falls back to white when it cannot produce a texture yet -- a sprite whose
-		// image has not been uploaded on the frame the array happens to be built. The old path
-		// never saw this because it made a binding per material, lazily, by which time the texture
-		// existed. Filled once and cached, the same fallback is permanent: the item sits there as a
-		// flat white rectangle for the rest of the level, which is exactly what it looked like.
-		//
-		// So a white answer for a live material asks for the array to be built again, with a bound
-		// on the retries -- a texture that truly cannot be made would otherwise rebuild thirteen
-		// bindings every frame forever.
+		// image has not been uploaded on the frame the array happens to be built. Filled once and
+		// cached, that fallback is permanent, so a white answer for a live material asks for the
+		// array to be built again -- with a bound on the retries, since a texture that truly cannot
+		// be made would otherwise rebuild thirteen bindings every frame forever.
 		const bool live = (i < g_matSlotTable.Size()) && g_matSlotTable[i].material != NULL;
 		if (obj == NULL) obj = white;
 		if (live && obj == white)
@@ -607,21 +614,43 @@ static bool FillMaterialArrayStatic(Diligent::IPipelineState *pso)
 // Animated textures raise the flag about four times a second, not sixty, so this is not a per-frame
 // cost. It runs before anything is recorded into a command buffer, because re-filling a binding the
 // GPU is still reading is a use-after-free with a very confusing symptom.
+// [rc4l] Follow the animation, without the animation pass having to know about the array.
+//
+// An animated texture keeps ONE identity and swaps which image it resolves to every few tics. The
+// old path re-pointed the batch's binding when that happened; here the slot's contents change and
+// its key does not, so the geometry never has to know that nukage flows.
+//
+// Asked here, once a frame over a couple of hundred slots, rather than pushed from the animation
+// pass. The pushed version was written first and got it wrong in a way worth remembering: the
+// pass only visits batches, so slots no batch owns went stale, and turning the pass OFF left the
+// wrong answers in place with nothing to correct them. dbab04 rendered every surface with some
+// other surface's texture.
+static void UpdateMaterialSlotResolutions()
+{
+	for (unsigned i = 1; i < g_matSlotTable.Size(); i++)
+	{
+		FMaterial *base = (FMaterial *)g_matSlotTable[i].material;
+		if (base == NULL || base->tex == NULL) continue;
+		FMaterial *now = FMaterial::ValidateTexture(base->tex->id, false, true);
+		if (now == NULL || now == g_matSlotTable[i].resolved) continue;
+		g_matSlotTable[i].resolved = now;
+		g_matSlotsDirty = true;
+	}
+}
+
 static void RefreshBindless()
 {
+	if (fua_dg_animate) UpdateMaterialSlotResolutions();
 	if (!g_matSlotsDirty) return;
 	g_matSlotsDirty = false;
 	g_bindlessReady = false;
 	ReleaseWorldSRBs();
-	// [rc4l] Every OTHER binding has to go as well, and this is not tidiness.
+	// [rc4l] The per-material bindings are deliberately NOT dropped here.
 	//
-	// Diligent copies the pipeline's static resources into an SRB when the SRB is made, so a
-	// binding created before this fill carries the array as it stood then. Anything drawn through
-	// one of those samples the OLD array -- and a slot that did not exist yet is the white
-	// placeholder, permanently. That is what put flat white rectangles where the items and the
-	// torch flames should be: their materials joined the table on the frame they first appeared,
-	// after their per-material bindings had already been made and cached for the level.
-	ReleaseMaterialSRBs();
+	// They each hold a copy of the array as it stood when they were made, which would be stale -- but
+	// nothing drawn through one of them reads it: the dynamic path writes slot 0 into its vertices,
+	// which sends the fragment to the bound texture. Dropping them anyway costs a rebuild of every
+	// sprite binding on every animation tick, several times a second, for nothing.
 	for (int i = 0; i < 13; i++)
 	{
 		if (!g_worldPSOs[i]) return;

@@ -1,12 +1,42 @@
 # Bindless materials in the Diligent backend
 
-**Landed.** The world picks its own texture out of an array and binds nothing per batch; thirteen
-bindings serve the level. `fua_dg_bindless` is on by default, `0` is the A/B, and `fua_dg_srbcost`
-prints what the array costs either way.
+**Built, measured, and off by default** — `fua_dg_bindless 1` turns it on. The world picks its own
+texture out of an array and binds nothing per batch; thirteen bindings serve the level, and adjacent
+batches collapse into one draw because a batch is then only a range.
 
-Measured on Sunder MAP16, 165 batches, the same frozen frame: the draw phase goes from
-0.568 / 0.593 / 0.569 ms to 0.460 / 0.469 / 0.524 ms, and the picture is identical -- 0.0% over the
-world region, against a control of two shots with nothing changed that also reads 0.0%.
+Measured on Sunder MAP16, same view: **165 draw calls at 0.686 / 0.715 / 0.689 ms become one at
+0.499 / 0.503 / 0.565 ms**. Sunder MAP10: 53 draws at 1.68 / 1.56 ms become one at 1.52 / 1.50 ms.
+Pixel-identical on the frozen frame on MAP16, MAP10 and dbab01 — 0.0% over the world region, with
+both controls (off/off and on/on) also at 0.0%.
+
+## Why it is not on
+
+**dbab04 draws almost every surface with some other surface's texture** — 89.9% of the frame, mean
+|d| 44. Not white, not missing: wrong. MAP16, MAP10 and dbab01 are exact on the same build, so this
+is a level-shaped difference rather than a pipeline one, and the obvious suspects have been measured
+and are not it:
+
+- The slot census is clean: 108 slots, none falling back to white, every pipeline filled and bound,
+  every draw taking the shared binding.
+- Animated textures were suspected and are not the cause. Two versions were tried -- pushing the new
+  frame from the animation pass, and resolving each slot once a frame in `UpdateMaterialSlotResolutions`
+  -- and the second is what ships, but turning animation off entirely leaves dbab04 just as wrong.
+- The draw merge is not it either: it runs with bindless off as well (96 draws instead of 111 on
+  dbab04, from batches sharing one material) and that path is byte-identical to the old one.
+
+dbab04 is the map with 337 sloped pieces and moving sectors, so the first thing to look at is whether
+the vertex buffer is ever re-emitted in a pass that does not also rebuild the slot table -- a stale
+index is exactly "the right texture, on the wrong wall".
+
+The second open item is smaller and separate: **sprites** get a valid slot and take the array, and
+some of them -- items, torch flames -- still draw as flat white rectangles. The dynamic path
+therefore writes slot 0, which sends it back to the bound texture and to exactly the path it was on
+before. `fua_dg_bindless_dyn 1` puts it back on the array.
+
+Diagnostics to start from, all of them already there: `fua_dg_srbcost`, the bindless section of
+`fua_dg_dynstats` (slots, white fallbacks, dynamic pieces on slot 0, per-pipeline fill state, which
+binding each dynamic draw took), and debug views `fua_dg_lightmode 16` (material slot as a grey ramp)
+and `17` (is this fragment taking the array).
 
 What follows is the record of the attempt that failed first, kept because every one of its four
 failures is a trap the next person walks into in the same order.
