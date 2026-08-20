@@ -67,14 +67,10 @@ await cap.waitTics(c, 15);
 // timing means anything.
 async function field(n, spread) {
   await cap.exec(c, 'fua_light_clear');
-  for (let i = 0; i < n; i++) {
-    const a = i * 2.39996;                       // golden angle: no rows, no clumps
-    const r = spread ? 200 + 3000 * Math.sqrt(i / Math.max(n, 1)) : 40 + 380 * Math.sqrt(i / Math.max(n, 1));
-    const x = (spot.x + r * Math.cos(a)).toFixed(1);
-    const y = (spot.y + r * Math.sin(a)).toFixed(1);
-    const z = (spot.z + 24 + 40 * Math.sin(i * 0.7)).toFixed(1);
-    await cap.exec(c, `fua_light 96 ${(i * 37) % 256} ${(i * 91) % 256} ${(i * 53) % 256} ${x} ${y} ${z}`);
-  }
+  // One command, not one per light: at a thousand lights the round trips took longer than the
+  // measurement, which is how a benchmark stops being run. The engine places the same golden-angle
+  // spiral, and puts each light above the floor of the sector it actually lands in.
+  if (n > 0) await cap.exec(c, `fua_light_field ${n} 96 ${spread ? 3000 : 400}`);
   await cap.waitTics(c, 8);
 }
 

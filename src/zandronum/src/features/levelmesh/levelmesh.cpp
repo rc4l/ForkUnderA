@@ -1334,6 +1334,72 @@ CCMD( fua_lightnodes )
 //        fua_light_clear
 //
 //==========================================================================
+//
+// fua_light_field
+//
+// [rc4l] A field of standing lights in one command, because measuring needed a thousand of them.
+//
+// The clustered-lighting measurement wants light COUNT as a variable, and the only way to get one
+// was fua_light per light over the console bridge. At a thousand lights that is a thousand round
+// trips, and the measurement took longer than the thing being measured -- which is how a benchmark
+// quietly stops being run.
+//
+// Placed on a golden-angle spiral rather than a grid or a random scatter: no rows to line up with
+// the cluster tiles and no clumps, so a cell count is not an artefact of the pattern. `spread` is
+// the radius the spiral fills, and it is the whole experiment -- lights packed around the camera
+// all reach everything, and lights over a map mostly do not.
+//
+// usage: fua_light_field <count> [radius] [spread] [dz]
+//
+//==========================================================================
+
+CCMD( fua_light_field )
+{
+	if ( sectors == NULL || numsectors <= 0 ) { Printf( "no level loaded.\n" ); return; }
+	AActor *pmo = players[consoleplayer].mo;
+	if ( pmo == NULL ) { Printf( "no player to place the field around.\n" ); return; }
+	if ( argv.argc( ) < 2 ) { Printf( "usage: fua_light_field <count> [radius] [spread] [dz]\n" ); return; }
+
+	const int count = atoi( argv[1] );
+	const int radius = ( argv.argc( ) > 2 ) ? atoi( argv[2] ) : 96;
+	const float spread = ( argv.argc( ) > 3 ) ? (float)atof( argv[3] ) : 3000.f;
+	const float dz = ( argv.argc( ) > 4 ) ? (float)atof( argv[4] ) : 24.f;
+	if ( count <= 0 || radius <= 0 ) { Printf( "count and radius must be positive.\n" ); return; }
+
+	int made = 0;
+	for ( int i = 0; i < count; i++ )
+	{
+		const float a = (float)i * 2.39996f;                       // golden angle
+		const float r = spread * sqrtf( (float)i / (float)count ); // even area density
+		const fixed_t x = pmo->x + FLOAT2FIXED( r * cosf( a ) );
+		const fixed_t y = pmo->y + FLOAT2FIXED( r * sinf( a ) );
+		// [rc4l] Height from the SECTOR under each light, not from the player.
+		//
+		// A field placed at one z sinks into the floor across a map with any relief, and a light
+		// under the floor lights nothing -- so the count would be honest and the picture would not.
+		sector_t *sec = R_PointInSubsector( x, y )->sector;
+		if ( sec == NULL ) continue;
+		const fixed_t z = sec->floorplane.ZatPoint( x, y ) + FLOAT2FIXED( dz );
+
+		ADynamicLight *lt = Spawn<ADynamicLight>( x, y, z, NO_REPLACE );
+		if ( lt == NULL ) continue;
+		// The same conventions fua_light uses: the intensity is halved going in because GetRadius
+		// doubles it, and m_intensity is written as well as args because BeginPlay has already run.
+		lt->args[LIGHT_RED]   = ( i * 37 ) % 256;
+		lt->args[LIGHT_GREEN] = ( i * 91 ) % 256;
+		lt->args[LIGHT_BLUE]  = ( i * 53 ) % 256;
+		lt->args[LIGHT_INTENSITY] = radius / 2;
+		lt->args[LIGHT_SECONDARY_INTENSITY] = radius / 2;
+		lt->m_intensity[0] = radius / 2;
+		lt->m_intensity[1] = radius / 2;
+		lt->lighttype = PointLight;
+		lt->Activate( NULL );
+		lt->UpdateLocation( );
+		made++;
+	}
+	Printf( "fua_light_field: %d lights, radius %d, spread %.0f\n", made, radius, spread );
+}
+//==========================================================================
 
 CCMD( fua_light )
 {
