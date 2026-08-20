@@ -1,0 +1,78 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 rc4l
+//
+// [rc4l] What a sidedef looks like, worked out from the map instead of watched from GL.
+//
+// Every surface in this renderer is currently CAPTURED: GL walks the BSP, builds a GLWall or a
+// GLFlat, and the mesh copies what it produced. That is why walls and flats are two different things
+// all the way down -- two capture paths, two caches, two stamps, two slot tables -- and why every
+// feature is written twice and the halves drift. Batched walls lost their dynamic lights while flats
+// kept theirs. The stale light index could only ever affect walls. Projected decals had to be taught
+// floors separately from walls, and each side broke the other twice.
+//
+// The split is not in the mesh -- a MeshPiece is already a surface, whatever made it -- and it is not
+// really in Doom's data either: a sidedef part and a sector plane are both "geometry, a material, a
+// light level, a colormap". It is in the derivation. So the way to one surface type is to derive the
+// geometry here, from sides and sectors, rather than to keep two transcriptions of what GL does.
+//
+// This is the first piece of that: the heights of the three parts of a sidedef. It is deliberately
+// the smallest thing that is worth testing on its own, because GLWall::Process is a thousand lines of
+// accumulated cases and the way to replace it is one answerable question at a time, not a rewrite
+// that has to be right everywhere before it can be run once.
+//
+// Engine-free: fixed-point heights in, quad extents out. No seg, no sector, no renderer.
+
+#ifndef ZX_WALLGEOM_COMPUTE_H
+#define ZX_WALLGEOM_COMPUTE_H
+
+namespace zx { namespace levelmesh {
+
+// The four plane heights a sidedef sits between, in map units.
+//
+// A one-sided wall has no back sector: pass the same heights for both and only the middle part comes
+// back, spanning the whole opening.
+struct WallHeights
+{
+	float frontFloor, frontCeiling;
+	float backFloor,  backCeiling;
+	bool  twoSided;
+};
+
+// One drawable part of a sidedef: the vertical span it covers.
+//
+// `top` is always the higher number. An empty part -- a step that goes the wrong way, a ceiling that
+// does not step down -- comes back with top <= bottom and `present` false, which is a different thing
+// from a part that is present and zero-height, and the difference has bitten before: a wall of zero
+// height still has a texture and still registers, and a wall that is absent must not.
+struct WallPart
+{
+	float bottom, top;
+	bool  present;
+};
+
+// The upper part: from the lower of the two ceilings up to the front ceiling. Present only where the
+// back sector's ceiling is BELOW the front's, which is what leaves wall to draw.
+WallPart ComputeUpperPart(const WallHeights &h);
+
+// The lower part: from the front floor up to the higher of the two floors. Present where the back
+// floor is above the front's.
+WallPart ComputeLowerPart(const WallHeights &h);
+
+// The middle part.
+//
+// On a one-sided wall this is the whole thing, floor to ceiling. On a two-sided line it is the
+// OPENING -- the gap between the highest floor and the lowest ceiling -- which is where a middle
+// texture hangs, and it is empty when the sectors do not overlap at all (a closed door seen from
+// outside).
+WallPart ComputeMiddlePart(const WallHeights &h);
+
+// [rc4l] Is there anything to draw here at all?
+//
+// Answered separately because "no parts" and "one part of zero height" are different states and the
+// caller does different things with them: the first skips the sidedef, the second still has to hold
+// its slot in the mesh so the geometry can come back when the sector moves.
+bool ComputeSideHasGeometry(const WallHeights &h);
+
+}} // namespace zx::levelmesh
+
+#endif // ZX_WALLGEOM_COMPUTE_H
