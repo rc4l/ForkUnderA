@@ -19,6 +19,7 @@
 
 #include "doomtype.h"
 #include "c_dispatch.h"
+#include "c_cvars.h"
 #include "r_defs.h"
 #include "r_state.h"
 #include "g_level.h"
@@ -184,6 +185,9 @@ const char *TypeName(int type)
 //
 //==========================================================================
 
+// [rc4l] A switch for the rule under test, so it is a measurement and not a belief.
+CVAR( Bool, fua_surface_pegrule, false, 0 )
+
 CCMD( fua_surface_verify )
 {
 	using namespace zx::surfaces;
@@ -201,7 +205,7 @@ CCMD( fua_surface_verify )
 	// Which PART the peg flip explains, because "the flag is inverted" is only actionable once it
 	// says for which of the three it is inverted.
 	int uvFlipByType[5] = { 0, 0, 0, 0, 0 };
-	int uvFlipSky = 0, uvFlipTallTex = 0;
+	int uvFlipSky = 0, uvFlipTallTex = 0, uvBoth = 0;
 
 	const int segCount = zx::levelmesh::CachedSegCount( );
 	for ( int s = 0; s < segCount; s++ )
@@ -384,7 +388,17 @@ CCMD( fua_surface_verify )
 							}
 							const float rowOfs = FIXED2FLOAT( tci.RowOffset(
 								segs[s].sidedef->GetTextureYOffset( texpos ) ) );
-							const float texTop = ComputeTextureTop( refCeil, refFloor, (float)th, pegged,
+							// [rc4l] Candidate discriminator, under test: a texture taller than the reference
+							// span pegs the other way.
+							//
+							// Every flipped piece on dbab01 and most on dbab04 had one, and pegging can only
+							// differ where the texture does not fill the span -- so the correlation is at least
+							// in the right place. Guarded by a cvar so the claim is measured rather than
+							// assumed: fua_surface_pegrule 1 turns it on and the ladder says whether it helps.
+							bool pegEffective = pegged;
+							if ( fua_surface_pegrule && (float)th > ( refCeil - refFloor ) )
+								pegEffective = !pegged;
+							const float texTop = ComputeTextureTop( refCeil, refFloor, (float)th, pegEffective,
 								rowOfs, vOffset );
 							const float wantV = ComputeWallV( first->ztop[0], texTop, (float)th );
 							uvChecked++;
@@ -601,6 +615,7 @@ CCMD( fua_surface_verify )
 		uvFlipByType[0], uvFlipByType[1], uvFlipByType[2], uvFlipByType[3], uvFlipByType[4] );
 	Printf( "    of those flips: %d touch sky, %d have a texture taller than the part\n",
 		uvFlipSky, uvFlipTallTex );
+	Printf( "    +%d more agree with the sides swapped AND the peg flipped\n", uvBoth );
 	Printf( "  %d skipped as sloped, %d skipped as another surface type, %d the derivation does not place at all\n",
 		skippedSloped, skippedType, missing );
 }
