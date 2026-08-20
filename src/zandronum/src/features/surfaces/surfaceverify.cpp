@@ -451,9 +451,18 @@ CCMD( fua_surface_verify )
 							// 77; the 77 were the hanging midtextures.
 							const bool glShifts = kTypeOf[slot] == RENDERWALL_TOP ||
 								kTypeOf[slot] == RENDERWALL_BOTTOM || kTypeOf[slot] == RENDERWALL_M1S;
+							// [rc4l] The shift belongs to the WHOLE wall, not to the piece of it that survived.
+							//
+							// CheckTexturePosition runs once, on the wall DoTexture built, and SplitWall then cuts
+							// that wall up and interpolates v across the cuts. A fragment therefore inherits a
+							// shift computed from corners it no longer has, and taking floor() of its OWN top v
+							// moves it again -- which is what made the shift fix 39 pieces and break 77. So the
+							// shift is computed from the derived span of the whole part, which is what the
+							// unsplit wall's top was.
+							const float wholeV = ComputeWallV( wantTop, texTop, (float)th );
 							const float vShift = ( !fua_surface_vshift || !glShifts ||
 								first->gltexture->tex->bHasCanvas ) ? 0.f
-								: ComputeVShift( wantVRaw, wantVRight );
+								: ComputeVShift( wholeV, wholeV );
 							const float wantV = wantVRaw - vShift;
 							// [rc4l] Both answers are scored, because a step that fixes more than it breaks is
 							// still breaking something, and the count of each is the only way to see that.
