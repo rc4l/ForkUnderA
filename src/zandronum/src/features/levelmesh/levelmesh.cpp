@@ -21,6 +21,7 @@
 #include "p_lnspec.h"    // Line_Mirror, for fua_make_mirror
 #include "gl/dynlights/gl_dynlight.h"   // ADynamicLight, for fua_light
 #include "a_sharedglobal.h"                // DBaseDecal, for fua_decals
+#include "a_sharedglobal.h"                // DBaseDecal, for fua_decals
 #include "d_player.h"     // players, consoleplayer
 #include "tables.h"       // finesine/finecosine
 #include "textures/textures.h"
@@ -1326,6 +1327,21 @@ CCMD( fua_lightnodes )
 		sideNodes, sideDead, sideDormant, subNodes, subDead );
 }
 
+//==========================================================================
+//
+// fua_decals
+//
+// [rc4l] Every decal the ENGINE is holding, which is not the same as what either renderer draws.
+//
+// Both renderers filter: GL skips a decal flagged invisible, the mesh path skips it too and also
+// reads its alpha off the engine's own object. So counting what a renderer registered answers
+// "what got drawn", and the question that keeps coming up is the other one -- what is still THERE.
+// A mark that should have faded and been destroyed, but has not been, is invisible to every
+// instrument that starts from the draw.
+//
+// Walks the sidedefs, because that is where a glued decal lives: side_t::AttachedDecals, threaded
+// on DBaseDecal::WallNext.
+//
 CCMD( fua_light )
 {
 	if ( sectors == NULL || numsectors <= 0 ) { Printf( "no level loaded.\n" ); return; }
