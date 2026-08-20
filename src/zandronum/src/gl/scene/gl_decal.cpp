@@ -369,7 +369,11 @@ void GLWall::DrawDecal(DBaseDecal *decal)
 	//
 	// The gate is a cvar and not a constant because that is what makes the modes comparable: change
 	// fua_decalmode in the console and the same mark is drawn the other way, in the same frame.
-	const bool projected = (fua_decalmode != 0) && decal->IsKindOf(RUNTIME_CLASS(DImpactDecal));
+	// [rc4l] ...and it is no longer only IMPACT decals. A decal the mapper placed is projected at
+	// creation too now, so capturing it here as well would paint the same mark twice -- once cut from
+	// the geometry and once glued to the texture -- and the two do not agree about depth. The port
+	// has one decal path; GL keeps its own quad, which is what the port is still compared against.
+	const bool projected = (fua_decalmode != 0);
 	if (gl_wallmesh && !projected)
 	{
 		const bool shadow = decal->RenderStyle.BlendOp == STYLEOP_Shadow;

@@ -837,6 +837,21 @@ DBaseDecal *ShootDecal(const FDecalTemplate *tpl, AActor *basisactor, sector_t *
 			wall = trace.Line->sidedef[trace.Side];
 			decal->StickToWall(wall, trace.X, trace.Y, trace.ffloor);
 			tpl->ApplyToDecal(decal, wall);
+
+			// [rc4l] features/levelmesh: a map-placed mark is projected too, like an impact one.
+			//
+			// The port had two decal paths and this was the reason for the second: an impact decal was
+			// projected while a decal the MAPPER placed -- the blood spatter beside a corpse, the scorch
+			// under a burnt-out light -- was still captured as a glued quad. Two implementations of one
+			// feature, and the pair of them is where the layering bugs kept coming from: a projection
+			// and a quad in the same frame do not agree about depth, and only one of them was ever
+			// being fixed.
+			//
+			// After ApplyToDecal for the same reason the impact path is: that is where the decal gets
+			// its texture, scale, colour and flips, which is everything the projection prints.
+			zx::levelmesh::SpawnProjectedDecal(decal, tpl, trace.X, trace.Y, trace.Z,
+				trace.Line != NULL ? trace.Line : NULL);
+
 			// Spread decal to nearby walls if it does not all fit on this one
 			if (cl_spreaddecals)
 			{
