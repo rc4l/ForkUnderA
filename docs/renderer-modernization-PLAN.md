@@ -103,6 +103,35 @@ streaming for static geometry.
 **Accepts when:** Sunder MAP10 CPU render time is under 1.5 ms and the frame is GPU-bound. That is
 the ~2.3x, and it is the phase that actually moves fps.
 
+## Phase 2b — one surface, not two
+
+Retires: the wall/flat split.
+
+Doom's software renderer drew walls as vertical columns and floors as horizontal spans — two
+completely different inner loops, because that is what made 1993 hardware fast. The GL renderer
+inherited the *shape* of that split without the reason: `GLWall` and `GLFlat`, separate draw lists,
+separate sorting, separate light setup, separate caches, separate batching. Every feature is
+therefore written twice, and the two halves drift.
+
+That drift is not theoretical — it has been the direct cause of at least three faults:
+
+- Batched walls got no dynamic light at all while flats were fine, because `DrawFlats` still draws
+  one at a time and refreshes each flat's light index; a torch lit the floor under it and left the
+  wall behind it dark.
+- The stale light index could only ever affect walls, for the same reason.
+- Projected decals had to be taught floors and ceilings separately from walls (`fua_decal_flats`),
+  and each side broke the other twice.
+
+A surface is a surface: some geometry, a plane, a material, a light level, a colormap. Nothing about
+a floor needs a different type from a wall once the renderer is neither span-based nor column-based.
+
+- One `Surface` record, one mesh, one draw list, one sort key, one light path.
+- `GLWall`/`GLFlat` become thin builders that emit surfaces, then disappear.
+- Slopes stop being a special case: a sloped floor is a plane like any other.
+
+**Accepts when:** no feature in the renderer is implemented twice, and the decal, light and ordering
+suites pass with a single code path serving walls, floors and ceilings.
+
 ## Phase 3 — one ordering authority
 
 Retires: implicit draw order as a correctness mechanism.

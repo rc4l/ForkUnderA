@@ -2,6 +2,7 @@
 // Copyright (C) 2026 rc4l
 
 #include "gl/system/gl_system.h"
+#include <stddef.h>   // offsetof, for the cached-record guard
 #include "features/levelmesh/wallcache.h"
 #include "features/levelmesh/flatmesh.h"
 #include "features/levelmesh/levelmesh.h"
@@ -296,6 +297,86 @@ void BeginCapture(int segIndex)
 	g_cache[segIndex].filled = false;
 }
 
+//==========================================================================
+//
+// ForgetFrameState
+//
+// [rc4l] The fields of a wall that describe THIS FRAME rather than the wall.
+//
+// A cached wall is stored once and replayed for the life of the level, which is only sound for
+// values that describe the world. Everything Doom's renderer computes per frame -- indices into
+// per-frame arrays, distances from wherever the camera stood, pointers into per-frame pools --
+// means something different by the next frame, and a replayed wall carrying one is reading data
+// that has since been overwritten by something unrelated.
+//
+// Not hypothetical: dynlightindex pointed into the light buffer, kept pointing there after the
+// light died, and a dead plasma bolt lit a wall for as long as nobody fired again. It cost a day,
+// because the light really was gone -- every instrument that starts from the light said so -- and
+// the wall was the last place anyone looked.
+//
+// So the classification is written down here, and the assert makes adding a field to GLWall a build
+// error until someone has decided which kind it is.
+//
+// WORLD, and therefore cached: glseg, vertexes, ztop/zbottom, the four texcoords, alpha, gltexture
+// (re-resolved on replay, so animation keeps running), Colormap, RenderStyle, lightlevel, type,
+// flags, rellight, the glow colours, topflat/bottomflat, topplane/bottomplane, zceil/zfloor, seg,
+// sub. None of these can change without the seg being re-captured or its stamp going stale.
+//
+// FRAME, and therefore cleared:
+//
+//   dynlightindex          an offset into a buffer that is rewritten as lights come and go
+//   viewdistance           measured from wherever the camera was standing at capture
+//   firstwall, numwalls    indices into the per-frame walls[] array the sorter splits into
+//   the union              skybox/sky/horizon/portal/planemirror, all from per-frame pools
+//
+// The portal members cannot reach a replay anyway, since NotePortal marks the seg uncacheable for
+// the level -- but a dangling pointer into a freed pool is not worth leaving in a structure on the
+// grounds that nothing currently reads it.
+//
+// [rc4l] Considered and rejected: a FrameScoped<T> that resets on copy. The sorter SPLITS walls by
+// copying them (SortWallIntoWall, SortWallIntoPlane) and those copies must keep their lights --
+// they are the same wall in the same frame. A copy cannot tell "crossing into the cache" from
+// "splitting in place", so the cache boundary is where the rule belongs, not the type.
+//
+//==========================================================================
+
+static void ForgetFrameState(GLWall &w)
+{
+	w.dynlightindex = zx::hwrender::kNoWallLightIndex;
+	w.viewdistance = 0;
+	w.firstwall = 0;
+	w.numwalls = 0;
+	w.skybox = NULL;   // the union: every member of it is a per-frame pointer
+}
+
+// [rc4l] What this guard does, and -- measured -- what it does not.
+//
+// A field added to GLWall changes its size or shifts the fields after it, and either way this stops
+// the build until someone has classified it above. That is the mechanism: the fault this file
+// exists to prevent was never a hard question, it was a question nobody was asked.
+//
+// It is not airtight, and the gap was measured rather than guessed. Adding `int f;` directly after
+// dynlightindex first compiled CLEAN: the int landed in the padding before the 8-aligned union, so
+// the size stayed 912 and seg did not move. A small field dropped into an interior hole is
+// invisible to a check written only in terms of size.
+//
+// So the holes get named too. With numwalls pinned -- it sits immediately before that padding --
+// the same insertion now fails the build, verified by making it. Other holes may exist; the
+// honest statement is "everything that changes the shape, plus the hole we found", and the
+// structural answer is the cache holding a record built for it rather than a whole GLWall, which
+// is where Phase 2b goes (docs/renderer-modernization-PLAN.md).
+#if defined(_M_X64) || defined(__x86_64__) || defined(__aarch64__)
+static_assert(sizeof(GLWall) == 912,
+	"GLWall changed size. Classify the new field as world state or frame state in ForgetFrameState "
+	"above, clear it there if it is frame state, then update this number.");
+// The tail, so an insertion that keeps the size the same still has to move something.
+static_assert(offsetof(GLWall, seg) == 896, "GLWall fields moved: see ForgetFrameState above.");
+// numwalls sits immediately before the union's alignment padding, which is the hole an added int
+// disappeared into when this was tested. Nailing it down closes that particular slip.
+static_assert(offsetof(GLWall, numwalls) == 184, "GLWall fields moved: see ForgetFrameState above.");
+static_assert(offsetof(GLWall, dynlightindex) == 176, "GLWall fields moved: see ForgetFrameState above.");
+#endif
+
 void RecordPiece(const GLWall &wall, int list)
 {
 	if (g_captureSeg < 0) return;
@@ -322,6 +403,8 @@ void RecordPiece(const GLWall &wall, int list)
 		return;
 	}
 	sc.walls[sc.pieceCount] = wall;
+	// [rc4l] Crossing into the cache: the frame it was captured in does not come with it.
+	ForgetFrameState( sc.walls[sc.pieceCount] );
 	// [rc4l] The one field of a captured wall that must not be kept: which lights it had.
 	//
 	// Everything else here describes the wall, and a wall does not change. A light index describes
@@ -424,6 +507,10 @@ bool TryReplay(int segIndex, const WallCacheEligibility &e, const WallCacheStamp
 		// Only the three ordinary sidedef parts map cleanly, the same three BakeSeg resolves; 3D
 		// floor and special walls are left alone and keep whatever they were captured with.
 		GLWall &w = sc.walls[i];
+		// [rc4l] And crossing back OUT: the frame that last drew this wall wrote its own state
+		// into it, and this is a different frame. The draw paths clear it too, but the invariant
+		// belongs at the boundary -- a wall leaving the cache carries no frame with it.
+		ForgetFrameState(w);
 		if (gl_wallcache_anim && w.gltexture != NULL && w.seg != NULL && w.seg->sidedef != NULL)
 		{
 			const side_t *sd = w.seg->sidedef;
