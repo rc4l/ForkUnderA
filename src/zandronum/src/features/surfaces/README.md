@@ -100,8 +100,12 @@ capture, how many walls arrive with their top v already inside `[0,1)`. On dbab0
 pieces do not -- and `CheckTexturePosition` guarantees exactly that range for everything `DoTexture`
 makes. So those pieces did not go through it, or something moved them afterwards. About a quarter of
 them are fragments `SplitWall` produced, whose v is interpolated from a parent that was already
-normalised; the rest are not yet accounted for. That census is the thing to pull on next, and it is
-one command.
+normalised; the rest are not yet accounted for.
+
+Computing the shift from the whole part's derived span instead of the surviving fragment's own
+top -- which is what the fragment inherited -- was tried and measured: dbab04 improves (84.1% to
+86.6%) and dbab01 and dbab02 get worse. So the fragment story is part of it and not all of it.
+That census is the thing to pull on next, and it is one command.
 
 **Hypotheses killed by measurement**, each of which looked right: the piece belonging to the other
 sidedef (0 pieces, on every map); a texture taller than its span pegging the other way (perfect
