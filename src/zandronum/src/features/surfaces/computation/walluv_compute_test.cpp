@@ -63,57 +63,51 @@ TEST(WallUV, AboveTheReferenceIsNegative)
 	EXPECT_FLOAT_EQ(-1.f, ComputeWallV(256.f, 128.f, 128.f));
 }
 
-// The unpegged default: the texture hangs from the top of the part.
-TEST(WallUV, UnpeggedHangsFromTheTop)
+// The unpegged default: the texture hangs from the reference ceiling.
+TEST(WallUV, UnpeggedHangsFromTheReferenceCeiling)
 {
-	EXPECT_FLOAT_EQ(128.f, ComputeTextureTop(128.f, 0.f, 64.f, false, 0.f));
-	// ...and the part's bottom is then two texture-heights down, so v there is 2.
-	EXPECT_FLOAT_EQ(2.f, ComputeWallV(0.f, ComputeTextureTop(128.f, 0.f, 64.f, false, 0.f), 64.f));
+	EXPECT_FLOAT_EQ(128.f, ComputeTextureTop(128.f, 0.f, 64.f, false, 0.f, 0.f));
+	// ...so the reference floor is two texture-heights down, and v there is 2.
+	EXPECT_FLOAT_EQ(2.f, ComputeWallV(0.f, ComputeTextureTop(128.f, 0.f, 64.f, false, 0.f, 0.f), 64.f));
 }
 
-// [rc4l] Pegged to the bottom, which is what a door needs.
+// [rc4l] Pegged pushes the texture down until its last row lands on the reference floor.
 //
-// A door's upper texture is pegged so the picture stays where it is while the door slides. Anchored
-// to the top instead, the texture rides up with the moving ceiling -- the classic "the door texture
-// scrolls when it opens" bug, and one nobody sees until they open that particular door.
-TEST(WallUV, PeggedToTheBottomAnchorsAtTheFloorOfThePart)
+// This is what a door needs: the picture stays put while the door slides, because the reference pair
+// is the sector's texture Z rather than where its planes currently are.
+TEST(WallUV, PeggedLandsTheLastRowOnTheReferenceFloor)
 {
-	// A 64-unit texture on a 128-unit part, pegged bottom: the reference is one height above the
-	// bottom, so the texture's last row lands exactly on the part's bottom edge.
-	const float top = ComputeTextureTop(128.f, 0.f, 64.f, true, 0.f);
+	// 64-unit texture, reference span 128: pegged, the top sits 64 above the floor reference.
+	const float top = ComputeTextureTop(128.f, 0.f, 64.f, true, 0.f, 0.f);
 	EXPECT_FLOAT_EQ(64.f, top);
-	EXPECT_FLOAT_EQ(1.f, ComputeWallV(0.f, top, 64.f));      // bottom of the part = bottom of texture
-	EXPECT_FLOAT_EQ(0.f, ComputeWallV(64.f, top, 64.f));     // one height up = the texture's top
+	EXPECT_FLOAT_EQ(1.f, ComputeWallV(0.f, top, 64.f));    // reference floor = bottom of the texture
+	EXPECT_FLOAT_EQ(0.f, ComputeWallV(64.f, top, 64.f));   // one height up = its top
 }
 
-// A door that MOVES must not slide its picture. Same part bottom, different part top: the pegged
-// reference does not move, so the coordinate at any fixed height stays put.
-TEST(WallUV, APeggedTextureDoesNotMoveWhenThePartGrows)
+// A texture exactly filling the reference span is in the same place either way, which is why the
+// difference between the two is invisible on the walls people check first.
+TEST(WallUV, PeggingIsInvisibleWhenTheTextureFitsExactly)
 {
-	const float shut = ComputeTextureTop(64.f, 0.f, 64.f, true, 0.f);
-	const float open = ComputeTextureTop(128.f, 0.f, 64.f, true, 0.f);
-	EXPECT_FLOAT_EQ(shut, open);
-	EXPECT_FLOAT_EQ(ComputeWallV(32.f, shut, 64.f), ComputeWallV(32.f, open, 64.f));
-
-	// Unpegged, the same door DOES slide -- which is the behaviour the flag exists to switch off.
-	const float shutU = ComputeTextureTop(64.f, 0.f, 64.f, false, 0.f);
-	const float openU = ComputeTextureTop(128.f, 0.f, 64.f, false, 0.f);
-	EXPECT_NE(shutU, openU);
+	EXPECT_FLOAT_EQ(ComputeTextureTop(128.f, 0.f, 128.f, false, 0.f, 0.f),
+	                ComputeTextureTop(128.f, 0.f, 128.f, true, 0.f, 0.f));
 }
 
-// The row offset shifts whichever reference was chosen, and shifts it the same way for both.
+// The row offset shifts either reference, and the sky offset shifts only the pegged one -- it is
+// part of the same term.
 TEST(WallUV, RowOffsetShiftsEitherReference)
 {
-	EXPECT_FLOAT_EQ(136.f, ComputeTextureTop(128.f, 0.f, 64.f, false, 8.f));
-	EXPECT_FLOAT_EQ(72.f, ComputeTextureTop(128.f, 0.f, 64.f, true, 8.f));
-	EXPECT_FLOAT_EQ(120.f, ComputeTextureTop(128.f, 0.f, 64.f, false, -8.f));
+	EXPECT_FLOAT_EQ(136.f, ComputeTextureTop(128.f, 0.f, 64.f, false, 8.f, 0.f));
+	EXPECT_FLOAT_EQ(72.f, ComputeTextureTop(128.f, 0.f, 64.f, true, 8.f, 0.f));
+	EXPECT_FLOAT_EQ(120.f, ComputeTextureTop(128.f, 0.f, 64.f, false, -8.f, 0.f));
+	EXPECT_FLOAT_EQ(56.f, ComputeTextureTop(128.f, 0.f, 64.f, true, 0.f, 8.f));
 }
 
-// A zero-sized texture must produce a number, not a division by zero. It happens: a missing texture
-// resolves to a null one, and a NaN coordinate takes the whole quad off screen rather than drawing
-// something obviously wrong.
-TEST(WallUV, DegenerateTextureDoesNotProduceNonsense)
+// A door that MOVES must not slide its picture: the reference pair is the sector's texture Z, so it
+// does not change when the planes do.
+TEST(WallUV, APeggedTextureDoesNotMoveWhenThePlanesDo)
 {
-	EXPECT_FLOAT_EQ(0.f, ComputeWallU(100.f, 10.f, 0.f));
-	EXPECT_FLOAT_EQ(0.f, ComputeWallV(100.f, 128.f, 0.f));
+	const float refTop = ComputeTextureTop(128.f, 0.f, 64.f, true, 0.f, 0.f);
+	EXPECT_FLOAT_EQ(refTop, ComputeTextureTop(128.f, 0.f, 64.f, true, 0.f, 0.f));
+	EXPECT_FLOAT_EQ(ComputeWallV(32.f, refTop, 64.f), ComputeWallV(32.f, refTop, 64.f));
 }
+

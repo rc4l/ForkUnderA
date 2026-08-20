@@ -29,6 +29,7 @@
 
 #include "features/levelmesh/wallcache.h"
 #include "features/surfaces/computation/wallgeom_compute.h"
+#include "features/surfaces/computation/walluv_compute.h"
 
 namespace zx { namespace surfaces {
 
@@ -191,6 +192,7 @@ CCMD( fua_surface_verify )
 	// disagreement about a HEIGHT is a wall that is the wrong size, while a disagreement about
 	// EXISTENCE is a wall that is missing or a wall that is not there at all.
 	int missing = 0;
+	int uvChecked = 0, uvAgreed = 0, uvShown = 0;
 
 	const int segCount = zx::levelmesh::CachedSegCount( );
 	for ( int s = 0; s < segCount; s++ )
@@ -259,6 +261,85 @@ CCMD( fua_surface_verify )
 			}
 
 			checked++;
+
+			// [rc4l] The alignment as well as the height, on the piece that agrees about height.
+			//
+			// Two different questions with two different failure modes, so two scores. A wall the right
+			// size with the picture in the wrong place is a texture that looks misaligned; a wall the
+			// wrong size with the picture right is a hole or an overlap. Reported apart because a single
+			// combined number cannot say which of them is happening.
+			{
+				const GLWall *first = NULL;
+				for ( int q = 0; q < pieces && first == NULL; q++ )
+				{
+					const GLWall *pw = zx::levelmesh::CachedPiece( s, q );
+					if ( pw != NULL && pw->type == kTypeOf[slot] ) first = pw;
+				}
+				if ( first != NULL && byType[slot].count == 1 )
+				{
+					FMaterial *mat = FMaterial::ValidateTexture( first->gltexture ?
+						first->gltexture->tex->id : FNullTextureID( ), false, true );
+					if ( mat != NULL )
+					{
+						FTexCoordInfo tci;
+						mat->GetTexCoordInfo( &tci, FRACUNIT, FRACUNIT );
+						int th = tci.mRenderHeight;
+						if ( th < 0 ) th = -th;
+						if ( th > 0 )
+						{
+							// The capture's own v at the top-left corner, against the derived one for the
+							// same height. Whatever pegging the line asked for is already in both.
+							// [rc4l] The reference pair and the peg flag each part actually uses, taken from
+							// DoTexture's own call sites rather than inferred:
+							//
+							//   upper   front ceiling / back ceiling, pegged when DONTPEGTOP is CLEAR
+							//   lower   back floor / front floor, pegged when DONTPEGBOTTOM is SET
+							//   middle  front ceiling / front floor, pegged when DONTPEGBOTTOM is SET
+							//
+							// All texture Z, not live plane heights. Two rounds of inferring this from
+							// pictures produced 91.9% and then 55.7%; reading the caller produced the rule.
+							const int lineFlags = segs[s].linedef->flags;
+							const sector_t *rf = segs[s].frontsector, *rb = segs[s].backsector;
+							bool pegged = false;
+							float refCeil = 0.f, refFloor = 0.f;
+							int texpos = side_t::mid;
+							if ( kTypeOf[slot] == RENDERWALL_TOP && rb != NULL )
+							{
+								texpos = side_t::top;
+								pegged = ( lineFlags & ML_DONTPEGTOP ) == 0;
+								refCeil = FIXED2FLOAT( rf->GetPlaneTexZ( sector_t::ceiling ) );
+								refFloor = FIXED2FLOAT( rb->GetPlaneTexZ( sector_t::ceiling ) );
+							}
+							else if ( kTypeOf[slot] == RENDERWALL_BOTTOM && rb != NULL )
+							{
+								texpos = side_t::bottom;
+								pegged = ( lineFlags & ML_DONTPEGBOTTOM ) != 0;
+								refCeil = FIXED2FLOAT( rb->GetPlaneTexZ( sector_t::floor ) );
+								refFloor = FIXED2FLOAT( rf->GetPlaneTexZ( sector_t::floor ) );
+							}
+							else
+							{
+								pegged = ( lineFlags & ML_DONTPEGBOTTOM ) != 0;
+								refCeil = FIXED2FLOAT( rf->GetPlaneTexZ( sector_t::ceiling ) );
+								refFloor = FIXED2FLOAT( rf->GetPlaneTexZ( sector_t::floor ) );
+							}
+							const float rowOfs = FIXED2FLOAT( tci.RowOffset(
+								segs[s].sidedef->GetTextureYOffset( texpos ) ) );
+							const float texTop = ComputeTextureTop( refCeil, refFloor, (float)th, pegged,
+								rowOfs, 0.f );
+							const float wantV = ComputeWallV( first->ztop[0], texTop, (float)th );
+							uvChecked++;
+							if ( fabsf( wantV - first->uplft.v ) <= 0.01f ) uvAgreed++;
+							else if ( uvShown < 4 )
+							{
+								Printf( "  seg %d %s: capture v %.3f, derived v %.3f (tex h %d, peg %d, rowofs %.1f)\n",
+									s, TypeName( kTypeOf[slot] ), first->uplft.v, wantV, th, (int)pegged, rowOfs );
+								uvShown++;
+							}
+						}
+					}
+				}
+			}
 			if ( fabsf( byType[slot].bottom - wantBottom ) <= tol &&
 			     fabsf( byType[slot].top - wantTop ) <= tol )
 			{
@@ -341,6 +422,8 @@ CCMD( fua_surface_verify )
 	Printf( "fua_surface_verify on %s: %d of %d captured pieces agree (%.1f%%)\n",
 		level.MapName.GetChars( ), agreed, checked,
 		checked ? 100.0 * agreed / checked : 0.0 );
+	Printf( "  alignment: %d of %d agree (%.1f%%)\n", uvAgreed, uvChecked,
+		uvChecked ? 100.0 * uvAgreed / uvChecked : 0.0 );
 	Printf( "  %d skipped as sloped, %d skipped as another surface type, %d the derivation does not place at all\n",
 		skippedSloped, skippedType, missing );
 }
