@@ -186,7 +186,6 @@ const char *TypeName(int type)
 //==========================================================================
 
 // [rc4l] A switch for the rule under test, so it is a measurement and not a belief.
-CVAR( Bool, fua_surface_pegrule, false, 0 )
 // [rc4l] GL's CheckTexturePosition, modelled -- and off by default because it is not yet a win.
 //
 // It fixes 39 pieces on dbab01 and breaks 77, so applying it unconditionally would trade one wrong
@@ -423,17 +422,7 @@ CCMD( fua_surface_verify )
 							}
 							const float rowOfs = FIXED2FLOAT( tci.RowOffset(
 								segs[s].sidedef->GetTextureYOffset( texpos ) ) );
-							// [rc4l] Candidate discriminator, under test: a texture taller than the reference
-							// span pegs the other way.
-							//
-							// Every flipped piece on dbab01 and most on dbab04 had one, and pegging can only
-							// differ where the texture does not fill the span -- so the correlation is at least
-							// in the right place. Guarded by a cvar so the claim is measured rather than
-							// assumed: fua_surface_pegrule 1 turns it on and the ladder says whether it helps.
-							bool pegEffective = pegged;
-							if ( fua_surface_pegrule && (float)th > ( refCeil - refFloor ) )
-								pegEffective = !pegged;
-							const float texTop = ComputeTextureTop( refCeil, refFloor, (float)th, pegEffective,
+							const float texTop = ComputeTextureTop( refCeil, refFloor, (float)th, pegged,
 								rowOfs, vOffset );
 							// [rc4l] And then GL slides the wall back into the first copy of its texture.
 							//

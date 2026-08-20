@@ -233,6 +233,9 @@ CVAR(Bool, fua_dg_bindless_dyn, false, 0)
 // [rc4l] Collapse adjacent batches into one draw. Only ever possible with bindless on, and separable
 // from it so "the array is wrong" and "the merge is wrong" can be told apart in one run.
 CVAR(Bool, fua_dg_mergedraws, true, 0)
+// [rc4l] Let the material array follow animated textures. Separable because following them means
+// rebuilding thirteen bindings, and a binding the GPU is still reading is its own kind of wrong.
+CVAR(Bool, fua_dg_bindless_anim, true, 0)
 static int g_batchesCulled = 0, g_batchesDrawn = 0;
 
 // Set once the level has been baked under standalone -- the bake itself needs GL frames.
@@ -541,6 +544,7 @@ int MaterialSlotCount() { return (int)g_matSlotTable.Size(); }
 void DirtyMaterialSlots() { g_matSlotsDirty = true; g_matSlotRetries = 0; }
 
 
+
 // [rc4l] ONE binding per pipeline, which is the whole point.
 //
 // A STATIC shader variable is copied into every SRB made from the pipeline, and this backend makes
@@ -554,6 +558,28 @@ static bool g_bindlessReady = false;
 static int g_matSlotsWhite = 0;
 // Per pipeline: '-' untouched, 'x' the array is not there, 'f' filled, 'b' filled and bound.
 static char g_fillState[14] = "-------------";
+static FString g_fillNames[8];
+static const void *g_fillViews[8] = { 0 };
+static int g_fillCount = 0;
+// [rc4l] What the array was last filled FROM, so a rebuild that changes nothing rebuilds nothing.
+//
+// A scene rebuild resets the slot table and re-emits every vertex, and on a level with moving
+// sectors that happens constantly -- dbab04 rebuilds the scene about two hundred times in a minute.
+// The table it produces is almost always IDENTICAL to the one before it, so taking the reset as a
+// reason to rebuild thirteen shader resource bindings meant rebuilding them every frame, and
+// releasing a binding the GPU is still reading out of the previous frame's command buffer.
+static TArray<MatSlot> g_filledFrom;
+
+static bool MaterialSlotsMatchFill()
+{
+	if (g_filledFrom.Size() != g_matSlotTable.Size()) return false;
+	for (unsigned i = 0; i < g_matSlotTable.Size(); i++)
+		if (g_filledFrom[i].material != g_matSlotTable[i].material ||
+		    g_filledFrom[i].translation != g_matSlotTable[i].translation ||
+		    g_filledFrom[i].resolved != g_matSlotTable[i].resolved) return false;
+	return true;
+}
+
 static int g_dynSlotRefused = 0, g_dynSlotNoMaterial = 0, g_dynSlotSeen = 0, g_dynSlotMax = 0;
 static int g_dynBindless = 0, g_dynPerMaterial = 0;
 // What the scene pixel shader said it declares, recorded at creation so the question can be asked
@@ -615,6 +641,14 @@ static bool FillMaterialArrayStatic(Diligent::IPipelineState *pso)
 			g_matSlotsWhite++;
 			if (g_matSlotRetries < 120) { g_matSlotsDirty = true; g_matSlotRetries++; }
 		}
+		// [rc4l] What the array is ACTUALLY given, recorded at the moment it is given, for the first
+		// few slots. Every report so far has described the table; this describes the fill.
+		if (i < 8 && live)
+		{
+			FMaterial *fm = (FMaterial *)g_matSlotTable[i].resolved;
+			g_fillNames[i] = (fm && fm->tex) ? fm->tex->Name.GetChars() : "?";
+			g_fillViews[i] = (const void *)obj;
+		}
 		v->SetArray(&obj, i, 1);
 	}
 	return true;
@@ -657,10 +691,13 @@ static void RefreshBindless()
 		g_bindlessReady = false;
 		return;
 	}
-	if (fua_dg_animate) UpdateMaterialSlotResolutions();
+	if (fua_dg_animate && fua_dg_bindless_anim) UpdateMaterialSlotResolutions();
 	if (!g_matSlotsDirty) return;
 	g_matSlotsDirty = false;
+	// A rebuild that produces the same table needs no new bindings -- see g_filledFrom.
+	if (g_bindlessReady && MaterialSlotsMatchFill()) return;
 	g_bindlessReady = false;
+	g_filledFrom.Clear();
 	ReleaseWorldSRBs();
 	// [rc4l] The per-material bindings are deliberately NOT dropped here.
 	//
@@ -693,6 +730,8 @@ static void RefreshBindless()
 		}
 	}
 	g_bindlessReady = true;
+	g_fillCount++;
+	g_filledFrom = g_matSlotTable;
 	static bool announced = false;
 	if (!announced)
 	{
@@ -709,6 +748,18 @@ static void RefreshBindless()
 // reach it is by definition a map that was not to hand. Falling back to per-material bindings costs
 // a little submit time on one level; drawing white walls costs a bug report that looks like a
 // texture-loading fault.
+// See the CCMD: drop everything keyed on an FMaterial address and let it all be made again.
+void FlushTextureCache()
+{
+	ReleaseBatchSRBs();
+	ReleaseMaterialSRBs();
+	for (unsigned b = 0; b < g_batches.Size(); b++) g_batches[b].srb = NULL;
+	ReleaseWorldSRBs();
+	ReleaseMaterials();
+	g_bindlessReady = false;
+	DirtyMaterialSlots();
+}
+
 bool BindlessActive() { return fua_dg_bindless && g_bindlessReady && !g_matSlotOverflow; }
 
 // The binding to commit for a draw on this pipeline, or NULL if bindless is not carrying it.
@@ -2081,8 +2132,12 @@ static void DrawBlended(Diligent::IDeviceContext *ctx)
 	for (unsigned i = 0; i < g_blendBatches.Size(); i++)
 	{
 		const SceneBatch &b = g_batches[g_blendBatches[i]];
-		if (b.count == 0) continue;
-		if (b.srb == NULL && !BindlessActive()) continue;
+		// [rc4l] A blended batch with no binding is skipped whether or not bindless is on.
+		//
+		// Relaxing this looked harmless -- with the array carrying materials a batch needs no binding
+		// of its own -- and it is how translucent geometry that the old path deliberately dropped got
+		// drawn again, over the whole world, in whatever the array had at its slot.
+		if (b.count == 0 || b.srb == NULL) continue;
 		const float dx = b.sortX - cx, dy = b.sortY - cy, dz = b.sortZ - cz;
 		BlendDraw d;
 		d.dyn = false; d.first = b.first; d.count = b.count; d.blend = b.blend;
@@ -3017,13 +3072,18 @@ static bool BuildSceneBuffer(FString &err)
 	g_batches.Clear();
 	g_blendBatches.Clear();
 	g_vbSlots.Clear();
-	// [rc4l] The slot table belongs to the level's geometry, so it is rebuilt with it.
+	// [rc4l] The slot table is NOT reset here, and that is the whole point of it.
 	//
-	// Kept across a re-upload it would keep every retired material and run the level past the slot
-	// count -- and the symptom of that is walls quietly turning white on the third map rather than
-	// anything that looks like a table filling up.
-	ResetMaterialSlots();
-	g_bindlessGen = zx::levelmesh::LevelGeneration();
+	// A scene rebuild re-emits every vertex, and on a level with moving sectors it happens
+	// constantly -- dbab04 rebuilds about two hundred times in a minute. Resetting the table each
+	// time renumbers the slots from the new emit order, so a material that was slot 3 becomes slot
+	// 7, and every binding built from the old numbering is describing a different level. The
+	// symptom is the whole world wearing the wrong textures with the geometry perfectly intact.
+	//
+	// Keeping it means a slot number is stable for as long as the level is: MaterialSlotFor finds
+	// the existing entry, the indices never move, and the array only has to be built again when a
+	// genuinely new material appears. The table is reset where it belongs -- on a level change,
+	// in AutoSetupForLevel, next to everything else keyed on a pointer the old level owned.
 	const void *cur = (const void *)(size_t)-1;
 	const void *curBase = (const void *)(size_t)-1;
 	int curBlend = -1;
@@ -3161,6 +3221,17 @@ static bool BuildSceneBuffer(FString &err)
 
 	// [rc4l] Give every batch its own SRB now that the list is final. Sized once, so the RefCntAutoPtrs
 	// never move and the raw pointers handed to SceneBatch stay valid.
+	// [rc4l] NOW the table describes the level whose vertices are on the GPU, and not one moment
+	// earlier.
+	//
+	// Setting this where the table is reset looks equivalent and is not: a rebuild can still fail
+	// after that point -- "no drawable pieces" is one of several ways -- and it leaves the slot
+	// table describing the NEW level while the buffer the GPU draws still holds the OLD one. Every
+	// surface then samples whatever material happens to sit at its index, which is exactly what
+	// dbab04 did, and only when reached by a map change rather than loaded directly.
+	g_bindlessGen = zx::levelmesh::LevelGeneration();
+	DirtyMaterialSlots();
+
 	ReleaseBatchSRBs();
 	for (unsigned i = 0; i < g_batches.Size(); i++)
 	{
@@ -5201,12 +5272,16 @@ void SlotReport(int n, FString &out)
 		// A lookup that agrees with the table proves nothing if the buffer was written against a
 		// different table.
 		const int inVB = (b.first < g_sceneVB.Size()) ? (int)(g_sceneVB[b.first].lightIndex + 0.5f) : -1;
+		// The view itself, because two slots resolving to ONE view is the signature of a cache keyed
+		// on an address that two different materials have held.
+		const void *srv = (slot > 0) ? (const void *)GetMaterialSRV(g_matSlotTable[slot].resolved,
+			g_matSlotTable[slot].translation) : NULL;
 		const char *vname = "-";
 		if (inVB > 0 && (unsigned)inVB < g_matSlotTable.Size() && g_matSlotTable[inVB].resolved &&
 		    ((FMaterial *)g_matSlotTable[inVB].resolved)->tex)
 			vname = ((FMaterial *)g_matSlotTable[inVB].resolved)->tex->Name.GetChars();
-		out.AppendFormat("  batch %d verts %u..%u material %s -> slot %d holding %s | vertex says %d = %s" "\n",
-			i, b.first, b.first + b.count, bname, slot, sname, inVB, vname);
+		out.AppendFormat("  batch %d verts %u..%u material %s -> slot %d holding %s (view %p) | vertex says %d = %s" "\n",
+			i, b.first, b.first + b.count, bname, slot, sname, srv, inVB, vname);
 	}
 }
 
@@ -5231,6 +5306,10 @@ void DynStats(FString &report)
 		g_dynSlotSeen, g_dynSlotMax, g_dynSlotRefused, g_dynSlotNoMaterial);
 	cull.AppendFormat(", dyn draws: %d bindless, %d per-material, pipelines [%s]",
 		g_dynBindless, g_dynPerMaterial, g_fillState);
+	cull.AppendFormat(" | array filled %d times, slots 1..7 got:", g_fillCount);
+	for (int fi = 1; fi < 8; fi++)
+		cull.AppendFormat(" %d=%s(%p)", fi, g_fillNames[fi].IsNotEmpty() ? g_fillNames[fi].GetChars() : "-",
+			g_fillViews[fi]);
 	report += cull;
 	FString phases;
 	PhaseReport(phases);
@@ -5608,6 +5687,19 @@ CCMD( fua_dg_dynstats )
 // A surface drawn with another surface's texture has exactly two causes and they need opposite
 // fixes: the vertex is carrying the wrong slot number, or the slot is carrying the wrong texture.
 // This prints both sides for the first batches so the two can be told apart instead of argued about.
+// [rc4l] Do to the texture cache what a level change does, on demand.
+//
+// The cache is keyed on raw FMaterial*, and a new level puts its materials at the addresses the old
+// level's just vacated -- so a cache that outlives the change serves the previous map's picture for
+// a pointer that merely happens to match. That is the standing suspect for bindless coming up wrong
+// after a map change and right on a fresh load, and this is how to ask it directly: if flushing here
+// repairs the frame, the fault is WHEN the cache was filled, not what the array or the vertices say.
+CCMD( fua_dg_flushtextures )
+{
+	zx::hwrender::FlushTextureCache( );
+	Printf( "texture cache and every binding dropped; they rebuild next frame\n" );
+}
+
 CCMD( fua_dg_bindless_rebuild )
 {
 	zx::hwrender::DirtyMaterialSlots( );
