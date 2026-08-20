@@ -1608,6 +1608,7 @@ add_executable( zdoom WIN32
 	features/levelmesh/computation/flatmesh_compute.cpp
 	features/levelmesh/computation/decalproject_compute.cpp
 	features/levelmesh/computation/wallcache_compute.cpp
+	features/levelmesh/computation/wallgeom_compute.cpp
 	# [rc4l] The decisions the Diligent backend used to make inline, where they can be tested.
 	features/hwrender/computation/surfaceorder_compute.cpp
 	features/hwrender/computation/lightside_compute.cpp
