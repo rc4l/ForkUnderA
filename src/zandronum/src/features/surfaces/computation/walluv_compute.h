@@ -38,18 +38,25 @@ float ComputeWallU(float alongLine, float xOffset, float texWidth);
 // sector behind it does exactly that.
 float ComputeWallV(float z, float textureTop, float texHeight);
 
-// [rc4l] Where the texture is pegged from, which is the whole of Doom's texture alignment.
+// [rc4l] Where the texture is pegged from -- GL's own form, because guessing at it cost two rounds.
 //
-// Unpegged (the default) hangs the texture from the top of the part being drawn. Pegged -- the
-// DONTPEG flags -- anchors it to the bottom instead, so a door's texture stays put while the door
-// moves and a step's texture lines up with the floor rather than the ceiling. The row offset shifts
-// whatever was chosen.
+// Doom aligns a wall texture from a REFERENCE PAIR, not from the part being drawn. Each part names
+// its own pair: an upper references the front ceiling and the back ceiling, a lower references the
+// back floor and the front floor, a one-sided middle references the front ceiling and floor -- and
+// all of them use the plane's TEXTURE Z rather than where the plane currently is, so a moving
+// sector slides its geometry without sliding its picture.
 //
-// It is one line of arithmetic and it is the single most common way a wall comes out wrong, because
-// the two choices differ only where the texture does not exactly fill the part -- which is most
-// walls in most maps, and none of the ones anybody checks first.
-float ComputeTextureTop(float partTop, float partBottom, float texHeight, bool pegBottom,
-	float rowOffset);
+// Unpegged, the texture hangs from refCeiling. Pegged, it is pushed down so its last row lands on
+// refFloor, which is the shift GL writes as `texHeight - (refSpan + vOffset)`.
+//
+// vOffset is the sky special case: two sky ceilings meeting over a lower texture reference it
+// against the sky instead. Zero everywhere else.
+//
+// Derived by reading DoTexture rather than by inferring it from pictures. The two inferred versions
+// before this were 91.9% and 55.7% against the capture -- both plausible, both wrong, and the
+// second one looked like progress until it was measured.
+float ComputeTextureTop(float refCeiling, float refFloor, float texHeight, bool pegged,
+	float rowOffset, float vOffset);
 
 }} // namespace zx::surfaces
 
