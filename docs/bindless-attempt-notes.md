@@ -32,30 +32,48 @@ of the minefield so the next attempt starts past it.
    fatal, one message per empty slot. They are tied with a `static_assert` now; a GLSL string cannot
    read a C++ constant, so this can only ever be a convention plus an assert.
 
-4. **A size ceiling between 64 and 128.** 64 slots runs. 128 does not. Past it the process dies
-   during pipeline setup with **nothing in the log at any severity** — no Diligent error, no Vulkan
-   validation line, the frame simply never arrives.
-   - Raising `MainDescriptorPoolSize` / `DynamicDescriptorPoolSize`
-     (`NumCombinedSamplerDescriptors`, `NumSampledImageDescriptors`,
-     `NumSeparateSamplerDescriptors`) did **not** lift it — and setting those fields at all made a
-     size that had previously worked stop working, which says they are not independent of the fields
-     left at their defaults.
-   - The device reports `bindless yes, sampler arrays yes`, and the ray-traced mirror pass has been
-     shipping `sampler2D uMaterials[128]` since it landed. **128 works there and not here**, which is
-     the single most useful fact in this document: the difference between those two pipelines is
-     where the answer is. The mirror PSO declares its array as static on ONE pipeline; the world
-     declares it on THIRTEEN that share a resource layout.
+4. **A size ceiling between 64 and 128 — solved, and it was never a pool size.**
+
+   64 slots ran; 128 killed the device during pipeline setup with nothing in the log at any
+   severity. Raising `MainDescriptorPoolSize` / `DynamicDescriptorPoolSize` did not lift it and made
+   a previously-working 64 stop working.
+
+   The reason is architectural, and it is visible from Diligent's own contract rather than from a
+   repro. A `SHADER_RESOURCE_VARIABLE_TYPE_STATIC` variable is **copied into every SRB created from
+   the pipeline**. This backend creates one SRB per `(pipeline, material, translation)` —
+   `g_matSRBs` in `dgscene.cpp`, deliberately, because a MUTABLE variable is baked into the
+   descriptor set at commit time and cannot be re-pointed per draw. So an N-slot array does not cost
+   N descriptors. It costs **N times the number of SRBs**.
+
+   `fua_dg_srbcost` prints the multiplier for the loaded map. On Sunder MAP10:
+
+   ```
+   material SRBs live: 149 cached + 0 batch = 149
+   a 128-slot STATIC sampler array would add 19072 combined-image-sampler descriptors
+   one SRB per pipeline instead -- which is what bindless is FOR -- would add 1664
+   ```
+
+   64 slots is 9536 descriptors and 128 is 19072, which brackets Diligent's default
+   `NumCombinedSamplerDescriptors` of 8192 per pool exactly where the ceiling was observed. The
+   mirror pass takes 128 slots happily because it has **one** SRB, not one per material.
+
+   **So bindless and per-material SRBs are mutually exclusive by construction**, and the first
+   attempt did them in the wrong order: it added the array while keeping the SRBs, which multiplies
+   the descriptor cost by the material count instead of dividing the draw cost by it.
 
 ## Where to start next time
 
-Compare the mirror pipeline against a world pipeline, since one takes 128 slots and the other will
-not. Suspects, in order: the thirteen-pipeline resource layout multiplying the static cache; a
-per-stage sampled-image limit reached by the sum rather than by any one pipeline; and
-`ShaderResourceRuntimeArrays` — an unbounded array may be the supported path where a large fixed one
-is not, which would also remove the fixed ceiling entirely.
+Do the two halves together, in this order:
 
-A minimal repro outside the engine — one Diligent device, N pipelines sharing a layout, one static
-sampler array — would answer this in minutes and is worth writing before touching the backend again.
+1. **Retire the per-material SRB for world geometry.** One SRB per pipeline, with the material array
+   bound once and `uTex`/`uBrightmap` pointed at the white placeholder. `g_matSRBs` stays for
+   anything not yet on the bindless path, and `fua_dg_srbcost` says when it is empty.
+2. **Then** grow the array to the level's material set. With one SRB per pipeline the cost is
+   `slots x 13`, which is 6656 descriptors at 512 slots — an order of magnitude under where the
+   ceiling was, and flat in the number of materials rather than linear in it.
+
+`ShaderResourceRuntimeArrays` (an unbounded array) remains the tidier long-term shape, and the device
+reports it; it is an optimisation of step 2, not a prerequisite for it.
 
 ## What is not in doubt
 
