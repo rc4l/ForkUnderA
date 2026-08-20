@@ -283,6 +283,15 @@ FStartupInfo DoomStartupInfo;
 FString lastIWAD;
 int restart = 0;
 
+// [rc4l] See D_RequestRestart in d_main.h: the throw is deferred to the top of D_DoomLoop so it
+// never has to unwind through Objective-C frames.
+static bool s_restartRequested = false;
+
+void D_RequestRestart()
+{
+	s_restartRequested = true;
+}
+
 cycle_t FrameCycles;
 
 
@@ -1305,6 +1314,14 @@ void D_DoomLoop ()
 	{
 		try
 		{
+			// [rc4l] The only place a restart is thrown from. Anything that wants one sets the flag
+			// and returns normally; see D_RequestRestart.
+			if (s_restartRequested)
+			{
+				s_restartRequested = false;
+				throw CRestartException();
+			}
+
 			zx::updater::Tick(); // [rc4l] fires the deferred update check + drains its verdict log (main thread)
 			zx::waddownload::Tick(); // [rc4l] drains the WAD downloader's log + fires its completion (main thread)
 			zx::wadserve::Tick(); // [rc4l] server side: binds/rebinds the WAD listener, snapshots its config, drains its log
@@ -3647,7 +3664,9 @@ UNSAFE_CCMD(restart)
 	}
 
 	// initiate the restart
-	throw CRestartException();
+	// [rc4l] Deferred for the same reason as wad_reload: a console command can be dispatched from
+	// inside the Cocoa event pump, and the throw must not unwind through Objective-C frames.
+	D_RequestRestart();
 }
 
 //==========================================================================
