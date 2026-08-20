@@ -988,7 +988,12 @@ public:
 
         Data.Resize((SampleRate / 5) * FrameSize);
 
-        size_t samples = Decoder->getSampleLength() / FrameSize;
+        // [rc4l] getSampleLength() is a count of FRAMES, not bytes -- mpg123_length() and
+        // SndInfo.frames both return frames, and DecoderCallback above compares it against
+        // getSampleOffset() and multiplies by FrameSize to get bytes. Dividing by FrameSize here
+        // made the track look a quarter of its real length (stereo 16-bit), and since Loop_End
+        // starts unset it gets clamped to that, so playback ended at 25% of the song.
+        size_t samples = Decoder->getSampleLength();
         ZxLoopPoints lp = ComputeLoopPoints(Loop_Start, Loop_End, startass, endass, srate, samples);
         Loop_Start = lp.start;
         Loop_End = lp.end;
