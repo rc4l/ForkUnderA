@@ -187,6 +187,12 @@ const char *TypeName(int type)
 
 // [rc4l] A switch for the rule under test, so it is a measurement and not a belief.
 CVAR( Bool, fua_surface_pegrule, false, 0 )
+// [rc4l] GL's CheckTexturePosition, modelled -- and off by default because it is not yet a win.
+//
+// It fixes 39 pieces on dbab01 and breaks 77, so applying it unconditionally would trade one wrong
+// number for a worse one. The switch is here so the claim stays measurable in one run rather than
+// remembered wrongly: see features/surfaces/README.md for what is known and what is not.
+CVAR( Bool, fua_surface_vshift, false, 0 )
 
 CCMD( fua_surface_verify )
 {
@@ -201,11 +207,31 @@ CCMD( fua_surface_verify )
 	// disagreement about a HEIGHT is a wall that is the wrong size, while a disagreement about
 	// EXISTENCE is a wall that is missing or a wall that is not there at all.
 	int missing = 0;
-	int uvChecked = 0, uvAgreed = 0, uvShown = 0, uvSwapped = 0, uvPegFlip = 0;
+	int uvChecked = 0, uvAgreed = 0, uvShown = 0;
 	// Which PART the peg flip explains, because "the flag is inverted" is only actionable once it
 	// says for which of the three it is inverted.
 	int uvFlipByType[5] = { 0, 0, 0, 0, 0 };
-	int uvFlipSky = 0, uvFlipTallTex = 0, uvBoth = 0;
+	// [rc4l] What the disagreement IS, in the terms DoTexture is written in.
+	//
+	// A v that is wrong is not a fault until you know by how much. GL's own reference is recoverable
+	// from the coordinate it produced -- texTop = z + v * texHeight -- so the difference can be
+	// measured against the terms of the formula instead of guessed at: the peg shift, a whole texture,
+	// or something that is neither and deserves its own look.
+	int uvDeltaPeg = 0, uvDeltaUnpeg = 0, uvDeltaWholeTex = 0, uvDeltaOther = 0, lastOther = 0;
+	// [rc4l] A whole texture off is the same picture ONLY where the wall wraps.
+	// GLT_CLAMPY is set on the parts that do not -- a hanging midtexture, a sky-clipped upper -- and on
+	// those the offset is a real fault wearing the harmless class's clothes. Counted apart so it can
+	// never be waved through.
+	int uvWholeTexClamped = 0;
+	// [rc4l] The shift scored on its own: how many pieces it fixed and how many it broke.
+	int uvAgreedRaw = 0, uvShiftFixed = 0, uvShiftBroke = 0, uvShiftShown = 0;
+	// [rc4l] Did GL shift THIS wall? Asked of the capture alone, with no derivation involved.
+	//
+	// CheckTexturePosition leaves min(uplft.v, uprgt.v) in [0,1) -- that is what it is for. So a
+	// captured wall whose top v sits outside that range was never put through it, whatever the call
+	// graph says, and counting those separates a wrong formula from a step that did not run.
+	int uvPostOk[5] = { 0, 0, 0, 0, 0 }, uvPostNo[5] = { 0, 0, 0, 0, 0 };
+	int uvPegByType[5] = { 0, 0, 0, 0, 0 }, uvUnpegByType[5] = { 0, 0, 0, 0, 0 };
 
 	const int segCount = zx::levelmesh::CachedSegCount( );
 	for ( int s = 0; s < segCount; s++ )
@@ -288,6 +314,15 @@ CCMD( fua_surface_verify )
 					const GLWall *pw = zx::levelmesh::CachedPiece( s, q );
 					if ( pw != NULL && pw->type == kTypeOf[slot] ) first = pw;
 				}
+				// [rc4l] A cached piece is only comparable while everything it points at is still there.
+				//
+				// The cache outlives a single frame by design, and a piece captured moments before a level
+				// change holds an FMaterial that the new level's precache has already thrown away. Reading
+				// through it takes the process down with no log line at all, which reads as a tool fault for
+				// an hour. Minisegs have no sidedef and no linedef either, so both are checked here rather
+				// than at each of the dozen places below that assume them.
+				if ( first != NULL && ( first->gltexture == NULL || first->gltexture->tex == NULL ||
+					segs[s].sidedef == NULL || segs[s].linedef == NULL ) ) first = NULL;
 				if ( first != NULL && byType[slot].count == 1 )
 				{
 					FMaterial *mat = FMaterial::ValidateTexture( first->gltexture ?
@@ -400,72 +435,112 @@ CCMD( fua_surface_verify )
 								pegEffective = !pegged;
 							const float texTop = ComputeTextureTop( refCeil, refFloor, (float)th, pegEffective,
 								rowOfs, vOffset );
-							const float wantV = ComputeWallV( first->ztop[0], texTop, (float)th );
+							// [rc4l] And then GL slides the wall back into the first copy of its texture.
+							//
+							// CheckTexturePosition runs on every wall DoTexture makes, and until it was modelled
+							// here every wall it moved read as an alignment fault. That is what the peg-condition
+							// hunt was chasing: a step after the formula, not a term inside it.
+							const float wantVRaw = ComputeWallV( first->ztop[0], texTop, (float)th );
+							const float wantVRight = ComputeWallV( first->ztop[1], texTop, (float)th );
+							// [rc4l] And only the parts DoTexture makes.
+							//
+							// CheckTexturePosition is called from DoTexture and from BuildFFBlock, and from
+							// nowhere else -- DoMidTexture writes its four v values and leaves them. So an upper,
+							// a lower and a one-sided middle slide back into the first copy of their texture and a
+							// two-sided middle does not. Applied to all five, the shift fixed 39 pieces and broke
+							// 77; the 77 were the hanging midtextures.
+							const bool glShifts = kTypeOf[slot] == RENDERWALL_TOP ||
+								kTypeOf[slot] == RENDERWALL_BOTTOM || kTypeOf[slot] == RENDERWALL_M1S;
+							const float vShift = ( !fua_surface_vshift || !glShifts ||
+								first->gltexture->tex->bHasCanvas ) ? 0.f
+								: ComputeVShift( wantVRaw, wantVRight );
+							const float wantV = wantVRaw - vShift;
+							// [rc4l] Both answers are scored, because a step that fixes more than it breaks is
+							// still breaking something, and the count of each is the only way to see that.
+							const bool okRaw = fabsf( wantVRaw - first->uplft.v ) <= 0.01f;
+							const bool okShifted = fabsf( wantV - first->uplft.v ) <= 0.01f;
+							if ( okRaw ) uvAgreedRaw++;
+							if ( okRaw && !okShifted ) uvShiftBroke++;
+							if ( !okRaw && okShifted ) uvShiftFixed++;
 							uvChecked++;
-							if ( fabsf( wantV - first->uplft.v ) <= 0.01f ) uvAgreed++;
+							{
+								const float topV = ( first->uplft.v < first->uprgt.v ) ? first->uplft.v : first->uprgt.v;
+								if ( topV >= 0.f && topV < 1.f ) uvPostOk[slot]++; else uvPostNo[slot]++;
+							}
+							if ( okRaw && !okShifted && uvShiftShown < 6 )
+							{
+								uvShiftShown++;
+								Printf( "  shift broke seg %d %s: capture v %.3f, derived %.3f, shift %.1f, ztop %.1f/%.1f, clampy %d\n",
+									s, TypeName( kTypeOf[slot] ), first->uplft.v, wantVRaw, vShift,
+									first->ztop[0], first->ztop[1], ( first->flags & GLT_CLAMPY ) ? 1 : 0 );
+								Printf( "      line %d flags 0x%x, drawn with %s, sidedef says %s, canvas %d, th %d, lolft.v %.3f\n",
+									(int)( segs[s].linedef - lines ), (unsigned)segs[s].linedef->flags,
+									first->gltexture->tex->Name.GetChars( ),
+									TexMan[segs[s].sidedef->GetTexture( (side_t::ETexpart)texposEarly )] ?
+										TexMan[segs[s].sidedef->GetTexture( (side_t::ETexpart)texposEarly )]->Name.GetChars( ) : "-",
+									first->gltexture->tex->bHasCanvas ? 1 : 0, tci.mRenderHeight, first->lolft.v );
+							}
+							if ( okShifted ) uvAgreed++;
 							else
 							{
-								// [rc4l] Does it agree with the sides the other way round?
+								// [rc4l] Name the term, do not guess the rule.
 								//
-								// The numbers on dbab04 said one disagreeing lower was aligned as though the
-								// seg front and back were swapped. That is a hypothesis with an obvious test,
-								// and counting the pieces it explains beats another round of reasoning about the
-								// formula: if it is most of them, the gap is a question about which sidedef a
-								// piece was recorded against, not about alignment at all.
-								const sector_t *sf = rb ? rb : rf, *sb = rf;
-								float sCeil, sFloor;
-								if ( kTypeOf[slot] == RENDERWALL_TOP )
-								{
-									sCeil = FIXED2FLOAT( sf->GetPlaneTexZ( sector_t::ceiling ) );
-									sFloor = FIXED2FLOAT( sb->GetPlaneTexZ( sector_t::ceiling ) );
-								}
-								else if ( kTypeOf[slot] == RENDERWALL_BOTTOM )
-								{
-									sCeil = FIXED2FLOAT( sb->GetPlaneTexZ( sector_t::floor ) );
-									sFloor = FIXED2FLOAT( sf->GetPlaneTexZ( sector_t::floor ) );
-								}
-								else
-								{
-									sCeil = FIXED2FLOAT( sf->GetPlaneTexZ( sector_t::ceiling ) );
-									sFloor = FIXED2FLOAT( sf->GetPlaneTexZ( sector_t::floor ) );
-								}
-								const float swapTop = ComputeTextureTop( sCeil, sFloor, (float)th, pegged, rowOfs, 0.f );
-								const float unpegTop = ComputeTextureTop( sCeil, sFloor, (float)th, !pegged, rowOfs, 0.f );
-								if ( fabsf( ComputeWallV( first->ztop[0], swapTop, (float)th ) - first->uplft.v ) <= 0.01f )
-									uvSwapped++;
-								else if ( fabsf( ComputeWallV( first->ztop[0], unpegTop, (float)th ) - first->uplft.v ) <= 0.01f )
-									{
-										uvPegFlip++; uvFlipByType[slot]++;
-										// [rc4l] Sky is the branch DoTexture treats separately, so it is the first
-										// thing to count rather than the fifth thing to guess.
-										const bool skyCeil = rf->GetTexture( sector_t::ceiling ) == skyflatnum ||
-											( rb && rb->GetTexture( sector_t::ceiling ) == skyflatnum );
-										const bool skyFloor = rf->GetTexture( sector_t::floor ) == skyflatnum ||
-											( rb && rb->GetTexture( sector_t::floor ) == skyflatnum );
-										if ( skyCeil || skyFloor ) uvFlipSky++;
-										// ...and whether the texture is taller than the part it is on, which is the
-										// only situation where the two peggings differ at all.
-										if ( (float)th > ( wantTop - wantBottom ) ) uvFlipTallTex++;
-									}
-							}
-							if ( uvShown < 4 && fabsf( wantV - first->uplft.v ) > 0.01f )
-							{
-								// [rc4l] GL's own reference, recovered from the coordinates it produced.
+								// Two rounds of inferring a peg CONDITION from which pieces failed produced a rule
+								// that correlated perfectly and halved the score when applied. So this asks a
+								// different question: not "which pieces are wrong" but "by exactly how much", in
+								// the units of the one line of DoTexture that can differ --
 								//
-								// v = (texTop - z) / texHeight, so texTop = z + v * texHeight. Printed beside the
-								// derived one, "off by 1.0" becomes "GL referenced THIS height", which names the
-								// term instead of inviting another guess at the formula.
-								const float glTexTop = first->ztop[0] + first->uplft.v * (float)th;
-								Printf( "  seg %d %s: capture v %.3f (texTop %.1f), derived v %.3f (texTop %.1f)\n",
-									s, TypeName( kTypeOf[slot] ), first->uplft.v, glTexTop, wantV, texTop );
-								Printf( "      refs %.1f / %.1f th %d peg %d rowofs %.1f ztop %.1f | sec %d/%d ceilZ %.1f/%.1f floorZ %.1f/%.1f vofs %.1f\n",
-									refCeil, refFloor, th, (int)pegged, rowOfs, first->ztop[0],
-									(int)( rf - sectors ), rb ? (int)( rb - sectors ) : -1,
-									FIXED2FLOAT( rf->GetPlaneTexZ( sector_t::ceiling ) ),
-									rb ? FIXED2FLOAT( rb->GetPlaneTexZ( sector_t::ceiling ) ) : 0.f,
-									FIXED2FLOAT( rf->GetPlaneTexZ( sector_t::floor ) ),
-									rb ? FIXED2FLOAT( rb->GetPlaneTexZ( sector_t::floor ) ) : 0.f, vOffset );
-								uvShown++;
+								//     if (peg) floatceilingref += mRenderHeight - (lh + v_offset)
+								//
+								// A difference of exactly that shift says the peg flag disagrees and nothing else
+								// does. A difference of a whole texture says the picture lands in the same place
+								// on a wrapped wall and the two answers are visually identical. Anything else is a
+								// real gap and is the only part worth reasoning about.
+								const float glTop = first->ztop[0] + first->uplft.v * (float)th;
+								const float delta = glTop - texTop;
+								const float pegShift = (float)th - ( ( refCeil - refFloor ) + vOffset );
+								const float texturesOff = delta / (float)th;
+								if ( fabsf( delta - pegShift ) <= 0.01f ) { uvDeltaPeg++; uvPegByType[slot]++; }
+								else if ( fabsf( delta + pegShift ) <= 0.01f ) { uvDeltaUnpeg++; uvUnpegByType[slot]++; }
+								else if ( fabsf( texturesOff - floorf( texturesOff + 0.5f ) ) <= 0.001f )
+								{
+									uvDeltaWholeTex++;
+									if ( first->flags & GLT_CLAMPY ) uvWholeTexClamped++;
+								}
+								else { uvDeltaOther++; uvFlipByType[slot]++; }
+								// Only the something-else cases get printed: the other three classes are already
+								// explained by their name, and four lines of a solved class crowd out the one
+								// unsolved piece worth looking at.
+								// The two classes with a term still unnamed -- the peg shift the other way, and the ones
+								// that fit no term at all -- are the only ones printed in full.
+								if ( uvShown < 8 && ( uvDeltaOther + uvDeltaUnpeg ) != lastOther )
+								{
+									// [rc4l] GL's own reference, recovered from the coordinates it produced.
+									//
+									// v = (texTop - z) / texHeight, so texTop = z + v * texHeight. Printed beside the
+									// derived one, "off by 1.0" becomes "GL referenced THIS height", which names the
+									// term instead of inviting another guess at the formula.
+									const float glTexTop = first->ztop[0] + first->uplft.v * (float)th;
+									Printf( "  seg %d %s: capture v %.3f (texTop %.1f), derived v %.3f (texTop %.1f)\n",
+										s, TypeName( kTypeOf[slot] ), first->uplft.v, glTexTop, wantV, texTop );
+									Printf( "      refs %.1f / %.1f th %d peg %d rowofs %.1f ztop %.1f | sec %d/%d ceilZ %.1f/%.1f floorZ %.1f/%.1f vofs %.1f\n",
+										refCeil, refFloor, th, (int)pegged, rowOfs, first->ztop[0],
+										(int)( rf - sectors ), rb ? (int)( rb - sectors ) : -1,
+										FIXED2FLOAT( rf->GetPlaneTexZ( sector_t::ceiling ) ),
+										rb ? FIXED2FLOAT( rb->GetPlaneTexZ( sector_t::ceiling ) ) : 0.f,
+										FIXED2FLOAT( rf->GetPlaneTexZ( sector_t::floor ) ),
+										rb ? FIXED2FLOAT( rb->GetPlaneTexZ( sector_t::floor ) ) : 0.f, vOffset );
+									Printf( "      off by %.2f textures; peg shift would be %.1f\n",
+										( glTexTop - texTop ) / (float)th,
+										(float)th - ( ( refCeil - refFloor ) + vOffset ) );
+									Printf( "      line %d flags 0x%x, side %d of it, tex %s, clampy %d\n",
+										(int)( segs[s].linedef - lines ), (unsigned)segs[s].linedef->flags,
+										segs[s].sidedef == segs[s].linedef->sidedef[0] ? 0 : 1,
+										first->gltexture ? first->gltexture->tex->Name.GetChars( ) : "?",
+										( first->flags & GLT_CLAMPY ) ? 1 : 0 );
+									lastOther = uvDeltaOther + uvDeltaUnpeg;
+									uvShown++;
+								}
 							}
 						}
 					}
@@ -609,13 +684,33 @@ CCMD( fua_surface_verify )
 	Printf( "fua_surface_verify on %s: %d of %d captured pieces agree (%.1f%%)\n",
 		level.MapName.GetChars( ), agreed, checked,
 		checked ? 100.0 * agreed / checked : 0.0 );
-	Printf( "  alignment: %d of %d agree (%.1f%%); +%d with the sides swapped, +%d with the peg flipped\n",
-		uvAgreed, uvChecked, uvChecked ? 100.0 * uvAgreed / uvChecked : 0.0, uvSwapped, uvPegFlip );
-	Printf( "    peg flips by part: upper %d, lower %d, middle-1s %d, middle %d, middle-nofog %d\n",
+	Printf( "  alignment: %d of %d agree (%.1f%%)\n",
+		uvAgreed, uvChecked, uvChecked ? 100.0 * uvAgreed / uvChecked : 0.0 );
+	Printf( "    of the %d that do not, by how much: %d off by the peg shift, %d off by the peg shift the other way,\n",
+		uvChecked - uvAgreed, uvDeltaPeg, uvDeltaUnpeg );
+	Printf( "      %d off by a whole texture (%d of them on a wall that CLAMPS, where it is a real fault)\n",
+		uvDeltaWholeTex, uvWholeTexClamped );
+	Printf( "      %d off by something else\n", uvDeltaOther );
+	Printf( "    without the CheckTexturePosition shift: %d of %d (%.1f%%); it fixed %d and broke %d\n",
+		uvAgreedRaw, uvChecked, uvChecked ? 100.0 * uvAgreedRaw / uvChecked : 0.0, uvShiftFixed, uvShiftBroke );
+	Printf( "    captured walls already inside their first texture copy (so GL shifted them):\n" );
+	Printf( "      upper %d/%d, lower %d/%d, middle-1s %d/%d, middle %d/%d, middle-nofog %d/%d\n",
+		uvPostOk[0], uvPostOk[0] + uvPostNo[0], uvPostOk[1], uvPostOk[1] + uvPostNo[1],
+		uvPostOk[2], uvPostOk[2] + uvPostNo[2], uvPostOk[3], uvPostOk[3] + uvPostNo[3],
+		uvPostOk[4], uvPostOk[4] + uvPostNo[4] );
+	Printf( "    the same question asked AT CAPTURE, before anything could rewrite it:\n" );
+	for ( int t = 0; t < 5; t++ )
+	{
+		int inRange = 0, outOfRange = 0;
+		static const int kReportTypes[5] = { RENDERWALL_TOP, RENDERWALL_BOTTOM, RENDERWALL_M1S,
+			RENDERWALL_M2S, RENDERWALL_M2SNF };
+		zx::levelmesh::GetCaptureVRangeStats( kReportTypes[t], inRange, outOfRange );
+		Printf( "      %-14s %d in range, %d outside\n", TypeName( kReportTypes[t] ), inRange, outOfRange );
+	}
+	Printf( "      of the outside ones, %d were fragments SplitWall made\n",
+		zx::levelmesh::CaptureVOutOfRangeSplits( ) );
+	Printf( "    the something-else by part: upper %d, lower %d, middle-1s %d, middle %d, middle-nofog %d\n",
 		uvFlipByType[0], uvFlipByType[1], uvFlipByType[2], uvFlipByType[3], uvFlipByType[4] );
-	Printf( "    of those flips: %d touch sky, %d have a texture taller than the part\n",
-		uvFlipSky, uvFlipTallTex );
-	Printf( "    +%d more agree with the sides swapped AND the peg flipped\n", uvBoth );
 	Printf( "  %d skipped as sloped, %d skipped as another surface type, %d the derivation does not place at all\n",
 		skippedSloped, skippedType, missing );
 }

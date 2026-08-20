@@ -58,6 +58,29 @@ float ComputeWallV(float z, float textureTop, float texHeight);
 float ComputeTextureTop(float refCeiling, float refFloor, float texHeight, bool pegged,
 	float rowOffset, float vOffset);
 
+
+// [rc4l] The step after the formula: GL slides the whole wall back into the first copy of its
+// texture.
+//
+// CheckTexturePosition subtracts floor(min(v at the two top corners)) from all four corners, so a
+// wall whose derived v runs 2.0..3.0 is drawn with v 0.0..1.0. On a wrapping texture that is the
+// same picture, which is why it is invisible until something compares numbers -- and it accounted
+// for EVERY alignment disagreement on the first map it was measured against, all of which had been
+// filed under "pegging" for two rounds.
+//
+// It is not cosmetic. The shift is what decides whether the wall then gets clamped vertically
+// (ComputeWallClampsY), and a clamped wall shows the difference immediately: the top row of pixels
+// smeared down the wall instead of the picture repeating.
+// It applies to the parts DoTexture makes -- upper, lower, one-sided middle -- and to a 3D floor
+// block, and to nothing else. A two-sided middle is written by DoMidTexture, which does not call
+// CheckTexturePosition, and shifting one moves a hanging texture off its hook.
+float ComputeVShift(float vTopLeft, float vTopRight);
+
+// Whether GL will clamp this wall vertically, given the four corner v values AFTER the shift. A wall
+// that occupies exactly one copy of its texture is clamped so that filtering cannot bleed the
+// opposite edge in -- the seam at the top of a door being the case everyone has seen.
+bool ComputeWallClampsY(float vUpLeft, float vUpRight, float vLoLeft, float vLoRight);
+
 }} // namespace zx::surfaces
 
 #endif // ZX_WALLUV_COMPUTE_H
