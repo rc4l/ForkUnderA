@@ -22,6 +22,7 @@
 #include "r_defs.h"
 #include "r_state.h"
 #include "g_level.h"
+#include "r_sky.h"   // skyflatnum, for the lower texture's sky reference
 
 #include "textures/textures.h"
 #include "gl/textures/gl_material.h"
@@ -281,8 +282,16 @@ CCMD( fua_surface_verify )
 						first->gltexture->tex->id : FNullTextureID( ), false, true );
 					if ( mat != NULL )
 					{
+						// [rc4l] The scales of the PART, not of nothing.
+						//
+						// Asking for texture coordinates with unit scales gives the answer for a wall that
+						// nobody scaled, which is most of them and not all of them -- and the ones that are
+						// scaled then disagree by exactly the scale factor, which reads as a pegging fault.
+						const int texposEarly = ( kTypeOf[slot] == RENDERWALL_TOP ) ? side_t::top :
+							( kTypeOf[slot] == RENDERWALL_BOTTOM ) ? side_t::bottom : side_t::mid;
 						FTexCoordInfo tci;
-						mat->GetTexCoordInfo( &tci, FRACUNIT, FRACUNIT );
+						mat->GetTexCoordInfo( &tci, segs[s].sidedef->GetTextureXScale( texposEarly ),
+							segs[s].sidedef->GetTextureYScale( texposEarly ) );
 						int th = tci.mRenderHeight;
 						if ( th < 0 ) th = -th;
 						if ( th > 0 )
@@ -301,7 +310,7 @@ CCMD( fua_surface_verify )
 							const int lineFlags = segs[s].linedef->flags;
 							const sector_t *rf = segs[s].frontsector, *rb = segs[s].backsector;
 							bool pegged = false;
-							float refCeil = 0.f, refFloor = 0.f;
+							float refCeil = 0.f, refFloor = 0.f, vOffset = 0.f;
 							int texpos = side_t::mid;
 							if ( kTypeOf[slot] == RENDERWALL_TOP && rb != NULL )
 							{
@@ -316,6 +325,37 @@ CCMD( fua_surface_verify )
 								pegged = ( lineFlags & ML_DONTPEGBOTTOM ) != 0;
 								refCeil = FIXED2FLOAT( rb->GetPlaneTexZ( sector_t::floor ) );
 								refFloor = FIXED2FLOAT( rf->GetPlaneTexZ( sector_t::floor ) );
+								// [rc4l] The lower texture's v_offset term is NOT applied here, and that is a
+								// finding rather than an omission.
+								//
+								// DoTexture passes one for lowers -- frontFloorTexZ - frontCeilingTexZ -- and
+								// feeding it through the documented formula moves the answer the WRONG way:
+								// GL references 88 on dbab04 seg 301, the formula gives 216 without the term
+								// and 344 with it. So the reference height DoTexture computes is not what ends
+								// up in the vertex: SetWallCoordinates transforms it again, and that transform
+								// is where the remaining alignment gap lives. Reading it is the next step, and
+								// guessing at it a third time is not.
+							}
+							else if ( rb != NULL )
+							{
+								// [rc4l] A two-sided middle is not pegged the way the other parts are: it is
+								// placed directly, from the higher floor upward when unpegged-bottom and from
+								// the lower ceiling downward otherwise, and clipped to the opening. DoMidTexture
+								// writes it as a texturebottom/texturetop pair rather than through DoTexture.
+								pegged = false;
+								if ( lineFlags & ML_DONTPEGBOTTOM )
+								{
+									const float bottomRef = FIXED2FLOAT( MAX( rf->GetPlaneTexZ( sector_t::floor ),
+										rb->GetPlaneTexZ( sector_t::floor ) ) );
+									refCeil = bottomRef + (float)th;
+									refFloor = bottomRef;
+								}
+								else
+								{
+									refCeil = FIXED2FLOAT( MIN( rf->GetPlaneTexZ( sector_t::ceiling ),
+										rb->GetPlaneTexZ( sector_t::ceiling ) ) );
+									refFloor = refCeil - (float)th;
+								}
 							}
 							else
 							{
@@ -326,14 +366,22 @@ CCMD( fua_surface_verify )
 							const float rowOfs = FIXED2FLOAT( tci.RowOffset(
 								segs[s].sidedef->GetTextureYOffset( texpos ) ) );
 							const float texTop = ComputeTextureTop( refCeil, refFloor, (float)th, pegged,
-								rowOfs, 0.f );
+								rowOfs, vOffset );
 							const float wantV = ComputeWallV( first->ztop[0], texTop, (float)th );
 							uvChecked++;
 							if ( fabsf( wantV - first->uplft.v ) <= 0.01f ) uvAgreed++;
 							else if ( uvShown < 4 )
 							{
-								Printf( "  seg %d %s: capture v %.3f, derived v %.3f (tex h %d, peg %d, rowofs %.1f)\n",
-									s, TypeName( kTypeOf[slot] ), first->uplft.v, wantV, th, (int)pegged, rowOfs );
+								// [rc4l] GL's own reference, recovered from the coordinates it produced.
+								//
+								// v = (texTop - z) / texHeight, so texTop = z + v * texHeight. Printed beside the
+								// derived one, "off by 1.0" becomes "GL referenced THIS height", which names the
+								// term instead of inviting another guess at the formula.
+								const float glTexTop = first->ztop[0] + first->uplft.v * (float)th;
+								Printf( "  seg %d %s: capture v %.3f (texTop %.1f), derived v %.3f (texTop %.1f)\n",
+									s, TypeName( kTypeOf[slot] ), first->uplft.v, glTexTop, wantV, texTop );
+								Printf( "      refs %.1f / %.1f  th %d  peg %d  rowofs %.1f  ztop %.1f\n",
+									refCeil, refFloor, th, (int)pegged, rowOfs, first->ztop[0] );
 								uvShown++;
 							}
 						}
