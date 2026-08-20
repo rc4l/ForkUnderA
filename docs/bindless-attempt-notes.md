@@ -11,44 +11,45 @@ both controls (off/off and on/on) also at 0.0%.
 
 ## Why it is not on
 
-**After a map change, dbab04 draws almost every surface with some other surface's texture** — 82-93%
-of the frame, mean |d| 26-47. Not white, not missing: wrong.
+**After a map change the world renders with the wrong textures** — 55-93% of the frame depending on
+the level, on dbab02 as well as dbab04, so it is the transition and not the map. Loaded at launch and
+toggled on, every map tested is **0.0%** — pixel-identical, draw merge and all, against controls that
+also read 0.0%. Deterministic in both directions.
 
-The transition is the whole of it, and that took a while to see:
+The geometry is perfect. Only the textures are wrong, and the two screenshots line up wall for wall.
 
-- Loaded at launch and toggled on, dbab04 is **0.0%** — pixel-identical, with the draw merge on as
-  well. So is dbab01, so are Sunder MAP10 and MAP16.
-- Reached by `map dbab04` from another level, it is wrong every time, whether bindless was on across
-  the change or switched on afterwards.
+### What has been ruled out, each by measurement
 
-What has been measured and is NOT the cause: the slot census (108 slots, none falling back to white,
-all thirteen pipelines filled and bound, every draw on the shared binding); animated textures (wrong
-with animation off too, and the resolution scan was rewritten once already — see
-`UpdateMaterialSlotResolutions` for the version that got it wrong and why); the draw merge (it runs
-with bindless off as well, and that path is byte-identical to the old one); a stale array (forcing a
-rebuild with `fua_dg_bindless_rebuild` changes nothing).
+| Suspect | How it was killed |
+|---|---|
+| The slot table | `fua_dg_slots`: batch material, table slot, and **the slot the vertex itself carries** all agree, name for name, in the broken state |
+| The array's contents | The fill records what it was handed: correct names, fresh views for the new level |
+| The texture cache | `fua_dg_flushtextures` drops it, every binding, and forces a rebuild — no change |
+| A stale array | `fua_dg_bindless_rebuild` — no change |
+| Animated textures | Wrong with `fua_dg_bindless_anim 0`, and wrong with animation off entirely |
+| The draw merge | Identical wrong with `fua_dg_mergedraws 0` |
+| Slot renumbering | Fixed (below) — the churn went from 340 array builds to 35, the picture did not change |
+| Drawing blended batches that used to be skipped | Guard restored — no change |
 
-And the thing that narrows it hardest, from `fua_dg_slots`: **the batch's material, the slot the
-table gives it, and the slot the vertex actually carries all agree**, name for name, in the broken
-state. So the index is right at every step and the fault is in the last link — what
-`GetMaterialSRV` hands back for a correct material pointer.
+### What was fixed along the way
 
-That link has a known hazard, documented at `AutoSetupForLevel`: the texture cache is keyed on raw
-`FMaterial*`, and a new level's materials land at the addresses the old level's just vacated.
-`ReleaseMaterials` exists for exactly that. Bindless calls `GetMaterialSRV` from a different place
-and at a different time than the per-material path did, so the next thing to do is find which of
-those calls happens while the pointers are in flight — the guard on `g_bindlessGen` was an attempt at
-that and it is not sufficient.
+**Slot numbers are stable for the life of a level now.** They were reset on every scene rebuild, and
+a rebuild renumbers from the new emit order — so a material that was slot 3 became slot 7 while every
+binding built from the old numbering was describing a different level. On dbab04 that happens about
+two hundred times a minute. The table is append-only within a level and reset only on a level change.
+This is right whether or not it is the bug, and it took array builds from 340 to 35.
+
+### Where to look next
+
+Everything the CPU can be asked says the frame should be correct, so the next step is to ask the GPU:
+a capture (RenderDoc) at a draw in the broken state answers in one look what is actually in the
+descriptor set and what index the vertex carries. That is the tool this needs, and it is the first
+thing I would reach for rather than another round of counters.
 
 The second open item is smaller and separate: **sprites** get a valid slot and take the array, and
-some of them — items, torch flames — still draw as flat white rectangles. The dynamic path therefore
-writes slot 0, which sends it back to the bound texture and to exactly the path it was on before.
+some — items, torch flames — still draw as flat white rectangles. The dynamic path therefore writes
+slot 0, which sends it back to the bound texture and the path it was always on.
 `fua_dg_bindless_dyn 1` puts it back on the array.
-
-Diagnostics to start from, all already there: `fua_dg_srbcost`, `fua_dg_slots` (batch material vs
-table slot vs what the vertex carries), `fua_dg_bindless_rebuild`, the bindless section of
-`fua_dg_dynstats`, and debug views `fua_dg_lightmode 16` (material slot as a grey ramp) and `17` (is
-this fragment taking the array).
 
 What follows is the record of the attempt that failed first, kept because every one of its four
 failures is a trap the next person walks into in the same order.

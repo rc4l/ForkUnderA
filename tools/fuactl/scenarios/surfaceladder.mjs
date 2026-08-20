@@ -5,17 +5,16 @@
 // this walks the list, runs the ladder on each, and prints the three scores side by side -- which
 // is what turns "84% on dbab04" into "the alignment rule is weaker on the maps with more sidedefs".
 //
-// It also carries the A/B for fua_surface_pegrule, because a candidate rule is worth exactly the
-// difference it makes to the score and nothing else. Two rounds of believing a rule that correlated
-// perfectly and halved the number is why the cvar exists.
+// It also carries the A/B for each candidate rule, because a rule is worth exactly the difference
+// it makes to the score and nothing else. Two rounds of believing one that correlated perfectly and
+// halved the number is why the switches exist at all.
 //
-// usage:  node scenarios/surfaceladder.mjs [--pegrule] [map ...]
+// usage:  node scenarios/surfaceladder.mjs [--vshift] [map ...]
 import fs from 'node:fs';
 import { BridgeClient } from 'file:///F:/ForkUnderA/tools/fuactl/src/client.mjs';
 import * as cap from 'file:///F:/ForkUnderA/tools/fuactl/src/capture.mjs';
 
 const args = process.argv.slice(2);
-const pegrule = args.includes('--pegrule');
 const vshift = args.includes('--vshift');
 const MAPS = args.filter(a => !a.startsWith('--'));
 const maps = MAPS.length ? MAPS : ['dbab01', 'dbab02', 'dbab04'];
@@ -33,7 +32,6 @@ await c.connect(PORT, { token: sess.TOKEN });
 // A `map` issued while the first level is still baking its mesh takes the process down, and the
 // symptom is a closed bridge with nothing in the log -- which reads as a tool bug for a while.
 await cap.waitTics(c, 35);
-await cap.exec(c, `fua_surface_pegrule ${pegrule ? 1 : 0}`);
 await cap.exec(c, `fua_surface_vshift ${vshift ? 1 : 0}`);
 
 const rows = [];
@@ -62,7 +60,7 @@ for (const m of maps) {
 await c.close();
 
 const pct = (a) => a && a[1] ? (100 * a[0] / a[1]).toFixed(1) + '%' : '--';
-console.log(`\nfua_surface_pegrule ${pegrule ? 1 : 0}, fua_surface_vshift ${vshift ? 1 : 0}\n`);
+console.log(`\nfua_surface_vshift ${vshift ? 1 : 0}\n`);
 console.log('map          geometry  alignment  planes    of the misses: peg / peg-other / whole-tex / unexplained');
 for (const r of rows) {
   const miss = r.cls && r.cls2 ? `${r.cls[0]} / ${r.cls[1]} / ${r.cls2[0]} / ${r.cls2[1]}` : '--';

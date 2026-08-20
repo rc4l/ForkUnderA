@@ -113,6 +113,10 @@ correlation over the failures, and applying it halves the score -- the correlati
 bias, since pegging can only differ where the texture does not fill the span); and the peg flag
 being inverted on a subset, which the delta measurement retired outright.
 
+The taller-texture rule had a `fua_surface_pegrule` switch so it could be A/B'd rather than argued
+about. It has been **deleted**: a rule that halves the score is not a candidate any more, and a
+switch nobody should ever turn on is worse than a paragraph. The measurement above is the record.
+
 **Still open**: the 84 pieces on Sunder MAP16 where GL draws 40 units of a 128-unit texture with
 every visible input saying 128, and the capture-time census above.
 
