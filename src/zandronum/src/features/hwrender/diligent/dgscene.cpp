@@ -54,6 +54,7 @@
 #include "v_video.h"
 #include "gl/renderer/gl_renderer.h"
 #include "gl/dynlights/gl_lightbuffer.h"
+#include "features/hwrender/computation/lightcluster_compute.h"
 #include "gl/dynlights/gl_dynlight.h"
 #include "p_local.h"
 #include "doomstat.h"
@@ -174,6 +175,22 @@ CVAR(Bool, fua_dg_hud, true, 0)
 
 // [rc4l] Dynamic lights: muzzle flashes, plasma, rocket trails, lamps.
 CVAR(Bool, fua_dg_dynlights, true, 0)
+
+// [rc4l] Clustered lighting, and the switch that makes it falsifiable.
+//
+// With this off the fragment shader tests every light in the level, which is what it has always
+// done; with it on it tests only the lights binned into its own cell. The two are supposed to draw
+// the SAME PICTURE -- clustering is an acceleration, not a look -- so the switch is the test: flip
+// it in a frozen frame and diff. Anything that shows up is a cell boundary disagreeing between the
+// binning pass and the shader, which is the one failure mode this design has.
+CVAR(Bool, fua_dg_clusters, true, 0)
+
+// [rc4l] The shader spells 64 and 24 out, because a GLSL string cannot read a C++ constant. This is
+// the tie: change the grid and the build stops until the shader has been changed with it. A tile
+// size that disagrees between the binning pass and the lookup is a grid where every cell holds the
+// wrong lights, and it shows up as nothing more alarming than "the lighting is a bit off there".
+static_assert(zx::hwrender::kClusterTilePixels == 64 && zx::hwrender::kClusterSlices == 24,
+	"the cluster grid changed: update the 64 and 24 in FUA_LIGHT_GLSL to match.");
 
 // [rc4l] The camera pitch, which lives outside any header the backend already pulls in.
 extern int viewpitch;
@@ -408,6 +425,25 @@ static void ReleaseMaterialSRBs()
 // path: the light list is variable-length and indexed per surface, which is exactly what a UBO is
 // bad at. Grow-only, and uploaded once per engine frame -- the same generation guard the sprite
 // stream uses, for the same reason (Vulkan's dynamic heap is per frame, not per draw).
+// [rc4l] The cluster grid: which lights can reach each cell of the view.
+//
+// g_clusterBuf holds one (offset, count) pair per cell and g_lightIndexBuf the runs those point
+// into, so a fragment reads its own cell and tests a handful of lights instead of all of them. The
+// binning is on the CPU for now -- correct and measurable first, a compute shader after, in that
+// order, because a wrong answer computed on the GPU is far harder to look at.
+static Diligent::RefCntAutoPtr<Diligent::IBuffer> g_clusterBuf;
+static Diligent::RefCntAutoPtr<Diligent::IBuffer> g_lightIndexBuf;
+static unsigned int g_clusterCapacity = 0;     // cells
+static unsigned int g_lightIndexCapacity = 0;  // entries
+static int g_clusterCells = 0;                 // cells actually in use this frame
+static int g_clusterRefs = 0;                  // light-in-cell entries this frame, for the stats
+static bool g_clusterBindFailed = false;
+
+// The lights of this frame as the shader will see them: eight floats each, position (x, z, y),
+// radius, colour, mode. The binning pass reads THESE rather than walking the thinkers again, so a
+// light the collector rejected cannot reappear in a cell.
+static TArray<float> g_lightData;
+
 static Diligent::RefCntAutoPtr<Diligent::IBuffer> g_lightBuf;
 static unsigned int g_lightBufCapacity = 0;   // in vec4s
 static int g_lightCount = 0;
@@ -537,6 +573,9 @@ static const char *kSceneVS =
 	   alternative: a per-batch flag, a branch here, and a second pipeline permutation. */ \
 	"layout(binding = 5) uniform sampler2D uBrightmap;\n" \
 	"layout(std430, binding = 2) readonly buffer LightBuffer { vec4 lights[]; };\n" \
+	/* [rc4l] The cluster grid: (offset, count) per cell, and the runs those point into. */ \
+	"layout(std430, binding = 6) readonly buffer ClusterTable { uvec2 clusterCells[]; };\n" \
+	"layout(std430, binding = 7) readonly buffer ClusterLightIndices { uint clusterLights[]; };\n" \
 	"layout(location = 0) out vec4 outColor;\n" \
 	/* [rc4l] Every light, tested per fragment -- no per-surface light list at all.
 
@@ -573,9 +612,39 @@ static const char *kSceneVS =
 	   So the marker now carries its full meaning -- no side, and no light from here. */ \
 	"    if (dot(vPlane.xyz, vPlane.xyz) <= 0.0001) return base;\n" \
 	"    vec3 dyn = vec3(0.0);\n" \
-	"    for (int i = 0; i < n; i++) {\n" \
-	"        vec4 lp = lights[i*2];\n" \
-	"        vec4 lc = lights[i*2+1];\n" \
+	/* [rc4l] The cell this fragment is in, and the short list of lights that can reach it.
+
+	   uLightParams.zw carry the cluster depth range, and a zero in z means the grid is off -- in
+	   which case this loops over every light exactly as it always has. The two paths must draw the
+	   SAME picture, so fua_dg_clusters flips between them in a frozen frame and a diff says whether
+	   they do.
+
+	   Depth is 1.0 / gl_FragCoord.w: the clip w the hardware interpolated, which is the quantity
+	   ComputeLightClustersFromMVP slices the light by on the CPU. Two sides agreeing because they
+	   read the same number is worth more than two sides computing numbers that ought to match.
+
+	   The 64 and 24 are kClusterTilePixels and kClusterSlices; a static_assert keeps them honest. */ \
+	"    int first = 0;\n" \
+	"    int count = n;\n" \
+	"    bool clustered = uLightParams.z > 0.0 && uLightParams.w > uLightParams.z;\n" \
+	"    if (clustered) {\n" \
+	"        int tilesX = int((uScreen.x + 63.0) / 64.0);\n" \
+	"        int tilesY = int((uScreen.y + 63.0) / 64.0);\n" \
+	"        int tx = clamp(int(gl_FragCoord.x) / 64, 0, tilesX - 1);\n" \
+	"        int ty = clamp(int(gl_FragCoord.y) / 64, 0, tilesY - 1);\n" \
+	"        float depth = 1.0 / gl_FragCoord.w;\n" \
+	"        int slice = 0;\n" \
+	"        if (depth > uLightParams.z)\n" \
+	"            slice = clamp(int(floor(log(depth / uLightParams.z) /\n" \
+	"                log(uLightParams.w / uLightParams.z) * 24.0)), 0, 23);\n" \
+	"        uvec2 cell = clusterCells[(slice * tilesY + ty) * tilesX + tx];\n" \
+	"        first = int(cell.x);\n" \
+	"        count = int(cell.y);\n" \
+	"    }\n" \
+	"    for (int i = 0; i < count; i++) {\n" \
+	"        int li = clustered ? int(clusterLights[first + i]) : i;\n" \
+	"        vec4 lp = lights[li*2];\n" \
+	"        vec4 lc = lights[li*2+1];\n" \
 	"        vec3 d = lp.xyz - vPixelPos.xyz;\n" \
 	/* The side test gl_GetLight does per surface: a light behind the plane does not light it.
 	   Without this the backs of walls and the room next door get lit, which reads as a scene far
@@ -2198,6 +2267,38 @@ static bool EnsureScenePipeline(FString &err)
 		lbd.ElementByteStride = 16;
 		dev->CreateBuffer(lbd, nullptr, &g_lightBuf);
 		if (!g_lightBuf) { err = "light buffer creation failed"; return false; }
+	// [rc4l] The cluster table and its index list, sized for the largest grid a window can produce.
+	//
+	// Created once at a fixed capacity for the same reason the light buffer is: a buffer recreated
+	// mid-frame leaves every SRB pointing at the freed one. 8192 cells covers a 4K screen at 64-pixel
+	// tiles with 24 slices to spare, and the index list is sized for every light landing in a
+	// generous share of them.
+	if (!g_clusterBuf)
+	{
+		g_clusterCapacity = 16384;
+		Diligent::BufferDesc cbd;
+		cbd.Name = "fua cluster table";
+		cbd.Size = (Diligent::Uint64)g_clusterCapacity * 8;
+		cbd.Usage = Diligent::USAGE_DEFAULT;
+		cbd.BindFlags = Diligent::BIND_SHADER_RESOURCE;
+		cbd.Mode = Diligent::BUFFER_MODE_STRUCTURED;
+		cbd.ElementByteStride = 8;
+		dev->CreateBuffer(cbd, nullptr, &g_clusterBuf);
+		if (!g_clusterBuf) { err = "cluster table creation failed"; return false; }
+	}
+	if (!g_lightIndexBuf)
+	{
+		g_lightIndexCapacity = 262144;
+		Diligent::BufferDesc ibd;
+		ibd.Name = "fua cluster light indices";
+		ibd.Size = (Diligent::Uint64)g_lightIndexCapacity * 4;
+		ibd.Usage = Diligent::USAGE_DEFAULT;
+		ibd.BindFlags = Diligent::BIND_SHADER_RESOURCE;
+		ibd.Mode = Diligent::BUFFER_MODE_STRUCTURED;
+		ibd.ElementByteStride = 4;
+		dev->CreateBuffer(ibd, nullptr, &g_lightIndexBuf);
+		if (!g_lightIndexBuf) { err = "cluster index buffer creation failed"; return false; }
+	}
 	}
 
 	// [rc4l] `false`, not Diligent::False -- something in the reshaped DXSDK headers defines False as
@@ -2351,6 +2452,15 @@ static bool EnsureScenePipeline(FString &err)
 		auto *lv = psos[i]->GetStaticVariableByName(Diligent::SHADER_TYPE_PIXEL, "LightBuffer");
 		if (lv) lv->Set(g_lightBuf->GetDefaultView(Diligent::BUFFER_VIEW_SHADER_RESOURCE));
 		else g_lightBindFailed = true;
+
+		// The cluster table and its index list ride along on the same reasoning: shared by every world
+		// pass, set once, and reported rather than silently skipped.
+		auto *cv = psos[i]->GetStaticVariableByName(Diligent::SHADER_TYPE_PIXEL, "ClusterTable");
+		if (cv) cv->Set(g_clusterBuf->GetDefaultView(Diligent::BUFFER_VIEW_SHADER_RESOURCE));
+		else g_clusterBindFailed = true;
+		auto *iv = psos[i]->GetStaticVariableByName(Diligent::SHADER_TYPE_PIXEL, "ClusterLightIndices");
+		if (iv) iv->Set(g_lightIndexBuf->GetDefaultView(Diligent::BUFFER_VIEW_SHADER_RESOURCE));
+		else g_clusterBindFailed = true;
 	}
 
 	g_maskedPSO->CreateShaderResourceBinding(&g_srbMasked, true);
@@ -2724,8 +2834,7 @@ static void CollectDynamicLights(Diligent::IDeviceContext *ctx)
 	{
 		// [rc4l] Straight from the level's thinkers, not from the engine's per-surface light buffer.
 		// Same filters gl_GetLight applies: dormant lights are skipped, and a zero radius means off.
-		static TArray<float> lightData;
-		lightData.Clear();
+		g_lightData.Clear();
 		TThinkerIterator<ADynamicLight> it(STAT_DLIGHT);
 		ADynamicLight *light;
 		while ((light = it.Next()) != NULL)
@@ -2742,20 +2851,113 @@ static void CollectDynamicLights(Diligent::IDeviceContext *ctx)
 			float b = light->GetBlue()  / 255.0f * cs * gl_lights_intensity;
 
 			// Same axis swap the mesh uses: (x, z, y).
-			lightData.Push(FIXED2FLOAT(light->x));
-			lightData.Push(FIXED2FLOAT(light->z));
-			lightData.Push(FIXED2FLOAT(light->y));
-			lightData.Push(radius);
-			lightData.Push(r);
-			lightData.Push(g);
-			lightData.Push(b);
-			lightData.Push(light->IsSubtractive() ? 1.0f : 0.0f);
+			g_lightData.Push(FIXED2FLOAT(light->x));
+			g_lightData.Push(FIXED2FLOAT(light->z));
+			g_lightData.Push(FIXED2FLOAT(light->y));
+			g_lightData.Push(radius);
+			g_lightData.Push(r);
+			g_lightData.Push(g);
+			g_lightData.Push(b);
+			g_lightData.Push(light->IsSubtractive() ? 1.0f : 0.0f);
 			g_lightCount++;
 		}
 		if (g_lightCount > 0)
-			ctx->UpdateBuffer(g_lightBuf, 0, (Diligent::Uint64)lightData.Size() * 4, &lightData[0],
+			ctx->UpdateBuffer(g_lightBuf, 0, (Diligent::Uint64)g_lightData.Size() * 4, &g_lightData[0],
 				Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 	}
+}
+
+// [rc4l] Bin this frame's lights into the cluster grid.
+//
+// One pass to count what lands in each cell, a prefix sum, and a second pass to fill the runs --
+// the standard way, and worth stating why it is not simply a list per cell: a cell-of-vectors
+// allocates thousands of times a frame and hands the GPU a pointer chase. Two flat buffers is what
+// the shader can read and what a compute shader will produce later without changing the format.
+//
+// The grid math is in lightcluster_compute.h, tested off-engine. What is here is only the
+// bookkeeping, deliberately: the boundaries are where the faults live, and they should not be in a
+// file that needs a level loaded to run.
+static void BuildLightClusters(Diligent::IDeviceContext *ctx)
+{
+	g_clusterCells = 0;
+	g_clusterRefs = 0;
+	if (!fua_dg_clusters || !g_clusterBuf || !g_lightIndexBuf || g_lightCount <= 0) return;
+
+	auto *swap = GetSwapChain();
+	if (swap == NULL) return;
+	const auto &sd = swap->GetDesc();
+
+	// [rc4l] The slice range is the CLUSTER far plane, not the projection's.
+	//
+	// BuildMVP's far plane is 65536 so that nothing in a Doom map is ever clipped, and slicing that
+	// range would spend every slice on distance no light reaches. Anything beyond this falls in the
+	// last slice, which is correct rather than approximate: a light 8000 units away is not lighting
+	// you either way.
+	const zx::hwrender::ClusterGrid grid =
+		zx::hwrender::ComputeGridForScreen((int)sd.Width, (int)sd.Height, 5.f, 8192.f);
+	const int cells = zx::hwrender::ComputeClusterCount(grid);
+	if (cells <= 0 || (unsigned)cells > g_clusterCapacity) return;
+
+	static TArray<unsigned int> counts, offsets, table, indices;
+	counts.Resize((unsigned)cells);
+	for (int i = 0; i < cells; i++) counts[i] = 0;
+
+	// Pass one: how many lights land in each cell.
+	for (int l = 0; l < g_lightCount; l++)
+	{
+		const float *lp = &g_lightData[l * 8];
+		const zx::hwrender::ClusterRange r =
+			zx::hwrender::ComputeLightClustersFromMVP(grid, g_mvp, lp, lp[3]);
+		if (r.empty) continue;
+		for (int z = r.z0; z <= r.z1; z++)
+			for (int y = r.y0; y <= r.y1; y++)
+				for (int x = r.x0; x <= r.x1; x++)
+					counts[zx::hwrender::ComputeClusterIndex(grid, x, y, z)]++;
+	}
+
+	// The prefix sum, and the ceiling that keeps a pathological frame from running off the buffer.
+	offsets.Resize((unsigned)cells);
+	unsigned int total = 0;
+	for (int i = 0; i < cells; i++)
+	{
+		offsets[i] = total;
+		if (total + counts[i] > g_lightIndexCapacity) counts[i] = 0;   // drop rather than overrun
+		total += counts[i];
+	}
+
+	// Pass two: write the runs. `filled` walks each cell's slot as entries arrive.
+	static TArray<unsigned int> filled;
+	filled.Resize((unsigned)cells);
+	for (int i = 0; i < cells; i++) filled[i] = 0;
+	indices.Resize(total > 0 ? total : 1);
+	for (int l = 0; l < g_lightCount; l++)
+	{
+		const float *lp = &g_lightData[l * 8];
+		const zx::hwrender::ClusterRange r =
+			zx::hwrender::ComputeLightClustersFromMVP(grid, g_mvp, lp, lp[3]);
+		if (r.empty) continue;
+		for (int z = r.z0; z <= r.z1; z++)
+			for (int y = r.y0; y <= r.y1; y++)
+				for (int x = r.x0; x <= r.x1; x++)
+				{
+					const int cell = zx::hwrender::ComputeClusterIndex(grid, x, y, z);
+					if (filled[cell] >= counts[cell]) continue;   // the dropped cells above
+					indices[offsets[cell] + filled[cell]] = (unsigned int)l;
+					filled[cell]++;
+				}
+	}
+
+	table.Resize((unsigned)cells * 2);
+	for (int i = 0; i < cells; i++) { table[i * 2] = offsets[i]; table[i * 2 + 1] = counts[i]; }
+
+	ctx->UpdateBuffer(g_clusterBuf, 0, (Diligent::Uint64)table.Size() * 4, &table[0],
+		Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	if (total > 0)
+		ctx->UpdateBuffer(g_lightIndexBuf, 0, (Diligent::Uint64)total * 4, &indices[0],
+			Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+
+	g_clusterCells = cells;
+	g_clusterRefs = (int)total;
 }
 
 // [rc4l] Everything that draws the WORLD, with the render target already bound and cleared.
@@ -3344,7 +3546,8 @@ static void DrawMirrorSurface(Diligent::IDeviceContext *ctx, unsigned index)
 		for (int k = 0; k < 16; k++) cb[k] = g_mvp[k];
 		cb[16] = FIXED2FLOAT(viewx); cb[17] = FIXED2FLOAT(viewz);
 		cb[18] = FIXED2FLOAT(viewy); cb[19] = (float)(int)fua_dg_lightmode;
-		cb[20] = (float)g_lightCount; cb[21] = g_skyAngle; cb[22] = 0.f; cb[23] = 0.f;
+		cb[20] = (float)g_lightCount; cb[21] = g_skyAngle; cb[22] = (g_clusterCells > 0) ? 5.f : 0.f;   // cluster zNear, or zero for "grid off"
+		cb[23] = (g_clusterCells > 0) ? 8192.f : 0.f;  // ...and its far, matching BuildLightClusters
 		for (int k = 0; k < 4; k++) cb[24 + k] = 0.f;
 		cb[28] = (float)g_mirrorW; cb[29] = (float)g_mirrorH; cb[30] = g_skyXScale; cb[31] = g_skyVScale;
 		cb[32] = g_skyCapColor[0].r / 255.f;
@@ -3466,7 +3669,8 @@ static void RenderMirrors(Diligent::IDeviceContext *ctx)
 			for (int k = 0; k < 16; k++) cb[k] = g_mvp[k];
 			cb[16] = FIXED2FLOAT(viewx); cb[17] = FIXED2FLOAT(viewz);
 			cb[18] = FIXED2FLOAT(viewy); cb[19] = (float)(int)fua_dg_lightmode;
-			cb[20] = (float)g_lightCount; cb[21] = g_skyAngle; cb[22] = 0.f; cb[23] = 0.f;
+			cb[20] = (float)g_lightCount; cb[21] = g_skyAngle; cb[22] = (g_clusterCells > 0) ? 5.f : 0.f;   // cluster zNear, or zero for "grid off"
+		cb[23] = (g_clusterCells > 0) ? 8192.f : 0.f;  // ...and its far, matching BuildLightClusters
 			for (int k = 0; k < 4; k++) cb[24 + k] = 0.f;
 			cb[28] = (float)g_mirrorW; cb[29] = (float)g_mirrorH; cb[30] = g_skyXScale; cb[31] = g_skyVScale;
 		cb[32] = g_skyCapColor[0].r / 255.f;
@@ -3757,6 +3961,7 @@ static void DrawWorld(Diligent::IDeviceContext *ctx)
 	// there, so collecting afterwards would light every frame with the previous frame's count.
 	RefreshMovedGeometry(ctx);
 	CollectDynamicLights(ctx);
+	BuildLightClusters(ctx);
 
 	{
 		Diligent::MapHelper<float> cb(ctx, g_cb, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD);
@@ -3767,7 +3972,8 @@ static void DrawWorld(Diligent::IDeviceContext *ctx)
 		cb[20] = (float)g_lightCount;
 		// [rc4l] The sky rotation for this frame: RenderDome's -180 degrees plus the scroll.
 		cb[21] = g_skyAngle;
-		cb[22] = 0.f; cb[23] = 0.f;
+		cb[22] = (g_clusterCells > 0) ? 5.f : 0.f;   // cluster zNear, or zero for "grid off"
+		cb[23] = (g_clusterCells > 0) ? 8192.f : 0.f;  // ...and its far, matching BuildLightClusters
 		// [rc4l] uClipPlane: while a mirror's reflection renders, everything on the FAR side of the
 		// mirror -- the wall it hangs on and the rooms behind it -- sits between the reflected camera
 		// and the scene and would occlude the entire reflection. w == 0 disables it, which is every
@@ -4090,6 +4296,15 @@ void DynStats(FString &report)
 	geo.Format(" | geometry: %d scene rebuilds since load, last dirty %u..%u",
 		g_geomRebuilds, g_lastDirtyLo, g_lastDirtyHi);
 	report += geo;
+	// [rc4l] What the grid actually did this frame. "0 cells" with lights alive means the binning
+	// pass bailed -- a screen bigger than the table, or the cvar off -- and the shader silently fell
+	// back to testing every light, which is correct but is not the thing being measured.
+	FString clusters;
+	clusters.Format(" | clusters: %d cells, %d light refs (%.1f per occupied cell)",
+		g_clusterCells, g_clusterRefs,
+		g_clusterCells > 0 ? (float)g_clusterRefs / (float)g_clusterCells : 0.f);
+	report += clusters;
+	if (g_clusterBindFailed) report += " | WARNING: ClusterTable not bound";
 	if (g_lightBindFailed) report += " | WARNING: LightBuffer not bound";
 	report += anim;
 }

@@ -234,3 +234,113 @@ TEST(LightCluster, APointInsideTheLightIsInACellTheLightClaimed)
 		EXPECT_GE(slice, r.z0); EXPECT_LE(slice, r.z1);
 	}
 }
+
+// ---------------------------------------------------------------------------------------------
+// The matrix path, which is the one the backend actually calls.
+// ---------------------------------------------------------------------------------------------
+
+namespace {
+
+// The backend's own projection, built the way BuildMVP builds it: column-major, w_clip = -z_eye,
+// Vulkan depth. With an identity view this makes world space and eye space the same thing, so the
+// two binning paths can be compared directly.
+void Projection(float *m, float fovY, float aspect, float zn, float zf)
+{
+	for (int i = 0; i < 16; i++) m[i] = 0.f;
+	const float f = 1.0f / tanf(fovY * 0.5f);
+	m[0] = f / aspect; m[5] = f; m[10] = zf / (zn - zf); m[11] = -1.0f;
+	m[14] = (zf * zn) / (zn - zf);
+}
+
+} // namespace
+
+TEST(LightCluster, GridForScreenCoversIt)
+{
+	const ClusterGrid g = ComputeGridForScreen(1024, 640, 5.f, 8000.f);
+	EXPECT_EQ(1024 / kClusterTilePixels, g.tilesX);
+	EXPECT_EQ(640 / kClusterTilePixels, g.tilesY);
+	EXPECT_EQ(kClusterSlices, g.slices);
+	// A screen that does not divide evenly still has to be covered to its last pixel.
+	const ClusterGrid odd = ComputeGridForScreen(1000, 601, 5.f, 8000.f);
+	EXPECT_GE(odd.tilesX * kClusterTilePixels, 1000);
+	EXPECT_GE(odd.tilesY * kClusterTilePixels, 601);
+}
+
+// The two paths are the same question in two coordinate systems, and they have to answer it the
+// same way. This is the test that catches a transposed matrix or a flipped sign -- the failure mode
+// that mirrored the entire world once already, and which no average-colour comparison can see.
+TEST(LightCluster, MatrixPathAgreesWithTheViewSpacePath)
+{
+	ClusterGrid g = ComputeGridForScreen(1024, 640, 5.f, 8000.f);
+	const float fovY = 74.f * 3.14159265f / 180.f;
+	const float aspect = 1024.f / 640.f;
+	g.projY = 1.f / tanf(fovY * 0.5f);
+	g.projX = g.projY / aspect;
+
+	float mvp[16];
+	Projection(mvp, fovY, aspect, 5.f, 65536.f);
+
+	int compared = 0;
+	for (int i = 1; i < 40; i++)
+	{
+		const float depth = 20.f + 60.f * (float)i;
+		const float x = -400.f + 25.f * (float)i;
+		const float y = 150.f - 9.f * (float)i;
+		const float radius = 40.f + 6.f * (float)i;
+
+		const float viewPos[3] = { x, y, depth };          // +z forward
+		const float worldPos[3] = { x, y, -depth };        // eye space, -z forward
+		const ClusterRange a = ComputeLightClusters(g, viewPos, radius);
+		const ClusterRange b = ComputeLightClustersFromMVP(g, mvp, worldPos, radius);
+		ASSERT_EQ(a.empty, b.empty) << "depth " << depth;
+		if (a.empty) continue;
+		compared++;
+		EXPECT_EQ(a.x0, b.x0) << "depth " << depth;
+		EXPECT_EQ(a.x1, b.x1) << "depth " << depth;
+		EXPECT_EQ(a.y0, b.y0) << "depth " << depth;
+		EXPECT_EQ(a.y1, b.y1) << "depth " << depth;
+		EXPECT_EQ(a.z0, b.z0) << "depth " << depth;
+		EXPECT_EQ(a.z1, b.z1) << "depth " << depth;
+	}
+	EXPECT_GT(compared, 20) << "the sweep rejected almost everything: it is not testing what it claims";
+}
+
+TEST(LightCluster, MatrixPathPutsBehindTheCameraNowhere)
+{
+	const ClusterGrid g = ComputeGridForScreen(1024, 640, 5.f, 8000.f);
+	float mvp[16];
+	Projection(mvp, 74.f * 3.14159265f / 180.f, 1.6f, 5.f, 65536.f);
+	const float behind[3] = { 0.f, 0.f, 300.f };   // +z is BEHIND in eye space
+	EXPECT_TRUE(ComputeLightClustersFromMVP(g, mvp, behind, 50.f).empty);
+}
+
+// The plasma bolt going past your ear. Its box crosses the camera plane, so a projected corner would
+// come back mirrored; the answer is every tile, not a mirrored rectangle behind the player.
+TEST(LightCluster, MatrixPathGivesAStraddlingLightTheWholeScreen)
+{
+	const ClusterGrid g = ComputeGridForScreen(1024, 640, 5.f, 8000.f);
+	float mvp[16];
+	Projection(mvp, 74.f * 3.14159265f / 180.f, 1.6f, 5.f, 65536.f);
+	const float atEar[3] = { 0.f, 0.f, -10.f };
+	const ClusterRange r = ComputeLightClustersFromMVP(g, mvp, atEar, 200.f);
+	ASSERT_FALSE(r.empty);
+	EXPECT_EQ(0, r.x0);
+	EXPECT_EQ(g.tilesX - 1, r.x1);
+	EXPECT_EQ(0, r.y0);
+	EXPECT_EQ(g.tilesY - 1, r.y1);
+	EXPECT_EQ(0, r.z0);
+}
+
+// And it must still be local when it is not straddling, or the grid buys nothing on a map full of
+// lights -- which is the entire point of the phase.
+TEST(LightCluster, MatrixPathKeepsASmallLightLocal)
+{
+	const ClusterGrid g = ComputeGridForScreen(1024, 640, 5.f, 8000.f);
+	float mvp[16];
+	Projection(mvp, 74.f * 3.14159265f / 180.f, 1.6f, 5.f, 65536.f);
+	const float p[3] = { 200.f, 0.f, -1200.f };
+	const ClusterRange r = ComputeLightClustersFromMVP(g, mvp, p, 64.f);
+	ASSERT_FALSE(r.empty);
+	const int cells = (r.x1 - r.x0 + 1) * (r.y1 - r.y0 + 1) * (r.z1 - r.z0 + 1);
+	EXPECT_LT(cells, ComputeClusterCount(g) / 20);
+}
