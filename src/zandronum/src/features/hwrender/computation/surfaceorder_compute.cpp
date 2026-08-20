@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 rc4l
 
-#include "features/hwrender/computation/decalorder_compute.h"
+#include "features/hwrender/computation/surfaceorder_compute.h"
 
 namespace zx { namespace hwrender {
 
@@ -48,6 +48,25 @@ bool ComputeDrawsBefore(const TranslucentDraw &a, const TranslucentDraw &b)
 	// same way every frame.
 	if (IsAdditive(a) != IsAdditive(b)) return !IsAdditive(a);
 	return a.first < b.first;
+}
+
+bool ComputePiecesBefore(const ScenePiece &a, const ScenePiece &b)
+{
+	// Correctness first: blended after opaque, always.
+	const int ba = (a.blendMode != 0), bb = (b.blendMode != 0);
+	if (ba != bb) return ba < bb;
+	// Then batching: identical state adjacent, so it draws once.
+	if (a.material != b.material) return a.material < b.material;
+	return a.baseTex < b.baseTex;
+}
+
+bool ComputeGLSpritesBefore(const GLSpriteOrder &a, const GLSpriteOrder &b, bool compatSpriteSort)
+{
+	if (a.depth != b.depth) return a.depth > b.depth;   // farthest first
+	// [rc4l] The tie-break flips with the compat flag, and it is not cosmetic: maps built against the
+	// older behaviour stack overlapping sprites the other way round, and getting it backwards puts the
+	// wrong one in front in exactly the scenes that were authored to look right.
+	return compatSpriteSort ? (a.spawnIndex < b.spawnIndex) : (a.spawnIndex > b.spawnIndex);
 }
 
 } }   // namespace zx::hwrender
