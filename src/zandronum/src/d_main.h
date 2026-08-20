@@ -45,6 +45,18 @@ struct CRestartException
 	char dummy;
 };
 
+// [rc4l] Ask for a restart from ANY context, instead of throwing CRestartException on the spot.
+//
+// The throw has to unwind to D_DoomMain's catch, and on the Cocoa backend the whole engine runs
+// inside applicationDidFinishLaunching -- so a console command dispatched from the event pump has
+// Objective-C frames between it and that catch. A C++ exception cannot cross those: it reaches
+// objc_exception_rethrow and the process aborts, after call_terms() has already torn the sound
+// renderer down on the way past. wad_reload therefore killed the engine on macOS every time.
+//
+// Deferring means the throw happens at the top of D_DoomLoop instead, which is a plain C++ frame
+// directly inside D_DoomMain's try, with nothing of AppKit's in between.
+void D_RequestRestart();
+
 void D_DoomMain (void);
 
 
