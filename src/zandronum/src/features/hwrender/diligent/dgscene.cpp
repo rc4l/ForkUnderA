@@ -198,6 +198,19 @@ CVAR(Bool, fua_dg_clusters, true, 0)
 // carrying the frame, which is not the same as the cvar being set.
 CVAR(Bool, fua_dg_standalone, false, CVAR_ARCHIVE)
 
+// [rc4l] Skip batches the camera cannot see -- which turns out to be almost none of them.
+//
+// Measured on Sunder MAP16 with the level fully baked: 20 batches culled out of 2348, and submit
+// time went UP, from 0.540 ms to 0.595. The reason is in the batching, not the test: a batch is a
+// run of pieces sharing a MATERIAL, and the pieces sharing a material are scattered the length of
+// the level, so every batch's box is most of the map. There is nothing to cull.
+//
+// Kept, off, because it becomes worth having the moment batches are spatially coherent -- which is
+// what per-piece indirect draws with bindless materials would give (#4), and what a spatial batch
+// sort would give at the cost of more draws. The number to beat is recorded above.
+CVAR(Bool, fua_dg_cullbatches, false, 0)
+static int g_batchesCulled = 0, g_batchesDrawn = 0;
+
 // Set once the level has been baked under standalone -- the bake itself needs GL frames.
 static bool g_standaloneBaked = false;
 static int  g_standaloneArmed = 0;
@@ -310,6 +323,13 @@ struct SceneBatch
 	// pass is sorted by material and never consults these.
 	float        sortX, sortY, sortZ;
 	float        normX, normY, normZ;   // mesh space: (x, z-up, y)
+	// [rc4l] The box this batch occupies, so a batch nobody can see costs nothing to skip.
+	//
+	// Every batch was drawn every frame, whatever the camera was looking at -- correct, and on a
+	// level with thousands of batches it is thousands of resource bindings a frame for geometry
+	// behind the player. The GPU never minded (0.18 ms for the whole world); the CPU did.
+	float        minX, minY, minZ;
+	float        maxX, maxY, maxZ;
 };
 static TArray<SceneBatch> g_batches;
 // [rc4l] Indices of the translucent batches, in build order. Small -- a level has a handful of
@@ -2553,6 +2573,8 @@ static unsigned int g_builtLayoutGen = 0;
 // at creation. g_appendedVerts is how much of that slack has been spent since the last rebuild.
 static unsigned int g_vbCapacity = 0;
 static int g_appendedVerts = 0, g_geomAppends = 0;
+// Batches the last sorted build produced -- the figure appends are measured against.
+static int g_builtBatchCount = 0;
 
 static bool BuildSceneBuffer(FString &err)
 {
@@ -2621,6 +2643,8 @@ static bool BuildSceneBuffer(FString &err)
 			b.blend = (p.blendMode == 2) ? 2 : (p.blendMode != 0 ? 1 : 0);
 			b.sortX = b.sortY = b.sortZ = 0.f;
 			b.normX = p.normX; b.normY = p.normY; b.normZ = p.normZ;
+			b.minX = b.minY = b.minZ =  1e30f;
+			b.maxX = b.maxY = b.maxZ = -1e30f;
 			g_batches.Push(b);
 			if (b.blend != 0) g_blendBatches.Push((int)g_batches.Size() - 1);
 			cur = p.material;
@@ -2637,6 +2661,20 @@ static bool BuildSceneBuffer(FString &err)
 			SceneVertex dv;
 			EmitPieceVertex(p, src[p.range.offset + v], g_batches.Size() - 1, dv);
 			g_sceneVB.Push(dv);
+		}
+		// The batch grows to hold this piece.
+		{
+			SceneBatch &nbb = g_batches[g_batches.Size() - 1];
+			for (unsigned int v = 0; v < p.range.count; v++)
+			{
+				const SceneVertex &dv = g_sceneVB[vbStart + v];
+				if (dv.x < nbb.minX) nbb.minX = dv.x;
+				if (dv.y < nbb.minY) nbb.minY = dv.y;
+				if (dv.z < nbb.minZ) nbb.minZ = dv.z;
+				if (dv.x > nbb.maxX) nbb.maxX = dv.x;
+				if (dv.y > nbb.maxY) nbb.maxY = dv.y;
+				if (dv.z > nbb.maxZ) nbb.maxZ = dv.z;
+			}
 		}
 		{
 			VBSlot slot;
@@ -2672,6 +2710,7 @@ static bool BuildSceneBuffer(FString &err)
 		[](const VBSlot &x, const VBSlot &y) { return x.meshOffset < y.meshOffset; });
 	g_builtLayoutGen = zx::levelmesh::MeshLayoutGeneration();
 	g_appendedVerts = 0;
+	g_builtBatchCount = (int)g_batches.Size();
 	g_slotByOffset.Clear();
 	for (unsigned i = 0; i < g_vbSlots.Size(); i++) g_slotByOffset.Insert(g_vbSlots[i].meshOffset, i);
 
@@ -2825,6 +2864,36 @@ bool SceneUpload(FString &report)
 // Blended pieces are refused: the translucent pass sorts batches by centroid every frame and a
 // piece appended without one would sort as if it were at the origin. They fall back to the rebuild,
 // which computes the centroid properly.
+// [rc4l] Is any of this box in front of the camera and on the screen?
+//
+// Every batch was drawn every frame, whatever the camera faced. The GPU never minded -- the whole
+// world measures 0.18 ms -- but each batch costs a resource binding on the CPU, and a level with
+// thousands of them spends most of a millisecond binding materials for geometry behind the player.
+//
+// The box is projected the same way the light binner projects a light: all eight corners through
+// the MVP, with anything crossing the near plane kept outright. Conservative in the direction that
+// matters -- a batch wrongly kept costs one draw, a batch wrongly dropped is a hole in the world.
+static bool BatchOnScreen(const SceneBatch &b, const float *mvp)
+{
+	if (b.maxX < b.minX) return true;   // no bounds recorded: draw it rather than guess
+	float minNdcX = 1e30f, maxNdcX = -1e30f, minNdcY = 1e30f, maxNdcY = -1e30f;
+	for (int i = 0; i < 8; i++)
+	{
+		const float x = (i & 1) ? b.maxX : b.minX;
+		const float y = (i & 2) ? b.maxY : b.minY;
+		const float z = (i & 4) ? b.maxZ : b.minZ;
+		const float w = mvp[3] * x + mvp[7] * y + mvp[11] * z + mvp[15];
+		if (w < 1.f) return true;   // crosses or sits behind the near plane: keep it
+		const float cx = (mvp[0] * x + mvp[4] * y + mvp[8]  * z + mvp[12]) / w;
+		const float cy = (mvp[1] * x + mvp[5] * y + mvp[9]  * z + mvp[13]) / w;
+		if (cx < minNdcX) minNdcX = cx;
+		if (cx > maxNdcX) maxNdcX = cx;
+		if (cy < minNdcY) minNdcY = cy;
+		if (cy > maxNdcY) maxNdcY = cy;
+	}
+	return !(maxNdcX < -1.f || minNdcX > 1.f || maxNdcY < -1.f || minNdcY > 1.f);
+}
+
 static bool AppendPiece(Diligent::IDeviceContext *ctx, const zx::levelmesh::MeshPiece &p,
 	const FFlatVertex *src)
 {
@@ -2841,6 +2910,8 @@ static bool AppendPiece(Diligent::IDeviceContext *ctx, const zx::levelmesh::Mesh
 	b.blend = 0;
 	b.sortX = b.sortY = b.sortZ = 0.f;
 	b.normX = p.normX; b.normY = p.normY; b.normZ = p.normZ;
+	b.minX = b.minY = b.minZ =  1e30f;
+	b.maxX = b.maxY = b.maxZ = -1e30f;
 	b.srb = GetMaterialSRB(g_maskedPSO.RawPtr(), p.material);
 	if (b.srb == NULL) return false;   // no binding, no draw -- and a rebuild will do it properly
 	g_batches.Push(b);
@@ -2856,6 +2927,13 @@ static bool AppendPiece(Diligent::IDeviceContext *ctx, const zx::levelmesh::Mesh
 	{
 		SceneVertex dv;
 		EmitPieceVertex(p, src[p.range.offset + v], slot.batch, dv);
+		SceneBatch &nb = g_batches[slot.batch];
+		if (dv.x < nb.minX) nb.minX = dv.x;
+		if (dv.y < nb.minY) nb.minY = dv.y;
+		if (dv.z < nb.minZ) nb.minZ = dv.z;
+		if (dv.x > nb.maxX) nb.maxX = dv.x;
+		if (dv.y > nb.maxY) nb.maxY = dv.y;
+		if (dv.z > nb.maxZ) nb.maxZ = dv.z;
 		g_sceneVB.Push(dv);
 	}
 	ctx->UpdateBuffer(g_vb, (Diligent::Uint64)slot.vbStart * sizeof(SceneVertex),
@@ -2985,7 +3063,18 @@ static void RefreshMovedGeometry(Diligent::IDeviceContext *ctx)
 			// [rc4l] Rebuild when the slack is spent, not when the layout changes. The collapsed slots
 			// and the extra batches are both reclaimed by the sort, so this is compaction rather than
 			// failure -- and it happens on the order of once per level rather than once per frame.
-			const bool slackSpent = (g_appendedVerts > (int)(g_vbCapacity / 8));
+			// [rc4l] Compact when the BATCH LIST has bloated, not only when the buffer has.
+			//
+			// An appended piece gets a batch of its own, and a batch costs a material binding and a draw
+			// call every frame forever. Sunder MAP16 fully baked reached 2348 batches where the sorted
+			// build produces 168, and submit time went 0.23 ms to 0.54 with it. The sort is what merges
+			// them back together, so the sort is worth running again once enough have piled up.
+			//
+			// Half again as many as the last sorted build: often enough to keep the cost near the
+			// compacted figure, rare enough that a rebuild is not what the frame is doing.
+			const bool batchesBloated = (g_builtBatchCount > 0) &&
+				((int)g_batches.Size() > g_builtBatchCount + g_builtBatchCount / 2 + 32);
+			const bool slackSpent = (g_appendedVerts > (int)(g_vbCapacity / 8)) || batchesBloated;
 			if (!bailed && !slackSpent)
 			{
 				if (patched > 0 || g_geomAppends > 0) g_geomPatches++;
@@ -4262,6 +4351,7 @@ static void DrawWorld(Diligent::IDeviceContext *ctx)
 	// [rc4l] Lights are collected BEFORE the constants are written -- the shader reads the count from
 	// there, so collecting afterwards would light every frame with the previous frame's count.
 	g_phase.Reset();
+	g_batchesCulled = g_batchesDrawn = 0;
 	g_phase.geometry.Clock();  RefreshMovedGeometry(ctx);   g_phase.geometry.Unclock();
 	g_phase.lights.Clock();    CollectDynamicLights(ctx);   g_phase.lights.Unclock();
 	g_phase.clusters.Clock();  BuildLightClusters(ctx);     g_phase.clusters.Unclock();
@@ -4362,6 +4452,7 @@ static void DrawWorld(Diligent::IDeviceContext *ctx)
 	{
 		SceneBatch &b = g_batches[bi];
 		if (b.count == 0 || b.blend != 0) continue;
+		if (fua_dg_cullbatches && !BatchOnScreen(b, g_mvp)) { g_batchesCulled++; continue; }
 		// Re-resolve rather than skip: a binding dropped by a resize would otherwise leave that
 		// material missing from the world until the next upload.
 		if (b.srb == NULL) b.srb = GetMaterialSRB(g_maskedPSO.RawPtr(), b.material);
@@ -4374,6 +4465,7 @@ static void DrawWorld(Diligent::IDeviceContext *ctx)
 		draw.StartVertexLocation = b.first;
 		draw.Flags = Diligent::DRAW_FLAG_VERIFY_ALL;
 		ctx->Draw(draw);
+		g_batchesDrawn++;
 	}
 
 	// [rc4l] The G-buffer is finished with: everything from here reads it or ignores it, and every
@@ -4634,6 +4726,9 @@ void DynStats(FString &report)
 	FString geo;
 	geo.Format(" | geometry: %d scene rebuilds since load, last dirty %u..%u",
 		g_geomRebuilds, g_lastDirtyLo, g_lastDirtyHi);
+	FString cull;
+	cull.Format(" | batches: %d drawn, %d culled", g_batchesDrawn, g_batchesCulled);
+	report += cull;
 	FString phases;
 	PhaseReport(phases);
 	report += " | ";
