@@ -24,6 +24,7 @@
 #include "g_level.h"
 
 #include "textures/textures.h"
+#include "gl/textures/gl_material.h"
 #include "gl/scene/gl_wall.h"
 
 #include "features/levelmesh/wallcache.h"
@@ -73,24 +74,43 @@ bool HeightsForSeg(const seg_t *seg, WallHeights &out, bool &sloped)
 // [rc4l] The seg's middle texture, for the rule that needs it: a two-sided middle hangs by its own
 // height rather than filling the opening. Null texture means the line carries none, which is most
 // two-sided lines in a Doom map.
-bool MiddleTextureOf(const seg_t *seg, float &height, bool &pegBottom, float &rowOffset)
+bool MiddleTextureOf(const seg_t *seg, float &height, bool &pegBottom, float &rowOffset,
+	float &pegFloor, float &pegCeiling)
 {
 	if (seg == NULL || seg->sidedef == NULL || seg->linedef == NULL) return false;
-	FTexture *tex = TexMan(seg->sidedef->GetTexture(side_t::mid));
-	if (tex == NULL || tex->UseType == FTexture::TEX_Null) return false;
-	// [rc4l] The SIDEDEF's scale as well as the texture's own.
+	FMaterial *mat = FMaterial::ValidateTexture(seg->sidedef->GetTexture(side_t::mid), false, true);
+	if (mat == NULL) return false;
+
+	// [rc4l] The material's RENDER height, which is not the texture's scaled height.
 	//
-	// GetScaledHeight applies the texture's scale; the sidedef can scale it again, and a middle
-	// texture scaled 3.2x covers 40 map units of a 128-unit graphic. Sunder MAP16 does exactly that
-	// on thousands of lines, and without this the derivation hangs the full 128 and disagrees with
-	// the capture by 88 units on every one of them -- 3640 pieces, which is the entire remaining gap
-	// on that map.
-	const fixed_t yscale = seg->sidedef->GetTextureYScale(side_t::mid);
-	height = (float)tex->GetScaledHeight();
-	if (yscale != 0) height /= FIXED2FLOAT(yscale);
-	if (height <= 0.f) return false;
+	// GetScaledHeight applies the texture's own scale and stops there; GetTexCoordInfo folds in the
+	// sidedef scales and whatever the texture definition did to it, and mRenderHeight is what GL
+	// measures the middle texture with. On Sunder MAP16 the two differ by more than three times --
+	// 128 against 40 -- which is 3640 pieces of disagreement from one wrong input, and no amount of
+	// staring at the map would have said which input it was.
+	FTexCoordInfo tci;
+	mat->GetTexCoordInfo(&tci, seg->sidedef->GetTextureXScale(side_t::mid),
+		seg->sidedef->GetTextureYScale(side_t::mid));
+	// [rc4l] expand=false. The expanded material carries a two-pixel border for filtering, and
+	// asking it for a render height gives 130 where the wall is 128 -- which reads as the derivation
+	// being two units too tall on every middle texture in the level.
+	int renderHeight = tci.mRenderHeight;
+	if (renderHeight < 0) renderHeight = -renderHeight;
+	if (renderHeight <= 0) return false;
+	height = (float)renderHeight;
+
 	pegBottom = !!(seg->linedef->flags & ML_DONTPEGBOTTOM);
-	rowOffset = FIXED2FLOAT(seg->sidedef->GetTextureYOffset(side_t::mid));
+	rowOffset = FIXED2FLOAT(tci.RowOffset(seg->sidedef->GetTextureYOffset(side_t::mid)));
+
+	// [rc4l] Pegged from the plane's TEXTURE Z, not from where the plane currently is.
+	//
+	// A sector that has moved keeps a separate reference height for its textures, so a lift under a
+	// hanging middle texture slides the geometry without sliding the picture. Pegging from the live
+	// plane instead is a mark that swims up and down with the lift.
+	const sector_t *front = seg->frontsector, *back = seg->backsector;
+	if (front == NULL || back == NULL) return false;
+	pegFloor = FIXED2FLOAT(MAX(front->GetPlaneTexZ(sector_t::floor), back->GetPlaneTexZ(sector_t::floor)));
+	pegCeiling = FIXED2FLOAT(MIN(front->GetPlaneTexZ(sector_t::ceiling), back->GetPlaneTexZ(sector_t::ceiling)));
 	return true;
 }
 
@@ -105,10 +125,21 @@ bool ExpectedSpan(const seg_t *seg, const WallHeights &h, int type, float &botto
 	case RENDERWALL_M2S:
 	case RENDERWALL_M2SNF:
 	{
-		float texH = 0.f, rowOfs = 0.f;
+		float texH = 0.f, rowOfs = 0.f, pegFloor = 0.f, pegCeil = 0.f;
 		bool pegBottom = false;
-		if (MiddleTextureOf(seg, texH, pegBottom, rowOfs))
-			p = ComputeMiddleTexturePart(h, texH, pegBottom, rowOfs);
+		if (MiddleTextureOf(seg, texH, pegBottom, rowOfs, pegFloor, pegCeil))
+		{
+			// The pegging reference is the texture Z, the CLIP is the live opening.
+			WallHeights peg = h;
+			peg.frontFloor = peg.backFloor = pegFloor;
+			peg.frontCeiling = peg.backCeiling = pegCeil;
+			const WallPart hung = ComputeMiddleTexturePart(peg, texH, pegBottom, rowOfs);
+			const WallPart opening = ComputeMiddlePart(h);
+			float b = hung.bottom, t = hung.top;
+			if (b < opening.bottom) b = opening.bottom;
+			if (t > opening.top) t = opening.top;
+			p.bottom = b; p.top = t; p.present = (t > b);
+		}
 		else p = ComputeMiddlePart(h);
 		break;
 	}
@@ -239,15 +270,23 @@ CCMD( fua_surface_verify )
 				Printf( "  seg %d %s: capture %.2f..%.2f (%d piece(s)), derived %.2f..%.2f\n",
 					s, TypeName( kTypeOf[slot] ), byType[slot].bottom, byType[slot].top,
 					byType[slot].count, wantBottom, wantTop );
-				float texH = 0.f, rowOfs = 0.f;
+				float texH = 0.f, rowOfs = 0.f, pegF = 0.f, pegC = 0.f;
 				bool pegBottom = false;
-				const bool haveTex = MiddleTextureOf( &segs[s], texH, pegBottom, rowOfs );
+				const bool haveTex = MiddleTextureOf( &segs[s], texH, pegBottom, rowOfs, pegF, pegC );
 				const WallPart opening = ComputeMiddlePart( h );
 				Printf( "      line %d: front %.0f..%.0f back %.0f..%.0f | opening %.0f..%.0f | "
-					"tex %s h %.1f peg %d rowofs %.1f | flags %08x\n",
+					"tex %s (%s %dx%d) h %.1f peg %d rowofs %.1f | scale %.3f | flags %08x\n",
 					segs[s].linedef ? (int)( segs[s].linedef - lines ) : -1,
 					h.frontFloor, h.frontCeiling, h.backFloor, h.backCeiling,
-					opening.bottom, opening.top, haveTex ? "yes" : "none", texH, (int)pegBottom, rowOfs,
+					opening.bottom, opening.top, haveTex ? "yes" : "none",
+					TexMan( segs[s].sidedef->GetTexture( side_t::mid ) ) ?
+						TexMan( segs[s].sidedef->GetTexture( side_t::mid ) )->Name.GetChars( ) : "?",
+					TexMan( segs[s].sidedef->GetTexture( side_t::mid ) ) ?
+						TexMan( segs[s].sidedef->GetTexture( side_t::mid ) )->GetWidth( ) : 0,
+					TexMan( segs[s].sidedef->GetTexture( side_t::mid ) ) ?
+						TexMan( segs[s].sidedef->GetTexture( side_t::mid ) )->GetHeight( ) : 0,
+					texH, (int)pegBottom, rowOfs,
+					FIXED2FLOAT( segs[s].sidedef->GetTextureYScale( side_t::mid ) ),
 					segs[s].linedef ? (unsigned)segs[s].linedef->flags : 0u );
 				shown++;
 			}
