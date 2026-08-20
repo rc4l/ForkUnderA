@@ -452,6 +452,13 @@ Diligent::IShaderResourceBinding *GetMaterialSRB(Diligent::IPipelineState *pso,
 // Nulling them is enough because the draw loop re-resolves a batch whose binding has gone.
 static void ForgetBatchSRBs();
 
+// [rc4l] How many SRBs are alive, for fua_dg_srbcost -- see the CCMD for why the number matters.
+void MaterialSRBCounts(int &cached, int &batch)
+{
+	cached = (int)g_matSRBs.Size();
+	batch = (int)g_batchSRBs.Size();
+}
+
 static void ReleaseMaterialSRBs()
 {
 	ForgetBatchSRBs();
@@ -5089,6 +5096,31 @@ CCMD( fua_dg_dynstats )
 	FString report;
 	zx::hwrender::DynStats( report );
 	Printf( "%s\n", report.GetChars( ) );
+}
+
+// [rc4l] What a static shader array would actually cost, before adding one.
+//
+// A bindless material array is declared STATIC, and Diligent copies a pipeline's static resources
+// into EVERY shader resource binding made from it. This backend makes one SRB per (pipeline,
+// material, translation) -- see g_matSRBs -- so an N-slot array does not cost N descriptors, it costs
+// N times the number of SRBs. That is the whole of the unexplained 64-works/128-dies ceiling the
+// first bindless attempt hit: not a pool size, not a device limit, but bindless and per-material
+// SRBs being mutually exclusive by construction.
+//
+// This prints the multiplier for the map that is loaded, so the next attempt can see the number
+// before it spends an afternoon on the symptom.
+CCMD( fua_dg_srbcost )
+{
+	const int slots = ( argv.argc( ) > 1 ) ? atoi( argv[1] ) : 512;
+	int cached = 0, batch = 0;
+	zx::hwrender::MaterialSRBCounts( cached, batch );
+	const int srbs = cached + batch;
+	Printf( "material SRBs live: %d cached + %d batch = %d" "\n",
+		cached, batch, srbs );
+	Printf( "a %d-slot STATIC sampler array would add %lld combined-image-sampler descriptors" "\n",
+		slots, (long long)slots * (long long)srbs );
+	Printf( "one SRB per pipeline instead -- which is what bindless is FOR -- would add %d" "\n",
+		slots * 13 );
 }
 
 CCMD( fua_diligent_scale )
