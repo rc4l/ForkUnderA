@@ -56,6 +56,16 @@ bool ProbeIsFinished(ProbePhase phase);
 // Whether a finished probe means the player may host to the internet.
 bool ProbeSaysReachable(ProbePhase phase);
 
+// [rc4l] Whether a verdict for ONE family should be spent on the other before it is believed.
+//
+// The registry probes back to whatever address it saw the request arrive from, so an attempt answers
+// for the family it was sent over and nothing more. Reachable on either family is reachable -- a
+// player joins over whichever one works -- so only a non-reachable verdict is worth a second attempt,
+// and only while the other family is untried AND this machine can actually reach a registry that
+// way. A host with no v6 has no v6 question to ask.
+bool ComputeShouldTryOtherFamily(ProbePhase verdict, bool bTryingV6, bool bTriedV4, bool bTriedV6,
+                                 bool bOtherFamilyAvailable);
+
 // How the INTERNET option should read, which is not the same question as the phase.
 //
 // Three answers, not six, because the player only cares about three: it works, it does not, or we
@@ -70,6 +80,24 @@ enum class ProbeDisplay
 };
 
 ProbeDisplay ProbeDisplayFor(ProbePhase phase);
+
+// [rc4l] How the INTERNET option should read once JOINABILITY, not dialability, is the question.
+//
+// ProbeDisplayFor answers "can a stranger open a connection straight to this port", which stopped
+// deciding whether anybody can join the moment punching existed: features/server-hosting/
+// zx_punchclient asks the registry to open the host's router alongside every join attempt, so
+// players connect through a port that is not forwarded at all. A host in Jordan reading a red
+// INTERNET was hosting a server people in the USA were playing on.
+//
+// So an unreachable PORT is not an unreachable SERVER. It is only bad news when the punch cannot be
+// brokered either -- and the phase already says whether it can, because Unreachable is only ever
+// arrived at THROUGH the cookie leg, which is the registry talking to us. Failed is the registry
+// never answering, and a registry that cannot answer cannot introduce anybody either.
+ProbeDisplay ComputeJoinableDisplay(ProbePhase phase);
+
+// Whether a green answer was earned by an open port or by the relay, which is the difference between
+// "anyone can dial you" and "we can get people in" -- worth saying, not worth colouring differently.
+bool ComputeJoinableViaRelay(ProbePhase phase);
 
 // How long to wait for each leg, in milliseconds.
 //

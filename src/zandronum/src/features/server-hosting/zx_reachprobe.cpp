@@ -37,6 +37,15 @@ namespace
 // engine already had and got it wrong on the platforms this machine cannot build.
 
 ProbePhase		g_Phase = ProbePhase::Idle;
+
+// [rc4l] WHICH FAMILY THIS ATTEMPT IS ASKING ABOUT.
+//
+// The registry probes back to whatever address it saw the request come from, so the family under
+// test is chosen by the address we send to -- not by anything in the packet. One attempt therefore
+// answers for one family, and "can anyone reach me" is only answered by asking both.
+bool			g_TryingV6 = false;
+bool			g_TriedV4 = false;
+bool			g_TriedV6 = false;
 int				g_Port = 0;
 std::string		g_Nonce;
 std::string		g_Cookie;
@@ -94,21 +103,70 @@ void CloseListener( void )
 
 // Bind the port under test. Failing here is its own answer: something on this machine already has
 // the port, so a server would not get it either.
+//
+// [rc4l] ONE SOCKET THAT HEARS BOTH FAMILIES, the same trick and the same fallback as
+// network_AllocateSocket in network.cpp -- turning IPV6_V6ONLY off makes a v6 socket accept v4
+// peers as well, so there is one bind, one read loop, and no second question about which socket a
+// packet arrived on.
+//
+// It was AF_INET outright, which asked the v4 question and drew the answer as though it were the
+// whole one. A host reachable over v6 and not over v4 -- which is every player behind carrier-grade
+// NAT with working v6, and the case this fork's v6 support exists for -- was told INTERNET in red
+// while a server there is perfectly joinable. Painting somebody's working network as shut is the
+// failure the colour rules in DrawHostVisibility are careful to avoid everywhere else.
+//
+// The fallback is not padding: IPV6_V6ONLY defaults differently per platform and a host can have the
+// v6 stack switched off, and a listener that can only ever hear v6 would be a worse probe than the
+// v4-only one it replaced.
 bool OpenListener( int port )
 {
 	CloseListener( );
 
-	g_Listen = socket( AF_INET, SOCK_DGRAM, IPPROTO_UDP );
+	bool bDualStack = false;
+
+	g_Listen = socket( PF_INET6, SOCK_DGRAM, IPPROTO_UDP );
+	if ( g_Listen != INVALID_SOCKET )
+	{
+		int off = 0;
+		if ( setsockopt( g_Listen, IPPROTO_IPV6, IPV6_V6ONLY, (const char *)&off, sizeof( off )) == 0 )
+			bDualStack = true;
+		else
+			CloseListener( );
+	}
+
 	if ( g_Listen == INVALID_SOCKET )
-		return false;
+	{
+		g_Listen = socket( AF_INET, SOCK_DGRAM, IPPROTO_UDP );
+		if ( g_Listen == INVALID_SOCKET )
+			return false;
+	}
 
-	sockaddr_in address;
-	memset( &address, 0, sizeof address );
-	address.sin_family = AF_INET;
-	address.sin_port = htons( static_cast<unsigned short>( port ));
-	address.sin_addr.s_addr = htonl( INADDR_ANY );
+	// [rc4l] The bind has to match the socket that was actually opened, which is why the fallback is
+	// tracked rather than assumed from whether the first call succeeded.
+	int result;
 
-	if ( bind( g_Listen, reinterpret_cast<sockaddr *>( &address ), sizeof address ) < 0 )
+	if ( bDualStack )
+	{
+		sockaddr_in6 address6;
+		memset( &address6, 0, sizeof address6 );
+		address6.sin6_family = AF_INET6;
+		address6.sin6_port = htons( static_cast<unsigned short>( port ));
+		address6.sin6_addr = in6addr_any;
+
+		result = bind( g_Listen, reinterpret_cast<sockaddr *>( &address6 ), sizeof address6 );
+	}
+	else
+	{
+		sockaddr_in address;
+		memset( &address, 0, sizeof address );
+		address.sin_family = AF_INET;
+		address.sin_port = htons( static_cast<unsigned short>( port ));
+		address.sin_addr.s_addr = htonl( INADDR_ANY );
+
+		result = bind( g_Listen, reinterpret_cast<sockaddr *>( &address ), sizeof address );
+	}
+
+	if ( result < 0 )
 	{
 		CloseListener( );
 		return false;
@@ -127,11 +185,16 @@ bool OpenListener( int port )
 
 void SendRequest( const std::string &cookie )
 {
+	// [rc4l] The registry of the family under test, falling back to whichever one answered when this
+	// machine has no address of that family at all -- on a v4-only host there is nothing v6 to ask.
 	NETADDRESS_s registry;
-	if ( BROWSER_GetServerRegistryAddress( registry ) == false )
+	if ( BROWSER_GetServerRegistryAddressForFamily( g_TryingV6, registry ) == false )
 	{
-		g_Phase = ProbePhase::Failed;
-		return;
+		if ( BROWSER_GetServerRegistryAddress( registry ) == false )
+		{
+			g_Phase = ProbePhase::Failed;
+			return;
+		}
 	}
 
 	NETBUFFER_s buffer;
@@ -144,6 +207,31 @@ void SendRequest( const std::string &cookie )
 
 	NETWORK_LaunchPacket( &buffer, registry );
 	buffer.Free( );
+}
+
+// [rc4l] Start the handshake again against the family we have not spent yet. False when there is
+// nothing left to try, which is when a verdict is finally the host's verdict.
+bool RetryOtherFamily( ProbePhase verdict )
+{
+	const bool bOther = !g_TryingV6;
+
+	NETADDRESS_s registry;
+	const bool bAvailable = BROWSER_GetServerRegistryAddressForFamily( bOther, registry );
+
+	// The rule itself is computation/reachprobe_compute's; this is only the socket work behind it.
+	if ( ComputeShouldTryOtherFamily( verdict, g_TryingV6, g_TriedV4, g_TriedV6, bAvailable ) == false )
+		return false;
+
+	g_TryingV6 = bOther;
+
+	// A cookie is issued to the source address, and the other family is a different source address,
+	// so the handshake starts from the top rather than reusing the one we hold.
+	g_Cookie = "";
+	g_Phase = ProbePhase::AwaitingCookie;
+	g_PhaseStartMs = I_MSTime( );
+
+	SendRequest( "" );
+	return true;
 }
 
 void Finish( ProbePhase phase )
@@ -171,7 +259,11 @@ void PollListener( void )
 	for ( ;; )
 	{
 		unsigned char encoded[MAX_UDP_PACKET];
-		sockaddr_in from;
+
+		// [rc4l] Wide enough for either family now that the listener hears both. A sockaddr_in here
+		// would be too small for a v6 sender, and recvfrom truncates the address rather than saying
+		// so -- the packet still arrives, but anything later reading `from` reads rubbish.
+		sockaddr_storage from;
 		// [rc4l] Winsock spells this int and POSIX spells it socklen_t; the engine's own socket code
 		// makes the same split, so it is spelled out here rather than assumed.
 #ifdef _WIN32
@@ -281,6 +373,17 @@ void ReachProbeRequest( int port )
 		return;
 	}
 
+	// [rc4l] Both families unspent, and v6 asked FIRST: it is the one that needs no forwarding to
+	// work, so on a host that has it this is usually the attempt that succeeds and the v4 round trip
+	// is never spent at all.
+	g_TriedV4 = false;
+	g_TriedV6 = false;
+	g_TryingV6 = true;
+
+	NETADDRESS_s probe;
+	if ( BROWSER_GetServerRegistryAddressForFamily( true, probe ) == false )
+		g_TryingV6 = false;
+
 	g_Cookie = "";
 	g_Phase = ProbePhase::AwaitingCookie;
 	g_PhaseStartMs = I_MSTime( );
@@ -301,8 +404,22 @@ void ReachProbeTick( void )
 	const int elapsed = I_MSTime( ) - g_PhaseStartMs;
 	const ProbePhase next = StepProbe( g_Phase, false, false, elapsed );
 
-	if ( next != g_Phase )
-		Finish( next );
+	if ( next == g_Phase )
+		return;
+
+	// [rc4l] Mark the family spent BEFORE deciding, so a retry cannot come back to it.
+	if ( g_TryingV6 )
+		g_TriedV6 = true;
+	else
+		g_TriedV4 = true;
+
+	// [rc4l] Reachable on one family is reachable, full stop -- a player joins over whichever one
+	// works. Anything else is only this family's answer, so the other one is asked before the pill
+	// is allowed to say the port is shut.
+	if ( RetryOtherFamily( next ))
+		return;
+
+	Finish( next );
 }
 
 ProbePhase ReachProbeStatus( int port )
@@ -361,11 +478,30 @@ std::string ReachProbeDebugText( void )
 	out += std::string( "listener on the port under test: " )
 		+ (( g_Listen != INVALID_SOCKET ) ? "open" : "closed" ) + "\n";
 
+	// [rc4l] WHICH FAMILY, because the verdict is per family and the pill is not. "Unreachable" with
+	// only v4 spent means something different from "unreachable" with both spent, and without this
+	// the two read identically.
+	out += std::string( "asking over: " ) + ( g_TryingV6 ? "IPv6" : "IPv4" ) + "\n";
+	out += std::string( "families tried: " )
+		+ ( g_TriedV4 ? "v4 " : "" ) + ( g_TriedV6 ? "v6" : "" )
+		+ (( !g_TriedV4 && !g_TriedV6 ) ? "(none yet)" : "" ) + "\n";
+
 	NETADDRESS_s registry;
 	if ( BROWSER_GetServerRegistryAddress( registry ))
 		out += std::string( "registry resolves to " ) + registry.ToString( ) + "\n";
 	else
 		out += "registry does NOT resolve, so no request can leave\n";
+
+	NETADDRESS_s perFamily;
+	if ( BROWSER_GetServerRegistryAddressForFamily( false, perFamily ))
+		out += std::string( "registry over v4: " ) + perFamily.ToString( ) + "\n";
+	else
+		out += "registry over v4: none, so v4 cannot be tested\n";
+
+	if ( BROWSER_GetServerRegistryAddressForFamily( true, perFamily ))
+		out += std::string( "registry over v6: " ) + perFamily.ToString( ) + "\n";
+	else
+		out += "registry over v6: none, so v6 cannot be tested\n";
 
 	return out;
 }

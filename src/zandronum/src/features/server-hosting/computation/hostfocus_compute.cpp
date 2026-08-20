@@ -15,9 +15,20 @@ HostFocusPos Foot()
 	return HostFocusPos(HostSlot::Action, 0);
 }
 
+// [rc4l] The experience list, or somewhere that exists when the screen has not got one.
+//
+// The SERVER box on CUSTOM and NEW is these same four fields and this same visibility row with
+// nothing above them, so every crossing that would land on the list needs an answer for the screen
+// where there is none -- and it has to be THIS unit's answer, or the box invents its own and the two
+// drift the first time either is touched.
+HostFocusPos ListOr(bool hasList, HostFocusPos fallback)
+{
+	return hasList ? HostFocusPos(HostSlot::List, 0) : fallback;
+}
+
 // [rc4l] Where UP off the foot lands, written once because both buttons on that row answer it and
 // two copies of a three-way choice is two chances to disagree.
-HostFocusPos UpFromTheFoot(bool bFields, bool bGameplay, int gameplayRows, bool bCopy)
+HostFocusPos UpFromTheFoot(bool bFields, bool bGameplay, int gameplayRows, bool bCopy, bool hasList)
 {
 	// The copy button sits between the visibility row and the foot, so it is what up meets first.
 	if (bCopy)
@@ -27,19 +38,24 @@ HostFocusPos UpFromTheFoot(bool bFields, bool bGameplay, int gameplayRows, bool 
 	if (bGameplay)
 		return HostFocusPos(HostSlot::Gameplay, gameplayRows - 1);
 
-	return HostFocusPos(HostSlot::List, 0);
+	return ListOr(hasList, Foot());
 }
 
 } // namespace
 
-HostFocusPos HostLeftOfTheForm()
+HostFocusPos HostLeftOfTheForm(bool hasList)
 {
-	return HostFocusPos(HostSlot::List, 0);
+	return ListOr(hasList, Foot());
 }
 
 HostFocusPos ClampHostFocus(HostFocusPos pos, int fieldCount, bool hasFields, bool hasToggle,
-                            int gameplayRows, bool hasCopy)
+                            int gameplayRows, bool hasCopy, bool hasList)
 {
+	// [rc4l] A screen with no list cannot hold focus on one, and the box opens over a panel whose
+	// focus was legitimately on the list a frame ago.
+	if ((pos.slot == HostSlot::List) && !hasList)
+		return Foot();
+
 	if ((pos.slot == HostSlot::Field) || (pos.slot == HostSlot::Visibility))
 	{
 		if (!hasFields)
@@ -77,13 +93,14 @@ HostFocusPos ClampHostFocus(HostFocusPos pos, int fieldCount, bool hasFields, bo
 }
 
 HostNavResult ComputeHostNav(HostFocusPos pos, HostNavKey key, int fieldCount,
-                             bool hasFields, bool hasToggle, int gameplayRows, bool hasCopy)
+                             bool hasFields, bool hasToggle, int gameplayRows, bool hasCopy,
+                             bool hasList)
 {
 	HostNavResult out;
 
 	// Start from something that exists. The settings can be shut, or a server started, underneath a
 	// focus that was legitimate when it was set.
-	pos = ClampHostFocus(pos, fieldCount, hasFields, hasToggle, gameplayRows, hasCopy);
+	pos = ClampHostFocus(pos, fieldCount, hasFields, hasToggle, gameplayRows, hasCopy, hasList);
 	out.pos = pos;
 
 	const bool bFields = hasFields && (fieldCount > 0);
@@ -138,7 +155,13 @@ HostNavResult ComputeHostNav(HostFocusPos pos, HostNavKey key, int fieldCount,
 			if (pos.field > 0)
 				out.pos = HostFocusPos(HostSlot::Field, pos.field - 1);
 			else
-				out.pos = HostFocusPos(HostSlot::List, 0);	// back across to the list
+			{
+				// [rc4l] Off the top of the fields is the list when there is one, and the FOOT when
+				// there is not -- the SERVER box is a modal, and a modal is a loop: its top row
+				// hands the key to the button that closes it, the same as every box on the NEW tab.
+				// It used to stay put, which made the first field a dead end.
+				out.pos = ListOr(hasList, Foot());
+			}
 			return out;
 		}
 
@@ -168,7 +191,7 @@ HostNavResult ComputeHostNav(HostFocusPos pos, HostNavKey key, int fieldCount,
 			// Up off the first row crosses back to the list, the way up off the first field does.
 			out.pos = (pos.field > 0)
 				? HostFocusPos(HostSlot::Gameplay, pos.field - 1)
-				: HostFocusPos(HostSlot::List, 0);
+				: ListOr(hasList, pos);
 			return out;
 		}
 
@@ -196,7 +219,7 @@ HostNavResult ComputeHostNav(HostFocusPos pos, HostNavKey key, int fieldCount,
 		{
 			out.pos = (fieldCount > 0)
 				? HostFocusPos(HostSlot::Field, fieldCount - 1)
-				: HostFocusPos(HostSlot::List, 0);
+				: ListOr(hasList, pos);
 			return out;
 		}
 
@@ -223,13 +246,13 @@ HostNavResult ComputeHostNav(HostFocusPos pos, HostNavKey key, int fieldCount,
 		}
 		if (key == HostNavKey::Left)
 		{
-			out.pos = HostFocusPos(HostSlot::List, 0);
+			out.pos = ListOr(hasList, pos);
 			return out;
 		}
 
 		if (key == HostNavKey::Up)
 		{
-			out.pos = UpFromTheFoot(bFields, bGameplay, gameplayRows, hasCopy);
+			out.pos = UpFromTheFoot(bFields, bGameplay, gameplayRows, hasCopy, hasList);
 			return out;
 		}
 
@@ -249,7 +272,7 @@ HostNavResult ComputeHostNav(HostFocusPos pos, HostNavKey key, int fieldCount,
 
 		if (key == HostNavKey::Up)
 		{
-			out.pos = UpFromTheFoot(bFields, bGameplay, gameplayRows, hasCopy);
+			out.pos = UpFromTheFoot(bFields, bGameplay, gameplayRows, hasCopy, hasList);
 			return out;
 		}
 
@@ -261,7 +284,7 @@ HostNavResult ComputeHostNav(HostFocusPos pos, HostNavKey key, int fieldCount,
 
 	// Away: coming back in lands on the list, which is what the panel is for.
 	if (key == HostNavKey::Down)
-		out.pos = HostFocusPos(HostSlot::List, 0);
+		out.pos = ListOr(hasList, Foot());
 
 	return out;
 }

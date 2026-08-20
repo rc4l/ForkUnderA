@@ -1506,6 +1506,7 @@ add_executable( zdoom WIN32
 	features/wad-library/zx_wadlibrary.cpp
 	features/wad-library/computation/wadlibrary_compute.cpp
 	features/wad-library/computation/loadorder_compute.cpp
+	features/wad-library/computation/pathdisplay_compute.cpp
 	features/wad-download/zx_waddownload.cpp
 	features/wad-download/zx_resolvejob.cpp
 	features/wad-download/zx_filehash.cpp
@@ -1532,7 +1533,10 @@ add_executable( zdoom WIN32
 	features/net/computation/v6prefix_compute.cpp
 	features/server-hosting/computation/punchbroker_compute.cpp
 	features/server-hosting/zx_punchclient.cpp
+	features/server-browser/computation/mapselect_compute.cpp
+	features/server-browser/computation/toolgrid_compute.cpp
 	features/server-hosting/computation/hostfocus_compute.cpp
+	features/server-hosting/computation/hostsettings_compute.cpp
 	features/server-hosting/computation/reachprobe_compute.cpp
 	features/server-hosting/zx_reachprobe.cpp
 	features/addon-catalogue/zx_catalogue.cpp

@@ -117,4 +117,20 @@ RegistryStatus AgeRegistryStatus(RegistryStatus current, int msSinceRecorded, in
 	return RegistryStatus::Pending;
 }
 
+RegistryStatus ComputeKnownStatus(RegistryStatus current, RegistryStatus prior)
+{
+	return (current == RegistryStatus::Pending) ? prior : current;
+}
+
+RegistryStatus ComputeRecordedStatus(RegistryStatus current, RegistryStatus incoming)
+{
+	// A throttle never unseats proof that the registry answered. Note it does not unseat a FAILURE
+	// either -- it replaces one, because a registry that can refuse us is a registry that is up, and
+	// that is better news than the silence we had recorded.
+	if ((incoming == RegistryStatus::Throttled) && (current == RegistryStatus::Ok))
+		return RegistryStatus::Ok;
+
+	return incoming;
+}
+
 } // namespace zx

@@ -69,6 +69,7 @@
 #include "features/addon-catalogue/zx_catalogue.h"
 #include "features/wad-library/zx_wadlibrary.h"
 #include "features/wad-library/computation/loadorder_compute.h"
+#include "features/wad-library/computation/pathdisplay_compute.h"
 #include "features/addon-catalogue/computation/hostplan_compute.h"
 #include "features/wad-download/computation/iwadallow_compute.h"
 #include "features/addon-catalogue/computation/iwadpick_compute.h"
@@ -85,7 +86,10 @@
 #include "features/server-hosting/zx_reachprobe.h" // [rc4l] and says whether the internet can reach it
 #include "features/server-hosting/computation/hoststatus_compute.h"
 #include "features/server-hosting/computation/hostport_compute.h" // [rc4l] which port the check asks about
+#include "features/server-browser/computation/mapselect_compute.h"	// [rc4l] and whether a bulk map change does anything
+#include "features/server-browser/computation/toolgrid_compute.h"	// [rc4l] and the 2x2 settings grid
 #include "features/server-hosting/computation/hostfocus_compute.h"
+#include "features/server-hosting/computation/hostsettings_compute.h"	// [rc4l] and what a preset folder may carry
 #include "features/port-mapping/zx_portmap.h" // [rc4l] and may ask the router to open the port
 #include "features/server-browser/computation/bytesize_compute.h"
 #include "features/server-browser/computation/browserhit_compute.h"
@@ -458,16 +462,48 @@ static int serverbrowser_OriginY( void );
 
 #define SB_NEW_WADS_TOP		( SB_NEW_SEARCH_TOP + SB_NEW_SEARCH_H + 6 )
 
-// [rc4l] The three settings buttons, in the strip under the wad list. One row rather than stacked:
-// three fit across the column, and stacking would take three rows off the list to save nothing.
+// [rc4l] The settings buttons, in the strip under the wad list. One row rather than stacked: they
+// fit across the column, and stacking would take a row off the list for each to save nothing.
+//
+// FOUR since SERVER joined them. It belongs here and not beside PLAY NOW: what it opens is a box of
+// settings, exactly like the three it now sits with, and the foot is for the two things that ACT --
+// saving the setup and starting it. A settings button among them read as a third action.
 #define SB_NEW_TOOL_H		13
 #define SB_NEW_TOOL_GAP		5
-#define SB_NEW_TOOL_Y		( SB_NEW_BTN_Y - SB_NEW_TOOL_H - 6 )
-#define SB_NEW_TOOL_COUNT	3
-#define SB_NEW_TOOL_W		(( SB_NEW_WADS_RIGHT - SB_HOST_LIST_LEFT - \
-								SB_NEW_TOOL_GAP * ( SB_NEW_TOOL_COUNT - 1 )) / SB_NEW_TOOL_COUNT )
+#define SB_NEW_TOOL_COUNT	4
 
-#define SB_NEW_WADS_BOTTOM	( SB_NEW_TOOL_Y - 8 )
+// [rc4l] TWO BY TWO, not four across.
+//
+// Four in the width of the wad column left each button narrower than the word on it, so GAMEPLAY and
+// SERVER spilled out of their own backgrounds. Half a column each is room to spare for the longest
+// label, and a block of four reads as one group of settings rather than a strip of unrelated tabs.
+#define SB_NEW_TOOL_COLS	2
+#define SB_NEW_TOOL_VGAP	4
+#define SB_NEW_TOOL_W		(( SB_NEW_WADS_RIGHT - SB_HOST_LIST_LEFT - SB_NEW_TOOL_GAP ) / \
+								SB_NEW_TOOL_COLS )
+
+// [rc4l] The bottom row ENDS WHERE THE FOOT ENDS, which is as low as the block can go.
+//
+// The grid is in the left column and SAVE / PLAY NOW are in the right, so the two never meet
+// sideways -- and stopping the grid a row short of them was leaving a band of empty panel under it
+// while the wad list above went on running out of room. Sharing the baseline spends that band on the
+// list, which is the only thing on this screen that grows with what the player owns.
+#define SB_NEW_TOOL_Y		( SB_NEW_BTN_Y + SB_HOST_BTN_H - SB_NEW_TOOL_H )
+#define SB_NEW_TOOL_TOP_Y	( SB_NEW_TOOL_Y - SB_NEW_TOOL_H - SB_NEW_TOOL_VGAP )
+
+// [rc4l] The grid says what it is, and is fenced off from the list above it.
+//
+// Unlabelled buttons hanging under a scrolling list read as part of the list; a heading and the same
+// rule the rest of the browser divides with make them a section of their own. The gaps are generous
+// on purpose -- a heading crowded against the rule above it reads as part of the rule.
+#define SB_NEW_TOOL_HEAD_Y	( SB_NEW_TOOL_TOP_Y - SB_HOST_LINE - 6 )
+#define SB_NEW_TOOL_SEP_Y	( SB_NEW_TOOL_HEAD_Y - 9 )
+
+#define SB_NEW_WADS_BOTTOM	( SB_NEW_TOOL_SEP_Y - 8 )
+
+// [rc4l] The notice line, under the settings grid and the foot both -- it belongs to the screen
+// rather than to either column, so it is centred across the panel and shares its row with nothing.
+#define SB_NEW_NOTICE_Y		( SB_NEW_TOOL_Y + SB_NEW_TOOL_H + 4 )
 
 // [rc4l] Where a wad ROW stops, which is short of where the list stops: the scrollbar lives in the
 // last few units of the column, so a row drawn to the column's edge puts its size under the bar.
@@ -729,6 +765,12 @@ enum class DialogAction
 	ResetFlags,
 	ResetMaps,
 	ResetGameplay,
+
+	// [rc4l] Putting every map back into the rotation, or taking every one out. Asked for the same
+	// reason a reset is -- a curated rotation is work with no undo -- and asked ONLY when the press
+	// would actually change the list; see computation/mapselect_compute.
+	SelectAllMaps,
+	DeselectAllMaps,
 };
 
 struct BrowserDialog
@@ -770,7 +812,10 @@ static bool DialogIsDestructive( DialogAction action )
 	return ( action == DialogAction::DeleteCustom ) ||
 		( action == DialogAction::ResetFlags ) ||
 		( action == DialogAction::ResetMaps ) ||
-		( action == DialogAction::ResetGameplay );
+		( action == DialogAction::ResetGameplay ) ||
+		// [rc4l] Emptying the rotation throws the curation away; filling it back up does not, so
+		// only the one that destroys work wears the red answer.
+		( action == DialogAction::DeselectAllMaps );
 }
 
 // What is typed into the dialog's field, edited by the same rules as the search box.
@@ -778,6 +823,15 @@ static	zx::TextInput	g_DialogInput;
 
 // Which button the pointer is over, so hover lights it as it does everywhere else.
 static	int				g_DialogHot = -1;
+
+// [rc4l] WHERE THE KEYBOARD WAS WHEN THE QUESTION WENT UP, so closing it puts the keyboard back.
+//
+// Closing used to hand focus to the server list unconditionally, which is a region that is not even
+// drawn while the HOST tab is showing -- so answering "reset the map list?" or "take every map out?"
+// left the orb pointing at nothing and the arrows walking a list behind two modals. Every dialog
+// this browser raises from the hosting screens had it; the map box's new buttons only made it easy
+// to notice.
+static	zx::BrowserFocus	g_DialogReturnFocus = zx::BrowserFocus::Rows;
 
 // [rc4l] The top row picks WHAT YOU ARE DOING; the row under it picks which servers.
 //
@@ -858,6 +912,22 @@ CVAR( Int, cl_fua_hostport, 10666, CVAR_ARCHIVE | CVAR_GLOBALCONFIG )
 CVAR( Int, cl_fua_hostmaxplayers, 8, CVAR_ARCHIVE | CVAR_GLOBALCONFIG )
 CVAR( Bool, cl_fua_hostpublic, true, CVAR_ARCHIVE | CVAR_GLOBALCONFIG )
 
+// [rc4l] The same two answers for a server built by hand, kept apart from the catalogue form's so
+// that changing one screen's mind does not change the other's.
+//
+// PUBLIC BY DEFAULT, like the catalogue form: hosting to be joined is the ordinary reason to host,
+// and a screen that opens on the narrower answer makes the common case the one you have to correct.
+//
+// Worth knowing what that carries, because it is more than a listing: config.advertise is also what
+// gates PortMapOpen, so the default asks the router to forward the port as well as announcing to the
+// registry. CUSTOM and NEW never advertised before this existed, so an existing preset played on a
+// build with this default does something on the player's network it did not do before.
+//
+// Only the two a machine answers for itself. The name belongs to the preset and lives in its folder;
+// the password lives nowhere, for the reason the block above gives.
+CVAR( Int, cl_fua_newhostport, 10666, CVAR_ARCHIVE | CVAR_GLOBALCONFIG )
+CVAR( Bool, cl_fua_newhostpublic, true, CVAR_ARCHIVE | CVAR_GLOBALCONFIG )
+
 // [rc4l] THE HOSTING FORM. What the player is about to run, kept across visits to the tab.
 //
 // Fields rather than one blob of config because each one is a separate decision with a separate
@@ -890,6 +960,28 @@ static const char *const g_HostFieldTips[kHostFieldCount] = {
 
 static	zx::TextInput	g_HostFields[kHostFieldCount];
 static	int				g_HostFieldHot = -1;
+
+// [rc4l] WHOSE VALUES THE FIELDS ABOVE ARE CURRENTLY HOLDING.
+//
+// The SERVER box on CUSTOM and NEW asks exactly the four questions this form asks, so it is drawn by
+// the same widgets, navigated by the same hostfocus_compute and marked by the same orb -- a second
+// copy of any of that would be a second set of bugs and would drift the first time either was
+// touched.
+//
+// What differs is not the form, it is where the answers are kept: the catalogue form's live in the
+// cl_fua_host* cvars above, and a hand-built server's live in the preset folder beside its wads. So
+// the fields are a SCRATCH BUFFER with a named owner, filled on the way in and written back on the
+// way out -- which is what LoadHostForm and SaveHostForm already were, for one owner.
+//
+// The two are never on screen together (the box is a modal on a sub-tab the other form does not
+// draw on), which is what makes one buffer safe rather than a mode flag waiting to be got wrong.
+enum class HostFormOwner
+{
+	Presets,	// the catalogue form, backed by the archived cl_fua_host* cvars
+	Build,		// the SERVER box on CUSTOM and NEW, backed by the preset being built
+};
+
+static	HostFormOwner	g_HostFormOwner = HostFormOwner::Presets;
 
 // [rc4l] WHERE THE KEYBOARD IS ON THE HOST PANEL, as one value.
 //
@@ -1392,6 +1484,22 @@ static int HostRunSplit( )
 // than always on screen: almost nobody changes them, and the thing worth reading before pressing
 // START is what the selection will actually load.
 static	bool			g_HostShowSettings = false;
+
+// [rc4l] Whether the SERVER box is up. One flag for both sub-tabs that open it, because only one of
+// them is ever the showing one.
+static	bool			g_ServerBoxOpen = false;
+
+// [rc4l] The saved preset the box was opened for, so closing it writes back to that folder. Empty on
+// the NEW tab, where there is no folder yet and SAVE is how one is made.
+static	FString			g_ServerBoxPreset;
+
+// [rc4l] The password a hand-built server is about to be started with, held for as long as the game
+// is running and written to no file at all -- the rule the catalogue form states and the reason
+// hostsettings_compute keeps every password out of a preset folder.
+//
+// Kept across a close so reopening the box shows what was typed rather than an empty box on a server
+// that does have a password, which is the one way this could lie about being open.
+static	FString			g_ServerBoxPassword;
 static	bool			g_HostOnSettingsToggle = false;
 // [rc4l] The gameplay rows are drawn inside the scrolled detail region, so where they LAND is only
 // known once they have been drawn. Each frame's draw records them here and the pointer tests against
@@ -1560,6 +1668,19 @@ enum { kHostVisGlobal = 0, kHostVisLocal = 1, kHostVisCount = 2 };
 // you to it. A checkbox row is navigated and then committed, like every other one.
 static	int				g_HostVisCursor = kHostVisGlobal;
 
+// [rc4l] WHICH PILL THE KEYBOARD IS POINTING AT on the focused gameplay axis, which is not the same
+// question as which one is chosen.
+//
+// Left and right used to set the value as they moved, so there was no way to look along an axis
+// without changing it -- arrowing past BRUTAL DOOM to read what was next had already chosen it, and
+// nothing could be inspected without being selected. The visibility row was fixed the same way and
+// for the same reason: a one-of-N row is navigated and then committed.
+//
+// The row it belongs to is remembered with it, so moving to another axis starts the cursor on that
+// axis's own answer rather than on an index left over from the last one.
+static	int				g_HostPillCursor = 0;
+static	int				g_HostPillCursorRow = -1;
+
 // True once the form has been filled from the CVARs that remember it, so a visit to the tab does not
 // wipe what was typed on the last one.
 static	bool			g_HostFormLoaded = false;
@@ -1622,7 +1743,20 @@ static	int					g_NewFlagFieldHot = -1;
 static	int					g_NewToolHot = -1;
 static	int					g_NewToolSel = 0;		// which of the three the keyboard is on
 static	bool				g_NewSaveHot = false;
-static	int					g_NewButtonSel = 1;		// 0 SAVE, 1 PLAY NOW; play is the usual one
+// [rc4l] The foot's buttons, numbered in the order they are DRAWN so that "leftmost" is a fact about
+// the layout rather than something every caller has to remember the other way round.
+//
+// PLAY NOW takes the left-hand end: it is what the screen is for, it is where every region that
+// leaves rightwards lands, and a keyboard arriving at the foot should arrive at the ordinary act
+// rather than at the one that writes a folder.
+enum
+{
+	kNewButtonPlay,
+	kNewButtonSave,
+	kNewButtonCount,
+};
+
+static	int					g_NewButtonSel = kNewButtonPlay;
 
 // [rc4l] The save box: the name being typed, whether the player has been asked about replacing, and
 // what the box last worked out to say. See customsave_compute for why the asking is a state.
@@ -1670,7 +1804,9 @@ static	GAMEMODE_e			g_NewGameMode = GAMEMODE_COOPERATIVE;
 
 // [rc4l] The CUSTOM tab's own state: the presets read from disk, the search over them, and where
 // the cursor is. Three regions, walked the same way the NEW screen's are.
-enum class CustomFocus { Search, List, Buttons };
+// [rc4l] Maps is the rotation button in the detail column. It had no slot, so the one control on
+// that side of the screen could only ever be pressed with a mouse.
+enum class CustomFocus { Search, List, Maps, Buttons };
 
 static	std::vector<zx::CustomEntry>	g_CustomAll;
 static	bool				g_CustomLoaded = false;
@@ -1764,6 +1900,25 @@ struct NewMapEntry
 };
 
 static	std::vector<NewMapEntry>	g_NewMaps;
+
+// [rc4l] WHERE THE KEYBOARD IS INSIDE THE MAP BOX, as one value rather than a bool per region.
+//
+// The box grew a footer worth reaching: DONE, RESET and the two bulk buttons. Escape still means
+// DONE and Backspace still means RESET, so nothing anybody had learned stopped working -- but the
+// two new ones needed a route, and a second shortcut key each would have been two more things to
+// know. Down off the last row goes to the footer, up comes back, the way every other region on
+// these screens hands over at its edge.
+enum class MapsFocus { List, Footer };
+
+// [rc4l] The last completed click on a map row, for spotting a double one. Its own pair rather than
+// the browser list's: two lists open at once would otherwise share a "last row", and a click in one
+// would arm a double in the other.
+static	int					g_NewMapClickRow = -1;
+static	int					g_NewMapClickTime = -1000;
+
+static	MapsFocus			g_NewMapFocus = MapsFocus::List;
+static	int					g_ModalFootSel = 0;
+static	int					g_ModalFootHot = -1;
 static	FString				g_NewMapsKey;
 static	int					g_NewMapSel = 0;
 static	int					g_NewMapScroll = 0;
@@ -1906,6 +2061,28 @@ static void serverbrowser_Tip( int x, int y, int w, int h, const char *text )
 	tip.h = h;
 	tip.text = text;
 	g_Tips.Push( tip );
+}
+
+// [rc4l] The font, for a unit that must not know about fonts. See pathdisplay_compute.h.
+static int serverbrowser_MeasureText( const char *text, void * )
+{
+	return SmallFont->StringWidth( text );
+}
+
+// The width a tooltip actually wraps at, less the padding its box adds either side. Wrapping a path
+// any wider than this hands V_BreakLines a line it will break again, in the one place a path must
+// not be broken: on a space inside a folder somebody put a space in.
+static int serverbrowser_TipWrapWidth( )
+{
+	return SB_VIRT_W / 3 - 8;
+}
+
+// [rc4l] What a row says about the file behind it: where that file came from. Not headed with the
+// name -- the row draws it, and the path ends with it.
+static FString serverbrowser_PathTip( zx::PathTipState state, const std::string &path )
+{
+	return zx::ComputePathTip( state, path, serverbrowser_TipWrapWidth( ),
+		serverbrowser_MeasureText, NULL ).c_str( );
 }
 
 // [rc4l] Everything registered so far, forgotten. Called by a modal as it starts drawing.
@@ -3415,6 +3592,11 @@ public:
 
 		g_DialogInput = zx::ClearInput( );
 		g_DialogHot = -1;
+
+		// Guarded, so a dialog raised from a dialog cannot record the dialog as the way back.
+		if ( g_Focus != zx::BrowserFocus::Dialog )
+			g_DialogReturnFocus = g_Focus;
+
 		SetFocus( zx::BrowserFocus::Dialog );
 
 		S_Sound( CHAN_VOICE | CHAN_UI, "menu/choose", snd_menuvolume, ATTN_NONE );
@@ -3442,6 +3624,10 @@ public:
 
 		g_DialogInput = zx::ClearInput( );
 		g_DialogHot = -1;
+
+		if ( g_Focus != zx::BrowserFocus::Dialog )
+			g_DialogReturnFocus = g_Focus;
+
 		SetFocus( zx::BrowserFocus::Dialog );
 
 		S_Sound( CHAN_VOICE | CHAN_UI, "menu/invalid", snd_menuvolume, ATTN_NONE );
@@ -3492,6 +3678,22 @@ public:
 			{
 				NewResetMaps( );
 				NewSay( "Map list reset" );
+			}
+			break;
+
+		case DialogAction::SelectAllMaps:
+			if ( bAffirmative )
+			{
+				NewSetAllMapsIn( true );
+				NewSay( "Every map in" );
+			}
+			break;
+
+		case DialogAction::DeselectAllMaps:
+			if ( bAffirmative )
+			{
+				NewSetAllMapsIn( false );
+				NewSay( "Every map out" );
 			}
 			break;
 
@@ -3593,7 +3795,9 @@ public:
 		g_Dialog = BrowserDialog( );
 		g_DialogInput = zx::ClearInput( );
 		g_DialogHot = -1;
-		SetFocus( zx::BrowserFocus::Rows );
+
+		// Back where it came from, which is the only answer that is right on more than one tab.
+		SetFocus( g_DialogReturnFocus );
 	}
 
 	//*************************************************************************
@@ -3912,7 +4116,8 @@ public:
 	//
 	// A named tint rather than a second bool beside `warn`: two bools at a call site say nothing
 	// about which combinations mean anything, and three of the four here mean nothing at all.
-	enum class ButtonTint { Neutral, Warn, Cool };
+	// [rc4l] Go is the affirmative one: the button that finishes what you came to do.
+	enum class ButtonTint { Neutral, Warn, Cool, Go };
 
 	void DrawRoundedButton( int vx, int vy, int vw, int vh, const char *label, bool lit,
 		ButtonTint tint = ButtonTint::Neutral )
@@ -3921,21 +4126,25 @@ public:
 
 		const bool warn = ( tint == ButtonTint::Warn );
 		const bool cool = ( tint == ButtonTint::Cool );
+		const bool go = ( tint == ButtonTint::Go );
 
-		// Warm pushes red, cool pushes blue, and the untinted one stays grey.
+		// Warm pushes red, cool pushes blue, go pushes green, and the untinted one stays grey.
 		const int warmTop = warn ? base + 30 : base;
 		const int warmBot = warn ? base + 15 : base / 2;
 		const int coolTop = cool ? base + 40 : base;
 		const int coolBot = cool ? base + 25 : base / 2;
+		const int greenTop = go ? base + 40 : base;
+		const int greenBot = go ? base + 25 : base / 2;
 
-		const zx::PanelColor topCol = { static_cast<BYTE>( warmTop ), static_cast<BYTE>( base ),
+		const zx::PanelColor topCol = { static_cast<BYTE>( warmTop ), static_cast<BYTE>( greenTop ),
 			static_cast<BYTE>( coolTop ), 220 };
-		const zx::PanelColor botCol = { static_cast<BYTE>( warmBot ), static_cast<BYTE>( base / 2 ),
+		const zx::PanelColor botCol = { static_cast<BYTE>( warmBot ), static_cast<BYTE>( greenBot ),
 			static_cast<BYTE>( coolBot ), 235 };
 
 		DrawRoundedPanel( vx, vy, vw, vh, topCol, botCol, 4 );
 
-		const EColorRange textCol = warn ? CR_ORANGE : ( lit ? CR_WHITE : CR_GRAY );
+		const EColorRange textCol = warn ? CR_ORANGE
+			: ( go ? CR_GREEN : ( lit ? CR_WHITE : CR_GRAY ));
 
 		const int textY = vy + ( vh - SmallFont->GetHeight( )) / 2 + 1;
 		screen->DrawText( SmallFont, textCol,
@@ -4195,6 +4404,263 @@ public:
 		cl_fua_hostport = atoi( g_HostFields[kHostFieldPort].text.c_str( ));
 		cl_fua_hostmaxplayers = atoi( g_HostFields[kHostFieldMaxPlayers].text.c_str( ));
 		cl_fua_hostpublic = g_HostAdvertise ? 1 : 0;
+	}
+
+	//*************************************************************************
+	//
+	// [rc4l] The same form, filled from and written back to the preset being built.
+	//
+	// The three that belong to the preset go through NewSetCvar, which is the list the NEW tab
+	// already hands to customsave_compute -- so they are written into the folder beside the wads,
+	// come back with EDIT, and travel with the folder to whoever is given it, with no schema of
+	// their own and no second reader. That is the whole reason they are expressed as cvars.
+	//
+	void LoadBuildForm( )
+	{
+		g_HostFormOwner = HostFormOwner::Build;
+
+		// [rc4l] Whatever the preset says, or nothing -- and nothing is the ordinary state, because
+		// the name is derived from the load order until somebody replaces it. Deliberately NOT
+		// falling back to a placeholder: a box showing "Fua: av.wad" would look typed in, and saving
+		// it would freeze today's first file into a preset whose files can change.
+		// [rc4l] The preset's name, or the default one spelled out in the box rather than left blank.
+		// An empty box with a server that turns out to be called something is the form keeping a
+		// secret; showing the default means what you read is what gets hosted.
+		std::string name = NewCvarValueOwn( "sv_hostname" );
+		if ( name.empty( ))
+			name = zx::kFuaDefaultBuildServerName;
+
+		g_HostFields[kHostFieldName] = zx::TextInput( name.c_str( ), name.size( ));
+
+		FString port;
+		port.Format( "%d", static_cast<int>( cl_fua_newhostport ));
+		g_HostFields[kHostFieldPort] = zx::TextInput( port.GetChars( ), port.Len( ));
+
+		g_HostFields[kHostFieldPassword] = zx::TextInput( g_ServerBoxPassword.GetChars( ),
+			g_ServerBoxPassword.Len( ));
+
+		// [rc4l] The preset's answer if it carries one, and this machine's default if it does not.
+		// Read through NewCvarValue's own list ONLY -- its engine fallback would answer with the
+		// running client's sv_ value, which is on by default and would show Internet on a screen
+		// whose default is Home.
+		const std::string announce = NewCvarValueOwn( "sv_fua_serverregistry_announce" );
+		g_HostAdvertise = announce.empty( ) ? ( cl_fua_newhostpublic != 0 )
+			: ( atoi( announce.c_str( )) != 0 );
+	}
+
+	void SaveBuildForm( )
+	{
+		NewSetCvar( "sv_hostname", g_HostFields[kHostFieldName].text );
+
+		NewSetCvar( "sv_fua_serverregistry_announce", g_HostAdvertise ? "1" : "0" );
+
+		// [rc4l] Held here rather than pushed through NewSetCvar, so it cannot reach the folder even
+		// by accident: what is not in that list cannot be written out of it.
+		g_ServerBoxPassword = g_HostFields[kHostFieldPassword].text.c_str( );
+
+		// [rc4l] The machine's two, which do not go in the folder -- see hostsettings_compute for
+		// why a port travelling inside a preset is somebody else's answer to this machine's question.
+		cl_fua_newhostport = atoi( g_HostFields[kHostFieldPort].text.c_str( ));
+		cl_fua_newhostpublic = g_HostAdvertise ? 1 : 0;
+
+		// [rc4l] The catalogue form must fill itself again next time it is shown: it shares this
+		// buffer, and without this it would come back holding whatever was typed here -- including
+		// the password box, which is the one thing on either screen that must not survive a trip
+		// through somebody else's form.
+		g_HostFormOwner = HostFormOwner::Presets;
+		g_HostFormLoaded = false;
+	}
+
+	//*************************************************************************
+	//
+	// [rc4l] THE SERVER BOX, which CUSTOM and NEW open from the button beside PLAY NOW.
+	//
+	// The same four questions the catalogue form asks, drawn by the same widgets AT THE SAME
+	// COORDINATES over a modal backdrop -- which is not a coincidence to be tidied away later, it is
+	// the whole design: identical geometry is what lets DrawHostField, DrawHostVisibility and
+	// HostFormMouse serve both screens, so there is one place to fix a row and one place for a hit
+	// rect to drift out of step with what was drawn.
+	//
+	// Called SERVER and not SETTINGS because NEW already has two boxes of settings -- FLAGS and
+	// GAMEPLAY -- and a third button saying the same word would be asking the player to remember
+	// which settings were behind which button.
+
+	int ServerBoxPad( )		{ return 8; }
+	int ServerBoxLeft( )	{ return SB_HOST_RCOL_LEFT - ServerBoxPad( ); }
+	int ServerBoxRight( )	{ return SB_HOST_RCOL_RIGHT + ServerBoxPad( ); }
+	// [rc4l] Room for the title ABOVE the first row rather than on it: the fields sit at the
+	// catalogue form's own coordinates, which start at the top of the viewport, so a box that began
+	// there had nowhere to put its name and wrote it across SERVER NAME.
+	int ServerBoxTop( )		{ return SB_HOST_VIEW_TOP - SB_HOST_LINE - ServerBoxPad( ); }
+	int ServerBoxBottom( )	{ return SB_HOST_RTOGGLE_Y + SB_HOST_RTOGGLE_H + ServerBoxPad( ); }
+
+	// The DONE button sits where the foot's action sits, so the eye finds it where it already looks.
+	int ServerDoneLeft( )	{ return SB_HOST_RCOL_LEFT; }
+	int ServerDoneW( )		{ return SB_HOST_RCOL_RIGHT - SB_HOST_RCOL_LEFT; }
+
+	void OpenServerBox( )
+	{
+		LoadBuildForm( );
+
+		g_ServerBoxOpen = true;
+		g_HostScroll = 0;
+
+		// [rc4l] Onto the first field, not the DONE button: somebody who opened this came to change
+		// something, and landing on the way out would make the first Down the price of arriving.
+		g_HostFocus = zx::HostFocusPos( zx::HostSlot::Field, 0 );
+		SetFocus( zx::BrowserFocus::Host );
+	}
+
+	void CloseServerBox( )
+	{
+		if ( !g_ServerBoxOpen )
+			return;
+
+		// [rc4l] Written back on the way out, which is the only moment the answer is complete -- and
+		// the moment the catalogue form is told to fill itself again, because it shares this buffer.
+		SaveBuildForm( );
+
+		// [rc4l] And onto the DISK when the box was opened for a saved preset, because that is what
+		// "the settings are part of the folder" has to mean: a change made on CUSTOM survives the
+		// tab, comes back with EDIT, and travels with the folder. Without this the values would live
+		// only in the NEW tab's working state and be gone the moment something else loaded into it.
+		if ( g_ServerBoxPreset.IsNotEmpty( ))
+		{
+			zx::CustomEntry entry = NewAsCustomEntry( g_ServerBoxPreset.GetChars( ));
+
+			if ( !zx::CustomSave( entry ))
+				ShowNotice( "Could not save", "The preset's settings could not be written to disk." );
+
+			CustomForget( );
+			g_ServerBoxPreset = "";
+		}
+
+		g_ServerBoxOpen = false;
+		g_HostFieldDragging = false;
+
+		// [rc4l] Off the fields, because the screen behind the box does not draw any: leaving it on
+		// one makes HostInAField true for a tab that has no form, which is a focus pointing at
+		// something invisible.
+		g_HostFocus = zx::HostFocusPos( zx::HostSlot::Action, 0 );
+	}
+
+	void DrawServerBox( )
+	{
+		// Nothing behind the box is hoverable while it is up. Same rule as the settings boxes.
+		serverbrowser_ClearTips( );
+
+		screen->Dim( 0x000000, 0.62f, 0, 0, screen->GetWidth( ), screen->GetHeight( ));
+
+		const zx::PanelColor topCol = { 26, 28, 40, 245 };
+		const zx::PanelColor botCol = { 12, 13, 20, 250 };
+		DrawRoundedPanel( ServerBoxLeft( ), ServerBoxTop( ),
+			ServerBoxRight( ) - ServerBoxLeft( ), ServerBoxBottom( ) - ServerBoxTop( ),
+			topCol, botCol, 8 );
+
+		screen->DrawText( SmallFont, CR_GOLD, SB_HOST_RCOL_LEFT, ServerBoxTop( ) + ServerBoxPad( ),
+			"SERVER",
+			DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
+
+		// [rc4l] Parked at the box's edge first and overwritten by whichever control is focused, for
+		// the reason the settings boxes give: the screen behind has already anchored the orb this
+		// frame, and the last call in a frame wins.
+		FocusAnchor( zx::BrowserFocus::Host, ServerBoxLeft( ), ServerBoxTop( ));
+
+		// [rc4l] THE SAME BLOCK THE CATALOGUE FORM DRAWS. Not a copy of it -- the same calls, at the
+		// same coordinates, which is what keeps one hit test honest for both.
+		int y = HostFirstFieldY( );
+		for ( int i = 0; i < HostFormFieldCount( ); ++i )
+		{
+			DrawHostField( i, SB_HOST_RCOL_LEFT, y );
+			y += HostRowPitch( );
+		}
+
+		DrawHostVisibility( SB_HOST_RCOL_LEFT, HostVisibilityY( ));
+
+		const bool bDone = ( g_HostFocus.slot == zx::HostSlot::Action ) &&
+			( g_Focus == zx::BrowserFocus::Host );
+
+		DrawRoundedButton( ServerDoneLeft( ), SB_HOST_RTOGGLE_Y, ServerDoneW( ), SB_HOST_RTOGGLE_H,
+			"DONE", bDone || g_HostButtonHot );
+
+		if ( bDone )
+		{
+			FocusAnchor( zx::BrowserFocus::Host, ServerDoneLeft( ) - 5,
+				SB_HOST_RTOGGLE_Y + SB_HOST_RTOGGLE_H / 2 );
+		}
+	}
+
+	bool ServerBoxMouse( int type, int x, int y )
+	{
+		g_HostFieldHot = -1;
+		g_HostVisHot = -1;
+		g_HostButtonHot = false;
+
+		// The controls, through the one hit test the catalogue form uses.
+		if ( HostFormMouse( type, x, y ))
+			return true;
+
+		if (( y >= serverbrowser_ToScreenY( SB_HOST_RTOGGLE_Y )) &&
+			( y < serverbrowser_ToScreenY( SB_HOST_RTOGGLE_Y + SB_HOST_RTOGGLE_H )) &&
+			( x >= serverbrowser_ToScreenX( ServerDoneLeft( ))) &&
+			( x < serverbrowser_ToScreenX( ServerDoneLeft( ) + ServerDoneW( ))))
+		{
+			g_HostButtonHot = true;
+
+			if ( type == MOUSE_Release )
+			{
+				SetFocus( zx::BrowserFocus::Host );
+				g_HostFocus = zx::HostFocusPos( zx::HostSlot::Action, 0 );
+				CloseServerBox( );
+			}
+
+			return true;
+		}
+
+		// [rc4l] OUTSIDE THE BOX, not merely unanswered.
+		//
+		// Closing on any click the controls did not claim made every dead spot inside the panel a
+		// dismiss button -- the gaps between the visibility pills, the margins, the blank band under
+		// the last field -- so a slightly-off click at a control threw the screen away instead of
+		// missing it. A modal is dismissed by clicking off it, and nothing else.
+		const bool bInside =
+			( x >= serverbrowser_ToScreenX( ServerBoxLeft( ))) &&
+			( x < serverbrowser_ToScreenX( ServerBoxRight( ))) &&
+			( y >= serverbrowser_ToScreenY( ServerBoxTop( ))) &&
+			( y < serverbrowser_ToScreenY( ServerBoxBottom( )));
+
+		if ( !bInside && ( type == MOUSE_Release ))
+			CloseServerBox( );
+
+		return true;
+	}
+
+	// [rc4l] Escape and Enter, and nothing else.
+	//
+	// The ARROWS are deliberately not here: they arrive at Navigate, which is where the box answers
+	// them, and a second copy of that answer in this function would be two places for the box's
+	// keyboard to be defined and two chances for them to disagree.
+	bool ServerBoxKey( int mkey )
+	{
+		if ( mkey == MKEY_Back )
+		{
+			CloseServerBox( );
+			return true;
+		}
+
+		if ( mkey == MKEY_Enter )
+		{
+			// On the visibility row Enter takes the cell the cursor is on, the same as the form does;
+			// on DONE it is the way out; anywhere else it is a text box, where Enter means nothing.
+			if ( g_HostFocus.slot == zx::HostSlot::Visibility )
+				PressHostVisibility( );
+			else if ( g_HostFocus.slot == zx::HostSlot::Action )
+				CloseServerBox( );
+
+			return true;
+		}
+
+		return false;
 	}
 
 	//*************************************************************************
@@ -4687,7 +5153,13 @@ public:
 	// now, so no caller can leave two of them disagreeing.
 	// How many rows the gameplay panel drew last frame, which is what the keyboard walks. Zero while
 	// the form is open, while a server is running, and for an experience with nothing to decide.
-	int HostGameplayRowCount( )		{ return static_cast<int>( g_HostGameFocusRows.Size( )); }
+	// [rc4l] Nothing on the SERVER box is a gameplay row: the mix and the sliders belong to the
+	// catalogue panel, and NEW answers those questions on its own FLAGS and GAMEPLAY boxes.
+	int HostGameplayRowCount( )
+	{
+		return ( g_HostFormOwner == HostFormOwner::Build ) ? 0
+			: static_cast<int>( g_HostGameFocusRows.Size( ));
+	}
 
 	bool HostOnGameplay( )		{ return g_HostFocus.slot == zx::HostSlot::Gameplay; }
 
@@ -4719,22 +5191,93 @@ public:
 	// Whether a text box can be typed into at all -- which is the fields, and nothing else.
 	bool HostInAField( )		{ return HostFieldFocus( ) >= 0; }
 
+	// [rc4l] WHICH BOXES THIS FORM ACTUALLY SHOWS, and in what order.
+	//
+	// The SERVER box drops MAX PLAYERS: the GAMEPLAY box beside it already asks for the room size
+	// with a slider that writes both sv_maxplayers and sv_maxclients, and the same number asked twice
+	// on one screen is the pair that eventually disagrees -- a server seating fewer people than it
+	// advertised, with no way to tell which control was believed.
+	//
+	// A ROW is not a FIELD once the two forms differ, so focus counts rows and this says which field
+	// a row is. Skipping an index inside a contiguous walk would have been the alternative, and the
+	// nav unit walks 0..count-1 -- a hole in the middle is a box the arrows step onto and cannot draw.
+	int HostFormFieldCount( )
+	{
+		return ( g_HostFormOwner == HostFormOwner::Build ) ? kHostFieldCount - 1 : kHostFieldCount;
+	}
+
+	HostField HostFormFieldAt( int row )
+	{
+		if ( g_HostFormOwner != HostFormOwner::Build )
+			return static_cast<HostField>( row );
+
+		static const HostField kBuildFields[] = {
+			kHostFieldName, kHostFieldPort, kHostFieldPassword,
+		};
+
+		if (( row < 0 ) || ( row >= static_cast<int>( sizeof( kBuildFields ) / sizeof( kBuildFields[0] ))))
+			return kHostFieldName;
+
+		return kBuildFields[row];
+	}
+
+	// The field the keyboard is in, as opposed to the row it is on. Negative when it is not in one.
+	int HostFocusedField( )
+	{
+		const int row = HostFieldFocus( );
+		return ( row < 0 ) ? -1 : static_cast<int>( HostFormFieldAt( row ));
+	}
+
+	// [rc4l] Whether the hosting form's text boxes are on screen AND holding the keyboard.
+	//
+	// Asked in both places that care, because they must not answer differently: one suppresses
+	// M_Responder's translation so a letter reaches the caret, the other delivers the key. The two
+	// disagreeing is a field that is drawn and dead -- which is what happened when the deliverer knew
+	// about the SERVER box and the suppressor only knew about PRESETS, and it also strands the tab
+	// the box was closed on, because g_HostFocus is still sitting on a field nobody is drawing.
+	bool HostFormOwnsKeyboard( )
+	{
+		if ( g_Tab != BrowserTab::Host )
+			return false;
+
+		if (( g_HostKind != HostKind::Presets ) && !g_ServerBoxOpen )
+			return false;
+
+		return ( g_Focus == zx::BrowserFocus::Host ) && HostInAField( );
+	}
+
+
 	// [rc4l] What the form currently OFFERS, handed to the compute unit so focus can never land on
 	// something that is not drawn. The settings take the fields and the visibility row with them, and
 	// a running server takes the toggle.
 	bool HostHasFields( )
 	{
+		// [rc4l] The SERVER box IS the fields -- it has no other face to show -- so it answers yes
+		// without asking the catalogue panel's questions, none of which are about it.
+		if ( g_HostFormOwner == HostFormOwner::Build )
+			return true;
+
 		const zx::HostState state = zx::HostCurrentState( );
 		const bool bForm = ( zx::HostIsActive( ) == false ) && ( state != zx::HostState::Failed );
 		return bForm && g_HostShowSettings;
+	}
+
+	// [rc4l] Whether the experience list is beside the form.
+	//
+	// It is not while the SERVER box is up: that box is these same four fields on a sub-tab that has
+	// no catalogue list at all, so every crossing the unit would answer with the list needs telling.
+	bool HostFormHasList( )
+	{
+		return ( g_HostFormOwner == HostFormOwner::Presets );
 	}
 
 	// Corrects a focus that named something no longer on screen. Called before anything reads it,
 	// because the panel can change underneath a position that was legitimate when it was set.
 	void ClampHostFocus( )
 	{
-		g_HostFocus = zx::ClampHostFocus( g_HostFocus, kHostFieldCount,
-			HostHasFields( ), HostFootHasToggle( ), HostGameplayRowCount( ), HostCopyOffered( ));
+		g_HostFocus = zx::ClampHostFocus( g_HostFocus, HostFormFieldCount( ),
+			HostHasFields( ), HostFootHasToggle( ), HostGameplayRowCount( ), HostCopyOffered( ),
+			HostFormHasList( ));
 	}
 
 	// [rc4l] One key, answered by computation/hostfocus_compute and applied here.
@@ -4764,8 +5307,9 @@ public:
 		// move that changes it from one that does not.
 		const bool bWasInField = HostInAField( );
 
-		const zx::HostNavResult r = zx::ComputeHostNav( g_HostFocus, key, kHostFieldCount,
-			HostHasFields( ), HostFootHasToggle( ), HostGameplayRowCount( ), HostCopyOffered( ));
+		const zx::HostNavResult r = zx::ComputeHostNav( g_HostFocus, key, HostFormFieldCount( ),
+			HostHasFields( ), HostFootHasToggle( ), HostGameplayRowCount( ), HostCopyOffered( ),
+			HostFormHasList( ));
 
 		// [rc4l] The list moves its SELECTION rather than focus, so it is applied here and focus is
 		// left alone -- the movement/traversal split the unit reports separately.
@@ -4783,11 +5327,13 @@ public:
 				const int here = HostSelectedRow( rows );
 				const int next = (( here >= 0 ) ? here : 0 ) + r.rowStep;
 
-				// Up off the first row is the one edge that leaves, back to the tabs. Down off the
-				// last simply stops, the same as the server list.
+				// [rc4l] Up off the first row leaves, to the SUB-tabs -- the row this screen hangs
+				// from and the one the keyboard came down through. It went to the tab row above
+				// them, which skipped PRESETS/CUSTOM/NEW entirely and read as the focus jumping to
+				// HOST for no reason. Down off the last simply stops, the same as the server list.
 				if ( next < 0 )
 				{
-					SetFocus( zx::BrowserFocus::Tabs );
+					SetFocus( zx::BrowserFocus::SubTabs );
 					return;
 				}
 
@@ -4817,7 +5363,7 @@ public:
 			// the panel is describing is more use than doing nothing.
 			if (( r.choiceStep < 0 ) && HostGameplayRowAtFirstChoice( HostGameplayFocus( )))
 			{
-				g_HostFocus = zx::HostLeftOfTheForm( );
+				g_HostFocus = zx::HostLeftOfTheForm( HostFormHasList( ));
 				RevealHostFocus( );
 				S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
 				return;
@@ -4941,7 +5487,7 @@ public:
 			return false;
 
 		int fieldY = HostFirstFieldY( );
-		for ( int i = 0; i < kHostFieldCount; ++i )
+		for ( int i = 0; i < HostFormFieldCount( ); ++i )
 		{
 			if ( HostRowVisible( fieldY, SB_HOST_FIELD_H ) &&
 				( y >= serverbrowser_ToScreenY( fieldY )) &&
@@ -4960,8 +5506,8 @@ public:
 			( y >= serverbrowser_ToScreenY( visY )) &&
 			( y < serverbrowser_ToScreenY( visY + SB_CHOICE_H )))
 		{
-			const int rowX = SB_HOST_RCOL_LEFT + SB_HOST_RLABEL_W;
-			const int rowW = SB_HOST_RIGHT - SB_HOST_PAD - rowX;
+			const int rowX = HostVisRowX( );
+			const int rowW = HostVisRowW( );
 
 			for ( int i = 0; i < kHostVisCount; ++i )
 			{
@@ -5057,15 +5603,22 @@ public:
 			const HostPillGeom geom = HostPillGeometry( SB_HOST_RCOL_LEFT, groups[g] );
 			const zx::RemixPick pick = zx::PickRemix( choices, HostRemixWanted( groups[g].id ));
 
+			// [rc4l] FROM THE CURSOR, and it moves the cursor -- the same rule left and right follow.
+			//
+			// This walked from the CHOSEN pill and committed what it landed on, so up and down still
+			// selected as they moved and, on a wrapped axis, started from somewhere the marker was
+			// not. Half the row navigated one way and half the other, which is worse than either.
+			const int from = HostPillCursorFor( row, pick.index, static_cast<int>( choices.size( )));
+
 			const zx::PillMove to = zx::MovePillVertically( geom.layout, geom.widths, geom.gap,
-				( pick.index >= 0 ) ? pick.index : 0, dir );
+				from, dir );
 
 			if ( to.leaves )
 				return false;
 
-			if ( to.index != pick.index )
+			if ( to.index != from )
 			{
-				HostSetRemixWanted( groups[g].id, choices[to.index].id );
+				g_HostPillCursor = to.index;
 				S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
 			}
 
@@ -5098,6 +5651,66 @@ public:
 	// The row registry says what the row IS; this says what a step does to each kind. Both kinds go
 	// through the very same call the mouse makes -- HostSliderSet for a track, HostSetRemixWanted for
 	// an axis -- so a key and a click cannot come to mean different things.
+	// [rc4l] The cursor for one axis, started from that axis's current answer the first time the
+	// keyboard arrives on it. Written once because the draw and the arrows must not disagree about
+	// where the marker is.
+	int HostPillCursorFor( int row, int chosenIndex, int count )
+	{
+		if ( count <= 0 )
+			return 0;
+
+		if ( g_HostPillCursorRow != row )
+		{
+			g_HostPillCursorRow = row;
+			g_HostPillCursor = ( chosenIndex >= 0 ) ? chosenIndex : 0;
+		}
+
+		return clamp( g_HostPillCursor, 0, count - 1 );
+	}
+
+	// [rc4l] What ENTER means on a gameplay row: take the pill the cursor is on. A slider has nothing
+	// to commit -- its arrows already moved it -- so it answers false and the caller carries on.
+	bool PressHostGameplayRow( int row )
+	{
+		if (( row < 0 ) || ( row >= HostGameplayRowCount( )))
+			return false;
+
+		const HostGameFocusRow &at = g_HostGameFocusRows[row];
+		if ( at.bSlider )
+			return false;
+
+		const std::vector<zx::CatalogueEntry> &entries = zx::CatalogueLoad( );
+		if (( g_HostEntrySel < 0 ) || ( g_HostEntrySel >= static_cast<int>( entries.size( ))))
+			return false;
+
+		const zx::AddonEntry &addon = entries[g_HostEntrySel].addon;
+		const std::vector<zx::RemixGroup> groups = zx::GroupRemixes( HostOfferedRemixes( addon ));
+
+		for ( size_t g = 0; g < groups.size( ); ++g )
+		{
+			if ( groups[g].id != at.id )
+				continue;
+
+			const std::vector<zx::AddonRemix> &choices = groups[g].choices;
+			if ( choices.empty( ))
+				return false;
+
+			// A locked axis is not pressable by the mouse either; the keyboard must not be the one
+			// way round it.
+			if (( groups[g].id == kHostMixGroup ) && HostWeaponsPlan( addon ).mixLocked )
+				return false;
+
+			const zx::RemixPick pick = zx::PickRemix( choices, HostRemixWanted( groups[g].id ));
+			const int at2 = HostPillCursorFor( row, pick.index, static_cast<int>( choices.size( )));
+
+			HostSetRemixWanted( groups[g].id, choices[at2].id );
+			S_Sound( CHAN_VOICE | CHAN_UI, "menu/choose", snd_menuvolume, ATTN_NONE );
+			return true;
+		}
+
+		return false;
+	}
+
 	void StepHostGameplayRow( int row, int step )
 	{
 		if (( row < 0 ) || ( row >= HostGameplayRowCount( )) || ( step == 0 ))
@@ -5151,15 +5764,17 @@ public:
 			if (( groups[g].id == kHostMixGroup ) && HostWeaponsPlan( addon ).mixLocked )
 				return;
 
+			// [rc4l] The CURSOR moves; the choice does not. Enter is what takes the one under it --
+			// see PressHostGameplayRow, and the visibility row for the same split.
 			const zx::RemixPick pick = zx::PickRemix( choices, HostRemixWanted( groups[g].id ));
 
 			const int count = static_cast<int>( choices.size( ));
-			const int from = ( pick.index >= 0 ) ? pick.index : 0;
+			const int from = HostPillCursorFor( row, pick.index, count );
 			const int to = clamp( from + step, 0, count - 1 );
 
 			if ( to != from )
 			{
-				HostSetRemixWanted( groups[g].id, choices[to].id );
+				g_HostPillCursor = to;
 				S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
 			}
 			return;
@@ -5286,6 +5901,111 @@ public:
 		return false;
 	}
 
+	// [rc4l] The FIELDS AND THE VISIBILITY ROW, hit-tested once for both screens that draw them.
+	//
+	// The catalogue form draws these in the host panel's right column; the SERVER box on CUSTOM and
+	// NEW draws the same controls at the same coordinates, over a modal backdrop, which is what lets
+	// one hit test serve both. A second copy measured off the same constants would be a second thing
+	// to move whenever the column does, and the first click to land in the gap would say so.
+	bool HostFormMouse( int type, int x, int y )
+	{
+		// The fields.
+		int fieldY = HostFirstFieldY( );
+		for ( int i = 0; i < HostFormFieldCount( ); ++i )
+		{
+			const int rowTop = serverbrowser_ToScreenY( fieldY );
+			const int rowBottom = serverbrowser_ToScreenY( fieldY + SB_HOST_FIELD_H );
+
+			if ( HostRowVisible( fieldY, SB_HOST_FIELD_H ) &&
+				( y >= rowTop ) && ( y < rowBottom ) &&
+				( x >= serverbrowser_ToScreenX( SB_HOST_RCOL_LEFT )) &&
+				( x < serverbrowser_ToScreenX( SB_HOST_RCOL_RIGHT )))
+			{
+				// [rc4l] The ROW is what glows and what focus remembers; the FIELD is what the click
+				// edits. They are the same number on the catalogue form and are not on the SERVER box.
+				const int field = static_cast<int>( HostFormFieldAt( i ));
+
+				g_HostFieldHot = field;
+
+				if ( type == MOUSE_Click )
+				{
+					SetFocus( zx::BrowserFocus::Host );
+
+					g_HostFocus = zx::HostFocusPos( zx::HostSlot::Field, i );
+
+					const int now = static_cast<int>( DMenu::MenuTime );
+					const bool bDouble = (( now - g_HostClickTime ) < 15 );
+					g_HostClickTime = now;
+
+					if ( bDouble )
+					{
+						// The word under the pointer, or everything when there is no word there. No
+						// drag afterwards: a second press that started selecting again would undo
+						// what the player just asked for before they let go.
+						g_HostFields[field] = zx::SelectWordOrAll( g_HostFields[field],
+							HostFieldCharAt( field, x ));
+						g_HostFieldDragging = false;
+					}
+					else
+					{
+						// Press puts the caret and arms a drag; the drag turns it into a selection.
+						g_HostFieldDragging = zx::BeginDrag( );
+						g_HostFields[field] = zx::SetCaret( g_HostFields[field],
+							HostFieldCharAt( field, x ), bShiftHeld( ));
+					}
+				}
+				return true;
+			}
+
+			fieldY += HostRowPitch( );
+		}
+
+		// The visibility row. Which CELL the pointer is in decides the answer -- the gaps belong to
+		// nobody, so a click between the two is not evidence for either.
+		const int visY = HostVisibilityY( );
+		if ( HostRowVisible( visY, SB_CHOICE_H ) &&
+			( y >= serverbrowser_ToScreenY( visY )) &&
+			( y < serverbrowser_ToScreenY( visY + SB_CHOICE_H )))
+		{
+			const int rowX = HostVisRowX( );
+			const int rowW = HostVisRowW( );
+
+			// Back into virtual units, because that is what the layout is expressed in.
+			int at = -1;
+			for ( int i = 0; i < kHostVisCount; ++i )
+			{
+				const zx::ChoiceCell cell = zx::ChoiceCellAt( i, kHostVisCount, rowX, rowW,
+					SB_CHOICE_GAP );
+				if ( !cell.valid )
+					continue;
+
+				if (( x >= serverbrowser_ToScreenX( cell.x )) &&
+					( x < serverbrowser_ToScreenX( cell.x + cell.width )))
+				{
+					at = i;
+					break;
+				}
+			}
+
+			g_HostVisHot = at;
+
+			if (( at >= 0 ) && ( type == MOUSE_Release ))
+			{
+				SetFocus( zx::BrowserFocus::Host );
+				g_HostFocus = zx::HostFocusPos( zx::HostSlot::Visibility, 0 );
+
+				// A click is not navigation -- it names a cell and answers in one act, so it does
+				// both. The cursor follows so the keyboard carries on from where the pointer left.
+				g_HostVisCursor = at;
+				PressHostVisibility( );
+			}
+
+			return ( at >= 0 );
+		}
+
+		return false;
+	}
+
 	bool HostMouseEvent( int type, int x, int y )
 	{
 		g_HostFieldHot = -1;
@@ -5343,8 +6063,8 @@ public:
 			// Tracked even once the pointer leaves the box, because that is what dragging means
 			// everywhere else -- a selection that stopped the moment you overshot the last character
 			// is one you could never make in a single gesture.
-			g_HostFields[HostFieldFocus( )] = zx::SetCaret( g_HostFields[HostFieldFocus( )],
-				HostFieldCharAt( HostFieldFocus( ), x ), true );
+			g_HostFields[HostFocusedField( )] = zx::SetCaret( g_HostFields[HostFocusedField( )],
+				HostFieldCharAt( HostFocusedField( ), x ), true );
 			return true;
 		}
 
@@ -5500,95 +6220,9 @@ public:
 		if ( !g_HostShowSettings || !bForm )
 			return false;
 
-		// The fields.
-		int fieldY = HostFirstFieldY( );
-		for ( int i = 0; i < kHostFieldCount; ++i )
-		{
-			const int rowTop = serverbrowser_ToScreenY( fieldY );
-			const int rowBottom = serverbrowser_ToScreenY( fieldY + SB_HOST_FIELD_H );
-
-			if ( HostRowVisible( fieldY, SB_HOST_FIELD_H ) &&
-				( y >= rowTop ) && ( y < rowBottom ) &&
-				( x >= serverbrowser_ToScreenX( SB_HOST_RCOL_LEFT )) &&
-				( x < serverbrowser_ToScreenX( SB_HOST_RCOL_RIGHT )))
-			{
-				g_HostFieldHot = i;
-
-				if ( type == MOUSE_Click )
-				{
-					SetFocus( zx::BrowserFocus::Host );
-
-					g_HostFocus = zx::HostFocusPos( zx::HostSlot::Field, i );
-
-					const int now = static_cast<int>( DMenu::MenuTime );
-					const bool bDouble = (( now - g_HostClickTime ) < 15 );
-					g_HostClickTime = now;
-
-					if ( bDouble )
-					{
-						// The word under the pointer, or everything when there is no word there. No
-						// drag afterwards: a second press that started selecting again would undo
-						// what the player just asked for before they let go.
-						g_HostFields[i] = zx::SelectWordOrAll( g_HostFields[i],
-							HostFieldCharAt( i, x ));
-						g_HostFieldDragging = false;
-					}
-					else
-					{
-						// Press puts the caret and arms a drag; the drag turns it into a selection.
-						g_HostFieldDragging = zx::BeginDrag( );
-						g_HostFields[i] = zx::SetCaret( g_HostFields[i], HostFieldCharAt( i, x ),
-							bShiftHeld( ));
-					}
-				}
-				return true;
-			}
-
-			fieldY += HostRowPitch( );
-		}
-
-		// The visibility row. Which CELL the pointer is in decides the answer -- the gaps belong to
-		// nobody, so a click between the two is not evidence for either.
-		const int visY = HostVisibilityY( );
-		if ( HostRowVisible( visY, SB_CHOICE_H ) &&
-			( y >= serverbrowser_ToScreenY( visY )) &&
-			( y < serverbrowser_ToScreenY( visY + SB_CHOICE_H )))
-		{
-			const int rowX = SB_HOST_RCOL_LEFT + SB_HOST_RLABEL_W;
-			const int rowW = SB_HOST_RIGHT - SB_HOST_PAD - rowX;
-
-			// Back into virtual units, because that is what the layout is expressed in.
-			int at = -1;
-			for ( int i = 0; i < kHostVisCount; ++i )
-			{
-				const zx::ChoiceCell cell = zx::ChoiceCellAt( i, kHostVisCount, rowX, rowW,
-					SB_CHOICE_GAP );
-				if ( !cell.valid )
-					continue;
-
-				if (( x >= serverbrowser_ToScreenX( cell.x )) &&
-					( x < serverbrowser_ToScreenX( cell.x + cell.width )))
-				{
-					at = i;
-					break;
-				}
-			}
-
-			g_HostVisHot = at;
-
-			if (( at >= 0 ) && ( type == MOUSE_Release ))
-			{
-				SetFocus( zx::BrowserFocus::Host );
-				g_HostFocus = zx::HostFocusPos( zx::HostSlot::Visibility, 0 );
-
-				// A click is not navigation -- it names a cell and answers in one act, so it does
-				// both. The cursor follows so the keyboard carries on from where the pointer left.
-				g_HostVisCursor = at;
-				PressHostVisibility( );
-			}
-
-			return ( at >= 0 );
-		}
+		// The fields and the visibility row, which the SERVER box shares -- see HostFormMouse.
+		if ( HostFormMouse( type, x, y ))
+			return true;
 
 		// COPY TO NEW, under it. Guarded by HostRowVisible for the reason every control in this
 		// scrolling column is: one scrolled out of the viewport must not still be clickable.
@@ -5883,6 +6517,11 @@ public:
 	// the thing to offer.
 	bool HostFootHasToggle( )
 	{
+		// [rc4l] The SERVER box's foot is one button, DONE: there is no second face to toggle to,
+		// because the box IS the settings and closing it is the way back.
+		if ( g_HostFormOwner == HostFormOwner::Build )
+			return false;
+
 		const HostAction action = HostActionNow( );
 		return ( action == HostAction::Play );
 	}
@@ -6213,7 +6852,7 @@ public:
 	// How tall the settings are, viewport or no viewport. What decides whether they scroll.
 	int HostContentH( )
 	{
-		int h = kHostFieldCount * HostRowPitch( ) + 4 + SB_HOST_LINE + SB_CHOICE_H;
+		int h = HostFormFieldCount( ) * HostRowPitch( ) + 4 + SB_HOST_LINE + SB_CHOICE_H;
 
 		// [rc4l] COPY TO NEW counts toward the scroll only when it is there. A height that always
 		// allowed for it would leave the column scrolling past its own bottom on every experience
@@ -6358,9 +6997,24 @@ public:
 		return SB_HOST_RBOT_TOP - g_HostScroll;
 	}
 
+	// [rc4l] Under the LAST DRAWN field, which is not always the last one that exists -- the SERVER
+	// box shows three of the four, so a row measured off the enum would leave a gap where MAX
+	// PLAYERS used to be and put the visibility row's hit rect somewhere nothing is drawn.
+	// [rc4l] THE VISIBILITY ROW'S RECTANGLE, written once.
+	//
+	// The draw measured the pills from the column's left edge and the hit test measured them from a
+	// hundred units further in, off a different right edge -- two rectangles for one row. The pills
+	// you could see and the pills you could click did not overlap, so clicking INTERNET answered
+	// "no cell", which reads as nothing happening on the catalogue form and as the SERVER box
+	// closing under you, because an unanswered click there is how a modal is dismissed.
+	//
+	// Both callers pass the column's left edge, so this is what both of them already meant.
+	int HostVisRowX( )	{ return SB_HOST_RCOL_LEFT; }
+	int HostVisRowW( )	{ return SB_HOST_RCOL_RIGHT - HostVisRowX( ); }
+
 	int HostVisibilityY( )
 	{
-		return HostFirstFieldY( ) + kHostFieldCount * HostRowPitch( ) + 4 + SB_HOST_LINE;
+		return HostFirstFieldY( ) + HostFormFieldCount( ) * HostRowPitch( ) + 4 + SB_HOST_LINE;
 	}
 
 	// [rc4l] COPY TO NEW, on its own line under the visibility row. A gap of a row above it, because
@@ -6437,6 +7091,11 @@ public:
 	// chosen, and every file for it already here.
 	bool HostCopyOffered( )
 	{
+		// [rc4l] COPY THIS TO NEW is how the catalogue form reaches the NEW tab, and the SERVER box
+		// is already on it -- offering it there would be a button that goes where you are.
+		if ( g_HostFormOwner == HostFormOwner::Build )
+			return false;
+
 		if ( !g_HostShowSettings || zx::HostIsActive( ))
 			return false;
 
@@ -7106,8 +7765,14 @@ public:
 		const FString iwadPath = NewIwadPath( );
 
 		zx::HostConfig config;
-		config.hostName = ( std::string( "Fua: " ) +
-			( g_NewOrder.empty( ) ? iwadName : g_NewOrder[0].name ));
+
+		// [rc4l] WHAT THE SERVER BOX DECIDED, where four hardcoded values used to be.
+		//
+		// They were bare assignments with no comment among a function that explains everything else
+		// it does, which is what a not-wired-yet default looks like -- and the effect was that a
+		// hand-built server could not be named, could not be given a port or a password, and could
+		// never be advertised. The box asks for those; this is where the answers land.
+		config.hostName = zx::ComputeHostDisplayName( NewCvarValueOwn( "sv_hostname" ));
 		config.iwad = iwadPath.GetChars( );
 
 		for ( size_t i = 0; i < g_NewOrder.size( ); ++i )
@@ -7130,9 +7795,28 @@ public:
 		for ( size_t i = 0; i < g_NewOrder.size( ); ++i )
 			g_HostEntryPwads.Push( g_NewOrder[i].path.c_str( ));
 
-		config.maxPlayers = 8;
-		config.port = 0;
-		config.advertise = false;
+		// [rc4l] From the GAMEPLAY box's Players slider, which writes sv_maxplayers and carries
+		// sv_maxclients with it -- one room size, asked once. The SERVER box used to ask again, and
+		// two controls setting the same number is the pair that eventually disagrees.
+		{
+			const std::string players = NewCvarValueOwn( "sv_maxclients" );
+			config.maxPlayers = players.empty( ) ? 8
+				: zx::ComputeClampedMaxPlayers( atoi( players.c_str( )));
+		}
+
+		config.port = cl_fua_newhostport;
+		config.password = g_ServerBoxPassword.GetChars( );
+
+		// [rc4l] The preset's own answer when it carries one, and this machine's default when it does
+		// not -- which is Home. Read through the configuration's OWN list rather than NewCvarValue,
+		// whose fallback would answer with the running client's sv_ value and turn every unanswered
+		// preset public.
+		{
+			const std::string announce = NewCvarValueOwn( "sv_fua_serverregistry_announce" );
+			config.advertise = announce.empty( ) ? ( cl_fua_newhostpublic != 0 )
+				: ( atoi( announce.c_str( )) != 0 );
+		}
+
 		config.serveWads = true;
 
 		// [rc4l] Everything the three settings boxes decided, applied after any exec so it wins --
@@ -7307,13 +7991,18 @@ public:
 
 	const char *NewToolLabel( int i )
 	{
-		static const char *const kLabels[SB_NEW_TOOL_COUNT] = { "FLAGS", "MAPS", "GAMEPLAY" };
+		static const char *const kLabels[SB_NEW_TOOL_COUNT] = { "FLAGS", "MAPS", "GAMEPLAY", "SERVER" };
 		return kLabels[i];
 	}
 
 	int NewToolLeft( int i )
 	{
-		return SB_HOST_LIST_LEFT + i * ( SB_NEW_TOOL_W + SB_NEW_TOOL_GAP );
+		return SB_HOST_LIST_LEFT + ( i % SB_NEW_TOOL_COLS ) * ( SB_NEW_TOOL_W + SB_NEW_TOOL_GAP );
+	}
+
+	int NewToolTop( int i )
+	{
+		return ( i < SB_NEW_TOOL_COLS ) ? SB_NEW_TOOL_TOP_Y : SB_NEW_TOOL_Y;
 	}
 
 	// [rc4l] What this screen would set the cvar to: what has been decided here, or failing that what
@@ -7322,6 +8011,22 @@ public:
 	// The fallback is the point. A server started from this screen begins at the same defaults this
 	// client has, so a box that showed nothing until somebody typed in it would be showing something
 	// untrue about what the server will do. Same reasoning as NewLoadFlags.
+	// [rc4l] What THIS configuration says, with no fallback to the running client.
+	//
+	// Split out because the fallback is wrong for any setting whose screen default differs from the
+	// engine's: asking for the visibility this way answers with the client's own sv_ value, which is
+	// on, and would show Internet on a form whose default is Home.
+	std::string NewCvarValueOwn( const std::string &name )
+	{
+		for ( size_t i = 0; i < g_NewCvars.size( ); ++i )
+		{
+			if ( g_NewCvars[i].first == name )
+				return g_NewCvars[i].second;
+		}
+
+		return std::string( );
+	}
+
 	std::string NewCvarValue( const std::string &name )
 	{
 		for ( size_t i = 0; i < g_NewCvars.size( ); ++i )
@@ -7396,58 +8101,101 @@ public:
 	// and clickable in another.
 	void DrawBoxFootButtons( )
 	{
-		DrawRoundedButton( NewBigDoneLeft( ), NewBigButtonTop( ), NewBigBtnW( ), SB_DLG_BTN_H,
-			"DONE", g_NewIwadConfirmHot );
+		// [rc4l] ONE ROW FOR EVERY BOX. It was a map-box row plus a hand-placed DONE/RESET pair for
+		// the others, which is how those two ended up with no keyboard: only the row had a cursor.
+		const bool bFocused = ( g_NewMapFocus == MapsFocus::Footer );
 
-		if ( !NewBoxHasReset( ))
-			return;
+		for ( int i = 0; i < ModalFootCount( ); ++i )
+		{
+			const bool lit = ( g_ModalFootHot == i ) || ( bFocused && ( g_ModalFootSel == i ));
 
-		// Neutral: this one only ASKS. The red belongs on the answer, and the confirmation's own
-		// affirmative wears it -- see DialogIsDestructive.
-		DrawRoundedButton( NewBigResetLeft( ), NewBigButtonTop( ), NewBigBtnW( ), SB_DLG_BTN_H,
-			"RESET", g_NewBoxResetHot );
+			// DONE is the affirmative one and wears the green; the rest only ask.
+			DrawRoundedButton( ModalFootLeft( i ), NewBigButtonTop( ), ModalFootW( ),
+				SB_DLG_BTN_H, ModalFootLabel( i ), lit,
+				( i == 0 ) ? ButtonTint::Go : ButtonTint::Neutral );
 
-		// [rc4l] One line per box. This was a two-way choice between maps and flags, which left
-		// GAMEPLAY -- added later -- being told about flags it does not show.
-		const char *tip = "Put every flag back to what a new setup starts with  (Backspace)";
+			if ( bFocused && ( g_ModalFootSel == i ))
+			{
+				FocusAnchor( zx::BrowserFocus::Host, ModalFootLeft( i ) - 5,
+					NewBigButtonTop( ) + SB_DLG_BTN_H / 2 );
+			}
 
-		if ( g_NewModal == NewModal::Maps )
-			tip = "Put every map back, in the order the files give  (Backspace)";
-		else if ( g_NewModal == NewModal::Gameplay )
-			tip = "Put these settings back to what this mode starts with  (Backspace)";
-
-		serverbrowser_Tip( NewBigResetLeft( ), NewBigButtonTop( ), NewBigBtnW( ), SB_DLG_BTN_H, tip );
+			serverbrowser_Tip( ModalFootLeft( i ), NewBigButtonTop( ), ModalFootW( ),
+				SB_DLG_BTN_H, ModalFootTip( i ));
+		}
 	}
 
-	// The RESET button's own hit test, shared by both boxes for the same reason the drawing is.
-	// Returns true when the click belonged to it.
-	bool BoxResetMouse( int type, int x, int y )
+	// [rc4l] The footer's hit test, shared by every box for the same reason the drawing is: two of
+	// them would be two things to move whenever the row does. Returns true when the click was its.
+	bool ModalFootMouse( int type, int x, int y )
 	{
-		if ( !NewBoxHasReset( ))
-			return false;
-
-		const int bx = NewBigResetLeft( );
 		const int by = NewBigButtonTop( );
 
-		if (( x < serverbrowser_ToScreenX( bx )) ||
-			( x >= serverbrowser_ToScreenX( bx + NewBigBtnW( ))) ||
-			( y < serverbrowser_ToScreenY( by )) ||
-			( y >= serverbrowser_ToScreenY( by + SB_DLG_BTN_H )))
+		for ( int i = 0; i < ModalFootCount( ); ++i )
 		{
-			return false;
+			const int bx = ModalFootLeft( i );
+
+			if (( x < serverbrowser_ToScreenX( bx )) ||
+				( x >= serverbrowser_ToScreenX( bx + ModalFootW( ))) ||
+				( y < serverbrowser_ToScreenY( by )) ||
+				( y >= serverbrowser_ToScreenY( by + SB_DLG_BTN_H )))
+			{
+				continue;
+			}
+
+			g_ModalFootHot = i;
+
+			if ( type == MOUSE_Release )
+			{
+				// The cursor follows the pointer, so the keyboard carries on from where the click
+				// left it -- the same rule every other row of buttons here follows.
+				g_NewMapFocus = MapsFocus::Footer;
+				g_ModalFootSel = i;
+				ModalFootPress( i );
+				S_Sound( CHAN_VOICE | CHAN_UI, "menu/choose", snd_menuvolume, ATTN_NONE );
+			}
+
+			return true;
 		}
 
-		g_NewBoxResetHot = true;
-
-		if ( type == MOUSE_Release )
-			NewAskReset( );
-
-		return true;
+		return false;
 	}
 
-	// [rc4l] The question, asked the same way from the mouse and the keyboard so the two cannot come
-	// to mean different things. Says WHAT goes rather than "are you sure": a player who has just
-	// spent a while in here deserves to be told which afternoon they are about to lose.
+	void NewSetAllMapsIn( bool bIn )
+	{
+		for ( size_t i = 0; i < g_NewMaps.size( ); ++i )
+			g_NewMaps[i].bIn = bIn;
+	}
+
+	// [rc4l] Asked only when the answer could be no. A confirmation for a press that would change
+	// nothing is a question with one honest answer, and asking it is how people learn to dismiss the
+	// box without reading -- which is the habit that makes it worthless on the press that matters.
+	void NewAskSelectAllMaps( )
+	{
+		if ( !zx::ComputeSelectAllChanges( NewMapsInCount( ),
+			static_cast<int>( g_NewMaps.size( ))))
+		{
+			return;
+		}
+
+		ShowDialog( DialogAction::SelectAllMaps, "Put every map in?",
+			"Every map goes into the rotation. The order they are in is kept.",
+			"Select all", 's', "Keep", 'k' );
+	}
+
+	void NewAskDeselectAllMaps( )
+	{
+		if ( !zx::ComputeDeselectAllChanges( NewMapsInCount( ),
+			static_cast<int>( g_NewMaps.size( ))))
+		{
+			return;
+		}
+
+		ShowDialog( DialogAction::DeselectAllMaps, "Take every map out?",
+			"The rotation is emptied. The maps stay listed, and the order they are in is kept.",
+			"Deselect all", 'd', "Keep", 'k' );
+	}
+
 	void NewAskReset( )
 	{
 		if ( g_NewModal == NewModal::Flags )
@@ -7581,10 +8329,10 @@ public:
 
 	// [rc4l] SAVE takes the corner and PLAY NOW keeps the rest. Both are here rather than inline so
 	// the draw and the hit test cannot disagree about where a button is.
-	int NewSaveLeft( )		{ return SB_HOST_RCOL_LEFT; }
 	int NewSaveWidth( )		{ return 54; }
-	int NewPlayLeft( )		{ return SB_HOST_RCOL_LEFT + NewSaveWidth( ) + 5; }
-	int NewPlayWidth( )		{ return SB_HOST_RCOL_RIGHT - NewPlayLeft( ); }
+	int NewSaveLeft( )		{ return SB_HOST_RCOL_RIGHT - NewSaveWidth( ); }
+	int NewPlayLeft( )		{ return SB_HOST_RCOL_LEFT; }
+	int NewPlayWidth( )		{ return NewSaveLeft( ) - 5 - NewPlayLeft( ); }
 
 	// [rc4l] What this screen currently is, as a preset.
 	//
@@ -7649,6 +8397,11 @@ public:
 			if ( !bMode )
 				entry.cvars.push_back( g_NewCvars[i] );
 		}
+
+		// [rc4l] LAST, and over the whole list: a preset folder is a file that gets handed to other
+		// people, so what may travel in it is decided in one place -- see hostsettings_compute for
+		// why the password and the port are not on the list.
+		entry.cvars = zx::ComputeSavedCvars( entry.cvars );
 
 		return entry;
 	}
@@ -7784,6 +8537,14 @@ public:
 	// there is one answer to what "opening FLAGS" means.
 	void NewOpenTool( int i )
 	{
+		// [rc4l] SERVER is a box of its own rather than one BuildBox assembles, and it asks nothing
+		// about the flags -- so it is answered before they are read off the engine.
+		if ( i == 3 )
+		{
+			OpenServerBox( );
+			return;
+		}
+
 		NewLoadFlags( );
 
 		if ( i == 0 )
@@ -7791,6 +8552,12 @@ public:
 		else if ( i == 1 )
 		{
 			g_NewModal = NewModal::Maps;
+
+			// The cursor starts in the list every time the box is opened, so it never comes up on a
+			// footer button somebody last pressed a session ago.
+			g_NewMapFocus = MapsFocus::List;
+			g_ModalFootSel = 0;
+			g_NewMapBtnSel = 0;
 
 			// [rc4l] The files are read HERE, on the press, and only when they have changed since
 			// the last read. Not at startup, not while the tab is drawn, and not per frame: this
@@ -7801,8 +8568,11 @@ public:
 		else
 			g_NewModal = NewModal::Gameplay;
 
-		// The cursor starts at the top of whichever box this is, and the view with it.
+		// The cursor starts at the top of whichever box this is, and the view with it -- and in the
+		// BODY, never on a footer button somebody last pressed.
 		g_NewBoxSel = 0;
+		g_NewMapFocus = MapsFocus::List;
+		g_ModalFootSel = 0;
 		BoxRevealSel( );
 
 		g_NewFlagEditing = -1;
@@ -7815,27 +8585,43 @@ public:
 		const bool bFocused = ( g_NewFocus == NewFocus::Tools ) &&
 			( g_Focus == zx::BrowserFocus::Host ) && ( g_NewModal == NewModal::None );
 
+		// [rc4l] The same rule the tab band and the detail panel divide with, spanning this column --
+		// reused rather than drawn again here, so all three fade the same way and move together.
+		DrawSeparatorSpan( SB_NEW_TOOL_SEP_Y, SB_HOST_LIST_LEFT, SB_NEW_WADS_RIGHT );
+
+		// [rc4l] Centred over the grid it heads, and white rather than gold: gold is what this screen
+		// uses for a value somebody has set, and a heading is not one.
+		{
+			const int colW = SB_NEW_WADS_RIGHT - SB_HOST_LIST_LEFT;
+			const int textW = SmallFont->StringWidth( "SETTINGS" );
+
+			screen->DrawText( SmallFont, CR_WHITE, SB_HOST_LIST_LEFT + ( colW - textW ) / 2,
+				SB_NEW_TOOL_HEAD_Y, "SETTINGS",
+				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true,
+				TAG_DONE );
+		}
+
+		static const char *const kTips[SB_NEW_TOOL_COUNT] = {
+			"Every dmflag and compat flag, by name\nAnd the numbers, to paste in or copy out",
+			"Server settings that are not flags",
+			"The mode, the limits, and who plays",
+			"Name, port and who can see it",
+		};
+
 		for ( int i = 0; i < SB_NEW_TOOL_COUNT; ++i )
 		{
 			const bool bOn = ( g_NewToolHot == i ) || ( bFocused && ( g_NewToolSel == i ));
+			const int top = NewToolTop( i );
 
-			DrawRoundedButton( NewToolLeft( i ), SB_NEW_TOOL_Y, SB_NEW_TOOL_W, SB_NEW_TOOL_H,
+			DrawRoundedButton( NewToolLeft( i ), top, SB_NEW_TOOL_W, SB_NEW_TOOL_H,
 				NewToolLabel( i ), bOn );
 
 			// The orb marks where the keyboard is, the same as it does on every other row here.
 			if ( bFocused && ( g_NewToolSel == i ))
-			{
-				FocusAnchor( zx::BrowserFocus::Host, NewToolLeft( i ) - 5,
-					SB_NEW_TOOL_Y + SB_NEW_TOOL_H / 2 );
-			}
-		}
+				FocusAnchor( zx::BrowserFocus::Host, NewToolLeft( i ) - 5, top + SB_NEW_TOOL_H / 2 );
 
-		serverbrowser_Tip( NewToolLeft( 0 ), SB_NEW_TOOL_Y, SB_NEW_TOOL_W, SB_NEW_TOOL_H,
-			"Every dmflag and compat flag, by name\nAnd the numbers, to paste in or copy out" );
-		serverbrowser_Tip( NewToolLeft( 1 ), SB_NEW_TOOL_Y, SB_NEW_TOOL_W, SB_NEW_TOOL_H,
-			"Server settings that are not flags" );
-		serverbrowser_Tip( NewToolLeft( 2 ), SB_NEW_TOOL_Y, SB_NEW_TOOL_W, SB_NEW_TOOL_H,
-			"The mode, the limits, and who plays" );
+			serverbrowser_Tip( NewToolLeft( i ), top, SB_NEW_TOOL_W, SB_NEW_TOOL_H, kTips[i] );
+		}
 	}
 
 	// ---------------------------------------------------------------------------------------------
@@ -8079,6 +8865,100 @@ public:
 	int NewBigDoneLeft( )	{ return NewBigButtonLeft( ) - ( NewBoxHasReset( ) ? 44 : 0 ); }
 	int NewBigResetLeft( )	{ return NewBigButtonLeft( ) + 44; }
 	int NewBigBtnW( )		{ return 80; }
+
+	// [rc4l] THE MODAL FOOTER, shared by every box on this tab that has one.
+	//
+	// It began as the map box's four buttons and stayed there, which left FLAGS and GAMEPLAY with a
+	// DONE and a RESET the keyboard could not reach: pressing up at the top of those lists did
+	// nothing, because there was nothing above them to go to. One footer, one cursor, one set of
+	// rules, so all three boxes answer a key the same way.
+	//
+	// Laid out as one centred row rather than hung off NewBigButtonLeft: past two buttons, offsets
+	// from a centre point stop being readable and start being arithmetic nobody can check by eye.
+	int ModalFootCount( )
+	{
+		if ( g_NewModal == NewModal::Maps )
+			return 4;
+
+		return NewBoxHasReset( ) ? 2 : 1;
+	}
+
+	int ModalFootW( )		{ return ( g_NewModal == NewModal::Maps ) ? 92 : 80; }
+	int ModalFootGap( )		{ return 8; }
+
+	int ModalFootRowW( )
+	{
+		return ModalFootCount( ) * ModalFootW( ) + ( ModalFootCount( ) - 1 ) * ModalFootGap( );
+	}
+
+	int ModalFootLeft( int i )
+	{
+		const int centre = ( NewBigModalLeft( ) + NewBigModalRight( )) / 2;
+		return centre - ModalFootRowW( ) / 2 + i * ( ModalFootW( ) + ModalFootGap( ));
+	}
+
+	// In the order they are drawn, which is the order the keyboard walks them. DONE is first on every
+	// box, so a cursor arriving at the footer always lands on the way out.
+	const char *ModalFootLabel( int i )
+	{
+		if ( g_NewModal == NewModal::Maps )
+		{
+			static const char *const kMaps[] = { "DONE", "SELECT ALL", "DESELECT ALL", "RESET" };
+			return kMaps[zx::ComputeClampedSelection( i, 4 )];
+		}
+
+		return ( i == 1 ) ? "RESET" : "DONE";
+	}
+
+	const char *ModalFootTip( int i )
+	{
+		if ( g_NewModal == NewModal::Maps )
+		{
+			static const char *const kMaps[] = {
+				"Close this box  (Escape)",
+				"Put every map into the rotation, keeping the order",
+				"Take every map out, keeping them listed and in order",
+				"Put every map back, in the order the files give  (Backspace)",
+			};
+			return kMaps[zx::ComputeClampedSelection( i, 4 )];
+		}
+
+		if ( i == 1 )
+		{
+			return ( g_NewModal == NewModal::Gameplay )
+				? "Put these settings back to what this mode starts with  (Backspace)"
+				: "Put every flag back to what a new setup starts with  (Backspace)";
+		}
+
+		return "Close this box  (Escape)";
+	}
+
+	void ModalFootPress( int i )
+	{
+		const int at = zx::ComputeClampedSelection( i, ModalFootCount( ));
+
+		if ( g_NewModal == NewModal::Maps )
+		{
+			switch ( at )
+			{
+			case 0:		g_NewModal = NewModal::None; break;
+			case 1:		NewAskSelectAllMaps( ); break;
+			case 2:		NewAskDeselectAllMaps( ); break;
+			default:	NewAskReset( ); break;
+			}
+			return;
+		}
+
+		if ( at == 1 )
+		{
+			NewAskReset( );
+			return;
+		}
+
+		EndSettingEdit( );
+		g_NewModal = NewModal::None;
+		g_NewFlagEditing = -1;
+	}
 
 	// [rc4l] A box to type a number into, and what separates two of them in the footer.
 	//
@@ -8757,6 +9637,12 @@ public:
 
 		if ( mkey == MKEY_Enter )
 		{
+			if ( g_NewMapFocus == MapsFocus::Footer )
+			{
+				ModalFootPress( g_ModalFootSel );
+				return true;
+			}
+
 			BoxActivate( items[g_NewBoxSel] );
 			BoxRevealSel( );
 			return true;
@@ -8790,7 +9676,60 @@ public:
 			}
 		}
 
+		// [rc4l] The footer owns the keys while the cursor is on it, exactly as it does on the map
+		// box. Up and down step the same loop; left and right walk the row.
+		if ( g_NewMapFocus == MapsFocus::Footer )
+		{
+			if (( mkey == MKEY_Left ) || ( mkey == MKEY_Right ))
+			{
+				const int next = zx::ComputeClampedSelection(
+					g_ModalFootSel + (( mkey == MKEY_Left ) ? -1 : 1 ), ModalFootCount( ));
+
+				if ( next != g_ModalFootSel )
+				{
+					g_ModalFootSel = next;
+					S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+				}
+				return true;
+			}
+
+			const zx::ModalPos to = zx::ComputeModalStep(
+				zx::ModalPos( zx::ModalRegion::Footer, g_ModalFootSel ),
+				static_cast<int>( items.size( )), ModalFootCount( ),
+				( mkey == MKEY_Up ) ? -1 : 1 );
+
+			if ( to.region == zx::ModalRegion::Body )
+			{
+				g_NewMapFocus = MapsFocus::List;
+				g_NewBoxSel = zx::ComputeClampedSelection( to.index,
+					static_cast<int>( items.size( )));
+				BoxRevealSel( );
+			}
+
+			S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+			return true;
+		}
+
 		const int moved = BoxMove( items, g_NewBoxSel, mkey );
+
+		// [rc4l] BoxMove clamps, so a vertical key that moved nothing means the cursor is at an edge
+		// of the body -- and off either edge is the footer. Without this the top and bottom of these
+		// lists were dead ends and DONE and RESET could not be reached by keyboard at all.
+		if (( moved == g_NewBoxSel ) && (( mkey == MKEY_Up ) || ( mkey == MKEY_Down )))
+		{
+			const zx::ModalPos to = zx::ComputeModalStep(
+				zx::ModalPos( zx::ModalRegion::Body, g_NewBoxSel ),
+				static_cast<int>( items.size( )), ModalFootCount( ),
+				( mkey == MKEY_Up ) ? -1 : 1 );
+
+			if ( to.region == zx::ModalRegion::Footer )
+			{
+				g_NewMapFocus = MapsFocus::Footer;
+				g_ModalFootSel = to.index;
+				S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+				return true;
+			}
+		}
 
 		if ( moved != g_NewBoxSel )
 		{
@@ -9200,7 +10139,13 @@ public:
 			FString foot;
 			foot.Format( "Starts on %s", NewFirstMapIn( ).c_str( ));
 
-			screen->DrawText( SmallFont, CR_DARKGRAY, left, NewBigButtonTop( ) + 4, foot,
+			// [rc4l] TOP RIGHT, on the heading's own line. Under the list it sat on whatever the
+			// last row was once the rotation filled the box, and above the buttons it was in the
+			// way of the four that are there now. The heading line is the one place on this box
+			// that is never a row.
+			screen->DrawText( SmallFont, CR_DARKGRAY,
+				NewBigContentRight( ) - SmallFont->StringWidth( foot ),
+				NewBigModalTop( ) + SB_NEW_MODAL_PAD, foot,
 				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true,
 				TAG_DONE );
 		}
@@ -9243,6 +10188,7 @@ public:
 		g_NewMapBtnHot = -1;
 		g_NewIwadConfirmHot = false;
 		g_NewBoxResetHot = false;
+		g_ModalFootHot = -1;
 
 		const int left = NewBigContentLeft( );
 		const int right = NewBigContentRight( );
@@ -9257,24 +10203,35 @@ public:
 			return true;
 		}
 
-		if ( BoxResetMouse( type, x, y ))
-			return true;
-
+		// [rc4l] The whole footer, in the order it is drawn -- one loop rather than a rect per
+		// button, so the row the pointer hits cannot drift from the row the eye sees.
 		{
-			const int bx = NewBigDoneLeft( );
 			const int by = NewBigButtonTop( );
 
-			if (( x >= serverbrowser_ToScreenX( bx )) &&
-				( x < serverbrowser_ToScreenX( bx + NewBigBtnW( ))) &&
-				( y >= serverbrowser_ToScreenY( by )) &&
-				( y < serverbrowser_ToScreenY( by + SB_DLG_BTN_H )))
+			for ( int i = 0; i < ModalFootCount( ); ++i )
 			{
-				g_NewIwadConfirmHot = true;
+				const int bx = ModalFootLeft( i );
+
+				if (( x < serverbrowser_ToScreenX( bx )) ||
+					( x >= serverbrowser_ToScreenX( bx + ModalFootW( ))) ||
+					( y < serverbrowser_ToScreenY( by )) ||
+					( y >= serverbrowser_ToScreenY( by + SB_DLG_BTN_H )))
+				{
+					continue;
+				}
+
+				g_ModalFootHot = i;
+
 				if ( type == MOUSE_Release )
 				{
-					g_NewModal = NewModal::None;
+					// The cursor follows the pointer, so the keyboard carries on from where the
+					// click left it -- the same rule every other row of buttons here follows.
+					g_NewMapFocus = MapsFocus::Footer;
+					g_ModalFootSel = i;
+					ModalFootPress( i );
 					S_Sound( CHAN_VOICE | CHAN_UI, "menu/choose", snd_menuvolume, ATTN_NONE );
 				}
+
 				return true;
 			}
 		}
@@ -9322,6 +10279,26 @@ public:
 			{
 				g_NewMapSel = row;
 				g_NewMapRevealSel = true;
+
+				// [rc4l] A DOUBLE click on the row switches the map in or out -- the same act as the
+				// tick at its left end, reached the way a list row is usually acted on. The interval
+				// is timed here because ZDoom's menu system has no double-click event; see
+				// SB_DOUBLECLICK_TICS, whose window this shares so both lists feel the same.
+				const int now = static_cast<int>( DMenu::MenuTime );
+				const bool bDouble = ( g_NewMapClickRow == row ) &&
+					(( now - g_NewMapClickTime ) < SB_DOUBLECLICK_TICS );
+
+				g_NewMapClickRow = row;
+				g_NewMapClickTime = now;
+
+				if ( bDouble )
+				{
+					// The cursor goes to the tick as well, so the keyboard carries on from what the
+					// pointer just did rather than from wherever it had been left.
+					g_NewMapBtnSel = 0;
+					NewMapToggle( row );
+					g_NewMapClickRow = -1;		// a third click starts a new pair, not a second double
+				}
 			}
 
 			return true;
@@ -9350,20 +10327,87 @@ public:
 	// meant reaching for the mouse in the middle of arranging a rotation with the arrows.
 	bool NewMapsMenuKey( int mkey )
 	{
+		// [rc4l] The footer owns the keys while the cursor is on it. Up goes back to the list, left
+		// and right walk the row, and Enter presses what is under the cursor -- the same alphabet
+		// every other row of buttons on these screens uses.
+		if ( g_NewMapFocus == MapsFocus::Footer )
+		{
+			if (( mkey == MKEY_Up ) || ( mkey == MKEY_Down ))
+			{
+				const zx::ModalPos to = zx::ComputeModalStep(
+					zx::ModalPos( zx::ModalRegion::Footer, g_ModalFootSel ),
+					static_cast<int>( g_NewMaps.size( )), ModalFootCount( ),
+					( mkey == MKEY_Up ) ? -1 : 1 );
+
+				if ( to.region == zx::ModalRegion::Body )
+				{
+					g_NewMapFocus = MapsFocus::List;
+					g_NewMapSel = to.index;
+					g_NewMapBtnSel = 0;
+					g_NewMapRevealSel = true;
+				}
+
+				S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+				return true;
+			}
+
+			if (( mkey == MKEY_Left ) || ( mkey == MKEY_Right ))
+			{
+				const int next = zx::ComputeClampedSelection(
+					g_ModalFootSel + (( mkey == MKEY_Left ) ? -1 : 1 ), ModalFootCount( ));
+
+				if ( next != g_ModalFootSel )
+				{
+					g_ModalFootSel = next;
+					S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+				}
+				return true;
+			}
+
+			if ( mkey == MKEY_Enter )
+			{
+				ModalFootPress( g_ModalFootSel );
+				return true;
+			}
+
+			return true;		// nothing else on the footer answers a key
+		}
+
 		if ( g_NewMaps.empty( ))
 			return true;
 
 		if (( mkey == MKEY_Up ) || ( mkey == MKEY_Down ))
 		{
-			const int next = g_NewMapSel + (( mkey == MKEY_Up ) ? -1 : 1 );
+			// [rc4l] Off EITHER end of the list is the footer -- computation/toolgrid_compute's
+			// ComputeModalStep, the same loop FLAGS and GAMEPLAY walk.
+			const zx::ModalPos to = zx::ComputeModalStep(
+				zx::ModalPos( zx::ModalRegion::Body, g_NewMapSel ),
+				static_cast<int>( g_NewMaps.size( )), ModalFootCount( ),
+				( mkey == MKEY_Up ) ? -1 : 1 );
 
-			if (( next >= 0 ) && ( next < static_cast<int>( g_NewMaps.size( ))))
+			if ( to.region == zx::ModalRegion::Footer )
 			{
-				g_NewMapSel = next;
+				g_NewMapFocus = MapsFocus::Footer;
+				g_ModalFootSel = to.index;
+			}
+			else
+			{
+				g_NewMapSel = to.index;
 				g_NewMapRevealSel = true;
-				S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+
+				// [rc4l] ARRIVING AT A ROW PUTS THE CURSOR BACK ON ITS TICK.
+				//
+				// The three row buttons share one cursor, so a single Right pressed pages ago left
+				// it parked on the up-arrow -- and Enter on every row after that MOVED the map
+				// instead of switching it, which is not what Enter on a list row means.
+				//
+				// Reset on ARRIVAL only, not whenever the selection changes: a move carries the
+				// selection with the map, and resetting there would make reordering by keyboard cost
+				// a Right press per step.
+				g_NewMapBtnSel = 0;
 			}
 
+			S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
 			return true;
 		}
 
@@ -9949,6 +10993,14 @@ public:
 			const zx::LibraryFile &file = files[rows[row].index];
 			const bool bSel = ( row == g_NewWadSel );
 
+			// [rc4l] WHERE THIS COPY IS. The row draws a name and a size, and on a collection with
+			// the same wad in three folders that is three identical rows and an x3 telling the
+			// player duplicates exist without saying where any of them are. The path is already in
+			// hand -- `file` above -- so the only thing that was missing is somewhere to put it.
+			serverbrowser_Tip( SB_HOST_LIST_LEFT - 4, rowY,
+				SB_NEW_WADS_RIGHT - SB_HOST_LIST_LEFT + 4, SB_NEW_ROW_H,
+				serverbrowser_PathTip( zx::PathTipState::Found, file.path ));
+
 			DrawNewRowHighlight( SB_HOST_LIST_LEFT - 4, SB_NEW_WADS_RIGHT, rowY, bSel,
 				( row == g_NewWadHot ));
 
@@ -10195,6 +11247,13 @@ public:
 			// The maps list dropped them for the same reason. The read-only list in the CUSTOM tab's
 			// maps box keeps its numbers, because there the position is all it has -- nothing can be
 			// moved, so nothing demonstrates the order.
+			// [rc4l] Registered BEFORE the row draws, so the three buttons on it can register
+			// their own over the top: the lookup walks the list backwards and takes the last
+			// rectangle that contains the pointer, so whatever draws last wins the hover.
+			serverbrowser_Tip( SB_HOST_RCOL_LEFT - 4, rowY,
+				SB_HOST_RCOL_RIGHT - SB_HOST_RCOL_LEFT + 4, SB_NEW_ROW_H,
+				serverbrowser_PathTip( zx::PathTipState::Found, g_NewOrder[row].path ));
+
 			DrawOrderRow( SB_HOST_RCOL_LEFT, SB_HOST_RCOL_RIGHT, rowY, row,
 				g_NewOrder[row].name.c_str( ), bSel, ( row == g_NewOrderHot ), btnHot,
 				( row == 0 ), ( row + 1 == static_cast<int>( g_NewOrder.size( ))), false );
@@ -10233,8 +11292,25 @@ public:
 	int CustomDetailRows( )		{ return ( CustomDetailBottom( ) - CustomDetailTop( )) / CustomDetailLineH( ); }
 
 	// The buttons across the bottom, in the tool row's own lane.
-	int CustomBtnW( )			{ return SB_NEW_TOOL_W; }
-	int CustomBtnLeft( int i )	{ return NewToolLeft( i ); }
+	// [rc4l] FOUR across now that SERVER has joined them, so they are laid out here rather than
+	// borrowed from the NEW tab's row of three -- sharing that helper put the fourth off the end of
+	// the column.
+	int CustomBtnCount( )		{ return 4; }
+	// [rc4l] Across the WHOLE panel, not the list column the NEW tab's three sit in.
+	//
+	// Four buttons in a column measured for three left PLAY NOW! wider than the box drawn under it,
+	// so the label spilled out of its own background. Nothing else is on this line -- the detail
+	// panel stops above it -- so the row takes the width that was already empty beside it rather
+	// than the labels being shortened to fit a boundary that is not there.
+	int CustomBtnW( )
+	{
+		return (( SB_HOST_RCOL_RIGHT - SB_HOST_LIST_LEFT ) -
+			SB_NEW_TOOL_GAP * ( CustomBtnCount( ) - 1 )) / CustomBtnCount( );
+	}
+	int CustomBtnLeft( int i )
+	{
+		return SB_HOST_LIST_LEFT + i * ( CustomBtnW( ) + SB_NEW_TOOL_GAP );
+	}
 
 	// Reloaded from disk when something changes it, not per frame: this reads a folder.
 	const std::vector<zx::CustomEntry> &CustomEntries( )
@@ -10629,6 +11705,11 @@ public:
 		FString value;			// Item: right-aligned
 		EColorRange colour;
 
+		// [rc4l] What the line says on hover, or empty for the lines that have nothing to add. The
+		// FILES rows use it to say which copy of a file this preset would actually load, which the
+		// bare name they draw cannot: the preset stores a name and an md5, never a path.
+		FString tip;
+
 		DetailLine() : kind(Blank), colour(CR_GRAY) {}
 	};
 
@@ -10658,7 +11739,7 @@ public:
 	// A label on the left and its value on the right, which is what makes a column of numbers
 	// readable: the eye runs down the right edge rather than hunting along each line.
 	void CustomDetailItem( std::vector<DetailLine> &out, const char *label, const char *value,
-		EColorRange colour )
+		EColorRange colour, const char *tip = NULL )
 	{
 		DetailLine line;
 		line.kind = DetailLine::Item;
@@ -10666,6 +11747,9 @@ public:
 			SmallFont->StringWidth( value ) - 12 );
 		line.value = value;
 		line.colour = colour;
+
+		if ( tip != NULL )
+			line.tip = tip;
 
 		out.push_back( line );
 	}
@@ -10736,18 +11820,27 @@ public:
 		{
 			// Three states, not two: saying MISSING about a file nobody has looked at yet is the
 			// same lie the rows used to tell, one column over.
-			switch ( CustomResolve( entry.files[i].name, entry.files[i].md5 ))
+			// [rc4l] The path comes back from the SAME call that decides the colour, rather than
+			// from a second lookup: two lookups are two chances to disagree about which copy this
+			// preset would load, and the disagreement would show as a row coloured found with a
+			// tooltip pointing somewhere else.
+			std::string path;
+
+			switch ( CustomResolve( entry.files[i].name, entry.files[i].md5, &path ))
 			{
 			case ResolveState::Found:
-				CustomDetailItem( out, entry.files[i].name.c_str( ), "", CR_GRAY );
+				CustomDetailItem( out, entry.files[i].name.c_str( ), "", CR_GRAY,
+					serverbrowser_PathTip( zx::PathTipState::Found, path ).GetChars( ));
 				break;
 
 			case ResolveState::Missing:
-				CustomDetailItem( out, entry.files[i].name.c_str( ), "MISSING", CR_ORANGE );
+				CustomDetailItem( out, entry.files[i].name.c_str( ), "MISSING", CR_ORANGE,
+					serverbrowser_PathTip( zx::PathTipState::Missing, "" ).GetChars( ));
 				break;
 
 			default:
-				CustomDetailItem( out, entry.files[i].name.c_str( ), "...", CR_DARKGRAY );
+				CustomDetailItem( out, entry.files[i].name.c_str( ), "...", CR_DARKGRAY,
+					serverbrowser_PathTip( zx::PathTipState::Pending, "" ).GetChars( ));
 				break;
 			}
 		}
@@ -10835,6 +11928,14 @@ public:
 				continue;
 			}
 
+			// [rc4l] Registered from the DRAW, like every other tooltip here, so a line scrolled
+			// out of the column stops being hoverable at the same moment it stops being visible.
+			if ( line.tip.IsNotEmpty( ))
+			{
+				serverbrowser_Tip( SB_HOST_RCOL_LEFT, y, SB_HOST_RCOL_RIGHT - SB_HOST_RCOL_LEFT,
+					lineH, line.tip.GetChars( ));
+			}
+
 			screen->DrawText( SmallFont,
 				( line.kind == DetailLine::Title ) ? CR_WHITE : line.colour,
 				SB_HOST_RCOL_LEFT, y, line.text.GetChars( ),
@@ -10859,9 +11960,19 @@ public:
 		FString maps;
 		maps.Format( "MAPS  (%d)", static_cast<int>( chosen->maps.size( )));
 
+		const bool bMapsFocused = ( g_CustomFocus == CustomFocus::Maps ) &&
+			( g_Focus == zx::BrowserFocus::Host ) && !g_CustomMapsOpen;
+
 		DrawRoundedButton( SB_HOST_RCOL_LEFT, CustomMapsBtnTop( ),
 			SB_HOST_RCOL_RIGHT - SB_HOST_RCOL_LEFT, CustomMapsBtnH( ), maps.GetChars( ),
-			g_CustomMapsHot );
+			g_CustomMapsHot || bMapsFocused );
+
+		// The orb marks it the same way it marks every other control on this tab.
+		if ( bMapsFocused )
+		{
+			FocusAnchor( zx::BrowserFocus::Host, SB_HOST_RCOL_LEFT - 5,
+				CustomMapsBtnTop( ) + CustomMapsBtnH( ) / 2 );
+		}
 
 		serverbrowser_Tip( SB_HOST_RCOL_LEFT, CustomMapsBtnTop( ),
 			SB_HOST_RCOL_RIGHT - SB_HOST_RCOL_LEFT, CustomMapsBtnH( ),
@@ -11112,21 +12223,24 @@ public:
 		const bool bEditable = ( chosen != NULL ) &&
 			CustomMissing( *chosen, false, &bEditPending ).empty( ) && !bEditPending;
 
-		const char *kLabels[3] = { "PLAY NOW!", "EDIT", "DELETE" };
+		// [rc4l] SERVER sits beside PLAY NOW rather than at the end, because it is about the thing
+		// PLAY NOW is about -- EDIT and DELETE act on the preset as a file, and reading left to
+		// right the pair that starts a server should not be split by them.
+		const char *kLabels[4] = { "PLAY NOW!", "SERVER", "EDIT", "DELETE" };
 
 		// [rc4l] EDIT says it is working while the worker checks the files. The press used to freeze
 		// the menu instead, which is the same wait with nothing to read.
 		if ( CustomEditPending( ))
-			kLabels[1] = LoadingText( );
+			kLabels[2] = LoadingText( );
 
-		for ( int i = 0; i < 3; ++i )
+		for ( int i = 0; i < CustomBtnCount( ); ++i )
 		{
 			const bool bOn = ( g_CustomBtnHot == i ) ||
 				(( g_CustomFocus == CustomFocus::Buttons ) && ( g_CustomBtnSel == i ) &&
 				 ( g_Focus == zx::BrowserFocus::Host ));
 
 			DrawRoundedButton( CustomBtnLeft( i ), SB_NEW_TOOL_Y, CustomBtnW( ), SB_NEW_TOOL_H,
-				kLabels[i], bOn && (( i != 1 ) || bEditable ));
+				kLabels[i], bOn && (( i != 2 ) || bEditable ));
 
 			if ( bOn && ( g_CustomFocus == CustomFocus::Buttons ))
 			{
@@ -11139,15 +12253,20 @@ public:
 			bPlayable ? "Start a server on this machine, fetching anything missing first"
 				: "Nothing selected" );
 		serverbrowser_Tip( CustomBtnLeft( 1 ), SB_NEW_TOOL_Y, CustomBtnW( ), SB_NEW_TOOL_H,
+			"Name, port, player limit and who can see it" );
+		serverbrowser_Tip( CustomBtnLeft( 2 ), SB_NEW_TOOL_Y, CustomBtnW( ), SB_NEW_TOOL_H,
 			bEditable ? "Open this setup on the NEW tab"
 				: "Cannot edit a preset whose files are missing" );
-		serverbrowser_Tip( CustomBtnLeft( 2 ), SB_NEW_TOOL_Y, CustomBtnW( ), SB_NEW_TOOL_H,
+		serverbrowser_Tip( CustomBtnLeft( 3 ), SB_NEW_TOOL_Y, CustomBtnW( ), SB_NEW_TOOL_H,
 			"Remove this preset" );
 
 		// [rc4l] LAST, so it is over everything this tab drew rather than among it. Drawn before the
 		// three buttons it sat behind them, which is a box you can see through and cannot use.
 		if ( g_CustomMapsOpen )
 			DrawCustomMapsModal( );
+
+		if ( g_ServerBoxOpen )
+			DrawServerBox( );
 	}
 
 	// --- the pointer and the keyboard on the CUSTOM tab -------------------------------------------
@@ -11155,6 +12274,8 @@ public:
 	bool CustomMouseEvent( int type, int x, int y )
 	{
 		// The box owns the pointer while it is up, which is what modal means.
+		if ( g_ServerBoxOpen )
+			return ServerBoxMouse( type, x, y );
 		if ( g_CustomMapsOpen )
 			return CustomMapsModalMouse( type, x, y );
 
@@ -11321,11 +12442,41 @@ public:
 
 	// [rc4l] Which button, pressed. Shared by the pointer and the keyboard so the two cannot differ
 	// about what DELETE means.
+	// [rc4l] The SERVER box for the preset the list is on, which means the preset's OWN answers and
+	// not the ones the NEW tab happens to be holding.
+	//
+	// CUSTOM's PLAY NOW loads the chosen entry onto the NEW screen and hosts from there, so those are
+	// the values that will actually run -- showing anything else would be a settings box for a
+	// server nobody is about to start. Loading it here is the same NewApplyEntry that press does,
+	// one step earlier.
+	//
+	// A preset whose files are missing is still openable: the name and the visibility are answerable
+	// without them, and refusing would make the box the one part of the row that needs a download.
+	void CustomOpenServerBox( )
+	{
+		const zx::CustomEntry *const chosen = CustomSelected( );
+		if ( chosen == NULL )
+		{
+			S_Sound( CHAN_VOICE | CHAN_UI, "menu/invalid", snd_menuvolume, ATTN_NONE );
+			return;
+		}
+
+		NewApplyEntry( *chosen );
+
+		// [rc4l] Remembered so the close can write it back to the folder it came from rather than
+		// leaving the change in memory to be lost with the tab.
+		g_ServerBoxPreset = chosen->name.c_str( );
+
+		OpenServerBox( );
+	}
+
 	void CustomPressButton( int i )
 	{
 		if ( i == 0 )
 			CustomPlay( );
 		else if ( i == 1 )
+			CustomOpenServerBox( );
+		else if ( i == 2 )
 			CustomEdit( );
 		else
 			CustomAskDelete( );
@@ -11338,7 +12489,18 @@ public:
 		const std::vector<int> rows = CustomRows( );
 
 		if ( CustomEntries( ).empty( ))
-			return true;		// one button, nothing to walk
+		{
+			// [rc4l] One button and nothing to walk -- but UP still has to get out, or an empty tab
+			// is a room with the door painted on: focus lands on CREATE ONE HERE and every key after
+			// that does nothing, including the one that would reach the tabs again.
+			if ( key == zx::NavKey::Up )
+			{
+				SetFocus( zx::BrowserFocus::SubTabs );
+				S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+			}
+
+			return true;
+		}
 
 		switch ( key )
 		{
@@ -11350,7 +12512,17 @@ public:
 			if ( g_CustomFocus == CustomFocus::Search )
 			{
 				if ( step > 0 )
+				{
 					g_CustomFocus = CustomFocus::List;
+				}
+				else
+				{
+					// [rc4l] The same way out this screen's top row needs, for the same reason the
+					// NEW tab's IWAD row needs it: the tabs are up there and nothing else is.
+					SetFocus( zx::BrowserFocus::SubTabs );
+					S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+					return true;
+				}
 			}
 			else if ( g_CustomFocus == CustomFocus::List )
 			{
@@ -11367,6 +12539,11 @@ public:
 				else
 					g_CustomFocus = CustomFocus::Buttons;
 			}
+			else if ( g_CustomFocus == CustomFocus::Maps )
+			{
+				// Down is the row of buttons under it; up is the list it was reached from.
+				g_CustomFocus = ( step > 0 ) ? CustomFocus::Buttons : CustomFocus::List;
+			}
 			else if ( step < 0 )
 			{
 				g_CustomFocus = CustomFocus::List;
@@ -11378,10 +12555,32 @@ public:
 
 		case zx::NavKey::Left:
 		case zx::NavKey::Right:
+			// [rc4l] The detail column is to the RIGHT of the list, and the rotation button is the
+			// only thing in it a key can press. Left comes back.
+			if ( g_CustomFocus == CustomFocus::List )
+			{
+				if (( key == zx::NavKey::Right ) && ( CustomSelected( ) != NULL ))
+				{
+					g_CustomFocus = CustomFocus::Maps;
+					S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+				}
+				return true;
+			}
+
+			if ( g_CustomFocus == CustomFocus::Maps )
+			{
+				if ( key == zx::NavKey::Left )
+				{
+					g_CustomFocus = CustomFocus::List;
+					S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+				}
+				return true;
+			}
+
 			if ( g_CustomFocus == CustomFocus::Buttons )
 			{
 				const int next = zx::ComputeClampedSelection(
-					g_CustomBtnSel + (( key == zx::NavKey::Left ) ? -1 : 1 ), 3 );
+					g_CustomBtnSel + (( key == zx::NavKey::Left ) ? -1 : 1 ), CustomBtnCount( ));
 
 				if ( next != g_CustomBtnSel )
 				{
@@ -11844,16 +13043,18 @@ public:
 		//
 		// DrawRoundedButton, which IS the JOIN and PLAY NOW drawing on the other screens. A button
 		// that merely resembled them would drift apart the first time either was touched.
-		const bool bSaveFocus = ( g_NewFocus == NewFocus::Buttons ) && ( g_NewButtonSel == 0 ) &&
+		const bool bSaveFocus = ( g_NewFocus == NewFocus::Buttons ) && ( g_NewButtonSel == kNewButtonSave ) &&
 			( g_Focus == zx::BrowserFocus::Host ) && ( g_NewModal == NewModal::None );
-		const bool bPlayFocus = ( g_NewFocus == NewFocus::Buttons ) && ( g_NewButtonSel == 1 ) &&
+		const bool bPlayFocus = ( g_NewFocus == NewFocus::Buttons ) && ( g_NewButtonSel == kNewButtonPlay ) &&
 			( g_Focus == zx::BrowserFocus::Host ) && ( g_NewModal == NewModal::None );
 
 		DrawRoundedButton( NewSaveLeft( ), SB_NEW_BTN_Y, NewSaveWidth( ), SB_HOST_BTN_H, "SAVE",
 			g_NewSaveHot || bSaveFocus );
 
+		// Green for the same reason DONE wears it in the map box: it is the button that finishes
+		// what the screen is for, and the ones beside it only prepare or save.
 		DrawRoundedButton( NewPlayLeft( ), SB_NEW_BTN_Y, NewPlayWidth( ), SB_HOST_BTN_H,
-			"PLAY NOW!", g_NewButtonHot || bPlayFocus );
+			"PLAY NOW!", g_NewButtonHot || bPlayFocus, ButtonTint::Go );
 
 		if ( bSaveFocus )
 			FocusAnchor( zx::BrowserFocus::Host, NewSaveLeft( ) - 5, SB_NEW_BTN_Y + SB_HOST_BTN_H / 2 );
@@ -11873,11 +13074,21 @@ public:
 		// It carried a standing list of what the keys do, which is the kind of thing the eye learns
 		// to skip -- and then the one message that matters, "a different file of that name is
 		// already in the list", arrives in a place nobody is looking any more.
+		// [rc4l] UNDER everything, centred, on a line of its own.
+		//
+		// It was drawn at the panel's left edge on the foot's row, which was empty when that was
+		// written and is where the settings grid sits now -- so "Added" landed across GAMEPLAY and
+		// SERVER every time a file went into the load order. It says things worth reading ("a
+		// different file of that name is already in the list", "no IWAD to run on"), so it moves
+		// rather than goes.
 		if ( g_NewNotice.IsNotEmpty( ) &&
 			( static_cast<int>( I_MSTime( )) - g_NewNoticeMs < 2500 ))
 		{
-			screen->DrawText( SmallFont, CR_GRAY, SB_HOST_LEFT + SB_HOST_PAD,
-				SB_NEW_BTN_Y + ( SB_HOST_BTN_H - SmallFont->GetHeight( )) / 2, g_NewNotice,
+			const int noticeW = SmallFont->StringWidth( g_NewNotice );
+
+			screen->DrawText( SmallFont, CR_GRAY,
+				SB_HOST_LEFT + ( SB_HOST_RIGHT - SB_HOST_LEFT - noticeW ) / 2, SB_NEW_NOTICE_Y,
+				g_NewNotice,
 				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true,
 				TAG_DONE );
 		}
@@ -11900,6 +13111,11 @@ public:
 		case NewModal::None:		break;
 		default:					break;
 		}
+
+		// [rc4l] After the switch, because it is a modal of its own rather than one of the boxes --
+		// and last of all, so it is over the row of buttons that opened it.
+		if ( g_ServerBoxOpen )
+			DrawServerBox( );
 	}
 
 	// Which row of a list a screen-space y lands on, or -1. One helper for all three, so a row can
@@ -12119,6 +13335,8 @@ public:
 	// than a copy of it.
 	bool SettingsBoxMouse( NewModal which, int type, int x, int y )
 	{
+		g_ModalFootHot = -1;
+
 		g_NewBoxHot = -1;
 		g_NewFlagFieldHot = -1;
 		g_NewIwadConfirmHot = false;
@@ -12142,29 +13360,11 @@ public:
 			return true;
 		}
 
-		if ( BoxResetMouse( type, x, y ))
+		// The whole footer, through the one hit test every box on this tab shares.
+		if ( ModalFootMouse( type, x, y ))
 			return true;
 
-		// DONE, which sits below the content where nothing else claims a click.
 		{
-			const int bx = NewBigDoneLeft( );
-			const int by = NewBigButtonTop( );
-
-			if (( x >= serverbrowser_ToScreenX( bx )) &&
-				( x < serverbrowser_ToScreenX( bx + NewBigBtnW( ))) &&
-				( y >= serverbrowser_ToScreenY( by )) &&
-				( y < serverbrowser_ToScreenY( by + SB_DLG_BTN_H )))
-			{
-				g_NewIwadConfirmHot = true;
-				if ( type == MOUSE_Release )
-				{
-					EndSettingEdit( );
-					g_NewModal = NewModal::None;
-					g_NewFlagEditing = -1;
-					S_Sound( CHAN_VOICE | CHAN_UI, "menu/choose", snd_menuvolume, ATTN_NONE );
-				}
-				return true;
-			}
 		}
 
 		if ( FlagFooterMouse( type, x, y, footFields ))
@@ -12259,6 +13459,8 @@ public:
 	bool NewMouseEvent( int type, int x, int y )
 	{
 		// The modal owns the pointer while it is up, which is what modal means.
+		if ( g_ServerBoxOpen )
+			return ServerBoxMouse( type, x, y );
 		if ( g_NewModal == NewModal::Iwad )
 			return NewIwadModalMouse( type, x, y );
 		if ( g_NewModal == NewModal::Maps )
@@ -12270,15 +13472,16 @@ public:
 
 		g_NewToolHot = -1;
 
-		// The three settings buttons, under the wad list.
+		// The settings buttons, in their two-by-two block under the wad list.
 		for ( int i = 0; i < SB_NEW_TOOL_COUNT; ++i )
 		{
 			const int bx = NewToolLeft( i );
+			const int by = NewToolTop( i );
 
 			if (( x < serverbrowser_ToScreenX( bx )) ||
 				( x >= serverbrowser_ToScreenX( bx + SB_NEW_TOOL_W )) ||
-				( y < serverbrowser_ToScreenY( SB_NEW_TOOL_Y )) ||
-				( y >= serverbrowser_ToScreenY( SB_NEW_TOOL_Y + SB_NEW_TOOL_H )))
+				( y < serverbrowser_ToScreenY( by )) ||
+				( y >= serverbrowser_ToScreenY( by + SB_NEW_TOOL_H )))
 			{
 				continue;
 			}
@@ -12316,7 +13519,7 @@ public:
 				if ( type == MOUSE_Release )
 				{
 					g_NewFocus = NewFocus::Buttons;
-					g_NewButtonSel = 0;
+					g_NewButtonSel = kNewButtonSave;
 
 					// [rc4l] The browser's focus comes with it, the way the tool buttons take it.
 					// Without this the box opened while the keyboard belonged to something else,
@@ -12328,13 +13531,13 @@ public:
 			}
 
 			if (( x >= serverbrowser_ToScreenX( NewPlayLeft( ))) &&
-				( x < serverbrowser_ToScreenX( SB_HOST_RCOL_RIGHT )))
+				( x < serverbrowser_ToScreenX( NewPlayLeft( ) + NewPlayWidth( ))))
 			{
 				g_NewButtonHot = true;
 				if ( type == MOUSE_Release )
 				{
 					g_NewFocus = NewFocus::Buttons;
-					g_NewButtonSel = 1;
+					g_NewButtonSel = kNewButtonPlay;
 					NewStartHosting( );
 				}
 				return true;
@@ -12482,6 +13685,28 @@ public:
 	//
 	// Up and down move within a region; left and right move BETWEEN them, which is the only mapping
 	// that works when the regions are laid out in two columns and one of them is a text field.
+	// [rc4l] Where RIGHT goes from the left column: the load order beside it, or the foot when that
+	// order is empty and has no row to land on. Written once because three controls and a text field
+	// all need the same answer, and the field reaches it by a different road -- see the search box's
+	// FieldKey::Right, which the menu machinery never translates for it.
+	void NewRightOutOfColumn( )
+	{
+		if ( zx::ComputeRightExitFromList( g_NewOrder.empty( ) == false )
+			== zx::RightExit::LoadOrder )
+		{
+			g_NewFocus = NewFocus::Order;
+			g_NewOrderSel = 0;			// the topmost row, which is the one the eye is on
+			g_NewOrderBtnSel = 0;
+		}
+		else
+		{
+			g_NewFocus = NewFocus::Buttons;
+			g_NewButtonSel = kNewButtonPlay;
+		}
+
+		S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+	}
+
 	bool NewNavigate( zx::NavKey key )
 	{
 		// [rc4l] The modal takes every arrow while it is up. Letting one through would move the
@@ -12557,7 +13782,19 @@ public:
 			if ( g_NewFocus == NewFocus::Iwads )
 			{
 				if ( step > 0 )
+				{
 					g_NewFocus = NewFocus::Search;
+				}
+				else
+				{
+					// [rc4l] Off the TOP of the screen is the sub-tab row, which is how the keyboard
+					// got in. Up did nothing here, so the IWAD row was a place you could reach and
+					// then not leave -- with the tabs above it unreachable, there was no way back to
+					// PRESETS or CUSTOM without a mouse.
+					SetFocus( zx::BrowserFocus::SubTabs );
+					S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+					return true;
+				}
 			}
 			else if ( g_NewFocus == NewFocus::Search )
 			{
@@ -12586,25 +13823,63 @@ public:
 			}
 			else if ( g_NewFocus == NewFocus::Tools )
 			{
-				// One row of three, so up leaves it and down has nowhere to go.
-				if ( step < 0 )
+				// [rc4l] Two rows now, so up and down cross between them and only the top edge hands
+				// the keyboard back -- computation/toolgrid_compute, the same unit left and right ask.
+				const zx::GridMove move = zx::ComputeGridMove( g_NewToolSel, SB_NEW_TOOL_COUNT,
+					SB_NEW_TOOL_COLS, ( step < 0 ) ? zx::GridKey::Up : zx::GridKey::Down );
+
+				if ( move.leaves )
 					g_NewFocus = NewFocus::Wads;
+				else
+					g_NewToolSel = move.sel;
 			}
 			else if ( g_NewFocus == NewFocus::Buttons )
 			{
-				// The bottom row of the screen: up is the load order above it.
+				// [rc4l] Up is the load order above it -- unless there is nothing in it, which used
+				// to be walked into anyway: the orb vanished onto a region with no row to mark and
+				// DOWN could not get back, because an empty order had nothing to step off either.
+				//
+				// With nothing loaded the answer is the IWAD row, not the settings grid: there is
+				// nothing to play yet, so the way out of the foot is the top of the screen where a
+				// setup starts rather than the settings for a server that cannot be started.
 				if ( step < 0 )
-					g_NewFocus = NewFocus::Order;
+				{
+					if ( zx::ComputeFootExit( zx::GridKey::Up, g_NewButtonSel,
+						g_NewOrder.empty( ) == false ) == zx::FootExit::LoadOrder )
+					{
+						g_NewFocus = NewFocus::Order;
+						g_NewOrderSel = static_cast<int>( g_NewOrder.size( )) - 1;
+					}
+					else
+					{
+						g_NewFocus = NewFocus::Iwads;
+					}
+				}
 			}
 			else
 			{
-				const int count = static_cast<int>( g_NewOrder.size( ));
-				const int next = g_NewOrderSel + step;
-
-				if (( next >= 0 ) && ( next < count ))
+				// [rc4l] The load order, which was a trap: it clamped at both ends, so once the
+				// keyboard was in it neither direction could leave. Down is the foot beneath it and
+				// up is the wad list beside it, which is where everything else on this screen goes.
+				switch ( zx::ComputeListStep( g_NewOrderSel,
+					static_cast<int>( g_NewOrder.size( )), step ))
 				{
-					g_NewOrderSel = next;
+				case zx::ListStep::Move:
+					g_NewOrderSel += step;
 					g_NewOrderRevealSel = true;
+					break;
+
+				case zx::ListStep::LeaveUp:
+					// [rc4l] The IWAD row, which is the top of the screen. Going back to the wad
+					// rows put the keyboard in the middle of the other column, which reads as the
+					// key jumping sideways rather than up.
+					g_NewFocus = NewFocus::Iwads;
+					break;
+
+				case zx::ListStep::LeaveDown:
+					g_NewFocus = NewFocus::Buttons;
+					g_NewButtonSel = kNewButtonPlay;
+					break;
 				}
 			}
 
@@ -12630,31 +13905,63 @@ public:
 			}
 			else if ( g_NewFocus == NewFocus::Tools )
 			{
-				// Along the row of three, which is what left and right mean while it has the keyboard.
-				if ( g_NewToolSel > 0 )
+				// Along the row, which is what left and right mean while the grid has the keyboard.
+				const int next = zx::ComputeGridMove( g_NewToolSel, SB_NEW_TOOL_COUNT,
+					SB_NEW_TOOL_COLS, zx::GridKey::Left ).sel;
+
+				if ( next != g_NewToolSel )
 				{
-					g_NewToolSel--;
+					g_NewToolSel = next;
 					S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
 				}
 			}
 			else if ( g_NewFocus == NewFocus::Buttons )
 			{
-				if ( g_NewButtonSel > 0 )
+				// [rc4l] Off the leftmost button is the settings grid, which shares this line in the
+				// other column. It used to be a dead key, so PLAY NOW -- which everything to its left
+				// now sends the keyboard to -- was somewhere you could arrive and not come back from.
+				if ( zx::ComputeFootExit( zx::GridKey::Left, g_NewButtonSel,
+					g_NewOrder.empty( ) == false ) == zx::FootExit::SettingsGrid )
 				{
-					g_NewButtonSel--;
-					S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+					g_NewFocus = NewFocus::Tools;
+					g_NewToolSel = SB_NEW_TOOL_COUNT - 1;
 				}
+				else
+					g_NewButtonSel--;
+
+				S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
 			}
 			return true;
 
 		case zx::NavKey::Right:
 			if ( g_NewFocus == NewFocus::Tools )
 			{
-				if ( g_NewToolSel < SB_NEW_TOOL_COUNT - 1 )
+				const zx::GridMove move = zx::ComputeGridMove( g_NewToolSel, SB_NEW_TOOL_COUNT,
+					SB_NEW_TOOL_COLS, zx::GridKey::Right );
+
+				// [rc4l] Off the right-hand end is the foot, and the foot's leftmost button is the
+				// one the eye is already travelling towards.
+				if ( move.leaves )
 				{
-					g_NewToolSel++;
+					g_NewFocus = NewFocus::Buttons;
+					g_NewButtonSel = kNewButtonPlay;
 					S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
 				}
+				else if ( move.sel != g_NewToolSel )
+				{
+					g_NewToolSel = move.sel;
+					S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+				}
+				return true;
+			}
+
+			// [rc4l] RIGHT out of the left column, from ANY of the three controls stacked in it.
+			// The load order is to the right of all of them, and a key that worked on one row and
+			// did nothing on the two above it is the column disagreeing with itself.
+			if (( g_NewFocus == NewFocus::Iwads ) || ( g_NewFocus == NewFocus::Search ) ||
+				( g_NewFocus == NewFocus::Wads ))
+			{
+				NewRightOutOfColumn( );
 				return true;
 			}
 
@@ -12671,7 +13978,7 @@ public:
 
 			if ( g_NewFocus == NewFocus::Buttons )
 			{
-				if ( g_NewButtonSel < 1 )
+				if ( g_NewButtonSel < kNewButtonCount - 1 )
 				{
 					g_NewButtonSel++;
 					S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
@@ -12708,7 +14015,7 @@ public:
 				return true;
 
 			static const CustomFocus kOrder[] = { CustomFocus::Search, CustomFocus::List,
-				CustomFocus::Buttons };
+				CustomFocus::Maps, CustomFocus::Buttons };
 			const int count = static_cast<int>( countof( kOrder ));
 
 			int at = 0;
@@ -12740,6 +14047,10 @@ public:
 			return true;
 
 		case FieldKey::Up:
+			// [rc4l] Out of the screen, to the sub-tab row above it. Swallowed, this box was the top
+			// of CUSTOM and had no way back to the tabs at all.
+			SetFocus( zx::BrowserFocus::SubTabs );
+			S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
 			return true;
 
 		case FieldKey::Handled:
@@ -12971,7 +14282,9 @@ public:
 		{
 			zx::TextInput next = g_NewSearch;
 
-			switch ( EditTextField( next, ev, 48, false, false, false ))
+			// [rc4l] Right may leave this box: the load order is over there, the same as it is
+			// from the wad row below it.
+			switch ( EditTextField( next, ev, 48, false, false, true ))
 			{
 			case FieldKey::Escape:
 				// Out of the box, not out of the browser.
@@ -13005,11 +14318,17 @@ public:
 				}
 				return true;
 
+			// [rc4l] The caret has run out to the right, so the key means what it means everywhere
+			// else in this column. It used to be handed back and then LOST: this box owns the raw
+			// keys while it has focus, so nothing downstream ever turned it into a menu key.
+			case FieldKey::Right:
+				NewRightOutOfColumn( );
+				return true;
+
 			// Not a key at all -- above all the mouse, which reaches a menu through this same
 			// Responder and must be allowed past.
 			case FieldKey::Unclaimed:
 			case FieldKey::Left:
-			case FieldKey::Right:
 				return false;
 			}
 
@@ -13212,7 +14531,7 @@ public:
 			g_HostGameFocusRows.Clear( );
 
 			int y = HostFirstFieldY( );
-			for ( int i = 0; i < kHostFieldCount; ++i )
+			for ( int i = 0; i < HostFormFieldCount( ); ++i )
 			{
 				DrawHostField( i, SB_HOST_RCOL_LEFT, y );
 				y += HostRowPitch( );
@@ -13264,6 +14583,10 @@ public:
 		// [rc4l] Every one of these has to be false for a field to look focused. Leaving the
 		// visibility row out meant the last field kept its gold label and its caret while the row had
 		// the keyboard -- two controls claiming the same thing, and the player believing the wrong one.
+		// [rc4l] `index` is the ROW. Focus counts rows, and everything the row SHOWS -- its label, its
+		// tip, its text -- comes from the field that row happens to be.
+		const int field = static_cast<int>( HostFormFieldAt( index ));
+
 		const bool bFocused = ( HostFieldFocus( ) == index )
 			&& ( g_Focus == zx::BrowserFocus::Host );
 
@@ -13272,11 +14595,11 @@ public:
 		if ( bLettering )
 		{
 			screen->DrawText( SmallFont, bFocused ? CR_GOLD : CR_DARKGRAY, x,
-				y + ( SB_HOST_FIELD_H - SmallFont->GetHeight( )) / 2 + 1, g_HostFieldLabels[index],
+				y + ( SB_HOST_FIELD_H - SmallFont->GetHeight( )) / 2 + 1, g_HostFieldLabels[field],
 				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 		}
 
-		const int base = bFocused ? 30 : (( g_HostFieldHot == index ) ? 22 : 16 );
+		const int base = bFocused ? 30 : (( g_HostFieldHot == field ) ? 22 : 16 );
 		const zx::PanelColor topCol = { static_cast<BYTE>( base ), static_cast<BYTE>( base ),
 			static_cast<BYTE>( base + 10 ), 225 };
 		const zx::PanelColor botCol = { static_cast<BYTE>( base + 18 ), static_cast<BYTE>( base + 18 ),
@@ -13287,18 +14610,18 @@ public:
 			FocusAnchor( zx::BrowserFocus::Host, x - 5, y + SB_HOST_FIELD_H / 2 );
 
 		serverbrowser_Tip( x, y, SB_HOST_RIGHT - SB_HOST_PAD - x, SB_HOST_FIELD_H,
-			g_HostFieldTips[index] );
+			g_HostFieldTips[field] );
 
 		// A password is masked here for the same reason it is masked when joining: it is the one
 		// string on this screen that must not be legible over a shoulder.
 		FString shown;
-		if ( index == kHostFieldPassword )
+		if ( field == kHostFieldPassword )
 		{
-			for ( size_t i = 0; i < g_HostFields[index].text.size( ); ++i )
+			for ( size_t i = 0; i < g_HostFields[field].text.size( ); ++i )
 				shown += "*";
 		}
 		else
-			shown = g_HostFields[index].text.c_str( );
+			shown = g_HostFields[field].text.c_str( );
 
 		const int textY = y + ( SB_HOST_FIELD_H - SmallFont->GetHeight( )) / 2 + 1;
 		const int textX = fieldX + 5;
@@ -13306,10 +14629,10 @@ public:
 		// The selection, under the text: a band behind the characters rather than an inversion of
 		// them, so the letters keep the colour they had and stay readable either way. Same treatment
 		// as the search box, because it is the same idea and a player should not have to learn two.
-		if ( bFocused && zx::HasSelection( g_HostFields[index] ))
+		if ( bFocused && zx::HasSelection( g_HostFields[field] ))
 		{
-			int from = static_cast<int>( zx::SelectionStart( g_HostFields[index] ));
-			int to = static_cast<int>( zx::SelectionEnd( g_HostFields[index] ));
+			int from = static_cast<int>( zx::SelectionStart( g_HostFields[field] ));
+			int to = static_cast<int>( zx::SelectionEnd( g_HostFields[field] ));
 			if ( from < 0 )
 				from = 0;
 			if ( to > static_cast<int>( shown.Len( )))
@@ -13338,7 +14661,7 @@ public:
 		if ( bLettering && bFocused && (( DMenu::MenuTime / 16 ) % 2 == 0 ))
 		{
 			const FString upTo = FString( shown.GetChars( )).Left(
-				static_cast<long>( g_HostFields[index].caret ));
+				static_cast<long>( g_HostFields[field].caret ));
 			const int caretX = textX + SmallFont->StringWidth( upTo );
 			const int cx = serverbrowser_ToScreenX( caretX );
 			const int cw = MAX( 1, serverbrowser_ToScreenX( caretX + 1 ) - cx );
@@ -14348,6 +15671,13 @@ public:
 			const zx::RemixPick pick = zx::PickRemix( choices,
 				bAxisLocked ? std::string( ) : HostRemixWanted( groups[g].id ));
 
+			// Only the focused axis has a cursor to draw, and asking for it here is what keeps the
+			// marker and the arrows agreeing about where it is.
+			const int pillCursor = bAxisFocused
+				? HostPillCursorFor( static_cast<int>( g_HostGameFocusRows.Size( )) - 1, pick.index,
+					static_cast<int>( choices.size( )))
+				: -1;
+
 			// [rc4l] The label sits on the FIRST row of pills rather than above them, which is a line
 			// back per axis. Wrapped rows hang under the pills, not under the label, so the block
 			// still reads as one thing.
@@ -14434,10 +15764,12 @@ public:
 						DrawGameplayPill( px, y - 1, pw, SB_HOST_GAME_ROW_H,
 							choices[i].name.c_str( ), bOn, bHot, bLocked );
 
-						// [rc4l] The glow sits on the pill that is ON, not at the head of the row. That
-						// is where the answer is, and it is what makes left and right read as moving
-						// the marker along the axis rather than as changing something elsewhere.
-						if ( bAxisFocused && bOn )
+						// [rc4l] The glow sits on the pill the KEYBOARD is on, which is not always the
+						// one that is chosen. It used to sit on the chosen one, which read correctly
+						// only because moving the marker also moved the choice -- and that was the
+						// bug: nothing on the axis could be looked at without being selected. The
+						// chosen pill still shows as lit, so both facts are on screen at once.
+						if ( bAxisFocused && ( static_cast<int>( i ) == pillCursor ))
 							FocusAnchor( zx::BrowserFocus::Host, px - 5, y + SB_HOST_GAME_ROW_H / 2 );
 
 						if ( !choices[i].summary.empty( ))
@@ -14769,8 +16101,8 @@ public:
 				DTA_VirtualWidth, SB_VIRT_W, DTA_VirtualHeight, SB_VIRT_H, DTA_KeepRatio, true, TAG_DONE );
 		}
 
-		const int rowX = x;
-		const int rowW = SB_HOST_RCOL_RIGHT - x;
+		const int rowX = HostVisRowX( );
+		const int rowW = HostVisRowW( );
 
 		static const char *const labels[kHostVisCount] = {
 			"Internet", "Home",
@@ -14807,7 +16139,10 @@ public:
 
 		EColorRange visColors[kHostVisCount];
 
-		switch ( zx::ProbeDisplayFor( reach ))
+		// [rc4l] JOINABILITY, not dialability -- see ComputeJoinableDisplay. A shut port with a live
+		// registry is a server people join through the punch, and coluring that red told hosts their
+		// server was broken while strangers were playing on it.
+		switch ( zx::ComputeJoinableDisplay( reach ))
 		{
 		case zx::ProbeDisplay::Reachable:	visColors[kHostVisGlobal] = CR_GREEN; break;
 		case zx::ProbeDisplay::Unreachable:	visColors[kHostVisGlobal] = CR_DARKRED; break;
@@ -14853,11 +16188,14 @@ public:
 				// [rc4l] One line, and it says which of the four states this is -- the colour alone
 				// cannot tell "we have not asked yet" from "we asked and the answer was no", and
 				// those lead to different actions.
+				// [rc4l] The relay case says how people get in rather than what is wrong, because
+				// nothing is: the old line told a host to forward a port for a server that was
+				// already being played on.
 				const char *pszWhy =
-					( reach == zx::ProbePhase::Reachable ) ? "Your port is open"
-					: ( reach == zx::ProbePhase::Unreachable ) ? "Nothing outside reached this port. Forward it, or host locally"
-					: ( reach == zx::ProbePhase::Failed ) ? "Untested, but it may still work"
-					: "Checking the port...";
+					( reach == zx::ProbePhase::Reachable ) ? "Your port is open, so players connect straight to you"
+					: ( reach == zx::ProbePhase::Unreachable ) ? "Your port is closed, so players are introduced through the registry"
+					: ( reach == zx::ProbePhase::Failed ) ? "The registry is not answering, so nobody can be sent your way"
+					: "Checking how players will reach you...";
 
 				FString tip;
 				tip << "Listed publicly so anyone can join\n" << pszWhy;
@@ -15299,6 +16637,10 @@ public:
 		if ( g_HostKind == kind )
 			return;
 
+		// [rc4l] A modal must not outlive the screen that opened it: leaving it up would take every
+		// key on a sub-tab that is not drawing it, and the values would go unsaved.
+		CloseServerBox( );
+
 		g_HostKind = kind;
 
 		// The form goes away with PRESETS, so the keyboard cannot stay in it. Same rule the search
@@ -15335,6 +16677,9 @@ public:
 		// across the change and lands on the row the new tab brought with it.
 		if (( tab != BrowserTab::Browse ) && ( g_Focus == zx::BrowserFocus::Search ))
 			SetFocus( zx::BrowserFocus::SubTabs );
+
+		// [rc4l] Same rule as the sub-tabs: the box belongs to the screen that opened it.
+		CloseServerBox( );
 
 		g_Tab = tab;
 
@@ -16943,9 +18288,15 @@ public:
 				return true;
 		}
 
+		// [rc4l] AND THE SERVER BOX, which draws these same fields on CUSTOM and NEW.
+		//
+		// Gated on PRESETS alone, the box's boxes were drawn and dead: bInAField below already
+		// answers yes for them, so M_Responder stopped translating -- and with nothing here to
+		// consume the raw key either, letters never arrived and the arrows never became MKEY_Down.
+		// The field looked right and did nothing, which is the routing bug the comment on bInAField
+		// describes, arrived at from the other side.
 		if (( ev != NULL ) && ( ev->type == EV_GUI_Event ) && !g_Dialog.open && g_Notice.IsEmpty( ) &&
-			( g_Tab == BrowserTab::Host ) && ( g_HostKind == HostKind::Presets ) &&
-			( g_Focus == zx::BrowserFocus::Host ) && HostInAField( ))
+			HostFormOwnsKeyboard( ))
 		{
 			if ( EditHostField( ev ))
 				return true;
@@ -17256,7 +18607,7 @@ public:
 		// The field was drawn correctly the whole time, which is what made it look like a drawing
 		// bug rather than a routing one.
 		const bool bInAField = ( g_Focus == zx::BrowserFocus::Search )
-			|| (( g_Focus == zx::BrowserFocus::Host ) && HostInAField( ))
+			|| HostFormOwnsKeyboard( )
 			|| (( g_Focus == zx::BrowserFocus::Host ) && ( g_Tab == BrowserTab::Host ) &&
 				( g_HostKind == HostKind::New ) && ( g_NewFocus == NewFocus::Search ) &&
 				( g_NewModal == NewModal::None ))
@@ -17274,8 +18625,13 @@ public:
 
 			// And the CUSTOM tab's search box, for the reason the wad search needed it: backspace
 			// has to reach the field rather than becoming a menu key on the way.
+			//
+			// [rc4l] ONLY WHILE THE HOST REGION ACTUALLY HAS THE KEYBOARD. Without that test the box
+			// went on claiming every raw key after focus had left it for the sub-tabs, so nothing was
+			// translated into a menu key and the arrows stopped working entirely -- the screen looked
+			// alive and answered nothing.
 			|| (( g_Tab == BrowserTab::Host ) && ( g_HostKind == HostKind::Custom ) &&
-				( g_CustomFocus == CustomFocus::Search ));
+				( g_Focus == zx::BrowserFocus::Host ) && ( g_CustomFocus == CustomFocus::Search ));
 
 		return ( bInAField == false ) || g_Dialog.open || g_Notice.IsNotEmpty( );
 	}
@@ -17497,16 +18853,25 @@ public:
 		if ( HostInAField( ) == false )
 			return false;
 
-		const bool bDigits = ( HostFieldFocus( ) == kHostFieldPort )
-			|| ( HostFieldFocus( ) == kHostFieldMaxPlayers );
+		const int field = HostFocusedField( );
+
+		const bool bDigits = ( field == kHostFieldPort ) || ( field == kHostFieldMaxPlayers );
 
 		// [rc4l] There IS something to the left: the experience list. Passing false here is what made
 		// the form a place the keyboard could go and not come out of sideways -- LEFT moved the caret
 		// forever and never reached the rows. Nothing sits to the right, so that one stays shut.
-		switch ( EditTextField( g_HostFields[HostFieldFocus( )], ev, SB_HOST_MAXLEN, bDigits,
+		switch ( EditTextField( g_HostFields[field], ev, SB_HOST_MAXLEN, bDigits,
 			true, false ))
 		{
 		case FieldKey::Escape:
+			// [rc4l] In the box, escape is the way OUT OF THE BOX -- which is also what saves it.
+			// Handing focus to the tabs instead would leave a modal up with the keyboard behind it.
+			if ( g_ServerBoxOpen )
+			{
+				CloseServerBox( );
+				return true;
+			}
+
 			// Out of the form, not out of the browser -- the same rule the search box follows, so a
 			// second escape then closes the menu.
 			SetFocus( zx::BrowserFocus::Tabs );
@@ -17527,7 +18892,7 @@ public:
 			// everywhere else on this screen. Where it lands is the unit's answer, not one written
 			// out again here.
 			M_ReleaseMenuButtons( );
-			g_HostFocus = zx::HostLeftOfTheForm( );
+			g_HostFocus = zx::HostLeftOfTheForm( HostFormHasList( ));
 			RevealHostFocus( );
 			S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
 			return true;
@@ -17738,6 +19103,23 @@ public:
 	// the selection, switching the tab, and making a noise about it.
 	bool Navigate( zx::NavKey key, int total )
 	{
+		// [rc4l] THE SERVER BOX FIRST, before the sub-tab dispatch below hands the key to the screen
+		// it is covering.
+		//
+		// The arrows arrive here rather than at MenuEvent, so answering the box there alone left it
+		// drawn and unnavigable: NewNavigate took every arrow and walked the wad list underneath.
+		if ( g_ServerBoxOpen && ( g_Tab == BrowserTab::Host ) && ( g_HostKind != HostKind::Presets ))
+		{
+			switch ( key )
+			{
+			case zx::NavKey::Up:	NavigateHostFocus( zx::HostNavKey::Up ); break;
+			case zx::NavKey::Down:	NavigateHostFocus( zx::HostNavKey::Down ); break;
+			case zx::NavKey::Left:	NavigateHostFocus( zx::HostNavKey::Left ); break;
+			case zx::NavKey::Right:	NavigateHostFocus( zx::HostNavKey::Right ); break;
+			}
+			return true;
+		}
+
 		// Nothing to steer while the browser is still looking: there are no tabs on screen and no rows
 		// to be on. Swallowed rather than passed up, so an arrow key does not escape into the menu
 		// machinery underneath and move something the player cannot see.
@@ -17760,19 +19142,35 @@ public:
 		// flew straight past it into the form and the sub-tabs became unreachable by keyboard. You
 		// could not get to CUSTOM or NEW without a mouse.
 		//
-		// CUSTOM is left out because it has no screen to enter yet.
+		// [rc4l] CUSTOM used to be left out, on the note that it had no screen to enter yet. It has
+		// had one for a while -- a list, a search box and a row of buttons, all of them navigable
+		// once reached -- so the exclusion had quietly become the reason none of that could be
+		// reached by keyboard at all.
 		const bool bAboveTheForm = ( g_Focus == zx::BrowserFocus::SubTabs ) ||
 			( g_Focus == zx::BrowserFocus::Search );
 
-		if (( g_Tab == BrowserTab::Host ) && ( g_HostKind != HostKind::Custom )
-			&& ( key == zx::NavKey::Down ) && bAboveTheForm )
+		if (( g_Tab == BrowserTab::Host ) && ( key == zx::NavKey::Down ) && bAboveTheForm )
 		{
 			SetFocus( zx::BrowserFocus::Host );
 
 			// Each screen has its own idea of where the keyboard should land first.
 			if ( g_HostKind == HostKind::New )
 			{
-				g_NewFocus = NewFocus::Wads;
+				// [rc4l] The IWAD row, which is the topmost control on the screen. Landing on the
+				// wad list skipped the two controls above it, so coming DOWN from the tabs started
+				// half way in and the way back up read as the key having jumped.
+				g_NewFocus = NewFocus::Iwads;
+			}
+			else if ( g_HostKind == HostKind::Custom )
+			{
+				// [rc4l] The SEARCH BOX, which is the topmost control on this tab -- landing on the
+				// list skipped it, so coming down from the tabs started half way in exactly as the
+				// NEW tab did before its IWAD row was made the landing.
+				//
+				// Its buttons when the tab is empty: there is no search worth focusing on a list
+				// that cannot be filtered, and an empty list is not a place focus may sit.
+				g_CustomFocus = CustomEntries( ).empty( ) ? CustomFocus::Buttons : CustomFocus::Search;
+				g_CustomBtnSel = 0;
 			}
 			else
 			{
@@ -17943,6 +19341,17 @@ public:
 			return true;
 		}
 
+		// [rc4l] THE SERVER BOX, before either tab's own keys: it is a modal, so while it is up the
+		// keyboard is its, and letting CUSTOM or NEW answer first would walk the list underneath it.
+		//
+		// Tested on the TAB rather than on the box alone so a stale flag cannot swallow every key on
+		// a screen that is not drawing it.
+		if (( g_Tab == BrowserTab::Host ) && ( g_HostKind != HostKind::Presets ) && g_ServerBoxOpen )
+		{
+			if ( ServerBoxKey( mkey ))
+				return true;
+		}
+
 		// [rc4l] The CUSTOM tab answers its own Enter, for the same reason the NEW screen does: it
 		// never reaches Responder, and falling through would act on the PRESETS panel's idea of what
 		// is selected.
@@ -17984,6 +19393,14 @@ public:
 
 			if ( g_CustomFocus == CustomFocus::Buttons )
 				CustomPressButton( g_CustomBtnSel );
+			else if ( g_CustomFocus == CustomFocus::Maps )
+			{
+				// The same thing the click does -- see the mouse handler for why the box takes the
+				// keyboard with it.
+				g_CustomMapsOpen = true;
+				g_CustomMapsScroll = 0;
+				S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+			}
 			else
 				CustomPlay( );		// on a row, Enter is what the row is for
 
@@ -18092,7 +19509,7 @@ public:
 				}
 				if ( g_NewFocus == NewFocus::Buttons )
 				{
-					if ( g_NewButtonSel == 0 )
+					if ( g_NewButtonSel == kNewButtonSave )
 						NewOpenSaveModal( );
 					else
 						NewStartHosting( );
@@ -18174,6 +19591,13 @@ public:
 					else
 						PressHostAction( );		// the list's enter is "host this one"
 				}
+				else if ( HostOnGameplay( ))
+				{
+					// A pill takes the choice; a slider has nothing to take, so the key falls
+					// through to the walk below exactly as it did before.
+					if ( !PressHostGameplayRow( HostGameplayFocus( )))
+						NavigateHostFocus( zx::HostNavKey::Down );
+				}
 				else if ( HostOnVisibility( ))
 					PressHostVisibility( );
 				else if ( g_HostFocus.slot == zx::HostSlot::Copy )
@@ -18201,6 +19625,15 @@ public:
 					S_Sound( CHAN_VOICE | CHAN_UI, "menu/choose", snd_menuvolume, ATTN_NONE );
 				return true;
 			}
+
+			// [rc4l] ENTER ON THE SUB-TAB ROW MEANS "GO IN", not "do the thing this screen is for".
+			//
+			// It fell through to the generic handler below, which reads the list behind the tabs and
+			// acted on it -- so pressing Enter while merely FOCUSED on NEW started hosting whatever
+			// happened to be selected, and the same on CUSTOM and PRESETS. Enter on a tab you are
+			// standing on can only sensibly mean the same as Down.
+			if (( g_Focus == zx::BrowserFocus::SubTabs ) && ( g_Tab == BrowserTab::Host ))
+				return Navigate( zx::NavKey::Down, total );
 
 			if (( g_Focus == zx::BrowserFocus::Tabs ) || ( g_Focus == zx::BrowserFocus::Search ))
 			{
