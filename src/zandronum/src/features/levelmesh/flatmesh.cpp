@@ -157,6 +157,24 @@ void ClearFlats()
 
 int FlatPieceCount() { return (int)g_flats.Size(); }
 
+// [rc4l] Read the captured flats, so a derivation can be checked against them.
+//
+// features/surfaces works out where a plane is from the map; this is what the capture recorded for
+// the same plane. Comparing the two on real levels is the only honest way to promote one over the
+// other, and it is read-only -- the verifier looks, it never bakes.
+bool CachedFlat(int index, const subsector_t **sub, bool *ceiling, const sector_t **model,
+	int *whichPlane, MeshRange *range)
+{
+	if ((unsigned)index >= g_flats.Size()) return false;
+	const FlatKey &k = g_flats[index];
+	if (sub) *sub = k.sub;
+	if (ceiling) *ceiling = k.ceiling;
+	if (model) *model = k.model;
+	if (whichPlane) *whichPlane = k.whichPlane;
+	if (range) *range = k.range;
+	return true;
+}
+
 void RegisterFlatSubsector(const GLFlat &flat, subsector_t *sub, bool ceiling)
 {
 	if (sub == NULL || sub->numlines < 3) return;

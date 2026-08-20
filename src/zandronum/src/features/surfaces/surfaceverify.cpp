@@ -29,8 +29,12 @@
 #include "gl/scene/gl_wall.h"
 
 #include "features/levelmesh/wallcache.h"
+#include "features/levelmesh/flatmesh.h"
+#include "features/levelmesh/staticmesh.h"
+#include "gl/data/gl_vertexbuffer.h"   // FFlatVertex, whose layout the mesh stores
 #include "features/surfaces/computation/wallgeom_compute.h"
 #include "features/surfaces/computation/walluv_compute.h"
+#include "features/surfaces/computation/planegeom_compute.h"
 
 namespace zx { namespace surfaces {
 
@@ -531,6 +535,62 @@ CCMD( fua_surface_verify )
 			}
 		}
 	}
+
+	// [rc4l] And the planes, on the same terms.
+	//
+	// A floor or ceiling that was captured has its vertices in the mesh; the derivation says where
+	// that plane is at each of those points. Every vertex should sit on it. This is a stronger check
+	// than the wall one -- it tests every vertex rather than a span -- and it is the one that will
+	// catch a slope derived with the wrong sign, which a height comparison at one point cannot.
+	int flatChecked = 0, flatAgreed = 0, flatShown = 0, flatSkipped = 0;
+	{
+		int vertCount = 0;
+		const FFlatVertex *verts = zx::levelmesh::MeshVertexData( vertCount );
+		for ( int i = 0; verts != NULL; i++ )
+		{
+			const subsector_t *sub = NULL;
+			const sector_t *model = NULL;
+			bool ceiling = false;
+			int whichPlane = 0;
+			zx::levelmesh::MeshRange range;
+			if ( !zx::levelmesh::CachedFlat( i, &sub, &ceiling, &model, &whichPlane, &range ) ) break;
+			if ( range.count == 0 || sub == NULL ) { flatSkipped++; continue; }
+
+			// [rc4l] Only a subsector's OWN planes. A 3D floor piece takes its geometry from a control
+			// sector and its own plane index, which the derivation has not been taught yet -- counted
+			// as skipped rather than failed, because "not yet answered" and "answered wrongly" are
+			// different states and only one of them is a bug.
+			const sector_t *sec = ( model != NULL ) ? model : sub->sector;
+			if ( sec == NULL || ( model != NULL && model != sub->sector ) ) { flatSkipped++; continue; }
+
+			const secplane_t &sp = ceiling ? sec->ceilingplane : sec->floorplane;
+			SurfacePlane plane;
+			plane.a = FIXED2FLOAT( sp.a ); plane.b = FIXED2FLOAT( sp.b );
+			plane.c = FIXED2FLOAT( sp.c ); plane.d = FIXED2FLOAT( sp.d );
+
+			bool ok = true;
+			for ( unsigned int v = 0; v < range.count && ok; v++ )
+			{
+				if ( (int)( range.offset + v ) >= vertCount ) { ok = false; break; }
+				const FFlatVertex &fv = verts[range.offset + v];
+				// The mesh stores (x, z-up, y); the plane is asked in map (x, y).
+				const float want = ComputePlaneHeightAt( plane, fv.x, fv.y );
+				if ( fabsf( want - fv.z ) > 0.05f ) ok = false;
+			}
+			flatChecked++;
+			if ( ok ) flatAgreed++;
+			else if ( flatShown < 4 )
+			{
+				const FFlatVertex &fv = verts[range.offset];
+				Printf( "  flat %d (sub %d, %s): vertex at (%.0f, %.0f) is z %.2f, plane says %.2f\n",
+					i, (int)( sub - subsectors ), ceiling ? "ceiling" : "floor", fv.x, fv.y, fv.z,
+					ComputePlaneHeightAt( plane, fv.x, fv.y ) );
+				flatShown++;
+			}
+		}
+	}
+	Printf( "  planes: %d of %d captured flats sit on their derived plane (%.1f%%), %d skipped\n",
+		flatAgreed, flatChecked, flatChecked ? 100.0 * flatAgreed / flatChecked : 0.0, flatSkipped );
 
 	Printf( "fua_surface_verify on %s: %d of %d captured pieces agree (%.1f%%)\n",
 		level.MapName.GetChars( ), agreed, checked,
