@@ -114,3 +114,29 @@ reports it; it is an optimisation of step 2, not a prerequisite for it.
 The port does **not** need UZDoom's texture system for any of this (see
 `docs/texture-system-decision.md`). Nothing in the four failures above is about where the pixels come
 from.
+
+## And the third item on #311: measured, not built
+
+The issue asked for GPU frustum and occlusion culling feeding an indirect draw buffer. The scale
+probe says there is nothing left for it to remove.
+
+```
+Diligent scale probe: 266402 tris/copy, 165 batches
+   1x =    266402 tris,   165 draws -> GPU 0.1555 ms
+  10x =   2664020 tris,  1650 draws -> GPU 0.4664 ms
+ 100x =  26640200 tris, 16500 draws -> GPU 3.3061 ms
+=> ~8058015 tris per GPU millisecond at this resolution and shader
+```
+
+Sunder MAP16's entire world is 266,402 triangles, drawn in **one** call, for **0.1195 ms** of GPU
+after the vertex shrink. Perfect culling could save at most that tenth of a millisecond, and a
+compute dispatch to decide it would cost some of it back. Per-piece indirect draws would go the wrong
+way outright: the probe's own numbers show draw count is not free, and 110,731 pieces is not 165.
+
+The reason the issue expected a win was the per-batch submit cost -- 0.445 ms on 166 batches -- and
+that cost is gone, removed by bindless rather than by culling. `fua_dg_cullbatches` stays off for the
+same reason it always was, but the reason has changed from "it makes things worse" to "there is
+nothing there".
+
+Worth revisiting only if something makes the GPU expensive: real shadows (#306), much higher
+resolution, or a shader far heavier than this one.
