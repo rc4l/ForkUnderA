@@ -270,9 +270,21 @@ MIDIDevice *MIDIStreamer::CreateMIDIDevice(EMidiDevice devtype) const
 		return new FluidSynthMIDIDevice;
 #endif
 
-	// [rc4l] Kept so existing configs naming this device still load; it maps to the OPL synth now.
+	// [rc4l] The default device, and the fallback everything else retries onto. It used to mean
+	// FMOD's own sampled synth (MDEV_FMOD). When FMOD went, this was pointed at the OPL synth --
+	// which is FM synthesis, not samples, so every player on the default setting quietly went from
+	// instruments to an emulated 1980s sound chip. That is the "MIDI sounds worse than it used to"
+	// complaint, and it is not something the player can be expected to diagnose from a menu.
+	//
+	// Windows has a sampled synth built in, so use it: it is the closest thing to what FMOD gave and
+	// costs nothing to ship. Elsewhere there is no system synth, so OPL remains the honest answer
+	// unless the user has set up FluidSynth with a soundfont.
 	case MDEV_SNDSYS:
+#ifdef _WIN32
+		return new WinMIDIDevice(0);
+#else
 		return new OPLMIDIDevice;
+#endif
 
 	case MDEV_GUS:
 		return new TimidityMIDIDevice;

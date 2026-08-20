@@ -34,10 +34,15 @@ static void AddDefaultMidiDevices(FOptionValues *opt)
 	pair[p+1].Value = -3.0;
 	pair[p+2].Text = "TiMidity++";
 	pair[p+2].Value = -2.0;
-	// [rc4l] Was "FMOD" -- FMOD is gone; device -1 (MDEV_SNDSYS, formerly MDEV_FMOD) now routes to the OPL synth. Label it
-	// honestly. uzdoom@1a40c95f8 renamed the enum to MDEV_SNDSYS; the SNDINFO "fmod"
-	// keyword stays as a config-compat alias.
+	// [rc4l] Was "FMOD" -- FMOD is gone. Device -1 (MDEV_SNDSYS, formerly MDEV_FMOD) is the default
+	// and the fallback; it plays through the system synth on Windows and the OPL synth elsewhere,
+	// so the label cannot name one of them. uzdoom@1a40c95f8 renamed the enum to MDEV_SNDSYS; the
+	// SNDINFO "fmod" keyword stays as a config-compat alias.
+#ifdef _WIN32
+	pair[p+3].Text = "Default (system synth)";
+#else
 	pair[p+3].Text = "Default (OPL)";
+#endif
 	pair[p+3].Value = -1.0;
 
 }

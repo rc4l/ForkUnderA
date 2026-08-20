@@ -59,7 +59,18 @@
 #else
 #include <dlfcn.h>
 
-#define FLUIDSYNTHLIB	"libfluidsynth.so.1"
+// [rc4l] The loader only knew libfluidsynth.so.1 -- a Linux name, and a FluidSynth 1.x one, so
+// macOS could never load it and a modern Linux (2.x/3.x soname) could not either. Try the current
+// sonames first and fall back to the old one.
+#ifdef __APPLE__
+#define FLUIDSYNTHLIB1	"libfluidsynth.3.dylib"
+#define FLUIDSYNTHLIB2	"libfluidsynth.2.dylib"
+#define FLUIDSYNTHLIB3	"libfluidsynth.dylib"
+#else
+#define FLUIDSYNTHLIB1	"libfluidsynth.so.3"
+#define FLUIDSYNTHLIB2	"libfluidsynth.so.2"
+#define FLUIDSYNTHLIB3	"libfluidsynth.so.1"
+#endif
 #endif
 
 #define FLUID_REVERB_DEFAULT_ROOMSIZE 0.2f
@@ -692,11 +703,22 @@ bool FluidSynthMIDIDevice::LoadFluidSynth()
 		}
 	}
 #else
-	FluidSynthSO = dlopen((libname = FLUIDSYNTHLIB), RTLD_LAZY);
+	// [rc4l] Walk the candidate sonames newest first. Homebrew and most distros install an
+	// unversioned symlink too, which is the last resort.
+	FluidSynthSO = dlopen((libname = FLUIDSYNTHLIB1), RTLD_LAZY);
 	if (FluidSynthSO == NULL)
 	{
-		Printf(TEXTCOLOR_RED"Could not load " FLUIDSYNTHLIB ": %s\n", dlerror());
-		return false;
+		FluidSynthSO = dlopen((libname = FLUIDSYNTHLIB2), RTLD_LAZY);
+		if (FluidSynthSO == NULL)
+		{
+			FluidSynthSO = dlopen((libname = FLUIDSYNTHLIB3), RTLD_LAZY);
+			if (FluidSynthSO == NULL)
+			{
+				Printf(TEXTCOLOR_RED"Could not load " FLUIDSYNTHLIB1 ", " FLUIDSYNTHLIB2
+					" or " FLUIDSYNTHLIB3 ": %s\n", dlerror());
+				return false;
+			}
+		}
 	}
 #endif
 
