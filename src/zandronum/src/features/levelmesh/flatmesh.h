@@ -21,6 +21,8 @@ class GLFlat;
 class GLSprite;
 struct FFlatVertex;
 struct FColormap;
+struct sector_t;
+namespace zx { namespace levelmesh { struct MeshRange; } }
 
 namespace zx { namespace levelmesh {
 
@@ -31,6 +33,11 @@ void RegisterFlatSubsector(const GLFlat &flat, subsector_t *sub, bool ceiling);
 // [rc4l] How often a visible flat was left alone rather than rebuilt. A cache whose hit rate
 // nobody can see is a cache nobody can tell has stopped working.
 void GetFlatCacheStats(int &hits, int &rebuilds);
+
+// [rc4l] One captured flat, read-only: which subsector and side it is, which sector and plane it
+// was taken from, and where its vertices live. For checking a derivation against the capture.
+bool CachedFlat(int index, const subsector_t **sub, bool *ceiling, const sector_t **model,
+	int *whichPlane, MeshRange *range);
 
 // Forget every baked flat -- called when the wall cache is invalidated, so the two stay in step.
 void ClearFlats();
