@@ -344,3 +344,47 @@ TEST(LightCluster, MatrixPathKeepsASmallLightLocal)
 	const int cells = (r.x1 - r.x0 + 1) * (r.y1 - r.y0 + 1) * (r.z1 - r.z0 + 1);
 	EXPECT_LT(cells, ComputeClusterCount(g) / 20);
 }
+
+// [rc4l] The property that the near-plane clamp must not break.
+//
+// The straddling case used to bail out and hand the light every tile, which cannot under-cover
+// because it covers everything. Clamping each corner to the near plane instead is eight times
+// cheaper and no longer obviously safe -- so it gets the same test the view-space path has, aimed
+// squarely at the lights that cross the camera plane: every point inside the sphere must land in a
+// cell the sphere claimed. A failure here is a surface going dark next to one that did not.
+TEST(LightCluster, MatrixPathCoversPointsInsideAStraddlingLight)
+{
+	const ClusterGrid g = ComputeGridForScreen(1024, 640, 5.f, 8192.f);
+	float mvp[16];
+	Projection(mvp, 74.f * 3.14159265f / 180.f, 1.6f, 5.f, 65536.f);
+
+	// Distances that put the sphere across the near plane, just inside it, and clear of it.
+	const float depths[] = { 8.f, 40.f, 90.f, 120.f, 400.f };
+	const float radius = 96.f;
+	for (int d = 0; d < 5; d++)
+	{
+		const float lp[3] = { 30.f, -20.f, -depths[d] };
+		const ClusterRange r = ComputeLightClustersFromMVP(g, mvp, lp, radius);
+		ASSERT_FALSE(r.empty) << "depth " << depths[d];
+
+		for (int i = 0; i < 200; i++)
+		{
+			const float a = (float)i * 0.61f, b = (float)i * 1.37f;
+			const float k = radius * 0.99f * ((i % 3) ? 0.6f : 1.0f);
+			const float p[3] = { lp[0] + k * cosf(a), lp[1] + k * sinf(b), lp[2] + k * cosf(b) };
+
+			const float w  = mvp[3] * p[0] + mvp[7] * p[1] + mvp[11] * p[2] + mvp[15];
+			if (w <= g.zNear) continue;   // in front of the near plane: nothing is shaded there
+			const float ndcX = (mvp[0] * p[0] + mvp[4] * p[1] + mvp[8] * p[2] + mvp[12]) / w;
+			const float ndcY = (mvp[1] * p[0] + mvp[5] * p[1] + mvp[9] * p[2] + mvp[13]) / w;
+			if (ndcX < -1.f || ndcX > 1.f || ndcY < -1.f || ndcY > 1.f) continue;   // off screen
+
+			const int tx = (int)floorf((ndcX * 0.5f + 0.5f) * (float)g.tilesX);
+			const int ty = (int)floorf((ndcY * 0.5f + 0.5f) * (float)g.tilesY);
+			const int slice = ComputeSliceForDepth(g, w);
+			EXPECT_GE(tx, r.x0) << "depth " << depths[d]; EXPECT_LE(tx, r.x1) << "depth " << depths[d];
+			EXPECT_GE(ty, r.y0) << "depth " << depths[d]; EXPECT_LE(ty, r.y1) << "depth " << depths[d];
+			EXPECT_GE(slice, r.z0) << "depth " << depths[d]; EXPECT_LE(slice, r.z1) << "depth " << depths[d];
+		}
+	}
+}

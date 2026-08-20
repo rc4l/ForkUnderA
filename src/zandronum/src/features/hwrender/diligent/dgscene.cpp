@@ -2907,12 +2907,20 @@ static void BuildLightClusters(Diligent::IDeviceContext *ctx)
 	counts.Resize((unsigned)cells);
 	for (int i = 0; i < cells; i++) counts[i] = 0;
 
-	// Pass one: how many lights land in each cell.
+	// [rc4l] Pass one: how many lights land in each cell -- and keep the ranges.
+	//
+	// Pass two needs exactly the same answer, and recomputing it means projecting every light's box
+	// through the matrix twice a frame for nothing. Eight corners times four thousand lights is not
+	// free, and it was measurable: the whole binning pass is now the cost that grows with light
+	// count, so the half of it that is pure repetition goes first.
+	static TArray<zx::hwrender::ClusterRange> ranges;
+	ranges.Resize((unsigned)g_lightCount);
 	for (int l = 0; l < g_lightCount; l++)
 	{
 		const float *lp = &g_lightData[l * 8];
 		const zx::hwrender::ClusterRange r =
 			zx::hwrender::ComputeLightClustersFromMVP(grid, g_mvp, lp, lp[3]);
+		ranges[l] = r;
 		if (r.empty) continue;
 		for (int z = r.z0; z <= r.z1; z++)
 			for (int y = r.y0; y <= r.y1; y++)
@@ -2964,9 +2972,7 @@ static void BuildLightClusters(Diligent::IDeviceContext *ctx)
 	indices.Resize(total > 0 ? total : 1);
 	for (int l = 0; l < g_lightCount; l++)
 	{
-		const float *lp = &g_lightData[l * 8];
-		const zx::hwrender::ClusterRange r =
-			zx::hwrender::ComputeLightClustersFromMVP(grid, g_mvp, lp, lp[3]);
+		const zx::hwrender::ClusterRange &r = ranges[l];
 		if (r.empty) continue;
 		for (int z = r.z0; z <= r.z1; z++)
 			for (int y = r.y0; y <= r.y1; y++)
