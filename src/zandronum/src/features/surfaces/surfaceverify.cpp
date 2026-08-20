@@ -308,7 +308,16 @@ CCMD( fua_surface_verify )
 							// All texture Z, not live plane heights. Two rounds of inferring this from
 							// pictures produced 91.9% and then 55.7%; reading the caller produced the rule.
 							const int lineFlags = segs[s].linedef->flags;
-							const sector_t *rf = segs[s].frontsector, *rb = segs[s].backsector;
+							// [rc4l] The ORIGINAL sectors, which is what GL aligns against.
+							//
+							// GLWall::Process works from `realfront`/`realback` -- &sectors[sectornum] -- and
+							// not from the frontsector/backsector it was handed, because those can be the
+							// substituted copies a fake floor or a transfer-heights sector puts in their place.
+							// Their PLANES agree; their texture Z does not have to, and texture Z is the whole
+							// of alignment.
+							const sector_t *rf = segs[s].frontsector ? &sectors[segs[s].frontsector->sectornum] : NULL;
+							const sector_t *rb = segs[s].backsector ? &sectors[segs[s].backsector->sectornum] : NULL;
+							if ( rf == NULL ) { uvChecked++; continue; }
 							bool pegged = false;
 							float refCeil = 0.f, refFloor = 0.f, vOffset = 0.f;
 							int texpos = side_t::mid;
@@ -325,16 +334,18 @@ CCMD( fua_surface_verify )
 								pegged = ( lineFlags & ML_DONTPEGBOTTOM ) != 0;
 								refCeil = FIXED2FLOAT( rb->GetPlaneTexZ( sector_t::floor ) );
 								refFloor = FIXED2FLOAT( rf->GetPlaneTexZ( sector_t::floor ) );
-								// [rc4l] The lower texture's v_offset term is NOT applied here, and that is a
-								// finding rather than an omission.
+								// [rc4l] The lower texture's extra term, which no other part has.
 								//
-								// DoTexture passes one for lowers -- frontFloorTexZ - frontCeilingTexZ -- and
-								// feeding it through the documented formula moves the answer the WRONG way:
-								// GL references 88 on dbab04 seg 301, the formula gives 216 without the term
-								// and 344 with it. So the reference height DoTexture computes is not what ends
-								// up in the vertex: SetWallCoordinates transforms it again, and that transform
-								// is where the remaining alignment gap lives. Reading it is the next step, and
-								// guessing at it a third time is not.
+								// A pegged lower continues the picture down from the wall above it, so its
+								// reference reaches to the front sector's ceiling -- and under sky on both sides,
+								// to the back sector's. Applied against the ORIGINAL sectors; against the
+								// substituted ones it moved the answer the wrong way, which is what sent the
+								// third guess at this rule to 84.1%.
+								const bool bothSky = rf->GetTexture( sector_t::ceiling ) == skyflatnum &&
+									rb->GetTexture( sector_t::ceiling ) == skyflatnum;
+								vOffset = FIXED2FLOAT( rf->GetPlaneTexZ( sector_t::floor ) -
+									( bothSky ? rb->GetPlaneTexZ( sector_t::ceiling )
+									          : rf->GetPlaneTexZ( sector_t::ceiling ) ) );
 							}
 							else if ( rb != NULL )
 							{
@@ -380,8 +391,13 @@ CCMD( fua_surface_verify )
 								const float glTexTop = first->ztop[0] + first->uplft.v * (float)th;
 								Printf( "  seg %d %s: capture v %.3f (texTop %.1f), derived v %.3f (texTop %.1f)\n",
 									s, TypeName( kTypeOf[slot] ), first->uplft.v, glTexTop, wantV, texTop );
-								Printf( "      refs %.1f / %.1f  th %d  peg %d  rowofs %.1f  ztop %.1f\n",
-									refCeil, refFloor, th, (int)pegged, rowOfs, first->ztop[0] );
+								Printf( "      refs %.1f / %.1f th %d peg %d rowofs %.1f ztop %.1f | sec %d/%d ceilZ %.1f/%.1f floorZ %.1f/%.1f vofs %.1f\n",
+									refCeil, refFloor, th, (int)pegged, rowOfs, first->ztop[0],
+									(int)( rf - sectors ), rb ? (int)( rb - sectors ) : -1,
+									FIXED2FLOAT( rf->GetPlaneTexZ( sector_t::ceiling ) ),
+									rb ? FIXED2FLOAT( rb->GetPlaneTexZ( sector_t::ceiling ) ) : 0.f,
+									FIXED2FLOAT( rf->GetPlaneTexZ( sector_t::floor ) ),
+									rb ? FIXED2FLOAT( rb->GetPlaneTexZ( sector_t::floor ) ) : 0.f, vOffset );
 								uvShown++;
 							}
 						}
