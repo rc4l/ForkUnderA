@@ -271,3 +271,32 @@ TEST(ModalStep, ABoxWithOneButtonStillLoops)
 	EXPECT_EQ(ModalRegion::Footer, ComputeModalStep(Body(0), 3, 1, -1).region);
 	EXPECT_EQ(ModalRegion::Body, ComputeModalStep(Foot(0), 3, 0, 1).region);
 }
+
+// [rc4l] The defaults each struct starts life with, which the callers rely on when they declare one
+// and fill it in afterwards: a cursor at the first cell, staying put, and a modal position at the
+// top of the body. Asserted rather than assumed, because changing either silently moves where an
+// unfilled result points.
+TEST(ToolGridTest, AGridMoveStartsOnTheFirstCellAndStaysPut)
+{
+	const GridMove move;
+	EXPECT_EQ(0, move.sel);
+	EXPECT_FALSE(move.leaves);
+}
+
+TEST(ToolGridTest, AModalPosStartsAtTheTopOfTheBody)
+{
+	const ModalPos pos;
+	EXPECT_EQ(ModalRegion::Body, pos.region);
+	EXPECT_EQ(0, pos.index);
+}
+
+// [rc4l] A key that is none of the four. Unreachable through the enum as written, and kept anyway:
+// the switch covers every value it knows, and the fall-through is what decides the answer if a fifth
+// direction is ever added and one call site is missed. Doing nothing is the right answer there --
+// the cursor stays where it is rather than jumping to a cell nobody asked for.
+TEST(ToolGridTest, AnUnknownKeyMovesNothing)
+{
+	const GridMove move = ComputeGridMove(2, 4, 2, static_cast<GridKey>(99));
+	EXPECT_EQ(2, move.sel);
+	EXPECT_FALSE(move.leaves);
+}
