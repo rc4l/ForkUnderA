@@ -1611,6 +1611,7 @@ add_executable( zdoom WIN32
 	# [rc4l] The decisions the Diligent backend used to make inline, where they can be tested.
 	features/hwrender/computation/decalorder_compute.cpp
 	features/hwrender/computation/lightside_compute.cpp
+	features/hwrender/computation/walllight_compute.cpp
 	features/fov-interp/fovinterp.cpp
 	features/fov-interp/fovcvar.cpp
 	features/quake-movement/quakemove.cpp
