@@ -19,7 +19,7 @@ namespace zx { namespace wadreload {
 
 enum class ReloadResult
 {
-	Restarting,      // never actually returned -- the call throws CRestartException on this path
+	Restarting,      // the restart is requested; D_DoomLoop throws CRestartException at its next top
 	AlreadyLoaded,   // wanted set already matches the loaded set; nothing done
 	InvalidWads,     // one or more wanted files aren't loadable resources; nothing done (rollback)
 };
@@ -45,8 +45,8 @@ void ResetStartupStateForRestart();
 // makes the reload boot straight into that map instead of the title screen -- if the map isn't in the
 // new WAD set, it lands at the title with a message rather than failing. Validates every wanted file
 // first: if any is not loadable, returns InvalidWads and the running game is untouched. If the wanted
-// set already matches what's loaded, returns AlreadyLoaded. Otherwise rewrites Args and throws
-// CRestartException (so it does not return on that path).
+// set already matches what's loaded, returns AlreadyLoaded. Otherwise rewrites Args, requests a
+// restart via D_RequestRestart and returns Restarting -- the engine unwinds at D_DoomLoop's next top.
 //
 // [rc4l] `connectAddress` (NULL/empty = none) makes the reload come back up connected to that server
 // instead of at the title screen -- the server browser's "join" is this call. It rides the same
