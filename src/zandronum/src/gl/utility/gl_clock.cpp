@@ -138,6 +138,34 @@ static void AppendLightStats(FString &out)
 		iter_dlight, draw_dlight, iter_dlightf, draw_dlightf );
 }
 
+//==========================================================================
+//
+// fua_rendertimes
+//
+// [rc4l] The same breakdown `stat rendertimes` draws on the HUD, printed where it can be read.
+//
+// The renderer has had these clocks all along, and the number quoted in every plan for weeks was a
+// single figure -- "4 ms of CPU" -- with no split. A phase aimed at that number should start by
+// knowing which part of it is the BSP walk, which is building walls and which is submitting them,
+// because those want completely different work. Reading it off a HUD overlay in a screenshot is not
+// a measurement anything can be automated against.
+//
+// The clocks only run while gl_benching is on -- `stat rendertimes` is what turns it on -- so this
+// says when it is reporting numbers nothing has been measuring.
+//
+//==========================================================================
+
+CCMD( fua_rendertimes )
+{
+	FString out;
+	AppendRenderStats( out );
+	AppendRenderTimes( out );
+	AppendLightStats( out );
+	Printf( "%s", out.GetChars( ) );
+	if ( !gl_benching )
+		Printf( "note: the clocks are off, so this is stale -- `stat rendertimes` turns them on.\n" );
+}
+
 ADD_STAT(rendertimes)
 {
 	static FString buff;
