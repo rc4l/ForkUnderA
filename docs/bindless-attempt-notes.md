@@ -1,55 +1,39 @@
 # Bindless materials in the Diligent backend
 
-**Built, measured, and off by default** — `fua_dg_bindless 1` turns it on. The world picks its own
-texture out of an array and binds nothing per batch; thirteen bindings serve the level, and adjacent
-batches collapse into one draw because a batch is then only a range.
+**Done, on by default.** The world picks its own texture out of an array and binds nothing per batch;
+thirteen bindings serve the level, sprites and decals included, and adjacent batches collapse into
+one draw because a batch is then only a range.
 
-Measured on Sunder MAP16, same view: **165 draw calls at 0.686 / 0.715 / 0.689 ms become one at
-0.499 / 0.503 / 0.565 ms**. Sunder MAP10: 53 draws at 1.68 / 1.56 ms become one at 1.52 / 1.50 ms.
-Pixel-identical on the frozen frame on MAP16, MAP10 and dbab01 — 0.0% over the world region, with
-both controls (off/off and on/on) also at 0.0%.
+Sunder MAP16, same view: **165 draw calls at 0.77 ms become one at 0.49**. Pixel-identical on
+MAP10, MAP16, dbab01, dbab02 and dbab04 — 0.0% over the world region, against controls that also read
+0.0% — both loaded directly and reached through a chain of four map changes.
 
-## Why it is not on
+## The bug that held it back, and what it was
 
-**After a map change the world renders with the wrong textures** — 55-93% of the frame depending on
-the level, on dbab02 as well as dbab04, so it is the transition and not the map. Loaded at launch and
-toggled on, every map tested is **0.0%** — pixel-identical, draw merge and all, against controls that
-also read 0.0%. Deterministic in both directions.
+For a day this looked like two separate faults: after a *map change* the world rendered with the
+wrong textures (55-93% of the frame, geometry perfectly intact), and sprites that appeared later drew
+as flat white rectangles. They were one bug.
 
-The geometry is perfect. Only the textures are wrong, and the two screenshots line up wall for wall.
+`uMaterials` is a **static** shader variable, so Diligent stores it on the pipeline and copies it into
+every binding created from that pipeline. **Once a pipeline has handed out a binding, writing the
+array again does not take** — it keeps whatever it held when the first binding was made. A map loaded
+directly was always fine, because there the array is filled before any binding exists. A map *changed
+into* filled the array and got the previous level's textures. A sprite whose material joined the
+table after the fill could not be added at all, so its slot stayed white.
 
-### What has been ruled out, each by measurement
+The fix is to make the pipelines again whenever the array has to change: `RefreshBindless` releases
+the bindings, releases the pipelines, rebuilds them, and fills before anything asks for a binding.
+That is rare — the table settles within a second of a level starting.
 
-| Suspect | How it was killed |
-|---|---|
-| The slot table | `fua_dg_slots`: batch material, table slot, and **the slot the vertex itself carries** all agree, name for name, in the broken state |
-| The array's contents | The fill records what it was handed: correct names, fresh views for the new level |
-| The texture cache | `fua_dg_flushtextures` drops it, every binding, and forces a rebuild — no change |
-| A stale array | `fua_dg_bindless_rebuild` — no change |
-| Animated textures | Wrong with `fua_dg_bindless_anim 0`, and wrong with animation off entirely |
-| The draw merge | Identical wrong with `fua_dg_mergedraws 0` |
-| Slot renumbering | Fixed (below) — the churn went from 340 array builds to 35, the picture did not change |
-| Drawing blended batches that used to be skipped | Guard restored — no change |
+Eight other suspects were measured and cleared before this one, and it was worth writing them down
+because every one of them was plausible: the slot table (`fua_dg_slots` shows the batch material, the
+table slot, and the slot the *vertex itself* carries, all agreeing in the broken state), the array's
+contents, the texture cache, a stale array, animated textures, the draw merge, slot renumbering, and
+drawing blended batches the old path skipped.
 
-### What was fixed along the way
-
-**Slot numbers are stable for the life of a level now.** They were reset on every scene rebuild, and
-a rebuild renumbers from the new emit order — so a material that was slot 3 became slot 7 while every
-binding built from the old numbering was describing a different level. On dbab04 that happens about
-two hundred times a minute. The table is append-only within a level and reset only on a level change.
-This is right whether or not it is the bug, and it took array builds from 340 to 35.
-
-### Where to look next
-
-Everything the CPU can be asked says the frame should be correct, so the next step is to ask the GPU:
-a capture (RenderDoc) at a draw in the broken state answers in one look what is actually in the
-descriptor set and what index the vertex carries. That is the tool this needs, and it is the first
-thing I would reach for rather than another round of counters.
-
-The second open item is smaller and separate: **sprites** get a valid slot and take the array, and
-some — items, torch flames — still draw as flat white rectangles. The dynamic path therefore writes
-slot 0, which sends it back to the bound texture and the path it was always on.
-`fua_dg_bindless_dyn 1` puts it back on the array.
+One of those, though, was a real bug on its own: **slot numbers used to be renumbered on every scene
+rebuild**, and a level with moving sectors rebuilds a couple of hundred times a minute. They are
+append-only within a level now, which took array builds from 340 to 35.
 
 What follows is the record of the attempt that failed first, kept because every one of its four
 failures is a trap the next person walks into in the same order.

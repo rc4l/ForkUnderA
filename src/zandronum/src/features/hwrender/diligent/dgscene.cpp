@@ -222,14 +222,12 @@ CVAR(Bool, fua_dg_cullbatches, false, 0)
 // docs/bindless-attempt-notes.md for the ceiling the first attempt hit doing these in the wrong
 // order.
 //
-// OFF by default, and the reason is dbab04. Sunder MAP10 and MAP16 and dbab01 all render
-// pixel-identical with it on -- 0.0% over the world region, against controls that also read 0.0% --
-// and MAP16 goes from 165 draw calls at 0.69 ms to one at 0.50. dbab04 draws almost every surface
-// with some other surface's texture. Whatever that is, it is a level-shaped difference and not a
-// pipeline one, and it is not going on by default until it is understood.
-CVAR(Bool, fua_dg_bindless, false, CVAR_ARCHIVE)
+// On by default. Sunder MAP10 and MAP16, dbab01, dbab02 and dbab04 all render pixel-identical with
+// it on -- 0.0% over the world region, against controls that also read 0.0% -- both loaded directly
+// and reached by a map change, and MAP16 goes from 165 draw calls at 0.69 ms to one at 0.50.
+CVAR(Bool, fua_dg_bindless, true, CVAR_ARCHIVE)
 // Sprites and decals on the shared binding as well. Off: see WorldSRB.
-CVAR(Bool, fua_dg_bindless_dyn, false, 0)
+CVAR(Bool, fua_dg_bindless_dyn, true, 0)
 // [rc4l] Collapse adjacent batches into one draw. Only ever possible with bindless on, and separable
 // from it so "the array is wrong" and "the merge is wrong" can be told apart in one run.
 CVAR(Bool, fua_dg_mergedraws, true, 0)
@@ -683,6 +681,12 @@ static void UpdateMaterialSlotResolutions()
 	}
 }
 
+
+// Declared here because refreshing the array can require the pipelines to be made again -- see
+// the comment inside RefreshBindless for why that is not optional.
+static void ReleaseScenePipelines();
+static bool EnsureScenePipeline(FString &err);
+
 static void RefreshBindless()
 {
 	if (zx::levelmesh::LevelGeneration() != g_bindlessGen)
@@ -696,6 +700,31 @@ static void RefreshBindless()
 	g_matSlotsDirty = false;
 	// A rebuild that produces the same table needs no new bindings -- see g_filledFrom.
 	if (g_bindlessReady && MaterialSlotsMatchFill()) return;
+	// [rc4l] If bindings already exist, the pipelines have to be MADE AGAIN, not just refilled.
+	//
+	// uMaterials is a static variable, so Diligent stores it on the pipeline and copies it into
+	// every binding created from that pipeline. Once a pipeline has handed one out, writing the
+	// array again does not take -- it keeps whatever it held when the first binding was made.
+	// That is the whole of the map-change fault: the new level filled the array, the array kept
+	// the old level's textures, and the world rendered with its geometry perfect and every
+	// surface wearing the wrong picture. A map loaded directly was always fine, because there
+	// the array is filled before any binding exists.
+	//
+	// It is also why a sprite that first appeared after the fill drew as a flat white rectangle.
+	// Same cause, and one fix.
+	if (g_bindlessReady)
+	{
+		ReleaseWorldSRBs();
+		ReleaseScenePipelines();
+		FString perr;
+		if (!EnsureScenePipeline(perr))
+		{
+			Printf("Diligent bindless: pipelines would not rebuild (%s)" "\n", perr.GetChars());
+			g_bindlessReady = false;
+			g_filledFrom.Clear();
+			return;
+		}
+	}
 	g_bindlessReady = false;
 	g_filledFrom.Clear();
 	ReleaseWorldSRBs();
@@ -769,13 +798,12 @@ static Diligent::IShaderResourceBinding *WorldSRB(Diligent::IPipelineState *pso)
 	for (int i = 0; i < 13; i++)
 		if (g_worldPSOs[i] == pso)
 		{
-			// [rc4l] The STATIC world only, for now.
+			// [rc4l] Sprites and decals are on the array too, and the switch stays for bisecting.
 			//
-			// Pipelines 4..11 are the sprite and decal ones. Their pieces get a valid slot, the array has
-			// their texture in it, every one of their draws takes the shared binding -- and some of them
-			// still come out as flat white rectangles. That is unexplained, so they keep the binding per
-			// material that has always worked, and the world takes the win. fua_dg_bindless_dyn 1 turns
-			// them on for whoever picks the question up.
+			// They used to draw as flat white rectangles, which looked like a second bug and was the same
+			// one: a sprite whose material joined the table after the array had been filled could not be
+			// added to it, because a static variable cannot be rewritten once its pipeline has handed out
+			// a binding. Rebuilding the pipelines fixed both at once.
 			if (i >= 4 && i < 12 && !fua_dg_bindless_dyn) return NULL;
 			return g_worldSRBs[i];
 		}
@@ -2026,15 +2054,8 @@ static void BuildDynamic(Diligent::IDeviceContext *ctx)
 				if (slot == 0) { if (p.material) g_dynSlotRefused++; else g_dynSlotNoMaterial++; }
 				g_dynSlotSeen++;
 				if (slot > g_dynSlotMax) g_dynSlotMax = slot;
-				// [rc4l] Slot 0 sends the fragment back to the bound texture, and that is how the dynamic
-				// path opts out.
-				//
-				// Sprites take the array -- the debug view says so, their slots are valid, the array has
-				// their textures and none of it falls back to white -- and some of them still draw as flat
-				// white rectangles. Items and torch flames, consistently, on Sunder MAP16. That is not
-				// understood yet, so the dynamic path keeps the binding per material that has always
-				// worked and the static world takes the win it can prove. fua_dg_bindless_dyn 1 puts them
-				// back on the array for whoever picks this up.
+				// [rc4l] Slot 0 sends the fragment back to the bound texture, which is how the dynamic path
+				// opts out when the switch is off.
 				dv.lightIndex = fua_dg_bindless_dyn ? (float)slot : 0.f;
 			}
 			dv.nx = p.normX; dv.ny = p.normY; dv.nz = p.normZ;
@@ -5152,6 +5173,15 @@ static bool AutoSetupForLevel()
 		// it looked like the map rather than the transition.
 		ResetMaterialSlots();
 		ReleaseWorldSRBs();
+		// [rc4l] And the PIPELINES, because the material array lives on them.
+		//
+		// uMaterials is a STATIC variable, which means Diligent stores it on the pipeline and copies it
+		// into every binding made from that pipeline. A level change refills it -- and on a pipeline
+		// that has already handed out bindings, refilling does not take: the array keeps the PREVIOUS
+		// level's textures, so the new level renders with its geometry perfect and every surface
+		// wearing the wrong picture. A map loaded directly is fine because the array is filled before
+		// any binding exists, which is why this only ever showed up after a map change.
+		ReleaseScenePipelines();
 		ReleaseMaterials();
 		// Camera targets are keyed on FMaterial* too, and go stale for exactly the same reason.
 		ReleaseCameraTargets();
