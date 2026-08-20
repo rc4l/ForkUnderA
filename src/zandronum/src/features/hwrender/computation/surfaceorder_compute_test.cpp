@@ -11,7 +11,7 @@
 
 #include <gtest/gtest.h>
 
-#include "features/hwrender/computation/decalorder_compute.h"
+#include "features/hwrender/computation/surfaceorder_compute.h"
 
 using namespace zx::hwrender;
 
@@ -165,4 +165,120 @@ TEST(DecalOrderCompute, OrderingIsAsymmetric)
 			if (ComputeDrawsBefore(items[i], items[j]))
 				EXPECT_FALSE(ComputeDrawsBefore(items[j], items[i]))
 					<< "pair " << i << "," << j << " orders both ways";
+}
+
+// ---------------------------------------------------------------------------------------------
+// The build-time order, which decides what goes into the vertex buffer before what.
+// ---------------------------------------------------------------------------------------------
+
+namespace {
+
+ScenePiece Piece(int blend, const void *mat, const void *base)
+{
+	ScenePiece p;
+	p.blendMode = blend; p.material = mat; p.baseTex = base;
+	return p;
+}
+
+// Stand-in handles. Their values are meaningless; only their ordering matters.
+const void *const kMatA = (const void *)0x1000;
+const void *const kMatB = (const void *)0x2000;
+const void *const kTexA = (const void *)0x10;
+const void *const kTexB = (const void *)0x20;
+
+} // namespace
+
+// The correctness half: a blended surface has to be drawn after everything it shows through, so it
+// can never sort into the middle of the opaque run -- whatever its material says.
+TEST(SurfaceOrder, BlendedNeverPrecedesOpaque)
+{
+	const ScenePiece opaque = Piece(0, kMatB, kTexB);   // materials chosen to sort the OTHER way
+	const ScenePiece blended = Piece(1, kMatA, kTexA);
+	EXPECT_TRUE(ComputePiecesBefore(opaque, blended));
+	EXPECT_FALSE(ComputePiecesBefore(blended, opaque));
+}
+
+// The batching half: equal state adjacent, so a material draws once instead of once per piece.
+TEST(SurfaceOrder, EqualStateSortsTogether)
+{
+	const ScenePiece a = Piece(0, kMatA, kTexA);
+	const ScenePiece b = Piece(0, kMatA, kTexA);
+	EXPECT_FALSE(ComputePiecesBefore(a, b));
+	EXPECT_FALSE(ComputePiecesBefore(b, a));   // neither before the other: they may batch
+}
+
+// [rc4l] Base texture is the secondary key and it is not cosmetic. Two surfaces with different base
+// textures can resolve to the SAME material at bake time, because an animation is at some frame when
+// the mesh is built -- and merged into one batch they are then re-resolved every frame from whichever
+// baseTex the batch recorded. That is a lava floor turning into green foliage.
+TEST(SurfaceOrder, SameMaterialDifferentBaseTextureStaysSeparable)
+{
+	const ScenePiece lava = Piece(0, kMatA, kTexA);
+	const ScenePiece vine = Piece(0, kMatA, kTexB);
+	EXPECT_TRUE(ComputePiecesBefore(lava, vine));
+	EXPECT_FALSE(ComputePiecesBefore(vine, lava));
+}
+
+// A comparator that says "a before b" AND "b before a" makes std::sort walk off the end of the array
+// in a release build. Cheap to assert, and the failure is a crash rather than a picture.
+TEST(SurfaceOrder, IsAStrictWeakOrdering)
+{
+	const ScenePiece all[] = {
+		Piece(0, kMatA, kTexA), Piece(0, kMatA, kTexB), Piece(0, kMatB, kTexA),
+		Piece(1, kMatA, kTexA), Piece(1, kMatB, kTexB), Piece(2, kMatA, kTexA),
+	};
+	for (const ScenePiece &x : all)
+		for (const ScenePiece &y : all)
+		{
+			EXPECT_FALSE(ComputePiecesBefore(x, y) && ComputePiecesBefore(y, x));
+			if (ComputePiecesBefore(x, y))
+				for (const ScenePiece &z : all)
+					if (ComputePiecesBefore(y, z)) EXPECT_TRUE(ComputePiecesBefore(x, z));
+		}
+}
+
+// ---------------------------------------------------------------------------------------------
+// GL's sprite rule, which is deliberately NOT the port's.
+// ---------------------------------------------------------------------------------------------
+
+TEST(SurfaceOrder, GLSpritesGoFarthestFirst)
+{
+	GLSpriteOrder near_, far_;
+	near_.depth = 100; near_.spawnIndex = 1;
+	far_.depth = 900;  far_.spawnIndex = 2;
+	EXPECT_TRUE(ComputeGLSpritesBefore(far_, near_, false));
+	EXPECT_FALSE(ComputeGLSpritesBefore(near_, far_, false));
+}
+
+// The tie-break flips with COMPATF_SPRITESORT, and maps depend on the older behaviour: two sprites at
+// the same depth stack the other way round, which is the whole point of the flag.
+TEST(SurfaceOrder, GLSpriteTieBreakFollowsTheCompatFlag)
+{
+	GLSpriteOrder first, second;
+	first.depth = 500;  first.spawnIndex = 1;
+	second.depth = 500; second.spawnIndex = 2;
+	EXPECT_TRUE(ComputeGLSpritesBefore(first, second, true));    // compat: lower index first
+	EXPECT_FALSE(ComputeGLSpritesBefore(first, second, false));  // default: higher index first
+	EXPECT_TRUE(ComputeGLSpritesBefore(second, first, false));
+}
+
+// And the two rules genuinely differ, which is the reason both are written down here. GL breaks a
+// depth tie by spawn order; the port breaks a distance tie by what the surface IS -- a decal before
+// the thing it is painted on. Asserting the difference stops someone "unifying" them by hand.
+TEST(SurfaceOrder, TheTwoRulesAreNotTheSameRule)
+{
+	TranslucentDraw decal, wall;
+	decal.distSq = 1000.f; decal.blend = 1; decal.decal = true;  decal.first = 900;
+	wall.distSq  = 1000.f; wall.blend  = 1; wall.decal  = false; wall.first  = 100;
+	// The port: a decal is a STAGE, drawn before the other blended things at that distance, so a
+	// flash composites over the mark rather than the mark landing on top of the flash. Which way
+	// round that goes is the whole content of two shipped bugs, so it is asserted explicitly.
+	EXPECT_TRUE(ComputeDrawsBefore(decal, wall));
+	EXPECT_FALSE(ComputeDrawsBefore(wall, decal));
+
+	// GL, given the same pair as sprites, would answer purely on spawn index.
+	GLSpriteOrder a, b;
+	a.depth = 1000; a.spawnIndex = 900;
+	b.depth = 1000; b.spawnIndex = 100;
+	EXPECT_TRUE(ComputeGLSpritesBefore(a, b, false));   // higher index first, regardless of what it is
 }

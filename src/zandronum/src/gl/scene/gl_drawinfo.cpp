@@ -49,6 +49,7 @@
 #include "gl/data/gl_data.h"
 #include "gl/data/gl_vertexbuffer.h"
 #include "gl/scene/gl_drawinfo.h"
+#include "features/hwrender/computation/surfaceorder_compute.h"
 #include "features/levelmesh/wallcache.h"
 #include "features/hwrender/computation/walllight_compute.h"
 #include "features/levelmesh/staticmesh.h"
@@ -538,10 +539,18 @@ inline int GLDrawList::CompareSprites(SortNode * a,SortNode * b)
 	GLSprite * s1=&sprites[drawitems[a->itemindex].index];
 	GLSprite * s2=&sprites[drawitems[b->itemindex].index];
 
-	int res = s1->depth - s2->depth;
-
-	if (res != 0) return -res;
-	else return (i_compatflags & COMPATF_SPRITESORT)? s1->index-s2->index : s2->index-s1->index;
+	// [rc4l] GL's own rule, stated in surfaceorder_compute beside the port's.
+	//
+	// Unchanged in behaviour -- this is the oracle and its answer is the shipped one. What moves is
+	// where the rule is written: next to the port's distance sort, so the two can be read together
+	// and the places they disagree are visible instead of being three lines in two files.
+	zx::hwrender::GLSpriteOrder oa, ob;
+	oa.depth = s1->depth; oa.spawnIndex = s1->index;
+	ob.depth = s2->depth; ob.spawnIndex = s2->index;
+	const bool compat = !!(i_compatflags & COMPATF_SPRITESORT);
+	if (zx::hwrender::ComputeGLSpritesBefore(oa, ob, compat)) return -1;
+	if (zx::hwrender::ComputeGLSpritesBefore(ob, oa, compat)) return 1;
+	return 0;
 }
 
 //==========================================================================

@@ -20,8 +20,8 @@
 // Header-pure and engine-free, so the ordering is unit-tested off-engine and the backend stays thin
 // glue around it.
 
-#ifndef ZX_DECALORDER_COMPUTE_H
-#define ZX_DECALORDER_COMPUTE_H
+#ifndef ZX_SURFACEORDER_COMPUTE_H
+#define ZX_SURFACEORDER_COMPUTE_H
 
 namespace zx { namespace hwrender {
 
@@ -44,6 +44,44 @@ struct TranslucentDraw
 // The distances of two coplanar quads differ only by where each centre falls, so ordering marks
 // against each other by distance answers a question the numbers cannot actually settle.
 bool ComputeDrawsBefore(const TranslucentDraw &a, const TranslucentDraw &b);
+
+// [rc4l] The BUILD-time order: which piece's vertices go into the buffer before which.
+//
+// A different question from the one above, and it was answered by a lambda inside BuildSceneBuffer
+// with three rules stacked in it -- opaque before blended, then material, then base texture. Two of
+// those are batching (put identical state together so it draws once); one is CORRECTNESS, because a
+// translucent surface has to be drawn after everything it shows through and cannot be sorted into
+// the middle of the opaque run. Mixing the two in one unlabelled comparator is how the correctness
+// half gets "tidied up" later by someone reading it all as batching.
+//
+// Materials and textures compare as opaque handles: the values mean nothing, they only have to
+// order consistently, which is what puts equal state next to itself.
+struct ScenePiece
+{
+	int         blendMode;    // 0 opaque/alpha-tested, non-zero blended
+	const void *material;
+	const void *baseTex;      // the animation identity: two frames of one flat share a material
+};
+
+bool ComputePiecesBefore(const ScenePiece &a, const ScenePiece &b);
+
+// [rc4l] And GL's own rule for sprites, which is NOT the rule above.
+//
+// GL sorts translucent sprites by depth descending, breaking ties by spawn index -- forwards or
+// backwards depending on COMPATF_SPRITESORT, because maps exist that depend on the older behaviour.
+// The port sorts everything translucent together by distance, which is a different answer wherever
+// the two disagree.
+//
+// Both live here deliberately. One authority does not mean every renderer answers the same way --
+// GL is the oracle and its answer is the shipped one -- it means the answers are written down where
+// they can be compared, instead of three lines inside two comparators nobody reads together.
+struct GLSpriteOrder
+{
+	int depth;        // GL's own depth measure for the sprite
+	int spawnIndex;   // GLSprite::index, the order it entered the list
+};
+
+bool ComputeGLSpritesBefore(const GLSpriteOrder &a, const GLSpriteOrder &b, bool compatSpriteSort);
 
 } }   // namespace zx::hwrender
 

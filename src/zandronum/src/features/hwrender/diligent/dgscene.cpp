@@ -49,7 +49,7 @@
 #include "d_main.h"                          // gamestate
 #include "features/levelmesh/flatmesh.h"
 #include "features/levelmesh/projdecals.h"   // [rc4l] the marks the decal pass draws
-#include "features/hwrender/computation/decalorder_compute.h"   // the draw order, tested off-engine
+#include "features/hwrender/computation/surfaceorder_compute.h"   // the draw order, tested off-engine
 #include "features/hwrender/hud2d.h"
 #include "v_video.h"
 #include "gl/renderer/gl_renderer.h"
@@ -1784,7 +1784,7 @@ static void DrawBlended(Diligent::IDeviceContext *ctx)
 	// puts underneath it, landing at the same point -- traded places between frames and flickered
 	// through each other. Falling back to the buffer offset makes equal distances resolve the same
 	// way every frame.
-	// [rc4l] The rule itself lives in decalorder_compute, where it is unit-tested.
+	// [rc4l] The rule itself lives in surfaceorder_compute, where it is unit-tested.
 	//
 	// Three layering faults shipped from this comparator -- a scorch over its own glow, a scorch over
 	// the impact flash, a decal over a sprite -- and each was fixed by aiming another epsilon at the
@@ -2608,11 +2608,13 @@ static bool BuildSceneBuffer(FString &err)
 	// one FMaterial. Merged into one batch, they then get re-resolved every frame from whichever
 	// baseTex the batch happened to record, and the other surface is repainted with a texture that has
 	// nothing to do with it -- which is a lava floor turning into green foliage, at dbab02-flatswap.
+	// [rc4l] The rule is in surfaceorder_compute, beside the translucent one, because one of its
+	// three clauses is correctness and two are batching -- see ComputePiecesBefore.
 	std::sort(&order[0], &order[0] + npieces, [pieces](int a, int b) {
-		const int ba = pieces[a].blendMode != 0, bb = pieces[b].blendMode != 0;
-		if (ba != bb) return ba < bb;
-		if (pieces[a].material != pieces[b].material) return pieces[a].material < pieces[b].material;
-		return pieces[a].baseTex < pieces[b].baseTex;
+		zx::hwrender::ScenePiece pa, pb;
+		pa.blendMode = pieces[a].blendMode; pa.material = pieces[a].material; pa.baseTex = pieces[a].baseTex;
+		pb.blendMode = pieces[b].blendMode; pb.material = pieces[b].material; pb.baseTex = pieces[b].baseTex;
+		return zx::hwrender::ComputePiecesBefore(pa, pb);
 	});
 
 	g_sceneVB.Clear();
