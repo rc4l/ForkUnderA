@@ -36,6 +36,35 @@ thing being retired.
   a camera, a level or a screenshot, and every answer that has to be checked by looking at a picture
   costs a day the first time it is wrong.
 
+## Where it stands, measured
+
+`fua_surface_verify` compares the derivation against the capture on a loaded level. Three ladders,
+because three different things can be wrong and a single number cannot say which:
+
+| map | geometry | alignment | planes |
+|---|---|---|---|
+| dbab01 | 99.7% | 92.3% | 100.0% |
+| dbab02 | 97.9% | 79.4% | — |
+| dbab04 | 100.0% | 84.1% | 99.1% |
+| Sunder MAP10 | 99.9% | 95.6% | 99.4% |
+| Sunder MAP16 | 93.9% | 82.8% | 99.9% |
+
+**Rules the ladders found**, none of which was obvious from looking at a wall: an upper cannot start
+below the back floor *or* the front floor; a two-sided middle hangs by its own height rather than
+filling the opening; the material's render height is not the texture's scaled height; `expand=true`
+adds a two-pixel border that reads as "two units too tall everywhere"; alignment references the
+plane's *texture Z*, not its live height, from a reference **pair** that differs per part.
+
+**Hypotheses killed by measurement**, each of which looked right: the piece belonging to the other
+sidedef (0 pieces, on every map); a texture taller than its span pegging the other way (perfect
+correlation over the failures, and applying it halves the score — the correlation was selection bias,
+since pegging can only differ where the texture does not fill the span).
+
+**Open**: the peg condition on a subset of uppers and lowers — 58 pieces on dbab01, 127 on dbab04,
+2277 on Sunder MAP16 — all of which agree when the flag is flipped, none explained by sky or by the
+sidedef. And Sunder MAP16's fence category, where GL draws 40 units of a 128-unit texture with every
+visible input saying 128.
+
 ## What comes next, in order
 
 1. UV derivation for those spans — pegging, offsets, scaling.
