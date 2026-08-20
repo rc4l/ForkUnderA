@@ -102,10 +102,19 @@ makes. So those pieces did not go through it, or something moved them afterwards
 them are fragments `SplitWall` produced, whose v is interpolated from a parent that was already
 normalised; the rest are not yet accounted for.
 
-Computing the shift from the whole part's derived span instead of the surviving fragment's own
-top -- which is what the fragment inherited -- was tried and measured: dbab04 improves (84.1% to
-86.6%) and dbab01 and dbab02 get worse. So the fragment story is part of it and not all of it.
-That census is the thing to pull on next, and it is one command.
+Three ways of deciding WHERE the shift applies have now been tried and measured, and all three land
+on the same numbers -- 89.1% / 75.9% / 86.6% against 92.3% / 79.5% / 84.1% without it:
+
+1. every part `DoTexture` makes (upper, lower, one-sided middle);
+2. the shift computed from the whole part's derived span rather than the surviving fragment's
+   own top, which is what a fragment inherits;
+3. skipping `SplitWall` fragments entirely, which `GLWF_NOSPLITUPPER`/`LOWER` make identifiable.
+
+Three different rules producing one identical score says the discriminator is not in this family
+at all. The shift itself is not in doubt -- it is a function in `gl_walls.cpp` and
+`ComputeVShift` transcribes it with tests -- so what is missing is the condition, and the
+capture-time census is the thing to pull on: it is one command, and it says which walls arrive
+already inside their first texture copy and which do not.
 
 **Hypotheses killed by measurement**, each of which looked right: the piece belonging to the other
 sidedef (0 pieces, on every map); a texture taller than its span pegging the other way (perfect
