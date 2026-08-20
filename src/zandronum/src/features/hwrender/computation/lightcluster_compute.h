@@ -90,6 +90,35 @@ int ComputeClusterIndex(const ClusterGrid &g, int tileX, int tileY, int slice);
 // a point behind the camera, which has no cell.
 int ComputeClusterForPoint(const ClusterGrid &g, const float viewPos[3]);
 
+
+// The same question asked with a matrix instead of a basis.
+//
+// [rc4l] The backend has an MVP and nothing else -- BuildMVP composes the view and the projection
+// and keeps only the product -- so binning in view space would mean rebuilding a basis that already
+// exists in a matrix, from angles, a second time. Two derivations of the same camera is how the
+// yaw error that mirrored the entire world survived for weeks.
+//
+// Depth here is the clip w, which for this projection is the distance along the view axis. That is
+// deliberate and not an implementation detail: the fragment side reads 1.0 / gl_FragCoord.w, which
+// is the same number arrived at by the hardware. A cluster the CPU assigns and a cluster the shader
+// looks up have to agree exactly, and the surest way to make two sides agree is to have them read
+// the same quantity rather than two quantities that ought to be equal.
+//
+// Column-major, as the backend stores it: m[col * 4 + row].
+ClusterRange ComputeLightClustersFromMVP(const ClusterGrid &g, const float mvp[16],
+	const float worldPos[3], float radius);
+
+// Tile size in pixels and depth slices, shared by the binning pass and the shader.
+//
+// Compile-time constants rather than variables because both sides must agree on the grid, and the
+// shader -- a GLSL string that cannot read a C++ value -- spells them out. dgscene.cpp asserts the
+// two against each other, which only works if these are constant expressions.
+enum { kClusterTilePixels = 64, kClusterSlices = 24 };
+
+// The grid a screen of this size gets. One place, so the shader and the binning agree by
+// construction rather than by both being edited at the same time.
+ClusterGrid ComputeGridForScreen(int screenW, int screenH, float zNear, float zFar);
+
 }} // namespace zx::hwrender
 
 #endif // ZX_LIGHTCLUSTER_COMPUTE_H
