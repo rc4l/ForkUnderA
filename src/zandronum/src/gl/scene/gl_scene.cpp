@@ -621,13 +621,86 @@ void FGLRenderer::DrawScene(bool toscreen)
 	// default, because a mode that drops moving doors is not a default.
 	if (zx::hwrender::StandaloneActive())
 	{
-		if (!gl_draw_sync && toscreen)
+		// [rc4l] The per-frame bookkeeping CreateScene owns, minus the derivation.
+		//
+		// Last frame's sprites are dead the moment the camera moves, marks age on the frame clock,
+		// and a sector that moved has invalidated its cached geometry. None of that is the BSP walk;
+		// all of it still has to happen.
+		zx::levelmesh::DynClear();
+		zx::levelmesh::ClearSprites();
+		zx::levelmesh::UpdateProjectedDecals();
+		zx::levelmesh::InvalidateMovedSectors();
+
+		// [rc4l] A frame where the world moved goes back through GL, because the walk is what
+		// re-bakes a seg whose sector moved. Doors and lifts are brief and occasional, so this is a
+		// handful of frames rather than a mode -- and it is the difference between a renderer that
+		// skips the derivation and one that shows a door still shut.
+		if (zx::levelmesh::SectorsMovedLastFrame() == 0)
 		{
-			All.Unclock();
-			static_cast<OpenGLFrameBuffer*>(screen)->Swap();
-			All.Clock();
+			// [rc4l] Sprites still come from GL, deliberately.
+			//
+			// GLSprite::Process picks the frame for the viewing angle, applies the sector's light and
+			// the actor's own, handles stretching, clipping and every render style a mod can set. A
+			// second implementation of that would drift the way the backend's lighting drifted before
+			// CaptureShading existed. What is skipped is the BSP walk that used to FIND the actors --
+			// they are taken from the thinker list instead, which is where they live anyway.
+			//
+			// Sprites are a rounding error next to walls: 397 of them on Sunder MAP16 against 10,506
+			// walls, and GLSprite::Process culls most of what is handed to it.
+			// [rc4l] Culled against the frustum FIRST, or this costs what the walk cost.
+			//
+			// Handing every actor in the level to ProcessSprite measured 10.7 ms against GL's 10.5 --
+			// the walk was replaced by an equally expensive sweep, which is not a saving, it is a
+			// different bill. The BSP walk was doing two jobs and only one of them is being dropped:
+			// it derived the geometry AND it found the actors worth looking at.
+			//
+			// The cheap half of that is a matrix multiply per actor. The backend's own MVP is used, so
+			// there is no second derivation of the camera, and the actor's radius and height pad the
+			// test -- a sprite is wider than the point it stands on, and clipping one that is half on
+			// screen would be worse than drawing a few that are not.
+			SetupSprite.Clock();
+			const float *mvp = zx::hwrender::SceneMVP();
+			TThinkerIterator<AActor> it;
+			AActor *thing;
+			while ((thing = it.Next()) != NULL)
+			{
+				if (thing->Sector == NULL) continue;
+				if (mvp != NULL)
+				{
+					// Mesh space is (x, z-up, y), the same swap the vertices get.
+					const float px = FIXED2FLOAT(thing->x);
+					const float py = FIXED2FLOAT(thing->z) + FIXED2FLOAT(thing->height) * 0.5f;
+					const float pz = FIXED2FLOAT(thing->y);
+					const float w = mvp[3] * px + mvp[7] * py + mvp[11] * pz + mvp[15];
+					// A generous margin: the sprite's own size, plus slack for one that is taller or
+					// wider than the actor claims (a rocket's explosion, a stretched corpse).
+					const float pad = FIXED2FLOAT(thing->radius) + FIXED2FLOAT(thing->height) + 64.f;
+					if (w < -pad) continue;   // behind the camera
+					if (w > 0.f)
+					{
+						const float cx = mvp[0] * px + mvp[4] * py + mvp[8]  * pz + mvp[12];
+						const float cy = mvp[1] * px + mvp[5] * py + mvp[9]  * pz + mvp[13];
+						const float m = pad / w + 0.15f;   // pad in NDC, plus slack for the projection
+						if (cx / w < -1.f - m || cx / w > 1.f + m) continue;
+						if (cy / w < -1.f - m || cy / w > 1.f + m) continue;
+					}
+				}
+				ProcessSprite(thing, thing->Sector);
+			}
+			SetupSprite.Unclock();
+
+			if (!gl_draw_sync && toscreen)
+			{
+				All.Unclock();
+				static_cast<OpenGLFrameBuffer*>(screen)->Swap();
+				All.Clock();
+			}
+
+			// Drawing the sorted list is what runs GLSprite::Draw, and RegisterSprite with it. The
+			// geometry lists are empty in this mode, so this is the sprites and nothing else.
+			RenderTranslucent();
+			return;
 		}
-		return;
 	}
 
 	CreateScene();

@@ -76,6 +76,11 @@ void Record2D(const Quad2D &q);
 // the level has to have been baked first, and that bake needs GL frames to run in.
 bool StandaloneActive();
 
+// [rc4l] The camera the backend is drawing with, column-major. Exposed so a standalone frame can
+// cull actors against the same matrix rather than deriving the camera a second time -- two
+// derivations of one camera is how a yaw error mirrored the whole world for weeks.
+const float *SceneMVP();
+
 // This frame's quads, in submission order -- which IS the draw order, because 2D is painter's
 // algorithm all the way down and reordering it would put the status bar behind the world.
 const Quad2D *Quads2D(int &count);
