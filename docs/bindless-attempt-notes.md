@@ -1,8 +1,15 @@
-# Bindless materials in the Diligent backend — what an attempt found
+# Bindless materials in the Diligent backend
 
-Written after building it, watching it fail four different ways, and reverting. The design is right
-and the mechanism works; what stopped it is a size ceiling nobody has explained yet. This is the map
-of the minefield so the next attempt starts past it.
+**Landed.** The world picks its own texture out of an array and binds nothing per batch; thirteen
+bindings serve the level. `fua_dg_bindless` is on by default, `0` is the A/B, and `fua_dg_srbcost`
+prints what the array costs either way.
+
+Measured on Sunder MAP16, 165 batches, the same frozen frame: the draw phase goes from
+0.568 / 0.593 / 0.569 ms to 0.460 / 0.469 / 0.524 ms, and the picture is identical -- 0.0% over the
+world region, against a control of two shots with nothing changed that also reads 0.0%.
+
+What follows is the record of the attempt that failed first, kept because every one of its four
+failures is a trap the next person walks into in the same order.
 
 ## The design (unchanged, still right)
 
@@ -61,7 +68,7 @@ of the minefield so the next attempt starts past it.
    attempt did them in the wrong order: it added the array while keeping the SRBs, which multiplies
    the descriptor cost by the material count instead of dividing the draw cost by it.
 
-## Where to start next time
+## How it was finally done
 
 Do the two halves together, in this order:
 
