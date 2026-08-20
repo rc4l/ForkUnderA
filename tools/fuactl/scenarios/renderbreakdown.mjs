@@ -28,37 +28,52 @@ await cap.exec(c, 'r_drawplayersprites 0');
 
 // [rc4l] The clocks are free when nothing is measuring, which is why they have to be switched on --
 // and why the first frames after switching them on are the only ones worth reading.
+// [rc4l] The clocks report ONE FRAME, and one frame is not a measurement.
+//
+// Read once, the same map measured 11.7 ms and 15.1 ms twenty minutes apart -- a spread wider than
+// anything this phase is trying to win, sitting in the number every decision would be made against.
+// So: stand in one stated place, sample many frames, and report the median with the spread beside
+// it, so a change smaller than the noise is visibly smaller than the noise.
 await cap.exec(c, 'stat rendertimes');
-await cap.waitTics(c, FRAMES);
+await cap.waitTics(c, 40);
 
-const text = String(await cap.exec(c, 'fua_rendertimes'));
-console.log(`--- ${MAP}, ${FRAMES} tics of warm clocks ---`);
-console.log(text.trim());
+const SAMPLES = 15;
+const keys = {
+  all: /All=([\d.]+)/, wallRender: /W: Render=([\d.]+)/, wallSetup: /, Setup=([\d.]+), Clip/,
+  wallClip: /Clip=([\d.]+)/, flatRender: /F: Render=([\d.]+)/, flatSetup: /F: Render=[\d.]+, Setup=([\d.]+)/,
+  sprRender: /S: Render=([\d.]+)/, bsp: /BSP = ([\d.]+)/, draws: /Drawcalls=([\d.]+)/, finish: /Finish=([\d.]+)/,
+};
+const samples = {};
+for (const k of Object.keys(keys)) samples[k] = [];
+let counts = '';
+for (let i = 0; i < SAMPLES; i++) {
+  await cap.waitTics(c, 12);
+  const t = String(await cap.exec(c, 'fua_rendertimes'));
+  if (!counts) counts = (t.split(String.fromCharCode(10))[0] || '').trim();
+  for (const [k, re] of Object.entries(keys)) {
+    const v = Number(re.exec(t)?.[1] ?? NaN);
+    if (Number.isFinite(v)) samples[k].push(v);
+  }
+}
+const med = (a) => { const s = [...a].sort((x, y) => x - y); return s.length ? s[Math.floor(s.length / 2)] : NaN; };
+const spread = (a) => (a.length ? Math.max(...a) - Math.min(...a) : NaN);
 
-const num = (re) => Number(re.exec(text)?.[1] ?? NaN);
-const wallRender = num(/W: Render=([\d.]+)/);
-const wallSetup = num(/Setup=([\d.]+), Clip/);
-const wallClip = num(/Clip=([\d.]+)/);
-const flatRender = num(/F: Render=([\d.]+)/);
-const flatSetup = num(/F: Render=[\d.]+, Setup=([\d.]+)/);
-const sprRender = num(/S: Render=([\d.]+)/);
-const all = num(/All=([\d.]+)/);
-const bsp = num(/BSP = ([\d.]+)/);
-const draws = num(/Drawcalls=([\d.]+)/);
-const finish = num(/Finish=([\d.]+)/);
-
-const rows = [
-  ['walls: render', wallRender], ['walls: setup', wallSetup], ['walls: clip', wallClip],
-  ['flats: render', flatRender], ['flats: setup', flatSetup],
-  ['sprites: render', sprRender],
-  ['bsp walk', bsp], ['draw calls', draws], ['finish', finish],
-];
+const all = med(samples.all);
+console.log(`--- ${MAP}, median of ${SAMPLES} samples ---`);
+console.log(counts);
+console.log(`frame ${all.toFixed(3)} ms  (spread ${spread(samples.all).toFixed(3)} across samples)`);
 console.log('');
-console.log(`share of the ${all.toFixed(3)} ms frame:`);
-for (const [name, ms] of rows.sort((a, b) => b[1] - a[1])) {
-  if (!Number.isFinite(ms)) continue;
-  const pct = all > 0 ? (100 * ms / all) : 0;
-  console.log(`  ${name.padEnd(16)} ${ms.toFixed(3)} ms  ${'#'.repeat(Math.round(pct / 2)).padEnd(50)} ${pct.toFixed(1)}%`);
+const rows = [
+  ['walls: render', 'wallRender'], ['walls: setup', 'wallSetup'], ['walls: clip', 'wallClip'],
+  ['flats: render', 'flatRender'], ['flats: setup', 'flatSetup'], ['sprites: render', 'sprRender'],
+  ['bsp walk', 'bsp'], ['draw calls', 'draws'], ['finish', 'finish'],
+];
+for (const [name, key] of rows.map((r) => r).sort((a, b) => med(samples[b[1]]) - med(samples[a[1]]))) {
+  const m = med(samples[key]);
+  if (!Number.isFinite(m)) continue;
+  const pct = all > 0 ? (100 * m / all) : 0;
+  console.log(`  ${name.padEnd(16)} ${m.toFixed(3)} ms +-${(spread(samples[key]) / 2).toFixed(3)}  ` +
+    `${'#'.repeat(Math.round(pct / 2)).padEnd(50)} ${pct.toFixed(1)}%`);
 }
 
 await cap.exec(c, 'stat rendertimes');
