@@ -111,3 +111,46 @@ TEST(WallUV, APeggedTextureDoesNotMoveWhenThePlanesDo)
 	EXPECT_FLOAT_EQ(ComputeWallV(32.f, refTop, 64.f), ComputeWallV(32.f, refTop, 64.f));
 }
 
+// [rc4l] The step that closed the "pegging" mystery.
+//
+// Every alignment disagreement on the first map measured -- 91 of them, filed under pegging through
+// two wrong rules -- was GL sliding the wall back into the first copy of its texture afterwards.
+// The formula had been right for a while; the function after it was missing.
+TEST(WallUV, TheWallSlidesBackIntoTheFirstCopyOfItsTexture)
+{
+	EXPECT_FLOAT_EQ(2.f, ComputeVShift(2.25f, 2.75f));
+	EXPECT_FLOAT_EQ(0.f, ComputeVShift(0.f, 0.5f));
+	// Already inside the first copy: nothing moves.
+	EXPECT_FLOAT_EQ(0.f, ComputeVShift(0.75f, 0.9f));
+}
+
+// A negative v is above the top of the texture, and floor() of it is not truncation. Getting this
+// wrong moves the wall the wrong way by a whole texture and looks exactly like the fault it fixes.
+TEST(WallUV, ABoveTheTextureRoundsDownNotTowardZero)
+{
+	EXPECT_FLOAT_EQ(-1.f, ComputeVShift(-0.875f, -0.875f));
+	EXPECT_FLOAT_EQ(-3.f, ComputeVShift(-2.5f, -2.1f));
+}
+
+// On a sloped wall the two top corners sit at different v, and GL takes the smaller -- which is not
+// always the left one. A wall that slopes up to the right is the case that tells them apart.
+TEST(WallUV, TheSmallerTopCornerDecides)
+{
+	EXPECT_FLOAT_EQ(1.f, ComputeVShift(1.5f, 2.5f));
+	EXPECT_FLOAT_EQ(1.f, ComputeVShift(2.5f, 1.5f));
+}
+
+TEST(WallUV, AWallFillingExactlyOneTextureIsClamped)
+{
+	EXPECT_TRUE(ComputeWallClampsY(0.f, 0.f, 1.f, 1.f));
+	// Starts at the top and stops short: still clamped, because nothing wraps.
+	EXPECT_TRUE(ComputeWallClampsY(0.f, 0.f, 0.6f, 0.6f));
+	// Ends at the bottom having started partway down: also clamped.
+	EXPECT_TRUE(ComputeWallClampsY(0.4f, 0.4f, 1.f, 1.f));
+}
+
+TEST(WallUV, AWallThatWrapsIsNotClamped)
+{
+	EXPECT_FALSE(ComputeWallClampsY(0.f, 0.f, 2.f, 2.f));
+	EXPECT_FALSE(ComputeWallClampsY(0.3f, 0.3f, 0.9f, 0.9f));
+}

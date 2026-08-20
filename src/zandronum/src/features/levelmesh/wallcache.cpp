@@ -70,6 +70,19 @@ int LevelGeneration() { return g_levelGeneration; }
 void AllocForLevel(int numsegs)
 {
 	g_levelGeneration++;
+	// [rc4l] The flats and sprites belong to the level too, and used to outlive it.
+	//
+	// AllocForLevel resized the WALL cache and left the flat table alone, so after a map change
+	// every flat key still named a subsector index from the previous level and still owned a mesh
+	// range in an arena that MeshInitForLevel was about to wipe. Anything that read a cached flat
+	// afterwards -- the standalone Vulkan frame, or fua_surface_verify -- was reading the old
+	// level through pointers the new one had already reused, which took the process down with
+	// nothing in the log.
+	//
+	// Cleared HERE and not in MeshInitForLevel because ClearFlats gives its ranges back to the
+	// mesh, and this runs while that mesh is still the one that handed them out.
+	zx::levelmesh::ClearFlats();
+	zx::levelmesh::ClearSprites();
 	g_cache.Clear();
 	g_uncacheable.Clear();
 	if (numsegs <= 0) return;
@@ -111,6 +124,7 @@ void AllocForLevel(int numsegs)
 		g_uncacheable[i] = false;
 	}
 	g_captureSeg = -1;
+	ResetCaptureVRangeStats();
 	ResetStats();
 }
 
@@ -392,9 +406,50 @@ static_assert(offsetof(GLWall, numwalls) == 184, "GLWall fields moved: see Forge
 static_assert(offsetof(GLWall, dynlightindex) == 176, "GLWall fields moved: see ForgetFrameState above.");
 #endif
 
+// [rc4l] Whether the wall arrives here already inside the first copy of its texture.
+//
+// CheckTexturePosition is supposed to guarantee that for everything DoTexture makes, and the
+// derivation in features/surfaces is scored against it. Reading the cache afterwards said 129 walls
+// on one map were outside it, which is either a producer that skips the step or something
+// rewriting v after capture -- and those two have completely different fixes. This counts it at
+// the moment of capture, which is the only place the two can be told apart.
+static int g_recTopInRange[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
+static int g_recTopOutOfRange[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
+static int g_recTopOutOfRangeSplit = 0;
+
+int CaptureVOutOfRangeSplits() { return g_recTopOutOfRangeSplit; }
+
+// Cleared per level. Cumulative counts across a session say more about which segs were re-processed
+// every frame than about the level, and a diagnostic that answers a different question than the one
+// asked is worse than none.
+void ResetCaptureVRangeStats()
+{
+	for (int i = 0; i < 8; i++) { g_recTopInRange[i] = 0; g_recTopOutOfRange[i] = 0; }
+	g_recTopOutOfRangeSplit = 0;
+}
+
+void GetCaptureVRangeStats(int type, int &inRange, int &outOfRange)
+{
+	if (type < 0 || type >= 8) { inRange = outOfRange = 0; return; }
+	inRange = g_recTopInRange[type];
+	outOfRange = g_recTopOutOfRange[type];
+}
+
 void RecordPiece(const GLWall &wall, int list)
 {
 	if (g_captureSeg < 0) return;
+	if (wall.gltexture != NULL)
+	{
+		const float topV = (wall.uplft.v < wall.uprgt.v) ? wall.uplft.v : wall.uprgt.v;
+		int *bucket = (topV >= 0.f && topV < 1.f) ? g_recTopInRange : g_recTopOutOfRange;
+		if (wall.type >= 0 && wall.type < 8) bucket[wall.type]++;
+		// SplitWall marks the fragments it makes, and a fragment's v is interpolated from a parent
+		// that CheckTexturePosition already normalised -- so a fragment can start deep inside the
+		// texture while its parent did not. If the out-of-range walls are the fragments, the
+		// derivation is not missing a rule, it is being compared against a piece of a wall.
+		if (!(topV >= 0.f && topV < 1.f) && (wall.flags & (GLWall::GLWF_NOSPLITUPPER | GLWall::GLWF_NOSPLITLOWER)))
+			g_recTopOutOfRangeSplit++;
+	}
 	// [rc4l] A translucent wall may be BAKED but must never be REPLAYED.
 	//
 	// GLDrawList's BSP sorter indexes the per-frame walls[] array directly in a dozen places

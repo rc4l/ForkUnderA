@@ -136,6 +136,15 @@ int  SegFate(int segIndex);
 bool SegHasBakedGeometry(int segIndex);
 void ResetStats();
 
+// [rc4l] How many captured walls of a RENDERWALL_ type arrived with their top v inside the first
+// copy of the texture, counted at capture rather than read back from the cache -- see RecordPiece.
+void GetCaptureVRangeStats(int type, int &inRange, int &outOfRange);
+
+// How many of those out-of-range walls were fragments SplitWall made.
+int CaptureVOutOfRangeSplits();
+
+void ResetCaptureVRangeStats();
+
 // [rc4l] How much of the level the wall mesh actually holds, as opposed to how much it could.
 //
 // A full-level bake grew the mesh from 8408 to 21886 pieces and the obvious question -- is that all

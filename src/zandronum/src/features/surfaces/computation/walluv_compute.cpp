@@ -3,6 +3,8 @@
 
 #include "features/surfaces/computation/walluv_compute.h"
 
+#include <math.h>
+
 namespace zx { namespace surfaces {
 
 float ComputeWallU(float alongLine, float xOffset, float texWidth)
@@ -26,6 +28,23 @@ float ComputeTextureTop(float refCeiling, float refFloor, float texHeight, bool 
 	// on refFloor. Written as it is written there, so the two cannot drift.
 	if (pegged) top += texHeight - ((refCeiling - refFloor) + vOffset);
 	return top;
+}
+
+
+float ComputeVShift(float vTopLeft, float vTopRight)
+{
+	// GL takes the SMALLER of the two top corners, which on a sloped wall is not always the left one.
+	const float top = ( vTopLeft < vTopRight ) ? vTopLeft : vTopRight;
+	return floorf( top );
+}
+
+bool ComputeWallClampsY(float vUpLeft, float vUpRight, float vLoLeft, float vLoRight)
+{
+	// Written as GL writes it: either the wall starts exactly at the top of the texture and ends
+	// within it, or it ends exactly at the bottom and starts within it. Both tests are on exact
+	// equality there, so they are here -- a tolerance would clamp walls GL leaves wrapping.
+	return ( vUpLeft == 0.f && vUpRight == 0.f && vLoLeft <= 1.f && vLoRight <= 1.f ) ||
+	       ( vUpLeft >= 0.f && vUpRight >= 0.f && vLoLeft == 1.f && vLoRight == 1.f );
 }
 
 }} // namespace zx::surfaces
