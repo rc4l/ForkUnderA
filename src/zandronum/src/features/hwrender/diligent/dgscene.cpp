@@ -230,6 +230,9 @@ CVAR(Bool, fua_dg_cullbatches, false, 0)
 CVAR(Bool, fua_dg_bindless, false, CVAR_ARCHIVE)
 // Sprites and decals on the shared binding as well. Off: see WorldSRB.
 CVAR(Bool, fua_dg_bindless_dyn, false, 0)
+// [rc4l] Collapse adjacent batches into one draw. Only ever possible with bindless on, and separable
+// from it so "the array is wrong" and "the merge is wrong" can be told apart in one run.
+CVAR(Bool, fua_dg_mergedraws, true, 0)
 static int g_batchesCulled = 0, g_batchesDrawn = 0;
 
 // Set once the level has been baked under standalone -- the bake itself needs GL frames.
@@ -495,6 +498,11 @@ static bool g_matSlotOverflow = false;
 static bool g_matSlotsDirty = true;
 // Bounded retries for slots that came back white -- see FillMaterialArrayStatic.
 static int g_matSlotRetries = 0;
+// [rc4l] The level this table describes. Nothing is filled from it until the scene has been rebuilt
+// for that level, because filling means calling GetMaterialSRV -- which CACHES what it makes, keyed
+// on the FMaterial address. Doing that with the previous level's pointers, in the window before the
+// new level's geometry arrives, teaches the cache things the new level then believes.
+static int g_bindlessGen = -1;
 
 static void ResetMaterialSlots()
 {
@@ -529,6 +537,9 @@ int MaterialSlotFor(const void *material, int translation)
 }
 
 int MaterialSlotCount() { return (int)g_matSlotTable.Size(); }
+// Force the array to be built again, for telling a stale fill from a wrong index.
+void DirtyMaterialSlots() { g_matSlotsDirty = true; g_matSlotRetries = 0; }
+
 
 // [rc4l] ONE binding per pipeline, which is the whole point.
 //
@@ -640,6 +651,12 @@ static void UpdateMaterialSlotResolutions()
 
 static void RefreshBindless()
 {
+	if (zx::levelmesh::LevelGeneration() != g_bindlessGen)
+	{
+		ReleaseWorldSRBs();
+		g_bindlessReady = false;
+		return;
+	}
 	if (fua_dg_animate) UpdateMaterialSlotResolutions();
 	if (!g_matSlotsDirty) return;
 	g_matSlotsDirty = false;
@@ -3006,6 +3023,7 @@ static bool BuildSceneBuffer(FString &err)
 	// count -- and the symptom of that is walls quietly turning white on the third map rather than
 	// anything that looks like a table filling up.
 	ResetMaterialSlots();
+	g_bindlessGen = zx::levelmesh::LevelGeneration();
 	const void *cur = (const void *)(size_t)-1;
 	const void *curBase = (const void *)(size_t)-1;
 	int curBlend = -1;
@@ -4883,7 +4901,7 @@ static void DrawWorld(Diligent::IDeviceContext *ctx)
 
 			// A run continues only while the next range starts where the last one ended AND wants the
 			// same binding. Without bindless that is one batch at a time, exactly as before.
-			const bool extends = take && runCount != 0 && srb == bound &&
+			const bool extends = fua_dg_mergedraws && take && runCount != 0 && srb == bound &&
 				b->first == runFirst + runCount;
 			if (extends) { runCount += b->count; g_batchesDrawn++; continue; }
 
@@ -5052,6 +5070,17 @@ static bool AutoSetupForLevel()
 		ReleaseBatchSRBs();
 		ReleaseMaterialSRBs();
 		for (unsigned int b = 0; b < g_batches.Size(); b++) g_batches[b].srb = NULL;
+		// [rc4l] The material SLOT TABLE holds the same stale pointers, and it is worse than the caches
+		// because something reads it every frame.
+		//
+		// Between a level change and the new scene upload, RefreshBindless would fill the array from
+		// the old level's FMaterial pointers -- and GetMaterialSRV caches what it makes of them, keyed
+		// on those same addresses. The new level then allocates its materials at the addresses the old
+		// ones just vacated, hits the poisoned cache, and every surface comes up wearing some other
+		// surface's texture. 93% of the frame on dbab04, and only ever after a map change, which is why
+		// it looked like the map rather than the transition.
+		ResetMaterialSlots();
+		ReleaseWorldSRBs();
 		ReleaseMaterials();
 		// Camera targets are keyed on FMaterial* too, and go stale for exactly the same reason.
 		ReleaseCameraTargets();
@@ -5153,6 +5182,34 @@ void LiveFrame()
 }
 
 // [rc4l] What the last dynamic pass actually drew, split by blend mode.
+void SlotReport(int n, FString &out)
+{
+	out.Format("slots %u, batches %u" "\n", g_matSlotTable.Size(), g_batches.Size());
+	for (int i = 0; i < n && (unsigned)i < g_batches.Size(); i++)
+	{
+		const SceneBatch &b = g_batches[i];
+		int slot = -1;
+		for (unsigned k = 0; k < g_matSlotTable.Size(); k++)
+			if (g_matSlotTable[k].material == b.material && g_matSlotTable[k].translation == 0) { slot = (int)k; break; }
+		const char *bname = "?";
+		if (b.material && ((FMaterial *)b.material)->tex) bname = ((FMaterial *)b.material)->tex->Name.GetChars();
+		const char *sname = "-";
+		if (slot > 0 && g_matSlotTable[slot].resolved &&
+		    ((FMaterial *)g_matSlotTable[slot].resolved)->tex)
+			sname = ((FMaterial *)g_matSlotTable[slot].resolved)->tex->Name.GetChars();
+		// [rc4l] ...and what the VERTEX actually says, which is the only number the GPU sees.
+		// A lookup that agrees with the table proves nothing if the buffer was written against a
+		// different table.
+		const int inVB = (b.first < g_sceneVB.Size()) ? (int)(g_sceneVB[b.first].lightIndex + 0.5f) : -1;
+		const char *vname = "-";
+		if (inVB > 0 && (unsigned)inVB < g_matSlotTable.Size() && g_matSlotTable[inVB].resolved &&
+		    ((FMaterial *)g_matSlotTable[inVB].resolved)->tex)
+			vname = ((FMaterial *)g_matSlotTable[inVB].resolved)->tex->Name.GetChars();
+		out.AppendFormat("  batch %d verts %u..%u material %s -> slot %d holding %s | vertex says %d = %s" "\n",
+			i, b.first, b.first + b.count, bname, slot, sname, inVB, vname);
+	}
+}
+
 void DynStats(FString &report)
 {
 	int sprites = zx::levelmesh::SpritePieceCount();
@@ -5546,6 +5603,25 @@ CCMD( fua_dg_dynstats )
 //
 // This prints the multiplier for the map that is loaded, so the next attempt can see the number
 // before it spends an afternoon on the symptom.
+// [rc4l] What each batch thinks its material is, against what the slot table says.
+//
+// A surface drawn with another surface's texture has exactly two causes and they need opposite
+// fixes: the vertex is carrying the wrong slot number, or the slot is carrying the wrong texture.
+// This prints both sides for the first batches so the two can be told apart instead of argued about.
+CCMD( fua_dg_bindless_rebuild )
+{
+	zx::hwrender::DirtyMaterialSlots( );
+	Printf( "material array will be rebuilt next frame\n" );
+}
+
+CCMD( fua_dg_slots )
+{
+	const int n = ( argv.argc( ) > 1 ) ? atoi( argv[1] ) : 12;
+	FString report;
+	zx::hwrender::SlotReport( n, report );
+	Printf( "%s" "\n", report.GetChars( ) );
+}
+
 CCMD( fua_dg_srbcost )
 {
 	const int slots = ( argv.argc( ) > 1 ) ? atoi( argv[1] ) : 512;

@@ -11,32 +11,44 @@ both controls (off/off and on/on) also at 0.0%.
 
 ## Why it is not on
 
-**dbab04 draws almost every surface with some other surface's texture** — 89.9% of the frame, mean
-|d| 44. Not white, not missing: wrong. MAP16, MAP10 and dbab01 are exact on the same build, so this
-is a level-shaped difference rather than a pipeline one, and the obvious suspects have been measured
-and are not it:
+**After a map change, dbab04 draws almost every surface with some other surface's texture** — 82-93%
+of the frame, mean |d| 26-47. Not white, not missing: wrong.
 
-- The slot census is clean: 108 slots, none falling back to white, every pipeline filled and bound,
-  every draw taking the shared binding.
-- Animated textures were suspected and are not the cause. Two versions were tried -- pushing the new
-  frame from the animation pass, and resolving each slot once a frame in `UpdateMaterialSlotResolutions`
-  -- and the second is what ships, but turning animation off entirely leaves dbab04 just as wrong.
-- The draw merge is not it either: it runs with bindless off as well (96 draws instead of 111 on
-  dbab04, from batches sharing one material) and that path is byte-identical to the old one.
+The transition is the whole of it, and that took a while to see:
 
-dbab04 is the map with 337 sloped pieces and moving sectors, so the first thing to look at is whether
-the vertex buffer is ever re-emitted in a pass that does not also rebuild the slot table -- a stale
-index is exactly "the right texture, on the wrong wall".
+- Loaded at launch and toggled on, dbab04 is **0.0%** — pixel-identical, with the draw merge on as
+  well. So is dbab01, so are Sunder MAP10 and MAP16.
+- Reached by `map dbab04` from another level, it is wrong every time, whether bindless was on across
+  the change or switched on afterwards.
+
+What has been measured and is NOT the cause: the slot census (108 slots, none falling back to white,
+all thirteen pipelines filled and bound, every draw on the shared binding); animated textures (wrong
+with animation off too, and the resolution scan was rewritten once already — see
+`UpdateMaterialSlotResolutions` for the version that got it wrong and why); the draw merge (it runs
+with bindless off as well, and that path is byte-identical to the old one); a stale array (forcing a
+rebuild with `fua_dg_bindless_rebuild` changes nothing).
+
+And the thing that narrows it hardest, from `fua_dg_slots`: **the batch's material, the slot the
+table gives it, and the slot the vertex actually carries all agree**, name for name, in the broken
+state. So the index is right at every step and the fault is in the last link — what
+`GetMaterialSRV` hands back for a correct material pointer.
+
+That link has a known hazard, documented at `AutoSetupForLevel`: the texture cache is keyed on raw
+`FMaterial*`, and a new level's materials land at the addresses the old level's just vacated.
+`ReleaseMaterials` exists for exactly that. Bindless calls `GetMaterialSRV` from a different place
+and at a different time than the per-material path did, so the next thing to do is find which of
+those calls happens while the pointers are in flight — the guard on `g_bindlessGen` was an attempt at
+that and it is not sufficient.
 
 The second open item is smaller and separate: **sprites** get a valid slot and take the array, and
-some of them -- items, torch flames -- still draw as flat white rectangles. The dynamic path
-therefore writes slot 0, which sends it back to the bound texture and to exactly the path it was on
-before. `fua_dg_bindless_dyn 1` puts it back on the array.
+some of them — items, torch flames — still draw as flat white rectangles. The dynamic path therefore
+writes slot 0, which sends it back to the bound texture and to exactly the path it was on before.
+`fua_dg_bindless_dyn 1` puts it back on the array.
 
-Diagnostics to start from, all of them already there: `fua_dg_srbcost`, the bindless section of
-`fua_dg_dynstats` (slots, white fallbacks, dynamic pieces on slot 0, per-pipeline fill state, which
-binding each dynamic draw took), and debug views `fua_dg_lightmode 16` (material slot as a grey ramp)
-and `17` (is this fragment taking the array).
+Diagnostics to start from, all already there: `fua_dg_srbcost`, `fua_dg_slots` (batch material vs
+table slot vs what the vertex carries), `fua_dg_bindless_rebuild`, the bindless section of
+`fua_dg_dynstats`, and debug views `fua_dg_lightmode 16` (material slot as a grey ramp) and `17` (is
+this fragment taking the array).
 
 What follows is the record of the attempt that failed first, kept because every one of its four
 failures is a trap the next person walks into in the same order.
