@@ -2522,13 +2522,20 @@ struct VBSlot
 	unsigned int batch;
 	bool         blended;
 };
-static TArray<VBSlot> g_vbSlots;      // sorted by meshOffset
+static TArray<VBSlot> g_vbSlots;
+// [rc4l] Offset -> slot, because appending breaks the sortedness a binary search needs and
+// re-sorting 115,000 slots to place one new piece would defeat the point of appending.
+static TMap<unsigned int, unsigned int> g_slotByOffset;
 
 
 // The layout this buffer was built for. The mesh bumps its generation when a piece appears, moves,
 // resizes or changes the base texture or blend mode that decides its batch -- so this comparison is
 // one integer rather than a hash of 115,000 pieces recomputed every frame.
 static unsigned int g_builtLayoutGen = 0;
+// Vertices the GPU buffer can hold, which is more than the scene currently uses -- see the slack
+// at creation. g_appendedVerts is how much of that slack has been spent since the last rebuild.
+static unsigned int g_vbCapacity = 0;
+static int g_appendedVerts = 0, g_geomAppends = 0;
 
 static bool BuildSceneBuffer(FString &err)
 {
@@ -2647,10 +2654,20 @@ static bool BuildSceneBuffer(FString &err)
 	std::sort(&g_vbSlots[0], &g_vbSlots[0] + g_vbSlots.Size(),
 		[](const VBSlot &x, const VBSlot &y) { return x.meshOffset < y.meshOffset; });
 	g_builtLayoutGen = zx::levelmesh::MeshLayoutGeneration();
+	g_appendedVerts = 0;
+	g_slotByOffset.Clear();
+	for (unsigned i = 0; i < g_vbSlots.Size(); i++) g_slotByOffset.Insert(g_vbSlots[i].meshOffset, i);
 
 	Diligent::BufferDesc bd;
 	bd.Name = "fua scene VB";
-	bd.Size = (Diligent::Uint64)g_sceneVB.Size() * sizeof(SceneVertex);
+	// [rc4l] A quarter more room than the level needs right now.
+	//
+	// A piece that appears mid-game -- a seg baked the first time it is looked at, a surface re-baked
+	// at a different size -- can then be APPENDED rather than forcing the whole buffer to be rebuilt
+	// and re-uploaded. Without slack there is nowhere to put it and every new surface in the level
+	// costs a full rebuild, which is what Sunder MAP16 was doing 21 times a tic.
+	g_vbCapacity = (unsigned int)(g_sceneVB.Size() + g_sceneVB.Size() / 4 + 1024);
+	bd.Size = (Diligent::Uint64)g_vbCapacity * sizeof(SceneVertex);
 	// [rc4l] USAGE_DEFAULT, not IMMUTABLE. The level mesh is not as static as its name suggests:
 	// doors, lifts and crushers move sector planes, the wall cache re-bakes those segs, and the
 	// vertices change. An IMMUTABLE buffer cannot be updated at all, so every moving thing in the
@@ -2670,12 +2687,16 @@ static bool BuildSceneBuffer(FString &err)
 		bd.Mode = Diligent::BUFFER_MODE_STRUCTURED;
 		bd.ElementByteStride = sizeof(float);
 	}
-	Diligent::BufferData bdata;
-	bdata.pData = &g_sceneVB[0];
-	bdata.DataSize = bd.Size;
+	// [rc4l] Created empty, then filled -- Diligent refuses initial data smaller than the buffer,
+	// and the buffer is deliberately larger than the level so pieces can be appended into the slack.
+	// It rejected this outright ("initial DataSize must be larger than the buffer size") and the
+	// backend then drew nothing at all, which is at least a loud way to fail.
 	g_vb.Release();
-	GetDevice()->CreateBuffer(bd, &bdata, &g_vb);
+	GetDevice()->CreateBuffer(bd, nullptr, &g_vb);
 	if (!g_vb) { err = "vertex buffer creation failed"; return false; }
+	if (auto *ctx = GetContext())
+		ctx->UpdateBuffer(g_vb, 0, (Diligent::Uint64)g_sceneVB.Size() * sizeof(SceneVertex),
+			&g_sceneVB[0], Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
 	// [rc4l] Give every batch its own SRB now that the list is final. Sized once, so the RefCntAutoPtrs
 	// never move and the raw pointers handed to SceneBatch stay valid.
@@ -2777,6 +2798,79 @@ bool SceneUpload(FString &report)
 // material-sorted buffer, so nothing needs re-sorting. A surface that changes its *material* mid-game
 // would need a full re-upload; nothing in Doom does that outside of animation, which is handled
 // separately by swapping the SRB.
+// [rc4l] Put a piece that has just appeared at the END of the buffer, in a batch of its own.
+//
+// The material sort exists to MINIMISE batches, not to make them correct: the opaque pass draws its
+// batches in whatever order the list holds them, so an appended surface drawing on its own costs
+// one extra draw call and nothing else. That is the whole reason a new seg no longer has to rebuild
+// the world -- on Sunder MAP16, 21 pieces a tic were each doing exactly that.
+//
+// Blended pieces are refused: the translucent pass sorts batches by centroid every frame and a
+// piece appended without one would sort as if it were at the origin. They fall back to the rebuild,
+// which computes the centroid properly.
+static bool AppendPiece(Diligent::IDeviceContext *ctx, const zx::levelmesh::MeshPiece &p,
+	const FFlatVertex *src)
+{
+	if (p.blendMode != 0 || p.range.count == 0) return false;
+	if ((unsigned int)(g_sceneVB.Size() + p.range.count) > g_vbCapacity) return false;
+
+	SceneBatch b;
+	b.material = p.material;
+	b.first = (unsigned int)g_sceneVB.Size();
+	b.count = p.range.count;
+	b.masked = MaterialIsMasked(p.material);
+	b.baseTex = p.baseTex;
+	b.resolved = p.material;
+	b.blend = 0;
+	b.sortX = b.sortY = b.sortZ = 0.f;
+	b.normX = p.normX; b.normY = p.normY; b.normZ = p.normZ;
+	b.srb = GetMaterialSRB(g_maskedPSO.RawPtr(), p.material);
+	if (b.srb == NULL) return false;   // no binding, no draw -- and a rebuild will do it properly
+	g_batches.Push(b);
+
+	VBSlot slot;
+	slot.meshOffset = p.range.offset;
+	slot.count = p.range.count;
+	slot.vbStart = b.first;
+	slot.batch = g_batches.Size() - 1;
+	slot.blended = false;
+
+	for (unsigned int v = 0; v < p.range.count; v++)
+	{
+		SceneVertex dv;
+		EmitPieceVertex(p, src[p.range.offset + v], slot.batch, dv);
+		g_sceneVB.Push(dv);
+	}
+	ctx->UpdateBuffer(g_vb, (Diligent::Uint64)slot.vbStart * sizeof(SceneVertex),
+		(Diligent::Uint64)slot.count * sizeof(SceneVertex), &g_sceneVB[slot.vbStart],
+		Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+
+	const unsigned int idx = g_vbSlots.Push(slot);
+	g_slotByOffset.Insert(slot.meshOffset, idx);
+	g_appendedVerts += (int)slot.count;
+	g_geomAppends++;
+	return true;
+}
+
+// [rc4l] Collapse a slot the world no longer uses, without moving anything after it.
+//
+// A piece that was re-baked at a different size lives somewhere else now, and its old vertices are
+// still in the buffer being drawn. Compacting them out would move every slot behind them; giving
+// them zero area costs one upload and the rasteriser discards them. The waste is reclaimed at the
+// next full rebuild, which is what the slack budget above is for.
+static void RetireSlot(Diligent::IDeviceContext *ctx, VBSlot &slot)
+{
+	for (unsigned int v = 0; v < slot.count; v++)
+	{
+		SceneVertex &dv = g_sceneVB[slot.vbStart + v];
+		dv.x = dv.y = dv.z = 0.f;
+	}
+	ctx->UpdateBuffer(g_vb, (Diligent::Uint64)slot.vbStart * sizeof(SceneVertex),
+		(Diligent::Uint64)slot.count * sizeof(SceneVertex), &g_sceneVB[slot.vbStart],
+		Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	slot.count = 0;   // nothing here to patch again
+}
+
 static void RefreshMovedGeometry(Diligent::IDeviceContext *ctx)
 {
 	if (!g_vb || g_sceneVB.Size() == 0) return;
@@ -2811,17 +2905,19 @@ static void RefreshMovedGeometry(Diligent::IDeviceContext *ctx)
 	// to give up on patching but to NOTICE: a signature over every piece's offset, size, material,
 	// base texture and blend mode says whether the layout is the one this buffer was built for. When
 	// it is not, the full rebuild still happens, exactly as before.
-	const bool sameLayout = (zx::levelmesh::MeshLayoutGeneration() == g_builtLayoutGen) &&
-		(g_vbSlots.Size() > 0) && g_vb;
-
-	if (sameLayout)
+	// [rc4l] A layout change no longer means a rebuild.
+	//
+	// It used to: the generation moved, the whole buffer was sorted and re-uploaded, and on Sunder
+	// MAP16 that happened every frame because ~21 pieces a tic are baked or re-baked at a new size.
+	// Rebuilds went 6506 -> 22 by patching what moved, and the frame did not shift at all, because
+	// the 22 that remained were each 17 ms.
+	//
+	// So the three things that can happen to a piece are handled where they happen: patched in place
+	// if it is the size its slot expects, appended at the end if it is new or has outgrown its slot,
+	// and collapsed to zero area if the world has stopped using it. A full rebuild is what happens
+	// when the slack runs out, which also reclaims everything the collapses left behind.
+	if (g_vbSlots.Size() > 0 && g_vb)
 	{
-		// [rc4l] Walk the RANGES that moved and find their pieces, not every piece asking whether it
-		// moved.
-		//
-		// The first version of this did the latter -- 115,000 pieces, each tested against up to 4096
-		// dirty ranges -- and measured 23 ms in a phase that exists to save time. The slots are sorted
-		// by mesh offset, so each dirty range is a binary search and a short walk.
 		int ndirty = 0;
 		const zx::levelmesh::MeshRange *dirty = zx::levelmesh::MeshTakeDirtyRanges(ndirty);
 		if (dirty != NULL)
@@ -2830,30 +2926,27 @@ static void RefreshMovedGeometry(Diligent::IDeviceContext *ctx)
 			int patched = 0;
 			for (int d = 0; d < ndirty && !bailed; d++)
 			{
-				const unsigned int dl = dirty[d].offset, dh = dirty[d].offset + dirty[d].count;
+				const unsigned int dl = dirty[d].offset;
 
-				// First slot that could overlap: the last one starting at or before dl.
-				int a = 0, b = (int)g_vbSlots.Size() - 1, start = 0;
-				while (a <= b)
+				// The piece that owns this range now, which may be a different one from last frame.
+				const zx::levelmesh::MeshPiece *p = zx::levelmesh::MeshPieceByOffset(dl);
+				unsigned int *slotIdx = g_slotByOffset.CheckKey(dl);
+
+				if (p == NULL || p->range.count == 0)
 				{
-					const int mid = (a + b) / 2;
-					if (g_vbSlots[mid].meshOffset <= dl) { start = mid; a = mid + 1; } else b = mid - 1;
+					// The world dropped it. Collapse whatever is still being drawn there.
+					if (slotIdx != NULL && *slotIdx < g_vbSlots.Size() && g_vbSlots[*slotIdx].count > 0)
+						RetireSlot(ctx, g_vbSlots[*slotIdx]);
+					continue;
 				}
 
-				for (unsigned int k = (unsigned)start; k < g_vbSlots.Size(); k++)
+				if (p->blendMode != 0) { bailed = true; break; }   // the sorted pass owns these
+
+				if (slotIdx != NULL && *slotIdx < g_vbSlots.Size() &&
+					g_vbSlots[*slotIdx].count == p->range.count)
 				{
-					const VBSlot &slot = g_vbSlots[k];
-					if (slot.meshOffset >= dh) break;
-					if (slot.meshOffset + slot.count <= dl) continue;
-
-					// A translucent piece carries the centroid the blended pass sorts on, and moving its
-					// vertices moves that. Rebuilding is the honest answer rather than a second place for
-					// the sort key to be computed.
+					const VBSlot &slot = g_vbSlots[*slotIdx];
 					if (slot.blended) { bailed = true; break; }
-
-					const zx::levelmesh::MeshPiece *p = zx::levelmesh::MeshPieceByOffset(slot.meshOffset);
-					if (p == NULL || p->range.count != slot.count) { bailed = true; break; }
-
 					for (unsigned int v = 0; v < slot.count; v++)
 						EmitPieceVertex(*p, src[slot.meshOffset + v], slot.batch,
 							g_sceneVB[slot.vbStart + v]);
@@ -2862,12 +2955,26 @@ static void RefreshMovedGeometry(Diligent::IDeviceContext *ctx)
 						Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 					g_geomPatchVerts += (int)slot.count;
 					patched++;
+					continue;
 				}
+
+				// New, or no longer the size its slot holds: the old vertices stop being drawn and the
+				// piece goes on the end.
+				if (slotIdx != NULL && *slotIdx < g_vbSlots.Size() && g_vbSlots[*slotIdx].count > 0)
+					RetireSlot(ctx, g_vbSlots[*slotIdx]);
+				if (!AppendPiece(ctx, *p, src)) { bailed = true; break; }
 			}
-			if (!bailed)
+
+			// [rc4l] Rebuild when the slack is spent, not when the layout changes. The collapsed slots
+			// and the extra batches are both reclaimed by the sort, so this is compaction rather than
+			// failure -- and it happens on the order of once per level rather than once per frame.
+			const bool slackSpent = (g_appendedVerts > (int)(g_vbCapacity / 8));
+			if (!bailed && !slackSpent)
 			{
-				if (patched > 0) g_geomPatches++;
+				if (patched > 0 || g_geomAppends > 0) g_geomPatches++;
 				zx::levelmesh::MeshClearDirtyRanges();
+				g_builtLayoutGen = zx::levelmesh::MeshLayoutGeneration();
+				g_sceneVerts = (int)g_sceneVB.Size();
 				g_geomUpdates = 0;
 				return;
 			}
@@ -4493,7 +4600,9 @@ void DynStats(FString &report)
 		zx::levelmesh::MeshLayoutGeneration(), g_builtLayoutGen, added, resized, rebatched);
 	report += why;
 	FString patches;
-	patches.Format(" | %d geometry patches (%d verts moved)", g_geomPatches, g_geomPatchVerts);
+	patches.Format(" | %d geometry patches (%d verts moved), %d appends (%d verts, %d%% of slack)",
+		g_geomPatches, g_geomPatchVerts, g_geomAppends, g_appendedVerts,
+		g_vbCapacity ? (int)(100.0 * g_appendedVerts / (g_vbCapacity / 8.0)) : 0);
 	report += patches;
 	report += geo;
 	// [rc4l] What the grid actually did this frame. "0 cells" with lights alive means the binning
