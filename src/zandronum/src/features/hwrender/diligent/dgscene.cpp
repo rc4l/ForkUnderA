@@ -222,6 +222,8 @@ CVAR(Bool, fua_dg_cullbatches, false, 0)
 // docs/bindless-attempt-notes.md for the ceiling the first attempt hit doing these in the wrong
 // order.
 CVAR(Bool, fua_dg_bindless, true, CVAR_ARCHIVE)
+// Sprites and decals on the shared binding as well. Off: see WorldSRB.
+CVAR(Bool, fua_dg_bindless_dyn, false, 0)
 static int g_batchesCulled = 0, g_batchesDrawn = 0;
 
 // Set once the level has been baked under standalone -- the bake itself needs GL frames.
@@ -313,6 +315,8 @@ static Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding> g_srbMasked;
 static int   g_sceneVerts = 0;
 static float g_mvp[16];
 static int   g_drawRepeat = 1;
+// [rc4l] Draw CALLS the opaque pass actually made, which is no longer the batch count.
+static int   g_worldDraws = 0;
 
 // [rc4l] One draw per material. Pieces arrive in bake order, so they are sorted by material first;
 // with a few hundred materials on a map that is a few hundred draws, which is what the GL path does
@@ -478,6 +482,8 @@ static bool g_matSlotOverflow = false;
 // changes what a slot should point at -- a new material, an animated texture reaching its next
 // frame -- raises this, and the next frame refills and rebuilds the world bindings.
 static bool g_matSlotsDirty = true;
+// Bounded retries for slots that came back white -- see FillMaterialArrayStatic.
+static int g_matSlotRetries = 0;
 
 static void ResetMaterialSlots()
 {
@@ -485,6 +491,7 @@ static void ResetMaterialSlots()
 	MatSlot white; white.material = NULL; white.translation = 0;
 	g_matSlotTable.Push(white);
 	g_matSlotOverflow = false;
+	g_matSlotRetries = 0;
 	g_matSlotsDirty = true;
 }
 
@@ -522,10 +529,16 @@ int MaterialSlotCount() { return (int)g_matSlotTable.Size(); }
 static Diligent::IPipelineState *g_worldPSOs[13] = { 0 };
 static Diligent::IShaderResourceBinding *g_worldSRBs[13] = { 0 };
 static bool g_bindlessReady = false;
+static int g_matSlotsWhite = 0;
+// Per pipeline: '-' untouched, 'x' the array is not there, 'f' filled, 'b' filled and bound.
+static char g_fillState[14] = "-------------";
+static int g_dynSlotRefused = 0, g_dynSlotNoMaterial = 0, g_dynSlotSeen = 0, g_dynSlotMax = 0;
+static int g_dynBindless = 0, g_dynPerMaterial = 0;
 // What the scene pixel shader said it declares, recorded at creation so the question can be asked
 // later -- pipeline setup happens before anything is listening on the console.
 static FString g_scenePSResources;
 
+static void ReleaseMaterialSRBs();
 static void ReleaseWorldSRBs()
 {
 	for (int i = 0; i < 13; i++)
@@ -560,12 +573,30 @@ static bool FillMaterialArrayStatic(Diligent::IPipelineState *pso)
 		}
 		return false;
 	}
+	g_matSlotsWhite = 0;
 	for (Diligent::Uint32 i = 0; i < (Diligent::Uint32)kMaterialSlots; i++)
 	{
 		Diligent::IDeviceObject *obj = NULL;
 		if (i < g_matSlotTable.Size())
 			obj = GetMaterialSRV(g_matSlotTable[i].material, g_matSlotTable[i].translation);
+		// [rc4l] A slot that came back WHITE for a real material is not filled, it is wrong.
+		//
+		// GetMaterialSRV falls back to white when it cannot produce a texture yet -- a sprite whose
+		// image has not been uploaded on the frame the array happens to be built. The old path
+		// never saw this because it made a binding per material, lazily, by which time the texture
+		// existed. Filled once and cached, the same fallback is permanent: the item sits there as a
+		// flat white rectangle for the rest of the level, which is exactly what it looked like.
+		//
+		// So a white answer for a live material asks for the array to be built again, with a bound
+		// on the retries -- a texture that truly cannot be made would otherwise rebuild thirteen
+		// bindings every frame forever.
+		const bool live = (i < g_matSlotTable.Size()) && g_matSlotTable[i].material != NULL;
 		if (obj == NULL) obj = white;
+		if (live && obj == white)
+		{
+			g_matSlotsWhite++;
+			if (g_matSlotRetries < 120) { g_matSlotsDirty = true; g_matSlotRetries++; }
+		}
 		v->SetArray(&obj, i, 1);
 	}
 	return true;
@@ -582,6 +613,15 @@ static void RefreshBindless()
 	g_matSlotsDirty = false;
 	g_bindlessReady = false;
 	ReleaseWorldSRBs();
+	// [rc4l] Every OTHER binding has to go as well, and this is not tidiness.
+	//
+	// Diligent copies the pipeline's static resources into an SRB when the SRB is made, so a
+	// binding created before this fill carries the array as it stood then. Anything drawn through
+	// one of those samples the OLD array -- and a slot that did not exist yet is the white
+	// placeholder, permanently. That is what put flat white rectangles where the items and the
+	// torch flames should be: their materials joined the table on the frame they first appeared,
+	// after their per-material bindings had already been made and cached for the level.
+	ReleaseMaterialSRBs();
 	for (int i = 0; i < 13; i++)
 	{
 		if (!g_worldPSOs[i]) return;
@@ -590,9 +630,11 @@ static void RefreshBindless()
 		// binding copies the statics as they stand at that moment, so the order is not optional.
 		// A pipeline whose shader never mentions the array has it stripped, and that is not a
 		// failure -- it just cannot be served by one binding. It keeps its per-material ones.
-		if (!FillMaterialArrayStatic(g_worldPSOs[i])) continue;
+		if (!FillMaterialArrayStatic(g_worldPSOs[i])) { g_fillState[i] = 'x'; continue; }
+		g_fillState[i] = 'f';
 		g_worldPSOs[i]->CreateShaderResourceBinding(&g_worldSRBs[i], true);
 		if (!g_worldSRBs[i]) { ReleaseWorldSRBs(); return; }
+		g_fillState[i] = 'b';
 		// uTex and uBrightmap are still declared and still mutable. The shader does not read them
 		// while the array is live, but an unassigned sampler is undefined rather than unused.
 		Diligent::IDeviceObject *white = GetMaterialSRV(NULL, 0);
@@ -628,7 +670,18 @@ static Diligent::IShaderResourceBinding *WorldSRB(Diligent::IPipelineState *pso)
 {
 	if (!BindlessActive()) return NULL;
 	for (int i = 0; i < 13; i++)
-		if (g_worldPSOs[i] == pso) return g_worldSRBs[i];
+		if (g_worldPSOs[i] == pso)
+		{
+			// [rc4l] The STATIC world only, for now.
+			//
+			// Pipelines 4..11 are the sprite and decal ones. Their pieces get a valid slot, the array has
+			// their texture in it, every one of their draws takes the shared binding -- and some of them
+			// still come out as flat white rectangles. That is unexplained, so they keep the binding per
+			// material that has always worked, and the world takes the win. fua_dg_bindless_dyn 1 turns
+			// them on for whoever picks the question up.
+			if (i >= 4 && i < 12 && !fua_dg_bindless_dyn) return NULL;
+			return g_worldSRBs[i];
+		}
 	return NULL;
 }
 
@@ -972,6 +1025,12 @@ static const char *kSceneVS =
 	   then switches on and off from fragment to fragment as the wobble crosses it. */ \
 	"    if (dbg == 14.0) return vNormal * 0.5 + 0.5;\n" \
 	"    if (dbg == 15.0) return vec3(fract(vPixelPos.y * 64.0));\n" \
+	/* [rc4l] 16: the MATERIAL SLOT the fragment is using, as a grey ramp; 17: whether it is
+	   taking the array at all. A surface that comes out white with bindless on looks the same
+	   whether the slot is zero, the array is empty, or the switch is off, and these separate the
+	   three without reading it off a guess. */ \
+	"    if (dbg == 16.0) return vec3(float(vLightIndex) / 255.0);\n" \
+	"    if (dbg == 17.0) return (uSkyColor.w > 0.5 && vLightIndex > 0) ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);\n" \
 	"    if (dbg == 0.0) return texel * vColor;\n" \
 	"    float fogMode = vFog.a;\n" \
 	"    float fogdist = 0.0, fogfactor = 0.0;\n" \
@@ -1763,6 +1822,8 @@ static void DrawSky(Diligent::IDeviceContext *ctx)
 static void BuildDynamic(Diligent::IDeviceContext *ctx)
 {
 	g_dynDraws = g_dynTris = 0;
+	g_dynSlotRefused = g_dynSlotNoMaterial = g_dynSlotSeen = g_dynSlotMax = 0;
+	g_dynBindless = g_dynPerMaterial = 0;
 	g_dynByBlend[0] = g_dynByBlend[1] = g_dynByBlend[2] = g_dynByBlend[3] = 0;
 	g_dynReady = false;
 
@@ -1859,7 +1920,26 @@ static void BuildDynamic(Diligent::IDeviceContext *ctx)
 			// Same field, same meaning, so a sprite picks its own texture out of the array exactly as a
 			// wall does -- and a translated sprite gets its own slot, because a translation is a
 			// different image of the same material.
-			dv.lightIndex = (float)MaterialSlotFor(p.material, p.translation);
+			{
+				const int slot = MaterialSlotFor(p.material, p.translation);
+				// [rc4l] Slot 0 is the white placeholder, so a dynamic piece landing there is a piece the
+				// array cannot draw. Counted rather than guessed at: a sprite rendered as a flat pale
+				// rectangle says nothing about WHY, and the two candidates -- no material at all, or a
+				// material the table refused -- have different fixes.
+				if (slot == 0) { if (p.material) g_dynSlotRefused++; else g_dynSlotNoMaterial++; }
+				g_dynSlotSeen++;
+				if (slot > g_dynSlotMax) g_dynSlotMax = slot;
+				// [rc4l] Slot 0 sends the fragment back to the bound texture, and that is how the dynamic
+				// path opts out.
+				//
+				// Sprites take the array -- the debug view says so, their slots are valid, the array has
+				// their textures and none of it falls back to white -- and some of them still draw as flat
+				// white rectangles. Items and torch flames, consistently, on Sunder MAP16. That is not
+				// understood yet, so the dynamic path keeps the binding per material that has always
+				// worked and the static world takes the win it can prove. fua_dg_bindless_dyn 1 puts them
+				// back on the array for whoever picks this up.
+				dv.lightIndex = fua_dg_bindless_dyn ? (float)slot : 0.f;
+			}
 			dv.nx = p.normX; dv.ny = p.normY; dv.nz = p.normZ;
 				vb.Push(dv);
 			}
@@ -1908,7 +1988,7 @@ static void DrawDynamicOpaque(Diligent::IDeviceContext *ctx)
 		Diligent::IPipelineState *pso = r.depthBias ? g_maskedDecalPSO.RawPtr()
 		                                            : g_maskedNoCullPSO.RawPtr();
 		auto *srb = WorldSRB(pso);
-		if (!srb) srb = GetMaterialSRB(pso, r.material, r.translation);
+		if (srb) g_dynBindless++; else { g_dynPerMaterial++; srb = GetMaterialSRB(pso, r.material, r.translation); }
 		if (!srb) continue;
 		if (pso != boundOpaque) { ctx->SetPipelineState(pso); boundOpaque = pso; }
 		ctx->CommitShaderResources(srb, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
@@ -1988,7 +2068,7 @@ static void DrawBlended(Diligent::IDeviceContext *ctx)
 					? ((r.blend == 2) ? g_addDecalPSO.RawPtr()  : g_transDecalPSO.RawPtr())
 					: ((r.blend == 2) ? g_addNoCullPSO.RawPtr() : g_transNoCullPSO.RawPtr());
 			auto *srb = WorldSRB(pso);
-			if (!srb) srb = GetMaterialSRB(pso, r.material, r.translation);
+			if (srb) g_dynBindless++; else { g_dynPerMaterial++; srb = GetMaterialSRB(pso, r.material, r.translation); }
 			if (!srb) continue;
 			BlendDraw d;
 			d.dyn = true; d.first = r.first; d.count = r.count; d.blend = r.blend;
@@ -4633,7 +4713,7 @@ static void DrawWorld(Diligent::IDeviceContext *ctx)
 	// [rc4l] Lights are collected BEFORE the constants are written -- the shader reads the count from
 	// there, so collecting afterwards would light every frame with the previous frame's count.
 	g_phase.Reset();
-	g_batchesCulled = g_batchesDrawn = 0;
+	g_batchesCulled = g_batchesDrawn = g_worldDraws = 0;
 	g_phase.geometry.Clock();  RefreshMovedGeometry(ctx);   g_phase.geometry.Unclock();
 	g_phase.lights.Clock();    CollectDynamicLights(ctx);   g_phase.lights.Unclock();
 	g_phase.clusters.Clock();  BuildLightClusters(ctx);     g_phase.clusters.Unclock();
@@ -4735,34 +4815,68 @@ static void DrawWorld(Diligent::IDeviceContext *ctx)
 	// not a measurement. Redrawing the same geometry N times is a cheap way to find where the GPU
 	// actually starts to cost something, and that threshold is what decides whether the BSP walk and
 	// the clipper can be deleted in favour of just drawing the level.
+	// [rc4l] With nothing bound per batch, a batch is only a range -- so adjacent ones are ONE draw.
+	//
+	// A batch exists to share a material binding. That was its whole reason for being, and with the
+	// array carrying the materials it has none: the opaque pass writes depth and tests it, so the
+	// order within it does not matter, and 165 ranges that happen to be contiguous in the vertex
+	// buffer are 165 draw calls describing one interval.
+	//
+	// The run is flushed whenever the chain breaks -- a translucent batch in the middle, an empty
+	// one, a culled one -- so this is exactly the old loop with the boundaries removed, and it stays
+	// correct when batch culling is on.
 	for (int rep = 0; rep < g_drawRepeat; rep++)
-	for (unsigned bi = 0; bi < g_batches.Size(); bi++)
 	{
-		SceneBatch &b = g_batches[bi];
-		if (b.count == 0 || b.blend != 0) continue;
-		if (fua_dg_cullbatches && !BatchOnScreen(b, g_mvp)) { g_batchesCulled++; continue; }
-		// [rc4l] One binding for the whole pass when the array is carrying the materials. This is the
-		// cost the culling experiment could not remove: 166 batches were 0.445 ms of submit on Sunder
-		// MAP16, almost all of it committing a different descriptor set per batch.
-		Diligent::IShaderResourceBinding *srb =
-			WorldSRB(g_gbufBound ? g_maskedGBufPSO.RawPtr() : g_maskedPSO.RawPtr());
-		if (srb == NULL)
+		Diligent::IShaderResourceBinding *bound = NULL;
+		unsigned runFirst = 0, runCount = 0;
+		for (unsigned bi = 0; bi <= g_batches.Size(); bi++)
 		{
-			// Re-resolve rather than skip: a binding dropped by a resize would otherwise leave that
-			// material missing from the world until the next upload.
-			if (b.srb == NULL) b.srb = GetMaterialSRB(g_maskedPSO.RawPtr(), b.material);
-			srb = b.srb;
+			SceneBatch *b = (bi < g_batches.Size()) ? &g_batches[bi] : NULL;
+			bool take = b != NULL && b->count != 0 && b->blend == 0;
+			if (take && fua_dg_cullbatches && !BatchOnScreen(*b, g_mvp)) { g_batchesCulled++; take = false; }
+
+			Diligent::IShaderResourceBinding *srb = NULL;
+			if (take)
+			{
+				// [rc4l] One binding for the whole pass when the array is carrying the materials. This
+				// is the cost the culling experiment could not remove: 166 batches were 0.445 ms of
+				// submit on Sunder MAP16, almost all of it committing a descriptor set per batch.
+				srb = WorldSRB(g_gbufBound ? g_maskedGBufPSO.RawPtr() : g_maskedPSO.RawPtr());
+				if (srb == NULL)
+				{
+					// Re-resolve rather than skip: a binding dropped by a resize would otherwise leave
+					// that material missing from the world until the next upload.
+					if (b->srb == NULL) b->srb = GetMaterialSRB(g_maskedPSO.RawPtr(), b->material);
+					srb = b->srb;
+				}
+				if (srb == NULL) take = false;
+			}
+
+			// A run continues only while the next range starts where the last one ended AND wants the
+			// same binding. Without bindless that is one batch at a time, exactly as before.
+			const bool extends = take && runCount != 0 && srb == bound &&
+				b->first == runFirst + runCount;
+			if (extends) { runCount += b->count; g_batchesDrawn++; continue; }
+
+			if (runCount != 0)
+			{
+				Diligent::DrawAttribs draw;
+				draw.NumVertices = runCount;
+				draw.StartVertexLocation = runFirst;
+				draw.Flags = Diligent::DRAW_FLAG_VERIFY_ALL;
+				ctx->Draw(draw);
+				g_worldDraws++;
+				runCount = 0;
+			}
+			if (!take) { bound = NULL; continue; }
+			if (srb != bound)
+			{
+				ctx->CommitShaderResources(srb, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+				bound = srb;
+			}
+			runFirst = b->first; runCount = b->count;
+			g_batchesDrawn++;
 		}
-		if (srb == NULL) continue;
-
-		ctx->CommitShaderResources(srb, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-
-		Diligent::DrawAttribs draw;
-		draw.NumVertices = b.count;
-		draw.StartVertexLocation = b.first;
-		draw.Flags = Diligent::DRAW_FLAG_VERIFY_ALL;
-		ctx->Draw(draw);
-		g_batchesDrawn++;
 	}
 
 	// [rc4l] The G-buffer is finished with: everything from here reads it or ignores it, and every
@@ -5024,7 +5138,13 @@ void DynStats(FString &report)
 	geo.Format(" | geometry: %d scene rebuilds since load, last dirty %u..%u",
 		g_geomRebuilds, g_lastDirtyLo, g_lastDirtyHi);
 	FString cull;
-	cull.Format(" | batches: %d drawn, %d culled", g_batchesDrawn, g_batchesCulled);
+	cull.Format(" | batches: %d drawn, %d culled, in %d draw calls | bindless %s: %d slots, %d white",
+		g_batchesDrawn, g_batchesCulled, g_worldDraws,
+		BindlessActive() ? "on" : "off", MaterialSlotCount(), g_matSlotsWhite);
+	cull.AppendFormat(", dyn slots: %d seen, max %d, %d refused, %d with no material",
+		g_dynSlotSeen, g_dynSlotMax, g_dynSlotRefused, g_dynSlotNoMaterial);
+	cull.AppendFormat(", dyn draws: %d bindless, %d per-material, pipelines [%s]",
+		g_dynBindless, g_dynPerMaterial, g_fillState);
 	report += cull;
 	FString phases;
 	PhaseReport(phases);
