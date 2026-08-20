@@ -323,6 +323,29 @@ static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_addRedAlphaPSO;
 static Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding> g_srb;
 static Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding> g_srbMasked;
 static int   g_sceneVerts = 0;
+// [rc4l] What a piece knows about itself, once, instead of once per vertex.
+//
+// Laid out in vec4s because std430 aligns a vec3 to 16 bytes anyway: writing it as four vec4s makes
+// the padding explicit rather than something the GLSL and the C++ have to agree about by luck.
+struct ScenePieceData
+{
+	float r, g, b, softLight;
+	float fogDensity, alpha, fogMode, matSlot;
+	float fogR, fogG, fogB, pad0;
+	float nx, ny, nz, pad1;
+};
+
+// [rc4l] The per-piece records the vertices index into, and the buffer that holds them.
+//
+// Sized per level with slack, like the vertex buffer, because a fixed capacity big enough for
+// Sunder MAP16 would be most of what the shrink saves on a small map.
+static TArray<ScenePieceData> g_scenePieceData;
+static void FillPieceData(const zx::levelmesh::MeshPiece &p, int translation, ScenePieceData &pd);
+static Diligent::RefCntAutoPtr<Diligent::IBuffer> g_pieceBuf;
+static unsigned int g_pieceCapacity = 0;
+// Where the dynamic path's records start -- the static level owns the front of the buffer.
+static unsigned int g_staticPieceCount = 0;
+
 static float g_mvp[16];
 static int   g_drawRepeat = 1;
 // [rc4l] Draw CALLS the opaque pass actually made, which is no longer the batch count.
@@ -868,6 +891,7 @@ static Diligent::RefCntAutoPtr<Diligent::IBuffer> g_lightBuf;
 static unsigned int g_lightBufCapacity = 0;   // in vec4s
 static int g_lightCount = 0;
 static bool g_lightBindFailed = false;
+static bool g_pieceBindFailed = false;
 
 // [rc4l] The per-frame sprite geometry: uploaded fresh every frame, never cached.
 static Diligent::RefCntAutoPtr<Diligent::IBuffer> g_dynVB;
@@ -898,15 +922,17 @@ struct SceneVertex
 {
 	float x, y, z;
 	float u, v;
-	float r, g, b;      // vColor -- gl_CalcLightColor(hwlight, LightColor, blendfactor)
-	float softLight;    // uLightLevel: 0..1 in software lighting mode, -1 otherwise
-	float fogDensity;   // uFogDensity: density * -log2(e)/64000, ready for exp2()
-	float alpha;        // per-piece translucency; 1 for everything opaque
-	float fogR, fogG, fogB;
-	float fogMode;      // uFogEnabled: 0 off, +gl_fogmode plain, -gl_fogmode coloured
-	float lightIndex;   // unused now the shader tests every light; kept for the vertex layout
-	float nx, ny, nz;   // surface normal, for the dynamic-light side test
+	// [rc4l] The piece this vertex belongs to. Everything else moved into ScenePieceData.
+	//
+	// Nineteen floats a vertex was the price of having no per-draw state: colour, light, fog, the
+	// surface normal and the material slot are all constant across a piece, and they were duplicated
+	// onto every one of its vertices because a uniform would have meant a draw per piece. An INDEX
+	// costs one float and buys the same thing -- the same trick bindless plays with textures, and for
+	// the same reason. On Sunder MAP16 that is 796,566 vertices at 76 bytes coming down to 24.
+	float pieceIndex;
 };
+
+
 static TArray<SceneVertex> g_sceneVB;
 
 // [rc4l] Same vertex layout as FFlatVertex (3 float position, 2 float uv), so the level mesh's data
@@ -915,12 +941,11 @@ static const char *kSceneVS =
 	"#version 450\n"
 	"layout(location = 0) in vec3 aPos;\n"
 	"layout(location = 1) in vec2 aUV;\n"
-	"layout(location = 2) in vec3 aColor;\n"
-	"layout(location = 3) in vec3 aLightParm;\n"
-	"layout(location = 4) in vec4 aFog;\n"
-	"layout(location = 5) in float aLightIndex;\n"
-	"layout(location = 6) in vec3 aNormal;\n"
+	"layout(location = 2) in float aPiece;\n"
 	"layout(binding = 0) uniform Constants { mat4 uMVP; vec4 uCameraPos; vec4 uLightParams; vec4 uClipPlane; vec4 uScreen; vec4 uSkyColor; };\n"
+	// [rc4l] Everything constant across a piece, read once here instead of ridden in on every vertex.
+	"struct PieceData { vec4 colorLight; vec4 fogAlphaMat; vec4 fogColor; vec4 normal; };\n"
+	"layout(std430, binding = 9) readonly buffer Pieces { PieceData pieces[]; };\n"
 	"layout(location = 0) out vec2 vUV;\n"
 	"layout(location = 1) out vec3 vColor;\n"
 	"layout(location = 2) out vec3 vLightParm;\n"
@@ -930,18 +955,20 @@ static const char *kSceneVS =
 	"layout(location = 6) out vec3 vNormal;\n"
 	"layout(location = 7) flat out vec4 vPlane;\n"
 	"void main() {\n"
+	"    PieceData pd = pieces[int(aPiece + 0.5)];\n"
 	"    vec4 clip = uMVP * vec4(aPos, 1.0);\n"
 	"    gl_Position = clip;\n"
 	"    vUV = aUV;\n"
-	"    vColor = aColor;\n"
-	"    vLightParm = aLightParm;\n"
-	"    vFog = aFog;\n"
+	"    vColor = pd.colorLight.rgb;\n"
+	// softLight, fogDensity, alpha -- the three the fragment shader reads as vLightParm.
+	"    vLightParm = vec3(pd.colorLight.w, pd.fogAlphaMat.x, pd.fogAlphaMat.y);\n"
+	"    vFog = vec4(pd.fogColor.rgb, pd.fogAlphaMat.z);\n"
 	// [rc4l] main.vp keeps pixelpos as (world xyz, view depth). The view depth is what the plane
 	// fog mode measures along, and clip.w IS that depth for a standard perspective matrix -- the
 	// projection's -1 in the w row copies eye-space -z straight through.
 	"    vPixelPos = vec4(aPos, clip.w);\n"
-	"    vLightIndex = int(aLightIndex);\n"
-	"    vNormal = aNormal;\n"
+	"    vLightIndex = int(pd.fogAlphaMat.w);\n"
+	"    vNormal = pd.normal.xyz;\n"
 	// [rc4l] The surface PLANE, flat: its normal and its distance from the origin.
 	//
 	// Whether a light reaches a surface is a property of the SURFACE, not of the fragment -- one
@@ -955,7 +982,7 @@ static const char *kSceneVS =
 	// Interpolating nothing removes the wobble rather than hiding it under a tolerance: every
 	// vertex of a planar face gives the same dot(n, p), so the flat value is that number exactly and
 	// the test is identical across the face however far away or however oblique it is.
-	"    vPlane = vec4(aNormal, dot(aNormal, aPos));\n"
+	"    vPlane = vec4(pd.normal.xyz, dot(pd.normal.xyz, aPos));\n"
 	"}\n";
 
 // [rc4l] The engine's real lighting, ported.
@@ -1958,6 +1985,10 @@ static void BuildDynamic(Diligent::IDeviceContext *ctx)
 	if (src == NULL || nverts <= 0 || pieces == NULL || npieces <= 0) { g_dynRuns.Clear(); return; }
 
 	static TArray<SceneVertex> vb;
+
+	// The dynamic path's piece records, rebuilt with its vertices every frame.
+
+	static TArray<ScenePieceData> dynPieces;
 	TArray<DynRun> &runs = g_dynRuns;
 
 	// [rc4l] Rebuild and re-upload ONCE per engine frame, not once per draw call.
@@ -2006,6 +2037,7 @@ static void BuildDynamic(Diligent::IDeviceContext *ctx)
 
 		vb.Clear();
 		runs.Clear();
+		dynPieces.Clear();
 		const void *cur = (const void *)(size_t)-1;
 		int curBlend = -1;
 		int curTrans = -99999;
@@ -2028,37 +2060,29 @@ static void BuildDynamic(Diligent::IDeviceContext *ctx)
 				r.cx = p.sortX; r.cy = p.sortY; r.cz = p.sortZ;
 				runs.Push(r);
 			}
+			// [rc4l] A dynamic piece gets a record too, appended behind the level's own.
+			//
+			// The static level owns the front of the buffer and never moves; sprites and decals are
+			// rebuilt every frame into the back of it. A sprite that overflows the slack draws with the
+			// last record rather than reading past the end, which is a wrong colour on one sprite rather
+			// than undefined behaviour on the whole frame.
+			unsigned int dynPieceIndex = g_staticPieceCount + dynPieces.Size();
+			if (dynPieceIndex >= g_pieceCapacity)
+				dynPieceIndex = (g_pieceCapacity > 0) ? g_pieceCapacity - 1 : 0;
+			else
+			{
+				ScenePieceData pd;
+				FillPieceData(p, p.translation, pd);
+				if (!fua_dg_bindless_dyn) pd.matSlot = 0.f;   // back to the bound texture
+				dynPieces.Push(pd);
+			}
 			for (unsigned v = 0; v < p.range.count; v++)
 			{
 				const FFlatVertex &sv = src[p.range.offset + v];
 				SceneVertex dv;
 				dv.x = sv.x; dv.y = sv.z; dv.z = sv.y;
 				dv.u = sv.u; dv.v = sv.v;
-				dv.r = p.colorR; dv.g = p.colorG; dv.b = p.colorB;
-				dv.softLight = p.softLight;
-				dv.fogDensity = p.fogDensity;
-				dv.alpha = p.alpha;
-				dv.fogR = ((p.fogColor >> 16) & 0xff) / 255.f;
-				dv.fogG = ((p.fogColor >> 8) & 0xff) / 255.f;
-				dv.fogB = (p.fogColor & 0xff) / 255.f;
-				dv.fogMode = (float)p.fogMode;
-			// Same field, same meaning, so a sprite picks its own texture out of the array exactly as a
-			// wall does -- and a translated sprite gets its own slot, because a translation is a
-			// different image of the same material.
-			{
-				const int slot = MaterialSlotFor(p.material, p.translation);
-				// [rc4l] Slot 0 is the white placeholder, so a dynamic piece landing there is a piece the
-				// array cannot draw. Counted rather than guessed at: a sprite rendered as a flat pale
-				// rectangle says nothing about WHY, and the two candidates -- no material at all, or a
-				// material the table refused -- have different fixes.
-				if (slot == 0) { if (p.material) g_dynSlotRefused++; else g_dynSlotNoMaterial++; }
-				g_dynSlotSeen++;
-				if (slot > g_dynSlotMax) g_dynSlotMax = slot;
-				// [rc4l] Slot 0 sends the fragment back to the bound texture, which is how the dynamic path
-				// opts out when the switch is off.
-				dv.lightIndex = fua_dg_bindless_dyn ? (float)slot : 0.f;
-			}
-			dv.nx = p.normX; dv.ny = p.normY; dv.nz = p.normZ;
+				dv.pieceIndex = (float)dynPieceIndex;
 				vb.Push(dv);
 			}
 			runs[runs.Size() - 1].count += p.range.count;
@@ -2081,6 +2105,13 @@ static void BuildDynamic(Diligent::IDeviceContext *ctx)
 		}
 		ctx->UpdateBuffer(g_dynVB, 0, (Diligent::Uint64)vb.Size() * sizeof(SceneVertex), &vb[0],
 			Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+		// ...and the records they index, into the back of the shared piece buffer.
+		if (g_pieceBuf && dynPieces.Size() > 0 &&
+		    g_staticPieceCount + dynPieces.Size() <= g_pieceCapacity)
+			ctx->UpdateBuffer(g_pieceBuf,
+				(Diligent::Uint64)g_staticPieceCount * sizeof(ScenePieceData),
+				(Diligent::Uint64)dynPieces.Size() * sizeof(ScenePieceData), &dynPieces[0],
+				Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 	}
 	if (vb.Size() == 0 || !g_dynVB) return;
 	g_dynReady = true;
@@ -2291,6 +2322,15 @@ static void ReleaseDeferredDecalPass();
 
 static void ReleaseScenePipelines()
 {
+	// [rc4l] The world bindings go first, and forgetting them is a use-after-free.
+	//
+	// A shader resource binding is created FROM a pipeline and does not outlive it. Releasing the
+	// pipelines while g_worldSRBs still held theirs took the process down on the first re-upload
+	// after this function started being called for reasons other than a filter change -- and it did
+	// it inside CommitShaderResources, which reads as a driver fault.
+	ReleaseWorldSRBs();
+	for (int i = 0; i < 13; i++) g_worldPSOs[i] = NULL;
+	g_bindlessReady = false;
 	ReleaseBatchSRBs();
 	ReleaseMaterialSRBs();
 	for (unsigned i = 0; i < g_batches.Size(); i++) g_batches[i].srb = NULL;
@@ -2800,13 +2840,9 @@ static bool EnsureScenePipeline(FString &err)
 	// [rc4l] `false`, not Diligent::False -- something in the reshaped DXSDK headers defines False as
 	// a macro, so the qualified name does not survive the preprocessor here.
 	Diligent::LayoutElement layout[] = {
-		Diligent::LayoutElement{0, 0, 3, Diligent::VT_FLOAT32, false},
-		Diligent::LayoutElement{1, 0, 2, Diligent::VT_FLOAT32, false},
-		Diligent::LayoutElement{2, 0, 3, Diligent::VT_FLOAT32, false},
-		Diligent::LayoutElement{3, 0, 3, Diligent::VT_FLOAT32, false},   // softLight, fogDensity, alpha
-		Diligent::LayoutElement{4, 0, 4, Diligent::VT_FLOAT32, false},
-		Diligent::LayoutElement{5, 0, 1, Diligent::VT_FLOAT32, false},
-		Diligent::LayoutElement{6, 0, 3, Diligent::VT_FLOAT32, false},   // surface normal
+		Diligent::LayoutElement{0, 0, 3, Diligent::VT_FLOAT32, false},   // position
+		Diligent::LayoutElement{1, 0, 2, Diligent::VT_FLOAT32, false},   // uv
+		Diligent::LayoutElement{2, 0, 1, Diligent::VT_FLOAT32, false},   // piece index
 	};
 
 	static Diligent::ShaderResourceVariableDesc vars[] = {
@@ -2900,7 +2936,7 @@ static bool EnsureScenePipeline(FString &err)
 			rt.BlendOpAlpha = Diligent::BLEND_OPERATION_ADD;
 		}
 		pci.GraphicsPipeline.InputLayout.LayoutElements = layout;
-		pci.GraphicsPipeline.InputLayout.NumElements = 7;
+		pci.GraphicsPipeline.InputLayout.NumElements = 3;
 		pci.PSODesc.ResourceLayout.DefaultVariableType = Diligent::SHADER_RESOURCE_VARIABLE_TYPE_STATIC;
 		pci.PSODesc.ResourceLayout.Variables = vars;
 		pci.PSODesc.ResourceLayout.NumVariables = 2;
@@ -2949,6 +2985,13 @@ static bool EnsureScenePipeline(FString &err)
 	ReleaseWorldSRBs();
 	for (int i = 0; i < 13; i++) g_worldPSOs[i] = psos[i];
 	g_matSlotsDirty = true;
+	// [rc4l] A freshly made pipeline has an EMPTY material array, and Diligent refuses -- fatally --
+	// to create a binding while any element of a static array is unassigned. Anything that makes a
+	// binding before RefreshBindless gets a turn therefore takes the process down: the per-batch
+	// bindings at the end of the scene upload do exactly that, and the benchmark found it. Filling
+	// here makes "a pipeline that exists has its array assigned" true by construction rather than by
+	// the order two other functions happen to run in.
+	for (int i = 0; i < 13; i++) FillMaterialArrayStatic(psos[i]);
 	for (int i = 0; i < 13; i++)
 	{
 		for (int s = 0; s < 2; s++)
@@ -2963,6 +3006,16 @@ static bool EnsureScenePipeline(FString &err)
 		auto *lv = psos[i]->GetStaticVariableByName(Diligent::SHADER_TYPE_PIXEL, "LightBuffer");
 		if (lv) lv->Set(g_lightBuf->GetDefaultView(Diligent::BUFFER_VIEW_SHADER_RESOURCE));
 		else g_lightBindFailed = true;
+
+		// [rc4l] The per-piece records, read by the VERTEX stage. Shared by every world pass, so it is
+		// static like the others -- and it is why a new piece buffer means new pipelines: a static
+		// variable cannot be re-pointed once its pipeline has handed out a binding.
+		if (g_pieceBuf)
+		{
+			auto *pv = psos[i]->GetStaticVariableByName(Diligent::SHADER_TYPE_VERTEX, "Pieces");
+			if (pv) pv->Set(g_pieceBuf->GetDefaultView(Diligent::BUFFER_VIEW_SHADER_RESOURCE));
+			else g_pieceBindFailed = true;
+		}
 
 		// The cluster table and its index list ride along on the same reasoning: shared by every world
 		// pass, set once, and reported rather than silently skipped.
@@ -2999,27 +3052,39 @@ static bool RayTracingAvailable();
 // Two copies of this loop is how a patched surface ends up shaded differently from a rebuilt one --
 // same geometry, different lighting, and only on the frames something moved. Kept as one function
 // so the question cannot arise.
-static void EmitPieceVertex(const zx::levelmesh::MeshPiece &p, const FFlatVertex &sv,
-	unsigned int /*batchIndex*/, SceneVertex &dv)
+// [rc4l] The piece's own record, written once. See ScenePieceData.
+static void FillPieceData(const zx::levelmesh::MeshPiece &p, int translation, ScenePieceData &pd)
+{
+	pd.r = p.colorR; pd.g = p.colorG; pd.b = p.colorB;
+	pd.softLight = p.softLight;
+	pd.fogDensity = p.fogDensity;
+	pd.alpha = p.alpha;
+	pd.fogMode = (float)p.fogMode;
+	// [rc4l] The material SLOT. It held a dynamic light index, then a batch index for the traced
+	// mirror, and it is a material slot because that is the one of the three that both the raster and
+	// the traced path want: a batch index only identifies a texture by accident, since a level has
+	// more batches than materials and the mirror had to mask it to 127 and hope.
+	pd.matSlot = (float)MaterialSlotFor(p.material, translation);
+	pd.fogR = ((p.fogColor >> 16) & 0xff) / 255.f;
+	pd.fogG = ((p.fogColor >> 8) & 0xff) / 255.f;
+	pd.fogB = (p.fogColor & 0xff) / 255.f;
+	pd.pad0 = 0.f;
+	pd.nx = p.normX; pd.ny = p.normY; pd.nz = p.normZ;
+	pd.pad1 = 0.f;
+}
+
+// [rc4l] One piece's vertex, built once and used by both the full build and the patch.
+//
+// Two copies of this loop is how a patched surface ends up shaded differently from a rebuilt one --
+// same geometry, different lighting, and only on the frames something moved. Kept as one function
+// so the question cannot arise. It carries position, texture coordinate and the piece's index now;
+// everything else the piece knows about itself is in the record that index points at.
+static void EmitPieceVertex(const zx::levelmesh::MeshPiece & /*p*/, const FFlatVertex &sv,
+	unsigned int pieceIndex, SceneVertex &dv)
 {
 	dv.x = sv.x; dv.y = sv.z; dv.z = sv.y;   // FFlatVertex stores x, z(up), y
 	dv.u = sv.u; dv.v = sv.v;
-	dv.r = p.colorR; dv.g = p.colorG; dv.b = p.colorB;
-	dv.softLight = p.softLight;
-	dv.fogDensity = p.fogDensity;
-	dv.alpha = p.alpha;
-	dv.fogR = ((p.fogColor >> 16) & 0xff) / 255.f;
-	dv.fogG = ((p.fogColor >> 8) & 0xff) / 255.f;
-	dv.fogB = (p.fogColor & 0xff) / 255.f;
-	dv.fogMode = (float)p.fogMode;
-	// [rc4l] The material SLOT, which is what this field carries now.
-	//
-	// It held a dynamic light index, then a batch index for the traced mirror, and it is a material
-	// slot because that is the one of the three that both the raster and the traced path want: a
-	// batch index only identifies a texture by accident, since a level has more batches than
-	// materials and the mirror had to mask it to 127 and hope.
-	dv.lightIndex = (float)MaterialSlotFor(p.material, 0);
-	dv.nx = p.normX; dv.ny = p.normY; dv.nz = p.normZ;
+	dv.pieceIndex = (float)pieceIndex;
 }
 
 // [rc4l] Where each piece's vertices ended up, so a moved one can be patched instead of rebuilt.
@@ -3029,6 +3094,9 @@ struct VBSlot
 	unsigned int count;
 	unsigned int vbStart;      // where those vertices live in the scene buffer
 	unsigned int batch;
+	// [rc4l] Where this piece's record lives. Stable across a patch: a moved sector rewrites the
+	// record in place rather than taking a new index, so the vertices never have to be renumbered.
+	unsigned int pieceIndex;
 	bool         blended;
 };
 static TArray<VBSlot> g_vbSlots;
@@ -3090,6 +3158,7 @@ static bool BuildSceneBuffer(FString &err)
 	});
 
 	g_sceneVB.Clear();
+	g_scenePieceData.Clear();
 	g_batches.Clear();
 	g_blendBatches.Clear();
 	g_vbSlots.Clear();
@@ -3142,10 +3211,16 @@ static bool BuildSceneBuffer(FString &err)
 		// produced for this surface at bake time. The backend re-derived them once and drifted --
 		// see CaptureShading in staticmesh.cpp.
 		const unsigned int vbStart = g_sceneVB.Size();
+		const unsigned int pieceIdx = g_scenePieceData.Size();
+		{
+			ScenePieceData pd;
+			FillPieceData(p, 0, pd);
+			g_scenePieceData.Push(pd);
+		}
 		for (unsigned int v = 0; v < p.range.count; v++)
 		{
 			SceneVertex dv;
-			EmitPieceVertex(p, src[p.range.offset + v], g_batches.Size() - 1, dv);
+			EmitPieceVertex(p, src[p.range.offset + v], pieceIdx, dv);
 			g_sceneVB.Push(dv);
 		}
 		// The batch grows to hold this piece.
@@ -3168,6 +3243,7 @@ static bool BuildSceneBuffer(FString &err)
 			slot.count = p.range.count;
 			slot.vbStart = vbStart;
 			slot.batch = g_batches.Size() - 1;
+			slot.pieceIndex = pieceIdx;
 			slot.blended = (p.blendMode != 0);
 			g_vbSlots.Push(slot);
 		}
@@ -3236,6 +3312,39 @@ static bool BuildSceneBuffer(FString &err)
 	g_vb.Release();
 	GetDevice()->CreateBuffer(bd, nullptr, &g_vb);
 	if (!g_vb) { err = "vertex buffer creation failed"; return false; }
+
+	// [rc4l] The per-piece records, sized for this level with the same slack the vertices get.
+	//
+	// Appending a piece must not have to resize this: a bigger buffer is a different object, and a
+	// static shader variable cannot be re-pointed once its pipeline has handed out a binding. So the
+	// slack is the budget, AppendPiece refuses when it runs out, and a rebuild sizes it again.
+	{
+		const unsigned int want = g_scenePieceData.Size() + g_scenePieceData.Size() / 2 + 4096;
+		Diligent::BufferDesc pbd;
+		pbd.Name = "fua scene piece data";
+		pbd.Size = (Diligent::Uint64)want * sizeof(ScenePieceData);
+		pbd.Usage = Diligent::USAGE_DEFAULT;
+		pbd.BindFlags = Diligent::BIND_SHADER_RESOURCE;
+		pbd.Mode = Diligent::BUFFER_MODE_STRUCTURED;
+		pbd.ElementByteStride = sizeof(ScenePieceData);
+		g_pieceBuf.Release();
+		GetDevice()->CreateBuffer(pbd, nullptr, &g_pieceBuf);
+		if (!g_pieceBuf) { err = "piece data buffer creation failed"; return false; }
+		g_pieceCapacity = want;
+		g_staticPieceCount = g_scenePieceData.Size();
+		if (auto *ctx2 = GetContext())
+			if (g_scenePieceData.Size() > 0)
+				ctx2->UpdateBuffer(g_pieceBuf, 0,
+					(Diligent::Uint64)g_scenePieceData.Size() * sizeof(ScenePieceData),
+					&g_scenePieceData[0], Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	}
+	// The buffer is a new object, so the pipelines have to be made again to bind it -- the same
+	// static-resource rule that governs the material array.
+	ReleaseScenePipelines();
+	{
+		FString perr;
+		if (!EnsureScenePipeline(perr)) { err = perr; return false; }
+	}
 	if (auto *ctx = GetContext())
 		ctx->UpdateBuffer(g_vb, 0, (Diligent::Uint64)g_sceneVB.Size() * sizeof(SceneVertex),
 			&g_sceneVB[0], Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
@@ -3326,17 +3435,22 @@ bool SceneUpload(FString &report)
 	// R_DoomLightingEquation, everything else takes fog diminishing. Printing it beats inferring it
 	// from a screenshot.
 	int softPieces = 0, fogPieces = 0;
-	for (unsigned int i = 0; i < g_sceneVB.Size(); i++)
+	// Counted over the PIECES now rather than their vertices, which is what the numbers always
+	// meant -- and one record per piece instead of one per vertex is the whole point of the shrink.
+	for (unsigned int i = 0; i < g_scenePieceData.Size(); i++)
 	{
-		if (g_sceneVB[i].softLight >= 0.f) softPieces++;
-		if (g_sceneVB[i].fogMode != 0.f) fogPieces++;
+		if (g_scenePieceData[i].softLight >= 0.f) softPieces++;
+		if (g_scenePieceData[i].fogMode != 0.f) fogPieces++;
 	}
-	report.Format("uploaded %d verts (%.2f MB), %d pieces -> %d material batches (%d translucent) "
+	report.Format("uploaded %d verts (%.2f MB) + %d piece records (%.2f MB), %d pieces -> %d material batches (%d translucent) "
 		"[lightmode %d, fogmode %d, %d%% soft-lit, %d%% fogged]",
 		g_sceneVerts, (double)g_sceneVB.Size() * sizeof(SceneVertex) / (1024.0 * 1024.0),
+		(int)g_scenePieceData.Size(),
+		(double)g_scenePieceData.Size() * sizeof(ScenePieceData) / (1024.0 * 1024.0),
 		npieces, (int)g_batches.Size(), (int)g_blendBatches.Size(),
 		glset.lightmode, (int)gl_fogmode,
-		softPieces * 100 / g_sceneVerts, fogPieces * 100 / g_sceneVerts);
+		g_scenePieceData.Size() ? softPieces * 100 / (int)g_scenePieceData.Size() : 0,
+		g_scenePieceData.Size() ? fogPieces * 100 / (int)g_scenePieceData.Size() : 0);
 	return true;
 }
 
@@ -3418,12 +3532,24 @@ static bool AppendPiece(Diligent::IDeviceContext *ctx, const zx::levelmesh::Mesh
 	slot.count = p.range.count;
 	slot.vbStart = b.first;
 	slot.batch = g_batches.Size() - 1;
+	// [rc4l] An appended piece needs a record as well as vertices, and the record has to reach the
+	// GPU before the vertices that index it do -- a vertex pointing at a slot nobody has written is
+	// undefined shading, and it would show up as one surface out of thousands looking wrong.
+	slot.pieceIndex = g_scenePieceData.Size();
+	if (slot.pieceIndex >= g_pieceCapacity) return false;   // out of record space: let a rebuild size it
+	{
+		ScenePieceData pd;
+		FillPieceData(p, 0, pd);
+		g_scenePieceData.Push(pd);
+		ctx->UpdateBuffer(g_pieceBuf, (Diligent::Uint64)slot.pieceIndex * sizeof(ScenePieceData),
+			sizeof(ScenePieceData), &pd, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	}
 	slot.blended = false;
 
 	for (unsigned int v = 0; v < p.range.count; v++)
 	{
 		SceneVertex dv;
-		EmitPieceVertex(p, src[p.range.offset + v], slot.batch, dv);
+		EmitPieceVertex(p, src[p.range.offset + v], slot.pieceIndex, dv);
 		SceneBatch &nb = g_batches[slot.batch];
 		if (dv.x < nb.minX) nb.minX = dv.x;
 		if (dv.y < nb.minY) nb.minY = dv.y;
@@ -3539,8 +3665,20 @@ static void RefreshMovedGeometry(Diligent::IDeviceContext *ctx)
 				{
 					const VBSlot &slot = g_vbSlots[*slotIdx];
 					if (slot.blended) { bailed = true; break; }
+					// [rc4l] The record is rewritten in place and the index does not move.
+					//
+					// A door's shading changes as it moves -- its light level, and on a slope its normal --
+					// so patching the vertices alone would leave the surface lit for where it used to be.
+					if (slot.pieceIndex < g_scenePieceData.Size())
+					{
+						FillPieceData(*p, 0, g_scenePieceData[slot.pieceIndex]);
+						ctx->UpdateBuffer(g_pieceBuf,
+							(Diligent::Uint64)slot.pieceIndex * sizeof(ScenePieceData), sizeof(ScenePieceData),
+							&g_scenePieceData[slot.pieceIndex],
+							Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+					}
 					for (unsigned int v = 0; v < slot.count; v++)
-						EmitPieceVertex(*p, src[slot.meshOffset + v], slot.batch,
+						EmitPieceVertex(*p, src[slot.meshOffset + v], slot.pieceIndex,
 							g_sceneVB[slot.vbStart + v]);
 					ctx->UpdateBuffer(g_vb, (Diligent::Uint64)slot.vbStart * sizeof(SceneVertex),
 						(Diligent::Uint64)slot.count * sizeof(SceneVertex), &g_sceneVB[slot.vbStart],
@@ -4134,8 +4272,13 @@ static const char *kMirrorPS =
 	"layout(location = 0) in vec3 vWorld;\n"
 	"layout(location = 1) in vec3 vNormal;\n"
 	"layout(location = 0) out vec4 outColor;\n"
-	"const uint STRIDE = 19u;\n"
-	"vec3 vertColor(uint v) { uint b = v * STRIDE + 5u; return vec3(vtx[b], vtx[b + 1u], vtx[b + 2u]); }\n"
+	// [rc4l] Six floats a vertex now: position, texture coordinate, and the index of the record
+	// that holds everything else. The colour and the material this ray hits come from there.
+	"const uint STRIDE = 6u;\n"
+	"struct PieceData { vec4 colorLight; vec4 fogAlphaMat; vec4 fogColor; vec4 normal; };\n"
+	"layout(std430, binding = 9) readonly buffer Pieces { PieceData pieces[]; };\n"
+	"uint vertPiece(uint v) { return uint(vtx[v * STRIDE + 5u] + 0.5); }\n"
+	"vec3 vertColor(uint v) { return pieces[vertPiece(v)].colorLight.rgb; }\n"
 	"vec2 vertUV(uint v)    { uint b = v * STRIDE + 3u; return vec2(vtx[b], vtx[b + 1u]); }\n"
 	"void main() {\n"
 	"    vec3 n = normalize(vNormal);\n"
@@ -4172,7 +4315,7 @@ static const char *kMirrorPS =
 	// [rc4l] The MATERIAL slot, shared with the raster path -- it used to be a batch index masked to
 	// 127, which on any level with more than 128 batches reflected the wrong texture and could not
 	// say so.
-	"    uint mat = uint(vtx[i0 * STRIDE + 15u] + 0.5) & 511u;\n"
+	"    uint mat = uint(pieces[vertPiece(i0)].fogAlphaMat.w + 0.5) & 511u;\n"
 	"    c *= texture(uMaterials[nonuniformEXT(mat)], uv).rgb;\n"
 	// Distance falls off the same way the raster path's fog does, so a far reflection reads as far.
 	"    float t = rayQueryGetIntersectionTEXT(rq, true);\n"
@@ -4293,6 +4436,11 @@ static bool EnsureMirrorResources()
 		pci.pVS = vs; pci.pPS = ps;
 		dev->CreateGraphicsPipelineState(pci, &g_mirrorPSO);
 		if (!g_mirrorPSO) { Printf("mirror: PSO failed\n"); return false; }
+		// The traced path reads the same per-piece records the raster path does, so a reflection can
+		// never disagree with the surface it reflects about what colour or texture that surface is.
+		if (g_pieceBuf)
+			if (auto *v = g_mirrorPSO->GetStaticVariableByName(Diligent::SHADER_TYPE_PIXEL, "Pieces"))
+				v->Set(g_pieceBuf->GetDefaultView(Diligent::BUFFER_VIEW_SHADER_RESOURCE));
 		if (auto *v = g_mirrorPSO->GetStaticVariableByName(Diligent::SHADER_TYPE_VERTEX, "Constants"))
 			v->Set(g_cb);
 		if (auto *v = g_mirrorPSO->GetStaticVariableByName(Diligent::SHADER_TYPE_PIXEL, "Constants"))
@@ -5301,7 +5449,10 @@ void SlotReport(int n, FString &out)
 		// [rc4l] ...and what the VERTEX actually says, which is the only number the GPU sees.
 		// A lookup that agrees with the table proves nothing if the buffer was written against a
 		// different table.
-		const int inVB = (b.first < g_sceneVB.Size()) ? (int)(g_sceneVB[b.first].lightIndex + 0.5f) : -1;
+		const unsigned int pidx = (b.first < g_sceneVB.Size()) ?
+			(unsigned int)(g_sceneVB[b.first].pieceIndex + 0.5f) : 0xffffffffu;
+		const int inVB = (pidx < g_scenePieceData.Size()) ?
+			(int)(g_scenePieceData[pidx].matSlot + 0.5f) : -1;
 		// The view itself, because two slots resolving to ONE view is the signature of a cache keyed
 		// on an address that two different materials have held.
 		const void *srv = (slot > 0) ? (const void *)GetMaterialSRV(g_matSlotTable[slot].resolved,
