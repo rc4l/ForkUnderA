@@ -31,6 +31,24 @@ static unsigned int        g_dirtyHi = 0;
 // [rc4l] A second, independent dirty cursor for a foreign backend -- see MeshTakeDirty.
 static unsigned int        g_bkDirtyLo = 0xffffffffu;
 static unsigned int        g_bkDirtyHi = 0;
+// [rc4l] ...and the individual spans, because one span is not a useful answer on a big level.
+//
+// A single lo..hi covers everything between the two things that changed, and on Sunder MAP16 the
+// things that change in a frame are scattered the length of the mesh -- so the span was 470,000
+// vertices wide and a backend patching "the dirty range" patched the entire world. The list says
+// which ranges actually moved. It is capped, and overflowing it falls back to the span, which is
+// correct and merely slow; silently patching less than moved would be neither.
+static TArray<MeshRange>   g_bkDirtyList;
+static bool                g_bkDirtyOverflow = false;
+enum { kMaxDirtyRanges = 32768 };   // a heavy frame on Sunder MAP16 re-bakes thousands of pieces
+
+static void NoteBackendDirty(unsigned int offset, unsigned int count)
+{
+	if (count == 0) return;
+	if (g_bkDirtyList.Size() >= (unsigned)kMaxDirtyRanges) { g_bkDirtyOverflow = true; return; }
+	MeshRange r; r.offset = offset; r.count = count;
+	g_bkDirtyList.Push(r);
+}
 static unsigned int        g_vbo = 0;
 static unsigned int        g_vao = 0;
 static bool                g_full = false;
@@ -195,6 +213,7 @@ static void RetireRange(const MeshRange &old)
 	if (old.count == 0 || old.offset + old.count > g_used) return;
 
 	memset(&g_verts[old.offset], 0, old.count * sizeof(FFlatVertex));
+	NoteBackendDirty(old.offset, old.count);
 	if (old.offset < g_dirtyLo || g_dirtyHi == 0) g_dirtyLo = old.offset;
 	if (old.offset + old.count > g_dirtyHi) g_dirtyHi = old.offset + old.count;
 	if (old.offset < g_bkDirtyLo || g_bkDirtyHi == 0) g_bkDirtyLo = old.offset;
@@ -223,6 +242,7 @@ void MeshSquash(const MeshRange &range)
 	if (range.count == 0 || range.offset + range.count > g_used) return;
 
 	memset(&g_verts[range.offset], 0, range.count * sizeof(FFlatVertex));
+	NoteBackendDirty(range.offset, range.count);
 	if (range.offset < g_dirtyLo || g_dirtyHi == 0) g_dirtyLo = range.offset;
 	if (range.offset + range.count > g_dirtyHi) g_dirtyHi = range.offset + range.count;
 	if (range.offset < g_bkDirtyLo || g_bkDirtyHi == 0) g_bkDirtyLo = range.offset;
@@ -250,6 +270,7 @@ bool MeshStore(MeshRange &range, const FFlatVertex *verts, int count)
 		if (memcmp(&g_verts[range.offset], verts, bytes) != 0)
 		{
 			memcpy(&g_verts[range.offset], verts, bytes);
+			NoteBackendDirty(range.offset, count);
 			if (range.offset < g_dirtyLo) g_dirtyLo = range.offset;
 			if (range.offset + count > g_dirtyHi) g_dirtyHi = range.offset + count;
 			if (range.offset < g_bkDirtyLo) g_bkDirtyLo = range.offset;
@@ -272,6 +293,7 @@ bool MeshStore(MeshRange &range, const FFlatVertex *verts, int count)
 	g_verts.Resize(g_used);
 	memcpy(&g_verts[range.offset], verts, count * sizeof(FFlatVertex));
 
+	NoteBackendDirty(range.offset, range.count);
 	if (range.offset < g_dirtyLo || g_dirtyHi == 0) g_dirtyLo = range.offset;
 	g_dirtyHi = g_used;
 	if (range.offset < g_bkDirtyLo) g_bkDirtyLo = range.offset;
@@ -286,6 +308,21 @@ void MeshTakeDirty(unsigned int &lo, unsigned int &hi)
 	hi = g_bkDirtyHi;
 	g_bkDirtyLo = 0xffffffffu;
 	g_bkDirtyHi = 0;
+}
+
+// The same claim, itemised. Returns NULL when the list overflowed, which means "assume everything
+// in lo..hi moved" rather than "nothing did".
+const MeshRange *MeshTakeDirtyRanges(int &count)
+{
+	if (g_bkDirtyOverflow) { count = 0; return NULL; }
+	count = (int)g_bkDirtyList.Size();
+	return count ? &g_bkDirtyList[0] : NULL;
+}
+
+void MeshClearDirtyRanges()
+{
+	g_bkDirtyList.Clear();
+	g_bkDirtyOverflow = false;
 }
 
 void MeshFlush()
@@ -412,6 +449,30 @@ void MeshRetireRange(const MeshRange &range)
 	RetireRange(range);
 }
 
+// [rc4l] A counter that changes when the LAYOUT does, so a backend can ask in constant time.
+//
+// The alternative was hashing every piece every frame to notice a change, which on Sunder MAP16 is
+// 115,000 pieces of work to discover that nothing happened. Bumped when a piece appears, when its
+// range moves or resizes, and when its base texture or blend mode changes -- the things that decide
+// which batch it lands in and where its vertices sit. NOT bumped for shading or a resolved
+// material: a patch re-emits those, and an animated flat swaps material several times a second.
+static unsigned int g_layoutGen = 1;
+// [rc4l] Why it last changed, because "the layout changed" is not a diagnosis. A backend that
+// never gets to patch needs to know which of the three reasons keeps firing.
+static int g_layoutNew = 0, g_layoutResized = 0, g_layoutRebatched = 0;
+void MeshLayoutReasons(int &added, int &resized, int &rebatched)
+{ added = g_layoutNew; resized = g_layoutResized; rebatched = g_layoutRebatched; }
+unsigned int MeshLayoutGeneration() { return g_layoutGen; }
+
+// The piece that owns a range, for a patch that has a dirty span and needs the shading that goes
+// with it. Uses the same offset index the registry already keeps.
+const MeshPiece *MeshPieceByOffset(unsigned int offset)
+{
+	unsigned *found = g_pieceByOffset.CheckKey(offset);
+	if (found == NULL || *found >= g_pieceList.Size()) return NULL;
+	return &g_pieceList[*found];
+}
+
 void MeshRegisterPiece(const MeshPiece &piece)
 {
 	if (piece.range.count == 0) return;
@@ -426,11 +487,16 @@ void MeshRegisterPiece(const MeshPiece &piece)
 	unsigned *found = g_pieceByOffset.CheckKey(piece.range.offset);
 	if (found != NULL && *found < g_pieceList.Size())
 	{
+		const MeshPiece &was = g_pieceList[*found];
+		if (was.range.count != piece.range.count) { g_layoutGen++; g_layoutResized++; }
+		else if (was.baseTex != piece.baseTex || was.blendMode != piece.blendMode)
+			{ g_layoutGen++; g_layoutRebatched++; }
 		g_pieceList[*found] = piece;
 		return;
 	}
 	const unsigned idx = g_pieceList.Push(piece);
 	g_pieceByOffset.Insert(piece.range.offset, idx);
+	g_layoutGen++; g_layoutNew++;   // a piece that was not there before
 }
 
 const MeshPiece *MeshPieces(int &count)
@@ -441,6 +507,7 @@ const MeshPiece *MeshPieces(int &count)
 
 void MeshClearPieces()
 {
+	g_layoutGen++;
 	g_pieceList.Clear();
 	g_pieceByOffset.Clear();
 }

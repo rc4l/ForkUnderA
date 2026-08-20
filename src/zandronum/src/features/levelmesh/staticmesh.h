@@ -220,6 +220,25 @@ void MeshFlush();
 // the whole level dirty on every frame forever.
 void MeshTakeDirty(unsigned int &lo, unsigned int &hi);
 
+// [rc4l] The dirty spans, itemised. One lo..hi covers everything BETWEEN two changes, which on a
+// large level is the whole world; these are the ranges that actually moved. NULL means the list
+// overflowed and the caller should fall back to the span.
+const MeshRange *MeshTakeDirtyRanges(int &count);
+
+// [rc4l] Changes when the piece LAYOUT changes -- a piece appearing, moving, resizing, or changing
+// the base texture or blend mode that decides its batch. Not shading, and not an animated material
+// swap. A backend keeping its own copy of the geometry compares this instead of hashing every
+// piece every frame to find out that nothing happened.
+unsigned int MeshLayoutGeneration();
+
+// Which of the three reasons has been bumping it: a piece added, a piece resized, a piece changing
+// the texture or blend mode that decides its batch.
+void MeshLayoutReasons(int &added, int &resized, int &rebatched);
+
+// The piece owning a range, for patching a dirty span with the shading that goes with it.
+const MeshPiece *MeshPieceByOffset(unsigned int offset);
+void MeshClearDirtyRanges();
+
 // Stats for fua_levelmesh_stats.
 void MeshGetStats(int &bakedPieces, int &vertices, int &bytes, int &reallocs);
 

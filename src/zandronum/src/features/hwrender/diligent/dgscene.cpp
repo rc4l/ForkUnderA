@@ -324,6 +324,10 @@ static unsigned int g_lastDirtyLo = 0, g_lastDirtyHi = 0;
 // tell whether the lift had moved at all in the frames between them. A counter answers "did the
 // moving-geometry path even run" without reading pixels.
 static int g_geomRebuilds = 0;
+// [rc4l] Patches, and how many vertices they moved -- the two numbers that say whether the buffer
+// is being nudged or rewritten. A rebuild count alone cannot tell "nothing moved" from "everything
+// moved and we patched it all".
+static int g_geomPatches = 0, g_geomPatchVerts = 0;
 
 // [rc4l] One SRB per material, not one SRB re-pointed per draw.
 //
@@ -2487,6 +2491,45 @@ static void ReleaseMirrorBinding();
 
 static bool RayTracingAvailable();
 
+// [rc4l] One piece's vertex, built once and used by both the full build and the patch.
+//
+// Two copies of this loop is how a patched surface ends up shaded differently from a rebuilt one --
+// same geometry, different lighting, and only on the frames something moved. Kept as one function
+// so the question cannot arise.
+static void EmitPieceVertex(const zx::levelmesh::MeshPiece &p, const FFlatVertex &sv,
+	unsigned int batchIndex, SceneVertex &dv)
+{
+	dv.x = sv.x; dv.y = sv.z; dv.z = sv.y;   // FFlatVertex stores x, z(up), y
+	dv.u = sv.u; dv.v = sv.v;
+	dv.r = p.colorR; dv.g = p.colorG; dv.b = p.colorB;
+	dv.softLight = p.softLight;
+	dv.fogDensity = p.fogDensity;
+	dv.alpha = p.alpha;
+	dv.fogR = ((p.fogColor >> 16) & 0xff) / 255.f;
+	dv.fogG = ((p.fogColor >> 8) & 0xff) / 255.f;
+	dv.fogB = (p.fogColor & 0xff) / 255.f;
+	dv.fogMode = (float)p.fogMode;
+	dv.lightIndex = (float)batchIndex;
+	dv.nx = p.normX; dv.ny = p.normY; dv.nz = p.normZ;
+}
+
+// [rc4l] Where each piece's vertices ended up, so a moved one can be patched instead of rebuilt.
+struct VBSlot
+{
+	unsigned int meshOffset;   // key: the piece's range in the level mesh
+	unsigned int count;
+	unsigned int vbStart;      // where those vertices live in the scene buffer
+	unsigned int batch;
+	bool         blended;
+};
+static TArray<VBSlot> g_vbSlots;      // sorted by meshOffset
+
+
+// The layout this buffer was built for. The mesh bumps its generation when a piece appears, moves,
+// resizes or changes the base texture or blend mode that decides its batch -- so this comparison is
+// one integer rather than a hash of 115,000 pieces recomputed every frame.
+static unsigned int g_builtLayoutGen = 0;
+
 static bool BuildSceneBuffer(FString &err)
 {
 	int srcCount = 0;
@@ -2529,6 +2572,7 @@ static bool BuildSceneBuffer(FString &err)
 	g_sceneVB.Clear();
 	g_batches.Clear();
 	g_blendBatches.Clear();
+	g_vbSlots.Clear();
 	const void *cur = (const void *)(size_t)-1;
 	const void *curBase = (const void *)(size_t)-1;
 	int curBlend = -1;
@@ -2566,25 +2610,18 @@ static bool BuildSceneBuffer(FString &err)
 		const unsigned int vbStart = g_sceneVB.Size();
 		for (unsigned int v = 0; v < p.range.count; v++)
 		{
-			const FFlatVertex &sv = src[p.range.offset + v];
 			SceneVertex dv;
-			dv.x = sv.x; dv.y = sv.z; dv.z = sv.y;   // FFlatVertex stores x, z(up), y
-			dv.u = sv.u; dv.v = sv.v;
-			dv.r = p.colorR; dv.g = p.colorG; dv.b = p.colorB;
-			dv.softLight = p.softLight;
-			dv.fogDensity = p.fogDensity;
-			dv.alpha = p.alpha;
-			dv.fogR = ((p.fogColor >> 16) & 0xff) / 255.f;
-			dv.fogG = ((p.fogColor >> 8) & 0xff) / 255.f;
-			dv.fogB = (p.fogColor & 0xff) / 255.f;
-			dv.fogMode = (float)p.fogMode;
-			// [rc4l] The BATCH index, which is the material index a ray hit needs to pick its own
-			// texture. This slot held a dynamic light index and has been dead since the shader
-			// started testing every light, so it costs nothing and saves a parallel per-triangle
-			// table that would have to be kept in step with the batch list by hand.
-			dv.lightIndex = (float)(g_batches.Size() - 1);
-			dv.nx = p.normX; dv.ny = p.normY; dv.nz = p.normZ;
+			EmitPieceVertex(p, src[p.range.offset + v], g_batches.Size() - 1, dv);
 			g_sceneVB.Push(dv);
+		}
+		{
+			VBSlot slot;
+			slot.meshOffset = p.range.offset;
+			slot.count = p.range.count;
+			slot.vbStart = vbStart;
+			slot.batch = g_batches.Size() - 1;
+			slot.blended = (p.blendMode != 0);
+			g_vbSlots.Push(slot);
 		}
 		SceneBatch &nb = g_batches[g_batches.Size() - 1];
 		nb.count += p.range.count;
@@ -2604,6 +2641,12 @@ static bool BuildSceneBuffer(FString &err)
 	}
 
 	if (g_sceneVB.Size() == 0) { err = "no drawable pieces"; return false; }
+
+	// [rc4l] The layout this buffer was built for, and the slots to patch it by. Sorted by mesh
+	// offset so a dirty range can be walked with a binary search rather than a scan of 60,000 pieces.
+	std::sort(&g_vbSlots[0], &g_vbSlots[0] + g_vbSlots.Size(),
+		[](const VBSlot &x, const VBSlot &y) { return x.meshOffset < y.meshOffset; });
+	g_builtLayoutGen = zx::levelmesh::MeshLayoutGeneration();
 
 	Diligent::BufferDesc bd;
 	bd.Name = "fua scene VB";
@@ -2740,7 +2783,11 @@ static void RefreshMovedGeometry(Diligent::IDeviceContext *ctx)
 
 	unsigned int lo = 0, hi = 0;
 	zx::levelmesh::MeshTakeDirty(lo, hi);
-	if (hi <= lo) { g_geomUpdates = 0; return; }
+	// [rc4l] Clear the itemised list HERE too, or it accumulates across every quiet frame until
+	// it overflows -- and an overflowed list reports "assume everything moved", which sent this
+	// straight to a full rebuild every frame while claiming the layout was stable. 0 patches, 188
+	// rebuilds, and a generation that matched the one the buffer was built for.
+	if (hi <= lo) { zx::levelmesh::MeshClearDirtyRanges(); g_geomUpdates = 0; return; }
 	g_lastDirtyLo = lo; g_lastDirtyHi = hi;
 
 	int srcCount = 0;
@@ -2749,20 +2796,91 @@ static void RefreshMovedGeometry(Diligent::IDeviceContext *ctx)
 	const zx::levelmesh::MeshPiece *pieces = zx::levelmesh::MeshPieces(npieces);
 	if (src == NULL || pieces == NULL) return;
 
-	// [rc4l] Rebuild everything rather than patch the touched pieces.
+	// [rc4l] Patch what moved; rebuild only when the LAYOUT moved.
 	//
-	// Patching in place was tried and is wrong: a re-baked piece can change vertex count, and
-	// MeshStore then gives it a NEW range at the top of the arena. Every offset recorded at upload
-	// time is stale from that moment, so the patch copied old vertices into the right slot and the
-	// new geometry had no slot at all -- the shut door stayed painted across an open doorway while
-	// GL showed the room behind it. The dirty range GROWING (5319 -> 5328) was the visible symptom.
+	// This used to call BuildSceneBuffer unconditionally, which sorts every piece in the level and
+	// re-uploads the whole vertex buffer. The comment justifying that said it "only happens on the
+	// frames something actually moves" -- true on a small map, and on Sunder MAP16 that is every
+	// frame, because something is always being baked, animating or lit differently. 6506 full
+	// rebuilds in a couple of hundred tics, and the backend cost 4.5 ms a frame while its actual
+	// drawing measured 0.23.
 	//
-	// A full rebuild costs a sort and a buffer upload, and only happens on the frames something
-	// actually moves.
+	// Patching in place was tried before and abandoned for a real reason: a re-baked piece can change
+	// vertex count, MeshStore then gives it a NEW range, and every offset recorded at upload time is
+	// stale from that moment -- the shut door stayed painted across an open doorway. The answer is not
+	// to give up on patching but to NOTICE: a signature over every piece's offset, size, material,
+	// base texture and blend mode says whether the layout is the one this buffer was built for. When
+	// it is not, the full rebuild still happens, exactly as before.
+	const bool sameLayout = (zx::levelmesh::MeshLayoutGeneration() == g_builtLayoutGen) &&
+		(g_vbSlots.Size() > 0) && g_vb;
+
+	if (sameLayout)
+	{
+		// [rc4l] Walk the RANGES that moved and find their pieces, not every piece asking whether it
+		// moved.
+		//
+		// The first version of this did the latter -- 115,000 pieces, each tested against up to 4096
+		// dirty ranges -- and measured 23 ms in a phase that exists to save time. The slots are sorted
+		// by mesh offset, so each dirty range is a binary search and a short walk.
+		int ndirty = 0;
+		const zx::levelmesh::MeshRange *dirty = zx::levelmesh::MeshTakeDirtyRanges(ndirty);
+		if (dirty != NULL)
+		{
+			bool bailed = false;
+			int patched = 0;
+			for (int d = 0; d < ndirty && !bailed; d++)
+			{
+				const unsigned int dl = dirty[d].offset, dh = dirty[d].offset + dirty[d].count;
+
+				// First slot that could overlap: the last one starting at or before dl.
+				int a = 0, b = (int)g_vbSlots.Size() - 1, start = 0;
+				while (a <= b)
+				{
+					const int mid = (a + b) / 2;
+					if (g_vbSlots[mid].meshOffset <= dl) { start = mid; a = mid + 1; } else b = mid - 1;
+				}
+
+				for (unsigned int k = (unsigned)start; k < g_vbSlots.Size(); k++)
+				{
+					const VBSlot &slot = g_vbSlots[k];
+					if (slot.meshOffset >= dh) break;
+					if (slot.meshOffset + slot.count <= dl) continue;
+
+					// A translucent piece carries the centroid the blended pass sorts on, and moving its
+					// vertices moves that. Rebuilding is the honest answer rather than a second place for
+					// the sort key to be computed.
+					if (slot.blended) { bailed = true; break; }
+
+					const zx::levelmesh::MeshPiece *p = zx::levelmesh::MeshPieceByOffset(slot.meshOffset);
+					if (p == NULL || p->range.count != slot.count) { bailed = true; break; }
+
+					for (unsigned int v = 0; v < slot.count; v++)
+						EmitPieceVertex(*p, src[slot.meshOffset + v], slot.batch,
+							g_sceneVB[slot.vbStart + v]);
+					ctx->UpdateBuffer(g_vb, (Diligent::Uint64)slot.vbStart * sizeof(SceneVertex),
+						(Diligent::Uint64)slot.count * sizeof(SceneVertex), &g_sceneVB[slot.vbStart],
+						Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+					g_geomPatchVerts += (int)slot.count;
+					patched++;
+				}
+			}
+			if (!bailed)
+			{
+				if (patched > 0) g_geomPatches++;
+				zx::levelmesh::MeshClearDirtyRanges();
+				g_geomUpdates = 0;
+				return;
+			}
+		}
+	}
+
+	// [rc4l] The layout changed -- or a translucent surface moved, or a piece resized under its own
+	// offset. A full rebuild costs a sort and an upload, and is now what happens when it has to.
 	FString err;
 	g_geomUpdates = BuildSceneBuffer(err) ? 1 : 0;
 	g_sceneVerts = (int)g_sceneVB.Size();
 	g_geomRebuilds += g_geomUpdates;
+	zx::levelmesh::MeshClearDirtyRanges();
 	(void)src; (void)pieces; (void)npieces;
 }
 
@@ -3993,13 +4111,37 @@ void ReleaseCameraTargets()
 Diligent::IBuffer *SceneConstantsCB() { return g_cb; }
 const float *SceneMVP() { return g_mvp; }
 
+// [rc4l] What the backend spends its frame on, phase by phase.
+//
+// The backend adds ~5 ms to a Sunder MAP16 frame while its own drawing measures 0.25 ms of submit
+// and 0.15 of GPU. Everything between those two numbers is bookkeeping, and guessing which part has
+// already cost one wrong answer today: the geometry rebuild was the obvious suspect, was genuinely
+// running 6506 times a frame-set, was fixed to 22, and the frame did not move. So it gets measured.
+struct PhaseClock
+{
+	cycle_t geometry, lights, clusters, constants, animation, draw;
+	void Reset() { geometry.Reset(); lights.Reset(); clusters.Reset(); constants.Reset();
+		animation.Reset(); draw.Reset(); }
+};
+static PhaseClock g_phase;
+
+void PhaseReport(FString &out)
+{
+	out.Format("backend phases (last frame, ms): geometry %.3f, lights %.3f, clusters %.3f, "
+		"constants %.3f, animation %.3f, draw %.3f",
+		g_phase.geometry.TimeMS(), g_phase.lights.TimeMS(), g_phase.clusters.TimeMS(),
+		g_phase.constants.TimeMS(), g_phase.animation.TimeMS(), g_phase.draw.TimeMS());
+}
+
 static void DrawWorld(Diligent::IDeviceContext *ctx)
 {
 	// [rc4l] Lights are collected BEFORE the constants are written -- the shader reads the count from
 	// there, so collecting afterwards would light every frame with the previous frame's count.
-	RefreshMovedGeometry(ctx);
-	CollectDynamicLights(ctx);
-	BuildLightClusters(ctx);
+	g_phase.Reset();
+	g_phase.geometry.Clock();  RefreshMovedGeometry(ctx);   g_phase.geometry.Unclock();
+	g_phase.lights.Clock();    CollectDynamicLights(ctx);   g_phase.lights.Unclock();
+	g_phase.clusters.Clock();  BuildLightClusters(ctx);     g_phase.clusters.Unclock();
+	g_phase.constants.Clock();
 
 	{
 		Diligent::MapHelper<float> cb(ctx, g_cb, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD);
@@ -4029,6 +4171,9 @@ static void DrawWorld(Diligent::IDeviceContext *ctx)
 		cb[35] = 0.f;
 	}
 
+	g_phase.constants.Unclock();
+
+	g_phase.animation.Clock();
 	// [rc4l] Re-resolve animated textures.
 	//
 	// A batch's material was resolved once at bake time, so without this every animated surface in
@@ -4052,6 +4197,9 @@ static void DrawWorld(Diligent::IDeviceContext *ctx)
 			if (auto *srb = GetMaterialSRB(pso, now)) b.srb = srb;
 		}
 	}
+	g_phase.animation.Unclock();
+
+	g_phase.draw.Clock();
 
 	// [rc4l] Sky first, with depth off, so the world paints over whatever it does not cover.
 	if (fua_dg_sky)
@@ -4138,6 +4286,7 @@ static void DrawWorld(Diligent::IDeviceContext *ctx)
 	// translucent sprites -- in ONE back-to-front pass, so the world and the sprites sort against each
 	// other rather than being layered by which pass came last.
 	DrawBlended(ctx);
+	g_phase.draw.Unclock();
 }
 
 bool SceneBench(int frames, FString &report)
@@ -4333,6 +4482,19 @@ void DynStats(FString &report)
 	FString geo;
 	geo.Format(" | geometry: %d scene rebuilds since load, last dirty %u..%u",
 		g_geomRebuilds, g_lastDirtyLo, g_lastDirtyHi);
+	FString phases;
+	PhaseReport(phases);
+	report += " | ";
+	report += phases;
+	int added = 0, resized = 0, rebatched = 0;
+	zx::levelmesh::MeshLayoutReasons(added, resized, rebatched);
+	FString why;
+	why.Format(" | layout gen %u (built %u): %d added, %d resized, %d rebatched",
+		zx::levelmesh::MeshLayoutGeneration(), g_builtLayoutGen, added, resized, rebatched);
+	report += why;
+	FString patches;
+	patches.Format(" | %d geometry patches (%d verts moved)", g_geomPatches, g_geomPatchVerts);
+	report += patches;
 	report += geo;
 	// [rc4l] What the grid actually did this frame. "0 cells" with lights alive means the binning
 	// pass bailed -- a screen bigger than the table, or the cvar off -- and the shader silently fell
