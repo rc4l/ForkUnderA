@@ -1288,22 +1288,28 @@ CCMD( fua_lightnodes )
 {
 	if ( sides == NULL || numsides <= 0 ) { Printf( "no level loaded.\n" ); return; }
 
-	int sideNodes = 0, sideDead = 0, subNodes = 0, subDead = 0, shown = 0;
+	int sideNodes = 0, sideDead = 0, sideDormant = 0, subNodes = 0, subDead = 0, shown = 0;
 	for ( int i = 0; i < numsides; i++ )
 	{
 		for ( FLightNode *n = sides[i].lighthead; n != NULL; n = n->nextLight )
 		{
 			sideNodes++;
-			const bool dead = ( n->lightsource == NULL ) ||
-			                  ( n->lightsource->GetRadius( ) <= 0.f ) ||
-			                  !n->lightsource->IsActive( );
+			// [rc4l] ORPHANED is the fault; dormant and zero-radius are not.
+			//
+			// A dormant light keeps its nodes on purpose -- Deactivate does not unlink, and both
+			// draw paths skip it explicitly (gl_flats.cpp and gl_walls_draw.cpp both test
+			// MF2_DORMANT). Counting those as broken reports 64 leaked nodes on a perfectly healthy
+			// level and sends the next reader after the wrong thing, which it duly did.
+			//
+			// A node with no light behind it is different: nothing skips it, both paths dereference
+			// lightsource without checking, so it is a crash waiting rather than a tint.
+			const bool dead = ( n->lightsource == NULL );
+			if ( n->lightsource != NULL && !n->lightsource->IsActive( ) ) sideDormant++;
 			if ( !dead ) continue;
 			sideDead++;
 			if ( shown < 8 )
 			{
-				Printf( "  side %d: node with %s\n", i,
-					( n->lightsource == NULL ) ? "NO light behind it"
-					: !n->lightsource->IsActive( ) ? "a dormant light" : "a zero-radius light" );
+				Printf( "  side %d: node with NO light behind it\n", i );
 				shown++;
 			}
 		}
@@ -1313,12 +1319,11 @@ CCMD( fua_lightnodes )
 		for ( FLightNode *n = subsectors[i].lighthead; n != NULL; n = n->nextLight )
 		{
 			subNodes++;
-			if ( n->lightsource == NULL || n->lightsource->GetRadius( ) <= 0.f ||
-			     !n->lightsource->IsActive( ) ) subDead++;
+			if ( n->lightsource == NULL ) subDead++;
 		}
 	}
-	Printf( "fua_lightnodes: sides %d linked (%d dead), subsectors %d linked (%d dead)\n",
-		sideNodes, sideDead, subNodes, subDead );
+	Printf( "fua_lightnodes: sides %d linked (%d orphaned, %d dormant), subsectors %d linked (%d orphaned)\n",
+		sideNodes, sideDead, sideDormant, subNodes, subDead );
 }
 
 CCMD( fua_light )
