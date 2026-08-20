@@ -639,14 +639,24 @@ void GetCoverage(CoverageStats &out)
 // it -- which, if it is ever actually visible, is the same frame.
 //
 // Called before the BSP walk so segs that ARE visible re-bake immediately afterwards and never blink.
+// [rc4l] How many sectors moved on the last frame this ran.
+//
+// Standalone rendering skips the BSP walk, and the walk is what re-bakes a seg whose sector moved.
+// So a frame where something moved is a frame that still needs GL, and this is how that is known
+// without a second traversal of the level to find out.
+static int g_movedThisFrame = 0;
+int SectorsMovedLastFrame() { return g_movedThisFrame; }
+
 void InvalidateMovedSectors()
 {
+	g_movedThisFrame = 0;
 	if (!gl_wallmesh || g_sectorDirty.Size() == 0) return;
 
 	for (int s = 0; s < numsectors; s++)
 	{
 		if (sectors[s].fua_dirty == g_sectorDirty[s]) continue;
 		g_sectorDirty[s] = sectors[s].fua_dirty;
+		g_movedThisFrame++;
 
 		const TArray<int> &segList = g_sectorSegs[s];
 		for (unsigned k = 0; k < segList.Size(); k++)

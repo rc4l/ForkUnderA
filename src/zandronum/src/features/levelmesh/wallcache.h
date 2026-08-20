@@ -146,6 +146,11 @@ void GetCoverage(CoverageStats &out);
 // Drop baked geometry for any sector that moved since the last call. Runs before the BSP walk.
 void InvalidateMovedSectors();
 
+// [rc4l] Sectors that moved the last time InvalidateMovedSectors ran. A standalone frame skips the
+// BSP walk, and the walk is what re-bakes a moved seg -- so a frame with movement in it is a frame
+// that has to go back through GL.
+int SectorsMovedLastFrame();
+
 // One seg's cache state, for the fua_line_mesh dump.
 void GetSegMeshInfo(int segIndex, int &pieces, int &baked);
 void GetSegPieceRange(int segIndex, int piece, unsigned int &offset, unsigned int &count);
