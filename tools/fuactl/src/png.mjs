@@ -176,7 +176,7 @@ if (args[0] === "--range") {
   const f = args.length >= 6 ? args.slice(2, 6).map(Number) : [0, 0, 1, 1];
   const x0 = Math.floor(f[0] * a.w), y0 = Math.floor(f[1] * a.h);
   const x1 = Math.ceil(f[2] * a.w),  y1 = Math.ceil(f[3] * a.h);
-  let lo = 255, hi = 0, sum = 0, n = 0;
+  let lo = 255, hi = 0, sum = 0, n = 0, sr = 0, sg = 0, sb = 0;
   for (let y = y0; y < y1; y++) {
     for (let x = x0; x < x1; x++) {
       const p = px(a, x, y);
@@ -184,9 +184,15 @@ if (args[0] === "--range") {
       if (v < lo) lo = v;
       if (v > hi) hi = v;
       sum += v; n++;
+      sr += p[0]; sg += p[1]; sb += p[2];
     }
   }
-  console.log(`min ${lo.toFixed(1)} max ${hi.toFixed(1)} spread ${(hi - lo).toFixed(1)} mean ${(sum / Math.max(n, 1)).toFixed(2)}`);
+  // [rc4l] Per channel as well as overall, because a colour CAST is invisible in luminance:
+  // a wall that has gone blue and the same wall unchanged can weigh exactly the same.
+  const den = Math.max(n, 1);
+  console.log(`min ${lo.toFixed(1)} max ${hi.toFixed(1)} spread ${(hi - lo).toFixed(1)} `
+    + `mean ${(sum / den).toFixed(2)}  r ${(sr / den).toFixed(2)} g ${(sg / den).toFixed(2)} `
+    + `b ${(sb / den).toFixed(2)}  b-r ${((sb - sr) / den).toFixed(2)}`);
   process.exit(0);
 }
 

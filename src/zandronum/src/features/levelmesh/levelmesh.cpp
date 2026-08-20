@@ -20,6 +20,7 @@
 #include "p_trace.h"      // Trace, so fua_look can say what the ENGINE thinks is there
 #include "p_lnspec.h"    // Line_Mirror, for fua_make_mirror
 #include "gl/dynlights/gl_dynlight.h"   // ADynamicLight, for fua_light
+#include "a_sharedglobal.h"                // DBaseDecal, for fua_decals
 #include "d_player.h"     // players, consoleplayer
 #include "tables.h"       // finesine/finecosine
 #include "textures/textures.h"
@@ -1217,6 +1218,108 @@ CCMD( fua_mesh_verify )
 //        fua_light_clear
 //
 //==========================================================================
+
+//==========================================================================
+//
+// fua_decals
+//
+// [rc4l] Every decal the ENGINE is holding, which is not the same as what either renderer draws.
+//
+// Both renderers filter: GL skips a decal flagged invisible, the mesh path skips it too and also
+// reads its alpha off the engine's own object. So counting what a renderer registered answers
+// "what got drawn", and the question that keeps coming up is the other one -- what is still THERE.
+// A mark that should have faded and been destroyed, but has not been, is invisible to every
+// instrument that starts from the draw.
+//
+// Walks the sidedefs, because that is where a glued decal lives: side_t::AttachedDecals, threaded
+// on DBaseDecal::WallNext.
+//
+//==========================================================================
+
+CCMD( fua_decals )
+{
+	if ( sides == NULL || numsides <= 0 ) { Printf( "no level loaded.\n" ); return; }
+
+	int total = 0, invisible = 0, additive = 0, zeroAlpha = 0;
+	int shown = 0;
+	for ( int i = 0; i < numsides; i++ )
+	{
+		for ( DBaseDecal *d = sides[i].AttachedDecals; d != NULL; d = d->WallNext )
+		{
+			total++;
+			const bool inv = !!( d->RenderFlags & RF_INVISIBLE );
+			const bool add = ( d->RenderStyle.BlendOp == STYLEOP_Add &&
+			                   d->RenderStyle.DestAlpha == STYLEALPHA_One );
+			if ( inv ) invisible++;
+			if ( add ) additive++;
+			if ( d->Alpha <= 0 ) zeroAlpha++;
+			if ( shown < 8 && add )
+			{
+				FTexture *t = TexMan[d->PicNum];
+				Printf( "  additive decal on side %d: %s alpha %.3f%s\n", i,
+					( t != NULL && t->Name != NULL ) ? t->Name : "?",
+					FIXED2FLOAT( d->Alpha ), inv ? " INVISIBLE" : "" );
+				shown++;
+			}
+		}
+	}
+	Printf( "fua_decals: %d attached to sides -- %d additive, %d invisible, %d at zero alpha\n",
+		total, additive, invisible, zeroAlpha );
+}
+
+//==========================================================================
+//
+// fua_lightnodes
+//
+// [rc4l] What is LINKED to the surfaces, which is not the same as what is alive.
+//
+// GL lights a wall by walking side_t::lighthead, a list of nodes each pointing at a light. The
+// light itself is a thinker and dies on its own schedule; the node is unlinked separately, by
+// ADynamicLight::UnlinkLight and by LinkLight's mark-and-sweep. Those two can disagree, and when
+// they do the symptom is a surface still being lit by something that no longer exists -- while
+// every instrument that starts from the thinker list reports nothing at all, because there IS
+// nothing at all. fua_dg_lights says "0 active" and the wall stays blue.
+//
+// So this walks the lists instead, and says which nodes have no light behind them.
+//
+//==========================================================================
+
+CCMD( fua_lightnodes )
+{
+	if ( sides == NULL || numsides <= 0 ) { Printf( "no level loaded.\n" ); return; }
+
+	int sideNodes = 0, sideDead = 0, subNodes = 0, subDead = 0, shown = 0;
+	for ( int i = 0; i < numsides; i++ )
+	{
+		for ( FLightNode *n = sides[i].lighthead; n != NULL; n = n->nextLight )
+		{
+			sideNodes++;
+			const bool dead = ( n->lightsource == NULL ) ||
+			                  ( n->lightsource->GetRadius( ) <= 0.f ) ||
+			                  !n->lightsource->IsActive( );
+			if ( !dead ) continue;
+			sideDead++;
+			if ( shown < 8 )
+			{
+				Printf( "  side %d: node with %s\n", i,
+					( n->lightsource == NULL ) ? "NO light behind it"
+					: !n->lightsource->IsActive( ) ? "a dormant light" : "a zero-radius light" );
+				shown++;
+			}
+		}
+	}
+	for ( int i = 0; i < numsubsectors; i++ )
+	{
+		for ( FLightNode *n = subsectors[i].lighthead; n != NULL; n = n->nextLight )
+		{
+			subNodes++;
+			if ( n->lightsource == NULL || n->lightsource->GetRadius( ) <= 0.f ||
+			     !n->lightsource->IsActive( ) ) subDead++;
+		}
+	}
+	Printf( "fua_lightnodes: sides %d linked (%d dead), subsectors %d linked (%d dead)\n",
+		sideNodes, sideDead, subNodes, subDead );
+}
 
 CCMD( fua_light )
 {
