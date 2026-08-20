@@ -758,6 +758,17 @@ CCMD( fua_wallcache_stats )
 				100.0 * hits / total, 100.0 * uncacheable / total );
 	Printf( "  animated texture refreshes on replay: %d\n", zx::levelmesh::GetAnimRefreshes( ) );
 	zx::levelmesh::ResetStats( );
+
+	// [rc4l] And the flats, which had no cache at all until they were measured.
+	//
+	// Every visible flat was rebuilt from scratch every frame -- vertices, UVs, triangles, a memcpy
+	// into the mesh and a piece re-registered -- 3406 times a frame on Sunder MAP16. Reported beside
+	// the wall numbers because the two answer the same question and only one of them was being asked.
+	int fh = 0, fr = 0;
+	zx::levelmesh::GetFlatCacheStats( fh, fr );
+	if ( fh + fr > 0 )
+		Printf( "  flats: %d left alone, %d rebuilt (%.1f%% hit)\n", fh, fr,
+			100.0 * (double)fh / (double)( fh + fr ) );
 }
 
 //==========================================================================
