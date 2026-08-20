@@ -160,6 +160,58 @@ function crc32(buf) {
 // One tool, one surface: `fuactl png <mode> ...`.
 export function png(args) {
 
+// [rc4l] Compare two frames on the SURFACE, with everything painted onto it masked out.
+//
+// Averaging colour over a region that contains decals does not measure the wall, it measures how
+// much of the wall the decals cover. A scorch is black, black is neutral, and enough of it walks a
+// warm surface toward grey. An entire hunt for a blue cast ran on that number before anyone noticed
+// what it was reporting: it moved when marks landed, reset when a map change cleared them, and
+// differed between identical runs because a burst does not always mark twice -- which is exactly
+// how a tint that comes and goes would read.
+//
+// So mask them. The two frames are the same view, so a mark sits on the same pixels in both, and a
+// pixel counts as SURFACE only if it is (a) bright enough in both -- a scorch is not -- and (b) not
+// much brighter in one than the other -- a glow, a muzzle flash and a projectile are not. What is
+// left is wall that neither frame has painted on, and its per-channel means are comparable.
+//
+// A cast is b-r: the same surface rendered twice, and the difference between those two numbers is
+// the answer. Luminance cannot see it -- a wall gone blue and the same wall unchanged weigh the same.
+//
+// usage: fuactl png --tint <a.png> <b.png> [x0 y0 x1 y1] [minLum] [maxDelta]
+if (args[0] === "--tint") {
+  const a = decodePNG(args[1]), b = decodePNG(args[2]);
+  if (a.w !== b.w || a.h !== b.h) { console.error("size mismatch"); process.exit(1); }
+  const rest = args.slice(3).map(Number);
+  const region = rest.length >= 4 && rest.slice(0, 4).every(Number.isFinite);
+  const f = region ? rest.slice(0, 4) : [0, 0, 1, 1];
+  const opt = region ? rest.slice(4) : rest;
+  const minLum = Number.isFinite(opt[0]) ? opt[0] : 40;
+  const maxDelta = Number.isFinite(opt[1]) ? opt[1] : 24;
+  const x0 = Math.floor(f[0] * a.w), y0 = Math.floor(f[1] * a.h);
+  const x1 = Math.ceil(f[2] * a.w),  y1 = Math.ceil(f[3] * a.h);
+  let n = 0, total = 0, dark = 0, moved = 0;
+  const sa = [0, 0, 0], sb = [0, 0, 0];
+  for (let y = y0; y < y1; y++) {
+    for (let x = x0; x < x1; x++) {
+      total++;
+      const pa = px(a, x, y), pb = px(b, x, y);
+      const la = (pa[0] + pa[1] + pa[2]) / 3, lb = (pb[0] + pb[1] + pb[2]) / 3;
+      if (la < minLum || lb < minLum) { dark++; continue; }         // scorch, or shadow
+      if (Math.abs(la - lb) > maxDelta) { moved++; continue; }       // glow, sprite, projectile
+      n++;
+      for (let c = 0; c < 3; c++) { sa[c] += pa[c]; sb[c] += pb[c]; }
+    }
+  }
+  if (n === 0) { console.log(`no surface pixels: ${dark} too dark, ${moved} changed too much, of ${total}`); process.exit(0); }
+  const ma = (c) => sa[c] / n, mb = (c) => sb[c] / n;
+  const ca = ma(2) - ma(0), cb = mb(2) - mb(0);
+  console.log(`surface ${n}/${total} px (${(100 * n / total).toFixed(1)}%) -- masked ${dark} dark, ${moved} changed  [minLum ${minLum} maxDelta ${maxDelta}]`);
+  console.log(`  a: r ${ma(0).toFixed(2)} g ${ma(1).toFixed(2)} b ${ma(2).toFixed(2)}  b-r ${ca.toFixed(2)}`);
+  console.log(`  b: r ${mb(0).toFixed(2)} g ${mb(1).toFixed(2)} b ${mb(2).toFixed(2)}  b-r ${cb.toFixed(2)}`);
+  console.log(`  cast b-a: ${(cb - ca).toFixed(2)}   (red ${(mb(0) - ma(0)).toFixed(2)}, green ${(mb(1) - ma(1)).toFixed(2)}, blue ${(mb(2) - ma(2)).toFixed(2)})`);
+  process.exit(0);
+}
+
 // [rc4l] Does this region have SHAPE, or is it one flat value?
 //
 // A mean cannot tell a decal from the rectangle it lives in: a mark and a solid block of its own

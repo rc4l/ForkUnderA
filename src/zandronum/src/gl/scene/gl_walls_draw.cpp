@@ -60,6 +60,7 @@
 #include "gl/textures/gl_material.h"
 #include "gl/utility/gl_clock.h"
 #include "gl/utility/gl_templates.h"
+#include "features/hwrender/computation/walllight_compute.h"
 
 EXTERN_CVAR(Bool, gl_seamless)
 
@@ -73,6 +74,15 @@ FDynLightData lightdata;
 
 void GLWall::SetupLights()
 {
+	// [rc4l] Nothing this wall was holding survives into this frame.
+	//
+	// A wall replayed from the cache is the SAME object every frame, so its light index is whatever
+	// was last written into it -- and every return below leaves it exactly as it was. Stock GL never
+	// had to think about that, because PutWall built a fresh wall each frame and cleared it there.
+	// Carried over, a wall goes on reading light data belonging to a light that has since died: a
+	// dead plasma bolt lighting the wall it hit, indefinitely. See walllight_compute.h.
+	dynlightindex = zx::hwrender::kNoWallLightIndex;
+
 	// check for wall types which cannot have dynamic lights on them (portal types never get here so they don't need to be checked.)
 	switch (type)
 	{
@@ -166,7 +176,10 @@ void GLWall::SetupLights()
 		node = node->nextLight;
 	}
 
-	dynlightindex = GLRenderer->mLights->UploadLights(lightdata);
+	// The pass ran for this wall, so what it produced is the answer -- including the -1 an empty
+	// upload returns, which is how a wall that receives no light says so.
+	dynlightindex = zx::hwrender::ComputeWallLightIndex(true,
+		GLRenderer->mLights->UploadLights(lightdata), dynlightindex);
 }
 
 
@@ -485,6 +498,15 @@ void GLWall::Draw(int pass)
 		SetupLights();
 		// fall through
 	case GLPASS_PLAIN:
+		// [rc4l] Reached with pass == GLPASS_ALL as well, by the fall-through above -- so only the
+		// plain pass clears, or this would throw away the index SetupLights just computed.
+		//
+		// The plain pass is what runs once the last dynamic light dies, and a wall replayed from the
+		// cache still holds the index it had while one was alive. Left alone it keeps reading that
+		// light out of the buffer for as long as nothing else spawns one.
+		if (pass == GLPASS_PLAIN)
+			dynlightindex = zx::hwrender::ComputeWallLightIndex(false,
+				zx::hwrender::kNoWallLightIndex, dynlightindex);
 		rel = rellight + getExtraLight();
 		gl_SetColor(lightlevel, rel, Colormap,1.0f);
 		tmode = gl_RenderState.GetTextureMode();

@@ -50,6 +50,7 @@
 #include "gl/data/gl_vertexbuffer.h"
 #include "gl/scene/gl_drawinfo.h"
 #include "features/levelmesh/wallcache.h"
+#include "features/hwrender/computation/walllight_compute.h"
 #include "features/levelmesh/staticmesh.h"
 #include "gl/scene/gl_portal.h"
 #include "gl/renderer/gl_lightdata.h"
@@ -897,7 +898,14 @@ void GLDrawList::DrawWallsIndexed(int pass)
 		// a torch lit the floor under it and left the wall behind it dark.
 		//
 		// Before FillBatchKey, because dynlightindex is part of the key.
+		//
+		// [rc4l] And on the other pass it is CLEARED, not left alone. GLPASS_PLAIN is what runs once
+		// the last dynamic light dies (gl_scene.cpp picks it when mLightCount is zero), and a
+		// replayed wall is the same object it was while the light was alive -- so leaving its index
+		// be means it keeps lighting itself from a light that no longer exists.
 		if (pass == GLPASS_ALL) wp->SetupLights();
+		else wp->dynlightindex = zx::hwrender::ComputeWallLightIndex(false,
+			zx::hwrender::kNoWallLightIndex, wp->dynlightindex);
 		wp->FillBatchKey(key);
 
 		const zx::levelmesh::MeshRange *mr = (drawitems[i].rendertype == GLDIT_STATICWALL)
@@ -984,8 +992,11 @@ void GLDrawList::DrawWalls(int pass)
 		GLWall *wp = WallAt(i);
 		if (wp == NULL) continue;
 		GLWall &w = *wp;
-		// See DrawWallsIndexed: same omission, same fix, on the path that stages vertices.
+		// See DrawWallsIndexed: same omission, same fix, on the path that stages vertices -- and the
+		// same clearing of a carried-over light index on the pass that does not compute one.
 		if (pass == GLPASS_ALL) w.SetupLights();
+		else w.dynlightindex = zx::hwrender::ComputeWallLightIndex(false,
+			zx::hwrender::kNoWallLightIndex, w.dynlightindex);
 		w.FillBatchKey(key);
 
 		// [rc4l] A wall that cannot join the open batch closes it first, so draw order within a

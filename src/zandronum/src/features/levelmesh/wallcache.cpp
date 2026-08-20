@@ -11,6 +11,7 @@
 #include "r_state.h"
 #include "doomdata.h"
 #include "gl/scene/gl_drawinfo.h"
+#include "features/hwrender/computation/walllight_compute.h"
 #include "gl/data/gl_data.h"
 #include "gl/data/gl_vertexbuffer.h"   // FFlatVertex
 #include "gl/renderer/gl_renderer.h"   // in_area, area_default
@@ -321,6 +322,13 @@ void RecordPiece(const GLWall &wall, int list)
 		return;
 	}
 	sc.walls[sc.pieceCount] = wall;
+	// [rc4l] The one field of a captured wall that must not be kept: which lights it had.
+	//
+	// Everything else here describes the wall, and a wall does not change. A light index describes
+	// one FRAME -- it points into a buffer that is rewritten as lights come and go -- so a replay
+	// carrying it lights the wall from whatever happens to sit at that offset later. See
+	// walllight_compute.h; the draw paths clear it again, and it should never have been stored.
+	sc.walls[sc.pieceCount].dynlightindex = zx::hwrender::kNoWallLightIndex;
 	sc.pieces[sc.pieceCount].list = list;
 	sc.pieceCount++;
 }
