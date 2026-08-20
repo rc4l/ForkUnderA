@@ -50,8 +50,21 @@ struct FlatKey
 	// alone still collides and the surface flickers between the two textures.
 	int whichPlane;
 	MeshRange range;
+	// [rc4l] Next slot for the same subsector. See g_flatHead.
+	int next;
 };
 static TArray<FlatKey> g_flats;
+
+// [rc4l] Which slots belong to which subsector, so finding one is not a walk of all of them.
+//
+// This lookup was a linear scan over every flat in the level, run once per flat per FRAME. That is
+// quadratic in a quantity Sunder MAP10 puts at 3069, and it was costing 4.7 ms a frame -- more than
+// the entire stock GL frame it was riding on. Nothing in the picture said so: the time sat inside
+// the flat render clock, which reads as "flats are expensive" rather than "our capture is".
+//
+// A subsector holds a handful of planes -- its own floor and ceiling plus two per 3D floor above it
+// -- so a head index per subsector and a chain through the slots turns the walk into a few steps.
+static TArray<int> g_flatHead;
 
 // [rc4l] How many registrations are 3D-floor planes rather than a subsector's own floor or ceiling.
 // Zero would mean the planes never reach the capture at all, which is a different problem from them
@@ -84,6 +97,8 @@ void ClearFlats()
 	// were duplicated on every toggle -- including every time a test harness set gl_wallmesh 1.
 	for (unsigned i = 0; i < g_flats.Size(); i++) MeshRetireRange(g_flats[i].range);
 	g_flats.Clear();
+	// The chains point into the table that was just emptied.
+	for (unsigned i = 0; i < g_flatHead.Size(); i++) g_flatHead[i] = -1;
 }
 
 int FlatPieceCount() { return (int)g_flats.Size(); }
@@ -151,10 +166,19 @@ void RegisterFlatSubsector(const GLFlat &flat, subsector_t *sub, bool ceiling)
 			tris[w++] = fan[ComputeFanTriangleVertex(n, t, cc)];
 		}
 
+	// The subsector's own chain, not every flat in the level.
+	const int subIndex = (int)(sub - subsectors);
+	if ((unsigned)subIndex >= g_flatHead.Size())
+	{
+		const unsigned was = g_flatHead.Size();
+		g_flatHead.Resize((unsigned)numsubsectors > 0 ? (unsigned)numsubsectors : (unsigned)subIndex + 1);
+		for (unsigned i = was; i < g_flatHead.Size(); i++) g_flatHead[i] = -1;
+	}
+
 	FlatKey *slot = NULL;
-	for (unsigned i = 0; i < g_flats.Size(); i++)
-		if (g_flats[i].sub == sub && g_flats[i].ceiling == ceiling &&
-			g_flats[i].model == flat.mMeshModel && g_flats[i].whichPlane == flat.mMeshWhichPlane)
+	for (int i = g_flatHead[subIndex]; i >= 0; i = g_flats[i].next)
+		if (g_flats[i].ceiling == ceiling && g_flats[i].model == flat.mMeshModel &&
+			g_flats[i].whichPlane == flat.mMeshWhichPlane)
 		{ slot = &g_flats[i]; break; }
 	if (slot == NULL)
 	{
@@ -165,7 +189,10 @@ void RegisterFlatSubsector(const GLFlat &flat, subsector_t *sub, bool ceiling)
 		k.whichPlane = flat.mMeshWhichPlane;
 		k.range.offset = 0;
 		k.range.count = 0;
-		slot = &g_flats[g_flats.Push(k)];
+		k.next = g_flatHead[subIndex];
+		const unsigned pushed = g_flats.Push(k);
+		g_flatHead[subIndex] = (int)pushed;
+		slot = &g_flats[pushed];
 		// [rc4l] Say when a NEW flat slot is created, and with what key.
 		//
 		// A slot that should have been found and was not is a duplicate surface: the same floor stored
