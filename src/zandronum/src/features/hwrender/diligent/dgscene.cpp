@@ -2315,6 +2315,18 @@ static void DrawBlended(Diligent::IDeviceContext *ctx)
 	}
 
 	Diligent::IPipelineState *bound = NULL;
+	// [rc4l] What is CURRENTLY committed, so the same binding is not committed again per draw.
+	//
+	// The pass sorts by distance so it cannot batch by material -- but with bindless there is ONE
+	// binding per pipeline for the whole level, so consecutive draws in the sorted list almost always
+	// want the one already there. Committing per draw costs a descriptor bind per sprite.
+	//
+	// This was tried once and reverted for measuring nothing, on a scene that turned out to be fill
+	// bound: 786 stacked lamps at 1920x1200, where the fragments swamped everything. On Sunder MAP10
+	// with GL cut out the balance is the other way -- a ninth of the pixels still leaves 2.9 ms -- and
+	// the same change is worth having. The lesson kept is that this must be measured on a CPU-bound
+	// frame, because on a fill-bound one it is invisible.
+	Diligent::IShaderResourceBinding *boundSRB = NULL;
 	int boundVB = -1;
 	const Diligent::Uint64 offsets[] = { 0 };
 	for (unsigned i = 0; i < list.Size(); i++)
@@ -2337,16 +2349,37 @@ static void DrawBlended(Diligent::IDeviceContext *ctx)
 					? ((d.blend == 2) ? g_addDecalPSO.RawPtr()  : g_transDecalPSO.RawPtr())
 					: ((d.blend == 2) ? g_addNoCullPSO.RawPtr() : g_transNoCullPSO.RawPtr());
 		if (!pso) continue;
-		if (pso != bound) { ctx->SetPipelineState(pso); bound = pso; }
+		if (pso != bound) { ctx->SetPipelineState(pso); bound = pso; boundSRB = NULL; }
 		// The pipeline is only known here -- the pass sorts by distance, not by material -- so this is
 		// where the per-pipeline binding can be asked for.
 		Diligent::IShaderResourceBinding *srb = WorldSRB(pso);
 		if (!srb) srb = d.srb;
 		if (!srb) continue;
-		ctx->CommitShaderResources(srb, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+		if (srb != boundSRB)
+		{
+			ctx->CommitShaderResources(srb, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+			boundSRB = srb;
+		}
+
+		// [rc4l] ...and two draws in a row over ADJACENT vertices in the same state are one draw.
+		// Nothing is reordered: two surfaces the sort put apart stay apart. This only collapses the
+		// case where the sort left neighbours next to each other, which for a crowd of decorations at
+		// a similar distance is most of them.
+		unsigned first = d.first, count = d.count;
+		while (i + 1 < list.Size())
+		{
+			const BlendDraw &n = list[i + 1];
+			if ((n.dyn ? 1 : 0) != want || n.first != first + count) break;
+			if (n.blend != d.blend || n.red != d.red || n.bias != d.bias) break;
+			// Without bindless the binding IS the material, so it has to match too.
+			if (!WorldSRB(pso) && n.srb != srb) break;
+			count += n.count;
+			i++;
+		}
+
 		Diligent::DrawAttribs draw;
-		draw.NumVertices = d.count;
-		draw.StartVertexLocation = d.first;
+		draw.NumVertices = count;
+		draw.StartVertexLocation = first;
 		draw.Flags = Diligent::DRAW_FLAG_VERIFY_ALL;
 		ctx->Draw(draw);
 	}
@@ -5481,7 +5514,11 @@ static bool AutoSetupForLevel()
 		if (fua_surface_mapbake_auto)
 		{
 			const int built = zx::levelmesh::BakeLevelFromMap();
-			if (built > 0) Printf("vulkan: %d wall parts built from the map\n", built);
+			// ...and the FLATS, which are the other half of not needing the traversal. GLFlats come
+			// from the same walk, so without this the level renders every wall over a bare sky.
+			const int flats = zx::levelmesh::BakeFlatsFromMap();
+			if (built > 0 || flats > 0)
+				Printf("vulkan: %d wall parts and %d planes built from the map\n", built, flats);
 		}
 		s_state = 1; s_wait = 0;
 		return false;
