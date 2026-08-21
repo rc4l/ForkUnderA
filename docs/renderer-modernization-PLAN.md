@@ -157,6 +157,24 @@ frame both ways. A renderer with no second opinion is one where a plausible-look
 nothing to run into. It goes when it is costing more than it is telling us, and that is a decision to
 make with the evidence of the phases in hand, not now.
 
+## The GL/Vulkan gap, measured rather than assumed
+
+Worth writing down because it has been carried as "a viewport offset" for a long time and that is not
+what it is.
+
+On dbab04, from a pinned camera, GL and Vulkan differ by 43.4% of pixels with a mean |d| of 10.2. The
+difference image is edge glow across the whole scene -- every surface present in both, every edge
+lit. That reads as a translation, so it was worth checking: `png --align` sweeps offsets and reports
+the best one as **dx=0 dy=0**. It is not a shift.
+
+Everything is in the right place and shaded slightly differently -- which points at filtering, mip
+selection or the light falloff, not at geometry and not at a missing category. That is a much better
+place to start than "the viewport is off by a pixel", and it is the number that decides when GL can
+be retired, so it belongs in Phase 4's decision rather than in any of the phases above.
+
+It is also unaffected by everything Phase 2b did: every A/B in that work was Vulkan against Vulkan
+and read 0.0%, so the derivation changed what produces the frame without changing the frame.
+
 ## How every phase is measured
 
 Same map, same spawn, same resolution, `fuactl bench` / `perf-ab` rather than a single capture; and
