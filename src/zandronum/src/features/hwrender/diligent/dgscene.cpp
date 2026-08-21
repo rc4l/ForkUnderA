@@ -222,21 +222,16 @@ CVAR(Bool, fua_dg_cullbatches, false, 0)
 // docs/bindless-attempt-notes.md for the ceiling the first attempt hit doing these in the wrong
 // order.
 //
-// OFF by default, and the reason is ANIMATED TEXTURES.
+// On by default. MAP10, MAP16, dbab01, dbab02 and dbab04 all render pixel-identical with it on --
+// 0.0% over the world region against controls that also read 0.0%, loaded directly and through map
+// changes -- and Sunder MAP16 goes from 165 draw calls at 0.69 ms to one at 0.50.
 //
-// The picture is right -- MAP10, MAP16, dbab01, dbab02 and dbab04 all render pixel-identical with it
-// on, and MAP16 goes from 165 draw calls at 0.69 ms to one at 0.50. What is wrong is the cost of
-// keeping it right while a texture animates: uMaterials is a STATIC shader variable, so following an
-// animation means rebuilding all thirteen pipelines, shader compiles and all. Measured at 65 rebuilds
-// in three seconds on Doom 2 MAP01 -- a stutter you can feel in the mouse, and a surface that
-// flickers between two textures while it happens because the frame falls back to the per-material
-// path mid-rebuild. Both were reported from play within a minute of the switch being turned on.
-//
-// The fix is to make the array MUTABLE so an update costs thirteen bindings instead of thirteen
-// pipelines, which needs the per-material bindings to stop existing while it is on -- otherwise each
-// of those carries a 512-slot array of its own and the descriptor count explodes exactly as it did
-// the first time. Until that is done this stays off.
-CVAR(Bool, fua_dg_bindless, false, CVAR_ARCHIVE)
+// It was off for one release of a day: the array was a STATIC variable, so following a texture to
+// its next animation frame meant rebuilding all thirteen pipelines, shader compiles and all, twenty
+// times a second. That was reported from play inside a minute -- mouse stutter, and a lowering floor
+// whose sides could not decide what texture they were. The array is mutable now and lives on the
+// bindings, so the same update is thirteen descriptor writes.
+CVAR(Bool, fua_dg_bindless, true, CVAR_ARCHIVE)
 // Sprites and decals on the shared binding as well. Off: see WorldSRB.
 CVAR(Bool, fua_dg_bindless_dyn, true, 0)
 // [rc4l] Collapse adjacent batches into one draw. Only ever possible with bindless on, and separable
@@ -593,6 +588,8 @@ static char g_fillState[14] = "-------------";
 static FString g_fillNames[8];
 static const void *g_fillViews[8] = { 0 };
 static int g_fillCount = 0;
+// Slot updates from animation -- descriptor writes, not rebuilds.
+static int g_matSlotUpdates = 0;
 // [rc4l] What the array was last filled FROM, so a rebuild that changes nothing rebuilds nothing.
 //
 // A scene rebuild resets the slot table and re-emits every vertex, and on a level with moving
@@ -625,21 +622,14 @@ static void ReleaseWorldSRBs()
 		if (g_worldSRBs[i]) { g_worldSRBs[i]->Release(); g_worldSRBs[i] = NULL; }
 }
 
-// [rc4l] Assign the material array on the PIPELINE's static variables.
+// [rc4l] Fill the material array on a BINDING.
 //
-// Diligent files uMaterials as static -- it refuses an unassigned element by that name -- but does
-// not enumerate it in GetStaticVariableCount(SHADER_TYPE_PIXEL), so it is looked up rather than
-// walked. The stage list is tried in turn because an implicit signature can file a resource under a
-// combined stage mask rather than the one that declared it, and guessing wrong reads exactly like
-// the shader having dropped the declaration.
-static bool FillMaterialArrayStatic(Diligent::IPipelineState *pso)
+// Every element, always: an unassigned element is not "mostly bound", and the white placeholder
+// covers the slots past the live ones as well as anything whose own upload failed.
+static bool FillMaterialArraySRB(Diligent::IShaderResourceBinding *srb)
 {
-	if (!pso) return false;
-	const Diligent::SHADER_TYPE tries[] = { Diligent::SHADER_TYPE_PIXEL, Diligent::SHADER_TYPE_ALL_GRAPHICS,
-	                                        Diligent::SHADER_TYPE_UNKNOWN };
-	Diligent::IShaderResourceVariable *v = NULL;
-	for (int t = 0; t < 3 && v == NULL; t++)
-		v = pso->GetStaticVariableByName(tries[t], "uMaterials");
+	if (!srb) return false;
+	auto *v = srb->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "uMaterials");
 	Diligent::IDeviceObject *white = GetMaterialSRV(NULL, 0);
 	if (v == NULL || white == NULL)
 	{
@@ -647,9 +637,9 @@ static bool FillMaterialArrayStatic(Diligent::IPipelineState *pso)
 		if (!said)
 		{
 			said = true;
-			Printf("Diligent bindless: %s on %s; the shader declared:%s" "\n",
-				v ? "no white placeholder texture" : "uMaterials is not a static variable under any stage mask",
-				pso->GetDesc().Name ? pso->GetDesc().Name : "?", g_scenePSResources.GetChars());
+			Printf("Diligent bindless: %s; the shader declared:%s" "\n",
+				v ? "no white placeholder texture" : "uMaterials is not on the binding",
+				g_scenePSResources.GetChars());
 		}
 		return false;
 	}
@@ -659,22 +649,19 @@ static bool FillMaterialArrayStatic(Diligent::IPipelineState *pso)
 		Diligent::IDeviceObject *obj = NULL;
 		if (i < g_matSlotTable.Size())
 			obj = GetMaterialSRV(g_matSlotTable[i].resolved, g_matSlotTable[i].translation);
+		const bool live = (i < g_matSlotTable.Size()) && g_matSlotTable[i].material != NULL;
+		if (obj == NULL) obj = white;
 		// [rc4l] A slot that came back WHITE for a real material is not filled, it is wrong.
 		//
 		// GetMaterialSRV falls back to white when it cannot produce a texture yet -- a sprite whose
 		// image has not been uploaded on the frame the array happens to be built. Filled once and
 		// cached, that fallback is permanent, so a white answer for a live material asks for the
-		// array to be built again -- with a bound on the retries, since a texture that truly cannot
-		// be made would otherwise rebuild thirteen bindings every frame forever.
-		const bool live = (i < g_matSlotTable.Size()) && g_matSlotTable[i].material != NULL;
-		if (obj == NULL) obj = white;
+		// array to be built again, with a bound on the retries.
 		if (live && obj == white)
 		{
 			g_matSlotsWhite++;
 			if (g_matSlotRetries < 120) { g_matSlotsDirty = true; g_matSlotRetries++; }
 		}
-		// [rc4l] What the array is ACTUALLY given, recorded at the moment it is given, for the first
-		// few slots. Every report so far has described the table; this describes the fill.
 		if (i < 8 && live)
 		{
 			FMaterial *fm = (FMaterial *)g_matSlotTable[i].resolved;
@@ -684,6 +671,24 @@ static bool FillMaterialArrayStatic(Diligent::IPipelineState *pso)
 		v->SetArray(&obj, i, 1);
 	}
 	return true;
+}
+
+// [rc4l] One slot changed -- an animated texture reaching its next frame. Written straight into the
+// thirteen bindings, which is the whole point of the array being mutable: no pipelines, no bindings,
+// no shader compiles, just thirteen descriptor writes.
+static void UpdateMaterialSlotInBindings(unsigned int slot)
+{
+	if (slot >= (unsigned)kMaterialSlots || slot >= g_matSlotTable.Size()) return;
+	Diligent::IDeviceObject *obj = GetMaterialSRV(g_matSlotTable[slot].resolved,
+		g_matSlotTable[slot].translation);
+	if (obj == NULL) obj = GetMaterialSRV(NULL, 0);
+	if (obj == NULL) return;
+	for (int i = 0; i < 13; i++)
+	{
+		if (!g_worldSRBs[i]) continue;
+		if (auto *v = g_worldSRBs[i]->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "uMaterials"))
+			v->SetArray(&obj, slot, 1);
+	}
 }
 
 // [rc4l] Rebuild when the table changed, and only then.
@@ -729,55 +734,34 @@ static void RefreshBindless()
 		g_bindlessReady = false;
 		return;
 	}
-	if (fua_dg_animate && fua_dg_bindless_anim) UpdateMaterialSlotResolutions();
-	if (!g_matSlotsDirty) return;
-	g_matSlotsDirty = false;
-	// A rebuild that produces the same table needs no new bindings -- see g_filledFrom.
-	if (g_bindlessReady && MaterialSlotsMatchFill()) return;
-	// [rc4l] If bindings already exist, the pipelines have to be MADE AGAIN, not just refilled.
+	// [rc4l] Animated textures move a SLOT, not the whole array.
 	//
-	// uMaterials is a static variable, so Diligent stores it on the pipeline and copies it into
-	// every binding created from that pipeline. Once a pipeline has handed one out, writing the
-	// array again does not take -- it keeps whatever it held when the first binding was made.
-	// That is the whole of the map-change fault: the new level filled the array, the array kept
-	// the old level's textures, and the world rendered with its geometry perfect and every
-	// surface wearing the wrong picture. A map loaded directly was always fine, because there
-	// the array is filled before any binding exists.
-	//
-	// It is also why a sprite that first appeared after the fill drew as a flat white rectangle.
-	// Same cause, and one fix.
-	if (g_bindlessReady)
+	// The array is mutable, so a texture reaching its next frame is a descriptor write into thirteen
+	// existing bindings. It used to mean rebuilding thirteen pipelines -- shader compiles and all --
+	// twenty times a second, which is what mouse stutter and a flickering lift side turned out to be.
+	if (fua_dg_animate && g_bindlessReady)
 	{
-		ReleaseWorldSRBs();
-		ReleaseScenePipelines();
-		FString perr;
-		if (!EnsureScenePipeline(perr))
+		for (unsigned i = 1; i < g_matSlotTable.Size(); i++)
 		{
-			Printf("Diligent bindless: pipelines would not rebuild (%s)" "\n", perr.GetChars());
-			g_bindlessReady = false;
-			g_filledFrom.Clear();
-			return;
+			FMaterial *base = (FMaterial *)g_matSlotTable[i].material;
+			if (base == NULL || base->tex == NULL) continue;
+			FMaterial *now = FMaterial::ValidateTexture(base->tex->id, false, true);
+			if (now == NULL || now == g_matSlotTable[i].resolved) continue;
+			g_matSlotTable[i].resolved = now;
+			UpdateMaterialSlotInBindings(i);
+			g_matSlotUpdates++;
 		}
 	}
+	if (!g_matSlotsDirty) return;
+	g_matSlotsDirty = false;
+	// A table that has not changed needs no new bindings -- see g_filledFrom.
+	if (g_bindlessReady && MaterialSlotsMatchFill()) return;
 	g_bindlessReady = false;
 	g_filledFrom.Clear();
 	ReleaseWorldSRBs();
-	// [rc4l] The per-material bindings are deliberately NOT dropped here.
-	//
-	// They each hold a copy of the array as it stood when they were made, which would be stale -- but
-	// nothing drawn through one of them reads it: the dynamic path writes slot 0 into its vertices,
-	// which sends the fragment to the bound texture. Dropping them anyway costs a rebuild of every
-	// sprite binding on every animation tick, several times a second, for nothing.
 	for (int i = 0; i < 13; i++)
 	{
 		if (!g_worldPSOs[i]) return;
-		// [rc4l] The array is a STATIC variable -- Diligent says so itself when an element is left
-		// unassigned -- so it is assigned on the PIPELINE, before any binding is made from it. A
-		// binding copies the statics as they stand at that moment, so the order is not optional.
-		// A pipeline whose shader never mentions the array has it stripped, and that is not a
-		// failure -- it just cannot be served by one binding. It keeps its per-material ones.
-		if (!FillMaterialArrayStatic(g_worldPSOs[i])) { g_fillState[i] = 'x'; continue; }
-		g_fillState[i] = 'f';
 		g_worldPSOs[i]->CreateShaderResourceBinding(&g_worldSRBs[i], true);
 		if (!g_worldSRBs[i]) { ReleaseWorldSRBs(); return; }
 		g_fillState[i] = 'b';
@@ -790,6 +774,13 @@ static void RefreshBindless()
 		{
 			Diligent::IDeviceObject *bm = GetBrightmapSRV(NULL);
 			v->Set(bm ? bm : white);
+		}
+		if (!FillMaterialArraySRB(g_worldSRBs[i]))
+		{
+			ReleaseWorldSRBs();
+			static bool said = false;
+			if (!said) { said = true; Printf("Diligent bindless: staying on per-material bindings" "\n"); }
+			return;
 		}
 	}
 	g_bindlessReady = true;
@@ -2859,6 +2850,16 @@ static bool EnsureScenePipeline(FString &err)
 	static Diligent::ShaderResourceVariableDesc vars[] = {
 		{ Diligent::SHADER_TYPE_PIXEL, "uTex", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
 		{ Diligent::SHADER_TYPE_PIXEL, "uBrightmap", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
+		// [rc4l] The material array is MUTABLE, which is to say it lives on the BINDING.
+		//
+		// It was static, and static means Diligent stores it on the pipeline and copies it into
+		// every binding at the moment that binding is made -- after which it cannot be rewritten.
+		// Following a texture to its next animation frame therefore meant making all thirteen
+		// pipelines again, shader compiles and all, twenty times a second. That was reported from
+		// play as mouse stutter and as a lowering floor that could not decide what texture it was.
+		//
+		// On the binding, the same update is one SetArray call on the slots that actually changed.
+		{ Diligent::SHADER_TYPE_PIXEL, "uMaterials", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
 	};
 	static Diligent::SamplerDesc samp;
 	FillSamplerFromEngine(samp);
@@ -2950,7 +2951,8 @@ static bool EnsureScenePipeline(FString &err)
 		pci.GraphicsPipeline.InputLayout.NumElements = 3;
 		pci.PSODesc.ResourceLayout.DefaultVariableType = Diligent::SHADER_RESOURCE_VARIABLE_TYPE_STATIC;
 		pci.PSODesc.ResourceLayout.Variables = vars;
-		pci.PSODesc.ResourceLayout.NumVariables = 2;
+		pci.PSODesc.ResourceLayout.NumVariables =
+			(Diligent::Uint32)(sizeof(vars) / sizeof(vars[0]));
 		pci.PSODesc.ResourceLayout.ImmutableSamplers = samplers;
 		pci.PSODesc.ResourceLayout.NumImmutableSamplers =
 			(Diligent::Uint32)(sizeof(samplers) / sizeof(samplers[0]));
@@ -2996,13 +2998,9 @@ static bool EnsureScenePipeline(FString &err)
 	ReleaseWorldSRBs();
 	for (int i = 0; i < 13; i++) g_worldPSOs[i] = psos[i];
 	g_matSlotsDirty = true;
-	// [rc4l] A freshly made pipeline has an EMPTY material array, and Diligent refuses -- fatally --
-	// to create a binding while any element of a static array is unassigned. Anything that makes a
-	// binding before RefreshBindless gets a turn therefore takes the process down: the per-batch
-	// bindings at the end of the scene upload do exactly that, and the benchmark found it. Filling
-	// here makes "a pipeline that exists has its array assigned" true by construction rather than by
-	// the order two other functions happen to run in.
-	for (int i = 0; i < 13; i++) FillMaterialArrayStatic(psos[i]);
+	// [rc4l] Nothing to pre-fill: the material array is mutable, so it belongs to each binding and is
+	// filled when that binding is made. A pipeline can hand out as many as it likes without the array
+	// ever being read from it -- which is exactly the property that was missing when it was static.
 	for (int i = 0; i < 13; i++)
 	{
 		for (int s = 0; s < 2; s++)
@@ -3120,6 +3118,8 @@ static TMap<unsigned int, unsigned int> g_slotByOffset;
 // resizes or changes the base texture or blend mode that decides its batch -- so this comparison is
 // one integer rather than a hash of 115,000 pieces recomputed every frame.
 static unsigned int g_builtLayoutGen = 0;
+// [rc4l] Rebatches the scene buffer was built for -- see RefreshMovedGeometry.
+static int g_builtRebatched = 0;
 // Vertices the GPU buffer can hold, which is more than the scene currently uses -- see the slack
 // at creation. g_appendedVerts is how much of that slack has been spent since the last rebuild.
 static unsigned int g_vbCapacity = 0;
@@ -3620,6 +3620,34 @@ static void RefreshMovedGeometry(Diligent::IDeviceContext *ctx)
 {
 	if (!g_vb || g_sceneVB.Size() == 0) return;
 
+	// [rc4l] A piece can change without a single vertex moving, and that used to be invisible here.
+	//
+	// Pressing a switch swaps the sidedef's texture. The seg re-bakes, the mesh piece takes the new
+	// material -- fua_look confirms it, SW1MET2 becomes SW2MET2 -- and not one vertex changes, so the
+	// dirty range is empty and this function returned on the line below before ever asking whether
+	// the LAYOUT had changed. The piece stayed in a batch keyed on the old texture and went on being
+	// drawn with it: the switch never looked pressed.
+	//
+	// MeshRegisterPiece already counts this as a rebatch. A rebatch is precisely the change the patch
+	// path cannot express -- moving a piece from one batch to another is what a rebuild is for -- so
+	// it is the one layout reason that forces one. New and resized pieces are left alone: those the
+	// append and patch paths handle without a full sort.
+	{
+		int added = 0, resized = 0, rebatched = 0;
+		zx::levelmesh::MeshLayoutReasons(added, resized, rebatched);
+		if (rebatched != g_builtRebatched)
+		{
+			g_builtRebatched = rebatched;
+			FString err;
+			if (BuildSceneBuffer(err))
+			{
+				g_geomRebuilds++;
+				g_sceneVerts = (int)g_sceneVB.Size();
+				zx::levelmesh::MeshClearDirtyRanges();
+				return;
+			}
+		}
+	}
 	unsigned int lo = 0, hi = 0;
 	zx::levelmesh::MeshTakeDirty(lo, hi);
 	// [rc4l] Clear the itemised list HERE too, or it accumulates across every quiet frame until
@@ -3692,6 +3720,16 @@ static void RefreshMovedGeometry(Diligent::IDeviceContext *ctx)
 				{
 					const VBSlot &slot = g_vbSlots[*slotIdx];
 					if (slot.blended) { bailed = true; break; }
+					// [rc4l] A piece whose MATERIAL changed cannot be patched in place.
+					//
+					// A batch is a run of pieces that share a material and, without bindless, one
+					// binding. Rewriting a piece's vertices where it lies leaves it in a batch that
+					// still names the old texture, so it goes on being drawn with it -- which is why
+					// pressing a switch left the switch looking unpressed. The seg re-bakes correctly
+					// (side_t::SetTexture bumps fua_dirty); it is the batching that has to be redone,
+					// and a rebuild is the only thing that can move a piece between batches.
+					if (slot.batch < g_batches.Size() && p->material != g_batches[slot.batch].material)
+						{ bailed = true; break; }
 					// [rc4l] The record is rewritten in place and the index does not move.
 					//
 					// A door's shading changes as it moves -- its light level, and on a slope its normal --
@@ -5514,7 +5552,7 @@ void DynStats(FString &report)
 		g_dynSlotSeen, g_dynSlotMax, g_dynSlotRefused, g_dynSlotNoMaterial);
 	cull.AppendFormat(", dyn draws: %d bindless, %d per-material, pipelines [%s]",
 		g_dynBindless, g_dynPerMaterial, g_fillState);
-	cull.AppendFormat(" | array filled %d times, slots 1..7 got:", g_fillCount);
+	cull.AppendFormat(" | array built %d times, %d slot updates, slots 1..7 got:", g_fillCount, g_matSlotUpdates);
 	for (int fi = 1; fi < 8; fi++)
 		cull.AppendFormat(" %d=%s(%p)", fi, g_fillNames[fi].IsNotEmpty() ? g_fillNames[fi].GetChars() : "-",
 			g_fillViews[fi]);

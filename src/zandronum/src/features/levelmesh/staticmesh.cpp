@@ -489,7 +489,14 @@ void MeshRegisterPiece(const MeshPiece &piece)
 	{
 		const MeshPiece &was = g_pieceList[*found];
 		if (was.range.count != piece.range.count) { g_layoutGen++; g_layoutResized++; }
-		else if (was.baseTex != piece.baseTex || was.blendMode != piece.blendMode)
+		// [rc4l] The MATERIAL is what a batch is keyed on, so it is what a rebatch has to notice.
+		//
+		// This compared baseTex and blendMode only. Pressing a switch swaps the sidedef's texture,
+		// the seg re-bakes, the piece takes the new material -- and if baseTex happens to compare
+		// equal the change went uncounted, so the renderer never learned to move the piece into a
+		// batch for its new texture. The switch stayed looking unpressed.
+		else if (was.material != piece.material || was.baseTex != piece.baseTex ||
+		         was.blendMode != piece.blendMode)
 			{ g_layoutGen++; g_layoutRebatched++; }
 		g_pieceList[*found] = piece;
 		return;
