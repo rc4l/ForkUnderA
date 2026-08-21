@@ -373,10 +373,6 @@ public:
 	void Draw(int pass);
 	void PutSprite(bool translucent);
 	void Process(AActor* thing,sector_t * sector);
-	// [rc4l] The cheap half of Process's rejection, hoisted so a caller can ask BEFORE paying for
-	// the rest. Static, and the only copy: Process calls it too, so the two cannot answer differently
-	// -- a second spelling of "can this actor draw" is the drift this port keeps refusing to buy.
-	static bool CanPossiblyDraw(AActor *thing);
 	void ProcessParticle (particle_t *particle, sector_t *sector);//, int shade, int fakeside)
 	void SetThingColor(PalEntry);
 	void SetSpriteColor(sector_t *sector, fixed_t y);
