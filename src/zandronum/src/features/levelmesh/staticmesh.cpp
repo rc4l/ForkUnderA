@@ -122,17 +122,27 @@ void DynClear()
 
 unsigned int DynGeneration() { return g_dynGen; }
 
-void DynAppend(const FFlatVertex *verts, int count, MeshPiece proto)
+void DynAppend(const FFlatVertex *verts, int count, const MeshPiece &proto)
 {
 	if (verts == NULL || count <= 0) return;
 	// [rc4l] A sane ceiling, so a pathological frame cannot eat memory the way the first wall cache
 	// did. 300k vertices is 100k triangles of sprites, far past anything a Doom frame produces.
 	if (g_dynVerts.Size() + (unsigned)count > 300000) return;
 
-	proto.range.offset = g_dynVerts.Size();
-	proto.range.count = (unsigned)count;
-	for (int i = 0; i < count; i++) g_dynVerts.Push(verts[i]);
+	// [rc4l] One grow check and one copy, not one of each per vertex.
+	//
+	// A sprite is six vertices and Sunder MAP16 draws three thousand of them, so pushing them
+	// individually was eighteen thousand bounds tests a frame to append a fixed-size block that is
+	// always six long. The proto came by VALUE as well, which copied a MeshPiece into the argument
+	// and then copied it again into the array -- twice per sprite for a struct of seventeen fields.
+	const unsigned base = g_dynVerts.Size();
+	g_dynVerts.Resize(base + (unsigned)count);
+	memcpy(&g_dynVerts[base], verts, (size_t)count * sizeof(FFlatVertex));
+
 	g_dynPieces.Push(proto);
+	MeshPiece &p = g_dynPieces[g_dynPieces.Size() - 1];
+	p.range.offset = base;
+	p.range.count = (unsigned)count;
 }
 
 const FFlatVertex *DynVertices(int &count)

@@ -1,75 +1,116 @@
-# Sprites: what deriving them would cost, and why not to
+# Sprites: what they actually cost, and what does not help
 
 In-game sprites -- the billboards Doom draws for actors: monsters, items, decorations, projectiles,
-blood, puffs. Not the HUD; that is the 2D layer, captured separately and part of a different debt.
+blood, puffs. Not the HUD; that is the 2D layer, captured separately.
 
-Sprites are the last thing GL still derives for the Vulkan backend. `GLSprite::Process` picks what a
-sprite looks like and `GLSprite::Draw` emits it, and the mesh takes what they produce -- which is why
-GL still runs at all once `fua_dg_standalone` has taken the world away from it.
+With `fua_dg_standalone` and `fua_surface_mapbake_auto` on, the world comes from a resident mesh and
+GL builds nothing per frame. Sprites are what is left. `GLSprite::Process` picks what a sprite looks
+like and the mesh takes what it produces, which is why GL still runs at all.
 
 ## A correction that changes the size of the prize
 
 `sv_nomonsters 1` does **not** remove sprites. On Sunder MAP10's arena it takes the frame from 1380
 sprites to 1074 -- the items and decorations stay. Every "with monsters / without monsters" comparison
-earlier in this work is therefore a comparison of 1380 against 1074, a 22% difference in count, and
-not sprites against none.
-
-That matters because "the remaining second of the frame is the GL sprite pipeline" was written on the
-back of exactly that comparison, and it is wrong.
+earlier in this work is therefore 1380 against 1074, and not sprites against none.
 
 ## What it actually costs
 
-The engine's own clocks, `stat rendertimes`, on Sunder MAP10's arena:
+This document previously said 15-25%, measured against a frame that still had GL building walls in
+it. Measured properly -- by capping the sweep with `fua_sprite_max 1`, which leaves the frame with no
+sprites in it and therefore prices the whole pipeline -- sprites are most of what is left:
 
-| sprites | GLSprite render | GLSprite setup | total |
+| | `All=` with sprites | `All=` without | sprites are |
 |---|---|---|---|
-| 1380 | 0.167 ms | 0.126 ms | **0.29 ms** |
-| 1074 | 0.149 ms | 0.337 ms | 0.49 ms |
+| Sunder MAP10 | 0.830 ms | 0.403 ms | **52%** |
+| Sunder MAP16 | 2.391 ms | 0.610 ms | **74%** |
 
-Against a frame of 1.5-2.1 ms depending on what is alive, that is **15-25%** -- and it is the whole of
-what a derivation would replace. The setup figure is noisy between runs; the render figure is not.
+Minimum of many samples, because the median swings by 2x on this machine and comparing across engine
+restarts is worthless. Everything below is a within-one-instance A/B, alternating.
 
-## What `GLSprite::Process` does, which is what would have to be rewritten
+## The funnel, and where it leaks
 
-- Visibility: the camera actor, `IsVisibleToPlayer`, `RF_INVISIBLE`, `RenderStyle.IsVisible`, the map
-  section bitmask, and the spy-icon / chasecam / mirror rules.
-- `P_CheckPlayerSprite` for player sprites, which can rewrite the sprite number and both scales.
-- Frame and angle selection: `R_PointToAngle` against the actor's own angle, then `gl_GetSpriteFrame`,
-  which also reports whether the frame is MIRRORED -- and a mirrored frame flips its x offset.
-- The sprite rectangle, already trimmed to the opaque border by `FMaterial::TrimBorders`.
-- `PerformSpriteClipAdjustment` -- a hundred lines of clipping a sprite against the floor and ceiling
-  it stands between.
-- Wall sprites versus face sprites, which orient differently.
-- Lighting: fullbright, fog level, `gl_CheckSpriteGlow`, the sector's colormap, a fixed colormap, the
-  actor's `fillcolor` under `STYLEF_ColorIsFixed`, and `STYLEF_InvertSource`.
-- `SplitSprite`, which cuts a sprite at a 3D floor's light bands the way `SplitWall` cuts a wall.
-- Particles and voxels, each with their own path.
+`fua_sprite_sweep` reports it. The standalone path walks the thinker list rather than the BSP tree,
+so it starts from every actor in the level:
 
-## The three options
+| | actors iterated | culled before `Process` | reach `Process` | actually draw |
+|---|---|---|---|---|
+| MAP10 | 3834 | 2428 | 1406 | **1406** |
+| MAP16 | 6428 | 1822 | 4606 | 3053 |
 
-1. **Narrow the sweep.** The standalone path iterates every actor in the level each frame and frustum
-   culls them. That is already far cheaper than the BSP walk it replaced, but it is still O(all
-   actors) where only the visible ones matter. A spatial index over visible sectors would cut it.
-   *Unmeasured: how many actors exist against how many draw. Measure that before building anything.*
-2. **Cache per-actor state between frames.** Limited by construction: the chosen frame depends on the
-   angle between the actor and the camera, and the camera moves every frame.
-3. **Derive sprites from the map.** Replaces the list above.
+MAP10 runs at a perfect hit rate. MAP16 loses 1553 a frame inside `Process`, and `fua_sprite_sweep`
+names the reason: **all of them fail the map section bitmask**.
 
-## The recommendation: don't do 3
+That test is worth reading carefully, because its comment in `GLSprite::Process` reads as though the
+BSP walk fills the mask in -- which would make it meaningless without a walk. It does not.
+`FGLRenderer::ProcessScene` clears the mask and sets the VIEWER's section every frame before drawing
+anything, and portal traversal is the only thing that ever adds to it. So the question is asked and
+answered identically with a walk or without one.
 
-15-25% of the frame, at 400+ fps, in exchange for a second implementation of every render style a mod
-can set -- which is the specific thing that drifted before `CaptureShading` existed, and the specific
-thing this port has refused to do since. The list above is not long because sprites are complicated;
-it is long because Doom's sprites accumulated thirty years of special cases, and each one is a bug
-that only shows up on somebody's favourite wad.
+## Three things that were tried and did not help
 
-## Two better targets, found while scoping this
+Each was built, measured with an alternating A/B in one instance, and then judged.
 
-**`glFinish()` in the swap path.** `OpenGLFrameBuffer::Swap` calls it before presenting -- a full GPU
-stall every frame, waiting on a GL queue that has almost nothing in it when the backend drew the
-world. `NtWaitForSingleObject` is 9-13% of the profile.
+1. **Narrow the sweep** -- hoist the cheap half of `Process`'s rejection ahead of the projection, so
+   an actor that can never draw is not projected and not passed on. This is what the previous version
+   of this document recommended. It **does not separate from noise** on either map. The cost is not
+   in the actors that get rejected; it is per-actor-that-draws. The extraction was kept anyway
+   (`GLSprite::CanPossiblyDraw`) because it is the same code `Process` runs rather than a copy of it,
+   and it is the first piece of the sprite path that is not tangled in the renderer.
 
-**The instant-replay capture owns the frame-time TAIL.** `cl_fua_replay` is on by default and reads
-the frame back through a PBO at 30 fps. On the median it costs nothing -- 1.515 ms against 1.505 --
-but the 99th percentile goes from **4.14 ms to 2.69** and the worst frame from 5.39 to 2.71. At 400+
-fps that is one frame in fourteen costing several times its neighbours, which is what a stutter is.
+2. **Memoise `CaptureShading`.** It goes through `gl_SetColor` and `gl_SetFog` -- which write the
+   whole render state -- and then reads eight values back, once per sprite per frame. Keyed on its
+   six inputs it hits **98%**: 3053 sprites on MAP16 come from 31 distinct lighting situations. It
+   still buys nothing. What a hit skips is two calls and eight getters, and writing the eight answers
+   into the piece costs about the same. Removed.
+
+   It is worth recording how that was nearly missed. The first version cached a whole `MeshPiece` and
+   assigned it over the caller's, which clobbered every field the caller had already set and that
+   `CaptureShading` does not touch -- chief among them `mp.material`, so every sprite sharing a cache
+   slot wore the texture of whichever sprite reached that slot first. That version measured as a 10%
+   win. It was only ever the bug being cheap, and it showed up against the picture at 1.7% on MAP16
+   and nowhere else.
+
+3. **`DynAppend` pushed six vertices one at a time** and took its `MeshPiece` by value -- eighteen
+   thousand bounds tests and six thousand struct copies a frame on MAP16, to append blocks that are
+   always six long. One grow and one `memcpy` now, and the proto passed by reference. Strictly less
+   work with identical semantics, and it did not separate from noise either.
+
+## Where the time actually is
+
+Splitting MAP16's 0.86 ms of sprite work by knob, minimum of many samples:
+
+| piece | cost | share |
+|---|---|---|
+| `RegisterSprite` -- building the quad and feeding the mesh | ~0.28 ms | 36% |
+| `gl_SetDynSpriteLight` -- the per-actor dynamic light | ~0.16 ms | 21% |
+| the rest of `Process` -- frame choice, clipping, projection | ~0.33 ms | 43% |
+
+There is no hot spot. It is roughly a quarter of a microsecond per drawn sprite, spread thinly across
+a lot of small work, which is why every micro-optimisation above came back a wash.
+
+## So the only lever left is drawing fewer
+
+The BSP walk was doing two jobs and only one of them was dropped: it derived the geometry, and it
+found the actors worth looking at. It only ever visited subsectors that were *visible*, so GL only
+ever saw actors that were not behind a wall. The sweep has no equivalent -- an actor in the camera's
+map section and inside the frustum is processed whether or not there is a wall in front of it, and on
+a map like MAP16 that is most of the 3053.
+
+The candidates, none of them small:
+
+- **A marking-only BSP traversal.** The walk's expense was building a `GLWall` per seg, not the
+  descent; a traversal that only marks visible subsectors would give exact sprite visibility. It
+  costs whatever `BSP=` costs, which was 0.6-0.75 ms on MAP10 -- possibly more than it saves, and it
+  brings back the thing that was just removed. Measure the marking pass on its own before believing
+  either way.
+- **A software occlusion buffer** over the resident mesh. The general answer, and much the largest.
+- **Screen-space size culling.** Cheap, effective, and it changes the picture -- which this port has
+  not been willing to do.
+
+## The other half: a GL-free build
+
+`GLSprite::Process` touches no GL state -- upstream reached the same conclusion and its
+`hw_sprites.cpp` is API-agnostic -- so the port of sprites is not a rewrite of the hard part, it is
+severing the easy one. `CanPossiblyDraw` is the first piece over that line. The rest still reaches
+through `GLRenderer->mViewActor`, `GLRenderer->mCurrentPortal` and the GL draw lists, and that is the
+work item -- not a second implementation of every render style a mod can set.
