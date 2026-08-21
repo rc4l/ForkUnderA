@@ -348,12 +348,14 @@ Ruled out by measurement, in order:
 `ClipFFloors` -- the clip GL applies when a slab is `FF_SWIMMABLE|FF_TRANSLUCENT`, against the *front*
 sector's slabs of the same kind -- is the next thing to try, and is not implemented.
 
-### What `fua_dg_cullbatches` is worth
+### `fua_dg_cullbatches`, removed
 
-Nothing, still, and it stays off. Measured again on Sunder MAP10 with the level baked: submit-only
-0.20-0.24 ms with it either way, four alternating runs, no separation. The reason is the one recorded
-at the cvar: a batch is a run of pieces sharing a material, those are scattered the length of the
-level, and every batch's box is most of the map.
+It was worth nothing and it is gone. Measured twice, most recently on Sunder MAP10 with the level
+baked: submit-only 0.20-0.24 ms with it either way, four alternating runs, no separation. The reason
+is the one recorded when it was written -- a batch is a run of pieces sharing a material, those are
+scattered the length of the level, and every batch's box is most of the map. It becomes worth having
+again only when batches are spatially coherent, which is what per-piece indirect draws would give,
+and at that point the test is three lines.
 
 ### What the switches are worth
 

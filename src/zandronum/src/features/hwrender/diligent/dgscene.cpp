@@ -204,17 +204,6 @@ CVAR(Bool, fua_dg_clusters, true, 0)
 // only known difference and it is written up in features/surfaces/README.md.
 CVAR(Bool, fua_dg_standalone, true, CVAR_ARCHIVE)
 
-// [rc4l] Skip batches the camera cannot see -- which turns out to be almost none of them.
-//
-// Measured on Sunder MAP16 with the level fully baked: 20 batches culled out of 2348, and submit
-// time went UP, from 0.540 ms to 0.595. The reason is in the batching, not the test: a batch is a
-// run of pieces sharing a MATERIAL, and the pieces sharing a material are scattered the length of
-// the level, so every batch's box is most of the map. There is nothing to cull.
-//
-// Kept, off, because it becomes worth having the moment batches are spatially coherent -- which is
-// what per-piece indirect draws with bindless materials would give (#4), and what a spatial batch
-// sort would give at the cost of more draws. The number to beat is recorded above.
-CVAR(Bool, fua_dg_cullbatches, false, 0)
 
 // [rc4l] Bindless materials: every texture in the level reachable from one descriptor set.
 //
@@ -256,7 +245,7 @@ CVAR(Bool, fua_dg_mergedraws, true, 0)
 // [rc4l] Let the material array follow animated textures. Separable because following them means
 // rebuilding thirteen bindings, and a binding the GPU is still reading is its own kind of wrong.
 CVAR(Bool, fua_dg_bindless_anim, true, 0)
-static int g_batchesCulled = 0, g_batchesDrawn = 0;
+static int g_batchesDrawn = 0;
 
 // Set once the level has been baked under standalone -- the bake itself needs GL frames.
 static bool g_standaloneBaked = false;
@@ -702,35 +691,6 @@ static void UpdateMaterialSlotInBindings(unsigned int slot)
 		if (!g_worldSRBs[i]) continue;
 		if (auto *v = g_worldSRBs[i]->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "uMaterials"))
 			v->SetArray(&obj, slot, 1);
-	}
-}
-
-// [rc4l] Rebuild when the table changed, and only then.
-//
-// Animated textures raise the flag about four times a second, not sixty, so this is not a per-frame
-// cost. It runs before anything is recorded into a command buffer, because re-filling a binding the
-// GPU is still reading is a use-after-free with a very confusing symptom.
-// [rc4l] Follow the animation, without the animation pass having to know about the array.
-//
-// An animated texture keeps ONE identity and swaps which image it resolves to every few tics. The
-// old path re-pointed the batch's binding when that happened; here the slot's contents change and
-// its key does not, so the geometry never has to know that nukage flows.
-//
-// Asked here, once a frame over a couple of hundred slots, rather than pushed from the animation
-// pass. The pushed version was written first and got it wrong in a way worth remembering: the
-// pass only visits batches, so slots no batch owns went stale, and turning the pass OFF left the
-// wrong answers in place with nothing to correct them. dbab04 rendered every surface with some
-// other surface's texture.
-static void UpdateMaterialSlotResolutions()
-{
-	for (unsigned i = 1; i < g_matSlotTable.Size(); i++)
-	{
-		FMaterial *base = (FMaterial *)g_matSlotTable[i].material;
-		if (base == NULL || base->tex == NULL) continue;
-		FMaterial *now = FMaterial::ValidateTexture(base->tex->id, false, true);
-		if (now == NULL || now == g_matSlotTable[i].resolved) continue;
-		g_matSlotTable[i].resolved = now;
-		g_matSlotsDirty = true;
 	}
 }
 
@@ -2212,50 +2172,6 @@ static void BuildDynamic(Diligent::IDeviceContext *ctx)
 	g_dynReady = true;
 }
 
-// [rc4l] The opaque half of the sprite stream. Alpha-tested, depth written, so these behave exactly
-// like world geometry against everything drawn afterwards.
-//
-// NOTHING CALLS THIS. Sprites of every blend mode -- opaque included -- go through the sorted
-// translucent pass instead, because an alpha-1 sprite has to be ordered against the additive glows
-// around it: splitting them into a depth-writing pass let an impact sprite punch a black hole in a
-// plasma burst. See the blend-0 note in the sorted loop, which is where the decision lives.
-//
-// Left standing rather than deleted because it is the shape a depth-writing sprite pass would take
-// if one is ever wanted again -- but it is DEAD, and it looks alive enough that optimising it is a
-// mistake worth only making once. It was: batching its draws changed nothing, because it never ran.
-static void DrawDynamicOpaque(Diligent::IDeviceContext *ctx)
-{
-	if (!g_dynReady) return;
-
-	Diligent::IBuffer *vbs[] = { g_dynVB };
-	const Diligent::Uint64 offsets[] = { 0 };
-	ctx->SetVertexBuffers(0, 1, vbs, offsets, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
-		Diligent::SET_VERTEX_BUFFERS_FLAG_RESET);
-	ctx->SetPipelineState(g_maskedNoCullPSO);
-	Diligent::IPipelineState *boundOpaque = g_maskedNoCullPSO.RawPtr();
-
-	for (unsigned i = 0; i < g_dynRuns.Size(); i++)
-	{
-		const DynRun &r = g_dynRuns[i];
-		if (r.count == 0 || r.blend != 0) continue;
-		Diligent::IPipelineState *pso = r.depthBias ? g_maskedDecalPSO.RawPtr()
-		                                            : g_maskedNoCullPSO.RawPtr();
-		auto *srb = WorldSRB(pso);
-		if (srb) g_dynBindless++; else { g_dynPerMaterial++; srb = GetMaterialSRB(pso, r.material, r.translation); }
-		if (!srb) continue;
-		if (pso != boundOpaque) { ctx->SetPipelineState(pso); boundOpaque = pso; }
-		ctx->CommitShaderResources(srb, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-		Diligent::DrawAttribs draw;
-		draw.NumVertices = r.count;
-		draw.StartVertexLocation = r.first;
-		draw.Flags = Diligent::DRAW_FLAG_VERIFY_ALL;
-		ctx->Draw(draw);
-		g_dynDraws++;
-		g_dynTris += r.count / 3;
-		g_dynByBlend[0]++;
-	}
-}
-
 // [rc4l] The away-facing half of a 3D floor used to be dropped HERE, per surface, on the CPU.
 //
 // That cost a batch per plane -- 240 extra draws on dbab02 -- because whether a horizontal plane
@@ -2499,7 +2415,6 @@ static void DrawBlended(Diligent::IDeviceContext *ctx)
 // settings. SRBs are created from a PSO and cannot outlive it.
 static int g_builtCull = -1;
 static int g_builtFilter = -1;
-static void ReleaseDeferredDecalPass();
 
 static void ReleaseScenePipelines()
 {
@@ -3669,57 +3584,6 @@ bool SceneUpload(FString &report)
 		g_scenePieceData.Size() ? softPieces * 100 / (int)g_scenePieceData.Size() : 0,
 		g_scenePieceData.Size() ? fogPieces * 100 / (int)g_scenePieceData.Size() : 0);
 	return true;
-}
-
-// [rc4l] Re-upload the parts of the world that actually moved.
-//
-// Doors, lifts, crushers and rising floors change sector planes; the wall cache notices, re-bakes
-// those segs, and MeshStore rewrites their vertices in place. Only the pieces overlapping the mesh's
-// dirty range are rebuilt and uploaded -- a door costs a handful of pieces, not the 8.9 MB the whole
-// level would.
-//
-// Positions and UVs are refreshed but the batch layout is not: a piece keeps its slot in the
-// material-sorted buffer, so nothing needs re-sorting. A surface that changes its *material* mid-game
-// would need a full re-upload; nothing in Doom does that outside of animation, which is handled
-// separately by swapping the SRB.
-// [rc4l] Put a piece that has just appeared at the END of the buffer, in a batch of its own.
-//
-// The material sort exists to MINIMISE batches, not to make them correct: the opaque pass draws its
-// batches in whatever order the list holds them, so an appended surface drawing on its own costs
-// one extra draw call and nothing else. That is the whole reason a new seg no longer has to rebuild
-// the world -- on Sunder MAP16, 21 pieces a tic were each doing exactly that.
-//
-// Blended pieces are refused: the translucent pass sorts batches by centroid every frame and a
-// piece appended without one would sort as if it were at the origin. They fall back to the rebuild,
-// which computes the centroid properly.
-// [rc4l] Is any of this box in front of the camera and on the screen?
-//
-// Every batch was drawn every frame, whatever the camera faced. The GPU never minded -- the whole
-// world measures 0.18 ms -- but each batch costs a resource binding on the CPU, and a level with
-// thousands of them spends most of a millisecond binding materials for geometry behind the player.
-//
-// The box is projected the same way the light binner projects a light: all eight corners through
-// the MVP, with anything crossing the near plane kept outright. Conservative in the direction that
-// matters -- a batch wrongly kept costs one draw, a batch wrongly dropped is a hole in the world.
-static bool BatchOnScreen(const SceneBatch &b, const float *mvp)
-{
-	if (b.maxX < b.minX) return true;   // no bounds recorded: draw it rather than guess
-	float minNdcX = 1e30f, maxNdcX = -1e30f, minNdcY = 1e30f, maxNdcY = -1e30f;
-	for (int i = 0; i < 8; i++)
-	{
-		const float x = (i & 1) ? b.maxX : b.minX;
-		const float y = (i & 2) ? b.maxY : b.minY;
-		const float z = (i & 4) ? b.maxZ : b.minZ;
-		const float w = mvp[3] * x + mvp[7] * y + mvp[11] * z + mvp[15];
-		if (w < 1.f) return true;   // crosses or sits behind the near plane: keep it
-		const float cx = (mvp[0] * x + mvp[4] * y + mvp[8]  * z + mvp[12]) / w;
-		const float cy = (mvp[1] * x + mvp[5] * y + mvp[9]  * z + mvp[13]) / w;
-		if (cx < minNdcX) minNdcX = cx;
-		if (cx > maxNdcX) maxNdcX = cx;
-		if (cy < minNdcY) minNdcY = cy;
-		if (cy > maxNdcY) maxNdcY = cy;
-	}
-	return !(maxNdcX < -1.f || minNdcX > 1.f || maxNdcY < -1.f || minNdcY > 1.f);
 }
 
 static bool AppendPiece(Diligent::IDeviceContext *ctx, const zx::levelmesh::MeshPiece &p,
@@ -5284,7 +5148,7 @@ static void DrawWorld(Diligent::IDeviceContext *ctx)
 	// [rc4l] Lights are collected BEFORE the constants are written -- the shader reads the count from
 	// there, so collecting afterwards would light every frame with the previous frame's count.
 	g_phase.Reset();
-	g_batchesCulled = g_batchesDrawn = g_worldDraws = 0;
+	g_batchesDrawn = g_worldDraws = 0;
 	g_phase.geometry.Clock();  RefreshMovedGeometry(ctx);   g_phase.geometry.Unclock();
 	g_phase.lights.Clock();    CollectDynamicLights(ctx);   g_phase.lights.Unclock();
 	g_phase.clusters.Clock();  BuildLightClusters(ctx);     g_phase.clusters.Unclock();
@@ -5404,7 +5268,6 @@ static void DrawWorld(Diligent::IDeviceContext *ctx)
 		{
 			SceneBatch *b = (bi < g_batches.Size()) ? &g_batches[bi] : NULL;
 			bool take = b != NULL && b->count != 0 && b->blend == 0;
-			if (take && fua_dg_cullbatches && !BatchOnScreen(*b, g_mvp)) { g_batchesCulled++; take = false; }
 
 			Diligent::IShaderResourceBinding *srb = NULL;
 			if (take)
@@ -5779,8 +5642,8 @@ void DynStats(FString &report)
 	geo.Format(" | geometry: %d scene rebuilds since load, last dirty %u..%u",
 		g_geomRebuilds, g_lastDirtyLo, g_lastDirtyHi);
 	FString cull;
-	cull.Format(" | batches: %d drawn, %d culled, in %d draw calls | bindless %s: %d slots, %d white",
-		g_batchesDrawn, g_batchesCulled, g_worldDraws,
+	cull.Format(" | batches: %d drawn in %d draw calls | bindless %s: %d slots, %d white",
+		g_batchesDrawn, g_worldDraws,
 		BindlessActive() ? "on" : "off", MaterialSlotCount(), g_matSlotsWhite);
 	cull.AppendFormat(", dyn slots: %d seen, max %d, %d refused, %d with no material",
 		g_dynSlotSeen, g_dynSlotMax, g_dynSlotRefused, g_dynSlotNoMaterial);

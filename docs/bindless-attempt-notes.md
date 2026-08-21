@@ -134,9 +134,8 @@ compute dispatch to decide it would cost some of it back. Per-piece indirect dra
 way outright: the probe's own numbers show draw count is not free, and 110,731 pieces is not 165.
 
 The reason the issue expected a win was the per-batch submit cost -- 0.445 ms on 166 batches -- and
-that cost is gone, removed by bindless rather than by culling. `fua_dg_cullbatches` stays off for the
-same reason it always was, but the reason has changed from "it makes things worse" to "there is
-nothing there".
+that cost is gone, removed by bindless rather than by culling. `fua_dg_cullbatches` has since been
+removed outright for that reason: not "it makes things worse" any more, but "there is nothing there".
 
 Worth revisiting only if something makes the GPU expensive: real shadows (#306), much higher
 resolution, or a shader far heavier than this one.

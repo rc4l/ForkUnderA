@@ -23,7 +23,6 @@
 #include "c_dispatch.h"   // CCMD, for fua_sprite_sweep
 #include "c_cvars.h"
 #include "features/hwrender/hud2d.h"   // StandaloneActive
-#include "features/hwrender/occlusion.h"
 
 
 // [rc4l] Print every new flat-mesh key. See RegisterFlatSubsector: a key that misses when it should
@@ -672,9 +671,6 @@ void RecordSpriteSweep(int seen, int noSector, int behind, int offScreen, int pr
 	g_swOffScreen = offScreen; g_swProcessed = processed;
 }
 
-static int g_swOccluded = 0;
-void RecordOcclusionProbe(int occluded) { g_swOccluded = occluded; }
-
 CCMD( fua_sprite_sweep )
 {
 	if (g_swSeen == 0) { Printf( "fua_sprite_sweep: no sweep has run -- needs fua_dg_standalone.\n" ); return; }
@@ -683,12 +679,6 @@ CCMD( fua_sprite_sweep )
 		g_swSeen, culled, g_swNoSector, g_swBehind, g_swOffScreen );
 	Printf( "  %d handed to GLSprite::Process, of which %d registered a sprite\n",
 		g_swProcessed, g_spritesThisFrame );
-	int linesUsed = 0, painted = 0;
-	double buildMs = 0.0;
-	zx::hwrender::OcclusionStats( linesUsed, painted, buildMs );
-	if (linesUsed > 0)
-		Printf( "  occlusion: %d lines -> %d limits in %.3f ms, hiding %d actors\n",
-			linesUsed, painted, buildMs, g_swOccluded );
 }
 int SpritePieceCount() { return g_spritesThisFrame; }
 
