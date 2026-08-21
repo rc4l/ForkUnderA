@@ -35,6 +35,22 @@ namespace zx { namespace levelmesh {
 // spare; 3D-floor segs, which are the ones that need more, are already ineligible.
 const int kMaxCachedPieces = 4;
 
+// [rc4l] How many MESH RANGES a seg can own, which is not the same question.
+//
+// The number above is how many GLWalls the capture keeps, and it is expensive to raise because a
+// GLWall is a couple of hundred bytes and there is one array per seg. A mesh range is twelve, and
+// the map-driven bake needs more of them than the capture ever did: a wall in a sector with 3D
+// floors is cut into one piece per light band, because each band lights it differently.
+//
+// That limit is why those sectors were handed back to the capture at all -- and handing them back is
+// what makes them vanish when GL stops walking the level. Sixteen is three parts by five bands with
+// room over; a wall crossing more bands than that keeps as many as fit, which is a wrong light on
+// the tail of one wall rather than a missing wall.
+//
+// The packed (seg, piece) reference GL replay uses keeps the SMALLER stride, because it only ever
+// addresses captured pieces.
+const int kMaxMapPieces = 16;
+
 // One GLWall as PutWall routed it, so replay can put it back in the same list without re-deciding.
 struct CachedWallPiece
 {
@@ -76,7 +92,7 @@ inline int PackWallRef(int segIndex, int piece) { return segIndex * kMaxCachedPi
 struct SegCache
 {
 	GLWall          walls[kMaxCachedPieces];
-	CachedWallPiece pieces[kMaxCachedPieces];
+	CachedWallPiece pieces[kMaxMapPieces];
 	int             pieceCount;
 	// [rc4l] How many pieces were in the mesh last time this seg baked.
 	//
@@ -100,7 +116,7 @@ struct SegCache
 	// launching straight into the same map was always fine, because the block started zeroed.
 	SegCache() : pieceCount(0), bakedCount(0), filled(false)
 	{
-		for (int i = 0; i < kMaxCachedPieces; i++)
+		for (int i = 0; i < kMaxMapPieces; i++)
 		{
 			pieces[i].list = 0;
 			pieces[i].range.offset = 0;

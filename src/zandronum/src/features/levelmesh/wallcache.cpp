@@ -54,6 +54,7 @@ EXTERN_CVAR(Int, gl_fogmode)
 CVAR(Bool, gl_wallcache_anim, true, 0)
 
 #include "features/surfaces/surfacebuild.h"
+#include "features/surfaces/computation/wallbands_compute.h"
 
 namespace zx { namespace levelmesh {
 
@@ -139,7 +140,7 @@ void AllocForLevel(int numsegs)
 		g_cache[i].filled = false;
 		g_cache[i].pieceCount = 0;
 		g_cache[i].bakedCount = 0;
-		for (int k = 0; k < kMaxCachedPieces; k++)
+		for (int k = 0; k < kMaxMapPieces; k++)
 		{
 			g_cache[i].pieces[k].list = 0;
 			g_cache[i].pieces[k].range.offset = 0;
@@ -287,7 +288,7 @@ void BakeSeg(int segIndex)
 	// squashed to zero area rather than abandoned, or it keeps rendering. Opening a door is exactly
 	// this case: its middle texture disappears, and without this the shut door stayed drawn across
 	// the doorway in the Vulkan view while GL showed the room behind it.
-	for (int i = sc.pieceCount; i < sc.bakedCount && i < kMaxCachedPieces; i++)
+	for (int i = sc.pieceCount; i < sc.bakedCount && i < kMaxMapPieces; i++)
 	{
 		MeshRange &r = sc.pieces[i].range;
 		if (r.count == 0) continue;
@@ -467,6 +468,14 @@ void BakeSeg(int segIndex)
 // Slots are assigned by PART -- upper, lower, middle -- rather than in the order pieces happen to
 // arrive, which the capture path cannot do and which makes a re-bake reuse the same mesh range every
 // time.
+// [rc4l] Slots per part, so a part+band always lands in the SAME mesh range across re-bakes.
+//
+// Assigning slots in the order pieces happen to come out would move a part's range whenever the band
+// count changed -- a lift crossing a 3D floor does that several times a second -- and a range that
+// moves is a rebatch, which is a full scene rebuild. Fixed arithmetic keeps the property the
+// per-part assignment had before bands existed.
+static const int kBandsPerPart = 5;
+
 int BakeSegFromMap(int segIndex)
 {
 	if (!gl_wallmesh) return 0;
@@ -487,11 +496,21 @@ int BakeSegFromMap(int segIndex)
 	// is what put a hole in dbab01 -- see MapBakeOwnsSeg.
 	if (!zx::surfaces::BuildDerivedWallLight(seg, dl, cmFrom) || cmFrom == NULL) return 0;
 
+	// [rc4l] The light bands the sector's 3D floors cast on every wall in it.
+	//
+	// A sector with 3D floors has no single light level: each floor contributes a band, and a wall
+	// crossing one is drawn as two pieces with two lights. Computed per part because the span being
+	// cut is the part's -- see wallbands_compute for the rule, which is GLWall::SplitWall's.
+	const sector_t *front = seg->frontsector;
+	const TArray<lightlist_t> *lights =
+		(front != NULL && front->e != NULL) ? &front->e->XFloor.lightlist : NULL;
+	int nLights = (lights != NULL) ? (int)lights->Size() : 0;
+	if (nLights > kBandsPerPart) nLights = kBandsPerPart;
+
 	int made = 0;
 	for (int part = 0; part < 3; part++)
 	{
-		if (part >= kMaxCachedPieces) break;
-		MeshRange &range = sc.pieces[part].range;
+		const int slot0 = part * kBandsPerPart;
 
 		zx::surfaces::DerivedWallSpan d;
 		if (!zx::surfaces::BuildDerivedWallSpan(seg, kParts[part], d))
@@ -504,53 +523,110 @@ int BakeSegFromMap(int segIndex)
 			// full scene rebuild -- 4869 of them on dbab04 before this line said squash. Squashing
 			// keeps the range so the geometry can come back into it, which is exactly the reasoning
 			// InvalidateMovedSectors gives for doing the same thing.
-			MeshSquash(range);
+			for (int k = 0; k < kBandsPerPart; k++) MeshSquash(sc.pieces[slot0 + k].range);
 			continue;
 		}
 
-		// The four corners, in the order BuildFanVertices produces them, wound as a pair of triangles.
-		FFlatVertex fan[4];
-		fan[0].Set(d.x1, d.zbottom[0], d.y1, d.uLeft,  d.vBottom[0]);
-		fan[1].Set(d.x1, d.ztop[0],    d.y1, d.uLeft,  d.vTop[0]);
-		fan[2].Set(d.x2, d.ztop[1],    d.y2, d.uRight, d.vTop[1]);
-		fan[3].Set(d.x2, d.zbottom[1], d.y2, d.uRight, d.vBottom[1]);
-		int w = 0;
-		for (int t = 0; t < 2; t++)
-			for (int c = 0; c < 3; c++)
-				tris[w++] = fan[ComputeFanTriangleVertex(4, t, c)];
-
-		if (!MeshStore(range, tris, w))
+		// Where each band ends, at the wall's two ends. Band i is bounded below by light i+1.
+		float bandBottom[kBandsPerPart][2];
+		for (int i = 0; i + 1 < nLights; i++)
 		{
-			MeshSquash(range);
+			const secplane_t &p = (*lights)[i + 1].plane;
+			if (p.a | p.b)
+			{
+				bandBottom[i][0] = FIXED2FLOAT(p.ZatPoint(FLOAT2FIXED(d.x1), FLOAT2FIXED(d.y1)));
+				bandBottom[i][1] = FIXED2FLOAT(p.ZatPoint(FLOAT2FIXED(d.x2), FLOAT2FIXED(d.y2)));
+			}
+			else
+			{
+				// Unsloped: SplitWall reads one end and uses it for both, so this does too.
+				bandBottom[i][0] = bandBottom[i][1] =
+					FIXED2FLOAT(p.ZatPoint(FLOAT2FIXED(d.x2), FLOAT2FIXED(d.y2)));
+			}
+		}
+
+		zx::surfaces::WallBand bands[kBandsPerPart];
+		const int n = zx::surfaces::ComputeWallBands(d.ztop, d.zbottom, bandBottom, nLights,
+			bands, kBandsPerPart);
+		if (n <= 0)
+		{
+			for (int k = 0; k < kBandsPerPart; k++) MeshSquash(sc.pieces[slot0 + k].range);
 			continue;
 		}
 
-		MeshPiece mp;
-		mp.range = range;
-		mp.material = d.material;
-		mp.baseTex = d.baseTex;
-		FColormap cm;
-		cm = cmFrom->ColorMap;
-		zx::levelmesh::CaptureShading(dl.lightLevel, dl.relLight + getExtraLight(), cm, mp,
-			kParts[part] == RENDERWALL_M2SNF);
-		mp.lightLevel = dl.lightLevel;
-		mp.lightColor = cm.LightColor.d;
-		mp.fadeColor = cm.FadeColor.d;
-		// [rc4l] The wall's normal: perpendicular to its direction, in mesh space (x, z-up, y), on the
-		// side the winding faces -- the same rule the capture path uses, so front faces agree.
+		const float spanTop0 = d.ztop[0], spanBottom0 = d.zbottom[0];
+		const float spanTop1 = d.ztop[1], spanBottom1 = d.zbottom[1];
+		const float h0 = spanTop0 - spanBottom0, h1 = spanTop1 - spanBottom1;
+		for (int bi = 0; bi < n; bi++)
 		{
-			const float dx = d.x2 - d.x1, dy = d.y2 - d.y1;
-			const float len = sqrtf(dx*dx + dy*dy);
-			if (len > 0.0001f) { mp.normX = dy / len; mp.normY = 0.f; mp.normZ = -dx / len; }
+			const zx::surfaces::WallBand &band = bands[bi];
+			MeshRange &range = sc.pieces[slot0 + bi].range;
+
+			// v follows z linearly across the whole wall, so a band takes its own v off the parent's
+			// pair rather than recomputing it from the texture -- the same interpolation SplitWall
+			// does when it cuts a copy of itself.
+			const float vt0 = (h0 != 0.f) ? d.vTop[0] + (spanTop0 - band.ztop[0])    * (d.vBottom[0] - d.vTop[0]) / h0 : d.vTop[0];
+			const float vb0 = (h0 != 0.f) ? d.vTop[0] + (spanTop0 - band.zbottom[0]) * (d.vBottom[0] - d.vTop[0]) / h0 : d.vBottom[0];
+			const float vt1 = (h1 != 0.f) ? d.vTop[1] + (spanTop1 - band.ztop[1])    * (d.vBottom[1] - d.vTop[1]) / h1 : d.vTop[1];
+			const float vb1 = (h1 != 0.f) ? d.vTop[1] + (spanTop1 - band.zbottom[1]) * (d.vBottom[1] - d.vTop[1]) / h1 : d.vBottom[1];
+
+			FFlatVertex fan[4];
+			fan[0].Set(d.x1, band.zbottom[0], d.y1, d.uLeft,  vb0);
+			fan[1].Set(d.x1, band.ztop[0],    d.y1, d.uLeft,  vt0);
+			fan[2].Set(d.x2, band.ztop[1],    d.y2, d.uRight, vt1);
+			fan[3].Set(d.x2, band.zbottom[1], d.y2, d.uRight, vb1);
+			int w = 0;
+			for (int t = 0; t < 2; t++)
+				for (int c = 0; c < 3; c++)
+					tris[w++] = fan[ComputeFanTriangleVertex(4, t, c)];
+
+			if (!MeshStore(range, tris, w)) { MeshSquash(range); continue; }
+
+			MeshPiece mp;
+			mp.range = range;
+			mp.material = d.material;
+			mp.baseTex = d.baseTex;
+
+			// [rc4l] The band's light, by GLWall::Put3DWall's rule.
+			//
+			// Only the light LEVEL is conditional -- a band whose level points at the seg's own
+			// sector is a light-transfer effect and must not override it -- while the colormap is
+			// copied whenever the piece went through Put3DWall at all. The uppermost piece does not:
+			// SplitWall puts that one with PutWall, which alters neither.
+			int lightLevel = dl.lightLevel;
+			FColormap cm;
+			cm = cmFrom->ColorMap;
+			if (!band.ownLight && band.lightIndex < nLights)
+			{
+				const lightlist_t &ll = (*lights)[band.lightIndex];
+				if (ll.p_lightlevel != &seg->sidedef->sector->lightlevel)
+					lightLevel = gl_ClampLight(*ll.p_lightlevel);
+				cm.CopyLightColor(ll.extra_colormap);
+			}
+
+			zx::levelmesh::CaptureShading(lightLevel, dl.relLight + getExtraLight(), cm, mp,
+				kParts[part] == RENDERWALL_M2SNF);
+			mp.lightLevel = lightLevel;
+			mp.lightColor = cm.LightColor.d;
+			mp.fadeColor = cm.FadeColor.d;
+			// [rc4l] The wall's normal: perpendicular to its direction, in mesh space (x, z-up, y), on
+			// the side the winding faces -- the same rule the capture path uses, so front faces agree.
+			{
+				const float dx = d.x2 - d.x1, dy = d.y2 - d.y1;
+				const float len = sqrtf(dx*dx + dy*dy);
+				if (len > 0.0001f) { mp.normX = dy / len; mp.normY = 0.f; mp.normZ = -dx / len; }
+			}
+			MeshRegisterPiece(mp);
+			made++;
 		}
-		MeshRegisterPiece(mp);
-		made++;
+		// Bands this part no longer has: hold the range, do not give it back.
+		for (int k = n; k < kBandsPerPart; k++) MeshSquash(sc.pieces[slot0 + k].range);
 	}
-	// Anything the capture had baked past the parts this makes is not ours to keep.
-	for (int i = 3; i < sc.bakedCount && i < kMaxCachedPieces; i++)
+	// Anything the capture had baked past the slots this makes is not ours to keep.
+	for (int i = 3 * kBandsPerPart; i < sc.bakedCount && i < kMaxMapPieces; i++)
 		if (sc.pieces[i].range.count != 0)
 			{ MeshRetireRange(sc.pieces[i].range); sc.pieces[i].range.count = 0; }
-	sc.bakedCount = 3;
+	sc.bakedCount = 3 * kBandsPerPart;
 	return made;
 }
 
@@ -578,8 +654,16 @@ int BakeLevelFromMap()
 int MapBakePartCount(int segIndex, int part)
 {
 	if ((unsigned)segIndex >= g_cache.Size()) return -1;
-	if (part < 0 || part >= kMaxCachedPieces) return -1;
-	return (int)g_cache[segIndex].pieces[part].range.count;
+	if (part < 0 || part >= 3) return -1;
+	// [rc4l] A part is spread across its BANDS, so the answer is their sum and not one slot.
+	//
+	// Reading slot `part` alone was right until a wall could be cut into bands and the lower moved
+	// from slot 1 to slot 5. The probe then reported 718 parts missing from a mesh that had all of
+	// them, which is a diagnostic lying in the direction that costs the most time.
+	int total = 0;
+	for (int k = 0; k < kBandsPerPart; k++)
+		total += (int)g_cache[segIndex].pieces[part * kBandsPerPart + k].range.count;
+	return total;
 }
 
 int CachedSegCount() { return (int)g_cache.Size(); }
@@ -958,7 +1042,7 @@ bool SegHasBakedGeometry(int segIndex)
 {
 	if (segIndex < 0 || (unsigned)segIndex >= g_cache.Size()) return false;
 	const SegCache &sc = g_cache[segIndex];
-	for (int i = 0; i < sc.bakedCount && i < kMaxCachedPieces; i++)
+	for (int i = 0; i < sc.bakedCount && i < kMaxMapPieces; i++)
 		if (sc.pieces[i].range.count > 0) return true;
 	return false;
 }
@@ -1051,7 +1135,7 @@ void InvalidateMovedSectors()
 			g_uncacheable[idx] = false;
 			// Squash, not release: the range stays allocated so the re-bake writes back over it.
 			// Freeing here re-allocates every frame the sector moves and the arena runs away.
-			for (int i = 0; i < kMaxCachedPieces; i++)
+			for (int i = 0; i < kMaxMapPieces; i++)
 				MeshSquash(sc.pieces[i].range);
 			// [rc4l] ...and put it back straight away, from the map.
 			//
@@ -1078,7 +1162,7 @@ void GetSegPieceRange(int segIndex, int piece, unsigned int &offset, unsigned in
 {
 	offset = count = 0;
 	if (segIndex < 0 || (unsigned)segIndex >= g_cache.Size()) return;
-	if (piece < 0 || piece >= kMaxCachedPieces) return;
+	if (piece < 0 || piece >= kMaxMapPieces) return;
 	offset = g_cache[segIndex].pieces[piece].range.offset;
 	count  = g_cache[segIndex].pieces[piece].range.count;
 }
