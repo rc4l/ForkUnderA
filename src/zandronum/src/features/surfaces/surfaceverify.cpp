@@ -179,6 +179,13 @@ const char *TypeName(int type)
 // One run A/Bs it rather than one memory.
 CVAR( Bool, fua_surface_vshift, true, 0 )
 
+// [rc4l] Cut a wall at its 3D floor light bands. ON -- see wallbands_compute for the rule.
+//
+// The switch is here because the banding is the newest thing in the map-driven bake and the residual
+// against the GL-driven picture is the oldest unexplained thing in it, and one run should be able to
+// say whether they are the same thing.
+CVAR( Bool, fua_surface_bands, true, 0 )
+
 
 // [rc4l] Could the bake be driven by the MAP instead of by GL's walk of the BSP?
 //

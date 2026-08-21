@@ -997,13 +997,22 @@ CCMD( fua_mesh_verify )
 	// engine's null texture, whose id translates to itself, so the animation pass re-resolves it
 	// every frame to no change and the surface silently freezes. It printed as "baseTex yes" for a
 	// week. The NAME is what makes it visible, so the name is what gets asserted.
-	int noBase = 0, nullBase = 0;
+	int noBase = 0, nullBase = 0, noBaseFlat = 0, noBaseWall = 0;
 	for ( int i = 0; i < np; i++ )
 	{
 		if ( pieces[i].range.count == 0 ) continue;
 		live++;
 		FTexture *bt = (FTexture *)pieces[i].baseTex;
-		if ( bt == NULL ) { noBase++; continue; }
+		if ( bt == NULL )
+		{
+			noBase++;
+			// [rc4l] Which KIND is missing it -- a flat's normal is vertical, a wall's is not.
+			// "1649 pieces without a base texture" does not say where to look; "all of them flats"
+			// does.
+			if ( pieces[i].normY > 0.9f || pieces[i].normY < -0.9f ) noBaseFlat++;
+			else noBaseWall++;
+			continue;
+		}
 		if ( bt->Name.Len( ) == 0 ) nullBase++;
 	}
 	if ( nullBase > 0 )
@@ -1162,6 +1171,8 @@ CCMD( fua_mesh_verify )
 	Printf( "fua_mesh_verify: %s  (%d live pieces, %d without a base texture, "
 			"%d coplanar overlapping pairs)\n",
 			failures ? "FAIL" : "PASS", live, noBase, overlaps );
+	if ( noBase > 0 )
+		Printf( "  of those, %d are flats and %d are walls" "\n", noBaseFlat, noBaseWall );
 }
 
 //==========================================================================
