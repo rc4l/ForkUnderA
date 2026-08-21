@@ -48,14 +48,17 @@ TEST(SurfaceChange, ASwitchChangesItsMaterialAndNothingElse)
 	EXPECT_EQ(kSurfaceRebatch, ComputeSurfaceChange(Wall(), now));
 }
 
-// ...and the half of it that was actually missed: the material changed while baseTex compared equal.
-// Whatever the reason for that -- it is not fully explained -- the material is what a batch is keyed
-// on, so the material is what has to be asked.
-TEST(SurfaceChange, TheMaterialAloneIsEnoughToRebatch)
+// [rc4l] ...but the material ALONE is an animation frame, and that is a repaint.
+//
+// An animated texture resolves to a different FMaterial every few tics while remaining the same
+// surface in the same batch -- a batch is keyed on the base texture and the backend re-resolves from
+// it every frame. Calling that a rebatch made every animated wall on a level with moving sectors
+// force a full scene rebuild, 5126 of them on dbab04 in under a minute.
+TEST(SurfaceChange, TheMaterialAloneIsAnAnimationFrame)
 {
 	SurfaceKey now = Wall();
 	now.material = &kTexB;
-	EXPECT_EQ(kSurfaceRebatch, ComputeSurfaceChange(Wall(), now));
+	EXPECT_EQ(kSurfaceRepaint, ComputeSurfaceChange(Wall(), now));
 }
 
 // [rc4l] A pane of glass becoming opaque, or a surface joining the sorted pass. Blend mode decides
@@ -115,8 +118,10 @@ TEST(SurfaceChange, ANormalThatTurnedIsRepainted)
 // also changed material -- which is why the enum escalates and the material questions come first.
 TEST(SurfaceChange, TheMoreExpensiveAnswerWins)
 {
+	// A surface that has both moved batch and changed colour must be told to rebatch, not repaint --
+	// the cheaper answer would leave it in a batch it no longer belongs to.
 	SurfaceKey now = Wall();
-	now.material = &kTexB;
+	now.baseTex = &kTexB;
 	now.colorR = 0.25f;
 	EXPECT_EQ(kSurfaceRebatch, ComputeSurfaceChange(Wall(), now));
 	EXPECT_GT(kSurfaceRebatch, kSurfaceRepaint);
@@ -129,4 +134,37 @@ TEST(SurfaceChange, TwoEmptySurfacesAreTheSame)
 {
 	SurfaceKey a; SurfaceKey b;
 	EXPECT_EQ(kSurfaceUnchanged, ComputeSurfaceChange(a, b));
+}
+
+// [rc4l] A surface that was squashed and has come back into the same range costs nothing.
+//
+// Squashing zeroes a surface's vertices and KEEPS its range so the geometry can return to it -- how
+// a door's upper is held while the door is open. The stored count goes to zero to say so, and
+// reading that as a RESIZE made every door and lift rebatch on the way back: 320,544 of them on
+// dbab04 in under a minute, each one a full scene rebuild.
+//
+// Unchanged is the right answer and not a cop-out. The batch never stopped covering those vertices,
+// nothing the backend reads per piece is different, and the vertices themselves travel back by the
+// dirty range that MeshStore already raised. There is nothing left to tell anyone.
+TEST(SurfaceChange, ComingBackFromASquashCostsNothing)
+{
+	SurfaceKey was = Wall(); was.rangeCount = 0;   // squashed
+	SurfaceKey now = Wall();                       // back, same offset, same size as before
+	EXPECT_EQ(kSurfaceUnchanged, ComputeSurfaceChange(was, now));
+}
+
+// ...but a surface that came back somewhere ELSE really has moved, and that is a rebatch.
+TEST(SurfaceChange, ComingBackAtADifferentOffsetIsARebatch)
+{
+	SurfaceKey was = Wall(); was.rangeCount = 0;
+	SurfaceKey now = Wall(); now.rangeOffset = 4096;
+	EXPECT_EQ(kSurfaceRebatch, ComputeSurfaceChange(was, now));
+}
+
+// A genuine resize -- a wall whose split topology changed -- is still a rebatch.
+TEST(SurfaceChange, AGenuineResizeIsStillARebatch)
+{
+	SurfaceKey was = Wall(); was.rangeCount = 6;
+	SurfaceKey now = Wall(); now.rangeCount = 12;
+	EXPECT_EQ(kSurfaceRebatch, ComputeSurfaceChange(was, now));
 }
