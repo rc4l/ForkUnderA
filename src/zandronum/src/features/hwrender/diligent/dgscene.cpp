@@ -2840,29 +2840,19 @@ static void Draw2D(Diligent::IDeviceContext *ctx)
 			ctx->SetScissorRects(1, &sc, sd.Width, sd.Height);
 		}
 
-		// [rc4l] ...and a run of quads in the same state is ONE draw.
+		// [rc4l] One draw per quad, and that is fine.
 		//
-		// 2D is painter's order and must not be reordered -- a layer sorted by texture would put the
-		// status bar behind the world. This does not reorder anything: it only notices that the next
-		// quad wants exactly what is already set, and its six vertices sit immediately after these,
-		// so the two are one draw over twelve. A status bar is mostly runs; so is a line of text.
-		unsigned run = 1;
-		while (i + run < (unsigned)nq)
-		{
-			const zx::hwrender::Quad2D &n = quads[i + run];
-			const int nb = (n.blend >= 0 && n.blend < 3) ? n.blend : 0;
-			if (nb != curBlend || n.material != curMat || n.translation != curTrans) break;
-			if (n.clipL != cl || n.clipT != ctp || n.clipR != cr || n.clipB != cb2) break;
-			run++;
-		}
-
+		// Merging runs of quads in the same state went in alongside the binding cache above and was
+		// measured afterwards: a frame's HUD is SIXTEEN quads, and the merge took it to thirteen
+		// draws. The pass costing 1.2 ms was the binding lookup, not the submissions -- so the merge
+		// came out again rather than stay as untested cleverness in a painter's-order path where
+		// getting the run condition wrong puts the status bar behind the world.
 		Diligent::DrawAttribs draw;
-		draw.NumVertices = 6 * run;
+		draw.NumVertices = 6;
 		draw.StartVertexLocation = (Diligent::Uint32)i * 6;
 		draw.Flags = Diligent::DRAW_FLAG_VERIFY_ALL;
 		ctx->Draw(draw);
 		g_draws2D++;
-		i += run - 1;
 	}
 	g_quads2D = nq;
 }

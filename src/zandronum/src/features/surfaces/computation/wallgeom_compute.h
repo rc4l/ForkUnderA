@@ -62,17 +62,6 @@ struct WallPart
 // other, and GL draws it when EITHER end has area. Deciding that is the caller's job.
 void ComputeUpperSpan(const WallHeights &a, const WallHeights &b, WallPart &pa, WallPart &pb);
 void ComputeLowerSpan(const WallHeights &a, const WallHeights &b, WallPart &pa, WallPart &pb);
-
-// The upper part: from the lower of the two ceilings up to the front ceiling. Present only where the
-// back sector's ceiling is BELOW the front's, which is what leaves wall to draw.
-//
-// The two-ended question asked about a wall that does not slope.
-WallPart ComputeUpperPart(const WallHeights &h);
-
-// The lower part: from the front floor up to the higher of the two floors. Present where the back
-// floor is above the front's.
-WallPart ComputeLowerPart(const WallHeights &h);
-
 // The middle part.
 //
 // On a one-sided wall this is the whole thing, floor to ceiling. On a two-sided line it is the
@@ -80,18 +69,6 @@ WallPart ComputeLowerPart(const WallHeights &h);
 // texture hangs, and it is empty when the sectors do not overlap at all (a closed door seen from
 // outside).
 WallPart ComputeMiddlePart(const WallHeights &h);
-
-// [rc4l] The middle texture of a TWO-SIDED line, which hangs rather than fills.
-//
-// ComputeMiddlePart gives the opening -- the gap between the sectors. A middle texture placed in
-// that gap is not the gap: it is its own height, hung from the top of the opening or from the
-// bottom when the line is unpegged-bottom, shifted by the sidedef row offset, and clipped to the
-// opening. Treating the two as the same thing turns an 8-unit grate into a 208-unit wall, which is
-// what fua_surface_verify found on dbab02 -- 93 pieces, all of them two-sided middles.
-//
-// texHeight of 0 or a one-sided line falls back to the opening, which is what those are.
-WallPart ComputeMiddleTexturePart(const WallHeights &h, float texHeight, bool pegBottom,
-	float rowOffset);
 
 // [rc4l] What a two-sided middle texture is CLIPPED to, which is not the opening.
 //
@@ -140,13 +117,6 @@ struct WallPinch
 };
 
 void ComputeWallPinch(const float *ztopIn, const float *zbottomIn, WallPinch &out);
-
-// [rc4l] Is there anything to draw here at all?
-//
-// Answered separately because "no parts" and "one part of zero height" are different states and the
-// caller does different things with them: the first skips the sidedef, the second still has to hold
-// its slot in the mesh so the geometry can come back when the sector moves.
-bool ComputeSideHasGeometry(const WallHeights &h);
 
 }} // namespace zx::surfaces
 

@@ -62,25 +62,6 @@ void ComputeLowerSpan(const WallHeights &a, const WallHeights &b, WallPart &pa, 
 	pb = Make(b.frontFloor, topB);
 }
 
-// [rc4l] The one-ended forms, which are the two-ended ones asked about a wall that does not slope.
-//
-// Kept because most of a level is flat and asking one question is clearer than asking the same
-// question twice, and because a clamp that reads "both ends" is not wrong on a wall whose two ends
-// are the same height -- it is simply the same test twice.
-WallPart ComputeUpperPart(const WallHeights &h)
-{
-	WallPart a, b;
-	ComputeUpperSpan(h, h, a, b);
-	return a;
-}
-
-WallPart ComputeLowerPart(const WallHeights &h)
-{
-	WallPart a, b;
-	ComputeLowerSpan(h, h, a, b);
-	return a;
-}
-
 WallPart ComputeMiddlePart(const WallHeights &h)
 {
 	if (!h.twoSided) return Make(h.frontFloor, h.frontCeiling);
@@ -90,39 +71,6 @@ WallPart ComputeMiddlePart(const WallHeights &h)
 	const float floor = (h.frontFloor > h.backFloor) ? h.frontFloor : h.backFloor;
 	const float ceiling = (h.frontCeiling < h.backCeiling) ? h.frontCeiling : h.backCeiling;
 	return Make(floor, ceiling);
-}
-
-WallPart ComputeMiddleTexturePart(const WallHeights &h, float texHeight, bool pegBottom,
-	float rowOffset)
-{
-	const WallPart opening = ComputeMiddlePart(h);
-	if (!opening.present || texHeight <= 0.f) return opening;
-	if (!h.twoSided) return opening;   // a one-sided wall really is floor to ceiling
-
-	// [rc4l] A middle texture on a two-sided line HANGS. It does not fill the opening.
-	//
-	// It is placed by its own height and its pegging -- from the top of the opening downward, or
-	// from the bottom upward when the line is unpegged-bottom -- shifted by the sidedef's row
-	// offset, and then clipped to the opening. Treating it as "the gap" is how a 8-unit grate came
-	// out 208 units tall: fua_surface_verify found 93 pieces on dbab02 exactly that way, every one a
-	// two-sided middle, every one the full opening instead of its own texture.
-	float bottom, top;
-	if (pegBottom)
-	{
-		bottom = opening.bottom + rowOffset;
-		top = bottom + texHeight;
-	}
-	else
-	{
-		top = opening.top + rowOffset;
-		bottom = top - texHeight;
-	}
-
-	// Clipped to the opening: the part hanging outside it is not drawn, and a texture entirely
-	// outside leaves nothing at all.
-	if (bottom < opening.bottom) bottom = opening.bottom;
-	if (top > opening.top) top = opening.top;
-	return WallPart{ bottom, top, top > bottom };
 }
 
 void ComputeMiddleClip(const WallHeights &a, const WallHeights &b, const MidTextureClip &c,
@@ -215,11 +163,6 @@ void ComputeWallPinch(const float *ztopIn, const float *zbottomIn, WallPinch &ou
 		out.fracRight = coeff;
 		out.ztop[1] = out.zbottom[1] = interY;
 	}
-}
-
-bool ComputeSideHasGeometry(const WallHeights &h)
-{
-	return ComputeUpperPart(h).present || ComputeLowerPart(h).present || ComputeMiddlePart(h).present;
 }
 
 }} // namespace zx::surfaces

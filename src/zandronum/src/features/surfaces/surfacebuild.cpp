@@ -21,7 +21,6 @@
 // [rc4l] Declared at global scope: EXTERN_CVAR inside the namespace would name a different symbol
 // than the CVAR defined in surfaceverify.cpp, and only the linker would notice.
 EXTERN_CVAR(Bool, fua_surface_vshift)
-EXTERN_CVAR(Bool, fua_surface_flatfallback)
 
 namespace zx { namespace surfaces {
 
@@ -172,7 +171,7 @@ bool BuildDerivedWallSpan(const seg_t *seg, int renderType, DerivedWallSpan &out
 	// otherwise and slopes are simply not precise enough to match in any case." Without this the map
 	// does not account for 131 of dbab04's parts, 38 uppers and 93 lowers, all of them on the map
 	// with 337 sloped pieces.
-	if (mat == NULL && fua_surface_flatfallback && seg->backsector != NULL &&
+	if (mat == NULL && seg->backsector != NULL &&
 	    (renderType == RENDERWALL_TOP || renderType == RENDERWALL_BOTTOM))
 	{
 		const sector_t *fs = seg->frontsector, *bs = seg->backsector;
