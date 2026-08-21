@@ -1610,6 +1610,7 @@ add_executable( zdoom WIN32
 	features/levelmesh/computation/wallcache_compute.cpp
 	features/surfaces/computation/wallgeom_compute.cpp
 	features/surfaces/computation/wallbands_compute.cpp
+	features/surfaces/computation/ffblocks_compute.cpp
 	features/surfaces/computation/walluv_compute.cpp
 	features/surfaces/computation/planegeom_compute.cpp
 	features/surfaces/computation/surfacechange_compute.cpp

@@ -36,6 +36,13 @@ struct WallHeights
 	float frontFloor, frontCeiling;
 	float backFloor,  backCeiling;
 	bool  twoSided;
+	// [rc4l] Whether each plane is the sky, because two of GL's span rules ask.
+	//
+	// An upper between two sky ceilings is not drawn at all -- the sky itself covers that strip, and
+	// drawing the sidedef's top texture there paints a wall over the horizon. The front floor's
+	// clamp on an upper is likewise skipped when both floors are sky.
+	bool  frontCeilingSky, backCeilingSky;
+	bool  frontFloorSky,   backFloorSky;
 };
 
 // One drawable part of a sidedef: the vertical span it covers.

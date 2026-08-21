@@ -41,6 +41,7 @@ WallHeights OneSided(float floor, float ceiling)
 	h.frontFloor = floor; h.frontCeiling = ceiling;
 	h.backFloor = floor;  h.backCeiling = ceiling;
 	h.twoSided = false;
+	h.frontCeilingSky = h.backCeilingSky = h.frontFloorSky = h.backFloorSky = false;
 	return h;
 }
 
@@ -50,6 +51,7 @@ WallHeights TwoSided(float ff, float fc, float bf, float bc)
 	h.frontFloor = ff; h.frontCeiling = fc;
 	h.backFloor = bf;  h.backCeiling = bc;
 	h.twoSided = true;
+	h.frontCeilingSky = h.backCeilingSky = h.frontFloorSky = h.backFloorSky = false;
 	return h;
 }
 
@@ -429,4 +431,29 @@ TEST(WallGeom, ParallelEdgesPinchNowhere)
 	EXPECT_FLOAT_EQ(0.f, p.fracLeft);
 	EXPECT_FLOAT_EQ(1.f, p.fracRight);
 	EXPECT_FLOAT_EQ(-10.f, p.ztop[0]);
+}
+
+// [rc4l] Two sky ceilings mean no upper -- the sky fills that strip, and a derived upper would
+// paint the sidedef's top texture across the horizon. GL wraps the whole branch in this test.
+TEST(WallGeom, NoUpperBetweenTwoSkyCeilings)
+{
+	WallHeights h = TwoSided(0.f, 256.f, 0.f, 128.f);
+	EXPECT_TRUE(Upper(h).present);
+	h.frontCeilingSky = h.backCeilingSky = true;
+	EXPECT_FALSE(Upper(h).present);
+	// One side alone is not enough: the strip is still a wall.
+	h.backCeilingSky = false;
+	EXPECT_TRUE(Upper(h).present);
+}
+
+// The front floor's clamp on an upper is skipped when both floors are sky, exactly as GL skips it.
+TEST(WallGeom, SkyFloorsLeaveTheUpperUnclamped)
+{
+	WallHeights h = TwoSided(200.f, 256.f, 0.f, 128.f);
+	WallPart a, b;
+	ComputeUpperSpan(h, h, a, b);
+	EXPECT_FLOAT_EQ(200.f, a.bottom);   // the front floor obstructs it
+	h.frontFloorSky = h.backFloorSky = true;
+	ComputeUpperSpan(h, h, a, b);
+	EXPECT_FLOAT_EQ(128.f, a.bottom);   // ...unless both floors are sky
 }

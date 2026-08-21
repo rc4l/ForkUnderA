@@ -49,7 +49,7 @@ const int kMaxCachedPieces = 4;
 //
 // The packed (seg, piece) reference GL replay uses keeps the SMALLER stride, because it only ever
 // addresses captured pieces.
-const int kMaxMapPieces = 16;
+const int kMaxMapPieces = 24;
 
 // One GLWall as PutWall routed it, so replay can put it back in the same list without re-deciding.
 struct CachedWallPiece
