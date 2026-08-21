@@ -290,8 +290,9 @@ void RenderDome(FMaterial * tex, float x_offset, float y_offset, bool mirror, in
 		// raw division scaled it DOWN -- 2048 wide became 0.5, stretching one copy across two domes'
 		// worth, which is the other half of the same report.
 		//
-		// Matches upstream's hw_skydome.cpp (SetupMatrices); our vertical branches already agree with
-		// it exactly, so this line was the only divergence left.
+		// Upstream 348c384bb6, "fixed scaling of skies with unusual dimensions" -- the same one-line
+		// change, using the later floorf spelling. Our vertical branches already agree with upstream's
+		// SetupMatrices exactly, so this line was the only divergence left in the sky path.
 		float xscale = texw < 1024.f ? floorf(1024.f / float(texw)) : 1.f;
 		float yscale = 1.f;
 		// [EP] Zandronum's early backport of GZDoom fad3a5410, re-grafted onto the
