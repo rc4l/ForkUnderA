@@ -164,6 +164,23 @@ x offset and that plus the line's texel length. There is no seg-along-line bookk
 Polyobjects are the exception, are drawn per seg with real fractions, and are left to the capture.
 Deriving it took Sunder MAP16 from 2.3% to 0.0%.
 
+## ...and its light, which was the last of it
+
+`fua_surface_derive_light` is on too. A wall's light level, its fake-contrast term and its colormap
+come from the sector and the sidedef now, not from a `GLWall`.
+
+**This is not a second lighting implementation, and that distinction is the whole reason it was safe
+to do.** `CaptureShading` calls the engine's own `gl_SetColor` and `gl_SetFog` and reads the answer
+back out of `FRenderState` -- that is what has kept the two renderers agreeing, and it is unchanged.
+What moved is where its three *inputs* come from.
+
+Pixel-identical: 0.0% on Doom 2 MAP01 and dbab04, 0.1% on Sunder MAP16 against that map's own reload
+noise floor of 0.4%.
+
+A sector with a 3D floor light list keeps the capture: `SplitWall` cuts the wall into bands and gives
+each its own light, so there is no single light level to derive, and deriving one would be wrong
+exactly in the rooms people build 3D floors for.
+
 The fallback column is broken down by reason in `fua_dg_dynstats`, because "1073 fell back" does not
 say what to build next and "467 special walls, 52 no span" does.
 

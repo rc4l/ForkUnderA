@@ -28,6 +28,7 @@
 #define ZX_SURFACES_SURFACEBUILD_H
 
 struct seg_t;
+struct sector_t;
 
 namespace zx { namespace surfaces {
 
@@ -55,6 +56,28 @@ struct DerivedWallSpan
 		vTop[0] = vTop[1] = vBottom[0] = vBottom[1] = 0.f;
 	}
 };
+
+// [rc4l] The three shading INPUTS for a wall, derived from the map.
+//
+// Worth being precise about what this is and is not. The shading itself was never implemented twice:
+// CaptureShading calls the engine's own gl_SetColor and gl_SetFog and reads the answer back out of
+// FRenderState, which is exactly what stopped a second implementation drifting. What came from GLWall
+// was the three INPUTS to it -- the light level after fake contrast, the relative light, and the
+// colormap -- and those are sector and sidedef data.
+//
+// So deriving this adds no second opinion about lighting. It removes the last reason a wall's
+// appearance needs GL to have walked the BSP first.
+struct DerivedWallLight
+{
+	int       lightLevel;
+	int       relLight;
+	bool      valid;
+	DerivedWallLight() : lightLevel(0), relLight(0), valid(false) {}
+};
+
+// Fills in the light and hands back the sector whose colormap goes with it. False for anything with
+// a 3D floor light list, which splits a wall into bands and is the capture's business.
+bool BuildDerivedWallLight(const seg_t *seg, DerivedWallLight &out, const sector_t *&colormapFrom);
 
 // renderType is a RENDERWALL_* value. Answers only for the three ordinary sidedef parts; anything
 // else -- a 3D floor face, a sky, a horizon -- returns false and keeps whatever the capture made.
