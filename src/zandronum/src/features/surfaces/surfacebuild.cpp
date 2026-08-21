@@ -295,7 +295,14 @@ bool BuildDerivedWallSpan(const seg_t *seg, int renderType, DerivedWallSpan &out
 	out.material = mat;
 	// The BASE texture, so an animated one keeps animating -- see MeshPiece::baseTex. The sector's
 	// flat when that is what is being drawn, so the fallback animates too.
-	out.baseTex = TexMan[seg->sidedef->GetTexture((side_t::ETexpart)texpos)];
+	// [rc4l] The BASE texture, and TexMan[] is not it.
+	//
+	// operator[] applies the animation translation, so it hands back whichever frame is showing right
+	// now -- which changes every few tics and makes "the base texture" a moving target. Everything
+	// downstream keys a batch on this, so an animated wall then looked like it had moved to a
+	// different batch several times a second: 311,437 rebatches on dbab04, each one a full scene
+	// rebuild. ByIndex skips the translation, which is what MeshPiece::baseTex says it wants.
+	out.baseTex = TexMan.ByIndex(seg->sidedef->GetTexture((side_t::ETexpart)texpos).GetIndex());
 	if (out.baseTex == NULL || ((FTexture *)out.baseTex)->Name.Len() == 0)
 		out.baseTex = (mat != NULL) ? (const void *)((FMaterial *)mat)->tex : NULL;
 	out.valid = true;

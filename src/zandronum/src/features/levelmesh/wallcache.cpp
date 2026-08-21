@@ -25,6 +25,7 @@
 // [rc4l] Declared at global scope: EXTERN_CVAR inside the namespace would name a different symbol
 // than the CVAR defined in gl_drawinfo.cpp, and only the linker would notice.
 EXTERN_CVAR(Bool, gl_wallmesh)
+EXTERN_CVAR(Bool, fua_surface_mapbake_auto)
 // [rc4l] Build wall heights and texture position from the MAP rather than from GLWall.
 //
 // ON. A wall's vertical span and both of its texture coordinates come from the map now, and the
@@ -184,6 +185,14 @@ static void CaptureWallShading(const GLWall &wall, MeshPiece &mp)
 void BakeSeg(int segIndex)
 {
 	if (!gl_wallmesh) return;   // [rc4l] the mesh draw path is off; baking would be pure cost
+	// [rc4l] When the map is driving, the capture stands down completely.
+	//
+	// Both baking the same seg is not twice the work, it is a fight: the map bake assigns slots by
+	// PART and the capture assigns them in the order pieces happen to arrive, so each overwrites the
+	// other's slots with a different material and a different range, every frame, and every one of
+	// those counts as a rebatch. Measured before this line existed: 11,820 scene rebuilds on Doom 2
+	// MAP03 in under a minute.
+	if (fua_surface_mapbake_auto) return;
 	if (segIndex < 0 || (unsigned)segIndex >= g_cache.Size()) return;
 	SegCache &sc = g_cache[segIndex];
 
@@ -349,11 +358,14 @@ void BakeSeg(int segIndex)
 			const side_t *sd = sc.walls[i].seg->sidedef;
 			switch (sc.walls[i].type)
 			{
-			case RENDERWALL_TOP:    mp.baseTex = TexMan[sd->GetTexture(side_t::top)]; break;
-			case RENDERWALL_BOTTOM: mp.baseTex = TexMan[sd->GetTexture(side_t::bottom)]; break;
+			// [rc4l] ByIndex, not operator[]: the latter applies the animation translation and hands
+			// back whichever frame is showing, which makes the BASE texture a moving target. See
+			// the same note in features/surfaces/surfacebuild.cpp.
+			case RENDERWALL_TOP:    mp.baseTex = TexMan.ByIndex(sd->GetTexture(side_t::top).GetIndex()); break;
+			case RENDERWALL_BOTTOM: mp.baseTex = TexMan.ByIndex(sd->GetTexture(side_t::bottom).GetIndex()); break;
 			case RENDERWALL_M1S:
 			case RENDERWALL_M2S:
-			case RENDERWALL_M2SNF:  mp.baseTex = TexMan[sd->GetTexture(side_t::mid)]; break;
+			case RENDERWALL_M2SNF:  mp.baseTex = TexMan.ByIndex(sd->GetTexture(side_t::mid).GetIndex()); break;
 			default: break;
 			}
 		}
@@ -401,8 +413,15 @@ int BakeSegFromMap(int segIndex)
 		zx::surfaces::DerivedWallSpan d;
 		if (!haveLight || !zx::surfaces::BuildDerivedWallSpan(seg, kParts[part], d))
 		{
-			// Nothing here now. Give the range back rather than leaving it drawing what used to be.
-			if (range.count != 0) { MeshRetireRange(range); range.count = 0; }
+			// [rc4l] Nothing here now -- SQUASH it, do not give the range back.
+			//
+			// A part that comes and goes is the normal case: a door's upper exists when it is shut
+			// and not when it is open, several times a second. Retiring the range means the next
+			// re-bake allocates a fresh one at a different offset, which is a rebatch, which is a
+			// full scene rebuild -- 4869 of them on dbab04 before this line said squash. Squashing
+			// keeps the range so the geometry can come back into it, which is exactly the reasoning
+			// InvalidateMovedSectors gives for doing the same thing.
+			MeshSquash(range);
 			continue;
 		}
 
@@ -419,8 +438,7 @@ int BakeSegFromMap(int segIndex)
 
 		if (!MeshStore(range, tris, w))
 		{
-			MeshRetireRange(range);
-			range.count = 0;
+			MeshSquash(range);
 			continue;
 		}
 
@@ -939,6 +957,13 @@ void InvalidateMovedSectors()
 			// Freeing here re-allocates every frame the sector moves and the arena runs away.
 			for (int i = 0; i < kMaxCachedPieces; i++)
 				MeshSquash(sc.pieces[i].range);
+			// [rc4l] ...and put it back straight away, from the map.
+			//
+			// Squashing waits for GL's walk to reach the seg again, which is fine when GL's walk is
+			// what fills the mesh. With the map bake driving it there is nothing to wait for: the
+			// sector has moved, the sidedef says what is on it, and the answer can be had now. A door
+			// opening is exactly this case, several times a second.
+			if (fua_surface_mapbake_auto) BakeSegFromMap(idx);
 		}
 	}
 }
