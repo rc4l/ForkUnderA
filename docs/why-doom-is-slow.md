@@ -53,7 +53,28 @@ view is: a ninth of the pixels takes it from 9.6 ms to 8.3, about 13%. The cost 
 
 ## What actually blocks turning it on
 
-One thing, and it is this session's own doing.
+Two things, not one. The first is done; the second was missed when this was written.
+
+### Walls -- done
+
+DONE. `wallbands_compute` cuts a wall at its light bands the way `SplitWall` does, so the map bake
+can carry a 3D floor sector instead of handing it back. dbab01's map bake goes from 2139 parts on
+1968 segs to 3019 on 2570, every part GL draws has geometry in the mesh, and under standalone the
+walls come out complete -- 3D floor steps included.
+
+### Flats -- next
+
+`flatmesh.cpp` captures `GLFlat`s from the same walk that standalone stops, so with GL cut out the
+floors and ceilings are simply not there: the frame renders every wall correctly over a bare sky.
+That is the whole of the 20.6% still between standalone and default on dbab01.
+
+It is the same shape of job as the walls and the inputs are already map data -- a subsector's
+vertices, the sector's plane, its offsets, scale, rotation and light -- so the work is to split
+`RegisterFlatSubsector` into "what a flat is made of" and "store it", and then fill the first half
+from the map instead of from a `GLFlat`. Sector floors and ceilings are the bulk of it; 3D floor
+faces are enumerated the way `GLFlat::ProcessSector` enumerates them.
+
+### The original, for the record
 
 `fua_surface_mapbake_auto 1` + `fua_dg_standalone 1` renders **30.7% wrong**, drawing 49 batches
 where the default draws 74. The cause is the ownership split: a seg whose sector has a 3D floor light
@@ -66,17 +87,18 @@ currently carries all of it except the sectors it hands back.
 
 ## The scope
 
-1. **Light a 3D-floor sector's wall from the map.** The band boundaries are the sector's light list,
+1. ~~**Light a 3D-floor sector's wall from the map.**~~ DONE. The band boundaries are the sector's light list,
    which is map data -- the derivation declines it today because deriving ONE light level for the
    whole wall would be wrong, not because the bands are unknowable. Split the derived wall at each
    band and give each fragment that band's light and colormap, which is what `SplitWall` does. This
    is the only thing between standalone and being correct, and on Sunder MAP10 it is worth the 6.6 ms
    above -- 100 fps to 298.
-2. **Close the map bake's own residual**, 0.4-1.1% depending on map, which is coplanar overlap:
+2. **Derive flats from the map**, which is what standalone is now waiting on -- see above.
+3. **Close the map bake's own residual**, 0.4-1.1% depending on map, which is coplanar overlap:
    the map bake builds the whole level where the capture only built what GL walked, and the extra
    surfaces stipple against the ones already there. Counted: dbab02 goes from 74 duplicate pieces and
    1807 coplanar pairs to 376 and 1927.
-3. **Then turn `fua_dg_standalone` on by default**, which is the point of the other two.
+4. **Then turn `fua_dg_standalone` on by default**, which is the point of the other two.
 
 ## What is NOT worth doing, measured
 
