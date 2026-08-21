@@ -99,6 +99,7 @@ CVAR(Bool, gl_no_skyclear, false, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 CVAR(Float, gl_mask_threshold, 0.5f,CVAR_ARCHIVE|CVAR_GLOBALCONFIG|CVAR_DEBUGONLY)
 CVAR(Float, gl_mask_sprite_threshold, 0.5f,CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 CVAR(Bool, gl_sort_textures, false, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
+EXTERN_CVAR(Bool, fua_surface_mapbake_auto)
 EXTERN_CVAR(Bool, gl_batch_walls)  // [rc4l] features/levelmesh wall batching
 
 EXTERN_CVAR (Int, screenblocks)
@@ -631,11 +632,16 @@ void FGLRenderer::DrawScene(bool toscreen)
 		zx::levelmesh::UpdateProjectedDecals();
 		zx::levelmesh::InvalidateMovedSectors();
 
-		// [rc4l] A frame where the world moved goes back through GL, because the walk is what
-		// re-bakes a seg whose sector moved. Doors and lifts are brief and occasional, so this is a
-		// handful of frames rather than a mode -- and it is the difference between a renderer that
-		// skips the derivation and one that shows a door still shut.
-		if (zx::levelmesh::SectorsMovedLastFrame() == 0)
+		// [rc4l] A frame where the world moved used to go back through GL, because the walk was what
+		// re-baked a seg whose sector had moved. It is not any more: InvalidateMovedSectors re-bakes
+		// the moved sector's walls AND its planes from the map, on the spot, with no traversal to wait
+		// for. So the fallback is needed only when the map is not driving the bake.
+		//
+		// It was not the handful of frames its own comment claimed, either. A map with a perpetual
+		// lift moves a sector on most frames, and the walk it dragged back in was still 12% of the
+		// profile on Sunder MAP10 -- AddLine, AddLines, TryReplay and GLWall::SetupLights, all of it
+		// working out a picture the backend draws from geometry it already holds.
+		if (zx::levelmesh::SectorsMovedLastFrame() == 0 || fua_surface_mapbake_auto)
 		{
 			// [rc4l] Sprites still come from GL, deliberately.
 			//

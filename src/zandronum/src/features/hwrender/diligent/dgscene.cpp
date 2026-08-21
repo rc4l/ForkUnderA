@@ -2070,18 +2070,34 @@ static void BuildDynamic(Diligent::IDeviceContext *ctx)
 			const float dx = p.sortX - cx, dy = p.sortY - cy, dz = p.sortZ - cz;
 			key[i] = dx*dx + dy*dy + dz*dz;
 		}
-		for (int a = 0; a + 1 < npieces; a++)
-			for (int b = a + 1; b < npieces; b++)
-			{
-				const zx::levelmesh::MeshPiece &pa = pieces[order[a]];
-				const zx::levelmesh::MeshPiece &pb = pieces[order[b]];
-				bool swap;
+		// [rc4l] n log n, because this ran as a selection sort over every sprite in the frame.
+		//
+		// The rule is unchanged -- opaque first and grouped by material, then blended back to front --
+		// and only the number of comparisons is different. The pair loop was O(n^2): a Sunder MAP10
+		// arena with monsters awake puts 1258 sprites in a frame, which is 790,000 comparisons every
+		// frame, each dereferencing two pieces. It was 18.5% of the profile, and it is the reason the
+		// same view cost twice as much with monsters as without -- the growth is in n, not in what
+		// the monsters do.
+		//
+		// The index breaks ties so the order is DETERMINISTIC. std::sort is not stable, and two
+		// sprites at the same distance trading places between frames is a flicker -- the same trap the
+		// translucent draw comparator documents one pass later.
+		// `key` has static storage, which a lambda cannot capture; the pointer can.
+		const float *keyp = (npieces > 0) ? &key[0] : NULL;
+		std::sort(&order[0], &order[0] + npieces,
+			[pieces, keyp](int ia, int ib) {
+				const zx::levelmesh::MeshPiece &pa = pieces[ia];
+				const zx::levelmesh::MeshPiece &pb = pieces[ib];
 				const bool ta = pa.blendMode != 0, tb = pb.blendMode != 0;
-				if (ta != tb)            swap = tb < ta;                       // opaque before blended
-				else if (!ta)            swap = pb.material < pa.material;     // opaque: by material
-				else                     swap = key[order[b]] > key[order[a]]; // blended: far first
-				if (swap) { const int t = order[a]; order[a] = order[b]; order[b] = t; }
-			}
+				if (ta != tb) return !ta;                             // opaque before blended
+				if (!ta)
+				{
+					if (pa.material != pb.material) return pa.material < pb.material;
+					return ia < ib;
+				}
+				if (keyp[ia] != keyp[ib]) return keyp[ia] > keyp[ib]; // blended: far first
+				return ia < ib;
+			});
 
 		vb.Clear();
 		runs.Clear();
