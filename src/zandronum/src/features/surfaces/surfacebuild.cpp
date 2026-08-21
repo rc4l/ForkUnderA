@@ -121,10 +121,17 @@ bool BuildDerivedWallLight(const seg_t *seg, DerivedWallLight &out, const sector
 {
 	if (seg == NULL || seg->sidedef == NULL || seg->frontsector == NULL) return false;
 	const sector_t *front = seg->frontsector;
-	// [rc4l] A sector with a 3D floor light list does not have ONE light level: SplitWall cuts the
-	// wall at each band and gives every fragment that band's light and colormap. Deriving one number
-	// for the whole wall would be wrong in exactly the rooms people build 3D floors for.
-	if (front->e != NULL && front->e->XFloor.lightlist.Size() != 0) return false;
+	// [rc4l] A sector with a 3D floor light list does not have ONE light level -- and that is now the
+	// CALLER's problem rather than a reason to refuse.
+	//
+	// SplitWall cuts the wall at each band and gives every fragment that band's light and colormap.
+	// This used to decline the sector outright, which was honest and had a cost nobody had measured:
+	// the seg was handed back to the capture, and when GL stops walking the level there is no
+	// capture, so those walls simply were not there. That is what kept fua_dg_standalone off, and
+	// standalone is worth two thirds of the frame on Sunder MAP10.
+	//
+	// What comes back here is the wall's OWN light -- band zero, which SplitWall also leaves alone.
+	// The bands below it are the caller's to apply, from wallbands_compute.
 	// [rc4l] ...and a sector whose planes are SUBSTITUTED for the viewer cannot be baked either.
 	//
 	// gl_FakeFlat hands GLWall::Process a different sector than seg->frontsector when a transfer-
