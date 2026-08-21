@@ -35,6 +35,17 @@ EXTERN_CVAR(Bool, gl_wallmesh)
 // faces, skies, horizons), and the shading -- which is deliberately last, being the part where a
 // second implementation drifted before.
 CVAR(Bool, fua_surface_derive, true, 0)
+// [rc4l] ...and its light, which was the last of a wall's appearance still taken from GLWall.
+//
+// Separable from the geometry because it is a different question with a different failure mode: a
+// wrong span is a hole in the world, a wrong light level is a room that is subtly too bright. On,
+// and pixel-identical: 0.0% on Doom 2 MAP01 and dbab04, 0.1% on Sunder MAP16 against a reload noise
+// floor of 0.4%.
+//
+// This is not a second lighting implementation. CaptureShading calls the engine's own gl_SetColor
+// and gl_SetFog either way; what changed is that its three inputs are read off the sector and the
+// sidedef rather than off a GLWall that GL had to walk the BSP to produce.
+CVAR(Bool, fua_surface_derive_light, true, 0)
 EXTERN_CVAR(Int, gl_fogmode)
 // [rc4l] The animated-texture re-resolve on replay, as a switch, so its cost can be A/B'd from the
 // console instead of from two builds. Off renders stale animation frames -- a measurement aid, not
@@ -263,7 +274,36 @@ void BakeSeg(int segIndex)
 		mp.lightLevel = sc.walls[i].lightlevel;
 		mp.lightColor = sc.walls[i].Colormap.LightColor.d;
 		mp.fadeColor = sc.walls[i].Colormap.FadeColor.d;
-		CaptureWallShading(sc.walls[i], mp);
+		// [rc4l] The light this wall is shaded with, derived rather than taken from GLWall.
+		//
+		// Not a second lighting implementation -- CaptureShading calls the engine's own gl_SetColor
+		// and gl_SetFog either way, which is what has kept the two renderers agreeing. What changes
+		// is where its three INPUTS come from: the sector's light, the sidedef's fake contrast, and
+		// the colormap are map data, and taking them from the map is the last thing standing between
+		// a wall's appearance and needing GL to have walked the BSP first.
+		//
+		// A sector with a 3D floor light list has no single light level -- SplitWall cuts the wall
+		// into bands, each with its own -- so those keep the capture and are counted.
+		bool litFromMap = false;
+		if (fua_surface_derive_light)
+		{
+			zx::surfaces::DerivedWallLight dl;
+			const sector_t *cmFrom = NULL;
+			if (zx::surfaces::BuildDerivedWallLight(sc.walls[i].seg, dl, cmFrom) && cmFrom != NULL)
+			{
+				// sector_t::ColorMap is an FDynamicColormap*, and GLWall::Process copies it into an
+				// FColormap by assignment -- the same conversion, spelled the same way.
+				FColormap cm;
+				cm = cmFrom->ColorMap;
+				zx::levelmesh::CaptureShading(dl.lightLevel, dl.relLight + getExtraLight(), cm, mp,
+					sc.walls[i].type == RENDERWALL_M2SNF);
+				mp.lightLevel = dl.lightLevel;
+				mp.lightColor = cm.LightColor.d;
+				mp.fadeColor = cm.FadeColor.d;
+				litFromMap = true;
+			}
+		}
+		if (!litFromMap) CaptureWallShading(sc.walls[i], mp);
 
 		// [rc4l] AFTER CaptureShading, which resets alpha to 1 and blendMode to 0 on the way past.
 		//

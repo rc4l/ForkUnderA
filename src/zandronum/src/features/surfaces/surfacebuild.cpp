@@ -5,6 +5,8 @@
 #include "r_defs.h"
 #include "r_state.h"
 #include "r_sky.h"   // skyflatnum, for the lower texture's sky reference
+#include "g_level.h"   // level.flags, for the fog test GLWall::Process makes
+#include "gl/renderer/gl_lightdata.h"   // gl_ClampLight, gl_isBlack
 
 #include "textures/textures.h"
 #include "gl/textures/gl_material.h"
@@ -92,6 +94,30 @@ void ResetDeriveStats()
 	g_fbMiddle = g_fbSpecial = g_fbNoTexture = g_fbNoSpan = g_fbSeam = 0;
 }
 void NoteDeriveFallback() { g_fellBack++; }
+
+bool BuildDerivedWallLight(const seg_t *seg, DerivedWallLight &out, const sector_t *&colormapFrom)
+{
+	if (seg == NULL || seg->sidedef == NULL || seg->frontsector == NULL) return false;
+	const sector_t *front = seg->frontsector;
+	// [rc4l] A sector with a 3D floor light list does not have ONE light level: SplitWall cuts the
+	// wall at each band and gives every fragment that band's light and colormap. Deriving one number
+	// for the whole wall would be wrong in exactly the rooms people build 3D floors for.
+	if (front->e != NULL && front->e->XFloor.lightlist.Size() != 0) return false;
+
+	colormapFrom = front;
+	// Transcribed from GLWall::Process, which is the only place this is written down. gl_ClampLight
+	// and GetLightLevel are the engine's; the shape of the rellight clamp is not obvious and is not
+	// re-derived here on purpose.
+	int rel = 0;
+	const int orglightlevel = gl_ClampLight(front->lightlevel);
+	const bool foggy = (!gl_isBlack(front->ColorMap->Fade) || (level.flags & LEVEL_HASFADETABLE));
+	out.lightLevel = gl_ClampLight(seg->sidedef->GetLightLevel(foggy, orglightlevel, false, &rel));
+	if (orglightlevel >= 253)                    out.relLight = 0;   // fake contrast is invisible here
+	else if (out.lightLevel - rel > 256)         out.relLight = 256 - out.lightLevel + rel;
+	else                                         out.relLight = rel;
+	out.valid = true;
+	return true;
+}
 
 bool BuildDerivedWallSpan(const seg_t *seg, int renderType, DerivedWallSpan &out)
 {
