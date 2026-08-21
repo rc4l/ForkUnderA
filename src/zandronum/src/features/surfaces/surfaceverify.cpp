@@ -683,7 +683,13 @@ CCMD( fua_surface_verify )
 								// on a wrapped wall and the two answers are visually identical. Anything else is a
 								// real gap and is the only part worth reasoning about.
 								const float glTop = first->ztop[0] + first->uplft.v * (float)th;
-								const float delta = glTop - texTop;
+								// [rc4l] Against the texture top the derivation ACTUALLY USES.
+								//
+								// v = (texTop - z)/th, so sliding v down by vShift is the same as sliding
+								// texTop down by vShift textures. Classifying against the unshifted one asked
+								// what was wrong with an answer that is no longer given.
+								const float texTopEff = texTop - vShift * (float)th;
+								const float delta = glTop - texTopEff;
 								const float pegShift = (float)th - ( ( refCeil - refFloor ) + vOffset );
 								const float texturesOff = delta / (float)th;
 								if ( fabsf( delta - pegShift ) <= 0.01f ) { uvDeltaPeg++; uvPegByType[slot]++; }
@@ -699,7 +705,7 @@ CCMD( fua_surface_verify )
 								// unsolved piece worth looking at.
 								// The two classes with a term still unnamed -- the peg shift the other way, and the ones
 								// that fit no term at all -- are the only ones printed in full.
-								if ( uvShown < 8 && ( uvDeltaOther + uvDeltaUnpeg ) != lastOther )
+								if ( uvShown < 8 && ( uvDeltaOther + uvDeltaUnpeg + uvDeltaPeg ) != lastOther )
 								{
 									// [rc4l] GL's own reference, recovered from the coordinates it produced.
 									//
@@ -708,7 +714,7 @@ CCMD( fua_surface_verify )
 									// term instead of inviting another guess at the formula.
 									const float glTexTop = first->ztop[0] + first->uplft.v * (float)th;
 									Printf( "  seg %d %s: capture v %.3f (texTop %.1f), derived v %.3f (texTop %.1f)\n",
-										s, TypeName( kTypeOf[slot] ), first->uplft.v, glTexTop, wantV, texTop );
+										s, TypeName( kTypeOf[slot] ), first->uplft.v, glTexTop, wantV, texTopEff );
 									Printf( "      refs %.1f / %.1f th %d peg %d rowofs %.1f ztop %.1f | sec %d/%d ceilZ %.1f/%.1f floorZ %.1f/%.1f vofs %.1f\n",
 										refCeil, refFloor, th, (int)pegged, rowOfs, first->ztop[0],
 										(int)( rf - sectors ), rb ? (int)( rb - sectors ) : -1,
@@ -724,7 +730,7 @@ CCMD( fua_surface_verify )
 										segs[s].sidedef == segs[s].linedef->sidedef[0] ? 0 : 1,
 										first->gltexture ? first->gltexture->tex->Name.GetChars( ) : "?",
 										( first->flags & GLT_CLAMPY ) ? 1 : 0 );
-									lastOther = uvDeltaOther + uvDeltaUnpeg;
+									lastOther = uvDeltaOther + uvDeltaUnpeg + uvDeltaPeg;
 									uvShown++;
 								}
 							}
