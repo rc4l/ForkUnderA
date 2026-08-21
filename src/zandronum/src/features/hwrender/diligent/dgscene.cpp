@@ -3124,8 +3124,9 @@ static TMap<unsigned int, unsigned int> g_slotByOffset;
 // resizes or changes the base texture or blend mode that decides its batch -- so this comparison is
 // one integer rather than a hash of 115,000 pieces recomputed every frame.
 static unsigned int g_builtLayoutGen = 0;
-// [rc4l] Rebatches the scene buffer was built for -- see RefreshMovedGeometry.
-static int g_builtRebatched = 0;
+// [rc4l] The mesh revisions this scene buffer was built at -- see RefreshMovedGeometry.
+static unsigned int g_builtRebatchRev = 0, g_builtRepaintRev = 0;
+static int g_geomRepaints = 0;
 // Vertices the GPU buffer can hold, which is more than the scene currently uses -- see the slack
 // at creation. g_appendedVerts is how much of that slack has been spent since the last rebuild.
 static unsigned int g_vbCapacity = 0;
@@ -3624,32 +3625,61 @@ static void RefreshMovedGeometry(Diligent::IDeviceContext *ctx)
 {
 	if (!g_vb || g_sceneVB.Size() == 0) return;
 
-	// [rc4l] A piece can change without a single vertex moving, and that used to be invisible here.
+	// [rc4l] Two questions, both answered by the mesh, neither of them "did a vertex move".
 	//
-	// Pressing a switch swaps the sidedef's texture. The seg re-bakes, the mesh piece takes the new
-	// material -- fua_look confirms it, SW1MET2 becomes SW2MET2 -- and not one vertex changes, so the
-	// dirty range is empty and this function returned on the line below before ever asking whether
-	// the LAYOUT had changed. The piece stayed in a batch keyed on the old texture and went on being
-	// drawn with it: the switch never looked pressed.
+	// A surface can change completely without moving: pressing a switch swaps a sidedef's texture,
+	// and a door's light level changes the shading of everything it passes. This function used to
+	// return on the dirty-vertex line below before asking anything else, so those changes arrived
+	// only if they happened to coincide with geometry that moved. The switch never looked pressed.
 	//
-	// MeshRegisterPiece already counts this as a rebatch. A rebatch is precisely the change the patch
-	// path cannot express -- moving a piece from one batch to another is what a rebuild is for -- so
-	// it is the one layout reason that forces one. New and resized pieces are left alone: those the
-	// append and patch paths handle without a full sort.
+	// MeshRegisterPiece decides which of the two it was, once, for walls and floors alike -- see
+	// features/surfaces/computation/surfacechange_compute.h.
 	{
-		int added = 0, resized = 0, rebatched = 0;
-		zx::levelmesh::MeshLayoutReasons(added, resized, rebatched);
-		if (rebatched != g_builtRebatched)
+		const unsigned int rebatch = zx::levelmesh::MeshRebatchRevision();
+		if (rebatch != g_builtRebatchRev)
 		{
-			g_builtRebatched = rebatched;
+			// A surface that changed material or pass is in the wrong batch, and only a rebuild can
+			// move it. Rare: it takes a switch, a door opening, or a sector changing its flat.
+			g_builtRebatchRev = rebatch;
 			FString err;
 			if (BuildSceneBuffer(err))
 			{
 				g_geomRebuilds++;
 				g_sceneVerts = (int)g_sceneVB.Size();
+				zx::levelmesh::MeshClearRepaints();
 				zx::levelmesh::MeshClearDirtyRanges();
 				return;
 			}
+		}
+	}
+	// A repaint is the surface in the right place with stale shading baked into its record. Since the
+	// shading moved out of the vertices and into that record, this is a sixty-four byte upload each.
+	{
+		const unsigned int repaint = zx::levelmesh::MeshRepaintRevision();
+		if (repaint != g_builtRepaintRev)
+		{
+			g_builtRepaintRev = repaint;
+			const unsigned int *list = NULL; int count = 0;
+			zx::levelmesh::MeshTakeRepaints(list, count);
+			int np = 0;
+			const zx::levelmesh::MeshPiece *pieces = zx::levelmesh::MeshPieces(np);
+			for (int i = 0; i < count && pieces != NULL; i++)
+			{
+				if ((int)list[i] >= np) continue;
+				const zx::levelmesh::MeshPiece &p = pieces[list[i]];
+				unsigned int *slotIdx = g_slotByOffset.CheckKey(p.range.offset);
+				if (slotIdx == NULL || *slotIdx >= g_vbSlots.Size()) continue;
+				const VBSlot &slot = g_vbSlots[*slotIdx];
+				if (slot.count == 0 || slot.pieceIndex >= g_scenePieceData.Size()) continue;
+				FillPieceData(p, 0, g_scenePieceData[slot.pieceIndex]);
+				if (g_pieceBuf)
+					ctx->UpdateBuffer(g_pieceBuf,
+						(Diligent::Uint64)slot.pieceIndex * sizeof(ScenePieceData),
+						sizeof(ScenePieceData), &g_scenePieceData[slot.pieceIndex],
+						Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+				g_geomRepaints++;
+			}
+			zx::levelmesh::MeshClearRepaints();
 		}
 	}
 	unsigned int lo = 0, hi = 0;
@@ -5568,8 +5598,9 @@ void DynStats(FString &report)
 	int added = 0, resized = 0, rebatched = 0;
 	zx::levelmesh::MeshLayoutReasons(added, resized, rebatched);
 	FString why;
-	why.Format(" | layout gen %u (built %u): %d added, %d resized, %d rebatched",
-		zx::levelmesh::MeshLayoutGeneration(), g_builtLayoutGen, added, resized, rebatched);
+	why.Format(" | layout gen %u (built %u): %d added, %d resized, %d rebatched, %d repaints applied",
+		zx::levelmesh::MeshLayoutGeneration(), g_builtLayoutGen, added, resized, rebatched,
+		g_geomRepaints);
 	report += why;
 	FString patches;
 	patches.Format(" | %d geometry patches (%d verts moved), %d appends (%d verts, %d%% of slack)",
