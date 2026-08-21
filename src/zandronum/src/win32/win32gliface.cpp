@@ -49,6 +49,7 @@ CVAR(Bool, gl_debug, false, 0)
 // [BB]
 CVAR(Bool, gl_quadbufferedstereo, false, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
 
+EXTERN_CVAR(Bool, fua_render_in_background)
 EXTERN_CVAR(Int, vid_refreshrate)
 
 //==========================================================================
@@ -1077,7 +1078,11 @@ void Win32GLFrameBuffer::SetWindowSize (int w, int h)
 
 bool Win32GLFrameBuffer::CanUpdate()
 {
-	if (!AppActive) return false;
+	// [rc4l] Refusing here skips the 2D pass AND the buffer swap, so an inactive window keeps
+	// whatever image it had. That is the right default -- nobody is looking -- and exactly wrong for
+	// the cases fua_render_in_background exists for: a second monitor, a capture card, a recording,
+	// a benchmark. See the cvar's note in s_sound.cpp.
+	if (!AppActive && !fua_render_in_background) return false;
 	return true;
 }
 

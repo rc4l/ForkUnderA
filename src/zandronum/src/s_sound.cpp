@@ -2008,12 +2008,55 @@ bool S_GetSoundPaused (void)
 CVAR (Bool, i_soundinbackground, false, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 CVAR (Bool, i_pauseinbackground, true, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 
+// [rc4l] Keep the game running AND drawing while the window is in the background.
+//
+// Three separate things stop when a window is deactivated, and turning off any one of them on its
+// own changes nothing measurable -- which is what made this confusing to chase. On Sunder MAP10,
+// unfocused, the frame reads 28.6 ms with the renderer using 1.5 ms of it; focused, the same scene
+// is 0.52 ms. The 27 ms in between is not work, it is the three of these:
+//
+//   1. The world is PAUSED. S_SetSoundPaused marks `paused` negative on deactivation, P_Ticker
+//      returns early, r_NoInterpolate is left true, and TryRunTics then waits out a whole tic --
+//      which is why an idle background window sits at exactly 35 fps and not some other number.
+//   2. The process drops to IDLE_PRIORITY_CLASS.
+//   3. The frame is never PRESENTED: Win32GLFrameBuffer::CanUpdate refuses while inactive, so the
+//      2D pass and the buffer swap are skipped and the window keeps a stale image.
+//
+// i_pauseinbackground already covers (1) and half of (2), and is the right switch for "keep playing
+// while I alt-tab". This is the switch for "keep DRAWING", which is a different ask -- a second
+// monitor, a capture card, a recording, a benchmark -- and it implies all three.
+//
+// It also takes effect IMMEDIATELY. i_pauseinbackground alone does not: set it while the window is
+// already in the background and nothing happens, because the pause mark and the idle priority were
+// latched on the way out and are only re-evaluated when the window is next activated. That cost an
+// hour of measuring a cvar that was already set correctly.
+CUSTOM_CVAR (Bool, fua_render_in_background, false, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
+{
+	if (self)
+	{
+		// Unlatch the background pause here rather than waiting to be activated. The mark is the
+		// negative value; a positive `paused` is the player's own pause and is not ours to clear.
+		if (paused < 0)
+			paused = 0;
+	}
+	else
+	{
+		// Turned off: re-apply the ordinary rule for whichever state the window is actually in.
+		S_SetSoundPaused (I_WindowIsActive () ? 1 : 0);
+	}
+	I_UpdateBackgroundPriority ();
+}
+
 // [rc4l] Upstream's `pauseext`, computed rather than stored: the commit defining it,
 // uzdoom@16e0f79fd7c31ab5a3b942c2899adaa2827e7fe3, only gates the P2P transport we replaced, so the
 // mark stays in `paused` as a negative value.
 static bool sound_BackgroundPauseWanted( int state )
 {
 	// [BB] !netgame -> (NETWORK_GetState( ) == NETSTATE_SINGLE)
+	// [rc4l] fua_render_in_background means the world keeps running back there, so there is nothing
+	// to pause -- see the cvar's note.
+	if ( fua_render_in_background )
+		return false;
 	return ( state == 0 ) && ( NETWORK_GetState( ) == NETSTATE_SINGLE ) && i_pauseinbackground
 #ifdef _DEBUG
 		&& !demoplayback

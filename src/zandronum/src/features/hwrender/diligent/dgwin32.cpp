@@ -51,6 +51,13 @@ void Fua_SyncBackendWindowToParent(void *hwnd)
 	if (h == NULL || GetParent(h) == NULL) return;
 	RECT cr;
 	if (!GetClientRect(GetParent(h), &cr)) return;
+	// [rc4l] A MINIMIZED parent has a client rect of nothing, and following it collapses the
+	// swapchain to a single pixel -- everything drawn until the window comes back is drawn into it.
+	// With fua_render_in_background on, those frames are the point: a minimized capture came out
+	// 1x1 while reporting a healthy 0.45 ms and 126 batches, which is the most convincing way for a
+	// frame to be wrong. Keeping the last good size costs nothing; restoring sends a real rect and
+	// the next sync follows it, which is the path a drag already takes.
+	if (cr.right <= 0 || cr.bottom <= 0) return;
 	RECT own;
 	if (GetClientRect(h, &own) &&
 		own.right == cr.right && own.bottom == cr.bottom) return;

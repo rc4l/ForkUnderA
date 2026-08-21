@@ -90,6 +90,10 @@ void I_StartFrame (void);
 // Can call D_PostEvent.
 void I_StartTic (void);
 
+// [rc4l] See the win32 header: the background-render switch asks these from cross-platform code.
+bool I_WindowIsActive ();
+void I_UpdateBackgroundPriority ();
+
 // Asynchronous interrupt functions should maintain private queues
 // that are read by the synchronous functions
 // to be converted into events.
