@@ -301,17 +301,22 @@ bool BuildDerivedWallSpan(const seg_t *seg, int renderType, DerivedWallSpan &out
 	else if (!SpanBothEnds(renderType, hEnd[0], hEnd[1], spanTop, spanBottom))
 		{ g_fbNoSpan++; g_fellBack++; return false; }
 
+	// GL's own test: nothing to draw only when BOTH ends are empty.
+	if (!(spanTop[0] > spanBottom[0] || spanTop[1] > spanBottom[1]))
+		{ g_fbNoSpan++; g_fellBack++; return false; }
+
+	// [rc4l] And a wall that pinches out is CUT SHORT, not turned into a triangle -- see
+	// ComputeWallPinch. The fractions come back with it, and both the ends and the horizontal
+	// texture coordinate move to where the wall actually stops.
+	WallPinch pinch;
+	ComputeWallPinch(spanTop, spanBottom, pinch);
 	for (int e = 0; e < 2; e++)
 	{
-		const float top = spanTop[e], bottom = spanBottom[e];
-		out.ztop[e] = top;
-		out.zbottom[e] = bottom;
-		out.vTop[e] = ComputeWallV(top, texTop, th);
-		out.vBottom[e] = ComputeWallV(bottom, texTop, th);
+		out.ztop[e] = pinch.ztop[e];
+		out.zbottom[e] = pinch.zbottom[e];
+		out.vTop[e] = ComputeWallV(pinch.ztop[e], texTop, th);
+		out.vBottom[e] = ComputeWallV(pinch.zbottom[e], texTop, th);
 	}
-	// GL's own test: nothing to draw only when BOTH ends are empty.
-	if (!(out.ztop[0] > out.zbottom[0] || out.ztop[1] > out.zbottom[1]))
-		{ g_fbNoSpan++; g_fellBack++; return false; }
 
 	// [rc4l] CheckTexturePosition, which is where a wall's v coordinates actually END UP.
 	//
@@ -337,23 +342,30 @@ bool BuildDerivedWallSpan(const seg_t *seg, int renderType, DerivedWallSpan &out
 	// [rc4l] And the horizontal, for everything that is not a polyobject.
 	//
 	// GLWall::Process sets fracleft 0 and fracright 1 for an ordinary wall and takes the linedef's
-	// vertices, so the two edges are simply the sidedef's x offset and that plus the line's texel
-	// length. A polyobject is drawn per seg with real fractions and is left to the capture.
+	// vertices, so the two edges START as the sidedef's x offset and that plus the line's texel
+	// length -- and then SetWallCoordinates moves whichever end pinched out, which is what `pinch`
+	// carries. A polyobject is drawn per seg with real fractions and is left to the capture.
 	if (!(seg->sidedef->Flags & WALLF_POLYOBJ))
 	{
 		const float ul = tci.FloatToTexU(FIXED2FLOAT(tci.TextureOffset(
 			seg->sidedef->GetTextureXOffset((side_t::ETexpart)texpos))));
-		out.uLeft = ul;
-		out.uRight = ul + tci.FloatToTexU(seg->sidedef->TexelLength);
+		const float texLength = tci.FloatToTexU(seg->sidedef->TexelLength);
+		out.uLeft = ul + texLength * pinch.fracLeft;
+		out.uRight = ul + texLength * pinch.fracRight;
 		out.hasU = true;
 	}
-	// [rc4l] The ends, from the linedef, ordered by side. GLWall::Process draws the whole line, so
-	// these are the line's vertices and not the seg's -- see the fracleft note above.
+	// [rc4l] The ends, from the linedef, ordered by side -- moved in to where the wall was cut short,
+	// exactly as the u coordinates were. GLWall::Process draws the whole line, so these start as the
+	// line's vertices and not the seg's; see the fracleft note above.
 	{
 		const vertex_t *lv1 = seg->linedef->v1, *lv2 = seg->linedef->v2;
 		if (seg->sidedef != seg->linedef->sidedef[0]) { lv1 = seg->linedef->v2; lv2 = seg->linedef->v1; }
-		out.x1 = FIXED2FLOAT(lv1->x); out.y1 = FIXED2FLOAT(lv1->y);
-		out.x2 = FIXED2FLOAT(lv2->x); out.y2 = FIXED2FLOAT(lv2->y);
+		const float ax = FIXED2FLOAT(lv1->x), ay = FIXED2FLOAT(lv1->y);
+		const float bx = FIXED2FLOAT(lv2->x), by = FIXED2FLOAT(lv2->y);
+		out.x1 = ax + pinch.fracLeft * (bx - ax);
+		out.y1 = ay + pinch.fracLeft * (by - ay);
+		out.x2 = ax + pinch.fracRight * (bx - ax);
+		out.y2 = ay + pinch.fracRight * (by - ay);
 	}
 	out.material = mat;
 	// The BASE texture, so an animated one keeps animating -- see MeshPiece::baseTex. The sector's

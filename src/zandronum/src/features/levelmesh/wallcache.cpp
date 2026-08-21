@@ -105,6 +105,9 @@ void AllocForLevel(int numsegs)
 	//
 	// Cleared HERE and not in MeshInitForLevel because ClearFlats gives its ranges back to the
 	// mesh, and this runs while that mesh is still the one that handed them out.
+	// The per-sidedef bake owners belong to the level that is going away.
+	extern void ClearSideOwners();
+	ClearSideOwners();
 	zx::levelmesh::ClearFlats();
 	zx::levelmesh::ClearSprites();
 	g_cache.Clear();
@@ -196,6 +199,48 @@ static void CaptureWallShading(const GLWall &wall, MeshPiece &mp)
 // because the ladder never asks about light. So the seg stays with the capture, which knows how to
 // take GL's split walls with their per-band shading, and the two paths divide the level cleanly
 // instead of one path leaving holes in it.
+// [rc4l] One quad per SIDEDEF, not one per seg.
+//
+// The derivation draws the WHOLE LINEDEF -- fracleft 0, fracright 1, the line's own vertices -- which
+// is what GLWall::Process does. Doing that once per seg means a linedef the BSP split into four segs
+// contributes four identical coplanar quads, and the map bake walks every seg in the level, so it
+// makes all four where the capture only ever made the ones GL happened to walk.
+//
+// They are duplicates in the exact sense: same corners, same material, same shading. Nothing on
+// screen needs more than the first, and three of them are depth-buffer noise and wasted vertices.
+static TArray<int> g_sideOwner;      // sidedef index -> the one seg that bakes it
+
+static void BuildSideOwners()
+{
+	g_sideOwner.Clear();
+	if (sides == NULL || numsides <= 0 || segs == NULL) return;
+	g_sideOwner.Reserve(numsides);
+	for (int i = 0; i < numsides; i++) g_sideOwner[i] = -1;
+	for (int i = 0; i < numsegs; i++)
+	{
+		if (segs[i].sidedef == NULL) continue;
+		const int sd = (int)(segs[i].sidedef - sides);
+		if (sd < 0 || sd >= numsides) continue;
+		if (g_sideOwner[sd] < 0) g_sideOwner[sd] = i;
+	}
+}
+
+void ClearSideOwners() { g_sideOwner.Clear(); }
+
+static bool SegOwnsItsSide(int segIndex)
+{
+	if (segs == NULL || segIndex < 0 || segIndex >= numsegs) return false;
+	const side_t *sd = segs[segIndex].sidedef;
+	if (sd == NULL) return false;
+	// Rebuilt when the table does not match the level's sidedef count, which is what a level change
+	// looks like from here. (An earlier version stamped this with level.totaltime -- which changes
+	// every tic, so it rebuilt the whole table on every seg of every bake.)
+	if (g_sideOwner.Size() != (unsigned)numsides) BuildSideOwners();
+	const int idx = (int)(sd - sides);
+	if (idx < 0 || (unsigned)idx >= g_sideOwner.Size()) return false;
+	return g_sideOwner[idx] == segIndex;
+}
+
 static bool MapBakeOwnsSeg(int segIndex)
 {
 	if (!fua_surface_mapbake_auto) return false;
@@ -418,6 +463,10 @@ int BakeSegFromMap(int segIndex)
 	if (segs == NULL || segIndex >= numsegs) return 0;
 	const seg_t *seg = &segs[segIndex];
 	if (seg->sidedef == NULL || seg->linedef == NULL || seg->frontsector == NULL) return 0;
+
+	// One quad per sidedef -- see SegOwnsItsSide. Every other seg of the same sidedef would build the
+	// same four corners over again.
+	if (!SegOwnsItsSide(segIndex)) return 0;
 
 	SegCache &sc = g_cache[segIndex];
 	static FFlatVertex tris[6];

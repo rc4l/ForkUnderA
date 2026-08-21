@@ -119,6 +119,28 @@ struct MidTextureClip
 void ComputeMiddleClip(const WallHeights &a, const WallHeights &b, const MidTextureClip &c,
 	WallPart &pa, WallPart &pb);
 
+// [rc4l] Where a wall that pinches out actually ENDS -- horizontally, not just vertically.
+//
+// A sloped wall can have area at one end and none at the other. It is tempting to hand that to the
+// rasteriser as a triangle -- two corners coincident -- and that is what this derivation did. GL does
+// something else: SetWallCoordinates finds the point along the wall where the top meets the bottom,
+// moves that END of the wall there, and moves the horizontal texture coordinate with it. The result
+// is a narrower QUAD, and its `u` at the cut end is nowhere near the linedef's.
+//
+// So the difference was never in the texture coordinate rule. It was that GL's wall is shorter than
+// the linedef and ours was not: 33 pieces on dbab04 and 2 on dbab01, every one of them a wall that
+// pinches out, and no ladder had ever compared a horizontal coordinate to notice.
+//
+// Both ends cannot pinch -- a wall with no area at either end is not drawn at all -- so the two
+// fractions are independent and the original endpoints are the right reference for both.
+struct WallPinch
+{
+	float fracLeft, fracRight;   // where along the linedef each end now sits, 0..1
+	float ztop[2], zbottom[2];   // with the pinched end collapsed to the intersection height
+};
+
+void ComputeWallPinch(const float *ztopIn, const float *zbottomIn, WallPinch &out);
+
 // [rc4l] Is there anything to draw here at all?
 //
 // Answered separately because "no parts" and "one part of zero height" are different states and the

@@ -247,6 +247,185 @@ CCMD( fua_surface_mapbake )
 	}
 }
 
+//==========================================================================
+//
+// [rc4l] fua_surface_bakediff -- WHICH surfaces the two bakes disagree about.
+//
+// The other ladders each ask one question and the map-driven frame kept differing by half a percent
+// with all of them reading clean, which means the difference was in something none of them compares.
+// Two candidates were never being looked at at all: the HORIZONTAL texture coordinate, which no
+// ladder has ever checked, and the LIGHT, which fua_surface_verify does not touch.
+//
+// So this compares the whole quad -- material, all four corners, and the shading inputs -- for every
+// captured piece against what the derivation would build for the same seg and part, and reports the
+// FIRST thing that differs, by class. A count per class says where to look; guessing said lava.
+//
+//==========================================================================
+CCMD( fua_surface_bakediff )
+{
+	using namespace zx::surfaces;
+	if ( segs == NULL || numsegs <= 0 ) { Printf( "no level loaded." "\n" ); return; }
+
+	const float tol = ( argv.argc( ) > 1 ) ? (float)atof( argv[1] ) : 0.01f;
+
+	int checked = 0, agreed = 0;
+	int dMaterial = 0, dU = 0, dV = 0, dZ = 0, dLight = 0, dMissing = 0, dWholeTex = 0;
+	int notOurs = 0, dColormap = 0;
+	int shown = 0;
+
+	const int segCount = zx::levelmesh::CachedSegCount( );
+	for ( int s = 0; s < segCount && s < numsegs; s++ )
+	{
+		const int pieces = zx::levelmesh::CachedPieceCount( s );
+		if ( pieces <= 0 ) continue;
+		if ( segs[s].sidedef == NULL || segs[s].linedef == NULL ) continue;
+
+		for ( int q = 0; q < pieces; q++ )
+		{
+			const GLWall *w = zx::levelmesh::CachedPiece( s, q );
+			if ( w == NULL || w->gltexture == NULL ) continue;
+			// Only the ordinary parts: the derivation does not claim skies, horizons or 3D floor
+			// faces, and counting them as disagreements would drown the ones it does claim.
+			if ( w->type != RENDERWALL_TOP && w->type != RENDERWALL_BOTTOM &&
+			     w->type != RENDERWALL_M1S && w->type != RENDERWALL_M2S ) continue;
+
+			// [rc4l] Only the segs the map bake OWNS. A seg it cannot light stays with the capture,
+			// so a disagreement there is not in the map-driven frame at all -- and counting it makes
+			// the number describe a wall nobody is going to build this way.
+			{
+				DerivedWallLight own; const sector_t *ocm = NULL;
+				if ( !BuildDerivedWallLight( &segs[s], own, ocm ) || ocm == NULL ) { notOurs++; continue; }
+			}
+
+			DerivedWallSpan d;
+			checked++;
+			if ( !BuildDerivedWallSpan( &segs[s], w->type, d ) ) { dMissing++; continue; }
+
+			// [rc4l] A fragment SplitWall made is not the wall the derivation builds, and comparing
+			// them corner for corner would report the cut as a fault. Only the light and the
+			// material are safe to compare on one, and only the whole wall's z and v mean anything.
+			const bool split = ( pieces > 1 ) && !( w->flags & GLWall::GLWF_NOSPLIT );
+
+			// [rc4l] The same surface showing a different FRAME is not a different material.
+			//
+			// DoMidTexture resolves through TexMan(), which applies the animation translation, while
+			// the derivation keeps the BASE -- deliberately, because the backend re-resolves every
+			// batch from its base texture each frame. Comparing the frames reported 171 material
+			// faults on dbab02 and every one of them was nukage flowing.
+			int firstBad = 0;   // 1 material, 2 u, 3 v, 4 z, 5 light
+			bool sameMaterial = ( (const void *)w->gltexture == d.material );
+			if ( !sameMaterial )
+			{
+				const int tp = ( w->type == RENDERWALL_TOP ) ? side_t::top :
+					( w->type == RENDERWALL_BOTTOM ) ? side_t::bottom : side_t::mid;
+				FTexture *anim = TexMan[segs[s].sidedef->GetTexture( (side_t::ETexpart)tp )];
+				if ( anim != NULL && FMaterial::ValidateTexture( anim, false ) == w->gltexture )
+					sameMaterial = true;
+			}
+			if ( !sameMaterial ) firstBad = 1;
+			else if ( d.hasU && ( fabsf( w->uplft.u - d.uLeft ) > tol ||
+			                      fabsf( w->uprgt.u - d.uRight ) > tol ) ) firstBad = 2;
+			else if ( !split && ( fabsf( w->uplft.v - d.vTop[0] ) > tol ||
+			                      fabsf( w->uprgt.v - d.vTop[1] ) > tol ) )
+			{
+				// A whole copy of the texture up or down on a wall that repeats is the same picture.
+				// Counting those with the rest buries the ones that are not.
+				const float off = w->uplft.v - d.vTop[0];
+				const bool whole = fabsf( off - floorf( off + 0.5f ) ) <= 0.001f;
+				firstBad = whole ? 6 : 3;
+			}
+			else if ( !split && ( fabsf( w->ztop[0] - d.ztop[0] ) > tol ||
+			                      fabsf( w->zbottom[0] - d.zbottom[0] ) > tol ) ) firstBad = 4;
+			else
+			{
+				// [rc4l] The COLORMAP too, not just the light level.
+				//
+				// CaptureShading takes three inputs and this was comparing two of them, which is how
+				// a difference that is visibly SHADING could sit behind a report saying "0 light".
+				// The capture takes the colormap off the GLWall; the map bake takes it off
+				// seg->frontsector, and those are not always the same sector.
+				DerivedWallLight dl;
+				const sector_t *cm = NULL;
+				if ( BuildDerivedWallLight( &segs[s], dl, cm ) )
+				{
+					if ( dl.lightLevel != w->lightlevel || dl.relLight != w->rellight ) firstBad = 5;
+					else if ( cm != NULL && cm->ColorMap != NULL &&
+					          ( w->Colormap.LightColor.d != cm->ColorMap->Color.d ||
+					            w->Colormap.FadeColor.d != cm->ColorMap->Fade.d ||
+					            w->Colormap.desaturation != cm->ColorMap->Desaturate ) ) firstBad = 7;
+				}
+			}
+
+			if ( firstBad == 0 ) { agreed++; continue; }
+			switch ( firstBad )
+			{
+			case 1: dMaterial++; break;
+			case 2: dU++; break;
+			case 3: dV++; break;
+			case 4: dZ++; break;
+			case 6: dWholeTex++; break;
+			case 7: dColormap++; break;
+			default: dLight++; break;
+			}
+			if ( firstBad == 6 ) continue;   // named, harmless, and not worth a line each
+			if ( shown < 10 )
+			{
+				shown++;
+				static const char *const kWhat[8] = { "?", "material", "u", "v", "z", "light", "whole texture", "colormap" };
+				Printf( "  seg %d line %d %s: %s differs" "\n", s,
+					(int)( segs[s].linedef - lines ), TypeName( w->type ), kWhat[firstBad] );
+				Printf( "      capture u %.3f..%.3f v %.3f/%.3f z %.1f..%.1f light %d rel %d tex %s" "\n",
+					w->uplft.u, w->uprgt.u, w->uplft.v, w->uprgt.v, w->zbottom[0], w->ztop[0],
+					w->lightlevel, (int)w->rellight, w->gltexture->tex->Name.GetChars( ) );
+				DerivedWallLight dl2; const sector_t *cm2 = NULL;
+				const bool haveL = BuildDerivedWallLight( &segs[s], dl2, cm2 );
+				Printf( "      derived u %.3f..%.3f v %.3f/%.3f z %.1f..%.1f light %d rel %d tex %s" "\n",
+					d.uLeft, d.uRight, d.vTop[0], d.vTop[1], d.zbottom[0], d.ztop[0],
+					haveL ? dl2.lightLevel : -1, haveL ? dl2.relLight : -1,
+					( d.material != NULL ) ? ( (FMaterial *)d.material )->tex->Name.GetChars( ) : "-" );
+				{
+					// The inputs ComputeMiddleClip and the pegging reference are decided from, because
+					// "the top is four units out" is not something to reason about from the top.
+					const side_t *sd = segs[s].sidedef;
+					const sector_t *fs = segs[s].frontsector, *bs = segs[s].backsector;
+					FTexture *ut = TexMan( sd->GetTexture( side_t::top ) );
+					FTexture *lt = TexMan( sd->GetTexture( side_t::bottom ) );
+					Printf( "      upper '%s' lower '%s' | fch %.1f/%.1f bch %.1f/%.1f ffh %.1f/%.1f bfh %.1f/%.1f | ceilTexZ %.1f/%.1f rowofs %.1f" "\n",
+						( ut != NULL && ut->UseType != FTexture::TEX_Null ) ? ut->Name.GetChars( ) : "-",
+						( lt != NULL && lt->UseType != FTexture::TEX_Null ) ? lt->Name.GetChars( ) : "-",
+						fs ? FIXED2FLOAT( fs->ceilingplane.ZatPoint( segs[s].linedef->v1 ) ) : 0.f,
+						fs ? FIXED2FLOAT( fs->ceilingplane.ZatPoint( segs[s].linedef->v2 ) ) : 0.f,
+						bs ? FIXED2FLOAT( bs->ceilingplane.ZatPoint( segs[s].linedef->v1 ) ) : 0.f,
+						bs ? FIXED2FLOAT( bs->ceilingplane.ZatPoint( segs[s].linedef->v2 ) ) : 0.f,
+						fs ? FIXED2FLOAT( fs->floorplane.ZatPoint( segs[s].linedef->v1 ) ) : 0.f,
+						fs ? FIXED2FLOAT( fs->floorplane.ZatPoint( segs[s].linedef->v2 ) ) : 0.f,
+						bs ? FIXED2FLOAT( bs->floorplane.ZatPoint( segs[s].linedef->v1 ) ) : 0.f,
+						bs ? FIXED2FLOAT( bs->floorplane.ZatPoint( segs[s].linedef->v2 ) ) : 0.f,
+						fs ? FIXED2FLOAT( sectors[fs->sectornum].GetPlaneTexZ( sector_t::ceiling ) ) : 0.f,
+						bs ? FIXED2FLOAT( sectors[bs->sectornum].GetPlaneTexZ( sector_t::ceiling ) ) : 0.f,
+						FIXED2FLOAT( sd->GetTextureYOffset( side_t::mid ) ) );
+					Printf( "      pieces %d, flags 0x%x | lightlist front %d back %d | ffloors front %d back %d | line flags 0x%x" "\n",
+						pieces, (unsigned)w->flags,
+						( fs && fs->e ) ? (int)fs->e->XFloor.lightlist.Size( ) : -1,
+						( bs && bs->e ) ? (int)bs->e->XFloor.lightlist.Size( ) : -1,
+						( fs && fs->e ) ? (int)fs->e->XFloor.ffloors.Size( ) : -1,
+						( bs && bs->e ) ? (int)bs->e->XFloor.ffloors.Size( ) : -1,
+						(unsigned)segs[s].linedef->flags );
+				}
+			}
+		}
+	}
+
+	Printf( "fua_surface_bakediff on %s: %d captured pieces, %d agree corner for corner" "\n",
+		level.MapName.GetChars( ), checked, agreed );
+	Printf( "  differ by: %d material, %d horizontal (u), %d vertical (v), %d height (z), %d light," "\n",
+		dMaterial, dU, dV, dZ, dLight );
+	Printf( "  plus %d colormap, and %d a whole texture up or down on a wall that repeats" "\n",
+		dColormap, dWholeTex );
+	Printf( "  and %d the derivation will not build at all" "\n", dMissing );
+	Printf( "  %d more pieces are on segs the map bake does not own and the capture keeps" "\n", notOurs );
+}
+
 CCMD( fua_surface_mapcover )
 {
 	using namespace zx::surfaces;
