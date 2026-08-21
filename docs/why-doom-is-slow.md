@@ -1,7 +1,14 @@
 # Why an old game is costing milliseconds, and what to do about it
 
-Measured on dbab01 and Sunder MAP16, 1920x1200, Vulkan backend, `fua_render_in_background 1` so the
-window can be out of focus without the numbers being a lie.
+Measured at 1920x1200 on the Vulkan backend, with `fua_render_in_background 1` so the window can be
+out of focus without the numbers being a lie.
+
+**A correction, first, because it invalidates a set of numbers.** The first pass at this was measured
+with `--file .../Sunder.wad`, and the file on disk is `sunder_2512.wad`. The launcher does not fail
+on a missing pwad -- it loads the IWAD and carries on -- so every figure originally filed under
+"Sunder MAP10" and "Sunder MAP16" was **base Doom 2**, on maps a fraction of the size. The tell was
+sitting in the stats the whole time: 126 batches and 4 sprites, against a map whose own baseline note
+records 8251 walls a frame. Sunder numbers below are the real ones.
 
 ## The frame, taken apart
 
@@ -24,19 +31,25 @@ backend draws. It is in what happens before it draws.
 `fua_dg_standalone 1` stops GL deriving the scene -- the BSP walk, a `GLWall` per visible seg, the
 draw lists -- for a picture the Vulkan backend renders from geometry that is already resident.
 
-| | p50 | render |
-|---|---|---|
-| GL still deriving (default) | 2.11 ms | 2.31 ms |
-| GL cut out | **0.835 ms** | 0.93 ms |
+On **Sunder MAP10 at spawn** -- 1008 sprites, 55 batches -- alternating runs, twice each:
 
-**1.3 ms a frame, at a view that draws almost nothing.** It lands inside the measured render time
-because GL's walk happens in `D_Display`, after the profiler's render mark. The saving scales with
-how much GL has to walk, not with what the backend draws: the same test at Sunder MAP16's spawn --
-a small room -- saves 0.13 ms of 0.69, and the switch's own note records ~7 ms on MAP16 from a
-vantage that sees the map.
+| | p50 | fps | render |
+|---|---|---|---|
+| GL still deriving (default) | 9.99 ms | 100 | 9.66 ms |
+| GL cut out | **3.36 ms** | **298** | 4.78 ms |
 
-And the picture is already right: standalone against default at the same camera differs by **0.3%**,
-with sprites present (93 of them). The old note listing sprites as a blocker is stale.
+**Two thirds of the frame, 6.6 ms, is GL working out a picture nobody looks at.** It lands inside the
+measured render time because GL's walk happens in `D_Display`, after the profiler's render mark.
+
+The same test on dbab01 at a light view saves 1.3 ms of 2.11; on Doom 2 MAP10, 1.3 ms of 2.1. The
+saving tracks how much GL has to walk, so it grows with exactly the maps that need it.
+
+And the picture is already right: standalone against default at the same camera differs by **0.1%**
+on Sunder MAP10 and 0.3% on dbab01, sprites present in both. The old note listing sprites as a
+blocker is stale.
+
+Sunder MAP10 is also not primarily fill bound, which is worth knowing because dbab01's sprite-heavy
+view is: a ninth of the pixels takes it from 9.6 ms to 8.3, about 13%. The cost there is CPU.
 
 ## What actually blocks turning it on
 
@@ -57,7 +70,8 @@ currently carries all of it except the sectors it hands back.
    which is map data -- the derivation declines it today because deriving ONE light level for the
    whole wall would be wrong, not because the bands are unknowable. Split the derived wall at each
    band and give each fragment that band's light and colormap, which is what `SplitWall` does. This
-   is the only thing between standalone and being correct, and it is worth roughly the 1.3 ms above.
+   is the only thing between standalone and being correct, and on Sunder MAP10 it is worth the 6.6 ms
+   above -- 100 fps to 298.
 2. **Close the map bake's own residual**, 0.4-1.1% depending on map, which is coplanar overlap:
    the map bake builds the whole level where the capture only built what GL walked, and the extra
    surfaces stipple against the ones already there. Counted: dbab02 goes from 74 duplicate pieces and
@@ -79,4 +93,5 @@ bursts. The quads are already trimmed to their opaque borders by `FMaterial::Tri
 ## The short version
 
 The game is not slow because it is old. It is slow because it is being drawn twice: once by GL, to
-work out a picture nobody looks at, and once by the backend, from geometry it already had.
+work out a picture nobody looks at, and once by the backend, from geometry it already had. On Sunder
+MAP10 that is two thirds of the frame.
