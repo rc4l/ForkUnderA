@@ -215,6 +215,19 @@ bool BuildDerivedWallSpan(const seg_t *seg, int renderType, DerivedWallSpan &out
 		out.vTop[e] = ComputeWallV(top, texTop, th);
 		out.vBottom[e] = ComputeWallV(bottom, texTop, th);
 	}
+	// [rc4l] And the horizontal, for everything that is not a polyobject.
+	//
+	// GLWall::Process sets fracleft 0 and fracright 1 for an ordinary wall and takes the linedef's
+	// vertices, so the two edges are simply the sidedef's x offset and that plus the line's texel
+	// length. A polyobject is drawn per seg with real fractions and is left to the capture.
+	if (!(seg->sidedef->Flags & WALLF_POLYOBJ))
+	{
+		const float ul = tci.FloatToTexU(FIXED2FLOAT(tci.TextureOffset(
+			seg->sidedef->GetTextureXOffset((side_t::ETexpart)texpos))));
+		out.uLeft = ul;
+		out.uRight = ul + tci.FloatToTexU(seg->sidedef->TexelLength);
+		out.hasU = true;
+	}
 	out.valid = true;
 	g_derived++;
 	return true;

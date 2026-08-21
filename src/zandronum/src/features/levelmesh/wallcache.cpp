@@ -27,10 +27,14 @@
 EXTERN_CVAR(Bool, gl_wallmesh)
 // [rc4l] Build wall heights and texture position from the MAP rather than from GLWall.
 //
-// Off while the ladders still disagree with GL on some pieces -- see features/surfaces/README.md.
-// Turning it on is the A/B: the ladders predict exactly which pieces should move, so anything else
-// that moves is a fault nobody had measured.
-CVAR(Bool, fua_surface_derive, false, 0)
+// ON. A wall's vertical span and both of its texture coordinates come from the map now, and the
+// frame is pixel-identical to GL's on every map tested -- including Sunder MAP16, where 71,743
+// surfaces are derived and six fall back. See features/surfaces/README.md for the table.
+//
+// What still comes from the capture is which surfaces exist at all, the special kinds (3D floor
+// faces, skies, horizons), and the shading -- which is deliberately last, being the part where a
+// second implementation drifted before.
+CVAR(Bool, fua_surface_derive, true, 0)
 EXTERN_CVAR(Int, gl_fogmode)
 // [rc4l] The animated-texture re-resolve on replay, as a switch, so its cost can be A/B'd from the
 // console instead of from two builds. Off renders stale animation frames -- a measurement aid, not
@@ -220,6 +224,11 @@ void BakeSeg(int segIndex)
 				fan[1].z = d.ztop[0];    fan[1].v = d.vTop[0];
 				fan[2].z = d.ztop[1];    fan[2].v = d.vTop[1];
 				fan[3].z = d.zbottom[1]; fan[3].v = d.vBottom[1];
+				if (d.hasU)
+				{
+					fan[0].u = fan[1].u = d.uLeft;
+					fan[2].u = fan[3].u = d.uRight;
+				}
 			}
 		}
 		const int triVerts = ComputeFanTriangleVertexCount(fanCount);
