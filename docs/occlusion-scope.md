@@ -1,128 +1,122 @@
-# Occlusion for sprites: what it is worth, and what it rules out
+# Occlusion for sprites: built, measured, and why it does not pay
 
 The standalone renderer draws the world from a resident mesh and never walks the BSP. That dropped
 two jobs, not one: the walk built the geometry, and it also *found the actors worth looking at* --
-it only ever descended into subsectors that survived angular clipping, so GL only ever saw actors
-that were not behind a wall.
+it only ever descended into subsectors that survived angular clipping, so GL never saw an actor
+behind a wall.
 
-The sweep that replaced it has no equivalent. An actor in the camera's map section and inside the
-frustum is processed whether or not there is a wall in front of it. Sprites are 52-74% of what is
-left of the frame (see `sprites-scope.md`), and every micro-optimisation of the per-sprite path came
-back a wash, so this is the only lever left.
+The sweep that replaced it has no equivalent. Sprites are 52-74% of what is left of the frame (see
+`sprites-scope.md`) and every micro-optimisation of the per-sprite path came back a wash, so this
+was the only lever left. It was built. It works. It is also a wash, and this is the record of why --
+because the reason is the same one that sank the other three attempts, and it is worth stating once
+in a form that stops it being tried again.
 
-## What it is worth
+## What it is worth, in sprites
 
-The BSP walk's own answer is the target, because it is a real occluder that ships and is known
-correct. Running both paths on the same camera and reading `Sprites:` out of `stat rendertimes`:
+The BSP walk's own answer is a real occluder that ships, so its count is a reference. Running both
+paths on the same camera and reading `Sprites:` out of `stat rendertimes`:
 
 | map | the BSP walk sees | the sweep sees | occlusion could remove |
 |---|---|---|---|
-| Sunder MAP10 (open arena) | 1258 | 1406 | **11%** |
-| Sunder MAP16 | 752 | 3053 | **75%** |
-| Sunder MAP04 | 20 | 246 | **92%** |
+| Sunder MAP10 (open arena) | 1258 | 1406 | 11% |
+| Sunder MAP16 | 752 | 3053 | 75% |
+| Sunder MAP04 | 20 | 246 | 92% |
 
-It is worth almost nothing in an open arena, where everything really is visible, and it is worth
-most of the sprite pipeline in a built-up map. MAP10 is the benchmark this port has been tuned
-against, and it is the map occlusion helps least.
+Worth almost nothing in an open arena, worth most of the sprite pipeline in a built-up map.
 
-## The measurement that rules out the obvious answer
+## The obvious answer, ruled out first
 
-The obvious answer is a **marking-only BSP traversal**: keep the descent and the clipper, drop
-`GLWall::Process`, and mark the subsectors that survive. It reuses tested code, it gives the numbers
-above by construction, and it cannot change the picture because it culls exactly what GL culls.
+A **marking-only BSP traversal** -- keep the descent and the clipper, drop `GLWall::Process`, mark
+the subsectors that survive -- reuses tested code and cannot change the picture.
 
-It also cannot pay for itself. `stat rendertimes` clocks the traversal separately from the wall
-building -- `All=` on Sunder MAP10 is 8.386 with `Render=3.403, Setup=3.322, BSP=0.746`, and those
-add up, so `BSP=` is the descent and the clipping and nothing else. That is precisely what a marking
-pass would cost:
+It cannot pay for itself. `stat rendertimes` clocks the traversal separately from the wall building
+and the parts add up (`All=8.386` with `Render=3.403, Setup=3.322, BSP=0.746`), so `BSP=` *is* the
+marking-pass cost: 0.564 ms on MAP10 to save 0.03, 1.374 on MAP16 to save 0.54. It loses 19x and
+2.5x. It only wins on MAP04, where the traversal is nearly free for the same reason its cull is
+nearly total -- a BSP walk costs what it *fails* to cull.
 
-| map | a marking pass costs (`BSP=`) | the sprites it saves | verdict |
+## So: an angular buffer, per actor
+
+`features/hwrender/occlusion.h`. A 1-D buffer over angle, 2048 buckets, filled from the biggest
+blockers in the level and asked one question per actor. Four things had to be got right, and each
+was got wrong first in a way worth keeping:
+
+1. **Height cannot be ignored.** The first version was pure angle, like Doom's solidsegs. Doom got
+   away with that because the walk only added a clip range for a wall it had actually reached, front
+   to back, which made it both in view and full height. Choosing occluders off the map loses both
+   guarantees: it occluded with the walls of 3D floor control sectors parked out in the void, and
+   with basements the sight line passes clean over. It took the torches off the towers of MAP16.
+
+2. **The vertical test is projective, not a world-height comparison.** Asking "is the actor between
+   this wall's floor and its ceiling" answers no almost everywhere in a map built of terraces: it
+   culled 5% where the honest answer was 85%. What decides the question is how much of the *view* a
+   limit covers, so both reduce to slope from the eye -- height over distance.
+
+3. **Two limits per bucket, not one wall.** Doom clipped each column against a floor limit and a
+   ceiling limit, and that decomposition is right here for the same reason: a step hides everything
+   below a line, a lintel everything above one. One band per bucket expresses neither. Restricting
+   occluders to one-sided walls has the same flaw from the other end -- in Sunder the buildings are
+   made of two-sided lines, and their steps are most of the occlusion there is.
+
+4. **Keep the blocker that hides more, measured as slope.** Keeping the *tallest* is the obvious rule
+   and it is wrong in a way that shows up as the curve running backwards: adding blockers reduced
+   what was culled, because a tall far wall beats a low near step on height while hiding almost
+   nothing, and once it owns the bucket the distance test spares everything nearer than it.
+
+Two more things made it affordable enough to measure at all: the lines are ranked once at load by
+length times blocking height (walking all 56,000 of MAP16's lines every frame costs 8.7 ms), and
+painting is order-independent so there is nothing to sort -- the sort was 54 ms a frame on its own.
+
+**It is exact.** Pixel-identical on Sunder MAP04/10/16/20 and dbab01-05, with the world frozen and
+monsters live, while hiding up to 96% of the actors the sweep finds.
+
+## And it is a wash
+
+Sunder MAP16, minimum of 28 alternating samples in one instance:
+
+| | Draw / RegisterSprite | the sweep | total |
 |---|---|---|---|
-| MAP10 | 0.564 ms | 0.250 x 11% = 0.03 ms | **loses, 19x** |
-| MAP16 | 1.374 ms | 0.726 x 75% = 0.54 ms | **loses, 2.5x** |
-| MAP04 | 0.007 ms | 0.060 x 92% = 0.055 ms | wins, by 0.05 ms |
+| off | 0.314 ms | 0.310 ms | **0.630 ms** |
+| on | 0.177 ms | 0.453 ms | **0.630 ms** |
 
-MAP04's traversal is nearly free for the same reason its cull is nearly total: a BSP walk costs what
-it *fails* to cull. That is a pleasant property and it is not enough. On the two maps where sprites
-actually cost something, re-adding the walk costs more than the sprites it removes.
+The culling does exactly what it is supposed to: `Draw` and `RegisterSprite` fall by 44%, in line
+with the actors removed. The sweep rises by the same amount -- the buffer's build, plus one test per
+actor. MAP20 behaves the same way.
 
-## The constraint that follows
+Earlier runs of the whole frame appeared to show 25-30% wins. They were noise: this machine's
+frame-to-frame spread is larger than the effect, and only the engine's own clocks, alternated inside
+one instance over dozens of samples, separate them.
 
-The sweep is fast because it is O(actors). The walk is slow because it is O(visible geometry), and on
-these maps geometry outnumbers actors by a lot -- Sunder MAP10 builds 8354 walls a frame against 3834
-actors iterated and 1406 sprites drawn.
+## Why, and what that rules out
 
-So: **any scheme that pays per-geometry per-frame has already lost.** What can win is a per-actor
-test against a structure that was either built once, or built by the GPU as a side effect of drawing
-the world it was going to draw anyway.
+**A drawn sprite costs about 0.2 microseconds, all in.** A test that decides whether to skip one
+cannot cost a comparable amount, and a square root, an angle and a bucket lookup do. The build is
+only a third of the added cost, so choosing better occluders does not rescue it -- and neither does
+choosing fewer, which was the recommendation this document used to carry.
 
-That rules out, without further measurement: the marking-only traversal above, a per-frame portal
-flood fill over the sector graph, and rebuilding a solidseg buffer from every seg each frame.
+That is the same wall the other three attempts hit, and it is worth naming: **the per-sprite pipeline
+is already too cheap for a per-actor decision to be worth making.** Anything that costs tens of
+nanoseconds per actor is competing with something that costs hundreds.
 
-## The three candidates that satisfy it
+So the surviving design has to be one of:
 
-### 1. Visibility baked with the mesh
+- **A test of about five nanoseconds.** That means one array lookup and nothing else, which means
+  visibility precomputed against something the actor already knows -- its sector.
+  `visible[viewSector][actorSector]`, one bit, built when the level is baked. The mesh is already
+  built once at load; this is the same move applied to visibility. The open questions are the build
+  cost on a map of Sunder's size, and how much is given up by having to assume every door open.
+- **A decision that is not per actor at all.** Reject whole groups: iterate `sector_t::thinglist`
+  and skip an entire sector's actors on one test. Worth a count first -- on these maps sectors do not
+  outnumber actors by nearly enough for that alone to be the answer.
+- **Not culling on the CPU.** The backend already draws the world into a depth buffer; a pyramid over
+  it, tested per actor on the GPU, moves the cost off the critical path entirely. Blocked behind the
+  GL-free sprite port, and the strongest answer once that lands.
 
-The level mesh is already built once at load and is static. Sector-to-sector visibility could be
-built at the same time, and the per-frame cost becomes a bit test: `visible[viewSector][actorSector]`.
+## What is left in the tree
 
-- **For it:** zero per-frame geometry cost, which is the whole constraint. Fits the architecture --
-  this port's central move has been to compute at bake time what the engine recomputed per frame.
-- **Against it:** doors, lifts and moving sectors change what is visible, so a static answer has to
-  assume every door open and is therefore conservative -- and the maps where occlusion is worth most
-  are the built-up ones full of doors. Build cost on a map of Sunder's size needs measuring before
-  anything else; a wrong-shaped algorithm here is minutes at load, not milliseconds.
-- **Not to be confused with** Doom's REJECT lump, which is sector line-of-sight for monster AI, is
-  frequently unbuilt or all zeroes, and is conservative in the wrong direction for this.
+`fua_occl_sprites` (default **0**, off). It is a correct occluder with a known cost, and it is the
+obvious thing to check a cheaper scheme against: whatever replaces it has to agree with it about
+which actors are hidden, and it already agrees with the picture on nine maps.
 
-### 2. Hi-Z from the depth buffer we already draw
-
-The backend draws the world into a depth buffer before sprites. A depth pyramid over it, tested per
-actor bounding box, is exactly the per-actor test the constraint asks for, and the occluder is the
-real geometry rather than an approximation of it.
-
-- **For it:** no CPU rasterisation, no bake, exact occluders, and it costs one downsample of a buffer
-  that already exists.
-- **Against it:** reading it back on the CPU is a stall, so the test wants to be on the GPU -- which
-  means the sprite list has to be GPU-side, which is the `GLSprite::Process` port that has not
-  happened. Using the *previous* frame's pyramid avoids the stall at the price of one frame of
-  latency, which shows as a sprite popping in when the player steps around a corner. Padding the test
-  box hides most of that.
-- **Sequencing:** this is the strongest long-term answer and it is blocked behind the GL-free sprite
-  port, so it is not the next thing.
-
-### 3. A few big occluders, not all of them
-
-Doom's original visibility was a 1D angular buffer, and it worked because Doom's occlusion is largely
-a 2D problem. The walk is expensive because it feeds that buffer from *every* seg. Feeding it from
-only the largest occluders near the camera -- a few dozen, chosen from the resident mesh -- makes the
-build O(chosen) instead of O(visible), and the test stays O(actors).
-
-- **For it:** self-contained, no latency, no bake, and the cost is a knob rather than a property of
-  the map.
-- **Against it:** it is an approximation, so it must be conservative -- cull only when an actor is
-  definitely hidden -- and a conservative angular test in a map with 3D floors and slopes will give
-  back some of the 75%. How much is unknown and is the thing to measure.
-- **Choosing the occluders** is the real design question: biggest solid one-sided walls within some
-  radius, re-chosen when the camera moves far enough.
-
-## Recommendation, and the next measurement
-
-Candidate 3 is the one to prototype, because it is the only one that is neither blocked on other work
-nor at risk of a load-time surprise, and because its own failure mode is measurable early: build the
-angular buffer from the N largest nearby occluders and count how many of MAP16's 3053 sprites it
-rejects. If N=32 gets most of the way to 752, it is worth building properly. If it needs N in the
-hundreds to beat half, it has become O(geometry) again and it has lost for the same reason the
-marking pass lost.
-
-That count is cheap to get and needs no rendering changes at all -- `fua_sprite_sweep` already
-reports the funnel, and a rejection counter next to it answers the question before any of the culling
-is wired to anything.
-
-Two things worth holding onto while doing it:
-
-- **The prize is map-shaped.** Anything measured on MAP10 will look worthless and anything measured on
-  MAP04 will look free. MAP16 is the case that decides it.
-- **Over-culling is visible and cheap to catch.** This only removes sprites, so a mistake shows up
-  directly in a picture diff against the GL-driven render, and the sprite count has an exact target
-  to hit: 752 on MAP16, 1258 on MAP10, 20 on MAP04.
+`fua_sprite_sweep` reports the funnel it feeds -- actors iterated, culled, reaching `Process`,
+drawing -- plus the buffer's build time and what it hid.

@@ -88,6 +88,8 @@ void ClearSprites();
 // [rc4l] What the per-frame actor sweep actually looked at, so "narrow the sweep" can be argued from
 // a number rather than from the shape of the loop. Reported by fua_sprite_sweep.
 void RecordSpriteSweep(int seen, int noSector, int behind, int offScreen, int processed);
+// What the occlusion buffer would have rejected this frame -- see features/hwrender/occlusion.h.
+void RecordOcclusionProbe(int occluded);
 int SpritePieceCount();
 
 // [rc4l] Print this frame's sprite pieces -- z range, texture-coordinate range, light, resolved
