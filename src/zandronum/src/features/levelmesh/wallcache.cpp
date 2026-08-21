@@ -453,6 +453,21 @@ int BakeSegFromMap(int segIndex)
 	return made;
 }
 
+// [rc4l] Every wall in the level, from the map, in one pass.
+//
+// The GL-driven bake arrives a subsector at a time as the player walks and as ArmFullBake pushes the
+// traversal along. This does not need a traversal at all: a seg either has parts or it does not, and
+// the sidedef says which.
+//
+// Returns how many parts it built, so the caller can say whether it is worth having.
+int BakeLevelFromMap()
+{
+	if (segs == NULL || numsegs <= 0) return 0;
+	int made = 0;
+	for (int i = 0; i < numsegs; i++) made += BakeSegFromMap(i);
+	return made;
+}
+
 int CachedSegCount() { return (int)g_cache.Size(); }
 
 int CachedPieceCount(int segIndex)

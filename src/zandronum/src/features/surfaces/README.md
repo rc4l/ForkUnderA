@@ -177,6 +177,10 @@ came from GL walking the BSP and reporting what it drew.
 | dbab04 | 1799 | 1543 | 0.1% | — |
 | Sunder MAP16 | **81153** | **69568** | 0.4% | 0.0% |
 
+`fua_surface_mapbake_auto` does it at level load, and the frame is what GL's own bake produces --
+0.0% on Doom 2 MAP01 and dbab04. Off by default while the traversal is still what fills in the kinds
+the derivation does not do.
+
 `fua_surface_mapcover` is what said this was possible before it was written, and it is the number to
 watch: on dbab04 the map accounts for 1332 of the 1336 parts GL draws; on Sunder MAP16, 59,477 of
 59,483 across 52,052 segs. Two categories had to be found to get there, and both were in
