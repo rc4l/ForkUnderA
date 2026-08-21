@@ -248,11 +248,13 @@ now.
 
 ## What comes next, in order
 
-1. The last percent of the map-driven bake: a handful of panels on dbab02 and dbab01, at 1.1% and
-   0.5%. The suspect is view-dependent substitution -- `gl_FakeFlat` hands `GLWall::Process` a
-   different sector than `seg->frontsector` for a transfer-heights or fake-floor sector, and a static
-   bake cannot be view-dependent. If that is what it is, it is a limit to write down rather than a
-   bug to fix.
+1. The last percent of the map-driven bake: a handful of small panels on dbab02 and dbab01, at 1.1%
+   and 0.5%, and **no hypothesis left standing**. View-dependent substitution was the leading
+   suspect -- `gl_FakeFlat` hands `GLWall::Process` a different sector than `seg->frontsector` for a
+   transfer-heights sector, and a static bake cannot be view-dependent -- so those sectors were given
+   back to the capture, and the number did not move: dbab01 and dbab04 have no such sector and dbab02
+   has one. `fua_surface_mapbake` prints both counts now, so the next guess can be checked before it
+   is believed rather than after.
 2. Special surface kinds -- 3D floor faces, skies, horizons -- which still come from the capture.
 3. Retiring `GLWall`/`GLFlat` and collapsing `wallcache.cpp` and `flatmesh.cpp` into one cache, which
    is the point of all of it: one surface type, derived once, instead of two transcriptions of what
