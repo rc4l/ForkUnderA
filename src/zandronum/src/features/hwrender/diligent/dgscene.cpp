@@ -222,10 +222,21 @@ CVAR(Bool, fua_dg_cullbatches, false, 0)
 // docs/bindless-attempt-notes.md for the ceiling the first attempt hit doing these in the wrong
 // order.
 //
-// On by default. Sunder MAP10 and MAP16, dbab01, dbab02 and dbab04 all render pixel-identical with
-// it on -- 0.0% over the world region, against controls that also read 0.0% -- both loaded directly
-// and reached by a map change, and MAP16 goes from 165 draw calls at 0.69 ms to one at 0.50.
-CVAR(Bool, fua_dg_bindless, true, CVAR_ARCHIVE)
+// OFF by default, and the reason is ANIMATED TEXTURES.
+//
+// The picture is right -- MAP10, MAP16, dbab01, dbab02 and dbab04 all render pixel-identical with it
+// on, and MAP16 goes from 165 draw calls at 0.69 ms to one at 0.50. What is wrong is the cost of
+// keeping it right while a texture animates: uMaterials is a STATIC shader variable, so following an
+// animation means rebuilding all thirteen pipelines, shader compiles and all. Measured at 65 rebuilds
+// in three seconds on Doom 2 MAP01 -- a stutter you can feel in the mouse, and a surface that
+// flickers between two textures while it happens because the frame falls back to the per-material
+// path mid-rebuild. Both were reported from play within a minute of the switch being turned on.
+//
+// The fix is to make the array MUTABLE so an update costs thirteen bindings instead of thirteen
+// pipelines, which needs the per-material bindings to stop existing while it is on -- otherwise each
+// of those carries a 512-slot array of its own and the descriptor count explodes exactly as it did
+// the first time. Until that is done this stays off.
+CVAR(Bool, fua_dg_bindless, false, CVAR_ARCHIVE)
 // Sprites and decals on the shared binding as well. Off: see WorldSRB.
 CVAR(Bool, fua_dg_bindless_dyn, true, 0)
 // [rc4l] Collapse adjacent batches into one draw. Only ever possible with bindless on, and separable
@@ -3318,6 +3329,8 @@ static bool BuildSceneBuffer(FString &err)
 	// Appending a piece must not have to resize this: a bigger buffer is a different object, and a
 	// static shader variable cannot be re-pointed once its pipeline has handed out a binding. So the
 	// slack is the budget, AppendPiece refuses when it runs out, and a rebuild sizes it again.
+	const bool pieceBufferKept = g_pieceBuf && g_scenePieceData.Size() <= g_pieceCapacity;
+	if (!pieceBufferKept)
 	{
 		const unsigned int want = g_scenePieceData.Size() + g_scenePieceData.Size() / 2 + 4096;
 		Diligent::BufferDesc pbd;
@@ -3338,10 +3351,24 @@ static bool BuildSceneBuffer(FString &err)
 					(Diligent::Uint64)g_scenePieceData.Size() * sizeof(ScenePieceData),
 					&g_scenePieceData[0], Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 	}
-	// The buffer is a new object, so the pipelines have to be made again to bind it -- the same
-	// static-resource rule that governs the material array.
-	ReleaseScenePipelines();
+	else if (auto *ctx3 = GetContext())
 	{
+		// [rc4l] Same buffer, new contents, and no new pipelines.
+		//
+		// Rebuilding the scene is not rare: a level with moving sectors does it a couple of hundred
+		// times a minute, and making thirteen pipelines again each time is a stutter you can feel with
+		// the mouse. A buffer that still fits is kept, and only a bigger one costs a rebuild.
+		g_staticPieceCount = g_scenePieceData.Size();
+		if (g_scenePieceData.Size() > 0)
+			ctx3->UpdateBuffer(g_pieceBuf, 0,
+				(Diligent::Uint64)g_scenePieceData.Size() * sizeof(ScenePieceData),
+				&g_scenePieceData[0], Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	}
+	// A NEW buffer object means the pipelines have to be made again to bind it -- the same
+	// static-resource rule that governs the material array.
+	if (!pieceBufferKept)
+	{
+		ReleaseScenePipelines();
 		FString perr;
 		if (!EnsureScenePipeline(perr)) { err = perr; return false; }
 	}
