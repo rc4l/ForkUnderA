@@ -291,7 +291,7 @@ void DynClear();
 
 // Append one piece's triangle-list vertices. `proto` carries the material and shading; its range is
 // filled in by this call.
-void DynAppend(const FFlatVertex *verts, int count, MeshPiece proto);
+void DynAppend(const FFlatVertex *verts, int count, const MeshPiece &proto);
 
 // This frame's dynamic vertices and pieces.
 const FFlatVertex *DynVertices(int &count);

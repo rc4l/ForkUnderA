@@ -20,6 +20,12 @@
 #include "r_sky.h"   // skyflatnum
 #include "gl/renderer/gl_lightdata.h"   // gl_ClampLight
 #include "gl/renderer/gl_renderstate.h"   // gl_RenderState.GetDynLight, for the sprite light fold
+#include "c_dispatch.h"   // CCMD, for fua_sprite_sweep
+#include "c_cvars.h"
+#include "features/hwrender/hud2d.h"   // StandaloneActive
+
+extern int g_sprReject[8];             // gl_sprite.cpp: why Process threw an actor away
+extern const char *g_sprRejectName[8];
 
 // [rc4l] Print every new flat-mesh key. See RegisterFlatSubsector: a key that misses when it should
 // have hit is a surface about to be stored, and drawn, twice.
@@ -658,6 +664,33 @@ void GetSpriteStyleDetail(int *dest16, int *classified4)
 }
 
 void ClearSprites() { g_spritesThisFrame = 0; g_spriteNoteCount = 0; }
+
+// [rc4l] The sweep's own arithmetic, kept from the last frame that ran one.
+static int g_swSeen = 0, g_swNoSector = 0, g_swBehind = 0, g_swOffScreen = 0, g_swProcessed = 0;
+void RecordSpriteSweep(int seen, int noSector, int behind, int offScreen, int processed)
+{
+	g_swSeen = seen; g_swNoSector = noSector; g_swBehind = behind;
+	g_swOffScreen = offScreen; g_swProcessed = processed;
+}
+
+CCMD( fua_sprite_sweep )
+{
+	if (g_swSeen == 0) { Printf( "fua_sprite_sweep: no sweep has run -- needs fua_dg_standalone.\n" ); return; }
+	const int culled = g_swNoSector + g_swBehind + g_swOffScreen;
+	Printf( "fua_sprite_sweep: %d actors iterated, %d culled (%d no sector, %d behind, %d off screen),\n",
+		g_swSeen, culled, g_swNoSector, g_swBehind, g_swOffScreen );
+	Printf( "  %d handed to GLSprite::Process, of which %d registered a sprite\n",
+		g_swProcessed, g_spritesThisFrame );
+	Printf( "  Process threw away:" );
+	int shown = 0;
+	for (int i = 0; i < 7; i++)
+	{
+		if (g_sprReject[i] == 0) continue;
+		Printf( "%s %d %s", shown++ ? "," : "", g_sprReject[i], g_sprRejectName[i] );
+	}
+	Printf( shown ? "\n" : " nothing\n" );
+	for (int i = 0; i < 8; i++) g_sprReject[i] = 0;
+}
 int SpritePieceCount() { return g_spritesThisFrame; }
 
 void RegisterSprite(const GLSprite &spr)
@@ -690,6 +723,9 @@ void RegisterSprite(const GLSprite &spr)
 	mp.lightColor = spr.Colormap.LightColor.d;
 	mp.fadeColor = spr.Colormap.FadeColor.d;
 	// GLSprite::Draw's own `rel`: fullbright sprites take no extra light.
+	// [rc4l] Not memoised, and that was measured rather than assumed -- see docs/sprites-scope.md.
+	// A cache keyed on the six inputs hits 98% of 3053 sprites on Sunder MAP16 and saves nothing:
+	// what it skips is two calls and eight getters, and writing the eight answers costs the same.
 	CaptureShading(spr.lightlevel, spr.fullbright ? 0 : getExtraLight(), spr.Colormap, mp);
 
 	// [rc4l] The dynamic light GL worked out for this actor, folded in here.

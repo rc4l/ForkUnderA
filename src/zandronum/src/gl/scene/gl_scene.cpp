@@ -99,6 +99,12 @@ CVAR(Bool, gl_no_skyclear, false, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 CVAR(Float, gl_mask_threshold, 0.5f,CVAR_ARCHIVE|CVAR_GLOBALCONFIG|CVAR_DEBUGONLY)
 CVAR(Float, gl_mask_sprite_threshold, 0.5f,CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 CVAR(Bool, gl_sort_textures, false, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
+// [rc4l] Cap how many actors the sweep hands on, for measuring only. 0 is no cap.
+//
+// Setting it to 1 leaves the frame with no sprites in it and therefore says what the sprite pipeline
+// is worth as a whole -- the ceiling on any amount of culling, which is the number worth knowing
+// before building a culler.
+CVAR(Int, fua_sprite_max, 0, 0)
 EXTERN_CVAR(Bool, fua_surface_mapbake_auto)
 EXTERN_CVAR(Bool, gl_batch_walls)  // [rc4l] features/levelmesh wall batching
 
@@ -682,12 +688,24 @@ void FGLRenderer::DrawScene(bool toscreen)
 			// test -- a sprite is wider than the point it stands on, and clipping one that is half on
 			// screen would be worse than drawing a few that are not.
 			SetupSprite.Clock();
+			int nSeen = 0, nNoSector = 0, nBehind = 0, nOffScreen = 0, nProcessed = 0, nCannotDraw = 0;
 			const float *mvp = zx::hwrender::SceneMVP();
 			TThinkerIterator<AActor> it;
 			AActor *thing;
 			while ((thing = it.Next()) != NULL)
 			{
-				if (thing->Sector == NULL) continue;
+				nSeen++;
+				if (thing->Sector == NULL) { nNoSector++; continue; }
+				// [rc4l] Ask the cheap half of Process's own rejection FIRST.
+				//
+				// The BSP walk handed GL a short list of actors in visible subsectors; this sweep
+				// hands it the whole thinker list, and a level is full of things that can never draw
+				// -- map spots, ambient sound sources, path nodes, anything with no sprite or with
+				// RF_INVISIBLE. On Sunder MAP16 that was 1986 actors going all the way through
+				// Process to be thrown away inside it, and a projection paid for each on the way.
+				//
+				// GLSprite::CanPossiblyDraw is the same code Process runs, not a copy of it.
+				if (!GLSprite::CanPossiblyDraw(thing)) { nCannotDraw++; continue; }
 				if (mvp != NULL)
 				{
 					// Mesh space is (x, z-up, y), the same swap the vertices get.
@@ -698,19 +716,22 @@ void FGLRenderer::DrawScene(bool toscreen)
 					// A generous margin: the sprite's own size, plus slack for one that is taller or
 					// wider than the actor claims (a rocket's explosion, a stretched corpse).
 					const float pad = FIXED2FLOAT(thing->radius) + FIXED2FLOAT(thing->height) + 64.f;
-					if (w < -pad) continue;   // behind the camera
+					if (w < -pad) { nBehind++; continue; }   // behind the camera
 					if (w > 0.f)
 					{
 						const float cx = mvp[0] * px + mvp[4] * py + mvp[8]  * pz + mvp[12];
 						const float cy = mvp[1] * px + mvp[5] * py + mvp[9]  * pz + mvp[13];
 						const float m = pad / w + 0.15f;   // pad in NDC, plus slack for the projection
-						if (cx / w < -1.f - m || cx / w > 1.f + m) continue;
-						if (cy / w < -1.f - m || cy / w > 1.f + m) continue;
+						if (cx / w < -1.f - m || cx / w > 1.f + m) { nOffScreen++; continue; }
+						if (cy / w < -1.f - m || cy / w > 1.f + m) { nOffScreen++; continue; }
 					}
 				}
+				if (fua_sprite_max > 0 && nProcessed >= fua_sprite_max) continue;
+				nProcessed++;
 				ProcessSprite(thing, thing->Sector);
 			}
 			SetupSprite.Unclock();
+			zx::levelmesh::RecordSpriteSweep(nSeen, nNoSector + nCannotDraw, nBehind, nOffScreen, nProcessed);
 
 			if (!gl_draw_sync && toscreen)
 			{

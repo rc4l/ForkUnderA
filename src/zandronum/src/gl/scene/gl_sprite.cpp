@@ -574,18 +574,58 @@ void GLSprite::PerformSpriteClipAdjustment(AActor *thing, fixed_t thingx, fixed_
 //
 //==========================================================================
 
+// [rc4l] Everything Process can decide from the actor alone, before any projection.
+//
+// Split out because the standalone path sweeps the thinker list rather than the BSP tree, and was
+// paying a matrix multiply and a full Process call for actors that could never draw -- on Sunder
+// MAP16, 5039 actors reached Process and 1986 of them were thrown away inside it.
+//
+// The tests are Process's own and Process still runs them by calling this, so the two cannot answer
+// differently. It stops before IsVisibleToPlayer(), which reads player state and is the expensive one.
+//
+// The map section test is in here, and that took checking: it reads as though the BSP walk fills the
+// bitmask in, which would make it meaningless without a walk. It does not. FGLRenderer::ProcessScene
+// clears the mask and sets the VIEWER's section every frame before drawing anything, and portal
+// traversal is the only thing that ever adds to it. So "is this actor in a section the camera can
+// see" is asked and answered the same way with a walk or without one -- and on Sunder MAP16 it is
+// the whole of the 1553 actors a frame that reached Process only to be thrown out of it.
+// [rc4l] Where Process throws an actor away, counted per reason.
+//
+// The sweep can only be narrowed against a reason. "1553 actors reach Process and do not draw" is
+// not actionable; "1553 fail the map section bitmask" named the fix -- and the risk with it, since a
+// mask the BSP walk filled would mean nothing without a walk. It turned out ProcessScene fills it.
+int g_sprReject[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
+const char *g_sprRejectName[8] = { "cannot draw", "not visible to player", "map section",
+	"spy icon", "too close", "player missile", "portal clip", "drawn" };
+
+bool GLSprite::CanPossiblyDraw(AActor *thing)
+{
+	if (thing == NULL) return false;
+	// don't draw the thing that's used as camera (for viewshifts during quakes!)
+	if (thing == GLRenderer->mViewActor) return false;
+	if (thing->sprite == 0) return false;
+	// If this thing is in a map section that's not in view it can't possibly be visible
+	if (thing->subsector != NULL &&
+		!(currentmapsection[thing->subsector->mapsection>>3] & (1 << (thing->subsector->mapsection & 7))))
+		return false;
+	// A stealth monster under enhanced night vision is drawn PRECISELY when it is invisible, so the
+	// invisibility test is not one-way and the exception has to travel with it.
+	if (thing->renderflags & RF_INVISIBLE || !thing->RenderStyle.IsVisible(thing->alpha))
+	{
+		if (!(thing->flags & MF_STEALTH) || !gl_fixedcolormap || !gl_enhanced_nightvision)
+			return false;
+	}
+	return true;
+}
+
 void GLSprite::Process(AActor* thing,sector_t * sector)
 {
 	sector_t rs;
 	sector_t * rendersector;
-	// don't draw the thing that's used as camera (for viewshifts during quakes!)
-	if (thing==GLRenderer->mViewActor) return;
 
 	// Don't waste time projecting sprites that are definitely not visible.
-	if (thing == NULL || thing->sprite == 0 || !thing->IsVisibleToPlayer())
-	{
-		return;
-	}
+	if (!CanPossiblyDraw(thing)) { g_sprReject[0]++; return; }
+	if (!thing->IsVisibleToPlayer()) { g_sprReject[1]++; return; }
 
 	int spritenum = thing->sprite;
 	fixed_t spritescaleX = thing->scaleX;
@@ -595,14 +635,9 @@ void GLSprite::Process(AActor* thing,sector_t * sector)
 		P_CheckPlayerSprite(thing, spritenum, spritescaleX, spritescaleY);
 	}
 
-	if (thing->renderflags & RF_INVISIBLE || !thing->RenderStyle.IsVisible(thing->alpha)) 
-	{
-		if (!(thing->flags & MF_STEALTH) || !gl_fixedcolormap || !gl_enhanced_nightvision)
-			return; 
-	}
+	// (the invisibility test is in CanPossiblyDraw above, which Process has already run.)
 
-	// If this thing is in a map section that's not in view it can't possibly be visible
-	if (!(currentmapsection[thing->subsector->mapsection>>3] & (1 << (thing->subsector->mapsection & 7)))) return;
+	// (the map section test is in CanPossiblyDraw above, which Process has already run.)
 
 	// [AK] Unless the sprite's in a horizontal mirror or the local player's using
 	// the chasecam, don't render icons above the heads of players being spied on.
@@ -612,7 +647,7 @@ void GLSprite::Process(AActor* thing,sector_t * sector)
 		if (((players[consoleplayer].cheats & CF_CHASECAM) == false) && (players[consoleplayer].camera != nullptr))
 		{
 			if ((players[consoleplayer].camera->player != nullptr) && (thing == players[consoleplayer].camera->player->pIcon))
-				return;
+				{ g_sprReject[3]++; return; }
 		}
 	}
 
@@ -632,6 +667,7 @@ void GLSprite::Process(AActor* thing,sector_t * sector)
 		{
 			if (!gl_FindModelFrame(RUNTIME_TYPE(thing), spritenum, thing->frame, false))
 			{
+				g_sprReject[4]++;
 				return;
 			}
 		}
@@ -640,13 +676,13 @@ void GLSprite::Process(AActor* thing,sector_t * sector)
 	// don't draw first frame of a player missile
 	if (thing->flags&MF_MISSILE && thing->target==GLRenderer->mViewActor && GLRenderer->mViewActor != NULL)
 	{
-		if (P_AproxDistance(thingx-viewx, thingy-viewy) < thing->Speed ) return;
+		if (P_AproxDistance(thingx-viewx, thingy-viewy) < thing->Speed ) { g_sprReject[5]++; return; }
 	}
 
 	if (GLRenderer->mCurrentPortal)
 	{
 		int clipres = GLRenderer->mCurrentPortal->ClipPoint(thingx, thingy);
-		if (clipres == GLPortal::PClip_InFront) return;
+		if (clipres == GLPortal::PClip_InFront) { g_sprReject[6]++; return; }
 	}
 
 	player_t *player=&players[consoleplayer];
