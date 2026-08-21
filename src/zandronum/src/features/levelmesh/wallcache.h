@@ -64,6 +64,9 @@ void BakeSeg(int segIndex);
 // and what it cannot do yet.
 int BakeSegFromMap(int segIndex);
 
+// Every wall in the level, from the map, in one pass. Returns the number of parts built.
+int BakeLevelFromMap();
+
 // Pack/unpack the reference a draw item carries.
 inline int PackWallRef(int segIndex, int piece) { return segIndex * kMaxCachedPieces + piece; }
 

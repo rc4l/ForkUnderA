@@ -235,6 +235,12 @@ CVAR(Bool, fua_dg_cullbatches, false, 0)
 CVAR(Bool, fua_dg_bindless, true, CVAR_ARCHIVE)
 // Sprites and decals on the shared binding as well. Off: see WorldSRB.
 CVAR(Bool, fua_dg_bindless_dyn, true, 0)
+// [rc4l] Build the level's walls from the map at load, rather than waiting for GL's walk of the BSP.
+//
+// Off while the traversal is still what fills in the kinds the derivation does not do -- 3D floor
+// faces and the like. fua_surface_mapcover is the number that says how close that is: the map
+// accounts for 1332 of dbab04's 1336 wall parts, and 59,477 of Sunder MAP16's 59,483.
+CVAR(Bool, fua_surface_mapbake_auto, false, 0)
 // [rc4l] Collapse adjacent batches into one draw. Only ever possible with bindless on, and separable
 // from it so "the array is wrong" and "the merge is wrong" can be told apart in one run.
 CVAR(Bool, fua_dg_mergedraws, true, 0)
@@ -5443,6 +5449,17 @@ static bool AutoSetupForLevel()
 		// point is that nobody is.
 		if (!gl_wallmesh) gl_wallmesh = true;
 		zx::levelmesh::ArmFullBake();
+		// [rc4l] ...and the walls straight from the map, without waiting for the traversal.
+		//
+		// ArmFullBake pushes GL's own walk along until every subsector has been visited, which is how
+		// the mesh has always been filled. A seg either has wall parts or it does not, and the sidedef
+		// says which -- so this asks the map directly and the traversal is left to fill in the kinds
+		// the derivation does not do yet.
+		if (fua_surface_mapbake_auto)
+		{
+			const int built = zx::levelmesh::BakeLevelFromMap();
+			if (built > 0) Printf("vulkan: %d wall parts built from the map\n", built);
+		}
 		s_state = 1; s_wait = 0;
 		return false;
 	case 1:
