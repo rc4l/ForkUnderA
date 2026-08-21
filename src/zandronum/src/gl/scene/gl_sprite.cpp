@@ -61,6 +61,7 @@
 #include "gl/shaders/gl_shader.h"
 #include "gl/textures/gl_material.h"
 #include "features/levelmesh/flatmesh.h"
+#include "features/hwrender/hud2d.h"   // StandaloneActive
 #include "gl/utility/gl_clock.h"
 #include "gl/data/gl_vertexbuffer.h"
 // [BB] New #includes.
@@ -298,6 +299,20 @@ void GLSprite::Draw(int pass)
 		// Not gated on gl_wallmesh: the dynamic stream is independent of the static mesh, and a
 		// backend wants actors even when the world geometry came from somewhere else.
 		if (fua_mesh_sprites) zx::levelmesh::RegisterSprite(*this);
+
+		// [rc4l] ...and when the backend is carrying the frame, that was the whole job.
+		//
+		// Everything above still has to run: Process worked out what this sprite looks like and the
+		// render state above it is where RegisterSprite reads the dynamic light back from. What comes
+		// BELOW is rasterisation -- four vertices into GL's buffer and a draw call -- into a
+		// framebuffer that is never presented, because the Diligent child window is covering it and
+		// the backend has already been handed this sprite. On Sunder MAP10's arena that is 1380 draw
+		// calls a frame for pixels nobody sees.
+		//
+		// This is also the shape of what a Vulkan-only build needs. GLSprite::Process touches no GL
+		// state at all -- upstream reached the same conclusion and its hw_sprites.cpp is API-agnostic
+		// -- so the port of sprites is not a rewrite of the hard part, it is severing the easy one.
+		if (zx::hwrender::StandaloneActive()) return;
 
 		FFlatVertex *ptr;
 		unsigned int offset, count;
