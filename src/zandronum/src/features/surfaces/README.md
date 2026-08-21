@@ -129,18 +129,44 @@ switch nobody should ever turn on is worse than a paragraph. The measurement abo
 **Still open**: the 84 pieces on Sunder MAP16 where GL draws 40 units of a 128-unit texture with
 every visible input saying 128, and the capture-time census above.
 
+## Wired in: the derivation is load-bearing now
+
+`fua_surface_derive 1` makes the bake take the two things the ladders measure -- a wall part's
+vertical SPAN and where its picture sits on it -- from the map instead of from `GLWall`. Everything
+else about the piece still comes from the capture, deliberately: the horizontal coordinate depends on
+how a seg sits along its linedef, which no ladder measures and which guessing at cost two days, and
+the shading is the last item below.
+
+| map | surfaces derived | from the capture | picture vs GL |
+|---|---|---|---|
+| Doom 2 MAP01 | 343 | **0** | 0.0% |
+| dbab02 | 1733 | 519 | 0.0% |
+| dbab04 | 3484 | 636 | 0.0% |
+| Sunder MAP10 | 14847 | 373 | 0.0% |
+| Sunder MAP16 | **72073** | **6** | 2.3% (mean 0.5) |
+
+Off by default while MAP16 still differs. The number that matters is the fallback column, and it is
+broken down by reason in `fua_dg_dynstats` -- "1073 fell back" does not say what to build next, and
+"467 special walls, 52 no span" does.
+
+Two-sided middles moved across in the second pass and are now derived like everything else; the
+remainder is 3D-floor faces, skies and horizons, which are different surface kinds rather than
+unfinished ones.
+
+Sunder MAP16's 2.3% is where the ladder said it would be -- 93.9% geometry, and the fence category
+below. Nothing moved on any map where the ladder said nothing should, which is the whole reason for
+building the ladders before the wiring.
+
 ## What comes next, in order
 
-1. Close the peg-condition subset and the MAP16 fence category — both listed above with their
-   numbers, both reproducible with one command.
-2. Wiring: the mesh builds from map data, and the capture path handles only the cases the derivation
-   has not learned yet, rather than the other way round. The ladders are what say when a case is
-   ready to move across.
-3. Shading — light level, colormap, fog — which the capture currently takes from GL through
-   `CaptureShading` and which a derivation would have to answer for itself. That one is deliberately
-   last: it is the part where a second implementation drifted before, and it is why `CaptureShading`
-   exists at all.
+1. Sunder MAP16's remaining disagreement, which is the last thing between the derivation and being
+   able to replace the capture rather than correct it. The fence category is named below.
+2. The horizontal coordinate, which needs the seg-along-linedef bookkeeping the derivation does not
+   model yet -- and a ladder of its own before any of it goes in.
+3. Shading -- light level, colormap, fog -- which the capture takes from GL through `CaptureShading`.
+   Deliberately last: it is the part where a second implementation drifted before, and it is why
+   `CaptureShading` exists at all.
 
 `GLWall::Process` is a thousand lines of accumulated cases. It gets replaced one answerable question
-at a time, and every question keeps its answer in a test — not by a rewrite that has to be right
+at a time, and every question keeps its answer in a test -- not by a rewrite that has to be right
 everywhere before it can be run once.
