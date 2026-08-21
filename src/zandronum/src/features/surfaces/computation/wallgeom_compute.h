@@ -93,6 +93,32 @@ WallPart ComputeMiddlePart(const WallHeights &h);
 WallPart ComputeMiddleTexturePart(const WallHeights &h, float texHeight, bool pegBottom,
 	float rowOffset);
 
+// [rc4l] What a two-sided middle texture is CLIPPED to, which is not the opening.
+//
+// ComputeMiddleTexturePart hangs the texture. This decides what survives, and DoMidTexture decides it
+// by asking which of the four planes would leave an artefact -- a question whose answer flips on
+// whether the sidedef has an upper or a lower texture at all, and on whether the ceilings are sky:
+//
+//   top, no upper texture:  both ceilings sky -> no clip at all; otherwise the HIGHER ceiling
+//   top, with upper:        the back ceiling where the two cross; otherwise the LOWER ceiling
+//   bottom, no lower:       the LOWER floor
+//   bottom, with lower:     the back floor where the two cross; otherwise the HIGHER floor
+//
+// "The opening" -- lower ceiling to higher floor -- is only the last case of each. Using it
+// everywhere cut 128-unit grates down to 96 on dbab02 and clipped a 235-unit one to 96, because a
+// line with no upper texture is clipped to the ceiling ABOVE, not the one below.
+struct MidTextureClip
+{
+	float texTop, texBottom;   // where the hanging texture is; the same at both ends
+	bool  hasUpper, hasLower;  // does the sidedef carry a texture in that slot
+	bool  frontCeilingSky, backCeilingSky;
+	bool  wrap;                // ML_WRAP_MIDTEX or WALLF_WRAP_MIDTEX: the texture repeats, so no clip
+	bool  clipToPlanes;        // false when both sides are the same sector and nothing forces it
+};
+
+void ComputeMiddleClip(const WallHeights &a, const WallHeights &b, const MidTextureClip &c,
+	WallPart &pa, WallPart &pb);
+
 // [rc4l] Is there anything to draw here at all?
 //
 // Answered separately because "no parts" and "one part of zero height" are different states and the

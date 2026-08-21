@@ -56,6 +56,13 @@ void HeightsAt(const seg_t *seg, fixed_t x, fixed_t y, WallHeights &out)
 	}
 }
 
+// GL's own test for "the sidedef carries a texture here": missing and TEX_Null both mean no.
+bool NonNullTexture(FTextureID id)
+{
+	FTexture *t = TexMan(id);
+	return t != NULL && t->UseType != FTexture::TEX_Null;
+}
+
 // The part this render type is, and which sidedef texture slot it uses.
 bool PartOf(int renderType, int &texpos)
 {
@@ -255,31 +262,35 @@ bool BuildDerivedWallSpan(const seg_t *seg, int renderType, DerivedWallSpan &out
 	HeightsAt(seg, px[0], py[0], hEnd[0]);
 	HeightsAt(seg, px[1], py[1], hEnd[1]);
 	float spanTop[2] = { 0.f, 0.f }, spanBottom[2] = { 0.f, 0.f };
-	if (!twoSidedMid && !SpanBothEnds(renderType, hEnd[0], hEnd[1], spanTop, spanBottom))
+	if (twoSidedMid)
+	{
+		// [rc4l] The hanging texture, and then GL's own clip -- which is not the opening.
+		//
+		// texTop already carries the pegging and the row offset; the texture hangs its own height
+		// below it. What survives is decided by ComputeMiddleClip, which asks the four planes the
+		// questions DoMidTexture asks rather than assuming the gap between the two nearest ones.
+		MidTextureClip c;
+		c.texTop = texTop;
+		c.texBottom = texTop - th;
+		const side_t *sd = seg->sidedef;
+		c.hasUpper = NonNullTexture(sd->GetTexture(side_t::top));
+		c.hasLower = NonNullTexture(sd->GetTexture(side_t::bottom));
+		c.frontCeilingSky = seg->frontsector->GetTexture(sector_t::ceiling) == skyflatnum;
+		c.backCeilingSky = seg->backsector->GetTexture(sector_t::ceiling) == skyflatnum;
+		c.wrap = (lineFlags & ML_WRAP_MIDTEX) != 0 || (sd->Flags & WALLF_WRAP_MIDTEX) != 0;
+		// GL clips to planes unless both sides really are the same sector with nothing forcing it.
+		c.clipToPlanes = (rf != rb) || c.wrap || rf->GetHeightSec() != NULL;
+		WallPart p0, p1;
+		ComputeMiddleClip(hEnd[0], hEnd[1], c, p0, p1);
+		spanTop[0] = p0.top; spanBottom[0] = p0.bottom;
+		spanTop[1] = p1.top; spanBottom[1] = p1.bottom;
+	}
+	else if (!SpanBothEnds(renderType, hEnd[0], hEnd[1], spanTop, spanBottom))
 		{ g_fbNoSpan++; g_fellBack++; return false; }
 
 	for (int e = 0; e < 2; e++)
 	{
-		const WallHeights &h = hEnd[e];
-		float top = spanTop[e], bottom = spanBottom[e];
-		if (twoSidedMid)
-		{
-			// The pegging reference is texture Z; the CLIP is the live opening. Conflating the two
-			// turns an 8-unit grate into a 208-unit wall, which is what the ladder found on dbab02.
-			WallHeights peg = h;
-			peg.frontFloor = peg.backFloor = FIXED2FLOAT(MAX(rf->GetPlaneTexZ(sector_t::floor),
-				rb->GetPlaneTexZ(sector_t::floor)));
-			peg.frontCeiling = peg.backCeiling = FIXED2FLOAT(MIN(rf->GetPlaneTexZ(sector_t::ceiling),
-				rb->GetPlaneTexZ(sector_t::ceiling)));
-			const WallPart hung = ComputeMiddleTexturePart(peg, th,
-				(lineFlags & ML_DONTPEGBOTTOM) != 0, rowOfs);
-			const WallPart opening = ComputeMiddlePart(h);
-			float b = hung.bottom, t = hung.top;
-			if (b < opening.bottom) b = opening.bottom;
-			if (t > opening.top) t = opening.top;
-			if (!(t > b)) { g_fbNoSpan++; g_fellBack++; return false; }
-			bottom = b; top = t;
-		}
+		const float top = spanTop[e], bottom = spanBottom[e];
 		out.ztop[e] = top;
 		out.zbottom[e] = bottom;
 		out.vTop[e] = ComputeWallV(top, texTop, th);
