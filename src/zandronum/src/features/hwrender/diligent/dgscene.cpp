@@ -903,7 +903,47 @@ static bool g_pieceBindFailed = false;
 // [rc4l] The per-frame sprite geometry: uploaded fresh every frame, never cached.
 static Diligent::RefCntAutoPtr<Diligent::IBuffer> g_dynVB;
 static unsigned int g_dynVBCapacity = 0;
+
+// [rc4l] The SORTED ORDER, as an index buffer, so back-to-front costs one draw instead of hundreds.
+//
+// The translucent pass sorts by distance and cannot batch by material, so it used to issue a draw
+// per surface: 1380 sprites in an arena on Sunder MAP10 came to 931 submissions even after adjacent
+// ones were collapsed, because the sort scatters neighbours. At roughly two microseconds of driver
+// time each that is most of the frame's CPU cost, on a map where a ninth of the pixels only buys a
+// third of the time.
+//
+// Writing the sorted order into indices instead moves the ordering out of the draw list and into
+// the buffer, where it costs nothing: every surface that wants the same pipeline becomes one
+// DrawIndexed over a contiguous span of indices, and the order within that span is exactly the order
+// the sort produced. Nothing is reordered and nothing is merged that was not adjacent in the sorted
+// list -- only the submissions disappear.
+static Diligent::RefCntAutoPtr<Diligent::IBuffer> g_blendIB;
+static unsigned int g_blendIBCapacity = 0;
+static TArray<Diligent::Uint32> g_blendIndices;
+
+static bool EnsureBlendIndexBuffer(Diligent::IRenderDevice *dev, unsigned int needed)
+{
+	if (dev == NULL || needed == 0) return false;
+	if (g_blendIB && g_blendIBCapacity >= needed) return true;
+	// Grown with slack, because a frame that needs one more index than the last must not reallocate.
+	unsigned int cap = g_blendIBCapacity ? g_blendIBCapacity : 4096;
+	while (cap < needed) cap *= 2;
+	g_blendIB.Release();
+	Diligent::BufferDesc bd;
+	bd.Name = "fua blend order";
+	bd.Size = (Diligent::Uint64)cap * sizeof(Diligent::Uint32);
+	bd.BindFlags = Diligent::BIND_INDEX_BUFFER;
+	bd.Usage = Diligent::USAGE_DEFAULT;
+	dev->CreateBuffer(bd, NULL, &g_blendIB);
+	if (!g_blendIB) { g_blendIBCapacity = 0; return false; }
+	g_blendIBCapacity = cap;
+	return true;
+}
 static int g_dynDraws = 0, g_dynTris = 0;
+// [rc4l] What was actually SUBMITTED, as opposed to queued. g_dynDraws counts entries in the sorted
+// list -- what the pass has to order -- and not what it hands the driver, and the two stopped being
+// the same number when adjacent draws started being collapsed.
+static int g_blendSubmits = 0;
 // [rc4l] Per-blend-mode draw counts. Verifying translucency by screenshot means catching a
 // projectile mid-flight; counting which pipelines actually ran is deterministic and takes a second.
 static int g_dynByBlend[4] = { 0, 0, 0, 0 };
@@ -1981,6 +2021,7 @@ static void DrawSky(Diligent::IDeviceContext *ctx)
 static void BuildDynamic(Diligent::IDeviceContext *ctx)
 {
 	g_dynDraws = g_dynTris = 0;
+	g_blendSubmits = 0;
 	g_dynSlotRefused = g_dynSlotNoMaterial = g_dynSlotSeen = g_dynSlotMax = 0;
 	g_dynBindless = g_dynPerMaterial = 0;
 	g_dynByBlend[0] = g_dynByBlend[1] = g_dynByBlend[2] = g_dynByBlend[3] = 0;
@@ -2314,6 +2355,31 @@ static void DrawBlended(Diligent::IDeviceContext *ctx)
 		Printf( "  %u draws total\n", list.Size() );
 	}
 
+	// [rc4l] The sorted order, written once into indices -- see g_blendIB.
+	{
+		unsigned int total = 0;
+		for (unsigned i = 0; i < list.Size(); i++) total += list[i].count;
+		g_blendIndices.Clear();
+		if (total > 0)
+		{
+			g_blendIndices.Reserve(total);
+			unsigned int w = 0;
+			for (unsigned i = 0; i < list.Size(); i++)
+			{
+				const BlendDraw &d = list[i];
+				for (unsigned k = 0; k < d.count; k++) g_blendIndices[w++] = (Diligent::Uint32)(d.first + k);
+			}
+			if (EnsureBlendIndexBuffer(GetDevice(), total))
+			{
+				ctx->UpdateBuffer(g_blendIB, 0, (Diligent::Uint64)total * sizeof(Diligent::Uint32),
+					&g_blendIndices[0], Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+				ctx->SetIndexBuffer(g_blendIB, 0, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+			}
+		}
+	}
+	// Where each entry's indices start, walked alongside the list below.
+	unsigned int idxCursor = 0;
+
 	Diligent::IPipelineState *bound = NULL;
 	// [rc4l] What is CURRENTLY committed, so the same binding is not committed again per draw.
 	//
@@ -2348,40 +2414,59 @@ static void DrawBlended(Diligent::IDeviceContext *ctx)
 				: d.bias
 					? ((d.blend == 2) ? g_addDecalPSO.RawPtr()  : g_transDecalPSO.RawPtr())
 					: ((d.blend == 2) ? g_addNoCullPSO.RawPtr() : g_transNoCullPSO.RawPtr());
-		if (!pso) continue;
+		if (!pso) { idxCursor += d.count; continue; }
 		if (pso != bound) { ctx->SetPipelineState(pso); bound = pso; boundSRB = NULL; }
 		// The pipeline is only known here -- the pass sorts by distance, not by material -- so this is
 		// where the per-pipeline binding can be asked for.
 		Diligent::IShaderResourceBinding *srb = WorldSRB(pso);
 		if (!srb) srb = d.srb;
-		if (!srb) continue;
+		if (!srb) { idxCursor += d.count; continue; }
 		if (srb != boundSRB)
 		{
 			ctx->CommitShaderResources(srb, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 			boundSRB = srb;
 		}
 
-		// [rc4l] ...and two draws in a row over ADJACENT vertices in the same state are one draw.
-		// Nothing is reordered: two surfaces the sort put apart stay apart. This only collapses the
-		// case where the sort left neighbours next to each other, which for a crowd of decorations at
-		// a similar distance is most of them.
-		unsigned first = d.first, count = d.count;
+		// [rc4l] ...and every entry after this one that wants the same state joins the same draw.
+		//
+		// They do not have to be adjacent in the VERTEX buffer any more -- the index buffer already
+		// holds them in sorted order, so a run is contiguous in indices by construction. Nothing is
+		// reordered: the run stops at the first entry that wants a different pipeline or binding, and
+		// within the run the order is the sort's.
+		const unsigned int idxStart = idxCursor;
+		unsigned int idxCount = d.count;
+		idxCursor += d.count;
 		while (i + 1 < list.Size())
 		{
 			const BlendDraw &n = list[i + 1];
-			if ((n.dyn ? 1 : 0) != want || n.first != first + count) break;
+			if ((n.dyn ? 1 : 0) != want) break;
 			if (n.blend != d.blend || n.red != d.red || n.bias != d.bias) break;
 			// Without bindless the binding IS the material, so it has to match too.
 			if (!WorldSRB(pso) && n.srb != srb) break;
-			count += n.count;
+			idxCount += n.count;
+			idxCursor += n.count;
 			i++;
 		}
 
-		Diligent::DrawAttribs draw;
-		draw.NumVertices = count;
-		draw.StartVertexLocation = first;
-		draw.Flags = Diligent::DRAW_FLAG_VERIFY_ALL;
-		ctx->Draw(draw);
+		if (g_blendIB && g_blendIndices.Size() > 0)
+		{
+			Diligent::DrawIndexedAttribs draw;
+			draw.NumIndices = idxCount;
+			draw.FirstIndexLocation = idxStart;
+			draw.IndexType = Diligent::VT_UINT32;
+			draw.Flags = Diligent::DRAW_FLAG_VERIFY_ALL;
+			ctx->DrawIndexed(draw);
+		}
+		else
+		{
+			// No index buffer this frame: fall back to the span the entry already names.
+			Diligent::DrawAttribs draw;
+			draw.NumVertices = d.count;
+			draw.StartVertexLocation = d.first;
+			draw.Flags = Diligent::DRAW_FLAG_VERIFY_ALL;
+			ctx->Draw(draw);
+		}
+		g_blendSubmits++;
 	}
 }
 
@@ -2700,7 +2785,7 @@ static void Draw2D(Diligent::IDeviceContext *ctx)
 	const void *curMat = (const void *)(size_t)-1;
 	int curTrans = -99999;
 	int cl = -1, ctp = -1, cr = -1, cb2 = -1;
-	for (int i = 0; i < nq; i++)
+	for (unsigned i = 0; i < (unsigned)nq; i++)
 	{
 		const zx::hwrender::Quad2D &q = quads[i];
 		const int blendMode = (q.blend >= 0 && q.blend < 3) ? q.blend : 0;
@@ -2708,9 +2793,23 @@ static void Draw2D(Diligent::IDeviceContext *ctx)
 		{
 			curBlend = blendMode;
 			ctx->SetPipelineState(g_pso2D[curBlend]);
+			// A pipeline change drops what was committed, so the next quad has to commit again even
+			// if it wants the same material.
+			curMat = (const void *)(size_t)-1;
 		}
-		auto *srb = GetMaterialSRB(g_pso2D[curBlend], q.material, q.translation);
-		if (!srb) continue;
+		// [rc4l] Only ask for the binding when the material actually changed.
+		//
+		// This is a lookup keyed on (material, translation) and it ran once per QUAD -- for a status
+		// bar that is the same handful of textures over and over, and for a line of text it is the
+		// same font page for every glyph.
+		if (q.material != curMat || q.translation != curTrans)
+		{
+			auto *found = GetMaterialSRB(g_pso2D[curBlend], q.material, q.translation);
+			if (!found) continue;
+			ctx->CommitShaderResources(found, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+			curMat = q.material;
+			curTrans = q.translation;
+		}
 
 		if (q.clipL != cl || q.clipT != ctp || q.clipR != cr || q.clipB != cb2)
 		{
@@ -2725,21 +2824,29 @@ static void Draw2D(Diligent::IDeviceContext *ctx)
 			ctx->SetScissorRects(1, &sc, sd.Width, sd.Height);
 		}
 
-		// Commit on every change of EITHER material or translation -- the same glyph in two
-		// colours is two different textures.
-		if (q.material != curMat || q.translation != curTrans)
+		// [rc4l] ...and a run of quads in the same state is ONE draw.
+		//
+		// 2D is painter's order and must not be reordered -- a layer sorted by texture would put the
+		// status bar behind the world. This does not reorder anything: it only notices that the next
+		// quad wants exactly what is already set, and its six vertices sit immediately after these,
+		// so the two are one draw over twelve. A status bar is mostly runs; so is a line of text.
+		unsigned run = 1;
+		while (i + run < (unsigned)nq)
 		{
-			ctx->CommitShaderResources(srb, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-			curMat = q.material;
-			curTrans = q.translation;
+			const zx::hwrender::Quad2D &n = quads[i + run];
+			const int nb = (n.blend >= 0 && n.blend < 3) ? n.blend : 0;
+			if (nb != curBlend || n.material != curMat || n.translation != curTrans) break;
+			if (n.clipL != cl || n.clipT != ctp || n.clipR != cr || n.clipB != cb2) break;
+			run++;
 		}
 
 		Diligent::DrawAttribs draw;
-		draw.NumVertices = 6;
+		draw.NumVertices = 6 * run;
 		draw.StartVertexLocation = (Diligent::Uint32)i * 6;
 		draw.Flags = Diligent::DRAW_FLAG_VERIFY_ALL;
 		ctx->Draw(draw);
 		g_draws2D++;
+		i += run - 1;
 	}
 	g_quads2D = nq;
 }
@@ -5646,9 +5753,9 @@ void SlotReport(int n, FString &out)
 void DynStats(FString &report)
 {
 	int sprites = zx::levelmesh::SpritePieceCount();
-	report.Format("dynamic: %d sprites -> %d draws, %d tris "
+	report.Format("2D: %d quads -> %d draws | dynamic: %d sprites -> %d draws (%d submitted), %d tris "
 		"[opaque %d, translucent %d, additive %d, fuzz %d]",
-		sprites, g_dynDraws, g_dynTris,
+		g_quads2D, g_draws2D, sprites, g_dynDraws, g_blendSubmits, g_dynTris,
 		g_dynByBlend[0], g_dynByBlend[1], g_dynByBlend[2], g_dynByBlend[3]);
 	FString anim;
 	anim.Format(" | %d animation frame swaps since load | light buffer %d vec4s (~%d lights)",
