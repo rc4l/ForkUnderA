@@ -235,6 +235,16 @@ CCMD( fua_surface_mapbake )
 		noLight, fbNoTex, fbNoSpan );
 	Printf( "  %d a two-sided middle, %d a special wall, %d a seam" "\n",
 		fbMid, fbSpecial, fbSeam );
+	{
+		int lightlist = 0, heightsec = 0;
+		for ( int i = 0; i < numsectors; i++ )
+		{
+			if ( sectors[i].e != NULL && sectors[i].e->XFloor.lightlist.Size( ) != 0 ) lightlist++;
+			if ( sectors[i].heightsec != NULL ) heightsec++;
+		}
+		Printf( "  sectors the map bake cannot own: %d with a 3D floor light list, %d substituted for the viewer" "\n",
+			lightlist, heightsec );
+	}
 }
 
 CCMD( fua_surface_mapcover )
