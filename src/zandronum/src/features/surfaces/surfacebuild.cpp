@@ -132,19 +132,6 @@ bool BuildDerivedWallLight(const seg_t *seg, DerivedWallLight &out, const sector
 	//
 	// What comes back here is the wall's OWN light -- band zero, which SplitWall also leaves alone.
 	// The bands below it are the caller's to apply, from wallbands_compute.
-	// [rc4l] ...and a sector whose planes are SUBSTITUTED for the viewer cannot be baked either.
-	//
-	// gl_FakeFlat hands GLWall::Process a different sector than seg->frontsector when a transfer-
-	// heights special is in play -- different planes, different textures, chosen from where the
-	// viewer is standing. A static bake has no viewer, so there is no answer to derive: whatever it
-	// picked would be right from one side of the water line and wrong from the other.
-	//
-	// This is reasoning, not a measurement, and it should be read as such: it went in as the leading
-	// suspect for the map-driven bake's last percent and changed nothing, because dbab01 and dbab04
-	// have no such sector at all and dbab02 has exactly one. It stays because the substitution is
-	// real and a static bake genuinely cannot answer it -- but nothing here exercises it, and the
-	// residual it was meant to explain is still unexplained.
-	if (front->heightsec != NULL) return false;
 
 	colormapFrom = front;
 	// Transcribed from GLWall::Process, which is the only place this is written down. gl_ClampLight
