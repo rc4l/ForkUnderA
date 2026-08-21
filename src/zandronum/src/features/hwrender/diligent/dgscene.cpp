@@ -349,8 +349,6 @@ static TArray<ScenePieceData> g_scenePieceData;
 static void FillPieceData(const zx::levelmesh::MeshPiece &p, int translation, ScenePieceData &pd);
 static Diligent::RefCntAutoPtr<Diligent::IBuffer> g_pieceBuf;
 static unsigned int g_pieceCapacity = 0;
-// Where the dynamic path's records start -- the static level owns the front of the buffer.
-static unsigned int g_staticPieceCount = 0;
 
 static float g_mvp[16];
 static int   g_drawRepeat = 1;
@@ -2068,7 +2066,15 @@ static void BuildDynamic(Diligent::IDeviceContext *ctx)
 			// rebuilt every frame into the back of it. A sprite that overflows the slack draws with the
 			// last record rather than reading past the end, which is a wrong colour on one sprite rather
 			// than undefined behaviour on the whole frame.
-			unsigned int dynPieceIndex = g_staticPieceCount + dynPieces.Size();
+			// [rc4l] The dynamic region starts after ALL of the static records, asked fresh every frame.
+			//
+			// This used to be a count snapshotted when the scene was last rebuilt, and AppendPiece pushes
+			// records past it -- baking the room behind a door that just opened does exactly that. The
+			// sprites and decals of the next frame then wrote over those appended records, so a surface
+			// that had just come into the world started rendering with some sprite's material. It reads
+			// as textures changing at random when you open a door or fire a shot, which is how it was
+			// reported.
+			unsigned int dynPieceIndex = g_scenePieceData.Size() + dynPieces.Size();
 			if (dynPieceIndex >= g_pieceCapacity)
 				dynPieceIndex = (g_pieceCapacity > 0) ? g_pieceCapacity - 1 : 0;
 			else
@@ -2109,9 +2115,9 @@ static void BuildDynamic(Diligent::IDeviceContext *ctx)
 			Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 		// ...and the records they index, into the back of the shared piece buffer.
 		if (g_pieceBuf && dynPieces.Size() > 0 &&
-		    g_staticPieceCount + dynPieces.Size() <= g_pieceCapacity)
+		    g_scenePieceData.Size() + dynPieces.Size() <= g_pieceCapacity)
 			ctx->UpdateBuffer(g_pieceBuf,
-				(Diligent::Uint64)g_staticPieceCount * sizeof(ScenePieceData),
+				(Diligent::Uint64)g_scenePieceData.Size() * sizeof(ScenePieceData),
 				(Diligent::Uint64)dynPieces.Size() * sizeof(ScenePieceData), &dynPieces[0],
 				Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 	}
@@ -3344,7 +3350,6 @@ static bool BuildSceneBuffer(FString &err)
 		GetDevice()->CreateBuffer(pbd, nullptr, &g_pieceBuf);
 		if (!g_pieceBuf) { err = "piece data buffer creation failed"; return false; }
 		g_pieceCapacity = want;
-		g_staticPieceCount = g_scenePieceData.Size();
 		if (auto *ctx2 = GetContext())
 			if (g_scenePieceData.Size() > 0)
 				ctx2->UpdateBuffer(g_pieceBuf, 0,
@@ -3358,7 +3363,6 @@ static bool BuildSceneBuffer(FString &err)
 		// Rebuilding the scene is not rare: a level with moving sectors does it a couple of hundred
 		// times a minute, and making thirteen pipelines again each time is a stutter you can feel with
 		// the mouse. A buffer that still fits is kept, and only a bigger one costs a rebuild.
-		g_staticPieceCount = g_scenePieceData.Size();
 		if (g_scenePieceData.Size() > 0)
 			ctx3->UpdateBuffer(g_pieceBuf, 0,
 				(Diligent::Uint64)g_scenePieceData.Size() * sizeof(ScenePieceData),
