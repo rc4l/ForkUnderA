@@ -128,8 +128,10 @@ deliberately refused to do.
 floors 0.6%, Doom 2 MAP01 with a door open 0.0%.
 
     fua_surface_mapbake_auto 1
-    fua_dg_cullbatches 1
     fua_dg_standalone 1
+
+(`fua_dg_cullbatches` was set for these runs and has since been removed -- it never separated from
+nothing, on any measurement. See the surfaces README.)
 
 Three things it took:
 

@@ -1599,7 +1599,6 @@ add_executable( zdoom WIN32
 	features/levelmesh/levelmesh.cpp
 	features/levelmesh/wallcache.cpp
 	features/hwrender/hud2d.cpp
-	features/hwrender/occlusion.cpp
 	features/levelmesh/staticmesh.cpp
 	features/levelmesh/flatmesh.cpp
 	features/levelmesh/projdecals.cpp

@@ -112,11 +112,16 @@ So the surviving design has to be one of:
   it, tested per actor on the GPU, moves the cost off the critical path entirely. Blocked behind the
   GL-free sprite port, and the strongest answer once that lands.
 
-## What is left in the tree
+## What is left in the tree: nothing
 
-`fua_occl_sprites` (default **0**, off). It is a correct occluder with a known cost, and it is the
-obvious thing to check a cheaper scheme against: whatever replaces it has to agree with it about
-which actors are hidden, and it already agrees with the picture on nine maps.
+The occluder was removed once it had answered the question. It was correct and it was measured, and
+both of those live here rather than in code nobody runs -- a switch defaulted to off is still
+something the next person has to read, decide about, and keep compiling.
 
-`fua_sprite_sweep` reports the funnel it feeds -- actors iterated, culled, reaching `Process`,
-drawing -- plus the buffer's build time and what it hid.
+It is recoverable in one command if the baked-visibility work wants something to check itself
+against, which is the only use it had left:
+
+    git show 10b5015a -- src/zandronum/src/features/hwrender/occlusion.cpp
+
+`fua_sprite_sweep` stays, because the funnel it reports -- actors iterated, culled, reaching
+`Process`, drawing -- is the measurement any future attempt starts from.
