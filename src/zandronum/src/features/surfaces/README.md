@@ -248,17 +248,39 @@ now.
 
 ## What comes next, in order
 
-1. The last percent of the map-driven bake: a handful of small panels on dbab02 and dbab01, at 1.1%
-   and 0.5%, and **no hypothesis left standing**. View-dependent substitution was the leading
-   suspect -- `gl_FakeFlat` hands `GLWall::Process` a different sector than `seg->frontsector` for a
-   transfer-heights sector, and a static bake cannot be view-dependent -- so those sectors were given
-   back to the capture, and the number did not move: dbab01 and dbab04 have no such sector and dbab02
-   has one. `fua_surface_mapbake` prints both counts now, so the next guess can be checked before it
-   is believed rather than after.
-2. Special surface kinds -- 3D floor faces, skies, horizons -- which still come from the capture.
-3. Retiring `GLWall`/`GLFlat` and collapsing `wallcache.cpp` and `flatmesh.cpp` into one cache, which
-   is the point of all of it: one surface type, derived once, instead of two transcriptions of what
-   GL does that drift apart every time a feature is added to one of them.
+1. **The map-driven bake's last percent, which is now identified: coplanar overlap.** Not a
+   derivation fault. `fua_surface_bakediff` compares the whole quad -- material, all four corners,
+   light, colormap -- for every captured piece against what the derivation builds for the same seg
+   and part, and every input agrees except 13 pieces across three maps. What differs is that the map
+   bake builds the WHOLE LEVEL where the capture only ever built what GL walked, and the extra
+   surfaces overlap the ones that were already there:
+
+   | dbab02 | pieces duplicating another piece's geometry | coplanar overlapping pairs |
+   |---|---|---|
+   | GL-driven | 74 of 3454 (2.1%) | 1807 |
+   | map-driven | 376 of 3489 (10.8%) | 1927 |
+
+   Coplanar quads with different vertices do not agree on depth to the last bit, so the rasteriser
+   stipples between them -- which is what `fua_dg_cull` was added for, and its note names a rock face
+   on dbab02 as the symptom. That is the same rock face still showing the difference. Backface
+   culling removes the pairs whose facings differ; these 120 are the remainder. The fix is the one
+   that note already names: normalise winding at bake time and stop building a second quad where one
+   already covers the wall.
+
+   **Ruled out by measurement, each of which looked plausible:** material identity (animation frames
+   read as faults until the probe learned better -- 171 of them on dbab02, all nukage flowing);
+   colormap; light level and fake contrast; the horizontal and vertical coordinates and the height on
+   every compared surface; viewer-substituted sectors; segs the map bake does not own; sector
+   movement between load and capture; dynamic lights; `gl_seamless`; incomplete capture coverage
+   (`fua_levelmesh_bakeall` first, no change); and reload noise, whose floor is 0.0%.
+
+2. **Special surface kinds** -- 3D floor faces, skies, horizons. These never reach the mesh from
+   either path (`RecordPiece` is only called for the plain wall lists), so this is about drawing them
+   at all, not about the two bakes disagreeing.
+
+3. **Retiring `GLWall`/`GLFlat` and collapsing `wallcache.cpp` and `flatmesh.cpp` into one cache**,
+   which is the point of all of it: one surface type, derived once, instead of two transcriptions of
+   what GL does that drift apart every time a feature is added to one of them.
 
 `GLWall::Process` is a thousand lines of accumulated cases. It gets replaced one answerable question
 at a time, and every question keeps its answer in a test -- not by a rewrite that has to be right

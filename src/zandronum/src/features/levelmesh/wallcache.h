@@ -64,6 +64,9 @@ void BakeSeg(int segIndex);
 // and what it cannot do yet.
 int BakeSegFromMap(int segIndex);
 
+// How many vertices the mesh holds for one part of one seg (0 upper, 1 lower, 2 middle).
+int MapBakePartCount(int segIndex, int part);
+
 // Every wall in the level, from the map, in one pass. Returns the number of parts built.
 int BakeLevelFromMap();
 
