@@ -50,94 +50,102 @@ looking at a picture costs a day the first time it is wrong.
 because three different things can be wrong and a single number cannot say which. Run them all with
 `node scenarios/surfaceladder.mjs <maps...>`, which also carries the A/B for each candidate rule.
 
-| map | geometry | alignment | planes | alignment misses that are a whole texture |
+| map | geometry | planes | alignment | of which REAL |
 |---|---|---|---|---|
-| dbab01 | 99.7% | 92.3% | 100.0% | 91 of 91 |
-| dbab02 | 97.9% | 79.5% | 100.0% | 228 of 228 |
-| dbab04 | 100.0% | 84.1% | 99.1% | 159 of 159 |
-| Sunder MAP10 | 99.9% | 95.6% | 100.0% | 566 of 566 |
-| Sunder MAP16 | 93.9% | 82.8% | 100.0% | 10181 of 10265 |
+| dbab01 | 99.7% | 100.0% | 89.1% | **0** |
+| dbab02 | 99.5% | 100.0% | 75.9% | **0** |
+| dbab04 | 100.0% | 99.1% | 86.6% | **0** |
+| Sunder MAP10 | 100.0% | 100.0% | 91.8% | **0** |
+| Sunder MAP16 | 100.0% | 100.0% | 90.9% | **0** |
 
-**Planes are exact now, on every map.** The last percent was not a derivation fault at all: the flat
-cache was not being cleared on a level change, so a fresh level was compared against the previous
-one's flats through pointers it had already reused. That is fixed in `AllocForLevel`, and it was
-taking the process down as well as the score -- see [features/levelmesh](../levelmesh) for the note.
+**Read the last column, not the one before it.** Every remaining alignment disagreement is a wall
+that REPEATS, drawn a whole copy of its texture up or down. That is the same picture -- the pixels
+cannot tell and neither can the player. The ladder prints the two separately for exactly this reason:
+a number that is right for a wrong-looking reason is still the number that catches the next real
+fault, but "alignment is 86%" was never the blocker it read as.
 
-**Rules the ladders found**, none of which was obvious from looking at a wall: an upper cannot start
-below the back floor *or* the front floor; a two-sided middle hangs by its own height rather than
-filling the opening; the material's render height is not the texture's scaled height; `expand=true`
-adds a two-pixel border that reads as "two units too tall everywhere"; alignment references the
-plane's *texture Z*, not its live height, from a reference **pair** that differs per part.
+Getting the real column to zero took three corrections, and two of them were the ladder's:
 
-## The pegging question, answered: it was never pegging
+- **`CheckTexturePosition`**, which GL runs on every wall it builds and the derivation did not:
+  subtract `floor(min(uplft.v, uprgt.v))` from all four v values so the wall starts inside the first
+  copy of its texture. Invisible on a wall that repeats; on a wall that CLAMPS it is the whole
+  picture, because outside [0,1] the clamp holds the edge texel and the wall becomes a smear of one
+  row of pixels. 112 pieces across three maps were outside their texture. Now none are.
+- **The ladder was scoring a second transcription of the derivation rather than the derivation.**
+  Both halves of it -- `ExpectedSpan` worked the parts out again, and the alignment check recomputed
+  `ComputeWallV` itself. So the shift landed and the number did not move, and GL's midtexture clip
+  landed and the geometry number did not move. Both call `BuildDerivedWallSpan` now.
+- **The delta classifier was asking what was wrong with an answer nobody gives**, measuring against
+  the unshifted texture top. Corrected, it reports zero peg-shift disagreements where it had reported
+  sixteen -- the same false lead the peg-condition hunt spent two rounds on.
 
-Two rounds of inferring a peg CONDITION from which pieces failed produced rules that correlated
-perfectly and halved the score when applied. The third round asked a different question -- not
-*which* pieces are wrong but *by exactly how much*, in the units of the one line of `DoTexture` that
-can differ:
+**Rules the ladders found**, none of which was obvious from looking at a wall:
+
+- An upper's bottom is cut by the **front floor** and a lower's top by the **front ceiling**, each
+  only when BOTH ends of the wall ask for it. Clamping to the back planes, per end, is the same
+  answer on every wall whose two ends and two floors agree -- which is most of a level, and why it
+  passed -- and a different one the moment anything slopes.
+- A wall is drawn when **either** end has area, and it comes out as a triangle when only one does.
+- A two-sided middle **hangs by its own height** rather than filling the opening...
+- ...and is **not clipped to the opening**. Which plane clips it turns on whether the sidedef carries
+  an upper or a lower texture at all: with no upper it is clipped to the ceiling ABOVE the opening,
+  not below it, and an intra-sky line with no upper is not clipped at all. Assuming the opening cut a
+  128-unit grate on dbab02 down to 96, and it was the whole of Sunder MAP16's "fence" -- the one
+  where GL drew 40 units of a 128-unit texture with every visible input saying 128. MAP16's geometry
+  went from 93.9% to 100.0% when that rule went in.
+- A sloped step with **no** sidedef texture is drawn with the SECTOR'S FLAT.
+- The material's render height is not the texture's scaled height; `expand=true` adds a two-pixel
+  border that reads as "two units too tall everywhere".
+- Alignment references the plane's *texture Z*, not its live height, from a reference **pair** that
+  differs per part.
+
+## The pegging question, answered: it was never pegging, and it was never a condition
+
+Two rounds inferred a peg CONDITION from which pieces failed, and produced rules that correlated
+perfectly over the failures and halved the score when applied. The third round asked a different
+question -- not *which* pieces are wrong but *by exactly how much*, in the units of the one line of
+`DoTexture` that can differ:
 
 ```
 if (peg) floatceilingref += mRenderHeight - (lh + v_offset)
 ```
 
-Measured that way the answer arrived immediately and it is the same on every map: **every alignment
-miss is an integer number of whole textures**, and the peg shift is never the difference. Not one
-piece anywhere is off by the peg term. The 84 exceptions are all on Sunder MAP16 and are the fence
-category below.
+Measured that way the answer arrived immediately: **not one piece anywhere is off by the peg term.**
+Every miss is an integer number of whole textures.
 
-A whole texture off is the same picture on a wall that wraps, and **none** of the ones counted are on
-a wall GL clamps -- so what is left is not visible. It is still not right: the number decides whether
-`GLT_CLAMPY` gets set, and a clamped wall shows the difference at once.
+Which pointed at `CheckTexturePosition` -- GL slides a finished wall back into the first copy of its
+texture by subtracting `floor(min(v at the two top corners))` -- and there the hunt stalled for
+another round, because three different rules for WHERE the shift applies all landed on the same
+score, and three different rules producing one identical number says the discriminator is not in that
+family at all.
 
-**Where it comes from, and what is still open.** GL's `CheckTexturePosition` slides a finished wall
-back into the first copy of its texture by subtracting `floor(min(v at the two top corners))`. That
-is modelled in `walluv_compute` (`ComputeVShift`) and it is real -- turning it on fixes 39 pieces on
-dbab01. It also breaks 77, so it is behind `fua_surface_vshift`, default off, and the score above is
-the honest one without it.
+It was not. **The ladder was scoring its own copy of the derivation.** The alignment check recomputed
+`ComputeWallV` from scratch instead of asking `BuildDerivedWallSpan`, so the shift could be put into
+the shipping code and the number would not move -- which is exactly what happened, twice, before
+anyone noticed the number was about something else. And the delta classifier measured against the
+unshifted texture top, so it kept reporting "sixteen walls have the peg flag inverted" about an answer
+the derivation had stopped giving.
 
-What the breakage says is worth more than the rule: `fua_surface_verify` counts, at the moment of
-capture, how many walls arrive with their top v already inside `[0,1)`. On dbab01, 129 of 1180 cached
-pieces do not -- and `CheckTexturePosition` guarantees exactly that range for everything `DoTexture`
-makes. So those pieces did not go through it, or something moved them afterwards. About a quarter of
-them are fragments `SplitWall` produced, whose v is interpolated from a parent that was already
-normalised; the rest are not yet accounted for.
-
-Three ways of deciding WHERE the shift applies have now been tried and measured, and all three land
-on the same numbers -- 89.1% / 75.9% / 86.6% against 92.3% / 79.5% / 84.1% without it:
-
-1. every part `DoTexture` makes (upper, lower, one-sided middle);
-2. the shift computed from the whole part's derived span rather than the surviving fragment's
-   own top, which is what a fragment inherits;
-3. skipping `SplitWall` fragments entirely, which `GLWF_NOSPLITUPPER`/`LOWER` make identifiable.
-
-Three different rules producing one identical score says the discriminator is not in this family
-at all. The shift itself is not in doubt -- it is a function in `gl_walls.cpp` and
-`ComputeVShift` transcribes it with tests -- so what is missing is the condition, and the
-capture-time census is the thing to pull on: it is one command, and it says which walls arrive
-already inside their first texture copy and which do not.
+With the ladder asking the derivation and the classifier asking about the answer that ships: the
+shift goes in unconditionally, every clamping fault across five maps goes to zero, and the peg class
+goes to zero on every map. There was never a peg rule to find.
 
 **Hypotheses killed by measurement**, each of which looked right: the piece belonging to the other
 sidedef (0 pieces, on every map); a texture taller than its span pegging the other way (perfect
 correlation over the failures, and applying it halves the score -- the correlation was selection
-bias, since pegging can only differ where the texture does not fill the span); and the peg flag
-being inverted on a subset, which the delta measurement retired outright.
+bias, since pegging can only differ where the texture does not fill the span); the peg flag being
+inverted on a subset, which the delta measurement retired outright; and Sunder MAP16's "fence", which
+turned out not to be about pegging at all but about which plane clips a two-sided middle.
 
-The taller-texture rule had a `fua_surface_pegrule` switch so it could be A/B'd rather than argued
-about. It has been **deleted**: a rule that halves the score is not a candidate any more, and a
-switch nobody should ever turn on is worse than a paragraph. The measurement above is the record.
+Two switches that existed so those rules could be A/B'd rather than argued about are gone.
+`fua_surface_pegrule` was deleted -- a rule that halves the score is not a candidate any more, and a
+switch nobody should ever turn on is worse than a paragraph. `fua_surface_vshift` survives with its
+meaning changed: it is now the real `CheckTexturePosition`, default **on**, kept switchable because
+it moves pieces in both directions and one run should be able to say so.
 
-**Still open**, and better understood than it was: Sunder MAP16's fence. GL draws 40 units of a
-128-unit texture (OFENCB01, pegged bottom, no scale) where every visible input says 128.
-
-What the last look added: the seg carries **two** middle pieces, one `RENDERWALL_M2S` and one
-`RENDERWALL_M2SNF`, at -244..-204 and -304..-244. That is a midtexture SPLIT across a 3D floor's
-light boundary -- so part of this category may be the LADDER rather than the derivation: it compares
-the union of pieces of one type, and a surface split across two types has no single union. The
-capture's own piece 0 also carries `GLT_CLAMPY`, which is set on a wall occupying exactly one copy of
-its texture, so GL believed it was drawing a whole texture into 40 units.
-
-Whichever of those it is, it is the last thing between the derivation and being able to replace the
-capture rather than correct it, and it is one texture on one map.
+The lesson worth keeping is not about pegging. It is that a ladder which transcribes the code it
+measures will agree with itself forever, and the two places this one did were the two places the
+answer had been sitting.
 
 ## Wired in, and on: the derivation builds the walls
 
@@ -192,23 +200,9 @@ watch: on dbab04 the map accounts for 1332 of the 1336 parts GL draws; on Sunder
 - **a sloped step with no texture on the sidedef is drawn with the SECTOR'S FLAT** -- "with a
   background sky there are ugly holes otherwise". That one category was 131 parts on dbab04.
 
-MAP16's 0.4% against a 0.0% control is the honest residual and the next thing to look at. It is six
-parts GL draws that the map does not claim, on a level with eighty-one thousand.
-
-## What the wiring proved about the ladders
-
-With the derivation live, the alignment ladder still reads 92.3% / 79.5% / 84.1% -- and the rendered
-frame is **0.0% different from GL's**. Both numbers are correct and the gap between them is the
-useful part.
-
-Every one of those misses is a whole-texture offset, and none is on a wall that clamps. A texture
-slid by an exact multiple of its own height, on a wall that wraps, is the same picture. The ladder
-compares a NUMBER and reports a difference; the eye compares the picture and there is none.
-
-So the alignment ladder was more pessimistic than reality by exactly the amount that was already
-measured and written down. It stays as it is -- a number that is right for the wrong-looking reason
-is still the number that will catch the next real fault -- but "alignment is only 84%" was never the
-blocker it read as.
+MAP16's residual is gone: it was the two-sided middle clip, and MAP16's geometry ladder now reads
+100.0% where it read 93.9%. Coverage on dbab01, dbab02 and dbab04 is exact in both directions -- no
+part GL draws that the map does not claim, and none the map claims that GL does not draw.
 
 ## ...and its light, which was the last of it
 
@@ -230,15 +224,39 @@ exactly in the rooms people build 3D floors for.
 The fallback column is broken down by reason in `fua_dg_dynstats`, because "1073 fell back" does not
 say what to build next and "467 special walls, 52 no span" does.
 
+## Driving the bake from the map, and what still stands in the way
+
+`fua_surface_mapbake_auto` builds every wall in the level from the map with no `GLWall` involved. It
+is **off** by default, and the reason is a number: the frame it produces differs from the GL-driven
+one by 0.5% on dbab01, 1.1% on dbab02 and 0.4% on dbab04 -- small, localised panels rather than
+anything systemic, but not the 0.0% the derivation itself reads when the capture is driving.
+
+Two things it took to get there, both of which were holes rather than inaccuracies:
+
+**Ownership is per SEG, not per level.** `BuildDerivedWallLight` declines one sector kind -- a sector
+with a 3D floor light list has no single light level, because `SplitWall` cuts the wall at every band
+and gives each fragment that band's own light. Declining is right. Reading the refusal as "there is
+no wall" was not: `BakeSegFromMap` squashed all three parts of every seg in such a sector, and on
+dbab01 an entire brick wall went missing and the lava room behind it came through -- 10.5% of the
+frame. A seg the map cannot light stays with the capture, and the two paths divide the level between
+them instead of one leaving holes in it.
+
+**`fua_surface_mapcover` was only asking half its question.** It skipped segs GL never drew, which
+makes "the map accounts for everything GL drew" true by construction and says nothing about what the
+map draws that GL does not -- the half that was putting a wall through another wall. It counts both
+now.
+
 ## What comes next, in order
 
-1. Sunder MAP16's remaining disagreement, which is the last thing between the derivation and being
-   able to replace the capture rather than correct it. The fence category is named below.
-2. The horizontal coordinate, which needs the seg-along-linedef bookkeeping the derivation does not
-   model yet -- and a ladder of its own before any of it goes in.
-3. Shading -- light level, colormap, fog -- which the capture takes from GL through `CaptureShading`.
-   Deliberately last: it is the part where a second implementation drifted before, and it is why
-   `CaptureShading` exists at all.
+1. The last percent of the map-driven bake: a handful of panels on dbab02 and dbab01, at 1.1% and
+   0.5%. The suspect is view-dependent substitution -- `gl_FakeFlat` hands `GLWall::Process` a
+   different sector than `seg->frontsector` for a transfer-heights or fake-floor sector, and a static
+   bake cannot be view-dependent. If that is what it is, it is a limit to write down rather than a
+   bug to fix.
+2. Special surface kinds -- 3D floor faces, skies, horizons -- which still come from the capture.
+3. Retiring `GLWall`/`GLFlat` and collapsing `wallcache.cpp` and `flatmesh.cpp` into one cache, which
+   is the point of all of it: one surface type, derived once, instead of two transcriptions of what
+   GL does that drift apart every time a feature is added to one of them.
 
 `GLWall::Process` is a thousand lines of accumulated cases. It gets replaced one answerable question
 at a time, and every question keeps its answer in a test -- not by a rewrite that has to be right
