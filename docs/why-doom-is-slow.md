@@ -85,20 +85,45 @@ simply absent.
 That is the whole of it. Standalone needs the map bake to carry 100% of the level, and the map bake
 currently carries all of it except the sectors it hands back.
 
-## The scope
+## Done, and what it came to
 
-1. ~~**Light a 3D-floor sector's wall from the map.**~~ DONE. The band boundaries are the sector's light list,
-   which is map data -- the derivation declines it today because deriving ONE light level for the
-   whole wall would be wrong, not because the bands are unknowable. Split the derived wall at each
-   band and give each fragment that band's light and colormap, which is what `SplitWall` does. This
-   is the only thing between standalone and being correct, and on Sunder MAP10 it is worth the 6.6 ms
-   above -- 100 fps to 298.
-2. **Derive flats from the map**, which is what standalone is now waiting on -- see above.
-3. **Close the map bake's own residual**, 0.4-1.1% depending on map, which is coplanar overlap:
-   the map bake builds the whole level where the capture only built what GL walked, and the extra
-   surfaces stipple against the ones already there. Counted: dbab02 goes from 74 duplicate pieces and
-   1807 coplanar pairs to 376 and 1927.
-4. **Then turn `fua_dg_standalone` on by default**, which is the point of the other two.
+Sunder MAP10 at spawn, 1920x1200, alternating runs:
+
+| | p50 | fps |
+|---|---|---|
+| default | 8.99 ms | 111 |
+| GL cut out | **2.11 ms** | **475** |
+
+    fua_surface_mapbake_auto 1
+    fua_dg_cullbatches 1
+    fua_dg_standalone 1
+
+Three things it took:
+
+1. **Walls in 3D floor sectors, lit from the map.** `wallbands_compute` cuts a wall at its light
+   bands the way `SplitWall` does, so those sectors stop being handed back to a capture that is not
+   running. A seg owns `kMaxMapPieces` mesh ranges rather than `kMaxCachedPieces` -- different
+   questions, and conflating them at four is why 3D floor segs were ineligible at all.
+2. **Flats from the map.** `RegisterFlatSubsector` is split into what a flat is made of and what
+   turns that into geometry; `BakeFlatsFromMap` fills the first half from subsector vertices, the
+   sector's plane, its offsets and its light. `ProcessSector` picks faces by where the viewer is, so
+   a bake emits both sides of everything and lets back-face culling drop the half turned away. A
+   sector that moves re-bakes its planes, because the flat cache's stamp is only consulted by a walk
+   that no longer happens.
+3. **One quad per SIDEDEF.** The derivation draws the whole linedef, so a line the BSP split into
+   four segs was contributing four coplanar copies -- and the map bake walks every seg. Sunder MAP20
+   went from 376 pieces duplicating another's geometry to **0**, and MAP16's parity from 1.7% to 0.1%.
+
+**Parity against the default renderer**, same camera: Doom 2 MAP01 with a door open 0.0%, Sunder
+MAP16 0.1%, MAP04 0.2%, MAP10 0.5%, dbab01 with its 138 3D-floor sectors 0.7%, Sunder MAP20 3.9%.
+
+MAP20 is the outlier and it is not missing geometry -- the difference is distant detail on a map with
+49,641 coplanar overlapping pairs, where two surfaces in the same plane disagree about depth in the
+last bit. That is why these stay **off by default**: 475 fps is one line of config away, and shipping
+a visible difference on somebody's favourite map is not a default to set on their behalf.
+
+**A door caught MID-TRAVEL reads 13.3% and is not a fault** -- two runs catching it at different
+heights. It settles to 0.0%. Worth writing down because it looks exactly like a broken lift.
 
 ## What is NOT worth doing, measured
 

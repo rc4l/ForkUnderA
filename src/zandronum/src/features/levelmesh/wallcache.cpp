@@ -106,6 +106,9 @@ void AllocForLevel(int numsegs)
 	//
 	// Cleared HERE and not in MeshInitForLevel because ClearFlats gives its ranges back to the
 	// mesh, and this runs while that mesh is still the one that handed them out.
+	// The per-sidedef bake owners belong to the level that is going away.
+	extern void ClearSideOwners();
+	ClearSideOwners();
 	zx::levelmesh::ClearFlats();
 	zx::levelmesh::ClearSprites();
 	g_cache.Clear();
@@ -495,6 +498,10 @@ int BakeSegFromMap(int segIndex)
 	// Not ours: leave every range exactly as it is and let the capture keep this seg. Squashing here
 	// is what put a hole in dbab01 -- see MapBakeOwnsSeg.
 	if (!zx::surfaces::BuildDerivedWallLight(seg, dl, cmFrom) || cmFrom == NULL) return 0;
+
+	// One quad per sidedef -- see SegOwnsItsSide. Every other seg on it would build the same four
+	// corners again, in the same plane, and the two would stipple against each other.
+	if (!SegOwnsItsSide(segIndex)) return 0;
 
 	// [rc4l] The light bands the sector's 3D floors cast on every wall in it.
 	//
