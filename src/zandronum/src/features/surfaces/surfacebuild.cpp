@@ -12,9 +12,16 @@
 #include "gl/textures/gl_material.h"
 #include "gl/scene/gl_wall.h"
 
+#include <math.h>
+
 #include "features/surfaces/surfacebuild.h"
 #include "features/surfaces/computation/wallgeom_compute.h"
 #include "features/surfaces/computation/walluv_compute.h"
+
+// [rc4l] Declared at global scope: EXTERN_CVAR inside the namespace would name a different symbol
+// than the CVAR defined in surfaceverify.cpp, and only the linker would notice.
+EXTERN_CVAR(Bool, fua_surface_vshift)
+EXTERN_CVAR(Bool, fua_surface_flatfallback)
 
 namespace zx { namespace surfaces {
 
@@ -64,23 +71,26 @@ bool PartOf(int renderType, int &texpos)
 }
 
 // [rc4l] The vertical span this part occupies, from the map.
-bool SpanAt(const seg_t *seg, int renderType, const WallHeights &h, float &top, float &bottom)
+// [rc4l] The span of a part at BOTH ends, because two of the three clamps are two-ended.
+//
+// The numbers come back whether or not the part has area at either end. A sloped wall can exist at
+// one end and not the other, and GL draws it if EITHER end has area -- `if (topleft<=bottomleft &&
+// topright<=bottomright) return;` is the whole of its test. Requiring both ends is what left 133
+// uppers and lowers on dbab04, the map with 337 sloped pieces, unaccounted for: every one of them a
+// wall that pinches out at one end.
+bool SpanBothEnds(int renderType, const WallHeights &h1, const WallHeights &h2,
+	float *top, float *bottom)
 {
-	WallPart part;
+	WallPart p1, p2;
 	switch (renderType)
 	{
-	case RENDERWALL_TOP:    part = ComputeUpperPart(h); break;
-	case RENDERWALL_BOTTOM: part = ComputeLowerPart(h); break;
-	case RENDERWALL_M1S:    part = ComputeMiddlePart(h); break;
-	default: return false;   // the two-sided middle is answered by MiddleSpanAt
+	case RENDERWALL_TOP:    ComputeUpperSpan(h1, h2, p1, p2); break;
+	case RENDERWALL_BOTTOM: ComputeLowerSpan(h1, h2, p1, p2); break;
+	case RENDERWALL_M1S:    p1 = ComputeMiddlePart(h1); p2 = ComputeMiddlePart(h2); break;
+	default: return false;   // the two-sided middle is answered inline, against texture Z
 	}
-	// [rc4l] The numbers come back whether or not the part has area at THIS end.
-	//
-	// A sloped wall can exist at one end and not the other, and GL draws it if EITHER end has area --
-	// `if (topleft<=bottomleft && topright<=bottomright) return;` is the whole of its test. Requiring
-	// both ends is what left 133 uppers and lowers on dbab04, the map with 337 sloped pieces,
-	// unaccounted for: every one of them a wall that pinches out at one end.
-	top = part.top; bottom = part.bottom;
+	top[0] = p1.top; bottom[0] = p1.bottom;
+	top[1] = p2.top; bottom[1] = p2.bottom;
 	return true;
 }
 
@@ -148,7 +158,7 @@ bool BuildDerivedWallSpan(const seg_t *seg, int renderType, DerivedWallSpan &out
 	// otherwise and slopes are simply not precise enough to match in any case." Without this the map
 	// does not account for 131 of dbab04's parts, 38 uppers and 93 lowers, all of them on the map
 	// with 337 sloped pieces.
-	if (mat == NULL && seg->backsector != NULL &&
+	if (mat == NULL && fua_surface_flatfallback && seg->backsector != NULL &&
 	    (renderType == RENDERWALL_TOP || renderType == RENDERWALL_BOTTOM))
 	{
 		const sector_t *fs = seg->frontsector, *bs = seg->backsector;
@@ -239,11 +249,19 @@ bool BuildDerivedWallSpan(const seg_t *seg, int renderType, DerivedWallSpan &out
 	if (seg->sidedef != seg->linedef->sidedef[0]) { lv1 = seg->linedef->v2; lv2 = seg->linedef->v1; }
 	const fixed_t px[2] = { lv1->x, lv2->x };
 	const fixed_t py[2] = { lv1->y, lv2->y };
+	// Both ends' heights first: the upper's and the lower's clamps are decided by the pair, not by
+	// each end on its own -- see SpanBothEnds.
+	WallHeights hEnd[2];
+	HeightsAt(seg, px[0], py[0], hEnd[0]);
+	HeightsAt(seg, px[1], py[1], hEnd[1]);
+	float spanTop[2] = { 0.f, 0.f }, spanBottom[2] = { 0.f, 0.f };
+	if (!twoSidedMid && !SpanBothEnds(renderType, hEnd[0], hEnd[1], spanTop, spanBottom))
+		{ g_fbNoSpan++; g_fellBack++; return false; }
+
 	for (int e = 0; e < 2; e++)
 	{
-		WallHeights h;
-		HeightsAt(seg, px[e], py[e], h);
-		float top = 0.f, bottom = 0.f;
+		const WallHeights &h = hEnd[e];
+		float top = spanTop[e], bottom = spanBottom[e];
 		if (twoSidedMid)
 		{
 			// The pegging reference is texture Z; the CLIP is the live opening. Conflating the two
@@ -262,7 +280,6 @@ bool BuildDerivedWallSpan(const seg_t *seg, int renderType, DerivedWallSpan &out
 			if (!(t > b)) { g_fbNoSpan++; g_fellBack++; return false; }
 			bottom = b; top = t;
 		}
-		else if (!SpanAt(seg, renderType, h, top, bottom)) { g_fbNoSpan++; g_fellBack++; return false; }
 		out.ztop[e] = top;
 		out.zbottom[e] = bottom;
 		out.vTop[e] = ComputeWallV(top, texTop, th);
@@ -271,6 +288,28 @@ bool BuildDerivedWallSpan(const seg_t *seg, int renderType, DerivedWallSpan &out
 	// GL's own test: nothing to draw only when BOTH ends are empty.
 	if (!(out.ztop[0] > out.zbottom[0] || out.ztop[1] > out.zbottom[1]))
 		{ g_fbNoSpan++; g_fellBack++; return false; }
+
+	// [rc4l] CheckTexturePosition, which is where a wall's v coordinates actually END UP.
+	//
+	// GL runs this on every wall DoTexture makes, immediately before putting it in the render list:
+	// subtract floor(min(uplft.v, uprgt.v)) from all four, so the quad starts inside its first copy
+	// of the texture. On a wall that REPEATS this is invisible -- a whole copy up or down looks the
+	// same -- which is why the derivation could go without it and still read 100% on geometry.
+	//
+	// On a wall that CLAMPS it is the whole picture: outside [0,1] the clamp holds the edge texel and
+	// the wall comes out as a smear of one row of pixels. 159 pieces on dbab04 sat a whole texture
+	// away from the capture, 75 of them on clamping walls, and that is the half-percent the map-bake
+	// A/B would not give up.
+	//
+	// Not for a two-sided middle: DoMidTexture writes its coordinates directly and never calls this.
+	// Not for a canvas texture, which GL also skips.
+	if (fua_surface_vshift && !twoSidedMid && !((FMaterial *)mat)->tex->bHasCanvas)
+	{
+		const float lead = (out.vTop[0] < out.vTop[1]) ? out.vTop[0] : out.vTop[1];
+		const float sub = floorf(lead);
+		out.vTop[0] -= sub; out.vTop[1] -= sub;
+		out.vBottom[0] -= sub; out.vBottom[1] -= sub;
+	}
 	// [rc4l] And the horizontal, for everything that is not a polyobject.
 	//
 	// GLWall::Process sets fracleft 0 and fracright 1 for an ordinary wall and takes the linedef's

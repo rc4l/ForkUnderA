@@ -50,8 +50,23 @@ struct WallPart
 	bool  present;
 };
 
+// [rc4l] The upper and lower of a wall, asked about BOTH ENDS AT ONCE.
+//
+// Two-ended because GL's clamps are: the front floor cuts the bottom off an upper only when it does
+// so at both ends, and the front ceiling cuts the top off a lower only when it does so at both ends.
+// A wall that pinches out at one end is still one quad, and GL moves the whole quad or neither end
+// of it. Asking each end separately gives a different answer on every sloped wall, and dbab04 --
+// 337 sloped pieces -- is where that shows.
+//
+// The parts come back whether or not they have area: a sloped wall can exist at one end and not the
+// other, and GL draws it when EITHER end has area. Deciding that is the caller's job.
+void ComputeUpperSpan(const WallHeights &a, const WallHeights &b, WallPart &pa, WallPart &pb);
+void ComputeLowerSpan(const WallHeights &a, const WallHeights &b, WallPart &pa, WallPart &pb);
+
 // The upper part: from the lower of the two ceilings up to the front ceiling. Present only where the
 // back sector's ceiling is BELOW the front's, which is what leaves wall to draw.
+//
+// The two-ended question asked about a wall that does not slope.
 WallPart ComputeUpperPart(const WallHeights &h);
 
 // The lower part: from the front floor up to the higher of the two floors. Present where the back

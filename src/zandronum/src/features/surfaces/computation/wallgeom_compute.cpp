@@ -21,36 +21,64 @@ WallPart Make(float bottom, float top)
 
 } // namespace
 
+void ComputeUpperSpan(const WallHeights &a, const WallHeights &b, WallPart &pa, WallPart &pb)
+{
+	if (!a.twoSided) { pa = Make(0.f, 0.f); pb = Make(0.f, 0.f); return; }
+	float bottomA = a.backCeiling, bottomB = b.backCeiling;
+	// [rc4l] The FRONT FLOOR obstructs the bottom of an upper, and only when it does so at BOTH ends.
+	//
+	// This is `if (ffh1>bch1 && ffh2>bch2) { bch1a=ffh1; bch2a=ffh2; }` -- GL's own comment says
+	// "the back sector's floor", and GL's own code says ffh, which is the front's. The plane matters:
+	// a sector squeezed shut, a door mid-move, a crusher down, reports a ceiling BELOW the floor, and
+	// taking that literally hangs the upper down through the doorway into space the lower already
+	// covers. Clamping to the BACK floor instead is the same answer whenever the two floors agree --
+	// which is every unsloped door, which is why it went unnoticed -- and a different one the moment
+	// either floor slopes.
+	//
+	// Both ends together, not each on its own, because a wall that pinches out at one end is still
+	// one quad and GL clamps it as one quad or not at all.
+	if (a.frontFloor > bottomA && b.frontFloor > bottomB)
+	{
+		bottomA = a.frontFloor;
+		bottomB = b.frontFloor;
+	}
+	pa = Make(bottomA, a.frontCeiling);
+	pb = Make(bottomB, b.frontCeiling);
+}
+
+void ComputeLowerSpan(const WallHeights &a, const WallHeights &b, WallPart &pa, WallPart &pb)
+{
+	if (!a.twoSided) { pa = Make(0.f, 0.f); pb = Make(0.f, 0.f); return; }
+	float topA = a.backFloor, topB = b.backFloor;
+	// The mirror, and the same correction: `if (fch1<bfh1 && fch2<bfh2) { bfh1=fch1; bfh2=fch2; }`.
+	// The FRONT CEILING cuts the top off a lower -- which matters most under a sky, where the back
+	// sector's floor can stand well above the ceiling the player is looking through.
+	if (a.frontCeiling < topA && b.frontCeiling < topB)
+	{
+		topA = a.frontCeiling;
+		topB = b.frontCeiling;
+	}
+	pa = Make(a.frontFloor, topA);
+	pb = Make(b.frontFloor, topB);
+}
+
+// [rc4l] The one-ended forms, which are the two-ended ones asked about a wall that does not slope.
+//
+// Kept because most of a level is flat and asking one question is clearer than asking the same
+// question twice, and because a clamp that reads "both ends" is not wrong on a wall whose two ends
+// are the same height -- it is simply the same test twice.
 WallPart ComputeUpperPart(const WallHeights &h)
 {
-	if (!h.twoSided) return Make(0.f, 0.f);
-	// The back ceiling has to be lower than the front's, or there is no wall above the opening.
-	//
-	// [rc4l] ...and it cannot start below the back FLOOR. A sector squeezed shut -- a door mid-move,
-	// a crusher down, a lift whose ceiling has dropped past its floor -- reports a ceiling BELOW its
-	// own floor, and taking that literally hangs the upper texture down through the doorway into
-	// space the lower texture already covers. GL clamps; so does this.
-	//
-	// Found by fua_surface_verify rather than by looking: 28 pieces on dbab01 and 13 on dbab04
-	// disagreed with the capture, all of them uppers starting too low, all by exactly the distance
-	// from the back ceiling up to the back floor.
-	float bottom = (h.backCeiling > h.backFloor) ? h.backCeiling : h.backFloor;
-	// [rc4l] ...nor below the FRONT floor, for the same reason from the other side: the wall the
-	// player is looking at starts at the floor they are standing on. dbab04 has uppers whose back
-	// ceiling sits at -8 against a front floor of 0, and the capture starts them at 0.
-	if (bottom < h.frontFloor) bottom = h.frontFloor;
-	return Make(bottom, h.frontCeiling);
+	WallPart a, b;
+	ComputeUpperSpan(h, h, a, b);
+	return a;
 }
 
 WallPart ComputeLowerPart(const WallHeights &h)
 {
-	if (!h.twoSided) return Make(0.f, 0.f);
-	// The mirror of the clamp above: a lower texture stops at the back ceiling when the sector
-	// behind has closed past it, rather than continuing up through geometry that is no longer there.
-	float top = (h.backFloor < h.backCeiling) ? h.backFloor : h.backCeiling;
-	// ...and not above the front ceiling, the mirror of the clamp in ComputeUpperPart.
-	if (top > h.frontCeiling) top = h.frontCeiling;
-	return Make(h.frontFloor, top);
+	WallPart a, b;
+	ComputeLowerSpan(h, h, a, b);
+	return a;
 }
 
 WallPart ComputeMiddlePart(const WallHeights &h)

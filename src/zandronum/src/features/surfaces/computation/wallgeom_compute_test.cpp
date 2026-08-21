@@ -148,23 +148,84 @@ TEST(WallGeom, InvertedSectorProducesNothing)
 // reports a ceiling BELOW its floor. Taken literally the upper texture hangs down through the
 // doorway into space the lower texture already covers -- 28 pieces on dbab01 and 13 on dbab04
 // disagreed with the capture exactly that way, every one of them by the gap between the two.
-TEST(WallGeom, UpperStopsAtTheBackFloorWhenTheSectorIsInverted)
+//
+// The plane that stops it is the FRONT FLOOR. GL's comment says "the back sector's floor" and GL's
+// code says ffh, and the two are the same number on every door whose sectors share a floor -- which
+// is every door in these two maps, and why clamping to the back floor passed for as long as it did.
+TEST(WallGeom, UpperStopsAtTheFrontFloorWhenTheBackSectorIsInverted)
 {
-	// Back sector closed past itself: ceiling 256, floor 336.
-	const WallHeights h = TwoSided(16.f, 464.f, 336.f, 256.f);
+	// A doorway: both sectors stand on the same floor, and the back ceiling has dropped past it.
+	const WallHeights h = TwoSided(336.f, 464.f, 336.f, 256.f);
 	const WallPart up = ComputeUpperPart(h);
 	ASSERT_TRUE(up.present);
-	EXPECT_FLOAT_EQ(336.f, up.bottom);   // the back FLOOR, not the back ceiling
+	EXPECT_FLOAT_EQ(336.f, up.bottom);   // the floor the player is standing on
 	EXPECT_FLOAT_EQ(464.f, up.top);
 }
 
-TEST(WallGeom, LowerStopsAtTheBackCeilingWhenTheSectorIsInverted)
+// ...and the two are NOT the same number when the floors differ, which is where the old rule was
+// wrong. GL clamps to 16 here, not to 336, and the upper reaches down to the front floor.
+TEST(WallGeom, UpperClampsToTheFrontFloorAndNotTheBackOne)
 {
 	const WallHeights h = TwoSided(16.f, 464.f, 336.f, 256.f);
+	const WallPart up = ComputeUpperPart(h);
+	ASSERT_TRUE(up.present);
+	EXPECT_FLOAT_EQ(256.f, up.bottom);   // no clamp at all: the front floor is BELOW the back ceiling
+	EXPECT_FLOAT_EQ(464.f, up.top);
+}
+
+// The lower's mirror: the FRONT CEILING cuts the top off, which is what a back floor standing above
+// the ceiling the player is looking through needs -- the sky case GL's own comment names.
+TEST(WallGeom, LowerStopsAtTheFrontCeiling)
+{
+	const WallHeights h = TwoSided(16.f, 200.f, 336.f, 400.f);
 	const WallPart low = ComputeLowerPart(h);
 	ASSERT_TRUE(low.present);
 	EXPECT_FLOAT_EQ(16.f, low.bottom);
-	EXPECT_FLOAT_EQ(256.f, low.top);     // the back CEILING, not the back floor
+	EXPECT_FLOAT_EQ(200.f, low.top);     // the front ceiling, not the back floor's 336
+}
+
+// [rc4l] Both clamps are decided by the PAIR of ends, not by each end on its own.
+//
+// A wall that pinches out at one end is still one quad, and GL moves the whole quad or neither end
+// of it: `if (fch1<bfh1 && fch2<bfh2)`, with an AND. Asking each end separately bends a sloped wall
+// where GL leaves it straight, and dbab04 -- 337 sloped pieces -- is where that shows.
+TEST(WallGeom, TheLowerClampNeedsBOTHEndsToWantIt)
+{
+	// The front ceiling is below the back floor at the LEFT end only.
+	const WallHeights left  = TwoSided(0.f, 100.f, 200.f, 400.f);
+	const WallHeights right = TwoSided(0.f, 300.f, 200.f, 400.f);
+	WallPart pl, pr;
+	ComputeLowerSpan(left, right, pl, pr);
+	EXPECT_FLOAT_EQ(200.f, pl.top);   // unclamped, because the right end did not ask
+	EXPECT_FLOAT_EQ(200.f, pr.top);
+}
+
+TEST(WallGeom, TheLowerClampAppliesWhenBothEndsWantIt)
+{
+	const WallHeights left  = TwoSided(0.f, 100.f, 200.f, 400.f);
+	const WallHeights right = TwoSided(0.f, 150.f, 200.f, 400.f);
+	WallPart pl, pr;
+	ComputeLowerSpan(left, right, pl, pr);
+	EXPECT_FLOAT_EQ(100.f, pl.top);   // each end to its OWN ceiling, so the slope stays a slope
+	EXPECT_FLOAT_EQ(150.f, pr.top);
+}
+
+// [rc4l] A lower that exists at one end and not the other, which is the dbab04 case.
+//
+// Back floor -64 at the left end (below the front floor: nothing to draw) and +32 at the right
+// (above it: a step). GL draws the quad -- `if (bfh1>ffh1 || bfh2>ffh2)`, with an OR -- and it comes
+// out as a triangle. Refusing it because one end is empty left four lowers on dbab04 that GL drew
+// and the map did not account for.
+TEST(WallGeom, ALowerThatPinchesOutAtOneEndStillHasTheOther)
+{
+	const WallHeights left  = TwoSided(-8.f, 200.f, -64.f, 400.f);
+	const WallHeights right = TwoSided(-8.f, 200.f,  32.f, 400.f);
+	WallPart pl, pr;
+	ComputeLowerSpan(left, right, pl, pr);
+	EXPECT_FALSE(pl.present);         // nothing at this end...
+	ASSERT_TRUE(pr.present);          // ...and a 40-unit step at the other
+	EXPECT_FLOAT_EQ(-8.f, pr.bottom);
+	EXPECT_FLOAT_EQ(32.f, pr.top);
 }
 
 // The ordinary case must not move: a normal window still reads its own two planes.
