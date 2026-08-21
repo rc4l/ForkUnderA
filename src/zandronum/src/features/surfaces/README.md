@@ -285,3 +285,81 @@ now.
 `GLWall::Process` is a thousand lines of accumulated cases. It gets replaced one answerable question
 at a time, and every question keeps its answer in a test -- not by a rewrite that has to be right
 everywhere before it can be run once.
+
+## Where the map-driven bake stands now
+
+`fua_dg_standalone` and `fua_surface_mapbake_auto` are **on by default**. The two things holding them
+off were the residual against the GL-driven picture and the surface kinds only the BSP walk built;
+what closed them:
+
+- **3D floor wall faces** (`ffblocks_compute`). A slab hanging in the sector on the other side of a
+  line cuts a block out of the wall behind it, and `GLWall::DoFFloorBlocks` builds those during the
+  traversal -- so when the traversal stops they simply vanish. That was the whole of dbab02's 4.0%.
+  The walk is nine tests' worth of rules: clip each slab to what the last one left, skip one entirely
+  above the wall, skip inverted ones (they belong to the front sector's pass), stop at the wall's
+  bottom.
+- **The span they are cut from is the opening**, not the middle texture's. Asking
+  `BuildDerivedWallSpan` for the middle read tidily and gated the whole thing on the sidedef having a
+  midtexture, which most two-sided lines with a slab behind them do not: 32 sectors of 3D floors
+  produced three faces. `DoFFloorBlocks` takes the gap between the planes -- the lower of the two
+  ceilings, the higher of the two floors, each decided at both ends together.
+- **No upper between two sky ceilings.** GL wraps its entire upper-texture branch in
+  `if (front != sky || back != sky)`. Deriving one anyway laid a lump of the sidedef's top texture
+  across dbab02's horizon: geometry and lighting both correct, and simply not a surface that exists.
+
+### The picture, each map against its own reload noise floor
+
+Settled world, monsters off, console cleared. A map only counts as differing when it beats the floor
+the GL-driven path sets for itself on the same shot.
+
+| map | GL-driven vs map-driven | GL-driven vs itself | verdict |
+|---|---|---|---|
+| dbab01 | 0.1% | 0.1% | no difference |
+| dbab02 | **0.0%** | 0.0% | was 4.0% |
+| dbab03 | 0.0% | 0.0% | no difference |
+| dbab04 | 0.6% | 0.1% | **one wall band, open** |
+| dbab05 | 0.0% | 0.0% | no difference |
+| Sunder MAP10 | 0.0% | -- | no difference |
+| Sunder MAP16 | 0.7% | 0.7% | no difference -- and the map-driven path repeats at 0.0%, the GL-driven one does not |
+| Sunder MAP04 | 0.2% | -- | at the floor |
+
+### The one open difference: dbab04's tinted band
+
+One horizontal band on one wall comes out grey where GL tints it blue. Its geometry, its texture and
+its extents are all already right; only the colour is wrong, which is the class of fault that
+survives every check that compares shapes -- `fua_surface_bakediff` reports **0 material, 0 light and
+0 colormap** differences across 1336 compared pieces, because whatever draws the band is not among
+the pieces being compared.
+
+Ruled out by measurement, in order:
+
+- the light bands the front sector's 3D floor light list casts (implemented for the faces, band
+  looked up per block the way `SplitWall` cuts one -- no change to the picture);
+- a fog slab, which `BuildFFBlock` turns into an untextured translucent panel of the light's fade
+  colour laid over the wall behind it. The bake used to skip these outright, on the reasoning that an
+  untextured face is nothing for the mesh to hold -- which is false, the capture path registers
+  exactly such a piece with a null material. They are emitted now. It did not move the band, so no
+  map measured here appears to contain one, and that path is correspondingly unexercised;
+- reload noise, whose floor on this map is 0.1%;
+- the player's weapon sprite, which is absent from the GL-driven capture on this map at any time and
+  present in the standalone one -- a pre-existing gap in the older path, in the direction of the new
+  one being right, and worth 2.6% of the raw figure until it was excluded.
+
+`ClipFFloors` -- the clip GL applies when a slab is `FF_SWIMMABLE|FF_TRANSLUCENT`, against the *front*
+sector's slabs of the same kind -- is the next thing to try, and is not implemented.
+
+### What `fua_dg_cullbatches` is worth
+
+Nothing, still, and it stays off. Measured again on Sunder MAP10 with the level baked: submit-only
+0.20-0.24 ms with it either way, four alternating runs, no separation. The reason is the one recorded
+at the cvar: a batch is a run of pieces sharing a material, those are scattered the length of the
+level, and every batch's box is most of the map.
+
+### What the switches are worth
+
+Sunder MAP10 at spawn, monsters live, the engine's own `stat rendertimes`:
+
+| | walls built per frame | `All=` |
+|---|---|---|
+| GL-driven | 8354 | 5.65-8.39 ms |
+| standalone + map bake | 0 | 0.66-0.75 ms |

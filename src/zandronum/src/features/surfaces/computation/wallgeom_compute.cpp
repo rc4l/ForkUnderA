@@ -24,6 +24,12 @@ WallPart Make(float bottom, float top)
 void ComputeUpperSpan(const WallHeights &a, const WallHeights &b, WallPart &pa, WallPart &pb)
 {
 	if (!a.twoSided) { pa = Make(0.f, 0.f); pb = Make(0.f, 0.f); return; }
+	// [rc4l] Under sky on BOTH sides there is no upper: `if (front!=sky || back!=sky)`.
+	//
+	// GL wraps the whole upper-texture branch in that test, so the strip between two sky ceilings
+	// is left for the sky to fill. Deriving it anyway put a lump of the sidedef's top texture across
+	// dbab02's horizon -- geometry and lighting both correct, and simply not a surface that exists.
+	if (a.frontCeilingSky && a.backCeilingSky) { pa = Make(0.f, 0.f); pb = Make(0.f, 0.f); return; }
 	float bottomA = a.backCeiling, bottomB = b.backCeiling;
 	// [rc4l] The FRONT FLOOR obstructs the bottom of an upper, and only when it does so at BOTH ends.
 	//
@@ -37,7 +43,9 @@ void ComputeUpperSpan(const WallHeights &a, const WallHeights &b, WallPart &pa, 
 	//
 	// Both ends together, not each on its own, because a wall that pinches out at one end is still
 	// one quad and GL clamps it as one quad or not at all.
-	if (a.frontFloor > bottomA && b.frontFloor > bottomB)
+	// ...and GL asks this one only when the floors are not both sky, for the same reason.
+	if ((!a.frontFloorSky || !a.backFloorSky) &&
+	    a.frontFloor > bottomA && b.frontFloor > bottomB)
 	{
 		bottomA = a.frontFloor;
 		bottomB = b.frontFloor;

@@ -10,6 +10,7 @@
 
 #include "r_defs.h"
 #include "r_state.h"
+#include "p_3dfloors.h"   // F3DFloor, for the 3D floor wall faces
 #include "doomdata.h"
 #include "gl/scene/gl_drawinfo.h"
 #include "features/hwrender/computation/walllight_compute.h"
@@ -56,6 +57,7 @@ CVAR(Bool, gl_wallcache_anim, true, 0)
 
 #include "features/surfaces/surfacebuild.h"
 #include "features/surfaces/computation/wallbands_compute.h"
+#include "features/surfaces/computation/ffblocks_compute.h"
 
 namespace zx { namespace levelmesh {
 
@@ -489,6 +491,28 @@ void BakeSeg(int segIndex)
 // per-part assignment had before bands existed.
 static const int kBandsPerPart = 5;
 
+// [rc4l] Where the 3D floor faces live, above the parts. A sidedef with more slabs than this keeps
+// as many as fit, which is a missing face on one wall rather than a wrong one everywhere.
+static const int kFFSlot0 = 3 * kBandsPerPart;
+static const int kMaxFFBlocks = kMaxMapPieces - kFFSlot0;
+
+// The rovers that produced each block, so the emitter can read their flags back.
+static F3DFloor *g_ffRoverOf[16];
+
+// A 3D floor plane evaluated at the wall's two ends, the way GLWall::GetPlanePos does it.
+static void PlaneAt(const F3DFloor::planeref &pr, float x0, float y0, float x1, float y1, float *out)
+{
+	const secplane_t *p = pr.plane;
+	if (p->a | p->b)
+	{
+		out[0] = FIXED2FLOAT(p->ZatPoint(FLOAT2FIXED(x0), FLOAT2FIXED(y0)));
+		out[1] = FIXED2FLOAT(p->ZatPoint(FLOAT2FIXED(x1), FLOAT2FIXED(y1)));
+	}
+	else if (pr.isceiling == sector_t::ceiling) out[0] = out[1] = FIXED2FLOAT(p->d);
+	else                                        out[0] = out[1] = FIXED2FLOAT(-p->d);
+}
+
+
 int BakeSegFromMap(int segIndex)
 {
 	if (!gl_wallmesh) return 0;
@@ -647,11 +671,259 @@ int BakeSegFromMap(int segIndex)
 		// Bands this part no longer has: hold the range, do not give it back.
 		for (int k = n; k < kBandsPerPart; k++) MeshSquash(sc.pieces[slot0 + k].range);
 	}
+	// [rc4l] ...and the wall faces the sector's 3D floors put on this sidedef.
+	//
+	// A 3D floor is a slab hanging in the sector on the OTHER side of this line, and each one cuts a
+	// block out of the wall behind it. GL builds these during its walk (DoFFloorBlocks), so when the
+	// walk stops they vanish -- on dbab02 that was every red rock panel and the whole of that map's
+	// 4.0% against the GL-driven picture.
+	//
+	// The slabs come from the BACK sector, because a slab is drawn on the wall you see it against.
+	// The walk itself -- clip each to what the last one left, stop at the wall's bottom -- is in
+	// ffblocks_compute, where it is tested against the cases GL's loop encodes.
+	if (seg->backsector != NULL && seg->backsector->e != NULL)
+	{
+		const TArray<F3DFloor *> &ff = seg->backsector->e->XFloor.ffloors;
+		// [rc4l] The span to cut is the OPENING, not the middle texture's.
+		//
+		// Asking BuildDerivedWallSpan for the middle looked tidy and gated the whole thing on the
+		// sidedef having a midtexture -- which most two-sided lines with a 3D floor behind them do
+		// not, so 32 sectors' worth of slabs produced three faces. DoFFloorBlocks takes the gap
+		// between the planes instead: the lower of the two ceilings and the higher of the two floors,
+		// each decided at BOTH ends together.
+		struct { float x1, y1, x2, y2; float ztop[2]; float zbottom[2]; } mid;
+		bool haveSpan = false;
+		if (ff.Size() != 0 && seg->frontsector != NULL)
+		{
+			const vertex_t *lv1 = seg->linedef->v1, *lv2 = seg->linedef->v2;
+			if (seg->sidedef != seg->linedef->sidedef[0]) { lv1 = seg->linedef->v2; lv2 = seg->linedef->v1; }
+			mid.x1 = FIXED2FLOAT(lv1->x); mid.y1 = FIXED2FLOAT(lv1->y);
+			mid.x2 = FIXED2FLOAT(lv2->x); mid.y2 = FIXED2FLOAT(lv2->y);
+			const sector_t *fs = seg->frontsector, *bs = seg->backsector;
+			float fch[2], bch[2], ffh[2], bfh[2];
+			fch[0] = FIXED2FLOAT(fs->ceilingplane.ZatPoint(lv1)); fch[1] = FIXED2FLOAT(fs->ceilingplane.ZatPoint(lv2));
+			bch[0] = FIXED2FLOAT(bs->ceilingplane.ZatPoint(lv1)); bch[1] = FIXED2FLOAT(bs->ceilingplane.ZatPoint(lv2));
+			ffh[0] = FIXED2FLOAT(fs->floorplane.ZatPoint(lv1));   ffh[1] = FIXED2FLOAT(fs->floorplane.ZatPoint(lv2));
+			bfh[0] = FIXED2FLOAT(bs->floorplane.ZatPoint(lv1));   bfh[1] = FIXED2FLOAT(bs->floorplane.ZatPoint(lv2));
+			if (fch[0] < bch[0] && fch[1] < bch[1]) { mid.ztop[0] = fch[0]; mid.ztop[1] = fch[1]; }
+			else                                    { mid.ztop[0] = bch[0]; mid.ztop[1] = bch[1]; }
+			if (ffh[0] > bfh[0] && ffh[1] > bfh[1]) { mid.zbottom[0] = ffh[0]; mid.zbottom[1] = ffh[1]; }
+			else                                    { mid.zbottom[0] = bfh[0]; mid.zbottom[1] = bfh[1]; }
+			haveSpan = true;
+		}
+		if (haveSpan)
+		{
+			// [rc4l] Where the front sector's light bands end along THIS span.
+			//
+			// BuildFFBlock finishes with SplitWall, so a 3D floor's face is cut by the front
+			// sector's light list exactly as an ordinary wall part is. Skipping that is what turned
+			// dbab04's blue light strip grey: the geometry and the texture were already right and
+			// only the colormap was the sector's instead of the band's.
+			float ffBandBottom[kBandsPerPart][2];
+			for (int i = 0; i + 1 < nLights; i++)
+			{
+				const secplane_t &p = (*lights)[i + 1].plane;
+				if (p.a | p.b)
+				{
+					ffBandBottom[i][0] = FIXED2FLOAT(p.ZatPoint(FLOAT2FIXED(mid.x1), FLOAT2FIXED(mid.y1)));
+					ffBandBottom[i][1] = FIXED2FLOAT(p.ZatPoint(FLOAT2FIXED(mid.x2), FLOAT2FIXED(mid.y2)));
+				}
+				else
+				{
+					ffBandBottom[i][0] = ffBandBottom[i][1] =
+						FIXED2FLOAT(p.ZatPoint(FLOAT2FIXED(mid.x2), FLOAT2FIXED(mid.y2)));
+				}
+			}
+
+			zx::surfaces::FFRover rovers[kMaxFFBlocks];
+			int nr = 0;
+			for (unsigned k = 0; k < ff.Size() && nr < kMaxFFBlocks; k++)
+			{
+				F3DFloor *rover = ff[k];
+				if (rover == NULL || !(rover->flags & FF_EXISTS)) continue;
+				zx::surfaces::FFRover &r = rovers[nr];
+				PlaneAt(rover->top, mid.x1, mid.y1, mid.x2, mid.y2, r.top);
+				PlaneAt(rover->bottom, mid.x1, mid.y1, mid.x2, mid.y2, r.bottom);
+				r.renderSides = (rover->flags & FF_RENDERSIDES) != 0;
+				r.invertSides = (rover->flags & FF_INVERTSIDES) != 0;
+				// [rc4l] A fog slab DOES draw -- it just draws no texture.
+				//
+				// This used to skip them, reasoning that an untextured face is nothing for the mesh
+				// to hold. It is not nothing: BuildFFBlock turns a fog slab into a flat translucent
+				// panel of the light's fade colour, laid over the wall behind it, and the wall shows
+				// through tinted. On dbab04 that is a blue water band, and skipping it left the band
+				// grey with its geometry and its texture both already correct -- a colour-only fault,
+				// which is the kind that survives every check that compares shapes.
+				//
+				// The capture path already registers such a piece with a NULL material, so the mesh
+				// and the backend both handle one; there was nothing to add but the decision.
+				g_ffRoverOf[nr] = rover;
+				nr++;
+			}
+
+			zx::surfaces::FFBlock blocks[kMaxFFBlocks];
+			const int nb = zx::surfaces::ComputeFFBlocks(mid.ztop, mid.zbottom, rovers, nr,
+				blocks, kMaxFFBlocks);
+
+			for (int bi = 0; bi < nb; bi++)
+			{
+				const zx::surfaces::FFBlock &blk = blocks[bi];
+				F3DFloor *rover = g_ffRoverOf[blk.rover];
+				MeshRange &range = sc.pieces[kFFSlot0 + bi].range;
+
+				// [rc4l] Which texture, by BuildFFBlock's rule: the sidedef's upper or lower when the
+				// slab asks for one, and otherwise the MASTER sidedef's middle -- the line that
+				// defines the 3D floor, not the one being drawn on.
+				const bool isFog = (rover->flags & FF_FOG) != 0;
+				if (isFog)
+				{
+					// The fog plane defines the light, not the front sector -- GL's own comment.
+					lightlist_t *fl = (rover->target != NULL && rover->top.plane != NULL) ?
+						P_GetPlaneLight(rover->target, rover->top.plane, true) : NULL;
+					if (fl == NULL || fl->extra_colormap == NULL) { MeshSquash(range); continue; }
+
+					FFlatVertex ffan[4];
+					ffan[0].Set(mid.x1, blk.bottom[0], mid.y1, 0.f, 0.f);
+					ffan[1].Set(mid.x1, blk.top[0],    mid.y1, 0.f, 0.f);
+					ffan[2].Set(mid.x2, blk.top[1],    mid.y2, 0.f, 0.f);
+					ffan[3].Set(mid.x2, blk.bottom[1], mid.y2, 0.f, 0.f);
+					int fgw = 0;
+					for (int t = 0; t < 2; t++)
+						for (int cc = 0; cc < 3; cc++)
+							tris[fgw++] = ffan[ComputeFanTriangleVertex(4, t, cc)];
+					if (!MeshStore(range, tris, fgw)) { MeshSquash(range); continue; }
+
+					MeshPiece fmp;
+					fmp.range = range;
+					fmp.material = NULL;   // no texture: the panel is its colour and nothing else
+					FColormap fcm;
+					fcm.Clear();
+					fcm.LightColor = fl->extra_colormap->Fade;
+					zx::levelmesh::CaptureShading(gl_ClampLight(*fl->p_lightlevel), 0, fcm, fmp, false);
+					fmp.baseTex = NULL;
+					fmp.lightLevel = gl_ClampLight(*fl->p_lightlevel);
+					fmp.lightColor = fcm.LightColor.d;
+					fmp.fadeColor = fcm.FadeColor.d;
+					fmp.alpha = rover->alpha / 255.0f;
+					fmp.blendMode = ComputeSurfaceBlendMode((rover->flags & FF_ADDITIVETRANS) != 0,
+						fmp.alpha);
+					{
+						const float dx = mid.x2 - mid.x1, dy = mid.y2 - mid.y1;
+						const float len = sqrtf(dx*dx + dy*dy);
+						if (len > 0.0001f) { fmp.normX = dy / len; fmp.normY = 0.f; fmp.normZ = -dx / len; }
+					}
+					MeshRegisterPiece(fmp);
+					made++;
+					continue;
+				}
+
+				side_t *mastersd = (rover->master != NULL) ? rover->master->sidedef[0] : NULL;
+				FTextureID texid;
+				int texpos;
+				if (rover->flags & FF_UPPERTEXTURE)      { texid = seg->sidedef->GetTexture(side_t::top);    texpos = side_t::top; }
+				else if (rover->flags & FF_LOWERTEXTURE) { texid = seg->sidedef->GetTexture(side_t::bottom); texpos = side_t::bottom; }
+				else if (mastersd != NULL)               { texid = mastersd->GetTexture(side_t::mid);        texpos = side_t::mid; }
+				else continue;
+
+				FMaterial *fmat = FMaterial::ValidateTexture(texid, false, true);
+				if (fmat == NULL) { MeshSquash(range); continue; }
+
+				FTexCoordInfo tci;
+				const side_t *scalesd = (rover->flags & (FF_UPPERTEXTURE | FF_LOWERTEXTURE)) ?
+					seg->sidedef : mastersd;
+				fmat->GetTexCoordInfo(&tci, scalesd->GetTextureXScale((side_t::ETexpart)texpos),
+					scalesd->GetTextureYScale((side_t::ETexpart)texpos));
+				if (tci.mRenderHeight == 0) { MeshSquash(range); continue; }
+
+				// u: the master's x offset plus this sidedef's, over the line's texel length -- the
+				// same pair BuildFFBlock adds together.
+				const float toU = (rover->flags & (FF_UPPERTEXTURE | FF_LOWERTEXTURE)) ? 0.f :
+					FIXED2FLOAT(tci.TextureOffset(mastersd->GetTextureXOffset(side_t::mid)));
+				const float ul = tci.FloatToTexU(toU +
+					FIXED2FLOAT(tci.TextureOffset(seg->sidedef->GetTextureXOffset(side_t::mid))));
+				const float uR = ul + tci.FloatToTexU(seg->sidedef->TexelLength);
+
+				// v: measured DOWN from the slab's own texture height, which is the plane's, not the
+				// wall's -- a 3D floor's texture hangs off the slab and not off the sector.
+				float toV = (rover->flags & (FF_UPPERTEXTURE | FF_LOWERTEXTURE)) ? 0.f :
+					FIXED2FLOAT(tci.RowOffset(mastersd->GetTextureYOffset(side_t::mid)));
+				toV += FIXED2FLOAT(tci.RowOffset(seg->sidedef->GetTextureYOffset(side_t::mid)));
+				const float texh = FIXED2FLOAT(*rover->top.texheight);
+				const float vt0 = tci.FloatToTexV(toV + texh - blk.top[0]);
+				const float vt1 = tci.FloatToTexV(toV + texh - blk.top[1]);
+				const float vb0 = tci.FloatToTexV(toV + texh - blk.bottom[0]);
+				const float vb1 = tci.FloatToTexV(toV + texh - blk.bottom[1]);
+
+				FFlatVertex fan[4];
+				fan[0].Set(mid.x1, blk.bottom[0], mid.y1, ul, vb0);
+				fan[1].Set(mid.x1, blk.top[0],    mid.y1, ul, vt0);
+				fan[2].Set(mid.x2, blk.top[1],    mid.y2, uR, vt1);
+				fan[3].Set(mid.x2, blk.bottom[1], mid.y2, uR, vb1);
+				int fw = 0;
+				for (int t = 0; t < 2; t++)
+					for (int cc = 0; cc < 3; cc++)
+						tris[fw++] = fan[ComputeFanTriangleVertex(4, t, cc)];
+
+				if (!MeshStore(range, tris, fw)) { MeshSquash(range); continue; }
+
+				MeshPiece mp;
+				mp.range = range;
+				mp.material = fmat;
+				// A slab's own planes are usually the light boundaries, so the block lands inside
+				// one band -- and where it straddles, its first piece takes the band SplitWall
+				// would have given it.
+				int ffLight = dl.lightLevel;
+				FColormap cm;
+				cm = cmFrom->ColorMap;
+				{
+					zx::surfaces::WallBand bb[kBandsPerPart];
+					const int nbb = zx::surfaces::ComputeWallBands(blk.top, blk.bottom,
+						ffBandBottom, nLights, bb, kBandsPerPart);
+					if (nbb > 0 && !bb[0].ownLight && bb[0].lightIndex < nLights)
+					{
+						const lightlist_t &ll = (*lights)[bb[0].lightIndex];
+						if (ll.p_lightlevel != &seg->sidedef->sector->lightlevel)
+							ffLight = gl_ClampLight(*ll.p_lightlevel);
+						cm.CopyLightColor(ll.extra_colormap);
+					}
+				}
+				zx::levelmesh::CaptureShading(ffLight, dl.relLight + getExtraLight(), cm, mp, false);
+				mp.baseTex = TexMan.ByIndex(texid.GetIndex());
+				mp.lightLevel = ffLight;
+				mp.lightColor = cm.LightColor.d;
+				mp.fadeColor = cm.FadeColor.d;
+				// A translucent or additive slab is not opaque, the way a 3D floor's own plane is not.
+				if (rover->flags & (FF_TRANSLUCENT | FF_ADDITIVETRANS))
+				{
+					mp.alpha = rover->alpha / 255.0f;
+					mp.blendMode = ComputeSurfaceBlendMode((rover->flags & FF_ADDITIVETRANS) != 0,
+						mp.alpha);
+				}
+				{
+					const float dx = mid.x2 - mid.x1, dy = mid.y2 - mid.y1;
+					const float len = sqrtf(dx*dx + dy*dy);
+					if (len > 0.0001f) { mp.normX = dy / len; mp.normY = 0.f; mp.normZ = -dx / len; }
+				}
+				MeshRegisterPiece(mp);
+				made++;
+			}
+			for (int k = nb; k < kMaxFFBlocks; k++) MeshSquash(sc.pieces[kFFSlot0 + k].range);
+		}
+		else
+		{
+			for (int k = 0; k < kMaxFFBlocks; k++) MeshSquash(sc.pieces[kFFSlot0 + k].range);
+		}
+	}
+	else
+	{
+		for (int k = 0; k < kMaxFFBlocks; k++) MeshSquash(sc.pieces[kFFSlot0 + k].range);
+	}
+
 	// Anything the capture had baked past the slots this makes is not ours to keep.
-	for (int i = 3 * kBandsPerPart; i < sc.bakedCount && i < kMaxMapPieces; i++)
+	for (int i = kMaxMapPieces; i < sc.bakedCount && i < kMaxMapPieces; i++)
 		if (sc.pieces[i].range.count != 0)
 			{ MeshRetireRange(sc.pieces[i].range); sc.pieces[i].range.count = 0; }
-	sc.bakedCount = 3 * kBandsPerPart;
+	sc.bakedCount = kMaxMapPieces;
 	return made;
 }
 

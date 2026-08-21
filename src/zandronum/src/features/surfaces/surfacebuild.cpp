@@ -43,15 +43,21 @@ void HeightsAt(const seg_t *seg, fixed_t x, fixed_t y, WallHeights &out)
 	out.frontFloor   = FIXED2FLOAT(front->floorplane.ZatPoint(x, y));
 	out.frontCeiling = FIXED2FLOAT(front->ceilingplane.ZatPoint(x, y));
 	out.twoSided = (back != NULL);
+	out.frontCeilingSky = front->GetTexture(sector_t::ceiling) == skyflatnum;
+	out.frontFloorSky   = front->GetTexture(sector_t::floor)   == skyflatnum;
 	if (back != NULL)
 	{
 		out.backFloor   = FIXED2FLOAT(back->floorplane.ZatPoint(x, y));
 		out.backCeiling = FIXED2FLOAT(back->ceilingplane.ZatPoint(x, y));
+		out.backCeilingSky = back->GetTexture(sector_t::ceiling) == skyflatnum;
+		out.backFloorSky   = back->GetTexture(sector_t::floor)   == skyflatnum;
 	}
 	else
 	{
 		out.backFloor = out.frontFloor;
 		out.backCeiling = out.frontCeiling;
+		out.backCeilingSky = out.frontCeilingSky;
+		out.backFloorSky   = out.frontFloorSky;
 	}
 }
 
