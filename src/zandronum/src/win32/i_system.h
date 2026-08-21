@@ -162,6 +162,17 @@ unsigned int I_FPSTime();
 // [RH] Used by the display code to set the normal window procedure
 void I_SetWndProc();
 
+// [rc4l] Is the game window the one the user is looking at?
+//
+// Exposed because the background-render switch has to be able to ask, from cross-platform code, what
+// state the window is in RIGHT NOW -- the activation message that would otherwise tell it may have
+// come and gone long before the cvar was touched.
+bool I_WindowIsActive ();
+
+// Re-apply the process priority for the current window state and the current cvars. Called when one
+// of those cvars changes, so the answer does not have to wait for the next activation.
+void I_UpdateBackgroundPriority ();
+
 // [RH] Checks the registry for Steam's install path, so we can scan its
 // directories for IWADs if the user purchased any through Steam.
 TArray<FString> I_GetSteamPath();

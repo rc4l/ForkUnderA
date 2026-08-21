@@ -981,3 +981,17 @@ void I_OpenURL (const char *url)
 	}
 #endif
 }
+
+// [rc4l] The background-render switch's two platform questions.
+//
+// SDL's CanUpdate never refused on focus and nothing here drops the process priority, so on this
+// platform the switch has nothing left to do: the window reports active and the priority is left
+// alone. Defined so the shared caller does not have to know which platform it is on.
+bool I_WindowIsActive ()
+{
+	return true;
+}
+
+void I_UpdateBackgroundPriority ()
+{
+}

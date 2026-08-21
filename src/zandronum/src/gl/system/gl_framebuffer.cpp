@@ -463,6 +463,19 @@ void OpenGLFrameBuffer::MaybeResizeForScale()
 
 	int cw = GetWidth(), ch = GetHeight();
 	GetClientSize(cw, ch);
+	// [rc4l] A MINIMIZED window has no client area, and following it there is worse than useless.
+	//
+	// This reconcile runs every frame against the window's live client rectangle, which is right for
+	// a drag or a fullscreen toggle and wrong for minimize: the client rect goes to nothing, the
+	// render target is rebuilt at one pixel square, and everything drawn until the window comes back
+	// is drawn into it. Harmless while nobody is looking -- and not harmless at all with
+	// fua_render_in_background on, where the whole point is that the frames still count. A minimized
+	// window's shots came out 1x1.
+	//
+	// Keeping the last good size costs nothing: restoring sends a real client rect and the next
+	// frame reconciles to it, which is the same path a drag already takes.
+	if (cw <= 0 || ch <= 0)
+		return;
 	zx::ScaledViewport v = zx::ComputeScaledViewport(cw, ch,
 		vid_scalemode, vid_scalefactor,
 		vid_scale_customwidth, vid_scale_customheight, vid_scale_custompixelaspect,
