@@ -164,6 +164,21 @@ x offset and that plus the line's texel length. There is no seg-along-line bookk
 Polyobjects are the exception, are drawn per seg with real fractions, and are left to the capture.
 Deriving it took Sunder MAP16 from 2.3% to 0.0%.
 
+## What the wiring proved about the ladders
+
+With the derivation live, the alignment ladder still reads 92.3% / 79.5% / 84.1% -- and the rendered
+frame is **0.0% different from GL's**. Both numbers are correct and the gap between them is the
+useful part.
+
+Every one of those misses is a whole-texture offset, and none is on a wall that clamps. A texture
+slid by an exact multiple of its own height, on a wall that wraps, is the same picture. The ladder
+compares a NUMBER and reports a difference; the eye compares the picture and there is none.
+
+So the alignment ladder was more pessimistic than reality by exactly the amount that was already
+measured and written down. It stays as it is -- a number that is right for the wrong-looking reason
+is still the number that will catch the next real fault -- but "alignment is only 84%" was never the
+blocker it read as.
+
 ## ...and its light, which was the last of it
 
 `fua_surface_derive_light` is on too. A wall's light level, its fake-contrast term and its colormap
