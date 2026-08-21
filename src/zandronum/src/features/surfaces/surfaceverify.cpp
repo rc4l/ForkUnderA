@@ -122,41 +122,22 @@ bool MiddleTextureOf(const seg_t *seg, float &height, bool &pegBottom, float &ro
 	return true;
 }
 
+// [rc4l] What the DERIVATION says, not a second copy of it.
+//
+// This used to work the parts out again from ComputeUpperPart and friends, which meant the ladder
+// scored a transcription of the shipping code rather than the shipping code -- and the two drifted
+// twice in one afternoon: GL's midtexture clip landed in the derivation and this number did not
+// move, and CheckTexturePosition landed and the alignment number did not move either. So the only
+// thing left here is asking, and taking the whole span across both ends because that is what the
+// capture's pieces add up to.
 bool ExpectedSpan(const seg_t *seg, const WallHeights &h, int type, float &bottom, float &top)
 {
-	WallPart p;
-	switch (type)
-	{
-	case RENDERWALL_TOP:    p = ComputeUpperPart(h); break;
-	case RENDERWALL_BOTTOM: p = ComputeLowerPart(h); break;
-	case RENDERWALL_M1S:    p = ComputeMiddlePart(h); break;
-	case RENDERWALL_M2S:
-	case RENDERWALL_M2SNF:
-	{
-		float texH = 0.f, rowOfs = 0.f, pegFloor = 0.f, pegCeil = 0.f;
-		bool pegBottom = false;
-		if (MiddleTextureOf(seg, texH, pegBottom, rowOfs, pegFloor, pegCeil))
-		{
-			// The pegging reference is the texture Z, the CLIP is the live opening.
-			WallHeights peg = h;
-			peg.frontFloor = peg.backFloor = pegFloor;
-			peg.frontCeiling = peg.backCeiling = pegCeil;
-			const WallPart hung = ComputeMiddleTexturePart(peg, texH, pegBottom, rowOfs);
-			const WallPart opening = ComputeMiddlePart(h);
-			float b = hung.bottom, t = hung.top;
-			if (b < opening.bottom) b = opening.bottom;
-			if (t > opening.top) t = opening.top;
-			p.bottom = b; p.top = t; p.present = (t > b);
-		}
-		else p = ComputeMiddlePart(h);
-		break;
-	}
-	default: return false;   // sky, portals, fog boundaries: not this question
-	}
-	if (!p.present) return false;
-	bottom = p.bottom;
-	top = p.top;
-	return true;
+	(void)h;
+	DerivedWallSpan d;
+	if (!BuildDerivedWallSpan(seg, type, d)) return false;
+	bottom = (d.zbottom[0] < d.zbottom[1]) ? d.zbottom[0] : d.zbottom[1];
+	top = (d.ztop[0] > d.ztop[1]) ? d.ztop[0] : d.ztop[1];
+	return (top > bottom);
 }
 
 const char *TypeName(int type)

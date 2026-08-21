@@ -235,3 +235,120 @@ TEST(WallGeom, TheClampDoesNothingToAnOrdinarySector)
 	EXPECT_FLOAT_EQ(96.f, ComputeUpperPart(h).bottom);
 	EXPECT_FLOAT_EQ(48.f, ComputeLowerPart(h).top);
 }
+
+// [rc4l] What a two-sided middle is clipped to, which is not the opening.
+//
+// Every case below is a branch of DoMidTexture, and the first two are what the old "clip to the
+// opening" rule got wrong on dbab02: a 128-unit grate came out 96 and a 235-unit one came out 96,
+// both because the line has no upper texture and is therefore clipped to the ceiling ABOVE the
+// opening rather than the one below it.
+namespace {
+
+zx::surfaces::MidTextureClip Hanging(float texTop, float texBottom)
+{
+	zx::surfaces::MidTextureClip c;
+	c.texTop = texTop; c.texBottom = texBottom;
+	c.hasUpper = true; c.hasLower = true;
+	c.frontCeilingSky = false; c.backCeilingSky = false;
+	c.wrap = false; c.clipToPlanes = true;
+	return c;
+}
+
+} // namespace
+
+TEST(WallGeom, AMiddleWithNoUpperIsClippedToTheHIGHERCeiling)
+{
+	// front ceiling 416, back ceiling 384: the opening's top is 384 and GL uses 416.
+	const WallHeights h = TwoSided(288.f, 416.f, 288.f, 384.f);
+	zx::surfaces::MidTextureClip c = Hanging(416.f, 288.f);
+	c.hasUpper = false;
+	WallPart p0, p1;
+	ComputeMiddleClip(h, h, c, p0, p1);
+	EXPECT_FLOAT_EQ(416.f, p0.top);
+	EXPECT_FLOAT_EQ(288.f, p0.bottom);
+}
+
+TEST(WallGeom, AMiddleWithAnUpperIsClippedToTheLOWERCeiling)
+{
+	const WallHeights h = TwoSided(288.f, 416.f, 288.f, 384.f);
+	WallPart p0, p1;
+	ComputeMiddleClip(h, h, Hanging(416.f, 288.f), p0, p1);
+	EXPECT_FLOAT_EQ(384.f, p0.top);
+}
+
+TEST(WallGeom, AnIntraSkyLineWithNoUpperIsNotClippedAtAll)
+{
+	const WallHeights h = TwoSided(0.f, 200.f, 0.f, 100.f);
+	zx::surfaces::MidTextureClip c = Hanging(1000.f, -1000.f);
+	c.hasUpper = false;
+	c.frontCeilingSky = c.backCeilingSky = true;
+	c.wrap = true;   // so the texture's own extent does not clip it either
+	WallPart p0, p1;
+	ComputeMiddleClip(h, h, c, p0, p1);
+	EXPECT_FLOAT_EQ(1000.f, p0.top);
+}
+
+TEST(WallGeom, AMiddleWithNoLowerIsClippedToTheLOWERFloor)
+{
+	const WallHeights h = TwoSided(64.f, 400.f, 16.f, 400.f);
+	zx::surfaces::MidTextureClip c = Hanging(400.f, 0.f);
+	c.hasLower = false;
+	WallPart p0, p1;
+	ComputeMiddleClip(h, h, c, p0, p1);
+	EXPECT_FLOAT_EQ(16.f, p0.bottom);   // the back floor, below the front's 64
+}
+
+// With a lower texture there are two branches, and which one fires turns on whether the floors
+// CROSS. They cross here -- the back floor is below the front's -- so GL draws down to the back
+// sector's floor and lets the front sector's plane clip the polygon for it.
+TEST(WallGeom, AMiddleWhoseFloorsCrossIsDrawnToTheBackFloor)
+{
+	const WallHeights h = TwoSided(64.f, 400.f, 16.f, 400.f);
+	WallPart p0, p1;
+	ComputeMiddleClip(h, h, Hanging(400.f, 0.f), p0, p1);
+	EXPECT_FLOAT_EQ(16.f, p0.bottom);
+}
+
+// And when they do not cross, the ordinary case: the higher of the two, which IS the opening's floor.
+TEST(WallGeom, AMiddleWithALowerIsOtherwiseClippedToTheHIGHERFloor)
+{
+	const WallHeights h = TwoSided(16.f, 400.f, 64.f, 400.f);
+	WallPart p0, p1;
+	ComputeMiddleClip(h, h, Hanging(400.f, 0.f), p0, p1);
+	EXPECT_FLOAT_EQ(64.f, p0.bottom);
+}
+
+// The texture's own extent brings the polygon in -- but only when it does not repeat, and only when
+// both ends agree, which is the same both-ends rule the upper and the lower clamps follow.
+TEST(WallGeom, AHangingTextureThatEndsEarlyBringsTheWallWithIt)
+{
+	const WallHeights h = TwoSided(0.f, 400.f, 0.f, 400.f);
+	WallPart p0, p1;
+	ComputeMiddleClip(h, h, Hanging(200.f, 72.f), p0, p1);
+	EXPECT_FLOAT_EQ(200.f, p0.top);
+	EXPECT_FLOAT_EQ(72.f, p0.bottom);
+}
+
+TEST(WallGeom, AWrappingMiddleIsNotBroughtInByItsTexture)
+{
+	const WallHeights h = TwoSided(0.f, 400.f, 0.f, 400.f);
+	zx::surfaces::MidTextureClip c = Hanging(200.f, 72.f);
+	c.wrap = true;
+	WallPart p0, p1;
+	ComputeMiddleClip(h, h, c, p0, p1);
+	EXPECT_FLOAT_EQ(400.f, p0.top);     // the planes, and nothing else
+	EXPECT_FLOAT_EQ(0.f, p0.bottom);
+}
+
+// Both sides the same sector with nothing forcing a clip: GL does not clip to planes at all, because
+// clipping to a plane against itself can only produce artefacts.
+TEST(WallGeom, AMiddleInOneSectorIsTheTextureAndNothingElse)
+{
+	const WallHeights h = TwoSided(0.f, 128.f, 0.f, 128.f);
+	zx::surfaces::MidTextureClip c = Hanging(300.f, 172.f);
+	c.clipToPlanes = false;
+	WallPart p0, p1;
+	ComputeMiddleClip(h, h, c, p0, p1);
+	EXPECT_FLOAT_EQ(300.f, p0.top);
+	EXPECT_FLOAT_EQ(172.f, p0.bottom);
+}

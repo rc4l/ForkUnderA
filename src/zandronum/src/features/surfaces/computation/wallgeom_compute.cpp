@@ -125,6 +125,69 @@ WallPart ComputeMiddleTexturePart(const WallHeights &h, float texHeight, bool pe
 	return WallPart{ bottom, top, top > bottom };
 }
 
+void ComputeMiddleClip(const WallHeights &a, const WallHeights &b, const MidTextureClip &c,
+	WallPart &pa, WallPart &pb)
+{
+	float topA, topB, botA, botB;
+	if (!c.clipToPlanes)
+	{
+		// Both sides the same sector, nothing forcing it: GL does not clip at all, because clipping
+		// to planes that are the same plane can only produce artefacts.
+		topA = topB = c.texTop;
+		botA = botB = c.texBottom;
+	}
+	else
+	{
+		if (!c.hasUpper)
+		{
+			// An intra-sky line with no upper does not clip the texture at all.
+			if (c.frontCeilingSky && c.backCeilingSky) { topA = topB = c.texTop; }
+			else
+			{
+				// Missing texture: the HIGHER ceiling, and let the geometry clip what extrudes.
+				topA = (a.backCeiling > a.frontCeiling) ? a.backCeiling : a.frontCeiling;
+				topB = (b.backCeiling > b.frontCeiling) ? b.backCeiling : b.frontCeiling;
+			}
+		}
+		else if ((a.backCeiling > a.frontCeiling || b.backCeiling > b.frontCeiling) &&
+		         (!c.frontCeilingSky || c.backCeilingSky))
+		{
+			// The ceilings cross: use the back sector's and let the front's plane clip the polygon.
+			topA = a.backCeiling; topB = b.backCeiling;
+		}
+		else
+		{
+			topA = (a.backCeiling < a.frontCeiling) ? a.backCeiling : a.frontCeiling;
+			topB = (b.backCeiling < b.frontCeiling) ? b.backCeiling : b.frontCeiling;
+		}
+
+		if (!c.hasLower)
+		{
+			botA = (a.backFloor < a.frontFloor) ? a.backFloor : a.frontFloor;
+			botB = (b.backFloor < b.frontFloor) ? b.backFloor : b.frontFloor;
+		}
+		else if (a.backFloor < a.frontFloor || b.backFloor < b.frontFloor)
+		{
+			botA = a.backFloor; botB = b.backFloor;
+		}
+		else
+		{
+			botA = (a.backFloor > a.frontFloor) ? a.backFloor : a.frontFloor;
+			botB = (b.backFloor > b.frontFloor) ? b.backFloor : b.frontFloor;
+		}
+
+		// And then the texture itself clips, when it does not repeat: a hanging texture that ends
+		// above the plane brings the polygon down with it. Both ends together, as everywhere else.
+		if (!c.wrap)
+		{
+			if (c.texTop < topA && c.texTop < topB) topA = topB = c.texTop;
+			if (c.texBottom > botA && c.texBottom > botB) botA = botB = c.texBottom;
+		}
+	}
+	pa = Make(botA, topA);
+	pb = Make(botB, topB);
+}
+
 bool ComputeSideHasGeometry(const WallHeights &h)
 {
 	return ComputeUpperPart(h).present || ComputeLowerPart(h).present || ComputeMiddlePart(h).present;
