@@ -159,9 +159,34 @@ MAP20 in earlier commits should be read against 3.6% rather than against zero.
 
 The other maps have a 0.0% floor, so their numbers stand as written.
 
-These stay **off by default** anyway, but for a smaller reason than "MAP20 is 4% wrong": the residual
-is real, it is unexplained, and turning them on is one line of config for anyone who wants the frame
-rate more than the last percent.
+These stay **off by default**, and the residual is no longer unexplained: it is **3D floor wall
+faces**.
+
+`RENDERWALL_FFBLOCK` is built by `BuildFFBlock` during GL's walk, and the map bake does not produce
+it. Because the map now OWNS those segs, `BakeSeg` stands down and the capture stops supplying them
+too -- so the faces are simply absent. On dbab02 that is a red rock panel the engine still reports as
+"linedef 1090 tier 3, 3D FLOOR" at 1031 units while the mesh's nearest piece is 468 further away, and
+it is the whole of that map's 4.0%. The proof it is the whole of it: walls-from-map-with-GL-flats and
+everything-from-map measure **identically**, to the decimal, on a map whose own reload noise floor is
+0.0%.
+
+Ruled out on the way, each by measurement, and each worth not re-testing: vertex precision (u, v and
+z agree at a tolerance of 0.0001), animated textures (both meshes animate; the ROCKRED2-against-
+ROCKRED3 differences the probe reports are frames of one texture), light banding (identical with it
+off), the flats (bisected out), camera drift (identical spawn, images align at dx=0 dy=0), duplicate
+geometry (zero duplicates), and reload noise.
+
+**Two ways to fix it, and the cheap one is not as cheap as it looks.** The capture could keep
+supplying the wall kinds the map bake does not make, on segs the map otherwise owns -- that fixes the
+map-bake-with-GL-walking mode but does nothing for standalone, where there is no walk. It was tried
+and reverted: the per-seg slot bookkeeping (`pieceCount`, `bakedCount`, and the squash loop that
+collapses pieces a seg no longer produces) assumes contiguous slots, and routing the specials above
+the map bake's fifteen took dbab02 from 4.0% to 14.7%. It needs the bookkeeping reworked, not a slot
+offset.
+
+The one that unblocks standalone is deriving the faces: `InverseFloors`, `ClipFFloors` and
+`DoFFloorBlocks` in `gl_walls.cpp`, which clip each rover against the others. That is a subsystem on
+the scale of the flats, and it is the last thing between these switches and being on by default.
 
 **A door caught MID-TRAVEL reads 13.3% and is not a fault** -- two runs catching it at different
 heights. It settles to 0.0%. Worth writing down because it looks exactly like a broken lift.
