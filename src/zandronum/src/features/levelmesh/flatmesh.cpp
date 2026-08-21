@@ -24,8 +24,6 @@
 #include "c_cvars.h"
 #include "features/hwrender/hud2d.h"   // StandaloneActive
 
-extern int g_sprReject[8];             // gl_sprite.cpp: why Process threw an actor away
-extern const char *g_sprRejectName[8];
 
 // [rc4l] Print every new flat-mesh key. See RegisterFlatSubsector: a key that misses when it should
 // have hit is a surface about to be stored, and drawn, twice.
@@ -681,15 +679,6 @@ CCMD( fua_sprite_sweep )
 		g_swSeen, culled, g_swNoSector, g_swBehind, g_swOffScreen );
 	Printf( "  %d handed to GLSprite::Process, of which %d registered a sprite\n",
 		g_swProcessed, g_spritesThisFrame );
-	Printf( "  Process threw away:" );
-	int shown = 0;
-	for (int i = 0; i < 7; i++)
-	{
-		if (g_sprReject[i] == 0) continue;
-		Printf( "%s %d %s", shown++ ? "," : "", g_sprReject[i], g_sprRejectName[i] );
-	}
-	Printf( shown ? "\n" : " nothing\n" );
-	for (int i = 0; i < 8; i++) g_sprReject[i] = 0;
 }
 int SpritePieceCount() { return g_spritesThisFrame; }
 
