@@ -93,17 +93,39 @@ Sunder MAP10, 1920x1200, alternating runs twice each. **Two vantages, because on
 |---|---|---|---|
 | spawn, monsters off -- default | 8.99 ms | 111 | 11.8 ms |
 | spawn, monsters off -- GL cut out | 2.11 ms | 475 | 9.4 ms |
-| **open arena, monsters on -- default** | **16.2 ms** | **62** | 20.5 ms |
-| **open arena, monsters on -- GL cut out** | **4.6 ms** | **220** | 15.4 ms |
+| **open arena, monsters on -- default** | **12.1 ms** | **82** | 16.8 ms |
+| **open arena, monsters on -- GL cut out** | **2.1 ms** | **470** | 4.9 ms |
+
+The arena pair moved a long way after the first version of this table, and none of it came from the
+renderer being clever. Four things, all found by profiling:
+
+- **An O(n squared) sort.** `BuildDynamic` ordered the frame's dynamic pieces with a pair loop. 1258
+  sprites is 790,000 comparisons a frame; it was 18.5% of the profile, and the whole reason the view
+  cost twice as much with monsters as without. `std::sort` with the same rule, ties broken by index so
+  the order stays deterministic.
+- **A fallback that was not a handful of frames.** Standalone sent any frame where a sector had moved
+  back through GL, because the walk used to be what re-baked it. It has not been since the map bake
+  started re-baking moved sectors directly, and on a map with a perpetual lift it was most frames --
+  12% of the profile and the source of the 11.5 ms spikes.
+- **The sorted order, as an index buffer.** The translucent pass sorts by distance and so cannot batch
+  by material; it issued a draw per surface, 931 of them after adjacent ones collapsed. Writing the
+  sorted order into indices makes every surface wanting the same pipeline one DrawIndexed. 1380
+  sprites, 1 submission.
+- **GL sorting sprites it does not composite.** Its draw is how they get registered into the mesh, so
+  it stays -- but the back-to-front sort is thrown away, because `BuildDynamic` sorts them again.
 
 The bottom pair is the one to quote. The spawn view is a corridor with a fraction of the map in it,
 and 475 fps taken there and called "Sunder MAP10" is the same one-viewpoint mistake this document
 already records once, made again: a heading sweep that silently failed, then a single vantage read as
 the map.
 
-The player's own `vid_fps` in the arena reads around 9 ms while actually playing, which sits between
-the p50 and the p99 above -- the counter averages a window that includes the worse frames, and the
-p99 here is 15 ms. **The ratio is what survives across all of it: a bit over 3x.**
+With monsters off the same arena is 1.35 ms, so what is left is the GL sprite pipeline --
+`GLSprite::Process` and `Draw`, and the thinker sweep that finds the actors. Replacing that is a
+second implementation of every render style a mod can set, which is the one thing this port has
+deliberately refused to do.
+
+**Parity holds throughout:** Sunder MAP10 static 0.6%, dbab01 with its translucent grates and 3D
+floors 0.6%, Doom 2 MAP01 with a door open 0.0%.
 
     fua_surface_mapbake_auto 1
     fua_dg_cullbatches 1

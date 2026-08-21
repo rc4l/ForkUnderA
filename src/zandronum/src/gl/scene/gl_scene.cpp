@@ -565,6 +565,23 @@ void FGLRenderer::RenderScene(int recursion)
 //
 //-----------------------------------------------------------------------------
 
+// [rc4l] The translucent pass without the sort -- see the standalone call site for why.
+void FGLRenderer::RenderTranslucentUnsorted()
+{
+	RenderAll.Clock();
+	glDepthMask(false);
+	gl_RenderState.SetCameraPos(FIXED2FLOAT(viewx), FIXED2FLOAT(viewy), FIXED2FLOAT(viewz));
+	gl_RenderState.AlphaFunc(GL_GEQUAL, gl_mask_sprite_threshold);
+	gl_RenderState.BlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	gl_RenderState.EnableBrightmap(true);
+	gl_drawinfo->drawlists[GLDL_TRANSLUCENTBORDER].Draw(GLPASS_TRANSLUCENT);
+	gl_drawinfo->drawlists[GLDL_TRANSLUCENT].Draw(GLPASS_TRANSLUCENT);
+	gl_RenderState.EnableBrightmap(false);
+	glDepthMask(true);
+	gl_RenderState.AlphaFunc(GL_GEQUAL, 0.5f);
+	RenderAll.Unclock();
+}
+
 void FGLRenderer::RenderTranslucent()
 {
 	RenderAll.Clock();
@@ -702,9 +719,17 @@ void FGLRenderer::DrawScene(bool toscreen)
 				All.Clock();
 			}
 
-			// Drawing the sorted list is what runs GLSprite::Draw, and RegisterSprite with it. The
-			// geometry lists are empty in this mode, so this is the sprites and nothing else.
-			RenderTranslucent();
+			// Drawing the list is what runs GLSprite::Draw, and RegisterSprite with it. The geometry
+			// lists are empty in this mode, so this is the sprites and nothing else.
+			//
+			// [rc4l] UNSORTED, because the only consumer sorts them again itself.
+			//
+			// DrawSorted builds a BSP of the draw items and orders them back to front, which is what
+			// GL needs to composite them correctly. Nothing is being composited here: the pixels come
+			// from the backend, and BuildDynamic sorts the sprites it was handed by distance before
+			// it builds a vertex out of any of them. So the sort is work whose result is thrown away
+			// -- CompareSprite was 3.1% of the profile on Sunder MAP10 with monsters awake.
+			RenderTranslucentUnsorted();
 			return;
 		}
 	}

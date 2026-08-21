@@ -95,6 +95,9 @@ public:
 	void CreateScene();
 	void RenderScene(int recursion);
 	void RenderTranslucent();
+	// [rc4l] The same pass without the back-to-front sort, for the standalone path -- the backend
+	// sorts the sprites it is handed, so sorting them here twice is work thrown away.
+	void RenderTranslucentUnsorted();
 	void DrawScene(bool toscreen = false);
 	void DrawBlend(sector_t * viewsector);
 
