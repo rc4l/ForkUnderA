@@ -245,6 +245,40 @@ CCMD( fua_surface_mapbake )
 		Printf( "  sectors the map bake cannot own: %d with a 3D floor light list, %d substituted for the viewer" "\n",
 			lightlist, heightsec );
 	}
+	// [rc4l] And the question that matters: is there anything in the MESH where GL drew something?
+	{
+		static const int kPartOf[3] = { RENDERWALL_TOP, RENDERWALL_BOTTOM, RENDERWALL_M1S };
+		int empty = 0, emptyShown = 0;
+		const int segCount = zx::levelmesh::CachedSegCount( );
+		for ( int i = 0; i < segCount && i < numsegs; i++ )
+		{
+			const int pieces = zx::levelmesh::CachedPieceCount( i );
+			if ( pieces <= 0 || segs[i].sidedef == NULL ) continue;
+			for ( int q = 0; q < pieces; q++ )
+			{
+				const GLWall *w = zx::levelmesh::CachedPiece( i, q );
+				if ( w == NULL || w->gltexture == NULL ) continue;
+				int part = -1;
+				if ( w->type == RENDERWALL_TOP ) part = 0;
+				else if ( w->type == RENDERWALL_BOTTOM ) part = 1;
+				else if ( w->type == RENDERWALL_M1S || w->type == RENDERWALL_M2S ||
+				          w->type == RENDERWALL_M2SNF ) part = 2;
+				if ( part < 0 ) continue;
+				if ( zx::levelmesh::MapBakePartCount( i, part ) != 0 ) continue;
+				empty++;
+				if ( emptyShown < 8 )
+				{
+					emptyShown++;
+					Printf( "    MISSING seg %d line %d %s: GL drew '%s' at %.0f..%.0f, the mesh has nothing" "\n",
+						i, (int)( segs[i].linedef - lines ),
+						( part == 0 ) ? "upper" : ( part == 1 ) ? "lower" : "middle",
+						w->gltexture->tex->Name.GetChars( ), w->zbottom[0], w->ztop[0] );
+				}
+			}
+		}
+		Printf( "  %d parts GL drew where the map-driven mesh holds no geometry at all" "\n", empty );
+		(void)kPartOf;
+	}
 }
 
 //==========================================================================
@@ -490,8 +524,17 @@ CCMD( fua_surface_mapcover )
 		wanted[nWanted++] = RENDERWALL_BOTTOM;
 		wanted[nWanted++] = midType;
 
+		// [rc4l] What the BAKE would build, which is not the same as what the derivation can answer.
+		//
+		// BakeSegFromMap needs a light for the seg as well as a span, and a seg it cannot light stays
+		// with the capture. Asking only BuildDerivedWallSpan reported full coverage for segs the map
+		// bake never touches -- and a wall the map bake does not build is a wall that is missing from
+		// the map-driven frame, which is exactly what this command exists to catch.
+		DerivedWallLight ownLight; const sector_t *ownCm = NULL;
+		const bool mapOwns = BuildDerivedWallLight( &segs[sIdx], ownLight, ownCm ) && ownCm != NULL;
+
 		bool mapHas[8] = { false, false, false, false, false, false, false, false };
-		for ( int k = 0; k < nWanted; k++ )
+		for ( int k = 0; mapOwns && k < nWanted; k++ )
 		{
 			DerivedWallSpan d;
 			if ( BuildDerivedWallSpan( &segs[sIdx], wanted[k], d ) && wanted[k] < 8 )

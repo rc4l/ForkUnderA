@@ -105,9 +105,6 @@ void AllocForLevel(int numsegs)
 	//
 	// Cleared HERE and not in MeshInitForLevel because ClearFlats gives its ranges back to the
 	// mesh, and this runs while that mesh is still the one that handed them out.
-	// The per-sidedef bake owners belong to the level that is going away.
-	extern void ClearSideOwners();
-	ClearSideOwners();
 	zx::levelmesh::ClearFlats();
 	zx::levelmesh::ClearSprites();
 	g_cache.Clear();
@@ -185,6 +182,20 @@ static void CaptureWallShading(const GLWall &wall, MeshPiece &mp)
 // [rc4l] Turn a captured seg's walls into persistent geometry. The fan the streaming path would have
 // emitted is expanded to an independent triangle list, because a baked range is drawn with
 // glMultiDrawArrays and a GL_TRIANGLE_FAN restarts at its own first vertex.
+// [rc4l] Which of the two bakes owns this seg -- and it is a per-SEG question, not a per-level one.
+//
+// The map bake needs a light level for the wall, and there is one sector kind it cannot give one
+// for: a sector with a 3D floor light list has no single light level, because SplitWall cuts the
+// wall at every band and gives each fragment that band's own light and colormap. Deriving one number
+// for the whole wall would be wrong in exactly the rooms people build 3D floors for, so
+// BuildDerivedWallLight declines.
+//
+// What that must NOT mean is "there is no wall". It meant exactly that for a while: BakeSegFromMap
+// squashed all three parts of every seg in such a sector, and on dbab01 an entire brick wall went
+// missing and the lava room behind it came through -- 10.5% of the frame, and the ladder read 100%
+// because the ladder never asks about light. So the seg stays with the capture, which knows how to
+// take GL's split walls with their per-band shading, and the two paths divide the level cleanly
+// instead of one path leaving holes in it.
 // [rc4l] Which of the two bakes owns this seg -- and it is a per-SEG question, not a per-level one.
 //
 // The map bake needs a light level for the wall, and there is one sector kind it cannot give one
@@ -464,10 +475,6 @@ int BakeSegFromMap(int segIndex)
 	const seg_t *seg = &segs[segIndex];
 	if (seg->sidedef == NULL || seg->linedef == NULL || seg->frontsector == NULL) return 0;
 
-	// One quad per sidedef -- see SegOwnsItsSide. Every other seg of the same sidedef would build the
-	// same four corners over again.
-	if (!SegOwnsItsSide(segIndex)) return 0;
-
 	SegCache &sc = g_cache[segIndex];
 	static FFlatVertex tris[6];
 
@@ -560,6 +567,19 @@ int BakeLevelFromMap()
 	int made = 0;
 	for (int i = 0; i < numsegs; i++) made += BakeSegFromMap(i);
 	return made;
+}
+
+// [rc4l] How many vertices the mesh actually holds for one part of one seg.
+//
+// Every other question about the map bake has been asked of the derivation, which can answer "yes I
+// would build that" for a part the bake then does not build -- because the bake also needs a light,
+// and needs MeshStore to accept it. This asks the MESH, which is the only thing the frame is drawn
+// from. Part is 0 upper, 1 lower, 2 middle, matching BakeSegFromMap's slots.
+int MapBakePartCount(int segIndex, int part)
+{
+	if ((unsigned)segIndex >= g_cache.Size()) return -1;
+	if (part < 0 || part >= kMaxCachedPieces) return -1;
+	return (int)g_cache[segIndex].pieces[part].range.count;
 }
 
 int CachedSegCount() { return (int)g_cache.Size(); }
