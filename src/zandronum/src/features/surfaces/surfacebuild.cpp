@@ -74,7 +74,12 @@ bool SpanAt(const seg_t *seg, int renderType, const WallHeights &h, float &top, 
 	case RENDERWALL_M1S:    part = ComputeMiddlePart(h); break;
 	default: return false;   // the two-sided middle is answered by MiddleSpanAt
 	}
-	if (!part.present) return false;
+	// [rc4l] The numbers come back whether or not the part has area at THIS end.
+	//
+	// A sloped wall can exist at one end and not the other, and GL draws it if EITHER end has area --
+	// `if (topleft<=bottomleft && topright<=bottomright) return;` is the whole of its test. Requiring
+	// both ends is what left 133 uppers and lowers on dbab04, the map with 337 sloped pieces,
+	// unaccounted for: every one of them a wall that pinches out at one end.
 	top = part.top; bottom = part.bottom;
 	return true;
 }
@@ -136,6 +141,25 @@ bool BuildDerivedWallSpan(const seg_t *seg, int renderType, DerivedWallSpan &out
 
 	FMaterial *mat = FMaterial::ValidateTexture(seg->sidedef->GetTexture((side_t::ETexpart)texpos),
 		false, true);
+	// [rc4l] A sloped step with NO texture on the sidedef is drawn with the SECTOR'S FLAT.
+	//
+	// GLWall::Process falls back to it when both sectors are sloped and neither plane is sky --
+	// "render it anyway with the sector's floor texture. With a background sky there are ugly holes
+	// otherwise and slopes are simply not precise enough to match in any case." Without this the map
+	// does not account for 131 of dbab04's parts, 38 uppers and 93 lowers, all of them on the map
+	// with 337 sloped pieces.
+	if (mat == NULL && seg->backsector != NULL &&
+	    (renderType == RENDERWALL_TOP || renderType == RENDERWALL_BOTTOM))
+	{
+		const sector_t *fs = seg->frontsector, *bs = seg->backsector;
+		const bool ceilingPart = (renderType == RENDERWALL_TOP);
+		const secplane_t &fp = ceilingPart ? fs->ceilingplane : fs->floorplane;
+		const secplane_t &bp = ceilingPart ? bs->ceilingplane : bs->floorplane;
+		const int which = ceilingPart ? sector_t::ceiling : sector_t::floor;
+		if ((fp.a | fp.b | bp.a | bp.b) != 0 &&
+		    fs->GetTexture(which) != skyflatnum && bs->GetTexture(which) != skyflatnum)
+			mat = FMaterial::ValidateTexture(fs->GetTexture(which), false, true);
+	}
 	if (mat == NULL) { g_fbNoTexture++; g_fellBack++; return false; }
 
 	FTexCoordInfo tci;
@@ -209,9 +233,12 @@ bool BuildDerivedWallSpan(const seg_t *seg, int renderType, DerivedWallSpan &out
 		seg->sidedef->GetTextureYOffset((side_t::ETexpart)texpos)));
 	const float texTop = ComputeTextureTop(refCeil, refFloor, th, pegged, rowOfs, vOffset);
 
-	// Both ends, so a slope stays a slope.
-	const fixed_t px[2] = { seg->v1->x, seg->v2->x };
-	const fixed_t py[2] = { seg->v1->y, seg->v2->y };
+	// Both ends, so a slope stays a slope. Evaluated at the LINE's vertices rather than the seg's,
+	// because that is the span GL draws -- see the fracleft note below.
+	const vertex_t *lv1 = seg->linedef->v1, *lv2 = seg->linedef->v2;
+	if (seg->sidedef != seg->linedef->sidedef[0]) { lv1 = seg->linedef->v2; lv2 = seg->linedef->v1; }
+	const fixed_t px[2] = { lv1->x, lv2->x };
+	const fixed_t py[2] = { lv1->y, lv2->y };
 	for (int e = 0; e < 2; e++)
 	{
 		WallHeights h;
@@ -241,6 +268,9 @@ bool BuildDerivedWallSpan(const seg_t *seg, int renderType, DerivedWallSpan &out
 		out.vTop[e] = ComputeWallV(top, texTop, th);
 		out.vBottom[e] = ComputeWallV(bottom, texTop, th);
 	}
+	// GL's own test: nothing to draw only when BOTH ends are empty.
+	if (!(out.ztop[0] > out.zbottom[0] || out.ztop[1] > out.zbottom[1]))
+		{ g_fbNoSpan++; g_fellBack++; return false; }
 	// [rc4l] And the horizontal, for everything that is not a polyobject.
 	//
 	// GLWall::Process sets fracleft 0 and fracright 1 for an ordinary wall and takes the linedef's
@@ -254,6 +284,20 @@ bool BuildDerivedWallSpan(const seg_t *seg, int renderType, DerivedWallSpan &out
 		out.uRight = ul + tci.FloatToTexU(seg->sidedef->TexelLength);
 		out.hasU = true;
 	}
+	// [rc4l] The ends, from the linedef, ordered by side. GLWall::Process draws the whole line, so
+	// these are the line's vertices and not the seg's -- see the fracleft note above.
+	{
+		const vertex_t *lv1 = seg->linedef->v1, *lv2 = seg->linedef->v2;
+		if (seg->sidedef != seg->linedef->sidedef[0]) { lv1 = seg->linedef->v2; lv2 = seg->linedef->v1; }
+		out.x1 = FIXED2FLOAT(lv1->x); out.y1 = FIXED2FLOAT(lv1->y);
+		out.x2 = FIXED2FLOAT(lv2->x); out.y2 = FIXED2FLOAT(lv2->y);
+	}
+	out.material = mat;
+	// The BASE texture, so an animated one keeps animating -- see MeshPiece::baseTex. The sector's
+	// flat when that is what is being drawn, so the fallback animates too.
+	out.baseTex = TexMan[seg->sidedef->GetTexture((side_t::ETexpart)texpos)];
+	if (out.baseTex == NULL || ((FTexture *)out.baseTex)->Name.Len() == 0)
+		out.baseTex = (mat != NULL) ? (const void *)((FMaterial *)mat)->tex : NULL;
 	out.valid = true;
 	g_derived++;
 	return true;

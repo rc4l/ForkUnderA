@@ -60,6 +60,10 @@ const GLWall *CachedPiece(int segIndex, int piece);
 // Bake a captured seg's pieces into the persistent buffer. Called after a successful capture.
 void BakeSeg(int segIndex);
 
+// [rc4l] Bake one seg from the MAP, with no GLWall involved -- see the definition for what it costs
+// and what it cannot do yet.
+int BakeSegFromMap(int segIndex);
+
 // Pack/unpack the reference a draw item carries.
 inline int PackWallRef(int segIndex, int piece) { return segIndex * kMaxCachedPieces + piece; }
 

@@ -48,9 +48,20 @@ struct DerivedWallSpan
 	// seg-along-line bookkeeping involved at all. Polyobjects are the exception and are not derived.
 	float uLeft, uRight;
 	bool  hasU;
+	// [rc4l] The two ends in world space, taken from the LINEDEF and ordered by which side this
+	// sidedef is -- which is how GLWall::Process orders them, and getting it backwards mirrors every
+	// texture on that wall.
+	float x1, y1, x2, y2;
+	// [rc4l] What to draw it with -- the sidedef's texture, or the sector's flat where GL falls back
+	// to that on a sloped step. An FMaterial*, kept as void* so this header stays free of the
+	// texture system.
+	const void *material;
+	// Its own height, which the two-sided middle needs and the batcher wants for animation.
+	const void *baseTex;
 	bool  valid;
 
-	DerivedWallSpan() : uLeft(0.f), uRight(0.f), hasU(false), valid(false)
+	DerivedWallSpan() : uLeft(0.f), uRight(0.f), hasU(false),
+		x1(0.f), y1(0.f), x2(0.f), y2(0.f), material(0), baseTex(0), valid(false)
 	{
 		ztop[0] = ztop[1] = zbottom[0] = zbottom[1] = 0.f;
 		vTop[0] = vTop[1] = vBottom[0] = vBottom[1] = 0.f;
