@@ -2059,6 +2059,20 @@ static void BuildDynamic(Diligent::IDeviceContext *ctx)
 			// Sprites are all drawn in one back-to-front pass now, the way GL does it, so any two
 			// merged into a shared run could no longer be ordered against each other. There are a few
 			// hundred sprites in a busy frame, so the batching this gives up is not worth having.
+			//
+			// MEASURED, because "1234 sprites, 1234 draw calls" reads like the whole problem and is
+			// not. Reusing the sorted pass's binding between draws that want the same one, and
+			// collapsing draws the sort happened to leave adjacent, took a 786-sprite frame from 786
+			// submissions and 786 descriptor binds to 95 and 21 -- and moved the frame time by
+			// nothing, over four alternating runs. The same scene at a ninth of the pixels went from
+			// 30.98 ms to 7.98 ms. This pass is FILL bound, not submission bound, and the sprites
+			// cost fragments rather than draw calls.
+			//
+			// So the lever is overdraw, not batching: these are drawn back-to-front with depth writes
+			// off, which is what lets an additive glow show through the alpha-tested sprite in front
+			// of it, and also means every overlapping layer is shaded in full. The quads themselves
+			// are already trimmed to their opaque borders by FMaterial's TrimBorders, so that easy
+			// win is spent.
 			{
 				DynRun r; r.material = p.material; r.first = vb.Size(); r.count = 0; r.blend = p.blendMode;
 				r.translation = p.translation;
