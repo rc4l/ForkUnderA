@@ -26,6 +26,7 @@
 // than the CVAR defined in gl_drawinfo.cpp, and only the linker would notice.
 EXTERN_CVAR(Bool, gl_wallmesh)
 EXTERN_CVAR(Bool, fua_surface_mapbake_auto)
+EXTERN_CVAR(Bool, fua_surface_bands)
 // [rc4l] Build wall heights and texture position from the MAP rather than from GLWall.
 //
 // ON. A wall's vertical span and both of its texture coordinates come from the map now, and the
@@ -454,6 +455,15 @@ void BakeSeg(int segIndex)
 			default: break;
 			}
 		}
+		// [rc4l] ...and anything the switch does not name still needs A base texture.
+		//
+		// Leaving it null was described above as "simply does not animate", and it is worse than
+		// that: the piece is registered with no identity for the animation pass to re-resolve from,
+		// and fua_mesh_verify counts it as a fault -- 435 pieces on dbab02 in the GL-driven mesh
+		// alone. A 3D floor block or a special wall still knows what it is drawing; the GLWall's own
+		// material is that answer, and it is what the piece is already being drawn with.
+		if (mp.baseTex == NULL && sc.walls[i].gltexture != NULL)
+			mp.baseTex = sc.walls[i].gltexture->tex;
 		MeshRegisterPiece(mp);
 	}
 }
@@ -511,7 +521,7 @@ int BakeSegFromMap(int segIndex)
 	const sector_t *front = seg->frontsector;
 	const TArray<lightlist_t> *lights =
 		(front != NULL && front->e != NULL) ? &front->e->XFloor.lightlist : NULL;
-	int nLights = (lights != NULL) ? (int)lights->Size() : 0;
+	int nLights = (fua_surface_bands && lights != NULL) ? (int)lights->Size() : 0;
 	if (nLights > kBandsPerPart) nLights = kBandsPerPart;
 
 	int made = 0;
@@ -592,7 +602,6 @@ int BakeSegFromMap(int segIndex)
 			MeshPiece mp;
 			mp.range = range;
 			mp.material = d.material;
-			mp.baseTex = d.baseTex;
 
 			// [rc4l] The band's light, by GLWall::Put3DWall's rule.
 			//
@@ -613,6 +622,15 @@ int BakeSegFromMap(int segIndex)
 
 			zx::levelmesh::CaptureShading(lightLevel, dl.relLight + getExtraLight(), cm, mp,
 				kParts[part] == RENDERWALL_M2SNF);
+			// [rc4l] AFTER CaptureShading, which ends by clearing baseTex.
+			//
+			// It sets the fields a surface has no opinion about -- blend mode, alpha, sort position,
+			// base texture -- back to their defaults, on the assumption the caller fills in whatever
+			// it actually knows afterwards. The capture path does exactly that and has always been
+			// fine. This one set it BEFORE and had it wiped every time: 1800 of dbab02's map-baked
+			// walls carried no base texture at all, which is the identity the animation pass
+			// re-resolves a material from, so a map-driven nukage wall could never have flowed.
+			mp.baseTex = d.baseTex;
 			mp.lightLevel = lightLevel;
 			mp.lightColor = cm.LightColor.d;
 			mp.fadeColor = cm.FadeColor.d;
