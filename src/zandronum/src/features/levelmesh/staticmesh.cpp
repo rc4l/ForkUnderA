@@ -3,6 +3,7 @@
 
 #include "gl/system/gl_system.h"
 #include "features/levelmesh/staticmesh.h"
+#include "features/surfaces/computation/surfacechange_compute.h"
 
 #include "gl/data/gl_vertexbuffer.h"
 #include "gl/system/gl_interface.h"
@@ -460,6 +461,10 @@ static unsigned int g_layoutGen = 1;
 // [rc4l] Why it last changed, because "the layout changed" is not a diagnosis. A backend that
 // never gets to patch needs to know which of the three reasons keeps firing.
 static int g_layoutNew = 0, g_layoutResized = 0, g_layoutRebatched = 0;
+// [rc4l] The two revisions a backend watches, and the list behind the second. See
+// MeshRegisterPiece and features/surfaces/computation/surfacechange_compute.h.
+static unsigned int g_rebatchRevision = 0, g_repaintRevision = 0;
+static TArray<unsigned int> g_repaints;
 void MeshLayoutReasons(int &added, int &resized, int &rebatched)
 { added = g_layoutNew; resized = g_layoutResized; rebatched = g_layoutRebatched; }
 unsigned int MeshLayoutGeneration() { return g_layoutGen; }
@@ -471,6 +476,29 @@ const MeshPiece *MeshPieceByOffset(unsigned int offset)
 	unsigned *found = g_pieceByOffset.CheckKey(offset);
 	if (found == NULL || *found >= g_pieceList.Size()) return NULL;
 	return &g_pieceList[*found];
+}
+
+// [rc4l] What a surface looks like to a renderer, for the one comparison that decides everything.
+//
+// See features/surfaces/computation/surfacechange_compute.h for why this is one function rather than
+// the four hand-written channels it replaces.
+static zx::surfaces::SurfaceKey KeyOf(const MeshPiece &p)
+{
+	zx::surfaces::SurfaceKey k;
+	k.material = p.material;
+	k.baseTex = p.baseTex;
+	k.rangeOffset = p.range.offset;
+	k.rangeCount = p.range.count;
+	k.blendMode = p.blendMode;
+	k.translation = p.translation;
+	k.alpha = p.alpha;
+	k.colorR = p.colorR; k.colorG = p.colorG; k.colorB = p.colorB;
+	k.softLight = p.softLight;
+	k.fogDensity = p.fogDensity;
+	k.fogColor = p.fogColor;
+	k.fogMode = p.fogMode;
+	k.normX = p.normX; k.normY = p.normY; k.normZ = p.normZ;
+	return k;
 }
 
 void MeshRegisterPiece(const MeshPiece &piece)
@@ -487,23 +515,96 @@ void MeshRegisterPiece(const MeshPiece &piece)
 	unsigned *found = g_pieceByOffset.CheckKey(piece.range.offset);
 	if (found != NULL && *found < g_pieceList.Size())
 	{
-		const MeshPiece &was = g_pieceList[*found];
-		if (was.range.count != piece.range.count) { g_layoutGen++; g_layoutResized++; }
-		// [rc4l] The MATERIAL is what a batch is keyed on, so it is what a rebatch has to notice.
+		// [rc4l] ONE comparison decides what happened, and it is the same one for a wall and a floor.
 		//
-		// This compared baseTex and blendMode only. Pressing a switch swaps the sidedef's texture,
-		// the seg re-bakes, the piece takes the new material -- and if baseTex happens to compare
-		// equal the change went uncounted, so the renderer never learned to move the piece into a
-		// batch for its new texture. The switch stayed looking unpressed.
-		else if (was.material != piece.material || was.baseTex != piece.baseTex ||
-		         was.blendMode != piece.blendMode)
-			{ g_layoutGen++; g_layoutRebatched++; }
+		// This used to be a pair of hand-written field tests that knew about baseTex and blendMode.
+		// A switch changes the MATERIAL, which was not among them, so the change went uncounted and
+		// the switch stayed looking unpressed -- and nothing here noticed a shading change at all,
+		// which is why moving geometry needed a separate dirty-vertex channel to be repainted.
+		const zx::surfaces::SurfaceChange what =
+			zx::surfaces::ComputeSurfaceChange(KeyOf(g_pieceList[*found]), KeyOf(piece));
 		g_pieceList[*found] = piece;
+		if (what == zx::surfaces::kSurfaceRebatch)
+		{
+			g_layoutGen++;
+			g_layoutRebatched++;
+			g_rebatchRevision++;
+		}
+		else if (what == zx::surfaces::kSurfaceRepaint)
+		{
+			// [rc4l] Named, not hoped for. A repaint used to reach a backend only if the surface
+			// happened to fall inside the dirty VERTEX range -- true for a moving door, false for a
+			// door whose light level changed while it stood still.
+			//
+			// Since the per-piece shading moved out of the vertices and into a record of its own, a
+			// repaint is a sixty-four byte upload, so there is no reason to be shy about listing one.
+			if (g_repaints.Size() < 8192) g_repaints.Push(*found);
+			g_repaintRevision++;
+		}
 		return;
 	}
 	const unsigned idx = g_pieceList.Push(piece);
 	g_pieceByOffset.Insert(piece.range.offset, idx);
 	g_layoutGen++; g_layoutNew++;   // a piece that was not there before
+}
+
+// [rc4l] The surfaces whose appearance changed since the backend last looked.
+//
+// Handed over rather than published: a backend that reads this is expected to act on it, and leaving
+// the list in place would have the next frame act on it again.
+void MeshTakeRepaints(const unsigned int *&list, int &count)
+{
+	count = (int)g_repaints.Size();
+	list = count ? &g_repaints[0] : 0;
+}
+
+void MeshClearRepaints() { g_repaints.Clear(); }
+
+// One number that says "a surface moved between batches since you last built". Cumulative for the
+// life of the level, so a backend stores what it built at and compares.
+unsigned int MeshRebatchRevision() { return g_rebatchRevision; }
+unsigned int MeshRepaintRevision() { return g_repaintRevision; }
+
+// [rc4l] Re-register a live surface with one field changed, so the change PATH can be tested without
+// waiting for a switch to be pressed in front of the right wall.
+//
+// Every real trigger for these -- a switch, a door, a sector changing its flat -- needs a particular
+// map, a particular spot and a working aim, and three attempts at arranging that produced three
+// different accidents. The path itself is the thing under test, so this pokes it directly: the same
+// MeshRegisterPiece every wall and every floor goes through, with a real piece, and the revisions say
+// what it concluded.
+//
+//   fua_mesh_change material   -- a rebatch: the surface belongs in a different batch now
+//   fua_mesh_change shading    -- a repaint: right place, stale colour
+//   fua_mesh_change nothing    -- neither, and nothing had better move
+CCMD( fua_mesh_change )
+{
+	if (g_pieceList.Size() == 0) { Printf("no baked pieces" "\n"); return; }
+	const char *what = (argv.argc() > 1) ? argv[1] : "material";
+	unsigned int idx = 0;
+	while (idx < g_pieceList.Size() && g_pieceList[idx].range.count == 0) idx++;
+	if (idx >= g_pieceList.Size()) { Printf("no live pieces" "\n"); return; }
+
+	const unsigned int rb0 = g_rebatchRevision, rp0 = g_repaintRevision;
+	MeshPiece p = g_pieceList[idx];
+	if (strcmp(what, "material") == 0)
+	{
+		// [rc4l] Another LIVE material, not a made-up pointer. The first version of this offset the
+		// pointer by one on the theory that identity was all anyone compared -- and the backend
+		// dereferences it to build its texture, so the test crashed the engine instead of testing it.
+		const void *other = NULL;
+		for (unsigned k = 0; k < g_pieceList.Size(); k++)
+			if (g_pieceList[k].range.count != 0 && g_pieceList[k].material != p.material)
+				{ other = g_pieceList[k].material; break; }
+		if (other == NULL) { Printf("only one material on this level" "\n"); return; }
+		p.material = other;
+	}
+	else if (strcmp(what, "shading") == 0)
+		p.colorR = (p.colorR > 0.5f) ? 0.25f : 0.75f;
+	MeshRegisterPiece(p);
+
+	Printf("piece %u: rebatch %u -> %u, repaint %u -> %u" "\n",
+		idx, rb0, g_rebatchRevision, rp0, g_repaintRevision);
 }
 
 const MeshPiece *MeshPieces(int &count)

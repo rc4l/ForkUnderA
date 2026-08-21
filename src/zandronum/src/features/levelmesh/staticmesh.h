@@ -253,6 +253,22 @@ const FFlatVertex *MeshVertexData(int &count);
 void MeshRetireRange(const MeshRange &range);
 
 void MeshRegisterPiece(const MeshPiece &piece);
+
+// [rc4l] The two questions a backend has to ask about surfaces it has already uploaded, answered by
+// one comparison rather than by four channels that each knew about part of a surface. See
+// features/surfaces/computation/surfacechange_compute.h.
+//
+// A REBATCH means a surface no longer belongs where it is -- a different material, pass, palette or
+// range -- and moving one between batches is not something a patch can express, so it is a rebuild.
+// A REPAINT means the surface is in the right place with the wrong shading baked into it, which
+// since the shading moved into a per-piece record is a sixty-four byte upload.
+//
+// Both revisions are cumulative for the life of the level: a backend stores the value it last built
+// at and compares, so it cannot miss one by not looking on the right frame.
+unsigned int MeshRebatchRevision();
+unsigned int MeshRepaintRevision();
+void MeshTakeRepaints(const unsigned int *&list, int &count);
+void MeshClearRepaints();
 const MeshPiece *MeshPieces(int &count);
 void MeshClearPieces();
 
