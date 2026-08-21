@@ -186,13 +186,25 @@ const char *TypeName(int type)
 //
 //==========================================================================
 
-// [rc4l] A switch for the rule under test, so it is a measurement and not a belief.
-// [rc4l] GL's CheckTexturePosition, modelled -- and off by default because it is not yet a win.
+// [rc4l] GL's CheckTexturePosition, in the derivation, with a switch so it stays a measurement.
 //
-// It fixes 39 pieces on dbab01 and breaks 77, so applying it unconditionally would trade one wrong
-// number for a worse one. The switch is here so the claim stays measurable in one run rather than
-// remembered wrongly: see features/surfaces/README.md for what is known and what is not.
-CVAR( Bool, fua_surface_vshift, false, 0 )
+// GL slides every wall DoTexture makes back into the first copy of its texture -- subtract
+// floor(min(uplft.v, uprgt.v)) from all four v values -- immediately before putting it in the render
+// list. On a wall that repeats this is invisible. On a wall that CLAMPS it is the whole picture, and
+// 75 pieces on dbab04 sat outside their texture without it.
+//
+// The switch is here because the shift moves BOTH ways: it takes dbab04's clamping faults from 75 to
+// 0 and dbab01's from 10 to 0, while moving pieces that repeat by a whole copy in either direction.
+// One run A/Bs it rather than one memory.
+CVAR( Bool, fua_surface_vshift, true, 0 )
+
+// [rc4l] GL's "render it anyway with the sector's floor texture" branch, switchable.
+//
+// A sloped step whose sidedef carries no texture is drawn by GL with the SECTOR'S FLAT -- its own
+// comment says slopes are not precise enough to match and a background sky leaves ugly holes
+// otherwise. The derivation copies that. The switch exists because a wall wearing a flat is a
+// distinctive enough mistake to be worth being able to rule in or out in one run.
+CVAR( Bool, fua_surface_flatfallback, true, 0 )
 
 // [rc4l] Could the bake be driven by the MAP instead of by GL's walk of the BSP?
 //
@@ -222,14 +234,26 @@ CVAR( Bool, fua_surface_vshift, false, 0 )
 CCMD( fua_surface_mapbake )
 {
 	if ( segs == NULL || numsegs <= 0 ) { Printf( "no level loaded." "\n" ); return; }
-	int made = 0, segsDone = 0;
+	// [rc4l] The REASONS, not just the count. "6922 parts" cannot tell a level whose walls are all
+	// there from one with a hole in it, and a hole is what a map-driven bake looks like when it goes
+	// wrong: the wall is simply absent and the room behind it is on screen.
+	zx::surfaces::ResetDeriveStats( );
+	int made = 0, segsDone = 0, noLight = 0;
 	for ( int i = 0; i < numsegs; i++ )
 	{
 		const int n = zx::levelmesh::BakeSegFromMap( i );
 		if ( n > 0 ) { made += n; segsDone++; }
+		else if ( segs[i].sidedef != NULL && segs[i].linedef != NULL ) noLight++;
 	}
+	int derived = 0, fellBack = 0, fbMid = 0, fbSpecial = 0, fbNoTex = 0, fbNoSpan = 0, fbSeam = 0;
+	zx::surfaces::GetDeriveStats( derived, fellBack );
+	zx::surfaces::GetDeriveFallbacks( fbMid, fbSpecial, fbNoTex, fbNoSpan, fbSeam );
 	Printf( "fua_surface_mapbake: %d parts on %d segs, built from the map with no GLWall involved" "\n",
 		made, segsDone );
+	Printf( "  %d segs produced nothing at all; of the parts refused: %d no texture, %d no span," "\n",
+		noLight, fbNoTex, fbNoSpan );
+	Printf( "  %d a two-sided middle, %d a special wall, %d a seam" "\n",
+		fbMid, fbSpecial, fbSeam );
 }
 
 CCMD( fua_surface_mapcover )
@@ -240,13 +264,42 @@ CCMD( fua_surface_mapcover )
 	static const int kOrdinary[3] = { RENDERWALL_TOP, RENDERWALL_BOTTOM, RENDERWALL_M1S };
 	int agreed = 0, mapOnly = 0, glOnly = 0, glSpecial = 0, segsSeen = 0;
 	int glOnlyByType[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
+	int shownSegs = 0;
+	int unseenMapOnly = 0, shownUnseen = 0;
 
 	const int segCount = zx::levelmesh::CachedSegCount( );
 	for ( int sIdx = 0; sIdx < segCount && sIdx < numsegs; sIdx++ )
 	{
 		const int pieces = zx::levelmesh::CachedPieceCount( sIdx );
-		if ( pieces <= 0 ) continue;
 		if ( segs[sIdx].sidedef == NULL || segs[sIdx].linedef == NULL ) continue;
+		// [rc4l] A seg GL never drew is the half of this question that was not being asked.
+		//
+		// Skipping them counted only the segs where GL had already committed to something, which
+		// makes "the map accounts for everything GL drew" true by construction and says nothing
+		// about what the map draws that GL does not. That is the half that shows: on dbab01 the map
+		// bake put a lava flat over a brick wall, in an area whose segs GL never reached, and this
+		// command read 100%.
+		if ( pieces <= 0 )
+		{
+			const int midT = ( segs[sIdx].backsector != NULL ) ? RENDERWALL_M2S : RENDERWALL_M1S;
+			const int want[3] = { RENDERWALL_TOP, RENDERWALL_BOTTOM, midT };
+			for ( int k = 0; k < 3; k++ )
+			{
+				DerivedWallSpan d;
+				if ( BuildDerivedWallSpan( &segs[sIdx], want[k], d ) )
+				{
+					unseenMapOnly++;
+					if ( shownUnseen < 6 )
+					{
+						Printf( "    UNSEEN seg %d line %d part %d: map draws '%s' where GL drew nothing" "\n",
+							sIdx, (int)( segs[sIdx].linedef - lines ), want[k],
+							( d.baseTex != NULL ) ? ( (FTexture *)d.baseTex )->Name.GetChars( ) : "?" );
+						shownUnseen++;
+					}
+				}
+			}
+			continue;
+		}
 		segsSeen++;
 
 		// What GL produced, by type.
@@ -279,7 +332,31 @@ CCMD( fua_surface_mapcover )
 		{
 			if ( glHas[t] && mapHas[t] ) agreed++;
 			else if ( mapHas[t] ) mapOnly++;
-			else if ( glHas[t] ) { glOnly++; glOnlyByType[t]++; }
+			else if ( glHas[t] )
+			{
+				glOnly++; glOnlyByType[t]++;
+				// [rc4l] Name the first few, because a count cannot be looked at in a map editor.
+				if ( shownSegs < 8 )
+				{
+					const side_t *sd = segs[sIdx].sidedef;
+					const sector_t *fs = segs[sIdx].frontsector;
+					const sector_t *bs = segs[sIdx].backsector;
+					const FTexture *bt = ( sd != NULL ) ?
+						TexMan.ByIndex( sd->GetTexture( side_t::bottom ).GetIndex( ) ) : NULL;
+					Printf( "    seg %d line %d part %d: front floor %.0f/%.0f back floor %.0f/%.0f"
+						" lower '%s' flags %04x 3dfloors %d/%d" "\n",
+						sIdx, (int)( segs[sIdx].linedef - lines ), t,
+						fs ? FIXED2FLOAT( fs->floorplane.ZatPoint( segs[sIdx].v1 ) ) : 0.f,
+						fs ? FIXED2FLOAT( fs->floorplane.ZatPoint( segs[sIdx].v2 ) ) : 0.f,
+						bs ? FIXED2FLOAT( bs->floorplane.ZatPoint( segs[sIdx].v1 ) ) : 0.f,
+						bs ? FIXED2FLOAT( bs->floorplane.ZatPoint( segs[sIdx].v2 ) ) : 0.f,
+						( bt != NULL ) ? bt->Name.GetChars( ) : "-",
+						(unsigned)segs[sIdx].linedef->flags,
+						fs ? (int)fs->e->XFloor.ffloors.Size( ) : 0,
+						bs ? (int)bs->e->XFloor.ffloors.Size( ) : 0 );
+					shownSegs++;
+				}
+			}
 		}
 	}
 
@@ -291,6 +368,7 @@ CCMD( fua_surface_mapcover )
 		glOnlyByType[RENDERWALL_TOP], glOnlyByType[RENDERWALL_BOTTOM], glOnlyByType[RENDERWALL_M1S],
 		glOnlyByType[RENDERWALL_M2S], glOnlyByType[RENDERWALL_M2SNF] );
 	Printf( "    and %d of a type this does not name (3D floor faces, sky, horizon)" "\n", glSpecial );
+	Printf( "  %d parts the map draws on segs GL never drew at all" "\n", unseenMapOnly );
 }
 
 CCMD( fua_surface_verify )
@@ -548,10 +626,20 @@ CCMD( fua_surface_verify )
 							// moves it again -- which is what made the shift fix 39 pieces and break 77. So the
 							// shift is computed from the derived span of the whole part, which is what the
 							// unsplit wall's top was.
-							const float wholeV = ComputeWallV( wantTop, texTop, (float)th );
-							const float vShift = ( !fua_surface_vshift || !glShifts ||
-								first->gltexture->tex->bHasCanvas ) ? 0.f
-								: ComputeVShift( wholeV, wholeV );
+							//
+							// And the amount is READ OFF THE SHIPPING DERIVATION rather than modelled here a
+							// second time. BuildDerivedWallSpan applies CheckTexturePosition itself, so the
+							// shift is the difference between the v it returns and the v the formula gives for
+							// the same height -- which means this ladder scores the code that runs, not a copy
+							// of it that can drift. It drifted: the shift landed in the derivation and this
+							// number did not move, because nothing here was asking the derivation anything.
+							float vShift = 0.f;
+							if ( glShifts && !first->gltexture->tex->bHasCanvas )
+							{
+								DerivedWallSpan ds;
+								if ( BuildDerivedWallSpan( &segs[s], kTypeOf[slot], ds ) )
+									vShift = ComputeWallV( ds.ztop[0], texTop, (float)th ) - ds.vTop[0];
+							}
 							const float wantV = wantVRaw - vShift;
 							// [rc4l] Both answers are scored, because a step that fixes more than it breaks is
 							// still breaking something, and the count of each is the only way to see that.
@@ -789,6 +877,19 @@ CCMD( fua_surface_verify )
 	Printf( "      %d off by a whole texture (%d of them on a wall that CLAMPS, where it is a real fault)\n",
 		uvDeltaWholeTex, uvWholeTexClamped );
 	Printf( "      %d off by something else\n", uvDeltaOther );
+	// [rc4l] What the percentage above is NOT.
+	//
+	// A wall that repeats, drawn a whole copy of its texture up or down, is the same picture: the
+	// pixels cannot tell and neither can the player. Scoring those as failures made the headline move
+	// the wrong way against a change that took every VISIBLE fault to zero, which is a measurement
+	// arguing against its own result. So the two are named separately, and the second number is the
+	// one that means anything.
+	{
+		const int identical = uvDeltaWholeTex - uvWholeTexClamped;
+		const int real = ( uvChecked - uvAgreed ) - identical;
+		Printf( "    of the disagreements, %d are visually identical (a repeating wall, a whole copy "
+			"up or down) and %d are real" "\n", identical, real );
+	}
 	Printf( "    without the CheckTexturePosition shift: %d of %d (%.1f%%); it fixed %d and broke %d\n",
 		uvAgreedRaw, uvChecked, uvChecked ? 100.0 * uvAgreedRaw / uvChecked : 0.0, uvShiftFixed, uvShiftBroke );
 	Printf( "    captured walls already inside their first texture copy (so GL shifted them):\n" );

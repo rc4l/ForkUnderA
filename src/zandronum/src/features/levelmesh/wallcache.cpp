@@ -182,18 +182,43 @@ static void CaptureWallShading(const GLWall &wall, MeshPiece &mp)
 // [rc4l] Turn a captured seg's walls into persistent geometry. The fan the streaming path would have
 // emitted is expanded to an independent triangle list, because a baked range is drawn with
 // glMultiDrawArrays and a GL_TRIANGLE_FAN restarts at its own first vertex.
+// [rc4l] Which of the two bakes owns this seg -- and it is a per-SEG question, not a per-level one.
+//
+// The map bake needs a light level for the wall, and there is one sector kind it cannot give one
+// for: a sector with a 3D floor light list has no single light level, because SplitWall cuts the
+// wall at every band and gives each fragment that band's own light and colormap. Deriving one number
+// for the whole wall would be wrong in exactly the rooms people build 3D floors for, so
+// BuildDerivedWallLight declines.
+//
+// What that must NOT mean is "there is no wall". It meant exactly that for a while: BakeSegFromMap
+// squashed all three parts of every seg in such a sector, and on dbab01 an entire brick wall went
+// missing and the lava room behind it came through -- 10.5% of the frame, and the ladder read 100%
+// because the ladder never asks about light. So the seg stays with the capture, which knows how to
+// take GL's split walls with their per-band shading, and the two paths divide the level cleanly
+// instead of one path leaving holes in it.
+static bool MapBakeOwnsSeg(int segIndex)
+{
+	if (!fua_surface_mapbake_auto) return false;
+	if (segs == NULL || segIndex < 0 || segIndex >= numsegs) return false;
+	zx::surfaces::DerivedWallLight dl;
+	const sector_t *cmFrom = NULL;
+	return zx::surfaces::BuildDerivedWallLight(&segs[segIndex], dl, cmFrom) && cmFrom != NULL;
+}
+
 void BakeSeg(int segIndex)
 {
 	if (!gl_wallmesh) return;   // [rc4l] the mesh draw path is off; baking would be pure cost
-	// [rc4l] When the map is driving, the capture stands down completely.
+	if (segIndex < 0 || (unsigned)segIndex >= g_cache.Size()) return;
+	// [rc4l] When the map OWNS this seg, the capture stands down for it.
 	//
 	// Both baking the same seg is not twice the work, it is a fight: the map bake assigns slots by
 	// PART and the capture assigns them in the order pieces happen to arrive, so each overwrites the
 	// other's slots with a different material and a different range, every frame, and every one of
 	// those counts as a rebatch. Measured before this line existed: 11,820 scene rebuilds on Doom 2
 	// MAP03 in under a minute.
-	if (fua_surface_mapbake_auto) return;
-	if (segIndex < 0 || (unsigned)segIndex >= g_cache.Size()) return;
+	//
+	// Per SEG and not per level, because the map bake cannot do every seg -- see MapBakeOwnsSeg.
+	if (MapBakeOwnsSeg(segIndex)) return;
 	SegCache &sc = g_cache[segIndex];
 
 	static FFlatVertex fan[GLWall::MAX_BATCH_FAN_VERTICES];
@@ -402,7 +427,9 @@ int BakeSegFromMap(int segIndex)
 
 	zx::surfaces::DerivedWallLight dl;
 	const sector_t *cmFrom = NULL;
-	const bool haveLight = zx::surfaces::BuildDerivedWallLight(seg, dl, cmFrom) && cmFrom != NULL;
+	// Not ours: leave every range exactly as it is and let the capture keep this seg. Squashing here
+	// is what put a hole in dbab01 -- see MapBakeOwnsSeg.
+	if (!zx::surfaces::BuildDerivedWallLight(seg, dl, cmFrom) || cmFrom == NULL) return 0;
 
 	int made = 0;
 	for (int part = 0; part < 3; part++)
@@ -411,7 +438,7 @@ int BakeSegFromMap(int segIndex)
 		MeshRange &range = sc.pieces[part].range;
 
 		zx::surfaces::DerivedWallSpan d;
-		if (!haveLight || !zx::surfaces::BuildDerivedWallSpan(seg, kParts[part], d))
+		if (!zx::surfaces::BuildDerivedWallSpan(seg, kParts[part], d))
 		{
 			// [rc4l] Nothing here now -- SQUASH it, do not give the range back.
 			//
@@ -963,7 +990,7 @@ void InvalidateMovedSectors()
 			// what fills the mesh. With the map bake driving it there is nothing to wait for: the
 			// sector has moved, the sidedef says what is on it, and the answer can be had now. A door
 			// opening is exactly this case, several times a second.
-			if (fua_surface_mapbake_auto) BakeSegFromMap(idx);
+			BakeSegFromMap(idx);   // a no-op on a seg the map does not own
 		}
 	}
 }
