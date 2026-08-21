@@ -361,6 +361,98 @@ void BakeSeg(int segIndex)
 	}
 }
 
+// [rc4l] Bake a seg from the MAP, with no GLWall involved at all.
+//
+// This is the last dependency in the phase: everything about a wall is derived now except WHICH
+// walls there are, and that still comes from GL walking the BSP and telling us what it drew. A bake
+// driven by the map answers it from the sidedef, which is where Doom keeps it.
+//
+// fua_surface_mapcover measured whether that is possible before this was written: on dbab04 the map
+// accounts for 1332 of the 1336 parts GL draws, and on Sunder MAP16 for 59,477 of 59,483 across
+// 52,052 segs. The handful left over are why the capture is still there.
+//
+// Slots are assigned by PART -- upper, lower, middle -- rather than in the order pieces happen to
+// arrive, which the capture path cannot do and which makes a re-bake reuse the same mesh range every
+// time.
+int BakeSegFromMap(int segIndex)
+{
+	if (!gl_wallmesh) return 0;
+	if (segIndex < 0 || (unsigned)segIndex >= g_cache.Size()) return 0;
+	if (segs == NULL || segIndex >= numsegs) return 0;
+	const seg_t *seg = &segs[segIndex];
+	if (seg->sidedef == NULL || seg->linedef == NULL || seg->frontsector == NULL) return 0;
+
+	SegCache &sc = g_cache[segIndex];
+	static FFlatVertex tris[6];
+
+	const int midType = (seg->backsector != NULL) ? RENDERWALL_M2S : RENDERWALL_M1S;
+	const int kParts[3] = { RENDERWALL_TOP, RENDERWALL_BOTTOM, midType };
+
+	zx::surfaces::DerivedWallLight dl;
+	const sector_t *cmFrom = NULL;
+	const bool haveLight = zx::surfaces::BuildDerivedWallLight(seg, dl, cmFrom) && cmFrom != NULL;
+
+	int made = 0;
+	for (int part = 0; part < 3; part++)
+	{
+		if (part >= kMaxCachedPieces) break;
+		MeshRange &range = sc.pieces[part].range;
+
+		zx::surfaces::DerivedWallSpan d;
+		if (!haveLight || !zx::surfaces::BuildDerivedWallSpan(seg, kParts[part], d))
+		{
+			// Nothing here now. Give the range back rather than leaving it drawing what used to be.
+			if (range.count != 0) { MeshRetireRange(range); range.count = 0; }
+			continue;
+		}
+
+		// The four corners, in the order BuildFanVertices produces them, wound as a pair of triangles.
+		FFlatVertex fan[4];
+		fan[0].Set(d.x1, d.zbottom[0], d.y1, d.uLeft,  d.vBottom[0]);
+		fan[1].Set(d.x1, d.ztop[0],    d.y1, d.uLeft,  d.vTop[0]);
+		fan[2].Set(d.x2, d.ztop[1],    d.y2, d.uRight, d.vTop[1]);
+		fan[3].Set(d.x2, d.zbottom[1], d.y2, d.uRight, d.vBottom[1]);
+		int w = 0;
+		for (int t = 0; t < 2; t++)
+			for (int c = 0; c < 3; c++)
+				tris[w++] = fan[ComputeFanTriangleVertex(4, t, c)];
+
+		if (!MeshStore(range, tris, w))
+		{
+			MeshRetireRange(range);
+			range.count = 0;
+			continue;
+		}
+
+		MeshPiece mp;
+		mp.range = range;
+		mp.material = d.material;
+		mp.baseTex = d.baseTex;
+		FColormap cm;
+		cm = cmFrom->ColorMap;
+		zx::levelmesh::CaptureShading(dl.lightLevel, dl.relLight + getExtraLight(), cm, mp,
+			kParts[part] == RENDERWALL_M2SNF);
+		mp.lightLevel = dl.lightLevel;
+		mp.lightColor = cm.LightColor.d;
+		mp.fadeColor = cm.FadeColor.d;
+		// [rc4l] The wall's normal: perpendicular to its direction, in mesh space (x, z-up, y), on the
+		// side the winding faces -- the same rule the capture path uses, so front faces agree.
+		{
+			const float dx = d.x2 - d.x1, dy = d.y2 - d.y1;
+			const float len = sqrtf(dx*dx + dy*dy);
+			if (len > 0.0001f) { mp.normX = dy / len; mp.normY = 0.f; mp.normZ = -dx / len; }
+		}
+		MeshRegisterPiece(mp);
+		made++;
+	}
+	// Anything the capture had baked past the parts this makes is not ours to keep.
+	for (int i = 3; i < sc.bakedCount && i < kMaxCachedPieces; i++)
+		if (sc.pieces[i].range.count != 0)
+			{ MeshRetireRange(sc.pieces[i].range); sc.pieces[i].range.count = 0; }
+	sc.bakedCount = 3;
+	return made;
+}
+
 int CachedSegCount() { return (int)g_cache.Size(); }
 
 int CachedPieceCount(int segIndex)

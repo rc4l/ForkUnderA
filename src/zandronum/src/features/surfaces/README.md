@@ -164,6 +164,33 @@ x offset and that plus the line's texel length. There is no seg-along-line bookk
 Polyobjects are the exception, are drawn per seg with real fractions, and are left to the capture.
 Deriving it took Sunder MAP16 from 2.3% to 0.0%.
 
+## And the walk itself: a level's walls built without GL
+
+`fua_surface_mapbake` rebuilds every wall in the level from the seg array, with no `GLWall` involved
+at any point -- geometry, texture coordinates, material and shading all derived. It was the last
+dependency in the phase: everything about a wall was derived except WHICH walls there are, and that
+came from GL walking the BSP and reporting what it drew.
+
+| map | parts built from the map | segs | vs GL's own bake | control |
+|---|---|---|---|---|
+| Doom 2 MAP01 | 393 | 373 | 0.0% | — |
+| dbab04 | 1799 | 1543 | 0.1% | — |
+| Sunder MAP16 | **81153** | **69568** | 0.4% | 0.0% |
+
+`fua_surface_mapcover` is what said this was possible before it was written, and it is the number to
+watch: on dbab04 the map accounts for 1332 of the 1336 parts GL draws; on Sunder MAP16, 59,477 of
+59,483 across 52,052 segs. Two categories had to be found to get there, and both were in
+`GLWall::Process` rather than in the map:
+
+- **a sloped wall is drawn if EITHER end has area**, not both. `if (topleft<=bottomleft &&
+  topright<=bottomright) return;` is the whole of GL's test, and requiring both ends left every wall
+  that pinches out at one end unaccounted for.
+- **a sloped step with no texture on the sidedef is drawn with the SECTOR'S FLAT** -- "with a
+  background sky there are ugly holes otherwise". That one category was 131 parts on dbab04.
+
+MAP16's 0.4% against a 0.0% control is the honest residual and the next thing to look at. It is six
+parts GL draws that the map does not claim, on a level with eighty-one thousand.
+
 ## What the wiring proved about the ladders
 
 With the derivation live, the alignment ladder still reads 92.3% / 79.5% / 84.1% -- and the rendered

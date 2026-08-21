@@ -36,6 +36,7 @@
 #include "features/surfaces/computation/wallgeom_compute.h"
 #include "features/surfaces/computation/walluv_compute.h"
 #include "features/surfaces/computation/planegeom_compute.h"
+#include "features/surfaces/surfacebuild.h"
 
 namespace zx { namespace surfaces {
 
@@ -192,6 +193,105 @@ const char *TypeName(int type)
 // number for a worse one. The switch is here so the claim stays measurable in one run rather than
 // remembered wrongly: see features/surfaces/README.md for what is known and what is not.
 CVAR( Bool, fua_surface_vshift, false, 0 )
+
+// [rc4l] Could the bake be driven by the MAP instead of by GL's walk of the BSP?
+//
+// That is the last thing standing between this renderer and not needing GL at all, and it is a
+// different question from "is the derivation right". The derivation answers what a wall part LOOKS
+// like; this asks whether the map alone can say which parts EXIST -- because GL currently supplies
+// that by walking the tree and telling us what it drew.
+//
+// So: for every seg in the level, derive the parts the map says are there, and compare that set with
+// the set GL actually produced. Three answers matter and they mean different things:
+//
+//   agreed        both say the part is there. Nothing to do.
+//   map only      the map says a part exists and GL drew nothing. Either the derivation is too
+//                 generous, or GL declined for a reason the map does not record -- a missing texture
+//                 hack, a portal, a seg GL never reached.
+//   GL only       GL drew something the map does not account for. These are the special kinds:
+//                 3D floor faces, skies, horizons -- and they are the list of what still has to be
+//                 derived before the walk can go.
+// [rc4l] Rebuild the whole level's walls from the MAP, and let the picture say whether it worked.
+//
+// The last dependency in the phase: everything about a wall is derived, except which walls there
+// are, and that comes from GL walking the BSP. This walks the seg array instead.
+//
+// It runs on demand rather than at level load because that is how it gets compared: bake, screenshot,
+// and diff against the frame GL's own bake produced. A number in a coverage report is not the same
+// claim as an identical picture.
+CCMD( fua_surface_mapbake )
+{
+	if ( segs == NULL || numsegs <= 0 ) { Printf( "no level loaded." "\n" ); return; }
+	int made = 0, segsDone = 0;
+	for ( int i = 0; i < numsegs; i++ )
+	{
+		const int n = zx::levelmesh::BakeSegFromMap( i );
+		if ( n > 0 ) { made += n; segsDone++; }
+	}
+	Printf( "fua_surface_mapbake: %d parts on %d segs, built from the map with no GLWall involved" "\n",
+		made, segsDone );
+}
+
+CCMD( fua_surface_mapcover )
+{
+	using namespace zx::surfaces;
+	if ( segs == NULL || numsegs <= 0 ) { Printf( "no level loaded." "\n" ); return; }
+
+	static const int kOrdinary[3] = { RENDERWALL_TOP, RENDERWALL_BOTTOM, RENDERWALL_M1S };
+	int agreed = 0, mapOnly = 0, glOnly = 0, glSpecial = 0, segsSeen = 0;
+	int glOnlyByType[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
+
+	const int segCount = zx::levelmesh::CachedSegCount( );
+	for ( int sIdx = 0; sIdx < segCount && sIdx < numsegs; sIdx++ )
+	{
+		const int pieces = zx::levelmesh::CachedPieceCount( sIdx );
+		if ( pieces <= 0 ) continue;
+		if ( segs[sIdx].sidedef == NULL || segs[sIdx].linedef == NULL ) continue;
+		segsSeen++;
+
+		// What GL produced, by type.
+		bool glHas[8] = { false, false, false, false, false, false, false, false };
+		for ( int q = 0; q < pieces; q++ )
+		{
+			const GLWall *w = zx::levelmesh::CachedPiece( sIdx, q );
+			if ( w == NULL ) continue;
+			if ( w->type >= 0 && w->type < 8 ) glHas[w->type] = true;
+			else glSpecial++;
+		}
+
+		// What the map says is there. A two-sided line's middle is asked for as M2S; a one-sided
+		// line's as M1S -- the same distinction GLWall::Process makes.
+		const int midType = ( segs[sIdx].backsector != NULL ) ? RENDERWALL_M2S : RENDERWALL_M1S;
+		int wanted[4]; int nWanted = 0;
+		wanted[nWanted++] = RENDERWALL_TOP;
+		wanted[nWanted++] = RENDERWALL_BOTTOM;
+		wanted[nWanted++] = midType;
+
+		bool mapHas[8] = { false, false, false, false, false, false, false, false };
+		for ( int k = 0; k < nWanted; k++ )
+		{
+			DerivedWallSpan d;
+			if ( BuildDerivedWallSpan( &segs[sIdx], wanted[k], d ) && wanted[k] < 8 )
+				mapHas[wanted[k]] = true;
+		}
+
+		for ( int t = 0; t < 8; t++ )
+		{
+			if ( glHas[t] && mapHas[t] ) agreed++;
+			else if ( mapHas[t] ) mapOnly++;
+			else if ( glHas[t] ) { glOnly++; glOnlyByType[t]++; }
+		}
+	}
+
+	Printf( "fua_surface_mapcover on %s: %d segs with baked geometry" "\n",
+		level.MapName.GetChars( ), segsSeen );
+	Printf( "  %d parts agreed, %d the map claims and GL did not draw, %d GL drew and the map does not account for" "\n",
+		agreed, mapOnly, glOnly );
+	Printf( "  what GL drew alone, by type: upper %d, lower %d, middle-1s %d, middle %d, middle-nofog %d," "\n",
+		glOnlyByType[RENDERWALL_TOP], glOnlyByType[RENDERWALL_BOTTOM], glOnlyByType[RENDERWALL_M1S],
+		glOnlyByType[RENDERWALL_M2S], glOnlyByType[RENDERWALL_M2SNF] );
+	Printf( "    and %d of a type this does not name (3D floor faces, sky, horizon)" "\n", glSpecial );
+}
 
 CCMD( fua_surface_verify )
 {
