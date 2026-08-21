@@ -39,9 +39,17 @@ struct DerivedWallSpan
 	float zbottom[2];
 	float vTop[2];      // texture v at those tops
 	float vBottom[2];
+	// [rc4l] The horizontal coordinate, at the same two ends.
+	//
+	// Derivable exactly, and it took reading GLWall::Process to see why: an ordinary wall is drawn
+	// over the whole LINEDEF with fracleft 0 and fracright 1, not per seg. So the left edge is the
+	// sidedef's x offset and the right edge is that plus the line's texel length, with no
+	// seg-along-line bookkeeping involved at all. Polyobjects are the exception and are not derived.
+	float uLeft, uRight;
+	bool  hasU;
 	bool  valid;
 
-	DerivedWallSpan() : valid(false)
+	DerivedWallSpan() : uLeft(0.f), uRight(0.f), hasU(false), valid(false)
 	{
 		ztop[0] = ztop[1] = zbottom[0] = zbottom[1] = 0.f;
 		vTop[0] = vTop[1] = vBottom[0] = vBottom[1] = 0.f;

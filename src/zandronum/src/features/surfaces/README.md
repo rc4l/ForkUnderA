@@ -139,33 +139,33 @@ its texture, so GL believed it was drawing a whole texture into 40 units.
 Whichever of those it is, it is the last thing between the derivation and being able to replace the
 capture rather than correct it, and it is one texture on one map.
 
-## Wired in: the derivation is load-bearing now
+## Wired in, and on: the derivation builds the walls
 
-`fua_surface_derive 1` makes the bake take the two things the ladders measure -- a wall part's
-vertical SPAN and where its picture sits on it -- from the map instead of from `GLWall`. Everything
-else about the piece still comes from the capture, deliberately: the horizontal coordinate depends on
-how a seg sits along its linedef, which no ladder measures and which guessing at cost two days, and
-the shading is the last item below.
+`fua_surface_derive` is on. The bake takes a wall part's vertical SPAN and BOTH of its texture
+coordinates from the map instead of from `GLWall`. What still comes from the capture is which
+surfaces exist at all, the special kinds -- 3D floor faces, skies, horizons -- and the shading, which
+is deliberately last.
 
-| map | surfaces derived | from the capture | picture vs GL |
-|---|---|---|---|
-| Doom 2 MAP01 | 343 | **0** | 0.0% |
-| dbab02 | 1733 | 519 | 0.0% |
-| dbab04 | 3484 | 636 | 0.0% |
-| Sunder MAP10 | 14847 | 373 | 0.0% |
-| Sunder MAP16 | **72073** | **6** | 2.3% (mean 0.5) |
+| map | surfaces derived | from the capture | picture vs GL | control |
+|---|---|---|---|---|
+| Doom 2 MAP01 | 343 | **0** | 0.0% | 0.0% |
+| dbab02 | 1733 | 519 | 0.0% | 0.0% |
+| dbab04 | 3463 | 636 | 0.0% | 0.0% |
+| Sunder MAP10 | 15350 | 5 | 0.0% | 0.0% |
+| Sunder MAP16 | **71743** | **6** | 0.0% | 0.4% |
 
-Off by default while MAP16 still differs. The number that matters is the fallback column, and it is
-broken down by reason in `fua_dg_dynstats` -- "1073 fell back" does not say what to build next, and
-"467 special walls, 52 no span" does.
+Pixel-identical everywhere. MAP16's own control -- two map reloads with nothing changed -- reads
+0.4%, which is what a level that size does between reloads, and the derivation reads 0.0% against it.
 
-Two-sided middles moved across in the second pass and are now derived like everything else; the
-remainder is 3D-floor faces, skies and horizons, which are different surface kinds rather than
-unfinished ones.
+**The horizontal coordinate turned out to be the easy half**, which is worth recording because it was
+carried as the hard one for a long time. `GLWall::Process` draws an ordinary wall over the whole
+LINEDEF with `fracleft` 0 and `fracright` 1 -- not per seg -- so the two edges are just the sidedef's
+x offset and that plus the line's texel length. There is no seg-along-line bookkeeping to model.
+Polyobjects are the exception, are drawn per seg with real fractions, and are left to the capture.
+Deriving it took Sunder MAP16 from 2.3% to 0.0%.
 
-Sunder MAP16's 2.3% is where the ladder said it would be -- 93.9% geometry, and the fence category
-below. Nothing moved on any map where the ladder said nothing should, which is the whole reason for
-building the ladders before the wiring.
+The fallback column is broken down by reason in `fua_dg_dynstats`, because "1073 fell back" does not
+say what to build next and "467 special walls, 52 no span" does.
 
 ## What comes next, in order
 
