@@ -150,10 +150,18 @@ Three things it took:
 **Parity against the default renderer**, same camera: Doom 2 MAP01 with a door open 0.0%, Sunder
 MAP16 0.1%, MAP04 0.2%, MAP10 0.5%, dbab01 with its 138 3D-floor sectors 0.7%, Sunder MAP20 3.9%.
 
-MAP20 is the outlier and it is not missing geometry -- the difference is distant detail on a map with
-49,641 coplanar overlapping pairs, where two surfaces in the same plane disagree about depth in the
-last bit. That is why these stay **off by default**: 475 fps is one line of config away, and shipping
-a visible difference on somebody's favourite map is not a default to set on their behalf.
+MAP20 read as the outlier for most of this work and it is mostly an artefact of the measurement. Its
+own NOISE FLOOR -- the same configuration, loaded twice, diffed against itself -- is **3.6%**. It is a
+map full of animated decorations and flickering lights, so two captures seconds apart disagree with
+each other by nearly as much as the two renderers do. The real difference there is about 2%, in the
+same distant-detail-and-coplanar-overlap class as everywhere else, and every parity number quoted for
+MAP20 in earlier commits should be read against 3.6% rather than against zero.
+
+The other maps have a 0.0% floor, so their numbers stand as written.
+
+These stay **off by default** anyway, but for a smaller reason than "MAP20 is 4% wrong": the residual
+is real, it is unexplained, and turning them on is one line of config for anyone who wants the frame
+rate more than the last percent.
 
 **A door caught MID-TRAVEL reads 13.3% and is not a fault** -- two runs catching it at different
 heights. It settles to 0.0%. Worth writing down because it looks exactly like a broken lift.
