@@ -83,6 +83,7 @@
 #include "features/levelmesh/flatmesh.h"
 #include "features/levelmesh/wallcache.h"
 #include "features/hwrender/hud2d.h"
+#include "features/hwrender/occlusion.h"
 #include "features/fov-interp/fovinterp.h"
 #include "features/fua-caching/fua_caching.h"
 #include "features/levelmesh/projdecals.h"   // [rc4l] projected mesh decals
@@ -99,6 +100,28 @@ CVAR(Bool, gl_no_skyclear, false, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 CVAR(Float, gl_mask_threshold, 0.5f,CVAR_ARCHIVE|CVAR_GLOBALCONFIG|CVAR_DEBUGONLY)
 CVAR(Float, gl_mask_sprite_threshold, 0.5f,CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 CVAR(Bool, gl_sort_textures, false, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
+// [rc4l] Hide sprites behind walls, using the biggest N blockers in the level. OFF, and honestly so.
+//
+// The standalone renderer has no BSP walk, and the walk did two jobs: it built the geometry and it
+// only descended into subsectors that survived clipping, so GL never saw an actor behind a wall.
+// This is the second job, done per actor -- see features/hwrender/occlusion.h.
+//
+// It works, and it is exact: pixel-identical on nine maps with the world frozen and monsters live,
+// while hiding up to 96% of the actors the sweep finds. It is also a WASH, and the breakdown says
+// why with no room for argument. Sunder MAP16, minimum of 28 alternating samples:
+//
+//     Draw/Register   0.314 -> 0.177 ms   the culling doing exactly what it should
+//     the sweep       0.310 -> 0.453 ms   the buffer's build, plus one test per actor
+//     total           0.630 -> 0.630 ms
+//
+// A drawn sprite costs about 0.2 microseconds all in. A test that decides whether to skip one cannot
+// cost a comparable amount, and a square root, an angle and a bucket lookup do. Nothing about
+// choosing better occluders fixes that -- the build is already only a third of the added cost.
+//
+// Left in, off, because it is a correct occluder with a known cost, and because it is the obvious
+// thing to check a cheaper scheme against: whatever replaces it has to agree with it about which
+// actors are hidden. docs/occlusion-scope.md says what that cheaper scheme has to look like.
+CVAR(Int, fua_occl_sprites, 0, 0)
 EXTERN_CVAR(Bool, fua_surface_mapbake_auto)
 EXTERN_CVAR(Bool, gl_batch_walls)  // [rc4l] features/levelmesh wall batching
 
@@ -682,7 +705,26 @@ void FGLRenderer::DrawScene(bool toscreen)
 			// test -- a sprite is wider than the point it stands on, and clipping one that is half on
 			// screen would be worse than drawing a few that are not.
 			SetupSprite.Clock();
-			int nSeen = 0, nNoSector = 0, nBehind = 0, nOffScreen = 0, nProcessed = 0;
+			int nSeen = 0, nNoSector = 0, nBehind = 0, nOffScreen = 0, nProcessed = 0, nOccluded = 0;
+			// [rc4l] Spend on occluders in proportion to what there is to cull.
+			//
+			// The build costs the same whether the level holds six thousand actors or sixty, and the
+			// saving does not: on the eon maps it paid 0.10 ms to hide thirty-one sprites, which is a
+			// loss of most of a frame that was only 0.66 ms to begin with. Scaling by the number of
+			// actors the sweep saw LAST frame -- a figure that does not itself depend on the culling,
+			// so it cannot oscillate -- keeps the cost where the benefit is.
+			// Below this there is not enough to cull to pay for building the buffer at all: the
+			// build is a fixed cost and the saving is per actor. Measured, on a frame of 0.31 ms the
+			// eon maps lost 0.02 to hide thirty sprites.
+			const int kWorthIt = 1500;
+			static int s_lastSeen = 0;
+			int occlBudget = 0;
+			if (fua_occl_sprites > 0 && s_lastSeen >= kWorthIt)
+			{
+				occlBudget = s_lastSeen / 4;
+				if (occlBudget > fua_occl_sprites) occlBudget = fua_occl_sprites;
+			}
+			zx::hwrender::OcclusionBuild(occlBudget);
 			const float *mvp = zx::hwrender::SceneMVP();
 			TThinkerIterator<AActor> it;
 			AActor *thing;
@@ -710,11 +752,19 @@ void FGLRenderer::DrawScene(bool toscreen)
 						if (cy / w < -1.f - m || cy / w > 1.f + m) { nOffScreen++; continue; }
 					}
 				}
+				// Behind a wall: the BSP walk would never have handed this one over.
+				if (occlBudget > 0 && zx::hwrender::OcclusionHidden(thing))
+				{
+					nOccluded++;
+					continue;
+				}
 				nProcessed++;
 				ProcessSprite(thing, thing->Sector);
 			}
 			SetupSprite.Unclock();
 			zx::levelmesh::RecordSpriteSweep(nSeen, nNoSector, nBehind, nOffScreen, nProcessed);
+			zx::levelmesh::RecordOcclusionProbe(nOccluded);
+			s_lastSeen = nSeen;
 
 			if (!gl_draw_sync && toscreen)
 			{
