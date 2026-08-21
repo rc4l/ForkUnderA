@@ -126,8 +126,18 @@ The taller-texture rule had a `fua_surface_pegrule` switch so it could be A/B'd 
 about. It has been **deleted**: a rule that halves the score is not a candidate any more, and a
 switch nobody should ever turn on is worse than a paragraph. The measurement above is the record.
 
-**Still open**: the 84 pieces on Sunder MAP16 where GL draws 40 units of a 128-unit texture with
-every visible input saying 128, and the capture-time census above.
+**Still open**, and better understood than it was: Sunder MAP16's fence. GL draws 40 units of a
+128-unit texture (OFENCB01, pegged bottom, no scale) where every visible input says 128.
+
+What the last look added: the seg carries **two** middle pieces, one `RENDERWALL_M2S` and one
+`RENDERWALL_M2SNF`, at -244..-204 and -304..-244. That is a midtexture SPLIT across a 3D floor's
+light boundary -- so part of this category may be the LADDER rather than the derivation: it compares
+the union of pieces of one type, and a surface split across two types has no single union. The
+capture's own piece 0 also carries `GLT_CLAMPY`, which is set on a wall occupying exactly one copy of
+its texture, so GL believed it was drawing a whole texture into 40 units.
+
+Whichever of those it is, it is the last thing between the derivation and being able to replace the
+capture rather than correct it, and it is one texture on one map.
 
 ## Wired in: the derivation is load-bearing now
 
