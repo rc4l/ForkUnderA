@@ -87,12 +87,23 @@ currently carries all of it except the sectors it hands back.
 
 ## Done, and what it came to
 
-Sunder MAP10 at spawn, 1920x1200, alternating runs:
+Sunder MAP10, 1920x1200, alternating runs twice each. **Two vantages, because one is not a map:**
 
-| | p50 | fps |
-|---|---|---|
-| default | 8.99 ms | 111 |
-| GL cut out | **2.11 ms** | **475** |
+| | p50 | fps | p99 |
+|---|---|---|---|
+| spawn, monsters off -- default | 8.99 ms | 111 | 11.8 ms |
+| spawn, monsters off -- GL cut out | 2.11 ms | 475 | 9.4 ms |
+| **open arena, monsters on -- default** | **16.2 ms** | **62** | 20.5 ms |
+| **open arena, monsters on -- GL cut out** | **4.6 ms** | **220** | 15.4 ms |
+
+The bottom pair is the one to quote. The spawn view is a corridor with a fraction of the map in it,
+and 475 fps taken there and called "Sunder MAP10" is the same one-viewpoint mistake this document
+already records once, made again: a heading sweep that silently failed, then a single vantage read as
+the map.
+
+The player's own `vid_fps` in the arena reads around 9 ms while actually playing, which sits between
+the p50 and the p99 above -- the counter averages a window that includes the worse frames, and the
+p99 here is 15 ms. **The ratio is what survives across all of it: a bit over 3x.**
 
     fua_surface_mapbake_auto 1
     fua_dg_cullbatches 1
