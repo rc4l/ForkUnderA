@@ -2134,6 +2134,15 @@ static void BuildDynamic(Diligent::IDeviceContext *ctx)
 
 // [rc4l] The opaque half of the sprite stream. Alpha-tested, depth written, so these behave exactly
 // like world geometry against everything drawn afterwards.
+//
+// NOTHING CALLS THIS. Sprites of every blend mode -- opaque included -- go through the sorted
+// translucent pass instead, because an alpha-1 sprite has to be ordered against the additive glows
+// around it: splitting them into a depth-writing pass let an impact sprite punch a black hole in a
+// plasma burst. See the blend-0 note in the sorted loop, which is where the decision lives.
+//
+// Left standing rather than deleted because it is the shape a depth-writing sprite pass would take
+// if one is ever wanted again -- but it is DEAD, and it looks alive enough that optimising it is a
+// mistake worth only making once. It was: batching its draws changed nothing, because it never ran.
 static void DrawDynamicOpaque(Diligent::IDeviceContext *ctx)
 {
 	if (!g_dynReady) return;
