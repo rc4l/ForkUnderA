@@ -1145,6 +1145,8 @@ void InvalidateMovedSectors()
 			// opening is exactly this case, several times a second.
 			BakeSegFromMap(idx);   // a no-op on a seg the map does not own
 		}
+		// ...and the sector's own planes, which have no walk to notice them either.
+		if (fua_surface_mapbake_auto) zx::levelmesh::BakeFlatsForSector(s);
 	}
 }
 

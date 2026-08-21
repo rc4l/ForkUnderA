@@ -16,6 +16,9 @@
 #include "gl/textures/gl_material.h"   // FMaterial::TextureWidth, for the plane UV transform
 #include "gl/utility/gl_convert.h"      // ANGLE_TO_FLOAT
 #include "tarray.h"
+#include "p_3dfloors.h"   // F3DFloor, P_GetPlaneLight
+#include "r_sky.h"   // skyflatnum
+#include "gl/renderer/gl_lightdata.h"   // gl_ClampLight
 #include "gl/renderer/gl_renderstate.h"   // gl_RenderState.GetDynLight, for the sprite light fold
 
 // [rc4l] Print every new flat-mesh key. See RegisterFlatSubsector: a key that misses when it should
@@ -25,6 +28,8 @@ CVAR(Bool, fua_flat_keylog, false, 0)
 // [rc4l] At FILE scope, not inside the namespace: p_mobj.cpp externs it to say whether a missile
 // managed to stick its mark, and a namespaced cvar is a different symbol that will not link.
 CVAR(Bool, fua_decal_log, false, 0)
+
+EXTERN_CVAR(Bool, fua_surface_mapbake_auto)
 
 namespace zx { namespace levelmesh {
 
@@ -175,7 +180,27 @@ bool CachedFlat(int index, const subsector_t **sub, bool *ceiling, const sector_
 	return true;
 }
 
-void RegisterFlatSubsector(const GLFlat &flat, subsector_t *sub, bool ceiling)
+// [rc4l] What a flat is MADE OF, separated from where those values came from.
+//
+// The fields are named after GLFlat's so the storing half below reads unchanged, which is the point:
+// the map-driven bake fills exactly the same set and the code that turns them into geometry does not
+// get written a second time. Everything here except the material and the dynamic light index is map
+// data -- a sector's plane, its offsets, its scale, its rotation, its light.
+struct FlatSource
+{
+	GLSectorPlane plane;
+	float         dz;
+	FMaterial    *gltexture;
+	int           lightlevel;
+	FColormap     Colormap;
+	float         alpha;
+	ERenderStyle  renderstyle;
+	int           mMeshLightIndex;
+	const sector_t *mMeshModel;
+	int           mMeshWhichPlane;
+};
+
+static void StoreFlat(const FlatSource &flat, subsector_t *sub, bool ceiling)
 {
 	if (sub == NULL || sub->numlines < 3) return;
 	if (flat.gltexture == NULL) return;
@@ -381,6 +406,205 @@ void RegisterFlatSubsector(const GLFlat &flat, subsector_t *sub, bool ceiling)
 	// Only now: a stamp recorded before the store would claim a surface that never made it in.
 	slot->stamp = now;
 	slot->stamped = true;
+}
+
+// [rc4l] Flats built from the MAP, with no GLFlat involved.
+//
+// GLFlat::ProcessSector decides what to draw from where the VIEWER is: a floor only when the plane
+// is below the eye, a ceiling only when it is above, a 3D floor's face only from the side it is
+// being looked at. That is right for a renderer walking the BSP once a frame and impossible for a
+// bake, which has no viewer.
+//
+// So this emits BOTH sides of everything and lets back-face culling drop the half that is turned
+// away -- which is what fua_dg_cull is for, and why a flat's winding is chosen by which side it is
+// seen from rather than by its plane's normal. The result is the same set of surfaces GL would have
+// produced across a walk that visited the sector from every side.
+static void BakeOnePlane(subsector_t *sub, sector_t *model, int whichPlane, bool ceiling,
+	int lightlevel, FColormap cm, float alpha, ERenderStyle style)
+{
+	if (model == NULL || sub == NULL) return;
+	FlatSource f;
+	f.plane.GetFromSector(model, whichPlane);
+	// The sky is not a surface: GLFlat::Process returns before making one, and the sky pass draws it.
+	if (f.plane.texture == skyflatnum) return;
+	f.gltexture = FMaterial::ValidateTexture(f.plane.texture, false, true);
+	if (f.gltexture == NULL) return;
+	if (f.gltexture->tex->isFullbright())
+	{
+		cm.LightColor.r = cm.LightColor.g = cm.LightColor.b = 0xff;
+		lightlevel = 255;
+	}
+	// GLFlat::Process's own rule, and the reason a transfer-heights door's floor does not z-fight
+	// with the one it sits on.
+	f.dz = (whichPlane == sector_t::floor && model->transdoor) ? -1.f : 0.f;
+	f.lightlevel = lightlevel;
+	f.Colormap = cm;
+	f.alpha = alpha;
+	f.renderstyle = style;
+	f.mMeshLightIndex = -1;
+	f.mMeshModel = model;
+	f.mMeshWhichPlane = whichPlane;
+	StoreFlat(f, sub, ceiling);
+}
+
+// One face of a 3D floor, by GLFlat::SetFrom3DFloor's rule with the viewer test taken out.
+static void Bake3DFace(subsector_t *sub, sector_t *real, F3DFloor *rover, bool top, bool underside,
+	bool ceiling)
+{
+	F3DFloor::planeref &pr = top ? rover->top : rover->bottom;
+	if (pr.copied) return;
+	lightlist_t *light = P_GetPlaneLight(real, pr.plane, underside);
+	int lightlevel = *light->p_lightlevel;
+
+	FColormap cm;
+	cm = real->ColorMap;
+	if (rover->flags & FF_FOG) cm.LightColor = (light->extra_colormap)->Fade;
+	else cm.CopyLightColor(light->extra_colormap);
+	// ProcessSector overrides the fade with the sector's own for every 3D floor face it puts.
+	cm.FadeColor = real->ColorMap->Fade;
+
+	float alpha = rover->alpha / 255.0f;
+	ERenderStyle style = (rover->flags & FF_ADDITIVETRANS) ? STYLE_Add : STYLE_Translucent;
+
+	// FF_FIX takes its light from the model sector outright, which is the one case where the plane
+	// light list is not the answer.
+	if (rover->flags & FF_FIX)
+	{
+		lightlevel = gl_ClampLight(rover->model->lightlevel);
+		cm = rover->GetColormap();
+	}
+
+	BakeOnePlane(sub, pr.model, pr.isceiling, ceiling, lightlevel, cm, alpha, style);
+}
+
+static int BakeFlatsForSubsector(subsector_t *sub)
+{
+	int made = 0;
+	{
+		if (sub == NULL || sub->sector == NULL || sub->numlines < 3) return 0;
+		// The ORIGINAL sector, the way ProcessSector takes it: &sectors[sectornum], not whatever
+		// substitution a fake floor put in its place for one frame.
+		sector_t *real = &sectors[sub->sector->sectornum];
+		if (real->e == NULL) return 0;
+		extsector_t::xfloor &x = real->e->XFloor;
+		const bool haveFF = x.ffloors.Size() != 0;
+
+		// ---- the sector's own floor ----
+		{
+			int ll = gl_ClampLight(real->GetFloorLight());
+			FColormap cm;
+			cm = real->ColorMap;
+			const float alpha = 1.0f - real->GetReflect(sector_t::floor);
+			if (haveFF)
+			{
+				lightlist_t *light = P_GetPlaneLight(real, &real->floorplane, false);
+				if ((!(real->GetFlags(sector_t::floor) & PLANEF_ABSLIGHTING) || !light->fromsector)
+					&& (light->p_lightlevel != &real->lightlevel))
+					ll = *light->p_lightlevel;
+				cm.CopyLightColor(light->extra_colormap);
+			}
+			if (alpha != 0.0f)
+			{
+				BakeOnePlane(sub, real, sector_t::floor, false, ll, cm, alpha, STYLE_Translucent);
+				made++;
+			}
+		}
+
+		// ---- and its ceiling ----
+		{
+			int ll = gl_ClampLight(real->GetCeilingLight());
+			FColormap cm;
+			cm = real->ColorMap;
+			const float alpha = 1.0f - real->GetReflect(sector_t::ceiling);
+			if (haveFF)
+			{
+				lightlist_t *light = P_GetPlaneLight(real, &real->ceilingplane, true);
+				if ((!(real->GetFlags(sector_t::ceiling) & PLANEF_ABSLIGHTING))
+					&& (light->p_lightlevel != &real->lightlevel))
+					ll = *light->p_lightlevel;
+				cm.CopyLightColor(light->extra_colormap);
+			}
+			if (alpha != 0.0f)
+			{
+				BakeOnePlane(sub, real, sector_t::ceiling, true, ll, cm, alpha, STYLE_Translucent);
+				made++;
+			}
+		}
+
+		// ---- every face of every 3D floor in it ----
+		//
+		// The four cases are ProcessSector's, which runs two loops -- one for the faces seen from
+		// below and one for those seen from above -- and each loop has an ordinary arm and an
+		// inverted one. Its height bookkeeping (lastceilingheight, lastfloorheight) is a
+		// view-dependent overlap trim and has no meaning without a viewer, so it is not here.
+		for (unsigned k = 0; k < x.ffloors.Size(); k++)
+		{
+			F3DFloor *rover = x.ffloors[k];
+			if ((rover->flags & (FF_EXISTS | FF_RENDERPLANES | FF_THISINSIDE))
+				!= (FF_EXISTS | FF_RENDERPLANES)) continue;
+			// A fog face draws no texture at all -- GLFlat::Process nulls the material for it -- so
+			// there is nothing for the mesh to hold.
+			if (rover->flags & FF_FOG) continue;
+
+			const bool inverted = (rover->flags & (FF_INVERTPLANES | FF_BOTHPLANES)) != 0;
+			if (!(rover->flags & FF_INVERTPLANES))
+			{
+				Bake3DFace(sub, real, rover, true,  false, false);  // walkable top, seen from above
+				Bake3DFace(sub, real, rover, false, true,  true);   // underside, seen from below
+				made += 2;
+			}
+			if (inverted)
+			{
+				Bake3DFace(sub, real, rover, true,  true,  true);
+				Bake3DFace(sub, real, rover, false, false, false);
+				made += 2;
+			}
+		}
+	}
+	return made;
+}
+
+int BakeFlatsFromMap()
+{
+	if (subsectors == NULL || numsubsectors <= 0 || sectors == NULL) return 0;
+	int made = 0;
+	for (int i = 0; i < numsubsectors; i++) made += BakeFlatsForSubsector(&subsectors[i]);
+	return made;
+}
+
+// [rc4l] One sector's planes again, because it moved.
+//
+// The flat cache notices a plane has changed by stamping what it was made of and comparing -- which
+// works because RegisterFlatSubsector is called every frame by GL's walk. With the walk gone nothing
+// asks, and a lift's floor keeps the height it was baked at while the player rides it. Walls already
+// had this: InvalidateMovedSectors re-bakes their segs from the map for exactly the same reason.
+int BakeFlatsForSector(int sectorIndex)
+{
+	if (sectors == NULL || sectorIndex < 0 || sectorIndex >= numsectors) return 0;
+	sector_t &sec = sectors[sectorIndex];
+	int made = 0;
+	for (int i = 0; i < sec.subsectorcount; i++) made += BakeFlatsForSubsector(sec.subsectors[i]);
+	return made;
+}
+
+// [rc4l] The capture's way in: a GLFlat, unpacked into the same fields the map bake fills.
+void RegisterFlatSubsector(const GLFlat &flat, subsector_t *sub, bool ceiling)
+{
+	// When the map is driving, the capture stands down for flats exactly as it does for walls --
+	// both writing the same slots is a fight over them, not twice the coverage.
+	if (fua_surface_mapbake_auto) return;
+	FlatSource f;
+	f.plane           = flat.plane;
+	f.dz              = flat.dz;
+	f.gltexture       = flat.gltexture;
+	f.lightlevel      = flat.lightlevel;
+	f.Colormap        = flat.Colormap;
+	f.alpha           = flat.alpha;
+	f.renderstyle     = flat.renderstyle;
+	f.mMeshLightIndex = flat.mMeshLightIndex;
+	f.mMeshModel      = flat.mMeshModel;
+	f.mMeshWhichPlane = flat.mMeshWhichPlane;
+	StoreFlat(f, sub, ceiling);
 }
 
 // ---------------------------------------------------------------------------

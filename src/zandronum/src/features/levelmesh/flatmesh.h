@@ -30,6 +30,16 @@ namespace zx { namespace levelmesh {
 // (subsector, plane) already baked at the same geometry is skipped.
 void RegisterFlatSubsector(const GLFlat &flat, subsector_t *sub, bool ceiling);
 
+// [rc4l] Every flat in the level, from the map, with no GLFlat involved.
+//
+// The companion to BakeLevelFromMap for walls, and the other half of what fua_dg_standalone needs:
+// GL's walk is what produces GLFlats, so with it cut out the floors and ceilings have to come from
+// somewhere else. Returns how many planes it built.
+int BakeFlatsFromMap();
+
+// One sector's planes again after it has moved -- see the definition for why the stamp cannot notice.
+int BakeFlatsForSector(int sectorIndex);
+
 // [rc4l] How often a visible flat was left alone rather than rebuilt. A cache whose hit rate
 // nobody can see is a cache nobody can tell has stopped working.
 void GetFlatCacheStats(int &hits, int &rebuilds);
