@@ -3449,7 +3449,7 @@ b3659305ce02399d0a2475963cd82fdb5923b935	2016-04-02T18:10:32Z	- fixed typo in li
 9b5a4b6d436c3b867e9f5bba8c1710feaadfdd6c	2016-04-02T20:05:23Z	- removed several unused setter functions for level data structures and fixed some incorrect uses.	pending		/
 6ffb5fa164ccdb8c7942a3727f989937b84f0f9e	2016-04-02T20:12:52Z	- fixed: Angular interpolation needs to call deltaangle instead of using the difference between two angles to avoid overflow conditions.	pending		/
 f7553fcd51ff4d91c1f45728f61c50aa32ad5938	2016-04-02T20:17:33Z	Merge branch 'floatcvt' of https://github.com/rheit/zdoom into floatcvt	pending		/
-348c384bb63ddbaf295d73703574187f804450d6	2016-04-02T20:18:42Z	- fixed scaling of skies with unusual dimensions.	pending		/
+348c384bb63ddbaf295d73703574187f804450d6	2016-04-02T20:18:42Z	- fixed scaling of skies with unusual dimensions.	ported	Sky xscale floored and clamped at 1024, so a width that does not divide 1024 no longer leaves a fractional wrap (the DADM seam). Used floorf per the later 9f6d244016 cleanup.	cf364c0b
 28ac65b25b1ebef5045d1193399f0876b3798bd1	2016-04-02T21:01:32Z	- Fixed GCC and Clang compilation errors.	pending		/
 f36489098f5a6eaeaff6d6cc3bde219a8250cbac	2016-04-02T21:01:51Z	- Fixed one GCC/Clang warning.	pending		/
 af78937a15e06fd1ca72031dcf52ead26ff96c76	2016-04-02T21:17:16Z	- updated GL renderer.	pending		/
