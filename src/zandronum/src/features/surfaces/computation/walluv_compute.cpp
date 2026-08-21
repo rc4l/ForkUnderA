@@ -31,13 +31,6 @@ float ComputeTextureTop(float refCeiling, float refFloor, float texHeight, bool 
 }
 
 
-float ComputeVShift(float vTopLeft, float vTopRight)
-{
-	// GL takes the SMALLER of the two top corners, which on a sloped wall is not always the left one.
-	const float top = ( vTopLeft < vTopRight ) ? vTopLeft : vTopRight;
-	return floorf( top );
-}
-
 bool ComputeWallClampsY(float vUpLeft, float vUpRight, float vLoLeft, float vLoRight)
 {
 	// Written as GL writes it: either the wall starts exactly at the top of the texture and ends

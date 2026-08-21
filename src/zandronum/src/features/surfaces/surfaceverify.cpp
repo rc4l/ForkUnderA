@@ -179,13 +179,6 @@ const char *TypeName(int type)
 // One run A/Bs it rather than one memory.
 CVAR( Bool, fua_surface_vshift, true, 0 )
 
-// [rc4l] GL's "render it anyway with the sector's floor texture" branch, switchable.
-//
-// A sloped step whose sidedef carries no texture is drawn by GL with the SECTOR'S FLAT -- its own
-// comment says slopes are not precise enough to match and a background sky leaves ugly holes
-// otherwise. The derivation copies that. The switch exists because a wall wearing a flat is a
-// distinctive enough mistake to be worth being able to rule in or out in one run.
-CVAR( Bool, fua_surface_flatfallback, true, 0 )
 
 // [rc4l] Could the bake be driven by the MAP instead of by GL's walk of the BSP?
 //
@@ -242,7 +235,7 @@ CCMD( fua_surface_mapbake )
 			if ( sectors[i].e != NULL && sectors[i].e->XFloor.lightlist.Size( ) != 0 ) lightlist++;
 			if ( sectors[i].heightsec != NULL ) heightsec++;
 		}
-		Printf( "  sectors the map bake cannot own: %d with a 3D floor light list, %d substituted for the viewer" "\n",
+		Printf( "  sectors with a 3D floor light list: %d (the bake cuts their walls into bands); %d substituted for the viewer" "\n",
 			lightlist, heightsec );
 	}
 	// [rc4l] And the question that matters: is there anything in the MESH where GL drew something?
