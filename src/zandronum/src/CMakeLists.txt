@@ -1613,6 +1613,7 @@ add_executable( zdoom WIN32
 	features/surfaces/computation/planegeom_compute.cpp
 	features/surfaces/computation/surfacechange_compute.cpp
 	features/surfaces/surfaceverify.cpp
+	features/surfaces/surfacebuild.cpp
 	# [rc4l] The decisions the Diligent backend used to make inline, where they can be tested.
 	features/hwrender/computation/surfaceorder_compute.cpp
 	features/hwrender/computation/lightside_compute.cpp

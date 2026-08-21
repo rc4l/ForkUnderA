@@ -44,6 +44,7 @@
 #include "TopLevelAS.h"
 
 #include "features/levelmesh/staticmesh.h"
+#include "features/surfaces/surfacebuild.h"
 #include "features/levelmesh/wallcache.h"   // LevelGeneration, for the per-level auto setup
 #include "features/levelmesh/levelmesh.h"   // ArmFullBake
 #include "d_main.h"                          // gamestate
@@ -5586,6 +5587,17 @@ void DynStats(FString &report)
 		g_dynSlotSeen, g_dynSlotMax, g_dynSlotRefused, g_dynSlotNoMaterial);
 	cull.AppendFormat(", dyn draws: %d bindless, %d per-material, pipelines [%s]",
 		g_dynBindless, g_dynPerMaterial, g_fillState);
+	{
+		// [rc4l] How much of the world the DERIVATION built, rather than transcribed from GL. The
+		// number is the point of features/surfaces: it goes up as categories move across.
+		int derived = 0, fellBack = 0;
+		zx::surfaces::GetDeriveStats(derived, fellBack);
+		int mid = 0, special = 0, notex = 0, nospan = 0, seam = 0;
+		zx::surfaces::GetDeriveFallbacks(mid, special, notex, nospan, seam);
+		cull.AppendFormat(" | derived surfaces: %d built, %d from the capture"
+			" (%d two-sided middles, %d special walls, %d no texture, %d no span, %d seam-split)",
+			derived, fellBack, mid, special, notex, nospan, seam);
+	}
 	cull.AppendFormat(" | array built %d times, %d slot updates, slots 1..7 got:", g_fillCount, g_matSlotUpdates);
 	for (int fi = 1; fi < 8; fi++)
 		cull.AppendFormat(" %d=%s(%p)", fi, g_fillNames[fi].IsNotEmpty() ? g_fillNames[fi].GetChars() : "-",

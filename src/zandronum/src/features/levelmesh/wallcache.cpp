@@ -25,11 +25,19 @@
 // [rc4l] Declared at global scope: EXTERN_CVAR inside the namespace would name a different symbol
 // than the CVAR defined in gl_drawinfo.cpp, and only the linker would notice.
 EXTERN_CVAR(Bool, gl_wallmesh)
+// [rc4l] Build wall heights and texture position from the MAP rather than from GLWall.
+//
+// Off while the ladders still disagree with GL on some pieces -- see features/surfaces/README.md.
+// Turning it on is the A/B: the ladders predict exactly which pieces should move, so anything else
+// that moves is a fault nobody had measured.
+CVAR(Bool, fua_surface_derive, false, 0)
 EXTERN_CVAR(Int, gl_fogmode)
 // [rc4l] The animated-texture re-resolve on replay, as a switch, so its cost can be A/B'd from the
 // console instead of from two builds. Off renders stale animation frames -- a measurement aid, not
 // a setting anyone should turn off.
 CVAR(Bool, gl_wallcache_anim, true, 0)
+
+#include "features/surfaces/surfacebuild.h"
 
 namespace zx { namespace levelmesh {
 
@@ -189,6 +197,31 @@ void BakeSeg(int segIndex)
 	for (int i = 0; i < sc.pieceCount; i++)
 	{
 		const int fanCount = sc.walls[i].BuildFanVertices(fan, GLWall::MAX_BATCH_FAN_VERTICES);
+		// [rc4l] The first thing in this renderer that DERIVES a surface instead of transcribing one.
+		//
+		// features/surfaces has been able to work out a sidedef's vertical span and texture position
+		// from the map for a while, and until now nothing read the answer -- three ladders scored it and
+		// the renderer went on using GL's. This puts the derived numbers in the mesh, for the two things
+		// the ladders actually measure and nothing else: the heights, and where the picture sits on
+		// them. The horizontal coordinate stays GL's, because how a seg sits along its linedef is
+		// bookkeeping no ladder measures and guessing at alignment is what cost two days.
+		//
+		// Only the plain four-corner case: gl_seamless adds vertices along the edges to hide cracks,
+		// and their heights are interpolated rather than derived. Those fall back and are counted, so
+		// "how much of the world is derived" is a number rather than an impression.
+		if (fua_surface_derive && fanCount != 4) zx::surfaces::NoteDeriveSeamFallback();
+		if (fua_surface_derive && fanCount == 4)
+		{
+			zx::surfaces::DerivedWallSpan d;
+			if (zx::surfaces::BuildDerivedWallSpan(sc.walls[i].seg, sc.walls[i].type, d))
+			{
+				// The fan is bottom-left, top-left, top-right, bottom-right -- see BuildFanVertices.
+				fan[0].z = d.zbottom[0]; fan[0].v = d.vBottom[0];
+				fan[1].z = d.ztop[0];    fan[1].v = d.vTop[0];
+				fan[2].z = d.ztop[1];    fan[2].v = d.vTop[1];
+				fan[3].z = d.zbottom[1]; fan[3].v = d.vBottom[1];
+			}
+		}
 		const int triVerts = ComputeFanTriangleVertexCount(fanCount);
 		// [rc4l] Give the range back before forgetting it, or the piece registered against it is
 		// orphaned: it stays in the piece list drawing the geometry that was there, and the next
