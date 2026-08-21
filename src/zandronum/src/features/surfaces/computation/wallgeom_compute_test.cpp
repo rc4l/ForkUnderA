@@ -352,3 +352,61 @@ TEST(WallGeom, AMiddleInOneSectorIsTheTextureAndNothingElse)
 	EXPECT_FLOAT_EQ(300.f, p0.top);
 	EXPECT_FLOAT_EQ(172.f, p0.bottom);
 }
+
+// [rc4l] A wall that pinches out is CUT SHORT, not turned into a triangle.
+//
+// This is the fault no ladder could see, because none of them ever compared a HORIZONTAL texture
+// coordinate. GL finds where the top edge meets the bottom edge, moves that end of the wall to the
+// crossing, and moves `u` with it -- so its quad is narrower than the linedef and ours was not.
+// 33 pieces on dbab04, every one a wall that pinches.
+TEST(WallGeom, AWallThatPinchesAtTheRightEndStopsThere)
+{
+	// Top runs 100 -> 0, bottom is flat at 50: they cross halfway.
+	const float ztop[2]    = { 100.f, 0.f };
+	const float zbottom[2] = {  50.f, 50.f };
+	zx::surfaces::WallPinch p;
+	ComputeWallPinch(ztop, zbottom, p);
+	EXPECT_FLOAT_EQ(0.f, p.fracLeft);
+	EXPECT_FLOAT_EQ(0.5f, p.fracRight);
+	EXPECT_FLOAT_EQ(50.f, p.ztop[1]);     // collapsed to the crossing height...
+	EXPECT_FLOAT_EQ(50.f, p.zbottom[1]);  // ...at both corners of that end
+	EXPECT_FLOAT_EQ(100.f, p.ztop[0]);    // the other end is untouched
+}
+
+TEST(WallGeom, AWallThatPinchesAtTheLeftEndStartsThere)
+{
+	const float ztop[2]    = { 0.f, 100.f };
+	const float zbottom[2] = { 50.f, 50.f };
+	zx::surfaces::WallPinch p;
+	ComputeWallPinch(ztop, zbottom, p);
+	EXPECT_FLOAT_EQ(0.5f, p.fracLeft);
+	EXPECT_FLOAT_EQ(1.f, p.fracRight);
+	EXPECT_FLOAT_EQ(50.f, p.ztop[0]);
+	EXPECT_FLOAT_EQ(50.f, p.zbottom[0]);
+	EXPECT_FLOAT_EQ(100.f, p.ztop[1]);
+}
+
+TEST(WallGeom, AnOrdinaryWallIsNotCutAtAll)
+{
+	const float ztop[2]    = { 100.f, 120.f };
+	const float zbottom[2] = {   0.f,  10.f };
+	zx::surfaces::WallPinch p;
+	ComputeWallPinch(ztop, zbottom, p);
+	EXPECT_FLOAT_EQ(0.f, p.fracLeft);
+	EXPECT_FLOAT_EQ(1.f, p.fracRight);
+	EXPECT_FLOAT_EQ(100.f, p.ztop[0]);
+	EXPECT_FLOAT_EQ(10.f, p.zbottom[1]);
+}
+
+// Parallel edges never cross, so a wall whose top and bottom slope together pinches nowhere -- and
+// the division that would find the crossing must not be attempted.
+TEST(WallGeom, ParallelEdgesPinchNowhere)
+{
+	const float ztop[2]    = { -10.f, -30.f };
+	const float zbottom[2] = {   0.f, -20.f };   // same slope: always 10 below the top
+	zx::surfaces::WallPinch p;
+	ComputeWallPinch(ztop, zbottom, p);
+	EXPECT_FLOAT_EQ(0.f, p.fracLeft);
+	EXPECT_FLOAT_EQ(1.f, p.fracRight);
+	EXPECT_FLOAT_EQ(-10.f, p.ztop[0]);
+}

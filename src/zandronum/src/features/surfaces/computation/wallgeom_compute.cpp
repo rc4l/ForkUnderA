@@ -188,6 +188,35 @@ void ComputeMiddleClip(const WallHeights &a, const WallHeights &b, const MidText
 	pb = Make(botB, topB);
 }
 
+void ComputeWallPinch(const float *ztopIn, const float *zbottomIn, WallPinch &out)
+{
+	out.fracLeft = 0.f;
+	out.fracRight = 1.f;
+	out.ztop[0] = ztopIn[0]; out.ztop[1] = ztopIn[1];
+	out.zbottom[0] = zbottomIn[0]; out.zbottom[1] = zbottomIn[1];
+
+	// The two edges of the wall as lines in (fraction along, height): the top runs from ztop[0] to
+	// ztop[1] and the bottom from zbottom[0] to zbottom[1]. Where they cross is where the wall ends.
+	const float dch = ztopIn[1] - ztopIn[0];
+	const float dfh = zbottomIn[1] - zbottomIn[0];
+	const float denom = dch - dfh;
+	if (denom == 0.f) return;   // parallel: it pinches nowhere, so it pinches at neither end
+
+	const float coeff = (zbottomIn[0] - ztopIn[0]) / denom;
+	const float interY = ztopIn[0] + coeff * dch;
+
+	if (ztopIn[0] < zbottomIn[0])
+	{
+		out.fracLeft = coeff;
+		out.ztop[0] = out.zbottom[0] = interY;
+	}
+	if (ztopIn[1] < zbottomIn[1])
+	{
+		out.fracRight = coeff;
+		out.ztop[1] = out.zbottom[1] = interY;
+	}
+}
+
 bool ComputeSideHasGeometry(const WallHeights &h)
 {
 	return ComputeUpperPart(h).present || ComputeLowerPart(h).present || ComputeMiddlePart(h).present;
