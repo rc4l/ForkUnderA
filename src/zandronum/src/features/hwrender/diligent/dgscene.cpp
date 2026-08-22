@@ -5832,6 +5832,16 @@ CCMD( fua_frametimes )
 			if (fp.ticked) { if (slow) slowTicked++; else medTicked++; }
 			if (slow) nSlow++; else nMed++;
 		}
+		// [rc4l] SAY SO when the sim was frozen, because the numbers stop meaning frame rate.
+		//
+		// A paused engine presents once per tic, so every reading collapses to ~28.6 ms / 35 fps
+		// however fast the renderer actually is. rc4l reported "sub 300" at a vantage that measures
+		// 305 fps running and 37 fps paused -- the menu was open. Reading a frame time off a frozen
+		// sim has now misled this work twice, so the report refuses to be quoted out of context.
+		if (slowTicked + medTicked == 0 && g_frameCount > 32)
+			Printf( "  NOTE: no game tic ran during this sample -- the sim was paused or the window "
+			        "was inactive.\n        A frozen sim presents once per tic, so this is the 35 Hz tic "
+			        "rate, not the renderer's speed.\n" );
 		if (nSlow > 0 && nMed > 0)
 		{
 			Printf( "  what a frame carries      %-12s %-12s\n", "p99+", "the rest" );
