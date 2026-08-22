@@ -359,7 +359,17 @@ void GLSprite::Draw(int pass)
 	}
 	else
 	{
-		gl_RenderModel(this);
+		// [rc4l] A model drawn into GL's back buffer is a model nobody sees.
+		//
+		// RegisterSprite is in the branch above, so a model never reaches the mesh, and this draws it
+		// through GL -- into a surface the Diligent child window is covering. So it has been invisible
+		// for as long as the backend has been presenting, and every one of these draws was GL driver
+		// and GPU work for no pixels. On rc4l's Whodunit content that is hundreds a frame, on the same
+		// device Vulkan is driving, and it is the OpenGL driver that TDR'd.
+		//
+		// Skipping it changes nothing that is on screen -- measured, 0.0% against the map's own floor.
+		// It does NOT fix models; they are still missing. docs/models-scope.md is how they come back.
+		if (!zx::hwrender::BackendPresenting()) gl_RenderModel(this);
 	}
 
 	if (pass==GLPASS_TRANSLUCENT)

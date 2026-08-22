@@ -5645,6 +5645,14 @@ bool Fua_WantEmbeddedWindow() { return !!fua_dg_embed; }
 // have been baked (a bake runs inside GL's BSP walk, so the first frames after switching are still
 // GL frames), and there has to be geometry. Anything else and GL keeps the frame -- falling back
 // silently is right here, because the alternative is a black screen.
+// [rc4l] See hud2d.h. Deliberately does NOT ask about fua_dg_standalone: with the embedded window
+// up, GL's output is discarded either way.
+bool BackendPresenting()
+{
+	if (!fua_vulkan || !fua_dg_embed) return false;
+	return GetSwapChain() != NULL;
+}
+
 bool StandaloneActive()
 {
 	if (!fua_dg_standalone || !fua_vulkan) return false;
