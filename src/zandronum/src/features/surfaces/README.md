@@ -320,10 +320,18 @@ the GL-driven path sets for itself on the same shot.
 | dbab04 | 0.6% | 0.1% | **one wall band, open** |
 | dbab05 | 0.0% | 0.0% | no difference |
 | Sunder MAP10 | 0.0% | -- | no difference |
-| Sunder MAP16 | 0.7% | 0.7% | no difference -- and the map-driven path repeats at 0.0%, the GL-driven one does not |
+| Sunder MAP16 | 0.8% | 0.0-0.1% | **real, open** -- see below |
 | Sunder MAP04 | 0.2% | -- | at the floor |
 
-### The one open difference: dbab04's tinted band
+### Sunder MAP16, 0.8%
+
+Recorded first as "no difference", on a floor reading that was itself unstable. Measured again with
+three loads per config it is consistent: both paths repeat within 0.0-0.1% of themselves and differ
+from each other by 0.8% every time. It is a patch of animated lava and a glowing object, which points
+at an animation frame resolving differently between the capture and the bake rather than at geometry.
+Not chased yet.
+
+### The other open difference: dbab04's tinted band
 
 One horizontal band on one wall comes out grey where GL tints it blue. Its geometry, its texture and
 its extents are all already right; only the colour is wrong, which is the class of fault that
