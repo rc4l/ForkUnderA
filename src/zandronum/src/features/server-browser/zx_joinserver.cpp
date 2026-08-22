@@ -38,6 +38,7 @@
 
 #include "features/server-browser/browser.h"
 #include "features/server-browser/zx_joinserver.h"
+#include "features/continue/zx_continue.h"
 #include "features/server-browser/computation/joinplan_compute.h"
 #include "features/server-browser/computation/joinresume_compute.h"
 #include "features/server-browser/computation/stableline_compute.h"
@@ -613,6 +614,11 @@ void NoteJoinStarted( const char *serverName )
 void NoteJoinSucceeded()
 {
 	g_joinInFlight = false;
+
+	// [rc4l] The player is demonstrably in, which is the one moment a server session is worth
+	// remembering: before this it might still fail, and after it we may never get another clean
+	// moment if the process dies.
+	Continue_NoteJoined();
 }
 
 void NoteJoinFailed( const char *reason )

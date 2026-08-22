@@ -357,6 +357,16 @@ void			BROWSER_RefreshListedServers( void );
 // does not need a floor of its own.
 void			BROWSER_RecheckServer( ULONG ulServer );
 
+// [rc4l] Make a slot for an address the browser has not been told about, deduping against one it
+// already has. Exposed so a feature that knows an address -- Continue remembering a server -- can
+// ask about it through the browser's own query path rather than reimplementing the protocol.
+void			BROWSER_AddServerToList( const NETADDRESS_s &Address );
+
+// [rc4l] The slot holding this address, or -1. Distinct from scanning BROWSER_GetAddress, which
+// answers with a cleared dummy for any slot that is not AS_ACTIVE -- so a server that has been asked
+// and not yet answered, or that never will, is invisible to that scan by construction.
+LONG			BROWSER_GetListIDByAddress( const NETADDRESS_s &Address );
+
 // [rc4l] A punch packet knocked on our socket. The server we asked the registry to punch sends its
 // packets from whatever public port ITS NAT hands out -- under endpoint-dependent (carrier) NAT
 // that is a DIFFERENT port from the one the registry listed, so the challenges we aim at the

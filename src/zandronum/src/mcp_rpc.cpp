@@ -34,6 +34,8 @@
 #include "mcp_ticprof.h"
 #include "mcp_simtrace.h"
 #include "features/server-browser/browser.h"
+#include "features/continue/zx_continue.h"
+#include "version.h"
 #include "network.h"
 #include "sv_main.h" // [rc4l] SERVER_SERVERREGISTRY_GetListingProof, for net.hostdiag
 #include "mcp_sample.h"
@@ -531,6 +533,30 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 		if ( NETWORK_GetState() != NETSTATE_SERVER ) { SendErr( id, "net.clients requires a server" ); return; }
 		std::string body = "{\"connected\":" + I( (long long)SERVER_CalcNumConnectedClients() );
 		body += ",\"players\":" + I( (long long)SERVER_CountPlayers( false ) ) + "}";
+		SendOk( id, body );
+	}
+	else if ( cmd == "ui.continue" )
+	{
+		// [rc4l] What the Continue button is doing, so an E2E can assert on the decision rather than
+		// on pixels. Reports the record and whether the button is on the bar, which are separate
+		// facts: a perfectly good record is still hidden while a game is running.
+		std::string kind = "none";
+		if ( zx::Continue_RecordKind( ) == 1 ) kind = "single";
+		else if ( zx::Continue_RecordKind( ) == 2 ) kind = "server";
+
+		std::string escaped;
+		JsonEscape( std::string( zx::Continue_RecordTarget( ) ), escaped );
+
+		std::string body = "{\"shown\":" + B( zx::Continue_IsShown( ) );
+		body += ",\"kind\":\"" + kind + "\"";
+		body += ",\"target\":\"" + escaped + "\"";
+		body += ",\"saveExists\":" + B( zx::Continue_DebugSaveExists( ) );
+		body += ",\"saveVersion\":" + I( (long long)zx::Continue_DebugSaveVersion( ) );
+		body += ",\"minSaveVersion\":" + I( (long long)MINSAVEVER );
+		body += ",\"busy\":" + B( zx::Continue_DebugBusy( ) );
+		body += ",\"probe\":" + I( (long long)zx::Continue_DebugProbe( ) );
+		body += ",\"probeSlot\":" + I( (long long)zx::Continue_DebugProbeSlot( ) );
+		body += "}";
 		SendOk( id, body );
 	}
 	else if ( cmd == "net.hostdiag" )
