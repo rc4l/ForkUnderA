@@ -542,11 +542,72 @@ static int g_matSlotRetries = 0;
 // new level's geometry arrives, teaches the cache things the new level then believes.
 static int g_bindlessGen = -1;
 
+// [rc4l] A side index over the slot table, because the table is SCANNED ONCE PER PIECE.
+//
+// MaterialSlotFor was a linear walk of the table, and every dynamic piece calls it to find out which
+// texture it draws with. Sunder MAP16 has 3053 sprites a frame and 335 slots, so that is up to a
+// million pointer comparisons a frame -- and it measured as 0.239 ms of the dynamic build's 0.493,
+// half of it, and ten times what writing all the vertices costs.
+//
+// The table stays the source of truth: slot INDICES are what the shader reads, so they cannot move.
+// This only answers "which index" without walking. Open addressing, no allocation, cleared with the
+// table it indexes -- there are exactly two places that mutate it and both are next to this comment.
+struct MatIndexEntry { const void *material; int translation; int slot; };
+const int kMatIndexSize = 2048;   // power of two, comfortably over kMaterialSlots
+static MatIndexEntry g_matIndex[kMatIndexSize];
+
+static inline unsigned MatIndexHash(const void *m, int t)
+{
+	unsigned long long h = (unsigned long long)(size_t)m;
+	h ^= (unsigned long long)(unsigned)t * 0x9E3779B97F4A7C15ull;
+	h ^= h >> 29; h *= 0xBF58476D1CE4E5B9ull; h ^= h >> 32;
+	return (unsigned)(h & (unsigned)(kMatIndexSize - 1));
+}
+
+// slot < 0 marks an empty bucket. NULL is a legitimate key -- it is the white slot -- so emptiness
+// cannot be spelled with the material pointer.
+static void MatIndexClear()
+{
+	for (int i = 0; i < kMatIndexSize; i++) g_matIndex[i].slot = -1;
+}
+
+static void MatIndexInsert(const void *material, int translation, int slot)
+{
+	unsigned i = MatIndexHash(material, translation);
+	for (int probe = 0; probe < kMatIndexSize; probe++)
+	{
+		if (g_matIndex[i].slot < 0)
+		{
+			g_matIndex[i].material = material;
+			g_matIndex[i].translation = translation;
+			g_matIndex[i].slot = slot;
+			return;
+		}
+		i = (i + 1) & (unsigned)(kMatIndexSize - 1);
+	}
+}
+
+// -1 when absent.
+static int MatIndexFind(const void *material, int translation)
+{
+	unsigned i = MatIndexHash(material, translation);
+	for (int probe = 0; probe < kMatIndexSize; probe++)
+	{
+		const MatIndexEntry &e = g_matIndex[i];
+		if (e.slot < 0) return -1;
+		if (e.material == material && e.translation == translation) return e.slot;
+		i = (i + 1) & (unsigned)(kMatIndexSize - 1);
+	}
+	return -1;
+}
+
 static void ResetMaterialSlots()
 {
 	g_matSlotTable.Clear();
+	MatIndexClear();
 	MatSlot white; white.material = NULL; white.translation = 0; white.resolved = NULL;
 	g_matSlotTable.Push(white);
+	MatIndexInsert(white.material, white.translation, 0);
 	g_matSlotOverflow = false;
 	g_matSlotRetries = 0;
 	g_matSlotsDirty = true;
@@ -555,9 +616,10 @@ static void ResetMaterialSlots()
 int MaterialSlotFor(const void *material, int translation)
 {
 	if (g_matSlotTable.Size() == 0) ResetMaterialSlots();
-	for (unsigned i = 0; i < g_matSlotTable.Size(); i++)
-		if (g_matSlotTable[i].material == material && g_matSlotTable[i].translation == translation)
-			return (int)i;
+	{
+		const int found = MatIndexFind(material, translation);
+		if (found >= 0) return found;
+	}
 	if (g_matSlotTable.Size() >= (unsigned)kMaterialSlots)
 	{
 		// Loud, once: a level past the slot count draws its extra materials white, and white walls
@@ -570,8 +632,10 @@ int MaterialSlotFor(const void *material, int translation)
 	}
 	MatSlot e; e.material = material; e.translation = translation; e.resolved = material;
 	g_matSlotTable.Push(e);
+	const int slot = (int)g_matSlotTable.Size() - 1;
+	MatIndexInsert(material, translation, slot);
 	g_matSlotsDirty = true;
-	return (int)g_matSlotTable.Size() - 1;
+	return slot;
 }
 
 int MaterialSlotCount() { return (int)g_matSlotTable.Size(); }
@@ -1998,6 +2062,10 @@ static void DrawSky(Diligent::IDeviceContext *ctx)
 // BACKEND, inside All= and outside every sub-clock, which is why Sunder MAP20 read 4.8 ms a frame
 // with its named parts summing to 2.
 double g_dynBuildMs = 0.0;
+// [rc4l] ...and how much of it is turning pieces into vertices, which is the only part instancing
+// would remove. Worth knowing before writing a shader and six pipeline variants to remove it.
+double g_dynVertMs = 0.0;
+double g_dynSortMs = 0.0, g_dynRecMs = 0.0, g_dynUpMs = 0.0;
 
 static void BuildDynamic(Diligent::IDeviceContext *ctx)
 {
@@ -2069,6 +2137,7 @@ static void BuildDynamic(Diligent::IDeviceContext *ctx)
 		// translucent draw comparator documents one pass later.
 		// `key` has static storage, which a lambda cannot capture; the pointer can.
 		const float *keyp = (npieces > 0) ? &key[0] : NULL;
+		cycle_t sortClock; sortClock.Reset(); sortClock.Clock();
 		std::sort(&order[0], &order[0] + npieces,
 			[pieces, keyp](int ia, int ib) {
 				const zx::levelmesh::MeshPiece &pa = pieces[ia];
@@ -2084,6 +2153,11 @@ static void BuildDynamic(Diligent::IDeviceContext *ctx)
 				return ia < ib;
 			});
 
+		cycle_t vertClock;
+		vertClock.Reset();
+		double vertAcc = 0.0;
+		sortClock.Unclock(); g_dynSortMs = sortClock.TimeMS();
+		cycle_t recClock; recClock.Reset(); double recAcc = 0.0;
 		vb.Clear();
 		runs.Clear();
 		dynPieces.Clear();
@@ -2142,22 +2216,39 @@ static void BuildDynamic(Diligent::IDeviceContext *ctx)
 				dynPieceIndex = (g_pieceCapacity > 0) ? g_pieceCapacity - 1 : 0;
 			else
 			{
+				recClock.Reset(); recClock.Clock();
 				ScenePieceData pd;
 				FillPieceData(p, p.translation, pd);
 				if (!fua_dg_bindless_dyn) pd.matSlot = 0.f;   // back to the bound texture
 				dynPieces.Push(pd);
+				recClock.Unclock(); recAcc += recClock.TimeMS();
 			}
-			for (unsigned v = 0; v < p.range.count; v++)
+			// [rc4l] A quad arrives as four CORNERS and becomes six vertices here.
+			//
+			// It used to arrive as six, with two of the four duplicated on the engine's side and then
+			// copied again into this format -- so the duplication was paid for twice. Expanding at the
+			// only place that writes SceneVertex costs the same six writes and saves the other pass.
+			vertClock.Reset();
+			vertClock.Clock();
+			static const int kQuadOrder[6] = { 0, 1, 2, 2, 1, 3 };
+			const unsigned outCount = p.quad ? 6 : p.range.count;
+			for (unsigned v = 0; v < outCount; v++)
 			{
-				const FFlatVertex &sv = src[p.range.offset + v];
+				const unsigned srcIndex = p.quad ? (unsigned)kQuadOrder[v] : v;
+				const FFlatVertex &sv = src[p.range.offset + srcIndex];
 				SceneVertex dv;
 				dv.x = sv.x; dv.y = sv.z; dv.z = sv.y;
 				dv.u = sv.u; dv.v = sv.v;
 				dv.pieceIndex = (float)dynPieceIndex;
 				vb.Push(dv);
 			}
-			runs[runs.Size() - 1].count += p.range.count;
+			runs[runs.Size() - 1].count += outCount;
+			vertClock.Unclock();
+			vertAcc += vertClock.TimeMS();
 		}
+	g_dynVertMs = vertAcc;
+		g_dynRecMs = recAcc;
+		cycle_t upClock; upClock.Reset(); upClock.Clock();
 	if (vb.Size() == 0) return;
 
 		// Grow-only, and USAGE_DEFAULT + UpdateBuffer rather than a mapped dynamic buffer: this data
@@ -2183,6 +2274,7 @@ static void BuildDynamic(Diligent::IDeviceContext *ctx)
 				(Diligent::Uint64)g_scenePieceData.Size() * sizeof(ScenePieceData),
 				(Diligent::Uint64)dynPieces.Size() * sizeof(ScenePieceData), &dynPieces[0],
 				Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+		upClock.Unclock(); g_dynUpMs = upClock.TimeMS();
 	}
 	if (vb.Size() == 0 || !g_dynVB) return;
 	g_dynReady = true;
@@ -5665,7 +5757,8 @@ void DynStats(FString &report)
 		g_dynSlotSeen, g_dynSlotMax, g_dynSlotRefused, g_dynSlotNoMaterial);
 	cull.AppendFormat(", dyn draws: %d bindless, %d per-material, pipelines [%s]",
 		g_dynBindless, g_dynPerMaterial, g_fillState);
-	cull.AppendFormat(", dyn build %.3f ms", g_dynBuildMs);
+	cull.AppendFormat(", dyn build %.3f ms [sort %.3f, records %.3f, verts %.3f, upload %.3f]",
+		g_dynBuildMs, g_dynSortMs, g_dynRecMs, g_dynVertMs, g_dynUpMs);
 	{
 		// [rc4l] How much of the world the DERIVATION built, rather than transcribed from GL. The
 		// number is the point of features/surfaces: it goes up as categories move across.
