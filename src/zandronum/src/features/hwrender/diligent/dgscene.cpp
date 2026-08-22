@@ -203,11 +203,6 @@ CVAR(Bool, fua_dg_clusters, true, 0)
 // that comes out grey where GL tints it, geometry and texture both already right. That band is the
 // only known difference and it is written up in features/surfaces/README.md.
 CVAR(Bool, fua_dg_standalone, true, CVAR_ARCHIVE)
-// [rc4l] Keep GL's per-frame glFinish() and SwapBuffers even when GL is drawing nothing. Here to be
-// turned ON, so the cost of removing them is a measurement rather than an argument.
-CVAR(Bool, fua_gl_idleswap, false, 0)
-// [rc4l] Keep FRenderState::Apply per sprite even when GL will not rasterise it. On to compare.
-CVAR(Bool, fua_gl_idlestate, false, 0)
 
 
 // [rc4l] Bindless materials: every texture in the level reachable from one descriptor set.
@@ -2062,10 +2057,6 @@ static void DrawSky(Diligent::IDeviceContext *ctx)
 // BACKEND, inside All= and outside every sub-clock, which is why Sunder MAP20 read 4.8 ms a frame
 // with its named parts summing to 2.
 double g_dynBuildMs = 0.0;
-// [rc4l] ...and how much of it is turning pieces into vertices, which is the only part instancing
-// would remove. Worth knowing before writing a shader and six pipeline variants to remove it.
-double g_dynVertMs = 0.0;
-double g_dynSortMs = 0.0, g_dynRecMs = 0.0, g_dynUpMs = 0.0;
 
 static void BuildDynamic(Diligent::IDeviceContext *ctx)
 {
@@ -2137,7 +2128,6 @@ static void BuildDynamic(Diligent::IDeviceContext *ctx)
 		// translucent draw comparator documents one pass later.
 		// `key` has static storage, which a lambda cannot capture; the pointer can.
 		const float *keyp = (npieces > 0) ? &key[0] : NULL;
-		cycle_t sortClock; sortClock.Reset(); sortClock.Clock();
 		std::sort(&order[0], &order[0] + npieces,
 			[pieces, keyp](int ia, int ib) {
 				const zx::levelmesh::MeshPiece &pa = pieces[ia];
@@ -2153,11 +2143,6 @@ static void BuildDynamic(Diligent::IDeviceContext *ctx)
 				return ia < ib;
 			});
 
-		cycle_t vertClock;
-		vertClock.Reset();
-		double vertAcc = 0.0;
-		sortClock.Unclock(); g_dynSortMs = sortClock.TimeMS();
-		cycle_t recClock; recClock.Reset(); double recAcc = 0.0;
 		vb.Clear();
 		runs.Clear();
 		dynPieces.Clear();
@@ -2216,20 +2201,16 @@ static void BuildDynamic(Diligent::IDeviceContext *ctx)
 				dynPieceIndex = (g_pieceCapacity > 0) ? g_pieceCapacity - 1 : 0;
 			else
 			{
-				recClock.Reset(); recClock.Clock();
 				ScenePieceData pd;
 				FillPieceData(p, p.translation, pd);
 				if (!fua_dg_bindless_dyn) pd.matSlot = 0.f;   // back to the bound texture
 				dynPieces.Push(pd);
-				recClock.Unclock(); recAcc += recClock.TimeMS();
 			}
 			// [rc4l] A quad arrives as four CORNERS and becomes six vertices here.
 			//
 			// It used to arrive as six, with two of the four duplicated on the engine's side and then
 			// copied again into this format -- so the duplication was paid for twice. Expanding at the
 			// only place that writes SceneVertex costs the same six writes and saves the other pass.
-			vertClock.Reset();
-			vertClock.Clock();
 			static const int kQuadOrder[6] = { 0, 1, 2, 2, 1, 3 };
 			const unsigned outCount = p.quad ? 6 : p.range.count;
 			for (unsigned v = 0; v < outCount; v++)
@@ -2243,12 +2224,7 @@ static void BuildDynamic(Diligent::IDeviceContext *ctx)
 				vb.Push(dv);
 			}
 			runs[runs.Size() - 1].count += outCount;
-			vertClock.Unclock();
-			vertAcc += vertClock.TimeMS();
 		}
-	g_dynVertMs = vertAcc;
-		g_dynRecMs = recAcc;
-		cycle_t upClock; upClock.Reset(); upClock.Clock();
 	if (vb.Size() == 0) return;
 
 		// Grow-only, and USAGE_DEFAULT + UpdateBuffer rather than a mapped dynamic buffer: this data
@@ -2274,7 +2250,6 @@ static void BuildDynamic(Diligent::IDeviceContext *ctx)
 				(Diligent::Uint64)g_scenePieceData.Size() * sizeof(ScenePieceData),
 				(Diligent::Uint64)dynPieces.Size() * sizeof(ScenePieceData), &dynPieces[0],
 				Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-		upClock.Unclock(); g_dynUpMs = upClock.TimeMS();
 	}
 	if (vb.Size() == 0 || !g_dynVB) return;
 	g_dynReady = true;
@@ -5757,8 +5732,7 @@ void DynStats(FString &report)
 		g_dynSlotSeen, g_dynSlotMax, g_dynSlotRefused, g_dynSlotNoMaterial);
 	cull.AppendFormat(", dyn draws: %d bindless, %d per-material, pipelines [%s]",
 		g_dynBindless, g_dynPerMaterial, g_fillState);
-	cull.AppendFormat(", dyn build %.3f ms [sort %.3f, records %.3f, verts %.3f, upload %.3f]",
-		g_dynBuildMs, g_dynSortMs, g_dynRecMs, g_dynVertMs, g_dynUpMs);
+	cull.AppendFormat(", dyn build %.3f ms", g_dynBuildMs);
 	{
 		// [rc4l] How much of the world the DERIVATION built, rather than transcribed from GL. The
 		// number is the point of features/surfaces: it goes up as categories move across.
