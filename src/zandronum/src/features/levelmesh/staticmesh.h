@@ -134,6 +134,17 @@ struct MeshPiece
 	// and a black scorch mark renders as a white blob.
 	bool          redToAlpha;
 
+	// [rc4l] This piece is a QUAD: four corners, not six vertices.
+	//
+	// A sprite is a billboard, and the mesh stores triangle lists, so it was written out as two
+	// triangles with two of the four corners duplicated -- thirty floats where twenty would do, and
+	// then copied again on the backend's side into its own vertex format. Upstream stores four and
+	// draws a triangle strip. Storing four and expanding once, where the backend is already writing
+	// its own vertices anyway, costs nothing and removes a third of the traffic.
+	//
+	// Corner order is GL's strip order: (x1,z1,y1), (x2,z1,y2), (x1,z2,y1), (x2,z2,y2).
+	bool          quad;
+
 	// [rc4l] Zero-initialise. Every site fills the fields it cares about and leaves the rest, so a
 	// field added later is garbage at the sites that predate it -- which is how SegCache::pieces
 	// silently inherited the previous level's vertex ranges. A translation of garbage would remap
@@ -150,6 +161,7 @@ struct MeshPiece
 		dynLightIndex = -1;
 		normX = normY = normZ = 0.f;
 		dynR = dynG = dynB = 0.f;
+		quad = false;
 		facesDown = false; depthBias = false; redToAlpha = false;
 	}
 };

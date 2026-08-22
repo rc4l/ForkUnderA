@@ -696,10 +696,6 @@ void RegisterSprite(const GLSprite &spr, const float *c1, const float *c2,
 	q[2].Set(c3[0], c3[1], c3[2], spr.ul, spr.vb);
 	q[3].Set(c4[0], c4[1], c4[2], spr.ur, spr.vb);
 
-	FFlatVertex tris[6];
-	tris[0] = q[0]; tris[1] = q[1]; tris[2] = q[2];
-	tris[3] = q[2]; tris[4] = q[1]; tris[5] = q[3];
-
 	MeshPiece mp;
 	mp.range.offset = 0;
 	mp.range.count = 0;
@@ -775,8 +771,10 @@ void RegisterSprite(const GLSprite &spr, const float *c1, const float *c2,
 	if (mp.blendMode >= 0 && mp.blendMode < 4) g_classified[mp.blendMode]++;
 	// Sprite centre, for the back-to-front sort.
 	mp.sortX = spr.x; mp.sortY = spr.y; mp.sortZ = spr.z;
+	// [rc4l] Four corners, not six vertices -- the backend expands them when it writes its own.
+	mp.quad = true;
 
-	DynAppend(tris, 6, mp);
+	DynAppend(q, 4, mp);
 	g_spritesThisFrame++;
 
 	if (g_spriteNoteCount < kMaxSpriteNotes)
