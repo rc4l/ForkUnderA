@@ -514,8 +514,24 @@ Diligent::IShaderResourceBinding *GetMaterialSRB(Diligent::IPipelineState *pso,
 // -- 64 slots x 149 per-material bindings = 9536 worked, 128 x 149 = 19072 killed the device --
 // puts the limit above 9.5k. 6656 sits under it with room, and does not move when a level has more
 // materials, which is the whole difference between this shape and the one that failed.
-enum { kMaterialSlots = 512 };
-static_assert(kMaterialSlots == 512, "FUA_MAT_SLOTS_STR must say the same number");
+// [rc4l] How many materials one bindless array holds -- and 512 was not enough for real content.
+//
+// Sunder and the eon maps fit in 512 comfortably, so every measurement in this work was taken with
+// bindless ON and nothing suggested the cap mattered. A nine-PWAD Whodunit load wants 835, and past
+// the cap MaterialSlotFor gives up and returns slot 0, which turns bindless OFF for the whole level:
+// the world went from ONE draw call to 670, sprites from bindless to a descriptor binding each, and
+// submit from 2.85 ms to 3.82. It is the loudest failure mode in the backend and it is a constant.
+//
+// 4096 is chosen to be past what content plausibly asks for rather than tuned to 835. The cost is a
+// larger descriptor array, not a larger frame -- the array is sized once and indexed per pixel.
+//
+// The assumption worth naming: the device must support an array of this many sampled images in one
+// descriptor set. Desktop Vulkan drivers report far more than this, but the Vulkan SPEC minimum is
+// much lower, so a device that cannot will fail pipeline creation rather than degrade. If that is
+// ever seen, the fix is to query maxPerStageDescriptorSampledImages and build the shader string at
+// runtime instead of pinning it to FUA_MAT_SLOTS_STR.
+enum { kMaterialSlots = 4096 };
+static_assert(kMaterialSlots == 4096, "FUA_MAT_SLOTS_STR must say the same number");
 
 // [rc4l] `resolved` is what the slot actually POINTS AT, which is not always what it is keyed on.
 //
@@ -548,7 +564,7 @@ static int g_bindlessGen = -1;
 // This only answers "which index" without walking. Open addressing, no allocation, cleared with the
 // table it indexes -- there are exactly two places that mutate it and both are next to this comment.
 struct MatIndexEntry { const void *material; int translation; int slot; };
-const int kMatIndexSize = 2048;   // power of two, comfortably over kMaterialSlots
+const int kMatIndexSize = 16384;   // power of two, comfortably over kMaterialSlots
 static MatIndexEntry g_matIndex[kMatIndexSize];
 
 static inline unsigned MatIndexHash(const void *m, int t)
@@ -1087,7 +1103,7 @@ static const char *kSceneVS =
 // Must match kMaterialSlots. A GLSL string cannot read a C++ constant, so the two are tied by the
 // static_assert below and by nothing else -- a mismatch is a fatal at pipeline setup, one message
 // per unassigned element.
-#define FUA_MAT_SLOTS_STR "512"
+#define FUA_MAT_SLOTS_STR "4096"
 
 #define FUA_LIGHT_GLSL \
 	"#extension GL_EXT_nonuniform_qualifier : require\n" \
