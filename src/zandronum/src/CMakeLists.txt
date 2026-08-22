@@ -909,6 +909,7 @@ if( NOT NO_GL )
 		gl/scene/gl_flats.cpp
 		gl/scene/gl_walls.cpp
 		gl/scene/gl_sprite.cpp
+	gl/scene/gl_spriteview.cpp
 		gl/scene/gl_skydome.cpp
 		gl/scene/gl_renderhacks.cpp
 		gl/scene/gl_weapon.cpp
@@ -1599,6 +1600,7 @@ add_executable( zdoom WIN32
 	features/levelmesh/levelmesh.cpp
 	features/levelmesh/wallcache.cpp
 	features/hwrender/hud2d.cpp
+	features/hwrender/spriteview.cpp
 	features/levelmesh/staticmesh.cpp
 	features/levelmesh/flatmesh.cpp
 	features/levelmesh/projdecals.cpp

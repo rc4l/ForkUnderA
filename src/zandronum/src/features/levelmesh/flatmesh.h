@@ -59,7 +59,14 @@ int FlatPieceCount();
 // [rc4l] Sprites. Unlike walls and flats these MOVE, so the range is keyed on the actor and reused
 // in place -- registering a fresh range each frame would grow the buffer without bound, which is the
 // failure that killed an early version of the wall cache.
-void RegisterSprite(const GLSprite &spr);
+// [rc4l] The four corners are passed in, not taken off the GLSprite.
+//
+// GL rasterises v1..v4 -- the billboard-rotated corners -- while this used to read the un-rotated
+// x1/x2/y1/y2/z1/z2 straight off the sprite. They agree only while no rotation is applied, so
+// RF_ROLLSPRITE, RF_FORCEXYBILLBOARD and gl_billboard_mode 1 were silently ignored by the mesh.
+// Corner order matches GL's strip: (x1,z1,y1), (x2,z1,y2), (x1,z2,y1), (x2,z2,y2).
+void RegisterSprite(const GLSprite &spr, const float *c1, const float *c2,
+	const float *c3, const float *c4);
 
 // Sprite render styles seen since load, indexed by STYLEOP_*. See fua_spritestyles.
 void GetSpriteStyleStats(int *ops16, int &flagsSeen);

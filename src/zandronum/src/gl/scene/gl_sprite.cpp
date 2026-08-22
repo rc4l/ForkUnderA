@@ -61,7 +61,8 @@
 #include "gl/shaders/gl_shader.h"
 #include "gl/textures/gl_material.h"
 #include "features/levelmesh/flatmesh.h"
-#include "features/hwrender/hud2d.h"   // StandaloneActive
+#include "features/hwrender/hud2d.h"
+#include "features/hwrender/spriteview.h"   // StandaloneActive
 #include "gl/utility/gl_clock.h"
 #include "gl/data/gl_vertexbuffer.h"
 // [BB] New #includes.
@@ -187,7 +188,7 @@ void GLSprite::Draw(int pass)
 	}
 	if (RenderStyle.BlendOp!=STYLEOP_Shadow)
 	{
-		if (gl_lights && GLRenderer->mLightCount && !gl_fixedcolormap && !fullbright)
+		if (gl_lights && zx::hwrender::SpriteView().DynamicLightCount() && !gl_fixedcolormap && !fullbright)
 		{
 			gl_SetDynSpriteLight(gl_light_sprites ? actor : NULL, gl_light_particles ? particle : NULL);
 		}
@@ -269,14 +270,16 @@ void GLSprite::Draw(int pass)
 			float xcenter = (x1 + x2)*0.5;
 			float ycenter = (y1 + y2)*0.5;
 			float zcenter = (z1 + z2)*0.5;
-			float angleRad = DEG2RAD(270. - float(GLRenderer->mAngles.Yaw));
+			float viewYaw, viewPitch;
+			zx::hwrender::SpriteView().ViewAngles(viewYaw, viewPitch);
+			float angleRad = DEG2RAD(270. - viewYaw);
 
 			Matrix3x4 mat;
 			mat.MakeIdentity();
 			mat.Translate(xcenter, zcenter, ycenter);
 			if (drawWithXYBillboard)
 			{
-				mat.Rotate(-sin(angleRad), 0, cos(angleRad), -GLRenderer->mAngles.Pitch);
+				mat.Rotate(-sin(angleRad), 0, cos(angleRad), -viewPitch);
 			}
 			if (drawRollSpriteActor)
 			{
@@ -307,7 +310,12 @@ void GLSprite::Draw(int pass)
 		//
 		// Not gated on gl_wallmesh: the dynamic stream is independent of the static mesh, and a
 		// backend wants actors even when the world geometry came from somewhere else.
-		if (fua_mesh_sprites) zx::levelmesh::RegisterSprite(*this);
+		if (fua_mesh_sprites)
+		{
+			const float c1[3] = { v1[0], v1[1], v1[2] }, c2[3] = { v2[0], v2[1], v2[2] };
+			const float c3[3] = { v3[0], v3[1], v3[2] }, c4[3] = { v4[0], v4[1], v4[2] };
+			zx::levelmesh::RegisterSprite(*this, c1, c2, c3, c4);
+		}
 
 		// [rc4l] ...and when the backend is carrying the frame, that was the whole job.
 		//
@@ -588,7 +596,7 @@ void GLSprite::Process(AActor* thing,sector_t * sector)
 	sector_t rs;
 	sector_t * rendersector;
 	// don't draw the thing that's used as camera (for viewshifts during quakes!)
-	if (thing==GLRenderer->mViewActor) return;
+	if (thing == zx::hwrender::SpriteView().ViewActor()) return;
 
 	// Don't waste time projecting sprites that are definitely not visible.
 	if (thing == NULL || thing->sprite == 0 || !thing->IsVisibleToPlayer())
@@ -616,7 +624,7 @@ void GLSprite::Process(AActor* thing,sector_t * sector)
 	// [AK] Unless the sprite's in a horizontal mirror or the local player's using
 	// the chasecam, don't render icons above the heads of players being spied on.
 	// TODO: Use the ONLYVISIBLEINMIRRORS actor flag from GZDoom when we support it.
-	if ((GLRenderer->mCurrentPortal == nullptr) || ((GLRenderer->mCurrentPortal->MirrorFlag == 0) && (GLRenderer->mCurrentPortal->PlaneMirrorFlag == 0)))
+	if (!zx::hwrender::SpriteView().PortalIsMirror())
 	{
 		if (((players[consoleplayer].cheats & CF_CHASECAM) == false) && (players[consoleplayer].camera != nullptr))
 		{
@@ -647,16 +655,13 @@ void GLSprite::Process(AActor* thing,sector_t * sector)
 	}
 
 	// don't draw first frame of a player missile
-	if (thing->flags&MF_MISSILE && thing->target==GLRenderer->mViewActor && GLRenderer->mViewActor != NULL)
+	AActor *const viewActor = zx::hwrender::SpriteView().ViewActor();
+	if (thing->flags&MF_MISSILE && thing->target == viewActor && viewActor != NULL)
 	{
 		if (P_AproxDistance(thingx-viewx, thingy-viewy) < thing->Speed ) return;
 	}
 
-	if (GLRenderer->mCurrentPortal)
-	{
-		int clipres = GLRenderer->mCurrentPortal->ClipPoint(thingx, thingy);
-		if (clipres == GLPortal::PClip_InFront) return;
-	}
+	if (zx::hwrender::SpriteView().PortalRejectsPoint(thingx, thingy)) return;
 
 	player_t *player=&players[consoleplayer];
 	FloatRect r;
@@ -751,8 +756,7 @@ void GLSprite::Process(AActor* thing,sector_t * sector)
 		switch (thing->renderflags & RF_SPRITETYPEMASK)
 		{
 		case RF_FACESPRITE:
-			viewvecX = GLRenderer->mViewVector.X;
-			viewvecY = GLRenderer->mViewVector.Y;
+			zx::hwrender::SpriteView().ViewVector(viewvecX, viewvecY);
 
 			x1 = x - viewvecY*leftfac;
 			x2 = x - viewvecY*rightfac;
@@ -943,7 +947,7 @@ void GLSprite::Process(AActor* thing,sector_t * sector)
 	// end of light calculation
 
 	actor=thing;
-	index = GLRenderer->gl_spriteindex++;
+	index = zx::hwrender::SpriteView().NextSpriteIndex();
 	particle=NULL;
 	
 	const bool drawWithXYBillboard = ( !(actor->renderflags & RF_FORCEYBILLBOARD)
@@ -977,11 +981,7 @@ void GLSprite::Process(AActor* thing,sector_t * sector)
 
 void GLSprite::ProcessParticle (particle_t *particle, sector_t *sector)//, int shade, int fakeside)
 {
-	if (GLRenderer->mCurrentPortal)
-	{
-		int clipres = GLRenderer->mCurrentPortal->ClipPoint(particle->x, particle->y);
-		if (clipres == GLPortal::PClip_InFront) return;
-	}
+	if (zx::hwrender::SpriteView().PortalRejectsPoint(particle->x, particle->y)) return;
 
 	player_t *player=&players[consoleplayer];
 	
@@ -1034,15 +1034,7 @@ void GLSprite::ProcessParticle (particle_t *particle, sector_t *sector)//, int s
 	// [BB] Load the texture for round or smooth particles
 	if (gl_particles_style)
 	{
-		FTexture *lump = NULL;
-		if (gl_particles_style == 1)
-		{
-			lump = GLRenderer->glpart2;
-		}
-		else if (gl_particles_style == 2)
-		{
-			lump = GLRenderer->glpart;
-		}
+		FTexture *lump = zx::hwrender::SpriteView().ParticleTexture(gl_particles_style);
 
 		if (lump != NULL)
 		{
@@ -1067,8 +1059,8 @@ void GLSprite::ProcessParticle (particle_t *particle, sector_t *sector)//, int s
 	if (gl_particles_style==2)
 		scalefac *= 1.7;
 
-	float viewvecX = GLRenderer->mViewVector.X;
-	float viewvecY = GLRenderer->mViewVector.Y;
+	float viewvecX, viewvecY;
+	zx::hwrender::SpriteView().ViewVector(viewvecX, viewvecY);
 
 	x1=x+viewvecY*scalefac;
 	x2=x-viewvecY*scalefac;

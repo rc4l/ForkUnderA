@@ -682,7 +682,8 @@ CCMD( fua_sprite_sweep )
 }
 int SpritePieceCount() { return g_spritesThisFrame; }
 
-void RegisterSprite(const GLSprite &spr)
+void RegisterSprite(const GLSprite &spr, const float *c1, const float *c2,
+	const float *c3, const float *c4)
 {
 	if (spr.gltexture == NULL) return;
 
@@ -690,10 +691,10 @@ void RegisterSprite(const GLSprite &spr)
 	// (0,1,2) and (2,1,3) -- which preserves the strip's winding rather than flipping the second
 	// triangle.
 	FFlatVertex q[4];
-	q[0].Set(spr.x1, spr.z1, spr.y1, spr.ul, spr.vt);
-	q[1].Set(spr.x2, spr.z1, spr.y2, spr.ur, spr.vt);
-	q[2].Set(spr.x1, spr.z2, spr.y1, spr.ul, spr.vb);
-	q[3].Set(spr.x2, spr.z2, spr.y2, spr.ur, spr.vb);
+	q[0].Set(c1[0], c1[1], c1[2], spr.ul, spr.vt);
+	q[1].Set(c2[0], c2[1], c2[2], spr.ur, spr.vt);
+	q[2].Set(c3[0], c3[1], c3[2], spr.ul, spr.vb);
+	q[3].Set(c4[0], c4[1], c4[2], spr.ur, spr.vb);
 
 	FFlatVertex tris[6];
 	tris[0] = q[0]; tris[1] = q[1]; tris[2] = q[2];
