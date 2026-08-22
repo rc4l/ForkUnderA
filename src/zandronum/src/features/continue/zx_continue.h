@@ -59,6 +59,8 @@ const char *Continue_RecordTarget();
 bool Continue_DebugSaveExists();
 int Continue_DebugSaveVersion();
 bool Continue_DebugBusy();
+int Continue_DebugProbe();   // 0 unknown, 1 alive, 2 gone, 3 wads differ
+int Continue_DebugProbeSlot();
 
 } // namespace zx
 
