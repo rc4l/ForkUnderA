@@ -87,7 +87,10 @@ void FGLRenderer::DrawPSprite (player_t * player,pspdef_t *psp,fixed_t sx, fixed
 	// [BB] In the HUD model step we just render the model and break out. 
 	if ( hudModelStep )
 	{
-		gl_RenderHUDModel( psp, sx, sy);
+		// [rc4l] Same as the world models: this draws into GL's back buffer, which the Diligent
+		// child window is covering, so a weapon replaced by a model has been invisible rather than
+		// merely unported. See features/hwrender/hud2d.h and docs/models-scope.md.
+		if (!zx::hwrender::BackendPresenting()) gl_RenderHUDModel( psp, sx, sy);
 		return;
 	}
 	

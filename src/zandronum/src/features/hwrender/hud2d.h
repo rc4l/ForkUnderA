@@ -76,6 +76,14 @@ void Record2D(const Quad2D &q);
 // the level has to have been baked first, and that bake needs GL frames to run in.
 bool StandaloneActive();
 
+// [rc4l] Is the Diligent child window what the player is looking at?
+//
+// Broader than StandaloneActive, and the difference matters. Standalone decides who BUILDS the
+// frame; this decides who PRESENTS it. Once the embedded swapchain is up, GL's back buffer is not
+// the picture no matter which path built the geometry -- so anything still drawing only into GL is
+// drawing into a surface nobody sees.
+bool BackendPresenting();
+
 // [rc4l] The camera the backend is drawing with, column-major. Exposed so a standalone frame can
 // cull actors against the same matrix rather than deriving the camera a second time -- two
 // derivations of one camera is how a yaw error mirrored the whole world for weeks.
