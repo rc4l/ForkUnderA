@@ -7,6 +7,26 @@ Two shapes of session are remembered:
 * **Server** — the address we were connected to, plus the password used. Pressing Continue reconnects.
 * **Single** — an offline session, snapshotted to one slot. Pressing Continue loads it.
 
+## Where the state lives
+
+A `continue/` folder under the per-user config root, alongside `identity/`:
+
+```
+<config root>/continue/session.txt   the record
+<config root>/continue/session.zds   the snapshot a Single record points at
+```
+
+One folder, named after what it is, because the two files only mean anything together — deleting
+this feature's state should be one obvious action rather than knowing which loose files in the
+config root belonged to it. The snapshot is one slot, overwritten: this is "where you left off",
+not a save history.
+
+Every way of damaging either file resolves to the button not appearing. Verified by deleting each,
+truncating the record, replacing either with random bytes, forging a newer format version, zeroing
+both, pointing the record at a directory, and replacing the folder itself with a file: the engine
+came up in every case and the button was hidden in every case. With both files read-only the quit
+path fails to write and exits cleanly, leaving the previous record intact.
+
 ## Why the record is not written from a shutdown hook
 
 `i_main.cpp` registers `atexit(call_terms)`, and `I_FatalError` leaves through `exit()`. The `atterm`

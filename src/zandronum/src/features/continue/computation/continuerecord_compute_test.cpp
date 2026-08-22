@@ -190,21 +190,36 @@ TEST(ContinueRecord, ParsingClearsWhateverTheCallerHadBefore)
 
 // ---------------------------------------------------------------- path
 
-TEST(ContinueRecord, TheRecordSitsBesideTheIdentityKeys)
+TEST(ContinueRecord, TheStateLivesInAFolderOfItsOwn)
 {
-	EXPECT_EQ("/home/p/.config/ForkUnderA/identity/continue.txt",
-		ContinueRecordPath("/home/p/.config/ForkUnderA/identity"));
+	// Named after what it is, so clearing this feature's state is one obvious action rather than
+	// knowing which loose files in the config root happened to belong to it.
+	EXPECT_EQ("/home/p/.config/ForkUnderA/continue", ContinueDir("/home/p/.config/ForkUnderA"));
+	EXPECT_EQ("/home/p/.config/ForkUnderA/continue/session.txt",
+		ContinueRecordPath("/home/p/.config/ForkUnderA"));
+	EXPECT_EQ("/home/p/.config/ForkUnderA/continue/session.zds",
+		ContinueSavePath("/home/p/.config/ForkUnderA"));
+}
+
+TEST(ContinueRecord, TheRecordAndItsSnapshotShareTheFolder)
+{
+	// They only mean anything together: a record naming a snapshot that is somewhere else is a
+	// record that can be half-deleted.
+	const std::string dir = ContinueDir("/a/b");
+	EXPECT_EQ(dir + "/session.txt", ContinueRecordPath("/a/b"));
+	EXPECT_EQ(dir + "/session.zds", ContinueSavePath("/a/b"));
 }
 
 TEST(ContinueRecord, ATrailingSeparatorIsNotDoubled)
 {
-	EXPECT_EQ("/a/b/continue.txt", ContinueRecordPath("/a/b/"));
-	EXPECT_EQ("C:\\a\\continue.txt", ContinueRecordPath("C:\\a\\"));
+	EXPECT_EQ("/a/b/continue/session.txt", ContinueRecordPath("/a/b/"));
+	EXPECT_EQ("C:\\a\\continue/session.txt", ContinueRecordPath("C:\\a\\"));
 }
 
-TEST(ContinueRecord, NoRootGivesABareName)
+TEST(ContinueRecord, NoRootGivesABareFolder)
 {
-	EXPECT_EQ("continue.txt", ContinueRecordPath(""));
+	EXPECT_EQ("continue", ContinueDir(""));
+	EXPECT_EQ("continue/session.txt", ContinueRecordPath(""));
 }
 
 TEST(ContinueRecord, AWadLineWithNoTabIsANameOnItsOwn)

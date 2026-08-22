@@ -151,15 +151,25 @@ bool ParseContinue(const std::string &text, ContinueRecord &out)
 	return false;
 }
 
-std::string ContinueRecordPath(const std::string &configRoot)
+std::string ContinueDir(const std::string &configRoot)
 {
 	if (configRoot.empty())
-		return std::string("continue.txt");
+		return std::string("continue");
 
 	const char last = configRoot[configRoot.size() - 1];
 	const bool bHasSeparator = (last == '/') || (last == '\\');
 
-	return configRoot + (bHasSeparator ? "" : "/") + "continue.txt";
+	return configRoot + (bHasSeparator ? "" : "/") + "continue";
+}
+
+std::string ContinueRecordPath(const std::string &configRoot)
+{
+	return ContinueDir(configRoot) + "/session.txt";
+}
+
+std::string ContinueSavePath(const std::string &configRoot)
+{
+	return ContinueDir(configRoot) + "/session.zds";
 }
 
 } // namespace zx
