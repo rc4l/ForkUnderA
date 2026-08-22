@@ -126,9 +126,15 @@ protected:
 	void SaveMapSection();
 	void RestoreMapSection();
 
-	// [AK] GLSprite::Process needs access to MirrorFlag and PlaneMirrorFlag,
-	// specifically for (not) rendering a player's icon above their own head.
-	friend void GLSprite::Process(AActor *thing, sector_t *sector);
+public:
+	// [AK] The sprite derivation needs to know whether a mirror is being drawn, specifically for
+	// (not) rendering a player's icon above their own head.
+	//
+	// [rc4l] It was a friend declaration naming GLSprite::Process, which meant the derivation could
+	// only ever live in a file that knew about GLPortal. Answering the question instead of exposing
+	// the two flags is what lets it move -- see features/hwrender/spriteview.h.
+	static bool IsMirroring() { return MirrorFlag != 0 || PlaneMirrorFlag != 0; }
+protected:
 
 public:
 

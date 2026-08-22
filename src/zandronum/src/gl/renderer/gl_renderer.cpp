@@ -38,6 +38,8 @@
 **
 */
 
+void gl_RegisterSpriteView();   // gl/scene/gl_spriteview.cpp
+
 #include "gl/system/gl_system.h"
 #include "files.h"
 #include "m_swap.h"
@@ -86,6 +88,7 @@ FGLRenderer::FGLRenderer(OpenGLFrameBuffer *fb)
 {
 	framebuffer = fb;
 	mCurrentPortal = NULL;
+	gl_RegisterSpriteView();   // features/hwrender/spriteview.h: GL answers the sprite derivation
 	mMirrorCount = 0;
 	mPlaneMirrorCount = 0;
 	mLightCount = 0;
