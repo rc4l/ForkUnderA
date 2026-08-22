@@ -206,6 +206,8 @@ CVAR(Bool, fua_dg_standalone, true, CVAR_ARCHIVE)
 // [rc4l] Keep GL's per-frame glFinish() and SwapBuffers even when GL is drawing nothing. Here to be
 // turned ON, so the cost of removing them is a measurement rather than an argument.
 CVAR(Bool, fua_gl_idleswap, false, 0)
+// [rc4l] Keep FRenderState::Apply per sprite even when GL will not rasterise it. On to compare.
+CVAR(Bool, fua_gl_idlestate, false, 0)
 
 
 // [rc4l] Bindless materials: every texture in the level reachable from one descriptor set.
@@ -1990,8 +1992,19 @@ static void DrawSky(Diligent::IDeviceContext *ctx)
 // occluded correctly. Only the opaque sprites are drawn here: the translucent ones are handed to the
 // world's translucent pass so the two sort against each other -- an item lying under a glass 3D floor
 // has to be composited before the floor, and it cannot be if sprites are a separate pass afterwards.
+// [rc4l] What the dynamic stream costs, which no other clock covers.
+//
+// stat rendertimes wraps GL's own work: S: Render and S: Setup are Process and Draw. This runs in the
+// BACKEND, inside All= and outside every sub-clock, which is why Sunder MAP20 read 4.8 ms a frame
+// with its named parts summing to 2.
+double g_dynBuildMs = 0.0;
+
 static void BuildDynamic(Diligent::IDeviceContext *ctx)
 {
+	cycle_t dynClock;
+	dynClock.Reset();
+	dynClock.Clock();
+	struct ClockStop { cycle_t &c; ~ClockStop() { c.Unclock(); g_dynBuildMs = c.TimeMS(); } } stopper = { dynClock };
 	g_dynDraws = g_dynTris = 0;
 	g_blendSubmits = 0;
 	g_dynSlotRefused = g_dynSlotNoMaterial = g_dynSlotSeen = g_dynSlotMax = 0;
@@ -5652,6 +5665,7 @@ void DynStats(FString &report)
 		g_dynSlotSeen, g_dynSlotMax, g_dynSlotRefused, g_dynSlotNoMaterial);
 	cull.AppendFormat(", dyn draws: %d bindless, %d per-material, pipelines [%s]",
 		g_dynBindless, g_dynPerMaterial, g_fillState);
+	cull.AppendFormat(", dyn build %.3f ms", g_dynBuildMs);
 	{
 		// [rc4l] How much of the world the DERIVATION built, rather than transcribed from GL. The
 		// number is the point of features/surfaces: it goes up as categories move across.

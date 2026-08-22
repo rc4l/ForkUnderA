@@ -33,20 +33,45 @@ place -- `Apply()` -- and everything above it is engine logic living in files na
 The four `GLRenderer` fields `Process` needs are `mViewActor`, `mViewVector`, `mCurrentPortal` and
 `gl_spriteindex`. That is a view context struct, not a rewrite.
 
-## Stage 0: stop doing GL work for a renderer that is not drawing (partly done)
+## Status
+
+| stage | |
+|---|---|
+| 0 -- stop doing GL work for an idle renderer | **done** |
+| 1 -- sever the derivation from GL | **done** |
+| 2 -- build the quads on the GPU | **blocked, see below** |
+| 3 -- cull on the GPU | not started, depends on 2 |
+
+## Stage 0: stop doing GL work for a renderer that is not drawing (DONE)
 
 Already landed, and it was worth more than every sprite optimisation attempted before it:
 `glFinish()` and `SwapBuffers()` were running every frame for an idle GL context. Sunder MAP10's
 median frame 0.648 ms -> 0.343, p99 2.016 -> 0.528; MAP20's p99 17.1 -> 7.1.
 
-**One more candidate here turned out to be load-bearing and is the first thing Stage 1 has to
-explain.** `gl_RenderState.Apply()` runs once per sprite inside `Draw`, before the standalone path
-returns without rasterising. Skipping it saves 6-15% of the sprite clocks and **changes the picture**:
-MAP04 differs by 0.2% against a 0.0% floor. Something `RegisterSprite` depends on is settled by
-`ApplyShader()` rather than by the state setters that precede it. A GL-free sprite path cannot call
-`Apply()` at all, so this dependency has to be found and made explicit either way.
+Two more landed with it:
 
-## Stage 1: sever the derivation from GL
+- **`gl_RenderState.Apply()` per sprite.** It runs inside `Draw` before the standalone path returns
+  without rasterising, pushing CPU-side state into an API that is not about to be used. Worth 11% of
+  the sprite clocks and 14% of the frame on Sunder MAP16 (`All` 0.826 ms -> 0.712).
+
+  Recorded here first as load-bearing and reverted, on a single 0.2% picture difference on MAP04
+  against one 0.0% floor reading. That was the map's own variance: three loads per config on MAP10
+  and MAP04 give 0.0% in all nine comparisons. One reading is not a floor, and this document said so
+  two sections further down while I was ignoring it.
+
+- **The GL instant-replay capture was recording a dead buffer.** There are two replay captures: this
+  one reads GL's back buffer, and `DrawSceneOnce` copies the Diligent swapchain just before Present.
+  With the backend carrying the frame, GL's back buffer is not the presented image -- a screenshot of
+  it shows the HUD over grey slabs where the world should be. So it paid a `glFinish`, a full-screen
+  `glReadPixels` and a buffer map every capture frame to record a corrupted picture. That was the
+  whole of the frame-time TAIL: `Finish` p95 3.078 ms -> 0.000, MAP20's `All` p95 8.65 -> 7.02.
+
+  `WantsFrame()` is still called unconditionally because it owns the recording session's lifecycle --
+  short-circuiting past it would stop the Vulkan stream, which is the one that works. And `fua_clip`
+  now skips a stream that has had no frames, instead of writing a second file of nothing beside the
+  real one and announcing both.
+
+## Stage 1: sever the derivation from GL (DONE)
 
 Move sprite derivation to a backend-neutral module the way `hud2d` and `features/surfaces` are, so it
 compiles and runs without a GL context.
@@ -64,20 +89,33 @@ compiles and runs without a GL context.
 and `gl_billboard_mode 1` are ignored by the mesh today. Latent with stock settings -- default
 billboard mode is 0 -- and wrong for any mod that uses them.
 
-## Stage 2: build the quads on the GPU
+## Stage 2: build the quads on the GPU -- BLOCKED, and here is the wall
 
-Today the CPU builds six vertices and a `MeshPiece` per sprite and appends them: `RegisterSprite` is
-~0.28 ms of MAP16's 0.63 ms of sprite work, the largest single piece.
+The prize is real and was measured: `RegisterSprite` is ~0.28 ms of MAP16's sprite work, and the
+backend's own `BuildDynamic` -- which no `stat rendertimes` clock covers -- is another 0.43 ms. Both
+exist only to turn four corners into six vertices twice over.
 
-Instead upload one compact record per actor -- position, frame, scale, light, style -- and expand to
-quads in a shader. That removes `RegisterSprite`, `DynAppend`, and the per-frame vertex traffic.
+What blocks it is the pass those sprites are drawn in, and the constraint is already written into the
+code: **every sprite goes through one back-to-front pass with depth writes OFF.** The comment at the
+dynamic draw loop records what happened when that was last challenged -- splitting the opaque sprites
+into a depth-writing pass let an alpha-tested impact sprite occlude the additive glow behind it,
+"black holes where a plasma burst's bright core should be".
 
-**Verified by:** the picture is unchanged, and `S: Render` falls.
-**Risks:** the four blend modes the mesh classifies into have to survive; billboarding moves into the
-shader (which is where it belongs, and closes the Stage 1 gap); the back-to-front sort has to be done
-GPU-side or replaced.
+That matters because 98% of sprites are opaque (Sunder MAP16: 2985 of 3053; MAP10: all 1406), and an
+unordered instanced draw of the opaque ones is the obvious GPU-driven shape. It is exactly the shape
+that was tried and reverted.
 
-## Stage 3: cull on the GPU
+So GPU expansion has to keep one draw per sprite in the existing sorted order, which means a second
+set of pipelines with no vertex input -- the sprite draws pick between six PSOs already
+(trans/add x plain/decal/redAlpha) and each would need a GPU-expanded twin. That is a large change to
+a renderer that currently matches GL pixel-for-pixel on every map that repeats, for ~0.4 ms on a
+frame that is now 0.71.
+
+**Not attempted, deliberately.** The next person should decide whether the pass structure can be
+revisited at all before duplicating six pipelines around it -- and if it can, the win is much larger
+than 0.4 ms, because unordered instancing collapses 3053 draws into one.
+
+## Stage 3: cull on the GPU -- not started, depends on Stage 2
 
 Build a depth pyramid over the world the backend has already drawn, and reject actors against it in
 the same pass that expands them. This is the culling that could never pay on the CPU.

@@ -92,6 +92,12 @@ struct Stream
 	std::string             saveReq;
 	bool                    stop = false;
 	bool                    running = false;   // game-thread view of worker liveness
+	// [rc4l] Frames this stream has actually been given since it started.
+	//
+	// With the backend carrying the frame, GL draws nothing worth recording and its stream is no
+	// longer fed -- see OpenGLFrameBuffer::Swap. It stays "running", so without this fua_clip wrote a
+	// second file of nothing beside the real one and announced both.
+	unsigned int            framesIn = 0;
 	const char             *tag = "";          // filename suffix; "" for the primary stream
 	bool                    takesAudio = false;
 };
@@ -354,6 +360,7 @@ void SubmitFrame(const unsigned char *rgbTopRow, int w, int h, int pitch)
 {
 	if (!g_streams[STREAM_GL].running) return;
 	g_lastCaptureUs = NowUs();
+	g_streams[STREAM_GL].framesIn++;
 	PushFrame(&g_streams[STREAM_GL], rgbTopRow, w, h, pitch);
 }
 
@@ -370,6 +377,7 @@ void SubmitFrameVulkan(const unsigned char *rgbTopRow, int w, int h, int pitch)
 {
 	if (!cl_fua_replay) return;
 	g_lastCaptureUsVk = NowUs();
+	g_streams[STREAM_VK].framesIn++;
 	PushFrame(&g_streams[STREAM_VK], rgbTopRow, w, h, pitch);
 }
 
@@ -429,7 +437,7 @@ CCMD(fua_clip)
 	for (int i = 0; i < STREAM_COUNT; i++)
 	{
 		Stream &st = g_streams[i];
-		if (!st.running) continue;
+		if (!st.running || st.framesIn == 0) continue;
 		std::string p = path;
 		if (st.tag[0] != 0)
 		{
@@ -443,7 +451,8 @@ CCMD(fua_clip)
 		st.cv.notify_one();
 		saved++;
 	}
-	Printf("Saving replay clip%s...\n", saved > 1 ? "s (GL and Vulkan)" : "");
+	if (saved == 0) Printf("Nothing recorded yet -- play for a moment, then try again.\n");
+	else Printf("Saving replay clip%s...\n", saved > 1 ? "s (GL and Vulkan)" : "");
 }
 
 #else // !ZX_ENABLE_REPLAY -- FFmpeg not available; keep the command as a no-capture stub.
