@@ -54,6 +54,7 @@
 
 #include "gl/system/gl_interface.h"
 #include "gl/system/gl_framebuffer.h"
+#include "features/hwrender/hud2d.h"   // StandaloneActive
 #include "gl/renderer/gl_renderer.h"
 #include "gl/renderer/gl_renderstate.h"
 #include "gl/renderer/gl_lightdata.h"
@@ -593,16 +594,28 @@ void OpenGLFrameBuffer::DestroyReplayCapture()
 }
 #endif
 
+EXTERN_CVAR(Bool, fua_gl_idleswap)
+
 void OpenGLFrameBuffer::Swap()
 {
 	Finish.Reset();
 	Finish.Clock();
-	glFinish();
+	// [rc4l] When the backend is carrying the frame, GL has drawn nothing to finish or to present.
+	//
+	// glFinish() is a full stall on the GL queue and SwapBuffers presents a back buffer the Diligent
+	// child window is covering. Both were written for a renderer that was drawing the world; with
+	// fua_dg_standalone on, neither has anything to do -- and together they are the largest single
+	// item left in the frame.
+	const bool glIdle = !fua_gl_idleswap && zx::hwrender::StandaloneActive();
+	if (!glIdle) glFinish();
 #ifdef ZX_ENABLE_REPLAY
 	// [rc4l] FUA instant replay: when a frame is due, kick off an async PBO readback of the just-
 	// rendered back buffer and hand the PREVIOUS frame's (already-completed) readback to the encoder.
 	if (zx::replay::WantsFrame())
 	{
+		// The readback wants a finished frame, so a capture frame pays for the stall the other
+		// frames no longer do -- thirty a second rather than every one.
+		if (glIdle) glFinish();
 		// Capture at the window's drawable size (the full presented frame), not the virtual render size.
 		const int cw = mScaleClientW > 0 ? mScaleClientW : SCREENWIDTH;
 		const int ch = mScaleClientH > 0 ? mScaleClientH : SCREENHEIGHT;
@@ -614,7 +627,7 @@ void OpenGLFrameBuffer::Swap()
 		//DoSetGamma();
 		needsetgamma = false;
 	}
-	SwapBuffers();
+	if (!glIdle) SwapBuffers();
 	Finish.Unclock();
 	swapped = true;
 	FHardwareTexture::UnbindAll();

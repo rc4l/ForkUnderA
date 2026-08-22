@@ -107,6 +107,19 @@ The candidates, none of them small:
 - **Screen-space size culling.** Cheap, effective, and it changes the picture -- which this port has
   not been willing to do.
 
+## The target that was worth more than any of this
+
+While the sprite path was being measured, `Finish=` in `stat rendertimes` kept showing up as the
+largest single item in the frame -- and it turned out to be `glFinish()` and `SwapBuffers()` in
+`OpenGLFrameBuffer::Swap`, running every frame for a renderer that, with `fua_dg_standalone` on,
+has drawn nothing. Skipping both when GL is idle: Sunder MAP10's median frame 0.648 ms -> 0.343 and
+its p99 2.016 -> 0.528; MAP20's min 6.869 -> 1.424. That is several times what every sprite
+optimisation in this document was fighting over, for four lines.
+
+Worth remembering the shape of it: four careful attempts at the thing that was obviously expensive
+all came back a wash, and the win was sitting in a function nobody had thought to look at because it
+belonged to the renderer that had already been switched off.
+
 ## The other half: a GL-free build
 
 `GLSprite::Process` touches no GL state -- upstream reached the same conclusion and its

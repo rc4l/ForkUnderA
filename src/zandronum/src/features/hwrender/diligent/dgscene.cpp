@@ -203,6 +203,9 @@ CVAR(Bool, fua_dg_clusters, true, 0)
 // that comes out grey where GL tints it, geometry and texture both already right. That band is the
 // only known difference and it is written up in features/surfaces/README.md.
 CVAR(Bool, fua_dg_standalone, true, CVAR_ARCHIVE)
+// [rc4l] Keep GL's per-frame glFinish() and SwapBuffers even when GL is drawing nothing. Here to be
+// turned ON, so the cost of removing them is a measurement rather than an argument.
+CVAR(Bool, fua_gl_idleswap, false, 0)
 
 
 // [rc4l] Bindless materials: every texture in the level reachable from one descriptor set.
