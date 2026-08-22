@@ -48,6 +48,7 @@
 #include "version.h"
 #include "c_console.h"
 #include "c_dispatch.h"
+#include "features/continue/zx_continue.h"
 
 #include "i_system.h"
 
@@ -170,13 +171,24 @@ void StopLogging( void )
 	}
 }
 
+// [rc4l] Remember where we were, from the DELIBERATE quit and not from a shutdown hook.
+//
+// i_main.cpp registers atexit(call_terms) and I_FatalError leaves through exit(), so the atterm
+// chain runs on a crash exactly as it does here. A record written from there would faithfully save
+// the crash and offer to put the player back into it. This is the only path that means "the player
+// chose to stop", which is the only thing worth remembering.
+static void zx_NoteDeliberateQuit()
+{
+	zx::Continue_NoteQuit();
+}
+
 CCMD (quit)
 {
 	// [BC] This function may not be used by ConsoleCommand.
 	if ( ACS_IsCalledFromConsoleCommand( ))
 		return;
 
-	if (!insave) exit (0);
+	if (!insave) { zx_NoteDeliberateQuit(); exit (0); }
 }
 
 CCMD (exit)
@@ -185,7 +197,7 @@ CCMD (exit)
 	if ( ACS_IsCalledFromConsoleCommand( ))
 		return;
 
-	if (!insave) exit (0);
+	if (!insave) { zx_NoteDeliberateQuit(); exit (0); }
 }
 
 /*

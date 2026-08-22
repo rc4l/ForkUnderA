@@ -54,6 +54,7 @@ const USAGE = `fuactl <command>
   ui <action> [args] --port P [--token T]   drive the UI: read (menu as text), find <label>, nav <keys>, click <x> <y>, drag, type <text>, look --yaw D --pitch D, screenshot [name], exec <ccmd>
   browser --port P [--token T] [--wait S] [--expect-lan] [--expect-country XXX]   refresh the server browser and report what it sees (LAN vs registry, country)
   hostdiag --port P [--token T] [--wait S] [--expect-listed]           ask the registry whether THIS server is reachable from outside (per family)
+  continue --port P [--token T] [--expect shown|hidden]   what the Continue button is offering, and whether it is on the bar
   mcp                                run as an MCP stdio server for agents
 `;
 
@@ -302,6 +303,27 @@ async function main() {
       if (failed) process.exit(1);
       break;
     }
+    case "continue": {
+      // The Continue button's decision, reported rather than eyeballed. `shown` and the record are
+      // separate facts on purpose: a perfectly good record is still hidden while a game is running,
+      // and an E2E that only checked one of them would pass on the wrong reason.
+      if (!flags.port) { console.error("usage: fuactl continue --port P [--token T] [--expect shown|hidden]"); process.exit(2); }
+      const c = new BridgeClient();
+      await c.connect(Number(flags.port), { token: flags.token || null });
+      await c.waitHello();
+      const info = await c.rpc("ui.continue");
+      c.close();
+      console.log(JSON.stringify(info, null, 2));
+      if (flags.expect) {
+        const want = String(flags.expect) === "shown";
+        if (info.shown !== want) {
+          console.error(`expected the button ${want ? "shown" : "hidden"}, it was ${info.shown ? "shown" : "hidden"}`);
+          process.exit(1);
+        }
+      }
+      break;
+    }
+
     case "hostdiag": {
       // "Is my server visible to anyone else?" answered by the only witness that counts, the
       // registry. Distinct from `browser`, which reports what the local browser BELIEVES -- a host's

@@ -103,6 +103,11 @@ void G_DoLoadGame (void);
 // Called by M_Responder.
 void G_SaveGame (const char *filename, const char *description);
 
+// [rc4l] The synchronous half of the above, exported because the quit path has no next tic for the
+// queued form to run in: G_SaveGame only sets gameaction = ga_savegame, and exit() follows
+// immediately after the caller returns.
+void G_DoSaveGame (bool okForQuicksave, FString filename, const char *description);
+
 // Only called by startup code.
 void G_RecordDemo (const char* name);
 

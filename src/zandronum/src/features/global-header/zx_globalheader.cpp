@@ -2,6 +2,7 @@
 // Copyright (C) 2026 rc4l
 
 #include "zx_globalheader.h"
+#include "features/continue/zx_continue.h"
 
 #include "doomtype.h"
 #include "v_video.h"
@@ -41,7 +42,20 @@ namespace
 const int HEADER_LAYOUT_W = 640;
 const int HEADER_LAYOUT_H = 400;
 
-const char *const kTabLabels[kHeaderTabCount] = { "Main Menu", "Play Online!" };
+const char *const kTabLabels[kHeaderTabCount] = { "Main Menu", "Play Online!", "Continue" };
+
+// [rc4l] Continue is the only tab that comes and goes, so everything the bar does has to ask how
+// many tabs there are rather than assume. It is last in the enum and drawn first on the bar; see
+// globalheader_compute.h on why those two orders are allowed to differ.
+int TabCount( )
+{
+	return Continue_IsShown( ) ? kHeaderTabCount : kHeaderTabCountNoContinue;
+}
+
+int PinnedIndex( )
+{
+	return Continue_IsShown( ) ? static_cast<int>( HeaderTab::Continue ) : -1;
+}
 
 // Where the keyboard is on the bar, and whether the bar owns it at all. The LIT tab is not stored
 // here -- that is asked of the world in CurrentTab() -- this is only the cursor while somebody is
@@ -173,7 +187,7 @@ int ToVirtualY( int py )
 // The measured width of every label, which is what the layout is built from.
 void MeasureLabels( int *out )
 {
-	for ( int i = 0; i < kHeaderTabCount; ++i )
+	for ( int i = 0; i < TabCount( ); ++i )
 		out[i] = SmallFont->StringWidth( kTabLabels[i] );
 }
 
@@ -388,7 +402,7 @@ void DrawFocusOrb( const HeaderMetrics &m, const int *widths )
 
 	const int lit = g_FocusTab;
 
-	const HeaderRect r = HeaderTabRect( m, widths, kHeaderTabCount, lit );
+	const HeaderRect r = HeaderTabRect( m, widths, TabCount( ), lit, PinnedIndex( ) );
 	// From the metrics, not a literal, so the padding that has to hold this orb is checked against
 	// the same number the orb is drawn at.
 	const GlowPos want( r.x - m.glowInset, r.y + r.h / 2 );
@@ -432,7 +446,7 @@ void DrawFocusOrb( const HeaderMetrics &m, const int *widths )
 // rather than wrap, and a sound on a keypress that changed nothing is a worse lie than silence.
 bool StepFocus( int step )
 {
-	const int next = StepHeaderTab( g_FocusTab, kHeaderTabCount, step );
+	const int next = StepHeaderTabPinned( g_FocusTab, TabCount( ), PinnedIndex( ), step );
 	if ( next == g_FocusTab )
 		return true;   // consumed, the bar still owns the key; there is simply nowhere further to go
 
@@ -457,6 +471,9 @@ const char *TooltipFor( int tab, HeaderReach reach )
 {
 	if ( tab == static_cast<int>( HeaderTab::PlayOnline ))
 		return HeaderReachTooltip( reach );
+
+	if ( tab == static_cast<int>( HeaderTab::Continue ))
+		return "Pick up where you left off";
 
 	return "Single player, options and everything else";
 }
@@ -550,13 +567,13 @@ void GlobalHeader_Draw( )
 	const HeaderReach reach = Reach( );
 	const int lit = static_cast<int>( CurrentTab( ));
 
-	for ( int i = 0; i < kHeaderTabCount; ++i )
+	for ( int i = 0; i < TabCount( ); ++i )
 	{
 		const bool bOnline = ( i == static_cast<int>( HeaderTab::PlayOnline ));
 		const ReachTint tint = bOnline ? HeaderReachTint( reach ) : ReachTint::Neutral;
 		const bool bEnabled = !bOnline || PlayOnlineSelectable( reach );
 
-		DrawPill( HeaderTabRect( m, widths, kHeaderTabCount, i ), kTabLabels[i], ( i == lit ),
+		DrawPill( HeaderTabRect( m, widths, TabCount( ), i, PinnedIndex( ) ), kTabLabels[i], ( i == lit ),
 			( i == g_HotTab ), ( g_HasFocus && ( i == g_FocusTab )), tint, bEnabled );
 	}
 
@@ -743,6 +760,20 @@ bool GoToTab( int tab )
 // the same Enter: letting one through is how Enter on the bar used to start a new game.
 bool PressTab( int tab, bool bDropFocus )
 {
+	// [rc4l] Continue is a button, not a place. It is never "where you are", so the already-here
+	// branch below would never fire for it, and it must act before that branch reads CurrentTab and
+	// decides it is somewhere to go. No confirmation: the decision was made when the button chose to
+	// exist, and asking again is a second decision about the same thing.
+	if ( tab == static_cast<int>( HeaderTab::Continue ))
+	{
+		if ( bDropFocus )
+			g_HasFocus = false;
+
+		S_Sound( CHAN_VOICE | CHAN_UI, "menu/choose", snd_menuvolume, ATTN_NONE );
+		Continue_Activate( );
+		return true;
+	}
+
 	if ( tab == static_cast<int>( CurrentTab( )))
 	{
 		// Already here, so there is nothing to open and the useful thing left is to get out of the
@@ -795,7 +826,7 @@ bool GlobalHeader_MouseMove( int screenX, int screenY )
 	const int vx = ToVirtualX( screenX );
 	const int vy = ToVirtualY( screenY );
 
-	g_HotTab = HeaderTabAtPoint( m, widths, kHeaderTabCount, vx, vy );
+	g_HotTab = HeaderTabAtPoint( m, widths, TabCount( ), vx, vy, PinnedIndex( ) );
 
 	// The bar swallows the move over its whole surface, pill or not, so the menu underneath does not
 	// highlight a row the pointer is nowhere near.
@@ -817,7 +848,7 @@ bool GlobalHeader_MouseClick( int screenX, int screenY )
 	if ( !HeaderBarContains( m, vy ))
 		return false;
 
-	const int tab = HeaderTabAtPoint( m, widths, kHeaderTabCount, vx, vy );
+	const int tab = HeaderTabAtPoint( m, widths, TabCount( ), vx, vy, PinnedIndex( ) );
 	if ( tab >= 0 )
 	{
 		// The pointer parks the keyboard cursor where it clicked, WITHOUT claiming the arrows. A
