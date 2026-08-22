@@ -611,11 +611,21 @@ void OpenGLFrameBuffer::Swap()
 #ifdef ZX_ENABLE_REPLAY
 	// [rc4l] FUA instant replay: when a frame is due, kick off an async PBO readback of the just-
 	// rendered back buffer and hand the PREVIOUS frame's (already-completed) readback to the encoder.
-	if (zx::replay::WantsFrame())
+	// [rc4l] ...and when the backend is carrying the frame, it has already captured it.
+	//
+	// There are two replay captures. This one reads GL's back buffer; DrawSceneOnce takes a copy of
+	// the Diligent swapchain just before Present. With fua_dg_standalone on, GL's back buffer is not
+	// the presented image and never was -- a screenshot of it shows the HUD over grey slabs where the
+	// world should be, because GL stopped drawing the world and nothing clears what it left. So this
+	// path was recording a corrupted picture, and paying a glFinish, a full-screen glReadPixels and a
+	// buffer map every capture frame to do it. That is the whole of the frame-time TAIL: Sunder MAP20's
+	// p95 goes 8.65 ms -> 7.21 with it gone, MAP16's 2.70 -> 1.92.
+	// WantsFrame() is asked FIRST and unconditionally: it owns the recording session's lifecycle, so
+	// short-circuiting past it would stop the session ever starting -- including the Vulkan stream,
+	// which is the one that still works.
+	const bool wantReplayFrame = zx::replay::WantsFrame();
+	if (wantReplayFrame && !glIdle)
 	{
-		// The readback wants a finished frame, so a capture frame pays for the stall the other
-		// frames no longer do -- thirty a second rather than every one.
-		if (glIdle) glFinish();
 		// Capture at the window's drawable size (the full presented frame), not the virtual render size.
 		const int cw = mScaleClientW > 0 ? mScaleClientW : SCREENWIDTH;
 		const int ch = mScaleClientH > 0 ? mScaleClientH : SCREENHEIGHT;

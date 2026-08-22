@@ -122,6 +122,8 @@ CVAR(Bool, gl_nolayer, false, 0)
 // 
 //
 //==========================================================================
+EXTERN_CVAR(Bool, fua_gl_idlestate)
+
 void GLSprite::Draw(int pass)
 {
 	if (pass == GLPASS_DECALS || pass == GLPASS_LIGHTSONLY) return;
@@ -246,16 +248,17 @@ void GLSprite::Draw(int pass)
 		// between tics rather than stepping.
 		const bool drawRollSpriteActor = ( actor != NULL && ( actor->renderflags & RF_ROLLSPRITE ) );
 
-		// [rc4l] This looks like waste in the standalone path and is not -- do not skip it.
+		// [rc4l] Nothing to push into GL when GL is not going to rasterise this.
 		//
-		// Apply() pushes CPU-side state into GL, and this function returns a few lines below without
-		// rasterising anything, so skipping it when the backend is carrying the frame reads as free.
-		// It is not: the picture moves. MAP04 differs by 0.2% against a 0.0% floor with it gone, so
-		// something RegisterSprite depends on is settled by ApplyShader rather than by the setters.
+		// Apply() writes the CPU-side render state through to the API, and this function returns a
+		// few lines below without drawing when the backend carries the frame. RegisterSprite reads
+		// the state's FIELDS, which the setters above have already written, so there is nothing here
+		// for it to depend on. Worth 11% of the sprite clocks on Sunder MAP16 and 14% of the frame.
 		//
-		// Worth 6-15% of the sprite clocks, and not worth taking until that dependency is understood
-		// -- which is Stage 1 of docs/sprites-gpu-plan.md, because a GL-free path cannot call it.
-		gl_RenderState.Apply();
+		// This was rejected once on a single 0.2% picture difference on MAP04, taken against one
+		// 0.0% floor reading. It was the map's own variance: three loads per config on MAP10 and
+		// MAP04 give 0.0% in all nine comparisons. One reading is not a floor.
+		if (!zx::hwrender::StandaloneActive() || fua_gl_idlestate) gl_RenderState.Apply();
 
 		Vector v1;
 		Vector v2;
