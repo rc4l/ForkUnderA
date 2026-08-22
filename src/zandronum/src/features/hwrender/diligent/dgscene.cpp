@@ -530,6 +530,8 @@ Diligent::IShaderResourceBinding *GetMaterialSRB(Diligent::IPipelineState *pso,
 // much lower, so a device that cannot will fail pipeline creation rather than degrade. If that is
 // ever seen, the fix is to query maxPerStageDescriptorSampledImages and build the shader string at
 // runtime instead of pinning it to FUA_MAT_SLOTS_STR.
+void RecordPresentInterval();   // the frame-interval recorder, defined below
+
 enum { kMaterialSlots = 4096 };
 static_assert(kMaterialSlots == 4096, "FUA_MAT_SLOTS_STR must say the same number");
 
@@ -5085,6 +5087,7 @@ static void DrawSceneOnce(bool present = true, bool pump = true)
 	if (present)
 	{
 		swap->Present(0);
+		RecordPresentInterval();
 		// [rc4l] The Win32 message pump is NOT free -- PeekMessage on a window with pending paint
 		// work costs more than the draw at these scales. Pumping every frame put 1.5 ms into a
 		// 0.01 ms submission, so the benchmark pumps sparsely and a real backend would pump once
@@ -5647,6 +5650,77 @@ bool Fua_WantEmbeddedWindow() { return !!fua_dg_embed; }
 // silently is right here, because the alternative is a black screen.
 // [rc4l] See hud2d.h. Deliberately does NOT ask about fua_dg_standalone: with the embedded window
 // up, GL's output is discarded either way.
+// [rc4l] THE FRAME, which nothing else in this backend measures.
+//
+// Every clock in this file and in stat rendertimes is a COMPONENT: All= is GL's render, the backend
+// phases are the passes, fua_diligent_bench re-renders the resident mesh in a loop without running a
+// game frame at all. Each of them can read 0.7 ms while the player is looking at 146 fps, because
+// none of them measures the interval between one picture appearing and the next -- which is the only
+// number a player can feel, and the only one that shows a stutter.
+//
+// So: wall clock between successive presents, kept as a ring, reported as percentiles by
+// fua_frametimes. A stutter is a p99 far above the median, and no average will ever show it.
+namespace {
+const int kFrameRing = 1024;
+double  g_frameMs[kFrameRing];
+int     g_frameCount = 0;
+int     g_frameHead  = 0;
+bool    g_frameHavePrev = false;
+std::chrono::steady_clock::time_point g_framePrev;
+}
+
+void RecordPresentInterval()
+{
+	const auto now = std::chrono::steady_clock::now();
+	if (g_frameHavePrev)
+	{
+		const double ms = std::chrono::duration<double, std::milli>(now - g_framePrev).count();
+		g_frameMs[g_frameHead] = ms;
+		g_frameHead = (g_frameHead + 1) % kFrameRing;
+		if (g_frameCount < kFrameRing) g_frameCount++;
+	}
+	g_framePrev = now;
+	g_frameHavePrev = true;
+}
+
+void ResetFrameTimes() { g_frameCount = 0; g_frameHead = 0; g_frameHavePrev = false; }
+
+CCMD( fua_frametimes )
+{
+	if (g_frameCount < 8) { Printf( "fua_frametimes: not enough frames yet -- play for a second.\n" ); return; }
+	TArray<double> v;
+	v.Resize( (unsigned)g_frameCount );
+	for (int i = 0; i < g_frameCount; i++) v[i] = g_frameMs[i];
+	std::sort( &v[0], &v[0] + g_frameCount );
+	const double med = v[g_frameCount / 2];
+	const double p95 = v[(int)(g_frameCount * 0.95)];
+	const double p99 = v[(int)(g_frameCount * 0.99)];
+	double sum = 0.0; for (int i = 0; i < g_frameCount; i++) sum += v[i];
+	const double mean = sum / g_frameCount;
+	// How many frames took more than twice the median -- that is what a stutter IS.
+	int hitches = 0; for (int i = 0; i < g_frameCount; i++) if (v[i] > med * 2.0) hitches++;
+	Printf( "fua_frametimes over %d frames: min %.2f  med %.2f  mean %.2f  p95 %.2f  p99 %.2f  max %.2f ms\n",
+		g_frameCount, v[0], med, mean, p95, p99, v[g_frameCount - 1] );
+	Printf( "  %.0f fps at the median, %.0f at p99   |   %d frames (%.1f%%) took over twice the median\n",
+		1000.0 / med, 1000.0 / p99, hitches, 100.0 * hitches / g_frameCount );
+	// [rc4l] The SEQUENCE, not just the percentiles. A stutter has a shape: every-Nth-frame is a
+	// timer, bursts are a stall, and alternating is a double-buffer fighting something. Percentiles
+	// cannot tell those apart and the raw run can.
+	if (argv.argc() > 1)
+	{
+		FString line;
+		const int n = (g_frameCount < 48) ? g_frameCount : 48;
+		const int start = (g_frameHead - n + kFrameRing) % kFrameRing;
+		for (int i = 0; i < n; i++)
+		{
+			line.AppendFormat( "%.1f ", g_frameMs[(start + i) % kFrameRing] );
+			if ((i % 12) == 11) { Printf( "  %s\n", line.GetChars() ); line = ""; }
+		}
+		if (line.Len()) Printf( "  %s\n", line.GetChars() );
+	}
+	ResetFrameTimes();
+}
+
 bool BackendPresenting()
 {
 	if (!fua_vulkan || !fua_dg_embed) return false;
