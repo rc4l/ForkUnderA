@@ -97,3 +97,86 @@ deserves its own investigation.
   exactly the state in which moving sectors and animated lights read as "no difference". Both halves
   are fixed: `sim.pause` honours `on`, and `GetBool` reads JSON booleans, with tests pinning that
   `GetInt` cannot.
+
+---
+
+# The choppiness: a spike once per tic, and three things that made it
+
+Fixing the median left a separate complaint standing -- "146 fps and the mouse movement is very
+choppy... it does sometimes report 480 fps but the choppiness is a big one." That is not something a
+median can show, and `fua_frametimes`' raw dump is what showed it:
+
+```
+4.0 3.2 2.9 2.9 2.7 2.7 [7.8] 3.6 2.8 4.3 3.6 2.8
+2.5 2.5 [7.8] 3.6 3.4 3.0 2.7 4.3 2.9 [7.9] 3.6 2.4
+```
+
+Every cycle sums to ~28.5 ms -- **one Doom tic at 35 Hz**. One frame in eight cost 3.5x the rest.
+The sim tic itself is only ~1.04 ms median (`fuactl ticprof`), so the tic was not the spike; the tic
+was the *trigger*. Everything a tic dirties is answered on the very next frame, and the other seven
+frames do nothing.
+
+## 1. One UpdateBuffer per repaint
+
+The backend applied each repainted surface with its own 64-byte `ctx->UpdateBuffer`. On the frame
+after a tic that was ~1,548 driver calls. `g_scenePieceData` is a full CPU mirror of that buffer, so
+any *span* of it is safe to upload whether or not every entry changed -- which makes near-misses
+mergeable. Sorting the slot indices and bridging gaps of up to 32 entries turned **1,492,083 repaints
+into 15,993 uploads, 93:1**.
+
+## 2. Re-deriving a wall to express a flicker
+
+`ReshadeSegFromMap` re-lights a seg without re-deriving it. If a sector's planes did not move, the
+band structure cannot have changed -- band boundaries are 3D-floor plane heights -- so only each
+band's light differs, and everything else (material, base texture, normal, alpha, blend mode) is read
+back off the piece the last bake registered. The one input a reshade cannot re-derive is *which*
+light list entry a band used, so the bake now records it in `SegCache::bandLight`.
+
+It declines rather than guesses: a seg it never baked, one whose stored piece has gone, one that does
+not own its side, or one carrying a **fog boundary** -- the single piece whose light comes off an
+`F3DFloor` rather than the band list. Ordinary 3D-floor blocks pick their light out of the same list
+a band does, so they reshade too. A decline falls back to the full bake, which is always right.
+
+## 3. Doing a tic's worth of work on one frame
+
+Even coalesced, ~1,500 surfaces changing appearance at once is a lump landing 35 times a second. A
+repaint is a *shading* change, not a position change: a surface carrying last frame's light for
+another two milliseconds is invisible, whereas a surface in last frame's *place* would not be. So
+repaints -- and only repaints, never the geometry patch -- are queued and drained at 512 a frame,
+with a flush-all escape if the backlog ever runs away.
+
+## Measured, four fixed vantages on wdiex02
+
+Medians are unchanged, which is the point -- this is all tail:
+
+| spot | median | p95 | p99 | worst frame |
+|---|---|---|---|---|
+| 1008,480 | 0.63 -> 0.60 | 3.43 -> **1.45** | 5.32 -> **3.43** | 7.04 -> **4.66** |
+| 280,1085 | 0.80 -> 0.76 | 3.54 -> **2.12** | 6.23 -> **3.76** | 7.68 -> **6.21** |
+| -5160,3328 | 1.24 -> 1.21 | 5.87 -> **3.91** | 7.27 -> **4.60** | 7.83 -> **5.78** |
+| -5616,1728 | 2.50 -> 2.54 | 7.50 -> **5.54** | 8.68 -> **7.04** | 9.57 -> **8.17** |
+
+The spike is ~5 ms above baseline at *every* vantage regardless of what is on screen, which is what
+identifies it as tic-coupled rather than view-dependent.
+
+## How the reshade was proved correct
+
+Percentile numbers cannot show a lighting bug. So: run the level for twenty seconds with every light
+effect animating through the reshade path, freeze it, screenshot, then run `fua_surface_mapbake` --
+which re-derives all 45,849 parts from the map -- and screenshot again.
+
+**0.0% over the world region.** A complete re-derivation produces the same pixels the reshade had
+already arrived at. (The 0.5% full-frame figure is the console text the re-bake printed between the
+two shots.) Also 0.1% Vulkan before-vs-after on dbab02 and dbab04, both maps' own reload floor.
+
+## What is left, and the honest ceiling
+
+Skipping light-only work *entirely* -- correct for nothing, but it bounds the prize -- gives p99 4.40
+and 0.8% of frames over twice the median. The tail is now within reach of that without freezing a
+single light. What remains is genuine per-tic work: the sim tic, and the surfaces that really did
+change. Threading the sim is the only thing left that would remove it, and that is a different
+project.
+
+One measurement trap worth keeping: `fua_surface_mapbake` leaves the mesh heavier than it found it,
+so an instance that has run it is no longer a valid timing baseline. A spot that read 0.63 ms on a
+clean load read 3.97 ms in an instance where the verifier had been run.

@@ -121,6 +121,17 @@ async function main() {
         // its twin. That is right for measuring and useless for the case where the point IS to walk
         // around and look at something, which until now needed the env var set by hand.
         allowOsInput: !!flags.play,
+        // [rc4l] --res WxH, because a stutter report is resolution-shaped.
+        //
+        // launch was pinned to 1024x640 with no way to say otherwise, so a frame-time tail reported
+        // on a 1920x1200 window could only be reproduced at a third of the pixels -- where it is
+        // milder, and where anything fill-bound hides entirely. `play` had --res; the measuring
+        // command, which is the one that needs it, did not.
+        ...(flags.res ? (() => {
+          const m = String(flags.res).match(/^(\d+)x(\d+)$/i);
+          if (!m) throw new Error(`--res wants WxH, e.g. 1920x1200 (got ${flags.res})`);
+          return { width: Number(m[1]), height: Number(m[2]) };
+        })() : {}),
         // [rc4l] PWADs, comma-separated. Without this the only launchable thing was a bare IWAD, so
         // a mod could be profiled only by hosting a server first and measuring through the netcode.
         extraArgs: flags.file

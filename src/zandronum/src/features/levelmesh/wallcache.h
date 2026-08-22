@@ -105,6 +105,21 @@ struct SegCache
 	WallCacheStamp  stamp;
 	bool            filled;
 
+	// [rc4l] What each baked slot took its LIGHT from, so a light change need not re-derive the wall.
+	//
+	// Three quarters of the sectors invalidated on a live level have not moved at all -- sector_t
+	// bumps fua_dirty for ChangeLightLevel exactly as it does for ChangePlaneTexZ, and Doom's light
+	// effects run every tic. Re-deriving a wall's spans, UVs and bands to express a flicker is the
+	// bulk of the once-per-tic frame spike that reads as choppy movement.
+	//
+	// Geometry cannot have moved if the planes did not, so the band STRUCTURE is unchanged and only
+	// each band's light value differs. This records which light list entry a slot used (-1 = the
+	// seg's own light), which is the one input a reshade cannot re-derive for free.
+	signed char     bandLight[kMaxMapPieces];
+	// 3D-floor slots take their light from an F3DFloor rather than the band list; a seg carrying any
+	// falls back to a full bake rather than growing a second rule here.
+	bool            hasFogBoundary;
+
 	// [rc4l] pieces[] must be cleared here, not left to whatever was in the memory.
 	//
 	// MeshRange is a POD and this constructor used to skip the array entirely, which is invisible on
@@ -114,13 +129,14 @@ struct SegCache
 	// offset in the new arena -- while never allocating space of its own. The map came up with walls
 	// missing and geometry smeared across the ones that survived, and only after a map CHANGE:
 	// launching straight into the same map was always fine, because the block started zeroed.
-	SegCache() : pieceCount(0), bakedCount(0), filled(false)
+	SegCache() : pieceCount(0), bakedCount(0), filled(false), hasFogBoundary(false)
 	{
 		for (int i = 0; i < kMaxMapPieces; i++)
 		{
 			pieces[i].list = 0;
 			pieces[i].range.offset = 0;
 			pieces[i].range.count = 0;
+			bandLight[i] = -1;
 		}
 	}
 };

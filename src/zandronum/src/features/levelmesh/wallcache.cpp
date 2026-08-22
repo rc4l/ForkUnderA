@@ -514,6 +514,95 @@ static void PlaneAt(const F3DFloor::planeref &pr, float x0, float y0, float x1, 
 }
 
 
+// Why a reshade handed the seg back to the full bake, so the fallback rate is explainable.
+static int g_reshadeFF = 0, g_reshadeNoLight = 0, g_reshadeNotOwner = 0, g_reshadeNoPiece = 0;
+
+// [rc4l] Re-light a seg WITHOUT re-deriving it. Returns pieces repainted, or -1 if it declined.
+//
+// The case this exists for is a sector whose light changed and whose planes did not -- three
+// quarters of all invalidations on a live level, because Doom's light effects run every tic and
+// sector_t bumps fua_dirty for a flicker exactly as it does for a lift. BakeSegFromMap answered
+// those by working the wall out from the map again: spans, UVs, band splits, materials, six
+// vertices per band, all to arrive at the same geometry it already had and one different light.
+//
+// If the planes did not move, the band structure cannot have changed -- band boundaries are 3D-floor
+// plane heights. So the only thing to redo is each band's light and the CaptureShading that follows
+// it, and the rest can be read back off the piece the last bake registered.
+//
+// It declines rather than guesses whenever it is not certain the geometry is untouched: a seg it
+// never baked, one carrying 3D-floor pieces (whose light comes from an F3DFloor, not the band list),
+// or one whose stored piece has gone. The caller falls back to the full bake, which is always right.
+static int ReshadeSegFromMap(int segIndex)
+{
+	if (!gl_wallmesh) return -1;
+	if (segIndex < 0 || (unsigned)segIndex >= g_cache.Size()) return -1;
+	if (segs == NULL || segIndex >= numsegs) return -1;
+	const seg_t *seg = &segs[segIndex];
+	if (seg->sidedef == NULL || seg->linedef == NULL || seg->frontsector == NULL) return -1;
+
+	SegCache &sc = g_cache[segIndex];
+	if (sc.hasFogBoundary) { g_reshadeFF++; return -1; }   // its light is not in bandLight
+
+	zx::surfaces::DerivedWallLight dl;
+	const sector_t *cmFrom = NULL;
+	if (!zx::surfaces::BuildDerivedWallLight(seg, dl, cmFrom) || cmFrom == NULL) { g_reshadeNoLight++; return -1; }
+	if (!SegOwnsItsSide(segIndex)) { g_reshadeNotOwner++; return -1; }
+
+	const sector_t *front = seg->frontsector;
+	const TArray<lightlist_t> *lights =
+		(front != NULL && front->e != NULL) ? &front->e->XFloor.lightlist : NULL;
+	int nLights = (fua_surface_bands && lights != NULL) ? (int)lights->Size() : 0;
+	if (nLights > kBandsPerPart) nLights = kBandsPerPart;
+
+	const int midType = (seg->backsector != NULL) ? RENDERWALL_M2S : RENDERWALL_M1S;
+	const int kParts[3] = { RENDERWALL_TOP, RENDERWALL_BOTTOM, midType };
+
+	int done = 0;
+	for (int slot = 0; slot < kMaxMapPieces; slot++)
+	{
+		const MeshRange &range = sc.pieces[slot].range;
+		if (range.count == 0) continue;
+		const zx::levelmesh::MeshPiece *had = zx::levelmesh::MeshFindPiece(range.offset);
+		if (had == NULL || had->range.count == 0) { g_reshadeNoPiece++; return -1; }
+
+		// The band's light, by the same rule the bake uses -- see the band loop.
+		int lightLevel = dl.lightLevel;
+		FColormap cm;
+		cm = cmFrom->ColorMap;
+		const int li = sc.bandLight[slot];
+		if (li >= 0 && li < nLights)
+		{
+			const lightlist_t &ll = (*lights)[li];
+			if (ll.p_lightlevel != &seg->sidedef->sector->lightlevel)
+				lightLevel = gl_ClampLight(*ll.p_lightlevel);
+			cm.CopyLightColor(ll.extra_colormap);
+		}
+
+		// Everything that is not light comes back off the registered piece, which is the point.
+		zx::levelmesh::MeshPiece mp = *had;
+		const void *savedBase = mp.baseTex;
+		const float nx = mp.normX, ny = mp.normY, nz = mp.normZ;
+		// A translucent 3D-floor slab carries its own alpha and blend mode, set after the bake's
+		// CaptureShading. Re-running it would hand them back their opaque defaults and the slab would
+		// turn solid, so they are preserved here exactly as the base texture and normal are.
+		const float savedAlpha = mp.alpha;
+		const int   savedBlend = mp.blendMode;
+		zx::levelmesh::CaptureShading(lightLevel, dl.relLight + getExtraLight(), cm, mp,
+			slot < kFFSlot0 && kParts[slot / kBandsPerPart] == RENDERWALL_M2SNF);
+		// AFTER CaptureShading, which clears baseTex and resets alpha and blend mode on the way past.
+		mp.baseTex    = savedBase;
+		mp.alpha      = savedAlpha;
+		mp.blendMode  = savedBlend;
+		mp.lightLevel = lightLevel;
+		mp.lightColor = cm.LightColor.d;
+		mp.fadeColor  = cm.FadeColor.d;
+		mp.normX = nx; mp.normY = ny; mp.normZ = nz;
+		MeshRegisterPiece(mp);
+		done++;
+	}
+	return done;
+}
+
 int BakeSegFromMap(int segIndex)
 {
 	// [rc4l] DECLINED (-1) and "took it, made nothing" (0) are different answers.
@@ -550,6 +639,7 @@ int BakeSegFromMap(int segIndex)
 	// A sector with 3D floors has no single light level: each floor contributes a band, and a wall
 	// crossing one is drawn as two pieces with two lights. Computed per part because the span being
 	// cut is the part's -- see wallbands_compute for the rule, which is GLWall::SplitWall's.
+	sc.hasFogBoundary = false;   // set below; a fog boundary is the one piece a reshade cannot redo
 	const sector_t *front = seg->frontsector;
 	const TArray<lightlist_t> *lights =
 		(front != NULL && front->e != NULL) ? &front->e->XFloor.lightlist : NULL;
@@ -644,6 +734,9 @@ int BakeSegFromMap(int segIndex)
 			int lightLevel = dl.lightLevel;
 			FColormap cm;
 			cm = cmFrom->ColorMap;
+			// Remembered so ReshadeSegFromMap can redo exactly this without re-deriving the wall.
+			sc.bandLight[slot0 + bi] =
+				(!band.ownLight && band.lightIndex < nLights) ? (signed char)band.lightIndex : -1;
 			if (!band.ownLight && band.lightIndex < nLights)
 			{
 				const lightlist_t &ll = (*lights)[band.lightIndex];
@@ -821,6 +914,9 @@ int BakeSegFromMap(int segIndex)
 						if (len > 0.0001f) { fmp.normX = dy / len; fmp.normY = 0.f; fmp.normZ = -dx / len; }
 					}
 					MeshRegisterPiece(fmp);
+					// A fog boundary takes its light straight off the F3DFloor rather than from the
+					// band list, so it is the one piece bandLight cannot describe -- see Reshade.
+					sc.hasFogBoundary = true;
 					made++;
 					continue;
 				}
@@ -887,6 +983,9 @@ int BakeSegFromMap(int segIndex)
 					zx::surfaces::WallBand bb[kBandsPerPart];
 					const int nbb = zx::surfaces::ComputeWallBands(blk.top, blk.bottom,
 						ffBandBottom, nLights, bb, kBandsPerPart);
+					sc.bandLight[kFFSlot0 + bi] =
+						(nbb > 0 && !bb[0].ownLight && bb[0].lightIndex < nLights)
+							? (signed char)bb[0].lightIndex : -1;
 					if (nbb > 0 && !bb[0].ownLight && bb[0].lightIndex < nLights)
 					{
 						const lightlist_t &ll = (*lights)[bb[0].lightIndex];
@@ -1423,8 +1522,11 @@ int g_dirtyLightOnly = 0, g_dirtyGeometry = 0;
 // measuring a frame it had made slower. The question here is only "how much of the frame is this
 // loop", so one read either side answers it and costs nothing.
 static double g_invalMs = 0.0; static int g_invalFrames = 0; static int g_segsBaked = 0;
+static int g_segsReshaded = 0;   // segs that took the light-only path instead of a full re-derive
 static TArray<int>     g_lastLight;
 static TArray<fixed_t> g_lastFloorZ, g_lastCeilZ;
+static TArray<int>     g_lastFloorPic, g_lastCeilPic;
+static int g_dirtyNoChange = 0;   // dirty, but nothing that shows on a wall actually differed
 
 void SectorDirtyBreakdown(int &lightOnly, int &geometry)
 {
@@ -1436,13 +1538,18 @@ CCMD( fua_bake_dirty )
 {
 	Printf( "sector invalidations since load: %d light-only, %d moved a plane, %d re-baked in the last frame\n",
 		g_dirtyLightOnly, g_dirtyGeometry, g_movedThisFrame );
+	Printf( "  %d were dirty with nothing visibly changed\n", g_dirtyNoChange );
+	Printf( "  reshade declined: %d 3D-floor, %d no light, %d not the side owner, %d piece missing\n",
+		g_reshadeFF, g_reshadeNoLight, g_reshadeNotOwner, g_reshadeNoPiece );
 	if ( g_invalFrames > 0 )
-		Printf( "  invalidation loop: %.3f ms/frame over %d frames, %.1f segs baked/frame\n",
-			g_invalMs / g_invalFrames, g_invalFrames, (double)g_segsBaked / g_invalFrames );
+		Printf( "  invalidation loop: %.3f ms/frame over %d frames, %.1f baked + %.1f reshaded per frame\n",
+			g_invalMs / g_invalFrames, g_invalFrames,
+			(double)g_segsBaked / g_invalFrames, (double)g_segsReshaded / g_invalFrames );
 	if ( argv.argc() > 1 )
 	{
-		g_dirtyLightOnly = 0; g_dirtyGeometry = 0;
-		g_invalMs = 0.0; g_invalFrames = 0; g_segsBaked = 0;
+		g_dirtyLightOnly = 0; g_dirtyGeometry = 0; g_dirtyNoChange = 0;
+		g_reshadeFF = 0; g_reshadeNoLight = 0; g_reshadeNotOwner = 0; g_reshadeNoPiece = 0;
+		g_invalMs = 0.0; g_invalFrames = 0; g_segsBaked = 0; g_segsReshaded = 0;
 		Printf( "  (counters reset)\n" );
 	}
 }
@@ -1457,11 +1564,15 @@ void InvalidateMovedSectors()
 		g_lastLight.Resize((unsigned)numsectors);
 		g_lastFloorZ.Resize((unsigned)numsectors);
 		g_lastCeilZ.Resize((unsigned)numsectors);
+		g_lastFloorPic.Resize((unsigned)numsectors);
+		g_lastCeilPic.Resize((unsigned)numsectors);
 		for (int i = 0; i < numsectors; i++)
 		{
-			g_lastLight[i]  = sectors[i].lightlevel;
-			g_lastFloorZ[i] = sectors[i].floorplane.d;
-			g_lastCeilZ[i]  = sectors[i].ceilingplane.d;
+			g_lastLight[i]    = sectors[i].lightlevel;
+			g_lastFloorZ[i]   = sectors[i].floorplane.d;
+			g_lastCeilZ[i]    = sectors[i].ceilingplane.d;
+			g_lastFloorPic[i] = sectors[i].GetTexture(sector_t::floor).GetIndex();
+			g_lastCeilPic[i]  = sectors[i].GetTexture(sector_t::ceiling).GetIndex();
 		}
 	}
 	if (!gl_wallmesh || g_sectorDirty.Size() == 0) return;
@@ -1471,16 +1582,32 @@ void InvalidateMovedSectors()
 		if (sectors[s].fua_dirty == g_sectorDirty[s]) continue;
 		g_sectorDirty[s] = sectors[s].fua_dirty;
 		g_movedThisFrame++;
-		{
-			const bool moved = (sectors[s].floorplane.d != g_lastFloorZ[s]) ||
-			                   (sectors[s].ceilingplane.d != g_lastCeilZ[s]);
-			if (moved) g_dirtyGeometry++; else g_dirtyLightOnly++;
-			g_lastLight[s]  = sectors[s].lightlevel;
-			g_lastFloorZ[s] = sectors[s].floorplane.d;
-			g_lastCeilZ[s]  = sectors[s].ceilingplane.d;
-		}
+		// [rc4l] fua_dirty says "something called a setter", not "the wall looks different".
+		//
+		// SetLightLevel, ChangeLightLevel, SetTexture, SetPlaneTexZ and ChangePlaneTexZ all bump it,
+		// and Doom's light thinkers call the setter every tic whether or not the value moved -- a
+		// strobe holds its level for many tics and re-asserts it each one. Comparing the five things
+		// a setter can change costs five loads and skips the whole sector when none of them did.
+		const int     nowLight = sectors[s].lightlevel;
+		const fixed_t nowFloor = sectors[s].floorplane.d, nowCeil = sectors[s].ceilingplane.d;
+		const int     nowFPic  = sectors[s].GetTexture(sector_t::floor).GetIndex();
+		const int     nowCPic  = sectors[s].GetTexture(sector_t::ceiling).GetIndex();
+		const bool moved   = (nowFloor != g_lastFloorZ[s]) || (nowCeil != g_lastCeilZ[s]);
+		const bool relit   = (nowLight != g_lastLight[s]);
+		const bool retexed = (nowFPic != g_lastFloorPic[s]) || (nowCPic != g_lastCeilPic[s]);
+		g_lastLight[s]    = nowLight;
+		g_lastFloorZ[s]   = nowFloor;
+		g_lastCeilZ[s]    = nowCeil;
+		g_lastFloorPic[s] = nowFPic;
+		g_lastCeilPic[s]  = nowCPic;
+		if (!moved && !relit && !retexed) { g_dirtyNoChange++; continue; }
+		if (moved) g_dirtyGeometry++; else g_dirtyLightOnly++;
+		// A texture change alters UVs, so only a pure relight may take the reshade path.
+		const bool sectorMoved = moved || retexed;
 
 		const TArray<int> &segList = g_sectorSegs[s];
+		// A sector whose planes held still cannot have moved its walls, so its segs only need
+		// re-lighting -- see ReshadeSegFromMap. Anything else takes the full bake.
 		for (unsigned k = 0; k < segList.Size(); k++)
 		{
 			const int idx = segList[k];
@@ -1517,8 +1644,13 @@ void InvalidateMovedSectors()
 			// a decline without touching a range, which is the case the squash is really for -- it
 			// hands the seg back to GL's walk to re-capture. Squashing that case unconditionally is
 			// also what put a hole in dbab01; here it stays, guarded.
-			const int made = BakeSegFromMap(idx);
-			g_segsBaked++;
+			int made = sectorMoved ? -2 : ReshadeSegFromMap(idx);
+			if (made == -1 || made == -2)
+			{
+				made = BakeSegFromMap(idx);
+				g_segsBaked++;
+			}
+			else g_segsReshaded++;
 			if (made < 0)   // declined: this seg is GL's, hand it back
 			{
 				// Squash, not release: the range stays allocated so the re-capture writes back over

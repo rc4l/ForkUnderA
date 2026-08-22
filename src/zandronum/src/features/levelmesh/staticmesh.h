@@ -282,6 +282,10 @@ unsigned int MeshRepaintRevision();
 void MeshTakeRepaints(const unsigned int *&list, int &count);
 void MeshClearRepaints();
 const MeshPiece *MeshPieces(int &count);
+
+// The registered piece at a vertex offset, or NULL. Lets a caller re-shade a surface without
+// re-deriving it -- see the definition.
+const MeshPiece *MeshFindPiece(unsigned int offset);
 void MeshClearPieces();
 
 // ---------------------------------------------------------------------------

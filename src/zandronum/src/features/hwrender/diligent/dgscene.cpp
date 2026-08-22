@@ -3328,6 +3328,9 @@ static unsigned int g_builtLayoutGen = 0;
 // [rc4l] The mesh revisions this scene buffer was built at -- see RefreshMovedGeometry.
 static unsigned int g_builtRebatchRev = 0, g_builtRepaintRev = 0;
 static int g_geomRepaints = 0;
+static int g_repaintRuns = 0;
+// Repaints waiting for a frame with room for them -- see where they are drained.
+static TArray<unsigned int> g_pendingRepaints;   // how many UpdateBuffer calls those repaints were coalesced into
 // Vertices the GPU buffer can hold, which is more than the scene currently uses -- see the slack
 // at creation. g_appendedVerts is how much of that slack has been spent since the last rebuild.
 static unsigned int g_vbCapacity = 0;
@@ -3796,6 +3799,9 @@ static void RefreshMovedGeometry(Diligent::IDeviceContext *ctx)
 			{
 				g_geomRebuilds++;
 				g_sceneVerts = (int)g_sceneVB.Size();
+				// A full rebuild uploaded every piece record, so anything queued is already applied.
+				// Left in place it would repaint by INDEX into a piece list the rebuild reshuffled.
+				g_pendingRepaints.Clear();
 				zx::levelmesh::MeshClearRepaints();
 				zx::levelmesh::MeshClearDirtyRanges();
 				return;
@@ -3805,14 +3811,56 @@ static void RefreshMovedGeometry(Diligent::IDeviceContext *ctx)
 	// A repaint is the surface in the right place with stale shading baked into its record. Since the
 	// shading moved out of the vertices and into that record, this is a sixty-four byte upload each.
 	{
+		// [rc4l] SPREAD the repaints, because they all arrive on the same frame.
+		//
+		// Doom's sim runs at 35 Hz and the renderer here runs at 400. Every light effect in the level
+		// changes its sector on the tic, so one frame in eight is handed ~1,500 surfaces to re-shade
+		// and the other seven are handed none. Even with the uploads coalesced that is a ~3 ms lump
+		// landing 35 times a second -- which is what choppy movement IS, and why a healthy median
+		// frame time never showed it.
+		//
+		// A repaint is a shading change, not a position change: a surface carrying last frame's light
+		// for another two milliseconds is not visible, whereas a surface in last frame's PLACE would
+		// be. So only these are deferred, never the geometry patch below, and the queue drains within
+		// a couple of frames at any sane frame rate.
 		const unsigned int repaint = zx::levelmesh::MeshRepaintRevision();
 		if (repaint != g_builtRepaintRev)
 		{
 			g_builtRepaintRev = repaint;
 			const unsigned int *list = NULL; int count = 0;
 			zx::levelmesh::MeshTakeRepaints(list, count);
+			for (int i = 0; i < count; i++) g_pendingRepaints.Push(list[i]);
+			zx::levelmesh::MeshClearRepaints();
+		}
+		if (g_pendingRepaints.Size() > 0)
+		{
 			int np = 0;
 			const zx::levelmesh::MeshPiece *pieces = zx::levelmesh::MeshPieces(np);
+			// Enough to drain a tic's worth in two or three frames. If the backlog ever runs away --
+			// a level load, a frame rate collapse -- take the lot rather than let it grow without
+			// bound; a one-off lump is better than shading that never catches up.
+			const unsigned int kPerFrame = 512, kFlushAll = 8192;
+			unsigned int budget = (g_pendingRepaints.Size() > kFlushAll)
+				? g_pendingRepaints.Size() : kPerFrame;
+			if (budget > g_pendingRepaints.Size()) budget = g_pendingRepaints.Size();
+			const unsigned int *list = &g_pendingRepaints[0];
+			const int count = (int)budget;
+			// [rc4l] Fill the mirror first, upload in RUNS -- one UpdateBuffer per repaint was the
+			// stutter.
+			//
+			// Doom's light effects run every tic, so on the frame after a tic a level with animated
+			// lighting repaints a thousand-odd surfaces at once. Each one was a separate 64-byte
+			// UpdateBuffer, and 1,548 driver calls do not cost 1,548 times nothing: it put a ~5 ms
+			// spike on one frame in eight at 35 Hz, which reads as choppy mouse movement however
+			// healthy the median looks. The frame-time MEDIAN never showed it -- that is exactly the
+			// thing rc4l said the metrics were missing.
+			//
+			// g_scenePieceData is a full CPU mirror of the buffer, so any span of it is safe to
+			// upload whether or not every entry in the span changed. That makes near-misses
+			// mergeable: pieces baked together are allocated together, so a sector's surfaces land in
+			// a handful of runs rather than a thousand scattered writes.
+			static TArray<unsigned int> s_repaintSlots;
+			s_repaintSlots.Clear();
 			for (int i = 0; i < count && pieces != NULL; i++)
 			{
 				if ((int)list[i] >= np) continue;
@@ -3822,14 +3870,35 @@ static void RefreshMovedGeometry(Diligent::IDeviceContext *ctx)
 				const VBSlot &slot = g_vbSlots[*slotIdx];
 				if (slot.count == 0 || slot.pieceIndex >= g_scenePieceData.Size()) continue;
 				FillPieceData(p, 0, g_scenePieceData[slot.pieceIndex]);
-				if (g_pieceBuf)
-					ctx->UpdateBuffer(g_pieceBuf,
-						(Diligent::Uint64)slot.pieceIndex * sizeof(ScenePieceData),
-						sizeof(ScenePieceData), &g_scenePieceData[slot.pieceIndex],
-						Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+				s_repaintSlots.Push(slot.pieceIndex);
 				g_geomRepaints++;
 			}
-			zx::levelmesh::MeshClearRepaints();
+			if (g_pieceBuf && s_repaintSlots.Size() > 0)
+			{
+				std::sort(&s_repaintSlots[0], &s_repaintSlots[0] + s_repaintSlots.Size());
+				// Bridging a gap re-sends entries that did not change. 32 of them is 2 KB of slack
+				// against a whole driver call, which is the trade every time.
+				const unsigned int kBridge = 32;
+				unsigned int runStart = s_repaintSlots[0], runEnd = runStart;
+				for (unsigned int i = 1; i <= s_repaintSlots.Size(); i++)
+				{
+					const bool end = (i == s_repaintSlots.Size());
+					if (!end && s_repaintSlots[i] <= runEnd + kBridge)
+					{
+						if (s_repaintSlots[i] > runEnd) runEnd = s_repaintSlots[i];
+						continue;
+					}
+					ctx->UpdateBuffer(g_pieceBuf,
+						(Diligent::Uint64)runStart * sizeof(ScenePieceData),
+						(Diligent::Uint64)(runEnd - runStart + 1) * sizeof(ScenePieceData),
+						&g_scenePieceData[runStart],
+						Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+					g_repaintRuns++;
+					if (!end) { runStart = runEnd = s_repaintSlots[i]; }
+				}
+			}
+			// Drop what was just applied; whatever is left rides to the next frame.
+			g_pendingRepaints.Delete(0, (int)budget);
 		}
 	}
 	unsigned int lo = 0, hi = 0;
@@ -5854,9 +5923,9 @@ void DynStats(FString &report)
 	int added = 0, resized = 0, rebatched = 0;
 	zx::levelmesh::MeshLayoutReasons(added, resized, rebatched);
 	FString why;
-	why.Format(" | layout gen %u (built %u): %d added, %d resized, %d rebatched, %d repaints applied",
+	why.Format(" | layout gen %u (built %u): %d added, %d resized, %d rebatched, %d repaints applied in %d uploads",
 		zx::levelmesh::MeshLayoutGeneration(), g_builtLayoutGen, added, resized, rebatched,
-		g_geomRepaints);
+		g_geomRepaints, g_repaintRuns);
 	report += why;
 	FString patches;
 	patches.Format(" | %d geometry patches (%d verts moved), %d appends (%d verts, %d%% of slack)",

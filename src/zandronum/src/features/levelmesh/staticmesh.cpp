@@ -570,6 +570,19 @@ void MeshTakeRepaints(const unsigned int *&list, int &count)
 
 void MeshClearRepaints() { g_repaints.Clear(); }
 
+// [rc4l] The registered piece at a vertex offset, or NULL.
+//
+// Re-shading a surface needs everything the last bake worked out about it -- material, base texture,
+// normal -- so that only the light has to be recomputed. That is all sitting in the registered piece
+// already; without a way to read it back the only route to a repaint was to derive the whole surface
+// from the map again, which is the cost the reshade path exists to avoid.
+const MeshPiece *MeshFindPiece(unsigned int offset)
+{
+	unsigned *found = g_pieceByOffset.CheckKey(offset);
+	if (found == NULL || *found >= g_pieceList.Size()) return NULL;
+	return &g_pieceList[*found];
+}
+
 // One number that says "a surface moved between batches since you last built". Cumulative for the
 // life of the level, so a backend stores what it built at and compares.
 unsigned int MeshRebatchRevision() { return g_rebatchRevision; }
