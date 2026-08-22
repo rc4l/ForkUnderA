@@ -122,8 +122,6 @@ CVAR(Bool, gl_nolayer, false, 0)
 // 
 //
 //==========================================================================
-EXTERN_CVAR(Bool, fua_gl_idlestate)
-
 void GLSprite::Draw(int pass)
 {
 	if (pass == GLPASS_DECALS || pass == GLPASS_LIGHTSONLY) return;
@@ -258,7 +256,7 @@ void GLSprite::Draw(int pass)
 		// This was rejected once on a single 0.2% picture difference on MAP04, taken against one
 		// 0.0% floor reading. It was the map's own variance: three loads per config on MAP10 and
 		// MAP04 give 0.0% in all nine comparisons. One reading is not a floor.
-		if (!zx::hwrender::StandaloneActive() || fua_gl_idlestate) gl_RenderState.Apply();
+		if (!zx::hwrender::StandaloneActive()) gl_RenderState.Apply();
 
 		Vector v1;
 		Vector v2;

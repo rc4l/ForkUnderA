@@ -594,8 +594,6 @@ void OpenGLFrameBuffer::DestroyReplayCapture()
 }
 #endif
 
-EXTERN_CVAR(Bool, fua_gl_idleswap)
-
 void OpenGLFrameBuffer::Swap()
 {
 	Finish.Reset();
@@ -606,7 +604,7 @@ void OpenGLFrameBuffer::Swap()
 	// child window is covering. Both were written for a renderer that was drawing the world; with
 	// fua_dg_standalone on, neither has anything to do -- and together they are the largest single
 	// item left in the frame.
-	const bool glIdle = !fua_gl_idleswap && zx::hwrender::StandaloneActive();
+	const bool glIdle = zx::hwrender::StandaloneActive();
 	if (!glIdle) glFinish();
 #ifdef ZX_ENABLE_REPLAY
 	// [rc4l] FUA instant replay: when a frame is due, kick off an async PBO readback of the just-
