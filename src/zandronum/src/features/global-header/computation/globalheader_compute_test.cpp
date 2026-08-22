@@ -14,6 +14,7 @@ using zx::HeaderRowLeft;
 using zx::HeaderRowWidth;
 using zx::HeaderTabAtPoint;
 using zx::HeaderTabRect;
+using zx::StepHeaderTabPinned;
 using zx::MenuClearanceY;
 using zx::kHeaderTabCount;
 using zx::StepHeaderTab;
@@ -48,9 +49,9 @@ TEST( GlobalHeader, ARowOfNothingIsWideEnoughForNothing )
 	// there is a worse answer than zero.
 	const HeaderMetrics m = DefaultHeaderMetrics( );
 
-	EXPECT_EQ( 0, HeaderRowWidth( m, 0, kCount ));
-	EXPECT_EQ( 0, HeaderRowWidth( m, kWidths, 0 ));
-	EXPECT_EQ( 0, HeaderRowWidth( m, kWidths, -1 ));
+	EXPECT_EQ( 0, HeaderRowWidth( m, 0, kCount , -1));
+	EXPECT_EQ( 0, HeaderRowWidth( m, kWidths, 0 , -1));
+	EXPECT_EQ( 0, HeaderRowWidth( m, kWidths, -1 , -1));
 }
 
 TEST( GlobalHeader, TheRowCentresOnTheBarOnceTheBarHasSaidHowWideItIs )
@@ -58,8 +59,8 @@ TEST( GlobalHeader, TheRowCentresOnTheBarOnceTheBarHasSaidHowWideItIs )
 	HeaderMetrics m = DefaultHeaderMetrics( );
 	m.barW = 1000;
 
-	const int rowW = HeaderRowWidth( m, kWidths, kCount );
-	const int left = HeaderRowLeft( m, kWidths, kCount );
+	const int rowW = HeaderRowWidth( m, kWidths, kCount , -1);
+	const int left = HeaderRowLeft( m, kWidths, kCount , -1);
 
 	// Equal air either side, to within the pixel an odd remainder costs.
 	EXPECT_LE( abs(( m.barW - ( left + rowW )) - left ), 1 );
@@ -72,7 +73,7 @@ TEST( GlobalHeader, ARowTooWideToCentreCrowdsTheMiddleRatherThanItsOwnOrb )
 	HeaderMetrics m = DefaultHeaderMetrics( );
 	m.barW = 10;
 
-	EXPECT_EQ( m.leftPad, HeaderRowLeft( m, kWidths, kCount ));
+	EXPECT_EQ( m.leftPad, HeaderRowLeft( m, kWidths, kCount , -1));
 }
 
 TEST( GlobalHeader, ABarThatNeverSaidHowWideItIsGetsTheLeftEdge )
@@ -82,7 +83,7 @@ TEST( GlobalHeader, ABarThatNeverSaidHowWideItIsGetsTheLeftEdge )
 	HeaderMetrics m = DefaultHeaderMetrics( );
 	m.barW = 0;
 
-	EXPECT_EQ( m.leftPad, HeaderRowLeft( m, kWidths, kCount ));
+	EXPECT_EQ( m.leftPad, HeaderRowLeft( m, kWidths, kCount , -1));
 }
 
 TEST( GlobalHeader, TheRowIsAsWideAsThePillsAndTheGapsBetweenThem )
@@ -97,13 +98,13 @@ TEST( GlobalHeader, TheRowIsAsWideAsThePillsAndTheGapsBetweenThem )
 			expected += m.gap;
 	}
 
-	EXPECT_EQ( expected, HeaderRowWidth( m, kWidths, kCount ));
+	EXPECT_EQ( expected, HeaderRowWidth( m, kWidths, kCount , -1));
 
 	// And it agrees with the rects: the last pill's right edge is the row's.
 	HeaderMetrics wide = m;
 	wide.barW = 1000;
-	const HeaderRect last = HeaderTabRect( wide, kWidths, kCount, kCount - 1 );
-	EXPECT_EQ( HeaderRowLeft( wide, kWidths, kCount ) + expected, last.x + last.w );
+	const HeaderRect last = HeaderTabRect( wide, kWidths, kCount, kCount - 1 , -1);
+	EXPECT_EQ( HeaderRowLeft( wide, kWidths, kCount , -1) + expected, last.x + last.w );
 }
 
 TEST( GlobalHeader, TheFirstTabsFocusOrbFitsOnTheScreen )
@@ -133,7 +134,7 @@ TEST( GlobalHeader, EveryTabsOrbClearsTheOneBeforeIt )
 
 	for ( int i = 0; i < kCount; ++i )
 	{
-		const HeaderRect r = HeaderTabRect( m, kWidths, kCount, i );
+		const HeaderRect r = HeaderTabRect( m, kWidths, kCount, i , -1);
 		const int orbLeft = r.x - m.glowInset - m.glowRadius;
 
 		if ( i == 0 )
@@ -142,7 +143,7 @@ TEST( GlobalHeader, EveryTabsOrbClearsTheOneBeforeIt )
 			continue;
 		}
 
-		const HeaderRect prev = HeaderTabRect( m, kWidths, kCount, i - 1 );
+		const HeaderRect prev = HeaderTabRect( m, kWidths, kCount, i - 1 , -1);
 		EXPECT_GE( orbLeft, prev.x + prev.w ) << "tab " << i;
 	}
 }
@@ -215,8 +216,8 @@ TEST( GlobalHeader, EachPillIsItsLabelPlusPaddingBothSides )
 {
 	const HeaderMetrics m = DefaultHeaderMetrics( );
 
-	EXPECT_EQ( kWidths[0] + 2 * m.labelPad, HeaderTabRect( m, kWidths, kCount, 0 ).w );
-	EXPECT_EQ( kWidths[1] + 2 * m.labelPad, HeaderTabRect( m, kWidths, kCount, 1 ).w );
+	EXPECT_EQ( kWidths[0] + 2 * m.labelPad, HeaderTabRect( m, kWidths, kCount, 0 , -1).w );
+	EXPECT_EQ( kWidths[1] + 2 * m.labelPad, HeaderTabRect( m, kWidths, kCount, 1 , -1).w );
 }
 
 TEST( GlobalHeader, PillsRunLeftToRightAndNeverOverlap )
@@ -231,8 +232,8 @@ TEST( GlobalHeader, PillsRunLeftToRightAndNeverOverlap )
 		for ( int b = 1; b <= 200; b += 11 )
 		{
 			const int widths[] = { a, b };
-			const HeaderRect first = HeaderTabRect( m, widths, 2, 0 );
-			const HeaderRect second = HeaderTabRect( m, widths, 2, 1 );
+			const HeaderRect first = HeaderTabRect( m, widths, 2, 0 , -1);
+			const HeaderRect second = HeaderTabRect( m, widths, 2, 1 , -1);
 
 			EXPECT_GE( second.x, first.x + first.w ) << "widths " << a << "," << b;
 		}
@@ -242,8 +243,8 @@ TEST( GlobalHeader, PillsRunLeftToRightAndNeverOverlap )
 TEST( GlobalHeader, TheGapBetweenPillsIsExactlyTheGap )
 {
 	const HeaderMetrics m = DefaultHeaderMetrics( );
-	const HeaderRect first = HeaderTabRect( m, kWidths, kCount, 0 );
-	const HeaderRect second = HeaderTabRect( m, kWidths, kCount, 1 );
+	const HeaderRect first = HeaderTabRect( m, kWidths, kCount, 0 , -1);
+	const HeaderRect second = HeaderTabRect( m, kWidths, kCount, 1 , -1);
 
 	EXPECT_EQ( first.x + first.w + m.gap, second.x );
 }
@@ -252,7 +253,7 @@ TEST( GlobalHeader, TheFirstPillStartsAtTheLeftPadding )
 {
 	const HeaderMetrics m = DefaultHeaderMetrics( );
 
-	EXPECT_EQ( m.leftPad, HeaderTabRect( m, kWidths, kCount, 0 ).x );
+	EXPECT_EQ( m.leftPad, HeaderTabRect( m, kWidths, kCount, 0 , -1).x );
 }
 
 TEST( GlobalHeader, EveryPillSitsInsideTheBar )
@@ -261,7 +262,7 @@ TEST( GlobalHeader, EveryPillSitsInsideTheBar )
 
 	for ( int i = 0; i < kCount; ++i )
 	{
-		const HeaderRect r = HeaderTabRect( m, kWidths, kCount, i );
+		const HeaderRect r = HeaderTabRect( m, kWidths, kCount, i , -1);
 		EXPECT_TRUE( HeaderBarContains( m, r.y )) << "tab " << i;
 		EXPECT_TRUE( HeaderBarContains( m, r.y + r.h - 1 )) << "tab " << i;
 	}
@@ -273,17 +274,17 @@ TEST( GlobalHeader, AnIndexOffTheEndIsAnEmptyRectNotAReadPastTheArray )
 {
 	const HeaderMetrics m = DefaultHeaderMetrics( );
 
-	EXPECT_EQ( 0, HeaderTabRect( m, kWidths, kCount, -1 ).w );
-	EXPECT_EQ( 0, HeaderTabRect( m, kWidths, kCount, kCount ).w );
-	EXPECT_EQ( 0, HeaderTabRect( m, kWidths, kCount, 999 ).w );
+	EXPECT_EQ( 0, HeaderTabRect( m, kWidths, kCount, -1 , -1).w );
+	EXPECT_EQ( 0, HeaderTabRect( m, kWidths, kCount, kCount , -1).w );
+	EXPECT_EQ( 0, HeaderTabRect( m, kWidths, kCount, 999 , -1).w );
 }
 
 TEST( GlobalHeader, NoWidthsAtAllIsAnEmptyRect )
 {
 	const HeaderMetrics m = DefaultHeaderMetrics( );
 
-	EXPECT_EQ( 0, HeaderTabRect( m, 0, 2, 0 ).w );
-	EXPECT_EQ( -1, HeaderTabAtPoint( m, 0, 2, 10, 8 ));
+	EXPECT_EQ( 0, HeaderTabRect( m, 0, 2, 0 , -1).w );
+	EXPECT_EQ( -1, HeaderTabAtPoint( m, 0, 2, 10, 8 , -1));
 }
 
 // -------------------------------------------------------------- hit-test
@@ -297,12 +298,12 @@ TEST( GlobalHeader, TheHitTestAgreesWithWhereThePillWasDrawn )
 
 	for ( int i = 0; i < kCount; ++i )
 	{
-		const HeaderRect r = HeaderTabRect( m, kWidths, kCount, i );
+		const HeaderRect r = HeaderTabRect( m, kWidths, kCount, i , -1);
 
 		for ( int x = r.x; x < r.x + r.w; ++x )
 		{
 			for ( int y = r.y; y < r.y + r.h; ++y )
-				EXPECT_EQ( i, HeaderTabAtPoint( m, kWidths, kCount, x, y )) << "tab " << i;
+				EXPECT_EQ( i, HeaderTabAtPoint( m, kWidths, kCount, x, y , -1)) << "tab " << i;
 		}
 	}
 }
@@ -312,12 +313,12 @@ TEST( GlobalHeader, TheBarBackgroundIsNotAButton )
 	// Between and around the pills is chrome. Answering a tab there would make the whole top of the
 	// screen a click target for something the player cannot see.
 	const HeaderMetrics m = DefaultHeaderMetrics( );
-	const HeaderRect first = HeaderTabRect( m, kWidths, kCount, 0 );
+	const HeaderRect first = HeaderTabRect( m, kWidths, kCount, 0 , -1);
 
-	EXPECT_EQ( -1, HeaderTabAtPoint( m, kWidths, kCount, 0, 8 ));                    // left of the first
-	EXPECT_EQ( -1, HeaderTabAtPoint( m, kWidths, kCount, first.x + 1, 0 ));          // above the pills
-	EXPECT_EQ( -1, HeaderTabAtPoint( m, kWidths, kCount, first.x + first.w + 1, 8 )); // in the gap
-	EXPECT_EQ( -1, HeaderTabAtPoint( m, kWidths, kCount, 9999, 8 ));                 // off the right
+	EXPECT_EQ( -1, HeaderTabAtPoint( m, kWidths, kCount, 0, 8 , -1));                    // left of the first
+	EXPECT_EQ( -1, HeaderTabAtPoint( m, kWidths, kCount, first.x + 1, 0 , -1));          // above the pills
+	EXPECT_EQ( -1, HeaderTabAtPoint( m, kWidths, kCount, first.x + first.w + 1, 8 , -1)); // in the gap
+	EXPECT_EQ( -1, HeaderTabAtPoint( m, kWidths, kCount, 9999, 8 , -1));                 // off the right
 }
 
 TEST( GlobalHeader, BelowTheBarIsTheMenusBusiness )
@@ -442,4 +443,161 @@ TEST( GlobalHeader, ExactlyOneRowIsEverTheTop )
 	}
 
 	EXPECT_EQ( 1, tops );
+}
+
+// ---------------------------------------------------------------- the pinned tab
+
+namespace
+{
+
+// Continue is last in the enum and first on the screen; these are its label widths alongside the
+// two that are always there.
+const int kPinnedWidths[3] = { 60, 90, 70 };	// Main Menu, Play Online!, Continue
+const int kPinned = 2;
+
+zx::HeaderMetrics WideBar()
+{
+	zx::HeaderMetrics m = zx::DefaultHeaderMetrics();
+	m.barW = 640;
+	return m;
+}
+
+} // namespace
+
+TEST( HeaderPinned, ThePinnedTabSitsAtTheLeftEdge )
+{
+	const zx::HeaderMetrics m = WideBar();
+	const zx::HeaderRect r = HeaderTabRect( m, kPinnedWidths, 3, kPinned, kPinned );
+
+	EXPECT_EQ( m.leftPad, r.x );
+	EXPECT_EQ( kPinnedWidths[kPinned] + 2 * m.labelPad, r.w );
+}
+
+TEST( HeaderPinned, TheOtherTabsDoNotMoveWhenItAppears )
+{
+	// The whole reason Continue was appended to the enum rather than inserted: the two tabs that are
+	// always there must stay exactly where the player last saw them.
+	const zx::HeaderMetrics m = WideBar();
+
+	const zx::HeaderRect mainWithout = HeaderTabRect( m, kPinnedWidths, 2, 0, -1 );
+	const zx::HeaderRect onlineWithout = HeaderTabRect( m, kPinnedWidths, 2, 1, -1 );
+
+	const zx::HeaderRect mainWith = HeaderTabRect( m, kPinnedWidths, 3, 0, kPinned );
+	const zx::HeaderRect onlineWith = HeaderTabRect( m, kPinnedWidths, 3, 1, kPinned );
+
+	EXPECT_EQ( mainWithout.x, mainWith.x );
+	EXPECT_EQ( onlineWithout.x, onlineWith.x );
+}
+
+TEST( HeaderPinned, ThePinnedPillIsNotMeasuredAsPartOfTheCentredRow )
+{
+	const zx::HeaderMetrics m = WideBar();
+	EXPECT_EQ( HeaderRowWidth( m, kPinnedWidths, 2, -1 ),
+		HeaderRowWidth( m, kPinnedWidths, 3, kPinned ));
+}
+
+TEST( HeaderPinned, TheCentredRowNeverSlidesUnderThePinnedPill )
+{
+	// Two pills sharing pixels is a click that hits whichever was drawn last.
+	zx::HeaderMetrics m = WideBar();
+	m.barW = 200;			// too narrow to centre a row this wide
+
+	const zx::HeaderRect pin = HeaderTabRect( m, kPinnedWidths, 3, kPinned, kPinned );
+	const zx::HeaderRect first = HeaderTabRect( m, kPinnedWidths, 3, 0, kPinned );
+
+	EXPECT_GE( first.x, pin.x + pin.w ) << "the centred row started inside the pinned pill";
+}
+
+TEST( HeaderPinned, ClickingThePinnedPillFindsIt )
+{
+	const zx::HeaderMetrics m = WideBar();
+	const zx::HeaderRect r = HeaderTabRect( m, kPinnedWidths, 3, kPinned, kPinned );
+
+	EXPECT_EQ( kPinned, HeaderTabAtPoint( m, kPinnedWidths, 3, r.x + 1, r.y + 1, kPinned ));
+	EXPECT_EQ( kPinned, HeaderTabAtPoint( m, kPinnedWidths, 3, r.x + r.w - 1, r.y + r.h - 1, kPinned ));
+}
+
+TEST( HeaderPinned, ClickingBesideThePinnedPillFindsNothing )
+{
+	const zx::HeaderMetrics m = WideBar();
+	const zx::HeaderRect r = HeaderTabRect( m, kPinnedWidths, 3, kPinned, kPinned );
+
+	EXPECT_EQ( -1, HeaderTabAtPoint( m, kPinnedWidths, 3, r.x + r.w + 1, r.y + 1, kPinned ));
+}
+
+TEST( HeaderPinned, TheArrowsStepInTheOrderTheEyeSees )
+{
+	// Left to right that is Continue, Main Menu, Play Online -- which is NOT the enum order.
+	EXPECT_EQ( 0, StepHeaderTabPinned( kPinned, 3, kPinned, +1 ));
+	EXPECT_EQ( 1, StepHeaderTabPinned( 0, 3, kPinned, +1 ));
+	EXPECT_EQ( 0, StepHeaderTabPinned( 1, 3, kPinned, -1 ));
+	EXPECT_EQ( kPinned, StepHeaderTabPinned( 0, 3, kPinned, -1 ));
+}
+
+TEST( HeaderPinned, TheEndsOfTheBarStillClamp )
+{
+	// Same promise as the unpinned bar: a bar whose ends you cannot feel is one you have to look at.
+	EXPECT_EQ( kPinned, StepHeaderTabPinned( kPinned, 3, kPinned, -1 ));
+	EXPECT_EQ( 1, StepHeaderTabPinned( 1, 3, kPinned, +1 ));
+}
+
+TEST( HeaderPinned, SteppingWithNothingPinnedIsTheOrdinaryWalk )
+{
+	for ( int i = 0; i < 2; ++i )
+	{
+		EXPECT_EQ( StepHeaderTab( i, 2, +1 ), StepHeaderTabPinned( i, 2, -1, +1 ));
+		EXPECT_EQ( StepHeaderTab( i, 2, -1 ), StepHeaderTabPinned( i, 2, -1, -1 ));
+	}
+}
+
+TEST( HeaderPinned, EveryTabIsReachableFromEveryOtherByArrowsAlone )
+{
+	// The property that matters: no pill can be stranded where the keyboard cannot get to it.
+	for ( int start = 0; start < 3; ++start )
+	{
+		for ( int target = 0; target < 3; ++target )
+		{
+			int at = start;
+			for ( int guard = 0; guard < 8 && at != target; ++guard )
+				at = StepHeaderTabPinned( at, 3, kPinned, ( target == at ) ? 0 : +1 );
+
+			if ( at != target )
+			{
+				at = start;
+				for ( int guard = 0; guard < 8 && at != target; ++guard )
+					at = StepHeaderTabPinned( at, 3, kPinned, -1 );
+			}
+
+			EXPECT_EQ( target, at ) << "could not walk from " << start << " to " << target;
+		}
+	}
+}
+
+TEST( HeaderPinned, AnOutOfRangePinnedIndexIsIgnoredRatherThanRead )
+{
+	const zx::HeaderMetrics m = WideBar();
+	EXPECT_EQ( HeaderTabRect( m, kPinnedWidths, 2, 0, -1 ).x,
+		HeaderTabRect( m, kPinnedWidths, 2, 0, 9 ).x );
+	EXPECT_EQ( StepHeaderTab( 0, 2, +1 ), StepHeaderTabPinned( 0, 2, 9, +1 ));
+}
+
+TEST( HeaderPinned, ATabAfterThePinnedOneStillLandsInTheRightPlace )
+{
+	// Continue happens to be last today, so nothing is ever laid out past it. Pinning something in
+	// the middle is what proves the walk actually skips the pinned pill rather than getting the
+	// right answer because it never had to.
+	const zx::HeaderMetrics m = WideBar();
+	const int pinnedFirst = 0;
+
+	const zx::HeaderRect second = HeaderTabRect( m, kPinnedWidths, 3, 1, pinnedFirst );
+	const zx::HeaderRect third = HeaderTabRect( m, kPinnedWidths, 3, 2, pinnedFirst );
+
+	EXPECT_EQ( second.x + second.w + m.gap, third.x );
+	EXPECT_EQ( m.leftPad, HeaderTabRect( m, kPinnedWidths, 3, pinnedFirst, pinnedFirst ).x );
+}
+
+TEST( HeaderPinned, AnEmptyBarStepsNowhere )
+{
+	EXPECT_EQ( 0, StepHeaderTabPinned( 0, 0, -1, +1 ));
+	EXPECT_EQ( 0, StepHeaderTabPinned( 3, 0, 1, -1 ));
 }
