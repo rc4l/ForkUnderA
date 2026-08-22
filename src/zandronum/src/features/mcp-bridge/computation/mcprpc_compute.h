@@ -39,6 +39,9 @@ RpcRequest ParseRequest(const std::string &line);
 
 // Extract an integer field ("key":N, N may be negative) from a flat JSON object substring.
 bool GetInt(const std::string &obj, const char *key, long &out);
+// A flag written either as a JSON bool or as 1/0. GetInt cannot read `false` and says so by
+// returning false, which reads identically to "absent" -- see the definition.
+bool GetBool(const std::string &obj, const char *key, bool &out);
 
 // Extract a floating-point field ("key":N.N, sign + optional fraction). Integers parse too.
 bool GetFloat(const std::string &obj, const char *key, double &out);

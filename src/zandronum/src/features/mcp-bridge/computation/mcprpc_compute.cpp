@@ -38,6 +38,23 @@ bool GetInt(const std::string &obj, const char *key, long &out)
 	return true;
 }
 
+// [rc4l] A flag, whether it was written as a JSON bool or as 1/0.
+//
+// GetInt reads digits and nothing else, so it returns false for `"on": false` -- and a caller that
+// then leaves its default at "true" does the OPPOSITE of what was asked while reporting success.
+// That is exactly how sim.pause came to answer {"on":false} by pausing.
+bool GetBool(const std::string &obj, const char *key, bool &out)
+{
+	size_t i = ValueStart(obj, key);
+	if (i == std::string::npos) return false;
+	if (obj.compare(i, 4, "true") == 0)  { out = true;  return true; }
+	if (obj.compare(i, 5, "false") == 0) { out = false; return true; }
+	long v = 0;
+	if (!GetInt(obj, key, v)) return false;
+	out = (v != 0);
+	return true;
+}
+
 bool GetFloat(const std::string &obj, const char *key, double &out)
 {
 	size_t i = ValueStart(obj, key);

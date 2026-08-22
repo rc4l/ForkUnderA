@@ -202,6 +202,13 @@ void GetSegPieceRange(int segIndex, int piece, unsigned int &offset, unsigned in
 // Why captures were refused, split by cause, plus how many succeeded.
 void GetRejects(int &portal, int &poly, int &ffloor, int &area, int &other, int &ok);
 
+// [rc4l] Why sectors were invalidated: only their light changed, or their planes actually moved.
+//
+// InvalidateMovedSectors answers every dirty sector with a full geometry re-derive, but sector_t
+// bumps fua_dirty for light changes too and Doom's light effects run every tic. These two counters
+// say which is really happening before anything is built on the assumption.
+void SectorDirtyBreakdown(int &lightOnly, int &geometry);
+
 }} // namespace zx::levelmesh
 
 #endif // ZX_WALLCACHE_H

@@ -20,6 +20,7 @@
 #include "gl/renderer/gl_renderstate.h"
 #include "gl/renderer/gl_lightdata.h"  // gl_SetColor / gl_SetFog
 #include "c_dispatch.h"
+#include "stats.h"   // cycle_t, to time the invalidation loop
 #include "c_cvars.h"
 #include "c_console.h"
 
@@ -515,11 +516,18 @@ static void PlaneAt(const F3DFloor::planeref &pr, float x0, float y0, float x1, 
 
 int BakeSegFromMap(int segIndex)
 {
-	if (!gl_wallmesh) return 0;
-	if (segIndex < 0 || (unsigned)segIndex >= g_cache.Size()) return 0;
-	if (segs == NULL || segIndex >= numsegs) return 0;
+	// [rc4l] DECLINED (-1) and "took it, made nothing" (0) are different answers.
+	//
+	// InvalidateMovedSectors needs to tell them apart: a seg this bake declined still belongs to
+	// GL's capture and has to be squashed so the walk re-fills it, while a seg the bake took has
+	// already had every slot it did not fill squashed by the loops below. Returning 0 for both meant
+	// the second kind was squashed a second time -- zeroing ranges that had just been written and
+	// marking them dirty again, every frame, which is the cost this whole change exists to remove.
+	if (!gl_wallmesh) return -1;
+	if (segIndex < 0 || (unsigned)segIndex >= g_cache.Size()) return -1;
+	if (segs == NULL || segIndex >= numsegs) return -1;
 	const seg_t *seg = &segs[segIndex];
-	if (seg->sidedef == NULL || seg->linedef == NULL || seg->frontsector == NULL) return 0;
+	if (seg->sidedef == NULL || seg->linedef == NULL || seg->frontsector == NULL) return -1;
 
 	SegCache &sc = g_cache[segIndex];
 	static FFlatVertex tris[6];
@@ -531,11 +539,11 @@ int BakeSegFromMap(int segIndex)
 	const sector_t *cmFrom = NULL;
 	// Not ours: leave every range exactly as it is and let the capture keep this seg. Squashing here
 	// is what put a hole in dbab01 -- see MapBakeOwnsSeg.
-	if (!zx::surfaces::BuildDerivedWallLight(seg, dl, cmFrom) || cmFrom == NULL) return 0;
+	if (!zx::surfaces::BuildDerivedWallLight(seg, dl, cmFrom) || cmFrom == NULL) return -1;
 
 	// One quad per sidedef -- see SegOwnsItsSide. Every other seg on it would build the same four
 	// corners again, in the same plane, and the two would stipple against each other.
-	if (!SegOwnsItsSide(segIndex)) return 0;
+	if (!SegOwnsItsSide(segIndex)) return -1;
 
 	// [rc4l] The light bands the sector's 3D floors cast on every wall in it.
 	//
@@ -938,7 +946,7 @@ int BakeLevelFromMap()
 {
 	if (segs == NULL || numsegs <= 0) return 0;
 	int made = 0;
-	for (int i = 0; i < numsegs; i++) made += BakeSegFromMap(i);
+	for (int i = 0; i < numsegs; i++) { const int m = BakeSegFromMap(i); if (m > 0) made += m; }
 	return made;
 }
 
@@ -1401,9 +1409,61 @@ void GetCoverage(CoverageStats &out)
 static int g_movedThisFrame = 0;
 int SectorsMovedLastFrame() { return g_movedThisFrame; }
 
+// [rc4l] Why a sector was dirty, not just that it was.
+//
+// InvalidateMovedSectors treats every dirty sector as one that MOVED and answers with a full
+// geometry re-derive. But sector_t bumps fua_dirty for light changes too, and Doom's light effects
+// -- flicker, strobe, glow -- run every tic. So a room with a flickering lamp can be re-deriving its
+// walls from the map several times a second to express a light level. Counted here so the guess
+// stops being a guess.
+int g_dirtyLightOnly = 0, g_dirtyGeometry = 0;
+// [rc4l] One timer for the WHOLE loop, not one per piece.
+//
+// An earlier profile put a timer around each piece and spent twelve thousand clock reads a frame
+// measuring a frame it had made slower. The question here is only "how much of the frame is this
+// loop", so one read either side answers it and costs nothing.
+static double g_invalMs = 0.0; static int g_invalFrames = 0; static int g_segsBaked = 0;
+static TArray<int>     g_lastLight;
+static TArray<fixed_t> g_lastFloorZ, g_lastCeilZ;
+
+void SectorDirtyBreakdown(int &lightOnly, int &geometry)
+{
+	lightOnly = g_dirtyLightOnly;
+	geometry  = g_dirtyGeometry;
+}
+
+CCMD( fua_bake_dirty )
+{
+	Printf( "sector invalidations since load: %d light-only, %d moved a plane, %d re-baked in the last frame\n",
+		g_dirtyLightOnly, g_dirtyGeometry, g_movedThisFrame );
+	if ( g_invalFrames > 0 )
+		Printf( "  invalidation loop: %.3f ms/frame over %d frames, %.1f segs baked/frame\n",
+			g_invalMs / g_invalFrames, g_invalFrames, (double)g_segsBaked / g_invalFrames );
+	if ( argv.argc() > 1 )
+	{
+		g_dirtyLightOnly = 0; g_dirtyGeometry = 0;
+		g_invalMs = 0.0; g_invalFrames = 0; g_segsBaked = 0;
+		Printf( "  (counters reset)\n" );
+	}
+}
+
 void InvalidateMovedSectors()
 {
 	g_movedThisFrame = 0;
+	cycle_t invalClock; invalClock.Reset(); invalClock.Clock();
+	g_invalFrames++;
+	if ((int)g_lastLight.Size() != numsectors)
+	{
+		g_lastLight.Resize((unsigned)numsectors);
+		g_lastFloorZ.Resize((unsigned)numsectors);
+		g_lastCeilZ.Resize((unsigned)numsectors);
+		for (int i = 0; i < numsectors; i++)
+		{
+			g_lastLight[i]  = sectors[i].lightlevel;
+			g_lastFloorZ[i] = sectors[i].floorplane.d;
+			g_lastCeilZ[i]  = sectors[i].ceilingplane.d;
+		}
+	}
 	if (!gl_wallmesh || g_sectorDirty.Size() == 0) return;
 
 	for (int s = 0; s < numsectors; s++)
@@ -1411,6 +1471,14 @@ void InvalidateMovedSectors()
 		if (sectors[s].fua_dirty == g_sectorDirty[s]) continue;
 		g_sectorDirty[s] = sectors[s].fua_dirty;
 		g_movedThisFrame++;
+		{
+			const bool moved = (sectors[s].floorplane.d != g_lastFloorZ[s]) ||
+			                   (sectors[s].ceilingplane.d != g_lastCeilZ[s]);
+			if (moved) g_dirtyGeometry++; else g_dirtyLightOnly++;
+			g_lastLight[s]  = sectors[s].lightlevel;
+			g_lastFloorZ[s] = sectors[s].floorplane.d;
+			g_lastCeilZ[s]  = sectors[s].ceilingplane.d;
+		}
 
 		const TArray<int> &segList = g_sectorSegs[s];
 		for (unsigned k = 0; k < segList.Size(); k++)
@@ -1430,21 +1498,40 @@ void InvalidateMovedSectors()
 			// permanently while GL kept drawing it. Clearing the flag makes the next capture bake
 			// exactly once more, which is the same budget the first bake had.
 			g_uncacheable[idx] = false;
-			// Squash, not release: the range stays allocated so the re-bake writes back over it.
-			// Freeing here re-allocates every frame the sector moves and the arena runs away.
-			for (int i = 0; i < kMaxMapPieces; i++)
-				MeshSquash(sc.pieces[i].range);
-			// [rc4l] ...and put it back straight away, from the map.
+			// [rc4l] Bake FIRST, and squash only what the bake did not take.
 			//
-			// Squashing waits for GL's walk to reach the seg again, which is fine when GL's walk is
-			// what fills the mesh. With the map bake driving it there is nothing to wait for: the
-			// sector has moved, the sidedef says what is on it, and the answer can be had now. A door
-			// opening is exactly this case, several times a second.
-			BakeSegFromMap(idx);   // a no-op on a seg the map does not own
+			// This ran the other way round -- squash all twenty-four slots, then re-bake -- and that
+			// order is what made map baking a 3.7x regression on a level with animated lights.
+			//
+			// MeshStore compares the new vertices against the stored ones and uploads nothing when
+			// they match, precisely so that re-baking a wall that did not move is free. MeshSquash
+			// MEMSETS THE RANGE TO ZERO. So squashing first guaranteed that comparison could never
+			// match: every re-bake saw zeros, rewrote the same bytes it had a moment ago, and marked
+			// them dirty. On wdiex02 that was 12,200 vertices and 1,548 repaints per frame for a
+			// world standing still -- and the sectors driving it had not moved at all. Nine tenths of
+			// them were dirty only because a light was flickering, since sector_t bumps fua_dirty for
+			// ChangeLightLevel exactly as it does for ChangePlaneTexZ.
+			//
+			// Nothing is lost by not squashing: an owned seg's bake squashes the band and 3D-floor
+			// slots it does not fill itself. And when the map does NOT own the seg the bake returns
+			// a decline without touching a range, which is the case the squash is really for -- it
+			// hands the seg back to GL's walk to re-capture. Squashing that case unconditionally is
+			// also what put a hole in dbab01; here it stays, guarded.
+			const int made = BakeSegFromMap(idx);
+			g_segsBaked++;
+			if (made < 0)   // declined: this seg is GL's, hand it back
+			{
+				// Squash, not release: the range stays allocated so the re-capture writes back over
+				// it. Freeing re-allocates every frame the sector moves and the arena runs away.
+				for (int i = 0; i < kMaxMapPieces; i++)
+					MeshSquash(sc.pieces[i].range);
+			}
 		}
 		// ...and the sector's own planes, which have no walk to notice them either.
 		if (fua_surface_mapbake_auto) zx::levelmesh::BakeFlatsForSector(s);
 	}
+	invalClock.Unclock();
+	g_invalMs += invalClock.TimeMS();
 }
 
 // [rc4l] Read-only views of one seg's cache state, for fua_line_mesh. The cache array is file-static

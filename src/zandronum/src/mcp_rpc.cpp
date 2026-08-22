@@ -411,8 +411,19 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 	else if ( cmd == "sim.pause" )
 	{
 		if ( IsNetInstance() ) { SendErr( id, "pause unsupported in a netgame (server/client sim runs on network tics, not the local paused flag)" ); return; }
-		paused = 1;
-		SendOk( id, "{\"paused\":1}" );
+		// [rc4l] Honour args.on, because {"on":false} meaning "pause" is a trap.
+		//
+		// sim.pause used to set paused=1 whatever it was handed, on the reasoning that sim.resume is
+		// the other half of the pair. But a caller that writes {"on":false} is plainly asking to
+		// UNPAUSE, and got the opposite plus a cheerful {"paused":1} confirming it. Nothing errors,
+		// the level clock simply stops -- and a frozen sim is exactly the state in which dynamic
+		// lights and moving sectors read as "no difference", so it silently invalidates whatever was
+		// being measured. Cost an hour of a profiling session before it was noticed.
+		bool on = true;
+		GetBool( args, "on", on );
+		paused = on ? 1 : 0;
+		if ( !paused ) g_stepping = false;
+		SendOk( id, paused ? "{\"paused\":1}" : "{\"paused\":0}" );
 	}
 	else if ( cmd == "sim.resume" )
 	{

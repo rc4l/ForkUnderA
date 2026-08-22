@@ -694,11 +694,16 @@ async function main() {
           case "find":       return ui.findLabel(c, a.join(" "));
           case "warp":       return ui.warp(c, Number(a[0]), Number(a[1]));
           case "damaging":   return ui.damagingSectors(c, flags.limit ? Number(flags.limit) : 64);
-          case "exec":       return c.rpc("console.exec", { text: a.join(" ") });
+          // [rc4l] exec RETURNS WHAT THE COMMAND PRINTED. console.exec answers {"executed":true}
+          // and drops the output, so every stats dump driven through here came back empty and had to
+          // be read off the log file by guessing which lines were new -- the exact guess capture.exec
+          // was written to remove. Listen for the tee instead.
+          case "exec":       process.stdout.write(await cap.exec(c, a.join(" "), { quietMs: 500, maxMs: 20000 })); return null;
           default: throw new Error(`unknown ui action: ${act} (nav/click/rightclick/drag/type/look/stick/screenshot/exec)`);
         }
       });
-      console.log(JSON.stringify(r, null, 2));
+      // exec has already written the command's own output; a bare "null" under it is noise.
+      if (r !== null && r !== undefined) console.log(JSON.stringify(r, null, 2));
       break;
     }
     case "mcp": {
