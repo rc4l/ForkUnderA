@@ -10,6 +10,7 @@
 #include "features/wadreload/zx_wadreload.h"
 
 #include "c_dispatch.h"
+#include "cmdlib.h"
 #include "cl_main.h"
 #include "d_netinf.h"
 #include "doomdef.h"
@@ -39,11 +40,6 @@ ContinueRecord g_Record;
 bool g_bLoaded = false;
 FString g_Label;
 
-// [rc4l] The snapshot a Single record points at. One slot, overwritten every time: this is "where
-// you left off", not a save history, and a growing pile of them is a thing nobody asked for and
-// nobody prunes.
-const char *const kContinueSaveName = "continue.zds";
-
 std::string RecordPath()
 {
 	return ContinueRecordPath( Identity_ConfigRoot( ));
@@ -51,13 +47,13 @@ std::string RecordPath()
 
 std::string SavePath()
 {
-	const std::string root = Identity_ConfigRoot( );
-	if ( root.empty( ))
-		return std::string( kContinueSaveName );
+	return ContinueSavePath( Identity_ConfigRoot( ));
+}
 
-	const char last = root[root.size( ) - 1];
-	const bool bHasSeparator = ( last == '/' ) || ( last == '\\' );
-	return root + ( bHasSeparator ? "" : "/" ) + kContinueSaveName;
+// The folder has to exist before either file can be written, and it is ours to make.
+void EnsureDir()
+{
+	CreatePath( ContinueDir( Identity_ConfigRoot( )).c_str( ));
 }
 
 bool FileExists( const std::string &path )
@@ -103,6 +99,8 @@ void WriteRecord( const ContinueRecord &record )
 	const std::string text = SerialiseContinue( record );
 	if ( text.empty( ))
 		return;
+
+	EnsureDir( );
 
 	FILE *f = fopen( RecordPath( ).c_str( ), "wb" );
 	if ( f == NULL )
@@ -292,6 +290,7 @@ void Continue_NoteQuit( void )
 	// work to the next tic. There is no next tic: the caller is the quit, and exit() follows
 	// immediately. The queued form wrote the record and never the snapshot, so Continue pointed at a
 	// file that would never exist and hid itself forever -- safe, and useless.
+	EnsureDir( );
 	G_DoSaveGame( false, record.savePath.c_str( ), "Continue" );
 	WriteRecord( record );
 }

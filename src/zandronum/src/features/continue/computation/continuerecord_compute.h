@@ -69,9 +69,18 @@ std::string SerialiseContinue(const ContinueRecord &record);
 // know, an unknown kind, or a kind missing the fields it cannot work without.
 bool ParseContinue(const std::string &text, ContinueRecord &out);
 
-// Where the record lives, beside the identity keys, so one folder per user holds everything that
-// describes this player rather than this installation.
+// Where the record lives: a `continue/` folder of its own under the per-user config root, alongside
+// `identity/` rather than loose beside it. Two files that only mean anything together, in a folder
+// named after what they are, so deleting the feature's state is one obvious action rather than
+// knowing which two of the loose files belonged to it.
 std::string ContinueRecordPath(const std::string &configRoot);
+
+// The snapshot that a Single record points at, in the same folder. One slot, overwritten: this is
+// "where you left off", not a save history.
+std::string ContinueSavePath(const std::string &configRoot);
+
+// The folder itself, for the caller that has to create it before writing.
+std::string ContinueDir(const std::string &configRoot);
 
 } // namespace zx
 
