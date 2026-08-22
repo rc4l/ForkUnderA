@@ -554,6 +554,8 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 		body += ",\"saveVersion\":" + I( (long long)zx::Continue_DebugSaveVersion( ) );
 		body += ",\"minSaveVersion\":" + I( (long long)MINSAVEVER );
 		body += ",\"busy\":" + B( zx::Continue_DebugBusy( ) );
+		body += ",\"probe\":" + I( (long long)zx::Continue_DebugProbe( ) );
+		body += ",\"probeSlot\":" + I( (long long)zx::Continue_DebugProbeSlot( ) );
 		body += "}";
 		SendOk( id, body );
 	}

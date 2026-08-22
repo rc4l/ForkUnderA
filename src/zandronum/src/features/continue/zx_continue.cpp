@@ -20,6 +20,8 @@
 #include "menu/menu.h"	// M_ClearMenus
 #include "m_png.h"
 #include "network.h"
+#include "features/server-browser/browser.h"
+#include "i_system.h"
 #include "version.h"
 #include "w_wad.h"
 #include "zstring.h"
@@ -136,6 +138,42 @@ void CollectLoadedWads( ContinueRecord &record )
 	}
 }
 
+// [rc4l] Asking the remembered server whether it is still there, and still the same game.
+//
+// Through the browser's own machinery rather than a second copy of the query: AddServerToList makes
+// the slot (deduping if the browser already knows it) and RecheckServer sends the query the browser
+// would have sent. Anything else would be a private reimplementation of a protocol that already has
+// one owner.
+ServerProbe g_Probe = ServerProbe::Unknown;
+bool g_bProbeSent = false;
+unsigned int g_ProbeStartedMS = 0;
+LONG g_ProbeSlot = -1;
+
+// How long to let it answer before calling it gone. A query and its reply on a working link is
+// milliseconds; this is loose enough for a slow one and short enough that the button does not sit
+// there offering a dead server for the whole time somebody reads the menu.
+const unsigned int kProbeTimeoutMS = 4000;
+
+// Same game, judged the way the record was written: bare PWAD names, in order.
+bool ProbeWadsMatch( ULONG slot )
+{
+	const LONG count = BROWSER_GetNumPWADs( slot );
+	if ( count < 0 )
+		return true;					// it told us nothing, so it has not contradicted us
+
+	if ( static_cast<size_t>( count ) != g_Record.wads.size( ) )
+		return false;
+
+	for ( LONG i = 0; i < count; ++i )
+	{
+		const char *name = BROWSER_GetPWADName( slot, i );
+		if (( name == NULL ) || ( g_Record.wads[i].first != name ))
+			return false;
+	}
+
+	return true;
+}
+
 // Whether what is loaded right now is what the record describes, by bare name and in order. Names
 // alone, because that is all a record can hold about files this machine may keep anywhere.
 bool SameWadSetAsRecord( )
@@ -205,8 +243,7 @@ bool Continue_IsShown( void )
 		in.saveVersion = in.saveFileExists ? SaveVersionOf( g_Record.savePath ) : 0;
 	}
 
-	// The probe stays Unknown until something has actually asked the address; see
-	// continueshow_compute.h on why that shows rather than hides.
+	in.probe = g_Probe;
 	return ContinueIsShown( in );
 }
 
@@ -332,6 +369,40 @@ FString g_SaveAfterRestart;
 
 void Continue_Tick( void )
 {
+	// [rc4l] The record has to be in hand before any of this means anything. Without it every tick
+	// saw kind None, the probe never started, and the button sat there offering a server nobody had
+	// asked about -- which looked exactly like a probe that had run and found it alive.
+	if ( g_bLoaded == false )
+		Continue_Load( );
+
+	// The probe runs while the player is at a menu deciding, so the answer is usually in before the
+	// button is pressed. It settles once and stays settled: re-asking every frame would be a query
+	// storm aimed at somebody else's server.
+	if (( g_Record.kind == ContinueKind::Server ) && ( g_Probe == ServerProbe::Unknown ))
+	{
+		if ( g_bProbeSent == false )
+		{
+			NETADDRESS_s address;
+			if ( address.LoadFromString( g_Record.address.c_str( )))
+			{
+				BROWSER_AddServerToList( address );
+				g_ProbeSlot = BROWSER_GetListIDByAddress( address );
+				if ( g_ProbeSlot >= 0 )
+					BROWSER_RecheckServer( g_ProbeSlot );
+
+				g_ProbeStartedMS = I_MSTime( );
+				g_bProbeSent = true;
+			}
+		}
+		else if ( g_ProbeSlot >= 0 )
+		{
+			if ( BROWSER_IsActive( g_ProbeSlot ))
+				g_Probe = ProbeWadsMatch( g_ProbeSlot ) ? ServerProbe::Alive : ServerProbe::WadsDiffer;
+			else if ( I_MSTime( ) - g_ProbeStartedMS > kProbeTimeoutMS )
+				g_Probe = ServerProbe::Gone;
+		}
+	}
+
 	if ( g_bLoadAfterRestart == false )
 		return;
 
@@ -341,6 +412,22 @@ void Continue_Tick( void )
 
 	g_bLoadAfterRestart = false;
 	G_LoadGame( g_SaveAfterRestart.GetChars( ));
+}
+
+int Continue_DebugProbe( void )
+{
+	switch ( g_Probe )
+	{
+	case ServerProbe::Alive:      return 1;
+	case ServerProbe::Gone:       return 2;
+	case ServerProbe::WadsDiffer: return 3;
+	default:                      return 0;
+	}
+}
+
+int Continue_DebugProbeSlot( void )
+{
+	return static_cast<int>( g_ProbeSlot );
 }
 
 void Continue_Activate( void )

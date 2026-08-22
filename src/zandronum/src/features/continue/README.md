@@ -16,6 +16,17 @@ would faithfully save the crash and then offer to put the player back into it.
 So the record is written from the **deliberate** quit (`CCMD quit`/`exit`) and from the moment a join
 succeeds. A signal crash never reaches `exit()` at all, so it is safe by omission.
 
+## The server probe
+
+A Server record is checked by asking the server, through the browser's own query path:
+`BROWSER_AddServerToList` makes the slot and `BROWSER_RecheckServer` sends the query the browser
+would have sent. No answer within four seconds is `Gone`; a different PWAD list is `WadsDiffer`.
+
+`BROWSER_GetListIDByAddress` is exported for this. Scanning `BROWSER_GetAddress` instead does not
+work and looks like it does: it answers with a cleared dummy for any slot that is not `AS_ACTIVE`,
+so a server that has been asked and not yet answered — or that never will — is invisible to that
+scan by construction, and the probe silently never settles.
+
 ## Why a pending server probe still shows the button
 
 Hiding until a probe answers makes the button appear a second after the menu, underneath the
@@ -33,6 +44,8 @@ already takes. Same asymmetry `headerreach_compute` settles for "Play Online!".
 | `features/global-header/zx_globalheader.cpp` | the Continue tab: label, count, pinned index, activation |
 | `features/global-header/computation/globalheader_compute.{h,cpp}` | `pinnedIndex` layout and `StepHeaderTabPinned` |
 | `mcp_rpc.cpp` | `ui.continue`, for `fuactl continue` |
+| `features/server-browser/browser.{h,cpp}` | exports `BROWSER_AddServerToList` and `BROWSER_GetListIDByAddress` |
+| `g_game.{h,cpp}` | exports `G_DoSaveGame`, the synchronous save the quit path needs |
 
 ## Computation units
 
