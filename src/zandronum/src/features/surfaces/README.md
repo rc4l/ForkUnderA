@@ -320,16 +320,19 @@ the GL-driven path sets for itself on the same shot.
 | dbab04 | 0.6% | 0.1% | **one wall band, open** |
 | dbab05 | 0.0% | 0.0% | no difference |
 | Sunder MAP10 | 0.0% | -- | no difference |
-| Sunder MAP16 | 0.8% | 0.0-0.1% | **real, open** -- see below |
+| Sunder MAP16 | 0.1-1.7% | 0.0-1.6% | bistable between loads -- not a parity map, see below |
 | Sunder MAP04 | 0.2% | -- | at the floor |
 
-### Sunder MAP16, 0.8%
+### Sunder MAP16 is not a parity map
 
-Recorded first as "no difference", on a floor reading that was itself unstable. Measured again with
-three loads per config it is consistent: both paths repeat within 0.0-0.1% of themselves and differ
-from each other by 0.8% every time. It is a patch of animated lava and a glowing object, which points
-at an animation frame resolving differently between the capture and the bake rather than at geometry.
-Not chased yet.
+Its cross-config reading has been 0.1%, 0.7%, 0.8% and 1.7% on the same build, and the 1.7% -- always
+the same 19% at row 810 -- has now turned up for four unrelated toggles, including two that provably
+change nothing. Something in that map is bistable between loads: it lands in one of two states and
+the diff reports whichever pair you got. A patch of animated lava and a glow are what light up.
+
+So MAP16 is unusable for judging the picture, and the "consistent 0.8%" recorded here briefly was an
+artefact of three loads happening to land the same way. MAP10, MAP04 and dbab01-05 repeat within
+0.0-0.1% and are what parity is judged on. MAP16 stays the heaviest timing case there is.
 
 ### The other open difference: dbab04's tinted band
 

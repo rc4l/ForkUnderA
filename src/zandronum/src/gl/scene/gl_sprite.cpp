@@ -245,6 +245,15 @@ void GLSprite::Draw(int pass)
 		// between tics rather than stepping.
 		const bool drawRollSpriteActor = ( actor != NULL && ( actor->renderflags & RF_ROLLSPRITE ) );
 
+		// [rc4l] This looks like waste in the standalone path and is not -- do not skip it.
+		//
+		// Apply() pushes CPU-side state into GL, and this function returns a few lines below without
+		// rasterising anything, so skipping it when the backend is carrying the frame reads as free.
+		// It is not: the picture moves. MAP04 differs by 0.2% against a 0.0% floor with it gone, so
+		// something RegisterSprite depends on is settled by ApplyShader rather than by the setters.
+		//
+		// Worth 6-15% of the sprite clocks, and not worth taking until that dependency is understood
+		// -- which is Stage 1 of docs/sprites-gpu-plan.md, because a GL-free path cannot call it.
 		gl_RenderState.Apply();
 
 		Vector v1;
