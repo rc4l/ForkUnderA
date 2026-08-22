@@ -1522,11 +1522,17 @@ int g_dirtyLightOnly = 0, g_dirtyGeometry = 0;
 // measuring a frame it had made slower. The question here is only "how much of the frame is this
 // loop", so one read either side answers it and costs nothing.
 static double g_invalMs = 0.0; static int g_invalFrames = 0; static int g_segsBaked = 0;
-static int g_segsReshaded = 0;   // segs that took the light-only path instead of a full re-derive
+static int g_segsReshaded = 0;
+// The last frame's own figures, not the running totals -- so a frame-time breakdown can ask what
+// THIS frame spent rather than what the level has spent since it loaded.
+static double g_invalMsLast = 0.0; static int g_sectorsLast = 0;   // segs that took the light-only path instead of a full re-derive
 static TArray<int>     g_lastLight;
 static TArray<fixed_t> g_lastFloorZ, g_lastCeilZ;
 static TArray<int>     g_lastFloorPic, g_lastCeilPic;
 static int g_dirtyNoChange = 0;   // dirty, but nothing that shows on a wall actually differed
+
+double InvalidationMsLastFrame() { return g_invalMsLast; }
+int    SectorsDirtyLastFrame()   { return g_sectorsLast; }
 
 void SectorDirtyBreakdown(int &lightOnly, int &geometry)
 {
@@ -1664,6 +1670,8 @@ void InvalidateMovedSectors()
 	}
 	invalClock.Unclock();
 	g_invalMs += invalClock.TimeMS();
+	g_invalMsLast = invalClock.TimeMS();
+	g_sectorsLast = g_movedThisFrame;
 }
 
 // [rc4l] Read-only views of one seg's cache state, for fua_line_mesh. The cache array is file-static

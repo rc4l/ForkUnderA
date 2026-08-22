@@ -3330,7 +3330,21 @@ static unsigned int g_builtRebatchRev = 0, g_builtRepaintRev = 0;
 static int g_geomRepaints = 0;
 static int g_repaintRuns = 0;
 // Repaints waiting for a frame with room for them -- see where they are drained.
-static TArray<unsigned int> g_pendingRepaints;   // how many UpdateBuffer calls those repaints were coalesced into
+static TArray<unsigned int> g_pendingRepaints;
+// [rc4l] What THIS frame did, so a p99 can be attributed instead of guessed at.
+static int g_fRepaints = 0, g_fRuns = 0, g_fPatchVerts = 0, g_fPatches = 0;
+// [rc4l] The repaint budget is per CALL of the dynamic build, not per frame, and MEASURING says
+// keep it that way.
+//
+// BuildDynamic runs about three times a frame, so "512" drains up to ~1,536 -- and the breakdown
+// showed exactly 1,536 on a p99 frame. That looks like the spreading failing, and tightening it to a
+// true per-frame 512 was tried: p99 went 4.55 -> 10.44 ms and hitches 6.9% -> 28.8%. The reason is
+// that the drain only runs when the dynamic build runs, which is on the tic frames -- so a per-frame
+// cap starves the queue on the seven quiet frames, the backlog crosses the flush-all threshold, and
+// the work lands in BIGGER lumps than before.
+//
+// Real spreading needs the drain lifted out of BuildDynamic so it runs on quiet frames too. Until
+// then ~1,536 a tic matches the arrival rate, which is the stable answer.   // how many UpdateBuffer calls those repaints were coalesced into
 // Vertices the GPU buffer can hold, which is more than the scene currently uses -- see the slack
 // at creation. g_appendedVerts is how much of that slack has been spent since the last rebuild.
 static unsigned int g_vbCapacity = 0;
@@ -3839,9 +3853,10 @@ static void RefreshMovedGeometry(Diligent::IDeviceContext *ctx)
 			// Enough to drain a tic's worth in two or three frames. If the backlog ever runs away --
 			// a level load, a frame rate collapse -- take the lot rather than let it grow without
 			// bound; a one-off lump is better than shading that never catches up.
-			const unsigned int kPerFrame = 512, kFlushAll = 8192;
+			// [rc4l] Per CALL, and that is not a slip -- see g_repaintBudget.
+			const unsigned int kPerCall = 512, kFlushAll = 8192;
 			unsigned int budget = (g_pendingRepaints.Size() > kFlushAll)
-				? g_pendingRepaints.Size() : kPerFrame;
+				? g_pendingRepaints.Size() : kPerCall;
 			if (budget > g_pendingRepaints.Size()) budget = g_pendingRepaints.Size();
 			const unsigned int *list = &g_pendingRepaints[0];
 			const int count = (int)budget;
@@ -3872,6 +3887,7 @@ static void RefreshMovedGeometry(Diligent::IDeviceContext *ctx)
 				FillPieceData(p, 0, g_scenePieceData[slot.pieceIndex]);
 				s_repaintSlots.Push(slot.pieceIndex);
 				g_geomRepaints++;
+				g_fRepaints++;
 			}
 			if (g_pieceBuf && s_repaintSlots.Size() > 0)
 			{
@@ -3894,6 +3910,7 @@ static void RefreshMovedGeometry(Diligent::IDeviceContext *ctx)
 						&g_scenePieceData[runStart],
 						Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 					g_repaintRuns++;
+					g_fRuns++;
 					if (!end) { runStart = runEnd = s_repaintSlots[i]; }
 				}
 			}
@@ -4002,6 +4019,7 @@ static void RefreshMovedGeometry(Diligent::IDeviceContext *ctx)
 						(Diligent::Uint64)slot.count * sizeof(SceneVertex), &g_sceneVB[slot.vbStart],
 						Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 					g_geomPatchVerts += (int)slot.count;
+					g_fPatchVerts += (int)slot.count;
 					patched++;
 					continue;
 				}
@@ -5738,6 +5756,15 @@ bool    g_frameHavePrev = false;
 std::chrono::steady_clock::time_point g_framePrev;
 }
 
+// [rc4l] What each recorded frame was made of, in step with g_frameMs.
+//
+// A percentile on its own says a frame was slow and nothing about why, and every attribution in this
+// work that was reasoned rather than measured turned out wrong. These ride the same ring as the
+// interval so the slow frames can be asked directly what they were carrying.
+struct FrameParts { float invalMs; int sectors; int repaints; int runs; int patchVerts; bool ticked; };
+static FrameParts g_frameParts[kFrameRing];
+static int g_lastLevelTime = -1;
+
 void RecordPresentInterval()
 {
 	const auto now = std::chrono::steady_clock::now();
@@ -5745,6 +5772,15 @@ void RecordPresentInterval()
 	{
 		const double ms = std::chrono::duration<double, std::milli>(now - g_framePrev).count();
 		g_frameMs[g_frameHead] = ms;
+		FrameParts &fp = g_frameParts[g_frameHead];
+		fp.invalMs    = (float)zx::levelmesh::InvalidationMsLastFrame();
+		fp.sectors    = zx::levelmesh::SectorsDirtyLastFrame();
+		fp.repaints   = g_fRepaints;
+		fp.runs       = g_fRuns;
+		fp.patchVerts = g_fPatchVerts;
+		fp.ticked     = (level.time != g_lastLevelTime);
+		g_lastLevelTime = level.time;
+		g_fRepaints = g_fRuns = g_fPatchVerts = g_fPatches = 0;
 		g_frameHead = (g_frameHead + 1) % kFrameRing;
 		if (g_frameCount < kFrameRing) g_frameCount++;
 	}
@@ -5772,6 +5808,47 @@ CCMD( fua_frametimes )
 		g_frameCount, v[0], med, mean, p95, p99, v[g_frameCount - 1] );
 	Printf( "  %.0f fps at the median, %.0f at p99   |   %d frames (%.1f%%) took over twice the median\n",
 		1000.0 / med, 1000.0 / p99, hitches, 100.0 * hitches / g_frameCount );
+	// [rc4l] WHAT the slow frames were carrying, next to what a median frame carries.
+	//
+	// A percentile says a frame was slow and nothing about why. Every attribution in this work that
+	// was reasoned instead of measured turned out to be wrong -- the stutter was blamed on moving
+	// geometry when three quarters of it was flickering lights. So the components ride the same ring
+	// as the interval, and the slow frames are asked directly.
+	{
+		double slowMs = 0, medMs = 0;
+		double sInval = 0, mInval = 0;
+		double sRep = 0, mRep = 0, sRuns = 0, mRuns = 0, sPatch = 0, mPatch = 0, sSect = 0, mSect = 0;
+		int nSlow = 0, nMed = 0, slowTicked = 0, medTicked = 0;
+		for (int i = 0; i < g_frameCount; i++)
+		{
+			const FrameParts &fp = g_frameParts[i];
+			const bool slow = g_frameMs[i] >= p99;
+			double &ms = slow ? slowMs : medMs; ms += g_frameMs[i];
+			(slow ? sInval : mInval) += fp.invalMs;
+			(slow ? sRep   : mRep)   += fp.repaints;
+			(slow ? sRuns  : mRuns)  += fp.runs;
+			(slow ? sPatch : mPatch) += fp.patchVerts;
+			(slow ? sSect  : mSect)  += fp.sectors;
+			if (fp.ticked) { if (slow) slowTicked++; else medTicked++; }
+			if (slow) nSlow++; else nMed++;
+		}
+		if (nSlow > 0 && nMed > 0)
+		{
+			Printf( "  what a frame carries      %-12s %-12s\n", "p99+", "the rest" );
+			Printf( "    frames                  %-12d %-12d\n", nSlow, nMed );
+			Printf( "    mean frame time         %-12.2f %-12.2f ms\n", slowMs/nSlow, medMs/nMed );
+			Printf( "    ran a game tic          %-11.0f%% %-11.0f%%\n",
+				100.0*slowTicked/nSlow, 100.0*medTicked/nMed );
+			Printf( "    sectors invalidated     %-12.1f %-12.1f\n", sSect/nSlow, mSect/nMed );
+			Printf( "    invalidation loop       %-12.3f %-12.3f ms\n", sInval/nSlow, mInval/nMed );
+			Printf( "    surfaces repainted      %-12.1f %-12.1f\n", sRep/nSlow, mRep/nMed );
+			Printf( "    repaint uploads         %-12.1f %-12.1f\n", sRuns/nSlow, mRuns/nMed );
+			Printf( "    vertices patched        %-12.1f %-12.1f\n", sPatch/nSlow, mPatch/nMed );
+			Printf( "    unattributed            %-12.3f %-12.3f ms  (tic, draw, present)\n",
+				slowMs/nSlow - sInval/nSlow, medMs/nMed - mInval/nMed );
+		}
+	}
+
 	// [rc4l] The SEQUENCE, not just the percentiles. A stutter has a shape: every-Nth-frame is a
 	// timer, bursts are a stall, and alternating is a double-buffer fighting something. Percentiles
 	// cannot tell those apart and the raw run can.

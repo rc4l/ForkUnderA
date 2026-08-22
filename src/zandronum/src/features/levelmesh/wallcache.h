@@ -225,6 +225,11 @@ void GetRejects(int &portal, int &poly, int &ffloor, int &area, int &other, int 
 // say which is really happening before anything is built on the assumption.
 void SectorDirtyBreakdown(int &lightOnly, int &geometry);
 
+// What the LAST frame spent invalidating, and how many sectors it answered. For attributing a
+// frame-time spike to a cause rather than guessing at one.
+double InvalidationMsLastFrame();
+int    SectorsDirtyLastFrame();
+
 }} // namespace zx::levelmesh
 
 #endif // ZX_WALLCACHE_H
