@@ -1207,9 +1207,21 @@ static const char *kSceneVS =
 	"        uvec2 cell = clusterCells[(slice * tilesY + ty) * tilesX + tx];\n" \
 	"        first = int(cell.x);\n" \
 	"        count = int(cell.y);\n" \
+	/* [rc4l] CLAMP the loop bound. It comes out of a buffer, and a buffer can be stale.\
+	   Every light in the level is at most n, so anything larger is nonsense -- and nonsense is what\
+	   the cluster grid holds around a level change, before the CPU rebuilds it for the new map. A\
+	   garbage count runs this loop for millions of iterations, and a GPU loop that long IS a hang:\
+	   Windows times it out, resets the device, and the driver terminates the process -- no\
+	   exception, no dump, nothing in the log. See docs/tdr-crash-after-map-loads.md. One\
+	   instruction makes a stale grid a wrong pixel for one frame instead of a dead process. */ \
+	"        count = clamp(count, 0, n);\n" \
+	"        first = max(first, 0);\n" \
 	"    }\n" \
 	"    for (int i = 0; i < count; i++) {\n" \
+	/* ...and the index it reads: lights[] has n entries and a stale grid can name anything. An\
+	   out-of-range read is undefined, not merely wrong. */ \
 	"        int li = clustered ? int(clusterLights[first + i]) : i;\n" \
+	"        li = clamp(li, 0, max(n - 1, 0));\n" \
 	"        vec4 lp = lights[li*2];\n" \
 	"        vec4 lc = lights[li*2+1];\n" \
 	"        vec3 d = lp.xyz - vPixelPos.xyz;\n" \

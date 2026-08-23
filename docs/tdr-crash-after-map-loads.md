@@ -68,7 +68,41 @@ Worth measuring first, and cheap: **how long `GenerateMips` actually accounts fo
 generating mips only above a size threshold may drop the submit under the timeout with no
 restructuring at all.
 
-## Six wrong theories, and why they were wrong
+## Everything ruled out by measurement
+
+Each of these was tested against the real failure, not reasoned about. None of them is the cause.
+
+| suspected | test | result |
+|---|---|---|
+| GL texture precaching | `cl_fua_caching=0` | still failed at load 22 |
+| `GenerateMips` (a render pass per level, ~12,600 per submit) | `fua_dg_mips=0`, no chain at all | still failed at load 22, 2 TDRs |
+| VRAM exhaustion | `nvidia-smi` after each of 23 loads | engine adds ~520 MiB once, then ~7 MiB/load; peaks at 11.8 of 16.3 GB with 4.5 GB free |
+| Unbounded light loop in the scene shader | clamped `count` and `li` | still failed at load 22, 3 TDRs |
+| Process memory | working set per load | ~30 MB/load, tops out ~1.6 GB, same with the backend off |
+| Thread leak | thread count per load | flat at ~124 |
+
+The shader clamp was **kept anyway**: taking a fragment-shader loop bound straight out of a GPU buffer
+with no limit is a real latent hazard whatever provoked this particular TDR, and the clamp costs one
+instruction. It is not a fix and is not presented as one.
+
+## Where that leaves it
+
+A TDR means one GPU operation ran past about two seconds. It is not the uploads, not the mip chain,
+not memory pressure, and not the light loop. What is left, unexamined:
+
+- **The planar mirror pass.** These maps log `6 mirror surface(s)`, and a planar mirror re-renders the
+  scene per mirror. Six mirrors against 50,321 pieces is six times the work, and there is no cvar to
+  switch it off for a bisect -- adding one is the cheapest next experiment in this document.
+- **Acceleration structures.** `ReleaseAccelerationStructures()` runs per level; whatever builds them
+  has not been timed.
+- **A pathological draw** on the first frame of a new level, before the batch layout settles.
+
+The bisect that would narrow it fastest is a per-pass GPU timer around the level-transition frames --
+`gl-timers` already reports per-pass GPU ms for the steady state, and the same instrument pointed at
+the first frames after a map change would say which pass eats the two seconds, instead of another
+round of guessing.
+
+## Nine wrong theories, and why they were wrong
 
 Recorded because each cost real time and each had a specific methodological cause.
 
