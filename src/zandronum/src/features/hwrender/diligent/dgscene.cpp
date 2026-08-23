@@ -3308,6 +3308,14 @@ struct VBSlot
 {
 	unsigned int meshOffset;   // key: the piece's range in the level mesh
 	unsigned int count;
+	// [rc4l] How much room the slot HAS, which is not the same as how much it is drawing.
+	//
+	// RetireSlot zeroes `count` when a surface goes away, and without a record of the space it left
+	// behind, a surface that comes BACK could only be put on the end of the buffer -- abandoning its
+	// old vertices every time. A door's upper exists when the door is shut and not when it is open,
+	// several times a second, so wdiex01 leaked ~1,060 slots every twelve seconds and walked from
+	// 3.25 ms to a flat 33.9 ms. Keeping the capacity lets the piece go back where it was.
+	unsigned int capacity;
 	unsigned int vbStart;      // where those vertices live in the scene buffer
 	unsigned int batch;
 	// [rc4l] Where this piece's record lives. Stable across a patch: a moved sector rewrites the
@@ -3349,6 +3357,10 @@ static int g_fRepaints = 0, g_fRuns = 0, g_fPatchVerts = 0, g_fPatches = 0;
 // at creation. g_appendedVerts is how much of that slack has been spent since the last rebuild.
 static unsigned int g_vbCapacity = 0;
 static int g_appendedVerts = 0, g_geomAppends = 0;
+// [rc4l] WHY a piece went on the end, because the two reasons want opposite fixes: a piece the
+// backend has never seen is the world growing, while a piece whose slot is the wrong size is the
+// same surface churning and leaking its old vertices every time.
+static int g_appendNoSlot = 0, g_appendResized = 0, g_slotRevived = 0;
 // Batches the last sorted build produced -- the figure appends are measured against.
 static int g_builtBatchCount = 0;
 
@@ -3477,6 +3489,7 @@ static bool BuildSceneBuffer(FString &err)
 			VBSlot slot;
 			slot.meshOffset = p.range.offset;
 			slot.count = p.range.count;
+			slot.capacity = p.range.count;
 			slot.vbStart = vbStart;
 			slot.batch = g_batches.Size() - 1;
 			slot.pieceIndex = pieceIdx;
@@ -3729,6 +3742,7 @@ static bool AppendPiece(Diligent::IDeviceContext *ctx, const zx::levelmesh::Mesh
 	VBSlot slot;
 	slot.meshOffset = p.range.offset;
 	slot.count = p.range.count;
+	slot.capacity = p.range.count;
 	slot.vbStart = b.first;
 	slot.batch = g_batches.Size() - 1;
 	// [rc4l] An appended piece needs a record as well as vertices, and the record has to reach the
@@ -3786,6 +3800,57 @@ static void RetireSlot(Diligent::IDeviceContext *ctx, VBSlot &slot)
 		(Diligent::Uint64)slot.count * sizeof(SceneVertex), &g_sceneVB[slot.vbStart],
 		Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 	slot.count = 0;   // nothing here to patch again
+}
+
+// [rc4l] Put a returning surface back where it was, instead of on the end of the buffer.
+//
+// RetireSlot leaves the slot allocated with count 0. A piece that comes back is otherwise "new" as
+// far as g_slotByOffset is concerned -- its slot exists but draws nothing -- so it was appended, and
+// the space it used to occupy was abandoned for the life of the level. That is the whole of the
+// wdiex01 leak: 100% of its appends were this case, none of them a genuine size change.
+//
+// Refuses when the piece no longer fits the room it left, or when its material has moved it to a
+// different batch -- reviving into a batch that names another texture is the bug that left a pressed
+// switch looking unpressed. Both fall through to the append, which is always correct.
+static bool ReviveSlot(Diligent::IDeviceContext *ctx, VBSlot &slot,
+	const zx::levelmesh::MeshPiece &p, const FFlatVertex *src)
+{
+	if (slot.count != 0 || slot.capacity < p.range.count || p.range.count == 0) return false;
+	if (slot.batch >= g_batches.Size()) return false;
+	if (p.material != g_batches[slot.batch].material) return false;
+	if (slot.pieceIndex >= g_scenePieceData.Size()) return false;
+
+	FillPieceData(p, 0, g_scenePieceData[slot.pieceIndex]);
+	ctx->UpdateBuffer(g_pieceBuf, (Diligent::Uint64)slot.pieceIndex * sizeof(ScenePieceData),
+		sizeof(ScenePieceData), &g_scenePieceData[slot.pieceIndex],
+		Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+
+	SceneBatch &nb = g_batches[slot.batch];
+	for (unsigned int v = 0; v < p.range.count; v++)
+	{
+		SceneVertex &dv = g_sceneVB[slot.vbStart + v];
+		EmitPieceVertex(p, src[p.range.offset + v], slot.pieceIndex, dv);
+		if (dv.x < nb.minX) nb.minX = dv.x;
+		if (dv.y < nb.minY) nb.minY = dv.y;
+		if (dv.z < nb.minZ) nb.minZ = dv.z;
+		if (dv.x > nb.maxX) nb.maxX = dv.x;
+		if (dv.y > nb.maxY) nb.maxY = dv.y;
+		if (dv.z > nb.maxZ) nb.maxZ = dv.z;
+	}
+	// Anything past what the piece needs stays collapsed, so the slot keeps its capacity.
+	for (unsigned int v = p.range.count; v < slot.capacity; v++)
+	{
+		SceneVertex &dv = g_sceneVB[slot.vbStart + v];
+		dv.x = dv.y = dv.z = 0.f;
+	}
+	ctx->UpdateBuffer(g_vb, (Diligent::Uint64)slot.vbStart * sizeof(SceneVertex),
+		(Diligent::Uint64)slot.capacity * sizeof(SceneVertex), &g_sceneVB[slot.vbStart],
+		Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+
+	slot.count = p.range.count;
+	slot.meshOffset = p.range.offset;
+	slot.blended = (p.blendMode != 0);
+	return true;
 }
 
 static void RefreshMovedGeometry(Diligent::IDeviceContext *ctx)
@@ -4026,8 +4091,20 @@ static void RefreshMovedGeometry(Diligent::IDeviceContext *ctx)
 
 				// New, or no longer the size its slot holds: the old vertices stop being drawn and the
 				// piece goes on the end.
+				// A slot that is merely EMPTY can take the piece back -- see ReviveSlot.
+				if (slotIdx != NULL && *slotIdx < g_vbSlots.Size() &&
+					ReviveSlot(ctx, g_vbSlots[*slotIdx], *p, src))
+				{
+					g_slotRevived++;
+					patched++;
+					continue;
+				}
 				if (slotIdx != NULL && *slotIdx < g_vbSlots.Size() && g_vbSlots[*slotIdx].count > 0)
+				{
+					g_appendResized++;
 					RetireSlot(ctx, g_vbSlots[*slotIdx]);
+				}
+				else g_appendNoSlot++;
 				if (!AppendPiece(ctx, *p, src)) { bailed = true; break; }
 			}
 
@@ -6015,8 +6092,8 @@ void DynStats(FString &report)
 		g_geomRepaints, g_repaintRuns);
 	report += why;
 	FString patches;
-	patches.Format(" | %d geometry patches (%d verts moved), %d appends (%d verts, %d%% of slack)",
-		g_geomPatches, g_geomPatchVerts, g_geomAppends, g_appendedVerts,
+	patches.Format(" | %d geometry patches (%d verts moved), %d appends (%d new, %d resized, %d revived) (%d verts, %d%% of slack)",
+		g_geomPatches, g_geomPatchVerts, g_geomAppends, g_appendNoSlot, g_appendResized, g_slotRevived, g_appendedVerts,
 		g_vbCapacity ? (int)(100.0 * g_appendedVerts / (g_vbCapacity / 8.0)) : 0);
 	report += patches;
 	report += geo;

@@ -51,7 +51,50 @@ draw.
 That is a different bottleneck from the tic-coupled stutter, and on this content it is the larger one:
 `wdi03` is **28x slower than `wdi11`** on the same engine and the same build. Nobody has looked at it.
 
-## Finding 2: wdiex01 degrades, and it is a vertex-arena leak
+## Finding 2 -- CORRECTED
+
+**What follows below was wrong in two ways, and the corrections matter more than the original.**
+
+**It does not degrade.** `fua_frametimes` keeps a 1024-frame ring. The "3.25 ms then 33.9 ms" reading
+was the ring still holding frames from the *previous* map right after the change, and then filling
+with wdiex01's. A fresh launch straight into wdiex01 reads 33.7 ms from the first sample. The map is
+simply a 30 fps map, flat, with no decay.
+
+**The leak was real but was in the wrong layer, and was not the cost.** `MeshStore`'s size-change
+path -- named below as the mechanism -- has `g_reallocs == 0` on wdiex01; it never runs there. The
+actual leak is in the backend: `RetireSlot` empties a `VBSlot` when a surface goes away but leaves it
+allocated, and a surface that came *back* was treated as new and **appended**, abandoning the space it
+had. A door's upper exists when the door is shut and not when it is open, several times a second.
+100% of wdiex01's appends were this case, none a genuine size change.
+
+`ReviveSlot` now puts a returning piece back into the slot it left, refusing when it no longer fits or
+when its material has moved it to another batch. Appends went from climbing ~1,060 every twelve
+seconds to **flat at 24 (0% of slack)** with 8,294 revivals, and the picture is unchanged (0.1% on
+dbab02/dbab04, and wdiex01 renders correctly after thousands of revive cycles).
+
+**Fixing it changed the frame time not at all** -- still 33.7 ms. It was an unbounded resource leak,
+almost certainly the reason the engine dies after eleven map loads, and not the reason the map is
+slow.
+
+## Finding 2b: what actually makes these maps slow
+
+Frame time is **linear in the total number of piece records**, whatever is on screen:
+
+| map | piece records | median | us per piece |
+|---|---|---|---|
+| wdiex01 | 114,646 | 33.67 ms | 0.29 |
+| wdi03 | 27,690 | 10.51 ms | 0.38 |
+| wdiexct | 159 | 0.25 ms | - |
+
+It is not fill rate (320x200 measures 33.77 ms against 1280x800's 33.78), not dynamic lights (33.65
+with them, 33.71 without), not draw calls (153-199 for all three), and not the sim (`ticprof` max
+3.77 ms). Something walks **every piece record every frame** at roughly 0.3 us each, and nothing culls
+it. That is the same bottleneck as Finding 1 -- `wdi03` and `wdi07` are slow because they are big, not
+because they do anything.
+
+**That is the next thing to fix, and it is worth more than everything else in this document.**
+
+## The original Finding 2, kept for the record (WRONG MECHANISM)
 
 `wdiex01` reads 3.25 ms (308 fps) on the first sample after load and settles to a **flat 33.9 ms
 (30 fps)** within a minute. The raw dump is uniform -- `33.5 33.9 33.8 36.4 32.6 33.2 ...` -- not

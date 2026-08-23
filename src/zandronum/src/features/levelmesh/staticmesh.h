@@ -286,6 +286,11 @@ const MeshPiece *MeshPieces(int &count);
 // The registered piece at a vertex offset, or NULL. Lets a caller re-shade a surface without
 // re-deriving it -- see the definition.
 const MeshPiece *MeshFindPiece(unsigned int offset);
+
+// Arena occupancy: vertices handed out, vertices parked on the free list, reuses and size-change
+// reallocations since the level loaded. `parked` growing without bound is the leak this watches for.
+void MeshArenaStats(unsigned int &used, unsigned int &parked, int &reuses, int &reallocs);
+void MeshPieceListStats(unsigned int &pieces, unsigned int &indexed);
 void MeshClearPieces();
 
 // ---------------------------------------------------------------------------

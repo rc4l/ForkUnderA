@@ -1547,6 +1547,15 @@ CCMD( fua_bake_dirty )
 	Printf( "  %d were dirty with nothing visibly changed\n", g_dirtyNoChange );
 	Printf( "  reshade declined: %d 3D-floor, %d no light, %d not the side owner, %d piece missing\n",
 		g_reshadeFF, g_reshadeNoLight, g_reshadeNotOwner, g_reshadeNoPiece );
+	{
+		unsigned int used = 0, parked = 0; int reuses = 0, reallocs = 0;
+		zx::levelmesh::MeshArenaStats( used, parked, reuses, reallocs );
+		Printf( "  arena: %u verts held, %u parked on the free list, %d reused, %d size changes\n",
+			used, parked, reuses, reallocs );
+		unsigned int pieces = 0, indexed = 0;
+		zx::levelmesh::MeshPieceListStats( pieces, indexed );
+		Printf( "  pieces: %u records, %u offsets indexed\n", pieces, indexed );
+	}
 	if ( g_invalFrames > 0 )
 		Printf( "  invalidation loop: %.3f ms/frame over %d frames, %.1f baked + %.1f reshaded per frame\n",
 			g_invalMs / g_invalFrames, g_invalFrames,

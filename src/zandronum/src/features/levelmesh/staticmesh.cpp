@@ -50,6 +50,69 @@ static void NoteBackendDirty(unsigned int offset, unsigned int count)
 	MeshRange r; r.offset = offset; r.count = count;
 	g_bkDirtyList.Push(r);
 }
+// [rc4l] RECLAIM retired space. Without this the arena only ever grows.
+//
+// MeshStore reuses a range in place when the vertex count matches, and bump-allocates a fresh one
+// when it does not -- and RetireRange only forgot the offset. So every piece whose COUNT changed
+// leaked its old space for the life of the level. A door or a lift changes which wall parts exist,
+// and how many band splits each carries, every tic.
+//
+// MEASURED HONESTLY: on wdiex01, the map this was built for, `g_reallocs` is ZERO -- the size-change
+// path never runs there, and the leak that map actually has is in the backend's slot table, fixed
+// separately by ReviveSlot. This free list was written on a wrong diagnosis and kept because the
+// hole is real: any map that does change a piece's vertex count leaks the old space for the life of
+// the level, and nothing else reclaims it. It is a guard, not a measured win. Watch `parked` and
+// `reused` in fua_bake_dirty before crediting it with anything.
+//
+// Exact-size buckets, no splitting and no coalescing. Piece sizes here are quantised -- six vertices
+// for a wall quad, (n-2)*3 for a flat fan -- so a same-size request almost always finds its own kind,
+// and a free list that never splits cannot fragment. Sizes past the bucket count are simply not
+// reclaimed; they are rare and large, and the alternative is a general allocator this does not need.
+enum { kFreeBuckets = 4096 };
+static TArray<unsigned int> g_freeBySize[kFreeBuckets];
+// offset -> count for everything parked. This is the DEDUPE SET, and it is the point: pushing one
+// offset twice would hand the same vertices to two pieces, which is the exact corruption this file's
+// history is made of. It also lets MeshStore refuse to write through a range its owner already gave
+// back.
+static TMap<unsigned int, unsigned int> g_freeAt;
+static unsigned int        g_freeVerts = 0;
+static int                 g_freeReuses = 0, g_freeStale = 0;
+
+static void FreeListPush(unsigned int offset, unsigned int count)
+{
+	if (count == 0 || count >= (unsigned int)kFreeBuckets) return;
+	if (g_freeAt.CheckKey(offset) != NULL) return;   // already parked -- never park it twice
+	g_freeAt.Insert(offset, count);
+	g_freeBySize[count].Push(offset);
+	g_freeVerts += count;
+}
+
+static bool FreeListPop(unsigned int count, unsigned int &offset)
+{
+	if (count == 0 || count >= (unsigned int)kFreeBuckets) return false;
+	TArray<unsigned int> &bucket = g_freeBySize[count];
+	while (bucket.Size() > 0)
+	{
+		const unsigned int off = bucket[bucket.Size() - 1];
+		bucket.Pop();
+		const unsigned int *have = g_freeAt.CheckKey(off);
+		if (have == NULL || *have != count) { g_freeStale++; continue; }   // bucket entry outlived it
+		g_freeAt.Remove(off);
+		g_freeVerts -= count;
+		offset = off;
+		return true;
+	}
+	return false;
+}
+
+static void FreeListClear()
+{
+	for (int i = 0; i < kFreeBuckets; i++) g_freeBySize[i].Clear();
+	g_freeAt.Clear();
+	g_freeVerts = 0;
+	g_freeReuses = g_freeStale = 0;
+}
+
 static unsigned int        g_vbo = 0;
 static unsigned int        g_vao = 0;
 static bool                g_full = false;
@@ -160,6 +223,7 @@ const MeshPiece *DynPieces(int &count)
 void MeshInitForLevel()
 {
 	MeshFreeLevel();
+	FreeListClear();   // offsets from the previous level mean nothing in this one
 	g_verts.Clear();
 	g_used = 0;
 	g_dirtyLo = g_dirtyHi = 0;
@@ -179,6 +243,7 @@ void MeshFreeLevel()
 	g_dirtyLo = g_dirtyHi = 0;
 	g_full = false;
 	g_pieces = g_reallocs = 0;
+	FreeListClear();
 }
 
 // [rc4l] Created lazily so a level with no baked geometry costs no GL objects, and so creation
@@ -236,6 +301,8 @@ static void RetireRange(const MeshRange &old)
 		g_pieceList[*found].range.count = 0;   // emitters skip empty pieces
 		g_pieceByOffset.Remove(old.offset);
 	}
+	// ...and hand the vertices back, which is the whole of the fix.
+	FreeListPush(old.offset, old.count);
 }
 
 // [rc4l] Make a range draw nothing while KEEPING it allocated.
@@ -271,7 +338,11 @@ bool MeshStore(MeshRange &range, const FFlatVertex *verts, int count)
 
 	// Reuse in place when the size is unchanged -- the normal case, since a wall's vertex count only
 	// moves when its split topology does.
-	if (range.count == (unsigned int)count)
+	//
+	// ...unless the range is PARKED, i.e. its owner retired it and then stored through it anyway.
+	// Writing there would scribble on space the free list has already promised to somebody else, so
+	// take the allocation path instead and let the caller keep whatever it thought it had.
+	if (range.count == (unsigned int)count && g_freeAt.CheckKey(range.offset) == NULL)
 	{
 		// [rc4l] Compare before writing, so the backend's dirty range means "geometry moved" and not
 		// merely "something was re-baked". Segs that are uncacheable re-capture every single frame
@@ -292,6 +363,28 @@ bool MeshStore(MeshRange &range, const FFlatVertex *verts, int count)
 
 	if (range.count != 0) { g_reallocs++; RetireRange(range); }   // size changed: retire the old one
 
+	// [rc4l] Somebody else's retired space of exactly this size, before growing the arena.
+	//
+	// The range just retired above is a different size by construction -- the equal-size case
+	// returned already -- so this never hands back the vertices of the piece being rewritten.
+	{
+		unsigned int reuse = 0;
+		if (FreeListPop((unsigned int)count, reuse))
+		{
+			range.offset = reuse;
+			range.count = (unsigned int)count;
+			memcpy(&g_verts[range.offset], verts, count * sizeof(FFlatVertex));
+			NoteBackendDirty(range.offset, range.count);
+			if (range.offset < g_dirtyLo || g_dirtyHi == 0) g_dirtyLo = range.offset;
+			if (range.offset + range.count > g_dirtyHi) g_dirtyHi = range.offset + range.count;
+			if (range.offset < g_bkDirtyLo) g_bkDirtyLo = range.offset;
+			if (range.offset + range.count > g_bkDirtyHi) g_bkDirtyHi = range.offset + range.count;
+			g_pieces++;
+			g_freeReuses++;
+			return true;
+		}
+	}
+
 	if (g_used + (unsigned int)count > kMaxVertices)
 	{
 		g_full = true;
@@ -311,6 +404,20 @@ bool MeshStore(MeshRange &range, const FFlatVertex *verts, int count)
 	if (g_used > g_bkDirtyHi) g_bkDirtyHi = g_used;
 	g_pieces++;
 	return true;
+}
+
+void MeshArenaStats(unsigned int &used, unsigned int &parked, int &reuses, int &reallocs)
+{
+	used = g_used; parked = g_freeVerts; reuses = g_freeReuses; reallocs = g_reallocs;
+}
+
+// How many piece RECORDS the level holds, and how many offsets are still indexed. A piece list that
+// grows while the vertex arena stands still means pieces are being re-registered as new rather than
+// found -- which is a different leak from the arena's, and the one that actually bit.
+void MeshPieceListStats(unsigned int &pieces, unsigned int &indexed)
+{
+	pieces = g_pieceList.Size();
+	indexed = g_pieceByOffset.CountUsed();
 }
 
 void MeshTakeDirty(unsigned int &lo, unsigned int &hi)
