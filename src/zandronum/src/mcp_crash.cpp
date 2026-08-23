@@ -353,12 +353,15 @@ LONG WINAPI MCP_VectoredFilter( EXCEPTION_POINTERS *info )
 {
 	if ( info == NULL || info->ExceptionRecord == NULL ) return EXCEPTION_CONTINUE_SEARCH;
 	const DWORD code = info->ExceptionRecord->ExceptionCode;
-	// Only the fatal ones. C++ throws (0xE06D7363) and debugger notifications are normal traffic and
-	// would bury the signal -- FFmpeg alone throws routinely.
-	const bool fatal = ( code == 0xC0000374 /* heap corruption */ ||
-	                     code == 0xC0000409 /* stack buffer overrun / __fastfail */ ||
-	                     code == 0xC0000005 /* access violation */ ||
-	                     code == 0xC000001D || code == 0xC0000096 );
+	// [rc4l] Everything FATAL, not a hand-picked list.
+	//
+	// This started as five codes and missed 0xC00000FD -- STACK OVERFLOW -- which is precisely the
+	// shape the remaining failure has: it dies during level TEARDOWN, silently, and only after enough
+	// maps have been loaded for something recursive to get deep enough. A whitelist is the wrong
+	// structure for "tell me how it died"; anything in the 0xC0000000 range is a fatal NTSTATUS, and
+	// the only regular traffic up there is the C++ throw code, which FFmpeg raises constantly.
+	const bool cppThrow = ( code == 0xE06D7363 );
+	const bool fatal = ( ( code & 0xF0000000 ) == 0xC0000000 ) && !cppThrow;
 	if ( !fatal ) return EXCEPTION_CONTINUE_SEARCH;
 
 	static volatile long reported = 0;
@@ -412,6 +415,12 @@ void MCP_Crash_Init()
 #ifdef _WIN32
 	SetUnhandledExceptionFilter( MCP_CrashFilter );
 	// ...and the two routes that filter never sees.
+	// [rc4l] Reserve stack for the handler, or a STACK OVERFLOW cannot be reported: the handler runs
+	// on the very stack that just ran out. This is what SetThreadStackGuarantee is for.
+	{
+		ULONG guarantee = 65536;
+		SetThreadStackGuarantee( &guarantee );
+	}
 	AddVectoredExceptionHandler( 1 /* first */, MCP_VectoredFilter );
 	_set_invalid_parameter_handler( InvalidParameterHandler );
 	_set_purecall_handler( PureCallHandler );
