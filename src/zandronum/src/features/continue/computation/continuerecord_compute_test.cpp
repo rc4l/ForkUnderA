@@ -253,3 +253,32 @@ TEST(ContinueRecord, AWadLineWithNoNameIsDropped)
 
 	EXPECT_TRUE(out.wads.empty());
 }
+
+TEST(ContinueRecord, TheMapsOwnWadSurvivesTheRoundTrip)
+{
+	ContinueRecord in = SingleRecord();
+	in.mapWad = "eviternity.wad";
+
+	EXPECT_EQ("eviternity.wad", RoundTrip(in).mapWad);
+}
+
+TEST(ContinueRecord, TheServersNameSurvivesTheRoundTrip)
+{
+	// Spaces and punctuation and all: a hostname is whatever the operator typed.
+	ContinueRecord in = ServerRecord();
+	in.serverName = "Kappa's Duel Server  [EU]";
+
+	EXPECT_EQ("Kappa's Duel Server  [EU]", RoundTrip(in).serverName);
+}
+
+TEST(ContinueRecord, TheNewFieldsAreOptional)
+{
+	// They were added without bumping the format, so a record written before they existed still
+	// parses and simply describes itself slightly less well.
+	ContinueRecord out;
+	ASSERT_TRUE(ParseContinue("fua-continue 1\nkind single\nsave /x\nmap MAP11\n", out));
+	EXPECT_EQ("", out.mapWad);
+
+	ASSERT_TRUE(ParseContinue("fua-continue 1\nkind server\naddress 1.2.3.4:10666\n", out));
+	EXPECT_EQ("", out.serverName);
+}
