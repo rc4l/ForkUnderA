@@ -473,7 +473,7 @@ const char *TooltipFor( int tab, HeaderReach reach )
 		return HeaderReachTooltip( reach );
 
 	if ( tab == static_cast<int>( HeaderTab::Continue ))
-		return "Pick up where you left off";
+		return Continue_Tooltip( );
 
 	return "Single player, options and everything else";
 }

@@ -28,6 +28,7 @@
 #include "zstring.h"
 
 #include <stdio.h>
+#include <string.h>
 #include <string>
 
 namespace zx
@@ -39,6 +40,7 @@ namespace
 ContinueRecord g_Record;
 bool g_bLoaded = false;
 FString g_Label;
+FString g_Tooltip;
 
 std::string RecordPath()
 {
@@ -172,6 +174,43 @@ bool ProbeWadsMatch( ULONG slot )
 	return true;
 }
 
+// [rc4l] Which file the MAP itself came from, which is not the same question as which files are
+// loaded. Several may define MAP11; only one of them is the one that opens.
+//
+// The rule is P_OpenMapData's, mirrored rather than guessed at: a map can be a plain lump, or
+// maps/<name>.wad, or maps/<name>.map, and THE HIGHEST LUMP NUMBER WINS because that is the copy
+// loaded last. Checking only the plain lump -- the obvious version -- finds nothing at all for a
+// map inside a pk3, and checking them in a fixed order names the IWAD's MAP11 while the player is
+// standing in a megawad's.
+std::string MapWadName( const char *mapName )
+{
+	if (( mapName == NULL ) || ( *mapName == 0 ))
+		return std::string( );
+
+	int best = -1;
+
+	// Names longer than eight characters cannot be a plain lump at all.
+	if ( strlen( mapName ) <= 8 )
+		best = Wads.CheckNumForName( mapName );
+
+	FString path;
+	path.Format( "maps/%s.wad", mapName );
+	const int asWad = Wads.CheckNumForFullName( path );
+	if ( asWad > best )
+		best = asWad;
+
+	path.Format( "maps/%s.map", mapName );
+	const int asMap = Wads.CheckNumForFullName( path );
+	if ( asMap > best )
+		best = asMap;
+
+	if ( best < 0 )
+		return std::string( );
+
+	const char *wad = Wads.GetWadName( Wads.GetLumpFile( best ));
+	return (( wad != NULL ) && ( *wad != 0 )) ? std::string( wad ) : std::string( );
+}
+
 // Whether what is loaded right now is what the record describes, by bare name and in order. Names
 // alone, because that is all a record can hold about files this machine may keep anywhere.
 bool SameWadSetAsRecord( )
@@ -245,6 +284,29 @@ bool Continue_IsShown( void )
 	return ContinueIsShown( in );
 }
 
+const char *Continue_Tooltip( void )
+{
+	if ( Continue_IsShown( ) == false )
+	{
+		g_Tooltip = "";
+		return g_Tooltip.GetChars( );
+	}
+
+	if ( g_Record.kind == ContinueKind::Server )
+	{
+		// The name if we have one, the address if we never learned it.
+		const char *where = g_Record.serverName.empty( )
+			? g_Record.address.c_str( ) : g_Record.serverName.c_str( );
+		g_Tooltip.Format( "Continue playing online in %s", where );
+	}
+	else if ( g_Record.mapWad.empty( ) == false )
+		g_Tooltip.Format( "Continue singleplayer in %s on %s", g_Record.mapName.c_str( ), g_Record.mapWad.c_str( ) );
+	else
+		g_Tooltip.Format( "Continue singleplayer in %s", g_Record.mapName.c_str( ) );
+
+	return g_Tooltip.GetChars( );
+}
+
 const char *Continue_Label( void )
 {
 	if ( Continue_IsShown( ) == false )
@@ -284,6 +346,9 @@ void Continue_NoteQuit( void )
 	record.savePath = SavePath( );
 	record.saveVersion = SAVEVER;
 	record.mapName = level.MapName.GetChars( );
+
+	record.mapWad = MapWadName( level.MapName.GetChars( ));
+
 	CollectLoadedWads( record );
 
 	// [rc4l] G_DoSaveGame and not G_SaveGame, which only sets gameaction = ga_savegame and leaves the
@@ -302,8 +367,20 @@ void Continue_NoteJoined( void )
 
 	ContinueRecord record;
 	record.kind = ContinueKind::Server;
-	record.address = CLIENT_GetServerAddress( ).ToString( );
+
+	const NETADDRESS_s address = CLIENT_GetServerAddress( );
+	record.address = address.ToString( );
 	record.password = cl_password;
+
+	// What the server calls itself, if the browser happens to know: an address in a tooltip is
+	// honest but unreadable, and a name is what the player recognises.
+	const LONG slot = BROWSER_GetListIDByAddress( address );
+	if ( slot >= 0 )
+	{
+		const char *name = BROWSER_GetHostName( slot );
+		if (( name != NULL ) && ( *name != 0 ))
+			record.serverName = name;
+	}
 	CollectLoadedWads( record );
 
 	WriteRecord( record );

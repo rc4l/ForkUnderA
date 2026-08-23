@@ -71,12 +71,16 @@ std::string SerialiseContinue(const ContinueRecord &record)
 		out << "savever " << record.saveVersion << '\n';
 		if (record.mapName.empty() == false)
 			out << "map " << record.mapName << '\n';
+		if (record.mapWad.empty() == false)
+			out << "mapwad " << record.mapWad << '\n';
 	}
 	else
 	{
 		out << "address " << record.address << '\n';
 		if (record.password.empty() == false)
 			out << "password " << record.password << '\n';
+		if (record.serverName.empty() == false)
+			out << "servername " << record.serverName << '\n';
 	}
 
 	if (record.iwad.empty() == false)
@@ -127,6 +131,8 @@ bool ParseContinue(const std::string &text, ContinueRecord &out)
 		else if (key == "save")      out.savePath = value;
 		else if (key == "savever")   out.saveVersion = atoi(value.c_str());
 		else if (key == "map")       out.mapName = value;
+		else if (key == "mapwad")    out.mapWad = value;
+		else if (key == "servername") out.serverName = value;
 		else if (key == "address")   out.address = value;
 		else if (key == "password")  out.password = value;
 		else if (key == "iwad")      out.iwad = value;

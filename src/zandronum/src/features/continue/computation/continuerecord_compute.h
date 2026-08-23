@@ -43,10 +43,12 @@ struct ContinueRecord
 	std::string savePath;
 	int saveVersion;
 	std::string mapName;
+	std::string mapWad;		// the file the map itself came from, for the tooltip
 
 	// Server.
 	std::string address;
 	std::string password;	// empty when the server had none
+	std::string serverName;	// as the server called itself, empty if it never said
 
 	// Both, because both have to land on the same files we left.
 	std::string iwad;
@@ -58,7 +60,8 @@ struct ContinueRecord
 
 // The format this build writes. Bumped only when a field changes meaning; adding an optional field
 // does not need it, since an older reader ignoring an unknown key is safe and a newer record is
-// refused outright anyway.
+// refused outright anyway. mapWad and serverName were added this way and cost an older build
+// nothing -- it simply describes the session slightly less well in a tooltip.
 const int kContinueFormat = 1;
 
 // Render the record. Returns an empty string for a record with nothing to continue, so a caller that

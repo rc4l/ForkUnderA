@@ -30,6 +30,10 @@ bool Continue_IsShown();
 // server's address or the map. Never null; empty when there is nothing.
 const char *Continue_Label();
 
+// What the bar should say about it while hovered: where, specifically, it is continuing from.
+// Never null; empty when there is nothing.
+const char *Continue_Tooltip();
+
 // Act on it: reload the WAD set the session needs and go. Does not return on the path that works,
 // because the reload throws.
 void Continue_Activate();

@@ -547,9 +547,13 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 		std::string escaped;
 		JsonEscape( std::string( zx::Continue_RecordTarget( ) ), escaped );
 
+		std::string tip;
+		JsonEscape( std::string( zx::Continue_Tooltip( ) ), tip );
+
 		std::string body = "{\"shown\":" + B( zx::Continue_IsShown( ) );
 		body += ",\"kind\":\"" + kind + "\"";
 		body += ",\"target\":\"" + escaped + "\"";
+		body += ",\"tooltip\":\"" + tip + "\"";
 		body += ",\"saveExists\":" + B( zx::Continue_DebugSaveExists( ) );
 		body += ",\"saveVersion\":" + I( (long long)zx::Continue_DebugSaveVersion( ) );
 		body += ",\"minSaveVersion\":" + I( (long long)MINSAVEVER );
