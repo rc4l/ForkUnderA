@@ -254,6 +254,23 @@ void StartStream(Stream *st)
 	static bool s_termHook = false;
 	if (!s_termHook) { atterm(ReplayAtTerm); s_termHook = true; }
 
+	// [rc4l] NEVER assign over a joinable thread.
+	//
+	// `st->worker = std::thread(...)` on a thread that is still joinable calls std::terminate(), and
+	// std::terminate is the quietest way a process can die: no message on stdout or stderr, no crash
+	// dump, and the log simply stops mid-line. Every caller guards on `st->running`, but `running` is
+	// a separate bool from whether the thread object holds anything -- a worker that returned on its
+	// own, or any path that clears the flag without joining, puts the two out of step. Costing whole
+	// test runs to learn one bit ("it died") is what this guard is for; it is cheap and it cannot be
+	// wrong.
+	if (st->worker.joinable())
+	{
+		{ std::lock_guard<std::mutex> lk(st->mtx); st->stop = true; }
+		st->cv.notify_all();
+		st->worker.join();
+	}
+	st->running = false;
+
 	{
 		std::lock_guard<std::mutex> lk(st->mtx);
 		st->stop = false;

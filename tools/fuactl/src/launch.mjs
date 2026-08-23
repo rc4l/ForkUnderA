@@ -168,9 +168,18 @@ export async function launchInstance(opts = {}) {
   writeInstanceIni(iniPath, opts);
   const args = engineArgs(opts, iniPath);
 
+  // [rc4l] CAPTURE the engine's own stdout and stderr. This was "ignore".
+  //
+  // The bridge tees the CONSOLE to its log, which covers everything the engine prints on purpose --
+  // and nothing about how it died. An engine that hits a fatal error, an unhandled exception or a
+  // failed allocation says so on stderr and then exits, and with stdio ignored that message went
+  // nowhere: the log simply stopped mid-line and the process was gone. Chasing a crash that reports
+  // nothing was costing whole test runs to learn one bit ("it died").
+  const stdioLog = path.join(logDir, `engine-${port}.stdio.log`);
+  const stdioFd = fs.openSync(stdioLog, "a");
   const proc = spawn(bin, args, {
     cwd: dir,
-    stdio: "ignore",
+    stdio: ["ignore", stdioFd, stdioFd],
     env: {
       ...process.env,
       ZANDRONUM_BRIDGE_PORT: String(port),
@@ -181,7 +190,7 @@ export async function launchInstance(opts = {}) {
       ZANDRONUM_BRIDGE_INPUT_LOCK: opts.allowOsInput ? "" : "1",
     },
   });
-  return { proc, pid: proc.pid, port, token, host: opts.host || "127.0.0.1", log };
+  return { proc, pid: proc.pid, port, token, host: opts.host || "127.0.0.1", log, stdioLog, logDir };
 }
 
 // Ask an instance to quit cleanly (SIGTERM -> engine's clean-quit path), then hard-kill after grace.

@@ -148,6 +148,9 @@ async function main() {
           : undefined,
       });
       console.log(`launched pid=${inst.pid} port=${inst.port} token=${inst.token}`);
+      // Where to look when it dies. The bridge log is the console; the stdio log is how it died.
+      console.log(`logs: ${inst.log}`);
+      console.log(`      ${inst.stdioLog}`);
       console.log(`(rpc it with: fuactl rpc sim.tic --port ${inst.port} --token ${inst.token})`);
       process.on("SIGINT", async () => { await stopInstance(inst); process.exit(0); });
       await new Promise(() => {}); // stay up
