@@ -28,6 +28,9 @@ void MCP_Bridge_Shutdown();
 
 // Arm the crash-backtrace handler (implemented in mcp_crash.cpp). Idempotent, opt-in.
 void MCP_Crash_Init();
+// Bumped by the game thread every pass of the main loop. If it stops while the process is still
+// alive, the hang watchdog suspends that thread and writes its stack -- see mcp_crash.cpp.
+void MCP_Crash_NoteAlive();
 
 // Marks the sim|render boundary for the coarse perf split (anchored before D_Display in D_DoomLoop).
 void MCP_RPC_MarkRender();

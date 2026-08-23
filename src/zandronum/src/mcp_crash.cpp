@@ -25,7 +25,12 @@
 #include "features/crashreport/computation/signal_chain_compute.h"
 
 #include <stdlib.h>
+#include <cwchar>
 #include <stdio.h>
+#include <exception>
+#include <thread>
+#include <signal.h>
+#include <stdlib.h>
 #include <string.h>
 
 #ifdef _WIN32
@@ -181,6 +186,219 @@ namespace
 #endif
 }
 
+// [rc4l] abort() and std::terminate DO NOT reach SetUnhandledExceptionFilter.
+//
+// That filter only sees structured exceptions -- an access violation gets a full symbolised stack in
+// <bridge log>.crash, which is how every crash in this project has been read. A std::terminate (an
+// exception escaping a thread, a joinable std::thread assigned over or destroyed) and a plain abort()
+// go straight to the CRT and take the process down with NO filter call, NO .crash file, NO message
+// and NO dump. The log simply stops mid-line.
+//
+// That is exactly the death that cost most of a session to characterise: four identical failures
+// that reported nothing at all, and could not even be distinguished from the bridge watchdog reaping
+// the process. Both routes now write the same report the SEH filter does.
+void WriteAbortReport( const char *why )
+{
+	FILE *f = fopen( g_crashPath, "w" );
+	if ( f == NULL ) return;
+	fprintf( f, "=== MCP ENGINE ABORT ===\nreason: %s\npid: %lu\n\nbacktrace:\n",
+		why ? why : "(none)", (unsigned long)GetCurrentProcessId() );
+	void *frames[128];
+	USHORT n = CaptureStackBackTrace( 0, 128, frames, NULL );
+	HANDLE proc = GetCurrentProcess();
+	SymSetOptions( SYMOPT_UNDNAME | SYMOPT_DEFERRED_LOADS );
+	SymInitialize( proc, NULL, TRUE );
+	char symbuf[sizeof( SYMBOL_INFO ) + 256];
+	SYMBOL_INFO *sym = (SYMBOL_INFO *)symbuf;
+	sym->SizeOfStruct = sizeof( SYMBOL_INFO );
+	sym->MaxNameLen = 255;
+	for ( USHORT i = 0; i < n; ++i )
+	{
+		DWORD64 addr = (DWORD64)(uintptr_t)frames[i];
+		if ( SymFromAddr( proc, addr, 0, sym ) )
+			fprintf( f, "  #%u %s + 0x%llx  [0x%p]\n", i, sym->Name,
+				(unsigned long long)( addr - sym->Address ), frames[i] );
+		else
+			fprintf( f, "  #%u [0x%p]\n", i, frames[i] );
+	}
+	fclose( f );
+	fprintf( stderr, "fua: ENGINE ABORT (%s) -- report written to %s\n",
+		why ? why : "(none)", g_crashPath );
+	fflush( stderr );
+}
+
+// [rc4l] A VECTORED handler, because the worst deaths never reach the others.
+//
+// SetUnhandledExceptionFilter runs at the END of exception dispatch and only if nothing handled it.
+// The two codes that matter most here skip it: STATUS_HEAP_CORRUPTION (0xC0000374) and
+// STATUS_STACK_BUFFER_OVERRUN (0xC0000409, which is also what __fastfail raises) terminate the
+// process immediately, with no filter call, no .crash file and no dump. 0xC0000409 is exactly what
+// rc4l saw on wdiex02, and the silent death after N map loads has every hallmark of the same family:
+// nothing on stderr, no report, the log stopping mid-line.
+//
+// A vectored handler runs FIRST, ahead of SEH dispatch, so it gets a look in before the process is
+// torn down. It reports and then always continues the search -- it never swallows anything.
+// [rc4l] The CRT's invalid-parameter path, which is the LAST silent exit left.
+//
+// Hand the CRT something it considers impossible -- a closed FILE*, a bad iterator, a malformed
+// format string -- and it calls the invalid-parameter handler, whose default is to fail fast. That
+// is not an SEH exception, not abort(), and not std::terminate, so the unhandled-exception filter,
+// the terminate handler and the SIGABRT handler all stay quiet and the process simply evaporates.
+// Every other silent route has been closed off and the engine still died saying nothing, so this one
+// gets a handler too. In a release CRT the arguments arrive empty, which is why it reports what it
+// can and leans on the backtrace for the rest.
+// [rc4l] A HANG reports too, because the engine does not always die -- sometimes it spins.
+//
+// Every handler above catches a process that STOPS. The failure that actually cost this session was
+// a process that kept running: after ~21 map changes the game thread went into an infinite loop
+// during level setup, the bridge stopped answering, the harness gave up, and only then did the
+// watchdog reap it -- so it looked exactly like a silent crash and no handler ever fired.
+//
+// The game thread bumps a heartbeat every pass of the main loop. If it stops bumping while the
+// process is still alive, this suspends it, walks its stack with dbghelp and writes the same report
+// a crash would. A spinning thread cannot be asked what it is doing; it has to be taken and read.
+volatile LONG   g_heartbeat = 0;
+HANDLE          g_mainThread = NULL;
+volatile LONG   g_hangReported = 0;
+
+void WriteThreadStack( HANDLE thread, const char *why )
+{
+	if ( thread == NULL ) return;
+	if ( InterlockedExchange( &g_hangReported, 1 ) != 0 ) return;
+
+	FILE *f = fopen( g_crashPath, "w" );
+	if ( f == NULL ) return;
+	fprintf( f, "=== MCP ENGINE HANG ===\nreason: %s\npid: %lu\n\nstuck thread backtrace:\n",
+		why, (unsigned long)GetCurrentProcessId() );
+
+	SuspendThread( thread );
+	CONTEXT ctx;
+	memset( &ctx, 0, sizeof( ctx ) );
+	ctx.ContextFlags = CONTEXT_FULL;
+	if ( GetThreadContext( thread, &ctx ) )
+	{
+		HANDLE proc = GetCurrentProcess();
+		SymSetOptions( SYMOPT_UNDNAME | SYMOPT_DEFERRED_LOADS );
+		SymInitialize( proc, NULL, TRUE );
+
+		STACKFRAME64 sf;
+		memset( &sf, 0, sizeof( sf ) );
+		sf.AddrPC.Offset    = ctx.Rip; sf.AddrPC.Mode    = AddrModeFlat;
+		sf.AddrFrame.Offset = ctx.Rbp; sf.AddrFrame.Mode = AddrModeFlat;
+		sf.AddrStack.Offset = ctx.Rsp; sf.AddrStack.Mode = AddrModeFlat;
+
+		char symbuf[sizeof( SYMBOL_INFO ) + 256];
+		SYMBOL_INFO *sym = (SYMBOL_INFO *)symbuf;
+		sym->SizeOfStruct = sizeof( SYMBOL_INFO );
+		sym->MaxNameLen = 255;
+
+		for ( int i = 0; i < 64; i++ )
+		{
+			if ( !StackWalk64( IMAGE_FILE_MACHINE_AMD64, proc, thread, &sf, &ctx, NULL,
+					SymFunctionTableAccess64, SymGetModuleBase64, NULL ) )
+				break;
+			if ( sf.AddrPC.Offset == 0 ) break;
+			DWORD64 addr = sf.AddrPC.Offset;
+			if ( SymFromAddr( proc, addr, 0, sym ) )
+				fprintf( f, "  #%d %s + 0x%llx  [0x%llx]\n", i, sym->Name,
+					(unsigned long long)( addr - sym->Address ), (unsigned long long)addr );
+			else
+				fprintf( f, "  #%d [0x%llx]\n", i, (unsigned long long)addr );
+		}
+	}
+	ResumeThread( thread );
+	fclose( f );
+	fprintf( stderr, "fua: ENGINE HANG -- stuck-thread stack written to %s\n", g_crashPath );
+	fflush( stderr );
+}
+
+void HangWatchdog()
+{
+	LONG last = -1;
+	int stalls = 0;
+	for ( ;; )
+	{
+		Sleep( 5000 );
+		const LONG now = g_heartbeat;
+		if ( now != last ) { last = now; stalls = 0; continue; }
+		// Level loads legitimately block the main loop, so only a LONG stall counts.
+		if ( ++stalls >= 6 )   // 30 seconds without a single pass of the main loop
+		{
+			WriteThreadStack( g_mainThread, "main loop stalled for 30s" );
+			return;
+		}
+	}
+}
+
+void InvalidParameterHandler( const wchar_t *expr, const wchar_t *func, const wchar_t *file,
+	unsigned int line, uintptr_t )
+{
+	char why[256];
+	char e[64] = "?", fn[64] = "?";
+	if ( expr ) wcstombs( e, expr, sizeof( e ) - 1 );
+	if ( func ) wcstombs( fn, func, sizeof( fn ) - 1 );
+	(void)file;
+	snprintf( why, sizeof( why ), "CRT invalid parameter -- expr '%s' in %s (line %u)", e, fn, line );
+	WriteAbortReport( why );
+	_exit( 3 );
+}
+
+void PureCallHandler()
+{
+	WriteAbortReport( "pure virtual call" );
+	_exit( 3 );
+}
+
+LONG WINAPI MCP_VectoredFilter( EXCEPTION_POINTERS *info )
+{
+	if ( info == NULL || info->ExceptionRecord == NULL ) return EXCEPTION_CONTINUE_SEARCH;
+	const DWORD code = info->ExceptionRecord->ExceptionCode;
+	// Only the fatal ones. C++ throws (0xE06D7363) and debugger notifications are normal traffic and
+	// would bury the signal -- FFmpeg alone throws routinely.
+	const bool fatal = ( code == 0xC0000374 /* heap corruption */ ||
+	                     code == 0xC0000409 /* stack buffer overrun / __fastfail */ ||
+	                     code == 0xC0000005 /* access violation */ ||
+	                     code == 0xC000001D || code == 0xC0000096 );
+	if ( !fatal ) return EXCEPTION_CONTINUE_SEARCH;
+
+	static volatile long reported = 0;
+	if ( InterlockedExchange( &reported, 1 ) != 0 ) return EXCEPTION_CONTINUE_SEARCH;
+
+	char why[128];
+	snprintf( why, sizeof( why ), "vectored: exception 0x%08lx at %p",
+		(unsigned long)code, (void *)info->ExceptionRecord->ExceptionAddress );
+	WriteAbortReport( why );
+	return EXCEPTION_CONTINUE_SEARCH;
+}
+
+void TerminateHandler()
+{
+	const char *what = "std::terminate";
+	// If a live exception caused it, its message is the single most useful fact here.
+	static char buf[512];
+	try { std::rethrow_exception( std::current_exception() ); }
+	catch ( const std::exception &e )
+	{
+		snprintf( buf, sizeof( buf ), "std::terminate -- uncaught %s", e.what() );
+		what = buf;
+	}
+	catch ( ... ) { what = "std::terminate -- uncaught non-std exception"; }
+	WriteAbortReport( what );
+	_exit( 3 );
+}
+
+void AbortHandler( int )
+{
+	WriteAbortReport( "abort() / SIGABRT" );
+	_exit( 3 );
+}
+
+// The game thread's proof of life. Cheap enough for the main loop: one interlocked increment.
+void MCP_Crash_NoteAlive()
+{
+	InterlockedIncrement( &g_heartbeat );
+}
+
 // Arm the crash handler once. Safe to call repeatedly (cheap no-op after the
 // first). No-op unless the bridge is opted in via ZANDRONUM_BRIDGE_PORT.
 void MCP_Crash_Init()
@@ -193,6 +411,16 @@ void MCP_Crash_Init()
 
 #ifdef _WIN32
 	SetUnhandledExceptionFilter( MCP_CrashFilter );
+	// ...and the two routes that filter never sees.
+	AddVectoredExceptionHandler( 1 /* first */, MCP_VectoredFilter );
+	_set_invalid_parameter_handler( InvalidParameterHandler );
+	_set_purecall_handler( PureCallHandler );
+	// A real handle to the thread that armed this -- the game thread -- so a hang can be read off it.
+	DuplicateHandle( GetCurrentProcess(), GetCurrentThread(), GetCurrentProcess(), &g_mainThread,
+		0, FALSE, DUPLICATE_SAME_ACCESS );
+	std::thread( HangWatchdog ).detach();
+	std::set_terminate( TerminateHandler );
+	signal( SIGABRT, AbortHandler );
 #else
 	// Warm up the unwinder so the handler does no lazy work.
 	void *warm[4];

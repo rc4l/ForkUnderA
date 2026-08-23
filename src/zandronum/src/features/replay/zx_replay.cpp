@@ -175,7 +175,34 @@ std::string ClipsDir()
 	return dir;
 }
 
+// [rc4l] An exception that escapes a thread function is std::terminate, and std::terminate takes the
+// whole process down with no message, no crash report and nothing in any log -- SetUnhandledException
+// Filter never sees it. This body allocates (frame buffers, encoder state) and calls into FFmpeg, so
+// a bad_alloc or a library throw here would kill the engine mid-game and look exactly like the silent
+// death that cost a session to characterise. A recording that stops is a bug; a recording that stops
+// the GAME is a different order of bug.
+void WorkerLoopInner(Stream *st);
+
 void WorkerLoop(Stream *st)
+{
+	try
+	{
+		WorkerLoopInner(st);
+	}
+	// stderr, not Printf: this runs on the capture thread, and the console is the game thread's.
+	catch (const std::exception &e)
+	{
+		fprintf(stderr, "fua replay: capture thread stopped -- %s\n", e.what());
+		fflush(stderr);
+	}
+	catch (...)
+	{
+		fprintf(stderr, "fua replay: capture thread stopped on an unknown exception\n");
+		fflush(stderr);
+	}
+}
+
+void WorkerLoopInner(Stream *st)
 {
 	zx::ReplayEncoder enc;
 	bool inited = false;

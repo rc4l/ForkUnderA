@@ -357,6 +357,7 @@ void MCP_Bridge_Poll()
 		exit( 0 );
 	}
 
+	MCP_Crash_NoteAlive(); // proof of life for the hang watchdog
 	MCP_RPC_Tick(); // step re-freeze, event pump, HUD frame capture (engine-facing)
 
 	for ( ;; )
