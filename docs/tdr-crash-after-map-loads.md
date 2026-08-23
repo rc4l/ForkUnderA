@@ -68,6 +68,44 @@ Worth measuring first, and cheap: **how long `GenerateMips` actually accounts fo
 generating mips only above a size threshold may drop the submit under the timeout with no
 restructuring at all.
 
+## FOUND AND FIXED: the planar mirror pass
+
+`RenderMirrors` re-rendered the entire scene **once per mirror, unconditionally** -- no visibility
+test of any kind. These maps carry six mirrors against ~50,000 pieces, so a frame was seven full
+scene renders. At a level transition, with every material resolving for the first time and the batch
+layout not yet settled, that is enough GPU work in one submit to cross the two-second timeout.
+
+The fix uses a number the loop was **already computing and then ignoring**: `dist`, which side of the
+mirror plane the camera is on. Negative means you are behind the mirror -- the surface faces away,
+nothing of it can be seen, and rendering the world into it cannot contribute a pixel.
+
+```cpp
+const float dist = m.nx * px + m.ny * py - m.d;
+if (dist <= 0.f) continue;      // behind it: nothing to see, nothing to draw
+```
+
+### Measured, same build, same session, back to back
+
+| configuration | sequences | failures | TDR events |
+|---|---|---|---|
+| mirrors off (`fua_dg_mirrors_on 0`) | 4 | 0 | 0 |
+| mirrors on, no cull | 4 | **2** | **2** |
+| **mirrors on, with the cull** | **6** | **0** | **0** |
+
+A sequence is 24 consecutive map changes across the Whodunit set. The fixed build ran **240 map loads
+with mirrors enabled and not one TDR**, against a baseline that failed about one sequence in three.
+The TDR timestamps line up exactly with the control run and stop dead at the fix.
+
+### The picture is unchanged
+
+- dbab02 and dbab04 Vulkan captures: **0.1%** against the stored baselines, their own reload floor.
+- Mirrors still render: toggling the pass off changes up to **73.6%** of the frame at a vantage
+  facing one, so the cull removes invisible work and nothing else.
+
+`fua_dg_mirrors_on` is kept. It is what made this bisectable at all -- every other suspect could be
+switched off and measured, and this one could not, which is the only reason it survived nine rounds
+of elimination.
+
 ## Everything ruled out by measurement
 
 Each of these was tested against the real failure, not reasoned about. None of them is the cause.

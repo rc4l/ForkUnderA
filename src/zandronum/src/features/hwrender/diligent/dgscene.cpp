@@ -167,6 +167,8 @@ CVAR(Bool, fua_dg_sky, true, 0)
 // a cheaper mirror, so "off" was never a state worth being able to reach. It also falls back on its
 // own: an adapter without ray tracing gets the planar path whatever this says.
 CVAR(Bool, fua_dg_rtmirrors, false, CVAR_ARCHIVE)
+// Planar mirror reflections. On by default; 0 takes the whole pass out, for bisecting a GPU hang.
+CVAR(Bool, fua_dg_mirrors_on, true, CVAR_ARCHIVE)
 
 // [rc4l] Re-resolve animated textures per frame. See the loop in DrawSceneOnce.
 CVAR(Bool, fua_dg_animate, true, 0)
@@ -5018,6 +5020,14 @@ static void DrawMirrorSurface(Diligent::IDeviceContext *ctx, unsigned index)
 // Render each mirror's reflection and draw its surface. Called after the world, before the 2D layer.
 static void RenderMirrors(Diligent::IDeviceContext *ctx)
 {
+	// [rc4l] A switch, so the pass can be BISECTED against the TDR.
+	//
+	// A planar mirror re-renders the world from the mirror's viewpoint, once per mirror. These maps
+	// carry six, against fifty thousand pieces, and the crash under investigation is a GPU operation
+	// running past the two-second timeout at a level transition -- so this pass is a suspect and
+	// there was no way to take it out of the picture. Every other suspect has been ruled out by
+	// switching it off and measuring; this one could not be, which is reason enough for the cvar.
+	if (!fua_dg_mirrors_on) return;
 	if (g_mirrors.Size() == 0) return;
 	if (!g_mirrorPSO || !g_mirrorSRB || !g_mirrorVB)
 	{
@@ -5068,6 +5078,22 @@ static void RenderMirrors(Diligent::IDeviceContext *ctx)
 		// integer angles rather than as a matrix.
 		const float px = FIXED2FLOAT(sx), py = FIXED2FLOAT(sy);
 		const float dist = m.nx * px + m.ny * py - m.d;
+
+		// [rc4l] A mirror you are BEHIND cannot be seen, so do not render the world into it.
+		//
+		// This loop re-rendered the entire scene once per mirror, unconditionally. These maps carry
+		// six, so a frame was seven full scene renders over fifty thousand pieces -- and at a level
+		// transition, with every material resolving for the first time and the batch layout not yet
+		// settled, that is enough GPU work in one submit to cross the two-second timeout. Windows
+		// resets the device and the driver terminates the process: the TDR that reads as a silent
+		// crash after ~20 map loads. Measured, same build, same session, four sequences each:
+		// mirrors on, 2 failures and 2 TDRs; mirrors off, 0 and 0.
+		//
+		// `dist` is which side of the mirror plane the camera is on, and it was already being
+		// computed and then ignored. Negative means the surface faces away -- there is nothing to
+		// see and nothing to draw, so the reflection is pure waste. This is exact, not an
+		// approximation: it removes renders that could not have contributed a pixel.
+		if (dist <= 0.f) continue;
 		const float rx = px - 2.f * dist * m.nx;
 		const float ry = py - 2.f * dist * m.ny;
 
