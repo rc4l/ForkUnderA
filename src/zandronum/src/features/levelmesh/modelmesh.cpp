@@ -61,8 +61,12 @@ void ModelCaptureEnd()
 
 bool ModelCaptureActive()
 {
-	return fua_mesh_models && g_sprite != NULL && g_matrix != NULL
-		&& zx::hwrender::BackendPresenting();
+	// [rc4l] NOT gated on the backend presenting, and that is deliberate -- RegisterSprite is not
+	// either. BackendPresenting means the Diligent window is covering GL's, which is false in a
+	// side-by-side session where BOTH windows are live: gating on it left the Vulkan window with no
+	// models in exactly the configuration used to compare the two renderers. The mesh is what a
+	// backend draws from, so it is filled whenever there is something to put in it.
+	return fua_mesh_models && g_sprite != NULL && g_matrix != NULL;
 }
 
 void ModelStatsReset() { g_models = g_surfaces = g_triangles = g_skipped = 0; }
@@ -179,6 +183,6 @@ CCMD(fua_models)
 	zx::levelmesh::ModelStatsGet(models, surfaces, triangles, skipped);
 	Printf("models: %d captured last frame, %d surfaces, %d triangles, %d surfaces skipped\n",
 		models, surfaces, triangles, skipped);
-	Printf("  capture is %s, and %s\n", fua_mesh_models ? "on" : "off",
-		zx::hwrender::BackendPresenting() ? "a backend is presenting" : "GL is presenting");
+	Printf("  capture is %s; the backend %s presenting\n", fua_mesh_models ? "on" : "off",
+		zx::hwrender::BackendPresenting() ? "is" : "is not (GL's own window, or side by side)");
 }
