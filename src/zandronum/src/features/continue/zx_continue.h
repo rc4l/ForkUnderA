@@ -77,6 +77,11 @@ void Continue_NoteReconnecting( bool bReconnecting );
 // middle of a teardown, which is what JoinTick already exists to avoid.
 void Continue_NoteLeftServer();
 
+// [rc4l] Join the server we just started, once the child reports itself listening. HostStart only
+// spawns it; joining is a separate step the menu path owns, and anything else that hosts has to ask
+// for it too or the player is left outside a server they meant to be in.
+void Continue_JoinHostWhenReady();
+
 // Call once per frame. Finishes a Continue that needed a WAD reload to get here, since the reload
 // does not return and the load has to happen on the other side of it.
 void Continue_Tick();

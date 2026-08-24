@@ -93,3 +93,28 @@ TEST(ContinueWrite, AJoinThatLandsAsWeAreDyingIsNot)
 {
 	EXPECT_EQ(ContinueWriteVerdict::Skip, DecideContinueWriteOnJoin(true));
 }
+
+TEST( ContinueWrite, WhileHostingTheLocalMapIsNotSnapshotted )
+{
+	// Joining our own server comes straight back through here. Snapshotting then replaced the record
+	// of the game we are HOSTING with whatever map we happened to be standing in when we started it,
+	// so leaving the hosted game later took the player to that map instead of starting it again.
+	ContinueWriteInputs in = InAMap();
+	in.hosting = true;
+
+	EXPECT_EQ( ContinueWriteVerdict::Skip, DecideContinueWrite( in ));
+}
+
+TEST( ContinueWrite, HostingOutranksBeingInAPerfectlyGoodMap )
+{
+	// The point is that everything else about the moment looks writable: in a level, not connecting,
+	// not crashing. Only the fact that our own server is up says otherwise.
+	for ( int host = 0; host <= 1; ++host )
+	{
+		ContinueWriteInputs in = InAMap();
+		in.hosting = ( host == 1 );
+
+		const bool expected = ( host == 0 );
+		EXPECT_EQ( expected, DecideContinueWrite( in ) == ContinueWriteVerdict::Write );
+	}
+}

@@ -26,7 +26,15 @@ struct ContinueWriteInputs
 	bool connecting;	// a connection is being attempted and has not landed
 	bool crashing;		// a fatal error is on its way out
 
-	ContinueWriteInputs() : inMap(false), connecting(false), crashing(false) {}
+	// [rc4l] We are hosting a server of our own right now.
+	//
+	// Joining it comes straight back through here, and snapshotting the local map at that moment
+	// overwrites the record of the game we are hosting with the map we happened to be standing in
+	// when we started it -- so leaving the hosted game later took the player to that map instead of
+	// starting the server again. The hosted record already describes what to come back to.
+	bool hosting;
+
+	ContinueWriteInputs() : inMap(false), connecting(false), crashing(false), hosting(false) {}
 };
 
 enum class ContinueWriteVerdict
