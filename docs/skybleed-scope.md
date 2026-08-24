@@ -226,3 +226,32 @@ vantage improved slightly, 9.6% to 9.4%. The sky surfaces are painting sky in pl
 and since the quad set is GL's own the difference has to be in how it is drawn -- GL paints its sky
 through a stencil with the depth cleared, this pass draws the quads directly. `fua_mesh_sky 0`
 switches the whole thing off.
+
+## The horizon cut (2026-08-24, final)
+
+One more trap worth writing down because it looked like a fix and was a tautology: clamping the sky
+vertex to eye level and THEN testing the clamped height in the fragment shader can never discard
+anything -- the test is comparing a value against the bound it was just forced into. It changed the
+picture by 0.6 of a level and read as "the pass is innocent".
+
+The quad now keeps its real height and the FRAGMENT below eye level is discarded, which cuts the sky
+exactly at the horizon instead of near it. Measured at `-4523,-468,-490` facing `270,0`, the rows
+just below the horizon go from Vulkan 5.4 against GL 1.2, to **19.16 against 19.51** -- the two
+renderers agreeing to within noise -- while the band above stays matched at 27.52 against 25.73.
+
+### Where it stands
+
+| vantage | before this work | after |
+|---|---|---|
+| the reported sky vantage | 8.3 peak in the horizon band against GL's 204 | matched, frame `mean\|d\|` 4.4 |
+| the car | 9.6% of pixels, `mean\|d\|` 3.2 | **4.8%, 2.7** |
+| the alley at `-6478,1552` | 15.1%, 4.4 | 19.4%, 6.1 |
+| the spawn | 37.8%, 8.6 | 40.7%, 10.6 |
+
+The two that got worse both have their worst row at the TOP of the frame, which is the sky: a sky
+quad coplanar with a wall wins the LESS_EQUAL tie and paints over it. LESS_EQUAL is what the tanker
+wall needs (there GL draws sky INSTEAD of the wall) and what the alley wall does not (there GL draws
+the wall). The two cases are identical to a depth test and differ only in whether GL considers the
+wall visible -- which is the same visibility question this whole document keeps arriving at.
+
+`fua_mesh_sky 0` turns the sky surfaces off and restores the full-screen background.

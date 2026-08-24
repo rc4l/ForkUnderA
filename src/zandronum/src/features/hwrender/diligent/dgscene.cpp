@@ -2452,9 +2452,12 @@ static bool EnsureSkyPortalResources()
 			// white streak straight along the horizon, mean 44 against GL 1.8 on that row.
 			"layout(location = 0) out float vUp;\n"
 			"void main() {\n"
-			"    vec3 p = vec3(aPos.x, max(aPos.y, uCameraPos.y), aPos.z);\n"
-			"    vUp = p.y - uCameraPos.y;\n"
-			"    gl_Position = uMVP * vec4(p, 1.0);\n"
+			// [rc4l] NOT clamped here. Moving the vertex to eye level and then testing the moved
+			// height is a tautology -- the test can never fire, which is exactly what it did. The
+			// quad keeps its real height and the fragment below the horizon is discarded instead,
+			// which cuts it at the horizon rather than near it.
+			"    vUp = aPos.y - uCameraPos.y;\n"
+			"    gl_Position = uMVP * vec4(aPos, 1.0);\n"
 			"}\n";
 		static const char *kSurfPS =
 			"#version 450\n"
