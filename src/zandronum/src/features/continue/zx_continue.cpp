@@ -5,6 +5,7 @@
 
 #include "features/continue/computation/continuerecord_compute.h"
 #include "features/continue/computation/continuebutton_compute.h"
+#include "features/continue/computation/continuedepart_compute.h"
 #include "features/continue/computation/continueshow_compute.h"
 #include "features/continue/computation/continuewrite_compute.h"
 #include "features/identity/zx_identity.h"
@@ -15,6 +16,7 @@
 #include "c_dispatch.h"
 #include "cmdlib.h"
 #include "cl_main.h"
+#include "d_event.h"		// gameaction, ga_nothing
 #include "d_main.h"		// D_AddFile
 #include "d_netinf.h"
 #include "doomdef.h"
@@ -26,6 +28,7 @@
 #include "m_png.h"
 #include "network.h"
 #include "features/server-browser/browser.h"
+#include "features/server-browser/zx_joinserver.h"
 #include "i_system.h"
 #include "version.h"
 #include "w_wad.h"
@@ -43,6 +46,14 @@ namespace
 
 ContinueRecord g_Record;
 ContinueRecord g_Offline;
+bool g_bReconnecting = false;
+bool g_bReturnPending = false;
+// [rc4l] Decided while we are still IN the session, because the question changes the moment we are
+// out of it: out of a session the pill offers the most recently left thing, which after a kick is
+// the server we were just thrown out of. Asking then sends the player back where they came from.
+ContinueTarget g_ReturnTarget = ContinueTarget::None;
+int g_DepartCalls = 0;
+int g_DepartReturns = 0;
 ContinueRecord g_Server;
 bool g_bLoaded = false;
 FString g_Label;
@@ -548,6 +559,41 @@ void Continue_NoteHosting( const HostConfig &config )
 	WriteRecord( record, OfflineRecordPath( ));
 }
 
+void Continue_NoteReconnecting( bool bReconnecting )
+{
+	g_bReconnecting = bReconnecting;
+}
+
+void Continue_NoteLeftServer( void )
+{
+	++g_DepartCalls;
+
+	if ( g_bLoaded == false )
+		Continue_Load( );
+
+	ContinueDepartInputs in;
+	in.wasInSession = InSession( );
+	in.joinInFlight = IsJoinInFlight( );
+	in.reconnecting = g_bReconnecting;
+	in.crashing = false;
+
+	if ( DecideContinueDepart( in ) != ContinueDepartVerdict::Return )
+		return;
+
+	// Where to, decided now while the answer is still the leaving one.
+	ContinueButtonInputs where;
+	where.inSession = true;
+	where.offlineUsable = ( g_Offline.kind != ContinueKind::None );
+	where.offlineIsHosted = ( g_Offline.kind == ContinueKind::Hosted );
+	where.offlineStamp = g_Offline.stamp;
+
+	g_ReturnTarget = DecideContinueButton( where ).target;
+
+	// Acted on by the tick, once the teardown has finished. See the header.
+	++g_DepartReturns;
+	g_bReturnPending = true;
+}
+
 void Continue_NoteJoined( void )
 {
 	if ( DecideContinueWriteOnJoin( false ) != ContinueWriteVerdict::Write )
@@ -633,6 +679,10 @@ bool Continue_DebugBusy( void )
 bool g_bLoadAfterRestart = false;
 FString g_SaveAfterRestart;
 
+// Both defined below, beside the records they act on.
+static void RehostRecorded( void );
+static void ActivateOfflineRecord( const ContinueRecord &rec );
+
 void Continue_Tick( void )
 {
 	// [rc4l] The record has to be in hand before any of this means anything. Without it every tick
@@ -669,6 +719,25 @@ void Continue_Tick( void )
 		}
 	}
 
+	// [rc4l] The return the departure gate asked for, now that the teardown is over. Same
+	// destination as pressing Disconnect, because leaving is leaving however it happened.
+	// [rc4l] And not until the engine has settled. A load is queued as a gameaction, so performing
+	// it while the teardown still has one of its own pending means ours is quietly overwritten --
+	// which is exactly what a kick does, with ga_fullconsole. Waiting for ga_nothing costs a frame
+	// or two and is the difference between returning and appearing to do nothing at all.
+	if ( g_bReturnPending && ( InSession( ) == false ) && ( gameaction == ga_nothing ))
+	{
+		g_bReturnPending = false;
+
+		if ( g_ReturnTarget == ContinueTarget::Hosted )
+			RehostRecorded( );
+		else if ( g_ReturnTarget == ContinueTarget::Offline )
+			ActivateOfflineRecord( g_Offline );
+		// MainMenu: the disconnect has already put us there.
+
+		g_ReturnTarget = ContinueTarget::None;
+	}
+
 	if ( g_bLoadAfterRestart == false )
 		return;
 
@@ -690,6 +759,10 @@ int Continue_DebugProbe( void )
 	default:                      return 0;
 	}
 }
+
+int Continue_DebugDepartCalls( void ) { return g_DepartCalls; }
+int Continue_DebugDepartReturns( void ) { return g_DepartReturns; }
+bool Continue_DebugReturnPending( void ) { return g_bReturnPending; }
 
 int Continue_DebugProbeSlot( void )
 {

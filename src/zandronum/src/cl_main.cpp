@@ -2619,6 +2619,10 @@ static unsigned g_ConnectedHostGeneration = 0;
 
 void CLIENT_QuitNetworkGame( const char *pszString )
 {
+	// [rc4l] Every way of leaving a server is the same way of leaving. The gate decides whether this
+	// teardown is one at all -- a join tidying up on its way in, and a reconnect, are not.
+	zx::Continue_NoteLeftServer( );
+
 	if ( pszString )
 		Printf( "%s\n", pszString );
 
@@ -9957,11 +9961,17 @@ CCMD( connect )
 	// Put the game in the full console.
 	gameaction = ga_fullconsole;
 
+	// [rc4l] Tell the departure gate this teardown belongs to a reconnect, so it does not send the
+	// player back to an offline game instead. Cleared once the attempt has been made.
+	zx::Continue_NoteReconnecting( true );
+
 	// Send out a connection signal.
 	CLIENT_AttemptConnection( );
 
 	// Update the connection state.
 	CLIENT_SetConnectionState( CTS_ATTEMPTINGCONNECTION );
+
+	zx::Continue_NoteReconnecting( false );
 
 	// If we've elected to record a demo, begin that process now.
 	pszDemoName = Args->CheckValue( "-record" );

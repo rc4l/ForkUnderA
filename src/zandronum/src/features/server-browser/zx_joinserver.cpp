@@ -720,6 +720,11 @@ void ReleaseJoinResume(bool proceed)
 	OnDownloadFinished(succeeded);
 }
 
+bool IsJoinInFlight()
+{
+	return g_joinInFlight;
+}
+
 bool IsJoinResumeHeld()
 {
 	return g_resumeHeld;
