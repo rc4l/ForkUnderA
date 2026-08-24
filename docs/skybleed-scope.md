@@ -113,3 +113,32 @@ Two stages, then, and the first is worth having on its own:
    Fixes the embedded and side-by-side cases; measurable immediately against this spot.
 2. Derive them in `features/surfaces/` beside the wall parts, which covers standalone and is what
    makes the sky-as-background pass deletable.
+
+## Stage 1 was tried and does not work: the wall cache eats it
+
+Built, measured, reverted. `RegisterSkyQuad` at both sky cases in `PutWall`, a `sky` flag on
+`MeshPiece`, a `DrawSkySurfaces` pass with its own pipeline sampling the sky image by
+`gl_FragCoord`. On the reported spot it captured **zero quads**, and the band did not move.
+
+The reason is `gl_bsp.cpp`:
+
+```cpp
+if (zx::levelmesh::TryReplay(segidx, elig, stamp))  done = true;
+else { BeginCapture(segidx); wall.Process(...); EndCapture(...); }
+```
+
+A replayed seg never runs `GLWall::Process`, so it never calls `SkyNormal`/`SkyTop`, so no sky quad
+is ever built for it. That is the wall cache doing exactly its job -- skipping GL's derivation is the
+whole point of it -- and it means "capture what GL builds" only ever sees the segs GL still derives,
+which on a walked level is the minority.
+
+One detail worth keeping from the attempt: **a map with a sky portal never produces
+`RENDERWALL_SKY`**. `SkyPlane` picks `RENDERWALL_SKYBOX` whenever the sector names a skybox, so
+hooking `RENDERWALL_SKY` alone captures nothing on exactly the maps that have this bug.
+
+So the two stages collapse into one, and it is the second: **derive sky surfaces from the map** in
+`features/surfaces/`, beside the wall parts that are already derived there, from the rules in
+`GLWall::SkyPlane`, `SkyTop` and `SkyBottom`. That is the only version that works with the cache and
+in standalone, which are the two modes the backend is meant to run in. The backend half -- the sky
+image, the pass, the screen-space sampler -- is small and was written in an hour; the derivation is
+the work.
