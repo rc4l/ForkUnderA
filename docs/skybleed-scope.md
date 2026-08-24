@@ -384,3 +384,29 @@ Stable across a wiggle: `mean|d|` 5.1 at yaw 290 and 5.1 at 294. Other vantages:
 from 9.6% of pixels differing to 7.7%, the alley sits at 19.8% against 15.1% before the sky work,
 the spawn 39.5% against 37.8%. Those two remain worse and remain unexplained; their worst rows are
 at the top of the frame, which is sky.
+
+## What is left: the residual band, measured
+
+At `-4435,-502,-486` facing `310,2.8` (the spot `sky-band-now`), the box just under the skyline --
+x 0.36..0.79, y 0.462..0.496 of the frame:
+
+| | mean | tint |
+|---|---|---|
+| GL | 0.70 | neutral, essentially black |
+| Vulkan, `fua_mesh_sky 0` (background blit) | 33.75 | neutral -- the old bright streak |
+| Vulkan, `fua_mesh_sky 1` (sky surfaces) | **13.85** | blue, `b-r` +8.4 |
+| Vulkan, `fua_dg_skyportal 0` | 162.80 | the placeholder sky, as expected |
+
+So the sky surfaces more than halve it and do not remove it. The band sits BELOW the horizon, and the
+pass already discards fragments below eye level (`vUp = aPos.y - uCameraPos.y`, unclamped, discarded
+under -0.5), so whatever paints it is not doing so through the sky quads' own geometry.
+
+A diagnostic worth not repeating: replacing the fragment colour with a constant to see the pass's
+coverage DISABLES the pass -- with `uSky` unused the compiler drops it, the static variable lookup
+fails, and the pipeline releases itself with "sky surfaces off: pipeline missing its texture". The
+frame then shows the sky region unpainted, in the clear colour, which looks like a result and is an
+artefact of the diagnostic.
+
+What that accident did show is worth keeping: the unpainted sky region is a bounded rectangle, so the
+world geometry around it is being drawn where GL has sky. That is the same visibility question this
+document has arrived at four times now, in a smaller form.
