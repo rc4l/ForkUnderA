@@ -174,6 +174,9 @@ CVAR(Bool, fua_dg_rtmirrors, false, CVAR_ARCHIVE)
 CVAR(Bool, fua_dg_mirrors_on, true, CVAR_ARCHIVE)
 // The sky that is a place: render the world from an ASkyViewpoint and use it as the background.
 CVAR(Bool, fua_dg_skyportal, true, CVAR_ARCHIVE)
+// [rc4l] The portal's render scale as a DIVISOR of the swapchain: 1 is full, 2 is half. See
+// EnsureSkyPortalResources for why full is the default.
+CVAR(Int, fua_dg_skyportal_scale, 1, CVAR_ARCHIVE)
 
 // [rc4l] Re-resolve animated textures per frame. See the loop in DrawSceneOnce.
 CVAR(Bool, fua_dg_animate, true, 0)
@@ -2332,13 +2335,21 @@ static bool EnsureSkyPortalResources()
 	auto *swap = GetSwapChain();
 	if (!dev || !swap) return false;
 
-	// [rc4l] HALF resolution, deliberately.
+	// [rc4l] FULL resolution, after half was tried and looked like it.
 	//
-	// The portal is a whole extra scene render every frame, and a skybox is at infinity where it is
-	// barely magnified -- so it is the one pass that can afford to be small. This is the bound the
-	// mirror pass did not have, and the lack of it there took the process down.
+	// The reasoning for halving it was that a skybox sits at infinity and is barely magnified. That
+	// is true of a sky TEXTURE and false of this: a sky portal is a view of a city, full of thin
+	// bright detail, and its pixels land on screen at 1:1 like any others. Halved, the skyline was
+	// visibly softer than GL's beside it -- which is what rc4l reported, in those words.
+	//
+	// The cost it was bounding is real (one extra scene render per frame, the shape that produced
+	// the TDR in tdr-crash-after-map-loads.md), so the divisor stays reachable rather than deleted:
+	// fua_dg_skyportal_scale 2 halves it again if a map ever needs the frame time back.
 	const auto &sd = swap->GetDesc();
-	const int w = (int)sd.Width / 2, h = (int)sd.Height / 2;
+	int div = fua_dg_skyportal_scale;
+	if (div < 1) div = 1;
+	if (div > 4) div = 4;
+	const int w = (int)sd.Width / div, h = (int)sd.Height / div;
 	if (w <= 0 || h <= 0) return false;
 	if (!g_skyPortalColor || g_skyPortalW != w || g_skyPortalH != h)
 	{

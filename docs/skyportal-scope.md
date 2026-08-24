@@ -177,3 +177,18 @@ The check is one call and it costs nothing: `fuactl here` prints the map, and do
 `(-96, 784)` while real `wdiex02` spawns near `(-7264, 800)`. Make it before believing a capture,
 not after publishing one. `here --save` now records the loaded wad set with md5s for exactly this
 reason -- a camera that matches on a different wad set is a different picture wearing the same name.
+
+## Half resolution was the wrong bound (2026-08-24)
+
+The portal rendered at half the swapchain, on the reasoning that a skybox sits at infinity and is
+barely magnified. That is true of a sky TEXTURE and false of a sky PORTAL: this one is a night city,
+all thin bright detail, and its pixels land on screen at 1:1 like any others. Beside GL it read as
+visibly soft -- which is how rc4l reported it, unprompted, in those words.
+
+It is full resolution now, with `fua_dg_skyportal_scale` as the divisor (1 full, 2 half) so the
+bound stays reachable rather than deleted -- the cost it was there to contain is real: one extra
+scene render per frame is the shape that produced the TDR in `tdr-crash-after-map-loads.md`.
+
+Measured at `-4523,-468,-490` facing `270,-9`, in the sky band: peak brightness went from 215 to
+**228, which is GL's 228 exactly**. The half-res version was clipping the skyline's highlights,
+which is what softness looks like in numbers.
