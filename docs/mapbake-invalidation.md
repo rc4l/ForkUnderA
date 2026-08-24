@@ -180,3 +180,34 @@ project.
 One measurement trap worth keeping: `fua_surface_mapbake` leaves the mesh heavier than it found it,
 so an instance that has run it is no longer a valid timing baseline. A spot that read 0.63 ms on a
 clean load read 3.97 ms in an instance where the verifier had been run.
+
+## Open: a derived wall samples the wrong part of its texture (2026-08-24)
+
+Found from rc4l's vantage on `wdiex02` at `-4523,-468,-490` facing `270,-9`, saved as the spot
+`sky-and-ship`. Looking west across the water, the far backdrop wall -- linedef 30450, one-sided,
+mid texture `SRISE_BK`, a 1024x512 night skyline -- renders in Vulkan as a flat, dark, red,
+detail-free band where GL renders a lit city.
+
+It is NOT lighting, NOT the models work, NOT culling, and the masked cut-out in front of it (the
+tanker, `XCTANKER`, a paletted PNG with tRNS) is drawn correctly. Measured in the same band:
+
+| | max | mean | r/g/b |
+|---|---|---|---|
+| GL, final | 217 | 8.54 | 10.8 / 8.2 / 6.7 |
+| Vulkan, final | 8.3 | 1.59 | 2.9 / 0.9 / 1.0 |
+| Vulkan, raw texel (`fua_dg_lightmode 10`) | 29 | 6.59 | 12.1 / 3.8 / 3.9 |
+| Vulkan, vertex light (`fua_dg_lightmode 4`) | 102 | 67.8 | flat grey, = the recorded 0.27 |
+
+The vertex light is right and the texture SAMPLE is wrong -- red-dominant with no highlights at all,
+which is what a texture minified to its top mip looks like. The v range is being stretched far past
+what the wall should carry, so the sampler is asked for a level that has averaged the skyline away.
+
+**Localised precisely, and this is the useful part:** `fua_surface_mapbake_auto 0` -- which leaves
+every wall to GL's capture instead of deriving it from the map -- makes the band read max 183.3 /
+mean 7.86 / r 10.4, against GL's 215 / 8.47 / 10.7. So the derived path is wrong and the captured
+path is right, for this wall, on this map. The bug is in `BuildDerivedWallSpan`'s one-sided-middle
+case (`features/surfaces/surfacebuild.cpp`) or in the `mRenderHeight` it takes its v scale from --
+not in the backend at all.
+
+Not yet fixed. The workaround costs the bake, which is the whole point of the derivation, so it is a
+diagnostic rather than a setting to ship.
