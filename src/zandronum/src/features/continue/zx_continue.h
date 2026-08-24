@@ -19,6 +19,8 @@
 #ifndef ZX_CONTINUE_H
 #define ZX_CONTINUE_H
 
+#include "features/server-hosting/computation/hostargs_compute.h"
+
 namespace zx
 {
 
@@ -40,6 +42,17 @@ void Continue_Activate();
 
 // Record the session we are in. Called from the deliberate quit, never from a shutdown hook.
 void Continue_NoteQuit();
+
+// [rc4l] We are about to abandon whatever is running locally -- joining a server, or hosting one.
+//
+// Called BEFORE the WAD set is torn down, which is the only moment this can be captured at all: by
+// the time the player leaves that server the local game has been gone for however long they played.
+// Without this, going from one game straight into another silently loses the first.
+void Continue_NoteLeavingLocalGame();
+
+// [rc4l] Record a game we are hosting, so leaving it can start the same one again. There is nothing
+// to snapshot -- the world lives in the child process -- so what is kept is the config that made it.
+void Continue_NoteHosting( const HostConfig &config );
 
 // Record a join that just landed.
 void Continue_NoteJoined();

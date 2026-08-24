@@ -40,6 +40,8 @@ namespace
 {
 
 ContinueRecord g_Record;
+ContinueRecord g_Offline;
+ContinueRecord g_Server;
 bool g_bLoaded = false;
 FString g_Label;
 FString g_Tooltip;
@@ -51,9 +53,45 @@ int Instance()
 	return Identity_Instance( );
 }
 
-std::string RecordPath()
+std::string OfflineRecordPath()
 {
 	return ContinueOfflinePath( Identity_ConfigRoot( ), Instance( ));
+}
+
+std::string ServerRecordPath()
+{
+	return ContinueServerPath( Identity_ConfigRoot( ), Instance( ));
+}
+
+ContinueRecord ReadRecord( const std::string &path )
+{
+	ContinueRecord out;
+
+	FILE *f = fopen( path.c_str( ), "rb" );
+	if ( f == NULL )
+		return out;
+
+	std::string text;
+	char buffer[1024];
+	size_t got;
+	while (( got = fread( buffer, 1, sizeof buffer, f )) > 0 )
+		text.append( buffer, got );
+	fclose( f );
+
+	ContinueRecord parsed;
+	return ParseContinue( text, parsed ) ? parsed : out;
+}
+
+// [rc4l] One past whichever record is currently the newer, so "most recently left" is a comparison
+// rather than a clock. Read from disk rather than remembered: the other record may have been written
+// by a different copy of the engine, or by this one before a restart.
+int NextStamp()
+{
+	const int offline = ReadRecord( ContinueOfflinePath( Identity_ConfigRoot( ), Instance( ))).stamp;
+	const int server = ReadRecord( ContinueServerPath( Identity_ConfigRoot( ), Instance( ))).stamp;
+	const int highest = ( offline > server ) ? offline : server;
+
+	return highest + 1;
 }
 
 std::string SavePath()
@@ -105,7 +143,7 @@ int SaveVersionOf( const std::string &path )
 	return version;
 }
 
-void WriteRecord( const ContinueRecord &record )
+void WriteRecord( const ContinueRecord &record, const std::string &path )
 {
 	const std::string text = SerialiseContinue( record );
 	if ( text.empty( ))
@@ -113,15 +151,12 @@ void WriteRecord( const ContinueRecord &record )
 
 	EnsureDir( );
 
-	FILE *f = fopen( RecordPath( ).c_str( ), "wb" );
+	FILE *f = fopen( path.c_str( ), "wb" );
 	if ( f == NULL )
 		return;
 
 	fwrite( text.data( ), 1, text.size( ), f );
 	fclose( f );
-
-	g_Record = record;
-	g_bLoaded = true;
 }
 
 // [rc4l] What is loaded right now, by NAME and CHECKSUM, so a Continue can find the same game again
@@ -293,22 +328,15 @@ bool SameWadSetAsRecord( )
 void Continue_Load( void )
 {
 	g_bLoaded = true;
-	g_Record = ContinueRecord( );
 
-	FILE *f = fopen( RecordPath( ).c_str( ), "rb" );
-	if ( f == NULL )
-		return;
+	// Both, kept apart, so joining a server does not forget the game that was already going.
+	g_Offline = ReadRecord( OfflineRecordPath( ));
+	g_Server = ReadRecord( ServerRecordPath( ));
 
-	std::string text;
-	char buffer[1024];
-	size_t got;
-	while (( got = fread( buffer, 1, sizeof buffer, f )) > 0 )
-		text.append( buffer, got );
-	fclose( f );
-
-	ContinueRecord parsed;
-	if ( ParseContinue( text, parsed ))
-		g_Record = parsed;
+	// What the pill offers out of a session: the more recently left of the two.
+	g_Record = ( g_Server.stamp > g_Offline.stamp ) ? g_Server : g_Offline;
+	if ( g_Record.kind == ContinueKind::None )
+		g_Record = ( g_Offline.kind != ContinueKind::None ) ? g_Offline : g_Server;
 }
 
 bool Continue_IsShown( void )
@@ -378,6 +406,9 @@ const char *Continue_Label( void )
 	return g_Label.GetChars( );
 }
 
+// Defined below, next to the record it writes.
+void WriteLocalSnapshot( void );
+
 void Continue_NoteQuit( void )
 {
 	ContinueWriteInputs in;
@@ -397,6 +428,14 @@ void Continue_NoteQuit( void )
 		return;
 	}
 
+	WriteLocalSnapshot( );
+}
+
+// [rc4l] Snapshot whatever is running locally into the offline record. One implementation, because
+// quitting and leaving for a server are the same act as far as the record is concerned -- the only
+// difference is what happens next.
+void WriteLocalSnapshot( void )
+{
 	ContinueRecord record;
 	record.kind = ContinueKind::Single;
 	record.savePath = SavePath( );
@@ -412,8 +451,45 @@ void Continue_NoteQuit( void )
 	// immediately. The queued form wrote the record and never the snapshot, so Continue pointed at a
 	// file that would never exist and hid itself forever -- safe, and useless.
 	EnsureDir( );
+	record.stamp = NextStamp( );
+
 	G_DoSaveGame( false, record.savePath.c_str( ), "Continue" );
-	WriteRecord( record );
+	WriteRecord( record, OfflineRecordPath( ));
+}
+
+void Continue_NoteLeavingLocalGame( void )
+{
+	// Same rules as quitting: a crash is not a session, mid-connect there is nothing to go back to,
+	// and a menu is not a place to be returned to.
+	ContinueWriteInputs in;
+	in.inMap = ( gamestate == GS_LEVEL ) && usergame;
+	in.connecting = ( CLIENT_GetConnectionState( ) == CTS_ATTEMPTINGCONNECTION );
+	in.crashing = false;
+
+	if ( DecideContinueWrite( in ) != ContinueWriteVerdict::Write )
+		return;
+
+	// Only what is OURS to snapshot. Already being a client means the local game went long ago, and
+	// that session belongs to whoever recorded it at the time.
+	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		return;
+
+	WriteLocalSnapshot( );
+}
+
+void Continue_NoteHosting( const HostConfig &config )
+{
+	// What we are LEAVING first, so the stamps land in the order the player lived them: the game
+	// they were in is older than the server they are starting.
+	Continue_NoteLeavingLocalGame( );
+
+	ContinueRecord record;
+	record.kind = ContinueKind::Hosted;
+	record.host = config;
+	record.host.rconSecret.clear( );	// worth nothing after its process; a rehost mints a new one
+	record.stamp = NextStamp( );
+
+	WriteRecord( record, OfflineRecordPath( ));
 }
 
 void Continue_NoteJoined( void )
@@ -439,12 +515,14 @@ void Continue_NoteJoined( void )
 	}
 	CollectLoadedWads( record );
 
-	WriteRecord( record );
+	record.stamp = NextStamp( );
+	WriteRecord( record, ServerRecordPath( ));
 }
 
 void Continue_Forget( void )
 {
-	remove( RecordPath( ).c_str( ));
+	remove( OfflineRecordPath( ).c_str( ));
+	remove( ServerRecordPath( ).c_str( ));
 	g_Record = ContinueRecord( );
 	g_bLoaded = true;
 }

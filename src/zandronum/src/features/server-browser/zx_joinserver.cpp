@@ -468,6 +468,11 @@ bool AttemptJoin(const JoinPlan &plan, bool mayDownload)
 
 	// [rc4l] Marked BEFORE the reload, because the reload does not return: RequestReload throws
 	// CRestartException on the path that works. Anything recorded after it would never run.
+	// [rc4l] Snapshot what we are leaving before the reload takes it. This has to be here rather
+	// than anywhere nearer the connect: the reload restarts the engine, so by the time a connect is
+	// attempted the local game has already gone.
+	zx::Continue_NoteLeavingLocalGame();
+
 	zx::NoteJoinStarted(plan.serverName.GetChars());
 
 	// RequestReload either connects in place (already on this WAD set), or throws CRestartException
