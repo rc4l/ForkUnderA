@@ -38,6 +38,11 @@ void CaptureModelSurface(const FModelVertexBuffer *vbuf, unsigned int base1, uns
 void ModelStatsReset();
 void ModelStatsGet(int &models, int &surfaces, int &triangles, int &skipped);
 
+// The world-space box the captured triangles occupy, and the last actor they came from. A count
+// proves the capture ran; this says whether what it produced is anywhere near the camera.
+void ModelBoundsGet(float *mn, float *mx, float *lastSort);
+void ModelPieceGet(float &alpha, int &blend, int &light, float *rgb, const void *&material);
+
 }} // namespace zx::levelmesh
 
 #endif

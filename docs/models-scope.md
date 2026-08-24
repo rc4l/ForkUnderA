@@ -167,3 +167,30 @@ time is unchanged (median 29.7 ms on, 30.4 ms off, both the tic-locked rate of a
 - **Interpolation is now CPU work**, per visible model per frame, which is the trade Option A makes.
   At this content's density it does not show. A mod with two hundred high-poly models in view is
   the case that would, and `fua_models` is how to find out before assuming.
+
+### How it was actually verified, after two bad attempts
+
+Both first attempts measured something other than models, and both looked like evidence.
+
+**A cvar A/B across two shots measures the map.** `wdiex02` changes its own lighting, so toggling
+`fua_mesh_models` and taking a second capture seconds later moved 63.5% of the pixels whether or
+not models were involved. Reported as "models are a big part of the frame", it was the room getting
+brighter.
+
+**A frozen A/B measures nothing at all.** The obvious fix -- pause the sim so the map cannot
+change, then toggle -- produced a 0.4% difference and read as "models are not drawn". A paused sim
+does not rebuild the dynamic stream, so the toggle never reached the frame being captured. This is
+the same trap as measuring dynamic lights under `sim.pause`, one layer further out: anything fed by
+the per-frame capture is frozen too.
+
+What settles it is a **matched GL/Vulkan pair at one camera, close enough to a model to identify**
+it. Standing at `-5716,394,-184` facing `180` on `wdiex02` puts the TCPDCar md3 across the whole
+alley: GL and Vulkan both draw the car, in the same place, with its headlights and plate. That is
+not a statistic, and it is the only reason to believe the rest of them.
+
+`fua_models` grew the two lines that made this findable: the world-space bounding box of what the
+last frame captured, and the alpha, blend, light, colour and material of the last piece handed over.
+The box distinguishes "captured nothing" from "captured it into the wrong place", and the piece line
+distinguishes both from "handed over black, or at alpha zero" -- three failures that are identical
+from outside and have nothing in common inside. `fua_dg_dynstats` then confirms the far end:
+`dynamic: 13 sprites -> 42 draws, 3012 tris` is the models arriving where they are drawn from.

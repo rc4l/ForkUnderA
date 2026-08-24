@@ -31,6 +31,16 @@ const VSMatrix *g_matrix = NULL;
 
 int g_models = 0, g_surfaces = 0, g_triangles = 0, g_skipped = 0;
 
+// [rc4l] Where the triangles LANDED. A count proves the capture ran and says nothing about whether
+// what it produced is in front of the camera -- and from outside, those two failures look the same.
+float g_bbMin[3] = { 0, 0, 0 }, g_bbMax[3] = { 0, 0, 0 };
+float g_lastSort[3] = { 0, 0, 0 };
+// The piece as handed over, so "invisible" can be told from "drawn black" or "drawn at alpha zero".
+float g_lastAlpha = 0.f, g_lastRGB[3] = { 0, 0, 0 };
+int g_lastBlend = -1, g_lastLight = -1;
+const void *g_lastMaterial = NULL;
+bool g_haveBB = false;
+
 // Scratch, kept across surfaces: a model surface is a few hundred triangles and this function runs
 // per surface per model per frame, so the allocation is worth not repeating.
 TArray<FFlatVertex> g_tris;
@@ -69,11 +79,22 @@ bool ModelCaptureActive()
 	return fua_mesh_models && g_sprite != NULL && g_matrix != NULL;
 }
 
-void ModelStatsReset() { g_models = g_surfaces = g_triangles = g_skipped = 0; }
+void ModelStatsReset() { g_models = g_surfaces = g_triangles = g_skipped = 0; g_haveBB = false; }
 
 void ModelStatsGet(int &models, int &surfaces, int &triangles, int &skipped)
 {
 	models = g_models; surfaces = g_surfaces; triangles = g_triangles; skipped = g_skipped;
+}
+
+void ModelBoundsGet(float *mn, float *mx, float *lastSort)
+{
+	for (int c = 0; c < 3; c++) { mn[c] = g_bbMin[c]; mx[c] = g_bbMax[c]; lastSort[c] = g_lastSort[c]; }
+}
+
+void ModelPieceGet(float &alpha, int &blend, int &light, float *rgb, const void *&material)
+{
+	alpha = g_lastAlpha; blend = g_lastBlend; light = g_lastLight; material = g_lastMaterial;
+	for (int c = 0; c < 3; c++) rgb[c] = g_lastRGB[c];
 }
 
 void CaptureModelSurface(const FModelVertexBuffer *vbuf, unsigned int base1, unsigned int base2,
@@ -130,6 +151,12 @@ void CaptureModelSurface(const FModelVertexBuffer *vbuf, unsigned int base1, uns
 		float w[3];
 		Transform(m, x, y, z, w);
 		g_tris[i].Set(w[0], w[1], w[2], a.u, a.v);
+		for (int c = 0; c < 3; c++)
+		{
+			if (!g_haveBB || w[c] < g_bbMin[c]) g_bbMin[c] = w[c];
+			if (!g_haveBB || w[c] > g_bbMax[c]) g_bbMax[c] = w[c];
+		}
+		g_haveBB = true;
 	}
 
 	MeshPiece mp;
@@ -168,6 +195,10 @@ void CaptureModelSurface(const FModelVertexBuffer *vbuf, unsigned int base1, uns
 	// The actor's own position, so the back-to-front sort puts a translucent model where the actor
 	// is rather than where its first triangle happens to be.
 	mp.sortX = spr.x; mp.sortY = spr.y; mp.sortZ = spr.z;
+	g_lastSort[0] = spr.x; g_lastSort[1] = spr.y; g_lastSort[2] = spr.z;
+	g_lastAlpha = mp.alpha; g_lastBlend = mp.blendMode; g_lastLight = mp.lightLevel;
+	g_lastRGB[0] = mp.colorR; g_lastRGB[1] = mp.colorG; g_lastRGB[2] = mp.colorB;
+	g_lastMaterial = mp.material;
 	mp.quad = false;
 
 	DynAppend(&g_tris[0], indexCount, mp);
@@ -183,6 +214,20 @@ CCMD(fua_models)
 	zx::levelmesh::ModelStatsGet(models, surfaces, triangles, skipped);
 	Printf("models: %d captured last frame, %d surfaces, %d triangles, %d surfaces skipped\n",
 		models, surfaces, triangles, skipped);
+	{
+		float mn[3], mx[3], sort[3];
+		zx::levelmesh::ModelBoundsGet(mn, mx, sort);
+		Printf("  world bounds x %.0f..%.0f  up %.0f..%.0f  y %.0f..%.0f   last actor at %.0f,%.0f,%.0f\n",
+			mn[0], mx[0], mn[1], mx[1], mn[2], mx[2], sort[0], sort[1], sort[2]);
+	}
+	{
+		float alpha = 0.f, rgb[3] = { 0, 0, 0 };
+		int blend = -1, light = -1;
+		const void *material = NULL;
+		zx::levelmesh::ModelPieceGet(alpha, blend, light, rgb, material);
+		Printf("  last piece: alpha %.3f  blend %d  light %d  rgb %.2f,%.2f,%.2f  material %s\n",
+			alpha, blend, light, rgb[0], rgb[1], rgb[2], material ? "yes" : "NULL");
+	}
 	Printf("  capture is %s; the backend %s presenting\n", fua_mesh_models ? "on" : "off",
 		zx::hwrender::BackendPresenting() ? "is" : "is not (GL's own window, or side by side)");
 }
