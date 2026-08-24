@@ -176,3 +176,53 @@ reason: they each answer a question that is not "can this surface be seen from w
 
 Nothing from the second pass is in the tree. What is kept is this section, `fua_look`'s material and
 u/v reporting, and `fua_dg_texalpha`.
+
+## Fixed (2026-08-24): the sky is a surface, taken from GL
+
+Three derivations of the sky quads were built and all three over-emitted -- the last one by a factor
+of hundreds, because GL emits sky quads only for segs its BSP walk reaches. On the reported vantage
+GL produces them for **four linedefs**; the map has thousands of sky segs. Deriving them from map
+data cannot know which four without redoing the visibility, so the quads are **taken from GL** at
+`GLWall::PutWall`, where they already exist, and they carry GL's visibility with them.
+
+Four things had to be true, and each one failed silently on its own:
+
+1. **Both sky cases must be hooked.** A map with a sky portal never produces `RENDERWALL_SKY` --
+   `SkyPlane` picks `RENDERWALL_SKYBOX` whenever the sector names a skybox -- so hooking the obvious
+   one captures nothing on exactly the maps that have this bug.
+2. **The wall cache must not replay those segs.** A seg `TryReplay` accepts never runs
+   `GLWall::Process`, so it never builds a sky quad. Sky-bordering segs are now always processed:
+   four linedefs in view, a few hundred in the level.
+3. **The quads need a list of their own.** GL re-enters its scene builder for its own skybox portal,
+   and that path calls `DynClear`, so anything the wall walk put in the shared dynamic stream is
+   gone before the backend reads it -- 5911 quads captured, 0 runs built. The list now resets on the
+   first push AFTER a read, which needs no agreement between GL and the backend about when a frame
+   starts. Every explicit clear was wrong in one direction or the other.
+4. **The depth test must be LESS_EQUAL.** A sky surface is coplanar with the wall it replaces -- GL
+   draws sky INSTEAD of that wall, not in front of it -- so under the default LESS it fails every
+   time and the pass draws nothing while looking perfectly healthy: quads captured, draws submitted,
+   no pixels.
+
+Plus one that is geometry rather than plumbing: **a sky surface may not reach below the horizon**,
+which sits at eye level. Baked quads cannot know the eye height, so the vertex shader clamps to
+`uCameraPos.y`. Without it the quad paints sky across the water in front of the far shore -- the
+white streak, mean 44 against GL's 1.8 on that row.
+
+### Measured, at the vantage this was reported from
+
+| | GL | Vulkan before | Vulkan after |
+|---|---|---|---|
+| horizon band, peak | 204 | 8.3 | **204** |
+| horizon band, mean | 8.09 | 1.59 | **7.58** |
+| streak row, mean | 1.47 | 30.7 | **7.18** |
+
+The rectangle over the horizon is gone and the skyline spans the frame as it does in GL.
+
+### Not clean yet, and stated rather than buried
+
+Two other vantages moved the wrong way: the alley at `-6478,1552` from 15.1% of pixels differing to
+20.1%, and the spawn from 37.8% to 40.8% (their `mean|d|` from 4.4 to 5.3 and 8.6 to 10.6). The car
+vantage improved slightly, 9.6% to 9.4%. The sky surfaces are painting sky in places GL does not,
+and since the quad set is GL's own the difference has to be in how it is drawn -- GL paints its sky
+through a stencil with the depth cleared, this pass draws the quads directly. `fua_mesh_sky 0`
+switches the whole thing off.

@@ -147,6 +147,9 @@ struct MeshPiece
 	// [rc4l] A closed 3D shell (a model) rather than a flat billboard, so it must occlude itself:
 	// the backend draws these with the world, depth-writing, instead of in the sorted blend pass.
 	bool          solid;
+	// [rc4l] A surface the map flags as sky. No material: the pass that draws it samples the sky
+	// image by screen position, a sky being at infinity. What it contributes is DEPTH.
+	bool          sky;
 
 	// [rc4l] Zero-initialise. Every site fills the fields it cares about and leaves the rest, so a
 	// field added later is garbage at the sites that predate it -- which is how SegCache::pieces
@@ -164,7 +167,7 @@ struct MeshPiece
 		dynLightIndex = -1;
 		normX = normY = normZ = 0.f;
 		dynR = dynG = dynB = 0.f;
-		quad = false; solid = false;
+		quad = false; solid = false; sky = false;
 		facesDown = false; depthBias = false; redToAlpha = false;
 	}
 };

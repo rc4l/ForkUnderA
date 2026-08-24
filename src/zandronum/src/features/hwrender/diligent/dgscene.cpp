@@ -174,6 +174,7 @@ CVAR(Bool, fua_dg_rtmirrors, false, CVAR_ARCHIVE)
 CVAR(Bool, fua_dg_mirrors_on, true, CVAR_ARCHIVE)
 // The sky that is a place: render the world from an ASkyViewpoint and use it as the background.
 CVAR(Bool, fua_dg_skyportal, true, CVAR_ARCHIVE)
+EXTERN_CVAR(Bool, fua_mesh_sky)
 // [rc4l] The portal's render scale as a DIVISOR of the swapchain: 1 is full, 2 is half. See
 // EnsureSkyPortalResources for why full is the default.
 CVAR(Int, fua_dg_skyportal_scale, 1, CVAR_ARCHIVE)
@@ -423,6 +424,7 @@ struct DynRun
 	// and without depth writes whichever triangle the buffer happens to hold last wins. On a car
 	// that draws the interior floor and seats straight through the bodywork.
 	bool         solid;
+	bool         sky;          // a sky surface: drawn from the sky image, and it writes depth
 	float        cx, cy, cz;   // centroid, for the merged sort
 };
 static TArray<DynRun> g_dynRuns;
@@ -1643,7 +1645,12 @@ static Diligent::RefCntAutoPtr<Diligent::ITexture>       g_skyPortalColor, g_sky
 static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_skyPortalPSO;
 static Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding> g_skyPortalSRB;
 static int  g_skyPortalW = 0, g_skyPortalH = 0;
-static bool g_skyPortalActive = false;   // this level's sky is a portal
+static bool g_skyPortalActive = false;
+static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_skySurfPSO;
+static Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding> g_skySurfSRB;
+static int g_skyDraws = 0;
+static Diligent::RefCntAutoPtr<Diligent::IBuffer> g_skySurfVB;
+static unsigned int g_skySurfVBCapacity = 0;   // this level's sky is a portal
 
 static const char *kSkyVS =
 	"#version 450\n"
@@ -2356,6 +2363,8 @@ static bool EnsureSkyPortalResources()
 		g_skyPortalColor.Release();
 		g_skyPortalDepth.Release();
 		g_skyPortalSRB.Release();
+		g_skySurfPSO.Release();
+		g_skySurfSRB.Release();
 		Diligent::TextureDesc td;
 		td.Name = "fua sky portal colour";
 		td.Type = Diligent::RESOURCE_DIM_TEX_2D;
@@ -2425,6 +2434,128 @@ static bool EnsureSkyPortalResources()
 		pci.pPS = ps;
 		dev->CreateGraphicsPipelineState(pci, &g_skyPortalPSO);
 		if (!g_skyPortalPSO) return false;
+	}
+	if (!g_skySurfPSO)
+	{
+		static const char *kSurfVS =
+			"#version 450\n"
+			"layout(location = 0) in vec3 aPos;\n"
+			"layout(location = 1) in vec2 aUV;\n"
+			"layout(location = 2) in float aPiece;\n"
+			"layout(binding = 0) uniform Constants { mat4 uMVP; vec4 uCameraPos; vec4 uLightParams; vec4 uClipPlane; vec4 uScreen; vec4 uSkyColor; };\n"
+			// [rc4l] A sky surface may never reach BELOW the horizon, and the horizon is eye level.
+			//
+			// A sky sits at infinity, so the line where it meets the ground is exactly the height of
+			// the eye -- which is why GL builds these quads bottomed at viewz and not at the floor.
+			// Baked geometry cannot know the eye height, so the clamp happens here, where it does.
+			// Without it the quad paints sky over the water in front of the far shore: a bright
+			// white streak straight along the horizon, mean 44 against GL 1.8 on that row.
+			"void main() {\n"
+			"    vec3 p = vec3(aPos.x, max(aPos.y, uCameraPos.y), aPos.z);\n"
+			"    gl_Position = uMVP * vec4(p, 1.0);\n"
+			"}\n";
+		static const char *kSurfPS =
+			"#version 450\n"
+			"layout(binding = 1) uniform sampler2D uSky;\n"
+			"layout(location = 0) out vec4 outColor;\n"
+			"void main() { outColor = vec4(texelFetch(uSky, ivec2(gl_FragCoord.xy), 0).rgb, 1.0); }\n";
+		Diligent::RefCntAutoPtr<Diligent::IShader> svs, sps;
+		{
+			Diligent::ShaderCreateInfo ci;
+			ci.SourceLanguage = Diligent::SHADER_SOURCE_LANGUAGE_GLSL_VERBATIM;
+			ci.Desc.ShaderType = Diligent::SHADER_TYPE_VERTEX;
+			ci.Desc.Name = "fua sky surface VS";
+			ci.Source = kSurfVS;
+			dev->CreateShader(ci, &svs);
+		}
+		{
+			Diligent::ShaderCreateInfo ci;
+			ci.SourceLanguage = Diligent::SHADER_SOURCE_LANGUAGE_GLSL_VERBATIM;
+			ci.Desc.ShaderType = Diligent::SHADER_TYPE_PIXEL;
+			ci.Desc.Name = "fua sky surface PS";
+			ci.Source = kSurfPS;
+			dev->CreateShader(ci, &sps);
+		}
+		if (svs && sps)
+		{
+			static Diligent::ShaderResourceVariableDesc surfVars[] = {
+				{ Diligent::SHADER_TYPE_PIXEL, "uSky",
+				  Diligent::SHADER_RESOURCE_VARIABLE_TYPE_STATIC },
+			};
+			// uSky is a GLSL sampler2D -- a COMBINED image sampler. Without an immutable sampler half
+			// of that binding is unfilled, and the copy CreateShaderResourceBinding makes then faults
+			// inside the Vulkan loader, nowhere near the shader that caused it.
+			Diligent::SamplerDesc ssamp;
+			ssamp.MinFilter = Diligent::FILTER_TYPE_POINT;
+			ssamp.MagFilter = Diligent::FILTER_TYPE_POINT;
+			ssamp.MipFilter = Diligent::FILTER_TYPE_POINT;
+			ssamp.AddressU = Diligent::TEXTURE_ADDRESS_CLAMP;
+			ssamp.AddressV = Diligent::TEXTURE_ADDRESS_CLAMP;
+			Diligent::ImmutableSamplerDesc surfSamplers[] = {
+				{ Diligent::SHADER_TYPE_PIXEL, "uSky", ssamp },
+			};
+			Diligent::LayoutElement selems[] = {
+				Diligent::LayoutElement{0, 0, 3, Diligent::VT_FLOAT32, false},
+				Diligent::LayoutElement{1, 0, 2, Diligent::VT_FLOAT32, false},
+				Diligent::LayoutElement{2, 0, 1, Diligent::VT_FLOAT32, false},
+			};
+			Diligent::GraphicsPipelineStateCreateInfo pci;
+			pci.PSODesc.Name = "fua sky surface PSO";
+			pci.PSODesc.PipelineType = Diligent::PIPELINE_TYPE_GRAPHICS;
+			pci.GraphicsPipeline.NumRenderTargets = 1;
+			pci.GraphicsPipeline.RTVFormats[0] = sd.ColorBufferFormat;
+			pci.GraphicsPipeline.DSVFormat = sd.DepthBufferFormat;
+			pci.GraphicsPipeline.PrimitiveTopology = Diligent::PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+			pci.GraphicsPipeline.RasterizerDesc.CullMode = Diligent::CULL_MODE_NONE;
+			pci.GraphicsPipeline.DepthStencilDesc.DepthEnable = true;
+			// [rc4l] Depth tested AND written. Measured both ways on three vantages: writing is the
+			// better of the two everywhere (the car vantage 9.4%% of pixels against 9.9%%, the alley
+			// 20.1%% against 21.1%%), so the sky occluding the passes after it costs less here than
+			// leaving them to draw over it.
+			pci.GraphicsPipeline.DepthStencilDesc.DepthWriteEnable = true;
+			// [rc4l] LESS_EQUAL, and it is the whole thing working or not.
+			//
+			// A sky surface is COPLANAR with the wall it replaces -- GL draws sky INSTEAD of that
+			// wall, not in front of it -- so it arrives at exactly the depth already in the buffer.
+			// Under the default LESS that is a fail, every time, and the pass draws nothing at all
+			// while looking perfectly correct from the outside: quads captured, runs built, draws
+			// submitted, no pixels. GL uses GL_LEQUAL here for the same reason.
+			pci.GraphicsPipeline.DepthStencilDesc.DepthFunc = Diligent::COMPARISON_FUNC_LESS_EQUAL;
+			// [rc4l] NO depth bias. A sky surface is usually COPLANAR with the wall it replaces --
+			// GL draws sky instead of that wall, not in front of it -- so biasing these away from
+			// the camera makes them lose every such contest and draw nothing at all. A bias was
+			// tried when the quads were derived from the map and over-emitted; taking them from GL
+			// removes the reason for it, because GL only emits the ones that belong.
+			pci.GraphicsPipeline.InputLayout.LayoutElements = selems;
+			pci.GraphicsPipeline.InputLayout.NumElements = 3;
+			pci.PSODesc.ResourceLayout.Variables = surfVars;
+			pci.PSODesc.ResourceLayout.NumVariables = 1;
+			pci.PSODesc.ResourceLayout.ImmutableSamplers = surfSamplers;
+			pci.PSODesc.ResourceLayout.NumImmutableSamplers = 1;
+			pci.pVS = svs;
+			pci.pPS = sps;
+			dev->CreateGraphicsPipelineState(pci, &g_skySurfPSO);
+		}
+		if (g_skySurfPSO)
+		{
+			auto *cbuf = g_cb.RawPtr();
+			auto *cv = g_skySurfPSO->GetStaticVariableByName(Diligent::SHADER_TYPE_VERTEX, "Constants");
+			auto *srv = g_skyPortalColor->GetDefaultView(Diligent::TEXTURE_VIEW_SHADER_RESOURCE);
+			auto *tv = g_skySurfPSO->GetStaticVariableByName(Diligent::SHADER_TYPE_PIXEL, "uSky");
+			if (cv && cbuf && tv && srv)
+			{
+				cv->Set(cbuf);
+				tv->Set(srv);
+				g_skySurfSRB.Release();
+				g_skySurfPSO->CreateShaderResourceBinding(&g_skySurfSRB, true);
+			}
+			else
+			{
+				Printf("vulkan sky surfaces OFF: pipeline missing %s%s\n",
+					(cv && cbuf) ? "" : "its constants ", (tv && srv) ? "" : "its texture");
+				g_skySurfPSO.Release();
+			}
+		}
 	}
 	if (!g_skyPortalSRB)
 	{
@@ -2724,6 +2855,7 @@ static void BuildDynamic(Diligent::IDeviceContext *ctx)
 				r.depthBias = p.depthBias;
 				r.redAlpha = p.redToAlpha;
 				r.solid = p.solid;
+				r.sky = p.sky;
 				r.cx = p.sortX; r.cy = p.sortY; r.cz = p.sortZ;
 				runs.Push(r);
 			}
@@ -2818,6 +2950,56 @@ static void BuildDynamic(Diligent::IDeviceContext *ctx)
 // contribution is a batch in the static vertex buffer and a sprite's is a run in the dynamic one, so
 // the merged list carries which buffer it came from and the pass rebinds when it crosses over --
 // a few dozen draws, so the extra binds are not worth avoiding.
+// [rc4l] The SKY, drawn as a surface: it writes depth, so a wall the map hides behind the sky
+// stays hidden. The quads come from the map bake (BakeSkyPart); what they draw is the sky image,
+// sampled at the screen position of the fragment, a sky being at infinity.
+static void DrawSkySurfaces(Diligent::IDeviceContext *ctx)
+{
+	if (!g_skyPortalActive || !g_skySurfPSO || !g_skySurfSRB) return;
+
+	int nverts = 0;
+	const FFlatVertex *src = zx::levelmesh::SkyQuadVertices(nverts);
+	if (src == NULL || nverts < 3) return;
+
+	// [rc4l] Its own buffer, rebuilt each frame. These quads are a few hundred vertices and they
+	// cannot ride the shared dynamic stream: GL clears that when it re-enters its scene builder
+	// for the skybox portal, which happens between the wall walk that produces them and the draw.
+	static TArray<SceneVertex> sv;
+	sv.Clear();
+	for (int i = 0; i < nverts; i++)
+	{
+		SceneVertex d;
+		d.x = src[i].x; d.y = src[i].z; d.z = src[i].y;
+		d.u = 0.f; d.v = 0.f; d.pieceIndex = 0.f;
+		sv.Push(d);
+	}
+	if (!g_skySurfVB || g_skySurfVBCapacity < sv.Size())
+	{
+		g_skySurfVBCapacity = sv.Size() + sv.Size() / 2 + 256;
+		Diligent::BufferDesc bd;
+		bd.Name = "fua sky surface VB";
+		bd.Size = (Diligent::Uint64)g_skySurfVBCapacity * sizeof(SceneVertex);
+		bd.Usage = Diligent::USAGE_DEFAULT;
+		bd.BindFlags = Diligent::BIND_VERTEX_BUFFER;
+		g_skySurfVB.Release();
+		GetDevice()->CreateBuffer(bd, nullptr, &g_skySurfVB);
+		if (!g_skySurfVB) { g_skySurfVBCapacity = 0; return; }
+	}
+	ctx->UpdateBuffer(g_skySurfVB, 0, (Diligent::Uint64)sv.Size() * sizeof(SceneVertex), &sv[0],
+		Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+
+	Diligent::IBuffer *vbs[] = { g_skySurfVB };
+	const Diligent::Uint64 offsets[] = { 0 };
+	ctx->SetVertexBuffers(0, 1, vbs, offsets, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
+		Diligent::SET_VERTEX_BUFFERS_FLAG_RESET);
+	ctx->SetPipelineState(g_skySurfPSO);
+	ctx->CommitShaderResources(g_skySurfSRB, Diligent::RESOURCE_STATE_TRANSITION_MODE_VERIFY);
+	Diligent::DrawAttribs dr;
+	dr.NumVertices = sv.Size();
+	dr.Flags = Diligent::DRAW_FLAG_VERIFY_ALL;
+	ctx->Draw(dr);
+	g_skyDraws++;
+}
 // [rc4l] The dynamic pieces that are SOLID, drawn with the world instead of in the sorted pass.
 //
 // GL draws an opaque model in the opaque pass, depth-writing, with culling off -- it only turns
@@ -2895,6 +3077,8 @@ static void DrawBlended(Diligent::IDeviceContext *ctx)
 			if (r.count == 0) continue;
 			// [rc4l] An opaque solid is drawn with the world, not in this list. See DrawSolidDyn.
 			if (r.solid && r.blend == 0) continue;
+			// [rc4l] And a sky surface is not a blend at all -- see DrawSkySurfaces.
+			if (r.sky) continue;
 			// Blend mode 3 is the fuzz shadow; the engine draws it as a dark near-opaque overlay, and
 			// normal translucency is a fair stand-in until the fuzz shaders are ported.
 			// [rc4l] blend 0 takes the TRANSLUCENT pipeline, not the masked one.
@@ -4011,7 +4195,8 @@ static bool BuildSceneBuffer(FString &err)
 		// A blended piece never merges with its neighbour: the translucent pass reorders batches per
 		// frame, and two pieces sharing a batch could not then be separated. A batch also breaks on
 		// baseTex, because the animation pass re-resolves the whole batch from that one pointer.
-		if (p.material != cur || p.baseTex != curBase || p.blendMode != curBlend || p.blendMode != 0)
+		if (p.material != cur || p.baseTex != curBase || p.blendMode != curBlend || p.blendMode != 0 ||
+		    false)
 		{
 			SceneBatch b;
 			b.material = p.material;
@@ -6101,7 +6286,14 @@ static void DrawWorld(Diligent::IDeviceContext *ctx)
 		// When the map has an ASkyViewpoint, the sky is the world seen from it and there is no sky
 		// texture to speak of -- maps that use one leave sky1texture as the null placeholder, which
 		// is why this used to draw a blue-and-white checkerboard here.
-		if (!BlitSkyPortal(ctx))
+		// [rc4l] The full-screen blit is what the sky USED to be, and it is a fallback now.
+		//
+		// With sky surfaces the sky is painted where the map says the sky is and nowhere else.
+		// Leaving the background underneath as well is not harmless: it shows through every gap
+		// the surfaces do not cover -- on wdiex02 a bright streak along the horizon where the
+		// water meets the far shore, mean 31 against GL 1.8 on that row.
+		if (fua_mesh_sky && g_skyPortalActive) { /* drawn as geometry -- see DrawSkySurfaces */ }
+		else if (!BlitSkyPortal(ctx))
 		{
 			EnsureSky();
 			DrawSky(ctx);
@@ -6225,6 +6417,16 @@ static void DrawWorld(Diligent::IDeviceContext *ctx)
 
 	// [rc4l] ...except the solid ones, which belong with the world: a model has to occlude itself.
 	DrawSolidDyn(ctx);
+
+	// [rc4l] ...and the sky as geometry, before the blend pass because it is opaque.
+	DrawSkySurfaces(ctx);
+
+	// [rc4l] Consumed, so clear them HERE and not before the frame starts.
+	//
+	// GL fills this list during its own scene walk, which runs AFTER the backend has begun its
+	// frame -- clearing at the top threw away the very quads this pass was about to draw, and the
+	// pass reported zero draws with several hundred quads captured.
+	zx::levelmesh::SkyQuadsClear();
 
 	// [rc4l] Then everything that blends -- translucent 3D floors, translucent middle textures and
 	// translucent sprites -- in ONE back-to-front pass, so the world and the sprites sort against each
@@ -6680,6 +6882,7 @@ void DynStats(FString &report)
 		g_dynSlotSeen, g_dynSlotMax, g_dynSlotRefused, g_dynSlotNoMaterial);
 	cull.AppendFormat(", dyn draws: %d bindless, %d per-material, pipelines [%s]",
 		g_dynBindless, g_dynPerMaterial, g_fillState);
+	cull.AppendFormat(", sky surfaces: %d draws since load", g_skyDraws);
 	cull.AppendFormat(", dyn build %.3f ms", g_dynBuildMs);
 	{
 		// [rc4l] How much of the world the DERIVATION built, rather than transcribed from GL. The

@@ -49,7 +49,10 @@ const int kMaxCachedPieces = 4;
 //
 // The packed (seg, piece) reference GL replay uses keeps the SMALLER stride, because it only ever
 // addresses captured pieces.
-const int kMaxMapPieces = 24;
+// [rc4l] 24 parts and 3D-floor faces, plus TWO slots for sky surfaces -- see BakeSkyPart.
+const int kMaxMapPieces = 26;
+const int kSkySlot = 24;
+const int kSkySlot2 = 25;
 
 // One GLWall as PutWall routed it, so replay can put it back in the same list without re-deciding.
 struct CachedWallPiece
@@ -154,6 +157,13 @@ void InvalidateAll();
 void BeginCapture(int segIndex);
 void EndCapture(const WallCacheStamp &stamp, const WallCacheEligibility &e);
 bool IsCapturing();
+// [rc4l] The sky quads GL builds for its stencil, taken as geometry. See the definition.
+void RegisterSkyQuad(const GLWall &wall);
+int SkyQuadsThisFrame();
+void SkyQuadsClear();
+const FFlatVertex *SkyQuadVertices(int &count);
+const MeshPiece *SkyQuadPieces(int &count);
+
 void RecordPiece(const GLWall &wall, int list);
 void NotePortal();
 

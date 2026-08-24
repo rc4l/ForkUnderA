@@ -12,6 +12,7 @@
 #include "r_state.h"
 #include "p_3dfloors.h"   // F3DFloor, for the 3D floor wall faces
 #include "doomdata.h"
+#include "r_sky.h"   // skyflatnum, for the sky surfaces
 #include "gl/scene/gl_drawinfo.h"
 #include "features/hwrender/computation/walllight_compute.h"
 #include "gl/data/gl_data.h"
@@ -28,6 +29,7 @@
 // than the CVAR defined in gl_drawinfo.cpp, and only the linker would notice.
 EXTERN_CVAR(Bool, gl_wallmesh)
 EXTERN_CVAR(Bool, fua_surface_mapbake_auto)
+EXTERN_CVAR(Bool, fua_mesh_sky)
 EXTERN_CVAR(Bool, fua_surface_bands)
 // [rc4l] Build wall heights and texture position from the MAP rather than from GLWall.
 //
@@ -495,7 +497,7 @@ static const int kBandsPerPart = 5;
 // [rc4l] Where the 3D floor faces live, above the parts. A sidedef with more slabs than this keeps
 // as many as fit, which is a missing face on one wall rather than a wrong one everywhere.
 static const int kFFSlot0 = 3 * kBandsPerPart;
-static const int kMaxFFBlocks = kMaxMapPieces - kFFSlot0;
+static const int kMaxFFBlocks = kSkySlot - kFFSlot0;
 
 // The rovers that produced each block, so the emitter can read their flags back.
 static F3DFloor *g_ffRoverOf[16];
@@ -1345,6 +1347,22 @@ bool TryReplay(int segIndex, const WallCacheEligibility &e, const WallCacheStamp
 {
 	if (segIndex < 0 || (unsigned)segIndex >= g_cache.Size()) return false;
 	if (g_uncacheable[segIndex]) { g_uncacheableHits++; return false; }
+
+	// [rc4l] A seg that borders the SKY is always processed, never replayed.
+	//
+	// GL builds its sky quads inside GLWall::Process, and a replayed seg never runs it -- so the
+	// sky surfaces the backend needs simply never existed for any cached seg, which is why
+	// capturing them caught nothing at all the first time. Refusing the cache for these segs costs
+	// the derivation on the few that border sky (four linedefs were in view on the vantage this
+	// was found from) and buys the one thing the map cannot provide: GL's own visibility.
+	if (fua_mesh_sky && segIndex < numsegs)
+	{
+		const seg_t *sg = &segs[segIndex];
+		const sector_t *fsec = sg->frontsector;
+		if (fsec != NULL && (fsec->GetTexture(sector_t::ceiling) == skyflatnum ||
+		                     fsec->GetTexture(sector_t::floor) == skyflatnum))
+			return false;
+	}
 
 	// [rc4l] DIAGNOSTIC ONLY (gl_wallcache 2): skip validation to isolate how much of the cache's
 	// cost is the stamp compare versus the replay itself. Renders stale geometry -- never ship on.

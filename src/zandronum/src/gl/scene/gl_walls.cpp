@@ -182,6 +182,12 @@ void GLWall::PutWall(bool translucent)
 		break;
 
 	case RENDERWALL_SKYBOX:
+		// [rc4l] The quad GL is about to stencil its sky through, taken as geometry as well. GL
+		// keeps drawing its portal exactly as before; this only adds the surface to the mesh, and
+		// with it the visibility GL already worked out. A map with a sky PORTAL never produces
+		// RENDERWALL_SKY at all -- SkyPlane picks SKYBOX when the sector names a skybox -- so both
+		// cases have to be taken or exactly the maps with this bug capture nothing.
+		zx::levelmesh::RegisterSkyQuad(*this);
 		portal=GLPortal::FindPortal(skybox);
 		if (!portal) portal=new GLSkyboxPortal(skybox);
 		portal->AddLine(this);
@@ -216,6 +222,12 @@ void GLWall::PutWall(bool translucent)
 		break;
 
 	case RENDERWALL_SKY:
+		// [rc4l] The quad GL is about to stencil its sky through, taken as geometry as well. GL
+		// keeps drawing its portal exactly as before; this only adds the surface to the mesh, and
+		// with it the visibility GL already worked out. A map with a sky PORTAL never produces
+		// RENDERWALL_SKY at all -- SkyPlane picks SKYBOX when the sector names a skybox -- so both
+		// cases have to be taken or exactly the maps with this bug capture nothing.
+		zx::levelmesh::RegisterSkyQuad(*this);
 		portal=GLPortal::FindPortal(sky);
 		if (!portal) portal=new GLSkyPortal(sky);
 		portal->AddLine(this);

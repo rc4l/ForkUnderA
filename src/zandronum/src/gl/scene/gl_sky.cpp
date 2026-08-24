@@ -39,6 +39,7 @@
 */
 
 #include "gl/system/gl_system.h"
+#include "c_cvars.h"
 #include "a_sharedglobal.h"
 #include "g_level.h"
 #include "r_sky.h"
@@ -68,6 +69,8 @@ enum
 //  Calculate sky texture
 //
 //==========================================================================
+CVAR(Bool, fua_sky_log, false, 0)
+
 void GLWall::SkyPlane(sector_t *sector, int plane, bool allowreflect)
 {
 	FPortal *portal = sector->portals[plane];
@@ -163,6 +166,14 @@ void GLWall::SkyPlane(sector_t *sector, int plane, bool allowreflect)
 		planemirror = plane == sector_t::ceiling? &sector->ceilingplane : &sector->floorplane;
 	}
 	else return;
+	if (fua_sky_log && seg != NULL && seg->linedef != NULL)
+	{
+		Printf("skyq %.0f %.0f line %d %s sec %d back %d\n", zbottom[0], ztop[0],
+			(int)(seg->linedef - lines),
+			(seg->linedef->backsector != NULL) ? "two-sided" : "one-sided",
+			(int)(sector - sectors),
+			(seg->backsector != NULL) ? (int)(seg->backsector - sectors) : -1);
+	}
 	PutWall(0);
 }
 

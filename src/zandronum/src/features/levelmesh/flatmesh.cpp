@@ -34,6 +34,10 @@ CVAR(Bool, fua_flat_keylog, false, 0)
 // managed to stick its mark, and a namespaced cvar is a different symbol that will not link.
 CVAR(Bool, fua_decal_log, false, 0)
 
+// [rc4l] The sky as SURFACES that write depth, rather than a background painted first and drawn
+// over. Off restores the old behaviour. See docs/skybleed-scope.md.
+CVAR(Bool, fua_mesh_sky, true, CVAR_ARCHIVE)
+
 EXTERN_CVAR(Bool, fua_surface_mapbake_auto)
 
 namespace zx { namespace levelmesh {
@@ -619,6 +623,9 @@ void RegisterFlatSubsector(const GLFlat &flat, subsector_t *sub, bool ceiling)
 // [rc4l] Sprites go into the DYNAMIC stream, rebuilt every frame -- see staticmesh.h. They are
 // billboards built for one viewpoint, so they are not level geometry and must never be baked.
 static int g_spritesThisFrame = 0;
+static int g_skyQuadsThisFrame = 0;
+static TArray<FFlatVertex> g_skyVerts;
+static TArray<MeshPiece>   g_skyPieces;
 
 // [rc4l] What each sprite piece was registered WITH, for one frame, so a seam can be read off
 // numbers instead of guessed at from a screenshot.
@@ -665,6 +672,33 @@ void GetSpriteStyleDetail(int *dest16, int *classified4)
 // [rc4l] Models are cleared with sprites because they arrive with them: both are per-frame
 // dynamic pieces, and a model count left standing from last frame reads as a model that is
 // still there.
+int SkyQuadsThisFrame() { return g_skyQuadsThisFrame; }
+
+// [rc4l] Cleared by the BACKEND at the top of its frame, not by DynClear -- see RegisterSkyQuad.
+// [rc4l] Consumed by the backend, refilled by the next walk -- and the two do not agree on when
+// a frame starts, which is what made every ordering of an explicit clear wrong. GL fills this
+// during its scene walk, re-enters that walk for its own skybox portal, and the backend renders
+// on its own schedule; clearing at the top of the backend frame threw away the quads about to
+// be drawn, and clearing at the end threw away the ones just built.
+//
+// So the list resets on the first push AFTER a read. No shared clock, no ordering assumption:
+// whatever the last walk produced is what the next draw sees.
+static bool g_skyConsumed = true;
+
+void SkyQuadsClear() { g_skyConsumed = true; }
+
+const FFlatVertex *SkyQuadVertices(int &count)
+{
+	count = (int)g_skyVerts.Size();
+	return count ? &g_skyVerts[0] : NULL;
+}
+
+const MeshPiece *SkyQuadPieces(int &count)
+{
+	count = (int)g_skyPieces.Size();
+	return count ? &g_skyPieces[0] : NULL;
+}
+
 void ClearSprites() { g_spritesThisFrame = 0; g_spriteNoteCount = 0; ModelStatsReset(); }
 
 // [rc4l] The sweep's own arithmetic, kept from the last frame that ran one.
@@ -686,6 +720,63 @@ CCMD( fua_sprite_sweep )
 }
 int SpritePieceCount() { return g_spritesThisFrame; }
 
+// [rc4l] A sky quad, as GEOMETRY, taken from GL as it emits it.
+//
+// GL paints its sky through a stencil built from these, so anything further away than one is
+// behind the sky and the depth buffer says so. This backend painted the sky full-screen before
+// the world instead, which is the same picture only while nothing is drawn BEYOND a sky surface
+// -- and the map-derived bake, having no visibility test, draws walls GL culls.
+//
+// Taken from GL rather than derived, and that is the point: GL emits these only for segs its BSP
+// walk reaches, so the set carries GL VISIBILITY with it. Deriving them from the map was tried
+// three ways and every one over-emitted -- on the reported vantage GL produces sky quads for FOUR
+// linedefs where the map has thousands of sky segs. See docs/skybleed-scope.md.
+void RegisterSkyQuad(const GLWall &wall)
+{
+	if (!fua_mesh_sky) return;
+	if (wall.ztop[0] <= wall.zbottom[0] && wall.ztop[1] <= wall.zbottom[1]) return;
+
+	const float x1 = wall.glseg.x1, y1 = wall.glseg.y1;
+	const float x2 = wall.glseg.x2, y2 = wall.glseg.y2;
+	FFlatVertex q[6];
+	FFlatVertex a, b, c, d;
+	a.Set(x1, wall.zbottom[0], y1, 0.f, 0.f);
+	b.Set(x1, wall.ztop[0],    y1, 0.f, 0.f);
+	c.Set(x2, wall.ztop[1],    y2, 0.f, 0.f);
+	d.Set(x2, wall.zbottom[1], y2, 0.f, 0.f);
+	q[0] = a; q[1] = b; q[2] = c;
+	q[3] = a; q[4] = c; q[5] = d;
+
+	MeshPiece mp;
+	mp.range.offset = 0;
+	mp.range.count = 0;
+	mp.material = NULL;   // the sky image is not a material; the pass binds it itself
+	mp.baseTex = NULL;
+	mp.dynLightIndex = -1;
+	mp.lightLevel = 255;
+	mp.colorR = mp.colorG = mp.colorB = 1.f;
+	mp.alpha = 1.f;
+	mp.blendMode = 0;
+	mp.quad = false;
+	mp.sky = true;
+	mp.sortX = (x1 + x2) * 0.5f;
+	mp.sortY = (y1 + y2) * 0.5f;
+	mp.sortZ = (wall.ztop[0] + wall.zbottom[0]) * 0.5f;
+	// [rc4l] Kept in a list of their own, NOT the shared dynamic stream.
+	//
+	// GL re-enters its own scene builder to render the skybox portal, and that path calls
+	// DynClear -- so anything the main walk put in the dynamic stream is wiped before the
+	// backend ever reads it. Sprites survive because they are registered after the re-entry;
+	// sky quads come from the wall walk and do not. Measured: 5911 quads captured and 0 runs
+	// built from them, with every other explanation (stale build, flag plumbing, pipeline,
+	// depth func) eliminated first.
+	if (g_skyConsumed) { g_skyVerts.Clear(); g_skyPieces.Clear(); g_skyConsumed = false; }
+	for (int k = 0; k < 6; k++) g_skyVerts.Push(q[k]);
+	mp.range.offset = g_skyVerts.Size() - 6;
+	mp.range.count = 6;
+	g_skyPieces.Push(mp);
+	g_skyQuadsThisFrame++;
+}
 void RegisterSprite(const GLSprite &spr, const float *c1, const float *c2,
 	const float *c3, const float *c4)
 {
@@ -935,3 +1026,12 @@ void RegisterDecalTriangles(const FFlatVertex *tris, int count, const void *mate
 }
 
 }} // namespace zx::levelmesh
+
+// [rc4l] How many sky surfaces GL has handed over since the level loaded. Zero when the answer should not be zero
+// is the difference between the capture not running and the pass not drawing -- two failures that
+// look identical on screen.
+CCMD(fua_sky_quads)
+{
+	Printf("sky quads captured since load: %d (fua_mesh_sky is %s)\n",
+		zx::levelmesh::SkyQuadsThisFrame(), fua_mesh_sky ? "on" : "off");
+}
