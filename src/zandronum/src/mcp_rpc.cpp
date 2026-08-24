@@ -25,6 +25,7 @@
 #include "m_joy.h"
 #include "network.h"
 #include "r_state.h"
+#include "r_utility.h"   // R_ResetViewInterpolation: snap the view after a camera move
 #include "m_random.h"
 #include "zstring.h"
 #include "m_cheat.h"
@@ -877,6 +878,16 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 		double pitchDeg = 0;
 		if ( GetFloat( args, "pitch", pitchDeg ) && mo->player != NULL )
 			mo->pitch = (int)( pitchDeg * 4294967296.0 / 360.0 );
+
+		// [rc4l] SNAP the view interpolator to the camera we just set.
+		//
+		// R_SetupFrame interpolates the view between the previous tic and this one, so a camera moved
+		// between frames is shown part of the way there -- and with the sim frozen for a capture it
+		// may not arrive at all. The two renderers then disagree about where the camera is, which is
+		// indistinguishable from a rendering fault: a matched GL/Vulkan pair taken at pitch -55 came
+		// back with Vulkan looking at the sky and GL looking straight down the corridor, and the
+		// difference was read as a sky bug rather than two different cameras.
+		R_ResetViewInterpolation();
 		mo->velx = mo->vely = mo->velz = 0;
 		mo->PrevX = mo->x;
 		mo->PrevY = mo->y;

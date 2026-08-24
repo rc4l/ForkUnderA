@@ -55,6 +55,19 @@ async function waitForFile(p, { timeoutMs = 10000 } = {}) {
 // light recorded as sitting ten units above the floor had been mid-flight when the shutter opened.
 // Whatever state a capture is to be read against has to be read in the same frozen frame as the
 // capture.
+// A PNG whose IHDR says 1x1 is a swapchain that had no window yet, not a picture. The header is at a
+// fixed offset, so this needs no decoder.
+function pngIsUsable(file) {
+  try {
+    const fd = fs.openSync(file, "r");
+    const head = Buffer.alloc(24);
+    fs.readSync(fd, head, 0, 24, 0);
+    fs.closeSync(fd);
+    if (head.toString("latin1", 1, 4) !== "PNG") return false;
+    return !(head.readUInt32BE(16) <= 1 && head.readUInt32BE(20) <= 1);
+  } catch { return false; }
+}
+
 export async function shotPair(c, tag, {
   at = null, engineBin, outDir = "F:/ForkUnderA/dist-windows/sweep", frozen = [],
 } = {}) {
@@ -72,8 +85,23 @@ export async function shotPair(c, tag, {
 
   await ui.screenshot(c, engineBin, `sweep/${tag}_gl`).catch(() => {});
   const gotGl = await waitForFile(gl);
-  await exec(c, `fua_diligent_shot ${vk}`);
-  const gotVk = await waitForFile(vk);
+  // [rc4l] RETRY a Vulkan capture that came back 1x1.
+  //
+  // fua_diligent_shot reads the swapchain, and a swapchain whose window has not been sized yet is
+  // one pixel. That happens for the first captures after a launch, and especially with
+  // fua_dg_embed 0, where Vulkan gets its own window that is created and sized a beat behind the GL
+  // one. The pair then fails to compare with "SIZE MISMATCH 1280x800 vs 1x1", which reads like a
+  // renderer fault and cost a diagnosis before it was recognised as a capture that was simply too
+  // early.
+  let gotVk = null;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    await exec(c, `fua_diligent_shot ${vk}`);
+    gotVk = await waitForFile(vk);
+    if (gotVk && pngIsUsable(vk)) break;
+    try { fs.rmSync(vk, { force: true }); } catch { /* fine */ }
+    gotVk = null;
+    await sleep(250);
+  }
 
   const said = [];
   for (const cmd of frozen) said.push(await exec(c, cmd));
