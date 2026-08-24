@@ -130,3 +130,27 @@ TEST( ContinueButton, TheButtonIsNeverHiddenWhileInASession )
 		}
 	}
 }
+
+TEST( ContinueButton, AHostedGameIsStartedAgainRatherThanLoaded )
+{
+	// The world lived in a child process and went with it, so there is nothing to restore but the
+	// settings that made it.
+	ContinueButtonInputs in;
+	in.offlineUsable = true;
+	in.offlineIsHosted = true;
+
+	EXPECT_EQ( ContinueTarget::Hosted, DecideContinueButton( in ).target );
+}
+
+TEST( ContinueButton, DisconnectGoesBackToTheGameWeWereHosting )
+{
+	// Nested: hosting, then out to a real server, then out again.
+	ContinueButtonInputs in;
+	in.inSession = true;
+	in.offlineUsable = true;
+	in.offlineIsHosted = true;
+
+	const ContinueButtonVerdict v = DecideContinueButton( in );
+	EXPECT_EQ( ContinueMode::Disconnect, v.mode );
+	EXPECT_EQ( ContinueTarget::Hosted, v.target );
+}

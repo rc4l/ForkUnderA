@@ -3556,6 +3556,14 @@ void ServerCommands::EndSnapshot::Execute()
 	// We're all done! Set the new client connection state to active.
 	CLIENT_SetConnectionState( CTS_ACTIVE );
 
+	// [rc4l] Remember this server, whichever way we got here.
+	//
+	// Hooked at the moment the connection COMPLETES rather than at either place that starts one:
+	// the browser's join had its own hook and the console's connect had none, so typing an address
+	// left nothing to come back to. Every route ends here, and ending here also means we never
+	// record a server we failed to reach.
+	zx::Continue_NoteJoined( );
+
 	// [rc4l] Anonymous accounts: open the identity exchange now that we are a client the server
 	// will take commands from. Doing it during the level check was too early, and the hello was
 

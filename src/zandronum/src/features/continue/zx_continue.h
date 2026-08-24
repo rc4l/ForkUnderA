@@ -24,6 +24,11 @@
 namespace zx
 {
 
+// [rc4l] Whether the pill is currently the way OUT rather than the way in. The label and the action
+// both follow from this, and it is asked rather than stored -- a remembered mode goes stale the
+// first time a kick or a dying server moves the player without telling the bar.
+bool Continue_IsDisconnect();
+
 // Whether the button should be on the bar right now. Cheap enough to ask every frame: the record is
 // read once and held, and the probe is whatever the browser already knows.
 bool Continue_IsShown();
