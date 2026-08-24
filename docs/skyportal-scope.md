@@ -118,3 +118,49 @@ So it must be bounded from the start, not afterwards:
 `wdiex02` is the case. `wdi03` covers the OTHER kind of skybox -- an `FSkyBox` of six textures,
 which is a different feature entirely and is already implemented; do not confuse the two while
 testing.
+
+## What building it actually taught (2026-08-23)
+
+The shader work and the viewpoint maths were the easy half. Two structural rules cost the whole
+debugging session between them, and both are properties of the frame, not of the sky.
+
+**1. A second view cannot be rendered from inside the first.**
+
+The obvious place to hang the portal is the sky hook -- it is where the sky is decided. But that
+hook lives inside `DrawWorld`, and rendering the portal means calling `DrawWorld` again. The
+re-entry is not merely wasteful: `DrawWorld` derives the frame once per call (moved geometry, the
+dynamic light list, the light clusters, the constant buffer), so the inner call leaves the outer one
+holding the SKYBOX ROOM's derivation and drawing it with the player's camera. The map vanishes and
+nothing in the log says why. The portal belongs BESIDE the frame, called from `DrawSceneOnce`
+before its render targets are bound -- exactly where the camera-texture pass already sits, and for
+exactly the same reason. `RenderSkyPortal` renders; `BlitSkyPortal` lays the result down in the sky
+hook. Two functions, no re-entry.
+
+**2. Never ask for a resource transition inside the frame's render pass.**
+
+With the re-entry gone the portal rendered correctly and STILL erased the world behind it. The
+cause was one argument: the blit committed its SRB with
+`RESOURCE_STATE_TRANSITION_MODE_TRANSITION`, and the portal texture was still in RENDER_TARGET
+state from the pass that had just filled it. Diligent honours that by ending the frame's render
+pass to place the barrier and beginning a fresh one -- so every world draw that followed the sky
+landed in a pass the frame no longer owned. Vulkan validation says nothing; the picture is simply
+the sky, full screen. The fix is to hand the picture over at the end of `RenderSkyPortal`, outside
+any pass, with an explicit `TransitionResourceStates`, and let the blit commit with
+`RESOURCE_STATE_TRANSITION_MODE_VERIFY`.
+
+The tell for both bugs is the same and worth remembering: **the sky is correct and the world is
+gone**. That is never a sky bug. It means the pass the world was supposed to draw into is not the
+pass that got presented.
+
+## Measured
+
+On `wdiex02` at `1162,163` facing `0,20` -- the water's edge, sky band visible -- with the sim
+frozen and `fua_dg_standalone 0` so GL's half of the pair is a live buffer:
+
+- portal on vs portal off, Vulkan against Vulkan: **0.9% of pixels differ**, and the worst row is
+  `y=13`, in the sky band. The portal is on screen, and it touches nothing but the sky.
+- against GL at the same camera: `mean|d| 11.5`, best alignment `dx=0 dy=0`, with the row profile
+  putting the difference at the horizon (`y=156..170`) rather than in the sky. That residual is the
+  pre-existing GL/Vulkan disagreement about wall tops, not the portal.
+- `wdi03` still draws its world and still takes the dome path (`vulkan sky: SKY1 256x128`), and the
+  dome path on `wdiex02` is reachable at any time with `fua_dg_skyportal 0`.

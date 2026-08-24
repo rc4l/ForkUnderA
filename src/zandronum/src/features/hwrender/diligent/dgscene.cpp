@@ -66,6 +66,8 @@
 #include "gl/textures/gl_material.h"
 #include "r_sky.h"
 #include "gl/textures/gl_skyboxtexture.h"   // FSkyBox: the six faces a skybox is
+#include "g_shared/a_sharedglobal.h"        // ASkyViewpoint: the sky that is a place, not a picture
+#include "features/fixed64/computation/angle_interp_compute.h"   // InterpolateAngleBAM
 #include "textures/textures.h"
 #include "g_level.h"
 #include "ShaderResourceVariable.h"
@@ -170,6 +172,8 @@ CVAR(Bool, fua_dg_sky, true, 0)
 CVAR(Bool, fua_dg_rtmirrors, false, CVAR_ARCHIVE)
 // Planar mirror reflections. On by default; 0 takes the whole pass out, for bisecting a GPU hang.
 CVAR(Bool, fua_dg_mirrors_on, true, CVAR_ARCHIVE)
+// The sky that is a place: render the world from an ASkyViewpoint and use it as the background.
+CVAR(Bool, fua_dg_skyportal, true, CVAR_ARCHIVE)
 
 // [rc4l] Re-resolve animated textures per frame. See the loop in DrawSceneOnce.
 CVAR(Bool, fua_dg_animate, true, 0)
@@ -1613,6 +1617,24 @@ static Diligent::RefCntAutoPtr<Diligent::IBuffer>        g_skyBoxVB;
 static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_skyBoxPSO;
 static bool g_skyIsBox = false;
 
+// [rc4l] ...and a third kind of sky: one that is a PLACE.
+//
+// ZDoom's other skybox is a portal. An ASkyViewpoint actor sits in a room built to look like the
+// horizon, and every sky surface shows the world as seen from it -- so the sky is a rendered scene,
+// not a texture. Maps that use one set no sky texture at all, and this backend was falling back to
+// the null placeholder and drawing a blue-and-white checkerboard. Proved by turning GL's own support
+// off: `gl_noskyboxes 1` makes GL draw exactly the checkerboard this did.
+//
+// Rendering it is the mirror pass again -- a second camera, an offscreen target, the same DrawWorld.
+// What this backend can do that GL cannot is skip the stencils: sky is drawn FIRST here, full-screen
+// and depth-off, with the world painted over it, and a skybox is at infinity, so its image simply IS
+// that background.
+static Diligent::RefCntAutoPtr<Diligent::ITexture>       g_skyPortalColor, g_skyPortalDepth;
+static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_skyPortalPSO;
+static Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding> g_skyPortalSRB;
+static int  g_skyPortalW = 0, g_skyPortalH = 0;
+static bool g_skyPortalActive = false;   // this level's sky is a portal
+
 static const char *kSkyVS =
 	"#version 450\n"
 	"layout(location = 0) in vec3 aPos;\n"
@@ -2255,6 +2277,248 @@ static void DrawSkyFade(Diligent::IDeviceContext *ctx)
 	ctx->Draw(d);
 }
 
+// Defined below: the world pass, reused verbatim by the sky portal exactly as the mirror pass
+// reuses it.
+static void DrawWorld(Diligent::IDeviceContext *ctx);
+
+// [rc4l] Which skybox this level takes its sky from, or NULL if the sky is an ordinary one.
+//
+// GetSkyBox does the DefaultSkybox fallback and honours the per-sector SECF_NO*SKYBOX flags, so
+// ask it rather than reading the sector fields by hand. ONE skybox per frame, from the camera
+// sector: sectors may each name their own, and rendering one per sector would multiply a full
+// scene render by the count -- the shape that had the driver kill this process over the mirror
+// pass. See docs/tdr-crash-after-map-loads.md.
+static ASkyViewpoint *CurrentSkyViewpoint()
+{
+	if (!fua_dg_skyportal) return NULL;
+	sector_t *sec = (consoleplayer >= 0 && players[consoleplayer].camera != NULL)
+		? players[consoleplayer].camera->Sector : NULL;
+	ASkyViewpoint *sb = (sec != NULL) ? sec->GetSkyBox(sector_t::ceiling) : NULL;
+	if (sb == NULL) sb = level.DefaultSkybox;
+	return sb;
+}
+
+// A full-screen triangle built from the vertex index -- no buffer, no input layout.
+static const char *kSkyPortalVS =
+	"#version 450\n"
+	"layout(location = 0) out vec2 vUV;\n"
+	"void main() {\n"
+	"    vec2 p = vec2(float((gl_VertexIndex << 1) & 2), float(gl_VertexIndex & 2));\n"
+	"    vUV = p;\n"
+	"    gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);\n"
+	"}\n";
+
+static const char *kSkyPortalPS =
+	"#version 450\n"
+	"layout(location = 0) in vec2 vUV;\n"
+	"layout(binding = 1) uniform sampler2D uTex;\n"
+	"layout(location = 0) out vec4 outColor;\n"
+	"void main() { outColor = vec4(texture(uTex, vUV).rgb, 1.0); }\n";
+
+static bool EnsureSkyPortalResources()
+{
+	auto *dev = GetDevice();
+	auto *swap = GetSwapChain();
+	if (!dev || !swap) return false;
+
+	// [rc4l] HALF resolution, deliberately.
+	//
+	// The portal is a whole extra scene render every frame, and a skybox is at infinity where it is
+	// barely magnified -- so it is the one pass that can afford to be small. This is the bound the
+	// mirror pass did not have, and the lack of it there took the process down.
+	const auto &sd = swap->GetDesc();
+	const int w = (int)sd.Width / 2, h = (int)sd.Height / 2;
+	if (w <= 0 || h <= 0) return false;
+	if (!g_skyPortalColor || g_skyPortalW != w || g_skyPortalH != h)
+	{
+		g_skyPortalColor.Release();
+		g_skyPortalDepth.Release();
+		g_skyPortalSRB.Release();
+		Diligent::TextureDesc td;
+		td.Name = "fua sky portal colour";
+		td.Type = Diligent::RESOURCE_DIM_TEX_2D;
+		td.Width = (Diligent::Uint32)w; td.Height = (Diligent::Uint32)h;
+		td.Format = sd.ColorBufferFormat;
+		td.BindFlags = Diligent::BIND_RENDER_TARGET | Diligent::BIND_SHADER_RESOURCE;
+		td.MipLevels = 1;
+		dev->CreateTexture(td, nullptr, &g_skyPortalColor);
+		Diligent::TextureDesc dd = td;
+		dd.Name = "fua sky portal depth";
+		dd.Format = sd.DepthBufferFormat;
+		dd.BindFlags = Diligent::BIND_DEPTH_STENCIL;
+		dev->CreateTexture(dd, nullptr, &g_skyPortalDepth);
+		if (!g_skyPortalColor || !g_skyPortalDepth) return false;
+		g_skyPortalW = w; g_skyPortalH = h;
+	}
+
+	if (!g_skyPortalPSO)
+	{
+		Diligent::RefCntAutoPtr<Diligent::IShader> vs, ps;
+		{
+			Diligent::ShaderCreateInfo ci;
+			ci.SourceLanguage = Diligent::SHADER_SOURCE_LANGUAGE_GLSL_VERBATIM;
+			ci.Desc.ShaderType = Diligent::SHADER_TYPE_VERTEX;
+			ci.Desc.Name = "fua sky portal VS";
+			ci.Source = kSkyPortalVS;
+			dev->CreateShader(ci, &vs);
+		}
+		{
+			Diligent::ShaderCreateInfo ci;
+			ci.SourceLanguage = Diligent::SHADER_SOURCE_LANGUAGE_GLSL_VERBATIM;
+			ci.Desc.ShaderType = Diligent::SHADER_TYPE_PIXEL;
+			ci.Desc.Name = "fua sky portal PS";
+			ci.Source = kSkyPortalPS;
+			dev->CreateShader(ci, &ps);
+		}
+		if (!vs || !ps) return false;
+
+		Diligent::SamplerDesc samp;
+		samp.MinFilter = Diligent::FILTER_TYPE_LINEAR;
+		samp.MagFilter = Diligent::FILTER_TYPE_LINEAR;
+		samp.MipFilter = Diligent::FILTER_TYPE_LINEAR;
+		samp.AddressU = Diligent::TEXTURE_ADDRESS_CLAMP;
+		samp.AddressV = Diligent::TEXTURE_ADDRESS_CLAMP;
+		Diligent::ImmutableSamplerDesc samplers[] = {
+			{ Diligent::SHADER_TYPE_PIXEL, "uTex", samp },
+		};
+		Diligent::ShaderResourceVariableDesc vars[] = {
+			{ Diligent::SHADER_TYPE_PIXEL, "uTex", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
+		};
+		Diligent::GraphicsPipelineStateCreateInfo pci;
+		pci.PSODesc.Name = "fua sky portal PSO";
+		pci.PSODesc.PipelineType = Diligent::PIPELINE_TYPE_GRAPHICS;
+		pci.GraphicsPipeline.NumRenderTargets = 1;
+		pci.GraphicsPipeline.RTVFormats[0] = sd.ColorBufferFormat;
+		pci.GraphicsPipeline.DSVFormat = sd.DepthBufferFormat;
+		pci.GraphicsPipeline.PrimitiveTopology = Diligent::PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+		pci.GraphicsPipeline.RasterizerDesc.CullMode = Diligent::CULL_MODE_NONE;
+		// Same standing as the dome it replaces: drawn first, never against the depth buffer.
+		pci.GraphicsPipeline.DepthStencilDesc.DepthEnable = false;
+		pci.GraphicsPipeline.DepthStencilDesc.DepthWriteEnable = false;
+		pci.PSODesc.ResourceLayout.Variables = vars;
+		pci.PSODesc.ResourceLayout.NumVariables = 1;
+		pci.PSODesc.ResourceLayout.ImmutableSamplers = samplers;
+		pci.PSODesc.ResourceLayout.NumImmutableSamplers = 1;
+		pci.pVS = vs;
+		pci.pPS = ps;
+		dev->CreateGraphicsPipelineState(pci, &g_skyPortalPSO);
+		if (!g_skyPortalPSO) return false;
+	}
+	if (!g_skyPortalSRB)
+	{
+		g_skyPortalPSO->CreateShaderResourceBinding(&g_skyPortalSRB, true);
+		if (!g_skyPortalSRB) return false;
+		if (auto *v = g_skyPortalSRB->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "uTex"))
+			v->Set(g_skyPortalColor->GetDefaultView(Diligent::TEXTURE_VIEW_SHADER_RESOURCE));
+	}
+	return true;
+}
+
+// Render the world from the skybox viewpoint, then paint it as this frame background.
+// [rc4l] Rendered before the frame's own world pass, exactly as the camera-texture pass is. The sky
+// portal is a second view of the map, and a second view cannot be taken from inside the first: the
+// world draw derives its visible set and light clusters once per call, so re-entering it hands the
+// outer pass the skybox room's geometry to draw with the player's camera -- and the map disappears.
+static bool RenderSkyPortal(Diligent::IDeviceContext *ctx)
+{
+	g_skyPortalActive = false;
+	if (!fua_dg_skyportal) return false;
+	ASkyViewpoint *sb = CurrentSkyViewpoint();
+	if (sb == NULL) return false;
+	if (!EnsureSkyPortalResources()) return false;
+	if (!EnsureSkyPortalResources()) return false;
+
+	auto *swap = GetSwapChain();
+	auto *brtv = swap->GetCurrentBackBufferRTV();
+	// [rc4l] The world pass renders into our own readable depth buffer, so restoring the swapchain's
+	// here would hand the screen a depth buffer nothing has written to.
+	Diligent::ITextureView *bdsv = EnsureSceneDepth();
+	if (!bdsv) bdsv = swap->GetDepthBufferDSV();
+	auto *prtv = g_skyPortalColor->GetDefaultView(Diligent::TEXTURE_VIEW_RENDER_TARGET);
+	auto *pdsv = g_skyPortalDepth->GetDefaultView(Diligent::TEXTURE_VIEW_DEPTH_STENCIL);
+	if (!prtv || !pdsv) return false;
+
+	const fixed_t sx = viewx, sy = viewy, sz = viewz;
+	const angle_t sa = viewangle;
+	float savedMVP[16];
+	for (int i = 0; i < 16; i++) savedMVP[i] = g_mvp[i];
+
+	// [rc4l] The viewpoint, interpolated, with its own angle ADDED to the camera -- which is how a
+	// skybox parallaxes and rotates. The BAM interpolation is the tested one; a hand-rolled version
+	// is already recorded in this tree as having made a rotating portal overshoot on right turns.
+	const fixed_t frac = r_TicFrac;
+	viewx = sb->PrevX + FixedMul(frac, sb->x - sb->PrevX);
+	viewy = sb->PrevY + FixedMul(frac, sb->y - sb->PrevY);
+	viewz = sb->PrevZ + FixedMul(frac, sb->z - sb->PrevZ);
+	viewangle = sa + zx::InterpolateAngleBAM(sb->PrevAngle, sb->angle, (int64_t)frac);
+
+	// Never let the eye sit inside the skybox room floor or ceiling.
+	if (sb->Sector != NULL)
+	{
+		const fixed_t fl = sb->Sector->floorplane.ZatPoint(sb->x, sb->y);
+		const fixed_t ce = sb->Sector->ceilingplane.ZatPoint(sb->x, sb->y);
+		if (viewz < fl + 4 * FRACUNIT) viewz = fl + 4 * FRACUNIT;
+		if (viewz > ce - 4 * FRACUNIT) viewz = ce - 4 * FRACUNIT;
+	}
+
+	BuildMVP(g_mvp);
+	viewx = sx; viewy = sy; viewz = sz; viewangle = sa;
+
+	ctx->SetRenderTargets(1, &prtv, pdsv, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	const float clearCol[4] = { 0.f, 0.f, 0.f, 1.f };
+	ctx->ClearRenderTarget(prtv, clearCol, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	ctx->ClearDepthStencil(pdsv, Diligent::CLEAR_DEPTH_FLAG, 1.0f, 0,
+		Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	{
+		Diligent::Viewport vp;
+		vp.TopLeftX = 0; vp.TopLeftY = 0;
+		vp.Width = (float)g_skyPortalW; vp.Height = (float)g_skyPortalH;
+		vp.MinDepth = 0.f; vp.MaxDepth = 1.f;
+		ctx->SetViewports(1, &vp, (Diligent::Uint32)g_skyPortalW, (Diligent::Uint32)g_skyPortalH);
+	}
+	if (g_cb)
+	{
+		Diligent::MapHelper<float> cb(ctx, g_cb, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD);
+		for (int k = 0; k < 16; k++) cb[k] = g_mvp[k];
+	}
+	DrawWorld(ctx);
+
+	// Hand the screen back its own target and full viewport; the frame assumes both.
+	for (int k = 0; k < 16; k++) g_mvp[k] = savedMVP[k];
+	ctx->SetRenderTargets(1, &brtv, bdsv, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	ctx->SetViewports(1, nullptr, 0, 0);
+	if (g_cb)
+	{
+		Diligent::MapHelper<float> cb(ctx, g_cb, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD);
+		for (int k = 0; k < 16; k++) cb[k] = g_mvp[k];
+	}
+	// [rc4l] The picture changes hands HERE, outside the frame's render pass, not at the draw that
+	// samples it. A transition asked for mid-pass makes Diligent end the pass to place the barrier and
+	// begin a new one, and the world drawn afterwards lands in a pass the frame no longer owns -- which
+	// is how a working portal blit came to erase the map behind it.
+	{
+		Diligent::StateTransitionDesc barrier(g_skyPortalColor, Diligent::RESOURCE_STATE_UNKNOWN,
+			Diligent::RESOURCE_STATE_SHADER_RESOURCE, Diligent::STATE_TRANSITION_FLAG_UPDATE_STATE);
+		ctx->TransitionResourceStates(1, &barrier);
+	}
+	g_skyPortalActive = true;
+	return true;
+}
+
+// [rc4l] What the viewpoint saw, laid down where the sky would otherwise be. Depth stays open, so
+// the world draws over it in the same pass -- the portal is a background, not geometry.
+static bool BlitSkyPortal(Diligent::IDeviceContext *ctx)
+{
+	if (!g_skyPortalActive || !g_skyPortalPSO || !g_skyPortalSRB) return false;
+	ctx->SetPipelineState(g_skyPortalPSO);
+	ctx->CommitShaderResources(g_skyPortalSRB, Diligent::RESOURCE_STATE_TRANSITION_MODE_VERIFY);
+	Diligent::DrawAttribs dr;
+	dr.NumVertices = 3;
+	dr.Flags = Diligent::DRAW_FLAG_VERIFY_ALL;
+	ctx->Draw(dr);
+	return true;
+}
+
 static void DrawSky(Diligent::IDeviceContext *ctx)
 {
 	// [rc4l] The box is one buffer and a draw per face, because each face is its own material -- the
@@ -2780,6 +3044,11 @@ static void ReleaseScenePipelines()
 	g_skyBoxVB.Release();
 	g_skyBoxPSO.Release();
 	g_skyIsBox = false;
+	g_skyPortalSRB.Release();
+	g_skyPortalPSO.Release();
+	g_skyPortalColor.Release();
+	g_skyPortalDepth.Release();
+	g_skyPortalW = g_skyPortalH = 0;
 	g_skyFadePSO.Release();
 	g_scenePSO.Release();
 	g_maskedPSO.Release();
@@ -5480,6 +5749,10 @@ static void DrawSceneOnce(bool present = true, bool pump = true)
 		if (sd.Width == 0 || sd.Height == 0) return;
 	}
 
+	// The sky portal is a whole second view of the map, so it is rendered here, beside the frame
+	// rather than inside it -- DrawWorld cannot be re-entered while it is deriving this frame.
+	RenderSkyPortal(ctx);
+
 	auto *rtv = swap->GetCurrentBackBufferRTV();
 	Diligent::ITextureView *dsv = EnsureSceneDepth();
 	if (!dsv) dsv = swap->GetDepthBufferDSV();
@@ -5759,8 +6032,16 @@ static void DrawWorld(Diligent::IDeviceContext *ctx)
 		// mSky1Pos is in degrees and advances with gl_frameMS, so it must be read every frame.
 		const float scroll = (GLRenderer != NULL) ? GLRenderer->mSky1Pos : 0.f;
 		g_skyAngle = (-180.0f + scroll) * 3.14159265f / 180.0f;
-		EnsureSky();
-		DrawSky(ctx);
+		// [rc4l] A sky that is a PLACE takes precedence over any texture.
+		//
+		// When the map has an ASkyViewpoint, the sky is the world seen from it and there is no sky
+		// texture to speak of -- maps that use one leave sky1texture as the null placeholder, which
+		// is why this used to draw a blue-and-white checkerboard here.
+		if (!BlitSkyPortal(ctx))
+		{
+			EnsureSky();
+			DrawSky(ctx);
+		}
 	}
 
 	Diligent::IBuffer *vbs[] = { g_vb };
