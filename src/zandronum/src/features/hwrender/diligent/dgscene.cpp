@@ -2304,7 +2304,11 @@ static const char *kSkyPortalVS =
 	"layout(location = 0) out vec2 vUV;\n"
 	"void main() {\n"
 	"    vec2 p = vec2(float((gl_VertexIndex << 1) & 2), float(gl_VertexIndex & 2));\n"
-	"    vUV = p;\n"
+	// [rc4l] V flipped: the portal is sampled by a triangle in clip space, where +Y is DOWN, while
+	// the texture it reads was rasterised with row 0 at the top. Sampling straight through hands back
+	// a skybox standing on its head -- and one that then appears to swing the wrong way when you look
+	// up, which reads as a broken camera rather than a flipped fetch.
+	"    vUV = vec2(p.x, 1.0 - p.y);\n"
 	"    gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);\n"
 	"}\n";
 

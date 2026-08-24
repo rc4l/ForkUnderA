@@ -408,6 +408,26 @@ async function main() {
       await c.connect(Number(flags.port), { token: flags.token || null });
       await c.waitHello();
       const cam = await c.rpc("player.camera");
+      // [rc4l] A camera alone is not a repro. The same four numbers on a different wad set, or with
+      // the mesh bake off, is a different picture -- and a spot whose picture cannot be reproduced is
+      // worse than no spot, because it gets trusted. So a saved spot carries what was LOADED and how
+      // the renderer was CONFIGURED, straight from the engine rather than from what the launch meant
+      // to do. `wads` is the authoritative answer, hashes included.
+      let loaded = null, renderer = null;
+      if (flags.save) {
+        const wadText = await cap.exec(c, "wads", { quietMs: 400, maxMs: 8000 }).catch(() => "");
+        const iwad = (wadText.match(/^IWAD:\s*(.+)$/m) || [])[1] || null;
+        const pwads = [...wadText.matchAll(/^PWAD:\s*(\S+)(?:\s*-\s*([0-9a-f]{32}))?/gm)]
+          .map((m) => (m[2] ? `${m[1]} ${m[2]}` : m[1]));
+        loaded = { iwad: iwad && iwad.trim(), pwads };
+        renderer = {};
+        for (const cv of ["fua_vulkan", "fua_dg_standalone", "fua_dg_embed", "fua_dg_skyportal",
+                          "gl_wallmesh"]) {
+          const out = await cap.exec(c, cv, { quietMs: 300, maxMs: 6000 }).catch(() => "");
+          const m = out.match(/is\s+"([^"]*)"/);
+          if (m) renderer[cv] = m[1];
+        }
+      }
       c.close();
       if (flags.save) {
         const p = new URL("../spots.json", import.meta.url);
@@ -416,6 +436,7 @@ async function main() {
           map: cam.map, x: cam.x, y: cam.y, z: cam.z, angle: cam.yaw, pitch: cam.pitch,
           shows: flags.note || (db.spots[flags.save] && db.spots[flags.save].shows) ||
                  "recorded from a live session",
+          loaded, renderer,
         });
         fs.writeFileSync(p, JSON.stringify(db, null, 2) + "\n");
         console.error(`saved spot ${flags.save}`);

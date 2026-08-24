@@ -138,6 +138,36 @@
       "angle": 69.7852,
       "pitch": 1.9336,
       "shows": "scorch visible through the plasma flash on VK, not GL"
+    },
+    "skyportal-city": {
+      "map": "wdiex02",
+      "x": -6107.653,
+      "y": 675.374,
+      "z": -184,
+      "angle": 339.2578,
+      "pitch": -25.4883,
+      "shows": "wdiex02 alley under the HOTEL sign: the sky portal's city skyline, where a flipped V showed it upside down",
+      "loaded": {
+        "iwad": "doom2.wad",
+        "pwads": [
+          "skulltag_content-3.2-beta2.pk3 41630bc75af4b51fe5d163fe4d434c6e",
+          "whodunit_fixed2.pk3 fc8afa7358c2c2b38614ee74a07a719f",
+          "wdi_expack_1a.pk3 0448efffc27d8105b1ae1172c14c794e",
+          "wdi_bigpackv3.9test.pk3 d642da865b0addd46ccfab34ef0fffd8",
+          "wdi_bigpackv3.9testfixsv1.pk3 2617768e95f3fdd36413a056e023d11e",
+          "wdi_touchupv9.11.wad 2ccc1f88f1160cd503fb790e63da9c9c",
+          "wdibeta_phobos_outpostd1.pk3 b22505cd5ce4152b8c8e9a6b62bb7484",
+          "wdi_random_crate_1b.pk3 408d20d4afaead2d15c9df1e46c9825c",
+          "wdi_scoreboard_fix.wad 26ee8a0515d71a2cc0ffea94a7ccfbbc"
+        ]
+      },
+      "renderer": {
+        "fua_vulkan": "true",
+        "fua_dg_standalone": "false",
+        "fua_dg_embed": "true",
+        "fua_dg_skyportal": "true",
+        "gl_wallmesh": "true"
+      }
     }
   }
 }
