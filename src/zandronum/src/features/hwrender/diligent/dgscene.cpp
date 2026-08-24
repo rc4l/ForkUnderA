@@ -1646,6 +1646,11 @@ static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_skyPortalPSO;
 static Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding> g_skyPortalSRB;
 static int  g_skyPortalW = 0, g_skyPortalH = 0;
 static bool g_skyPortalActive = false;
+// [rc4l] True while the portal is rendering its own view. A skybox room must not paint a sky of its
+// own: the room IS the sky, and what it draws inside itself lands in the image the sky is sampled
+// from. On wdiex02 that put the placeholder sky's bright band across the portal at its horizon, and
+// the sky surfaces then dutifully painted it over the water -- the blue rectangle under the skyline.
+static bool g_inSkyPortal = false;
 static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_skySurfPSO;
 static Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding> g_skySurfSRB;
 static int g_skyDraws = 0;
@@ -2647,7 +2652,9 @@ static bool RenderSkyPortal(Diligent::IDeviceContext *ctx)
 		Diligent::MapHelper<float> cb(ctx, g_cb, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD);
 		for (int k = 0; k < 16; k++) cb[k] = g_mvp[k];
 	}
+	g_inSkyPortal = true;
 	DrawWorld(ctx);
+	g_inSkyPortal = false;
 
 	// Hand the screen back its own target and full viewport; the frame assumes both.
 	for (int k = 0; k < 16; k++) g_mvp[k] = savedMVP[k];
@@ -6299,6 +6306,9 @@ static void DrawWorld(Diligent::IDeviceContext *ctx)
 		// When the map has an ASkyViewpoint, the sky is the world seen from it and there is no sky
 		// texture to speak of -- maps that use one leave sky1texture as the null placeholder, which
 		// is why this used to draw a blue-and-white checkerboard here.
+		// [rc4l] Inside the portal there is no sky to draw -- see g_inSkyPortal.
+		if (g_inSkyPortal) { /* nothing: the room is the sky */ }
+		else
 		// [rc4l] The full-screen blit is what the sky USED to be, and it is a fallback now.
 		//
 		// With sky surfaces the sky is painted where the map says the sky is and nowhere else.

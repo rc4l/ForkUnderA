@@ -255,3 +255,23 @@ the wall). The two cases are identical to a depth test and differ only in whethe
 wall visible -- which is the same visibility question this whole document keeps arriving at.
 
 `fua_mesh_sky 0` turns the sky surfaces off and restores the full-screen background.
+
+## The band under the skyline, and where it actually lives
+
+The blue rectangle under the city is NOT the sky pass reaching below the horizon -- that was fixed
+and measured (rows just below the horizon: Vulkan 19.16 against GL 19.51). Probing rc4l's exact
+camera, the rectangle is the sky quad for linedef 30451 painting the SKY IMAGE, and the band is in
+that image: the portal render has a bright neutral stripe at rows 0.58-0.61 with black beneath it.
+
+Ruled out: it is not the room painting a sky of its own. A guard was added for that -- a skybox room
+must not draw a sky, since the room IS the sky and anything it paints lands in the image the sky is
+sampled from, which is the same recursion GL blocks with `MF_JUSTHIT`. The guard is right and it
+moved the band by 1.6 of a level, so the stripe is the room's own geometry: a lit surface at the
+skybox room's horizon.
+
+Which leaves the question this document keeps arriving at. GL renders the same room and gets the
+same stripe in its portal, and does not show it -- because GL's stencil is the sky quad's VISIBLE
+extent, trimmed by the world geometry in front of it, while this pass draws the whole quad. Trimming
+it needs the visible set.
+
+`fua_mesh_sky 0` switches the sky surfaces off.
