@@ -540,6 +540,7 @@ static int ReshadeSegFromMap(int segIndex)
 	const seg_t *seg = &segs[segIndex];
 	if (seg->sidedef == NULL || seg->linedef == NULL || seg->frontsector == NULL) return -1;
 
+
 	SegCache &sc = g_cache[segIndex];
 	if (sc.hasFogBoundary) { g_reshadeFF++; return -1; }   // its light is not in bandLight
 

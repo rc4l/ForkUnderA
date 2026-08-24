@@ -927,6 +927,39 @@ CCMD( fua_look )
 				? "   <-- points AWAY from the side it is seen from" : "",
 			bt ? ( bt->Name.Len( ) ? bt->Name.GetChars( ) : "(THE NULL TEXTURE)" ) : "(none)",
 			bt && ( bt->isFullbright( ) || bt->isGlowing( ) ) ? "  [fullbright/glowing]" : "" );
+	{
+		// [rc4l] The MATERIAL the backend actually binds, which is not baseTex. baseTex is what the
+		// surface was built from and is used for sorting and reporting; material is the pointer the
+		// draw resolves to a texture. When they disagree the picture is a correct surface wearing
+		// someone else s texture, and every other field in this report looks perfect.
+		FMaterial *fm = (FMaterial *)p.material;
+		FTexture *mt = (fm != NULL) ? fm->tex : NULL;
+		const char *mn = mt ? (mt->Name.Len() ? mt->Name.GetChars() : "(unnamed)") : "(none)";
+		Printf("        material %s%s\n", mn,
+			(mt != NULL && bt != NULL && mt != bt) ? "   <-- DIFFERENT from baseTex" : "");
+	}
+	// [rc4l] The TEXTURE COORDINATES the piece carries, which is the one thing a picture cannot
+	// tell you. A surface at the right place, with the right texture and the right light, can
+	// still sample the wrong PART of that texture -- and what reaches the screen is then a smear
+	// of one row, or a repeat count so high the sampler hands back the top mip and the detail is
+	// averaged away. Both look like "the texture is wrong" and neither is.
+	{
+		int nverts = 0;
+		const FFlatVertex *vp = zx::levelmesh::MeshVertexData(nverts);
+		if (vp != NULL && p.range.count > 0 && (int)(p.range.offset + p.range.count) <= nverts)
+		{
+			float u0 = vp[p.range.offset].u, u1 = u0, v0 = vp[p.range.offset].v, v1 = v0;
+			for (unsigned k = 1; k < p.range.count; k++)
+			{
+				const FFlatVertex &q = vp[p.range.offset + k];
+				if (q.u < u0) u0 = q.u; if (q.u > u1) u1 = q.u;
+				if (q.v < v0) v0 = q.v; if (q.v > v1) v1 = q.v;
+			}
+			Printf("        u %.3f..%.3f (%.2f copies), v %.3f..%.3f (%.2f copies)%s\n",
+				u0, u1, u1 - u0, v0, v1, v1 - v0,
+				(v1 - v0 > 8.f || u1 - u0 > 32.f) ? "   <-- repeated far more than a wall should be" : "");
+		}
+	}
 	// [rc4l] Whether this surface has a brightmap, and whether the backend is therefore adding one.
 	// "The feature is ported" and "this particular texture uses it" are different claims, and only
 	// the second one can be checked by looking at a screenshot of this wall.

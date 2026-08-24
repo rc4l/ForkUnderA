@@ -39,6 +39,11 @@
 
 
 
+// [rc4l] Mip chains for materials. On by default: point-sampling a 64x64 Doom texture across a
+// long vista aliases badly, and GL has always mipmapped. Off is the A/B for a cut-out texture that
+// has lost its shape at distance -- see the note at the CreateTexture below.
+CVAR(Bool, fua_dg_mips, true, CVAR_ARCHIVE)
+
 namespace zx { namespace hwrender {
 
 Diligent::ITextureView *GetCameraSRV(const void *material);
@@ -245,8 +250,15 @@ Diligent::ITextureView *GetMaterialSRV(const void *materialPtr, int translation)
 	// badly at distance -- the GL renderer has always mipmapped, so a port that does not is not
 	// comparable to look at. MipLevels 0 means "full chain"; GENERATE_MIPS lets the GPU build it.
 	td.Usage = Diligent::USAGE_DEFAULT;
-	td.MipLevels = 0;
-	td.MiscFlags = Diligent::MISC_TEXTURE_FLAG_GENERATE_MIPS;
+	// [rc4l] Switchable, because mipmapping and ALPHA TESTING do not compose.
+	//
+	// A cut-out texture stores its shape in alpha, and averaging four texels averages the shape
+	// with it: a few levels down the mask is grey everywhere and the discard threshold either
+	// keeps the lot or drops the lot. The RGB it averages in comes from the TRANSPARENT texels
+	// too, which carry whatever colour the palette left behind them and were never meant to be
+	// seen. See docs/mapbake-invalidation.md for the case that found this.
+	td.MipLevels = fua_dg_mips ? 0 : 1;
+	td.MiscFlags = fua_dg_mips ? Diligent::MISC_TEXTURE_FLAG_GENERATE_MIPS : Diligent::MISC_TEXTURE_FLAG_NONE;
 
 	// [rc4l] Create EMPTY, then write mip 0 and let the GPU build the rest. Passing initial data here
 	// is what a single-mip texture does; with a full chain requested Diligent demands init data for
@@ -273,7 +285,7 @@ Diligent::ITextureView *GetMaterialSRV(const void *materialPtr, int translation)
 	delete[] buf;
 
 	e.srv = e.tex ? e.tex->GetDefaultView(Diligent::TEXTURE_VIEW_SHADER_RESOURCE) : EnsureWhite();
-	if (e.tex && e.srv) GetContext()->GenerateMips(e.srv);
+	if (e.tex && e.srv && fua_dg_mips) GetContext()->GenerateMips(e.srv);
 	g_textures.Push(e);
 	return e.srv;
 }
@@ -298,5 +310,36 @@ bool MaterialIsMasked(const void *materialPtr)
 }
 
 }} // namespace zx::hwrender
+
+// [rc4l] What the ALPHA of a material looks like by the time it is uploaded.
+//
+// A cut-out texture that draws as a solid rectangle has lost its alpha somewhere between the lump
+// and the sampler, and every stage in between looks fine from outside. This asks the upload's own
+// question -- CreateTexBuffer, with the arguments the upload uses -- and counts what came back.
+CCMD(fua_dg_texalpha)
+{
+	if (argv.argc() < 2) { Printf("usage: fua_dg_texalpha [texture name]\n"); return; }
+	FTextureID id = TexMan.CheckForTexture(argv[1], FTexture::TEX_Any);
+	if (!id.isValid()) { Printf("no texture called %s\n", argv[1]); return; }
+	FMaterial *mat = FMaterial::ValidateTexture(id, false, true);
+	if (mat == NULL) { Printf("%s has no material\n", argv[1]); return; }
+	int w = 0, h = 0;
+	unsigned char *buf = mat->CreateTexBuffer(0, w, h, true, false);
+	if (buf == NULL || w <= 0 || h <= 0) { Printf("%s produced no buffer\n", argv[1]); return; }
+	int zero = 0, low = 0, full = 0;
+	const int n = w * h;
+	for (int i = 0; i < n; i++)
+	{
+		const unsigned char a = buf[i * 4 + 3];
+		if (a == 0) zero++;
+		else if (a < 128) low++;
+		else if (a == 255) full++;
+	}
+	Printf("%s: %dx%d, alpha 0 in %.1f%%, under half in %.1f%%, fully opaque in %.1f%%\n",
+		argv[1], w, h, 100.0 * zero / n, 100.0 * low / n, 100.0 * full / n);
+	Printf("  isMasked %s, mIsTransparent %d\n",
+		mat->isMasked() ? "yes" : "no", (int)mat->tex->gl_info.mIsTransparent);
+	delete[] buf;
+}
 
 #endif // FUA_DILIGENT
