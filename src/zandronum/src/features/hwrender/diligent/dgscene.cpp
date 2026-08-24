@@ -2450,15 +2450,25 @@ static bool EnsureSkyPortalResources()
 			// Baked geometry cannot know the eye height, so the clamp happens here, where it does.
 			// Without it the quad paints sky over the water in front of the far shore: a bright
 			// white streak straight along the horizon, mean 44 against GL 1.8 on that row.
+			"layout(location = 0) out float vUp;\n"
 			"void main() {\n"
 			"    vec3 p = vec3(aPos.x, max(aPos.y, uCameraPos.y), aPos.z);\n"
+			"    vUp = p.y - uCameraPos.y;\n"
 			"    gl_Position = uMVP * vec4(p, 1.0);\n"
 			"}\n";
 		static const char *kSurfPS =
 			"#version 450\n"
 			"layout(binding = 1) uniform sampler2D uSky;\n"
 			"layout(location = 0) out vec4 outColor;\n"
-			"void main() { outColor = vec4(texelFetch(uSky, ivec2(gl_FragCoord.xy), 0).rgb, 1.0); }\n";
+			"layout(location = 0) in float vUp;\n"
+			"void main() {\n"
+			// [rc4l] The sky stops at the horizon, and the horizon is eye level. The vertex clamp
+			// puts every corner at or above it; this catches what interpolation and the
+			// rasteriser do in between, which is where a band of sky several rows deep was
+			// appearing UNDER the waterline -- the blue quad rc4l photographed.
+			"    if (vUp < -0.5) discard;\n"
+			"    outColor = vec4(texelFetch(uSky, ivec2(gl_FragCoord.xy), 0).rgb, 1.0);\n"
+			"}\n";
 		Diligent::RefCntAutoPtr<Diligent::IShader> svs, sps;
 		{
 			Diligent::ShaderCreateInfo ci;
