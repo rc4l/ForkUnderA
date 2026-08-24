@@ -194,3 +194,32 @@ The box distinguishes "captured nothing" from "captured it into the wrong place"
 distinguishes both from "handed over black, or at alpha zero" -- three failures that are identical
 from outside and have nothing in common inside. `fua_dg_dynstats` then confirms the far end:
 `dynamic: 13 sprites -> 42 draws, 3012 tris` is the models arriving where they are drawn from.
+
+## A model is a SOLID, and that is not a detail (2026-08-24)
+
+The first working version drew the car with its own interior visible through the bodywork -- floor,
+seats and far panels straight through the near ones. It reads as garbled geometry and it is nothing
+of the kind.
+
+Every dynamic piece went into the sorted back-to-front pass, and that pass draws with **depth writes
+off**. That is deliberate and correct for what used to be in it: a sprite is a flat billboard and a
+decal is glued to a wall, so neither can occlude itself, and turning depth writes on there was
+already tried and reverted -- it let an alpha-tested impact sprite punch a black hole in the
+additive glow behind it. A model breaks the assumption the pass was built on. It is a closed shell,
+so without depth writes whichever triangle the buffer happens to hold last wins.
+
+**What upstream does:** `gl_RenderModel` -- ours and GZDoom's alike -- draws an opaque model in the
+opaque pass with `glDepthFunc(GL_LEQUAL)` and depth writes on, and enables face culling ONLY when
+the render style is not `STYLE_Normal`, with a comment saying it is a stand-in for the depth sorting
+translucent models do not get. So culling is not what makes a model look right; the depth buffer is.
+
+**In our pattern:** `MeshPiece::solid` marks a piece as a closed shell, the model capture sets it,
+and `DrawSolidDyn` draws those runs with `g_maskedNoCullPSO` alongside the world instead of in the
+sorted pass. That pipeline already exists, is alpha-tested, already writes depth and already ignores
+winding -- exactly the combination `gl_RenderModel` sets up by hand -- so this needs no new pipeline,
+no new shader and no change to how sprites are treated. A translucent model still goes to the sorted
+pass, which is also what GL does with one.
+
+Measured at `-5769,435,-184` facing `215,21` on `wdiex02`, the vantage rc4l reported it from --
+matched pair, same camera: **14.3% of pixels and `mean|d|` 4.3 before, 9.6% and 3.2 after**, and the
+interior is gone from the picture.

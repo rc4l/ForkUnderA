@@ -144,6 +144,9 @@ struct MeshPiece
 	//
 	// Corner order is GL's strip order: (x1,z1,y1), (x2,z1,y2), (x1,z2,y1), (x2,z2,y2).
 	bool          quad;
+	// [rc4l] A closed 3D shell (a model) rather than a flat billboard, so it must occlude itself:
+	// the backend draws these with the world, depth-writing, instead of in the sorted blend pass.
+	bool          solid;
 
 	// [rc4l] Zero-initialise. Every site fills the fields it cares about and leaves the rest, so a
 	// field added later is garbage at the sites that predate it -- which is how SegCache::pieces
@@ -161,7 +164,7 @@ struct MeshPiece
 		dynLightIndex = -1;
 		normX = normY = normZ = 0.f;
 		dynR = dynG = dynB = 0.f;
-		quad = false;
+		quad = false; solid = false;
 		facesDown = false; depthBias = false; redToAlpha = false;
 	}
 };

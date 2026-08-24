@@ -413,6 +413,13 @@ struct DynRun
 	int          translation;
 	bool         depthBias;    // decals: coplanar with their wall, so they need the biased pipeline
 	bool         redAlpha;     // the texture is an alpha mask, not a colour image
+	// [rc4l] A closed shell rather than a billboard, and the difference decides the pipeline.
+	//
+	// Sprites and decals are flat, so they cannot occlude themselves and the sorted depth-write-off
+	// pass is exactly right for them. A model is a solid: its near panels have to hide its far ones,
+	// and without depth writes whichever triangle the buffer happens to hold last wins. On a car
+	// that draws the interior floor and seats straight through the bodywork.
+	bool         solid;
 	float        cx, cy, cz;   // centroid, for the merged sort
 };
 static TArray<DynRun> g_dynRuns;
@@ -2705,6 +2712,7 @@ static void BuildDynamic(Diligent::IDeviceContext *ctx)
 				r.translation = p.translation;
 				r.depthBias = p.depthBias;
 				r.redAlpha = p.redToAlpha;
+				r.solid = p.solid;
 				r.cx = p.sortX; r.cy = p.sortY; r.cz = p.sortZ;
 				runs.Push(r);
 			}
@@ -2799,6 +2807,45 @@ static void BuildDynamic(Diligent::IDeviceContext *ctx)
 // contribution is a batch in the static vertex buffer and a sprite's is a run in the dynamic one, so
 // the merged list carries which buffer it came from and the pass rebinds when it crosses over --
 // a few dozen draws, so the extra binds are not worth avoiding.
+// [rc4l] The dynamic pieces that are SOLID, drawn with the world instead of in the sorted pass.
+//
+// GL draws an opaque model in the opaque pass, depth-writing, with culling off -- it only turns
+// culling on for translucent ones, to paper over having no depth sort. This is that pass: the
+// masked no-cull pipeline is already alpha-tested, already writes depth and already ignores winding,
+// which is the exact combination a model wants and the reason it needs no pipeline of its own.
+static void DrawSolidDyn(Diligent::IDeviceContext *ctx)
+{
+	if (!g_dynVB || g_dynRuns.Size() == 0 || !g_maskedNoCullPSO) return;
+
+	Diligent::IBuffer *vbs[] = { g_dynVB };
+	const Diligent::Uint64 offsets[] = { 0 };
+	bool bound = false;
+	for (unsigned i = 0; i < g_dynRuns.Size(); i++)
+	{
+		const DynRun &r = g_dynRuns[i];
+		if (r.count == 0 || !r.solid || r.blend != 0) continue;
+		auto *srb = WorldSRB(g_maskedNoCullPSO.RawPtr());
+		if (srb) g_dynBindless++;
+		else { g_dynPerMaterial++; srb = GetMaterialSRB(g_maskedNoCullPSO.RawPtr(), r.material, r.translation); }
+		if (!srb) continue;
+		if (!bound)
+		{
+			ctx->SetVertexBuffers(0, 1, vbs, offsets, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
+				Diligent::SET_VERTEX_BUFFERS_FLAG_RESET);
+			ctx->SetPipelineState(g_maskedNoCullPSO);
+			bound = true;
+		}
+		ctx->CommitShaderResources(srb, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+		Diligent::DrawAttribs dr;
+		dr.NumVertices = r.count;
+		dr.StartVertexLocation = r.first;
+		dr.Flags = Diligent::DRAW_FLAG_VERIFY_ALL;
+		ctx->Draw(dr);
+		g_dynDraws++;
+		g_dynTris += r.count / 3;
+	}
+}
+
 static void DrawBlended(Diligent::IDeviceContext *ctx)
 {
 	struct BlendDraw { bool dyn; unsigned first, count; int blend, translation; const void *material;
@@ -2835,6 +2882,8 @@ static void DrawBlended(Diligent::IDeviceContext *ctx)
 		{
 			const DynRun &r = g_dynRuns[i];
 			if (r.count == 0) continue;
+			// [rc4l] An opaque solid is drawn with the world, not in this list. See DrawSolidDyn.
+			if (r.solid && r.blend == 0) continue;
 			// Blend mode 3 is the fuzz shadow; the engine draws it as a dark near-opaque overlay, and
 			// normal translucency is a fair stand-in until the fuzz shaders are ported.
 			// [rc4l] blend 0 takes the TRANSLUCENT pipeline, not the masked one.
@@ -6162,6 +6211,9 @@ static void DrawWorld(Diligent::IDeviceContext *ctx)
 	// [rc4l] Sprites are built here but ALL of them draw in the sorted pass below, never in an
 	// opaque one. See DrawBlended.
 	BuildDynamic(ctx);
+
+	// [rc4l] ...except the solid ones, which belong with the world: a model has to occlude itself.
+	DrawSolidDyn(ctx);
 
 	// [rc4l] Then everything that blends -- translucent 3D floors, translucent middle textures and
 	// translucent sprites -- in ONE back-to-front pass, so the world and the sprites sort against each

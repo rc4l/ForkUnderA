@@ -200,6 +200,10 @@ void CaptureModelSurface(const FModelVertexBuffer *vbuf, unsigned int base1, uns
 	g_lastRGB[0] = mp.colorR; g_lastRGB[1] = mp.colorG; g_lastRGB[2] = mp.colorB;
 	g_lastMaterial = mp.material;
 	mp.quad = false;
+	// [rc4l] Solid, which is what separates a model from every other dynamic piece: it is a closed
+	// shell, so its near panels must hide its far ones. Left in the sorted depth-write-off pass
+	// with the sprites, a car draws its own interior floor and seats through the bodywork.
+	mp.solid = true;
 
 	DynAppend(&g_tris[0], indexCount, mp);
 	g_surfaces++;
