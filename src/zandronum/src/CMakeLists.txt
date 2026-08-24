@@ -1604,6 +1604,7 @@ add_executable( zdoom WIN32
 	features/levelmesh/staticmesh.cpp
 	features/levelmesh/flatmesh.cpp
 	features/levelmesh/projdecals.cpp
+	features/levelmesh/modelmesh.cpp
 	features/levelmesh/computation/surfacebudget_compute.cpp
 	features/levelmesh/computation/lightband_compute.cpp
 	features/levelmesh/computation/wallbatch_compute.cpp

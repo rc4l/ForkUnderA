@@ -164,6 +164,11 @@ export async function play(opts = {}) {
 
   const inst = await launchInstance({
     port,
+    // [rc4l] A caller-chosen token, forwarded. play used to mint its own and print it, so a scripted
+    // launch could only learn it by parsing stdout -- which is buffered, so the first several seconds
+    // of a run had a live engine and no way to address it. .play-session covers the interactive case
+    // and is written by whichever launch went last, which is the wrong answer when two are up.
+    token: opts.token,
     map: opts.map || "MAP01",
     iwad: opts.iwad || "doom2.wad",
     // [rc4l] Hands-on unless told otherwise -- but --lock exists because MY OWN launches must use

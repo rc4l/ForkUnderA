@@ -45,6 +45,8 @@
 #include "gl/renderer/gl_renderer.h"
 #include "gl/scene/gl_drawinfo.h"
 #include "gl/models/gl_models.h"
+#include "features/levelmesh/modelmesh.h"
+#include "features/hwrender/hud2d.h"
 #include "gl/textures/gl_material.h"
 #include "gl/shaders/gl_shader.h"
 
@@ -355,6 +357,17 @@ void FMD3Model::RenderFrame(FTexture * skin, int frameno, int frameno2, double i
 		FMaterial * tex = FMaterial::ValidateTexture(surfaceSkin, false);
 
 		gl_RenderState.SetMaterial(tex, CLAMP_NONE, translation, -1, false);
+
+		// [rc4l] The surface goes to the mesh, and to GL only if GL is still drawing this frame.
+		//
+		// Same shape as the sprite branch in GLSprite::Draw: capture first, then return before the
+		// rasterisation when the backend is carrying the frame. Not gated on standalone alone --
+		// side by side, GL's own window is live and still needs the draw.
+		zx::levelmesh::CaptureModelSurface(mVBuf,
+			surf->vindex + frameno * surf->numVertices,
+			surf->vindex + frameno2 * surf->numVertices,
+			(float)inter, surf->iindex, surf->numTriangles * 3, tex, translation);
+		if (zx::hwrender::StandaloneActive()) continue;
 
 		gl_RenderState.Apply();
 		mVBuf->SetupFrame(surf->vindex + frameno * surf->numVertices, surf->vindex + frameno2 * surf->numVertices);

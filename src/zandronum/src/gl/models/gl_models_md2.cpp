@@ -47,6 +47,8 @@
 #include "gl/renderer/gl_renderstate.h"
 #include "gl/scene/gl_drawinfo.h"
 #include "gl/models/gl_models.h"
+#include "features/levelmesh/modelmesh.h"
+#include "features/hwrender/hud2d.h"
 #include "gl/textures/gl_material.h"
 #include "gl/shaders/gl_shader.h"
 #include "gl/data/gl_vertexbuffer.h"
@@ -373,6 +375,15 @@ void FDMDModel::RenderFrame(FTexture * skin, int frameno, int frameno2, double i
 
 	gl_RenderState.SetMaterial(tex, CLAMP_NONE, translation, -1, false);
 	gl_RenderState.SetInterpolationFactor((float)inter);
+
+	// [rc4l] Sequentially numbered rather than indexed -- see CaptureModelSurface.
+	zx::levelmesh::CaptureModelSurface(mVBuf, frames[frameno].vindex, frames[frameno2].vindex,
+		(float)inter, 0, lodInfo[0].numTriangles * 3, tex, translation);
+	if (zx::hwrender::StandaloneActive())
+	{
+		gl_RenderState.SetInterpolationFactor(0.f);
+		return;
+	}
 
 	gl_RenderState.Apply();
 	mVBuf->SetupFrame(frames[frameno].vindex, frames[frameno2].vindex);

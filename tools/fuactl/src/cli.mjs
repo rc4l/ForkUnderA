@@ -74,7 +74,7 @@ const USAGE = `fuactl <command>
   renderer-info --port P [--token T]   renderer identity + whether GL timer queries work on this driver
   ui <action> [args] --port P [--token T]   drive the UI: read (menu as text), find <label>, nav <keys>, click <x> <y>, drag, type <text>, look --yaw D --pitch D, screenshot [name], exec <ccmd>
   diligent --port P [--frames N] [--shot FILE] [--sweep DIR]   drive the Diligent (Vulkan) backend: bake the level mesh, upload geometry, optional swapchain screenshot, optional debug-view sweep (lm0..lm4.png in DIR), the matched Diligent-vs-GL benchmark, and with --scale a GPU-time probe at 1x..100x the visible geometry
-  play [--restart] [--port P] [--map M] [--file a.pk3,b.pk3] [--preset ID --variant V] [--gl] [--side-by-side] [--rt] [--monsters] [--lock] [--res WxH]   a build to walk around in, Vulkan live in the window; stays up until Ctrl-C
+  play [--restart] [--port P] [--token T] [--map M] [--file a.pk3,b.pk3] [--preset ID --variant V] [--gl] [--side-by-side] [--rt] [--monsters] [--lock] [--res WxH]   a build to walk around in, Vulkan live in the window; stays up until Ctrl-C
   build [--root DIR]                 compile the engine and stage it, failing loudly instead of staging a stale binary
   shot <tag> [--port P] [--spot NAME | --at x,y,z --face yaw,pitch]   matched GL/Vulkan pair from a running instance, one camera, sim frozen
   shoot [--port P] --tag T --at x,y,z --face yaw,pitch [--look x,y,z] [--weapon W] [--map M] [--after TICS]   fire at a junction and capture a GL/Vulkan pair (--look frames a point, --after catches transient effects before they fade)
@@ -605,6 +605,7 @@ async function main() {
       }
       const inst = await play({
         port: flags.port ? Number(flags.port) : undefined,
+        token: flags.token || undefined,
         map: flags.map, iwad: flags.iwad, file: flags.file,
         preset: flags.preset, variant: flags.variant,
         catalogueDir: path.resolve(fileURLToPath(new URL(".", import.meta.url)), "../../../catalogue"),

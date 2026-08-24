@@ -109,3 +109,61 @@ shot the same way every other parity item here was established.
 
 Without that, this is unverifiable -- and an unverifiable rendering change is how the last several
 wrong conclusions in this work got made.
+
+## Built, 2026-08-24: Option A, and models are on screen
+
+`features/levelmesh/modelmesh.cpp`. The frame is resolved on the CPU and the result goes into the
+same dynamic stream sprites and decals already use, so models inherit the back-to-front sort,
+bindless materials, `CaptureShading` lighting and the parity harness without any of them being
+told about models.
+
+Four pieces, and the interesting part is how little each one is:
+
+1. **The geometry stays readable.** `FModelVertexBuffer::LockVertexBuffer` used to hand back a
+   mapped GL range that the loaders wrote into and then dropped -- `FMD3Model::BuildVertexBuffer`
+   even calls `UnloadGeometry()` on each surface afterwards. Lock now returns plain memory and
+   Unlock uploads it whole, so GL gets exactly what it got before and the data is still there to
+   read. Model data is tens of KB; the mesh it feeds is megabytes.
+2. **One interception point covers all three formats.** MD3, MD2 and voxels end their RenderFrame
+   the same way: set the material, `SetupFrame(off1, off2)`, draw. So each captures and then falls
+   through to the GL draw only when GL is still drawing -- the same shape as the sprite branch in
+   `GLSprite::Draw`, and gated the same way, on `StandaloneActive` rather than
+   `BackendPresenting`, because side by side GL's own window is live and still needs the draw.
+   MD2 is not indexed (it calls `glDrawArrays`), so the absence of an index buffer is read as
+   sequential numbering rather than as nothing to draw.
+3. **The transform comes from where it already exists.** `gl_RenderModel` builds the object-to-world
+   matrix into the render state for GL's vertex shader; the capture is bracketed around the frame
+   draw there and applies that same matrix on the CPU. The sprite is in scope at that level too,
+   which is where the light, translucency and sort position come from.
+4. **`fua_models`** reports what the last frame captured, and `fua_mesh_models 0` switches the whole
+   thing off. That counter is what made this tractable: the content is dark and the props are
+   small, so "is a model in view here" was otherwise a question about eyesight.
+
+### Measured
+
+`wdiex02`, sim frozen, `fua_dg_standalone 0`, nine whodunit wads loaded. Both readings are
+Vulkan against GL **in the same pair**, which is the only comparison this map allows -- its own
+lighting changes between shots, so comparing two Vulkan frames taken seconds apart measures the
+map, not the renderer.
+
+| vantage | models off | models on |
+|---|---|---|
+| spawn (4 models, 29 surfaces, 2986 triangles) | `mean\|d\|` 8.6 | **6.9** |
+| the alley at `-6478,1552` (2 models, 351 triangles) | `mean\|d\|` 4.8 | **4.4** |
+
+Switching the capture on changes 63.5% of the pixels at the spawn, so this is not a subtle
+addition -- and it moves TOWARD GL at both vantages, which is the direction that matters. Frame
+time is unchanged (median 29.7 ms on, 30.4 ms off, both the tic-locked rate of a frozen sim).
+
+### What is still missing, stated rather than implied
+
+- **The HUD weapon model.** `gl_RenderHUDModel` has the same fault and is NOT fixed. It is not the
+  same fix: a HUD model is drawn in view space with its own projection, so appending world-space
+  triangles would put the weapon in the room. It needs the HUD layer, not this stream.
+- **No normals.** `FModelVertex::SetNormal` is a no-op in this tree -- the loaders read normals and
+  throw them away, because GL's model shader never wanted them. So a captured surface has no side,
+  the backend skips its dynamic-light facing test the way it does for billboards, and a model lit
+  from behind is lit all over. Fixing this means carrying normals through the vertex buffer.
+- **Interpolation is now CPU work**, per visible model per frame, which is the trade Option A makes.
+  At this content's density it does not show. A mod with two hundred high-poly models in view is
+  the case that would, and `fua_models` is how to find out before assuming.

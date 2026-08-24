@@ -55,6 +55,7 @@
 #include "gl/renderer/gl_renderer.h"
 #include "gl/scene/gl_drawinfo.h"
 #include "gl/models/gl_models.h"
+#include "features/levelmesh/modelmesh.h"
 #include "gl/textures/gl_material.h"
 #include "gl/utility/gl_geometric.h"
 #include "gl/utility/gl_convert.h"
@@ -160,9 +161,11 @@ FModelVertexBuffer::~FModelVertexBuffer()
 
 FModelVertex *FModelVertexBuffer::LockVertexBuffer(unsigned int size)
 {
-	glBindBuffer(GL_ARRAY_BUFFER, vbo_id);
-	glBufferData(GL_ARRAY_BUFFER, size * sizeof(FModelVertex), NULL, GL_STATIC_DRAW);
-	return (FModelVertex*)glMapBufferRange(GL_ARRAY_BUFFER, 0, size * sizeof(FModelVertex), GL_MAP_WRITE_BIT|GL_MAP_INVALIDATE_BUFFER_BIT);
+	// [rc4l] Written into our own memory, then uploaded whole at unlock, rather than into a mapped
+	// range that vanishes. The loaders' writes are unchanged; what changes is that the result is
+	// still readable afterwards, which is what lets a backend resolve a frame without a GPU shader.
+	mShadowVerts.Resize(size);
+	return size ? &mShadowVerts[0] : NULL;
 }
 
 //===========================================================================
@@ -174,7 +177,8 @@ FModelVertex *FModelVertexBuffer::LockVertexBuffer(unsigned int size)
 void FModelVertexBuffer::UnlockVertexBuffer()
 {
 	glBindBuffer(GL_ARRAY_BUFFER, vbo_id);
-	glUnmapBuffer(GL_ARRAY_BUFFER); 
+	glBufferData(GL_ARRAY_BUFFER, mShadowVerts.Size() * sizeof(FModelVertex),
+		mShadowVerts.Size() ? &mShadowVerts[0] : NULL, GL_STATIC_DRAW);
 }
 
 //===========================================================================
@@ -187,9 +191,8 @@ unsigned int *FModelVertexBuffer::LockIndexBuffer(unsigned int size)
 {
 	if (ibo_id != 0)
 	{
-		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ibo_id);
-		glBufferData(GL_ELEMENT_ARRAY_BUFFER, size * sizeof(unsigned int), NULL, GL_STATIC_DRAW);
-		return (unsigned int*)glMapBufferRange(GL_ELEMENT_ARRAY_BUFFER, 0, size * sizeof(unsigned int), GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT);
+		mShadowIndices.Resize(size);
+		return size ? &mShadowIndices[0] : NULL;
 	}
 	else
 	{
@@ -206,7 +209,8 @@ unsigned int *FModelVertexBuffer::LockIndexBuffer(unsigned int size)
 void FModelVertexBuffer::UnlockIndexBuffer()
 {
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ibo_id);
-	glUnmapBuffer(GL_ELEMENT_ARRAY_BUFFER); 
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, mShadowIndices.Size() * sizeof(unsigned int),
+		mShadowIndices.Size() ? &mShadowIndices[0] : NULL, GL_STATIC_DRAW);
 }
 
 
@@ -1040,7 +1044,13 @@ void gl_RenderModel(GLSprite * spr)
 	gl_RenderState.mModelMatrix.scale(1, stretch, 1);
 
 	gl_RenderState.EnableModelMatrix(true);
+	// [rc4l] The matrix above is the whole reason this bracket exists. GL hands it to the vertex
+	// shader; the mesh has no per-piece transform, so the capture reads it from here and applies it
+	// on the CPU. Everything the surfaces need that is not geometry -- light, translucency, sort
+	// position -- comes from the sprite, which is only in scope at this level.
+	zx::levelmesh::ModelCaptureBegin(spr, gl_RenderState.mModelMatrix);
 	gl_RenderFrameModels( smf, spr->actor->state, spr->actor->tics, RUNTIME_TYPE(spr->actor), NULL, translation );
+	zx::levelmesh::ModelCaptureEnd();
 	gl_RenderState.EnableModelMatrix(false);
 
 	glDepthFunc(GL_LESS);

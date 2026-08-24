@@ -367,9 +367,11 @@ void GLSprite::Draw(int pass)
 		// and GPU work for no pixels. On rc4l's Whodunit content that is hundreds a frame, on the same
 		// device Vulkan is driving, and it is the OpenGL driver that TDR'd.
 		//
-		// Skipping it changes nothing that is on screen -- measured, 0.0% against the map's own floor.
-		// It does NOT fix models; they are still missing. docs/models-scope.md is how they come back.
-		if (!zx::hwrender::BackendPresenting()) gl_RenderModel(this);
+		// It is called unconditionally again now, because it is how models reach the mesh: the
+		// capture is bracketed around the frame draw inside it, where the model matrix and this
+		// sprite are both in scope. The rasterisation it used to be skipped for is now skipped one
+		// level down, per surface, exactly as the sprite branch above skips its own.
+		gl_RenderModel(this);
 	}
 
 	if (pass==GLPASS_TRANSLUCENT)

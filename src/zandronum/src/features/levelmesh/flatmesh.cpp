@@ -5,6 +5,7 @@
 #include "features/levelmesh/flatmesh.h"
 #include "features/hwrender/computation/lightside_compute.h"   // the plane bake, tested off-engine
 #include "features/levelmesh/staticmesh.h"
+#include "features/levelmesh/modelmesh.h"
 #include "features/levelmesh/computation/wallbatch_compute.h"
 #include "features/levelmesh/computation/flatmesh_compute.h"
 
@@ -661,7 +662,10 @@ void GetSpriteStyleDetail(int *dest16, int *classified4)
 	for (int i = 0; i < 4; i++) classified4[i] = g_classified[i];
 }
 
-void ClearSprites() { g_spritesThisFrame = 0; g_spriteNoteCount = 0; }
+// [rc4l] Models are cleared with sprites because they arrive with them: both are per-frame
+// dynamic pieces, and a model count left standing from last frame reads as a model that is
+// still there.
+void ClearSprites() { g_spritesThisFrame = 0; g_spriteNoteCount = 0; ModelStatsReset(); }
 
 // [rc4l] The sweep's own arithmetic, kept from the last frame that ran one.
 static int g_swSeen = 0, g_swNoSector = 0, g_swBehind = 0, g_swOffScreen = 0, g_swProcessed = 0;

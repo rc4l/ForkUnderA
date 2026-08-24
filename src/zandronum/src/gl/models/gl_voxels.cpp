@@ -55,6 +55,8 @@
 #include "gl/data/gl_vertexbuffer.h"
 #include "gl/scene/gl_drawinfo.h"
 #include "gl/models/gl_models.h"
+#include "features/levelmesh/modelmesh.h"
+#include "features/hwrender/hud2d.h"
 #include "gl/textures/gl_material.h"
 #include "gl/utility/gl_geometric.h"
 #include "gl/utility/gl_convert.h"
@@ -443,6 +445,12 @@ void FVoxelModel::RenderFrame(FTexture * skin, int frame, int frame2, double int
 {
 	FMaterial * tex = FMaterial::ValidateTexture(skin, false);
 	gl_RenderState.SetMaterial(tex, CLAMP_NOFILTER, translation, -1, false);
+
+	// [rc4l] A voxel model is one frame, so there is nothing to interpolate -- but it is the same
+	// geometry through the same buffers, which is why voxels come back with models rather than
+	// needing a path of their own.
+	zx::levelmesh::CaptureModelSurface(mVBuf, 0, 0, 0.f, 0, mNumIndices, tex, translation);
+	if (zx::hwrender::StandaloneActive()) return;
 
 	gl_RenderState.Apply();
 	mVBuf->SetupFrame(0, 0);

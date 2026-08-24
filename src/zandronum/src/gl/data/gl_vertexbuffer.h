@@ -212,6 +212,24 @@ public:
 	void UnlockIndexBuffer();
 
 	unsigned int SetupFrame(unsigned int frame1, unsigned int frame2);
+
+	// [rc4l] The geometry stays on the CPU as well as going to the GPU.
+	//
+	// A model's vertices used to be written straight into a mapped GL buffer and then dropped -- the
+	// loaders even free their own copies once BuildVertexBuffer has run. That is fine for a renderer
+	// that lerps two frames in a vertex shader, and useless for a backend that has to resolve the
+	// frame itself. So Lock hands back plain memory, Unlock uploads it, and what was uploaded is
+	// still here to be read. Model data is small (tens of KB per model); the world mesh it feeds is
+	// megabytes.
+	const FModelVertex *ShadowVertices() const { return mShadowVerts.Size() ? &mShadowVerts[0] : NULL; }
+	unsigned int ShadowVertexCount() const { return mShadowVerts.Size(); }
+	const unsigned int *ShadowIndices() const { return mShadowIndices.Size() ? &mShadowIndices[0] : NULL; }
+	unsigned int ShadowIndexCount() const { return mShadowIndices.Size(); }
+
+private:
+
+	TArray<FModelVertex> mShadowVerts;
+	TArray<unsigned int> mShadowIndices;
 };
 
 #define VMO ((FModelVertex*)NULL)
