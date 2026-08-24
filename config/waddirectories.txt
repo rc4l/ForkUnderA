@@ -5,6 +5,14 @@ macos   | ~/Library/Application Support/doomseeker  | Doomseeker (Wadseeker down
 macos   | ~/.doomseeker                             | Doomseeker (legacy layout)
 linux   | ~/.local/share/doomseeker                 | Doomseeker (Wadseeker download target)
 linux   | ~/.doomseeker                             | Doomseeker (legacy layout)
+# [rc4l] Zandronum's own config folders. Missing until a player reported Continue unable to reload
+# an IWAD that was sitting in one: we listed doomseeker and gzdoom but never the port this is a fork
+# of, so anyone whose doom2.wad lives where Zandronum keeps it could not be resolved BY NAME -- which
+# breaks joining a server that names it, not merely Continue.
+windows | $APPDATA/Zandronum                        | Zandronum
+macos   | ~/Library/Application Support/Zandronum   | Zandronum
+linux   | ~/.config/zandronum                       | Zandronum
+linux   | ~/.zandronum                              | Zandronum (legacy layout)
 windows | $USERPROFILE/Documents/GZDoom             | GZDoom
 windows | $USERPROFILE/Documents/My Games/Doom      | ZDoom-family "My Games" layout
 macos   | ~/Library/Application Support/gzdoom      | GZDoom
