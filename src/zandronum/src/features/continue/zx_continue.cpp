@@ -8,10 +8,12 @@
 #include "features/continue/computation/continuewrite_compute.h"
 #include "features/identity/zx_identity.h"
 #include "features/wadreload/zx_wadreload.h"
+#include "features/wad-download/zx_waddownload.h"
 
 #include "c_dispatch.h"
 #include "cmdlib.h"
 #include "cl_main.h"
+#include "d_main.h"		// D_AddFile
 #include "d_netinf.h"
 #include "doomdef.h"
 #include "doomstat.h"
@@ -122,27 +124,74 @@ void WriteRecord( const ContinueRecord &record )
 	g_bLoaded = true;
 }
 
-// What is loaded right now, so a Continue can put it back. Bare names only: the record is about
-// which game, not about where this machine happened to keep it.
+// [rc4l] What is loaded right now, by NAME and CHECKSUM, so a Continue can find the same game again
+// wherever the player keeps it.
+//
+// The checksums are not computed here. NETWORK_GetPWADList already holds one per loaded file: it is
+// built once per WAD set at startup, by a loop that reads every file end to end because servers have
+// to tell clients what they are running. Hashing again at quit would re-read every byte -- a large
+// pack is a visible pause on exit -- to arrive at an answer the engine worked out at launch.
 void CollectLoadedWads( ContinueRecord &record )
 {
-	for ( int i = 0; i < Wads.GetNumWads( ); ++i )
+	// The PWAD list is already exactly what we want here: it excludes the IWAD, our own pk3 and
+	// anything the engine auto-loaded, which are the three things a Continue must not try to re-add.
+	const TArray<NetworkPWAD> &loaded = NETWORK_GetPWADList( );
+
+	for ( unsigned int i = 0; i < loaded.Size( ); ++i )
 	{
-		const char *name = Wads.GetWadName( i );
-		if (( name == NULL ) || ( *name == 0 ))
+		if ( loaded[i].name.IsEmpty( ))
 			continue;
 
-		if ( i == 0 )
-			continue;						// our own pk3, which every launch already has
-
-		if ( i == FWadCollection::IWAD_FILENUM )
-		{
-			record.iwad = name;
-			continue;
-		}
-
-		record.wads.push_back( std::make_pair( std::string( name ), std::string( )));
+		record.wads.push_back( std::make_pair(
+			std::string( loaded[i].name.GetChars( )), std::string( loaded[i].checksum.GetChars( ))));
 	}
+
+	// The IWAD is deliberately absent from that list, so its digest is fetched the way the server
+	// fetches it for SQF2_FUA_IWAD_HASH: by name out of the authenticated list.
+	const char *iwadName = NETWORK_GetIWAD( );
+	if (( iwadName == NULL ) || ( *iwadName == 0 ))
+		return;
+
+	record.iwad = iwadName;
+
+	const TArray<NetworkPWAD> &authenticated = NETWORK_GetAuthenticatedWADsList( );
+	for ( unsigned int i = 0; i < authenticated.Size( ); ++i )
+	{
+		if ( authenticated[i].name.CompareNoCase( iwadName ) == 0 )
+		{
+			record.iwadHash = authenticated[i].checksum.GetChars( );
+			break;
+		}
+	}
+}
+
+// [rc4l] The file on this disk that a recorded name and checksum mean, as a path something can load.
+//
+// The join path's own order, and for its own reason: ask for the CONTENT first, because a copy we
+// already hold with that digest is the right answer by definition, and going by name instead lets
+// another file of the same name earlier in the search path answer for it. Falling back to D_AddFile
+// is what turns a bare name into a real path at all -- WadLoadable only stats what it is handed, so
+// a name that was never resolved is simply "file not found", whatever the search directories say.
+//
+// Empty when nothing on this machine matches, which the caller must treat as "cannot continue"
+// rather than guessing.
+FString ResolveWad( const std::string &name, const std::string &md5 )
+{
+	if ( name.empty( ))
+		return FString( );
+
+	if ( md5.empty( ) == false )
+	{
+		const FString exact = waddownload::FindLocalCopy( name.c_str( ), md5.c_str( ));
+		if ( exact.IsNotEmpty( ))
+			return exact;
+	}
+
+	TArray<FString> resolved;
+	if ( D_AddFile( resolved, name.c_str( )) && ( resolved.Size( ) > 0 ))
+		return resolved[resolved.Size( ) - 1];
+
+	return FString( );
 }
 
 // [rc4l] Asking the remembered server whether it is still there, and still the same game.
@@ -542,14 +591,36 @@ void Continue_Activate( void )
 		return;
 	}
 
+	// Names into paths before anything is asked to load them; see ResolveWad.
 	TArray<FString> pwads;
+	bool bAllFound = true;
+
 	for ( size_t i = 0; i < g_Record.wads.size( ); ++i )
-		pwads.Push( g_Record.wads[i].first.c_str( ));
+	{
+		const FString path = ResolveWad( g_Record.wads[i].first, g_Record.wads[i].second );
+		if ( path.IsEmpty( ))
+		{
+			bAllFound = false;
+			break;
+		}
+
+		pwads.Push( path );
+	}
+
+	const FString iwad = ResolveWad( g_Record.iwad, g_Record.iwadHash );
+	if ( g_Record.iwad.empty( ) == false && iwad.IsEmpty( ))
+		bAllFound = false;
+
+	if ( bAllFound == false )
+	{
+		Printf( "Continue: the files that session used are no longer on this machine.\n" );
+		return;
+	}
 
 	g_SaveAfterRestart = g_Record.savePath.c_str( );
 
 	const wadreload::ReloadResult r = wadreload::RequestReload(
-		g_Record.iwad.empty( ) ? NULL : g_Record.iwad.c_str( ), pwads );
+		iwad.IsEmpty( ) ? NULL : iwad.GetChars( ), pwads );
 
 	if ( r == wadreload::ReloadResult::AlreadyLoaded )
 	{

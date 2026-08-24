@@ -259,3 +259,35 @@ TEST(ContinueRecord, TheNewFieldsAreOptional)
 	ASSERT_TRUE(ParseContinue("fua-continue 1\nkind server\naddress 1.2.3.4:10666\n", out));
 	EXPECT_EQ("", out.serverName);
 }
+
+TEST(ContinueRecord, AWadLineWithNoTabIsANameOnItsOwn)
+{
+	// Our own writer always emits the separator, so this shape only arrives from a record written by
+	// hand or by something older. It is still a usable name.
+	ContinueRecord out;
+	ASSERT_TRUE(ParseContinue(
+		"fua-continue 1\nkind server\naddress 1.2.3.4:10666\nwad plain.wad\n", out));
+
+	ASSERT_EQ(1u, out.wads.size());
+	EXPECT_EQ("plain.wad", out.wads[0].first);
+	EXPECT_EQ("", out.wads[0].second);
+}
+
+TEST(ContinueRecord, ALineWithNoKeyIsSkippedRatherThanRead)
+{
+	// A line that begins with a space has no key. Reading it as one would invent a field named "".
+	ContinueRecord out;
+	ASSERT_TRUE(ParseContinue(
+		"fua-continue 1\nkind server\n   leading space\naddress 1.2.3.4:10666\n", out));
+
+	EXPECT_EQ("1.2.3.4:10666", out.address);
+}
+
+TEST(ContinueRecord, AWadLineWithNoNameIsDropped)
+{
+	ContinueRecord out;
+	ASSERT_TRUE(ParseContinue(
+		"fua-continue 1\nkind server\naddress 1.2.3.4:10666\nwad \t\n", out));
+
+	EXPECT_TRUE(out.wads.empty());
+}
