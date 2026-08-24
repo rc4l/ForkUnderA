@@ -65,6 +65,18 @@ void Continue_NoteJoined();
 // Forget it, for the case where the record describes something that turned out not to work.
 void Continue_Forget();
 
+// [rc4l] A reconnect is in progress, so the teardown it performs is not a departure.
+void Continue_NoteReconnecting( bool bReconnecting );
+
+// [rc4l] We have left a server, however that happened -- disconnected, kicked, banned, the server
+// died, a version mismatch. Every one of them lands the player in the same place, because somebody
+// who ends up somewhere different depending on WHY they left has to understand the difference to
+// predict the game.
+//
+// Records the intention only. Acting here would mean opening a menu or reloading WADs from the
+// middle of a teardown, which is what JoinTick already exists to avoid.
+void Continue_NoteLeftServer();
+
 // Call once per frame. Finishes a Continue that needed a WAD reload to get here, since the reload
 // does not return and the load has to happen on the other side of it.
 void Continue_Tick();
@@ -83,6 +95,9 @@ int Continue_DebugSaveVersion();
 bool Continue_DebugBusy();
 int Continue_DebugProbe();   // 0 unknown, 1 alive, 2 gone, 3 wads differ
 int Continue_DebugProbeSlot();
+int Continue_DebugDepartCalls();
+int Continue_DebugDepartReturns();
+bool Continue_DebugReturnPending();
 
 } // namespace zx
 

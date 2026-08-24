@@ -560,6 +560,9 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 		body += ",\"busy\":" + B( zx::Continue_DebugBusy( ) );
 		body += ",\"probe\":" + I( (long long)zx::Continue_DebugProbe( ) );
 		body += ",\"probeSlot\":" + I( (long long)zx::Continue_DebugProbeSlot( ) );
+		body += ",\"departCalls\":" + I( (long long)zx::Continue_DebugDepartCalls( ) );
+		body += ",\"departReturns\":" + I( (long long)zx::Continue_DebugDepartReturns( ) );
+		body += ",\"returnPending\":" + B( zx::Continue_DebugReturnPending( ) );
 		body += "}";
 		SendOk( id, body );
 	}
