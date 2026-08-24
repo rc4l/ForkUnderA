@@ -2313,6 +2313,13 @@ static void DrawWorld(Diligent::IDeviceContext *ctx);
 static ASkyViewpoint *CurrentSkyViewpoint()
 {
 	if (!fua_dg_skyportal) return NULL;
+	// [rc4l] The viewpoint the VISIBLE SKY SURFACES name, first. GL renders one portal per unique
+	// skybox and stencils each through the walls that name it; this backend renders one image, so
+	// it has to be the one the sky in view actually belongs to. Falling back to the sector the
+	// player stands in gives the right city seen from the wrong room on any map with more than
+	// one skybox -- small and off-centre inside a hard-edged rectangle.
+	ASkyViewpoint *fromWalls = (ASkyViewpoint *)zx::levelmesh::SkyQuadViewpoint();
+	if (fromWalls != NULL) return fromWalls;
 	sector_t *sec = (consoleplayer >= 0 && players[consoleplayer].camera != NULL)
 		? players[consoleplayer].camera->Sector : NULL;
 	ASkyViewpoint *sb = (sec != NULL) ? sec->GetSkyBox(sector_t::ceiling) : NULL;
@@ -2466,6 +2473,7 @@ static bool EnsureSkyPortalResources()
 			"}\n";
 		static const char *kSurfPS =
 			"#version 450\n"
+			"layout(binding = 0) uniform Constants { mat4 uMVP; vec4 uCameraPos; vec4 uLightParams; vec4 uClipPlane; vec4 uScreen; vec4 uSkyColor; };\n"
 			"layout(binding = 1) uniform sampler2D uSky;\n"
 			"layout(location = 0) out vec4 outColor;\n"
 			"layout(location = 0) in float vUp;\n"
@@ -2475,7 +2483,24 @@ static bool EnsureSkyPortalResources()
 			// rasteriser do in between, which is where a band of sky several rows deep was
 			// appearing UNDER the waterline -- the blue quad rc4l photographed.
 			"    if (vUp < -0.5) discard;\n"
-			"    outColor = vec4(texelFetch(uSky, ivec2(gl_FragCoord.xy), 0).rgb, 1.0);\n"
+			// [rc4l] Sampled by SCREEN FRACTION, not by texel.
+			//
+			// texelFetch indexes the sky image directly, which is only right while that image is
+			// exactly the size of the window. It is not: a side-by-side session gives the Vulkan
+			// window its own swapchain, and the portal texture is built from whichever size was
+			// current -- so every fragment past the texture edge fetched nothing and the sky came
+			// out as a hard-edged RECTANGLE with the map dark around it. It reproduces on no other
+			// window size, which is why an embedded capture at 1024x640 never showed it.
+			//
+			// A fraction is also what makes fua_dg_skyportal_scale work: a half-size portal image
+			// still covers the whole screen.
+			// [rc4l] Against the SKY IMAGE own size, not uScreen. uScreen is filled by whichever
+			// pass wrote the constants last and carries the mirror target size on some paths, which
+			// squeezed the whole sky into a fraction of the window -- the skyline sitting in a
+			// hard-edged rectangle. The portal texture is built from the swapchain, so its size IS
+			// the window size, and asking the sampler is self-consistent by construction.
+			"    vec2 uv = gl_FragCoord.xy / vec2(textureSize(uSky, 0));\n"
+			"    outColor = vec4(texture(uSky, uv).rgb, 1.0);\n"
 			"}\n";
 		Diligent::RefCntAutoPtr<Diligent::IShader> svs, sps;
 		{
@@ -2499,13 +2524,15 @@ static bool EnsureSkyPortalResources()
 			static Diligent::ShaderResourceVariableDesc surfVars[] = {
 				{ Diligent::SHADER_TYPE_PIXEL, "uSky",
 				  Diligent::SHADER_RESOURCE_VARIABLE_TYPE_STATIC },
+				{ Diligent::SHADER_TYPE_PIXEL, "Constants",
+				  Diligent::SHADER_RESOURCE_VARIABLE_TYPE_STATIC },
 			};
 			// uSky is a GLSL sampler2D -- a COMBINED image sampler. Without an immutable sampler half
 			// of that binding is unfilled, and the copy CreateShaderResourceBinding makes then faults
 			// inside the Vulkan loader, nowhere near the shader that caused it.
 			Diligent::SamplerDesc ssamp;
-			ssamp.MinFilter = Diligent::FILTER_TYPE_POINT;
-			ssamp.MagFilter = Diligent::FILTER_TYPE_POINT;
+			ssamp.MinFilter = Diligent::FILTER_TYPE_LINEAR;
+			ssamp.MagFilter = Diligent::FILTER_TYPE_LINEAR;
 			ssamp.MipFilter = Diligent::FILTER_TYPE_POINT;
 			ssamp.AddressU = Diligent::TEXTURE_ADDRESS_CLAMP;
 			ssamp.AddressV = Diligent::TEXTURE_ADDRESS_CLAMP;
@@ -2547,7 +2574,7 @@ static bool EnsureSkyPortalResources()
 			pci.GraphicsPipeline.InputLayout.LayoutElements = selems;
 			pci.GraphicsPipeline.InputLayout.NumElements = 3;
 			pci.PSODesc.ResourceLayout.Variables = surfVars;
-			pci.PSODesc.ResourceLayout.NumVariables = 1;
+			pci.PSODesc.ResourceLayout.NumVariables = 2;
 			pci.PSODesc.ResourceLayout.ImmutableSamplers = surfSamplers;
 			pci.PSODesc.ResourceLayout.NumImmutableSamplers = 1;
 			pci.pVS = svs;
@@ -2560,6 +2587,8 @@ static bool EnsureSkyPortalResources()
 			auto *cv = g_skySurfPSO->GetStaticVariableByName(Diligent::SHADER_TYPE_VERTEX, "Constants");
 			auto *srv = g_skyPortalColor->GetDefaultView(Diligent::TEXTURE_VIEW_SHADER_RESOURCE);
 			auto *tv = g_skySurfPSO->GetStaticVariableByName(Diligent::SHADER_TYPE_PIXEL, "uSky");
+			auto *pcv = g_skySurfPSO->GetStaticVariableByName(Diligent::SHADER_TYPE_PIXEL, "Constants");
+			if (pcv && cbuf) pcv->Set(cbuf);
 			if (cv && cbuf && tv && srv)
 			{
 				cv->Set(cbuf);
@@ -2617,11 +2646,20 @@ static bool RenderSkyPortal(Diligent::IDeviceContext *ctx)
 	// [rc4l] The viewpoint, interpolated, with its own angle ADDED to the camera -- which is how a
 	// skybox parallaxes and rotates. The BAM interpolation is the tested one; a hand-rolled version
 	// is already recorded in this tree as having made a rotating portal overshoot on right turns.
+	// [rc4l] Interpolated ONLY when the viewpoint has a previous position to interpolate from.
+	//
+	// A skybox viewpoint that never moves may carry PrevX/Y/Z of zero -- nothing has ever
+	// written them -- and then this lerps from the MAP ORIGIN to the actor, landing the camera
+	// somewhere out in the middle of the level and moving it with r_TicFrac. The skybox is then
+	// rendered from the wrong place, which makes the city small and off-centre, and it shifts
+	// as the frame fraction changes: the "sky moves with the mouse" this started from.
 	const fixed_t frac = r_TicFrac;
-	viewx = sb->PrevX + FixedMul(frac, sb->x - sb->PrevX);
-	viewy = sb->PrevY + FixedMul(frac, sb->y - sb->PrevY);
-	viewz = sb->PrevZ + FixedMul(frac, sb->z - sb->PrevZ);
-	viewangle = sa + zx::InterpolateAngleBAM(sb->PrevAngle, sb->angle, (int64_t)frac);
+	const bool moved = (sb->PrevX != 0 || sb->PrevY != 0 || sb->PrevZ != 0);
+	viewx = moved ? sb->PrevX + FixedMul(frac, sb->x - sb->PrevX) : sb->x;
+	viewy = moved ? sb->PrevY + FixedMul(frac, sb->y - sb->PrevY) : sb->y;
+	viewz = moved ? sb->PrevZ + FixedMul(frac, sb->z - sb->PrevZ) : sb->z;
+	viewangle = sa + (moved ? zx::InterpolateAngleBAM(sb->PrevAngle, sb->angle, (int64_t)frac)
+	                        : sb->angle);
 
 	// Never let the eye sit inside the skybox room floor or ceiling.
 	if (sb->Sector != NULL)
@@ -6444,12 +6482,6 @@ static void DrawWorld(Diligent::IDeviceContext *ctx)
 	// [rc4l] ...and the sky as geometry, before the blend pass because it is opaque.
 	DrawSkySurfaces(ctx);
 
-	// [rc4l] Consumed, so clear them HERE and not before the frame starts.
-	//
-	// GL fills this list during its own scene walk, which runs AFTER the backend has begun its
-	// frame -- clearing at the top threw away the very quads this pass was about to draw, and the
-	// pass reported zero draws with several hundred quads captured.
-	zx::levelmesh::SkyQuadsClear();
 
 	// [rc4l] Then everything that blends -- translucent 3D floors, translucent middle textures and
 	// translucent sprites -- in ONE back-to-front pass, so the world and the sprites sort against each

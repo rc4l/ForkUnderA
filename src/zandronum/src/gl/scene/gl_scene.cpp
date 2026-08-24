@@ -364,6 +364,13 @@ void FGLRenderer::CreateScene()
 	// camera moves, so it is dropped here and rebuilt as this frame generates it.
 	zx::levelmesh::DynClear();
 	zx::levelmesh::ClearSprites();
+	// [rc4l] The sky surfaces belong to THIS walk, and only to a walk that is not inside a portal.
+	//
+	// GL re-enters CreateScene to render the skybox portal, and that walk builds the skybox ROOM.
+	// Clearing on every walk therefore throws away the quads the main view just produced and keeps
+	// the room own ones instead; not clearing at all lets them accumulate across frames. Clearing
+	// only on the outer walk is the one that leaves the list holding what the player can see.
+	if (!GLPortal::inskybox) zx::levelmesh::SkyQuadsClear();
 	// [rc4l] features/levelmesh: age the marks by a frame. They are DRAWN by the backend, from their
 	// boxes, so nothing is emitted here -- but their lifetimes are the simulation's business and not
 	// the renderer's, and this is the one place that runs every frame in every mode.

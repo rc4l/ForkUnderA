@@ -22,6 +22,8 @@
 struct seg_t;
 struct sector_t;
 
+class AActor;
+
 namespace zx { namespace levelmesh {
 
 // [rc4l] Storage is FIXED per seg, not a growing level-wide array.
@@ -160,6 +162,7 @@ bool IsCapturing();
 // [rc4l] The sky quads GL builds for its stencil, taken as geometry. See the definition.
 void RegisterSkyQuad(const GLWall &wall);
 int SkyQuadsThisFrame();
+AActor *SkyQuadViewpoint();
 void SkyQuadsClear();
 const FFlatVertex *SkyQuadVertices(int &count);
 const MeshPiece *SkyQuadPieces(int &count);

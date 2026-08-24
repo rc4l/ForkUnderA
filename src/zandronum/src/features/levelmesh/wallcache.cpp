@@ -1358,10 +1358,19 @@ bool TryReplay(int segIndex, const WallCacheEligibility &e, const WallCacheStamp
 	if (fua_mesh_sky && segIndex < numsegs)
 	{
 		const seg_t *sg = &segs[segIndex];
+		// [rc4l] BOTH sides. SkyTop and SkyBottom look at the front sector AND the back one -- the sky
+		// boundary of a two-sided line belongs to whichever side carries the sky flat, and a seg is
+		// walked from either side depending on which subsector the traversal reaches first. Checking
+		// only the front left every seg whose sky is on the far side replayed from cache, so its quad
+		// was never built and the sky covered part of the view: at 1280x720 that read as the skyline
+		// sitting inside a hard-edged rectangle with the map dark around it.
 		const sector_t *fsec = sg->frontsector;
-		if (fsec != NULL && (fsec->GetTexture(sector_t::ceiling) == skyflatnum ||
-		                     fsec->GetTexture(sector_t::floor) == skyflatnum))
-			return false;
+		const sector_t *bsec = sg->backsector;
+		const bool frontSky = fsec != NULL && (fsec->GetTexture(sector_t::ceiling) == skyflatnum ||
+		                                       fsec->GetTexture(sector_t::floor) == skyflatnum);
+		const bool backSky = bsec != NULL && (bsec->GetTexture(sector_t::ceiling) == skyflatnum ||
+		                                      bsec->GetTexture(sector_t::floor) == skyflatnum);
+		if (frontSky || backSky) return false;
 	}
 
 	// [rc4l] DIAGNOSTIC ONLY (gl_wallcache 2): skip validation to isolate how much of the cache's

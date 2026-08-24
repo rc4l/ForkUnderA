@@ -275,3 +275,38 @@ extent, trimmed by the world geometry in front of it, while this pass draws the 
 it needs the visible set.
 
 `fua_mesh_sky 0` switches the sky surfaces off.
+
+## The rectangle is the PORTAL IMAGE, and it predates all of this
+
+Measured with `fua_mesh_sky 0` -- the sky-surface work switched off, i.e. the old full-screen blit --
+at two window sizes, sampling the sky band at the left edge, the centre and the right edge:
+
+| | left | centre | right |
+|---|---|---|---|
+| GL, 1024x640 | 18.87 | 15.18 | 6.43 |
+| Vulkan, 1024x640 | **1.48** | 14.52 | **1.94** |
+| Vulkan, 1280x720 | dark | city | dark |
+
+The sky portal has only ever covered a **central rectangle of the screen**, at every resolution. It
+was never visible in the numbers here because every band measured in this document was taken between
+x 0.59 and 0.88 -- inside the rectangle. rc4l saw it immediately because a person looks at the whole
+window.
+
+That reframes everything above. The horizon bleed, the white streak and the blue quad were all
+measured and fixed inside the rectangle, and they were real; but the reason the sky looks wrong from
+a normal viewing position is this, and it has nothing to do with sky surfaces, depth tests,
+horizons or visibility.
+
+**The blit is a full-screen triangle sampling the whole texture, so the texture itself has content
+only in the middle: the portal RENDER fills only part of its target.** The corners are the clear
+colour, which means nothing rasterised there -- and inside a sealed skybox room every direction
+should hit a wall. So the likely cause is that the skybox room's own geometry is largely NOT IN THE
+MESH: the room is an area GL visits only while rendering the portal, and what the portal draws is
+whatever happens to be baked, which here is the city billboard in the middle and little else.
+
+**Next step, and it is a cheap one:** count what the portal's DrawWorld actually draws (batches and
+triangles) compared with the main pass, and check whether the skybox room's sectors have baked
+geometry at all. If they do not, the fix is in the bake, not the backend.
+
+`fua_mesh_sky` now defaults to OFF: the sky surfaces are right where they were measured and this
+larger fault sits underneath them, so shipping them on would only change which wrong picture appears.

@@ -36,7 +36,15 @@ CVAR(Bool, fua_decal_log, false, 0)
 
 // [rc4l] The sky as SURFACES that write depth, rather than a background painted first and drawn
 // over. Off restores the old behaviour. See docs/skybleed-scope.md.
-CVAR(Bool, fua_mesh_sky, true, CVAR_ARCHIVE)
+// [rc4l] DEFAULT OFF until the resolution bug below is found.
+//
+// The sky surfaces are measurably right at 1024x640 -- the horizon band matches GL peak for
+// peak -- and at 1280x720 the sky comes out inside a hard-edged rectangle about 640x360 of
+// the frame with the map dark around it. Same code, same map, same camera; only the window
+// size differs, and fua_dg_skyportal_scale is 1 in both. Until that is understood the default
+// has to be the behaviour that is merely wrong in a known way rather than one that depends on
+// the size of the window. See docs/skybleed-scope.md.
+CVAR(Bool, fua_mesh_sky, false, CVAR_ARCHIVE)
 
 EXTERN_CVAR(Bool, fua_surface_mapbake_auto)
 
@@ -624,6 +632,7 @@ void RegisterFlatSubsector(const GLFlat &flat, subsector_t *sub, bool ceiling)
 // billboards built for one viewpoint, so they are not level geometry and must never be baked.
 static int g_spritesThisFrame = 0;
 static int g_skyQuadsThisFrame = 0;
+static AActor *g_skyViewpoint = NULL;
 static TArray<FFlatVertex> g_skyVerts;
 static TArray<MeshPiece>   g_skyPieces;
 
@@ -683,9 +692,11 @@ int SkyQuadsThisFrame() { return g_skyQuadsThisFrame; }
 //
 // So the list resets on the first push AFTER a read. No shared clock, no ordering assumption:
 // whatever the last walk produced is what the next draw sees.
-static bool g_skyConsumed = true;
 
-void SkyQuadsClear() { g_skyConsumed = true; }
+void SkyQuadsClear() { g_skyVerts.Clear(); g_skyPieces.Clear(); g_skyViewpoint = NULL; }
+
+// The viewpoint the visible sky surfaces name; NULL until a walk has produced one.
+AActor *SkyQuadViewpoint() { return g_skyViewpoint; }
 
 const FFlatVertex *SkyQuadVertices(int &count)
 {
@@ -734,6 +745,12 @@ int SpritePieceCount() { return g_spritesThisFrame; }
 void RegisterSkyQuad(const GLWall &wall)
 {
 	if (!fua_mesh_sky) return;
+	// [rc4l] The skybox THIS wall names, which is not necessarily the one the player is standing
+	// under. GL renders a portal per unique skybox and stencils each through its own walls; a map
+	// with more than one would otherwise have every sky surface painted from the player sector's
+	// viewpoint -- the right city seen from the wrong room, framed small and off-centre.
+	if (wall.skybox != NULL) g_skyViewpoint = wall.skybox;
+
 	if (wall.ztop[0] <= wall.zbottom[0] && wall.ztop[1] <= wall.zbottom[1]) return;
 
 	const float x1 = wall.glseg.x1, y1 = wall.glseg.y1;
@@ -770,7 +787,6 @@ void RegisterSkyQuad(const GLWall &wall)
 	// sky quads come from the wall walk and do not. Measured: 5911 quads captured and 0 runs
 	// built from them, with every other explanation (stale build, flag plumbing, pipeline,
 	// depth func) eliminated first.
-	if (g_skyConsumed) { g_skyVerts.Clear(); g_skyPieces.Clear(); g_skyConsumed = false; }
 	for (int k = 0; k < 6; k++) g_skyVerts.Push(q[k]);
 	mp.range.offset = g_skyVerts.Size() - 6;
 	mp.range.count = 6;
