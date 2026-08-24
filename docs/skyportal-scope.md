@@ -154,13 +154,26 @@ pass that got presented.
 
 ## Measured
 
-On `wdiex02` at `1162,163` facing `0,20` -- the water's edge, sky band visible -- with the sim
-frozen and `fua_dg_standalone 0` so GL's half of the pair is a live buffer:
+On `wdiex02` at `-6107.653,675.374,-184` facing `339.2578,-25.4883` -- the alley under the HOTEL
+sign, where the skybox city is in frame -- sim frozen, `fua_dg_standalone 0` so GL's half of the
+pair is a live buffer, and the nine whodunit wads on the command line. Saved as the spot
+`skyportal-city`, which carries the wad set with it.
 
-- portal on vs portal off, Vulkan against Vulkan: **0.9% of pixels differ**, and the worst row is
-  `y=13`, in the sky band. The portal is on screen, and it touches nothing but the sky.
-- against GL at the same camera: `mean|d| 11.5`, best alignment `dx=0 dy=0`, with the row profile
-  putting the difference at the horizon (`y=156..170`) rather than in the sky. That residual is the
-  pre-existing GL/Vulkan disagreement about wall tops, not the portal.
+- against GL at the same camera: **`mean|d| 4.0`**. The same vantage with the portal switched off,
+  falling back to the plain dome, reads **`mean|d| 44.6`**. That difference is the whole feature.
+- portal on vs portal off, Vulkan against Vulkan: **25% of pixels differ**. On an outdoor vantage
+  this is not a subtle tint; the sky band is most of what is on screen.
 - `wdi03` still draws its world and still takes the dome path (`vulkan sky: SKY1 256x128`), and the
   dome path on `wdiex02` is reachable at any time with `fua_dg_skyportal 0`.
+
+### The numbers this section used to carry were measured on the wrong map
+
+They read `1162,163`, 0.9% and `mean|d| 11.5`, and they were taken WITHOUT `--file` -- so without
+the nine whodunit wads, so `wdiex02` did not exist, so the engine was sitting in doom2 MAP01. It
+loaded, it rendered, it had a sky, the portal cvar A/B'd cleanly, and every number was an honest
+measurement of a question nobody asked. Nothing in the engine or the tool said a word.
+
+The check is one call and it costs nothing: `fuactl here` prints the map, and doom2 MAP01 spawns at
+`(-96, 784)` while real `wdiex02` spawns near `(-7264, 800)`. Make it before believing a capture,
+not after publishing one. `here --save` now records the loaded wad set with md5s for exactly this
+reason -- a camera that matches on a different wad set is a different picture wearing the same name.
