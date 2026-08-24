@@ -142,3 +142,37 @@ So the two stages collapse into one, and it is the second: **derive sky surfaces
 in standalone, which are the two modes the backend is meant to run in. The backend half -- the sky
 image, the pass, the screen-space sampler -- is small and was written in an hour; the derivation is
 the work.
+
+## The corrected conclusion (2026-08-24, second pass)
+
+Two more attempts failed, and the measurements that killed them are worth more than the code was.
+
+**Sky surfaces do not fix it, and the reason is geometric.** Derived sky quads were built the way
+`GLWall::SkyNormal`/`SkyTop` build them, drawn after the world with depth on. First cut emitted one
+per seg of every sky sector and was far worse than the bug -- the horizon band went from mean 1.6 to
+36.7 against GL's 7.3, because a 32768-tall quad at every sky seg is an invisible wall across every
+open area. Corrected to GL's real rule (emit only where the sky does not continue into the back
+sector) it changed nothing at all.
+
+`fua_sky_log` says why: GL emits **376 sky quads from this vantage, every one of them z 320..32768**.
+From an eye at z -441 that is 22-32 degrees above the horizon at these distances -- rows 60..130 of
+640. The band in question is rows 256..384. **No sky surface covers it, in either renderer.** So the
+sky-as-a-surface difference is real and worth fixing one day, and it is not this bug.
+
+**And the wall is not lit wrongly either.** Standing 340 units from it, facing it, GL and Vulkan
+agree to within noise: mean 3.10 against 3.06, max 4.7 both, 1.4% of pixels differing. Vulkan draws
+that wall correctly. It draws it *dark*, and so does GL.
+
+So what is left is exactly what the bisection said and nothing more: **at 1900 units GL does not draw
+that wall and Vulkan does.** GL's clipper rejects it; the map-derived bake has no visibility test and
+produces it; and the sky is where a wall nobody should see has nothing to hide behind. The bright
+city GL paints in that band is its sky portal showing through a region Vulkan has filled with
+geometry.
+
+**That makes the fix occlusion culling, not sky work** -- a visible-set test for the derived bake,
+which is a real feature (a PVS, or a clipper walk at bake time) and not a patch. Everything short of
+it that has been tried here -- reachability, sky capture, sky derivation -- fails for the same
+reason: they each answer a question that is not "can this surface be seen from where the player is".
+
+Nothing from the second pass is in the tree. What is kept is this section, `fua_look`'s material and
+u/v reporting, and `fua_dg_texalpha`.
