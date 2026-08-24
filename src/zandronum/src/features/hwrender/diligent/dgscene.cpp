@@ -65,6 +65,7 @@
 #include "gl/scene/gl_portal.h"
 #include "gl/textures/gl_material.h"
 #include "r_sky.h"
+#include "gl/textures/gl_skyboxtexture.h"   // FSkyBox: the six faces a skybox is
 #include "textures/textures.h"
 #include "g_level.h"
 #include "ShaderResourceVariable.h"
@@ -1593,6 +1594,25 @@ static const void  *g_skyMaterial = NULL;
 static int          g_skyBuiltFor = -1;   // FTextureID index; == has ambiguous overloads
 static bool         g_skyBuiltValid = false;
 
+// [rc4l] A skybox is six textures on a cube, not one on a dome.
+//
+// GLDEFS resolves a map's sky name to an FSkyBox, which carries six FTextures and no pixels of its
+// own. This backend detected one and drew it as an ordinary dome anyway, so a six-sided sky came out
+// as one of its faces smeared around a cylinder -- it has been saying "[SKYBOX -- not implemented]"
+// per sky since the sky path was written. See docs/skybox-scope.md.
+//
+// Each face is its own material, so each needs its own binding and its own draw, exactly as a world
+// batch does. They share one vertex buffer; a face is a range in it.
+struct SkyBoxFace
+{
+	int first, count;
+	Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding> srb;
+};
+static TArray<SkyBoxFace> g_skyBoxFaces;
+static Diligent::RefCntAutoPtr<Diligent::IBuffer>        g_skyBoxVB;
+static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_skyBoxPSO;
+static bool g_skyIsBox = false;
+
 static const char *kSkyVS =
 	"#version 450\n"
 	"layout(location = 0) in vec3 aPos;\n"
@@ -1790,9 +1810,13 @@ static void BuildSkyDome(int texw, int texh)
 	GetDevice()->CreateBuffer(bd, &bdata, &g_skyVB);
 }
 
-static bool EnsureSkyPipeline()
+// [rc4l] One creator, two pipelines. The dome WRAPS horizontally -- a cylinder has to, the texture
+// meets itself -- and a box face must CLAMP both ways or its edge pixels bleed across the seam,
+// which is what GL asks for with CLAMP_XY. Everything else about the two is identical.
+static bool CreateSkyPipeline(Diligent::TEXTURE_ADDRESS_MODE addrU, const char *name,
+	Diligent::RefCntAutoPtr<Diligent::IPipelineState> &outPSO)
 {
-	if (g_skyPSO) return true;
+	if (outPSO) return true;
 	auto *dev = GetDevice();
 	auto *swap = GetSwapChain();
 	if (!dev || !swap) return false;
@@ -1830,7 +1854,7 @@ static bool EnsureSkyPipeline()
 	samp.MinFilter = Diligent::FILTER_TYPE_LINEAR;
 	samp.MagFilter = Diligent::FILTER_TYPE_LINEAR;
 	samp.MipFilter = Diligent::FILTER_TYPE_LINEAR;
-	samp.AddressU = Diligent::TEXTURE_ADDRESS_WRAP;
+	samp.AddressU = addrU;
 	samp.AddressV = Diligent::TEXTURE_ADDRESS_CLAMP;   // no wrap top-to-bottom
 	static Diligent::ImmutableSamplerDesc samplers[] = {
 		{ Diligent::SHADER_TYPE_PIXEL, "uTex", samp },
@@ -1838,7 +1862,7 @@ static bool EnsureSkyPipeline()
 	};
 
 	Diligent::GraphicsPipelineStateCreateInfo pci;
-	pci.PSODesc.Name = "fua sky PSO";
+	pci.PSODesc.Name = name;
 	pci.PSODesc.PipelineType = Diligent::PIPELINE_TYPE_GRAPHICS;
 	pci.GraphicsPipeline.NumRenderTargets = 1;
 	pci.GraphicsPipeline.RTVFormats[0] = swap->GetDesc().ColorBufferFormat;
@@ -1868,15 +1892,162 @@ static bool EnsureSkyPipeline()
 	pci.PSODesc.ResourceLayout.NumImmutableSamplers = 1;
 	pci.pVS = vs;
 	pci.pPS = ps;
-	dev->CreateGraphicsPipelineState(pci, &g_skyPSO);
-
-	if (!g_skyPSO) return false;
-
-	if (auto *v = g_skyPSO->GetStaticVariableByName(Diligent::SHADER_TYPE_VERTEX, "Constants"))
+	dev->CreateGraphicsPipelineState(pci, &outPSO);
+	if (!outPSO) return false;
+	if (auto *v = outPSO->GetStaticVariableByName(Diligent::SHADER_TYPE_VERTEX, "Constants"))
 		v->Set(g_cb);
-	g_skyPSO->CreateShaderResourceBinding(&g_skySRB, true);
+	return true;
+}
+
+static bool EnsureSkyPipeline()
+{
+	if (g_skyPSO && g_skySRB) return true;
+	if (!CreateSkyPipeline(Diligent::TEXTURE_ADDRESS_WRAP, "fua sky PSO", g_skyPSO)) return false;
+	if (!g_skySRB) g_skyPSO->CreateShaderResourceBinding(&g_skySRB, true);
 	// RefCntAutoPtr has several conversions, so `!= NULL` is ambiguous; ask it directly.
 	return g_skySRB.RawPtr() != nullptr;
+}
+
+// The box gets its own pipeline for the sampler, and a binding PER FACE rather than one shared.
+// [rc4l] The cube, transcribed from GL's RenderBox.
+//
+// Coordinates are GL's own: +/-128 with Y up, which is the space the sky vertex shader already works
+// in -- it adds uCameraPos and rotates (x, z) about Y by the same (-180 + scroll) angle GL puts on
+// its model matrix. So the box needs no new transform and no shader change; useTex 1 makes the pixel
+// shader take the texture, which is what a face is.
+//
+// GL draws each face as a four-vertex strip and this pipeline is a triangle list, so each becomes
+// (0,1,2) and (2,1,3). Winding does not matter: the sky pipeline culls nothing.
+static void PushSkyQuad(TArray<SkyVertexData> &v,
+	const float px[4], const float py[4], const float pz[4], const float uu[4], const float vv[4])
+{
+	static const int order[6] = { 0, 1, 2, 2, 1, 3 };
+	for (int i = 0; i < 6; i++)
+	{
+		const int k = order[i];
+		SkyVertexData d;
+		d.x = px[k]; d.y = py[k]; d.z = pz[k];
+		d.u = uu[k]; d.v = vv[k];
+		d.r = d.g = d.b = 1.f;
+		d.useTex = 1.f;    // textured and opaque -- see kSkyPS
+		d.alpha  = 1.f;
+		v.Push(d);
+	}
+}
+
+static void BuildSkyBox(FSkyBox *sb)
+{
+	g_skyBoxFaces.Clear();
+	g_skyBoxVB.Release();
+	if (sb == NULL) return;
+
+	TArray<SkyVertexData> verts;
+	struct Pending { int first, count; FTexture *tex; };
+	TArray<Pending> pending;
+
+	// [rc4l] Two forms, told apart exactly as RenderBox tells them apart.
+	//
+	// With six faces each wall is its own texture. With three, faces[0] is ONE texture wrapped right
+	// around the four walls -- its U runs 0, .25, .5, .75, 1 -- and the top and bottom move down to
+	// faces[1] and faces[2]. Getting this wrong shows up as three of the four walls being the same
+	// picture, which looks plausible enough to miss.
+	const bool sixFace = (sb->faces[5] != NULL);
+	const int  topIdx  = sixFace ? 4 : 1;
+	const int  botIdx  = sixFace ? 5 : 2;
+
+	const float T = 128.f;
+	if (sixFace)
+	{
+		//                      north              east               south              west
+		const float qx[4][4] = {{ T,-T, T,-T}, {-T,-T,-T,-T}, {-T, T,-T, T}, { T, T, T, T}};
+		const float qy[4][4] = {{ T, T,-T,-T}, { T, T,-T,-T}, { T, T,-T,-T}, { T, T,-T,-T}};
+		const float qz[4][4] = {{-T,-T,-T,-T}, {-T, T,-T, T}, { T, T, T, T}, { T,-T, T,-T}};
+		const float qu[4]    = { 0.f, 1.f, 0.f, 1.f };
+		const float qv[4]    = { 0.f, 0.f, 1.f, 1.f };
+		for (int f = 0; f < 4; f++)
+		{
+			const int first = (int)verts.Size();
+			PushSkyQuad(verts, qx[f], qy[f], qz[f], qu, qv);
+			Pending pd; pd.first = first; pd.count = (int)verts.Size() - first; pd.tex = sb->faces[f];
+			pending.Push(pd);
+		}
+	}
+	else
+	{
+		// One texture around all four walls: four quads sharing a material, so ONE draw.
+		const float wx[4][4] = {{ T,-T, T,-T}, {-T,-T,-T,-T}, {-T, T,-T, T}, { T, T, T, T}};
+		const float wy[4]    = { T, T,-T,-T };
+		const float wz[4][4] = {{-T,-T,-T,-T}, {-T, T,-T, T}, { T, T, T, T}, { T,-T, T,-T}};
+		const int first = (int)verts.Size();
+		for (int f = 0; f < 4; f++)
+		{
+			const float u0 = f * 0.25f, u1 = u0 + 0.25f;
+			const float uu[4] = { u0, u1, u0, u1 };
+			const float vv[4] = { 0.f, 0.f, 1.f, 1.f };
+			PushSkyQuad(verts, wx[f], wy, wz[f], uu, vv);
+		}
+		Pending pd; pd.first = first; pd.count = (int)verts.Size() - first; pd.tex = sb->faces[0];
+		pending.Push(pd);
+	}
+
+	// Top. fliptop swaps its V, which is how a skybox author turns the ceiling the right way up.
+	{
+		const float tx[4] = { T, -T,  T, -T };
+		const float ty[4] = { T,  T,  T,  T };
+		const float tz[4] = { -T, -T, T,  T };
+		const float ftop  = sb->fliptop ? 1.f : 0.f;
+		const float tu[4] = { 0.f, 1.f, 0.f, 1.f };
+		const float tv[4] = { ftop, ftop, 1.f - ftop, 1.f - ftop };
+		const int first = (int)verts.Size();
+		PushSkyQuad(verts, tx, ty, tz, tu, tv);
+		Pending pd; pd.first = first; pd.count = (int)verts.Size() - first; pd.tex = sb->faces[topIdx];
+		pending.Push(pd);
+	}
+	// Bottom.
+	{
+		const float bx[4] = { T, -T,  T, -T };
+		const float by[4] = { -T, -T, -T, -T };
+		const float bz[4] = { -T, -T,  T,  T };
+		const float bu[4] = { 0.f, 1.f, 0.f, 1.f };
+		const float bv[4] = { 0.f, 0.f, 1.f, 1.f };
+		const int first = (int)verts.Size();
+		PushSkyQuad(verts, bx, by, bz, bu, bv);
+		Pending pd; pd.first = first; pd.count = (int)verts.Size() - first; pd.tex = sb->faces[botIdx];
+		pending.Push(pd);
+	}
+
+	if (verts.Size() == 0) return;
+
+	Diligent::BufferDesc bd;
+	bd.Name = "fua skybox VB";
+	bd.Size = (Diligent::Uint64)verts.Size() * sizeof(SkyVertexData);
+	bd.Usage = Diligent::USAGE_IMMUTABLE;
+	bd.BindFlags = Diligent::BIND_VERTEX_BUFFER;
+	Diligent::BufferData bdata;
+	bdata.pData = &verts[0];
+	bdata.DataSize = bd.Size;
+	GetDevice()->CreateBuffer(bd, &bdata, &g_skyBoxVB);
+	if (!g_skyBoxVB) return;
+
+	// A binding per face, from the same material path the world uses -- a face that cannot be
+	// resolved falls back to white rather than dropping the face and leaving a hole.
+	for (unsigned i = 0; i < pending.Size(); i++)
+	{
+		SkyBoxFace face;
+		face.first = pending[i].first;
+		face.count = pending[i].count;
+		g_skyBoxPSO->CreateShaderResourceBinding(&face.srb, true);
+		if (!face.srb) continue;
+		FMaterial *fm = pending[i].tex ? FMaterial::ValidateTexture(pending[i].tex, false) : NULL;
+		if (auto *v = face.srb->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "uTex"))
+			v->Set(GetMaterialSRV(fm, 0));
+		g_skyBoxFaces.Push(face);
+	}
+}
+
+static bool EnsureSkyBoxPipeline()
+{
+	return CreateSkyPipeline(Diligent::TEXTURE_ADDRESS_CLAMP, "fua skybox PSO", g_skyBoxPSO);
 }
 
 // Rebuild the dome and its binding when the level's sky texture changes.
@@ -1908,14 +2079,44 @@ static void EnsureSky()
 	// [rc4l] Say what the sky actually IS, once per genuinely new texture rather than per animation
 	// frame. Comparing this line against the engine's own is what identified both the skybox that is
 	// unimplemented and the animation that was frozen.
+	// [rc4l] A skybox is a CUBE, and until now this drew it as a dome anyway.
+	//
+	// GLDEFS resolves the map's sky to an FSkyBox, which is six textures and no pixels of its own --
+	// so the dome sampled one face and wrapped it around a cylinder. The marker that used to print
+	// here said as much on every such sky.
+	const bool isBox = (mat->tex != NULL && mat->tex->gl_info.bSkybox);
+	if (isBox)
+	{
+		FSkyBox *sb = static_cast<FSkyBox *>(mat->tex);
+		if (!EnsureSkyBoxPipeline()) { g_skyBuiltValid = false; return; }
+		BuildSkyBox(sb);
+		if (g_skyBoxFaces.Size() == 0) { g_skyBuiltValid = false; return; }
+		if (!sameShape)
+		{
+			Printf("vulkan sky: %s  [SKYBOX, %s: %s %s %s %s %s %s]\n",
+				(mat->tex->Name != NULL) ? mat->tex->Name : "?",
+				(sb->faces[5] != NULL) ? "six faces" : "wrapped",
+				(sb->faces[0] && sb->faces[0]->Name) ? sb->faces[0]->Name : "-",
+				(sb->faces[1] && sb->faces[1]->Name) ? sb->faces[1]->Name : "-",
+				(sb->faces[2] && sb->faces[2]->Name) ? sb->faces[2]->Name : "-",
+				(sb->faces[3] && sb->faces[3]->Name) ? sb->faces[3]->Name : "-",
+				(sb->faces[4] && sb->faces[4]->Name) ? sb->faces[4]->Name : "-",
+				(sb->faces[5] && sb->faces[5]->Name) ? sb->faces[5]->Name : "-");
+		}
+		g_skyIsBox = true;
+		g_skyMaterial = mat;
+		g_skyBuiltValid = true;
+		return;
+	}
+
+	g_skyIsBox = false;
 	if (!sameShape)
 	{
-		Printf("vulkan sky: %s %dx%d skyoffset %d  cap %d,%d,%d / %d,%d,%d%s\n",
+		Printf("vulkan sky: %s %dx%d skyoffset %d  cap %d,%d,%d / %d,%d,%d\n",
 			(mat->tex != NULL && mat->tex->Name != NULL) ? mat->tex->Name : "?",
 			mat->TextureWidth(), mat->TextureHeight(), g_skyTexOffset,
 			g_skyCapColor[0].r, g_skyCapColor[0].g, g_skyCapColor[0].b,
-			g_skyCapColor[1].r, g_skyCapColor[1].g, g_skyCapColor[1].b,
-			(mat->tex != NULL && mat->tex->gl_info.bSkybox) ? "  [SKYBOX -- not implemented]" : "");
+			g_skyCapColor[1].r, g_skyCapColor[1].g, g_skyCapColor[1].b);
 	}
 	if (!sameShape) BuildSkyDome(mat->TextureWidth(), mat->TextureHeight());
 	g_skyMaterial = mat;
@@ -2056,6 +2257,31 @@ static void DrawSkyFade(Diligent::IDeviceContext *ctx)
 
 static void DrawSky(Diligent::IDeviceContext *ctx)
 {
+	// [rc4l] The box is one buffer and a draw per face, because each face is its own material -- the
+	// same shape as a world batch, which is one draw per binding.
+	if (g_skyIsBox)
+	{
+		if (!g_skyBuiltValid || !g_skyBoxVB || !g_skyBoxPSO || g_skyBoxFaces.Size() == 0) return;
+		Diligent::IBuffer *bvbs[] = { g_skyBoxVB };
+		const Diligent::Uint64 boffsets[] = { 0 };
+		ctx->SetVertexBuffers(0, 1, bvbs, boffsets, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
+			Diligent::SET_VERTEX_BUFFERS_FLAG_RESET);
+		ctx->SetPipelineState(g_skyBoxPSO);
+		for (unsigned i = 0; i < g_skyBoxFaces.Size(); i++)
+		{
+			const SkyBoxFace &f = g_skyBoxFaces[i];
+			if (!f.srb || f.count == 0) continue;
+			ctx->CommitShaderResources(f.srb, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+			Diligent::DrawAttribs d;
+			d.NumVertices = (Diligent::Uint32)f.count;
+			d.StartVertexLocation = (Diligent::Uint32)f.first;
+			d.Flags = Diligent::DRAW_FLAG_VERIFY_ALL;
+			ctx->Draw(d);
+		}
+		DrawSkyFade(ctx);
+		return;
+	}
+
 	if (!g_skyBuiltValid || !g_skyVB || !g_skyPSO || g_skyVerts == 0) return;
 
 	Diligent::IBuffer *vbs[] = { g_skyVB };
@@ -2549,6 +2775,11 @@ static void ReleaseScenePipelines()
 	g_srbMasked.Release();
 	g_skySRB.Release();
 	g_skyPSO.Release();
+	// The face bindings are keyed on this level's materials, so they go with everything else that is.
+	g_skyBoxFaces.Clear();
+	g_skyBoxVB.Release();
+	g_skyBoxPSO.Release();
+	g_skyIsBox = false;
 	g_skyFadePSO.Release();
 	g_scenePSO.Release();
 	g_maskedPSO.Release();
