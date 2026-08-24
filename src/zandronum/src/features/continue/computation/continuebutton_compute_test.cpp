@@ -154,3 +154,23 @@ TEST( ContinueButton, DisconnectGoesBackToTheGameWeWereHosting )
 	EXPECT_EQ( ContinueMode::Disconnect, v.mode );
 	EXPECT_EQ( ContinueTarget::Hosted, v.target );
 }
+
+TEST( ContinueButton, LeavingNeverSendsYouBackToTheServerYouLeft )
+{
+	// The regression this encodes: the destination used to be worked out AFTER the teardown, when
+	// the pill answers the out-of-session question and offers the most recently left thing -- which
+	// right after a kick is the server that just threw you out. Asked with inSession, the server
+	// record must be irrelevant however new it is.
+	for ( int stamp = 0; stamp <= 100; stamp += 50 )
+	{
+		ContinueButtonInputs in;
+		in.inSession = true;
+		in.offlineUsable = true;
+		in.offlineStamp = 1;
+		in.serverUsable = true;
+		in.serverStamp = stamp;
+
+		EXPECT_EQ( ContinueTarget::Offline, DecideContinueButton( in ).target )
+			<< "server stamp " << stamp << " changed where leaving lands";
+	}
+}

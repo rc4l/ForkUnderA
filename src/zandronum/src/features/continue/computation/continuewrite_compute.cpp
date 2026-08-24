@@ -18,6 +18,11 @@ ContinueWriteVerdict DecideContinueWrite(const ContinueWriteInputs &in)
 	if (in.connecting)
 		return ContinueWriteVerdict::Skip;
 
+	// Our own server is running, so the offline record already says what to come back to and this
+	// snapshot would replace it with wherever we were standing when we started it.
+	if (in.hosting)
+		return ContinueWriteVerdict::Skip;
+
 	// Quitting from a menu is quitting, not leaving off somewhere.
 	if (in.inMap == false)
 		return ContinueWriteVerdict::Skip;

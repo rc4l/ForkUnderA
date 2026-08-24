@@ -6,6 +6,7 @@
 #include "features/continue/computation/continuerecord_compute.h"
 #include "features/continue/computation/continuebutton_compute.h"
 #include "features/continue/computation/continuedepart_compute.h"
+#include "features/continue/computation/continuereturn_compute.h"
 #include "features/continue/computation/continueshow_compute.h"
 #include "features/continue/computation/continuewrite_compute.h"
 #include "features/identity/zx_identity.h"
@@ -52,6 +53,10 @@ bool g_bReturnPending = false;
 // out of it: out of a session the pill offers the most recently left thing, which after a kick is
 // the server we were just thrown out of. Asking then sends the player back where they came from.
 ContinueTarget g_ReturnTarget = ContinueTarget::None;
+// [rc4l] A rehost we started and have not yet joined. HostStart only SPAWNS the server; the menu
+// path joins it separately once the child reports ready, so a rehost that stopped at HostStart left
+// the player at a menu watching a server they were supposed to be inside.
+bool g_bJoinRehostWhenReady = false;
 int g_DepartCalls = 0;
 int g_DepartReturns = 0;
 ContinueRecord g_Server;
@@ -532,6 +537,7 @@ void Continue_NoteLeavingLocalGame( void )
 	in.inMap = ( gamestate == GS_LEVEL ) && usergame;
 	in.connecting = ( CLIENT_GetConnectionState( ) == CTS_ATTEMPTINGCONNECTION );
 	in.crashing = false;
+	in.hosting = HostIsActive( );
 
 	if ( DecideContinueWrite( in ) != ContinueWriteVerdict::Write )
 		return;
@@ -557,6 +563,11 @@ void Continue_NoteHosting( const HostConfig &config )
 	record.stamp = NextStamp( );
 
 	WriteRecord( record, OfflineRecordPath( ));
+}
+
+void Continue_JoinHostWhenReady( void )
+{
+	g_bJoinRehostWhenReady = true;
 }
 
 void Continue_NoteReconnecting( bool bReconnecting )
@@ -719,13 +730,35 @@ void Continue_Tick( void )
 		}
 	}
 
+	// [rc4l] Join a server we restarted, the moment it is actually listening. HostTakeReadyEdge is a
+	// one-shot on purpose: a level would have this trying to join again on every frame afterwards,
+	// on a connection it already has.
+	if ( g_bJoinRehostWhenReady && HostTakeReadyEdge( ))
+	{
+		g_bJoinRehostWhenReady = false;
+
+		const FString address = HostConnectAddress( );
+		if ( address.IsNotEmpty( ))
+		{
+			FString command;
+			command.Format( "connect %s", address.GetChars( ));
+			AddCommandString( command.LockBuffer( ));
+			command.UnlockBuffer( );
+		}
+	}
+
 	// [rc4l] The return the departure gate asked for, now that the teardown is over. Same
 	// destination as pressing Disconnect, because leaving is leaving however it happened.
 	// [rc4l] And not until the engine has settled. A load is queued as a gameaction, so performing
 	// it while the teardown still has one of its own pending means ours is quietly overwritten --
 	// which is exactly what a kick does, with ga_fullconsole. Waiting for ga_nothing costs a frame
 	// or two and is the difference between returning and appearing to do nothing at all.
-	if ( g_bReturnPending && ( InSession( ) == false ) && ( gameaction == ga_nothing ))
+	ContinueReturnInputs ret;
+	ret.pending = g_bReturnPending;
+	ret.inSession = InSession( );
+	ret.engineIdle = ( gameaction == ga_nothing );
+
+	if ( DecideContinueReturn( ret ) == ContinueReturnStep::Perform )
 	{
 		g_bReturnPending = false;
 
@@ -777,7 +810,13 @@ static void RehostRecorded( void )
 	config.rconSecret.clear( );		// minted fresh by HostStart; the stored one died with its process
 
 	if ( HostStart( config ) == false )
+	{
 		Printf( "Continue: could not start that server again.\n" );
+		return;
+	}
+
+	// Spawning it is only half. The child is not listening yet, so the join waits for the ready edge.
+	g_bJoinRehostWhenReady = true;
 }
 
 // [rc4l] Put a recorded local session back: the right WAD set, then the snapshot.
