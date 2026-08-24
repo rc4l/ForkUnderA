@@ -349,3 +349,38 @@ stamped with whatever sector the last derived seg happened to leave behind. That
 before trying the split again.
 
 **Until then `fua_surface_mapbake_auto 0` gives a correct sky**, at the cost of the map bake.
+
+## Fixed, 2026-08-24: the portal draws its own room, and the sky is a surface
+
+Two changes, and neither is the one this document spent most of its length on.
+
+**1. The portal draws only what stands near ITS OWN camera** (`fua_dg_skyportal_reach`, 2048 units).
+The sky portal renders from a viewpoint inside a sealed room off the side of the map; GL walks the
+BSP from there and reaches only the room, while the map-derived bake has no walk and put the whole
+level in the mesh -- so the portal drew the map from inside the room, its walls standing all around
+that camera. A reach test rather than a sector flood, because a batch already carries its bounds.
+2048 measured best of 2048/4096/8192: `mean|d|` 5.1 against 7.0, the wider two letting map geometry
+back in.
+
+The bug that made this look impossible for an hour: the camera position was recorded AFTER the
+portal restores `viewx`, so the test measured from the PLAYER and excluded the room along with
+everything else -- every reach value drew nothing, which reads exactly like the test being wrong in
+principle.
+
+**2. The sky is drawn as SURFACES that cut at the horizon** (`fua_mesh_sky`, on). That is what
+removes the bright streak along the waterline: the full-screen background blit paints the portal
+image everywhere including below the horizon, where the portal holds its own room edge.
+
+### Measured, at rc4l's camera, 1280x720
+
+| | GL | Vulkan before | Vulkan after |
+|---|---|---|---|
+| sky, left edge | 17.23 | 1.96 | **16.73** |
+| sky, centre | 22.57 | 14.8 | **21.09** |
+| sky, right edge | 8.01 | 2.25 | **7.67** |
+| streak row | 1.28 | 30.7 | **2.98** |
+
+Stable across a wiggle: `mean|d|` 5.1 at yaw 290 and 5.1 at 294. Other vantages: the car improves
+from 9.6% of pixels differing to 7.7%, the alley sits at 19.8% against 15.1% before the sky work,
+the spawn 39.5% against 37.8%. Those two remain worse and remain unexplained; their worst rows are
+at the top of the frame, which is sky.

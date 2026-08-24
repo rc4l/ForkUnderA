@@ -36,15 +36,11 @@ CVAR(Bool, fua_decal_log, false, 0)
 
 // [rc4l] The sky as SURFACES that write depth, rather than a background painted first and drawn
 // over. Off restores the old behaviour. See docs/skybleed-scope.md.
-// [rc4l] DEFAULT OFF until the resolution bug below is found.
-//
-// The sky surfaces are measurably right at 1024x640 -- the horizon band matches GL peak for
-// peak -- and at 1280x720 the sky comes out inside a hard-edged rectangle about 640x360 of
-// the frame with the map dark around it. Same code, same map, same camera; only the window
-// size differs, and fua_dg_skyportal_scale is 1 in both. Until that is understood the default
-// has to be the behaviour that is merely wrong in a known way rather than one that depends on
-// the size of the window. See docs/skybleed-scope.md.
-CVAR(Bool, fua_mesh_sky, false, CVAR_ARCHIVE)
+// [rc4l] The sky as SURFACES that write depth, taken from GL, rather than a background painted
+// first and drawn over. It cuts the sky at the horizon, which is what removes the bright streak
+// along the waterline: measured 3.86 against GL 1.21 on that row, where the background blit
+// reads 30+. Off restores the old behaviour. See docs/skybleed-scope.md.
+CVAR(Bool, fua_mesh_sky, true, CVAR_ARCHIVE)
 
 EXTERN_CVAR(Bool, fua_surface_mapbake_auto)
 

@@ -179,6 +179,12 @@ EXTERN_CVAR(Bool, fua_mesh_sky)
 // EnsureSkyPortalResources for why full is the default.
 CVAR(Int, fua_dg_skyportal_scale, 1, CVAR_ARCHIVE)
 
+// [rc4l] How far from the portal camera the skybox room is allowed to reach, in map units. Zero
+// disables the test and draws the whole level into the portal, which is what produced the
+// rectangle. 2048 measured best of 2048/4096/8192 on wdiex02 -- 5.1 mean|d| against 7.0 for
+// the wider two, which let map geometry back into the room.
+CVAR(Float, fua_dg_skyportal_reach, 2048.f, CVAR_ARCHIVE)
+
 // [rc4l] Re-resolve animated textures per frame. See the loop in DrawSceneOnce.
 CVAR(Bool, fua_dg_animate, true, 0)
 
@@ -1652,6 +1658,8 @@ static bool g_skyPortalActive = false;
 // draws a sky of its own, and that sky is PART OF THE SKYBOX IMAGE -- the red cloudscape around
 // the city on wdiex02 is exactly that. Without it the city sits in a black surround.
 static bool g_inSkyPortal = false;
+// Where the portal camera stood, for the reach test in the world draw.
+static float g_skyPortalCamX = 0.f, g_skyPortalCamY = 0.f;
 static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_skySurfPSO;
 static Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding> g_skySurfSRB;
 static int g_skyDraws = 0;
@@ -2671,6 +2679,11 @@ static bool RenderSkyPortal(Diligent::IDeviceContext *ctx)
 		if (viewz > ce - 4 * FRACUNIT) viewz = ce - 4 * FRACUNIT;
 	}
 
+	// [rc4l] Where the portal camera actually stands. Recorded HERE and not after the restore a
+	// few lines down, which hands back the player position -- the reach test then measured from
+	// the player, excluded the skybox room along with everything else, and drew nothing at all.
+	g_skyPortalCamX = FIXED2FLOAT(viewx);
+	g_skyPortalCamY = FIXED2FLOAT(viewy);
 	BuildMVP(g_mvp);
 	viewx = sx; viewy = sy; viewz = sz; viewangle = sa;
 
@@ -6399,6 +6412,24 @@ static void DrawWorld(Diligent::IDeviceContext *ctx)
 		{
 			SceneBatch *b = (bi < g_batches.Size()) ? &g_batches[bi] : NULL;
 			bool take = b != NULL && b->count != 0 && b->blend == 0;
+			// [rc4l] The portal draws only what stands NEAR ITS OWN CAMERA.
+			//
+			// A sky portal renders from a viewpoint inside a sealed room off the side of the map.
+			// GL walks the BSP from there and reaches only that room; the map-derived bake has no
+			// walk, so this pass would otherwise draw the whole level from inside the room -- the
+			// map's own walls all around the camera, leaving the sky a rectangle in the middle of
+			// the window. Measured: the sky band at the frame edges read 1.96 and 2.25 against GL's
+			// 18.57 and 8.48, and matched GL exactly with the derived bake switched off.
+			//
+			// A reach test rather than a sector flood, because a batch already carries its bounds
+			// and a skybox room is small and far from everything else. See docs/skybleed-scope.md.
+			if (take && g_inSkyPortal && fua_dg_skyportal_reach > 0.f)
+			{
+				const float cx = g_skyPortalCamX, cy = g_skyPortalCamY;
+				const float r = fua_dg_skyportal_reach;
+				if (b->minX > cx + r || b->maxX < cx - r ||
+				    b->minZ > cy + r || b->maxZ < cy - r) take = false;
+			}
 
 			Diligent::IShaderResourceBinding *srb = NULL;
 			if (take)
