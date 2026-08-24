@@ -190,68 +190,45 @@ TEST(ContinueRecord, ParsingClearsWhateverTheCallerHadBefore)
 
 // ---------------------------------------------------------------- path
 
-TEST(ContinueRecord, TheStateLivesInAFolderOfItsOwn)
+TEST(ContinueRecord, EachInstanceGetsItsOwnFolder)
 {
-	// Named after what it is, so clearing this feature's state is one obvious action rather than
-	// knowing which loose files in the config root happened to belong to it.
-	EXPECT_EQ("/home/p/.config/ForkUnderA/continue", ContinueDir("/home/p/.config/ForkUnderA"));
-	EXPECT_EQ("/home/p/.config/ForkUnderA/continue/session.txt",
-		ContinueRecordPath("/home/p/.config/ForkUnderA"));
-	EXPECT_EQ("/home/p/.config/ForkUnderA/continue/session.zds",
-		ContinueSavePath("/home/p/.config/ForkUnderA"));
+	// A second copy of the engine is a second player, exactly as it is for the account keys, and two
+	// of them sharing one record would have each overwriting the other's session.
+	EXPECT_EQ("/cfg/continue", ContinueDir("/cfg", 0));
+	EXPECT_EQ("/cfg/continue.2", ContinueDir("/cfg", 1));
+	EXPECT_EQ("/cfg/continue.3", ContinueDir("/cfg", 2));
 }
 
-TEST(ContinueRecord, TheRecordAndItsSnapshotShareTheFolder)
+TEST(ContinueRecord, TheTwoRecordsAreSeparateFiles)
 {
-	// They only mean anything together: a record naming a snapshot that is somewhere else is a
-	// record that can be half-deleted.
-	const std::string dir = ContinueDir("/a/b");
-	EXPECT_EQ(dir + "/session.txt", ContinueRecordPath("/a/b"));
-	EXPECT_EQ(dir + "/session.zds", ContinueSavePath("/a/b"));
+	// Decoupled on purpose: joining a server must not forget the campaign, and an unreadable one
+	// must not take the other down with it.
+	EXPECT_EQ("/cfg/continue/offline.txt", ContinueOfflinePath("/cfg", 0));
+	EXPECT_EQ("/cfg/continue/server.txt", ContinueServerPath("/cfg", 0));
+	EXPECT_EQ("/cfg/continue/offline.zds", ContinueSavePath("/cfg", 0));
+
+	EXPECT_EQ("/cfg/continue.2/offline.txt", ContinueOfflinePath("/cfg", 1));
+	EXPECT_EQ("/cfg/continue.2/server.txt", ContinueServerPath("/cfg", 1));
 }
 
 TEST(ContinueRecord, ATrailingSeparatorIsNotDoubled)
 {
-	EXPECT_EQ("/a/b/continue/session.txt", ContinueRecordPath("/a/b/"));
-	EXPECT_EQ("C:\\a\\continue/session.txt", ContinueRecordPath("C:\\a\\"));
+	EXPECT_EQ("/a/b/continue/offline.txt", ContinueOfflinePath("/a/b/", 0));
+	EXPECT_EQ("C:\\a\\continue/server.txt", ContinueServerPath("C:\\a\\", 0));
 }
 
 TEST(ContinueRecord, NoRootGivesABareFolder)
 {
-	EXPECT_EQ("continue", ContinueDir(""));
-	EXPECT_EQ("continue/session.txt", ContinueRecordPath(""));
+	EXPECT_EQ("continue", ContinueDir("", 0));
+	EXPECT_EQ("continue.2/offline.txt", ContinueOfflinePath("", 1));
 }
 
-TEST(ContinueRecord, AWadLineWithNoTabIsANameOnItsOwn)
+TEST(ContinueRecord, TheStampSurvivesTheRoundTrip)
 {
-	// Our own writer always emits the separator, so this shape only arrives from a record written by
-	// hand or by something older. It is still a usable name.
-	ContinueRecord out;
-	ASSERT_TRUE(ParseContinue(
-		"fua-continue 1\nkind server\naddress 1.2.3.4:10666\nwad plain.wad\n", out));
-
-	ASSERT_EQ(1u, out.wads.size());
-	EXPECT_EQ("plain.wad", out.wads[0].first);
-	EXPECT_EQ("", out.wads[0].second);
-}
-
-TEST(ContinueRecord, ALineWithNoKeyIsSkippedRatherThanRead)
-{
-	// A line that begins with a space has no key. Reading it as one would invent a field named "".
-	ContinueRecord out;
-	ASSERT_TRUE(ParseContinue(
-		"fua-continue 1\nkind server\n   leading space\naddress 1.2.3.4:10666\n", out));
-
-	EXPECT_EQ("1.2.3.4:10666", out.address);
-}
-
-TEST(ContinueRecord, AWadLineWithNoNameIsDropped)
-{
-	ContinueRecord out;
-	ASSERT_TRUE(ParseContinue(
-		"fua-continue 1\nkind server\naddress 1.2.3.4:10666\nwad \t\n", out));
-
-	EXPECT_TRUE(out.wads.empty());
+	// It is how "most recently left" survives a restart without a clock.
+	ContinueRecord in = SingleRecord();
+	in.stamp = 42;
+	EXPECT_EQ(42, RoundTrip(in).stamp);
 }
 
 TEST(ContinueRecord, TheMapsOwnWadSurvivesTheRoundTrip)

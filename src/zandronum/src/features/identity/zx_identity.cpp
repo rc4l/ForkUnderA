@@ -517,6 +517,11 @@ namespace
 
 } // namespace
 
+int Identity_Instance( void )
+{
+	return g_Instance;
+}
+
 std::string Identity_ConfigRoot( void )
 {
 	// [rc4l] The same folder the IWAD store uses, so a player's account and their games sit

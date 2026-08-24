@@ -42,20 +42,27 @@ bool g_bLoaded = false;
 FString g_Label;
 FString g_Tooltip;
 
+// [rc4l] Which copy of the engine this is, so two of them do not share one record. Same numbering
+// the account keys use, taken from the same claim, so the two cannot disagree about who is who.
+int Instance()
+{
+	return Identity_Instance( );
+}
+
 std::string RecordPath()
 {
-	return ContinueRecordPath( Identity_ConfigRoot( ));
+	return ContinueOfflinePath( Identity_ConfigRoot( ), Instance( ));
 }
 
 std::string SavePath()
 {
-	return ContinueSavePath( Identity_ConfigRoot( ));
+	return ContinueSavePath( Identity_ConfigRoot( ), Instance( ));
 }
 
 // The folder has to exist before either file can be written, and it is ours to make.
 void EnsureDir()
 {
-	CreatePath( ContinueDir( Identity_ConfigRoot( )).c_str( ));
+	CreatePath( ContinueDir( Identity_ConfigRoot( ), Instance( )).c_str( ));
 }
 
 bool FileExists( const std::string &path )

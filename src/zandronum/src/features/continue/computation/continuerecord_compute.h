@@ -31,7 +31,10 @@ namespace zx
 enum class ContinueKind
 {
 	None,	// nothing to continue
-	Single,	// a saved offline session: a map, restored from a snapshot
+	// [rc4l] One kind for everything played locally: single player, single player with addbot, and
+	// an offline skirmish alike. They differ only in NETSTATE_SINGLE_MULTIPLAYER, which the engine
+	// already records in the save's own mpEm chunk, and all three snapshot the same way.
+	Single,
 	Server,	// a server we were connected to: an address, rejoined
 };
 
@@ -50,12 +53,16 @@ struct ContinueRecord
 	std::string password;	// empty when the server had none
 	std::string serverName;	// as the server called itself, empty if it never said
 
+	// [rc4l] Which record was written most recently, so "most recently left" survives a restart
+	// without needing a clock. Bumped past whatever the other record holds on every write.
+	int stamp;
+
 	// Both, because both have to land on the same files we left.
 	std::string iwad;
 	std::string iwadHash;
 	std::vector<std::pair<std::string, std::string> > wads;	// bare name, MD5 (may be empty)
 
-	ContinueRecord() : kind(ContinueKind::None), saveVersion(0) {}
+	ContinueRecord() : kind(ContinueKind::None), saveVersion(0), stamp(0) {}
 };
 
 // The format this build writes. Bumped only when a field changes meaning; adding an optional field
@@ -76,14 +83,23 @@ bool ParseContinue(const std::string &text, ContinueRecord &out);
 // `identity/` rather than loose beside it. Two files that only mean anything together, in a folder
 // named after what they are, so deleting the feature's state is one obvious action rather than
 // knowing which two of the loose files belonged to it.
-std::string ContinueRecordPath(const std::string &configRoot);
-
-// The snapshot that a Single record points at, in the same folder. One slot, overwritten: this is
-// "where you left off", not a save history.
-std::string ContinueSavePath(const std::string &configRoot);
+// The snapshot a Single record points at, in the same folder. One slot, overwritten: this is "where
+// you left off", not a save history.
+std::string ContinueSavePath(const std::string &configRoot, int instance);
 
 // The folder itself, for the caller that has to create it before writing.
-std::string ContinueDir(const std::string &configRoot);
+//
+// [rc4l] One folder per INSTANCE, numbered exactly as the account keys are: a second copy of the
+// engine is a second player, and two of them sharing one record would have each overwriting the
+// other's session. The first instance keeps the plain name so the folder a player finds is the one
+// the documentation names.
+std::string ContinueDir(const std::string &configRoot, int instance);
+
+// The two records, kept apart so the server you last played and the offline game you last played are
+// remembered independently -- joining a server must not forget the campaign you were half way
+// through. Independent files also mean a corrupt one cannot take the other down with it.
+std::string ContinueOfflinePath(const std::string &configRoot, int instance);
+std::string ContinueServerPath(const std::string &configRoot, int instance);
 
 } // namespace zx
 

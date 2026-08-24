@@ -64,6 +64,7 @@ std::string SerialiseContinue(const ContinueRecord &record)
 	std::ostringstream out;
 	out << kMagic << ' ' << kContinueFormat << '\n';
 	out << "kind " << KindName(record.kind) << '\n';
+	out << "stamp " << record.stamp << '\n';
 
 	if (record.kind == ContinueKind::Single)
 	{
@@ -124,12 +125,13 @@ bool ParseContinue(const std::string &text, ContinueRecord &out)
 
 		if (key == "kind")
 		{
-			if (value == "single")      out.kind = ContinueKind::Single;
-			else if (value == "server") out.kind = ContinueKind::Server;
+			if (value == "single")        out.kind = ContinueKind::Single;
+			else if (value == "server")   out.kind = ContinueKind::Server;
 			else                        return false;	// a kind we do not know is not a kind we can act on
 		}
 		else if (key == "save")      out.savePath = value;
 		else if (key == "savever")   out.saveVersion = atoi(value.c_str());
+		else if (key == "stamp")     out.stamp = atoi(value.c_str());
 		else if (key == "map")       out.mapName = value;
 		else if (key == "mapwad")    out.mapWad = value;
 		else if (key == "servername") out.serverName = value;
@@ -153,29 +155,40 @@ bool ParseContinue(const std::string &text, ContinueRecord &out)
 		return out.savePath.empty() == false;
 	if (out.kind == ContinueKind::Server)
 		return out.address.empty() == false;
-
 	return false;
 }
 
-std::string ContinueDir(const std::string &configRoot)
+std::string ContinueDir(const std::string &configRoot, int instance)
 {
+	// The first instance keeps the plain name, matching the account keys: the folder a player finds
+	// is the one the documentation names, however many copies they open afterwards.
+	char suffix[16];
+	suffix[0] = 0;
+	if (instance > 0)
+		snprintf(suffix, sizeof suffix, ".%d", instance + 1);
+
 	if (configRoot.empty())
-		return std::string("continue");
+		return std::string("continue") + suffix;
 
 	const char last = configRoot[configRoot.size() - 1];
 	const bool bHasSeparator = (last == '/') || (last == '\\');
 
-	return configRoot + (bHasSeparator ? "" : "/") + "continue";
+	return configRoot + (bHasSeparator ? "" : "/") + "continue" + suffix;
 }
 
-std::string ContinueRecordPath(const std::string &configRoot)
+std::string ContinueOfflinePath(const std::string &configRoot, int instance)
 {
-	return ContinueDir(configRoot) + "/session.txt";
+	return ContinueDir(configRoot, instance) + "/offline.txt";
 }
 
-std::string ContinueSavePath(const std::string &configRoot)
+std::string ContinueServerPath(const std::string &configRoot, int instance)
 {
-	return ContinueDir(configRoot) + "/session.zds";
+	return ContinueDir(configRoot, instance) + "/server.txt";
+}
+
+std::string ContinueSavePath(const std::string &configRoot, int instance)
+{
+	return ContinueDir(configRoot, instance) + "/offline.zds";
 }
 
 } // namespace zx
