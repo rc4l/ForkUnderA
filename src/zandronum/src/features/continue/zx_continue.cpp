@@ -4,9 +4,11 @@
 #include "features/continue/zx_continue.h"
 
 #include "features/continue/computation/continuerecord_compute.h"
+#include "features/continue/computation/continuebutton_compute.h"
 #include "features/continue/computation/continueshow_compute.h"
 #include "features/continue/computation/continuewrite_compute.h"
 #include "features/identity/zx_identity.h"
+#include "features/server-hosting/zx_hosting.h"
 #include "features/wadreload/zx_wadreload.h"
 #include "features/wad-download/zx_waddownload.h"
 
@@ -157,6 +159,11 @@ void WriteRecord( const ContinueRecord &record, const std::string &path )
 
 	fwrite( text.data( ), 1, text.size( ), f );
 	fclose( f );
+
+	// [rc4l] What is held in memory is now behind what is on disk, so make the next question re-read
+	// it. Without this the pill answers from whatever was loaded when the menus first opened, which
+	// is exactly the moment before anything interesting has been recorded.
+	g_bLoaded = false;
 }
 
 // [rc4l] What is loaded right now, by NAME and CHECKSUM, so a Continue can find the same game again
@@ -339,12 +346,46 @@ void Continue_Load( void )
 		g_Record = ( g_Offline.kind != ContinueKind::None ) ? g_Offline : g_Server;
 }
 
+// [rc4l] Connected to a server. NOT merely "a level is running": the title screen plays a demo, so
+// a level runs while the player sits at the main menu.
+static bool InSession( void )
+{
+	return ( NETWORK_GetState( ) == NETSTATE_CLIENT );
+}
+
+// Everything the pill's decision rests on, gathered in one place so the label, the action and
+// whether it is drawn at all cannot disagree about the answer.
+static ContinueButtonVerdict Verdict( void )
+{
+	if ( g_bLoaded == false )
+		Continue_Load( );
+
+	ContinueButtonInputs in;
+	in.inSession = InSession( );
+	in.offlineUsable = ( g_Offline.kind != ContinueKind::None );
+	in.offlineIsHosted = ( g_Offline.kind == ContinueKind::Hosted );
+	in.offlineStamp = g_Offline.stamp;
+	in.serverUsable = ( g_Server.kind != ContinueKind::None );
+	in.serverStamp = g_Server.stamp;
+
+	return DecideContinueButton( in );
+}
+
+bool Continue_IsDisconnect( void )
+{
+	return ( Verdict( ).mode == ContinueMode::Disconnect );
+}
+
 bool Continue_IsShown( void )
 {
 	if ( g_bLoaded == false )
 		Continue_Load( );
 
-	// [rc4l] Not while a game is running. Continue is a way back INTO something, and offering it to
+	// [rc4l] In a server it is the way OUT, and leaving is always possible, so it is always there.
+	if ( InSession( ))
+		return true;
+
+	// Not while a LOCAL game is running: Continue is a way back into something, and offering it to
 	// somebody already playing is offering to throw away what they are doing.
 	//
 	// AND usergame, because the title screen runs a demo: gamestate is GS_LEVEL while the player is
@@ -376,6 +417,21 @@ const char *Continue_Tooltip( void )
 		return g_Tooltip.GetChars( );
 	}
 
+	// [rc4l] Leaving says where it will put you, because that is the part nobody can guess.
+	if ( Continue_IsDisconnect( ))
+	{
+		const ContinueButtonVerdict v = Verdict( );
+
+		if ( v.target == ContinueTarget::Hosted )
+			g_Tooltip.Format( "Leave and go back to hosting %s", g_Offline.host.map.c_str( ));
+		else if ( v.target == ContinueTarget::Offline )
+			g_Tooltip.Format( "Leave and go back to %s", g_Offline.mapName.c_str( ));
+		else
+			g_Tooltip = "Leave and go back to the main menu";
+
+		return g_Tooltip.GetChars( );
+	}
+
 	if ( g_Record.kind == ContinueKind::Server )
 	{
 		// The name if we have one, the address if we never learned it.
@@ -399,10 +455,10 @@ const char *Continue_Label( void )
 		return g_Label.GetChars( );
 	}
 
-	// [rc4l] Just the word. The pill is sized to its label and sits beside two fixed ones, so a
-	// label that grew with the map name would move the bar's whole left edge every time the player
-	// changed level.
-	g_Label = "Continue";
+	// [rc4l] Just the word, either way. The pill is sized to its label and sits beside two fixed
+	// ones, so a label that grew with the map name would move the bar's left edge every time the
+	// player changed level.
+	g_Label = Continue_IsDisconnect( ) ? "Disconnect" : "Continue";
 	return g_Label.GetChars( );
 }
 
@@ -640,32 +696,31 @@ int Continue_DebugProbeSlot( void )
 	return static_cast<int>( g_ProbeSlot );
 }
 
-void Continue_Activate( void )
+// [rc4l] Start the game we recorded hosting, silently. A fresh match on the same terms: the world
+// lived in the child process and went with it, so there is nothing to restore but the settings.
+static void RehostRecorded( void )
 {
-	if ( Continue_IsShown( ) == false )
-		return;
+	HostConfig config = g_Offline.host;
+	config.rconSecret.clear( );		// minted fresh by HostStart; the stored one died with its process
 
-	// [rc4l] Straight in, no confirmation: the decision was made when the button chose to exist.
-	M_ClearMenus( );
+	if ( HostStart( config ) == false )
+		Printf( "Continue: could not start that server again.\n" );
+}
 
-	if ( g_Record.kind == ContinueKind::Server )
-	{
-		// Down the join path the browser already uses, so a failure lands where every other failed
-		// join lands rather than inventing a second way to go wrong.
-		FString command;
-		command.Format( "connect %s", g_Record.address.c_str( ));
-		AddCommandString( command.LockBuffer( ));
-		command.UnlockBuffer( );
-		return;
-	}
-
+// [rc4l] Put a recorded local session back: the right WAD set, then the snapshot.
+//
+// Shared by both directions on purpose. Pressing Continue at the menu and disconnecting from a
+// server both mean "put me back where I was", and two implementations of that would be two things
+// to keep in step.
+static void ActivateOfflineRecord( const ContinueRecord &rec )
+{
 	// [rc4l] Only reload when the set is actually wrong. The ordinary case by far is relaunching the
 	// same way and pressing Continue, and asking RequestReload to prove that costs a full validation
 	// against search paths the record cannot know -- our IWAD is remembered by bare name, so a copy
 	// living outside the search path fails the check and refuses a reload nothing needed.
 	if ( SameWadSetAsRecord( ) )
 	{
-		G_LoadGame( g_Record.savePath.c_str( ));
+		G_LoadGame( rec.savePath.c_str( ));
 		return;
 	}
 
@@ -673,9 +728,9 @@ void Continue_Activate( void )
 	TArray<FString> pwads;
 	bool bAllFound = true;
 
-	for ( size_t i = 0; i < g_Record.wads.size( ); ++i )
+	for ( size_t i = 0; i < rec.wads.size( ); ++i )
 	{
-		const FString path = ResolveWad( g_Record.wads[i].first, g_Record.wads[i].second );
+		const FString path = ResolveWad( rec.wads[i].first, rec.wads[i].second );
 		if ( path.IsEmpty( ))
 		{
 			bAllFound = false;
@@ -685,8 +740,8 @@ void Continue_Activate( void )
 		pwads.Push( path );
 	}
 
-	const FString iwad = ResolveWad( g_Record.iwad, g_Record.iwadHash );
-	if ( g_Record.iwad.empty( ) == false && iwad.IsEmpty( ))
+	const FString iwad = ResolveWad( rec.iwad, rec.iwadHash );
+	if ( rec.iwad.empty( ) == false && iwad.IsEmpty( ))
 		bAllFound = false;
 
 	if ( bAllFound == false )
@@ -695,7 +750,7 @@ void Continue_Activate( void )
 		return;
 	}
 
-	g_SaveAfterRestart = g_Record.savePath.c_str( );
+	g_SaveAfterRestart = rec.savePath.c_str( );
 
 	const wadreload::ReloadResult r = wadreload::RequestReload(
 		iwad.IsEmpty( ) ? NULL : iwad.GetChars( ), pwads );
@@ -713,5 +768,45 @@ void Continue_Activate( void )
 
 	g_bLoadAfterRestart = ( r == wadreload::ReloadResult::Restarting );
 }
+
+void Continue_Activate( void )
+{
+	if ( Continue_IsShown( ) == false )
+		return;
+
+	// [rc4l] Straight in, no confirmation: the decision was made when the button chose to exist.
+	M_ClearMenus( );
+
+	// Leaving a server: drop the connection, then go wherever the verdict says. Every way of
+	// leaving lands in the same place, so this is the same path a kick or a dead server takes.
+	if ( Continue_IsDisconnect( ))
+	{
+		const ContinueButtonVerdict v = Verdict( );
+
+		CLIENT_QuitNetworkGame( NULL );
+
+		if ( v.target == ContinueTarget::Hosted )
+			RehostRecorded( );
+		else if ( v.target == ContinueTarget::Offline )
+			ActivateOfflineRecord( g_Offline );
+		// MainMenu: the disconnect already put us there.
+
+		return;
+	}
+
+	if ( g_Record.kind == ContinueKind::Server )
+	{
+		// Down the join path the browser already uses, so a failure lands where every other failed
+		// join lands rather than inventing a second way to go wrong.
+		FString command;
+		command.Format( "connect %s", g_Record.address.c_str( ));
+		AddCommandString( command.LockBuffer( ));
+		command.UnlockBuffer( );
+		return;
+	}
+
+	ActivateOfflineRecord( g_Record );
+}
+
 
 } // namespace zx

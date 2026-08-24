@@ -620,10 +620,6 @@ void NoteJoinSucceeded()
 {
 	g_joinInFlight = false;
 
-	// [rc4l] The player is demonstrably in, which is the one moment a server session is worth
-	// remembering: before this it might still fail, and after it we may never get another clean
-	// moment if the process dies.
-	Continue_NoteJoined();
 }
 
 void NoteJoinFailed( const char *reason )

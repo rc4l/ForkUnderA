@@ -35,6 +35,7 @@ enum class ContinueTarget
 {
 	None,
 	Offline,	// whatever was being played locally, restored from its snapshot
+	Hosted,		// a game we hosted, started again from its config: a fresh match on the same terms
 	Server,		// rejoin the server we were on
 	MainMenu,	// the WAD set the engine was launched with, and nothing loaded
 };
@@ -45,14 +46,15 @@ struct ContinueButtonInputs
 	// level is running while the player sits at the main menu.
 	bool inSession;
 
-	bool offlineUsable;			// a snapshot we could actually return to
+	bool offlineUsable;			// a snapshot or host config we could actually return to
+	bool offlineIsHosted;		// it is a game we hosted, so going back means starting it again
 	int offlineStamp;
 
 	bool serverUsable;			// a server record that is still worth offering
 	int serverStamp;
 
 	ContinueButtonInputs()
-		: inSession(false), offlineUsable(false), offlineStamp(0),
+		: inSession(false), offlineUsable(false), offlineIsHosted(false), offlineStamp(0),
 		  serverUsable(false), serverStamp(0) {}
 };
 
