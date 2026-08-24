@@ -291,3 +291,73 @@ TEST(ContinueRecord, AWadLineWithNoNameIsDropped)
 
 	EXPECT_TRUE(out.wads.empty());
 }
+
+TEST(ContinueRecord, AHostedGameSurvivesTheRoundTripWholeSale)
+{
+	// The whole config, because a rehost has to start the same server -- not something resembling it.
+	ContinueRecord in;
+	in.kind = ContinueKind::Hosted;
+	in.host.hostName = "Bob's DM  [EU]";
+	in.host.iwad = "doom2.wad";
+	in.host.pwads.push_back("skulltag_actors.pk3");
+	in.host.pwads.push_back("av.wad");
+	in.host.map = "D2DM01";
+	in.host.execCfg = "/entries/skulltag/server.cfg";
+	in.host.execRemixCfgs.push_back("/entries/skulltag/fast.cfg");
+	in.host.extraCvars.push_back(std::make_pair(std::string("sv_maxlives"), std::string("3")));
+	in.host.extraCvars.push_back(std::make_pair(std::string("sv_motd"), std::string("hello there friend")));
+	in.host.mapRotation.push_back("D2DM01");
+	in.host.mapRotation.push_back("D2DM02");
+	in.host.password = "secret pass";
+	in.host.joinPassword = "join me";
+	in.host.gameMode = 4;
+	in.host.maxPlayers = 16;
+	in.host.port = 10777;
+	in.host.advertise = true;
+	in.host.serveWads = false;
+	in.host.hideWindow = true;
+
+	const ContinueRecord out = RoundTrip(in);
+	EXPECT_EQ(ContinueKind::Hosted, out.kind);
+	EXPECT_EQ("Bob's DM  [EU]", out.host.hostName);
+	EXPECT_EQ("doom2.wad", out.host.iwad);
+	ASSERT_EQ(2u, out.host.pwads.size());
+	EXPECT_EQ("av.wad", out.host.pwads[1]);
+	EXPECT_EQ("D2DM01", out.host.map);
+	EXPECT_EQ("/entries/skulltag/server.cfg", out.host.execCfg);
+	ASSERT_EQ(1u, out.host.execRemixCfgs.size());
+	ASSERT_EQ(2u, out.host.extraCvars.size());
+	EXPECT_EQ("sv_maxlives", out.host.extraCvars[0].first);
+	EXPECT_EQ("3", out.host.extraCvars[0].second);
+	EXPECT_EQ("hello there friend", out.host.extraCvars[1].second) << "a value with spaces must survive";
+	ASSERT_EQ(2u, out.host.mapRotation.size());
+	EXPECT_EQ("secret pass", out.host.password);
+	EXPECT_EQ("join me", out.host.joinPassword);
+	EXPECT_EQ(4, out.host.gameMode);
+	EXPECT_EQ(16, out.host.maxPlayers);
+	EXPECT_EQ(10777, out.host.port);
+	EXPECT_TRUE(out.host.advertise);
+	EXPECT_FALSE(out.host.serveWads);
+	EXPECT_TRUE(out.host.hideWindow);
+}
+
+TEST(ContinueRecord, TheRconSecretIsNeverWrittenDown)
+{
+	// It is worth nothing after the process it was made for, so a rehost must mint a new one. Storing
+	// it would be storing a dead credential and inviting somebody to replay it.
+	ContinueRecord in;
+	in.kind = ContinueKind::Hosted;
+	in.host.map = "MAP01";
+	in.host.rconSecret = "hunter2-do-not-store-me";
+
+	const std::string text = SerialiseContinue(in);
+	EXPECT_EQ(std::string::npos, text.find("hunter2-do-not-store-me"));
+	EXPECT_EQ("", RoundTrip(in).host.rconSecret);
+}
+
+TEST(ContinueRecord, AHostedRecordWithNoMapIsRefused)
+{
+	// It would start a server on whatever the WADs default to, which is not the game we left.
+	ContinueRecord out;
+	EXPECT_FALSE(ParseContinue("fua-continue 1\nkind hosted\nhost_iwad doom2.wad\n", out));
+}

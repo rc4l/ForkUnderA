@@ -9,6 +9,7 @@
 // It must come FIRST, before any engine header: doomtype.h and friends pull in parts of the SDK
 // themselves, and once they have, the reshaped copy is already the one in play.
 #include "networkheaders.h"
+#include "features/continue/zx_continue.h"
 
 #include "features/server-hosting/zx_hosting.h"
 #include "features/server-hosting/zx_hostprocess.h"
@@ -129,6 +130,10 @@ static void HostStopBlocking( void );
 //
 bool HostStart( const HostConfig &config )
 {
+	// [rc4l] Remember what we are leaving, and what we are starting, BEFORE either is torn down.
+	// Hosting replaces the running game and its WAD set, so this is the last moment either exists.
+	zx::Continue_NoteHosting( config );
+
 	// The blocking stop, deliberately: the new child needs the old one's port, and
 	// HostProcessStart refuses to spawn while a child is still held.
 	HostStopBlocking( );

@@ -51,7 +51,12 @@ void SplitWad(const std::string &value, std::string &name, std::string &hash)
 // turned None away, so there is no third answer to give.
 const char *KindName(ContinueKind kind)
 {
-	return (kind == ContinueKind::Single) ? "single" : "server";
+	switch (kind)
+	{
+	case ContinueKind::Single: return "single";
+	case ContinueKind::Hosted: return "hosted";
+	default:                   return "server";
+	}
 }
 
 } // namespace
@@ -66,7 +71,37 @@ std::string SerialiseContinue(const ContinueRecord &record)
 	out << "kind " << KindName(record.kind) << '\n';
 	out << "stamp " << record.stamp << '\n';
 
-	if (record.kind == ContinueKind::Single)
+	if (record.kind == ContinueKind::Hosted)
+	{
+		const HostConfig &h = record.host;
+
+		out << "host_name " << h.hostName << '\n';
+		out << "host_iwad " << h.iwad << '\n';
+		for (size_t i = 0; i < h.pwads.size(); ++i)
+			out << "host_pwad " << h.pwads[i] << '\n';
+		out << "host_map " << h.map << '\n';
+		if (h.execCfg.empty() == false)
+			out << "host_execcfg " << h.execCfg << '\n';
+		for (size_t i = 0; i < h.execRemixCfgs.size(); ++i)
+			out << "host_remixcfg " << h.execRemixCfgs[i] << '\n';
+		// Name then value, split on the FIRST space: a cvar name never contains one and a value
+		// frequently does.
+		for (size_t i = 0; i < h.extraCvars.size(); ++i)
+			out << "host_cvar " << h.extraCvars[i].first << ' ' << h.extraCvars[i].second << '\n';
+		for (size_t i = 0; i < h.mapRotation.size(); ++i)
+			out << "host_rotation " << h.mapRotation[i] << '\n';
+		if (h.password.empty() == false)
+			out << "host_password " << h.password << '\n';
+		if (h.joinPassword.empty() == false)
+			out << "host_joinpassword " << h.joinPassword << '\n';
+		out << "host_gamemode " << h.gameMode << '\n';
+		out << "host_maxplayers " << h.maxPlayers << '\n';
+		out << "host_port " << h.port << '\n';
+		out << "host_advertise " << (h.advertise ? 1 : 0) << '\n';
+		out << "host_servewads " << (h.serveWads ? 1 : 0) << '\n';
+		out << "host_hidewindow " << (h.hideWindow ? 1 : 0) << '\n';
+	}
+	else if (record.kind == ContinueKind::Single)
 	{
 		out << "save " << record.savePath << '\n';
 		out << "savever " << record.saveVersion << '\n';
@@ -127,11 +162,33 @@ bool ParseContinue(const std::string &text, ContinueRecord &out)
 		{
 			if (value == "single")        out.kind = ContinueKind::Single;
 			else if (value == "server")   out.kind = ContinueKind::Server;
+			else if (value == "hosted")   out.kind = ContinueKind::Hosted;
 			else                        return false;	// a kind we do not know is not a kind we can act on
 		}
 		else if (key == "save")      out.savePath = value;
 		else if (key == "savever")   out.saveVersion = atoi(value.c_str());
 		else if (key == "stamp")     out.stamp = atoi(value.c_str());
+		else if (key == "host_name")        out.host.hostName = value;
+		else if (key == "host_iwad")        out.host.iwad = value;
+		else if (key == "host_pwad")        out.host.pwads.push_back(value);
+		else if (key == "host_map")         out.host.map = value;
+		else if (key == "host_execcfg")     out.host.execCfg = value;
+		else if (key == "host_remixcfg")    out.host.execRemixCfgs.push_back(value);
+		else if (key == "host_rotation")    out.host.mapRotation.push_back(value);
+		else if (key == "host_password")    out.host.password = value;
+		else if (key == "host_joinpassword") out.host.joinPassword = value;
+		else if (key == "host_gamemode")    out.host.gameMode = atoi(value.c_str());
+		else if (key == "host_maxplayers")  out.host.maxPlayers = atoi(value.c_str());
+		else if (key == "host_port")        out.host.port = atoi(value.c_str());
+		else if (key == "host_advertise")   out.host.advertise = (atoi(value.c_str()) != 0);
+		else if (key == "host_servewads")   out.host.serveWads = (atoi(value.c_str()) != 0);
+		else if (key == "host_hidewindow")  out.host.hideWindow = (atoi(value.c_str()) != 0);
+		else if (key == "host_cvar")
+		{
+			std::string cvarName, cvarValue;
+			if (SplitLine(value, cvarName, cvarValue))
+				out.host.extraCvars.push_back(std::make_pair(cvarName, cvarValue));
+		}
 		else if (key == "map")       out.mapName = value;
 		else if (key == "mapwad")    out.mapWad = value;
 		else if (key == "servername") out.serverName = value;
@@ -155,6 +212,10 @@ bool ParseContinue(const std::string &text, ContinueRecord &out)
 		return out.savePath.empty() == false;
 	if (out.kind == ContinueKind::Server)
 		return out.address.empty() == false;
+	// A rehost with no map is a server that would start on whatever the WADs default to, which is
+	// not the game the player left.
+	if (out.kind == ContinueKind::Hosted)
+		return out.host.map.empty() == false;
 	return false;
 }
 

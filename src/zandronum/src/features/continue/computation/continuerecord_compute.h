@@ -21,6 +21,8 @@
 #ifndef ZX_CONTINUERECORD_COMPUTE_H
 #define ZX_CONTINUERECORD_COMPUTE_H
 
+#include "features/server-hosting/computation/hostargs_compute.h"
+
 #include <string>
 #include <utility>
 #include <vector>
@@ -36,6 +38,10 @@ enum class ContinueKind
 	// already records in the save's own mpEm chunk, and all three snapshot the same way.
 	Single,
 	Server,	// a server we were connected to: an address, rejoined
+	// [rc4l] A game we HOSTED from the presets. The world lived in a child process, so once that
+	// process is gone there is nothing to reconnect to and nothing to load: the only way back is to
+	// start it again from the same settings. A fresh match on the same terms, not the match we left.
+	Hosted,
 };
 
 struct ContinueRecord
@@ -52,6 +58,13 @@ struct ContinueRecord
 	std::string address;
 	std::string password;	// empty when the server had none
 	std::string serverName;	// as the server called itself, empty if it never said
+
+	// Hosted. The whole config, reused rather than re-listed: hostargs_compute already describes
+	// what a server needs and already refuses values that could be read as another flag.
+	//
+	// rconSecret is deliberately NOT carried. It is documented as worth nothing after the process it
+	// was made for, so a rehost must mint a new one rather than replay a dead one.
+	HostConfig host;
 
 	// [rc4l] Which record was written most recently, so "most recently left" survives a restart
 	// without needing a clock. Bumped past whatever the other record holds on every write.

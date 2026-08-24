@@ -64,6 +64,7 @@
 #include "announcer.h"
 #include "features/server-browser/browser.h"
 #include "features/server-hosting/zx_punchclient.h"
+#include "features/continue/zx_continue.h"
 #include "features/server-browser/computation/reconnect_compute.h"
 #include "features/server-browser/computation/replyrouting_compute.h"
 #include "features/server-browser/zx_joinserver.h" // [rc4l] a failed join lands in the browser
@@ -874,6 +875,7 @@ void CLIENT_SendServerPacket( void )
 //
 void CLIENT_AttemptConnection( void )
 {
+
 	ULONG	ulIdx;
 
 	if ( g_ulRetryTicks )
@@ -9923,6 +9925,10 @@ CCMD( connect )
 		CLIENT_QuitNetworkGame( NULL );
 
 	// Put the game in client mode.
+	// [rc4l] Remember the local game BEFORE the netstate flips, because after this line we look
+	// like a client and there is nothing left that says we were playing something of our own.
+	zx::Continue_NoteLeavingLocalGame( );
+
 	NETWORK_SetState( NETSTATE_CLIENT );
 
 	// [AK] Make sure the server setup menu is closed if we're connecting.
