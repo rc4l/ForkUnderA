@@ -310,3 +310,42 @@ geometry at all. If they do not, the fix is in the bake, not the backend.
 
 `fua_mesh_sky` now defaults to OFF: the sky surfaces are right where they were measured and this
 larger fault sits underneath them, so shipping them on would only change which wrong picture appears.
+
+## The cause, proved: the derived bake fills the SKYBOX ROOM with the whole level
+
+One measurement settles it, and it is reproducible in two commands. Sampling the sky band at the
+left edge, the centre and the right edge of the frame, GL against Vulkan:
+
+| | left | centre | right |
+|---|---|---|---|
+| GL | 18.57 | 17.19 | 8.48 |
+| Vulkan, `fua_surface_mapbake_auto 1` (default) | **1.96** | 14.8 | **2.25** |
+| Vulkan, `fua_surface_mapbake_auto 0` | **17.51** | 16.30 | **9.39** |
+
+With the map-derived bake off the sky matches GL across the whole width. With it on, the sky exists
+only in the middle of the window.
+
+The reason is the portal camera. A sky portal renders the world from an `ASkyViewpoint` that stands
+in a sealed room off the side of the map. GL walks the BSP from there and reaches only the room. The
+derived bake has no walk: it puts the ENTIRE LEVEL in one mesh, and the portal pass then draws the
+entire level from inside that room -- the map's own walls standing all around the portal camera,
+dark, with the room's city visible only where it happens to be nearer. That dark surround IS the
+rectangle, and it is why the sky looks like a picture hung on a wall.
+
+It also explains why every measurement in this document missed it: the bands sampled here run from
+x 0.59 to 0.88, inside the rectangle. A range query looks where it is told.
+
+### The fix, and what went wrong with the first attempt
+
+The two passes need two halves of the mesh: the portal draws the skybox room, the main view draws
+everything else. The room is a flood fill from the viewpoint's sector through two-sided lines --
+built, and it works: `fua_skyroom` reported "viewpoint sector 3690, 27 sectors, sealed skybox room".
+
+Splitting the batches on that flag was tried and reverted: the main view lost geometry it should
+have kept and the portal came back blown out (the sky band read 167 against GL's 16.8, and the frame
+went to 41% of pixels differing). The flag reaches the pieces through `MeshSetCurrentSector`, which
+the bake sets per seg -- the capture path does not set it at all, so pieces GL contributes are
+stamped with whatever sector the last derived seg happened to leave behind. That is the thing to fix
+before trying the split again.
+
+**Until then `fua_surface_mapbake_auto 0` gives a correct sky**, at the cost of the map bake.
