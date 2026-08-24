@@ -87,3 +87,29 @@ has depth writes off for good reasons (see `DrawBlended`), and the whole point h
 
 `fua_surface_mapbake_auto 0` hides it, at the cost of the map bake -- which is the feature the
 derivation exists to provide, so this is a diagnostic and not a setting to ship.
+
+## Where the hook goes, and the one thing that complicates it
+
+`GLWall::PutWall` classifies by `passflag[type]`, and the sky types are `4` -- "special". Those walls
+skip `RecordPiece` entirely and fall into the portal branch, which is why no sky geometry is in the
+mesh today. That branch is the capture point: GL has already built the quad, with its `glseg` and
+`ztop`/`zbottom`, by the time it gets there.
+
+**The complication is `fua_dg_standalone`.** In standalone the level is baked once and GL stops
+deriving the scene, so there are no per-frame GLWall objects to capture -- and standalone is the
+mode the backend is meant to end up in. So capturing GL's sky quads fixes the embedded and
+side-by-side cases and leaves standalone with the bleed.
+
+Doing it properly therefore means DERIVING sky surfaces from the map, the same way walls are derived:
+for each seg whose front or back sector has `skyflatnum` on the plane, the quad from that plane
+upward (or downward), which is what `GLWall::SkyPlane`, `SkyTop` and `SkyBottom` compute. Their rules
+are fiddly -- `SkyTop` alone handles the both-sides-sky case, the sky-hack case and the bordering
+case -- but they are rules, not guesses, and `features/surfaces/` is where the equivalents already
+live for the ordinary parts.
+
+Two stages, then, and the first is worth having on its own:
+
+1. Capture GL's sky quads at the `passflag == 4` branch, flag them `sky`, draw them after the world.
+   Fixes the embedded and side-by-side cases; measurable immediately against this spot.
+2. Derive them in `features/surfaces/` beside the wall parts, which covers standalone and is what
+   makes the sky-as-background pass deletable.
