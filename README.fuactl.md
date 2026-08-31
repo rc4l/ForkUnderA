@@ -43,6 +43,20 @@ npx fuactl rpc sim.step '{"tics":1}' --port <P>
 | Profiling | `perf.ticprof` `perf.capture`, etc | what is inside a slow tic; what composes a spike frame; GPU ms per pass |
 | State | `sim.tic` `state.actors`, etc | leveltime, positions, health, class names |
 | Driving | `console.exec` `ui …`, etc | commands, keys, menu reading, screenshots |
+| Triage | `fuactl hang` `fuactl doctor` | why an instance stopped answering, and whether this build is driveable at all |
+
+### When an instance stops answering
+
+```sh
+npx fuactl hang --port <P>     # gone / unreachable / stalled / paused / healthy + the stuck function
+npx fuactl doctor              # is the configured engine bridge-enabled, and newer than the source?
+```
+
+`hang` separates the four things that look identical from outside: the process died, it is spinning
+inside one function so it never polls the bridge again, it polls but the tic is frozen, or it is
+simply paused. When it is stuck it samples the process and names the top-of-stack function. `doctor`
+catches the other trap — a plain release build in the engine path can't be driven at all, and fails
+with "bridge port never opened", which says nothing about the bridge.
 
 ## Release builds
 
