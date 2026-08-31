@@ -11,7 +11,9 @@ import { sampleProcess } from "./sample.mjs";
 import { summarizeGlTimers } from "./proto.mjs";
 import * as ui from "./ui.mjs";
 import { runBench } from "./bench.mjs";
+import { diagnoseHang, doctorEngine } from "./diagnose.mjs";
 import fs from "node:fs";
+import path from "node:path";
 
 const num = (v) => (v != null && v !== true ? Number(v) : undefined);
 
@@ -42,6 +44,8 @@ const USAGE = `fuactl <command>
   reap [--kill] [--all]              prune dead; --kill SIGTERMs ORPHANS only (other sessions safe); --all kills every live instance
   launch [--map M] [--seed S] [--port P] [--token T] [--iwad W] [--skill N] [--file a.wad,b.pk3] [--arg "-host,+sv_hostname,X"]   launch one supervised bridge instance (stays up until Ctrl-C)
   sample --pid P | --port P [--seconds N] [--engine]   hottest functions (macOS sample / Linux perf; unavailable on Windows)
+  hang --port P [--token T] [--pid P] [--gap MS]   why an instance stopped answering: gone / unreachable / stalled / paused / healthy, plus the function it is stuck in
+  doctor [--exe PATH] [--src DIR]      is the configured engine driveable at all (bridge compiled in?) and is it older than the source?
   net-bw [--seed S] [--map M] [--spawn CLS] [--count N] [--seconds N]   client/server bandwidth, baseline vs perturbation
   rpc <cmd> [jsonArgs] --port P [--token T]   send one RPC to an instance and print the result
   session [--instances N] [--seed S] [--map M] [--tics T]   run the determinism + desync check
@@ -157,6 +161,43 @@ async function main() {
         ? await withUi(flags, (c) => sampleProcess(pid, { ...opts, conn: c }))
         : await sampleProcess(pid, opts);
       console.log(JSON.stringify(r, null, 2));
+      break;
+    }
+    case "hang": {
+      // [rc4l] An instance that stops answering looks the same whether it died, wedged inside one
+      // function, froze its tic, or is just paused. Probe, classify, and -- when it is wedged --
+      // sample it so the report names the function to go read.
+      if (!flags.port && !flags.pid) { console.error("usage: fuactl hang --port P [--token T] [--pid P]"); process.exit(2); }
+      const r = await diagnoseHang({
+        // num() so a bare `--pid` (no value) stays unset instead of becoming pid 1.
+        port: num(flags.port) ?? null,
+        token: flags.token || null,
+        pid: num(flags.pid) ?? null,
+        gapMs: num(flags.gap) ?? 1500,
+      });
+      console.log(JSON.stringify(r, null, 2));
+      if (!r.healthy) process.exitCode = 1;
+      break;
+    }
+    case "doctor": {
+      // [rc4l] fuactl and the MCP resolve the engine differently (FUACTL_ENGINE vs ZANDRONUM_EXE),
+      // so check both: a release build sitting in one of those paths cannot be driven at all, and
+      // says so with "bridge port never opened" rather than anything about the bridge.
+      const src = flags.src || path.resolve(process.cwd(), "src/zandronum/src");
+      const srcDir = fs.existsSync(src) ? src : null;
+      const targets = [];
+      if (flags.exe) targets.push({ label: "--exe", exe: String(flags.exe) });
+      else {
+        let fuactlExe = null;
+        try { fuactlExe = resolveEngine(); } catch { /* reported as a missing engine below */ }
+        targets.push({ label: "fuactl (FUACTL_ENGINE)", exe: fuactlExe });
+        if (process.env.ZANDRONUM_EXE && process.env.ZANDRONUM_EXE !== fuactlExe) {
+          targets.push({ label: "MCP (ZANDRONUM_EXE)", exe: process.env.ZANDRONUM_EXE });
+        }
+      }
+      const reports = targets.map((t) => doctorEngine({ ...t, srcDir }));
+      console.log(JSON.stringify(reports, null, 2));
+      if (reports.some((r) => r.problems.length)) process.exitCode = 1;
       break;
     }
     case "gl-timers": {
