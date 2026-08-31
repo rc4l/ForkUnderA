@@ -64,6 +64,7 @@
 #include "announcer.h"
 #include "features/server-browser/browser.h"
 #include "features/server-hosting/zx_punchclient.h"
+#include "features/continue/zx_continue.h"
 #include "features/server-browser/computation/reconnect_compute.h"
 #include "features/server-browser/computation/replyrouting_compute.h"
 #include "features/server-browser/zx_joinserver.h" // [rc4l] a failed join lands in the browser
@@ -874,6 +875,7 @@ void CLIENT_SendServerPacket( void )
 //
 void CLIENT_AttemptConnection( void )
 {
+
 	ULONG	ulIdx;
 
 	if ( g_ulRetryTicks )
@@ -2617,6 +2619,10 @@ static unsigned g_ConnectedHostGeneration = 0;
 
 void CLIENT_QuitNetworkGame( const char *pszString )
 {
+	// [rc4l] Every way of leaving a server is the same way of leaving. The gate decides whether this
+	// teardown is one at all -- a join tidying up on its way in, and a reconnect, are not.
+	zx::Continue_NoteLeftServer( );
+
 	if ( pszString )
 		Printf( "%s\n", pszString );
 
@@ -3553,6 +3559,14 @@ void ServerCommands::EndSnapshot::Execute()
 {
 	// We're all done! Set the new client connection state to active.
 	CLIENT_SetConnectionState( CTS_ACTIVE );
+
+	// [rc4l] Remember this server, whichever way we got here.
+	//
+	// Hooked at the moment the connection COMPLETES rather than at either place that starts one:
+	// the browser's join had its own hook and the console's connect had none, so typing an address
+	// left nothing to come back to. Every route ends here, and ending here also means we never
+	// record a server we failed to reach.
+	zx::Continue_NoteJoined( );
 
 	// [rc4l] Anonymous accounts: open the identity exchange now that we are a client the server
 	// will take commands from. Doing it during the level check was too early, and the hello was
@@ -9923,6 +9937,10 @@ CCMD( connect )
 		CLIENT_QuitNetworkGame( NULL );
 
 	// Put the game in client mode.
+	// [rc4l] Remember the local game BEFORE the netstate flips, because after this line we look
+	// like a client and there is nothing left that says we were playing something of our own.
+	zx::Continue_NoteLeavingLocalGame( );
+
 	NETWORK_SetState( NETSTATE_CLIENT );
 
 	// [AK] Make sure the server setup menu is closed if we're connecting.
@@ -9943,11 +9961,17 @@ CCMD( connect )
 	// Put the game in the full console.
 	gameaction = ga_fullconsole;
 
+	// [rc4l] Tell the departure gate this teardown belongs to a reconnect, so it does not send the
+	// player back to an offline game instead. Cleared once the attempt has been made.
+	zx::Continue_NoteReconnecting( true );
+
 	// Send out a connection signal.
 	CLIENT_AttemptConnection( );
 
 	// Update the connection state.
 	CLIENT_SetConnectionState( CTS_ATTEMPTINGCONNECTION );
+
+	zx::Continue_NoteReconnecting( false );
 
 	// If we've elected to record a demo, begin that process now.
 	pszDemoName = Args->CheckValue( "-record" );
