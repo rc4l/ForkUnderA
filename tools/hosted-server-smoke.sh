@@ -10,6 +10,13 @@
 # so it needed no map, no client and no network to reproduce: only a REALISTIC NUMBER OF ARGUMENTS,
 # which is the one thing a hand-typed command line never has.
 #
+# It does catch that one: run against the broken build on a CI runner this script segfaults in under
+# a second. But it caught it there by LUCK OF LAYOUT -- the same binary on the machine where the bug
+# was found survived this same test three times out of three, because an overflow is only fatal when
+# whatever it lands on happens to matter. So this is a liveness check that happened to be enough
+# once, and the ASan job is what actually sees the write. Do not retire that job on the strength of
+# this one passing.
+#
 # So the argument list below is not a token gesture. It is the shape of what
 # zx::BuildHostArgs emits for an ordinary co-op preset: a gameplay cvar block, a full map rotation
 # and the server settings, comfortably past a hundred arguments. The count is asserted, because a

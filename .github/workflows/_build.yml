@@ -87,9 +87,10 @@ jobs:
       # the whole hosting path was built and packaged without once being asked to work. Costs about
       # nine seconds and reuses the binary this job just produced, so it adds no compile.
       #
-      # This is a LIVENESS check, not a memory check: it catches a server that fails to start or
-      # dies on its own, which is a real class and had no coverage. It does NOT catch a silent
-      # overflow -- the smoke-asan job below is what sees those.
+      # A LIVENESS check. It caught the argv overflow on this runner -- the pre-fix binary segfaults
+      # here in under a second -- but only because an overflow is fatal when what it lands on happens
+      # to matter, and the same binary survived this same test on the machine the bug was found on.
+      # smoke-asan-macos below is what actually sees the write; this is not a replacement for it.
       - name: Hosted server smoke test
         run: ./tools/hosted-server-smoke.sh build/ForkUnderA.app/Contents/MacOS/forkundera
 
