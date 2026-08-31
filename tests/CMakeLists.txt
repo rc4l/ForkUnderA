@@ -174,6 +174,11 @@ if(NET_TEST_SOURCES)
     # [rc4l] ...and matches v6 bans through this one, for the same reason.
     "${ENGINE_SRC}/features/net/computation/v6prefix_compute.cpp"
     "${ENGINE_SRC}/platform.cpp"
+    # [rc4l] The ini parser, here for the same reason as networkshared.cpp: it is vendored engine
+    # code whose only heavy dependency is shimmed away, and a truncation bug in it reached players.
+    "${ENGINE_SRC}/configfile.cpp"
+    "${ENGINE_SRC}/zstring.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/shims/net/frandom_stub.cpp"
     "${ENGINE_SRC}/huffman/bitreader.cpp"
     "${ENGINE_SRC}/huffman/bitwriter.cpp"
     "${ENGINE_SRC}/huffman/huffcodec.cpp"
@@ -181,7 +186,10 @@ if(NET_TEST_SOURCES)
   # Shim dir BEFORE the engine tree: networkshared.cpp's #include "i_system.h" must resolve to
   # tests/shims/net/i_system.h; doomtype.h etc. still come from ENGINE_SRC.
   target_include_directories(zandrox_tests_net BEFORE PRIVATE
-    "${CMAKE_CURRENT_SOURCE_DIR}/shims/net" "${ENGINE_SRC}")
+    "${CMAKE_CURRENT_SOURCE_DIR}/shims/net" "${ENGINE_SRC}"
+    # [rc4l] configfile.cpp's own two dependencies: FString's formatter and the RNG behind its
+    # multi-line end tags.
+    "${ENGINE_SRC}/../gdtoa" "${ENGINE_SRC}/sound")
   # strnicmp is a Windows spelling; the vendored code uses it, POSIX spells it strncasecmp.
   # [rc4l] Only remap it AWAY from Windows: on MSVC strnicmp is the one that exists and
   # strncasecmp is not declared, so defining this unconditionally broke the Windows build.
