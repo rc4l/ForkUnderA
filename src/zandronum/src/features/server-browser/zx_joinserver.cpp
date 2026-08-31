@@ -38,6 +38,7 @@
 
 #include "features/server-browser/browser.h"
 #include "features/server-browser/zx_joinserver.h"
+#include "features/continue/zx_continue.h"
 #include "features/server-browser/computation/joinplan_compute.h"
 #include "features/server-browser/computation/joinresume_compute.h"
 #include "features/server-browser/computation/stableline_compute.h"
@@ -467,6 +468,11 @@ bool AttemptJoin(const JoinPlan &plan, bool mayDownload)
 
 	// [rc4l] Marked BEFORE the reload, because the reload does not return: RequestReload throws
 	// CRestartException on the path that works. Anything recorded after it would never run.
+	// [rc4l] Snapshot what we are leaving before the reload takes it. This has to be here rather
+	// than anywhere nearer the connect: the reload restarts the engine, so by the time a connect is
+	// attempted the local game has already gone.
+	zx::Continue_NoteLeavingLocalGame();
+
 	zx::NoteJoinStarted(plan.serverName.GetChars());
 
 	// RequestReload either connects in place (already on this WAD set), or throws CRestartException
@@ -613,6 +619,7 @@ void NoteJoinStarted( const char *serverName )
 void NoteJoinSucceeded()
 {
 	g_joinInFlight = false;
+
 }
 
 void NoteJoinFailed( const char *reason )
@@ -711,6 +718,11 @@ void ReleaseJoinResume(bool proceed)
 	const bool succeeded = g_resumePendingSuccess;
 	g_resumePending = false;
 	OnDownloadFinished(succeeded);
+}
+
+bool IsJoinInFlight()
+{
+	return g_joinInFlight;
 }
 
 bool IsJoinResumeHeld()

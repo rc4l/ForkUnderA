@@ -1362,6 +1362,23 @@ int FWadCollection::GetLastLump (int wadnum) const
 //
 //==========================================================================
 
+// [rc4l] See the header. Matched case-insensitively, because a name written into a record or a
+// server's file list is the player's spelling, not the filesystem's.
+const char *W_GetLoadedWadPath (const char *bareName)
+{
+	if ((bareName == NULL) || (bareName[0] == '\0'))
+		return NULL;
+
+	for (int i = 0; i < Wads.GetNumWads(); ++i)
+	{
+		const char *name = Wads.GetWadName(i);
+		if ((name != NULL) && (stricmp(name, bareName) == 0))
+			return Wads.GetWadFullName(i);
+	}
+
+	return NULL;
+}
+
 const char *FWadCollection::GetWadFullName (int wadnum) const
 {
 	if ((unsigned int)wadnum >= Files.Size())
