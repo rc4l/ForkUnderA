@@ -28,9 +28,22 @@ enum class HeaderTab
 {
 	MainMenu,
 	PlayOnline,
+	Continue,
 };
 
-const int kHeaderTabCount = 2;
+// [rc4l] Continue is LAST in this enum and FIRST on the screen, and the two orders are deliberately
+// allowed to disagree.
+//
+// Everything else about the bar is keyed on these values -- which tab is lit, which one the mouse
+// found, what the arrows step through -- so inserting Continue at the front would have renumbered
+// the two tabs that were already there and moved them for the sake of a third that is usually
+// absent. Appending leaves them exactly where they were, centred, and lets the LAYOUT say where the
+// new one is drawn. `pinnedIndex` below is how that is said.
+const int kHeaderTabCount = 3;
+
+// The count when there is nothing to continue, which is most of the time. The centred pair are
+// indices 0 and 1, so a shorter count simply stops before the pinned one exists.
+const int kHeaderTabCountNoContinue = 2;
 
 // The bar's own geometry, in whatever virtual space the caller draws in.
 //
@@ -98,20 +111,33 @@ struct HeaderRect
 	HeaderRect(int rx, int ry, int rw, int rh) : x(rx), y(ry), w(rw), h(rh) {}
 };
 
-// How wide the whole row of tabs is, and where it starts. Exposed because the drawing, the mouse and
-// the tests all have to agree on where the row begins, and a row that is centred has no fixed left
-// edge to hardcode.
-int HeaderRowWidth(const HeaderMetrics &m, const int *labelWidths, int count);
-int HeaderRowLeft(const HeaderMetrics &m, const int *labelWidths, int count);
+// [rc4l] ONE TAB MAY BE PINNED TO THE LEFT EDGE while the rest stay centred.
+//
+// Continue is not a peer of the other tabs. It is a way back into a session, it comes and goes with
+// whether there is one, and the two that are always there must not shuffle sideways every time it
+// appears. Pinning it to the left edge gives it a fixed home of its own and leaves the centred pair
+// exactly where the player last saw them.
+//
+// `pinnedIndex` is -1 for none. Everything below takes it, because the drawing, the hit-test and the
+// arrow keys all have to agree about where the pill went, and a layout only half of them know about
+// is a click that lands on nothing.
+int HeaderRowWidth(const HeaderMetrics &m, const int *labelWidths, int count, int pinnedIndex);
+int HeaderRowLeft(const HeaderMetrics &m, const int *labelWidths, int count, int pinnedIndex);
 
 // Where tab `index` sits, given the measured width of every label. An index outside the range
 // answers an empty rect rather than reading past the array, because the caller that got the index
 // wrong is exactly the caller that will not check.
-HeaderRect HeaderTabRect(const HeaderMetrics &m, const int *labelWidths, int count, int index);
+HeaderRect HeaderTabRect(const HeaderMetrics &m, const int *labelWidths, int count, int index,
+	int pinnedIndex);
 
 // Which tab the point is over, or -1 for none. Points anywhere on the bar but not on a pill are
 // none: the bar's background is not a button.
-int HeaderTabAtPoint(const HeaderMetrics &m, const int *labelWidths, int count, int px, int py);
+int HeaderTabAtPoint(const HeaderMetrics &m, const int *labelWidths, int count, int px, int py,
+	int pinnedIndex);
+
+// Left and right in the order the EYE sees, which is the pinned tab first and then the centred row.
+// Without this the arrows would step in enum order and jump over the middle of the bar.
+int StepHeaderTabPinned(int index, int count, int pinnedIndex, int step);
 
 // Is the point on the bar at all, pill or not? Used to keep a click on the bar's background from
 // falling through to the menu underneath, which is still there and still listening.

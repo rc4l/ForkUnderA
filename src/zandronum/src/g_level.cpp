@@ -37,6 +37,7 @@
 #include "d_main.h"
 #include "features/crashreport/zx_crashreport.h"
 #include "g_level.h"
+#include "features/continue/zx_continue.h"
 #include "features/skywire/computation/sky_wire_compute.h"
 #include "g_game.h"
 #include "s_sound.h"
@@ -215,7 +216,14 @@ CCMD (map)
 						return;
 					}
 
+					// [rc4l] This disconnect is on the way to the map just named, not a player
+					// leaving a server. Continue routes every departure back to the last session,
+					// so without saying so here it takes them there instead of to the map -- and
+					// if that session was one we hosted, it starts the server again, whose join
+					// tears down through here as well.
+					zx::Continue_NoteChoosingDestination( true );
 					CLIENT_QuitNetworkGame( NULL );
+					zx::Continue_NoteChoosingDestination( false );
 				}
 
 				if ( sv_maprotation )
