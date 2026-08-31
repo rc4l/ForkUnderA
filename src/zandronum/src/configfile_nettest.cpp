@@ -14,27 +14,39 @@
 #include "configfile.h"
 
 #include <cstdio>
+#include <cstdlib>
 #include <string>
 
 namespace
 {
 
+// Somewhere writable on every platform we build for: P_tmpdir is POSIX and MSVC has no such macro.
+std::string TempPath(const char *name)
+{
+	const char *dir = std::getenv("TMPDIR");
+	if (dir == NULL) dir = std::getenv("TEMP");
+	if (dir == NULL) dir = std::getenv("TMP");
+	if (dir == NULL) dir = ".";
+	return std::string(dir) + "/" + name;
+}
+
 // A config written to a temp file and read back, which is the trip a setting actually makes.
 std::string RoundTrip(const std::string &value)
 {
-	char path[L_tmpnam + 16];
-	std::snprintf(path, sizeof path, "%s/zx_cfgtest_%d.ini", P_tmpdir, (int)value.size());
+	char name[64];
+	std::snprintf(name, sizeof name, "zx_cfgtest_%d.ini", (int)value.size());
+	const std::string path = TempPath(name);
 
 	{
 		FConfigFile out;
 		out.SetSection("GlobalSettings", true);
 		out.SetValueForKey("some_cvar", value.c_str());
-		out.ChangePathName(path);
+		out.ChangePathName(path.c_str());
 		out.WriteConfigFile();
 	}
 
-	FConfigFile in(path);
-	std::remove(path);
+	FConfigFile in(path.c_str());
+	std::remove(path.c_str());
 
 	if (!in.SetSection("GlobalSettings"))
 		return "<no section>";
@@ -88,19 +100,18 @@ TEST(ConfigFileRoundTrip, DoesNotTurnALongValueIntoASecondKey)
 {
 	// How the truncation showed itself in the wild: the tail of the line came back as its own entry.
 	const std::string value(400, 'z');
-	char path[L_tmpnam + 16];
-	std::snprintf(path, sizeof path, "%s/zx_cfgtest_tail.ini", P_tmpdir);
+	const std::string path = TempPath("zx_cfgtest_tail.ini");
 
 	{
 		FConfigFile out;
 		out.SetSection("GlobalSettings", true);
 		out.SetValueForKey("some_cvar", value.c_str());
-		out.ChangePathName(path);
+		out.ChangePathName(path.c_str());
 		out.WriteConfigFile();
 	}
 
-	FConfigFile in(path);
-	std::remove(path);
+	FConfigFile in(path.c_str());
+	std::remove(path.c_str());
 	ASSERT_TRUE(in.SetSection("GlobalSettings"));
 
 	int entries = 0;
