@@ -46,6 +46,7 @@
 #include "doomerrors.h"
 #include "i_system.h"
 #include "m_argv.h"
+#include "computation/argv_collect_compute.h"
 #include "s_sound.h"
 #include "st_console.h"
 #include "version.h"
@@ -183,12 +184,40 @@ void OriginalMainTry(int argc, char** argv)
 namespace
 {
 
-const int ARGC_MAX = 64;
-
-int   s_argc;
-char* s_argv[ARGC_MAX];
-
+// [rc4l] The command line, as something that grows.
+//
+// This was a fixed 64-entry array that main() wrote WITHOUT a bounds check. Sixty-four is plenty for
+// a player double-clicking the app and nowhere near enough for a server we start ourselves: the HOST
+// tab hands the child one argument per gameplay cvar, two per map in the rotation and two per WAD,
+// which reaches a hundred and fifty for an ordinary co-op preset. Every argument past the sixty-
+// fourth was stored PAST THE END of the array, over whichever file's statics the linker had placed
+// next -- and the server then died seconds later somewhere with no connection to the real fault
+// (inside the automap's arrays, inside the object allocator, inside CoreFoundation), differently
+// each time and only sometimes at all. The file-open handler below always bounds-checked; main()
+// never did.
+//
+// Fixed by removing the cap rather than raising it. A number picked in advance is the bug: a map
+// rotation is as long as the operator wants it, so any constant is one rotation away from being
+// wrong again, and silently dropping the arguments past it would lose maps and cvars instead.
+// s_argvStorage owns the bytes, s_argv holds the pointers into them, and both grow.
 TArray<FString> s_argvStorage;
+TArray<char *>  s_argv;
+
+// Keep the two in step: every argument is stored, then pointed at. Growing s_argvStorage moves the
+// FString objects but not the characters they own, so pointers handed out earlier stay good.
+void AddArg(const char* argument)
+{
+	s_argvStorage.Push(argument);
+	s_argv.Push(s_argvStorage.Last().LockBuffer());
+}
+
+// argv for the engine. NULL only if nothing was collected at all, which cannot happen -- argv[0] is
+// always there -- but taking &s_argv[0] of an empty array to find that out would be the same class
+// of mistake this comment is about.
+char** ArgVector()
+{
+	return (s_argv.Size() > 0) ? &s_argv[0] : NULL;
+}
 
 bool s_restartedFromWADPicker;
 
@@ -311,7 +340,7 @@ ApplicationController* appCtrl;
 	FConsoleWindow::CreateInstance();
 	atterm(FConsoleWindow::DeleteInstance);
 
-	exit(OriginalMain(s_argc, s_argv));
+	exit(OriginalMain(s_argv.Size(), ArgVector()));
 }
 
 
@@ -320,8 +349,7 @@ ApplicationController* appCtrl;
 	ZD_UNUSED(theApplication);
 
 	if (s_restartedFromWADPicker
-		|| 0 == [filename length]
-		|| s_argc + 2 >= ARGC_MAX)
+		|| 0 == [filename length])
 	{
 		return FALSE;
 	}
@@ -332,7 +360,7 @@ ApplicationController* appCtrl;
 
 	const char* const charFileName = [filename UTF8String];
 
-	for (int i = 0; i < s_argc; ++i)
+	for (unsigned int i = 0; i < s_argv.Size(); ++i)
 	{
 		if (0 == strcmp(s_argv[i], charFileName))
 		{
@@ -340,11 +368,8 @@ ApplicationController* appCtrl;
 		}
 	}
 
-	s_argvStorage.Push("-file");
-	s_argv[s_argc++] = s_argvStorage.Last().LockBuffer();
-
-	s_argvStorage.Push([filename UTF8String]);
-	s_argv[s_argc++] = s_argvStorage.Last().LockBuffer();
+	AddArg("-file");
+	AddArg([filename UTF8String]);
 
 	return TRUE;
 }
@@ -502,31 +527,23 @@ void ReleaseApplicationController()
 
 int main(int argc, char** argv)
 {
-	for (int i = 0; i <= argc; ++i)
+	// [rc4l] The counting, the bound and which arguments are dropped live in ComputeCollectArgv,
+	// where they are tested; getting them wrong here is what corrupted a hosted server's memory.
+	// What is left is copying into storage the engine owns.
+	const zx::CollectedArgv collected = zx::ComputeCollectArgv(argc, argv);
+
+	s_restartedFromWADPicker = collected.bRestartedFromWadPicker;
+
+	for (size_t i = 0; i < collected.args.size(); ++i)
 	{
-		const char* const argument = argv[i];
-
-		if (NULL == argument || '\0' == argument[0])
-		{
-			continue;
-		}
-
-		if (0 == strcmp(argument, "-wad_picker_restart"))
-		{
-			s_restartedFromWADPicker = true;
-		}
-		else
-		{
-			s_argvStorage.Push(argument);
-			s_argv[s_argc++] = s_argvStorage.Last().LockBuffer();
-		}
+		AddArg(collected.args[i].c_str());
 	}
 
 	// [rc4l][SB][BB] Zandronum's entry-point work, before any Cocoa object exists.
 	//
 	// --version must print and exit without side effects, so ZA_PrintVersion() runs first and
 	// crash reporting starts only after it has declined to bail.
-	Args = new DArgs(s_argc, s_argv);
+	Args = new DArgs(s_argv.Size(), ArgVector());
 
 	if (ZA_PrintVersion())
 	{
@@ -547,7 +564,7 @@ int main(int argc, char** argv)
 #endif
 	if ( Args->CheckParm( "-host" ) )
 	{
-		OriginalMainExcept(s_argc, s_argv);
+		OriginalMainExcept(s_argv.Size(), ArgVector());
 		return EXIT_SUCCESS;
 	}
 
