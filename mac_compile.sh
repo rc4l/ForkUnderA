@@ -252,8 +252,27 @@ configure() {
 
     # [rc4l] ZX_WITH_SYMBOLS=1 (release CI) builds with debug info; a .dSYM is generated after the
     # build (RELEASE_WITH_DEBUG_FILE is off on Apple) and uploaded to GlitchTip so crashes symbolicate.
+    #
+    # ZX_SANITIZE=1 additionally builds the ENGINE under AddressSanitizer. The unit tests have run
+    # under ASan for a long time; the engine never had, and the gap is not academic -- the overflow
+    # that killed every hosted server lived in the entry point, which no unit test links and which
+    # every allocator is blind to because it wrote over statics rather than the heap. ASan is the
+    # only thing that sees that write. Never ship a build made this way: it is slower, it is bigger,
+    # and it aborts on the first fault by design.
+    #
+    # Composed into ONE flags string rather than two -DCMAKE_CXX_FLAGS arguments, because the second
+    # would silently replace the first and the symbols would quietly stop being built.
+    local zx_extra_flags=""
     if [[ "${ZX_WITH_SYMBOLS:-0}" == "1" ]]; then
-        args+=( -DCMAKE_CXX_FLAGS=-g -DCMAKE_C_FLAGS=-g )
+        zx_extra_flags+=" -g"
+    fi
+    if [[ "${ZX_SANITIZE:-0}" == "1" ]]; then
+        zx_extra_flags+=" -g -fsanitize=address -fno-omit-frame-pointer"
+        args+=( -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address" )
+        status "AddressSanitizer: ENABLED (diagnostic build -- do not ship)"
+    fi
+    if [[ -n "$zx_extra_flags" ]]; then
+        args+=( -DCMAKE_CXX_FLAGS="${zx_extra_flags# }" -DCMAKE_C_FLAGS="${zx_extra_flags# }" )
     fi
 
     # [rc4l] Only a build whose symbols get published may report crashes; see ZX_OFFICIAL_BUILD in
