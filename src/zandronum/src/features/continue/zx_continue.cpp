@@ -6,12 +6,14 @@
 #include "features/continue/computation/continuerecord_compute.h"
 #include "features/continue/computation/continuebutton_compute.h"
 #include "features/continue/computation/continuedepart_compute.h"
+#include "features/continue/computation/continuerehost_compute.h"
 #include "features/continue/computation/continuereturn_compute.h"
 #include "features/continue/computation/continueshow_compute.h"
 #include "features/continue/computation/continuewrite_compute.h"
 #include "features/identity/zx_identity.h"
 #include "features/server-hosting/zx_hosting.h"
 #include "features/wadreload/zx_wadreload.h"
+#include "features/wad-download/zx_filehash.h"
 #include "features/wad-download/zx_waddownload.h"
 
 #include "c_dispatch.h"
@@ -45,7 +47,6 @@ namespace zx
 namespace
 {
 
-ContinueRecord g_Record;
 ContinueRecord g_Offline;
 bool g_bReconnecting = false;
 bool g_bReturnPending = false;
@@ -57,10 +58,25 @@ ContinueTarget g_ReturnTarget = ContinueTarget::None;
 // path joins it separately once the child reports ready, so a rehost that stopped at HostStart left
 // the player at a menu watching a server they were supposed to be inside.
 bool g_bJoinRehostWhenReady = false;
+// [rc4l] A return of ours between being performed and being proven. Only cleared by actually landing
+// in the session -- a return that falls apart must not read as the player leaving and ask for
+// another one, which is the infinite rehost.
+bool g_bReturnInFlight = false;
+// [rc4l] Set before a reload and read on the way back up, so a rehost that needed different files
+// finishes on the other side of the restart. Survives because RequestReload unwinds in-process.
+bool g_bHostAfterRestart = false;
+// [rc4l] The player's own command is mid-flight and it has a destination of its own.
+bool g_bGoingSomewhereChosen = false;
 int g_DepartCalls = 0;
 int g_DepartReturns = 0;
 ContinueRecord g_Server;
 bool g_bLoaded = false;
+// [rc4l] Bumped every time the records are re-read, so anything derived from them can tell in one
+// comparison whether what it worked out last frame still holds.
+int g_LoadGeneration = 0;
+// [rc4l] Answered by Chosen() when nothing is worth offering, so callers get a record rather than a
+// null to check.
+const ContinueRecord g_Nothing;
 FString g_Label;
 FString g_Tooltip;
 
@@ -200,8 +216,17 @@ void CollectLoadedWads( ContinueRecord &record )
 		if ( loaded[i].name.IsEmpty( ))
 			continue;
 
-		record.wads.push_back( std::make_pair(
-			std::string( loaded[i].name.GetChars( )), std::string( loaded[i].checksum.GetChars( ))));
+		ContinueRecord::Wad wad;
+		wad.name = loaded[i].name.GetChars( );
+		wad.hash = loaded[i].checksum.GetChars( );
+
+		// Where we opened it from, so a Continue can find it again even somewhere the engine would
+		// not think to look. Checked against the digest before it is believed; see the header.
+		const char *path = W_GetLoadedWadPath( wad.name.c_str( ));
+		if (( path != NULL ) && ( *path != 0 ))
+			wad.path = path;
+
+		record.wads.push_back( wad );
 	}
 
 	// The IWAD is deliberately absent from that list, so its digest is fetched the way the server
@@ -223,6 +248,20 @@ void CollectLoadedWads( ContinueRecord &record )
 	}
 }
 
+// Every file a record names, as paths, or false the moment one cannot be found. Shared because
+// going back to an offline game and starting a server again need exactly the same answer, and when
+// they each worked it out the rehost path got the weaker version.
+static bool ResolveRecordFiles( const ContinueRecord &rec, TArray<FString> &pwads, FString &iwad );
+
+// The IWAD as a Wad, so one resolver answers for every file rather than two that can drift apart.
+static ContinueRecord::Wad IwadOf( const ContinueRecord &rec )
+{
+	ContinueRecord::Wad out;
+	out.name = rec.iwad;
+	out.hash = rec.iwadHash;
+	return out;
+}
+
 // [rc4l] The file on this disk that a recorded name and checksum mean, as a path something can load.
 //
 // The join path's own order, and for its own reason: ask for the CONTENT first, because a copy we
@@ -233,21 +272,40 @@ void CollectLoadedWads( ContinueRecord &record )
 //
 // Empty when nothing on this machine matches, which the caller must treat as "cannot continue"
 // rather than guessing.
-FString ResolveWad( const std::string &name, const std::string &md5 )
+FString ResolveWad( const ContinueRecord::Wad &wad )
 {
-	if ( name.empty( ))
+	if ( wad.name.empty( ))
 		return FString( );
 
-	if ( md5.empty( ) == false )
+	// [rc4l] A file we are holding open answers for itself. Searching first meant a mod loaded from
+	// anywhere but a wad directory -- a downloads folder, which is where one arrives -- was reported
+	// as no longer on this machine while it was open in this very process.
+	const char *loaded = W_GetLoadedWadPath( wad.name.c_str( ));
+	if (( loaded != NULL ) && ( *loaded != 0 ))
+		return FString( loaded );
+
+	if ( wad.hash.empty( ) == false )
 	{
-		const FString exact = waddownload::FindLocalCopy( name.c_str( ), md5.c_str( ));
+		const FString exact = waddownload::FindLocalCopy( wad.name.c_str( ), wad.hash.c_str( ));
 		if ( exact.IsNotEmpty( ))
 			return exact;
 	}
 
 	TArray<FString> resolved;
-	if ( D_AddFile( resolved, name.c_str( )) && ( resolved.Size( ) > 0 ))
+	if ( D_AddFile( resolved, wad.name.c_str( )) && ( resolved.Size( ) > 0 ))
 		return resolved[resolved.Size( ) - 1];
+
+	// [rc4l] Last: where it was when we recorded it. Only ever reached once every portable way of
+	// finding it has failed, and only believed when the file there still has the digest we recorded
+	// -- a path is a guess about another machine's disk, and the digest is what makes it safe to
+	// act on. Without this a mod kept outside the search directories, which is where a downloaded
+	// one lands, was declared missing while sitting exactly where the player left it.
+	if (( wad.path.empty( ) == false ) && ( wad.hash.empty( ) == false ))
+	{
+		char actual[33] = { 0 };
+		if ( Md5OfFile( wad.path.c_str( ), actual, sizeof actual ) && ( stricmp( actual, wad.hash.c_str( )) == 0 ))
+			return FString( wad.path.c_str( ));
+	}
 
 	return FString( );
 }
@@ -275,13 +333,13 @@ bool ProbeWadsMatch( ULONG slot )
 	if ( count < 0 )
 		return true;					// it told us nothing, so it has not contradicted us
 
-	if ( static_cast<size_t>( count ) != g_Record.wads.size( ) )
+	if ( static_cast<size_t>( count ) != g_Server.wads.size( ) )
 		return false;
 
 	for ( LONG i = 0; i < count; ++i )
 	{
 		const char *name = BROWSER_GetPWADName( slot, i );
-		if (( name == NULL ) || ( g_Record.wads[i].first != name ))
+		if (( name == NULL ) || ( g_Server.wads[i].name != name ))
 			return false;
 	}
 
@@ -325,21 +383,42 @@ std::string MapWadName( const char *mapName )
 	return (( wad != NULL ) && ( *wad != 0 )) ? std::string( wad ) : std::string( );
 }
 
+static bool ResolveRecordFiles( const ContinueRecord &rec, TArray<FString> &pwads, FString &iwad )
+{
+	pwads.Clear( );
+
+	for ( size_t i = 0; i < rec.wads.size( ); ++i )
+	{
+		const FString path = ResolveWad( rec.wads[i] );
+		if ( path.IsEmpty( ))
+			return false;
+
+		pwads.Push( path );
+	}
+
+	iwad = ResolveWad( IwadOf( rec ));
+	return ( rec.iwad.empty( ) || iwad.IsNotEmpty( ));
+}
+
 // Whether what is loaded right now is what the record describes, by bare name and in order. Names
 // alone, because that is all a record can hold about files this machine may keep anywhere.
-bool SameWadSetAsRecord( )
+//
+// [rc4l] Takes the record to compare against rather than reading a stored winner. It always read the
+// derived one, including from the path activating the offline record, so an offline return could be
+// measured against the file set of an unrelated server and skip the reload it needed.
+bool SameWadSetAsRecord( const ContinueRecord &against )
 {
 	ContinueRecord loaded;
 	CollectLoadedWads( loaded );
 
-	if ( loaded.iwad != g_Record.iwad )
+	if ( loaded.iwad != against.iwad )
 		return false;
-	if ( loaded.wads.size( ) != g_Record.wads.size( ) )
+	if ( loaded.wads.size( ) != against.wads.size( ) )
 		return false;
 
 	for ( size_t i = 0; i < loaded.wads.size( ); ++i )
 	{
-		if ( loaded.wads[i].first != g_Record.wads[i].first )
+		if ( loaded.wads[i].name != against.wads[i].name )
 			return false;
 	}
 
@@ -351,15 +430,11 @@ bool SameWadSetAsRecord( )
 void Continue_Load( void )
 {
 	g_bLoaded = true;
+	++g_LoadGeneration;
 
 	// Both, kept apart, so joining a server does not forget the game that was already going.
 	g_Offline = ReadRecord( OfflineRecordPath( ));
 	g_Server = ReadRecord( ServerRecordPath( ));
-
-	// What the pill offers out of a session: the more recently left of the two.
-	g_Record = ( g_Server.stamp > g_Offline.stamp ) ? g_Server : g_Offline;
-	if ( g_Record.kind == ContinueKind::None )
-		g_Record = ( g_Offline.kind != ContinueKind::None ) ? g_Offline : g_Server;
 }
 
 // [rc4l] Connected to a server. NOT merely "a level is running": the title screen plays a demo, so
@@ -369,6 +444,32 @@ static bool InSession( void )
 	return ( NETWORK_GetState( ) == NETSTATE_CLIENT );
 }
 
+// [rc4l] Whether this particular record is worth offering: a snapshot too old to load, one whose
+// file has gone, and a server that no longer answers are all records that parse perfectly and lead
+// nowhere.
+//
+// Asked per record rather than once for "the" record. Deriving a single winner up front and then
+// testing THAT was the old shape, and it hid the pill whenever the more recent of the two happened
+// to be a dead server -- the other record was still perfectly good and never got asked.
+static bool RecordUsable( const ContinueRecord &rec )
+{
+	ContinueShowInputs in;
+	in.recordParsed = ( rec.kind != ContinueKind::None );
+	in.kind = rec.kind;
+	in.minSaveVersion = MINSAVEVER;
+
+	if ( rec.kind == ContinueKind::Single )
+	{
+		in.saveFileExists = FileExists( rec.savePath );
+		in.saveVersion = in.saveFileExists ? SaveVersionOf( rec.savePath ) : 0;
+	}
+
+	// The probe is a fact about a remote address, so it only bears on the server record.
+	in.probe = ( rec.kind == ContinueKind::Server ) ? g_Probe : ServerProbe::Alive;
+
+	return ContinueIsShown( in );
+}
+
 // Everything the pill's decision rests on, gathered in one place so the label, the action and
 // whether it is drawn at all cannot disagree about the answer.
 static ContinueButtonVerdict Verdict( void )
@@ -376,15 +477,50 @@ static ContinueButtonVerdict Verdict( void )
 	if ( g_bLoaded == false )
 		Continue_Load( );
 
+	// [rc4l] Worked out once per change rather than once per frame. The header asks the pill for its
+	// label and whether to draw it every frame, and answering honestly means a stat and, for a
+	// snapshot, opening the savegame and parsing its PNG header -- twice over, sixty times a second,
+	// for an answer that only moves when one of these four inputs does.
+	static ContinueButtonVerdict cached;
+	static int cachedGeneration = -1;
+	static ServerProbe cachedProbe = ServerProbe::Unknown;
+	static bool cachedInSession = false;
+
+	const bool inSession = InSession( );
+
+	if (( cachedGeneration == g_LoadGeneration ) && ( cachedProbe == g_Probe )
+		&& ( cachedInSession == inSession ))
+	{
+		return cached;
+	}
+
 	ContinueButtonInputs in;
-	in.inSession = InSession( );
-	in.offlineUsable = ( g_Offline.kind != ContinueKind::None );
+	in.inSession = inSession;
+	in.offlineUsable = RecordUsable( g_Offline );
 	in.offlineIsHosted = ( g_Offline.kind == ContinueKind::Hosted );
 	in.offlineStamp = g_Offline.stamp;
-	in.serverUsable = ( g_Server.kind != ContinueKind::None );
+	in.serverUsable = RecordUsable( g_Server );
 	in.serverStamp = g_Server.stamp;
 
-	return DecideContinueButton( in );
+	cached = DecideContinueButton( in );
+	cachedGeneration = g_LoadGeneration;
+	cachedProbe = g_Probe;
+	cachedInSession = inSession;
+
+	return cached;
+}
+
+// The record the pill would act on, which is the only sense in which one of the two is "the"
+// record. Everything that used to read a stored winner reads this.
+static const ContinueRecord &Chosen( void )
+{
+	switch ( Verdict( ).target )
+	{
+	case ContinueTarget::Server:	return g_Server;
+	case ContinueTarget::Offline:
+	case ContinueTarget::Hosted:	return g_Offline;
+	default:						return g_Nothing;
+	}
 }
 
 bool Continue_IsDisconnect( void )
@@ -410,19 +546,8 @@ bool Continue_IsShown( void )
 	if (( gamestate == GS_LEVEL ) && usergame )
 		return false;
 
-	ContinueShowInputs in;
-	in.recordParsed = ( g_Record.kind != ContinueKind::None );
-	in.kind = g_Record.kind;
-	in.minSaveVersion = MINSAVEVER;
-
-	if ( g_Record.kind == ContinueKind::Single )
-	{
-		in.saveFileExists = FileExists( g_Record.savePath );
-		in.saveVersion = in.saveFileExists ? SaveVersionOf( g_Record.savePath ) : 0;
-	}
-
-	in.probe = g_Probe;
-	return ContinueIsShown( in );
+	// Whether there is anywhere to go is the same question as where, asked of the same verdict.
+	return ( Verdict( ).target != ContinueTarget::None );
 }
 
 const char *Continue_Tooltip( void )
@@ -448,17 +573,21 @@ const char *Continue_Tooltip( void )
 		return g_Tooltip.GetChars( );
 	}
 
-	if ( g_Record.kind == ContinueKind::Server )
+	const ContinueRecord &rec = Chosen( );
+
+	if ( rec.kind == ContinueKind::Server )
 	{
 		// The name if we have one, the address if we never learned it.
-		const char *where = g_Record.serverName.empty( )
-			? g_Record.address.c_str( ) : g_Record.serverName.c_str( );
+		const char *where = rec.serverName.empty( )
+			? rec.address.c_str( ) : rec.serverName.c_str( );
 		g_Tooltip.Format( "Continue playing online in %s", where );
 	}
-	else if ( g_Record.mapWad.empty( ) == false )
-		g_Tooltip.Format( "Continue singleplayer in %s on %s", g_Record.mapName.c_str( ), g_Record.mapWad.c_str( ) );
+	else if ( rec.kind == ContinueKind::Hosted )
+		g_Tooltip.Format( "Continue hosting %s", rec.host.map.c_str( ) );
+	else if ( rec.mapWad.empty( ) == false )
+		g_Tooltip.Format( "Continue singleplayer in %s on %s", rec.mapName.c_str( ), rec.mapWad.c_str( ) );
 	else
-		g_Tooltip.Format( "Continue singleplayer in %s", g_Record.mapName.c_str( ) );
+		g_Tooltip.Format( "Continue singleplayer in %s", rec.mapName.c_str( ) );
 
 	return g_Tooltip.GetChars( );
 }
@@ -562,6 +691,12 @@ void Continue_NoteHosting( const HostConfig &config )
 	record.host.rconSecret.clear( );	// worth nothing after its process; a rehost mints a new one
 	record.stamp = NextStamp( );
 
+	// [rc4l] The files WE were holding, not just the ones the server was told to load. A rehost has
+	// to put this process back on them before it can join anything, and by name alone it cannot: the
+	// hashes are what turn a remembered set into files on this machine. Free here -- the same list
+	// the offline path records, already digested at startup.
+	CollectLoadedWads( record );
+
 	WriteRecord( record, OfflineRecordPath( ));
 }
 
@@ -587,6 +722,8 @@ void Continue_NoteLeftServer( void )
 	in.joinInFlight = IsJoinInFlight( );
 	in.reconnecting = g_bReconnecting;
 	in.crashing = false;
+	in.goingSomewhereChosen = g_bGoingSomewhereChosen;
+	in.returnInFlight = g_bReturnInFlight;
 
 	if ( DecideContinueDepart( in ) != ContinueDepartVerdict::Return )
 		return;
@@ -605,8 +742,21 @@ void Continue_NoteLeftServer( void )
 	g_bReturnPending = true;
 }
 
+// [rc4l] Bracket a command that is deliberately leaving a server in order to go somewhere it has
+// already chosen -- `map` from a client does exactly that, disconnecting first and starting the map
+// after. Without this the disconnect reads as an ordinary departure and we take the player back to
+// the session they were leaving, instead of the map they typed.
+void Continue_NoteChoosingDestination( bool bChoosing )
+{
+	g_bGoingSomewhereChosen = bChoosing;
+}
+
 void Continue_NoteJoined( void )
 {
+	// [rc4l] We are in. Whatever return brought us here is finished, so a later disconnect is the
+	// player leaving rather than our own attempt coming apart.
+	g_bReturnInFlight = false;
+
 	if ( DecideContinueWriteOnJoin( false ) != ContinueWriteVerdict::Write )
 		return;
 
@@ -636,8 +786,13 @@ void Continue_Forget( void )
 {
 	remove( OfflineRecordPath( ).c_str( ));
 	remove( ServerRecordPath( ).c_str( ));
-	g_Record = ContinueRecord( );
+	g_Offline = ContinueRecord( );
+	g_Server = ContinueRecord( );
 	g_bLoaded = true;
+
+	// The records changed without being re-read, so say so: anything derived from them is now about
+	// two records that no longer exist.
+	++g_LoadGeneration;
 }
 
 int Continue_RecordKind( void )
@@ -645,10 +800,11 @@ int Continue_RecordKind( void )
 	if ( g_bLoaded == false )
 		Continue_Load( );
 
-	switch ( g_Record.kind )
+	switch ( Chosen( ).kind )
 	{
 	case ContinueKind::Single: return 1;
 	case ContinueKind::Server: return 2;
+	case ContinueKind::Hosted: return 3;
 	default:                   return 0;
 	}
 }
@@ -658,10 +814,8 @@ const char *Continue_RecordTarget( void )
 	if ( g_bLoaded == false )
 		Continue_Load( );
 
-	if ( g_Record.kind == ContinueKind::Server )
-		return g_Record.address.c_str( );
-
-	return g_Record.mapName.c_str( );
+	const ContinueRecord &rec = Chosen( );
+	return ( rec.kind == ContinueKind::Server ) ? rec.address.c_str( ) : rec.mapName.c_str( );
 }
 
 bool Continue_DebugSaveExists( void )
@@ -669,7 +823,7 @@ bool Continue_DebugSaveExists( void )
 	if ( g_bLoaded == false )
 		Continue_Load( );
 
-	return FileExists( g_Record.savePath );
+	return FileExists( Chosen( ).savePath );
 }
 
 int Continue_DebugSaveVersion( void )
@@ -677,7 +831,7 @@ int Continue_DebugSaveVersion( void )
 	if ( g_bLoaded == false )
 		Continue_Load( );
 
-	return SaveVersionOf( g_Record.savePath );
+	return SaveVersionOf( Chosen( ).savePath );
 }
 
 bool Continue_DebugBusy( void )
@@ -692,6 +846,7 @@ FString g_SaveAfterRestart;
 
 // Both defined below, beside the records they act on.
 static void RehostRecorded( void );
+static void StartAndJoinRecordedHost( void );
 static void ActivateOfflineRecord( const ContinueRecord &rec );
 
 void Continue_Tick( void )
@@ -705,12 +860,12 @@ void Continue_Tick( void )
 	// The probe runs while the player is at a menu deciding, so the answer is usually in before the
 	// button is pressed. It settles once and stays settled: re-asking every frame would be a query
 	// storm aimed at somebody else's server.
-	if (( g_Record.kind == ContinueKind::Server ) && ( g_Probe == ServerProbe::Unknown ))
+	if (( g_Server.kind == ContinueKind::Server ) && ( g_Probe == ServerProbe::Unknown ))
 	{
 		if ( g_bProbeSent == false )
 		{
 			NETADDRESS_s address;
-			if ( address.LoadFromString( g_Record.address.c_str( )))
+			if ( address.LoadFromString( g_Server.address.c_str( )))
 			{
 				BROWSER_AddServerToList( address );
 				g_ProbeSlot = BROWSER_GetListIDByAddress( address );
@@ -771,6 +926,18 @@ void Continue_Tick( void )
 		g_ReturnTarget = ContinueTarget::None;
 	}
 
+	// [rc4l] The other side of a reload the rehost asked for. Same shape as the load below, and the
+	// same reason for waiting: there is no point starting a server before the engine can join one.
+	if ( g_bHostAfterRestart )
+	{
+		if ( gamestate == GS_STARTUP )
+			return;
+
+		g_bHostAfterRestart = false;
+		StartAndJoinRecordedHost( );
+		return;
+	}
+
 	if ( g_bLoadAfterRestart == false )
 		return;
 
@@ -804,7 +971,7 @@ int Continue_DebugProbeSlot( void )
 
 // [rc4l] Start the game we recorded hosting, silently. A fresh match on the same terms: the world
 // lived in the child process and went with it, so there is nothing to restore but the settings.
-static void RehostRecorded( void )
+static void StartAndJoinRecordedHost( void )
 {
 	HostConfig config = g_Offline.host;
 	config.rconSecret.clear( );		// minted fresh by HostStart; the stored one died with its process
@@ -817,6 +984,57 @@ static void RehostRecorded( void )
 
 	// Spawning it is only half. The child is not listening yet, so the join waits for the ready edge.
 	g_bJoinRehostWhenReady = true;
+
+	// [rc4l] From here until we are actually in, this is a return of ours in flight. If the join is
+	// refused, the disconnect that follows must not read as the player leaving a server and ask for
+	// another rehost -- see continuedepart_compute.
+	g_bReturnInFlight = true;
+}
+
+static void RehostRecorded( void )
+{
+	const ContinueRecord &rec = g_Offline;
+
+	// Names into paths, so "found" means found rather than named. Same resolution the offline path
+	// uses, for the same reason: a bare name is not a file.
+	TArray<FString> pwads;
+	FString iwad;
+	const bool bAllFound = ResolveRecordFiles( rec, pwads, iwad );
+
+	ContinueRehostInputs in;
+	in.filesFound = bAllFound;
+	in.filesMatchOurs = SameWadSetAsRecord( rec );
+
+	switch ( DecideContinueRehost( in ))
+	{
+	case ContinueRehostStep::Host:
+		StartAndJoinRecordedHost( );
+		return;
+
+	case ContinueRehostStep::RefuseMissing:
+		Printf( "Continue: the files that server used are no longer on this machine.\n" );
+		return;
+
+	case ContinueRehostStep::ReloadThenHost:
+		break;
+	}
+
+	// [rc4l] Our files are not that server's files, so joining it as we are is refused before it
+	// starts. Restart onto them first and host on the way back up: the reload throws and unwinds
+	// inside this same process, so the flag below survives it.
+	g_bHostAfterRestart = true;
+
+	const wadreload::ReloadResult r = wadreload::RequestReload(
+		iwad.IsEmpty( ) ? NULL : iwad.GetChars( ), pwads );
+
+	// Only reached when it did NOT restart -- the restarting case throws past here and the flag is
+	// read on the way back up.
+	g_bHostAfterRestart = false;
+
+	if ( r == wadreload::ReloadResult::AlreadyLoaded )
+		StartAndJoinRecordedHost( );
+	else if ( r == wadreload::ReloadResult::InvalidWads )
+		Printf( "Continue: the files that server used are no longer loadable.\n" );
 }
 
 // [rc4l] Put a recorded local session back: the right WAD set, then the snapshot.
@@ -830,7 +1048,7 @@ static void ActivateOfflineRecord( const ContinueRecord &rec )
 	// same way and pressing Continue, and asking RequestReload to prove that costs a full validation
 	// against search paths the record cannot know -- our IWAD is remembered by bare name, so a copy
 	// living outside the search path fails the check and refuses a reload nothing needed.
-	if ( SameWadSetAsRecord( ) )
+	if ( SameWadSetAsRecord( rec ) )
 	{
 		G_LoadGame( rec.savePath.c_str( ));
 		return;
@@ -838,23 +1056,8 @@ static void ActivateOfflineRecord( const ContinueRecord &rec )
 
 	// Names into paths before anything is asked to load them; see ResolveWad.
 	TArray<FString> pwads;
-	bool bAllFound = true;
-
-	for ( size_t i = 0; i < rec.wads.size( ); ++i )
-	{
-		const FString path = ResolveWad( rec.wads[i].first, rec.wads[i].second );
-		if ( path.IsEmpty( ))
-		{
-			bAllFound = false;
-			break;
-		}
-
-		pwads.Push( path );
-	}
-
-	const FString iwad = ResolveWad( rec.iwad, rec.iwadHash );
-	if ( rec.iwad.empty( ) == false && iwad.IsEmpty( ))
-		bAllFound = false;
+	FString iwad;
+	const bool bAllFound = ResolveRecordFiles( rec, pwads, iwad );
 
 	if ( bAllFound == false )
 	{
@@ -881,6 +1084,40 @@ static void ActivateOfflineRecord( const ContinueRecord &rec )
 	g_bLoadAfterRestart = ( r == wadreload::ReloadResult::Restarting );
 }
 
+// [rc4l] Go where the verdict points. One switch rather than one per entry point: leaving a server
+// and pressing the pill at a menu differ only in whether a connection has to be dropped first, and
+// when they were written separately the menu path had no Hosted case at all -- pressing Continue on
+// a game you had hosted quietly tried to load a savegame that a hosted record never has.
+static void GoTo( ContinueTarget target )
+{
+	switch ( target )
+	{
+	case ContinueTarget::Hosted:
+		RehostRecorded( );
+		return;
+
+	case ContinueTarget::Offline:
+		ActivateOfflineRecord( g_Offline );
+		return;
+
+	case ContinueTarget::Server:
+	{
+		// Down the join path the browser already uses, so a failure lands where every other failed
+		// join lands rather than inventing a second way to go wrong.
+		FString command;
+		command.Format( "connect %s", g_Server.address.c_str( ));
+		AddCommandString( command.LockBuffer( ));
+		command.UnlockBuffer( );
+		return;
+	}
+
+	case ContinueTarget::MainMenu:
+	case ContinueTarget::None:
+		// Nothing to do: a disconnect has already put us at the menu, and None is not offered.
+		return;
+	}
+}
+
 void Continue_Activate( void )
 {
 	if ( Continue_IsShown( ) == false )
@@ -889,36 +1126,34 @@ void Continue_Activate( void )
 	// [rc4l] Straight in, no confirmation: the decision was made when the button chose to exist.
 	M_ClearMenus( );
 
-	// Leaving a server: drop the connection, then go wherever the verdict says. Every way of
-	// leaving lands in the same place, so this is the same path a kick or a dead server takes.
-	if ( Continue_IsDisconnect( ))
-	{
-		const ContinueButtonVerdict v = Verdict( );
+	const ContinueTarget target = Verdict( ).target;
 
+	// Leaving a server: drop the connection first. Where we go afterwards is the same question it
+	// always is, so it is the same answer.
+	if ( Continue_IsDisconnect( ))
 		CLIENT_QuitNetworkGame( NULL );
 
-		if ( v.target == ContinueTarget::Hosted )
-			RehostRecorded( );
-		else if ( v.target == ContinueTarget::Offline )
-			ActivateOfflineRecord( g_Offline );
-		// MainMenu: the disconnect already put us there.
-
-		return;
-	}
-
-	if ( g_Record.kind == ContinueKind::Server )
-	{
-		// Down the join path the browser already uses, so a failure lands where every other failed
-		// join lands rather than inventing a second way to go wrong.
-		FString command;
-		command.Format( "connect %s", g_Record.address.c_str( ));
-		AddCommandString( command.LockBuffer( ));
-		command.UnlockBuffer( );
-		return;
-	}
-
-	ActivateOfflineRecord( g_Record );
+	GoTo( target );
 }
 
 
 } // namespace zx
+
+//*****************************************************************************
+//
+// [rc4l] Press the pill from the console.
+//
+// The button was reachable only by clicking it, which meant the one thing the whole feature does
+// could not be asserted without driving a menu -- and every bug found in it so far has been in what
+// happens AFTER the press. Same reasoning as fua_hostmap.
+CCMD( fua_continue )
+{
+	if ( zx::Continue_IsShown( ) == false )
+	{
+		Printf( "fua_continue: nothing to continue.\n" );
+		return;
+	}
+
+	Printf( "fua_continue: %s\n", zx::Continue_Tooltip( ));
+	zx::Continue_Activate( );
+}

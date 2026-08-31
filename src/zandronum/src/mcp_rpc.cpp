@@ -35,6 +35,7 @@
 #include "mcp_simtrace.h"
 #include "features/server-browser/browser.h"
 #include "features/continue/zx_continue.h"
+#include "features/identity/zx_identity.h"
 #include "version.h"
 #include "network.h"
 #include "sv_main.h" // [rc4l] SERVER_SERVERREGISTRY_GetListingProof, for net.hostdiag
@@ -543,6 +544,9 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 		std::string kind = "none";
 		if ( zx::Continue_RecordKind( ) == 1 ) kind = "single";
 		else if ( zx::Continue_RecordKind( ) == 2 ) kind = "server";
+		// [rc4l] Hosted was missing, so a perfectly good hosted record read back as "none" and every
+		// question asked of this surface about one started from a false answer.
+		else if ( zx::Continue_RecordKind( ) == 3 ) kind = "hosted";
 
 		std::string escaped;
 		JsonEscape( std::string( zx::Continue_RecordTarget( ) ), escaped );
@@ -560,6 +564,10 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 		body += ",\"busy\":" + B( zx::Continue_DebugBusy( ) );
 		body += ",\"probe\":" + I( (long long)zx::Continue_DebugProbe( ) );
 		body += ",\"probeSlot\":" + I( (long long)zx::Continue_DebugProbeSlot( ) );
+		// [rc4l] Which copy of the engine is answering. Records are per instance, so a test that
+		// writes one in instance 1 and reads in instance 2 sees an empty answer that looks exactly
+		// like a bug in the feature.
+		body += ",\"instance\":" + I( (long long)zx::Identity_Instance( ) );
 		body += ",\"departCalls\":" + I( (long long)zx::Continue_DebugDepartCalls( ) );
 		body += ",\"departReturns\":" + I( (long long)zx::Continue_DebugDepartReturns( ) );
 		body += ",\"returnPending\":" + B( zx::Continue_DebugReturnPending( ) );

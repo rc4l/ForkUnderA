@@ -66,9 +66,13 @@ already takes. Same asymmetry `headerreach_compute` settles for "Play Online!".
 | `mcp_rpc.cpp` | `ui.continue`, for `fuactl continue` |
 | `features/server-browser/browser.{h,cpp}` | exports `BROWSER_AddServerToList` and `BROWSER_GetListIDByAddress` |
 | `g_game.{h,cpp}` | exports `G_DoSaveGame`, the synchronous save the quit path needs |
+| `g_level.cpp` | `map` from a client brackets its deliberate disconnect with `Continue_NoteChoosingDestination` |
+| `w_wad.{h,cpp}` | adds `W_GetLoadedWadPath`, the real path of a file we already have open |
+| `features/server-hosting/zx_hosting.cpp` | `HostStart` names loaded files by path, so the child can find them |
 
 ## Computation units
 
 * `continuerecord_compute` — the on-disk format, versioned, refusing anything newer.
 * `continueshow_compute` — whether the button exists.
 * `continuewrite_compute` — whether this shutdown is worth remembering.
+* `continuerehost_compute` — whether a remembered server can be started as we are, needs a reload first, or is missing.

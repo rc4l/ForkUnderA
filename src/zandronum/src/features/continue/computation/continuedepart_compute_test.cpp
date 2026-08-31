@@ -69,25 +69,41 @@ TEST( ContinueDepart, TearingDownSomethingThatWasNotASessionDoesNothing )
 	EXPECT_EQ( ContinueDepartVerdict::Ignore, DecideContinueDepart( in ));
 }
 
+TEST( ContinueDepart, ChangingMapFromAClientGoesToThatMap )
+{
+	// `map shoot` while connected disconnects on purpose and then starts shoot. The player named a
+	// destination; ours is not a better one.
+	ContinueDepartInputs in = LeftAServer();
+	in.goingSomewhereChosen = true;
+
+	EXPECT_EQ( ContinueDepartVerdict::Ignore, DecideContinueDepart( in ));
+}
+
+TEST( ContinueDepart, AReturnThatFailsDoesNotAskForAnother )
+{
+	// The infinite rehost: a server we started and could not join tears down through here, and if
+	// that counts as leaving, we start it again and fail again with no way out.
+	ContinueDepartInputs in = LeftAServer();
+	in.returnInFlight = true;
+
+	EXPECT_EQ( ContinueDepartVerdict::Ignore, DecideContinueDepart( in ));
+}
+
 TEST( ContinueDepart, AnythingUnsureIsIgnored )
 {
 	// The asymmetry that governs the whole unit: a missed return leaves the player where they
-	// already are, a wrong one destroys a connection they were making.
-	for ( int join = 0; join <= 1; ++join )
+	// already are, a wrong one destroys a connection they were making or a destination they chose.
+	for ( int bits = 0; bits < 32; ++bits )
 	{
-		for ( int recon = 0; recon <= 1; ++recon )
-		{
-			for ( int crash = 0; crash <= 1; ++crash )
-			{
-				ContinueDepartInputs in = LeftAServer();
-				in.joinInFlight = ( join == 1 );
-				in.reconnecting = ( recon == 1 );
-				in.crashing = ( crash == 1 );
+		ContinueDepartInputs in = LeftAServer();
+		in.joinInFlight        = (( bits & 1 ) != 0 );
+		in.reconnecting        = (( bits & 2 ) != 0 );
+		in.crashing            = (( bits & 4 ) != 0 );
+		in.goingSomewhereChosen= (( bits & 8 ) != 0 );
+		in.returnInFlight      = (( bits & 16 ) != 0 );
 
-				const bool expected = ( join == 0 ) && ( recon == 0 ) && ( crash == 0 );
-				EXPECT_EQ( expected, DecideContinueDepart( in ) == ContinueDepartVerdict::Return )
-					<< "join=" << join << " recon=" << recon << " crash=" << crash;
-			}
-		}
+		const bool expected = ( bits == 0 );
+		EXPECT_EQ( expected, DecideContinueDepart( in ) == ContinueDepartVerdict::Return )
+			<< "bits=" << bits;
 	}
 }

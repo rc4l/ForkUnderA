@@ -21,6 +21,14 @@ ContinueDepartVerdict DecideContinueDepart(const ContinueDepartInputs &in)
 	if (in.reconnecting)
 		return ContinueDepartVerdict::Ignore;
 
+	// A destination the player named beats one we remembered for them.
+	if (in.goingSomewhereChosen)
+		return ContinueDepartVerdict::Ignore;
+
+	// Our own return falling over. Asking for another one is asking for the same failure.
+	if (in.returnInFlight)
+		return ContinueDepartVerdict::Ignore;
+
 	// Not connected in the first place, so this teardown is tidying up something else.
 	if (in.wasInSession == false)
 		return ContinueDepartVerdict::Ignore;

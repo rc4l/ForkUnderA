@@ -73,7 +73,22 @@ struct ContinueRecord
 	// Both, because both have to land on the same files we left.
 	std::string iwad;
 	std::string iwadHash;
-	std::vector<std::pair<std::string, std::string> > wads;	// bare name, MD5 (may be empty)
+	// [rc4l] One loaded file: what it is called, what it contains, and where it was when we last
+	// held it open.
+	//
+	// The path is a HINT and is checked before it is trusted, never a substitute for the digest. It
+	// exists because name and digest between them still cannot find a file the engine would not
+	// find on its own, and the commonest place to keep a mod -- the folder a browser downloaded it
+	// into -- is exactly such a place. Refusing there means telling a player a file is missing
+	// while it sits where they put it.
+	struct Wad
+	{
+		std::string name;	// bare filename
+		std::string hash;	// MD5, may be empty
+		std::string path;	// where it was opened from, may be empty
+	};
+
+	std::vector<Wad> wads;
 
 	ContinueRecord() : kind(ContinueKind::None), saveVersion(0), stamp(0) {}
 };
