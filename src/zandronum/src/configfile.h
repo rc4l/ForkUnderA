@@ -76,6 +76,9 @@ protected:
 	virtual void WriteCommentHeader (FILE *file) const;
 
 	virtual char *ReadLine (char *string, int n, void *file) const;
+
+	// [rc4l] One logical line, however long: ReadLine is fgets and cuts at its buffer.
+	bool ReadFullLine (FString &line, void *file) const;
 	bool ReadConfig (void *file);
 	static const char *GenerateEndTag(const char *value);
 	void RenameSection(const char *oldname, const char *newname) const;

@@ -3026,6 +3026,9 @@ void D_DoomMain (void)
 		// [rc4l] And our own download folder, before anything searches it.
 		zx::waddownload::RegisterDownloadDirEarly();
 
+		// [rc4l] And any mirror shipped since this player's saved list was written.
+		zx::waddownload::MergeShippedDownloadSites();
+
 		// [rc4l] Anonymous accounts: load or create this machine's identity before any join can
 		// need it, so the handshake itself never touches the disk.
 		{

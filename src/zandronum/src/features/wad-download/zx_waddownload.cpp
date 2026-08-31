@@ -71,6 +71,10 @@ CVAR( Bool, cl_fua_download, true, CVAR_ARCHIVE | CVAR_GLOBALCONFIG )
 // entirely costs them nothing but their own downloads.
 CVAR( String, cl_fua_downloadsites, zx::kDefaultDownloadSites, CVAR_ARCHIVE | CVAR_GLOBALCONFIG )
 
+// [rc4l] The shipped list as it stood when cl_fua_downloadsites was last merged, which is what lets
+// MergeDownloadSites tell a stale default from a mirror the player deleted on purpose.
+CVAR( String, cl_fua_downloadsites_stamp, "", CVAR_ARCHIVE | CVAR_GLOBALCONFIG )
+
 // [rc4l] Empty means "the default directory" (DownloadDir below), which is the case that should need
 // no configuration.
 CVAR( String, cl_fua_download_dir, "", CVAR_ARCHIVE | CVAR_GLOBALCONFIG )
@@ -653,6 +657,25 @@ static FString LegacyDownloadDir()
 	// compare, so a path spelled differently is added a second time every launch.
 	FixPathSeperator(legacy);
 	return legacy;
+}
+
+// [rc4l] Give a saved mirror list the mirrors shipped since it was written, at startup so the first
+// download of the session already has them.
+void MergeShippedDownloadSites()
+{
+	const std::vector<std::string> shipped = zx::SplitOnWhitespace(zx::kDefaultDownloadSites);
+	const zx::DownloadSiteMerge merged = zx::MergeDownloadSites(
+		zx::SplitOnWhitespace(std::string(*cl_fua_downloadsites)),
+		zx::SplitOnWhitespace(std::string(*cl_fua_downloadsites_stamp)), shipped);
+
+	if (merged.changed)
+	{
+		const std::string joined = zx::JoinDownloadSites(merged.sites);
+		cl_fua_downloadsites = joined.c_str();
+	}
+
+	// Written even when nothing changed: without it every launch re-offers mirrors already refused.
+	cl_fua_downloadsites_stamp = std::string(zx::kDefaultDownloadSites).c_str();
 }
 
 // [rc4l] Registered at startup because the folder already holds what earlier sessions fetched
