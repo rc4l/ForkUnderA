@@ -1493,6 +1493,8 @@ add_executable( zdoom WIN32
 	features/replay/zx_replay_encoder.cpp
 	features/replay/computation/replay_compute.cpp
 	features/wadreload/zx_wadreload.cpp
+	features/continue/zx_continue.cpp
+	features/host-command/zx_hostcommand.cpp
 	features/playerclass-fallback/zx_playerclassfallback.cpp
 	features/fua-caching/fua_caching.cpp
 	features/fua-caching/fua_warmup.cpp

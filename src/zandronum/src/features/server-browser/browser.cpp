@@ -1329,6 +1329,13 @@ void BROWSER_DeactivateAllServers( void )
 
 //*****************************************************************************
 //
+LONG BROWSER_GetListIDByAddress( const NETADDRESS_s &Address )
+{
+	return browser_GetListIDByAddress( Address );
+}
+
+//*****************************************************************************
+//
 void BROWSER_AddServerToList( const NETADDRESS_s &Address )
 {
 	// [rc4l] A server may be announced by more than one server registry, and each answers our query

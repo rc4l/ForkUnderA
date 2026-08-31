@@ -35,6 +35,11 @@ bool Identity_InitClient( const char *configRoot, int instance );
 // one that was, so two engines running side by side each play as their own account.
 int Identity_InitClientHere( const char *configRoot );
 
+// [rc4l] Which copy of the engine this is: 0 for the first, 1 for the second, and so on. Claimed
+// with a lock file at startup, so anything else that needs per-copy state can key on the same
+// number rather than inventing a second one that could disagree.
+int Identity_Instance( void );
+
 // [rc4l] Play as the next spare secret instead, for a player whose account is occupied. False when
 // this machine has no spare left.
 bool Identity_SwitchToSpare( void );

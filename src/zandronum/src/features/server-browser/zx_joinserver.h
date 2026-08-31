@@ -47,6 +47,11 @@ void ReleaseJoinResume(bool proceed);
 
 bool IsJoinResumeHeld();
 
+// [rc4l] Whether a join WE started has not landed yet. Asked by the departure gate, because
+// CLIENT_QuitNetworkGame is also how a successful join tidies up on its way IN, and acting on that
+// would drag the player out of the join they are half way through.
+bool IsJoinInFlight();
+
 // [rc4l] A join we started is now in flight -- the WAD set has been reloaded and the connect is
 // being attempted. `serverName` is only for the message if it goes wrong.
 //

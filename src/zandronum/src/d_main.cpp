@@ -68,6 +68,7 @@
 #include "w_wad.h"
 #include "features/addon-catalogue/zx_catalogue.h" // [rc4l] validated at startup, not on first use
 #include "features/crashreport/zx_crashreport.h"
+#include "features/continue/zx_continue.h"
 #include "features/identity/zx_identity.h"
 #include "features/updater/zx_updater.h" // [rc4l] background auto-update check
 #include "features/wad-download/zx_waddownload.h" // [rc4l] background WAD downloads
@@ -1326,6 +1327,7 @@ void D_DoomLoop ()
 			zx::waddownload::Tick(); // [rc4l] drains the WAD downloader's log + fires its completion (main thread)
 			zx::wadserve::Tick(); // [rc4l] server side: binds/rebinds the WAD listener, snapshots its config, drains its log
 			zx::JoinTick(); // [rc4l] puts a failed join back in the server browser instead of a bare console
+			zx::Continue_Tick(); // [rc4l] finishes a Continue that had to reload the WAD set first
 			zx::HostTick(); // [rc4l] client side: drains our own server's output and watches it come up or fall over
 			MCP_Bridge_Poll();
 			switch ( NETWORK_GetState( ))
