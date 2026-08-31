@@ -37,9 +37,29 @@ jobs:
         shell: bash
         run: git tag -f "${{ inputs.version }}" HEAD
 
+      # [rc4l] Not preinstalled on the macOS runners, and CMake fails its configure outright if the
+      # launcher it was handed is not on PATH -- so this is installed before it is asked for.
+      - name: Install ccache
+        run: brew list --versions ccache >/dev/null 2>&1 || brew install ccache
+
+      # [rc4l] ccache across runs. The engine is ~677 translation units and nothing was cached, so
+      # every run paid for a full compile of code that had not changed. Keyed on the workflow +
+      # runner so a macOS cache never feeds a Linux build; restore-keys lets a run with a few
+      # changed files start from the previous run's objects instead of from nothing.
+      - name: Set up ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/Library/Caches/ccache
+          key: ccache-macos-${{ github.sha }}
+          restore-keys: ccache-macos-
+
       - name: Build ForkUnderA
         env:
           ZX_WITH_SYMBOLS: ${{ inputs.upload_symbols && '1' || '0' }}
+          # CMake reads these from the environment to initialise the cache variables of the same
+          # name, so the compile is routed through ccache without any change to mac_compile.sh.
+          CMAKE_C_COMPILER_LAUNCHER: ccache
+          CMAKE_CXX_COMPILER_LAUNCHER: ccache
           # [rc4l] Same condition as the symbols, because it is the same fact: a build may report a
           # crash exactly when someone can read the report. See ZX_OFFICIAL_BUILD in CMakeLists.
           ZX_OFFICIAL_BUILD: ${{ inputs.upload_symbols && '1' || '0' }}
@@ -62,6 +82,16 @@ jobs:
           test -f build/ForkUnderA.app/Contents/MacOS/libopenal.1.dylib \
             || { echo "::error::libopenal is not bundled in the .app"; exit 1; }
           echo "sound OK"; otool -L "$bin" | grep -iE 'openal|sndfile|mpg123'
+
+      # [rc4l] Start a server the way the HOST tab starts one. Nothing in CI had ever run one, so
+      # the whole hosting path was built and packaged without once being asked to work. Costs about
+      # nine seconds and reuses the binary this job just produced, so it adds no compile.
+      #
+      # This is a LIVENESS check, not a memory check: it catches a server that fails to start or
+      # dies on its own, which is a real class and had no coverage. It does NOT catch a silent
+      # overflow -- the smoke-asan job below is what sees those.
+      - name: Hosted server smoke test
+        run: ./tools/hosted-server-smoke.sh build/ForkUnderA.app/Contents/MacOS/forkundera
 
       # [rc4l] ditto preserves the bundle's permissions and symlinks; upload-artifact's own
       # zipping drops the executable bit and produces an .app macOS refuses to launch.
@@ -116,6 +146,16 @@ jobs:
         shell: bash
         run: git tag -f "${{ inputs.version }}" HEAD
 
+      - name: Install ccache
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ccache
+
+      - name: Set up ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ccache
+          key: ccache-linux-${{ github.sha }}
+          restore-keys: ccache-linux-
+
       - name: Build + package ForkUnderA (Linux, native)
         # [rc4l] linux_compile.sh is the same script devs run; --install-deps apt-installs the
         # build/OpenAL libs, then it configures, builds and packages dist-linux/*.tar.gz itself.
@@ -125,6 +165,8 @@ jobs:
           # [rc4l] Same condition as the symbols, because it is the same fact: a build may report a
           # crash exactly when someone can read the report. See ZX_OFFICIAL_BUILD in CMakeLists.
           ZX_OFFICIAL_BUILD: ${{ inputs.upload_symbols && '1' || '0' }}
+          CMAKE_C_COMPILER_LAUNCHER: ccache
+          CMAKE_CXX_COMPILER_LAUNCHER: ccache
         run: |
           set -o pipefail
           ./linux_compile.sh --install-deps 2>&1 | tee build.log
@@ -182,11 +224,23 @@ jobs:
         shell: bash
         run: git tag -f "${{ inputs.version }}" HEAD
 
+      - name: Install ccache
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ccache
+
+      - name: Set up ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ccache
+          key: ccache-linux-server-${{ github.sha }}
+          restore-keys: ccache-linux-server-
+
       - name: Build + package the headless server (Linux, native)
         env:
           VERSION: ${{ inputs.version }}
           ZX_WITH_SYMBOLS: ${{ inputs.upload_symbols && '1' || '0' }}
           ZX_OFFICIAL_BUILD: ${{ inputs.upload_symbols && '1' || '0' }}
+          CMAKE_C_COMPILER_LAUNCHER: ccache
+          CMAKE_CXX_COMPILER_LAUNCHER: ccache
         run: |
           set -o pipefail
           ./linux_compile.sh --install-deps --serveronly 2>&1 | tee build-server.log
@@ -195,6 +249,11 @@ jobs:
           # to choose and not something CI should restate.
           ls -la dist-linux/
           ls dist-linux/*-server.tar.gz >/dev/null 2>&1             || { echo "::error::serveronly build produced no -server tarball"; exit 1; }
+
+      # [rc4l] The headless server is the one this test is actually about, so run it here too --
+      # same script, same argument count, no client and no window involved. See build-macos.
+      - name: Hosted server smoke test
+        run: ./tools/hosted-server-smoke.sh build-linux/forkundera-server
 
       # [rc4l] Its own artifact name: two jobs cannot upload to one name, v4 artifacts being
       # immutable. release.yml downloads with merge-multiple and no name filter, so both still land
@@ -226,6 +285,53 @@ jobs:
         with:
           name: symbols-linux-server
           path: symbols-linux-server-*.zip
+
+  # [rc4l] The engine under AddressSanitizer, started as a hosted server.
+  #
+  # This is the job that would have caught the argv overflow, and nothing else here would have. The
+  # unit tests have run under ASan for a long time but they never link the engine; the build jobs
+  # link the engine but never run it; and the smoke test above runs it but cannot see a write that
+  # lands on statics rather than the heap. Only an instrumented engine, actually started, with a
+  # realistic number of arguments, closes that gap.
+  #
+  # macOS on purpose: the entry point that overflowed is Cocoa-only, so a Linux server build does
+  # not contain the code this is here for. No `needs:`, so it runs beside the other builds and its
+  # time hides inside theirs rather than being added to the pipeline.
+  #
+  # Not packaged and never uploaded -- an ASan binary is a diagnostic, not a shippable artifact.
+  smoke-asan-macos:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Install ccache
+        run: brew list --versions ccache >/dev/null 2>&1 || brew install ccache
+
+      # Its own cache key: ASan objects are not interchangeable with the release job's.
+      - name: Set up ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/Library/Caches/ccache
+          key: ccache-macos-asan-${{ github.sha }}
+          restore-keys: ccache-macos-asan-
+
+      - name: Build ForkUnderA (AddressSanitizer)
+        env:
+          ZX_SANITIZE: '1'
+          CMAKE_C_COMPILER_LAUNCHER: ccache
+          CMAKE_CXX_COMPILER_LAUNCHER: ccache
+        run: SOUND=1 ./mac_compile.sh
+
+      # [rc4l] detect_leaks is off because macOS AddressSanitizer has no leak detector and aborts if
+      # asked for one; abort_on_error makes a report a failed job rather than a line in a log the
+      # run is about to discard.
+      - name: Hosted server smoke test (AddressSanitizer)
+        env:
+          ASAN_OPTIONS: detect_leaks=0:abort_on_error=1:print_stacktrace=1
+        run: ./tools/hosted-server-smoke.sh build/ForkUnderA.app/Contents/MacOS/forkundera
 
   build-windows:
     # windows-2022 has Visual Studio 2022 (windows-latest moved to VS2026, whose
