@@ -158,6 +158,31 @@
           "md5": "c0d606a610cce0cea7827d810ef46fe7"
         }
       ]
+    },
+    {
+      "id": "meepy",
+      "name": "Meepy Edition",
+      "cfg": "meepy.cfg",
+      "kind": "pvp",
+      "tooltip": "The maintained line: every community pack folded into one.",
+      "files": [
+        {
+          "name": "skulltag_content-3.2-beta2.pk3",
+          "md5": "41630bc75af4b51fe5d163fe4d434c6e"
+        },
+        {
+          "name": "gvhmeepyedition_v3b7a8.pk3",
+          "md5": "f458af28045e68704712c78a5c3cc4ee"
+        },
+        {
+          "name": "gvh-paradoxmaps-1a.pk3",
+          "md5": "f163cf6f5cd8c8f356f00b93a232df6e"
+        },
+        {
+          "name": "gvhme_patch[07-06-2026].pk3",
+          "md5": "53cfc2bde9883e597ddddfa35585b034"
+        }
+      ]
     }
   ]
 }
