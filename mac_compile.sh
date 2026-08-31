@@ -223,11 +223,20 @@ configure() {
     glew="$(brew --prefix glew)"
     ssl="$(brew --prefix openssl@3)"
 
+    # [rc4l] A sanitizer has to JOIN these linker flags, never arrive as a second
+    # -DCMAKE_EXE_LINKER_FLAGS. The second one silently replaces the first, and the first is
+    # $APPLE_FRAMEWORKS -- so the obvious way drops every Apple framework and the link dies in a
+    # thousand undefined AudioToolbox/IOKit/Carbon symbols that say nothing about the real cause.
+    local zx_linker_flags="$APPLE_FRAMEWORKS"
+    if [[ "${ZX_SANITIZE:-0}" == "1" ]]; then
+        zx_linker_flags+=" -fsanitize=address"
+    fi
+
     local args=(
         -S "$ZAN_SRC_DIR" -B "$BUILD_DIR" "${CMAKE_COMPAT[@]}"
         -DCMAKE_BUILD_TYPE="$CONFIGURATION"
         -DCMAKE_OSX_ARCHITECTURES="$TARGET_ARCH"
-        -DCMAKE_EXE_LINKER_FLAGS="$APPLE_FRAMEWORKS"
+        -DCMAKE_EXE_LINKER_FLAGS="$zx_linker_flags"
         # macOS has no system libjpeg; force the bundled jpeg-6b so find_package
         # can't latch onto a stray Homebrew libjpeg and break the link.
         -DFORCE_INTERNAL_JPEG=ON
@@ -268,7 +277,6 @@ configure() {
     fi
     if [[ "${ZX_SANITIZE:-0}" == "1" ]]; then
         zx_extra_flags+=" -g -fsanitize=address -fno-omit-frame-pointer"
-        args+=( -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address" )
         status "AddressSanitizer: ENABLED (diagnostic build -- do not ship)"
     fi
     if [[ -n "$zx_extra_flags" ]]; then
