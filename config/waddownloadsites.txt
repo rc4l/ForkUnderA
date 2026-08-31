@@ -5,3 +5,4 @@ https://static.audrealms.org/wads/             Aud Realms
 http://grandpachuck.org/files/wads/            Grandpa Chuck
 https://wads.doomleague.org/                   Doom League
 https://wads.firestick.games/                  Firestick Games
+https://static.action.fapnow.xyz/wads/         Action Platform [FAP]

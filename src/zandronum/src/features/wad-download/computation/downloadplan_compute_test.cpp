@@ -397,3 +397,143 @@ TEST(HumanBytes, PicksTheUnitAndAnswersNegativesWithAQuestionMark)
 	EXPECT_EQ("1.5 MB", zx::HumanBytes(1536 * 1024));
 	EXPECT_EQ("?", zx::HumanBytes(-1));
 }
+
+// MergeDownloadSites
+
+namespace {
+const std::vector<std::string> kOld = { "https://a/wads/", "https://b/wads/" };
+const std::vector<std::string> kNew = { "https://a/wads/", "https://b/wads/", "https://c/wads/" };
+}
+
+TEST(MergeDownloadSites, GivesAStaleDefaultTheMirrorsAddedSinceItWasSaved)
+{
+	// The bug this exists for: an ini written before c/ was shipped never reaches c/.
+	const zx::DownloadSiteMerge got = zx::MergeDownloadSites(kOld, std::vector<std::string>(), kNew);
+
+	EXPECT_EQ(kNew, got.sites);
+	EXPECT_TRUE(got.changed);
+}
+
+TEST(MergeDownloadSites, LeavesAMirrorOutWhenTheStampSaysItWasRemoved)
+{
+	// b/ is shipped and missing from their list, but the stamp proves they had it and took it out.
+	const std::vector<std::string> saved = { "https://a/wads/" };
+	const zx::DownloadSiteMerge got = zx::MergeDownloadSites(saved, kOld, kNew);
+
+	const std::vector<std::string> want = { "https://a/wads/", "https://c/wads/" };
+	EXPECT_EQ(want, got.sites);
+}
+
+TEST(MergeDownloadSites, KeepsTheirOwnMirrorsAndTheirOrder)
+{
+	// Appending only, so a hand-written list is never reordered or trimmed.
+	const std::vector<std::string> saved = { "https://mine/", "https://b/wads/" };
+	const zx::DownloadSiteMerge got = zx::MergeDownloadSites(saved, kOld, kNew);
+
+	const std::vector<std::string> want = { "https://mine/", "https://b/wads/", "https://c/wads/" };
+	EXPECT_EQ(want, got.sites);
+}
+
+TEST(MergeDownloadSites, SaysNothingChangedWhenTheListIsAlreadyCurrent)
+{
+	const zx::DownloadSiteMerge got = zx::MergeDownloadSites(kNew, kNew, kNew);
+
+	EXPECT_EQ(kNew, got.sites);
+	EXPECT_FALSE(got.changed);
+}
+
+TEST(MergeDownloadSites, TreatsCaseAndATrailingSlashAsTheSameMirror)
+{
+	// Spelled without its slash and shouted; appending it again would fetch the same host twice.
+	const std::vector<std::string> saved = { "HTTPS://A/WADS", "https://b/wads/" };
+	const zx::DownloadSiteMerge got = zx::MergeDownloadSites(saved, kNew, kNew);
+
+	EXPECT_EQ(saved, got.sites);
+	EXPECT_FALSE(got.changed);
+}
+
+TEST(MergeDownloadSites, SkipsAnEmptyShippedEntry)
+{
+	// Whitespace in the shipped list must not become an empty site to fetch.
+	const std::vector<std::string> shipped = { "", "https://c/wads/" };
+	const zx::DownloadSiteMerge got = zx::MergeDownloadSites(kOld, kOld, shipped);
+
+	EXPECT_EQ(kNew, got.sites);
+}
+
+TEST(MergeDownloadSites, StartsFromTheShippedListWhenNothingIsSaved)
+{
+	const zx::DownloadSiteMerge got = zx::MergeDownloadSites(std::vector<std::string>(),
+		std::vector<std::string>(), kNew);
+
+	EXPECT_EQ(kNew, got.sites);
+	EXPECT_TRUE(got.changed);
+}
+
+// The launch-to-launch cycle. MergeDownloadSites alone was tested and passed while the feature was
+// broken on a real machine, because the value does not go from one launch to the next as a vector:
+// it is joined into the CVAR, written to the ini, and split back. These tests run that whole cycle.
+
+namespace {
+std::vector<std::string> Relaunch(const std::vector<std::string> &sites)
+{
+	return zx::SplitOnWhitespace(zx::JoinDownloadSites(sites));
+}
+
+const std::vector<std::string> kShipped = {
+	"https://static.allfearthesentinel.com/wads/", "https://euroboros.net/zandronum/wads/",
+	"https://static.audrealms.org/wads/", "http://grandpachuck.org/files/wads/",
+	"https://wads.doomleague.org/", "https://wads.firestick.games/",
+	"https://static.action.fapnow.xyz/wads/" };
+}
+
+TEST(JoinDownloadSites, SurvivesTheRoundTripThroughTheCvar)
+{
+	EXPECT_EQ(kShipped, Relaunch(kShipped));
+}
+
+TEST(JoinDownloadSites, DropsAnEmptyEntryRatherThanDoublingASeparator)
+{
+	const std::vector<std::string> withHole = { "https://a/", "", "https://b/" };
+
+	EXPECT_EQ("https://a/ https://b/", zx::JoinDownloadSites(withHole));
+}
+
+TEST(MergeDownloadSites, AddsAMirrorOnceAcrossRepeatedLaunches)
+{
+	// The bug this was written for: the mirror was appended again on every launch, and the list grew
+	// a fresh copy each time. Three launches, and only the first may change anything.
+	std::vector<std::string> saved = { "https://a/wads/", "https://b/wads/" };
+	std::vector<std::string> stamp;
+
+	const zx::DownloadSiteMerge first = zx::MergeDownloadSites(saved, stamp, kShipped);
+	EXPECT_TRUE(first.changed);
+	saved = Relaunch(first.sites);
+	stamp = Relaunch(kShipped);
+
+	for (int launch = 0; launch < 2; ++launch)
+	{
+		const zx::DownloadSiteMerge again = zx::MergeDownloadSites(saved, stamp, kShipped);
+
+		EXPECT_FALSE(again.changed) << "launch " << launch << " appended something twice";
+		EXPECT_EQ(saved, again.sites);
+		saved = Relaunch(again.sites);
+	}
+}
+
+TEST(MergeDownloadSites, KeepsARemovedMirrorOutAcrossRepeatedLaunches)
+{
+	// A player deletes one, and it must stay deleted however many times they launch.
+	std::vector<std::string> saved = kShipped;
+	saved.pop_back();
+	const std::vector<std::string> stamp = Relaunch(kShipped);
+
+	for (int launch = 0; launch < 3; ++launch)
+	{
+		const zx::DownloadSiteMerge got = zx::MergeDownloadSites(saved, stamp, kShipped);
+
+		EXPECT_FALSE(got.changed);
+		EXPECT_EQ(saved, got.sites);
+		saved = Relaunch(got.sites);
+	}
+}
