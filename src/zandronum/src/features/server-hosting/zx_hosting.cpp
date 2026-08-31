@@ -19,6 +19,7 @@
 #include "doomtype.h"
 #include "c_dispatch.h"
 #include "i_system.h"
+#include "w_wad.h"
 #include "m_argv.h"
 #include "m_random.h"
 // [rc4l] NETWORK_GetLocalPort: the port the server ACTUALLY bound, which is what the ready line
@@ -128,6 +129,22 @@ static void HostStopBlocking( void );
 
 //*****************************************************************************
 //
+// [rc4l] See the call site: every file we already have open is named by its real path, so the child
+// can find it wherever the player keeps it.
+static void UpgradeToLoadedPaths( HostConfig &config )
+{
+	const char *iwad = W_GetLoadedWadPath( config.iwad.c_str( ));
+	if (( iwad != NULL ) && ( *iwad != 0 ))
+		config.iwad = iwad;
+
+	for ( size_t i = 0; i < config.pwads.size( ); ++i )
+	{
+		const char *path = W_GetLoadedWadPath( config.pwads[i].c_str( ));
+		if (( path != NULL ) && ( *path != 0 ))
+			config.pwads[i] = path;
+	}
+}
+
 bool HostStart( const HostConfig &config )
 {
 	// [rc4l] Remember what we are leaving, and what we are starting, BEFORE either is torn down.
@@ -146,6 +163,16 @@ bool HostStart( const HostConfig &config )
 
 	g_Config.rconSecret = g_Secret.GetChars( );
 	g_Config.parentPid = OurProcessId( );
+
+	// [rc4l] Bare names into the paths we opened them from, for every file we are actually holding.
+	// The child searches the wad directories for whatever it is handed, so a mod loaded from
+	// anywhere else -- a downloads folder, the usual home of a freshly fetched mod -- silently did
+	// not load, and the server came up with fewer files than the player. The only visible symptom
+	// was the join being refused for a file the player could see was right there.
+	//
+	// Names it cannot match are left alone: a catalogue entry already gives full paths, and one of
+	// those is not a name we are holding.
+	UpgradeToLoadedPaths( g_Config );
 
 	// Argv[0] is whatever started US. A server is the same binary, so there is nothing to locate and
 	// nothing to get wrong -- and it can never be a different build from the one the player is

@@ -33,8 +33,27 @@ struct ContinueDepartInputs
 	bool crashing;			// a fatal error is unwinding
 	bool wasInSession;		// we were actually connected, rather than tearing down something else
 
+	// [rc4l] The player named where they are going, so we are not the ones to decide it.
+	//
+	// `map` from a client is a deliberate exit to a new single-player game, and it announces the
+	// leaving by calling the same disconnect everything else does (g_level.cpp) before starting the
+	// map. Returning them somewhere at that point fights the destination they asked for, which is
+	// how "map shoot" ended up somewhere that was not shoot.
+	bool goingSomewhereChosen;
+
+	// [rc4l] This teardown is a return of OURS coming apart, and a return that failed must not ask
+	// for another one.
+	//
+	// A rehost that cannot be joined -- wrong files, port taken, server died on startup -- ends in
+	// this same disconnect. Treating that as a fresh departure arms another rehost, which fails the
+	// same way, forever: a wall of hash mismatches scrolling past with no way to type. The engine
+	// was still running and still refusing to do anything else, which is the worst shape a bug can
+	// take.
+	bool returnInFlight;
+
 	ContinueDepartInputs()
-		: joinInFlight(false), reconnecting(false), crashing(false), wasInSession(false) {}
+		: joinInFlight(false), reconnecting(false), crashing(false), wasInSession(false),
+		  goingSomewhereChosen(false), returnInFlight(false) {}
 };
 
 enum class ContinueDepartVerdict

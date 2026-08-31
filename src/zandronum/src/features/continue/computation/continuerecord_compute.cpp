@@ -33,18 +33,29 @@ bool SplitLine(const std::string &line, std::string &key, std::string &value)
 
 // The WAD line is "name<tab>hash", tab-separated so a name with spaces still parses. A missing tab
 // means a name and no hash, which is what a server that sent none gives us.
-void SplitWad(const std::string &value, std::string &name, std::string &hash)
+ContinueRecord::Wad SplitWad(const std::string &value)
 {
-	const std::string::size_type tab = value.find('\t');
-	if (tab == std::string::npos)
+	ContinueRecord::Wad out;
+
+	const std::string::size_type first = value.find('\t');
+	if (first == std::string::npos)
 	{
-		name = value;
-		hash.clear();
-		return;
+		out.name = value;
+		return out;
 	}
 
-	name = value.substr(0, tab);
-	hash = value.substr(tab + 1);
+	out.name = value.substr(0, first);
+
+	const std::string::size_type second = value.find('\t', first + 1);
+	if (second == std::string::npos)
+	{
+		out.hash = value.substr(first + 1);
+		return out;
+	}
+
+	out.hash = value.substr(first + 1, second - first - 1);
+	out.path = value.substr(second + 1);
+	return out;
 }
 
 // Only ever asked about a kind there is something to write for; SerialiseContinue has already
@@ -124,8 +135,15 @@ std::string SerialiseContinue(const ContinueRecord &record)
 	if (record.iwadHash.empty() == false)
 		out << "iwadhash " << record.iwadHash << '\n';
 
+	// Tab-separated, and the path is simply absent when we do not have one -- a reader that stops
+	// at two fields still gets a name and a digest, which is everything it had before.
 	for (size_t i = 0; i < record.wads.size(); ++i)
-		out << "wad " << record.wads[i].first << '\t' << record.wads[i].second << '\n';
+	{
+		out << "wad " << record.wads[i].name << '\t' << record.wads[i].hash;
+		if (record.wads[i].path.empty() == false)
+			out << '\t' << record.wads[i].path;
+		out << '\n';
+	}
 
 	return out.str();
 }
@@ -198,10 +216,9 @@ bool ParseContinue(const std::string &text, ContinueRecord &out)
 		else if (key == "iwadhash")  out.iwadHash = value;
 		else if (key == "wad")
 		{
-			std::string name, hash;
-			SplitWad(value, name, hash);
-			if (name.empty() == false)
-				out.wads.push_back(std::make_pair(name, hash));
+			const ContinueRecord::Wad wad = SplitWad(value);
+			if (wad.name.empty() == false)
+				out.wads.push_back(wad);
 		}
 		// Anything else is ignored, so a field added by a LATER build of the same format number
 		// costs an older reader nothing.

@@ -5,6 +5,17 @@
 
 #include "features/continue/computation/continuerecord_compute.h"
 
+// A recorded file, written the way the tests care about it.
+static zx::ContinueRecord::Wad W(const std::string &name, const std::string &hash,
+	const std::string &path = std::string())
+{
+	zx::ContinueRecord::Wad out;
+	out.name = name;
+	out.hash = hash;
+	out.path = path;
+	return out;
+}
+
 using namespace zx;
 
 namespace
@@ -18,8 +29,8 @@ ContinueRecord ServerRecord()
 	r.password = "hunter2";
 	r.iwad = "doom2.wad";
 	r.iwadHash = "25e1459ca71d7f2eafd11e6d0e9ff54b";
-	r.wads.push_back(std::make_pair(std::string("dadm.pk3"), std::string("aaaa")));
-	r.wads.push_back(std::make_pair(std::string("sunset.wad"), std::string("bbbb")));
+	r.wads.push_back(W("dadm.pk3", "aaaa"));
+	r.wads.push_back(W("sunset.wad", "bbbb"));
 	return r;
 }
 
@@ -54,9 +65,9 @@ TEST(ContinueRecord, AServerSessionSurvivesTheRoundTrip)
 	EXPECT_EQ(in.iwad, out.iwad);
 	EXPECT_EQ(in.iwadHash, out.iwadHash);
 	ASSERT_EQ(2u, out.wads.size());
-	EXPECT_EQ("dadm.pk3", out.wads[0].first);
-	EXPECT_EQ("aaaa", out.wads[0].second);
-	EXPECT_EQ("sunset.wad", out.wads[1].first);
+	EXPECT_EQ("dadm.pk3", out.wads[0].name);
+	EXPECT_EQ("aaaa", out.wads[0].hash);
+	EXPECT_EQ("sunset.wad", out.wads[1].name);
 }
 
 TEST(ContinueRecord, AnOfflineSessionSurvivesTheRoundTrip)
@@ -90,12 +101,12 @@ TEST(ContinueRecord, AWadNameWithSpacesSurvivesVerbatim)
 {
 	ContinueRecord in = ServerRecord();
 	in.wads.clear();
-	in.wads.push_back(std::make_pair(std::string("my great mod.pk3"), std::string("cccc")));
+	in.wads.push_back(W("my great mod.pk3", "cccc"));
 
 	const ContinueRecord out = RoundTrip(in);
 	ASSERT_EQ(1u, out.wads.size());
-	EXPECT_EQ("my great mod.pk3", out.wads[0].first);
-	EXPECT_EQ("cccc", out.wads[0].second);
+	EXPECT_EQ("my great mod.pk3", out.wads[0].name);
+	EXPECT_EQ("cccc", out.wads[0].hash);
 }
 
 TEST(ContinueRecord, AWadWithNoHashIsKept)
@@ -103,12 +114,12 @@ TEST(ContinueRecord, AWadWithNoHashIsKept)
 	// What a server that sent no hashes gives us. The name alone is still worth having.
 	ContinueRecord in = ServerRecord();
 	in.wads.clear();
-	in.wads.push_back(std::make_pair(std::string("plain.wad"), std::string()));
+	in.wads.push_back(W("plain.wad", ""));
 
 	const ContinueRecord out = RoundTrip(in);
 	ASSERT_EQ(1u, out.wads.size());
-	EXPECT_EQ("plain.wad", out.wads[0].first);
-	EXPECT_EQ("", out.wads[0].second);
+	EXPECT_EQ("plain.wad", out.wads[0].name);
+	EXPECT_EQ("", out.wads[0].hash);
 }
 
 TEST(ContinueRecord, AnEmptyPasswordIsNotWrittenAndReadsBackEmpty)
@@ -269,8 +280,8 @@ TEST(ContinueRecord, AWadLineWithNoTabIsANameOnItsOwn)
 		"fua-continue 1\nkind server\naddress 1.2.3.4:10666\nwad plain.wad\n", out));
 
 	ASSERT_EQ(1u, out.wads.size());
-	EXPECT_EQ("plain.wad", out.wads[0].first);
-	EXPECT_EQ("", out.wads[0].second);
+	EXPECT_EQ("plain.wad", out.wads[0].name);
+	EXPECT_EQ("", out.wads[0].hash);
 }
 
 TEST(ContinueRecord, ALineWithNoKeyIsSkippedRatherThanRead)
@@ -360,4 +371,44 @@ TEST(ContinueRecord, AHostedRecordWithNoMapIsRefused)
 	// It would start a server on whatever the WADs default to, which is not the game we left.
 	ContinueRecord out;
 	EXPECT_FALSE(ParseContinue("fua-continue 1\nkind hosted\nhost_iwad doom2.wad\n", out));
+}
+
+TEST( ContinueRecord, AWadsPathSurvivesTheRoundTrip )
+{
+	// The hint that lets a mod kept outside the search directories be found again.
+	ContinueRecord in;
+	in.kind = ContinueKind::Single;
+	in.savePath = "continue/offline.zds";
+	in.wads.push_back(W("ssnx.pk3", "cccc", "/home/someone/Downloads/ssnx.pk3"));
+
+	ContinueRecord out;
+	ASSERT_TRUE(ParseContinue(SerialiseContinue(in), out));
+	ASSERT_EQ(1u, out.wads.size());
+	EXPECT_EQ("ssnx.pk3", out.wads[0].name);
+	EXPECT_EQ("cccc", out.wads[0].hash);
+	EXPECT_EQ("/home/someone/Downloads/ssnx.pk3", out.wads[0].path);
+}
+
+TEST( ContinueRecord, ARecordWrittenBeforePathsWereKeptStillReads )
+{
+	// Two fields is what every record on disk today holds. Reading one must not become an error
+	// because a later build learned to write a third.
+	ContinueRecord out;
+	ASSERT_TRUE(ParseContinue(
+		"fua-continue 1\nkind single\nsave continue/offline.zds\nwad old.pk3\tdddd\n", out));
+
+	ASSERT_EQ(1u, out.wads.size());
+	EXPECT_EQ("old.pk3", out.wads[0].name);
+	EXPECT_EQ("dddd", out.wads[0].hash);
+	EXPECT_EQ("", out.wads[0].path);
+}
+
+TEST( ContinueRecord, APathIsOmittedRatherThanWrittenEmpty )
+{
+	ContinueRecord in;
+	in.kind = ContinueKind::Single;
+	in.savePath = "continue/offline.zds";
+	in.wads.push_back(W("bare.pk3", "eeee"));
+
+	EXPECT_NE(std::string::npos, SerialiseContinue(in).find("wad bare.pk3\teeee\n"));
 }

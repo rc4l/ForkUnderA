@@ -145,3 +145,18 @@ TEST(ContinueShow, ARecordThatParsedButNamesNoKindShowsNothing)
 
 	EXPECT_EQ(ContinueVisibility::Hidden, DecideContinueVisibility(in));
 }
+
+TEST( ContinueShow, AHostedGameIsAlwaysOfferable )
+{
+	// It needs no save and answers no probe -- starting it again is entirely within our gift.
+	ContinueShowInputs in;
+	in.recordParsed = true;
+	in.kind = ContinueKind::Hosted;
+	in.minSaveVersion = 4507;
+
+	EXPECT_TRUE( ContinueIsShown( in ));
+
+	// And a probe verdict about somebody else's server has no bearing on ours.
+	in.probe = ServerProbe::Gone;
+	EXPECT_TRUE( ContinueIsShown( in ));
+}

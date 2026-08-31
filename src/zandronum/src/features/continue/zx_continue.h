@@ -60,6 +60,10 @@ void Continue_NoteLeavingLocalGame();
 void Continue_NoteHosting( const HostConfig &config );
 
 // Record a join that just landed.
+// [rc4l] Bracket a command that leaves a server on its way to a destination it has already chosen,
+// so the disconnect is not mistaken for the player simply leaving. See the .cpp.
+void Continue_NoteChoosingDestination( bool bChoosing );
+
 void Continue_NoteJoined();
 
 // Forget it, for the case where the record describes something that turned out not to work.

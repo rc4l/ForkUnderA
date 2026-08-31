@@ -22,6 +22,13 @@ ContinueVisibility DecideContinueVisibility(const ContinueShowInputs &in)
 			return ContinueVisibility::Hidden;
 		return ContinueVisibility::Shown;
 
+	case ContinueKind::Hosted:
+		// [rc4l] A server we started ourselves. Nothing to verify: there is no snapshot to be too
+		// old and no remote address to answer, only a config we can start again. This kind was
+		// added after this unit and inherited the default, so a hosted game was the one thing the
+		// pill remembered and then refused to offer.
+		return ContinueVisibility::Shown;
+
 	case ContinueKind::Server:
 		// Only PROOF that it will not work hides it; see the header on why pending does not.
 		if ((in.probe == ServerProbe::Gone) || (in.probe == ServerProbe::WadsDiffer))
