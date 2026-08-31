@@ -113,6 +113,10 @@ FString DownloadDir();
 // [rc4l] Put the download folder in FileSearch.Directories now, not when a download starts.
 void RegisterDownloadDirEarly();
 
+// [rc4l] Add mirrors shipped since this player's list was saved, so a mirror added by pull request
+// reaches an existing install and not only a fresh one.
+void MergeShippedDownloadSites();
+
 // [rc4l] Full path of a copy of `name` whose MD5 is `md5Hex`, inside our own download folder, or ""
 // if we do not have that exact content. Checks the content-addressed store (a stat) and then the
 // flat working copy (one hash).

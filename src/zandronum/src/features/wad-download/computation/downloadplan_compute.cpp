@@ -283,6 +283,65 @@ std::vector<std::string> AssembleSiteOrder(const std::vector<std::string> &serve
 	return out;
 }
 
+namespace
+{
+
+// One spelling of a site, for comparison only. Case and a trailing '/' are the two ways the same
+// mirror gets written down twice; neither changes which host is fetched from.
+std::string SiteKey(const std::string &site)
+{
+	std::string key = ToLower(site);
+	while (!key.empty() && key[key.size() - 1] == '/')
+		key.erase(key.size() - 1);
+	return key;
+}
+
+bool Holds(const std::vector<std::string> &list, const std::string &key)
+{
+	for (size_t i = 0; i < list.size(); ++i)
+	{
+		if (SiteKey(list[i]) == key)
+			return true;
+	}
+	return false;
+}
+
+} // namespace
+
+DownloadSiteMerge MergeDownloadSites(const std::vector<std::string> &saved,
+	const std::vector<std::string> &stamp, const std::vector<std::string> &shipped)
+{
+	DownloadSiteMerge out;
+	out.sites = saved;
+
+	for (size_t i = 0; i < shipped.size(); ++i)
+	{
+		const std::string key = SiteKey(shipped[i]);
+		if (key.empty() || Holds(out.sites, key) || Holds(stamp, key))
+			continue;				// already theirs, or theirs to have removed
+
+		out.sites.push_back(shipped[i]);
+		out.changed = true;
+	}
+
+	return out;
+}
+
+std::string JoinDownloadSites(const std::vector<std::string> &sites)
+{
+	std::string out;
+	for (size_t i = 0; i < sites.size(); ++i)
+	{
+		if (sites[i].empty())
+			continue;				// an empty entry would collapse two separators into one
+
+		if (!out.empty())
+			out += ' ';
+		out += sites[i];
+	}
+	return out;
+}
+
 std::string HumanBytes(long long n)
 {
 	char buf[64];

@@ -40,6 +40,8 @@
 #include "configfile.h"
 #include "m_random.h"
 
+#include <vector>
+
 #define READBUFFERSIZE	256
 
 static FRandom pr_endtag;
@@ -624,15 +626,38 @@ void FConfigFile::LoadConfigFile ()
 //
 //====================================================================
 
-bool FConfigFile::ReadConfig (void *file)
+// [rc4l] One whole line however long it is, because ReadLine is fgets and fgets stops at the buffer.
+//
+// A line longer than READBUFFERSIZE used to arrive as two: the head parsed as key=truncated-value and
+// the tail as a line with no '=' that was then dropped, so the value was silently cut at 255 bytes
+// with no error anywhere. Found when a seventh WAD mirror pushed cl_fua_downloadsites past the
+// buffer and the list came back with a half a URL in it.
+bool FConfigFile::ReadFullLine (FString &line, void *file) const
 {
 	char readbuf[READBUFFERSIZE];
-	FConfigSection *section = NULL;
-	ClearConfig ();
 
+	line = "";
 	while (ReadLine (readbuf, READBUFFERSIZE, file) != NULL)
 	{
-		char *start = readbuf;
+		line += readbuf;
+		const size_t got = strlen (readbuf);
+		if (got > 0 && readbuf[got - 1] == '\n')
+			return true;			// the whole line, terminator and all
+	}
+	return line.Len() > 0;			// a last line with no newline after it
+}
+
+bool FConfigFile::ReadConfig (void *file)
+{
+	FConfigSection *section = NULL;
+	FString line;
+	ClearConfig ();
+
+	while (ReadFullLine (line, file))
+	{
+		// The parse below writes terminators into the line, so it needs a buffer of its own.
+		std::vector<char> linebuf (line.GetChars(), line.GetChars() + line.Len() + 1);
+		char *start = &linebuf[0];
 		char *equalpt;
 		char *endpt;
 

@@ -86,6 +86,31 @@ std::vector<std::string> AssembleSiteOrder(const std::vector<std::string> &serve
 	const std::vector<std::string> &configuredMirrors,
 	const std::vector<std::string> &lastResortSites);
 
+// [rc4l] What a saved mirror list becomes when the shipped list has moved on: the list is
+// CVAR_ARCHIVE, so without this a mirror added by pull request reaches nobody who has ever launched
+// the engine.
+//
+// `stamp` is the shipped list as it stood at the last merge, and is what tells a stale default from
+// a deliberate deletion: shipped mirrors the player lacks are appended unless the stamp says they
+// once had them. An empty stamp (a list saved before stamping existed) treats every shipped mirror
+// as new, which costs a player who had removed one a single re-removal.
+//
+// Only ever appends, so the player's order and entries survive; comparison ignores case and a
+// trailing '/'.
+struct DownloadSiteMerge
+{
+	std::vector<std::string> sites;
+	bool changed;					// false means the saved list already said this
+
+	DownloadSiteMerge() : changed(false) {}
+};
+
+DownloadSiteMerge MergeDownloadSites(const std::vector<std::string> &saved,
+	const std::vector<std::string> &stamp, const std::vector<std::string> &shipped);
+
+// [rc4l] The inverse of SplitOnWhitespace, so a merged list can go back into the CVAR it came from.
+std::string JoinDownloadSites(const std::vector<std::string> &sites);
+
 // "3.2 MB" / "412 KB" -- the form a transfer figure takes in the status line. "?" for a negative.
 std::string HumanBytes(long long n);
 
