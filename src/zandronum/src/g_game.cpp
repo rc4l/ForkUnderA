@@ -69,6 +69,7 @@
 #include "g_game.h"
 #include "g_level.h"
 #include "features/skywire/computation/sky_wire_compute.h"
+#include "features/bot-save/zx_botsave.h"
 #include "features/quake-movement/quakemove.h"
 #include "features/quake-movement/computation/qphysics_compute.h"
 #include "sbar.h"
@@ -4772,6 +4773,11 @@ void G_DoLoadGame ()
 	P_ReadACSDefereds (png);
 
 	// load a base level
+	// [rc4l] Re-occupy the slots the bots held BEFORE the matcher runs. Their data is already in
+	// this file; ReadMultiplePlayers simply refuses to match into an empty slot, so without this it
+	// is read past and thrown away.
+	zx::BotSave_Restore( png, stdfile );
+
 	savegamerestore = true;		// Use the player actors in the savegame
 	bool demoplaybacksave = demoplayback;
 	G_InitNew (map, false);
@@ -5081,6 +5087,10 @@ void G_DoSaveGame (bool okForQuicksave, FString filename, const char *descriptio
 		BYTE multiplayerEmulation = !!( NETWORK_GetState( ) == NETSTATE_SINGLE_MULTIPLAYER );
 		M_AppendPNGChunk (stdfile, MAKE_ID('m','p','E','m'), &multiplayerEmulation, 1);
 	}
+
+	// [rc4l] The bots, so they are still here when this save is loaded. Beside mpEm deliberately:
+	// same kind of Zandronum-specific state, same additive mechanism, no change to the save stream.
+	zx::BotSave_Write( stdfile );
 
 	if (NextSkill != -1)
 	{
