@@ -13,9 +13,9 @@
 # It does catch that one: run against the broken build on a CI runner this script segfaults in under
 # a second. But it caught it there by LUCK OF LAYOUT -- the same binary on the machine where the bug
 # was found survived this same test three times out of three, because an overflow is only fatal when
-# whatever it lands on happens to matter. So this is a liveness check that happened to be enough
-# once, and the ASan job is what actually sees the write. Do not retire that job on the strength of
-# this one passing.
+# whatever it lands on happens to matter. So read a pass here as "the server starts and stays up",
+# never as "the server's memory is sound". Seeing the write itself needs the engine under a
+# sanitizer, which it cannot run under yet -- see the note on ZX_SANITIZE in mac_compile.sh.
 #
 # So the argument list below is not a token gesture. It is the shape of what
 # zx::BuildHostArgs emits for an ordinary co-op preset: a gameplay cvar block, a full map rotation

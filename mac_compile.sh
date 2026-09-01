@@ -262,12 +262,19 @@ configure() {
     # [rc4l] ZX_WITH_SYMBOLS=1 (release CI) builds with debug info; a .dSYM is generated after the
     # build (RELEASE_WITH_DEBUG_FILE is off on Apple) and uploaded to GlitchTip so crashes symbolicate.
     #
-    # ZX_SANITIZE=1 additionally builds the ENGINE under AddressSanitizer. The unit tests have run
-    # under ASan for a long time; the engine never had, and the gap is not academic -- the overflow
-    # that killed every hosted server lived in the entry point, which no unit test links and which
-    # every allocator is blind to because it wrote over statics rather than the heap. ASan is the
-    # only thing that sees that write. Never ship a build made this way: it is slower, it is bigger,
-    # and it aborts on the first fault by design.
+    # ZX_SANITIZE=1 additionally builds the ENGINE under AddressSanitizer, for diagnosing the class
+    # of bug no unit test can reach: the overflow that killed every hosted server lived in the entry
+    # point, which nothing links, and wrote over statics rather than the heap, where no allocator
+    # could see it. Never ship a build made this way -- slower, bigger, and it aborts on the first
+    # fault by design.
+    #
+    # KNOWN LIMITATION, read this before reaching for it: the engine currently ABORTS AT STARTUP
+    # under ASan, in PClass::StaticInit, and it is not an engine bug. Class registration works by
+    # putting every RegistrationInfoPtr into a `creg` linker section (_DECLARE_TI in dobject.h) and
+    # walking the section as a packed array. ASan pads every instrumented global with a redzone, so
+    # the section stops being packed and the walk reads padding. The same trick is used by the areg,
+    # greg, mreg and yreg sections. Making the engine ASan-clean means making those walks tolerate
+    # the padding -- worth doing, and its own piece of work, not a flag.
     #
     # Composed into ONE flags string rather than two -DCMAKE_CXX_FLAGS arguments, because the second
     # would silently replace the first and the symbols would quietly stop being built.
