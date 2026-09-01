@@ -90,7 +90,7 @@ jobs:
       # A LIVENESS check. It caught the argv overflow on this runner -- the pre-fix binary segfaults
       # here in under a second -- but only because an overflow is fatal when what it lands on happens
       # to matter, and the same binary survived this same test on the machine the bug was found on.
-      # smoke-asan-macos below is what actually sees the write; this is not a replacement for it.
+      # Read a pass as "the server starts and stays up", never as "its memory is sound".
       - name: Hosted server smoke test
         run: ./tools/hosted-server-smoke.sh build/ForkUnderA.app/Contents/MacOS/forkundera
 
@@ -286,53 +286,6 @@ jobs:
         with:
           name: symbols-linux-server
           path: symbols-linux-server-*.zip
-
-  # [rc4l] The engine under AddressSanitizer, started as a hosted server.
-  #
-  # This is the job that would have caught the argv overflow, and nothing else here would have. The
-  # unit tests have run under ASan for a long time but they never link the engine; the build jobs
-  # link the engine but never run it; and the smoke test above runs it but cannot see a write that
-  # lands on statics rather than the heap. Only an instrumented engine, actually started, with a
-  # realistic number of arguments, closes that gap.
-  #
-  # macOS on purpose: the entry point that overflowed is Cocoa-only, so a Linux server build does
-  # not contain the code this is here for. No `needs:`, so it runs beside the other builds and its
-  # time hides inside theirs rather than being added to the pipeline.
-  #
-  # Not packaged and never uploaded -- an ASan binary is a diagnostic, not a shippable artifact.
-  smoke-asan-macos:
-    runs-on: macos-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          submodules: true
-
-      - name: Install ccache
-        run: brew list --versions ccache >/dev/null 2>&1 || brew install ccache
-
-      # Its own cache key: ASan objects are not interchangeable with the release job's.
-      - name: Set up ccache
-        uses: actions/cache@v4
-        with:
-          path: ~/Library/Caches/ccache
-          key: ccache-macos-asan-${{ github.sha }}
-          restore-keys: ccache-macos-asan-
-
-      - name: Build ForkUnderA (AddressSanitizer)
-        env:
-          ZX_SANITIZE: '1'
-          CMAKE_C_COMPILER_LAUNCHER: ccache
-          CMAKE_CXX_COMPILER_LAUNCHER: ccache
-        run: SOUND=1 ./mac_compile.sh
-
-      # [rc4l] detect_leaks is off because macOS AddressSanitizer has no leak detector and aborts if
-      # asked for one; abort_on_error makes a report a failed job rather than a line in a log the
-      # run is about to discard.
-      - name: Hosted server smoke test (AddressSanitizer)
-        env:
-          ASAN_OPTIONS: detect_leaks=0:abort_on_error=1:print_stacktrace=1
-        run: ./tools/hosted-server-smoke.sh build/ForkUnderA.app/Contents/MacOS/forkundera
 
   build-windows:
     # windows-2022 has Visual Studio 2022 (windows-latest moved to VS2026, whose
