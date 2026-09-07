@@ -19,6 +19,14 @@ ContinueButtonVerdict DecideContinueButton(const ContinueButtonInputs &in)
 		out.target = in.localUsable
 			? (in.localIsHosted ? ContinueTarget::Hosted : ContinueTarget::Offline)
 			: ContinueTarget::MainMenu;
+
+		// [rc4l] It asks in here too. Leaving used to be one act performed on the spot, which is
+		// defensible and was not what anybody expected: the same button one press earlier had opened
+		// a list, so pressing it again read as "open the list" and instead threw them out of the
+		// game. The list in a session leads with leaving, so the immediate act is still one keystroke
+		// away -- and going straight to another remembered session no longer means leaving first and
+		// pressing again.
+		out.opensList = true;
 		return out;
 	}
 

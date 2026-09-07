@@ -43,8 +43,14 @@ forty-nine.
 chain therefore runs on a crash exactly as it does on a clean quit, and a record written from there
 would faithfully save the crash and then offer to put the player back into it.
 
-So the record is written from the **deliberate** quit (`CCMD quit`/`exit`) and from the moment a join
-succeeds. A signal crash never reaches `exit()` at all, so it is safe by omission.
+So the record is written from the **deliberate** quit (`CCMD quit`/`exit`), from ending a game back
+to the menu (`CCMD endgame`), from starting a host, from leaving a local game to join something, and
+from the moment a join succeeds. A signal crash never reaches `exit()` at all, so it is safe by
+omission.
+
+Note that a server goes into the list **when the join lands**, not when you leave it — so however you
+leave (disconnect, kick, ban, the server dying) it is already there, and the departure itself writes
+nothing.
 
 ## What makes two sessions the same session
 
@@ -125,8 +131,17 @@ with no entries rather than deleted, so a player who clears it does not find it 
 
 ## What leaving means
 
-Pressing the pill inside a session is Disconnect, and it goes to **what you left in this process to
-get here** — or the main menu if that was nothing. Not "the newest local entry", which is what it was
+Pressing the pill inside a session **opens the same list**, titled "Where to?", with **Leave and go to
+the main menu** as its first row and already selected. Leaving used to be performed on the spot,
+which is defensible and was not what anybody expected: the same button one press earlier had opened a
+list, so pressing it again read as "open the list" and instead threw the player out of the game. One
+keystroke still leaves; picking any other row goes straight there without leaving and pressing again.
+
+The session you are currently in is **not** in that list. "Continue" to where you already are says
+nothing, and for a hosted game it would tear the match down to start the same match again.
+
+When leaving does happen it goes to **what you left in this process to get here** — or the main menu
+if that was nothing. Not "the newest local entry", which is what it was
 while there were two records: with a history that answer is some match from last week, so leaving a
 rehosted game started an unrelated one, and leaving a game you had picked from the list started the
 very game you were standing in.

@@ -115,17 +115,24 @@ TEST( ContinueButton, DisconnectFallsBackToTheMainMenu )
 	EXPECT_EQ( ContinueTarget::MainMenu, DecideContinueButton( InSession() ).target );
 }
 
-TEST( ContinueButton, LeavingNeverOpensTheList )
+TEST( ContinueButton, LeavingAsksWhereToo )
 {
-	// Disconnect is one act with one destination. A player who wants somewhere else can open the
-	// list once they are out; asking them WHERE while they are still connected turns leaving into a
-	// two-step decision they did not ask to make.
+	// It used to act on the spot, which is defensible and was not what anybody expected: the same
+	// button one press earlier had opened a list, so pressing it again read as "open the list" and
+	// instead threw the player out of the game.
 	ContinueButtonInputs in = InSession();
 	in.offerableCount = 30;
 	in.listCount = 30;
 	in.localUsable = true;
 
-	EXPECT_FALSE( DecideContinueButton( in ).opensList );
+	EXPECT_TRUE( DecideContinueButton( in ).opensList );
+}
+
+TEST( ContinueButton, LeavingAsksEvenWithNothingRemembered )
+{
+	// The list in a session always has something in it, because leaving is itself a row. A player
+	// with an empty history still gets the same button doing the same thing.
+	EXPECT_TRUE( DecideContinueButton( InSession() ).opensList );
 }
 
 TEST( ContinueButton, TheButtonIsNeverHiddenWhileInASession )
