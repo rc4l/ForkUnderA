@@ -6,16 +6,6 @@
 namespace zx
 {
 
-namespace
-{
-
-ContinueTarget OfflineTarget(const ContinueButtonInputs &in)
-{
-	return in.offlineIsHosted ? ContinueTarget::Hosted : ContinueTarget::Offline;
-}
-
-} // namespace
-
 ContinueButtonVerdict DecideContinueButton(const ContinueButtonInputs &in)
 {
 	ContinueButtonVerdict out;
@@ -26,25 +16,22 @@ ContinueButtonVerdict DecideContinueButton(const ContinueButtonInputs &in)
 		// and the main menu is the floor: somebody who joined straight from the browser has no
 		// offline session to go back to and must still end up somewhere deliberate.
 		out.mode = ContinueMode::Disconnect;
-		out.target = in.offlineUsable ? OfflineTarget(in) : ContinueTarget::MainMenu;
+		out.target = in.localUsable
+			? (in.localIsHosted ? ContinueTarget::Hosted : ContinueTarget::Offline)
+			: ContinueTarget::MainMenu;
 		return out;
 	}
 
-	if ((in.offlineUsable == false) && (in.serverUsable == false))
+	if (in.usableCount <= 0)
 		return out;			// Hidden
 
 	out.mode = ContinueMode::Continue;
+	out.target = in.newestTarget;
 
-	if (in.offlineUsable && in.serverUsable)
-	{
-		// Most recently left wins. Ties go to offline: a tie means both were written in the same
-		// breath, which is what leaving an offline game FOR a server looks like, and in that pair
-		// the server is where the player already is rather than what they left.
-		out.target = (in.serverStamp > in.offlineStamp) ? ContinueTarget::Server : OfflineTarget(in);
-		return out;
-	}
-
-	out.target = in.offlineUsable ? OfflineTarget(in) : ContinueTarget::Server;
+	// [rc4l] Two or more is a choice, and a choice is what the list is for. One is not: the pill
+	// already names it, and putting a menu in front of a single row would turn the one-press feature
+	// this started as into two presses for no decision.
+	out.opensList = (in.usableCount > 1);
 	return out;
 }
 

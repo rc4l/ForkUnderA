@@ -23,7 +23,11 @@ const BTN = {
   middle: { down: SUB.mdown, up: SUB.mup, dbl: SUB.mdbl },
   right: { down: SUB.rdown, up: SUB.rup, dbl: SUB.rdbl },
 };
-const GK = { up: 11, down: 10, left: 5, right: 6, enter: 13, back: 27, backspace: 8 };
+// [rc4l] pgup/pgdn/home/end/del are here because a menu now uses them: the Continue history is a
+// list of up to fifty rows, and paging and jumping through it cannot be driven -- or asserted -- with
+// only the arrows.
+const GK = { up: 11, down: 10, left: 5, right: 6, enter: 13, back: 27, backspace: 8,
+  pgdn: 1, pgup: 2, home: 3, end: 4, del: 26 };
 
 // Raw (non-GUI) event types from d_event.h -- these carry keycodes, not GUI subtypes.
 export const EV_KEYDOWN = 1;
