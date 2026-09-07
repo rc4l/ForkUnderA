@@ -566,3 +566,47 @@ TEST( ContinueHistory, AFullHistorySurvivesTheRoundTrip )
 	ASSERT_EQ( static_cast<size_t>( kContinueHistoryMax ), back.size() );
 	EXPECT_EQ( "10.0.0.50:10666", back[49].address );
 }
+
+TEST( ContinueHistory, TheSameFileSpelledDifferentlyIsTheSameGame )
+{
+	// The bug this encodes, found by rehosting from the list: the row held "freedoom2.wad" because
+	// that is what the player picked, and the config the RUNNING server reported held the absolute
+	// path the engine had resolved it to. Compared as strings that is two games, so rehosting added a
+	// second copy of the row AND left the pill offering to take the player back to the game they were
+	// already standing in.
+	ContinueRecord picked = Hosted( "MAP01", 1 );
+	ContinueRecord running = Hosted( "MAP01", 2 );
+	running.host.iwad = "/Users/someone/games/Doom2.WAD";
+
+	EXPECT_EQ( ContinueIdentity( picked ), ContinueIdentity( running ));
+
+	// And the list agrees: one row, not two.
+	std::vector<ContinueRecord> history;
+	history.push_back( picked );
+	EXPECT_EQ( 1u, InsertContinueEntry( history, running, 10 ).size() );
+}
+
+TEST( ContinueHistory, APathIsNotPartOfWhatAMapWasPlayedWith )
+{
+	// Same rule for the other kinds: where a file happens to live on this disk is not what makes a
+	// session the session.
+	ContinueRecord bare = Single( "MAP01", "sunder.wad", 1 );
+
+	ContinueRecord pathed = Single( "MAP01", "sunder.wad", 2 );
+	pathed.iwad = "C:\\Games\\Doom\\doom2.wad";
+	pathed.wads[0].name = "/home/someone/wads/Sunder.wad";
+
+	EXPECT_EQ( ContinueIdentity( bare ), ContinueIdentity( pathed ));
+}
+
+TEST( ContinueHistory, DifferentFilesAreStillDifferentGames )
+{
+	// The fix must not make everything the same thing: only the directory is ignored, never the name.
+	ContinueRecord a = Hosted( "MAP01", 1 );
+	a.host.iwad = "/games/doom2.wad";
+
+	ContinueRecord b = Hosted( "MAP01", 1 );
+	b.host.iwad = "/games/tnt.wad";
+
+	EXPECT_NE( ContinueIdentity( a ), ContinueIdentity( b ));
+}

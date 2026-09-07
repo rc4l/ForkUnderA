@@ -57,6 +57,12 @@ history that showed it three times would have spent three of its rows saying the
   another, and a history that thought otherwise would overwrite one with the other.
 * A hosted game is **what would start it again**: the map, the files and the mode.
 
+Files are compared by name, never by the path they happened to be written down under. A remembered
+host config holds `doom2.wad` because that is what the player picked; the config a *running* server
+reports holds the absolute path the engine resolved it to. Compared as strings those are two games,
+which is how rehosting a row added a second copy of it and left the pill offering to take the player
+back to the game they were already inside.
+
 ## Order comes from the counter, the column comes from the clock
 
 `stamp` is monotonic and ours; `playedAt` is the system clock and is not. Sorting by the clock would
@@ -116,6 +122,20 @@ claim the player was in all of them a second ago.
 
 Migration only ever runs when there is **no** history file. An emptied history is written as a file
 with no entries rather than deleted, so a player who clears it does not find it back next launch.
+
+## What leaving means
+
+Pressing the pill inside a session is Disconnect, and it goes to **what you left in this process to
+get here** — or the main menu if that was nothing. Not "the newest local entry", which is what it was
+while there were two records: with a history that answer is some match from last week, so leaving a
+rehosted game started an unrelated one, and leaving a game you had picked from the list started the
+very game you were standing in.
+
+Leaving with nowhere to go lands on the **title screen with the main menu open**.
+`CLIENT_QuitNetworkGame` ends in `ga_fullconsole` and `D_StartTitle` alone begins the attract loop, so
+the two obvious versions of this leave the player at a console or in a slideshow while the pill has
+just promised them a menu. Both are performed from the tick, because a gameaction issued inside a
+teardown is replaced by the teardown's own.
 
 ## The list
 

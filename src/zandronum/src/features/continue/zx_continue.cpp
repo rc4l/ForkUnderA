@@ -92,6 +92,25 @@ int g_DepartReturns = 0;
 ContinueRecord g_ReturnRecord;
 // The settings a rehost is on its way to, held across the WAD reload that gets us there.
 ContinueRecord g_PendingHost;
+// [rc4l] What we are INSIDE right now, as an identity.
+//
+// Leaving a session goes to the newest local entry, and after a rehost that entry is the very game
+// being left: pressing the pill inside your own hosted server tore it down and started it again,
+// forever. Recorded on the way IN rather than worked out on the way out, because by the time the
+// teardown runs the host may already be gone and the question unanswerable.
+std::string g_InsideIdentity;
+// [rc4l] And the row itself, so re-recording it on arrival rewrites THAT row rather than minting a
+// near-copy from whatever spelling the running server reports its files under.
+ContinueRecord g_InsideRecord;
+// [rc4l] What we left IN THIS PROCESS to get where we are, which is the only honest answer to "take
+// me back" when leaving.
+//
+// It used to be "the newest local entry", which was fine while there were two records and is not
+// fine with a history: after rehosting a game from the list, the newest local entry that is not the
+// one you are in is some match from last week, so pressing Disconnect started it. Leaving is a
+// request to leave, and the only place it can put you that you actually asked for is the thing you
+// were doing a moment ago -- or the main menu, if that was nothing.
+ContinueRecord g_CameFrom;
 bool g_bLoaded = false;
 // [rc4l] Bumped every time the records are re-read, so anything derived from them can tell in one
 // comparison whether what it worked out last frame still holds.
@@ -801,12 +820,26 @@ static ContinueTarget TargetOf( const ContinueRecord &rec )
 // are in it, so the newest entry during a session is the very server the player is asking to leave.
 static int NewestLocalEntry( void )
 {
-	const std::vector<int> usable = OfferableEntries( );
+	if ( g_CameFrom.kind == ContinueKind::None )
+		return -1;						// we came from the menu, and the menu is where leaving goes
 
-	for ( size_t i = 0; i < usable.size( ); ++i )
+	// [rc4l] Never the thing we are standing in, however we came to be standing in it. A rehost
+	// re-records its own row on arrival, so without this the game being left is also the game
+	// "before" it, and Disconnect tore it down and started it again.
+	const std::string cameFrom = ContinueIdentity( g_CameFrom );
+	if ( cameFrom == g_InsideIdentity )
+		return -1;
+
+	// It has to still be in the history and still be worth going to: a snapshot deleted while we were
+	// away is not somewhere to land.
+	const std::vector<int> offerable = OfferableEntries( );
+	for ( size_t i = 0; i < offerable.size( ); ++i )
 	{
-		if ( g_History[usable[i]].kind != ContinueKind::Server )
-			return usable[i];
+		if (( g_History[offerable[i]].kind != ContinueKind::Server )
+			&& ( ContinueIdentity( g_History[offerable[i]] ) == cameFrom ))
+		{
+			return offerable[i];
+		}
 	}
 	return -1;
 }
@@ -1020,6 +1053,9 @@ void WriteLocalSnapshot( void )
 
 	G_DoSaveGame( false, record.savePath.c_str( ), "Continue" );
 	NoteRecord( record );
+
+	// This is what we are leaving, so this is where leaving comes back to.
+	g_CameFrom = record;
 }
 
 void Continue_NoteLeavingLocalGame( void )
@@ -1089,7 +1125,11 @@ void Continue_NoteLeftServer( void )
 	in.returnInFlight = g_bReturnInFlight;
 
 	if ( DecideContinueDepart( in ) != ContinueDepartVerdict::Return )
+	{
+		// [rc4l] Not a departure, so we are still inside whatever we were inside -- a join tidying up
+		// on its way in re-states it the moment it lands.
 		return;
+	}
 
 	// Where to, decided now while the answer is still the leaving one -- and the record COPIED, not
 	// indexed: this very teardown is about to record the server we are leaving, which rewrites the
@@ -1103,6 +1143,10 @@ void Continue_NoteLeftServer( void )
 
 	g_ReturnTarget = DecideContinueButton( where ).target;
 	g_ReturnRecord = ( local >= 0 ) ? g_History[local] : ContinueRecord( );
+
+	// Read while it still meant something; we are on our way out of it now.
+	g_InsideIdentity.clear( );
+	g_InsideRecord = ContinueRecord( );
 
 	// Acted on by the tick, once the teardown has finished. See the header.
 	++g_DepartReturns;
@@ -1127,10 +1171,36 @@ void Continue_NoteJoined( void )
 	if ( DecideContinueWriteOnJoin( false ) != ContinueWriteVerdict::Write )
 		return;
 
+	const NETADDRESS_s address = CLIENT_GetServerAddress( );
+
+	// [rc4l] Our OWN server is not a server we played on, it is the game we are hosting -- and there
+	// is already a row saying so. Writing a second one would put a loopback address in the history
+	// after every hosted match, dead the moment the child stopped, and the player would watch their
+	// list fill with rows that lead nowhere. Re-recording the hosted row instead refreshes when it
+	// was last played, which is the only thing this moment actually tells us.
+	if ( HostIsActive( ) && HostOwnsAddress( FString( address.ToString( ))))
+	{
+		// The row we came FROM when we have one: it is the same game, and it is already spelled the
+		// way the player's history spells it.
+		ContinueRecord hosted = g_InsideRecord;
+		if ( hosted.kind != ContinueKind::Hosted )
+		{
+			hosted = ContinueRecord( );
+			hosted.kind = ContinueKind::Hosted;
+			hosted.host = HostCurrentConfig( );
+			hosted.host.rconSecret.clear( );
+			CollectLoadedWads( hosted );
+		}
+
+		g_InsideRecord = hosted;
+		g_InsideIdentity = ContinueIdentity( hosted );
+		NoteRecord( hosted );
+		return;
+	}
+
 	ContinueRecord record;
 	record.kind = ContinueKind::Server;
 
-	const NETADDRESS_s address = CLIENT_GetServerAddress( );
 	record.address = address.ToString( );
 	record.password = cl_password;
 
@@ -1145,6 +1215,8 @@ void Continue_NoteJoined( void )
 	}
 	CollectLoadedWads( record );
 
+	g_InsideRecord = record;
+	g_InsideIdentity = ContinueIdentity( record );
 	NoteRecord( record );
 }
 
@@ -1294,7 +1366,20 @@ void Continue_Tick( void )
 			RehostRecorded( g_ReturnRecord );
 		else if ( g_ReturnTarget == ContinueTarget::Offline )
 			ActivateOfflineRecord( g_ReturnRecord );
-		// MainMenu: the disconnect has already put us there.
+		else if ( g_ReturnTarget == ContinueTarget::MainMenu )
+		{
+			// [rc4l] The disconnect does NOT already put us there, which is what this used to assume.
+			// CLIENT_QuitNetworkGame ends in ga_fullconsole, so a player who left a server with nowhere
+			// to go was left staring at the console -- while the pill had just promised them the main
+			// menu. Performed from the tick like every other return, because a title screen started
+			// from inside the teardown is a gameaction the teardown then overwrites.
+			//
+			// And the MENU on top of it, because D_StartTitle alone starts the attract loop -- the
+			// title, then the credits, then a demo -- so a player who asked to leave was handed a
+			// slideshow instead of the thing they were promised.
+			D_StartTitle( );
+			M_SetMenu( NAME_Mainmenu, -1 );
+		}
 
 		g_ReturnTarget = ContinueTarget::None;
 	}
@@ -1612,10 +1697,27 @@ bool Continue_ActivateEntry( int index )
 	// different row, or none.
 	const ContinueRecord chosen = *rec;
 
+	// [rc4l] What we are about to be inside. Set BEFORE we go, because a hosted row only reports
+	// itself once the join lands and the answer is needed the moment the player presses again.
+	g_InsideRecord = chosen;
+	g_InsideIdentity = ContinueIdentity( chosen );
+
+	// [rc4l] Chosen from the list, so there is nothing behind us: the player asked for THIS, not for
+	// a trail back through everything the history remembers.
+	g_CameFrom = ContinueRecord( );
+
 	M_ClearMenus( );
 
 	if ( InSession( ))
+	{
 		CLIENT_QuitNetworkGame( NULL );
+
+		// [rc4l] The teardown's own departure gate has just queued a return to wherever leaving would
+		// have gone. We are the ones going somewhere, and it is not there: left armed, the tick would
+		// perform its return on top of ours a frame later.
+		g_bReturnPending = false;
+		g_ReturnTarget = ContinueTarget::None;
+	}
 
 	GoToRecord( chosen );
 	return true;
@@ -1644,15 +1746,30 @@ void Continue_Activate( void )
 	// always is, so it is the same answer.
 	if ( Continue_IsDisconnect( ))
 	{
+		// [rc4l] Asked BEFORE the teardown. The disconnect clears what we are inside -- it has to, we
+		// are leaving it -- and asking afterwards found the game we had just left sitting at the top
+		// of the list again, so leaving a hosted match tore it down and started it back up.
+		const int local = NewestLocalEntry( );
+		const ContinueRecord back = ( local >= 0 ) ? g_History[local] : ContinueRecord( );
+
 		CLIENT_QuitNetworkGame( NULL );
 
-		const int local = NewestLocalEntry( );
-		if (( v.target != ContinueTarget::MainMenu ) && ( local >= 0 ))
-			GoToRecord( g_History[local] );
+		// [rc4l] Ours to perform, so the tick must not perform its own on top of it -- except for the
+		// main menu, which HAS to go through the tick: it is a gameaction, and one issued inside the
+		// teardown is replaced by the teardown's own.
+		g_bReturnPending = ( v.target == ContinueTarget::MainMenu );
+		g_ReturnTarget = v.target;
+
+		if ( v.target != ContinueTarget::MainMenu )
+			GoToRecord( back );
 		return;
 	}
 
-	GoToRecord( Chosen( ));
+	const ContinueRecord chosen = Chosen( );
+	g_InsideRecord = chosen;
+	g_InsideIdentity = ContinueIdentity( chosen );
+
+	GoToRecord( chosen );
 }
 
 

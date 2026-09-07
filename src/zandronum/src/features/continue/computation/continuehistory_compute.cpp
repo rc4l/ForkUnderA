@@ -19,6 +19,20 @@ const char *const kHistoryMagic = "fua-continue-history";
 // every other line in the file has a key and a space, and this has neither.
 const char *const kEntryMarker = "entry";
 
+// [rc4l] A file, named the way a comparison should see it: the last component, lowercased.
+//
+// The same file arrives spelled differently depending on who wrote the record down. A remembered
+// host config holds "doom2.wad" because that is what the player picked; the config a RUNNING server
+// reports holds the absolute path the engine resolved it to. Comparing those as strings makes one
+// game into two rows, and then the row you are standing in is not the row you came from -- which is
+// how rehosting a game added a second copy of it AND left the pill offering to take you back to the
+// game you were already inside.
+std::string BaseName(const std::string &path)
+{
+	const std::string::size_type slash = path.find_last_of("/\\");
+	return (slash == std::string::npos) ? path : path.substr(slash + 1);
+}
+
 std::string Lowered(const std::string &s)
 {
 	std::string out;
@@ -36,9 +50,9 @@ std::string Lowered(const std::string &s)
 // is not a different thing to have been doing.
 std::string WadSetKey(const ContinueRecord &record)
 {
-	std::string out = Lowered(record.iwad);
+	std::string out = Lowered(BaseName(record.iwad));
 	for (size_t i = 0; i < record.wads.size(); ++i)
-		out += "\n" + Lowered(record.wads[i].name);
+		out += "\n" + Lowered(BaseName(record.wads[i].name));
 	return out;
 }
 
@@ -90,9 +104,9 @@ std::string ContinueIdentity(const ContinueRecord &record)
 	// the same mode. Two hosted rows differing only in a password are the same game to everyone who
 	// plays it.
 	std::ostringstream out;
-	out << "hosted\n" << Lowered(record.host.map) << "\n" << Lowered(record.host.iwad);
+	out << "hosted\n" << Lowered(record.host.map) << "\n" << Lowered(BaseName(record.host.iwad));
 	for (size_t i = 0; i < record.host.pwads.size(); ++i)
-		out << "\n" << Lowered(record.host.pwads[i]);
+		out << "\n" << Lowered(BaseName(record.host.pwads[i]));
 	out << "\n" << record.host.gameMode;
 	return out.str();
 }
