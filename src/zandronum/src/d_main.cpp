@@ -1757,6 +1757,12 @@ CCMD (endgame)
 
 	if ( NETWORK_GetState( ) == NETSTATE_SINGLE )
 	{
+		// [rc4l] Remember it first. Ending a game back to the menu is one of the ordinary ways of
+		// stopping playing -- and it was the one way that left no trace, so a map you had played for
+		// an hour was in the Continue list only if you happened to quit the program rather than go
+		// back to the menu.
+		zx::Continue_NoteLeavingLocalGame( );
+
 		gameaction = ga_fullconsole;
 		demosequence = -1;
 		// [rc4l] uzdoom@eceb37aa6: close out a recording rather than leaving it dangling.

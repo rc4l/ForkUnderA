@@ -69,6 +69,10 @@ void Continue_ForgetEntry( int index );
 // does not have to know what a menu is.
 void Continue_OpenList();
 
+// [rc4l] Leave the session and land on the main menu. The first row of the list while in one, so
+// that pressing the pill in a game asks where to go rather than deciding for the player.
+void Continue_LeaveToMenu();
+
 // Record the session we are in. Called from the deliberate quit, never from a shutdown hook.
 void Continue_NoteQuit();
 

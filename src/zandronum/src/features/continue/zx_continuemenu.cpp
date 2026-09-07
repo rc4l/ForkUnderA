@@ -237,7 +237,18 @@ private:
 	int mFirst;						// the row at the top of the window
 	int mHot;						// the row under the pointer, or -1
 
-	int Total( ) const { return zx::Continue_HistoryCount( ); }
+	// [rc4l] Leaving is a ROW while we are in a session, not a separate act performed by the same
+	// press. It sits at the top and starts selected, so the immediate leave the button used to do is
+	// still one keystroke away -- and going straight to another session no longer means leaving
+	// first and pressing the pill again.
+	bool HasLeaveRow( ) const { return zx::Continue_IsDisconnect( ); }
+	int LeaveRows( ) const { return HasLeaveRow( ) ? 1 : 0; }
+
+	// Every row on screen, the leave row included.
+	int Total( ) const { return zx::Continue_HistoryCount( ) + LeaveRows( ); }
+
+	// The history row a screen row means, or -1 for the leave row.
+	int EntryIndex( int row ) const { return row - LeaveRows( ); }
 
 	void Step( zx::ContinueListKey key );
 	void Activate( );
@@ -263,7 +274,7 @@ void DFUAContinueMenu::Step( zx::ContinueListKey key )
 
 	// [rc4l] The row the player is on is asked about, and only then. Fifty servers queried the moment
 	// a menu opened would be a storm sent on somebody else's behalf.
-	zx::Continue_ProbeEntry( mSelected );
+	zx::Continue_ProbeEntry( EntryIndex( mSelected ));
 }
 
 void DFUAContinueMenu::Activate( )
@@ -273,8 +284,15 @@ void DFUAContinueMenu::Activate( )
 
 	S_Sound( CHAN_VOICE | CHAN_UI, "menu/choose", snd_menuvolume, ATTN_NONE );
 
+	const int entry = EntryIndex( mSelected );
+	if ( entry < 0 )
+	{
+		zx::Continue_LeaveToMenu( );
+		return;
+	}
+
 	// Closes the menus itself, and on the path that works it does not return: the WAD reload throws.
-	zx::Continue_ActivateEntry( mSelected );
+	zx::Continue_ActivateEntry( entry );
 }
 
 void DFUAContinueMenu::Forget( )
@@ -282,7 +300,12 @@ void DFUAContinueMenu::Forget( )
 	if ( Total( ) <= 0 )
 		return;
 
-	zx::Continue_ForgetEntry( mSelected );
+	// Leaving is not a row anybody can forget.
+	const int entry = EntryIndex( mSelected );
+	if ( entry < 0 )
+		return;
+
+	zx::Continue_ForgetEntry( entry );
 	S_Sound( CHAN_VOICE | CHAN_UI, "menu/clear", snd_menuvolume, ATTN_NONE );
 
 	// [rc4l] The list just got shorter under the cursor. Pulled back in here rather than left for
@@ -424,14 +447,30 @@ void DFUAContinueMenu::DrawRows( const Layout &layout )
 				ToScreenY( y + kRowH - 1 ) - ToScreenY( y - 1 ));
 		}
 
+		const int entry = EntryIndex( row );
+
+		// [rc4l] Leaving, drawn as the row it now is. No "last played" against it: it is not
+		// somewhere the player has been, it is the way out of where they are.
+		if ( entry < 0 )
+		{
+			DrawTextAt( bSelected ? CR_WHITE : CR_GRAY, layout.listX, y, "Leave and go to the main menu" );
+
+			if ( bSelected )
+			{
+				zx::DrawFocusGlow( ToScreenX( layout.listX - 9 ), ToScreenY( y + ( kRowH / 2 )),
+					ToScreenX( 100 ) - ToScreenX( 0 ));
+			}
+			continue;
+		}
+
 		// [rc4l] A server that has stopped answering is DIMMED AND LABELLED, not removed. Rows that
 		// vanish from under a pointer are how a click lands on something the player did not read,
 		// and the press still costs at worst one trip back to the browser with a reason -- the path
 		// a failed join already takes.
-		const int probe = zx::Continue_EntryProbe( row );
+		const int probe = zx::Continue_EntryProbe( entry );
 		const bool bDead = ( probe == 2 ) || ( probe == 3 );
 
-		FString label = zx::Continue_EntryLabel( row );
+		FString label = zx::Continue_EntryLabel( entry );
 		if ( probe == 2 )
 			label += " (not answering)";
 		else if ( probe == 3 )
@@ -441,7 +480,7 @@ void DFUAContinueMenu::DrawRows( const Layout &layout )
 
 		DrawTextAt( labelCol, layout.listX, y, Ellipsised( label, labelW ) );
 
-		const char *when = zx::Continue_EntryWhen( row );
+		const char *when = zx::Continue_EntryWhen( entry );
 		DrawTextAt( bSelected ? CR_GOLD : CR_DARKGRAY,
 			layout.listX + layout.listW - SmallFont->StringWidth( when ), y, when );
 
@@ -499,7 +538,9 @@ void DFUAContinueMenu::Drawer( )
 	const zx::PanelColor botCol = { 8, 9, 15, 248 };
 	DrawRoundedPanel( layout.cardX, layout.cardY, layout.cardW, layout.cardH, topCol, botCol, 10 );
 
-	const char *const title = "CONTINUE";
+	// [rc4l] It is a different question in a session: not "what do you want to continue" but "where
+	// do you want to go", and leaving is one of the answers.
+	const char *const title = HasLeaveRow( ) ? "WHERE TO?" : "CONTINUE";
 	DrawTextAt( CR_WHITE, layout.cardX + ( layout.cardW - SmallFont->StringWidth( title )) / 2,
 		layout.cardY + 10, title );
 
@@ -519,7 +560,9 @@ void DFUAContinueMenu::Drawer( )
 	DrawRows( layout );
 	DrawScrollbar( layout );
 
-	const char *const hint = "Enter: continue      Del: forget      Esc: back";
+	const char *const hint = HasLeaveRow( )
+		? "Enter: go      Del: forget      Esc: back"
+		: "Enter: continue      Del: forget      Esc: back";
 	DrawTextAt( CR_DARKGRAY, layout.cardX + ( layout.cardW - SmallFont->StringWidth( hint )) / 2,
 		layout.cardY + layout.cardH - 16, hint );
 

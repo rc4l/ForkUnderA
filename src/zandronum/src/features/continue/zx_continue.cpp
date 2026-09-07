@@ -781,23 +781,37 @@ static std::vector<int> UsableEntries( void )
 	std::vector<int> out;
 	for ( size_t i = 0; i < g_History.size( ); ++i )
 	{
-		if ( RecordUsable( g_History[i] ))
-			out.push_back( static_cast<int>( i ));
+		if ( RecordUsable( g_History[i] ) == false )
+			continue;
+
+		// [rc4l] Never the session we are in. "Continue" to where you already are says nothing, and
+		// for a hosted game it would tear the match down to start the same match again.
+		if (( g_InsideIdentity.empty( ) == false )
+			&& ( ContinueIdentity( g_History[i] ) == g_InsideIdentity ))
+		{
+			continue;
+		}
+
+		out.push_back( static_cast<int>( i ));
 	}
 	return out;
 }
 
-// The rows one press may act on. A subset of the above; see RecordOfferable.
+// The rows one press may act on. A strict subset of the rows the list shows; see RecordOfferable.
+//
+// [rc4l] Built FROM the list rather than by scanning the history again, so it cannot drift from it.
+// Scanning separately meant the session the player was standing in was filtered out of the list and
+// still named by the pill -- two answers to "what would one press do", one of which was "the thing
+// you are already doing".
 static std::vector<int> OfferableEntries( void )
 {
-	if ( g_bLoaded == false )
-		Continue_Load( );
+	const std::vector<int> usable = UsableEntries( );
 
 	std::vector<int> out;
-	for ( size_t i = 0; i < g_History.size( ); ++i )
+	for ( size_t i = 0; i < usable.size( ); ++i )
 	{
-		if ( RecordOfferable( g_History[i] ))
-			out.push_back( static_cast<int>( i ));
+		if ( RecordOfferable( g_History[usable[i]] ))
+			out.push_back( usable[i] );
 	}
 	return out;
 }
@@ -1723,6 +1737,20 @@ bool Continue_ActivateEntry( int index )
 	return true;
 }
 
+void Continue_LeaveToMenu( void )
+{
+	if ( InSession( ) == false )
+		return;
+
+	M_ClearMenus( );
+	CLIENT_QuitNetworkGame( NULL );
+
+	// [rc4l] Through the tick, like every other return: CLIENT_QuitNetworkGame ends in
+	// ga_fullconsole, so a title screen started from here is replaced by the teardown's own action.
+	g_bReturnPending = true;
+	g_ReturnTarget = ContinueTarget::MainMenu;
+}
+
 void Continue_Activate( void )
 {
 	if ( Continue_IsShown( ) == false )
@@ -1742,26 +1770,10 @@ void Continue_Activate( void )
 	// [rc4l] Straight in, no confirmation: the decision was made when the button chose to exist.
 	M_ClearMenus( );
 
-	// Leaving a server: drop the connection first. Where we go afterwards is the same question it
-	// always is, so it is the same answer.
+	// In a session the list leads with leaving, so there is no separate immediate path any more.
 	if ( Continue_IsDisconnect( ))
 	{
-		// [rc4l] Asked BEFORE the teardown. The disconnect clears what we are inside -- it has to, we
-		// are leaving it -- and asking afterwards found the game we had just left sitting at the top
-		// of the list again, so leaving a hosted match tore it down and started it back up.
-		const int local = NewestLocalEntry( );
-		const ContinueRecord back = ( local >= 0 ) ? g_History[local] : ContinueRecord( );
-
-		CLIENT_QuitNetworkGame( NULL );
-
-		// [rc4l] Ours to perform, so the tick must not perform its own on top of it -- except for the
-		// main menu, which HAS to go through the tick: it is a gameaction, and one issued inside the
-		// teardown is replaced by the teardown's own.
-		g_bReturnPending = ( v.target == ContinueTarget::MainMenu );
-		g_ReturnTarget = v.target;
-
-		if ( v.target != ContinueTarget::MainMenu )
-			GoToRecord( back );
+		Continue_LeaveToMenu( );
 		return;
 	}
 
