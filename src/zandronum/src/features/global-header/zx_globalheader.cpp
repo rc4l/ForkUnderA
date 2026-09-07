@@ -44,6 +44,24 @@ const int HEADER_LAYOUT_H = 400;
 
 const char *const kTabLabels[kHeaderTabCount] = { "Main Menu", "Play Online!", "Continue" };
 
+// [rc4l] The Continue pill says what it will DO, which is not always "Continue".
+//
+// The bar drew the fixed word in every state while the feature had a second label ready and unused,
+// so the button read "Continue" while it was the way out of a game -- and a player who pressed it
+// expecting to continue something got a disconnect. Everything else on the bar is a fixed noun and
+// still comes from the table.
+const char *TabLabel( int i )
+{
+	if ( i == static_cast<int>( HeaderTab::Continue ))
+	{
+		const char *label = zx::Continue_Label( );
+		if (( label != NULL ) && ( *label != 0 ))
+			return label;
+	}
+
+	return kTabLabels[i];
+}
+
 // [rc4l] Continue is the only tab that comes and goes, so everything the bar does has to ask how
 // many tabs there are rather than assume. It is last in the enum and drawn first on the bar; see
 // globalheader_compute.h on why those two orders are allowed to differ.
@@ -187,8 +205,10 @@ int ToVirtualY( int py )
 // The measured width of every label, which is what the layout is built from.
 void MeasureLabels( int *out )
 {
+	// Measured from the label that will actually be drawn, or the pill is sized for a different word
+	// than the one inside it.
 	for ( int i = 0; i < TabCount( ); ++i )
-		out[i] = SmallFont->StringWidth( kTabLabels[i] );
+		out[i] = SmallFont->StringWidth( TabLabel( i ));
 }
 
 // [rc4l] Which tab is LIT, asked rather than remembered.
@@ -573,7 +593,7 @@ void GlobalHeader_Draw( )
 		const ReachTint tint = bOnline ? HeaderReachTint( reach ) : ReachTint::Neutral;
 		const bool bEnabled = !bOnline || PlayOnlineSelectable( reach );
 
-		DrawPill( HeaderTabRect( m, widths, TabCount( ), i, PinnedIndex( ) ), kTabLabels[i], ( i == lit ),
+		DrawPill( HeaderTabRect( m, widths, TabCount( ), i, PinnedIndex( ) ), TabLabel( i ), ( i == lit ),
 			( i == g_HotTab ), ( g_HasFocus && ( i == g_FocusTab )), tint, bEnabled );
 	}
 
