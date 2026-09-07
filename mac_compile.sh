@@ -223,11 +223,20 @@ configure() {
     glew="$(brew --prefix glew)"
     ssl="$(brew --prefix openssl@3)"
 
+    # [rc4l] A sanitizer has to JOIN these linker flags, never arrive as a second
+    # -DCMAKE_EXE_LINKER_FLAGS. The second one silently replaces the first, and the first is
+    # $APPLE_FRAMEWORKS -- so the obvious way drops every Apple framework and the link dies in a
+    # thousand undefined AudioToolbox/IOKit/Carbon symbols that say nothing about the real cause.
+    local zx_linker_flags="$APPLE_FRAMEWORKS"
+    if [[ "${ZX_SANITIZE:-0}" == "1" ]]; then
+        zx_linker_flags+=" -fsanitize=address"
+    fi
+
     local args=(
         -S "$ZAN_SRC_DIR" -B "$BUILD_DIR" "${CMAKE_COMPAT[@]}"
         -DCMAKE_BUILD_TYPE="$CONFIGURATION"
         -DCMAKE_OSX_ARCHITECTURES="$TARGET_ARCH"
-        -DCMAKE_EXE_LINKER_FLAGS="$APPLE_FRAMEWORKS"
+        -DCMAKE_EXE_LINKER_FLAGS="$zx_linker_flags"
         # macOS has no system libjpeg; force the bundled jpeg-6b so find_package
         # can't latch onto a stray Homebrew libjpeg and break the link.
         -DFORCE_INTERNAL_JPEG=ON
@@ -252,9 +261,37 @@ configure() {
 
     # [rc4l] ZX_WITH_SYMBOLS=1 (release CI) builds with debug info; a .dSYM is generated after the
     # build (RELEASE_WITH_DEBUG_FILE is off on Apple) and uploaded to GlitchTip so crashes symbolicate.
+    #
+    # ZX_SANITIZE=1 additionally builds the ENGINE under AddressSanitizer, for diagnosing the class
+    # of bug no unit test can reach: the overflow that killed every hosted server lived in the entry
+    # point, which nothing links, and wrote over statics rather than the heap, where no allocator
+    # could see it. Never ship a build made this way -- slower, bigger, and it aborts on the first
+    # fault by design.
+    #
+    # KNOWN LIMITATION, read this before reaching for it: the engine currently ABORTS AT STARTUP
+    # under ASan, in PClass::StaticInit, and it is not an engine bug. Class registration works by
+    # putting every RegistrationInfoPtr into a `creg` linker section (_DECLARE_TI in dobject.h) and
+    # walking the section as a packed array. ASan pads every instrumented global with a redzone, so
+    # the section stops being packed and the walk reads padding. The same trick is used by the areg,
+    # greg, mreg and yreg sections. Making the engine ASan-clean means making those walks tolerate
+    # the padding -- worth doing, and its own piece of work, not a flag.
+    #
+    # Composed into ONE flags string rather than two -DCMAKE_CXX_FLAGS arguments, because the second
+    # would silently replace the first and the symbols would quietly stop being built.
+    local zx_extra_flags=""
     if [[ "${ZX_WITH_SYMBOLS:-0}" == "1" ]]; then
-        args+=( -DCMAKE_CXX_FLAGS=-g -DCMAKE_C_FLAGS=-g )
+        zx_extra_flags+=" -g"
     fi
+    if [[ "${ZX_SANITIZE:-0}" == "1" ]]; then
+        zx_extra_flags+=" -g -fsanitize=address -fno-omit-frame-pointer"
+        status "AddressSanitizer: ENABLED (diagnostic build -- do not ship)"
+    fi
+    # [rc4l] Passed ALWAYS, empty included. These are cache variables: a build that simply omits
+    # them inherits whatever the last one left behind, so a single ZX_SANITIZE=1 run would quietly
+    # make every later build in the same directory a sanitizer build -- one that aborts at startup
+    # (see the creg note above) for reasons nothing about the command would explain. Stating the
+    # flags every time means the cache always says what this invocation asked for.
+    args+=( -DCMAKE_CXX_FLAGS="${zx_extra_flags# }" -DCMAKE_C_FLAGS="${zx_extra_flags# }" )
 
     # [rc4l] Only a build whose symbols get published may report crashes; see ZX_OFFICIAL_BUILD in
     # src/zandronum/CMakeLists.txt. Set by CI, never by a local build.
