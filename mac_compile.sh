@@ -286,9 +286,12 @@ configure() {
         zx_extra_flags+=" -g -fsanitize=address -fno-omit-frame-pointer"
         status "AddressSanitizer: ENABLED (diagnostic build -- do not ship)"
     fi
-    if [[ -n "$zx_extra_flags" ]]; then
-        args+=( -DCMAKE_CXX_FLAGS="${zx_extra_flags# }" -DCMAKE_C_FLAGS="${zx_extra_flags# }" )
-    fi
+    # [rc4l] Passed ALWAYS, empty included. These are cache variables: a build that simply omits
+    # them inherits whatever the last one left behind, so a single ZX_SANITIZE=1 run would quietly
+    # make every later build in the same directory a sanitizer build -- one that aborts at startup
+    # (see the creg note above) for reasons nothing about the command would explain. Stating the
+    # flags every time means the cache always says what this invocation asked for.
+    args+=( -DCMAKE_CXX_FLAGS="${zx_extra_flags# }" -DCMAKE_C_FLAGS="${zx_extra_flags# }" )
 
     # [rc4l] Only a build whose symbols get published may report crashes; see ZX_OFFICIAL_BUILD in
     # src/zandronum/CMakeLists.txt. Set by CI, never by a local build.
