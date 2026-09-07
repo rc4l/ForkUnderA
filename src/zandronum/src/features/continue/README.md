@@ -131,8 +131,20 @@ with no entries rather than deleted, so a player who clears it does not find it 
 
 ## What leaving means
 
-Pressing the pill inside a session **opens the same list**, titled "Where to?", with **Leave and go to
-the main menu** as its first row and already selected. Leaving used to be performed on the spot,
+The pill is on the bar **everywhere**, including while a single-player map is running. It used to
+hide there, on the reasoning that offering Continue to somebody already playing is offering to throw
+away what they are doing. That was right while pressing it threw the game away; it is not right now
+that pressing it opens a list whose first row is "leave", and a button that vanishes exactly when the
+program is being used most is one nobody can rely on.
+
+It also says what it will DO — `Continue` at a menu, `Disconnect` in a server, `Leave` in a map. The
+bar drew the fixed word "Continue" in every state while the feature had a second label ready and
+unused, so the button read "Continue" while it was the way out of a game.
+
+Pressing it inside a game **opens the same list**, titled "Where to?", with **Leave and go to the
+main menu** as its first row and already selected. A local game leaves through `endgame`, which is
+also what records it, so leaving a map from this list remembers it exactly as ending it from the menu
+does. Leaving used to be performed on the spot,
 which is defensible and was not what anybody expected: the same button one press earlier had opened a
 list, so pressing it again read as "open the list" and instead threw the player out of the game. One
 keystroke still leaves; picking any other row goes straight there without leaving and pressing again.

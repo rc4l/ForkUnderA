@@ -722,6 +722,16 @@ static bool InSession( void )
 	return ( NETWORK_GetState( ) == NETSTATE_CLIENT );
 }
 
+// [rc4l] Playing something, of any shape -- a server, a game we host, or a map of our own.
+//
+// The pill is the way OUT of all three and the list is the same list in all three, so the question
+// it asks is "is a game running", not "is a socket open". The `usergame` half matters as much as the
+// level check: the title screen runs a demo, so a level is running while the player sits at the menu.
+static bool InGame( void )
+{
+	return InSession( ) || (( gamestate == GS_LEVEL ) && usergame );
+}
+
 // [rc4l] Whether this particular record is worth offering: a snapshot too old to load, one whose
 // file has gone, and a server that no longer answers are all records that parse perfectly and lead
 // nowhere.
@@ -786,7 +796,12 @@ static std::vector<int> UsableEntries( void )
 
 		// [rc4l] Never the session we are in. "Continue" to where you already are says nothing, and
 		// for a hosted game it would tear the match down to start the same match again.
-		if (( g_InsideIdentity.empty( ) == false )
+		//
+		// Only while we are actually IN one. The marker is set for any row that gets picked and is
+		// cleared by leaving a SERVER, so an offline game picked from the list left it set for the
+		// rest of the process -- and that row then stayed hidden from the list long after the player
+		// had finished with it.
+		if ( InGame( ) && ( g_InsideIdentity.empty( ) == false )
 			&& ( ContinueIdentity( g_History[i] ) == g_InsideIdentity ))
 		{
 			continue;
@@ -875,7 +890,7 @@ static ContinueButtonVerdict Verdict( void )
 	static int cachedGeneration = -1;
 	static bool cachedInSession = false;
 
-	const bool inSession = InSession( );
+	const bool inSession = InGame( );
 
 	// The generation covers the probes too: every answer that lands bumps it.
 	if (( cachedGeneration == g_LoadGeneration ) && ( cachedInSession == inSession ))
@@ -918,18 +933,15 @@ bool Continue_IsShown( void )
 	if ( g_bLoaded == false )
 		Continue_Load( );
 
-	// [rc4l] In a server it is the way OUT, and leaving is always possible, so it is always there.
-	if ( InSession( ))
-		return true;
-
-	// Not while a LOCAL game is running: Continue is a way back into something, and offering it to
-	// somebody already playing is offering to throw away what they are doing.
+	// [rc4l] In a game it is the way OUT, and leaving is always possible, so it is always there.
 	//
-	// AND usergame, because the title screen runs a demo: gamestate is GS_LEVEL while the player is
-	// sitting at the main menu, so the level check alone hid the button in exactly the place it is
-	// meant to appear.
-	if (( gamestate == GS_LEVEL ) && usergame )
-		return false;
+	// It used to hide during a LOCAL game, on the reasoning that offering Continue to somebody
+	// already playing is offering to throw away what they are doing. That was right while pressing it
+	// threw the game away; it is not right now that pressing it opens a list whose first row is
+	// "leave". A button that vanishes exactly when you are using the program most is a button nobody
+	// can rely on.
+	if ( InGame( ))
+		return true;
 
 	// Whether there is anywhere to go is the same question as where, asked of the same verdict.
 	return ( Verdict( ).target != ContinueTarget::None );
@@ -996,10 +1008,17 @@ const char *Continue_Label( void )
 		return g_Label.GetChars( );
 	}
 
-	// [rc4l] Just the word, either way. The pill is sized to its label and sits beside two fixed
-	// ones, so a label that grew with the map name would move the bar's left edge every time the
-	// player changed level.
-	g_Label = Continue_IsDisconnect( ) ? "Disconnect" : "Continue";
+	// [rc4l] Just the word. The pill is sized to its label and sits beside two fixed ones, so a label
+	// that grew with the map name would move the bar's left edge every time the player changed level.
+	//
+	// Three words rather than two, because there is nothing to DISCONNECT from in a single-player
+	// map: the button is the way out of it just the same, and saying "Disconnect" there would be
+	// describing a socket the player does not have.
+	if ( Continue_IsDisconnect( ))
+		g_Label = InSession( ) ? "Disconnect" : "Leave";
+	else
+		g_Label = "Continue";
+
 	return g_Label.GetChars( );
 }
 
@@ -1739,14 +1758,24 @@ bool Continue_ActivateEntry( int index )
 
 void Continue_LeaveToMenu( void )
 {
-	if ( InSession( ) == false )
+	if ( InGame( ) == false )
 		return;
 
 	M_ClearMenus( );
-	CLIENT_QuitNetworkGame( NULL );
 
-	// [rc4l] Through the tick, like every other return: CLIENT_QuitNetworkGame ends in
-	// ga_fullconsole, so a title screen started from here is replaced by the teardown's own action.
+	if ( InSession( ))
+	{
+		CLIENT_QuitNetworkGame( NULL );
+	}
+	else
+	{
+		// [rc4l] A local game leaves through `endgame`, which is also what records it -- so leaving a
+		// map from this list remembers it exactly as ending it from the menu does.
+		AddCommandString( "endgame" );
+	}
+
+	// [rc4l] Through the tick, like every other return: both teardowns end in ga_fullconsole, so a
+	// title screen started from here is replaced by the teardown's own action.
 	g_bReturnPending = true;
 	g_ReturnTarget = ContinueTarget::MainMenu;
 }
