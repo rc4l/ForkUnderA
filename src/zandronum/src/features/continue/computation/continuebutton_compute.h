@@ -47,9 +47,17 @@ struct ContinueButtonInputs
 	// level is running while the player sits at the main menu.
 	bool inSession;
 
-	// [rc4l] How many entries of the history are worth offering right now. The pill exists when this
-	// is more than none, and it OPENS A LIST rather than acting when it is more than one.
-	int usableCount;
+	// [rc4l] How many entries one press may actually act on. The pill exists when this is more than
+	// none: a button that is offered and then fails is worse than no button.
+	int offerableCount;
+
+	// [rc4l] How many rows the LIST would show, which is a larger number and a different question.
+	//
+	// Whether to ASK follows from what the player can see, not from what we have worked out. A
+	// history holding a dead server and a game to rehost shows two rows; deciding that only one of
+	// them is pressable and therefore silently doing that one means a press the player expected to
+	// open a menu instead threw them into a session -- which is exactly what it did.
+	int listCount;
 
 	// The newest usable entry's kind, so the pill can name where one press would take them.
 	ContinueTarget newestTarget;
@@ -62,8 +70,8 @@ struct ContinueButtonInputs
 	bool localIsHosted;
 
 	ContinueButtonInputs()
-		: inSession(false), usableCount(0), newestTarget(ContinueTarget::None),
-		  localUsable(false), localIsHosted(false) {}
+		: inSession(false), offerableCount(0), listCount(0),
+		  newestTarget(ContinueTarget::None), localUsable(false), localIsHosted(false) {}
 };
 
 struct ContinueButtonVerdict
@@ -71,8 +79,9 @@ struct ContinueButtonVerdict
 	ContinueMode mode;
 	ContinueTarget target;
 
-	// [rc4l] Whether pressing it should ASK. With one thing to continue there is nothing to choose
-	// between, and a one-row list is a click charged for nothing -- the press already said which one.
+	// [rc4l] Whether pressing it should ASK. Only a genuinely single-row history skips the question:
+	// with anything else on screen the player is choosing, whether or not we think one of the rows
+	// would fail.
 	bool opensList;
 
 	ContinueButtonVerdict()

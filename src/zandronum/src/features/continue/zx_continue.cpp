@@ -839,7 +839,8 @@ static ContinueButtonVerdict Verdict( void )
 
 	ContinueButtonInputs in;
 	in.inSession = inSession;
-	in.usableCount = static_cast<int>( offerable.size( ));
+	in.offerableCount = static_cast<int>( offerable.size( ));
+	in.listCount = static_cast<int>( UsableEntries( ).size( ));
 	in.newestTarget = offerable.empty( ) ? ContinueTarget::None
 		: TargetOf( g_History[offerable[0]] );
 	in.localUsable = ( local >= 0 );
@@ -917,7 +918,7 @@ const char *Continue_Tooltip( void )
 	if ( Verdict( ).opensList )
 	{
 		g_Tooltip.Format( "Pick up where you left off (%d to choose from)",
-			static_cast<int>( OfferableEntries( ).size( )));
+			static_cast<int>( UsableEntries( ).size( )));
 		return g_Tooltip.GetChars( );
 	}
 
@@ -1492,6 +1493,26 @@ static void GoToRecord( const ContinueRecord &rec )
 
 	case ContinueKind::Server:
 	{
+		// [rc4l] Refused rather than attempted when we have already ASKED and been told. A connect to
+		// a server we know is not there spends fifteen seconds arriving at an answer we had before we
+		// started, and reads as the engine hammering a corpse -- which is what it is.
+		//
+		// Only a settled answer refuses. An address nobody has asked about yet is still tried: not
+		// knowing is not the same as knowing it is dead, and the join path reports its own failures.
+		const ServerProbe probe = ProbeStateFor( rec.address );
+		if ( probe == ServerProbe::Gone )
+		{
+			Printf( "Continue: %s is not answering, so there is nothing to reconnect to.\n",
+				rec.address.c_str( ));
+			return;
+		}
+		if ( probe == ServerProbe::WadsDiffer )
+		{
+			Printf( "Continue: %s is running different files now, so this is not the game you left.\n",
+				rec.address.c_str( ));
+			return;
+		}
+
 		// Down the join path the browser already uses, so a failure lands where every other failed
 		// join lands rather than inventing a second way to go wrong.
 		FString command;
