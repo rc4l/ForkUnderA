@@ -401,6 +401,7 @@ OptionValue "FuaCachingModes"
 OptionMenu "FUAOptions"
 {
 	Title "FUA OPTIONS"
+	Submenu "Continue History",			"FUAContinueOptions"
 	Submenu "Instant Replay Options",	"ReplayOptions"
 	Submenu "Field of View",			"FUAFovOptions"
 	Submenu "Crash Reporting",			"CrashReportOptions"
@@ -411,6 +412,20 @@ OptionMenu "FUAOptions"
 	// notice. On by default; off means no update check and no network call.
 	Option	"Check for updates",		"cl_fua_update_notify",		"OnOff"
 	Option	"Asset caching",			"cl_fua_caching",			"FuaCachingModes"
+}
+
+// [rc4l] features/continue: how many of the things you have played the Continue button remembers.
+// One entry per distinct session -- the same server played three evenings running is one row, moved
+// to the top -- so this is a count of DIFFERENT things, not of times played. Lowering it trims the
+// oldest at once, and the snapshots of any local games that fall off are deleted with them.
+OptionMenu "FUAContinueOptions"
+{
+	Title "CONTINUE HISTORY"
+	Slider	"Entries to remember",		"cl_fua_continue_history",	1, 50, 1, 1
+	StaticText " "
+	StaticText "The Continue button remembers this many", 1
+	StaticText "different sessions. One is the old behaviour:", 1
+	StaticText "straight back into the last thing you played.", 1
 }
 
 // [rc4l] features/damage-tint: players on damaging floors pick up the floor's color -- a glow

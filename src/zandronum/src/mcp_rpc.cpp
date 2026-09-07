@@ -571,6 +571,26 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 		body += ",\"departCalls\":" + I( (long long)zx::Continue_DebugDepartCalls( ) );
 		body += ",\"departReturns\":" + I( (long long)zx::Continue_DebugDepartReturns( ) );
 		body += ",\"returnPending\":" + B( zx::Continue_DebugReturnPending( ) );
+
+		// [rc4l] The whole list, so an E2E can assert on the ROWS -- their order, their labels and
+		// what each one says about when it was played -- rather than on the one the pill happens to
+		// name. Every bug this feature has had was in a row that was not the first one.
+		body += ",\"entries\":[";
+		const int count = zx::Continue_HistoryCount( );
+		for ( int i = 0; i < count; ++i )
+		{
+			std::string label, when;
+			JsonEscape( std::string( zx::Continue_EntryLabel( i ) ), label );
+			JsonEscape( std::string( zx::Continue_EntryWhen( i ) ), when );
+
+			if ( i > 0 )
+				body += ",";
+
+			body += "{\"label\":\"" + label + "\",\"when\":\"" + when + "\"";
+			body += ",\"kind\":" + I( (long long)zx::Continue_EntryKind( i ) );
+			body += ",\"probe\":" + I( (long long)zx::Continue_EntryProbe( i ) ) + "}";
+		}
+		body += "]";
 		body += "}";
 		SendOk( id, body );
 	}

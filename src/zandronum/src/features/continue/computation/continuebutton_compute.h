@@ -11,10 +11,11 @@
 // a remembered mode is a second source of truth, and it goes stale the first time anything moves
 // the player without telling the bar -- a kick, a server dying, a console connect.
 //
-// TWO RECORDS, NOT ONE. The last server and the last offline session are remembered separately, so
-// joining a server no longer forgets the campaign you were half way through. Out of a session the
-// more recent of the two wins, which is what `stamp` is for: a counter bumped on every write, so
-// "most recently left" survives a restart without needing a clock.
+// A HISTORY, NOT A RECORD. What is remembered is a capped list of the different things the player
+// has been doing (see continuehistory_compute), so joining a server no longer forgets the campaign
+// they were half way through, and neither does the map they tested in between. Out of a session the
+// pill opens that list -- unless there is only one thing in it, in which case the press has already
+// chosen and an one-row menu would only be in the way.
 //
 // Header-pure by the features/ rules: no engine types.
 
@@ -46,16 +47,31 @@ struct ContinueButtonInputs
 	// level is running while the player sits at the main menu.
 	bool inSession;
 
-	bool offlineUsable;			// a snapshot or host config we could actually return to
-	bool offlineIsHosted;		// it is a game we hosted, so going back means starting it again
-	int offlineStamp;
+	// [rc4l] How many entries one press may actually act on. The pill exists when this is more than
+	// none: a button that is offered and then fails is worse than no button.
+	int offerableCount;
 
-	bool serverUsable;			// a server record that is still worth offering
-	int serverStamp;
+	// [rc4l] How many rows the LIST would show, which is a larger number and a different question.
+	//
+	// Whether to ASK follows from what the player can see, not from what we have worked out. A
+	// history holding a dead server and a game to rehost shows two rows; deciding that only one of
+	// them is pressable and therefore silently doing that one means a press the player expected to
+	// open a menu instead threw them into a session -- which is exactly what it did.
+	int listCount;
+
+	// The newest usable entry's kind, so the pill can name where one press would take them.
+	ContinueTarget newestTarget;
+
+	// [rc4l] Where LEAVING lands, which is a different question and has to be answered from a
+	// different entry. The newest entry after a join is the server being left, so a Disconnect that
+	// read it would put the player back into the game they just asked to leave. What it wants is the
+	// newest entry that is not a server: the local game or hosted match they were in before.
+	bool localUsable;
+	bool localIsHosted;
 
 	ContinueButtonInputs()
-		: inSession(false), offlineUsable(false), offlineIsHosted(false), offlineStamp(0),
-		  serverUsable(false), serverStamp(0) {}
+		: inSession(false), offerableCount(0), listCount(0),
+		  newestTarget(ContinueTarget::None), localUsable(false), localIsHosted(false) {}
 };
 
 struct ContinueButtonVerdict
@@ -63,7 +79,13 @@ struct ContinueButtonVerdict
 	ContinueMode mode;
 	ContinueTarget target;
 
-	ContinueButtonVerdict() : mode(ContinueMode::Hidden), target(ContinueTarget::None) {}
+	// [rc4l] Whether pressing it should ASK. Only a genuinely single-row history skips the question:
+	// with anything else on screen the player is choosing, whether or not we think one of the rows
+	// would fail.
+	bool opensList;
+
+	ContinueButtonVerdict()
+		: mode(ContinueMode::Hidden), target(ContinueTarget::None), opensList(false) {}
 };
 
 ContinueButtonVerdict DecideContinueButton(const ContinueButtonInputs &in);

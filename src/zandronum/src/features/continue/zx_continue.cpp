@@ -6,6 +6,7 @@
 #include "features/continue/computation/continuerecord_compute.h"
 #include "features/continue/computation/continuebutton_compute.h"
 #include "features/continue/computation/continuedepart_compute.h"
+#include "features/continue/computation/continuehistory_compute.h"
 #include "features/continue/computation/continuerehost_compute.h"
 #include "features/continue/computation/continuereturn_compute.h"
 #include "features/continue/computation/continueshow_compute.h"
@@ -16,6 +17,7 @@
 #include "features/wad-download/zx_filehash.h"
 #include "features/wad-download/zx_waddownload.h"
 
+#include "c_cvars.h"
 #include "c_dispatch.h"
 #include "cmdlib.h"
 #include "cl_main.h"
@@ -37,9 +39,22 @@
 #include "w_wad.h"
 #include "zstring.h"
 
+#include <ctime>
 #include <stdio.h>
 #include <string.h>
 #include <string>
+#include <vector>
+
+// [rc4l] How many things back the history goes. Archived and global, because it is a preference
+// about the player rather than about the game they happen to have loaded.
+CUSTOM_CVAR( Int, cl_fua_continue_history, 10, CVAR_ARCHIVE | CVAR_GLOBALCONFIG )
+{
+	// Pulled into range in the cvar itself, so a value typed at the console is corrected where the
+	// player can see it rather than silently meaning something else everywhere it is read.
+	const int clamped = zx::ClampContinueHistoryLimit( self );
+	if ( self != clamped )
+		self = clamped;
+}
 
 namespace zx
 {
@@ -47,7 +62,9 @@ namespace zx
 namespace
 {
 
-ContinueRecord g_Offline;
+// [rc4l] Everything worth going back to, newest first. See continuehistory_compute for why it is a
+// list rather than the two records it grew out of.
+std::vector<ContinueRecord> g_History;
 bool g_bReconnecting = false;
 bool g_bReturnPending = false;
 // [rc4l] Decided while we are still IN the session, because the question changes the moment we are
@@ -69,7 +86,31 @@ bool g_bHostAfterRestart = false;
 bool g_bGoingSomewhereChosen = false;
 int g_DepartCalls = 0;
 int g_DepartReturns = 0;
-ContinueRecord g_Server;
+// [rc4l] The entry a departure decided to return to, COPIED rather than pointed at. The history is
+// rewritten while the teardown runs -- leaving a server records that we were in it -- so an index or
+// a pointer into it names something different by the time the return is performed.
+ContinueRecord g_ReturnRecord;
+// The settings a rehost is on its way to, held across the WAD reload that gets us there.
+ContinueRecord g_PendingHost;
+// [rc4l] What we are INSIDE right now, as an identity.
+//
+// Leaving a session goes to the newest local entry, and after a rehost that entry is the very game
+// being left: pressing the pill inside your own hosted server tore it down and started it again,
+// forever. Recorded on the way IN rather than worked out on the way out, because by the time the
+// teardown runs the host may already be gone and the question unanswerable.
+std::string g_InsideIdentity;
+// [rc4l] And the row itself, so re-recording it on arrival rewrites THAT row rather than minting a
+// near-copy from whatever spelling the running server reports its files under.
+ContinueRecord g_InsideRecord;
+// [rc4l] What we left IN THIS PROCESS to get where we are, which is the only honest answer to "take
+// me back" when leaving.
+//
+// It used to be "the newest local entry", which was fine while there were two records and is not
+// fine with a history: after rehosting a game from the list, the newest local entry that is not the
+// one you are in is some match from last week, so pressing Disconnect started it. Leaving is a
+// request to leave, and the only place it can put you that you actually asked for is the thing you
+// were doing a moment ago -- or the main menu, if that was nothing.
+ContinueRecord g_CameFrom;
 bool g_bLoaded = false;
 // [rc4l] Bumped every time the records are re-read, so anything derived from them can tell in one
 // comparison whether what it worked out last frame still holds.
@@ -97,40 +138,47 @@ std::string ServerRecordPath()
 	return ContinueServerPath( Identity_ConfigRoot( ), Instance( ));
 }
 
-ContinueRecord ReadRecord( const std::string &path )
+std::string HistoryPath()
 {
-	ContinueRecord out;
+	return ContinueHistoryPath( Identity_ConfigRoot( ), Instance( ));
+}
+
+// Whole file into a string, or empty when there is not one.
+std::string ReadFile( const std::string &path )
+{
+	std::string text;
 
 	FILE *f = fopen( path.c_str( ), "rb" );
 	if ( f == NULL )
-		return out;
+		return text;
 
-	std::string text;
 	char buffer[1024];
 	size_t got;
 	while (( got = fread( buffer, 1, sizeof buffer, f )) > 0 )
 		text.append( buffer, got );
 	fclose( f );
 
+	return text;
+}
+
+ContinueRecord ReadRecord( const std::string &path )
+{
 	ContinueRecord parsed;
-	return ParseContinue( text, parsed ) ? parsed : out;
+	ContinueRecord out;
+	return ParseContinue( ReadFile( path ), parsed ) ? parsed : out;
 }
 
-// [rc4l] One past whichever record is currently the newer, so "most recently left" is a comparison
-// rather than a clock. Read from disk rather than remembered: the other record may have been written
-// by a different copy of the engine, or by this one before a restart.
-int NextStamp()
+// How many entries the player asked to keep, as a number this code may act on.
+int HistoryLimit()
 {
-	const int offline = ReadRecord( ContinueOfflinePath( Identity_ConfigRoot( ), Instance( ))).stamp;
-	const int server = ReadRecord( ContinueServerPath( Identity_ConfigRoot( ), Instance( ))).stamp;
-	const int highest = ( offline > server ) ? offline : server;
-
-	return highest + 1;
+	return ClampContinueHistoryLimit( *cl_fua_continue_history );
 }
 
-std::string SavePath()
+// [rc4l] Now, for the "last played" column. The only clock in the feature: the ORDER still comes
+// from the stamp, so a machine whose time is wrong cannot reshuffle the list.
+long long Now()
 {
-	return ContinueSavePath( Identity_ConfigRoot( ), Instance( ));
+	return static_cast<long long>( time( NULL ));
 }
 
 // The folder has to exist before either file can be written, and it is ours to make.
@@ -177,12 +225,8 @@ int SaveVersionOf( const std::string &path )
 	return version;
 }
 
-void WriteRecord( const ContinueRecord &record, const std::string &path )
+void WriteFile( const std::string &path, const std::string &text )
 {
-	const std::string text = SerialiseContinue( record );
-	if ( text.empty( ))
-		return;
-
 	EnsureDir( );
 
 	FILE *f = fopen( path.c_str( ), "wb" );
@@ -191,11 +235,65 @@ void WriteRecord( const ContinueRecord &record, const std::string &path )
 
 	fwrite( text.data( ), 1, text.size( ), f );
 	fclose( f );
+}
 
-	// [rc4l] What is held in memory is now behind what is on disk, so make the next question re-read
-	// it. Without this the pill answers from whatever was loaded when the menus first opened, which
-	// is exactly the moment before anything interesting has been recorded.
-	g_bLoaded = false;
+// [rc4l] The snapshots of entries that have just fallen off the end of the list.
+//
+// Deleted from the DIFFERENCE between the two lists rather than by scanning the folder for files
+// nothing points at. A scan would also find the snapshot another copy of the engine is holding, or
+// one being written right now, and deciding those are orphans deletes somebody's game. The pair of
+// lists says exactly which rows this write dropped, and nothing else is anybody's business.
+void RemoveDroppedSnapshots( const std::vector<ContinueRecord> &before,
+	const std::vector<ContinueRecord> &after )
+{
+	for ( size_t i = 0; i < before.size( ); ++i )
+	{
+		if (( before[i].kind != ContinueKind::Single ) || before[i].savePath.empty( ))
+			continue;
+
+		bool bStillReferenced = false;
+		for ( size_t j = 0; j < after.size( ); ++j )
+		{
+			if ( after[j].savePath == before[i].savePath )
+			{
+				bStillReferenced = true;
+				break;
+			}
+		}
+
+		if ( bStillReferenced == false )
+			remove( before[i].savePath.c_str( ));
+	}
+}
+
+void WriteHistory( const std::vector<ContinueRecord> &history )
+{
+	WriteFile( HistoryPath( ), SerialiseContinueHistory( history ));
+
+	// Anything derived from the list is now about a list that no longer exists.
+	++g_LoadGeneration;
+}
+
+// [rc4l] Remember this session, at the top of the list.
+//
+// One door in, so the stamp, the clock, the dedupe, the cap and the snapshot tidy-up cannot be got
+// right in one caller and wrong in the next.
+void NoteRecord( ContinueRecord record )
+{
+	if ( record.kind == ContinueKind::None )
+		return;
+
+	if ( g_bLoaded == false )
+		Continue_Load( );
+
+	record.stamp = NextContinueStamp( g_History );
+	record.playedAt = Now( );
+
+	const std::vector<ContinueRecord> before = g_History;
+	g_History = InsertContinueEntry( before, record, HistoryLimit( ));
+
+	WriteHistory( g_History );
+	RemoveDroppedSnapshots( before, g_History );
 }
 
 // [rc4l] What is loaded right now, by NAME and CHECKSUM, so a Continue can find the same game again
@@ -316,7 +414,21 @@ FString ResolveWad( const ContinueRecord::Wad &wad )
 // the slot (deduping if the browser already knows it) and RecheckServer sends the query the browser
 // would have sent. Anything else would be a private reimplementation of a protocol that already has
 // one owner.
-ServerProbe g_Probe = ServerProbe::Unknown;
+// [rc4l] What we have learned about an address, remembered per address rather than one answer for
+// the feature.
+//
+// The list can hold several servers now, and asking all of them the moment the menu opens is a query
+// storm aimed at other people's machines for rows nobody may click. So: ONE query in flight at a
+// time, started for the entry the pill would act on and for whichever row the player selects, and
+// every answer kept so a row is only ever asked once.
+struct ProbeResult
+{
+	std::string address;
+	ServerProbe state;
+};
+
+std::vector<ProbeResult> g_Probes;
+std::string g_ProbeAddress;			// the one being asked right now; empty when nothing is
 bool g_bProbeSent = false;
 unsigned int g_ProbeStartedMS = 0;
 LONG g_ProbeSlot = -1;
@@ -326,24 +438,141 @@ LONG g_ProbeSlot = -1;
 // there offering a dead server for the whole time somebody reads the menu.
 const unsigned int kProbeTimeoutMS = 4000;
 
+ServerProbe ProbeStateFor( const std::string &address )
+{
+	for ( size_t i = 0; i < g_Probes.size( ); ++i )
+	{
+		if ( g_Probes[i].address == address )
+			return g_Probes[i].state;
+	}
+
+	// Never asked, which is not the same as no answer: an unasked server is offered, and only a
+	// definite refusal takes the row away. See continueshow_compute.
+	return ServerProbe::Unknown;
+}
+
+void SetProbeState( const std::string &address, ServerProbe state )
+{
+	for ( size_t i = 0; i < g_Probes.size( ); ++i )
+	{
+		if ( g_Probes[i].address == address )
+		{
+			g_Probes[i].state = state;
+			++g_LoadGeneration;			// the pill's answer may have just changed
+			return;
+		}
+	}
+
+	ProbeResult fresh;
+	fresh.address = address;
+	fresh.state = state;
+	g_Probes.push_back( fresh );
+	++g_LoadGeneration;
+}
+
 // Same game, judged the way the record was written: bare PWAD names, in order.
-bool ProbeWadsMatch( ULONG slot )
+bool ProbeWadsMatch( ULONG slot, const std::vector<ContinueRecord::Wad> &wads )
 {
 	const LONG count = BROWSER_GetNumPWADs( slot );
 	if ( count < 0 )
 		return true;					// it told us nothing, so it has not contradicted us
 
-	if ( static_cast<size_t>( count ) != g_Server.wads.size( ) )
+	if ( static_cast<size_t>( count ) != wads.size( ) )
 		return false;
 
 	for ( LONG i = 0; i < count; ++i )
 	{
 		const char *name = BROWSER_GetPWADName( slot, i );
-		if (( name == NULL ) || ( g_Server.wads[i].name != name ))
+		if (( name == NULL ) || ( wads[i].name != name ))
 			return false;
 	}
 
 	return true;
+}
+
+// Addresses waiting their turn. One question in flight at a time; see the ProbeResult comment.
+std::vector<std::string> g_ProbeQueue;
+
+void RequestProbe( const std::string &address )
+{
+	if ( address.empty( ))
+		return;
+
+	// Asked once, ever. A settled answer is not re-checked and an unsettled one is not asked twice.
+	if ( ProbeStateFor( address ) != ServerProbe::Unknown )
+		return;
+	if ( g_ProbeAddress == address )
+		return;
+
+	for ( size_t i = 0; i < g_ProbeQueue.size( ); ++i )
+	{
+		if ( g_ProbeQueue[i] == address )
+			return;
+	}
+
+	g_ProbeQueue.push_back( address );
+}
+
+// The entry an answer belongs to, so its reply can be judged against the files that entry recorded.
+const ContinueRecord *EntryForAddress( const std::string &address )
+{
+	for ( size_t i = 0; i < g_History.size( ); ++i )
+	{
+		if (( g_History[i].kind == ContinueKind::Server ) && ( g_History[i].address == address ))
+			return &g_History[i];
+	}
+	return NULL;
+}
+
+void TickProbe( void )
+{
+	if ( g_ProbeAddress.empty( ))
+	{
+		if ( g_ProbeQueue.empty( ))
+			return;
+
+		g_ProbeAddress = g_ProbeQueue[0];
+		g_ProbeQueue.erase( g_ProbeQueue.begin( ));
+		g_bProbeSent = false;
+		g_ProbeSlot = -1;
+	}
+
+	if ( g_bProbeSent == false )
+	{
+		NETADDRESS_s address;
+		if ( address.LoadFromString( g_ProbeAddress.c_str( )) == false )
+		{
+			// An address we cannot even read is not one anything could have reached.
+			SetProbeState( g_ProbeAddress, ServerProbe::Gone );
+			g_ProbeAddress.clear( );
+			return;
+		}
+
+		BROWSER_AddServerToList( address );
+		g_ProbeSlot = BROWSER_GetListIDByAddress( address );
+		if ( g_ProbeSlot >= 0 )
+			BROWSER_RecheckServer( g_ProbeSlot );
+
+		g_ProbeStartedMS = I_MSTime( );
+		g_bProbeSent = true;
+		return;
+	}
+
+	if (( g_ProbeSlot >= 0 ) && BROWSER_IsActive( g_ProbeSlot ))
+	{
+		// The entry may have fallen off the list while we waited, in which case there is nothing to
+		// contradict and the answer is simply that it is up.
+		const ContinueRecord *rec = EntryForAddress( g_ProbeAddress );
+		const bool bSameGame = ( rec == NULL ) || ProbeWadsMatch( g_ProbeSlot, rec->wads );
+
+		SetProbeState( g_ProbeAddress, bSameGame ? ServerProbe::Alive : ServerProbe::WadsDiffer );
+		g_ProbeAddress.clear( );
+	}
+	else if ( I_MSTime( ) - g_ProbeStartedMS > kProbeTimeoutMS )
+	{
+		SetProbeState( g_ProbeAddress, ServerProbe::Gone );
+		g_ProbeAddress.clear( );
+	}
 }
 
 // [rc4l] Which file the MAP itself came from, which is not the same question as which files are
@@ -427,14 +656,63 @@ bool SameWadSetAsRecord( const ContinueRecord &against )
 
 } // namespace
 
+// [rc4l] Everything the player had before this build existed, moved into the list.
+//
+// Only ever reached when there is no history file at all. Once one has been written -- even an empty
+// one -- it is the answer, so somebody who clears their history does not find it back on the next
+// launch. The two old files are deleted afterwards for the same reason.
+static void MigrateLegacyRecords( void )
+{
+	const ContinueRecord offline = ReadRecord( OfflineRecordPath( ));
+	const ContinueRecord server = ReadRecord( ServerRecordPath( ));
+
+	// Oldest first, so the stamps they already carry put them in the order the player lived them.
+	const bool bServerFirst = ( server.stamp <= offline.stamp );
+
+	const ContinueRecord *order[2];
+	order[0] = bServerFirst ? &server : &offline;
+	order[1] = bServerFirst ? &offline : &server;
+
+	for ( int i = 0; i < 2; ++i )
+	{
+		if ( order[i]->kind == ContinueKind::None )
+			continue;
+
+		ContinueRecord record = *order[i];
+
+		// [rc4l] The clock is left at zero rather than set to now. These sessions happened at some
+		// point in the past that nothing wrote down, and stamping them with the moment of the upgrade
+		// would have the list claim the player was in all of them a second ago.
+		record.playedAt = 0;
+		g_History = InsertContinueEntry( g_History, record, HistoryLimit( ));
+	}
+
+	WriteHistory( g_History );
+
+	// [rc4l] Gone, so a later launch cannot migrate them a second time on top of whatever the player
+	// has done since. The snapshot they point at is NOT deleted: the offline record still names it
+	// and the entry that came from it still leads there.
+	remove( OfflineRecordPath( ).c_str( ));
+	remove( ServerRecordPath( ).c_str( ));
+}
+
 void Continue_Load( void )
 {
 	g_bLoaded = true;
 	++g_LoadGeneration;
 
-	// Both, kept apart, so joining a server does not forget the game that was already going.
-	g_Offline = ReadRecord( OfflineRecordPath( ));
-	g_Server = ReadRecord( ServerRecordPath( ));
+	g_History.clear( );
+
+	std::vector<ContinueRecord> parsed;
+	if ( ParseContinueHistory( ReadFile( HistoryPath( )), parsed ))
+	{
+		// Trimmed on the way OUT as well as the way in, so lowering the setting takes effect at the
+		// next launch rather than waiting for the next thing the player happens to play.
+		g_History = TrimContinueHistory( parsed, HistoryLimit( ));
+		return;
+	}
+
+	MigrateLegacyRecords( );
 }
 
 // [rc4l] Connected to a server. NOT merely "a level is running": the title screen plays a demo, so
@@ -464,10 +742,106 @@ static bool RecordUsable( const ContinueRecord &rec )
 		in.saveVersion = in.saveFileExists ? SaveVersionOf( rec.savePath ) : 0;
 	}
 
-	// The probe is a fact about a remote address, so it only bears on the server record.
-	in.probe = ( rec.kind == ContinueKind::Server ) ? g_Probe : ServerProbe::Alive;
+	// [rc4l] Deliberately NOT the probe. This asks whether the entry is structurally sound -- a
+	// snapshot that is gone, or too old for this build -- which is a fact about our own disk and
+	// cannot change while the player looks at it.
+	in.probe = ServerProbe::Alive;
 
 	return ContinueIsShown( in );
+}
+
+// [rc4l] Whether it is worth pressing ONE BUTTON for, which is a stricter question.
+//
+// A server that has been asked and did not answer stays in the LIST, dimmed and labelled, because
+// rows that vanish from under a pointer are how a click lands on something the player did not read.
+// But the pill acts without asking, and a button that is offered and then fails is worse than no
+// button: the player has already decided by the time it fails.
+static bool RecordOfferable( const ContinueRecord &rec )
+{
+	if ( RecordUsable( rec ) == false )
+		return false;
+
+	if ( rec.kind != ContinueKind::Server )
+		return true;
+
+	const ServerProbe probe = ProbeStateFor( rec.address );
+	return ( probe != ServerProbe::Gone ) && ( probe != ServerProbe::WadsDiffer );
+}
+
+// [rc4l] The rows worth offering, as indices into the history.
+//
+// Indices rather than copies so a caller can act on one, and asked fresh rather than cached: a
+// snapshot that has been deleted or a probe that has come back changes this answer without anything
+// having been written.
+static std::vector<int> UsableEntries( void )
+{
+	if ( g_bLoaded == false )
+		Continue_Load( );
+
+	std::vector<int> out;
+	for ( size_t i = 0; i < g_History.size( ); ++i )
+	{
+		if ( RecordUsable( g_History[i] ))
+			out.push_back( static_cast<int>( i ));
+	}
+	return out;
+}
+
+// The rows one press may act on. A subset of the above; see RecordOfferable.
+static std::vector<int> OfferableEntries( void )
+{
+	if ( g_bLoaded == false )
+		Continue_Load( );
+
+	std::vector<int> out;
+	for ( size_t i = 0; i < g_History.size( ); ++i )
+	{
+		if ( RecordOfferable( g_History[i] ))
+			out.push_back( static_cast<int>( i ));
+	}
+	return out;
+}
+
+// The kind of thing an entry is, as the target that would act on it.
+static ContinueTarget TargetOf( const ContinueRecord &rec )
+{
+	switch ( rec.kind )
+	{
+	case ContinueKind::Server: return ContinueTarget::Server;
+	case ContinueKind::Hosted: return ContinueTarget::Hosted;
+	case ContinueKind::Single: return ContinueTarget::Offline;
+	default:                   return ContinueTarget::None;
+	}
+}
+
+// [rc4l] The newest usable entry that is NOT a server, which is where LEAVING lands.
+//
+// A different question from "the newest entry", and it has to be: joining a server records that we
+// are in it, so the newest entry during a session is the very server the player is asking to leave.
+static int NewestLocalEntry( void )
+{
+	if ( g_CameFrom.kind == ContinueKind::None )
+		return -1;						// we came from the menu, and the menu is where leaving goes
+
+	// [rc4l] Never the thing we are standing in, however we came to be standing in it. A rehost
+	// re-records its own row on arrival, so without this the game being left is also the game
+	// "before" it, and Disconnect tore it down and started it again.
+	const std::string cameFrom = ContinueIdentity( g_CameFrom );
+	if ( cameFrom == g_InsideIdentity )
+		return -1;
+
+	// It has to still be in the history and still be worth going to: a snapshot deleted while we were
+	// away is not somewhere to land.
+	const std::vector<int> offerable = OfferableEntries( );
+	for ( size_t i = 0; i < offerable.size( ); ++i )
+	{
+		if (( g_History[offerable[i]].kind != ContinueKind::Server )
+			&& ( ContinueIdentity( g_History[offerable[i]] ) == cameFrom ))
+		{
+			return offerable[i];
+		}
+	}
+	return -1;
 }
 
 // Everything the pill's decision rests on, gathered in one place so the label, the action and
@@ -478,49 +852,46 @@ static ContinueButtonVerdict Verdict( void )
 		Continue_Load( );
 
 	// [rc4l] Worked out once per change rather than once per frame. The header asks the pill for its
-	// label and whether to draw it every frame, and answering honestly means a stat and, for a
-	// snapshot, opening the savegame and parsing its PNG header -- twice over, sixty times a second,
-	// for an answer that only moves when one of these four inputs does.
+	// label and whether to draw it every frame, and answering honestly means a stat and, for every
+	// snapshot in the list, opening the savegame and parsing its PNG header -- sixty times a second,
+	// for an answer that only moves when one of these inputs does. With a history rather than two
+	// records this matters more, not less: the work is now proportional to how much the player has
+	// been playing.
 	static ContinueButtonVerdict cached;
 	static int cachedGeneration = -1;
-	static ServerProbe cachedProbe = ServerProbe::Unknown;
 	static bool cachedInSession = false;
 
 	const bool inSession = InSession( );
 
-	if (( cachedGeneration == g_LoadGeneration ) && ( cachedProbe == g_Probe )
-		&& ( cachedInSession == inSession ))
-	{
+	// The generation covers the probes too: every answer that lands bumps it.
+	if (( cachedGeneration == g_LoadGeneration ) && ( cachedInSession == inSession ))
 		return cached;
-	}
+
+	const std::vector<int> offerable = OfferableEntries( );
+	const int local = NewestLocalEntry( );
 
 	ContinueButtonInputs in;
 	in.inSession = inSession;
-	in.offlineUsable = RecordUsable( g_Offline );
-	in.offlineIsHosted = ( g_Offline.kind == ContinueKind::Hosted );
-	in.offlineStamp = g_Offline.stamp;
-	in.serverUsable = RecordUsable( g_Server );
-	in.serverStamp = g_Server.stamp;
+	in.offerableCount = static_cast<int>( offerable.size( ));
+	in.listCount = static_cast<int>( UsableEntries( ).size( ));
+	in.newestTarget = offerable.empty( ) ? ContinueTarget::None
+		: TargetOf( g_History[offerable[0]] );
+	in.localUsable = ( local >= 0 );
+	in.localIsHosted = ( local >= 0 ) && ( g_History[local].kind == ContinueKind::Hosted );
 
 	cached = DecideContinueButton( in );
 	cachedGeneration = g_LoadGeneration;
-	cachedProbe = g_Probe;
 	cachedInSession = inSession;
 
 	return cached;
 }
 
-// The record the pill would act on, which is the only sense in which one of the two is "the"
-// record. Everything that used to read a stored winner reads this.
+// [rc4l] The entry ONE press would act on: the newest usable row. Everything that used to read a
+// stored winner reads this.
 static const ContinueRecord &Chosen( void )
 {
-	switch ( Verdict( ).target )
-	{
-	case ContinueTarget::Server:	return g_Server;
-	case ContinueTarget::Offline:
-	case ContinueTarget::Hosted:	return g_Offline;
-	default:						return g_Nothing;
-	}
+	const std::vector<int> offerable = OfferableEntries( );
+	return offerable.empty( ) ? g_Nothing : g_History[offerable[0]];
 }
 
 bool Continue_IsDisconnect( void )
@@ -562,14 +933,25 @@ const char *Continue_Tooltip( void )
 	if ( Continue_IsDisconnect( ))
 	{
 		const ContinueButtonVerdict v = Verdict( );
+		const int local = NewestLocalEntry( );
 
-		if ( v.target == ContinueTarget::Hosted )
-			g_Tooltip.Format( "Leave and go back to hosting %s", g_Offline.host.map.c_str( ));
-		else if ( v.target == ContinueTarget::Offline )
-			g_Tooltip.Format( "Leave and go back to %s", g_Offline.mapName.c_str( ));
+		if (( v.target == ContinueTarget::Hosted ) && ( local >= 0 ))
+			g_Tooltip.Format( "Leave and go back to hosting %s", g_History[local].host.map.c_str( ));
+		else if (( v.target == ContinueTarget::Offline ) && ( local >= 0 ))
+			g_Tooltip.Format( "Leave and go back to %s", g_History[local].mapName.c_str( ));
 		else
 			g_Tooltip = "Leave and go back to the main menu";
 
+		return g_Tooltip.GetChars( );
+	}
+
+	// [rc4l] With more than one thing to go back to the press opens a list, so the tooltip has to
+	// say that rather than name a single destination -- a pill that promised one server and then
+	// showed a menu would be describing the row instead of the button.
+	if ( Verdict( ).opensList )
+	{
+		g_Tooltip.Format( "Pick up where you left off (%d to choose from)",
+			static_cast<int>( UsableEntries( ).size( )));
 		return g_Tooltip.GetChars( );
 	}
 
@@ -637,9 +1019,11 @@ void Continue_NoteQuit( void )
 // difference is what happens next.
 void WriteLocalSnapshot( void )
 {
+	if ( g_bLoaded == false )
+		Continue_Load( );
+
 	ContinueRecord record;
 	record.kind = ContinueKind::Single;
-	record.savePath = SavePath( );
 	record.saveVersion = SAVEVER;
 	record.mapName = level.MapName.GetChars( );
 
@@ -647,15 +1031,31 @@ void WriteLocalSnapshot( void )
 
 	CollectLoadedWads( record );
 
+	// [rc4l] Where the snapshot goes, which depends on whether this session is a row the list
+	// already has.
+	//
+	// Coming back to a map already in the history OVERWRITES that row's snapshot, because the row is
+	// about to be replaced and its old save would otherwise be left behind with nothing pointing at
+	// it. Anything else gets a slot of its own, named after the stamp it is about to be written with
+	// -- unique and increasing already, so no second counter has to be kept in step with the first.
+	const ContinueRecord *existing = FindContinueEntry( g_History, ContinueIdentity( record ));
+	if (( existing != NULL ) && ( existing->savePath.empty( ) == false ))
+		record.savePath = existing->savePath;
+	else
+		record.savePath = ContinueSaveSlotPath( Identity_ConfigRoot( ), Instance( ),
+			NextContinueStamp( g_History ));
+
 	// [rc4l] G_DoSaveGame and not G_SaveGame, which only sets gameaction = ga_savegame and leaves the
 	// work to the next tic. There is no next tic: the caller is the quit, and exit() follows
 	// immediately. The queued form wrote the record and never the snapshot, so Continue pointed at a
 	// file that would never exist and hid itself forever -- safe, and useless.
 	EnsureDir( );
-	record.stamp = NextStamp( );
 
 	G_DoSaveGame( false, record.savePath.c_str( ), "Continue" );
-	WriteRecord( record, OfflineRecordPath( ));
+	NoteRecord( record );
+
+	// This is what we are leaving, so this is where leaving comes back to.
+	g_CameFrom = record;
 }
 
 void Continue_NoteLeavingLocalGame( void )
@@ -689,7 +1089,6 @@ void Continue_NoteHosting( const HostConfig &config )
 	record.kind = ContinueKind::Hosted;
 	record.host = config;
 	record.host.rconSecret.clear( );	// worth nothing after its process; a rehost mints a new one
-	record.stamp = NextStamp( );
 
 	// [rc4l] The files WE were holding, not just the ones the server was told to load. A rehost has
 	// to put this process back on them before it can join anything, and by name alone it cannot: the
@@ -697,7 +1096,7 @@ void Continue_NoteHosting( const HostConfig &config )
 	// the offline path records, already digested at startup.
 	CollectLoadedWads( record );
 
-	WriteRecord( record, OfflineRecordPath( ));
+	NoteRecord( record );
 }
 
 void Continue_JoinHostWhenReady( void )
@@ -726,16 +1125,28 @@ void Continue_NoteLeftServer( void )
 	in.returnInFlight = g_bReturnInFlight;
 
 	if ( DecideContinueDepart( in ) != ContinueDepartVerdict::Return )
+	{
+		// [rc4l] Not a departure, so we are still inside whatever we were inside -- a join tidying up
+		// on its way in re-states it the moment it lands.
 		return;
+	}
 
-	// Where to, decided now while the answer is still the leaving one.
+	// Where to, decided now while the answer is still the leaving one -- and the record COPIED, not
+	// indexed: this very teardown is about to record the server we are leaving, which rewrites the
+	// list the index would have pointed into.
+	const int local = NewestLocalEntry( );
+
 	ContinueButtonInputs where;
 	where.inSession = true;
-	where.offlineUsable = ( g_Offline.kind != ContinueKind::None );
-	where.offlineIsHosted = ( g_Offline.kind == ContinueKind::Hosted );
-	where.offlineStamp = g_Offline.stamp;
+	where.localUsable = ( local >= 0 );
+	where.localIsHosted = ( local >= 0 ) && ( g_History[local].kind == ContinueKind::Hosted );
 
 	g_ReturnTarget = DecideContinueButton( where ).target;
+	g_ReturnRecord = ( local >= 0 ) ? g_History[local] : ContinueRecord( );
+
+	// Read while it still meant something; we are on our way out of it now.
+	g_InsideIdentity.clear( );
+	g_InsideRecord = ContinueRecord( );
 
 	// Acted on by the tick, once the teardown has finished. See the header.
 	++g_DepartReturns;
@@ -760,10 +1171,36 @@ void Continue_NoteJoined( void )
 	if ( DecideContinueWriteOnJoin( false ) != ContinueWriteVerdict::Write )
 		return;
 
+	const NETADDRESS_s address = CLIENT_GetServerAddress( );
+
+	// [rc4l] Our OWN server is not a server we played on, it is the game we are hosting -- and there
+	// is already a row saying so. Writing a second one would put a loopback address in the history
+	// after every hosted match, dead the moment the child stopped, and the player would watch their
+	// list fill with rows that lead nowhere. Re-recording the hosted row instead refreshes when it
+	// was last played, which is the only thing this moment actually tells us.
+	if ( HostIsActive( ) && HostOwnsAddress( FString( address.ToString( ))))
+	{
+		// The row we came FROM when we have one: it is the same game, and it is already spelled the
+		// way the player's history spells it.
+		ContinueRecord hosted = g_InsideRecord;
+		if ( hosted.kind != ContinueKind::Hosted )
+		{
+			hosted = ContinueRecord( );
+			hosted.kind = ContinueKind::Hosted;
+			hosted.host = HostCurrentConfig( );
+			hosted.host.rconSecret.clear( );
+			CollectLoadedWads( hosted );
+		}
+
+		g_InsideRecord = hosted;
+		g_InsideIdentity = ContinueIdentity( hosted );
+		NoteRecord( hosted );
+		return;
+	}
+
 	ContinueRecord record;
 	record.kind = ContinueKind::Server;
 
-	const NETADDRESS_s address = CLIENT_GetServerAddress( );
 	record.address = address.ToString( );
 	record.password = cl_password;
 
@@ -778,21 +1215,42 @@ void Continue_NoteJoined( void )
 	}
 	CollectLoadedWads( record );
 
-	record.stamp = NextStamp( );
-	WriteRecord( record, ServerRecordPath( ));
+	g_InsideRecord = record;
+	g_InsideIdentity = ContinueIdentity( record );
+	NoteRecord( record );
 }
 
 void Continue_Forget( void )
 {
-	remove( OfflineRecordPath( ).c_str( ));
-	remove( ServerRecordPath( ).c_str( ));
-	g_Offline = ContinueRecord( );
-	g_Server = ContinueRecord( );
+	const std::vector<ContinueRecord> before = g_History;
+
+	g_History.clear( );
 	g_bLoaded = true;
 
-	// The records changed without being re-read, so say so: anything derived from them is now about
-	// two records that no longer exist.
-	++g_LoadGeneration;
+	// [rc4l] An empty history is WRITTEN rather than the file deleted. A missing file means "never
+	// had one" and sends the next launch off to migrate the old records, so deleting it would hand
+	// the player back the very sessions they just cleared.
+	WriteHistory( g_History );
+	RemoveDroppedSnapshots( before, g_History );
+
+	// And the records this feature grew out of, in case one is still sitting there unmigrated.
+	remove( OfflineRecordPath( ).c_str( ));
+	remove( ServerRecordPath( ).c_str( ));
+}
+
+void Continue_ForgetEntry( int index )
+{
+	if ( g_bLoaded == false )
+		Continue_Load( );
+
+	if (( index < 0 ) || ( index >= static_cast<int>( g_History.size( ))))
+		return;
+
+	const std::vector<ContinueRecord> before = g_History;
+	g_History = RemoveContinueEntry( before, index );
+
+	WriteHistory( g_History );
+	RemoveDroppedSnapshots( before, g_History );
 }
 
 int Continue_RecordKind( void )
@@ -845,8 +1303,8 @@ bool g_bLoadAfterRestart = false;
 FString g_SaveAfterRestart;
 
 // Both defined below, beside the records they act on.
-static void RehostRecorded( void );
-static void StartAndJoinRecordedHost( void );
+static void RehostRecorded( const ContinueRecord &rec );
+static void StartAndJoinRecordedHost( const ContinueRecord &rec );
 static void ActivateOfflineRecord( const ContinueRecord &rec );
 
 void Continue_Tick( void )
@@ -857,33 +1315,20 @@ void Continue_Tick( void )
 	if ( g_bLoaded == false )
 		Continue_Load( );
 
-	// The probe runs while the player is at a menu deciding, so the answer is usually in before the
-	// button is pressed. It settles once and stays settled: re-asking every frame would be a query
-	// storm aimed at somebody else's server.
-	if (( g_Server.kind == ContinueKind::Server ) && ( g_Probe == ServerProbe::Unknown ))
+	// [rc4l] The row ONE press would act on is asked without being clicked, exactly as the single
+	// record was: the answer is then usually in before the player decides. The rest of the list is
+	// asked only when it is selected -- querying fifty of other people's servers the moment a menu
+	// opens is a storm sent on behalf of rows nobody may ever look at.
+	for ( size_t i = 0; i < g_History.size( ); ++i )
 	{
-		if ( g_bProbeSent == false )
+		if ( g_History[i].kind == ContinueKind::Server )
 		{
-			NETADDRESS_s address;
-			if ( address.LoadFromString( g_Server.address.c_str( )))
-			{
-				BROWSER_AddServerToList( address );
-				g_ProbeSlot = BROWSER_GetListIDByAddress( address );
-				if ( g_ProbeSlot >= 0 )
-					BROWSER_RecheckServer( g_ProbeSlot );
-
-				g_ProbeStartedMS = I_MSTime( );
-				g_bProbeSent = true;
-			}
-		}
-		else if ( g_ProbeSlot >= 0 )
-		{
-			if ( BROWSER_IsActive( g_ProbeSlot ))
-				g_Probe = ProbeWadsMatch( g_ProbeSlot ) ? ServerProbe::Alive : ServerProbe::WadsDiffer;
-			else if ( I_MSTime( ) - g_ProbeStartedMS > kProbeTimeoutMS )
-				g_Probe = ServerProbe::Gone;
+			RequestProbe( g_History[i].address );
+			break;
 		}
 	}
+
+	TickProbe( );
 
 	// [rc4l] Join a server we restarted, the moment it is actually listening. HostTakeReadyEdge is a
 	// one-shot on purpose: a level would have this trying to join again on every frame afterwards,
@@ -918,10 +1363,23 @@ void Continue_Tick( void )
 		g_bReturnPending = false;
 
 		if ( g_ReturnTarget == ContinueTarget::Hosted )
-			RehostRecorded( );
+			RehostRecorded( g_ReturnRecord );
 		else if ( g_ReturnTarget == ContinueTarget::Offline )
-			ActivateOfflineRecord( g_Offline );
-		// MainMenu: the disconnect has already put us there.
+			ActivateOfflineRecord( g_ReturnRecord );
+		else if ( g_ReturnTarget == ContinueTarget::MainMenu )
+		{
+			// [rc4l] The disconnect does NOT already put us there, which is what this used to assume.
+			// CLIENT_QuitNetworkGame ends in ga_fullconsole, so a player who left a server with nowhere
+			// to go was left staring at the console -- while the pill had just promised them the main
+			// menu. Performed from the tick like every other return, because a title screen started
+			// from inside the teardown is a gameaction the teardown then overwrites.
+			//
+			// And the MENU on top of it, because D_StartTitle alone starts the attract loop -- the
+			// title, then the credits, then a demo -- so a player who asked to leave was handed a
+			// slideshow instead of the thing they were promised.
+			D_StartTitle( );
+			M_SetMenu( NAME_Mainmenu, -1 );
+		}
 
 		g_ReturnTarget = ContinueTarget::None;
 	}
@@ -934,7 +1392,7 @@ void Continue_Tick( void )
 			return;
 
 		g_bHostAfterRestart = false;
-		StartAndJoinRecordedHost( );
+		StartAndJoinRecordedHost( g_PendingHost );
 		return;
 	}
 
@@ -951,13 +1409,26 @@ void Continue_Tick( void )
 
 int Continue_DebugProbe( void )
 {
-	switch ( g_Probe )
+	if ( g_bLoaded == false )
+		Continue_Load( );
+
+	// What we know about the server the pill would act on, which is the one asked without being
+	// clicked. A row further down the list has its own answer; see Continue_EntryProbe.
+	for ( size_t i = 0; i < g_History.size( ); ++i )
 	{
-	case ServerProbe::Alive:      return 1;
-	case ServerProbe::Gone:       return 2;
-	case ServerProbe::WadsDiffer: return 3;
-	default:                      return 0;
+		if ( g_History[i].kind != ContinueKind::Server )
+			continue;
+
+		switch ( ProbeStateFor( g_History[i].address ))
+		{
+		case ServerProbe::Alive:      return 1;
+		case ServerProbe::Gone:       return 2;
+		case ServerProbe::WadsDiffer: return 3;
+		default:                      return 0;
+		}
 	}
+
+	return 0;
 }
 
 int Continue_DebugDepartCalls( void ) { return g_DepartCalls; }
@@ -971,9 +1442,9 @@ int Continue_DebugProbeSlot( void )
 
 // [rc4l] Start the game we recorded hosting, silently. A fresh match on the same terms: the world
 // lived in the child process and went with it, so there is nothing to restore but the settings.
-static void StartAndJoinRecordedHost( void )
+static void StartAndJoinRecordedHost( const ContinueRecord &rec )
 {
-	HostConfig config = g_Offline.host;
+	HostConfig config = rec.host;
 	config.rconSecret.clear( );		// minted fresh by HostStart; the stored one died with its process
 
 	if ( HostStart( config ) == false )
@@ -991,10 +1462,8 @@ static void StartAndJoinRecordedHost( void )
 	g_bReturnInFlight = true;
 }
 
-static void RehostRecorded( void )
+static void RehostRecorded( const ContinueRecord &rec )
 {
-	const ContinueRecord &rec = g_Offline;
-
 	// Names into paths, so "found" means found rather than named. Same resolution the offline path
 	// uses, for the same reason: a bare name is not a file.
 	TArray<FString> pwads;
@@ -1008,7 +1477,7 @@ static void RehostRecorded( void )
 	switch ( DecideContinueRehost( in ))
 	{
 	case ContinueRehostStep::Host:
-		StartAndJoinRecordedHost( );
+		StartAndJoinRecordedHost( rec );
 		return;
 
 	case ContinueRehostStep::RefuseMissing:
@@ -1022,6 +1491,9 @@ static void RehostRecorded( void )
 	// [rc4l] Our files are not that server's files, so joining it as we are is refused before it
 	// starts. Restart onto them first and host on the way back up: the reload throws and unwinds
 	// inside this same process, so the flag below survives it.
+	// Held across the restart, because the list on the other side of it is re-read from disk and the
+	// record we were handed is a local that will not survive the unwind.
+	g_PendingHost = rec;
 	g_bHostAfterRestart = true;
 
 	const wadreload::ReloadResult r = wadreload::RequestReload(
@@ -1032,7 +1504,7 @@ static void RehostRecorded( void )
 	g_bHostAfterRestart = false;
 
 	if ( r == wadreload::ReloadResult::AlreadyLoaded )
-		StartAndJoinRecordedHost( );
+		StartAndJoinRecordedHost( rec );
 	else if ( r == wadreload::ReloadResult::InvalidWads )
 		Printf( "Continue: the files that server used are no longer loadable.\n" );
 }
@@ -1088,34 +1560,167 @@ static void ActivateOfflineRecord( const ContinueRecord &rec )
 // and pressing the pill at a menu differ only in whether a connection has to be dropped first, and
 // when they were written separately the menu path had no Hosted case at all -- pressing Continue on
 // a game you had hosted quietly tried to load a savegame that a hosted record never has.
-static void GoTo( ContinueTarget target )
+// [rc4l] Go to one particular entry. One switch rather than one per entry point: leaving a server
+// and picking a row from the list differ only in whether a connection has to be dropped first, and
+// when they were written separately the menu path had no Hosted case at all -- pressing Continue on
+// a game you had hosted quietly tried to load a savegame that a hosted record never has.
+static void GoToRecord( const ContinueRecord &rec )
 {
-	switch ( target )
+	switch ( rec.kind )
 	{
-	case ContinueTarget::Hosted:
-		RehostRecorded( );
+	case ContinueKind::Hosted:
+		RehostRecorded( rec );
 		return;
 
-	case ContinueTarget::Offline:
-		ActivateOfflineRecord( g_Offline );
+	case ContinueKind::Single:
+		ActivateOfflineRecord( rec );
 		return;
 
-	case ContinueTarget::Server:
+	case ContinueKind::Server:
 	{
+		// [rc4l] Refused rather than attempted when we have already ASKED and been told. A connect to
+		// a server we know is not there spends fifteen seconds arriving at an answer we had before we
+		// started, and reads as the engine hammering a corpse -- which is what it is.
+		//
+		// Only a settled answer refuses. An address nobody has asked about yet is still tried: not
+		// knowing is not the same as knowing it is dead, and the join path reports its own failures.
+		const ServerProbe probe = ProbeStateFor( rec.address );
+		if ( probe == ServerProbe::Gone )
+		{
+			Printf( "Continue: %s is not answering, so there is nothing to reconnect to.\n",
+				rec.address.c_str( ));
+			return;
+		}
+		if ( probe == ServerProbe::WadsDiffer )
+		{
+			Printf( "Continue: %s is running different files now, so this is not the game you left.\n",
+				rec.address.c_str( ));
+			return;
+		}
+
 		// Down the join path the browser already uses, so a failure lands where every other failed
 		// join lands rather than inventing a second way to go wrong.
 		FString command;
-		command.Format( "connect %s", g_Server.address.c_str( ));
+		command.Format( "connect %s", rec.address.c_str( ));
 		AddCommandString( command.LockBuffer( ));
 		command.UnlockBuffer( );
 		return;
 	}
 
-	case ContinueTarget::MainMenu:
-	case ContinueTarget::None:
-		// Nothing to do: a disconnect has already put us at the menu, and None is not offered.
+	default:
+		// Nothing to continue is nothing to do; a disconnect has already put us at the menu.
 		return;
 	}
+}
+
+int Continue_HistoryCount( void )
+{
+	return static_cast<int>( UsableEntries( ).size( ));
+}
+
+// [rc4l] The history as the LIST SEES IT: only rows worth offering, in the order they are shown.
+//
+// The menu indexes this, not the raw history, so a row that has stopped being usable cannot be
+// pressed by an index that used to mean something else.
+static const ContinueRecord *EntryAt( int index )
+{
+	const std::vector<int> usable = UsableEntries( );
+	if (( index < 0 ) || ( index >= static_cast<int>( usable.size( ))))
+		return NULL;
+
+	return &g_History[usable[index]];
+}
+
+const char *Continue_EntryLabel( int index )
+{
+	static FString label;
+
+	const ContinueRecord *rec = EntryAt( index );
+	label = ( rec != NULL ) ? ContinueEntryLabel( *rec ).c_str( ) : "";
+	return label.GetChars( );
+}
+
+const char *Continue_EntryWhen( int index )
+{
+	static FString when;
+
+	const ContinueRecord *rec = EntryAt( index );
+	when = ( rec != NULL ) ? FormatLastPlayed( Now( ), rec->playedAt ).c_str( ) : "";
+	return when.GetChars( );
+}
+
+int Continue_EntryKind( int index )
+{
+	const ContinueRecord *rec = EntryAt( index );
+	if ( rec == NULL )
+		return 0;
+
+	switch ( rec->kind )
+	{
+	case ContinueKind::Single: return 1;
+	case ContinueKind::Server: return 2;
+	case ContinueKind::Hosted: return 3;
+	default:                   return 0;
+	}
+}
+
+int Continue_EntryProbe( int index )
+{
+	const ContinueRecord *rec = EntryAt( index );
+	if (( rec == NULL ) || ( rec->kind != ContinueKind::Server ))
+		return 0;
+
+	switch ( ProbeStateFor( rec->address ))
+	{
+	case ServerProbe::Alive:      return 1;
+	case ServerProbe::Gone:       return 2;
+	case ServerProbe::WadsDiffer: return 3;
+	default:                      return 0;
+	}
+}
+
+void Continue_ProbeEntry( int index )
+{
+	const ContinueRecord *rec = EntryAt( index );
+	if (( rec != NULL ) && ( rec->kind == ContinueKind::Server ))
+		RequestProbe( rec->address );
+}
+
+bool Continue_ActivateEntry( int index )
+{
+	const ContinueRecord *rec = EntryAt( index );
+	if ( rec == NULL )
+		return false;
+
+	// [rc4l] COPIED before anything else happens. Everything below can rewrite the history --
+	// leaving a server records it, a reload re-reads the file -- and the pointer would then name a
+	// different row, or none.
+	const ContinueRecord chosen = *rec;
+
+	// [rc4l] What we are about to be inside. Set BEFORE we go, because a hosted row only reports
+	// itself once the join lands and the answer is needed the moment the player presses again.
+	g_InsideRecord = chosen;
+	g_InsideIdentity = ContinueIdentity( chosen );
+
+	// [rc4l] Chosen from the list, so there is nothing behind us: the player asked for THIS, not for
+	// a trail back through everything the history remembers.
+	g_CameFrom = ContinueRecord( );
+
+	M_ClearMenus( );
+
+	if ( InSession( ))
+	{
+		CLIENT_QuitNetworkGame( NULL );
+
+		// [rc4l] The teardown's own departure gate has just queued a return to wherever leaving would
+		// have gone. We are the ones going somewhere, and it is not there: left armed, the tick would
+		// perform its return on top of ours a frame later.
+		g_bReturnPending = false;
+		g_ReturnTarget = ContinueTarget::None;
+	}
+
+	GoToRecord( chosen );
+	return true;
 }
 
 void Continue_Activate( void )
@@ -1123,17 +1728,48 @@ void Continue_Activate( void )
 	if ( Continue_IsShown( ) == false )
 		return;
 
+	const ContinueButtonVerdict v = Verdict( );
+
+	// [rc4l] More than one thing to go back to is a question, and the list is where it gets asked.
+	// One thing is not: the press has already chosen, and a menu of a single row would turn the
+	// one-press feature this started as into two presses for no decision.
+	if ( v.opensList )
+	{
+		Continue_OpenList( );
+		return;
+	}
+
 	// [rc4l] Straight in, no confirmation: the decision was made when the button chose to exist.
 	M_ClearMenus( );
-
-	const ContinueTarget target = Verdict( ).target;
 
 	// Leaving a server: drop the connection first. Where we go afterwards is the same question it
 	// always is, so it is the same answer.
 	if ( Continue_IsDisconnect( ))
+	{
+		// [rc4l] Asked BEFORE the teardown. The disconnect clears what we are inside -- it has to, we
+		// are leaving it -- and asking afterwards found the game we had just left sitting at the top
+		// of the list again, so leaving a hosted match tore it down and started it back up.
+		const int local = NewestLocalEntry( );
+		const ContinueRecord back = ( local >= 0 ) ? g_History[local] : ContinueRecord( );
+
 		CLIENT_QuitNetworkGame( NULL );
 
-	GoTo( target );
+		// [rc4l] Ours to perform, so the tick must not perform its own on top of it -- except for the
+		// main menu, which HAS to go through the tick: it is a gameaction, and one issued inside the
+		// teardown is replaced by the teardown's own.
+		g_bReturnPending = ( v.target == ContinueTarget::MainMenu );
+		g_ReturnTarget = v.target;
+
+		if ( v.target != ContinueTarget::MainMenu )
+			GoToRecord( back );
+		return;
+	}
+
+	const ContinueRecord chosen = Chosen( );
+	g_InsideRecord = chosen;
+	g_InsideIdentity = ContinueIdentity( chosen );
+
+	GoToRecord( chosen );
 }
 
 
@@ -1151,6 +1787,17 @@ CCMD( fua_continue )
 	if ( zx::Continue_IsShown( ) == false )
 	{
 		Printf( "fua_continue: nothing to continue.\n" );
+		return;
+	}
+
+	// [rc4l] With a row number it acts on that row, which is the only way to drive the list without
+	// a menu -- and the list is where every bug in this feature has been found.
+	if ( argv.argc( ) > 1 )
+	{
+		const int index = atoi( argv[1] );
+		if ( zx::Continue_ActivateEntry( index ) == false )
+			Printf( "fua_continue: there is no entry %d.\n", index );
+
 		return;
 	}
 
