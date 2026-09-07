@@ -22,16 +22,20 @@ ContinueButtonVerdict DecideContinueButton(const ContinueButtonInputs &in)
 		return out;
 	}
 
-	if (in.usableCount <= 0)
+	if (in.offerableCount <= 0)
 		return out;			// Hidden
 
 	out.mode = ContinueMode::Continue;
 	out.target = in.newestTarget;
 
-	// [rc4l] Two or more is a choice, and a choice is what the list is for. One is not: the pill
-	// already names it, and putting a menu in front of a single row would turn the one-press feature
-	// this started as into two presses for no decision.
-	out.opensList = (in.usableCount > 1);
+	// [rc4l] Counted from the ROWS, not from the ones we would act on. A history of two where only
+	// one is pressable is still two things in front of the player, and a press that skipped the
+	// question threw them into a rehost they never chose.
+	//
+	// One row and one row only is the exception: the pill already names it, and putting a menu in
+	// front of a single row would turn the one-press feature this started as into two presses for
+	// no decision.
+	out.opensList = (in.listCount > 1);
 	return out;
 }
 

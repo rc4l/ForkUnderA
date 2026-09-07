@@ -34,7 +34,8 @@ TEST( ContinueButton, OneEntryIsOfferedWithoutAList )
 	// The feature started as one press and one press is still right when there is nothing to choose
 	// between: a menu of a single row is a click that asks a question with one answer.
 	ContinueButtonInputs in = AtMenu();
-	in.usableCount = 1;
+	in.offerableCount = 1;
+	in.listCount = 1;
 	in.newestTarget = ContinueTarget::Offline;
 
 	const ContinueButtonVerdict v = DecideContinueButton( in );
@@ -47,10 +48,11 @@ TEST( ContinueButton, TwoOrMoreEntriesOpenTheList )
 {
 	ContinueButtonInputs in = AtMenu();
 	in.newestTarget = ContinueTarget::Server;
+	in.offerableCount = 1;			// however few are pressable, the rows are what is being chosen from
 
 	for ( int count = 2; count <= 50; ++count )
 	{
-		in.usableCount = count;
+		in.listCount = count;
 
 		const ContinueButtonVerdict v = DecideContinueButton( in );
 		EXPECT_EQ( ContinueMode::Continue, v.mode ) << "count " << count;
@@ -68,7 +70,8 @@ TEST( ContinueButton, ThePillNamesTheNewestEntry )
 	for ( int i = 0; i < 3; ++i )
 	{
 		ContinueButtonInputs in = AtMenu();
-		in.usableCount = 4;
+		in.offerableCount = 4;
+		in.listCount = 4;
 		in.newestTarget = kinds[i];
 
 		EXPECT_EQ( kinds[i], DecideContinueButton( in ).target );
@@ -81,11 +84,12 @@ TEST( ContinueButton, AnEmptyHistoryHidesItHoweverItIsDescribed )
 	// decides: offering a row that is not there is the failure the whole unit exists to avoid.
 	ContinueButtonInputs in = AtMenu();
 	in.newestTarget = ContinueTarget::Server;
-	in.usableCount = 0;
+	in.offerableCount = 0;
+	in.listCount = 3;				// rows we could show, none of which a press could act on
 
 	EXPECT_EQ( ContinueMode::Hidden, DecideContinueButton( in ).mode );
 
-	in.usableCount = -1;			// a count that has gone wrong is still not something to offer
+	in.offerableCount = -1;			// a count that has gone wrong is still not something to offer
 	EXPECT_EQ( ContinueMode::Hidden, DecideContinueButton( in ).mode );
 }
 
@@ -117,7 +121,8 @@ TEST( ContinueButton, LeavingNeverOpensTheList )
 	// list once they are out; asking them WHERE while they are still connected turns leaving into a
 	// two-step decision they did not ask to make.
 	ContinueButtonInputs in = InSession();
-	in.usableCount = 30;
+	in.offerableCount = 30;
+	in.listCount = 30;
 	in.localUsable = true;
 
 	EXPECT_FALSE( DecideContinueButton( in ).opensList );
@@ -132,7 +137,8 @@ TEST( ContinueButton, TheButtonIsNeverHiddenWhileInASession )
 		{
 			ContinueButtonInputs in = InSession();
 			in.localUsable = ( local == 1 );
-			in.usableCount = count;
+			in.offerableCount = count;
+			in.listCount = count;
 
 			EXPECT_EQ( ContinueMode::Disconnect, DecideContinueButton( in ).mode );
 			EXPECT_NE( ContinueTarget::None, DecideContinueButton( in ).target );
@@ -145,7 +151,8 @@ TEST( ContinueButton, AHostedGameIsStartedAgainRatherThanLoaded )
 	// The world lived in a child process and went with it, so there is nothing to restore but the
 	// settings that made it.
 	ContinueButtonInputs in = AtMenu();
-	in.usableCount = 1;
+	in.offerableCount = 1;
+	in.listCount = 1;
 	in.newestTarget = ContinueTarget::Hosted;
 
 	EXPECT_EQ( ContinueTarget::Hosted, DecideContinueButton( in ).target );
@@ -172,11 +179,39 @@ TEST( ContinueButton, LeavingNeverSendsYouBackToTheServerYouLeft )
 	for ( int count = 1; count <= 50; count += 7 )
 	{
 		ContinueButtonInputs in = InSession();
-		in.usableCount = count;
+		in.offerableCount = count;
+		in.listCount = count;
 		in.newestTarget = ContinueTarget::Server;
 		in.localUsable = true;
 
 		EXPECT_EQ( ContinueTarget::Offline, DecideContinueButton( in ).target )
 			<< "a history of " << count << " changed where leaving lands";
 	}
+}
+
+TEST( ContinueButton, ARowThatCannotBePressedStillCountsAsSomethingToChooseFrom )
+{
+	// The bug this encodes, found by pressing it: a history of a dead server and a game to rehost
+	// showed TWO rows, only one of which was pressable, so the pill decided there was nothing to ask
+	// about and threw the player straight into a rehost they never chose. What is in front of them is
+	// what makes it a question.
+	ContinueButtonInputs in = AtMenu();
+	in.listCount = 2;
+	in.offerableCount = 1;
+	in.newestTarget = ContinueTarget::Hosted;
+
+	const ContinueButtonVerdict v = DecideContinueButton( in );
+	EXPECT_EQ( ContinueMode::Continue, v.mode );
+	EXPECT_TRUE( v.opensList );
+}
+
+TEST( ContinueButton, ASingleRowIsStillOnePress )
+{
+	// And the other side of it: one row is one row however it is counted, and must not gain a menu.
+	ContinueButtonInputs in = AtMenu();
+	in.listCount = 1;
+	in.offerableCount = 1;
+	in.newestTarget = ContinueTarget::Server;
+
+	EXPECT_FALSE( DecideContinueButton( in ).opensList );
 }
