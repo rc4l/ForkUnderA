@@ -210,13 +210,12 @@ TEST(ContinueRecord, EachInstanceGetsItsOwnFolder)
 	EXPECT_EQ("/cfg/continue.3", ContinueDir("/cfg", 2));
 }
 
-TEST(ContinueRecord, TheTwoRecordsAreSeparateFiles)
+TEST(ContinueRecord, TheTwoLegacyRecordsAreSeparateFiles)
 {
-	// Decoupled on purpose: joining a server must not forget the campaign, and an unreadable one
-	// must not take the other down with it.
+	// The pair the history grew out of. Still named, because the first launch after this build
+	// migrates them, and a wrong path there means a player's last session silently does not arrive.
 	EXPECT_EQ("/cfg/continue/offline.txt", ContinueOfflinePath("/cfg", 0));
 	EXPECT_EQ("/cfg/continue/server.txt", ContinueServerPath("/cfg", 0));
-	EXPECT_EQ("/cfg/continue/offline.zds", ContinueSavePath("/cfg", 0));
 
 	EXPECT_EQ("/cfg/continue.2/offline.txt", ContinueOfflinePath("/cfg", 1));
 	EXPECT_EQ("/cfg/continue.2/server.txt", ContinueServerPath("/cfg", 1));
@@ -411,4 +410,78 @@ TEST( ContinueRecord, APathIsOmittedRatherThanWrittenEmpty )
 	in.wads.push_back(W("bare.pk3", "eeee"));
 
 	EXPECT_NE(std::string::npos, SerialiseContinue(in).find("wad bare.pk3\teeee\n"));
+}
+
+TEST( ContinueRecord, TheClockSurvivesTheRoundTrip )
+{
+	ContinueRecord in;
+	in.kind = ContinueKind::Server;
+	in.address = "10.0.0.5:10666";
+	in.playedAt = 1788000000LL;
+
+	ContinueRecord out;
+	ASSERT_TRUE(ParseContinue(SerialiseContinue(in), out));
+	EXPECT_EQ(1788000000LL, out.playedAt);
+}
+
+TEST( ContinueRecord, ARecordWrittenBeforeTheClockExistedReadsAsUnknown )
+{
+	// Zero rather than 1970: the list renders it as a dash, and a dash is the honest answer for a
+	// record that never recorded a time.
+	ContinueRecord out;
+	ASSERT_TRUE(ParseContinue("fua-continue 1\nkind server\naddress a:1\n", out));
+	EXPECT_EQ(0, out.playedAt);
+
+	// And an unknown time is not written out, so an older reader is not handed a field of zeroes.
+	ContinueRecord in;
+	in.kind = ContinueKind::Server;
+	in.address = "a:1";
+	EXPECT_EQ(std::string::npos, SerialiseContinue(in).find("played "));
+}
+
+TEST( ContinueRecord, TheBodyIsTheRecordWithoutTheHeader )
+{
+	// What the history file holds: the magic and the version stated once for the whole list, so a
+	// file cannot disagree with itself about what format it is in.
+	ContinueRecord in;
+	in.kind = ContinueKind::Server;
+	in.address = "10.0.0.5:10666";
+	in.stamp = 4;
+
+	const std::string body = SerialiseContinueBody(in);
+	EXPECT_EQ(std::string::npos, body.find("fua-continue"));
+
+	ContinueRecord out;
+	ASSERT_TRUE(ParseContinueBody(body, out));
+	EXPECT_EQ("10.0.0.5:10666", out.address);
+	EXPECT_EQ(4, out.stamp);
+
+	// The whole file is that body with a header in front of it.
+	EXPECT_NE(std::string::npos, SerialiseContinue(in).find(body));
+}
+
+TEST( ContinueRecord, ABodyWithNothingToContinueIsEmpty )
+{
+	EXPECT_TRUE(SerialiseContinueBody(ContinueRecord()).empty());
+	EXPECT_TRUE(SerialiseContinue(ContinueRecord()).empty());
+
+	ContinueRecord out;
+	EXPECT_FALSE(ParseContinueBody("", out));
+}
+
+TEST( ContinueRecord, EachEntryGetsItsOwnSnapshotFile )
+{
+	// One slot per entry, or a ten-row history would be ten rows pointing at one save, nine of them
+	// lying about which map they lead to.
+	EXPECT_EQ("/cfg/continue/offline-3.zds", ContinueSaveSlotPath("/cfg", 0, 3));
+	EXPECT_NE(ContinueSaveSlotPath("/cfg", 0, 3), ContinueSaveSlotPath("/cfg", 0, 4));
+
+	// And a second copy of the engine keeps its own, exactly as the records do.
+	EXPECT_EQ("/cfg/continue.2/offline-3.zds", ContinueSaveSlotPath("/cfg", 1, 3));
+}
+
+TEST( ContinueRecord, TheHistoryLivesBesideTheRecordsItReplaced )
+{
+	EXPECT_EQ("/cfg/continue/history.txt", ContinueHistoryPath("/cfg", 0));
+	EXPECT_EQ("/cfg/continue.2/history.txt", ContinueHistoryPath("/cfg", 1));
 }

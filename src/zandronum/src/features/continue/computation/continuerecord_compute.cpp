@@ -74,13 +74,26 @@ const char *KindName(ContinueKind kind)
 
 std::string SerialiseContinue(const ContinueRecord &record)
 {
+	const std::string body = SerialiseContinueBody(record);
+	if (body.empty())
+		return body;
+
+	std::ostringstream out;
+	out << kMagic << ' ' << kContinueFormat << '\n';
+	out << body;
+	return out.str();
+}
+
+std::string SerialiseContinueBody(const ContinueRecord &record)
+{
 	if (record.kind == ContinueKind::None)
 		return std::string();
 
 	std::ostringstream out;
-	out << kMagic << ' ' << kContinueFormat << '\n';
 	out << "kind " << KindName(record.kind) << '\n';
 	out << "stamp " << record.stamp << '\n';
+	if (record.playedAt > 0)
+		out << "played " << record.playedAt << '\n';
 
 	if (record.kind == ContinueKind::Hosted)
 	{
@@ -168,6 +181,22 @@ bool ParseContinue(const std::string &text, ContinueRecord &out)
 	if ((format <= 0) || (format > kContinueFormat))
 		return false;
 
+	// Everything after the header is the body, which is the same body a history entry holds.
+	std::string body;
+	while (std::getline(in, line))
+		body += line + "\n";
+
+	return ParseContinueBody(body, out);
+}
+
+bool ParseContinueBody(const std::string &text, ContinueRecord &out)
+{
+	out = ContinueRecord();
+
+	std::istringstream in(text);
+	std::string line;
+	std::string key, value;
+
 	while (std::getline(in, line))
 	{
 		if (line.empty())
@@ -186,6 +215,7 @@ bool ParseContinue(const std::string &text, ContinueRecord &out)
 		else if (key == "save")      out.savePath = value;
 		else if (key == "savever")   out.saveVersion = atoi(value.c_str());
 		else if (key == "stamp")     out.stamp = atoi(value.c_str());
+		else if (key == "played")    out.playedAt = strtoll(value.c_str(), NULL, 10);
 		else if (key == "host_name")        out.host.hostName = value;
 		else if (key == "host_iwad")        out.host.iwad = value;
 		else if (key == "host_pwad")        out.host.pwads.push_back(value);
@@ -264,9 +294,16 @@ std::string ContinueServerPath(const std::string &configRoot, int instance)
 	return ContinueDir(configRoot, instance) + "/server.txt";
 }
 
-std::string ContinueSavePath(const std::string &configRoot, int instance)
+std::string ContinueSaveSlotPath(const std::string &configRoot, int instance, int slot)
 {
-	return ContinueDir(configRoot, instance) + "/offline.zds";
+	char name[32];
+	snprintf(name, sizeof name, "/offline-%d.zds", slot);
+	return ContinueDir(configRoot, instance) + name;
+}
+
+std::string ContinueHistoryPath(const std::string &configRoot, int instance)
+{
+	return ContinueDir(configRoot, instance) + "/history.txt";
 }
 
 } // namespace zx

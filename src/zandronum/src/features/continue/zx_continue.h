@@ -42,8 +42,32 @@ const char *Continue_Label();
 const char *Continue_Tooltip();
 
 // Act on it: reload the WAD set the session needs and go. Does not return on the path that works,
-// because the reload throws.
+// because the reload throws. With more than one thing to go back to this opens the list instead.
 void Continue_Activate();
+
+// [rc4l] The history, as the list shows it: only the rows worth offering, newest first.
+//
+// Indexed by POSITION IN THE LIST rather than in the underlying history, so a row that has stopped
+// being usable cannot be activated by an index that used to mean something else.
+int Continue_HistoryCount();
+const char *Continue_EntryLabel( int index );		// the activity column; never null
+const char *Continue_EntryWhen( int index );		// the last played column; never null
+int Continue_EntryKind( int index );				// 0 none, 1 single, 2 server, 3 hosted
+int Continue_EntryProbe( int index );				// 0 unknown, 1 alive, 2 gone, 3 wads differ
+
+// Ask about a server row. Lazy on purpose: querying fifty of other people's servers the moment a
+// menu opens is a storm sent on behalf of rows nobody may look at.
+void Continue_ProbeEntry( int index );
+
+// Go to one row. False when there is no such row, which is all a caller has to check.
+bool Continue_ActivateEntry( int index );
+
+// Drop one row and its snapshot. The rest of the history is untouched.
+void Continue_ForgetEntry( int index );
+
+// Show the picker. Implemented by the menu (zx_continuemenu.cpp), so the record side of the feature
+// does not have to know what a menu is.
+void Continue_OpenList();
 
 // Record the session we are in. Called from the deliberate quit, never from a shutdown hook.
 void Continue_NoteQuit();

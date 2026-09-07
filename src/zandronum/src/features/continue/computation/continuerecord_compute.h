@@ -70,6 +70,14 @@ struct ContinueRecord
 	// without needing a clock. Bumped past whatever the other record holds on every write.
 	int stamp;
 
+	// [rc4l] When it was last played, as seconds since the epoch. The ORDER still comes from `stamp`
+	// -- a counter cannot be dragged backwards by a wrong system clock, and a list that reorders
+	// itself because the machine corrected its time is a list nobody can trust. This is only ever
+	// shown, never compared: a history that lists what you played needs to say WHEN, and no counter
+	// can be turned into "yesterday". Zero for a record written before this field existed, which the
+	// column renders as a dash rather than as 1970.
+	long long playedAt;
+
 	// Both, because both have to land on the same files we left.
 	std::string iwad;
 	std::string iwadHash;
@@ -90,7 +98,7 @@ struct ContinueRecord
 
 	std::vector<Wad> wads;
 
-	ContinueRecord() : kind(ContinueKind::None), saveVersion(0), stamp(0) {}
+	ContinueRecord() : kind(ContinueKind::None), saveVersion(0), stamp(0), playedAt(0) {}
 };
 
 // The format this build writes. Bumped only when a field changes meaning; adding an optional field
@@ -107,13 +115,35 @@ std::string SerialiseContinue(const ContinueRecord &record);
 // know, an unknown kind, or a kind missing the fields it cannot work without.
 bool ParseContinue(const std::string &text, ContinueRecord &out);
 
-// Where the record lives: a `continue/` folder of its own under the per-user config root, alongside
-// `identity/` rather than loose beside it. Two files that only mean anything together, in a folder
-// named after what they are, so deleting the feature's state is one obvious action rather than
-// knowing which two of the loose files belonged to it.
-// The snapshot a Single record points at, in the same folder. One slot, overwritten: this is "where
-// you left off", not a save history.
-std::string ContinueSavePath(const std::string &configRoot, int instance);
+// [rc4l] The same record without the magic line, for a container that has already established the
+// format on its own behalf.
+//
+// The history file states the magic and the version once and then holds many records, so repeating
+// the header per entry would be a version number that a file could disagree with itself about.
+// Exposed rather than duplicated: one description of what a record looks like, whether it is alone
+// in a file or the fourth of fifty.
+std::string SerialiseContinueBody(const ContinueRecord &record);
+bool ParseContinueBody(const std::string &text, ContinueRecord &out);
+
+// Where all of this lives: a `continue/` folder of its own under the per-user config root, alongside
+// `identity/` rather than loose beside it. Files that only mean anything together, in a folder named
+// after what they are, so deleting the feature's state is one obvious action rather than knowing
+// which of the loose files belonged to it.
+
+// [rc4l] The snapshot belonging to ONE entry of the history.
+//
+// One slot per entry rather than one slot for the feature. The single slot was right while there was
+// a single offline record: "where you left off" is one place. A history of them is a list of
+// different places, and every one of them that is a local game needs its own snapshot or the list
+// would be ten rows pointing at the same save -- nine of them lying about which map they lead to.
+//
+// Numbered by the entry's stamp, which is already unique and already increasing, so no second
+// counter has to be kept in step with the first. Files whose entry has fallen off the end are
+// deleted by the caller; the name is the link between the two.
+std::string ContinueSaveSlotPath(const std::string &configRoot, int instance, int slot);
+
+// The whole history, one file. See continuehistory_compute for what is in it.
+std::string ContinueHistoryPath(const std::string &configRoot, int instance);
 
 // The folder itself, for the caller that has to create it before writing.
 //
