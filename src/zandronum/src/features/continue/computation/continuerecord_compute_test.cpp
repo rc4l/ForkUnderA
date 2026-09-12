@@ -485,3 +485,57 @@ TEST( ContinueRecord, TheHistoryLivesBesideTheRecordsItReplaced )
 	EXPECT_EQ("/cfg/continue/history.txt", ContinueHistoryPath("/cfg", 0));
 	EXPECT_EQ("/cfg/continue.2/history.txt", ContinueHistoryPath("/cfg", 1));
 }
+
+TEST( ContinueRecord, TheMapsRealNameSurvivesTheRoundTrip )
+{
+	// Captured when the record is written, because it comes out of the MAPINFO of the set that was
+	// loaded then -- so if it does not survive the file it cannot be recovered later.
+	ContinueRecord in;
+	in.kind = ContinueKind::Single;
+	in.savePath = "continue/offline-3.zds";
+	in.mapName = "MAP01";
+	in.mapTitle = "Hydroelectric Plant";
+
+	ContinueRecord out;
+	ASSERT_TRUE(ParseContinue(SerialiseContinue(in), out));
+	EXPECT_EQ("Hydroelectric Plant", out.mapTitle);
+}
+
+TEST( ContinueRecord, AHostedGameKeepsItsMapNameAndItsMode )
+{
+	ContinueRecord in;
+	in.kind = ContinueKind::Hosted;
+	in.host.map = "MAP07";
+	in.mapTitle = "Dead Simple";
+	in.modeName = "Team LMS";
+
+	ContinueRecord out;
+	ASSERT_TRUE(ParseContinue(SerialiseContinue(in), out));
+	EXPECT_EQ("Dead Simple", out.mapTitle);
+	EXPECT_EQ("Team LMS", out.modeName);
+}
+
+TEST( ContinueRecord, AServerKeepsTheModeTheBrowserNamed )
+{
+	ContinueRecord in;
+	in.kind = ContinueKind::Server;
+	in.address = "10.0.0.5:10666";
+	in.modeName = "CTF";
+
+	ContinueRecord out;
+	ASSERT_TRUE(ParseContinue(SerialiseContinue(in), out));
+	EXPECT_EQ("CTF", out.modeName);
+}
+
+TEST( ContinueRecord, ANameNobodyKnewIsOmittedRatherThanWrittenEmpty )
+{
+	// An older reader ignores an unknown key; it should not have to ignore an empty one as well.
+	ContinueRecord in;
+	in.kind = ContinueKind::Single;
+	in.savePath = "continue/offline-3.zds";
+	in.mapName = "MAP01";
+
+	const std::string text = SerialiseContinue(in);
+	EXPECT_EQ(std::string::npos, text.find("maptitle"));
+	EXPECT_EQ(std::string::npos, text.find("mode "));
+}

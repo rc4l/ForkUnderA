@@ -54,10 +54,24 @@ struct ContinueRecord
 	std::string mapName;
 	std::string mapWad;		// the file the map itself came from, for the tooltip
 
+	// [rc4l] What the map is CALLED, as opposed to which lump it is. "MAP01" identifies a slot and
+	// tells the player nothing; "Hydroelectric Plant" is the thing they remember playing. Captured
+	// when the record is written, because it comes from MAPINFO in the WAD set that was loaded then
+	// -- by the time the list is drawn a different set may be loaded, or none.
+	//
+	// Empty for a record written before this existed, and for a map whose MAPINFO gives no name; the
+	// list falls back to the lump, which is what it always showed.
+	std::string mapTitle;
+
 	// Server.
 	std::string address;
 	std::string password;	// empty when the server had none
 	std::string serverName;	// as the server called itself, empty if it never said
+
+	// [rc4l] Coop, deathmatch, CTF... Named at record time rather than derived at display time: for a
+	// server only the browser knows, and for a hosted game the mode usually arrives as a cvar in the
+	// preset rather than as the mode index. Empty when nobody could say.
+	std::string modeName;
 
 	// Hosted. The whole config, reused rather than re-listed: hostargs_compute already describes
 	// what a server needs and already refuses values that could be read as another flag.

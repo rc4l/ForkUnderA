@@ -124,6 +124,10 @@ std::string SerialiseContinueBody(const ContinueRecord &record)
 		out << "host_advertise " << (h.advertise ? 1 : 0) << '\n';
 		out << "host_servewads " << (h.serveWads ? 1 : 0) << '\n';
 		out << "host_hidewindow " << (h.hideWindow ? 1 : 0) << '\n';
+		if (record.mapTitle.empty() == false)
+			out << "maptitle " << record.mapTitle << '\n';
+		if (record.modeName.empty() == false)
+			out << "mode " << record.modeName << '\n';
 	}
 	else if (record.kind == ContinueKind::Single)
 	{
@@ -133,6 +137,8 @@ std::string SerialiseContinueBody(const ContinueRecord &record)
 			out << "map " << record.mapName << '\n';
 		if (record.mapWad.empty() == false)
 			out << "mapwad " << record.mapWad << '\n';
+		if (record.mapTitle.empty() == false)
+			out << "maptitle " << record.mapTitle << '\n';
 	}
 	else
 	{
@@ -141,6 +147,8 @@ std::string SerialiseContinueBody(const ContinueRecord &record)
 			out << "password " << record.password << '\n';
 		if (record.serverName.empty() == false)
 			out << "servername " << record.serverName << '\n';
+		if (record.modeName.empty() == false)
+			out << "mode " << record.modeName << '\n';
 	}
 
 	if (record.iwad.empty() == false)
@@ -239,6 +247,8 @@ bool ParseContinueBody(const std::string &text, ContinueRecord &out)
 		}
 		else if (key == "map")       out.mapName = value;
 		else if (key == "mapwad")    out.mapWad = value;
+		else if (key == "maptitle")  out.mapTitle = value;
+		else if (key == "mode")      out.modeName = value;
 		else if (key == "servername") out.serverName = value;
 		else if (key == "address")   out.address = value;
 		else if (key == "password")  out.password = value;

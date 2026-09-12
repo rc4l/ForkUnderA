@@ -121,16 +121,176 @@ std::string ContinueEntryLabel(const ContinueRecord &record)
 		return record.serverName.empty() ? record.address : record.serverName;
 
 	case ContinueKind::Hosted:
-		return "Hosting " + record.host.map;
+		// The map's real name, falling back to the lump for a record written before we kept it.
+		return record.mapTitle.empty() ? record.host.map : record.mapTitle;
 
 	case ContinueKind::Single:
-		// Which megawad, because MAP01 on its own does not identify anything once a player has more
-		// than one of them.
-		return record.mapWad.empty() ? record.mapName : (record.mapName + " in " + record.mapWad);
+		return record.mapTitle.empty() ? record.mapName : record.mapTitle;
 
 	default:
 		return std::string();
 	}
+}
+
+std::string ContinueModeFromCvars(const HostConfig &host)
+{
+	// In the order the engine resolves them, so a config with two switched on is described the way it
+	// will actually start rather than the way it is written down.
+	static const char *const kModes[][2] =
+	{
+		{ "ctf", "CTF" },
+		{ "oneflagctf", "1-flag CTF" },
+		{ "skulltag", "Skulltag" },
+		{ "domination", "Domination" },
+		{ "teampossession", "Team possession" },
+		{ "possession", "Possession" },
+		{ "teamlms", "Team LMS" },
+		{ "lastmanstanding", "Last man standing" },
+		{ "terminator", "Terminator" },
+		{ "duel", "Duel" },
+		{ "teamgame", "Teamgame" },
+		{ "teamplay", "Team deathmatch" },
+		{ "invasion", "Invasion" },
+		{ "survival", "Survival" },
+		{ "deathmatch", "Deathmatch" },
+		{ "cooperative", "Coop" },
+	};
+
+	for (size_t m = 0; m < sizeof kModes / sizeof kModes[0]; ++m)
+	{
+		for (size_t i = 0; i < host.extraCvars.size(); ++i)
+		{
+			if (Lowered(host.extraCvars[i].first) != kModes[m][0])
+				continue;
+
+			const std::string value = Lowered(host.extraCvars[i].second);
+			if ((value == "true") || (value == "1"))
+				return kModes[m][1];
+		}
+	}
+
+	return std::string();
+}
+
+namespace
+{
+
+// The files that make this session what it is, as a short phrase. Two names and a count, because a
+// row is a thing to recognise at a glance and a full list of a twelve-file load order is not.
+std::string ModPhrase(const std::vector<std::string> &names)
+{
+	const size_t kShown = 2;
+
+	std::string out;
+	for (size_t i = 0; (i < names.size()) && (i < kShown); ++i)
+	{
+		if (out.empty() == false)
+			out += ", ";
+		out += names[i];
+	}
+
+	if (names.size() > kShown)
+	{
+		char more[32];
+		snprintf(more, sizeof more, " +%d more", int(names.size() - kShown));
+		out += more;
+	}
+
+	return out;
+}
+
+// What was loaded on top of the IWAD. The IWAD itself is named only when nothing else was, because
+// every session has one and naming it in every row would tell the player nothing about any of them.
+std::vector<std::string> ModNames(const ContinueRecord &record)
+{
+	std::vector<std::string> out;
+
+	if (record.kind == ContinueKind::Hosted)
+	{
+		for (size_t i = 0; i < record.host.pwads.size(); ++i)
+			out.push_back(BaseName(record.host.pwads[i]));
+
+		if (out.empty() && (record.host.iwad.empty() == false))
+			out.push_back(BaseName(record.host.iwad));
+
+		return out;
+	}
+
+	for (size_t i = 0; i < record.wads.size(); ++i)
+		out.push_back(BaseName(record.wads[i].name));
+
+	if (out.empty() && (record.iwad.empty() == false))
+		out.push_back(BaseName(record.iwad));
+
+	return out;
+}
+
+// The parts only a hosted row has. Its own function so the switch below needs no braced case: a
+// scoped case ends in a closing brace the flow never reaches, which is a line no test can cover.
+void AppendHostedParts(std::string &line, const ContinueRecord &record);
+
+void AppendPart(std::string &line, const std::string &part)
+{
+	if (part.empty())
+		return;
+
+	if (line.empty() == false)
+		line += " \x95 ";			// a middle dot, the separator the rest of the interface uses
+
+	line += part;
+}
+
+} // namespace
+
+namespace
+{
+
+void AppendHostedParts(std::string &line, const ContinueRecord &record)
+{
+	AppendPart(line, "Hosting");
+
+	// Named at record time where the browser or the mode index could say; read off the preset's own
+	// cvars otherwise, which is how nearly every config in the catalogue expresses it.
+	std::string mode = record.modeName;
+	if (mode.empty())
+		mode = ContinueModeFromCvars(record.host);
+	AppendPart(line, mode);
+
+	if (record.host.maxPlayers > 0)
+	{
+		char players[32];
+		snprintf(players, sizeof players, "%d players", record.host.maxPlayers);
+		AppendPart(line, players);
+	}
+}
+
+} // namespace
+
+std::string ContinueEntryDetail(const ContinueRecord &record)
+{
+	std::string out;
+
+	switch (record.kind)
+	{
+	case ContinueKind::Single:
+		AppendPart(out, "Solo");
+		break;
+
+	case ContinueKind::Server:
+		AppendPart(out, "Online");
+		AppendPart(out, record.modeName);
+		break;
+
+	case ContinueKind::Hosted:
+		AppendHostedParts(out, record);
+		break;
+
+	default:
+		return std::string();
+	}
+
+	AppendPart(out, ModPhrase(ModNames(record)));
+	return out;
 }
 
 std::string FormatLastPlayed(long long nowEpoch, long long thenEpoch)

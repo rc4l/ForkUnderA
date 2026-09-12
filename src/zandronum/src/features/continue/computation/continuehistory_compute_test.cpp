@@ -156,19 +156,20 @@ TEST( ContinueHistory, AServerIsNamedIfWeKnowItsName )
 	EXPECT_EQ( "Best Ever GvH", ContinueEntryLabel( r ));
 }
 
-TEST( ContinueHistory, ALocalGameNamesTheMegawadItWasIn )
+TEST( ContinueHistory, ALocalGameHeadlinesItsMap )
 {
-	EXPECT_EQ( "MAP01 in sunder.wad", ContinueEntryLabel( Single( "MAP01", "sunder.wad", 1 )));
-
-	// Nothing to attribute it to: the map alone, rather than a dangling "in".
-	ContinueRecord bare = Single( "MAP01", "", 1 );
-	bare.mapWad.clear();
-	EXPECT_EQ( "MAP01", ContinueEntryLabel( bare ));
+	// The megawad moved to the second line, where it sits beside the kind: a headline reading
+	// "MAP01 in sunder.wad" spent its width on the least memorable half of that sentence.
+	EXPECT_EQ( "MAP01", ContinueEntryLabel( Single( "MAP01", "sunder.wad", 1 )));
+	EXPECT_NE( std::string::npos,
+		ContinueEntryDetail( Single( "MAP01", "sunder.wad", 1 )).find( "sunder.wad" ));
 }
 
-TEST( ContinueHistory, AHostedGameSaysSo )
+TEST( ContinueHistory, AHostedGameSaysSoOnItsSecondLine )
 {
-	EXPECT_EQ( "Hosting MAP07", ContinueEntryLabel( Hosted( "MAP07", 1 )));
+	// The headline is the map, the same as any other row; that it is HOSTED is what the detail says.
+	EXPECT_EQ( "MAP07", ContinueEntryLabel( Hosted( "MAP07", 1 )));
+	EXPECT_NE( std::string::npos, ContinueEntryDetail( Hosted( "MAP07", 1 )).find( "Hosting" ));
 }
 
 TEST( ContinueHistory, NothingToContinueHasNoLabel )
@@ -609,4 +610,139 @@ TEST( ContinueHistory, DifferentFilesAreStillDifferentGames )
 	b.host.iwad = "/games/tnt.wad";
 
 	EXPECT_NE( ContinueIdentity( a ), ContinueIdentity( b ));
+}
+
+// ---------------------------------------------------------------- the second line
+
+TEST( ContinueHistory, TheHeadlineIsTheMapsRealName )
+{
+	// "MAP01" is a slot number. What the player remembers playing is what the map is called.
+	ContinueRecord r = Single( "MAP01", "sunder.wad", 1 );
+	r.mapTitle = "Hydroelectric Plant";
+
+	EXPECT_EQ( "Hydroelectric Plant", ContinueEntryLabel( r ));
+
+	// And a record written before we kept the title still names something.
+	r.mapTitle.clear();
+	EXPECT_EQ( "MAP01", ContinueEntryLabel( r ));
+}
+
+TEST( ContinueHistory, AHostedGameHeadlinesItsMapToo )
+{
+	ContinueRecord r = Hosted( "MAP07", 1 );
+	r.mapTitle = "Dead Simple";
+
+	EXPECT_EQ( "Dead Simple", ContinueEntryLabel( r ));
+}
+
+TEST( ContinueHistory, TheDetailLineSaysWhatKindOfSessionItWas )
+{
+	EXPECT_EQ( "Solo \x95 sunder.wad", ContinueEntryDetail( Single( "MAP01", "sunder.wad", 1 )));
+
+	// A record that never learned which files the server ran still says what kind of thing it was.
+	EXPECT_EQ( "Online", ContinueEntryDetail( Server( "10.0.0.5:10666", 1 )));
+}
+
+TEST( ContinueHistory, TheDetailLineNamesTheModRatherThanTheIwad )
+{
+	// Every session has an IWAD, so naming it in every row tells the player nothing about any of
+	// them. The mod is the thing that distinguishes one from another.
+	ContinueRecord r = Single( "MAP01", "sunder.wad", 1 );
+	EXPECT_NE( std::string::npos, ContinueEntryDetail( r ).find( "sunder.wad" ));
+	EXPECT_EQ( std::string::npos, ContinueEntryDetail( r ).find( "doom2.wad" ));
+}
+
+TEST( ContinueHistory, TheIwadIsNamedWhenNothingElseWas )
+{
+	// A bare IWAD game would otherwise have a detail line that named no files at all.
+	ContinueRecord r;
+	r.kind = ContinueKind::Single;
+	r.savePath = "/tmp/x.zds";
+	r.mapName = "MAP01";
+	r.iwad = "doom2.wad";
+
+	EXPECT_EQ( "Solo \x95 doom2.wad", ContinueEntryDetail( r ));
+}
+
+TEST( ContinueHistory, ALongLoadOrderIsSummarised )
+{
+	// A row is a thing to recognise at a glance; a twelve-file load order is not.
+	ContinueRecord r = Single( "MAP01", "sunder.wad", 1 );
+	for ( int i = 0; i < 4; ++i )
+	{
+		ContinueRecord::Wad w;
+		w.name = "extra.pk3";
+		r.wads.push_back( w );
+	}
+
+	EXPECT_NE( std::string::npos, ContinueEntryDetail( r ).find( "+3 more" ));
+}
+
+TEST( ContinueHistory, AHostedRowSaysItsModeAndSize )
+{
+	ContinueRecord r = Hosted( "MAP07", 1 );
+	r.modeName = "Coop";
+	r.host.maxPlayers = 8;
+
+	const std::string detail = ContinueEntryDetail( r );
+	EXPECT_NE( std::string::npos, detail.find( "Hosting" ));
+	EXPECT_NE( std::string::npos, detail.find( "Coop" ));
+	EXPECT_NE( std::string::npos, detail.find( "8 players" ));
+}
+
+TEST( ContinueHistory, AHostedRowReadsItsModeOffThePresetWhenNobodyNamedIt )
+{
+	// Presets set `teamlms true` rather than a mode index -- the index is "leave it alone" in almost
+	// every config the catalogue ships -- so the mode is knowable, just not from the field named
+	// after it.
+	ContinueRecord r = Hosted( "MAP07", 1 );
+	r.host.extraCvars.push_back( std::make_pair( std::string( "cooperative" ), std::string( "false" )));
+	r.host.extraCvars.push_back( std::make_pair( std::string( "teamlms" ), std::string( "true" )));
+
+	EXPECT_NE( std::string::npos, ContinueEntryDetail( r ).find( "Team LMS" ));
+}
+
+TEST( ContinueHistory, TheModeIsWhicheverTheEngineWouldResolveFirst )
+{
+	HostConfig host;
+	host.extraCvars.push_back( std::make_pair( std::string( "deathmatch" ), std::string( "true" )));
+	host.extraCvars.push_back( std::make_pair( std::string( "ctf" ), std::string( "true" )));
+
+	// Both on: described the way it will actually start, not the way it is written down.
+	EXPECT_EQ( "CTF", ContinueModeFromCvars( host ));
+}
+
+TEST( ContinueHistory, AModeCvarSwitchedOffIsNotTheMode )
+{
+	HostConfig host;
+	host.extraCvars.push_back( std::make_pair( std::string( "ctf" ), std::string( "false" )));
+	host.extraCvars.push_back( std::make_pair( std::string( "deathmatch" ), std::string( "1" )));
+
+	EXPECT_EQ( "Deathmatch", ContinueModeFromCvars( host ));
+}
+
+TEST( ContinueHistory, APresetThatNamesNoModeSaysNothing )
+{
+	EXPECT_TRUE( ContinueModeFromCvars( HostConfig() ).empty() );
+}
+
+TEST( ContinueHistory, NothingToContinueHasNoDetail )
+{
+	EXPECT_TRUE( ContinueEntryDetail( ContinueRecord() ).empty() );
+}
+
+TEST( ContinueHistory, AHostedRowNamesThePackItRuns )
+{
+	// What a hosted match is playing is the pwads the server will be started with, not the files we
+	// happened to have loaded when we wrote the row down.
+	ContinueRecord r = Hosted( "MAP07", 1 );
+	r.host.pwads.push_back( "/somewhere/else/gvhmeepyedition.pk3" );
+	r.host.pwads.push_back( "paradoxmaps.wad" );
+
+	const std::string detail = ContinueEntryDetail( r );
+	EXPECT_NE( std::string::npos, detail.find( "gvhmeepyedition.pk3" ));
+	EXPECT_NE( std::string::npos, detail.find( "paradoxmaps.wad" ));
+
+	// And by name, not by wherever the file happens to live on this disk.
+	EXPECT_EQ( std::string::npos, detail.find( "/somewhere/else/" ));
 }
