@@ -105,8 +105,18 @@ int ToVirtualY( int py )
 
 // The card, in virtual units.
 const int kCardW = 460;
-const int kRowH = 13;
-const int kMaxVisibleRows = 12;		// beyond this the card would fill the window; it scrolls instead
+
+// [rc4l] Two lines to a row: the headline, and under it what kind of session it was and what it was
+// played with. One line could not tell two rows apart -- "MAP01" is a slot number and a server name
+// says nothing about the game behind it -- and the missing half will not fit beside the headline
+// without turning every row into a paragraph.
+const int kLineH = 10;
+const int kRowH = ( 2 * kLineH ) + 3;
+const int kMaxVisibleRows = 7;		// beyond this the card would fill the window; it scrolls instead
+
+// The status dot, in its own gutter to the left of the text so the headlines stay aligned.
+const int kDotW = 9;
+const int kDotR = 2;
 const int kPadX = 14;
 const int kWhenColumnW = 96;
 const int kScrollbarW = 4;
@@ -144,9 +154,9 @@ Layout Measure( int total )
 	out.cardX = ( vw - out.cardW ) / 2;
 	out.cardY = ( vh - out.cardH ) / 2;
 
-	out.listX = out.cardX + kPadX;
+	out.listX = out.cardX + kPadX + kDotW;
 	out.listY = out.cardY + headerH;
-	out.listW = out.cardW - ( 2 * kPadX );
+	out.listW = out.cardW - ( 2 * kPadX ) - kDotW;
 
 	return out;
 }
@@ -180,6 +190,38 @@ void DrawRoundedPanel( int vx, int vy, int vw, int vh, const zx::PanelColor &top
 
 		const zx::PanelColor c = zx::ComputePanelGradient( row, h, topCol, botCol );
 		DimClipped( PalEntry( c.r, c.g, c.b ), c.a / 255.f, left + inset, top + row, rowW, 1 );
+	}
+}
+
+// [rc4l] Whether the row will WORK, as a colour: green go, yellow a download away, red not from
+// here. The verdict is continuestatus_compute's; this only paints it.
+//
+// A dot rather than words because it is glanced at, not read: the reason in words is one line of
+// tooltip away, and spelling it out on every row would bury the thing the row is actually about.
+void DrawStatusDot( int vx, int vy, int status )
+{
+	static const zx::PanelColor kColours[3] =
+	{
+		{ 90, 210, 110, 255 },		// green
+		{ 230, 190, 70, 255 },		// yellow
+		{ 225, 85, 85, 255 },		// red
+	};
+
+	const zx::PanelColor c = kColours[( status >= 0 && status <= 2 ) ? status : 0];
+
+	const int left = ToScreenX( vx - kDotR ), right = ToScreenX( vx + kDotR + 1 );
+	const int top = ToScreenY( vy - kDotR ), bottom = ToScreenY( vy + kDotR + 1 );
+	const int w = right - left, h = bottom - top;
+	if (( w <= 0 ) || ( h <= 0 ))
+		return;
+
+	// Rounded off with the same inset the panels use, so it reads as a dot rather than a pixel block.
+	for ( int row = 0; row < h; ++row )
+	{
+		const int inset = zx::ComputeRoundedInset( row, h, h / 2 );
+		const int rowW = w - 2 * inset;
+		if ( rowW > 0 )
+			DimClipped( PalEntry( c.r, c.g, c.b ), 0.95f, left + inset, top + row, rowW, 1 );
 	}
 }
 
@@ -448,12 +490,15 @@ void DFUAContinueMenu::DrawRows( const Layout &layout )
 		}
 
 		const int entry = EntryIndex( row );
+		const int textY = y + 1;
 
 		// [rc4l] Leaving, drawn as the row it now is. No "last played" against it: it is not
 		// somewhere the player has been, it is the way out of where they are.
 		if ( entry < 0 )
 		{
-			DrawTextAt( bSelected ? CR_WHITE : CR_GRAY, layout.listX, y, "Leave and go to the main menu" );
+			DrawTextAt( bSelected ? CR_WHITE : CR_GRAY, layout.listX, textY,
+				"Leave and go to the main menu" );
+			DrawTextAt( CR_DARKGRAY, layout.listX, textY + kLineH, "Stop playing and go back" );
 
 			if ( bSelected )
 			{
@@ -467,22 +512,27 @@ void DFUAContinueMenu::DrawRows( const Layout &layout )
 		// vanish from under a pointer are how a click lands on something the player did not read,
 		// and the press still costs at worst one trip back to the browser with a reason -- the path
 		// a failed join already takes.
-		const int probe = zx::Continue_EntryProbe( entry );
-		const bool bDead = ( probe == 2 ) || ( probe == 3 );
-
-		FString label = zx::Continue_EntryLabel( entry );
-		if ( probe == 2 )
-			label += " (not answering)";
-		else if ( probe == 3 )
-			label += " (different files)";
+		// [rc4l] A server that has stopped answering is DIMMED, not removed. Rows that vanish from
+		// under a pointer are how a click lands on something the player did not read -- and the dot
+		// beside it already says, in a colour, that pressing it will not get anywhere.
+		const int status = zx::Continue_EntryStatus( entry );
+		const bool bDead = ( status == 2 );
 
 		const EColorRange labelCol = bDead ? CR_DARKGRAY : ( bSelected ? CR_WHITE : CR_GRAY );
 
-		DrawTextAt( labelCol, layout.listX, y, Ellipsised( label, labelW ) );
+		DrawTextAt( labelCol, layout.listX, textY,
+			Ellipsised( zx::Continue_EntryLabel( entry ), labelW ));
+
+		// What it was and what it was played with, dimmer and underneath: the half that tells two
+		// rows apart, in the place where it does not compete with the name.
+		DrawTextAt( CR_DARKGRAY, layout.listX, textY + kLineH,
+			Ellipsised( zx::Continue_EntryDetail( entry ), layout.listW ));
 
 		const char *when = zx::Continue_EntryWhen( entry );
 		DrawTextAt( bSelected ? CR_GOLD : CR_DARKGRAY,
-			layout.listX + layout.listW - SmallFont->StringWidth( when ), y, when );
+			layout.listX + layout.listW - SmallFont->StringWidth( when ), textY, when );
+
+		DrawStatusDot( layout.listX - kDotW, y + ( kRowH / 2 ), status );
 
 		if ( bSelected )
 		{

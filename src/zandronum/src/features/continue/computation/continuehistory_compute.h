@@ -66,8 +66,27 @@ int ClampContinueHistoryLimit(int requested);
 // Empty for a record with nothing to continue, which is never inserted.
 std::string ContinueIdentity(const ContinueRecord &record);
 
-// The activity column: what the player would call this row.
+// The headline of a row: what the player would call this thing. The map's real name where we have
+// one, the server's name where we have that, and the lump or the address when we have neither.
 std::string ContinueEntryLabel(const ContinueRecord &record);
+
+// [rc4l] The line UNDER the headline: what kind of session it was and what it was played with.
+//
+// A headline alone cannot tell two sessions apart, which is the whole complaint the list started
+// from: "MAP01" is a slot number, and a server name says nothing about the game behind it. What
+// actually distinguishes one row from another is the mod, the kind, and for a match its mode -- and
+// none of those fit on the headline without turning every row into a paragraph.
+//
+// Empty only for a record with nothing in it, so a caller can draw it unconditionally.
+std::string ContinueEntryDetail(const ContinueRecord &record);
+
+// [rc4l] The mode a hosted preset actually starts in, read off the cvars it carries.
+//
+// Presets set `deathmatch true` rather than a mode index -- the index is "leave it alone" in almost
+// every config the catalogue ships -- so the mode is knowable, just not from the field named after
+// it. First one switched on wins, in the order the engine itself resolves them. Empty when the
+// config says nothing, which reads as an ordinary cooperative game and is not worth asserting.
+std::string ContinueModeFromCvars(const HostConfig &host);
 
 // The "last played" column, relative to now. Both times are seconds since the epoch.
 //

@@ -164,6 +164,49 @@ the two obvious versions of this leave the player at a console or in a slideshow
 just promised them a menu. Both are performed from the tick, because a gameaction issued inside a
 teardown is replaced by the teardown's own.
 
+## What a row says
+
+Two lines. The headline is what the player would call the thing -- the map's **real name** where we
+have one ("Hydroelectric Plant", not "MAP01"), the server's name where we have that. Under it, dimmer:
+the kind of session, its mode and size where those mean anything, and the **mod** it was played with.
+
+The mod rather than the IWAD, because every session has an IWAD and naming it in every row tells the
+player nothing about any of them; the IWAD is named only when nothing else was. Two names and a
+count, because a row is a thing to recognise at a glance and a twelve-file load order is not.
+
+A hosted preset's mode is read off **its own cvars** when nobody named it. Presets set
+`deathmatch true` rather than a mode index -- the index is "leave it alone" in almost every config the
+catalogue ships -- so the mode is knowable, just not from the field named after it.
+
+The map title and the mode are captured **when the record is written**, because they come out of the
+MAPINFO of the set that was loaded at that moment and a different set, or none, may be loaded by the
+time the list is drawn. Rows written before this existed keep showing the lump name.
+
+## Whether a row will work
+
+A dot in the gutter, from `continuestatus_compute`:
+
+* **Green** -- go. Every file is here, and for a server it answered and we can join it.
+* **Yellow** -- fixable without leaving. Something is missing that can be fetched: a mod, or a free
+  IWAD. Pressing it costs a download, not a dead end.
+* **Red** -- not from here. A commercial IWAD is missing and no amount of downloading will produce it;
+  or the server is gone; or it is running a version we cannot join.
+
+The split is about what the PLAYER has to do next, not about how broken the row is: yellow means
+"press it and wait", red means "this needs something we cannot give you". Whether a missing IWAD can
+be fetched is asked of the **downloader's own allowlist** (`IsFreeIwadName`), never of a second table
+here -- a list that disagreed with the one the download gate enforces would promise a fetch that then
+gets refused.
+
+Two judgement calls, written down because they are arguable. A server nobody has asked about yet is
+**green**: the same asymmetry the button already settles, since painting "we have not checked" as a
+fault would mark every row red for the second it takes to answer. A server running **different files**
+than we recorded is **yellow**, not red: it is up and it will let us in, and what waits on the other
+side is a download.
+
+Resolving a row's files means hashing copies on disk, so the verdict is cached against the load
+generation -- the same counter everything else derived from the history hangs off.
+
 ## The list
 
 `DFUAContinueMenu` (`zx_continuemenu.cpp`) — a card in the same visual language as the browser and

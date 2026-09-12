@@ -8,6 +8,8 @@
 #include "features/continue/computation/continuedepart_compute.h"
 #include "features/continue/computation/continuehistory_compute.h"
 #include "features/continue/computation/continuerehost_compute.h"
+#include "features/continue/computation/continuestatus_compute.h"
+#include "features/wad-download/computation/iwadallow_compute.h"
 #include "features/continue/computation/continuereturn_compute.h"
 #include "features/continue/computation/continueshow_compute.h"
 #include "features/continue/computation/continuewrite_compute.h"
@@ -28,6 +30,7 @@
 #include "doomstat.h"
 #include "g_game.h"
 #include "g_level.h"
+#include "gamemode.h"
 #include "m_misc.h"
 #include "menu/menu.h"	// M_ClearMenus
 #include "m_png.h"
@@ -575,6 +578,139 @@ void TickProbe( void )
 	}
 }
 
+// [rc4l] Whether a row will work, worked out once per row and remembered.
+//
+// Answering it means resolving every file the session used, and resolving a file can mean hashing a
+// copy on disk. That is nothing once and a stutter sixty times a second across fifty rows, so it is
+// cached against the load generation -- the same counter everything else derived from the history
+// hangs off, bumped by a write, a probe answering, or a re-read.
+struct StatusCacheEntry
+{
+	std::string identity;
+	ContinueStatus status;
+	const char *reason;
+};
+
+std::vector<StatusCacheEntry> g_StatusCache;
+int g_StatusGeneration = -1;
+
+// Every file a session needs, as the names the record holds. Hosted games are started from the host
+// config; everything else is the set we had loaded.
+void FilesOf( const ContinueRecord &rec, std::string &iwad, std::vector<std::string> &mods )
+{
+	if ( rec.kind == ContinueKind::Hosted )
+	{
+		iwad = rec.host.iwad;
+		mods = rec.host.pwads;
+		return;
+	}
+
+	iwad = rec.iwad;
+	mods.clear( );
+	for ( size_t i = 0; i < rec.wads.size( ); ++i )
+		mods.push_back( rec.wads[i].name );
+}
+
+ContinueStatusInputs StatusInputsFor( const ContinueRecord &rec )
+{
+	ContinueStatusInputs in;
+	in.kind = rec.kind;
+
+	std::string iwadName;
+	std::vector<std::string> modNames;
+	FilesOf( rec, iwadName, modNames );
+
+	if ( iwadName.empty( ))
+	{
+		in.iwadPresent = true;			// nothing named, so nothing to be missing
+	}
+	else
+	{
+		ContinueRecord::Wad wad;
+		wad.name = iwadName;
+		wad.hash = rec.iwadHash;
+		in.iwadPresent = ResolveWad( wad ).IsNotEmpty( );
+
+		// [rc4l] Asked of the DOWNLOADER'S own allowlist, never of a second table here: a list of
+		// free IWADs that disagreed with the one the download gate enforces would promise a fetch
+		// that then gets refused.
+		in.iwadIsFree = IsFreeIwadName( iwadName );
+	}
+
+	for ( size_t i = 0; i < modNames.size( ); ++i )
+	{
+		ContinueRecord::Wad wad;
+		wad.name = modNames[i];
+
+		// The digest only where we kept one; a hosted config lists names alone.
+		for ( size_t j = 0; j < rec.wads.size( ); ++j )
+		{
+			if ( rec.wads[j].name == modNames[i] )
+			{
+				wad.hash = rec.wads[j].hash;
+				wad.path = rec.wads[j].path;
+				break;
+			}
+		}
+
+		if ( ResolveWad( wad ).IsEmpty( ))
+			++in.missingMods;
+	}
+
+	if ( rec.kind == ContinueKind::Server )
+	{
+		in.probe = ProbeStateFor( rec.address );
+
+		// Only a server that ANSWERED can be said to be running a version we cannot join. One nobody
+		// has asked is not incompatible, it is unasked.
+		if (( in.probe == ServerProbe::Alive ) || ( in.probe == ServerProbe::WadsDiffer ))
+		{
+			NETADDRESS_s address;
+			if ( address.LoadFromString( rec.address.c_str( )))
+			{
+				const LONG slot = BROWSER_GetListIDByAddress( address );
+				if ( slot >= 0 )
+					in.versionCompatible = ( BROWSER_GetVersionRelation( slot ) == VersionRelation::Same );
+			}
+		}
+	}
+
+	return in;
+}
+
+ContinueStatus StatusOf( const ContinueRecord &rec, const char **reason )
+{
+	if ( g_StatusGeneration != g_LoadGeneration )
+	{
+		g_StatusCache.clear( );
+		g_StatusGeneration = g_LoadGeneration;
+	}
+
+	const std::string identity = ContinueIdentity( rec );
+
+	for ( size_t i = 0; i < g_StatusCache.size( ); ++i )
+	{
+		if ( g_StatusCache[i].identity == identity )
+		{
+			if ( reason != NULL )
+				*reason = g_StatusCache[i].reason;
+			return g_StatusCache[i].status;
+		}
+	}
+
+	const ContinueStatusInputs in = StatusInputsFor( rec );
+
+	StatusCacheEntry fresh;
+	fresh.identity = identity;
+	fresh.status = DecideContinueStatus( in );
+	fresh.reason = ContinueStatusReason( in );
+	g_StatusCache.push_back( fresh );
+
+	if ( reason != NULL )
+		*reason = fresh.reason;
+	return fresh.status;
+}
+
 // [rc4l] Which file the MAP itself came from, which is not the same question as which files are
 // loaded. Several may define MAP11; only one of them is the one that opens.
 //
@@ -1062,6 +1198,11 @@ void WriteLocalSnapshot( void )
 
 	record.mapWad = MapWadName( level.MapName.GetChars( ));
 
+	// [rc4l] What the map is CALLED. Taken now rather than looked up when the list is drawn, because
+	// it comes out of the MAPINFO of the set that is loaded at this moment and a different set -- or
+	// none -- may be loaded by then.
+	record.mapTitle = level.LevelName.GetChars( );
+
 	CollectLoadedWads( record );
 
 	// [rc4l] Where the snapshot goes, which depends on whether this session is a row the list
@@ -1122,6 +1263,21 @@ void Continue_NoteHosting( const HostConfig &config )
 	record.kind = ContinueKind::Hosted;
 	record.host = config;
 	record.host.rconSecret.clear( );	// worth nothing after its process; a rehost mints a new one
+
+	// The map's name and the mode, for the row that will describe this later.
+	if ( record.host.map.empty( ) == false )
+	{
+		level_info_t *info = FindLevelInfo( record.host.map.c_str( ), false );
+		if ( info != NULL )
+			record.mapTitle = info->LookupLevelName( ).GetChars( );
+	}
+
+	if ( record.host.gameMode >= 0 )
+	{
+		const char *mode = GAMEMODE_GetName( static_cast<GAMEMODE_e>( record.host.gameMode ));
+		if (( mode != NULL ) && ( *mode != 0 ))
+			record.modeName = mode;
+	}
 
 	// [rc4l] The files WE were holding, not just the ones the server was told to load. A rehost has
 	// to put this process back on them before it can join anything, and by name alone it cannot: the
@@ -1245,6 +1401,10 @@ void Continue_NoteJoined( void )
 		const char *name = BROWSER_GetHostName( slot );
 		if (( name != NULL ) && ( *name != 0 ))
 			record.serverName = name;
+
+		const char *mode = BROWSER_GetGameModeShortName( slot );
+		if (( mode != NULL ) && ( *mode != 0 ))
+			record.modeName = mode;
 	}
 	CollectLoadedWads( record );
 
@@ -1671,6 +1831,40 @@ const char *Continue_EntryLabel( int index )
 	const ContinueRecord *rec = EntryAt( index );
 	label = ( rec != NULL ) ? ContinueEntryLabel( *rec ).c_str( ) : "";
 	return label.GetChars( );
+}
+
+const char *Continue_EntryDetail( int index )
+{
+	static FString detail;
+
+	const ContinueRecord *rec = EntryAt( index );
+	detail = ( rec != NULL ) ? ContinueEntryDetail( *rec ).c_str( ) : "";
+	return detail.GetChars( );
+}
+
+int Continue_EntryStatus( int index )
+{
+	const ContinueRecord *rec = EntryAt( index );
+	if ( rec == NULL )
+		return 0;
+
+	switch ( StatusOf( *rec, NULL ))
+	{
+	case ContinueStatus::Fixable: return 1;
+	case ContinueStatus::Broken:  return 2;
+	default:                      return 0;
+	}
+}
+
+const char *Continue_EntryStatusReason( int index )
+{
+	const ContinueRecord *rec = EntryAt( index );
+	if ( rec == NULL )
+		return "";
+
+	const char *reason = "";
+	StatusOf( *rec, &reason );
+	return ( reason != NULL ) ? reason : "";
 }
 
 const char *Continue_EntryWhen( int index )
