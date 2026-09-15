@@ -2,6 +2,7 @@
 // Copyright (C) 2026 rc4l
 
 #include "zx_globalheader.h"
+#include "computation/virtualspace_compute.h"
 #include "features/continue/zx_continue.h"
 
 #include "doomtype.h"
@@ -179,25 +180,17 @@ int ToScreenY( int vy )
 }
 
 // Screen pixels back to virtual, by inverting the mapping through two known points rather than
-// reimplementing it. Two conversions that agree only on some aspect ratios is the bug this avoids.
+// reimplementing it. Two conversions that agree only on some aspect ratios is the bug this avoids --
+// which is also why the inversion itself is shared (computation/virtualspace_compute) rather than
+// written out in each of the three menus that need it.
 int ToVirtualX( int px )
 {
-	const int at0 = ToScreenX( 0 );
-	const int at100 = ToScreenX( 100 );
-	if ( at100 == at0 )
-		return 0;
-
-	return (( px - at0 ) * 100 ) / ( at100 - at0 );
+	return zx::ScreenToVirtual( px, ToScreenX( 0 ), ToScreenX( 100 ), 100 );
 }
 
 int ToVirtualY( int py )
 {
-	const int at0 = ToScreenY( 0 );
-	const int at100 = ToScreenY( 100 );
-	if ( at100 == at0 )
-		return 0;
-
-	return (( py - at0 ) * 100 ) / ( at100 - at0 );
+	return zx::ScreenToVirtual( py, ToScreenY( 0 ), ToScreenY( 100 ), 100 );
 }
 
 //*****************************************************************************

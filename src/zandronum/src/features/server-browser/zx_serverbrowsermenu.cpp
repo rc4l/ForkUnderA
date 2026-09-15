@@ -36,6 +36,7 @@
 #include "templates.h"
 
 #include "features/server-browser/browser.h"
+#include "computation/virtualspace_compute.h"
 #include "i_input.h"		// [rc4l] I_PutInClipboard / I_GetFromClipboard, for the search box
 #include "cl_main.h"		// [rc4l] cl_password, handed to the join from the password prompt
 #include "features/server-browser/computation/browserchrome_compute.h"
@@ -2307,22 +2308,12 @@ static int serverbrowser_ToScreenY( int vy )
 // helpers were written to end.
 static int serverbrowser_ToVirtualX( int px )
 {
-	const int at0 = serverbrowser_ToScreenX( 0 );
-	const int at100 = serverbrowser_ToScreenX( 100 );
-	if ( at100 == at0 )
-		return 0;
-
-	return (( px - at0 ) * 100 ) / ( at100 - at0 );
+	return zx::ScreenToVirtual( px, serverbrowser_ToScreenX( 0 ), serverbrowser_ToScreenX( 100 ), 100 );
 }
 
 static int serverbrowser_ToVirtualY( int py )
 {
-	const int at0 = serverbrowser_ToScreenY( 0 );
-	const int at100 = serverbrowser_ToScreenY( 100 );
-	if ( at100 == at0 )
-		return 0;
-
-	return (( py - at0 ) * 100 ) / ( at100 - at0 );
+	return zx::ScreenToVirtual( py, serverbrowser_ToScreenY( 0 ), serverbrowser_ToScreenY( 100 ), 100 );
 }
 
 //*****************************************************************************
