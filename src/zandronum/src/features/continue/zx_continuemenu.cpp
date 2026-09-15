@@ -154,6 +154,9 @@ Layout Measure( int total )
 	out.cardX = ( vw - out.cardW ) / 2;
 	out.cardY = ( vh - out.cardH ) / 2;
 
+	// [rc4l] Two markers live left of the text and they are different questions -- the orb is "you
+	// are here", the dot is "this will work" -- so they get a lane each. Drawn at the same x, the
+	// selection hid the status of the very row being considered.
 	out.listX = out.cardX + kPadX + kDotW;
 	out.listY = out.cardY + headerH;
 	out.listW = out.cardW - ( 2 * kPadX ) - kDotW;
@@ -264,8 +267,10 @@ class DFUAContinueMenu : public DMenu
 	DECLARE_CLASS( DFUAContinueMenu, DMenu )
 
 public:
-	DFUAContinueMenu( )
-		: mSelected( 0 ), mFirst( 0 ), mHot( -1 )
+	// [rc4l] Parented to whatever was open, so Escape goes back to it rather than closing every menu
+	// and dropping the player onto the title screen they opened this from.
+	DFUAContinueMenu( DMenu *parent = NULL )
+		: DMenu( parent ), mSelected( 0 ), mFirst( 0 ), mHot( -1 )
 	{
 	}
 
@@ -324,17 +329,25 @@ void DFUAContinueMenu::Activate( )
 	if ( Total( ) <= 0 )
 		return;
 
-	S_Sound( CHAN_VOICE | CHAN_UI, "menu/choose", snd_menuvolume, ATTN_NONE );
-
 	const int entry = EntryIndex( mSelected );
 	if ( entry < 0 )
 	{
+		S_Sound( CHAN_VOICE | CHAN_UI, "menu/choose", snd_menuvolume, ATTN_NONE );
 		zx::Continue_LeaveToMenu( );
 		return;
 	}
 
+	// [rc4l] A red row refuses without touching the menus, so the list is still here to say no ON.
+	// Saying it out loud beats a row that looks pressable and then appears to do nothing at all --
+	// the same reasoning the tab bar uses for a tab it cannot go to.
+	if ( zx::Continue_ActivateEntry( entry ) == false )
+	{
+		S_Sound( CHAN_VOICE | CHAN_UI, "menu/invalid", snd_menuvolume, ATTN_NONE );
+		return;
+	}
+
 	// Closes the menus itself, and on the path that works it does not return: the WAD reload throws.
-	zx::Continue_ActivateEntry( entry );
+	S_Sound( CHAN_VOICE | CHAN_UI, "menu/choose", snd_menuvolume, ATTN_NONE );
 }
 
 void DFUAContinueMenu::Forget( )
@@ -502,7 +515,7 @@ void DFUAContinueMenu::DrawRows( const Layout &layout )
 
 			if ( bSelected )
 			{
-				zx::DrawFocusGlow( ToScreenX( layout.listX - 9 ), ToScreenY( y + ( kRowH / 2 )),
+				zx::DrawFocusGlow( ToScreenX( layout.cardX + 6 ), ToScreenY( y + ( kRowH / 2 )),
 					ToScreenX( 100 ) - ToScreenX( 0 ));
 			}
 			continue;
@@ -538,7 +551,7 @@ void DFUAContinueMenu::DrawRows( const Layout &layout )
 		{
 			// The same focus orb the browser and the tab bar use, so "you are here" does not change
 			// shape halfway through a gesture.
-			zx::DrawFocusGlow( ToScreenX( layout.listX - 9 ), ToScreenY( y + ( kRowH / 2 )),
+			zx::DrawFocusGlow( ToScreenX( layout.cardX + 6 ), ToScreenY( y + ( kRowH / 2 )),
 				ToScreenX( 100 ) - ToScreenX( 0 ));
 		}
 	}
@@ -624,12 +637,28 @@ void DFUAContinueMenu::Drawer( )
 namespace zx
 {
 
+bool Continue_IsListOpen( void )
+{
+	return ( DMenu::CurrentMenu != NULL )
+		&& DMenu::CurrentMenu->IsKindOf( RUNTIME_CLASS( DFUAContinueMenu ));
+}
+
+void Continue_CloseList( void )
+{
+	if ( Continue_IsListOpen( ))
+		DMenu::CurrentMenu->Close( );
+}
+
 void Continue_OpenList( void )
 {
+	// Already showing: a second press is not a second list.
+	if ( Continue_IsListOpen( ))
+		return;
+
 	// [rc4l] Constructed rather than declared in menudef. The list has no items a descriptor could
 	// describe -- its rows come from the history at the moment it opens -- so a descriptor would be
 	// an empty menu whose only purpose was to name a class.
-	M_ActivateMenu( new DFUAContinueMenu( ));
+	M_ActivateMenu( new DFUAContinueMenu( DMenu::CurrentMenu ));
 
 	// The row one press would have gone to is the row the cursor starts on, so Enter straight away
 	// does what pressing the pill with a single entry does.

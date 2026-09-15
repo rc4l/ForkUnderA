@@ -218,6 +218,13 @@ void MeasureLabels( int *out )
 // Escape, a console command, a mod's own submenu all do exactly that.
 HeaderTab CurrentTab( )
 {
+	// [rc4l] The Continue list is a THIRD place to be, and this used to have only two answers: the
+	// browser, or else the main menu. With the list open it therefore answered "main menu", so
+	// clicking Main Menu was a click on the tab you were already on -- which does nothing, by
+	// design, and left the player unable to get out of the list with the mouse.
+	if ( Continue_IsListOpen( ))
+		return HeaderTab::Continue;
+
 	return IsServerBrowserOpen( ) ? HeaderTab::PlayOnline : HeaderTab::MainMenu;
 }
 
@@ -788,6 +795,16 @@ bool PressTab( int tab, bool bDropFocus )
 	{
 		if ( bDropFocus )
 			g_HasFocus = false;
+
+		// Pressing it while its own list is open closes the list. A second press is the player
+		// saying they have seen it, and stacking a second copy on the first is the only other thing
+		// it could mean.
+		if ( Continue_IsListOpen( ))
+		{
+			S_Sound( CHAN_VOICE | CHAN_UI, "menu/backup", snd_menuvolume, ATTN_NONE );
+			Continue_CloseList( );
+			return true;
+		}
 
 		S_Sound( CHAN_VOICE | CHAN_UI, "menu/choose", snd_menuvolume, ATTN_NONE );
 		Continue_Activate( );
