@@ -104,7 +104,12 @@ int ToVirtualY( int py )
 }
 
 // The card, in virtual units.
-const int kCardW = 460;
+// [rc4l] Wide enough for two columns: the list, and a panel that says everything about the row the
+// cursor is on. Same shape as the server browser, and for the same reason -- a list row has space
+// for a name and a glance, and everything else about a session has to live somewhere.
+const int kCardW = 570;
+const int kListW = 320;
+const int kColGap = 12;
 
 // [rc4l] Two lines to a row: the headline, and under it what kind of session it was and what it was
 // played with. One line could not tell two rows apart -- "MAP01" is a slot number and a server name
@@ -125,6 +130,8 @@ struct Layout
 {
 	int cardX, cardY, cardW, cardH;
 	int listX, listY, listW;
+	int panelX, panelY, panelW, panelH;
+	int buttonX, buttonY, buttonW, buttonH;
 	int rows;						// how many fit on screen
 	int total;
 };
@@ -159,7 +166,20 @@ Layout Measure( int total )
 	// selection hid the status of the very row being considered.
 	out.listX = out.cardX + kPadX + kDotW;
 	out.listY = out.cardY + headerH;
-	out.listW = out.cardW - ( 2 * kPadX ) - kDotW;
+	out.listW = kListW - kDotW;
+
+	// The panel fills the rest of the card's width and the whole height of the list, with the button
+	// pinned to its bottom edge: the one thing the player is here to press is always in the same
+	// place, whatever the row above it says.
+	out.panelX = out.cardX + kPadX + kListW + kColGap;
+	out.panelY = out.listY - 4;
+	out.panelW = out.cardW - kPadX - ( out.panelX - out.cardX );
+	out.panelH = ( out.rows * kRowH ) + 4;
+
+	out.buttonH = 15;
+	out.buttonW = out.panelW - 12;
+	out.buttonX = out.panelX + 6;
+	out.buttonY = out.panelY + out.panelH - out.buttonH - 6;
 
 	return out;
 }
@@ -228,6 +248,25 @@ void DrawStatusDot( int vx, int vy, int status )
 	}
 }
 
+// The browser's button, drawn the same way for the same reason: one press ends the question, and a
+// button that looked different here would read as a different kind of thing.
+void DrawRoundedButton( int vx, int vy, int vw, int vh, const char *label, bool bHot, bool bEnabled )
+{
+	const int base = bHot ? 70 : 45;
+	const zx::PanelColor topCol = { static_cast<BYTE>( base ), static_cast<BYTE>( base + 25 ),
+		static_cast<BYTE>( base ), 220 };
+	const zx::PanelColor botCol = { static_cast<BYTE>( base / 2 ), static_cast<BYTE>( base + 5 ),
+		static_cast<BYTE>( base / 2 ), 235 };
+
+	DrawRoundedPanel( vx, vy, vw, vh, topCol, botCol, 4 );
+
+	const EColorRange col = bEnabled ? ( bHot ? CR_WHITE : CR_GREEN ) : CR_DARKGRAY;
+	screen->DrawText( SmallFont, col,
+		vx + ( vw / 2 ) - ( SmallFont->StringWidth( label ) / 2 ),
+		vy + ( vh - SmallFont->GetHeight( )) / 2 + 1, label,
+		DTA_VirtualWidth, VirtW( ), DTA_VirtualHeight, VirtH( ), DTA_KeepRatio, true, TAG_DONE );
+}
+
 void DrawTextAt( EColorRange colour, int vx, int vy, const char *text )
 {
 	screen->DrawText( SmallFont, colour, vx, vy, text,
@@ -254,6 +293,45 @@ FString Ellipsised( const char *text, int maxWidth )
 	return out;
 }
 
+// [rc4l] A sentence broken across lines at its spaces, for the panel. The reason a row is refused is
+// the one line a player has to READ rather than glance at, and ellipsising it cuts off the half that
+// says what to do about it.
+//
+// Words only: a word longer than the column is left to overrun rather than chopped mid-way, because
+// that only happens to a filename and half a filename is worse than a wide one.
+void WrapInto( const char *text, int maxWidth, TArray<FString> &lines, unsigned maxLines )
+{
+	FString current;
+
+	const FString whole = text;
+	long start = 0;
+
+	while (( start <= (long)whole.Len( )) && ( lines.Size( ) < maxLines ))
+	{
+		long space = whole.IndexOf( ' ', start );
+		if ( space < 0 )
+			space = whole.Len( );
+
+		const FString word = whole.Mid( start, space - start );
+		FString candidate = current.IsEmpty( ) ? word : ( current + " " + word );
+
+		if ( current.IsNotEmpty( ) && ( SmallFont->StringWidth( candidate ) > maxWidth ))
+		{
+			lines.Push( current );
+			current = word;
+		}
+		else
+		{
+			current = candidate;
+		}
+
+		start = space + 1;
+	}
+
+	if ( current.IsNotEmpty( ) && ( lines.Size( ) < maxLines ))
+		lines.Push( current );
+}
+
 } // namespace
 
 //=============================================================================
@@ -270,7 +348,7 @@ public:
 	// [rc4l] Parented to whatever was open, so Escape goes back to it rather than closing every menu
 	// and dropping the player onto the title screen they opened this from.
 	DFUAContinueMenu( DMenu *parent = NULL )
-		: DMenu( parent ), mSelected( 0 ), mFirst( 0 ), mHot( -1 )
+		: DMenu( parent ), mSelected( 0 ), mFirst( 0 ), mHot( -1 ), mButtonHot( false )
 	{
 	}
 
@@ -283,6 +361,7 @@ private:
 	int mSelected;
 	int mFirst;						// the row at the top of the window
 	int mHot;						// the row under the pointer, or -1
+	bool mButtonHot;
 
 	// [rc4l] Leaving is a ROW while we are in a session, not a separate act performed by the same
 	// press. It sits at the top and starts selected, so the immediate leave the button used to do is
@@ -297,12 +376,30 @@ private:
 	// The history row a screen row means, or -1 for the leave row.
 	int EntryIndex( int row ) const { return row - LeaveRows( ); }
 
+	// [rc4l] The button names the ACT, not the feature: a player reads it to find out what pressing
+	// it does to the thing they have highlighted.
+	const char *ButtonLabel( ) const
+	{
+		const int entry = EntryIndex( mSelected );
+		if ( entry < 0 )
+			return "LEAVE";
+
+		switch ( zx::Continue_EntryKind( entry ))
+		{
+		case 2:  return "RECONNECT";
+		case 3:  return "HOST AGAIN";
+		default: return "CONTINUE";
+		}
+	}
+
 	void Step( zx::ContinueListKey key );
 	void Activate( );
 	void Forget( );
 	int RowAt( int vx, int vy ) const;
+	bool OnButton( int vx, int vy ) const;
 	void DrawRows( const Layout &layout );
 	void DrawScrollbar( const Layout &layout );
+	void DrawDetail( const Layout &layout );
 };
 
 IMPLEMENT_CLASS( DFUAContinueMenu )
@@ -444,21 +541,48 @@ int DFUAContinueMenu::RowAt( int vx, int vy ) const
 	return ( row < Total( )) ? row : -1;
 }
 
+bool DFUAContinueMenu::OnButton( int vx, int vy ) const
+{
+	const Layout layout = Measure( Total( ));
+
+	return ( vx >= layout.buttonX ) && ( vx < layout.buttonX + layout.buttonW )
+		&& ( vy >= layout.buttonY ) && ( vy < layout.buttonY + layout.buttonH );
+}
+
 bool DFUAContinueMenu::MouseEvent( int type, int x, int y )
 {
 	const int vx = ToVirtualX( x ), vy = ToVirtualY( y );
 
 	mHot = RowAt( vx, vy );
+	mButtonHot = OnButton( vx, vy );
 
-	if (( type == MOUSE_Click ) && ( mHot >= 0 ))
+	if ( type == MOUSE_Click )
 	{
-		// [rc4l] One click, because the menu IS the question and the row IS the answer. It never
-		// appears under the pointer -- it opens from a press on the header bar and draws centred --
-		// so the misclick that a one-click list would ordinarily invite has nowhere to come from.
-		mSelected = mHot;
-		Activate( );
-		return true;
+		// [rc4l] A click on a row SELECTS it and nothing else. It used to act, which put a WAD
+		// reload one stray click away and gave the player nowhere to read what the row was before
+		// committing to it. The panel is that somewhere, and the button is the commitment.
+		if ( mHot >= 0 )
+		{
+			if ( mSelected != mHot )
+			{
+				mSelected = mHot;
+				S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+				zx::Continue_ProbeEntry( EntryIndex( mSelected ));
+			}
+			return true;
+		}
+
+		if ( mButtonHot )
+		{
+			Activate( );
+			return true;
+		}
 	}
+
+	// Double-clicking a row is the shortcut for the two presses, which is what a list of things to
+	// open does everywhere else.
+	if (( type == MOUSE_Release ) && ( mHot >= 0 ) && ( mHot == mSelected ))
+		return true;
 
 	return Super::MouseEvent( type, x, y );
 }
@@ -557,6 +681,109 @@ void DFUAContinueMenu::DrawRows( const Layout &layout )
 	}
 }
 
+void DFUAContinueMenu::DrawDetail( const Layout &layout )
+{
+	// The sunken backdrop the browser puts its detail on, so the two read as the same kind of place.
+	const zx::PanelColor topCol = { 6, 7, 12, 220 };
+	const zx::PanelColor botCol = { 3, 4, 8, 235 };
+	DrawRoundedPanel( layout.panelX, layout.panelY, layout.panelW, layout.panelH, topCol, botCol, 6 );
+
+	const int x = layout.panelX + 7;
+	const int w = layout.panelW - 14;
+	int y = layout.panelY + 6;
+
+	const int entry = EntryIndex( mSelected );
+
+	if ( entry < 0 )
+	{
+		// [rc4l] Leaving has no session behind it, so the panel says what will happen rather than
+		// leaving a blank square where every other row has a description.
+		DrawTextAt( CR_WHITE, x, y, "Leave" );
+		y += kLineH + 2;
+		DrawTextAt( CR_DARKGRAY, x, y, Ellipsised( "Stop playing and go", w ));
+		y += kLineH;
+		DrawTextAt( CR_DARKGRAY, x, y, Ellipsised( "back to the main menu.", w ));
+
+		DrawRoundedButton( layout.buttonX, layout.buttonY, layout.buttonW, layout.buttonH,
+			ButtonLabel( ), mButtonHot, true );
+		return;
+	}
+
+	DrawTextAt( CR_WHITE, x, y, Ellipsised( zx::Continue_EntryLabel( entry ), w ));
+	y += kLineH + 1;
+
+	// The summary, not the row's line: the files it would have tacked on are listed in full below.
+	DrawTextAt( CR_GRAY, x, y, Ellipsised( zx::Continue_EntrySummary( entry ), w ));
+	y += kLineH + 3;
+
+	const char *address = zx::Continue_EntryAddress( entry );
+	if ( *address != 0 )
+	{
+		DrawTextAt( CR_DARKGRAY, x, y, Ellipsised( address, w ));
+		y += kLineH + 2;
+	}
+
+	DrawTextAt( CR_DARKGRAY, x, y, "LAST PLAYED" );
+	y += kLineH;
+	DrawTextAt( CR_GOLD, x, y, zx::Continue_EntryWhen( entry ));
+	y += kLineH + 3;
+
+	// [rc4l] Every file, not the two the row has room for. "Which Doom was this" is exactly the
+	// question a row two years old raises, and the row cannot answer it.
+	const int files = zx::Continue_EntryFileCount( entry );
+
+	// Whatever fits between here and whatever is under it -- the reason, if there is one, and then
+	// the button. A file list that ran into either would be a panel writing over itself.
+	const int reserved = ( *zx::Continue_EntryStatusReason( entry ) != 0 ) ? ( 3 * kLineH ) : 0;
+	const int room = ( layout.buttonY - 6 - reserved - ( y + kLineH )) / kLineH;
+
+	// A heading with nothing under it is worse than no heading: it promises a list and then shows the
+	// player an empty strip of panel.
+	if (( files > 0 ) && ( room > 0 ))
+	{
+		DrawTextAt( CR_DARKGRAY, x, y, "FILES" );
+		y += kLineH;
+
+		for ( int i = 0; ( i < files ) && ( i < room ); ++i )
+		{
+			if (( i == room - 1 ) && ( files > room ))
+			{
+				char more[32];
+				snprintf( more, sizeof more, "+%d more", files - i );
+				DrawTextAt( CR_DARKGRAY, x, y, more );
+			}
+			else
+			{
+				DrawTextAt( CR_GRAY, x, y, Ellipsised( zx::Continue_EntryFile( entry, i ), w ));
+			}
+			y += kLineH;
+		}
+	}
+
+	// Why it is the colour it is, in words, immediately above the button that will act on it --
+	// WRAPPED, because this is the one line in the panel that has to be read rather than glanced at.
+	const char *reason = zx::Continue_EntryStatusReason( entry );
+	if ( *reason != 0 )
+	{
+		TArray<FString> lines;
+		WrapInto( reason, w, lines, 3 );
+
+		const int status = zx::Continue_EntryStatus( entry );
+		int ry = layout.buttonY - 3 - ( (int)lines.Size( ) * kLineH );
+
+		for ( unsigned i = 0; i < lines.Size( ); ++i )
+		{
+			DrawTextAt( ( status == 2 ) ? CR_BRICK : CR_ORANGE, x, ry, lines[i] );
+			ry += kLineH;
+		}
+	}
+
+	// A row that cannot work still draws its button, greyed: a button that VANISHES leaves the
+	// player wondering whether they missed it, and one that is visibly refused says what it means.
+	DrawRoundedButton( layout.buttonX, layout.buttonY, layout.buttonW, layout.buttonH,
+		ButtonLabel( ), mButtonHot, ( zx::Continue_EntryStatus( entry ) != 2 ));
+}
+
 void DFUAContinueMenu::DrawScrollbar( const Layout &layout )
 {
 	const int total = layout.total;
@@ -615,6 +842,8 @@ void DFUAContinueMenu::Drawer( )
 		layout.listX + layout.listW - SmallFont->StringWidth( whenHeading ), layout.cardY + 30,
 		whenHeading );
 
+	DrawTextAt( CR_DARKGRAY, layout.panelX + 7, layout.cardY + 30, "DETAILS" );
+
 	DimClipped( PalEntry( 120, 140, 180 ), 0.25f, ToScreenX( layout.listX ),
 		ToScreenY( layout.cardY + 41 ),
 		ToScreenX( layout.listX + layout.listW ) - ToScreenX( layout.listX ),
@@ -622,10 +851,9 @@ void DFUAContinueMenu::Drawer( )
 
 	DrawRows( layout );
 	DrawScrollbar( layout );
+	DrawDetail( layout );
 
-	const char *const hint = HasLeaveRow( )
-		? "Enter: go      Del: forget      Esc: back"
-		: "Enter: continue      Del: forget      Esc: back";
+	const char *const hint = "Enter or click the button      Del: forget      Esc: back";
 	DrawTextAt( CR_DARKGRAY, layout.cardX + ( layout.cardW - SmallFont->StringWidth( hint )) / 2,
 		layout.cardY + layout.cardH - 16, hint );
 

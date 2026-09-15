@@ -80,6 +80,13 @@ std::string ContinueEntryLabel(const ContinueRecord &record);
 // Empty only for a record with nothing in it, so a caller can draw it unconditionally.
 std::string ContinueEntryDetail(const ContinueRecord &record);
 
+// [rc4l] The same line WITHOUT the files: what kind of session it was, its mode and its size.
+//
+// For a reader that lists the files separately and has room to do it properly. The row has to fold
+// everything onto one line and truncate what does not fit; a panel that repeated that truncation
+// would be spending its width saying half of something it says in full three lines further down.
+std::string ContinueEntrySummary(const ContinueRecord &record);
+
 // [rc4l] The mode a hosted preset actually starts in, read off the cvars it carries.
 //
 // Presets set `deathmatch true` rather than a mode index -- the index is "leave it alone" in almost
