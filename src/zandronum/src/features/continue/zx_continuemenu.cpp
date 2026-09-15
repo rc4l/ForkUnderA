@@ -20,6 +20,7 @@
 
 #include "features/continue/zx_continue.h"
 
+#include "computation/listaction_compute.h"
 #include "features/continue/computation/continuelist_compute.h"
 #include "features/menu-focus/zx_focusglow.h"
 #include "features/server-browser/computation/scrollbar_compute.h"
@@ -155,7 +156,10 @@ Layout Measure( int total )
 		out.rows = 1;
 
 	const int headerH = 46;			// title, column headings and the rule under them
-	const int footerH = 22;			// the key hints
+	// [rc4l] Breathing room, and no key hints. The card carries a button that says what pressing it
+	// does and rows that say what they are; a strip spelling out Enter, Del and Esc underneath was a
+	// third thing to read on a card whose whole point is being glanceable.
+	const int footerH = 10;
 
 	out.cardH = headerH + ( out.rows * kRowH ) + footerH;
 	out.cardX = ( vw - out.cardW ) / 2;
@@ -348,7 +352,8 @@ public:
 	// [rc4l] Parented to whatever was open, so Escape goes back to it rather than closing every menu
 	// and dropping the player onto the title screen they opened this from.
 	DFUAContinueMenu( DMenu *parent = NULL )
-		: DMenu( parent ), mSelected( 0 ), mFirst( 0 ), mHot( -1 ), mButtonHot( false )
+		: DMenu( parent ), mSelected( 0 ), mFirst( 0 ), mHot( -1 ), mButtonHot( false ),
+		  mZone( zx::ListActionZone::List )
 	{
 	}
 
@@ -362,6 +367,11 @@ private:
 	int mFirst;						// the row at the top of the window
 	int mHot;						// the row under the pointer, or -1
 	bool mButtonHot;
+
+	// [rc4l] Which half of the card the keyboard is on. The route between them is the shared
+	// list-and-button contract (computation/listaction_compute), the same one the server browser's
+	// list and JOIN button use.
+	zx::ListActionZone mZone;
 
 	// [rc4l] Leaving is a ROW while we are in a session, not a separate act performed by the same
 	// press. It sits at the top and starts selected, so the immediate leave the button used to do is
@@ -378,6 +388,17 @@ private:
 
 	// [rc4l] The button names the ACT, not the feature: a player reads it to find out what pressing
 	// it does to the thing they have highlighted.
+	// Whether the button can be pressed at all: a red row draws it greyed, and the keyboard must not
+	// be able to walk onto something that refuses.
+	bool ActionAvailable( ) const
+	{
+		if ( Total( ) <= 0 )
+			return false;
+
+		const int entry = EntryIndex( mSelected );
+		return ( entry < 0 ) || ( zx::Continue_EntryStatus( entry ) != 2 );
+	}
+
 	const char *ButtonLabel( ) const
 	{
 		const int entry = EntryIndex( mSelected );
@@ -474,22 +495,57 @@ void DFUAContinueMenu::Forget( )
 //
 bool DFUAContinueMenu::MenuEvent( int mkey, bool fromcontroller )
 {
+	// [rc4l] Paging and jumping belong to the list, so they pull the focus back to it rather than
+	// doing nothing while the button holds the keyboard.
 	switch ( mkey )
 	{
-	case MKEY_Up:		Step( zx::ContinueListKey::Up );		return true;
-	case MKEY_Down:		Step( zx::ContinueListKey::Down );		return true;
-	case MKEY_PageUp:	Step( zx::ContinueListKey::PageUp );	return true;
-	case MKEY_PageDown:	Step( zx::ContinueListKey::PageDown );	return true;
+	case MKEY_PageUp:
+		mZone = zx::ListActionZone::List;
+		Step( zx::ContinueListKey::PageUp );
+		return true;
 
-	case MKEY_Enter:
-		Activate( );
+	case MKEY_PageDown:
+		mZone = zx::ListActionZone::List;
+		Step( zx::ContinueListKey::PageDown );
 		return true;
 
 	default:
 		break;
 	}
 
-	return Super::MenuEvent( mkey, fromcontroller );
+	zx::ListActionKey key;
+	switch ( mkey )
+	{
+	case MKEY_Up:		key = zx::ListActionKey::Up;	break;
+	case MKEY_Down:		key = zx::ListActionKey::Down;	break;
+	case MKEY_Left:		key = zx::ListActionKey::Left;	break;
+	case MKEY_Right:	key = zx::ListActionKey::Right;	break;
+	case MKEY_Enter:	key = zx::ListActionKey::Enter;	break;
+	default:
+		return Super::MenuEvent( mkey, fromcontroller );
+	}
+
+	const zx::ListActionZone was = mZone;
+	const zx::ListActionStep step = zx::StepListAction( mZone, key, ActionAvailable( ));
+
+	if ( step.activate )
+	{
+		Activate( );
+		return true;
+	}
+
+	// [rc4l] Off the pair entirely -- Left out of the list, Up off the button. There is nothing
+	// outside the card to reach, so the focus comes to rest on the list rather than nowhere.
+	mZone = ( step.zone == zx::ListActionZone::Outside ) ? zx::ListActionZone::List : step.zone;
+
+	if ( step.rowStep < 0 )
+		Step( zx::ContinueListKey::Up );
+	else if ( step.rowStep > 0 )
+		Step( zx::ContinueListKey::Down );
+	else if ( mZone != was )
+		S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
+
+	return true;
 }
 
 bool DFUAContinueMenu::Responder( event_t *ev )
@@ -501,8 +557,15 @@ bool DFUAContinueMenu::Responder( event_t *ev )
 		// them. A fifty-row list is exactly where their absence is felt.
 		switch ( ev->data1 )
 		{
-		case GK_HOME:	Step( zx::ContinueListKey::Home );	return true;
-		case GK_END:	Step( zx::ContinueListKey::End );	return true;
+		case GK_HOME:
+			mZone = zx::ListActionZone::List;
+			Step( zx::ContinueListKey::Home );
+			return true;
+
+		case GK_END:
+			mZone = zx::ListActionZone::List;
+			Step( zx::ContinueListKey::End );
+			return true;
 		case GK_DEL:	Forget( );							return true;
 		default:
 			break;
@@ -563,6 +626,7 @@ bool DFUAContinueMenu::MouseEvent( int type, int x, int y )
 		// committing to it. The panel is that somewhere, and the button is the commitment.
 		if ( mHot >= 0 )
 		{
+			mZone = zx::ListActionZone::List;
 			if ( mSelected != mHot )
 			{
 				mSelected = mHot;
@@ -574,6 +638,7 @@ bool DFUAContinueMenu::MouseEvent( int type, int x, int y )
 
 		if ( mButtonHot )
 		{
+			mZone = zx::ListActionZone::Action;
 			Activate( );
 			return true;
 		}
@@ -671,10 +736,11 @@ void DFUAContinueMenu::DrawRows( const Layout &layout )
 
 		DrawStatusDot( layout.listX - kDotW, y + ( kRowH / 2 ), status );
 
-		if ( bSelected )
+		// The same focus orb the browser and the tab bar use, so "you are here" does not change shape
+		// halfway through a gesture -- and it is on the row only while the keyboard is, or the card
+		// would claim the cursor is in two places.
+		if ( bSelected && ( mZone == zx::ListActionZone::List ))
 		{
-			// The same focus orb the browser and the tab bar use, so "you are here" does not change
-			// shape halfway through a gesture.
 			zx::DrawFocusGlow( ToScreenX( layout.cardX + 6 ), ToScreenY( y + ( kRowH / 2 )),
 				ToScreenX( 100 ) - ToScreenX( 0 ));
 		}
@@ -693,6 +759,7 @@ void DFUAContinueMenu::DrawDetail( const Layout &layout )
 	int y = layout.panelY + 6;
 
 	const int entry = EntryIndex( mSelected );
+	const bool bFocused = ( mZone == zx::ListActionZone::Action );
 
 	if ( entry < 0 )
 	{
@@ -705,7 +772,14 @@ void DFUAContinueMenu::DrawDetail( const Layout &layout )
 		DrawTextAt( CR_DARKGRAY, x, y, Ellipsised( "back to the main menu.", w ));
 
 		DrawRoundedButton( layout.buttonX, layout.buttonY, layout.buttonW, layout.buttonH,
-			ButtonLabel( ), mButtonHot, true );
+			ButtonLabel( ), mButtonHot || bFocused, true );
+
+		if ( bFocused )
+		{
+			zx::DrawFocusGlow( ToScreenX( layout.buttonX - 6 ),
+				ToScreenY( layout.buttonY + ( layout.buttonH / 2 )),
+				ToScreenX( 100 ) - ToScreenX( 0 ));
+		}
 		return;
 	}
 
@@ -781,7 +855,14 @@ void DFUAContinueMenu::DrawDetail( const Layout &layout )
 	// A row that cannot work still draws its button, greyed: a button that VANISHES leaves the
 	// player wondering whether they missed it, and one that is visibly refused says what it means.
 	DrawRoundedButton( layout.buttonX, layout.buttonY, layout.buttonW, layout.buttonH,
-		ButtonLabel( ), mButtonHot, ( zx::Continue_EntryStatus( entry ) != 2 ));
+		ButtonLabel( ), mButtonHot || bFocused, ( zx::Continue_EntryStatus( entry ) != 2 ));
+
+	if ( bFocused )
+	{
+		zx::DrawFocusGlow( ToScreenX( layout.buttonX - 6 ),
+			ToScreenY( layout.buttonY + ( layout.buttonH / 2 )),
+			ToScreenX( 100 ) - ToScreenX( 0 ));
+	}
 }
 
 void DFUAContinueMenu::DrawScrollbar( const Layout &layout )
@@ -852,10 +933,6 @@ void DFUAContinueMenu::Drawer( )
 	DrawRows( layout );
 	DrawScrollbar( layout );
 	DrawDetail( layout );
-
-	const char *const hint = "Enter or click the button      Del: forget      Esc: back";
-	DrawTextAt( CR_DARKGRAY, layout.cardX + ( layout.cardW - SmallFont->StringWidth( hint )) / 2,
-		layout.cardY + layout.cardH - 16, hint );
 
 	Super::Drawer( );
 }
