@@ -79,9 +79,10 @@ struct ContinueButtonVerdict
 	ContinueMode mode;
 	ContinueTarget target;
 
-	// [rc4l] Whether pressing it should ASK. Only a genuinely single-row history skips the question:
-	// with anything else on screen the player is choosing, whether or not we think one of the rows
-	// would fail.
+	// [rc4l] Whether pressing it should ASK -- which, out of a session, it always does.
+	//
+	// It used to skip the list for a single row. What that cost was predictability: the same button
+	// sometimes asked and sometimes acted, and which it did depended on a count nobody can see.
 	bool opensList;
 
 	ContinueButtonVerdict()
