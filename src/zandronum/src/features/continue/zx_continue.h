@@ -75,6 +75,16 @@ void Continue_ForgetEntry( int index );
 // does not have to know what a menu is.
 void Continue_OpenList();
 
+// [rc4l] Whether the picker is the menu currently on screen.
+//
+// The bar needs it: "which tab am I on" used to be "the browser, or else the main menu", and with a
+// third place to be that answered Main Menu while the list was open -- so clicking Main Menu was a
+// click on the tab you were already on, which does nothing by design.
+bool Continue_IsListOpen();
+
+// Close it, for the press that means "I have seen this list".
+void Continue_CloseList();
+
 // [rc4l] Leave the session and land on the main menu. The first row of the list while in one, so
 // that pressing the pill in a game asks where to go rather than deciding for the player.
 void Continue_LeaveToMenu();

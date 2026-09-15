@@ -1784,13 +1784,6 @@ static void GoToRecord( const ContinueRecord &rec )
 				rec.address.c_str( ));
 			return;
 		}
-		if ( probe == ServerProbe::WadsDiffer )
-		{
-			Printf( "Continue: %s is running different files now, so this is not the game you left.\n",
-				rec.address.c_str( ));
-			return;
-		}
-
 		// Down the join path the browser already uses, so a failure lands where every other failed
 		// join lands rather than inventing a second way to go wrong.
 		FString command;
@@ -1918,6 +1911,18 @@ bool Continue_ActivateEntry( int index )
 	const ContinueRecord *rec = EntryAt( index );
 	if ( rec == NULL )
 		return false;
+
+	// [rc4l] Refused BEFORE anything is torn down. A row we already know cannot work -- a commercial
+	// IWAD we do not have, a server that has stopped answering -- used to close every menu and then
+	// print why, so a misclick on a red row cost the player the list and put them back in the game
+	// with a console line they had to go looking for. The dot already said it; pressing it anyway
+	// should leave them exactly where they were.
+	const char *reason = "";
+	if ( StatusOf( *rec, &reason ) == ContinueStatus::Broken )
+	{
+		Printf( "Continue: %s\n", (( reason != NULL ) && ( *reason != 0 )) ? reason : "that one cannot be opened" );
+		return false;
+	}
 
 	// [rc4l] COPIED before anything else happens. Everything below can rewrite the history --
 	// leaving a server records it, a reload re-reads the file -- and the pointer would then name a

@@ -219,6 +219,27 @@ The scrolling is not new: `ComputeRowWindow`, `ComputeRestoredScroll`, `ComputeT
 `ComputeThumbTop` and `ComputeClampedSelection` are the server browser's, already unit-tested. What is
 genuinely new is Home and End, which nothing else in this engine implements.
 
+## The list and the bar
+
+The list is a **place**, and the bar has to know that. "Which tab am I on" used to be "the browser,
+or else the main menu", so with the list open it answered *main menu* -- and clicking Main Menu was
+therefore a click on the tab you were already on, which does nothing by design. The mouse could not
+get out of the list at all. `CurrentTab()` now answers Continue while the list is open, so both other
+tabs lead out of it and the pill lights up as the place you are.
+
+Pressing Continue while its own list is open **closes** it. Stacking a second copy on the first is
+the only other thing a second press could mean.
+
+The list is **parented** to whatever was open, so Escape goes back to that rather than closing every
+menu and dropping the player on the title screen they opened it from.
+
+A **red row refuses in place**: the status is asked before anything is torn down, so a misclick on a
+row that cannot work costs a sound rather than the whole list and a console line the player has to go
+looking for. A yellow row is let through on purpose -- the download is the point.
+
+The focus orb and the status dot get **a lane each**. Drawn at the same x, selecting a row hid the
+very thing that says whether that row works.
+
 ## In-place engine edits
 
 | File | Edit |
