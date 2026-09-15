@@ -146,6 +146,11 @@ void Continue_Tick();
 // Read the record off disk once, at startup, so the menu never touches the disk while drawing.
 void Continue_Load();
 
+// [rc4l] The player has changed how many entries to keep. Applied AT ONCE rather than at the next
+// launch: a setting that appears to do nothing is one the player will move again, further, looking
+// for the effect -- and then find it has thrown away more than they meant when it finally lands.
+void Continue_LimitChanged();
+
 // [rc4l] For the control bridge, so an E2E can assert on the decision rather than on pixels.
 // 0 none, 1 single, 2 server. `Target` is the address or the map, never null.
 int Continue_RecordKind();

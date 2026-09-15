@@ -421,7 +421,7 @@ OptionMenu "FUAOptions"
 OptionMenu "FUAContinueOptions"
 {
 	Title "CONTINUE HISTORY"
-	Slider	"Entries to remember",		"cl_fua_continue_history",	1, 50, 1, 1
+	Slider	"Entries to remember",		"cl_fua_continue_history",	5, 50, 5, 0
 	StaticText " "
 	StaticText "The Continue button remembers this many", 1
 	StaticText "different sessions. One is the old behaviour:", 1

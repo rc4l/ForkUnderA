@@ -36,14 +36,15 @@ ContinueButtonVerdict DecideContinueButton(const ContinueButtonInputs &in)
 	out.mode = ContinueMode::Continue;
 	out.target = in.newestTarget;
 
-	// [rc4l] Counted from the ROWS, not from the ones we would act on. A history of two where only
-	// one is pressable is still two things in front of the player, and a press that skipped the
-	// question threw them into a rehost they never chose.
+	// [rc4l] ALWAYS. It used to skip the list for a single row, on the reasoning that a one-row menu
+	// is a click charged for nothing -- and in isolation that is true. What it cost was
+	// PREDICTABILITY: the same button sometimes asked and sometimes acted, and which it did depended
+	// on a count the player cannot see. Every report about this button has been a version of "it did
+	// something when I expected it to ask", including one from a history trimmed to a single entry.
 	//
-	// One row and one row only is the exception: the pill already names it, and putting a menu in
-	// front of a single row would turn the one-press feature this started as into two presses for
-	// no decision.
-	out.opensList = (in.listCount > 1);
+	// A button that always asks can be learned in one press. One that asks most of the time cannot be
+	// learned at all.
+	out.opensList = true;
 	return out;
 }
 

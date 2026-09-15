@@ -56,7 +56,12 @@ CUSTOM_CVAR( Int, cl_fua_continue_history, 10, CVAR_ARCHIVE | CVAR_GLOBALCONFIG 
 	// player can see it rather than silently meaning something else everywhere it is read.
 	const int clamped = zx::ClampContinueHistoryLimit( self );
 	if ( self != clamped )
-		self = clamped;
+	{
+		self = clamped;			// which lands back here with the corrected value
+		return;
+	}
+
+	zx::Continue_LimitChanged( );
 }
 
 namespace zx
@@ -842,9 +847,19 @@ void Continue_Load( void )
 	std::vector<ContinueRecord> parsed;
 	if ( ParseContinueHistory( ReadFile( HistoryPath( )), parsed ))
 	{
-		// Trimmed on the way OUT as well as the way in, so lowering the setting takes effect at the
-		// next launch rather than waiting for the next thing the player happens to play.
+		// Trimmed on the way OUT as well as the way in, so a limit lowered by a DIFFERENT copy of the
+		// engine -- or by hand in the ini -- is honoured the moment this one reads the file.
 		g_History = TrimContinueHistory( parsed, HistoryLimit( ));
+
+		// [rc4l] And the file made to agree with it, because rows dropped HERE used to be dropped
+		// silently: their snapshots stayed on disk with nothing pointing at them, a hundred kilobytes
+		// each, and nothing would ever collect them. Two paths shorten the list and only one of them
+		// was tidying up after itself.
+		if ( g_History.size( ) != parsed.size( ))
+		{
+			WriteHistory( g_History );
+			RemoveDroppedSnapshots( parsed, g_History );
+		}
 		return;
 	}
 
@@ -1429,6 +1444,24 @@ void Continue_Forget( void )
 	// And the records this feature grew out of, in case one is still sitting there unmigrated.
 	remove( OfflineRecordPath( ).c_str( ));
 	remove( ServerRecordPath( ).c_str( ));
+}
+
+void Continue_LimitChanged( void )
+{
+	// [rc4l] Only once the history is actually in hand. This fires while the config file is being
+	// parsed too, long before there is an identity to ask where the config root is -- and the load
+	// that follows applies the limit anyway, so there is nothing to do here yet.
+	if ( g_bLoaded == false )
+		return;
+
+	const std::vector<ContinueRecord> before = g_History;
+	g_History = TrimContinueHistory( before, HistoryLimit( ));
+
+	if ( g_History.size( ) == before.size( ))
+		return;					// nothing fell off, so nothing to write
+
+	WriteHistory( g_History );
+	RemoveDroppedSnapshots( before, g_History );
 }
 
 void Continue_ForgetEntry( int index )

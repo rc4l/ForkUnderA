@@ -29,10 +29,11 @@ TEST( ContinueButton, NothingToOfferHidesIt )
 	EXPECT_EQ( ContinueMode::Hidden, DecideContinueButton( AtMenu() ).mode );
 }
 
-TEST( ContinueButton, OneEntryIsOfferedWithoutAList )
+TEST( ContinueButton, OneEntryStillOpensTheList )
 {
-	// The feature started as one press and one press is still right when there is nothing to choose
-	// between: a menu of a single row is a click that asks a question with one answer.
+	// It used to act directly here, and that is what made the button unlearnable: it asked or acted
+	// depending on a count the player cannot see. A history trimmed to one entry connected on the
+	// press, which is exactly the surprise the list exists to remove.
 	ContinueButtonInputs in = AtMenu();
 	in.offerableCount = 1;
 	in.listCount = 1;
@@ -41,7 +42,7 @@ TEST( ContinueButton, OneEntryIsOfferedWithoutAList )
 	const ContinueButtonVerdict v = DecideContinueButton( in );
 	EXPECT_EQ( ContinueMode::Continue, v.mode );
 	EXPECT_EQ( ContinueTarget::Offline, v.target );
-	EXPECT_FALSE( v.opensList );
+	EXPECT_TRUE( v.opensList );
 }
 
 TEST( ContinueButton, TwoOrMoreEntriesOpenTheList )
@@ -212,13 +213,16 @@ TEST( ContinueButton, ARowThatCannotBePressedStillCountsAsSomethingToChooseFrom 
 	EXPECT_TRUE( v.opensList );
 }
 
-TEST( ContinueButton, ASingleRowIsStillOnePress )
+TEST( ContinueButton, TheAnswerNeverDependsOnHowManyRowsThereAre )
 {
-	// And the other side of it: one row is one row however it is counted, and must not gain a menu.
-	ContinueButtonInputs in = AtMenu();
-	in.listCount = 1;
-	in.offerableCount = 1;
-	in.newestTarget = ContinueTarget::Server;
+	// The property that makes it learnable: whatever the counts, out of a session it asks.
+	for ( int rows = 1; rows <= 50; ++rows )
+	{
+		ContinueButtonInputs in = AtMenu();
+		in.listCount = rows;
+		in.offerableCount = rows;
+		in.newestTarget = ContinueTarget::Server;
 
-	EXPECT_FALSE( DecideContinueButton( in ).opensList );
+		EXPECT_TRUE( DecideContinueButton( in ).opensList ) << "with " << rows << " rows";
+	}
 }
