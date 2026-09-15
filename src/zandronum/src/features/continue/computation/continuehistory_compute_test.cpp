@@ -768,3 +768,221 @@ TEST( ContinueHistory, NothingToContinueHasNoSummary )
 {
 	EXPECT_TRUE( ContinueEntrySummary( ContinueRecord() ).empty() );
 }
+
+// ---------------------------------------------------------------- stress and abuse
+
+TEST( ContinueHistory, AHundredSessionsKeepOnlyTheCapAndTheNewest )
+{
+	// More than anyone can ask for. The cap is the cap, and what survives is the TOP of the list --
+	// keeping the first fifty written would be a history of what you stopped doing.
+	std::vector<ContinueRecord> history;
+	for ( int i = 1; i <= 100; ++i )
+	{
+		char address[32];
+		snprintf( address, sizeof address, "10.0.0.%d:%d", i % 250, 10000 + i );
+		history.push_back( Server( address, i ));
+	}
+
+	const std::vector<ContinueRecord> out = TrimContinueHistory( history, kContinueHistoryMax );
+
+	ASSERT_EQ( 50u, out.size() );
+	EXPECT_EQ( 100, out[0].stamp );
+	EXPECT_EQ( 51, out[49].stamp );
+
+	// And strictly descending the whole way down, with no duplicates.
+	for ( size_t i = 1; i < out.size(); ++i )
+		EXPECT_GT( out[i - 1].stamp, out[i].stamp ) << "at " << i;
+}
+
+TEST( ContinueHistory, ReplayingTheOLDESTSessionPutsItOnTop )
+{
+	// The question the whole list turns on: a thing you have not touched in months is still the thing
+	// you were just doing the moment you touch it.
+	std::vector<ContinueRecord> history;
+	for ( int i = 1; i <= 50; ++i )
+	{
+		char address[32];
+		snprintf( address, sizeof address, "10.0.0.%d:10666", i );
+		history.push_back( Server( address, i ));
+	}
+	history = TrimContinueHistory( history, 50 );
+	ASSERT_EQ( "10.0.0.1:10666", history[49].address );		// the oldest, at the bottom
+
+	// Played again, carrying a stale stamp exactly as a caller reading an old file would.
+	const std::vector<ContinueRecord> out =
+		InsertContinueEntry( history, Server( "10.0.0.1:10666", 1 ), 50 );
+
+	ASSERT_EQ( 50u, out.size() );
+	EXPECT_EQ( "10.0.0.1:10666", out[0].address );
+
+	// And it is not down there as well.
+	for ( size_t i = 1; i < out.size(); ++i )
+		EXPECT_NE( "10.0.0.1:10666", out[i].address ) << "duplicated at " << i;
+}
+
+TEST( ContinueHistory, AHundredOfTHESAMESessionIsOneRow )
+{
+	// Playing one server all week is one thing done many times.
+	std::vector<ContinueRecord> history;
+	for ( int i = 1; i <= 100; ++i )
+		history = InsertContinueEntry( history, Server( "10.0.0.5:10666", i ), 50 );
+
+	EXPECT_EQ( 1u, history.size() );
+}
+
+TEST( ContinueHistory, AHundredSessionsSurviveTheFileWhole )
+{
+	std::vector<ContinueRecord> history;
+	for ( int i = 1; i <= 100; ++i )
+	{
+		char map[16];
+		snprintf( map, sizeof map, "MAP%02d", i % 99 );
+		ContinueRecord r = Single( map, "sunder.wad", i );
+		r.mapTitle = "A Map With A Name";
+		history.push_back( r );
+	}
+
+	std::vector<ContinueRecord> back;
+	ASSERT_TRUE( ParseContinueHistory( SerialiseContinueHistory( history ), back ));
+	ASSERT_EQ( 100u, back.size() );
+	EXPECT_EQ( 100, back[99].stamp );
+}
+
+TEST( ContinueHistory, AbsurdlyLongTextSurvivesTheRoundTrip )
+{
+	// A server can call itself whatever it likes, and a mod's filename is whatever is on disk.
+	ContinueRecord in = Server( "10.0.0.5:10666", 1 );
+	in.serverName = std::string( 4000, 'N' );
+	in.password = std::string( 500, 'p' );
+
+	ContinueRecord::Wad wad;
+	wad.name = std::string( 300, 'w' ) + ".pk3";
+	in.wads.push_back( wad );
+
+	std::vector<ContinueRecord> history;
+	history.push_back( in );
+
+	std::vector<ContinueRecord> back;
+	ASSERT_TRUE( ParseContinueHistory( SerialiseContinueHistory( history ), back ));
+	ASSERT_EQ( 1u, back.size() );
+	EXPECT_EQ( in.serverName, back[0].serverName );
+	EXPECT_EQ( in.password, back[0].password );
+
+	// And the row still describes it rather than falling over.
+	EXPECT_FALSE( ContinueEntryLabel( back[0] ).empty() );
+	EXPECT_FALSE( ContinueEntryDetail( back[0] ).empty() );
+}
+
+TEST( ContinueHistory, TextThatLooksLikeTheFormatIsJustText )
+{
+	// A server named "entry" would end the entry it is in, if the marker were not a whole line.
+	ContinueRecord in = Server( "10.0.0.5:10666", 1 );
+	in.serverName = "entry";
+
+	std::vector<ContinueRecord> history;
+	history.push_back( in );
+	history.push_back( Server( "10.0.0.6:10666", 2 ));
+
+	std::vector<ContinueRecord> back;
+	ASSERT_TRUE( ParseContinueHistory( SerialiseContinueHistory( history ), back ));
+	ASSERT_EQ( 2u, back.size() );
+	EXPECT_EQ( "entry", back[0].serverName );
+}
+
+TEST( ContinueHistory, AKeyShapedServerNameDoesNotBecomeAField )
+{
+	ContinueRecord in = Server( "10.0.0.5:10666", 1 );
+	in.serverName = "address 1.2.3.4:5";
+
+	std::vector<ContinueRecord> history;
+	history.push_back( in );
+
+	std::vector<ContinueRecord> back;
+	ASSERT_TRUE( ParseContinueHistory( SerialiseContinueHistory( history ), back ));
+	ASSERT_EQ( 1u, back.size() );
+	EXPECT_EQ( "10.0.0.5:10666", back[0].address );			// not the one hidden in the name
+	EXPECT_EQ( "address 1.2.3.4:5", back[0].serverName );
+}
+
+TEST( ContinueHistory, HalfAFileIsTheRowsThatParsed )
+{
+	// Truncated mid-write, which is what a power cut during a save looks like.
+	std::vector<ContinueRecord> history;
+	for ( int i = 1; i <= 20; ++i )
+	{
+		char address[32];
+		snprintf( address, sizeof address, "10.0.0.%d:10666", i );
+		history.push_back( Server( address, i ));
+	}
+
+	std::string text = SerialiseContinueHistory( history );
+	text = text.substr( 0, text.size() / 2 );
+
+	std::vector<ContinueRecord> back;
+	ASSERT_TRUE( ParseContinueHistory( text, back ));
+	EXPECT_GT( back.size(), 0u );
+	EXPECT_LT( back.size(), 20u );
+}
+
+TEST( ContinueHistory, EveryEntryBeingRubbishIsAnEmptyListRatherThanAFailure )
+{
+	std::string text = "fua-continue-history 1\n";
+	for ( int i = 0; i < 50; ++i )
+		text += "entry\nkind nonsense\nbanana\n";
+
+	std::vector<ContinueRecord> back;
+	EXPECT_TRUE( ParseContinueHistory( text, back ));
+	EXPECT_TRUE( back.empty() );
+}
+
+TEST( ContinueHistory, AClockFromTheFutureDoesNotReorderAnything )
+{
+	// The reason order comes from the counter: a machine whose clock is wrong must not be able to
+	// drag a row to the top by claiming to be in 2099.
+	std::vector<ContinueRecord> history;
+	history.push_back( Server( "new:1", 10 ));
+	history[0].playedAt = 1000;
+
+	history.push_back( Server( "old:1", 1 ));
+	history[1].playedAt = 4000000000LL;
+
+	const std::vector<ContinueRecord> out = TrimContinueHistory( history, 50 );
+	EXPECT_EQ( "new:1", out[0].address );
+}
+
+TEST( ContinueHistory, AHundredIdenticalStampsKeepTheirFileOrder )
+{
+	std::vector<ContinueRecord> history;
+	for ( int i = 0; i < 100; ++i )
+	{
+		char address[32];
+		snprintf( address, sizeof address, "10.0.0.%d:10666", i );
+		history.push_back( Server( address, 7 ));
+	}
+
+	const std::vector<ContinueRecord> out = TrimContinueHistory( history, 50 );
+	ASSERT_EQ( 50u, out.size() );
+	EXPECT_EQ( "10.0.0.0:10666", out[0].address );
+	EXPECT_EQ( "10.0.0.49:10666", out[49].address );
+}
+
+TEST( ContinueHistory, ARecordWithTwoHundredFilesStillDescribesItself )
+{
+	ContinueRecord r = Single( "MAP01", "sunder.wad", 1 );
+	for ( int i = 0; i < 200; ++i )
+	{
+		ContinueRecord::Wad w;
+		w.name = "mod.pk3";
+		r.wads.push_back( w );
+	}
+
+	const std::string detail = ContinueEntryDetail( r );
+	EXPECT_NE( std::string::npos, detail.find( "+199 more" ));
+
+	std::vector<ContinueRecord> history;
+	history.push_back( r );
+	std::vector<ContinueRecord> back;
+	ASSERT_TRUE( ParseContinueHistory( SerialiseContinueHistory( history ), back ));
+	ASSERT_EQ( 1u, back.size() );
+	EXPECT_EQ( 201u, back[0].wads.size() );
+}
