@@ -21,6 +21,8 @@
 #include "features/continue/zx_continue.h"
 
 #include "computation/listaction_compute.h"
+#include "computation/virtualspace_compute.h"
+#include "features/continue/computation/continuecard_compute.h"
 #include "features/continue/computation/continuelist_compute.h"
 #include "features/menu-focus/zx_focusglow.h"
 #include "features/server-browser/computation/scrollbar_compute.h"
@@ -49,27 +51,10 @@ const int kLayoutH = 400;
 
 void VirtSize( int &vw, int &vh )
 {
-	const int sw = screen->GetWidth( );
-	const int sh = screen->GetHeight( );
-
-	if (( sw <= 0 ) || ( sh <= 0 ))
-	{
-		vw = kLayoutW;
-		vh = kLayoutH;
-		return;
-	}
-
-	if (( sw * kLayoutH ) <= ( sh * kLayoutW ))
-	{
-		// Width runs out first: the layout spans the window and the space is taller than 400.
-		vw = kLayoutW;
-		vh = ( sh * kLayoutW ) / sw;
-	}
-	else
-	{
-		vw = ( sw * kLayoutH ) / sh;
-		vh = kLayoutH;
-	}
+	const zx::VirtualSpace s = zx::ComputeVirtualSpace( screen->GetWidth( ), screen->GetHeight( ),
+		kLayoutW, kLayoutH );
+	vw = s.width;
+	vh = s.height;
 }
 
 int VirtW( ) { int vw = 0, vh = 0; VirtSize( vw, vh ); return vw; }
@@ -79,14 +64,14 @@ int ToScreenX( int vx )
 {
 	int vw = 0, vh = 0;
 	VirtSize( vw, vh );
-	return ( vw > 0 ) ? ( vx * screen->GetWidth( ) / vw ) : 0;
+	return zx::VirtualToScreen( vx, screen->GetWidth( ), vw );
 }
 
 int ToScreenY( int vy )
 {
 	int vw = 0, vh = 0;
 	VirtSize( vw, vh );
-	return ( vh > 0 ) ? ( vy * screen->GetHeight( ) / vh ) : 0;
+	return zx::VirtualToScreen( vy, screen->GetHeight( ), vh );
 }
 
 // [rc4l] Screen pixels back to virtual ones, DERIVED from the forward mapping rather than written
@@ -94,23 +79,17 @@ int ToScreenY( int vy )
 // disagree the first time either is touched.
 int ToVirtualX( int px )
 {
-	const int at0 = ToScreenX( 0 ), at100 = ToScreenX( 100 );
-	return ( at100 != at0 ) ? ((( px - at0 ) * 100 ) / ( at100 - at0 )) : 0;
+	return zx::ScreenToVirtual( px, ToScreenX( 0 ), ToScreenX( 100 ), 100 );
 }
 
 int ToVirtualY( int py )
 {
-	const int at0 = ToScreenY( 0 ), at100 = ToScreenY( 100 );
-	return ( at100 != at0 ) ? ((( py - at0 ) * 100 ) / ( at100 - at0 )) : 0;
+	return zx::ScreenToVirtual( py, ToScreenY( 0 ), ToScreenY( 100 ), 100 );
 }
 
 // The card, in virtual units.
-// [rc4l] Wide enough for two columns: the list, and a panel that says everything about the row the
-// cursor is on. Same shape as the server browser, and for the same reason -- a list row has space
-// for a name and a glance, and everything else about a session has to live somewhere.
-const int kCardW = 570;
-const int kListW = 320;
-const int kColGap = 12;
+// [rc4l] The card's WIDTHS live in continuecard_compute with the rest of the geometry; what stays
+// here is only what the drawing itself needs.
 
 // [rc4l] Two lines to a row: the headline, and under it what kind of session it was and what it was
 // played with. One line could not tell two rows apart -- "MAP01" is a slot number and a server name
@@ -123,79 +102,32 @@ const int kMaxVisibleRows = 7;		// beyond this the card would fill the window; i
 // The status dot, in its own gutter to the left of the text so the headlines stay aligned.
 const int kDotW = 9;
 const int kDotR = 2;
-const int kPadX = 14;
 const int kWhenColumnW = 96;
 const int kScrollbarW = 4;
 
-struct Layout
+// [rc4l] The card's geometry belongs to computation/continuecard_compute, where it can be asserted:
+// the one bug this menu shipped was a layout bug, and nothing could catch it while the arithmetic
+// lived inside a Drawer. This only supplies the sizes the engine knows and carries the row count.
+struct Layout : public zx::ContinueCardLayout
 {
-	int cardX, cardY, cardW, cardH;
-	int listX, listY, listW;
-	int panelX, panelY, panelW, panelH;
-	int buttonX, buttonY, buttonW, buttonH;
 	int rows;						// how many fit on screen
 	int total;
 };
 
-Layout Measure( int total )
+Layout Measure( int total, int reasonLines = 0 )
 {
+	zx::ContinueCardMetrics m;
+	m.virtualW = VirtW( );
+	m.virtualH = VirtH( );
+	m.rowCount = total;
+	m.rowHeight = kRowH;
+	m.lineHeight = kLineH;
+	m.maxVisibleRows = kMaxVisibleRows;
+
 	Layout out;
+	static_cast<zx::ContinueCardLayout &>( out ) = zx::ComputeContinueCard( m, reasonLines );
+	out.rows = out.visibleRows;
 	out.total = total;
-
-	const int vw = VirtW( ), vh = VirtH( );
-
-	out.cardW = ( kCardW < vw - 40 ) ? kCardW : ( vw - 40 );
-	if ( out.cardW < 160 )
-		out.cardW = 160;			// a window too narrow for the card still gets a card
-
-	// The list is at most kMaxVisibleRows tall, and shorter when there is less to show: a card sized
-	// for twelve rows with three in it is a box of empty space with a list at the top of it.
-	const int fits = zx::ComputeContinueVisibleRows( kMaxVisibleRows * kRowH, kRowH );
-	out.rows = ( total < fits ) ? total : fits;
-	if ( out.rows < 1 )
-		out.rows = 1;
-
-	const int headerH = 46;			// title, column headings and the rule under them
-	// [rc4l] Breathing room, and no key hints. The card carries a button that says what pressing it
-	// does and rows that say what they are; a strip spelling out Enter, Del and Esc underneath was a
-	// third thing to read on a card whose whole point is being glanceable.
-	const int footerH = 10;
-
-	// The card is as tall as the taller of its two columns; the panel's floor can exceed the list.
-	const int listH = out.rows * kRowH;
-	const int panelFloorH = 112;
-	out.cardH = headerH + (( listH > panelFloorH ) ? listH : panelFloorH ) + footerH;
-	out.cardX = ( vw - out.cardW ) / 2;
-	out.cardY = ( vh - out.cardH ) / 2;
-
-	// [rc4l] Two markers live left of the text and they are different questions -- the orb is "you
-	// are here", the dot is "this will work" -- so they get a lane each. Drawn at the same x, the
-	// selection hid the status of the very row being considered.
-	out.listX = out.cardX + kPadX + kDotW;
-	out.listY = out.cardY + headerH;
-	out.listW = kListW - kDotW;
-
-	// The panel fills the rest of the card's width and the whole height of the list, with the button
-	// pinned to its bottom edge: the one thing the player is here to press is always in the same
-	// place, whatever the row above it says.
-	out.panelX = out.cardX + kPadX + kListW + kColGap;
-	out.panelY = out.listY - 4;
-	out.panelW = out.cardW - kPadX - ( out.panelX - out.cardX );
-
-	// [rc4l] Tall enough for what the panel always has to say, even when the list is short. Sized
-	// only from the rows, a four-row history gave the panel less height than a name, a mode, an
-	// address, a date and a refusal need -- and the refusal, anchored above the button, was drawn
-	// straight over the date.
-	const int panelFloor = 112;
-	out.panelH = ( out.rows * kRowH ) + 4;
-	if ( out.panelH < panelFloor )
-		out.panelH = panelFloor;
-
-	out.buttonH = 15;
-	out.buttonW = out.panelW - 12;
-	out.buttonX = out.panelX + 6;
-	out.buttonY = out.panelY + out.panelH - out.buttonH - 6;
-
 	return out;
 }
 
@@ -364,6 +296,7 @@ public:
 	// and dropping the player onto the title screen they opened this from.
 	DFUAContinueMenu( DMenu *parent = NULL )
 		: DMenu( parent ), mSelected( 0 ), mFirst( 0 ), mHot( -1 ), mButtonHot( false ),
+		  mDraggingScrollbar( false ), mReveal( true ),
 		  mZone( zx::ListActionZone::List )
 	{
 	}
@@ -378,6 +311,13 @@ private:
 	int mFirst;						// the row at the top of the window
 	int mHot;						// the row under the pointer, or -1
 	bool mButtonHot;
+	bool mDraggingScrollbar;
+
+	// [rc4l] The selection has MOVED and the view must catch up with it. Without this the window is
+	// derived from the selection on every frame, so anything that scrolls without selecting -- the
+	// wheel, the scrollbar -- is undone before it can be seen. The browser keeps the same flag for
+	// the same reason; taking its scrolling maths without it is what left this list unscrollable.
+	bool mReveal;
 
 	// [rc4l] Which half of the card the keyboard is on. The route between them is the shared
 	// list-and-button contract (computation/listaction_compute), the same one the server browser's
@@ -429,6 +369,12 @@ private:
 	void Forget( );
 	int RowAt( int vx, int vy ) const;
 	bool OnButton( int vx, int vy ) const;
+
+	// [rc4l] ONE source for where the bar is, used by the drawing AND the hit test. Written out
+	// twice, they drift, and a thumb that is drawn a few pixels from where it can be grabbed is a
+	// scrollbar that feels broken without ever looking wrong.
+	bool ScrollbarRect( const Layout &layout, int &left, int &top, int &width, int &height ) const;
+	bool ScrollbarDrag( int type, int screenY );
 	void DrawRows( const Layout &layout );
 	void DrawScrollbar( const Layout &layout );
 	void DrawDetail( const Layout &layout );
@@ -444,6 +390,7 @@ void DFUAContinueMenu::Step( zx::ContinueListKey key )
 	const int was = mSelected;
 
 	mSelected = zx::StepContinueList( key, mSelected, total, Measure( total ).rows );
+	mReveal = true;
 
 	if ( mSelected != was )
 		S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
@@ -496,6 +443,7 @@ void DFUAContinueMenu::Forget( )
 	// the next keypress, because the DRAWING is what happens next and it would otherwise paint a
 	// highlight on a row that is not there.
 	mSelected = zx::ComputeClampedSelection( mSelected, Total( ));
+	mReveal = true;
 
 	// Nothing left to choose between: the menu has answered its own question.
 	if ( Total( ) <= 0 )
@@ -627,6 +575,26 @@ bool DFUAContinueMenu::MouseEvent( int type, int x, int y )
 {
 	const int vx = ToVirtualX( x ), vy = ToVirtualY( y );
 
+	// [rc4l] The bar gets asked BEFORE the rows, and a drag in progress gets asked before anything:
+	// once the button is down the pointer belongs to the thumb wherever it goes.
+	{
+		const Layout layout = Measure( Total( ));
+
+		int left = 0, top = 0, width = 0, height = 0;
+		const bool bHasBar = ScrollbarRect( layout, left, top, width, height );
+
+		// A few pixels of slack either side, because a four-pixel target is a target nobody hits.
+		const int grab = MAX( 1, ToScreenX( 3 ) - ToScreenX( 0 ));
+		const bool bOverBar = bHasBar && ( x >= left - grab ) && ( x < left + width + grab )
+			&& ( y >= top ) && ( y < top + height );
+
+		if ( type == MOUSE_Click )
+			mDraggingScrollbar = bOverBar;
+
+		if ( mDraggingScrollbar )
+			return ScrollbarDrag( type, y );
+	}
+
 	mHot = RowAt( vx, vy );
 	mButtonHot = OnButton( vx, vy );
 
@@ -641,6 +609,7 @@ bool DFUAContinueMenu::MouseEvent( int type, int x, int y )
 			if ( mSelected != mHot )
 			{
 				mSelected = mHot;
+				mReveal = true;
 				S_Sound( CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE );
 				zx::Continue_ProbeEntry( EntryIndex( mSelected ));
 			}
@@ -674,8 +643,18 @@ void DFUAContinueMenu::DrawRows( const Layout &layout )
 	// may no longer exist by the time it is drawn.
 	mSelected = zx::ComputeClampedSelection( mSelected, total );
 
-	const zx::RowWindow window = zx::ComputeRowWindow( total, layout.rows, mSelected, mFirst );
-	mFirst = zx::ComputeRestoredScroll( window.first, total, layout.rows );
+	// ...but only when the SELECTION moved. Done every frame, "keep the selection visible" drags the
+	// window back the instant anything scrolls without selecting.
+	if ( mReveal )
+	{
+		const zx::RowWindow window = zx::ComputeRowWindow( total, layout.rows, mSelected, mFirst );
+		mFirst = window.first;
+		mReveal = false;
+	}
+
+	// Every frame, though: rows come and go while the menu is open, so a position that was in range
+	// a moment ago may not be one now.
+	mFirst = zx::ComputeRestoredScroll( mFirst, total, layout.rows );
 
 	const int whenX = layout.listX + layout.listW - kWhenColumnW;
 	const int labelW = whenX - layout.listX - 8;
@@ -802,7 +781,9 @@ void DFUAContinueMenu::DrawDetail( const Layout &layout )
 	if ( *reason != 0 )
 		WrapInto( reason, w, reasonLines, 3 );
 
-	const int limit = layout.buttonY - 3 - ( (int)reasonLines.Size( ) * kLineH );
+	// The floor comes from the layout unit, asked again now that the refusal's height is known --
+	// recomputing it here is how the drawing and the tested geometry would come to disagree.
+	const int limit = Measure( layout.total, (int)reasonLines.Size( )).panelFlowLimit;
 
 	DrawTextAt( CR_WHITE, x, y, Ellipsised( zx::Continue_EntryLabel( entry ), w ));
 	y += kLineH + 1;
@@ -887,19 +868,28 @@ void DFUAContinueMenu::DrawDetail( const Layout &layout )
 	}
 }
 
-void DFUAContinueMenu::DrawScrollbar( const Layout &layout )
+bool DFUAContinueMenu::ScrollbarRect( const Layout &layout, int &left, int &top,
+	int &width, int &height ) const
 {
-	const int total = layout.total;
-	if ( total <= layout.rows )
-		return;					// a list that fits needs no bar
+	if ( layout.total <= layout.rows )
+		return false;				// a list that fits needs no bar
 
 	const int vx = layout.listX + layout.listW + 6;
 
-	const int left = ToScreenX( vx );
-	const int width = MAX( 1, ToScreenX( vx + kScrollbarW ) - left );
-	const int top = ToScreenY( layout.listY );
-	const int height = ToScreenY( layout.listY + layout.rows * kRowH ) - top;
-	if ( height <= 0 )
+	left = ToScreenX( vx );
+	width = MAX( 1, ToScreenX( vx + kScrollbarW ) - left );
+	top = ToScreenY( layout.listY );
+	height = ToScreenY( layout.listY + layout.rows * kRowH ) - top;
+
+	return ( height > 0 );
+}
+
+void DFUAContinueMenu::DrawScrollbar( const Layout &layout )
+{
+	const int total = layout.total;
+
+	int left = 0, top = 0, width = 0, height = 0;
+	if ( ScrollbarRect( layout, left, top, width, height ) == false )
 		return;
 
 	screen->Dim( PalEntry( 120, 140, 180 ), 0.14f, left, top, width, height );
@@ -910,7 +900,36 @@ void DFUAContinueMenu::DrawScrollbar( const Layout &layout )
 	const int thumbH = zx::ComputeThumbHeight( height, layout.rows, total, minThumb );
 	const int thumbY = top + zx::ComputeThumbTop( height, thumbH, mFirst, total - layout.rows );
 
-	screen->Dim( PalEntry( 170, 190, 230 ), 0.55f, left, thumbY, width, thumbH );
+	screen->Dim( PalEntry( 170, 190, 230 ), mDraggingScrollbar ? 0.8f : 0.55f,
+		left, thumbY, width, thumbH );
+}
+
+// [rc4l] Grabbing the bar. The thumb follows the pointer for as long as the button is held, even
+// once it wanders off the bar, which is what dragging a scrollbar means everywhere else.
+bool DFUAContinueMenu::ScrollbarDrag( int type, int screenY )
+{
+	const Layout layout = Measure( Total( ));
+
+	int left = 0, top = 0, width = 0, height = 0;
+	if ( ScrollbarRect( layout, left, top, width, height ) == false )
+	{
+		mDraggingScrollbar = false;
+		return false;
+	}
+
+	// Same geometry the drawing uses, so the thumb lands where it was grabbed.
+	const int minThumb = ToScreenY( 8 ) - ToScreenY( 0 );
+	const int thumbH = zx::ComputeThumbHeight( height, layout.rows, layout.total, minThumb );
+
+	// Moves the VIEW only. What is selected is none of the scrollbar's business -- the same rule the
+	// wheel keeps, and the reason dragging past a row does not arm the button on it.
+	mFirst = zx::ComputeFirstFromPointer( screenY - top, height, thumbH,
+		layout.total - layout.rows );
+
+	if ( type == MOUSE_Release )
+		mDraggingScrollbar = false;
+
+	return true;
 }
 
 void DFUAContinueMenu::Drawer( )
