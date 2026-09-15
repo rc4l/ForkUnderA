@@ -2,6 +2,7 @@
 // Copyright (C) 2026 rc4l
 
 #include "zx_globalheader.h"
+#include "computation/virtualspace_compute.h"
 #include "features/continue/zx_continue.h"
 
 #include "doomtype.h"
@@ -43,6 +44,24 @@ const int HEADER_LAYOUT_W = 640;
 const int HEADER_LAYOUT_H = 400;
 
 const char *const kTabLabels[kHeaderTabCount] = { "Main Menu", "Play Online!", "Continue" };
+
+// [rc4l] The Continue pill says what it will DO, which is not always "Continue".
+//
+// The bar drew the fixed word in every state while the feature had a second label ready and unused,
+// so the button read "Continue" while it was the way out of a game -- and a player who pressed it
+// expecting to continue something got a disconnect. Everything else on the bar is a fixed noun and
+// still comes from the table.
+const char *TabLabel( int i )
+{
+	if ( i == static_cast<int>( HeaderTab::Continue ))
+	{
+		const char *label = zx::Continue_Label( );
+		if (( label != NULL ) && ( *label != 0 ))
+			return label;
+	}
+
+	return kTabLabels[i];
+}
 
 // [rc4l] Continue is the only tab that comes and goes, so everything the bar does has to ask how
 // many tabs there are rather than assume. It is last in the enum and drawn first on the bar; see
@@ -161,25 +180,17 @@ int ToScreenY( int vy )
 }
 
 // Screen pixels back to virtual, by inverting the mapping through two known points rather than
-// reimplementing it. Two conversions that agree only on some aspect ratios is the bug this avoids.
+// reimplementing it. Two conversions that agree only on some aspect ratios is the bug this avoids --
+// which is also why the inversion itself is shared (computation/virtualspace_compute) rather than
+// written out in each of the three menus that need it.
 int ToVirtualX( int px )
 {
-	const int at0 = ToScreenX( 0 );
-	const int at100 = ToScreenX( 100 );
-	if ( at100 == at0 )
-		return 0;
-
-	return (( px - at0 ) * 100 ) / ( at100 - at0 );
+	return zx::ScreenToVirtual( px, ToScreenX( 0 ), ToScreenX( 100 ), 100 );
 }
 
 int ToVirtualY( int py )
 {
-	const int at0 = ToScreenY( 0 );
-	const int at100 = ToScreenY( 100 );
-	if ( at100 == at0 )
-		return 0;
-
-	return (( py - at0 ) * 100 ) / ( at100 - at0 );
+	return zx::ScreenToVirtual( py, ToScreenY( 0 ), ToScreenY( 100 ), 100 );
 }
 
 //*****************************************************************************
@@ -187,8 +198,10 @@ int ToVirtualY( int py )
 // The measured width of every label, which is what the layout is built from.
 void MeasureLabels( int *out )
 {
+	// Measured from the label that will actually be drawn, or the pill is sized for a different word
+	// than the one inside it.
 	for ( int i = 0; i < TabCount( ); ++i )
-		out[i] = SmallFont->StringWidth( kTabLabels[i] );
+		out[i] = SmallFont->StringWidth( TabLabel( i ));
 }
 
 // [rc4l] Which tab is LIT, asked rather than remembered.
@@ -198,6 +211,13 @@ void MeasureLabels( int *out )
 // Escape, a console command, a mod's own submenu all do exactly that.
 HeaderTab CurrentTab( )
 {
+	// [rc4l] The Continue list is a THIRD place to be, and this used to have only two answers: the
+	// browser, or else the main menu. With the list open it therefore answered "main menu", so
+	// clicking Main Menu was a click on the tab you were already on -- which does nothing, by
+	// design, and left the player unable to get out of the list with the mouse.
+	if ( Continue_IsListOpen( ))
+		return HeaderTab::Continue;
+
 	return IsServerBrowserOpen( ) ? HeaderTab::PlayOnline : HeaderTab::MainMenu;
 }
 
@@ -573,7 +593,7 @@ void GlobalHeader_Draw( )
 		const ReachTint tint = bOnline ? HeaderReachTint( reach ) : ReachTint::Neutral;
 		const bool bEnabled = !bOnline || PlayOnlineSelectable( reach );
 
-		DrawPill( HeaderTabRect( m, widths, TabCount( ), i, PinnedIndex( ) ), kTabLabels[i], ( i == lit ),
+		DrawPill( HeaderTabRect( m, widths, TabCount( ), i, PinnedIndex( ) ), TabLabel( i ), ( i == lit ),
 			( i == g_HotTab ), ( g_HasFocus && ( i == g_FocusTab )), tint, bEnabled );
 	}
 
@@ -768,6 +788,16 @@ bool PressTab( int tab, bool bDropFocus )
 	{
 		if ( bDropFocus )
 			g_HasFocus = false;
+
+		// Pressing it while its own list is open closes the list. A second press is the player
+		// saying they have seen it, and stacking a second copy on the first is the only other thing
+		// it could mean.
+		if ( Continue_IsListOpen( ))
+		{
+			S_Sound( CHAN_VOICE | CHAN_UI, "menu/backup", snd_menuvolume, ATTN_NONE );
+			Continue_CloseList( );
+			return true;
+		}
 
 		S_Sound( CHAN_VOICE | CHAN_UI, "menu/choose", snd_menuvolume, ATTN_NONE );
 		Continue_Activate( );

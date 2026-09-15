@@ -3,6 +3,8 @@
 
 #include "features/server-browser/computation/browserfocus_compute.h"
 
+#include "computation/listaction_compute.h"
+
 namespace zx
 {
 
@@ -118,6 +120,20 @@ NavResult ComputeNav( BrowserFocus focus, NavKey key, const NavWhere &where )
 		break;
 
 	case BrowserFocus::Rows:
+		// [rc4l] Right into the button is the shared half of this pair, so it is answered by the
+		// shared unit (computation/listaction_compute) rather than restated here. What stays is what
+		// is peculiar to the browser: there is a filter row above this list, so Up off the top leaves
+		// for it instead of wrapping.
+		if ( key == NavKey::Right )
+		{
+			if ( StepListAction( ListActionZone::List, ListActionKey::Right, true ).zone
+				== ListActionZone::Action )
+			{
+				out.focus = BrowserFocus::Action;
+			}
+			break;
+		}
+
 		if ( key == NavKey::Up )
 		{
 			// At the top of the list Up LEAVES for the region above it -- the filter row, or the tabs
@@ -131,8 +147,6 @@ NavResult ComputeNav( BrowserFocus focus, NavKey key, const NavWhere &where )
 		}
 		else if ( key == NavKey::Down )
 			out.rowStep = 1;
-		else if ( key == NavKey::Right )
-			out.focus = BrowserFocus::Action;
 		// Left is deliberately nothing: there is no region to the left, and wrapping round to the
 		// button would make the two horizontal keys disagree about which way the layout runs.
 		break;
@@ -149,8 +163,16 @@ NavResult ComputeNav( BrowserFocus focus, NavKey key, const NavWhere &where )
 		break;
 
 	case BrowserFocus::Action:
+		// Coming back left is the other shared half; where "the list" IS remains the browser's own
+		// question, because an empty list has to land somewhere that exists.
 		if ( key == NavKey::Left )
-			out.focus = IntoTheList( where, AboveTheList( where ));
+		{
+			if ( StepListAction( ListActionZone::Action, ListActionKey::Left, true ).zone
+				== ListActionZone::List )
+			{
+				out.focus = IntoTheList( where, AboveTheList( where ));
+			}
+		}
 		else if ( key == NavKey::Up )
 			out.focus = AboveTheList( where );
 		else if ( key == NavKey::Down )

@@ -2,30 +2,40 @@
 
 One button on the global header, pinned to the left, that puts the player back where they left off.
 
-Two shapes of session are remembered:
+It remembers a **history** rather than a single session: the last several distinct things the player
+has been doing, newest first. Pressing the pill with more than one of them opens a list to choose
+from; with exactly one it goes straight there, which is what the feature did before the list existed.
 
-* **Server** — the address we were connected to, plus the password used. Pressing Continue reconnects.
-* **Single** — an offline session, snapshotted to one slot. Pressing Continue loads it.
+Three shapes of session live in that list:
+
+* **Server** — the address we were connected to, plus the password used. Continuing reconnects.
+* **Single** — an offline session, snapshotted to a slot of its own. Continuing loads it.
+* **Hosted** — a game we hosted. The world lived in the child process and went with it, so what is
+  kept is the config that made it: a fresh match on the same terms, not the match we left.
 
 ## Where the state lives
 
 A `continue/` folder under the per-user config root, alongside `identity/`:
 
 ```
-<config root>/continue/session.txt   the record
-<config root>/continue/session.zds   the snapshot a Single record points at
+<config root>/continue/history.txt        the list
+<config root>/continue/offline-<n>.zds    the snapshot one Single entry points at
 ```
 
-One folder, named after what it is, because the two files only mean anything together — deleting
-this feature's state should be one obvious action rather than knowing which loose files in the
-config root belonged to it. The snapshot is one slot, overwritten: this is "where you left off",
-not a save history.
+One folder, named after what it is, because the files only mean anything together — deleting this
+feature's state should be one obvious action rather than knowing which loose files in the config root
+belonged to it.
 
-Every way of damaging either file resolves to the button not appearing. Verified by deleting each,
-truncating the record, replacing either with random bytes, forging a newer format version, zeroing
-both, pointing the record at a directory, and replacing the folder itself with a file: the engine
-came up in every case and the button was hidden in every case. With both files read-only the quit
-path fails to write and exits cleanly, leaving the previous record intact.
+**One snapshot per entry**, numbered by the entry's stamp. A single shared slot was right while there
+was a single offline record; a history of them would otherwise be ten rows pointing at one save, nine
+of them lying about which map they lead to. When an entry falls off the end its snapshot is deleted
+with it — worked out from the difference between the old list and the new one, never by scanning the
+folder for files nothing points at (that scan would also find the snapshot another copy of the engine
+is holding).
+
+Every way of damaging any of it resolves to the button not appearing, or to one row missing. The
+history parses entry by entry: a mangled entry costs one row rather than throwing away the other
+forty-nine.
 
 ## Why the record is not written from a shutdown hook
 
@@ -33,8 +43,47 @@ path fails to write and exits cleanly, leaving the previous record intact.
 chain therefore runs on a crash exactly as it does on a clean quit, and a record written from there
 would faithfully save the crash and then offer to put the player back into it.
 
-So the record is written from the **deliberate** quit (`CCMD quit`/`exit`) and from the moment a join
-succeeds. A signal crash never reaches `exit()` at all, so it is safe by omission.
+So the record is written from the **deliberate** quit (`CCMD quit`/`exit`), from ending a game back
+to the menu (`CCMD endgame`), from starting a host, from leaving a local game to join something, and
+from the moment a join succeeds. A signal crash never reaches `exit()` at all, so it is safe by
+omission.
+
+Note that a server goes into the list **when the join lands**, not when you leave it — so however you
+leave (disconnect, kick, ban, the server dying) it is already there, and the departure itself writes
+nothing.
+
+## What makes two sessions the same session
+
+Each entry has an identity, and a new session whose identity is already in the list **replaces** that
+row and moves it to the top. Three evenings on the same server is one thing done three times, and a
+history that showed it three times would have spent three of its rows saying the same sentence.
+
+* A server is its **address** — one that renames itself is still where they go in the evening.
+* A local game is its **map and the files it was played with** — MAP01 of one megawad is not MAP01 of
+  another, and a history that thought otherwise would overwrite one with the other.
+* A hosted game is **what would start it again**: the map, the files and the mode.
+
+Files are compared by name, never by the path they happened to be written down under. A remembered
+host config holds `doom2.wad` because that is what the player picked; the config a *running* server
+reports holds the absolute path the engine resolved it to. Compared as strings those are two games,
+which is how rehosting a row added a second copy of it and left the pill offering to take the player
+back to the game they were already inside.
+
+## Order comes from the counter, the column comes from the clock
+
+`stamp` is monotonic and ours; `playedAt` is the system clock and is not. Sorting by the clock would
+let a machine whose time is wrong — or which corrects itself while the engine runs — reshuffle a list
+the player has learned the shape of. Sorting by the counter cannot, and the clock is still the only
+thing that can say "yesterday", so both are kept and each does the one job it can be trusted with. An
+entry with no clock (written before the field existed) shows a dash rather than 1970.
+
+## How many it keeps
+
+`cl_fua_continue_history`, 1 to 50, default 10, under **FUA Options → Continue History**. The cap is
+applied on the way in AND on the way out, so lowering it trims at the next launch rather than waiting
+for the next thing the player happens to play. The floor is one, not zero: zero entries is the feature
+switched off, and a size control that switches something off at one end of its travel is two settings
+wearing one hat.
 
 ## The server probe
 
@@ -47,6 +96,11 @@ work and looks like it does: it answers with a cleared dummy for any slot that i
 so a server that has been asked and not yet answered — or that never will — is invisible to that
 scan by construction, and the probe silently never settles.
 
+**One question in flight, and one per address ever.** The list can hold several servers, and asking
+all of them the moment a menu opens is a query storm aimed at other people's machines on behalf of
+rows nobody may click. The row one press would act on is asked without being clicked, exactly as the
+single record was; the rest are asked when the player selects them.
+
 ## Why a pending server probe still shows the button
 
 Hiding until a probe answers makes the button appear a second after the menu, underneath the
@@ -54,11 +108,171 @@ player's cursor, which is how a misclick becomes a reconnect. Showing until a pr
 costs at worst one press that lands back in the browser with a reason — the path a failed join
 already takes. Same asymmetry `headerreach_compute` settles for "Play Online!".
 
+In the list this goes one step further: a row whose probe has come back dead is **dimmed and
+labelled**, not removed. Rows that vanish from under a pointer are how a click lands on something the
+player did not read.
+
+That makes two different questions, and the code asks them separately. *Usable* is structural — the
+snapshot is there and this build can load it — and decides which rows the list shows. *Offerable* is
+usable **and** not a server we know is dead, and decides what the pill will do without asking. A dead
+server therefore stays visible and pressable in the list, but never becomes the thing a single press
+lands on.
+
+## Migrating from the two records
+
+The first launch after this build reads the old `offline.txt` and `server.txt`, inserts them oldest
+first so their existing stamps put them in the order the player lived them, writes `history.txt`, and
+deletes the two. Their clocks are left at zero rather than set to now: those sessions happened at some
+point that nothing wrote down, and stamping them with the moment of the upgrade would have the list
+claim the player was in all of them a second ago.
+
+Migration only ever runs when there is **no** history file. An emptied history is written as a file
+with no entries rather than deleted, so a player who clears it does not find it back next launch.
+
+## What leaving means
+
+The pill is on the bar **everywhere**, including while a single-player map is running. It used to
+hide there, on the reasoning that offering Continue to somebody already playing is offering to throw
+away what they are doing. That was right while pressing it threw the game away; it is not right now
+that pressing it opens a list whose first row is "leave", and a button that vanishes exactly when the
+program is being used most is one nobody can rely on.
+
+It also says what it will DO — `Continue` at a menu, `Disconnect` in a server, `Leave` in a map. The
+bar drew the fixed word "Continue" in every state while the feature had a second label ready and
+unused, so the button read "Continue" while it was the way out of a game.
+
+Pressing it inside a game **opens the same list**, titled "Where to?", with **Leave and go to the
+main menu** as its first row and already selected. A local game leaves through `endgame`, which is
+also what records it, so leaving a map from this list remembers it exactly as ending it from the menu
+does. Leaving used to be performed on the spot,
+which is defensible and was not what anybody expected: the same button one press earlier had opened a
+list, so pressing it again read as "open the list" and instead threw the player out of the game. One
+keystroke still leaves; picking any other row goes straight there without leaving and pressing again.
+
+The session you are currently in is **not** in that list. "Continue" to where you already are says
+nothing, and for a hosted game it would tear the match down to start the same match again.
+
+When leaving does happen it goes to **what you left in this process to get here** — or the main menu
+if that was nothing. Not "the newest local entry", which is what it was
+while there were two records: with a history that answer is some match from last week, so leaving a
+rehosted game started an unrelated one, and leaving a game you had picked from the list started the
+very game you were standing in.
+
+Leaving with nowhere to go lands on the **title screen with the main menu open**.
+`CLIENT_QuitNetworkGame` ends in `ga_fullconsole` and `D_StartTitle` alone begins the attract loop, so
+the two obvious versions of this leave the player at a console or in a slideshow while the pill has
+just promised them a menu. Both are performed from the tick, because a gameaction issued inside a
+teardown is replaced by the teardown's own.
+
+## What a row says
+
+Two lines. The headline is what the player would call the thing -- the map's **real name** where we
+have one ("Hydroelectric Plant", not "MAP01"), the server's name where we have that. Under it, dimmer:
+the kind of session, its mode and size where those mean anything, and the **mod** it was played with.
+
+The mod rather than the IWAD, because every session has an IWAD and naming it in every row tells the
+player nothing about any of them; the IWAD is named only when nothing else was. Two names and a
+count, because a row is a thing to recognise at a glance and a twelve-file load order is not.
+
+A hosted preset's mode is read off **its own cvars** when nobody named it. Presets set
+`deathmatch true` rather than a mode index -- the index is "leave it alone" in almost every config the
+catalogue ships -- so the mode is knowable, just not from the field named after it.
+
+The map title and the mode are captured **when the record is written**, because they come out of the
+MAPINFO of the set that was loaded at that moment and a different set, or none, may be loaded by the
+time the list is drawn. Rows written before this existed keep showing the lump name.
+
+## Whether a row will work
+
+A dot in the gutter, from `continuestatus_compute`:
+
+* **Green** -- go. Every file is here, and for a server it answered and we can join it.
+* **Yellow** -- fixable without leaving. Something is missing that can be fetched: a mod, or a free
+  IWAD. Pressing it costs a download, not a dead end.
+* **Red** -- not from here. A commercial IWAD is missing and no amount of downloading will produce it;
+  or the server is gone; or it is running a version we cannot join.
+
+The split is about what the PLAYER has to do next, not about how broken the row is: yellow means
+"press it and wait", red means "this needs something we cannot give you". Whether a missing IWAD can
+be fetched is asked of the **downloader's own allowlist** (`IsFreeIwadName`), never of a second table
+here -- a list that disagreed with the one the download gate enforces would promise a fetch that then
+gets refused.
+
+Two judgement calls, written down because they are arguable. A server nobody has asked about yet is
+**green**: the same asymmetry the button already settles, since painting "we have not checked" as a
+fault would mark every row red for the second it takes to answer. A server running **different files**
+than we recorded is **yellow**, not red: it is up and it will let us in, and what waits on the other
+side is a download.
+
+Resolving a row's files means hashing copies on disk, so the verdict is cached against the load
+generation -- the same counter everything else derived from the history hangs off.
+
+## The list
+
+`DFUAContinueMenu` (`zx_continuemenu.cpp`) — a card in the same visual language as the browser and
+the updater's notice, drawn from the same tested geometry.
+
+**Two columns, like the browser**: the list on the left, and a panel on the right describing whatever
+the cursor is on — its name, kind, mode and size, its address if it has one, when it was last played,
+**every** file it used, and why its dot is the colour it is. The row has space for a name and a
+glance; everything else about a session has to live somewhere.
+
+**The keyboard walks between the two halves**, by the shared list-and-button contract in
+`src/computation/listaction_compute` — the same unit the server browser's list and JOIN button now
+use for their own Right/Left edges. Enter or Right on a row moves to the button rather than starting
+anything; Left comes back to the same row; Down comes back and moves on to the next one; Enter on the
+button is the only thing that acts. Page keys, Home and End pull the focus back to the list, because
+that is what they are for. The focus orb is on the row only while the keyboard is, or the card would
+claim the cursor is in two places at once.
+
+**Clicking a row selects it. The button commits.** It used to act on the click, which put a WAD
+reload one stray click away and gave the player nowhere to read what a row was before committing to
+it. The button names the act rather than the feature — `CONTINUE`, `RECONNECT`, `HOST AGAIN`,
+`LEAVE` — and sits in the same place whatever the row above it says. A red row still draws its
+button, greyed: one that VANISHED would leave the player wondering whether they had missed it.
+
+There are no key hints along the bottom. The button says what pressing it does and the rows say what
+they are; a strip spelling out Enter, Del and Esc underneath was a third thing to read on a card
+whose whole point is being glanceable.
+
+The panel shows the **summary** rather than the row's line, because the row's line ends in the files
+and the panel lists those in full underneath. The refusal reason is **wrapped**, not ellipsised: it is
+the one line here that has to be read rather than glanced at, and cutting it off removes the half
+that says what to do. Keyboard is Up/Down (wrapping), PageUp/PageDown (clamping — a page key that wrapped would make
+holding it a loop through the whole list), Home/End, Enter to continue, Del to forget a row, Esc to
+leave. The wheel moves the view and leaves the selection alone.
+
+The scrolling is not new: `ComputeRowWindow`, `ComputeRestoredScroll`, `ComputeThumbHeight`,
+`ComputeThumbTop` and `ComputeClampedSelection` are the server browser's, already unit-tested. What is
+genuinely new is Home and End, which nothing else in this engine implements.
+
+## The list and the bar
+
+The list is a **place**, and the bar has to know that. "Which tab am I on" used to be "the browser,
+or else the main menu", so with the list open it answered *main menu* -- and clicking Main Menu was
+therefore a click on the tab you were already on, which does nothing by design. The mouse could not
+get out of the list at all. `CurrentTab()` now answers Continue while the list is open, so both other
+tabs lead out of it and the pill lights up as the place you are.
+
+Pressing Continue while its own list is open **closes** it. Stacking a second copy on the first is
+the only other thing a second press could mean.
+
+The list is **parented** to whatever was open, so Escape goes back to that rather than closing every
+menu and dropping the player on the title screen they opened it from.
+
+A **red row refuses in place**: the status is asked before anything is torn down, so a misclick on a
+row that cannot work costs a sound rather than the whole list and a console line the player has to go
+looking for. A yellow row is let through on purpose -- the download is the point.
+
+The focus orb and the status dot get **a lane each**. Drawn at the same x, selecting a row hid the
+very thing that says whether that row works.
+
 ## In-place engine edits
 
 | File | Edit |
 |---|---|
-| `src/CMakeLists.txt` | registers `features/continue/zx_continue.cpp` |
+| `src/CMakeLists.txt` | registers `features/continue/zx_continue.cpp` and `zx_continuemenu.cpp` |
+| `wadsrc/static/menudef.txt` | the `FUAContinueOptions` submenu and its row in `FUAOptions` |
 | `c_cmds.cpp` | `quit`/`exit` record the session before exiting |
 | `features/server-browser/zx_joinserver.cpp` | `NoteJoinSucceeded` records the server |
 | `features/global-header/zx_globalheader.cpp` | the Continue tab: label, count, pinned index, activation |
@@ -70,9 +284,19 @@ already takes. Same asymmetry `headerreach_compute` settles for "Play Online!".
 | `w_wad.{h,cpp}` | adds `W_GetLoadedWadPath`, the real path of a file we already have open |
 | `features/server-hosting/zx_hosting.cpp` | `HostStart` names loaded files by path, so the child can find them |
 
+## Console
+
+* `fua_continue` — press the pill. With a row number, act on that row instead.
+* `fua_continue_list` — print the list, so an E2E can assert on rows rather than pixels.
+
 ## Computation units
 
-* `continuerecord_compute` — the on-disk format, versioned, refusing anything newer.
-* `continueshow_compute` — whether the button exists.
+* `continuerecord_compute` — one record's on-disk format, versioned, refusing anything newer.
+* `continuehistory_compute` — the list: identity, dedupe, ordering, the cap, and the file it lives in.
+* `continuelist_compute` — where the keyboard cursor goes, including Home and End.
+* `continueshow_compute` — whether an entry is worth offering.
+* `continuebutton_compute` — what the pill says, where it goes, and whether it asks.
 * `continuewrite_compute` — whether this shutdown is worth remembering.
+* `continuedepart_compute` — whether leaving a server means "take me back".
+* `continuereturn_compute` — when an owed return may actually be performed.
 * `continuerehost_compute` — whether a remembered server can be started as we are, needs a reload first, or is missing.

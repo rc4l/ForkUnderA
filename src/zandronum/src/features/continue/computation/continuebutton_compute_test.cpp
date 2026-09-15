@@ -29,53 +29,69 @@ TEST( ContinueButton, NothingToOfferHidesIt )
 	EXPECT_EQ( ContinueMode::Hidden, DecideContinueButton( AtMenu() ).mode );
 }
 
-TEST( ContinueButton, OutOfASessionItOffersTheOfflineGame )
+TEST( ContinueButton, OneEntryStillOpensTheList )
 {
+	// It used to act directly here, and that is what made the button unlearnable: it asked or acted
+	// depending on a count the player cannot see. A history trimmed to one entry connected on the
+	// press, which is exactly the surprise the list exists to remove.
 	ContinueButtonInputs in = AtMenu();
-	in.offlineUsable = true;
+	in.offerableCount = 1;
+	in.listCount = 1;
+	in.newestTarget = ContinueTarget::Offline;
 
 	const ContinueButtonVerdict v = DecideContinueButton( in );
 	EXPECT_EQ( ContinueMode::Continue, v.mode );
 	EXPECT_EQ( ContinueTarget::Offline, v.target );
+	EXPECT_TRUE( v.opensList );
 }
 
-TEST( ContinueButton, OutOfASessionItOffersTheServerWhenThatIsAllThereIs )
+TEST( ContinueButton, TwoOrMoreEntriesOpenTheList )
 {
 	ContinueButtonInputs in = AtMenu();
-	in.serverUsable = true;
+	in.newestTarget = ContinueTarget::Server;
+	in.offerableCount = 1;			// however few are pressable, the rows are what is being chosen from
 
-	const ContinueButtonVerdict v = DecideContinueButton( in );
-	EXPECT_EQ( ContinueMode::Continue, v.mode );
-	EXPECT_EQ( ContinueTarget::Server, v.target );
+	for ( int count = 2; count <= 50; ++count )
+	{
+		in.listCount = count;
+
+		const ContinueButtonVerdict v = DecideContinueButton( in );
+		EXPECT_EQ( ContinueMode::Continue, v.mode ) << "count " << count;
+		EXPECT_TRUE( v.opensList ) << "count " << count;
+	}
 }
 
-TEST( ContinueButton, WithBothTheMoreRecentlyLeftWins )
+TEST( ContinueButton, ThePillNamesTheNewestEntry )
 {
-	// The whole point of decoupling them: joining a server no longer forgets the campaign, and
-	// finishing with the server does not forget the server either.
-	ContinueButtonInputs in = AtMenu();
-	in.offlineUsable = true;
-	in.serverUsable = true;
+	// Whatever the list holds, the label and tooltip describe what ONE press would do, which is the
+	// most recent thing. A pill that named the second row would be describing a menu, not an action.
+	const ContinueTarget kinds[] =
+		{ ContinueTarget::Offline, ContinueTarget::Hosted, ContinueTarget::Server };
 
-	in.offlineStamp = 7;
-	in.serverStamp = 9;
-	EXPECT_EQ( ContinueTarget::Server, DecideContinueButton( in ).target );
+	for ( int i = 0; i < 3; ++i )
+	{
+		ContinueButtonInputs in = AtMenu();
+		in.offerableCount = 4;
+		in.listCount = 4;
+		in.newestTarget = kinds[i];
 
-	in.offlineStamp = 11;
-	EXPECT_EQ( ContinueTarget::Offline, DecideContinueButton( in ).target );
+		EXPECT_EQ( kinds[i], DecideContinueButton( in ).target );
+	}
 }
 
-TEST( ContinueButton, ATieGoesToTheOfflineGame )
+TEST( ContinueButton, AnEmptyHistoryHidesItHoweverItIsDescribed )
 {
-	// A tie is what leaving an offline game FOR a server looks like, both written in one breath. Of
-	// that pair the server is where the player already is; the offline game is the thing they left.
+	// A newest target with no entries behind it is a contradiction, and the count is the one that
+	// decides: offering a row that is not there is the failure the whole unit exists to avoid.
 	ContinueButtonInputs in = AtMenu();
-	in.offlineUsable = true;
-	in.serverUsable = true;
-	in.offlineStamp = 5;
-	in.serverStamp = 5;
+	in.newestTarget = ContinueTarget::Server;
+	in.offerableCount = 0;
+	in.listCount = 3;				// rows we could show, none of which a press could act on
 
-	EXPECT_EQ( ContinueTarget::Offline, DecideContinueButton( in ).target );
+	EXPECT_EQ( ContinueMode::Hidden, DecideContinueButton( in ).mode );
+
+	in.offerableCount = -1;			// a count that has gone wrong is still not something to offer
+	EXPECT_EQ( ContinueMode::Hidden, DecideContinueButton( in ).mode );
 }
 
 // ---------------------------------------------------------------- in a session
@@ -88,7 +104,7 @@ TEST( ContinueButton, InASessionItBecomesDisconnect )
 TEST( ContinueButton, DisconnectLandsInTheOfflineGameWhenThereIsOne )
 {
 	ContinueButtonInputs in = InSession();
-	in.offlineUsable = true;
+	in.localUsable = true;
 
 	EXPECT_EQ( ContinueTarget::Offline, DecideContinueButton( in ).target );
 }
@@ -100,30 +116,37 @@ TEST( ContinueButton, DisconnectFallsBackToTheMainMenu )
 	EXPECT_EQ( ContinueTarget::MainMenu, DecideContinueButton( InSession() ).target );
 }
 
-TEST( ContinueButton, ARememberedServerNeverAffectsWhereDisconnectLands )
+TEST( ContinueButton, LeavingAsksWhereToo )
 {
-	// We are IN a server; the remembered one is beside the point, even a newer one.
+	// It used to act on the spot, which is defensible and was not what anybody expected: the same
+	// button one press earlier had opened a list, so pressing it again read as "open the list" and
+	// instead threw the player out of the game.
 	ContinueButtonInputs in = InSession();
-	in.serverUsable = true;
-	in.serverStamp = 99;
+	in.offerableCount = 30;
+	in.listCount = 30;
+	in.localUsable = true;
 
-	EXPECT_EQ( ContinueTarget::MainMenu, DecideContinueButton( in ).target );
+	EXPECT_TRUE( DecideContinueButton( in ).opensList );
+}
 
-	in.offlineUsable = true;
-	in.offlineStamp = 1;
-	EXPECT_EQ( ContinueTarget::Offline, DecideContinueButton( in ).target );
+TEST( ContinueButton, LeavingAsksEvenWithNothingRemembered )
+{
+	// The list in a session always has something in it, because leaving is itself a row. A player
+	// with an empty history still gets the same button doing the same thing.
+	EXPECT_TRUE( DecideContinueButton( InSession() ).opensList );
 }
 
 TEST( ContinueButton, TheButtonIsNeverHiddenWhileInASession )
 {
 	// Leaving is always possible, so the way out is always there.
-	for ( int off = 0; off <= 1; ++off )
+	for ( int local = 0; local <= 1; ++local )
 	{
-		for ( int srv = 0; srv <= 1; ++srv )
+		for ( int count = 0; count <= 3; ++count )
 		{
 			ContinueButtonInputs in = InSession();
-			in.offlineUsable = ( off == 1 );
-			in.serverUsable = ( srv == 1 );
+			in.localUsable = ( local == 1 );
+			in.offerableCount = count;
+			in.listCount = count;
 
 			EXPECT_EQ( ContinueMode::Disconnect, DecideContinueButton( in ).mode );
 			EXPECT_NE( ContinueTarget::None, DecideContinueButton( in ).target );
@@ -135,9 +158,10 @@ TEST( ContinueButton, AHostedGameIsStartedAgainRatherThanLoaded )
 {
 	// The world lived in a child process and went with it, so there is nothing to restore but the
 	// settings that made it.
-	ContinueButtonInputs in;
-	in.offlineUsable = true;
-	in.offlineIsHosted = true;
+	ContinueButtonInputs in = AtMenu();
+	in.offerableCount = 1;
+	in.listCount = 1;
+	in.newestTarget = ContinueTarget::Hosted;
 
 	EXPECT_EQ( ContinueTarget::Hosted, DecideContinueButton( in ).target );
 }
@@ -145,10 +169,9 @@ TEST( ContinueButton, AHostedGameIsStartedAgainRatherThanLoaded )
 TEST( ContinueButton, DisconnectGoesBackToTheGameWeWereHosting )
 {
 	// Nested: hosting, then out to a real server, then out again.
-	ContinueButtonInputs in;
-	in.inSession = true;
-	in.offlineUsable = true;
-	in.offlineIsHosted = true;
+	ContinueButtonInputs in = InSession();
+	in.localUsable = true;
+	in.localIsHosted = true;
 
 	const ContinueButtonVerdict v = DecideContinueButton( in );
 	EXPECT_EQ( ContinueMode::Disconnect, v.mode );
@@ -159,18 +182,47 @@ TEST( ContinueButton, LeavingNeverSendsYouBackToTheServerYouLeft )
 {
 	// The regression this encodes: the destination used to be worked out AFTER the teardown, when
 	// the pill answers the out-of-session question and offers the most recently left thing -- which
-	// right after a kick is the server that just threw you out. Asked with inSession, the server
-	// record must be irrelevant however new it is.
-	for ( int stamp = 0; stamp <= 100; stamp += 50 )
+	// right after a kick is the server that just threw you out. In a session the answer comes from
+	// the local entry alone, so however full the history is of servers it cannot be one of them.
+	for ( int count = 1; count <= 50; count += 7 )
 	{
-		ContinueButtonInputs in;
-		in.inSession = true;
-		in.offlineUsable = true;
-		in.offlineStamp = 1;
-		in.serverUsable = true;
-		in.serverStamp = stamp;
+		ContinueButtonInputs in = InSession();
+		in.offerableCount = count;
+		in.listCount = count;
+		in.newestTarget = ContinueTarget::Server;
+		in.localUsable = true;
 
 		EXPECT_EQ( ContinueTarget::Offline, DecideContinueButton( in ).target )
-			<< "server stamp " << stamp << " changed where leaving lands";
+			<< "a history of " << count << " changed where leaving lands";
+	}
+}
+
+TEST( ContinueButton, ARowThatCannotBePressedStillCountsAsSomethingToChooseFrom )
+{
+	// The bug this encodes, found by pressing it: a history of a dead server and a game to rehost
+	// showed TWO rows, only one of which was pressable, so the pill decided there was nothing to ask
+	// about and threw the player straight into a rehost they never chose. What is in front of them is
+	// what makes it a question.
+	ContinueButtonInputs in = AtMenu();
+	in.listCount = 2;
+	in.offerableCount = 1;
+	in.newestTarget = ContinueTarget::Hosted;
+
+	const ContinueButtonVerdict v = DecideContinueButton( in );
+	EXPECT_EQ( ContinueMode::Continue, v.mode );
+	EXPECT_TRUE( v.opensList );
+}
+
+TEST( ContinueButton, TheAnswerNeverDependsOnHowManyRowsThereAre )
+{
+	// The property that makes it learnable: whatever the counts, out of a session it asks.
+	for ( int rows = 1; rows <= 50; ++rows )
+	{
+		ContinueButtonInputs in = AtMenu();
+		in.listCount = rows;
+		in.offerableCount = rows;
+		in.newestTarget = ContinueTarget::Server;
+
+		EXPECT_TRUE( DecideContinueButton( in ).opensList ) << "with " << rows << " rows";
 	}
 }

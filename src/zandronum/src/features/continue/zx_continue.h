@@ -42,8 +42,61 @@ const char *Continue_Label();
 const char *Continue_Tooltip();
 
 // Act on it: reload the WAD set the session needs and go. Does not return on the path that works,
-// because the reload throws.
+// because the reload throws. With more than one thing to go back to this opens the list instead.
 void Continue_Activate();
+
+// [rc4l] The history, as the list shows it: only the rows worth offering, newest first.
+//
+// Indexed by POSITION IN THE LIST rather than in the underlying history, so a row that has stopped
+// being usable cannot be activated by an index that used to mean something else.
+int Continue_HistoryCount();
+const char *Continue_EntryLabel( int index );		// the row's headline; never null
+const char *Continue_EntryDetail( int index );		// the line under it: kind, mode, mods; never null
+const char *Continue_EntrySummary( int index );		// the same without the files; never null
+
+// [rc4l] Whether the row will work: 0 green, 1 yellow, 2 red. See continuestatus_compute for what
+// each colour promises the player about their next action.
+int Continue_EntryStatus( int index );
+const char *Continue_EntryStatusReason( int index );	// empty for green; never null
+
+// [rc4l] The files a row was played with, one at a time, for the panel that has room to list them.
+// The row itself only has space for two and a count.
+int Continue_EntryFileCount( int index );
+const char *Continue_EntryFile( int index, int file );	// never null
+
+// Where a server row points, for the panel. Empty for anything else; never null.
+const char *Continue_EntryAddress( int index );
+const char *Continue_EntryWhen( int index );		// the last played column; never null
+int Continue_EntryKind( int index );				// 0 none, 1 single, 2 server, 3 hosted
+int Continue_EntryProbe( int index );				// 0 unknown, 1 alive, 2 gone, 3 wads differ
+
+// Ask about a server row. Lazy on purpose: querying fifty of other people's servers the moment a
+// menu opens is a storm sent on behalf of rows nobody may look at.
+void Continue_ProbeEntry( int index );
+
+// Go to one row. False when there is no such row, which is all a caller has to check.
+bool Continue_ActivateEntry( int index );
+
+// Drop one row and its snapshot. The rest of the history is untouched.
+void Continue_ForgetEntry( int index );
+
+// Show the picker. Implemented by the menu (zx_continuemenu.cpp), so the record side of the feature
+// does not have to know what a menu is.
+void Continue_OpenList();
+
+// [rc4l] Whether the picker is the menu currently on screen.
+//
+// The bar needs it: "which tab am I on" used to be "the browser, or else the main menu", and with a
+// third place to be that answered Main Menu while the list was open -- so clicking Main Menu was a
+// click on the tab you were already on, which does nothing by design.
+bool Continue_IsListOpen();
+
+// Close it, for the press that means "I have seen this list".
+void Continue_CloseList();
+
+// [rc4l] Leave the session and land on the main menu. The first row of the list while in one, so
+// that pressing the pill in a game asks where to go rather than deciding for the player.
+void Continue_LeaveToMenu();
 
 // Record the session we are in. Called from the deliberate quit, never from a shutdown hook.
 void Continue_NoteQuit();
@@ -92,6 +145,11 @@ void Continue_Tick();
 
 // Read the record off disk once, at startup, so the menu never touches the disk while drawing.
 void Continue_Load();
+
+// [rc4l] The player has changed how many entries to keep. Applied AT ONCE rather than at the next
+// launch: a setting that appears to do nothing is one the player will move again, further, looking
+// for the effect -- and then find it has thrown away more than they meant when it finally lands.
+void Continue_LimitChanged();
 
 // [rc4l] For the control bridge, so an E2E can assert on the decision rather than on pixels.
 // 0 none, 1 single, 2 server. `Target` is the address or the map, never null.

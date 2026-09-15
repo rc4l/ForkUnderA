@@ -6,16 +6,6 @@
 namespace zx
 {
 
-namespace
-{
-
-ContinueTarget OfflineTarget(const ContinueButtonInputs &in)
-{
-	return in.offlineIsHosted ? ContinueTarget::Hosted : ContinueTarget::Offline;
-}
-
-} // namespace
-
 ContinueButtonVerdict DecideContinueButton(const ContinueButtonInputs &in)
 {
 	ContinueButtonVerdict out;
@@ -26,25 +16,35 @@ ContinueButtonVerdict DecideContinueButton(const ContinueButtonInputs &in)
 		// and the main menu is the floor: somebody who joined straight from the browser has no
 		// offline session to go back to and must still end up somewhere deliberate.
 		out.mode = ContinueMode::Disconnect;
-		out.target = in.offlineUsable ? OfflineTarget(in) : ContinueTarget::MainMenu;
+		out.target = in.localUsable
+			? (in.localIsHosted ? ContinueTarget::Hosted : ContinueTarget::Offline)
+			: ContinueTarget::MainMenu;
+
+		// [rc4l] It asks in here too. Leaving used to be one act performed on the spot, which is
+		// defensible and was not what anybody expected: the same button one press earlier had opened
+		// a list, so pressing it again read as "open the list" and instead threw them out of the
+		// game. The list in a session leads with leaving, so the immediate act is still one keystroke
+		// away -- and going straight to another remembered session no longer means leaving first and
+		// pressing again.
+		out.opensList = true;
 		return out;
 	}
 
-	if ((in.offlineUsable == false) && (in.serverUsable == false))
+	if (in.offerableCount <= 0)
 		return out;			// Hidden
 
 	out.mode = ContinueMode::Continue;
+	out.target = in.newestTarget;
 
-	if (in.offlineUsable && in.serverUsable)
-	{
-		// Most recently left wins. Ties go to offline: a tie means both were written in the same
-		// breath, which is what leaving an offline game FOR a server looks like, and in that pair
-		// the server is where the player already is rather than what they left.
-		out.target = (in.serverStamp > in.offlineStamp) ? ContinueTarget::Server : OfflineTarget(in);
-		return out;
-	}
-
-	out.target = in.offlineUsable ? OfflineTarget(in) : ContinueTarget::Server;
+	// [rc4l] ALWAYS. It used to skip the list for a single row, on the reasoning that a one-row menu
+	// is a click charged for nothing -- and in isolation that is true. What it cost was
+	// PREDICTABILITY: the same button sometimes asked and sometimes acted, and which it did depended
+	// on a count the player cannot see. Every report about this button has been a version of "it did
+	// something when I expected it to ask", including one from a history trimmed to a single entry.
+	//
+	// A button that always asks can be learned in one press. One that asks most of the time cannot be
+	// learned at all.
+	out.opensList = true;
 	return out;
 }
 

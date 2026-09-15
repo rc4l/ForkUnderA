@@ -75,6 +75,34 @@ spilling first or do not add the shadow.
 Keep the affordances that work: the scrollbar, a half-cut row at the edge, and content that visibly
 continues.
 
+## The window follows the selection ONLY when the selection moved
+
+Deriving the visible window from the selected row is right, and doing it on **every frame** is the
+bug it turns into. "Keep the selection visible" is satisfied by the window it already had, so any
+scroll that does not also select — the wheel, a scrollbar drag — is undone before the next frame
+draws. Both inputs appear completely dead, and the scrolling code looks correct in isolation.
+
+Keep a flag, set it where the selection changes, and consult it in the draw:
+
+```cpp
+if ( mReveal ) { mFirst = ComputeRowWindow( total, rows, mSelected, mFirst ).first; mReveal = false; }
+mFirst = ComputeRestoredScroll( mFirst, total, rows );   // clamped every frame, revealed only on demand
+```
+
+The clamp still runs unconditionally — content comes and goes while a menu is open — but the reveal
+does not. Taking a working menu's scrolling maths without this flag is how a list ships unscrollable.
+
+## A drawn scrollbar is not a scrollbar
+
+Drawing the bar and wiring the grab are two jobs, and the first one looks finished. Test the bar by
+dragging it before believing it works; a thumb that renders and moves with the keyboard proves
+nothing about the pointer.
+
+The bar must be hit-tested **before** the rows, or a row's box swallows the clicks meant for the
+thumb. Give it a few pixels of slack either side — a four-pixel target is a target nobody hits — and
+keep tracking the pointer once the button is down even when it wanders off the bar, which is what
+dragging means everywhere else.
+
 ## Scroll state
 
 - **Reset the offset when the selection changes.** A short panel left scrolled from a taller one

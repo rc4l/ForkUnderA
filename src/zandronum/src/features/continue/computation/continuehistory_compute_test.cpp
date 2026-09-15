@@ -1,0 +1,988 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 rc4l
+
+#include <gtest/gtest.h>
+
+#include "features/continue/computation/continuehistory_compute.h"
+
+#include <cstdio>
+
+using namespace zx;
+
+namespace
+{
+
+ContinueRecord Server( const char *address, int stamp )
+{
+	ContinueRecord r;
+	r.kind = ContinueKind::Server;
+	r.address = address;
+	r.stamp = stamp;
+	return r;
+}
+
+ContinueRecord Single( const char *map, const char *wad, int stamp )
+{
+	ContinueRecord r;
+	r.kind = ContinueKind::Single;
+	r.savePath = "/tmp/continue/offline-1.zds";
+	r.saveVersion = 4552;
+	r.mapName = map;
+	r.mapWad = wad;
+	r.iwad = "doom2.wad";
+	r.stamp = stamp;
+
+	ContinueRecord::Wad w;
+	w.name = wad;
+	w.hash = "0123456789abcdef0123456789abcdef";
+	r.wads.push_back( w );
+	return r;
+}
+
+ContinueRecord Hosted( const char *map, int stamp )
+{
+	ContinueRecord r;
+	r.kind = ContinueKind::Hosted;
+	r.host.map = map;
+	r.host.iwad = "doom2.wad";
+	r.host.gameMode = 3;
+	r.stamp = stamp;
+	return r;
+}
+
+std::vector<ContinueRecord> Nothing()
+{
+	return std::vector<ContinueRecord>();
+}
+
+} // namespace
+
+// ---------------------------------------------------------------- the size limit
+
+TEST( ContinueHistory, TheLimitIsPulledIntoItsRange )
+{
+	EXPECT_EQ( kContinueHistoryMin, ClampContinueHistoryLimit( 0 ));
+	EXPECT_EQ( kContinueHistoryMin, ClampContinueHistoryLimit( -12 ));
+	EXPECT_EQ( kContinueHistoryMax, ClampContinueHistoryLimit( 500 ));
+	EXPECT_EQ( 10, ClampContinueHistoryLimit( 10 ));
+	EXPECT_EQ( kContinueHistoryMin, ClampContinueHistoryLimit( kContinueHistoryMin ));
+	EXPECT_EQ( kContinueHistoryMax, ClampContinueHistoryLimit( kContinueHistoryMax ));
+}
+
+TEST( ContinueHistory, ZeroIsNotAnAllowedSize )
+{
+	// Zero entries is the feature switched off, not a shorter list, and a size control must not be
+	// an off switch at one end of its travel -- see the header.
+	EXPECT_GE( ClampContinueHistoryLimit( 0 ), 1 );
+}
+
+// ---------------------------------------------------------------- identity
+
+TEST( ContinueHistory, AServerIsItsAddress )
+{
+	ContinueRecord a = Server( "10.0.0.5:10666", 1 );
+	ContinueRecord b = Server( "10.0.0.5:10666", 9 );
+	b.serverName = "renamed since";
+
+	EXPECT_EQ( ContinueIdentity( a ), ContinueIdentity( b ));
+	EXPECT_NE( ContinueIdentity( a ), ContinueIdentity( Server( "10.0.0.6:10666", 1 )));
+}
+
+TEST( ContinueHistory, ALocalGameIsItsMapAndItsFiles )
+{
+	// MAP01 of one megawad is not MAP01 of another, and a history that thought otherwise would
+	// overwrite one with the other.
+	EXPECT_NE( ContinueIdentity( Single( "MAP01", "sunder.wad", 1 )),
+		ContinueIdentity( Single( "MAP01", "valiant.wad", 1 )));
+
+	EXPECT_NE( ContinueIdentity( Single( "MAP01", "sunder.wad", 1 )),
+		ContinueIdentity( Single( "MAP02", "sunder.wad", 1 )));
+
+	EXPECT_EQ( ContinueIdentity( Single( "MAP01", "sunder.wad", 1 )),
+		ContinueIdentity( Single( "MAP01", "sunder.wad", 44 )));
+}
+
+TEST( ContinueHistory, SpellingDoesNotMakeASecondEntry )
+{
+	// The same address or file written in a different case is the same thing, and two rows saying it
+	// would be two of the ten spent on one session.
+	EXPECT_EQ( ContinueIdentity( Server( "10.0.0.5:10666", 1 )),
+		ContinueIdentity( Server( "10.0.0.5:10666", 1 )));
+
+	ContinueRecord upper = Single( "MAP01", "Sunder.WAD", 1 );
+	ContinueRecord lower = Single( "map01", "sunder.wad", 1 );
+	EXPECT_EQ( ContinueIdentity( upper ), ContinueIdentity( lower ));
+}
+
+TEST( ContinueHistory, AHostedGameIsWhatWouldStartItAgain )
+{
+	EXPECT_EQ( ContinueIdentity( Hosted( "MAP07", 1 )), ContinueIdentity( Hosted( "MAP07", 5 )));
+	EXPECT_NE( ContinueIdentity( Hosted( "MAP07", 1 )), ContinueIdentity( Hosted( "MAP08", 1 )));
+
+	// The mode is part of it: the same map as a deathmatch is not the same match as a coop.
+	ContinueRecord coop = Hosted( "MAP07", 1 );
+	coop.host.gameMode = 0;
+	EXPECT_NE( ContinueIdentity( Hosted( "MAP07", 1 )), ContinueIdentity( coop ));
+
+	// And so are the files, for the same reason a local game's are.
+	ContinueRecord modded = Hosted( "MAP07", 1 );
+	modded.host.pwads.push_back( "brutal.pk3" );
+	EXPECT_NE( ContinueIdentity( Hosted( "MAP07", 1 )), ContinueIdentity( modded ));
+}
+
+TEST( ContinueHistory, NothingToContinueHasNoIdentity )
+{
+	EXPECT_TRUE( ContinueIdentity( ContinueRecord() ).empty() );
+}
+
+TEST( ContinueHistory, DifferentKindsNeverCollide )
+{
+	// Three namespaces in one string, so a hosted MAP07 and an offline MAP07 cannot replace one
+	// another however similarly they are named.
+	ContinueRecord hostedish = Single( "MAP07", "doom2.wad", 1 );
+
+	EXPECT_NE( ContinueIdentity( Hosted( "MAP07", 1 )), ContinueIdentity( hostedish ));
+	EXPECT_NE( ContinueIdentity( Server( "MAP07", 1 )), ContinueIdentity( hostedish ));
+}
+
+// ---------------------------------------------------------------- the activity column
+
+TEST( ContinueHistory, AServerIsNamedIfWeKnowItsName )
+{
+	ContinueRecord r = Server( "10.0.0.5:10666", 1 );
+	EXPECT_EQ( "10.0.0.5:10666", ContinueEntryLabel( r ));
+
+	r.serverName = "Best Ever GvH";
+	EXPECT_EQ( "Best Ever GvH", ContinueEntryLabel( r ));
+}
+
+TEST( ContinueHistory, ALocalGameHeadlinesItsMap )
+{
+	// The megawad moved to the second line, where it sits beside the kind: a headline reading
+	// "MAP01 in sunder.wad" spent its width on the least memorable half of that sentence.
+	EXPECT_EQ( "MAP01", ContinueEntryLabel( Single( "MAP01", "sunder.wad", 1 )));
+	EXPECT_NE( std::string::npos,
+		ContinueEntryDetail( Single( "MAP01", "sunder.wad", 1 )).find( "sunder.wad" ));
+}
+
+TEST( ContinueHistory, AHostedGameSaysSoOnItsSecondLine )
+{
+	// The headline is the map, the same as any other row; that it is HOSTED is what the detail says.
+	EXPECT_EQ( "MAP07", ContinueEntryLabel( Hosted( "MAP07", 1 )));
+	EXPECT_NE( std::string::npos, ContinueEntryDetail( Hosted( "MAP07", 1 )).find( "Hosting" ));
+}
+
+TEST( ContinueHistory, NothingToContinueHasNoLabel )
+{
+	EXPECT_TRUE( ContinueEntryLabel( ContinueRecord() ).empty() );
+}
+
+// ---------------------------------------------------------------- the last played column
+
+TEST( ContinueHistory, AnEntryWithNoClockShowsADash )
+{
+	// Written by a build from before the field existed. It is not from 1970 and must not say so.
+	EXPECT_EQ( "-", FormatLastPlayed( 1000000, 0 ));
+	EXPECT_EQ( "-", FormatLastPlayed( 1000000, -5 ));
+}
+
+TEST( ContinueHistory, RecentIsJustNow )
+{
+	EXPECT_EQ( "just now", FormatLastPlayed( 1000, 1000 ));
+	EXPECT_EQ( "just now", FormatLastPlayed( 1059, 1000 ));
+}
+
+TEST( ContinueHistory, AClockThatWentBackwardsStillReads )
+{
+	// What a machine that corrected its time leaves behind. The row is still the thing they last
+	// played; only its age is unsayable, so it must not print a negative number of minutes.
+	EXPECT_EQ( "just now", FormatLastPlayed( 1000, 900000 ));
+}
+
+TEST( ContinueHistory, TheUnitGrowsWithTheGap )
+{
+	const long long now = 1000000000LL;
+
+	EXPECT_EQ( "1 min ago",   FormatLastPlayed( now, now - 60 ));
+	EXPECT_EQ( "59 mins ago", FormatLastPlayed( now, now - 59 * 60 ));
+	EXPECT_EQ( "1 hour ago",  FormatLastPlayed( now, now - 60 * 60 ));
+	EXPECT_EQ( "23 hours ago", FormatLastPlayed( now, now - 23 * 60 * 60 ));
+	EXPECT_EQ( "1 day ago",   FormatLastPlayed( now, now - 24 * 60 * 60 ));
+	EXPECT_EQ( "6 days ago",  FormatLastPlayed( now, now - 6 * 24 * 60 * 60 ));
+	EXPECT_EQ( "1 week ago",  FormatLastPlayed( now, now - 7 * 24 * 60 * 60 ));
+	EXPECT_EQ( "2 weeks ago", FormatLastPlayed( now, now - 14 * 24 * 60 * 60 ));
+	EXPECT_EQ( "1 year ago",  FormatLastPlayed( now, now - 365LL * 24 * 60 * 60 ));
+	EXPECT_EQ( "3 years ago", FormatLastPlayed( now, now - 3 * 365LL * 24 * 60 * 60 ));
+}
+
+// ---------------------------------------------------------------- ordering and capping
+
+TEST( ContinueHistory, TrimPutsTheNewestFirst )
+{
+	std::vector<ContinueRecord> history;
+	history.push_back( Server( "a:1", 3 ));
+	history.push_back( Server( "b:1", 9 ));
+	history.push_back( Server( "c:1", 5 ));
+
+	const std::vector<ContinueRecord> out = TrimContinueHistory( history, 10 );
+
+	ASSERT_EQ( 3u, out.size() );
+	EXPECT_EQ( "b:1", out[0].address );
+	EXPECT_EQ( "c:1", out[1].address );
+	EXPECT_EQ( "a:1", out[2].address );
+}
+
+TEST( ContinueHistory, TrimDropsTheOldestPastTheLimit )
+{
+	std::vector<ContinueRecord> history;
+	for ( int i = 1; i <= 20; ++i )
+	{
+		char address[32];
+		snprintf( address, sizeof address, "10.0.0.%d:10666", i );
+		history.push_back( Server( address, i ));
+	}
+
+	const std::vector<ContinueRecord> out = TrimContinueHistory( history, 5 );
+
+	ASSERT_EQ( 5u, out.size() );
+	EXPECT_EQ( 20, out[0].stamp );
+	EXPECT_EQ( 16, out[4].stamp );
+}
+
+TEST( ContinueHistory, TrimObeysTheSameRangeAsTheOption )
+{
+	std::vector<ContinueRecord> history;
+	for ( int i = 1; i <= 60; ++i )
+		history.push_back( Server( "a:1", i ));
+
+	EXPECT_EQ( 1u, TrimContinueHistory( history, 0 ).size() );
+	EXPECT_EQ( static_cast<size_t>( kContinueHistoryMax ),
+		TrimContinueHistory( history, 999 ).size() );
+}
+
+TEST( ContinueHistory, TrimKeepsTheFileOrderWhenStampsTie )
+{
+	// A list that shuffles between two reads of the same file is a list nobody can point at.
+	std::vector<ContinueRecord> history;
+	history.push_back( Server( "first:1", 4 ));
+	history.push_back( Server( "second:1", 4 ));
+	history.push_back( Server( "third:1", 4 ));
+
+	const std::vector<ContinueRecord> out = TrimContinueHistory( history, 10 );
+
+	ASSERT_EQ( 3u, out.size() );
+	EXPECT_EQ( "first:1", out[0].address );
+	EXPECT_EQ( "second:1", out[1].address );
+	EXPECT_EQ( "third:1", out[2].address );
+}
+
+TEST( ContinueHistory, TrimmingNothingIsNothing )
+{
+	EXPECT_TRUE( TrimContinueHistory( Nothing(), 10 ).empty() );
+}
+
+TEST( ContinueHistory, TheNextStampBeatsEverythingInTheList )
+{
+	EXPECT_EQ( 1, NextContinueStamp( Nothing() ));
+
+	std::vector<ContinueRecord> history;
+	history.push_back( Server( "a:1", 3 ));
+	history.push_back( Server( "b:1", 41 ));
+	history.push_back( Server( "c:1", 12 ));
+
+	EXPECT_EQ( 42, NextContinueStamp( history ));
+}
+
+// ---------------------------------------------------------------- inserting
+
+TEST( ContinueHistory, PlayingSomethingNewAddsARow )
+{
+	std::vector<ContinueRecord> history;
+	history.push_back( Server( "a:1", 1 ));
+
+	const std::vector<ContinueRecord> out =
+		InsertContinueEntry( history, Single( "MAP01", "sunder.wad", 0 ), 10 );
+
+	ASSERT_EQ( 2u, out.size() );
+	EXPECT_EQ( ContinueKind::Single, out[0].kind );
+	EXPECT_EQ( ContinueKind::Server, out[1].kind );
+}
+
+TEST( ContinueHistory, PlayingTheSameThingAgainMovesItRatherThanRepeatingIt )
+{
+	// Three evenings on the same server is one thing done three times. A history that showed it
+	// three times would have spent three of its rows saying the same sentence.
+	std::vector<ContinueRecord> history;
+	history.push_back( Server( "evening:1", 1 ));
+	history.push_back( Single( "MAP01", "sunder.wad", 2 ));
+
+	ContinueRecord again = Server( "evening:1", 0 );
+	again.serverName = "learned its name since";
+
+	const std::vector<ContinueRecord> out = InsertContinueEntry( history, again, 10 );
+
+	ASSERT_EQ( 2u, out.size() );
+	EXPECT_EQ( "evening:1", out[0].address );
+	EXPECT_EQ( "learned its name since", out[0].serverName );	// and the row is rewritten, not kept
+	EXPECT_EQ( ContinueKind::Single, out[1].kind );
+}
+
+TEST( ContinueHistory, AnInsertedEntryOutranksEverythingAlreadyThere )
+{
+	// The stamp the caller brought may be older than the list it is joining -- it came from a file
+	// read that another copy of the engine has written since.
+	std::vector<ContinueRecord> history;
+	history.push_back( Server( "a:1", 90 ));
+
+	const std::vector<ContinueRecord> out = InsertContinueEntry( history, Server( "b:1", 2 ), 10 );
+
+	ASSERT_EQ( 2u, out.size() );
+	EXPECT_EQ( "b:1", out[0].address );
+	EXPECT_GT( out[0].stamp, 90 );
+}
+
+TEST( ContinueHistory, AnAlreadyNewerStampIsLeftAlone )
+{
+	std::vector<ContinueRecord> history;
+	history.push_back( Server( "a:1", 5 ));
+
+	const std::vector<ContinueRecord> out = InsertContinueEntry( history, Server( "b:1", 77 ), 10 );
+
+	ASSERT_EQ( 2u, out.size() );
+	EXPECT_EQ( 77, out[0].stamp );
+}
+
+TEST( ContinueHistory, InsertingObeysTheLimit )
+{
+	std::vector<ContinueRecord> history;
+	for ( int i = 1; i <= 10; ++i )
+	{
+		char address[32];
+		snprintf( address, sizeof address, "10.0.0.%d:10666", i );
+		history.push_back( Server( address, i ));
+	}
+
+	const std::vector<ContinueRecord> out = InsertContinueEntry( history, Server( "new:1", 0 ), 10 );
+
+	ASSERT_EQ( 10u, out.size() );
+	EXPECT_EQ( "new:1", out[0].address );
+	EXPECT_EQ( "10.0.0.2:10666", out[9].address );	// the oldest fell off, not the newest
+}
+
+TEST( ContinueHistory, NothingToContinueIsNotRemembered )
+{
+	std::vector<ContinueRecord> history;
+	history.push_back( Server( "a:1", 1 ));
+
+	const std::vector<ContinueRecord> out = InsertContinueEntry( history, ContinueRecord(), 10 );
+
+	ASSERT_EQ( 1u, out.size() );
+	EXPECT_EQ( "a:1", out[0].address );
+}
+
+TEST( ContinueHistory, TheFirstThingEverPlayedStartsTheList )
+{
+	const std::vector<ContinueRecord> out =
+		InsertContinueEntry( Nothing(), Server( "a:1", 0 ), 10 );
+
+	ASSERT_EQ( 1u, out.size() );
+	EXPECT_EQ( 1, out[0].stamp );
+}
+
+// ---------------------------------------------------------------- finding and removing
+
+TEST( ContinueHistory, AnEntryCanBeFoundByWhatItIs )
+{
+	std::vector<ContinueRecord> history;
+	history.push_back( Server( "a:1", 1 ));
+	history.push_back( Single( "MAP01", "sunder.wad", 2 ));
+
+	const ContinueRecord *found =
+		FindContinueEntry( history, ContinueIdentity( Single( "MAP01", "sunder.wad", 99 )));
+
+	ASSERT_TRUE( found != NULL );
+	EXPECT_EQ( 2, found->stamp );
+
+	EXPECT_TRUE( FindContinueEntry( history, ContinueIdentity( Server( "gone:1", 1 ))) == NULL );
+	EXPECT_TRUE( FindContinueEntry( history, "" ) == NULL );
+}
+
+TEST( ContinueHistory, ARowCanBeTakenOut )
+{
+	std::vector<ContinueRecord> history;
+	history.push_back( Server( "a:1", 3 ));
+	history.push_back( Server( "b:1", 2 ));
+	history.push_back( Server( "c:1", 1 ));
+
+	const std::vector<ContinueRecord> out = RemoveContinueEntry( history, 1 );
+
+	ASSERT_EQ( 2u, out.size() );
+	EXPECT_EQ( "a:1", out[0].address );
+	EXPECT_EQ( "c:1", out[1].address );
+}
+
+TEST( ContinueHistory, RemovingARowThatIsNotThereChangesNothing )
+{
+	std::vector<ContinueRecord> history;
+	history.push_back( Server( "a:1", 1 ));
+
+	EXPECT_EQ( 1u, RemoveContinueEntry( history, -1 ).size() );
+	EXPECT_EQ( 1u, RemoveContinueEntry( history, 1 ).size() );
+	EXPECT_EQ( 1u, RemoveContinueEntry( history, 900 ).size() );
+	EXPECT_TRUE( RemoveContinueEntry( Nothing(), 0 ).empty() );
+}
+
+// ---------------------------------------------------------------- the file
+
+TEST( ContinueHistory, AListSurvivesTheRoundTrip )
+{
+	std::vector<ContinueRecord> history;
+	history.push_back( Server( "10.0.0.5:10666", 9 ));
+	history[0].serverName = "Best Ever GvH";
+	history[0].password = "a password with spaces";
+	history[0].playedAt = 1788000000LL;
+	history.push_back( Single( "MAP12", "sunder.wad", 8 ));
+	history.push_back( Hosted( "MAP07", 7 ));
+
+	std::vector<ContinueRecord> back;
+	ASSERT_TRUE( ParseContinueHistory( SerialiseContinueHistory( history ), back ));
+
+	ASSERT_EQ( 3u, back.size() );
+
+	EXPECT_EQ( ContinueKind::Server, back[0].kind );
+	EXPECT_EQ( "10.0.0.5:10666", back[0].address );
+	EXPECT_EQ( "Best Ever GvH", back[0].serverName );
+	EXPECT_EQ( "a password with spaces", back[0].password );
+	EXPECT_EQ( 1788000000LL, back[0].playedAt );
+	EXPECT_EQ( 9, back[0].stamp );
+
+	EXPECT_EQ( ContinueKind::Single, back[1].kind );
+	EXPECT_EQ( "MAP12", back[1].mapName );
+	EXPECT_EQ( "sunder.wad", back[1].mapWad );
+	ASSERT_EQ( 1u, back[1].wads.size() );
+	EXPECT_EQ( "sunder.wad", back[1].wads[0].name );
+
+	EXPECT_EQ( ContinueKind::Hosted, back[2].kind );
+	EXPECT_EQ( "MAP07", back[2].host.map );
+	EXPECT_EQ( 3, back[2].host.gameMode );
+}
+
+TEST( ContinueHistory, AnEmptyListIsStillAFile )
+{
+	// "Nothing to continue" has to be something the file can SAY. Without it, load falls back to
+	// migrating the old records and a player who cleared their history finds it back next launch.
+	const std::string text = SerialiseContinueHistory( Nothing() );
+	EXPECT_FALSE( text.empty() );
+
+	std::vector<ContinueRecord> back;
+	EXPECT_TRUE( ParseContinueHistory( text, back ));
+	EXPECT_TRUE( back.empty() );
+}
+
+TEST( ContinueHistory, ARecordWithNothingInItIsNotWrittenOut )
+{
+	std::vector<ContinueRecord> history;
+	history.push_back( Server( "a:1", 1 ));
+	history.push_back( ContinueRecord() );
+
+	std::vector<ContinueRecord> back;
+	ASSERT_TRUE( ParseContinueHistory( SerialiseContinueHistory( history ), back ));
+	ASSERT_EQ( 1u, back.size() );
+}
+
+TEST( ContinueHistory, SomethingElseEntirelyIsNotAHistory )
+{
+	std::vector<ContinueRecord> back;
+
+	EXPECT_FALSE( ParseContinueHistory( "", back ));
+	EXPECT_FALSE( ParseContinueHistory( "hello\n", back ));
+	EXPECT_FALSE( ParseContinueHistory( "fua-continue 1\nkind server\naddress a:1\n", back ));
+}
+
+TEST( ContinueHistory, AHistoryFromANewerBuildIsRefused )
+{
+	// Read hopefully, a field whose meaning changed would put the player somewhere plausible and
+	// wrong. The same rule one record has always followed.
+	std::vector<ContinueRecord> back;
+
+	EXPECT_FALSE( ParseContinueHistory( "fua-continue-history 99\nentry\nkind server\naddress a:1\n", back ));
+	EXPECT_FALSE( ParseContinueHistory( "fua-continue-history 0\nentry\nkind server\naddress a:1\n", back ));
+	EXPECT_FALSE( ParseContinueHistory( "fua-continue-history x\n", back ));
+}
+
+TEST( ContinueHistory, OneBadEntryCostsOneRow )
+{
+	// The file holds fifty where it used to hold one, so all-or-nothing parsing would let a single
+	// mangled entry throw away the other forty-nine.
+	const char *const text =
+		"fua-continue-history 1\n"
+		"entry\n"
+		"kind server\n"
+		"address good:1\n"
+		"entry\n"
+		"kind single\n"				// a Single with no save path is not a session
+		"map MAP01\n"
+		"entry\n"
+		"kind server\n"
+		"address alsogood:1\n";
+
+	std::vector<ContinueRecord> back;
+	ASSERT_TRUE( ParseContinueHistory( text, back ));
+
+	ASSERT_EQ( 2u, back.size() );
+	EXPECT_EQ( "good:1", back[0].address );
+	EXPECT_EQ( "alsogood:1", back[1].address );
+}
+
+TEST( ContinueHistory, LinesBeforeTheFirstEntryAreNotAnEntry )
+{
+	const char *const text =
+		"fua-continue-history 1\n"
+		"address stray:1\n"			// not inside any entry, so it belongs to nothing
+		"entry\n"
+		"kind server\n"
+		"address real:1\n";
+
+	std::vector<ContinueRecord> back;
+	ASSERT_TRUE( ParseContinueHistory( text, back ));
+
+	ASSERT_EQ( 1u, back.size() );
+	EXPECT_EQ( "real:1", back[0].address );
+}
+
+TEST( ContinueHistory, AFullHistorySurvivesTheRoundTrip )
+{
+	// Fifty entries is the most a player can ask for, and it is the size at which a format that
+	// separates entries badly would first show it.
+	std::vector<ContinueRecord> history;
+	for ( int i = 1; i <= kContinueHistoryMax; ++i )
+	{
+		char address[32];
+		snprintf( address, sizeof address, "10.0.0.%d:10666", i );
+		history.push_back( Server( address, i ));
+	}
+
+	std::vector<ContinueRecord> back;
+	ASSERT_TRUE( ParseContinueHistory( SerialiseContinueHistory( history ), back ));
+	ASSERT_EQ( static_cast<size_t>( kContinueHistoryMax ), back.size() );
+	EXPECT_EQ( "10.0.0.50:10666", back[49].address );
+}
+
+TEST( ContinueHistory, TheSameFileSpelledDifferentlyIsTheSameGame )
+{
+	// The bug this encodes, found by rehosting from the list: the row held "freedoom2.wad" because
+	// that is what the player picked, and the config the RUNNING server reported held the absolute
+	// path the engine had resolved it to. Compared as strings that is two games, so rehosting added a
+	// second copy of the row AND left the pill offering to take the player back to the game they were
+	// already standing in.
+	ContinueRecord picked = Hosted( "MAP01", 1 );
+	ContinueRecord running = Hosted( "MAP01", 2 );
+	running.host.iwad = "/Users/someone/games/Doom2.WAD";
+
+	EXPECT_EQ( ContinueIdentity( picked ), ContinueIdentity( running ));
+
+	// And the list agrees: one row, not two.
+	std::vector<ContinueRecord> history;
+	history.push_back( picked );
+	EXPECT_EQ( 1u, InsertContinueEntry( history, running, 10 ).size() );
+}
+
+TEST( ContinueHistory, APathIsNotPartOfWhatAMapWasPlayedWith )
+{
+	// Same rule for the other kinds: where a file happens to live on this disk is not what makes a
+	// session the session.
+	ContinueRecord bare = Single( "MAP01", "sunder.wad", 1 );
+
+	ContinueRecord pathed = Single( "MAP01", "sunder.wad", 2 );
+	pathed.iwad = "C:\\Games\\Doom\\doom2.wad";
+	pathed.wads[0].name = "/home/someone/wads/Sunder.wad";
+
+	EXPECT_EQ( ContinueIdentity( bare ), ContinueIdentity( pathed ));
+}
+
+TEST( ContinueHistory, DifferentFilesAreStillDifferentGames )
+{
+	// The fix must not make everything the same thing: only the directory is ignored, never the name.
+	ContinueRecord a = Hosted( "MAP01", 1 );
+	a.host.iwad = "/games/doom2.wad";
+
+	ContinueRecord b = Hosted( "MAP01", 1 );
+	b.host.iwad = "/games/tnt.wad";
+
+	EXPECT_NE( ContinueIdentity( a ), ContinueIdentity( b ));
+}
+
+// ---------------------------------------------------------------- the second line
+
+TEST( ContinueHistory, TheHeadlineIsTheMapsRealName )
+{
+	// "MAP01" is a slot number. What the player remembers playing is what the map is called.
+	ContinueRecord r = Single( "MAP01", "sunder.wad", 1 );
+	r.mapTitle = "Hydroelectric Plant";
+
+	EXPECT_EQ( "Hydroelectric Plant", ContinueEntryLabel( r ));
+
+	// And a record written before we kept the title still names something.
+	r.mapTitle.clear();
+	EXPECT_EQ( "MAP01", ContinueEntryLabel( r ));
+}
+
+TEST( ContinueHistory, AHostedGameHeadlinesItsMapToo )
+{
+	ContinueRecord r = Hosted( "MAP07", 1 );
+	r.mapTitle = "Dead Simple";
+
+	EXPECT_EQ( "Dead Simple", ContinueEntryLabel( r ));
+}
+
+TEST( ContinueHistory, TheDetailLineSaysWhatKindOfSessionItWas )
+{
+	EXPECT_EQ( "Solo \x95 sunder.wad", ContinueEntryDetail( Single( "MAP01", "sunder.wad", 1 )));
+
+	// A record that never learned which files the server ran still says what kind of thing it was.
+	EXPECT_EQ( "Online", ContinueEntryDetail( Server( "10.0.0.5:10666", 1 )));
+}
+
+TEST( ContinueHistory, TheDetailLineNamesTheModRatherThanTheIwad )
+{
+	// Every session has an IWAD, so naming it in every row tells the player nothing about any of
+	// them. The mod is the thing that distinguishes one from another.
+	ContinueRecord r = Single( "MAP01", "sunder.wad", 1 );
+	EXPECT_NE( std::string::npos, ContinueEntryDetail( r ).find( "sunder.wad" ));
+	EXPECT_EQ( std::string::npos, ContinueEntryDetail( r ).find( "doom2.wad" ));
+}
+
+TEST( ContinueHistory, TheIwadIsNamedWhenNothingElseWas )
+{
+	// A bare IWAD game would otherwise have a detail line that named no files at all.
+	ContinueRecord r;
+	r.kind = ContinueKind::Single;
+	r.savePath = "/tmp/x.zds";
+	r.mapName = "MAP01";
+	r.iwad = "doom2.wad";
+
+	EXPECT_EQ( "Solo \x95 doom2.wad", ContinueEntryDetail( r ));
+}
+
+TEST( ContinueHistory, ALongLoadOrderIsSummarised )
+{
+	// A row is a thing to recognise at a glance; a twelve-file load order is not.
+	ContinueRecord r = Single( "MAP01", "sunder.wad", 1 );
+	for ( int i = 0; i < 4; ++i )
+	{
+		ContinueRecord::Wad w;
+		w.name = "extra.pk3";
+		r.wads.push_back( w );
+	}
+
+	EXPECT_NE( std::string::npos, ContinueEntryDetail( r ).find( "+3 more" ));
+}
+
+TEST( ContinueHistory, AHostedRowSaysItsModeAndSize )
+{
+	ContinueRecord r = Hosted( "MAP07", 1 );
+	r.modeName = "Coop";
+	r.host.maxPlayers = 8;
+
+	const std::string detail = ContinueEntryDetail( r );
+	EXPECT_NE( std::string::npos, detail.find( "Hosting" ));
+	EXPECT_NE( std::string::npos, detail.find( "Coop" ));
+	EXPECT_NE( std::string::npos, detail.find( "8 players" ));
+}
+
+TEST( ContinueHistory, AHostedRowReadsItsModeOffThePresetWhenNobodyNamedIt )
+{
+	// Presets set `teamlms true` rather than a mode index -- the index is "leave it alone" in almost
+	// every config the catalogue ships -- so the mode is knowable, just not from the field named
+	// after it.
+	ContinueRecord r = Hosted( "MAP07", 1 );
+	r.host.extraCvars.push_back( std::make_pair( std::string( "cooperative" ), std::string( "false" )));
+	r.host.extraCvars.push_back( std::make_pair( std::string( "teamlms" ), std::string( "true" )));
+
+	EXPECT_NE( std::string::npos, ContinueEntryDetail( r ).find( "Team LMS" ));
+}
+
+TEST( ContinueHistory, TheModeIsWhicheverTheEngineWouldResolveFirst )
+{
+	HostConfig host;
+	host.extraCvars.push_back( std::make_pair( std::string( "deathmatch" ), std::string( "true" )));
+	host.extraCvars.push_back( std::make_pair( std::string( "ctf" ), std::string( "true" )));
+
+	// Both on: described the way it will actually start, not the way it is written down.
+	EXPECT_EQ( "CTF", ContinueModeFromCvars( host ));
+}
+
+TEST( ContinueHistory, AModeCvarSwitchedOffIsNotTheMode )
+{
+	HostConfig host;
+	host.extraCvars.push_back( std::make_pair( std::string( "ctf" ), std::string( "false" )));
+	host.extraCvars.push_back( std::make_pair( std::string( "deathmatch" ), std::string( "1" )));
+
+	EXPECT_EQ( "Deathmatch", ContinueModeFromCvars( host ));
+}
+
+TEST( ContinueHistory, APresetThatNamesNoModeSaysNothing )
+{
+	EXPECT_TRUE( ContinueModeFromCvars( HostConfig() ).empty() );
+}
+
+TEST( ContinueHistory, NothingToContinueHasNoDetail )
+{
+	EXPECT_TRUE( ContinueEntryDetail( ContinueRecord() ).empty() );
+}
+
+TEST( ContinueHistory, AHostedRowNamesThePackItRuns )
+{
+	// What a hosted match is playing is the pwads the server will be started with, not the files we
+	// happened to have loaded when we wrote the row down.
+	ContinueRecord r = Hosted( "MAP07", 1 );
+	r.host.pwads.push_back( "/somewhere/else/gvhmeepyedition.pk3" );
+	r.host.pwads.push_back( "paradoxmaps.wad" );
+
+	const std::string detail = ContinueEntryDetail( r );
+	EXPECT_NE( std::string::npos, detail.find( "gvhmeepyedition.pk3" ));
+	EXPECT_NE( std::string::npos, detail.find( "paradoxmaps.wad" ));
+
+	// And by name, not by wherever the file happens to live on this disk.
+	EXPECT_EQ( std::string::npos, detail.find( "/somewhere/else/" ));
+}
+
+TEST( ContinueHistory, TheSummaryIsTheDetailWithoutTheFiles )
+{
+	// What a reader with room to list the files separately wants: repeating them in a truncated line
+	// spends width saying half of something it says in full three lines further down.
+	ContinueRecord r = Hosted( "MAP07", 1 );
+	r.modeName = "Coop";
+	r.host.maxPlayers = 8;
+	r.host.pwads.push_back( "sunder.wad" );
+
+	EXPECT_EQ( "Hosting \x95 Coop \x95 8 players", ContinueEntrySummary( r ));
+
+	// And the row's line is that summary with the files appended, so the two cannot drift apart.
+	const std::string detail = ContinueEntryDetail( r );
+	EXPECT_EQ( 0u, detail.find( ContinueEntrySummary( r )));
+	EXPECT_NE( std::string::npos, detail.find( "sunder.wad" ));
+}
+
+TEST( ContinueHistory, NothingToContinueHasNoSummary )
+{
+	EXPECT_TRUE( ContinueEntrySummary( ContinueRecord() ).empty() );
+}
+
+// ---------------------------------------------------------------- stress and abuse
+
+TEST( ContinueHistory, AHundredSessionsKeepOnlyTheCapAndTheNewest )
+{
+	// More than anyone can ask for. The cap is the cap, and what survives is the TOP of the list --
+	// keeping the first fifty written would be a history of what you stopped doing.
+	std::vector<ContinueRecord> history;
+	for ( int i = 1; i <= 100; ++i )
+	{
+		char address[32];
+		snprintf( address, sizeof address, "10.0.0.%d:%d", i % 250, 10000 + i );
+		history.push_back( Server( address, i ));
+	}
+
+	const std::vector<ContinueRecord> out = TrimContinueHistory( history, kContinueHistoryMax );
+
+	ASSERT_EQ( 50u, out.size() );
+	EXPECT_EQ( 100, out[0].stamp );
+	EXPECT_EQ( 51, out[49].stamp );
+
+	// And strictly descending the whole way down, with no duplicates.
+	for ( size_t i = 1; i < out.size(); ++i )
+		EXPECT_GT( out[i - 1].stamp, out[i].stamp ) << "at " << i;
+}
+
+TEST( ContinueHistory, ReplayingTheOLDESTSessionPutsItOnTop )
+{
+	// The question the whole list turns on: a thing you have not touched in months is still the thing
+	// you were just doing the moment you touch it.
+	std::vector<ContinueRecord> history;
+	for ( int i = 1; i <= 50; ++i )
+	{
+		char address[32];
+		snprintf( address, sizeof address, "10.0.0.%d:10666", i );
+		history.push_back( Server( address, i ));
+	}
+	history = TrimContinueHistory( history, 50 );
+	ASSERT_EQ( "10.0.0.1:10666", history[49].address );		// the oldest, at the bottom
+
+	// Played again, carrying a stale stamp exactly as a caller reading an old file would.
+	const std::vector<ContinueRecord> out =
+		InsertContinueEntry( history, Server( "10.0.0.1:10666", 1 ), 50 );
+
+	ASSERT_EQ( 50u, out.size() );
+	EXPECT_EQ( "10.0.0.1:10666", out[0].address );
+
+	// And it is not down there as well.
+	for ( size_t i = 1; i < out.size(); ++i )
+		EXPECT_NE( "10.0.0.1:10666", out[i].address ) << "duplicated at " << i;
+}
+
+TEST( ContinueHistory, AHundredOfTHESAMESessionIsOneRow )
+{
+	// Playing one server all week is one thing done many times.
+	std::vector<ContinueRecord> history;
+	for ( int i = 1; i <= 100; ++i )
+		history = InsertContinueEntry( history, Server( "10.0.0.5:10666", i ), 50 );
+
+	EXPECT_EQ( 1u, history.size() );
+}
+
+TEST( ContinueHistory, AHundredSessionsSurviveTheFileWhole )
+{
+	std::vector<ContinueRecord> history;
+	for ( int i = 1; i <= 100; ++i )
+	{
+		char map[16];
+		snprintf( map, sizeof map, "MAP%02d", i % 99 );
+		ContinueRecord r = Single( map, "sunder.wad", i );
+		r.mapTitle = "A Map With A Name";
+		history.push_back( r );
+	}
+
+	std::vector<ContinueRecord> back;
+	ASSERT_TRUE( ParseContinueHistory( SerialiseContinueHistory( history ), back ));
+	ASSERT_EQ( 100u, back.size() );
+	EXPECT_EQ( 100, back[99].stamp );
+}
+
+TEST( ContinueHistory, AbsurdlyLongTextSurvivesTheRoundTrip )
+{
+	// A server can call itself whatever it likes, and a mod's filename is whatever is on disk.
+	ContinueRecord in = Server( "10.0.0.5:10666", 1 );
+	in.serverName = std::string( 4000, 'N' );
+	in.password = std::string( 500, 'p' );
+
+	ContinueRecord::Wad wad;
+	wad.name = std::string( 300, 'w' ) + ".pk3";
+	in.wads.push_back( wad );
+
+	std::vector<ContinueRecord> history;
+	history.push_back( in );
+
+	std::vector<ContinueRecord> back;
+	ASSERT_TRUE( ParseContinueHistory( SerialiseContinueHistory( history ), back ));
+	ASSERT_EQ( 1u, back.size() );
+	EXPECT_EQ( in.serverName, back[0].serverName );
+	EXPECT_EQ( in.password, back[0].password );
+
+	// And the row still describes it rather than falling over.
+	EXPECT_FALSE( ContinueEntryLabel( back[0] ).empty() );
+	EXPECT_FALSE( ContinueEntryDetail( back[0] ).empty() );
+}
+
+TEST( ContinueHistory, TextThatLooksLikeTheFormatIsJustText )
+{
+	// A server named "entry" would end the entry it is in, if the marker were not a whole line.
+	ContinueRecord in = Server( "10.0.0.5:10666", 1 );
+	in.serverName = "entry";
+
+	std::vector<ContinueRecord> history;
+	history.push_back( in );
+	history.push_back( Server( "10.0.0.6:10666", 2 ));
+
+	std::vector<ContinueRecord> back;
+	ASSERT_TRUE( ParseContinueHistory( SerialiseContinueHistory( history ), back ));
+	ASSERT_EQ( 2u, back.size() );
+	EXPECT_EQ( "entry", back[0].serverName );
+}
+
+TEST( ContinueHistory, AKeyShapedServerNameDoesNotBecomeAField )
+{
+	ContinueRecord in = Server( "10.0.0.5:10666", 1 );
+	in.serverName = "address 1.2.3.4:5";
+
+	std::vector<ContinueRecord> history;
+	history.push_back( in );
+
+	std::vector<ContinueRecord> back;
+	ASSERT_TRUE( ParseContinueHistory( SerialiseContinueHistory( history ), back ));
+	ASSERT_EQ( 1u, back.size() );
+	EXPECT_EQ( "10.0.0.5:10666", back[0].address );			// not the one hidden in the name
+	EXPECT_EQ( "address 1.2.3.4:5", back[0].serverName );
+}
+
+TEST( ContinueHistory, HalfAFileIsTheRowsThatParsed )
+{
+	// Truncated mid-write, which is what a power cut during a save looks like.
+	std::vector<ContinueRecord> history;
+	for ( int i = 1; i <= 20; ++i )
+	{
+		char address[32];
+		snprintf( address, sizeof address, "10.0.0.%d:10666", i );
+		history.push_back( Server( address, i ));
+	}
+
+	std::string text = SerialiseContinueHistory( history );
+	text = text.substr( 0, text.size() / 2 );
+
+	std::vector<ContinueRecord> back;
+	ASSERT_TRUE( ParseContinueHistory( text, back ));
+	EXPECT_GT( back.size(), 0u );
+	EXPECT_LT( back.size(), 20u );
+}
+
+TEST( ContinueHistory, EveryEntryBeingRubbishIsAnEmptyListRatherThanAFailure )
+{
+	std::string text = "fua-continue-history 1\n";
+	for ( int i = 0; i < 50; ++i )
+		text += "entry\nkind nonsense\nbanana\n";
+
+	std::vector<ContinueRecord> back;
+	EXPECT_TRUE( ParseContinueHistory( text, back ));
+	EXPECT_TRUE( back.empty() );
+}
+
+TEST( ContinueHistory, AClockFromTheFutureDoesNotReorderAnything )
+{
+	// The reason order comes from the counter: a machine whose clock is wrong must not be able to
+	// drag a row to the top by claiming to be in 2099.
+	std::vector<ContinueRecord> history;
+	history.push_back( Server( "new:1", 10 ));
+	history[0].playedAt = 1000;
+
+	history.push_back( Server( "old:1", 1 ));
+	history[1].playedAt = 4000000000LL;
+
+	const std::vector<ContinueRecord> out = TrimContinueHistory( history, 50 );
+	EXPECT_EQ( "new:1", out[0].address );
+}
+
+TEST( ContinueHistory, AHundredIdenticalStampsKeepTheirFileOrder )
+{
+	std::vector<ContinueRecord> history;
+	for ( int i = 0; i < 100; ++i )
+	{
+		char address[32];
+		snprintf( address, sizeof address, "10.0.0.%d:10666", i );
+		history.push_back( Server( address, 7 ));
+	}
+
+	const std::vector<ContinueRecord> out = TrimContinueHistory( history, 50 );
+	ASSERT_EQ( 50u, out.size() );
+	EXPECT_EQ( "10.0.0.0:10666", out[0].address );
+	EXPECT_EQ( "10.0.0.49:10666", out[49].address );
+}
+
+TEST( ContinueHistory, ARecordWithTwoHundredFilesStillDescribesItself )
+{
+	ContinueRecord r = Single( "MAP01", "sunder.wad", 1 );
+	for ( int i = 0; i < 200; ++i )
+	{
+		ContinueRecord::Wad w;
+		w.name = "mod.pk3";
+		r.wads.push_back( w );
+	}
+
+	const std::string detail = ContinueEntryDetail( r );
+	EXPECT_NE( std::string::npos, detail.find( "+199 more" ));
+
+	std::vector<ContinueRecord> history;
+	history.push_back( r );
+	std::vector<ContinueRecord> back;
+	ASSERT_TRUE( ParseContinueHistory( SerialiseContinueHistory( history ), back ));
+	ASSERT_EQ( 1u, back.size() );
+	EXPECT_EQ( 201u, back[0].wads.size() );
+}
