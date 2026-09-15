@@ -20,6 +20,23 @@ an earlier test matched first and returned.
 
 ```cpp
 enum class ThingSlot { List, Field, Choice, Action, ..., Away };
+```
+
+## A list beside an action button is already written
+
+That pair — rows on one side, the button that acts on the highlighted row on the other — lives in
+`src/computation/listaction_compute`, shared by the server browser's JOIN and the Continue history's
+button. Use it rather than restating the edges: Right or Enter moves from the list to the button,
+Left comes back, Down comes back and moves on, and Enter on the button is the only thing that acts.
+
+**Enter on a row must not act.** It moves to the button. A list that launches under the player's
+hands gives them nowhere to read what a row is before committing to it, and the pointer already has
+to select and then press — the keyboard disagreeing with it makes the menu unlearnable.
+
+Keys that leave the pair answer `Outside`, because what lies above a list or below a button is
+layout and belongs to the menu that has it.
+
+```cpp
 struct ThingFocusPos { ThingSlot slot; int index; };   // index means something only for some slots
 ```
 

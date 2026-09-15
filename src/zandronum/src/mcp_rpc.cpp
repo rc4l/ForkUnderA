@@ -586,9 +586,18 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 			if ( i > 0 )
 				body += ",";
 
+			// [rc4l] The detail line and the STATUS as well, so an E2E can assert that a row is amber
+			// because its mod is missing instead of taking a screenshot and looking at a dot.
+			std::string detail, reason;
+			JsonEscape( std::string( zx::Continue_EntryDetail( i ) ), detail );
+			JsonEscape( std::string( zx::Continue_EntryStatusReason( i ) ), reason );
+
 			body += "{\"label\":\"" + label + "\",\"when\":\"" + when + "\"";
+			body += ",\"detail\":\"" + detail + "\"";
 			body += ",\"kind\":" + I( (long long)zx::Continue_EntryKind( i ) );
-			body += ",\"probe\":" + I( (long long)zx::Continue_EntryProbe( i ) ) + "}";
+			body += ",\"probe\":" + I( (long long)zx::Continue_EntryProbe( i ) );
+			body += ",\"status\":" + I( (long long)zx::Continue_EntryStatus( i ) );
+			body += ",\"reason\":\"" + reason + "\"}";
 		}
 		body += "]";
 		body += "}";

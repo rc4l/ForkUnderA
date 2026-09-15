@@ -9,6 +9,9 @@ src/zandronum/sqlite/sqlite-autoconf*
 
 # Test/coverage build trees (cmake -S tests -B build-*)
 build-tests/
+# [rc4l] Any build-tests-* variant: the plain and coverage trees each vendor GoogleTest, and a
+# stray `git add -A` otherwise commits 1790 files of it.
+build-tests-*/
 build-san/
 build-coverage/
 build-cov-llvm/
