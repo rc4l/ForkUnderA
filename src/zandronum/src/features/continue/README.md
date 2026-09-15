@@ -217,11 +217,23 @@ the cursor is on — its name, kind, mode and size, its address if it has one, w
 **every** file it used, and why its dot is the colour it is. The row has space for a name and a
 glance; everything else about a session has to live somewhere.
 
+**The keyboard walks between the two halves**, by the shared list-and-button contract in
+`src/computation/listaction_compute` — the same unit the server browser's list and JOIN button now
+use for their own Right/Left edges. Enter or Right on a row moves to the button rather than starting
+anything; Left comes back to the same row; Down comes back and moves on to the next one; Enter on the
+button is the only thing that acts. Page keys, Home and End pull the focus back to the list, because
+that is what they are for. The focus orb is on the row only while the keyboard is, or the card would
+claim the cursor is in two places at once.
+
 **Clicking a row selects it. The button commits.** It used to act on the click, which put a WAD
 reload one stray click away and gave the player nowhere to read what a row was before committing to
 it. The button names the act rather than the feature — `CONTINUE`, `RECONNECT`, `HOST AGAIN`,
 `LEAVE` — and sits in the same place whatever the row above it says. A red row still draws its
 button, greyed: one that VANISHED would leave the player wondering whether they had missed it.
+
+There are no key hints along the bottom. The button says what pressing it does and the rows say what
+they are; a strip spelling out Enter, Del and Esc underneath was a third thing to read on a card
+whose whole point is being glanceable.
 
 The panel shows the **summary** rather than the row's line, because the row's line ends in the files
 and the panel lists those in full underneath. The refusal reason is **wrapped**, not ellipsised: it is
