@@ -161,7 +161,10 @@ Layout Measure( int total )
 	// third thing to read on a card whose whole point is being glanceable.
 	const int footerH = 10;
 
-	out.cardH = headerH + ( out.rows * kRowH ) + footerH;
+	// The card is as tall as the taller of its two columns; the panel's floor can exceed the list.
+	const int listH = out.rows * kRowH;
+	const int panelFloorH = 112;
+	out.cardH = headerH + (( listH > panelFloorH ) ? listH : panelFloorH ) + footerH;
 	out.cardX = ( vw - out.cardW ) / 2;
 	out.cardY = ( vh - out.cardH ) / 2;
 
@@ -178,7 +181,15 @@ Layout Measure( int total )
 	out.panelX = out.cardX + kPadX + kListW + kColGap;
 	out.panelY = out.listY - 4;
 	out.panelW = out.cardW - kPadX - ( out.panelX - out.cardX );
+
+	// [rc4l] Tall enough for what the panel always has to say, even when the list is short. Sized
+	// only from the rows, a four-row history gave the panel less height than a name, a mode, an
+	// address, a date and a refusal need -- and the refusal, anchored above the button, was drawn
+	// straight over the date.
+	const int panelFloor = 112;
 	out.panelH = ( out.rows * kRowH ) + 4;
+	if ( out.panelH < panelFloor )
+		out.panelH = panelFloor;
 
 	out.buttonH = 15;
 	out.buttonW = out.panelW - 12;
@@ -783,33 +794,48 @@ void DFUAContinueMenu::DrawDetail( const Layout &layout )
 		return;
 	}
 
+	// [rc4l] Where the flowing half has to stop. The reason sits above the button and the button is
+	// pinned to the bottom, so everything written downwards from the top has a floor -- without one,
+	// a panel with an address and a refusal in it drew the refusal over the date.
+	TArray<FString> reasonLines;
+	const char *reason = zx::Continue_EntryStatusReason( entry );
+	if ( *reason != 0 )
+		WrapInto( reason, w, reasonLines, 3 );
+
+	const int limit = layout.buttonY - 3 - ( (int)reasonLines.Size( ) * kLineH );
+
 	DrawTextAt( CR_WHITE, x, y, Ellipsised( zx::Continue_EntryLabel( entry ), w ));
 	y += kLineH + 1;
 
 	// The summary, not the row's line: the files it would have tacked on are listed in full below.
-	DrawTextAt( CR_GRAY, x, y, Ellipsised( zx::Continue_EntrySummary( entry ), w ));
-	y += kLineH + 3;
+	if ( y + kLineH <= limit )
+	{
+		DrawTextAt( CR_GRAY, x, y, Ellipsised( zx::Continue_EntrySummary( entry ), w ));
+		y += kLineH + 3;
+	}
 
 	const char *address = zx::Continue_EntryAddress( entry );
-	if ( *address != 0 )
+	if (( *address != 0 ) && ( y + kLineH <= limit ))
 	{
 		DrawTextAt( CR_DARKGRAY, x, y, Ellipsised( address, w ));
 		y += kLineH + 2;
 	}
 
-	DrawTextAt( CR_DARKGRAY, x, y, "LAST PLAYED" );
-	y += kLineH;
-	DrawTextAt( CR_GOLD, x, y, zx::Continue_EntryWhen( entry ));
-	y += kLineH + 3;
+	if ( y + ( 2 * kLineH ) <= limit )
+	{
+		DrawTextAt( CR_DARKGRAY, x, y, "LAST PLAYED" );
+		y += kLineH;
+		DrawTextAt( CR_GOLD, x, y, zx::Continue_EntryWhen( entry ));
+		y += kLineH + 3;
+	}
 
 	// [rc4l] Every file, not the two the row has room for. "Which Doom was this" is exactly the
 	// question a row two years old raises, and the row cannot answer it.
 	const int files = zx::Continue_EntryFileCount( entry );
 
-	// Whatever fits between here and whatever is under it -- the reason, if there is one, and then
-	// the button. A file list that ran into either would be a panel writing over itself.
-	const int reserved = ( *zx::Continue_EntryStatusReason( entry ) != 0 ) ? ( 3 * kLineH ) : 0;
-	const int room = ( layout.buttonY - 6 - reserved - ( y + kLineH )) / kLineH;
+	// Whatever fits between here and the floor. A file list that ran past it would be a panel
+	// writing over itself.
+	const int room = ( limit - ( y + kLineH )) / kLineH;
 
 	// A heading with nothing under it is worse than no heading: it promises a list and then shows the
 	// player an empty strip of panel.
@@ -836,18 +862,14 @@ void DFUAContinueMenu::DrawDetail( const Layout &layout )
 
 	// Why it is the colour it is, in words, immediately above the button that will act on it --
 	// WRAPPED, because this is the one line in the panel that has to be read rather than glanced at.
-	const char *reason = zx::Continue_EntryStatusReason( entry );
-	if ( *reason != 0 )
+	if ( reasonLines.Size( ) > 0 )
 	{
-		TArray<FString> lines;
-		WrapInto( reason, w, lines, 3 );
-
 		const int status = zx::Continue_EntryStatus( entry );
-		int ry = layout.buttonY - 3 - ( (int)lines.Size( ) * kLineH );
+		int ry = limit;
 
-		for ( unsigned i = 0; i < lines.Size( ); ++i )
+		for ( unsigned i = 0; i < reasonLines.Size( ); ++i )
 		{
-			DrawTextAt( ( status == 2 ) ? CR_BRICK : CR_ORANGE, x, ry, lines[i] );
+			DrawTextAt( ( status == 2 ) ? CR_BRICK : CR_ORANGE, x, ry, reasonLines[i] );
 			ry += kLineH;
 		}
 	}
