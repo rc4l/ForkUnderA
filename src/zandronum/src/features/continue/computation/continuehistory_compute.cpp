@@ -268,6 +268,16 @@ void AppendHostedParts(std::string &line, const ContinueRecord &record)
 
 std::string ContinueEntryDetail(const ContinueRecord &record)
 {
+	std::string out = ContinueEntrySummary(record);
+	if (out.empty())
+		return out;
+
+	AppendPart(out, ModPhrase(ModNames(record)));
+	return out;
+}
+
+std::string ContinueEntrySummary(const ContinueRecord &record)
+{
 	std::string out;
 
 	switch (record.kind)
@@ -289,7 +299,6 @@ std::string ContinueEntryDetail(const ContinueRecord &record)
 		return std::string();
 	}
 
-	AppendPart(out, ModPhrase(ModNames(record)));
 	return out;
 }
 

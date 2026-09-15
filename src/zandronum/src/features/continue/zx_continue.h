@@ -52,11 +52,20 @@ void Continue_Activate();
 int Continue_HistoryCount();
 const char *Continue_EntryLabel( int index );		// the row's headline; never null
 const char *Continue_EntryDetail( int index );		// the line under it: kind, mode, mods; never null
+const char *Continue_EntrySummary( int index );		// the same without the files; never null
 
 // [rc4l] Whether the row will work: 0 green, 1 yellow, 2 red. See continuestatus_compute for what
 // each colour promises the player about their next action.
 int Continue_EntryStatus( int index );
 const char *Continue_EntryStatusReason( int index );	// empty for green; never null
+
+// [rc4l] The files a row was played with, one at a time, for the panel that has room to list them.
+// The row itself only has space for two and a count.
+int Continue_EntryFileCount( int index );
+const char *Continue_EntryFile( int index, int file );	// never null
+
+// Where a server row points, for the panel. Empty for anything else; never null.
+const char *Continue_EntryAddress( int index );
 const char *Continue_EntryWhen( int index );		// the last played column; never null
 int Continue_EntryKind( int index );				// 0 none, 1 single, 2 server, 3 hosted
 int Continue_EntryProbe( int index );				// 0 unknown, 1 alive, 2 gone, 3 wads differ

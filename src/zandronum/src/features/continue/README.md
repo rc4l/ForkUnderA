@@ -210,8 +210,23 @@ generation -- the same counter everything else derived from the history hangs of
 ## The list
 
 `DFUAContinueMenu` (`zx_continuemenu.cpp`) — a card in the same visual language as the browser and
-the updater's notice, drawn from the same tested geometry. Two columns and no more: what it was, and
-when. Keyboard is Up/Down (wrapping), PageUp/PageDown (clamping — a page key that wrapped would make
+the updater's notice, drawn from the same tested geometry.
+
+**Two columns, like the browser**: the list on the left, and a panel on the right describing whatever
+the cursor is on — its name, kind, mode and size, its address if it has one, when it was last played,
+**every** file it used, and why its dot is the colour it is. The row has space for a name and a
+glance; everything else about a session has to live somewhere.
+
+**Clicking a row selects it. The button commits.** It used to act on the click, which put a WAD
+reload one stray click away and gave the player nowhere to read what a row was before committing to
+it. The button names the act rather than the feature — `CONTINUE`, `RECONNECT`, `HOST AGAIN`,
+`LEAVE` — and sits in the same place whatever the row above it says. A red row still draws its
+button, greyed: one that VANISHED would leave the player wondering whether they had missed it.
+
+The panel shows the **summary** rather than the row's line, because the row's line ends in the files
+and the panel lists those in full underneath. The refusal reason is **wrapped**, not ellipsised: it is
+the one line here that has to be read rather than glanced at, and cutting it off removes the half
+that says what to do. Keyboard is Up/Down (wrapping), PageUp/PageDown (clamping — a page key that wrapped would make
 holding it a loop through the whole list), Home/End, Enter to continue, Del to forget a row, Esc to
 leave. The wheel moves the view and leaves the selection alone.
 

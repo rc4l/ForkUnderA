@@ -1835,6 +1835,69 @@ const char *Continue_EntryDetail( int index )
 	return detail.GetChars( );
 }
 
+int Continue_EntryFileCount( int index )
+{
+	const ContinueRecord *rec = EntryAt( index );
+	if ( rec == NULL )
+		return 0;
+
+	std::string iwad;
+	std::vector<std::string> mods;
+	FilesOf( *rec, iwad, mods );
+
+	// The IWAD counts: in the panel there is room to name the game as well as the mods, and "which
+	// Doom was this" is exactly the question a row two years old raises.
+	return static_cast<int>( mods.size( )) + ( iwad.empty( ) ? 0 : 1 );
+}
+
+const char *Continue_EntryFile( int index, int file )
+{
+	static FString name;
+	name = "";
+
+	const ContinueRecord *rec = EntryAt( index );
+	if ( rec == NULL )
+		return name.GetChars( );
+
+	std::string iwad;
+	std::vector<std::string> mods;
+	FilesOf( *rec, iwad, mods );
+
+	// The game first, then what was loaded on top of it, which is the order they are loaded in.
+	if ( iwad.empty( ) == false )
+	{
+		if ( file == 0 )
+		{
+			name = iwad.c_str( );
+			return name.GetChars( );
+		}
+		--file;
+	}
+
+	if (( file >= 0 ) && ( file < static_cast<int>( mods.size( ))))
+		name = mods[file].c_str( );
+
+	return name.GetChars( );
+}
+
+const char *Continue_EntryAddress( int index )
+{
+	static FString address;
+
+	const ContinueRecord *rec = EntryAt( index );
+	address = (( rec != NULL ) && ( rec->kind == ContinueKind::Server )) ? rec->address.c_str( ) : "";
+	return address.GetChars( );
+}
+
+const char *Continue_EntrySummary( int index )
+{
+	static FString summary;
+
+	const ContinueRecord *rec = EntryAt( index );
+	summary = ( rec != NULL ) ? ContinueEntrySummary( *rec ).c_str( ) : "";
+	return summary.GetChars( );
+}
+
 int Continue_EntryStatus( int index )
 {
 	const ContinueRecord *rec = EntryAt( index );

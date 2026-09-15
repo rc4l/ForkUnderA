@@ -746,3 +746,25 @@ TEST( ContinueHistory, AHostedRowNamesThePackItRuns )
 	// And by name, not by wherever the file happens to live on this disk.
 	EXPECT_EQ( std::string::npos, detail.find( "/somewhere/else/" ));
 }
+
+TEST( ContinueHistory, TheSummaryIsTheDetailWithoutTheFiles )
+{
+	// What a reader with room to list the files separately wants: repeating them in a truncated line
+	// spends width saying half of something it says in full three lines further down.
+	ContinueRecord r = Hosted( "MAP07", 1 );
+	r.modeName = "Coop";
+	r.host.maxPlayers = 8;
+	r.host.pwads.push_back( "sunder.wad" );
+
+	EXPECT_EQ( "Hosting \x95 Coop \x95 8 players", ContinueEntrySummary( r ));
+
+	// And the row's line is that summary with the files appended, so the two cannot drift apart.
+	const std::string detail = ContinueEntryDetail( r );
+	EXPECT_EQ( 0u, detail.find( ContinueEntrySummary( r )));
+	EXPECT_NE( std::string::npos, detail.find( "sunder.wad" ));
+}
+
+TEST( ContinueHistory, NothingToContinueHasNoSummary )
+{
+	EXPECT_TRUE( ContinueEntrySummary( ContinueRecord() ).empty() );
+}
