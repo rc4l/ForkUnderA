@@ -55,7 +55,7 @@ const USAGE = `fuactl <command>
   ticprof --port P [--tics N]          per-tic sim phase split (P_Ticker / thinkers / effects / specials)
   bench --port P --scenario F.json [--runs N] [--metric total.p99_ms]   repeat a scenario, report median + spread, discard runs whose expectations failed
   renderer-info --port P [--token T]   renderer identity + whether GL timer queries work on this driver
-  ui <action> [args] --port P [--token T]   drive the UI: read (menu as text), find <label>, nav <keys>, click <x> <y>, drag, type <text>, look --yaw D --pitch D, screenshot [name], exec <ccmd>
+  ui <action> [args] --port P [--token T]   drive the UI: read (menu as text), find <label>, nav <keys>, click <x> <y>, drag, wheel <x> <y> up|down [n], type <text>, look --yaw D --pitch D, screenshot [name], exec <ccmd>
   browser --port P [--token T] [--wait S] [--expect-lan] [--expect-country XXX]   refresh the server browser and report what it sees (LAN vs registry, country)
   hostdiag --port P [--token T] [--wait S] [--expect-listed]           ask the registry whether THIS server is reachable from outside (per family)
   continue --port P [--token T] [--expect shown|hidden]   what the Continue button is offering, and whether it is on the bar
@@ -292,6 +292,11 @@ async function main() {
             return ui.click(c, Number(a[0]), Number(a[1]), { button: flags.button || "left", double: !!flags.double }).then(() => ({ clicked: [Number(a[0]), Number(a[1])], button: flags.button || "left" }));
           case "rightclick": return ui.rightClick(c, Number(a[0]), Number(a[1])).then(() => ({ rightClicked: [Number(a[0]), Number(a[1])] }));
           case "drag":       return ui.drag(c, Number(a[0]), Number(a[1]), Number(a[2]), Number(a[3])).then(() => ({ dragged: a.map(Number) }));
+          // [rc4l] `ui wheel <x> <y> <up|down> [n]`. ui.mjs has always been able to send a wheel
+          // notch and the CLI had no way to ask for one, so a menu's scrolling could be driven by
+          // hand and never from a script -- which is how a list shipped with a wheel nobody had
+          // tried.
+          case "wheel":      return ui.wheel(c, Number(a[0]), Number(a[1]), a[2] === "up" ? "up" : "down", a[3] ? Number(a[3]) : 1).then(() => ({ wheeled: { x: Number(a[0]), y: Number(a[1]), dir: a[2], times: a[3] ? Number(a[3]) : 1 } }));
           case "type":       return ui.typeText(c, a.join(" ")).then(() => ({ typed: a.join(" ") }));
           case "look":       return ui.look(c, { yaw: flags.yaw ? Number(flags.yaw) : 0, pitch: flags.pitch ? Number(flags.pitch) : 0 });
           case "stick":      return c.rpc("input.axis", flags.clear ? { clear: true } : { yaw: num(flags.yaw), pitch: num(flags.pitch), forward: num(flags.forward), side: num(flags.side) });
@@ -301,7 +306,7 @@ async function main() {
           case "warp":       return ui.warp(c, Number(a[0]), Number(a[1]));
           case "damaging":   return ui.damagingSectors(c, flags.limit ? Number(flags.limit) : 64);
           case "exec":       return c.rpc("console.exec", { text: a.join(" ") });
-          default: throw new Error(`unknown ui action: ${act} (nav/click/rightclick/drag/type/look/stick/screenshot/exec)`);
+          default: throw new Error(`unknown ui action: ${act} (nav/click/rightclick/drag/wheel/type/look/stick/screenshot/exec)`);
         }
       });
       console.log(JSON.stringify(r, null, 2));
