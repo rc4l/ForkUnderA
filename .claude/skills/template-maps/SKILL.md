@@ -1,6 +1,6 @@
 ---
 name: template-maps
-description: Build a small generated map that isolates one engine feature or bug, and turn it into a GL-vs-Vulkan regression test with fuactl. Use whenever a fault reproduces only in a mod's maps, when a feature needs a test level of its own, or when a renderer fix needs a regression test that runs from the repository alone (Freedoom 2 textures, no mod wads).
+description: Build a small generated map that isolates one engine feature or bug, and turn it into a GL-vs-Vulkan (or Vulkan-vs-Vulkan) regression test with fuactl. Use whenever a fault reproduces only in a mod's maps, when a feature needs a test level of its own, or when a renderer fix needs a regression test that runs from the repository alone (Freedoom 2 textures, no mod wads).
 ---
 
 # Template maps: one ingredient, one map, one regression test
@@ -37,8 +37,12 @@ m.thing({ x: 512, y: 724, angle: 90, type: 1 });          // player 1 start
 const bytes = wad([...mapLumps("MAP01", m), ...mapLumps("MAP02", other)]);
 ```
 
-- `room()` for closed sectors, `wall()` for single one-sided lines (sector on the right), `sector()`,
+- `room()` for closed sectors, `block()` for a sector standing inside another (two-sided lines, e.g.
+  a pool or a tagged area), `wall()` for single one-sided lines (sector on the right), `sector()`,
   `thing()` (present on every skill and mode unless told otherwise), `vertex()` shares corners.
+- **Behaviour set by ACS** (reflective floors, anything only a script can do): `src/acs.mjs` writes an
+  ACS0 BEHAVIOR lump with one OPEN script -- `acs0([...callSpecial(159, [tag, 66, 0]), PCD.TERMINATE])`
+  -- passed as `mapLumps("MAP01", m, { behavior })`. No ACS compiler is needed.
 - Any UDMF key passes straight through: `special`, `arg0..`, `texturetop/middle/bottom`, `lightlevel`,
   flags. Numbers stay bare and positions get a decimal point; a QUOTED number makes the engine drop
   the thing, and a map with no player start crashed on load.
@@ -59,18 +63,25 @@ const bytes = wad([...mapLumps("MAP01", m), ...mapLumps("MAP02", other)]);
 ## 4. Turn it into a scenario with `src/template.mjs`
 
 ```js
-import { compareTemplate } from "../src/template.mjs";
-const r = await compareTemplate({ name: "horizon", wad: bytes, maps: ["MAP01", "MAP02"],
-  vantages: VANTAGES, boxes: BOXES, port: 7796 });
-for (const l of r.lines) console.log(l);
-process.exit(r.refused ? 3 : r.failed ? 1 : 0);
+import { runScenarioIfMain } from "../src/template.mjs";
+runScenarioIfMain(import.meta.url, () => ({ name: "horizon", wad: buildHorizonWad(), maps: ["MAP01", "MAP02"],
+  vantages: VANTAGES, boxes: BOXES }));
 ```
+
+`runScenarioIfMain` runs only when the file itself is invoked (`node scenarios/horizon.mjs [port]`), prints
+each box's verdict, and exits 0 (all under ceiling), 1 (failed), 2 (crashed) or 3 (refused) -- so a test
+can import the builder without launching anything.
 
 `compareTemplate` refuses to run while another engine is open (GL readback under another window is
 undefined), launches each map twice — GL alone, then Vulkan with `fua_dg_standalone 0` — captures
 every vantage, and judges each box by `boxDiff`: mean |d| in 16-pixel block means, so the renderers'
 sub-pixel framing averages out while a block-sized fault stays loud. Its GL frames come from the
 Vulkan-off launch on purpose: with Vulkan on, GL captures on a skybox map were unreliable in every build.
+
+When the fault is a Vulkan switch rather than a GL difference, pass `sides`: two named launches, each
+with the cvars it sets, compared Vulkan against Vulkan. `scenarios/pointlight.mjs` compares
+`fua_dg_clusters 0` against `1`, which match exactly once fixed, so its ceiling is 0.05. With no GL side
+nothing is read back from a window, and the harness runs even with other engines open.
 
 `BOXES[map]` is `{ name: { box: [x0, y0, x1, y1], ceiling } }` in frame fractions. Set ceilings from
 measurement, not taste: run the FIXED build, take what it reads, add margin. A map with a known,
@@ -86,7 +97,7 @@ where the fixed build reads 2. A test that has never failed is not yet a test (`
 
 The wad builder is pure, so it gets a `node --test` case: the lumps are there in order and the
 ingredient is in the TEXTMAP (`test/udmf.test.mjs` checks the horizon special and the skybox thing).
-Export the builder from the scenario and only run `main()` when invoked directly.
+Export the builder from the scenario; `runScenarioIfMain` keeps the import from launching anything.
 
 ## Files
 
@@ -96,4 +107,7 @@ Export the builder from the scenario and only run `main()` when invoked directly
 | `tools/fuactl/src/template.mjs` | `compareTemplate` (launch, capture, judge) and the pure `judge` |
 | `tools/fuactl/src/pngcore.mjs` | PNG decode/encode, `boxDiff`; `fuactl png --boxdiff` on the CLI |
 | `tools/fuactl/scenarios/horizon.mjs` | the worked example |
+| `tools/fuactl/scenarios/pointlight.mjs` | two Vulkan sides, a light-grid switch against itself |
+| `tools/fuactl/scenarios/skymirror.mjs` | a reflective floor set by an OPEN script, reflection off against on |
+| `tools/fuactl/src/acs.mjs` | ACS0 BEHAVIOR writer for scripted template maps |
 | `tools/fuactl/test/{udmf,template,pngcore}.test.mjs` | their tests |

@@ -69,16 +69,16 @@ Notes:
 
 ## Run it locally (Windows)
 
-`build-tests/` is a Visual Studio tree. Build and run with the bundled CMake:
+`build-tests/` is a Visual Studio tree. Build and run with `cmake` from PATH, or the one Visual
+Studio bundles at `<VS install>/Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin/cmake.exe`:
 
 ```bash
-CM="C:/Program Files/Microsoft Visual Studio/2022/Community/Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin/cmake.exe"
-"$CM" --build build-tests --config Release -- -m
+cmake --build build-tests --config Release -- -m
 build-tests/Release/zandrox_tests.exe --gtest_filter='Suite.*'
 ```
 
-There is no clang/llvm-cov on the Windows box, so the coverage gate runs in CI only -- check every
-branch of a new `Compute*` function against its tests by reading them, and say so.
+Without clang/llvm-cov installed the coverage gate runs in CI only -- check every branch of a new
+`Compute*` function against its tests by reading them, and say so.
 
 ## CI
 

@@ -122,7 +122,7 @@ after an upstream pull; it appends new commits as `pending` and preserves every 
    against the build tree before either says "safe to launch." The Windows one additionally builds
    **all** targets and resolves `cmake` out of the VS install, so it does not need a Developer
    PowerShell. Neither stages runtime deps (dylibs / DLLs, IWADs) — those come from a one-time
-   `mac_compile.sh` / `windows_build.ps1`. Then drive with the `zandronum-driver` skill. E2E must inspect the *artifacts an action leaves behind*,
+   `mac_compile.sh` / `windows_build.ps1`. Then drive with the `zandronum-session` skill. E2E must inspect the *artifacts an action leaves behind*,
    not just the action itself: fire at a wall and then WALK UP to the decals; kill and look at the
    corpse; open a door and look at the track (the white-decal miss — the muzzle flash verified,
    the bullet marks it left didn't). And cover the views nobody defaults to: LOOK STRAIGHT UP at

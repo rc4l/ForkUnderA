@@ -5,7 +5,7 @@ import path from "node:path";
 import { BridgeClient } from "./client.mjs";
 import { launchInstance, stopInstance, resolveEngine } from "./launch.mjs";
 import { exec, waitTics, sandbox } from "./capture.mjs";
-import { shotPair } from "./shot.mjs";
+import { shotPair, sweepDirFor } from "./shot.mjs";
 import * as ui from "./ui.mjs";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -42,7 +42,7 @@ export async function changeMap(c, map, { timeoutMs = 90000 } = {}) {
 // is the one path a single-map test can never reach.
 export async function sweep({
   maps = ["MAP01", "MAP02", "MAP07", "MAP11", "MAP15", "MAP27"],
-  port = 7902, iwad = "doom2.wad", outDir = "F:/ForkUnderA/dist-windows/sweep",
+  port = 7902, iwad = "doom2.wad", outDir = sweepDirFor(resolveEngine()),
   log = console.error,
 } = {}) {
   fs.mkdirSync(outDir, { recursive: true });

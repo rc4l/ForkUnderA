@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { judge } from "../src/template.mjs";
+import { judge, scenarioOutcome } from "../src/template.mjs";
 
 // [rc4l] A decoded-frame stand-in: w x h, every pixel the same RGB.
 function flat(w, h, rgb) {
@@ -32,4 +32,17 @@ test("frames of the wrong size fail rather than compare the wrong pixels", () =>
   const r = judge("MAP01", { small: { gl: flat(16, 16, [0, 0, 0]), vk: flat(16, 16, [0, 0, 0]) } }, BOXES, [32, 32]);
   assert.equal(r.failed, 1);
   assert.match(r.lines[0], /boxes assume 32x32/);
+});
+
+test("a scenario's own sides are compared by name", () => {
+  const frames = { far: { flat: flat(32, 32, [40, 40, 40]), clustered: flat(32, 32, [0, 0, 0]) } };
+  const r = judge("MAP01", frames, BOXES, [32, 32], ["flat", "clustered"]);
+  assert.equal(r.failed, 1);
+  assert.match(r.lines[0], /^FAIL MAP01 far/);
+});
+
+test("a scenario exits 0 only when nothing failed, and 3 when it refused to run", () => {
+  assert.deepEqual(scenarioOutcome("x", { lines: ["PASS a"], failed: 0 }), { lines: ["PASS a", "all x boxes under their ceilings"], code: 0 });
+  assert.equal(scenarioOutcome("x", { lines: [], failed: 2 }).code, 1);
+  assert.equal(scenarioOutcome("x", { lines: [], failed: 1, refused: true }).code, 3);
 });

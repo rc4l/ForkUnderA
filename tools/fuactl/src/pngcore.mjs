@@ -98,6 +98,8 @@ function crc32(buf) {
 
 // [rc4l] Mean |d| over a box (fractions x0,y0,x1,y1) in block means, so sub-pixel framing between renderers averages out (block 1 is per pixel).
 export function boxDiff(a, b, box, block = 16) {
+  // [rc4l] Pixel coordinates passed by mistake made a box hundreds of frames wide, and the walk over it never came back.
+  if (box.some((v) => !(v >= 0 && v <= 1))) throw new Error(`box is fractions of the frame, 0..1: ${box.join(",")}`);
   const x0 = Math.floor(box[0] * a.w), y0 = Math.floor(box[1] * a.h);
   const x1 = Math.ceil(box[2] * a.w), y1 = Math.ceil(box[3] * a.h);
   const mean = (img, bx, by) => {
@@ -116,4 +118,9 @@ export function boxDiff(a, b, box, block = 16) {
     n++;
   }
   return sum / Math.max(n, 1);
+}
+
+// [rc4l] A frozen A/B: what switching the value changed, against the repeat of the first value, which is the noise floor.
+export function abDiff(a, b, a2, box = [0, 0, 1, 1], block = 16) {
+  return { changed: boxDiff(a, b, box, block), noise: boxDiff(a, a2, box, block) };
 }

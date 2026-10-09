@@ -47,9 +47,8 @@ exactly where a naive guard desyncs.)
 A crash fix is proven by "it no longer crashes doing the thing that crashed it." The state is
 engine-wide (actors, sectors, players) and not extractable to a pure `Compute*` helper, so don't force
 one — reproduce instead:
-1. Apply the minimal guard. `cmake --build build --target zdoom -j4`, then refresh the `.app` bundle
-   binary (`cp build/zandronum build/ForkUnderA.app/Contents/MacOS/zandronum`).
-2. Drive the exact scenario that crashed via the MCP bridge (see `zandronum-driver`) — same iwad, map,
+1. Apply the minimal guard and rebuild and stage it (see `zandronum-rebuild`).
+2. Drive the exact scenario that crashed with fuactl (see `zandronum-session`) — same iwad, map,
    bots, sequence.
 3. Before the fix it died within seconds; after, confirm it **survives well past that point** (watch
    `pgrep` for ~20s past the trigger).

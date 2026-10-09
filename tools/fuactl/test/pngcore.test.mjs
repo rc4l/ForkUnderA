@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { decodePNG, px, writePNG, boxDiff } from "../src/pngcore.mjs";
+import { decodePNG, px, writePNG, boxDiff, abDiff } from "../src/pngcore.mjs";
 
 // [rc4l] A w x h RGB image whose pixel colour is f(x, y), written and read back through the real codec.
 function image(w, h, f) {
@@ -27,6 +27,11 @@ test("identical frames differ by nothing", () => {
   assert.equal(boxDiff(a, a, [0, 0, 1, 1]), 0);
 });
 
+test("a box given in pixels is refused rather than walked", () => {
+  const a = image(32, 32, () => [0, 0, 0]);
+  assert.throws(() => boxDiff(a, a, [0, 0, 1280, 720]), /fractions of the frame/);
+});
+
 test("a stripe one pixel out of phase is loud per pixel and quiet in blocks", () => {
   // [rc4l] The texture-phase difference two correct renderers show, which blocks are there to ignore.
   const a = image(32, 32, (x) => (x % 2 ? [255, 255, 255] : [0, 0, 0]));
@@ -41,4 +46,10 @@ test("a block-sized fault stays loud in blocks, and only inside the box", () => 
   const wall = image(32, 32, (x, y) => (y < 16 ? [220, 20, 20] : [20, 20, 20]));
   assert.ok(Math.abs(boxDiff(sky, wall, [0, 0, 1, 0.5]) - 200 / 3) < 1e-9);
   assert.equal(boxDiff(sky, wall, [0, 0.5, 1, 1]), 0);
+});
+
+test("a frozen A/B reports the switch's change beside the repeat's noise", () => {
+  const a = image(32, 32, () => [10, 10, 10]);
+  const b = image(32, 32, () => [40, 40, 40]);
+  assert.deepEqual(abDiff(a, b, a), { changed: 30, noise: 0 });
 });

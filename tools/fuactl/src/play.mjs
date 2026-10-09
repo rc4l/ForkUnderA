@@ -8,6 +8,7 @@
 // path with no tests. The argument-ordering bug that shipped a "no monsters" build full of monsters
 // lived here, under a comment claiming the opposite.
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { launchInstance, stopInstance, describeExit } from "./launch.mjs";
 
@@ -50,15 +51,24 @@ export function playCvars({ gl = false, sideBySide = false, rt = false, monsters
   return cv;
 }
 
+// [rc4l] The engine's own download store (M_GetFuaUserPath + "/pwads"), where `fua_download` puts catalogue wads.
+export function defaultPwadStore(platform = process.platform, env = process.env, home = os.homedir()) {
+  if (platform === "win32") return path.join(env.LOCALAPPDATA || path.join(home, "AppData/Local"), "ForkUnderA/pwads");
+  if (platform === "darwin") return path.join(home, "Library/Application Support/ForkUnderA/pwads");
+  return path.join(home, ".config/ForkUnderA/pwads");
+}
+
 // [rc4l] Resolve a catalogue entry to its file list, so playing what the HOST tab offers does not
 // mean copying six pk3 paths out of a JSON file by hand. A missing file is NAMED rather than
 // quietly dropped: a wad list that is one short loads a map with no textures and looks like a
 // renderer bug.
 export function resolvePreset(catalogueDir, storeDir, id, variantId) {
   const meta = JSON.parse(fs.readFileSync(path.join(catalogueDir, id, "addon.json"), "utf8"));
+  // [rc4l] An entry with no variants carries its files at the top level, and is its own only variant.
+  const variants = meta.variants || [{ id: "default", default: true, files: meta.files }];
   const variant = variantId
-    ? meta.variants.find((v) => v.id === variantId)
-    : meta.variants.find((v) => v.default) || meta.variants[0];
+    ? variants.find((v) => v.id === variantId)
+    : variants.find((v) => v.default) || variants[0];
   if (!variant) throw new Error(`no such variant: ${variantId}`);
   const found = [], missing = [];
   for (const f of variant.files || []) {

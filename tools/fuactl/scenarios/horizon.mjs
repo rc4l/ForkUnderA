@@ -1,9 +1,8 @@
 // [rc4l] Line_Horizon on a template map, GL against Vulkan at fixed vantages: exit 0 when every box is under its ceiling.
 //
 // usage:  node scenarios/horizon.mjs [port]
-import { pathToFileURL } from "node:url";
 import { UdmfMap, wad, mapLumps } from "../src/udmf.mjs";
-import { compareTemplate } from "../src/template.mjs";
+import { runScenarioIfMain } from "../src/template.mjs";
 
 // [rc4l] A 1024 court with a sky ceiling whose north wall is a horizon line carrying a texture GL never draws.
 function court(m, { beyond }) {
@@ -43,15 +42,5 @@ const VANTAGES = [
   { name: "oblique", at: { x: 300, y: 650, z: 0, angle: 70, pitch: 0 } },
 ];
 
-async function main() {
-  const r = await compareTemplate({ name: "horizon", wad: buildHorizonWad(), maps: ["MAP01", "MAP02"],
-    vantages: VANTAGES, boxes: BOXES, port: Number(process.argv[2] || 7796) });
-  for (const l of r.lines) console.log(l);
-  console.log(r.failed ? `${r.failed} failed` : "all horizon boxes under their ceilings");
-  process.exit(r.refused ? 3 : r.failed ? 1 : 0);
-}
-
-// [rc4l] Run when invoked; when imported, only the wad builder is exposed, for its unit test.
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  main().catch((e) => { console.error(e); process.exit(2); });
-}
+runScenarioIfMain(import.meta.url, () => ({ name: "horizon", wad: buildHorizonWad(), maps: ["MAP01", "MAP02"],
+  vantages: VANTAGES, boxes: BOXES }));

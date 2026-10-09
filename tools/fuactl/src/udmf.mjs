@@ -13,6 +13,11 @@ function field(key, value) {
   return `${key} = ${value};`;
 }
 
+// [rc4l] A rectangle's edges walked clockwise, so whatever is inside lies on each edge's right.
+function rectEdges(x0, y0, x1, y1) {
+  return [["west", x0, y0, x0, y1], ["north", x0, y1, x1, y1], ["east", x1, y1, x1, y0], ["south", x1, y0, x0, y0]];
+}
+
 export class UdmfMap {
   constructor() {
     this.vertices = [];
@@ -49,13 +54,21 @@ export class UdmfMap {
   // [rc4l] A closed rectangular room walked clockwise, so it is on every wall's right; walls(edge) returns { side, line } per edge.
   room(x0, y0, x1, y1, sectorProps, walls = () => ({})) {
     const s = this.sector(sectorProps);
-    const edges = [
-      ["west", x0, y0, x0, y1], ["north", x0, y1, x1, y1],
-      ["east", x1, y1, x1, y0], ["south", x1, y0, x0, y0],
-    ];
-    for (const [name, ax, ay, bx, by] of edges) {
+    for (const [name, ax, ay, bx, by] of rectEdges(x0, y0, x1, y1)) {
       const w = walls(name) || {};
       this.wall(ax, ay, bx, by, s, w.side || {}, w.line || {});
+    }
+    return s;
+  }
+
+  // [rc4l] A sector standing inside another, joined by two-sided lines so the block is on every line's front; outer(edge) styles the side facing out.
+  block(x0, y0, x1, y1, sectorProps, outerSector, outer = () => ({})) {
+    const s = this.sector(sectorProps);
+    for (const [name, ax, ay, bx, by] of rectEdges(x0, y0, x1, y1)) {
+      this.sides.push({ sector: s });
+      this.sides.push({ sector: outerSector, ...(outer(name) || {}) });
+      this.lines.push({ v1: this.vertex(ax, ay), v2: this.vertex(bx, by), sidefront: this.sides.length - 2,
+        sideback: this.sides.length - 1, twosided: true });
     }
     return s;
   }
@@ -103,7 +116,8 @@ export function wad(lumps) {
   return out;
 }
 
-// [rc4l] The lumps one UDMF map needs: its marker, its TEXTMAP and ENDMAP.
-export function mapLumps(name, map) {
-  return [{ name, data: "" }, { name: "TEXTMAP", data: map.textmap() }, { name: "ENDMAP", data: "" }];
+// [rc4l] The lumps one UDMF map needs: its marker, its TEXTMAP, a BEHAVIOR when it runs scripts, and ENDMAP.
+export function mapLumps(name, map, { behavior = null } = {}) {
+  return [{ name, data: "" }, { name: "TEXTMAP", data: map.textmap() },
+    ...(behavior ? [{ name: "BEHAVIOR", data: behavior }] : []), { name: "ENDMAP", data: "" }];
 }

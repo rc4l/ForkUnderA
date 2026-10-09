@@ -47,15 +47,17 @@ export function describeExit(code) {
   return name ? `${code} (0x${unsigned.toString(16)}: ${name})` : String(code);
 }
 
-// [rc4l] How many lines of `tasklist` output name the engine, so a capture can refuse to run under another engine window.
-export function countEngineLines(tasklistText, image = "forkundera.exe") {
-  return String(tasklistText).split(/\r?\n/).filter((l) => l.toLowerCase().startsWith(image)).length;
+// [rc4l] How many lines of a process listing (tasklist rows, or `ps -A -o comm=` names) are the engine.
+export function countEngineLines(listing) {
+  return String(listing).split(/\r?\n/).filter((l) => /^(.*[\\/])?forkundera(\.exe)?(\s|$)/i.test(l.trim())).length;
 }
 
-// [rc4l] Engines running on this machine (Windows only; elsewhere 0), because GL readback under another window is undefined.
+// [rc4l] Engines running on this machine, because GL readback under another engine's window is undefined.
 export function engineProcessCount() {
-  if (process.platform !== "win32") return 0;
-  return countEngineLines(spawnSync("tasklist", ["/FI", "IMAGENAME eq forkundera.exe", "/NH"], { encoding: "utf8" }).stdout);
+  const out = process.platform === "win32"
+    ? spawnSync("tasklist", ["/FI", "IMAGENAME eq forkundera.exe", "/NH"], { encoding: "utf8" }).stdout
+    : spawnSync("ps", ["-A", "-o", "comm="], { encoding: "utf8" }).stdout;
+  return countEngineLines(out || "");
 }
 
 export function freePort() {

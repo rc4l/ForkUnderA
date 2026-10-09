@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { resolveEngine, engineArgs, describeExit, countEngineLines } from "../src/launch.mjs";
-import { sweepDirFor } from "../src/shot.mjs";
+import { sweepDirFor, pickCmake, resolveTarget, cameraFromFlags, cvarValueFrom } from "../src/shot.mjs";
 
 // Run `fn` with cwd moved to `dir` and FUACTL_ENGINE cleared, then put both back.
 function inDir(dir, fn) {
@@ -156,7 +156,43 @@ test("engines are counted from tasklist's lines, and its no-match message counts
   assert.equal(countEngineLines("INFO: No tasks are running which match the specified criteria.\r\n"), 0);
 });
 
+test("engines are counted from ps names on macOS and Linux, and nothing merely like one counts", () => {
+  const ps = "launchd\n/Applications/ForkUnderA.app/Contents/MacOS/forkundera\nforkundera\nforkundera-helper\nbash\n";
+  assert.equal(countEngineLines(ps), 2);
+});
+
 test("a pair lands in sweep/ beside whichever engine is running", () => {
-  assert.equal(sweepDirFor("F:/ForkUnderA/dist-windows/forkundera.exe"), "F:/ForkUnderA/dist-windows/sweep");
-  assert.equal(sweepDirFor("F:/ForkUnderA/build-win/Release/forkundera.exe"), "F:/ForkUnderA/build-win/Release/sweep");
+  assert.equal(sweepDirFor("/repo/dist-windows/forkundera.exe"), "/repo/dist-windows/sweep");
+  assert.equal(sweepDirFor("/repo/build-win/Release/forkundera.exe"), "/repo/build-win/Release/sweep");
+});
+
+test("cmake comes from FUACTL_CMAKE, then any Visual Studio 2022 edition, then PATH", () => {
+  const pf = "/pf";
+  const pro = path.join(pf, "Microsoft Visual Studio/2022", "Professional", "Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin/cmake.exe");
+  assert.equal(pickCmake({ FUACTL_CMAKE: "/x/cmake", ProgramFiles: pf }, () => true), "/x/cmake");
+  assert.equal(pickCmake({ ProgramFiles: pf }, (p) => p === pro), pro);
+  assert.equal(pickCmake({}, () => false), "cmake");
+});
+
+test("a command means --port first, then the last play session, and nothing when there is neither", () => {
+  assert.deepEqual(resolveTarget({ port: "7799", token: "t" }, { port: 7801, token: "s" }), { port: 7799, token: "t" });
+  assert.deepEqual(resolveTarget({}, { port: 7801, token: "s" }), { port: 7801, token: "s" });
+  assert.deepEqual(resolveTarget({ token: "t" }, { port: 7801, token: "s" }), { port: 7801, token: "t" });
+  assert.equal(resolveTarget({}, null), null);
+});
+
+test("a camera comes from --spot, else --at with --face, else nowhere", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "spots-"));
+  const spots = path.join(dir, "spots.json");
+  fs.writeFileSync(spots, JSON.stringify({ spots: { s: { x: 1, y: 2, z: 3, angle: 90, shows: "it" } } }));
+  assert.deepEqual(cameraFromFlags({ spot: "s", at: "9,9,9" }, spots), { x: 1, y: 2, z: 3, angle: 90, pitch: 0, shows: "it" });
+  assert.deepEqual(cameraFromFlags({ at: "4,5,6", face: "180,-30" }, spots), { x: 4, y: 5, z: 6, angle: 180, pitch: -30 });
+  assert.deepEqual(cameraFromFlags({ at: "4,5,6" }, spots, "90,0"), { x: 4, y: 5, z: 6, angle: 90, pitch: 0 });
+  assert.equal(cameraFromFlags({}, spots), null);
+});
+
+test("a cvar's value is read off the console echo, and anything else is no value", () => {
+  assert.equal(cvarValueFrom('"fua_mesh_sky" is "true"'), "true");
+  assert.equal(cvarValueFrom('"gl_plane_reflection" is "0"\n'), "0");
+  assert.equal(cvarValueFrom("Unknown command \"nope\""), null);
 });

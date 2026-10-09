@@ -143,7 +143,8 @@ if (args[0] === "--boxdiff") {
   if (a.w !== b.w || a.h !== b.h) { console.error(`size mismatch ${a.w}x${a.h} vs ${b.w}x${b.h}`); process.exit(1); }
   const box = args.slice(3, 7).map(Number);
   const block = Number(args[7]) || 16;
-  console.log(`mean|d| ${boxDiff(a, b, box, block).toFixed(2)}  (block ${block}, box ${box.join(",")})`);
+  try { console.log(`mean|d| ${boxDiff(a, b, box, block).toFixed(2)}  (block ${block}, box ${box.join(",")})`); }
+  catch (e) { console.error(e.message); process.exit(1); }
   process.exit(0);
 }
 
