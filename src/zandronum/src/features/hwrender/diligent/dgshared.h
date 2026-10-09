@@ -51,6 +51,12 @@ bool InvertMatrix4(const float *m, float *out);
 // the world about how textures are filtered.
 void FillSamplerFromEngine(Diligent::SamplerDesc &samp);
 
+// [rc4l] While the sky portal pass is drawing: where its camera stands and how far it may reach.
+bool SkyPortalReach(float &camX, float &camY, float &reach);
+
+// [rc4l] The horizon windows' planes, drawn after the opaque world -- see features/horizon.
+void DrawHorizonPlanes(Diligent::IDeviceContext *ctx);
+
 }} // namespace zx::hwrender
 
 #endif // ZX_DGSHARED_H

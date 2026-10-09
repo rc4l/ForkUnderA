@@ -138,6 +138,14 @@ PlaneUVTransform ComputeIdentityPlaneUV();
 // the wrong place.
 void ComputePlaneUV(float px, float py, const PlaneUVTransform &t, float &u, float &v);
 
+// [rc4l] The same mapping as six numbers (u = ux*x + uy*y + u0, v likewise), for a plane sampled per fragment rather than per vertex.
+struct PlaneUVAffine
+{
+	float ux, uy, u0;
+	float vx, vy, v0;
+};
+PlaneUVAffine ComputePlaneUVAffine(const PlaneUVTransform &t);
+
 }} // namespace zx::levelmesh
 
 #endif // ZX_FLATMESH_COMPUTE_H

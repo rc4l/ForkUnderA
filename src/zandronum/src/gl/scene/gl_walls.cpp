@@ -187,7 +187,7 @@ void GLWall::PutWall(bool translucent)
 		// with it the visibility GL already worked out. A map with a sky PORTAL never produces
 		// RENDERWALL_SKY at all -- SkyPlane picks SKYBOX when the sector names a skybox -- so both
 		// cases have to be taken or exactly the maps with this bug capture nothing.
-		zx::levelmesh::RegisterSkyQuad(*this);
+		zx::levelmesh::RegisterSkyQuad(*this, skybox);
 		portal=GLPortal::FindPortal(skybox);
 		if (!portal) portal=new GLSkyboxPortal(skybox);
 		portal->AddLine(this);
@@ -227,7 +227,8 @@ void GLWall::PutWall(bool translucent)
 		// with it the visibility GL already worked out. A map with a sky PORTAL never produces
 		// RENDERWALL_SKY at all -- SkyPlane picks SKYBOX when the sector names a skybox -- so both
 		// cases have to be taken or exactly the maps with this bug capture nothing.
-		zx::levelmesh::RegisterSkyQuad(*this);
+		// [rc4l] NULL, never `skybox`: on a plain sky that union member is this wall's GLSkyInfo.
+		zx::levelmesh::RegisterSkyQuad(*this, NULL);
 		portal=GLPortal::FindPortal(sky);
 		if (!portal) portal=new GLSkyPortal(sky);
 		portal->AddLine(this);

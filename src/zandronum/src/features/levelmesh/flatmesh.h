@@ -101,6 +101,10 @@ int SpritePieceCount();
 // colour, alpha, blend. See fua_sprites.
 void DumpSpriteNotes();
 
+// [rc4l] A vertical quad from (x1, y1) to (x2, y2), as six triangle-list vertices in fan order.
+void MakeWallQuad(FFlatVertex *out6, float x1, float y1, float x2, float y2,
+	const float *zbottom2, const float *ztop2);
+
 }} // namespace zx::levelmesh
 
 #endif // ZX_FLATMESH_H

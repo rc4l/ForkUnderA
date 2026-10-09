@@ -127,6 +127,8 @@ static TMap<unsigned int, unsigned int> g_pieceByOffset;
 // desaturation, and produced a Vulkan render visibly brighter and flatter than GL's.
 void CaptureShading(int lightlevel, int rellight, const FColormap &cm, MeshPiece &out, bool noFog)
 {
+	// [rc4l] Put back what the two setters write: callers run inside GL's frame, and asking must not change what GL draws next.
+	const FRenderState::ShadingSnapshot before = gl_RenderState.SaveShading();
 	FColormap local = cm;
 	gl_SetColor(lightlevel, rellight, local, 1.0f);
 	if (noFog) gl_SetFog(255, 0, NULL, false);
@@ -142,6 +144,7 @@ void CaptureShading(int lightlevel, int rellight, const FColormap &cm, MeshPiece
 	// FRenderState::Apply turns the enable plus the fog colour into uFogEnabled's sign.
 	if (!gl_RenderState.IsFogEnabled()) out.fogMode = 0;
 	else out.fogMode = (out.fogColor == 0) ? (int)gl_fogmode : -(int)gl_fogmode;
+	gl_RenderState.RestoreShading(before);
 
 	// Opaque unless the caller says otherwise -- walls and flats always are.
 	out.blendMode = 0;

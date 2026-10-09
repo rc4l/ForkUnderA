@@ -86,6 +86,7 @@
 #include "features/fov-interp/fovinterp.h"
 #include "features/fua-caching/fua_caching.h"
 #include "features/levelmesh/projdecals.h"   // [rc4l] projected mesh decals
+#include "features/horizon/horizon.h"   // [rc4l] horizon windows, rebuilt per frame
 #include "mcp_glperf.h" // [rc4l] GPU render-pass timer anchors (no-op unless FUA_MCP_BRIDGE)
 
 //==========================================================================
@@ -371,6 +372,8 @@ void FGLRenderer::CreateScene()
 	// the room own ones instead; not clearing at all lets them accumulate across frames. Clearing
 	// only on the outer walk is the one that leaves the list holding what the player can see.
 	if (!GLPortal::inskybox) zx::levelmesh::SkyQuadsClear();
+	// [rc4l] features/horizon: this frame's horizon windows, from the map -- once per outer walk.
+	if (!GLPortal::inskybox) zx::horizon::UpdateHorizons();
 	// [rc4l] features/levelmesh: age the marks by a frame. They are DRAWN by the backend, from their
 	// boxes, so nothing is emitted here -- but their lifetimes are the simulation's business and not
 	// the renderer's, and this is the one place that runs every frame in every mode.
@@ -655,6 +658,7 @@ void FGLRenderer::DrawScene(bool toscreen)
 		zx::levelmesh::ClearSprites();
 		zx::levelmesh::UpdateProjectedDecals();
 		zx::levelmesh::InvalidateMovedSectors();
+		zx::horizon::UpdateHorizons();
 
 		// [rc4l] A frame where the world moved used to go back through GL, because the walk was what
 		// re-baked a seg whose sector had moved. It is not any more: InvalidateMovedSectors re-bakes

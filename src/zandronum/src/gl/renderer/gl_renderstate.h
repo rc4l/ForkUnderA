@@ -321,6 +321,36 @@ public:
 		mLightParms[0] = d;
 	}
 
+	// [rc4l] Every field gl_SetColor and gl_SetFog write, so a caller that only asks them can put them back.
+	struct ShadingSnapshot
+	{
+		FStateVec4 color;
+		int desaturation;
+		float lightParms[4];
+		bool fogEnabled;
+		PalEntry fogColor;
+	};
+
+	ShadingSnapshot SaveShading() const
+	{
+		ShadingSnapshot s;
+		s.color = mColor;
+		s.desaturation = mDesaturation;
+		for (int i = 0; i < 4; i++) s.lightParms[i] = mLightParms[i];
+		s.fogEnabled = mFogEnabled;
+		s.fogColor = mFogColor;
+		return s;
+	}
+
+	void RestoreShading(const ShadingSnapshot &s)
+	{
+		mColor = s.color;
+		mDesaturation = s.desaturation;
+		for (int i = 0; i < 4; i++) mLightParms[i] = s.lightParms[i];
+		mFogEnabled = s.fogEnabled;
+		mFogColor = s.fogColor;
+	}
+
 	void SetFixedColormap(int cm)
 	{
 		mColormapState = cm;

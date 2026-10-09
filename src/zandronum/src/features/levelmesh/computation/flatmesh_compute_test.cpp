@@ -6,6 +6,8 @@
 
 #include <gtest/gtest.h>
 
+#include <math.h>
+
 #include "features/levelmesh/computation/flatmesh_compute.h"
 
 using namespace zx::levelmesh;
@@ -397,4 +399,76 @@ TEST(FlatNormal, LeavesAVerticalPlaneAlone)
 	// error would make the answer depend on which way the last bit fell.
 	EXPECT_FALSE(ComputeFlatNormalFlipped(false, 0.f));
 	EXPECT_FALSE(ComputeFlatNormalFlipped(true, 0.f));
+}
+
+// ---- the plane mapping as an affine map ----------------------------------------
+//
+// [rc4l] A horizon plane is sampled where a ray lands, so the six numbers must give exactly what ComputePlaneUV gives.
+
+namespace {
+
+void ExpectAffineMatches(const PlaneUVTransform &t, float x, float y)
+{
+	const PlaneUVAffine a = ComputePlaneUVAffine(t);
+	float u, v;
+	ComputePlaneUV(x, y, t, u, v);
+	// [rc4l] Relative to the size of the answer, since at 30000 units out a coordinate runs to the hundreds.
+	const float tol = 1e-5f * (1.f + fabsf(u) + fabsf(v));
+	EXPECT_NEAR(a.ux * x + a.uy * y + a.u0, u, tol) << "at " << x << "," << y;
+	EXPECT_NEAR(a.vx * x + a.vy * y + a.v0, v, tol) << "at " << x << "," << y;
+}
+
+} // namespace
+
+TEST(PlaneUVAffine, IdentityIsOneTexturePerSixtyFourUnitsWithVReversed)
+{
+	const PlaneUVAffine a = ComputePlaneUVAffine(ComputeIdentityPlaneUV());
+	EXPECT_FLOAT_EQ(a.ux, 1.f / 64.f);
+	EXPECT_FLOAT_EQ(a.uy, 0.f);
+	EXPECT_FLOAT_EQ(a.u0, 0.f);
+	EXPECT_FLOAT_EQ(a.vx, 0.f);
+	EXPECT_FLOAT_EQ(a.vy, -1.f / 64.f);
+	EXPECT_FLOAT_EQ(a.v0, 0.f);
+}
+
+TEST(PlaneUVAffine, MatchesThePerVertexMappingFarFromTheOrigin)
+{
+	// [rc4l] wdiex02's water is sampled tens of thousands of units out, which is where it counts.
+	const PlaneUVTransform id = ComputeIdentityPlaneUV();
+	ExpectAffineMatches(id, -4623.f, -489.f);
+	ExpectAffineMatches(id, -37391.f, 32279.f);
+}
+
+TEST(PlaneUVAffine, CarriesRotationScaleOffsetAndTextureSize)
+{
+	PlaneUVTransform t = ComputeIdentityPlaneUV();
+	t.angleDegrees = 37.f;
+	t.xscale = 2.f;
+	t.yscale = 0.5f;
+	t.xoffs = 48.f;
+	t.yoffs = -20.f;
+	t.texWidth = 128.f;
+	t.texHeight = 32.f;
+	ExpectAffineMatches(t, 0.f, 0.f);
+	ExpectAffineMatches(t, 1234.f, -567.f);
+	ExpectAffineMatches(t, -30000.f, 29000.f);
+}
+
+TEST(PlaneUVAffine, ALargeScrollOffsetDoesNotCostTheSlope)
+{
+	// [rc4l] A scroller's offset grows for as long as the level runs, and the slope must not lose precision to it.
+	PlaneUVTransform t = ComputeIdentityPlaneUV();
+	t.xoffs = 6400000.f;
+	const PlaneUVAffine a = ComputePlaneUVAffine(t);
+	EXPECT_FLOAT_EQ(a.ux, 1.f / 64.f);
+	EXPECT_FLOAT_EQ(a.u0, 100000.f);
+}
+
+TEST(PlaneUVAffine, ACanvasFlipsV)
+{
+	PlaneUVTransform t = ComputeIdentityPlaneUV();
+	t.hasCanvas = true;
+	const PlaneUVAffine a = ComputePlaneUVAffine(t);
+	EXPECT_FLOAT_EQ(a.vy, 1.f / 64.f);
+	ExpectAffineMatches(t, 300.f, -700.f);
 }

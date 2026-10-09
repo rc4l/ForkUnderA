@@ -17,6 +17,7 @@
 #include "features/surfaces/surfacebuild.h"
 #include "features/surfaces/computation/wallgeom_compute.h"
 #include "features/surfaces/computation/walluv_compute.h"
+#include "features/horizon/computation/horizon_compute.h"
 
 // [rc4l] Declared at global scope: EXTERN_CVAR inside the namespace would name a different symbol
 // than the CVAR defined in surfaceverify.cpp, and only the linker would notice.
@@ -157,6 +158,8 @@ bool BuildDerivedWallSpan(const seg_t *seg, int renderType, DerivedWallSpan &out
 {
 	if (seg == NULL || seg->sidedef == NULL || seg->linedef == NULL ||
 	    seg->frontsector == NULL) return false;
+	// [rc4l] A horizon line has no wall parts: GLWall::Process hands it to DoHorizon and returns.
+	if (zx::horizon::ComputeIsHorizonLine(seg->linedef->special)) return false;
 
 	int texpos = side_t::mid;
 	if (!PartOf(renderType, texpos)) { g_fbSpecial++; g_fellBack++; return false; }

@@ -49,9 +49,13 @@
 #include "features/levelmesh/levelmesh.h"   // ArmFullBake
 #include "d_main.h"                          // gamestate
 #include "features/levelmesh/flatmesh.h"
+#include "features/horizon/horizon.h"   // [rc4l] the horizon lines' sky halves
+#include "features/hwrender/computation/skyportal_compute.h"   // [rc4l] what the portal pass may draw
+#include "features/levelmesh/computation/packedcolor_compute.h"
 #include "features/levelmesh/projdecals.h"   // [rc4l] the marks the decal pass draws
 #include "features/hwrender/computation/surfaceorder_compute.h"   // the draw order, tested off-engine
 #include "features/hwrender/hud2d.h"
+#include "features/hwrender/diligent/dglight_glsl.h"   // [rc4l] the sector light, shared with the horizon pass
 #include "v_video.h"
 #include "gl/renderer/gl_renderer.h"
 #include "gl/dynlights/gl_lightbuffer.h"
@@ -430,7 +434,6 @@ struct DynRun
 	// and without depth writes whichever triangle the buffer happens to hold last wins. On a car
 	// that draws the interior floor and seats straight through the bodywork.
 	bool         solid;
-	bool         sky;          // a sky surface: drawn from the sky image, and it writes depth
 	float        cx, cy, cz;   // centroid, for the merged sort
 };
 static TArray<DynRun> g_dynRuns;
@@ -1286,14 +1289,7 @@ static const char *kSceneVS =
 	"    }\n" \
 	"    return clamp(base + dyn, 0.0, 1.4);\n" \
 	"}\n" \
-	"float R_DoomLightingEquation(float light, float dist) {\n" \
-	"    float L = light * 63.0/31.0;\n" \
-	"    float min_L = clamp(36.0/31.0 - L, 0.0, 1.0);\n" \
-	"    if (dist < 0.0001) dist = 0.0001;\n" \
-	"    float scale = 1.0 / dist;\n" \
-	"    float index = (59.0/31.0 - L) - (scale * 232.0/31.0 - 232.0/31.0);\n" \
-	"    return clamp(index, min_L, 1.0);\n" \
-	"}\n" \
+	FUA_SECTOR_LIGHT_GLSL \
 	"vec3 fuaShadeEx(vec3 texel, bool wantDynLight) {\n" \
 	"    float dbg = uCameraPos.w;\n" \
 	"    if (dbg == 2.0) return vec3(gl_FragCoord.z);\n" \
@@ -1320,12 +1316,7 @@ static const char *kSceneVS =
 	"    if (dbg == 17.0) return (uSkyColor.w > 0.5 && vLightIndex > 0) ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);\n" \
 	"    if (dbg == 0.0) return texel * vColor;\n" \
 	"    float fogMode = vFog.a;\n" \
-	"    float fogdist = 0.0, fogfactor = 0.0;\n" \
-	"    if (fogMode != 0.0) {\n" \
-	"        fogdist = (abs(fogMode) < 1.5) ? vPixelPos.w\n" \
-	"                                       : max(16.0, distance(vPixelPos.xyz, uCameraPos.xyz));\n" \
-	"        fogfactor = exp2(vLightParm.y * fogdist);\n" \
-	"    }\n" \
+	"    float fogfactor = fuaFogFactor(fogMode, vLightParm.y, vPixelPos, uCameraPos.xyz);\n" \
 	"    if (dbg == 5.0) return vec3(fogfactor);\n" \
 	"    if (dbg == 6.0) return vFog.rgb;\n" \
 	"    if (dbg == 7.0) return vec3(clamp(vPixelPos.w / 2000.0, 0.0, 1.0));\n" \
@@ -1335,12 +1326,9 @@ static const char *kSceneVS =
 	   must not appear in the reflection -- without this the wall the mirror hangs on renders first
 	   from the reflected camera and fills the whole reflection. w == 0 means no mirror is active. */ \
 	"    if (uClipPlane.w != 0.0 && dot(vPixelPos.xyz, uClipPlane.xyz) + uClipPlane.w < 0.0) discard;\n" \
-	"    vec3 color = vColor;\n" \
-	"    if (vLightParm.x >= 0.0) color *= 1.0 - R_DoomLightingEquation(vLightParm.x, gl_FragCoord.z);\n" \
-	"    else if (fogMode > 0.0)  color  = mix(vec3(0.0), color, fogfactor);\n" \
+	"    vec3 color = fuaSectorLight(vColor, vLightParm.x, fogMode, fogfactor, gl_FragCoord.z);\n" \
 	/* Dynamic lights add to the light COLOUR before the texture is modulated, exactly as
 	   getLightColor does -- adding after would light the black parts of a texture too. */ \
-	"    color = min(color, vec3(1.0));\n" \
 	/* [rc4l] Brightmaps add to the LIGHT, not to the finished fragment.
 	   main.fp calls ProcessLight(color) while `color` is still the light colour -- the texel is
 	   multiplied in afterwards -- so a white brightmap texel means "light this texel fully", and the
@@ -1356,8 +1344,7 @@ static const char *kSceneVS =
 	   the finished fragment, and zero times anything is still zero. */ \
 	"    if (wantDynLight) color = fuaDynLight(color);\n" \
 	"    vec3 frag = texel * color;\n" \
-	"    if (fogMode < 0.0) frag = mix(vFog.rgb, frag, fogfactor);\n" \
-	"    return frag;\n" \
+	"    return fuaColouredFog(frag, vFog.rgb, fogMode, fogfactor);\n" \
 	"}\n" \
 	"vec3 fuaShade(vec3 texel) { return fuaShadeEx(texel, true); }\n"
 
@@ -2730,6 +2717,16 @@ static bool RenderSkyPortal(Diligent::IDeviceContext *ctx)
 	return true;
 }
 
+// [rc4l] See dgshared.h: the portal pass's camera, for passes that apply the same reach as the world.
+bool SkyPortalReach(float &camX, float &camY, float &reach)
+{
+	if (!g_inSkyPortal || fua_dg_skyportal_reach <= 0.f) return false;
+	camX = g_skyPortalCamX;
+	camY = g_skyPortalCamY;
+	reach = fua_dg_skyportal_reach;
+	return true;
+}
+
 // [rc4l] What the viewpoint saw, laid down where the sky would otherwise be. Depth stays open, so
 // the world draws over it in the same pass -- the portal is a background, not geometry.
 static bool BlitSkyPortal(Diligent::IDeviceContext *ctx)
@@ -2927,7 +2924,6 @@ static void BuildDynamic(Diligent::IDeviceContext *ctx)
 				r.depthBias = p.depthBias;
 				r.redAlpha = p.redToAlpha;
 				r.solid = p.solid;
-				r.sky = p.sky;
 				r.cx = p.sortX; r.cy = p.sortY; r.cz = p.sortZ;
 				runs.Push(r);
 			}
@@ -3022,26 +3018,29 @@ static void BuildDynamic(Diligent::IDeviceContext *ctx)
 // contribution is a batch in the static vertex buffer and a sprite's is a run in the dynamic one, so
 // the merged list carries which buffer it came from and the pass rebinds when it crosses over --
 // a few dozen draws, so the extra binds are not worth avoiding.
-// [rc4l] The SKY, drawn as a surface: it writes depth, so a wall the map hides behind the sky
-// stays hidden. The quads come from the map bake (BakeSkyPart); what they draw is the sky image,
-// sampled at the screen position of the fragment, a sky being at infinity.
+// [rc4l] The sky as depth-writing surfaces -- GL's captured quads plus the horizon lines' -- painted from the sky image by screen position.
 static void DrawSkySurfaces(Diligent::IDeviceContext *ctx)
 {
 	if (!g_skyPortalActive || !g_skySurfPSO || !g_skySurfSRB) return;
 
-	int nverts = 0;
+	// [rc4l] GL's own sky quads, plus the sky halves of the horizon lines, which come from the map.
+	int nverts = 0, nhorizon = 0;
 	const FFlatVertex *src = zx::levelmesh::SkyQuadVertices(nverts);
-	if (src == NULL || nverts < 3) return;
+	const FFlatVertex *hsrc = zx::horizon::HorizonSkyVertices(nhorizon);
+	if (src == NULL) nverts = 0;
+	if (hsrc == NULL) nhorizon = 0;
+	if (nverts + nhorizon < 3) return;
 
 	// [rc4l] Its own buffer, rebuilt each frame. These quads are a few hundred vertices and they
 	// cannot ride the shared dynamic stream: GL clears that when it re-enters its scene builder
 	// for the skybox portal, which happens between the wall walk that produces them and the draw.
 	static TArray<SceneVertex> sv;
 	sv.Clear();
-	for (int i = 0; i < nverts; i++)
+	for (int i = 0; i < nverts + nhorizon; i++)
 	{
+		const FFlatVertex &s = (i < nverts) ? src[i] : hsrc[i - nverts];
 		SceneVertex d;
-		d.x = src[i].x; d.y = src[i].z; d.z = src[i].y;
+		d.x = s.x; d.y = s.z; d.z = s.y;
 		d.u = 0.f; d.v = 0.f; d.pieceIndex = 0.f;
 		sv.Push(d);
 	}
@@ -3149,8 +3148,6 @@ static void DrawBlended(Diligent::IDeviceContext *ctx)
 			if (r.count == 0) continue;
 			// [rc4l] An opaque solid is drawn with the world, not in this list. See DrawSolidDyn.
 			if (r.solid && r.blend == 0) continue;
-			// [rc4l] And a sky surface is not a blend at all -- see DrawSkySurfaces.
-			if (r.sky) continue;
 			// Blend mode 3 is the fuzz shadow; the engine draws it as a dark near-opaque overlay, and
 			// normal translucency is a fair stand-in until the fuzz shaders are ported.
 			// [rc4l] blend 0 takes the TRANSLUCENT pipeline, not the masked one.
@@ -4115,9 +4112,7 @@ static void FillPieceData(const zx::levelmesh::MeshPiece &p, int translation, Sc
 	// the traced path want: a batch index only identifies a texture by accident, since a level has
 	// more batches than materials and the mirror had to mask it to 127 and hope.
 	pd.matSlot = (float)MaterialSlotFor(p.material, translation);
-	pd.fogR = ((p.fogColor >> 16) & 0xff) / 255.f;
-	pd.fogG = ((p.fogColor >> 8) & 0xff) / 255.f;
-	pd.fogB = (p.fogColor & 0xff) / 255.f;
+	zx::levelmesh::ComputeUnpackRGB(p.fogColor, pd.fogR, pd.fogG, pd.fogB);
 	pd.pad0 = 0.f;
 	pd.nx = p.normX; pd.ny = p.normY; pd.nz = p.normZ;
 	pd.pad1 = 0.f;
@@ -5251,6 +5246,7 @@ static void DrawWorld(Diligent::IDeviceContext *ctx);
 
 // [rc4l] The decal pass, in dgdecals.cpp. Runs between the world and the sprites.
 void DrawDeferredDecals(Diligent::IDeviceContext *ctx);
+void DrawHorizonPlanes(Diligent::IDeviceContext *ctx);
 
 // [rc4l] Ray-traced reflections: the acceleration structure over the baked level.
 //
@@ -6423,13 +6419,10 @@ static void DrawWorld(Diligent::IDeviceContext *ctx)
 			//
 			// A reach test rather than a sector flood, because a batch already carries its bounds
 			// and a skybox room is small and far from everything else. See docs/skybleed-scope.md.
-			if (take && g_inSkyPortal && fua_dg_skyportal_reach > 0.f)
-			{
-				const float cx = g_skyPortalCamX, cy = g_skyPortalCamY;
-				const float r = fua_dg_skyportal_reach;
-				if (b->minX > cx + r || b->maxX < cx - r ||
-				    b->minZ > cy + r || b->maxZ < cy - r) take = false;
-			}
+			if (take && g_inSkyPortal && fua_dg_skyportal_reach > 0.f &&
+			    ComputeBeyondSkyPortalReach(b->minX, b->maxX, b->minZ, b->maxZ,
+			                                g_skyPortalCamX, g_skyPortalCamY, fua_dg_skyportal_reach))
+				take = false;
 
 			Diligent::IShaderResourceBinding *srb = NULL;
 			if (take)
@@ -6507,6 +6500,9 @@ static void DrawWorld(Diligent::IDeviceContext *ctx)
 
 	// [rc4l] ...except the solid ones, which belong with the world: a model has to occlude itself.
 	DrawSolidDyn(ctx);
+
+	// [rc4l] Horizon lines, painted with the planes they open onto -- see features/horizon.
+	DrawHorizonPlanes(ctx);
 
 	// [rc4l] ...and the sky as geometry, before the blend pass because it is opaque.
 	DrawSkySurfaces(ctx);

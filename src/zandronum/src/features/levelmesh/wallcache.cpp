@@ -61,6 +61,7 @@ CVAR(Bool, gl_wallcache_anim, true, 0)
 #include "features/surfaces/surfacebuild.h"
 #include "features/surfaces/computation/wallbands_compute.h"
 #include "features/surfaces/computation/ffblocks_compute.h"
+#include "features/horizon/computation/horizon_compute.h"
 
 namespace zx { namespace levelmesh {
 
@@ -497,7 +498,7 @@ static const int kBandsPerPart = 5;
 // [rc4l] Where the 3D floor faces live, above the parts. A sidedef with more slabs than this keeps
 // as many as fit, which is a missing face on one wall rather than a wrong one everywhere.
 static const int kFFSlot0 = 3 * kBandsPerPart;
-static const int kMaxFFBlocks = kSkySlot - kFFSlot0;
+static const int kMaxFFBlocks = kMaxMapPieces - kFFSlot0;
 
 // The rovers that produced each block, so the emitter can read their flags back.
 static F3DFloor *g_ffRoverOf[16];
@@ -636,6 +637,13 @@ int BakeSegFromMap(int segIndex)
 	// One quad per sidedef -- see SegOwnsItsSide. Every other seg on it would build the same four
 	// corners again, in the same plane, and the two would stipple against each other.
 	if (!SegOwnsItsSide(segIndex)) return -1;
+
+	// [rc4l] A horizon line is taken and left empty, since GL draws no wall on it -- see features/horizon.
+	if (zx::horizon::ComputeIsHorizonLine(seg->linedef->special))
+	{
+		for (int k = 0; k < kMaxMapPieces; k++) MeshSquash(sc.pieces[k].range);
+		return 0;
+	}
 
 	// [rc4l] The light bands the sector's 3D floors cast on every wall in it.
 	//
@@ -1029,10 +1037,6 @@ int BakeSegFromMap(int segIndex)
 		for (int k = 0; k < kMaxFFBlocks; k++) MeshSquash(sc.pieces[kFFSlot0 + k].range);
 	}
 
-	// Anything the capture had baked past the slots this makes is not ours to keep.
-	for (int i = kMaxMapPieces; i < sc.bakedCount && i < kMaxMapPieces; i++)
-		if (sc.pieces[i].range.count != 0)
-			{ MeshRetireRange(sc.pieces[i].range); sc.pieces[i].range.count = 0; }
 	sc.bakedCount = kMaxMapPieces;
 	return made;
 }

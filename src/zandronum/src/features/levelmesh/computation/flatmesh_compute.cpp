@@ -135,4 +135,16 @@ void ComputePlaneUV(float px, float py, const PlaneUVTransform &t, float &u, flo
 	v = vv;
 }
 
+PlaneUVAffine ComputePlaneUVAffine(const PlaneUVTransform &t)
+{
+	// [rc4l] The slope from an unoffset transform, read straight off rather than subtracted, so a large scroll costs no precision.
+	PlaneUVTransform linear = t;
+	linear.xoffs = linear.yoffs = 0.f;
+	PlaneUVAffine a;
+	ComputePlaneUV(1.f, 0.f, linear, a.ux, a.vx);
+	ComputePlaneUV(0.f, 1.f, linear, a.uy, a.vy);
+	ComputePlaneUV(0.f, 0.f, t, a.u0, a.v0);
+	return a;
+}
+
 }} // namespace zx::levelmesh

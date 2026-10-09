@@ -410,3 +410,53 @@ artefact of the diagnostic.
 What that accident did show is worth keeping: the unpainted sky region is a bounded rectangle, so the
 world geometry around it is being drawn where GL has sky. That is the same visibility question this
 document has arrived at four times now, in a smaller form.
+
+## The cause, found (2026-10-09): the lines are `Line_Horizon`, and nothing here knew
+
+The four lines that bound the harbour at rc4l's vantage carry special 9, `Line_Horizon`.
+`fua_sky_log` gives it away: half of GL's sky quads there run from the EYE to the ceiling (`skyq -445
+320`), which is `DoHorizon`, not `SkyNormal`. GL never draws a horizon line as a wall. Above eye level
+it paints the sky, and below it a horizon portal carries the floor out to infinity. The map-derived
+bake knew none of this, so it built three of them as one-sided walls of their `SRISE_BK` middle
+texture. That slab is the dark block across the skyline. With nothing drawn below eye level, the
+clear colour (0.05, 0.06, 0.09) showed through; that is the band under the skyline and its blue tint.
+
+wdiex02 has 102 horizon windows, not four. Fixed in `features/horizon/` -- see its README: no wall
+parts on a horizon line, and each line becomes a window that writes depth and is painted with the
+sky above the eye and a ray-cast floor plane below it.
+
+Measured at `sky-bleed-rc4l` (16-pixel block means, Vulkan against GL):
+
+| box | before | after |
+|---|---|---|
+| under the skyline | 10.78 | **0.48** |
+| water | 0.35 | 0.39 |
+| sky, right (the slab) | Vulkan 2.6 against GL 7.6 brightness | 7.4 against 7.9 |
+
+Standalone mode draws the same picture (block difference to the walked frame 0.1 to 1.7). The pass
+costs about 0.02 ms at p50 with per-pass culling (0.12 ms before the culling went in).
+
+Also fixed on the way: `RegisterSkyQuad` read `wall.skybox` out of a union whose live member on a
+plain sky is `wall.sky`, so every map whose sky is a texture crashed under Vulkan -- Doom 2 MAP01 on
+load. wdiex02 never hit it because every sky there is a skybox. `CaptureShading` also restores the GL
+colour and fog state it writes now, since its callers run inside GL's frame -- hygiene, not a fix for
+the black frames below.
+
+### Still open: the skyline is squashed
+
+The city in the sky stands about 0.83 times GL's height (spire 145 px above the horizon against 174
+at pitch 0). It is NOT the portal: standing inside the skybox room the same squash shows in the
+plain view, on the room's `SRISE_FT` wall (linedef 3, a 1024x512 PNG on a 512-unit wall, no sidedef
+scale). The derived piece maps it v 0..1, which is what the rules say; GL draws it taller. The tops
+move by 0.83 and the bases by about 0.94, so it is not a single scale either. This is the derived-wall
+alignment question again, and it is the next thing to measure rather than guess.
+
+### Capture caveats found while building the regression test
+
+- GL's readback is undefined where another window covers it, so the scenario refuses to run with
+  another engine open and `fuactl shot` warns. Overlap is one way to get a black GL capture; it is not
+  the only one (next point).
+- With Vulkan on, GL captures on the template's skybox map are unreliable in every build: stale, black,
+  or scrambled from one run to the next, with no other window open, and the old binary does exactly the
+  same. They were twice blamed on this change before the old build was run under identical conditions.
+  The scenario takes its GL references from a launch with Vulkan off, which is reliable.

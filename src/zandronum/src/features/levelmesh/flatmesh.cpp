@@ -8,6 +8,9 @@
 #include "features/levelmesh/modelmesh.h"
 #include "features/levelmesh/computation/wallbatch_compute.h"
 #include "features/levelmesh/computation/flatmesh_compute.h"
+#include "features/levelmesh/computation/packedcolor_compute.h"
+#include "features/horizon/horizon.h"
+#include "features/horizon/computation/horizon_compute.h"
 
 #include "r_defs.h"
 #include "r_state.h"
@@ -630,7 +633,6 @@ static int g_spritesThisFrame = 0;
 static int g_skyQuadsThisFrame = 0;
 static AActor *g_skyViewpoint = NULL;
 static TArray<FFlatVertex> g_skyVerts;
-static TArray<MeshPiece>   g_skyPieces;
 
 // [rc4l] What each sprite piece was registered WITH, for one frame, so a seam can be read off
 // numbers instead of guessed at from a screenshot.
@@ -674,22 +676,10 @@ void GetSpriteStyleDetail(int *dest16, int *classified4)
 	for (int i = 0; i < 4; i++) classified4[i] = g_classified[i];
 }
 
-// [rc4l] Models are cleared with sprites because they arrive with them: both are per-frame
-// dynamic pieces, and a model count left standing from last frame reads as a model that is
-// still there.
 int SkyQuadsThisFrame() { return g_skyQuadsThisFrame; }
 
-// [rc4l] Cleared by the BACKEND at the top of its frame, not by DynClear -- see RegisterSkyQuad.
-// [rc4l] Consumed by the backend, refilled by the next walk -- and the two do not agree on when
-// a frame starts, which is what made every ordering of an explicit clear wrong. GL fills this
-// during its scene walk, re-enters that walk for its own skybox portal, and the backend renders
-// on its own schedule; clearing at the top of the backend frame threw away the quads about to
-// be drawn, and clearing at the end threw away the ones just built.
-//
-// So the list resets on the first push AFTER a read. No shared clock, no ordering assumption:
-// whatever the last walk produced is what the next draw sees.
-
-void SkyQuadsClear() { g_skyVerts.Clear(); g_skyPieces.Clear(); g_skyViewpoint = NULL; }
+// [rc4l] Cleared at the start of GL's outer walk only, so the skybox portal's re-entry cannot wipe what the main view built.
+void SkyQuadsClear() { g_skyVerts.Clear(); g_skyViewpoint = NULL; }
 
 // The viewpoint the visible sky surfaces name; NULL until a walk has produced one.
 AActor *SkyQuadViewpoint() { return g_skyViewpoint; }
@@ -700,12 +690,7 @@ const FFlatVertex *SkyQuadVertices(int &count)
 	return count ? &g_skyVerts[0] : NULL;
 }
 
-const MeshPiece *SkyQuadPieces(int &count)
-{
-	count = (int)g_skyPieces.Size();
-	return count ? &g_skyPieces[0] : NULL;
-}
-
+// [rc4l] Models are cleared with sprites because they arrive with them, and a stale count reads as a model still there.
 void ClearSprites() { g_spritesThisFrame = 0; g_spriteNoteCount = 0; ModelStatsReset(); }
 
 // [rc4l] The sweep's own arithmetic, kept from the last frame that ran one.
@@ -738,56 +723,37 @@ int SpritePieceCount() { return g_spritesThisFrame; }
 // walk reaches, so the set carries GL VISIBILITY with it. Deriving them from the map was tried
 // three ways and every one over-emitted -- on the reported vantage GL produces sky quads for FOUR
 // linedefs where the map has thousands of sky segs. See docs/skybleed-scope.md.
-void RegisterSkyQuad(const GLWall &wall)
+void RegisterSkyQuad(const GLWall &wall, AActor *viewpoint)
 {
 	if (!fua_mesh_sky) return;
-	// [rc4l] The skybox THIS wall names, which is not necessarily the one the player is standing
-	// under. GL renders a portal per unique skybox and stencils each through its own walls; a map
-	// with more than one would otherwise have every sky surface painted from the player sector's
-	// viewpoint -- the right city seen from the wrong room, framed small and off-centre.
-	if (wall.skybox != NULL) g_skyViewpoint = wall.skybox;
+	// [rc4l] Passed in, never read off wall.skybox: that shares a union with wall.sky, so on a plain sky it is a GLSkyInfo.
+	if (viewpoint != NULL) g_skyViewpoint = viewpoint;
+
+	// [rc4l] A horizon line's sky belongs to features/horizon, which builds it for every eye height.
+	if (zx::horizon::HorizonsActive() && wall.seg != NULL && wall.seg->linedef != NULL &&
+	    zx::horizon::ComputeIsHorizonLine(wall.seg->linedef->special)) return;
 
 	if (wall.ztop[0] <= wall.zbottom[0] && wall.ztop[1] <= wall.zbottom[1]) return;
 
-	const float x1 = wall.glseg.x1, y1 = wall.glseg.y1;
-	const float x2 = wall.glseg.x2, y2 = wall.glseg.y2;
+	// [rc4l] A list of their own, not the dynamic stream, which GL's skybox re-entry clears with DynClear.
 	FFlatVertex q[6];
-	FFlatVertex a, b, c, d;
-	a.Set(x1, wall.zbottom[0], y1, 0.f, 0.f);
-	b.Set(x1, wall.ztop[0],    y1, 0.f, 0.f);
-	c.Set(x2, wall.ztop[1],    y2, 0.f, 0.f);
-	d.Set(x2, wall.zbottom[1], y2, 0.f, 0.f);
-	q[0] = a; q[1] = b; q[2] = c;
-	q[3] = a; q[4] = c; q[5] = d;
-
-	MeshPiece mp;
-	mp.range.offset = 0;
-	mp.range.count = 0;
-	mp.material = NULL;   // the sky image is not a material; the pass binds it itself
-	mp.baseTex = NULL;
-	mp.dynLightIndex = -1;
-	mp.lightLevel = 255;
-	mp.colorR = mp.colorG = mp.colorB = 1.f;
-	mp.alpha = 1.f;
-	mp.blendMode = 0;
-	mp.quad = false;
-	mp.sky = true;
-	mp.sortX = (x1 + x2) * 0.5f;
-	mp.sortY = (y1 + y2) * 0.5f;
-	mp.sortZ = (wall.ztop[0] + wall.zbottom[0]) * 0.5f;
-	// [rc4l] Kept in a list of their own, NOT the shared dynamic stream.
-	//
-	// GL re-enters its own scene builder to render the skybox portal, and that path calls
-	// DynClear -- so anything the main walk put in the dynamic stream is wiped before the
-	// backend ever reads it. Sprites survive because they are registered after the re-entry;
-	// sky quads come from the wall walk and do not. Measured: 5911 quads captured and 0 runs
-	// built from them, with every other explanation (stale build, flag plumbing, pipeline,
-	// depth func) eliminated first.
+	MakeWallQuad(q, wall.glseg.x1, wall.glseg.y1, wall.glseg.x2, wall.glseg.y2, wall.zbottom, wall.ztop);
 	for (int k = 0; k < 6; k++) g_skyVerts.Push(q[k]);
-	mp.range.offset = g_skyVerts.Size() - 6;
-	mp.range.count = 6;
-	g_skyPieces.Push(mp);
 	g_skyQuadsThisFrame++;
+}
+
+void MakeWallQuad(FFlatVertex *out6, float x1, float y1, float x2, float y2,
+	const float *zbottom2, const float *ztop2)
+{
+	FFlatVertex fan[4];
+	fan[0].Set(x1, zbottom2[0], y1, 0.f, 0.f);
+	fan[1].Set(x1, ztop2[0],    y1, 0.f, 0.f);
+	fan[2].Set(x2, ztop2[1],    y2, 0.f, 0.f);
+	fan[3].Set(x2, zbottom2[1], y2, 0.f, 0.f);
+	int w = 0;
+	for (int t = 0; t < 2; t++)
+		for (int c = 0; c < 3; c++)
+			out6[w++] = fan[ComputeFanTriangleVertex(4, t, c)];
 }
 void RegisterSprite(const GLSprite &spr, const float *c1, const float *c2,
 	const float *c3, const float *c4)
@@ -1007,9 +973,9 @@ void RegisterDecalTriangles(const FFlatVertex *tris, int count, const void *mate
 	mp.redToAlpha = redToAlpha;
 	if (redToAlpha)
 	{
-		mp.colorR *= ((alphaColor >> 16) & 0xff) / 255.f;
-		mp.colorG *= ((alphaColor >> 8) & 0xff) / 255.f;
-		mp.colorB *= (alphaColor & 0xff) / 255.f;
+		float r, g, b;
+		ComputeUnpackRGB(alphaColor, r, g, b);
+		mp.colorR *= r; mp.colorG *= g; mp.colorB *= b;
 		// [rc4l] An alpha-mask decal ALWAYS blends: its coverage lives in the texture's red channel,
 		// so there is no such thing as an opaque one. Classified by alpha alone an unfaded decal
 		// comes out as blend mode 0, takes the opaque pipeline, and is sampled as a colour image --

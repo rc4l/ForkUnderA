@@ -4,6 +4,7 @@
 #include "gl/system/gl_system.h"
 #include "features/levelmesh/projdecals.h"
 #include "features/levelmesh/computation/decalproject_compute.h"
+#include "features/levelmesh/computation/packedcolor_compute.h"
 
 #include "r_defs.h"
 #include "p_local.h"                 // P_PointInSector, for the plane a mark rides
@@ -545,9 +546,7 @@ int GetProjectedDecalsGpu(const GpuDecal **out)
 		g.fullbright = d.fullbright;
 		if (d.redToAlpha)
 		{
-			g.r = ((d.alphaColor >> 16) & 0xff) / 255.f;
-			g.g = ((d.alphaColor >> 8) & 0xff) / 255.f;
-			g.b = (d.alphaColor & 0xff) / 255.f;
+			ComputeUnpackRGB(d.alphaColor, g.r, g.g, g.b);
 		}
 		else
 		{
