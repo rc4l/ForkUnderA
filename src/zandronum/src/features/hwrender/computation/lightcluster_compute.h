@@ -47,6 +47,9 @@ struct ClusterGrid
 	//   ndcX = projX * x / z,  ndcY = projY * y / z
 	// projY = 1 / tan(fovY / 2), projX = projY / aspect.
 	float projX, projY;
+
+	// [rc4l] The pixels the shader cuts into kClusterTilePixels tiles, counted from the top-left as gl_FragCoord is under Vulkan.
+	int   screenW, screenH;
 };
 
 // Cells in the whole grid. Cluster indices run 0..count-1.
@@ -81,6 +84,9 @@ struct ClusterRange
 // different road. The sphere's own axis-aligned box is projected corner by corner rather than
 // solving for the exact silhouette, which over-covers slightly and cannot under-cover.
 ClusterRange ComputeLightClusters(const ClusterGrid &g, const float viewPos[3], float radius);
+
+// [rc4l] The tile the shader reads at the pixel an NDC point lands on: NDC +y is the top row, and the last row may be partial.
+void ComputeTileForNdc(const ClusterGrid &g, float ndcX, float ndcY, int *tileX, int *tileY);
 
 // Flatten a cell coordinate. Slice varies slowest, so a fragment's neighbours in screen space are
 // neighbours in memory.

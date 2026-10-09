@@ -22,7 +22,23 @@ float Ratio(const ClusterGrid &g)
 	return logf(g.zFar / g.zNear);
 }
 
+void TileRange(const ClusterGrid &g, float minNdcX, float maxNdcX, float minNdcY, float maxNdcY, ClusterRange &out)
+{
+	// [rc4l] The highest NDC y is the topmost pixel, so it names the first row.
+	ComputeTileForNdc(g, minNdcX, maxNdcY, &out.x0, &out.y0);
+	ComputeTileForNdc(g, maxNdcX, minNdcY, &out.x1, &out.y1);
+}
+
 } // namespace
+
+void ComputeTileForNdc(const ClusterGrid &g, float ndcX, float ndcY, int *tileX, int *tileY)
+{
+	// [rc4l] Clamped as floats first, since a corner pulled onto the near plane can project far past any int.
+	const float fragX = fminf(fmaxf((ndcX * 0.5f + 0.5f) * (float)g.screenW, -1.f), (float)g.screenW);
+	const float fragY = fminf(fmaxf((0.5f - ndcY * 0.5f) * (float)g.screenH, -1.f), (float)g.screenH);
+	*tileX = Clamp((int)floorf(fragX / (float)kClusterTilePixels), 0, g.tilesX - 1);
+	*tileY = Clamp((int)floorf(fragY / (float)kClusterTilePixels), 0, g.tilesY - 1);
+}
 
 int ComputeClusterCount(const ClusterGrid &g)
 {
@@ -75,10 +91,10 @@ int ComputeClusterForPoint(const ClusterGrid &g, const float viewPos[3])
 
 	const float ndcX = g.projX * viewPos[0] / z;
 	const float ndcY = g.projY * viewPos[1] / z;
-	// NDC -1..1 to tile 0..tiles-1. Clamped rather than rejected: a fragment slightly outside the
-	// grid is a rounding artefact at the screen edge, and it still has to be lit.
-	const int tx = Clamp((int)floorf((ndcX * 0.5f + 0.5f) * (float)g.tilesX), 0, g.tilesX - 1);
-	const int ty = Clamp((int)floorf((ndcY * 0.5f + 0.5f) * (float)g.tilesY), 0, g.tilesY - 1);
+	// [rc4l] Clamped rather than rejected: a fragment slightly outside the grid is a rounding artefact at
+	// the screen edge, and it still has to be lit.
+	int tx, ty;
+	ComputeTileForNdc(g, ndcX, ndcY, &tx, &ty);
 	return ComputeClusterIndex(g, tx, ty, ComputeSliceForDepth(g, z));
 }
 
@@ -124,10 +140,7 @@ ClusterRange ComputeLightClusters(const ClusterGrid &g, const float viewPos[3], 
 	// Off the side of the screen entirely.
 	if (maxNdcX < -1.f || minNdcX > 1.f || maxNdcY < -1.f || minNdcY > 1.f) return out;
 
-	out.x0 = Clamp((int)floorf((minNdcX * 0.5f + 0.5f) * (float)g.tilesX), 0, g.tilesX - 1);
-	out.x1 = Clamp((int)floorf((maxNdcX * 0.5f + 0.5f) * (float)g.tilesX), 0, g.tilesX - 1);
-	out.y0 = Clamp((int)floorf((minNdcY * 0.5f + 0.5f) * (float)g.tilesY), 0, g.tilesY - 1);
-	out.y1 = Clamp((int)floorf((maxNdcY * 0.5f + 0.5f) * (float)g.tilesY), 0, g.tilesY - 1);
+	TileRange(g, minNdcX, maxNdcX, minNdcY, maxNdcY, out);
 	out.z0 = ComputeSliceForDepth(g, nearZ);
 	out.z1 = ComputeSliceForDepth(g, farZ);
 	out.empty = false;
@@ -144,6 +157,8 @@ ClusterGrid ComputeGridForScreen(int screenW, int screenH, float zNear, float zF
 	if (g.tilesX < 1) g.tilesX = 1;
 	if (g.tilesY < 1) g.tilesY = 1;
 	g.slices = kClusterSlices;
+	g.screenW = screenW;
+	g.screenH = screenH;
 	g.zNear = zNear;
 	g.zFar = zFar;
 	// Unused by the matrix path, which carries its own projection; filled so the struct is never
@@ -209,10 +224,7 @@ ClusterRange ComputeLightClustersFromMVP(const ClusterGrid &g, const float mvp[1
 	}
 	if (maxNdcX < -1.f || minNdcX > 1.f || maxNdcY < -1.f || minNdcY > 1.f) return out;
 
-	out.x0 = Clamp((int)floorf((minNdcX * 0.5f + 0.5f) * (float)g.tilesX), 0, g.tilesX - 1);
-	out.x1 = Clamp((int)floorf((maxNdcX * 0.5f + 0.5f) * (float)g.tilesX), 0, g.tilesX - 1);
-	out.y0 = Clamp((int)floorf((minNdcY * 0.5f + 0.5f) * (float)g.tilesY), 0, g.tilesY - 1);
-	out.y1 = Clamp((int)floorf((maxNdcY * 0.5f + 0.5f) * (float)g.tilesY), 0, g.tilesY - 1);
+	TileRange(g, minNdcX, maxNdcX, minNdcY, maxNdcY, out);
 	out.empty = false;
 	return out;
 }

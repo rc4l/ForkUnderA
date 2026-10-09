@@ -23,13 +23,11 @@ using namespace zx::hwrender;
 
 namespace {
 
-// A grid shaped like something the engine would actually use: a 1024x640 window in 16x16 tiles,
-// Doom's near plane, and a far plane past the end of any room.
+// A grid shaped like something the engine would actually use: a 1024x640 window in the shader's
+// tiles, Doom's near plane, and a far plane past the end of any room.
 ClusterGrid Grid()
 {
-	ClusterGrid g;
-	g.tilesX = 64; g.tilesY = 40; g.slices = 24;
-	g.zNear = 5.f; g.zFar = 8000.f;
+	ClusterGrid g = ComputeGridForScreen(1024, 640, 5.f, 8000.f);
 	g.projY = 1.f / tanf(45.f * 3.14159265f / 180.f);   // 90 degree vertical fov
 	g.projX = g.projY / 1.6f;                            // 1024x640
 	return g;
@@ -46,7 +44,7 @@ const float *At(float x, float y, float z)
 
 TEST(LightCluster, CountIsTheProduct)
 {
-	EXPECT_EQ(64 * 40 * 24, ComputeClusterCount(Grid()));
+	EXPECT_EQ(16 * 10 * kClusterSlices, ComputeClusterCount(Grid()));
 }
 
 // Slices are exponential: each covers a constant RATIO of depth, so the first few are small and the
@@ -101,8 +99,8 @@ TEST(LightCluster, DegenerateRangeDoesNotProduceNonsense)
 }
 
 // A point dead ahead is in the middle of the screen. With an even tile count the middle falls on the
-// boundary between two tiles, and floor puts it in the upper one -- stated here so a later change to
-// the rounding is a failing test rather than a shifted light.
+// boundary between two tiles, and floor puts it in the one below and to the right -- stated here so a
+// later change to the rounding is a failing test rather than a shifted light.
 TEST(LightCluster, PointOnTheViewAxisLandsInTheMiddle)
 {
 	const ClusterGrid g = Grid();
@@ -252,6 +250,18 @@ void Projection(float *m, float fovY, float aspect, float zn, float zf)
 	m[14] = (zf * zn) / (zn - zf);
 }
 
+// [rc4l] The tile the shader reads for a point: Vulkan rasterises NDC +y at the TOP (gl_FragCoord.y 0), and fuaDynLight cuts 64-pixel tiles from there.
+void ShaderTile(const float mvp[16], const float p[3], int w, int h, int *tx, int *ty, float *clipW)
+{
+	*clipW = mvp[3] * p[0] + mvp[7] * p[1] + mvp[11] * p[2] + mvp[15];
+	const float ndcX = (mvp[0] * p[0] + mvp[4] * p[1] + mvp[8] * p[2] + mvp[12]) / *clipW;
+	const float ndcY = (mvp[1] * p[0] + mvp[5] * p[1] + mvp[9] * p[2] + mvp[13]) / *clipW;
+	const float fragX = (ndcX * 0.5f + 0.5f) * (float)w;
+	const float fragY = (0.5f - ndcY * 0.5f) * (float)h;
+	*tx = (int)fragX / kClusterTilePixels;
+	*ty = (int)fragY / kClusterTilePixels;
+}
+
 } // namespace
 
 TEST(LightCluster, GridForScreenCoversIt)
@@ -373,18 +383,68 @@ TEST(LightCluster, MatrixPathCoversPointsInsideAStraddlingLight)
 			const float k = radius * 0.99f * ((i % 3) ? 0.6f : 1.0f);
 			const float p[3] = { lp[0] + k * cosf(a), lp[1] + k * sinf(b), lp[2] + k * cosf(b) };
 
-			const float w  = mvp[3] * p[0] + mvp[7] * p[1] + mvp[11] * p[2] + mvp[15];
+			int tx, ty;
+			float w;
+			ShaderTile(mvp, p, 1024, 640, &tx, &ty, &w);
 			if (w <= g.zNear) continue;   // in front of the near plane: nothing is shaded there
-			const float ndcX = (mvp[0] * p[0] + mvp[4] * p[1] + mvp[8] * p[2] + mvp[12]) / w;
-			const float ndcY = (mvp[1] * p[0] + mvp[5] * p[1] + mvp[9] * p[2] + mvp[13]) / w;
-			if (ndcX < -1.f || ndcX > 1.f || ndcY < -1.f || ndcY > 1.f) continue;   // off screen
+			if (tx < 0 || tx >= g.tilesX || ty < 0 || ty >= g.tilesY) continue;   // off screen
 
-			const int tx = (int)floorf((ndcX * 0.5f + 0.5f) * (float)g.tilesX);
-			const int ty = (int)floorf((ndcY * 0.5f + 0.5f) * (float)g.tilesY);
 			const int slice = ComputeSliceForDepth(g, w);
 			EXPECT_GE(tx, r.x0) << "depth " << depths[d]; EXPECT_LE(tx, r.x1) << "depth " << depths[d];
 			EXPECT_GE(ty, r.y0) << "depth " << depths[d]; EXPECT_LE(ty, r.y1) << "depth " << depths[d];
 			EXPECT_GE(slice, r.z0) << "depth " << depths[d]; EXPECT_LE(slice, r.z1) << "depth " << depths[d];
 		}
 	}
+}
+
+// [rc4l] A light above eye level lit only the tile rows it would have reached upside down: the CPU numbered rows from the bottom, the shader from the top.
+TEST(LightCluster, EveryFragmentInsideALightReadsATileTheLightClaimed)
+{
+	const int w = 1280, h = 720;   // [rc4l] 720 is not a multiple of 64, so rows spread evenly over it drift from the shader's too.
+	const ClusterGrid g = ComputeGridForScreen(w, h, 5.f, 8192.f);
+	float mvp[16];
+	Projection(mvp, 74.f * 3.14159265f / 180.f, (float)w / (float)h, 5.f, 65536.f);
+
+	// [rc4l] The template map's light, 215 above the eye, seen from 536 and from further back.
+	const float depths[] = { 536.f, 1436.f, 2936.f };
+	const float radius = 320.f;
+	int checked = 0;
+	for (int d = 0; d < 3; d++)
+	{
+		const float lp[3] = { 0.f, 215.f, -depths[d] };
+		const ClusterRange r = ComputeLightClustersFromMVP(g, mvp, lp, radius);
+		ASSERT_FALSE(r.empty) << "depth " << depths[d];
+		for (int i = 0; i < 400; i++)
+		{
+			const float a = (float)i * 0.61f, b = (float)i * 1.37f;
+			const float k = radius * 0.99f * ((i % 3) ? 0.6f : 1.0f);
+			const float p[3] = { lp[0] + k * cosf(a), lp[1] + k * sinf(b), lp[2] + k * cosf(b) };
+			int tx, ty;
+			float clipW;
+			ShaderTile(mvp, p, w, h, &tx, &ty, &clipW);
+			if (clipW <= g.zNear || tx < 0 || tx >= g.tilesX || ty < 0 || ty >= g.tilesY) continue;
+			checked++;
+			EXPECT_GE(tx, r.x0) << "depth " << depths[d]; EXPECT_LE(tx, r.x1) << "depth " << depths[d];
+			EXPECT_GE(ty, r.y0) << "depth " << depths[d]; EXPECT_LE(ty, r.y1) << "depth " << depths[d];
+		}
+	}
+	EXPECT_GT(checked, 300) << "the sweep rejected almost everything: it is not testing what it claims";
+}
+
+// [rc4l] Rows run down from the top, the last row is partial, and a corner projected to infinity still names a real tile.
+TEST(LightCluster, NdcLandsInTheTileTheShaderReads)
+{
+	const ClusterGrid g = ComputeGridForScreen(1280, 720, 5.f, 8192.f);
+	int tx, ty;
+	ComputeTileForNdc(g, -1.f, 1.f, &tx, &ty);
+	EXPECT_EQ(0, tx); EXPECT_EQ(0, ty);
+	ComputeTileForNdc(g, 0.999f, -0.999f, &tx, &ty);
+	EXPECT_EQ(19, tx); EXPECT_EQ(11, ty);
+	// [rc4l] 130 pixels down is row 2 of the shader's 64-pixel rows; twelve rows spread evenly over 720 called it row 9, counted from the bottom.
+	ComputeTileForNdc(g, 0.f, 1.f - 2.f * 130.f / 720.f, &tx, &ty);
+	EXPECT_EQ(10, tx); EXPECT_EQ(2, ty);
+	ComputeTileForNdc(g, -1e30f, 1e30f, &tx, &ty);
+	EXPECT_EQ(0, tx); EXPECT_EQ(0, ty);
+	ComputeTileForNdc(g, 1e30f, -1e30f, &tx, &ty);
+	EXPECT_EQ(g.tilesX - 1, tx); EXPECT_EQ(g.tilesY - 1, ty);
 }
