@@ -10,10 +10,7 @@ export function buildSkyzenithWad() {
   m.room(0, 0, 4096, 4096, { heightfloor: 0, heightceiling: 256, texturefloor: "FLOOR4_8", textureceiling: "F_SKY1",
     lightlevel: 192 }, () => ({ side: { texturemiddle: "BROWN1" } }));
   m.thing({ x: 2048, y: 2048, angle: 90, type: 1 });
-  m.room(5000, 5000, 5512, 5512, { heightfloor: 0, heightceiling: 384, texturefloor: "FLOOR0_1",
-    textureceiling: "CEIL5_1", lightlevel: 255 }, (edge) => ({ side: { texturemiddle:
-      edge === "north" ? "COMPBLUE" : edge === "east" ? "BRICK1" : edge === "south" ? "STARTAN2" : "BROWN1" } }));
-  m.thing({ x: 5256, y: 5256, height: 128, angle: 0, type: 9080 });
+  m.skyboxRoom(5000, 5000);
   return wad(mapLumps("MAP01", m));
 }
 

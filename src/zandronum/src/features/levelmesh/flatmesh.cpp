@@ -630,7 +630,7 @@ void RegisterFlatSubsector(const GLFlat &flat, subsector_t *sub, bool ceiling)
 // [rc4l] Sprites go into the DYNAMIC stream, rebuilt every frame -- see staticmesh.h. They are
 // billboards built for one viewpoint, so they are not level geometry and must never be baked.
 static int g_spritesThisFrame = 0;
-static int g_skyQuadsThisFrame = 0;
+static int g_skyQuadsCaptured = 0;
 static int g_skyWalks[2];   // [rc4l] Outer walks per list, so a second walk per frame shows up as a count.
 static AActor *g_skyViewpoint = NULL;
 // [rc4l] One list per view the backend draws, indexed by kSkyCaptureMain and kSkyCaptureCamera, and the one the walk in progress fills.
@@ -679,7 +679,7 @@ void GetSpriteStyleDetail(int *dest16, int *classified4)
 	for (int i = 0; i < 4; i++) classified4[i] = g_classified[i];
 }
 
-int SkyQuadsThisFrame() { return g_skyQuadsThisFrame; }
+int SkyQuadsCaptured() { return g_skyQuadsCaptured; }
 
 // [rc4l] A walk starting: an outer one empties the list it fills, and a portal re-entry (mirror, skybox) fills none.
 int BeginSkyWalk(bool mainView, int portalDepth)
@@ -751,7 +751,7 @@ void RegisterSkyQuad(const GLWall &wall, AActor *viewpoint)
 	FFlatVertex q[6];
 	MakeWallQuad(q, wall.glseg.x1, wall.glseg.y1, wall.glseg.x2, wall.glseg.y2, wall.zbottom, wall.ztop);
 	for (int k = 0; k < 6; k++) g_skyVerts[g_skyList].Push(q[k]);
-	g_skyQuadsThisFrame++;
+	g_skyQuadsCaptured++;
 }
 
 void MakeWallQuad(FFlatVertex *out6, float x1, float y1, float x2, float y2,
@@ -1026,7 +1026,7 @@ CCMD(fua_sky_quads)
 	zx::levelmesh::SkyQuadVertices(heldCamera, zx::levelmesh::kSkyCaptureCamera);
 	const int walksMain = zx::levelmesh::SkyWalks(zx::levelmesh::kSkyCaptureMain);
 	const int walksCamera = zx::levelmesh::SkyWalks(zx::levelmesh::kSkyCaptureCamera);
-	Printf("sky quads captured since load: %d (fua_mesh_sky is %s)\n", zx::levelmesh::SkyQuadsThisFrame(),
+	Printf("sky quads captured since load: %d (fua_mesh_sky is %s)\n", zx::levelmesh::SkyQuadsCaptured(),
 		fua_mesh_sky ? "on" : "off");
 	Printf("  player's view holds %d after %d walks; camera textures hold %d after %d walks\n",
 		heldMain / 6, walksMain - lastMain, heldCamera / 6, walksCamera - lastCamera);

@@ -1,22 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { UdmfMap, wad, mapLumps } from "../src/udmf.mjs";
+import { UdmfMap, wad, mapLumps, readWad, parseUdmf } from "../src/udmf.mjs";
 import { buildHorizonWad } from "../scenarios/horizon.mjs";
 import { buildPointlightWad, VANTAGES } from "../scenarios/pointlight.mjs";
 
-// [rc4l] Read a PWAD's directory back, the way the engine will.
-function lumpsOf(buf) {
-  assert.equal(buf.toString("latin1", 0, 4), "PWAD");
-  const n = buf.readInt32LE(4), dir = buf.readInt32LE(8);
-  const out = [];
-  for (let i = 0; i < n; i++) {
-    const e = dir + 16 * i;
-    const pos = buf.readInt32LE(e), size = buf.readInt32LE(e + 4);
-    const name = buf.toString("latin1", e + 8, e + 16).replace(/\0+$/, "");
-    out.push({ name, text: buf.toString("latin1", pos, pos + size) });
-  }
-  return out;
-}
+// [rc4l] A wad's lumps with their contents as text, which is how these tests read TEXTMAP and markers.
+const lumpsOf = (buf) => readWad(buf).map((l) => ({ name: l.name, text: l.data.toString("latin1") }));
 
 test("a position is written as a bare float, never quoted", () => {
   // [rc4l] The first template map quoted them, and the engine dropped the player start and crashed.
@@ -125,4 +114,25 @@ test("the sky templates carry what reproduces each fault: a scripted reflective 
   const zenith = lumpsOf(buildSkyzenithWad())[1].text;
   assert.match(zenith, /x = 4096\.0;/);
   assert.match(zenith, /textureceiling = "F_SKY1";/);
+});
+
+test("a map reads back through parseUdmf with every value typed as it was written", () => {
+  const m = new UdmfMap();
+  m.room(0, 0, 64, 32, { heightfloor: 8, texturefloor: "FLOOR4_8" }, () => ({ side: { texturemiddle: "STARTAN2" } }));
+  m.thing({ x: 16.5, y: 8, type: 1 });
+  const u = parseUdmf(`// [rc4l] a comment the engine skips\n${m.textmap()}`);
+  assert.equal(u.namespace, "zdoom");
+  assert.deepEqual([u.vertex.length, u.linedef.length, u.sidedef.length, u.sector.length, u.thing.length], [4, 4, 4, 1, 1]);
+  assert.deepEqual([u.sector[0].heightfloor, u.sector[0].texturefloor, u.linedef[0].blocking], [8, "FLOOR4_8", true]);
+  assert.deepEqual([u.thing[0].x, u.thing[0].y], [16.5, 8]);
+  assert.throws(() => readWad(Buffer.from("ZWAD....")), /not a wad/);
+});
+
+test("a skybox room is a 512 box with a wall texture per side and the default SkyViewpoint in its middle", () => {
+  const m = new UdmfMap();
+  m.skyboxRoom(4000, 4000);
+  const u = parseUdmf(m.textmap());
+  assert.deepEqual(u.sidedef.map((s) => s.texturemiddle), ["BROWN1", "COMPBLUE", "BRICK1", "STARTAN2"]);
+  assert.deepEqual([u.thing[0].type, u.thing[0].x, u.thing[0].y, u.thing[0].height], [9080, 4256, 4256, 128]);
+  assert.equal(u.sector[0].heightceiling, 384);
 });

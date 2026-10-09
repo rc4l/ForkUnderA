@@ -159,7 +159,7 @@ void EndCapture(const WallCacheStamp &stamp, const WallCacheEligibility &e);
 bool IsCapturing();
 // [rc4l] A sky quad GL builds for its stencil, taken as geometry, with the skybox a RENDERWALL_SKYBOX names (NULL for a plain sky).
 void RegisterSkyQuad(const GLWall &wall, AActor *viewpoint);
-int SkyQuadsThisFrame();
+int SkyQuadsCaptured();   // [rc4l] Since the level loaded, for fua_sky_quads.
 AActor *SkyQuadViewpoint();
 // [rc4l] A GL walk starting at this portal depth, for the main view or a camera texture; returns the kSkyCapture* list it fills.
 int BeginSkyWalk(bool mainView, int portalDepth);

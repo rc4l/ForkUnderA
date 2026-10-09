@@ -64,6 +64,7 @@ port with no token hangs and reports `rpc timeout`.
 | matched GL/Vulkan pair, sim frozen | `shot <tag> --spot NAME` or `--at x,y,z --face yaw,pitch` |
 | what the crosshair is on, and the mesh piece drawing it | `look --at x,y,z --face yaw,pitch` |
 | what a linedef is, or every line near a point | `line <index>` or `line --at X,Y --radius R` |
+| a map's sectors, lines, specials and ACS source, from its files | `mapdata <MAP> --preset ID [--sector N] [--line N] [--scripts REGEX]` |
 | compare two captures | `png --diff a b`, `png --boxdiff a b x0 y0 x1 y1 [block]`, `png --diffimg a b out` |
 | frametime distribution (p50/p95/p99) | `capture [--frames N]` |
 | GPU ms per pass | `gl-timers` (check `renderer-info` first; no timer queries reads as zeros) |

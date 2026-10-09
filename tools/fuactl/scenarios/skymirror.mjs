@@ -21,10 +21,7 @@ export function buildSkymirrorWad() {
   m.block(900, 420, 1150, 640, { heightfloor: -16, heightceiling: 256, texturefloor: "FLAT14", textureceiling: "F_SKY1",
     lightlevel: 192, id: POOL_TAG }, court, () => ({ texturebottom: "BRICK1" }));
   m.thing({ x: 1024, y: 300, angle: 90, type: 1 });
-  m.room(4000, 4000, 4512, 4512, { heightfloor: 0, heightceiling: 384, texturefloor: "FLOOR0_1",
-    textureceiling: "CEIL5_1", lightlevel: 255 }, (edge) => ({ side: { texturemiddle:
-      edge === "north" ? "COMPBLUE" : edge === "east" ? "BRICK1" : edge === "south" ? "STARTAN2" : "BROWN1" } }));
-  m.thing({ x: 4256, y: 4256, height: 128, angle: 0, type: 9080 });
+  m.skyboxRoom(4000, 4000);
   const script = acs0([...callSpecial(SECTOR_SET_PLANE_REFLECTION, [POOL_TAG, 66, 0]), PCD.TERMINATE]);
   return wad(mapLumps("MAP01", m, { behavior: script }));
 }

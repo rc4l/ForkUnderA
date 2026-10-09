@@ -25,10 +25,7 @@ export function buildHorizonWad() {
   court(a, { beyond: false });
   const b = new UdmfMap();
   court(b, { beyond: true });
-  b.room(4000, 4000, 4512, 4512, { heightfloor: 0, heightceiling: 384, texturefloor: "FLOOR0_1",
-    textureceiling: "CEIL5_1", lightlevel: 255 }, (edge) => ({ side: { texturemiddle:
-      edge === "north" ? "COMPBLUE" : edge === "east" ? "BRICK1" : edge === "south" ? "STARTAN2" : "BROWN1" } }));
-  b.thing({ x: 4256, y: 4256, height: 128, angle: 0, type: 9080 });
+  b.skyboxRoom(4000, 4000);
   return wad([...mapLumps("MAP01", a), ...mapLumps("MAP02", b)]);
 }
 

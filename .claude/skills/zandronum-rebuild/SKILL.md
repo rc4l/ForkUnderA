@@ -63,7 +63,9 @@ Captures then land in `build-win/Release/sweep/`.
 ## Keep the old binary for a before/after
 
 Copy the staged binary somewhere before staging over it. It is the before half of every comparison,
-and the only way to check whether an odd behaviour predates the change.
+and the only way to check whether an odd behaviour predates the change. To RUN a copy, its folder
+needs the runtime DLLs AND the `*.pk3` files beside it -- without `fua_core_*.pk3` the engine stops on
+a modal error box on the user's screen. fuactl refuses such a folder before launching it.
 
 ## Unit tests
 

@@ -13,7 +13,8 @@ import { summarizeGlTimers } from "./proto.mjs";
 import * as ui from "./ui.mjs";
 import { runBench } from "./bench.mjs";
 import * as cap from "./capture.mjs";
-import { play, defaultPwadStore } from "./play.mjs";
+import { play, defaultPwadStore, resolvePreset } from "./play.mjs";
+import { findMapLumps, mapReport } from "./mapdata.mjs";
 import * as shot from "./shot.mjs";
 import { sweepDirFor } from "./shot.mjs";
 import * as sweepMod from "./sweep.mjs";
@@ -28,12 +29,24 @@ const num = (v) => (v != null && v !== true ? Number(v) : undefined);
 
 const SPOTS = new URL("../spots.json", import.meta.url);
 
-// [rc4l] The instance a command means (--port, else the last play session), or exit with its usage.
+// [rc4l] The instance a command means: --port, else the last play session, else null.
+function sessionTarget(flags) {
+  return shot.resolveTarget(flags, flags.port ? null : shot.readSession(path.resolve(process.cwd(), ".play-session")));
+}
+
+// [rc4l] sessionTarget, or exit with the command's usage when there is none.
 function targetOf(flags, usage = "no --port and no .play-session -- nothing running") {
-  const session = flags.port ? null : shot.readSession(path.resolve(process.cwd(), ".play-session"));
-  const t = shot.resolveTarget(flags, session);
+  const t = sessionTarget(flags);
   if (!t) { console.error(usage); process.exit(2); }
   return t;
+}
+
+// [rc4l] Where --preset finds its catalogue entry and its wads: --store, then FUACTL_PWADS, then the in-engine downloader's store.
+function presetDirs(flags) {
+  return {
+    catalogueDir: path.resolve(fileURLToPath(new URL(".", import.meta.url)), "../../../catalogue"),
+    storeDir: flags.store || process.env.FUACTL_PWADS || defaultPwadStore(),
+  };
 }
 
 async function connectTarget(flags, usage) {
@@ -93,6 +106,7 @@ const USAGE = `fuactl <command>
   diligent --port P [--frames N] [--shot FILE] [--sweep DIR]   drive the Diligent (Vulkan) backend: bake the level mesh, upload geometry, optional swapchain screenshot, optional debug-view sweep (lm0..lm4.png in DIR), the matched Diligent-vs-GL benchmark, and with --scale a GPU-time probe at 1x..100x the visible geometry
   play [--restart] [--port P] [--token T] [--map M] [--file a.pk3,b.pk3] [--preset ID --variant V --store DIR] [--gl] [--side-by-side] [--rt] [--monsters] [--lock] [--res WxH]   a build to walk around in, Vulkan live in the window; stays up until Ctrl-C
   build [--root DIR]                 compile the engine and stage it, failing loudly instead of staging a stale binary
+  mapdata <MAP> (--preset ID | --file a.pk3,b.wad) [--sector N,..] [--line N,..] [--scripts REGEX]   a UDMF level's summary, sectors, lines and ACS source lines, read from its files
   ready [--port P --token T] [--timeout S]   wait until an instance answers (defaults to the last play session)
   goto (--spot NAME | --at x,y,z --face yaw,pitch) [--port P]   stand the player there
   ab <cvar> <a> <b> [--spot NAME | --at x,y,z --face yaw,pitch] [--box x0,y0,x1,y1]   Vulkan under each value in ONE paused frame, plus a repeat as the noise floor
@@ -528,12 +542,27 @@ async function main() {
       console.log(`build ok, staged ${when} (+${r.entries} catalogue entries)`);
       break;
     }
+    // [rc4l] `fuactl mapdata <MAP>` -- a level's sectors, lines, specials and ACS source read from its files, no engine needed.
+    case "mapdata": {
+      const map = rest[0];
+      const mdUsage = "usage: fuactl mapdata <MAP> (--preset ID [--variant V --store DIR] | --file a.pk3,b.wad) [--sector N,..] [--line N,..] [--scripts REGEX]";
+      if (!map || (!flags.preset && !flags.file)) { console.error(mdUsage); process.exit(2); }
+      const { catalogueDir, storeDir } = presetDirs(flags);
+      const paths = flags.preset ? resolvePreset(catalogueDir, storeDir, flags.preset, flags.variant)
+        : String(flags.file).split(",").map((f) => f.trim()).filter(Boolean);
+      const found = findMapLumps(paths.map((p) => ({ name: path.basename(p), buf: fs.readFileSync(p) })), map);
+      if (!found) { console.error(`${map} is in none of: ${paths.map((p) => path.basename(p)).join(", ")}`); process.exit(1); }
+      const list = (v) => (v ? String(v).split(",").map(Number) : []);
+      console.log(JSON.stringify(mapReport(found, { sectors: list(flags.sector), lines: list(flags.line),
+        scripts: flags.scripts ? String(flags.scripts) : null }), null, 2));
+      break;
+    }
     // [rc4l] `fuactl ready` -- wait until an instance answers, instead of a hand-rolled poll after every launch.
     case "ready": {
       const deadline = Date.now() + 1000 * (Number(flags.timeout) || 120);
       // [rc4l] A launch writes .play-session only once it is up, so with no --port this waits for the file as well.
       let t = null;
-      while (!(t = shot.resolveTarget(flags, flags.port ? null : shot.readSession(path.resolve(process.cwd(), ".play-session"))))) {
+      while (!(t = sessionTarget(flags))) {
         if (Date.now() > deadline) { console.error("usage: fuactl ready [--port P --token T] [--timeout S] -- no play session appeared"); process.exit(2); }
         await new Promise((r) => setTimeout(r, 500));
       }
@@ -637,9 +666,7 @@ async function main() {
         token: flags.token || undefined,
         map: flags.map, iwad: flags.iwad, file: flags.file,
         preset: flags.preset, variant: flags.variant,
-        catalogueDir: path.resolve(fileURLToPath(new URL(".", import.meta.url)), "../../../catalogue"),
-        // [rc4l] Where catalogue wads live: --store, then FUACTL_PWADS, then the in-engine downloader's store.
-        storeDir: flags.store || process.env.FUACTL_PWADS || defaultPwadStore(),
+        ...presetDirs(flags),
         // [rc4l] --res WxH, so a capture can be framed exactly like the window a report came from.
         width: flags.res ? Number(String(flags.res).split("x")[0]) : undefined,
         height: flags.res ? Number(String(flags.res).split("x")[1]) : undefined,

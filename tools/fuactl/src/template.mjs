@@ -111,9 +111,14 @@ export function scenarioOutcome(name, r) {
   return { lines: [...r.lines, summary], code: r.refused ? 3 : r.failed ? 1 : 0 };
 }
 
+// [rc4l] Whether the module at metaUrl is the file node was started with.
+export function isMain(metaUrl, argv1 = process.argv[1]) {
+  return Boolean(argv1) && metaUrl === pathToFileURL(argv1).href;
+}
+
 // [rc4l] Run a scenario only when its own file is invoked, so a test importing its wad builder launches nothing; argv[2] is the port.
 export function runScenarioIfMain(metaUrl, options) {
-  if (!process.argv[1] || metaUrl !== pathToFileURL(process.argv[1]).href) return;
+  if (!isMain(metaUrl)) return;
   const opts = options();
   compareTemplate({ ...opts, port: Number(process.argv[2] || opts.port || 7796) }).then((r) => {
     const out = scenarioOutcome(opts.name, r);

@@ -70,6 +70,14 @@ capture code reads as correct in review because it *is* correct.
 
 Search for every write to the field in the code path, in order. This is faster than reasoning.
 
+The writer after you can be the same code run again. GL re-enters its scene walk for plane mirrors,
+skyboxes, stacked sectors and camera textures, so per-frame state reset at the top of a walk is
+overwritten by whichever walk ran last. Count walks per frame before suspecting the capture.
+
+> wdiexsec's sky turned navy looking up: a reflective floor's mirror walk replaced the player's 88
+> sky quads with its own 4. `fua_sky_quads` showed two walks a frame; `mapdata --scripts reflect`
+> found the `Sector_SetPlaneReflection` that made the mirror.
+
 ## 5. A cache of the reference's output freezes anything the reference recomputes
 
 This is the highest-yield insight here, and it generalises well beyond rendering.

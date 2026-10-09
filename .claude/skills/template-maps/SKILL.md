@@ -19,8 +19,10 @@ Worked example: `tools/fuactl/scenarios/horizon.mjs` (about 60 lines).
 
 Get the fault on your own screen in the reporter's map (`reproducing-a-report`), then find what it is
 made of: which line special, sector flag, sky type, texture setup. Ask the engine rather than guess —
-`fuactl line <index>` / `line --at X,Y`, `look`, `rpc state.actors`, and the engine's own logs
-(`fua_sky_log` named the horizon lines). The template reproduces THAT, nothing else.
+`fuactl line <index>` / `line --at X,Y`, `look`, `rpc state.actors`, the engine's own logs
+(`fua_sky_log` named the horizon lines) -- and the map's own files: `fuactl mapdata <MAP> --preset ID
+--sector N --scripts REGEX` found wdiexsec's reflective floor in its OPEN script. The template
+reproduces THAT, nothing else.
 
 ## 2. Build the map with `src/udmf.mjs`
 
@@ -38,8 +40,9 @@ const bytes = wad([...mapLumps("MAP01", m), ...mapLumps("MAP02", other)]);
 ```
 
 - `room()` for closed sectors, `block()` for a sector standing inside another (two-sided lines, e.g.
-  a pool or a tagged area), `wall()` for single one-sided lines (sector on the right), `sector()`,
-  `thing()` (present on every skill and mode unless told otherwise), `vertex()` shares corners.
+  a pool or a tagged area), `skyboxRoom(x, y)` for a ready skybox every sky ceiling shows, `wall()`
+  for single one-sided lines (sector on the right), `sector()`, `thing()` (present on every skill and
+  mode unless told otherwise), `vertex()` shares corners.
 - **Behaviour set by ACS** (reflective floors, anything only a script can do): `src/acs.mjs` writes an
   ACS0 BEHAVIOR lump with one OPEN script -- `acs0([...callSpecial(159, [tag, 66, 0]), PCD.TERMINATE])`
   -- passed as `mapLumps("MAP01", m, { behavior })`. No ACS compiler is needed.
@@ -109,5 +112,7 @@ Export the builder from the scenario; `runScenarioIfMain` keeps the import from 
 | `tools/fuactl/scenarios/horizon.mjs` | the worked example |
 | `tools/fuactl/scenarios/pointlight.mjs` | two Vulkan sides, a light-grid switch against itself |
 | `tools/fuactl/scenarios/skymirror.mjs` | a reflective floor set by an OPEN script, reflection off against on |
+| `tools/fuactl/scenarios/skyzenith.mjs` | straight up where no sky wall reaches, sky surfaces off against on |
+| `tools/fuactl/src/mapdata.mjs` | read a real map's sectors, lines and scripts, to find the ingredient to template |
 | `tools/fuactl/src/acs.mjs` | ACS0 BEHAVIOR writer for scripted template maps |
 | `tools/fuactl/test/{udmf,template,pngcore}.test.mjs` | their tests |

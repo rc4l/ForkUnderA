@@ -473,7 +473,7 @@ TEST(PlaneUVAffine, ACanvasFlipsV)
 	ExpectAffineMatches(t, 300.f, -700.f);
 }
 
-// [rc4l] wdiexsec's reflective floor re-walked the scene from under it, and that walk's two sky walls replaced the player's eighty-eight.
+// [rc4l] wdiexsec's reflective floor re-walked the scene from under it, and that walk's four sky quads replaced the player's eighty-eight.
 TEST(FlatMeshCompute, OnlyThePlayersOuterWalkFillsThePlayersSkyList)
 {
 	EXPECT_EQ(kSkyCaptureMain, ComputeSkyCaptureList(true, 0));

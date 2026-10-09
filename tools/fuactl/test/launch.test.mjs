@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { resolveEngine, engineArgs, describeExit, countEngineLines } from "../src/launch.mjs";
+import { resolveEngine, engineArgs, describeExit, countEngineLines, missingCoreData } from "../src/launch.mjs";
 import { sweepDirFor, pickCmake, resolveTarget, cameraFromFlags, cvarValueFrom } from "../src/shot.mjs";
 
 // Run `fn` with cwd moved to `dir` and FUACTL_ENGINE cleared, then put both back.
@@ -195,4 +195,11 @@ test("a cvar's value is read off the console echo, and anything else is no value
   assert.equal(cvarValueFrom('"fua_mesh_sky" is "true"'), "true");
   assert.equal(cvarValueFrom('"gl_plane_reflection" is "0"\n'), "0");
   assert.equal(cvarValueFrom("Unknown command \"nope\""), null);
+});
+
+test("a binary folder with no fua_core pk3 is refused before the engine can open an error box", () => {
+  // [rc4l] A comparison build copied without its pk3s popped "Cannot find fua_core_v0.3.0.pk3" on the user's screen at every launch.
+  assert.match(missingCoreData("/x", ["forkundera.exe", "zmusic.dll"]), /no fua_core_\*\.pk3 beside \/x/);
+  assert.equal(missingCoreData("/x", ["forkundera.exe", "fua_core_v0.3.0.pk3"]), null);
+  assert.match(missingCoreData("/x", ["fua_core_.pk3"]), /no fua_core/);
 });

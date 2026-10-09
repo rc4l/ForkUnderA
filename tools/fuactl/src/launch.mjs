@@ -182,10 +182,18 @@ export function engineArgs(opts = {}, configPath) {
   return args;
 }
 
+// [rc4l] Why a binary's folder cannot start the engine, or null: without a fua_core_*.pk3 beside it the engine stops on a modal error box.
+export function missingCoreData(dir, listing = fs.readdirSync(dir)) {
+  if (listing.some((f) => /^fua_core_.+\.pk3$/i.test(f))) return null;
+  return `no fua_core_*.pk3 beside ${dir} -- copy the staged folder's *.pk3 next to the binary, or the engine stops on a modal error`;
+}
+
 // Spawn one instance. opts: { iwad, map, skill, seed, port, token, logDir, extraArgs, host }.
 export async function launchInstance(opts = {}) {
   const bin = opts.engine || resolveEngine();
   const dir = path.dirname(bin);
+  const missing = missingCoreData(dir);
+  if (missing) throw new Error(missing);
   const port = opts.port || (await freePort());
   const token = opts.token || crypto.randomBytes(12).toString("hex");
   const logDir = opts.logDir || fs.mkdtempSync(path.join(os.tmpdir(), "fuactl-"));

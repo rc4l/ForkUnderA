@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { judge, scenarioOutcome } from "../src/template.mjs";
+import { judge, scenarioOutcome, isMain } from "../src/template.mjs";
+import { pathToFileURL } from "node:url";
 
 // [rc4l] A decoded-frame stand-in: w x h, every pixel the same RGB.
 function flat(w, h, rgb) {
@@ -45,4 +46,11 @@ test("a scenario exits 0 only when nothing failed, and 3 when it refused to run"
   assert.deepEqual(scenarioOutcome("x", { lines: ["PASS a"], failed: 0 }), { lines: ["PASS a", "all x boxes under their ceilings"], code: 0 });
   assert.equal(scenarioOutcome("x", { lines: [], failed: 2 }).code, 1);
   assert.equal(scenarioOutcome("x", { lines: [], failed: 1, refused: true }).code, 3);
+});
+
+test("a scenario counts as main only when node was started on that very file", () => {
+  const url = pathToFileURL("/repo/scenarios/a.mjs").href;
+  assert.equal(isMain(url, "/repo/scenarios/a.mjs"), true);
+  assert.equal(isMain(url, "/repo/test/a.test.mjs"), false);
+  assert.equal(isMain(url, undefined), false);
 });
