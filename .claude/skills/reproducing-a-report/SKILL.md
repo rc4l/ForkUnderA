@@ -86,6 +86,10 @@ fix, a rebuild, and the reporter's next screenshot showing the same thing.
 When it does reproduce, check it is *the same* fault and not a cousin. Compare against the
 reporter's artefact directly. Same shape, same place, same conditions.
 
+Once it reproduces in the reporter's content, rebuild the fault on a **template map** that carries
+only the ingredient that matters -- the `template-maps` skill. A repro that needs nine mod wads cannot
+run in a regression test, and the template often finds a second bug the big map hides.
+
 ## 4a. Hold the world still before you measure it
 
 A repro is a camera and a piece of state, and anything in the simulation that moves either one

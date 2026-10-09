@@ -1,5 +1,5 @@
 // Launch a bridge-enabled engine instance under fuactl's supervision.
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import net from "node:net";
 import crypto from "node:crypto";
 import path from "node:path";
@@ -31,6 +31,31 @@ export function resolveEngine() {
   ]);
   for (const c of candidates) if (fs.existsSync(c)) return c;
   throw new Error(`engine binary not found (set FUACTL_ENGINE). tried:\n  ${candidates.join("\n  ")}`);
+}
+
+// [rc4l] An engine exit code as words, since 3221225781 says nothing and "a DLL is missing" says what to do.
+const EXIT_NAMES = new Map([
+  [0xc0000135, "a DLL next to the binary is missing -- run the staged build, or copy dist-windows' DLLs beside it"],
+  [0xc0000005, "access violation -- the engine crashed; see the .crash file beside its log"],
+  [0xc00000fd, "stack overflow"],
+  [0xc0000409, "fail-fast / stack buffer overrun"],
+]);
+export function describeExit(code) {
+  if (code == null) return "still running";
+  const unsigned = code < 0 ? code + 0x100000000 : code;
+  const name = EXIT_NAMES.get(unsigned);
+  return name ? `${code} (0x${unsigned.toString(16)}: ${name})` : String(code);
+}
+
+// [rc4l] How many lines of `tasklist` output name the engine, so a capture can refuse to run under another engine window.
+export function countEngineLines(tasklistText, image = "forkundera.exe") {
+  return String(tasklistText).split(/\r?\n/).filter((l) => l.toLowerCase().startsWith(image)).length;
+}
+
+// [rc4l] Engines running on this machine (Windows only; elsewhere 0), because GL readback under another window is undefined.
+export function engineProcessCount() {
+  if (process.platform !== "win32") return 0;
+  return countEngineLines(spawnSync("tasklist", ["/FI", "IMAGENAME eq forkundera.exe", "/NH"], { encoding: "utf8" }).stdout);
 }
 
 export function freePort() {

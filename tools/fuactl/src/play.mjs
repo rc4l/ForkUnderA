@@ -9,7 +9,7 @@
 // lived here, under a comment claiming the opposite.
 import fs from "node:fs";
 import path from "node:path";
-import { launchInstance, stopInstance } from "./launch.mjs";
+import { launchInstance, stopInstance, describeExit } from "./launch.mjs";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -79,7 +79,7 @@ async function waitInLevel(inst, { timeoutMs = 90000, log = () => {} } = {}) {
   const { BridgeClient } = await import("./client.mjs");
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    if (inst.proc.exitCode != null) throw new Error(`engine exited (${inst.proc.exitCode}) before reaching a level`);
+    if (inst.proc.exitCode != null) throw new Error(`engine exited ${describeExit(inst.proc.exitCode)} before reaching a level`);
     try {
       const c = new BridgeClient();
       await c.connect(inst.port, { token: inst.token, timeoutMs: 1500 });

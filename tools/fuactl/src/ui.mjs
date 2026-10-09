@@ -139,6 +139,8 @@ export async function typeText(c, text, { delay = 30 } = {}) { for (const ch of 
 export async function screenshot(c, engineBinPath, name = "fuactl_shot", { tries = 40, delay = 150 } = {}) {
   const dir = path.dirname(engineBinPath);
   const file = path.join(dir, `${name}.png`);
+  // [rc4l] The engine will not make the folder, and a missing sweep/ reads as a screenshot that never arrives.
+  fs.mkdirSync(path.dirname(file), { recursive: true });
   try { fs.rmSync(file, { force: true }); } catch { /* ignore */ }
   await c.rpc("console.exec", { text: `screenshot ${name}` });
   for (let i = 0; i < tries; i++) { // wait for the PNG to land (a busy frame can take a moment)

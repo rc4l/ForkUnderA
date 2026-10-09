@@ -68,9 +68,16 @@ function pngIsUsable(file) {
   } catch { return false; }
 }
 
+// [rc4l] The engine writes its GL screenshot into sweep/ beside its own binary, so a pair lands there whichever build is running.
+export function sweepDirFor(engineBin) {
+  return path.posix.join(path.dirname(String(engineBin)).split(path.sep).join("/"), "sweep");
+}
+
 export async function shotPair(c, tag, {
-  at = null, engineBin, outDir = "F:/ForkUnderA/dist-windows/sweep", frozen = [],
+  at = null, engineBin, outDir = null, frozen = [],
 } = {}) {
+  outDir = outDir || sweepDirFor(engineBin);
+  fs.mkdirSync(outDir, { recursive: true });
   if (at) {
     await c.rpc("sim.resume", {}).catch(() => {});
     await waitTics(c, 10);

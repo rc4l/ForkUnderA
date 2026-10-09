@@ -5,7 +5,7 @@
 // -DFUA_MCP_BRIDGE=ON (ZX_MCP_BRIDGE=1 ./mac_compile.sh) and armed with ZANDRONUM_BRIDGE_PORT.
 import { reap, readRegistry } from "./registry.mjs";
 import { runDeterminismCheck, runPerfAblation, runNetBandwidth, runGlTimers } from "./session.mjs";
-import { launchInstance, stopInstance, resolveEngine } from "./launch.mjs";
+import { launchInstance, stopInstance, resolveEngine, engineProcessCount } from "./launch.mjs";
 import { BridgeClient } from "./client.mjs";
 import { diligentRun } from "./diligent.mjs";
 import { sampleProcess } from "./sample.mjs";
@@ -82,7 +82,7 @@ const USAGE = `fuactl <command>
   doorshot <tag> [--port P] [--at x,y,z --face yaw] [--mid TICS]   a door caught MID-SWING in both renderers, plus a before pair
   look [--port P] [--at x,y,z --face yaw,pitch]   what the crosshair is on and what the level mesh holds for it
   line <index> | --at X,Y [--radius R]   what a linedef IS: blocking flags, front/back sector heights, and which tier carries a texture over which span of height -- the three things that decide whether a mark can exist there. --at finds every line near a point, which is what tells two lines in the same place apart.
-  png <mode> ...                     pixel arithmetic on captures: --diff, --diffimg, --align, --crop, --rows, --blob
+  png <mode> ...                     pixel arithmetic on captures: --diff, --boxdiff, --diffimg, --align, --crop, --rows, --blob
   mcp                                run as an MCP stdio server for agents
 `;
 
@@ -566,6 +566,9 @@ async function main() {
         at = { x, y, z, angle: yaw, pitch };
       }
 
+      // [rc4l] GL reads its picture back out of the window, so another engine on top makes it black or garbage.
+      const engines = engineProcessCount();
+      if (engines > 1) console.error(`warning: ${engines} engines are running -- close the others, or the GL capture may be garbage`);
       const c = new BridgeClient();
       await c.connect(port, { token });
       await c.waitHello();

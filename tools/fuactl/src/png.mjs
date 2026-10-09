@@ -6,56 +6,8 @@
 //
 // Minimal PNG decoder: enough for the engine's own RGB screenshots and readbacks.
 import fs from "node:fs";
-import zlib from "node:zlib";
+import { decodePNG, px, writePNG, boxDiff } from "./pngcore.mjs";
 
-function decodePNG(path) {
-  const buf = fs.readFileSync(path);
-  let p = 8, w = 0, h = 0, bitDepth = 0, colorType = 0;
-  const idat = [];
-  let palette = null;
-  while (p < buf.length) {
-    const len = buf.readUInt32BE(p);
-    const type = buf.toString("ascii", p + 4, p + 8);
-    const data = buf.subarray(p + 8, p + 8 + len);
-    if (type === "IHDR") {
-      w = data.readUInt32BE(0); h = data.readUInt32BE(4);
-      bitDepth = data[8]; colorType = data[9];
-    } else if (type === "PLTE") palette = data;
-    else if (type === "IDAT") idat.push(data);
-    else if (type === "IEND") break;
-    p += 12 + len;
-  }
-  if (bitDepth !== 8) throw new Error(`unsupported bit depth ${bitDepth}`);
-  const channels = { 0: 1, 2: 3, 3: 1, 4: 2, 6: 4 }[colorType];
-  if (!channels) throw new Error(`unsupported color type ${colorType}`);
-
-  const raw = zlib.inflateSync(Buffer.concat(idat));
-  const stride = w * channels;
-  const out = Buffer.alloc(h * stride);
-  let prev = Buffer.alloc(stride);
-  for (let y = 0; y < h; y++) {
-    const filter = raw[y * (stride + 1)];
-    const line = raw.subarray(y * (stride + 1) + 1, y * (stride + 1) + 1 + stride);
-    const cur = Buffer.alloc(stride);
-    for (let i = 0; i < stride; i++) {
-      const a = i >= channels ? cur[i - channels] : 0;
-      const b = prev[i];
-      const c = i >= channels ? prev[i - channels] : 0;
-      let v = line[i];
-      if (filter === 1) v += a;
-      else if (filter === 2) v += b;
-      else if (filter === 3) v += (a + b) >> 1;
-      else if (filter === 4) {
-        const pp = a + b - c, pa = Math.abs(pp - a), pb = Math.abs(pp - b), pc = Math.abs(pp - c);
-        v += (pa <= pb && pa <= pc) ? a : (pb <= pc ? b : c);
-      }
-      cur[i] = v & 0xff;
-    }
-    cur.copy(out, y * stride);
-    prev = cur;
-  }
-  return { w, h, channels, palette, colorType, data: out };
-}
 
 // Region given in FRACTIONS of the image, so two different resolutions can be compared.
 function meanRegion(img, x0, y0, x1, y1) {
@@ -85,12 +37,6 @@ function meanRegion(img, x0, y0, x1, y1) {
 // disagree and by how much.
 // Resolve one pixel to RGB whatever the colour type is -- the engine writes truecolour, the readback
 // writes truecolour, and an indexed PNG from anywhere else would otherwise diff as garbage.
-function px(img, x, y) {
-  const i = (y * img.w + x) * img.channels;
-  if (img.colorType === 3) { const q = img.data[i] * 3; return [img.palette[q], img.palette[q + 1], img.palette[q + 2]]; }
-  if (img.channels === 1 || img.channels === 2) { const v = img.data[i]; return [v, v, v]; }
-  return [img.data[i], img.data[i + 1], img.data[i + 2]];
-}
 
 // [rc4l] CROP applies here too, as fractions "x0,y0,x1,y1". Asking "did the wall change" while the
 // floor and the weapon sprite are in the same frame gets answered by whichever covers more pixels --
@@ -116,41 +62,7 @@ function diff(a, b, tol) {
 }
 
 // [rc4l] Write a PNG. Only what an 8-bit RGB image needs, which is all this ever emits.
-function writePNG(path, w, h, rgb) {
-  const raw = Buffer.alloc((w * 3 + 1) * h);
-  for (let y = 0; y < h; y++) {
-    raw[y * (w * 3 + 1)] = 0;                                  // filter: none
-    rgb.copy(raw, y * (w * 3 + 1) + 1, y * w * 3, (y + 1) * w * 3);
-  }
-  const chunk = (type, data) => {
-    const len = Buffer.alloc(4); len.writeUInt32BE(data.length);
-    const td = Buffer.concat([Buffer.from(type, "ascii"), data]);
-    const crc = Buffer.alloc(4); crc.writeUInt32BE(crc32(td) >>> 0);
-    return Buffer.concat([len, td, crc]);
-  };
-  const ihdr = Buffer.alloc(13);
-  ihdr.writeUInt32BE(w, 0); ihdr.writeUInt32BE(h, 4);
-  ihdr[8] = 8; ihdr[9] = 2; ihdr[10] = 0; ihdr[11] = 0; ihdr[12] = 0;
-  fs.writeFileSync(path, Buffer.concat([
-    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-    chunk("IHDR", ihdr), chunk("IDAT", zlib.deflateSync(raw)), chunk("IEND", Buffer.alloc(0)),
-  ]));
-}
 
-let CRC_TABLE = null;
-function crc32(buf) {
-  if (!CRC_TABLE) {
-    CRC_TABLE = new Int32Array(256);
-    for (let n = 0; n < 256; n++) {
-      let c = n;
-      for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
-      CRC_TABLE[n] = c;
-    }
-  }
-  let c = 0xffffffff;
-  for (let i = 0; i < buf.length; i++) c = CRC_TABLE[(c ^ buf[i]) & 0xff] ^ (c >>> 8);
-  return c ^ 0xffffffff;
-}
 
 // [rc4l] The dispatch, as a function rather than a module that reads process.argv on import.
 //
@@ -223,6 +135,18 @@ if (args[0] === "--tint") {
 // neither. Reported as min, max and mean so a threshold can be written against the spread.
 //
 // usage: fuactl png --range <file.png> [x0 y0 x1 y1]   (fractions, default the whole image)
+// [rc4l] Mean |d| of two frames over a box, in 16-pixel block means unless told otherwise -- see boxDiff.
+//
+// usage: fuactl png --boxdiff <a.png> <b.png> <x0> <y0> <x1> <y1> [block]   (fractions)
+if (args[0] === "--boxdiff") {
+  const a = decodePNG(args[1]), b = decodePNG(args[2]);
+  if (a.w !== b.w || a.h !== b.h) { console.error(`size mismatch ${a.w}x${a.h} vs ${b.w}x${b.h}`); process.exit(1); }
+  const box = args.slice(3, 7).map(Number);
+  const block = Number(args[7]) || 16;
+  console.log(`mean|d| ${boxDiff(a, b, box, block).toFixed(2)}  (block ${block}, box ${box.join(",")})`);
+  process.exit(0);
+}
+
 if (args[0] === "--range") {
   const a = decodePNG(args[1]);
   const f = args.length >= 6 ? args.slice(2, 6).map(Number) : [0, 0, 1, 1];

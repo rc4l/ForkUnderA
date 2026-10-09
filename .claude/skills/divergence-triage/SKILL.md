@@ -113,6 +113,18 @@ When a pixel test cannot isolate the thing, instrument the mechanism instead: co
 times the code path that *should* fire actually fires. Zero versus non-zero is unambiguous
 where a percentage is not.
 
+## 7a. Check the oracle is sound before reading the disagreement
+
+The reference is only an oracle while its own output is trustworthy. A capture of it can be wrong in
+ways that look exactly like your side being wrong.
+
+> GL captures on a skybox test map came back black, then scrambled with floor textures on the
+> walls, and two "fixes" went in and out of the new code on the strength of them. The old binary,
+> run under identical conditions, did exactly the same -- the capture was unreliable, not the change.
+
+So when the reference itself looks odd, run the OLD build under identical conditions first. If it
+does the same, the problem is the measurement, not the change.
+
 ## 8. Silent-and-total failures belong in unit tests
 
 Note the shape of these bugs: not "slightly wrong output" but *every ceiling in the level

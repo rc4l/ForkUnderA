@@ -67,6 +67,19 @@ Notes:
   (Ubuntu) runs the full ASan+UBSan+LSan set, so rely on CI for leak checks.
 - Coverage requires the **Clang** toolchain (llvm-cov); `coverage.sh` forces it.
 
+## Run it locally (Windows)
+
+`build-tests/` is a Visual Studio tree. Build and run with the bundled CMake:
+
+```bash
+CM="C:/Program Files/Microsoft Visual Studio/2022/Community/Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin/cmake.exe"
+"$CM" --build build-tests --config Release -- -m
+build-tests/Release/zandrox_tests.exe --gtest_filter='Suite.*'
+```
+
+There is no clang/llvm-cov on the Windows box, so the coverage gate runs in CI only -- check every
+branch of a new `Compute*` function against its tests by reading them, and say so.
+
 ## CI
 
 `.github/workflows/_test.yml` runs the same three steps (sanitized build+run, coverage

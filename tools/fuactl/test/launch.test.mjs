@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { resolveEngine, engineArgs } from "../src/launch.mjs";
+import { resolveEngine, engineArgs, describeExit, countEngineLines } from "../src/launch.mjs";
+import { sweepDirFor } from "../src/shot.mjs";
 
 // Run `fn` with cwd moved to `dir` and FUACTL_ENGINE cleared, then put both back.
 function inDir(dir, fn) {
@@ -139,4 +140,23 @@ test("resolveEngine names every path it tried when it finds nothing", () => {
     assert.match(err.message, /ForkUnderA\.app/);
     return true;
   });
+});
+
+test("an exit code the engine dies with is named, signed or not", () => {
+  // [rc4l] 3221225781 is what a run from build-win/ printed when its DLLs were not beside it.
+  assert.match(describeExit(3221225781), /0xc0000135: a DLL next to the binary is missing/);
+  assert.match(describeExit(-1073741819), /0xc0000005: access violation/);
+  assert.equal(describeExit(1), "1");
+  assert.equal(describeExit(null), "still running");
+});
+
+test("engines are counted from tasklist's lines, and its no-match message counts as none", () => {
+  const two = "\r\nforkundera.exe    1234 Console    1  512,000 K\r\nforkundera.exe    5678 Console    1  498,000 K\r\n";
+  assert.equal(countEngineLines(two), 2);
+  assert.equal(countEngineLines("INFO: No tasks are running which match the specified criteria.\r\n"), 0);
+});
+
+test("a pair lands in sweep/ beside whichever engine is running", () => {
+  assert.equal(sweepDirFor("F:/ForkUnderA/dist-windows/forkundera.exe"), "F:/ForkUnderA/dist-windows/sweep");
+  assert.equal(sweepDirFor("F:/ForkUnderA/build-win/Release/forkundera.exe"), "F:/ForkUnderA/build-win/Release/sweep");
 });
