@@ -52,6 +52,7 @@
 #include "features/horizon/horizon.h"   // [rc4l] the horizon lines' sky halves
 #include "features/hwrender/computation/skyportal_compute.h"   // [rc4l] what the portal pass may draw
 #include "features/levelmesh/computation/packedcolor_compute.h"
+#include "features/levelmesh/computation/flatmesh_compute.h"   // [rc4l] kSkyCapture*, the sky list a pass draws
 #include "features/levelmesh/projdecals.h"   // [rc4l] the marks the decal pass draws
 #include "features/hwrender/computation/surfaceorder_compute.h"   // the draw order, tested off-engine
 #include "features/hwrender/hud2d.h"
@@ -178,7 +179,6 @@ CVAR(Bool, fua_dg_rtmirrors, false, CVAR_ARCHIVE)
 CVAR(Bool, fua_dg_mirrors_on, true, CVAR_ARCHIVE)
 // The sky that is a place: render the world from an ASkyViewpoint and use it as the background.
 CVAR(Bool, fua_dg_skyportal, true, CVAR_ARCHIVE)
-EXTERN_CVAR(Bool, fua_mesh_sky)
 // [rc4l] The portal's render scale as a DIVISOR of the swapchain: 1 is full, 2 is half. See
 // EnsureSkyPortalResources for why full is the default.
 CVAR(Int, fua_dg_skyportal_scale, 1, CVAR_ARCHIVE)
@@ -1645,6 +1645,7 @@ static bool g_skyPortalActive = false;
 // draws a sky of its own, and that sky is PART OF THE SKYBOX IMAGE -- the red cloudscape around
 // the city on wdiex02 is exactly that. Without it the city sits in a black surround.
 static bool g_inSkyPortal = false;
+static bool g_inCameraPass = false;   // [rc4l] Drawing a camera texture, whose sky quads are its own walk's.
 // Where the portal camera stood, for the reach test in the world draw.
 static float g_skyPortalCamX = 0.f, g_skyPortalCamY = 0.f;
 static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_skySurfPSO;
@@ -3023,9 +3024,10 @@ static void DrawSkySurfaces(Diligent::IDeviceContext *ctx)
 {
 	if (!g_skyPortalActive || !g_skySurfPSO || !g_skySurfSRB) return;
 
-	// [rc4l] GL's own sky quads, plus the sky halves of the horizon lines, which come from the map.
+	// [rc4l] GL's own sky quads for the view being drawn, plus the sky halves of the horizon lines, which come from the map.
 	int nverts = 0, nhorizon = 0;
-	const FFlatVertex *src = zx::levelmesh::SkyQuadVertices(nverts);
+	const FFlatVertex *src = zx::levelmesh::SkyQuadVertices(nverts,
+		g_inCameraPass ? zx::levelmesh::kSkyCaptureCamera : zx::levelmesh::kSkyCaptureMain);
 	const FFlatVertex *hsrc = zx::horizon::HorizonSkyVertices(nhorizon);
 	if (src == NULL) nverts = 0;
 	if (hsrc == NULL) nhorizon = 0;
@@ -6222,7 +6224,9 @@ void RenderCameraTexture(const void *material, int w, int h,
 	ctx->ClearDepthStencil(cam->dsv, Diligent::CLEAR_DEPTH_FLAG, 1.0f, 0,
 		Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
+	g_inCameraPass = true;
 	DrawWorld(ctx);
+	g_inCameraPass = false;
 
 	// Hand the screen back its own target and full viewport; the main pass assumes both.
 	auto *swap = GetSwapChain();
@@ -6354,14 +6358,8 @@ static void DrawWorld(Diligent::IDeviceContext *ctx)
 		// When the map has an ASkyViewpoint, the sky is the world seen from it and there is no sky
 		// texture to speak of -- maps that use one leave sky1texture as the null placeholder, which
 		// is why this used to draw a blue-and-white checkerboard here.
-		// [rc4l] The full-screen blit is what the sky USED to be, and it is a fallback now.
-		//
-		// With sky surfaces the sky is painted where the map says the sky is and nowhere else.
-		// Leaving the background underneath as well is not harmless: it shows through every gap
-		// the surfaces do not cover -- on wdiex02 a bright streak along the horizon where the
-		// water meets the far shore, mean 31 against GL 1.8 on that row.
-		if (fua_mesh_sky && g_skyPortalActive) { /* drawn as geometry -- see DrawSkySurfaces */ }
-		else if (!BlitSkyPortal(ctx))
+		// [rc4l] Painted full-screen first, as GL's RenderFirstSkyPortal does, so sky no captured wall covers is still sky; the surfaces drawn later only cut what lies beyond it.
+		if (!BlitSkyPortal(ctx))
 		{
 			EnsureSky();
 			DrawSky(ctx);

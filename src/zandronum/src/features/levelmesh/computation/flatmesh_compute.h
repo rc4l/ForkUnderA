@@ -146,6 +146,12 @@ struct PlaneUVAffine
 };
 PlaneUVAffine ComputePlaneUVAffine(const PlaneUVTransform &t);
 
+// [rc4l] The sky-surface lists a GL scene walk can fill: the player's view, a camera texture's, or neither.
+enum { kSkyCaptureNone = -1, kSkyCaptureMain = 0, kSkyCaptureCamera = 1 };
+
+// [rc4l] Which list a walk fills: only an outer walk (portal depth 0) fills one, and only the main view's fills the player's.
+int ComputeSkyCaptureList(bool mainView, int portalDepth);
+
 }} // namespace zx::levelmesh
 
 #endif // ZX_FLATMESH_COMPUTE_H

@@ -42,7 +42,15 @@ comparison, and the mean/worst per side — the tail is what decides fixed range
 
 ## In-engine hooks
 
-**None yet.** P0 is a console command and a pure computation unit; it reads existing map structures
+Sky surfaces (`flatmesh.cpp`, see `docs/skybleed-scope.md`):
+
+- `gl/scene/gl_walls.cpp` `PutWall`: `RegisterSkyQuad` for `RENDERWALL_SKY` and `RENDERWALL_SKYBOX`.
+- `gl/scene/gl_scene.cpp` `CreateScene`: `BeginSkyWalk`, so only the player's outer walk fills the
+  player's list and a camera texture fills its own; `RenderViewpoint` records which view is walking.
+- `gl/scene/gl_portal.h`: `GLPortal::RenderDepth()`, 0 outside any portal re-entry.
+- `hwrender/diligent/dgscene.cpp` `DrawSkySurfaces`: reads the list of the view it is drawing.
+
+The rest of this section predates the bake: **P0 had none.** P0 is a console command and a pure computation unit; it reads existing map structures
 and writes nothing. The dirty-tracking hooks the later phases need are enumerated in
 `docs/levelmesh-PLAN.md` under "Invalidation taxonomy" and are not wired up.
 

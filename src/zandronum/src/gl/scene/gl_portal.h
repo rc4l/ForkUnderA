@@ -88,6 +88,8 @@ protected:
 	static int renderdepth;
 
 public:
+	// [rc4l] 0 for the outer scene walk, deeper inside any portal's re-entry; read by features/levelmesh's sky capture.
+	static int RenderDepth() { return renderdepth; }
 	static int PlaneMirrorMode;
 	static int inupperstack;
 	static int	instack[2];

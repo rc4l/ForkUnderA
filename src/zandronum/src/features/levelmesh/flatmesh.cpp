@@ -631,8 +631,11 @@ void RegisterFlatSubsector(const GLFlat &flat, subsector_t *sub, bool ceiling)
 // billboards built for one viewpoint, so they are not level geometry and must never be baked.
 static int g_spritesThisFrame = 0;
 static int g_skyQuadsThisFrame = 0;
+static int g_skyWalks[2];   // [rc4l] Outer walks per list, so a second walk per frame shows up as a count.
 static AActor *g_skyViewpoint = NULL;
-static TArray<FFlatVertex> g_skyVerts;
+// [rc4l] One list per view the backend draws, indexed by kSkyCaptureMain and kSkyCaptureCamera, and the one the walk in progress fills.
+static TArray<FFlatVertex> g_skyVerts[2];
+static int g_skyList = kSkyCaptureNone;
 
 // [rc4l] What each sprite piece was registered WITH, for one frame, so a seam can be read off
 // numbers instead of guessed at from a screenshot.
@@ -678,16 +681,25 @@ void GetSpriteStyleDetail(int *dest16, int *classified4)
 
 int SkyQuadsThisFrame() { return g_skyQuadsThisFrame; }
 
-// [rc4l] Cleared at the start of GL's outer walk only, so the skybox portal's re-entry cannot wipe what the main view built.
-void SkyQuadsClear() { g_skyVerts.Clear(); g_skyViewpoint = NULL; }
+// [rc4l] A walk starting: an outer one empties the list it fills, and a portal re-entry (mirror, skybox) fills none.
+int BeginSkyWalk(bool mainView, int portalDepth)
+{
+	g_skyList = ComputeSkyCaptureList(mainView, portalDepth);
+	if (g_skyList == kSkyCaptureNone) return g_skyList;
+	g_skyVerts[g_skyList].Clear();
+	if (g_skyList == kSkyCaptureMain) g_skyViewpoint = NULL;
+	g_skyWalks[g_skyList]++;
+	return g_skyList;
+}
+int SkyWalks(int list) { return g_skyWalks[list]; }
 
 // The viewpoint the visible sky surfaces name; NULL until a walk has produced one.
 AActor *SkyQuadViewpoint() { return g_skyViewpoint; }
 
-const FFlatVertex *SkyQuadVertices(int &count)
+const FFlatVertex *SkyQuadVertices(int &count, int list)
 {
-	count = (int)g_skyVerts.Size();
-	return count ? &g_skyVerts[0] : NULL;
+	count = (int)g_skyVerts[list].Size();
+	return count ? &g_skyVerts[list][0] : NULL;
 }
 
 // [rc4l] Models are cleared with sprites because they arrive with them, and a stale count reads as a model still there.
@@ -725,9 +737,9 @@ int SpritePieceCount() { return g_spritesThisFrame; }
 // linedefs where the map has thousands of sky segs. See docs/skybleed-scope.md.
 void RegisterSkyQuad(const GLWall &wall, AActor *viewpoint)
 {
-	if (!fua_mesh_sky) return;
+	if (!fua_mesh_sky || g_skyList == kSkyCaptureNone) return;
 	// [rc4l] Passed in, never read off wall.skybox: that shares a union with wall.sky, so on a plain sky it is a GLSkyInfo.
-	if (viewpoint != NULL) g_skyViewpoint = viewpoint;
+	if (viewpoint != NULL && g_skyList == kSkyCaptureMain) g_skyViewpoint = viewpoint;
 
 	// [rc4l] A horizon line's sky belongs to features/horizon, which builds it for every eye height.
 	if (zx::horizon::HorizonsActive() && wall.seg != NULL && wall.seg->linedef != NULL &&
@@ -738,7 +750,7 @@ void RegisterSkyQuad(const GLWall &wall, AActor *viewpoint)
 	// [rc4l] A list of their own, not the dynamic stream, which GL's skybox re-entry clears with DynClear.
 	FFlatVertex q[6];
 	MakeWallQuad(q, wall.glseg.x1, wall.glseg.y1, wall.glseg.x2, wall.glseg.y2, wall.zbottom, wall.ztop);
-	for (int k = 0; k < 6; k++) g_skyVerts.Push(q[k]);
+	for (int k = 0; k < 6; k++) g_skyVerts[g_skyList].Push(q[k]);
 	g_skyQuadsThisFrame++;
 }
 
@@ -1005,11 +1017,19 @@ void RegisterDecalTriangles(const FFlatVertex *tris, int count, const void *mate
 
 }} // namespace zx::levelmesh
 
-// [rc4l] How many sky surfaces GL has handed over since the level loaded. Zero when the answer should not be zero
-// is the difference between the capture not running and the pass not drawing -- two failures that
-// look identical on screen.
+// [rc4l] What each sky list holds now, and the walks that filled them since the last ask: two main walks a frame is the fault that hid wdiexsec's sky.
 CCMD(fua_sky_quads)
 {
-	Printf("sky quads captured since load: %d (fua_mesh_sky is %s)\n",
-		zx::levelmesh::SkyQuadsThisFrame(), fua_mesh_sky ? "on" : "off");
+	static int lastMain = 0, lastCamera = 0;
+	int heldMain = 0, heldCamera = 0;
+	zx::levelmesh::SkyQuadVertices(heldMain, zx::levelmesh::kSkyCaptureMain);
+	zx::levelmesh::SkyQuadVertices(heldCamera, zx::levelmesh::kSkyCaptureCamera);
+	const int walksMain = zx::levelmesh::SkyWalks(zx::levelmesh::kSkyCaptureMain);
+	const int walksCamera = zx::levelmesh::SkyWalks(zx::levelmesh::kSkyCaptureCamera);
+	Printf("sky quads captured since load: %d (fua_mesh_sky is %s)\n", zx::levelmesh::SkyQuadsThisFrame(),
+		fua_mesh_sky ? "on" : "off");
+	Printf("  player's view holds %d after %d walks; camera textures hold %d after %d walks\n",
+		heldMain / 6, walksMain - lastMain, heldCamera / 6, walksCamera - lastCamera);
+	lastMain = walksMain;
+	lastCamera = walksCamera;
 }

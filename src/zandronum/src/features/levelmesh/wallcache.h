@@ -161,8 +161,11 @@ bool IsCapturing();
 void RegisterSkyQuad(const GLWall &wall, AActor *viewpoint);
 int SkyQuadsThisFrame();
 AActor *SkyQuadViewpoint();
-void SkyQuadsClear();
-const FFlatVertex *SkyQuadVertices(int &count);
+// [rc4l] A GL walk starting at this portal depth, for the main view or a camera texture; returns the kSkyCapture* list it fills.
+int BeginSkyWalk(bool mainView, int portalDepth);
+int SkyWalks(int list);
+// [rc4l] One view's sky quads: kSkyCaptureMain for the player, kSkyCaptureCamera for a camera texture.
+const FFlatVertex *SkyQuadVertices(int &count, int list);
 
 void RecordPiece(const GLWall &wall, int list);
 void NotePortal();

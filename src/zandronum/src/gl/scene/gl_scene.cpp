@@ -82,6 +82,7 @@
 #include "features/levelmesh/levelmesh.h"
 #include "features/levelmesh/flatmesh.h"
 #include "features/levelmesh/wallcache.h"
+#include "features/levelmesh/computation/flatmesh_compute.h"   // [rc4l] kSkyCapture*, which walk fills which sky list
 #include "features/hwrender/hud2d.h"
 #include "features/fov-interp/fovinterp.h"
 #include "features/fua-caching/fua_caching.h"
@@ -102,6 +103,9 @@ CVAR(Float, gl_mask_sprite_threshold, 0.5f,CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 CVAR(Bool, gl_sort_textures, false, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 EXTERN_CVAR(Bool, fua_surface_mapbake_auto)
 EXTERN_CVAR(Bool, gl_batch_walls)  // [rc4l] features/levelmesh wall batching
+
+// [rc4l] Whether the walk in progress is the player's view (true) or a camera texture's, as RenderViewpoint was told.
+static bool fua_mainview = true;
 
 EXTERN_CVAR (Int, screenblocks)
 EXTERN_CVAR (Bool, cl_capfps)
@@ -365,15 +369,10 @@ void FGLRenderer::CreateScene()
 	// camera moves, so it is dropped here and rebuilt as this frame generates it.
 	zx::levelmesh::DynClear();
 	zx::levelmesh::ClearSprites();
-	// [rc4l] The sky surfaces belong to THIS walk, and only to a walk that is not inside a portal.
-	//
-	// GL re-enters CreateScene to render the skybox portal, and that walk builds the skybox ROOM.
-	// Clearing on every walk therefore throws away the quads the main view just produced and keeps
-	// the room own ones instead; not clearing at all lets them accumulate across frames. Clearing
-	// only on the outer walk is the one that leaves the list holding what the player can see.
-	if (!GLPortal::inskybox) zx::levelmesh::SkyQuadsClear();
-	// [rc4l] features/horizon: this frame's horizon windows, from the map -- once per outer walk.
-	if (!GLPortal::inskybox) zx::horizon::UpdateHorizons();
+	// [rc4l] Only the player's outer walk fills the player's sky surfaces; a mirror, skybox or camera-texture walk must not replace them.
+	const int skyList = zx::levelmesh::BeginSkyWalk(fua_mainview, GLPortal::RenderDepth());
+	// [rc4l] features/horizon: this frame's horizon windows, from the map -- once per frame, on the player's walk.
+	if (skyList == zx::levelmesh::kSkyCaptureMain) zx::horizon::UpdateHorizons();
 	// [rc4l] features/levelmesh: age the marks by a frame. They are DRAWN by the backend, from their
 	// boxes, so nothing is emitted here -- but their lifetimes are the simulation's business and not
 	// the renderer's, and this is the one place that runs every frame in every mode.
@@ -1062,6 +1061,9 @@ extern bool CLIENTDEMO_IsInFreeSpectateMode(); // [AK]
 
 sector_t * FGLRenderer::RenderViewpoint (AActor * camera, GL_IRECT * bounds, float fov, float ratio, float fovratio, bool mainview, bool toscreen)
 {
+	// [rc4l] Which view the walks below belong to, for CreateScene's capture; restored on return in case one view nests in another.
+	const bool savedMainview = fua_mainview;
+	fua_mainview = mainview;
 	sector_t * retval;
 	R_SetupFrame (camera);
 	SetViewArea();
@@ -1133,6 +1135,7 @@ sector_t * FGLRenderer::RenderViewpoint (AActor * camera, GL_IRECT * bounds, flo
 
 	gl_frameCount++;	// This counter must be increased right before the interpolations are restored.
 	interpolator.RestoreInterpolations ();
+	fua_mainview = savedMainview;
 	return retval;
 }
 

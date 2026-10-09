@@ -472,3 +472,13 @@ TEST(PlaneUVAffine, ACanvasFlipsV)
 	EXPECT_FLOAT_EQ(a.vy, 1.f / 64.f);
 	ExpectAffineMatches(t, 300.f, -700.f);
 }
+
+// [rc4l] wdiexsec's reflective floor re-walked the scene from under it, and that walk's two sky walls replaced the player's eighty-eight.
+TEST(FlatMeshCompute, OnlyThePlayersOuterWalkFillsThePlayersSkyList)
+{
+	EXPECT_EQ(kSkyCaptureMain, ComputeSkyCaptureList(true, 0));
+	EXPECT_EQ(kSkyCaptureNone, ComputeSkyCaptureList(true, 1));    // [rc4l] a mirror or skybox re-entry
+	EXPECT_EQ(kSkyCaptureNone, ComputeSkyCaptureList(true, 3));
+	EXPECT_EQ(kSkyCaptureCamera, ComputeSkyCaptureList(false, 0)); // [rc4l] a camera texture's own view
+	EXPECT_EQ(kSkyCaptureNone, ComputeSkyCaptureList(false, 1));
+}

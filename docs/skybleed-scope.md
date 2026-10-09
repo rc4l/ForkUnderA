@@ -254,7 +254,7 @@ wall needs (there GL draws sky INSTEAD of the wall) and what the alley wall does
 the wall). The two cases are identical to a depth test and differ only in whether GL considers the
 wall visible -- which is the same visibility question this whole document keeps arriving at.
 
-`fua_mesh_sky 0` turns the sky surfaces off and restores the full-screen background.
+`fua_mesh_sky 0` turns the sky surfaces off; the full-screen background is painted either way (see below).
 
 ## The band under the skyline, and where it actually lives
 
@@ -460,3 +460,23 @@ alignment question again, and it is the next thing to measure rather than guess.
   or scrambled from one run to the next, with no other window open, and the old binary does exactly the
   same. They were twice blamed on this change before the old build was run under identical conditions.
   The scenario takes its GL references from a launch with Vulkan off, which is reliable.
+
+## Navy sky looking up on wdiexsec (2026-10-09): a mirror's walk replaced the player's sky walls
+
+Looking up in wdiexsec, Vulkan showed the clear colour (0.05, 0.06, 0.09) over most of the sky with a
+few wedges of real sky. Two causes, both fixed:
+
+1. **The list was refilled by the wrong walk.** The map's OPEN script calls
+   `Sector_SetPlaneReflection`, and GL renders a reflective floor as a plane-mirror portal that walks
+   the scene again from the mirrored eye. That walk was not a skybox, so it cleared the sky list and
+   left its own quads: 88 from the player, 4 from the mirror, and Vulkan drew the 4. Only the
+   player's outer walk (portal depth 0, main view) now fills the player's list; a camera texture fills
+   its own (`ComputeSkyCaptureList`), and `fua_sky_quads` reports both.
+2. **Nothing painted what no sky wall covers.** GL paints its first sky portal full-screen before the
+   scene (`RenderFirstSkyPortal`), so the cone round the zenith that the 32768-high walls never reach is
+   sky. Vulkan skipped that background to avoid the waterline streak; that streak came from the
+   `Line_Horizon` slab fixed above, and at rc4l's skyline vantage painting it now changes the frame by
+   0.06. The background is painted again, with the surfaces still cutting what lies beyond the sky.
+
+Regression maps: `tools/fuactl/scenarios/skymirror.mjs` (reflection off against on) and
+`skyzenith.mjs` (surfaces off against on, looking straight up).

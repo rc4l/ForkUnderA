@@ -147,4 +147,10 @@ PlaneUVAffine ComputePlaneUVAffine(const PlaneUVTransform &t)
 	return a;
 }
 
+int ComputeSkyCaptureList(bool mainView, int portalDepth)
+{
+	if (portalDepth > 0) return kSkyCaptureNone;
+	return mainView ? kSkyCaptureMain : kSkyCaptureCamera;
+}
+
 }} // namespace zx::levelmesh
