@@ -146,11 +146,12 @@ static bool EnsureHorizonPipeline()
 		{ Diligent::SHADER_TYPE_PIXEL, "uBrightmap", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
 	};
 	// [rc4l] The world's own filter, and WRAP: a flat tiles out to the horizon.
-	static Diligent::SamplerDesc samp;
+	// [rc4l] Per call, never static: a static array keeps the filter of the first build after the engine's changes.
+	Diligent::SamplerDesc samp;
 	FillSamplerFromEngine(samp);
 	samp.AddressU = Diligent::TEXTURE_ADDRESS_WRAP;
 	samp.AddressV = Diligent::TEXTURE_ADDRESS_WRAP;
-	static Diligent::ImmutableSamplerDesc samplers[] = {
+	const Diligent::ImmutableSamplerDesc samplers[] = {
 		{ Diligent::SHADER_TYPE_PIXEL, "uTex", samp },
 		{ Diligent::SHADER_TYPE_PIXEL, "uBrightmap", samp },
 	};

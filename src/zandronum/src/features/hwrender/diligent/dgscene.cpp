@@ -2034,13 +2034,13 @@ static bool CreateSkyPipeline(Diligent::TEXTURE_ADDRESS_MODE addrU, const char *
 		{ Diligent::SHADER_TYPE_PIXEL, "uTex", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
 		{ Diligent::SHADER_TYPE_PIXEL, "uBrightmap", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
 	};
-	static Diligent::SamplerDesc samp;
-	samp.MinFilter = Diligent::FILTER_TYPE_LINEAR;
-	samp.MagFilter = Diligent::FILTER_TYPE_LINEAR;
-	samp.MipFilter = Diligent::FILTER_TYPE_LINEAR;
+	// [rc4l] Not static: a static array is filled on the first call only, so the skybox's clamp took the dome's wrap and blended each face's edge with its opposite one.
+	Diligent::SamplerDesc samp;
+	// [rc4l] The engine's filter, as GL binds a sky texture with, where a fixed linear one smoothed every sky GL draws crisp.
+	FillSamplerFromEngine(samp);
 	samp.AddressU = addrU;
 	samp.AddressV = Diligent::TEXTURE_ADDRESS_CLAMP;   // no wrap top-to-bottom
-	static Diligent::ImmutableSamplerDesc samplers[] = {
+	const Diligent::ImmutableSamplerDesc samplers[] = {
 		{ Diligent::SHADER_TYPE_PIXEL, "uTex", samp },
 		{ Diligent::SHADER_TYPE_PIXEL, "uBrightmap", samp },
 	};
@@ -3966,11 +3966,12 @@ static bool EnsureScenePipeline(FString &err)
 		// On the binding, the same update is one SetArray call on the slots that actually changed.
 		{ Diligent::SHADER_TYPE_PIXEL, "uMaterials", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
 	};
-	static Diligent::SamplerDesc samp;
+	// [rc4l] Per call, never static: the filter is the engine's at this rebuild, and a static array would keep the first one forever.
+	Diligent::SamplerDesc samp;
 	FillSamplerFromEngine(samp);
 	samp.AddressU = Diligent::TEXTURE_ADDRESS_WRAP;
 	samp.AddressV = Diligent::TEXTURE_ADDRESS_WRAP;
-	static Diligent::ImmutableSamplerDesc samplers[] = {
+	const Diligent::ImmutableSamplerDesc samplers[] = {
 		{ Diligent::SHADER_TYPE_PIXEL, "uTex", samp },
 		{ Diligent::SHADER_TYPE_PIXEL, "uBrightmap", samp },
 		// [rc4l] The material array needs its own, and this is not optional.

@@ -466,16 +466,17 @@ static bool EnsureDeferredDecalPass()
 		{ Diligent::SHADER_TYPE_PIXEL, "uSceneDepth", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
 		{ Diligent::SHADER_TYPE_PIXEL, "uSceneNormal", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
 	};
-	static Diligent::SamplerDesc samp;
+	// [rc4l] Per call, never static: a static array keeps the filter of the first build after the engine's changes.
+	Diligent::SamplerDesc samp;
 	FillSamplerFromEngine(samp);
 	// CLAMP both ways: the picture is bounded by the box, and a wrap would tile the graphic across
 	// whatever the box happens to reach.
 	samp.AddressU = Diligent::TEXTURE_ADDRESS_CLAMP;
 	samp.AddressV = Diligent::TEXTURE_ADDRESS_CLAMP;
-	static Diligent::SamplerDesc depthSamp;
+	Diligent::SamplerDesc depthSamp;
 	depthSamp.MinFilter = depthSamp.MagFilter = depthSamp.MipFilter = Diligent::FILTER_TYPE_POINT;
 	depthSamp.AddressU = depthSamp.AddressV = Diligent::TEXTURE_ADDRESS_CLAMP;
-	static Diligent::ImmutableSamplerDesc samplers[] = {
+	const Diligent::ImmutableSamplerDesc samplers[] = {
 		{ Diligent::SHADER_TYPE_PIXEL, "uTex", samp },
 		{ Diligent::SHADER_TYPE_PIXEL, "uSceneDepth", depthSamp },
 		{ Diligent::SHADER_TYPE_PIXEL, "uSceneNormal", depthSamp },
