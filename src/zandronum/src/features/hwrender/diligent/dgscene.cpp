@@ -58,6 +58,7 @@
 #include "features/hwrender/computation/scenebinding_compute.h"
 #include "features/hwrender/computation/planemirror_compute.h"   // [rc4l] reflective floors and ceilings   // [rc4l] a batch's pipeline, and when a resize rebuilds the targets
 #include "features/hwrender/computation/growbuffer_compute.h"   // [rc4l] the per-frame vertex streams
+#include "features/hwrender/computation/texfilter_compute.h"   // [rc4l] the engine's filter modes
 #include "features/hwrender/computation/backendview_compute.h"   // [rc4l] the camera, as GL builds it
 #include "features/hwrender/computation/sceneview_compute.h"   // [rc4l] GL's vertical field of view
 #include "features/hwrender/diligent/dgshared.h"          // [rc4l] FUA_CONSTANTS_GLSL, the constant block every pass declares
@@ -892,6 +893,7 @@ static void UpdateMaterialSlotInBindings(unsigned int slot)
 // the comment inside RefreshBindless for why that is not optional.
 static void ReleaseScenePipelines();
 static void ReleasePlaneMirrors();
+static void ReleaseLineMirrorPipeline();
 static void ReleaseStackPortals();
 static bool EnsureScenePipeline(FString &err);
 
@@ -3477,11 +3479,15 @@ static void ReleaseScenePipelines()
 	// it inside CommitShaderResources, which reads as a driver fault.
 	ReleaseWorldSRBs();
 	ReleasePlaneMirrors();
+	ReleaseLineMirrorPipeline();
 	ReleaseStackPortals();
 	for (int i = 0; i < 13; i++) g_worldPSOs[i] = NULL;
 	g_bindlessReady = false;
 	ReleaseBatchSRBs();
 	ReleaseMaterialSRBs();
+	// [rc4l] Their samplers come from the engine's filter too, so they are made again with the rest.
+	ReleaseHorizonPipeline();
+	ReleaseDecalPipelines();
 	for (unsigned i = 0; i < g_batches.Size(); i++) g_batches[i].srb = NULL;
 	g_srb.Release();
 	g_srbMasked.Release();
@@ -3614,7 +3620,7 @@ static bool Ensure2DPipeline()
 		{ Diligent::SHADER_TYPE_PIXEL, "uTex", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
 		{ Diligent::SHADER_TYPE_PIXEL, "uBrightmap", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
 	};
-	static Diligent::SamplerDesc samp;
+	Diligent::SamplerDesc samp;
 	// [rc4l] CLAMP, and no mips: the engine draws 2D with CLAMP_XY_NOMIP. Wrapping would bleed the
 	// opposite edge of a font glyph into its neighbour, and a mipped status bar goes soft.
 	samp.MinFilter = Diligent::FILTER_TYPE_POINT;
@@ -3622,7 +3628,7 @@ static bool Ensure2DPipeline()
 	samp.MipFilter = Diligent::FILTER_TYPE_POINT;
 	samp.AddressU = Diligent::TEXTURE_ADDRESS_CLAMP;
 	samp.AddressV = Diligent::TEXTURE_ADDRESS_CLAMP;
-	static Diligent::ImmutableSamplerDesc samplers[] = {
+	const Diligent::ImmutableSamplerDesc samplers[] = {
 		{ Diligent::SHADER_TYPE_PIXEL, "uTex", samp },
 		{ Diligent::SHADER_TYPE_PIXEL, "uBrightmap", samp },
 	};
@@ -3831,16 +3837,11 @@ static void Draw2D(Diligent::IDeviceContext *ctx)
 // mipmapping off, which a sampler expresses by refusing to sample past mip 0.
 void FillSamplerFromEngine(Diligent::SamplerDesc &samp)
 {
-	const int mode = (gl_texture_filter >= 0 && gl_texture_filter <= 5) ? (int)gl_texture_filter : 0;
-	const bool magLinear = (mode == 2 || mode == 3 || mode == 4);
-	const bool minLinear = (mode == 2 || mode == 3 || mode == 4);
-	const bool mipLinear = (mode == 4 || mode == 5);
-	const bool mipmapped = (mode != 0 && mode != 2);
-
-	samp.MinFilter = minLinear ? Diligent::FILTER_TYPE_LINEAR : Diligent::FILTER_TYPE_POINT;
-	samp.MagFilter = magLinear ? Diligent::FILTER_TYPE_LINEAR : Diligent::FILTER_TYPE_POINT;
-	samp.MipFilter = mipLinear ? Diligent::FILTER_TYPE_LINEAR : Diligent::FILTER_TYPE_POINT;
-	samp.MaxLOD = mipmapped ? 1000.0f : 0.0f;
+	const zx::hwrender::TextureFilter f = zx::hwrender::ComputeTextureFilter((int)gl_texture_filter);
+	samp.MinFilter = f.minLinear ? Diligent::FILTER_TYPE_LINEAR : Diligent::FILTER_TYPE_POINT;
+	samp.MagFilter = f.magLinear ? Diligent::FILTER_TYPE_LINEAR : Diligent::FILTER_TYPE_POINT;
+	samp.MipFilter = f.mipLinear ? Diligent::FILTER_TYPE_LINEAR : Diligent::FILTER_TYPE_POINT;
+	samp.MaxLOD = f.mipmapped ? 1000.0f : 0.0f;
 }
 
 static bool EnsureScenePipeline(FString &err)
@@ -3881,13 +3882,17 @@ static bool EnsureScenePipeline(FString &err)
 	if (!vs || !psOpaque || !psMasked || !psTrans || !psRedAlpha)
 	{ err = "scene shader compilation failed"; return false; }
 
-	Diligent::BufferDesc cbd;
-	cbd.Name = "fua scene constants";
-	cbd.Size = sizeof(float) * zx::hwrender::kSceneConstantFloats;
-	cbd.Usage = Diligent::USAGE_DYNAMIC;
-	cbd.BindFlags = Diligent::BIND_UNIFORM_BUFFER;
-	cbd.CPUAccessFlags = Diligent::CPU_ACCESS_WRITE;
-	dev->CreateBuffer(cbd, nullptr, &g_cb);
+	// [rc4l] Created once and never replaced, since the horizon, decal and mirror pipelines bind it too and a new one after a map change left them drawing the old map's last camera.
+	if (!g_cb)
+	{
+		Diligent::BufferDesc cbd;
+		cbd.Name = "fua scene constants";
+		cbd.Size = sizeof(float) * zx::hwrender::kSceneConstantFloats;
+		cbd.Usage = Diligent::USAGE_DYNAMIC;
+		cbd.BindFlags = Diligent::BIND_UNIFORM_BUFFER;
+		cbd.CPUAccessFlags = Diligent::CPU_ACCESS_WRITE;
+		dev->CreateBuffer(cbd, nullptr, &g_cb);
+	}
 	if (!g_cb) { err = "constant buffer creation failed"; return false; }
 
 	// [rc4l] The dynamic light buffer, created ONCE at a fixed capacity.
@@ -5486,6 +5491,8 @@ static TArray<MirrorSurface> g_mirrors;
 static Diligent::RefCntAutoPtr<Diligent::IBuffer> g_mirrorVB;
 static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_mirrorPSO;
 static Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding> g_mirrorSRB;
+// [rc4l] Its traced path binds the level's materials and piece buffer on the pipeline, so a level change makes it again.
+static void ReleaseLineMirrorPipeline() { g_mirrorSRB.Release(); g_mirrorPSO.Release(); }
 static Diligent::RefCntAutoPtr<Diligent::ITexture> g_mirrorColor, g_mirrorDepth;
 static int g_mirrorW = 0, g_mirrorH = 0;
 // True once the TLAS is genuinely bound to the mirror shader; false means use the planar path.
@@ -5694,7 +5701,7 @@ static bool EnsureMirrorResources()
 			{ Diligent::SHADER_TYPE_PIXEL, "Verts", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
 			{ Diligent::SHADER_TYPE_PIXEL, "uSky", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
 		};
-		static Diligent::SamplerDesc samp;
+		Diligent::SamplerDesc samp;
 		samp.MinFilter = Diligent::FILTER_TYPE_LINEAR;
 		samp.MagFilter = Diligent::FILTER_TYPE_LINEAR;
 		samp.MipFilter = Diligent::FILTER_TYPE_POINT;
@@ -5707,11 +5714,11 @@ static bool EnsureMirrorResources()
 		// smeared every one of them into a stretched edge colour. In a reflection that reads as an
 		// untextured floor, which is indistinguishable from a missing texture until you notice the
 		// walls beside it are fine.
-		static Diligent::SamplerDesc matSamp = samp;
+		Diligent::SamplerDesc matSamp = samp;
 		matSamp.AddressU = Diligent::TEXTURE_ADDRESS_WRAP;
 		matSamp.AddressV = Diligent::TEXTURE_ADDRESS_WRAP;
 
-		static Diligent::ImmutableSamplerDesc samplers[] = {
+		const Diligent::ImmutableSamplerDesc samplers[] = {
 			{ Diligent::SHADER_TYPE_PIXEL, "uTex", samp },
 			// [rc4l] uMaterials needs its own immutable sampler. A GLSL sampler2D is a COMBINED image
 			// sampler, so an array of them needs a sampler declared for the array too -- without it the

@@ -129,13 +129,27 @@ export function isMain(metaUrl, argv1 = process.argv[1]) {
   return Boolean(argv1) && metaUrl === pathToFileURL(argv1).href;
 }
 
-// [rc4l] Run a scenario only when its own file is invoked (compareTemplate unless it names another), so importing its wad builder launches nothing; argv[2] is the port.
-// [rc4l] Scenario options by module URL, kept when a scenario is imported rather than run, so `fuactl probe` can launch it.
+// [rc4l] Scenarios by module URL, kept when one is imported rather than run, so `fuactl probe` and `fuactl scenarios` can launch it.
 const registered = new Map();
-export function scenarioOptions(metaUrl) { return registered.get(metaUrl) || null; }
+export function scenarioOptions(metaUrl) { const e = registered.get(metaUrl); return e ? e.options : null; }
 
+// [rc4l] An imported scenario as one call that runs its comparison and returns its outcome, or null if the module registered none.
+export function scenarioRun(metaUrl) {
+  const e = registered.get(metaUrl);
+  if (!e) return null;
+  return async () => { const opts = e.options(); return scenarioOutcome(opts.name, await e.compare(opts)); };
+}
+
+// [rc4l] The template scenarios in dir (all, or those named), by file: the folder also holds measurement scripts that run as soon as they are imported.
+export function templateScenarioFiles(dir, names = []) {
+  return fs.readdirSync(dir).filter((f) => f.endsWith(".mjs")
+    && (names.length === 0 || names.includes(f.slice(0, -4)))
+    && fs.readFileSync(path.join(dir, f), "utf8").includes("runScenarioIfMain("));
+}
+
+// [rc4l] Run a scenario only when its own file is invoked (compareTemplate unless it names another), so importing its wad builder launches nothing; argv[2] is the port.
 export function runScenarioIfMain(metaUrl, options, compare = compareTemplate) {
-  if (!isMain(metaUrl)) { registered.set(metaUrl, options); return; }
+  if (!isMain(metaUrl)) { registered.set(metaUrl, { options, compare }); return; }
   const opts = options();
   compare({ ...opts, port: Number(process.argv[2] || opts.port || 7796) }).then((r) => {
     const out = scenarioOutcome(opts.name, r);

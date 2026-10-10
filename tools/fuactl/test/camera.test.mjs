@@ -1,6 +1,19 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { pixelToFace, pointToPixel } from "../src/camera.mjs";
+import { pixelToFace, stretchedPitch } from "../src/camera.mjs";
+
+const DEG = Math.PI / 180;
+
+// [rc4l] The forward projection pixelToFace inverts: where a map point (x, y, height) lands in a capture from camera, or null behind the eye.
+function pointToPixel(camera, point, width, height, stretch = 1.2, fovY = 2 * Math.atan(0.75)) {
+  const yaw = camera.angle * DEG, pc = stretchedPitch(camera.pitch || 0, stretch);
+  const p5 = 1 / Math.tan(fovY / 2), p0 = p5 / (width / height);
+  const rx = point.x - camera.x, ry = point.y - camera.y, rz = (point.z - camera.viewz) * stretch;
+  const fh = Math.cos(yaw) * rx + Math.sin(yaw) * ry, side = Math.sin(yaw) * rx - Math.cos(yaw) * ry;
+  const depth = Math.cos(pc) * fh + Math.sin(pc) * rz, ye = -Math.sin(pc) * fh + Math.cos(pc) * rz;
+  if (depth <= 0) return null;
+  return { x: width / 2 + (side / depth) * p0 * (width / 2) - 0.5, y: height / 2 - (ye / depth) * p5 * (height / 2) - 0.5 };
+}
 
 // [rc4l] The stackportal template's upper room, where GL put the far corner's top on row 345 of 640 looking up 40 degrees.
 const CORNER = { x: 448, y: 448, viewz: 169, angle: 225, pitch: -40 };

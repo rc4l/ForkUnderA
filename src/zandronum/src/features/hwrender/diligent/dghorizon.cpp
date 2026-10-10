@@ -119,6 +119,8 @@ static unsigned int g_hzVBCapacity = 0;
 static bool         g_hzFailed = false;
 static int          g_hzBusiestHalves = 0, g_hzBusiestDraws = 0;   // [rc4l] the busiest pass since fua_horizons last asked
 
+void ReleaseHorizonPipeline() { g_hzPSO.Release(); }
+
 static bool EnsureHorizonPipeline()
 {
 	if (g_hzPSO) return true;

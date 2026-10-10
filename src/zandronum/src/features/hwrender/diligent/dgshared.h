@@ -65,6 +65,10 @@ bool InvertMatrix4(const float *m, float *out);
 // the world about how textures are filtered.
 void FillSamplerFromEngine(Diligent::SamplerDesc &samp);
 
+// [rc4l] Drop the horizon and decal passes' pipelines, so the next draw builds them with the engine's current filter.
+void ReleaseHorizonPipeline();
+void ReleaseDecalPipelines();
+
 // [rc4l] While the sky portal pass is drawing: where its camera stands and how far it may reach.
 bool SkyPortalReach(float &camX, float &camY, float &reach);
 

@@ -1,0 +1,39 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 rc4l
+
+#include <gtest/gtest.h>
+#include "features/hwrender/computation/texfilter_compute.h"
+
+using namespace zx::hwrender;
+
+// [rc4l] TexFilter[] in gl_texture.cpp: none, nearest mipmapped, linear, bilinear, trilinear, nearest with linear mips.
+TEST(TexFilterCompute, EachModeIsTheEnginesOwn)
+{
+	const bool expect[6][4] = {
+		// min    mag    mip    mipmapped
+		{ false, false, false, false },
+		{ false, false, false, true  },
+		{ true,  true,  false, false },
+		{ true,  true,  false, true  },
+		{ true,  true,  true,  true  },
+		{ false, false, true,  true  },
+	};
+	for (int m = 0; m < 6; m++)
+	{
+		const TextureFilter f = ComputeTextureFilter(m);
+		EXPECT_EQ(expect[m][0], f.minLinear) << m;
+		EXPECT_EQ(expect[m][1], f.magLinear) << m;
+		EXPECT_EQ(expect[m][2], f.mipLinear) << m;
+		EXPECT_EQ(expect[m][3], f.mipmapped) << m;
+	}
+}
+
+// [rc4l] WDI03's 8x8 test skybox: GL drew it crisp at mode 0 while the backend's sky smoothed it regardless.
+TEST(TexFilterCompute, AModeOutOfRangeIsNearestWithNoMips)
+{
+	for (int m : { -1, 6, 99 })
+	{
+		const TextureFilter f = ComputeTextureFilter(m);
+		EXPECT_FALSE(f.minLinear || f.magLinear || f.mipLinear || f.mipmapped) << m;
+	}
+}

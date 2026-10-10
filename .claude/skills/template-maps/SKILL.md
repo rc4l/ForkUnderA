@@ -73,7 +73,9 @@ runScenarioIfMain(import.meta.url, () => ({ name: "horizon", wad: buildHorizonWa
 
 `runScenarioIfMain` runs only when the file itself is invoked (`node scenarios/horizon.mjs [port]`), prints
 each box's verdict, and exits 0 (all under ceiling), 1 (failed), 2 (crashed) or 3 (refused) -- so a test
-can import the builder without launching anything.
+can import the builder without launching anything. The whole set runs as one command,
+`node src/cli.mjs scenarios [name ...] [--engine build-win/Release/forkundera.exe]`, which prints only
+the boxes that did not pass and exits 1 if any scenario failed.
 
 `compareTemplate` refuses to run while another engine is open (GL readback under another window is
 undefined), launches each map twice — GL alone, then Vulkan with `fua_dg_standalone 0` — captures

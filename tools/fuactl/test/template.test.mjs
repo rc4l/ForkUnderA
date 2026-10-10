@@ -1,7 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { judge, scenarioOutcome, isMain, sideCommands, boxWithin, runScenarioIfMain, scenarioOptions, probeChoices } from "../src/template.mjs";
+import { judge, scenarioOutcome, isMain, sideCommands, boxWithin, runScenarioIfMain, scenarioOptions, scenarioRun, templateScenarioFiles, probeChoices } from "../src/template.mjs";
 import { pathToFileURL } from "node:url";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
 // [rc4l] A decoded-frame stand-in: w x h, every pixel the same RGB.
 function flat(w, h, rgb) {
@@ -49,6 +52,28 @@ test("a scenario imported rather than run keeps its options for probing", () => 
   runScenarioIfMain(url, () => ({ name: "imported" }));
   assert.equal(scenarioOptions(url)().name, "imported");
   assert.equal(scenarioOptions("file:///scenarios/never.mjs"), null);
+});
+
+test("an imported scenario runs as one call through the comparison it named", async () => {
+  const url = "file:///scenarios/runnable.mjs";
+  const seen = [];
+  runScenarioIfMain(url, () => ({ name: "runnable", port: 7 }), async (opts) => { seen.push(opts.port); return { lines: ["PASS a"], failed: 0 }; });
+  const out = await scenarioRun(url)();
+  assert.deepEqual(seen, [7]);
+  assert.deepEqual(out, { lines: ["PASS a", "all runnable boxes within their limits"], code: 0 });
+  assert.equal(scenarioRun("file:///scenarios/never.mjs"), null);
+});
+
+test("only files that register a template scenario are run, all of them or those named", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fuactl-scen-"));
+  fs.writeFileSync(path.join(dir, "a.mjs"), "runScenarioIfMain(import.meta.url, () => ({}));");
+  fs.writeFileSync(path.join(dir, "b.mjs"), "runScenarioIfMain(import.meta.url, () => ({}));");
+  fs.writeFileSync(path.join(dir, "measure.mjs"), "await launchSomething();");
+  fs.writeFileSync(path.join(dir, "bench.json"), "{}");
+  try {
+    assert.deepEqual(templateScenarioFiles(dir).sort(), ["a.mjs", "b.mjs"]);
+    assert.deepEqual(templateScenarioFiles(dir, ["b", "measure"]), ["b.mjs"]);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
 test("a probe takes the named map, vantage and side, else the first map, vantage and Vulkan side", () => {

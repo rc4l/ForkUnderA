@@ -393,6 +393,12 @@ void GetDeferredDecalStats(int &boxes, int &draws, int &textures, const char **b
 	if (bail) *bail = g_ddBail;
 }
 
+void ReleaseDecalPipelines()
+{
+	g_ddSRB.Release(); g_ddAddSRB.Release();
+	g_ddPSO.Release(); g_ddAddPSO.Release();
+}
+
 static bool EnsureDeferredDecalPass()
 {
 	if (g_ddPSO) return true;

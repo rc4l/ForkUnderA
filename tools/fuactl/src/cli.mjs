@@ -21,7 +21,7 @@ import * as sweepMod from "./sweep.mjs";
 import { png } from "./png.mjs";
 import { actorsNear } from "./actors.mjs";
 import { pixelToFace } from "./camera.mjs";
-import { scenarioOptions, probeScenario } from "./template.mjs";
+import { scenarioOptions, scenarioRun, templateScenarioFiles, probeScenario } from "./template.mjs";
 import { decodePNG, abDiff, boxDiff } from "./pngcore.mjs";
 import fs from "node:fs";
 import os from "node:os";
@@ -112,6 +112,7 @@ const USAGE = `fuactl <command>
   mapdata <MAP> (--preset ID | --file a.pk3,b.wad) [--sector N,..] [--line N,..] [--special N] [--tag N] [--scripts REGEX]   a UDMF level's summary, sectors, lines and ACS source lines, read from its files
   actors [--near x,y] [--radius R] [--toward YAW | --ahead] [--cone DEG] [--class REGEX]   actors near a point (default the player), nearest first, optionally only in a direction
   probe <scenario.mjs> [--map M] [--vantage V] [--side S] [<command> ...]   launch a template scenario's map at a vantage and run console commands there
+  scenarios [name ...] [--engine path/to/forkundera.exe]   run every template scenario (or the named ones) in turn and summarise; --engine picks the binary, as FUACTL_ENGINE does
   ready [--port P --token T] [--timeout S]   wait until an instance answers (defaults to the last play session)
   goto (--spot NAME | --at x,y,z --face yaw,pitch) [--port P]   stand the player there
   motion [--spot NAME | --at x,y,z --face yaw,pitch] [--box x0,y0,x1,y1] [--interval MS]   per-pixel change between two captures apart, Vulkan and GL, sim running
@@ -268,6 +269,25 @@ async function main() {
       if (!options) { console.error(`${rest[0]} does not call runScenarioIfMain`); process.exit(2); }
       const out = await probeScenario(options(), { map: flags.map, vantage: flags.vantage, side: flags.side }, rest.slice(1));
       for (const o of out) console.log(`> ${o.command}\n${o.output}`);
+      break;
+    }
+    // [rc4l] `fuactl scenarios` -- the whole regression set as one command, where it was a shell loop over scenarios/*.mjs.
+    case "scenarios": {
+      if (flags.engine) process.env.FUACTL_ENGINE = String(flags.engine);
+      const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "scenarios");
+      const files = templateScenarioFiles(dir, rest);
+      let failed = 0;
+      for (const f of files) {
+        const url = pathToFileURL(path.join(dir, f)).href;
+        await import(url);
+        const run = scenarioRun(url);
+        if (!run) continue;
+        const out = await run();
+        for (const l of out.lines.filter((x) => !x.startsWith("PASS"))) console.log(`${f.slice(0, -4).padEnd(18)} ${l}`);
+        if (out.code !== 0) failed++;
+      }
+      console.log(failed ? `${failed} scenario(s) failed` : "every scenario within its limits");
+      process.exitCode = failed ? 1 : 0;
       break;
     }
     case "rpc": {

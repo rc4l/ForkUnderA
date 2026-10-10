@@ -2,7 +2,7 @@
 const DEG = Math.PI / 180;
 
 // [rc4l] The pitch GL turns by, the playsim's seen through stretched pixels (up is negative, as viewpitch has it).
-function stretchedPitch(pitchDeg, stretch) {
+export function stretchedPitch(pitchDeg, stretch) {
   const up = -pitchDeg * DEG;
   return Math.asin(Math.sin(up) * stretch / Math.hypot(Math.cos(up), Math.sin(up) * stretch));
 }
@@ -18,13 +18,3 @@ export function pixelToFace(camera, px, py, width, height, { stretch = 1.2, fovY
   return { angle: Math.atan2(dy, dx) / DEG, pitch: -Math.atan2(up, Math.hypot(dx, dy)) / DEG };
 }
 
-// [rc4l] Where a map point (x, y, height) lands in a width x height capture from camera (eye at camera.x, y, viewz), or null behind the eye.
-export function pointToPixel(camera, point, width, height, { stretch = 1.2, fovY = 2 * Math.atan(0.75) } = {}) {
-  const yaw = camera.angle * DEG, pc = stretchedPitch(camera.pitch || 0, stretch);
-  const p5 = 1 / Math.tan(fovY / 2), p0 = p5 / (width / height);
-  const rx = point.x - camera.x, ry = point.y - camera.y, rz = (point.z - camera.viewz) * stretch;
-  const fh = Math.cos(yaw) * rx + Math.sin(yaw) * ry, side = Math.sin(yaw) * rx - Math.cos(yaw) * ry;
-  const depth = Math.cos(pc) * fh + Math.sin(pc) * rz, ye = -Math.sin(pc) * fh + Math.cos(pc) * rz;
-  if (depth <= 0) return null;
-  return { x: width / 2 + (side / depth) * p0 * (width / 2) - 0.5, y: height / 2 - (ye / depth) * p5 * (height / 2) - 0.5 };
-}
