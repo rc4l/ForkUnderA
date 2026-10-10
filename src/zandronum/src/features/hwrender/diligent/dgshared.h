@@ -14,6 +14,15 @@
 #ifndef ZX_DGSHARED_H
 #define ZX_DGSHARED_H
 
+// [rc4l] The scene constant block every pass binds, declared once; uFrame.x is the warp clock in seconds.
+#define FUA_CONSTANTS_GLSL \
+	"layout(binding = 0) uniform Constants { mat4 uMVP; vec4 uCameraPos; vec4 uLightParams; vec4 uClipPlane; vec4 uScreen; vec4 uSkyColor; vec4 uFrame; };\n"
+
+// [rc4l] One piece's record as every shader reads it, declared once so its stride cannot drift from ScenePieceData's.
+#define FUA_PIECEDATA_GLSL \
+	"struct PieceData { vec4 colorLight; vec4 fogAlphaMat; vec4 fogColor; vec4 normal; vec4 floodU; vec4 floodV; vec4 actorLight; };\n" \
+	"layout(std430, binding = 9) readonly buffer Pieces { PieceData pieces[]; };\n"
+
 #include "RenderDevice.h"
 #include "DeviceContext.h"
 #include "SwapChain.h"
@@ -22,11 +31,16 @@
 #include "Sampler.h"
 #include "PipelineState.h"
 #include "ShaderResourceBinding.h"
+#include "Shader.h"
+#include "RefCntAutoPtr.hpp"
 
 namespace zx { namespace hwrender {
 
 Diligent::IRenderDevice  *GetDevice();
 Diligent::ISwapChain     *GetSwapChain();
+
+// [rc4l] One GLSL stage compiled as written, or null when it fails (Diligent says why through its message callback).
+Diligent::RefCntAutoPtr<Diligent::IShader> CompileShader(Diligent::SHADER_TYPE type, const char *name, const char *source);
 
 // The texture a material draws with, and a resource binding for one against a given pipeline. Both
 // cache, so asking every frame is what they are for.

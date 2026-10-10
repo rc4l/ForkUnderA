@@ -22,13 +22,32 @@ class GLSprite;
 struct FFlatVertex;
 struct FColormap;
 struct sector_t;
-namespace zx { namespace levelmesh { struct MeshRange; } }
+struct GLSectorPlane;
+class FMaterial;
+namespace zx { namespace levelmesh { struct MeshRange; struct PlaneUVTransform; } }
 
 namespace zx { namespace levelmesh {
 
 // Bake one subsector's plane into the mesh and register it as a piece. Cheap and idempotent: a
 // (subsector, plane) already baked at the same geometry is skipped.
 void RegisterFlatSubsector(const GLFlat &flat, subsector_t *sub, bool ceiling);
+
+// [rc4l] Whether the walk in progress belongs to the player's view (true) or a camera texture's, as RenderViewpoint was told.
+void SetMainView(bool mainView);
+bool MainView();
+
+// [rc4l] GL's DrawScene nesting: the player's scene is 1, every portal's runs inside it.
+void EnterScene();
+void LeaveScene();
+
+// [rc4l] Whether what is being captured right now belongs to the frame (ComputeOwnsFrameCapture): never a mirror, skybox or camera-texture scene.
+bool PlayerWalkActive();
+
+// [rc4l] A fullbright texture draws at light 255 and white light, as GLFlat::Process and DrawFloodedPlane both decide it.
+void ApplyFullbright(const FMaterial *mat, FColormap &cm, int &lightLevel);
+
+// [rc4l] A sector plane's texture mapping, by gl_SetPlaneTextureRotation's inputs: its offsets, scale, angle and the texture's size.
+void PlaneUVFor(const GLSectorPlane &plane, FMaterial *mat, PlaneUVTransform &out);
 
 // [rc4l] Every flat in the level, from the map, with no GLFlat involved.
 //

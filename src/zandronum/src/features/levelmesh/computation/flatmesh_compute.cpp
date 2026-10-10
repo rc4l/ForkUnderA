@@ -7,6 +7,14 @@
 
 namespace zx { namespace levelmesh {
 
+FFFaceLight ComputeFFFaceLight(bool top, bool viewedFromBelow, bool fog, bool fix)
+{
+	FFFaceLight l;
+	l.lightBelow = top ? fog : !fog;
+	l.modelLight = fix && !top && !viewedFromBelow;
+	return l;
+}
+
 bool ComputeFlatWindingReversed(bool viewedFromBelow)
 {
 	return viewedFromBelow;
@@ -147,10 +155,15 @@ PlaneUVAffine ComputePlaneUVAffine(const PlaneUVTransform &t)
 	return a;
 }
 
-int ComputeSkyCaptureList(bool mainView, int portalDepth)
+int ComputeSkyCaptureList(bool mainView, int sceneNesting)
 {
-	if (portalDepth > 0) return kSkyCaptureNone;
+	if (sceneNesting > 1) return kSkyCaptureNone;
 	return mainView ? kSkyCaptureMain : kSkyCaptureCamera;
+}
+
+bool ComputeOwnsFrameCapture(bool mainView, int sceneNesting)
+{
+	return ComputeSkyCaptureList(mainView, sceneNesting) == kSkyCaptureMain;
 }
 
 }} // namespace zx::levelmesh

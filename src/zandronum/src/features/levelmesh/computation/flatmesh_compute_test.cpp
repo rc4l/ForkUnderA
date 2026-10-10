@@ -476,9 +476,43 @@ TEST(PlaneUVAffine, ACanvasFlipsV)
 // [rc4l] wdiexsec's reflective floor re-walked the scene from under it, and that walk's four sky quads replaced the player's eighty-eight.
 TEST(FlatMeshCompute, OnlyThePlayersOuterWalkFillsThePlayersSkyList)
 {
-	EXPECT_EQ(kSkyCaptureMain, ComputeSkyCaptureList(true, 0));
-	EXPECT_EQ(kSkyCaptureNone, ComputeSkyCaptureList(true, 1));    // [rc4l] a mirror or skybox re-entry
-	EXPECT_EQ(kSkyCaptureNone, ComputeSkyCaptureList(true, 3));
-	EXPECT_EQ(kSkyCaptureCamera, ComputeSkyCaptureList(false, 0)); // [rc4l] a camera texture's own view
-	EXPECT_EQ(kSkyCaptureNone, ComputeSkyCaptureList(false, 1));
+	EXPECT_EQ(kSkyCaptureMain, ComputeSkyCaptureList(true, 1));
+	EXPECT_EQ(kSkyCaptureNone, ComputeSkyCaptureList(true, 2));    // [rc4l] a mirror or skybox re-entry
+	EXPECT_EQ(kSkyCaptureNone, ComputeSkyCaptureList(true, 4));
+	EXPECT_EQ(kSkyCaptureCamera, ComputeSkyCaptureList(false, 1)); // [rc4l] a camera texture's own view
+	EXPECT_EQ(kSkyCaptureNone, ComputeSkyCaptureList(false, 2));
+}
+
+// [rc4l] wdiexsec: looking up from under the pool, the water's underside took the light under it, the script's blue, where GL lights a top plane from above.
+TEST(FlatMeshCompute, AFacesLightComesFromItsPlaneNotFromTheViewer)
+{
+	EXPECT_FALSE(ComputeFFFaceLight(true, false, false, false).lightBelow);   // [rc4l] top, from above
+	EXPECT_FALSE(ComputeFFFaceLight(true, true, false, false).lightBelow);    // [rc4l] top, from below
+	EXPECT_TRUE(ComputeFFFaceLight(false, true, false, false).lightBelow);    // [rc4l] bottom, from below
+	EXPECT_TRUE(ComputeFFFaceLight(false, false, false, false).lightBelow);   // [rc4l] bottom, from above
+}
+
+TEST(FlatMeshCompute, AFogFaceReadsItsLightFromTheOtherSide)
+{
+	EXPECT_TRUE(ComputeFFFaceLight(true, true, true, false).lightBelow);
+	EXPECT_FALSE(ComputeFFFaceLight(false, false, true, false).lightBelow);
+}
+
+// [rc4l] GL gives FF_FIX's model light to a bottom plane seen from above and to nothing else.
+TEST(FlatMeshCompute, OnlyABottomSeenFromAboveTakesTheFixedModelLight)
+{
+	EXPECT_TRUE(ComputeFFFaceLight(false, false, false, true).modelLight);
+	EXPECT_FALSE(ComputeFFFaceLight(true, true, false, true).modelLight);
+	EXPECT_FALSE(ComputeFFFaceLight(true, false, false, true).modelLight);
+	EXPECT_FALSE(ComputeFFFaceLight(false, true, false, true).modelLight);
+	EXPECT_FALSE(ComputeFFFaceLight(false, false, false, false).modelLight);
+}
+
+// [rc4l] wdiexsec: a barrel drawn in the player's scene was wiped by a mirror walk, and gating on portal depth then dropped it, since GL draws the player's scene at depth 1.
+TEST(FlatMeshCompute, OnlyThePlayersOutermostSceneOwnsTheFramesCapture)
+{
+	EXPECT_TRUE(ComputeOwnsFrameCapture(true, 1));
+	EXPECT_TRUE(ComputeOwnsFrameCapture(true, 0));
+	EXPECT_FALSE(ComputeOwnsFrameCapture(true, 2));
+	EXPECT_FALSE(ComputeOwnsFrameCapture(false, 1));
 }

@@ -10,30 +10,22 @@ float ComputeBandPlaneZ(const BandPlane &p, float x, float y)
 	return p.ic * (-p.d - p.a * x - p.b * y);
 }
 
-int ComputeLightBandIndex(const BandPlane *planes, int count, float x, float y, float up)
+BandPlane ComputeBandPlaneFromFixed(double a, double b, double ic, double d)
 {
-	if (planes == 0 || count <= 0) return 0;
-
-	// [rc4l] Walk down until the point sits above the next boundary. Mirrors SplitWall's descent:
-	// it compares against lightlist[i+1]'s plane to decide where the current band ends, so the
-	// boundary belongs to the band below it -- a pixel exactly on plane[i+1] is band i+1.
-	for (int i = 0; i + 1 < count; i++)
-	{
-		const float bottom = ComputeBandPlaneZ(planes[i + 1], x, y);
-		if (up > bottom) return i;
-	}
-	return count - 1;
+	const double unit = 65536.0;
+	BandPlane p;
+	p.a = (float)(a / unit);
+	p.b = (float)(b / unit);
+	p.ic = (float)(ic / unit);
+	p.d = (float)(d / unit);
+	return p;
 }
 
-int ComputeUploadableBandCount(int listSize)
+void ComputeBandBottomAtEnds(const BandPlane &boundary, float x1, float y1, float x2, float y2, float out[2])
 {
-	if (listSize <= 0) return 0;
-	return (listSize > kMaxLightBands) ? kMaxLightBands : listSize;
-}
-
-bool ComputeNeedsGeometrySplit(int listSize)
-{
-	return listSize > kMaxLightBands;
+	const bool sloped = boundary.a != 0.f || boundary.b != 0.f;
+	out[0] = ComputeBandPlaneZ(boundary, sloped ? x1 : x2, sloped ? y1 : y2);
+	out[1] = ComputeBandPlaneZ(boundary, x2, y2);
 }
 
 }} // namespace zx::levelmesh

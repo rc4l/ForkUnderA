@@ -14,8 +14,18 @@ import { decodePNG, boxDiff } from "./pngcore.mjs";
 // [rc4l] The repo's own Freedoom 2, found from this file so the harness runs from any checkout.
 export const FREEDOOM2 = fileURLToPath(new URL("../../freedoom/freedoom2.wad", import.meta.url));
 
+// [rc4l] The console lines a side runs once its level is up: each cvar, then its own commands (a re-bake, say).
+export function sideCommands(side) {
+  return [...Object.entries(side.cvars || {}).map(([k, v]) => `${k} ${v}`), ...(side.commands || [])];
+}
+
 // [rc4l] The two launches a template compares by default; a scenario may name its own, each with the cvars it sets.
 export const GL_VS_VULKAN = [{ name: "gl", gl: true }, { name: "vk", gl: false }];
+
+// [rc4l] Whether a box's difference passes: at most its ceiling, and at least its floor when it must change.
+export function boxWithin(d, { ceiling, floor }) {
+  return (ceiling === undefined || d <= ceiling) && (floor === undefined || d >= floor);
+}
 
 // [rc4l] Mean |d| per box for one map, given each vantage's frame from both sides, as PASS/FAIL lines and a failure count.
 export function judge(map, frames, boxes, size = [1280, 720], [a, b] = ["gl", "vk"]) {
@@ -29,18 +39,21 @@ export function judge(map, frames, boxes, size = [1280, 720], [a, b] = ["gl", "v
       failed++;
       continue;
     }
-    for (const [name, { box, ceiling }] of Object.entries(boxes)) {
-      const d = boxDiff(A, B, box);
-      const ok = d <= ceiling;
+    for (const [name, { box, ceiling, floor, block = 16, vantage: only }] of Object.entries(boxes)) {
+      // [rc4l] A box naming a vantage is judged only there, for scenes whose vantages look at different parts of the frame.
+      if (only && only !== vantage) continue;
+      const d = boxDiff(A, B, box, block);
+      const ok = boxWithin(d, { ceiling, floor });
       if (!ok) failed++;
-      lines.push(`${ok ? "PASS" : "FAIL"} ${map} ${vantage.padEnd(8)} ${name.padEnd(8)} mean|d| ${d.toFixed(2).padStart(6)}  ceiling ${ceiling}`);
+      const limit = floor === undefined ? `ceiling ${ceiling}` : `floor ${floor}`;
+      lines.push(`${ok ? "PASS" : "FAIL"} ${map} ${vantage.padEnd(8)} ${name.padEnd(8)} mean|d| ${d.toFixed(2).padStart(6)}  ${limit}`);
     }
   }
   return { lines, failed };
 }
 
 // [rc4l] One locked launch of the wad, handed to `body` and always torn down; a crash comes back as the error.
-async function withEngine({ port, map, iwad, wadPath, gl, cvars = {}, size }, body) {
+async function withEngine({ port, map, iwad, wadPath, gl, side = {}, size }, body) {
   let inst = null;
   const c = new BridgeClient();
   try {
@@ -50,7 +63,7 @@ async function withEngine({ port, map, iwad, wadPath, gl, cvars = {}, size }, bo
     await cap.exec(c, "r_drawplayersprites 0");
     // [rc4l] GL keeps walking the scene, or nothing feeds the passes that still take from it.
     if (!gl) await cap.exec(c, "fua_dg_standalone 0");
-    for (const [k, v] of Object.entries(cvars)) await cap.exec(c, `${k} ${v}`);
+    for (const line of sideCommands(side)) await cap.exec(c, line);
     await cap.waitTics(c, 10);
     return await body(c);
   } catch (e) {
@@ -86,7 +99,7 @@ export async function compareTemplate({ name, wad, maps, vantages, boxes, sides 
     const frames = {};
     try {
       for (const side of sides) {
-        await withEngine({ port, map, iwad, wadPath, gl: !!side.gl, cvars: side.cvars, size }, async (c) => {
+        await withEngine({ port, map, iwad, wadPath, gl: !!side.gl, side, size }, async (c) => {
           for (const v of vantages) {
             const file = await grab(c, exe, `${name}_${map}_${v.name}_${side.name}`, v.at, !!side.gl);
             (frames[v.name] ||= {})[side.name] = file ? decodePNG(file) : null;
@@ -107,7 +120,7 @@ export async function compareTemplate({ name, wad, maps, vantages, boxes, sides 
 
 // [rc4l] A scenario's verdict as printed lines and an exit code: 0 all under ceiling, 1 failed, 3 refused.
 export function scenarioOutcome(name, r) {
-  const summary = r.failed ? `${r.failed} failed` : `all ${name} boxes under their ceilings`;
+  const summary = r.failed ? `${r.failed} failed` : `all ${name} boxes within their limits`;
   return { lines: [...r.lines, summary], code: r.refused ? 3 : r.failed ? 1 : 0 };
 }
 
@@ -116,13 +129,72 @@ export function isMain(metaUrl, argv1 = process.argv[1]) {
   return Boolean(argv1) && metaUrl === pathToFileURL(argv1).href;
 }
 
-// [rc4l] Run a scenario only when its own file is invoked, so a test importing its wad builder launches nothing; argv[2] is the port.
-export function runScenarioIfMain(metaUrl, options) {
-  if (!isMain(metaUrl)) return;
+// [rc4l] Run a scenario only when its own file is invoked (compareTemplate unless it names another), so importing its wad builder launches nothing; argv[2] is the port.
+// [rc4l] Scenario options by module URL, kept when a scenario is imported rather than run, so `fuactl probe` can launch it.
+const registered = new Map();
+export function scenarioOptions(metaUrl) { return registered.get(metaUrl) || null; }
+
+export function runScenarioIfMain(metaUrl, options, compare = compareTemplate) {
+  if (!isMain(metaUrl)) { registered.set(metaUrl, options); return; }
   const opts = options();
-  compareTemplate({ ...opts, port: Number(process.argv[2] || opts.port || 7796) }).then((r) => {
+  compare({ ...opts, port: Number(process.argv[2] || opts.port || 7796) }).then((r) => {
     const out = scenarioOutcome(opts.name, r);
     for (const l of out.lines) console.log(l);
     process.exit(out.code);
   }, (e) => { console.error(e); process.exit(2); });
+}
+
+// [rc4l] The map, vantage and side a probe uses: the named ones, else the first map, the first vantage and the first Vulkan side.
+export function probeChoices({ maps, vantages, sides = GL_VS_VULKAN }, { map, vantage, side } = {}) {
+  const v = vantage ? vantages.find((x) => x.name === vantage) : vantages[0];
+  const sd = side ? sides.find((x) => x.name === side) : (sides.find((x) => !x.gl) || sides[0]);
+  if (map && !maps.includes(map)) throw new Error(`no map ${map}: the scenario has ${maps.join(", ")}`);
+  if (!v) throw new Error(`no vantage ${vantage}: the scenario has ${vantages.map((x) => x.name).join(", ")}`);
+  if (!sd) throw new Error(`no side ${side}: the scenario has ${sides.map((x) => x.name).join(", ")}`);
+  return { map: map || maps[0], vantage: v, side: sd };
+}
+
+// [rc4l] One launch of a scenario's map, standing at a vantage, running console commands and returning what each printed: the look before a box is drawn.
+export async function probeScenario(opts, choice = {}, commands = []) {
+  const { name, wad, iwad = FREEDOOM2, port = 7796, size = [1280, 720] } = opts;
+  const { map, vantage, side } = probeChoices(opts, choice);
+  const wadPath = path.join(os.tmpdir(), `fua-${name}-probe.wad`);
+  fs.writeFileSync(wadPath, wad);
+  return withEngine({ port, map, iwad, wadPath, gl: !!side.gl, side, size }, async (c) => {
+    await c.rpc("player.setpos", vantage.at);
+    await cap.waitTics(c, 15);
+    const out = [];
+    for (const command of commands) out.push({ command, output: await cap.exec(c, command, { quietMs: 400 }) });
+    return out;
+  });
+}
+
+// [rc4l] One Vulkan launch per map, each vantage captured twice intervalMs apart, judged before against after: for what must move (a warp) or must not.
+export async function compareOverTime({ name, wad, maps, vantages, boxes, intervalMs = 600, iwad = FREEDOOM2, port = 7796,
+  size = [1280, 720] }) {
+  const exe = resolveEngine().split(path.sep).join("/");
+  const wadPath = path.join(os.tmpdir(), `fua-${name}-template.wad`);
+  fs.writeFileSync(wadPath, wad);
+  const lines = [];
+  let failed = 0;
+  for (const map of maps) {
+    const frames = {};
+    try {
+      await withEngine({ port, map, iwad, wadPath, gl: false, size }, async (c) => {
+        for (const v of vantages) {
+          const { vk: [before, after] } = await shot.captureOverTime(c, { at: v.at, engineBin: exe,
+            tag: `${name}_${map}_${v.name}`, intervalMs });
+          frames[v.name] = { before: before ? decodePNG(before) : null, after: after ? decodePNG(after) : null };
+        }
+      });
+    } catch (e) {
+      lines.push(`FAIL ${map}: ${e.message}`);
+      failed++;
+      continue;
+    }
+    const r = judge(map, frames, boxes[map], size, ["before", "after"]);
+    lines.push(...r.lines);
+    failed += r.failed;
+  }
+  return { lines, failed };
 }

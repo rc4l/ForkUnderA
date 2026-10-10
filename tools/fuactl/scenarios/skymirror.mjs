@@ -4,9 +4,8 @@
 import { UdmfMap, wad, mapLumps } from "../src/udmf.mjs";
 import { acs0, callSpecial, PCD } from "../src/acs.mjs";
 import { runScenarioIfMain } from "../src/template.mjs";
+import { SPECIAL } from "../src/doomnums.mjs";
 
-// [rc4l] Sector_SetPlaneReflection, the special wdiexsec's OPEN script uses to make its floors mirror.
-const SECTOR_SET_PLANE_REFLECTION = 159;
 const POOL_TAG = 125;
 
 // [rc4l] A sky court standing in a taller roofed hall, a reflective pool in it, and the skybox room the sky is seen from.
@@ -22,7 +21,7 @@ export function buildSkymirrorWad() {
     lightlevel: 192, id: POOL_TAG }, court, () => ({ texturebottom: "BRICK1" }));
   m.thing({ x: 1024, y: 300, angle: 90, type: 1 });
   m.skyboxRoom(4000, 4000);
-  const script = acs0([...callSpecial(SECTOR_SET_PLANE_REFLECTION, [POOL_TAG, 66, 0]), PCD.TERMINATE]);
+  const script = acs0([...callSpecial(SPECIAL.Sector_SetPlaneReflection, [POOL_TAG, 66, 0]), PCD.TERMINATE]);
   return wad(mapLumps("MAP01", m, { behavior: script }));
 }
 

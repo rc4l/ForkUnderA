@@ -121,7 +121,7 @@ struct SegCache
 	signed char     bandLight[kMaxMapPieces];
 	// 3D-floor slots take their light from an F3DFloor rather than the band list; a seg carrying any
 	// falls back to a full bake rather than growing a second rule here.
-	bool            hasFogBoundary;
+	bool            hasOwnLitPiece;   // [rc4l] a fog boundary or a flooded gap, whose light is not in bandLight
 
 	// [rc4l] pieces[] must be cleared here, not left to whatever was in the memory.
 	//
@@ -132,7 +132,7 @@ struct SegCache
 	// offset in the new arena -- while never allocating space of its own. The map came up with walls
 	// missing and geometry smeared across the ones that survived, and only after a map CHANGE:
 	// launching straight into the same map was always fine, because the block started zeroed.
-	SegCache() : pieceCount(0), bakedCount(0), filled(false), hasFogBoundary(false)
+	SegCache() : pieceCount(0), bakedCount(0), filled(false), hasOwnLitPiece(false)
 	{
 		for (int i = 0; i < kMaxMapPieces; i++)
 		{
@@ -162,7 +162,7 @@ void RegisterSkyQuad(const GLWall &wall, AActor *viewpoint);
 int SkyQuadsCaptured();   // [rc4l] Since the level loaded, for fua_sky_quads.
 AActor *SkyQuadViewpoint();
 // [rc4l] A GL walk starting at this portal depth, for the main view or a camera texture; returns the kSkyCapture* list it fills.
-int BeginSkyWalk(bool mainView, int portalDepth);
+int BeginSkyWalk();
 int SkyWalks(int list);
 // [rc4l] One view's sky quads: kSkyCaptureMain for the player, kSkyCaptureCamera for a camera texture.
 const FFlatVertex *SkyQuadVertices(int &count, int list);
@@ -227,6 +227,7 @@ int SectorsMovedLastFrame();
 // One seg's cache state, for the fua_line_mesh dump.
 void GetSegMeshInfo(int segIndex, int &pieces, int &baked);
 void GetSegPieceRange(int segIndex, int piece, unsigned int &offset, unsigned int &count);
+int GetSegBandLight(int segIndex, int piece);
 
 // Why captures were refused, split by cause, plus how many succeeded.
 void GetRejects(int &portal, int &poly, int &ffloor, int &area, int &other, int &ok);

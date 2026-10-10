@@ -18,6 +18,7 @@
 #include "r_state.h"      // sides, numsides, sectors, numsectors, subsectors, numsubsectors
 #include "r_utility.h"    // viewx/viewy/viewz, for fua_look
 #include "p_trace.h"      // Trace, so fua_look can say what the ENGINE thinks is there
+#include "p_3dfloors.h"   // lightlist_t, for fua_sector_lights
 #include "p_lnspec.h"    // Line_Mirror, for fua_make_mirror
 #include "gl/dynlights/gl_dynlight.h"   // ADynamicLight, for fua_light
 #include "a_sharedglobal.h"                // DBaseDecal, for fua_decals
@@ -1445,6 +1446,27 @@ CCMD( fua_light_field )
 }
 //==========================================================================
 
+// [rc4l] A sector's 3D-floor light list as the wall split reads it: each entry's plane height at the sector's sound origin, its light and colour.
+CCMD( fua_sector_lights )
+{
+	if ( argv.argc( ) < 2 ) { Printf( "usage: fua_sector_lights <sector>\n" ); return; }
+	const int s = atoi( argv[1] );
+	if ( s < 0 || s >= numsectors ) { Printf( "no sector %d: the map has %d\n", s, numsectors ); return; }
+	const sector_t &sec = sectors[s];
+	if ( sec.e == NULL ) { Printf( "sector %d has no extended data\n", s ); return; }
+	const TArray<lightlist_t> &ll = sec.e->XFloor.lightlist;
+	Printf( "sector %d: %u lights, %u 3D floors, own light %d\n", s, ll.Size( ), sec.e->XFloor.ffloors.Size( ), sec.lightlevel );
+	for ( unsigned i = 0; i < ll.Size( ); i++ )
+	{
+		const PalEntry c = ( ll[i].extra_colormap != NULL ) ? ll[i].extra_colormap->Color : PalEntry( 0 );
+		Printf( "  %u: plane z %.1f, light %d%s, colour %02x%02x%02x, flags %x, caster %s\n", i,
+			FIXED2FLOAT( ll[i].plane.ZatPoint( sec.soundorg[0], sec.soundorg[1] ) ),
+			ll[i].p_lightlevel != NULL ? *ll[i].p_lightlevel : -1,
+			ll[i].p_lightlevel == &sec.lightlevel ? " (own)" : "", c.r, c.g, c.b, ll[i].flags,
+			ll[i].caster != NULL ? "a 3D floor" : "none" );
+	}
+}
+
 CCMD( fua_light )
 {
 	if ( sectors == NULL || numsectors <= 0 ) { Printf( "no level loaded.\n" ); return; }
@@ -1632,8 +1654,7 @@ CCMD( fua_find_sky )
 	{
 		Printf( "sky sector %d: area %.0f  stand (%d, %d)  floor %d\n",
 				cands[i].sec, cands[i].area, (int)cands[i].cx, (int)cands[i].cy,
-				(int)FIXED2FLOAT( sectors[cands[i].sec].floorplane.ZatPoint(
-					FLOAT2FIXED( cands[i].cx ), FLOAT2FIXED( cands[i].cy ) ) ) );
+				(int)sectors[cands[i].sec].floorplane.ZatPoint( (double)cands[i].cx, (double)cands[i].cy ) );
 	}
 	Printf( "fua_find_sky: %d of %d sky sectors, %d sectors total\n",
 			shown, (int)cands.Size( ), numsectors );

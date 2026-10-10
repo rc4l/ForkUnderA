@@ -214,6 +214,8 @@ struct FlatSource
 	int           mMeshLightIndex;
 	const sector_t *mMeshModel;
 	int           mMeshWhichPlane;
+	int           mirrorSector = -1;   // [rc4l] see MeshPiece::mirrorSector
+	bool          mirrorCeiling = false;
 };
 
 static void StoreFlat(const FlatSource &flat, subsector_t *sub, bool ceiling)
@@ -314,15 +316,8 @@ static void StoreFlat(const FlatSource &flat, subsector_t *sub, bool ceiling)
 	const bool sloped = (p.a | p.b) != 0;
 	const float zc = sloped ? 0.0f : (FIXED2FLOAT(p.Zat0()) + flat.dz);
 
-	PlaneUVTransform uvt = ComputeIdentityPlaneUV();
-	uvt.xoffs = FIXED2FLOAT(flat.plane.xoffs);
-	uvt.yoffs = FIXED2FLOAT(flat.plane.yoffs);
-	uvt.xscale = FIXED2FLOAT(flat.plane.xscale);
-	uvt.yscale = FIXED2FLOAT(flat.plane.yscale);
-	uvt.angleDegrees = ANGLE_TO_FLOAT(flat.plane.angle);
-	uvt.texWidth = (float)flat.gltexture->TextureWidth();
-	uvt.texHeight = (float)flat.gltexture->TextureHeight();
-	uvt.hasCanvas = flat.gltexture->tex->bHasCanvas;
+	PlaneUVTransform uvt;
+	PlaneUVFor(flat.plane, flat.gltexture, uvt);
 
 	for (int k = 0; k < n; k++)
 	{
@@ -417,6 +412,8 @@ static void StoreFlat(const FlatSource &flat, subsector_t *sub, bool ceiling)
 	// plane.texture is what GLFlat::Process itself fed to ValidateTexture, so by construction it is
 	// the base id of the texture actually being drawn, in every case, with no cases to enumerate.
 	mp.baseTex = TexMan[flat.plane.texture];
+	mp.mirrorSector = flat.mirrorSector;
+	mp.mirrorCeiling = flat.mirrorCeiling;
 	MeshRegisterPiece(mp);
 
 	// Only now: a stamp recorded before the store would claim a surface that never made it in.
@@ -436,7 +433,7 @@ static void StoreFlat(const FlatSource &flat, subsector_t *sub, bool ceiling)
 // seen from rather than by its plane's normal. The result is the same set of surfaces GL would have
 // produced across a walk that visited the sector from every side.
 static void BakeOnePlane(subsector_t *sub, sector_t *model, int whichPlane, bool ceiling,
-	int lightlevel, FColormap cm, float alpha, ERenderStyle style)
+	int lightlevel, FColormap cm, float alpha, ERenderStyle style, bool reflects = false)
 {
 	if (model == NULL || sub == NULL) return;
 	FlatSource f;
@@ -445,11 +442,7 @@ static void BakeOnePlane(subsector_t *sub, sector_t *model, int whichPlane, bool
 	if (f.plane.texture == skyflatnum) return;
 	f.gltexture = FMaterial::ValidateTexture(f.plane.texture, false, true);
 	if (f.gltexture == NULL) return;
-	if (f.gltexture->tex->isFullbright())
-	{
-		cm.LightColor.r = cm.LightColor.g = cm.LightColor.b = 0xff;
-		lightlevel = 255;
-	}
+	ApplyFullbright(f.gltexture, cm, lightlevel);
 	// GLFlat::Process's own rule, and the reason a transfer-heights door's floor does not z-fight
 	// with the one it sits on.
 	f.dz = (whichPlane == sector_t::floor && model->transdoor) ? -1.f : 0.f;
@@ -458,18 +451,41 @@ static void BakeOnePlane(subsector_t *sub, sector_t *model, int whichPlane, bool
 	f.alpha = alpha;
 	f.renderstyle = style;
 	f.mMeshLightIndex = -1;
+	f.mirrorSector = reflects ? (int)(model - sectors) : -1;
+	f.mirrorCeiling = (whichPlane == sector_t::ceiling);
 	f.mMeshModel = model;
 	f.mMeshWhichPlane = whichPlane;
 	StoreFlat(f, sub, ceiling);
 }
 
+void ApplyFullbright(const FMaterial *mat, FColormap &cm, int &lightLevel)
+{
+	if (mat == NULL || !mat->tex->isFullbright()) return;
+	cm.LightColor.r = cm.LightColor.g = cm.LightColor.b = 0xff;
+	lightLevel = 255;
+}
+
+void PlaneUVFor(const GLSectorPlane &plane, FMaterial *mat, PlaneUVTransform &out)
+{
+	out = ComputeIdentityPlaneUV();
+	out.xoffs = FIXED2FLOAT(plane.xoffs);
+	out.yoffs = FIXED2FLOAT(plane.yoffs);
+	out.xscale = FIXED2FLOAT(plane.xscale);
+	out.yscale = FIXED2FLOAT(plane.yscale);
+	out.angleDegrees = ANGLE_TO_FLOAT(plane.angle);
+	out.texWidth = (float)mat->TextureWidth();
+	out.texHeight = (float)mat->TextureHeight();
+	out.hasCanvas = mat->tex->bHasCanvas;
+}
+
 // One face of a 3D floor, by GLFlat::SetFrom3DFloor's rule with the viewer test taken out.
-static void Bake3DFace(subsector_t *sub, sector_t *real, F3DFloor *rover, bool top, bool underside,
-	bool ceiling)
+static void Bake3DFace(subsector_t *sub, sector_t *real, F3DFloor *rover, bool top, bool ceiling)
 {
 	F3DFloor::planeref &pr = top ? rover->top : rover->bottom;
 	if (pr.copied) return;
-	lightlist_t *light = P_GetPlaneLight(real, pr.plane, underside);
+	// [rc4l] Lit by which plane it is, not by which way it faces: the water's underside reading the light under it came out the script's blue.
+	const FFFaceLight fl = ComputeFFFaceLight(top, ceiling, (rover->flags & FF_FOG) != 0, (rover->flags & FF_FIX) != 0);
+	lightlist_t *light = P_GetPlaneLight(real, pr.plane, fl.lightBelow);
 	int lightlevel = *light->p_lightlevel;
 
 	FColormap cm;
@@ -484,7 +500,7 @@ static void Bake3DFace(subsector_t *sub, sector_t *real, F3DFloor *rover, bool t
 
 	// FF_FIX takes its light from the model sector outright, which is the one case where the plane
 	// light list is not the answer.
-	if (rover->flags & FF_FIX)
+	if (fl.modelLight)
 	{
 		lightlevel = gl_ClampLight(rover->model->lightlevel);
 		cm = rover->GetColormap();
@@ -511,6 +527,8 @@ static int BakeFlatsForSubsector(subsector_t *sub)
 			FColormap cm;
 			cm = real->ColorMap;
 			const float alpha = 1.0f - real->GetReflect(sector_t::floor);
+			// [rc4l] GL reflects a plane with no portal stack on it, and a fully reflective one still needs the surface the reflection is painted on.
+			const bool reflects = real->GetReflect(sector_t::floor) > 0 && real->portals[sector_t::floor] == NULL;
 			if (haveFF)
 			{
 				lightlist_t *light = P_GetPlaneLight(real, &real->floorplane, false);
@@ -519,9 +537,9 @@ static int BakeFlatsForSubsector(subsector_t *sub)
 					ll = *light->p_lightlevel;
 				cm.CopyLightColor(light->extra_colormap);
 			}
-			if (alpha != 0.0f)
+			if (alpha != 0.0f || reflects)
 			{
-				BakeOnePlane(sub, real, sector_t::floor, false, ll, cm, alpha, STYLE_Translucent);
+				BakeOnePlane(sub, real, sector_t::floor, false, ll, cm, alpha, STYLE_Translucent, reflects);
 				made++;
 			}
 		}
@@ -532,6 +550,7 @@ static int BakeFlatsForSubsector(subsector_t *sub)
 			FColormap cm;
 			cm = real->ColorMap;
 			const float alpha = 1.0f - real->GetReflect(sector_t::ceiling);
+			const bool reflects = real->GetReflect(sector_t::ceiling) > 0 && real->portals[sector_t::ceiling] == NULL;
 			if (haveFF)
 			{
 				lightlist_t *light = P_GetPlaneLight(real, &real->ceilingplane, true);
@@ -540,9 +559,9 @@ static int BakeFlatsForSubsector(subsector_t *sub)
 					ll = *light->p_lightlevel;
 				cm.CopyLightColor(light->extra_colormap);
 			}
-			if (alpha != 0.0f)
+			if (alpha != 0.0f || reflects)
 			{
-				BakeOnePlane(sub, real, sector_t::ceiling, true, ll, cm, alpha, STYLE_Translucent);
+				BakeOnePlane(sub, real, sector_t::ceiling, true, ll, cm, alpha, STYLE_Translucent, reflects);
 				made++;
 			}
 		}
@@ -565,14 +584,14 @@ static int BakeFlatsForSubsector(subsector_t *sub)
 			const bool inverted = (rover->flags & (FF_INVERTPLANES | FF_BOTHPLANES)) != 0;
 			if (!(rover->flags & FF_INVERTPLANES))
 			{
-				Bake3DFace(sub, real, rover, true,  false, false);  // walkable top, seen from above
-				Bake3DFace(sub, real, rover, false, true,  true);   // underside, seen from below
+				Bake3DFace(sub, real, rover, true,  false);  // [rc4l] walkable top, seen from above
+				Bake3DFace(sub, real, rover, false, true);   // [rc4l] underside, seen from below
 				made += 2;
 			}
 			if (inverted)
 			{
-				Bake3DFace(sub, real, rover, true,  true,  true);
-				Bake3DFace(sub, real, rover, false, false, false);
+				Bake3DFace(sub, real, rover, true,  true);   // [rc4l] the top, seen from below
+				Bake3DFace(sub, real, rover, false, false);  // [rc4l] the bottom, seen from above
 				made += 2;
 			}
 		}
@@ -682,9 +701,15 @@ void GetSpriteStyleDetail(int *dest16, int *classified4)
 int SkyQuadsCaptured() { return g_skyQuadsCaptured; }
 
 // [rc4l] A walk starting: an outer one empties the list it fills, and a portal re-entry (mirror, skybox) fills none.
-int BeginSkyWalk(bool mainView, int portalDepth)
+namespace { bool s_mainView = true; int s_sceneNesting = 0; }
+void SetMainView(bool mainView) { s_mainView = mainView; }
+bool MainView() { return s_mainView; }
+void EnterScene() { s_sceneNesting++; }
+void LeaveScene() { if (s_sceneNesting > 0) s_sceneNesting--; }
+
+int BeginSkyWalk()
 {
-	g_skyList = ComputeSkyCaptureList(mainView, portalDepth);
+	g_skyList = ComputeSkyCaptureList(s_mainView, s_sceneNesting);
 	if (g_skyList == kSkyCaptureNone) return g_skyList;
 	g_skyVerts[g_skyList].Clear();
 	if (g_skyList == kSkyCaptureMain) g_skyViewpoint = NULL;
@@ -767,10 +792,17 @@ void MakeWallQuad(FFlatVertex *out6, float x1, float y1, float x2, float y2,
 		for (int c = 0; c < 3; c++)
 			out6[w++] = fan[ComputeFanTriangleVertex(4, t, c)];
 }
+
+bool PlayerWalkActive()
+{
+	return ComputeOwnsFrameCapture(s_mainView, s_sceneNesting);
+}
+
 void RegisterSprite(const GLSprite &spr, const float *c1, const float *c2,
 	const float *c3, const float *c4)
 {
-	if (spr.gltexture == NULL) return;
+	// [rc4l] Only the player's walk fills the frame's sprites: a mirror walk's would draw them twice, and its reset used to wipe them.
+	if (spr.gltexture == NULL || !PlayerWalkActive()) return;
 
 	// [rc4l] GLSprite emits a 4-vertex TRIANGLE STRIP; the mesh is triangle lists, so expand to
 	// (0,1,2) and (2,1,3) -- which preserves the strip's winding rather than flipping the second
@@ -819,6 +851,8 @@ void RegisterSprite(const GLSprite &spr, const float *c1, const float *c2,
 		// by how dark the sector is, and a bonus in a dark room came out a quarter dimmer than GL's.
 		mp.dynR = dyn[0]; mp.dynG = dyn[1]; mp.dynB = dyn[2];
 	}
+	// [rc4l] A sprite takes this light and no other, fullbright ones none at all: GL never runs the per-light loop on one.
+	mp.cpuLight = true;
 
 	// [rc4l] Classify the render style into the handful of blends a backend actually needs.
 	//
@@ -929,6 +963,7 @@ void RegisterDecalTriangles(const FFlatVertex *tris, int count, const void *mate
                             bool redToAlpha, unsigned int alphaColor,
                             float sortX, float sortY, float sortZ, const float *dynLight)
 {
+	if (!PlayerWalkActive()) return;   // [rc4l] see RegisterSprite
 	if (tris == NULL || count < 3 || material == NULL) return;
 
 	MeshPiece mp;

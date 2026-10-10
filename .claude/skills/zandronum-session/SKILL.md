@@ -58,17 +58,25 @@ port with no token hangs and reports `rpc timeout`.
 |---|---|
 | console command, with its output | `ui exec "<ccmd>"` |
 | any RPC | `rpc <cmd> '<jsonArgs>'` — e.g. `rpc player.camera`, `rpc state.actors '{"limit":5000}'` |
+| what stands near a point, or ahead of the player | `actors [--near x,y] [--radius R] [--ahead \| --toward YAW] [--cone DEG] [--class REGEX]` |
+| a template scenario's map at one of its vantages, with console commands run there | `probe scenarios/x.mjs [--vantage V] [--side S] "<ccmd>" ...` |
 | where the camera is; save it as a spot | `here [--save NAME --note TEXT]` (see `fua-capture-spot`) |
 | stand at a saved spot | `goto --spot NAME` |
 | does a render cvar change the picture | `ab <cvar> <a> <b> --spot NAME [--box x0,y0,x1,y1]` |
 | matched GL/Vulkan pair, sim frozen | `shot <tag> --spot NAME` or `--at x,y,z --face yaw,pitch` |
 | what the crosshair is on, and the mesh piece drawing it | `look --at x,y,z --face yaw,pitch` |
 | what a linedef is, or every line near a point | `line <index>` or `line --at X,Y --radius R` |
-| a map's sectors, lines, specials and ACS source, from its files | `mapdata <MAP> --preset ID [--sector N] [--line N] [--scripts REGEX]` |
+| a map's sectors, lines, specials and ACS source, from its files | `mapdata <MAP> --preset ID [--sector N] [--line N] [--special N] [--tag N] [--scripts REGEX]` |
+| does a region move over time (warp, scroller), Vulkan and GL | `motion --spot NAME --box x0,y0,x1,y1 [--interval MS]` |
 | compare two captures | `png --diff a b`, `png --boxdiff a b x0 y0 x1 y1 [block]`, `png --diffimg a b out` |
 | frametime distribution (p50/p95/p99) | `capture [--frames N]` |
 | GPU ms per pass | `gl-timers` (check `renderer-info` first; no timer queries reads as zeros) |
 | pause / step the sim | `rpc sim.pause` · `rpc sim.step '{"tics":1}'` |
+
+Console diagnostics worth knowing (run them with `ui exec`): `fua_dg_blendorder [z]` (the translucent
+pass in draw order with plane layers, or every draw spanning height z), `fua_models` (model draws and
+which walk drew them), `gl_portalinfo` (the portals GL ran last frame), `fua_line_mesh <line>` (what the
+bake holds for a line). `fua_dg_planemirrors N` caps the floor reflections Vulkan renders a frame.
 
 `png --boxdiff` compares in 16-pixel block means: the renderers frame the world a fraction of a pixel
 apart, which reads ~13 per pixel on a bright tiled floor while both are right.

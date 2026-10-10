@@ -35,6 +35,16 @@ namespace zx { namespace levelmesh {
 // principled and culled exactly those surfaces.
 bool ComputeFlatWindingReversed(bool viewedFromBelow);
 
+// [rc4l] Where one face of a 3D floor takes its light, by ProcessSector's four calls to GLFlat::SetFrom3DFloor.
+struct FFFaceLight
+{
+	bool lightBelow;   // [rc4l] read the plane light from under the plane (P_GetPlaneLight's underside)
+	bool modelLight;   // [rc4l] FF_FIX: the model sector's own light and colormap instead
+};
+
+// [rc4l] A top plane is lit from above it and a bottom plane from below, whichever side it is seen from (a fog face the other way round), and only a bottom seen from above takes FF_FIX's model light.
+FFFaceLight ComputeFFFaceLight(bool top, bool viewedFromBelow, bool fog, bool fix);
+
 // [rc4l] Must this flat's NORMAL be flipped to face the side it is seen from?
 //
 // The same trap as the winding, one step further on, and it fails even more quietly. A secplane's
@@ -150,7 +160,10 @@ PlaneUVAffine ComputePlaneUVAffine(const PlaneUVTransform &t);
 enum { kSkyCaptureNone = -1, kSkyCaptureMain = 0, kSkyCaptureCamera = 1 };
 
 // [rc4l] Which list a walk fills: only an outer walk (portal depth 0) fills one, and only the main view's fills the player's.
-int ComputeSkyCaptureList(bool mainView, int portalDepth);
+int ComputeSkyCaptureList(bool mainView, int sceneNesting);
+
+// [rc4l] Whether a sprite, model or decal being captured belongs to the frame: the player's view from the outermost DrawScene (nesting 1, or 0 outside any), since GL raises the portal depth for the player's own scene once its walk is done.
+bool ComputeOwnsFrameCapture(bool mainView, int sceneNesting);
 
 }} // namespace zx::levelmesh
 

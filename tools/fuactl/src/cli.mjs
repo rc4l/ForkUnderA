@@ -19,11 +19,13 @@ import * as shot from "./shot.mjs";
 import { sweepDirFor } from "./shot.mjs";
 import * as sweepMod from "./sweep.mjs";
 import { png } from "./png.mjs";
-import { decodePNG, abDiff } from "./pngcore.mjs";
+import { actorsNear } from "./actors.mjs";
+import { scenarioOptions, probeScenario } from "./template.mjs";
+import { decodePNG, abDiff, boxDiff } from "./pngcore.mjs";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const num = (v) => (v != null && v !== true ? Number(v) : undefined);
 
@@ -106,9 +108,12 @@ const USAGE = `fuactl <command>
   diligent --port P [--frames N] [--shot FILE] [--sweep DIR]   drive the Diligent (Vulkan) backend: bake the level mesh, upload geometry, optional swapchain screenshot, optional debug-view sweep (lm0..lm4.png in DIR), the matched Diligent-vs-GL benchmark, and with --scale a GPU-time probe at 1x..100x the visible geometry
   play [--restart] [--port P] [--token T] [--map M] [--file a.pk3,b.pk3] [--preset ID --variant V --store DIR] [--gl] [--side-by-side] [--rt] [--monsters] [--lock] [--res WxH]   a build to walk around in, Vulkan live in the window; stays up until Ctrl-C
   build [--root DIR]                 compile the engine and stage it, failing loudly instead of staging a stale binary
-  mapdata <MAP> (--preset ID | --file a.pk3,b.wad) [--sector N,..] [--line N,..] [--scripts REGEX]   a UDMF level's summary, sectors, lines and ACS source lines, read from its files
+  mapdata <MAP> (--preset ID | --file a.pk3,b.wad) [--sector N,..] [--line N,..] [--special N] [--tag N] [--scripts REGEX]   a UDMF level's summary, sectors, lines and ACS source lines, read from its files
+  actors [--near x,y] [--radius R] [--toward YAW | --ahead] [--cone DEG] [--class REGEX]   actors near a point (default the player), nearest first, optionally only in a direction
+  probe <scenario.mjs> [--map M] [--vantage V] [--side S] [<command> ...]   launch a template scenario's map at a vantage and run console commands there
   ready [--port P --token T] [--timeout S]   wait until an instance answers (defaults to the last play session)
   goto (--spot NAME | --at x,y,z --face yaw,pitch) [--port P]   stand the player there
+  motion [--spot NAME | --at x,y,z --face yaw,pitch] [--box x0,y0,x1,y1] [--interval MS]   per-pixel change between two captures apart, Vulkan and GL, sim running
   ab <cvar> <a> <b> [--spot NAME | --at x,y,z --face yaw,pitch] [--box x0,y0,x1,y1]   Vulkan under each value in ONE paused frame, plus a repeat as the noise floor
   shot <tag> [--port P] [--spot NAME | --at x,y,z --face yaw,pitch]   matched GL/Vulkan pair from a running instance, one camera, sim frozen
   shoot [--port P] --tag T --at x,y,z --face yaw,pitch [--look x,y,z] [--weapon W] [--map M] [--after TICS]   fire at a junction and capture a GL/Vulkan pair (--look frames a point, --after catches transient effects before they fade)
@@ -234,6 +239,34 @@ async function main() {
         }
         return { cycled: count };
       });
+      break;
+    }
+    // [rc4l] `fuactl actors` -- what stands near a point or ahead of the player, out of the hundreds state.actors lists.
+    case "actors": {
+      const actorsUsage = "usage: fuactl actors [--near x,y] [--radius R] [--toward YAW | --ahead] [--cone DEG] [--class REGEX] [--port P --token T]";
+      const c = await connectTarget(flags, actorsUsage);
+      try {
+        const cam = await c.rpc("player.camera");
+        const [x, y] = flags.near ? String(flags.near).split(",").map(Number) : [cam.x, cam.y];
+        const toward = flags.toward !== undefined ? Number(flags.toward) : (flags.ahead ? cam.yaw : null);
+        const { actors } = await c.rpc("state.actors", { limit: 1000000 });
+        const found = actorsNear(actors, { x, y, toward, radius: flags.radius ? Number(flags.radius) : Infinity,
+          cone: flags.cone ? Number(flags.cone) : 20, cls: flags.class ? new RegExp(String(flags.class), "i") : null });
+        for (const a of found)
+          console.log(`${a.c.padEnd(28)} ${String(Math.round(a.d)).padStart(6)} away  bearing ${String(Math.round(a.bearing)).padStart(3)}  at ${a.x},${a.y},${a.z}`);
+      } finally { c.close(); }
+      break;
+    }
+    // [rc4l] `fuactl probe` -- a scenario's own map, at one of its vantages, with console commands run there: four scratch scripts' worth of setup.
+    case "probe": {
+      const probeUsage = "usage: fuactl probe <scenario.mjs> [--map M] [--vantage V] [--side S] [<command> ...]";
+      if (!rest[0]) { console.error(probeUsage); process.exit(2); }
+      const url = pathToFileURL(path.resolve(rest[0])).href;
+      await import(url);
+      const options = scenarioOptions(url);
+      if (!options) { console.error(`${rest[0]} does not call runScenarioIfMain`); process.exit(2); }
+      const out = await probeScenario(options(), { map: flags.map, vantage: flags.vantage, side: flags.side }, rest.slice(1));
+      for (const o of out) console.log(`> ${o.command}\n${o.output}`);
       break;
     }
     case "rpc": {
@@ -545,7 +578,7 @@ async function main() {
     // [rc4l] `fuactl mapdata <MAP>` -- a level's sectors, lines, specials and ACS source read from its files, no engine needed.
     case "mapdata": {
       const map = rest[0];
-      const mdUsage = "usage: fuactl mapdata <MAP> (--preset ID [--variant V --store DIR] | --file a.pk3,b.wad) [--sector N,..] [--line N,..] [--scripts REGEX]";
+      const mdUsage = "usage: fuactl mapdata <MAP> (--preset ID [--variant V --store DIR] | --file a.pk3,b.wad) [--sector N,..] [--line N,..] [--special N] [--tag N] [--scripts REGEX]";
       if (!map || (!flags.preset && !flags.file)) { console.error(mdUsage); process.exit(2); }
       const { catalogueDir, storeDir } = presetDirs(flags);
       const paths = flags.preset ? resolvePreset(catalogueDir, storeDir, flags.preset, flags.variant)
@@ -554,7 +587,8 @@ async function main() {
       if (!found) { console.error(`${map} is in none of: ${paths.map((p) => path.basename(p)).join(", ")}`); process.exit(1); }
       const list = (v) => (v ? String(v).split(",").map(Number) : []);
       console.log(JSON.stringify(mapReport(found, { sectors: list(flags.sector), lines: list(flags.line),
-        scripts: flags.scripts ? String(flags.scripts) : null }), null, 2));
+        scripts: flags.scripts ? String(flags.scripts) : null, special: flags.special ? Number(flags.special) : null,
+        tag: flags.tag !== undefined ? Number(flags.tag) : null }), null, 2));
       break;
     }
     // [rc4l] `fuactl ready` -- wait until an instance answers, instead of a hand-rolled poll after every launch.
@@ -593,6 +627,20 @@ async function main() {
       break;
     }
     // [rc4l] `fuactl ab <cvar> <a> <b>` -- one Vulkan frame under each value, captured in a single pause, with the repeat as its noise floor.
+    // [rc4l] `fuactl motion` -- does a region move over time, in Vulkan and in GL, judged per pixel: a warp, a scroller, an animation.
+    case "motion": {
+      const motionUsage = "usage: fuactl motion [--spot NAME | --at x,y,z --face yaw,pitch] [--box x0,y0,x1,y1] [--interval MS]";
+      const c = await connectTarget(flags, motionUsage);
+      try {
+        const engineBin = flags.engine || resolveEngine();
+        const got = await shot.captureOverTime(c, { at: shot.cameraFromFlags(flags, SPOTS), engineBin, gl: true,
+          intervalMs: Number(flags.interval) || 600, tag: flags.tag || "motion" });
+        const box = flags.box ? String(flags.box).split(",").map(Number) : [0, 0.05, 1, 1];
+        const moved = (pair) => (pair && pair[0] && pair[1] ? boxDiff(decodePNG(pair[0]), decodePNG(pair[1]), box, 1) : null);
+        console.log(JSON.stringify({ box, vulkan: moved(got.vk), gl: moved(got.gl), files: [...got.vk, ...got.gl] }, null, 2));
+      } finally { c.close(); }
+      break;
+    }
     case "ab": {
       const [cvar, a, b] = rest;
       const abUsage = "usage: fuactl ab <cvar> <a> <b> [--spot NAME | --at x,y,z --face yaw,pitch] [--box x0,y0,x1,y1] [--tag T]";

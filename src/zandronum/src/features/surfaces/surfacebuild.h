@@ -59,10 +59,18 @@ struct DerivedWallSpan
 	// Its own height, which the two-sided middle needs and the batcher wants for animation.
 	const void *baseTex;
 	bool  valid;
+	// [rc4l] A step with no texture that GL floods with the back plane: its height, the six numbers mapping it to texture space, and the sector whose light it takes.
+	bool  flood;
+	bool  floodCeiling;
+	float floodZ;
+	float floodUV[6];
+	const sector_t *floodSector;
 
 	DerivedWallSpan() : uLeft(0.f), uRight(0.f), hasU(false),
-		x1(0.f), y1(0.f), x2(0.f), y2(0.f), material(0), baseTex(0), valid(false)
+		x1(0.f), y1(0.f), x2(0.f), y2(0.f), material(0), baseTex(0), valid(false),
+		flood(false), floodCeiling(false), floodZ(0.f), floodSector(0)
 	{
+		for (int i = 0; i < 6; i++) floodUV[i] = 0.f;
 		ztop[0] = ztop[1] = zbottom[0] = zbottom[1] = 0.f;
 		vTop[0] = vTop[1] = vBottom[0] = vBottom[1] = 0.f;
 	}

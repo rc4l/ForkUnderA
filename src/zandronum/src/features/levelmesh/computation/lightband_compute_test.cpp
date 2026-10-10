@@ -49,115 +49,32 @@ TEST(LightBand, PlaneHeightMatchesSecplaneFormula)
 	EXPECT_FLOAT_EQ(ComputeBandPlaneZ(p, x, y), expected);
 }
 
-// ---- ComputeLightBandIndex: degenerate inputs ------------------------------
-
-TEST(LightBand, NoBandsReadsAsTheTopBand)
+// [rc4l] wdiexsec's pool wall took the water's blue light above the water: the bake read the -80 surface as -0.001, a fixed height counted twice.
+TEST(LightBand, AFixedPlaneConvertsToItsHeightInMapUnits)
 {
-	EXPECT_EQ(ComputeLightBandIndex(0, 0, 0.0f, 0.0f, 0.0f), 0);
-	EXPECT_EQ(ComputeLightBandIndex(0, 5, 0.0f, 0.0f, 0.0f), 0);
-
-	const BandPlane one = Flat(0.0f);
-	EXPECT_EQ(ComputeLightBandIndex(&one, 0, 0.0f, 0.0f, 0.0f), 0);
-	EXPECT_EQ(ComputeLightBandIndex(&one, -3, 0.0f, 0.0f, 0.0f), 0);
+	// [rc4l] A 3D floor's top is its control sector's ceiling: c = -1, so ic = -1 and d = the height, all in 16.16.
+	const BandPlane ceiling = ComputeBandPlaneFromFixed(0.0, 0.0, -65536.0, -80.0 * 65536.0);
+	EXPECT_FLOAT_EQ(-80.f, ComputeBandPlaneZ(ceiling, 512.f, 896.f));
+	// [rc4l] A floor at -154: c = 1, so ic = 1 and d = 154.
+	const BandPlane floor = ComputeBandPlaneFromFixed(0.0, 0.0, 65536.0, 154.0 * 65536.0);
+	EXPECT_FLOAT_EQ(-154.f, ComputeBandPlaneZ(floor, -2000.f, 3000.f));
 }
 
-TEST(LightBand, SingleBandAlwaysWins)
+TEST(LightBand, AFlatBoundaryIsReadAtTheSecondEndForBoth)
 {
-	const BandPlane one = Flat(100.0f);
-	EXPECT_EQ(ComputeLightBandIndex(&one, 1, 0.0f, 0.0f, 500.0f), 0);
-	EXPECT_EQ(ComputeLightBandIndex(&one, 1, 0.0f, 0.0f, -500.0f), 0);
+	const BandPlane water = ComputeBandPlaneFromFixed(0.0, 0.0, -65536.0, -80.0 * 65536.0);
+	float out[2];
+	ComputeBandBottomAtEnds(water, 256.f, 896.f, 768.f, 896.f, out);
+	EXPECT_FLOAT_EQ(-80.f, out[0]);
+	EXPECT_FLOAT_EQ(-80.f, out[1]);
 }
 
-// ---- ComputeLightBandIndex: the ordinary case ------------------------------
-
-TEST(LightBand, PointPicksTheBandItSitsIn)
+TEST(LightBand, ASlopedBoundaryIsReadAtEachEnd)
 {
-	// Bands top to bottom: [128..64) = 0, [64..0) = 1, below 0 = 2.
-	const BandPlane planes[3] = { Flat(128.0f), Flat(64.0f), Flat(0.0f) };
-
-	EXPECT_EQ(ComputeLightBandIndex(planes, 3, 0.0f, 0.0f, 200.0f), 0); // above everything
-	EXPECT_EQ(ComputeLightBandIndex(planes, 3, 0.0f, 0.0f, 100.0f), 0);
-	EXPECT_EQ(ComputeLightBandIndex(planes, 3, 0.0f, 0.0f, 65.0f), 0);
-	EXPECT_EQ(ComputeLightBandIndex(planes, 3, 0.0f, 0.0f, 32.0f), 1);
-	EXPECT_EQ(ComputeLightBandIndex(planes, 3, 0.0f, 0.0f, 1.0f), 1);
-	EXPECT_EQ(ComputeLightBandIndex(planes, 3, 0.0f, 0.0f, -50.0f), 2); // below everything
-}
-
-TEST(LightBand, BoundaryBelongsToTheLowerBand)
-{
-	// SplitWall ends a band at the next plane, so a pixel exactly on that plane is already the
-	// band below it. Getting this backwards would shift every band seam by one texel.
-	const BandPlane planes[2] = { Flat(128.0f), Flat(64.0f) };
-	EXPECT_EQ(ComputeLightBandIndex(planes, 2, 0.0f, 0.0f, 64.0f), 1);
-	EXPECT_EQ(ComputeLightBandIndex(planes, 2, 0.0f, 0.0f, 64.001f), 0);
-}
-
-TEST(LightBand, TopPlaneItselfDoesNotBoundTheTopBand)
-{
-	// Only plane[i+1] ends band i, so plane[0]'s own height never selects a band -- a point far
-	// above the whole stack is still band 0.
-	const BandPlane planes[2] = { Flat(10.0f), Flat(0.0f) };
-	EXPECT_EQ(ComputeLightBandIndex(planes, 2, 0.0f, 0.0f, 10.0f), 0);
-	EXPECT_EQ(ComputeLightBandIndex(planes, 2, 0.0f, 0.0f, 99999.0f), 0);
-}
-
-TEST(LightBand, SlopedBandsSelectByPositionNotJustHeight)
-{
-	// This is the case that forces the geometry split today: one band boundary crossing a wall
-	// diagonally. Per-fragment the same height lands in different bands at different x.
-	const BandPlane planes[2] = { Flat(1000.0f), SlopedX(0.0f, 10.0f) };
-
-	// boundary height is 10*x, so at height 50: above the slope for x<5, below for x>5.
-	EXPECT_EQ(ComputeLightBandIndex(planes, 2, 0.0f, 0.0f, 50.0f), 0);
-	EXPECT_EQ(ComputeLightBandIndex(planes, 2, 4.0f, 0.0f, 50.0f), 0);
-	EXPECT_EQ(ComputeLightBandIndex(planes, 2, 6.0f, 0.0f, 50.0f), 1);
-	EXPECT_EQ(ComputeLightBandIndex(planes, 2, 100.0f, 0.0f, 50.0f), 1);
-}
-
-TEST(LightBand, DeepStackResolvesEveryBand)
-{
-	BandPlane planes[8];
-	for (int i = 0; i < 8; i++) planes[i] = Flat(700.0f - 100.0f * i); // 700, 600, ... 0
-
-	for (int i = 0; i < 7; i++)
-	{
-		const float mid = 650.0f - 100.0f * i;
-		EXPECT_EQ(ComputeLightBandIndex(planes, 8, 0.0f, 0.0f, mid), i) << "band " << i;
-	}
-	EXPECT_EQ(ComputeLightBandIndex(planes, 8, 0.0f, 0.0f, -10.0f), 7);
-}
-
-TEST(LightBand, CoincidentPlanesCollapseToTheLowestOfThem)
-{
-	// P_Recalculate3DFloors can leave zero-thickness bands; every one of them must resolve to a
-	// single deterministic index rather than to whichever the loop happened to see first.
-	const BandPlane planes[4] = { Flat(64.0f), Flat(32.0f), Flat(32.0f), Flat(0.0f) };
-	EXPECT_EQ(ComputeLightBandIndex(planes, 4, 0.0f, 0.0f, 40.0f), 0);
-	EXPECT_EQ(ComputeLightBandIndex(planes, 4, 0.0f, 0.0f, 32.0f), 2);
-	EXPECT_EQ(ComputeLightBandIndex(planes, 4, 0.0f, 0.0f, 16.0f), 2);
-}
-
-// ---- Band count limits -----------------------------------------------------
-
-TEST(LightBand, UploadableCountClampsToTheShaderArray)
-{
-	EXPECT_EQ(ComputeUploadableBandCount(0), 0);
-	EXPECT_EQ(ComputeUploadableBandCount(1), 1);
-	EXPECT_EQ(ComputeUploadableBandCount(kMaxLightBands), kMaxLightBands);
-	EXPECT_EQ(ComputeUploadableBandCount(kMaxLightBands + 1), kMaxLightBands);
-	EXPECT_EQ(ComputeUploadableBandCount(9999), kMaxLightBands);
-}
-
-TEST(LightBand, UploadableCountIsNeverNegative)
-{
-	EXPECT_EQ(ComputeUploadableBandCount(-1), 0);
-	EXPECT_EQ(ComputeUploadableBandCount(-9999), 0);
-}
-
-TEST(LightBand, GeometrySplitOnlyBeyondTheArrayLimit)
-{
-	EXPECT_FALSE(ComputeNeedsGeometrySplit(0));
-	EXPECT_FALSE(ComputeNeedsGeometrySplit(1));
-	EXPECT_FALSE(ComputeNeedsGeometrySplit(kMaxLightBands));
-	EXPECT_TRUE(ComputeNeedsGeometrySplit(kMaxLightBands + 1));
+	// [rc4l] Rising one unit per eight east: a = -0.125 in 16.16 with c = 1 makes z = 0.125 * x.
+	const BandPlane slope = ComputeBandPlaneFromFixed(-0.125 * 65536.0, 0.0, 65536.0, 0.0);
+	float out[2];
+	ComputeBandBottomAtEnds(slope, 0.f, 0.f, 64.f, 0.f, out);
+	EXPECT_FLOAT_EQ(0.f, out[0]);
+	EXPECT_FLOAT_EQ(8.f, out[1]);
 }

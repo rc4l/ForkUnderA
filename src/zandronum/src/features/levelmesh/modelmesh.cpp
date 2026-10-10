@@ -4,6 +4,8 @@
 #include "gl/system/gl_system.h"
 #include "features/levelmesh/modelmesh.h"
 #include "features/levelmesh/staticmesh.h"
+#include "features/levelmesh/flatmesh.h"   // PlayerWalkActive
+#include "gl/scene/gl_portal.h"   // GLPortal::RenderDepth, for the walk a model was drawn in
 #include "features/levelmesh/computation/flatmesh_compute.h"   // ComputeStyleBlendMode
 
 #include "gl/scene/gl_wall.h"   // GLSprite
@@ -30,6 +32,9 @@ const GLSprite *g_sprite = NULL;
 const VSMatrix *g_matrix = NULL;
 
 int g_models = 0, g_surfaces = 0, g_triangles = 0, g_skipped = 0;
+// [rc4l] Every model GL started to draw, captured or not, and the walk the last one was in, so "not drawn" and "not ours" read apart.
+int g_begins = 0, g_lastDepth = -1, g_lastPortalKind = 0;
+bool g_lastMainView = false;
 
 // [rc4l] Where the triangles LANDED. A count proves the capture ran and says nothing about whether
 // what it produced is in front of the camera -- and from outside, those two failures look the same.
@@ -60,6 +65,11 @@ void ModelCaptureBegin(const GLSprite *spr, const VSMatrix &modelToWorld)
 {
 	g_sprite = spr;
 	g_matrix = &modelToWorld;
+	g_begins++;
+	g_lastDepth = GLPortal::RenderDepth();
+	g_lastMainView = MainView();
+	g_lastPortalKind = (GLPortal::IsMirroring() ? 1 : 0) | (GLPortal::inskybox ? 4 : 0) |
+		((GLPortal::instack[0] || GLPortal::instack[1]) ? 8 : 0);
 	if (ModelCaptureActive()) g_models++;
 }
 
@@ -76,10 +86,12 @@ bool ModelCaptureActive()
 	// side-by-side session where BOTH windows are live: gating on it left the Vulkan window with no
 	// models in exactly the configuration used to compare the two renderers. The mesh is what a
 	// backend draws from, so it is filled whenever there is something to put in it.
-	return fua_mesh_models && g_sprite != NULL && g_matrix != NULL;
+	// [rc4l] ...and only the player's walk: wdiexsec's mirror walks wiped a barrel the player's had already drawn.
+	return fua_mesh_models && g_sprite != NULL && g_matrix != NULL && PlayerWalkActive();
 }
 
-void ModelStatsReset() { g_models = g_surfaces = g_triangles = g_skipped = 0; g_haveBB = false; }
+void ModelStatsReset() { g_models = g_surfaces = g_triangles = g_skipped = g_begins = 0; g_haveBB = false; }
+static void ModelBeginsGet(int &begins, int &depth, bool &mainView, int &kind) { begins = g_begins; depth = g_lastDepth; mainView = g_lastMainView; kind = g_lastPortalKind; }
 
 void ModelStatsGet(int &models, int &surfaces, int &triangles, int &skipped)
 {
@@ -180,6 +192,7 @@ void CaptureModelSurface(const FModelVertexBuffer *vbuf, unsigned int base1, uns
 		gl_RenderState.GetDynLight(dyn[0], dyn[1], dyn[2]);
 		mp.dynR = dyn[0]; mp.dynG = dyn[1]; mp.dynB = dyn[2];
 	}
+	mp.cpuLight = true;   // [rc4l] see RegisterSprite
 	// [rc4l] No normal, and this one is a real limitation rather than a shortcut for its own sake.
 	// FModelVertex::SetNormal is a no-op in this tree -- the loaders read normals and throw them
 	// away, because GL's model shader never wanted them -- so there is nothing to capture. Zero
@@ -231,6 +244,13 @@ CCMD(fua_models)
 		zx::levelmesh::ModelPieceGet(alpha, blend, light, rgb, material);
 		Printf("  last piece: alpha %.3f  blend %d  light %d  rgb %.2f,%.2f,%.2f  material %s\n",
 			alpha, blend, light, rgb[0], rgb[1], rgb[2], material ? "yes" : "NULL");
+	}
+	{
+		int begins = 0, depth = -1, kind = 0;
+		bool mainView = false;
+		zx::levelmesh::ModelBeginsGet(begins, depth, mainView, kind);
+		Printf("  %d model draws started since the reset, the last at portal depth %d (mirror 1, skybox 4, stack 8: %d) in %s view\n",
+			begins, depth, kind, mainView ? "the player's" : "a camera's");
 	}
 	Printf("  capture is %s; the backend %s presenting\n", fua_mesh_models ? "on" : "off",
 		zx::hwrender::BackendPresenting() ? "is" : "is not (GL's own window, or side by side)");

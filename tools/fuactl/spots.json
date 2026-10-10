@@ -408,6 +408,276 @@
         "fua_dg_skyportal": "true",
         "gl_wallmesh": "true"
       }
+    },
+    "wdi-3d-water-pool": {
+      "map": "wdiexsec",
+      "x": -2481.274,
+      "y": 2650.856,
+      "z": -42,
+      "angle": 336.9727,
+      "pitch": 11.4258,
+      "shows": "3D-floor water pool with wooden posts: Vulkan shows the pool dark/missing its water surface and tint compared to GL",
+      "loaded": {
+        "iwad": "doom2.wad",
+        "pwads": [
+          "skulltag_content-3.2-beta2.pk3 41630bc75af4b51fe5d163fe4d434c6e",
+          "whodunit_fixed2.pk3 fc8afa7358c2c2b38614ee74a07a719f",
+          "wdi_expack_1a.pk3 0448efffc27d8105b1ae1172c14c794e",
+          "wdi_bigpackv3.9test.pk3 d642da865b0addd46ccfab34ef0fffd8",
+          "wdi_bigpackv3.9testfixsv1.pk3 2617768e95f3fdd36413a056e023d11e",
+          "wdi_touchupv9.11.wad 2ccc1f88f1160cd503fb790e63da9c9c",
+          "wdibeta_phobos_outpostd1.pk3 b22505cd5ce4152b8c8e9a6b62bb7484",
+          "wdi_random_crate_1b.pk3 408d20d4afaead2d15c9df1e46c9825c",
+          "wdi_scoreboard_fix.wad 26ee8a0515d71a2cc0ffea94a7ccfbbc"
+        ]
+      },
+      "renderer": {
+        "fua_vulkan": "true",
+        "fua_dg_standalone": "false",
+        "fua_dg_embed": "false",
+        "fua_dg_skyportal": "true",
+        "gl_wallmesh": "true"
+      }
+    },
+    "wdi-underwater-box": {
+      "map": "wdiexsec",
+      "x": -2243.15,
+      "y": 2707.868,
+      "z": -50,
+      "angle": 218.8477,
+      "pitch": 32.8711,
+      "shows": "dark blue box under the water seen from above, Vulkan only",
+      "loaded": {
+        "iwad": "doom2.wad",
+        "pwads": [
+          "skulltag_content-3.2-beta2.pk3 41630bc75af4b51fe5d163fe4d434c6e",
+          "whodunit_fixed2.pk3 fc8afa7358c2c2b38614ee74a07a719f",
+          "wdi_expack_1a.pk3 0448efffc27d8105b1ae1172c14c794e",
+          "wdi_bigpackv3.9test.pk3 d642da865b0addd46ccfab34ef0fffd8",
+          "wdi_bigpackv3.9testfixsv1.pk3 2617768e95f3fdd36413a056e023d11e",
+          "wdi_touchupv9.11.wad 2ccc1f88f1160cd503fb790e63da9c9c",
+          "wdibeta_phobos_outpostd1.pk3 b22505cd5ce4152b8c8e9a6b62bb7484",
+          "wdi_random_crate_1b.pk3 408d20d4afaead2d15c9df1e46c9825c",
+          "wdi_scoreboard_fix.wad 26ee8a0515d71a2cc0ffea94a7ccfbbc"
+        ]
+      },
+      "renderer": {
+        "fua_vulkan": "true",
+        "fua_dg_standalone": "false",
+        "fua_dg_embed": "false",
+        "fua_dg_skyportal": "true",
+        "gl_wallmesh": "true"
+      }
+    },
+    "wdi-underwater-up": {
+      "map": "wdiexsec",
+      "x": -2234.376,
+      "y": 2523.847,
+      "z": -154,
+      "angle": 143.6133,
+      "pitch": -29.4434,
+      "shows": "looking up from under the pool water, tint differs GL vs Vulkan",
+      "loaded": {
+        "iwad": "doom2.wad",
+        "pwads": [
+          "skulltag_content-3.2-beta2.pk3 41630bc75af4b51fe5d163fe4d434c6e",
+          "whodunit_fixed2.pk3 fc8afa7358c2c2b38614ee74a07a719f",
+          "wdi_expack_1a.pk3 0448efffc27d8105b1ae1172c14c794e",
+          "wdi_bigpackv3.9test.pk3 d642da865b0addd46ccfab34ef0fffd8",
+          "wdi_bigpackv3.9testfixsv1.pk3 2617768e95f3fdd36413a056e023d11e",
+          "wdi_touchupv9.11.wad 2ccc1f88f1160cd503fb790e63da9c9c",
+          "wdibeta_phobos_outpostd1.pk3 b22505cd5ce4152b8c8e9a6b62bb7484",
+          "wdi_random_crate_1b.pk3 408d20d4afaead2d15c9df1e46c9825c",
+          "wdi_scoreboard_fix.wad 26ee8a0515d71a2cc0ffea94a7ccfbbc"
+        ]
+      },
+      "renderer": {
+        "fua_vulkan": "true",
+        "fua_dg_standalone": "false",
+        "fua_dg_embed": "false",
+        "fua_dg_skyportal": "true",
+        "gl_wallmesh": "true"
+      }
+    },
+    "wdi-wall-patch": {
+      "map": "wdiexsec",
+      "x": -4176.041,
+      "y": 3481.127,
+      "z": -154.651,
+      "angle": 297.9492,
+      "pitch": 4.3945,
+      "shows": "a lit brown patch on a dark wall or floor, Vulkan only",
+      "loaded": {
+        "iwad": "doom2.wad",
+        "pwads": [
+          "skulltag_content-3.2-beta2.pk3 41630bc75af4b51fe5d163fe4d434c6e",
+          "whodunit_fixed2.pk3 fc8afa7358c2c2b38614ee74a07a719f",
+          "wdi_expack_1a.pk3 0448efffc27d8105b1ae1172c14c794e",
+          "wdi_bigpackv3.9test.pk3 d642da865b0addd46ccfab34ef0fffd8",
+          "wdi_bigpackv3.9testfixsv1.pk3 2617768e95f3fdd36413a056e023d11e",
+          "wdi_touchupv9.11.wad 2ccc1f88f1160cd503fb790e63da9c9c",
+          "wdibeta_phobos_outpostd1.pk3 b22505cd5ce4152b8c8e9a6b62bb7484",
+          "wdi_random_crate_1b.pk3 408d20d4afaead2d15c9df1e46c9825c",
+          "wdi_scoreboard_fix.wad 26ee8a0515d71a2cc0ffea94a7ccfbbc"
+        ]
+      },
+      "renderer": {
+        "fua_vulkan": "true",
+        "fua_dg_standalone": "false",
+        "fua_dg_embed": "false",
+        "fua_dg_skyportal": "true",
+        "gl_wallmesh": "true"
+      }
+    },
+    "wdi-reflection": {
+      "map": "wdiexsec",
+      "x": -4289.001,
+      "y": 3898.543,
+      "z": -32,
+      "angle": 71.543,
+      "pitch": 32.7832,
+      "shows": "reflective floor looks wrong on Vulkan vs GL, brown patches in it",
+      "loaded": {
+        "iwad": "doom2.wad",
+        "pwads": [
+          "skulltag_content-3.2-beta2.pk3 41630bc75af4b51fe5d163fe4d434c6e",
+          "whodunit_fixed2.pk3 fc8afa7358c2c2b38614ee74a07a719f",
+          "wdi_expack_1a.pk3 0448efffc27d8105b1ae1172c14c794e",
+          "wdi_bigpackv3.9test.pk3 d642da865b0addd46ccfab34ef0fffd8",
+          "wdi_bigpackv3.9testfixsv1.pk3 2617768e95f3fdd36413a056e023d11e",
+          "wdi_touchupv9.11.wad 2ccc1f88f1160cd503fb790e63da9c9c",
+          "wdibeta_phobos_outpostd1.pk3 b22505cd5ce4152b8c8e9a6b62bb7484",
+          "wdi_random_crate_1b.pk3 408d20d4afaead2d15c9df1e46c9825c",
+          "wdi_scoreboard_fix.wad 26ee8a0515d71a2cc0ffea94a7ccfbbc"
+        ]
+      },
+      "renderer": {
+        "fua_vulkan": "true",
+        "fua_dg_standalone": "false",
+        "fua_dg_embed": "false",
+        "fua_dg_skyportal": "true",
+        "gl_wallmesh": "true"
+      }
+    },
+    "wdi-barrel-popin": {
+      "map": "wdiexsec",
+      "x": -4116.604,
+      "y": 4289.08,
+      "z": -32,
+      "angle": 184.3945,
+      "pitch": 4.043,
+      "shows": "barrel model missing on Vulkan until you walk close; GL always draws it",
+      "loaded": {
+        "iwad": "doom2.wad",
+        "pwads": [
+          "skulltag_content-3.2-beta2.pk3 41630bc75af4b51fe5d163fe4d434c6e",
+          "whodunit_fixed2.pk3 fc8afa7358c2c2b38614ee74a07a719f",
+          "wdi_expack_1a.pk3 0448efffc27d8105b1ae1172c14c794e",
+          "wdi_bigpackv3.9test.pk3 d642da865b0addd46ccfab34ef0fffd8",
+          "wdi_bigpackv3.9testfixsv1.pk3 2617768e95f3fdd36413a056e023d11e",
+          "wdi_touchupv9.11.wad 2ccc1f88f1160cd503fb790e63da9c9c",
+          "wdibeta_phobos_outpostd1.pk3 b22505cd5ce4152b8c8e9a6b62bb7484",
+          "wdi_random_crate_1b.pk3 408d20d4afaead2d15c9df1e46c9825c",
+          "wdi_scoreboard_fix.wad 26ee8a0515d71a2cc0ffea94a7ccfbbc"
+        ]
+      },
+      "renderer": {
+        "fua_vulkan": "true",
+        "fua_dg_standalone": "false",
+        "fua_dg_embed": "false",
+        "fua_dg_skyportal": "true",
+        "gl_wallmesh": "true"
+      }
+    },
+    "wdi-dark-props": {
+      "map": "wdiexsec",
+      "x": 32.976,
+      "y": 2345.331,
+      "z": 0,
+      "angle": 296.1914,
+      "pitch": 7.7344,
+      "shows": "3D toilet paper model and 2D bottle sprite darker on Vulkan than GL",
+      "loaded": {
+        "iwad": "doom2.wad",
+        "pwads": [
+          "skulltag_content-3.2-beta2.pk3 41630bc75af4b51fe5d163fe4d434c6e",
+          "whodunit_fixed2.pk3 fc8afa7358c2c2b38614ee74a07a719f",
+          "wdi_expack_1a.pk3 0448efffc27d8105b1ae1172c14c794e",
+          "wdi_bigpackv3.9test.pk3 d642da865b0addd46ccfab34ef0fffd8",
+          "wdi_bigpackv3.9testfixsv1.pk3 2617768e95f3fdd36413a056e023d11e",
+          "wdi_touchupv9.11.wad 2ccc1f88f1160cd503fb790e63da9c9c",
+          "wdibeta_phobos_outpostd1.pk3 b22505cd5ce4152b8c8e9a6b62bb7484",
+          "wdi_random_crate_1b.pk3 408d20d4afaead2d15c9df1e46c9825c",
+          "wdi_scoreboard_fix.wad 26ee8a0515d71a2cc0ffea94a7ccfbbc"
+        ]
+      },
+      "renderer": {
+        "fua_vulkan": "true",
+        "fua_dg_standalone": "false",
+        "fua_dg_embed": "false",
+        "fua_dg_skyportal": "true",
+        "gl_wallmesh": "true"
+      }
+    },
+    "wdi-dark-sprite": {
+      "map": "wdiexsec",
+      "x": -3266.607,
+      "y": 4290.947,
+      "z": 0,
+      "angle": 56.4258,
+      "pitch": 32.168,
+      "shows": "a corpse sprite darker on Vulkan than GL",
+      "loaded": {
+        "iwad": "doom2.wad",
+        "pwads": [
+          "skulltag_content-3.2-beta2.pk3 41630bc75af4b51fe5d163fe4d434c6e",
+          "whodunit_fixed2.pk3 fc8afa7358c2c2b38614ee74a07a719f",
+          "wdi_expack_1a.pk3 0448efffc27d8105b1ae1172c14c794e",
+          "wdi_bigpackv3.9test.pk3 d642da865b0addd46ccfab34ef0fffd8",
+          "wdi_bigpackv3.9testfixsv1.pk3 2617768e95f3fdd36413a056e023d11e",
+          "wdi_touchupv9.11.wad 2ccc1f88f1160cd503fb790e63da9c9c",
+          "wdibeta_phobos_outpostd1.pk3 b22505cd5ce4152b8c8e9a6b62bb7484",
+          "wdi_random_crate_1b.pk3 408d20d4afaead2d15c9df1e46c9825c",
+          "wdi_scoreboard_fix.wad 26ee8a0515d71a2cc0ffea94a7ccfbbc"
+        ]
+      },
+      "renderer": {
+        "fua_vulkan": "true",
+        "fua_dg_standalone": "false",
+        "fua_dg_embed": "false",
+        "fua_dg_skyportal": "true",
+        "gl_wallmesh": "true"
+      }
+    },
+    "wdi-use-texture": {
+      "map": "WDI01",
+      "x": -176.074,
+      "y": 822.223,
+      "z": 128,
+      "angle": 336.0938,
+      "pitch": 10.6348,
+      "shows": "pressing +use on this white texture changes it on GL but not on Vulkan (switch texture)",
+      "loaded": {
+        "iwad": "doom2.wad",
+        "pwads": [
+          "skulltag_content-3.2-beta2.pk3 41630bc75af4b51fe5d163fe4d434c6e",
+          "whodunit_fixed2.pk3 fc8afa7358c2c2b38614ee74a07a719f",
+          "wdi_expack_1a.pk3 0448efffc27d8105b1ae1172c14c794e",
+          "wdi_bigpackv3.9test.pk3 d642da865b0addd46ccfab34ef0fffd8",
+          "wdi_bigpackv3.9testfixsv1.pk3 2617768e95f3fdd36413a056e023d11e",
+          "wdi_touchupv9.11.wad 2ccc1f88f1160cd503fb790e63da9c9c",
+          "wdibeta_phobos_outpostd1.pk3 b22505cd5ce4152b8c8e9a6b62bb7484",
+          "wdi_random_crate_1b.pk3 408d20d4afaead2d15c9df1e46c9825c",
+          "wdi_scoreboard_fix.wad 26ee8a0515d71a2cc0ffea94a7ccfbbc"
+        ]
+      },
+      "renderer": {
+        "fua_vulkan": "true",
+        "fua_dg_standalone": "false",
+        "fua_dg_embed": "false",
+        "fua_dg_skyportal": "true",
+        "gl_wallmesh": "true"
+      }
     }
   }
 }

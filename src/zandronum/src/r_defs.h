@@ -290,6 +290,9 @@ struct secplane_t
 		return (double(d) + double(a)*x + double(b)*y) * double(ic) / (-65536.0 * 65536.0);
 	}
 
+	// [rc4l] 32-bit ints (FLOAT2FIXED's result) would silently take the double overload and come back in map units, not fixed.
+	double ZatPoint (SDWORD x, SDWORD y) const = delete;
+
 	// Returns the value of z at vertex v
 	fixed_t ZatPoint (const vertex_t *v) const
 	{

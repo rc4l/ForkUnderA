@@ -41,7 +41,8 @@ test("a map that runs scripts carries its BEHAVIOR between TEXTMAP and ENDMAP", 
 test("a block is a two-sided sector inside another, on every line's front, styled on the side facing out", () => {
   const m = new UdmfMap();
   const outer = m.room(0, 0, 256, 256, { heightfloor: 0 });
-  const inner = m.block(64, 64, 192, 192, { heightfloor: 0, id: 7 }, outer, () => ({ texturebottom: "BRICK1" }));
+  const inner = m.block(64, 64, 192, 192, { heightfloor: 0, id: 7 }, outer, () => ({ texturebottom: "BRICK1" }),
+    (edge) => ({ texturebottom: edge.toUpperCase() }));
   const lines = m.lines.slice(4);
   assert.equal(lines.length, 4);
   for (const l of lines) {
@@ -49,6 +50,7 @@ test("a block is a two-sided sector inside another, on every line's front, style
     const cross = (b.x - a.x) * (128 - a.y) - (b.y - a.y) * (128 - a.x);
     assert.ok(cross < 0, `block line ${a.x},${a.y} -> ${b.x},${b.y} faces away from the block`);
     assert.equal(m.sides[l.sidefront].sector, inner);
+    assert.match(m.sides[l.sidefront].texturebottom, /^(WEST|NORTH|EAST|SOUTH)$/);
     assert.deepEqual(m.sides[l.sideback], { sector: outer, texturebottom: "BRICK1" });
     assert.equal(l.twosided, true);
     assert.equal(l.blocking, undefined);
@@ -135,4 +137,26 @@ test("a skybox room is a 512 box with a wall texture per side and the default Sk
   assert.deepEqual(u.sidedef.map((s) => s.texturemiddle), ["BROWN1", "COMPBLUE", "BRICK1", "STARTAN2"]);
   assert.deepEqual([u.thing[0].type, u.thing[0].x, u.thing[0].y, u.thing[0].height], [9080, 4256, 4256, 128]);
   assert.equal(u.sector[0].heightceiling, 384);
+});
+
+test("the water template has a swimmable 3D floor on the pool's tag, and its colour set by script, by map, or not at all", async () => {
+  const { buildWater3dWad } = await import("../scenarios/water3d.mjs");
+  const lumps = lumpsOf(buildWater3dWad());
+  assert.deepEqual(lumps.map((l) => l.name), ["MAP01", "TEXTMAP", "BEHAVIOR", "ENDMAP", "MAP02", "TEXTMAP", "ENDMAP",
+    "MAP03", "TEXTMAP", "ENDMAP"]);
+  for (const i of [1, 5, 8]) {
+    assert.match(lumps[i].text, /special = 160;/);
+    assert.match(lumps[i].text, /arg0 = 9;/);
+    assert.match(lumps[i].text, /arg1 = 2;/);
+  }
+  assert.match(lumps[5].text, /lightcolor = 6598655;/);
+  assert.doesNotMatch(lumps[8].text, /lightcolor/);
+});
+
+test("the warp template floors its pool with FWATER1 and makes that flat warp2 in an ANIMDEFS lump", async () => {
+  const { buildWarpwaterWad } = await import("../scenarios/warpwater.mjs");
+  const lumps = lumpsOf(buildWarpwaterWad());
+  assert.deepEqual(lumps.map((l) => l.name), ["MAP01", "TEXTMAP", "ENDMAP", "ANIMDEFS"]);
+  assert.match(lumps[1].text, /texturefloor = "FWATER1";/);
+  assert.equal(lumps[3].text, "warp2 flat FWATER1\n");
 });

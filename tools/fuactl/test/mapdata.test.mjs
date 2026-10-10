@@ -35,7 +35,7 @@ function courtMap() {
   const m = new UdmfMap();
   m.room(0, 0, 256, 256, { heightfloor: 0, heightceiling: 128, textureceiling: "F_SKY1" }, (edge) =>
     (edge === "north" ? { line: { special: 9 } } : {}));
-  m.room(512, 0, 768, 256, { heightfloor: 0, heightceiling: 96, textureceiling: "CEIL3_5" });
+  m.room(512, 0, 768, 256, { heightfloor: 0, heightceiling: 96, textureceiling: "CEIL3_5", id: 5 });
   m.thing({ x: 128, y: 128, type: 1 });
   return m;
 }
@@ -69,6 +69,11 @@ test("the report summarises the map and describes the sectors and lines asked ab
   assert.deepEqual(r.sectors[0].lines, [0, 1, 2, 3]);
   assert.deepEqual([r.lines[0].from, r.lines[0].to, r.lines[0].front, r.lines[0].back, r.lines[0].special], [[0, 256], [256, 256], 0, null, 9]);
   assert.deepEqual(r.scripts, [{ line: 3, text: "Sector_SetPlaneReflection(125, 66, 0);" }]);
+  assert.deepEqual(mapReport(found, { special: 9 }).special.map((l) => l.index), [1]);
+  assert.deepEqual(r.sectors[0].bounds, [0, 0, 256, 256]);
+  assert.deepEqual(mapReport(found, { tag: 0 }).tag, []);
+  assert.deepEqual(mapReport(found, { tag: 5 }).tag.map((t) => [t.index, t.bounds]), [[1, [512, 0, 768, 256]]]);
+  assert.equal(mapReport(found).special, undefined);
   assert.throws(() => mapReport(found, { sectors: [5] }), /no sector 5: the map has 2/);
   assert.throws(() => mapReport(found, { lines: [99] }), /no line 99: the map has 8/);
 });

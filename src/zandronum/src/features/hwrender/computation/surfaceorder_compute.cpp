@@ -3,6 +3,9 @@
 
 #include "features/hwrender/computation/surfaceorder_compute.h"
 
+#include <algorithm>
+#include <vector>
+
 namespace zx { namespace hwrender {
 
 
@@ -38,6 +41,10 @@ bool ComputeDrawsBefore(const TranslucentDraw &a, const TranslucentDraw &b)
 		return a.first < b.first;
 	}
 
+	// [rc4l] Then the plane layers, farthest first, a plane ahead of what shares its layer: a medkit under water is drawn before the water over it.
+	if (a.layer != b.layer) return a.layer > b.layer;
+	if (a.plane != b.plane) return a.plane;
+
 	// Everything else is back to front, as it was.
 	if (a.distSq != b.distSq) return a.distSq > b.distSq;
 
@@ -48,6 +55,31 @@ bool ComputeDrawsBefore(const TranslucentDraw &a, const TranslucentDraw &b)
 	// same way every frame.
 	if (IsAdditive(a) != IsAdditive(b)) return !IsAdditive(a);
 	return a.first < b.first;
+}
+
+int ComputeBlendLayers(const BlendSpan *spans, int n, float viewZ, int *layers, bool *planes)
+{
+	std::vector<float> heights;
+	for (int i = 0; i < n; i++)
+	{
+		planes[i] = spans[i].surface && spans[i].lo == spans[i].hi;
+		if (planes[i] && std::find(heights.begin(), heights.end(), spans[i].lo) == heights.end())
+			heights.push_back(spans[i].lo);
+	}
+	for (int i = 0; i < n; i++)
+	{
+		int layer = 0;
+		for (size_t k = 0; k < heights.size(); k++)
+		{
+			const float h = heights[k];
+			// [rc4l] A floor seen from above hides what is below it; a ceiling seen from below, what is above.
+			const bool beyond = (viewZ >= h) ? (spans[i].hi <= h && spans[i].lo < h)
+			                                 : (spans[i].lo >= h && spans[i].hi > h);
+			if (beyond) layer++;
+		}
+		layers[i] = layer;
+	}
+	return (int)heights.size();
 }
 
 bool ComputePiecesBefore(const ScenePiece &a, const ScenePiece &b)

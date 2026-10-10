@@ -1,4 +1,5 @@
 // [rc4l] A small UDMF map writer, so a regression carries its own level and needs only an IWAD -- the engine builds the nodes.
+import { THING } from "./doomnums.mjs";
 import { Buffer } from "node:buffer";
 
 // [rc4l] A float written bare with its point, since UDMF refuses a quoted number.
@@ -64,11 +65,11 @@ export class UdmfMap {
     return s;
   }
 
-  // [rc4l] A sector standing inside another, joined by two-sided lines so the block is on every line's front; outer(edge) styles the side facing out.
-  block(x0, y0, x1, y1, sectorProps, outerSector, outer = () => ({})) {
+  // [rc4l] A sector standing inside another, joined by two-sided lines so the block is on every line's front; outer(edge) and inner(edge) style the sides facing out and in.
+  block(x0, y0, x1, y1, sectorProps, outerSector, outer = () => ({}), inner = () => ({})) {
     const s = this.sector(sectorProps);
     for (const [name, ax, ay, bx, by] of rectEdges(x0, y0, x1, y1)) {
-      this.sides.push({ sector: s });
+      this.sides.push({ sector: s, ...(inner(name) || {}) });
       this.sides.push({ sector: outerSector, ...(outer(name) || {}) });
       this.lines.push({ v1: this.vertex(ax, ay), v2: this.vertex(bx, by), sidefront: this.sides.length - 2,
         sideback: this.sides.length - 1, twosided: true });
@@ -80,7 +81,7 @@ export class UdmfMap {
   skyboxRoom(x0, y0) {
     this.room(x0, y0, x0 + 512, y0 + 512, { heightfloor: 0, heightceiling: 384, texturefloor: "FLOOR0_1",
       textureceiling: "CEIL5_1", lightlevel: 255 }, (edge) => ({ side: { texturemiddle: SKYBOX_WALLS[edge] } }));
-    this.thing({ x: x0 + 256, y: y0 + 256, height: 128, angle: 0, type: 9080 });
+    this.thing({ x: x0 + 256, y: y0 + 256, height: 128, angle: 0, type: THING.SkyViewpoint });
   }
 
   // [rc4l] Present on every skill and in every mode unless the caller says otherwise.

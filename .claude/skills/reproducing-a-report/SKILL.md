@@ -69,6 +69,9 @@ you what you were meant to be looking at, and a spot whose meaning has been forg
 spot nobody re-runs. Write what is wrong *and* what correct would look like — the second half
 is what lets someone else confirm the fix.
 
+When reports arrive faster than they are fixed, save each one's spot the moment it arrives, against
+their running instance: the reporter moves on to the next thing, and the state goes with them.
+
 This is also how a one-off reproduction becomes a regression test. The expensive part of a
 visual or interactive regression test is never the assertion; it is knowing where to stand.
 

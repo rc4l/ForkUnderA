@@ -282,3 +282,102 @@ TEST(SurfaceOrder, TheTwoRulesAreNotTheSameRule)
 	b.depth = 1000; b.spawnIndex = 100;
 	EXPECT_TRUE(ComputeGLSpritesBefore(a, b, false));   // higher index first, regardless of what it is
 }
+
+namespace {
+
+BlendSpan Span(float lo, float hi, bool surface) { BlendSpan s; s.lo = lo; s.hi = hi; s.surface = surface; return s; }
+
+} // namespace
+
+// [rc4l] wdiexsec: a medkit on the pool floor sat farther than the water piece over it, so the distance sort drew it on top of the water.
+TEST(SurfaceOrder, AnItemBeyondATranslucentPlaneDrawsBeforeIt)
+{
+	TranslucentDraw water = Sprite(16000.f, 1, 0);
+	water.layer = 0; water.plane = true;
+	TranslucentDraw medkit = Sprite(12000.f, 0, 10);
+	medkit.layer = 1;
+	EXPECT_TRUE(ComputeDrawsBefore(medkit, water));
+	EXPECT_FALSE(ComputeDrawsBefore(water, medkit));
+}
+
+// [rc4l] Within one layer the plane goes first, because everything sharing its layer is on the eye's side of it.
+TEST(SurfaceOrder, APlaneDrawsBeforeItemsOnTheEyesSideOfIt)
+{
+	TranslucentDraw water = Sprite(100.f, 1, 0);
+	water.plane = true;
+	const TranslucentDraw above = Sprite(9000.f, 1, 10);
+	EXPECT_TRUE(ComputeDrawsBefore(water, above));
+	EXPECT_FALSE(ComputeDrawsBefore(above, water));
+}
+
+TEST(SurfaceOrder, DecalsStayAStageAheadOfTheLayers)
+{
+	TranslucentDraw deep = Sprite(100.f, 1, 0);
+	deep.layer = 3;
+	const TranslucentDraw mark = Mark(100.f, 1, 10);
+	EXPECT_TRUE(ComputeDrawsBefore(mark, deep));
+}
+
+TEST(SurfaceOrder, LayersCountTheLevelPlanesBetweenAnItemAndAnEyeAboveThem)
+{
+	const BlendSpan spans[6] = {
+		Span(-80.f, -80.f, true),     // [rc4l] the water's surface
+		Span(-154.f, -130.f, false),  // [rc4l] a medkit on the pool floor
+		Span(-154.f, -80.f, true),    // [rc4l] a 3D floor's side under the water, its top on the surface
+		Span(-100.f, -40.f, false),   // [rc4l] a sprite standing in the water
+		Span(-80.f, -80.f, true),     // [rc4l] another piece of the same water
+		Span(-30.f, -10.f, false),    // [rc4l] a sprite on the bank
+	};
+	int layers[6];
+	bool planes[6];
+	ComputeBlendLayers(spans, 6, 0.f, layers, planes);
+	const int wantLayers[6] = { 0, 1, 1, 0, 0, 0 };
+	const bool wantPlanes[6] = { true, false, false, false, true, false };
+	for (int i = 0; i < 6; i++) { EXPECT_EQ(wantLayers[i], layers[i]) << i; EXPECT_EQ(wantPlanes[i], planes[i]) << i; }
+}
+
+TEST(SurfaceOrder, AnEyeUnderThePlaneCountsWhatIsAboveIt)
+{
+	const BlendSpan spans[4] = {
+		Span(-80.f, -80.f, true),
+		Span(-70.f, -40.f, false),    // [rc4l] a sprite above the water, seen from under it
+		Span(-154.f, -130.f, false),  // [rc4l] the medkit, on the eye's side now
+		Span(-80.f, -20.f, true),     // [rc4l] a wall rising from the surface
+	};
+	int layers[4];
+	bool planes[4];
+	ComputeBlendLayers(spans, 4, -120.f, layers, planes);
+	EXPECT_EQ(1, layers[1]);
+	EXPECT_EQ(0, layers[2]);
+	EXPECT_EQ(1, layers[3]);
+	EXPECT_EQ(0, layers[0]);
+}
+
+// [rc4l] Only a level piece of the level splits the order: a sloped one, or a sprite with no height, does not.
+TEST(SurfaceOrder, OnlyLevelSurfacesAreSplittingPlanes)
+{
+	const BlendSpan spans[4] = {
+		Span(-80.f, -60.f, true),
+		Span(-50.f, -50.f, false),
+		Span(-120.f, -100.f, false),
+		Span(-200.f, -200.f, true),
+	};
+	int layers[4];
+	bool planes[4];
+	ComputeBlendLayers(spans, 4, 0.f, layers, planes);
+	EXPECT_FALSE(planes[0]);
+	EXPECT_FALSE(planes[1]);
+	EXPECT_EQ(0, layers[2]);
+	EXPECT_TRUE(planes[3]);
+	EXPECT_EQ(0, layers[3]);
+}
+
+// [rc4l] Two pieces of water at one height are one plane, so an item under both is one layer down, not two.
+TEST(SurfaceOrder, CoplanarPiecesCountOnce)
+{
+	const BlendSpan spans[3] = { Span(-80.f, -80.f, true), Span(-80.f, -80.f, true), Span(-154.f, -130.f, false) };
+	int layers[3];
+	bool planes[3];
+	EXPECT_EQ(1, ComputeBlendLayers(spans, 3, 0.f, layers, planes));
+	EXPECT_EQ(1, layers[2]);
+}

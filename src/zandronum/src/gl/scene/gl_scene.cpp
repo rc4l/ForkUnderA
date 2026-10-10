@@ -104,8 +104,6 @@ CVAR(Bool, gl_sort_textures, false, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 EXTERN_CVAR(Bool, fua_surface_mapbake_auto)
 EXTERN_CVAR(Bool, gl_batch_walls)  // [rc4l] features/levelmesh wall batching
 
-// [rc4l] Whether the walk in progress is the player's view (true) or a camera texture's, as RenderViewpoint was told.
-static bool fua_mainview = true;
 
 EXTERN_CVAR (Int, screenblocks)
 EXTERN_CVAR (Bool, cl_capfps)
@@ -365,18 +363,17 @@ void FGLRenderer::CreateScene()
 	// collecting actors. Paired with the Draw() at the end of RenderTranslucent.
 	zx::hitboxviz::BeginFrame();
 
-	// [rc4l] features/levelmesh: last frame's dynamic geometry (sprites) is dead the moment the
-	// camera moves, so it is dropped here and rebuilt as this frame generates it.
-	zx::levelmesh::DynClear();
-	zx::levelmesh::ClearSprites();
 	// [rc4l] Only the player's outer walk fills the player's sky surfaces; a mirror, skybox or camera-texture walk must not replace them.
-	const int skyList = zx::levelmesh::BeginSkyWalk(fua_mainview, GLPortal::RenderDepth());
-	// [rc4l] features/horizon: this frame's horizon windows, from the map -- once per frame, on the player's walk.
-	if (skyList == zx::levelmesh::kSkyCaptureMain) zx::horizon::UpdateHorizons();
-	// [rc4l] features/levelmesh: age the marks by a frame. They are DRAWN by the backend, from their
-	// boxes, so nothing is emitted here -- but their lifetimes are the simulation's business and not
-	// the renderer's, and this is the one place that runs every frame in every mode.
-	zx::levelmesh::UpdateProjectedDecals();
+	if (zx::levelmesh::BeginSkyWalk() == zx::levelmesh::kSkyCaptureMain)
+	{
+		// [rc4l] features/levelmesh: the frame's sprites, models and decals start again, only here, since a mirror walk later in the frame wiped what the player's had drawn.
+		zx::levelmesh::DynClear();
+		zx::levelmesh::ClearSprites();
+		// [rc4l] features/horizon: this frame's horizon windows, from the map.
+		zx::horizon::UpdateHorizons();
+		// [rc4l] features/levelmesh: age the projected decals by a frame, once, which is simulation time the backend only draws.
+		zx::levelmesh::UpdateProjectedDecals();
+	}
 	// [rc4l] features/levelmesh: geometry whose sector moved is no longer valid, and this has to run
 	// BEFORE the BSP walk so anything still visible re-bakes in the same frame. See
 	// InvalidateMovedSectors -- a door's far face is never walked, so without this it kept the
@@ -634,6 +631,8 @@ EXTERN_CVAR(Bool, gl_draw_sync)
 void FGLRenderer::DrawScene(bool toscreen)
 {
 	static int recursion=0;
+	// [rc4l] Which scene the captures below belong to: this one is outermost only when nothing encloses it.
+	struct SceneNest { SceneNest() { zx::levelmesh::EnterScene(); } ~SceneNest() { zx::levelmesh::LeaveScene(); } } nest;
 
 	// [rc4l] STANDALONE: the backend draws the world and GL stops deriving it.
 	//
@@ -653,9 +652,12 @@ void FGLRenderer::DrawScene(bool toscreen)
 		// Last frame's sprites are dead the moment the camera moves, marks age on the frame clock,
 		// and a sector that moved has invalidated its cached geometry. None of that is the BSP walk;
 		// all of it still has to happen.
-		zx::levelmesh::DynClear();
-		zx::levelmesh::ClearSprites();
-		zx::levelmesh::UpdateProjectedDecals();
+		if (zx::levelmesh::PlayerWalkActive())
+		{
+			zx::levelmesh::DynClear();
+			zx::levelmesh::ClearSprites();
+			zx::levelmesh::UpdateProjectedDecals();
+		}
 		zx::levelmesh::InvalidateMovedSectors();
 		zx::horizon::UpdateHorizons();
 
@@ -1062,8 +1064,8 @@ extern bool CLIENTDEMO_IsInFreeSpectateMode(); // [AK]
 sector_t * FGLRenderer::RenderViewpoint (AActor * camera, GL_IRECT * bounds, float fov, float ratio, float fovratio, bool mainview, bool toscreen)
 {
 	// [rc4l] Which view the walks below belong to, for CreateScene's capture; restored on return in case one view nests in another.
-	const bool savedMainview = fua_mainview;
-	fua_mainview = mainview;
+	const bool savedMainview = zx::levelmesh::MainView();
+	zx::levelmesh::SetMainView(mainview);
 	sector_t * retval;
 	R_SetupFrame (camera);
 	SetViewArea();
@@ -1135,7 +1137,7 @@ sector_t * FGLRenderer::RenderViewpoint (AActor * camera, GL_IRECT * bounds, flo
 
 	gl_frameCount++;	// This counter must be increased right before the interpolations are restored.
 	interpolator.RestoreInterpolations ();
-	fua_mainview = savedMainview;
+	zx::levelmesh::SetMainView(savedMainview);
 	return retval;
 }
 

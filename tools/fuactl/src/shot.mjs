@@ -130,6 +130,21 @@ export async function shotPair(c, tag, {
   return { gl: gotGl ? gl : null, vk: gotVk, frozen: said };
 }
 
+// [rc4l] Two captures intervalMs apart with the sim RUNNING, Vulkan and optionally GL, for what must move: a warp, a scroller, an animation.
+export async function captureOverTime(c, { at = null, engineBin, outDir, tag = "motion", intervalMs = 600, gl = false }) {
+  outDir = outDir || sweepDirFor(engineBin);
+  fs.mkdirSync(outDir, { recursive: true });
+  if (at) await moveTo(c, at);
+  await c.rpc("sim.resume", {}).catch(() => {});
+  const vk = [], glFiles = [];
+  for (let i = 0; i < 2; i++) {
+    if (i > 0) await sleep(intervalMs);
+    vk.push(await captureVulkan(c, path.posix.join(outDir, `${tag}_vk${i}.png`)));
+    if (gl) glFiles.push((await ui.screenshot(c, engineBin, `sweep/${tag}_gl${i}`).catch(() => ({ path: null }))).path);
+  }
+  return { vk, gl: gl ? glFiles : null };
+}
+
 // [rc4l] A cvar's two values in ONE paused frame, then the first again, so animated lights cannot pass for a difference; the cvar is left as found.
 export async function frozenAB(c, { cvar, values: [a, b], at = null, outDir, tag = "ab", settleMs = 400 }) {
   fs.mkdirSync(outDir, { recursive: true });

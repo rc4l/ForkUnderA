@@ -71,7 +71,16 @@ export function describeSector(udmf, index) {
   if (!sector) throw new Error(`no sector ${index}: the map has ${udmf.sector.length}`);
   const sideIn = (s) => s !== undefined && udmf.sidedef[s] && udmf.sidedef[s].sector === index;
   const lines = udmf.linedef.map((l, i) => (sideIn(l.sidefront) || sideIn(l.sideback) ? i : -1)).filter((i) => i >= 0);
-  return { index, ...sector, lines };
+  const xs = [], ys = [];
+  for (const i of lines) for (const v of [udmf.linedef[i].v1, udmf.linedef[i].v2]) { xs.push(udmf.vertex[v].x); ys.push(udmf.vertex[v].y); }
+  // [rc4l] The box its lines span, so a camera or a player can be put inside it without guessing.
+  const bounds = lines.length ? [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)] : null;
+  return { index, ...sector, bounds, lines };
+}
+
+// [rc4l] Every sector carrying a tag (its UDMF id), described: what a special or script aimed at that tag reaches.
+export function describeTag(udmf, tag) {
+  return udmf.sector.map((s, i) => (s.id === tag ? describeSector(udmf, i) : null)).filter(Boolean);
 }
 
 // [rc4l] One line with its ends, its special and the sector on each side.
@@ -89,8 +98,8 @@ export function grepScripts(text, pattern) {
   return String(text).split(/\r?\n/).map((t, i) => ({ line: i + 1, text: t.trim() })).filter((l) => re.test(l.text));
 }
 
-// [rc4l] Everything `fuactl mapdata` prints, from the map's lumps and the sectors, lines and script pattern asked about.
-export function mapReport(found, { sectors = [], lines = [], scripts = null } = {}) {
+// [rc4l] Everything `fuactl mapdata` prints, from the map's lumps and the sectors, lines, special and script pattern asked about.
+export function mapReport(found, { sectors = [], lines = [], scripts = null, special = null, tag = null } = {}) {
   const textmap = found.lumps.get("TEXTMAP");
   if (!textmap) throw new Error(`${found.file} holds the map in binary format; mapdata reads UDMF only`);
   const udmf = parseUdmf(textmap.toString("latin1"));
@@ -100,6 +109,9 @@ export function mapReport(found, { sectors = [], lines = [], scripts = null } = 
     summary: summarizeMap(udmf),
     sectors: sectors.map((i) => describeSector(udmf, i)),
     lines: lines.map((i) => describeLine(udmf, i)),
+    tag: tag === null ? undefined : describeTag(udmf, tag),
+    special: special === null ? undefined
+      : udmf.linedef.map((l, i) => (l.special === special ? describeLine(udmf, i) : null)).filter(Boolean),
     scripts: scripts === null ? undefined : (source ? grepScripts(source.toString("latin1"), scripts) : "no SCRIPTS source in the map"),
   };
 }

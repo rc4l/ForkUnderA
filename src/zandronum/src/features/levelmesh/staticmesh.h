@@ -110,6 +110,8 @@ struct MeshPiece
 	// so the equation attenuates it and a lit item in a dark room comes out dimmer than GL's. It is
 	// therefore carried separately rather than mixed into colorR/G/B.
 	float         dynR, dynG, dynB;
+	// [rc4l] Lit by the CPU's light for the whole actor (dynR..dynB) rather than the shader's per-fragment loop, as GL lights sprites and models.
+	bool          cpuLight;
 
 	// [rc4l] This surface is seen from BELOW: a ceiling, or the underside of a 3D floor.
 	//
@@ -148,6 +150,14 @@ struct MeshPiece
 	// the backend draws these with the world, depth-writing, instead of in the sorted blend pass.
 	bool          solid;
 
+	// [rc4l] A flooded gap: drawn with the plane at floodZ seen through it, u = floodUV[0..2] . (x, y, 1) and v likewise from [3..5].
+	bool          flood;
+	float         floodZ;
+	float         floodUV[6];
+	// [rc4l] A reflective floor or ceiling (Sector_SetPlaneReflection): its sector, -1 for none, and which plane.
+	int           mirrorSector;
+	bool          mirrorCeiling;
+
 	// [rc4l] Zero-initialise. Every site fills the fields it cares about and leaves the rest, so a
 	// field added later is garbage at the sites that predate it -- which is how SegCache::pieces
 	// silently inherited the previous level's vertex ranges. A translation of garbage would remap
@@ -166,6 +176,10 @@ struct MeshPiece
 		dynR = dynG = dynB = 0.f;
 		quad = false; solid = false;
 		facesDown = false; depthBias = false; redToAlpha = false;
+		flood = false; floodZ = 0.f;
+		mirrorSector = -1; mirrorCeiling = false;
+		cpuLight = false;
+		for (int i = 0; i < 6; i++) floodUV[i] = 0.f;
 	}
 };
 

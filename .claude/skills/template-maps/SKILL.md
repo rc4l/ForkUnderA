@@ -82,9 +82,29 @@ sub-pixel framing averages out while a block-sized fault stays loud. Its GL fram
 Vulkan-off launch on purpose: with Vulkan on, GL captures on a skybox map were unreliable in every build.
 
 When the fault is a Vulkan switch rather than a GL difference, pass `sides`: two named launches, each
-with the cvars it sets, compared Vulkan against Vulkan. `scenarios/pointlight.mjs` compares
+with the cvars it sets and any `commands` to run after them (`fua_mapbake_now` re-bakes with a bake
+cvar changed), compared Vulkan against Vulkan. `scenarios/pointlight.mjs` compares
 `fua_dg_clusters 0` against `1`, which match exactly once fixed, so its ceiling is 0.05. With no GL side
 nothing is read back from a window, and the harness runs even with other engines open.
+
+A box can name a `vantage`, when the vantages look at different parts of the frame. A model needs no
+assets: `kvxBox` and `voxelLumps` in `src/kvx.mjs` put a KVX voxel on every frame of a sprite.
+
+A side's `commands` can also load another map of the same wad (`map MAP02`), which makes the oracle a
+level that is right by construction: `waterseam.mjs` judges a pool split into two sectors against the
+same pool in one piece, and `underwatersprite.mjs` a medkit under all-but-opaque water against the
+empty pool.
+
+GL and Vulkan do not frame a view identically yet: GL applies Doom's 1.2 pixel stretch vertically and
+Vulkan does not, so a thin GL-vs-Vulkan box over a few rows of geometry reads several points of
+difference on a correct build. Prefer a Vulkan-vs-Vulkan oracle that is right by construction for the
+region (`water3d.mjs`: bands off is the wall's own light, which is what the part above the water must
+have), and prove it fails on a deliberately broken build.
+
+For something that must MOVE (a warp, a scroller), use `compareOverTime` instead: one launch, each
+vantage captured twice `intervalMs` apart, and a box can carry a `floor` (it must change at least this
+much) as well as a `ceiling`. Judge it per pixel (`block: 1`): a ripple shifts an even texture without
+moving its 16-pixel block means.
 
 `BOXES[map]` is `{ name: { box: [x0, y0, x1, y1], ceiling } }` in frame fractions. Set ceilings from
 measurement, not taste: run the FIXED build, take what it reads, add margin. A map with a known,
@@ -113,6 +133,17 @@ Export the builder from the scenario; `runScenarioIfMain` keeps the import from 
 | `tools/fuactl/scenarios/pointlight.mjs` | two Vulkan sides, a light-grid switch against itself |
 | `tools/fuactl/scenarios/skymirror.mjs` | a reflective floor set by an OPEN script, reflection off against on |
 | `tools/fuactl/scenarios/skyzenith.mjs` | straight up where no sky wall reaches, sky surfaces off against on |
+| `tools/fuactl/scenarios/water3d.mjs` | a swimmable 3D floor's light band on the pool walls, bands on against off |
+| `tools/fuactl/scenarios/droppedbindings.mjs` | every binding dropped (`fua_dg_flushtextures`, what a minimise does) against kept, over still water |
+| `tools/fuactl/scenarios/waterseam.mjs` | two 3D-floor waters meeting at a sector line against one pool: the seam draws no wall |
+| `tools/fuactl/scenarios/underwatersprite.mjs` | a sprite under translucent water against no sprite: the plane-layer sort draws it first |
+| `tools/fuactl/scenarios/underwaterup.mjs` | a water's underside from below, its water lit dark blue against lit like the pool: a top plane takes the light above it |
+| `tools/fuactl/scenarios/floodgap.mjs` | steps with no lower or upper texture against the same hall with no steps; boxes name their `vantage` |
+| `tools/fuactl/scenarios/planemirror.mjs` | a reflective floor before a raised block, GL against Vulkan |
+| `tools/fuactl/scenarios/mirrorwalk.mjs` | a voxel model (`src/kvx.mjs`) in a room whose sky and floor are GL portals, against one with neither |
+| `tools/fuactl/scenarios/switchtex.mjs` | a switch pressed with `+use` against the same wall drawn pressed |
+| `tools/fuactl/scenarios/actorlight.mjs` | a sprite by a red point light, GL against Vulkan: the actor's own light |
+| `tools/fuactl/scenarios/warpwater.mjs` | a warp2 flat captured twice apart (`compareOverTime`): the water must move, the floor must not |
 | `tools/fuactl/src/mapdata.mjs` | read a real map's sectors, lines and scripts, to find the ingredient to template |
 | `tools/fuactl/src/acs.mjs` | ACS0 BEHAVIOR writer for scripted template maps |
 | `tools/fuactl/test/{udmf,template,pngcore}.test.mjs` | their tests |

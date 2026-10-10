@@ -26,6 +26,8 @@ struct FFRover
 	// handled by the front sector's pass, not this one, and must be skipped here.
 	bool  renderSides;
 	bool  invertSides;
+	// [rc4l] GL's FF_SWIMMABLE|FF_TRANSLUCENT bits: a non-zero kind is clipped by the near side's slabs of the same kind, 0 (solid) never is.
+	int   kind;
 };
 
 // One block of wall, cut out by one slab.
@@ -44,8 +46,15 @@ struct FFBlock
 // Returns how many blocks were written. A slab entirely above the wall contributes nothing; one that
 // overlaps the previous block is clipped to it; and the walk stops as soon as the running top reaches
 // the wall's bottom, because everything below that is the wall's own lower part.
+//
+// [rc4l] nearRovers are the FRONT sector's slabs, top down, which clip the translucent and swimmable blocks (ComputeFFClip).
 int ComputeFFBlocks(const float *wallTop, const float *wallBottom,
-	const FFRover *rovers, int nRovers, FFBlock *out, int maxOut);
+	const FFRover *rovers, int nRovers, FFBlock *out, int maxOut,
+	const FFRover *nearRovers = 0, int nNear = 0);
+
+// [rc4l] GLWall::ClipFFloors: one block of a slab of this kind, less what the near side's slabs of the same kind already cover, as the blocks left top down.
+int ComputeFFClip(const float *top, const float *bottom, int kind, const FFRover *nearRovers, int nNear,
+	int rover, FFBlock *out, int maxOut);
 
 }} // namespace zx::surfaces
 

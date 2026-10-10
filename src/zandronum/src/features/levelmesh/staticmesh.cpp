@@ -154,6 +154,7 @@ void CaptureShading(int lightlevel, int rellight, const FColormap &cm, MeshPiece
 	out.dynLightIndex = -1;
 	// CaptureShading captures SHADING; a CPU light belongs to whoever computed one.
 	out.dynR = out.dynG = out.dynB = 0.f;
+	out.cpuLight = false;
 	// [rc4l] The NORMAL is deliberately not touched here.
 	//
 	// This function captures SHADING, and a normal is geometry. It used to default to straight up,

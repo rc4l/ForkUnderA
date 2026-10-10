@@ -121,6 +121,10 @@ ClusterRange ComputeLightClustersFromMVP(const ClusterGrid &g, const float mvp[1
 // two against each other, which only works if these are constant expressions.
 enum { kClusterTilePixels = 64, kClusterSlices = 24 };
 
+// [rc4l] The depth range the slices cover, in map units: the binning pass and the scene constants read the same two numbers.
+const float kClusterZNear = 5.f;
+const float kClusterZFar = 8192.f;
+
 // The grid a screen of this size gets. One place, so the shader and the binning agree by
 // construction rather than by both being edited at the same time.
 ClusterGrid ComputeGridForScreen(int screenW, int screenH, float zNear, float zFar);

@@ -17,6 +17,10 @@
 #include "features/surfaces/surfacebuild.h"
 #include "features/surfaces/computation/wallgeom_compute.h"
 #include "features/surfaces/computation/walluv_compute.h"
+#include "features/surfaces/computation/gapfill_compute.h"
+#include "features/levelmesh/flatmesh.h"
+#include "features/levelmesh/computation/flatmesh_compute.h"
+#include "p_3dfloors.h"   // F3DFloor, for the FF_FIX abuse GL will not flood over
 #include "features/horizon/computation/horizon_compute.h"
 
 // [rc4l] Declared at global scope: EXTERN_CVAR inside the namespace would name a different symbol
@@ -173,6 +177,9 @@ bool BuildDerivedWallSpan(const seg_t *seg, int renderType, DerivedWallSpan &out
 
 	FMaterial *mat = FMaterial::ValidateTexture(seg->sidedef->GetTexture((side_t::ETexpart)texpos),
 		false, true);
+	// [rc4l] The sector flat a gap is filled with, by its BASE id, so an animated floor keeps animating there.
+	FTextureID gapTex;
+	gapTex.SetInvalid();
 	// [rc4l] A sloped step with NO texture on the sidedef is drawn with the SECTOR'S FLAT.
 	//
 	// GLWall::Process falls back to it when both sectors are sloped and neither plane is sky --
@@ -180,17 +187,55 @@ bool BuildDerivedWallSpan(const seg_t *seg, int renderType, DerivedWallSpan &out
 	// otherwise and slopes are simply not precise enough to match in any case." Without this the map
 	// does not account for 131 of dbab04's parts, 38 uppers and 93 lowers, all of them on the map
 	// with 337 sloped pieces.
+	// [rc4l] A flat one is FLOODED: GL paints the gap with the back plane seen through it (FloodLowerGap, FloodUpperGap), where the bake left a hole.
 	if (mat == NULL && seg->backsector != NULL &&
 	    (renderType == RENDERWALL_TOP || renderType == RENDERWALL_BOTTOM))
 	{
-		const sector_t *fs = seg->frontsector, *bs = seg->backsector;
+		sector_t *fs = seg->frontsector, *bs = seg->backsector;
 		const bool ceilingPart = (renderType == RENDERWALL_TOP);
 		const secplane_t &fp = ceilingPart ? fs->ceilingplane : fs->floorplane;
 		const secplane_t &bp = ceilingPart ? bs->ceilingplane : bs->floorplane;
 		const int which = ceilingPart ? sector_t::ceiling : sector_t::floor;
-		if ((fp.a | fp.b | bp.a | bp.b) != 0 &&
-		    fs->GetTexture(which) != skyflatnum && bs->GetTexture(which) != skyflatnum)
-			mat = FMaterial::ValidateTexture(fs->GetTexture(which), false, true);
+		const subsector_t *sub = seg->Subsector;
+		zx::surfaces::GapInputs g = {};
+		g.top = ceilingPart;
+		g.sloped = (fp.a | fp.b | bp.a | bp.b) != 0;
+		g.frontSky = fs->GetTexture(which) == skyflatnum;
+		g.backSky = bs->GetTexture(which) == skyflatnum;
+		g.backPortal = bs->portals[which] != NULL;
+		g.transdoor = bs->transdoor;
+		g.polyobj = (seg->sidedef->Flags & WALLF_POLYOBJ) != 0;
+		g.fixAbuse = bs->e != NULL && bs->e->XFloor.ffloors.Size() != 0 &&
+			(bs->e->XFloor.ffloors[0]->flags & (FF_FIX | FF_SEETHROUGH)) == FF_FIX;
+		g.fakeFlat = sub == NULL || sub->render_sector != sub->sector || fs != sub->sector;
+		g.hasPartner = seg->PartnerSeg != NULL && seg->PartnerSeg->Subsector != NULL &&
+			!(seg->PartnerSeg->Subsector->hacked & 4);
+		const int fill = zx::surfaces::ComputeGapFill(g);
+		if (fill == zx::surfaces::kGapFrontFlat)
+		{
+			gapTex = fs->GetTexture(which);
+			mat = FMaterial::ValidateTexture(gapTex, false, true);
+		}
+		else if (fill == zx::surfaces::kGapFlood)
+		{
+			gapTex = bs->GetTexture(which);
+			mat = FMaterial::ValidateTexture(gapTex, false, true);
+			if (mat != NULL)
+			{
+				GLSectorPlane sp;
+				sp.GetFromSector(bs, which);
+				zx::levelmesh::PlaneUVTransform uvt;
+				zx::levelmesh::PlaneUVFor(sp, mat, uvt);
+				const zx::levelmesh::PlaneUVAffine a = zx::levelmesh::ComputePlaneUVAffine(uvt);
+				out.flood = true;
+				out.floodCeiling = ceilingPart;
+				// [rc4l] GL floods at the back plane's height at the seg's first vertex, sloped or not.
+				out.floodZ = FIXED2FLOAT(bp.ZatPoint(seg->v1));
+				out.floodUV[0] = a.ux; out.floodUV[1] = a.uy; out.floodUV[2] = a.u0;
+				out.floodUV[3] = a.vx; out.floodUV[4] = a.vy; out.floodUV[5] = a.v0;
+				out.floodSector = bs;
+			}
+		}
 	}
 	if (mat == NULL) { g_fbNoTexture++; g_fellBack++; return false; }
 
@@ -379,7 +424,7 @@ bool BuildDerivedWallSpan(const seg_t *seg, int renderType, DerivedWallSpan &out
 	// downstream keys a batch on this, so an animated wall then looked like it had moved to a
 	// different batch several times a second: 311,437 rebatches on dbab04, each one a full scene
 	// rebuild. ByIndex skips the translation, which is what MeshPiece::baseTex says it wants.
-	out.baseTex = TexMan.ByIndex(seg->sidedef->GetTexture((side_t::ETexpart)texpos).GetIndex());
+	out.baseTex = TexMan.ByIndex((gapTex.isValid() ? gapTex : seg->sidedef->GetTexture((side_t::ETexpart)texpos)).GetIndex());
 	if (out.baseTex == NULL || ((FTexture *)out.baseTex)->Name.Len() == 0)
 		out.baseTex = (mat != NULL) ? (const void *)((FMaterial *)mat)->tex : NULL;
 	out.valid = true;

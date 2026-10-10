@@ -1615,6 +1615,7 @@ add_executable( zdoom WIN32
 	features/surfaces/computation/wallgeom_compute.cpp
 	features/surfaces/computation/wallbands_compute.cpp
 	features/surfaces/computation/ffblocks_compute.cpp
+	features/surfaces/computation/gapfill_compute.cpp
 	features/surfaces/computation/walluv_compute.cpp
 	features/surfaces/computation/planegeom_compute.cpp
 	features/surfaces/computation/surfacechange_compute.cpp
@@ -1627,6 +1628,11 @@ add_executable( zdoom WIN32
 	features/hwrender/computation/lightside_compute.cpp
 	features/hwrender/computation/walllight_compute.cpp
 	features/hwrender/computation/lightcluster_compute.cpp
+	features/hwrender/computation/warp_compute.cpp
+	features/hwrender/computation/sceneconstants_compute.cpp
+	features/hwrender/computation/scenebinding_compute.cpp
+	features/hwrender/computation/flood_compute.cpp
+	features/hwrender/computation/planemirror_compute.cpp
 	features/hwrender/computation/skyportal_compute.cpp
 	features/hwrender/computation/batch_compute.cpp
 	features/fov-interp/fovinterp.cpp

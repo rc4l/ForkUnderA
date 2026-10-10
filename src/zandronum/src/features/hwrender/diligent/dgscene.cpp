@@ -53,6 +53,11 @@
 #include "features/hwrender/computation/skyportal_compute.h"   // [rc4l] what the portal pass may draw
 #include "features/levelmesh/computation/packedcolor_compute.h"
 #include "features/levelmesh/computation/flatmesh_compute.h"   // [rc4l] kSkyCapture*, the sky list a pass draws
+#include "features/hwrender/computation/warp_compute.h"   // [rc4l] the warp texture ripple
+#include "features/hwrender/computation/sceneconstants_compute.h"   // [rc4l] the constant block, packed in one place
+#include "features/hwrender/computation/scenebinding_compute.h"
+#include "features/hwrender/computation/planemirror_compute.h"   // [rc4l] reflective floors and ceilings   // [rc4l] a batch's pipeline, and when a resize rebuilds the targets
+#include "features/hwrender/diligent/dgshared.h"          // [rc4l] FUA_CONSTANTS_GLSL, the constant block every pass declares
 #include "features/levelmesh/projdecals.h"   // [rc4l] the marks the decal pass draws
 #include "features/hwrender/computation/surfaceorder_compute.h"   // the draw order, tested off-engine
 #include "features/hwrender/hud2d.h"
@@ -115,9 +120,16 @@ CVAR(Int, fua_dg_lightmode, 1, CVAR_ARCHIVE)
 // glow" and "the glow is under the scorch" are the same screenshot. Two attempts at this were made
 // by reading pictures and both were wrong. The list itself is one Printf away.
 static bool g_dumpBlendOrder = false;
+// [rc4l] Whether the world being drawn is the player's own view, the only one that dumps its order or paints plane reflections.
+static bool g_drawingMainView = false;
+// [rc4l] With a height given, the dump lists every draw whose span holds it instead of the nearest 40.
+static bool g_dumpBlendAtZ = false;
+static float g_dumpBlendZ = 0.f;
 CCMD( fua_dg_blendorder )
 {
 	g_dumpBlendOrder = true;
+	g_dumpBlendAtZ = argv.argc( ) > 1;
+	g_dumpBlendZ = g_dumpBlendAtZ ? (float)atof( argv[1] ) : 0.f;
 	Printf( "fua_dg_blendorder: dumping the next translucent pass\n" );
 }
 // [rc4l] Mirror every engine frame into the backend window, from the live camera. Off by default:
@@ -177,6 +189,8 @@ CVAR(Bool, fua_dg_sky, true, 0)
 CVAR(Bool, fua_dg_rtmirrors, false, CVAR_ARCHIVE)
 // Planar mirror reflections. On by default; 0 takes the whole pass out, for bisecting a GPU hang.
 CVAR(Bool, fua_dg_mirrors_on, true, CVAR_ARCHIVE)
+// [rc4l] How many reflective planes get a reflection a frame, each a render of the world; 0 turns them off.
+CVAR(Int, fua_dg_planemirrors, 4, CVAR_ARCHIVE)
 // The sky that is a place: render the world from an ASkyViewpoint and use it as the background.
 CVAR(Bool, fua_dg_skyportal, true, CVAR_ARCHIVE)
 // [rc4l] The portal's render scale as a DIVISOR of the swapchain: 1 is full, 2 is half. See
@@ -289,6 +303,9 @@ EXTERN_CVAR(Int, fua_decalmode)
 
 namespace zx { namespace hwrender {
 
+// [rc4l] Backend chatter, off by default: here, when the scene targets are rebuilt and at what size.
+EXTERN_CVAR(Bool, fua_dg_verbose)
+
 Diligent::IRenderDevice  *GetDevice();
 Diligent::ITextureView   *GetMaterialSRV(const void *materialPtr, int translation);
 Diligent::ITextureView   *GetBrightmapSRV(const void *materialPtr);
@@ -363,8 +380,13 @@ struct ScenePieceData
 {
 	float r, g, b, softLight;
 	float fogDensity, alpha, fogMode, matSlot;
-	float fogR, fogG, fogB, pad0;
-	float nx, ny, nz, pad1;
+	float fogR, fogG, fogB, warpStyle;   // [rc4l] ANIMDEFS warp (1) or warp2 (2), else 0
+	float nx, ny, nz, warpSpeed;
+	// [rc4l] A flooded gap: u = floodU.xy . (x, y) + floodU.z on the plane at height floodU.w, v likewise, flood 1 to switch it on.
+	float floodUx, floodUy, floodU0, floodZ;
+	float floodVx, floodVy, floodV0, flood;
+	// [rc4l] A sprite's or model's light from the CPU (GL's gl_SetDynSpriteLight), cpuLight 1 to use it instead of the shader's loop.
+	float actorR, actorG, actorB, cpuLight;
 };
 
 // [rc4l] The per-piece records the vertices index into, and the buffer that holds them.
@@ -373,6 +395,7 @@ struct ScenePieceData
 // Sunder MAP16 would be most of what the shrink saves on a small map.
 static TArray<ScenePieceData> g_scenePieceData;
 static void FillPieceData(const zx::levelmesh::MeshPiece &p, int translation, ScenePieceData &pd);
+
 static Diligent::RefCntAutoPtr<Diligent::IBuffer> g_pieceBuf;
 static unsigned int g_pieceCapacity = 0;
 
@@ -410,6 +433,10 @@ struct SceneBatch
 	// behind the player. The GPU never minded (0.18 ms for the whole world); the CPU did.
 	float        minX, minY, minZ;
 	float        maxX, maxY, maxZ;
+	// [rc4l] A reflective plane's sector (-1 for none) and side, and the reflection slot it drew from this frame.
+	int          mirrorSector;
+	bool         mirrorCeiling;
+	int          mirrorSlot;
 };
 static TArray<SceneBatch> g_batches;
 // [rc4l] Indices of the translucent batches, in build order. Small -- a level has a handful of
@@ -435,6 +462,7 @@ struct DynRun
 	// that draws the interior floor and seats straight through the bodywork.
 	bool         solid;
 	float        cx, cy, cz;   // centroid, for the merged sort
+	float        lo, hi;       // [rc4l] its height span, which sides of a translucent plane it is on
 };
 static TArray<DynRun> g_dynRuns;
 static bool g_dynReady = false;
@@ -479,6 +507,20 @@ static void ReleaseBatchSRBs()
 // The static path can build its SRBs once at upload, but the dynamic path (sprites) sees a different
 // set of materials every frame, and creating SRBs per frame would allocate descriptor sets at 60 Hz.
 // Keyed on the FMaterial pointer, which is stable per level.
+Diligent::RefCntAutoPtr<Diligent::IShader> CompileShader(Diligent::SHADER_TYPE type, const char *name, const char *source)
+{
+	Diligent::RefCntAutoPtr<Diligent::IShader> shader;
+	auto *dev = GetDevice();
+	if (dev == NULL) return shader;
+	Diligent::ShaderCreateInfo ci;
+	ci.SourceLanguage = Diligent::SHADER_SOURCE_LANGUAGE_GLSL_VERBATIM;
+	ci.Desc.ShaderType = type;
+	ci.Desc.Name = name;
+	ci.Source = source;
+	dev->CreateShader(ci, &shader);
+	return shader;
+}
+
 // [rc4l] Keyed on (PSO, material), not material alone: an SRB is created from a pipeline and is only
 // valid with it, so the translucent and additive passes need their own even for the same texture.
 struct MatSRB { const void *material; const void *pso; int translation; Diligent::IShaderResourceBinding *srb; };
@@ -525,6 +567,24 @@ Diligent::IShaderResourceBinding *GetMaterialSRB(Diligent::IPipelineState *pso,
 	}
 	g_matSRBs.Push(e);
 	return e.srb;
+}
+
+// [rc4l] The scene pipeline a static batch draws with.
+static Diligent::IPipelineState *BatchPSO(int blend)
+{
+	switch (zx::hwrender::ComputeBatchPipeline(blend))
+	{
+	case zx::hwrender::kBatchPipelineMasked: return g_maskedPSO.RawPtr();
+	case zx::hwrender::kBatchPipelineAdd: return g_addPSO.RawPtr();
+	default: return g_transPSO.RawPtr();
+	}
+}
+
+// [rc4l] A batch's binding, made again for the frame it last resolved to whenever a flush, a resize or a minimise dropped it.
+static Diligent::IShaderResourceBinding *BatchSRB(SceneBatch &b)
+{
+	if (b.srb == NULL) b.srb = GetMaterialSRB(BatchPSO(b.blend), b.resolved);
+	return b.srb;
 }
 
 // [rc4l] The material slot table: the level's textures, numbered.
@@ -808,6 +868,7 @@ static void UpdateMaterialSlotInBindings(unsigned int slot)
 // Declared here because refreshing the array can require the pipelines to be made again -- see
 // the comment inside RefreshBindless for why that is not optional.
 static void ReleaseScenePipelines();
+static void ReleasePlaneMirrors();
 static bool EnsureScenePipeline(FString &err);
 
 static void RefreshBindless()
@@ -1068,10 +1129,9 @@ static const char *kSceneVS =
 	"layout(location = 0) in vec3 aPos;\n"
 	"layout(location = 1) in vec2 aUV;\n"
 	"layout(location = 2) in float aPiece;\n"
-	"layout(binding = 0) uniform Constants { mat4 uMVP; vec4 uCameraPos; vec4 uLightParams; vec4 uClipPlane; vec4 uScreen; vec4 uSkyColor; };\n"
+	FUA_CONSTANTS_GLSL
 	// [rc4l] Everything constant across a piece, read once here instead of ridden in on every vertex.
-	"struct PieceData { vec4 colorLight; vec4 fogAlphaMat; vec4 fogColor; vec4 normal; };\n"
-	"layout(std430, binding = 9) readonly buffer Pieces { PieceData pieces[]; };\n"
+	FUA_PIECEDATA_GLSL
 	"layout(location = 0) out vec2 vUV;\n"
 	"layout(location = 1) out vec3 vColor;\n"
 	"layout(location = 2) out vec3 vLightParm;\n"
@@ -1080,8 +1140,16 @@ static const char *kSceneVS =
 	"layout(location = 5) flat out int vLightIndex;\n"
 	"layout(location = 6) out vec3 vNormal;\n"
 	"layout(location = 7) flat out vec4 vPlane;\n"
+	"layout(location = 8) flat out vec2 vWarp;\n"
+	"layout(location = 9) flat out vec4 vFloodU;\n"
+	"layout(location = 10) flat out vec4 vFloodV;\n"
+	"layout(location = 11) flat out vec4 vActorLight;\n"
 	"void main() {\n"
 	"    PieceData pd = pieces[int(aPiece + 0.5)];\n"
+	"    vWarp = vec2(pd.fogColor.w, pd.normal.w);\n"
+	"    vFloodU = pd.floodU;\n"
+	"    vFloodV = pd.floodV;\n"
+	"    vActorLight = pd.actorLight;\n"
 	"    vec4 clip = uMVP * vec4(aPos, 1.0);\n"
 	"    gl_Position = clip;\n"
 	"    vUV = aUV;\n"
@@ -1145,7 +1213,11 @@ static const char *kSceneVS =
 	"layout(location = 5) flat in int vLightIndex;\n" \
 	"layout(location = 6) in vec3 vNormal;\n" \
 	"layout(location = 7) flat in vec4 vPlane;\n" \
-	"layout(binding = 0) uniform Constants { mat4 uMVP; vec4 uCameraPos; vec4 uLightParams; vec4 uClipPlane; vec4 uScreen; vec4 uSkyColor; };\n" \
+	"layout(location = 8) flat in vec2 vWarp;\n" \
+	"layout(location = 9) flat in vec4 vFloodU;\n" \
+	"layout(location = 10) flat in vec4 vFloodV;\n" \
+	"layout(location = 11) flat in vec4 vActorLight;\n" \
+	FUA_CONSTANTS_GLSL \
 	"layout(binding = 1) uniform sampler2D uTex;\n" \
 	/* [rc4l] The brightmap layer, present on EVERY material -- black where there is none.
 	   The brightmap is added to the lit colour, so black is the identity, and that removes the
@@ -1162,7 +1234,39 @@ static const char *kSceneVS =
 	   surfaces with different slots, and without it the index is assumed uniform across the wave
 	   and the whole quad samples whichever one won. */ \
 	"layout(binding = 8) uniform sampler2D uMaterials[" FUA_MAT_SLOTS_STR "];\n" \
-	"vec4 fuaTexel(vec2 uv) {\n" \
+	/* [rc4l] GL's func_warp1.fp and func_warp2.fp, line for line -- see warp_compute for the tested copy. */ \
+	"vec2 fuaWarp(vec2 uv) {\n" \
+	"    if (vWarp.x < 0.5) return uv;\n" \
+	"    const float twoPi = 6.28318530717958647692;\n" \
+	"    float t = uFrame.x * vWarp.y;\n" \
+	"    vec2 o;\n" \
+	"    if (vWarp.x < 1.5) {\n" \
+	"        o.y = sin(twoPi * (uv.x + t * 0.125)) * 0.1;\n" \
+	"        o.x = sin(twoPi * (uv.y + t * 0.125)) * 0.1;\n" \
+	"    } else {\n" \
+	"        float siny = sin(twoPi * (uv.y * 2.2 + t * 0.75)) * 0.03;\n" \
+	"        o.y = siny + sin(twoPi * (uv.x * 0.75 + t * 0.75)) * 0.03;\n" \
+	"        o.x = siny + sin(twoPi * (uv.x * 1.1 + t * 0.45)) * 0.02;\n" \
+	"    }\n" \
+	"    return uv + o;\n" \
+	"}\n" \
+	/* [rc4l] GL's flooded gap: where the eye's ray through this fragment meets the plane at vFloodU.w, w 1 when it does; flood_compute is the tested twin. */ \
+	"vec4 fuaFloodPoint() {\n" \
+	"    if (vFloodV.w < 0.5) return vec4(0.0);\n" \
+	"    float rise = vPixelPos.y - uCameraPos.y;\n" \
+	"    if (rise == 0.0) return vec4(0.0);\n" \
+	"    float t = (vFloodU.w - uCameraPos.y) / rise;\n" \
+	"    if (!(t > 0.0 && t <= 1.0)) return vec4(0.0);\n" \
+	"    return vec4(uCameraPos.xyz + t * (vPixelPos.xyz - uCameraPos.xyz), 1.0);\n" \
+	"}\n" \
+	/* [rc4l] The plane's own texture coordinate there (mesh x and z are map x and y), or the wall's own when the eye is on the plane's far side. */ \
+	"vec2 fuaFloodUV(vec2 uvIn) {\n" \
+	"    vec4 q = fuaFloodPoint();\n" \
+	"    if (q.w < 0.5) return uvIn;\n" \
+	"    return vec2(dot(vFloodU.xy, q.xz) + vFloodU.z, dot(vFloodV.xy, q.xz) + vFloodV.z);\n" \
+	"}\n" \
+	"vec4 fuaTexel(vec2 uvIn) {\n" \
+	"    vec2 uv = fuaWarp(fuaFloodUV(uvIn));\n" \
 	"    if (uSkyColor.w > 0.5 && vLightIndex > 0)\n" \
 	"        return texture(uMaterials[nonuniformEXT(vLightIndex)], uv);\n" \
 	"    return texture(uTex, uv);\n" \
@@ -1315,8 +1419,13 @@ static const char *kSceneVS =
 	"    if (dbg == 16.0) return vec3(float(vLightIndex) / 255.0);\n" \
 	"    if (dbg == 17.0) return (uSkyColor.w > 0.5 && vLightIndex > 0) ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);\n" \
 	"    if (dbg == 0.0) return texel * vColor;\n" \
+	/* [rc4l] A flooded gap is lit and fogged where the plane it shows is, as DrawFloodedPlane's own polygon would be, and takes no dynamic light. */ \
+	"    vec4 surfPos = vPixelPos;\n" \
+	"    float surfDepth = gl_FragCoord.z;\n" \
+	"    vec4 fq = fuaFloodPoint();\n" \
+	"    if (fq.w > 0.5) { vec4 fc = uMVP * vec4(fq.xyz, 1.0); surfPos = vec4(fq.xyz, fc.w); surfDepth = fc.z / fc.w; wantDynLight = false; }\n" \
 	"    float fogMode = vFog.a;\n" \
-	"    float fogfactor = fuaFogFactor(fogMode, vLightParm.y, vPixelPos, uCameraPos.xyz);\n" \
+	"    float fogfactor = fuaFogFactor(fogMode, vLightParm.y, surfPos, uCameraPos.xyz);\n" \
 	"    if (dbg == 5.0) return vec3(fogfactor);\n" \
 	"    if (dbg == 6.0) return vFog.rgb;\n" \
 	"    if (dbg == 7.0) return vec3(clamp(vPixelPos.w / 2000.0, 0.0, 1.0));\n" \
@@ -1326,7 +1435,7 @@ static const char *kSceneVS =
 	   must not appear in the reflection -- without this the wall the mirror hangs on renders first
 	   from the reflected camera and fills the whole reflection. w == 0 means no mirror is active. */ \
 	"    if (uClipPlane.w != 0.0 && dot(vPixelPos.xyz, uClipPlane.xyz) + uClipPlane.w < 0.0) discard;\n" \
-	"    vec3 color = fuaSectorLight(vColor, vLightParm.x, fogMode, fogfactor, gl_FragCoord.z);\n" \
+	"    vec3 color = fuaSectorLight(vColor, vLightParm.x, fogMode, fogfactor, surfDepth);\n" \
 	/* Dynamic lights add to the light COLOUR before the texture is modulated, exactly as
 	   getLightColor does -- adding after would light the black parts of a texture too. */ \
 	/* [rc4l] Brightmaps add to the LIGHT, not to the finished fragment.
@@ -1335,14 +1444,16 @@ static const char *kSceneVS =
 	   surface keeps its own colour. Adding the same white to texel * color instead means "make this
 	   texel white", and a lava floor came out as a washed-out pink slab: luminance 41 -> 162 at the
 	   same camera. Right value, right texture, wrong point in the pipeline. */ \
-	"    color = min(color + texture(uBrightmap, vUV).rgb, vec3(1.0));\n" \
+	"    color = min(color + texture(uBrightmap, fuaFloodUV(vUV)).rgb, vec3(1.0));\n" \
 	/* [rc4l] Dynamic lights are optional, because a SHADED DECAL must not take them.
 	   Its colour is its own -- a scorch mark is black -- and that colour arrives folded into the
 	   vertex light, so a black decal has vColor 0 and the dynamic light term is then the ONLY thing
 	   left in it. Firing a weapon lit every burn mark in the room with the muzzle flash's colour.
 	   GL never has this problem: it applies the decal's colour as an OBJECT COLOUR that multiplies
 	   the finished fragment, and zero times anything is still zero. */ \
-	"    if (wantDynLight) color = fuaDynLight(color);\n" \
+	/* [rc4l] A sprite or model takes the light GL worked out for its actor, added after the sector light as main.fp adds uDynLightColor, and never the per-light loop. */ \
+	"    if (vActorLight.w > 0.5) { if (wantDynLight) color = clamp(color + vActorLight.rgb, 0.0, 1.4); }\n" \
+	"    else if (wantDynLight) color = fuaDynLight(color);\n" \
 	"    vec3 frag = texel * color;\n" \
 	"    return fuaColouredFog(frag, vFog.rgb, fogMode, fogfactor);\n" \
 	"}\n" \
@@ -1660,7 +1771,7 @@ static const char *kSkyVS =
 	"layout(location = 1) in vec2 aUV;\n"
 	"layout(location = 2) in vec4 aSkyColor;\n"
 	"layout(location = 3) in float aSkyAlpha;\n"
-	"layout(binding = 0) uniform Constants { mat4 uMVP; vec4 uCameraPos; vec4 uLightParams; vec4 uClipPlane; vec4 uScreen; vec4 uSkyColor; };\n"
+	FUA_CONSTANTS_GLSL
 	"layout(location = 0) out vec2 vUV;\n"
 	"layout(location = 1) out vec4 vSkyColor;\n"
 	"layout(location = 2) out float vSkyAlpha;\n"
@@ -1863,22 +1974,8 @@ static bool CreateSkyPipeline(Diligent::TEXTURE_ADDRESS_MODE addrU, const char *
 	if (!dev || !swap) return false;
 
 	Diligent::RefCntAutoPtr<Diligent::IShader> vs, ps;
-	{
-		Diligent::ShaderCreateInfo ci;
-		ci.SourceLanguage = Diligent::SHADER_SOURCE_LANGUAGE_GLSL_VERBATIM;
-		ci.Desc.ShaderType = Diligent::SHADER_TYPE_VERTEX;
-		ci.Desc.Name = "fua sky VS";
-		ci.Source = kSkyVS;
-		dev->CreateShader(ci, &vs);
-	}
-	{
-		Diligent::ShaderCreateInfo ci;
-		ci.SourceLanguage = Diligent::SHADER_SOURCE_LANGUAGE_GLSL_VERBATIM;
-		ci.Desc.ShaderType = Diligent::SHADER_TYPE_PIXEL;
-		ci.Desc.Name = "fua sky PS";
-		ci.Source = kSkyPS;
-		dev->CreateShader(ci, &ps);
-	}
+	vs = CompileShader(Diligent::SHADER_TYPE_VERTEX, "fua sky VS", kSkyVS);
+	ps = CompileShader(Diligent::SHADER_TYPE_PIXEL, "fua sky PS", kSkyPS);
 	if (!vs || !ps) return false;
 
 	Diligent::LayoutElement layout[] = {
@@ -2203,22 +2300,8 @@ static bool EnsureSkyFadePipeline()
 	if (!dev || !swap) return false;
 
 	Diligent::RefCntAutoPtr<Diligent::IShader> vs, ps;
-	{
-		Diligent::ShaderCreateInfo ci;
-		ci.SourceLanguage = Diligent::SHADER_SOURCE_LANGUAGE_GLSL_VERBATIM;
-		ci.Desc.ShaderType = Diligent::SHADER_TYPE_VERTEX;
-		ci.Desc.Name = "fua sky fade VS";
-		ci.Source = kSkyFadeVS;
-		dev->CreateShader(ci, &vs);
-	}
-	{
-		Diligent::ShaderCreateInfo ci;
-		ci.SourceLanguage = Diligent::SHADER_SOURCE_LANGUAGE_GLSL_VERBATIM;
-		ci.Desc.ShaderType = Diligent::SHADER_TYPE_PIXEL;
-		ci.Desc.Name = "fua sky fade PS";
-		ci.Source = kSkyFadePS;
-		dev->CreateShader(ci, &ps);
-	}
+	vs = CompileShader(Diligent::SHADER_TYPE_VERTEX, "fua sky fade VS", kSkyFadeVS);
+	ps = CompileShader(Diligent::SHADER_TYPE_PIXEL, "fua sky fade PS", kSkyFadePS);
 	if (!vs || !ps) return false;
 
 	Diligent::LayoutElement layout[] = {
@@ -2394,22 +2477,8 @@ static bool EnsureSkyPortalResources()
 	if (!g_skyPortalPSO)
 	{
 		Diligent::RefCntAutoPtr<Diligent::IShader> vs, ps;
-		{
-			Diligent::ShaderCreateInfo ci;
-			ci.SourceLanguage = Diligent::SHADER_SOURCE_LANGUAGE_GLSL_VERBATIM;
-			ci.Desc.ShaderType = Diligent::SHADER_TYPE_VERTEX;
-			ci.Desc.Name = "fua sky portal VS";
-			ci.Source = kSkyPortalVS;
-			dev->CreateShader(ci, &vs);
-		}
-		{
-			Diligent::ShaderCreateInfo ci;
-			ci.SourceLanguage = Diligent::SHADER_SOURCE_LANGUAGE_GLSL_VERBATIM;
-			ci.Desc.ShaderType = Diligent::SHADER_TYPE_PIXEL;
-			ci.Desc.Name = "fua sky portal PS";
-			ci.Source = kSkyPortalPS;
-			dev->CreateShader(ci, &ps);
-		}
+		vs = CompileShader(Diligent::SHADER_TYPE_VERTEX, "fua sky portal VS", kSkyPortalVS);
+		ps = CompileShader(Diligent::SHADER_TYPE_PIXEL, "fua sky portal PS", kSkyPortalPS);
 		if (!vs || !ps) return false;
 
 		Diligent::SamplerDesc samp;
@@ -2451,7 +2520,7 @@ static bool EnsureSkyPortalResources()
 			"layout(location = 0) in vec3 aPos;\n"
 			"layout(location = 1) in vec2 aUV;\n"
 			"layout(location = 2) in float aPiece;\n"
-			"layout(binding = 0) uniform Constants { mat4 uMVP; vec4 uCameraPos; vec4 uLightParams; vec4 uClipPlane; vec4 uScreen; vec4 uSkyColor; };\n"
+			FUA_CONSTANTS_GLSL
 			// [rc4l] A sky surface may never reach BELOW the horizon, and the horizon is eye level.
 			//
 			// A sky sits at infinity, so the line where it meets the ground is exactly the height of
@@ -2470,7 +2539,7 @@ static bool EnsureSkyPortalResources()
 			"}\n";
 		static const char *kSurfPS =
 			"#version 450\n"
-			"layout(binding = 0) uniform Constants { mat4 uMVP; vec4 uCameraPos; vec4 uLightParams; vec4 uClipPlane; vec4 uScreen; vec4 uSkyColor; };\n"
+			FUA_CONSTANTS_GLSL
 			"layout(binding = 1) uniform sampler2D uSky;\n"
 			"layout(location = 0) out vec4 outColor;\n"
 			"layout(location = 0) in float vUp;\n"
@@ -2500,22 +2569,8 @@ static bool EnsureSkyPortalResources()
 			"    outColor = vec4(texture(uSky, uv).rgb, 1.0);\n"
 			"}\n";
 		Diligent::RefCntAutoPtr<Diligent::IShader> svs, sps;
-		{
-			Diligent::ShaderCreateInfo ci;
-			ci.SourceLanguage = Diligent::SHADER_SOURCE_LANGUAGE_GLSL_VERBATIM;
-			ci.Desc.ShaderType = Diligent::SHADER_TYPE_VERTEX;
-			ci.Desc.Name = "fua sky surface VS";
-			ci.Source = kSurfVS;
-			dev->CreateShader(ci, &svs);
-		}
-		{
-			Diligent::ShaderCreateInfo ci;
-			ci.SourceLanguage = Diligent::SHADER_SOURCE_LANGUAGE_GLSL_VERBATIM;
-			ci.Desc.ShaderType = Diligent::SHADER_TYPE_PIXEL;
-			ci.Desc.Name = "fua sky surface PS";
-			ci.Source = kSurfPS;
-			dev->CreateShader(ci, &sps);
-		}
+		svs = CompileShader(Diligent::SHADER_TYPE_VERTEX, "fua sky surface VS", kSurfVS);
+		sps = CompileShader(Diligent::SHADER_TYPE_PIXEL, "fua sky surface PS", kSurfPS);
 		if (svs && sps)
 		{
 			static Diligent::ShaderResourceVariableDesc surfVars[] = {
@@ -2926,6 +2981,7 @@ static void BuildDynamic(Diligent::IDeviceContext *ctx)
 				r.redAlpha = p.redToAlpha;
 				r.solid = p.solid;
 				r.cx = p.sortX; r.cy = p.sortY; r.cz = p.sortZ;
+				r.lo = 1e30f; r.hi = -1e30f;
 				runs.Push(r);
 			}
 			// [rc4l] A dynamic piece gets a record too, appended behind the level's own.
@@ -2959,6 +3015,7 @@ static void BuildDynamic(Diligent::IDeviceContext *ctx)
 			// only place that writes SceneVertex costs the same six writes and saves the other pass.
 			static const int kQuadOrder[6] = { 0, 1, 2, 2, 1, 3 };
 			const unsigned outCount = p.quad ? 6 : p.range.count;
+			DynRun &run = runs[runs.Size() - 1];
 			for (unsigned v = 0; v < outCount; v++)
 			{
 				const unsigned srcIndex = p.quad ? (unsigned)kQuadOrder[v] : v;
@@ -2968,8 +3025,10 @@ static void BuildDynamic(Diligent::IDeviceContext *ctx)
 				dv.u = sv.u; dv.v = sv.v;
 				dv.pieceIndex = (float)dynPieceIndex;
 				vb.Push(dv);
+				if (dv.y < run.lo) run.lo = dv.y;
+				if (dv.y > run.hi) run.hi = dv.y;
 			}
-			runs[runs.Size() - 1].count += outCount;
+			run.count += outCount;
 		}
 	if (vb.Size() == 0) return;
 
@@ -3112,12 +3171,16 @@ static void DrawSolidDyn(Diligent::IDeviceContext *ctx)
 	}
 }
 
+// [rc4l] How many distinct translucent plane heights split the last translucent pass, for fua_dg_blendorder.
+static int g_blendPlaneHeights = 0;
+
 static void DrawBlended(Diligent::IDeviceContext *ctx)
 {
 	struct BlendDraw { bool dyn; unsigned first, count; int blend, translation; const void *material;
 	                   Diligent::IShaderResourceBinding *srb; float dist; bool bias, red;
-	                   float cx, cy, cz; };   // the centre too: distance alone cannot tell two
+	                   float cx, cy, cz;      // [rc4l] the centre too: distance alone cannot tell two
 	                                          // marks on ONE spot from two marks on two walls
+	                   float lo, hi; int layer; bool plane; };   // [rc4l] height span, and its place among the translucent planes
 	static TArray<BlendDraw> list;
 	list.Clear();
 
@@ -3125,19 +3188,21 @@ static void DrawBlended(Diligent::IDeviceContext *ctx)
 
 	for (unsigned i = 0; i < g_blendBatches.Size(); i++)
 	{
-		const SceneBatch &b = g_batches[g_blendBatches[i]];
+		SceneBatch &b = g_batches[g_blendBatches[i]];
 		// [rc4l] A blended batch with no binding is skipped whether or not bindless is on.
 		//
 		// Relaxing this looked harmless -- with the array carrying materials a batch needs no binding
 		// of its own -- and it is how translucent geometry that the old path deliberately dropped got
 		// drawn again, over the whole world, in whatever the array had at its slot.
-		if (b.count == 0 || b.srb == NULL) continue;
+		// [rc4l] Re-resolved first, as the opaque pass does, or a minimise dropped every translucent surface until the next upload.
+		if (b.count == 0 || BatchSRB(b) == NULL) continue;
 		const float dx = b.sortX - cx, dy = b.sortY - cy, dz = b.sortZ - cz;
 		BlendDraw d;
 		d.dyn = false; d.first = b.first; d.count = b.count; d.blend = b.blend;
 		d.translation = 0; d.material = b.material; d.srb = b.srb;
 		d.bias = false; d.red = false;
 		d.cx = b.sortX; d.cy = b.sortY; d.cz = b.sortZ;
+		d.lo = b.minY; d.hi = b.maxY;   // [rc4l] SceneVertex y is height
 		d.dist = dx*dx + dy*dy + dz*dz;
 		list.Push(d);
 	}
@@ -3174,6 +3239,7 @@ static void DrawBlended(Diligent::IDeviceContext *ctx)
 			d.red = r.redAlpha;
 			const float dx = r.cx - cx, dy = r.cy - cy, dz = r.cz - cz;
 			d.cx = r.cx; d.cy = r.cy; d.cz = r.cz;
+			d.lo = r.lo; d.hi = r.hi;
 			d.dist = dx*dx + dy*dy + dz*dz;
 			list.Push(d);
 			g_dynDraws++;
@@ -3183,6 +3249,23 @@ static void DrawBlended(Diligent::IDeviceContext *ctx)
 	}
 
 	if (list.Size() == 0) return;
+
+	// [rc4l] Which translucent level planes stand between each draw and the eye, as GL's sort splits on them.
+	{
+		static TArray<zx::hwrender::BlendSpan> spans;
+		static TArray<int> layers;
+		static TArray<bool> planes;
+		spans.Resize(list.Size());
+		layers.Resize(list.Size());
+		planes.Resize(list.Size());
+		for (unsigned i = 0; i < list.Size(); i++)
+		{
+			spans[i].lo = list[i].lo; spans[i].hi = list[i].hi; spans[i].surface = !list[i].dyn;
+		}
+		g_blendPlaneHeights = zx::hwrender::ComputeBlendLayers(&spans[0], (int)list.Size(), cz, &layers[0], &planes[0]);
+		for (unsigned i = 0; i < list.Size(); i++) { list[i].layer = layers[i]; list[i].plane = planes[i]; }
+	}
+
 	// [rc4l] Farthest first, and DETERMINISTIC on a tie.
 	//
 	// std::sort is not stable, so two draws at the same distance -- a decal and the one a template
@@ -3201,21 +3284,36 @@ static void DrawBlended(Diligent::IDeviceContext *ctx)
 		[](const BlendDraw &a, const BlendDraw &b) {
 			zx::hwrender::TranslucentDraw da, db;
 			da.distSq = a.dist; da.blend = a.blend; da.decal = a.bias; da.first = a.first;
+			da.layer = a.layer; da.plane = a.plane;
 			db.distSq = b.dist; db.blend = b.blend; db.decal = b.bias; db.first = b.first;
+			db.layer = b.layer; db.plane = b.plane;
 			return zx::hwrender::ComputeDrawsBefore(da, db);
 		});
 
-	if (g_dumpBlendOrder)
+	if (g_dumpBlendOrder && g_drawingMainView)
 	{
 		g_dumpBlendOrder = false;
+		// [rc4l] Why static translucent batches were left out, so a pass that lost them all says which test dropped them.
+		int empty = 0, unbound = 0;
+		for (unsigned i = 0; i < g_blendBatches.Size(); i++)
+		{
+			const SceneBatch &b = g_batches[g_blendBatches[i]];
+			if (b.count == 0) empty++;
+			else if (b.srb == NULL) unbound++;
+		}
+		Printf( "%u blended batches: %d empty, %d with no binding (trans PSO %s, add PSO %s)\n", g_blendBatches.Size(),
+			empty, unbound, g_transPSO ? "ok" : "NULL", g_addPSO ? "ok" : "NULL" );
+		Printf( "%d translucent plane heights split the order\n", g_blendPlaneHeights );
 		Printf( "translucent pass, in draw order (first drawn = furthest back):\n" );
-		const unsigned from = (list.Size() > 40) ? list.Size() - 40 : 0;   // the NEAREST 40; the far end is scenery
+		const unsigned from = (list.Size() > 40 && !g_dumpBlendAtZ) ? list.Size() - 40 : 0;   // [rc4l] the NEAREST 40; the far end is scenery
 		for (unsigned i = from; i < list.Size(); i++)
 		{
 			const BlendDraw &d = list[i];
-			Printf( "  %2u  dist %9.0f  %s  blend %d%s%s  verts %u at %u\n", i, d.dist,
+			if (g_dumpBlendAtZ && (d.lo > g_dumpBlendZ || d.hi < g_dumpBlendZ)) continue;
+			Printf( "  %2u  dist %9.0f  %s  blend %d%s%s  layer %d%s  z %.0f..%.0f  verts %u at %u\n", i, d.dist,
 				d.dyn ? "dyn " : "batch", d.blend,
-				d.bias ? "  DECAL" : "", d.red ? " redToAlpha" : "", d.count, d.first );
+				d.bias ? "  DECAL" : "", d.red ? " redToAlpha" : "", d.layer, d.plane ? " PLANE" : "",
+				d.lo, d.hi, d.count, d.first );
 		}
 		Printf( "  %u draws total\n", list.Size() );
 	}
@@ -3273,7 +3371,7 @@ static void DrawBlended(Diligent::IDeviceContext *ctx)
 			boundVB = want;
 		}
 		Diligent::IPipelineState *pso = !d.dyn
-			? ((d.blend == 2) ? g_addPSO.RawPtr()       : g_transPSO.RawPtr())
+			? BatchPSO(d.blend)
 			: d.red
 				? ((d.blend == 2) ? g_addRedAlphaPSO.RawPtr() : g_transRedAlphaPSO.RawPtr())
 				: d.bias
@@ -3349,6 +3447,7 @@ static void ReleaseScenePipelines()
 	// after this function started being called for reasons other than a filter change -- and it did
 	// it inside CommitShaderResources, which reads as a driver fault.
 	ReleaseWorldSRBs();
+	ReleasePlaneMirrors();
 	for (int i = 0; i < 13; i++) g_worldPSOs[i] = NULL;
 	g_bindlessReady = false;
 	ReleaseBatchSRBs();
@@ -3462,22 +3561,8 @@ static bool Ensure2DPipeline()
 	if (!dev || !swap) return false;
 
 	Diligent::RefCntAutoPtr<Diligent::IShader> vs, ps;
-	{
-		Diligent::ShaderCreateInfo ci;
-		ci.SourceLanguage = Diligent::SHADER_SOURCE_LANGUAGE_GLSL_VERBATIM;
-		ci.Desc.ShaderType = Diligent::SHADER_TYPE_VERTEX;
-		ci.Desc.Name = "fua 2D VS";
-		ci.Source = k2DVS;
-		dev->CreateShader(ci, &vs);
-	}
-	{
-		Diligent::ShaderCreateInfo ci;
-		ci.SourceLanguage = Diligent::SHADER_SOURCE_LANGUAGE_GLSL_VERBATIM;
-		ci.Desc.ShaderType = Diligent::SHADER_TYPE_PIXEL;
-		ci.Desc.Name = "fua 2D PS";
-		ci.Source = k2DPS;
-		dev->CreateShader(ci, &ps);
-	}
+	vs = CompileShader(Diligent::SHADER_TYPE_VERTEX, "fua 2D VS", k2DVS);
+	ps = CompileShader(Diligent::SHADER_TYPE_PIXEL, "fua 2D PS", k2DPS);
 	if (!vs || !ps) return false;
 
 	Diligent::BufferDesc cbd;
@@ -3754,30 +3839,9 @@ static bool EnsureScenePipeline(FString &err)
 	if (!dev || !swap) { err = "no device/swapchain"; return false; }
 
 	Diligent::RefCntAutoPtr<Diligent::IShader> vs, psOpaque, psMasked, psTrans, psRedAlpha, psGBuffer;
-	{
-		Diligent::ShaderCreateInfo ci;
-		ci.SourceLanguage = Diligent::SHADER_SOURCE_LANGUAGE_GLSL_VERBATIM;
-		ci.Desc.ShaderType = Diligent::SHADER_TYPE_VERTEX;
-		ci.Desc.Name = "fua scene VS";
-		ci.Source = kSceneVS;
-		dev->CreateShader(ci, &vs);
-	}
-	{
-		Diligent::ShaderCreateInfo ci;
-		ci.SourceLanguage = Diligent::SHADER_SOURCE_LANGUAGE_GLSL_VERBATIM;
-		ci.Desc.ShaderType = Diligent::SHADER_TYPE_PIXEL;
-		ci.Desc.Name = "fua scene PS opaque";
-		ci.Source = kScenePSOpaque;
-		dev->CreateShader(ci, &psOpaque);
-	}
-	{
-		Diligent::ShaderCreateInfo ci;
-		ci.SourceLanguage = Diligent::SHADER_SOURCE_LANGUAGE_GLSL_VERBATIM;
-		ci.Desc.ShaderType = Diligent::SHADER_TYPE_PIXEL;
-		ci.Desc.Name = "fua scene PS masked";
-		ci.Source = kScenePS;
-		dev->CreateShader(ci, &psMasked);
-	}
+	vs = CompileShader(Diligent::SHADER_TYPE_VERTEX, "fua scene VS", kSceneVS);
+	psOpaque = CompileShader(Diligent::SHADER_TYPE_PIXEL, "fua scene PS opaque", kScenePSOpaque);
+	psMasked = CompileShader(Diligent::SHADER_TYPE_PIXEL, "fua scene PS masked", kScenePS);
 	// [rc4l] Ask the SHADER what it declared, before any pipeline has an opinion about it.
 	// "Not in the pipeline resource list" has two very different causes -- the shader never declared
 	// it, or the layout classified it somewhere else -- and only the shader can tell them apart.
@@ -3794,31 +3858,15 @@ static bool EnsureScenePipeline(FString &err)
 		g_scenePSResources = names;
 		Printf("Diligent scene PS declares (%u):%s\n", psMasked->GetResourceCount(), names.GetChars());
 	}
-	{
-		Diligent::ShaderCreateInfo ci;
-		ci.SourceLanguage = Diligent::SHADER_SOURCE_LANGUAGE_GLSL_VERBATIM;
-		ci.Desc.ShaderType = Diligent::SHADER_TYPE_PIXEL;
-		ci.Desc.Name = "fua scene PS masked + gbuffer";
-		ci.Source = kScenePSGBuffer;
-		dev->CreateShader(ci, &psGBuffer);
-	}
-	{
-		Diligent::ShaderCreateInfo ci;
-		ci.SourceLanguage = Diligent::SHADER_SOURCE_LANGUAGE_GLSL_VERBATIM;
-		ci.Desc.ShaderType = Diligent::SHADER_TYPE_PIXEL;
-		ci.Desc.Name = "fua scene PS translucent";
-		ci.Source = kScenePSTrans;
-		dev->CreateShader(ci, &psTrans);
-		ci.Source = kScenePSRedAlpha;
-		dev->CreateShader(ci, &psRedAlpha);
-	}
+	psGBuffer = CompileShader(Diligent::SHADER_TYPE_PIXEL, "fua scene PS masked + gbuffer", kScenePSGBuffer);
+	psTrans = CompileShader(Diligent::SHADER_TYPE_PIXEL, "fua scene PS translucent", kScenePSTrans);
+	psRedAlpha = CompileShader(Diligent::SHADER_TYPE_PIXEL, "fua scene PS red alpha", kScenePSRedAlpha);
 	if (!vs || !psOpaque || !psMasked || !psTrans || !psRedAlpha)
 	{ err = "scene shader compilation failed"; return false; }
 
 	Diligent::BufferDesc cbd;
 	cbd.Name = "fua scene constants";
-	// mat4 uMVP + vec4 uCameraPos + vec4 uLightParams + vec4 uClipPlane (mirrors) + vec4 uScreen
-	cbd.Size = sizeof(float) * 36;
+	cbd.Size = sizeof(float) * zx::hwrender::kSceneConstantFloats;
 	cbd.Usage = Diligent::USAGE_DYNAMIC;
 	cbd.BindFlags = Diligent::BIND_UNIFORM_BUFFER;
 	cbd.CPUAccessFlags = Diligent::CPU_ACCESS_WRITE;
@@ -4115,9 +4163,15 @@ static void FillPieceData(const zx::levelmesh::MeshPiece &p, int translation, Sc
 	// more batches than materials and the mirror had to mask it to 127 and hope.
 	pd.matSlot = (float)MaterialSlotFor(p.material, translation);
 	zx::levelmesh::ComputeUnpackRGB(p.fogColor, pd.fogR, pd.fogG, pd.fogB);
-	pd.pad0 = 0.f;
+	// [rc4l] A warp texture ripples in the shader, as GL's func_warp does; the upload already holds its unwarped source.
+	const FMaterial *mat = (const FMaterial *)p.material;
+	const FTexture *tex = (mat != NULL) ? mat->tex : NULL;
+	pd.warpStyle = (float)zx::hwrender::ComputeWarpStyle(tex != NULL ? tex->bWarped : 0);
 	pd.nx = p.normX; pd.ny = p.normY; pd.nz = p.normZ;
-	pd.pad1 = 0.f;
+	pd.warpSpeed = (tex != NULL) ? tex->gl_info.shaderspeed : 1.f;
+	pd.floodUx = p.floodUV[0]; pd.floodUy = p.floodUV[1]; pd.floodU0 = p.floodUV[2]; pd.floodZ = p.floodZ;
+	pd.floodVx = p.floodUV[3]; pd.floodVy = p.floodUV[4]; pd.floodV0 = p.floodUV[5]; pd.flood = p.flood ? 1.f : 0.f;
+	pd.actorR = p.dynR; pd.actorG = p.dynG; pd.actorB = p.dynB; pd.cpuLight = p.cpuLight ? 1.f : 0.f;
 }
 
 // [rc4l] One piece's vertex, built once and used by both the full build and the patch.
@@ -4273,6 +4327,9 @@ static bool BuildSceneBuffer(FString &err)
 			b.count = 0;
 			b.masked = MaterialIsMasked(p.material);
 			b.srb = NULL;   // filled once the batch list is final
+			b.mirrorSector = p.mirrorSector;
+			b.mirrorCeiling = p.mirrorCeiling;
+			b.mirrorSlot = -1;
 			b.baseTex = p.baseTex;
 			b.resolved = p.material;
 			b.blend = (p.blendMode == 2) ? 2 : (p.blendMode != 0 ? 1 : 0);
@@ -4458,13 +4515,7 @@ static bool BuildSceneBuffer(FString &err)
 	DirtyMaterialSlots();
 
 	ReleaseBatchSRBs();
-	for (unsigned i = 0; i < g_batches.Size(); i++)
-	{
-		Diligent::IPipelineState *pso =
-			(g_batches[i].blend == 0) ? g_maskedPSO.RawPtr() :
-			(g_batches[i].blend == 2) ? g_addPSO.RawPtr() : g_transPSO.RawPtr();
-		g_batches[i].srb = GetMaterialSRB(pso, g_batches[i].material);
-	}
+	for (unsigned i = 0; i < g_batches.Size(); i++) BatchSRB(g_batches[i]);
 	return true;
 }
 // See ReleaseMaterialSRBs. The batches keep raw copies of bindings they do not own.
@@ -4563,12 +4614,15 @@ static bool AppendPiece(Diligent::IDeviceContext *ctx, const zx::levelmesh::Mesh
 	b.baseTex = p.baseTex;
 	b.resolved = p.material;
 	b.blend = 0;
+	b.mirrorSector = -1;
+	b.mirrorCeiling = false;
+	b.mirrorSlot = -1;
 	b.sortX = b.sortY = b.sortZ = 0.f;
 	b.normX = p.normX; b.normY = p.normY; b.normZ = p.normZ;
 	b.minX = b.minY = b.minZ =  1e30f;
 	b.maxX = b.maxY = b.maxZ = -1e30f;
-	b.srb = GetMaterialSRB(g_maskedPSO.RawPtr(), p.material);
-	if (b.srb == NULL) return false;   // no binding, no draw -- and a rebuild will do it properly
+	b.srb = NULL;
+	if (BatchSRB(b) == NULL) return false;   // [rc4l] no binding, no draw -- and a rebuild will do it properly
 	g_batches.Push(b);
 
 	VBSlot slot;
@@ -5110,7 +5164,8 @@ static void BuildLightClusters(Diligent::IDeviceContext *ctx)
 	// last slice, which is correct rather than approximate: a light 8000 units away is not lighting
 	// you either way.
 	const zx::hwrender::ClusterGrid grid =
-		zx::hwrender::ComputeGridForScreen((int)sd.Width, (int)sd.Height, 5.f, 8192.f);
+		zx::hwrender::ComputeGridForScreen((int)sd.Width, (int)sd.Height,
+			zx::hwrender::kClusterZNear, zx::hwrender::kClusterZFar);
 	const int cells = zx::hwrender::ComputeClusterCount(grid);
 	if (cells <= 0 || (unsigned)cells > g_clusterCapacity) return;
 
@@ -5480,7 +5535,7 @@ static const char *kMirrorVS =
 	"#version 450\n"
 	"layout(location = 0) in vec3 aPos;\n"
 	"layout(location = 1) in vec3 aNormal;\n"
-	"layout(binding = 0) uniform Constants { mat4 uMVP; vec4 uCameraPos; vec4 uLightParams; vec4 uClipPlane; vec4 uScreen; vec4 uSkyColor; };\n"
+	FUA_CONSTANTS_GLSL
 	"layout(location = 0) out vec3 vWorld;\n"
 	"layout(location = 1) out vec3 vNormal;\n"
 	"void main() {\n"
@@ -5509,7 +5564,7 @@ static const char *kMirrorPS =
 	"#version 460\n"
 	"#extension GL_EXT_ray_query : require\n"
 	"#extension GL_EXT_nonuniform_qualifier : require\n"
-	"layout(binding = 0) uniform Constants { mat4 uMVP; vec4 uCameraPos; vec4 uLightParams; vec4 uClipPlane; vec4 uScreen; vec4 uSkyColor; };\n"
+	FUA_CONSTANTS_GLSL
 	"layout(binding = 1) uniform sampler2D uTex;\n"
 	"layout(binding = 2) uniform accelerationStructureEXT uTLAS;\n"
 	"layout(std430, binding = 3) readonly buffer Verts { float vtx[]; };\n"
@@ -5521,8 +5576,7 @@ static const char *kMirrorPS =
 	// [rc4l] Six floats a vertex now: position, texture coordinate, and the index of the record
 	// that holds everything else. The colour and the material this ray hits come from there.
 	"const uint STRIDE = 6u;\n"
-	"struct PieceData { vec4 colorLight; vec4 fogAlphaMat; vec4 fogColor; vec4 normal; };\n"
-	"layout(std430, binding = 9) readonly buffer Pieces { PieceData pieces[]; };\n"
+	FUA_PIECEDATA_GLSL
 	"uint vertPiece(uint v) { return uint(vtx[v * STRIDE + 5u] + 0.5); }\n"
 	"vec3 vertColor(uint v) { return pieces[vertPiece(v)].colorLight.rgb; }\n"
 	"vec2 vertUV(uint v)    { uint b = v * STRIDE + 3u; return vec2(vtx[b], vtx[b + 1u]); }\n"
@@ -5598,20 +5652,8 @@ static bool EnsureMirrorResources()
 	if (!g_mirrorPSO)
 	{
 		Diligent::RefCntAutoPtr<Diligent::IShader> vs, ps;
-		{
-			Diligent::ShaderCreateInfo ci;
-			ci.SourceLanguage = Diligent::SHADER_SOURCE_LANGUAGE_GLSL_VERBATIM;
-			ci.Desc.ShaderType = Diligent::SHADER_TYPE_VERTEX;
-			ci.Desc.Name = "fua mirror VS"; ci.Source = kMirrorVS;
-			dev->CreateShader(ci, &vs);
-		}
-		{
-			Diligent::ShaderCreateInfo ci;
-			ci.SourceLanguage = Diligent::SHADER_SOURCE_LANGUAGE_GLSL_VERBATIM;
-			ci.Desc.ShaderType = Diligent::SHADER_TYPE_PIXEL;
-			ci.Desc.Name = "fua mirror PS"; ci.Source = kMirrorPS;
-			dev->CreateShader(ci, &ps);
-		}
+		vs = CompileShader(Diligent::SHADER_TYPE_VERTEX, "fua mirror VS", kMirrorVS);
+		ps = CompileShader(Diligent::SHADER_TYPE_PIXEL, "fua mirror PS", kMirrorPS);
 		if (!vs || !ps) return false;
 
 		Diligent::LayoutElement layout[] = {
@@ -5803,21 +5845,30 @@ static bool EnsureMirrorResources()
 // without it the surface samples the reflection rendered a moment earlier.
 static void ReleaseMirrorBinding() { g_mirrorSRB.Release(); g_mirrorTraced = false; }
 
+// [rc4l] The scene constant block for this frame's camera; passes differ only in clip plane, target size and bindless.
+static void WriteSceneConstants(float *cb, const float *clip, float targetW, float targetH, float materialSlots)
+{
+	zx::hwrender::SceneConstantInputs in;
+	in.mvp = g_mvp;
+	in.camX = FIXED2FLOAT(viewx); in.camY = FIXED2FLOAT(viewy); in.camZ = FIXED2FLOAT(viewz);
+	in.lightMode = (float)(int)fua_dg_lightmode;
+	in.lightCount = (float)g_lightCount;
+	in.skyAngle = g_skyAngle;
+	in.clusters = g_clusterCells > 0;
+	in.clip = clip;
+	in.targetW = targetW; in.targetH = targetH;
+	in.skyXScale = g_skyXScale; in.skyVScale = g_skyVScale;
+	in.skyCapR = g_skyCapColor[0].r; in.skyCapG = g_skyCapColor[0].g; in.skyCapB = g_skyCapColor[0].b;
+	in.materialSlots = materialSlots;
+	in.frameMS = I_MSTime();
+	zx::hwrender::ComputeSceneConstants(in, cb);
+}
+
 static void DrawMirrorSurface(Diligent::IDeviceContext *ctx, unsigned index)
 {
 	{
 		Diligent::MapHelper<float> cb(ctx, g_cb, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD);
-		for (int k = 0; k < 16; k++) cb[k] = g_mvp[k];
-		cb[16] = FIXED2FLOAT(viewx); cb[17] = FIXED2FLOAT(viewz);
-		cb[18] = FIXED2FLOAT(viewy); cb[19] = (float)(int)fua_dg_lightmode;
-		cb[20] = (float)g_lightCount; cb[21] = g_skyAngle; cb[22] = (g_clusterCells > 0) ? 5.f : 0.f;   // cluster zNear, or zero for "grid off"
-		cb[23] = (g_clusterCells > 0) ? 8192.f : 0.f;  // ...and its far, matching BuildLightClusters
-		for (int k = 0; k < 4; k++) cb[24 + k] = 0.f;
-		cb[28] = (float)g_mirrorW; cb[29] = (float)g_mirrorH; cb[30] = g_skyXScale; cb[31] = g_skyVScale;
-		cb[32] = g_skyCapColor[0].r / 255.f;
-		cb[33] = g_skyCapColor[0].g / 255.f;
-		cb[34] = g_skyCapColor[0].b / 255.f;
-		cb[35] = 0.f;
+		WriteSceneConstants(&cb[0], nullptr, (float)g_mirrorW, (float)g_mirrorH, 0.f);
 	}
 	if (g_mirrorTraced)
 	{
@@ -5837,6 +5888,207 @@ static void DrawMirrorSurface(Diligent::IDeviceContext *ctx, unsigned index)
 }
 
 // Render each mirror's reflection and draw its surface. Called after the world, before the 2D layer.
+// [rc4l] Reflective floors and ceilings as GL's GLPlaneMirrorPortal draws them: each visible plane gets the world rendered from the mirrored eye into a slot before the frame, and the world pass paints its pieces from that picture, flipped, under the translucent floor (decisions in planemirror_compute).
+static const int kMaxPlaneMirrors = 4;
+static Diligent::RefCntAutoPtr<Diligent::ITexture> g_pmColor[kMaxPlaneMirrors], g_pmDepth[kMaxPlaneMirrors];
+static Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding> g_pmSRB[kMaxPlaneMirrors];
+static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_pmPSO;
+static int g_pmW = 0, g_pmH = 0;
+// [rc4l] Reflections rendered this frame.
+static int g_pmUsed = 0;
+
+static void ReleasePlaneMirrors()
+{
+	for (int k = 0; k < kMaxPlaneMirrors; k++) { g_pmSRB[k].Release(); g_pmColor[k].Release(); g_pmDepth[k].Release(); }
+	g_pmPSO.Release();
+	g_pmW = g_pmH = 0;
+	g_pmUsed = 0;
+}
+
+static bool EnsurePlaneMirrorResources()
+{
+	auto *dev = GetDevice();
+	auto *swap = GetSwapChain();
+	if (!dev || !swap || !g_cb) return false;
+	const auto &sd = swap->GetDesc();
+	if (g_pmW != (int)sd.Width || g_pmH != (int)sd.Height) ReleasePlaneMirrors();
+	if (!g_pmPSO)
+	{
+		static const char *kPlaneMirrorVS =
+			"#version 450\n"
+			"layout(location = 0) in vec3 aPos;\n"
+			"layout(location = 1) in vec2 aUV;\n"
+			"layout(location = 2) in float aPiece;\n"
+			FUA_CONSTANTS_GLSL
+			"void main() { gl_Position = uMVP * vec4(aPos, 1.0); }\n";
+		// [rc4l] The mirrored eye sees the reflection upright, so the plane samples it upside down at its own screen position.
+		static const char *kPlaneMirrorPS =
+			"#version 450\n"
+			"layout(binding = 1) uniform sampler2D uReflection;\n"
+			"layout(location = 0) out vec4 outColor;\n"
+			"void main() {\n"
+			"    ivec2 size = textureSize(uReflection, 0);\n"
+			"    ivec2 p = ivec2(gl_FragCoord.xy);\n"
+			"    outColor = vec4(texelFetch(uReflection, ivec2(p.x, size.y - 1 - p.y), 0).rgb, 1.0);\n"
+			"}\n";
+		Diligent::RefCntAutoPtr<Diligent::IShader> vs, ps;
+		vs = CompileShader(Diligent::SHADER_TYPE_VERTEX, "fua plane mirror VS", kPlaneMirrorVS);
+		ps = CompileShader(Diligent::SHADER_TYPE_PIXEL, "fua plane mirror PS", kPlaneMirrorPS);
+		if (!vs || !ps) return false;
+		static Diligent::ShaderResourceVariableDesc vars[] = {
+			{ Diligent::SHADER_TYPE_VERTEX, "Constants", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_STATIC },
+			{ Diligent::SHADER_TYPE_PIXEL, "uReflection", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
+		};
+		Diligent::LayoutElement elems[] = {
+			Diligent::LayoutElement{0, 0, 3, Diligent::VT_FLOAT32, false},
+			Diligent::LayoutElement{1, 0, 2, Diligent::VT_FLOAT32, false},
+			Diligent::LayoutElement{2, 0, 1, Diligent::VT_FLOAT32, false},
+		};
+		Diligent::GraphicsPipelineStateCreateInfo pci;
+		pci.PSODesc.Name = "fua plane mirror PSO";
+		pci.PSODesc.PipelineType = Diligent::PIPELINE_TYPE_GRAPHICS;
+		pci.GraphicsPipeline.NumRenderTargets = 1;
+		pci.GraphicsPipeline.RTVFormats[0] = sd.ColorBufferFormat;
+		pci.GraphicsPipeline.DSVFormat = sd.DepthBufferFormat;
+		pci.GraphicsPipeline.PrimitiveTopology = Diligent::PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+		pci.GraphicsPipeline.RasterizerDesc.CullMode = Diligent::CULL_MODE_NONE;
+		// [rc4l] Tested so nearer walls hide it, never written, so the translucent floor drawn over it still passes on the same plane.
+		pci.GraphicsPipeline.DepthStencilDesc.DepthEnable = true;
+		pci.GraphicsPipeline.DepthStencilDesc.DepthWriteEnable = false;
+		pci.GraphicsPipeline.DepthStencilDesc.DepthFunc = Diligent::COMPARISON_FUNC_LESS_EQUAL;
+		pci.GraphicsPipeline.InputLayout.LayoutElements = elems;
+		pci.GraphicsPipeline.InputLayout.NumElements = 3;
+		pci.PSODesc.ResourceLayout.Variables = vars;
+		pci.PSODesc.ResourceLayout.NumVariables = 2;
+		// [rc4l] A combined image sampler needs a sampler in its descriptor even though texelFetch never uses it; without one the driver faults writing the binding.
+		Diligent::SamplerDesc samp;
+		samp.MinFilter = samp.MagFilter = Diligent::FILTER_TYPE_POINT;
+		samp.MipFilter = Diligent::FILTER_TYPE_POINT;
+		samp.AddressU = samp.AddressV = Diligent::TEXTURE_ADDRESS_CLAMP;
+		Diligent::ImmutableSamplerDesc samplers[] = { { Diligent::SHADER_TYPE_PIXEL, "uReflection", samp } };
+		pci.PSODesc.ResourceLayout.ImmutableSamplers = samplers;
+		pci.PSODesc.ResourceLayout.NumImmutableSamplers = 1;
+		pci.pVS = vs;
+		pci.pPS = ps;
+		dev->CreateGraphicsPipelineState(pci, &g_pmPSO);
+		if (!g_pmPSO) return false;
+		if (auto *cv = g_pmPSO->GetStaticVariableByName(Diligent::SHADER_TYPE_VERTEX, "Constants")) cv->Set(g_cb);
+	}
+	for (int k = 0; k < g_pmUsed; k++)
+	{
+		if (g_pmColor[k] && g_pmDepth[k] && g_pmSRB[k]) continue;
+		Diligent::TextureDesc td;
+		td.Name = "fua plane mirror colour";
+		td.Type = Diligent::RESOURCE_DIM_TEX_2D;
+		td.Width = sd.Width; td.Height = sd.Height;
+		td.Format = sd.ColorBufferFormat;
+		td.BindFlags = Diligent::BIND_RENDER_TARGET | Diligent::BIND_SHADER_RESOURCE;
+		dev->CreateTexture(td, nullptr, &g_pmColor[k]);
+		Diligent::TextureDesc dd = td;
+		dd.Name = "fua plane mirror depth";
+		dd.Format = sd.DepthBufferFormat;
+		dd.BindFlags = Diligent::BIND_DEPTH_STENCIL;
+		dev->CreateTexture(dd, nullptr, &g_pmDepth[k]);
+		if (!g_pmColor[k] || !g_pmDepth[k]) return false;
+		g_pmPSO->CreateShaderResourceBinding(&g_pmSRB[k], true);
+		if (!g_pmSRB[k]) return false;
+		if (auto *v = g_pmSRB[k]->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "uReflection"))
+			v->Set(g_pmColor[k]->GetDefaultView(Diligent::TEXTURE_VIEW_SHADER_RESOURCE));
+	}
+	g_pmW = (int)sd.Width; g_pmH = (int)sd.Height;
+	return true;
+}
+
+// [rc4l] Before the frame: pick the reflective planes the eye faces and can see, and render each one's reflection.
+static void RenderPlaneMirrors(Diligent::IDeviceContext *ctx)
+{
+	g_pmUsed = 0;
+	for (unsigned i = 0; i < g_blendBatches.Size(); i++) g_batches[g_blendBatches[i]].mirrorSlot = -1;
+	int maxSlots = fua_dg_planemirrors;
+	if (maxSlots > kMaxPlaneMirrors) maxSlots = kMaxPlaneMirrors;
+	if (maxSlots <= 0 || sectors == NULL || !g_vb) return;
+
+	float mvp[16];
+	BuildMVP(mvp);
+	const float vz = FIXED2FLOAT(viewz);
+	zx::hwrender::MirrorPlane slots[kMaxPlaneMirrors];
+	for (unsigned i = 0; i < g_blendBatches.Size(); i++)
+	{
+		SceneBatch &b = g_batches[g_blendBatches[i]];
+		if (b.mirrorSector < 0 || b.mirrorSector >= numsectors || b.count == 0) continue;
+		const sector_t &s = sectors[b.mirrorSector];
+		const float z = FIXED2FLOAT((b.mirrorCeiling ? s.ceilingplane : s.floorplane).ZatPoint(viewx, viewy));
+		if (!zx::hwrender::ComputePlaneMirrorFaces(b.mirrorCeiling, z, vz)) continue;
+		const float mn[3] = { b.minX, b.minY, b.minZ }, mx[3] = { b.maxX, b.maxY, b.maxZ };
+		if (!zx::hwrender::ComputeBoxMayBeVisible(mvp, mn, mx)) continue;
+		zx::hwrender::MirrorPlane p;
+		p.ceiling = b.mirrorCeiling;
+		p.z = z;
+		b.mirrorSlot = zx::hwrender::ComputePlaneMirrorSlot(slots, g_pmUsed, maxSlots, p);
+	}
+	if (g_pmUsed == 0) return;
+	if (!EnsurePlaneMirrorResources()) { g_pmUsed = 0; return; }
+
+	const fixed_t sz = viewz;
+	const int sp = viewpitch;
+	float savedMVP[16];
+	for (int k = 0; k < 16; k++) savedMVP[k] = g_mvp[k];
+	const bool savedGBuf = g_gbufBound;
+	g_gbufBound = false;
+	for (int k = 0; k < g_pmUsed; k++)
+	{
+		viewz = FLOAT2FIXED(zx::hwrender::ComputePlaneMirrorEyeZ(slots[k].z, vz));
+		viewpitch = -sp;
+		BuildMVP(g_mvp);
+		zx::hwrender::ComputePlaneMirrorClip(slots[k].ceiling, slots[k].z, g_clipPlane);
+		auto *rtv = g_pmColor[k]->GetDefaultView(Diligent::TEXTURE_VIEW_RENDER_TARGET);
+		auto *dsv = g_pmDepth[k]->GetDefaultView(Diligent::TEXTURE_VIEW_DEPTH_STENCIL);
+		ctx->SetRenderTargets(1, &rtv, dsv, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+		const float clear[4] = { 0.05f, 0.06f, 0.09f, 1.0f };
+		ctx->ClearRenderTarget(rtv, clear, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+		ctx->ClearDepthStencil(dsv, Diligent::CLEAR_DEPTH_FLAG, 1.0f, 0, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+		DrawWorld(ctx);
+	}
+	viewz = sz;
+	viewpitch = sp;
+	for (int k = 0; k < 16; k++) g_mvp[k] = savedMVP[k];
+	g_clipPlane[0] = g_clipPlane[1] = g_clipPlane[2] = g_clipPlane[3] = 0.f;
+	g_gbufBound = savedGBuf;
+	// [rc4l] The pictures change hands here, outside the frame's render pass, for the reason RenderSkyPortal gives.
+	for (int k = 0; k < g_pmUsed; k++)
+	{
+		Diligent::StateTransitionDesc barrier(g_pmColor[k], Diligent::RESOURCE_STATE_UNKNOWN,
+			Diligent::RESOURCE_STATE_SHADER_RESOURCE, Diligent::STATE_TRANSITION_FLAG_UPDATE_STATE);
+		ctx->TransitionResourceStates(1, &barrier);
+	}
+}
+
+// [rc4l] In the player's view, before the translucent pass: each reflective piece painted from its plane's reflection.
+static void DrawPlaneMirrorSurfaces(Diligent::IDeviceContext *ctx)
+{
+	if (!g_drawingMainView || g_pmUsed == 0 || !g_pmPSO || !g_vb) return;
+	Diligent::IBuffer *vbs[] = { g_vb };
+	const Diligent::Uint64 offsets[] = { 0 };
+	ctx->SetVertexBuffers(0, 1, vbs, offsets, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
+		Diligent::SET_VERTEX_BUFFERS_FLAG_RESET);
+	ctx->SetPipelineState(g_pmPSO);
+	int bound = -1;
+	for (unsigned i = 0; i < g_blendBatches.Size(); i++)
+	{
+		const SceneBatch &b = g_batches[g_blendBatches[i]];
+		if (b.mirrorSlot < 0 || b.mirrorSlot >= g_pmUsed || !g_pmSRB[b.mirrorSlot]) continue;
+		if (b.mirrorSlot != bound)
+		{
+			ctx->CommitShaderResources(g_pmSRB[b.mirrorSlot], Diligent::RESOURCE_STATE_TRANSITION_MODE_VERIFY);
+			bound = b.mirrorSlot;
+		}
+		Diligent::DrawAttribs d;
+		d.NumVertices = b.count;
+		d.StartVertexLocation = b.first;
+		ctx->Draw(d);
+	}
+}
+
 static void RenderMirrors(Diligent::IDeviceContext *ctx)
 {
 	// [rc4l] A switch, so the pass can be BISECTED against the TDR.
@@ -5954,17 +6206,7 @@ static void RenderMirrors(Diligent::IDeviceContext *ctx)
 		ctx->SetRenderTargets(1, &brtv, bdsv, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 		{
 			Diligent::MapHelper<float> cb(ctx, g_cb, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD);
-			for (int k = 0; k < 16; k++) cb[k] = g_mvp[k];
-			cb[16] = FIXED2FLOAT(viewx); cb[17] = FIXED2FLOAT(viewz);
-			cb[18] = FIXED2FLOAT(viewy); cb[19] = (float)(int)fua_dg_lightmode;
-			cb[20] = (float)g_lightCount; cb[21] = g_skyAngle; cb[22] = (g_clusterCells > 0) ? 5.f : 0.f;   // cluster zNear, or zero for "grid off"
-		cb[23] = (g_clusterCells > 0) ? 8192.f : 0.f;  // ...and its far, matching BuildLightClusters
-			for (int k = 0; k < 4; k++) cb[24 + k] = 0.f;
-			cb[28] = (float)g_mirrorW; cb[29] = (float)g_mirrorH; cb[30] = g_skyXScale; cb[31] = g_skyVScale;
-		cb[32] = g_skyCapColor[0].r / 255.f;
-		cb[33] = g_skyCapColor[0].g / 255.f;
-		cb[34] = g_skyCapColor[0].b / 255.f;
-		cb[35] = 0.f;
+			WriteSceneConstants(&cb[0], nullptr, (float)g_mirrorW, (float)g_mirrorH, 0.f);
 		}
 		Diligent::IBuffer *vbs[] = { g_mirrorVB };
 		const Diligent::Uint64 offsets[] = { (Diligent::Uint64)i * 36 * sizeof(float) };
@@ -5991,8 +6233,10 @@ static Diligent::ITextureView *EnsureSceneDepth()
 	auto *dev = GetDevice();
 	if (!swap || !dev) return NULL;
 	const auto &sd = swap->GetDesc();
-	if (g_sceneDepth && g_sceneDepthW == (int)sd.Width && g_sceneDepthH == (int)sd.Height)
+	if (!ComputeSceneTargetsRebuild(g_sceneDepth.RawPtr() != nullptr, g_sceneDepthW, g_sceneDepthH, (int)sd.Width, (int)sd.Height))
 		return g_sceneDepth->GetDefaultView(Diligent::TEXTURE_VIEW_DEPTH_STENCIL);
+	if (fua_dg_verbose)
+		Printf("Diligent scene targets rebuilt at %ux%u (were %dx%d)\n", sd.Width, sd.Height, g_sceneDepthW, g_sceneDepthH);
 
 	// [rc4l] Every cached binding of the OLD depth texture goes with it.
 	//
@@ -6071,6 +6315,7 @@ static void DrawSceneOnce(bool present = true, bool pump = true)
 	// The sky portal is a whole second view of the map, so it is rendered here, beside the frame
 	// rather than inside it -- DrawWorld cannot be re-entered while it is deriving this frame.
 	RenderSkyPortal(ctx);
+	RenderPlaneMirrors(ctx);
 
 	auto *rtv = swap->GetCurrentBackBufferRTV();
 	Diligent::ITextureView *dsv = EnsureSceneDepth();
@@ -6094,7 +6339,9 @@ static void DrawSceneOnce(bool present = true, bool pump = true)
 	ctx->ClearDepthStencil(dsv, Diligent::CLEAR_DEPTH_FLAG, 1.0f, 0,
 		Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
+	g_drawingMainView = true;
 	DrawWorld(ctx);
+	g_drawingMainView = false;
 	RenderMirrors(ctx);
 
 	// [rc4l] 2D last, over everything, with depth off entirely -- it is the frame's top layer.
@@ -6288,33 +6535,8 @@ static void DrawWorld(Diligent::IDeviceContext *ctx)
 
 	{
 		Diligent::MapHelper<float> cb(ctx, g_cb, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD);
-		for (int i = 0; i < 16; i++) cb[i] = g_mvp[i];
-		// [rc4l] Same axis swap the vertices get: the mesh is (x, z-up, y).
-		cb[16] = FIXED2FLOAT(viewx); cb[17] = FIXED2FLOAT(viewz);
-		cb[18] = FIXED2FLOAT(viewy); cb[19] = (float)(int)fua_dg_lightmode;
-		cb[20] = (float)g_lightCount;
-		// [rc4l] The sky rotation for this frame: RenderDome's -180 degrees plus the scroll.
-		cb[21] = g_skyAngle;
-		cb[22] = (g_clusterCells > 0) ? 5.f : 0.f;   // cluster zNear, or zero for "grid off"
-		cb[23] = (g_clusterCells > 0) ? 8192.f : 0.f;  // ...and its far, matching BuildLightClusters
-		// [rc4l] uClipPlane: while a mirror's reflection renders, everything on the FAR side of the
-		// mirror -- the wall it hangs on and the rooms behind it -- sits between the reflected camera
-		// and the scene and would occlude the entire reflection. w == 0 disables it, which is every
-		// ordinary pass.
-		for (int ci = 0; ci < 4; ci++) cb[24 + ci] = g_clipPlane[ci];
-		cb[28] = (float)GetSwapChain()->GetDesc().Width;
-		cb[29] = (float)GetSwapChain()->GetDesc().Height;
-		cb[30] = g_skyXScale; cb[31] = g_skyVScale;
-		// [rc4l] What a ray sees when it hits nothing. Sky ceilings are portals and are deliberately
-		// not in the mesh, so a reflection looking upward hits nothing -- and painting that black put
-		// holes in the reflected floor and sky. The sky's own cap colour is the honest answer.
-		cb[32] = g_skyCapColor[0].r / 255.f;
-		cb[33] = g_skyCapColor[0].g / 255.f;
-		cb[34] = g_skyCapColor[0].b / 255.f;
-		// [rc4l] The bindless switch, and the whole of it: nonzero means the fragment picks its own
-		// material out of the array, zero means it samples whatever is bound. One float, no second
-		// pipeline, and an A/B that can be flipped between two frames of the same scene.
-		cb[35] = BindlessActive() ? (float)MaterialSlotCount() : 0.f;
+		WriteSceneConstants(&cb[0], g_clipPlane, (float)GetSwapChain()->GetDesc().Width,
+			(float)GetSwapChain()->GetDesc().Height, BindlessActive() ? (float)MaterialSlotCount() : 0.f);
 	}
 
 	g_phase.constants.Unclock();
@@ -6337,10 +6559,7 @@ static void DrawWorld(Diligent::IDeviceContext *ctx)
 			if (now == NULL || now == b.resolved) continue;
 			b.resolved = now;
 			g_animSwaps++;
-			Diligent::IPipelineState *pso =
-				(b.blend == 0) ? g_maskedPSO.RawPtr() :
-				(b.blend == 2) ? g_addPSO.RawPtr() : g_transPSO.RawPtr();
-			if (auto *srb = GetMaterialSRB(pso, now)) b.srb = srb;
+			if (auto *srb = GetMaterialSRB(BatchPSO(b.blend), now)) b.srb = srb;
 		}
 	}
 	g_phase.animation.Unclock();
@@ -6433,8 +6652,7 @@ static void DrawWorld(Diligent::IDeviceContext *ctx)
 				{
 					// Re-resolve rather than skip: a binding dropped by a resize would otherwise leave
 					// that material missing from the world until the next upload.
-					if (b->srb == NULL) b->srb = GetMaterialSRB(g_maskedPSO.RawPtr(), b->material);
-					srb = b->srb;
+					srb = BatchSRB(*b);
 				}
 				if (srb == NULL) take = false;
 			}
@@ -6505,6 +6723,8 @@ static void DrawWorld(Diligent::IDeviceContext *ctx)
 	// [rc4l] ...and the sky as geometry, before the blend pass because it is opaque.
 	DrawSkySurfaces(ctx);
 
+
+	DrawPlaneMirrorSurfaces(ctx);
 
 	// [rc4l] Then everything that blends -- translucent 3D floors, translucent middle textures and
 	// translucent sprites -- in ONE back-to-front pass, so the world and the sprites sort against each

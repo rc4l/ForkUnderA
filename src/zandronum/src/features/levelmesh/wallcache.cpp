@@ -11,6 +11,7 @@
 #include "r_defs.h"
 #include "r_state.h"
 #include "p_3dfloors.h"   // F3DFloor, for the 3D floor wall faces
+#include "features/levelmesh/computation/lightband_compute.h"   // [rc4l] BandPlane, the band boundaries in map units
 #include "doomdata.h"
 #include "r_sky.h"   // skyflatnum, for the sky surfaces
 #include "gl/scene/gl_drawinfo.h"
@@ -31,6 +32,8 @@ EXTERN_CVAR(Bool, gl_wallmesh)
 EXTERN_CVAR(Bool, fua_surface_mapbake_auto)
 EXTERN_CVAR(Bool, fua_mesh_sky)
 EXTERN_CVAR(Bool, fua_surface_bands)
+// [rc4l] Print each banded wall the map bake splits: its span, the first boundary and the band that lights its top.
+CVAR(Bool, fua_band_log, false, 0)
 // [rc4l] Build wall heights and texture position from the MAP rather than from GLWall.
 //
 // ON. A wall's vertical span and both of its texture coordinates come from the map now, and the
@@ -72,6 +75,8 @@ static TArray<SegCache> g_cache;
 // not the BSP happens to walk it, and answering "which segs belong to this sector" by scanning all
 // segs every frame would be silly when the mapping never changes.
 static TArray<int>          g_sectorDirty;
+// [rc4l] Per-sidedef fua_dirty as of the last sweep, so a switch's new texture reaches the map bake.
+static TArray<int>          g_sideDirty;
 static TArray<TArray<int> > g_sectorSegs;
 static TArray<bool>     g_uncacheable;   // sticky: this seg produced a portal, never cache it
 static int              g_captureSeg = -1;
@@ -128,6 +133,12 @@ void AllocForLevel(int numsegs)
 	for (int i = 0; i < numsegs; i++) g_segFate[i] = SEG_UNSEEN;
 	g_sectorDirty.Clear();
 	g_sectorSegs.Clear();
+	g_sideDirty.Clear();
+	if (numsides > 0)
+	{
+		g_sideDirty.Resize(numsides);
+		for (int i = 0; i < numsides; i++) g_sideDirty[i] = sides[i].fua_dirty;
+	}
 	if (numsectors > 0)
 	{
 		g_sectorDirty.Resize(numsectors);
@@ -503,17 +514,41 @@ static const int kMaxFFBlocks = kMaxMapPieces - kFFSlot0;
 // The rovers that produced each block, so the emitter can read their flags back.
 static F3DFloor *g_ffRoverOf[16];
 
+// [rc4l] An engine plane in map units for the pure band helpers; reading one through FLOAT2FIXED's ints once took the double ZatPoint and lost a factor of 65536.
+static zx::levelmesh::BandPlane ToBandPlane(const secplane_t &p)
+{
+	return zx::levelmesh::ComputeBandPlaneFromFixed((double)p.a, (double)p.b, (double)p.ic, (double)p.d);
+}
+
+// [rc4l] Where each light band ends at a wall's two ends: band i is bounded below by light i+1.
+static void BandBottoms(const TArray<lightlist_t> &lights, int nLights, float x1, float y1, float x2, float y2,
+	float out[][2])
+{
+	for (int i = 0; i + 1 < nLights; i++)
+		zx::levelmesh::ComputeBandBottomAtEnds(ToBandPlane(lights[i + 1].plane), x1, y1, x2, y2, out[i]);
+}
+
 // A 3D floor plane evaluated at the wall's two ends, the way GLWall::GetPlanePos does it.
 static void PlaneAt(const F3DFloor::planeref &pr, float x0, float y0, float x1, float y1, float *out)
 {
 	const secplane_t *p = pr.plane;
 	if (p->a | p->b)
 	{
-		out[0] = FIXED2FLOAT(p->ZatPoint(FLOAT2FIXED(x0), FLOAT2FIXED(y0)));
-		out[1] = FIXED2FLOAT(p->ZatPoint(FLOAT2FIXED(x1), FLOAT2FIXED(y1)));
+		out[0] = zx::levelmesh::ComputeBandPlaneZ(ToBandPlane(*p), x0, y0);
+		out[1] = zx::levelmesh::ComputeBandPlaneZ(ToBandPlane(*p), x1, y1);
 	}
 	else if (pr.isceiling == sector_t::ceiling) out[0] = out[1] = FIXED2FLOAT(p->d);
 	else                                        out[0] = out[1] = FIXED2FLOAT(-p->d);
+}
+
+// [rc4l] A slab as the block walk sees it along this span: where it sits at both ends, which way it draws sides, and its clip kind.
+static void ToFFRover(F3DFloor *rover, float x0, float y0, float x1, float y1, zx::surfaces::FFRover &r)
+{
+	PlaneAt(rover->top, x0, y0, x1, y1, r.top);
+	PlaneAt(rover->bottom, x0, y0, x1, y1, r.bottom);
+	r.renderSides = (rover->flags & FF_RENDERSIDES) != 0;
+	r.invertSides = (rover->flags & FF_INVERTSIDES) != 0;
+	r.kind = rover->flags & (FF_SWIMMABLE | FF_TRANSLUCENT);
 }
 
 
@@ -545,7 +580,7 @@ static int ReshadeSegFromMap(int segIndex)
 
 
 	SegCache &sc = g_cache[segIndex];
-	if (sc.hasFogBoundary) { g_reshadeFF++; return -1; }   // its light is not in bandLight
+	if (sc.hasOwnLitPiece) { g_reshadeFF++; return -1; }   // [rc4l] its light is not in bandLight
 
 	zx::surfaces::DerivedWallLight dl;
 	const sector_t *cmFrom = NULL;
@@ -607,6 +642,44 @@ static int ReshadeSegFromMap(int segIndex)
 	return done;
 }
 
+// [rc4l] One flooded gap: the wall quad, textured per fragment from the back plane and lit by DrawFloodedPlane's rule (that sector's plane light and colormap, extra light only).
+static bool BakeFloodPiece(MeshRange &range, const zx::surfaces::DerivedWallSpan &d)
+{
+	static FFlatVertex tris[6];
+	FFlatVertex fan[4];
+	fan[0].Set(d.x1, d.zbottom[0], d.y1, d.uLeft,  d.vBottom[0]);
+	fan[1].Set(d.x1, d.ztop[0],    d.y1, d.uLeft,  d.vTop[0]);
+	fan[2].Set(d.x2, d.ztop[1],    d.y2, d.uRight, d.vTop[1]);
+	fan[3].Set(d.x2, d.zbottom[1], d.y2, d.uRight, d.vBottom[1]);
+	int w = 0;
+	for (int t = 0; t < 2; t++)
+		for (int c = 0; c < 3; c++)
+			tris[w++] = fan[ComputeFanTriangleVertex(4, t, c)];
+	if (!MeshStore(range, tris, w)) { MeshSquash(range); return false; }
+
+	const sector_t *sec = d.floodSector;
+	const FMaterial *mat = (const FMaterial *)d.material;
+	FColormap cm;
+	cm = sec->ColorMap;
+	int lightLevel = d.floodCeiling ? sec->GetCeilingLight() : sec->GetFloorLight();
+	if (lightLevel < 0) lightLevel = -lightLevel;   // [rc4l] DrawFloodedPlane takes abs() of it
+	ApplyFullbright(mat, cm, lightLevel);
+	MeshPiece mp;
+	mp.range = range;
+	mp.material = d.material;
+	zx::levelmesh::CaptureShading(lightLevel, getExtraLight(), cm, mp, false);
+	// [rc4l] After CaptureShading, which resets what it does not decide.
+	mp.baseTex = d.baseTex;
+	mp.lightLevel = lightLevel;
+	mp.lightColor = cm.LightColor.d;
+	mp.fadeColor = cm.FadeColor.d;
+	mp.flood = true;
+	mp.floodZ = d.floodZ;
+	for (int i = 0; i < 6; i++) mp.floodUV[i] = d.floodUV[i];
+	MeshRegisterPiece(mp);
+	return true;
+}
+
 int BakeSegFromMap(int segIndex)
 {
 	// [rc4l] DECLINED (-1) and "took it, made nothing" (0) are different answers.
@@ -650,7 +723,7 @@ int BakeSegFromMap(int segIndex)
 	// A sector with 3D floors has no single light level: each floor contributes a band, and a wall
 	// crossing one is drawn as two pieces with two lights. Computed per part because the span being
 	// cut is the part's -- see wallbands_compute for the rule, which is GLWall::SplitWall's.
-	sc.hasFogBoundary = false;   // set below; a fog boundary is the one piece a reshade cannot redo
+	sc.hasOwnLitPiece = false;   // [rc4l] set below; a fog boundary or a flood is a piece a reshade cannot redo
 	const sector_t *front = seg->frontsector;
 	const TArray<lightlist_t> *lights =
 		(front != NULL && front->e != NULL) ? &front->e->XFloor.lightlist : NULL;
@@ -677,27 +750,25 @@ int BakeSegFromMap(int segIndex)
 			continue;
 		}
 
-		// Where each band ends, at the wall's two ends. Band i is bounded below by light i+1.
-		float bandBottom[kBandsPerPart][2];
-		for (int i = 0; i + 1 < nLights; i++)
+		// [rc4l] A flooded gap is one piece lit like the plane it shows, as DrawFloodedPlane lights it, so it takes no bands.
+		if (d.flood)
 		{
-			const secplane_t &p = (*lights)[i + 1].plane;
-			if (p.a | p.b)
-			{
-				bandBottom[i][0] = FIXED2FLOAT(p.ZatPoint(FLOAT2FIXED(d.x1), FLOAT2FIXED(d.y1)));
-				bandBottom[i][1] = FIXED2FLOAT(p.ZatPoint(FLOAT2FIXED(d.x2), FLOAT2FIXED(d.y2)));
-			}
-			else
-			{
-				// Unsloped: SplitWall reads one end and uses it for both, so this does too.
-				bandBottom[i][0] = bandBottom[i][1] =
-					FIXED2FLOAT(p.ZatPoint(FLOAT2FIXED(d.x2), FLOAT2FIXED(d.y2)));
-			}
+			if (BakeFloodPiece(sc.pieces[slot0].range, d)) { sc.hasOwnLitPiece = true; made++; }
+			for (int k = 1; k < kBandsPerPart; k++) MeshSquash(sc.pieces[slot0 + k].range);
+			continue;
 		}
+
+		float bandBottom[kBandsPerPart][2];
+		if (nLights > 1) BandBottoms(*lights, nLights, d.x1, d.y1, d.x2, d.y2, bandBottom);
 
 		zx::surfaces::WallBand bands[kBandsPerPart];
 		const int n = zx::surfaces::ComputeWallBands(d.ztop, d.zbottom, bandBottom, nLights,
 			bands, kBandsPerPart);
+		if (fua_band_log && nLights > 1)
+		{
+			Printf("bands seg %d part %d: wall %.1f..%.1f, %d lights, first boundary %.1f, %d bands, first lit by %d\n",
+				segIndex, part, d.ztop[0], d.zbottom[0], nLights, bandBottom[0][0], n, n > 0 ? bands[0].lightIndex : -1);
+		}
 		if (n <= 0)
 		{
 			for (int k = 0; k < kBandsPerPart; k++) MeshSquash(sc.pieces[slot0 + k].range);
@@ -832,20 +903,7 @@ int BakeSegFromMap(int segIndex)
 			// dbab04's blue light strip grey: the geometry and the texture were already right and
 			// only the colormap was the sector's instead of the band's.
 			float ffBandBottom[kBandsPerPart][2];
-			for (int i = 0; i + 1 < nLights; i++)
-			{
-				const secplane_t &p = (*lights)[i + 1].plane;
-				if (p.a | p.b)
-				{
-					ffBandBottom[i][0] = FIXED2FLOAT(p.ZatPoint(FLOAT2FIXED(mid.x1), FLOAT2FIXED(mid.y1)));
-					ffBandBottom[i][1] = FIXED2FLOAT(p.ZatPoint(FLOAT2FIXED(mid.x2), FLOAT2FIXED(mid.y2)));
-				}
-				else
-				{
-					ffBandBottom[i][0] = ffBandBottom[i][1] =
-						FIXED2FLOAT(p.ZatPoint(FLOAT2FIXED(mid.x2), FLOAT2FIXED(mid.y2)));
-				}
-			}
+			if (nLights > 1) BandBottoms(*lights, nLights, mid.x1, mid.y1, mid.x2, mid.y2, ffBandBottom);
 
 			zx::surfaces::FFRover rovers[kMaxFFBlocks];
 			int nr = 0;
@@ -853,11 +911,7 @@ int BakeSegFromMap(int segIndex)
 			{
 				F3DFloor *rover = ff[k];
 				if (rover == NULL || !(rover->flags & FF_EXISTS)) continue;
-				zx::surfaces::FFRover &r = rovers[nr];
-				PlaneAt(rover->top, mid.x1, mid.y1, mid.x2, mid.y2, r.top);
-				PlaneAt(rover->bottom, mid.x1, mid.y1, mid.x2, mid.y2, r.bottom);
-				r.renderSides = (rover->flags & FF_RENDERSIDES) != 0;
-				r.invertSides = (rover->flags & FF_INVERTSIDES) != 0;
+				ToFFRover(rover, mid.x1, mid.y1, mid.x2, mid.y2, rovers[nr]);
 				// [rc4l] A fog slab DOES draw -- it just draws no texture.
 				//
 				// This used to skip them, reasoning that an untextured face is nothing for the mesh
@@ -873,9 +927,20 @@ int BakeSegFromMap(int segIndex)
 				nr++;
 			}
 
+			// [rc4l] This side's own slabs, which take away the water a neighbour's water would wall off, as GL's ClipFFloors does.
+			zx::surfaces::FFRover nearRovers[kMaxFFBlocks];
+			int nn = 0;
+			const sector_t *fs = seg->frontsector;
+			for (unsigned k = 0; fs->e != NULL && k < fs->e->XFloor.ffloors.Size() && nn < kMaxFFBlocks; k++)
+			{
+				F3DFloor *rover = fs->e->XFloor.ffloors[k];
+				if (rover != NULL && (rover->flags & FF_EXISTS))
+					ToFFRover(rover, mid.x1, mid.y1, mid.x2, mid.y2, nearRovers[nn++]);
+			}
+
 			zx::surfaces::FFBlock blocks[kMaxFFBlocks];
 			const int nb = zx::surfaces::ComputeFFBlocks(mid.ztop, mid.zbottom, rovers, nr,
-				blocks, kMaxFFBlocks);
+				blocks, kMaxFFBlocks, nearRovers, nn);
 
 			for (int bi = 0; bi < nb; bi++)
 			{
@@ -927,7 +992,7 @@ int BakeSegFromMap(int segIndex)
 					MeshRegisterPiece(fmp);
 					// A fog boundary takes its light straight off the F3DFloor rather than from the
 					// band list, so it is the one piece bandLight cannot describe -- see Reshade.
-					sc.hasFogBoundary = true;
+					sc.hasOwnLitPiece = true;
 					made++;
 					continue;
 				}
@@ -1572,6 +1637,12 @@ void SectorDirtyBreakdown(int &lightOnly, int &geometry)
 	geometry  = g_dirtyGeometry;
 }
 
+// [rc4l] Re-run the whole-map wall bake now, to tell a bake that was wrong from one that went stale.
+CCMD( fua_mapbake_now )
+{
+	Printf( "%d wall parts rebuilt from the map\n", zx::levelmesh::BakeLevelFromMap( ) );
+}
+
 CCMD( fua_bake_dirty )
 {
 	Printf( "sector invalidations since load: %d light-only, %d moved a plane, %d re-baked in the last frame\n",
@@ -1598,6 +1669,30 @@ CCMD( fua_bake_dirty )
 		g_reshadeFF = 0; g_reshadeNoLight = 0; g_reshadeNotOwner = 0; g_reshadeNoPiece = 0;
 		g_invalMs = 0.0; g_invalFrames = 0; g_segsBaked = 0; g_segsReshaded = 0;
 		Printf( "  (counters reset)\n" );
+	}
+}
+
+// [rc4l] Re-bake one seg whose sector or sidedef changed: re-light it when only the light moved, re-derive it otherwise, and hand it back to GL's walk if the map bake declines it.
+static void RebakeChangedSeg(int idx, bool geometryChanged)
+{
+	if ((unsigned)idx >= g_cache.Size()) return;
+	SegCache &sc = g_cache[idx];
+	sc.filled = false;   // [rc4l] force a re-capture when the BSP next reaches it
+	// [rc4l] Re-arm the once-per-seg bake, or a seg GL refused once (every 3D floor, everything under sky) is squashed and never baked again, as dbab02's lava grate was.
+	g_uncacheable[idx] = false;
+	// [rc4l] Bake first and squash only what the bake declined, since squashing zeroes the range and defeats MeshStore's compare-before-upload (3.7x slower on wdiex02's flickering lights).
+	int made = geometryChanged ? -2 : ReshadeSegFromMap(idx);
+	if (made == -1 || made == -2)
+	{
+		made = BakeSegFromMap(idx);
+		g_segsBaked++;
+	}
+	else g_segsReshaded++;
+	if (made < 0)   // [rc4l] declined: this seg is GL's, hand it back
+	{
+		// [rc4l] Squash, not release, so the re-capture writes back over a range that stays allocated instead of the arena growing every frame the sector moves.
+		for (int i = 0; i < kMaxMapPieces; i++)
+			MeshSquash(sc.pieces[i].range);
 	}
 }
 
@@ -1655,59 +1750,16 @@ void InvalidateMovedSectors()
 		const TArray<int> &segList = g_sectorSegs[s];
 		// A sector whose planes held still cannot have moved its walls, so its segs only need
 		// re-lighting -- see ReshadeSegFromMap. Anything else takes the full bake.
-		for (unsigned k = 0; k < segList.Size(); k++)
-		{
-			const int idx = segList[k];
-			if ((unsigned)idx >= g_cache.Size()) continue;
-			SegCache &sc = g_cache[idx];
-			sc.filled = false;   // force a re-capture when the BSP next reaches it
-			// [rc4l] Re-arm the once-per-seg bake, or squashing this geometry destroys it forever.
-			//
-			// EndCapture bakes a refused seg only on the false->true edge of g_uncacheable, because a
-			// refused seg re-captures every single frame and baking it every frame would burn the
-			// arena. But g_uncacheable is sticky and nothing ever cleared it, so a seg that had
-			// already been refused once -- which is every 3D floor and everything under sky -- got
-			// its ranges squashed here and then never re-baked. On dbab02 a switch raises a platform,
-			// and the 16-unit-thick grate over the lava pit next to it vanished from the Vulkan view
-			// permanently while GL kept drawing it. Clearing the flag makes the next capture bake
-			// exactly once more, which is the same budget the first bake had.
-			g_uncacheable[idx] = false;
-			// [rc4l] Bake FIRST, and squash only what the bake did not take.
-			//
-			// This ran the other way round -- squash all twenty-four slots, then re-bake -- and that
-			// order is what made map baking a 3.7x regression on a level with animated lights.
-			//
-			// MeshStore compares the new vertices against the stored ones and uploads nothing when
-			// they match, precisely so that re-baking a wall that did not move is free. MeshSquash
-			// MEMSETS THE RANGE TO ZERO. So squashing first guaranteed that comparison could never
-			// match: every re-bake saw zeros, rewrote the same bytes it had a moment ago, and marked
-			// them dirty. On wdiex02 that was 12,200 vertices and 1,548 repaints per frame for a
-			// world standing still -- and the sectors driving it had not moved at all. Nine tenths of
-			// them were dirty only because a light was flickering, since sector_t bumps fua_dirty for
-			// ChangeLightLevel exactly as it does for ChangePlaneTexZ.
-			//
-			// Nothing is lost by not squashing: an owned seg's bake squashes the band and 3D-floor
-			// slots it does not fill itself. And when the map does NOT own the seg the bake returns
-			// a decline without touching a range, which is the case the squash is really for -- it
-			// hands the seg back to GL's walk to re-capture. Squashing that case unconditionally is
-			// also what put a hole in dbab01; here it stays, guarded.
-			int made = sectorMoved ? -2 : ReshadeSegFromMap(idx);
-			if (made == -1 || made == -2)
-			{
-				made = BakeSegFromMap(idx);
-				g_segsBaked++;
-			}
-			else g_segsReshaded++;
-			if (made < 0)   // declined: this seg is GL's, hand it back
-			{
-				// Squash, not release: the range stays allocated so the re-capture writes back over
-				// it. Freeing re-allocates every frame the sector moves and the arena runs away.
-				for (int i = 0; i < kMaxMapPieces; i++)
-					MeshSquash(sc.pieces[i].range);
-			}
-		}
+		for (unsigned k = 0; k < segList.Size(); k++) RebakeChangedSeg(segList[k], sectorMoved);
 		// ...and the sector's own planes, which have no walk to notice them either.
 		if (fua_surface_mapbake_auto) zx::levelmesh::BakeFlatsForSector(s);
+	}
+	// [rc4l] ...and every sidedef a setter touched: a switch's texture, a scroller's offset, which no sector change reports.
+	for (int i = 0; i < numsides && (unsigned)i < g_sideDirty.Size(); i++)
+	{
+		if (sides[i].fua_dirty == g_sideDirty[i]) continue;
+		g_sideDirty[i] = sides[i].fua_dirty;
+		for (int k = 0; k < sides[i].numsegs; k++) RebakeChangedSeg(int(sides[i].segs[k] - segs), true);
 	}
 	invalClock.Unclock();
 	g_invalMs += invalClock.TimeMS();
@@ -1723,6 +1775,13 @@ void GetSegMeshInfo(int segIndex, int &pieces, int &baked)
 	if (segIndex < 0 || (unsigned)segIndex >= g_cache.Size()) return;
 	pieces = g_cache[segIndex].pieceCount;
 	baked  = g_cache[segIndex].bakedCount;
+}
+
+// [rc4l] The light-list entry a baked slot took its light from, or -1 for the wall's own light.
+int GetSegBandLight(int segIndex, int piece)
+{
+	if (segIndex < 0 || (unsigned)segIndex >= g_cache.Size() || piece < 0 || piece >= kMaxMapPieces) return -1;
+	return g_cache[segIndex].bandLight[piece];
 }
 
 void GetSegPieceRange(int segIndex, int piece, unsigned int &offset, unsigned int &count)
@@ -1846,11 +1905,13 @@ CCMD( fua_line_mesh )
 		int pieces = 0, baked = 0;
 		zx::levelmesh::GetSegMeshInfo( i, pieces, baked );
 		Printf( "seg %d: %d pieces (%d baked last time)\n", i, pieces, baked );
-		for ( int k = 0; k < pieces; k++ )
+		// [rc4l] A map-baked seg keeps its geometry in the baked slots, not the captured pieces, so list whichever it has.
+		const int listed = ( pieces > baked ) ? pieces : baked;
+		for ( int k = 0; k < listed; k++ )
 		{
 			unsigned off = 0, cnt = 0;
 			zx::levelmesh::GetSegPieceRange( i, k, off, cnt );
-			if ( cnt == 0 ) { Printf( "   piece %d: empty\n", k ); continue; }
+			if ( cnt == 0 ) continue;
 			float zlo = 1e9f, zhi = -1e9f;
 			for ( unsigned v = 0; v < cnt && off + v < (unsigned)nv; v++ )
 			{
@@ -1858,7 +1919,8 @@ CCMD( fua_line_mesh )
 				if ( z < zlo ) zlo = z;
 				if ( z > zhi ) zhi = z;
 			}
-			Printf( "   piece %d: range %u+%u, z %.1f..%.1f\n", k, off, cnt, zlo, zhi );
+			Printf( "   piece %d: range %u+%u, z %.1f..%.1f, band light %d\n", k, off, cnt, zlo, zhi,
+				zx::levelmesh::GetSegBandLight( i, k ) );
 		}
 	}
 	if ( found == 0 ) Printf( "line %d has no segs\n", want );

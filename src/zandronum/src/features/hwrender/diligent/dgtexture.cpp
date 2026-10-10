@@ -203,27 +203,7 @@ Diligent::ITextureView *GetMaterialSRV(const void *materialPtr, int translation)
 
 	FMaterial *mat = (FMaterial *)materialPtr;
 	int w = 0, h = 0;
-	// [rc4l] Say when a texture is not a plain image.
-	//
-	// A camera texture (bHasCanvas) has no static pixels at all -- the engine RENDERS into it every
-	// frame -- so asking CreateTexBuffer for its bytes returns whatever the buffer happens to hold.
-	// That is the red/blue noise on gvh06's teleporter and the flat slab on gvh07's monitor. A warped
-	// texture (bWarped) is a shader effect this backend does not run either. Both are reported once
-	// so they stop being mysteries and start being a list.
-	if (mat->tex != NULL && mat->tex->bWarped)
-	{
-		static TArray<const void *> reported;
-		bool seen = false;
-		for (unsigned i = 0; i < reported.Size(); i++) if (reported[i] == materialPtr) { seen = true; break; }
-		if (!seen)
-		{
-			reported.Push(materialPtr);
-			Printf("vulkan texture: %s is %s -- not implemented, will render wrong\n",
-				(mat->tex->Name != NULL) ? mat->tex->Name : "?",
-				"warp-shaded");
-		}
-	}
-
+	// [rc4l] A warp texture's CopyTrueColorPixels is its unwarped source, so it uploads as is and ripples in the scene shader.
 	// [rc4l] createexpanded=false: the expanded border exists for GL's clamp behaviour on sprites and
 	// would shift the UVs the mesh already baked.
 	unsigned char *buf = mat->CreateTexBuffer(translation, w, h, true, false);

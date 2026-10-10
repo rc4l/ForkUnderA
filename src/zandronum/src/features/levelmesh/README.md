@@ -42,12 +42,15 @@ comparison, and the mean/worst per side — the tail is what decides fixed range
 
 ## In-engine hooks
 
-Sky surfaces (`flatmesh.cpp`, see `docs/skybleed-scope.md`):
+The frame's captures -- sky surfaces, sprites, models, decals (`flatmesh.cpp`, `modelmesh.cpp`, see
+`docs/skybleed-scope.md`) -- belong to the player's outermost scene only:
 
+- `gl/scene/gl_scene.cpp` `DrawScene`: a nesting guard (`EnterScene`/`LeaveScene`), since GL raises the
+  portal depth for the player's own scene once its walk is done; `PlayerWalkActive` asks it.
+- `gl/scene/gl_scene.cpp` `CreateScene`: `BeginSkyWalk`, and the frame's sprite, model and decal reset
+  only on the player's scene; `RenderViewpoint` records which view is walking (`SetMainView`).
 - `gl/scene/gl_walls.cpp` `PutWall`: `RegisterSkyQuad` for `RENDERWALL_SKY` and `RENDERWALL_SKYBOX`.
-- `gl/scene/gl_scene.cpp` `CreateScene`: `BeginSkyWalk`, so only the player's outer walk fills the
-  player's list and a camera texture fills its own; `RenderViewpoint` records which view is walking.
-- `gl/scene/gl_portal.h`: `GLPortal::RenderDepth()`, 0 outside any portal re-entry.
+- `gl/models/gl_models.cpp` `gl_RenderModel`: `ModelCaptureBegin`/`ModelCaptureEnd` around the draw.
 - `hwrender/diligent/dgscene.cpp` `DrawSkySurfaces`: reads the list of the view it is drawing.
 
 The rest of this section predates the bake: **P0 had none.** P0 is a console command and a pure computation unit; it reads existing map structures

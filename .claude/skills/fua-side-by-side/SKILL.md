@@ -37,7 +37,8 @@ node src/cli.mjs ui exec "fua_dg_standalone 0" --port 7801 --token <T>
   elsewhere (7799, 7796).
 - `play` **ignores `--token`** and mints its own. Read `PORT`/`TOKEN` from `tools/fuactl/.play-session`
   (a two-line `KEY=VALUE` file, not JSON) — it is written immediately, while the launch log is
-  buffered and often empty for the first several seconds.
+  buffered and often empty for the first several seconds. Right after a background launch the file
+  can still hold the previous launch's token, so wait for `TOKEN` to change before `ready`.
 - Do not sleep in long blocks waiting for it: poll `rpc sim.tic` until it answers. A bare launch is
   ready in seconds; a heavy wad set can take 15-25 s.
 

@@ -50,7 +50,7 @@ static const char *kHorizonVS =
 	"layout(location = 3) in vec4 aPlane;\n"
 	"layout(location = 4) in vec4 aUVu;\n"
 	"layout(location = 5) in vec4 aUVv;\n"
-	"layout(binding = 0) uniform Constants { mat4 uMVP; vec4 uCameraPos; vec4 uLightParams; vec4 uClipPlane; vec4 uScreen; vec4 uSkyColor; };\n"
+	FUA_CONSTANTS_GLSL
 	"layout(location = 0) out vec3 vWorld;\n"
 	"layout(location = 1) flat out vec3 vEye;\n"
 	"layout(location = 2) flat out vec4 vColorLight;\n"
@@ -75,7 +75,7 @@ static const char *kHorizonVS =
 static const char *kHorizonPS =
 	"#version 450\n"
 	FUA_SECTOR_LIGHT_GLSL
-	"layout(binding = 0) uniform Constants { mat4 uMVP; vec4 uCameraPos; vec4 uLightParams; vec4 uClipPlane; vec4 uScreen; vec4 uSkyColor; };\n"
+	FUA_CONSTANTS_GLSL
 	"layout(binding = 1) uniform sampler2D uTex;\n"
 	"layout(binding = 5) uniform sampler2D uBrightmap;\n"
 	"layout(location = 0) in vec3 vWorld;\n"
@@ -128,18 +128,8 @@ static bool EnsureHorizonPipeline()
 	if (!dev || !swap) return false;
 
 	Diligent::RefCntAutoPtr<Diligent::IShader> vs, ps;
-	{
-		Diligent::ShaderCreateInfo ci;
-		ci.SourceLanguage = Diligent::SHADER_SOURCE_LANGUAGE_GLSL_VERBATIM;
-		ci.Desc.ShaderType = Diligent::SHADER_TYPE_VERTEX;
-		ci.Desc.Name = "fua horizon VS";
-		ci.Source = kHorizonVS;
-		dev->CreateShader(ci, &vs);
-		ci.Desc.ShaderType = Diligent::SHADER_TYPE_PIXEL;
-		ci.Desc.Name = "fua horizon PS";
-		ci.Source = kHorizonPS;
-		dev->CreateShader(ci, &ps);
-	}
+	vs = CompileShader(Diligent::SHADER_TYPE_VERTEX, "fua horizon VS", kHorizonVS);
+	ps = CompileShader(Diligent::SHADER_TYPE_PIXEL, "fua horizon PS", kHorizonPS);
 	// [rc4l] Said once and then left alone, so a shader that will not compile costs one line, not a frame.
 	if (!vs || !ps) { g_hzFailed = true; Printf("vulkan horizons OFF: shader compilation failed\n"); return false; }
 

@@ -43,6 +43,12 @@ them **by name, not by presence**.
 Truthy checks are not instrumentation. `!= NULL`, `> 0`, `is set` all hide the case where a
 field is populated with a meaningless value.
 
+> wdiexsec's pool walls took the water's blue above the water line. `fua_band_log 1` then
+> `fua_mapbake_now` printed the bake's band boundary as `-0.0` where `fua_sector_lights` read the
+> same plane as `-80`: a fixed height divided by 65536 twice, through the double `ZatPoint` that
+> `FLOAT2FIXED`'s ints silently selected. `fua_line_mesh <line>` lists a wall's baked slots with
+> their heights and band light.
+
 ## 3. Capture the reference's decision; never re-derive it
 
 If the reference computed something, **store what it computed**. Recomputing it from the same
@@ -77,6 +83,11 @@ overwritten by whichever walk ran last. Count walks per frame before suspecting 
 > wdiexsec's sky turned navy looking up: a reflective floor's mirror walk replaced the player's 88
 > sky quads with its own 4. `fua_sky_quads` showed two walks a frame; `mapdata --scripts reflect`
 > found the `Sector_SetPlaneReflection` that made the mirror.
+
+A walk's depth counter is not the same as which walk it is. GL raises the portal depth for the
+player's own scene once its walk is done, so the player's models are drawn at the depth a mirror's
+walk runs at: gating on depth 0 dropped the barrel it was meant to save. Count the enclosing
+`DrawScene` instead (`PlayerWalkActive`).
 
 ## 5. A cache of the reference's output freezes anything the reference recomputes
 
@@ -116,6 +127,10 @@ it against the broken state — stash the fix, rebuild, confirm it fails.
 > A frame-to-frame pixel diff "proved" an animation was working: 49% of pixels changed. Then
 > the same test against the unfixed build gave 43%. Other things in the frame were animating.
 > The test would have passed against the bug it was written for.
+
+> A template for "minimising drops the translucent water" passed on the broken build: its water flat
+> was animated, and the animation step re-binds a batch on every new frame. A still flat failed at
+> 6.95 against 0.00 fixed.
 
 When a pixel test cannot isolate the thing, instrument the mechanism instead: count how many
 times the code path that *should* fire actually fires. Zero versus non-zero is unambiguous

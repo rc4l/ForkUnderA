@@ -32,6 +32,9 @@ struct TranslucentDraw
 	int      blend;         // 0 opaque/alpha-tested, 1 translucent, 2 additive, 3 fuzz
 	bool     decal;         // paint on a surface: coplanar with it, and depth-biased to win against it
 	unsigned first;         // vertex offset, which is creation order: older marks have smaller ones
+	// [rc4l] How many translucent level planes lie between it and the eye, and whether it is one of them (ComputeBlendLayers).
+	int      layer = 0;
+	bool     plane = false;
 };
 
 
@@ -44,6 +47,16 @@ struct TranslucentDraw
 // The distances of two coplanar quads differ only by where each centre falls, so ordering marks
 // against each other by distance answers a question the numbers cannot actually settle.
 bool ComputeDrawsBefore(const TranslucentDraw &a, const TranslucentDraw &b);
+
+// [rc4l] A translucent draw's height span, and whether it is a piece of the level (a sprite never splits the order).
+struct BlendSpan
+{
+	float lo, hi;
+	bool  surface;
+};
+
+// [rc4l] GL's GLDrawList sort against translucent flats: layers[i] counts the level-plane heights item i lies wholly beyond from the eye (a straddler counts as the eye's side, where GL would split it), planes[i] marks the planes, and the return is how many heights there are.
+int ComputeBlendLayers(const BlendSpan *spans, int n, float viewZ, int *layers, bool *planes);
 
 // [rc4l] The BUILD-time order: which piece's vertices go into the buffer before which.
 //

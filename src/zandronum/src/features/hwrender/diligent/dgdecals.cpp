@@ -99,7 +99,7 @@ namespace zx { namespace hwrender {
 
 static const char *kDeferredDecalVS =
 	"#version 450\n"
-	"layout(binding = 0) uniform Constants { mat4 uMVP; vec4 uCameraPos; vec4 uLightParams; vec4 uClipPlane; vec4 uScreen; vec4 uSkyColor; };\n"
+	FUA_CONSTANTS_GLSL
 	/* One record per mark: where it landed, which way its picture is turned, how far it reaches,
 	   what to paint, and which texture to paint it with. */
 	"struct DecalRec { vec4 centre; vec4 axisU; vec4 axisV; vec4 axisN; vec4 color; vec4 params; vec4 anchor; };\n"
@@ -172,7 +172,7 @@ static const char *kDeferredDecalVS =
 
 static const char *kDeferredDecalPS =
 	"#version 450\n"
-	"layout(binding = 0) uniform Constants { mat4 uMVP; vec4 uCameraPos; vec4 uLightParams; vec4 uClipPlane; vec4 uScreen; vec4 uSkyColor; };\n"
+	FUA_CONSTANTS_GLSL
 	"layout(binding = 6) uniform Decal { mat4 uInvMVP; vec4 uDecalDebug; };\n"
 	"layout(binding = 7) uniform sampler2D uSceneDepth;\n"
 	"layout(binding = 8) uniform sampler2D uSceneNormal;\n"
@@ -400,17 +400,8 @@ static bool EnsureDeferredDecalPass()
 	auto *swap = GetSwapChain();
 	if (!dev || !swap) return false;
 
-	Diligent::ShaderCreateInfo ci;
-	ci.SourceLanguage = Diligent::SHADER_SOURCE_LANGUAGE_GLSL_VERBATIM;
-	Diligent::RefCntAutoPtr<Diligent::IShader> vs, ps;
-	ci.Desc.ShaderType = Diligent::SHADER_TYPE_VERTEX;
-	ci.Desc.Name = "fua deferred decal VS";
-	ci.Source = kDeferredDecalVS;
-	dev->CreateShader(ci, &vs);
-	ci.Desc.ShaderType = Diligent::SHADER_TYPE_PIXEL;
-	ci.Desc.Name = "fua deferred decal PS";
-	ci.Source = kDeferredDecalPS;
-	dev->CreateShader(ci, &ps);
+	Diligent::RefCntAutoPtr<Diligent::IShader> vs = CompileShader(Diligent::SHADER_TYPE_VERTEX, "fua deferred decal VS", kDeferredDecalVS);
+	Diligent::RefCntAutoPtr<Diligent::IShader> ps = CompileShader(Diligent::SHADER_TYPE_PIXEL, "fua deferred decal PS", kDeferredDecalPS);
 	if (!vs || !ps) { g_ddBail = "shader compilation failed"; return false; }
 
 	if (!g_ddInstBuf)
