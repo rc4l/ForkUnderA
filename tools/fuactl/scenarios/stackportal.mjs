@@ -3,20 +3,11 @@
 // usage:  node scenarios/stackportal.mjs [port]
 import { UdmfMap, wad, mapLumps } from "../src/udmf.mjs";
 import { runScenarioIfMain } from "../src/template.mjs";
-import { THING } from "../src/doomnums.mjs";
 
-// [rc4l] The pair of anchors share a TID; the upper room sits STACK_DX east, the stack's displacement, as WDI01's rooftops sit east of its town.
-const STACK_TID = 7, STACK_DX = 4096;
-
+// [rc4l] The upper room sits east by the stack's displacement, as WDI01's rooftops sit east of its town.
 export function buildStackPortalWad() {
   const m = new UdmfMap();
-  m.room(0, 0, 512, 512, { heightfloor: 0, heightceiling: 128, texturefloor: "FLOOR4_8", textureceiling: "CEIL3_5",
-    lightlevel: 128 }, () => ({ side: { texturemiddle: "STARTAN2" } }));
-  m.room(STACK_DX, 0, STACK_DX + 512, 512, { heightfloor: 128, heightceiling: 640, texturefloor: "FLOOR4_8",
-    textureceiling: "F_SKY1", lightlevel: 255 }, () => ({ side: { texturemiddle: "BRICK1" } }));
-  // [rc4l] Off the eye's line so a sky rendered from an anchor, the old fallback, sees the room from somewhere else.
-  m.thing({ x: 64, y: 64, angle: 0, type: THING.LowerStackLookOnly, id: STACK_TID });
-  m.thing({ x: STACK_DX + 64, y: 64, angle: 0, type: THING.UpperStackLookOnly, id: STACK_TID });
+  m.stackedRooms();
   m.thing({ x: 256, y: 256, angle: 90, type: 1 });
   return wad(mapLumps("MAP01", m));
 }

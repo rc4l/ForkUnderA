@@ -95,6 +95,18 @@ export class UdmfMap {
     this.thing({ x: x0 + 256, y: y0 + 256, height: 128, angle: 0, type: THING.SkyViewpoint });
   }
 
+  // [rc4l] A 512 room whose ceiling at 128 is a stacked sector opening onto a sky-lit room upperWidth wide, dx east, as WDI's towns see their rooftops; returns both sectors.
+  stackedRooms({ dx = 4096, upperWidth = 512, tid = 7 } = {}) {
+    const lower = this.room(0, 0, 512, 512, { heightfloor: 0, heightceiling: 128, texturefloor: "FLOOR4_8",
+      textureceiling: "CEIL3_5", lightlevel: 128 }, () => ({ side: { texturemiddle: "STARTAN2" } }));
+    const upper = this.room(dx, 0, dx + upperWidth, 512, { heightfloor: 128, heightceiling: 640, texturefloor: "FLOOR4_8",
+      textureceiling: "F_SKY1", lightlevel: 255 }, () => ({ side: { texturemiddle: "BRICK1" } }));
+    // [rc4l] The anchors sit off the eye's line, so a sky rendered from an anchor, the old fallback, sees the room from somewhere else.
+    this.thing({ x: 64, y: 64, angle: 0, type: THING.LowerStackLookOnly, id: tid });
+    this.thing({ x: dx + 64, y: 64, angle: 0, type: THING.UpperStackLookOnly, id: tid });
+    return { lower, upper };
+  }
+
   // [rc4l] Present on every skill and in every mode unless the caller says otherwise.
   thing(props) {
     this.things.push({ skill1: true, skill2: true, skill3: true, skill4: true, skill5: true,

@@ -101,7 +101,11 @@ the same pixels off several captures -- the comparison that showed a "roof slab"
 showing through a gap, not a surface at all. Hand-worked angles missed by a few pixels every time.
 Under a floor or ceiling `look` also names the subsector, its nodebuilder and render sectors, both plane
 textures and the lights GL links to it, which is what told a wrong-sector floor and a light shining
-through a wall apart from texture faults.
+through a wall apart from texture faults. When the trace stops at a sky, ask what lies further along the
+ray (`fua_sector_at x y ...`) and how GL got there (`gl_portalinfo`): WDI07's clocktower roof and smoke
+were drawn through the town's stacked sky from a copy of the tower a thousand units away, which nothing
+on screen says. A report naming several symptoms is several reports; measure each, since one of them
+(the clouds' colour there) matched to half a level.
 
 Once it reproduces in the reporter's content, rebuild the fault on a **template map** that carries
 only the ingredient that matters -- the `template-maps` skill. A repro that needs nine mod wads cannot

@@ -43,7 +43,8 @@ comparison, and the mean/worst per side — the tail is what decides fixed range
 ## In-engine hooks
 
 The frame's captures -- sky surfaces, sprites, models, decals (`flatmesh.cpp`, `modelmesh.cpp`, see
-`docs/skybleed-scope.md`) -- belong to the player's outermost scene only:
+`docs/skybleed-scope.md`) -- belong to the player's outermost scene only, except that the sprites, models and
+decals a stacked view's walk draws are kept for that view's pass alone (`StackCaptureSlot`):
 
 - `gl/scene/gl_scene.cpp` `DrawScene`: a nesting guard (`EnterScene`/`LeaveScene`), since GL raises the
   portal depth for the player's own scene once its walk is done; `PlayerWalkActive` asks it.
@@ -55,7 +56,7 @@ The frame's captures -- sky surfaces, sprites, models, decals (`flatmesh.cpp`, `
   view through, gathered per portal into a few views.
 - `gl/scene/gl_bsp.cpp` `DoSubsector` and `AddLine`: `NoteWalkedSubsector`/`NoteWalkedSide`, what a stacked view's walk drew.
 - `gl/scene/gl_portal.cpp` `GLSectorStackPortal::DrawContents`: a `StackWalk` around its `DrawScene`, so
-  that walk's sky quads fill its view's list.
+  that walk's sky quads fill its view's list and its sprites, models and decals are filed under its view.
 - `gl/scene/gl_portal.cpp` `GLMirrorPortal::DrawContents`: a `MirrorWalk(line)` around its `DrawScene`, so the viewer's
   sprite it draws is filed under that mirror and only that mirror's pass in the backend shows it.
 - `textures/textures.h` `FTextureManager::GetAnimations`: the ANIMDEFS list, read-only, so the backend gives every frame

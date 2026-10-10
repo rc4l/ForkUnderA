@@ -40,6 +40,7 @@ Diligent::IDeviceContext *GetContext();
 // [rc4l] Opaque HWND. windows.h is deliberately not included here -- see dgwin32.cpp for why.
 void *Fua_CreateBackendWindow(const char *title, int w, int h);
 void  Fua_PumpBackendWindow(void *hwnd);
+bool  Fua_RestoreEngineWindow();
 
 static void                                          *g_hwnd = NULL;
 static int g_wantW = 0, g_wantH = 0;
@@ -218,9 +219,13 @@ CCMD( fua_diligent_frame )
 	Printf( "%s%s\n", ok ? "" : "FAILED: ", report.GetChars( ) );
 }
 
+// [rc4l] fuactl's shot asks this when GL's frame comes back blank, the tell of a minimized window.
+CCMD( fua_window_restore ) { Printf( "%s\n", zx::hwrender::Fua_RestoreEngineWindow( ) ? "restored" : "not minimized" ); }
+
 #else // !FUA_DILIGENT
 
 CCMD( fua_diligent_window ) { Printf( "This build has no Diligent backend (-DFUA_DILIGENT=ON).\n" ); }
 CCMD( fua_diligent_frame )  { Printf( "This build has no Diligent backend (-DFUA_DILIGENT=ON).\n" ); }
+CCMD( fua_window_restore )  { Printf( "This build has no Diligent backend (-DFUA_DILIGENT=ON).\n" ); }
 
 #endif // FUA_DILIGENT

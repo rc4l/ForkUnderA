@@ -381,3 +381,21 @@ TEST(SurfaceOrder, CoplanarPiecesCountOnce)
 	EXPECT_EQ(1, ComputeBlendLayers(spans, 3, 0.f, layers, planes));
 	EXPECT_EQ(1, layers[2]);
 }
+
+namespace { struct P3 { float x, y, z, u; }; }
+
+// [rc4l] WDI07's WFALL1 waterfall scrolls every tic: its UVs change and its corners do not, so the patch keeps the scene's order.
+TEST(SurfaceOrder, AScrolledSurfaceKeepsItsPositionsAndAMovedOneDoesNot)
+{
+	const P3 before[2] = { { 1, 2, 3, 0.0f }, { 4, 5, 6, 0.5f } };
+	const P3 scrolled[2] = { { 1, 2, 3, 0.25f }, { 4, 5, 6, 0.75f } };
+	P3 moved[2] = { { 1, 2, 3, 0.0f }, { 4, 5, 6, 0.5f } };
+	EXPECT_TRUE(ComputeSamePositions(before, scrolled, 2));
+	for (int axis = 0; axis < 3; axis++)
+	{
+		moved[1] = before[1];
+		(axis == 0 ? moved[1].x : axis == 1 ? moved[1].y : moved[1].z) += 1.f;
+		EXPECT_FALSE(ComputeSamePositions(before, moved, 2)) << axis;
+	}
+	EXPECT_TRUE(ComputeSamePositions(before, moved, 0));
+}

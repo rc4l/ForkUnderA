@@ -158,6 +158,8 @@ export async function shotPair(c, tag, {
     await ui.screenshot(c, engineBin, `sweep/${tag}_gl`).catch(() => {});
     gotGl = await waitForFile(gl);
     if (!gotGl || !isBlankImage(decodePNG(gl))) break;
+    // [rc4l] A minimized window reads back blank every time, so un-minimize it and let a frame draw before asking again.
+    if ((await exec(c, "fua_window_restore")).includes("restored")) await sleep(300);
   }
   const gotVk = await captureVulkan(c, vk);
 

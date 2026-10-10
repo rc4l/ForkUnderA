@@ -96,6 +96,15 @@ struct GLSpriteOrder
 
 bool ComputeGLSpritesBefore(const GLSpriteOrder &a, const GLSpriteOrder &b, bool compatSpriteSort);
 
+// [rc4l] Whether two runs of n vertices sit in exactly the same places, which lets a translucent surface whose picture moved but whose geometry did not (a scrolling waterfall) be patched without re-sorting the scene.
+template <typename A, typename B>
+bool ComputeSamePositions(const A *a, const B *b, unsigned n)
+{
+	for (unsigned i = 0; i < n; i++)
+		if (a[i].x != b[i].x || a[i].y != b[i].y || a[i].z != b[i].z) return false;
+	return true;
+}
+
 } }   // namespace zx::hwrender
 
 #endif

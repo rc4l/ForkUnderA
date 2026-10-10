@@ -166,6 +166,9 @@ enum { kSkyCaptureNone = -1, kSkyCaptureMain = 0, kSkyCaptureCamera = 1, kSkyCap
 // [rc4l] Which list a walk fills: an outer walk fills the main or camera one, and the player's walk through a stacked view it saw (stackSlot, else -1) fills that view's.
 int ComputeSkyCaptureList(bool mainView, int sceneNesting, int stackSlot);
 
+// [rc4l] The stacked view a capture belongs to: stackSlot while the player's walk is inside that view, by ComputeSkyCaptureList's rule, else -1.
+int ComputeStackCaptureSlot(bool mainView, int sceneNesting, int stackSlot);
+
 // [rc4l] The list a backend pass draws its sky from: a camera texture's, a stacked view's (stackSlot, else -1), or the player's.
 int ComputeSkyDrawList(bool cameraPass, int stackSlot);
 
@@ -199,14 +202,31 @@ bool ComputeIsOwnFlat(int model, int sector, int renderSector);
 // [rc4l] The squared distance from a point to a segment, for finding the seg a wall piece lies on.
 float ComputeSegmentDistance2(float px, float py, float x1, float y1, float x2, float y2);
 
-// [rc4l] A point inside the subsector a piece lies in: its centre, stepped a unit off a wall along its normal (mesh space, y up) so it lands on the wall's own side; true for a wall.
+// [rc4l] A point inside the subsector a piece lies in: its centre, stepped a unit off a wall along its normal (mesh space, y up) so it lands on the wall's own side; true for a wall, which in Doom is always upright.
 bool ComputePieceProbe(float centreX, float centreY, float normX, float normUp, float normY, float &probeX, float &probeY);
+
+// [rc4l] The mean position of vertices [offset, offset + count) of a mesh holding total, for placing or sorting a piece; false, writing nothing, when that run is empty or overruns.
+template <typename V>
+bool ComputeCentroid(const V *verts, unsigned total, unsigned offset, unsigned count, float &cx, float &cy, float &cz)
+{
+	if (verts == nullptr || count == 0 || offset > total || count > total - offset) return false;
+	cx = cy = cz = 0.f;
+	for (unsigned i = 0; i < count; i++) { cx += verts[offset + i].x; cy += verts[offset + i].y; cz += verts[offset + i].z; }
+	cx /= (float)count; cy /= (float)count; cz /= (float)count;
+	return true;
+}
 
 // [rc4l] Whether a sprite from GL's walk through a line mirror is kept for the backend's mirror pass: only the viewer's own, which the player's walk never draws, from the mirror the player's view reached.
 bool ComputeTakesMirrorViewer(bool mirrorWalk, bool mainView, int sceneNesting, bool isViewer);
 
 // [rc4l] Whether a pass drawing the reflection in drawingMirrorLine (-1 for none) draws a piece kept for pieceMirrorLine's (-1 for every pass): each mirror's viewer is the billboard GL faced to that mirror's camera.
 bool ComputeDrawsMirrorViewer(int pieceMirrorLine, int drawingMirrorLine);
+
+// [rc4l] Whether a pass draws a sprite, model or decal: the mirror's own viewer as ComputeDrawsMirrorViewer says, and only in the stacked view whose walk took it (-1 for every other pass).
+bool ComputeDrawsDynamicPiece(int pieceMirrorLine, int pieceStackSlot, int drawingMirrorLine, int drawingStackSlot);
+
+// [rc4l] Whether the backend renders a line mirror's reflection this frame: when GL's walk went through it, or in standalone, where nothing walks, when its quad is on screen.
+bool ComputeRendersMirror(bool walkedByGL, bool standalone, bool onScreen);
 
 // [rc4l] Whether a sprite, model or decal being captured belongs to the frame: the player's view from the outermost DrawScene (nesting 1, or 0 outside any), since GL raises the portal depth for the player's own scene once its walk is done.
 bool ComputeOwnsFrameCapture(bool mainView, int sceneNesting);

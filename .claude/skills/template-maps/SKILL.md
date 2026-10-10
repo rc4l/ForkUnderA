@@ -40,7 +40,9 @@ const bytes = wad([...mapLumps("MAP01", m), ...mapLumps("MAP02", other)]);
 ```
 
 - `room()` for closed sectors, `block()` for a sector standing inside another (two-sided lines, e.g.
-  a pool or a tagged area), `skyboxRoom(x, y)` for a ready skybox every sky ceiling shows, `wall()`
+  a pool or a tagged area), `skyboxRoom(x, y)` for a ready skybox every sky ceiling shows,
+  `stackedRooms({ dx, upperWidth })` for a room whose ceiling is a stacked sector onto a sky-lit room
+  `dx` east (it returns both sectors, for a `block()` inside the upper one), `wall()`
   for single one-sided lines (sector on the right), `sector()`, `thing()` (present on every skill and
   mode unless told otherwise), `vertex()` shares corners.
 - **Behaviour set by ACS** (reflective floors, anything only a script can do): `src/acs.mjs` writes an
@@ -72,7 +74,7 @@ runScenarioIfMain(import.meta.url, () => ({ name: "horizon", wad: buildHorizonWa
 ```
 
 `runScenarioIfMain` runs only when the file itself is invoked (`node scenarios/horizon.mjs [port]`), prints
-each box's verdict, and exits 0 (all under ceiling), 1 (failed), 2 (crashed) or 3 (refused) -- so a test
+the engine it runs (the staged `dist-windows` one unless `FUACTL_ENGINE` names another) and each box's verdict, and exits 0 (all under ceiling), 1 (failed), 2 (crashed) or 3 (refused) -- so a test
 can import the builder without launching anything. The whole set runs as one command,
 `node src/cli.mjs scenarios [name ...] [--engine build-win/Release/forkundera.exe]`, which prints only
 the boxes that did not pass and exits 1 if any scenario failed.
@@ -152,6 +154,9 @@ Export the builder from the scenario; `runScenarioIfMain` keeps the import from 
 | `tools/fuactl/scenarios/brightmap.mjs` | GLDEFS brightmaps on a wall and a sprite in a dark room, bindless against a binding per material; the brightmap PNG is a lump between `TX_START`/`TX_END` |
 | `tools/fuactl/scenarios/stackportal.mjs` | a ceiling that is a stacked sector (`UpperStackLookOnly`/`LowerStackLookOnly` paired by TID) onto a room off the map's side, GL against Vulkan |
 | `tools/fuactl/scenarios/stackwalls.mjs` | rays crossing a low stacked annex above its ceiling, which only GL's stack walls catch, GL against Vulkan |
+| `tools/fuactl/scenarios/stackslope.mjs` | a steep sloped floor seen through a stacked ceiling, which the stacked view must place by its subsector, not as a wall |
+| `tools/fuactl/scenarios/stacksprite.mjs` | things standing where only the stacked view's walk reaches, GL against Vulkan |
+| `tools/fuactl/scenarios/stackwide.mjs` | an upper room wider than the stacked room under it, which crashed GL with a stack overflow on load |
 | `tools/fuactl/scenarios/linemirror.mjs` | a one-sided `Line_Mirror` wall reflecting the room and the player, GL (sheen off) against Vulkan |
 | `tools/fuactl/scenarios/animdefs.mjs` | an ANIMDEFS lump whose discrete wall animation flips frame a second after the level is built and then holds, so a backend drawing its bake frame differs from GL in a still shot |
 | `tools/fuactl/scenarios/lightlinks.mjs` | a point light 16 units behind a solid wall with a radius reaching the next room, which GL leaves dark because a light's links stop at solid walls |

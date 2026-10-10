@@ -168,11 +168,12 @@ void GLWall::SkyPlane(sector_t *sector, int plane, bool allowreflect)
 	else return;
 	if (fua_sky_log && seg != NULL && seg->linedef != NULL)
 	{
-		Printf("skyq %.0f %.0f line %d %s sec %d back %d\n", zbottom[0], ztop[0],
+		Printf("skyq %.0f %.0f line %d %s sec %d back %d type %d by %.0f,%.0f\n", zbottom[0], ztop[0],
 			(int)(seg->linedef - lines),
 			(seg->linedef->backsector != NULL) ? "two-sided" : "one-sided",
 			(int)(sector - sectors),
-			(seg->backsector != NULL) ? (int)(seg->backsector - sectors) : -1);
+			(seg->backsector != NULL) ? (int)(seg->backsector - sectors) : -1, type,
+			portal != NULL ? FIXED2FLOAT(portal->xDisplacement) : 0.f, portal != NULL ? FIXED2FLOAT(portal->yDisplacement) : 0.f);
 	}
 	PutWall(0);
 }

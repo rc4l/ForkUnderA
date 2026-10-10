@@ -66,7 +66,10 @@
 #include "features/hwrender/diligent/dgshared.h"          // [rc4l] FUA_CONSTANTS_GLSL, the constant block every pass declares
 #include "features/levelmesh/projdecals.h"   // [rc4l] the marks the decal pass draws
 #include "features/hwrender/computation/surfaceorder_compute.h"   // the draw order, tested off-engine
+#include "features/hwrender/computation/batch_compute.h"   // [rc4l] ComputeStaysInBatch, for patching animated surfaces
+#include "features/hwrender/computation/passname_compute.h"   // [rc4l] ComputeWorldPassName, for the per-pass timings
 #include "features/hwrender/hud2d.h"
+#include "features/horizon/computation/horizon_compute.h"   // [rc4l] ComputeQuadMayBeVisible, for mirrors out of sight
 #include "features/hwrender/diligent/dglight_glsl.h"   // [rc4l] the sector light, shared with the horizon pass
 #include "v_video.h"
 #include "gl/renderer/gl_renderer.h"
@@ -96,7 +99,6 @@
 #include <algorithm>
 #include <stdio.h>
 #include "m_png.h"
-#include "doomtype.h"
 #ifdef ZX_ENABLE_REPLAY
 #include "features/replay/zx_replay.h"   // [rc4l] the Vulkan instant-replay stream
 #endif
@@ -481,6 +483,7 @@ struct DynRun
 	// that draws the interior floor and seats straight through the bodywork.
 	bool         solid;
 	int          mirrorLine;   // [rc4l] the viewer's own sprite, drawn only in this line mirror's reflection, or -1
+	int          stackSlot;    // [rc4l] drawn only in this stacked view, whose walk took it, or -1 for every other pass
 	float        cx, cy, cz;   // centroid, for the merged sort
 	float        lo, hi;       // [rc4l] its height span, which sides of a translucent plane it is on
 };
@@ -496,6 +499,16 @@ static unsigned int g_lastDirtyLo = 0, g_lastDirtyHi = 0;
 // tell whether the lift had moved at all in the frames between them. A counter answers "did the
 // moving-geometry path even run" without reading pixels.
 static int g_geomRebuilds = 0;
+// [rc4l] World passes in the frame being drawn and the last presented one, with their CPU time, since a frame draws the world once per mirror, stacked view, sky portal and camera texture.
+static int g_framePasses = 0, g_lastFramePasses = 0;
+static double g_frameWorldMs = 0.0, g_lastFrameWorldMs = 0.0;
+// [rc4l] Each pass of the frame by kind and CPU time, e.g. "sky 3.10 main 1.02".
+static FString g_framePassList, g_lastFramePassList;
+// [rc4l] The frame's phase times summed over its passes: geometry, lights, clusters, constants, animation, draw.
+static double g_framePhase[6] = { 0 }, g_lastFramePhase[6] = { 0 };
+// [rc4l] Why a patch gave up and rebuilt the scene: a translucent piece that moved or has no slot, one whose blend left its batch's, or one whose material did, and the last one's texture.
+static int g_bailBlend = 0, g_bailBlendedSlot = 0, g_bailMaterial = 0;
+static FString g_bailLast;
 // [rc4l] Patches, and how many vertices they moved -- the two numbers that say whether the buffer
 // is being nudged or rewritten. A rebuild count alone cannot tell "nothing moved" from "everything
 // moved and we patched it all".
@@ -3110,6 +3123,7 @@ static void BuildDynamic(Diligent::IDeviceContext *ctx)
 				r.redAlpha = p.redToAlpha;
 				r.solid = p.solid;
 				r.mirrorLine = p.mirrorLine;
+				r.stackSlot = p.stackSlot;
 				if (p.mirrorLine >= 0) g_dynViewerRuns++;
 				r.cx = p.sortX; r.cy = p.sortY; r.cz = p.sortZ;
 				r.lo = 1e30f; r.hi = -1e30f;
@@ -3278,7 +3292,7 @@ static void DrawSolidDyn(Diligent::IDeviceContext *ctx)
 	for (unsigned i = 0; i < g_dynRuns.Size(); i++)
 	{
 		const DynRun &r = g_dynRuns[i];
-		if (r.count == 0 || !r.solid || r.blend != 0 || !zx::levelmesh::ComputeDrawsMirrorViewer(r.mirrorLine, g_lineMirror)) continue;
+		if (r.count == 0 || !r.solid || r.blend != 0 || !zx::levelmesh::ComputeDrawsDynamicPiece(r.mirrorLine, r.stackSlot, g_lineMirror, g_stackPassSlot)) continue;
 		auto *srb = WorldSRB(g_maskedNoCullPSO.RawPtr());
 		if (srb) g_dynBindless++;
 		else { g_dynPerMaterial++; srb = GetMaterialSRB(g_maskedNoCullPSO.RawPtr(), r.material, r.translation); }
@@ -3342,7 +3356,7 @@ static void DrawBlended(Diligent::IDeviceContext *ctx)
 		for (unsigned i = 0; i < g_dynRuns.Size(); i++)
 		{
 			const DynRun &r = g_dynRuns[i];
-			if (r.count == 0 || !zx::levelmesh::ComputeDrawsMirrorViewer(r.mirrorLine, g_lineMirror)) continue;
+			if (r.count == 0 || !zx::levelmesh::ComputeDrawsDynamicPiece(r.mirrorLine, r.stackSlot, g_lineMirror, g_stackPassSlot)) continue;
 			// [rc4l] An opaque solid is drawn with the world, not in this list. See DrawSolidDyn.
 			if (r.solid && r.blend == 0) continue;
 			// Blend mode 3 is the fuzz shadow; the engine draws it as a dark near-opaque overlay, and
@@ -4496,17 +4510,8 @@ static bool BuildSceneBuffer(FString &err)
 		nb.count += p.range.count;
 		// The centroid the translucent pass sorts on. Averaged from the piece's own vertices rather
 		// than taken from MeshPiece::sortX, which only the dynamic path fills in.
-		if (nb.blend != 0 && p.range.count > 0)
-		{
-			float ax = 0.f, ay = 0.f, az = 0.f;
-			for (unsigned int v = 0; v < p.range.count; v++)
-			{
-				const FFlatVertex &sv = src[p.range.offset + v];
-				ax += sv.x; ay += sv.y; az += sv.z;
-			}
-			const float inv = 1.f / (float)p.range.count;
-			nb.sortX = ax * inv; nb.sortY = ay * inv; nb.sortZ = az * inv;
-		}
+		if (nb.blend != 0)
+			zx::levelmesh::ComputeCentroid(src, (unsigned)srcCount, p.range.offset, p.range.count, nb.sortX, nb.sortY, nb.sortZ);
 	}
 
 	if (g_sceneVB.Size() == 0) { err = "no drawable pieces"; return false; }
@@ -4847,6 +4852,18 @@ static bool ReviveSlot(Diligent::IDeviceContext *ctx, VBSlot &slot,
 	return true;
 }
 
+static void NoteBail(const zx::levelmesh::MeshPiece &p)
+{
+	const FMaterial *m = (const FMaterial *)p.material;
+	// [rc4l] Where it is in map units, so the line it came from can be looked up.
+	int count = 0;
+	const FFlatVertex *v = zx::levelmesh::MeshVertexData(count);
+	float cx = 0.f, cy = 0.f, cz = 0.f;
+	zx::levelmesh::ComputeCentroid(v, (unsigned)count, p.range.offset, p.range.count, cx, cy, cz);
+	g_bailLast.Format("%s at %u (map %.0f, %.0f, z %.0f), blend %d", (m && m->tex) ? m->tex->Name.GetChars() : "?",
+		p.range.offset, cx, cy, cz, p.blendMode);
+}
+
 static void RefreshMovedGeometry(Diligent::IDeviceContext *ctx)
 {
 	if (!g_vb || g_sceneVB.Size() == 0) return;
@@ -5042,13 +5059,23 @@ static void RefreshMovedGeometry(Diligent::IDeviceContext *ctx)
 					continue;
 				}
 
-				if (p->blendMode != 0) { bailed = true; break; }   // the sorted pass owns these
-
 				if (slotIdx != NULL && *slotIdx < g_vbSlots.Size() &&
 					g_vbSlots[*slotIdx].count == p->range.count)
 				{
 					const VBSlot &slot = g_vbSlots[*slotIdx];
-					if (slot.blended) { bailed = true; break; }
+					// [rc4l] A translucent piece is sorted by where it is, so it is patched only in its own blend mode and where it stood (a scrolling waterfall), and anything that moved is rebuilt.
+					static TArray<SceneVertex> moved;
+					moved.Resize(slot.count);
+					for (unsigned int v = 0; v < slot.count; v++) moved[v] = ToSceneVertex(src[slot.meshOffset + v], slot.pieceIndex);
+					const bool blendedNow = (p->blendMode != 0);
+					if (blendedNow || slot.blended)
+					{
+						const bool sameBlend = slot.blended == blendedNow && slot.batch < g_batches.Size() &&
+							g_batches[slot.batch].blend == p->blendMode;
+						if (!sameBlend) { g_bailBlendedSlot++; NoteBail(*p); bailed = true; break; }
+						if (!zx::hwrender::ComputeSamePositions(&g_sceneVB[slot.vbStart], &moved[0], slot.count))
+							{ g_bailBlend++; NoteBail(*p); bailed = true; break; }
+					}
 					// [rc4l] A piece whose MATERIAL changed cannot be patched in place.
 					//
 					// A batch is a run of pieces that share a material and, without bindless, one
@@ -5057,8 +5084,9 @@ static void RefreshMovedGeometry(Diligent::IDeviceContext *ctx)
 					// pressing a switch left the switch looking unpressed. The seg re-bakes correctly
 					// (side_t::SetTexture bumps fua_dirty); it is the batching that has to be redone,
 					// and a rebuild is the only thing that can move a piece between batches.
-					if (slot.batch < g_batches.Size() && p->material != g_batches[slot.batch].material)
-						{ bailed = true; break; }
+					if (slot.batch < g_batches.Size() && !::hwrender::ComputeStaysInBatch(p->material, p->baseTex,
+							g_batches[slot.batch].material, g_batches[slot.batch].baseTex))
+						{ g_bailMaterial++; NoteBail(*p); bailed = true; break; }
 					// [rc4l] The record is rewritten in place and the index does not move.
 					//
 					// A door's shading changes as it moves -- its light level, and on a slope its normal --
@@ -5071,8 +5099,7 @@ static void RefreshMovedGeometry(Diligent::IDeviceContext *ctx)
 							&g_scenePieceData[slot.pieceIndex],
 							Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 					}
-					for (unsigned int v = 0; v < slot.count; v++)
-						g_sceneVB[slot.vbStart + v] = ToSceneVertex(src[slot.meshOffset + v], slot.pieceIndex);
+					for (unsigned int v = 0; v < slot.count; v++) g_sceneVB[slot.vbStart + v] = moved[v];
 					ctx->UpdateBuffer(g_vb, (Diligent::Uint64)slot.vbStart * sizeof(SceneVertex),
 						(Diligent::Uint64)slot.count * sizeof(SceneVertex), &g_sceneVB[slot.vbStart],
 						Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
@@ -5082,6 +5109,8 @@ static void RefreshMovedGeometry(Diligent::IDeviceContext *ctx)
 					continue;
 				}
 
+				// [rc4l] A translucent piece with no slot of its size cannot be appended into the sorted pass, so it is rebuilt.
+				if (p->blendMode != 0) { g_bailBlend++; NoteBail(*p); bailed = true; break; }
 				// New, or no longer the size its slot holds: the old vertices stop being drawn and the
 				// piece goes on the end.
 				// A slot that is merely EMPTY can take the piece back -- see ReviveSlot.
@@ -5216,6 +5245,11 @@ static void CollectLightLinks(ADynamicLight *light, std::vector<unsigned> &out)
 static void CollectDynamicLights(Diligent::IDeviceContext *ctx)
 {
 	static std::vector<std::vector<unsigned> > touched;
+	// [rc4l] Once per tic: lights change only in the ticker, and every pass of a frame (mirrors, stacked views, sky, camera textures) reads the same ones.
+	static int s_tic = -1, s_gen = -1, s_flags = -1;
+	const int flags = (fua_dg_dynlights ? 1 : 0) | (fua_dg_lightlinks ? 2 : 0);
+	if (gametic == s_tic && zx::levelmesh::LevelGeneration() == s_gen && flags == s_flags) return;
+	s_tic = gametic; s_gen = zx::levelmesh::LevelGeneration(); s_flags = flags;
 	g_lightCount = 0;
 	if (fua_dg_dynlights && g_lightBuf)
 	{
@@ -6439,6 +6473,12 @@ static void RenderMirrors(Diligent::IDeviceContext *ctx)
 		// see and nothing to draw, so the reflection is pure waste. This is exact, not an
 		// approximation: it removes renders that could not have contributed a pixel.
 		if (dist <= 0.f) continue;
+		// [rc4l] ...and one nobody can see is not rendered either, since each costs a whole scene render and WDI07 holds four out of sight.
+		const float corners[4][3] = { { m.v[0][0], m.v[0][1], m.v[0][2] }, { m.v[1][0], m.v[1][1], m.v[1][2] },
+			{ m.v[5][0], m.v[5][1], m.v[5][2] }, { m.v[2][0], m.v[2][1], m.v[2][2] } };
+		if (!zx::levelmesh::ComputeRendersMirror(zx::levelmesh::MirrorWalkedThisFrame(m.line), zx::hwrender::StandaloneActive(),
+				zx::horizon::ComputeQuadMayBeVisible(savedMVP, corners)))
+			continue;
 		const float rx = px - 2.f * dist * m.nx;
 		const float ry = py - 2.f * dist * m.ny;
 
@@ -6636,6 +6676,11 @@ static void DrawSceneOnce(bool present = true, bool pump = true)
 
 	if (present)
 	{
+		g_lastFramePasses = g_framePasses; g_lastFrameWorldMs = g_frameWorldMs;
+		g_lastFramePassList = g_framePassList;
+		for (int k = 0; k < 6; k++) { g_lastFramePhase[k] = g_framePhase[k]; g_framePhase[k] = 0.0; }
+		g_framePasses = 0; g_frameWorldMs = 0.0;
+		g_framePassList = "";
 		swap->Present(0);
 		RecordPresentInterval();
 		// [rc4l] The Win32 message pump is NOT free -- PeekMessage on a window with pending paint
@@ -6812,6 +6857,23 @@ void PhaseReport(FString &out)
 
 static void DrawWorld(Diligent::IDeviceContext *ctx)
 {
+	cycle_t whole;
+	whole.Reset();
+	whole.Clock();
+	struct PassTimer
+	{
+		cycle_t &c;
+		~PassTimer()
+		{
+			c.Unclock();
+			g_framePasses++; g_frameWorldMs += c.TimeMS();
+			const double ph[6] = { g_phase.geometry.TimeMS(), g_phase.lights.TimeMS(), g_phase.clusters.TimeMS(),
+				g_phase.constants.TimeMS(), g_phase.animation.TimeMS(), g_phase.draw.TimeMS() };
+			for (int k = 0; k < 6; k++) g_framePhase[k] += ph[k];
+			g_framePassList.AppendFormat(" %s %.2f", zx::hwrender::ComputeWorldPassName(g_drawingMainView, g_lineMirror,
+				g_stackPassSlot, g_inCameraPass, g_inSkyPortal), c.TimeMS());
+		}
+	} passTimer = { whole };
 	// [rc4l] Lights are collected BEFORE the constants are written -- the shader reads the count from
 	// there, so collecting afterwards would light every frame with the previous frame's count.
 	g_phase.Reset();
@@ -7463,8 +7525,9 @@ void DynStats(FString &report)
 	anim.Format(" | %d animation frame swaps since load | light buffer %d vec4s (~%d lights)",
 		g_animSwaps, g_lightCount * 2, g_lightCount);
 	FString geo;
-	geo.Format(" | geometry: %d scene rebuilds since load, last dirty %u..%u",
-		g_geomRebuilds, g_lastDirtyLo, g_lastDirtyHi);
+	geo.Format(" | geometry: %d scene rebuilds since load, last dirty %u..%u, patches abandoned for %d translucent moved, %d blend changed, %d material, last %s",
+		g_geomRebuilds, g_lastDirtyLo, g_lastDirtyHi, g_bailBlend, g_bailBlendedSlot, g_bailMaterial,
+		g_bailLast.IsNotEmpty() ? g_bailLast.GetChars() : "none");
 	FString cull;
 	cull.Format(" | batches: %d drawn in %d draw calls | bindless %s: %d slots, %d white",
 		g_batchesDrawn, g_worldDraws,
@@ -7496,6 +7559,10 @@ void DynStats(FString &report)
 	PhaseReport(phases);
 	report += " | ";
 	report += phases;
+	report.AppendFormat(" | world passes last frame: %d, %.2f ms CPU:%s", g_lastFramePasses, g_lastFrameWorldMs,
+		g_lastFramePassList.GetChars());
+	report.AppendFormat(" | frame phases (ms): geometry %.2f, lights %.2f, clusters %.2f, constants %.2f, animation %.2f, draw %.2f",
+		g_lastFramePhase[0], g_lastFramePhase[1], g_lastFramePhase[2], g_lastFramePhase[3], g_lastFramePhase[4], g_lastFramePhase[5]);
 	int added = 0, resized = 0, rebatched = 0;
 	zx::levelmesh::MeshLayoutReasons(added, resized, rebatched);
 	FString why;

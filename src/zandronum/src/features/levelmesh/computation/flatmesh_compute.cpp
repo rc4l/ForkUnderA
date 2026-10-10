@@ -162,6 +162,12 @@ int ComputeSkyCaptureList(bool mainView, int sceneNesting, int stackSlot)
 	return kSkyCaptureNone;
 }
 
+int ComputeStackCaptureSlot(bool mainView, int sceneNesting, int stackSlot)
+{
+	const int list = ComputeSkyCaptureList(mainView, sceneNesting, stackSlot);
+	return list >= kSkyCaptureStack ? list - kSkyCaptureStack : -1;
+}
+
 int ComputeSkyDrawList(bool cameraPass, int stackSlot)
 {
 	if (cameraPass) return kSkyCaptureCamera;
@@ -236,8 +242,8 @@ bool ComputePieceProbe(float centreX, float centreY, float normX, float normUp, 
 {
 	probeX = centreX; probeY = centreY;
 	const float flat = sqrtf(normX * normX + normY * normY);
-	// [rc4l] A floor or ceiling's centre is already inside its convex subsector; only a wall's sits on an edge.
-	if (fabsf(normUp) >= 0.7f || flat <= 0.f) return false;
+	// [rc4l] A floor or ceiling's centre is already inside its convex subsector, however steep; only a wall's sits on an edge.
+	if (flat <= 0.f || fabsf(normUp) > 0.01f * flat) return false;
 	probeX += normX / flat;
 	probeY += normY / flat;
 	return true;
@@ -251,6 +257,16 @@ bool ComputeTakesMirrorViewer(bool mirrorWalk, bool mainView, int sceneNesting, 
 bool ComputeDrawsMirrorViewer(int pieceMirrorLine, int drawingMirrorLine)
 {
 	return pieceMirrorLine < 0 || pieceMirrorLine == drawingMirrorLine;
+}
+
+bool ComputeDrawsDynamicPiece(int pieceMirrorLine, int pieceStackSlot, int drawingMirrorLine, int drawingStackSlot)
+{
+	return ComputeDrawsMirrorViewer(pieceMirrorLine, drawingMirrorLine) && pieceStackSlot == drawingStackSlot;
+}
+
+bool ComputeRendersMirror(bool walkedByGL, bool standalone, bool onScreen)
+{
+	return walkedByGL || (standalone && onScreen);
 }
 
 bool ComputeOwnsFrameCapture(bool mainView, int sceneNesting)

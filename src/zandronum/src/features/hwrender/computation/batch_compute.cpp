@@ -4,6 +4,11 @@
 namespace hwrender
 {
 
+bool ComputeStaysInBatch(const void *pieceMaterial, const void *pieceBase, const void *batchMaterial, const void *batchBase)
+{
+	return pieceMaterial == batchMaterial || (pieceBase != nullptr && pieceBase == batchBase);
+}
+
 int ComputeBatchRuns(const uint64_t *keys, int count, BatchRun *outRuns, int maxRuns)
 {
 	int runs = 0;

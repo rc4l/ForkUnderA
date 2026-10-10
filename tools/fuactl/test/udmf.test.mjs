@@ -163,6 +163,15 @@ test("a skybox room is a 512 box with a wall texture per side and the default Sk
   assert.equal(u.sector[0].heightceiling, 384);
 });
 
+test("stacked rooms put a ceiling at 128 under a room dx east whose floor is at 128, with a shared-TID anchor in each", () => {
+  const m = new UdmfMap();
+  const { lower, upper } = m.stackedRooms({ dx: 2048, upperWidth: 1024, tid: 3 });
+  const u = parseUdmf(m.textmap());
+  assert.deepEqual([u.sector[lower].heightceiling, u.sector[upper].heightfloor, u.sector[upper].textureceiling], [128, 128, "F_SKY1"]);
+  assert.deepEqual(u.vertex.map((v) => v.x).sort((a, b) => a - b).slice(-2), [3072, 3072]);
+  assert.deepEqual(u.thing.map((t) => [t.type, t.x, t.id]), [[9078, 64, 3], [9077, 2112, 3]]);
+});
+
 test("the water template has a swimmable 3D floor on the pool's tag, and its colour set by script, by map, or not at all", async () => {
   const { buildWater3dWad } = await import("../scenarios/water3d.mjs");
   const lumps = lumpsOf(buildWater3dWad());

@@ -152,15 +152,33 @@ export function boxDiff(a, b, box, block = 16) {
   return sum / Math.max(n, 1);
 }
 
-// [rc4l] The mean brightness ((r+g+b)/3) over a box of fractions, one number to follow across a burst of captures.
-export function boxMean(img, box) {
+// [rc4l] A box of fractions' brightness ((r+g+b)/3) as its least, greatest and mean, and each channel's mean, since a colour cast is invisible in brightness.
+export function boxStats(img, box) {
   if (box.some((v) => !(v >= 0 && v <= 1))) throw new Error(`box is fractions of the frame, 0..1: ${box.join(",")}`);
   const x0 = Math.floor(box[0] * img.w), y0 = Math.floor(box[1] * img.h);
   const x1 = Math.ceil(box[2] * img.w), y1 = Math.ceil(box[3] * img.h);
-  let s = 0, n = 0;
-  for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) { const q = px(img, x, y); s += (q[0] + q[1] + q[2]) / 3; n++; }
-  return s / Math.max(n, 1);
+  let lo = 255, hi = 0, s = 0, n = 0;
+  const rgb = [0, 0, 0];
+  for (let y = y0; y < y1; y++) {
+    for (let x = x0; x < x1; x++) {
+      const q = px(img, x, y), v = (q[0] + q[1] + q[2]) / 3;
+      lo = Math.min(lo, v); hi = Math.max(hi, v); s += v; n++;
+      for (let c = 0; c < 3; c++) rgb[c] += q[c];
+    }
+  }
+  const d = Math.max(n, 1);
+  return { lo, hi, mean: s / d, r: rgb[0] / d, g: rgb[1] / d, b: rgb[2] / d };
 }
+
+// [rc4l] Files, then a box when the last four arguments are numbers (not merely when there are enough of them), else fallback.
+export function filesAndBox(args, fallback = [0, 0, 1, 1]) {
+  const tail = args.slice(-4).map(Number);
+  const has = args.length >= 5 && tail.every((v) => Number.isFinite(v));
+  return { files: has ? args.slice(0, -4) : args, box: has ? tail : fallback };
+}
+
+// [rc4l] The mean brightness over a box of fractions, one number to follow across a burst of captures.
+export function boxMean(img, box) { return boxStats(img, box).mean; }
 
 // [rc4l] A frozen A/B: what switching the value changed, against the repeat of the first value, which is the noise floor.
 export function abDiff(a, b, a2, box = [0, 0, 1, 1], block = 16) {

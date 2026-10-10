@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { decodePNG, px, writePNG, encodePNG, cropImage, boxDiff, abDiff, samplePoints, isBlankImage, boxMean } from "../src/pngcore.mjs";
+import { decodePNG, px, writePNG, encodePNG, cropImage, boxDiff, abDiff, samplePoints, isBlankImage, boxMean, boxStats, filesAndBox } from "../src/pngcore.mjs";
 
 // [rc4l] A w x h RGB image whose pixel colour is f(x, y), written and read back through the real codec.
 function image(w, h, f) {
@@ -93,4 +93,18 @@ test("a box's mean is the brightness of the pixels it covers, and pixel coordina
   assert.equal(boxMean(img, [0.5, 0, 1, 1]), 60);
   assert.equal(boxMean(img, [0, 0, 0.5, 1]), 0);
   assert.throws(() => boxMean(img, [0, 0, 640, 1]), /fractions/);
+});
+
+test("box stats give the brightness range and each channel's mean, so a cast shows where brightness hides it", () => {
+  const img = image(4, 2, (x) => (x < 2 ? [30, 0, 0] : [0, 0, 90]));
+  const t = boxStats(img, [0, 0, 1, 1]);
+  assert.deepEqual([t.lo, t.hi, t.mean, t.r, t.g, t.b], [10, 30, 20, 15, 0, 45]);
+  assert.equal(boxStats(img, [0, 0, 0.5, 1]).b, 0);
+});
+
+test("a box follows the files only when the last four arguments are numbers", () => {
+  assert.deepEqual(filesAndBox(["a.png", "0", "0.1", "1", "0.5"]), { files: ["a.png"], box: [0, 0.1, 1, 0.5] });
+  assert.deepEqual(filesAndBox(["a.png", "b.png"]), { files: ["a.png", "b.png"], box: [0, 0, 1, 1] });
+  assert.deepEqual(filesAndBox(["a.png", "b.png", "c.png", "d.png", "e.png"], [0.3, 0.5, 0.7, 0.8]).box, [0.3, 0.5, 0.7, 0.8]);
+  assert.deepEqual(filesAndBox(["0", "0", "1", "1"]).files, ["0", "0", "1", "1"]);   // [rc4l] four numbers and no file is not a box
 });

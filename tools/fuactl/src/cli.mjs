@@ -28,6 +28,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { usageFor } from "./usage.mjs";
 
 const num = (v) => (v != null && v !== true ? Number(v) : undefined);
 
@@ -133,7 +134,7 @@ const USAGE = `fuactl <command>
   capture --port P [--frames N] [--warmup M]   frametime distribution (p50/p95/p99/max, sim vs render split)
   ticprof --port P [--tics N]          per-tic sim phase split (P_Ticker / thinkers / effects / specials)
   bench --port P --scenario F.json [--runs N] [--metric total.p99_ms]   repeat a scenario, report median + spread, discard runs whose expectations failed
-  lines --port P [--special N] [--door] [--use] [--cross] [--tag N] [--limit N]   query linedefs; prints a stand position and facing for each match
+  lines --port P [--special N] [--door] [--use] [--cross] [--tag N] [--texture NAME] [--limit N]   query linedefs; prints a stand position and facing for each match
   here --port P [--token T] [--save NAME] [--note TEXT]   the live camera (position + facing, full precision) and what the crosshair is on; --save records it in spots.json as a named repro
   renderer-info --port P [--token T]   renderer identity + whether GL timer queries work on this driver
   ui <action> [args] --port P [--token T]   drive the UI: read (menu as text), find <label>, nav <keys>, click <x> <y>, drag, type <text>, look --yaw D --pitch D, screenshot [name], exec <ccmd>
@@ -154,13 +155,15 @@ const USAGE = `fuactl <command>
   doorshot <tag> [--port P] [--at x,y,z --face yaw] [--mid TICS]   a door caught MID-SWING in both renderers, plus a before pair
   look [--port P] [--spot S | --at x,y,z --face yaw,pitch] [--pixel x,y [--size WxH]] [--stack]   what the crosshair is on and what the level mesh holds for it; --pixel aims through that pixel of a capture from the camera, --stack casts through the first stacked view
   line <index> | --at X,Y [--radius R]   what a linedef IS: blocking flags, front/back sector heights, and which tier carries a texture over which span of height -- the three things that decide whether a mark can exist there. --at finds every line near a point, which is what tells two lines in the same place apart.
-  png <mode> ...                     pixel arithmetic on captures: --diff, --boxdiff, --diffimg, --align, --crop, --rows, --blob, --px
+  png <mode> ...                     pixel arithmetic on captures: --diff, --boxdiff, --diffimg, --align, --crop, --rows, --blob, --px, --range (a box's brightness and channel means, over several files)
   mcp                                run as an MCP stdio server for agents
 `;
 
 async function main() {
   const [cmd, ...argv] = process.argv.slice(2);
   const { flags, rest } = parseFlags(argv);
+  // [rc4l] --help says what a command takes and does nothing else: `play --help` used to launch an engine.
+  if (flags.help) { console.log(usageFor(USAGE, cmd)); return; }
 
   switch (cmd) {
     case "ls": {
@@ -302,6 +305,7 @@ async function main() {
       if (flags.engine) process.env.FUACTL_ENGINE = String(flags.engine);
       const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "scenarios");
       const files = templateScenarioFiles(dir, rest);
+      console.log(`engine ${resolveEngine()}`);
       let failed = 0;
       for (const f of files) {
         const url = pathToFileURL(path.join(dir, f)).href;
@@ -531,7 +535,7 @@ async function main() {
     case "lines": {
       if (!flags.port) {
         console.error("usage: fuactl lines --port P [--token T] [--special N] [--door] [--use]" +
-                      " [--cross] [--tag N] [--limit N]");
+                      " [--cross] [--tag N] [--texture NAME] [--limit N]");
         process.exit(2);
       }
       const parts = [];
@@ -540,6 +544,7 @@ async function main() {
       if (flags.door) parts.push("door=1");
       if (flags.use) parts.push("use=1");
       if (flags.cross) parts.push("cross=1");
+      if (flags.texture && flags.texture !== true) parts.push(`texture=${flags.texture}`);
       parts.push(`limit=${flags.limit && flags.limit !== true ? flags.limit : 8}`);
 
       // launchInstance writes to <tmp>/fuactl-XXXX/engine-<port>.log; the registry does not record

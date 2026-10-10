@@ -6,6 +6,7 @@
 
 #include "features/levelmesh/levelmesh.h"
 #include "features/levelmesh/computation/flatmesh_compute.h"
+#include "features/levelmesh/computation/linequery_compute.h"   // [rc4l] fua_find_lines' key=value and texture-prefix matching
 #include "r_sky.h"   // skyflatnum, for fua_find_sky
 #include "gl/data/gl_vertexbuffer.h"   // FFlatVertex, for fua_mesh_at
 #include "features/levelmesh/wallcache.h"
@@ -21,7 +22,6 @@
 #include "p_3dfloors.h"   // lightlist_t, for fua_sector_lights
 #include "p_lnspec.h"    // Line_Mirror, for fua_make_mirror
 #include "gl/dynlights/gl_dynlight.h"   // ADynamicLight, for fua_light
-#include "a_sharedglobal.h"                // DBaseDecal, for fua_decals
 #include "a_sharedglobal.h"                // DBaseDecal, for fua_decals
 #include "d_player.h"     // players, consoleplayer
 #include "tables.h"       // finesine/finecosine
@@ -191,15 +191,31 @@ bool ClaimSideForBake(int sideIndex)
 //
 //==========================================================================
 
-static int FindLinesArg( FCommandLine &argv, const char *key, int fallback )
+// [rc4l] The text after key= among the arguments, or NULL.
+static const char *FindLinesText( FCommandLine &argv, const char *key )
 {
-	const size_t klen = strlen( key );
 	for ( int i = 1; i < argv.argc( ); i++ )
 	{
-		const char *a = argv[i];
-		if ( strncmp( a, key, klen ) == 0 && a[klen] == '=' ) return atoi( a + klen + 1 );
+		const char *v = zx::levelmesh::ComputeKeyArgValue( argv[i], key );
+		if ( v != NULL ) return v;
 	}
-	return fallback;
+	return NULL;
+}
+
+// [rc4l] Whether any tier of either side of ln (only the middle ones when midOnly) has a texture pred accepts.
+template <typename Pred>
+static bool AnyLineTexture( const line_t *ln, bool midOnly, Pred pred )
+{
+	for ( int sd = 0; sd < 2; sd++ )
+		for ( int part = 0; part < 3 && ln->sidedef[sd] != NULL; part++ )
+			if ( ( !midOnly || part == side_t::mid ) && pred( ln->sidedef[sd]->GetTexture( part ) ) ) return true;
+	return false;
+}
+
+static int FindLinesArg( FCommandLine &argv, const char *key, int fallback )
+{
+	const char *v = FindLinesText( argv, key );
+	return v != NULL ? atoi( v ) : fallback;
 }
 
 //==========================================================================
@@ -292,6 +308,25 @@ CCMD( fua_line )
 	PrintOneLine( idx );
 }
 
+// [rc4l] fua_sector_at x y [x y ...] -- the subsector, sector and render sector under each map point, with both planes' heights and textures, for walking a ray past what the engine's trace stops at.
+CCMD( fua_sector_at )
+{
+	if ( subsectors == NULL || numsubsectors <= 0 || argv.argc( ) < 3 ) { Printf( "usage: fua_sector_at x y [x y ...]\n" ); return; }
+	for ( int a = 1; a + 1 < argv.argc( ); a += 2 )
+	{
+		const fixed_t x = FLOAT2FIXED( atof( argv[a] ) ), y = FLOAT2FIXED( atof( argv[a + 1] ) );
+		const subsector_t *ss = R_PointInSubsector( x, y );
+		const sector_t *rs = ss->render_sector ? ss->render_sector : ss->sector;
+		FTexture *ft = TexMan[rs->GetTexture( sector_t::floor )], *ct = TexMan[rs->GetTexture( sector_t::ceiling )];
+		Printf( "(%s, %s): subsector %d (%u segs), sector %d, render %d: floor %s at %.0f, ceiling %s at %.0f%s%s\n",
+				argv[a], argv[a + 1], (int)( ss - subsectors ), (unsigned)ss->numlines, ss->sector ? ss->sector->sectornum : -1,
+				rs->sectornum, ft ? ft->Name.GetChars( ) : "-", FIXED2FLOAT( rs->floorplane.ZatPoint( x, y ) ),
+				ct ? ct->Name.GetChars( ) : "-", FIXED2FLOAT( rs->ceilingplane.ZatPoint( x, y ) ),
+				rs->GetTexture( sector_t::ceiling ) == skyflatnum ? " (sky)" : "",
+				( rs->e != NULL && rs->e->XFloor.ffloors.Size( ) ) ? " [3D floors]" : "" );
+	}
+}
+
 CCMD( fua_lines_at )
 {
 	if ( lines == NULL || numlines <= 0 ) { Printf( "no level loaded.\n" ); return; }
@@ -336,25 +371,25 @@ CCMD( fua_find_lines )
 	// grates, force fields. Those are exactly the surfaces the mesh handles differently from the
 	// solid ones, and finding one meant asking someone to walk the level and take a screenshot.
 	const int wantTrans   = FindLinesArg( argv, "transparent", 0 );
+	// [rc4l] texture=NAME finds lines with a texture starting NAME on any side and tier, so WFALL finds every frame of a waterfall.
+	const char *wantTex   = FindLinesText( argv, "texture" );
 
 	int found = 0, scanned = 0;
 	for ( int i = 0; i < numlines && found < limit; i++ )
 	{
 		const line_t *ln = &lines[i];
-		// A transparent midtexture usually carries no special at all, so that filter replaces the
-		// has-a-special requirement rather than adding to it.
-		if ( wantTrans )
+		// [rc4l] A transparent or textured wall usually carries no special at all, so those filters replace the has-a-special requirement rather than adding to it.
+		if ( wantTex != NULL )
 		{
-			bool anyTrans = false;
-			for ( int sd = 0; sd < 2 && !anyTrans; sd++ )
-			{
-				if ( ln->sidedef[sd] == NULL ) continue;
-				FTextureID mid = ln->sidedef[sd]->GetTexture( side_t::mid );
-				if ( !mid.isValid( ) ) continue;
-				FMaterial *m = FMaterial::ValidateTexture( mid, false, true );
-				if ( m != NULL && m->GetTransparent( ) ) anyTrans = true;
-			}
-			if ( !anyTrans ) continue;
+			if ( !AnyLineTexture( ln, false, [wantTex]( FTextureID id ) {
+					FTexture *tex = TexMan[id];
+					return tex != NULL && zx::levelmesh::ComputeHasNamePrefix( tex->Name.GetChars( ), wantTex ); } ) ) continue;
+		}
+		else if ( wantTrans )
+		{
+			if ( !AnyLineTexture( ln, true, []( FTextureID id ) {
+					FMaterial *m = id.isValid( ) ? FMaterial::ValidateTexture( id, false, true ) : NULL;
+					return m != NULL && m->GetTransparent( ); } ) ) continue;
 		}
 		else if ( ln->special == 0 ) continue;
 		scanned++;

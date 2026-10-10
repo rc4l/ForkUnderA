@@ -1609,6 +1609,7 @@ add_executable( zdoom WIN32
 	features/levelmesh/computation/lightband_compute.cpp
 	features/levelmesh/computation/wallbatch_compute.cpp
 	features/levelmesh/computation/flatmesh_compute.cpp
+	features/levelmesh/computation/linequery_compute.cpp
 	features/levelmesh/computation/packedcolor_compute.cpp
 	features/levelmesh/computation/decalproject_compute.cpp
 	features/levelmesh/computation/wallcache_compute.cpp
@@ -1623,8 +1624,10 @@ add_executable( zdoom WIN32
 	features/surfaces/surfacebuild.cpp
 	features/horizon/horizon.cpp
 	features/horizon/computation/horizon_compute.cpp
+	features/glportal/computation/glportal_compute.cpp
 	# [rc4l] The decisions the Diligent backend used to make inline, where they can be tested.
 	features/hwrender/computation/surfaceorder_compute.cpp
+	features/hwrender/computation/passname_compute.cpp
 	features/hwrender/computation/lightside_compute.cpp
 	features/hwrender/computation/walllight_compute.cpp
 	features/hwrender/computation/lightcluster_compute.cpp

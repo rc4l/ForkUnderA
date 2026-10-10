@@ -69,14 +69,19 @@ port with no token hangs and reports `rpc timeout`.
 | a map's sectors, lines, specials and ACS source, from its files | `mapdata <MAP> --preset ID [--sector N] [--line N] [--special N] [--tag N] [--scripts REGEX]` |
 | does a region move over time (warp, scroller), Vulkan and GL | `motion --spot NAME --box x0,y0,x1,y1 [--interval MS]` |
 | compare two captures | `png --diff a b`, `png --boxdiff a b x0 y0 x1 y1 [block]`, `png --diffimg a b out` |
+| a box's brightness and channel means, several captures | `png --range a b ... [x0 y0 x1 y1]` |
+| lines wearing a texture (any tier, by prefix) | `lines --texture NAME` |
 | frametime distribution (p50/p95/p99) | `capture [--frames N]` |
 | GPU ms per pass | `gl-timers` (check `renderer-info` first; no timer queries reads as zeros) |
 | pause / step the sim | `rpc sim.pause` · `rpc sim.step '{"tics":1}'` |
 
 Console diagnostics worth knowing (run them with `ui exec`): `fua_dg_blendorder [z]` (the translucent
 pass in draw order with plane layers, or every draw spanning height z), `fua_models` (model draws and
-which walk drew them), `gl_portalinfo` (the portals GL ran last frame), `fua_line_mesh <line>` (what the
-bake holds for a line). `fua_dg_planemirrors N` caps the floor reflections Vulkan renders a frame.
+which walk drew them), `gl_portalinfo` (the portals GL ran last frame, a stacked view named by its plane
+and displacement), `fua_line_mesh <line>` (what the bake holds for a line), `fua_sector_at x y [x y ...]`
+(the subsector, sectors and plane heights under each point, for walking a ray past where `look`'s trace
+stops at a sky), `fua_dg_dynstats` (world passes last frame by kind and CPU time, and why a patch rebuilt
+the scene). `fua_dg_planemirrors N` caps the floor reflections Vulkan renders a frame.
 
 `png --boxdiff` compares in 16-pixel block means: the renderers frame the world a fraction of a pixel
 apart, which reads ~13 per pixel on a bright tiled floor while both are right.
@@ -87,6 +92,7 @@ apart, which reads ~13 per pixel on a bright tiled floor while both are right.
   window covers it the pixels are undefined. `shot` warns when more than one engine is running.
 - **Vulkan on, some skybox maps.** GL captures on the horizon template's MAP02 came back stale, black
   or scrambled run to run in old and new builds alike; take GL references from a `--gl` launch there.
+- **A minimized engine window.** GL reads back blank; `shot` asks `fua_window_restore` and tries again.
 - **A pwad map without its wads.** The engine sits in the IWAD's MAP01 and measures perfectly.
 - **A paused sim** does not rebuild dynamic geometry or lights.
 - **Animated lights between captures.** Two shots of a flickering map differ by ~0.4 with nothing

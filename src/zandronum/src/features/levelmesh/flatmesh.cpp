@@ -729,7 +729,18 @@ static TArray<unsigned int> g_stackVis;
 StackWalk::StackWalk(const void *portal) : saved(s_stackWalk) { s_stackWalk = portal; }
 
 static int s_mirrorLine = -1;
-MirrorWalk::MirrorWalk(int line) : saved(s_mirrorLine) { s_mirrorLine = line; }
+// [rc4l] The line mirrors GL's walk went through since the player's walk began this frame.
+static TArray<int> g_walkedMirrors;
+MirrorWalk::MirrorWalk(int line) : saved(s_mirrorLine)
+{
+	s_mirrorLine = line;
+	if (!MirrorWalkedThisFrame(line)) g_walkedMirrors.Push(line);
+}
+bool MirrorWalkedThisFrame(int line)
+{
+	for (unsigned i = 0; i < g_walkedMirrors.Size(); i++) if (g_walkedMirrors[i] == line) return true;
+	return false;
+}
 MirrorWalk::~MirrorWalk() { s_mirrorLine = saved; }
 StackWalk::~StackWalk() { s_stackWalk = saved; }
 
@@ -740,13 +751,15 @@ static int StackWalkSlot()
 	return -1;
 }
 
+int StackCaptureSlot() { return ComputeStackCaptureSlot(s_mainView, s_sceneNesting, StackWalkSlot()); }
+
 // [rc4l] Marks an id for the stacked view being walked, if a stacked view is what is being walked.
 static void NoteWalked(int id)
 {
 	if (s_stackWalk == NULL || g_stackVis.Size() == 0) return;
-	const int list = ComputeSkyCaptureList(s_mainView, s_sceneNesting, StackWalkSlot());
-	if (list < kSkyCaptureStack || id < 0 || id >= numsubsectors + numsides) return;
-	ComputeMarkStackVisible(&g_stackVis[0], id, list - kSkyCaptureStack);
+	const int slot = StackCaptureSlot();
+	if (slot < 0 || id < 0 || id >= numsubsectors + numsides) return;
+	ComputeMarkStackVisible(&g_stackVis[0], id, slot);
 }
 void NoteWalkedSubsector(int subsector) { if (subsector < numsubsectors) NoteWalked(subsector); }
 void NoteWalkedSide(int side) { if (side >= 0 && side < numsides) NoteWalked(numsubsectors + side); }
@@ -761,10 +774,8 @@ int PieceStackId(const MeshPiece &p)
 {
 	int count = 0;
 	const FFlatVertex *v = MeshVertexData(count);
-	if (v == NULL || numsubsectors <= 0 || p.range.count == 0 || p.range.offset + p.range.count > (unsigned)count) return -1;
-	float cx = 0.f, cy = 0.f;
-	for (unsigned int i = 0; i < p.range.count; i++) { cx += v[p.range.offset + i].x; cy += v[p.range.offset + i].y; }
-	cx /= (float)p.range.count; cy /= (float)p.range.count;
+	float cx, cy, cz;
+	if (numsubsectors <= 0 || !ComputeCentroid(v, (unsigned)count, p.range.offset, p.range.count, cx, cy, cz)) return -1;
 	float px, py;
 	const bool wall = ComputePieceProbe(cx, cy, p.normX, p.normY, p.normZ, px, py);
 	const subsector_t *ss = R_PointInSubsector(FLOAT2FIXED(px), FLOAT2FIXED(py));
@@ -835,6 +846,7 @@ int BeginSkyWalk()
 	{
 		g_skyViewpoint = NULL;
 		g_stackUsed = 0;
+		g_walkedMirrors.Clear();
 		for (int i = 0; i < kMaxStackViews; i++) { g_stackVerts[i].Clear(); g_skyVerts[kSkyCaptureStack + i].Clear(); }
 		g_stackVis.Resize((unsigned)ComputeStackVisWords(numsubsectors + numsides));
 		if (g_stackVis.Size() > 0) memset(&g_stackVis[0], 0, g_stackVis.Size() * sizeof(unsigned int));
@@ -932,13 +944,15 @@ bool PlayerWalkActive()
 	return ComputeOwnsFrameCapture(s_mainView, s_sceneNesting);
 }
 
+bool DynamicCaptureActive() { return PlayerWalkActive() || StackCaptureSlot() >= 0; }
+
 void RegisterSprite(const GLSprite &spr, const float *c1, const float *c2,
 	const float *c3, const float *c4)
 {
 	// [rc4l] Only the player's walk fills the frame's sprites: a mirror walk's would draw them twice, and its reset used to wipe them; it adds only the viewer, whom no other walk draws.
 	const bool mirrorViewer = ComputeTakesMirrorViewer(s_mirrorLine >= 0, s_mainView, s_sceneNesting,
 		spr.actor != NULL && consoleplayer >= 0 && spr.actor == players[consoleplayer].camera);
-	if (spr.gltexture == NULL || !(PlayerWalkActive() || mirrorViewer)) return;
+	if (spr.gltexture == NULL || !(DynamicCaptureActive() || mirrorViewer)) return;
 
 	// [rc4l] GLSprite emits a 4-vertex TRIANGLE STRIP; the mesh is triangle lists, so expand to
 	// (0,1,2) and (2,1,3) -- which preserves the strip's winding rather than flipping the second
@@ -954,6 +968,7 @@ void RegisterSprite(const GLSprite &spr, const float *c1, const float *c2,
 	mp.range.count = 0;
 	mp.material = spr.gltexture;
 	mp.mirrorLine = mirrorViewer ? s_mirrorLine : -1;
+	mp.stackSlot = StackCaptureSlot();
 	// [rc4l] GLSprite has no light index. Its dynamic light is computed per actor on the CPU and
 	// folded into the vertex colour below -- see the fold after CaptureShading, which is what makes
 	// that true. It was asserted here before it was done, and sprites went dark when the shader
@@ -1100,13 +1115,14 @@ void RegisterDecalTriangles(const FFlatVertex *tris, int count, const void *mate
                             bool redToAlpha, unsigned int alphaColor,
                             float sortX, float sortY, float sortZ, const float *dynLight)
 {
-	if (!PlayerWalkActive()) return;   // [rc4l] see RegisterSprite
+	if (!DynamicCaptureActive()) return;   // [rc4l] see RegisterSprite
 	if (tris == NULL || count < 3 || material == NULL) return;
 
 	MeshPiece mp;
 	mp.range.offset = 0;
 	mp.range.count = 0;
 	mp.material = material;
+	mp.stackSlot = StackCaptureSlot();
 	// [rc4l] A decal takes its dynamic light from the CPU, and its NORMAL is what says so.
 	//
 	// gl_SetDynSpriteLight computes the light for this decal and RegisterDecal folds it into the

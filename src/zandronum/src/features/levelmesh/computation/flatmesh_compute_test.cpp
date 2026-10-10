@@ -494,6 +494,18 @@ TEST(FlatMeshCompute, TheWalkThroughAStackedViewFillsThatViewsSkyList)
 	EXPECT_EQ(kSkyCaptureMain, ComputeSkyCaptureList(true, 1, 0));
 }
 
+// [rc4l] WDI07: the clocktower's fan clouds stand where only the walk through the town's stacked sky reaches, and only the player's walk was kept.
+TEST(FlatMeshCompute, WhatAStackedViewsWalkDrawsBelongsToThatView)
+{
+	EXPECT_EQ(0, ComputeStackCaptureSlot(true, 2, 0));
+	EXPECT_EQ(1, ComputeStackCaptureSlot(true, 2, 1));
+	EXPECT_EQ(-1, ComputeStackCaptureSlot(true, 1, 0));                // [rc4l] the player's own walk
+	EXPECT_EQ(-1, ComputeStackCaptureSlot(true, 2, -1));               // [rc4l] a mirror or skybox walk
+	EXPECT_EQ(-1, ComputeStackCaptureSlot(true, 2, kMaxStackViews));
+	EXPECT_EQ(-1, ComputeStackCaptureSlot(true, 3, 0));                // [rc4l] a portal inside the stacked view
+	EXPECT_EQ(-1, ComputeStackCaptureSlot(false, 2, 0));               // [rc4l] a camera texture's portal
+}
+
 TEST(FlatMeshCompute, APassDrawsTheSkyListItsOwnWalkFilled)
 {
 	EXPECT_EQ(kSkyCaptureMain, ComputeSkyDrawList(false, -1));
@@ -560,7 +572,39 @@ TEST(FlatMeshCompute, AWallsProbeStepsOntoItsOwnSideAndAFlatsStaysAtItsCentre)
 	EXPECT_FLOAT_EQ(50.f, y);
 }
 
-// [rc4l] WDI01's rooftops: GL's clipper drops a roof's trim behind the walls in front of it, so a wall is kept or dropped by the seg it lies on.
+// [rc4l] WDI07's clocktower roof: an ARTILE05 floor leaning (-0.96, 0.29, 0) was placed as a wall, by a sidedef its stacked view's walk never drew, and culled.
+TEST(FlatMeshCompute, ASteepFloorIsStillAFlatAndOnlyAnUprightSurfaceIsAWall)
+{
+	float x, y;
+	EXPECT_FALSE(ComputePieceProbe(100.f, 50.f, -0.96f, 0.29f, 0.f, x, y));
+	EXPECT_FLOAT_EQ(100.f, x);
+	EXPECT_FLOAT_EQ(50.f, y);
+	EXPECT_FALSE(ComputePieceProbe(100.f, 50.f, 0.f, -0.3f, 0.95f, x, y));  // [rc4l] a steep ceiling
+	EXPECT_TRUE(ComputePieceProbe(100.f, 50.f, 1.f, 0.001f, 0.f, x, y));    // [rc4l] a wall whose normal carries rounding
+	EXPECT_FLOAT_EQ(101.f, x);
+	EXPECT_FLOAT_EQ(50.f, y);
+}
+
+namespace { struct V3 { float x, y, z; }; }
+
+// [rc4l] One average for the stacked view's placement, the translucent sort and the patch report, which each kept their own loop.
+TEST(FlatMeshCompute, APiecesCentroidIsItsVerticesMeanAndAnOverrunIsRefused)
+{
+	const V3 v[4] = { { 0, 0, 0 }, { 2, 4, 6 }, { 4, 8, 12 }, { 100, 100, 100 } };
+	float x = -1.f, y = -1.f, z = -1.f;
+	ASSERT_TRUE(ComputeCentroid(v, 4, 0, 3, x, y, z));
+	EXPECT_FLOAT_EQ(2.f, x);
+	EXPECT_FLOAT_EQ(4.f, y);
+	EXPECT_FLOAT_EQ(6.f, z);
+	ASSERT_TRUE(ComputeCentroid(v, 4, 3, 1, x, y, z));
+	EXPECT_FLOAT_EQ(100.f, x);
+	EXPECT_FALSE(ComputeCentroid(v, 4, 2, 3, x, y, z));                  // [rc4l] runs off the end
+	EXPECT_FALSE(ComputeCentroid(v, 4, 5, 1, x, y, z));                  // [rc4l] starts past it
+	EXPECT_FALSE(ComputeCentroid(v, 4, 0, 0, x, y, z));
+	EXPECT_FALSE(ComputeCentroid((const V3 *)nullptr, 4, 0, 1, x, y, z));
+	EXPECT_FLOAT_EQ(100.f, x);                                            // [rc4l] a refusal leaves the answer alone
+}
+
 // [rc4l] WDI01: looking over a low roof, GL showed the stacked rooftops through its stencil's cap where the backend, with no cap, showed sky.
 TEST(FlatMeshCompute, AStacksCapCoversTheMapOverheadOrUnderfoot)
 {
@@ -602,6 +646,7 @@ TEST(FlatMeshCompute, AStackedPlaneTakesItsOwnAlphaAndAnyOtherWhatItsReflectionL
 	EXPECT_FLOAT_EQ(0.75f, ComputePlaneAlpha(false, 1.f, 0.25f));
 }
 
+// [rc4l] WDI01's rooftops: GL's clipper drops a roof's trim behind the walls in front of it, so a wall is kept or dropped by the seg it lies on.
 TEST(FlatMeshCompute, APointsDistanceToASegmentStopsAtItsEnds)
 {
 	EXPECT_FLOAT_EQ(0.f, ComputeSegmentDistance2(5.f, 0.f, 0.f, 0.f, 10.f, 0.f));
@@ -663,6 +708,18 @@ TEST(FlatMeshCompute, AMirrorShowsOnlyItsOwnViewer)
 	EXPECT_TRUE(ComputeDrawsMirrorViewer(-1, 5776));
 }
 
+// [rc4l] A stacked view draws the sprites its own walk took, as GL's does, and the frame's other passes never draw them.
+TEST(FlatMeshCompute, ASpriteFromAStackedViewsWalkIsDrawnOnlyInThatView)
+{
+	EXPECT_TRUE(ComputeDrawsDynamicPiece(-1, -1, -1, -1));
+	EXPECT_TRUE(ComputeDrawsDynamicPiece(-1, 1, -1, 1));
+	EXPECT_FALSE(ComputeDrawsDynamicPiece(-1, 1, -1, -1));   // [rc4l] the player's view
+	EXPECT_FALSE(ComputeDrawsDynamicPiece(-1, 1, -1, 0));    // [rc4l] the other stacked view
+	EXPECT_FALSE(ComputeDrawsDynamicPiece(-1, -1, -1, 0));   // [rc4l] the player's walk's sprites are not this view's
+	EXPECT_TRUE(ComputeDrawsDynamicPiece(5776, -1, 5776, -1));
+	EXPECT_FALSE(ComputeDrawsDynamicPiece(5776, -1, -1, -1));
+}
+
 // [rc4l] The same subsector 3796: a plane modelled on 164 or 385 is its own and goes in GL's solid pass, one modelled on a 3D floor's control sector is masked.
 TEST(FlatMeshCompute, AFlatIsItsSubsectorsOwnUnlessA3DFloorModelsIt)
 {
@@ -670,4 +727,13 @@ TEST(FlatMeshCompute, AFlatIsItsSubsectorsOwnUnlessA3DFloorModelsIt)
 	EXPECT_TRUE(ComputeIsOwnFlat(385, 385, 164));
 	EXPECT_TRUE(ComputeIsOwnFlat(-1, 385, 164));
 	EXPECT_FALSE(ComputeIsOwnFlat(900, 385, 164));
+}
+
+// [rc4l] WDI07 rendered four washroom mirrors from across the map every frame, half the frame's world passes, though GL's walk reached none of them.
+TEST(FlatMeshCompute, AMirrorIsRenderedOnlyWhenItCanBeSeen)
+{
+	EXPECT_TRUE(ComputeRendersMirror(true, false, false));
+	EXPECT_FALSE(ComputeRendersMirror(false, false, true));   // [rc4l] GL's walk is the authority while it runs
+	EXPECT_TRUE(ComputeRendersMirror(false, true, true));
+	EXPECT_FALSE(ComputeRendersMirror(false, true, false));
 }

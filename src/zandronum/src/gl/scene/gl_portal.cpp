@@ -68,6 +68,9 @@
 #include "c_console.h"
 #include "features/fixed64/computation/angle_interp_compute.h"
 #include "features/levelmesh/flatmesh.h"
+#include "features/glportal/computation/glportal_compute.h"
+
+static bool gl_portalinfo;
 
 //-----------------------------------------------------------------------------
 //-----------------------------------------------------------------------------
@@ -267,6 +270,7 @@ bool GLPortal::Start(bool usestencil, bool doquery)
 
 				if (sampleCount==0) 	// not visible
 				{
+					if (gl_portalinfo) Printf("    %s not visible\n", GetName());	// [rc4l] So a skipped portal reads as skipped, not drawn.
 					// restore default stencil op.
 					glStencilOp(GL_KEEP,GL_KEEP,GL_KEEP);
 					glStencilFunc(GL_EQUAL,recursion,~0);		// draw sky into stencil
@@ -500,8 +504,6 @@ void GLPortal::StartFrame()
 //
 //-----------------------------------------------------------------------------
 
-static bool gl_portalinfo;
-
 CCMD(gl_portalinfo)
 {
 	gl_portalinfo = true;
@@ -534,7 +536,7 @@ void GLPortal::EndFrame()
 	{
 		if (gl_portalinfo) 
 		{
-			Printf("%sProcessing %s, depth = %d, query = %d\n", indent.GetChars(), p->GetName(), renderdepth, usequery);
+			Printf("%sProcessing %s, depth = %d, query = %d, %d lines\n", indent.GetChars(), p->GetName(), renderdepth, usequery, p->lines.Size());
 		}
 		if (p->lines.Size() > 0)
 		{
@@ -575,7 +577,8 @@ bool GLPortal::RenderFirstSkyPortal(int recursion)
 		if (p->lines.Size() > 0 && p->IsSky())
 		{
 			// Cannot clear the depth buffer inside a portal recursion
-			if (recursion && p->NeedDepthBuffer()) continue;
+			// [rc4l] features/glportal: a portal drawn first nests without raising recursion, so the portal depth says it too.
+			if (!zx::glportal::ComputeDrawsSkyPortalFirst(p->NeedDepthBuffer(), recursion, renderdepth)) continue;
 
 			if (!best || p->lines.Size()>best->lines.Size())
 			{
@@ -1128,7 +1131,14 @@ void GLHorizonPortal::DrawContents()
 
 const char *GLSkyPortal::GetName() { return "Sky"; }
 const char *GLSkyboxPortal::GetName() { return "Skybox"; }
-const char *GLSectorStackPortal::GetName() { return "Sectorstack"; }
+// [rc4l] Named with its plane and displacement, so gl_portalinfo tells two stacks apart.
+const char *GLSectorStackPortal::GetName()
+{
+	static FString name;
+	name.Format("Sectorstack %s by %.0f,%.0f", origin->plane == sector_t::ceiling ? "ceiling" : "floor",
+		FIXED2FLOAT(origin->xDisplacement), FIXED2FLOAT(origin->yDisplacement));
+	return name.GetChars();
+}
 const char *GLPlaneMirrorPortal::GetName() { return "Planemirror"; }
 const char *GLMirrorPortal::GetName() { return "Mirror"; }
 const char *GLHorizonPortal::GetName() { return "Horizon"; }

@@ -6,27 +6,8 @@
 //
 // Minimal PNG decoder: enough for the engine's own RGB screenshots and readbacks.
 import fs from "node:fs";
-import { decodePNG, px, writePNG, boxDiff, cropImage, samplePoints } from "./pngcore.mjs";
-
-
-// Region given in FRACTIONS of the image, so two different resolutions can be compared.
-function meanRegion(img, x0, y0, x1, y1) {
-  const { w, h, channels, palette, colorType, data } = img;
-  const ax = Math.floor(x0 * w), ay = Math.floor(y0 * h);
-  const bx = Math.floor(x1 * w), by = Math.floor(y1 * h);
-  let r = 0, g = 0, b = 0, n = 0;
-  for (let y = ay; y < by; y++) {
-    for (let x = ax; x < bx; x++) {
-      const i = y * w * channels + x * channels;
-      let pr, pg, pb;
-      if (colorType === 3) { const q = data[i] * 3; pr = palette[q]; pg = palette[q + 1]; pb = palette[q + 2]; }
-      else if (channels === 1 || channels === 2) { pr = pg = pb = data[i]; }
-      else { pr = data[i]; pg = data[i + 1]; pb = data[i + 2]; }
-      r += pr; g += pg; b += pb; n++;
-    }
-  }
-  return n ? [r / n, g / n, b / n] : [0, 0, 0];
-}
+import path from "node:path";
+import { decodePNG, px, writePNG, boxDiff, cropImage, samplePoints, boxStats, filesAndBox } from "./pngcore.mjs";
 
 // [rc4l] Per-pixel agreement between two renders, because a mean cannot see shape.
 //
@@ -134,7 +115,7 @@ if (args[0] === "--tint") {
 // The spread does tell them apart. A mark has near-black and near-white in it; a flat wash has
 // neither. Reported as min, max and mean so a threshold can be written against the spread.
 //
-// usage: fuactl png --range <file.png> [x0 y0 x1 y1]   (fractions, default the whole image)
+// usage: fuactl png --range <a.png> [b.png ...] [x0 y0 x1 y1]   (fractions, default the whole image)
 // usage: fuactl png --px x,y[;x,y...] <a.png> [b.png ...]   the RGB at each point in each capture
 if (args[0] === "--px") {
   const points = String(args[1]).split(";").map((p) => p.split(",").map(Number));
@@ -159,27 +140,14 @@ if (args[0] === "--boxdiff") {
 }
 
 if (args[0] === "--range") {
-  const a = decodePNG(args[1]);
-  const f = args.length >= 6 ? args.slice(2, 6).map(Number) : [0, 0, 1, 1];
-  const x0 = Math.floor(f[0] * a.w), y0 = Math.floor(f[1] * a.h);
-  const x1 = Math.ceil(f[2] * a.w),  y1 = Math.ceil(f[3] * a.h);
-  let lo = 255, hi = 0, sum = 0, n = 0, sr = 0, sg = 0, sb = 0;
-  for (let y = y0; y < y1; y++) {
-    for (let x = x0; x < x1; x++) {
-      const p = px(a, x, y);
-      const v = (p[0] + p[1] + p[2]) / 3;
-      if (v < lo) lo = v;
-      if (v > hi) hi = v;
-      sum += v; n++;
-      sr += p[0]; sg += p[1]; sb += p[2];
-    }
+  // [rc4l] Any number of files, then the box, so a GL/Vulkan pair or a before/after set reads as one table.
+  const { files, box } = filesAndBox(args.slice(1));
+  for (const file of files) {
+    const t = boxStats(decodePNG(file), box);
+    console.log(`${files.length > 1 ? `${path.basename(file)}  ` : ""}min ${t.lo.toFixed(1)} max ${t.hi.toFixed(1)} `
+      + `spread ${(t.hi - t.lo).toFixed(1)} mean ${t.mean.toFixed(2)}  r ${t.r.toFixed(2)} g ${t.g.toFixed(2)} `
+      + `b ${t.b.toFixed(2)}  b-r ${(t.b - t.r).toFixed(2)}`);
   }
-  // [rc4l] Per channel as well as overall, because a colour CAST is invisible in luminance:
-  // a wall that has gone blue and the same wall unchanged can weigh exactly the same.
-  const den = Math.max(n, 1);
-  console.log(`min ${lo.toFixed(1)} max ${hi.toFixed(1)} spread ${(hi - lo).toFixed(1)} `
-    + `mean ${(sum / den).toFixed(2)}  r ${(sr / den).toFixed(2)} g ${(sg / den).toFixed(2)} `
-    + `b ${(sb / den).toFixed(2)}  b-r ${((sb - sr) / den).toFixed(2)}`);
   process.exit(0);
 }
 
@@ -438,17 +406,11 @@ if (args.length < 1) {
   console.error("usage: node pngstats.mjs <a.png> [b.png] [x0 y0 x1 y1]  (region as 0..1 fractions)");
   process.exit(2);
 }
-// [rc4l] The region is present when the last four arguments are NUMBERS, not when there happen to be
-// six of them. The count test needed two files to work and silently treated the region of a
-// single-file call as four more filenames -- which then reported the whole frame and crashed on
-// "0.33", so a measurement that looked like it had a region never had one.
-const tail = args.slice(-4).map(Number);
-const hasRegion = args.length >= 5 && tail.every((v) => Number.isFinite(v));
-const region = hasRegion ? tail : [0.3, 0.55, 0.7, 0.8];
-const files = hasRegion ? args.slice(0, -4) : args;
+// [rc4l] The region is present when the last four arguments are NUMBERS, not when there happen to be six of them (see filesAndBox).
+const { files, box: region } = filesAndBox(args, [0.3, 0.55, 0.7, 0.8]);
 for (const f of files) {
   const img = decodePNG(f);
-  const [r, g, b] = meanRegion(img, ...region);
+  const { r, g, b } = boxStats(img, region);
   const lum = 0.299 * r + 0.587 * g + 0.114 * b;
   console.log(
     `${f.padEnd(46)} ${img.w}x${img.h}  mean rgb ${r.toFixed(1)},${g.toFixed(1)},${b.toFixed(1)}` +

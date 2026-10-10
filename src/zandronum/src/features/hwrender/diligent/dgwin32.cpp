@@ -198,6 +198,14 @@ void Fua_PumpBackendWindow(void *hwnd)
 	}
 }
 
+// [rc4l] Un-minimizes the engine's own window without taking focus, since GL reads nothing back from a minimized one; true if it was minimized.
+bool Fua_RestoreEngineWindow()
+{
+	if (Window == NULL || !IsIconic(Window)) return false;
+	ShowWindow(Window, SW_SHOWNOACTIVATE);
+	return true;
+}
+
 }} // namespace zx::hwrender
 
 #endif // FUA_DILIGENT

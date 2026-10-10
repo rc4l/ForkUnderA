@@ -44,6 +44,10 @@ void LeaveScene();
 
 // [rc4l] Whether what is being captured right now belongs to the frame (ComputeOwnsFrameCapture): never a mirror, skybox or camera-texture scene.
 bool PlayerWalkActive();
+// [rc4l] The stacked view whose walk GL is in now (ComputeStackCaptureSlot), or -1.
+int StackCaptureSlot();
+// [rc4l] Whether a sprite, model or decal GL draws now is captured: the player's walk's for the frame, a stacked view's walk's for that view alone.
+bool DynamicCaptureActive();
 
 // [rc4l] A stacked view the player's walk saw this frame: the eye's move into it in map units, and the plane it opens from.
 struct StackViewInfo
@@ -65,6 +69,9 @@ void NoteWalkedSide(int side);
 int PieceStackId(const MeshPiece &p);
 // [rc4l] This frame's ComputeMarkStackVisible bits over the subsectors then the sidedefs, or NULL with no stacked view.
 const unsigned int *StackVisibility(int &words);
+
+// [rc4l] Whether GL's walk this frame went through the line mirror on linedef line, which is what says it can be seen.
+bool MirrorWalkedThisFrame(int line);
 
 // [rc4l] Marks GL's walk through a line mirror (GLMirrorPortal::DrawContents) by its linedef, so the viewer's sprite it draws reaches that mirror's pass in the backend.
 struct MirrorWalk

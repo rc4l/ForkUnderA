@@ -114,6 +114,7 @@ struct MeshPiece
 	bool          cpuLight;
 	// [rc4l] A sprite only a line mirror shows: the viewer's own, taken from GL's mirror walk (ComputeTakesMirrorViewer).
 	int           mirrorLine;   // [rc4l] the line mirror whose reflection alone shows it (the viewer's own sprite), or -1
+	int           stackSlot;    // [rc4l] the stacked view whose walk alone drew it (ComputeStackCaptureSlot), or -1 for the frame's
 	bool          plain;        // [rc4l] GL draws it in its solid pass, so its see-through texels are drawn rather than discarded
 
 	// [rc4l] This surface is seen from BELOW: a ceiling, or the underside of a 3D floor.
@@ -183,6 +184,7 @@ struct MeshPiece
 		mirrorSector = -1; mirrorCeiling = false;
 		cpuLight = false;
 		mirrorLine = -1;
+		stackSlot = -1;
 		plain = false;
 		for (int i = 0; i < 6; i++) floodUV[i] = 0.f;
 	}

@@ -151,6 +151,8 @@ export function templateScenarioFiles(dir, names = []) {
 export function runScenarioIfMain(metaUrl, options, compare = compareTemplate) {
   if (!isMain(metaUrl)) { registered.set(metaUrl, { options, compare }); return; }
   const opts = options();
+  // [rc4l] Named up front, since a scenario run directly takes the staged binary unless FUACTL_ENGINE says otherwise.
+  console.log(`engine ${resolveEngine()}`);
   compare({ ...opts, port: Number(process.argv[2] || opts.port || 7796) }).then((r) => {
     const out = scenarioOutcome(opts.name, r);
     for (const l of out.lines) console.log(l);
