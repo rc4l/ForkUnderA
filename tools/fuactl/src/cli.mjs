@@ -13,7 +13,7 @@ import { summarizeGlTimers } from "./proto.mjs";
 import * as ui from "./ui.mjs";
 import { runBench } from "./bench.mjs";
 import * as cap from "./capture.mjs";
-import { play, defaultPwadStore, resolvePreset } from "./play.mjs";
+import { play, quitInstance, defaultPwadStore, resolvePreset } from "./play.mjs";
 import { findMapLumps, mapReport } from "./mapdata.mjs";
 import * as shot from "./shot.mjs";
 import { sweepDirFor } from "./shot.mjs";
@@ -96,6 +96,7 @@ const USAGE = `fuactl <command>
   net-bw [--seed S] [--map M] [--spawn CLS] [--count N] [--seconds N]   client/server bandwidth, baseline vs perturbation
   cycle --port P [--token T] [--count N] [--settle MS]   advance the map rotation N times, confirming intermissions
   rpc <cmd> [jsonArgs] --port P [--token T]   send one RPC to an instance and print the result
+  quit [--port P] [--token T]   quit an instance (else the last play session) and wait until its port closes; exit 1 if it would not go
   session [--instances N] [--seed S] [--map M] [--tics T]   run the determinism + desync check
   perf-ab [--seed S] [--map M] [--spawn CLS] [--count N] [--frames F]   deterministic perf ablation (baseline vs perturbation, causal ms delta + sim/render verdict)
   gl-timers --port P [--token T] [--frames N] [--warmup M]   GPU render profiling: per-pass GPU ms (scene/translucent/hud2d) of a running instance
@@ -288,6 +289,14 @@ async function main() {
       }
       console.log(failed ? `${failed} scenario(s) failed` : "every scenario within its limits");
       process.exitCode = failed ? 1 : 0;
+      break;
+    }
+    // [rc4l] `fuactl quit` -- stop an instance by its token and wait for its port to close, where a bare console quit left no way to tell it had gone.
+    case "quit": {
+      const t = targetOf(flags);
+      const outcome = await quitInstance(t);
+      console.log(`${outcome}: port ${t.port}`);
+      process.exitCode = outcome === "running" ? 1 : 0;
       break;
     }
     case "rpc": {
@@ -726,16 +735,8 @@ async function main() {
       // to another, and a capture then taken from whichever answered. One flag, one instance.
       if (flags.restart) {
         const prev = shot.readSession(sessionFile);
-        if (prev && prev.port) {
-          try {
-            const old = new BridgeClient();
-            await old.connect(Number(prev.port), { token: prev.token || null });
-            await old.waitHello();
-            await old.rpc("console.exec", { text: "quit" }).catch(() => {});
-            old.close();
-            console.error(`stopped the instance on port ${prev.port}`);
-          } catch { /* nothing was listening: already gone */ }
-        }
+        const outcome = prev && prev.port ? await quitInstance({ port: prev.port, token: prev.token || null }) : "absent";
+        if (outcome !== "absent") console.error(`${outcome}: the instance on port ${prev.port}`);
       }
       const inst = await play({
         port: flags.port ? Number(flags.port) : undefined,

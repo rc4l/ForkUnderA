@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 rc4l
 //
-// [rc4l] The size a grow-only GPU buffer is re-created at, for the per-frame streams (sprites, the 2D layer, sky and stacked surfaces).
+// [rc4l] The size a grow-only GPU buffer is re-created at, for the per-frame streams (sprites, the 2D layer, sky, stacked and horizon surfaces).
 
 #ifndef ZX_GROWBUFFER_COMPUTE_H
 #define ZX_GROWBUFFER_COMPUTE_H

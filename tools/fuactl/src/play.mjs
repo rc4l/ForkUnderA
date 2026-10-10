@@ -221,3 +221,23 @@ export async function play(opts = {}) {
 }
 
 export { stopInstance };
+
+// [rc4l] A bridge connection that has said hello, or a throw when nothing answers on port.
+async function bridgeConnect(port, token) {
+  const { BridgeClient } = await import("./client.mjs");
+  const c = new BridgeClient();
+  try { await c.connect(port, { token }); await c.waitHello(); return c; } catch (e) { c.close(); throw e; }
+}
+
+// [rc4l] Quit the instance on port by its token and wait for the port to close: "stopped", "absent" when nothing answered, or "running" when it would not go.
+export async function quitInstance({ port, token = null }, { connect = bridgeConnect, timeoutMs = 10000, pollMs = 200 } = {}) {
+  let c;
+  try { c = await connect(Number(port), token); } catch { return "absent"; }
+  await c.rpc("console.exec", { text: "quit" }).catch(() => {});
+  c.close();
+  for (const deadline = Date.now() + timeoutMs; Date.now() < deadline;) {
+    await sleep(pollMs);
+    try { (await connect(Number(port), token)).close(); } catch { return "stopped"; }
+  }
+  return "running";
+}

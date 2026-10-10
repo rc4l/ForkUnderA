@@ -57,10 +57,12 @@ after asking for a pwad map means the wads did not load; fix that before believi
 
 ## Cleaning up
 
-`quit` needs the right token, and a failed quit leaves the old engine running on the same port while
-the new one starts beside it — the user then looks at the stale window and reasonably concludes the
-tool is broken. So check what is actually running, and stop a stray by **PID**, never by name, which
-also kills the user's own instance and any other harness:
+`node src/cli.mjs quit --port 7801 --token <T>` quits by token and waits for the port to close,
+printing `stopped`, `absent` or `running` (exit 1); `play --restart` does the same for the last
+session. A quit that did not take leaves the old engine on the port while the new one starts beside
+it — the user then looks at the stale window and reasonably concludes the tool is broken. So on
+`running`, check what is actually up, and stop a stray by **PID**, never by name, which also kills
+the user's own instance and any other harness:
 
 ```bash
 # Windows (PowerShell)

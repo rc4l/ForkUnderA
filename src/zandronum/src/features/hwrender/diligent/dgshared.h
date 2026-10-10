@@ -59,6 +59,9 @@ Diligent::ITextureView *SceneDepthDSV();
 Diligent::IBuffer *SceneConstantsCB();
 const float       *SceneMVP();
 
+// [rc4l] Bind the scene constants on every stage of pso that declares them; false when its vertex stage does not.
+bool BindSceneConstants(Diligent::IPipelineState *pso);
+
 bool InvertMatrix4(const float *m, float *out);
 
 // The engine's texture filter, as a sampler. Shared so a second pass cannot quietly disagree with

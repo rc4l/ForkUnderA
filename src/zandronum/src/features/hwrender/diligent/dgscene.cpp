@@ -2080,8 +2080,7 @@ static bool CreateSkyPipeline(Diligent::TEXTURE_ADDRESS_MODE addrU, const char *
 	pci.pPS = ps;
 	dev->CreateGraphicsPipelineState(pci, &outPSO);
 	if (!outPSO) return false;
-	if (auto *v = outPSO->GetStaticVariableByName(Diligent::SHADER_TYPE_VERTEX, "Constants"))
-		v->Set(g_cb);
+	BindSceneConstants(outPSO);
 	return true;
 }
 
@@ -2609,16 +2608,11 @@ static Diligent::RefCntAutoPtr<Diligent::IPipelineState> CreateScreenSurfacePSO(
 	pci.pPS = sps;
 	dev->CreateGraphicsPipelineState(pci, &pso);
 	if (!pso) return pso;
-	auto *cv = pso->GetStaticVariableByName(Diligent::SHADER_TYPE_VERTEX, "Constants");
-	auto *pcv = pso->GetStaticVariableByName(Diligent::SHADER_TYPE_PIXEL, "Constants");
-	if (pcv) pcv->Set(g_cb);
-	if (!cv)
+	if (!BindSceneConstants(pso))
 	{
 		Printf("vulkan %s OFF: pipeline missing its constants\n", name);
 		pso.Release();
-		return pso;
 	}
-	cv->Set(g_cb);
 	return pso;
 }
 
@@ -3882,7 +3876,7 @@ static bool EnsureScenePipeline(FString &err)
 	if (!vs || !psOpaque || !psMasked || !psTrans || !psRedAlpha)
 	{ err = "scene shader compilation failed"; return false; }
 
-	// [rc4l] Created once and never replaced, since the horizon, decal and mirror pipelines bind it too and a new one after a map change left them drawing the old map's last camera.
+	// [rc4l] Created once and never replaced, since pipelines that outlive a level change bind it statically and a replaced one is never mapped again.
 	if (!g_cb)
 	{
 		Diligent::BufferDesc cbd;
@@ -4093,8 +4087,6 @@ static bool EnsureScenePipeline(FString &err)
 		!g_transRedAlphaPSO || !g_addRedAlphaPSO || !g_maskedGBufPSO)
 	{ err = "scene pipeline creation failed"; return false; }
 
-	// [rc4l] Both stages read Constants now -- the pixel shader needs uCameraPos for radial fog.
-	// A stage that declares the block but never gets it bound reads garbage rather than failing.
 	// [rc4l] The sprite pipelines belong in here too. They were left out when they were added and the
 	// backend died on launch with "No resource is assigned to static shader variable 'Constants'" --
 	// a pipeline that is created but never has its statics bound is not a working pipeline.
@@ -4102,7 +4094,6 @@ static bool EnsureScenePipeline(FString &err)
 	                                     g_maskedNoCullPSO, g_transNoCullPSO, g_addNoCullPSO,
 	                                     g_maskedDecalPSO, g_transDecalPSO, g_addDecalPSO,
 	                                     g_transRedAlphaPSO, g_addRedAlphaPSO, g_maskedGBufPSO };
-	const Diligent::SHADER_TYPE stages[] = { Diligent::SHADER_TYPE_VERTEX, Diligent::SHADER_TYPE_PIXEL };
 	// [rc4l] Remembered as a list, because every later question about these thirteen -- fill the
 	// material array, make one binding each, find the binding for a pipeline -- is a loop over
 	// them, and a hand-written list of "the world pipelines" missed five of them once already.
@@ -4114,9 +4105,7 @@ static bool EnsureScenePipeline(FString &err)
 	// ever being read from it -- which is exactly the property that was missing when it was static.
 	for (int i = 0; i < 13; i++)
 	{
-		for (int s = 0; s < 2; s++)
-			if (auto *var = psos[i]->GetStaticVariableByName(stages[s], "Constants"))
-				var->Set(g_cb);
+		BindSceneConstants(psos[i]);
 		// [rc4l] The light buffer is shared by every world pass, so it is STATIC and set once here.
 		//
 		// Reported rather than silently skipped: a `if (auto *v = GetStaticVariableByName(...))` that
@@ -5764,10 +5753,7 @@ static bool EnsureMirrorResources()
 		if (g_pieceBuf)
 			if (auto *v = g_mirrorPSO->GetStaticVariableByName(Diligent::SHADER_TYPE_PIXEL, "Pieces"))
 				v->Set(g_pieceBuf->GetDefaultView(Diligent::BUFFER_VIEW_SHADER_RESOURCE));
-		if (auto *v = g_mirrorPSO->GetStaticVariableByName(Diligent::SHADER_TYPE_VERTEX, "Constants"))
-			v->Set(g_cb);
-		if (auto *v = g_mirrorPSO->GetStaticVariableByName(Diligent::SHADER_TYPE_PIXEL, "Constants"))
-			v->Set(g_cb);
+		BindSceneConstants(g_mirrorPSO);
 		// [rc4l] Every material the level uses, bound once on the PIPELINE.
 		//
 		// A rasterised draw binds one material and draws its batch; a ray can land on any triangle, so
@@ -6054,7 +6040,7 @@ static bool EnsurePlaneMirrorResources()
 		pci.pPS = ps;
 		dev->CreateGraphicsPipelineState(pci, &g_pmPSO);
 		if (!g_pmPSO) return false;
-		if (auto *cv = g_pmPSO->GetStaticVariableByName(Diligent::SHADER_TYPE_VERTEX, "Constants")) cv->Set(g_cb);
+		BindSceneConstants(g_pmPSO);
 	}
 	for (int k = 0; k < g_pmUsed; k++)
 		if (!EnsureViewTarget(g_pm[k], g_pmPSO, "uReflection", "fua plane mirror")) return false;
@@ -6649,6 +6635,15 @@ void ReleaseCameraTargets()
 
 // [rc4l] Read-only handles for passes that live in their own file. See dgshared.h.
 Diligent::IBuffer *SceneConstantsCB() { return g_cb; }
+
+// [rc4l] Both stages, because pixel shaders read uCameraPos for radial fog and a declared block left unbound reads garbage rather than failing.
+bool BindSceneConstants(Diligent::IPipelineState *pso)
+{
+	auto *vv = pso->GetStaticVariableByName(Diligent::SHADER_TYPE_VERTEX, "Constants");
+	if (vv) vv->Set(g_cb);
+	if (auto *pv = pso->GetStaticVariableByName(Diligent::SHADER_TYPE_PIXEL, "Constants")) pv->Set(g_cb);
+	return vv != NULL;
+}
 const float *SceneMVP() { return g_mvp; }
 
 // [rc4l] What the backend spends its frame on, phase by phase.

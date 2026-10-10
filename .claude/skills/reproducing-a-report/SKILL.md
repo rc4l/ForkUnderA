@@ -86,6 +86,11 @@ the strength of an argument — and arguments about visual behaviour are wrong a
 will surprise you. Two rounds in this repo were exactly that: a plausible cause, a plausible
 fix, a rebuild, and the reporter's next screenshot showing the same thing.
 
+When it will not reproduce after the reporter's own steps, stop re-shooting and audit lifetimes instead:
+a pipeline that binds a buffer statically and outlives its replacement (a level change rebuilt the
+scene constants under the horizon pass here) reads stale data that usually captures correctly. Fix
+what the audit finds, and tell the reporter plainly that the fix is unverified.
+
 When it does reproduce, check it is *the same* fault and not a cousin. Compare against the
 reporter's artefact directly. Same shape, same place, same conditions.
 

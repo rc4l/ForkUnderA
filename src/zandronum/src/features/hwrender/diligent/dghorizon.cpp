@@ -9,6 +9,7 @@
 #include "RefCntAutoPtr.hpp"
 
 #include "features/hwrender/diligent/dgshared.h"
+#include "features/hwrender/computation/growbuffer_compute.h"
 #include "features/hwrender/diligent/dglight_glsl.h"
 #include "features/horizon/horizon.h"
 #include "features/horizon/computation/horizon_compute.h"
@@ -182,11 +183,7 @@ static bool EnsureHorizonPipeline()
 	pci.pPS = ps;
 	dev->CreateGraphicsPipelineState(pci, &g_hzPSO);
 	if (!g_hzPSO) { g_hzFailed = true; Printf("vulkan horizons OFF: pipeline creation failed\n"); return false; }
-	for (int st = 0; st < 2; st++)
-	{
-		const Diligent::SHADER_TYPE stage = st ? Diligent::SHADER_TYPE_PIXEL : Diligent::SHADER_TYPE_VERTEX;
-		if (auto *v = g_hzPSO->GetStaticVariableByName(stage, "Constants")) v->Set(SceneConstantsCB());
-	}
+	BindSceneConstants(g_hzPSO);
 	return true;
 }
 
@@ -281,7 +278,7 @@ void DrawHorizonPlanes(Diligent::IDeviceContext *ctx)
 
 	if (!g_hzVB || g_hzVBCapacity < verts.Size())
 	{
-		g_hzVBCapacity = verts.Size() * 2 + 64;
+		g_hzVBCapacity = zx::hwrender::ComputeGrownCapacity(verts.Size(), 64);
 		Diligent::BufferDesc bd;
 		bd.Name = "fua horizon VB";
 		bd.Size = (Diligent::Uint64)g_hzVBCapacity * sizeof(HorizonVertex);

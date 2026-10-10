@@ -401,6 +401,8 @@ void ReleaseDecalPipelines()
 
 static bool EnsureDeferredDecalPass()
 {
+	// [rc4l] The pipeline binds the plane table, so a level with more sectors than it holds makes both again before anything is written past its end.
+	if (g_ddPSO && g_ddPlaneCapacity < numsectors) ReleaseDecalPipelines();
 	if (g_ddPSO) return true;
 	auto *dev = GetDevice();
 	auto *swap = GetSwapChain();
@@ -532,10 +534,10 @@ static bool EnsureDeferredDecalPass()
 		Diligent::RefCntAutoPtr<Diligent::IPipelineState> made;
 		dev->CreateGraphicsPipelineState(pci, &made);
 		if (!made) { g_ddBail = "pipeline creation failed"; return false; }
+		BindSceneConstants(made);
 		for (int st = 0; st < 2; st++)
 		{
 			const Diligent::SHADER_TYPE stage = st ? Diligent::SHADER_TYPE_PIXEL : Diligent::SHADER_TYPE_VERTEX;
-			if (auto *v = made->GetStaticVariableByName(stage, "Constants")) v->Set(SceneConstantsCB());
 			if (auto *v = made->GetStaticVariableByName(stage, "Decal")) v->Set(g_ddCB);
 			if (auto *v = made->GetStaticVariableByName(stage, "Decals")) v->Set(g_ddInstSRV);
 			if (auto *v = made->GetStaticVariableByName(stage, "Planes")) v->Set(g_ddPlaneSRV);
