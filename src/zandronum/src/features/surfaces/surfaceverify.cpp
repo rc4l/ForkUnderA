@@ -357,8 +357,7 @@ CCMD( fua_surface_bakediff )
 					sameMaterial = true;
 			}
 			if ( !sameMaterial ) firstBad = 1;
-			else if ( d.hasU && ( fabsf( w->uplft.u - d.uLeft ) > tol ||
-			                      fabsf( w->uprgt.u - d.uRight ) > tol ) ) firstBad = 2;
+			else if ( fabsf( w->uplft.u - d.uLeft ) > tol || fabsf( w->uprgt.u - d.uRight ) > tol ) firstBad = 2;
 			else if ( !split && ( fabsf( w->uplft.v - d.vTop[0] ) > tol ||
 			                      fabsf( w->uprgt.v - d.vTop[1] ) > tol ) )
 			{

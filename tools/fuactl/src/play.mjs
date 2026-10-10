@@ -11,6 +11,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { launchInstance, stopInstance, describeExit } from "./launch.mjs";
+import { sessionFileFor } from "./shot.mjs";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -24,7 +25,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // freelook OFF. It is `2` that enables it. sv_nofreeaim decides whether a projectile follows the
 // crosshair or is auto-aimed at whatever is nearest -- the difference between hitting a wall/floor
 // join on purpose and hitting it by luck.
-export function playCvars({ gl = false, sideBySide = false, rt = false, monsters = false } = {}) {
+export function playCvars({ gl = false, sideBySide = false, rt = false, monsters = false, extra = {} } = {}) {
   const cv = {
     sv_nofreelook: 0, sv_freelook: 2, freelook: 1,
     sv_nofreeaim: 0, autoaim: 0,
@@ -48,7 +49,8 @@ export function playCvars({ gl = false, sideBySide = false, rt = false, monsters
   // Being shot at halfway through showing someone a texture seam is pure friction. Monsters go back
   // when the thing to look at IS a monster sprite.
   if (!monsters) cv.sv_nomonsters = 1;
-  return cv;
+  // [rc4l] --cvar's, last, so a launch can set what it needs before the map loads.
+  return { ...cv, ...extra };
 }
 
 // [rc4l] The engine's own download store (M_GetFuaUserPath + "/pwads"), where `fua_download` puts catalogue wads.
@@ -211,11 +213,15 @@ export async function play(opts = {}) {
     const cheats = [];
     for (const ch of CHEATS) cheats.push(await ensureCheat(c, ch, cap));
     world = { cheats, cvars: await verifyWorld(c, cap) };
+    // [rc4l] opts.at (x, y, z, angle, pitch) stands the player there before anyone is told the instance is up.
+    if (opts.at) await c.rpc("player.setpos", { x: opts.at.x, y: opts.at.y, z: opts.at.z, angle: opts.at.angle, pitch: opts.at.pitch || 0 });
   } finally { c.close(); }
   inst.world = world;
 
   if (opts.sessionFile) {
-    fs.writeFileSync(opts.sessionFile, `PORT=${inst.port}\nTOKEN=${inst.token}\n`);
+    const text = `PORT=${inst.port}\nTOKEN=${inst.token}\n`;
+    fs.writeFileSync(opts.sessionFile, text);
+    fs.writeFileSync(sessionFileFor(opts.sessionFile, inst.port), text);
   }
   return inst;
 }

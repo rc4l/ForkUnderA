@@ -13,6 +13,15 @@ float ComputeWallU(float alongLine, float xOffset, float texWidth)
 	return (alongLine + xOffset) / texWidth;
 }
 
+void ComputePolyobjSegFractions(float lx1, float ly1, float lx2, float ly2,
+	float sx1, float sy1, float sx2, float sy2, float &left, float &right)
+{
+	const float dx = lx2 - lx1, dy = ly2 - ly1;
+	if (dx == 0.f && dy == 0.f) { left = 0.f; right = 1.f; return; }
+	if (fabsf(dx) > fabsf(dy)) { left = (sx1 - lx1) / dx; right = (sx2 - lx1) / dx; }
+	else                       { left = (sy1 - ly1) / dy; right = (sy2 - ly1) / dy; }
+}
+
 float ComputeWallV(float z, float textureTop, float texHeight)
 {
 	if (texHeight <= 0.f) return 0.f;

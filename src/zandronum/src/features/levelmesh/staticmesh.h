@@ -113,7 +113,8 @@ struct MeshPiece
 	// [rc4l] Lit by the CPU's light for the whole actor (dynR..dynB) rather than the shader's per-fragment loop, as GL lights sprites and models.
 	bool          cpuLight;
 	// [rc4l] A sprite only a line mirror shows: the viewer's own, taken from GL's mirror walk (ComputeTakesMirrorViewer).
-	bool          mirrorOnly;
+	int           mirrorLine;   // [rc4l] the line mirror whose reflection alone shows it (the viewer's own sprite), or -1
+	bool          plain;        // [rc4l] GL draws it in its solid pass, so its see-through texels are drawn rather than discarded
 
 	// [rc4l] This surface is seen from BELOW: a ceiling, or the underside of a 3D floor.
 	//
@@ -181,7 +182,8 @@ struct MeshPiece
 		flood = false; floodZ = 0.f;
 		mirrorSector = -1; mirrorCeiling = false;
 		cpuLight = false;
-		mirrorOnly = false;
+		mirrorLine = -1;
+		plain = false;
 		for (int i = 0; i < 6; i++) floodUV[i] = 0.f;
 	}
 };

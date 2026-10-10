@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { SPECIAL, THING } from "../src/doomnums.mjs";
+import { SPECIAL, THING, ENGINE_THING } from "../src/doomnums.mjs";
 
 const ENGINE = fileURLToPath(new URL("../../../src/zandronum/", import.meta.url));
 
@@ -37,4 +37,12 @@ test("every named thing but PointLight has the editor number its DECORATE gives 
     if (name === "PointLight") continue;
     assert.equal(numbers[name], num, name);
   }
+});
+
+test("the polyobject anchor and spawn numbers are p_local.h's PO_ANCHOR_TYPE and the one after it", () => {
+  const header = fs.readFileSync(path.join(ENGINE, "src/p_local.h"), "latin1");
+  const m = /PO_ANCHOR_TYPE\s*=\s*(\d+),\s*PO_SPAWN_TYPE\s*,/.exec(header);
+  assert.ok(m, "PO_ANCHOR_TYPE / PO_SPAWN_TYPE not found in p_local.h");
+  assert.equal(ENGINE_THING.PolyAnchor, Number(m[1]));
+  assert.equal(ENGINE_THING.PolySpawn, Number(m[1]) + 1);
 });

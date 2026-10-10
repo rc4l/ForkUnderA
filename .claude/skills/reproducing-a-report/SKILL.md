@@ -99,6 +99,9 @@ aims the probe through one pixel of a capture (`src/camera.mjs` inverts GL's cam
 `--stack` casts it through a stacked sector's view, and `fuactl png --px "x,y;x,y" a.png b.png` reads
 the same pixels off several captures -- the comparison that showed a "roof slab" was the sky background
 showing through a gap, not a surface at all. Hand-worked angles missed by a few pixels every time.
+Under a floor or ceiling `look` also names the subsector, its nodebuilder and render sectors, both plane
+textures and the lights GL links to it, which is what told a wrong-sector floor and a light shining
+through a wall apart from texture faults.
 
 Once it reproduces in the reporter's content, rebuild the fault on a **template map** that carries
 only the ingredient that matters -- the `template-maps` skill. A repro that needs nine mod wads cannot

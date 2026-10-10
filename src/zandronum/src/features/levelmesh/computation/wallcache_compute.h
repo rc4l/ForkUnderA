@@ -63,6 +63,12 @@ enum { kLineMirror = 182 };
 // [rc4l] Whether a seg's face is a mirror GL draws instead of its wall, as GLWall::DoMidTexture decides: a one-sided Line_Mirror while gl_mirrors is on.
 bool ComputeIsMirrorWall(int lineSpecial, bool oneSided, bool mirrorsOn);
 
+// [rc4l] gl_wall.h's RENDERWALL_ numbers that GL draws in its solid pass, checked against the enum in wallcache.cpp.
+enum { kRenderWallTop = 1, kRenderWallM1S = 2, kRenderWallBottom = 4, kRenderWallMirrorSurface = 12 };
+
+// [rc4l] Whether GL draws a wall of this type in its solid pass, where nothing is alpha-tested and a see-through texel shows its own colour (passflag 1 in GLWall::PutWall).
+bool ComputeWallPlainPass(int renderWallType);
+
 
 }} // namespace zx::levelmesh
 

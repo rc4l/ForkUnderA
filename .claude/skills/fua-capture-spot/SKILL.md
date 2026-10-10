@@ -31,6 +31,9 @@ read from the engine's own `wads` command rather than from what the launch inten
 **Capture before touching anything.** Do not warp, unpause, toggle a cvar or rebuild first: the
 vantage is whatever they are looking at right now, and every one of those actions can change it.
 
+To queue a problem for fixing rather than just save the view, `queue add "<description>" --port P`
+saves the spot and the description together (`report-queue`).
+
 **Name it for what it shows**, not for the bug you think it is — `skyportal-city`, not `skyfix2`. The
 note is what makes it findable in six weeks; write the symptom, not the diagnosis.
 

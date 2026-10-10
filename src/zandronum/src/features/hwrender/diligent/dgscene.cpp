@@ -59,6 +59,8 @@
 #include "features/hwrender/computation/planemirror_compute.h"   // [rc4l] reflective floors and ceilings   // [rc4l] a batch's pipeline, and when a resize rebuilds the targets
 #include "features/hwrender/computation/growbuffer_compute.h"   // [rc4l] the per-frame vertex streams
 #include "features/hwrender/computation/texfilter_compute.h"   // [rc4l] the engine's filter modes
+#include "features/hwrender/computation/slotremap_compute.h"   // [rc4l] ANIMDEFS frames in the material array
+#include "features/hwrender/computation/lighttouch_compute.h"   // [rc4l] GL's light links
 #include "features/hwrender/computation/backendview_compute.h"   // [rc4l] the camera, as GL builds it
 #include "features/hwrender/computation/sceneview_compute.h"   // [rc4l] GL's vertical field of view
 #include "features/hwrender/diligent/dgshared.h"          // [rc4l] FUA_CONSTANTS_GLSL, the constant block every pass declares
@@ -220,6 +222,8 @@ CVAR(Bool, fua_dg_hud, true, 0)
 
 // [rc4l] Dynamic lights: muzzle flashes, plasma, rocket trails, lamps.
 CVAR(Bool, fua_dg_dynlights, true, 0)
+// [rc4l] Light only what GL's light links reach (0 lights by radius alone, through walls), for an A/B.
+CVAR(Bool, fua_dg_lightlinks, true, 0)
 
 // [rc4l] Clustered lighting, and the switch that makes it falsifiable.
 //
@@ -396,8 +400,8 @@ struct ScenePieceData
 	float floodVx, floodVy, floodV0, flood;
 	// [rc4l] A sprite's or model's light from the CPU (GL's gl_SetDynSpriteLight), cpuLight 1 to use it instead of the shader's loop.
 	float actorR, actorG, actorB, cpuLight;
-	// [rc4l] The slot holding this material's brightmap in the bindless array (0 for none), the piece's PieceStackId plus one (0 for a sprite or model, never culled), and two spare.
-	float brightSlot, stackId, brightPad1, brightPad2;
+	// [rc4l] The slot holding this material's brightmap in the bindless array (0 for none), the piece's PieceStackId plus one (0 for a sprite or model, never culled), 1 when both slots go through SlotRemap, and 1 when GL draws it unmasked so no texel is discarded.
+	float brightSlot, stackId, animates, plain;
 };
 
 // [rc4l] The per-piece records the vertices index into, and the buffer that holds them.
@@ -476,7 +480,7 @@ struct DynRun
 	// and without depth writes whichever triangle the buffer happens to hold last wins. On a car
 	// that draws the interior floor and seats straight through the bodywork.
 	bool         solid;
-	bool         mirrorOnly;   // [rc4l] the viewer's own sprite, drawn only in a line mirror's reflection
+	int          mirrorLine;   // [rc4l] the viewer's own sprite, drawn only in this line mirror's reflection, or -1
 	float        cx, cy, cz;   // centroid, for the merged sort
 	float        lo, hi;       // [rc4l] its height span, which sides of a translucent plane it is on
 };
@@ -644,10 +648,13 @@ static_assert(kMaterialSlots == 4096, "FUA_MAT_SLOTS_STR must say the same numbe
 // An animated texture keeps one FMaterial as its identity and swaps which image that resolves to
 // every eight tics. The old path re-pointed the batch's binding; here the slot's contents change
 // and its key does not, so the geometry never has to know that nukage flows.
-struct MatSlot { const void *material; int translation; const void *resolved; };
+struct MatSlot { const void *material; int translation; };
 // [rc4l] The translation a brightmap's slot is filed under: no real one is this, so a material and its brightmap never share a slot.
 static const int kBrightmapTranslation = -0x7fffffff;
 static TArray<MatSlot> g_matSlotTable;
+// [rc4l] Per slot, the slot showing its texture's current ANIMDEFS frame, on the GPU as SlotRemap; made once, since a static binding cannot follow a replaced buffer.
+static Diligent::RefCntAutoPtr<Diligent::IBuffer> g_slotRemapBuf;
+static std::vector<unsigned> g_slotRemap;
 static bool g_matSlotOverflow = false;
 // The static array copied into the pipelines is only as fresh as the last fill. Anything that
 // changes what a slot should point at -- a new material, an animated texture reaching its next
@@ -724,7 +731,7 @@ static void ResetMaterialSlots()
 {
 	g_matSlotTable.Clear();
 	MatIndexClear();
-	MatSlot white; white.material = NULL; white.translation = 0; white.resolved = NULL;
+	MatSlot white; white.material = NULL; white.translation = 0;
 	g_matSlotTable.Push(white);
 	MatIndexInsert(white.material, white.translation, 0);
 	g_matSlotOverflow = false;
@@ -735,8 +742,45 @@ static void ResetMaterialSlots()
 // [rc4l] What a slot holds: a material in its translation, or, under kBrightmapTranslation, that material's brightmap (black for none).
 static Diligent::IDeviceObject *SlotSRV(const MatSlot &e)
 {
-	if (e.translation == kBrightmapTranslation) return GetBrightmapSRV(e.resolved);
-	return GetMaterialSRV(e.resolved, e.translation);
+	if (e.translation == kBrightmapTranslation) return GetBrightmapSRV(e.material);
+	return GetMaterialSRV(e.material, e.translation);
+}
+
+static int PushMaterialSlot(const void *material, int translation)
+{
+	MatSlot e; e.material = material; e.translation = translation;
+	g_matSlotTable.Push(e);
+	const int slot = (int)g_matSlotTable.Size() - 1;
+	MatIndexInsert(material, translation, slot);
+	g_matSlotsDirty = true;
+	return slot;
+}
+
+// [rc4l] The engine's animations as plain records and the one each texture index belongs to, rebuilt when ANIMDEFS or the texture list changes size.
+static std::vector<zx::hwrender::AnimationDef> g_anims;
+static std::vector<int> g_animOfTex;
+
+static int AnimationOf(const FMaterial *mat)
+{
+	if (mat == NULL || mat->tex == NULL) return -1;
+	const TArray<FAnimDef *> &defs = TexMan.GetAnimations();
+	if (g_anims.size() != defs.Size() || g_animOfTex.size() != (size_t)TexMan.NumTextures())
+	{
+		g_anims.clear();
+		for (unsigned i = 0; i < defs.Size(); i++)
+		{
+			zx::hwrender::AnimationDef a;
+			a.basePic = defs[i]->BasePic.GetIndex();
+			a.numFrames = defs[i]->NumFrames;
+			a.discrete = defs[i]->AnimType == FAnimDef::ANIM_DiscreteFrames;
+			if (a.discrete)
+				for (int f = 0; f < defs[i]->NumFrames; f++) a.pics.push_back(defs[i]->Frames[f].FramePic.GetIndex());
+			g_anims.push_back(a);
+		}
+		g_animOfTex = zx::hwrender::ComputeAnimationOfTexture(TexMan.NumTextures(), g_anims);
+	}
+	const int id = mat->tex->id.GetIndex();
+	return (id >= 0 && id < (int)g_animOfTex.size()) ? g_animOfTex[id] : -1;
 }
 
 int MaterialSlotFor(const void *material, int translation)
@@ -756,11 +800,16 @@ int MaterialSlotFor(const void *material, int translation)
 		g_matSlotOverflow = true;
 		return 0;
 	}
-	MatSlot e; e.material = material; e.translation = translation; e.resolved = material;
-	g_matSlotTable.Push(e);
-	const int slot = (int)g_matSlotTable.Size() - 1;
-	MatIndexInsert(material, translation, slot);
-	g_matSlotsDirty = true;
+	const int slot = PushMaterialSlot(material, translation);
+	// [rc4l] Every frame of an animated texture gets a slot right behind it, so SlotRemap can point at any frame without a new binding.
+	const int anim = AnimationOf((const FMaterial *)material);
+	if (anim >= 0)
+		for (const int frame : zx::hwrender::ComputeAnimationFrames(g_anims[anim]))
+		{
+			FMaterial *fm = FMaterial::ValidateTexture(TexMan.ByIndex(frame), false);
+			if (fm != NULL && MatIndexFind(fm, translation) < 0 && g_matSlotTable.Size() < (unsigned)kMaterialSlots)
+				PushMaterialSlot(fm, translation);
+		}
 	return slot;
 }
 
@@ -786,8 +835,8 @@ static char g_fillState[14] = "-------------";
 static FString g_fillNames[8];
 static const void *g_fillViews[8] = { 0 };
 static int g_fillCount = 0;
-// Slot updates from animation -- descriptor writes, not rebuilds.
-static int g_matSlotUpdates = 0;
+// [rc4l] Uploads of SlotRemap, one per frame an animation moved.
+static int g_remapUploads = 0;
 // [rc4l] What the array was last filled FROM, so a rebuild that changes nothing rebuilds nothing.
 //
 // A scene rebuild resets the slot table and re-emits every vertex, and on a level with moving
@@ -802,12 +851,13 @@ static bool MaterialSlotsMatchFill()
 	if (g_filledFrom.Size() != g_matSlotTable.Size()) return false;
 	for (unsigned i = 0; i < g_matSlotTable.Size(); i++)
 		if (g_filledFrom[i].material != g_matSlotTable[i].material ||
-		    g_filledFrom[i].translation != g_matSlotTable[i].translation ||
-		    g_filledFrom[i].resolved != g_matSlotTable[i].resolved) return false;
+		    g_filledFrom[i].translation != g_matSlotTable[i].translation) return false;
 	return true;
 }
 
 static int g_dynSlotRefused = 0, g_dynSlotNoMaterial = 0, g_dynSlotSeen = 0, g_dynSlotMax = 0;
+// [rc4l] The viewer's own sprites in this frame's dynamic stream, one per line mirror GL walked at the first level.
+static int g_dynViewerRuns = 0;
 static int g_dynBindless = 0, g_dynPerMaterial = 0;
 // What the scene pixel shader said it declares, recorded at creation so the question can be asked
 // later -- pipeline setup happens before anything is listening on the console.
@@ -862,7 +912,7 @@ static bool FillMaterialArraySRB(Diligent::IShaderResourceBinding *srb)
 		}
 		if (i < 8 && live)
 		{
-			FMaterial *fm = (FMaterial *)g_matSlotTable[i].resolved;
+			FMaterial *fm = (FMaterial *)g_matSlotTable[i].material;
 			g_fillNames[i] = (fm && fm->tex) ? fm->tex->Name.GetChars() : "?";
 			g_fillViews[i] = (const void *)obj;
 		}
@@ -871,22 +921,6 @@ static bool FillMaterialArraySRB(Diligent::IShaderResourceBinding *srb)
 	return true;
 }
 
-// [rc4l] One slot changed -- an animated texture reaching its next frame. Written straight into the
-// thirteen bindings, which is the whole point of the array being mutable: no pipelines, no bindings,
-// no shader compiles, just thirteen descriptor writes.
-static void UpdateMaterialSlotInBindings(unsigned int slot)
-{
-	if (slot >= (unsigned)kMaterialSlots || slot >= g_matSlotTable.Size()) return;
-	Diligent::IDeviceObject *obj = SlotSRV(g_matSlotTable[slot]);
-	if (obj == NULL) obj = GetMaterialSRV(NULL, 0);
-	if (obj == NULL) return;
-	for (int i = 0; i < 13; i++)
-	{
-		if (!g_worldSRBs[i]) continue;
-		if (auto *v = g_worldSRBs[i]->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "uMaterials"))
-			v->SetArray(&obj, slot, 1);
-	}
-}
 
 
 // Declared here because refreshing the array can require the pipelines to be made again -- see
@@ -905,22 +939,22 @@ static void RefreshBindless()
 		g_bindlessReady = false;
 		return;
 	}
-	// [rc4l] Animated textures move a SLOT, not the whole array.
-	//
-	// The array is mutable, so a texture reaching its next frame is a descriptor write into thirteen
-	// existing bindings. It used to mean rebuilding thirteen pipelines -- shader compiles and all --
-	// twenty times a second, which is what mouse stutter and a flickering lift side turned out to be.
-	if (fua_dg_animate && g_bindlessReady)
+	// [rc4l] Animated textures move through SlotRemap, since Diligent ignores a second write to a bound mutable descriptor and rewriting one the GPU still reads is undefined.
+	if (fua_dg_animate && g_bindlessReady && g_slotRemapBuf)
 	{
-		for (unsigned i = 1; i < g_matSlotTable.Size(); i++)
-		{
-			FMaterial *base = (FMaterial *)g_matSlotTable[i].material;
-			if (base == NULL || base->tex == NULL) continue;
+		const bool moved = zx::hwrender::ComputeSlotRemap(g_matSlotTable.Size(), [](unsigned i) -> int {
+			const MatSlot &e = g_matSlotTable[i];
+			const FMaterial *base = (const FMaterial *)e.material;
+			if (base == NULL || base->tex == NULL) return -1;
 			FMaterial *now = FMaterial::ValidateTexture(base->tex->id, false, true);
-			if (now == NULL || now == g_matSlotTable[i].resolved) continue;
-			g_matSlotTable[i].resolved = now;
-			UpdateMaterialSlotInBindings(i);
-			g_matSlotUpdates++;
+			return (now == NULL || now == base) ? -1 : MatIndexFind(now, e.translation);
+		}, g_slotRemap);
+		auto *ctx = GetContext();
+		if (moved && ctx)
+		{
+			ctx->UpdateBuffer(g_slotRemapBuf, 0, (Diligent::Uint64)g_slotRemap.size() * sizeof(unsigned), &g_slotRemap[0],
+				Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+			g_remapUploads++;
 		}
 	}
 	if (!g_matSlotsDirty) return;
@@ -1062,6 +1096,9 @@ static TArray<float> g_lightData;
 
 static Diligent::RefCntAutoPtr<Diligent::IBuffer> g_lightBuf;
 static unsigned int g_lightBufCapacity = 0;   // in vec4s
+// [rc4l] Each light's run in the sorted list of subsector and sidedef ids GL linked it to, made once at fixed sizes since the pipelines bind them statically.
+static Diligent::RefCntAutoPtr<Diligent::IBuffer> g_lightTouchRangeBuf, g_lightTouchIdBuf;
+static const unsigned int kLightTouchIdCapacity = 262144;
 static int g_lightCount = 0;
 static bool g_lightBindFailed = false;
 static bool g_pieceBindFailed = false;
@@ -1236,7 +1273,10 @@ static const char *kSceneVS =
 	"layout(location = 10) flat out vec4 vFloodV;\n"
 	"layout(location = 11) flat out vec4 vActorLight;\n"
 	"layout(location = 12) flat out int vBrightSlot;\n"
+	"layout(location = 13) flat out int vLinkId;\n"
+	"layout(location = 14) flat out float vPlain;\n"
 	"layout(std430, binding = 10) readonly buffer StackVis { uint stackVis[]; };\n"
+	"layout(std430, binding = 11) readonly buffer SlotRemap { uint slotRemap[]; };\n"
 	"void main() {\n"
 	"    PieceData pd = pieces[int(aPiece + 0.5)];\n"
 	"    vWarp = vec2(pd.fogColor.w, pd.normal.w);\n"
@@ -1244,6 +1284,11 @@ static const char *kSceneVS =
 	"    vFloodV = pd.floodV;\n"
 	"    vActorLight = pd.actorLight;\n"
 	"    vBrightSlot = int(pd.bright.x + 0.5);\n"
+	// [rc4l] bright.z marks a baked piece on an animated texture, whose slots SlotRemap turns into those of the frame showing.
+	"    if (pd.bright.z > 0.5) vBrightSlot = int(slotRemap[vBrightSlot]);\n"
+	// [rc4l] The piece's subsector or sidedef as GL's light links name it (bright.y is PieceStackId plus one), or -1 for a sprite or model.
+	"    vLinkId = int(pd.bright.y + 0.5) - 1;\n"
+	"    vPlain = pd.bright.w;\n"
 	"    vec4 clip = uMVP * vec4(aPos, 1.0);\n"
 	// [rc4l] A stacked view draws only what GL's walk through it drew, subsector for a flat and sidedef for a wall (ComputeMarkStackVisible); any other piece's triangle goes off screen whole.
 	"    int stackSlot = int(uFrame.y + 0.5) - 1;\n"
@@ -1265,6 +1310,7 @@ static const char *kSceneVS =
 	// projection's -1 in the w row copies eye-space -z straight through.
 	"    vPixelPos = vec4(aPos, clip.w);\n"
 	"    vLightIndex = int(pd.fogAlphaMat.w);\n"
+	"    if (pd.bright.z > 0.5) vLightIndex = int(slotRemap[vLightIndex]);\n"
 	"    vNormal = pd.normal.xyz;\n"
 	// [rc4l] The surface PLANE, flat: its normal and its distance from the origin.
 	//
@@ -1321,6 +1367,8 @@ static const char *kSceneVS =
 	"layout(location = 10) flat in vec4 vFloodV;\n" \
 	"layout(location = 11) flat in vec4 vActorLight;\n" \
 	"layout(location = 12) flat in int vBrightSlot;\n" \
+	"layout(location = 13) flat in int vLinkId;\n" \
+	"layout(location = 14) flat in float vPlain;\n" \
 	FUA_CONSTANTS_GLSL \
 	"layout(binding = 1) uniform sampler2D uTex;\n" \
 	/* [rc4l] The brightmap layer, present on EVERY material -- black where there is none.
@@ -1379,6 +1427,21 @@ static const char *kSceneVS =
 	/* [rc4l] The cluster grid: (offset, count) per cell, and the runs those point into. */ \
 	"layout(std430, binding = 6) readonly buffer ClusterTable { uvec2 clusterCells[]; };\n" \
 	"layout(std430, binding = 7) readonly buffer ClusterLightIndices { uint clusterLights[]; };\n" \
+	/* [rc4l] ComputeLightTouches, line for line: a light lights only the ids GL linked it to, and a count of all ones lights everything. */ \
+	"layout(std430, binding = 12) readonly buffer LightTouchRanges { uvec2 lightTouch[]; };\n" \
+	"layout(std430, binding = 13) readonly buffer LightTouchIds { uint touchIds[]; };\n" \
+	"bool fuaLightTouches(int li, uint id) {\n" \
+	"    uvec2 r = lightTouch[li];\n" \
+	"    if (r.y == 0xFFFFFFFFu) return true;\n" \
+	"    uint lo = r.x, hi = r.x + r.y;\n" \
+	"    while (lo < hi) {\n" \
+	"        uint mid = (lo + hi) >> 1;\n" \
+	"        uint v = touchIds[mid];\n" \
+	"        if (v == id) return true;\n" \
+	"        if (v < id) lo = mid + 1u; else hi = mid;\n" \
+	"    }\n" \
+	"    return false;\n" \
+	"}\n" \
 	"layout(location = 0) out vec4 outColor;\n" \
 	/* [rc4l] Every light, tested per fragment -- no per-surface light list at all.
 
@@ -1458,6 +1521,8 @@ static const char *kSceneVS =
 	   out-of-range read is undefined, not merely wrong. */ \
 	"        int li = clustered ? int(clusterLights[first + i]) : i;\n" \
 	"        li = clamp(li, 0, max(n - 1, 0));\n" \
+	/* [rc4l] GL's flood stops at solid walls, so a light whose links do not name this surface does not light it. */ \
+	"        if (vLinkId >= 0 && !fuaLightTouches(li, uint(vLinkId))) continue;\n" \
 	"        vec4 lp = lights[li*2];\n" \
 	"        vec4 lc = lights[li*2+1];\n" \
 	"        vec3 d = lp.xyz - vPixelPos.xyz;\n" \
@@ -1579,7 +1644,8 @@ static const char *kScenePS =
 	FUA_LIGHT_GLSL
 	"void main() {\n"
 	"    vec4 t = fuaTexel(vUV);\n"
-	"    if (t.a < 0.5) discard;\n"
+	/* [rc4l] GL's solid pass tests no alpha, so an upper, lower or one-sided middle shows its see-through texels in their own colour. */
+	"    if (t.a < 0.5 && vPlain < 0.5) discard;\n"
 	"    outColor = vec4(fuaShade(t.rgb), 1.0);\n"
 	"}\n";
 
@@ -1609,7 +1675,8 @@ static const char *kScenePSGBuffer =
 	"layout(location = 1) out vec4 outNormal;\n"
 	"void main() {\n"
 	"    vec4 t = fuaTexel(vUV);\n"
-	"    if (t.a < 0.5) discard;\n"
+	/* [rc4l] GL's solid pass tests no alpha, so an upper, lower or one-sided middle shows its see-through texels in their own colour. */
+	"    if (t.a < 0.5 && vPlain < 0.5) discard;\n"
 	"    outColor = vec4(fuaShade(t.rgb), 1.0);\n"
 	/* Encoded to 0..1 because the target is 8-bit unorm. That is coarse for lighting and ample here:
 	   the decal pass uses this to lay axes into a plane and to ask how far a surface is from the
@@ -1799,7 +1866,7 @@ static bool g_skyPortalActive = false;
 // the city on wdiex02 is exactly that. Without it the city sits in a black surround.
 static bool g_inSkyPortal = false;
 static bool g_inCameraPass = false;   // [rc4l] Drawing a camera texture, whose sky quads are its own walk's.
-static bool g_inLineMirror = false;   // [rc4l] Drawing a line mirror's reflection, the one pass that shows the viewer.
+static int g_lineMirror = -1;   // [rc4l] The line mirror whose reflection is being drawn, the one pass that shows its viewer, or -1.
 // Where the portal camera stood, for the reach test in the world draw.
 static float g_skyPortalCamX = 0.f, g_skyPortalCamY = 0.f;
 static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_skySurfPSO;
@@ -2534,8 +2601,11 @@ static const char *kScreenSurfPSTail =
 	"}\n";
 
 // [rc4l] The pipeline for such surfaces: horizon cuts them at eye level as a sky must, and texType says whether uSky is one fixed picture (the sky) or one per binding (each stacked view).
+// [rc4l] An empty fragment stage, for a pass that only writes depth.
+static const char *kScreenSurfDepthPS = "#version 450\nvoid main() {}\n";
+
 static Diligent::RefCntAutoPtr<Diligent::IPipelineState> CreateScreenSurfacePSO(const char *name, bool horizon,
-	Diligent::SHADER_RESOURCE_VARIABLE_TYPE texType)
+	Diligent::SHADER_RESOURCE_VARIABLE_TYPE texType, bool depthOnly = false)
 {
 	Diligent::RefCntAutoPtr<Diligent::IPipelineState> pso;
 	auto *dev = GetDevice();
@@ -2545,6 +2615,7 @@ static Diligent::RefCntAutoPtr<Diligent::IPipelineState> CreateScreenSurfacePSO(
 	FString ps = kScreenSurfPSHead;
 	if (horizon) ps += kScreenSurfPSHorizon;
 	ps += kScreenSurfPSTail;
+	if (depthOnly) ps = kScreenSurfDepthPS;
 	Diligent::RefCntAutoPtr<Diligent::IShader> svs, sps;
 	svs = CompileShader(Diligent::SHADER_TYPE_VERTEX, name, kScreenSurfVS);
 	sps = CompileShader(Diligent::SHADER_TYPE_PIXEL, name, ps.GetChars());
@@ -2604,6 +2675,14 @@ static Diligent::RefCntAutoPtr<Diligent::IPipelineState> CreateScreenSurfacePSO(
 	pci.PSODesc.ResourceLayout.NumVariables = 2;
 	pci.PSODesc.ResourceLayout.ImmutableSamplers = surfSamplers;
 	pci.PSODesc.ResourceLayout.NumImmutableSamplers = 1;
+	if (depthOnly)
+	{
+		// [rc4l] A depth-only pass reads no picture, so it declares just the constants, surfVars' second entry.
+		pci.PSODesc.ResourceLayout.Variables = &surfVars[1];
+		pci.PSODesc.ResourceLayout.NumVariables = 1;
+		pci.PSODesc.ResourceLayout.NumImmutableSamplers = 0;
+		pci.GraphicsPipeline.BlendDesc.RenderTargets[0].RenderTargetWriteMask = Diligent::COLOR_MASK_NONE;
+	}
 	pci.pVS = svs;
 	pci.pPS = sps;
 	dev->CreateGraphicsPipelineState(pci, &pso);
@@ -2994,6 +3073,7 @@ static void BuildDynamic(Diligent::IDeviceContext *ctx)
 
 		vb.Clear();
 		runs.Clear();
+		g_dynViewerRuns = 0;
 		dynPieces.Clear();
 		const void *cur = (const void *)(size_t)-1;
 		int curBlend = -1;
@@ -3029,7 +3109,8 @@ static void BuildDynamic(Diligent::IDeviceContext *ctx)
 				r.depthBias = p.depthBias;
 				r.redAlpha = p.redToAlpha;
 				r.solid = p.solid;
-				r.mirrorOnly = p.mirrorOnly;
+				r.mirrorLine = p.mirrorLine;
+				if (p.mirrorLine >= 0) g_dynViewerRuns++;
 				r.cx = p.sortX; r.cy = p.sortY; r.cz = p.sortZ;
 				r.lo = 1e30f; r.hi = -1e30f;
 				runs.Push(r);
@@ -3134,11 +3215,9 @@ static void DrawScreenSurfaceRun(Diligent::IDeviceContext *ctx, Diligent::IShade
 	ctx->Draw(dr);
 }
 
-static void DrawSkySurfaces(Diligent::IDeviceContext *ctx)
+// [rc4l] This pass's sky surfaces: GL's own sky quads for the view being drawn, plus the sky halves of the horizon lines, which come from the map.
+static void GatherSkySurfaces(TArray<SceneVertex> &sv)
 {
-	if (!g_skyPortalActive || !g_skySurfPSO || !g_skySurfSRB) return;
-
-	// [rc4l] GL's own sky quads for the view being drawn, plus the sky halves of the horizon lines, which come from the map.
 	int nverts = 0, nhorizon = 0;
 	const FFlatVertex *src = zx::levelmesh::SkyQuadVertices(nverts,
 		zx::levelmesh::ComputeSkyDrawList(g_inCameraPass, g_stackPassSlot));
@@ -3146,13 +3225,39 @@ static void DrawSkySurfaces(Diligent::IDeviceContext *ctx)
 	const FFlatVertex *hsrc = (g_stackPassSlot < 0) ? zx::horizon::HorizonSkyVertices(nhorizon) : NULL;
 	if (src == NULL) nverts = 0;
 	if (hsrc == NULL) nhorizon = 0;
-
-	// [rc4l] Its own buffer, rebuilt each frame. These quads are a few hundred vertices and they
-	// cannot ride the shared dynamic stream: GL clears that when it re-enters its scene builder
-	// for the skybox portal, which happens between the wall walk that produces them and the draw.
-	static TArray<SceneVertex> sv;
 	sv.Clear();
 	for (int i = 0; i < nverts + nhorizon; i++) sv.Push(ToSceneVertex((i < nverts) ? src[i] : hsrc[i - nverts], 0));
+}
+
+// [rc4l] Under a plain sky dome, the same surfaces in depth only, before the world: GL's sky walls reach to 32768 and hide whatever stands behind them, and the dome is already the colour there.
+static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_skyOccluderPSO;
+static Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding> g_skyOccluderSRB;
+static Diligent::RefCntAutoPtr<Diligent::IBuffer> g_skyOccluderVB;
+static unsigned int g_skyOccluderVBCapacity = 0;
+
+static void DrawSkyOccluders(Diligent::IDeviceContext *ctx)
+{
+	if (g_skyPortalActive) return;
+	if (!g_skyOccluderPSO)
+	{
+		g_skyOccluderPSO = CreateScreenSurfacePSO("fua sky occluder", false, Diligent::SHADER_RESOURCE_VARIABLE_TYPE_STATIC, true);
+		if (!g_skyOccluderPSO) return;
+		g_skyOccluderPSO->CreateShaderResourceBinding(&g_skyOccluderSRB, true);
+	}
+	if (!g_skyOccluderSRB) return;
+	static TArray<SceneVertex> sv;
+	GatherSkySurfaces(sv);
+	if (!BindScreenSurfaces(ctx, g_skyOccluderVB, g_skyOccluderVBCapacity, sv, g_skyOccluderPSO, "fua sky occluder VB")) return;
+	DrawScreenSurfaceRun(ctx, g_skyOccluderSRB, 0, sv.Size());
+}
+
+static void DrawSkySurfaces(Diligent::IDeviceContext *ctx)
+{
+	if (!g_skyPortalActive || !g_skySurfPSO || !g_skySurfSRB) return;
+
+	// [rc4l] Its own buffer, rebuilt each frame, since GL clears the shared dynamic stream when it re-enters its scene builder for the skybox portal, between the walk that produces these and the draw.
+	static TArray<SceneVertex> sv;
+	GatherSkySurfaces(sv);
 	if (!BindScreenSurfaces(ctx, g_skySurfVB, g_skySurfVBCapacity, sv, g_skySurfPSO, "fua sky surface VB")) return;
 	DrawScreenSurfaceRun(ctx, g_skySurfSRB, 0, sv.Size());
 	g_skyDraws++;
@@ -3173,7 +3278,7 @@ static void DrawSolidDyn(Diligent::IDeviceContext *ctx)
 	for (unsigned i = 0; i < g_dynRuns.Size(); i++)
 	{
 		const DynRun &r = g_dynRuns[i];
-		if (r.count == 0 || !r.solid || r.blend != 0 || (r.mirrorOnly && !g_inLineMirror)) continue;
+		if (r.count == 0 || !r.solid || r.blend != 0 || !zx::levelmesh::ComputeDrawsMirrorViewer(r.mirrorLine, g_lineMirror)) continue;
 		auto *srb = WorldSRB(g_maskedNoCullPSO.RawPtr());
 		if (srb) g_dynBindless++;
 		else { g_dynPerMaterial++; srb = GetMaterialSRB(g_maskedNoCullPSO.RawPtr(), r.material, r.translation); }
@@ -3237,7 +3342,7 @@ static void DrawBlended(Diligent::IDeviceContext *ctx)
 		for (unsigned i = 0; i < g_dynRuns.Size(); i++)
 		{
 			const DynRun &r = g_dynRuns[i];
-			if (r.count == 0 || (r.mirrorOnly && !g_inLineMirror)) continue;
+			if (r.count == 0 || !zx::levelmesh::ComputeDrawsMirrorViewer(r.mirrorLine, g_lineMirror)) continue;
 			// [rc4l] An opaque solid is drawn with the world, not in this list. See DrawSolidDyn.
 			if (r.solid && r.blend == 0) continue;
 			// Blend mode 3 is the fuzz shadow; the engine draws it as a dark near-opaque overlay, and
@@ -3498,6 +3603,8 @@ static void ReleaseScenePipelines()
 	g_skyPortalDepth.Release();
 	g_skyPortalW = g_skyPortalH = 0;
 	g_skyFadePSO.Release();
+	g_skyOccluderSRB.Release();
+	g_skyOccluderPSO.Release();
 	g_scenePSO.Release();
 	g_maskedPSO.Release();
 	g_maskedGBufPSO.Release();
@@ -3889,6 +3996,13 @@ static bool EnsureScenePipeline(FString &err)
 	}
 	if (!g_cb) { err = "constant buffer creation failed"; return false; }
 
+	if (!g_slotRemapBuf)
+	{
+		std::vector<unsigned> identity(kMaterialSlots);
+		for (unsigned i = 0; i < identity.size(); i++) identity[i] = i;
+		if (!CreateStructuredBuffer("fua slot remap", sizeof(unsigned), kMaterialSlots, &identity[0], g_slotRemapBuf))
+		{ err = "slot remap buffer creation failed"; return false; }
+	}
 	// [rc4l] The dynamic light buffer, created ONCE at a fixed capacity.
 	//
 	// It is bound to the pipelines as a STATIC variable, which Diligent copies into every SRB at
@@ -3897,15 +4011,12 @@ static bool EnsureScenePipeline(FString &err)
 	if (!g_lightBuf)
 	{
 		g_lightBufCapacity = 65536;
-		Diligent::BufferDesc lbd;
-		lbd.Name = "fua light buffer";
-		lbd.Size = (Diligent::Uint64)g_lightBufCapacity * 16;
-		lbd.Usage = Diligent::USAGE_DEFAULT;
-		lbd.BindFlags = Diligent::BIND_SHADER_RESOURCE;
-		lbd.Mode = Diligent::BUFFER_MODE_STRUCTURED;
-		lbd.ElementByteStride = 16;
-		dev->CreateBuffer(lbd, nullptr, &g_lightBuf);
-		if (!g_lightBuf) { err = "light buffer creation failed"; return false; }
+		if (!CreateStructuredBuffer("fua light buffer", 16, g_lightBufCapacity, NULL, g_lightBuf))
+		{ err = "light buffer creation failed"; return false; }
+		// [rc4l] The light links, one range per light the buffer holds and a fixed id list, created once like everything else the world pipelines bind.
+		if (!CreateStructuredBuffer("fua light link ranges", 2 * sizeof(unsigned), g_lightBufCapacity / 2, NULL, g_lightTouchRangeBuf) ||
+			!CreateStructuredBuffer("fua light link ids", sizeof(unsigned), kLightTouchIdCapacity, NULL, g_lightTouchIdBuf))
+		{ err = "light link buffer creation failed"; return false; }
 	// [rc4l] The cluster table and its index list, sized for the largest grid a window can produce.
 	//
 	// Created once at a fixed capacity for the same reason the light buffer is: a buffer recreated
@@ -3915,15 +4026,8 @@ static bool EnsureScenePipeline(FString &err)
 	if (!g_clusterBuf)
 	{
 		g_clusterCapacity = 16384;
-		Diligent::BufferDesc cbd;
-		cbd.Name = "fua cluster table";
-		cbd.Size = (Diligent::Uint64)g_clusterCapacity * 8;
-		cbd.Usage = Diligent::USAGE_DEFAULT;
-		cbd.BindFlags = Diligent::BIND_SHADER_RESOURCE;
-		cbd.Mode = Diligent::BUFFER_MODE_STRUCTURED;
-		cbd.ElementByteStride = 8;
-		dev->CreateBuffer(cbd, nullptr, &g_clusterBuf);
-		if (!g_clusterBuf) { err = "cluster table creation failed"; return false; }
+		if (!CreateStructuredBuffer("fua cluster table", 8, g_clusterCapacity, NULL, g_clusterBuf))
+		{ err = "cluster table creation failed"; return false; }
 	}
 	if (!g_lightIndexBuf)
 	{
@@ -3931,15 +4035,8 @@ static bool EnsureScenePipeline(FString &err)
 		// was invisible. 4096 lights spread over a map bin to ~385k entries; 262144 truncated that
 		// and the picture went 85% wrong with nothing but a number in a stats line to say so.
 		g_lightIndexCapacity = 1048576;
-		Diligent::BufferDesc ibd;
-		ibd.Name = "fua cluster light indices";
-		ibd.Size = (Diligent::Uint64)g_lightIndexCapacity * 4;
-		ibd.Usage = Diligent::USAGE_DEFAULT;
-		ibd.BindFlags = Diligent::BIND_SHADER_RESOURCE;
-		ibd.Mode = Diligent::BUFFER_MODE_STRUCTURED;
-		ibd.ElementByteStride = 4;
-		dev->CreateBuffer(ibd, nullptr, &g_lightIndexBuf);
-		if (!g_lightIndexBuf) { err = "cluster index buffer creation failed"; return false; }
+		if (!CreateStructuredBuffer("fua cluster light indices", 4, g_lightIndexCapacity, NULL, g_lightIndexBuf))
+		{ err = "cluster index buffer creation failed"; return false; }
 	}
 	}
 
@@ -4128,9 +4225,15 @@ static bool EnsureScenePipeline(FString &err)
 		if (g_stackVisBuf)
 			if (auto *sv = psos[i]->GetStaticVariableByName(Diligent::SHADER_TYPE_VERTEX, "StackVis"))
 				sv->Set(g_stackVisBuf->GetDefaultView(Diligent::BUFFER_VIEW_SHADER_RESOURCE));
+		if (auto *rv = psos[i]->GetStaticVariableByName(Diligent::SHADER_TYPE_VERTEX, "SlotRemap"))
+			rv->Set(g_slotRemapBuf->GetDefaultView(Diligent::BUFFER_VIEW_SHADER_RESOURCE));
 
 		// The cluster table and its index list ride along on the same reasoning: shared by every world
 		// pass, set once, and reported rather than silently skipped.
+		if (auto *tv = psos[i]->GetStaticVariableByName(Diligent::SHADER_TYPE_PIXEL, "LightTouchRanges"))
+			tv->Set(g_lightTouchRangeBuf->GetDefaultView(Diligent::BUFFER_VIEW_SHADER_RESOURCE));
+		if (auto *tv = psos[i]->GetStaticVariableByName(Diligent::SHADER_TYPE_PIXEL, "LightTouchIds"))
+			tv->Set(g_lightTouchIdBuf->GetDefaultView(Diligent::BUFFER_VIEW_SHADER_RESOURCE));
 		auto *cv = psos[i]->GetStaticVariableByName(Diligent::SHADER_TYPE_PIXEL, "ClusterTable");
 		if (cv) cv->Set(g_clusterBuf->GetDefaultView(Diligent::BUFFER_VIEW_SHADER_RESOURCE));
 		else g_clusterBindFailed = true;
@@ -4171,7 +4274,11 @@ static void FillPieceData(const zx::levelmesh::MeshPiece &p, int translation, Sc
 	// mirror, and it is a material slot because that is the one of the three that both the raster and
 	// the traced path want: a batch index only identifies a texture by accident, since a level has
 	// more batches than materials and the mirror had to mask it to 127 and hope.
-	pd.matSlot = (float)MaterialSlotFor(p.material, translation);
+	// [rc4l] A baked piece on an animated texture keys its slots on the untranslated base, which SlotRemap maps to the frame showing, since the bake froze whichever frame it saw.
+	FMaterial *base = (inMesh && p.baseTex != NULL) ? FMaterial::ValidateTexture((FTexture *)p.baseTex, false) : NULL;
+	const bool animates = AnimationOf(base) >= 0;
+	const void *slotMat = animates ? (const void *)base : p.material;
+	pd.matSlot = (float)MaterialSlotFor(slotMat, translation);
 	zx::levelmesh::ComputeUnpackRGB(p.fogColor, pd.fogR, pd.fogG, pd.fogB);
 	// [rc4l] A warp texture ripples in the shader, as GL's func_warp does; the upload already holds its unwarped source.
 	const FMaterial *mat = (const FMaterial *)p.material;
@@ -4182,9 +4289,11 @@ static void FillPieceData(const zx::levelmesh::MeshPiece &p, int translation, Sc
 	pd.floodUx = p.floodUV[0]; pd.floodUy = p.floodUV[1]; pd.floodU0 = p.floodUV[2]; pd.floodZ = p.floodZ;
 	pd.floodVx = p.floodUV[3]; pd.floodVy = p.floodUV[4]; pd.floodV0 = p.floodUV[5]; pd.flood = p.flood ? 1.f : 0.f;
 	pd.actorR = p.dynR; pd.actorG = p.dynG; pd.actorB = p.dynB; pd.cpuLight = p.cpuLight ? 1.f : 0.f;
-	pd.brightSlot = (tex != NULL && tex->gl_info.Brightmap != NULL) ? (float)MaterialSlotFor(p.material, kBrightmapTranslation) : 0.f;
+	// [rc4l] An animated one always takes a brightmap slot, since another frame may have a brightmap where this one has none.
+	pd.brightSlot = (animates || (tex != NULL && tex->gl_info.Brightmap != NULL)) ? (float)MaterialSlotFor(slotMat, kBrightmapTranslation) : 0.f;
 	pd.stackId = inMesh ? (float)(zx::levelmesh::PieceStackId(p) + 1) : 0.f;
-	pd.brightPad1 = pd.brightPad2 = 0.f;
+	pd.animates = animates ? 1.f : 0.f;
+	pd.plain = p.plain ? 1.f : 0.f;
 }
 
 
@@ -4458,16 +4567,8 @@ static bool BuildSceneBuffer(FString &err)
 	if (!pieceBufferKept)
 	{
 		const unsigned int want = g_scenePieceData.Size() + g_scenePieceData.Size() / 2 + 4096;
-		Diligent::BufferDesc pbd;
-		pbd.Name = "fua scene piece data";
-		pbd.Size = (Diligent::Uint64)want * sizeof(ScenePieceData);
-		pbd.Usage = Diligent::USAGE_DEFAULT;
-		pbd.BindFlags = Diligent::BIND_SHADER_RESOURCE;
-		pbd.Mode = Diligent::BUFFER_MODE_STRUCTURED;
-		pbd.ElementByteStride = sizeof(ScenePieceData);
-		g_pieceBuf.Release();
-		GetDevice()->CreateBuffer(pbd, nullptr, &g_pieceBuf);
-		if (!g_pieceBuf) { err = "piece data buffer creation failed"; return false; }
+		if (!CreateStructuredBuffer("fua scene piece data", sizeof(ScenePieceData), want, NULL, g_pieceBuf))
+		{ err = "piece data buffer creation failed"; return false; }
 		g_pieceCapacity = want;
 		if (auto *ctx2 = GetContext())
 			if (g_scenePieceData.Size() > 0)
@@ -4493,16 +4594,8 @@ static bool BuildSceneBuffer(FString &err)
 	if (!stackVisKept)
 	{
 		const unsigned int want = zx::hwrender::ComputeGrownCapacity(visWords, 64);
-		Diligent::BufferDesc vbd;
-		vbd.Name = "fua stacked view subsectors";
-		vbd.Size = (Diligent::Uint64)want * sizeof(unsigned int);
-		vbd.Usage = Diligent::USAGE_DEFAULT;
-		vbd.BindFlags = Diligent::BIND_SHADER_RESOURCE;
-		vbd.Mode = Diligent::BUFFER_MODE_STRUCTURED;
-		vbd.ElementByteStride = sizeof(unsigned int);
-		g_stackVisBuf.Release();
-		GetDevice()->CreateBuffer(vbd, nullptr, &g_stackVisBuf);
-		if (!g_stackVisBuf) { err = "stacked view buffer creation failed"; return false; }
+		if (!CreateStructuredBuffer("fua stacked view subsectors", sizeof(unsigned int), want, NULL, g_stackVisBuf))
+		{ err = "stacked view buffer creation failed"; return false; }
 		g_stackVisCapacity = want;
 	}
 	// A NEW buffer object means the pipelines have to be made again to bind it -- the same
@@ -5110,8 +5203,19 @@ CCMD( fua_dg_lights )
 //
 // Rebuilt every frame -- lights move, spawn and die. See fuaDynLight in the shader for why there is
 // no per-surface light list at all.
+// [rc4l] The ids a light is linked to, as PieceStackId names surfaces: each subsector its flood reached, and numsubsectors plus each sidedef it lights.
+static void CollectLightLinks(ADynamicLight *light, std::vector<unsigned> &out)
+{
+	out.clear();
+	for (FLightNode *n = light->touching_subsectors; n != NULL; n = n->nextTarget)
+		if (n->targSubsector != NULL) out.push_back((unsigned)(n->targSubsector - subsectors));
+	for (FLightNode *n = light->touching_sides; n != NULL; n = n->nextTarget)
+		if (n->targLine != NULL) out.push_back((unsigned)(numsubsectors + (n->targLine - sides)));
+}
+
 static void CollectDynamicLights(Diligent::IDeviceContext *ctx)
 {
+	static std::vector<std::vector<unsigned> > touched;
 	g_lightCount = 0;
 	if (fua_dg_dynlights && g_lightBuf)
 	{
@@ -5142,11 +5246,29 @@ static void CollectDynamicLights(Diligent::IDeviceContext *ctx)
 			g_lightData.Push(g);
 			g_lightData.Push(b);
 			g_lightData.Push(light->IsSubtractive() ? 1.0f : 0.0f);
+			if ((size_t)g_lightCount >= touched.size()) touched.resize(g_lightCount + 1);
+			CollectLightLinks(light, touched[g_lightCount]);
 			g_lightCount++;
 		}
 		if (g_lightCount > 0)
+		{
 			ctx->UpdateBuffer(g_lightBuf, 0, (Diligent::Uint64)g_lightData.Size() * 4, &g_lightData[0],
 				Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+			touched.resize(g_lightCount);
+			static std::vector<zx::hwrender::LightTouchRange> ranges;
+			static std::vector<unsigned> ids;
+			zx::hwrender::ComputeLightTouchLists(touched, kLightTouchIdCapacity, ranges, ids);
+			if (!fua_dg_lightlinks)
+				for (zx::hwrender::LightTouchRange &r : ranges) r.count = zx::hwrender::kLightTouchesAll;
+			if (g_lightTouchRangeBuf && g_lightTouchIdBuf)
+			{
+				ctx->UpdateBuffer(g_lightTouchRangeBuf, 0, (Diligent::Uint64)ranges.size() * sizeof(ranges[0]), &ranges[0],
+					Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+				if (!ids.empty())
+					ctx->UpdateBuffer(g_lightTouchIdBuf, 0, (Diligent::Uint64)ids.size() * sizeof(unsigned), &ids[0],
+						Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+			}
+		}
 	}
 }
 
@@ -5475,6 +5597,7 @@ struct MirrorSurface
 {
 	float v[6][6];        // two triangles: position then normal, mesh space (x, z-up, y)
 	float nx, ny, d;      // plane in MAP space (nx*x + ny*y = d), for reflecting the camera
+	int line;             // [rc4l] its linedef, which the viewer sprites GL drew in it are filed under
 };
 static TArray<MirrorSurface> g_mirrors;
 static Diligent::RefCntAutoPtr<Diligent::IBuffer> g_mirrorVB;
@@ -5526,6 +5649,7 @@ static void CollectMirrors()
 
 		m.nx = dy / len; m.ny = -dx / len;
 		m.d = m.nx * x1 + m.ny * y1;
+		m.line = i;
 		g_mirrors.Push(m);
 	}
 	if (g_mirrors.Size() > 0)
@@ -6348,9 +6472,9 @@ static void RenderMirrors(Diligent::IDeviceContext *ctx)
 		ctx->ClearRenderTarget(mrtv, clear, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 		ctx->ClearDepthStencil(mdsv, Diligent::CLEAR_DEPTH_FLAG, 1.0f, 0,
 			Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-		g_inLineMirror = true;
+		g_lineMirror = m.line;
 		DrawWorld(ctx);
-		g_inLineMirror = false;
+		g_lineMirror = -1;
 
 		// Back to the screen, with the real camera, and draw this mirror's surface.
 		g_clipPlane[0] = g_clipPlane[1] = g_clipPlane[2] = g_clipPlane[3] = 0.f;
@@ -6637,6 +6761,24 @@ void ReleaseCameraTargets()
 Diligent::IBuffer *SceneConstantsCB() { return g_cb; }
 
 // [rc4l] Both stages, because pixel shaders read uCameraPos for radial fog and a declared block left unbound reads garbage rather than failing.
+bool CreateStructuredBuffer(const char *name, unsigned stride, unsigned long long count, const void *data,
+	Diligent::RefCntAutoPtr<Diligent::IBuffer> &out)
+{
+	Diligent::BufferDesc bd;
+	bd.Name = name;
+	bd.Size = (Diligent::Uint64)count * stride;
+	bd.Usage = Diligent::USAGE_DEFAULT;
+	bd.BindFlags = Diligent::BIND_SHADER_RESOURCE;
+	bd.Mode = Diligent::BUFFER_MODE_STRUCTURED;
+	bd.ElementByteStride = stride;
+	Diligent::BufferData init;
+	init.pData = data;
+	init.DataSize = bd.Size;
+	out.Release();
+	GetDevice()->CreateBuffer(bd, data != NULL ? &init : nullptr, &out);
+	return out != nullptr;
+}
+
 bool BindSceneConstants(Diligent::IPipelineState *pso)
 {
 	auto *vv = pso->GetStaticVariableByName(Diligent::SHADER_TYPE_VERTEX, "Constants");
@@ -6731,6 +6873,7 @@ static void DrawWorld(Diligent::IDeviceContext *ctx)
 		{
 			EnsureSky();
 			DrawSky(ctx);
+			DrawSkyOccluders(ctx);
 		}
 	}
 
@@ -7286,9 +7429,9 @@ void SlotReport(int n, FString &out)
 		const char *bname = "?";
 		if (b.material && ((FMaterial *)b.material)->tex) bname = ((FMaterial *)b.material)->tex->Name.GetChars();
 		const char *sname = "-";
-		if (slot > 0 && g_matSlotTable[slot].resolved &&
-		    ((FMaterial *)g_matSlotTable[slot].resolved)->tex)
-			sname = ((FMaterial *)g_matSlotTable[slot].resolved)->tex->Name.GetChars();
+		if (slot > 0 && g_matSlotTable[slot].material &&
+		    ((FMaterial *)g_matSlotTable[slot].material)->tex)
+			sname = ((FMaterial *)g_matSlotTable[slot].material)->tex->Name.GetChars();
 		// [rc4l] ...and what the VERTEX actually says, which is the only number the GPU sees.
 		// A lookup that agrees with the table proves nothing if the buffer was written against a
 		// different table.
@@ -7298,12 +7441,12 @@ void SlotReport(int n, FString &out)
 			(int)(g_scenePieceData[pidx].matSlot + 0.5f) : -1;
 		// The view itself, because two slots resolving to ONE view is the signature of a cache keyed
 		// on an address that two different materials have held.
-		const void *srv = (slot > 0) ? (const void *)GetMaterialSRV(g_matSlotTable[slot].resolved,
+		const void *srv = (slot > 0) ? (const void *)GetMaterialSRV(g_matSlotTable[slot].material,
 			g_matSlotTable[slot].translation) : NULL;
 		const char *vname = "-";
-		if (inVB > 0 && (unsigned)inVB < g_matSlotTable.Size() && g_matSlotTable[inVB].resolved &&
-		    ((FMaterial *)g_matSlotTable[inVB].resolved)->tex)
-			vname = ((FMaterial *)g_matSlotTable[inVB].resolved)->tex->Name.GetChars();
+		if (inVB > 0 && (unsigned)inVB < g_matSlotTable.Size() && g_matSlotTable[inVB].material &&
+		    ((FMaterial *)g_matSlotTable[inVB].material)->tex)
+			vname = ((FMaterial *)g_matSlotTable[inVB].material)->tex->Name.GetChars();
 		out.AppendFormat("  batch %d verts %u..%u material %s -> slot %d holding %s (view %p) | vertex says %d = %s" "\n",
 			i, b.first, b.first + b.count, bname, slot, sname, srv, inVB, vname);
 	}
@@ -7331,6 +7474,7 @@ void DynStats(FString &report)
 	cull.AppendFormat(", dyn draws: %d bindless, %d per-material, pipelines [%s]",
 		g_dynBindless, g_dynPerMaterial, g_fillState);
 	cull.AppendFormat(", sky surfaces: %d draws since load", g_skyDraws);
+	cull.AppendFormat(", viewer sprites for mirrors: %d", g_dynViewerRuns);
 	cull.AppendFormat(", dyn build %.3f ms", g_dynBuildMs);
 	{
 		// [rc4l] How much of the world the DERIVATION built, rather than transcribed from GL. The
@@ -7343,7 +7487,7 @@ void DynStats(FString &report)
 			" (%d two-sided middles, %d special walls, %d no texture, %d no span, %d seam-split)",
 			derived, fellBack, mid, special, notex, nospan, seam);
 	}
-	cull.AppendFormat(" | array built %d times, %d slot updates, slots 1..7 got:", g_fillCount, g_matSlotUpdates);
+	cull.AppendFormat(" | array built %d times, %d remap uploads, slots 1..7 got:", g_fillCount, g_remapUploads);
 	for (int fi = 1; fi < 8; fi++)
 		cull.AppendFormat(" %d=%s(%p)", fi, g_fillNames[fi].IsNotEmpty() ? g_fillNames[fi].GetChars() : "-",
 			g_fillViews[fi]);

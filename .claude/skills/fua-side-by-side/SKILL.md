@@ -19,7 +19,10 @@ cd tools/fuactl
 nohup node src/cli.mjs play --map <MAP> --side-by-side --port 7801 [--preset <id> | --file a.pk3,b.wad] > sbs.log 2>&1 &
 ```
 
-Then, once it answers, **turn standalone off** or GL's window is a still frame:
+`--spot <name>` instead of `--map`/`--file` takes a saved spot's map and wads (by name, from `FUACTL_PWADS`
+or `--store`) and stands the player there, and `--cvar fua_dg_standalone=0` does the next step at launch.
+
+Otherwise, once it answers, **turn standalone off** or GL's window is a still frame:
 
 ```bash
 node src/cli.mjs ui exec "fua_dg_standalone 0" --port 7801 --token <T>
@@ -41,7 +44,9 @@ node src/cli.mjs ui exec "fua_dg_standalone 0" --port 7801 --token <T>
 - `play` **ignores `--token`** and mints its own. Read `PORT`/`TOKEN` from `tools/fuactl/.play-session`
   (a two-line `KEY=VALUE` file, not JSON) — it is written immediately, while the launch log is
   buffered and often empty for the first several seconds. Right after a background launch the file
-  can still hold the previous launch's token, so wait for `TOKEN` to change before `ready`.
+  can still hold the previous launch's token, so wait for `TOKEN` to change before `ready`. Each launch
+  also writes `.play-session-<port>`, so `--port 7801` with no `--token` finds the user's instance even
+  after your own launches have overwritten `.play-session`.
 - Do not sleep in long blocks waiting for it: poll `rpc sim.tic` until it answers. A bare launch is
   ready in seconds; a heavy wad set can take 15-25 s.
 

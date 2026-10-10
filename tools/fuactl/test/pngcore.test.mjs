@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { decodePNG, px, writePNG, encodePNG, cropImage, boxDiff, abDiff, samplePoints, isBlankImage } from "../src/pngcore.mjs";
+import { decodePNG, px, writePNG, encodePNG, cropImage, boxDiff, abDiff, samplePoints, isBlankImage, boxMean } from "../src/pngcore.mjs";
 
 // [rc4l] A w x h RGB image whose pixel colour is f(x, y), written and read back through the real codec.
 function image(w, h, f) {
@@ -82,4 +82,15 @@ test("a frozen A/B reports the switch's change beside the repeat's noise", () =>
   const a = image(32, 32, () => [10, 10, 10]);
   const b = image(32, 32, () => [40, 40, 40]);
   assert.deepEqual(abDiff(a, b, a), { changed: 30, noise: 0 });
+});
+
+test("a box's mean is the brightness of the pixels it covers, and pixel coordinates are refused", () => {
+  // [rc4l] 4x2 RGB: the left half black, the right half (30, 60, 90), whose (r+g+b)/3 is 60.
+  const data = Buffer.alloc(4 * 2 * 3);
+  for (const [x, y] of [[2, 0], [3, 0], [2, 1], [3, 1]]) data.set([30, 60, 90], (y * 4 + x) * 3);
+  const img = { w: 4, h: 2, channels: 3, data };
+  assert.equal(boxMean(img, [0, 0, 1, 1]), 30);
+  assert.equal(boxMean(img, [0.5, 0, 1, 1]), 60);
+  assert.equal(boxMean(img, [0, 0, 0.5, 1]), 0);
+  assert.throws(() => boxMean(img, [0, 0, 640, 1]), /fractions/);
 });

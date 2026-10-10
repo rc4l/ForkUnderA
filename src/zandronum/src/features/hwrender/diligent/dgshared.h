@@ -59,6 +59,10 @@ Diligent::ITextureView *SceneDepthDSV();
 Diligent::IBuffer *SceneConstantsCB();
 const float       *SceneMVP();
 
+// [rc4l] A shader-readable structured buffer of count elements of stride bytes in out, filled from data when given; false when the device refuses it.
+bool CreateStructuredBuffer(const char *name, unsigned stride, unsigned long long count, const void *data,
+	Diligent::RefCntAutoPtr<Diligent::IBuffer> &out);
+
 // [rc4l] Bind the scene constants on every stage of pso that declares them; false when its vertex stage does not.
 bool BindSceneConstants(Diligent::IPipelineState *pso);
 

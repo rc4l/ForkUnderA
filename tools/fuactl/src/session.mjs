@@ -3,6 +3,7 @@
 // multi-instance + desync detection, none of which a console-scraping bolt-on could do.
 import { launchInstance, stopInstance } from "./launch.mjs";
 import { BridgeClient } from "./client.mjs";
+import { waitInLevel } from "./capture.mjs";
 import { desyncVerdict } from "./proto.mjs";
 import { sampleProcess } from "./sample.mjs";
 
@@ -23,16 +24,6 @@ async function attach(inst, { retries = 60, delayMs = 500 } = {}) {
       await sleep(delayMs);
     }
   }
-}
-
-async function waitInLevel(c, timeoutMs = 20000) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    const t = await c.rpc("sim.tic");
-    if (t.inlevel) return t;
-    await sleep(200);
-  }
-  throw new Error("instance never reached GS_LEVEL");
 }
 
 // Step an instance to (or past) an absolute leveltime target and wait for the refreeze. Returns the

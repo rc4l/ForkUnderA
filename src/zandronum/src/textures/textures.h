@@ -495,6 +495,8 @@ public:
 
 	FSwitchDef *FindSwitch (FTextureID texture);
 	FDoorAnimation *FindAnimatedDoor (FTextureID picnum);
+	// [rc4l] The ANIMDEFS animations, read-only, so the Vulkan backend can give every frame of one a material slot.
+	const TArray<FAnimDef *> &GetAnimations () const { return mAnimations; }
 
 private:
 

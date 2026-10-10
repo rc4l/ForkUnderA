@@ -331,8 +331,8 @@ void BakeSeg(int segIndex)
 		// from the map for a while, and until now nothing read the answer -- three ladders scored it and
 		// the renderer went on using GL's. This puts the derived numbers in the mesh, for the two things
 		// the ladders actually measure and nothing else: the heights, and where the picture sits on
-		// them. The horizontal coordinate stays GL's, because how a seg sits along its linedef is
-		// bookkeeping no ladder measures and guessing at alignment is what cost two days.
+		// them. The horizontal coordinate is derived too, by GLWall::Process's own rule: the whole
+		// linedef for an ordinary wall and the seg's share of it for a polyobject.
 		//
 		// Only the plain four-corner case: gl_seamless adds vertices along the edges to hide cracks,
 		// and their heights are interpolated rather than derived. Those fall back and are counted, so
@@ -348,11 +348,8 @@ void BakeSeg(int segIndex)
 				fan[1].z = d.ztop[0];    fan[1].v = d.vTop[0];
 				fan[2].z = d.ztop[1];    fan[2].v = d.vTop[1];
 				fan[3].z = d.zbottom[1]; fan[3].v = d.vBottom[1];
-				if (d.hasU)
-				{
-					fan[0].u = fan[1].u = d.uLeft;
-					fan[2].u = fan[3].u = d.uRight;
-				}
+				fan[0].u = fan[1].u = d.uLeft;
+				fan[2].u = fan[3].u = d.uRight;
 			}
 		}
 		const int triVerts = ComputeFanTriangleVertexCount(fanCount);
@@ -482,6 +479,7 @@ void BakeSeg(int segIndex)
 		// material is that answer, and it is what the piece is already being drawn with.
 		if (mp.baseTex == NULL && sc.walls[i].gltexture != NULL)
 			mp.baseTex = sc.walls[i].gltexture->tex;
+		mp.plain = ComputeWallPlainPass(sc.walls[i].type);
 		MeshRegisterPiece(mp);
 	}
 }
@@ -861,6 +859,7 @@ int BakeSegFromMap(int segIndex)
 				const float len = sqrtf(dx*dx + dy*dy);
 				if (len > 0.0001f) { mp.normX = dy / len; mp.normY = 0.f; mp.normZ = -dx / len; }
 			}
+			mp.plain = ComputeWallPlainPass(kParts[part]);
 			MeshRegisterPiece(mp);
 			made++;
 		}
@@ -1271,6 +1270,8 @@ static void ForgetFrameState(GLWall &w)
 // structural answer is the cache holding a record built for it rather than a whole GLWall, which
 // is where Phase 2b goes (docs/renderer-modernization-PLAN.md).
 #if defined(_M_X64) || defined(__x86_64__) || defined(__aarch64__)
+static_assert(RENDERWALL_TOP == kRenderWallTop && RENDERWALL_M1S == kRenderWallM1S && RENDERWALL_BOTTOM == kRenderWallBottom &&
+	RENDERWALL_MIRRORSURFACE == kRenderWallMirrorSurface, "gl_wall.h's RENDERWALL_ order moved: update wallcache_compute.h");
 static_assert(sizeof(GLWall) == 912,
 	"GLWall changed size. Classify the new field as world state or frame state in ForgetFrameState "
 	"above, clear it there if it is frame state, then update this number.");

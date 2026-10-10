@@ -153,6 +153,12 @@ Export the builder from the scenario; `runScenarioIfMain` keeps the import from 
 | `tools/fuactl/scenarios/stackportal.mjs` | a ceiling that is a stacked sector (`UpperStackLookOnly`/`LowerStackLookOnly` paired by TID) onto a room off the map's side, GL against Vulkan |
 | `tools/fuactl/scenarios/stackwalls.mjs` | rays crossing a low stacked annex above its ceiling, which only GL's stack walls catch, GL against Vulkan |
 | `tools/fuactl/scenarios/linemirror.mjs` | a one-sided `Line_Mirror` wall reflecting the room and the player, GL (sheen off) against Vulkan |
+| `tools/fuactl/scenarios/animdefs.mjs` | an ANIMDEFS lump whose discrete wall animation flips frame a second after the level is built and then holds, so a backend drawing its bake frame differs from GL in a still shot |
+| `tools/fuactl/scenarios/lightlinks.mjs` | a point light 16 units behind a solid wall with a radius reaching the next room, which GL leaves dark because a light's links stop at solid walls |
+| `tools/fuactl/scenarios/plainwall.mjs` | a one-sided wall wearing a see-through texture (`MIDGRATE`) with a lit room behind, which GL's solid pass draws without an alpha test |
+| `tools/fuactl/scenarios/polyobjwall.mjs` | a polyobject (a counter-clockwise template box with `Polyobj_StartLine`, `ENGINE_THING.PolyAnchor` and `PolySpawn`) moved in front of the player, whose u has to span the face |
+| `tools/fuactl/scenarios/selfref.mjs` | a raised sector hidden by self-referencing lines (`selfRef`), which GL draws as the surrounding room's floor through the subsector's render sector |
+| `tools/fuactl/scenarios/skywall.mjs` | a plain-sky room with a taller room behind its wall, which GL's sky walls (up to 32768) hide |
 | `tools/fuactl/scenarios/skyboxseam.mjs` | a six-face GLDEFS skybox (faces between `TX_START`/`TX_END`, `sky1` set by a MAPINFO lump) seen at its corners: the seam and the filter, GL against Vulkan |
 | `tools/fuactl/scenarios/translucentmid.mjs` | a two-sided middle texture at half alpha (`block`'s `line(edge)` sets the linedef's `alpha`), GL against Vulkan |
 | `tools/fuactl/scenarios/pitchframing.mjs` | a tall sky room level and looking up: the camera's 1.2 pixel stretch, GL against Vulkan |

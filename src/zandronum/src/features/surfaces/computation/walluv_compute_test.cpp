@@ -136,3 +136,33 @@ TEST(WallUV, AWallThatWrapsIsNotClamped)
 // while the ladder went on scoring a copy that did not have it. The rule -- subtract
 // floor(min(uplft.v, uprgt.v)) from all four -- is stated at that call site, and what checks it now
 // is fua_surface_verify against the real capture on real maps.
+
+// [rc4l] WDI04's barred gate, a polyobject: its 64-unit face is one seg covering the whole line, so u has to run its full width rather than sit at 0.
+TEST(WallUV, APolyobjectSegCoveringItsLineSpansAllOfIt)
+{
+	float l = -1.f, r = -1.f;
+	ComputePolyobjSegFractions(634.f, 1336.f, 634.f, 1400.f, 634.f, 1336.f, 634.f, 1400.f, l, r);
+	EXPECT_FLOAT_EQ(0.f, l);
+	EXPECT_FLOAT_EQ(1.f, r);
+}
+
+TEST(WallUV, APolyobjectSegIsMeasuredAlongTheLongerAxis)
+{
+	float l = 0.f, r = 0.f;
+	// [rc4l] Mostly along x: the middle half of a line from (0,0) to (100,10).
+	ComputePolyobjSegFractions(0.f, 0.f, 100.f, 10.f, 25.f, 2.5f, 75.f, 7.5f, l, r);
+	EXPECT_FLOAT_EQ(0.25f, l);
+	EXPECT_FLOAT_EQ(0.75f, r);
+	// [rc4l] Mostly along y and running backwards: the side-ordered line from (0,100) down to (5,0).
+	ComputePolyobjSegFractions(0.f, 100.f, 5.f, 0.f, 0.f, 100.f, 2.5f, 50.f, l, r);
+	EXPECT_FLOAT_EQ(0.f, l);
+	EXPECT_FLOAT_EQ(0.5f, r);
+}
+
+TEST(WallUV, APolyobjectLineOfNoLengthCoversItsWholeSpan)
+{
+	float l = -1.f, r = -1.f;
+	ComputePolyobjSegFractions(8.f, 8.f, 8.f, 8.f, 8.f, 8.f, 8.f, 8.f, l, r);
+	EXPECT_FLOAT_EQ(0.f, l);
+	EXPECT_FLOAT_EQ(1.f, r);
+}

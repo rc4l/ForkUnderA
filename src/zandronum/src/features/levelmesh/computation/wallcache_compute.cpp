@@ -29,6 +29,12 @@ bool ComputeCanReuse(const WallCacheEligibility &e, bool haveCached,
 	return ComputeStampsEqual(cached, current);
 }
 
+bool ComputeWallPlainPass(int renderWallType)
+{
+	return renderWallType == kRenderWallTop || renderWallType == kRenderWallM1S ||
+		renderWallType == kRenderWallBottom || renderWallType == kRenderWallMirrorSurface;
+}
+
 bool ComputeIsMirrorWall(int lineSpecial, bool oneSided, bool mirrorsOn)
 {
 	return lineSpecial == kLineMirror && oneSided && mirrorsOn;

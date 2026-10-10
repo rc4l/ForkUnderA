@@ -51,6 +51,17 @@ export async function exec(c, text, { quietMs = 220, maxMs = 4000 } = {}) {
   return out;
 }
 
+// [rc4l] Wait until the instance is playing a level, which a map change leaves for a while; returns the sim.tic reply.
+export async function waitInLevel(c, timeoutMs = 20000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const t = await c.rpc("sim.tic").catch(() => ({}));
+    if (t.inlevel) return t;
+    await sleep(200);
+  }
+  throw new Error("instance never reached GS_LEVEL");
+}
+
 // Advance the simulation by n tics, measured against the engine's own clock rather than wall time.
 // A busy frame or a stalled window makes a wall-clock sleep mean a different number of tics each
 // run, which is how a projectile gets captured mid-flight in one run and landed in the next.

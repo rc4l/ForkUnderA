@@ -66,12 +66,12 @@ int PieceStackId(const MeshPiece &p);
 // [rc4l] This frame's ComputeMarkStackVisible bits over the subsectors then the sidedefs, or NULL with no stacked view.
 const unsigned int *StackVisibility(int &words);
 
-// [rc4l] Marks GL's walk through a line mirror (GLMirrorPortal::DrawContents), so the viewer's sprite it draws reaches the backend's mirror pass.
+// [rc4l] Marks GL's walk through a line mirror (GLMirrorPortal::DrawContents) by its linedef, so the viewer's sprite it draws reaches that mirror's pass in the backend.
 struct MirrorWalk
 {
-	MirrorWalk();
+	explicit MirrorWalk(int line);
 	~MirrorWalk();
-	bool saved;
+	int saved;
 };
 
 // [rc4l] Marks GL's walk through a stacked view (GLSectorStackPortal::DrawContents), so its sky quads fill that view's list.

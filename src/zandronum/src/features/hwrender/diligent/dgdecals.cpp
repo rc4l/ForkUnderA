@@ -415,33 +415,19 @@ static bool EnsureDeferredDecalPass()
 	if (!g_ddInstBuf)
 	{
 		g_ddCapacity = 1024;
-		Diligent::BufferDesc bd;
-		bd.Name = "fua deferred decal instances";
-		bd.Size = (Diligent::Uint64)g_ddCapacity * sizeof(DeferredDecalInstance);
-		bd.Usage = Diligent::USAGE_DEFAULT;
-		bd.BindFlags = Diligent::BIND_SHADER_RESOURCE;
-		bd.Mode = Diligent::BUFFER_MODE_STRUCTURED;
-		bd.ElementByteStride = sizeof(DeferredDecalInstance);
-		dev->CreateBuffer(bd, nullptr, &g_ddInstBuf);
-		if (!g_ddInstBuf) { g_ddCapacity = 0; g_ddBail = "instance buffer creation failed"; return false; }
+		if (!CreateStructuredBuffer("fua deferred decal instances", sizeof(DeferredDecalInstance), g_ddCapacity, NULL, g_ddInstBuf))
+		{ g_ddCapacity = 0; g_ddBail = "instance buffer creation failed"; return false; }
 		g_ddInstSRV = g_ddInstBuf->GetDefaultView(Diligent::BUFFER_VIEW_SHADER_RESOURCE);
 	}
 
 	// [rc4l] The plane table, sized to the level.
 	if (!g_ddPlaneBuf || g_ddPlaneCapacity < numsectors)
 	{
-		g_ddPlaneBuf.Release();
 		g_ddPlaneSRV = NULL;
 		g_ddPlaneCapacity = (numsectors > 0) ? numsectors : 1;
-		Diligent::BufferDesc bd;
-		bd.Name = "fua decal sector planes";
-		bd.Size = (Diligent::Uint64)g_ddPlaneCapacity * 32;   // floor and ceiling equations
-		bd.Usage = Diligent::USAGE_DEFAULT;
-		bd.BindFlags = Diligent::BIND_SHADER_RESOURCE;
-		bd.Mode = Diligent::BUFFER_MODE_STRUCTURED;
-		bd.ElementByteStride = 16;   // one vec4; two per sector
-		dev->CreateBuffer(bd, nullptr, &g_ddPlaneBuf);
-		if (!g_ddPlaneBuf) { g_ddPlaneCapacity = 0; g_ddBail = "plane buffer creation failed"; return false; }
+		// [rc4l] One vec4 per plane equation, floor and ceiling for each sector.
+		if (!CreateStructuredBuffer("fua decal sector planes", 16, (unsigned long long)g_ddPlaneCapacity * 2, NULL, g_ddPlaneBuf))
+		{ g_ddPlaneCapacity = 0; g_ddBail = "plane buffer creation failed"; return false; }
 		g_ddPlaneSRV = g_ddPlaneBuf->GetDefaultView(Diligent::BUFFER_VIEW_SHADER_RESOURCE);
 	}
 

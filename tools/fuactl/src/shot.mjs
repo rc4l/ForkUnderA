@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 import * as ui from "./ui.mjs";
 import { exec, waitTics } from "./capture.mjs";
 import { engineProcessCount } from "./launch.mjs";
-import { decodePNG, isBlankImage } from "./pngcore.mjs";
+import { decodePNG, isBlankImage, boxMean } from "./pngcore.mjs";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -19,6 +19,9 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 //
 // stdout is whatever the caller redirected it into, and a play session that has to be found again
 // -- to capture the thing just walked to -- must not depend on that.
+// [rc4l] Each launch's own session file beside the shared one, so two instances do not overwrite each other's token.
+export function sessionFileFor(sessionFile, port) { return `${sessionFile}-${port}`; }
+
 export function readSession(file = ".play-session") {
   if (!fs.existsSync(file)) return null;
   const text = fs.readFileSync(file, "utf8");
@@ -35,9 +38,37 @@ export function readSpot(spotsPath, name) {
   return { x: s.x, y: s.y, z: s.z, angle: s.angle, pitch: s.pitch || 0, shows: s.shows };
 }
 
+// [rc4l] --cvar's "name=value,name2=value2" as an object, a bare name meaning 1; undefined when the flag is absent.
+export function parseCvarFlag(text) {
+  if (text == null || text === true) return undefined;
+  return Object.fromEntries(String(text).split(",").filter((kv) => kv.trim()).map((kv) => {
+    const i = kv.indexOf("=");
+    return i < 0 ? [kv.trim(), "1"] : [kv.slice(0, i).trim(), kv.slice(i + 1).trim()];
+  }));
+}
+
+// [rc4l] The map and wads a spot was recorded with, its wads found by name (any case) in storeDir: files in load order, and the names it could not find.
+export function spotLaunch(spotsPath, name, storeDir, listing = fs.existsSync(storeDir) ? fs.readdirSync(storeDir) : []) {
+  const db = JSON.parse(fs.readFileSync(spotsPath, "utf8"));
+  const s = db.spots[name];
+  if (!s) throw new Error(`no such spot: ${name}`);
+  const byName = new Map(listing.map((f) => [f.toLowerCase(), f]));
+  const files = [], missing = [];
+  for (const entry of (s.loaded && s.loaded.pwads) || []) {
+    const wad = entry.split(" ")[0];
+    const hit = byName.get(wad.toLowerCase());
+    if (hit) files.push(path.join(storeDir, hit)); else missing.push(wad);
+  }
+  return { map: s.map, files, missing };
+}
+
 // [rc4l] Which instance a command means: --port and --token, else the last play session's.
 export function resolveTarget(flags, session) {
-  if (flags.port) return { port: Number(flags.port), token: flags.token || null };
+  // [rc4l] A session for the same port lends its token, so `--port 7801` alone finds the user's instance even after another launch.
+  if (flags.port) {
+    const same = session && Number(session.port) === Number(flags.port);
+    return { port: Number(flags.port), token: flags.token || (same ? session.token : null) };
+  }
   if (session) return { port: Number(session.port), token: flags.token || session.token || null };
   return null;
 }
@@ -135,6 +166,23 @@ export async function shotPair(c, tag, {
 
   await c.rpc("sim.resume", {}).catch(() => {});
   return { gl: gotGl ? gl : null, vk: gotVk, frozen: said };
+}
+
+// [rc4l] count captures from one renderer as fast as it gives them, sim RUNNING, each with its time and box mean: an animation's rate, or a light a pause would hide.
+export async function captureBurst(c, { side = "vk", count = 8, box = [0, 0, 1, 1], engineBin, outDir = null, tag = "burst" }) {
+  outDir = outDir || sweepDirFor(engineBin);
+  fs.mkdirSync(outDir, { recursive: true });
+  await c.rpc("sim.resume", {}).catch(() => {});
+  const out = [];
+  const t0 = Date.now();
+  for (let i = 0; i < count; i++) {
+    const t = Date.now() - t0;
+    const file = side === "gl"
+      ? (await ui.screenshot(c, engineBin, `sweep/${tag}_gl${i}`)).path
+      : await captureVulkan(c, path.posix.join(outDir, `${tag}_vk${i}.png`));
+    out.push({ i, t, file, mean: file ? boxMean(decodePNG(file), box) : NaN });
+  }
+  return out;
 }
 
 // [rc4l] Two captures intervalMs apart with the sim RUNNING, Vulkan and optionally GL, for what must move: a warp, a scroller, an animation.

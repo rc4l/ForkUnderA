@@ -858,6 +858,35 @@ CCMD( fua_look )
 						(int)res.Tier );
 			if ( res.ffloor != NULL ) Printf( ", 3D FLOOR" );
 			Printf( "\n" );
+			// [rc4l] Under a floor or ceiling hit, the subsector the flat bake works from, since a plane missing from the mesh is one of these skipped or drawn as another sector.
+			if ( res.HitType == TRACE_HitFloor || res.HitType == TRACE_HitCeiling )
+			{
+				const subsector_t *ss = R_PointInSubsector( res.X, res.Y );
+				Printf( "          subsector %d: %u segs, sector %d, render sector %d, hacked %d%s\n",
+						(int)( ss - subsectors ), (unsigned)ss->numlines, ss->sector ? ss->sector->sectornum : -1,
+						ss->render_sector ? ss->render_sector->sectornum : -1, (int)ss->hacked,
+						ss->polys != NULL ? ", holds a polyobject" : "" );
+				if ( const sector_t *rs = ss->render_sector ? ss->render_sector : ss->sector )
+				{
+					FTexture *ft = TexMan[rs->GetTexture( sector_t::floor )], *ct = TexMan[rs->GetTexture( sector_t::ceiling )];
+					Printf( "          floor %s at %.0f, ceiling %s at %.0f%s\n", ft ? ft->Name.GetChars( ) : "-",
+							FIXED2FLOAT( rs->floorplane.ZatPoint( res.X, res.Y ) ), ct ? ct->Name.GetChars( ) : "-",
+							FIXED2FLOAT( rs->ceilingplane.ZatPoint( res.X, res.Y ) ),
+							rs->GetTexture( sector_t::ceiling ) == skyflatnum ? " (sky)" : "" );
+				}
+				// [rc4l] The lights GL links to it, which are the only ones GL lets light this flat.
+				int linked = 0;
+				for ( FLightNode *n = ss->lighthead; n != NULL; n = n->nextLight )
+				{
+					ADynamicLight *l = n->lightsource;
+					if ( l == NULL ) continue;
+					Printf( "          lit by %s at (%.0f, %.0f, %.0f)\n",
+							l->target != NULL ? l->target->GetClass( )->TypeName.GetChars( ) : "a light",
+							FIXED2FLOAT( l->x ), FIXED2FLOAT( l->y ), FIXED2FLOAT( l->z ) );
+					linked++;
+				}
+				if ( linked == 0 ) Printf( "          no light is linked to it\n" );
+			}
 		}
 		else Printf( "  engine: trace hit nothing\n" );
 	}

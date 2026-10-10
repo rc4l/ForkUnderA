@@ -644,3 +644,30 @@ TEST(FlatMeshCompute, OnlyThePlayersOutermostSceneOwnsTheFramesCapture)
 	EXPECT_FALSE(ComputeOwnsFrameCapture(true, 2));
 	EXPECT_FALSE(ComputeOwnsFrameCapture(false, 1));
 }
+
+// [rc4l] WDI04's corner room: subsector 3796 has the nodebuilder's sector 385 and render sector 164, and only 164's floor is where GL draws it.
+TEST(FlatMeshCompute, AFlatIsDrawnWithItsRenderSector)
+{
+	EXPECT_EQ(164, ComputeFlatSector(164, 385));
+	EXPECT_EQ(7, ComputeFlatSector(7, 7));
+	EXPECT_EQ(385, ComputeFlatSector(-1, 385));
+}
+
+// [rc4l] WDI07's washroom has four Line_Mirror walls in view, and each reflection showed every mirror's viewer, one of them faced to another mirror's camera.
+TEST(FlatMeshCompute, AMirrorShowsOnlyItsOwnViewer)
+{
+	EXPECT_TRUE(ComputeDrawsMirrorViewer(5776, 5776));
+	EXPECT_FALSE(ComputeDrawsMirrorViewer(5765, 5776));
+	EXPECT_FALSE(ComputeDrawsMirrorViewer(5776, -1));   // [rc4l] the player's own view never shows the viewer
+	EXPECT_TRUE(ComputeDrawsMirrorViewer(-1, -1));
+	EXPECT_TRUE(ComputeDrawsMirrorViewer(-1, 5776));
+}
+
+// [rc4l] The same subsector 3796: a plane modelled on 164 or 385 is its own and goes in GL's solid pass, one modelled on a 3D floor's control sector is masked.
+TEST(FlatMeshCompute, AFlatIsItsSubsectorsOwnUnlessA3DFloorModelsIt)
+{
+	EXPECT_TRUE(ComputeIsOwnFlat(164, 385, 164));
+	EXPECT_TRUE(ComputeIsOwnFlat(385, 385, 164));
+	EXPECT_TRUE(ComputeIsOwnFlat(-1, 385, 164));
+	EXPECT_FALSE(ComputeIsOwnFlat(900, 385, 164));
+}

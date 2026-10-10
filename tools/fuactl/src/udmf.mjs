@@ -77,6 +77,17 @@ export class UdmfMap {
     return s;
   }
 
+  // [rc4l] A square of self-referencing lines, both sides in one new sector, the trick that hides a sector inside another; GL draws what it encloses as the surrounding sector.
+  selfRef(x0, y0, x1, y1, sectorProps) {
+    const s = this.sector(sectorProps);
+    for (const [, ax, ay, bx, by] of rectEdges(x0, y0, x1, y1)) {
+      this.sides.push({ sector: s }, { sector: s });
+      this.lines.push({ v1: this.vertex(ax, ay), v2: this.vertex(bx, by), sidefront: this.sides.length - 2,
+        sideback: this.sides.length - 1, twosided: true });
+    }
+    return s;
+  }
+
   // [rc4l] A 512 skybox room at (x0, y0) holding the level's default SkyViewpoint, so every sky ceiling in the map shows it.
   skyboxRoom(x0, y0) {
     this.room(x0, y0, x0 + 512, y0 + 512, { heightfloor: 0, heightceiling: 384, texturefloor: "FLOOR0_1",

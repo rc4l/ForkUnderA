@@ -190,6 +190,12 @@ bool ComputeMidTextureTranslucent(float lineAlpha, bool additive, bool textureTr
 // [rc4l] How opaque GLFlat::ProcessSector draws a sector plane: a stacked one by its own alpha (0 for a stack seen straight through, which is not drawn), any other by what its reflection leaves.
 float ComputePlaneAlpha(bool stacked, float stackAlpha, float reflect);
 
+// [rc4l] The sector a subsector's flats are drawn with: its render sector (-1 for none yet), which GL takes from the first boundary seg so a self-referencing trick draws its surroundings, else the nodebuilder's.
+int ComputeFlatSector(int renderSector, int sector);
+
+// [rc4l] Whether a flat built from model (-1 for none) is its subsector's own plane rather than a 3D floor's: its sector or the render sector the bake draws it with.
+bool ComputeIsOwnFlat(int model, int sector, int renderSector);
+
 // [rc4l] The squared distance from a point to a segment, for finding the seg a wall piece lies on.
 float ComputeSegmentDistance2(float px, float py, float x1, float y1, float x2, float y2);
 
@@ -198,6 +204,9 @@ bool ComputePieceProbe(float centreX, float centreY, float normX, float normUp, 
 
 // [rc4l] Whether a sprite from GL's walk through a line mirror is kept for the backend's mirror pass: only the viewer's own, which the player's walk never draws, from the mirror the player's view reached.
 bool ComputeTakesMirrorViewer(bool mirrorWalk, bool mainView, int sceneNesting, bool isViewer);
+
+// [rc4l] Whether a pass drawing the reflection in drawingMirrorLine (-1 for none) draws a piece kept for pieceMirrorLine's (-1 for every pass): each mirror's viewer is the billboard GL faced to that mirror's camera.
+bool ComputeDrawsMirrorViewer(int pieceMirrorLine, int drawingMirrorLine);
 
 // [rc4l] Whether a sprite, model or decal being captured belongs to the frame: the player's view from the outermost DrawScene (nesting 1, or 0 outside any), since GL raises the portal depth for the player's own scene once its walk is done.
 bool ComputeOwnsFrameCapture(bool mainView, int sceneNesting);

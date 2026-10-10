@@ -30,6 +30,10 @@ namespace zx { namespace surfaces {
 // wall, and clamping it here would tile a corridor with one stretched copy.
 float ComputeWallU(float alongLine, float xOffset, float texWidth);
 
+// [rc4l] How far along its linedef (lx1,ly1 to lx2,ly2, in side order) a polyobject seg's ends sit, on the axis the line runs further along, since GLWall::Process draws a polyobject per seg; 0 and 1 for a line of no length.
+void ComputePolyobjSegFractions(float lx1, float ly1, float lx2, float ly2,
+	float sx1, float sy1, float sx2, float sy2, float &left, float &right);
+
 // The vertical texture coordinate at a height.
 //
 // Measured DOWN from the pegging reference, because Doom hangs wall textures from a top edge: v = 0

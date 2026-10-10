@@ -56,6 +56,10 @@ The frame's captures -- sky surfaces, sprites, models, decals (`flatmesh.cpp`, `
 - `gl/scene/gl_bsp.cpp` `DoSubsector` and `AddLine`: `NoteWalkedSubsector`/`NoteWalkedSide`, what a stacked view's walk drew.
 - `gl/scene/gl_portal.cpp` `GLSectorStackPortal::DrawContents`: a `StackWalk` around its `DrawScene`, so
   that walk's sky quads fill its view's list.
+- `gl/scene/gl_portal.cpp` `GLMirrorPortal::DrawContents`: a `MirrorWalk(line)` around its `DrawScene`, so the viewer's
+  sprite it draws is filed under that mirror and only that mirror's pass in the backend shows it.
+- `textures/textures.h` `FTextureManager::GetAnimations`: the ANIMDEFS list, read-only, so the backend gives every frame
+  of an animated texture a material slot and remaps baked pieces to the frame showing.
 - `hwrender/diligent/dgscene.cpp` `DrawSkySurfaces`: reads the list of the view it is drawing;
   `RenderStackPortals`/`DrawStackSurfaces` render each stacked view and paint its planes from it.
 

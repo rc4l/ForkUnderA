@@ -959,7 +959,7 @@ void GLMirrorPortal::DrawContents()
 	clipper.SafeAddClipRange(a1,a2);
 
 	{
-		zx::levelmesh::MirrorWalk walk;	// [rc4l] features/levelmesh: the viewer this walk draws belongs to the backend's mirror pass
+		zx::levelmesh::MirrorWalk walk(int(linedef - ::lines));	// [rc4l] features/levelmesh: the viewer this walk draws belongs to this mirror's pass in the backend
 		GLRenderer->DrawScene();
 	}
 

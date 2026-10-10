@@ -67,6 +67,20 @@ test("a block's lines take their own properties per edge", () => {
   assert.match(m.textmap(), /alpha = 0\.5;/);
 });
 
+test("a self-referencing square puts both sides of every line in its own new sector", () => {
+  const m = new UdmfMap();
+  m.room(0, 0, 256, 256, { heightfloor: 0 });
+  const hidden = m.selfRef(64, 64, 192, 192, { heightfloor: 48 });
+  const lines = m.lines.slice(4);
+  assert.equal(lines.length, 4);
+  for (const l of lines) {
+    assert.equal(m.sides[l.sidefront].sector, hidden);
+    assert.equal(m.sides[l.sideback].sector, hidden);
+    assert.equal(l.twosided, true);
+  }
+  assert.equal(m.sectors[hidden].heightfloor, 48);
+});
+
 test("strings are quoted and booleans are bare", () => {
   const m = new UdmfMap();
   const s = m.sector({ texturefloor: "FLOOR4_8", heightfloor: 0 });

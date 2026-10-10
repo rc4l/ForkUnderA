@@ -226,8 +226,11 @@ static void StoreFlat(const FlatSource &flat, subsector_t *sub, bool ceiling)
 {
 	if (sub == NULL || sub->numlines < 3) return;
 	if (flat.gltexture == NULL) return;
-	if (sub->sector != NULL && flat.mMeshModel != NULL && flat.mMeshModel != sub->sector) g_flat3D++;
-	else g_flatOwn++;
+	// [rc4l] The subsector's own plane, by its sector or the render sector the bake draws it with, rather than a 3D floor's.
+	const bool own = ComputeIsOwnFlat(flat.mMeshModel != NULL ? flat.mMeshModel->sectornum : -1,
+		sub->sector != NULL ? sub->sector->sectornum : -1, sub->render_sector != NULL ? sub->render_sector->sectornum : -1);
+	if (own) g_flatOwn++;
+	else g_flat3D++;
 
 	// The subsector's own chain, not every flat in the level.
 	const int subIndex = (int)(sub - subsectors);
@@ -418,6 +421,8 @@ static void StoreFlat(const FlatSource &flat, subsector_t *sub, bool ceiling)
 	mp.baseTex = TexMan[flat.plane.texture];
 	mp.mirrorSector = flat.mirrorSector;
 	mp.mirrorCeiling = flat.mirrorCeiling;
+	// [rc4l] GLFlat::PutFlat puts a sector's own plane in the solid pass and masks a 3D floor's.
+	mp.plain = own;
 	MeshRegisterPiece(mp);
 
 	// Only now: a stamp recorded before the store would claim a surface that never made it in.
@@ -518,9 +523,9 @@ static int BakeFlatsForSubsector(subsector_t *sub)
 	int made = 0;
 	{
 		if (sub == NULL || sub->sector == NULL || sub->numlines < 3) return 0;
-		// The ORIGINAL sector, the way ProcessSector takes it: &sectors[sectornum], not whatever
-		// substitution a fake floor put in its place for one frame.
-		sector_t *real = &sectors[sub->sector->sectornum];
+		// [rc4l] The render sector's own record, as DoSubsector and ProcessSector take it: the nodebuilder's sector is wrong inside a self-referencing trick, and a fake floor's stand-in lasts one frame.
+		sector_t *real = &sectors[ComputeFlatSector(sub->render_sector != NULL ? sub->render_sector->sectornum : -1,
+			sub->sector->sectornum)];
 		if (real->e == NULL) return 0;
 		extsector_t::xfloor &x = real->e->XFloor;
 		const bool haveFF = x.ffloors.Size() != 0;
@@ -723,9 +728,9 @@ static TArray<unsigned int> g_stackVis;
 
 StackWalk::StackWalk(const void *portal) : saved(s_stackWalk) { s_stackWalk = portal; }
 
-static bool s_mirrorWalk = false;
-MirrorWalk::MirrorWalk() : saved(s_mirrorWalk) { s_mirrorWalk = true; }
-MirrorWalk::~MirrorWalk() { s_mirrorWalk = saved; }
+static int s_mirrorLine = -1;
+MirrorWalk::MirrorWalk(int line) : saved(s_mirrorLine) { s_mirrorLine = line; }
+MirrorWalk::~MirrorWalk() { s_mirrorLine = saved; }
 StackWalk::~StackWalk() { s_stackWalk = saved; }
 
 static int StackWalkSlot()
@@ -931,7 +936,7 @@ void RegisterSprite(const GLSprite &spr, const float *c1, const float *c2,
 	const float *c3, const float *c4)
 {
 	// [rc4l] Only the player's walk fills the frame's sprites: a mirror walk's would draw them twice, and its reset used to wipe them; it adds only the viewer, whom no other walk draws.
-	const bool mirrorViewer = ComputeTakesMirrorViewer(s_mirrorWalk, s_mainView, s_sceneNesting,
+	const bool mirrorViewer = ComputeTakesMirrorViewer(s_mirrorLine >= 0, s_mainView, s_sceneNesting,
 		spr.actor != NULL && consoleplayer >= 0 && spr.actor == players[consoleplayer].camera);
 	if (spr.gltexture == NULL || !(PlayerWalkActive() || mirrorViewer)) return;
 
@@ -948,7 +953,7 @@ void RegisterSprite(const GLSprite &spr, const float *c1, const float *c2,
 	mp.range.offset = 0;
 	mp.range.count = 0;
 	mp.material = spr.gltexture;
-	mp.mirrorOnly = mirrorViewer;
+	mp.mirrorLine = mirrorViewer ? s_mirrorLine : -1;
 	// [rc4l] GLSprite has no light index. Its dynamic light is computed per actor on the CPU and
 	// folded into the vertex colour below -- see the fold after CaptureShading, which is what makes
 	// that true. It was asserted here before it was done, and sprites went dark when the shader

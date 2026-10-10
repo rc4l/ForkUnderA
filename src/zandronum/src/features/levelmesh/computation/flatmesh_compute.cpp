@@ -195,6 +195,16 @@ float ComputePlaneAlpha(bool stacked, float stackAlpha, float reflect)
 	return stacked ? stackAlpha : 1.f - reflect;
 }
 
+int ComputeFlatSector(int renderSector, int sector)
+{
+	return renderSector >= 0 ? renderSector : sector;
+}
+
+bool ComputeIsOwnFlat(int model, int sector, int renderSector)
+{
+	return model < 0 || model == sector || model == renderSector;
+}
+
 void ComputeStackCapCorner(bool ceiling, int corner, float &x, float &y, float &z)
 {
 	static const int kQuad[6] = { 0, 1, 2, 0, 2, 3 };
@@ -236,6 +246,11 @@ bool ComputePieceProbe(float centreX, float centreY, float normX, float normUp, 
 bool ComputeTakesMirrorViewer(bool mirrorWalk, bool mainView, int sceneNesting, bool isViewer)
 {
 	return mirrorWalk && mainView && sceneNesting == 2 && isViewer;
+}
+
+bool ComputeDrawsMirrorViewer(int pieceMirrorLine, int drawingMirrorLine)
+{
+	return pieceMirrorLine < 0 || pieceMirrorLine == drawingMirrorLine;
 }
 
 bool ComputeOwnsFrameCapture(bool mainView, int sceneNesting)

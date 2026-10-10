@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { resolveEngine, engineArgs, describeExit, countEngineLines, missingCoreData } from "../src/launch.mjs";
-import { sweepDirFor, pickCmake, resolveTarget, cameraFromFlags, cvarValueFrom } from "../src/shot.mjs";
+import { sweepDirFor, pickCmake, resolveTarget, sessionFileFor, cameraFromFlags, cvarValueFrom, parseCvarFlag, spotLaunch } from "../src/shot.mjs";
 
 // Run `fn` with cwd moved to `dir` and FUACTL_ENGINE cleared, then put both back.
 function inDir(dir, fn) {
@@ -179,6 +179,9 @@ test("a command means --port first, then the last play session, and nothing when
   assert.deepEqual(resolveTarget({}, { port: 7801, token: "s" }), { port: 7801, token: "s" });
   assert.deepEqual(resolveTarget({ token: "t" }, { port: 7801, token: "s" }), { port: 7801, token: "t" });
   assert.equal(resolveTarget({}, null), null);
+  assert.deepEqual(resolveTarget({ port: "7801" }, { port: 7801, token: "s" }), { port: 7801, token: "s" });
+  assert.deepEqual(resolveTarget({ port: "7799" }, { port: 7801, token: "s" }), { port: 7799, token: null });
+  assert.equal(sessionFileFor("/x/.play-session", 7801), "/x/.play-session-7801");
 });
 
 test("a camera comes from --spot, else --at with --face, else nowhere", () => {
@@ -202,4 +205,25 @@ test("a binary folder with no fua_core pk3 is refused before the engine can open
   assert.match(missingCoreData("/x", ["forkundera.exe", "zmusic.dll"]), /no fua_core_\*\.pk3 beside \/x/);
   assert.equal(missingCoreData("/x", ["forkundera.exe", "fua_core_v0.3.0.pk3"]), null);
   assert.match(missingCoreData("/x", ["fua_core_.pk3"]), /no fua_core/);
+});
+
+test("--cvar reads as name=value pairs, a bare name meaning 1, and nothing when it is absent", () => {
+  assert.deepEqual(parseCvarFlag("fua_dg_standalone=0, gl_lights=1,sv_cheats"), { fua_dg_standalone: "0", gl_lights: "1", sv_cheats: "1" });
+  assert.equal(parseCvarFlag(undefined), undefined);
+  assert.equal(parseCvarFlag(true), undefined);
+  assert.deepEqual(parseCvarFlag("a=b=c,"), { a: "b=c" });
+});
+
+test("a spot launches its map with its wads found by name in the store, and names what is missing", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "spotlaunch-"));
+  const spots = path.join(dir, "spots.json");
+  fs.writeFileSync(spots, JSON.stringify({ spots: { s: { map: "WDI04", x: 0, y: 0, z: 0, angle: 0,
+    loaded: { iwad: "doom2.wad", pwads: ["Whodunit_Fixed2.pk3 fc8a", "wdi_touchupv9.11.wad 2ccc", "gone.pk3"] } }, bare: { map: "MAP01" } } }));
+  const r = spotLaunch(spots, "s", "/store", ["whodunit_fixed2.pk3", "WDI_TOUCHUPV9.11.WAD", "other.wad"]);
+  assert.equal(r.map, "WDI04");
+  assert.deepEqual(r.files, [path.join("/store", "whodunit_fixed2.pk3"), path.join("/store", "WDI_TOUCHUPV9.11.WAD")]);
+  assert.deepEqual(r.missing, ["gone.pk3"]);
+  assert.deepEqual(spotLaunch(spots, "bare", path.join(dir, "nowhere")), { map: "MAP01", files: [], missing: [] });
+  assert.throws(() => spotLaunch(spots, "nope", "/store", []), /no such spot: nope/);
+  fs.rmSync(dir, { recursive: true, force: true });
 });

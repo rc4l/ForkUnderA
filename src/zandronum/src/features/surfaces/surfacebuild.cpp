@@ -386,33 +386,27 @@ bool BuildDerivedWallSpan(const seg_t *seg, int renderType, DerivedWallSpan &out
 		out.vTop[0] -= sub; out.vTop[1] -= sub;
 		out.vBottom[0] -= sub; out.vBottom[1] -= sub;
 	}
-	// [rc4l] And the horizontal, for everything that is not a polyobject.
-	//
-	// GLWall::Process sets fracleft 0 and fracright 1 for an ordinary wall and takes the linedef's
-	// vertices, so the two edges START as the sidedef's x offset and that plus the line's texel
-	// length -- and then SetWallCoordinates moves whichever end pinched out, which is what `pinch`
-	// carries. A polyobject is drawn per seg with real fractions and is left to the capture.
-	if (!(seg->sidedef->Flags & WALLF_POLYOBJ))
-	{
-		const float ul = tci.FloatToTexU(FIXED2FLOAT(tci.TextureOffset(
-			seg->sidedef->GetTextureXOffset((side_t::ETexpart)texpos))));
-		const float texLength = tci.FloatToTexU(seg->sidedef->TexelLength);
-		out.uLeft = ul + texLength * pinch.fracLeft;
-		out.uRight = ul + texLength * pinch.fracRight;
-		out.hasU = true;
-	}
-	// [rc4l] The ends, from the linedef, ordered by side -- moved in to where the wall was cut short,
-	// exactly as the u coordinates were. GLWall::Process draws the whole line, so these start as the
-	// line's vertices and not the seg's; see the fracleft note above.
+	// [rc4l] The horizontal and the ends, as fractions of the linedef in side order: all of it for an ordinary wall (GLWall::Process), the seg's share for a polyobject, with the pinch applied inside that share.
 	{
 		const vertex_t *lv1 = seg->linedef->v1, *lv2 = seg->linedef->v2;
 		if (seg->sidedef != seg->linedef->sidedef[0]) { lv1 = seg->linedef->v2; lv2 = seg->linedef->v1; }
 		const float ax = FIXED2FLOAT(lv1->x), ay = FIXED2FLOAT(lv1->y);
 		const float bx = FIXED2FLOAT(lv2->x), by = FIXED2FLOAT(lv2->y);
-		out.x1 = ax + pinch.fracLeft * (bx - ax);
-		out.y1 = ay + pinch.fracLeft * (by - ay);
-		out.x2 = ax + pinch.fracRight * (bx - ax);
-		out.y2 = ay + pinch.fracRight * (by - ay);
+		float segLeft = 0.f, segRight = 1.f;
+		if (seg->sidedef->Flags & WALLF_POLYOBJ)
+			ComputePolyobjSegFractions(ax, ay, bx, by, FIXED2FLOAT(seg->v1->x), FIXED2FLOAT(seg->v1->y),
+				FIXED2FLOAT(seg->v2->x), FIXED2FLOAT(seg->v2->y), segLeft, segRight);
+		const float fracLeft = segLeft + pinch.fracLeft * (segRight - segLeft);
+		const float fracRight = segLeft + pinch.fracRight * (segRight - segLeft);
+		const float ul = tci.FloatToTexU(FIXED2FLOAT(tci.TextureOffset(
+			seg->sidedef->GetTextureXOffset((side_t::ETexpart)texpos))));
+		const float texLength = tci.FloatToTexU(seg->sidedef->TexelLength);
+		out.uLeft = ul + texLength * fracLeft;
+		out.uRight = ul + texLength * fracRight;
+		out.x1 = ax + fracLeft * (bx - ax);
+		out.y1 = ay + fracLeft * (by - ay);
+		out.x2 = ax + fracRight * (bx - ax);
+		out.y2 = ay + fracRight * (by - ay);
 	}
 	out.material = mat;
 	// The BASE texture, so an animated one keeps animating -- see MeshPiece::baseTex. The sector's

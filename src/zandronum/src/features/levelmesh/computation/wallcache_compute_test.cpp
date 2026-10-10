@@ -115,3 +115,13 @@ TEST(WallCache, ChangedStampBlocksReuse)
 	cur.frontDirty++;   // a door coming down bumps its sector's counter
 	EXPECT_FALSE(ComputeCanReuse(Eligible(), true, Stamp(), cur));
 }
+
+// [rc4l] WDI06's window is an upper texture, RWIND8: GL draws it unmasked, so its see-through texels come out black rather than showing the room behind.
+TEST(WallCache, UpperLowerAndOneSidedMiddlesAreDrawnUnmasked)
+{
+	for (int t : { kRenderWallTop, kRenderWallM1S, kRenderWallBottom, kRenderWallMirrorSurface })
+		EXPECT_TRUE(ComputeWallPlainPass(t)) << t;
+	// [rc4l] A two-sided middle, its no-fog twin, a 3D floor's side, sky and portals are all something else.
+	for (int t : { 0, 3, 5, 6, 7, 11, 13, 15, 16 })
+		EXPECT_FALSE(ComputeWallPlainPass(t)) << t;
+}

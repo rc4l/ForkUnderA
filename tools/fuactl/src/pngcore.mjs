@@ -152,6 +152,16 @@ export function boxDiff(a, b, box, block = 16) {
   return sum / Math.max(n, 1);
 }
 
+// [rc4l] The mean brightness ((r+g+b)/3) over a box of fractions, one number to follow across a burst of captures.
+export function boxMean(img, box) {
+  if (box.some((v) => !(v >= 0 && v <= 1))) throw new Error(`box is fractions of the frame, 0..1: ${box.join(",")}`);
+  const x0 = Math.floor(box[0] * img.w), y0 = Math.floor(box[1] * img.h);
+  const x1 = Math.ceil(box[2] * img.w), y1 = Math.ceil(box[3] * img.h);
+  let s = 0, n = 0;
+  for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) { const q = px(img, x, y); s += (q[0] + q[1] + q[2]) / 3; n++; }
+  return s / Math.max(n, 1);
+}
+
 // [rc4l] A frozen A/B: what switching the value changed, against the repeat of the first value, which is the noise floor.
 export function abDiff(a, b, a2, box = [0, 0, 1, 1], block = 16) {
   return { changed: boxDiff(a, b, box, block), noise: boxDiff(a, a2, box, block) };

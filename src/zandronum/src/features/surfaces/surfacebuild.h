@@ -45,9 +45,8 @@ struct DerivedWallSpan
 	// Derivable exactly, and it took reading GLWall::Process to see why: an ordinary wall is drawn
 	// over the whole LINEDEF with fracleft 0 and fracright 1, not per seg. So the left edge is the
 	// sidedef's x offset and the right edge is that plus the line's texel length, with no
-	// seg-along-line bookkeeping involved at all. Polyobjects are the exception and are not derived.
+	// seg-along-line bookkeeping involved at all. A polyobject is drawn per seg, so it takes its seg's share.
 	float uLeft, uRight;
-	bool  hasU;
 	// [rc4l] The two ends in world space, taken from the LINEDEF and ordered by which side this
 	// sidedef is -- which is how GLWall::Process orders them, and getting it backwards mirrors every
 	// texture on that wall.
@@ -66,7 +65,7 @@ struct DerivedWallSpan
 	float floodUV[6];
 	const sector_t *floodSector;
 
-	DerivedWallSpan() : uLeft(0.f), uRight(0.f), hasU(false),
+	DerivedWallSpan() : uLeft(0.f), uRight(0.f),
 		x1(0.f), y1(0.f), x2(0.f), y2(0.f), material(0), baseTex(0), valid(false),
 		flood(false), floodCeiling(false), floodZ(0.f), floodSector(0)
 	{
