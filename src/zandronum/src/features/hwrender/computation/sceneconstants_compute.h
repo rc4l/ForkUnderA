@@ -25,6 +25,7 @@ struct SceneConstantInputs
 	unsigned char skyCapR, skyCapG, skyCapB;   // [rc4l] what a reflected ray that hits nothing sees
 	float materialSlots;              // [rc4l] live bindless slots, or 0 to sample the bound texture
 	unsigned int frameMS;             // [rc4l] the clock GL's gl_frameMS reads, for the warp timer
+	int stackSlot;                    // [rc4l] the stacked view being drawn, else -1; uFrame.y carries it plus one
 };
 
 // [rc4l] Fill `out` (kSceneConstantFloats floats) from `in`.

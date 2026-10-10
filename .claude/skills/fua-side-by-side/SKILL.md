@@ -32,6 +32,9 @@ node src/cli.mjs ui exec "fua_dg_standalone 0" --port 7801 --token <T>
   `--store DIR` (or set `FUACTL_PWADS`) when they live elsewhere. A missing one is named; fetch it
   with `fua_download <file>` in the console.
 - `--side-by-side` only sets `fua_dg_embed 0`; that is what un-nests the Vulkan window.
+- `play` runs the **staged** `dist-windows/forkundera.exe`, so restage a fix before relaunching the user's
+  session. Your own instance on a fresh build takes `FUACTL_ENGINE=F:/ForkUnderA/build-win/Release/forkundera.exe`,
+  and `shot` against it needs the same variable or its pair lands in the other binary's `sweep/`.
 - **No `--lock`** when the launch is for the user — the lock exists for your own measuring instances
   so a stray cursor cannot diverge a run. Give theirs its own port (7801 by convention) and keep yours
   elsewhere (7799, 7796).

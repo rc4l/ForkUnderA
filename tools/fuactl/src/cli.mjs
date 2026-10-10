@@ -20,6 +20,7 @@ import { sweepDirFor } from "./shot.mjs";
 import * as sweepMod from "./sweep.mjs";
 import { png } from "./png.mjs";
 import { actorsNear } from "./actors.mjs";
+import { pixelToFace } from "./camera.mjs";
 import { scenarioOptions, probeScenario } from "./template.mjs";
 import { decodePNG, abDiff, boxDiff } from "./pngcore.mjs";
 import fs from "node:fs";
@@ -119,9 +120,9 @@ const USAGE = `fuactl <command>
   shoot [--port P] --tag T --at x,y,z --face yaw,pitch [--look x,y,z] [--weapon W] [--map M] [--after TICS]   fire at a junction and capture a GL/Vulkan pair (--look frames a point, --after catches transient effects before they fade)
   sweep [--maps "MAP01 MAP07"] [--port P]   matched pairs across several maps, ranked by how much the renderers disagree
   doorshot <tag> [--port P] [--at x,y,z --face yaw] [--mid TICS]   a door caught MID-SWING in both renderers, plus a before pair
-  look [--port P] [--at x,y,z --face yaw,pitch]   what the crosshair is on and what the level mesh holds for it
+  look [--port P] [--spot S | --at x,y,z --face yaw,pitch] [--pixel x,y [--size WxH]] [--stack]   what the crosshair is on and what the level mesh holds for it; --pixel aims through that pixel of a capture from the camera, --stack casts through the first stacked view
   line <index> | --at X,Y [--radius R]   what a linedef IS: blocking flags, front/back sector heights, and which tier carries a texture over which span of height -- the three things that decide whether a mark can exist there. --at finds every line near a point, which is what tells two lines in the same place apart.
-  png <mode> ...                     pixel arithmetic on captures: --diff, --boxdiff, --diffimg, --align, --crop, --rows, --blob
+  png <mode> ...                     pixel arithmetic on captures: --diff, --boxdiff, --diffimg, --align, --crop, --rows, --blob, --px
   mcp                                run as an MCP stdio server for agents
 `;
 
@@ -543,7 +544,14 @@ async function main() {
     case "look": {
       const c = await connectTarget(flags);
       try {
-        process.stdout.write(await sweepMod.look(c, shot.cameraFromFlags(flags, SPOTS)));
+        let cam = shot.cameraFromFlags(flags, SPOTS);
+        // [rc4l] --pixel turns a point on a capture into the facing that puts the crosshair on it, instead of a hand-worked angle.
+        if (flags.pixel && cam) {
+          const [px, py] = String(flags.pixel).split(",").map(Number);
+          const [w, h] = String(flags.size || "1024x640").split("x").map(Number);
+          cam = { ...cam, ...pixelToFace(cam, px, py, w, h) };
+        }
+        process.stdout.write(await sweepMod.look(c, cam, flags.stack ? "fua_look stack" : "fua_look"));
       } finally { c.close(); }
       break;
     }

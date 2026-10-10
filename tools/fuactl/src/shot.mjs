@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 import * as ui from "./ui.mjs";
 import { exec, waitTics } from "./capture.mjs";
 import { engineProcessCount } from "./launch.mjs";
+import { decodePNG, isBlankImage } from "./pngcore.mjs";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -119,8 +120,14 @@ export async function shotPair(c, tag, {
   const vk = path.posix.join(outDir, `${tag}_vk.png`);
   for (const f of [gl, vk]) { try { fs.rmSync(f, { force: true }); } catch { /* fine */ } }
 
-  await ui.screenshot(c, engineBin, `sweep/${tag}_gl`).catch(() => {});
-  const gotGl = await waitForFile(gl);
+  // [rc4l] A blank GL frame is the readback's fault, not the renderer's, and a second ask inside the same pause comes back whole.
+  let gotGl = false;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try { fs.rmSync(gl, { force: true }); } catch { /* fine */ }
+    await ui.screenshot(c, engineBin, `sweep/${tag}_gl`).catch(() => {});
+    gotGl = await waitForFile(gl);
+    if (!gotGl || !isBlankImage(decodePNG(gl))) break;
+  }
   const gotVk = await captureVulkan(c, vk);
 
   const said = [];

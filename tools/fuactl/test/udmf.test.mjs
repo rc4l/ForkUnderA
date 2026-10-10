@@ -57,6 +57,16 @@ test("a block is a two-sided sector inside another, on every line's front, style
   }
 });
 
+test("a block's lines take their own properties per edge", () => {
+  const m = new UdmfMap();
+  const outer = m.room(0, 0, 256, 256, { heightfloor: 0 });
+  m.block(64, 64, 192, 192, { heightfloor: 0 }, outer, () => ({}), () => ({}), (edge) => (edge === "west" ? { alpha: 0.5 } : {}));
+  const lines = m.lines.slice(4);
+  assert.deepEqual(lines.map((l) => l.alpha), [0.5, undefined, undefined, undefined]);
+  assert.ok(lines.every((l) => l.twosided === true));
+  assert.match(m.textmap(), /alpha = 0\.5;/);
+});
+
 test("strings are quoted and booleans are bare", () => {
   const m = new UdmfMap();
   const s = m.sector({ texturefloor: "FLOOR4_8", heightfloor: 0 });

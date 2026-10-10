@@ -8,6 +8,7 @@
 #include "features/levelmesh/modelmesh.h"
 #include "features/levelmesh/computation/wallbatch_compute.h"
 #include "features/levelmesh/computation/flatmesh_compute.h"
+#include "features/hwrender/computation/slot_compute.h"
 #include "features/levelmesh/computation/packedcolor_compute.h"
 #include "features/horizon/horizon.h"
 #include "features/horizon/computation/horizon_compute.h"
@@ -26,6 +27,9 @@
 #include "gl/renderer/gl_renderstate.h"   // gl_RenderState.GetDynLight, for the sprite light fold
 #include "c_dispatch.h"   // CCMD, for fua_sprite_sweep
 #include "c_cvars.h"
+#include "r_utility.h"   // R_PointInSubsector, for PieceStackId
+#include "d_player.h"    // players, for the viewer a mirror walk draws
+#include "doomstat.h"    // consoleplayer
 #include "features/hwrender/hud2d.h"   // StandaloneActive
 
 
@@ -526,7 +530,8 @@ static int BakeFlatsForSubsector(subsector_t *sub)
 			int ll = gl_ClampLight(real->GetFloorLight());
 			FColormap cm;
 			cm = real->ColorMap;
-			const float alpha = 1.0f - real->GetReflect(sector_t::floor);
+			const float alpha = ComputePlaneAlpha(real->portals[sector_t::floor] != NULL,
+				FIXED2FLOAT(real->GetAlpha(sector_t::floor)), real->GetReflect(sector_t::floor));
 			// [rc4l] GL reflects a plane with no portal stack on it, and a fully reflective one still needs the surface the reflection is painted on.
 			const bool reflects = real->GetReflect(sector_t::floor) > 0 && real->portals[sector_t::floor] == NULL;
 			if (haveFF)
@@ -549,7 +554,8 @@ static int BakeFlatsForSubsector(subsector_t *sub)
 			int ll = gl_ClampLight(real->GetCeilingLight());
 			FColormap cm;
 			cm = real->ColorMap;
-			const float alpha = 1.0f - real->GetReflect(sector_t::ceiling);
+			const float alpha = ComputePlaneAlpha(real->portals[sector_t::ceiling] != NULL,
+				FIXED2FLOAT(real->GetAlpha(sector_t::ceiling)), real->GetReflect(sector_t::ceiling));
 			const bool reflects = real->GetReflect(sector_t::ceiling) > 0 && real->portals[sector_t::ceiling] == NULL;
 			if (haveFF)
 			{
@@ -650,10 +656,10 @@ void RegisterFlatSubsector(const GLFlat &flat, subsector_t *sub, bool ceiling)
 // billboards built for one viewpoint, so they are not level geometry and must never be baked.
 static int g_spritesThisFrame = 0;
 static int g_skyQuadsCaptured = 0;
-static int g_skyWalks[2];   // [rc4l] Outer walks per list, so a second walk per frame shows up as a count.
+static int g_skyWalks[kSkyCaptureLists];   // [rc4l] Walks per list, so a second walk per frame shows up as a count.
 static AActor *g_skyViewpoint = NULL;
-// [rc4l] One list per view the backend draws, indexed by kSkyCaptureMain and kSkyCaptureCamera, and the one the walk in progress fills.
-static TArray<FFlatVertex> g_skyVerts[2];
+// [rc4l] One list per view the backend draws, indexed by the kSkyCapture* lists, and the one the walk in progress fills.
+static TArray<FFlatVertex> g_skyVerts[kSkyCaptureLists];
 static int g_skyList = kSkyCaptureNone;
 
 // [rc4l] What each sprite piece was registered WITH, for one frame, so a seam can be read off
@@ -707,16 +713,139 @@ bool MainView() { return s_mainView; }
 void EnterScene() { s_sceneNesting++; }
 void LeaveScene() { if (s_sceneNesting > 0) s_sceneNesting--; }
 
+// [rc4l] The stacked views the player's walk saw this frame, by slot, and the portal whose view GL is walking now.
+static const void *g_stackPortals[kMaxStackViews];
+static StackViewInfo g_stackInfo[kMaxStackViews];
+static TArray<FFlatVertex> g_stackVerts[kMaxStackViews];
+static int g_stackUsed = 0;
+static const void *s_stackWalk = NULL;
+static TArray<unsigned int> g_stackVis;
+
+StackWalk::StackWalk(const void *portal) : saved(s_stackWalk) { s_stackWalk = portal; }
+
+static bool s_mirrorWalk = false;
+MirrorWalk::MirrorWalk() : saved(s_mirrorWalk) { s_mirrorWalk = true; }
+MirrorWalk::~MirrorWalk() { s_mirrorWalk = saved; }
+StackWalk::~StackWalk() { s_stackWalk = saved; }
+
+static int StackWalkSlot()
+{
+	for (int i = 0; i < g_stackUsed; i++)
+		if (g_stackPortals[i] == s_stackWalk) return i;
+	return -1;
+}
+
+// [rc4l] Marks an id for the stacked view being walked, if a stacked view is what is being walked.
+static void NoteWalked(int id)
+{
+	if (s_stackWalk == NULL || g_stackVis.Size() == 0) return;
+	const int list = ComputeSkyCaptureList(s_mainView, s_sceneNesting, StackWalkSlot());
+	if (list < kSkyCaptureStack || id < 0 || id >= numsubsectors + numsides) return;
+	ComputeMarkStackVisible(&g_stackVis[0], id, list - kSkyCaptureStack);
+}
+void NoteWalkedSubsector(int subsector) { if (subsector < numsubsectors) NoteWalked(subsector); }
+void NoteWalkedSide(int side) { if (side >= 0 && side < numsides) NoteWalked(numsubsectors + side); }
+
+const unsigned int *StackVisibility(int &words)
+{
+	words = (g_stackUsed > 0) ? (int)g_stackVis.Size() : 0;
+	return words ? &g_stackVis[0] : NULL;
+}
+
+int PieceStackId(const MeshPiece &p)
+{
+	int count = 0;
+	const FFlatVertex *v = MeshVertexData(count);
+	if (v == NULL || numsubsectors <= 0 || p.range.count == 0 || p.range.offset + p.range.count > (unsigned)count) return -1;
+	float cx = 0.f, cy = 0.f;
+	for (unsigned int i = 0; i < p.range.count; i++) { cx += v[p.range.offset + i].x; cy += v[p.range.offset + i].y; }
+	cx /= (float)p.range.count; cy /= (float)p.range.count;
+	float px, py;
+	const bool wall = ComputePieceProbe(cx, cy, p.normX, p.normY, p.normZ, px, py);
+	const subsector_t *ss = R_PointInSubsector(FLOAT2FIXED(px), FLOAT2FIXED(py));
+	if (ss == NULL) return -1;
+	if (!wall) return int(ss - subsectors);
+	// [rc4l] A wall belongs to the side of the seg it lies on, the one of its subsector's segs nearest its centre.
+	int best = -1;
+	float bestD = 1e30f;
+	for (DWORD i = 0; i < ss->numlines; i++)
+	{
+		const seg_t &sg = ss->firstline[i];
+		if (sg.sidedef == NULL) continue;
+		const float d = ComputeSegmentDistance2(cx, cy, FIXED2FLOAT(sg.v1->x), FIXED2FLOAT(sg.v1->y),
+			FIXED2FLOAT(sg.v2->x), FIXED2FLOAT(sg.v2->y));
+		if (d < bestD) { bestD = d; best = int(sg.sidedef - sides); }
+	}
+	return (best >= 0) ? numsubsectors + best : int(ss - subsectors);
+}
+
+int StackViewCount() { return g_stackUsed; }
+StackViewInfo StackView(int slot) { return g_stackInfo[slot]; }
+const FFlatVertex *StackViewVertices(int slot, int &count)
+{
+	count = (int)g_stackVerts[slot].Size();
+	return count ? &g_stackVerts[slot][0] : NULL;
+}
+
+// [rc4l] The slot of a portal's stacked view, made on its first surface of the frame, or -1 once every slot is taken.
+static int StackSlotFor(const FPortal *portal)
+{
+	const int before = g_stackUsed;
+	const int slot = zx::hwrender::ComputeSlotFor<const void *>(g_stackPortals, g_stackUsed, kMaxStackViews, portal);
+	if (slot >= 0 && slot == before)
+	{
+		StackViewInfo &v = g_stackInfo[slot];
+		v.dx = FIXED2FLOAT(portal->xDisplacement);
+		v.dy = FIXED2FLOAT(portal->yDisplacement);
+		v.ceiling = portal->plane == sector_t::ceiling;
+	}
+	return slot;
+}
+
+void RegisterStackWall(const GLWall &wall, const FPortal *portal)
+{
+	if (portal == NULL || !PlayerWalkActive()) return;
+	const int slot = StackSlotFor(portal);
+	if (slot < 0) return;
+	FFlatVertex q[6];
+	MakeWallQuad(q, wall.glseg.x1, wall.glseg.y1, wall.glseg.x2, wall.glseg.y2, wall.zbottom, wall.ztop);
+	for (int k = 0; k < 6; k++) g_stackVerts[slot].Push(q[k]);
+}
+
+// [rc4l] The last walks begun, newest last: which view, how deep, and what the list they emptied held.
+struct SkyWalkNote { bool mainView; int nesting; int list; int heldBefore; };
+static SkyWalkNote g_walkNotes[8];
+static int g_walkNoteCount = 0;
+
 int BeginSkyWalk()
 {
-	g_skyList = ComputeSkyCaptureList(s_mainView, s_sceneNesting);
+	g_skyList = ComputeSkyCaptureList(s_mainView, s_sceneNesting, StackWalkSlot());
+	const SkyWalkNote note = { s_mainView, s_sceneNesting, g_skyList,
+		g_skyList == kSkyCaptureNone ? -1 : (int)g_skyVerts[g_skyList].Size() / 6 };
+	g_walkNotes[g_walkNoteCount++ % 8] = note;
 	if (g_skyList == kSkyCaptureNone) return g_skyList;
 	g_skyVerts[g_skyList].Clear();
-	if (g_skyList == kSkyCaptureMain) g_skyViewpoint = NULL;
+	// [rc4l] The player's walk starts the frame, so last frame's stacked views and their skies go with it.
+	if (g_skyList == kSkyCaptureMain)
+	{
+		g_skyViewpoint = NULL;
+		g_stackUsed = 0;
+		for (int i = 0; i < kMaxStackViews; i++) { g_stackVerts[i].Clear(); g_skyVerts[kSkyCaptureStack + i].Clear(); }
+		g_stackVis.Resize((unsigned)ComputeStackVisWords(numsubsectors + numsides));
+		if (g_stackVis.Size() > 0) memset(&g_stackVis[0], 0, g_stackVis.Size() * sizeof(unsigned int));
+	}
 	g_skyWalks[g_skyList]++;
 	return g_skyList;
 }
 int SkyWalks(int list) { return g_skyWalks[list]; }
+void PrintSkyWalkNotes()
+{
+	for (int i = g_walkNoteCount > 8 ? g_walkNoteCount - 8 : 0; i < g_walkNoteCount; i++)
+	{
+		const SkyWalkNote &n = g_walkNotes[i % 8];
+		Printf("  walk %d: %s view, nesting %d, list %d, emptied %d quads\n", i, n.mainView ? "main" : "camera", n.nesting, n.list, n.heldBefore);
+	}
+}
 
 // The viewpoint the visible sky surfaces name; NULL until a walk has produced one.
 AActor *SkyQuadViewpoint() { return g_skyViewpoint; }
@@ -764,7 +893,7 @@ void RegisterSkyQuad(const GLWall &wall, AActor *viewpoint)
 {
 	if (!fua_mesh_sky || g_skyList == kSkyCaptureNone) return;
 	// [rc4l] Passed in, never read off wall.skybox: that shares a union with wall.sky, so on a plain sky it is a GLSkyInfo.
-	if (viewpoint != NULL && g_skyList == kSkyCaptureMain) g_skyViewpoint = viewpoint;
+	if (viewpoint != NULL && ComputeTakesSkyViewpoint(g_skyList, g_skyViewpoint != NULL)) g_skyViewpoint = viewpoint;
 
 	// [rc4l] A horizon line's sky belongs to features/horizon, which builds it for every eye height.
 	if (zx::horizon::HorizonsActive() && wall.seg != NULL && wall.seg->linedef != NULL &&
@@ -801,8 +930,10 @@ bool PlayerWalkActive()
 void RegisterSprite(const GLSprite &spr, const float *c1, const float *c2,
 	const float *c3, const float *c4)
 {
-	// [rc4l] Only the player's walk fills the frame's sprites: a mirror walk's would draw them twice, and its reset used to wipe them.
-	if (spr.gltexture == NULL || !PlayerWalkActive()) return;
+	// [rc4l] Only the player's walk fills the frame's sprites: a mirror walk's would draw them twice, and its reset used to wipe them; it adds only the viewer, whom no other walk draws.
+	const bool mirrorViewer = ComputeTakesMirrorViewer(s_mirrorWalk, s_mainView, s_sceneNesting,
+		spr.actor != NULL && consoleplayer >= 0 && spr.actor == players[consoleplayer].camera);
+	if (spr.gltexture == NULL || !(PlayerWalkActive() || mirrorViewer)) return;
 
 	// [rc4l] GLSprite emits a 4-vertex TRIANGLE STRIP; the mesh is triangle lists, so expand to
 	// (0,1,2) and (2,1,3) -- which preserves the strip's winding rather than flipping the second
@@ -817,6 +948,7 @@ void RegisterSprite(const GLSprite &spr, const float *c1, const float *c2,
 	mp.range.offset = 0;
 	mp.range.count = 0;
 	mp.material = spr.gltexture;
+	mp.mirrorOnly = mirrorViewer;
 	// [rc4l] GLSprite has no light index. Its dynamic light is computed per actor on the CPU and
 	// folded into the vertex colour below -- see the fold after CaptureShading, which is what makes
 	// that true. It was asserted here before it was done, and sprites went dark when the shader
@@ -1065,6 +1197,16 @@ CCMD(fua_sky_quads)
 		fua_mesh_sky ? "on" : "off");
 	Printf("  player's view holds %d after %d walks; camera textures hold %d after %d walks\n",
 		heldMain / 6, walksMain - lastMain, heldCamera / 6, walksCamera - lastCamera);
+	for (int i = 0; i < zx::levelmesh::StackViewCount(); i++)
+	{
+		int heldStack = 0, wallVerts = 0;
+		zx::levelmesh::SkyQuadVertices(heldStack, zx::levelmesh::kSkyCaptureStack + i);
+		zx::levelmesh::StackViewVertices(i, wallVerts);
+		const zx::levelmesh::StackViewInfo v = zx::levelmesh::StackView(i);
+		Printf("  stacked view %d: %s, moved %.0f,%.0f, %d stack walls, sky holds %d\n", i,
+			v.ceiling ? "ceiling" : "floor", v.dx, v.dy, wallVerts / 6, heldStack / 6);
+	}
 	lastMain = walksMain;
 	lastCamera = walksCamera;
+	zx::levelmesh::PrintSkyWalkNotes();
 }

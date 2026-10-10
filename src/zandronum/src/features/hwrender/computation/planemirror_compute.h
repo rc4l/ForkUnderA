@@ -13,6 +13,7 @@ struct MirrorPlane
 {
 	bool  ceiling;
 	float z;
+	bool operator==(const MirrorPlane &o) const { return ceiling == o.ceiling && z == o.z; }
 };
 
 // [rc4l] Whether the eye is on the reflecting side: at or above a floor, at or below a ceiling, as GLWall::SkyPlane decides.

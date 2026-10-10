@@ -476,11 +476,139 @@ TEST(PlaneUVAffine, ACanvasFlipsV)
 // [rc4l] wdiexsec's reflective floor re-walked the scene from under it, and that walk's four sky quads replaced the player's eighty-eight.
 TEST(FlatMeshCompute, OnlyThePlayersOuterWalkFillsThePlayersSkyList)
 {
-	EXPECT_EQ(kSkyCaptureMain, ComputeSkyCaptureList(true, 1));
-	EXPECT_EQ(kSkyCaptureNone, ComputeSkyCaptureList(true, 2));    // [rc4l] a mirror or skybox re-entry
-	EXPECT_EQ(kSkyCaptureNone, ComputeSkyCaptureList(true, 4));
-	EXPECT_EQ(kSkyCaptureCamera, ComputeSkyCaptureList(false, 1)); // [rc4l] a camera texture's own view
-	EXPECT_EQ(kSkyCaptureNone, ComputeSkyCaptureList(false, 2));
+	EXPECT_EQ(kSkyCaptureMain, ComputeSkyCaptureList(true, 1, -1));
+	EXPECT_EQ(kSkyCaptureNone, ComputeSkyCaptureList(true, 2, -1));    // [rc4l] a mirror or skybox re-entry
+	EXPECT_EQ(kSkyCaptureNone, ComputeSkyCaptureList(true, 4, -1));
+	EXPECT_EQ(kSkyCaptureCamera, ComputeSkyCaptureList(false, 1, -1)); // [rc4l] a camera texture's own view
+	EXPECT_EQ(kSkyCaptureNone, ComputeSkyCaptureList(false, 2, -1));
+}
+
+// [rc4l] WDI01: looking up through the town's stacked ceiling, every sky quad came from the stack's walk and went nowhere, so the sky was black.
+TEST(FlatMeshCompute, TheWalkThroughAStackedViewFillsThatViewsSkyList)
+{
+	EXPECT_EQ(kSkyCaptureStack, ComputeSkyCaptureList(true, 2, 0));
+	EXPECT_EQ(kSkyCaptureStack + 1, ComputeSkyCaptureList(true, 2, 1));
+	EXPECT_EQ(kSkyCaptureNone, ComputeSkyCaptureList(true, 2, kMaxStackViews));  // [rc4l] a portal no slot took
+	EXPECT_EQ(kSkyCaptureNone, ComputeSkyCaptureList(true, 3, 0));               // [rc4l] the skybox inside the stack
+	EXPECT_EQ(kSkyCaptureNone, ComputeSkyCaptureList(false, 2, 0));              // [rc4l] a camera texture's portal
+	EXPECT_EQ(kSkyCaptureMain, ComputeSkyCaptureList(true, 1, 0));
+}
+
+TEST(FlatMeshCompute, APassDrawsTheSkyListItsOwnWalkFilled)
+{
+	EXPECT_EQ(kSkyCaptureMain, ComputeSkyDrawList(false, -1));
+	EXPECT_EQ(kSkyCaptureCamera, ComputeSkyDrawList(true, -1));
+	EXPECT_EQ(kSkyCaptureCamera, ComputeSkyDrawList(true, 1));
+	EXPECT_EQ(kSkyCaptureStack + 1, ComputeSkyDrawList(false, 1));
+	EXPECT_EQ(kSkyCaptureMain, ComputeSkyDrawList(false, kMaxStackViews));
+	for (int slot = 0; slot < kMaxStackViews; slot++)
+		EXPECT_EQ(ComputeSkyCaptureList(true, 2, slot), ComputeSkyDrawList(false, slot));
+}
+
+// [rc4l] WDI01: with no sky in the player's own walk, the backend fell back to the sector's ceiling "skybox", which is the stack's anchor, and rendered the sky from inside the town.
+TEST(FlatMeshCompute, AStackedViewsSkyboxStandsInOnlyForAPlayerWalkThatNamedNone)
+{
+	EXPECT_TRUE(ComputeTakesSkyViewpoint(kSkyCaptureMain, false));
+	EXPECT_TRUE(ComputeTakesSkyViewpoint(kSkyCaptureMain, true));
+	EXPECT_TRUE(ComputeTakesSkyViewpoint(kSkyCaptureStack, false));
+	EXPECT_FALSE(ComputeTakesSkyViewpoint(kSkyCaptureStack + 1, true));
+	EXPECT_FALSE(ComputeTakesSkyViewpoint(kSkyCaptureCamera, false));
+	EXPECT_FALSE(ComputeTakesSkyViewpoint(kSkyCaptureNone, false));
+}
+
+// [rc4l] WDI01: the stacked view drew rooftops GL's walk through the stack never reached, as roof slabs over the courtyard's walls.
+// [rc4l] WDI01's bathroom mirror reflected the room and not the player standing in front of it.
+TEST(FlatMeshCompute, OnlyTheViewersSpriteFromTheMirrorTheyFaceIsKept)
+{
+	EXPECT_TRUE(ComputeTakesMirrorViewer(true, true, 2, true));
+	EXPECT_FALSE(ComputeTakesMirrorViewer(true, true, 2, false));   // [rc4l] the room's sprites come from the player's walk
+	EXPECT_FALSE(ComputeTakesMirrorViewer(false, true, 2, true));   // [rc4l] a skybox or stacked view is no mirror
+	EXPECT_FALSE(ComputeTakesMirrorViewer(true, true, 3, true));    // [rc4l] a mirror seen in a mirror
+	EXPECT_FALSE(ComputeTakesMirrorViewer(true, false, 2, true));   // [rc4l] a camera texture's mirror
+}
+
+TEST(FlatMeshCompute, AStackedViewMarksEachSubsectorItsWalkReached)
+{
+	EXPECT_EQ(0, ComputeStackVisWords(0));
+	EXPECT_EQ(1, ComputeStackVisWords(16));
+	EXPECT_EQ(2, ComputeStackVisWords(17));
+	unsigned int bits[2] = { 0u, 0u };
+	ComputeMarkStackVisible(bits, 0, 1);
+	ComputeMarkStackVisible(bits, 16, 0);
+	ComputeMarkStackVisible(bits, 16, 0);
+	EXPECT_EQ(2u, bits[0]);     // [rc4l] subsector 0, second view
+	EXPECT_EQ(1u, bits[1]);     // [rc4l] subsector 16, first view, set once
+	EXPECT_TRUE(ComputeStackVisible(bits, 2, 0, 1));
+	EXPECT_FALSE(ComputeStackVisible(bits, 2, 0, 0));
+	EXPECT_TRUE(ComputeStackVisible(bits, 2, 16, 0));
+	EXPECT_FALSE(ComputeStackVisible(bits, 2, 40, 0));        // [rc4l] past the words
+	EXPECT_FALSE(ComputeStackVisible(bits, 2, -1, 0));
+	EXPECT_FALSE(ComputeStackVisible(nullptr, 2, 0, 1));
+}
+
+TEST(FlatMeshCompute, AWallsProbeStepsOntoItsOwnSideAndAFlatsStaysAtItsCentre)
+{
+	float x, y;
+	EXPECT_TRUE(ComputePieceProbe(100.f, 50.f, 0.f, 0.f, -2.f, x, y));    // [rc4l] a wall facing south, normal not unit
+	EXPECT_FLOAT_EQ(100.f, x);
+	EXPECT_FLOAT_EQ(49.f, y);
+	EXPECT_FALSE(ComputePieceProbe(100.f, 50.f, 0.3f, 0.9f, 0.f, x, y));  // [rc4l] a gentle slope is still a flat
+	EXPECT_FLOAT_EQ(100.f, x);
+	EXPECT_FLOAT_EQ(50.f, y);
+	EXPECT_FALSE(ComputePieceProbe(100.f, 50.f, 0.f, 0.f, 0.f, x, y));    // [rc4l] no normal at all
+	EXPECT_FLOAT_EQ(100.f, x);
+	EXPECT_FLOAT_EQ(50.f, y);
+}
+
+// [rc4l] WDI01's rooftops: GL's clipper drops a roof's trim behind the walls in front of it, so a wall is kept or dropped by the seg it lies on.
+// [rc4l] WDI01: looking over a low roof, GL showed the stacked rooftops through its stencil's cap where the backend, with no cap, showed sky.
+TEST(FlatMeshCompute, AStacksCapCoversTheMapOverheadOrUnderfoot)
+{
+	float minX = 0.f, maxX = 0.f, minY = 0.f, maxY = 0.f, x, y, z;
+	for (int k = 0; k < 6; k++)
+	{
+		ComputeStackCapCorner(true, k, x, y, z);
+		EXPECT_FLOAT_EQ(32767.f, z);
+		minX = x < minX ? x : minX; maxX = x > maxX ? x : maxX;
+		minY = y < minY ? y : minY; maxY = y > maxY ? y : maxY;
+	}
+	EXPECT_FLOAT_EQ(-32767.f, minX); EXPECT_FLOAT_EQ(32767.f, maxX);
+	EXPECT_FLOAT_EQ(-32767.f, minY); EXPECT_FLOAT_EQ(32767.f, maxY);
+	ComputeStackCapCorner(false, 0, x, y, z);
+	EXPECT_FLOAT_EQ(-32767.f, z);
+	float x2, y2, z2;
+	ComputeStackCapCorner(true, 3, x2, y2, z2);   // [rc4l] the two triangles share their diagonal
+	ComputeStackCapCorner(true, 0, x, y, z);
+	EXPECT_FLOAT_EQ(x, x2); EXPECT_FLOAT_EQ(y, y2);
+}
+
+// [rc4l] WDI01: a window's glass, a middle texture with see-through texels, came out of the map bake solid.
+TEST(FlatMeshCompute, ATwoSidedMiddleIsTranslucentByItsLineOrItsTexture)
+{
+	EXPECT_TRUE(ComputeMidTextureTranslucent(1.f, false, true));     // [rc4l] glass in the texture
+	EXPECT_TRUE(ComputeMidTextureTranslucent(0.5f, false, false));   // [rc4l] a translucent line
+	EXPECT_TRUE(ComputeMidTextureTranslucent(1.f, true, false));     // [rc4l] an additive one
+	EXPECT_FALSE(ComputeMidTextureTranslucent(1.f, false, false));
+	EXPECT_FALSE(ComputeMidTextureTranslucent(0.f, true, false));    // [rc4l] alpha 0 skips GL's linedef block
+	EXPECT_TRUE(ComputeMidTextureTranslucent(0.f, false, true));
+}
+
+// [rc4l] A stacked ceiling the map bake drew solid hid the stacked view's walls behind it, which GL never draws.
+TEST(FlatMeshCompute, AStackedPlaneTakesItsOwnAlphaAndAnyOtherWhatItsReflectionLeaves)
+{
+	EXPECT_FLOAT_EQ(0.f, ComputePlaneAlpha(true, 0.f, 0.f));
+	EXPECT_FLOAT_EQ(0.5f, ComputePlaneAlpha(true, 0.5f, 0.25f));   // [rc4l] a translucent stack ignores the reflection
+	EXPECT_FLOAT_EQ(1.f, ComputePlaneAlpha(false, 0.f, 0.f));
+	EXPECT_FLOAT_EQ(0.75f, ComputePlaneAlpha(false, 1.f, 0.25f));
+}
+
+TEST(FlatMeshCompute, APointsDistanceToASegmentStopsAtItsEnds)
+{
+	EXPECT_FLOAT_EQ(0.f, ComputeSegmentDistance2(5.f, 0.f, 0.f, 0.f, 10.f, 0.f));
+	EXPECT_FLOAT_EQ(9.f, ComputeSegmentDistance2(5.f, 3.f, 0.f, 0.f, 10.f, 0.f));
+	EXPECT_FLOAT_EQ(25.f, ComputeSegmentDistance2(-3.f, 4.f, 0.f, 0.f, 10.f, 0.f));   // [rc4l] past the start
+	EXPECT_FLOAT_EQ(4.f, ComputeSegmentDistance2(12.f, 0.f, 0.f, 0.f, 10.f, 0.f));    // [rc4l] past the end
+	EXPECT_FLOAT_EQ(2.f, ComputeSegmentDistance2(1.f, 1.f, 0.f, 0.f, 0.f, 0.f));      // [rc4l] a seg with no length
 }
 
 // [rc4l] wdiexsec: looking up from under the pool, the water's underside took the light under it, the script's blue, where GL lights a top plane from above.

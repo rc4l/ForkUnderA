@@ -12,6 +12,8 @@ export const THING = Object.freeze({
   TechPillar: 48,
   Medikit: 2012,
   Column: 2028,
+  UpperStackLookOnly: 9077,
+  LowerStackLookOnly: 9078,
   SkyViewpoint: 9080,
   PointLight: 9800,
 });

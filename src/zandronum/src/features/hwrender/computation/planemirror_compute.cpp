@@ -2,6 +2,7 @@
 // Copyright (C) 2026 rc4l
 
 #include "features/hwrender/computation/planemirror_compute.h"
+#include "features/hwrender/computation/slot_compute.h"
 
 namespace zx { namespace hwrender {
 
@@ -25,11 +26,7 @@ void ComputePlaneMirrorClip(bool ceiling, float planeZ, float out[4])
 
 int ComputePlaneMirrorSlot(MirrorPlane *slots, int &used, int maxSlots, MirrorPlane p)
 {
-	for (int i = 0; i < used; i++)
-		if (slots[i].ceiling == p.ceiling && slots[i].z == p.z) return i;
-	if (used >= maxSlots) return -1;
-	slots[used] = p;
-	return used++;
+	return ComputeSlotFor(slots, used, maxSlots, p);
 }
 
 bool ComputeBoxMayBeVisible(const float *mvp, const float mn[3], const float mx[3])

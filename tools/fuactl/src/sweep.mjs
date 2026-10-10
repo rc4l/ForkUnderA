@@ -100,10 +100,10 @@ export async function doorShot(c, tag, {
 // The loop this replaces: screenshot, guess a cause, rebuild, ask someone to walk back there and
 // look again. Four rounds of that on one pane of glass. The question every round was really asking
 // is "what does the mesh say about THIS surface", and it is one command against a running instance.
-export async function look(c, at = null) {
+export async function look(c, at = null, command = "fua_look") {
   if (at) {
     await c.rpc("player.setpos", { x: at.x, y: at.y, z: at.z, angle: at.angle, pitch: at.pitch || 0 });
     await waitTics(c, 6);
   }
-  return exec(c, "fua_look");
+  return exec(c, command);
 }

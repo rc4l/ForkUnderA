@@ -59,8 +59,40 @@ export function px(img, x, y) {
   return [img.data[i], img.data[i + 1], img.data[i + 2]];
 }
 
+// [rc4l] The RGB at each [x, y] point, for reading a handful of pixels off several captures at once.
+export function samplePoints(img, points) {
+  return points.map(([x, y]) => px(img, x, y));
+}
+
+// [rc4l] Whether a capture holds nothing, every channel at most threshold: what a GL readback returns when another window covers it.
+export function isBlankImage(img, threshold = 2) {
+  for (let y = 0; y < img.h; y += 4)
+    for (let x = 0; x < img.w; x += 4)
+      if (px(img, x, y).some((c) => c > threshold)) return false;
+  return true;
+}
+
 // [rc4l] Write an 8-bit RGB PNG, which is all this ever emits.
 export function writePNG(path, w, h, rgb) {
+  fs.writeFileSync(path, encodePNG(w, h, rgb));
+}
+
+// [rc4l] A box of an image (fractions x0,y0,x1,y1), scaled by zoom (below 1 shrinks it, to whole pixels) and brightened by gain.
+export function cropImage(img, box, zoom = 4, gain = 1) {
+  const x0 = Math.floor(box[0] * img.w), y0 = Math.floor(box[1] * img.h);
+  const x1 = Math.ceil(box[2] * img.w),  y1 = Math.ceil(box[3] * img.h);
+  const w = Math.max(1, Math.round((x1 - x0) * zoom)), h = Math.max(1, Math.round((y1 - y0) * zoom));
+  const rgb = Buffer.alloc(w * h * 3);
+  for (let y = 0; y < h; y++)
+    for (let x = 0; x < w; x++) {
+      const p = px(img, Math.min(x1 - 1, x0 + Math.floor(x / zoom)), Math.min(y1 - 1, y0 + Math.floor(y / zoom)));
+      for (let c = 0; c < 3; c++) rgb[(y * w + x) * 3 + c] = Math.min(255, Math.round(p[c] * gain));
+    }
+  return { w, h, rgb, srcW: x1 - x0, srcH: y1 - y0 };
+}
+
+// [rc4l] An RGB image as PNG bytes, for a capture on disk or a graphic lump inside a template wad.
+export function encodePNG(w, h, rgb) {
   const raw = Buffer.alloc((w * 3 + 1) * h);
   for (let y = 0; y < h; y++) {
     raw[y * (w * 3 + 1)] = 0;                                  // filter: none
@@ -75,10 +107,10 @@ export function writePNG(path, w, h, rgb) {
   const ihdr = Buffer.alloc(13);
   ihdr.writeUInt32BE(w, 0); ihdr.writeUInt32BE(h, 4);
   ihdr[8] = 8; ihdr[9] = 2; ihdr[10] = 0; ihdr[11] = 0; ihdr[12] = 0;
-  fs.writeFileSync(path, Buffer.concat([
+  return Buffer.concat([
     Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
     chunk("IHDR", ihdr), chunk("IDAT", zlib.deflateSync(raw)), chunk("IEND", Buffer.alloc(0)),
-  ]));
+  ]);
 }
 
 let CRC_TABLE = null;

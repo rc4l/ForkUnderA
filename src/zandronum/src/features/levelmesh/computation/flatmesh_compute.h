@@ -156,11 +156,48 @@ struct PlaneUVAffine
 };
 PlaneUVAffine ComputePlaneUVAffine(const PlaneUVTransform &t);
 
-// [rc4l] The sky-surface lists a GL scene walk can fill: the player's view, a camera texture's, or neither.
-enum { kSkyCaptureNone = -1, kSkyCaptureMain = 0, kSkyCaptureCamera = 1 };
+// [rc4l] The most stacked-sector views (GL's GLSectorStackPortal) a frame renders; a further portal in sight is left undrawn.
+enum { kMaxStackViews = 2 };
 
-// [rc4l] Which list a walk fills: only an outer walk (portal depth 0) fills one, and only the main view's fills the player's.
-int ComputeSkyCaptureList(bool mainView, int sceneNesting);
+// [rc4l] The sky-surface lists a GL scene walk can fill: the player's view, a camera texture's, one per stacked view, or none.
+enum { kSkyCaptureNone = -1, kSkyCaptureMain = 0, kSkyCaptureCamera = 1, kSkyCaptureStack = 2,
+       kSkyCaptureLists = kSkyCaptureStack + kMaxStackViews };
+
+// [rc4l] Which list a walk fills: an outer walk fills the main or camera one, and the player's walk through a stacked view it saw (stackSlot, else -1) fills that view's.
+int ComputeSkyCaptureList(bool mainView, int sceneNesting, int stackSlot);
+
+// [rc4l] The list a backend pass draws its sky from: a camera texture's, a stacked view's (stackSlot, else -1), or the player's.
+int ComputeSkyDrawList(bool cameraPass, int stackSlot);
+
+// [rc4l] Whether a sky quad's skybox becomes the frame's: the player's own walk always, a stacked view's only while the player's named none.
+bool ComputeTakesSkyViewpoint(int list, bool haveOne);
+
+// [rc4l] The words of a frame's bit set holding, for every id (the subsectors, then the sidedefs), one bit per stacked view: whether that view's walk drew it.
+int ComputeStackVisWords(int ids);
+
+// [rc4l] Marks an id drawn by a stacked view's walk, at bit id * kMaxStackViews + slot, which is where the scene shader looks.
+void ComputeMarkStackVisible(unsigned int *bits, int id, int slot);
+
+// [rc4l] Whether a stacked view's walk drew an id, read back as the scene shader reads it; an id outside the words is not drawn.
+bool ComputeStackVisible(const unsigned int *bits, int words, int id, int slot);
+
+// [rc4l] One corner (0..5, two triangles) of a stacked view's cap, the plane at the map's height limit GLPortal::DrawPortalStencil closes a stack's stencil with: overhead for a ceiling stack, underfoot for a floor one.
+void ComputeStackCapCorner(bool ceiling, int corner, float &x, float &y, float &z);
+
+// [rc4l] Whether GL draws a two-sided middle in its translucent pass (GLWall::DoMidTexture, PutWall): a linedef alpha below opaque or additive, or a texture with see-through texels; an alpha of 0 skips the linedef's part.
+bool ComputeMidTextureTranslucent(float lineAlpha, bool additive, bool textureTransparent);
+
+// [rc4l] How opaque GLFlat::ProcessSector draws a sector plane: a stacked one by its own alpha (0 for a stack seen straight through, which is not drawn), any other by what its reflection leaves.
+float ComputePlaneAlpha(bool stacked, float stackAlpha, float reflect);
+
+// [rc4l] The squared distance from a point to a segment, for finding the seg a wall piece lies on.
+float ComputeSegmentDistance2(float px, float py, float x1, float y1, float x2, float y2);
+
+// [rc4l] A point inside the subsector a piece lies in: its centre, stepped a unit off a wall along its normal (mesh space, y up) so it lands on the wall's own side; true for a wall.
+bool ComputePieceProbe(float centreX, float centreY, float normX, float normUp, float normY, float &probeX, float &probeY);
+
+// [rc4l] Whether a sprite from GL's walk through a line mirror is kept for the backend's mirror pass: only the viewer's own, which the player's walk never draws, from the mirror the player's view reached.
+bool ComputeTakesMirrorViewer(bool mirrorWalk, bool mainView, int sceneNesting, bool isViewer);
 
 // [rc4l] Whether a sprite, model or decal being captured belongs to the frame: the player's view from the outermost DrawScene (nesting 1, or 0 outside any), since GL raises the portal depth for the player's own scene once its walk is done.
 bool ComputeOwnsFrameCapture(bool mainView, int sceneNesting);

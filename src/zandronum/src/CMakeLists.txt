@@ -1635,6 +1635,8 @@ add_executable( zdoom WIN32
 	features/hwrender/computation/planemirror_compute.cpp
 	features/hwrender/computation/skyportal_compute.cpp
 	features/hwrender/computation/batch_compute.cpp
+	features/hwrender/computation/growbuffer_compute.cpp
+	features/hwrender/computation/backendview_compute.cpp
 	features/fov-interp/fovinterp.cpp
 	features/fov-interp/fovcvar.cpp
 	features/quake-movement/quakemove.cpp

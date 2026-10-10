@@ -31,6 +31,7 @@
 EXTERN_CVAR(Bool, gl_wallmesh)
 EXTERN_CVAR(Bool, fua_surface_mapbake_auto)
 EXTERN_CVAR(Bool, fua_mesh_sky)
+EXTERN_CVAR(Bool, gl_mirrors)
 EXTERN_CVAR(Bool, fua_surface_bands)
 // [rc4l] Print each banded wall the map bake splits: its span, the first boundary and the band that lights its top.
 CVAR(Bool, fua_band_log, false, 0)
@@ -711,8 +712,9 @@ int BakeSegFromMap(int segIndex)
 	// corners again, in the same plane, and the two would stipple against each other.
 	if (!SegOwnsItsSide(segIndex)) return -1;
 
-	// [rc4l] A horizon line is taken and left empty, since GL draws no wall on it -- see features/horizon.
-	if (zx::horizon::ComputeIsHorizonLine(seg->linedef->special))
+	// [rc4l] A horizon line or a mirror is taken and left empty, since GL draws no wall on either -- see features/horizon and RenderMirrors.
+	if (zx::horizon::ComputeIsHorizonLine(seg->linedef->special) ||
+	    ComputeIsMirrorWall(seg->linedef->special, seg->backsector == NULL, gl_mirrors))
 	{
 		for (int k = 0; k < kMaxMapPieces; k++) MeshSquash(sc.pieces[k].range);
 		return 0;
@@ -841,6 +843,17 @@ int BakeSegFromMap(int segIndex)
 			mp.lightLevel = lightLevel;
 			mp.lightColor = cm.LightColor.d;
 			mp.fadeColor = cm.FadeColor.d;
+			// [rc4l] A two-sided middle blends as GL draws it: the linedef's alpha and style, or the texture's own see-through texels.
+			if (kParts[part] == RENDERWALL_M2S || kParts[part] == RENDERWALL_M2SNF)
+			{
+				const line_t *ln = seg->linedef;
+				const float lineAlpha = FIXED2FLOAT(ln->Alpha);
+				const bool additive = lineAlpha != 0.f && (ln->flags & ML_ADDTRANS) != 0;
+				const FMaterial *fm = (const FMaterial *)d.material;
+				const bool trans = ComputeMidTextureTranslucent(lineAlpha, additive, fm != NULL && fm->GetTransparent());
+				mp.alpha = (lineAlpha != 0.f) ? lineAlpha : 1.f;
+				mp.blendMode = ComputeWallBlendMode(trans, additive, mp.alpha);
+			}
 			// [rc4l] The wall's normal: perpendicular to its direction, in mesh space (x, z-up, y), on
 			// the side the winding faces -- the same rule the capture path uses, so front faces agree.
 			{

@@ -17,6 +17,8 @@
 #define ZX_FLATMESH_H
 
 struct subsector_t;
+struct FPortal;
+class GLWall;
 class GLFlat;
 class GLSprite;
 struct FFlatVertex;
@@ -24,7 +26,7 @@ struct FColormap;
 struct sector_t;
 struct GLSectorPlane;
 class FMaterial;
-namespace zx { namespace levelmesh { struct MeshRange; struct PlaneUVTransform; } }
+namespace zx { namespace levelmesh { struct MeshRange; struct PlaneUVTransform; struct MeshPiece; } }
 
 namespace zx { namespace levelmesh {
 
@@ -42,6 +44,43 @@ void LeaveScene();
 
 // [rc4l] Whether what is being captured right now belongs to the frame (ComputeOwnsFrameCapture): never a mirror, skybox or camera-texture scene.
 bool PlayerWalkActive();
+
+// [rc4l] A stacked view the player's walk saw this frame: the eye's move into it in map units, and the plane it opens from.
+struct StackViewInfo
+{
+	float dx, dy;
+	bool ceiling;
+};
+
+// [rc4l] A wall GL stencils a stacked view through (RENDERWALL_SECTORSTACK, from the stacked plane to the map's limit), taken as geometry into its portal's view; with the cap it is the whole of GL's stencil, so geometry beyond a stacked plane still hides the view as it does in GL.
+void RegisterStackWall(const GLWall &wall, const FPortal *portal);
+int StackViewCount();
+StackViewInfo StackView(int slot);
+const FFlatVertex *StackViewVertices(int slot, int &count);
+
+// [rc4l] A subsector GL's walk accepted (DoSubsector) and a sidedef whose seg its clipper let through (AddLine), kept for the stacked view whose walk it is.
+void NoteWalkedSubsector(int subsector);
+void NoteWalkedSide(int side);
+// [rc4l] The id a stacked view keeps or drops a level-mesh piece by: its subsector for a flat, numsubsectors plus its sidedef for a wall, -1 if it cannot be placed.
+int PieceStackId(const MeshPiece &p);
+// [rc4l] This frame's ComputeMarkStackVisible bits over the subsectors then the sidedefs, or NULL with no stacked view.
+const unsigned int *StackVisibility(int &words);
+
+// [rc4l] Marks GL's walk through a line mirror (GLMirrorPortal::DrawContents), so the viewer's sprite it draws reaches the backend's mirror pass.
+struct MirrorWalk
+{
+	MirrorWalk();
+	~MirrorWalk();
+	bool saved;
+};
+
+// [rc4l] Marks GL's walk through a stacked view (GLSectorStackPortal::DrawContents), so its sky quads fill that view's list.
+struct StackWalk
+{
+	explicit StackWalk(const void *portal);
+	~StackWalk();
+	const void *saved;
+};
 
 // [rc4l] A fullbright texture draws at light 255 and white light, as GLFlat::Process and DrawFloodedPlane both decide it.
 void ApplyFullbright(const FMaterial *mat, FColormap &cm, int &lightLevel);

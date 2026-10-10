@@ -67,6 +67,7 @@
 // [AK] New #includes.
 #include "c_console.h"
 #include "features/fixed64/computation/angle_interp_compute.h"
+#include "features/levelmesh/flatmesh.h"
 
 //-----------------------------------------------------------------------------
 //-----------------------------------------------------------------------------
@@ -787,7 +788,10 @@ void GLSectorStackPortal::DrawContents()
 	SaveMapSection();
 	SetupCoverage();
 	ClearClipper();
-	GLRenderer->DrawScene();
+	{
+		zx::levelmesh::StackWalk walk(origin);	// [rc4l] features/levelmesh: this walk's sky belongs to the stacked view
+		GLRenderer->DrawScene();
+	}
 	RestoreMapSection();
 
 	if (origin->plane != -1) instack[origin->plane]--;
@@ -954,7 +958,10 @@ void GLMirrorPortal::DrawContents()
 	angle_t a1 = linedef->v2->GetClipAngle();
 	clipper.SafeAddClipRange(a1,a2);
 
-	GLRenderer->DrawScene();
+	{
+		zx::levelmesh::MirrorWalk walk;	// [rc4l] features/levelmesh: the viewer this walk draws belongs to the backend's mirror pass
+		GLRenderer->DrawScene();
+	}
 
 	MirrorFlag--;
 }

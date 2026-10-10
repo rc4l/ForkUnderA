@@ -828,13 +828,18 @@ CCMD( fua_look )
 	const float dy = ca * FIXED2FLOAT( finesine[ang >> ANGLETOFINESHIFT] );
 	const float dz = -FIXED2FLOAT( finesine[pit >> ANGLETOFINESHIFT] );
 
-	const float ox = FIXED2FLOAT( viewx ), oy = FIXED2FLOAT( viewy ), oz = FIXED2FLOAT( viewz );
-	Printf( "fua_look: from (%.0f, %.0f, %.0f) dir (%.2f, %.2f, %.2f)\n", ox, oy, oz, dx, dy, dz );
+	// [rc4l] `fua_look stack` casts from the first stacked view's eye instead, the player's moved by its portal, to name what that view draws.
+	const bool throughStack = argv.argc( ) > 1 && !stricmp( argv[1], "stack" ) && zx::levelmesh::StackViewCount( ) > 0;
+	const zx::levelmesh::StackViewInfo sv = throughStack ? zx::levelmesh::StackView( 0 ) : zx::levelmesh::StackViewInfo( );
+	const float ox = FIXED2FLOAT( viewx ) + ( throughStack ? sv.dx : 0.f ), oy = FIXED2FLOAT( viewy ) + ( throughStack ? sv.dy : 0.f );
+	const float oz = FIXED2FLOAT( viewz );
+	Printf( "fua_look: from (%.0f, %.0f, %.0f) dir (%.2f, %.2f, %.2f)%s\n", ox, oy, oz, dx, dy, dz, throughStack ? " through stacked view 0" : "" );
 	// The camera itself is NOT printed here. It belongs to the bridge, not to a mesh diagnostic:
 	// see the player.camera RPC and `fuactl here`, which answer it in the units setpos takes and to
 	// enough decimals to replay onto the same texel.
 
 	// --- what the engine says is there ---------------------------------------------------------
+	if ( !throughStack )
 	{
 		FTraceResults res;
 		if ( Trace( viewx, viewy, viewz, mo->Sector,
@@ -869,6 +874,9 @@ CCMD( fua_look )
 	{
 		const zx::levelmesh::MeshPiece &p = pieces[i];
 		if ( p.range.count < 3 ) continue;
+		// [rc4l] Through a stacked view, only what faces the eye, as the backend's cull draws it.
+		if ( throughStack && p.range.offset < (unsigned)nv &&
+			 p.normX * ( ox - verts[p.range.offset].x ) + p.normY * ( oz - verts[p.range.offset].z ) + p.normZ * ( oy - verts[p.range.offset].y ) < -0.01f ) continue;
 		for ( unsigned v = 0; v + 2 < p.range.count; v += 3 )
 		{
 			if ( p.range.offset + v + 2 >= (unsigned)nv ) break;
@@ -906,6 +914,16 @@ CCMD( fua_look )
 	}
 
 	const zx::levelmesh::MeshPiece &p = pieces[bestPiece];
+	if ( throughStack )
+	{
+		// [rc4l] What the backend keeps or drops this piece by in the stacked view, and whether that view's walk drew it.
+		const int id = zx::levelmesh::PieceStackId( p );
+		int words = 0;
+		const unsigned int *bits = zx::levelmesh::StackVisibility( words );
+		const bool drawn = zx::levelmesh::ComputeStackVisible( bits, words, id, 0 );
+		Printf( "  stacked view: %s %d, %s\n", id >= numsubsectors ? "sidedef" : "subsector",
+				id >= numsubsectors ? id - numsubsectors : id, drawn ? "drawn by the view's walk" : "NOT drawn by it" );
+	}
 	static const char *kBlend[4] = { "opaque/alpha-tested", "translucent", "additive", "fuzz" };
 	FTexture *bt = (FTexture *)p.baseTex;
 	Printf( "  mesh: piece %d at %.0f away, range %u+%u\n"

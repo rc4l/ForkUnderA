@@ -61,6 +61,7 @@
 #include "gl/utility/gl_templates.h"
 #include "gl/shaders/gl_shader.h"
 #include "features/levelmesh/wallcache.h"
+#include "features/levelmesh/flatmesh.h"   // [rc4l] RegisterStackWall
 
 
 //==========================================================================
@@ -194,6 +195,7 @@ void GLWall::PutWall(bool translucent)
 		break;
 
 	case RENDERWALL_SECTORSTACK:
+		zx::levelmesh::RegisterStackWall(*this, this->portal);	// [rc4l] features/levelmesh: the stacked view's surface
 		portal = this->portal->GetGLPortal();
 		portal->AddLine(this);
 		break;

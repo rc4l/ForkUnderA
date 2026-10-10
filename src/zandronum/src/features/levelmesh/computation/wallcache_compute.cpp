@@ -29,5 +29,10 @@ bool ComputeCanReuse(const WallCacheEligibility &e, bool haveCached,
 	return ComputeStampsEqual(cached, current);
 }
 
+bool ComputeIsMirrorWall(int lineSpecial, bool oneSided, bool mirrorsOn)
+{
+	return lineSpecial == kLineMirror && oneSided && mirrorsOn;
+}
+
 
 }} // namespace zx::levelmesh

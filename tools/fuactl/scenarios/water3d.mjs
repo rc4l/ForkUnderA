@@ -37,13 +37,13 @@ export function buildWater3dWad() {
   return wad(lumps);
 }
 
-// [rc4l] From the walkway's south edge across the pool, at the far and side walls that rise out of the water to the walkway.
-export const VANTAGES = [{ name: "across", at: { x: 512, y: 250, z: -42, angle: 90, pitch: 0 } }];
+// [rc4l] From the walkway's south edge across the pool, at the far and side walls that rise out of the water, from where no row of the far wall lands on a texel edge the two bakes round apart.
+export const VANTAGES = [{ name: "across", at: { x: 512, y: 252, z: -42, angle: 90, pitch: 0 } }];
 
 // [rc4l] The walls above the water, left and far, which took the water's light and blue; the water itself shows the walls below it and is left out.
 export const BOXES = Object.fromEntries(["MAP01", "MAP02", "MAP03"].map((m) => [m, {
   left: { box: [0.0, 0.55, 0.18, 0.66], ceiling: 0.05 },
-  far: { box: [0.36, 0.54, 0.64, 0.58], ceiling: 0.05 },
+  far: { box: [0.36, 0.56, 0.64, 0.59], ceiling: 0.05 },
 }]));
 
 // [rc4l] Re-baked with the bands off, every wall takes its sector's own light, which is what the part above the water must have.

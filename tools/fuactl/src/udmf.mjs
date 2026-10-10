@@ -65,14 +65,14 @@ export class UdmfMap {
     return s;
   }
 
-  // [rc4l] A sector standing inside another, joined by two-sided lines so the block is on every line's front; outer(edge) and inner(edge) style the sides facing out and in.
-  block(x0, y0, x1, y1, sectorProps, outerSector, outer = () => ({}), inner = () => ({})) {
+  // [rc4l] A sector standing inside another, joined by two-sided lines so the block is on every line's front; outer(edge) and inner(edge) style the sides facing out and in, line(edge) the lines themselves.
+  block(x0, y0, x1, y1, sectorProps, outerSector, outer = () => ({}), inner = () => ({}), line = () => ({})) {
     const s = this.sector(sectorProps);
     for (const [name, ax, ay, bx, by] of rectEdges(x0, y0, x1, y1)) {
       this.sides.push({ sector: s, ...(inner(name) || {}) });
       this.sides.push({ sector: outerSector, ...(outer(name) || {}) });
       this.lines.push({ v1: this.vertex(ax, ay), v2: this.vertex(bx, by), sidefront: this.sides.length - 2,
-        sideback: this.sides.length - 1, twosided: true });
+        sideback: this.sides.length - 1, twosided: true, ...(line(name) || {}) });
     }
     return s;
   }

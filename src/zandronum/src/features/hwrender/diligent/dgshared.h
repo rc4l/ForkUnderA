@@ -20,7 +20,7 @@
 
 // [rc4l] One piece's record as every shader reads it, declared once so its stride cannot drift from ScenePieceData's.
 #define FUA_PIECEDATA_GLSL \
-	"struct PieceData { vec4 colorLight; vec4 fogAlphaMat; vec4 fogColor; vec4 normal; vec4 floodU; vec4 floodV; vec4 actorLight; };\n" \
+	"struct PieceData { vec4 colorLight; vec4 fogAlphaMat; vec4 fogColor; vec4 normal; vec4 floodU; vec4 floodV; vec4 actorLight; vec4 bright; };\n" \
 	"layout(std430, binding = 9) readonly buffer Pieces { PieceData pieces[]; };\n"
 
 #include "RenderDevice.h"

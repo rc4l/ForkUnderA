@@ -22,10 +22,12 @@
 #include "features/levelmesh/computation/flatmesh_compute.h"
 #include "p_3dfloors.h"   // F3DFloor, for the FF_FIX abuse GL will not flood over
 #include "features/horizon/computation/horizon_compute.h"
+#include "features/levelmesh/computation/wallcache_compute.h"   // [rc4l] ComputeIsMirrorWall
 
 // [rc4l] Declared at global scope: EXTERN_CVAR inside the namespace would name a different symbol
 // than the CVAR defined in surfaceverify.cpp, and only the linker would notice.
 EXTERN_CVAR(Bool, fua_surface_vshift)
+EXTERN_CVAR(Bool, gl_mirrors)
 
 namespace zx { namespace surfaces {
 
@@ -164,14 +166,12 @@ bool BuildDerivedWallSpan(const seg_t *seg, int renderType, DerivedWallSpan &out
 	    seg->frontsector == NULL) return false;
 	// [rc4l] A horizon line has no wall parts: GLWall::Process hands it to DoHorizon and returns.
 	if (zx::horizon::ComputeIsHorizonLine(seg->linedef->special)) return false;
+	// [rc4l] Nor has a mirror: GLWall::DoMidTexture makes its face RENDERWALL_MIRROR, which the backend's mirror pass draws.
+	if (renderType == RENDERWALL_M1S && zx::levelmesh::ComputeIsMirrorWall(seg->linedef->special, true, gl_mirrors)) return false;
 
 	int texpos = side_t::mid;
 	if (!PartOf(renderType, texpos)) { g_fbSpecial++; g_fellBack++; return false; }
-	// [rc4l] A two-sided middle is left to the capture on purpose.
-	//
-	// It does not fill an opening: DoMidTexture hangs it by its own height and clips it, and the
-	// ladder scores it lowest of the three. Moving the parts that are understood is what this is for;
-	// moving one that is not would put a guess on screen and call it progress.
+	// [rc4l] A two-sided middle needs the sector behind it, since DoMidTexture hangs it by its own height and clips it against both sides (ComputeMiddleClip).
 	const bool twoSidedMid = (renderType == RENDERWALL_M2S || renderType == RENDERWALL_M2SNF);
 	if (twoSidedMid && seg->backsector == NULL) { g_fbMiddle++; g_fellBack++; return false; }
 

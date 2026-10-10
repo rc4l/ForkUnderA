@@ -23,6 +23,7 @@ SceneConstantInputs Inputs(const float *mvp, const float *clip)
 	in.skyCapR = 255; in.skyCapG = 0; in.skyCapB = 51;
 	in.materialSlots = 4096.f;
 	in.frameMS = 2500u;
+	in.stackSlot = 1;
 	return in;
 }
 
@@ -47,7 +48,18 @@ TEST(SceneConstants, EveryFieldLandsWhereTheShaderReadsIt)
 	EXPECT_FLOAT_EQ(1.f, out[32]); EXPECT_FLOAT_EQ(0.f, out[33]); EXPECT_FLOAT_EQ(0.2f, out[34]);
 	EXPECT_EQ(4096.f, out[35]);
 	EXPECT_FLOAT_EQ(2.5f, out[36]);
-	EXPECT_EQ(0.f, out[37]); EXPECT_EQ(0.f, out[38]); EXPECT_EQ(0.f, out[39]);
+	EXPECT_EQ(2.f, out[37]); EXPECT_EQ(0.f, out[38]); EXPECT_EQ(0.f, out[39]);
+}
+
+// [rc4l] Every pass but a stacked view's reads zero, which the scene shader takes as "cull nothing".
+TEST(SceneConstants, NoStackedViewReadsZero)
+{
+	float mvp[16] = {};
+	SceneConstantInputs in = Inputs(mvp, nullptr);
+	in.stackSlot = -1;
+	float out[kSceneConstantFloats];
+	ComputeSceneConstants(in, out);
+	EXPECT_EQ(0.f, out[37]);
 }
 
 // [rc4l] A zero cluster range is how the shader is told the grid is off, and a missing clip plane is all zeros (w 0 disables it).

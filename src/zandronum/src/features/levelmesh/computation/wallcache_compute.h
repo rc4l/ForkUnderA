@@ -57,6 +57,12 @@ bool ComputeIsCacheable(const WallCacheEligibility &e);
 bool ComputeCanReuse(const WallCacheEligibility &e, bool haveCached,
                      const WallCacheStamp &cached, const WallCacheStamp &current);
 
+// [rc4l] Line_Mirror's number in actionspecials.h.
+enum { kLineMirror = 182 };
+
+// [rc4l] Whether a seg's face is a mirror GL draws instead of its wall, as GLWall::DoMidTexture decides: a one-sided Line_Mirror while gl_mirrors is on.
+bool ComputeIsMirrorWall(int lineSpecial, bool oneSided, bool mirrorsOn);
+
 
 }} // namespace zx::levelmesh
 

@@ -80,6 +80,8 @@ undefined), launches each map twice — GL alone, then Vulkan with `fua_dg_stand
 every vantage, and judges each box by `boxDiff`: mean |d| in 16-pixel block means, so the renderers'
 sub-pixel framing averages out while a block-sized fault stays loud. Its GL frames come from the
 Vulkan-off launch on purpose: with Vulkan on, GL captures on a skybox map were unreliable in every build.
+"Another engine" includes the reporter's own side-by-side session: quit it by its token before a GL-side
+run and relaunch it afterwards (`fua-side-by-side`), never by process name.
 
 When the fault is a Vulkan switch rather than a GL difference, pass `sides`: two named launches, each
 with the cvars it sets and any `commands` to run after them (`fua_mapbake_now` re-bakes with a bake
@@ -144,6 +146,12 @@ Export the builder from the scenario; `runScenarioIfMain` keeps the import from 
 | `tools/fuactl/scenarios/switchtex.mjs` | a switch pressed with `+use` against the same wall drawn pressed |
 | `tools/fuactl/scenarios/actorlight.mjs` | a sprite by a red point light, GL against Vulkan: the actor's own light |
 | `tools/fuactl/scenarios/warpwater.mjs` | a warp2 flat captured twice apart (`compareOverTime`): the water must move, the floor must not |
+| `tools/fuactl/scenarios/brightmap.mjs` | GLDEFS brightmaps on a wall and a sprite in a dark room, bindless against a binding per material; the brightmap PNG is a lump between `TX_START`/`TX_END` |
+| `tools/fuactl/scenarios/stackportal.mjs` | a ceiling that is a stacked sector (`UpperStackLookOnly`/`LowerStackLookOnly` paired by TID) onto a room off the map's side, GL against Vulkan |
+| `tools/fuactl/scenarios/stackwalls.mjs` | rays crossing a low stacked annex above its ceiling, which only GL's stack walls catch, GL against Vulkan |
+| `tools/fuactl/scenarios/linemirror.mjs` | a one-sided `Line_Mirror` wall reflecting the room and the player, GL (sheen off) against Vulkan |
+| `tools/fuactl/scenarios/translucentmid.mjs` | a two-sided middle texture at half alpha (`block`'s `line(edge)` sets the linedef's `alpha`), GL against Vulkan |
+| `tools/fuactl/scenarios/pitchframing.mjs` | a tall sky room level and looking up: the camera's 1.2 pixel stretch, GL against Vulkan |
 | `tools/fuactl/src/mapdata.mjs` | read a real map's sectors, lines and scripts, to find the ingredient to template |
 | `tools/fuactl/src/acs.mjs` | ACS0 BEHAVIOR writer for scripted template maps |
 | `tools/fuactl/test/{udmf,template,pngcore}.test.mjs` | their tests |

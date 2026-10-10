@@ -100,6 +100,15 @@ TEST(WallCache, IneligibleSegNeverReusesEvenWithAMatchingStamp)
 	EXPECT_FALSE(ComputeCanReuse(e, true, s, s));
 }
 
+// [rc4l] WDI01's bathroom mirror: the map bake gave the mirror line its wall, which hid the mirror drawn on the same plane.
+TEST(WallCache, AOneSidedMirrorLineIsAMirrorNotAWall)
+{
+	EXPECT_TRUE(ComputeIsMirrorWall(kLineMirror, true, true));
+	EXPECT_FALSE(ComputeIsMirrorWall(kLineMirror, false, true));   // [rc4l] GL mirrors only a one-sided middle
+	EXPECT_FALSE(ComputeIsMirrorWall(kLineMirror, true, false));   // [rc4l] gl_mirrors off draws the wall
+	EXPECT_FALSE(ComputeIsMirrorWall(0, true, true));
+}
+
 TEST(WallCache, ChangedStampBlocksReuse)
 {
 	WallCacheStamp cur = Stamp();

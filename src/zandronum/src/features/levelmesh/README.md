@@ -51,7 +51,13 @@ The frame's captures -- sky surfaces, sprites, models, decals (`flatmesh.cpp`, `
   only on the player's scene; `RenderViewpoint` records which view is walking (`SetMainView`).
 - `gl/scene/gl_walls.cpp` `PutWall`: `RegisterSkyQuad` for `RENDERWALL_SKY` and `RENDERWALL_SKYBOX`.
 - `gl/models/gl_models.cpp` `gl_RenderModel`: `ModelCaptureBegin`/`ModelCaptureEnd` around the draw.
-- `hwrender/diligent/dgscene.cpp` `DrawSkySurfaces`: reads the list of the view it is drawing.
+- `gl/scene/gl_walls.cpp` `PutWall`: `RegisterStackWall` for `RENDERWALL_SECTORSTACK`, the walls GL stencils a stacked
+  view through, gathered per portal into a few views.
+- `gl/scene/gl_bsp.cpp` `DoSubsector` and `AddLine`: `NoteWalkedSubsector`/`NoteWalkedSide`, what a stacked view's walk drew.
+- `gl/scene/gl_portal.cpp` `GLSectorStackPortal::DrawContents`: a `StackWalk` around its `DrawScene`, so
+  that walk's sky quads fill its view's list.
+- `hwrender/diligent/dgscene.cpp` `DrawSkySurfaces`: reads the list of the view it is drawing;
+  `RenderStackPortals`/`DrawStackSurfaces` render each stacked view and paint its planes from it.
 
 The rest of this section predates the bake: **P0 had none.** P0 is a console command and a pure computation unit; it reads existing map structures
 and writes nothing. The dirty-tracking hooks the later phases need are enumerated in

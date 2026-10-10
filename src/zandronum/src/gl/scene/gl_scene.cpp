@@ -88,6 +88,7 @@
 #include "features/fua-caching/fua_caching.h"
 #include "features/levelmesh/projdecals.h"   // [rc4l] projected mesh decals
 #include "features/horizon/horizon.h"   // [rc4l] horizon windows, rebuilt per frame
+#include "features/hwrender/diligent/dglive.h"   // [rc4l] SetMainViewLens
 #include "mcp_glperf.h" // [rc4l] GPU render-pass timer anchors (no-op unless FUA_MCP_BRIDGE)
 
 //==========================================================================
@@ -1066,6 +1067,7 @@ sector_t * FGLRenderer::RenderViewpoint (AActor * camera, GL_IRECT * bounds, flo
 	// [rc4l] Which view the walks below belong to, for CreateScene's capture; restored on return in case one view nests in another.
 	const bool savedMainview = zx::levelmesh::MainView();
 	zx::levelmesh::SetMainView(mainview);
+	if (mainview && toscreen) zx::hwrender::SetMainViewLens(fov, fovratio);	// [rc4l] features/hwrender: the backend frames the player's view with GL's lens
 	sector_t * retval;
 	R_SetupFrame (camera);
 	SetViewArea();

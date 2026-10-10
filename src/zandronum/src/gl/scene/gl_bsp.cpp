@@ -55,6 +55,7 @@
 #include "features/hitboxviz/hitboxviz.h"
 #include "features/levelmesh/wallcache.h"
 #include "features/levelmesh/levelmesh.h"
+#include "features/levelmesh/flatmesh.h"
 
 EXTERN_CVAR(Bool, gl_render_segs)
 
@@ -169,6 +170,7 @@ static void AddLine (seg_t *seg)
 		return;
 	}
 	currentsubsector->flags |= SSECF_DRAWN;
+	zx::levelmesh::NoteWalkedSide(int(seg->sidedef - sides));	// [rc4l] features/levelmesh: a wall a stacked view may draw
 
 	if (!seg->backsector)
 	{
@@ -465,6 +467,7 @@ static void DoSubsector(subsector_t * sub)
 		int clipres = GLRenderer->mCurrentPortal->ClipSubsector(sub);
 		if (clipres == GLPortal::PClip_InFront) return;
 	}
+	zx::levelmesh::NoteWalkedSubsector(int(sub - subsectors));	// [rc4l] features/levelmesh: what a stacked view may draw
 
 
 

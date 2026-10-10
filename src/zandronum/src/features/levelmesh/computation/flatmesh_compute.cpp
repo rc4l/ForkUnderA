@@ -155,15 +155,92 @@ PlaneUVAffine ComputePlaneUVAffine(const PlaneUVTransform &t)
 	return a;
 }
 
-int ComputeSkyCaptureList(bool mainView, int sceneNesting)
+int ComputeSkyCaptureList(bool mainView, int sceneNesting, int stackSlot)
 {
-	if (sceneNesting > 1) return kSkyCaptureNone;
-	return mainView ? kSkyCaptureMain : kSkyCaptureCamera;
+	if (sceneNesting <= 1) return mainView ? kSkyCaptureMain : kSkyCaptureCamera;
+	if (sceneNesting == 2 && mainView && stackSlot >= 0 && stackSlot < kMaxStackViews) return kSkyCaptureStack + stackSlot;
+	return kSkyCaptureNone;
+}
+
+int ComputeSkyDrawList(bool cameraPass, int stackSlot)
+{
+	if (cameraPass) return kSkyCaptureCamera;
+	return (stackSlot >= 0 && stackSlot < kMaxStackViews) ? kSkyCaptureStack + stackSlot : kSkyCaptureMain;
+}
+
+bool ComputeTakesSkyViewpoint(int list, bool haveOne)
+{
+	return list == kSkyCaptureMain || (list >= kSkyCaptureStack && !haveOne);
+}
+
+int ComputeStackVisWords(int ids)
+{
+	return (ids * kMaxStackViews + 31) / 32;
+}
+
+void ComputeMarkStackVisible(unsigned int *bits, int id, int slot)
+{
+	const int bit = id * kMaxStackViews + slot;
+	bits[bit >> 5] |= 1u << (bit & 31);
+}
+
+bool ComputeMidTextureTranslucent(float lineAlpha, bool additive, bool textureTransparent)
+{
+	if (textureTransparent) return true;
+	return lineAlpha != 0.f && (additive || lineAlpha < 1.f);
+}
+
+float ComputePlaneAlpha(bool stacked, float stackAlpha, float reflect)
+{
+	return stacked ? stackAlpha : 1.f - reflect;
+}
+
+void ComputeStackCapCorner(bool ceiling, int corner, float &x, float &y, float &z)
+{
+	static const int kQuad[6] = { 0, 1, 2, 0, 2, 3 };
+	const int c = kQuad[corner];
+	x = (c == 0 || c == 1) ? -32767.f : 32767.f;
+	y = (c == 0 || c == 3) ? -32767.f : 32767.f;
+	z = ceiling ? 32767.f : -32767.f;
+}
+
+bool ComputeStackVisible(const unsigned int *bits, int words, int id, int slot)
+{
+	const int bit = id * kMaxStackViews + slot;
+	if (bits == nullptr || id < 0 || (bit >> 5) >= words) return false;
+	return (bits[bit >> 5] & (1u << (bit & 31))) != 0;
+}
+
+float ComputeSegmentDistance2(float px, float py, float x1, float y1, float x2, float y2)
+{
+	const float dx = x2 - x1, dy = y2 - y1;
+	const float len2 = dx * dx + dy * dy;
+	float t = (len2 > 0.f) ? ((px - x1) * dx + (py - y1) * dy) / len2 : 0.f;
+	if (t < 0.f) t = 0.f;
+	if (t > 1.f) t = 1.f;
+	const float ex = x1 + t * dx - px, ey = y1 + t * dy - py;
+	return ex * ex + ey * ey;
+}
+
+bool ComputePieceProbe(float centreX, float centreY, float normX, float normUp, float normY, float &probeX, float &probeY)
+{
+	probeX = centreX; probeY = centreY;
+	const float flat = sqrtf(normX * normX + normY * normY);
+	// [rc4l] A floor or ceiling's centre is already inside its convex subsector; only a wall's sits on an edge.
+	if (fabsf(normUp) >= 0.7f || flat <= 0.f) return false;
+	probeX += normX / flat;
+	probeY += normY / flat;
+	return true;
+}
+
+bool ComputeTakesMirrorViewer(bool mirrorWalk, bool mainView, int sceneNesting, bool isViewer)
+{
+	return mirrorWalk && mainView && sceneNesting == 2 && isViewer;
 }
 
 bool ComputeOwnsFrameCapture(bool mainView, int sceneNesting)
 {
-	return ComputeSkyCaptureList(mainView, sceneNesting) == kSkyCaptureMain;
+	return ComputeSkyCaptureList(mainView, sceneNesting, -1) == kSkyCaptureMain;
 }
 
 }} // namespace zx::levelmesh

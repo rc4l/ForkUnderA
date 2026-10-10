@@ -6,7 +6,7 @@
 //
 // Minimal PNG decoder: enough for the engine's own RGB screenshots and readbacks.
 import fs from "node:fs";
-import { decodePNG, px, writePNG, boxDiff } from "./pngcore.mjs";
+import { decodePNG, px, writePNG, boxDiff, cropImage, samplePoints } from "./pngcore.mjs";
 
 
 // Region given in FRACTIONS of the image, so two different resolutions can be compared.
@@ -135,6 +135,16 @@ if (args[0] === "--tint") {
 // neither. Reported as min, max and mean so a threshold can be written against the spread.
 //
 // usage: fuactl png --range <file.png> [x0 y0 x1 y1]   (fractions, default the whole image)
+// usage: fuactl png --px x,y[;x,y...] <a.png> [b.png ...]   the RGB at each point in each capture
+if (args[0] === "--px") {
+  const points = String(args[1]).split(";").map((p) => p.split(",").map(Number));
+  for (const f of args.slice(2)) {
+    const rgb = samplePoints(decodePNG(f), points);
+    console.log(`${f}  ${points.map((p, i) => `${p.join(",")}=${rgb[i].join("/")}`).join("  ")}`);
+  }
+  process.exit(0);
+}
+
 // [rc4l] Mean |d| of two frames over a box, in 16-pixel block means unless told otherwise -- see boxDiff.
 //
 // usage: fuactl png --boxdiff <a.png> <b.png> <x0> <y0> <x1> <y1> [block]   (fractions)
@@ -369,22 +379,11 @@ if (args[0] === "--extent") {
 // the light amplifier on instead is not a substitute: it is a GL colormap the backend does not
 // implement, so it lights one window and not the other, which is worse than dark.
 if (args[0] === "--crop") {
-  const a = decodePNG(args[1]);
-  const f = args.slice(3, 7).map(Number);
   const z = Number(args[7] || 4);
   const gain = Number(process.env.GAIN || 1);
-  const x0 = Math.floor(f[0] * a.w), y0 = Math.floor(f[1] * a.h);
-  const x1 = Math.ceil(f[2] * a.w),  y1 = Math.ceil(f[3] * a.h);
-  const w = (x1 - x0) * z, h = (y1 - y0) * z;
-  const out = Buffer.alloc(w * h * 3);
-  for (let y = 0; y < h; y++)
-    for (let x = 0; x < w; x++) {
-      const p0 = px(a, x0 + Math.floor(x / z), y0 + Math.floor(y / z));
-      const o = (y * w + x) * 3;
-      for (let c = 0; c < 3; c++) out[o + c] = Math.min(255, Math.round(p0[c] * gain));
-    }
-  writePNG(args[2], w, h, out);
-  console.log(`wrote ${args[2]} ${w}x${h} (${z}x of ${x1 - x0}x${y1 - y0}${gain !== 1 ? `, gain ${gain}` : ""})`);
+  const c = cropImage(decodePNG(args[1]), args.slice(3, 7).map(Number), z, gain);
+  writePNG(args[2], c.w, c.h, c.rgb);
+  console.log(`wrote ${args[2]} ${c.w}x${c.h} (${z}x of ${c.srcW}x${c.srcH}${gain !== 1 ? `, gain ${gain}` : ""})`);
   process.exit(0);
 }
 // [rc4l] Per-row luminance, and the rows where it STEPS.
