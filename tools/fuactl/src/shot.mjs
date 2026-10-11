@@ -25,8 +25,9 @@ export function sessionFileFor(sessionFile, port) { return `${sessionFile}-${por
 export function readSession(file = ".play-session") {
   if (!fs.existsSync(file)) return null;
   const text = fs.readFileSync(file, "utf8");
-  const port = /PORT=(\d+)/.exec(text), token = /TOKEN=(\w+)/.exec(text), engine = /ENGINE=(.+)/.exec(text);
-  return port ? { port: Number(port[1]), token: token ? token[1] : null, engine: engine ? engine[1].trim() : null } : null;
+  const port = /PORT=(\d+)/.exec(text), token = /TOKEN=(\w+)/.exec(text), engine = /ENGINE=(.+)/.exec(text), pid = /PID=(\d+)/.exec(text);
+  return port ? { port: Number(port[1]), token: token ? token[1] : null, engine: engine ? engine[1].trim() : null,
+    pid: pid ? Number(pid[1]) : null } : null;
 }
 
 // A named camera from spots.json. A fault found by looking at it is worth a name, not four numbers
@@ -89,10 +90,22 @@ export function resolveTarget(flags, session) {
   // [rc4l] A session for the same port lends its token and the binary it launched, so `--port 7801` alone finds the user's instance and where it writes its captures.
   if (flags.port) {
     const same = session && Number(session.port) === Number(flags.port);
-    return { port: Number(flags.port), token: flags.token || (same ? session.token : null), engine: (same && session.engine) || null };
+    return { port: Number(flags.port), token: flags.token || (same ? session.token : null), engine: (same && session.engine) || null,
+      pid: (same && !flags.token && session.pid) || null };
   }
-  if (session) return { port: Number(session.port), token: flags.token || session.token || null, engine: session.engine || null };
+  if (session) return { port: Number(session.port), token: flags.token || session.token || null, engine: session.engine || null,
+    pid: (!flags.token && session.pid) || null };
   return null;
+}
+
+// [rc4l] Whether a process is running: signal 0 only asks, and EPERM means it runs as someone else.
+export function pidAlive(pid) {
+  try { process.kill(pid, 0); return true; } catch (e) { return e.code === "EPERM"; }
+}
+
+// [rc4l] Whether `ready` may connect to a target: it has a token, and the engine its session names is alive, since the bridge serves only its newest client and a stale session's token would knock a launch still checking its world off it.
+export function liveTarget(t, isAlive = pidAlive) {
+  return !!(t && t.token && (!t.pid || isAlive(t.pid)));
 }
 
 // [rc4l] A cvar's value from the console's `"name" is "value"` echo, or null when the echo is not one.
@@ -269,22 +282,50 @@ export function pickCmake(env = process.env, exists = fs.existsSync) {
 // [rc4l] The checkout this copy of fuactl lives in, so `build` works from any clone.
 const REPO_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 
-export function build({ root = REPO_ROOT, cmake = null, log = console.error } = {}) {
-  const logPath = path.join(root, "build-win/build.log");
-  const cm = cmake || pickCmake();
-  const r = spawnSync(cm, ["--build", path.join(root, "build-win"), "--config", "Release", "--target", "zdoom", "--", "-m"], {
+// [rc4l] A build log's first errors, and whether the linker could not write the binary because an engine still holds it open (LNK1104).
+export function buildErrors(out) {
+  return { errors: out.split(/\r?\n/).filter((l) => /error (C|LNK|MSB)\d*/.test(l)).slice(0, 20), locked: /LNK1104/.test(out) };
+}
+
+// [rc4l] A unit test run's count of passing tests and the names of the failing ones, from gtest's own summary lines.
+export function summarizeGtest(out) {
+  const passed = /\[\s+PASSED\s+\]\s+(\d+)\s+test/.exec(out);
+  const failed = [...out.matchAll(/^\[\s+FAILED\s+\]\s+(\S+\.\S+)/gm)].map((m) => m[1]);
+  return { passed: passed ? Number(passed[1]) : 0, failed: [...new Set(failed)] };
+}
+
+// [rc4l] One cmake build of the tree in dir (one target, or all of it), its log beside it, throwing with the first errors when it fails.
+function compile(cm, root, dir, target, log) {
+  const r = spawnSync(cm, ["--build", path.join(root, dir), "--config", "Release", ...(target ? ["--target", target] : []), "--", "-m"], {
     encoding: "utf8", env: { ...process.env, DXSDK_DIR: path.join(root, "dxsdk") },
   });
   const out = (r.stdout || "") + (r.stderr || "");
-  fs.mkdirSync(path.dirname(logPath), { recursive: true });
-  fs.writeFileSync(logPath, out);
-
-  const errors = out.split(/\r?\n/).filter((l) => /error (C|LNK|MSB)\d*/.test(l)).slice(0, 20);
+  fs.mkdirSync(path.join(root, dir), { recursive: true });
+  fs.writeFileSync(path.join(root, dir, "build.log"), out);
+  const { errors, locked } = buildErrors(out);
   // A zero exit with errors in the log has happened too; belt and braces.
   if (r.status !== 0 || errors.length) {
     for (const e of errors) log(e);
+    if (locked) throw new Error(`a running engine holds ${dir}'s binary -- quit it by port first`);
     throw new Error(r.status !== 0 ? "build failed" : "build reported success but the log contains errors");
   }
+}
+
+// [rc4l] Compile the engine, and with tests the unit tests too and run them; then stage it unless stage is false, which leaves the user's binary alone mid-investigation.
+export function build({ root = REPO_ROOT, cmake = null, log = console.error, stage = true, tests = false } = {}) {
+  const cm = cmake || pickCmake();
+  compile(cm, root, "build-win", "zdoom", log);
+  let testRun = null;
+  if (tests) {
+    compile(cm, root, "build-tests", null, log);
+    const r = spawnSync(path.join(root, "build-tests/Release/zandrox_tests.exe"), ["--gtest_brief=1"], { encoding: "utf8" });
+    testRun = summarizeGtest((r.stdout || "") + (r.stderr || ""));
+    if (r.status !== 0) {
+      for (const f of testRun.failed) log(`FAILED ${f}`);
+      throw new Error(`unit tests failed (${testRun.failed.length})`);
+    }
+  }
+  if (!stage) return { staged: null, entries: 0, tests: testRun };
 
   // [rc4l] A running engine holds the staged binary, and killing it by name would take the user's own instance with it.
   const running = engineProcessCount();
@@ -310,5 +351,5 @@ export function build({ root = REPO_ROOT, cmake = null, log = console.error } = 
   fs.rmSync(path.join(root, "dist-windows/catalogue"), { recursive: true, force: true });
   fs.cpSync(cat, path.join(root, "dist-windows/catalogue"), { recursive: true });
 
-  return { staged: path.join(root, "dist-windows/forkundera.exe"), entries: fs.readdirSync(cat).length };
+  return { staged: path.join(root, "dist-windows/forkundera.exe"), entries: fs.readdirSync(cat).length, tests: testRun };
 }

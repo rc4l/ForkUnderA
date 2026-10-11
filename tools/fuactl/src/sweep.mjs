@@ -5,7 +5,7 @@ import path from "node:path";
 import { BridgeClient } from "./client.mjs";
 import { launchInstance, stopInstance, resolveEngine } from "./launch.mjs";
 import { exec, waitTics, sandbox } from "./capture.mjs";
-import { shotPair, sweepDirFor } from "./shot.mjs";
+import { shotPair, sweepDirFor, moveTo } from "./shot.mjs";
 import * as ui from "./ui.mjs";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -100,10 +100,8 @@ export async function doorShot(c, tag, {
 // The loop this replaces: screenshot, guess a cause, rebuild, ask someone to walk back there and
 // look again. Four rounds of that on one pane of glass. The question every round was really asking
 // is "what does the mesh say about THIS surface", and it is one command against a running instance.
+// [rc4l] Stood there by moveTo, which resumes the sim first, since a paused one never updates the eye height and the ray started at the feet.
 export async function look(c, at = null, command = "fua_look") {
-  if (at) {
-    await c.rpc("player.setpos", { x: at.x, y: at.y, z: at.z, angle: at.angle, pitch: at.pitch || 0 });
-    await waitTics(c, 6);
-  }
+  if (at) await moveTo(c, at);
   return exec(c, command);
 }

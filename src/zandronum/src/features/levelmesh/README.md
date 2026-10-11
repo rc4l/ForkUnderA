@@ -62,6 +62,8 @@ decals a stacked view's or a line mirror's walk draws are kept for that pass alo
   sector it is a 3D floor in, re-bakes with its new colormap.
 - `gl/scene/gl_walls.cpp` `PutWall`: `RegisterMirrorSheen` for a `RENDERWALL_MIRROR` with `gl_mirror_envmap` on, the light
   `RenderMirrorSurface` draws the mirror's sheen in, which the backend's mirror surface adds as GL does.
+- `gl/scene/gl_walls.cpp` `PutWall` (a portal wall) and `Process` (before `AddUpperMissingTexture` and
+  `AddLowerMissingTexture`): `NoteUnreplayable`, since both hand GL per-frame state, so the wall cache never replays that seg.
 - `gl/scene/gl_bsp.cpp` `DoSubsector` and `AddLine`: `NoteWalkedSubsector`/`NoteWalkedSide`, what a stacked view's walk drew.
 - `gl/scene/gl_portal.cpp` `GLSectorStackPortal::DrawContents`: a `StackWalk` around its `DrawScene`, so
   that walk's sky quads fill its view's list and its sprites, models and decals are filed under its view.

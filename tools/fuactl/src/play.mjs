@@ -221,7 +221,7 @@ export async function play(opts = {}) {
   inst.world = world;
 
   if (opts.sessionFile) {
-    const text = `PORT=${inst.port}\nTOKEN=${inst.token}\n${inst.engine ? `ENGINE=${inst.engine}\n` : ""}`;
+    const text = `PORT=${inst.port}\nTOKEN=${inst.token}\nPID=${inst.pid}\n${inst.engine ? `ENGINE=${inst.engine}\n` : ""}`;
     fs.writeFileSync(opts.sessionFile, text);
     fs.writeFileSync(sessionFileFor(opts.sessionFile, inst.port), text);
   }

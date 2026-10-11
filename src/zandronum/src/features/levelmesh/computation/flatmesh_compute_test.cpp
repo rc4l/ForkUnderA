@@ -729,3 +729,14 @@ TEST(FlatMeshCompute, AMirrorIsRenderedOnlyWhenItCanBeSeen)
 	EXPECT_TRUE(ComputeRendersMirror(false, true, true));
 	EXPECT_FALSE(ComputeRendersMirror(false, true, false));
 }
+
+// [rc4l] gl_flats.cpp's two arms: an absolute floor light gives way to a band no sector casts, an absolute ceiling light never does, and a sector's own band is never taken from itself.
+TEST(FlatMeshCompute, APlaneTakesTheBandLightByProcessSectorsRule)
+{
+	EXPECT_TRUE(ComputePlaneTakesBandLight(false, false, true, false));
+	EXPECT_TRUE(ComputePlaneTakesBandLight(true, false, true, false));
+	EXPECT_FALSE(ComputePlaneTakesBandLight(false, false, true, true));   // [rc4l] its own band
+	EXPECT_FALSE(ComputePlaneTakesBandLight(true, true, false, false));
+	EXPECT_FALSE(ComputePlaneTakesBandLight(false, true, true, false));
+	EXPECT_TRUE(ComputePlaneTakesBandLight(false, true, false, false));
+}

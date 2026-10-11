@@ -201,6 +201,11 @@ float ComputePlaneAlpha(bool stacked, float stackAlpha, float reflect)
 	return stacked ? stackAlpha : 1.f - reflect;
 }
 
+bool ComputePlaneTakesBandLight(bool ceiling, bool absolute, bool bandFromSector, bool ownBand)
+{
+	return !ownBand && (!absolute || (!ceiling && !bandFromSector));
+}
+
 int ComputeFlatSector(int renderSector, int sector)
 {
 	return renderSector >= 0 ? renderSector : sector;

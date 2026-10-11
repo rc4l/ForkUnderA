@@ -313,3 +313,28 @@ test("the inverted-back template's strip has its floor above its ceiling, which 
   assert.ok(u.sidedef.some((s) => s.texturemiddle === "REDWALL"));
   assert.deepEqual(SIDES.map((s) => s.frame || (s.gl ? "gl alone" : "vk")), ["gl alone", "gl"]);
 });
+
+test("the missing-lower template sinks an untextured recess into the floor and looks at a red wall before it", async () => {
+  const { buildMissingLowerWad, VANTAGES: at, BOXES } = await import("../scenarios/missinglower.mjs");
+  const [u] = textmaps(buildMissingLowerWad());
+  assert.ok(u.sector[1].heightfloor < u.sector[0].heightfloor, "a recess");
+  assert.ok(u.sidedef.filter((s) => s.sector === 1).every((s) => !s.texturebottom), "its steps have no lower texture");
+  assert.deepEqual(at.map((v) => v.name), ["red", "down"], "stale red must be in GL's framebuffer before the steps are judged");
+  assert.equal(BOXES.MAP01.steps.vantage, "down");
+});
+
+test("the missing-upper template raises an untextured island's ceiling over the room and stands inside it looking up", async () => {
+  const { buildMissingUpperWad, VANTAGES: at, SIDES } = await import("../scenarios/missingupper.mjs");
+  const [u] = textmaps(buildMissingUpperWad());
+  const [room, island] = u.sector;
+  assert.ok(island.heightceiling > room.heightceiling, "the island's ceiling is above the room's");
+  assert.ok(u.sidedef.filter((s) => s.sector === 1).every((s) => !s.texturetop), "and no upper closes the step");
+  assert.ok(at[0].at.x > 256 && at[0].at.x < 768 && at[0].at.y > 256 && at[0].at.y < 768 && at[0].at.pitch < 0);
+  assert.equal(SIDES[0].cvars.gl_wallcache, 0, "stock GL's fill as the reference");
+});
+
+test("the fill-cache template compares GL with its wall cache off and on over the missing-upper map", async () => {
+  const { SIDES } = await import("../scenarios/missingfillcache.mjs");
+  assert.ok(SIDES.every((s) => s.gl));
+  assert.deepEqual(SIDES.map((s) => (s.cvars || {}).gl_wallcache), [0, undefined]);
+});

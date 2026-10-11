@@ -67,11 +67,12 @@ its full spot record.
 6. **Fix** following `AGENTS.md`: pure logic in `Compute*` helpers with colocated `*_test.cpp`
    (`writing-tests`), thin engine glue, GL hooks listed in the feature README, one-sentence
    `// [rc4l]` comments.
-7. **Verify, all of it:** build the engine and `zandrox_tests`, run the gtests and `node --test`, the
+7. **Verify, all of it:** `build --no-stage --tests` (the engine and `zandrox_tests`, run, the user's binary
+   left alone), `node --test`, the
    new scenario now passes, and `node src/cli.mjs scenarios --engine F:/ForkUnderA/build-win/Release/forkundera.exe`
    is green. Re-shoot the item's spot GL against Vulkan and look at it.
 8. **Close it:** `queue done <id> --note "<cause>; <fix>; scenario <name>"`.
-9. **Hand the build back:** copy `forkundera.exe` and `.pdb` from `build-win/Release` to `dist-windows`,
+9. **Hand the build back:** `build` stages it (or copy `forkundera.exe` and `.pdb` from `build-win/Release` to `dist-windows`),
    relaunch their session (`play --unpark --port 7801` if you parked it, else `fua-side-by-side`), then take the next item.
 
 ### When it will not reproduce

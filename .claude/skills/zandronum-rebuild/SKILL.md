@@ -1,6 +1,6 @@
 ---
 name: zandronum-rebuild
-description: Recompile the ForkUnderA engine (forkundera) after a C++ change and get the new binary running under fuactl. Use whenever engine source under src/zandronum/src changes -- features, the Diligent backend, the MCP bridge. On Windows do NOT use build.ps1 or windows_build*.ps1 for this; they throw on CMake dev warnings and do not pass the bridge flag. Drive CMake directly.
+description: Recompile the ForkUnderA engine (forkundera) after a C++ change and get the new binary running under fuactl. Use whenever engine source under src/zandronum/src changes -- features, the Diligent backend, the MCP bridge. On Windows do NOT use build.ps1 or windows_build*.ps1 for this; they throw on CMake dev warnings and do not pass the bridge flag. Use fuactl build.
 ---
 
 # Rebuild the engine
@@ -10,27 +10,24 @@ fuactl needs a **bridge-enabled** build (`FUA_MCP_BRIDGE=ON`); the Vulkan/Dilige
 
 | platform | build | staged binary fuactl runs |
 |---|---|---|
-| Windows | CMake on the existing `build-win/` tree (below) | `dist-windows/forkundera.exe` |
+| Windows | `fuactl build` on the existing `build-win/` tree (below) | `dist-windows/forkundera.exe` |
 | macOS | `ZX_MCP_BRIDGE=1 ./mac_compile.sh` | `build/ForkUnderA.app/Contents/MacOS/forkundera` |
 | Linux | `cmake -S src/zandronum -B build-linux -DFUA_MCP_BRIDGE=ON` once (it stays in the cache), then `./linux_compile.sh --no-package` | `FUACTL_ENGINE=<repo>/build-linux/forkundera`, or copy it to `dist-linux/forkundera` |
 
-## Windows: drive CMake directly
+## Windows: fuactl build
 
 ```bash
-# From the repo root, with cmake from PATH or the one Visual Studio ships at
-# <VS install>/Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin/cmake.exe.
-export DXSDK_DIR="$PWD/dxsdk"
-cmake --build build-win --config Release --target zdoom -- -m > build.log 2>&1; echo "EXIT $?"
-grep -E " error " build.log | head
+node tools/fuactl/src/cli.mjs build --no-stage --tests   # mid-investigation: engine and unit tests, run, nothing staged
+node tools/fuactl/src/cli.mjs build                      # when the fix is done: compiled and staged
 ```
 
-It reconfigures by itself when `CMakeLists.txt` changes; the `(dev) find_package` warning is harmless.
-Run it in the background -- an incremental build is a few minutes. Exit 0 and no ` error ` lines means
-`build-win/Release/forkundera.exe` and its `.pdb` are fresh.
-
-`node tools/fuactl/src/cli.mjs build` does the same and stages, finding CMake itself (`FUACTL_CMAKE`
-overrides). It refuses to stage while any engine is running rather than killing them by name -- quit
-each by port first, or run the new build with `FUACTL_ENGINE`.
+It finds Visual Studio's CMake itself (Git Bash has none on PATH; `FUACTL_CMAKE` overrides), sets
+`DXSDK_DIR`, writes `build-win/build.log`, and fails loudly with the first errors. A running engine that
+holds `build-win`'s binary is named as such instead of a bare LNK1104 -- quit your own instance by port.
+The tree reconfigures by itself when `CMakeLists.txt` changes; the `(dev) find_package` warning is
+harmless. Run it in the background -- an incremental build is a few minutes. Staging refuses while any
+engine is running rather than killing them by name -- quit each by port first, or run the new build with
+`FUACTL_ENGINE`.
 
 ## Adding a source file
 
@@ -69,5 +66,5 @@ a modal error box on the user's screen. fuactl refuses such a folder before laun
 
 ## Unit tests
 
-`tests/` builds separately; see the `writing-tests` skill (on Windows: `cmake --build build-tests
---config Release -- -m`, then `build-tests/Release/zandrox_tests.exe`).
+`tests/` builds separately; see the `writing-tests` skill (on Windows: `build --no-stage --tests` above,
+then `build-tests/Release/zandrox_tests.exe --gtest_filter=...` for one suite).

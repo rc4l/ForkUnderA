@@ -16,6 +16,8 @@
 #ifndef ZX_FLATMESH_H
 #define ZX_FLATMESH_H
 
+#include "tarray.h"   // [rc4l] the moved sectors and changed sides RefreshFakePlanes takes
+
 struct subsector_t;
 struct FPortal;
 class GLWall;
@@ -111,6 +113,13 @@ int BakeFlatsFromMap();
 
 // One sector's planes again after it has moved -- see the definition for why the stamp cannot notice.
 int BakeFlatsForSector(int sectorIndex);
+
+// [rc4l] GL's missing-texture fills again after sectors moved or sides changed texture (features/levelmesh/fakeplanes.h): each subsector whose fake planes changed drops the old ones and bakes the new.
+void RefreshFakePlanes(const TArray<int> &movedSectors, const TArray<int> &changedSides);
+// [rc4l] The same with every candidate read again.
+void RefreshAllFakePlanes();
+// [rc4l] The fake planes modelled on sector baked again, since they take its light, colour and texture.
+void RebakeFakesModelledOn(int sector);
 
 // [rc4l] How often a visible flat was left alone rather than rebuilt. A cache whose hit rate
 // nobody can see is a cache nobody can tell has stopped working.

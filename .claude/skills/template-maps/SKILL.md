@@ -53,6 +53,10 @@ const bytes = wad([...mapLumps("MAP01", m), ...mapLumps("MAP02", other)]);
   after the level is baked -- which is how a fault in noticing a runtime change is caught at all. A small map can bake
   later than the delay; when the order matters, write a closed script (`acs0(code, [], { open: false, number: 2 })`)
   and give each side `commands: ["puke 2"]`, which run once the level is up and baked (`watertint.mjs`).
+- **Texture both sides of every step** unless the missing texture is the point. GL closes an untextured
+  upper or lower with the neighbour's plane (`HandleMissingTextures`, now baked too), so a pool whose inner
+  steps have no `texturebottom` shows as flat floor in both renderers: `warpwater.mjs` showed water only
+  while the bake skipped that fill. `missingupper.mjs`/`missinglower.mjs` are the fill on purpose.
 - Any UDMF key passes straight through: `special`, `arg0..`, `texturetop/middle/bottom`, `lightlevel`,
   flags. Numbers stay bare and positions get a decimal point; a QUOTED number makes the engine drop
   the thing, and a map with no player start crashed on load.
@@ -167,6 +171,9 @@ Export the builder from the scenario; `runScenarioIfMain` keeps the import from 
 | `tools/fuactl/scenarios/skyboxopen.mjs` | a skybox room that is all sky (sky floor and ceiling, horizon walls) under a six-face GLDEFS skybox, GL against Vulkan |
 | `tools/fuactl/scenarios/skywallbelow.mjs` | a sky wall over a closed sky sector that starts below the eye, with a lit room behind it GL never walks, GL against Vulkan |
 | `tools/fuactl/scenarios/mirrorsky.mjs` | a mirror beside a window onto a low sky-roofed yard shallower than the player stands from the glass, so the sky GL sees through the window lies between the reflected eye and the mirror, GL against Vulkan |
+| `tools/fuactl/scenarios/missingupper.mjs` | a raised-ceiling island with untextured uppers, seen from inside, GL (wall cache off, the stock fill) against Vulkan: the map bake must draw the room's lower ceiling across it as GL's missing-texture fill does |
+| `tools/fuactl/scenarios/missingfillcache.mjs` | the missing-upper map in GL alone, wall cache off against on: the cache must not cost GL its missing-texture fill |
+| `tools/fuactl/scenarios/missinglower.mjs` | a recess with untextured steps, GL against Vulkan: GL's missing-texture fill must run every frame under the wall cache. GL does not clear its framebuffer, so a missing fill shows stale pixels, and the map looks at a red wall first to put red there |
 | `tools/fuactl/scenarios/invertedback.mjs` | a wall onto a sector whose floor is above its ceiling, GL alone against GL's frame from a Vulkan session (`frame: "gl"`): the backend's wall mesh must not change GL's picture |
 | `tools/fuactl/scenarios/watertint.mjs` | additive 3D-floor water whose control sector a puked script tints after the bake, over a grey pool floor, GL against Vulkan |
 | `tools/fuactl/scenarios/brightmap.mjs` | GLDEFS brightmaps on a wall and a sprite in a dark room, bindless against a binding per material; the brightmap PNG is a lump between `TX_START`/`TX_END` |

@@ -146,7 +146,7 @@ const USAGE = `fuactl <command>
   ui <action> [args] --port P [--token T]   drive the UI: read (menu as text), find <label>, nav <keys>, click <x> <y>, drag, type <text>, look --yaw D --pitch D, screenshot [name], exec <ccmd>
   diligent --port P [--frames N] [--shot FILE] [--sweep DIR]   drive the Diligent (Vulkan) backend: bake the level mesh, upload geometry, optional swapchain screenshot, optional debug-view sweep (lm0..lm4.png in DIR), the matched Diligent-vs-GL benchmark, and with --scale a GPU-time probe at 1x..100x the visible geometry
   play [--restart] [--port P] [--token T] [--spot NAME | --unpark] [--map M] [--file a.pk3,b.pk3] [--cvar k=v,k2=v2] [--preset ID --variant V --store DIR] [--gl] [--side-by-side] [--rt] [--monsters] [--lock] [--res WxH]   a build to walk around in, Vulkan live in the window; stays up until Ctrl-C
-  build [--root DIR]                 compile the engine and stage it, failing loudly instead of staging a stale binary
+  build [--root DIR] [--no-stage] [--tests]   compile the engine (with --tests the unit tests too, and run them) and stage it unless --no-stage, failing loudly instead of staging a stale binary
   mapdata <MAP> (--preset ID | --file a.pk3,b.wad) [--sector N,..] [--line N,..] [--special N] [--tag N] [--scripts REGEX]   a UDMF level's summary, sectors, lines and ACS source lines, read from its files
   actors [--near x,y] [--radius R] [--toward YAW | --ahead] [--cone DEG] [--class REGEX]   actors near a point (default the player), nearest first, optionally only in a direction
   probe <scenario.mjs> [--map M] [--vantage V] [--side S] [--engine path/to/forkundera.exe] [<command> ...]   launch a template scenario's map at a vantage and run console commands there
@@ -686,7 +686,9 @@ async function main() {
     }
     // [rc4l] `fuactl build` -- compile and stage, failing loudly rather than staging nothing.
     case "build": {
-      const r = shot.build({ root: flags.root || undefined });
+      const r = shot.build({ root: flags.root || undefined, stage: !flags["no-stage"], tests: !!flags.tests });
+      if (r.tests) console.log(`unit tests: ${r.tests.passed} passed`);
+      if (!r.staged) { console.log("build ok, not staged"); break; }
       const when = new Date(fs.statSync(r.staged).mtime).toTimeString().slice(0, 8);
       console.log(`build ok, staged ${when} (+${r.entries} catalogue entries)`);
       break;
@@ -710,26 +712,25 @@ async function main() {
     // [rc4l] `fuactl ready` -- wait until an instance answers, instead of a hand-rolled poll after every launch.
     case "ready": {
       const deadline = Date.now() + 1000 * (Number(flags.timeout) || 120);
-      // [rc4l] A launch writes its session files only once it is up, so this waits for a token as well: connecting without one while play is still checking the world takes the bridge out from under it.
-      let t = null;
-      while (!(t = sessionTarget(flags)) || !t.token) {
-        if (Date.now() > deadline) { console.error("usage: fuactl ready [--port P --token T] [--timeout S] -- no play session appeared"); process.exit(2); }
-        await new Promise((r) => setTimeout(r, 500));
-      }
+      // [rc4l] The bridge serves only its newest client, so this tries only a live session's token (liveTarget), read again each round: connecting early knocked a launch still checking its world off the bridge, and it died.
+      let failure = null;
       for (;;) {
-        // [rc4l] Read again each try, since a launch still coming up rewrites its token.
-        t = sessionTarget(flags) || t;
-        const c = new BridgeClient();
-        try {
-          await c.connect(t.port, { token: t.token, timeoutMs: 1500 });
-          await c.waitHello(3000);
-          const cam = await c.rpc("player.camera");
-          console.log(JSON.stringify({ port: t.port, map: cam.map }));
-          break;
-        } catch (e) {
-          if (Date.now() > deadline) { console.error(`port ${t.port} never answered: ${e.message}`); process.exit(1); }
-          await new Promise((r) => setTimeout(r, 500));
-        } finally { c.close(); }
+        const t = sessionTarget(flags);
+        if (shot.liveTarget(t)) {
+          const c = new BridgeClient();
+          try {
+            await c.connect(t.port, { token: t.token, timeoutMs: 1500 });
+            await c.waitHello(3000);
+            const cam = await c.rpc("player.camera");
+            console.log(JSON.stringify({ port: t.port, map: cam.map }));
+            break;
+          } catch (e) { failure = `port ${t.port} never answered: ${e.message}`; } finally { c.close(); }
+        }
+        if (Date.now() > deadline) {
+          console.error(failure || "usage: fuactl ready [--port P --token T] [--timeout S] -- no live play session appeared");
+          process.exit(failure ? 1 : 2);
+        }
+        await new Promise((r) => setTimeout(r, 500));
       }
       break;
     }

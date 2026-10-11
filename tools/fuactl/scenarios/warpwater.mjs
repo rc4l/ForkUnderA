@@ -4,13 +4,13 @@
 import { UdmfMap, wad, mapLumps } from "../src/udmf.mjs";
 import { runScenarioIfMain, compareOverTime } from "../src/template.mjs";
 
-// [rc4l] A room with a pool of FWATER1, which ANIMDEFS makes a warp2 flat as wdiexsec's AZWATER3 is.
+// [rc4l] A room with a pool of FWATER1, which ANIMDEFS makes a warp2 flat as wdiexsec's AZWATER3 is, its steps textured on both sides so GL's missing-texture fill does not close it at the room's floor.
 export function buildWarpwaterWad() {
   const m = new UdmfMap();
   const room = m.room(0, 0, 1024, 1024, { heightfloor: 0, heightceiling: 256, texturefloor: "FLOOR4_8",
     textureceiling: "CEIL3_5", lightlevel: 192 }, () => ({ side: { texturemiddle: "STARTAN2" } }));
   m.block(256, 512, 768, 896, { heightfloor: -16, heightceiling: 256, texturefloor: "FWATER1", textureceiling: "CEIL3_5",
-    lightlevel: 192 }, room, () => ({ texturebottom: "STARTAN2" }));
+    lightlevel: 192 }, room, () => ({ texturebottom: "STARTAN2" }), () => ({ texturebottom: "STARTAN2" }));
   m.thing({ x: 512, y: 128, angle: 90, type: 1 });
   return wad([...mapLumps("MAP01", m), { name: "ANIMDEFS", data: "warp2 flat FWATER1\n" }]);
 }

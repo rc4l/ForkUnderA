@@ -169,7 +169,8 @@ int SkyWalks(int list);
 const FFlatVertex *SkyQuadVertices(int &count, int list);
 
 void RecordPiece(const GLWall &wall, int list);
-void NotePortal();
+// [rc4l] The seg being captured hands GL per-frame state (a portal, a missing-texture fill), so it is never replayed.
+void NoteUnreplayable();
 
 // Replay: push the cached pieces for this seg back into the draw lists. Returns false if there is
 // nothing usable, in which case the caller must run Process as normal.

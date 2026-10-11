@@ -1603,12 +1603,14 @@ add_executable( zdoom WIN32
 	features/hwrender/spriteview.cpp
 	features/levelmesh/staticmesh.cpp
 	features/levelmesh/flatmesh.cpp
+	features/levelmesh/fakeplanes.cpp
 	features/levelmesh/projdecals.cpp
 	features/levelmesh/modelmesh.cpp
 	features/levelmesh/computation/surfacebudget_compute.cpp
 	features/levelmesh/computation/lightband_compute.cpp
 	features/levelmesh/computation/wallbatch_compute.cpp
 	features/levelmesh/computation/flatmesh_compute.cpp
+	features/levelmesh/computation/fakeplane_compute.cpp
 	features/levelmesh/computation/linequery_compute.cpp
 	features/levelmesh/computation/lookhits_compute.cpp
 	features/udmf-desaturation/computation/udmfdesaturation_compute.cpp

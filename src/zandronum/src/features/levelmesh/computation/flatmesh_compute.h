@@ -193,6 +193,9 @@ bool ComputeMidTextureTranslucent(float lineAlpha, bool additive, bool textureTr
 // [rc4l] How opaque GLFlat::ProcessSector draws a sector plane: a stacked one by its own alpha (0 for a stack seen straight through, which is not drawn), any other by what its reflection leaves.
 float ComputePlaneAlpha(bool stacked, float stackAlpha, float reflect);
 
+// [rc4l] Whether ProcessSector lights a sector's own floor or ceiling with the 3D floor band over it rather than the plane's own light: never its own band, and an absolute plane light gives way only on a floor, to a band no sector casts.
+bool ComputePlaneTakesBandLight(bool ceiling, bool absolute, bool bandFromSector, bool ownBand);
+
 // [rc4l] The sector a subsector's flats are drawn with: its render sector (-1 for none yet), which GL takes from the first boundary seg so a self-referencing trick draws its surroundings, else the nodebuilder's.
 int ComputeFlatSector(int renderSector, int sector);
 

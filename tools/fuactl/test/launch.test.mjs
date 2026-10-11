@@ -1,10 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import { spawnSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
 import { resolveEngine, engineArgs, describeExit, countEngineLines, missingCoreData } from "../src/launch.mjs";
-import { sweepDirFor, pickCmake, resolveTarget, readSession, sessionFileFor, cameraFromFlags, cvarValueFrom, parseCvarFlag, spotLaunch, parkFileFor, parkedLaunch, PARKED, clearPortSessions } from "../src/shot.mjs";
+import { sweepDirFor, pickCmake, resolveTarget, readSession, sessionFileFor, cameraFromFlags, cvarValueFrom, parseCvarFlag, spotLaunch, parkFileFor, parkedLaunch, PARKED, clearPortSessions, liveTarget, pidAlive, buildErrors, summarizeGtest } from "../src/shot.mjs";
 
 // Run `fn` with cwd moved to `dir` and FUACTL_ENGINE cleared, then put both back.
 function inDir(dir, fn) {
@@ -175,25 +176,40 @@ test("cmake comes from FUACTL_CMAKE, then any Visual Studio 2022 edition, then P
 });
 
 test("a command means --port first, then the last play session, and nothing when there is neither", () => {
-  const s = { port: 7801, token: "s", engine: "/b/forkundera.exe" };
-  assert.deepEqual(resolveTarget({ port: "7799", token: "t" }, s), { port: 7799, token: "t", engine: null });
-  assert.deepEqual(resolveTarget({}, s), { port: 7801, token: "s", engine: "/b/forkundera.exe" });
-  assert.deepEqual(resolveTarget({ token: "t" }, { port: 7801, token: "s" }), { port: 7801, token: "t", engine: null });
+  const s = { port: 7801, token: "s", engine: "/b/forkundera.exe", pid: 42 };
+  assert.deepEqual(resolveTarget({ port: "7799", token: "t" }, s), { port: 7799, token: "t", engine: null, pid: null });
+  assert.deepEqual(resolveTarget({}, s), { port: 7801, token: "s", engine: "/b/forkundera.exe", pid: 42 });
+  assert.deepEqual(resolveTarget({ token: "t" }, { port: 7801, token: "s" }), { port: 7801, token: "t", engine: null, pid: null });
   assert.equal(resolveTarget({}, null), null);
-  assert.deepEqual(resolveTarget({ port: "7801" }, s), { port: 7801, token: "s", engine: "/b/forkundera.exe" });
-  assert.deepEqual(resolveTarget({ port: "7799" }, s), { port: 7799, token: null, engine: null });
+  assert.deepEqual(resolveTarget({ port: "7801" }, s), { port: 7801, token: "s", engine: "/b/forkundera.exe", pid: 42 });
+  assert.deepEqual(resolveTarget({ port: "7801", token: "t" }, s).pid, null, "a token given by hand is not the session's engine");
+  assert.deepEqual(resolveTarget({ token: "t" }, s).pid, null);
+  assert.deepEqual(resolveTarget({ port: "7799" }, s), { port: 7799, token: null, engine: null, pid: null });
   assert.equal(sessionFileFor("/x/.play-session", 7801), "/x/.play-session-7801");
 });
 
 // [rc4l] A build launched from build-win writes its captures beside itself, so a shot that looked beside the staged binary found nothing.
-test("a play session records the binary it launched", () => {
+test("a play session records the binary it launched and its engine's process", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "session-"));
   const file = path.join(dir, ".play-session");
-  fs.writeFileSync(file, "PORT=7799\nTOKEN=abc\nENGINE=F:/A B/build-win/Release/forkundera.exe\n");
-  assert.deepEqual(readSession(file), { port: 7799, token: "abc", engine: "F:/A B/build-win/Release/forkundera.exe" });
+  fs.writeFileSync(file, "PORT=7799\nTOKEN=abc\nPID=4242\nENGINE=F:/A B/build-win/Release/forkundera.exe\n");
+  assert.deepEqual(readSession(file), { port: 7799, token: "abc", engine: "F:/A B/build-win/Release/forkundera.exe", pid: 4242 });
   fs.writeFileSync(file, "PORT=7799\nTOKEN=abc\n");
-  assert.deepEqual(readSession(file), { port: 7799, token: "abc", engine: null });
+  assert.deepEqual(readSession(file), { port: 7799, token: "abc", engine: null, pid: null });
   assert.equal(readSession(path.join(dir, "absent")), null);
+});
+
+// [rc4l] ready connected with a dead launch's token, or none, while play still checked the new engine's world, and the bridge's newest client knocked play off it.
+test("ready connects only with a token whose engine is still running", () => {
+  const alive = (pid) => pid === 7;
+  assert.equal(liveTarget({ port: 7799, token: "t", pid: 7 }, alive), true);
+  assert.equal(liveTarget({ port: 7799, token: "t", pid: 8 }, alive), false, "a stale session names a dead engine");
+  assert.equal(liveTarget({ port: 7799, token: "t", pid: null }, alive), true, "no pid to check: --token given by hand");
+  assert.equal(liveTarget({ port: 7799, token: null, pid: 7 }, alive), false);
+  assert.equal(liveTarget(null, alive), false);
+  assert.equal(pidAlive(process.pid), true);
+  const gone = spawnSync(process.execPath, ["-e", ""]).pid;
+  assert.equal(pidAlive(gone), false);
 });
 
 test("a camera comes from --spot, else --at with --face, else nowhere", () => {
@@ -275,4 +291,17 @@ test("a launch clears the session files that name its port and leaves another po
   assert.deepEqual(clearPortSessions(shared, 7799), [], "the shared file names another port, and 7799's is gone already");
   assert.equal(readSession(shared).port, 7801);
   fs.rmSync(dir, { recursive: true, force: true });
+});
+
+// [rc4l] A build run beside a running engine failed to link with nothing saying why.
+test("a build's errors are read off its log, and a binary held open is named as that", () => {
+  const out = "a.cpp(3): error C2065: x\nb.cpp: warning C4996: y\nLINK : fatal error LNK1104: cannot open file 'forkundera.exe'\n";
+  assert.deepEqual(buildErrors(out), { errors: ["a.cpp(3): error C2065: x", "LINK : fatal error LNK1104: cannot open file 'forkundera.exe'"], locked: true });
+  assert.deepEqual(buildErrors("ok\n"), { errors: [], locked: false });
+});
+
+test("a unit test run reports how many passed and which failed, each once", () => {
+  const out = "[==========] 3 tests ran.\n[  PASSED  ] 2 tests.\n[  FAILED  ] 1 test, listed below:\n[  FAILED  ] Suite.Case\n[  FAILED  ] Suite.Case (0 ms)\n";
+  assert.deepEqual(summarizeGtest(out), { passed: 2, failed: ["Suite.Case"] });
+  assert.deepEqual(summarizeGtest("nothing"), { passed: 0, failed: [] });
 });

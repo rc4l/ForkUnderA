@@ -6,6 +6,7 @@
 #include "features/hwrender/computation/lightside_compute.h"   // the plane bake, tested off-engine
 #include "features/levelmesh/staticmesh.h"
 #include "features/levelmesh/modelmesh.h"
+#include "features/levelmesh/fakeplanes.h"   // [rc4l] GL's missing-texture fills, baked as fake planes
 #include "features/levelmesh/computation/wallbatch_compute.h"
 #include "features/levelmesh/computation/flatmesh_compute.h"
 #include "features/hwrender/computation/slot_compute.h"
@@ -120,6 +121,7 @@ struct FlatKey
 	MeshRange range;
 	// [rc4l] Next slot for the same subsector. See g_flatHead.
 	int next;
+	bool fake;   // [rc4l] another sector's plane GL's missing-texture fill draws here, squashed when the fill moves away
 
 	// [rc4l] Everything the stored geometry and the stored piece were built from.
 	//
@@ -157,6 +159,7 @@ void GetFlatStats(int &own, int &threeD) { own = g_flatOwn; threeD = g_flat3D; }
 void ClearFlats()
 {
 	g_flat3D = g_flatOwn = 0;
+	ClearFakePlanes();
 
 	// [rc4l] Give the ranges back before forgetting the keys that own them.
 	//
@@ -220,6 +223,7 @@ struct FlatSource
 	int           mMeshWhichPlane;
 	int           mirrorSector = -1;   // [rc4l] see MeshPiece::mirrorSector
 	bool          mirrorCeiling = false;
+	bool          fake = false;        // [rc4l] see FlatKey::fake
 };
 
 static void StoreFlat(const FlatSource &flat, subsector_t *sub, bool ceiling)
@@ -257,6 +261,7 @@ static void StoreFlat(const FlatSource &flat, subsector_t *sub, bool ceiling)
 		k.range.count = 0;
 		k.next = g_flatHead[subIndex];
 		k.stamped = false;
+		k.fake = flat.fake;
 		const unsigned pushed = g_flats.Push(k);
 		g_flatHead[subIndex] = (int)pushed;
 		slot = &g_flats[pushed];
@@ -442,7 +447,7 @@ static void StoreFlat(const FlatSource &flat, subsector_t *sub, bool ceiling)
 // seen from rather than by its plane's normal. The result is the same set of surfaces GL would have
 // produced across a walk that visited the sector from every side.
 static void BakeOnePlane(subsector_t *sub, sector_t *model, int whichPlane, bool ceiling,
-	int lightlevel, FColormap cm, float alpha, ERenderStyle style, bool reflects = false)
+	int lightlevel, FColormap cm, float alpha, ERenderStyle style, bool reflects = false, bool fake = false)
 {
 	if (model == NULL || sub == NULL) return;
 	FlatSource f;
@@ -464,6 +469,7 @@ static void BakeOnePlane(subsector_t *sub, sector_t *model, int whichPlane, bool
 	f.mirrorCeiling = (whichPlane == sector_t::ceiling);
 	f.mMeshModel = model;
 	f.mMeshWhichPlane = whichPlane;
+	f.fake = fake;
 	StoreFlat(f, sub, ceiling);
 }
 
@@ -518,6 +524,29 @@ static void Bake3DFace(subsector_t *sub, sector_t *real, F3DFloor *rover, bool t
 	BakeOnePlane(sub, pr.model, pr.isceiling, ceiling, lightlevel, cm, alpha, style);
 }
 
+// [rc4l] A sector's own floor or ceiling as ProcessSector lights it, laid over sub: the sector's own subsector, or with fake another one GL's missing-texture fill covers with it.
+static int BakeSectorPlane(subsector_t *sub, sector_t *real, bool ceiling, bool fake)
+{
+	const int which = ceiling ? sector_t::ceiling : sector_t::floor;
+	int ll = gl_ClampLight(ceiling ? real->GetCeilingLight() : real->GetFloorLight());
+	FColormap cm;
+	cm = real->ColorMap;
+	const float alpha = ComputePlaneAlpha(real->portals[which] != NULL, FIXED2FLOAT(real->GetAlpha(which)), real->GetReflect(which));
+	// [rc4l] GL reflects a plane with no portal stack on it, and a fully reflective one still needs the surface the reflection is painted on.
+	const bool reflects = real->GetReflect(which) > 0 && real->portals[which] == NULL;
+	if (real->e != NULL && real->e->XFloor.ffloors.Size() != 0)
+	{
+		lightlist_t *light = P_GetPlaneLight(real, ceiling ? &real->ceilingplane : &real->floorplane, ceiling);
+		if (ComputePlaneTakesBandLight(ceiling, (real->GetFlags(which) & PLANEF_ABSLIGHTING) != 0, light->fromsector,
+				light->p_lightlevel == &real->lightlevel))
+			ll = *light->p_lightlevel;
+		cm.CopyLightColor(light->extra_colormap);
+	}
+	if (alpha == 0.0f && !reflects) return 0;
+	BakeOnePlane(sub, real, which, ceiling, ll, cm, alpha, STYLE_Translucent, reflects, fake);
+	return 1;
+}
+
 static int BakeFlatsForSubsector(subsector_t *sub)
 {
 	int made = 0;
@@ -528,54 +557,15 @@ static int BakeFlatsForSubsector(subsector_t *sub)
 			sub->sector->sectornum)];
 		if (real->e == NULL) return 0;
 		extsector_t::xfloor &x = real->e->XFloor;
-		const bool haveFF = x.ffloors.Size() != 0;
 
-		// ---- the sector's own floor ----
-		{
-			int ll = gl_ClampLight(real->GetFloorLight());
-			FColormap cm;
-			cm = real->ColorMap;
-			const float alpha = ComputePlaneAlpha(real->portals[sector_t::floor] != NULL,
-				FIXED2FLOAT(real->GetAlpha(sector_t::floor)), real->GetReflect(sector_t::floor));
-			// [rc4l] GL reflects a plane with no portal stack on it, and a fully reflective one still needs the surface the reflection is painted on.
-			const bool reflects = real->GetReflect(sector_t::floor) > 0 && real->portals[sector_t::floor] == NULL;
-			if (haveFF)
-			{
-				lightlist_t *light = P_GetPlaneLight(real, &real->floorplane, false);
-				if ((!(real->GetFlags(sector_t::floor) & PLANEF_ABSLIGHTING) || !light->fromsector)
-					&& (light->p_lightlevel != &real->lightlevel))
-					ll = *light->p_lightlevel;
-				cm.CopyLightColor(light->extra_colormap);
-			}
-			if (alpha != 0.0f || reflects)
-			{
-				BakeOnePlane(sub, real, sector_t::floor, false, ll, cm, alpha, STYLE_Translucent, reflects);
-				made++;
-			}
-		}
+		// [rc4l] The sector's own floor and ceiling.
+		made += BakeSectorPlane(sub, real, false, false);
+		made += BakeSectorPlane(sub, real, true, false);
 
-		// ---- and its ceiling ----
-		{
-			int ll = gl_ClampLight(real->GetCeilingLight());
-			FColormap cm;
-			cm = real->ColorMap;
-			const float alpha = ComputePlaneAlpha(real->portals[sector_t::ceiling] != NULL,
-				FIXED2FLOAT(real->GetAlpha(sector_t::ceiling)), real->GetReflect(sector_t::ceiling));
-			const bool reflects = real->GetReflect(sector_t::ceiling) > 0 && real->portals[sector_t::ceiling] == NULL;
-			if (haveFF)
-			{
-				lightlist_t *light = P_GetPlaneLight(real, &real->ceilingplane, true);
-				if ((!(real->GetFlags(sector_t::ceiling) & PLANEF_ABSLIGHTING))
-					&& (light->p_lightlevel != &real->lightlevel))
-					ll = *light->p_lightlevel;
-				cm.CopyLightColor(light->extra_colormap);
-			}
-			if (alpha != 0.0f || reflects)
-			{
-				BakeOnePlane(sub, real, sector_t::ceiling, true, ll, cm, alpha, STYLE_Translucent, reflects);
-				made++;
-			}
-		}
+		// [rc4l] ...and another sector's plane wherever GL's missing-texture fill draws one over this subsector.
+		int fakes = 0;
+		const FakePlane *fp = FakePlanesFor(int(sub - subsectors), fakes);
+		for (int i = 0; i < fakes; i++) made += BakeSectorPlane(sub, &sectors[fp[i].model], fp[i].upper, true);
 
 		// ---- every face of every 3D floor in it ----
 		//
@@ -610,12 +600,54 @@ static int BakeFlatsForSubsector(subsector_t *sub)
 	return made;
 }
 
+// [rc4l] Collapse a subsector's fake planes, so a fill that has moved away stops drawing; the ones still there are baked again over them.
+static void SquashFakeFlats(int sub)
+{
+	if (sub < 0 || (unsigned)sub >= g_flatHead.Size()) return;
+	for (int i = g_flatHead[sub]; i >= 0; i = g_flats[i].next)
+		if (g_flats[i].fake && g_flats[i].range.count > 0) { MeshSquash(g_flats[i].range); g_flats[i].stamped = false; }
+}
+
 int BakeFlatsFromMap()
 {
 	if (subsectors == NULL || numsubsectors <= 0 || sectors == NULL) return 0;
+	TArray<int> changed;
+	RecomputeAllFakePlanes(changed);
+	for (unsigned i = 0; i < changed.Size(); i++) SquashFakeFlats(changed[i]);
 	int made = 0;
 	for (int i = 0; i < numsubsectors; i++) made += BakeFlatsForSubsector(&subsectors[i]);
 	return made;
+}
+
+// [rc4l] The fills' changed subsectors drop their old fake planes and bake again.
+static void RebakeChangedFills(const TArray<int> &changed)
+{
+	for (unsigned i = 0; i < changed.Size(); i++)
+	{
+		SquashFakeFlats(changed[i]);
+		BakeFlatsForSubsector(&subsectors[changed[i]]);
+	}
+}
+
+void RefreshFakePlanes(const TArray<int> &movedSectors, const TArray<int> &changedSides)
+{
+	TArray<int> changed;
+	RecomputeFakePlanesFor(changed, movedSectors, changedSides);
+	RebakeChangedFills(changed);
+}
+
+void RefreshAllFakePlanes()
+{
+	TArray<int> changed;
+	RecomputeAllFakePlanes(changed);
+	RebakeChangedFills(changed);
+}
+
+void RebakeFakesModelledOn(int sector)
+{
+	int count = 0;
+	const int *subs = FakeSubsModelledOn(sector, count);
+	for (int i = 0; i < count; i++) BakeFlatsForSubsector(&subsectors[subs[i]]);
 }
 
 // [rc4l] One sector's planes again, because it moved.

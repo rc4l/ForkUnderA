@@ -69,11 +69,12 @@ Notes:
 
 ## Run it locally (Windows)
 
-`build-tests/` is a Visual Studio tree. Build and run with `cmake` from PATH, or the one Visual
-Studio bundles at `<VS install>/Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin/cmake.exe`:
+`build-tests/` is a Visual Studio tree. `node tools/fuactl/src/cli.mjs build --no-stage --tests` builds the
+engine and the tests with Visual Studio's own cmake (Git Bash has none on PATH), runs them, and prints the
+count or the failing names; a running engine holding the binary is named as such rather than left as an
+LNK1104. One suite at a time:
 
 ```bash
-cmake --build build-tests --config Release -- -m
 build-tests/Release/zandrox_tests.exe --gtest_filter='Suite.*'
 ```
 

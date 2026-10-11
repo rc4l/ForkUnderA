@@ -5,6 +5,7 @@
 #include <stddef.h>   // offsetof, for the cached-record guard
 #include "features/levelmesh/wallcache.h"
 #include "features/levelmesh/flatmesh.h"
+#include "features/levelmesh/fakeplanes.h"   // [rc4l] SideTexturesChanged, for the fills a switch can open or close
 #include "features/levelmesh/levelmesh.h"
 #include "features/levelmesh/computation/flatmesh_compute.h"
 
@@ -1253,7 +1254,7 @@ void BeginCapture(int segIndex)
 //   firstwall, numwalls    indices into the per-frame walls[] array the sorter splits into
 //   the union              skybox/sky/horizon/portal/planemirror, all from per-frame pools
 //
-// The portal members cannot reach a replay anyway, since NotePortal marks the seg uncacheable for
+// The portal members cannot reach a replay anyway, since NoteUnreplayable marks the seg uncacheable for
 // the level -- but a dangling pointer into a freed pool is not worth leaving in a structure on the
 // grounds that nothing currently reads it.
 //
@@ -1383,10 +1384,9 @@ void RecordPiece(const GLWall &wall, int list)
 	sc.pieceCount++;
 }
 
-void NotePortal()
+void NoteUnreplayable()
 {
-	// [rc4l] Portal walls are handed to the portal manager rather than a draw list, and the manager
-	// keeps per-frame state, so a seg that produces one can never be replayed. Sticky for the level.
+	// [rc4l] A portal wall goes to the portal manager and a missing texture to the fill hack, both per-frame state a replay never rebuilds, so such a seg is processed every frame, sticky for the level.
 	if (g_captureSeg < 0) return;
 	g_sawPortal = true;
 }
@@ -1575,7 +1575,7 @@ int SegFate(int segIndex)
 
 const char *SegFateName(int fate)
 {
-	static const char *kName[] = { "never captured", "cached", "portal", "polyobject", "3D floor", "heightsec area", "other" };
+	static const char *kName[] = { "never captured", "cached", "portal or fill", "polyobject", "3D floor", "heightsec area", "other" };
 	return (fate >= SEG_UNSEEN && fate <= SEG_OTHER) ? kName[fate] : "?";
 }
 
@@ -1744,6 +1744,13 @@ static void ForSectorAndTargets(int s, Fn fn)
 	for (unsigned k = 0; k < targets.Size(); k++) fn(int(targets[k] - sectors));
 }
 
+// [rc4l] A sector's own planes, which have no walk to notice them change, and the fake planes other subsectors copy from it.
+static void RebakeSectorFlats(int sector)
+{
+	zx::levelmesh::BakeFlatsForSector(sector);
+	zx::levelmesh::RebakeFakesModelledOn(sector);
+}
+
 static SectorLook LookOf(const sector_t &s)
 {
 	SectorLook l;
@@ -1767,6 +1774,8 @@ void InvalidateMovedSectors()
 		for (int i = 0; i < numsectors; i++) g_lastLook[i] = LookOf(sectors[i]);
 	}
 	if (!gl_wallmesh || g_sectorDirty.Size() == 0) return;
+	// [rc4l] GL's missing-texture fills hang on the heights and textures round them, so a move or a texture change works them out again below.
+	TArray<int> fillMoved, fillSides;
 
 	for (int s = 0; s < numsectors; s++)
 	{
@@ -1780,28 +1789,30 @@ void InvalidateMovedSectors()
 		if (change == kSectorMoved) g_dirtyGeometry++; else g_dirtyLightOnly++;
 		// A texture change alters UVs, so only a pure relight may take the reshade path.
 		const bool sectorMoved = change >= kSectorRetextured;
+		if (sectorMoved) fillMoved.Push(s);
 
 		// [rc4l] A 3D floor's control sector moves or relights the floors, sides and light bands of the sectors it sits in, so those go again with it.
 		ForSectorAndTargets(s, [sectorMoved](int t) {
 			const TArray<int> &segList = g_sectorSegs[t];
 			// [rc4l] Planes that held still cannot have moved the walls, so those segs only re-light (ReshadeSegFromMap) and anything else takes the full bake.
 			for (unsigned k = 0; k < segList.Size(); k++) RebakeChangedSeg(segList[k], sectorMoved);
-			// [rc4l] ...and the sector's own planes, which have no walk to notice them either.
-			if (fua_surface_mapbake_auto) zx::levelmesh::BakeFlatsForSector(t);
+			if (fua_surface_mapbake_auto) RebakeSectorFlats(t);
 		});
 	}
 	// [rc4l] ...and every sidedef a setter touched: a switch's texture, a scroller's offset, which no sector change reports.
 	for (int i = 0; i < numsides && (unsigned)i < g_sideDirty.Size(); i++)
 	{
 		if (!ComputeTakeChange(g_sideDirty[i], sides[i].fua_dirty)) continue;
+		if (zx::levelmesh::SideTexturesChanged(i)) fillSides.Push(i);
 		for (int k = 0; k < sides[i].numsegs; k++) RebakeChangedSeg(int(sides[i].segs[k] - segs), true);
 	}
 	// [rc4l] ...and every sector whose floor or ceiling texture a scroller, its interpolation or a script placed, re-baking its flats and those of any sector it is a 3D floor in, since no wall is drawn from it.
 	for (int s = 0; fua_surface_mapbake_auto && s < numsectors && (unsigned)s < g_sectorPlacement.Size(); s++)
 	{
 		if (ComputeTakeChange(g_sectorPlacement[s], sectors[s].fua_placement))
-			ForSectorAndTargets(s, [](int t) { zx::levelmesh::BakeFlatsForSector(t); });
+			ForSectorAndTargets(s, RebakeSectorFlats);
 	}
+	if (fua_surface_mapbake_auto && (fillMoved.Size() > 0 || fillSides.Size() > 0)) zx::levelmesh::RefreshFakePlanes(fillMoved, fillSides);
 	invalClock.Unclock();
 	g_invalMs += invalClock.TimeMS();
 	g_invalMsLast = invalClock.TimeMS();

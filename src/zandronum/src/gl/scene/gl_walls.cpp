@@ -166,7 +166,7 @@ void GLWall::PutWall(bool translucent)
 	}
 	// [rc4l] features/levelmesh: portal walls go to the portal manager, which keeps per-frame
 	// state, so a seg producing one can never be replayed from cache.
-	else if (zx::levelmesh::NotePortal(), false) { /* never taken; the call above is the point */ }
+	else if (zx::levelmesh::NoteUnreplayable(), false) { /* never taken; the call above is the point */ }
 	else switch (type)
 	{
 	case RENDERWALL_COLORLAYER:
@@ -1676,6 +1676,7 @@ void GLWall::Process(seg_t *seg, sector_t * frontsector, sector_t * backsector)
 					// skip processing if the back is a malformed subsector
 					if (seg->PartnerSeg != NULL && !(seg->PartnerSeg->Subsector->hacked & 4))
 					{
+						zx::levelmesh::NoteUnreplayable();	// [rc4l] features/levelmesh: the fill is per-frame, so the cache must not replay this seg
 						gl_drawinfo->AddUpperMissingTexture(seg->sidedef, sub, bch1a);
 					}
 				}
@@ -1749,6 +1750,7 @@ void GLWall::Process(seg_t *seg, sector_t * frontsector, sector_t * backsector)
 				// skip processing if the back is a malformed subsector
 				if (seg->PartnerSeg != NULL && !(seg->PartnerSeg->Subsector->hacked & 4))
 				{
+					zx::levelmesh::NoteUnreplayable();	// [rc4l] features/levelmesh: the fill is per-frame, so the cache must not replay this seg
 					gl_drawinfo->AddLowerMissingTexture(seg->sidedef, sub, bfh1);
 				}
 			}

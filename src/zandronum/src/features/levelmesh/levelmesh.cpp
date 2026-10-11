@@ -873,9 +873,12 @@ static void PrintLinkedLights( FLightNode *head )
 	{
 		ADynamicLight *l = n->lightsource;
 		if ( l == NULL ) continue;
-		Printf( "          lit by %s at (%.0f, %.0f, %.0f)\n",
+		// [rc4l] With what decides how it lights: radius, colour, subtractive, dormant, and whether the backend's IsActive filter keeps it.
+		Printf( "          lit by %s at (%.0f, %.0f, %.0f), radius %d, rgb %d,%d,%d%s%s%s\n",
 				l->target != NULL ? l->target->GetClass( )->TypeName.GetChars( ) : "a light",
-				FIXED2FLOAT( l->x ), FIXED2FLOAT( l->y ), FIXED2FLOAT( l->z ) );
+				FIXED2FLOAT( l->x ), FIXED2FLOAT( l->y ), FIXED2FLOAT( l->z ), (int)l->GetRadius( ),
+				l->GetRed( ), l->GetGreen( ), l->GetBlue( ), l->IsSubtractive( ) ? ", subtractive" : "",
+				( l->flags2 & MF2_DORMANT ) ? ", dormant" : "", l->IsActive( ) ? "" : ", inactive" );
 		linked++;
 	}
 	if ( linked == 0 ) Printf( "          no light is linked to it\n" );
@@ -1598,6 +1601,12 @@ CCMD( fua_sector_lights )
 	if ( sec.e == NULL ) { Printf( "sector %d has no extended data\n", s ); return; }
 	const TArray<lightlist_t> &ll = sec.e->XFloor.lightlist;
 	Printf( "sector %d: %u lights, %u 3D floors, own light %d\n", s, ll.Size( ), sec.e->XFloor.ffloors.Size( ), sec.lightlevel );
+	// [rc4l] Each plane's own light, which GL keeps over a 3D floor's band when it is absolute or the band is the sector's own, and the sector's colour.
+	const PalEntry own = sec.ColorMap != NULL ? sec.ColorMap->Color : PalEntry( 0 );
+	Printf( "  floor light %d%s, ceiling light %d%s, sector colour %02x%02x%02x, heightsec %d\n",
+		sec.GetFloorLight( ), ( sec.GetFlags( sector_t::floor ) & PLANEF_ABSLIGHTING ) ? " (absolute)" : "",
+		sec.GetCeilingLight( ), ( sec.GetFlags( sector_t::ceiling ) & PLANEF_ABSLIGHTING ) ? " (absolute)" : "", own.r, own.g, own.b,
+		sec.heightsec != NULL ? sec.heightsec->sectornum : -1 );
 	for ( unsigned i = 0; i < ll.Size( ); i++ )
 	{
 		const PalEntry c = ( ll[i].extra_colormap != NULL ) ? ll[i].extra_colormap->Color : PalEntry( 0 );
