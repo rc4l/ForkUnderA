@@ -72,7 +72,7 @@ its full spot record.
    is green. Re-shoot the item's spot GL against Vulkan and look at it.
 8. **Close it:** `queue done <id> --note "<cause>; <fix>; scenario <name>"`.
 9. **Hand the build back:** copy `forkundera.exe` and `.pdb` from `build-win/Release` to `dist-windows`,
-   relaunch their side-by-side session at the camera you saved (`fua-side-by-side`), then take the next item.
+   relaunch their session (`play --unpark --port 7801` if you parked it, else `fua-side-by-side`), then take the next item.
 
 ### When it will not reproduce
 
@@ -85,8 +85,10 @@ replaced usually still captures correctly. Fix what the audit finds, close the i
 
 - **One harness at a time.** `scenarios` and every template comparison refuse while any other engine
   window is open, the user's included, because a GL frame read back from under another window is garbage.
-  Before running them, save their camera (`rpc player.camera --port 7801`), say in one line that you are
-  closing their window, run `quit --port 7801`, and relaunch them at that camera afterwards.
+  Before running them, say in one line that you are closing their window and run
+  `quit --park --port 7801`, which files their camera, wads and renderer first; afterwards
+  `nohup node src/cli.mjs play --unpark --port 7801 --store <their wad folder> &` brings it back
+  there, side by side again.
 - Reproducing in your locked 7799 instance can run beside theirs.
 - Quit engines by token (`quit --port P`) and never by process name, which kills theirs too.
 - `shot` cannot capture their side-by-side Vulkan window (it comes back 1x1), which is another

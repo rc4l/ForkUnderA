@@ -125,3 +125,34 @@ TEST(WallCache, UpperLowerAndOneSidedMiddlesAreDrawnUnmasked)
 	for (int t : { 0, 3, 5, 6, 7, 11, 13, 15, 16 })
 		EXPECT_FALSE(ComputeWallPlainPass(t)) << t;
 }
+
+// [rc4l] WDI09's slime floor scrolled every tic and no counter the flat bake read ever moved, so it froze at its first offset.
+TEST(WallCache, ACounterReadsChangedOnceEachTimeItMoves)
+{
+	int seen = 4;
+	EXPECT_FALSE(ComputeTakeChange(seen, 4));
+	EXPECT_TRUE(ComputeTakeChange(seen, 5));
+	EXPECT_EQ(5, seen);
+	EXPECT_FALSE(ComputeTakeChange(seen, 5));
+}
+
+// [rc4l] WDI19's pool: a script tinted the water's control sector blue after the bake, and no change the sweep compared showed it, so the floor under the water stayed grey.
+TEST(WallCache, ASectorsRecolourIsARelightAndItsMoveIsARebake)
+{
+	int mapA = 0, mapB = 0;
+	const SectorLook was = { 160, 100, 200, 7, 8, &mapA };
+	SectorLook now = was;
+	EXPECT_EQ(kSectorSame, ComputeSectorRebake(was, now));
+	now.colormap = &mapB;
+	EXPECT_EQ(kSectorRelit, ComputeSectorRebake(was, now));
+	now = was; now.light = 96;
+	EXPECT_EQ(kSectorRelit, ComputeSectorRebake(was, now));
+	now = was; now.ceilPic = 9;
+	EXPECT_EQ(kSectorRetextured, ComputeSectorRebake(was, now));
+	now = was; now.floorPic = 9; now.light = 96;
+	EXPECT_EQ(kSectorRetextured, ComputeSectorRebake(was, now));  // [rc4l] the stronger need wins
+	now = was; now.ceilD = 210;
+	EXPECT_EQ(kSectorMoved, ComputeSectorRebake(was, now));
+	now = was; now.floorD = 90; now.floorPic = 9;
+	EXPECT_EQ(kSectorMoved, ComputeSectorRebake(was, now));
+}

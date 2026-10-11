@@ -528,17 +528,17 @@ TEST(FlatMeshCompute, AStackedViewsSkyboxStandsInOnlyForAPlayerWalkThatNamedNone
 	EXPECT_FALSE(ComputeTakesSkyViewpoint(kSkyCaptureNone, false));
 }
 
-// [rc4l] WDI01: the stacked view drew rooftops GL's walk through the stack never reached, as roof slabs over the courtyard's walls.
-// [rc4l] WDI01's bathroom mirror reflected the room and not the player standing in front of it.
-TEST(FlatMeshCompute, OnlyTheViewersSpriteFromTheMirrorTheyFaceIsKept)
+// [rc4l] WDI01's bathroom mirror reflected the room and not the player standing in front of it, and WDI12's left out the hand dryer behind the player.
+TEST(FlatMeshCompute, WhatAMirrorsWalkDrawsBelongsToThatMirror)
 {
-	EXPECT_TRUE(ComputeTakesMirrorViewer(true, true, 2, true));
-	EXPECT_FALSE(ComputeTakesMirrorViewer(true, true, 2, false));   // [rc4l] the room's sprites come from the player's walk
-	EXPECT_FALSE(ComputeTakesMirrorViewer(false, true, 2, true));   // [rc4l] a skybox or stacked view is no mirror
-	EXPECT_FALSE(ComputeTakesMirrorViewer(true, true, 3, true));    // [rc4l] a mirror seen in a mirror
-	EXPECT_FALSE(ComputeTakesMirrorViewer(true, false, 2, true));   // [rc4l] a camera texture's mirror
+	EXPECT_EQ(5776, ComputeMirrorCaptureLine(5776, true, 2));
+	EXPECT_EQ(-1, ComputeMirrorCaptureLine(-1, true, 2));     // [rc4l] a skybox or stacked view is no mirror
+	EXPECT_EQ(-1, ComputeMirrorCaptureLine(5776, true, 3));   // [rc4l] a mirror seen in a mirror
+	EXPECT_EQ(-1, ComputeMirrorCaptureLine(5776, true, 1));
+	EXPECT_EQ(-1, ComputeMirrorCaptureLine(5776, false, 2));  // [rc4l] a camera texture's mirror
 }
 
+// [rc4l] WDI01: the stacked view drew rooftops GL's walk through the stack never reached, as roof slabs over the courtyard's walls.
 TEST(FlatMeshCompute, AStackedViewMarksEachSubsectorItsWalkReached)
 {
 	EXPECT_EQ(0, ComputeStackVisWords(0));
@@ -698,18 +698,8 @@ TEST(FlatMeshCompute, AFlatIsDrawnWithItsRenderSector)
 	EXPECT_EQ(385, ComputeFlatSector(-1, 385));
 }
 
-// [rc4l] WDI07's washroom has four Line_Mirror walls in view, and each reflection showed every mirror's viewer, one of them faced to another mirror's camera.
-TEST(FlatMeshCompute, AMirrorShowsOnlyItsOwnViewer)
-{
-	EXPECT_TRUE(ComputeDrawsMirrorViewer(5776, 5776));
-	EXPECT_FALSE(ComputeDrawsMirrorViewer(5765, 5776));
-	EXPECT_FALSE(ComputeDrawsMirrorViewer(5776, -1));   // [rc4l] the player's own view never shows the viewer
-	EXPECT_TRUE(ComputeDrawsMirrorViewer(-1, -1));
-	EXPECT_TRUE(ComputeDrawsMirrorViewer(-1, 5776));
-}
-
-// [rc4l] A stacked view draws the sprites its own walk took, as GL's does, and the frame's other passes never draw them.
-TEST(FlatMeshCompute, ASpriteFromAStackedViewsWalkIsDrawnOnlyInThatView)
+// [rc4l] A stacked view or a mirror draws the sprites its own walk took, as GL's does, and the frame's other passes never draw them.
+TEST(FlatMeshCompute, ASpriteIsDrawnOnlyInThePassWhoseWalkTookIt)
 {
 	EXPECT_TRUE(ComputeDrawsDynamicPiece(-1, -1, -1, -1));
 	EXPECT_TRUE(ComputeDrawsDynamicPiece(-1, 1, -1, 1));
@@ -717,7 +707,9 @@ TEST(FlatMeshCompute, ASpriteFromAStackedViewsWalkIsDrawnOnlyInThatView)
 	EXPECT_FALSE(ComputeDrawsDynamicPiece(-1, 1, -1, 0));    // [rc4l] the other stacked view
 	EXPECT_FALSE(ComputeDrawsDynamicPiece(-1, -1, -1, 0));   // [rc4l] the player's walk's sprites are not this view's
 	EXPECT_TRUE(ComputeDrawsDynamicPiece(5776, -1, 5776, -1));
-	EXPECT_FALSE(ComputeDrawsDynamicPiece(5776, -1, -1, -1));
+	EXPECT_FALSE(ComputeDrawsDynamicPiece(5776, -1, -1, -1));    // [rc4l] the player's view never shows the viewer
+	EXPECT_FALSE(ComputeDrawsDynamicPiece(5765, -1, 5776, -1));  // [rc4l] WDI07: another mirror's viewer, faced to its camera
+	EXPECT_FALSE(ComputeDrawsDynamicPiece(-1, -1, 5776, -1));    // [rc4l] the mirror draws its own walk's room, not the player's
 }
 
 // [rc4l] The same subsector 3796: a plane modelled on 164 or 385 is its own and goes in GL's solid pass, one modelled on a 3D floor's control sector is masked.

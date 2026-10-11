@@ -4,7 +4,7 @@
 #include "gl/system/gl_system.h"
 #include "features/levelmesh/modelmesh.h"
 #include "features/levelmesh/staticmesh.h"
-#include "features/levelmesh/flatmesh.h"   // [rc4l] DynamicCaptureActive, StackCaptureSlot
+#include "features/levelmesh/flatmesh.h"   // [rc4l] DynamicCaptureActive, StackCaptureSlot, MirrorCaptureLine
 #include "gl/scene/gl_portal.h"   // GLPortal::RenderDepth, for the walk a model was drawn in
 #include "features/levelmesh/computation/flatmesh_compute.h"   // ComputeStyleBlendMode
 
@@ -86,7 +86,7 @@ bool ModelCaptureActive()
 	// side-by-side session where BOTH windows are live: gating on it left the Vulkan window with no
 	// models in exactly the configuration used to compare the two renderers. The mesh is what a
 	// backend draws from, so it is filled whenever there is something to put in it.
-	// [rc4l] ...and only the player's walk or a stacked view's: wdiexsec's mirror walks wiped a barrel the player's had already drawn.
+	// [rc4l] ...and only from a walk the backend draws again, each kept for its own pass, since wdiexsec's mirror walks once wiped a barrel the player's had already drawn.
 	return fua_mesh_models && g_sprite != NULL && g_matrix != NULL && DynamicCaptureActive();
 }
 
@@ -178,6 +178,7 @@ void CaptureModelSurface(const FModelVertexBuffer *vbuf, unsigned int base1, uns
 	// resolves to its own texture, and it resolves it AS an FMaterial -- handing it the inner pointer
 	// type-checks, then faults inside CreateTexBuffer on the first frame that draws a model.
 	mp.material = material;
+	mp.mirrorLine = MirrorCaptureLine();
 	mp.stackSlot = StackCaptureSlot();
 	// [rc4l] The light is the CPU's, exactly as it is for a sprite: gl_SetDynSpriteLight has already
 	// run for this actor and left its answer in the render state, having applied gl_light_sprites and

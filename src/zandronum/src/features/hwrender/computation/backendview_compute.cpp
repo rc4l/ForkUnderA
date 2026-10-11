@@ -7,16 +7,9 @@
 
 namespace zx { namespace hwrender {
 
-void ComputeBackendMVP(const BackendCamera &c, float out[16])
+void ComputeBackendView(const BackendCamera &c, float v[16])
 {
 	const float stretch = c.pixelStretch > 0.f ? c.pixelStretch : 1.f;
-	const float zn = 5.0f, zf = 65536.0f;
-	const float f = 1.0f / tanf(c.fovY * 0.5f);
-
-	// [rc4l] Vulkan clip space maps depth to [0,1].
-	float p[16] = {0};
-	p[0] = f / c.aspect; p[5] = f; p[10] = zf / (zn - zf); p[11] = -1.0f;
-	p[14] = (zf * zn) / (zn - zf);
 
 	// [rc4l] The pitch GL turns by, FGLRenderer::RenderViewpoint's: the playsim's angle seen through stretched pixels.
 	const double angx = cos(c.pitch);
@@ -27,7 +20,7 @@ void ComputeBackendMVP(const BackendCamera &c, float out[16])
 	const float ca = cosf(c.yaw), sa = sinf(c.yaw);
 
 	// [rc4l] Mesh space (east, up, north) is left-handed, so the right axis is cross(up, forward), and rows 1 and 2 are up and back turned by the pitch.
-	float v[16] = {0};
+	for (int i = 0; i < 16; i++) v[i] = 0.0f;
 	v[0] =  sa;      v[4] = 0.0f; v[8]  = -ca;
 	v[1] =  sp * ca; v[5] = cp;   v[9]  =  sp * sa;
 	v[2] = -cp * ca; v[6] = sp;   v[10] = -cp * sa;
@@ -38,7 +31,20 @@ void ComputeBackendMVP(const BackendCamera &c, float out[16])
 	v[12] = -(v[0] * px + v[4] * py + v[8] * pz);
 	v[13] = -(v[1] * px + v[5] * py + v[9] * pz);
 	v[14] = -(v[2] * px + v[6] * py + v[10] * pz);
+}
 
+void ComputeBackendMVP(const BackendCamera &c, float out[16])
+{
+	const float zn = 5.0f, zf = 65536.0f;
+	const float f = 1.0f / tanf(c.fovY * 0.5f);
+
+	// [rc4l] Vulkan clip space maps depth to [0,1].
+	float p[16] = {0};
+	p[0] = f / c.aspect; p[5] = f; p[10] = zf / (zn - zf); p[11] = -1.0f;
+	p[14] = (zf * zn) / (zn - zf);
+
+	float v[16];
+	ComputeBackendView(c, v);
 	for (int col = 0; col < 4; col++)
 		for (int r = 0; r < 4; r++)
 		{

@@ -44,7 +44,7 @@ comparison, and the mean/worst per side — the tail is what decides fixed range
 
 The frame's captures -- sky surfaces, sprites, models, decals (`flatmesh.cpp`, `modelmesh.cpp`, see
 `docs/skybleed-scope.md`) -- belong to the player's outermost scene only, except that the sprites, models and
-decals a stacked view's walk draws are kept for that view's pass alone (`StackCaptureSlot`):
+decals a stacked view's or a line mirror's walk draws are kept for that pass alone (`StackCaptureSlot`, `MirrorCaptureLine`):
 
 - `gl/scene/gl_scene.cpp` `DrawScene`: a nesting guard (`EnterScene`/`LeaveScene`), since GL raises the
   portal depth for the player's own scene once its walk is done; `PlayerWalkActive` asks it.
@@ -54,11 +54,20 @@ decals a stacked view's walk draws are kept for that view's pass alone (`StackCa
 - `gl/models/gl_models.cpp` `gl_RenderModel`: `ModelCaptureBegin`/`ModelCaptureEnd` around the draw.
 - `gl/scene/gl_walls.cpp` `PutWall`: `RegisterStackWall` for `RENDERWALL_SECTORSTACK`, the walls GL stencils a stacked
   view through, gathered per portal into a few views.
+- `r_defs.h` `sector_t`: the plane texture placement setters (`SetXOffset`, `AddXOffset`, the Y pair, scales, angle,
+  `SetBase`) bump `fua_placement`, so `InvalidateMovedSectors` re-bakes a scrolled floor's flats under the map bake.
+- `r_defs.h` `side_t::SetLight`: bumps the side's `fua_dirty`, so a wall `Transfer_WallLight` re-lights when its source
+  sector's light changes re-bakes, in GL's wall cache and the map bake alike.
+- `p_sectors.cpp` `sector_t::SetColor` and `SetFade`: bump `fua_dirty`, so a sector recoloured after the bake, and every
+  sector it is a 3D floor in, re-bakes with its new colormap.
+- `gl/scene/gl_walls.cpp` `PutWall`: `RegisterMirrorSheen` for a `RENDERWALL_MIRROR` with `gl_mirror_envmap` on, the light
+  `RenderMirrorSurface` draws the mirror's sheen in, which the backend's mirror surface adds as GL does.
 - `gl/scene/gl_bsp.cpp` `DoSubsector` and `AddLine`: `NoteWalkedSubsector`/`NoteWalkedSide`, what a stacked view's walk drew.
 - `gl/scene/gl_portal.cpp` `GLSectorStackPortal::DrawContents`: a `StackWalk` around its `DrawScene`, so
   that walk's sky quads fill its view's list and its sprites, models and decals are filed under its view.
-- `gl/scene/gl_portal.cpp` `GLMirrorPortal::DrawContents`: a `MirrorWalk(line)` around its `DrawScene`, so the viewer's
-  sprite it draws is filed under that mirror and only that mirror's pass in the backend shows it.
+- `gl/scene/gl_portal.cpp` `GLMirrorPortal::DrawContents`: a `MirrorWalk(line)` around its `DrawScene`, so the sprites,
+  models and decals it draws (the viewer's, and anything behind the player) are filed under that mirror and only that
+  mirror's pass in the backend shows them.
 - `textures/textures.h` `FTextureManager::GetAnimations`: the ANIMDEFS list, read-only, so the backend gives every frame
   of an animated texture a material slot and remaps baked pieces to the frame showing.
 - `hwrender/diligent/dgscene.cpp` `DrawSkySurfaces`: reads the list of the view it is drawing;

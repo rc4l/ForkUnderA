@@ -47,8 +47,20 @@ const HorizonWindow *HorizonWindows(int &count)
 	return count ? &g_windows[0] : NULL;
 }
 
-const FFlatVertex *HorizonSkyVertices(int &count)
+const FFlatVertex *HorizonSkyVertices(int &count, float eyeZ)
 {
+	g_skyVerts.Clear();
+	for (unsigned i = 0; i < g_windows.Size(); i++)
+	{
+		const HorizonWindow &w = g_windows[i];
+		if (!w.skyAbove) continue;
+		const float bottom = ComputeHorizonSkyBottom(w.floor.valid, w.bottom, w.floorZ, w.ceilingZ, eyeZ);
+		if (bottom >= w.top) continue;
+		const float zb[2] = { bottom, bottom }, zt[2] = { w.top, w.top };
+		FFlatVertex q[6];
+		zx::levelmesh::MakeWallQuad(q, w.x1, w.y1, w.x2, w.y2, zb, zt);
+		for (int k = 0; k < 6; k++) g_skyVerts.Push(q[k]);
+	}
 	count = (int)g_skyVerts.Size();
 	return count ? &g_skyVerts[0] : NULL;
 }
@@ -123,7 +135,6 @@ static void BuildPlane(sector_t *sec, int which, HorizonPlane &out)
 void UpdateHorizons()
 {
 	g_windows.Clear();
-	g_skyVerts.Clear();
 	if (!fua_dg_horizon || !gl_wallmesh || lines == NULL || numlines <= 0) return;
 	RescanIfNeeded();
 
@@ -152,13 +163,6 @@ void UpdateHorizons()
 		if (halves.ceilingPlane) BuildPlane(sec, sector_t::ceiling, w.ceiling);
 		w.skyAbove = halves.skyAbove;
 		g_windows.Push(w);
-		if (w.skyAbove)
-		{
-			const float zb[2] = { w.bottom, w.bottom }, zt[2] = { w.top, w.top };
-			FFlatVertex q[6];
-			zx::levelmesh::MakeWallQuad(q, w.x1, w.y1, w.x2, w.y2, zb, zt);
-			for (int k = 0; k < 6; k++) g_skyVerts.Push(q[k]);
-		}
 	}
 }
 

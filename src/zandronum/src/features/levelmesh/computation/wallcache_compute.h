@@ -69,6 +69,21 @@ enum { kRenderWallTop = 1, kRenderWallM1S = 2, kRenderWallBottom = 4, kRenderWal
 // [rc4l] Whether GL draws a wall of this type in its solid pass, where nothing is alpha-tested and a see-through texel shows its own colour (passflag 1 in GLWall::PutWall).
 bool ComputeWallPlainPass(int renderWallType);
 
+// [rc4l] Whether a setter counter moved since it was last seen, taking its new value so it reads unchanged until it moves again.
+bool ComputeTakeChange(int &seen, int now);
+
+// [rc4l] What a sector's bake shows of it: its light, both plane heights, both flat textures, and the colormap a script can recolour it with.
+struct SectorLook
+{
+	int light;
+	long long floorD, ceilD;
+	int floorPic, ceilPic;
+	const void *colormap;
+};
+
+// [rc4l] What a dirty sector's bake needs, mildest first: nothing, a relight for a new light or colour, a re-bake for new flat textures, a re-bake for a moved plane.
+enum { kSectorSame, kSectorRelit, kSectorRetextured, kSectorMoved };
+int ComputeSectorRebake(const SectorLook &before, const SectorLook &now);
 
 }} // namespace zx::levelmesh
 

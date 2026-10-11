@@ -48,6 +48,7 @@
 #include "w_wad.h"
 // [BB] New #includes.
 #include "g_game.h"
+#include "features/udmf-desaturation/computation/udmfdesaturation_compute.h"
 
 //===========================================================================
 //
@@ -1454,7 +1455,8 @@ public:
 					continue;
 
 				case NAME_Desaturation:
-					desaturation = int(255*CheckFloat(key));
+					// [rc4l] features/udmf-desaturation: held to 0..255, since a percentage written here turned a grey sector blue.
+					desaturation = zx::udmf::ComputeUdmfDesaturation(CheckFloat(key));
 					continue;
 
 				case NAME_Silent:

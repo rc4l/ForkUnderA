@@ -46,7 +46,9 @@ void LeaveScene();
 bool PlayerWalkActive();
 // [rc4l] The stacked view whose walk GL is in now (ComputeStackCaptureSlot), or -1.
 int StackCaptureSlot();
-// [rc4l] Whether a sprite, model or decal GL draws now is captured: the player's walk's for the frame, a stacked view's walk's for that view alone.
+// [rc4l] The line mirror whose walk GL is in now (ComputeMirrorCaptureLine), or -1.
+int MirrorCaptureLine();
+// [rc4l] Whether a sprite, model or decal GL draws now is captured: the player's walk's for the frame, a stacked view's or a line mirror's walk's for that pass alone.
 bool DynamicCaptureActive();
 
 // [rc4l] A stacked view the player's walk saw this frame: the eye's move into it in map units, and the plane it opens from.
@@ -65,7 +67,7 @@ const FFlatVertex *StackViewVertices(int slot, int &count);
 // [rc4l] A subsector GL's walk accepted (DoSubsector) and a sidedef whose seg its clipper let through (AddLine), kept for the stacked view whose walk it is.
 void NoteWalkedSubsector(int subsector);
 void NoteWalkedSide(int side);
-// [rc4l] The id a stacked view keeps or drops a level-mesh piece by: its subsector for a flat, numsubsectors plus its sidedef for a wall, -1 if it cannot be placed.
+// [rc4l] The id a stacked view keeps or drops a level-mesh piece by, and GL's light links name it by: the sidedef it was baked from (MeshPiece::linkId), else its subsector for a flat or numsubsectors plus the nearest sidedef for a wall, -1 if it cannot be placed.
 int PieceStackId(const MeshPiece &p);
 // [rc4l] This frame's ComputeMarkStackVisible bits over the subsectors then the sidedefs, or NULL with no stacked view.
 const unsigned int *StackVisibility(int &words);
@@ -73,7 +75,12 @@ const unsigned int *StackVisibility(int &words);
 // [rc4l] Whether GL's walk this frame went through the line mirror on linedef line, which is what says it can be seen.
 bool MirrorWalkedThisFrame(int line);
 
-// [rc4l] Marks GL's walk through a line mirror (GLMirrorPortal::DrawContents) by its linedef, so the viewer's sprite it draws reaches that mirror's pass in the backend.
+// [rc4l] A line mirror GL's walk filed with its sheen (gl_mirror_envmap), kept with the light RenderMirrorSurface will draw that sheen in.
+void RegisterMirrorSheen(const GLWall &wall);
+// [rc4l] That light for linedef line this frame, or NULL when GL drew no sheen on it.
+const MeshPiece *MirrorSheen(int line);
+
+// [rc4l] Marks GL's walk through a line mirror (GLMirrorPortal::DrawContents) by its linedef, so the sprites, models and decals it draws reach that mirror's pass in the backend.
 struct MirrorWalk
 {
 	explicit MirrorWalk(int line);

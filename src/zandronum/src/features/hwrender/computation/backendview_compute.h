@@ -17,7 +17,10 @@ struct BackendCamera
 	float fovY, aspect;   // [rc4l] the vertical field of view in radians, of the stretched world, and width over height
 };
 
-// [rc4l] The column-major view-projection for a camera: heights stretched by the pixel aspect before the pitch turns them, as GL does, so every view keeps GL's framing.
+// [rc4l] The column-major view alone, GL's ViewMatrix: mesh space into eye space, heights stretched by the pixel aspect before the pitch turns them.
+void ComputeBackendView(const BackendCamera &c, float out[16]);
+
+// [rc4l] The column-major view-projection for a camera: ComputeBackendView under GL's projection with Vulkan's depth, so every view keeps GL's framing.
 void ComputeBackendMVP(const BackendCamera &c, float out[16]);
 
 }} // namespace zx::hwrender

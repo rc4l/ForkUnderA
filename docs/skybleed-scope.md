@@ -239,6 +239,10 @@ exactly at the horizon instead of near it. Measured at `-4523,-468,-490` facing 
 just below the horizon go from Vulkan 5.4 against GL 1.2, to **19.16 against 19.51** -- the two
 renderers agreeing to within noise -- while the band above stays matched at 27.52 against 25.73.
 
+**Removed 2026-10-10.** GL fills a sky wall through its stencil below eye level too, and with the quads taken
+from GL the cut only let level geometry show through that part of the wall (WDI18, queue #21); this vantage
+still matches GL without it, `mean|d|` 0.25 against 0.24 with it.
+
 ### Where it stands
 
 | vantage | before this work | after |

@@ -78,6 +78,8 @@ static TArray<SegCache> g_cache;
 static TArray<int>          g_sectorDirty;
 // [rc4l] Per-sidedef fua_dirty as of the last sweep, so a switch's new texture reaches the map bake.
 static TArray<int>          g_sideDirty;
+// [rc4l] Per-sector fua_placement as of the last sweep, so a scrolled floor reaches the map bake.
+static TArray<int>          g_sectorPlacement;
 static TArray<TArray<int> > g_sectorSegs;
 static TArray<bool>     g_uncacheable;   // sticky: this seg produced a portal, never cache it
 static int              g_captureSeg = -1;
@@ -133,6 +135,7 @@ void AllocForLevel(int numsegs)
 	g_segFate.Resize(numsegs);
 	for (int i = 0; i < numsegs; i++) g_segFate[i] = SEG_UNSEEN;
 	g_sectorDirty.Clear();
+	g_sectorPlacement.Clear();
 	g_sectorSegs.Clear();
 	g_sideDirty.Clear();
 	if (numsides > 0)
@@ -143,8 +146,14 @@ void AllocForLevel(int numsegs)
 	if (numsectors > 0)
 	{
 		g_sectorDirty.Resize(numsectors);
+		g_sectorPlacement.Resize(numsectors);
 		g_sectorSegs.Resize(numsectors);
-		for (int i = 0; i < numsectors; i++) { g_sectorDirty[i] = sectors[i].fua_dirty; g_sectorSegs[i].Clear(); }
+		for (int i = 0; i < numsectors; i++)
+		{
+			g_sectorDirty[i] = sectors[i].fua_dirty;
+			g_sectorPlacement[i] = sectors[i].fua_placement;
+			g_sectorSegs[i].Clear();
+		}
 		for (int i = 0; i < numsegs; i++)
 		{
 			if (segs[i].frontsector != NULL)
@@ -191,6 +200,13 @@ const MeshRange *StaticWallRange(int packedIndex)
 	if (piece >= g_cache[seg].pieceCount) return NULL;
 	const MeshRange &r = g_cache[seg].pieces[piece].range;
 	return r.count ? &r : NULL;
+}
+
+// [rc4l] A wall piece into the mesh, filed under the sidedef it was baked from, since working it out again from where the piece lies picks a neighbour on a narrow wall (WDI14's painting wall).
+static void RegisterSegPiece(MeshPiece &mp, const seg_t *seg)
+{
+	if (seg != NULL && seg->sidedef != NULL) mp.linkId = numsubsectors + int(seg->sidedef - sides);
+	MeshRegisterPiece(mp);
 }
 
 // [rc4l] Mirrors GLWall::SetupBatchState's first two lines -- deliberately, because those two lines
@@ -480,7 +496,7 @@ void BakeSeg(int segIndex)
 		if (mp.baseTex == NULL && sc.walls[i].gltexture != NULL)
 			mp.baseTex = sc.walls[i].gltexture->tex;
 		mp.plain = ComputeWallPlainPass(sc.walls[i].type);
-		MeshRegisterPiece(mp);
+		RegisterSegPiece(mp, sc.walls[i].seg);
 	}
 }
 
@@ -635,7 +651,7 @@ static int ReshadeSegFromMap(int segIndex)
 		mp.lightColor = cm.LightColor.d;
 		mp.fadeColor  = cm.FadeColor.d;
 		mp.normX = nx; mp.normY = ny; mp.normZ = nz;
-		MeshRegisterPiece(mp);
+		RegisterSegPiece(mp, seg);
 		done++;
 	}
 	return done;
@@ -860,7 +876,7 @@ int BakeSegFromMap(int segIndex)
 				if (len > 0.0001f) { mp.normX = dy / len; mp.normY = 0.f; mp.normZ = -dx / len; }
 			}
 			mp.plain = ComputeWallPlainPass(kParts[part]);
-			MeshRegisterPiece(mp);
+			RegisterSegPiece(mp, seg);
 			made++;
 		}
 		// Bands this part no longer has: hold the range, do not give it back.
@@ -1001,7 +1017,7 @@ int BakeSegFromMap(int segIndex)
 						const float len = sqrtf(dx*dx + dy*dy);
 						if (len > 0.0001f) { fmp.normX = dy / len; fmp.normY = 0.f; fmp.normZ = -dx / len; }
 					}
-					MeshRegisterPiece(fmp);
+					RegisterSegPiece(fmp, seg);
 					// A fog boundary takes its light straight off the F3DFloor rather than from the
 					// band list, so it is the one piece bandLight cannot describe -- see Reshade.
 					sc.hasOwnLitPiece = true;
@@ -1099,7 +1115,7 @@ int BakeSegFromMap(int segIndex)
 					const float len = sqrtf(dx*dx + dy*dy);
 					if (len > 0.0001f) { mp.normX = dy / len; mp.normY = 0.f; mp.normZ = -dx / len; }
 				}
-				MeshRegisterPiece(mp);
+				RegisterSegPiece(mp, seg);
 				made++;
 			}
 			for (int k = nb; k < kMaxFFBlocks; k++) MeshSquash(sc.pieces[kFFSlot0 + k].range);
@@ -1637,9 +1653,7 @@ static int g_segsReshaded = 0;
 // The last frame's own figures, not the running totals -- so a frame-time breakdown can ask what
 // THIS frame spent rather than what the level has spent since it loaded.
 static double g_invalMsLast = 0.0; static int g_sectorsLast = 0;   // segs that took the light-only path instead of a full re-derive
-static TArray<int>     g_lastLight;
-static TArray<fixed_t> g_lastFloorZ, g_lastCeilZ;
-static TArray<int>     g_lastFloorPic, g_lastCeilPic;
+static TArray<SectorLook> g_lastLook;
 static int g_dirtyNoChange = 0;   // dirty, but nothing that shows on a wall actually differed
 
 double InvalidationMsLastFrame() { return g_invalMsLast; }
@@ -1710,70 +1724,73 @@ static void RebakeChangedSeg(int idx, bool geometryChanged)
 	}
 }
 
+// [rc4l] A sector, then every sector it is a 3D floor in (XFloor.attached), whose planes, sides and light bands are drawn from it.
+template <typename Fn>
+static void ForSectorAndTargets(int s, Fn fn)
+{
+	fn(s);
+	if (sectors[s].e == NULL) return;
+	const TArray<sector_t *> &targets = sectors[s].e->XFloor.attached;
+	for (unsigned k = 0; k < targets.Size(); k++) fn(int(targets[k] - sectors));
+}
+
+static SectorLook LookOf(const sector_t &s)
+{
+	SectorLook l;
+	l.light = s.lightlevel;
+	l.floorD = s.floorplane.d.Raw();
+	l.ceilD = s.ceilingplane.d.Raw();
+	l.floorPic = s.GetTexture(sector_t::floor).GetIndex();
+	l.ceilPic = s.GetTexture(sector_t::ceiling).GetIndex();
+	l.colormap = s.ColorMap;
+	return l;
+}
+
 void InvalidateMovedSectors()
 {
 	g_movedThisFrame = 0;
 	cycle_t invalClock; invalClock.Reset(); invalClock.Clock();
 	g_invalFrames++;
-	if ((int)g_lastLight.Size() != numsectors)
+	if ((int)g_lastLook.Size() != numsectors)
 	{
-		g_lastLight.Resize((unsigned)numsectors);
-		g_lastFloorZ.Resize((unsigned)numsectors);
-		g_lastCeilZ.Resize((unsigned)numsectors);
-		g_lastFloorPic.Resize((unsigned)numsectors);
-		g_lastCeilPic.Resize((unsigned)numsectors);
-		for (int i = 0; i < numsectors; i++)
-		{
-			g_lastLight[i]    = sectors[i].lightlevel;
-			g_lastFloorZ[i]   = sectors[i].floorplane.d;
-			g_lastCeilZ[i]    = sectors[i].ceilingplane.d;
-			g_lastFloorPic[i] = sectors[i].GetTexture(sector_t::floor).GetIndex();
-			g_lastCeilPic[i]  = sectors[i].GetTexture(sector_t::ceiling).GetIndex();
-		}
+		g_lastLook.Resize((unsigned)numsectors);
+		for (int i = 0; i < numsectors; i++) g_lastLook[i] = LookOf(sectors[i]);
 	}
 	if (!gl_wallmesh || g_sectorDirty.Size() == 0) return;
 
 	for (int s = 0; s < numsectors; s++)
 	{
-		if (sectors[s].fua_dirty == g_sectorDirty[s]) continue;
-		g_sectorDirty[s] = sectors[s].fua_dirty;
+		if (!ComputeTakeChange(g_sectorDirty[s], sectors[s].fua_dirty)) continue;
 		g_movedThisFrame++;
-		// [rc4l] fua_dirty says "something called a setter", not "the wall looks different".
-		//
-		// SetLightLevel, ChangeLightLevel, SetTexture, SetPlaneTexZ and ChangePlaneTexZ all bump it,
-		// and Doom's light thinkers call the setter every tic whether or not the value moved -- a
-		// strobe holds its level for many tics and re-asserts it each one. Comparing the five things
-		// a setter can change costs five loads and skips the whole sector when none of them did.
-		const int     nowLight = sectors[s].lightlevel;
-		const fixed_t nowFloor = sectors[s].floorplane.d, nowCeil = sectors[s].ceilingplane.d;
-		const int     nowFPic  = sectors[s].GetTexture(sector_t::floor).GetIndex();
-		const int     nowCPic  = sectors[s].GetTexture(sector_t::ceiling).GetIndex();
-		const bool moved   = (nowFloor != g_lastFloorZ[s]) || (nowCeil != g_lastCeilZ[s]);
-		const bool relit   = (nowLight != g_lastLight[s]);
-		const bool retexed = (nowFPic != g_lastFloorPic[s]) || (nowCPic != g_lastCeilPic[s]);
-		g_lastLight[s]    = nowLight;
-		g_lastFloorZ[s]   = nowFloor;
-		g_lastCeilZ[s]    = nowCeil;
-		g_lastFloorPic[s] = nowFPic;
-		g_lastCeilPic[s]  = nowCPic;
-		if (!moved && !relit && !retexed) { g_dirtyNoChange++; continue; }
-		if (moved) g_dirtyGeometry++; else g_dirtyLightOnly++;
+		// [rc4l] fua_dirty says only that a setter ran (SetLightLevel, ChangeLightLevel, SetTexture, SetPlaneTexZ, ChangePlaneTexZ, SetColor, SetFade), and a strobe re-asserts its held level every tic, so a sector whose look did not change is skipped.
+		const SectorLook now = LookOf(sectors[s]);
+		const int change = ComputeSectorRebake(g_lastLook[s], now);
+		g_lastLook[s] = now;
+		if (change == kSectorSame) { g_dirtyNoChange++; continue; }
+		if (change == kSectorMoved) g_dirtyGeometry++; else g_dirtyLightOnly++;
 		// A texture change alters UVs, so only a pure relight may take the reshade path.
-		const bool sectorMoved = moved || retexed;
+		const bool sectorMoved = change >= kSectorRetextured;
 
-		const TArray<int> &segList = g_sectorSegs[s];
-		// A sector whose planes held still cannot have moved its walls, so its segs only need
-		// re-lighting -- see ReshadeSegFromMap. Anything else takes the full bake.
-		for (unsigned k = 0; k < segList.Size(); k++) RebakeChangedSeg(segList[k], sectorMoved);
-		// ...and the sector's own planes, which have no walk to notice them either.
-		if (fua_surface_mapbake_auto) zx::levelmesh::BakeFlatsForSector(s);
+		// [rc4l] A 3D floor's control sector moves or relights the floors, sides and light bands of the sectors it sits in, so those go again with it.
+		ForSectorAndTargets(s, [sectorMoved](int t) {
+			const TArray<int> &segList = g_sectorSegs[t];
+			// [rc4l] Planes that held still cannot have moved the walls, so those segs only re-light (ReshadeSegFromMap) and anything else takes the full bake.
+			for (unsigned k = 0; k < segList.Size(); k++) RebakeChangedSeg(segList[k], sectorMoved);
+			// [rc4l] ...and the sector's own planes, which have no walk to notice them either.
+			if (fua_surface_mapbake_auto) zx::levelmesh::BakeFlatsForSector(t);
+		});
 	}
 	// [rc4l] ...and every sidedef a setter touched: a switch's texture, a scroller's offset, which no sector change reports.
 	for (int i = 0; i < numsides && (unsigned)i < g_sideDirty.Size(); i++)
 	{
-		if (sides[i].fua_dirty == g_sideDirty[i]) continue;
-		g_sideDirty[i] = sides[i].fua_dirty;
+		if (!ComputeTakeChange(g_sideDirty[i], sides[i].fua_dirty)) continue;
 		for (int k = 0; k < sides[i].numsegs; k++) RebakeChangedSeg(int(sides[i].segs[k] - segs), true);
+	}
+	// [rc4l] ...and every sector whose floor or ceiling texture a scroller, its interpolation or a script placed, re-baking its flats and those of any sector it is a 3D floor in, since no wall is drawn from it.
+	for (int s = 0; fua_surface_mapbake_auto && s < numsectors && (unsigned)s < g_sectorPlacement.Size(); s++)
+	{
+		if (ComputeTakeChange(g_sectorPlacement[s], sectors[s].fua_placement))
+			ForSectorAndTargets(s, [](int t) { zx::levelmesh::BakeFlatsForSector(t); });
 	}
 	invalClock.Unclock();
 	g_invalMs += invalClock.TimeMS();

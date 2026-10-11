@@ -90,3 +90,19 @@ TEST(BackendViewCompute, RightIsRightAndDepthRunsZeroToOne)
 	Project(c, 0.f, 65536.f, 0.f, ndc);    // [rc4l] on the far plane
 	EXPECT_NEAR(1.f, ndc[2], 1e-3f);
 }
+
+// [rc4l] The view alone, which the mirror sheen reflects in: the eye at the origin, what it faces down -z, and heights stretched.
+TEST(BackendViewCompute, TheViewPutsTheEyeAtTheOriginFacingDownZ)
+{
+	BackendCamera c = Corner(0.f, 1.2f);
+	c.x = 100.f; c.y = 200.f; c.z = 50.f;
+	c.yaw = 90.f * kDeg;   // [rc4l] facing north
+	float v[16];
+	ComputeBackendView(c, v);
+	// [rc4l] Mesh space is (x, height, y).
+	auto eye = [&](float x, float h, float y, int r) { return v[r] * x + v[4 + r] * h + v[8 + r] * y + v[12 + r]; };
+	for (int r = 0; r < 3; r++) EXPECT_NEAR(0.f, eye(100.f, 50.f, 200.f, r), 1e-3f) << r;
+	EXPECT_NEAR(-10.f, eye(100.f, 50.f, 210.f, 2), 1e-3f);
+	EXPECT_NEAR(12.f, eye(100.f, 60.f, 200.f, 1), 1e-3f);
+	EXPECT_FLOAT_EQ(1.f, v[15]);
+}

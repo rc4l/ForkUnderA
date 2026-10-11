@@ -217,6 +217,8 @@ void GLWall::PutWall(bool translucent)
 		portal->AddLine(this);
 		if (gl_mirror_envmap) 
 		{
+			// [rc4l] The sheen's light, for the backend's mirror surface (features/levelmesh).
+			zx::levelmesh::RegisterMirrorSheen(*this);
 			// draw a reflective layer over the mirror
 			type=RENDERWALL_MIRRORSURFACE;
 			gl_drawinfo->drawlists[GLDL_TRANSLUCENTBORDER].AddWall(this);

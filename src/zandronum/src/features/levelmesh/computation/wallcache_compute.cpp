@@ -5,6 +5,21 @@
 
 namespace zx { namespace levelmesh {
 
+int ComputeSectorRebake(const SectorLook &before, const SectorLook &now)
+{
+	if (now.floorD != before.floorD || now.ceilD != before.ceilD) return kSectorMoved;
+	if (now.floorPic != before.floorPic || now.ceilPic != before.ceilPic) return kSectorRetextured;
+	if (now.light != before.light || now.colormap != before.colormap) return kSectorRelit;
+	return kSectorSame;
+}
+
+bool ComputeTakeChange(int &seen, int now)
+{
+	if (seen == now) return false;
+	seen = now;
+	return true;
+}
+
 bool ComputeStampsEqual(const WallCacheStamp &a, const WallCacheStamp &b)
 {
 	return a.frontDirty == b.frontDirty

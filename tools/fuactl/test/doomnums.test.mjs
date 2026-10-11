@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { SPECIAL, THING, ENGINE_THING } from "../src/doomnums.mjs";
+import { SPECIAL, THING, ENGINE_THING, SECTOR_TYPE } from "../src/doomnums.mjs";
 
 const ENGINE = fileURLToPath(new URL("../../../src/zandronum/", import.meta.url));
 
@@ -45,4 +45,13 @@ test("the polyobject anchor and spawn numbers are p_local.h's PO_ANCHOR_TYPE and
   assert.ok(m, "PO_ANCHOR_TYPE / PO_SPAWN_TYPE not found in p_local.h");
   assert.equal(ENGINE_THING.PolyAnchor, Number(m[1]));
   assert.equal(ENGINE_THING.PolySpawn, Number(m[1]) + 1);
+});
+
+test("every named sector type has the number p_lnspec.h's enum gives it", () => {
+  const header = fs.readFileSync(path.join(ENGINE, "src/p_lnspec.h"), "latin1");
+  for (const [name, num] of Object.entries(SECTOR_TYPE)) {
+    const m = new RegExp(`\\b${name}\\s*=\\s*(\\d+)`).exec(header);
+    assert.ok(m, `${name} is not in p_lnspec.h`);
+    assert.equal(Number(m[1]), num, name);
+  }
 });

@@ -9,21 +9,22 @@ import { SPECIAL } from "../src/doomnums.mjs";
 // [rc4l] The tags of wdiexsec's pool: a swimmable 3D floor, and its control sector tinted blue by an OPEN script.
 const POOL_TAG = 9, CONTROL_TAG = 5;
 
-// [rc4l] A walkway round a deep pool, the water's control room, how the water's colour is set (by script, in the map, or not at all), and its flat.
-export function pool(colour, water = "FWATER1") {
+// [rc4l] A walkway round a deep pool, the water's control room, how the water's colour is set (by an OPEN script, by script 2 when puked, in the map, or not at all), its flat, its Sector_Set3DFloor flags and alpha, the pool's floor and the script's tint.
+export function pool(colour, water = "FWATER1", { flags = 0, alpha = 200, floor = "FLAT14", tint = [100, 175, 255] } = {}) {
   const m = new UdmfMap();
   const walk = m.room(0, 0, 1024, 1024, { heightfloor: -42, heightceiling: 256, texturefloor: "FLOOR4_8",
     textureceiling: "CEIL3_5", lightlevel: 152 }, () => ({ side: { texturemiddle: "BROWN1" } }));
-  m.block(256, 384, 768, 896, { heightfloor: -154, heightceiling: 256, texturefloor: "FLAT14", textureceiling: "CEIL3_5",
+  m.block(256, 384, 768, 896, { heightfloor: -154, heightceiling: 256, texturefloor: floor, textureceiling: "CEIL3_5",
     lightlevel: 152, id: POOL_TAG }, walk, () => ({}), () => ({ texturebottom: "STARTAN2" }));
   // [rc4l] The control room's ceiling is the water's surface at -80, its light and colour are what the water casts below it, and COMPBLUE is the water's side.
   m.room(2000, 2000, 2064, 2064, { heightfloor: -194, heightceiling: -80, texturefloor: "FLAT1", textureceiling: water,
     lightlevel: 128, id: CONTROL_TAG, ...(colour === "map" ? { lightcolor: 0x64afff } : {}) }, (edge) => (edge === "south"
-    ? { side: { texturemiddle: "COMPBLUE" }, line: { special: SPECIAL.Sector_Set3DFloor, arg0: POOL_TAG, arg1: 2, arg2: 0, arg3: 200 } }
+    ? { side: { texturemiddle: "COMPBLUE" }, line: { special: SPECIAL.Sector_Set3DFloor, arg0: POOL_TAG, arg1: 2, arg2: flags, arg3: alpha } }
     : { side: { texturemiddle: "COMPBLUE" } }));
   m.thing({ x: 512, y: 250, angle: 90, type: 1 });
-  const behavior = colour === "script"
-    ? acs0([...callSpecial(SPECIAL.Sector_SetColor, [CONTROL_TAG, 100, 175, 255]), PCD.TERMINATE]) : null;
+  const setColor = callSpecial(SPECIAL.Sector_SetColor, [CONTROL_TAG, ...tint]);
+  const behavior = colour === "script" ? acs0([...setColor, PCD.TERMINATE])
+    : colour === "puked" ? acs0([...setColor, PCD.TERMINATE], [], { open: false, number: 2 }) : null;
   return { m, behavior };
 }
 

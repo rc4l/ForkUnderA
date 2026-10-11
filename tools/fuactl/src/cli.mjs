@@ -33,11 +33,17 @@ import { usageFor } from "./usage.mjs";
 const num = (v) => (v != null && v !== true ? Number(v) : undefined);
 
 const SPOTS = new URL("../spots.json", import.meta.url);
+const SESSION = () => path.resolve(process.cwd(), ".play-session");
 
 // [rc4l] The instance a command means: --port, else the last play session, else null.
 function sessionTarget(flags) {
-  const shared = path.resolve(process.cwd(), ".play-session");
+  const shared = SESSION();
   return shot.resolveTarget(flags, shot.readSession(flags.port ? shot.sessionFileFor(shared, flags.port) : shared));
+}
+
+// [rc4l] The binary a command's instance runs, which is where its captures land: --engine, its play session's, else the staged one.
+function engineOf(flags) {
+  return flags.engine || (sessionTarget(flags) || {}).engine || resolveEngine();
 }
 
 // [rc4l] sessionTarget, or exit with the command's usage when there is none.
@@ -47,8 +53,8 @@ function targetOf(flags, usage = "no --port and no .play-session -- nothing runn
   return t;
 }
 
-// [rc4l] Save the instance's vantage as spot name with what was loaded (the engine's own `wads`, hashes included) and how the renderer was set, since a camera alone is not a repro; returns the camera.
-async function captureSpot(c, name, note) {
+// [rc4l] Save the instance's vantage as spot name in file (spots.json by default) with what was loaded (the engine's own `wads`, hashes included) and how the renderer was set, since a camera alone is not a repro; returns the camera.
+async function captureSpot(c, name, note, file = SPOTS) {
   const cam = await c.rpc("player.camera");
   const wadText = await cap.exec(c, "wads", { quietMs: 400, maxMs: 8000 }).catch(() => "");
   const iwad = (wadText.match(/^IWAD:\s*(.+)$/m) || [])[1] || null;
@@ -60,13 +66,13 @@ async function captureSpot(c, name, note) {
     const v = shot.cvarValueFrom(await cap.exec(c, cv, { quietMs: 300, maxMs: 6000 }).catch(() => ""));
     if (v !== null) renderer[cv] = v;
   }
-  const db = JSON.parse(fs.readFileSync(SPOTS, "utf8"));
+  const db = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf8")) : { spots: {} };
   db.spots[name] = Object.assign({}, db.spots[name], {
     map: cam.map, x: cam.x, y: cam.y, z: cam.z, angle: cam.yaw, pitch: cam.pitch,
     shows: note || (db.spots[name] && db.spots[name].shows) || "recorded from a live session",
     loaded, renderer,
   });
-  fs.writeFileSync(SPOTS, JSON.stringify(db, null, 2) + "\n");
+  fs.writeFileSync(file, JSON.stringify(db, null, 2) + "\n");
   console.error(`saved spot ${name}`);
   return cam;
 }
@@ -127,7 +133,7 @@ const USAGE = `fuactl <command>
   queue list [--all] | next | note <id> <text> | done <id> [--unverified] [--note TEXT]   read and work the queue, oldest open item first
   burst <tag> [--side gl|vk] [--count N] [--box x0,y0,x1,y1] [--spot S | --at --face] [--port P]   timed captures with the sim running and each one's box brightness, for an animation's rate or a light a paused shot hides
   travel --to MAP [--max N] [--port P]   nextmap until the instance is on MAP, the way a player reached it
-  quit [--port P] [--token T]   quit an instance (else the last play session) and wait until its port closes; exit 1 if it would not go
+  quit [--port P] [--token T] [--park]   quit an instance (else the last play session) and wait until its port closes; exit 1 if it would not go; --park files its camera, wads and renderer first
   session [--instances N] [--seed S] [--map M] [--tics T]   run the determinism + desync check
   perf-ab [--seed S] [--map M] [--spawn CLS] [--count N] [--frames F]   deterministic perf ablation (baseline vs perturbation, causal ms delta + sim/render verdict)
   gl-timers --port P [--token T] [--frames N] [--warmup M]   GPU render profiling: per-pass GPU ms (scene/translucent/hud2d) of a running instance
@@ -139,17 +145,17 @@ const USAGE = `fuactl <command>
   renderer-info --port P [--token T]   renderer identity + whether GL timer queries work on this driver
   ui <action> [args] --port P [--token T]   drive the UI: read (menu as text), find <label>, nav <keys>, click <x> <y>, drag, type <text>, look --yaw D --pitch D, screenshot [name], exec <ccmd>
   diligent --port P [--frames N] [--shot FILE] [--sweep DIR]   drive the Diligent (Vulkan) backend: bake the level mesh, upload geometry, optional swapchain screenshot, optional debug-view sweep (lm0..lm4.png in DIR), the matched Diligent-vs-GL benchmark, and with --scale a GPU-time probe at 1x..100x the visible geometry
-  play [--restart] [--port P] [--token T] [--spot NAME] [--map M] [--file a.pk3,b.pk3] [--cvar k=v,k2=v2] [--preset ID --variant V --store DIR] [--gl] [--side-by-side] [--rt] [--monsters] [--lock] [--res WxH]   a build to walk around in, Vulkan live in the window; stays up until Ctrl-C
+  play [--restart] [--port P] [--token T] [--spot NAME | --unpark] [--map M] [--file a.pk3,b.pk3] [--cvar k=v,k2=v2] [--preset ID --variant V --store DIR] [--gl] [--side-by-side] [--rt] [--monsters] [--lock] [--res WxH]   a build to walk around in, Vulkan live in the window; stays up until Ctrl-C
   build [--root DIR]                 compile the engine and stage it, failing loudly instead of staging a stale binary
   mapdata <MAP> (--preset ID | --file a.pk3,b.wad) [--sector N,..] [--line N,..] [--special N] [--tag N] [--scripts REGEX]   a UDMF level's summary, sectors, lines and ACS source lines, read from its files
   actors [--near x,y] [--radius R] [--toward YAW | --ahead] [--cone DEG] [--class REGEX]   actors near a point (default the player), nearest first, optionally only in a direction
-  probe <scenario.mjs> [--map M] [--vantage V] [--side S] [<command> ...]   launch a template scenario's map at a vantage and run console commands there
+  probe <scenario.mjs> [--map M] [--vantage V] [--side S] [--engine path/to/forkundera.exe] [<command> ...]   launch a template scenario's map at a vantage and run console commands there
   scenarios [name ...] [--engine path/to/forkundera.exe]   run every template scenario (or the named ones) in turn and summarise; --engine picks the binary, as FUACTL_ENGINE does
   ready [--port P --token T] [--timeout S]   wait until an instance answers (defaults to the last play session)
   goto (--spot NAME | --at x,y,z --face yaw,pitch) [--port P]   stand the player there
   motion [--spot NAME | --at x,y,z --face yaw,pitch] [--box x0,y0,x1,y1] [--interval MS]   per-pixel change between two captures apart, Vulkan and GL, sim running
   ab <cvar> <a> <b> [--spot NAME | --at x,y,z --face yaw,pitch] [--box x0,y0,x1,y1]   Vulkan under each value in ONE paused frame, plus a repeat as the noise floor
-  shot <tag> [--port P] [--spot NAME | --at x,y,z --face yaw,pitch]   matched GL/Vulkan pair from a running instance, one camera, sim frozen
+  shot <tag> [--port P] [--spot NAME | --at x,y,z --face yaw,pitch] [--force]   matched GL/Vulkan pair from a running instance, one camera, sim frozen
   shoot [--port P] --tag T --at x,y,z --face yaw,pitch [--look x,y,z] [--weapon W] [--map M] [--after TICS]   fire at a junction and capture a GL/Vulkan pair (--look frames a point, --after catches transient effects before they fade)
   sweep [--maps "MAP01 MAP07"] [--port P]   matched pairs across several maps, ranked by how much the renderers disagree
   doorshot <tag> [--port P] [--at x,y,z --face yaw] [--mid TICS]   a door caught MID-SWING in both renderers, plus a before pair
@@ -290,13 +296,15 @@ async function main() {
     }
     // [rc4l] `fuactl probe` -- a scenario's own map, at one of its vantages, with console commands run there: four scratch scripts' worth of setup.
     case "probe": {
-      const probeUsage = "usage: fuactl probe <scenario.mjs> [--map M] [--vantage V] [--side S] [<command> ...]";
+      const probeUsage = "usage: fuactl probe <scenario.mjs> [--map M] [--vantage V] [--side S] [--engine path/to/forkundera.exe] [<command> ...]";
       if (!rest[0]) { console.error(probeUsage); process.exit(2); }
+      if (flags.engine) process.env.FUACTL_ENGINE = String(flags.engine);
       const url = pathToFileURL(path.resolve(rest[0])).href;
       await import(url);
       const options = scenarioOptions(url);
       if (!options) { console.error(`${rest[0]} does not call runScenarioIfMain`); process.exit(2); }
       const out = await probeScenario(options(), { map: flags.map, vantage: flags.vantage, side: flags.side }, rest.slice(1));
+      console.log(`engine ${resolveEngine()}`);
       for (const o of out) console.log(`> ${o.command}\n${o.output}`);
       break;
     }
@@ -329,7 +337,7 @@ async function main() {
       const out = await shot.captureBurst(c, {
         side: flags.side === "gl" ? "gl" : "vk", count: Number(flags.count) || 8,
         box: flags.box ? String(flags.box).split(",").map(Number) : [0, 0, 1, 1],
-        engineBin: resolveEngine().split(path.sep).join("/"), tag: rest[0] || "burst",
+        engineBin: engineOf(flags).split(path.sep).join("/"), tag: rest[0] || "burst",
       });
       for (const r of out) console.log(`${r.i} t=${r.t}ms mean=${r.mean.toFixed(2)} ${r.file || "(no capture)"}`);
       c.close();
@@ -389,6 +397,12 @@ async function main() {
     // [rc4l] `fuactl quit` -- stop an instance by its token and wait for its port to close, where a bare console quit left no way to tell it had gone.
     case "quit": {
       const t = targetOf(flags);
+      // [rc4l] --park first files where it stands, what it loaded and how it rendered, so `play --unpark` brings it back after an exclusive run.
+      if (flags.park) {
+        const c = await connectTarget(flags);
+        const cam = await captureSpot(c, shot.PARKED, `parked from port ${t.port}`, shot.parkFileFor(SESSION(), t.port)).finally(() => c.close());
+        console.log(`parked ${cam.map} at ${cam.x},${cam.y},${cam.z} facing ${cam.yaw},${cam.pitch}`);
+      }
       const outcome = await quitInstance(t);
       console.log(`${outcome}: port ${t.port}`);
       process.exitCode = outcome === "running" ? 1 : 0;
@@ -663,7 +677,7 @@ async function main() {
       const c = await connectTarget(flags);
       try {
         const out = await sweepMod.doorShot(c, rest[0] || "door", {
-          at: shot.cameraFromFlags(flags, SPOTS, "90,0") || undefined, engineBin: resolveEngine(),
+          at: shot.cameraFromFlags(flags, SPOTS, "90,0") || undefined, engineBin: engineOf(flags),
           midTics: flags.mid ? Number(flags.mid) : undefined,
         });
         console.log(JSON.stringify(out, null, 2));
@@ -703,6 +717,8 @@ async function main() {
         await new Promise((r) => setTimeout(r, 500));
       }
       for (;;) {
+        // [rc4l] Read again each try, since a launch still coming up rewrites its token.
+        t = sessionTarget(flags) || t;
         const c = new BridgeClient();
         try {
           await c.connect(t.port, { token: t.token, timeoutMs: 1500 });
@@ -734,7 +750,7 @@ async function main() {
       const motionUsage = "usage: fuactl motion [--spot NAME | --at x,y,z --face yaw,pitch] [--box x0,y0,x1,y1] [--interval MS]";
       const c = await connectTarget(flags, motionUsage);
       try {
-        const engineBin = flags.engine || resolveEngine();
+        const engineBin = engineOf(flags);
         const got = await shot.captureOverTime(c, { at: shot.cameraFromFlags(flags, SPOTS), engineBin, gl: true,
           intervalMs: Number(flags.interval) || 600, tag: flags.tag || "motion" });
         const box = flags.box ? String(flags.box).split(",").map(Number) : [0, 0.05, 1, 1];
@@ -750,7 +766,7 @@ async function main() {
       const c = await connectTarget(flags, abUsage);
       try {
         const files = await shot.frozenAB(c, { cvar, values: [a, b], at: shot.cameraFromFlags(flags, SPOTS),
-          outDir: sweepDirFor(flags.engine || resolveEngine()), tag: flags.tag || `ab_${cvar}` });
+          outDir: sweepDirFor(engineOf(flags)), tag: flags.tag || `ab_${cvar}` });
         if (files.some((f) => !f)) { console.log(JSON.stringify({ files }, null, 2)); process.exitCode = 1; break; }
         const box = flags.box ? String(flags.box).split(",").map(Number) : [0, 0.05, 1, 1];
         const [A, B, A2] = files.map((f) => decodePNG(f));
@@ -778,7 +794,7 @@ async function main() {
       if (engines > 1) console.error(`warning: ${engines} engines are running -- close the others, or the GL capture may be garbage`);
       const c = await connectTarget(flags);
       try {
-        const out = await shot.shotPair(c, tag, { at, engineBin: flags.engine || resolveEngine() });
+        const out = await shot.shotPair(c, tag, { at, engineBin: engineOf(flags) });
         console.log(JSON.stringify(out, null, 2));
         if (!out.gl || !out.vk) process.exitCode = 1;
       } finally { c.close(); }
@@ -792,7 +808,7 @@ async function main() {
     // Stays up until Ctrl-C, and writes the port and token to .play-session so a capture taken
     // later can find this instance without depending on a pipe still existing.
     case "play": {
-      const sessionFile = path.resolve(process.cwd(), ".play-session");
+      const sessionFile = SESSION();
       // [rc4l] --restart: quit whatever this session file points at before launching.
       //
       // Every engine change needs the instance replaced, and doing that by hand is where the two
@@ -803,18 +819,30 @@ async function main() {
         const outcome = prev && prev.port ? await quitInstance({ port: prev.port, token: prev.token || null }) : "absent";
         if (outcome !== "absent") console.error(`${outcome}: the instance on port ${prev.port}`);
       }
-      // [rc4l] --spot: the spot's map and wads, found by name in --store or FUACTL_PWADS, and the player stood there once it is up.
-      let spotAt = null;
-      if (flags.spot) {
-        const store = presetDirs(flags).storeDir;
-        const sl = shot.spotLaunch(SPOTS, String(flags.spot), store);
+      // [rc4l] A recorded launch's map and wads (found by name in --store or FUACTL_PWADS) into the flags, or exit naming the ones missing.
+      const store = presetDirs(flags).storeDir;
+      const takeLaunch = (what, sl) => {
         if (sl.missing.length) {
-          console.error(`spot ${flags.spot} needs ${sl.missing.join(", ")}, which are not in ${store} (set --store or FUACTL_PWADS)`);
+          console.error(`${what} needs ${sl.missing.join(", ")}, which are not in ${store} (set --store or FUACTL_PWADS)`);
           process.exit(2);
         }
         flags.map = flags.map || sl.map;
         flags.file = flags.file || (sl.files.length ? sl.files.join(",") : undefined);
+      };
+      // [rc4l] --spot: the spot's launch, and the player stood there once it is up.
+      let spotAt = null;
+      if (flags.spot) {
+        takeLaunch(`spot ${flags.spot}`, shot.spotLaunch(SPOTS, String(flags.spot), store));
         spotAt = shot.cameraFromFlags({ spot: flags.spot }, SPOTS);
+      }
+      // [rc4l] --unpark: what `quit --park` filed for --port, side by side again if it was.
+      if (flags.unpark) {
+        const park = shot.parkFileFor(sessionFile, Number(flags.port));
+        if (!flags.port || !fs.existsSync(park)) { console.error(`nothing parked for port ${flags.port}: run quit --park --port P first`); process.exit(2); }
+        const pl = shot.parkedLaunch(park, store);
+        takeLaunch("the parked instance", pl);
+        flags["side-by-side"] = flags["side-by-side"] || pl.sideBySide;
+        spotAt = pl.at;
       }
       const inst = await play({
         port: flags.port ? Number(flags.port) : undefined,
@@ -888,7 +916,7 @@ async function main() {
         }
         // shotPair, not a second capture path: it PAUSES the sim between the two halves, which is
         // the only way anything transient appears in both.
-        const shots = await shot.shotPair(c, tag, { engineBin: flags.engine || resolveEngine() });
+        const shots = await shot.shotPair(c, tag, { engineBin: engineOf(flags) });
         console.log(JSON.stringify({ tag, weapon, camera, ...shots }, null, 2));
       } finally { c.close(); }
       break;
@@ -928,7 +956,7 @@ async function main() {
           case "type":       return ui.typeText(c, a.join(" ")).then(() => ({ typed: a.join(" ") }));
           case "look":       return ui.look(c, { yaw: flags.yaw ? Number(flags.yaw) : 0, pitch: flags.pitch ? Number(flags.pitch) : 0 });
           case "stick":      return c.rpc("input.axis", flags.clear ? { clear: true } : { yaw: num(flags.yaw), pitch: num(flags.pitch), forward: num(flags.forward), side: num(flags.side) });
-          case "screenshot": return ui.screenshot(c, flags.engine || resolveEngine(), a[0] || "fuactl_shot").then((s) => ({ path: s.path, bytes: s.base64.length }));
+          case "screenshot": return ui.screenshot(c, engineOf(flags), a[0] || "fuactl_shot").then((s) => ({ path: s.path, bytes: s.base64.length }));
           case "read":       return ui.readMenu(c).then((m) => (flags.full ? m : { lines: m.lines.map((l) => l.text) }));
           case "find":       return ui.findLabel(c, a.join(" "));
           case "warp":       return ui.warp(c, Number(a[0]), Number(a[1]));

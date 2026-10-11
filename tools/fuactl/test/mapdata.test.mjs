@@ -68,6 +68,7 @@ test("the report summarises the map and describes the sectors and lines asked ab
   assert.equal(r.sectors[0].textureceiling, "F_SKY1");
   assert.deepEqual(r.sectors[0].lines, [0, 1, 2, 3]);
   assert.deepEqual([r.lines[0].from, r.lines[0].to, r.lines[0].front, r.lines[0].back, r.lines[0].special], [[0, 256], [256, 256], 0, null, 9]);
+  assert.deepEqual([r.lines[0].frontSide.sector, r.lines[0].backSide], [0, null]);
   assert.deepEqual(r.scripts, [{ line: 3, text: "Sector_SetPlaneReflection(125, 66, 0);" }]);
   assert.deepEqual(mapReport(found, { special: 9 }).special.map((l) => l.index), [1]);
   assert.deepEqual(r.sectors[0].bounds, [0, 0, 256, 256]);

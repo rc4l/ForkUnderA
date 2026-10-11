@@ -18,9 +18,13 @@
 #define FUA_CONSTANTS_GLSL \
 	"layout(binding = 0) uniform Constants { mat4 uMVP; vec4 uCameraPos; vec4 uLightParams; vec4 uClipPlane; vec4 uScreen; vec4 uSkyColor; vec4 uFrame; };\n"
 
+// [rc4l] A line mirror's pass drops every fragment at world position p behind the glass; uClipPlane.w of 0 means no mirror.
+#define FUA_MIRROR_CLIP_GLSL(p) \
+	"    if (uClipPlane.w != 0.0 && dot(" p ", uClipPlane.xyz) + uClipPlane.w < 0.0) discard;\n"
+
 // [rc4l] One piece's record as every shader reads it, declared once so its stride cannot drift from ScenePieceData's.
 #define FUA_PIECEDATA_GLSL \
-	"struct PieceData { vec4 colorLight; vec4 fogAlphaMat; vec4 fogColor; vec4 normal; vec4 floodU; vec4 floodV; vec4 actorLight; vec4 bright; };\n" \
+	"struct PieceData { vec4 colorLight; vec4 fogAlphaMat; vec4 fogColor; vec4 normal; vec4 floodU; vec4 floodV; vec4 actorLight; vec4 bright; vec4 extra; };\n" \
 	"layout(std430, binding = 9) readonly buffer Pieces { PieceData pieces[]; };\n"
 
 #include "RenderDevice.h"

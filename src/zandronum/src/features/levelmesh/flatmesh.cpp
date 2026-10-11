@@ -742,6 +742,26 @@ bool MirrorWalkedThisFrame(int line)
 	return false;
 }
 MirrorWalk::~MirrorWalk() { s_mirrorLine = saved; }
+
+// [rc4l] The light GLWall::RenderMirrorSurface draws each line mirror's sheen in, from the player's walk this frame.
+struct MirrorSheenShade { int line; MeshPiece shade; };
+static TArray<MirrorSheenShade> g_mirrorSheens;
+const MeshPiece *MirrorSheen(int line)
+{
+	for (unsigned i = 0; i < g_mirrorSheens.Size(); i++) if (g_mirrorSheens[i].line == line) return &g_mirrorSheens[i].shade;
+	return NULL;
+}
+void RegisterMirrorSheen(const GLWall &wall)
+{
+	if (!PlayerWalkActive() || wall.seg == NULL || wall.seg->linedef == NULL) return;
+	const int line = int(wall.seg->linedef - lines);
+	if (MirrorSheen(line) != NULL) return;
+	MirrorSheenShade s;
+	s.line = line;
+	// [rc4l] gl_SetColor and gl_SetFog as RenderMirrorSurface calls them: no relative light, and fogged to black as an added surface.
+	CaptureShading(wall.lightlevel, 0, wall.Colormap, s.shade, false, true);
+	g_mirrorSheens.Push(s);
+}
 StackWalk::~StackWalk() { s_stackWalk = saved; }
 
 static int StackWalkSlot()
@@ -772,6 +792,7 @@ const unsigned int *StackVisibility(int &words)
 
 int PieceStackId(const MeshPiece &p)
 {
+	if (p.linkId >= 0) return p.linkId;
 	int count = 0;
 	const FFlatVertex *v = MeshVertexData(count);
 	float cx, cy, cz;
@@ -847,6 +868,7 @@ int BeginSkyWalk()
 		g_skyViewpoint = NULL;
 		g_stackUsed = 0;
 		g_walkedMirrors.Clear();
+		g_mirrorSheens.Clear();
 		for (int i = 0; i < kMaxStackViews; i++) { g_stackVerts[i].Clear(); g_skyVerts[kSkyCaptureStack + i].Clear(); }
 		g_stackVis.Resize((unsigned)ComputeStackVisWords(numsubsectors + numsides));
 		if (g_stackVis.Size() > 0) memset(&g_stackVis[0], 0, g_stackVis.Size() * sizeof(unsigned int));
@@ -944,15 +966,15 @@ bool PlayerWalkActive()
 	return ComputeOwnsFrameCapture(s_mainView, s_sceneNesting);
 }
 
-bool DynamicCaptureActive() { return PlayerWalkActive() || StackCaptureSlot() >= 0; }
+int MirrorCaptureLine() { return ComputeMirrorCaptureLine(s_mirrorLine, s_mainView, s_sceneNesting); }
+
+bool DynamicCaptureActive() { return PlayerWalkActive() || StackCaptureSlot() >= 0 || MirrorCaptureLine() >= 0; }
 
 void RegisterSprite(const GLSprite &spr, const float *c1, const float *c2,
 	const float *c3, const float *c4)
 {
-	// [rc4l] Only the player's walk fills the frame's sprites: a mirror walk's would draw them twice, and its reset used to wipe them; it adds only the viewer, whom no other walk draws.
-	const bool mirrorViewer = ComputeTakesMirrorViewer(s_mirrorLine >= 0, s_mainView, s_sceneNesting,
-		spr.actor != NULL && consoleplayer >= 0 && spr.actor == players[consoleplayer].camera);
-	if (spr.gltexture == NULL || !(DynamicCaptureActive() || mirrorViewer)) return;
+	// [rc4l] Each walk the backend draws again keeps its own sprites, for its pass alone: the player's for the frame, a stacked view's or a line mirror's (the viewer and whatever stands behind the player) for that one.
+	if (spr.gltexture == NULL || !DynamicCaptureActive()) return;
 
 	// [rc4l] GLSprite emits a 4-vertex TRIANGLE STRIP; the mesh is triangle lists, so expand to
 	// (0,1,2) and (2,1,3) -- which preserves the strip's winding rather than flipping the second
@@ -967,7 +989,7 @@ void RegisterSprite(const GLSprite &spr, const float *c1, const float *c2,
 	mp.range.offset = 0;
 	mp.range.count = 0;
 	mp.material = spr.gltexture;
-	mp.mirrorLine = mirrorViewer ? s_mirrorLine : -1;
+	mp.mirrorLine = MirrorCaptureLine();
 	mp.stackSlot = StackCaptureSlot();
 	// [rc4l] GLSprite has no light index. Its dynamic light is computed per actor on the CPU and
 	// folded into the vertex colour below -- see the fold after CaptureShading, which is what makes
@@ -1122,6 +1144,7 @@ void RegisterDecalTriangles(const FFlatVertex *tris, int count, const void *mate
 	mp.range.offset = 0;
 	mp.range.count = 0;
 	mp.material = material;
+	mp.mirrorLine = MirrorCaptureLine();
 	mp.stackSlot = StackCaptureSlot();
 	// [rc4l] A decal takes its dynamic light from the CPU, and its NORMAL is what says so.
 	//

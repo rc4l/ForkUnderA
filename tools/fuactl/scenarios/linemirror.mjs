@@ -1,4 +1,4 @@
-// [rc4l] A room with a one-sided Line_Mirror wall, GL against Vulkan: exit 0 when Vulkan reflects the room and the player as GL does.
+// [rc4l] A room with a one-sided Line_Mirror wall, GL against Vulkan: exit 0 when Vulkan reflects the room and the player as GL does, under GL's sphere-mapped sheen (gl_mirror_envmap).
 //
 // usage:  node scenarios/linemirror.mjs [port]
 import { UdmfMap, wad, mapLumps } from "../src/udmf.mjs";
@@ -26,8 +26,5 @@ export const VANTAGES = [
 // [rc4l] The mirror's face, above the weapon.
 export const BOXES = { MAP01: { mirror: { box: [0.1, 0.12, 0.9, 0.62], ceiling: 2 } } };
 
-// [rc4l] GL's faint sphere-mapped sheen over a mirror (gl_mirror_envmap) is not drawn by the backend yet, so the reflection is compared without it.
-export const SIDES = [{ name: "gl", gl: true, cvars: { gl_mirror_envmap: "0" } }, { name: "vk", gl: false }];
-
 runScenarioIfMain(import.meta.url, () => ({ name: "linemirror", wad: buildLineMirrorWad(), maps: ["MAP01"],
-  vantages: VANTAGES, boxes: BOXES, sides: SIDES }));
+  vantages: VANTAGES, boxes: BOXES }));

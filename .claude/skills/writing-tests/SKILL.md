@@ -77,6 +77,10 @@ cmake --build build-tests --config Release -- -m
 build-tests/Release/zandrox_tests.exe --gtest_filter='Suite.*'
 ```
 
+This tree has not always re-globbed a new `*_test.cpp` on build (`lookhits_compute_test.cpp` ran zero
+cases), so after adding one, check its suite appears in `--gtest_list_tests`, and if not run
+`cmake build-tests` once to reconfigure.
+
 Without clang/llvm-cov installed the coverage gate runs in CI only -- check every branch of a new
 `Compute*` function against its tests by reading them, and say so.
 

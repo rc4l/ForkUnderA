@@ -1,6 +1,9 @@
 // [rc4l] The action specials and editor numbers template maps use, named as the engine names them and checked against its own definitions by test/doomnums.test.mjs.
 export const SPECIAL = Object.freeze({
   Polyobj_StartLine: 1,
+  Line_Horizon: 9,
+  Transfer_WallLight: 16,
+  FloorAndCeiling_RaiseByValue: 96,
   Light_ChangeToValue: 112,
   Sector_SetPlaneReflection: 159,
   Sector_Set3DFloor: 160,
@@ -17,6 +20,11 @@ export const THING = Object.freeze({
   LowerStackLookOnly: 9078,
   SkyViewpoint: 9080,
   PointLight: 9800,
+});
+
+// [rc4l] Sector types (UDMF's sector special), named as p_lnspec.h's enum names them and checked against it.
+export const SECTOR_TYPE = Object.freeze({
+  Scroll_East_Fast: 206,
 });
 
 // [rc4l] Things the engine handles itself rather than through DECORATE, checked against p_local.h's PO_ enum.

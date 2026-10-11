@@ -45,6 +45,11 @@ HorizonSpan ComputeHorizonHalfSpan(bool ceilingHalf, float floorZ, float ceiling
 	return s;
 }
 
+float ComputeHorizonSkyBottom(bool floorPlane, float windowBottom, float floorZ, float ceilingZ, float eyeZ)
+{
+	return floorPlane ? ComputeHorizonSplit(eyeZ, floorZ, ceilingZ) : windowBottom;
+}
+
 void ComputeHorizonLightInputs(bool fullbright, int lightLevel, int extraLight, int &level, int &rel)
 {
 	level = fullbright ? 255 : lightLevel;

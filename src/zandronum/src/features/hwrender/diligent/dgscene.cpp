@@ -68,8 +68,11 @@
 #include "features/hwrender/computation/surfaceorder_compute.h"   // the draw order, tested off-engine
 #include "features/hwrender/computation/batch_compute.h"   // [rc4l] ComputeStaysInBatch, for patching animated surfaces
 #include "features/hwrender/computation/passname_compute.h"   // [rc4l] ComputeWorldPassName, for the per-pass timings
+#include "features/hwrender/computation/mirrorsheen_compute.h"   // [rc4l] GL's sheen over a line mirror
+#include "features/hwrender/computation/desaturate_compute.h"   // [rc4l] a sector's desaturation, as main.fp applies it
+#include "features/levelmesh/computation/wallbatch_compute.h"   // [rc4l] ComputeFanTriangleVertex, a mirror quad split as GL fans it
 #include "features/hwrender/hud2d.h"
-#include "features/horizon/computation/horizon_compute.h"   // [rc4l] ComputeQuadMayBeVisible, for mirrors out of sight
+#include "features/horizon/computation/horizon_compute.h"   // [rc4l] ComputeQuadMayBeVisible for mirrors out of sight, ComputeEyeFromViewProjection for the horizon sky
 #include "features/hwrender/diligent/dglight_glsl.h"   // [rc4l] the sector light, shared with the horizon pass
 #include "v_video.h"
 #include "gl/renderer/gl_renderer.h"
@@ -404,6 +407,7 @@ struct ScenePieceData
 	float actorR, actorG, actorB, cpuLight;
 	// [rc4l] The slot holding this material's brightmap in the bindless array (0 for none), the piece's PieceStackId plus one (0 for a sprite or model, never culled), 1 when both slots go through SlotRemap, and 1 when GL draws it unmasked so no texel is discarded.
 	float brightSlot, stackId, animates, plain;
+	float desaturation, unused0, unused1, unused2;   // [rc4l] the colormap's desaturation, 0..1, which main.fp mixes every texel toward grey by
 };
 
 // [rc4l] The per-piece records the vertices index into, and the buffer that holds them.
@@ -869,8 +873,8 @@ static bool MaterialSlotsMatchFill()
 }
 
 static int g_dynSlotRefused = 0, g_dynSlotNoMaterial = 0, g_dynSlotSeen = 0, g_dynSlotMax = 0;
-// [rc4l] The viewer's own sprites in this frame's dynamic stream, one per line mirror GL walked at the first level.
-static int g_dynViewerRuns = 0;
+// [rc4l] Runs in this frame's dynamic stream that a line mirror's walk took, drawn only in that mirror's pass.
+static int g_dynMirrorRuns = 0;
 static int g_dynBindless = 0, g_dynPerMaterial = 0;
 // What the scene pixel shader said it declares, recorded at creation so the question can be asked
 // later -- pipeline setup happens before anything is listening on the console.
@@ -1288,6 +1292,7 @@ static const char *kSceneVS =
 	"layout(location = 12) flat out int vBrightSlot;\n"
 	"layout(location = 13) flat out int vLinkId;\n"
 	"layout(location = 14) flat out float vPlain;\n"
+	"layout(location = 15) flat out float vDesaturation;\n"
 	"layout(std430, binding = 10) readonly buffer StackVis { uint stackVis[]; };\n"
 	"layout(std430, binding = 11) readonly buffer SlotRemap { uint slotRemap[]; };\n"
 	"void main() {\n"
@@ -1302,6 +1307,7 @@ static const char *kSceneVS =
 	// [rc4l] The piece's subsector or sidedef as GL's light links name it (bright.y is PieceStackId plus one), or -1 for a sprite or model.
 	"    vLinkId = int(pd.bright.y + 0.5) - 1;\n"
 	"    vPlain = pd.bright.w;\n"
+	"    vDesaturation = pd.extra.x;\n"
 	"    vec4 clip = uMVP * vec4(aPos, 1.0);\n"
 	// [rc4l] A stacked view draws only what GL's walk through it drew, subsector for a flat and sidedef for a wall (ComputeMarkStackVisible); any other piece's triangle goes off screen whole.
 	"    int stackSlot = int(uFrame.y + 0.5) - 1;\n"
@@ -1382,6 +1388,13 @@ static const char *kSceneVS =
 	"layout(location = 12) flat in int vBrightSlot;\n" \
 	"layout(location = 13) flat in int vLinkId;\n" \
 	"layout(location = 14) flat in float vPlain;\n" \
+	"layout(location = 15) flat in float vDesaturation;\n" \
+	/* [rc4l] ComputeDesaturate, line for line: main.fp's desaturate(), on the texel and the brightmap but never the light. */ \
+	"vec3 fuaDesaturate(vec3 c) {\n" \
+	"    if (vDesaturation <= 0.0) return c;\n" \
+	"    float gray = c.r * 0.3 + c.g * 0.56 + c.b * 0.14;\n" \
+	"    return mix(c, vec3(gray), vDesaturation);\n" \
+	"}\n" \
 	FUA_CONSTANTS_GLSL \
 	"layout(binding = 1) uniform sampler2D uTex;\n" \
 	/* [rc4l] The brightmap layer, present on EVERY material -- black where there is none.
@@ -1577,6 +1590,7 @@ static const char *kSceneVS =
 	"}\n" \
 	FUA_SECTOR_LIGHT_GLSL \
 	"vec3 fuaShadeEx(vec3 texel, bool wantDynLight) {\n" \
+	"    texel = fuaDesaturate(texel);\n" \
 	"    float dbg = uCameraPos.w;\n" \
 	"    if (dbg == 2.0) return vec3(gl_FragCoord.z);\n" \
 	"    if (dbg == 3.0) return vec3(fract(gl_FragCoord.z * 64.0));\n" \
@@ -1616,7 +1630,7 @@ static const char *kSceneVS =
 	/* [rc4l] Mirror clipping. Everything on the far side of the mirror plane is behind the glass and
 	   must not appear in the reflection -- without this the wall the mirror hangs on renders first
 	   from the reflected camera and fills the whole reflection. w == 0 means no mirror is active. */ \
-	"    if (uClipPlane.w != 0.0 && dot(vPixelPos.xyz, uClipPlane.xyz) + uClipPlane.w < 0.0) discard;\n" \
+	FUA_MIRROR_CLIP_GLSL("vPixelPos.xyz") \
 	"    vec3 color = fuaSectorLight(vColor, vLightParm.x, fogMode, fogfactor, surfDepth);\n" \
 	/* Dynamic lights add to the light COLOUR before the texture is modulated, exactly as
 	   getLightColor does -- adding after would light the black parts of a texture too. */ \
@@ -1629,7 +1643,7 @@ static const char *kSceneVS =
 	/* [rc4l] Under bindless the brightmap is the array's at its own slot, as the texel is, since one binding cannot carry every material's. */ \
 	"    vec2 bmUV = fuaFloodUV(vUV);\n" \
 	"    vec3 bm = (uSkyColor.w > 0.5 && vLightIndex > 0) ? (vBrightSlot > 0 ? texture(uMaterials[nonuniformEXT(vBrightSlot)], bmUV).rgb : vec3(0.0)) : texture(uBrightmap, bmUV).rgb;\n" \
-	"    color = min(color + bm, vec3(1.0));\n" \
+	"    color = min(color + fuaDesaturate(bm), vec3(1.0));\n" \
 	/* [rc4l] Dynamic lights are optional, because a SHADED DECAL must not take them.
 	   Its colour is its own -- a scorch mark is black -- and that colour arrives folded into the
 	   vertex light, so a black decal has vColor 0 and the dynamic light term is then the ONLY thing
@@ -1766,7 +1780,8 @@ static float g_fovOverride = 0.f, g_aspectOverride = 0.f;
 static float g_lensFov = 90.f, g_lensRatio = 1.333333f;
 void SetMainViewLens(float fovDegrees, float fovRatio) { g_lensFov = fovDegrees; g_lensRatio = fovRatio; }
 
-static void BuildMVP(float *m)
+// [rc4l] The camera the engine's view globals describe now, as the backend frames it.
+static zx::hwrender::BackendCamera CurrentCamera()
 {
 	zx::hwrender::BackendCamera c;
 	// [rc4l] GL's vertical field of view, derived as SetProjection derives it, where a constant 74 degrees was half a percent off and never zoomed.
@@ -1791,8 +1806,9 @@ static void BuildMVP(float *m)
 	c.pitch = (float)radPitch;
 	// [rc4l] GL draws the world 1.2 times taller than square at every pitch, and this drew it square, so every wall above or below the eye sat off GL's by a fifth.
 	c.pixelStretch = glset.pixelstretch;
-	zx::hwrender::ComputeBackendMVP(c, m);
+	return c;
 }
+static void BuildMVP(float *m) { zx::hwrender::ComputeBackendMVP(CurrentCamera(), m); }
 // ---------------------------------------------------------------------------
 // Sky
 // ---------------------------------------------------------------------------
@@ -1912,7 +1928,9 @@ static const char *kSkyVS =
 	// in as an angle and is applied here.
 	"    float sa = sin(uLightParams.y), ca = cos(uLightParams.y);\n"
 	"    vec3 p = vec3(aPos.x * ca + aPos.z * sa, aPos.y, -aPos.x * sa + aPos.z * ca);\n"
-	"    gl_Position = uMVP * vec4(p + uCameraPos.xyz, 1.0);\n"
+	// [rc4l] Centred on the eye of whichever pass is drawing, read off its matrix as the horizon pass reads it, since uCameraPos holds only the player's and a skybox portal's sky sat around the player, thousands of units from its camera.
+	"    vec4 e = inverse(uMVP) * vec4(0.0, 0.0, 1.0, 0.0);\n"
+	"    gl_Position = uMVP * vec4(p + e.xyz / e.w, 1.0);\n"
 	"    vUV = aUV;\n"
 	"    vSkyColor = aSkyColor;\n"
 	"    vSkyAlpha = aSkyAlpha;\n"
@@ -2563,36 +2581,21 @@ static const char *kScreenSurfVS =
 	"layout(location = 1) in vec2 aUV;\n"
 	"layout(location = 2) in float aPiece;\n"
 	FUA_CONSTANTS_GLSL
-	// [rc4l] A sky surface may never reach BELOW the horizon, and the horizon is eye level.
-	//
-	// A sky sits at infinity, so the line where it meets the ground is exactly the height of
-	// the eye -- which is why GL builds these quads bottomed at viewz and not at the floor.
-	// Baked geometry cannot know the eye height, so the clamp happens here, where it does.
-	// Without it the quad paints sky over the water in front of the far shore: a bright
-	// white streak straight along the horizon, mean 44 against GL 1.8 on that row.
-	"layout(location = 0) out float vUp;\n"
+	"layout(location = 0) out vec3 vWorld;\n"
 	"void main() {\n"
-	// [rc4l] NOT clamped here. Moving the vertex to eye level and then testing the moved
-	// height is a tautology -- the test can never fire, which is exactly what it did. The
-	// quad keeps its real height and the fragment below the horizon is discarded instead,
-	// which cuts it at the horizon rather than near it.
-	"    vUp = aPos.y - uCameraPos.y;\n"
+	"    vWorld = aPos;\n"
 	"    gl_Position = uMVP * vec4(aPos, 1.0);\n"
 	"}\n";
-static const char *kScreenSurfPSHead =
+// [rc4l] No cut at the horizon: GL fills a sky wall through its stencil over the whole visible wall, below eye level too, which is what hides what stands behind it.
+// [rc4l] A mirror's pass draws these from the main walk, so one beyond the glass, between the reflected eye and the mirror, would paint over the reflection; the clip drops it as it drops the world there.
+static const char *kScreenSurfPS =
 	"#version 450\n"
 	FUA_CONSTANTS_GLSL
 	"layout(binding = 1) uniform sampler2D uSky;\n"
+	"layout(location = 0) in vec3 vWorld;\n"
 	"layout(location = 0) out vec4 outColor;\n"
-	"layout(location = 0) in float vUp;\n"
-	"void main() {\n";
-// [rc4l] The sky stops at the horizon, and the horizon is eye level. The vertex clamp
-// puts every corner at or above it; this catches what interpolation and the
-// rasteriser do in between, which is where a band of sky several rows deep was
-// appearing UNDER the waterline -- the blue quad rc4l photographed.
-static const char *kScreenSurfPSHorizon =
-	"    if (vUp < -0.5) discard;\n";
-static const char *kScreenSurfPSTail =
+	"void main() {\n"
+	FUA_MIRROR_CLIP_GLSL("vWorld")
 	// [rc4l] Sampled by SCREEN FRACTION, not by texel.
 	//
 	// texelFetch indexes the sky image directly, which is only right while that image is
@@ -2613,11 +2616,17 @@ static const char *kScreenSurfPSTail =
 	"    outColor = vec4(texture(uSky, uv).rgb, 1.0);\n"
 	"}\n";
 
-// [rc4l] The pipeline for such surfaces: horizon cuts them at eye level as a sky must, and texType says whether uSky is one fixed picture (the sky) or one per binding (each stacked view).
-// [rc4l] An empty fragment stage, for a pass that only writes depth.
-static const char *kScreenSurfDepthPS = "#version 450\nvoid main() {}\n";
+// [rc4l] A fragment stage for a pass that only writes depth, clipped at a mirror as the coloured one is.
+static const char *kScreenSurfDepthPS =
+	"#version 450\n"
+	FUA_CONSTANTS_GLSL
+	"layout(location = 0) in vec3 vWorld;\n"
+	"void main() {\n"
+	FUA_MIRROR_CLIP_GLSL("vWorld")
+	"}\n";
 
-static Diligent::RefCntAutoPtr<Diligent::IPipelineState> CreateScreenSurfacePSO(const char *name, bool horizon,
+// [rc4l] The pipeline for such surfaces: texType says whether uSky is one fixed picture (the sky) or one per binding (each stacked view).
+static Diligent::RefCntAutoPtr<Diligent::IPipelineState> CreateScreenSurfacePSO(const char *name,
 	Diligent::SHADER_RESOURCE_VARIABLE_TYPE texType, bool depthOnly = false)
 {
 	Diligent::RefCntAutoPtr<Diligent::IPipelineState> pso;
@@ -2625,13 +2634,10 @@ static Diligent::RefCntAutoPtr<Diligent::IPipelineState> CreateScreenSurfacePSO(
 	auto *swap = GetSwapChain();
 	if (!dev || !swap || !g_cb) return pso;
 	const auto &sd = swap->GetDesc();
-	FString ps = kScreenSurfPSHead;
-	if (horizon) ps += kScreenSurfPSHorizon;
-	ps += kScreenSurfPSTail;
-	if (depthOnly) ps = kScreenSurfDepthPS;
+	const char *ps = depthOnly ? kScreenSurfDepthPS : kScreenSurfPS;
 	Diligent::RefCntAutoPtr<Diligent::IShader> svs, sps;
 	svs = CompileShader(Diligent::SHADER_TYPE_VERTEX, name, kScreenSurfVS);
-	sps = CompileShader(Diligent::SHADER_TYPE_PIXEL, name, ps.GetChars());
+	sps = CompileShader(Diligent::SHADER_TYPE_PIXEL, name, ps);
 	if (!svs || !sps) return pso;
 
 	Diligent::ShaderResourceVariableDesc surfVars[] = {
@@ -2782,7 +2788,7 @@ static bool EnsureSkyPortalResources()
 	}
 	if (!g_skySurfPSO)
 	{
-		g_skySurfPSO = CreateScreenSurfacePSO("fua sky surface", true, Diligent::SHADER_RESOURCE_VARIABLE_TYPE_STATIC);
+		g_skySurfPSO = CreateScreenSurfacePSO("fua sky surface", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_STATIC);
 		auto *srv = g_skyPortalColor->GetDefaultView(Diligent::TEXTURE_VIEW_SHADER_RESOURCE);
 		auto *tv = g_skySurfPSO ? g_skySurfPSO->GetStaticVariableByName(Diligent::SHADER_TYPE_PIXEL, "uSky") : NULL;
 		if (tv && srv)
@@ -2818,7 +2824,6 @@ static bool RenderSkyPortal(Diligent::IDeviceContext *ctx)
 	if (!fua_dg_skyportal) return false;
 	ASkyViewpoint *sb = CurrentSkyViewpoint();
 	if (sb == NULL) return false;
-	if (!EnsureSkyPortalResources()) return false;
 	if (!EnsureSkyPortalResources()) return false;
 
 	auto *swap = GetSwapChain();
@@ -3086,7 +3091,7 @@ static void BuildDynamic(Diligent::IDeviceContext *ctx)
 
 		vb.Clear();
 		runs.Clear();
-		g_dynViewerRuns = 0;
+		g_dynMirrorRuns = 0;
 		dynPieces.Clear();
 		const void *cur = (const void *)(size_t)-1;
 		int curBlend = -1;
@@ -3124,7 +3129,7 @@ static void BuildDynamic(Diligent::IDeviceContext *ctx)
 				r.solid = p.solid;
 				r.mirrorLine = p.mirrorLine;
 				r.stackSlot = p.stackSlot;
-				if (p.mirrorLine >= 0) g_dynViewerRuns++;
+				if (p.mirrorLine >= 0) g_dynMirrorRuns++;
 				r.cx = p.sortX; r.cy = p.sortY; r.cz = p.sortZ;
 				r.lo = 1e30f; r.hi = -1e30f;
 				runs.Push(r);
@@ -3235,8 +3240,10 @@ static void GatherSkySurfaces(TArray<SceneVertex> &sv)
 	int nverts = 0, nhorizon = 0;
 	const FFlatVertex *src = zx::levelmesh::SkyQuadVertices(nverts,
 		zx::levelmesh::ComputeSkyDrawList(g_inCameraPass, g_stackPassSlot));
-	// [rc4l] A horizon line is built for the player's eye, so a stacked view, which stands somewhere else, takes none.
-	const FFlatVertex *hsrc = (g_stackPassSlot < 0) ? zx::horizon::HorizonSkyVertices(nhorizon) : NULL;
+	// [rc4l] A horizon line is built for the player's eye, so a stacked view, which stands somewhere else, takes none; the sky starts at this pass's eye, where the horizon pass stops the floor half.
+	float eye[3];
+	const FFlatVertex *hsrc = (g_stackPassSlot < 0 && zx::horizon::ComputeEyeFromViewProjection(g_mvp, eye))
+		? zx::horizon::HorizonSkyVertices(nhorizon, eye[1]) : NULL;
 	if (src == NULL) nverts = 0;
 	if (hsrc == NULL) nhorizon = 0;
 	sv.Clear();
@@ -3254,7 +3261,7 @@ static void DrawSkyOccluders(Diligent::IDeviceContext *ctx)
 	if (g_skyPortalActive) return;
 	if (!g_skyOccluderPSO)
 	{
-		g_skyOccluderPSO = CreateScreenSurfacePSO("fua sky occluder", false, Diligent::SHADER_RESOURCE_VARIABLE_TYPE_STATIC, true);
+		g_skyOccluderPSO = CreateScreenSurfacePSO("fua sky occluder", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_STATIC, true);
 		if (!g_skyOccluderPSO) return;
 		g_skyOccluderPSO->CreateShaderResourceBinding(&g_skyOccluderSRB, true);
 	}
@@ -4308,6 +4315,8 @@ static void FillPieceData(const zx::levelmesh::MeshPiece &p, int translation, Sc
 	pd.stackId = inMesh ? (float)(zx::levelmesh::PieceStackId(p) + 1) : 0.f;
 	pd.animates = animates ? 1.f : 0.f;
 	pd.plain = p.plain ? 1.f : 0.f;
+	pd.desaturation = zx::hwrender::ComputeDesaturationFactor(p.desaturation);
+	pd.unused0 = pd.unused1 = pd.unused2 = 0.f;
 }
 
 
@@ -5629,11 +5638,13 @@ static bool EnsureAccelerationStructure()
 // per-mirror texture coordinates.
 struct MirrorSurface
 {
-	float v[6][6];        // two triangles: position then normal, mesh space (x, z-up, y)
-	float nx, ny, d;      // plane in MAP space (nx*x + ny*y = d), for reflecting the camera
-	int line;             // [rc4l] its linedef, which the viewer sprites GL drew in it are filed under
+	float corners[4][3];  // [rc4l] the whole line's face in mesh space (x, z-up, y), bottom and top at v1 then top and bottom at v2, for the visibility test
+	float nx, ny, d;      // [rc4l] plane in map space (nx*x + ny*y = d), for reflecting the camera; mesh space's normal is (nx, 0, ny), which the ray query and GL's sheen reflect about
+	int line;             // [rc4l] its linedef, which the sprites, models and decals GL's walk through it drew are filed under
 };
 static TArray<MirrorSurface> g_mirrors;
+// [rc4l] Every mirror's face as two triangles, in g_mirrors' order.
+static TArray<float> g_mirrorVerts;
 static Diligent::RefCntAutoPtr<Diligent::IBuffer> g_mirrorVB;
 static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_mirrorPSO;
 static Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding> g_mirrorSRB;
@@ -5641,12 +5652,14 @@ static Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding> g_mirrorSRB;
 static void ReleaseLineMirrorPipeline() { g_mirrorSRB.Release(); g_mirrorPSO.Release(); }
 static Diligent::RefCntAutoPtr<Diligent::ITexture> g_mirrorColor, g_mirrorDepth;
 static int g_mirrorW = 0, g_mirrorH = 0;
+static Diligent::RefCntAutoPtr<Diligent::IBuffer> g_sheenCB;   // [rc4l] ComputeMirrorSheenConstants for the mirror being drawn
 // True once the TLAS is genuinely bound to the mirror shader; false means use the planar path.
 static bool g_mirrorTraced = false;
 
 static void CollectMirrors()
 {
 	g_mirrors.Clear();
+	g_mirrorVerts.Clear();
 	g_mirrorVB.Release();
 	if (lines == NULL) return;
 
@@ -5659,31 +5672,31 @@ static void CollectMirrors()
 
 		const float x1 = FIXED2FLOAT(ln->v1->x), y1 = FIXED2FLOAT(ln->v1->y);
 		const float x2 = FIXED2FLOAT(ln->v2->x), y2 = FIXED2FLOAT(ln->v2->y);
-		const float zf1 = FIXED2FLOAT(ln->frontsector->floorplane.ZatPoint(ln->v1->x, ln->v1->y));
-		const float zc1 = FIXED2FLOAT(ln->frontsector->ceilingplane.ZatPoint(ln->v1->x, ln->v1->y));
-		const float zf2 = FIXED2FLOAT(ln->frontsector->floorplane.ZatPoint(ln->v2->x, ln->v2->y));
-		const float zc2 = FIXED2FLOAT(ln->frontsector->ceilingplane.ZatPoint(ln->v2->x, ln->v2->y));
-
 		const float dx = x2 - x1, dy = y2 - y1;
 		const float len = sqrtf(dx * dx + dy * dy);
 		if (len < 0.001f) continue;
 
 		MirrorSurface m;
-		// Mesh space is (x, z-up, y), the same swap the level mesh uses. Six floats per vertex:
-		// position, then the surface normal the ray query reflects the eye ray about.
-		const float a[3] = { x1, zf1, y1 }, b[3] = { x1, zc1, y1 };
-		const float c[3] = { x2, zf2, y2 }, e[3] = { x2, zc2, y2 };
-		const float *tri[6] = { a, b, c, c, b, e };
-		const float mnx = dy / len, mnz = -dx / len;
-		for (int k = 0; k < 6; k++)
+		// [rc4l] The face from the linedef's own v1 to v2, floor to ceiling, as GLWall::Process takes a wall's ends from its line; mesh space is (x, z-up, y).
+		const vertex_t *ends[4] = { ln->v1, ln->v1, ln->v2, ln->v2 };
+		for (int k = 0; k < 4; k++)
 		{
-			for (int q = 0; q < 3; q++) m.v[k][q] = tri[k][q];
-			m.v[k][3] = mnx; m.v[k][4] = 0.f; m.v[k][5] = mnz;
+			const secplane_t &plane = (k == 0 || k == 3) ? ln->frontsector->floorplane : ln->frontsector->ceilingplane;
+			m.corners[k][0] = FIXED2FLOAT(ends[k]->x);
+			m.corners[k][1] = FIXED2FLOAT(plane.ZatPoint(ends[k]->x, ends[k]->y));
+			m.corners[k][2] = FIXED2FLOAT(ends[k]->y);
 		}
-
 		m.nx = dy / len; m.ny = -dx / len;
 		m.d = m.nx * x1 + m.ny * y1;
 		m.line = i;
+		// [rc4l] Split as GLWall::RenderWall fans it, bottom left to top right, since the sheen's coordinate is interpolated across each triangle; six floats a vertex, position then normal.
+		for (int t = 0; t < 2; t++)
+			for (int k = 0; k < 3; k++)
+			{
+				const float *p = m.corners[zx::levelmesh::ComputeFanTriangleVertex(4, t, k)];
+				for (int q = 0; q < 3; q++) g_mirrorVerts.Push(p[q]);
+				g_mirrorVerts.Push(m.nx); g_mirrorVerts.Push(0.f); g_mirrorVerts.Push(m.ny);
+			}
 		g_mirrors.Push(m);
 	}
 	if (g_mirrors.Size() > 0)
@@ -5705,16 +5718,41 @@ int RecollectMirrors()
 	return (int)g_mirrors.Size();
 }
 
+// [rc4l] The sheen block both mirror stages read, packed by ComputeMirrorSheenConstants.
+#define FUA_MIRROR_SHEEN_BLOCK_GLSL \
+	"layout(binding = 6) uniform Sheen { mat4 uSheenView; vec4 uSheenNormal; vec4 uSheenColor; vec4 uSheenLight; };\n"
+
+// [rc4l] GL's sheen as RenderMirrorSurface draws it, for a mirror shader to add: mirror.png at the sphere-map coordinate, in the wall's light fogged to black, at uSheenColor.a.
+#define FUA_MIRROR_SHEEN_PS_GLSL \
+	FUA_SECTOR_LIGHT_GLSL \
+	FUA_MIRROR_SHEEN_BLOCK_GLSL \
+	"layout(binding = 7) uniform sampler2D uSheen;\n" \
+	"layout(location = 2) in vec2 vSheenUV;\n" \
+	"vec3 fuaMirrorSheen() {\n" \
+	"    vec4 texel = texture(uSheen, vSheenUV);\n" \
+	"    vec4 clip = uMVP * vec4(vWorld, 1.0);\n" \
+	"    float fogfactor = fuaFogFactor(uSheenLight.y, uSheenLight.z, vec4(vWorld, clip.w), uCameraPos.xyz);\n" \
+	"    vec3 light = fuaSectorLight(uSheenColor.rgb, uSheenLight.x, uSheenLight.y, fogfactor, gl_FragCoord.z);\n" \
+	"    return texel.rgb * light * (texel.a * uSheenColor.a);\n" \
+	"}\n"
+
 static const char *kMirrorVS =
 	"#version 450\n"
 	"layout(location = 0) in vec3 aPos;\n"
 	"layout(location = 1) in vec3 aNormal;\n"
 	FUA_CONSTANTS_GLSL
+	FUA_MIRROR_SHEEN_BLOCK_GLSL
 	"layout(location = 0) out vec3 vWorld;\n"
 	"layout(location = 1) out vec3 vNormal;\n"
+	"layout(location = 2) out vec2 vSheenUV;\n"
 	"void main() {\n"
 	"    vWorld = aPos;\n"
 	"    vNormal = aNormal;\n"
+	// [rc4l] ComputeSphereMapUV, per vertex as main.vp works it out, with the normal already turned and normalised on the CPU.
+	"    vec3 u = normalize((uSheenView * vec4(aPos, 1.0)).xyz);\n"
+	"    vec3 r = reflect(u, uSheenNormal.xyz);\n"
+	"    float m = 2.0 * sqrt(r.x * r.x + r.y * r.y + (r.z + 1.0) * (r.z + 1.0));\n"
+	"    vSheenUV = r.xy / m + 0.5;\n"
 	"    gl_Position = uMVP * vec4(aPos, 1.0);\n"
 	"}\n";
 
@@ -5746,6 +5784,7 @@ static const char *kMirrorPS =
 	"layout(binding = 5) uniform sampler2D uSky;\n"
 	"layout(location = 0) in vec3 vWorld;\n"
 	"layout(location = 1) in vec3 vNormal;\n"
+	FUA_MIRROR_SHEEN_PS_GLSL
 	"layout(location = 0) out vec4 outColor;\n"
 	// [rc4l] Six floats a vertex now: position, texture coordinate, and the index of the record
 	// that holds everything else. The colour and the material this ray hits come from there.
@@ -5755,6 +5794,7 @@ static const char *kMirrorPS =
 	"vec3 vertColor(uint v) { return pieces[vertPiece(v)].colorLight.rgb; }\n"
 	"vec2 vertUV(uint v)    { uint b = v * STRIDE + 3u; return vec2(vtx[b], vtx[b + 1u]); }\n"
 	"void main() {\n"
+	"    vec3 sheen = fuaMirrorSheen();\n"
 	"    vec3 n = normalize(vNormal);\n"
 	"    vec3 eye = normalize(vWorld - uCameraPos.xyz);\n"
 	"    vec3 dir = reflect(eye, n);\n"
@@ -5775,7 +5815,7 @@ static const char *kMirrorPS =
 	"        float su = (atan(d.z, d.x) + uLightParams.y) / 6.28318531;\n"
 	// The dome spans the horizon to 60 degrees over its texture, so map elevation the same way.
 	"        float sv = clamp((1.0472 - el) / 1.0472, 0.0, 1.0);\n"
-	"        outColor = vec4(texture(uSky, vec2(su * uScreen.z, sv * uScreen.w)).rgb, 1.0);\n"
+	"        outColor = vec4(min(texture(uSky, vec2(su * uScreen.z, sv * uScreen.w)).rgb + sheen, vec3(1.0)), 1.0);\n"
 	"        return;\n"
 	"    }\n"
 	"    uint prim = uint(rayQueryGetIntersectionPrimitiveIndexEXT(rq, true));\n"
@@ -5794,20 +5834,24 @@ static const char *kMirrorPS =
 	// Distance falls off the same way the raster path's fog does, so a far reflection reads as far.
 	"    float t = rayQueryGetIntersectionTEXT(rq, true);\n"
 	"    c *= clamp(1.0 - t / 4000.0, 0.15, 1.0);\n"
-	"    outColor = vec4(c, 1.0);\n"
+	"    outColor = vec4(min(c + sheen, vec3(1.0)), 1.0);\n"
 	"}\n";
 
 // [rc4l] The planar path's surface: the reflection RenderMirrors rendered from the mirrored eye, by screen position, with no ray query so an adapter without one can still draw it.
 // [rc4l] Flipped left to right, since the mirrored eye sees the room the right way round and a mirror shows it reversed.
+// [rc4l] GL's sheen goes on top, clamped as its additive blend into the framebuffer clamps.
 static const char *kMirrorPlanarPS =
 	"#version 450\n"
+	FUA_CONSTANTS_GLSL
 	"layout(binding = 1) uniform sampler2D uTex;\n"
 	"layout(location = 0) in vec3 vWorld;\n"
 	"layout(location = 1) in vec3 vNormal;\n"
+	FUA_MIRROR_SHEEN_PS_GLSL
 	"layout(location = 0) out vec4 outColor;\n"
 	"void main() {\n"
+	"    vec3 sheen = fuaMirrorSheen();\n"
 	"    vec2 uv = gl_FragCoord.xy / vec2(textureSize(uTex, 0));\n"
-	"    outColor = vec4(texture(uTex, vec2(1.0 - uv.x, uv.y)).rgb, 1.0);\n"
+	"    outColor = vec4(min(texture(uTex, vec2(1.0 - uv.x, uv.y)).rgb + sheen, vec3(1.0)), 1.0);\n"
 	"}\n";
 
 // [rc4l] Which shader g_mirrorPSO was built with; the traced one only where the structure exists and fua_dg_rtmirrors asks for it.
@@ -5847,6 +5891,7 @@ static bool EnsureMirrorResources()
 			{ Diligent::SHADER_TYPE_PIXEL, "uTLAS", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
 			{ Diligent::SHADER_TYPE_PIXEL, "Verts", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
 			{ Diligent::SHADER_TYPE_PIXEL, "uSky", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
+			{ Diligent::SHADER_TYPE_PIXEL, "uSheen", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
 		};
 		Diligent::SamplerDesc samp;
 		samp.MinFilter = Diligent::FILTER_TYPE_LINEAR;
@@ -5864,8 +5909,12 @@ static bool EnsureMirrorResources()
 		Diligent::SamplerDesc matSamp = samp;
 		matSamp.AddressU = Diligent::TEXTURE_ADDRESS_WRAP;
 		matSamp.AddressV = Diligent::TEXTURE_ADDRESS_WRAP;
+		// [rc4l] The sheen is filtered as GL filters any material (CLAMP_NONE), and a filter change rebuilds this pipeline with the scene's.
+		Diligent::SamplerDesc sheenSamp = matSamp;
+		FillSamplerFromEngine(sheenSamp);
 
 		const Diligent::ImmutableSamplerDesc samplers[] = {
+			{ Diligent::SHADER_TYPE_PIXEL, "uSheen", sheenSamp },
 			{ Diligent::SHADER_TYPE_PIXEL, "uTex", samp },
 			// [rc4l] uMaterials needs its own immutable sampler. A GLSL sampler2D is a COMBINED image
 			// sampler, so an array of them needs a sampler declared for the array too -- without it the
@@ -5912,6 +5961,20 @@ static bool EnsureMirrorResources()
 			if (auto *v = g_mirrorPSO->GetStaticVariableByName(Diligent::SHADER_TYPE_PIXEL, "Pieces"))
 				v->Set(g_pieceBuf->GetDefaultView(Diligent::BUFFER_VIEW_SHADER_RESOURCE));
 		BindSceneConstants(g_mirrorPSO);
+		// [rc4l] The sheen block, made once like the scene constants, since a replaced buffer would leave this pipeline reading the old one.
+		if (!g_sheenCB)
+		{
+			Diligent::BufferDesc cbd;
+			cbd.Name = "fua mirror sheen";
+			cbd.Size = sizeof(float) * zx::hwrender::kMirrorSheenFloats;
+			cbd.Usage = Diligent::USAGE_DYNAMIC;
+			cbd.BindFlags = Diligent::BIND_UNIFORM_BUFFER;
+			cbd.CPUAccessFlags = Diligent::CPU_ACCESS_WRITE;
+			dev->CreateBuffer(cbd, nullptr, &g_sheenCB);
+		}
+		if (!g_sheenCB) { Printf("mirror: sheen buffer failed\n"); g_mirrorPSO.Release(); return false; }
+		for (Diligent::SHADER_TYPE st : { Diligent::SHADER_TYPE_VERTEX, Diligent::SHADER_TYPE_PIXEL })
+			if (auto *v = g_mirrorPSO->GetStaticVariableByName(st, "Sheen")) v->Set(g_sheenCB);
 		// [rc4l] Every material the level uses, bound once on the PIPELINE.
 		//
 		// A rasterised draw binds one material and draws its batch; a ray can land on any triangle, so
@@ -5973,6 +6036,13 @@ static bool EnsureMirrorResources()
 		g_mirrorPSO->InitializeStaticSRBResources(g_mirrorSRB);
 		if (auto *v = g_mirrorSRB->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "uTex"))
 			v->Set(g_mirrorColor->GetDefaultView(Diligent::TEXTURE_VIEW_SHADER_RESOURCE));
+		// [rc4l] glstuff/mirror.png, or the white placeholder so the binding is whole when GL has none and draws no sheen.
+		if (auto *v = g_mirrorSRB->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "uSheen"))
+		{
+			FMaterial *sheen = GLRenderer && GLRenderer->mirrortexture ? FMaterial::ValidateTexture(GLRenderer->mirrortexture, false) : NULL;
+			Diligent::IDeviceObject *srv = sheen ? GetMaterialSRV(sheen, 0) : NULL;
+			v->Set(srv ? srv : GetMaterialSRV(NULL, 0));
+		}
 		// The traced path is only taken if the binding actually took. A variable the shader does not
 		// declare, or a structure that failed to build, means falling back rather than committing an
 		// SRB with a hole in it.
@@ -6003,10 +6073,7 @@ static bool EnsureMirrorResources()
 
 	if (!g_mirrorVB && g_mirrors.Size() > 0)
 	{
-		TArray<float> verts;
-		for (unsigned i = 0; i < g_mirrors.Size(); i++)
-			for (int k = 0; k < 6; k++)
-				for (int q = 0; q < 6; q++) verts.Push(g_mirrors[i].v[k][q]);
+		const TArray<float> &verts = g_mirrorVerts;
 		Diligent::BufferDesc bd;
 		bd.Name = "fua mirror VB";
 		bd.Size = (Diligent::Uint64)verts.Size() * sizeof(float);
@@ -6021,8 +6088,6 @@ static bool EnsureMirrorResources()
 	return g_mirrors.Size() == 0 || g_mirrorVB.RawPtr() != nullptr;
 }
 
-// Draw one mirror's surface. Shared by both paths: with ray tracing the shader traces from here, and
-// without it the surface samples the reflection rendered a moment earlier.
 static void ReleaseMirrorBinding() { g_mirrorSRB.Release(); g_mirrorTraced = false; }
 
 // [rc4l] The scene constant block for this frame's camera; passes differ only in clip plane, target size and bindless.
@@ -6045,8 +6110,20 @@ static void WriteSceneConstants(float *cb, const float *clip, float targetW, flo
 	zx::hwrender::ComputeSceneConstants(in, cb);
 }
 
-static void DrawMirrorSurface(Diligent::IDeviceContext *ctx, unsigned index)
+// [rc4l] The sheen GL draws over this mirror (RenderMirrorSurface), in the light its walk captured, or none when it drew none.
+static void WriteMirrorSheen(Diligent::IDeviceContext *ctx, const MirrorSurface &m, const float view[16])
 {
+	const zx::levelmesh::MeshPiece *shade = zx::levelmesh::MirrorSheen(m.line);
+	const float rgb[3] = { shade ? shade->colorR : 0.f, shade ? shade->colorG : 0.f, shade ? shade->colorB : 0.f };
+	Diligent::MapHelper<float> cb(ctx, g_sheenCB, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD);
+	zx::hwrender::ComputeMirrorSheenConstants(view, m.nx, m.ny, rgb, shade ? shade->softLight : -1.f,
+		shade ? (float)shade->fogMode : 0.f, shade ? shade->fogDensity : 0.f, shade != NULL, &cb[0]);
+}
+
+// [rc4l] One mirror's face under the camera now, its sheen included: the traced path traces from it, the planar one samples the reflection just rendered.
+static void DrawMirrorSurface(Diligent::IDeviceContext *ctx, unsigned index, const float view[16])
+{
+	WriteMirrorSheen(ctx, g_mirrors[index], view);
 	{
 		Diligent::MapHelper<float> cb(ctx, g_cb, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD);
 		WriteSceneConstants(&cb[0], nullptr, (float)g_mirrorW, (float)g_mirrorH, 0.f);
@@ -6304,7 +6381,7 @@ static void RenderStackPortals(Diligent::IDeviceContext *ctx)
 	if (n > fua_dg_stackportals) n = fua_dg_stackportals;
 	if (n <= 0 || !g_vb || !g_cb) return;
 	if (!g_stackSurfPSO)
-		g_stackSurfPSO = CreateScreenSurfacePSO("fua stack surface", false, Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE);
+		g_stackSurfPSO = CreateScreenSurfacePSO("fua stack surface", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE);
 	if (!g_stackSurfPSO) return;
 
 	int visWords = 0;
@@ -6426,6 +6503,9 @@ static void RenderMirrors(Diligent::IDeviceContext *ctx)
 	const angle_t sa = viewangle;
 	float savedMVP[16];
 	for (int i = 0; i < 16; i++) savedMVP[i] = g_mvp[i];
+	// [rc4l] The player's view alone, which GL's sheen reflects the eye ray in.
+	float view[16];
+	zx::hwrender::ComputeBackendView(CurrentCamera(), view);
 
 	// [rc4l] With ray tracing there is no reflection pass at all: the mirror's own fragment shader
 	// traces, so this collapses to drawing the surfaces. The planar path below stays for adapters
@@ -6448,7 +6528,7 @@ static void RenderMirrors(Diligent::IDeviceContext *ctx)
 		const MirrorSurface &m = g_mirrors[i];
 		if (traced)
 		{
-			DrawMirrorSurface(ctx, i);
+			DrawMirrorSurface(ctx, i, view);
 			continue;
 		}
 
@@ -6474,10 +6554,8 @@ static void RenderMirrors(Diligent::IDeviceContext *ctx)
 		// approximation: it removes renders that could not have contributed a pixel.
 		if (dist <= 0.f) continue;
 		// [rc4l] ...and one nobody can see is not rendered either, since each costs a whole scene render and WDI07 holds four out of sight.
-		const float corners[4][3] = { { m.v[0][0], m.v[0][1], m.v[0][2] }, { m.v[1][0], m.v[1][1], m.v[1][2] },
-			{ m.v[5][0], m.v[5][1], m.v[5][2] }, { m.v[2][0], m.v[2][1], m.v[2][2] } };
 		if (!zx::levelmesh::ComputeRendersMirror(zx::levelmesh::MirrorWalkedThisFrame(m.line), zx::hwrender::StandaloneActive(),
-				zx::horizon::ComputeQuadMayBeVisible(savedMVP, corners)))
+				zx::horizon::ComputeQuadMayBeVisible(savedMVP, m.corners)))
 			continue;
 		const float rx = px - 2.f * dist * m.nx;
 		const float ry = py - 2.f * dist * m.ny;
@@ -6520,20 +6598,7 @@ static void RenderMirrors(Diligent::IDeviceContext *ctx)
 		g_clipPlane[0] = g_clipPlane[1] = g_clipPlane[2] = g_clipPlane[3] = 0.f;
 		for (int k = 0; k < 16; k++) g_mvp[k] = savedMVP[k];
 		ctx->SetRenderTargets(1, &brtv, bdsv, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-		{
-			Diligent::MapHelper<float> cb(ctx, g_cb, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD);
-			WriteSceneConstants(&cb[0], nullptr, (float)g_mirrorW, (float)g_mirrorH, 0.f);
-		}
-		Diligent::IBuffer *vbs[] = { g_mirrorVB };
-		const Diligent::Uint64 offsets[] = { (Diligent::Uint64)i * 36 * sizeof(float) };
-		ctx->SetVertexBuffers(0, 1, vbs, offsets, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
-			Diligent::SET_VERTEX_BUFFERS_FLAG_RESET);
-		ctx->SetPipelineState(g_mirrorPSO);
-		ctx->CommitShaderResources(g_mirrorSRB, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-		Diligent::DrawAttribs d;
-		d.NumVertices = 6;
-		d.Flags = Diligent::DRAW_FLAG_VERIFY_ALL;
-		ctx->Draw(d);
+		DrawMirrorSurface(ctx, i, view);
 	}
 
 	viewx = sx; viewy = sy; viewz = sz; viewangle = sa;
@@ -7537,7 +7602,7 @@ void DynStats(FString &report)
 	cull.AppendFormat(", dyn draws: %d bindless, %d per-material, pipelines [%s]",
 		g_dynBindless, g_dynPerMaterial, g_fillState);
 	cull.AppendFormat(", sky surfaces: %d draws since load", g_skyDraws);
-	cull.AppendFormat(", viewer sprites for mirrors: %d", g_dynViewerRuns);
+	cull.AppendFormat(", runs from mirror walks: %d", g_dynMirrorRuns);
 	cull.AppendFormat(", dyn build %.3f ms", g_dynBuildMs);
 	{
 		// [rc4l] How much of the world the DERIVATION built, rather than transcribed from GL. The

@@ -89,7 +89,10 @@ export function describeLine(udmf, index) {
   if (!line) throw new Error(`no line ${index}: the map has ${udmf.linedef.length}`);
   const sectorOf = (s) => (s === undefined ? null : udmf.sidedef[s].sector);
   const v = (i) => [udmf.vertex[i].x, udmf.vertex[i].y];
-  return { index, ...line, from: v(line.v1), to: v(line.v2), front: sectorOf(line.sidefront), back: sectorOf(line.sideback) };
+  // [rc4l] Each side's own fields too, since its light, offsets and flags decide how it is drawn and the sector does not say.
+  const side = (s) => (s === undefined ? null : udmf.sidedef[s]);
+  return { index, ...line, from: v(line.v1), to: v(line.v2), front: sectorOf(line.sidefront), back: sectorOf(line.sideback),
+    frontSide: side(line.sidefront), backSide: side(line.sideback) };
 }
 
 // [rc4l] The numbered lines of a map's ACS source that match, since an OPEN script can change what the map's own data says.

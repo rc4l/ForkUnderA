@@ -216,13 +216,10 @@ bool ComputeCentroid(const V *verts, unsigned total, unsigned offset, unsigned c
 	return true;
 }
 
-// [rc4l] Whether a sprite from GL's walk through a line mirror is kept for the backend's mirror pass: only the viewer's own, which the player's walk never draws, from the mirror the player's view reached.
-bool ComputeTakesMirrorViewer(bool mirrorWalk, bool mainView, int sceneNesting, bool isViewer);
+// [rc4l] The line mirror a sprite, model or decal GL draws now is kept for: mirrorLine while GL walks that mirror from the player's view (nesting 2), else -1.
+int ComputeMirrorCaptureLine(int mirrorLine, bool mainView, int sceneNesting);
 
-// [rc4l] Whether a pass drawing the reflection in drawingMirrorLine (-1 for none) draws a piece kept for pieceMirrorLine's (-1 for every pass): each mirror's viewer is the billboard GL faced to that mirror's camera.
-bool ComputeDrawsMirrorViewer(int pieceMirrorLine, int drawingMirrorLine);
-
-// [rc4l] Whether a pass draws a sprite, model or decal: the mirror's own viewer as ComputeDrawsMirrorViewer says, and only in the stacked view whose walk took it (-1 for every other pass).
+// [rc4l] Whether a pass draws a sprite, model or decal: only the pass whose walk took it, a line mirror's or a stacked view's (each -1 for the player's view), as GL draws each from its own walk.
 bool ComputeDrawsDynamicPiece(int pieceMirrorLine, int pieceStackSlot, int drawingMirrorLine, int drawingStackSlot);
 
 // [rc4l] Whether the backend renders a line mirror's reflection this frame: when GL's walk went through it, or in standalone, where nothing walks, when its quad is on screen.

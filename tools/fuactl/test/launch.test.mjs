@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { resolveEngine, engineArgs, describeExit, countEngineLines, missingCoreData } from "../src/launch.mjs";
-import { sweepDirFor, pickCmake, resolveTarget, sessionFileFor, cameraFromFlags, cvarValueFrom, parseCvarFlag, spotLaunch } from "../src/shot.mjs";
+import { sweepDirFor, pickCmake, resolveTarget, readSession, sessionFileFor, cameraFromFlags, cvarValueFrom, parseCvarFlag, spotLaunch, parkFileFor, parkedLaunch, PARKED, clearPortSessions } from "../src/shot.mjs";
 
 // Run `fn` with cwd moved to `dir` and FUACTL_ENGINE cleared, then put both back.
 function inDir(dir, fn) {
@@ -175,13 +175,25 @@ test("cmake comes from FUACTL_CMAKE, then any Visual Studio 2022 edition, then P
 });
 
 test("a command means --port first, then the last play session, and nothing when there is neither", () => {
-  assert.deepEqual(resolveTarget({ port: "7799", token: "t" }, { port: 7801, token: "s" }), { port: 7799, token: "t" });
-  assert.deepEqual(resolveTarget({}, { port: 7801, token: "s" }), { port: 7801, token: "s" });
-  assert.deepEqual(resolveTarget({ token: "t" }, { port: 7801, token: "s" }), { port: 7801, token: "t" });
+  const s = { port: 7801, token: "s", engine: "/b/forkundera.exe" };
+  assert.deepEqual(resolveTarget({ port: "7799", token: "t" }, s), { port: 7799, token: "t", engine: null });
+  assert.deepEqual(resolveTarget({}, s), { port: 7801, token: "s", engine: "/b/forkundera.exe" });
+  assert.deepEqual(resolveTarget({ token: "t" }, { port: 7801, token: "s" }), { port: 7801, token: "t", engine: null });
   assert.equal(resolveTarget({}, null), null);
-  assert.deepEqual(resolveTarget({ port: "7801" }, { port: 7801, token: "s" }), { port: 7801, token: "s" });
-  assert.deepEqual(resolveTarget({ port: "7799" }, { port: 7801, token: "s" }), { port: 7799, token: null });
+  assert.deepEqual(resolveTarget({ port: "7801" }, s), { port: 7801, token: "s", engine: "/b/forkundera.exe" });
+  assert.deepEqual(resolveTarget({ port: "7799" }, s), { port: 7799, token: null, engine: null });
   assert.equal(sessionFileFor("/x/.play-session", 7801), "/x/.play-session-7801");
+});
+
+// [rc4l] A build launched from build-win writes its captures beside itself, so a shot that looked beside the staged binary found nothing.
+test("a play session records the binary it launched", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "session-"));
+  const file = path.join(dir, ".play-session");
+  fs.writeFileSync(file, "PORT=7799\nTOKEN=abc\nENGINE=F:/A B/build-win/Release/forkundera.exe\n");
+  assert.deepEqual(readSession(file), { port: 7799, token: "abc", engine: "F:/A B/build-win/Release/forkundera.exe" });
+  fs.writeFileSync(file, "PORT=7799\nTOKEN=abc\n");
+  assert.deepEqual(readSession(file), { port: 7799, token: "abc", engine: null });
+  assert.equal(readSession(path.join(dir, "absent")), null);
 });
 
 test("a camera comes from --spot, else --at with --face, else nowhere", () => {
@@ -192,6 +204,8 @@ test("a camera comes from --spot, else --at with --face, else nowhere", () => {
   assert.deepEqual(cameraFromFlags({ at: "4,5,6", face: "180,-30" }, spots), { x: 4, y: 5, z: 6, angle: 180, pitch: -30 });
   assert.deepEqual(cameraFromFlags({ at: "4,5,6" }, spots, "90,0"), { x: 4, y: 5, z: 6, angle: 90, pitch: 0 });
   assert.equal(cameraFromFlags({}, spots), null);
+  assert.equal(cameraFromFlags({ spot: "s", force: true }, spots).force, 1);   // [rc4l] a spot saved where something now stands
+  assert.equal(cameraFromFlags({ force: true }, spots), null);
 });
 
 test("a cvar's value is read off the console echo, and anything else is no value", () => {
@@ -225,5 +239,40 @@ test("a spot launches its map with its wads found by name in the store, and name
   assert.deepEqual(r.missing, ["gone.pk3"]);
   assert.deepEqual(spotLaunch(spots, "bare", path.join(dir, "nowhere")), { map: "MAP01", files: [], missing: [] });
   assert.throws(() => spotLaunch(spots, "nope", "/store", []), /no such spot: nope/);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+// [rc4l] Every exclusive scenario run meant saving the user's camera, quitting their window and relaunching it there by hand.
+test("a parked instance relaunches at its camera with its wads, side by side when its Vulkan window was un-embedded", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "park-"));
+  const park = parkFileFor(path.join(dir, ".play-session"), 7801);
+  assert.equal(park, path.join(dir, ".play-session-7801.park"));
+  const record = (embed) => ({ spots: { [PARKED]: { map: "WDI18", x: -656, y: -480, z: 0, angle: 296, pitch: -3.6,
+    loaded: { iwad: "doom2.wad", pwads: ["whodunit_fixed2.pk3 fc8a"] }, renderer: embed === undefined ? {} : { fua_dg_embed: embed } } } });
+  fs.writeFileSync(park, JSON.stringify(record("false")));
+  const r = parkedLaunch(park, "/store", ["whodunit_fixed2.pk3"]);
+  assert.deepEqual([r.map, r.files, r.missing, r.sideBySide], ["WDI18", [path.join("/store", "whodunit_fixed2.pk3")], [], true]);
+  assert.deepEqual([r.at.x, r.at.y, r.at.angle, r.at.pitch], [-656, -480, 296, -3.6]);
+  fs.writeFileSync(park, JSON.stringify(record("0")));
+  assert.equal(parkedLaunch(park, "/store", []).sideBySide, true);
+  fs.writeFileSync(park, JSON.stringify(record("true")));
+  assert.equal(parkedLaunch(park, "/store", []).sideBySide, false);
+  fs.writeFileSync(park, JSON.stringify(record(undefined)));
+  assert.equal(parkedLaunch(park, "/store", []).sideBySide, false);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+// [rc4l] `ready --port 7799` read the last launch's token there and waited its whole timeout on a dead one.
+test("a launch clears the session files that name its port and leaves another port's alone", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sessions-"));
+  const shared = path.join(dir, ".play-session");
+  fs.writeFileSync(shared, "PORT=7799\nTOKEN=old\n");
+  fs.writeFileSync(sessionFileFor(shared, 7799), "PORT=7799\nTOKEN=old\n");
+  fs.writeFileSync(sessionFileFor(shared, 7801), "PORT=7801\nTOKEN=theirs\n");
+  assert.deepEqual(clearPortSessions(shared, 7799), [shared, sessionFileFor(shared, 7799)]);
+  assert.equal(readSession(sessionFileFor(shared, 7801)).token, "theirs");
+  fs.writeFileSync(shared, "PORT=7801\nTOKEN=theirs\n");
+  assert.deepEqual(clearPortSessions(shared, 7799), [], "the shared file names another port, and 7799's is gone already");
+  assert.equal(readSession(shared).port, 7801);
   fs.rmSync(dir, { recursive: true, force: true });
 });

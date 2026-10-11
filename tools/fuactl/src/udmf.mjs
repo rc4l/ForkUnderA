@@ -55,6 +55,14 @@ export class UdmfMap {
     return this.lines.length - 1;
   }
 
+  // [rc4l] A two-sided line from (x1, y1) to (x2, y2), front on its right; frontSide and backSide style each side, line the line itself.
+  opening(x1, y1, x2, y2, front, back, frontSide = {}, backSide = {}, line = {}) {
+    this.sides.push({ sector: front, ...frontSide }, { sector: back, ...backSide });
+    this.lines.push({ v1: this.vertex(x1, y1), v2: this.vertex(x2, y2), sidefront: this.sides.length - 2,
+      sideback: this.sides.length - 1, twosided: true, ...line });
+    return this.lines.length - 1;
+  }
+
   // [rc4l] A closed rectangular room walked clockwise, so it is on every wall's right; walls(edge) returns { side, line } per edge.
   room(x0, y0, x1, y1, sectorProps, walls = () => ({})) {
     const s = this.sector(sectorProps);
@@ -68,23 +76,15 @@ export class UdmfMap {
   // [rc4l] A sector standing inside another, joined by two-sided lines so the block is on every line's front; outer(edge) and inner(edge) style the sides facing out and in, line(edge) the lines themselves.
   block(x0, y0, x1, y1, sectorProps, outerSector, outer = () => ({}), inner = () => ({}), line = () => ({})) {
     const s = this.sector(sectorProps);
-    for (const [name, ax, ay, bx, by] of rectEdges(x0, y0, x1, y1)) {
-      this.sides.push({ sector: s, ...(inner(name) || {}) });
-      this.sides.push({ sector: outerSector, ...(outer(name) || {}) });
-      this.lines.push({ v1: this.vertex(ax, ay), v2: this.vertex(bx, by), sidefront: this.sides.length - 2,
-        sideback: this.sides.length - 1, twosided: true, ...(line(name) || {}) });
-    }
+    for (const [name, ax, ay, bx, by] of rectEdges(x0, y0, x1, y1))
+      this.opening(ax, ay, bx, by, s, outerSector, inner(name) || {}, outer(name) || {}, line(name) || {});
     return s;
   }
 
   // [rc4l] A square of self-referencing lines, both sides in one new sector, the trick that hides a sector inside another; GL draws what it encloses as the surrounding sector.
   selfRef(x0, y0, x1, y1, sectorProps) {
     const s = this.sector(sectorProps);
-    for (const [, ax, ay, bx, by] of rectEdges(x0, y0, x1, y1)) {
-      this.sides.push({ sector: s }, { sector: s });
-      this.lines.push({ v1: this.vertex(ax, ay), v2: this.vertex(bx, by), sidefront: this.sides.length - 2,
-        sideback: this.sides.length - 1, twosided: true });
-    }
+    for (const [, ax, ay, bx, by] of rectEdges(x0, y0, x1, y1)) this.opening(ax, ay, bx, by, s, s);
     return s;
   }
 

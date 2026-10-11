@@ -28,12 +28,13 @@ reproduces THAT, nothing else.
 
 ```js
 import { UdmfMap, wad, mapLumps } from "../src/udmf.mjs";
+import { SPECIAL } from "../src/doomnums.mjs";   // specials and editor numbers by name, checked against the engine
 
 const m = new UdmfMap();
 // A closed room, walked clockwise so it is on every wall's right; walls(edge) styles each edge.
 m.room(0, 0, 1024, 1024,
   { heightfloor: 0, heightceiling: 256, texturefloor: "FLOOR4_8", textureceiling: "F_SKY1", lightlevel: 192 },
-  (edge) => edge === "north" ? { side: { texturemiddle: "STARTAN2" }, line: { special: 9 } }
+  (edge) => edge === "north" ? { side: { texturemiddle: "STARTAN2" }, line: { special: SPECIAL.Line_Horizon } }
                              : { side: { texturemiddle: "BROWN1" } });
 m.thing({ x: 512, y: 724, angle: 90, type: 1 });          // player 1 start
 const bytes = wad([...mapLumps("MAP01", m), ...mapLumps("MAP02", other)]);
@@ -43,11 +44,15 @@ const bytes = wad([...mapLumps("MAP01", m), ...mapLumps("MAP02", other)]);
   a pool or a tagged area), `skyboxRoom(x, y)` for a ready skybox every sky ceiling shows,
   `stackedRooms({ dx, upperWidth })` for a room whose ceiling is a stacked sector onto a sky-lit room
   `dx` east (it returns both sectors, for a `block()` inside the upper one), `wall()`
-  for single one-sided lines (sector on the right), `sector()`, `thing()` (present on every skill and
+  for single one-sided lines (sector on the right), `opening()` for a single two-sided line (front on
+  the right, each side styled, e.g. a window through a wall), `sector()`, `thing()` (present on every skill and
   mode unless told otherwise), `vertex()` shares corners.
 - **Behaviour set by ACS** (reflective floors, anything only a script can do): `src/acs.mjs` writes an
   ACS0 BEHAVIOR lump with one OPEN script -- `acs0([...callSpecial(159, [tag, 66, 0]), PCD.TERMINATE])`
-  -- passed as `mapLumps("MAP01", m, { behavior })`. No ACS compiler is needed.
+  -- passed as `mapLumps("MAP01", m, { behavior })`. No ACS compiler is needed. `PCD.DELAYDIRECT, n` waits n tics first, so a change lands
+  after the level is baked -- which is how a fault in noticing a runtime change is caught at all. A small map can bake
+  later than the delay; when the order matters, write a closed script (`acs0(code, [], { open: false, number: 2 })`)
+  and give each side `commands: ["puke 2"]`, which run once the level is up and baked (`watertint.mjs`).
 - Any UDMF key passes straight through: `special`, `arg0..`, `texturetop/middle/bottom`, `lightlevel`,
   flags. Numbers stay bare and positions get a decimal point; a QUOTED number makes the engine drop
   the thing, and a map with no player start crashed on load.
@@ -151,13 +156,23 @@ Export the builder from the scenario; `runScenarioIfMain` keeps the import from 
 | `tools/fuactl/scenarios/switchtex.mjs` | a switch pressed with `+use` against the same wall drawn pressed |
 | `tools/fuactl/scenarios/actorlight.mjs` | a sprite by a red point light, GL against Vulkan: the actor's own light |
 | `tools/fuactl/scenarios/warpwater.mjs` | a warp2 flat captured twice apart (`compareOverTime`): the water must move, the floor must not |
+| `tools/fuactl/scenarios/scrollfloor.mjs` | a floor scrolled by its sector type (`SECTOR_TYPE` in `src/doomnums.mjs`) captured twice apart: it must move, the floor beside it must not |
+| `tools/fuactl/scenarios/walllight.mjs` | a wall lit by `Transfer_WallLight` from a sector a script brightens after load, Vulkan against the same wall lit 255 from the start: GL's own wall cache had the fault too, so GL is no oracle here |
+| `tools/fuactl/scenarios/raised3dfloor.mjs` | a 3D floor platform a script raises after load (`FloorAndCeiling_RaiseByValue` on its control sector), GL against Vulkan |
+| `tools/fuactl/scenarios/desaturate.mjs` | a sector with UDMF `desaturation` 0.99 (MAP01) and an out-of-range 99 (MAP02), GL against Vulkan |
+| `tools/fuactl/scenarios/mirrorbehind.mjs` | a thing on its own block behind the player, which only GL's walk through the mirror reaches, GL against Vulkan |
+| `tools/fuactl/scenarios/horizondeep.mjs` | a horizon line under a sky ceiling seen from well above its floor, square-on and at an angle (only the oblique view shows the sky quad and floor half depth-fighting), GL against Vulkan |
+| `tools/fuactl/scenarios/skyboxopen.mjs` | a skybox room that is all sky (sky floor and ceiling, horizon walls) under a six-face GLDEFS skybox, GL against Vulkan |
+| `tools/fuactl/scenarios/skywallbelow.mjs` | a sky wall over a closed sky sector that starts below the eye, with a lit room behind it GL never walks, GL against Vulkan |
+| `tools/fuactl/scenarios/mirrorsky.mjs` | a mirror beside a window onto a low sky-roofed yard shallower than the player stands from the glass, so the sky GL sees through the window lies between the reflected eye and the mirror, GL against Vulkan |
+| `tools/fuactl/scenarios/watertint.mjs` | additive 3D-floor water whose control sector a puked script tints after the bake, over a grey pool floor, GL against Vulkan |
 | `tools/fuactl/scenarios/brightmap.mjs` | GLDEFS brightmaps on a wall and a sprite in a dark room, bindless against a binding per material; the brightmap PNG is a lump between `TX_START`/`TX_END` |
 | `tools/fuactl/scenarios/stackportal.mjs` | a ceiling that is a stacked sector (`UpperStackLookOnly`/`LowerStackLookOnly` paired by TID) onto a room off the map's side, GL against Vulkan |
 | `tools/fuactl/scenarios/stackwalls.mjs` | rays crossing a low stacked annex above its ceiling, which only GL's stack walls catch, GL against Vulkan |
 | `tools/fuactl/scenarios/stackslope.mjs` | a steep sloped floor seen through a stacked ceiling, which the stacked view must place by its subsector, not as a wall |
 | `tools/fuactl/scenarios/stacksprite.mjs` | things standing where only the stacked view's walk reaches, GL against Vulkan |
 | `tools/fuactl/scenarios/stackwide.mjs` | an upper room wider than the stacked room under it, which crashed GL with a stack overflow on load |
-| `tools/fuactl/scenarios/linemirror.mjs` | a one-sided `Line_Mirror` wall reflecting the room and the player, GL (sheen off) against Vulkan |
+| `tools/fuactl/scenarios/linemirror.mjs` | a one-sided `Line_Mirror` wall reflecting the room and the player under GL's sphere-mapped sheen, GL against Vulkan |
 | `tools/fuactl/scenarios/animdefs.mjs` | an ANIMDEFS lump whose discrete wall animation flips frame a second after the level is built and then holds, so a backend drawing its bake frame differs from GL in a still shot |
 | `tools/fuactl/scenarios/lightlinks.mjs` | a point light 16 units behind a solid wall with a radius reaching the next room, which GL leaves dark because a light's links stop at solid walls |
 | `tools/fuactl/scenarios/plainwall.mjs` | a one-sided wall wearing a see-through texture (`MIDGRATE`) with a lit room behind, which GL's solid pass draws without an alpha test |

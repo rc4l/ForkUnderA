@@ -546,11 +546,13 @@ struct sector_t
 	void SetXOffset(int pos, fixed_t o)
 	{
 		planes[pos].xform.xoffs = o;
+		fua_placement++;	// [rc4l] features/levelmesh flat bake
 	}
 
 	void AddXOffset(int pos, fixed_t o)
 	{
 		planes[pos].xform.xoffs += o;
+		fua_placement++;	// [rc4l] features/levelmesh flat bake
 	}
 
 	fixed_t GetXOffset(int pos) const
@@ -561,11 +563,13 @@ struct sector_t
 	void SetYOffset(int pos, fixed_t o)
 	{
 		planes[pos].xform.yoffs = o;
+		fua_placement++;	// [rc4l] features/levelmesh flat bake
 	}
 
 	void AddYOffset(int pos, fixed_t o)
 	{
 		planes[pos].xform.yoffs += o;
+		fua_placement++;	// [rc4l] features/levelmesh flat bake
 	}
 
 	fixed_t GetYOffset(int pos, bool addbase = true) const
@@ -583,6 +587,7 @@ struct sector_t
 	void SetXScale(int pos, fixed_t o)
 	{
 		planes[pos].xform.xscale = o;
+		fua_placement++;	// [rc4l] features/levelmesh flat bake
 	}
 
 	fixed_t GetXScale(int pos) const
@@ -593,6 +598,7 @@ struct sector_t
 	void SetYScale(int pos, fixed_t o)
 	{
 		planes[pos].xform.yscale = o;
+		fua_placement++;	// [rc4l] features/levelmesh flat bake
 	}
 
 	fixed_t GetYScale(int pos) const
@@ -603,6 +609,7 @@ struct sector_t
 	void SetAngle(int pos, angle_t o)
 	{
 		planes[pos].xform.angle = o;
+		fua_placement++;	// [rc4l] features/levelmesh flat bake
 	}
 
 	angle_t GetAngle(int pos, bool addbase = true) const
@@ -621,6 +628,7 @@ struct sector_t
 	{
 		planes[pos].xform.base_yoffs = y;
 		planes[pos].xform.base_angle = fixed_t::FromUnsignedBits(o);
+		fua_placement++;	// [rc4l] features/levelmesh flat bake
 	}
 
 	void SetAlpha(int pos, fixed_t o)
@@ -747,6 +755,8 @@ struct sector_t
 	// dsectoreffect.cpp, but always followed by ChangePlaneTexZ on a committed move, so this
 	// catches them; a rolled-back crush never reaches it.
 	int			fua_dirty;
+	// [rc4l] features/levelmesh: bumped by the plane texture placement setters (a scroller, its interpolation, a script), which re-bake this sector's flats and none of its walls.
+	int			fua_placement;
 
 	// [RH] give floor and ceiling even more properties
 	FDynamicColormap *ColorMap;	// [RH] Per-sector colormap
@@ -982,6 +992,7 @@ struct side_t
 	void SetLight(SWORD l)
 	{
 		Light = l;
+		fua_dirty++;	// [rc4l] features/levelmesh wall cache: Transfer_WallLight re-lights a side every time its source sector's light changes
 	}
 
 	FTextureID GetTexture(int which) const

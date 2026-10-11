@@ -336,3 +336,14 @@ TEST(HorizonCompute, AQuadBeyondTheFarPlaneIsNot)
 	const float q[4][3] = { { -50, -20, -90000 }, { -50, 20, -90000 }, { 50, 20, -90000 }, { 50, -20, -90000 } };
 	EXPECT_FALSE(ComputeQuadMayBeVisible(mvp, q));
 }
+
+// [rc4l] WDI13: the sky quad ran from the floor up, coplanar with the floor half below the eye, and the two fought in a hatched band.
+TEST(HorizonCompute, TheSkyStartsWhereTheFloorHalfStops)
+{
+	EXPECT_FLOAT_EQ(59.f, ComputeHorizonSkyBottom(true, -200.f, -200.f, 256.f, 59.f));
+	EXPECT_FLOAT_EQ(-200.f, ComputeHorizonSkyBottom(true, -200.f, -200.f, 256.f, -300.f));   // [rc4l] eye below the floor: all sky
+	EXPECT_FLOAT_EQ(256.f, ComputeHorizonSkyBottom(true, -200.f, -200.f, 256.f, 400.f));     // [rc4l] eye above the ceiling
+	const HorizonSpan floorHalf = ComputeHorizonHalfSpan(false, -200.f, 256.f, 59.f);
+	EXPECT_FLOAT_EQ(floorHalf.top, ComputeHorizonSkyBottom(true, -200.f, -200.f, 256.f, 59.f));   // [rc4l] one shared edge, so no gap and no overlap
+	EXPECT_FLOAT_EQ(-32768.f, ComputeHorizonSkyBottom(false, -32768.f, -200.f, 256.f, 59.f)); // [rc4l] a sky floor has no plane to stop at
+}

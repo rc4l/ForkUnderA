@@ -11,7 +11,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { launchInstance, stopInstance, describeExit } from "./launch.mjs";
-import { sessionFileFor } from "./shot.mjs";
+import { sessionFileFor, clearPortSessions } from "./shot.mjs";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -41,7 +41,8 @@ export function playCvars({ gl = false, sideBySide = false, rt = false, monsters
   if (!gl) cv.fua_vulkan = 1;
   // Its own window beside the engine's instead of embedded, so both renderers are on screen at
   // once. Easier to point at a difference than toggling and trying to remember the other one.
-  if (sideBySide) cv.fua_dg_embed = 0;
+  // [rc4l] ...and with standalone off, or GL's window is a still frame beside the live one.
+  if (sideBySide) { cv.fua_dg_embed = 0; cv.fua_dg_standalone = 0; }
   // Ray-traced reflections must be on at LAUNCH: the acceleration structure is built at scene
   // upload, which has already happened by the time a level is playable, so setting it later leaves
   // nothing for the rays to hit.
@@ -173,6 +174,7 @@ export async function play(opts = {}) {
   const files = opts.preset
     ? resolvePreset(opts.catalogueDir, opts.storeDir, opts.preset, opts.variant)
     : (opts.file ? String(opts.file).split(",").map((s) => s.trim()) : []);
+  if (opts.sessionFile) clearPortSessions(opts.sessionFile, port);
 
   const inst = await launchInstance({
     port,
@@ -219,7 +221,7 @@ export async function play(opts = {}) {
   inst.world = world;
 
   if (opts.sessionFile) {
-    const text = `PORT=${inst.port}\nTOKEN=${inst.token}\n`;
+    const text = `PORT=${inst.port}\nTOKEN=${inst.token}\n${inst.engine ? `ENGINE=${inst.engine}\n` : ""}`;
     fs.writeFileSync(opts.sessionFile, text);
     fs.writeFileSync(sessionFileFor(opts.sessionFile, inst.port), text);
   }

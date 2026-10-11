@@ -103,9 +103,10 @@ static const char *kHorizonPS =
 	"    vec3 bright = texture(uBrightmap, uv).rgb;\n"
 	// [rc4l] ComputeHorizonSplit's rule, so a quad paints only its own half.
 	"    float split = clamp(vEye.y, vPlane.y, vPlane.z);\n"
-	"    bool ceilingHalf = vWorld.y >= split;\n"
-	"    if (ceilingHalf != (vPlane.w > 0.5)) discard;\n"
-	"    if (uClipPlane.w != 0.0 && dot(vWorld, uClipPlane.xyz) + uClipPlane.w < 0.0) discard;\n"
+	// [rc4l] With a unit's slack, since the quad already stops at the split and the sky starts on that same edge: a fragment rounded across it must not leave a speck of what lies behind.
+	"    bool wrongHalf = (vPlane.w > 0.5) ? vWorld.y < split - 1.0 : vWorld.y > split + 1.0;\n"
+	"    if (wrongHalf) discard;\n"
+	FUA_MIRROR_CLIP_GLSL("vWorld")
 	"    if (uCameraPos.w == 0.0) { outColor = vec4(texel * vColorLight.rgb, 1.0); return; }\n"
 	"    vec4 clip = uMVP * vec4(hit, 1.0);\n"
 	"    float fogfactor = fuaFogFactor(vFog.a, vUVu.w, vec4(hit, clip.w), vEye);\n"
@@ -330,9 +331,9 @@ CCMD(fua_horizons)
 	int n = 0;
 	const zx::horizon::HorizonWindow *w = zx::horizon::HorizonWindows(n);
 	int sky = 0;
-	zx::horizon::HorizonSkyVertices(sky);
+	for (int i = 0; i < n; i++) sky += w[i].skyAbove ? 1 : 0;
 	Printf("horizons: %d windows, %d sky quads; the busiest pass drew %d halves in %d draws\n",
-		n, sky / 6, zx::hwrender::g_hzBusiestHalves, zx::hwrender::g_hzBusiestDraws);
+		n, sky, zx::hwrender::g_hzBusiestHalves, zx::hwrender::g_hzBusiestDraws);
 	zx::hwrender::g_hzBusiestHalves = zx::hwrender::g_hzBusiestDraws = 0;
 	for (int i = 0; i < n && i < 16; i++)
 		Printf("  (%.0f,%.0f)-(%.0f,%.0f) floor %.0f ceiling %.0f  floor plane %s  ceiling %s\n",

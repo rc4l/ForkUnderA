@@ -112,9 +112,9 @@ struct MeshPiece
 	float         dynR, dynG, dynB;
 	// [rc4l] Lit by the CPU's light for the whole actor (dynR..dynB) rather than the shader's per-fragment loop, as GL lights sprites and models.
 	bool          cpuLight;
-	// [rc4l] A sprite only a line mirror shows: the viewer's own, taken from GL's mirror walk (ComputeTakesMirrorViewer).
-	int           mirrorLine;   // [rc4l] the line mirror whose reflection alone shows it (the viewer's own sprite), or -1
+	int           mirrorLine;   // [rc4l] the line mirror whose walk alone drew it (ComputeMirrorCaptureLine), or -1 for the frame's
 	int           stackSlot;    // [rc4l] the stacked view whose walk alone drew it (ComputeStackCaptureSlot), or -1 for the frame's
+	int           linkId;       // [rc4l] numsubsectors plus the sidedef a wall was baked from, the id GL's light links name it by, or -1 to place it by geometry (PieceStackId)
 	bool          plain;        // [rc4l] GL draws it in its solid pass, so its see-through texels are drawn rather than discarded
 
 	// [rc4l] This surface is seen from BELOW: a ceiling, or the underside of a 3D floor.
@@ -185,6 +185,7 @@ struct MeshPiece
 		cpuLight = false;
 		mirrorLine = -1;
 		stackSlot = -1;
+		linkId = -1;
 		plain = false;
 		for (int i = 0; i < 6; i++) floodUV[i] = 0.f;
 	}
@@ -193,8 +194,9 @@ struct MeshPiece
 // [rc4l] Run the engine's own gl_SetColor/gl_SetFog for a surface and record what they produced into
 // `out`. Walls and flats share it so there is exactly one place that decides how a baked surface is
 // lit. `noFog` is the RENDERWALL_M2SNF case, which the wall path renders with fog forced off.
+// [rc4l] `additive` is gl_SetFog's own flag, which fogs an added-on surface to black rather than the fog colour.
 void CaptureShading(int lightlevel, int rellight, const FColormap &cm, MeshPiece &out,
-                    bool noFog = false);
+                    bool noFog = false, bool additive = false);
 
 void MeshInitForLevel();
 void MeshFreeLevel();

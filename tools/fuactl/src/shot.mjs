@@ -25,8 +25,8 @@ export function sessionFileFor(sessionFile, port) { return `${sessionFile}-${por
 export function readSession(file = ".play-session") {
   if (!fs.existsSync(file)) return null;
   const text = fs.readFileSync(file, "utf8");
-  const port = /PORT=(\d+)/.exec(text), token = /TOKEN=(\w+)/.exec(text);
-  return port ? { port: Number(port[1]), token: token ? token[1] : null } : null;
+  const port = /PORT=(\d+)/.exec(text), token = /TOKEN=(\w+)/.exec(text), engine = /ENGINE=(.+)/.exec(text);
+  return port ? { port: Number(port[1]), token: token ? token[1] : null, engine: engine ? engine[1].trim() : null } : null;
 }
 
 // A named camera from spots.json. A fault found by looking at it is worth a name, not four numbers
@@ -62,14 +62,36 @@ export function spotLaunch(spotsPath, name, storeDir, listing = fs.existsSync(st
   return { map: s.map, files, missing };
 }
 
+// [rc4l] Remove the session files that name port, since a launch there is about to mint a new token and `ready` would wait out its timeout on the old one; returns the files removed.
+export function clearPortSessions(sessionFile, port) {
+  const gone = [];
+  for (const f of [sessionFile, sessionFileFor(sessionFile, port)]) {
+    const s = readSession(f);
+    if (s && s.port === Number(port)) { fs.rmSync(f, { force: true }); gone.push(f); }
+  }
+  return gone;
+}
+
+// [rc4l] The spot name `quit --park` files an instance under, in its own file beside the session file (gitignored with it).
+export const PARKED = "parked";
+export function parkFileFor(sessionFile, port) { return `${sessionFileFor(sessionFile, port)}.park`; }
+
+// [rc4l] How `play --unpark` relaunches a parked instance: spotLaunch's map and wads, its camera, and whether its Vulkan window was un-embedded.
+export function parkedLaunch(parkPath, storeDir, listing) {
+  const s = JSON.parse(fs.readFileSync(parkPath, "utf8")).spots[PARKED];
+  const embed = String((s && s.renderer && s.renderer.fua_dg_embed) ?? "");
+  return { ...spotLaunch(parkPath, PARKED, storeDir, listing), at: readSpot(parkPath, PARKED),
+    sideBySide: embed === "false" || embed === "0" };
+}
+
 // [rc4l] Which instance a command means: --port and --token, else the last play session's.
 export function resolveTarget(flags, session) {
-  // [rc4l] A session for the same port lends its token, so `--port 7801` alone finds the user's instance even after another launch.
+  // [rc4l] A session for the same port lends its token and the binary it launched, so `--port 7801` alone finds the user's instance and where it writes its captures.
   if (flags.port) {
     const same = session && Number(session.port) === Number(flags.port);
-    return { port: Number(flags.port), token: flags.token || (same ? session.token : null) };
+    return { port: Number(flags.port), token: flags.token || (same ? session.token : null), engine: (same && session.engine) || null };
   }
-  if (session) return { port: Number(session.port), token: flags.token || session.token || null };
+  if (session) return { port: Number(session.port), token: flags.token || session.token || null, engine: session.engine || null };
   return null;
 }
 
@@ -81,11 +103,16 @@ export function cvarValueFrom(echo) {
 
 // [rc4l] The camera a command was given: --spot NAME, else --at x,y,z with --face yaw,pitch, else none.
 export function cameraFromFlags(flags, spotsPath, defaultFace = "0,0") {
-  if (flags.spot) return readSpot(spotsPath, String(flags.spot));
-  if (!flags.at) return null;
-  const [x, y, z] = String(flags.at).split(",").map(Number);
-  const [angle, pitch] = String(flags.face || defaultFace).split(",").map(Number);
-  return { x, y, z, angle, pitch: pitch || 0 };
+  let at = null;
+  if (flags.spot) at = readSpot(spotsPath, String(flags.spot));
+  else if (flags.at) {
+    const [x, y, z] = String(flags.at).split(",").map(Number);
+    const [angle, pitch] = String(flags.face || defaultFace).split(",").map(Number);
+    at = { x, y, z, angle, pitch: pitch || 0 };
+  }
+  // [rc4l] --force stands the camera there even when something occupies the spot, which a spot saved beside a monster or a door needs.
+  if (at && flags.force) at.force = 1;
+  return at;
 }
 
 // [rc4l] Wait for the FILE, not for a guess about how long the engine takes to write it.
@@ -123,7 +150,7 @@ export function sweepDirFor(engineBin) {
 export async function moveTo(c, at) {
   await c.rpc("sim.resume", {}).catch(() => {});
   await waitTics(c, 10);
-  await c.rpc("player.setpos", { x: at.x, y: at.y, z: at.z, angle: at.angle, pitch: at.pitch || 0 });
+  await c.rpc("player.setpos", { x: at.x, y: at.y, z: at.z, angle: at.angle, pitch: at.pitch || 0, ...(at.force ? { force: 1 } : {}) });
   await waitTics(c, 10);
 }
 

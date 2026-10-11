@@ -20,13 +20,11 @@ nohup node src/cli.mjs play --map <MAP> --side-by-side --port 7801 [--preset <id
 ```
 
 `--spot <name>` instead of `--map`/`--file` takes a saved spot's map and wads (by name, from `FUACTL_PWADS`
-or `--store`) and stands the player there, and `--cvar fua_dg_standalone=0` does the next step at launch.
+or `--store`) and stands the player there.
 
-Otherwise, once it answers, **turn standalone off** or GL's window is a still frame:
-
-```bash
-node src/cli.mjs ui exec "fua_dg_standalone 0" --port 7801 --token <T>
-```
+**Closing it for an exclusive run** (`scenarios`, a template comparison): `quit --park --port 7801` files
+their camera, wads and renderer first, and afterwards `play --unpark --port 7801 --store <wad folder>`
+(backgrounded as above) brings it back at that camera, side by side again.
 
 - **A pwad map needs its wads.** Without them the map silently does not exist and the engine sits in
   the IWAD's MAP01 — which looks like a real level, renders fine, and quietly invalidates every
@@ -34,19 +32,19 @@ node src/cli.mjs ui exec "fua_dg_standalone 0" --port 7801 --token <T>
   wdi/wdiex maps), which loads its files in catalogue order from the download store; add
   `--store DIR` (or set `FUACTL_PWADS`) when they live elsewhere. A missing one is named; fetch it
   with `fua_download <file>` in the console.
-- `--side-by-side` only sets `fua_dg_embed 0`; that is what un-nests the Vulkan window.
+- `--side-by-side` sets `fua_dg_embed 0`, which un-nests the Vulkan window, and `fua_dg_standalone 0`,
+  without which GL's window is a still frame.
 - `play` runs the **staged** `dist-windows/forkundera.exe`, so restage a fix before relaunching the user's
   session. Your own instance on a fresh build takes `FUACTL_ENGINE=F:/ForkUnderA/build-win/Release/forkundera.exe`,
-  and `shot` against it needs the same variable or its pair lands in the other binary's `sweep/`.
+  and `shot`/`ab`/`burst`/`motion --port P` find its `sweep/` from the binary its play session recorded.
 - **No `--lock`** when the launch is for the user — the lock exists for your own measuring instances
   so a stray cursor cannot diverge a run. Give theirs its own port (7801 by convention) and keep yours
   elsewhere (7799, 7796).
-- `play` **ignores `--token`** and mints its own. Read `PORT`/`TOKEN` from `tools/fuactl/.play-session`
-  (a two-line `KEY=VALUE` file, not JSON) — it is written immediately, while the launch log is
-  buffered and often empty for the first several seconds. Right after a background launch the file
-  can still hold the previous launch's token, so wait for `TOKEN` to change before `ready`. Each launch
-  also writes `.play-session-<port>`, so `--port 7801` with no `--token` finds the user's instance even
-  after your own launches have overwritten `.play-session`.
+- `play` takes `--token` or mints one, and once the instance is up writes `PORT`, `TOKEN` and `ENGINE` to
+  `tools/fuactl/.play-session` and `.play-session-<port>` (`KEY=VALUE` lines, not JSON); the launch log
+  is buffered and often empty for the first several seconds. A launch first clears the files naming its
+  port, so `ready --port P` waits for the new token, and `--port 7801` with no `--token` finds the user's
+  instance even after your own launches have overwritten `.play-session`.
 - Do not sleep in long blocks waiting for it: poll `rpc sim.tic` until it answers. A bare launch is
   ready in seconds; a heavy wad set can take 15-25 s.
 

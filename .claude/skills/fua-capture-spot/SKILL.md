@@ -10,7 +10,7 @@ everything that has to be true for that picture to come back. Record it once, by
 capture and measurement can be aimed at the same place.
 
 Run from `tools/fuactl` as `node src/cli.mjs …`. You need the port and token of the instance the user
-is looking at: `.play-session` (a two-line `KEY=VALUE` file) holds the last launch's, or ask.
+is looking at: `.play-session` (`KEY=VALUE` lines) holds the last launch's, `.play-session-<port>` each port's, or ask.
 
 ## Capture it
 

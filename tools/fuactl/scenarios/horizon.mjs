@@ -3,13 +3,14 @@
 // usage:  node scenarios/horizon.mjs [port]
 import { UdmfMap, wad, mapLumps } from "../src/udmf.mjs";
 import { runScenarioIfMain } from "../src/template.mjs";
+import { SPECIAL } from "../src/doomnums.mjs";
 
 // [rc4l] A 1024 court with a sky ceiling whose north wall is a horizon line carrying a texture GL never draws.
 function court(m, { beyond }) {
   const floor = { heightfloor: 0, heightceiling: 256, texturefloor: "FLOOR4_8", textureceiling: "F_SKY1",
     lightlevel: 192 };
   m.room(0, 0, 1024, 1024, floor, (edge) => edge === "north"
-    ? { side: { texturemiddle: "STARTAN2" }, line: { special: 9 } }
+    ? { side: { texturemiddle: "STARTAN2" }, line: { special: SPECIAL.Line_Horizon } }
     : { side: { texturemiddle: "BROWN1" } });
   m.thing({ x: 512, y: 724, angle: 90, type: 1 });
   // [rc4l] A tall bright room behind the line, which GL never reaches and the map-built mesh holds.

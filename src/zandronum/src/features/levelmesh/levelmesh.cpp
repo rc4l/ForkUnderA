@@ -7,6 +7,7 @@
 #include "features/levelmesh/levelmesh.h"
 #include "features/levelmesh/computation/flatmesh_compute.h"
 #include "features/levelmesh/computation/linequery_compute.h"   // [rc4l] fua_find_lines' key=value and texture-prefix matching
+#include "features/levelmesh/computation/lookhits_compute.h"   // [rc4l] fua_look's pieces behind the nearest
 #include "r_sky.h"   // skyflatnum, for fua_find_sky
 #include "gl/data/gl_vertexbuffer.h"   // FFlatVertex, for fua_mesh_at
 #include "features/levelmesh/wallcache.h"
@@ -849,6 +850,23 @@ CCMD( fua_make_mirror )
 			"  GL reflects in it immediately; run fua_dg_mirrors for the Vulkan backend to see it\n",
 			idx, gl_mirrors ? 1 : 0 );
 }
+
+// [rc4l] The lights a light list names, which are the only ones GL lets light the flat or wall it belongs to.
+static void PrintLinkedLights( FLightNode *head )
+{
+	int linked = 0;
+	for ( FLightNode *n = head; n != NULL; n = n->nextLight )
+	{
+		ADynamicLight *l = n->lightsource;
+		if ( l == NULL ) continue;
+		Printf( "          lit by %s at (%.0f, %.0f, %.0f)\n",
+				l->target != NULL ? l->target->GetClass( )->TypeName.GetChars( ) : "a light",
+				FIXED2FLOAT( l->x ), FIXED2FLOAT( l->y ), FIXED2FLOAT( l->z ) );
+		linked++;
+	}
+	if ( linked == 0 ) Printf( "          no light is linked to it\n" );
+}
+
 CCMD( fua_look )
 {
 	if ( players[consoleplayer].mo == NULL ) { Printf( "no player\n" ); return; }
@@ -909,19 +927,22 @@ CCMD( fua_look )
 							FIXED2FLOAT( rs->ceilingplane.ZatPoint( res.X, res.Y ) ),
 							rs->GetTexture( sector_t::ceiling ) == skyflatnum ? " (sky)" : "" );
 				}
-				// [rc4l] The lights GL links to it, which are the only ones GL lets light this flat.
-				int linked = 0;
-				for ( FLightNode *n = ss->lighthead; n != NULL; n = n->nextLight )
+				// [rc4l] The light-list band GL lights this plane with under a 3D floor, as the flat bake takes it now.
+				sector_t *ls = ss->render_sector ? ss->render_sector : ss->sector;
+				if ( ls != NULL && ls->e != NULL && ls->e->XFloor.ffloors.Size( ) > 0 )
 				{
-					ADynamicLight *l = n->lightsource;
-					if ( l == NULL ) continue;
-					Printf( "          lit by %s at (%.0f, %.0f, %.0f)\n",
-							l->target != NULL ? l->target->GetClass( )->TypeName.GetChars( ) : "a light",
-							FIXED2FLOAT( l->x ), FIXED2FLOAT( l->y ), FIXED2FLOAT( l->z ) );
-					linked++;
+					const bool ceil = res.HitType == TRACE_HitCeiling;
+					lightlist_t *band = P_GetPlaneLight( ls, ceil ? &ls->ceilingplane : &ls->floorplane, ceil );
+					const PalEntry bc = band->extra_colormap != NULL ? band->extra_colormap->Color : PalEntry( 0 );
+					Printf( "          3D floor band: light %d, colour %02x%02x%02x\n",
+							band->p_lightlevel != NULL ? *band->p_lightlevel : -1, bc.r, bc.g, bc.b );
 				}
-				if ( linked == 0 ) Printf( "          no light is linked to it\n" );
+				// [rc4l] The lights GL links to it, which are the only ones GL lets light this flat.
+				PrintLinkedLights( ss->lighthead );
 			}
+			// [rc4l] ...and a wall's, from its sidedef, as GLWall::SetupLights takes them.
+			else if ( res.HitType == TRACE_HitWall && res.Line != NULL && res.Line->sidedef[res.Side] != NULL )
+				PrintLinkedLights( res.Line->sidedef[res.Side]->lighthead );
 		}
 		else Printf( "  engine: trace hit nothing\n" );
 	}
@@ -932,8 +953,11 @@ CCMD( fua_look )
 	const zx::levelmesh::MeshPiece *pieces = zx::levelmesh::MeshPieces( np );
 	if ( verts == NULL || pieces == NULL ) { Printf( "  mesh: EMPTY\n" ); return; }
 
-	int bestPiece = -1;
-	float bestT = 1e30f;
+	// [rc4l] The nearest few pieces along the ray, since a translucent one hides the surface behind it that may be the fault.
+	enum { kLookHits = 4 };
+	float hitT[kLookHits];
+	int hitPiece[kLookHits];
+	int hits = 0;
 	for ( int i = 0; i < np; i++ )
 	{
 		const zx::levelmesh::MeshPiece &p = pieces[i];
@@ -966,17 +990,19 @@ CCMD( fua_look )
 			const float vv = ( dx * qx + dy * qy + dz * qz ) * inv;
 			if ( vv < 0.f || u + vv > 1.f ) continue;
 			const float t = ( e2x * qx + e2y * qy + e2z * qz ) * inv;
-			if ( t > 0.5f && t < bestT ) { bestT = t; bestPiece = i; }
+			if ( t > 0.5f ) hits = zx::levelmesh::ComputeKeepNearestHit( hitT, hitPiece, hits, kLookHits, t, i );
 		}
 	}
 
-	if ( bestPiece < 0 )
+	if ( hits == 0 )
 	{
 		Printf( "  mesh: NOTHING along that ray -- the surface is not baked. Walk to it, or it is "
 				"refused by the wall cache (fua_wallcache_census).\n" );
 		return;
 	}
 
+	const int bestPiece = hitPiece[0];
+	const float bestT = hitT[0];
 	const zx::levelmesh::MeshPiece &p = pieces[bestPiece];
 	if ( throughStack )
 	{
@@ -1052,6 +1078,26 @@ CCMD( fua_look )
 		Printf( "        brightmap: %s\n",
 				( m->tex != NULL && m->tex->gl_info.Brightmap != NULL )
 					? m->tex->gl_info.Brightmap->Name.GetChars( ) : "none (adds black)" );
+	}
+	// [rc4l] The id a light's links and a stacked view name this piece by, so a light the backend withholds can be checked against what GL linked it to.
+	const int linkId = zx::levelmesh::PieceStackId( p );
+	if ( linkId < 0 ) Printf( "        link id: none\n" );
+	else if ( linkId < numsubsectors ) Printf( "        link id %d: subsector %d\n", linkId, linkId );
+	else
+	{
+		const int side = linkId - numsubsectors;
+		const int line = ( side < numsides && sides[side].linedef != NULL ) ? int( sides[side].linedef - lines ) : -1;
+		Printf( "        link id %d: sidedef %d (linedef %d side %d)\n", linkId, side, line,
+				( line >= 0 && lines[line].sidedef[1] == &sides[side] ) ? 1 : 0 );
+	}
+	// [rc4l] The pieces behind it along the ray, in one line each.
+	for ( int h = 1; h < hits; h++ )
+	{
+		const zx::levelmesh::MeshPiece &q = pieces[hitPiece[h]];
+		FTexture *qt = (FTexture *)q.baseTex;
+		Printf( "  behind: piece %d at %.0f away, %s alpha %.3f, light %d, rgb %.2f,%.2f,%.2f, %s\n", hitPiece[h], hitT[h],
+				kBlend[( q.blendMode >= 0 && q.blendMode < 4 ) ? q.blendMode : 0], q.alpha, q.lightLevel,
+				q.colorR, q.colorG, q.colorB, qt ? qt->Name.GetChars( ) : "(none)" );
 	}
 }
 
@@ -1541,11 +1587,13 @@ CCMD( fua_sector_lights )
 	for ( unsigned i = 0; i < ll.Size( ); i++ )
 	{
 		const PalEntry c = ( ll[i].extra_colormap != NULL ) ? ll[i].extra_colormap->Color : PalEntry( 0 );
-		Printf( "  %u: plane z %.1f, light %d%s, colour %02x%02x%02x, flags %x, caster %s\n", i,
+		// [rc4l] The control sector a 3D floor's band takes its light from, which is what a script recolours.
+		const int model = ( ll[i].caster != NULL && ll[i].caster->model != NULL ) ? ll[i].caster->model->sectornum : -1;
+		Printf( "  %u: plane z %.1f, light %d%s, colour %02x%02x%02x, flags %x, caster %s %d\n", i,
 			FIXED2FLOAT( ll[i].plane.ZatPoint( sec.soundorg[0], sec.soundorg[1] ) ),
 			ll[i].p_lightlevel != NULL ? *ll[i].p_lightlevel : -1,
 			ll[i].p_lightlevel == &sec.lightlevel ? " (own)" : "", c.r, c.g, c.b, ll[i].flags,
-			ll[i].caster != NULL ? "a 3D floor" : "none" );
+			ll[i].caster != NULL ? "a 3D floor, control sector" : "none", model );
 	}
 }
 

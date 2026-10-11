@@ -2,10 +2,10 @@
 import { Buffer } from "node:buffer";
 
 // [rc4l] The p-codes templates use, numbered as in p_acs.h; ACS0 writes every code and argument as a 32-bit word.
-export const PCD = { TERMINATE: 1, PUSHNUMBER: 3, LSPEC1: 4 };
+export const PCD = { TERMINATE: 1, PUSHNUMBER: 3, LSPEC1: 4, DELAYDIRECT: 56 };
 
-// [rc4l] OPEN script 1 running `code` (words), with `strings` indexed from 0 as the script's string arguments.
-export function acs0(code, strings = []) {
+// [rc4l] OPEN script 1 running `code` (words), with `strings` indexed from 0 as the script's string arguments; `{ open: false, number }` makes it a closed script that `puke number` runs.
+export function acs0(code, strings = [], { open = true, number = 1 } = {}) {
   const strBytes = strings.map((s) => Buffer.from(`${s}\0`, "latin1"));
   const strStart = 8 + 4 * code.length;
   const strLen = strBytes.reduce((n, b) => n + b.length, 0);
@@ -17,9 +17,9 @@ export function acs0(code, strings = []) {
   const offsets = [];
   let at = strStart;
   for (const b of strBytes) { b.copy(out, at); offsets.push(at); at += b.length; }
-  // [rc4l] The directory: one script numbered 1001, which ACS0 reads as script 1 of type OPEN, then the string table after it.
+  // [rc4l] The directory: one script, its type in the thousands (1001 is script 1 of type OPEN), then the string table after it.
   out.writeInt32LE(1, dirOffset);
-  out.writeInt32LE(1001, dirOffset + 4);
+  out.writeInt32LE((open ? 1000 : 0) + number, dirOffset + 4);
   out.writeInt32LE(8, dirOffset + 8);
   out.writeInt32LE(0, dirOffset + 12);
   out.writeInt32LE(strings.length, dirOffset + 16);

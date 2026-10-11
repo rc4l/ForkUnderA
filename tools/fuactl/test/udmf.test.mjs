@@ -193,3 +193,113 @@ test("the warp template floors its pool with FWATER1 and makes that flat warp2 i
   assert.match(lumps[1].text, /texturefloor = "FWATER1";/);
   assert.equal(lumps[3].text, "warp2 flat FWATER1\n");
 });
+
+test("the scroll-floor template's block carries the scrolling sector type and the camera stands off it", async () => {
+  const { buildScrollFloorWad, VANTAGES: at } = await import("../scenarios/scrollfloor.mjs");
+  const textmap = readWad(buildScrollFloorWad()).find((l) => l.name === "TEXTMAP").data.toString("latin1");
+  const u = parseUdmf(textmap);
+  assert.deepEqual(u.sector.map((s) => s.special ?? 0), [0, 206]);
+  assert.ok(at[0].at.y < 512, "the camera must not stand on the scroller, which would carry it");
+});
+
+// [rc4l] Each new template's ingredient read back out of its own TEXTMAP, so a builder that drops it fails here rather than as a scenario that tests nothing.
+const textmaps = (buf) => readWad(buf).filter((l) => l.name === "TEXTMAP").map((l) => parseUdmf(l.data.toString("latin1")));
+
+test("the wall-light template transfers to the north wall by line id on MAP01 and lights it 255 outright on MAP02", async () => {
+  const { buildWallLightWad } = await import("../scenarios/walllight.mjs");
+  const buf = buildWallLightWad();
+  const [transfer, fixed] = textmaps(buf);
+  assert.ok(transfer.linedef.some((l) => l.special === 16 && l.arg0 === 1));
+  assert.ok(transfer.linedef.some((l) => l.id === 1));
+  assert.ok(readWad(buf).some((l) => l.name === "BEHAVIOR"));
+  assert.ok(fixed.sidedef.some((s) => s.light === 255 && s.lightabsolute === true));
+});
+
+test("the raised 3D floor template makes its control room a 3D floor in the tagged block and raises it by script", async () => {
+  const { buildRaised3DFloorWad } = await import("../scenarios/raised3dfloor.mjs");
+  const buf = buildRaised3DFloorWad();
+  const [u] = textmaps(buf);
+  assert.ok(u.linedef.some((l) => l.special === 160 && l.arg0 === 3));
+  assert.deepEqual(u.sector.filter((s) => s.id).map((s) => s.id), [3, 4]);
+  assert.ok(readWad(buf).some((l) => l.name === "BEHAVIOR"));
+});
+
+test("the desaturation template writes 0.99 on MAP01 and an out-of-range 99 on MAP02", async () => {
+  const { buildDesaturateWad } = await import("../scenarios/desaturate.mjs");
+  assert.deepEqual(textmaps(buildDesaturateWad()).map((u) => u.sector[0].desaturation), [0.99, 99]);
+});
+
+test("the mirror-behind template's pillar stands on its own block behind the player, facing a mirror", async () => {
+  const { buildMirrorBehindWad, VANTAGES: at } = await import("../scenarios/mirrorbehind.mjs");
+  const [u] = textmaps(buildMirrorBehindWad());
+  assert.ok(u.linedef.some((l) => l.special === 182));
+  assert.equal(u.sector.length, 2);
+  const pillar = u.thing.find((t) => t.type === 48);
+  assert.ok(pillar.y < at[0].at.y, "the pillar must be behind the player");
+});
+
+test("an opening is one two-sided line with its front sector on the right, each side styled by its own argument", () => {
+  const m = new UdmfMap();
+  const a = m.sector({}), b = m.sector({});
+  const l = m.opening(0, 0, 64, 0, a, b, { texturebottom: "BROWN1" }, { texturetop: "STARTAN2" }, { special: 9 });
+  assert.equal(l, 0);
+  assert.deepEqual(m.lines[0], { v1: 0, v2: 1, sidefront: 0, sideback: 1, twosided: true, special: 9 });
+  assert.deepEqual(m.sides, [{ sector: a, texturebottom: "BROWN1" }, { sector: b, texturetop: "STARTAN2" }]);
+});
+
+test("the mirror-sky template's yard is shallower than the player stands from the mirror, with a low sky beyond the window beside it", async () => {
+  const { buildMirrorSkyWad, VANTAGES: at } = await import("../scenarios/mirrorsky.mjs");
+  const [u] = textmaps(buildMirrorSkyWad());
+  const mirror = u.linedef.find((l) => l.special === 182);
+  assert.ok(mirror);
+  const yard = u.sector.find((s) => s.textureceiling === "F_SKY1");
+  assert.ok(yard.heightceiling < u.sector[0].heightceiling, "the yard's sky must sit below the room's ceiling");
+  const yardDepth = 1024 - 528, mirrorY = u.vertex[mirror.v1].y;
+  assert.ok(mirrorY - at[0].at.y > yardDepth, "the reflected eye must stand beyond the yard's far wall");
+  assert.equal(u.linedef.filter((l) => l.twosided).length, 2, "the window and its far edge");
+});
+
+test("the sky-wall-below template's closed strip is a sky sector shut below eye level between the player and a room the walk never reaches", async () => {
+  const { buildSkyWallBelowWad } = await import("../scenarios/skywallbelow.mjs");
+  const [u] = textmaps(buildSkyWallBelowWad());
+  const closed = u.sector.find((s) => s.heightfloor === s.heightceiling);
+  assert.equal(closed.textureceiling, "F_SKY1");
+  assert.ok(closed.heightceiling > 0 && closed.heightceiling < 41, "above the floor, below the eye");
+  assert.equal(u.linedef.filter((l) => l.twosided).length, 2);
+  assert.ok(u.thing.some((t) => t.type === 9080), "a skybox for the sky wall to show");
+});
+
+test("the deep horizon template stands the player 256 over the court, and only its oblique vantage judges the band", async () => {
+  const { buildHorizonDeepWad, VANTAGES: at, BOXES } = await import("../scenarios/horizondeep.mjs");
+  const [u] = textmaps(buildHorizonDeepWad());
+  assert.ok(u.linedef.some((l) => l.special === 9));
+  assert.equal(u.sector[1].heightfloor - u.sector[0].heightfloor, 256);
+  assert.equal(BOXES.MAP01.band.vantage, "oblique");
+  assert.ok(at.find((v) => v.name === "oblique").at.angle !== 90, "square-on, the depth fight never shows");
+});
+
+test("the open skybox template's viewpoint stands in a room of sky and horizon lines, under a six-face GLDEFS skybox", async () => {
+  const { buildSkyboxOpenWad } = await import("../scenarios/skyboxopen.mjs");
+  const buf = buildSkyboxOpenWad();
+  const lumps = lumpsOf(buf);
+  assert.match(lumps.find((l) => l.name === "GLDEFS").text, /skybox OBOX/);
+  assert.match(lumps.find((l) => l.name === "MAPINFO").text, /sky1 = "OBOX"/);
+  const names = lumps.map((l) => l.name);
+  assert.equal(names.indexOf("TX_END") - names.indexOf("TX_START"), 7, "six faces between the markers");
+  const [u] = textmaps(buf);
+  const box = u.sector.find((s) => s.texturefloor === "F_SKY1");
+  assert.equal(box.textureceiling, "F_SKY1");
+  assert.equal(u.linedef.filter((l) => l.special === 9).length, 4);
+  assert.ok(u.thing.some((t) => t.type === 9080));
+});
+
+test("the water-tint template's additive water is tinted by closed script 2, which each side pukes once its level is up", async () => {
+  const { buildWaterTintWad, SIDES } = await import("../scenarios/watertint.mjs");
+  const buf = buildWaterTintWad();
+  const [u] = textmaps(buf);
+  const water = u.linedef.find((l) => l.special === 160);
+  assert.deepEqual([water.arg2, water.arg3], [64, 128]);
+  const behavior = readWad(buf).find((l) => l.name === "BEHAVIOR").data;
+  assert.equal(behavior.readInt32LE(behavior.readInt32LE(4) + 4), 2, "closed, so it runs only when puked");
+  assert.ok(SIDES.length === 2 && SIDES.every((s) => s.commands.includes("puke 2")));
+});

@@ -249,19 +249,14 @@ bool ComputePieceProbe(float centreX, float centreY, float normX, float normUp, 
 	return true;
 }
 
-bool ComputeTakesMirrorViewer(bool mirrorWalk, bool mainView, int sceneNesting, bool isViewer)
+int ComputeMirrorCaptureLine(int mirrorLine, bool mainView, int sceneNesting)
 {
-	return mirrorWalk && mainView && sceneNesting == 2 && isViewer;
-}
-
-bool ComputeDrawsMirrorViewer(int pieceMirrorLine, int drawingMirrorLine)
-{
-	return pieceMirrorLine < 0 || pieceMirrorLine == drawingMirrorLine;
+	return (mirrorLine >= 0 && mainView && sceneNesting == 2) ? mirrorLine : -1;
 }
 
 bool ComputeDrawsDynamicPiece(int pieceMirrorLine, int pieceStackSlot, int drawingMirrorLine, int drawingStackSlot)
 {
-	return ComputeDrawsMirrorViewer(pieceMirrorLine, drawingMirrorLine) && pieceStackSlot == drawingStackSlot;
+	return pieceMirrorLine == drawingMirrorLine && pieceStackSlot == drawingStackSlot;
 }
 
 bool ComputeRendersMirror(bool walkedByGL, bool standalone, bool onScreen)

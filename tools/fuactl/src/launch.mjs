@@ -225,7 +225,7 @@ export async function launchInstance(opts = {}) {
       ZANDRONUM_BRIDGE_INPUT_LOCK: opts.allowOsInput ? "" : "1",
     },
   });
-  return { proc, pid: proc.pid, port, token, host: opts.host || "127.0.0.1", log, stdioLog, logDir };
+  return { proc, pid: proc.pid, port, token, host: opts.host || "127.0.0.1", log, stdioLog, logDir, engine: bin };
 }
 
 // Ask an instance to quit cleanly (SIGTERM -> engine's clean-quit path), then hard-kill after grace.

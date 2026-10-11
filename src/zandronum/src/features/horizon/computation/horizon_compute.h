@@ -44,6 +44,9 @@ float ComputeHorizonSplit(float eyeZ, float floorZ, float ceilingZ);
 // [rc4l] The slice one half paints for an eye at eyeZ -- floor..split or split..ceiling, empty when the eye leaves none.
 HorizonSpan ComputeHorizonHalfSpan(bool ceilingHalf, float floorZ, float ceilingZ, float eyeZ);
 
+// [rc4l] Where a window's sky quad starts for an eye at eyeZ: the split when a floor plane paints below it, as DoHorizon starts SkyPlane at viewz, else the window's own bottom.
+float ComputeHorizonSkyBottom(bool floorPlane, float windowBottom, float floorZ, float ceilingZ, float eyeZ);
+
 // [rc4l] The light GLHorizonPortal shades a plane with: full and unrelative for a fullbright flat, else the sector's.
 void ComputeHorizonLightInputs(bool fullbright, int lightLevel, int extraLight, int &level, int &rel);
 

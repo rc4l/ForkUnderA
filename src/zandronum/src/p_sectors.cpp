@@ -707,6 +707,7 @@ void sector_t::SetColor(int r, int g, int b, int desat, bool bInformClients, boo
 	PalEntry color = PalEntry (r,g,b);
 	ColorMap = GetSpecialLights (color, ColorMap->Fade, desat);
 	P_RecalculateAttachedLights(this);
+	fua_dirty++;	// [rc4l] features/levelmesh: a recoloured sector, and the 3D floor bands it casts, re-bake
 
 	// Tell clients about the sector color update.
 	// [BB] Only if instructed to.
@@ -725,6 +726,7 @@ void sector_t::SetFade(int r, int g, int b, bool bInformClients, bool bExecuteOn
 	PalEntry fade = PalEntry (r,g,b);
 	ColorMap = GetSpecialLights (ColorMap->Color, fade, ColorMap->Desaturate);
 	P_RecalculateAttachedLights(this);
+	fua_dirty++;	// [rc4l] features/levelmesh: a recoloured sector, and the 3D floor bands it casts, re-bake
 
 	// [BC] Tell clients about the sector fade update.
 	// [BB] Only if instructed to.

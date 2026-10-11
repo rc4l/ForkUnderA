@@ -125,14 +125,14 @@ static TMap<unsigned int, unsigned int> g_pieceByOffset;
 // [rc4l] See staticmesh.h. This exists so the backend never re-derives lighting: a second
 // implementation of gl_SetColor/gl_SetFog drifted, silently losing rellight, extralight and
 // desaturation, and produced a Vulkan render visibly brighter and flatter than GL's.
-void CaptureShading(int lightlevel, int rellight, const FColormap &cm, MeshPiece &out, bool noFog)
+void CaptureShading(int lightlevel, int rellight, const FColormap &cm, MeshPiece &out, bool noFog, bool additive)
 {
 	// [rc4l] Put back what the two setters write: callers run inside GL's frame, and asking must not change what GL draws next.
 	const FRenderState::ShadingSnapshot before = gl_RenderState.SaveShading();
 	FColormap local = cm;
 	gl_SetColor(lightlevel, rellight, local, 1.0f);
 	if (noFog) gl_SetFog(255, 0, NULL, false);
-	else       gl_SetFog(lightlevel, rellight, &local, false);
+	else       gl_SetFog(lightlevel, rellight, &local, additive);
 
 	gl_RenderState.GetColorRGB(out.colorR, out.colorG, out.colorB);
 	const float *lp = gl_RenderState.GetLightParms();

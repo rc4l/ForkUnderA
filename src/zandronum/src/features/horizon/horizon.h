@@ -38,8 +38,8 @@ void UpdateHorizons();
 
 const HorizonWindow *HorizonWindows(int &count);
 
-// [rc4l] The sky halves as triangle-list quads in FFlatVertex's (x, height, y), like every other sky quad.
-const FFlatVertex *HorizonSkyVertices(int &count);
+// [rc4l] The sky halves for an eye at height eyeZ as triangle-list quads in FFlatVertex's (x, height, y), each starting where its floor half stops (ComputeHorizonSkyBottom).
+const FFlatVertex *HorizonSkyVertices(int &count, float eyeZ);
 
 // [rc4l] Whether this feature owns horizon lines, which the GL sky capture asks before standing down for one.
 bool HorizonsActive();

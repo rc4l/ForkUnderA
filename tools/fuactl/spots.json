@@ -1278,6 +1278,396 @@
         "fua_dg_skyportal": "true",
         "gl_wallmesh": "true"
       }
+    },
+    "q13-part-1-of-2": {
+      "map": "WDI09",
+      "x": 2872.01,
+      "y": -1558.034,
+      "z": -275,
+      "angle": 115.4883,
+      "pitch": 28.7403,
+      "shows": "part 1 of 2: first press this switch here (part 2, what goes wrong after, still to come); screenshot: facing a dark green-grey wall panel with a red button above a green one, a yellow-and-black hazard-striped ledge to the right, 'WAITING FOR PLAYERS...' on screen",
+      "loaded": {
+        "iwad": "doom2.wad",
+        "pwads": [
+          "skulltag_content-3.2-beta2.pk3 41630bc75af4b51fe5d163fe4d434c6e",
+          "whodunit_fixed2.pk3 fc8afa7358c2c2b38614ee74a07a719f",
+          "wdi_expack_1a.pk3 0448efffc27d8105b1ae1172c14c794e",
+          "wdi_bigpackv3.9test.pk3 d642da865b0addd46ccfab34ef0fffd8",
+          "wdi_bigpackv3.9testfixsv1.pk3 2617768e95f3fdd36413a056e023d11e",
+          "wdi_touchupv9.11.wad 2ccc1f88f1160cd503fb790e63da9c9c",
+          "wdibeta_phobos_outpostd1.pk3 b22505cd5ce4152b8c8e9a6b62bb7484",
+          "wdi_random_crate_1b.pk3 408d20d4afaead2d15c9df1e46c9825c",
+          "wdi_scoreboard_fix.wad 26ee8a0515d71a2cc0ffea94a7ccfbbc"
+        ]
+      },
+      "renderer": {
+        "fua_vulkan": "true",
+        "fua_dg_standalone": "false",
+        "fua_dg_embed": "false",
+        "fua_dg_skyportal": "true",
+        "gl_wallmesh": "true"
+      }
+    },
+    "q13b-3d-floor-after-switch": {
+      "map": "WDI09",
+      "x": 2872.01,
+      "y": -1558.034,
+      "z": -275,
+      "angle": 60.293,
+      "pitch": -55.3711,
+      "shows": "part 2 of #13: after pressing the switch at q13-part-1-of-2, the 3D floor raises on GL but stays stuck in its original spot on Vulkan; screenshot: looking up a tall stone shaft at pipes/fans and a dark cylindrical pillar, the raised 3D floor seen from below",
+      "loaded": {
+        "iwad": "doom2.wad",
+        "pwads": [
+          "skulltag_content-3.2-beta2.pk3 41630bc75af4b51fe5d163fe4d434c6e",
+          "whodunit_fixed2.pk3 fc8afa7358c2c2b38614ee74a07a719f",
+          "wdi_expack_1a.pk3 0448efffc27d8105b1ae1172c14c794e",
+          "wdi_bigpackv3.9test.pk3 d642da865b0addd46ccfab34ef0fffd8",
+          "wdi_bigpackv3.9testfixsv1.pk3 2617768e95f3fdd36413a056e023d11e",
+          "wdi_touchupv9.11.wad 2ccc1f88f1160cd503fb790e63da9c9c",
+          "wdibeta_phobos_outpostd1.pk3 b22505cd5ce4152b8c8e9a6b62bb7484",
+          "wdi_random_crate_1b.pk3 408d20d4afaead2d15c9df1e46c9825c",
+          "wdi_scoreboard_fix.wad 26ee8a0515d71a2cc0ffea94a7ccfbbc"
+        ]
+      },
+      "renderer": {
+        "fua_vulkan": "true",
+        "fua_dg_standalone": "false",
+        "fua_dg_embed": "false",
+        "fua_dg_skyportal": "true",
+        "gl_wallmesh": "true"
+      }
+    },
+    "q14-on-gl-this-corner": {
+      "map": "WDI09",
+      "x": 2287.989,
+      "y": -2067.196,
+      "z": -235,
+      "angle": 243.9844,
+      "pitch": 11.3379,
+      "shows": "on GL this corner is rendered blue for some reason, may be a GL bug because it renders correctly on vulkan; identify whether it is the mapper's intended effect or a GL bug -- if intended, the bug is on Vulkan; screenshot (GL): a narrow stone corridor whose right-hand walls, ceiling strip and a puddle-shaped patch on the floor are bright blue/cyan textured, the rest grey stone",
+      "loaded": {
+        "iwad": "doom2.wad",
+        "pwads": [
+          "skulltag_content-3.2-beta2.pk3 41630bc75af4b51fe5d163fe4d434c6e",
+          "whodunit_fixed2.pk3 fc8afa7358c2c2b38614ee74a07a719f",
+          "wdi_expack_1a.pk3 0448efffc27d8105b1ae1172c14c794e",
+          "wdi_bigpackv3.9test.pk3 d642da865b0addd46ccfab34ef0fffd8",
+          "wdi_bigpackv3.9testfixsv1.pk3 2617768e95f3fdd36413a056e023d11e",
+          "wdi_touchupv9.11.wad 2ccc1f88f1160cd503fb790e63da9c9c",
+          "wdibeta_phobos_outpostd1.pk3 b22505cd5ce4152b8c8e9a6b62bb7484",
+          "wdi_random_crate_1b.pk3 408d20d4afaead2d15c9df1e46c9825c",
+          "wdi_scoreboard_fix.wad 26ee8a0515d71a2cc0ffea94a7ccfbbc"
+        ]
+      },
+      "renderer": {
+        "fua_vulkan": "true",
+        "fua_dg_standalone": "false",
+        "fua_dg_embed": "false",
+        "fua_dg_skyportal": "true",
+        "gl_wallmesh": "true"
+      }
+    },
+    "q15-on-vulkan-looking-at": {
+      "map": "WDI12",
+      "x": 667.902,
+      "y": -122.108,
+      "z": -152,
+      "angle": 26.543,
+      "pitch": 0.791,
+      "shows": "on vulkan, looking at this mirror, the hand dryer (in the reflection) does not render unless you stand further away from the mirror; screenshot (GL): a washroom mirror over a sink counter reflecting a grey tiled wall with a wall-mounted hand dryer (red button), an 'EMPLOYEES MUST WASH HANDS' sign and the player's green-clad marine on the right",
+      "loaded": {
+        "iwad": "doom2.wad",
+        "pwads": [
+          "skulltag_content-3.2-beta2.pk3 41630bc75af4b51fe5d163fe4d434c6e",
+          "whodunit_fixed2.pk3 fc8afa7358c2c2b38614ee74a07a719f",
+          "wdi_expack_1a.pk3 0448efffc27d8105b1ae1172c14c794e",
+          "wdi_bigpackv3.9test.pk3 d642da865b0addd46ccfab34ef0fffd8",
+          "wdi_bigpackv3.9testfixsv1.pk3 2617768e95f3fdd36413a056e023d11e",
+          "wdi_touchupv9.11.wad 2ccc1f88f1160cd503fb790e63da9c9c",
+          "wdibeta_phobos_outpostd1.pk3 b22505cd5ce4152b8c8e9a6b62bb7484",
+          "wdi_random_crate_1b.pk3 408d20d4afaead2d15c9df1e46c9825c",
+          "wdi_scoreboard_fix.wad 26ee8a0515d71a2cc0ffea94a7ccfbbc"
+        ]
+      },
+      "renderer": {
+        "fua_vulkan": "true",
+        "fua_dg_standalone": "false",
+        "fua_dg_embed": "false",
+        "fua_dg_skyportal": "true",
+        "gl_wallmesh": "true"
+      }
+    },
+    "q16-another-line-horizon-bug": {
+      "map": "WDI13",
+      "x": -5141.088,
+      "y": -4630.804,
+      "z": -32,
+      "angle": 193.8867,
+      "pitch": 12.3926,
+      "shows": "another line horizon bug on vulkan: after a map change this line horizon renders with z-fighting artifacts whereas GL does not; screenshot (Vulkan): a cloudy grey sky over a dark horizon band, with a hatched/stippled diagonal-line pattern along the horizon edge where sky and ground meet, trees at both sides",
+      "loaded": {
+        "iwad": "doom2.wad",
+        "pwads": [
+          "skulltag_content-3.2-beta2.pk3 41630bc75af4b51fe5d163fe4d434c6e",
+          "whodunit_fixed2.pk3 fc8afa7358c2c2b38614ee74a07a719f",
+          "wdi_expack_1a.pk3 0448efffc27d8105b1ae1172c14c794e",
+          "wdi_bigpackv3.9test.pk3 d642da865b0addd46ccfab34ef0fffd8",
+          "wdi_bigpackv3.9testfixsv1.pk3 2617768e95f3fdd36413a056e023d11e",
+          "wdi_touchupv9.11.wad 2ccc1f88f1160cd503fb790e63da9c9c",
+          "wdibeta_phobos_outpostd1.pk3 b22505cd5ce4152b8c8e9a6b62bb7484",
+          "wdi_random_crate_1b.pk3 408d20d4afaead2d15c9df1e46c9825c",
+          "wdi_scoreboard_fix.wad 26ee8a0515d71a2cc0ffea94a7ccfbbc"
+        ]
+      },
+      "renderer": {
+        "fua_vulkan": "true",
+        "fua_dg_standalone": "false",
+        "fua_dg_embed": "false",
+        "fua_dg_skyportal": "true",
+        "gl_wallmesh": "true"
+      }
+    },
+    "q17-on-this-map-there": {
+      "map": "WDI14",
+      "x": -6494.426,
+      "y": -2208.911,
+      "z": 63.762,
+      "angle": 10.7227,
+      "pitch": -17.5781,
+      "shows": "on this map there is a weird black shadow on vulkan but not on gl (likely vulkan bug); screenshot (Vulkan): a brown brick wall with a framed painting of a rider on a white horse, and a dark vertical band running up the wall and over the painting's right edge, like a shadow cast down the wall",
+      "loaded": {
+        "iwad": "doom2.wad",
+        "pwads": [
+          "skulltag_content-3.2-beta2.pk3 41630bc75af4b51fe5d163fe4d434c6e",
+          "whodunit_fixed2.pk3 fc8afa7358c2c2b38614ee74a07a719f",
+          "wdi_expack_1a.pk3 0448efffc27d8105b1ae1172c14c794e",
+          "wdi_bigpackv3.9test.pk3 d642da865b0addd46ccfab34ef0fffd8",
+          "wdi_bigpackv3.9testfixsv1.pk3 2617768e95f3fdd36413a056e023d11e",
+          "wdi_touchupv9.11.wad 2ccc1f88f1160cd503fb790e63da9c9c",
+          "wdibeta_phobos_outpostd1.pk3 b22505cd5ce4152b8c8e9a6b62bb7484",
+          "wdi_random_crate_1b.pk3 408d20d4afaead2d15c9df1e46c9825c",
+          "wdi_scoreboard_fix.wad 26ee8a0515d71a2cc0ffea94a7ccfbbc"
+        ]
+      },
+      "renderer": {
+        "fua_vulkan": "true",
+        "fua_dg_standalone": "false",
+        "fua_dg_embed": "false",
+        "fua_dg_skyportal": "true",
+        "gl_wallmesh": "true"
+      }
+    },
+    "q18-on-this-map-in": {
+      "map": "WDI16",
+      "x": 439.388,
+      "y": -4548.896,
+      "z": 6,
+      "angle": 282.3047,
+      "pitch": -24.082,
+      "shows": "on this map in vulkan the sky isnt rendering at all whereas it renders fine in gl; screenshot (Vulkan): an outdoor beach view, a leafy canopy along the top, rock walls left and right, turquoise water and sand at the bottom, and pure black where the sky should be",
+      "loaded": {
+        "iwad": "doom2.wad",
+        "pwads": [
+          "skulltag_content-3.2-beta2.pk3 41630bc75af4b51fe5d163fe4d434c6e",
+          "whodunit_fixed2.pk3 fc8afa7358c2c2b38614ee74a07a719f",
+          "wdi_expack_1a.pk3 0448efffc27d8105b1ae1172c14c794e",
+          "wdi_bigpackv3.9test.pk3 d642da865b0addd46ccfab34ef0fffd8",
+          "wdi_bigpackv3.9testfixsv1.pk3 2617768e95f3fdd36413a056e023d11e",
+          "wdi_touchupv9.11.wad 2ccc1f88f1160cd503fb790e63da9c9c",
+          "wdibeta_phobos_outpostd1.pk3 b22505cd5ce4152b8c8e9a6b62bb7484",
+          "wdi_random_crate_1b.pk3 408d20d4afaead2d15c9df1e46c9825c",
+          "wdi_scoreboard_fix.wad 26ee8a0515d71a2cc0ffea94a7ccfbbc"
+        ]
+      },
+      "renderer": {
+        "fua_vulkan": "true",
+        "fua_dg_standalone": "false",
+        "fua_dg_embed": "false",
+        "fua_dg_skyportal": "true",
+        "gl_wallmesh": "true"
+      }
+    },
+    "q19-another-sky-bug-on": {
+      "map": "WDI17",
+      "x": 1526.817,
+      "y": -1680.092,
+      "z": 16,
+      "angle": 298.8281,
+      "pitch": -38.6719,
+      "shows": "another sky bug: on this map the clouds move on GL (correct) but not on Vulkan (incorrect); screenshot: looking up at a dark starry night sky with brownish cloud layers drifting across it",
+      "loaded": {
+        "iwad": "doom2.wad",
+        "pwads": [
+          "skulltag_content-3.2-beta2.pk3 41630bc75af4b51fe5d163fe4d434c6e",
+          "whodunit_fixed2.pk3 fc8afa7358c2c2b38614ee74a07a719f",
+          "wdi_expack_1a.pk3 0448efffc27d8105b1ae1172c14c794e",
+          "wdi_bigpackv3.9test.pk3 d642da865b0addd46ccfab34ef0fffd8",
+          "wdi_bigpackv3.9testfixsv1.pk3 2617768e95f3fdd36413a056e023d11e",
+          "wdi_touchupv9.11.wad 2ccc1f88f1160cd503fb790e63da9c9c",
+          "wdibeta_phobos_outpostd1.pk3 b22505cd5ce4152b8c8e9a6b62bb7484",
+          "wdi_random_crate_1b.pk3 408d20d4afaead2d15c9df1e46c9825c",
+          "wdi_scoreboard_fix.wad 26ee8a0515d71a2cc0ffea94a7ccfbbc"
+        ]
+      },
+      "renderer": {
+        "fua_vulkan": "true",
+        "fua_dg_standalone": "false",
+        "fua_dg_embed": "false",
+        "fua_dg_skyportal": "true",
+        "gl_wallmesh": "true"
+      }
+    },
+    "q20-another-mirror-bug-could": {
+      "map": "WDI18",
+      "x": -656.042,
+      "y": -476.067,
+      "z": 0,
+      "angle": 285.1172,
+      "pitch": -4.3066,
+      "shows": "another mirror bug, could be the same one: viewing this mirror from afar (arrived by changemap), it does not reflect correctly unless you get closer; screenshot: a mostly black mirror with a grey oval/blob shape in the middle speckled with light dots",
+      "loaded": {
+        "iwad": "doom2.wad",
+        "pwads": [
+          "skulltag_content-3.2-beta2.pk3 41630bc75af4b51fe5d163fe4d434c6e",
+          "whodunit_fixed2.pk3 fc8afa7358c2c2b38614ee74a07a719f",
+          "wdi_expack_1a.pk3 0448efffc27d8105b1ae1172c14c794e",
+          "wdi_bigpackv3.9test.pk3 d642da865b0addd46ccfab34ef0fffd8",
+          "wdi_bigpackv3.9testfixsv1.pk3 2617768e95f3fdd36413a056e023d11e",
+          "wdi_touchupv9.11.wad 2ccc1f88f1160cd503fb790e63da9c9c",
+          "wdibeta_phobos_outpostd1.pk3 b22505cd5ce4152b8c8e9a6b62bb7484",
+          "wdi_random_crate_1b.pk3 408d20d4afaead2d15c9df1e46c9825c",
+          "wdi_scoreboard_fix.wad 26ee8a0515d71a2cc0ffea94a7ccfbbc"
+        ]
+      },
+      "renderer": {
+        "fua_vulkan": "true",
+        "fua_dg_standalone": "false",
+        "fua_dg_embed": "false",
+        "fua_dg_skyportal": "true",
+        "gl_wallmesh": "true"
+      }
+    },
+    "q21-on-vulkan-you-can": {
+      "map": "WDI18",
+      "x": -64.02,
+      "y": 3383.109,
+      "z": 112,
+      "angle": 106.1719,
+      "pitch": 5.8008,
+      "shows": "on vulkan you can x-ray the map from this angle whereas on gl it doesnt happen; screenshot (Vulkan): a dark starry night sky over a low wall, with the level's distant buildings and floors visible through/above it as a dark silhouette band where GL shows sky or wall",
+      "loaded": {
+        "iwad": "doom2.wad",
+        "pwads": [
+          "skulltag_content-3.2-beta2.pk3 41630bc75af4b51fe5d163fe4d434c6e",
+          "whodunit_fixed2.pk3 fc8afa7358c2c2b38614ee74a07a719f",
+          "wdi_expack_1a.pk3 0448efffc27d8105b1ae1172c14c794e",
+          "wdi_bigpackv3.9test.pk3 d642da865b0addd46ccfab34ef0fffd8",
+          "wdi_bigpackv3.9testfixsv1.pk3 2617768e95f3fdd36413a056e023d11e",
+          "wdi_touchupv9.11.wad 2ccc1f88f1160cd503fb790e63da9c9c",
+          "wdibeta_phobos_outpostd1.pk3 b22505cd5ce4152b8c8e9a6b62bb7484",
+          "wdi_random_crate_1b.pk3 408d20d4afaead2d15c9df1e46c9825c",
+          "wdi_scoreboard_fix.wad 26ee8a0515d71a2cc0ffea94a7ccfbbc"
+        ]
+      },
+      "renderer": {
+        "fua_vulkan": "true",
+        "fua_dg_standalone": "false",
+        "fua_dg_embed": "false",
+        "fua_dg_skyportal": "true",
+        "gl_wallmesh": "true"
+      }
+    },
+    "q22-this-pool-appears-to": {
+      "map": "WDI19",
+      "x": 1486.922,
+      "y": 2554.714,
+      "z": 32,
+      "angle": 298.4766,
+      "pitch": 17.1387,
+      "shows": "this pool appears to be a different tint/color on vulkan vs gl, not sure whether GL or Vulkan is wrong; screenshot: a large indoor swimming pool of green-teal water with caustic ripples, brick walls with small lamps around it",
+      "loaded": {
+        "iwad": "doom2.wad",
+        "pwads": [
+          "skulltag_content-3.2-beta2.pk3 41630bc75af4b51fe5d163fe4d434c6e",
+          "whodunit_fixed2.pk3 fc8afa7358c2c2b38614ee74a07a719f",
+          "wdi_expack_1a.pk3 0448efffc27d8105b1ae1172c14c794e",
+          "wdi_bigpackv3.9test.pk3 d642da865b0addd46ccfab34ef0fffd8",
+          "wdi_bigpackv3.9testfixsv1.pk3 2617768e95f3fdd36413a056e023d11e",
+          "wdi_touchupv9.11.wad 2ccc1f88f1160cd503fb790e63da9c9c",
+          "wdibeta_phobos_outpostd1.pk3 b22505cd5ce4152b8c8e9a6b62bb7484",
+          "wdi_random_crate_1b.pk3 408d20d4afaead2d15c9df1e46c9825c",
+          "wdi_scoreboard_fix.wad 26ee8a0515d71a2cc0ffea94a7ccfbbc"
+        ]
+      },
+      "renderer": {
+        "fua_vulkan": "true",
+        "fua_dg_standalone": "false",
+        "fua_dg_embed": "false",
+        "fua_dg_skyportal": "true",
+        "gl_wallmesh": "true"
+      }
+    },
+    "q23-mirror-wall-unlit": {
+      "map": "WDI12",
+      "x": 667.902,
+      "y": -122.108,
+      "z": -152,
+      "angle": 26.543,
+      "pitch": 0.791,
+      "shows": "found while fixing #15: in the washroom mirror's reflection, the north wall above the tiles is much darker on Vulkan (box mean 21) than GL (48); facing that wall directly they match within 2.6. fua_dg_lightlinks 0 makes the reflection match GL (46), so the mirror pass's light-link test rejects lights GL applies; the pieces carry the right link id (sidedef 10310, linedef 5775 side 1) and GL links lights (715,-128,-39) and (610,-128,-36) to that side",
+      "loaded": {
+        "iwad": "doom2.wad",
+        "pwads": [
+          "skulltag_content-3.2-beta2.pk3 41630bc75af4b51fe5d163fe4d434c6e",
+          "whodunit_fixed2.pk3 fc8afa7358c2c2b38614ee74a07a719f",
+          "wdi_expack_1a.pk3 0448efffc27d8105b1ae1172c14c794e",
+          "wdi_bigpackv3.9test.pk3 d642da865b0addd46ccfab34ef0fffd8",
+          "wdi_bigpackv3.9testfixsv1.pk3 2617768e95f3fdd36413a056e023d11e",
+          "wdi_touchupv9.11.wad 2ccc1f88f1160cd503fb790e63da9c9c",
+          "wdibeta_phobos_outpostd1.pk3 b22505cd5ce4152b8c8e9a6b62bb7484",
+          "wdi_random_crate_1b.pk3 408d20d4afaead2d15c9df1e46c9825c",
+          "wdi_scoreboard_fix.wad 26ee8a0515d71a2cc0ffea94a7ccfbbc"
+        ]
+      },
+      "renderer": {
+        "fua_vulkan": "true",
+        "fua_dg_standalone": "false",
+        "fua_dg_embed": "true",
+        "fua_dg_skyportal": "true",
+        "gl_wallmesh": "true"
+      }
+    },
+    "q20-broke-after-move": {
+      "map": "WDI18",
+      "x": -656.026,
+      "y": -480.005,
+      "z": 0,
+      "angle": 296.0156,
+      "pitch": -3.6035,
+      "shows": "user: had to move a little from q20, then the mirror broke (grey oval with stars)",
+      "loaded": {
+        "iwad": "doom2.wad",
+        "pwads": [
+          "skulltag_content-3.2-beta2.pk3 41630bc75af4b51fe5d163fe4d434c6e",
+          "whodunit_fixed2.pk3 fc8afa7358c2c2b38614ee74a07a719f",
+          "wdi_expack_1a.pk3 0448efffc27d8105b1ae1172c14c794e",
+          "wdi_bigpackv3.9test.pk3 d642da865b0addd46ccfab34ef0fffd8",
+          "wdi_bigpackv3.9testfixsv1.pk3 2617768e95f3fdd36413a056e023d11e",
+          "wdi_touchupv9.11.wad 2ccc1f88f1160cd503fb790e63da9c9c",
+          "wdibeta_phobos_outpostd1.pk3 b22505cd5ce4152b8c8e9a6b62bb7484",
+          "wdi_random_crate_1b.pk3 408d20d4afaead2d15c9df1e46c9825c",
+          "wdi_scoreboard_fix.wad 26ee8a0515d71a2cc0ffea94a7ccfbbc"
+        ]
+      },
+      "renderer": {
+        "fua_vulkan": "true",
+        "fua_dg_standalone": "false",
+        "fua_dg_embed": "false",
+        "fua_dg_skyportal": "true",
+        "gl_wallmesh": "true"
+      }
     }
   }
 }
