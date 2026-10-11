@@ -75,13 +75,18 @@ async function withEngine({ port, map, iwad, wadPath, gl, side = {}, size }, bod
   }
 }
 
-// [rc4l] Stand at a vantage and take one renderer's frame; GL comes from a Vulkan-off launch, the one reliable GL reference.
-async function grab(c, exe, tag, at, gl) {
+// [rc4l] Which half of a Vulkan launch's GL/Vulkan pair a side keeps: Vulkan's, or with `frame: "gl"` GL's, which there draws through the backend's wall mesh.
+export function pairFrame(side, pair) {
+  return side.frame === "gl" ? pair.gl : pair.vk;
+}
+
+// [rc4l] Stand at a vantage and take one side's frame; GL alone comes from a Vulkan-off launch, the one reliable GL reference.
+async function grab(c, exe, tag, at, side) {
   await c.rpc("sim.resume", {}).catch(() => {});
   await c.rpc("player.setpos", at);
   await cap.waitTics(c, 15);
-  if (gl) return (await ui.screenshot(c, exe, `sweep/${tag}`)).path;
-  return (await shot.shotPair(c, tag, { engineBin: exe })).vk;
+  if (side.gl) return (await ui.screenshot(c, exe, `sweep/${tag}`)).path;
+  return pairFrame(side, await shot.shotPair(c, tag, { engineBin: exe }));
 }
 
 // [rc4l] Build the wad, capture every map at every vantage from both sides, and judge; returns { lines, failed }.
@@ -101,7 +106,7 @@ export async function compareTemplate({ name, wad, maps, vantages, boxes, sides 
       for (const side of sides) {
         await withEngine({ port, map, iwad, wadPath, gl: !!side.gl, side, size }, async (c) => {
           for (const v of vantages) {
-            const file = await grab(c, exe, `${name}_${map}_${v.name}_${side.name}`, v.at, !!side.gl);
+            const file = await grab(c, exe, `${name}_${map}_${v.name}_${side.name}`, v.at, side);
             (frames[v.name] ||= {})[side.name] = file ? decodePNG(file) : null;
           }
         });

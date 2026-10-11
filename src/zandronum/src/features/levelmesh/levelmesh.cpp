@@ -297,6 +297,20 @@ static void PrintOneLine( int idx )
 			}
 			Printf( "\n" );
 		}
+		// [rc4l] Each of its segs in GL's wall cache: what became of it, and the walls a replay draws (type, bottom..top at v1, ends).
+		for ( int s = 0; s < side->numsegs; s++ )
+		{
+			const int seg = int( side->segs[s] - segs );
+			const int n = zx::levelmesh::CachedPieceCount( seg );
+			Printf( "    seg %d: %s, %d cached wall%s", seg, zx::levelmesh::SegFateName( zx::levelmesh::SegFate( seg ) ), n, n == 1 ? "" : "s" );
+			for ( int p = 0; p < n; p++ )
+			{
+				const GLWall *w = zx::levelmesh::CachedPiece( seg, p );
+				Printf( "%s type %d %.0f..%.0f (%.0f, %.0f)-(%.0f, %.0f)", p ? "," : ":", w->type, w->zbottom[0], w->ztop[0],
+						w->glseg.x1, w->glseg.y1, w->glseg.x2, w->glseg.y2 );
+			}
+			Printf( "\n" );
+		}
 	}
 }
 

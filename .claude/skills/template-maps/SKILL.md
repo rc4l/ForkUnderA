@@ -90,14 +90,16 @@ every vantage, and judges each box by `boxDiff`: mean |d| in 16-pixel block mean
 sub-pixel framing averages out while a block-sized fault stays loud. Its GL frames come from the
 Vulkan-off launch on purpose: with Vulkan on, GL captures on a skybox map were unreliable in every build.
 Every frame it judges is kept, as `<engine dir>/sweep/<name>_<map>_<vantage>_<side>.png`, so a failing box
-can be looked at rather than re-shot by hand. "Another engine" includes the reporter's own side-by-side session: quit it by its token before a GL-side
-run and relaunch it afterwards (`fua-side-by-side`), never by process name.
+can be looked at rather than re-shot by hand. "Another engine" includes the reporter's own side-by-side session: `quit --park --port P`
+before a GL-side run and `play --unpark --port P` afterwards (`fua-side-by-side`), never by process name.
 
 When the fault is a Vulkan switch rather than a GL difference, pass `sides`: two named launches, each
 with the cvars it sets and any `commands` to run after them (`fua_mapbake_now` re-bakes with a bake
 cvar changed), compared Vulkan against Vulkan. `scenarios/pointlight.mjs` compares
 `fua_dg_clusters 0` against `1`, which match exactly once fixed, so its ceiling is 0.05. With no GL side
 nothing is read back from a window, and the harness runs even with other engines open.
+A side with `frame: "gl"` keeps GL's half of a Vulkan launch's pair instead, where GL replays walls
+through the backend's wall mesh; `invertedback.mjs` compares that against GL alone.
 
 A box can name a `vantage`, when the vantages look at different parts of the frame. A model needs no
 assets: `kvxBox` and `voxelLumps` in `src/kvx.mjs` put a KVX voxel on every frame of a sprite.
@@ -165,6 +167,7 @@ Export the builder from the scenario; `runScenarioIfMain` keeps the import from 
 | `tools/fuactl/scenarios/skyboxopen.mjs` | a skybox room that is all sky (sky floor and ceiling, horizon walls) under a six-face GLDEFS skybox, GL against Vulkan |
 | `tools/fuactl/scenarios/skywallbelow.mjs` | a sky wall over a closed sky sector that starts below the eye, with a lit room behind it GL never walks, GL against Vulkan |
 | `tools/fuactl/scenarios/mirrorsky.mjs` | a mirror beside a window onto a low sky-roofed yard shallower than the player stands from the glass, so the sky GL sees through the window lies between the reflected eye and the mirror, GL against Vulkan |
+| `tools/fuactl/scenarios/invertedback.mjs` | a wall onto a sector whose floor is above its ceiling, GL alone against GL's frame from a Vulkan session (`frame: "gl"`): the backend's wall mesh must not change GL's picture |
 | `tools/fuactl/scenarios/watertint.mjs` | additive 3D-floor water whose control sector a puked script tints after the bake, over a grey pool floor, GL against Vulkan |
 | `tools/fuactl/scenarios/brightmap.mjs` | GLDEFS brightmaps on a wall and a sprite in a dark room, bindless against a binding per material; the brightmap PNG is a lump between `TX_START`/`TX_END` |
 | `tools/fuactl/scenarios/stackportal.mjs` | a ceiling that is a stacked sector (`UpperStackLookOnly`/`LowerStackLookOnly` paired by TID) onto a room off the map's side, GL against Vulkan |

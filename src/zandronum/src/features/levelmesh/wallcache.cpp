@@ -171,6 +171,7 @@ void AllocForLevel(int numsegs)
 		g_cache[i].filled = false;
 		g_cache[i].pieceCount = 0;
 		g_cache[i].bakedCount = 0;
+		g_cache[i].mapBaked = false;
 		for (int k = 0; k < kMaxMapPieces; k++)
 		{
 			g_cache[i].pieces[k].list = 0;
@@ -197,9 +198,10 @@ const MeshRange *StaticWallRange(int packedIndex)
 	const int seg = packedIndex / kMaxCachedPieces;
 	const int piece = packedIndex % kMaxCachedPieces;
 	if ((unsigned)seg >= g_cache.Size()) return NULL;
-	if (piece >= g_cache[seg].pieceCount) return NULL;
-	const MeshRange &r = g_cache[seg].pieces[piece].range;
-	return r.count ? &r : NULL;
+	const SegCache &sc = g_cache[seg];
+	// [rc4l] NULL draws the wall from its own captured vertices, which is what GL must show once the map bake's ranges sit in these slots.
+	if (!ComputeReplaysFromMesh(sc.mapBaked, piece, sc.pieceCount, sc.pieces[piece].range.count)) return NULL;
+	return &sc.pieces[piece].range;
 }
 
 // [rc4l] A wall piece into the mesh, filed under the sidedef it was baked from, since working it out again from where the piece lies picks a neighbour on a narrow wall (WDI14's painting wall).
@@ -315,6 +317,7 @@ void BakeSeg(int segIndex)
 	// Per SEG and not per level, because the map bake cannot do every seg -- see MapBakeOwnsSeg.
 	if (MapBakeOwnsSeg(segIndex)) return;
 	SegCache &sc = g_cache[segIndex];
+	sc.mapBaked = false;
 
 	static FFlatVertex fan[GLWall::MAX_BATCH_FAN_VERTICES];
 	static FFlatVertex tris[GLWall::MAX_BATCH_FAN_VERTICES * 3];
@@ -725,6 +728,7 @@ int BakeSegFromMap(int segIndex)
 	// One quad per sidedef -- see SegOwnsItsSide. Every other seg on it would build the same four
 	// corners again, in the same plane, and the two would stipple against each other.
 	if (!SegOwnsItsSide(segIndex)) return -1;
+	sc.mapBaked = true;
 
 	// [rc4l] A horizon line or a mirror is taken and left empty, since GL draws no wall on either -- see features/horizon and RenderMirrors.
 	if (zx::horizon::ComputeIsHorizonLine(seg->linedef->special) ||
@@ -1569,6 +1573,12 @@ int SegFate(int segIndex)
 	return g_segFate[segIndex];
 }
 
+const char *SegFateName(int fate)
+{
+	static const char *kName[] = { "never captured", "cached", "portal", "polyobject", "3D floor", "heightsec area", "other" };
+	return (fate >= SEG_UNSEEN && fate <= SEG_OTHER) ? kName[fate] : "?";
+}
+
 bool SegHasBakedGeometry(int segIndex)
 {
 	if (segIndex < 0 || (unsigned)segIndex >= g_cache.Size()) return false;
@@ -1865,13 +1875,11 @@ CCMD( fua_wallcache_census )
 		                       ( bs != NULL && bs->e != NULL && bs->e->XFloor.ffloors.Size() > 0 );
 		if ( touches3d ) { ffloorSegs++; if ( baked ) ffloorBaked++; }
 	}
-	static const char *kName[7] = { "never captured", "cached", "portal", "polyobject",
-	                                "3D floor", "heightsec area", "other" };
 	Printf( "wallcache census over %d drawable segs:\n", drawable );
 	for ( int i = 0; i < 7; i++ )
 		if ( fate[i] > 0 )
 			Printf( "  %-15s %5d segs (%4.1f%%), %5d with baked geometry (%4.1f%% of them)\n",
-					kName[i], fate[i], 100.0 * fate[i] / MAX( 1, drawable ),
+					zx::levelmesh::SegFateName( i ), fate[i], 100.0 * fate[i] / MAX( 1, drawable ),
 					bakedBy[i], 100.0 * bakedBy[i] / MAX( 1, fate[i] ) );
 	Printf( "  segs touching a 3D floor: %d, of which %d have baked geometry (%.1f%%)\n",
 			ffloorSegs, ffloorBaked, 100.0 * ffloorBaked / MAX( 1, ffloorSegs ) );

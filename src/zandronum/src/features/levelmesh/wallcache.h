@@ -122,6 +122,7 @@ struct SegCache
 	// 3D-floor slots take their light from an F3DFloor rather than the band list; a seg carrying any
 	// falls back to a full bake rather than growing a second rule here.
 	bool            hasOwnLitPiece;   // [rc4l] a fog boundary or a flooded gap, whose light is not in bandLight
+	bool            mapBaked;         // [rc4l] pieces[] holds the map bake's slots by part, not the captured walls in order (ComputeReplaysFromMesh)
 
 	// [rc4l] pieces[] must be cleared here, not left to whatever was in the memory.
 	//
@@ -132,7 +133,7 @@ struct SegCache
 	// offset in the new arena -- while never allocating space of its own. The map came up with walls
 	// missing and geometry smeared across the ones that survived, and only after a map CHANGE:
 	// launching straight into the same map was always fine, because the block started zeroed.
-	SegCache() : pieceCount(0), bakedCount(0), filled(false), hasOwnLitPiece(false)
+	SegCache() : pieceCount(0), bakedCount(0), filled(false), hasOwnLitPiece(false), mapBaked(false)
 	{
 		for (int i = 0; i < kMaxMapPieces; i++)
 		{
@@ -188,6 +189,8 @@ int GetAnimRefreshes();
 
 // [rc4l] Per-seg census: what became of this seg (see the SEG_* enum) and whether it baked anything.
 int  SegFate(int segIndex);
+// [rc4l] A SegFate as the census and fua_line print it.
+const char *SegFateName(int fate);
 bool SegHasBakedGeometry(int segIndex);
 void ResetStats();
 

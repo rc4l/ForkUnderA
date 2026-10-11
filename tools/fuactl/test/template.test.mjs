@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { judge, scenarioOutcome, isMain, sideCommands, boxWithin, runScenarioIfMain, scenarioOptions, scenarioRun, templateScenarioFiles, probeChoices } from "../src/template.mjs";
+import { judge, scenarioOutcome, isMain, sideCommands, boxWithin, runScenarioIfMain, scenarioOptions, scenarioRun, templateScenarioFiles, probeChoices, pairFrame } from "../src/template.mjs";
 import { pathToFileURL } from "node:url";
 import fs from "node:fs";
 import os from "node:os";
@@ -132,4 +132,11 @@ test("a box can be judged per pixel, where block means would hide a ripple", () 
   const frames = { pool: { before: stripes(0), after: stripes(1) } };
   assert.equal(judge("MAP01", frames, { water: { box: [0, 0, 1, 1], floor: 1 } }, [32, 32], ["before", "after"]).failed, 1);
   assert.equal(judge("MAP01", frames, { water: { box: [0, 0, 1, 1], floor: 1, block: 1 } }, [32, 32], ["before", "after"]).failed, 0);
+});
+
+// [rc4l] WDI18's mirror frame was wrong only in GL's half of a Vulkan session, where GL draws replayed walls from the backend's mesh.
+test("a Vulkan side keeps Vulkan's frame of the pair, or GL's when it asks for it", () => {
+  const pair = { gl: "a_gl.png", vk: "a_vk.png" };
+  assert.equal(pairFrame({ name: "vk" }, pair), "a_vk.png");
+  assert.equal(pairFrame({ name: "glmesh", frame: "gl" }, pair), "a_gl.png");
 });

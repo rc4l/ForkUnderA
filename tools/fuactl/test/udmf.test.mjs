@@ -303,3 +303,13 @@ test("the water-tint template's additive water is tinted by closed script 2, whi
   assert.equal(behavior.readInt32LE(behavior.readInt32LE(4) + 4), 2, "closed, so it runs only when puked");
   assert.ok(SIDES.length === 2 && SIDES.every((s) => s.commands.includes("puke 2")));
 });
+
+test("the inverted-back template's strip has its floor above its ceiling, which meets the room's ceiling, and a red wall behind", async () => {
+  const { buildInvertedBackWad, SIDES } = await import("../scenarios/invertedback.mjs");
+  const [u] = textmaps(buildInvertedBackWad());
+  const [room, inverted] = u.sector;
+  assert.ok(inverted.heightfloor > inverted.heightceiling, "floor above ceiling");
+  assert.equal(inverted.heightfloor, room.heightceiling, "so GL draws no top on the wall between them");
+  assert.ok(u.sidedef.some((s) => s.texturemiddle === "REDWALL"));
+  assert.deepEqual(SIDES.map((s) => s.frame || (s.gl ? "gl alone" : "vk")), ["gl alone", "gl"]);
+});
