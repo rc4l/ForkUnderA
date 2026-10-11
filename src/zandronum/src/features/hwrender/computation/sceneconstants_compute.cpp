@@ -21,7 +21,8 @@ void ComputeSceneConstants(const SceneConstantInputs &in, float *out)
 	out[35] = in.materialSlots;
 	out[36] = ComputeWarpTimer(in.frameMS, 1.f);
 	out[37] = (float)(in.stackSlot + 1);
-	out[38] = out[39] = 0.f;
+	out[38] = in.playerPass ? (float)in.skyHoles : 0.f;
+	out[39] = 0.f;
 }
 
 }} // namespace zx::hwrender

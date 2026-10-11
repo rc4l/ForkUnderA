@@ -181,13 +181,47 @@ bool ComputeTakesSkyViewpoint(int list, bool haveOne)
 
 int ComputeStackVisWords(int ids)
 {
-	return (ids * kMaxStackViews + 31) / 32;
+	return (ids * kWalkSlots + 31) / 32;
 }
 
 void ComputeMarkStackVisible(unsigned int *bits, int id, int slot)
 {
-	const int bit = id * kMaxStackViews + slot;
+	const int bit = id * kWalkSlots + slot;
 	bits[bit >> 5] |= 1u << (bit & 31);
+}
+
+int ComputeWalkSlot(bool stackWalk, int stackSlot, bool playerWalk)
+{
+	if (stackWalk) return stackSlot;
+	return playerWalk ? kMainWalkSlot : -1;
+}
+
+void ComputeSkyHoleRecord(float x1, float y1, float x2, float y2, const float *zfloor, const float *zceil, float *out)
+{
+	out[0] = x1; out[1] = y1; out[2] = x2; out[3] = y2;
+	out[4] = zfloor[0]; out[5] = zceil[0]; out[6] = zfloor[1]; out[7] = zceil[1];
+}
+
+bool ComputeSkyHoleToShader(int list, int held)
+{
+	return list == kSkyCaptureMain && held < kMaxSkyHoles;
+}
+
+bool ComputeBehindSkyHole(const float *eye, const float *p, const float *hole)
+{
+	// [rc4l] The scene shader's fuaBehindSkyHole line for line: where the map-plane line from the eye to p meets the hole's wall, as fractions along each.
+	const float dx = p[0] - eye[0], dy = p[2] - eye[2];
+	const float ex = hole[2] - hole[0], ey = hole[3] - hole[1];
+	const float den = dx * ey - dy * ex;
+	if (fabsf(den) < 1e-6f) return false;
+	const float wx = hole[0] - eye[0], wy = hole[1] - eye[2];
+	const float t = (wx * ey - wy * ex) / den;
+	const float s = (wx * dy - wy * dx) / den;
+	// [rc4l] Short of 1 by a hair, so what stands on the hole's own line is not behind it.
+	if (s < 0.f || s > 1.f || t <= 0.f || t >= 0.9999f) return false;
+	const float h = eye[1] + t * (p[1] - eye[1]);
+	const float bottom = hole[4] + s * (hole[6] - hole[4]), top = hole[5] + s * (hole[7] - hole[5]);
+	return h >= bottom && h <= top;
 }
 
 bool ComputeMidTextureTranslucent(float lineAlpha, bool additive, bool textureTransparent)
@@ -227,7 +261,7 @@ void ComputeStackCapCorner(bool ceiling, int corner, float &x, float &y, float &
 
 bool ComputeStackVisible(const unsigned int *bits, int words, int id, int slot)
 {
-	const int bit = id * kMaxStackViews + slot;
+	const int bit = id * kWalkSlots + slot;
 	if (bits == nullptr || id < 0 || (bit >> 5) >= words) return false;
 	return (bits[bit >> 5] & (1u << (bit & 31))) != 0;
 }

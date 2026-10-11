@@ -11,7 +11,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { launchInstance, stopInstance, describeExit } from "./launch.mjs";
-import { sessionFileFor, clearPortSessions } from "./shot.mjs";
+import { sessionFileFor, clearPortSessions, standAt, holdingLaunchFile } from "./shot.mjs";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -171,10 +171,16 @@ export async function verifyWorld(c, { exec }) {
 
 export async function play(opts = {}) {
   const port = opts.port || 7900;
+  if (!opts.sessionFile) return launchChecked(opts, port);
+  clearPortSessions(opts.sessionFile, port);
+  return holdingLaunchFile(opts.sessionFile, port, () => launchChecked(opts, port));
+}
+
+// [rc4l] play's launch, its world checked and the player stood at its camera, with its session files written once it is.
+async function launchChecked(opts, port) {
   const files = opts.preset
     ? resolvePreset(opts.catalogueDir, opts.storeDir, opts.preset, opts.variant)
     : (opts.file ? String(opts.file).split(",").map((s) => s.trim()) : []);
-  if (opts.sessionFile) clearPortSessions(opts.sessionFile, port);
 
   const inst = await launchInstance({
     port,
@@ -216,7 +222,7 @@ export async function play(opts = {}) {
     for (const ch of CHEATS) cheats.push(await ensureCheat(c, ch, cap));
     world = { cheats, cvars: await verifyWorld(c, cap) };
     // [rc4l] opts.at (x, y, z, angle, pitch) stands the player there before anyone is told the instance is up.
-    if (opts.at) await c.rpc("player.setpos", { x: opts.at.x, y: opts.at.y, z: opts.at.z, angle: opts.at.angle, pitch: opts.at.pitch || 0 });
+    if (opts.at) await standAt(c, opts.at);
   } finally { c.close(); }
   inst.world = world;
 

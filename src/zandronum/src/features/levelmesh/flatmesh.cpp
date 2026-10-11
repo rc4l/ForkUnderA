@@ -698,6 +698,8 @@ static AActor *g_skyViewpoint = NULL;
 // [rc4l] One list per view the backend draws, indexed by the kSkyCapture* lists, and the one the walk in progress fills.
 static TArray<FFlatVertex> g_skyVerts[kSkyCaptureLists];
 static int g_skyList = kSkyCaptureNone;
+// [rc4l] The player's walk's sky holes this frame, kSkyHoleFloats each, for the scene shader.
+static TArray<float> g_skyHoles;
 
 // [rc4l] What each sprite piece was registered WITH, for one frame, so a seam can be read off
 // numbers instead of guessed at from a screenshot.
@@ -805,11 +807,11 @@ static int StackWalkSlot()
 
 int StackCaptureSlot() { return ComputeStackCaptureSlot(s_mainView, s_sceneNesting, StackWalkSlot()); }
 
-// [rc4l] Marks an id for the stacked view being walked, if a stacked view is what is being walked.
+// [rc4l] Marks an id for the walk in progress: a stacked view's, or the player's own, which a sky hole lets through what it drew.
 static void NoteWalked(int id)
 {
-	if (s_stackWalk == NULL || g_stackVis.Size() == 0) return;
-	const int slot = StackCaptureSlot();
+	if (g_stackVis.Size() == 0) return;
+	const int slot = ComputeWalkSlot(s_stackWalk != NULL, StackCaptureSlot(), PlayerWalkActive());
 	if (slot < 0 || id < 0 || id >= numsubsectors + numsides) return;
 	ComputeMarkStackVisible(&g_stackVis[0], id, slot);
 }
@@ -818,8 +820,14 @@ void NoteWalkedSide(int side) { if (side >= 0 && side < numsides) NoteWalked(num
 
 const unsigned int *StackVisibility(int &words)
 {
-	words = (g_stackUsed > 0) ? (int)g_stackVis.Size() : 0;
+	words = (g_stackUsed > 0 || g_skyHoles.Size() > 0) ? (int)g_stackVis.Size() : 0;
 	return words ? &g_stackVis[0] : NULL;
+}
+
+const float *SkyHoles(int &count)
+{
+	count = (int)g_skyHoles.Size() / kSkyHoleFloats;
+	return count ? &g_skyHoles[0] : NULL;
 }
 
 int PieceStackId(const MeshPiece &p)
@@ -898,6 +906,7 @@ int BeginSkyWalk()
 	if (g_skyList == kSkyCaptureMain)
 	{
 		g_skyViewpoint = NULL;
+		g_skyHoles.Clear();
 		g_stackUsed = 0;
 		g_walkedMirrors.Clear();
 		g_mirrorSheens.Clear();
@@ -949,6 +958,16 @@ CCMD( fua_sprite_sweep )
 }
 int SpritePieceCount() { return g_spritesThisFrame; }
 
+// [rc4l] One quad of the wall between heights zb and zt at its two ends into the sky list GL's walk is filling, a list of its own because GL's skybox re-entry clears the dynamic stream with DynClear.
+static void PushSkyQuad(const GLWall &wall, const float *zb, const float *zt)
+{
+	if (zt[0] <= zb[0] && zt[1] <= zb[1]) return;
+	FFlatVertex q[6];
+	MakeWallQuad(q, wall.glseg.x1, wall.glseg.y1, wall.glseg.x2, wall.glseg.y2, zb, zt);
+	for (int k = 0; k < 6; k++) g_skyVerts[g_skyList].Push(q[k]);
+	g_skyQuadsCaptured++;
+}
+
 // [rc4l] A sky quad, as GEOMETRY, taken from GL as it emits it.
 //
 // GL paints its sky through a stencil built from these, so anything further away than one is
@@ -970,13 +989,21 @@ void RegisterSkyQuad(const GLWall &wall, AActor *viewpoint)
 	if (zx::horizon::HorizonsActive() && wall.seg != NULL && wall.seg->linedef != NULL &&
 	    zx::horizon::ComputeIsHorizonLine(wall.seg->linedef->special)) return;
 
-	if (wall.ztop[0] <= wall.zbottom[0] && wall.ztop[1] <= wall.zbottom[1]) return;
+	PushSkyQuad(wall, wall.zbottom, wall.ztop);
+}
 
-	// [rc4l] A list of their own, not the dynamic stream, which GL's skybox re-entry clears with DynClear.
-	FFlatVertex q[6];
-	MakeWallQuad(q, wall.glseg.x1, wall.glseg.y1, wall.glseg.x2, wall.glseg.y2, wall.zbottom, wall.ztop);
-	for (int k = 0; k < 6; k++) g_skyVerts[g_skyList].Push(q[k]);
-	g_skyQuadsCaptured++;
+void RegisterSkyHole(const GLWall &wall)
+{
+	if (!fua_mesh_sky || g_skyList == kSkyCaptureNone) return;
+	// [rc4l] The player's own go to the scene shader, which drops only what GL's walk did not draw behind them; another view's, or one past the shader's room, still paints sky over everything behind it.
+	if (ComputeSkyHoleToShader(g_skyList, (int)g_skyHoles.Size() / kSkyHoleFloats))
+	{
+		float rec[kSkyHoleFloats];
+		ComputeSkyHoleRecord(wall.glseg.x1, wall.glseg.y1, wall.glseg.x2, wall.glseg.y2, wall.zfloor, wall.zceil, rec);
+		for (int i = 0; i < kSkyHoleFloats; i++) g_skyHoles.Push(rec[i]);
+		return;
+	}
+	PushSkyQuad(wall, wall.zfloor, wall.zceil);
 }
 
 void MakeWallQuad(FFlatVertex *out6, float x1, float y1, float x2, float y2,

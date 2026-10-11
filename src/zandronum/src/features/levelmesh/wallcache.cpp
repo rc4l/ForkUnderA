@@ -1386,7 +1386,7 @@ void RecordPiece(const GLWall &wall, int list)
 
 void NoteUnreplayable()
 {
-	// [rc4l] A portal wall goes to the portal manager and a missing texture to the fill hack, both per-frame state a replay never rebuilds, so such a seg is processed every frame, sticky for the level.
+	// [rc4l] A portal wall goes to the portal manager, a missing texture to the fill hack and a bare one-sided wall to the sky list, all per-frame state a replay never rebuilds, so such a seg is processed every frame, sticky for the level.
 	if (g_captureSeg < 0) return;
 	g_sawPortal = true;
 }

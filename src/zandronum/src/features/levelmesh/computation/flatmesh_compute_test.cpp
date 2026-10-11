@@ -542,17 +542,18 @@ TEST(FlatMeshCompute, WhatAMirrorsWalkDrawsBelongsToThatMirror)
 TEST(FlatMeshCompute, AStackedViewMarksEachSubsectorItsWalkReached)
 {
 	EXPECT_EQ(0, ComputeStackVisWords(0));
-	EXPECT_EQ(1, ComputeStackVisWords(16));
-	EXPECT_EQ(2, ComputeStackVisWords(17));
+	EXPECT_EQ(1, ComputeStackVisWords(10));
+	EXPECT_EQ(2, ComputeStackVisWords(11));
 	unsigned int bits[2] = { 0u, 0u };
 	ComputeMarkStackVisible(bits, 0, 1);
 	ComputeMarkStackVisible(bits, 16, 0);
 	ComputeMarkStackVisible(bits, 16, 0);
-	EXPECT_EQ(2u, bits[0]);     // [rc4l] subsector 0, second view
-	EXPECT_EQ(1u, bits[1]);     // [rc4l] subsector 16, first view, set once
+	EXPECT_EQ(2u, bits[0]);              // [rc4l] subsector 0, second view
+	EXPECT_EQ(1u << 16, bits[1]);        // [rc4l] subsector 16, first view, set once
 	EXPECT_TRUE(ComputeStackVisible(bits, 2, 0, 1));
 	EXPECT_FALSE(ComputeStackVisible(bits, 2, 0, 0));
 	EXPECT_TRUE(ComputeStackVisible(bits, 2, 16, 0));
+	EXPECT_FALSE(ComputeStackVisible(bits, 2, 16, kMainWalkSlot));
 	EXPECT_FALSE(ComputeStackVisible(bits, 2, 40, 0));        // [rc4l] past the words
 	EXPECT_FALSE(ComputeStackVisible(bits, 2, -1, 0));
 	EXPECT_FALSE(ComputeStackVisible(nullptr, 2, 0, 1));
@@ -739,4 +740,64 @@ TEST(FlatMeshCompute, APlaneTakesTheBandLightByProcessSectorsRule)
 	EXPECT_FALSE(ComputePlaneTakesBandLight(true, true, false, false));
 	EXPECT_FALSE(ComputePlaneTakesBandLight(false, true, true, false));
 	EXPECT_TRUE(ComputePlaneTakesBandLight(false, true, false, false));
+}
+
+// [rc4l] WDI18's forest: the player's walk marks its own slot, a stacked view's walk its view's, and a camera's or a mirror's none.
+TEST(FlatMeshCompute, EachWalkMarksItsOwnSlot)
+{
+	EXPECT_EQ(1, ComputeWalkSlot(true, 1, false));
+	EXPECT_EQ(-1, ComputeWalkSlot(true, -1, true));     // [rc4l] a stacked view no slot took
+	EXPECT_EQ(kMainWalkSlot, ComputeWalkSlot(false, -1, true));
+	EXPECT_EQ(-1, ComputeWalkSlot(false, -1, false));
+	unsigned int bits[1] = { 0u };
+	ComputeMarkStackVisible(bits, 1, kMainWalkSlot);
+	EXPECT_TRUE(ComputeStackVisible(bits, 1, 1, kMainWalkSlot));
+	EXPECT_FALSE(ComputeStackVisible(bits, 1, 1, 0));
+}
+
+// [rc4l] The player's walk's holes go to the scene shader until it is full, and a stacked view's or a camera's are painted as sky.
+TEST(FlatMeshCompute, OnlyThePlayersSkyHolesGoToTheShader)
+{
+	EXPECT_TRUE(ComputeSkyHoleToShader(kSkyCaptureMain, 0));
+	EXPECT_TRUE(ComputeSkyHoleToShader(kSkyCaptureMain, kMaxSkyHoles - 1));
+	EXPECT_FALSE(ComputeSkyHoleToShader(kSkyCaptureMain, kMaxSkyHoles));
+	EXPECT_FALSE(ComputeSkyHoleToShader(kSkyCaptureStack, 0));
+	EXPECT_FALSE(ComputeSkyHoleToShader(kSkyCaptureCamera, 0));
+}
+
+// [rc4l] WDI18's linedef 14495: a pillar beyond a bare one-sided wall is behind its hole, the yard in front of it and anything over, under or beside the hole's span is not.
+TEST(FlatMeshCompute, APointIsBehindASkyHoleOnlyThroughItsSpan)
+{
+	const float zfloor[2] = { 0.f, 0.f }, zceil[2] = { 256.f, 128.f };
+	float hole[kSkyHoleFloats];
+	ComputeSkyHoleRecord(0.f, 512.f, 768.f, 512.f, zfloor, zceil, hole);
+	EXPECT_EQ(768.f, hole[2]); EXPECT_EQ(512.f, hole[3]);
+	EXPECT_EQ(0.f, hole[4]); EXPECT_EQ(256.f, hole[5]); EXPECT_EQ(128.f, hole[7]);
+	const float eye[3] = { 384.f, 41.f, 256.f };            // [rc4l] mesh space: map x, height, map y
+	const float pillar[3] = { 384.f, 32.f, 800.f };
+	const float yard[3] = { 384.f, 0.f, 400.f };
+	const float onTheLine[3] = { 384.f, 32.f, 512.f };
+	const float overIt[3] = { 384.f, 2000.f, 800.f };
+	const float underIt[3] = { 384.f, -2000.f, 800.f };
+	const float pastItsEnd[3] = { 1500.f, 32.f, 800.f };
+	const float pastItsStart[3] = { -800.f, 32.f, 800.f };
+	const float behindTheEye[3] = { 384.f, 32.f, -400.f };
+	EXPECT_TRUE(ComputeBehindSkyHole(eye, pillar, hole));
+	EXPECT_FALSE(ComputeBehindSkyHole(eye, yard, hole));
+	EXPECT_FALSE(ComputeBehindSkyHole(eye, onTheLine, hole));
+	EXPECT_FALSE(ComputeBehindSkyHole(eye, overIt, hole));
+	EXPECT_FALSE(ComputeBehindSkyHole(eye, underIt, hole));
+	EXPECT_FALSE(ComputeBehindSkyHole(eye, pastItsEnd, hole));
+	EXPECT_FALSE(ComputeBehindSkyHole(eye, pastItsStart, hole));
+	EXPECT_FALSE(ComputeBehindSkyHole(eye, behindTheEye, hole));
+	// [rc4l] The ceiling falls from 256 to 128 along the wall, so a point seen high through its low end passes over it.
+	const float lowEndHigh[3] = { 700.f, 400.f, 800.f };
+	const float highEndHigh[3] = { 64.f, 400.f, 800.f };
+	EXPECT_FALSE(ComputeBehindSkyHole(eye, lowEndHigh, hole));
+	EXPECT_TRUE(ComputeBehindSkyHole(eye, highEndHigh, hole));
+	// [rc4l] A line from the eye running along the wall never meets it.
+	const float alongIt[kSkyHoleFloats] = { 100.f, 0.f, 100.f, 512.f, 0.f, 256.f, 0.f, 256.f };
+	const float eye2[3] = { 100.f, 41.f, -100.f };
+	const float ahead[3] = { 100.f, 41.f, 900.f };
+	EXPECT_FALSE(ComputeBehindSkyHole(eye2, ahead, alongIt));
 }

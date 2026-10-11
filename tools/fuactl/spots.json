@@ -1818,6 +1818,152 @@
         "fua_dg_skyportal": "true",
         "gl_wallmesh": "true"
       }
+    },
+    "q29-x-ray-still-possible": {
+      "map": "WDI18",
+      "x": -714.74,
+      "y": 3909.522,
+      "z": 48,
+      "angle": 77.6952,
+      "pitch": 1.2305,
+      "shows": "x-ray still possible on Vulkan at this angle, not on GL; screenshot (Vulkan): a starry night sky with level geometry floating in it, a block of dark walls, a floor slab with a jagged edge and a crate, seen through where GL shows sky or wall",
+      "loaded": {
+        "iwad": "doom2.wad",
+        "pwads": [
+          "skulltag_content-3.2-beta2.pk3 41630bc75af4b51fe5d163fe4d434c6e",
+          "whodunit_fixed2.pk3 fc8afa7358c2c2b38614ee74a07a719f",
+          "wdi_expack_1a.pk3 0448efffc27d8105b1ae1172c14c794e",
+          "wdi_bigpackv3.9test.pk3 d642da865b0addd46ccfab34ef0fffd8",
+          "wdi_bigpackv3.9testfixsv1.pk3 2617768e95f3fdd36413a056e023d11e",
+          "wdi_touchupv9.11.wad 2ccc1f88f1160cd503fb790e63da9c9c",
+          "wdibeta_phobos_outpostd1.pk3 b22505cd5ce4152b8c8e9a6b62bb7484",
+          "wdi_random_crate_1b.pk3 408d20d4afaead2d15c9df1e46c9825c",
+          "wdi_scoreboard_fix.wad 26ee8a0515d71a2cc0ffea94a7ccfbbc"
+        ]
+      },
+      "renderer": {
+        "fua_vulkan": "true",
+        "fua_dg_standalone": "false",
+        "fua_dg_embed": "false",
+        "fua_dg_skyportal": "true",
+        "gl_wallmesh": "true"
+      }
+    },
+    "q30-from-this-point-gl": {
+      "map": "WDI18",
+      "x": -249.737,
+      "y": -2312.588,
+      "z": -56,
+      "angle": 298.828,
+      "pitch": 1.4942,
+      "shows": "from this point GL shows x-ray but Vulkan does not; user is not sure which renderer is wrong; screenshot (GL): starry night sky filling the view, with trees, bushes and a flat umbrella-like canopy floating in it on a thin dark ground line, as if seen through the level",
+      "loaded": {
+        "iwad": "doom2.wad",
+        "pwads": [
+          "skulltag_content-3.2-beta2.pk3 41630bc75af4b51fe5d163fe4d434c6e",
+          "whodunit_fixed2.pk3 fc8afa7358c2c2b38614ee74a07a719f",
+          "wdi_expack_1a.pk3 0448efffc27d8105b1ae1172c14c794e",
+          "wdi_bigpackv3.9test.pk3 d642da865b0addd46ccfab34ef0fffd8",
+          "wdi_bigpackv3.9testfixsv1.pk3 2617768e95f3fdd36413a056e023d11e",
+          "wdi_touchupv9.11.wad 2ccc1f88f1160cd503fb790e63da9c9c",
+          "wdibeta_phobos_outpostd1.pk3 b22505cd5ce4152b8c8e9a6b62bb7484",
+          "wdi_random_crate_1b.pk3 408d20d4afaead2d15c9df1e46c9825c",
+          "wdi_scoreboard_fix.wad 26ee8a0515d71a2cc0ffea94a7ccfbbc"
+        ]
+      },
+      "renderer": {
+        "fua_vulkan": "true",
+        "fua_dg_standalone": "false",
+        "fua_dg_embed": "false",
+        "fua_dg_skyportal": "true",
+        "gl_wallmesh": "true"
+      }
+    },
+    "q30b-another-angle": {
+      "map": "WDI18",
+      "x": 1103.027,
+      "y": -2303.787,
+      "z": -56,
+      "angle": 6.8554,
+      "pitch": -1.7578,
+      "shows": "another angle of #30 (GL x-ray, Vulkan none, unsure which is wrong); screenshot (GL): a huge moon in the night sky with a dark green-black wedge (a floating floor or canopy fragment) hanging in front of it, trees and bushes standing on a dim ground line below",
+      "loaded": {
+        "iwad": "doom2.wad",
+        "pwads": [
+          "skulltag_content-3.2-beta2.pk3 41630bc75af4b51fe5d163fe4d434c6e",
+          "whodunit_fixed2.pk3 fc8afa7358c2c2b38614ee74a07a719f",
+          "wdi_expack_1a.pk3 0448efffc27d8105b1ae1172c14c794e",
+          "wdi_bigpackv3.9test.pk3 d642da865b0addd46ccfab34ef0fffd8",
+          "wdi_bigpackv3.9testfixsv1.pk3 2617768e95f3fdd36413a056e023d11e",
+          "wdi_touchupv9.11.wad 2ccc1f88f1160cd503fb790e63da9c9c",
+          "wdibeta_phobos_outpostd1.pk3 b22505cd5ce4152b8c8e9a6b62bb7484",
+          "wdi_random_crate_1b.pk3 408d20d4afaead2d15c9df1e46c9825c",
+          "wdi_scoreboard_fix.wad 26ee8a0515d71a2cc0ffea94a7ccfbbc"
+        ]
+      },
+      "renderer": {
+        "fua_vulkan": "true",
+        "fua_dg_standalone": "false",
+        "fua_dg_embed": "false",
+        "fua_dg_skyportal": "true",
+        "gl_wallmesh": "true"
+      }
+    },
+    "q32-this-tv-does-not": {
+      "map": "WDI20",
+      "x": 1568.227,
+      "y": 1062.335,
+      "z": 16,
+      "angle": 157.1484,
+      "pitch": 1.1426,
+      "shows": "this TV does not show what GL shows (user: Vulkan bug); screenshot (Vulkan): a wall-mounted TV whose screen is a plain dark blue-black panel with three thin grey vertical lines, a shotgun shell on the shelf below, where GL presumably shows a picture (a camera texture or animated screen)",
+      "loaded": {
+        "iwad": "doom2.wad",
+        "pwads": [
+          "skulltag_content-3.2-beta2.pk3 41630bc75af4b51fe5d163fe4d434c6e",
+          "whodunit_fixed2.pk3 fc8afa7358c2c2b38614ee74a07a719f",
+          "wdi_expack_1a.pk3 0448efffc27d8105b1ae1172c14c794e",
+          "wdi_bigpackv3.9test.pk3 d642da865b0addd46ccfab34ef0fffd8",
+          "wdi_bigpackv3.9testfixsv1.pk3 2617768e95f3fdd36413a056e023d11e",
+          "wdi_touchupv9.11.wad 2ccc1f88f1160cd503fb790e63da9c9c",
+          "wdibeta_phobos_outpostd1.pk3 b22505cd5ce4152b8c8e9a6b62bb7484",
+          "wdi_random_crate_1b.pk3 408d20d4afaead2d15c9df1e46c9825c",
+          "wdi_scoreboard_fix.wad 26ee8a0515d71a2cc0ffea94a7ccfbbc"
+        ]
+      },
+      "renderer": {
+        "fua_vulkan": "true",
+        "fua_dg_standalone": "false",
+        "fua_dg_embed": "false",
+        "fua_dg_skyportal": "true",
+        "gl_wallmesh": "true"
+      }
+    },
+    "q33-on-this-map-on": {
+      "map": "MAP03",
+      "x": 2146.001,
+      "y": 3533.73,
+      "z": 0,
+      "angle": 330.4688,
+      "pitch": 19.5996,
+      "shows": "on this map, on Vulkan, monsters moving around render a white quad for a very short split frame; GL fine; user suspects a regression. No screenshot.",
+      "loaded": {
+        "iwad": "doom2.wad",
+        "pwads": [
+          "aow2.3_data_r260606.pk3 11109c8541a6b9b3982545d8ab79f986",
+          "aow2.3_code_r260606.pk3 46a08cbad4e08a795581e46ec97656c6",
+          "aow2.3_maps_r230122.pk3 273e4b7c31f825519acc9f9e25ff97cb",
+          "aow2.3_music_r230122.pk3 cca3692aabebc42d830a4f79737e2eee",
+          "aow2.3_patch_r260606.pk3 6675a80ed21d43e7bd101ef68166dc15"
+        ]
+      },
+      "renderer": {
+        "fua_vulkan": "true",
+        "fua_dg_standalone": "false",
+        "fua_dg_embed": "false",
+        "fua_dg_skyportal": "true",
+        "gl_wallmesh": "true"
+      }
     }
   }
 }

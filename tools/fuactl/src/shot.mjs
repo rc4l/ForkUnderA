@@ -73,6 +73,30 @@ export function clearPortSessions(sessionFile, port) {
   return gone;
 }
 
+// [rc4l] The file a play launch on port holds while it checks its world, naming the fuactl process doing it (gitignored with the session files).
+export function launchFileFor(sessionFile, port) { return `${sessionFileFor(sessionFile, port)}.launching`; }
+
+// [rc4l] Runs fn with port's launch file held, so a command started meanwhile waits for it (awaitLaunch) instead of knocking it off the bridge.
+export async function holdingLaunchFile(sessionFile, port, fn, pid = process.pid) {
+  const file = launchFileFor(sessionFile, port);
+  fs.writeFileSync(file, `PORT=${port}\nPID=${pid}\n`);
+  try { return await fn(); } finally { fs.rmSync(file, { force: true }); }
+}
+
+// [rc4l] Whether a launch file names a launch still running, since one left by a killed launch names a dead process.
+export function launchInProgress(file, isAlive = pidAlive) {
+  const s = readSession(file);
+  return !!(s && s.pid && isAlive(s.pid));
+}
+
+// [rc4l] Waits up to timeoutMs while a launch checks its world on port, because the bridge serves only its newest client and connecting then killed the launch with "hello timeout"; true if it waited.
+export async function awaitLaunch(sessionFile, port, { timeoutMs = 120000, pollMs = 250, isAlive = pidAlive } = {}) {
+  const file = launchFileFor(sessionFile, port);
+  let waited = false;
+  for (const deadline = Date.now() + timeoutMs; launchInProgress(file, isAlive) && Date.now() < deadline; waited = true) await sleep(pollMs);
+  return waited;
+}
+
 // [rc4l] The spot name `quit --park` files an instance under, in its own file beside the session file (gitignored with it).
 export const PARKED = "parked";
 export function parkFileFor(sessionFile, port) { return `${sessionFileFor(sessionFile, port)}.park`; }
@@ -160,10 +184,22 @@ export function sweepDirFor(engineBin) {
 }
 
 // [rc4l] Stand the player at a camera with the sim running, so the view and everything it sees settle there.
+// [rc4l] Stand the player at at, and when the engine refuses the spot as solid or occupied stand there anyway, saying so: a spot saved beside a monster or a door failed whole launches and every shot without --force.
+export async function standAt(c, at, log = console.error) {
+  const pos = { x: at.x, y: at.y, z: at.z, angle: at.angle, pitch: at.pitch || 0, ...(at.force ? { force: 1 } : {}) };
+  try {
+    await c.rpc("player.setpos", pos);
+  } catch (e) {
+    if (at.force || !/solid or occupied/.test(String(e && e.message))) throw e;
+    log("the spot is solid or occupied -- standing there anyway");
+    await c.rpc("player.setpos", { ...pos, force: 1 });
+  }
+}
+
 export async function moveTo(c, at) {
   await c.rpc("sim.resume", {}).catch(() => {});
   await waitTics(c, 10);
-  await c.rpc("player.setpos", { x: at.x, y: at.y, z: at.z, angle: at.angle, pitch: at.pitch || 0, ...(at.force ? { force: 1 } : {}) });
+  await standAt(c, at);
   await waitTics(c, 10);
 }
 

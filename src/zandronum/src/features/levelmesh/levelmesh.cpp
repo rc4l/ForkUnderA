@@ -1603,9 +1603,12 @@ CCMD( fua_sector_lights )
 	Printf( "sector %d: %u lights, %u 3D floors, own light %d\n", s, ll.Size( ), sec.e->XFloor.ffloors.Size( ), sec.lightlevel );
 	// [rc4l] Each plane's own light, which GL keeps over a 3D floor's band when it is absolute or the band is the sector's own, and the sector's colour.
 	const PalEntry own = sec.ColorMap != NULL ? sec.ColorMap->Color : PalEntry( 0 );
-	Printf( "  floor light %d%s, ceiling light %d%s, sector colour %02x%02x%02x, heightsec %d\n",
+	// [rc4l] With the colour's alpha (GL's blend factor), its desaturation and its fade, what gl_CalcLightColor and gl_SetFog read beside it.
+	const PalEntry fade = sec.ColorMap != NULL ? sec.ColorMap->Fade : PalEntry( 0 );
+	Printf( "  floor light %d%s, ceiling light %d%s, sector colour %02x%02x%02x blend %d desaturate %d fade %02x%02x%02x, heightsec %d\n",
 		sec.GetFloorLight( ), ( sec.GetFlags( sector_t::floor ) & PLANEF_ABSLIGHTING ) ? " (absolute)" : "",
 		sec.GetCeilingLight( ), ( sec.GetFlags( sector_t::ceiling ) & PLANEF_ABSLIGHTING ) ? " (absolute)" : "", own.r, own.g, own.b,
+		own.a, sec.ColorMap != NULL ? sec.ColorMap->Desaturate : 0, fade.r, fade.g, fade.b,
 		sec.heightsec != NULL ? sec.heightsec->sectornum : -1 );
 	for ( unsigned i = 0; i < ll.Size( ); i++ )
 	{
@@ -1618,6 +1621,15 @@ CCMD( fua_sector_lights )
 			ll[i].p_lightlevel == &sec.lightlevel ? " (own)" : "", c.r, c.g, c.b, ll[i].flags,
 			ll[i].caster != NULL ? "a 3D floor, control sector" : "none", model );
 	}
+}
+
+// [rc4l] Recolour a sector as a script's Sector_SetColor does, to watch which renderer follows it.
+CCMD( fua_sector_color )
+{
+	if ( argv.argc( ) < 5 ) { Printf( "usage: fua_sector_color <sector> <r> <g> <b>\n" ); return; }
+	const int s = atoi( argv[1] );
+	if ( s < 0 || s >= numsectors ) { Printf( "no sector %d: the map has %d\n", s, numsectors ); return; }
+	sectors[s].SetColor( atoi( argv[2] ), atoi( argv[3] ), atoi( argv[4] ), sectors[s].ColorMap != NULL ? sectors[s].ColorMap->Desaturate : 0 );
 }
 
 CCMD( fua_light )

@@ -54,7 +54,8 @@ its full spot record.
    since a fault only one shows is a level-change bug. Check it is the fault they reported and not a
    cousin, and pin it to a pixel: `look --spot <spot> --pixel x,y` names the surface (and, under a
    floor, its subsector, sectors, textures and linked lights); `png --px`, `png --boxdiff` and
-   `png --diffimg` compare captures (`reproducing-a-report`). For what moves, or a light a paused
+   `png --diffimg` compare captures (`reproducing-a-report`), and `sector-of --pixel x,y --side gl` names the
+   sector whose colour a pixel follows (it repaints the map, so only in your own instance). For what moves, or a light a paused
    `shot` can hide, `burst <tag> --side gl|vk --box ...` takes timed captures with the sim running.
 3. **Bisect before theorising.** Flip render cvars inside one paused frame (`ab <cvar> a b --spot`),
    switch features off (`fua_dg_*`), and run the old staged binary against your build. Read how GL

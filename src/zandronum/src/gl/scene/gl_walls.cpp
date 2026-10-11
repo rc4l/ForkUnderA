@@ -1603,6 +1603,12 @@ void GLWall::Process(seg_t *seg, sector_t * frontsector, sector_t * backsector)
 							  (int)(realfront->GetPlaneTexZ(sector_t::ceiling)),(int)(realfront->GetPlaneTexZ(sector_t::floor)),	// must come from the original!
 							  (int)(fch1),(int)(fch2),(int)(ffh1),(int)(ffh2),0);
 		}
+		// [rc4l] features/levelmesh: an untextured one-sided wall shows the sky GL fills the screen with first, so the backend drops what this walk did not draw behind it, registered every frame and so never replayed.
+		else
+		{
+			zx::levelmesh::NoteUnreplayable();
+			zx::levelmesh::RegisterSkyHole(*this);
+		}
 	}
 	else // two sided
 	{

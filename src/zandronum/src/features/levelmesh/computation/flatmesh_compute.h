@@ -159,6 +159,9 @@ PlaneUVAffine ComputePlaneUVAffine(const PlaneUVTransform &t);
 // [rc4l] The most stacked-sector views (GL's GLSectorStackPortal) a frame renders; a further portal in sight is left undrawn.
 enum { kMaxStackViews = 2 };
 
+// [rc4l] The walk-visibility slots each id has: one per stacked view, then the player's own walk, which says what GL drew behind a sky hole.
+enum { kMainWalkSlot = kMaxStackViews, kWalkSlots = kMaxStackViews + 1 };
+
 // [rc4l] The sky-surface lists a GL scene walk can fill: the player's view, a camera texture's, one per stacked view, or none.
 enum { kSkyCaptureNone = -1, kSkyCaptureMain = 0, kSkyCaptureCamera = 1, kSkyCaptureStack = 2,
        kSkyCaptureLists = kSkyCaptureStack + kMaxStackViews };
@@ -175,14 +178,27 @@ int ComputeSkyDrawList(bool cameraPass, int stackSlot);
 // [rc4l] Whether a sky quad's skybox becomes the frame's: the player's own walk always, a stacked view's only while the player's named none.
 bool ComputeTakesSkyViewpoint(int list, bool haveOne);
 
-// [rc4l] The words of a frame's bit set holding, for every id (the subsectors, then the sidedefs), one bit per stacked view: whether that view's walk drew it.
+// [rc4l] The words of a frame's bit set holding, for every id (the subsectors, then the sidedefs), one bit per walk slot: whether that walk drew it.
 int ComputeStackVisWords(int ids);
 
-// [rc4l] Marks an id drawn by a stacked view's walk, at bit id * kMaxStackViews + slot, which is where the scene shader looks.
+// [rc4l] Marks an id drawn by a walk, at bit id * kWalkSlots + slot, which is where the scene shader looks.
 void ComputeMarkStackVisible(unsigned int *bits, int id, int slot);
 
-// [rc4l] Whether a stacked view's walk drew an id, read back as the scene shader reads it; an id outside the words is not drawn.
+// [rc4l] Whether a walk drew an id, read back as the scene shader reads it; an id outside the words is not drawn.
 bool ComputeStackVisible(const unsigned int *bits, int words, int id, int slot);
+
+// [rc4l] The slot a walk's drawing is marked in: a stacked view's own (stackSlot, -1 for one no slot took), the player's walk kMainWalkSlot, any other none (-1).
+int ComputeWalkSlot(bool stackWalk, int stackSlot, bool playerWalk);
+
+// [rc4l] One sky hole as the scene shader reads it: the wall's ends (x1, y1, x2, y2), then floor and ceiling at each end (zb1, zt1, zb2, zt2), in map units; at most kMaxSkyHoles a frame.
+enum { kSkyHoleFloats = 8, kMaxSkyHoles = 256 };
+void ComputeSkyHoleRecord(float x1, float y1, float x2, float y2, const float *zfloor, const float *zceil, float *out);
+
+// [rc4l] Whether a sky hole the walk filling list met goes to the scene shader, holding held already: only the player's walk's, while there is room, and any other is painted as a sky quad.
+bool ComputeSkyHoleToShader(int list, int held);
+
+// [rc4l] Whether the eye's line to p crosses a hole's span before reaching p, both in mesh space (map x, height, map y) as the scene shader holds them, which then drops p unless GL's walk drew its piece.
+bool ComputeBehindSkyHole(const float *eye, const float *p, const float *hole);
 
 // [rc4l] One corner (0..5, two triangles) of a stacked view's cap, the plane at the map's height limit GLPortal::DrawPortalStencil closes a stack's stencil with: overhead for a ceiling stack, underfoot for a floor one.
 void ComputeStackCapCorner(bool ceiling, int corner, float &x, float &y, float &z);

@@ -5,7 +5,7 @@ import { spawnSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
 import { resolveEngine, engineArgs, describeExit, countEngineLines, missingCoreData } from "../src/launch.mjs";
-import { sweepDirFor, pickCmake, resolveTarget, readSession, sessionFileFor, cameraFromFlags, cvarValueFrom, parseCvarFlag, spotLaunch, parkFileFor, parkedLaunch, PARKED, clearPortSessions, liveTarget, pidAlive, buildErrors, summarizeGtest } from "../src/shot.mjs";
+import { sweepDirFor, pickCmake, resolveTarget, readSession, sessionFileFor, cameraFromFlags, cvarValueFrom, parseCvarFlag, spotLaunch, parkFileFor, parkedLaunch, PARKED, clearPortSessions, liveTarget, pidAlive, buildErrors, summarizeGtest, standAt, launchFileFor, holdingLaunchFile, launchInProgress, awaitLaunch } from "../src/shot.mjs";
 
 // Run `fn` with cwd moved to `dir` and FUACTL_ENGINE cleared, then put both back.
 function inDir(dir, fn) {
@@ -293,6 +293,31 @@ test("a launch clears the session files that name its port and leaves another po
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+// [rc4l] A `rpc sim.tic` poll started beside `play` took the single-client bridge mid-handshake, four times in one session, and the launch died with "hello timeout".
+test("a command waits while a launch on its port checks its world, and not for a dead or finished one", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "launching-"));
+  const shared = path.join(dir, ".play-session");
+  const file = launchFileFor(shared, 7799);
+  const alive = (pid) => pid === 7;
+  let during = null;
+  const r = await holdingLaunchFile(shared, 7799, async () => { during = launchInProgress(file, alive); return "up"; }, 7);
+  assert.equal(r, "up");
+  assert.equal(during, true);
+  assert.equal(fs.existsSync(file), false, "released once the launch is up");
+  await assert.rejects(holdingLaunchFile(shared, 7799, async () => { throw new Error("no playable level"); }, 7), /no playable level/);
+  assert.equal(fs.existsSync(file), false, "released when the launch fails too");
+  fs.writeFileSync(file, "PORT=7799\nPID=8\n");
+  assert.equal(launchInProgress(file, alive), false, "a killed launch's file names a dead process");
+  assert.equal(await awaitLaunch(shared, 7799, { isAlive: alive }), false);
+  fs.writeFileSync(file, "PORT=7799\nPID=7\n");
+  setTimeout(() => fs.rmSync(file, { force: true }), 60);
+  assert.equal(await awaitLaunch(shared, 7799, { isAlive: alive, pollMs: 10 }), true);
+  fs.writeFileSync(file, "PORT=7799\nPID=7\n");
+  assert.equal(await awaitLaunch(shared, 7799, { isAlive: alive, pollMs: 10, timeoutMs: 30 }), true, "bounded by its timeout");
+  assert.equal(launchInProgress(path.join(dir, "absent"), alive), false);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
 // [rc4l] A build run beside a running engine failed to link with nothing saying why.
 test("a build's errors are read off its log, and a binary held open is named as that", () => {
   const out = "a.cpp(3): error C2065: x\nb.cpp: warning C4996: y\nLINK : fatal error LNK1104: cannot open file 'forkundera.exe'\n";
@@ -304,4 +329,27 @@ test("a unit test run reports how many passed and which failed, each once", () =
   const out = "[==========] 3 tests ran.\n[  PASSED  ] 2 tests.\n[  FAILED  ] 1 test, listed below:\n[  FAILED  ] Suite.Case\n[  FAILED  ] Suite.Case (0 ms)\n";
   assert.deepEqual(summarizeGtest(out), { passed: 2, failed: ["Suite.Case"] });
   assert.deepEqual(summarizeGtest("nothing"), { passed: 0, failed: [] });
+});
+
+// [rc4l] play --spot at WDI18's #29 spot died on an occupied spot and left no instance at all.
+test("a spot refused as occupied is stood on anyway, and any other refusal still fails", async () => {
+  const fake = (refuse) => {
+    const calls = [];
+    return { calls, rpc: async (method, args) => { calls.push(args); if (refuse(args)) throw new Error(refuse(args)); return {}; } };
+  };
+  const at = { x: 1, y: 2, z: 3, angle: 90 };
+  const ok = fake(() => null);
+  await standAt(ok, at, () => {});
+  assert.deepEqual(ok.calls, [{ x: 1, y: 2, z: 3, angle: 90, pitch: 0 }]);
+  const said = [];
+  const busy = fake((a) => (a.force ? null : "that spot is solid or occupied -- pass force:1 to go there anyway"));
+  await standAt(busy, at, (m) => said.push(m));
+  assert.equal(busy.calls.length, 2);
+  assert.equal(busy.calls[1].force, 1);
+  assert.equal(said.length, 1);
+  const broken = fake(() => "no such map");
+  await assert.rejects(standAt(broken, at, () => {}), /no such map/);
+  const forced = fake(() => "that spot is solid or occupied");
+  await assert.rejects(standAt(forced, { ...at, force: 1 }, () => {}), /occupied/);
+  assert.equal(forced.calls.length, 1);
 });

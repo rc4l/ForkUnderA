@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { UdmfMap, wad, mapLumps, readWad, parseUdmf } from "../src/udmf.mjs";
+import { THING } from "../src/doomnums.mjs";
+import { PCD } from "../src/acs.mjs";
 import { buildHorizonWad } from "../scenarios/horizon.mjs";
 import { buildPointlightWad, VANTAGES } from "../scenarios/pointlight.mjs";
 
@@ -337,4 +339,43 @@ test("the fill-cache template compares GL with its wall cache off and on over th
   const { SIDES } = await import("../scenarios/missingfillcache.mjs");
   assert.ok(SIDES.every((s) => s.gl));
   assert.deepEqual(SIDES.map((s) => (s.cvars || {}).gl_wallcache), [0, undefined]);
+});
+
+test("the sky-hole template leaves the yard's north wall bare under a sky, with a lit room behind it that nothing joins", async () => {
+  const { buildSkyHoleWad } = await import("../scenarios/skyhole.mjs");
+  const [u] = textmaps(buildSkyHoleWad());
+  const bare = u.linedef.filter((l) => l.sideback === undefined && !u.sidedef[l.sidefront].texturemiddle);
+  assert.equal(bare.length, 1, "one bare one-sided wall");
+  assert.equal(u.sector[u.sidedef[bare[0].sidefront].sector].textureceiling, "F_SKY1");
+  assert.ok(u.linedef.every((l) => !l.twosided), "nothing joins the room behind it");
+});
+
+test("the sky-hole template's pillar maps keep the field beyond the bare wall in the yard's own sector, one with a skybox and one without", async () => {
+  const { buildSkyHoleWad } = await import("../scenarios/skyhole.mjs");
+  const [, portal, dome] = textmaps(buildSkyHoleWad());
+  for (const u of [portal, dome]) {
+    assert.equal(u.sector.length - (u === portal ? 1 : 0), 1, "the yard, the corridor and the field are one sector");
+    const bare = u.linedef.filter((l) => !u.sidedef[l.sidefront].texturemiddle);
+    assert.equal(bare.length, 1, "one bare one-sided wall");
+    const pillar = u.thing.find((t) => t.type === THING.TechPillar);
+    assert.ok(pillar && pillar.y > u.vertex[bare[0].v1].y, "the pillar stands beyond the bare wall");
+  }
+  assert.ok(portal.thing.some((t) => t.type === THING.SkyViewpoint));
+  assert.ok(!dome.thing.some((t) => t.type === THING.SkyViewpoint));
+});
+
+test("the camera-texture template declares a wide camera texture fitted smaller, shows it on the screen wall and aims a tagged camera at it from an OPEN script", async () => {
+  const { buildCameraTexWad } = await import("../scenarios/cameratex.mjs");
+  const lumps = lumpsOf(buildCameraTexWad());
+  const animdefs = lumps.find((l) => l.name === "ANIMDEFS").text;
+  const [, w, h, fw, fh] = animdefs.match(/cameratexture FUACAM (\d+) (\d+) fit (\d+) (\d+)/).map(Number);
+  assert.ok(w > h && fw < w, "wider than tall, fitted smaller than its pixels");
+  assert.equal(fw / fh, w / h);
+  const [u] = textmaps(buildCameraTexWad());
+  assert.equal(u.sidedef.filter((s) => s.texturemiddle === "FUACAM").length, 1);
+  const camera = u.thing.find((t) => t.type === 9001);
+  const behavior = readWad(buildCameraTexWad()).find((l) => l.name === "BEHAVIOR").data;
+  const words = [];
+  for (let i = 8; i + 4 <= behavior.readInt32LE(4); i += 4) words.push(behavior.readInt32LE(i));
+  assert.deepEqual(words.slice(0, 7), [PCD.PUSHNUMBER, camera.id, PCD.PUSHNUMBER, 0, PCD.PUSHNUMBER, 90, PCD.SETCAMERATOTEXTURE]);
 });

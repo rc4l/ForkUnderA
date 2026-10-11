@@ -160,6 +160,8 @@ void EndCapture(const WallCacheStamp &stamp, const WallCacheEligibility &e);
 bool IsCapturing();
 // [rc4l] A sky quad GL builds for its stencil, taken as geometry, with the skybox a RENDERWALL_SKYBOX names (NULL for a plain sky).
 void RegisterSkyQuad(const GLWall &wall, AActor *viewpoint);
+// [rc4l] An untextured one-sided wall's floor-to-ceiling span, which GL leaves undrawn: its walk clips what lies behind it except what it already reached, and its full-screen sky shows through the rest.
+void RegisterSkyHole(const GLWall &wall);
 int SkyQuadsCaptured();   // [rc4l] Since the level loaded, for fua_sky_quads.
 AActor *SkyQuadViewpoint();
 // [rc4l] A GL walk starting at this portal depth, for the main view or a camera texture; returns the kSkyCapture* list it fills.
@@ -169,7 +171,7 @@ int SkyWalks(int list);
 const FFlatVertex *SkyQuadVertices(int &count, int list);
 
 void RecordPiece(const GLWall &wall, int list);
-// [rc4l] The seg being captured hands GL per-frame state (a portal, a missing-texture fill), so it is never replayed.
+// [rc4l] The seg being captured hands GL per-frame state (a portal, a missing-texture fill, a sky hole), so it is never replayed.
 void NoteUnreplayable();
 
 // Replay: push the cached pieces for this seg back into the draw lists. Returns false if there is

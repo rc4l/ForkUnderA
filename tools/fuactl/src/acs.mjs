@@ -2,7 +2,7 @@
 import { Buffer } from "node:buffer";
 
 // [rc4l] The p-codes templates use, numbered as in p_acs.h; ACS0 writes every code and argument as a 32-bit word.
-export const PCD = { TERMINATE: 1, PUSHNUMBER: 3, LSPEC1: 4, DELAYDIRECT: 56 };
+export const PCD = { TERMINATE: 1, PUSHNUMBER: 3, LSPEC1: 4, DELAYDIRECT: 56, SETCAMERATOTEXTURE: 269 };
 
 // [rc4l] OPEN script 1 running `code` (words), with `strings` indexed from 0 as the script's string arguments; `{ open: false, number }` makes it a closed script that `puke number` runs.
 export function acs0(code, strings = [], { open = true, number = 1 } = {}) {

@@ -422,6 +422,9 @@ static Diligent::RefCntAutoPtr<Diligent::IBuffer> g_pieceBuf;
 static Diligent::RefCntAutoPtr<Diligent::IBuffer> g_stackVisBuf;
 static unsigned int g_stackVisCapacity = 0;
 static bool g_stackVisReady = false;
+// [rc4l] The player's sky holes (zx::levelmesh::SkyHoles), and how many this frame uploaded for the main pass to test.
+static Diligent::RefCntAutoPtr<Diligent::IBuffer> g_skyHoleBuf;
+static int g_skyHoleCount = 0;
 static unsigned int g_pieceCapacity = 0;
 
 static float g_mvp[16];
@@ -977,7 +980,8 @@ static void RefreshBindless()
 	if (!g_matSlotsDirty) return;
 	g_matSlotsDirty = false;
 	// A table that has not changed needs no new bindings -- see g_filledFrom.
-	if (g_bindlessReady && MaterialSlotsMatchFill()) return;
+	// [rc4l] Unless the last fill left a live material white, which is what the retry that dirtied it is for.
+	if (zx::hwrender::ComputeKeepsMaterialFill(g_bindlessReady, MaterialSlotsMatchFill(), g_matSlotsWhite)) return;
 	g_bindlessReady = false;
 	g_filledFrom.Clear();
 	ReleaseWorldSRBs();
@@ -1209,39 +1213,58 @@ static SceneVertex ToSceneVertex(const FFlatVertex &sv, unsigned int pieceIndex)
 	return dv;
 }
 
-// [rc4l] Uploads count vertices of stride bytes into a grow-only vertex buffer, re-created at ComputeGrownCapacity when short; false if none can be had.
-//
-// USAGE_DEFAULT + UpdateBuffer rather than a mapped dynamic buffer: this data changes once per
-// frame, so it does not belong in the dynamic heap at all.
-// [rc4l] A w x h colour target the shaders can read and its depth buffer, in the swapchain's formats, for a view rendered off screen; false if either cannot be made.
-static bool CreateViewTextures(int w, int h, const char *name,
-	Diligent::RefCntAutoPtr<Diligent::ITexture> &color, Diligent::RefCntAutoPtr<Diligent::ITexture> &depth)
+// [rc4l] A w by h picture in the swapchain's colour format, drawn into and then sampled.
+static bool CreateColorTarget(int w, int h, const char *name, Diligent::RefCntAutoPtr<Diligent::ITexture> &color)
 {
 	auto *dev = GetDevice();
 	auto *swap = GetSwapChain();
 	if (!dev || !swap || w <= 0 || h <= 0) return false;
-	const auto &sd = swap->GetDesc();
-	FString colorName, depthName;
+	FString colorName;
 	colorName.Format("%s colour", name);
-	depthName.Format("%s depth", name);
 	Diligent::TextureDesc td;
 	td.Name = colorName.GetChars();
 	td.Type = Diligent::RESOURCE_DIM_TEX_2D;
 	td.Width = (Diligent::Uint32)w; td.Height = (Diligent::Uint32)h;
-	td.Format = sd.ColorBufferFormat;
+	td.Format = swap->GetDesc().ColorBufferFormat;
 	td.MipLevels = 1;
 	td.BindFlags = Diligent::BIND_RENDER_TARGET | Diligent::BIND_SHADER_RESOURCE;
 	color.Release();
 	dev->CreateTexture(td, nullptr, &color);
-	Diligent::TextureDesc dd = td;
-	dd.Name = depthName.GetChars();
-	dd.Format = sd.DepthBufferFormat;
-	dd.BindFlags = Diligent::BIND_DEPTH_STENCIL;
-	depth.Release();
-	dev->CreateTexture(dd, nullptr, &depth);
-	return color.RawPtr() != nullptr && depth.RawPtr() != nullptr;
+	return color.RawPtr() != nullptr;
 }
 
+// [rc4l] A w x h colour target the shaders can read and its depth buffer, in the swapchain's formats, for a view rendered off screen; false if either cannot be made.
+static bool CreateViewTextures(int w, int h, const char *name,
+	Diligent::RefCntAutoPtr<Diligent::ITexture> &color, Diligent::RefCntAutoPtr<Diligent::ITexture> &depth)
+{
+	if (!CreateColorTarget(w, h, name, color)) return false;
+	FString depthName;
+	depthName.Format("%s depth", name);
+	Diligent::TextureDesc dd = color->GetDesc();
+	dd.Name = depthName.GetChars();
+	dd.Format = GetSwapChain()->GetDesc().DepthBufferFormat;
+	dd.BindFlags = Diligent::BIND_DEPTH_STENCIL;
+	depth.Release();
+	GetDevice()->CreateTexture(dd, nullptr, &depth);
+	return depth.RawPtr() != nullptr;
+}
+
+// [rc4l] A binding on pso with its pixel-stage texture var reading tex, the one way a picture drawn off screen is handed to the pass that paints it; false if pso makes none.
+static bool CreatePictureBinding(Diligent::IPipelineState *pso, const char *var, Diligent::ITexture *tex,
+	Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding> &srb)
+{
+	srb.Release();
+	pso->CreateShaderResourceBinding(&srb, true);
+	if (!srb) return false;
+	if (auto *v = srb->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, var))
+		v->Set(tex->GetDefaultView(Diligent::TEXTURE_VIEW_SHADER_RESOURCE));
+	return true;
+}
+
+// [rc4l] Uploads count vertices of stride bytes into a grow-only vertex buffer, re-created at ComputeGrownCapacity when short; false if none can be had.
+//
+// USAGE_DEFAULT + UpdateBuffer rather than a mapped dynamic buffer: this data changes once per
+// frame, so it does not belong in the dynamic heap at all.
 static bool UploadGrowingVB(Diligent::IDeviceContext *ctx, Diligent::RefCntAutoPtr<Diligent::IBuffer> &vb,
 	unsigned int &capacity, const void *data, unsigned int count, unsigned int stride, unsigned int pad, const char *name)
 {
@@ -1266,9 +1289,11 @@ static TArray<SceneVertex> g_sceneVB;
 
 // [rc4l] Same vertex layout as FFlatVertex (3 float position, 2 float uv), so the level mesh's data
 // is uploaded byte-for-byte with no conversion pass.
-// [rc4l] kMaxStackViews spelled for the scene shader, which marks one bit per view for every subsector.
-#define FUA_STACK_VIEWS_STR "2"
-static_assert(zx::levelmesh::kMaxStackViews == 2, "FUA_STACK_VIEWS_STR spells kMaxStackViews");
+// [rc4l] kWalkSlots and kMainWalkSlot spelled for the scene shader, which reads one bit per walk for every subsector and sidedef.
+#define FUA_WALK_SLOTS_STR "3"
+#define FUA_MAIN_WALK_SLOT_STR "2"
+static_assert(zx::levelmesh::kWalkSlots == 3, "FUA_WALK_SLOTS_STR spells kWalkSlots");
+static_assert(zx::levelmesh::kMainWalkSlot == 2, "FUA_MAIN_WALK_SLOT_STR spells kMainWalkSlot");
 static const char *kSceneVS =
 	"#version 450\n"
 	"layout(location = 0) in vec3 aPos;\n"
@@ -1293,8 +1318,14 @@ static const char *kSceneVS =
 	"layout(location = 13) flat out int vLinkId;\n"
 	"layout(location = 14) flat out float vPlain;\n"
 	"layout(location = 15) flat out float vDesaturation;\n"
+	"layout(location = 16) flat out float vHoleCut;\n"
 	"layout(std430, binding = 10) readonly buffer StackVis { uint stackVis[]; };\n"
 	"layout(std430, binding = 11) readonly buffer SlotRemap { uint slotRemap[]; };\n"
+	// [rc4l] ComputeStackVisible, line for line: whether walk slot's walk drew id this frame.
+	"bool fuaWalked(int id, int slot) {\n"
+	"    int bit = id * " FUA_WALK_SLOTS_STR " + slot;\n"
+	"    return (stackVis[bit >> 5] & (1u << uint(bit & 31))) != 0u;\n"
+	"}\n"
 	"void main() {\n"
 	"    PieceData pd = pieces[int(aPiece + 0.5)];\n"
 	"    vWarp = vec2(pd.fogColor.w, pd.normal.w);\n"
@@ -1312,9 +1343,10 @@ static const char *kSceneVS =
 	// [rc4l] A stacked view draws only what GL's walk through it drew, subsector for a flat and sidedef for a wall (ComputeMarkStackVisible); any other piece's triangle goes off screen whole.
 	"    int stackSlot = int(uFrame.y + 0.5) - 1;\n"
 	"    int stackId = int(pd.bright.y + 0.5) - 1;\n"
+	// [rc4l] With the player's sky holes in uFrame.z, a piece the player's walk did not draw is one a hole may drop (fuaBehindSkyHole); a sprite or model GL drew is never one.
+	"    vHoleCut = (uFrame.z > 0.5 && stackId >= 0 && !fuaWalked(stackId, " FUA_MAIN_WALK_SLOT_STR ")) ? 1.0 : 0.0;\n"
 	"    if (stackSlot >= 0) {\n"
-	"        int bit = stackId * " FUA_STACK_VIEWS_STR " + stackSlot;\n"
-	"        bool unseen = stackId >= 0 && (stackVis[bit >> 5] & (1u << uint(bit & 31))) == 0u;\n"
+	"        bool unseen = stackId >= 0 && !fuaWalked(stackId, stackSlot);\n"
 	// [rc4l] GL draws a surface only from its front, a floor from above and a ceiling from below, and a stacked view's eye sits under every rooftop it looks up at.
 	"        if (unseen || dot(pd.normal.xyz, uCameraPos.xyz - aPos) < -0.01) clip = vec4(2.0, 2.0, 2.0, 1.0);\n"
 	"    }\n"
@@ -1389,6 +1421,7 @@ static const char *kSceneVS =
 	"layout(location = 13) flat in int vLinkId;\n" \
 	"layout(location = 14) flat in float vPlain;\n" \
 	"layout(location = 15) flat in float vDesaturation;\n" \
+	"layout(location = 16) flat in float vHoleCut;\n" \
 	/* [rc4l] ComputeDesaturate, line for line: main.fp's desaturate(), on the texel and the brightmap but never the light. */ \
 	"vec3 fuaDesaturate(vec3 c) {\n" \
 	"    if (vDesaturation <= 0.0) return c;\n" \
@@ -1450,6 +1483,26 @@ static const char *kSceneVS =
 	"    return texture(uTex, uv);\n" \
 	"}\n" \
 	"layout(std430, binding = 2) readonly buffer LightBuffer { vec4 lights[]; };\n" \
+	/* [rc4l] ComputeBehindSkyHole, line for line: whether the eye's line to this fragment passes through one of the player's sky holes (two vec4s each, ComputeSkyHoleRecord) first. */ \
+	"layout(std430, binding = 14) readonly buffer SkyHoles { vec4 skyHoles[]; };\n" \
+	"bool fuaBehindSkyHole() {\n" \
+	"    if (vHoleCut < 0.5) return false;\n" \
+	"    vec2 d = vPixelPos.xz - uCameraPos.xz;\n" \
+	"    int n = int(uFrame.z + 0.5);\n" \
+	"    for (int i = 0; i < n; i++) {\n" \
+	"        vec4 seg = skyHoles[2 * i], zs = skyHoles[2 * i + 1];\n" \
+	"        vec2 e = seg.zw - seg.xy;\n" \
+	"        float den = d.x * e.y - d.y * e.x;\n" \
+	"        if (abs(den) < 1e-6) continue;\n" \
+	"        vec2 w = seg.xy - uCameraPos.xz;\n" \
+	"        float t = (w.x * e.y - w.y * e.x) / den;\n" \
+	"        float s = (w.x * d.y - w.y * d.x) / den;\n" \
+	"        if (s < 0.0 || s > 1.0 || t <= 0.0 || t >= 0.9999) continue;\n" \
+	"        float h = uCameraPos.y + t * (vPixelPos.y - uCameraPos.y);\n" \
+	"        if (h >= zs.x + s * (zs.z - zs.x) && h <= zs.y + s * (zs.w - zs.y)) return true;\n" \
+	"    }\n" \
+	"    return false;\n" \
+	"}\n" \
 	/* [rc4l] The cluster grid: (offset, count) per cell, and the runs those point into. */ \
 	"layout(std430, binding = 6) readonly buffer ClusterTable { uvec2 clusterCells[]; };\n" \
 	"layout(std430, binding = 7) readonly buffer ClusterLightIndices { uint clusterLights[]; };\n" \
@@ -1631,6 +1684,8 @@ static const char *kSceneVS =
 	   must not appear in the reflection -- without this the wall the mirror hangs on renders first
 	   from the reflected camera and fills the whole reflection. w == 0 means no mirror is active. */ \
 	FUA_MIRROR_CLIP_GLSL("vPixelPos.xyz") \
+	/* [rc4l] What GL's walk never drew behind a sky hole is GL's sky there, which the frame painted first. */ \
+	"    if (fuaBehindSkyHole()) discard;\n" \
 	"    vec3 color = fuaSectorLight(vColor, vLightParm.x, fogMode, fogfactor, surfDepth);\n" \
 	/* Dynamic lights add to the light COLOUR before the texture is modulated, exactly as
 	   getLightColor does -- adding after would light the black parts of a texture too. */ \
@@ -2574,6 +2629,48 @@ static const char *kSkyPortalPS =
 	"layout(location = 0) out vec4 outColor;\n"
 	"void main() { outColor = vec4(texture(uTex, vUV).rgb, 1.0); }\n";
 
+// [rc4l] A pipeline that paints one picture, uTex, over its whole target with kSkyPortalVS's triangle and the fragment stage ps, never against depth; dsvFormat is whatever depth buffer is bound beside it.
+static bool CreatePicturePSO(const char *name, const char *ps, Diligent::FILTER_TYPE filter, Diligent::TEXTURE_FORMAT dsvFormat,
+	Diligent::RefCntAutoPtr<Diligent::IPipelineState> &pso)
+{
+	auto *dev = GetDevice();
+	auto *swap = GetSwapChain();
+	if (!dev || !swap) return false;
+	FString vsName, psName, psoName;
+	vsName.Format("%s VS", name); psName.Format("%s PS", name); psoName.Format("%s PSO", name);
+	Diligent::RefCntAutoPtr<Diligent::IShader> vs, fs;
+	vs = CompileShader(Diligent::SHADER_TYPE_VERTEX, vsName.GetChars(), kSkyPortalVS);
+	fs = CompileShader(Diligent::SHADER_TYPE_PIXEL, psName.GetChars(), ps);
+	if (!vs || !fs) return false;
+	Diligent::SamplerDesc samp;
+	samp.MinFilter = samp.MagFilter = samp.MipFilter = filter;
+	samp.AddressU = Diligent::TEXTURE_ADDRESS_CLAMP;
+	samp.AddressV = Diligent::TEXTURE_ADDRESS_CLAMP;
+	Diligent::ImmutableSamplerDesc samplers[] = { { Diligent::SHADER_TYPE_PIXEL, "uTex", samp } };
+	Diligent::ShaderResourceVariableDesc vars[] = {
+		{ Diligent::SHADER_TYPE_PIXEL, "uTex", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
+	};
+	Diligent::GraphicsPipelineStateCreateInfo pci;
+	pci.PSODesc.Name = psoName.GetChars();
+	pci.PSODesc.PipelineType = Diligent::PIPELINE_TYPE_GRAPHICS;
+	pci.GraphicsPipeline.NumRenderTargets = 1;
+	pci.GraphicsPipeline.RTVFormats[0] = swap->GetDesc().ColorBufferFormat;
+	pci.GraphicsPipeline.DSVFormat = dsvFormat;
+	pci.GraphicsPipeline.PrimitiveTopology = Diligent::PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+	pci.GraphicsPipeline.RasterizerDesc.CullMode = Diligent::CULL_MODE_NONE;
+	pci.GraphicsPipeline.DepthStencilDesc.DepthEnable = false;
+	pci.GraphicsPipeline.DepthStencilDesc.DepthWriteEnable = false;
+	pci.PSODesc.ResourceLayout.Variables = vars;
+	pci.PSODesc.ResourceLayout.NumVariables = 1;
+	pci.PSODesc.ResourceLayout.ImmutableSamplers = samplers;
+	pci.PSODesc.ResourceLayout.NumImmutableSamplers = 1;
+	pci.pVS = vs;
+	pci.pPS = fs;
+	pso.Release();
+	dev->CreateGraphicsPipelineState(pci, &pso);
+	return pso.RawPtr() != nullptr;
+}
+
 // [rc4l] A surface painted from a picture of the world by its own screen position -- the sky's from the skybox's view, a stacked plane from its view -- and depth-written like any wall.
 static const char *kScreenSurfVS =
 	"#version 450\n"
@@ -2747,45 +2844,9 @@ static bool EnsureSkyPortalResources()
 		g_skyPortalW = w; g_skyPortalH = h;
 	}
 
-	if (!g_skyPortalPSO)
-	{
-		Diligent::RefCntAutoPtr<Diligent::IShader> vs, ps;
-		vs = CompileShader(Diligent::SHADER_TYPE_VERTEX, "fua sky portal VS", kSkyPortalVS);
-		ps = CompileShader(Diligent::SHADER_TYPE_PIXEL, "fua sky portal PS", kSkyPortalPS);
-		if (!vs || !ps) return false;
-
-		Diligent::SamplerDesc samp;
-		samp.MinFilter = Diligent::FILTER_TYPE_LINEAR;
-		samp.MagFilter = Diligent::FILTER_TYPE_LINEAR;
-		samp.MipFilter = Diligent::FILTER_TYPE_LINEAR;
-		samp.AddressU = Diligent::TEXTURE_ADDRESS_CLAMP;
-		samp.AddressV = Diligent::TEXTURE_ADDRESS_CLAMP;
-		Diligent::ImmutableSamplerDesc samplers[] = {
-			{ Diligent::SHADER_TYPE_PIXEL, "uTex", samp },
-		};
-		Diligent::ShaderResourceVariableDesc vars[] = {
-			{ Diligent::SHADER_TYPE_PIXEL, "uTex", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
-		};
-		Diligent::GraphicsPipelineStateCreateInfo pci;
-		pci.PSODesc.Name = "fua sky portal PSO";
-		pci.PSODesc.PipelineType = Diligent::PIPELINE_TYPE_GRAPHICS;
-		pci.GraphicsPipeline.NumRenderTargets = 1;
-		pci.GraphicsPipeline.RTVFormats[0] = sd.ColorBufferFormat;
-		pci.GraphicsPipeline.DSVFormat = sd.DepthBufferFormat;
-		pci.GraphicsPipeline.PrimitiveTopology = Diligent::PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-		pci.GraphicsPipeline.RasterizerDesc.CullMode = Diligent::CULL_MODE_NONE;
-		// Same standing as the dome it replaces: drawn first, never against the depth buffer.
-		pci.GraphicsPipeline.DepthStencilDesc.DepthEnable = false;
-		pci.GraphicsPipeline.DepthStencilDesc.DepthWriteEnable = false;
-		pci.PSODesc.ResourceLayout.Variables = vars;
-		pci.PSODesc.ResourceLayout.NumVariables = 1;
-		pci.PSODesc.ResourceLayout.ImmutableSamplers = samplers;
-		pci.PSODesc.ResourceLayout.NumImmutableSamplers = 1;
-		pci.pVS = vs;
-		pci.pPS = ps;
-		dev->CreateGraphicsPipelineState(pci, &g_skyPortalPSO);
-		if (!g_skyPortalPSO) return false;
-	}
+	// [rc4l] Same standing as the dome it replaces: drawn first, never against the depth buffer, into the frame's own targets.
+	if (!g_skyPortalPSO && !CreatePicturePSO("fua sky portal", kSkyPortalPS, Diligent::FILTER_TYPE_LINEAR, sd.DepthBufferFormat, g_skyPortalPSO))
+		return false;
 	if (!g_skySurfPSO)
 	{
 		g_skySurfPSO = CreateScreenSurfacePSO("fua sky surface", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_STATIC);
@@ -2803,13 +2864,7 @@ static bool EnsureSkyPortalResources()
 			g_skySurfPSO.Release();
 		}
 	}
-	if (!g_skyPortalSRB)
-	{
-		g_skyPortalPSO->CreateShaderResourceBinding(&g_skyPortalSRB, true);
-		if (!g_skyPortalSRB) return false;
-		if (auto *v = g_skyPortalSRB->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "uTex"))
-			v->Set(g_skyPortalColor->GetDefaultView(Diligent::TEXTURE_VIEW_SHADER_RESOURCE));
-	}
+	if (!g_skyPortalSRB && !CreatePictureBinding(g_skyPortalPSO, "uTex", g_skyPortalColor, g_skyPortalSRB)) return false;
 	return true;
 }
 
@@ -4038,6 +4093,9 @@ static bool EnsureScenePipeline(FString &err)
 		if (!CreateStructuredBuffer("fua light link ranges", 2 * sizeof(unsigned), g_lightBufCapacity / 2, NULL, g_lightTouchRangeBuf) ||
 			!CreateStructuredBuffer("fua light link ids", sizeof(unsigned), kLightTouchIdCapacity, NULL, g_lightTouchIdBuf))
 		{ err = "light link buffer creation failed"; return false; }
+	// [rc4l] The player's sky holes, two vec4s each, created once at kMaxSkyHoles for the same reason: every world pipeline binds them statically.
+	if (!g_skyHoleBuf && !CreateStructuredBuffer("fua sky holes", 16, zx::levelmesh::kMaxSkyHoles * 2, NULL, g_skyHoleBuf))
+	{ err = "sky hole buffer creation failed"; return false; }
 	// [rc4l] The cluster table and its index list, sized for the largest grid a window can produce.
 	//
 	// Created once at a fixed capacity for the same reason the light buffer is: a buffer recreated
@@ -4248,6 +4306,8 @@ static bool EnsureScenePipeline(FString &err)
 				sv->Set(g_stackVisBuf->GetDefaultView(Diligent::BUFFER_VIEW_SHADER_RESOURCE));
 		if (auto *rv = psos[i]->GetStaticVariableByName(Diligent::SHADER_TYPE_VERTEX, "SlotRemap"))
 			rv->Set(g_slotRemapBuf->GetDefaultView(Diligent::BUFFER_VIEW_SHADER_RESOURCE));
+		if (auto *hv = psos[i]->GetStaticVariableByName(Diligent::SHADER_TYPE_PIXEL, "SkyHoles"))
+			hv->Set(g_skyHoleBuf->GetDefaultView(Diligent::BUFFER_VIEW_SHADER_RESOURCE));
 
 		// The cluster table and its index list ride along on the same reasoning: shared by every world
 		// pass, set once, and reported rather than silently skipped.
@@ -6107,6 +6167,8 @@ static void WriteSceneConstants(float *cb, const float *clip, float targetW, flo
 	in.materialSlots = materialSlots;
 	in.frameMS = I_MSTime();
 	in.stackSlot = g_stackVisReady ? g_stackPassSlot : -1;
+	in.playerPass = g_drawingMainView && g_lineMirror < 0;
+	in.skyHoles = g_skyHoleCount;
 	zx::hwrender::ComputeSceneConstants(in, cb);
 }
 
@@ -6164,11 +6226,8 @@ static bool EnsureViewTarget(ViewTarget &t, Diligent::IPipelineState *pso, const
 	const auto &sd = swap->GetDesc();
 	if (t.color && t.depth && t.srb && t.w == (int)sd.Width && t.h == (int)sd.Height) return true;
 	t.Release();
-	if (!CreateViewTextures((int)sd.Width, (int)sd.Height, name, t.color, t.depth)) return false;
-	pso->CreateShaderResourceBinding(&t.srb, true);
-	if (!t.srb) return false;
-	if (auto *v = t.srb->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, var))
-		v->Set(t.color->GetDefaultView(Diligent::TEXTURE_VIEW_SHADER_RESOURCE));
+	if (!CreateViewTextures((int)sd.Width, (int)sd.Height, name, t.color, t.depth) ||
+		!CreatePictureBinding(pso, var, t.color, t.srb)) return false;
 	t.w = (int)sd.Width; t.h = (int)sd.Height;
 	return true;
 }
@@ -6373,6 +6432,23 @@ static void ReleaseStackPortals()
 	g_stackVisReady = false;
 }
 
+// [rc4l] What GL's walks drew this frame and the player's sky holes, uploaded before any pass, outside the frame's render pass, since the stacked views and the main pass both read them.
+static void UploadWalkVisibility(Diligent::IDeviceContext *ctx)
+{
+	int visWords = 0;
+	const unsigned int *visBits = zx::levelmesh::StackVisibility(visWords);
+	g_stackVisReady = visBits != NULL && g_stackVisBuf && (unsigned int)visWords <= g_stackVisCapacity;
+	if (g_stackVisReady)
+		ctx->UpdateBuffer(g_stackVisBuf, 0, (Diligent::Uint64)visWords * sizeof(unsigned int), visBits,
+			Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	int holes = 0;
+	const float *hole = zx::levelmesh::SkyHoles(holes);
+	g_skyHoleCount = (g_stackVisReady && hole != NULL && g_skyHoleBuf) ? holes : 0;
+	if (g_skyHoleCount > 0)
+		ctx->UpdateBuffer(g_skyHoleBuf, 0, (Diligent::Uint64)g_skyHoleCount * zx::levelmesh::kSkyHoleFloats * sizeof(float), hole,
+			Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+}
+
 // [rc4l] Before the frame and after the sky's picture, which each view paints behind its own world.
 static void RenderStackPortals(Diligent::IDeviceContext *ctx)
 {
@@ -6383,13 +6459,6 @@ static void RenderStackPortals(Diligent::IDeviceContext *ctx)
 	if (!g_stackSurfPSO)
 		g_stackSurfPSO = CreateScreenSurfacePSO("fua stack surface", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE);
 	if (!g_stackSurfPSO) return;
-
-	int visWords = 0;
-	const unsigned int *visBits = zx::levelmesh::StackVisibility(visWords);
-	g_stackVisReady = visBits != NULL && g_stackVisBuf && (unsigned int)visWords <= g_stackVisCapacity;
-	if (g_stackVisReady)
-		ctx->UpdateBuffer(g_stackVisBuf, 0, (Diligent::Uint64)visWords * sizeof(unsigned int), visBits,
-			Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
 	const fixed_t sx = viewx, sy = viewy;
 	float savedMVP[16];
@@ -6419,12 +6488,14 @@ void StackInfo(FString &out)
 {
 	int words = 0;
 	const unsigned int *bits = zx::levelmesh::StackVisibility(words);
-	int reached[zx::levelmesh::kMaxStackViews] = {};
+	int reached[zx::levelmesh::kWalkSlots] = {};
 	for (int w = 0; w < words; w++)
 		for (int b = 0; b < 32; b++)
-			if (bits[w] & (1u << b)) reached[(w * 32 + b) % zx::levelmesh::kMaxStackViews]++;
-	out.Format("stacked views: %d drawn, cull %s, %d words; subsectors and sidedefs drawn by view 0: %d, view 1: %d (of %d)",
-		g_stackDrawn, g_stackVisReady ? "on" : "off", words, reached[0], reached[1], numsubsectors + numsides);
+			if (bits[w] & (1u << b)) reached[(w * 32 + b) % zx::levelmesh::kWalkSlots]++;
+	out.Format("stacked views: %d drawn, cull %s, %d words; subsectors and sidedefs drawn by view 0: %d, view 1: %d, "
+		"the player's walk: %d (of %d); %d sky holes",
+		g_stackDrawn, g_stackVisReady ? "on" : "off", words, reached[0], reached[1], reached[zx::levelmesh::kMainWalkSlot],
+		numsubsectors + numsides, g_skyHoleCount);
 }
 
 // [rc4l] In the player's view, with the sky: each stacked plane painted from its view's picture, and depth-written so nothing behind it shows through.
@@ -6695,6 +6766,7 @@ static void DrawSceneOnce(bool present = true, bool pump = true)
 
 	// The sky portal is a whole second view of the map, so it is rendered here, beside the frame
 	// rather than inside it -- DrawWorld cannot be re-entered while it is deriving this frame.
+	UploadWalkVisibility(ctx);
 	RenderSkyPortal(ctx);
 	RenderStackPortals(ctx);
 	RenderPlaneMirrors(ctx);
@@ -6773,8 +6845,39 @@ struct CameraTarget
 	int w, h;
 	Diligent::RefCntAutoPtr<Diligent::ITexture> color, depth;
 	Diligent::ITextureView *rtv, *dsv, *srv;
+	// [rc4l] Where the world pass draws, top row first, before it is copied into color the way GL keeps it.
+	Diligent::RefCntAutoPtr<Diligent::ITexture> scratch;
+	Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding> flipSRB;
 };
 static TArray<CameraTarget *> g_cameraTargets;
+
+// [rc4l] GL keeps a camera texture bottom row first (glCopyTexSubImage), and every coordinate that samples one, a wall's, a flat's or the HUD's, is GL's, so the camera's picture is copied in upside down; kSkyPortalVS hands this an upright vUV.
+static const char *kCameraFlipPS =
+	"#version 450\n"
+	"layout(location = 0) in vec2 vUV;\n"
+	"layout(binding = 1) uniform sampler2D uTex;\n"
+	"layout(location = 0) out vec4 outColor;\n"
+	"void main() { outColor = vec4(texture(uTex, vec2(vUV.x, 1.0 - vUV.y)).rgb, 1.0); }\n";
+static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_cameraFlipPSO;
+
+// [rc4l] The scratch picture into the camera texture upside down, outside any pass that samples it.
+static void CopyCameraFlipped(Diligent::IDeviceContext *ctx, CameraTarget &cam)
+{
+	// [rc4l] Point sampled, since the copy is texel for texel, and with no depth buffer bound.
+	if (!g_cameraFlipPSO && !CreatePicturePSO("fua camera flip", kCameraFlipPS, Diligent::FILTER_TYPE_POINT, Diligent::TEX_FORMAT_UNKNOWN, g_cameraFlipPSO))
+		return;
+	if (!cam.flipSRB && !CreatePictureBinding(g_cameraFlipPSO, "uTex", cam.scratch, cam.flipSRB)) return;
+	Diligent::StateTransitionDesc barrier(cam.scratch, Diligent::RESOURCE_STATE_UNKNOWN,
+		Diligent::RESOURCE_STATE_SHADER_RESOURCE, Diligent::STATE_TRANSITION_FLAG_UPDATE_STATE);
+	ctx->TransitionResourceStates(1, &barrier);
+	Diligent::ITextureView *rtv = cam.rtv;
+	ctx->SetRenderTargets(1, &rtv, nullptr, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	ctx->SetPipelineState(g_cameraFlipPSO);
+	ctx->CommitShaderResources(cam.flipSRB, Diligent::RESOURCE_STATE_TRANSITION_MODE_VERIFY);
+	Diligent::DrawAttribs dr;
+	dr.NumVertices = 3;
+	ctx->Draw(dr);
+}
 
 static CameraTarget *GetCameraTarget(const void *material, int w, int h)
 {
@@ -6791,11 +6894,14 @@ static CameraTarget *GetCameraTarget(const void *material, int w, int h)
 	c->material = material; c->w = w; c->h = h;
 	c->rtv = c->dsv = c->srv = NULL;
 
-	if (!CreateViewTextures(w, h, "fua camera", c->color, c->depth)) { delete c; return NULL; }
+	if (!CreateViewTextures(w, h, "fua camera", c->scratch, c->depth) || !CreateColorTarget(w, h, "fua camera flipped", c->color))
+	{ delete c; return NULL; }
 	c->rtv = c->color->GetDefaultView(Diligent::TEXTURE_VIEW_RENDER_TARGET);
 	c->srv = c->color->GetDefaultView(Diligent::TEXTURE_VIEW_SHADER_RESOURCE);
 	c->dsv = c->depth->GetDefaultView(Diligent::TEXTURE_VIEW_DEPTH_STENCIL);
 	g_cameraTargets.Push(c);
+	// [rc4l] Its material may already sit in the bindless array as white, filled before this first render, and the retries for that may be spent.
+	DirtyMaterialSlots();
 	return c;
 }
 
@@ -6814,7 +6920,7 @@ Diligent::ITextureView *GetCameraSRV(const void *material)
 // viewx/viewy/viewz/viewangle/viewpitch because every other caller wants the player's view; swapping
 // them around this call is smaller and less error-prone than threading a viewpoint through the
 // matrix builder and every one of its callers, and they are restored before anything else can look.
-void RenderCameraTexture(const void *material, int w, int h,
+void RenderCameraTexture(const void *material, int w, int h, float aspect,
                          int px, int py, int pz, unsigned int pangle, int ppitch, float fovDeg)
 {
 	if (!GetDevice() || !g_vb || !g_scenePSO) return;
@@ -6827,13 +6933,14 @@ void RenderCameraTexture(const void *material, int w, int h,
 	const angle_t sa = viewangle;
 	const int sp = viewpitch;
 	viewx = px; viewy = py; viewz = pz; viewangle = pangle; viewpitch = ppitch;
-	g_fovOverride = fovDeg * 3.14159265f / 180.0f;
-	g_aspectOverride = (h > 0) ? (float)w / (float)h : 1.f;
+	g_aspectOverride = (aspect > 0.f) ? aspect : 1.f;
+	// [rc4l] The camera's FOV is across, as GL's SetProjection takes it, and its height follows from the picture's shape: taken as the height, a wide TV saw a smaller moon lower in the sky.
+	g_fovOverride = ::hwrender::ComputeSceneFovY(fovDeg, g_aspectOverride) * 3.14159265f / 180.0f;
 	BuildMVP(g_mvp);
 	g_fovOverride = g_aspectOverride = 0.f;
 	viewx = sx; viewy = sy; viewz = sz; viewangle = sa; viewpitch = sp;
 
-	Diligent::ITextureView *rtv = cam->rtv;
+	Diligent::ITextureView *rtv = cam->scratch->GetDefaultView(Diligent::TEXTURE_VIEW_RENDER_TARGET);
 	ctx->SetRenderTargets(1, &rtv, cam->dsv, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 	Diligent::Viewport vp;
 	vp.TopLeftX = 0; vp.TopLeftY = 0;
@@ -6848,6 +6955,7 @@ void RenderCameraTexture(const void *material, int w, int h,
 	g_inCameraPass = true;
 	DrawWorld(ctx);
 	g_inCameraPass = false;
+	CopyCameraFlipped(ctx, *cam);
 
 	// Hand the screen back its own target and full viewport; the main pass assumes both.
 	auto *swap = GetSwapChain();

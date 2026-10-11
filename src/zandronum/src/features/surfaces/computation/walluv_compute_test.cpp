@@ -63,6 +63,17 @@ TEST(WallUV, AboveTheReferenceIsNegative)
 	EXPECT_FLOAT_EQ(-1.f, ComputeWallV(256.f, 128.f, 128.f));
 }
 
+// [rc4l] WDI20's TV: a camera texture's height is negative, so its v runs from 0 at the top to -1 one height down, and SetWallCoordinates shifts that to 1..0.
+TEST(WallUV, ACameraTextureRunsUpwardAndIsShiftedIntoOneCopy)
+{
+	EXPECT_FLOAT_EQ(0.f, ComputeWallV(128.f, 128.f, -128.f));
+	EXPECT_FLOAT_EQ(-1.f, ComputeWallV(0.f, 128.f, -128.f));
+	EXPECT_FLOAT_EQ(0.f, ComputeWallV(0.f, 128.f, 0.f));
+	EXPECT_FLOAT_EQ(1.f, ComputeCanvasWallV(0.f, true));
+	EXPECT_FLOAT_EQ(0.f, ComputeCanvasWallV(-1.f, true));
+	EXPECT_FLOAT_EQ(-1.f, ComputeCanvasWallV(-1.f, false));
+}
+
 // The unpegged default: the texture hangs from the reference ceiling.
 TEST(WallUV, UnpeggedHangsFromTheReferenceCeiling)
 {

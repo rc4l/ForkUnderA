@@ -379,12 +379,19 @@ bool BuildDerivedWallSpan(const seg_t *seg, int renderType, DerivedWallSpan &out
 	//
 	// Not for a two-sided middle: DoMidTexture writes its coordinates directly and never calls this.
 	// Not for a canvas texture, which GL also skips.
-	if (fua_surface_vshift && !twoSidedMid && !((FMaterial *)mat)->tex->bHasCanvas)
+	const bool canvas = ((FMaterial *)mat)->tex->bHasCanvas;
+	if (fua_surface_vshift && !twoSidedMid && !canvas)
 	{
 		const float lead = (out.vTop[0] < out.vTop[1]) ? out.vTop[0] : out.vTop[1];
 		const float sub = floorf(lead);
 		out.vTop[0] -= sub; out.vTop[1] -= sub;
 		out.vBottom[0] -= sub; out.vBottom[1] -= sub;
+	}
+	// [rc4l] And SetWallCoordinates' own shift for a camera texture, without which its v sat in [-1, 0] and the clamp showed one row of the picture.
+	for (int e = 0; e < 2; e++)
+	{
+		out.vTop[e] = ComputeCanvasWallV(out.vTop[e], canvas);
+		out.vBottom[e] = ComputeCanvasWallV(out.vBottom[e], canvas);
 	}
 	// [rc4l] The horizontal and the ends, as fractions of the linedef in side order: all of it for an ordinary wall (GLWall::Process), the seg's share for a polyobject, with the pinch applied inside that share.
 	{

@@ -57,7 +57,8 @@ struct Quad2D
 // This is the one thing a backend cannot get by replaying what the engine captured. A camera texture
 // is GL-rendered into a GL texture, which Diligent cannot read, so it has to draw the view itself.
 // Same machinery a portal, a mirror or a skybox needs.
-void RenderCameraTexture(const void *material, int w, int h,
+// [rc4l] w by h is the picture's size in pixels, aspect the shape GL frames it to (the texture's scaled size), which differ when ANIMDEFS fits it smaller.
+void RenderCameraTexture(const void *material, int w, int h, float aspect,
                          int px, int py, int pz, unsigned int pangle, int ppitch, float fovDeg);
 
 // [rc4l] The sky's fade layer: a translucent sheet in the sector's fade colour that GL draws over

@@ -45,8 +45,11 @@ their camera, wads and renderer first, and afterwards `play --unpark --port 7801
   is buffered and often empty for the first several seconds. A launch first clears the files naming its
   port, so `ready --port P` waits for the new token, and `--port 7801` with no `--token` finds the user's
   instance even after your own launches have overwritten `.play-session`.
-- Do not sleep in long blocks waiting for it: poll `rpc sim.tic` until it answers. A bare launch is
-  ready in seconds; a heavy wad set can take 15-25 s.
+- Wait for it with `ready --port 7801`, never a hand-rolled `rpc` poll loop: the bridge serves only its
+  newest client, and a poll that connects while `play` is still checking its world knocks it off and the
+  launch dies with `hello timeout`. Every command now waits out a launch on its port by itself (`play`
+  holds `.play-session-<port>.launching` until it is up), so `--port` must name the launch's port. A
+  bare launch is ready in seconds; a heavy wad set can take 15-25 s.
 
 ## Confirm it is the map you asked for
 

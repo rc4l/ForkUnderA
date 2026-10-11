@@ -1535,7 +1535,7 @@ void FGLInterface::RenderTextureView (FCanvasTexture *tex, AActor *Viewpoint, in
 	// draw it. Same viewpoint, same field of view, its own texture.
 	if (Viewpoint != NULL)
 	{
-		zx::hwrender::RenderCameraTexture(gltex, width, height,
+		zx::hwrender::RenderCameraTexture(gltex, bounds.width, bounds.height, (float)width / height,
 			(int)Viewpoint->x, (int)Viewpoint->y,
 			(int)(Viewpoint->z + (Viewpoint->height >> 1)),
 			(unsigned int)Viewpoint->angle, 0, (float)FOV);

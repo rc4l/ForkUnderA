@@ -22,6 +22,7 @@ import * as sweepMod from "./sweep.mjs";
 import { png } from "./png.mjs";
 import { actorsNear } from "./actors.mjs";
 import { pixelToFace } from "./camera.mjs";
+import { sectorOf } from "./sectorof.mjs";
 import { scenarioOptions, scenarioRun, templateScenarioFiles, probeScenario } from "./template.mjs";
 import { decodePNG, abDiff, boxDiff } from "./pngcore.mjs";
 import fs from "node:fs";
@@ -86,6 +87,9 @@ function presetDirs(flags) {
 }
 
 async function connectTarget(flags, usage) {
+  // [rc4l] Every command waits out a launch still checking its world on its port, so a poll started right after `play` cannot kill it.
+  const port = flags.port || (sessionTarget(flags) || {}).port;
+  if (port && await shot.awaitLaunch(SESSION(), port)) console.error(`waited for the launch on port ${port}`);
   const t = targetOf(flags, usage);
   const c = new BridgeClient();
   await c.connect(t.port, { token: t.token });
@@ -132,6 +136,7 @@ const USAGE = `fuactl <command>
   queue add <description> [--port P] [--name SPOT]   save the instance's vantage as a spot and queue the problem seen there (report-queue skill)
   queue list [--all] | next | note <id> <text> | done <id> [--unverified] [--note TEXT]   read and work the queue, oldest open item first
   burst <tag> [--side gl|vk] [--count N] [--box x0,y0,x1,y1] [--spot S | --at --face] [--port P]   timed captures with the sim running and each one's box brightness, for an animation's rate or a light a paused shot hides
+  sector-of --pixel x,y [--side gl|vk] [--spot S | --at --face] [--port P]   which sector's colour that pixel of a capture follows, found by painting halves of the map red and green (fua_sector_color); the sectors stay painted
   travel --to MAP [--max N] [--port P]   nextmap until the instance is on MAP, the way a player reached it
   quit [--port P] [--token T] [--park]   quit an instance (else the last play session) and wait until its port closes; exit 1 if it would not go; --park files its camera, wads and renderer first
   session [--instances N] [--seed S] [--map M] [--tics T]   run the determinism + desync check
@@ -341,6 +346,23 @@ async function main() {
       });
       for (const r of out) console.log(`${r.i} t=${r.t}ms mean=${r.mean.toFixed(2)} ${r.file || "(no capture)"}`);
       c.close();
+      break;
+    }
+    // [rc4l] `fuactl sector-of --pixel x,y` -- whose sector a pixel takes its colour from, a first-class command instead of a bisect script beside the tool.
+    case "sector-of": {
+      const usage = "usage: fuactl sector-of --pixel x,y [--side gl|vk] [--spot NAME | --at x,y,z --face yaw,pitch] [--port P]";
+      if (!flags.pixel) { console.error(usage); process.exit(2); }
+      const [x, y] = String(flags.pixel).split(",").map(Number);
+      const c = await connectTarget(flags, usage);
+      try {
+        const at = shot.cameraFromFlags(flags, SPOTS);
+        if (at) await shot.moveTo(c, at);
+        const r = await sectorOf(c, { side: flags.side === "vk" ? "vk" : "gl", x, y,
+          engineBin: engineOf(flags).split(path.sep).join("/"), log: (m) => console.error(m) });
+        console.log(r.sector === null ? `pixel ${x},${y} follows no sector's colour (sky, a fullbright, or a texel with no red or green)`
+          : `sector ${r.sector} (of ${r.count}, ${r.frames} frames); the sectors stay painted until the map restarts`);
+        process.exitCode = r.sector === null ? 1 : 0;
+      } finally { c.close(); }
       break;
     }
     // [rc4l] `fuactl travel --to MAP` -- nextmap until the instance is on MAP, as a player reaches it, since some faults only follow a level change.

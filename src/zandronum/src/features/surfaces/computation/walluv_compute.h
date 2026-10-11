@@ -40,7 +40,12 @@ void ComputePolyobjSegFractions(float lx1, float ly1, float lx2, float ly2,
 // at textureTop and v = 1 one texture-height below it. A wall whose bottom is above the reference
 // gets a negative v, which is correct and normal -- an upper texture pegged to the ceiling of the
 // sector behind it does exactly that.
+//
+// [rc4l] A negative height is a camera texture's, which GL stores upside down, and v then runs upward as FloatToTexV's division makes it; a zero height has no v.
 float ComputeWallV(float z, float textureTop, float texHeight);
+
+// [rc4l] SetWallCoordinates' last step for a camera texture, whose negative height leaves its v in [-1, 0]: GL shifts it back into [0, 1].
+float ComputeCanvasWallV(float v, bool canvas);
 
 // [rc4l] Where the texture is pegged from -- GL's own form, because guessing at it cost two rounds.
 //

@@ -26,6 +26,8 @@ struct SceneConstantInputs
 	float materialSlots;              // [rc4l] live bindless slots, or 0 to sample the bound texture
 	unsigned int frameMS;             // [rc4l] the clock GL's gl_frameMS reads, for the warp timer
 	int stackSlot;                    // [rc4l] the stacked view being drawn, else -1; uFrame.y carries it plus one
+	bool playerPass;                  // [rc4l] the player's own pass, the main view outside any line mirror, the only one whose walk the holes and walk bits are
+	int skyHoles;                     // [rc4l] the player's sky holes this frame, which uFrame.z carries to the player's pass alone
 };
 
 // [rc4l] Fill `out` (kSceneConstantFloats floats) from `in`.

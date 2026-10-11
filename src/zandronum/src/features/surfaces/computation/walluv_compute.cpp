@@ -24,9 +24,14 @@ void ComputePolyobjSegFractions(float lx1, float ly1, float lx2, float ly2,
 
 float ComputeWallV(float z, float textureTop, float texHeight)
 {
-	if (texHeight <= 0.f) return 0.f;
+	if (texHeight == 0.f) return 0.f;
 	// Downward: v grows as z falls, because Doom hangs a wall texture from its top edge.
 	return (textureTop - z) / texHeight;
+}
+
+float ComputeCanvasWallV(float v, bool canvas)
+{
+	return canvas ? v + 1.f : v;
 }
 
 float ComputeTextureTop(float refCeiling, float refFloor, float texHeight, bool pegged,

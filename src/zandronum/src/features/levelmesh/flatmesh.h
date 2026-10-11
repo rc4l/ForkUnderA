@@ -66,13 +66,15 @@ int StackViewCount();
 StackViewInfo StackView(int slot);
 const FFlatVertex *StackViewVertices(int slot, int &count);
 
-// [rc4l] A subsector GL's walk accepted (DoSubsector) and a sidedef whose seg its clipper let through (AddLine), kept for the stacked view whose walk it is.
+// [rc4l] A subsector GL's walk accepted (DoSubsector) and a sidedef whose seg its clipper let through (AddLine), kept for the stacked view or the player's walk whose it is.
 void NoteWalkedSubsector(int subsector);
 void NoteWalkedSide(int side);
 // [rc4l] The id a stacked view keeps or drops a level-mesh piece by, and GL's light links name it by: the sidedef it was baked from (MeshPiece::linkId), else its subsector for a flat or numsubsectors plus the nearest sidedef for a wall, -1 if it cannot be placed.
 int PieceStackId(const MeshPiece &p);
-// [rc4l] This frame's ComputeMarkStackVisible bits over the subsectors then the sidedefs, or NULL with no stacked view.
+// [rc4l] This frame's ComputeMarkStackVisible bits over the subsectors then the sidedefs, or NULL with no stacked view and no sky hole.
 const unsigned int *StackVisibility(int &words);
+// [rc4l] The player's walk's sky holes this frame (ComputeSkyHoleRecord, count of them), or NULL with none.
+const float *SkyHoles(int &count);
 
 // [rc4l] Whether GL's walk this frame went through the line mirror on linedef line, which is what says it can be seen.
 bool MirrorWalkedThisFrame(int line);

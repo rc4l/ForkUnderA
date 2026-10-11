@@ -40,6 +40,9 @@ bool ComputeSlotRemap(unsigned count, Shows shows, std::vector<unsigned> &remap)
 	return changed;
 }
 
+// [rc4l] Whether the bindless material array keeps its last fill: built, filled from this same table, and with no live material that came back as the white placeholder, which a later fill may resolve (a sprite not yet uploaded, a camera not yet rendered).
+bool ComputeKeepsMaterialFill(bool ready, bool tableMatches, int whiteLiveSlots);
+
 }} // namespace zx::hwrender
 
 #endif // ZX_SLOTREMAP_COMPUTE_H
