@@ -438,15 +438,26 @@ void DrawBlended(Diligent::IDeviceContext *ctx)
 	// picture cannot say which of two draws landed second. As a function over stated inputs it can:
 	// the rule that required two distances to be EXACTLY equal, and therefore never once fired, fails
 	// a test written with the real numbers off a real wall.
-	std::sort(&list[0], &list[0] + list.Size(),
-		[](const BlendDraw &a, const BlendDraw &b) {
-			zx::hwrender::TranslucentDraw da, db;
-			da.distSq = a.dist; da.blend = a.blend; da.decal = a.bias; da.first = a.first;
-			da.layer = a.layer; da.plane = a.plane;
-			db.distSq = b.dist; db.blend = b.blend; db.decal = b.bias; db.first = b.first;
-			db.layer = b.layer; db.plane = b.plane;
-			return zx::hwrender::ComputeDrawsBefore(da, db);
-		});
+	// [rc4l] Sorted as small keys and the draws then moved once, since the comparator rebuilt both keys and the sort moved whole draws on every step.
+	{
+		struct SortKey { zx::hwrender::TranslucentDraw key; unsigned index; };
+		static TArray<SortKey> keys;
+		static TArray<BlendDraw> sorted;
+		keys.Resize(list.Size());
+		for (unsigned i = 0; i < list.Size(); i++)
+		{
+			const BlendDraw &d = list[i];
+			zx::hwrender::TranslucentDraw &k = keys[i].key;
+			k.distSq = d.dist; k.blend = d.blend; k.decal = d.bias; k.first = d.first;
+			k.layer = d.layer; k.plane = d.plane;
+			keys[i].index = i;
+		}
+		std::sort(&keys[0], &keys[0] + keys.Size(),
+			[](const SortKey &a, const SortKey &b) { return zx::hwrender::ComputeDrawsBefore(a.key, b.key); });
+		sorted.Resize(list.Size());
+		for (unsigned i = 0; i < keys.Size(); i++) sorted[i] = list[keys[i].index];
+		for (unsigned i = 0; i < sorted.Size(); i++) list[i] = sorted[i];
+	}
 
 	if (g_dumpBlendOrder && g_pass.mainView)
 	{
