@@ -88,6 +88,7 @@
 #include "features/viewsetup/viewsetup.h"   // [rc4l] the view, set up without GL
 #include "features/draw2d/screenblend.h"   // [rc4l] the screen's tint, worked out without GL
 #include "features/sprites/pspritebuild.h"   // [rc4l] the weapon derived without GL, and its check
+#include "features/frame/standaloneframe.h"   // [rc4l] the standalone scene, driven without GL
 #include "features/viewsetup/computation/viewsetup_compute.h"
 EXTERN_CVAR(Bool, fua_vis_check)
 #include "features/levelmesh/computation/flatmesh_compute.h"   // [rc4l] kSkyCapture*, which walk fills which sky list
@@ -634,26 +635,15 @@ EXTERN_CVAR(Bool, gl_batch_walls)
 EXTERN_CVAR(Bool, gl_draw_sync)
 EXTERN_CVAR(Bool, fua_sprites_own)
 EXTERN_CVAR(Bool, fua_sprite_check)
-// [rc4l] Standalone walks the player's view without GL for its sky surfaces, the automap and the cull, as GL's walk serves GL; about 0.04 ms on wdiex02.
-CVAR(Bool, fua_vis_walk, true, 0)
-// [rc4l] Off walks without culling, so the walk's own cost and the cull's can be measured apart.
-CVAR(Bool, fua_vis_cull, true, 0)
-
-EXTERN_CVAR(Bool, gl_render_things)
-
-// [rc4l] The particles in a subsector the player's walk reached, to GL's sprite path as its own walk hands them over.
-static void WalkParticles(subsector_t *sub, sector_t *sector)
+// [rc4l] An actor or particle features/frame leaves to GL, which draws it into its own window.
+static void GLActorFallback(AActor *thing)
 {
-	if (!gl_render_things) return;
-	for (WORD i = ParticlesInSubsec[DWORD(sub - subsectors)]; i != NO_PARTICLE; i = Particles[i].snext)
-		if (!(fua_sprites_own || fua_sprite_check) || !zx::sprites::BuildParticle(&Particles[i], sector))
-			GLRenderer->ProcessParticle(&Particles[i], sector);
+	GLRenderer->ProcessSprite(thing, thing->Sector);
 }
 
-// [rc4l] An actor a stacked view's or mirror's walk reached, its sprite or model derived inside that view.
-static void StackViewSprite(AActor *thing)
+static void GLParticleFallback(particle_t *particle, sector_t *sector)
 {
-	if (fua_sprites_own) zx::sprites::BuildSprite(thing);
+	GLRenderer->ProcessParticle(particle, sector);
 }
 
 void FGLRenderer::DrawScene(bool toscreen)
@@ -669,102 +659,13 @@ void FGLRenderer::DrawScene(bool toscreen)
 	// any of it: its geometry is resident and its frame is a matrix upload and a batch loop, which
 	// measures 0.25 ms of submit and 0.15 ms of GPU on Sunder MAP16 against roughly 7 ms of this.
 	//
-	// So with fua_dg_standalone the whole derivation is skipped, and what runs below instead is the upkeep, the sprite sweep and the moved sectors' re-bake (scenario standalonemove).
+	// So with fua_dg_standalone the whole derivation is skipped, and features/frame runs the upkeep, the walks, the sprite sweep and the moved sectors' re-bake instead (scenario standalonemove).
 	if (zx::hwrender::StandaloneActive())
 	{
-		// [rc4l] The per-frame bookkeeping CreateScene owns, minus the derivation.
-		//
-		// Last frame's sprites are dead the moment the camera moves, marks age on the frame clock,
-		// and a sector that moved has invalidated its cached geometry. None of that is the BSP walk;
-		// all of it still has to happen.
-		if (zx::levelmesh::PlayerWalkActive())
+		// [rc4l] features/frame drives the scene; GL keeps the actors and particles the backend leaves it, and its own window's draw of them.
+		static const zx::frame::SceneHooks hooks = { GLActorFallback, GLParticleFallback };
+		if (zx::frame::StandaloneScene(hooks))
 		{
-			zx::levelmesh::DynClear();
-			zx::levelmesh::ClearSprites();
-			zx::levelmesh::UpdateProjectedDecals();
-		}
-		zx::horizon::UpdateHorizons();
-		// [rc4l] The walks first, so a sector or side that moved or relit is re-baked only once one of them reaches it.
-		const bool walked = fua_vis_walk && zx::levelmesh::PlayerWalkActive();
-		if (walked)
-		{
-			PO_LinkToSubsectors();
-			zx::visibility::WalkView(fua_vis_cull, true, WalkParticles);
-			zx::visibility::WalkPortalViews(StackViewSprite);
-		}
-		zx::levelmesh::WalkedThisFrame walkedSet;
-		walkedSet.sectors = zx::visibility::SectorsWalkedThisFrame(walkedSet.sectorCount);
-		walkedSet.sides = zx::visibility::SidesWalkedThisFrame(walkedSet.sideCount);
-		zx::levelmesh::InvalidateMovedSectors(walked ? &walkedSet : NULL);
-
-		// [rc4l] A frame where the world moved used to go back through GL, because the walk was what
-		// re-baked a seg whose sector had moved. It is not any more: InvalidateMovedSectors re-bakes
-		// the moved sector's walls AND its planes from the map, on the spot, with no traversal to wait
-		// for. So the fallback is needed only when the map is not driving the bake.
-		//
-		// It was not the handful of frames its own comment claimed, either. A map with a perpetual
-		// lift moves a sector on most frames, and the walk it dragged back in was still 12% of the
-		// profile on Sunder MAP10 -- AddLine, AddLines, TryReplay and GLWall::SetupLights, all of it
-		// working out a picture the backend draws from geometry it already holds.
-		if (zx::levelmesh::SectorsMovedLastFrame() == 0 || fua_surface_mapbake_auto)
-		{
-			// [rc4l] Sprites still come from GL, deliberately.
-			//
-			// GLSprite::Process picks the frame for the viewing angle, applies the sector's light and
-			// the actor's own, handles stretching, clipping and every render style a mod can set. A
-			// second implementation of that would drift the way the backend's lighting drifted before
-			// CaptureShading existed. What is skipped is the BSP walk that used to FIND the actors --
-			// they are taken from the thinker list instead, which is where they live anyway.
-			//
-			// Sprites are a rounding error next to walls: 397 of them on Sunder MAP16 against 10,506
-			// walls, and GLSprite::Process culls most of what is handed to it.
-			// [rc4l] Culled against the frustum FIRST, or this costs what the walk cost.
-			//
-			// Handing every actor in the level to ProcessSprite measured 10.7 ms against GL's 10.5 --
-			// the walk was replaced by an equally expensive sweep, which is not a saving, it is a
-			// different bill. The BSP walk was doing two jobs and only one of them is being dropped:
-			// it derived the geometry AND it found the actors worth looking at.
-			//
-			// The cheap half of that is a matrix multiply per actor. The backend's own MVP is used, so
-			// there is no second derivation of the camera, and the actor's radius and height pad the
-			// test -- a sprite is wider than the point it stands on, and clipping one that is half on
-			// screen would be worse than drawing a few that are not.
-			SetupSprite.Clock();
-			int nSeen = 0, nNoSector = 0, nBehind = 0, nOffScreen = 0, nProcessed = 0;
-			const float *mvp = zx::hwrender::SceneMVP();
-			TThinkerIterator<AActor> it;
-			AActor *thing;
-			while ((thing = it.Next()) != NULL)
-			{
-				nSeen++;
-				if (thing->Sector == NULL) { nNoSector++; continue; }
-				if (mvp != NULL)
-				{
-					// Mesh space is (x, z-up, y), the same swap the vertices get.
-					const float px = FIXED2FLOAT(thing->x);
-					const float py = FIXED2FLOAT(thing->z) + FIXED2FLOAT(thing->height) * 0.5f;
-					const float pz = FIXED2FLOAT(thing->y);
-					const float w = mvp[3] * px + mvp[7] * py + mvp[11] * pz + mvp[15];
-					// A generous margin: the sprite's own size, plus slack for one that is taller or
-					// wider than the actor claims (a rocket's explosion, a stretched corpse).
-					const float pad = FIXED2FLOAT(thing->radius) + FIXED2FLOAT(thing->height) + 64.f;
-					if (w < -pad) { nBehind++; continue; }   // behind the camera
-					if (w > 0.f)
-					{
-						const float cx = mvp[0] * px + mvp[4] * py + mvp[8]  * pz + mvp[12];
-						const float cy = mvp[1] * px + mvp[5] * py + mvp[9]  * pz + mvp[13];
-						const float m = pad / w + 0.15f;   // pad in NDC, plus slack for the projection
-						if (cx / w < -1.f - m || cx / w > 1.f + m) { nOffScreen++; continue; }
-						if (cy / w < -1.f - m || cy / w > 1.f + m) { nOffScreen++; continue; }
-					}
-				}
-				nProcessed++;
-				// [rc4l] features/sprites derives the backend's sprites and models itself; with the check on GL draws them all too.
-				if (!(fua_sprites_own || fua_sprite_check) || !zx::sprites::BuildSprite(thing)) ProcessSprite(thing, thing->Sector);
-			}
-			SetupSprite.Unclock();
-			zx::levelmesh::RecordSpriteSweep(nSeen, nNoSector, nBehind, nOffScreen, nProcessed);
-
 			if (!gl_draw_sync && toscreen)
 			{
 				All.Unclock();

@@ -39,11 +39,11 @@ neither there. `fua_sprites_own 0` hands every sprite and model back to GL.
 
 ## In-engine hooks
 
-- `gl/scene/gl_scene.cpp` `FGLRenderer::DrawScene`, the standalone sprite sweep: `BuildSprite` per
-  actor in view, `ProcessSprite` with the switch off or the check on, GL's model list with the check on,
-  and `CheckFrameSprites` after GL's sprites are drawn; `StackViewSprite`, `BuildSprite` for each actor a
-  stacked view's or mirror's walk reaches; `WalkParticles`, `BuildParticle` for each particle the player's
-  walk reaches.
+- `features/frame/standaloneframe.cpp`, the standalone sprite sweep: `BuildSprite` per actor in view, GL's
+  `ProcessSprite` through a hook with the switch off or the check on; `BuildSprite` for each actor a stacked
+  view's or mirror's walk reaches; `BuildParticle` for each particle the player's walk reaches.
+- `gl/scene/gl_scene.cpp` `FGLRenderer::DrawScene`: GL's model list with the check on, and
+  `CheckFrameSprites` after GL's sprites are drawn.
 - `features/levelmesh/flatmesh.cpp` `RegisterSprite`: `NoteGLSprite`, GL's piece for the check, and the
   `ThingColor` fold.
 - `features/levelmesh/modelmesh.cpp`: `ModelPieceLook`, a model's look for GL's capture and ours;

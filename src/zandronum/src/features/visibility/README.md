@@ -60,9 +60,10 @@ seg, and a seg facing away never loads its sidedef; the rest is cache misses on 
 
 - `gl/scene/gl_scene.cpp` `FGLRenderer::CreateScene`: `CheckAgainstGL` after GL's walk of the player's
   view, from the view area GL started with.
-- `gl/scene/gl_scene.cpp` `FGLRenderer::DrawScene`: `CheckPortalViews` after `GLPortal::EndFrame`; in
-  the standalone branch, `PO_LinkToSubsectors`, `WalkView` (publishing to the player's walk slot
-  unless `fua_vis_cull` is off, with `WalkParticles`) and `WalkPortalViews` with `StackViewSprite`.
+- `gl/scene/gl_scene.cpp` `FGLRenderer::DrawScene`: `CheckPortalViews` after `GLPortal::EndFrame`.
+- `features/frame/standaloneframe.cpp` `StandaloneScene`: `PO_LinkToSubsectors`, `WalkView` (publishing to
+  the player's walk slot unless `fua_vis_cull` is off, with the walked particles) and `WalkPortalViews`
+  with the actors they reach.
 - `gl/data/gl_setup.cpp` `gl_CleanLevelData`: `ForgetWalk`.
 - `features/levelmesh/wallcache.cpp` `InvalidateMovedSectors`: with the walks' lists, only what they reached.
 - `features/levelmesh/flatmesh.cpp`: `BeginSlotVisibility`/`NoteSlotVisible`, the walk slots;
