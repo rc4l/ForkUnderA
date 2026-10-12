@@ -60,6 +60,8 @@
 #include "gl/textures/gl_material.h"
 #include "computation/psprite_overlay_compute.h"
 #include "features/damage-tint/damagetint.h"	// [rc4l] damaging-floor weapon tint
+#include "features/sprites/pspritebuild.h"	// [rc4l] the weapon derived without GL
+#include "features/draw2d/computation/quad2d_compute.h"	// [rc4l] a layer's 2D blend
 
 EXTERN_CVAR (Bool, r_drawplayersprites)
 EXTERN_CVAR(Float, transsouls)
@@ -74,7 +76,7 @@ EXTERN_CVAR (Bool, r_deathcamera)
 //
 //==========================================================================
 
-void FGLRenderer::DrawPSprite (player_t * player,pspdef_t *psp,fixed_t sx, fixed_t sy, bool hudModelStep, int OverrideShader, bool alphatexture)
+void FGLRenderer::DrawPSprite (player_t * player,pspdef_t *psp,fixed_t sx, fixed_t sy, bool hudModelStep, int OverrideShader, bool alphatexture, int blend2d)
 {
 	float			fU1,fV1;
 	float			fU2,fV2;
@@ -239,10 +241,14 @@ void FGLRenderer::DrawPSprite (player_t * player,pspdef_t *psp,fixed_t sx, fixed
 			q.b = (q.b + db > 1.f) ? 1.f : q.b + db;
 		}
 		q.clipL = 0; q.clipT = 0; q.clipR = 0; q.clipB = 0;
-		q.blend = 0;
-		q.translation = 0;
+		q.blend = blend2d;
+		q.translation = psptranslation;
 		q.texMode = gl_RenderState.GetTextureMode();
-		zx::hwrender::Record2D(q);
+		q.kind = 0;
+		q.lx2 = q.ly2 = 0.f;
+		// [rc4l] features/sprites records the weapon itself; GL's quad is only compared against it with the check on.
+		zx::sprites::NoteGLPSprite(q);
+		if (!zx::sprites::PSpritesOwned()) zx::hwrender::Record2D(q);
 	}
 
 	FFlatVertex *ptr = GLRenderer->mVBO->GetBuffer();
@@ -294,6 +300,8 @@ void FGLRenderer::DrawPlayerSprites(sector_t * viewsector, bool hudModelStep)
 		return;
 
 	P_BobWeapon (player, &player->psprites[ps_weapon], &ofsx, &ofsy);
+	// [rc4l] features/sprites derives the weapon from the same bob, since P_BobWeapon smooths it a step per call.
+	if (!hudModelStep) zx::sprites::BuildPlayerSprites(viewsector, in_area, ofsx, ofsy);
 
 	// [overlay] Collect the weapon-pass layers (everything below the targeter) in ascending
 	// draw order, and compute each layer's fullbright exactly as the old statebright[] did.
@@ -549,7 +557,8 @@ void FGLRenderer::DrawPlayerSprites(sector_t * viewsector, bool hudModelStep)
 			drawsx = psp->oldx + FixedMul(psp->sx - psp->oldx, r_TicFrac);
 			drawsy = psp->oldy + FixedMul(psp->sy - psp->oldy, r_TicFrac);
 		}
-		DrawPSprite (player,psp,drawsx+addx, drawsy+addy, hudModelStep, layerShader, !!(layerStyle.Flags & STYLEF_RedIsAlpha));
+		DrawPSprite (player,psp,drawsx+addx, drawsy+addy, hudModelStep, layerShader, !!(layerStyle.Flags & STYLEF_RedIsAlpha),
+			zx::draw2d::ComputeQuadBlend(layerStyle.BlendOp, layerStyle.DestAlpha));
 	}
 	gl_RenderState.SetObjectColor(0xffffffff);
 	gl_RenderState.SetDynLight(0, 0, 0);
@@ -569,6 +578,7 @@ void FGLRenderer::DrawTargeterSprites()
 	pspdef_t *psp;
 	AActor * playermo=players[consoleplayer].camera;
 	player_t * player=playermo->player;
+	zx::sprites::BuildTargeterSprites(mViewActor);	// [rc4l] features/sprites derives the targeter too
 	
 	if(!player || playermo->renderflags&RF_INVISIBLE || !r_drawplayersprites ||
 		mViewActor!=playermo) return;
@@ -586,6 +596,6 @@ void FGLRenderer::DrawTargeterSprites()
 	for (i=0; i<3; i++)
 	{
 		psp = player->psprites.Find(targetlayers[i]);
-		if (psp && psp->state) DrawPSprite (player,psp,psp->sx, psp->sy, false, 0, false);
+		if (psp && psp->state) DrawPSprite (player,psp,psp->sx, psp->sy, false, 0, false, 0);
 	}
 }

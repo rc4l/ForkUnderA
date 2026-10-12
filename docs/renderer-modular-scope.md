@@ -248,8 +248,10 @@ gamma, screenshots and save pictures, and materials (`FMaterial`). First step: `
 works out a 2D draw once, without GL (`DrawTexture`'s quad and texture mode, lines, pixels, dims,
 clears), and GL draws and records that; GL and Vulkan frames of the HUD, console and menu are
 unchanged. Then `features/viewsetup` works out the view once (the stretched pitch, the roll, the
-actor the eye is in, the walks' frustum), which GL's `RenderViewpoint` and the walks read. Next: the
-frame driver out of `gl_scene.cpp`, then a window and framebuffer of Vulkan's own.
+actor the eye is in, the walks' frustum), which GL's `RenderViewpoint` and the walks read. The screen's
+tint (`draw2d/screenblend`) and the weapon (`sprites/pspritebuild`) are worked out without GL too, the
+weapon checked against GL's record on about 54,000 frames. Next: the frame driver out of
+`gl_scene.cpp`, then a window and framebuffer of Vulkan's own.
 
 ### P6: visibility and threads
 

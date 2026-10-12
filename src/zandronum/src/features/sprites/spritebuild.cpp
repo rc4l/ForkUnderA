@@ -144,6 +144,12 @@ static void ActorLight(const AActor *self, float out[3])
 	PointLight(self->x, self->y, self->z + (self->height >> 1), self->subsector, self, out);
 }
 
+void ActorDynamicLight(const AActor *actor, float out[3])
+{
+	out[0] = out[1] = out[2] = 0.f;
+	ActorLight(actor, out);
+}
+
 // [rc4l] GLSprite's ThingColor, which GL's shader multiplies the sprite by as the object colour, folded into the shading.
 static void ApplyThingColor(PalEntry color, MeshPiece &mp)
 {

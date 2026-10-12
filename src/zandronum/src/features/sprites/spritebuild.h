@@ -32,6 +32,9 @@ void NoteDerivedSprite(const void *who, const zx::levelmesh::MeshPiece &piece, c
 // [rc4l] Compare every actor GL drew this frame against the derivation; called once GL's sprites are in.
 void CheckFrameSprites();
 
+// [rc4l] gl_SetDynSpriteLight for an actor: the dynamic light at its middle, into `out`, which starts from nothing.
+void ActorDynamicLight(const AActor *actor, float out[3]);
+
 }} // namespace zx::sprites
 
 #endif // ZX_SPRITEBUILD_H

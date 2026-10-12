@@ -19,6 +19,15 @@ surfaces from `FModel::FrameSurfaces`, captured through `CaptureModelSurface`. G
 the same pose and blend, so the two cannot drift. Standalone drew no solid models before this, since only
 `RenderScene` draws GL's model list, and none in stacked views or mirrors (scenario `modelstandalone`).
 
+The weapon too (`pspritebuild.cpp`, `computation/pspritequad_compute`): each layer below the targeter as
+`DrawPlayerSprites` and `DrawPSprite` draw it, with the weapon light (software lighting's curve, the
+brighten a fullbright layer gives, bright fog), the 3D floor band the eye is in, the style and alpha
+`AlterWeaponSprite` leaves, the overlay offsets and bob, and the targeter; recorded into the 2D capture
+where GL's quad was. GL's `P_BobWeapon` result is handed over, since it smooths the bob a step per call.
+`fua_psprite_check 1` compares the derived quads with GL's bit for bit (`fua_psprite_report`): about
+54,000 frames with a weapon drawn across Freedoom MAP01 and MAP04 firing and the Whodunit maps, 0 differed. GL's own record
+now carries a player-translated layer's colours and an additive layer's blend, which it dropped.
+
 `fua_sprite_check 1` derives every sprite and model beside GL's and compares the two bit for bit, every
 vertex of a model surface included, matching an actor's pieces within one walk; `fua_sprite_report`
 prints what differed and how many model surfaces were compared. It matched on about 1.6 million
@@ -44,6 +53,9 @@ neither there. `fua_sprites_own 0` hands every sprite and model back to GL.
   `ComputeModelMatrix`, and `NextModelFrame`.
 - `gl/models/gl_models_md2.cpp`, `gl_models_md3.cpp`, `gl_voxels.cpp`: `FrameSurfaces`, each `RenderFrame`'s
   surfaces worked out without GL and drawn from.
+- `gl/scene/gl_weapon.cpp` `DrawPlayerSprites`: `BuildPlayerSprites` with GL's bob; `DrawTargeterSprites`:
+  `BuildTargeterSprites`; `DrawPSprite`: `NoteGLPSprite`, and records only when `PSpritesOwned` is false.
+- `gl/scene/gl_scene.cpp` `EndDrawScene`: `CheckFramePSprites` once the weapon and targeter are in.
 
 GL settings it still reads, until the renderer interface supplies them (P5): `glset`,
 `gl_fixedcolormap`, `currentmapsection`, `getExtraLight`, `gl_FindModelFrame`, and GL's sprite cvars.

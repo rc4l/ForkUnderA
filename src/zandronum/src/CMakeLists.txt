@@ -1610,6 +1610,7 @@ add_executable( zdoom WIN32
 	features/materials/materials.cpp
 	features/sprites/spritebuild.cpp
 	features/sprites/modelbuild.cpp
+	features/sprites/pspritebuild.cpp
 	features/visibility/viswalk.cpp
 	features/draw2d/draw2d.cpp
 	features/draw2d/screenblend.cpp
@@ -1628,6 +1629,7 @@ add_executable( zdoom WIN32
 	features/sprites/computation/spriteclip_compute.cpp
 	features/sprites/computation/spriteframe_compute.cpp
 	features/sprites/computation/modelpose_compute.cpp
+	features/sprites/computation/pspritequad_compute.cpp
 	features/levelmesh/computation/shading_compute.cpp
 	features/levelmesh/computation/surfacebudget_compute.cpp
 	features/levelmesh/computation/lightband_compute.cpp

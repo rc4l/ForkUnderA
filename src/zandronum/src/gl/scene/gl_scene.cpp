@@ -87,6 +87,7 @@
 #include "features/visibility/viswalk.h"   // [rc4l] the player's visible set, walked without GL
 #include "features/viewsetup/viewsetup.h"   // [rc4l] the view, set up without GL
 #include "features/draw2d/screenblend.h"   // [rc4l] the screen's tint, worked out without GL
+#include "features/sprites/pspritebuild.h"   // [rc4l] the weapon derived without GL, and its check
 #include "features/viewsetup/computation/viewsetup_compute.h"
 EXTERN_CVAR(Bool, fua_vis_check)
 #include "features/levelmesh/computation/flatmesh_compute.h"   // [rc4l] kSkyCapture*, which walk fills which sky list
@@ -921,6 +922,7 @@ void FGLRenderer::EndDrawScene(sector_t * viewsector)
 	gl_RenderState.SetFixedColormap(CM_DEFAULT);
 	gl_RenderState.SetSoftLightLevel(-1);
 	DrawTargeterSprites();
+	zx::sprites::CheckFramePSprites();
 	DrawBlend(viewsector);
 
 	// Restore standard rendering state
