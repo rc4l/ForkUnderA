@@ -1,8 +1,10 @@
-// [MobiusU9B] The speedometer's speed, readout value, text colour and on-screen position, kept engine-free so they are unit-tested.
+// [MobiusU9B] The speedometer's speed, readout text, text colour and on-screen position, kept engine-free so they are unit-tested.
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 MobiusU9B
 #ifndef ZX_SPEEDOMETER_COMPUTE_H
 #define ZX_SPEEDOMETER_COMPUTE_H
+
+#include <string>
 
 namespace zx { namespace speedometer {
 
@@ -18,6 +20,12 @@ double ComputeSpeedometerSpeed(double vx, double vy, double vz, bool includeVert
 
 // [MobiusU9B] The whole number the readout shows: rounded to nearest, clamped to [0, 99999], and 0 for NaN.
 int ComputeSpeedometerDisplayValue(double unitsPerSecond);
+
+// [MobiusU9B] The readout text for a speed in map units per second, e.g. "583 u/s".
+std::string ComputeSpeedometerText(double unitsPerSecond);
+
+// [MobiusU9B] The widest readout the text box is sized for, "0000 u/s", sharing ComputeSpeedometerText's suffix.
+std::string ComputeSpeedometerBoxText();
 
 // [MobiusU9B] A position cvar's value clamped to [0, 100] percent, with NaN treated as 0.
 double ComputeSpeedometerClampPercent(double percent);

@@ -7,10 +7,12 @@
 
 #include <limits>
 
+using zx::speedometer::ComputeSpeedometerBoxText;
 using zx::speedometer::ComputeSpeedometerClampPercent;
 using zx::speedometer::ComputeSpeedometerColor;
 using zx::speedometer::ComputeSpeedometerDisplayValue;
 using zx::speedometer::ComputeSpeedometerSpeed;
+using zx::speedometer::ComputeSpeedometerText;
 using zx::speedometer::ComputeSpeedometerTextPos;
 using zx::speedometer::TextPos;
 
@@ -69,6 +71,25 @@ TEST(ComputeSpeedometerDisplayValue, ClampsRunawaySpeeds)
 	EXPECT_EQ(99999, ComputeSpeedometerDisplayValue(99999.0));
 	EXPECT_EQ(99999, ComputeSpeedometerDisplayValue(1e300));
 	EXPECT_EQ(99999, ComputeSpeedometerDisplayValue(std::numeric_limits<double>::infinity()));
+}
+
+TEST(ComputeSpeedometerText, FormatsTheRoundedValueWithItsUnit)
+{
+	EXPECT_EQ("583 u/s", ComputeSpeedometerText(583.4));
+	EXPECT_EQ("0 u/s", ComputeSpeedometerText(0.0));
+}
+
+TEST(ComputeSpeedometerText, CarriesTheDisplayValueClamps)
+{
+	EXPECT_EQ("0 u/s", ComputeSpeedometerText(kNaN));
+	EXPECT_EQ("99999 u/s", ComputeSpeedometerText(1e300));
+}
+
+TEST(ComputeSpeedometerBoxText, IsFourZeroDigitsWithTheSameSuffix)
+{
+	EXPECT_EQ("0000 u/s", ComputeSpeedometerBoxText());
+	// [MobiusU9B] A four-digit reading must be exactly as long as the box text, or the right edge would shift.
+	EXPECT_EQ(ComputeSpeedometerBoxText().size(), ComputeSpeedometerText(9999.0).size());
 }
 
 TEST(ComputeSpeedometerClampPercent, PassesInRangeValuesThrough)

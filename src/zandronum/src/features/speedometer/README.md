@@ -12,7 +12,7 @@ network, savegame or demo impact. A dedicated server never reaches `D_Display`, 
 | file | role |
 |------|------|
 | `speedometer.h/.cpp` | Engine glue: the CVARs and `zx::speedometer::Draw`, which reads `mo->velx/vely/velz` and draws with `HUD_DrawText`. |
-| `computation/speedometer_compute.{h,cpp,_test.cpp}` | Pure math: speed from velocity, the rounded readout value, percent and colour clamping, and the text position. 100% unit coverage. |
+| `computation/speedometer_compute.{h,cpp,_test.cpp}` | Pure math: speed from velocity (via `vectors.h`), the readout value and text, percent and colour clamping, and the text position. 100% unit coverage. |
 
 ## Cvars
 
