@@ -56,6 +56,7 @@ void gl_RegisterSpriteView();   // gl/scene/gl_spriteview.cpp
 #include "gl/system/gl_framebuffer.h"
 #include "gl/system/gl_cvars.h"
 #include "gl/renderer/gl_renderer.h"
+#include "features/materials/materials.h"   // [rc4l] the particle and mirror textures
 #include "gl/renderer/gl_lightdata.h"
 #include "gl/renderer/gl_renderstate.h"
 #include "gl/data/gl_data.h"
@@ -108,9 +109,10 @@ void gl_FlushModels();
 
 void FGLRenderer::Initialize()
 {
-	glpart2 = FTexture::CreateTexture(Wads.GetNumForFullName("glstuff/glpart2.png"), FTexture::TEX_MiscPatch);
-	glpart = FTexture::CreateTexture(Wads.GetNumForFullName("glstuff/glpart.png"), FTexture::TEX_MiscPatch);
-	mirrortexture = FTexture::CreateTexture(Wads.GetNumForFullName("glstuff/mirror.png"), FTexture::TEX_MiscPatch);
+	// [rc4l] features/materials owns these, so a backend has them without GL.
+	glpart2 = zx::materials::ParticleTexture(1);
+	glpart = zx::materials::ParticleTexture(2);
+	mirrortexture = zx::materials::MirrorSheenTexture();
 
 	mVBO = new FFlatVertexBuffer;
 	mSkyVBO = new FSkyVertexBuffer;
@@ -134,9 +136,7 @@ FGLRenderer::~FGLRenderer()
 	if (mVBO != NULL) delete mVBO;
 	if (mSkyVBO != NULL) delete mSkyVBO;
 	if (mLights != NULL) delete mLights;
-	if (glpart2) delete glpart2;
-	if (glpart) delete glpart;
-	if (mirrortexture) delete mirrortexture;
+	// [rc4l] glpart, glpart2 and mirrortexture are features/materials', which keeps them.
 	if (mFBID != 0) glDeleteFramebuffers(1, &mFBID);
 }
 

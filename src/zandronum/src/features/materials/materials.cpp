@@ -3,6 +3,7 @@
 
 #include "gl/system/gl_system.h"
 #include "features/materials/materials.h"
+#include "w_wad.h"   // [rc4l] the special textures' lumps
 
 #include "textures/textures.h"
 #include "gl/textures/gl_material.h"
@@ -32,6 +33,30 @@ bool DescribeMaterial(MaterialRef m, MaterialInfo &info)
 	info.brightmap = tex->gl_info.Brightmap != NULL;
 	info.shaderSpeed = tex->gl_info.shaderspeed;
 	return true;
+}
+
+// [rc4l] glstuff's particle and mirror pictures, which FGLRenderer::Initialize created for itself before.
+static FTexture *g_special[3] = { NULL, NULL, NULL };
+static bool g_specialLoaded = false;
+
+static void LoadSpecialTextures()
+{
+	if (g_specialLoaded) return;
+	g_specialLoaded = true;
+	static const char *names[3] = { "glstuff/glpart2.png", "glstuff/glpart.png", "glstuff/mirror.png" };
+	for (int i = 0; i < 3; i++) g_special[i] = FTexture::CreateTexture(Wads.GetNumForFullName(names[i]), FTexture::TEX_MiscPatch);
+}
+
+FTexture *ParticleTexture(int style)
+{
+	LoadSpecialTextures();
+	return (style == 1 || style == 2) ? g_special[style - 1] : NULL;
+}
+
+FTexture *MirrorSheenTexture()
+{
+	LoadSpecialTextures();
+	return g_special[2];
 }
 
 MaterialRef MaterialForTexture(const void *texture, bool expand)

@@ -32,3 +32,37 @@ TEST(ViewSetup, TheFrustumWidensWithTiltAndOpensFullyPastIt)
 	EXPECT_EQ(ComputeFrustumAngle(10.f, 400.f, 48), 0xffffffffu);  // [rc4l] a lens wide enough to pass half a turn sees everything
 	EXPECT_LT(ComputeFrustumAngle(0.f, 90.f, 64), level);          // [rc4l] a wider aspect's multiplier narrows it
 }
+
+TEST(ViewSetup, TheSkyScrollsWithTheClockAndWraps)
+{
+	EXPECT_FLOAT_EQ(ComputeSkyScroll(0, 0.5f), 0.f);
+	EXPECT_FLOAT_EQ(ComputeSkyScroll(512, 1.f), 512.f * 90.f / 256.f);
+	EXPECT_FLOAT_EQ(ComputeSkyScroll(1536, 1.f), 512.f * 90.f / 256.f);   // [rc4l] a wrapped clock scrolls as far
+}
+
+TEST(ViewSetup, TheViewAngleGivesTheYawAndFacing)
+{
+	float yaw, x, y;
+	ComputeViewAngleVector(0, yaw, x, y);
+	EXPECT_FLOAT_EQ(yaw, 270.f); EXPECT_FLOAT_EQ(x, 1.f); EXPECT_NEAR(y, 0.f, 1e-6f);
+	ComputeViewAngleVector(0x40000000u, yaw, x, y);   // [rc4l] a quarter turn: north
+	EXPECT_FLOAT_EQ(yaw, 180.f); EXPECT_NEAR(x, 0.f, 1e-6f); EXPECT_FLOAT_EQ(y, 1.f);
+}
+
+TEST(ViewSetup, TheViewAreaAgainstAHeightTransfer)
+{
+	EXPECT_EQ(ComputeViewArea(false, 0, 0, 0, false), kAreaDefault);
+	EXPECT_EQ(ComputeViewArea(true, 10, 10, 100, false), kAreaBelow);
+	EXPECT_EQ(ComputeViewArea(true, 50, 10, 100, false), kAreaNormal);
+	EXPECT_EQ(ComputeViewArea(true, 150, 10, 100, false), kAreaAbove);
+	EXPECT_EQ(ComputeViewArea(true, 150, 10, 100, true), kAreaNormal);   // [rc4l] a floor-only transfer has no above
+}
+
+TEST(ViewSetup, TheEyeStaysFourUnitsInside)
+{
+	const long long u = 1 << 16;
+	EXPECT_EQ(ComputeClampedViewZ(50 * u, 0, 100 * u), 50 * u);
+	EXPECT_EQ(ComputeClampedViewZ(99 * u, 0, 100 * u), 96 * u);
+	EXPECT_EQ(ComputeClampedViewZ(1 * u, 0, 100 * u), 4 * u);
+	EXPECT_EQ(ComputeClampedViewZ(1 * u, 0, 2 * u), 4 * u);   // [rc4l] crossed: the floor wins
+}

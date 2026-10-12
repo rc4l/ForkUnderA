@@ -4,6 +4,7 @@
 // [rc4l] The sky: GL's dome or skybox, the skybox portal rendered from its viewpoint, the fade, and the sky surfaces and occluders cut from the world.
 
 #include "features/hwrender/diligent/dgscene_internal.h"
+#include "features/viewsetup/viewsetup.h"   // [rc4l] the sky's scroll this frame
 
 namespace zx { namespace hwrender {
 
@@ -1277,7 +1278,7 @@ void ResetSkyForLevel()
 void DrawSkyBackground(Diligent::IDeviceContext *ctx)
 {
 	// mSky1Pos is in degrees and advances with gl_frameMS, so it must be read every frame.
-	const float scroll = (GLRenderer != NULL) ? GLRenderer->mSky1Pos : 0.f;
+	const float scroll = zx::viewsetup::CurrentView().sky1Pos;
 	g_skyAngle = (-180.0f + scroll) * 3.14159265f / 180.0f;
 	// [rc4l] A sky that is a PLACE takes precedence over any texture.
 	//

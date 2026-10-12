@@ -17,10 +17,23 @@ struct ViewSetup
 	float    pitch, roll;    // [rc4l] degrees, the pitch stretched by the level's pixel ratio
 	float    fov;            // [rc4l] degrees across
 	unsigned frustumAngle;   // [rc4l] the walks' frustum half-angle (BAM), 2^32-1 for all round
+	float    yaw;            // [rc4l] degrees, as GL's matrices take the view angle
+	float    vectorX, vectorY;   // [rc4l] the unit vector the view faces in the plane
+	float    sky1Pos, sky2Pos;   // [rc4l] how far the two sky layers have scrolled this frame, in degrees
+	bool     dynamicLights;  // [rc4l] the level has a dynamic light, which decides whether a sprite is lit per pixel at all
 };
 
-// [rc4l] Set the view up from the camera R_SetupFrame placed, at field of view `fov`; call once a viewpoint, after R_SetupFrame.
-void SetupView(AActor *camera, float fov);
+// [rc4l] Set the view up from the camera R_SetupFrame placed, at field of view `fov` and the frame's clock; call once a viewpoint, after R_SetupFrame.
+void SetupView(AActor *camera, float fov, long frameMS);
+
+// [rc4l] SetViewAngle: turn the view to `viewAngle`, as a mirror's walk turns it and back, R_SetViewAngle with it.
+void TurnView(unsigned viewAngle);
+
+// [rc4l] SetViewArea: the render sector the eye is in, the eye kept inside it unless `viewActor` is an unrestricted spectator, and the area against a height transfer.
+void SetViewArea(AActor *viewActor);
+
+// [rc4l] Register the sprite view this view answers, for a frame GL is not drawing.
+void InstallSpriteView();
 
 // [rc4l] The view last set up.
 const ViewSetup &CurrentView();

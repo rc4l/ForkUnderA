@@ -154,37 +154,8 @@ angle_t FGLRenderer::FrustumAngle()
 //-----------------------------------------------------------------------------
 void FGLRenderer::SetViewArea()
 {
-	// The render_sector is better suited to represent the current position in GL
-	viewsector = R_PointInSubsector(viewx, viewy)->render_sector;
-
-	// keep the view within the render sector's floor and ceiling
-	// [AK] Allow spectators without physical restrictions to pass through floors/ceilings.
-	if (P_IsSpectatorUnrestricted(mViewActor) == false)
-	{
-		fixed_t theZ = viewsector->ceilingplane.ZatPoint (viewx, viewy) - 4*FRACUNIT;
-		if (viewz > theZ)
-		{
-			viewz = theZ;
-		}
-
-		theZ = viewsector->floorplane.ZatPoint (viewx, viewy) + 4*FRACUNIT;
-		if (viewz < theZ)
-		{
-			viewz = theZ;
-		}
-	}
-
-	// Get the heightsec state from the render sector, not the current one!
-	if (viewsector->heightsec && !(viewsector->heightsec->MoreFlags & SECF_IGNOREHEIGHTSEC))
-	{
-		in_area = viewz<=viewsector->heightsec->floorplane.ZatPoint(viewx,viewy) ? area_below :
-				   (viewz>viewsector->heightsec->ceilingplane.ZatPoint(viewx,viewy) &&
-				   !(viewsector->heightsec->MoreFlags&SECF_FAKEFLOORONLY)) ? area_above:area_normal;
-	}
-	else
-	{
-		in_area=area_default;	// depends on exposed lower sectors
-	}
+	// [rc4l] features/viewsetup places the eye and finds its area, for a frame GL draws or not.
+	zx::viewsetup::SetViewArea(mViewActor);
 }
 
 //-----------------------------------------------------------------------------
@@ -261,11 +232,11 @@ void FGLRenderer::SetViewport(GL_IRECT *bounds)
 
 void FGLRenderer::SetViewAngle(angle_t viewangle)
 {
-	float fviewangle=(float)(viewangle>>ANGLETOFINESHIFT)*360.0f/FINEANGLES;
-
-	mAngles.Yaw = 270.0f-fviewangle;
-	mViewVector = FVector2(cos(DEG2RAD(fviewangle)), sin(DEG2RAD(fviewangle)));
-
+	// [rc4l] The yaw and facing as features/viewsetup works them out, so the two cannot drift.
+	float yaw, vx, vy;
+	zx::viewsetup::ComputeViewAngleVector(viewangle, yaw, vx, vy);
+	mAngles.Yaw = yaw;
+	mViewVector = FVector2(vx, vy);
 	R_SetViewAngle();
 }
 	
@@ -956,14 +927,14 @@ sector_t * FGLRenderer::RenderViewpoint (AActor * camera, GL_IRECT * bounds, flo
 	SetViewArea();
 
 	// [rc4l] features/viewsetup works the view out once, without GL: the stretched pitch, the roll, the actor the eye is in and the walks' frustum.
-	zx::viewsetup::SetupView(camera, fov);
+	zx::viewsetup::SetupView(camera, fov, gl_frameMS);
 	const zx::viewsetup::ViewSetup &view = zx::viewsetup::CurrentView();
 	mAngles.Pitch = view.pitch;
 	mAngles.Roll = view.roll;
 
 	// Scroll the sky
-	mSky1Pos = (float)fmod(gl_frameMS * level.skyspeed1, 1024.f) * 90.f/256.f;
-	mSky2Pos = (float)fmod(gl_frameMS * level.skyspeed2, 1024.f) * 90.f/256.f;
+	mSky1Pos = view.sky1Pos;
+	mSky2Pos = view.sky2Pos;
 
 
 

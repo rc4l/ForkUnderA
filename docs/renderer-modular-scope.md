@@ -250,8 +250,12 @@ clears), and GL draws and records that; GL and Vulkan frames of the HUD, console
 unchanged. Then `features/viewsetup` works out the view once (the stretched pitch, the roll, the
 actor the eye is in, the walks' frustum), which GL's `RenderViewpoint` and the walks read. The screen's
 tint (`draw2d/screenblend`) and the weapon (`sprites/pspritebuild`) are worked out without GL too, the
-weapon checked against GL's record on about 54,000 frames. Next: the frame driver out of
-`gl_scene.cpp`, then a window and framebuffer of Vulkan's own.
+weapon checked against GL's record on about 54,000 frames. `features/frame` drives the standalone
+scene, GL hooked in only for what the backend leaves it. The walks and the backend no longer read
+`GLRenderer`: the sky scroll, the view vector and angles, the view area and the particle and mirror
+textures come from `viewsetup` and `materials`, and `InstallSpriteView` gives a frame without GL its
+sprite view. Next: the player's view without GL (`RenderView`'s engine half), then a window,
+framebuffer and renderer of Vulkan's own, chosen at startup.
 
 ### P6: visibility and threads
 

@@ -570,7 +570,7 @@ bool EnsureMirrorResources()
 		// [rc4l] glstuff/mirror.png, or the white placeholder so the binding is whole when GL has none and draws no sheen.
 		if (auto *v = g_mirrorSRB->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "uSheen"))
 		{
-			const void *sheen = GLRenderer ? zx::materials::MaterialForTexture(GLRenderer->mirrortexture) : NULL;
+			const void *sheen = zx::materials::MaterialForTexture(zx::materials::MirrorSheenTexture());
 			Diligent::IDeviceObject *srv = sheen ? GetMaterialSRV(sheen, 0) : NULL;
 			v->Set(srv ? srv : GetMaterialSRV(NULL, 0));
 		}

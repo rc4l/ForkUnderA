@@ -73,6 +73,6 @@ seg, and a seg facing away never loads its sidedef; the rest is cache misses on 
 - `features/hwrender/diligent/dgviews.cpp`: `WriteSceneConstants`, the player's pass takes the main walk
   slot; the mirror pass, a mirror the walks saw (`PortalViewsDerived`) rather than any on screen.
 
-GL state it still reads, until the renderer interface supplies the view (P5): `GLRenderer->FrustumAngle`,
-`SetViewArea`, `SetViewAngle` and `mViewActor`, `gl_FakeFlat`, `gl_CheckViewArea` and `in_area`,
+GL state it still reads, until the renderer interface supplies the view (P5): `gl_FakeFlat`,
+`gl_CheckViewArea` and `in_area`,
 `currentmapsection`, `FPortal` and `gl_BuildPortalCoverage`, `gl_ClampLight`, and `ProcessParticle`.

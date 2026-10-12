@@ -6,6 +6,8 @@
 #ifndef ZX_MATERIALS_H
 #define ZX_MATERIALS_H
 
+class FTexture;
+
 namespace zx { namespace materials {
 
 // [rc4l] A material's identity, stable for the level and compared by address; only this module looks inside it.
@@ -32,6 +34,12 @@ bool DescribeMaterial(MaterialRef m, MaterialInfo &info);
 
 // [rc4l] The material for an engine texture (an FTexture), expanded with the border a face sprite is drawn with when asked, or for an index into the texture manager.
 MaterialRef MaterialForTexture(const void *texture, bool expand = false);
+
+// [rc4l] The round (1) and smooth (2) particle pictures gl_particles_style picks, NULL for square ones; loaded once and kept.
+FTexture *ParticleTexture(int style);
+
+// [rc4l] The sheen a mirror is drawn with (gl_mirror_envmap); loaded once and kept.
+FTexture *MirrorSheenTexture();
 MaterialRef MaterialForTextureIndex(int index);
 // [rc4l] The material a texture name looks up to, through animation and switch translation.
 MaterialRef MaterialForName(const char *name);

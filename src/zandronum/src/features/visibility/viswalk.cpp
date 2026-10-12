@@ -703,12 +703,12 @@ void EnsureCoverageNodes()
 const zx::hwrender::SpriteViewProvider *g_outerView = NULL;
 line_t *g_viewMirror = NULL;
 AActor *PortalViewActor() { return NULL; }
-void PortalViewVector(float &x, float &y) { g_outerView->ViewVector(x, y); }
+void PortalViewVector(float &x, float &y) { x = zx::viewsetup::CurrentView().vectorX; y = zx::viewsetup::CurrentView().vectorY; }
 int PortalSpriteIndex() { return g_outerView->NextSpriteIndex(); }
 bool PortalRejects(fixed_t x, fixed_t y) { return g_viewMirror != NULL && P_PointOnLineSide(x, y, g_viewMirror) != 0; }
 bool PortalMirrors() { return g_viewMirror != NULL; }
 int PortalLightCount() { return g_outerView->DynamicLightCount(); }
-void PortalViewAngles(float &yaw, float &pitch) { g_outerView->ViewAngles(yaw, pitch); }
+void PortalViewAngles(float &yaw, float &pitch) { yaw = zx::viewsetup::CurrentView().yaw; pitch = zx::viewsetup::CurrentView().pitch; }
 FTexture *PortalParticle(int style) { return g_outerView->ParticleTexture(style); }
 const zx::hwrender::SpriteViewProvider g_portalView =
 {
@@ -736,7 +736,6 @@ void WalkSkybox(const PortalView &p, long long seenX, long long seenY)
 	const angle_t sa = viewangle;
 	sector_t *const ssector = viewsector;
 	const area_t sarea = in_area;
-	AActor *const sactor = GLRenderer->mViewActor;
 	const fixed_t frac = C_ShouldForceInterpolation() ? FRACUNIT : r_TicFrac;
 	viewx = origin->PrevX + FixedMul(frac, origin->x - origin->PrevX);
 	viewy = origin->PrevY + FixedMul(frac, origin->y - origin->PrevY);
@@ -747,9 +746,8 @@ void WalkSkybox(const PortalView &p, long long seenX, long long seenY)
 	const fixed_t ceilh = origin->Sector->ceilingplane.ZatPoint(origin->x, origin->y);
 	if (viewz < floorh + 4 * FRACUNIT) viewz = floorh + 4 * FRACUNIT;
 	if (viewz > ceilh - 4 * FRACUNIT) viewz = ceilh - 4 * FRACUNIT;
-	GLRenderer->mViewActor = origin;
 	origin->flags |= MF_JUSTHIT;
-	GLRenderer->SetViewArea();
+	zx::viewsetup::SetViewArea(origin);
 	ComputeSeedPortal(g_clip, seenX, seenY, &p.lines[0], int(p.lines.size() / 4), viewangle - sa, viewangle, zx::viewsetup::CurrentView().frustumAngle);
 	const int mapsection = R_PointInSubsector(viewx, viewy)->mapsection;
 	TArray<BYTE> sections(currentmapsection);
@@ -763,7 +761,6 @@ void WalkSkybox(const PortalView &p, long long seenX, long long seenY)
 	viewangle = sa;
 	viewsector = ssector;
 	in_area = sarea;
-	GLRenderer->mViewActor = sactor;
 }
 
 // [rc4l] GLSectorStackPortal::DrawContents's walk: from the eye moved by the portal's displacement, over the map sections its subsectors cover, the clipper opened only where its walls were seen from; then its actors to `sprite` from inside the view, and the skyboxes it looks into.
@@ -839,14 +836,14 @@ void WalkMirror(const PortalView &p, void (*sprite)(AActor *thing))
 	if (sprite != NULL)
 	{
 		// [rc4l] Billboarded to the reflected view, as GL's SetupView turns its view vector for the mirror.
-		GLRenderer->SetViewAngle(viewangle);
+		zx::viewsetup::TurnView(viewangle);
 		zx::levelmesh::EnterScene();
 		{
 			const zx::levelmesh::MirrorWalk walk(int(line - lines));
 			PortalSprites(sprite, line);
 		}
 		zx::levelmesh::LeaveScene();
-		GLRenderer->SetViewAngle(sa);
+		zx::viewsetup::TurnView(sa);
 	}
 	const long long ex = viewx.Raw(), ey = viewy.Raw();
 	for (size_t i = skyboxes.size(); i-- > 0; )
@@ -983,7 +980,6 @@ void WalkView(bool publish, bool derive, void (*particles)(subsector_t *sub, sec
 
 void WalkPortalViews(void (*sprite)(AActor *thing))
 {
-	if (GLRenderer == NULL) return;
 	cycle_t clock;
 	clock.Reset();
 	clock.Clock();

@@ -32,4 +32,33 @@ unsigned ComputeFrustumAngle(float pitchDeg, float fovDeg, int aspectMultiplier)
 	return a1 >= 0x80000000u ? 0xffffffffu : a1;
 }
 
+float ComputeSkyScroll(long frameMS, float skySpeed)
+{
+	return fmodf(frameMS * skySpeed, 1024.f) * 90.f / 256.f;
+}
+
+void ComputeViewAngleVector(unsigned viewAngle, float &yaw, float &vectorX, float &vectorY)
+{
+	// [rc4l] The angle to fine-angle resolution, in degrees.
+	const float angle = (float)(viewAngle >> 19) * 360.0f / 8192;
+	yaw = 270.0f - angle;
+	vectorX = (float)cos(angle * kPi / 180.f);
+	vectorY = (float)sin(angle * kPi / 180.f);
+}
+
+int ComputeViewArea(bool transfer, long long viewZ, long long transferFloorZ, long long transferCeilingZ, bool fakeFloorOnly)
+{
+	if (!transfer) return kAreaDefault;
+	if (viewZ <= transferFloorZ) return kAreaBelow;
+	return (viewZ > transferCeilingZ && !fakeFloorOnly) ? kAreaAbove : kAreaNormal;
+}
+
+long long ComputeClampedViewZ(long long viewZ, long long floorZ, long long ceilingZ)
+{
+	const long long unit4 = 4 << 16;
+	if (viewZ > ceilingZ - unit4) viewZ = ceilingZ - unit4;
+	if (viewZ < floorZ + unit4) viewZ = floorZ + unit4;
+	return viewZ;
+}
+
 }} // namespace zx::viewsetup
