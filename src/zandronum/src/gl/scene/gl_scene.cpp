@@ -687,14 +687,19 @@ void FGLRenderer::DrawScene(bool toscreen)
 			zx::levelmesh::ClearSprites();
 			zx::levelmesh::UpdateProjectedDecals();
 		}
-		zx::levelmesh::InvalidateMovedSectors();
 		zx::horizon::UpdateHorizons();
-		if (fua_vis_walk && zx::levelmesh::PlayerWalkActive())
+		// [rc4l] The walks first, so a sector or side that moved or relit is re-baked only once one of them reaches it.
+		const bool walked = fua_vis_walk && zx::levelmesh::PlayerWalkActive();
+		if (walked)
 		{
 			PO_LinkToSubsectors();
 			zx::visibility::WalkView(fua_vis_cull, true, WalkParticles);
 			zx::visibility::WalkPortalViews(StackViewSprite);
 		}
+		zx::levelmesh::WalkedThisFrame walkedSet;
+		walkedSet.sectors = zx::visibility::SectorsWalkedThisFrame(walkedSet.sectorCount);
+		walkedSet.sides = zx::visibility::SidesWalkedThisFrame(walkedSet.sideCount);
+		zx::levelmesh::InvalidateMovedSectors(walked ? &walkedSet : NULL);
 
 		// [rc4l] A frame where the world moved used to go back through GL, because the walk was what
 		// re-baked a seg whose sector had moved. It is not any more: InvalidateMovedSectors re-bakes

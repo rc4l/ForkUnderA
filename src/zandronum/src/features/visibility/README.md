@@ -21,7 +21,10 @@ Each frame the player's walk also makes what GL's walk used to hand the backend:
 - the line mirrors: each `Line_Mirror` wall reached, its sheen's light (the light band `SplitWall`
   gives its first piece), and a walk from the reflected eye that leaves out what lies behind the
   mirror, giving the reflection's sprites;
-- the particles in each subsector reached, handed to GL's sprite path as its walk hands them over.
+- the particles in each subsector reached, handed to GL's sprite path as its walk hands them over;
+- what every walk reached, as lists (`SectorsWalkedThisFrame`, `SidesWalkedThisFrame`): a sector or
+  side that moved, relit or scrolled is re-baked once a walk reaches it rather than every frame it
+  changes (scenario `movedbehind`).
 
 Before this, standalone drew all of these as GL's last walk left them, which on a map where nothing
 moves was the spawn view, and drew no particles and no actors in mirrors at all (scenarios `skymove`,
@@ -55,6 +58,7 @@ pass. A stacked view's or mirror's models are not drawn yet in standalone.
   the standalone branch, `PO_LinkToSubsectors`, `WalkView` (publishing to the player's walk slot
   unless `fua_vis_cull` is off, with `WalkParticles`) and `WalkPortalViews` with `StackViewSprite`.
 - `gl/data/gl_setup.cpp` `gl_CleanLevelData`: `ForgetWalk`.
+- `features/levelmesh/wallcache.cpp` `InvalidateMovedSectors`: with the walks' lists, only what they reached.
 - `features/levelmesh/flatmesh.cpp`: `BeginSlotVisibility`/`NoteSlotVisible`, the walk slots;
   `BeginViewSky`/`AddViewSkyQuad`/`AddViewSkyHole`, a view's sky surfaces; `BeginPortalViews`,
   `AddStackWall`, `AddWalkedMirror` and `AddMirrorSheen`, the portal views; `SwapMainSky` and

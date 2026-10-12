@@ -22,6 +22,10 @@ void WalkPortalViews(void (*sprite)(AActor *thing));
 void CheckAgainstGL();
 void CheckPortalViews();
 
+// [rc4l] What every walk since the player's last derived WalkView reached (the player's view, a stacked view, a skybox, a mirror), each once: the sectors whose change re-bakes something reached (a subsector's own and render sector, a seg's two sectors, the control sectors of their 3D floors, a fill's model), and the sidedefs.
+const int *SectorsWalkedThisFrame(int &count);
+const int *SidesWalkedThisFrame(int &count);
+
 // [rc4l] Forget the level's walk, at level unload.
 void ForgetWalk();
 

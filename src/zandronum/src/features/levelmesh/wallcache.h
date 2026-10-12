@@ -236,8 +236,18 @@ struct CoverageStats
 };
 void GetCoverage(CoverageStats &out);
 
+// [rc4l] What this frame's walks reached, for re-baking only what can be seen: the sectors whose change re-bakes something reached, and the sidedefs reached, each once.
+struct WalkedThisFrame
+{
+	const int *sectors;
+	int sectorCount;
+	const int *sides;
+	int sideCount;
+};
+
 // Drop baked geometry for any sector that moved since the last call. Runs before the BSP walk.
-void InvalidateMovedSectors();
+// [rc4l] With `walked`, a sector or side nothing reached stays dirty until a walk reaches it.
+void InvalidateMovedSectors(const WalkedThisFrame *walked = NULL);
 
 // [rc4l] Re-derives every seg on a height transfer's sector, whose heights and light follow the view area (RefreshTransferArea).
 void RebakeTransferSegs();

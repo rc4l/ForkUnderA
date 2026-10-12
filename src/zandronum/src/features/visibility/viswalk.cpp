@@ -11,6 +11,7 @@
 #include "features/levelmesh/wallcache.h"   // [rc4l] the backend's walk bits and sky surfaces
 #include "features/levelmesh/flatmesh.h"    // [rc4l] the stacked views, and the scene nesting a stacked view's sprites are captured in
 #include "features/levelmesh/staticmesh.h"
+#include "features/levelmesh/fakeplanes.h"   // [rc4l] FakePlanesFor, a fill's model sector
 #include "features/levelmesh/computation/flatmesh_compute.h"   // [rc4l] the walk slots, the sky lists and a sky hole's size
 #include "features/surfaces/computation/skywall_compute.h"
 #include "features/surfaces/computation/wallgeom_compute.h"   // [rc4l] where a pinched wall ends, as SetWallCoordinates moves it
@@ -19,6 +20,7 @@
 #include "features/fixed64/computation/angle_interp_compute.h"   // [rc4l] a skybox's turn, as GL interpolates it
 #include "g_shared/a_sharedglobal.h"        // [rc4l] ASkyViewpoint
 #include "p_lnspec.h"                       // [rc4l] Line_Horizon
+#include "p_3dfloors.h"                     // [rc4l] F3DFloor, a 3D floor's control sector
 #include "c_console.h"                      // [rc4l] C_ShouldForceInterpolation
 #include "p_local.h"                        // [rc4l] P_PointOnLineSide, a mirror's clip
 
@@ -84,6 +86,10 @@ std::vector<sector_t *> g_sectorOrder;
 std::vector<unsigned> g_vertAngle, g_vertStamp;
 unsigned g_stamp = 1;
 long long g_viewx = 0, g_viewy = 0;
+// [rc4l] Every walk's subsectors, sidedefs and sectors since the player's last derived walk, stamped with that walk's frame, and the sidedefs and sectors as lists.
+std::vector<unsigned> g_subSeen, g_sideSeen, g_sectorSeen;
+std::vector<int> g_seenSides, g_seenSectors;
+unsigned g_seenFrame = 1;
 // [rc4l] Linedefs whose walls this walk has built, since GL builds a line's once a walk from its first visible seg.
 std::vector<unsigned char> g_lineDone;
 const int kNoSkyDraw = 89;   // [rc4l] gl_sky.cpp's NoSkyDraw sector special
@@ -130,6 +136,19 @@ unsigned ClipAngle(vertex_t *v)
 		g_vertAngle[i] = ComputePseudoAngle((double)(v->x - g_viewx).Raw(), (double)(v->y - g_viewy).Raw());
 	}
 	return g_vertAngle[i];
+}
+
+// [rc4l] A sector whose change re-bakes something a walk reached, and the control sectors of the 3D floors in it, which re-bake it with them.
+void SeeSector(const sector_t *s)
+{
+	if (s == NULL) return;
+	const int i = s->sectornum;
+	if (g_sectorSeen[i] == g_seenFrame) return;
+	g_sectorSeen[i] = g_seenFrame;
+	g_seenSectors.push_back(i);
+	const sector_t &real = sectors[i];
+	if (real.e == NULL) return;
+	for (unsigned k = 0; k < real.e->XFloor.ffloors.Size(); k++) SeeSector(real.e->XFloor.ffloors[k]->model);
 }
 
 // [rc4l] gl_CheckClip's question, with the heights read from the planes as GL reads them.
@@ -363,6 +382,13 @@ void AddLine(seg_t *seg)
 	g_sub->flags |= SSECF_DRAWN;
 	const int side = int(seg->sidedef - sides);
 	g_sides[side] = 1;
+	if (g_sideSeen[side] != g_seenFrame)
+	{
+		g_sideSeen[side] = g_seenFrame;
+		g_seenSides.push_back(side);
+		SeeSector(seg->frontsector);
+		SeeSector(seg->backsector);
+	}
 	if (g_spec.slot >= 0) zx::levelmesh::NoteSlotVisible(g_spec.slot, numsubsectors + side);
 
 	sector_t bs;
@@ -482,6 +508,15 @@ void DoSubsector(subsector_t *sub)
 	if (g_spec.covered != NULL && g_spec.covered[si]) UnclipSubsector(sub);
 	if (g_spec.mirror != NULL && SubsectorBehindMirror(sub)) return;
 	g_subs[si] = 1;
+	if (g_subSeen[si] != g_seenFrame)
+	{
+		g_subSeen[si] = g_seenFrame;
+		SeeSector(sector);
+		SeeSector(sub->render_sector);
+		int fills = 0;
+		const zx::levelmesh::FakePlane *fill = zx::levelmesh::FakePlanesFor(si, fills);
+		for (int k = 0; k < fills; k++) SeeSector(&sectors[fill[k].model]);
+	}
 	if (g_spec.slot >= 0) zx::levelmesh::NoteSlotVisible(g_spec.slot, si);
 	if (!g_sectors[sector->sectornum])
 	{
@@ -537,6 +572,12 @@ void Walk(const WalkSpec &spec)
 	if (++g_stamp == 0) { g_vertStamp.assign(numvertexes, 0); g_stamp = 1; }
 	g_viewx = viewx.Raw();
 	g_viewy = viewy.Raw();
+	if ((int)g_subSeen.size() != numsubsectors || (int)g_sideSeen.size() != numsides || (int)g_sectorSeen.size() != numsectors)
+	{
+		g_subSeen.assign(numsubsectors, 0);
+		g_sideSeen.assign(numsides, 0);
+		g_sectorSeen.assign(numsectors, 0);
+	}
 	if (numnodes == 0) DoSubsector(subsectors);
 	else Node(nodes + numnodes - 1);
 }
@@ -868,6 +909,16 @@ void WalkView(bool publish, bool derive, void (*particles)(subsector_t *sub, sec
 	if (publish) zx::levelmesh::BeginSlotVisibility(zx::levelmesh::kMainWalkSlot);
 	if (derive)
 	{
+		// [rc4l] A new frame of walks; at the wrap every stamp goes, so an old one cannot read as this frame's.
+		if (++g_seenFrame == 0)
+		{
+			g_subSeen.assign(g_subSeen.size(), 0);
+			g_sideSeen.assign(g_sideSeen.size(), 0);
+			g_sectorSeen.assign(g_sectorSeen.size(), 0);
+			g_seenFrame = 1;
+		}
+		g_seenSides.clear();
+		g_seenSectors.clear();
 		zx::levelmesh::BeginViewSky(zx::levelmesh::kSkyCaptureMain);
 		zx::levelmesh::BeginPortalViews();
 		g_playerPortals.clear();
@@ -904,8 +955,25 @@ void WalkPortalViews(void (*sprite)(AActor *thing))
 	}
 }
 
+const int *SectorsWalkedThisFrame(int &count)
+{
+	count = (int)g_seenSectors.size();
+	return count ? &g_seenSectors[0] : NULL;
+}
+
+const int *SidesWalkedThisFrame(int &count)
+{
+	count = (int)g_seenSides.size();
+	return count ? &g_seenSides[0] : NULL;
+}
+
 void ForgetWalk()
 {
+	g_subSeen.clear();
+	g_sideSeen.clear();
+	g_sectorSeen.clear();
+	g_seenSides.clear();
+	g_seenSectors.clear();
 	g_subs.clear();
 	g_sides.clear();
 	g_sectors.clear();

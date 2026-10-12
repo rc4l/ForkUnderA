@@ -1861,7 +1861,49 @@ static SectorLook LookOf(const sector_t &s)
 	return l;
 }
 
-void InvalidateMovedSectors()
+// [rc4l] A sector's change since the last look, re-baking its walls and flats and those of any sector it is a 3D floor in.
+static void InvalidateSector(int s, TArray<int> &fillMoved)
+{
+	if (s < 0 || s >= numsectors || (unsigned)s >= g_sectorDirty.Size()) return;
+	if (!ComputeTakeChange(g_sectorDirty[s], sectors[s].fua_dirty)) return;
+	g_movedThisFrame++;
+	// [rc4l] fua_dirty says only that a setter ran (SetLightLevel, ChangeLightLevel, SetTexture, SetPlaneTexZ, ChangePlaneTexZ, SetColor, SetFade), and a strobe re-asserts its held level every tic, so a sector whose look did not change is skipped.
+	const SectorLook now = LookOf(sectors[s]);
+	const int change = ComputeSectorRebake(g_lastLook[s], now);
+	g_lastLook[s] = now;
+	if (change == kSectorSame) { g_dirtyNoChange++; return; }
+	if (change == kSectorMoved) g_dirtyGeometry++; else g_dirtyLightOnly++;
+	// A texture change alters UVs, so only a pure relight may take the reshade path.
+	const bool sectorMoved = change >= kSectorRetextured;
+	if (sectorMoved) fillMoved.Push(s);
+
+	// [rc4l] A 3D floor's control sector moves or relights the floors, sides and light bands of the sectors it sits in, so those go again with it.
+	ForSectorAndTargets(s, [sectorMoved](int t) {
+		const TArray<int> &segList = g_sectorSegs[t];
+		// [rc4l] Planes that held still cannot have moved the walls, so those segs only re-light (ReshadeSegFromMap) and anything else takes the full bake.
+		for (unsigned k = 0; k < segList.Size(); k++) RebakeChangedSeg(segList[k], sectorMoved);
+		if (fua_surface_mapbake_auto) RebakeSectorFlats(t);
+	});
+}
+
+// [rc4l] A sidedef a setter touched: a switch's texture, a scroller's offset, which no sector change reports.
+static void InvalidateSide(int i, TArray<int> &fillSides)
+{
+	if (i < 0 || i >= numsides || (unsigned)i >= g_sideDirty.Size()) return;
+	if (!ComputeTakeChange(g_sideDirty[i], sides[i].fua_dirty)) return;
+	if (zx::levelmesh::SideTexturesChanged(i)) fillSides.Push(i);
+	if (RescrollSide(i)) { g_sidesRescrolled++; return; }
+	for (int k = 0; k < sides[i].numsegs; k++) RebakeChangedSeg(int(sides[i].segs[k] - segs), true);
+}
+
+// [rc4l] A sector whose floor or ceiling texture a scroller, its interpolation or a script placed: its flats and those of any sector it is a 3D floor in, since no wall is drawn from it.
+static void ReplaceSectorFlats(int s)
+{
+	if (s < 0 || s >= numsectors || (unsigned)s >= g_sectorPlacement.Size()) return;
+	if (ComputeTakeChange(g_sectorPlacement[s], sectors[s].fua_placement)) ForSectorAndTargets(s, RebakeSectorFlats);
+}
+
+void InvalidateMovedSectors(const WalkedThisFrame *walked)
 {
 	g_movedThisFrame = 0;
 	cycle_t invalClock; invalClock.Reset(); invalClock.Clock();
@@ -1874,43 +1916,12 @@ void InvalidateMovedSectors()
 	if (!gl_wallmesh || g_sectorDirty.Size() == 0) return;
 	// [rc4l] GL's missing-texture fills hang on the heights and textures round them, so a move or a texture change works them out again below.
 	TArray<int> fillMoved, fillSides;
-
-	for (int s = 0; s < numsectors; s++)
-	{
-		if (!ComputeTakeChange(g_sectorDirty[s], sectors[s].fua_dirty)) continue;
-		g_movedThisFrame++;
-		// [rc4l] fua_dirty says only that a setter ran (SetLightLevel, ChangeLightLevel, SetTexture, SetPlaneTexZ, ChangePlaneTexZ, SetColor, SetFade), and a strobe re-asserts its held level every tic, so a sector whose look did not change is skipped.
-		const SectorLook now = LookOf(sectors[s]);
-		const int change = ComputeSectorRebake(g_lastLook[s], now);
-		g_lastLook[s] = now;
-		if (change == kSectorSame) { g_dirtyNoChange++; continue; }
-		if (change == kSectorMoved) g_dirtyGeometry++; else g_dirtyLightOnly++;
-		// A texture change alters UVs, so only a pure relight may take the reshade path.
-		const bool sectorMoved = change >= kSectorRetextured;
-		if (sectorMoved) fillMoved.Push(s);
-
-		// [rc4l] A 3D floor's control sector moves or relights the floors, sides and light bands of the sectors it sits in, so those go again with it.
-		ForSectorAndTargets(s, [sectorMoved](int t) {
-			const TArray<int> &segList = g_sectorSegs[t];
-			// [rc4l] Planes that held still cannot have moved the walls, so those segs only re-light (ReshadeSegFromMap) and anything else takes the full bake.
-			for (unsigned k = 0; k < segList.Size(); k++) RebakeChangedSeg(segList[k], sectorMoved);
-			if (fua_surface_mapbake_auto) RebakeSectorFlats(t);
-		});
-	}
-	// [rc4l] ...and every sidedef a setter touched: a switch's texture, a scroller's offset, which no sector change reports.
-	for (int i = 0; i < numsides && (unsigned)i < g_sideDirty.Size(); i++)
-	{
-		if (!ComputeTakeChange(g_sideDirty[i], sides[i].fua_dirty)) continue;
-		if (zx::levelmesh::SideTexturesChanged(i)) fillSides.Push(i);
-		if (RescrollSide(i)) { g_sidesRescrolled++; continue; }
-		for (int k = 0; k < sides[i].numsegs; k++) RebakeChangedSeg(int(sides[i].segs[k] - segs), true);
-	}
-	// [rc4l] ...and every sector whose floor or ceiling texture a scroller, its interpolation or a script placed, re-baking its flats and those of any sector it is a 3D floor in, since no wall is drawn from it.
-	for (int s = 0; fua_surface_mapbake_auto && s < numsectors && (unsigned)s < g_sectorPlacement.Size(); s++)
-	{
-		if (ComputeTakeChange(g_sectorPlacement[s], sectors[s].fua_placement))
-			ForSectorAndTargets(s, RebakeSectorFlats);
-	}
+	// [rc4l] With the walks' lists only what they reached is looked at, and the rest stays dirty until a walk reaches it.
+	const int sectorCount = walked != NULL ? walked->sectorCount : numsectors;
+	const int sideCount = walked != NULL ? walked->sideCount : numsides;
+	for (int k = 0; k < sectorCount; k++) InvalidateSector(walked != NULL ? walked->sectors[k] : k, fillMoved);
+	for (int k = 0; k < sideCount; k++) InvalidateSide(walked != NULL ? walked->sides[k] : k, fillSides);
+	for (int k = 0; fua_surface_mapbake_auto && k < sectorCount; k++) ReplaceSectorFlats(walked != NULL ? walked->sectors[k] : k);
 	if (fua_surface_mapbake_auto && (fillMoved.Size() > 0 || fillSides.Size() > 0)) zx::levelmesh::RefreshFakePlanes(fillMoved, fillSides);
 	invalClock.Unclock();
 	g_invalMs += invalClock.TimeMS();

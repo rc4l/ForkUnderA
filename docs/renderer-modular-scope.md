@@ -252,6 +252,13 @@ standalone frame); then the capture hooks and the harness's standalone default.
 **Accepts when:** the modernization plan's Phase 2 target is met (Sunder MAP10 CPU under 1.5 ms and
 GPU-bound), and Vulkan is clearly ahead of GL at the AOW03 view.
 
+**Status, 2026-10-12.** Two costs on wdiex02 in standalone, found with a stack sampler:
+
+| Item | Result |
+|---|---|
+| Light links per tic | `CollectDynamicLights` walked and sorted all 767 lights' touching lists each tic, 4.7 ms on every tic frame. Each light's sorted links are now kept until it moves or changes radius (none stale in 600,000 checks). |
+| Re-bakes that track what is visible | Every frame a sector moved or relit, its walls and flats were re-baked, seen or not: about 0.78 ms a frame there. Now only what a walk reached this frame is re-baked, and the rest waits until a walk reaches it (scenario `movedbehind`). The loop costs 0.001 ms at that view; with the walks against without, p50 is 0.4 ms faster in every round and p99 goes from 6-7.5 ms to about 3.2 ms. |
+
 ## Decisions taken
 
 - GL stays as the oracle, as the modernization plan says. After P5 it is optional at runtime.
