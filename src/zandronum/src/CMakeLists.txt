@@ -1612,6 +1612,9 @@ add_executable( zdoom WIN32
 	features/visibility/viswalk.cpp
 	features/visibility/computation/clipranges_compute.cpp
 	features/visibility/computation/closedline_compute.cpp
+	features/visibility/computation/coverage_compute.cpp
+	features/visibility/computation/mirrorview_compute.cpp
+	features/surfaces/computation/skywall_compute.cpp
 	features/sprites/computation/spritestyle_compute.cpp
 	features/sprites/computation/spritequad_compute.cpp
 	features/sprites/computation/spritelight_compute.cpp

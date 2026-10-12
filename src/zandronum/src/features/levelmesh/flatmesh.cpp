@@ -722,13 +722,19 @@ void RegisterFlatSubsector(const GLFlat &flat, subsector_t *sub, bool ceiling)
 // [rc4l] Sprites go into the DYNAMIC stream, rebuilt every frame -- see staticmesh.h. They are
 // billboards built for one viewpoint, so they are not level geometry and must never be baked.
 static int g_spritesThisFrame = 0;
+// [rc4l] Particles among them, for fua_particles.
+static int g_particlesThisFrame = 0;
 static int g_skyQuadsCaptured = 0;
 static int g_skyWalks[kSkyCaptureLists];   // [rc4l] Walks per list, so a second walk per frame shows up as a count.
 static AActor *g_skyViewpoint = NULL;
 // [rc4l] The player's view was walked outside GL this frame (features/visibility), and its slot holds what that walk reached.
 static bool g_mainVisibility = false;
-// [rc4l] GL's own walk filled the player's slot since the visibility walk last ran, so all of it must be cleared.
-static bool g_mainSlotNeedsClear = true;
+// [rc4l] The portal views (stacked views, skybox walks, line mirrors) came from a visibility walk since GL last walked.
+static bool g_portalViewsDerived = false;
+// [rc4l] Per walk slot, GL's walks filled it since a visibility walk last did, so all of it must be cleared.
+static bool g_slotNeedsClear[kWalkSlots];
+// [rc4l] Per walk slot, the ids a visibility walk marked last, so the next clears just those.
+static TArray<int> g_slotMarked[kWalkSlots];
 // [rc4l] One list per view the backend draws, indexed by the kSkyCapture* lists, and the one the walk in progress fills.
 static TArray<MeshVertex> g_skyVerts[kSkyCaptureLists];
 static int g_skyList = kSkyCaptureNone;
@@ -808,6 +814,10 @@ static TArray<int> g_walkedMirrors;
 MirrorWalk::MirrorWalk(int line) : saved(s_mirrorLine)
 {
 	s_mirrorLine = line;
+	AddWalkedMirror(line);
+}
+void AddWalkedMirror(int line)
+{
 	if (!MirrorWalkedThisFrame(line)) g_walkedMirrors.Push(line);
 }
 bool MirrorWalkedThisFrame(int line)
@@ -818,23 +828,25 @@ bool MirrorWalkedThisFrame(int line)
 MirrorWalk::~MirrorWalk() { s_mirrorLine = saved; }
 
 // [rc4l] The light GLWall::RenderMirrorSurface draws each line mirror's sheen in, from the player's walk this frame.
-struct MirrorSheenShade { int line; MeshPiece shade; };
 static TArray<MirrorSheenShade> g_mirrorSheens;
 const MeshPiece *MirrorSheen(int line)
 {
 	for (unsigned i = 0; i < g_mirrorSheens.Size(); i++) if (g_mirrorSheens[i].line == line) return &g_mirrorSheens[i].shade;
 	return NULL;
 }
-void RegisterMirrorSheen(const GLWall &wall)
+void AddMirrorSheen(int line, int lightlevel, const FColormap &cm)
 {
-	if (!PlayerWalkActive() || wall.seg == NULL || wall.seg->linedef == NULL) return;
-	const int line = int(wall.seg->linedef - lines);
 	if (MirrorSheen(line) != NULL) return;
 	MirrorSheenShade s;
 	s.line = line;
 	// [rc4l] gl_SetColor and gl_SetFog as RenderMirrorSurface calls them: no relative light, and fogged to black as an added surface.
-	CaptureShading(wall.lightlevel, 0, wall.Colormap, s.shade, false, true);
+	CaptureShading(lightlevel, 0, cm, s.shade, false, true);
 	g_mirrorSheens.Push(s);
+}
+void RegisterMirrorSheen(const GLWall &wall)
+{
+	if (!PlayerWalkActive() || wall.seg == NULL || wall.seg->linedef == NULL) return;
+	AddMirrorSheen(int(wall.seg->linedef - lines), wall.lightlevel, wall.Colormap);
 }
 StackWalk::~StackWalk() { s_stackWalk = saved; }
 
@@ -920,14 +932,20 @@ static int StackSlotFor(const FPortal *portal)
 	return slot;
 }
 
+int AddStackWall(const FPortal *portal, float x1, float y1, float x2, float y2, const float *zb, const float *zt)
+{
+	const int slot = StackSlotFor(portal);
+	if (slot < 0) return slot;
+	MeshVertex q[6];
+	MakeWallQuad(q, x1, y1, x2, y2, zb, zt);
+	for (int k = 0; k < 6; k++) g_stackVerts[slot].Push(q[k]);
+	return slot;
+}
+
 void RegisterStackWall(const GLWall &wall, const FPortal *portal)
 {
 	if (portal == NULL || !PlayerWalkActive()) return;
-	const int slot = StackSlotFor(portal);
-	if (slot < 0) return;
-	MeshVertex q[6];
-	MakeWallQuad(q, wall.glseg.x1, wall.glseg.y1, wall.glseg.x2, wall.glseg.y2, wall.zbottom, wall.ztop);
-	for (int k = 0; k < 6; k++) g_stackVerts[slot].Push(q[k]);
+	AddStackWall(portal, wall.glseg.x1, wall.glseg.y1, wall.glseg.x2, wall.glseg.y2, wall.zbottom, wall.ztop);
 }
 
 // [rc4l] The last walks begun, newest last: which view, how deep, and what the list they emptied held.
@@ -939,7 +957,8 @@ static int g_walkNoteCount = 0;
 static void ForgetFrameWalks()
 {
 	g_mainVisibility = false;
-	g_mainSlotNeedsClear = true;
+	g_portalViewsDerived = false;
+	for (int s = 0; s < kWalkSlots; s++) g_slotNeedsClear[s] = true;
 	g_skyViewpoint = NULL;
 	g_skyHoles.Clear();
 	g_skyboxWalked = false;
@@ -965,41 +984,90 @@ int BeginSkyWalk()
 	return g_skyList;
 }
 
-// [rc4l] The ids the visibility walk marked last frame, so the next one clears just those; GL's walk filling the slot instead asks for the whole slot.
-static TArray<int> g_mainMarked;
-
-void BeginMainVisibility()
+template <class T> static void SwapArrays(TArray<T> &a, TArray<T> &b)
 {
-	// [rc4l] Only the player's slot: what GL's walks captured before standalone (sheens, skyboxes, stacked views) is all standalone has of them.
+	TArray<T> held(a);
+	a = b;
+	b = held;
+}
+
+void BeginSlotVisibility(int slot)
+{
+	// [rc4l] Only this slot: what GL's walks captured in the others before standalone (the mirrors' sheens) is all standalone has of them.
 	const int ids = numsubsectors + numsides;
 	const unsigned words = (unsigned)ComputeStackVisWords(ids);
 	if (g_stackVis.Size() != words)
 	{
 		g_stackVis.Resize(words);
 		if (words > 0) memset(&g_stackVis[0], 0, words * sizeof(unsigned int));
-		g_mainSlotNeedsClear = false;
-		g_mainMarked.Clear();
+		for (int s = 0; s < kWalkSlots; s++) { g_slotNeedsClear[s] = false; g_slotMarked[s].Clear(); }
 	}
-	if (g_mainSlotNeedsClear)
+	TArray<int> &marked = g_slotMarked[slot];
+	if (g_slotNeedsClear[slot])
 	{
-		for (int id = 0; id < ids; id++) ComputeClearStackVisible(&g_stackVis[0], id, kMainWalkSlot);
-		g_mainSlotNeedsClear = false;
+		for (int id = 0; id < ids; id++) ComputeClearStackVisible(&g_stackVis[0], id, slot);
+		g_slotNeedsClear[slot] = false;
 	}
 	else
-		for (unsigned i = 0; i < g_mainMarked.Size(); i++) ComputeClearStackVisible(&g_stackVis[0], g_mainMarked[i], kMainWalkSlot);
-	g_mainMarked.Clear();
-	g_mainVisibility = true;
+		for (unsigned i = 0; i < marked.Size(); i++) ComputeClearStackVisible(&g_stackVis[0], marked[i], slot);
+	marked.Clear();
 }
 
-void NoteMainVisible(int id)
+void NoteSlotVisible(int slot, int id)
 {
 	if (g_stackVis.Size() == 0 || id < 0 || id >= numsubsectors + numsides) return;
-	ComputeMarkStackVisible(&g_stackVis[0], id, kMainWalkSlot);
-	g_mainMarked.Push(id);
+	ComputeMarkStackVisible(&g_stackVis[0], id, slot);
+	g_slotMarked[slot].Push(id);
+	if (slot == kSkyboxWalkSlot) g_skyboxWalked = true;
 }
 
+void SetMainVisibility(bool on) { g_mainVisibility = on; }
 bool MainVisibility() { return g_mainVisibility; }
-void CancelMainVisibility() { g_mainVisibility = false; }
+
+void BeginPortalViews()
+{
+	g_stackUsed = 0;
+	for (int i = 0; i < kMaxStackViews; i++)
+	{
+		g_stackVerts[i].Clear();
+		g_skyVerts[kSkyCaptureStack + i].Clear();
+		BeginSlotVisibility(i);
+	}
+	BeginSlotVisibility(kSkyboxWalkSlot);
+	g_skyboxWalked = false;
+	g_walkedMirrors.Clear();
+	g_mirrorSheens.Clear();
+	g_portalViewsDerived = true;
+}
+
+bool PortalViewsDerived() { return g_portalViewsDerived; }
+
+void SwapPortalViews(PortalViewState &other)
+{
+	std::swap(g_stackUsed, other.stackUsed);
+	for (int i = 0; i < kMaxStackViews; i++)
+	{
+		std::swap(g_stackPortals[i], other.portals[i]);
+		std::swap(g_stackInfo[i], other.info[i]);
+		SwapArrays(g_stackVerts[i], other.walls[i]);
+		SwapArrays(g_skyVerts[kSkyCaptureStack + i], other.sky[i]);
+	}
+	SwapArrays(g_stackVis, other.bits);
+	for (int s = 0; s < kWalkSlots; s++)
+	{
+		SwapArrays(g_slotMarked[s], other.marked[s]);
+		std::swap(g_slotNeedsClear[s], other.needsClear[s]);
+	}
+	std::swap(g_skyboxWalked, other.skyboxWalked);
+	SwapArrays(g_walkedMirrors, other.mirrors);
+	SwapArrays(g_mirrorSheens, other.sheens);
+}
+
+PortalViewState::PortalViewState() : stackUsed(0), skyboxWalked(false)
+{
+	for (int i = 0; i < kMaxStackViews; i++) { portals[i] = NULL; info[i].dx = info[i].dy = 0.f; info[i].ceiling = false; }
+	for (int s = 0; s < kWalkSlots; s++) needsClear[s] = false;
+}
 
 const unsigned int *WalkBits(int &words)
 {
@@ -1032,7 +1100,7 @@ const MeshVertex *SkyQuadVertices(int &count, int list)
 }
 
 // [rc4l] Models are cleared with sprites because they arrive with them, and a stale count reads as a model still there.
-void ClearSprites() { g_spritesThisFrame = 0; g_spriteNoteCount = 0; ModelStatsReset(); }
+void ClearSprites() { g_spritesThisFrame = 0; g_particlesThisFrame = 0; g_spriteNoteCount = 0; ModelStatsReset(); }
 
 // [rc4l] The sweep's own arithmetic, kept from the last frame that ran one.
 static int g_swSeen = 0, g_swNoSector = 0, g_swBehind = 0, g_swOffScreen = 0, g_swProcessed = 0;
@@ -1040,6 +1108,12 @@ void RecordSpriteSweep(int seen, int noSector, int behind, int offScreen, int pr
 {
 	g_swSeen = seen; g_swNoSector = noSector; g_swBehind = behind;
 	g_swOffScreen = offScreen; g_swProcessed = processed;
+}
+
+// [rc4l] How many particles the backend was handed for the last frame, which standalone takes from the visibility walk.
+CCMD( fua_particles )
+{
+	Printf( "particles: %d drawn this frame\n", zx::levelmesh::g_particlesThisFrame );
 }
 
 CCMD( fua_sprite_sweep )
@@ -1053,13 +1127,13 @@ CCMD( fua_sprite_sweep )
 }
 int SpritePieceCount() { return g_spritesThisFrame; }
 
-// [rc4l] One quad of the wall between heights zb and zt at its two ends into the sky list GL's walk is filling, a list of its own because GL's skybox re-entry clears the dynamic stream with DynClear.
-static void PushSkyQuad(const GLWall &wall, const float *zb, const float *zt)
+// [rc4l] One quad of the wall between heights zb and zt at its two ends into a view's sky list, a list of its own because GL's skybox re-entry clears the dynamic stream with DynClear.
+static void PushSkyQuad(int list, float x1, float y1, float x2, float y2, const float *zb, const float *zt)
 {
 	if (zt[0] <= zb[0] && zt[1] <= zb[1]) return;
 	MeshVertex q[6];
-	MakeWallQuad(q, wall.glseg.x1, wall.glseg.y1, wall.glseg.x2, wall.glseg.y2, zb, zt);
-	for (int k = 0; k < 6; k++) g_skyVerts[g_skyList].Push(q[k]);
+	MakeWallQuad(q, x1, y1, x2, y2, zb, zt);
+	for (int k = 0; k < 6; k++) g_skyVerts[list].Push(q[k]);
 	g_skyQuadsCaptured++;
 }
 
@@ -1074,31 +1148,54 @@ static void PushSkyQuad(const GLWall &wall, const float *zb, const float *zt)
 // walk reaches, so the set carries GL VISIBILITY with it. Deriving them from the map was tried
 // three ways and every one over-emitted -- on the reported vantage GL produces sky quads for FOUR
 // linedefs where the map has thousands of sky segs. See docs/skybleed-scope.md.
+void AddViewSkyQuad(int list, float x1, float y1, float x2, float y2, const float *zb, const float *zt, AActor *viewpoint, int lineSpecial)
+{
+	if (!fua_mesh_sky || list == kSkyCaptureNone) return;
+	if (viewpoint != NULL && ComputeTakesSkyViewpoint(list, g_skyViewpoint != NULL)) g_skyViewpoint = viewpoint;
+	// [rc4l] A horizon line's sky belongs to features/horizon, which builds it for every eye height.
+	if (zx::horizon::HorizonsActive() && zx::horizon::ComputeIsHorizonLine(lineSpecial)) return;
+	PushSkyQuad(list, x1, y1, x2, y2, zb, zt);
+}
+
 void RegisterSkyQuad(const GLWall &wall, AActor *viewpoint)
 {
-	if (!fua_mesh_sky || g_skyList == kSkyCaptureNone) return;
-	// [rc4l] Passed in, never read off wall.skybox: that shares a union with wall.sky, so on a plain sky it is a GLSkyInfo.
-	if (viewpoint != NULL && ComputeTakesSkyViewpoint(g_skyList, g_skyViewpoint != NULL)) g_skyViewpoint = viewpoint;
+	// [rc4l] The viewpoint is passed in, never read off wall.skybox: that shares a union with wall.sky, so on a plain sky it is a GLSkyInfo.
+	AddViewSkyQuad(g_skyList, wall.glseg.x1, wall.glseg.y1, wall.glseg.x2, wall.glseg.y2, wall.zbottom, wall.ztop, viewpoint,
+		(wall.seg != NULL && wall.seg->linedef != NULL) ? wall.seg->linedef->special : 0);
+}
 
-	// [rc4l] A horizon line's sky belongs to features/horizon, which builds it for every eye height.
-	if (zx::horizon::HorizonsActive() && wall.seg != NULL && wall.seg->linedef != NULL &&
-	    zx::horizon::ComputeIsHorizonLine(wall.seg->linedef->special)) return;
-
-	PushSkyQuad(wall, wall.zbottom, wall.ztop);
+void AddViewSkyHole(int list, float x1, float y1, float x2, float y2, const float *zfloor, const float *zceil)
+{
+	if (!fua_mesh_sky || list == kSkyCaptureNone) return;
+	// [rc4l] The player's own go to the scene shader, which drops only what GL's walk did not draw behind them; another view's, or one past the shader's room, still paints sky over everything behind it.
+	if (ComputeSkyHoleToShader(list, (int)g_skyHoles.Size() / kSkyHoleFloats))
+	{
+		float rec[kSkyHoleFloats];
+		ComputeSkyHoleRecord(x1, y1, x2, y2, zfloor, zceil, rec);
+		for (int i = 0; i < kSkyHoleFloats; i++) g_skyHoles.Push(rec[i]);
+		return;
+	}
+	PushSkyQuad(list, x1, y1, x2, y2, zfloor, zceil);
 }
 
 void RegisterSkyHole(const GLWall &wall)
 {
-	if (!fua_mesh_sky || g_skyList == kSkyCaptureNone) return;
-	// [rc4l] The player's own go to the scene shader, which drops only what GL's walk did not draw behind them; another view's, or one past the shader's room, still paints sky over everything behind it.
-	if (ComputeSkyHoleToShader(g_skyList, (int)g_skyHoles.Size() / kSkyHoleFloats))
-	{
-		float rec[kSkyHoleFloats];
-		ComputeSkyHoleRecord(wall.glseg.x1, wall.glseg.y1, wall.glseg.x2, wall.glseg.y2, wall.zfloor, wall.zceil, rec);
-		for (int i = 0; i < kSkyHoleFloats; i++) g_skyHoles.Push(rec[i]);
-		return;
-	}
-	PushSkyQuad(wall, wall.zfloor, wall.zceil);
+	AddViewSkyHole(g_skyList, wall.glseg.x1, wall.glseg.y1, wall.glseg.x2, wall.glseg.y2, wall.zfloor, wall.zceil);
+}
+
+void BeginViewSky(int list)
+{
+	g_skyVerts[list].Clear();
+	if (list != kSkyCaptureMain) return;
+	g_skyViewpoint = NULL;
+	g_skyHoles.Clear();
+}
+
+void SwapMainSky(MainSkyState &other)
+{
+	SwapArrays(g_skyVerts[kSkyCaptureMain], other.quads);
+	SwapArrays(g_skyHoles, other.holes);
+	std::swap(g_skyViewpoint, other.viewpoint);
 }
 
 void MakeWallQuad(MeshVertex *out6, float x1, float y1, float x2, float y2,
@@ -1129,6 +1226,7 @@ void RegisterSprite(const GLSprite &spr, const float *c1, const float *c2,
 {
 	// [rc4l] Each walk the backend draws again keeps its own sprites, for its pass alone: the player's for the frame, a stacked view's or a line mirror's (the viewer and whatever stands behind the player) for that one.
 	if (spr.gltexture == NULL || !DynamicCaptureActive()) return;
+	if (spr.particle != NULL) g_particlesThisFrame++;
 
 	// [rc4l] GLSprite emits a 4-vertex TRIANGLE STRIP; the mesh is triangle lists, so expand to
 	// (0,1,2) and (2,1,3) -- which preserves the strip's winding rather than flipping the second

@@ -203,24 +203,26 @@ export async function probeScenario(opts, choice = {}, commands = []) {
   });
 }
 
-// [rc4l] A counter the engine printed, held to its ceiling: the number pattern's first group captures in text, as a PASS/FAIL line and a failure count.
-export function judgeCounter(map, text, { label, pattern, ceiling }) {
+// [rc4l] A counter the engine printed, held to its ceiling or its floor: the number pattern's first group captures in text, as a PASS/FAIL line and a failure count.
+export function judgeCounter(map, text, { label, pattern, ceiling, floor }) {
   const m = new RegExp(pattern).exec(String(text));
   if (!m) return { line: `FAIL ${map}: no ${label} in the engine's answer`, failed: 1 };
   const value = Number(m[1]);
-  const ok = value <= ceiling;
-  return { line: `${ok ? "PASS" : "FAIL"} ${map} ${label}: ${value} (ceiling ${ceiling})`, failed: ok ? 0 : 1 };
+  const ok = (ceiling === undefined || value <= ceiling) && (floor === undefined || value >= floor);
+  const limit = ceiling !== undefined ? `ceiling ${ceiling}` : `floor ${floor}`;
+  return { line: `${ok ? "PASS" : "FAIL"} ${map} ${label}: ${value} (${limit})`, failed: ok ? 0 : 1 };
 }
 
-// [rc4l] One Vulkan launch per map, standing at each vantage with the sim running, then counter.command's number judged by judgeCounter: for a fault no paused frame can show, such as a one-frame flash the engine counts.
-export async function compareCounter({ name, wad, maps, vantages, counter, iwad = FREEDOOM2, port = 7796, size = [1280, 720] }) {
+// [rc4l] One Vulkan launch per map, standing at each vantage with the sim running, then counter.command's number judged by judgeCounter: for a fault no paused frame can show, such as a one-frame flash the engine counts; the launch takes the first non-GL side's cvars.
+export async function compareCounter({ name, wad, maps, vantages, counter, sides = [], iwad = FREEDOOM2, port = 7796, size = [1280, 720] }) {
+  const side = sides.find((s) => !s.gl);
   const wadPath = path.join(os.tmpdir(), `fua-${name}-template.wad`);
   fs.writeFileSync(wadPath, wad);
   const lines = [];
   let failed = 0;
   for (const map of maps) {
     try {
-      const text = await withEngine({ port, map, iwad, wadPath, gl: false, size }, async (c) => {
+      const text = await withEngine({ port, map, iwad, wadPath, gl: false, side, size }, async (c) => {
         for (const v of vantages) {
           await c.rpc("sim.resume", {}).catch(() => {});
           await c.rpc("player.setpos", v.at);

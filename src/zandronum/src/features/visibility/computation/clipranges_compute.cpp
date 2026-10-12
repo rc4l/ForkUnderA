@@ -51,9 +51,10 @@ void ClipRanges::AddClipRange(unsigned start, unsigned end)
 		else i++;
 	}
 	// [rc4l] Grow the first range it touches, and swallow the ones that growth reaches.
-	for (size_t i = 0; i < m_ranges.size() && m_ranges[i].start <= end; i++)
+	size_t i = 0;
+	while (i < m_ranges.size() && m_ranges[i].start <= end && m_ranges[i].end < start) i++;
+	if (i < m_ranges.size() && m_ranges[i].start <= end)
 	{
-		if (m_ranges[i].end < start) continue;
 		if (m_ranges[i].start > start) m_ranges[i].start = start;
 		if (m_ranges[i].end < end) m_ranges[i].end = end;
 		while (i + 1 < m_ranges.size() && m_ranges[i + 1].start <= m_ranges[i].end)
@@ -86,13 +87,15 @@ void ClipRanges::DoRemoveClipRange(unsigned start, unsigned end)
 		if (m_ranges[i].start >= start && m_ranges[i].end <= end) m_ranges.erase(m_ranges.begin() + i);
 		else i++;
 	}
-	for (size_t i = 0; i < m_ranges.size(); i++)
+	// [rc4l] Trim or split the first range the removal cuts into, trimming the ends of those before it on the way.
+	bool done = false;
+	for (size_t i = 0; !done && i < m_ranges.size(); i++)
 	{
 		Range &r = m_ranges[i];
 		if (r.start >= start && r.start <= end)
 		{
 			r.start = end;
-			break;
+			done = true;
 		}
 		else if (r.end >= start && r.end <= end) r.end = start;
 		else if (r.start < start && r.end > end)
@@ -100,7 +103,7 @@ void ClipRanges::DoRemoveClipRange(unsigned start, unsigned end)
 			const Range tail = { end, r.end };
 			r.end = start;
 			m_ranges.insert(m_ranges.begin() + i + 1, tail);
-			break;
+			done = true;
 		}
 	}
 }
@@ -159,6 +162,32 @@ unsigned ComputeAngleToPseudo(unsigned angle)
 void ComputeSeedFrustum(ClipRanges &clip, unsigned viewAngle, unsigned halfAngle)
 {
 	clip.SafeAddClipRange(ComputeAngleToPseudo(viewAngle + halfAngle), ComputeAngleToPseudo(viewAngle - halfAngle));
+}
+
+unsigned ComputePointToAnglePrecise(double dx, double dy)
+{
+	const double angle = atan2(dy, dx) * (2147483648.0 / 3.14159265358979323846);
+	// [rc4l] xs_RoundToInt's two adds, nearest with ties up, and the low word taken unsigned.
+	const double magic = (angle + 1.5e-8) + 6755399441055744.0;
+	unsigned long long bits;
+	memcpy(&bits, &magic, sizeof(bits));
+	return (unsigned)bits;
+}
+
+void ComputeSeedPortal(ClipRanges &clip, long long eyeX, long long eyeY, const long long *lines, int count,
+	unsigned angleOffset, unsigned viewAngle, unsigned halfAngle)
+{
+	clip.Clear();
+	clip.SafeAddClipRange(0, kAngleMax);
+	for (int i = 0; i < count; i++)
+	{
+		const long long *l = lines + 4 * i;
+		const unsigned start = ComputePointToAnglePrecise(double(l[2] - eyeX), double(l[3] - eyeY));
+		const unsigned end = ComputePointToAnglePrecise(double(l[0] - eyeX), double(l[1] - eyeY));
+		if (start != end) clip.SafeRemoveClipRange(ComputeAngleToPseudo(start + angleOffset), ComputeAngleToPseudo(end + angleOffset));
+	}
+	if (halfAngle < 0x80000000u) ComputeSeedFrustum(clip, viewAngle, halfAngle);
+	clip.SetSilhouette();
 }
 
 bool ComputeBoxVisible(const ClipRanges &clip, long long viewx, long long viewy, const long long box[4])

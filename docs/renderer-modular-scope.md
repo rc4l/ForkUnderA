@@ -214,25 +214,27 @@ green, and GL's frame rate side by side equals GL alone.
 **Status, 2026-10-12.** Standalone (`fua_dg_standalone 1`, the mode a player runs) already skipped GL's
 walk for walls and flats. The template harness turns standalone off for its Vulkan sides, so the suite
 had been testing Vulkan with GL walking. Run with standalone on, 41 of 42 GL-against-Vulkan scenarios
-pass. The exception is `stacksprite`: standalone draws no stacked views, because their list comes from
-GL's walk.
+passed; the exception was `stacksprite`. All 42 pass now.
 
 | Item | Result |
 |---|---|
 | Sprites | `features/sprites` derives an actor's sprite as `GLSprite::Process`, `Draw` and `RegisterSprite` do: 31 unit tests, and `fua_sprite_check` matched GL bit for bit on about 1.6 million actor-frames, rare settings included. On by default (`fua_sprites_own`); the sprite section costs the same as GL's (0.34-0.36 ms against 0.35-0.38 on wdiex02). Models still go through GL's model code, CPU-only in standalone. |
-| Visibility | `features/visibility` walks the player's view as GL's BSP walk and clipper do, frustum seed included, marking and building nothing. `fua_vis_check` matched GL's walk exactly on about 4,500 frames across six maps. With `fua_vis_walk` the player's pass draws only what the walk reached (the walked-bit cull stacked views already used). This is the visible-set test `skybleed-scope.md` found the map bake lacked. It is off by default: on wdiex02 the walk costs 0.22 ms a frame and the cull 0.09 more, which a vertex-shader cull does not repay. It goes on with P6's CPU-side culling. |
-| Sky walls | `surfaces/computation/skywall_compute` is `GLWall::SkyNormal`, `SkyTop` and `SkyBottom` as pure functions, tested; not yet wired. |
+| Visibility | `features/visibility` walks the player's view as GL's BSP walk and clipper do, frustum seed included. The player's pass draws only what the walk reached (the walked-bit cull stacked views already used), the visible-set test `skybleed-scope.md` found the map bake lacked. On by default (`fua_vis_walk`): the sampler puts the walk at about 2.4% of a wdiex02 frame, 0.04 ms. |
+| Sky surfaces | The walk makes the player's sky surfaces, sky holes and skybox each frame, from `surfaces/computation/skywall_compute` (`SkyNormal`, `SkyTop`, `SkyBottom`, `DoHorizon`). `fua_vis_check` matched GL bit for bit on about 19,000 frames across nine maps, horizons on and off. |
+| Stacked views and skyboxes | The walk collects each stacked plane's walls and covered subsectors (GL's flats pass and `ProcessSectorStacks`) and each skybox its sky walls name; each is then walked from its own eye with GL's portal clipper (`ClearClipper`, `SetupCoverage`), giving its walk bits, sky surfaces and sprites. Matched GL on about 6,900 frames across seven maps, apart from views GL's occlusion query skipped. |
+| Mirrors and particles | The walk notes each `Line_Mirror` wall, its sheen light (the band `SplitWall` gives its first piece, `mirrorview_compute`) and walks the reflection for its sprites; 2,220 mirrors and sheens matched GL. It hands each reached subsector's particles to GL's sprite path, which standalone had never done. |
 
-Found on the way: standalone's sky surfaces, skybox viewpoint, mirror sheens and stacked views are
-whatever GL's walk captured before standalone took over, stale ever after. A first version of the
-cull reset them every frame and nine scenarios failed (mirrors, the skybox, stacked sectors); the
-walk now resets only its own walk-bit slot. Deriving those per frame from the walk is the next item.
+Found on the way: standalone's sky surfaces, skybox, stacked views, skybox walk and mirrors were
+whatever GL's walk captured before standalone took over, stale ever after (on a map where nothing
+moves, the spawn view's), and it drew no actors in mirrors and no particles at all. Each now comes
+from the walks every frame; scenarios `skymove`, `stackturn`, `skyboxturn`, `mirrorsprite` and
+`particles` fail on the old binary and pass now.
 
-Still to do: sky walls, sheens and stacked views per frame from the walk (stacked views: a walk from
-the displaced eye, the clipper seeded from the portal outline, sprites per view); models' data
-without GL's buffers; GL's view settings the new modules read (`glset`, `gl_fixedcolormap`,
-`FrustumAngle`, `gl_FakeFlat`), which the renderer interface supplies in P5; then the capture hooks
-and the harness's standalone default.
+Still to do: models' data without GL's buffers (a stacked view's or mirror's models are not drawn in
+standalone yet); GL's view settings the new modules read (`glset`, `gl_fixedcolormap`, `FrustumAngle`,
+`gl_FakeFlat`, `SetViewArea`, `ProcessParticle`), which the renderer interface supplies in P5; light
+and plane heights from game state (on wdiex02, re-baking what moved or relit is about 30% of a
+standalone frame); then the capture hooks and the harness's standalone default.
 
 ### P5: one renderer interface, Vulkan owning itself
 

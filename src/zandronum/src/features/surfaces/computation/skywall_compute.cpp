@@ -83,4 +83,20 @@ bool ComputeSkyBottom(const SkyBottomIn &in, SkyWallQuad &out)
 	return true;
 }
 
+int ComputeHorizonSky(long long viewz, long long ceilingZ, long long floorZ, bool ceilingSky, bool floorSky, SkyWallQuad out[2])
+{
+	// [rc4l] FIXED2FLOAT, which the engine's m_fixed.h would drag in.
+	const float view = float(viewz) / 65536.0f, ceiling = float(ceilingZ) / 65536.0f, floor = float(floorZ) / 65536.0f;
+	int n = 0;
+	float top = ceiling;
+	if (viewz < ceilingZ)
+	{
+		const float bottom = viewz > floorZ ? view : floor;
+		if (ceilingSky) Span(out[n++], true, bottom, bottom, top, top, false);
+		top = bottom;
+	}
+	if (viewz > floorZ && floorSky) Span(out[n++], false, floor, floor, top, top, false);
+	return n;
+}
+
 }} // namespace zx::surfaces

@@ -163,14 +163,21 @@ int SkyQuadsCaptured();   // [rc4l] Since the level loaded, for fua_sky_quads.
 AActor *SkyQuadViewpoint();
 // [rc4l] A GL walk starting at this portal depth, for the main view or a camera texture; returns the kSkyCapture* list it fills.
 int BeginSkyWalk();
+// [rc4l] A view's sky from a visibility walk (features/visibility) rather than GL's: start kSkyCapture* list `list` afresh (the player's with its skybox and holes), then add each surface as RegisterSkyQuad and RegisterSkyHole take GL's.
+void BeginViewSky(int list);
+void AddViewSkyQuad(int list, float x1, float y1, float x2, float y2, const float *zb, const float *zt, AActor *viewpoint, int lineSpecial);
+void AddViewSkyHole(int list, float x1, float y1, float x2, float y2, const float *zfloor, const float *zceil);
+// [rc4l] The player's sky surfaces, holes and skybox, exchanged with `other`, so a second derivation can be compared against the first.
+struct MainSkyState { TArray<MeshVertex> quads; TArray<float> holes; AActor *viewpoint = nullptr; };
+void SwapMainSky(MainSkyState &other);
 // [rc4l] Drop everything GL's walks captured, at level unload, since a backend frame before the next level's first walk would otherwise draw the old level's sky from its freed SkyViewpoint.
 void ForgetWalks();
-// [rc4l] A walk of the player's view outside GL (features/visibility): start the frame's bits afresh, then mark each subsector or sidedef id it reaches.
-void BeginMainVisibility();
-void NoteMainVisible(int id);
+// [rc4l] A walk outside GL (features/visibility) into walk slot `slot` (kMainWalkSlot, a stacked view's, kSkyboxWalkSlot): start the slot afresh, then mark each subsector or sidedef id it reaches.
+void BeginSlotVisibility(int slot);
+void NoteSlotVisible(int slot, int id);
+// [rc4l] Whether the player's pass culls to its slot this frame: set by the player's visibility walk, cleared when GL walks.
+void SetMainVisibility(bool on);
 bool MainVisibility();
-// [rc4l] Keep the walk's bits from the player's pass after all, for a frame the walk alone cannot describe.
-void CancelMainVisibility();
 // [rc4l] The frame's walk bits whatever filled them, for comparing one walk against another.
 const unsigned int *WalkBits(int &words);
 int SkyWalks(int list);

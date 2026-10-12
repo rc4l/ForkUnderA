@@ -58,6 +58,9 @@ bool ComputeSkyTop(const SkyTopIn &in, SkyWallQuad &out);
 // [rc4l] SkyBottom: the wall below a two-sided line, when GL lowers one.
 bool ComputeSkyBottom(const SkyBottomIn &in, SkyWallQuad &out);
 
+// [rc4l] DoHorizon's skies, from the eye and the sector's plane heights as raw fixed point: the line above the eye on a sky ceiling, below it on a sky floor; returns how many.
+int ComputeHorizonSky(long long viewz, long long ceilingZ, long long floorZ, bool ceilingSky, bool floorSky, SkyWallQuad out[2]);
+
 }} // namespace zx::surfaces
 
 #endif // ZX_SKYWALL_COMPUTE_H

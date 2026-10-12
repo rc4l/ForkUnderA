@@ -6,19 +6,21 @@
 #ifndef ZX_VISWALK_H
 #define ZX_VISWALK_H
 
+class AActor;
+struct subsector_t;
+struct sector_t;
+
 namespace zx { namespace visibility {
 
-// [rc4l] Walk the BSP from the current view (viewx, viewy) and mark every subsector, sidedef and sector it reaches; `publish` hands the marks to the backend's walk bits.
-void WalkView(bool publish = false);
+// [rc4l] Walk the BSP from the current view as GL's walk does; `publish` hands what it reaches to the player's walk bits, `derive` makes the player's sky surfaces and collects the stacked views, skyboxes and mirrors it looks into, and `particles` takes each subsector reached with its sector as GL's walk sees it.
+void WalkView(bool publish = false, bool derive = false, void (*particles)(subsector_t *sub, sector_t *sector) = 0);
 
-// [rc4l] What the last walk reached; false before any walk this level.
-bool SubsectorVisible(int subsector);
-bool SideVisible(int side);
-bool SectorVisible(int sector);
-bool WalkedThisFrame();
+// [rc4l] Walk each stacked view, skybox and line mirror the last derived WalkView looked into, from its own eye, as GL's portals walk them: their walk bits and sky surfaces, and each stacked view's and mirror's actors handed to `sprite` from inside that view.
+void WalkPortalViews(void (*sprite)(AActor *thing));
 
-// [rc4l] With fua_vis_check on, compare the last walk against the set GL's own walk marked this frame, counting what differs.
-void CheckAgainstGL(const unsigned int *glBits, int words, int walkSlots, int mainSlot);
+// [rc4l] With fua_vis_check on, walk beside GL's own walk of the player's view and compare what the two reached and made; the stacked views, skyboxes and mirrors are compared once GL has walked them, by CheckPortalViews.
+void CheckAgainstGL();
+void CheckPortalViews();
 
 // [rc4l] Forget the level's walk, at level unload.
 void ForgetWalk();

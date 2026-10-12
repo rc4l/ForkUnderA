@@ -17,6 +17,8 @@
 #define ZX_FLATMESH_H
 
 #include "tarray.h"   // [rc4l] the moved sectors and changed sides RefreshFakePlanes takes
+#include "features/levelmesh/staticmesh.h"                   // [rc4l] MeshVertex, which PortalViewState holds
+#include "features/levelmesh/computation/flatmesh_compute.h" // [rc4l] kMaxStackViews and kWalkSlots
 
 struct subsector_t;
 struct FPortal;
@@ -61,6 +63,30 @@ struct StackViewInfo
 
 // [rc4l] A wall GL stencils a stacked view through (RENDERWALL_SECTORSTACK, from the stacked plane to the map's limit), taken as geometry into its portal's view; with the cap it is the whole of GL's stencil, so geometry beyond a stacked plane still hides the view as it does in GL.
 void RegisterStackWall(const GLWall &wall, const FPortal *portal);
+// [rc4l] The same wall from a visibility walk (features/visibility); returns the portal's slot, or -1 once every slot is taken.
+int AddStackWall(const FPortal *portal, float x1, float y1, float x2, float y2, const float *zb, const float *zt);
+// [rc4l] Start the frame's stacked views, their sky surfaces, the stacked views' and skyboxes' walk bits and the line mirrors walked afresh, for walks outside GL.
+void BeginPortalViews();
+// [rc4l] Whether those came from walks outside GL since GL last walked.
+bool PortalViewsDerived();
+// [rc4l] A line mirror's sheen light, kept with its linedef.
+struct MirrorSheenShade { int line; MeshPiece shade; };
+// [rc4l] All of that, exchanged with `other`, so a derivation can be compared against what GL's walks captured.
+struct PortalViewState
+{
+	PortalViewState();
+	int stackUsed;
+	const void *portals[kMaxStackViews];
+	StackViewInfo info[kMaxStackViews];
+	TArray<MeshVertex> walls[kMaxStackViews], sky[kMaxStackViews];
+	TArray<unsigned int> bits;
+	TArray<int> marked[kWalkSlots];
+	bool needsClear[kWalkSlots];
+	bool skyboxWalked;
+	TArray<int> mirrors;
+	TArray<MirrorSheenShade> sheens;
+};
+void SwapPortalViews(PortalViewState &other);
 int StackViewCount();
 StackViewInfo StackView(int slot);
 const MeshVertex *StackViewVertices(int slot, int &count);
@@ -77,9 +103,13 @@ const float *SkyHoles(int &count);
 
 // [rc4l] Whether GL's walk this frame went through the line mirror on linedef line, which is what says it can be seen.
 bool MirrorWalkedThisFrame(int line);
+// [rc4l] A line mirror a visibility walk saw this frame, as MirrorWalk takes GL's.
+void AddWalkedMirror(int line);
 
 // [rc4l] A line mirror GL's walk filed with its sheen (gl_mirror_envmap), kept with the light RenderMirrorSurface will draw that sheen in.
 void RegisterMirrorSheen(const GLWall &wall);
+// [rc4l] The same from a visibility walk, from the wall's light and colormap as GL's first piece of it holds them.
+void AddMirrorSheen(int line, int lightlevel, const FColormap &cm);
 // [rc4l] That light for linedef line this frame, or NULL when GL drew no sheen on it.
 const MeshPiece *MirrorSheen(int line);
 

@@ -420,9 +420,7 @@ void FGLRenderer::CreateScene()
 	{
 		const area_t areaAfter = in_area;
 		in_area = areaBefore;
-		int words = 0;
-		const unsigned int *bits = zx::levelmesh::WalkBits(words);
-		zx::visibility::CheckAgainstGL(bits, words, zx::levelmesh::kWalkSlots, zx::levelmesh::kMainWalkSlot);
+		zx::visibility::CheckAgainstGL();
 		in_area = areaAfter;
 	}
 
@@ -641,10 +639,26 @@ EXTERN_CVAR(Bool, gl_batch_walls)
 EXTERN_CVAR(Bool, gl_draw_sync)
 EXTERN_CVAR(Bool, fua_sprites_own)
 EXTERN_CVAR(Bool, fua_sprite_check)
-// [rc4l] Standalone walks the player's view without GL and draws only what that walk reached, as GL does; off until culling repays its 0.22-0.31 ms on wdiex02.
-CVAR(Bool, fua_vis_walk, false, 0)
+// [rc4l] Standalone walks the player's view without GL for its sky surfaces, the automap and the cull, as GL's walk serves GL; about 0.04 ms on wdiex02.
+CVAR(Bool, fua_vis_walk, true, 0)
 // [rc4l] Off walks without culling, so the walk's own cost and the cull's can be measured apart.
 CVAR(Bool, fua_vis_cull, true, 0)
+
+EXTERN_CVAR(Bool, gl_render_things)
+
+// [rc4l] The particles in a subsector the player's walk reached, to GL's sprite path as its own walk hands them over.
+static void WalkParticles(subsector_t *sub, sector_t *sector)
+{
+	if (!gl_render_things) return;
+	for (WORD i = ParticlesInSubsec[DWORD(sub - subsectors)]; i != NO_PARTICLE; i = Particles[i].snext)
+		GLRenderer->ProcessParticle(&Particles[i], sector);
+}
+
+// [rc4l] An actor a stacked view's or mirror's walk reached, derived inside that view; a model there is not drawn yet, since GL's model path captures only what GL draws.
+static void StackViewSprite(AActor *thing)
+{
+	if (fua_sprites_own) zx::sprites::BuildSprite(thing);
+}
 
 void FGLRenderer::DrawScene(bool toscreen)
 {
@@ -678,7 +692,8 @@ void FGLRenderer::DrawScene(bool toscreen)
 		if (fua_vis_walk && zx::levelmesh::PlayerWalkActive())
 		{
 			PO_LinkToSubsectors();
-			zx::visibility::WalkView(fua_vis_cull);
+			zx::visibility::WalkView(fua_vis_cull, true, WalkParticles);
+			zx::visibility::WalkPortalViews(StackViewSprite);
 		}
 
 		// [rc4l] A frame where the world moved used to go back through GL, because the walk was what
@@ -792,6 +807,8 @@ void FGLRenderer::DrawScene(bool toscreen)
 	recursion++;
 	GLPortal::EndFrame();
 	recursion--;
+	// [rc4l] features/visibility: GL has walked its stacked views and skyboxes now, so the ones derived beside its walk are compared.
+	if (zx::levelmesh::PlayerWalkActive()) zx::visibility::CheckPortalViews();
 	MCP_GLPerf_ZoneBegin(MCP_GLZ_TRANSLUCENT); // [rc4l] GPU-time the translucent/overdraw pass
 	RenderTranslucent();
 	MCP_GLPerf_ZoneEnd(MCP_GLZ_TRANSLUCENT);

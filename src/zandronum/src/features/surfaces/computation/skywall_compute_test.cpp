@@ -152,3 +152,31 @@ TEST(SkyWall, StackedAndReflectiveFloorsWallTheirEdge)
 	in.backReflectSameHeight = true;
 	EXPECT_FALSE(ComputeSkyBottom(in, q));
 }
+
+TEST(SkyWall, AHorizonBetweenItsPlanesSplitsAtTheEye)
+{
+	SkyWallQuad q[2];
+	ASSERT_EQ(ComputeHorizonSky(64 << 16, 128 << 16, 0, true, true, q), 2);
+	EXPECT_TRUE(q[0].ceiling);
+	EXPECT_EQ(q[0].zbottom[0], 64.f);
+	EXPECT_EQ(q[0].ztop[1], 128.f);
+	EXPECT_FALSE(q[0].allowReflect);
+	EXPECT_FALSE(q[1].ceiling);
+	EXPECT_EQ(q[1].zbottom[1], 0.f);
+	EXPECT_EQ(q[1].ztop[0], 64.f);
+	EXPECT_EQ(ComputeHorizonSky(64 << 16, 128 << 16, 0, false, true, q), 1);   // [rc4l] a plain ceiling is a horizon, not sky
+	EXPECT_FALSE(q[0].ceiling);
+	EXPECT_EQ(q[0].ztop[0], 64.f);
+	EXPECT_EQ(ComputeHorizonSky(64 << 16, 128 << 16, 0, false, false, q), 0);
+}
+
+TEST(SkyWall, AnEyeOutsideTheHorizonsPlanesSeesOneSide)
+{
+	SkyWallQuad q[2];
+	ASSERT_EQ(ComputeHorizonSky(200 << 16, 128 << 16, 0, true, true, q), 1);   // [rc4l] above the ceiling: only the floor's, up to the ceiling
+	EXPECT_FALSE(q[0].ceiling);
+	EXPECT_EQ(q[0].ztop[0], 128.f);
+	ASSERT_EQ(ComputeHorizonSky(-(8 << 16), 128 << 16, 0, true, true, q), 1);   // [rc4l] below the floor: only the ceiling's, down to the floor
+	EXPECT_TRUE(q[0].ceiling);
+	EXPECT_EQ(q[0].zbottom[0], 0.f);
+}

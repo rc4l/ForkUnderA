@@ -26,6 +26,14 @@ test("a counter passes at or under its ceiling, and fails over it or when the en
     { line: "FAIL MAP01: no slots past the fill in the engine's answer", failed: 1 });
 });
 
+test("a counter with a floor passes at or over it and fails under it", () => {
+  const counter = { label: "particles drawn", pattern: "particles: (\\d+) drawn", floor: 1 };
+  assert.deepEqual(judgeCounter("MAP01", "particles: 40 drawn this frame", counter),
+    { line: "PASS MAP01 particles drawn: 40 (floor 1)", failed: 0 });
+  assert.deepEqual(judgeCounter("MAP01", "particles: 0 drawn this frame", counter),
+    { line: "FAIL MAP01 particles drawn: 0 (floor 1)", failed: 1 });
+});
+
 test("a box under its ceiling passes and one over it fails", () => {
   const frames = {
     same: { gl: flat(32, 32, [10, 10, 10]), vk: flat(32, 32, [12, 12, 12]) },

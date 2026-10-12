@@ -149,3 +149,69 @@ TEST(ClipRanges, ABoxIsVisibleUnlessItsSpanIsBlocked)
 	EXPECT_TRUE(ComputeBoxVisible(c, 150, 400, box));   // [rc4l] from the north it lies south, which is open
 	EXPECT_TRUE(ComputeBoxVisible(c, 400, 0, box));     // [rc4l] from the south-east corner
 }
+
+TEST(ClipRanges, PreciseAnglesRoundToTheNearestBam)
+{
+	EXPECT_EQ(ComputePointToAnglePrecise(1, 0), 0u);
+	EXPECT_EQ(ComputePointToAnglePrecise(0, 1), 0x40000000u);
+	EXPECT_EQ(ComputePointToAnglePrecise(-1, 0), 0x80000000u);
+	EXPECT_EQ(ComputePointToAnglePrecise(0, -1), 0xC0000000u);   // [rc4l] below zero, the word wraps as an int's would
+	EXPECT_EQ(ComputePointToAnglePrecise(1, 1), 0x20000000u);
+}
+
+TEST(ClipRanges, APortalSeesOnlyThroughItsLines)
+{
+	ClipRanges c;
+	// [rc4l] One line north of the eye, from north-west to north-east and facing it, so only that arc stays open.
+	const long long line[4] = { -(100LL << 16), 100LL << 16, 100LL << 16, 100LL << 16 };
+	ComputeSeedPortal(c, 0, 0, line, 1, 0, 0x40000000u, 0xFFFFFFFFu);
+	EXPECT_TRUE(c.SafeCheckRange(ComputeAngleToPseudo(0x38000000u), ComputeAngleToPseudo(0x48000000u)));
+	EXPECT_FALSE(c.SafeCheckRange(ComputeAngleToPseudo(0xB8000000u), ComputeAngleToPseudo(0xC8000000u)));
+	// [rc4l] The outline is the silhouette: a later removal cannot open what it blocks.
+	c.SafeRemoveClipRange(ComputeAngleToPseudo(0xB8000000u), ComputeAngleToPseudo(0xC8000000u));
+	EXPECT_FALSE(c.SafeCheckRange(ComputeAngleToPseudo(0xB8000000u), ComputeAngleToPseudo(0xC8000000u)));
+}
+
+TEST(ClipRanges, APortalsOutlineTurnsWithItsViewAndNarrowsToTheFrustum)
+{
+	const long long line[4] = { -(100LL << 16), 100LL << 16, 100LL << 16, 100LL << 16 };
+	ClipRanges turned;
+	ComputeSeedPortal(turned, 0, 0, line, 1, 0x80000000u, 0xC0000000u, 0xFFFFFFFFu);   // [rc4l] a skybox turned half round sees it to the south
+	EXPECT_TRUE(turned.SafeCheckRange(ComputeAngleToPseudo(0xB8000000u), ComputeAngleToPseudo(0xC8000000u)));
+	EXPECT_FALSE(turned.SafeCheckRange(ComputeAngleToPseudo(0x38000000u), ComputeAngleToPseudo(0x48000000u)));
+	ClipRanges narrow;
+	ComputeSeedPortal(narrow, 0, 0, line, 1, 0, 0x40000000u, 0x08000000u);   // [rc4l] 11 degrees either side of north
+	EXPECT_TRUE(narrow.SafeCheckRange(ComputeAngleToPseudo(0x3C000000u), ComputeAngleToPseudo(0x44000000u)));
+	EXPECT_FALSE(narrow.SafeCheckRange(ComputeAngleToPseudo(0x2C000000u), ComputeAngleToPseudo(0x30000000u)));
+	ClipRanges point;
+	const long long dot[4] = { 100LL << 16, 100LL << 16, 100LL << 16, 100LL << 16 };   // [rc4l] a line of no length opens nothing
+	ComputeSeedPortal(point, 0, 0, dot, 1, 0, 0x40000000u, 0xFFFFFFFFu);
+	EXPECT_FALSE(point.SafeCheckRange(ComputeAngleToPseudo(0x10000000u), ComputeAngleToPseudo(0x30000000u)));
+}
+
+TEST(ClipRanges, AGrowingRangeSwallowsTheNextAndKeepsItsFarEnd)
+{
+	ClipRanges c;
+	c.SafeAddClipRange(100, 200);
+	c.SafeAddClipRange(300, 400);
+	c.SafeAddClipRange(150, 350);   // [rc4l] grows the first over the gap, then takes the second's end
+	Expect(c, { { 100, 400 } });
+}
+
+TEST(ClipRanges, RemovingOverARangesEndTrimsIt)
+{
+	ClipRanges c;
+	c.SafeAddClipRange(10, 20);   // [rc4l] passed over untouched on the way
+	c.SafeAddClipRange(100, 300);
+	c.SafeRemoveClipRange(200, 400);
+	Expect(c, { { 10, 20 }, { 100, 200 } });
+}
+
+TEST(ClipRanges, AddingPastAnEarlierRangeGrowsTheOneItTouches)
+{
+	ClipRanges c;
+	c.SafeAddClipRange(100, 200);
+	c.SafeAddClipRange(300, 400);
+	c.SafeAddClipRange(350, 450);
+	Expect(c, { { 100, 200 }, { 300, 450 } });
+}

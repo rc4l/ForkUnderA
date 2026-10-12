@@ -44,6 +44,14 @@ unsigned ComputeAngleToPseudo(unsigned angle);
 // [rc4l] Block everything outside the view's frustum, as GL seeds its clipper before a walk: a half-angle of 2^32-1 or more blocks nothing.
 void ComputeSeedFrustum(ClipRanges &clip, unsigned viewAngle, unsigned halfAngle);
 
+// [rc4l] R_PointToAnglePrecise for the offset (dx, dy) from the eye: the true angle in BAM, rounded as xs_RoundToUInt rounds.
+unsigned ComputePointToAnglePrecise(double dx, double dy);
+
+// [rc4l] GLPortal::ClearClipper: everything blocked but what the portal's lines span from the eye that saw them, turned by angleOffset, then the frustum when it is narrower than half a turn, kept as the silhouette.
+// `lines` holds x1, y1, x2, y2 for each line, raw 16.16 as the eye is.
+void ComputeSeedPortal(ClipRanges &clip, long long eyeX, long long eyeY, const long long *lines, int count,
+	unsigned angleOffset, unsigned viewAngle, unsigned halfAngle);
+
 // [rc4l] Clipper::CheckBox: whether any of a BSP node's box (top, bottom, left, right, raw 16.16) may be visible from the eye.
 bool ComputeBoxVisible(const ClipRanges &clip, long long viewx, long long viewy, const long long box[4]);
 

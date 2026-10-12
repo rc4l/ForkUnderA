@@ -61,6 +61,7 @@
 #include "gl/utility/gl_clock.h"
 #include "gl/gl_functions.h"
 #include "features/levelmesh/wallcache.h"
+#include "features/visibility/viswalk.h"
 #include "features/levelmesh/staticmesh.h"
 
 void InitGLRMapinfoData();
@@ -690,6 +691,7 @@ void gl_PreprocessLevel()
 void gl_CleanLevelData()
 {
 	zx::levelmesh::FreeLevel();
+	zx::visibility::ForgetWalk();   // [rc4l] features/visibility: the level's coverage nodes and portals
 	zx::levelmesh::MeshFreeLevel();
 
 	// Dynamic lights must be destroyed before the sector information here is deleted.

@@ -1100,7 +1100,8 @@ void RenderMirrors(Diligent::IDeviceContext *ctx)
 		// approximation: it removes renders that could not have contributed a pixel.
 		if (dist <= 0.f) continue;
 		// [rc4l] ...and one nobody can see is not rendered either, since each costs a whole scene render and WDI07 holds four out of sight.
-		if (!zx::levelmesh::ComputeRendersMirror(zx::levelmesh::MirrorWalkedThisFrame(m.line), zx::hwrender::StandaloneActive(),
+		if (!zx::levelmesh::ComputeRendersMirror(zx::levelmesh::MirrorWalkedThisFrame(m.line),
+				zx::hwrender::StandaloneActive() && !zx::levelmesh::PortalViewsDerived(),
 				zx::horizon::ComputeQuadMayBeVisible(savedMVP, m.corners)))
 			continue;
 		const float rx = px - 2.f * dist * m.nx;
