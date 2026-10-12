@@ -1610,6 +1610,8 @@ add_executable( zdoom WIN32
 	features/materials/materials.cpp
 	features/sprites/spritebuild.cpp
 	features/visibility/viswalk.cpp
+	features/draw2d/draw2d.cpp
+	features/draw2d/computation/quad2d_compute.cpp
 	features/visibility/computation/clipranges_compute.cpp
 	features/visibility/computation/closedline_compute.cpp
 	features/visibility/computation/coverage_compute.cpp

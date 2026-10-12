@@ -2,6 +2,7 @@
 // Copyright (C) 2026 rc4l
 
 #include "features/visibility/computation/clipranges_compute.h"
+#include "features/fixed64/computation/xsround_compute.h"
 
 #include <math.h>
 #include <string.h>
@@ -146,11 +147,8 @@ unsigned ComputePseudoAngle(double dx, double dy)
 	if (dx == 0 && dy == 0) return 0;
 	double result = dy / (fabs(dx) + fabs(dy));
 	if (dx < 0) result = 2.f - result;
-	// [rc4l] xs_Fix<30>::ToFix, as GL does it: the magic add leaves the value rounded half to even in the low word.
-	const double magic = result + 6755399441055744.0 / 1073741824.0;
-	unsigned long long bits;
-	memcpy(&bits, &magic, sizeof(bits));
-	return (unsigned)bits;
+	// [rc4l] xs_Fix<30>::ToFix, as GL does it.
+	return (unsigned)ComputeXsFix(result, 30);
 }
 
 unsigned ComputeAngleToPseudo(unsigned angle)
@@ -166,12 +164,7 @@ void ComputeSeedFrustum(ClipRanges &clip, unsigned viewAngle, unsigned halfAngle
 
 unsigned ComputePointToAnglePrecise(double dx, double dy)
 {
-	const double angle = atan2(dy, dx) * (2147483648.0 / 3.14159265358979323846);
-	// [rc4l] xs_RoundToInt's two adds, nearest with ties up, and the low word taken unsigned.
-	const double magic = (angle + 1.5e-8) + 6755399441055744.0;
-	unsigned long long bits;
-	memcpy(&bits, &magic, sizeof(bits));
-	return (unsigned)bits;
+	return ComputeXsRoundToUInt(atan2(dy, dx) * (2147483648.0 / 3.14159265358979323846));
 }
 
 void ComputeSeedPortal(ClipRanges &clip, long long eyeX, long long eyeY, const long long *lines, int count,

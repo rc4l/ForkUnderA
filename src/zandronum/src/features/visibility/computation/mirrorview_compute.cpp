@@ -2,20 +2,15 @@
 // Copyright (C) 2026 rc4l
 
 #include "features/visibility/computation/mirrorview_compute.h"
+#include "features/fixed64/computation/xsround_compute.h"
 
 #include <math.h>
 #include <string.h>
 
 namespace zx { namespace visibility {
 
-// [rc4l] FLOAT2FIXED: xs_Fix<16>::ToFix's magic add, the low word taken as a 32-bit int.
-static long long ToFix16(double v)
-{
-	const double magic = v + 6755399441055744.0 / 65536.0;
-	unsigned long long bits;
-	memcpy(&bits, &magic, sizeof(bits));
-	return (long long)(int)(unsigned)bits;
-}
+// [rc4l] FLOAT2FIXED, a 32-bit xs_Fix<16> widened to the engine's 64-bit fixed point.
+static long long ToFix16(double v) { return ComputeXsFix(v, 16); }
 
 void ComputeMirrorEye(long long v1x, long long v1y, long long v2x, long long v2y, long long eyeX, long long eyeY, int depth,
 	long long &outX, long long &outY)

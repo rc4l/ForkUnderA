@@ -62,6 +62,7 @@ void gl_RegisterSpriteView();   // gl/scene/gl_spriteview.cpp
 #include "gl/data/gl_vertexbuffer.h"
 #include "gl/scene/gl_drawinfo.h"
 #include "features/hwrender/hud2d.h"
+#include "features/draw2d/draw2d.h"   // [rc4l] the 2D draws, worked out without GL
 #include "gl/shaders/gl_shader.h"
 #include "gl/textures/gl_texture.h"
 #include "gl/textures/gl_translate.h"
@@ -328,95 +329,27 @@ struct BackendOnly2D
 void FGLRenderer::DrawTexture(FTexture *img, DCanvas::DrawParms &parms)
 {
 	BackendOnly2D backendOnly;
-	double xscale = parms.destwidth / parms.texwidth;
-	double yscale = parms.destheight / parms.texheight;
-	double x = parms.x - parms.left * xscale;
-	double y = parms.y - parms.top * yscale;
-	double w = parms.destwidth;
-	double h = parms.destheight;
-	float u1, v1, u2, v2;
-	int light = 255;
-
-	FMaterial * gltex = FMaterial::ValidateTexture(img, false);
-
-	if (parms.colorOverlay && (parms.colorOverlay & 0xffffff) == 0)
-	{
-		// Right now there's only black. Should be implemented properly later
-		light = 255 - APART(parms.colorOverlay);
-		parms.colorOverlay = 0;
-	}
-
-	// [rc4l] features/hwrender: hoisted out of the branch below so the 2D capture can record it.
-	// Coloured text is the same glyph under a different palette remap, and a backend that ignores it
-	// renders every font in the base palette -- dim and muddy, while untranslated menu graphics look
-	// perfect. That asymmetry is what the bug looked like.
-	int translation = 0;
-	// [rc4l] The POSITIVE index, for a backend that bakes the remap into its uploaded texture.
-	//
-	// The GL path deliberately passes the index NEGATED, because it applies the remap in the shader
-	// from a palette texture. FGLBitmap::CopyPixelData only honours a positive value
-	// (`if (translation > 0)`), so handing a backend the negated one silently produces untranslated
-	// pixels -- the whole server browser rendered in the base Doom font's dark red instead of white.
-	int cpuTranslation = 0;
+	// [rc4l] features/draw2d works the draw out, the quad the 2D capture records and GL draws alike.
+	zx::draw2d::TextureDraw d;
+	zx::draw2d::PrepareTexture(img, parms, d);
+	FMaterial *gltex = (FMaterial *)d.quad.material;
+	const float x = d.quad.x, y = d.quad.y, x2 = d.x2, y2 = d.y2;
+	const float u1 = d.quad.u1, v1 = d.quad.v1, u2 = d.quad.u2, v2 = d.quad.v2;
+	parms.colorOverlay = d.colorOverlay;
 
 	gl_SetRenderStyle(parms.style, !parms.masked, false);
 	if (!img->bHasCanvas)
 	{
-		if (!parms.alphaChannel)
-		{
-			if (parms.remap != NULL && !parms.remap->Inactive)
-			{
-				GLTranslationPalette * pal = static_cast<GLTranslationPalette*>(parms.remap->GetNative());
-				if (pal) { translation = -pal->GetIndex(); cpuTranslation = pal->GetIndex(); }
-			}
-		}
-		gl_RenderState.SetMaterial(gltex, CLAMP_XY_NOMIP, translation, 0, !!(parms.style.Flags & STYLEF_RedIsAlpha));
-
-		u1 = gltex->GetUL();
-		v1 = gltex->GetVT();
-		u2 = gltex->GetUR();
-		v2 = gltex->GetVB();
-
+		// [rc4l] GL applies the remap in the shader from a palette texture, so it takes the index negated.
+		gl_RenderState.SetMaterial(gltex, CLAMP_XY_NOMIP, -d.translation, 0, !!(parms.style.Flags & STYLEF_RedIsAlpha));
 	}
 	else
 	{
 		gl_RenderState.SetMaterial(gltex, CLAMP_XY_NOMIP, 0, -1, false);
-		u1 = 0.f;
-		v1 = 1.f;
-		u2 = 1.f;
-		v2 = 0.f;
 		gl_RenderState.SetTextureMode(TM_OPAQUE);
 	}
-	
-	if (parms.flipX)
-	{
-		float temp = u1;
-		u1 = u2;
-		u2 = temp;
-	}
-	
 
-	if (parms.windowleft > 0 || parms.windowright < parms.texwidth)
-	{
-		x += parms.windowleft * xscale;
-		w -= (parms.texwidth - parms.windowright + parms.windowleft) * xscale;
-
-		u1 = float(u1 + parms.windowleft / parms.texwidth);
-		u2 = float(u2 - (parms.texwidth - parms.windowright) / parms.texwidth);
-	}
-
-	PalEntry color;
-	if (parms.style.Flags & STYLEF_ColorIsFixed)
-	{
-		color = parms.fillcolor;
-	}
-	else
-	{
-		color = PalEntry(light, light, light);
-	}
-	// [rc4l] fixed64: upstream used Scale(alpha, 255, FRACUNIT); convert through the
-	// draw-side float macro instead of raw fixed math on the strong type.
-	color.a = (BYTE)(FIXED2FLOAT(parms.alpha) * 255.f);
+	PalEntry color(d.a, d.r, d.g, d.b);
 
 	// scissor test doesn't use the current viewport for the coordinates, so use real screen coordinates
 	int btm = (SCREENHEIGHT - screen->GetHeight()) / 2;
@@ -432,31 +365,13 @@ void FGLRenderer::DrawTexture(FTexture *img, DCanvas::DrawParms &parms)
 
 	FFlatVertex *ptr = GLRenderer->mVBO->GetBuffer();
 	ptr->Set(x, y, 0, u1, v1); ptr++;
-	ptr->Set(x, y + h, 0, u1, v2); ptr++;
-	ptr->Set(x + w, y, 0, u2, v1); ptr++;
-	ptr->Set(x + w, y + h, 0, u2, v2); ptr++;
+	ptr->Set(x, y2, 0, u1, v2); ptr++;
+	ptr->Set(x2, y, 0, u2, v1); ptr++;
+	ptr->Set(x2, y2, 0, u2, v2); ptr++;
 	GLRenderer->mVBO->RenderCurrent(ptr, GL_TRIANGLE_STRIP);
 
-	// [rc4l] features/hwrender: record what this call just drew, so a foreign backend gets the HUD,
-	// the menus and the console without reimplementing DCanvas. Everything needed is already resolved
-	// here -- rect, uvs (flipped and windowed), colour with alpha, and the scissor. See hud2d.h.
-	{
-		zx::hwrender::Quad2D q;
-		q.material = gltex;
-		q.x = (float)x; q.y = (float)y; q.w = (float)w; q.h = (float)h;
-		q.u1 = u1; q.v1 = v1; q.u2 = u2; q.v2 = v2;
-		q.r = color.r / 255.f; q.g = color.g / 255.f;
-		q.b = color.b / 255.f; q.a = color.a / 255.f;
-		q.clipL = parms.lclip; q.clipT = parms.uclip;
-		q.clipR = parms.rclip; q.clipB = parms.dclip;
-		q.blend = 0;
-		// [rc4l] Negated: the backend normalises with the same rule FGLTexture::Bind uses, where a
-		// negative value means "already an internal palette index". Handing it the positive form
-		// would make it treat this as a game translation and convert something already converted.
-		q.translation = -cpuTranslation;
-		q.texMode = gl_RenderState.GetTextureMode();
-		zx::hwrender::Record2D(q);
-	}
+	// [rc4l] features/hwrender: the same quad to the 2D capture, so a foreign backend gets the HUD, the menus and the console. See hud2d.h.
+	zx::hwrender::Record2D(d.quad);
 
 	if (parms.colorOverlay)
 	{
@@ -468,9 +383,9 @@ void FGLRenderer::DrawTexture(FTexture *img, DCanvas::DrawParms &parms)
 
 		FFlatVertex *ptr = GLRenderer->mVBO->GetBuffer();
 		ptr->Set(x, y, 0, u1, v1); ptr++;
-		ptr->Set(x, y + h, 0, u1, v2); ptr++;
-		ptr->Set(x + w, y, 0, u2, v1); ptr++;
-		ptr->Set(x + w, y + h, 0, u2, v2); ptr++;
+		ptr->Set(x, y2, 0, u1, v2); ptr++;
+		ptr->Set(x2, y, 0, u2, v1); ptr++;
+		ptr->Set(x2, y2, 0, u2, v2); ptr++;
 		GLRenderer->mVBO->RenderCurrent(ptr, GL_TRIANGLE_STRIP);
 	}
 
@@ -488,7 +403,7 @@ void FGLRenderer::DrawTexture(FTexture *img, DCanvas::DrawParms &parms)
 //==========================================================================
 void FGLRenderer::DrawLine(int x1, int y1, int x2, int y2, int palcolor, uint32 color)
 {
-	PalEntry p = color? (PalEntry)color : GPalette.BaseColors[palcolor];
+	const PalEntry p = zx::draw2d::DrawColor(palcolor, color);
 	gl_RenderState.EnableTexture(false);
 	gl_RenderState.SetColorAlpha(p, 1.f);
 	gl_RenderState.Apply();
@@ -498,16 +413,7 @@ void FGLRenderer::DrawLine(int x1, int y1, int x2, int y2, int palcolor, uint32 
 	ptr->Set(x2, y2, 0, 0, 0); ptr++;
 	GLRenderer->mVBO->RenderCurrent(ptr, GL_LINES);
 
-	// [rc4l] features/hwrender: the automap is made of these, and a backend that only replays rects
-	// drew its background and nothing else.
-	{
-		zx::hwrender::Quad2D q;
-		memset(&q, 0, sizeof(q));
-		q.kind = 1;
-		q.x = (float)x1; q.y = (float)y1; q.lx2 = (float)x2; q.ly2 = (float)y2;
-		q.r = p.r / 255.f; q.g = p.g / 255.f; q.b = p.b / 255.f; q.a = 1.f;
-		zx::hwrender::Record2D(q);
-	}
+	zx::hwrender::Record2D(zx::draw2d::PrepareLine(x1, y1, x2, y2, p));   // [rc4l] features/draw2d
 
 	gl_RenderState.EnableTexture(true);
 }
@@ -519,7 +425,7 @@ void FGLRenderer::DrawLine(int x1, int y1, int x2, int y2, int palcolor, uint32 
 //==========================================================================
 void FGLRenderer::DrawPixel(int x1, int y1, int palcolor, uint32 color)
 {
-	PalEntry p = color? (PalEntry)color : GPalette.BaseColors[palcolor];
+	const PalEntry p = zx::draw2d::DrawColor(palcolor, color);
 	gl_RenderState.EnableTexture(false);
 	gl_RenderState.SetColorAlpha(p, 1.f);
 	gl_RenderState.Apply();
@@ -528,13 +434,7 @@ void FGLRenderer::DrawPixel(int x1, int y1, int palcolor, uint32 color)
 	ptr->Set(x1, y1, 0, 0, 0); ptr++;
 	GLRenderer->mVBO->RenderCurrent(ptr, GL_POINTS);
 
-	{
-		zx::hwrender::Quad2D q;
-		memset(&q, 0, sizeof(q));
-		q.x = (float)x1; q.y = (float)y1; q.w = 1.f; q.h = 1.f;
-		q.r = p.r / 255.f; q.g = p.g / 255.f; q.b = p.b / 255.f; q.a = 1.f;
-		zx::hwrender::Record2D(q);
-	}
+	zx::hwrender::Record2D(zx::draw2d::PreparePixel(x1, y1, p));   // [rc4l] features/draw2d
 
 	gl_RenderState.EnableTexture(true);
 }
@@ -553,22 +453,7 @@ void FGLRenderer::Dim(PalEntry color, float damount, int x1, int y1, int w, int 
 	gl_RenderState.SetColorAlpha(color, damount);
 	gl_RenderState.Apply();
 	
-	// [rc4l] features/hwrender: untextured fills matter as much as textures. This one call draws the
-	// menu's background dim AND the pill behind every menu tab -- without it the tab captions, which
-	// are DARK text meant to sit on a light pill, landed straight on the dark world and read as
-	// missing. Material NULL means "flat colour"; the backend binds its white texture.
-	{
-		zx::hwrender::Quad2D q;
-		q.material = NULL;
-		q.x = (float)x1; q.y = (float)y1; q.w = (float)w; q.h = (float)h;
-		q.u1 = 0.f; q.v1 = 0.f; q.u2 = 1.f; q.v2 = 1.f;
-		q.r = color.r / 255.f; q.g = color.g / 255.f; q.b = color.b / 255.f; q.a = damount;
-		q.clipL = 0; q.clipT = 0; q.clipR = 0; q.clipB = 0;   // no scissor
-		q.blend = 0;
-		q.translation = 0;
-		q.texMode = 0;
-		zx::hwrender::Record2D(q);
-	}
+	zx::hwrender::Record2D(zx::draw2d::PrepareDim(color, damount, x1, y1, w, h));   // [rc4l] features/draw2d
 
 	FFlatVertex *ptr = GLRenderer->mVBO->GetBuffer();
 	ptr->Set(x1, y1, 0, 0, 0); ptr++;
@@ -631,7 +516,7 @@ void FGLRenderer::Clear(int left, int top, int right, int bottom, int palcolor, 
 	BackendOnly2D backendOnly;
 	int rt;
 	int offY = 0;
-	PalEntry p = palcolor==-1 || color != 0? (PalEntry)color : GPalette.BaseColors[palcolor];
+	const PalEntry p = palcolor == -1 ? PalEntry(color) : zx::draw2d::DrawColor(palcolor, color);
 	int width = right-left;
 	int height= bottom-top;
 	
@@ -648,21 +533,7 @@ void FGLRenderer::Clear(int left, int top, int right, int bottom, int palcolor, 
 	}
 	*/
 	
-	// [rc4l] features/hwrender: a scissored glClear is still a filled rectangle as far as a backend
-	// is concerned. Recorded as an opaque untextured quad -- the console background and the menu
-	// backdrop come through here.
-	{
-		zx::hwrender::Quad2D q;
-		q.material = NULL;
-		q.x = (float)left; q.y = (float)top; q.w = (float)width; q.h = (float)height;
-		q.u1 = 0.f; q.v1 = 0.f; q.u2 = 1.f; q.v2 = 1.f;
-		q.r = p.r / 255.f; q.g = p.g / 255.f; q.b = p.b / 255.f; q.a = 1.f;
-		q.clipL = 0; q.clipT = 0; q.clipR = 0; q.clipB = 0;
-		q.blend = 0;
-		q.translation = 0;
-		q.texMode = 0;
-		zx::hwrender::Record2D(q);
-	}
+	zx::hwrender::Record2D(zx::draw2d::PrepareClear(left, top, right, bottom, p));   // [rc4l] features/draw2d
 
 	glEnable(GL_SCISSOR_TEST);
 	glScissor(left, rt - height, width, height);

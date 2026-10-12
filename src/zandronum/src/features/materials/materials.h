@@ -66,6 +66,12 @@ int MaterialTransparency(MaterialRef m);
 // [rc4l] A translation in either convention (a negated palette index, or an actor's game translation) as the palette index pixels are made under.
 int MaterialTranslation(int translation);
 
+// [rc4l] An engine remap table (FRemapTable) as the palette index pixels are made under, 0 for none or an inactive one.
+int MaterialRemapIndex(const void *remap);
+
+// [rc4l] The texture coordinates of the material's corners, as a 2D draw spans them; false, and nothing written, without a material.
+bool MaterialCorners(MaterialRef m, float &ul, float &vt, float &ur, float &vb);
+
 // [rc4l] RGBA pixels under a palette index from MaterialTranslation, edge-smoothed where GL's upload smooths them; the caller deletes[] them, NULL when there are none.
 unsigned char *MaterialPixels(MaterialRef m, int translation, int &width, int &height);
 

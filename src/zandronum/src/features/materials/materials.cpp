@@ -7,6 +7,7 @@
 #include "textures/textures.h"
 #include "gl/textures/gl_material.h"
 #include "gl/textures/gl_translate.h"   // GLTranslationPalette
+#include "r_data/r_translate.h"         // FRemapTable
 #include "gl/system/gl_interface.h"     // gl.flags, whether trimmed sprite coordinates are usable
 
 namespace zx { namespace materials {
@@ -105,6 +106,22 @@ int MaterialTranslation(int translation)
 {
 	// [rc4l] As FGLTexture::Bind does: negative is already a GLTranslationPalette index, positive a game translation to look up.
 	return translation <= 0 ? -translation : GLTranslationPalette::GetInternalTranslation(translation);
+}
+
+int MaterialRemapIndex(const void *remap)
+{
+	const FRemapTable *table = (const FRemapTable *)remap;
+	if (table == NULL || table->Inactive) return 0;
+	GLTranslationPalette *pal = static_cast<GLTranslationPalette *>(const_cast<FRemapTable *>(table)->GetNative());
+	return pal != NULL ? pal->GetIndex() : 0;
+}
+
+bool MaterialCorners(MaterialRef m, float &ul, float &vt, float &ur, float &vb)
+{
+	if (m == NULL) return false;
+	const FMaterial *mat = (const FMaterial *)m;
+	ul = mat->GetUL(); vt = mat->GetVT(); ur = mat->GetUR(); vb = mat->GetVB();
+	return true;
 }
 
 unsigned char *MaterialPixels(MaterialRef m, int translation, int &width, int &height)

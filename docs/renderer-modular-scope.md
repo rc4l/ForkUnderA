@@ -243,6 +243,14 @@ standalone frame); then the capture hooks and the harness's standalone default.
 
 **Accepts when:** a Vulkan-only launch creates no GL context.
 
+**Status, 2026-10-12.** What GL still owns in a standalone frame was mapped: the window and context,
+every 2D quad (GL draws each one and records it), the view setup in `RenderViewpoint`, wipes,
+gamma, screenshots and save pictures, and materials (`FMaterial`). First step: `features/draw2d`
+works out a 2D draw once, without GL (`DrawTexture`'s quad and texture mode, lines, pixels, dims,
+clears), and GL draws and records that; GL and Vulkan frames of the HUD, console and menu are
+unchanged. Next: the view setup, then the frame driver out of `gl_scene.cpp`, then a window and
+framebuffer of Vulkan's own.
+
 ### P6: visibility and threads
 
 - Cost tracks what is visible: sector or portal visibility, or GPU culling into indirect draws.
