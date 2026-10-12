@@ -306,8 +306,28 @@ void FGLRenderer::ClearBorders()
 //
 //==========================================================================
 
+// [rc4l] features/hwrender: a 2D draw meant for the backend's window alone still runs here to be recorded, with GL's colour writes off.
+struct BackendOnly2D
+{
+	bool on, r, g, b, a;
+	BackendOnly2D() : on(zx::hwrender::Get2DTarget() == zx::hwrender::k2DBackendOnly), r(true), g(true), b(true), a(true)
+	{
+		if (!on) return;
+		gl_RenderState.GetColorMask(r, g, b, a);
+		gl_RenderState.SetColorMask(false, false, false, false);
+		gl_RenderState.ApplyColorMask();
+	}
+	~BackendOnly2D()
+	{
+		if (!on) return;
+		gl_RenderState.SetColorMask(r, g, b, a);
+		gl_RenderState.ApplyColorMask();
+	}
+};
+
 void FGLRenderer::DrawTexture(FTexture *img, DCanvas::DrawParms &parms)
 {
+	BackendOnly2D backendOnly;
 	double xscale = parms.destwidth / parms.texwidth;
 	double yscale = parms.destheight / parms.texheight;
 	double x = parms.x - parms.left * xscale;
@@ -608,6 +628,7 @@ void FGLRenderer::FlatFill (int left, int top, int right, int bottom, FTexture *
 //==========================================================================
 void FGLRenderer::Clear(int left, int top, int right, int bottom, int palcolor, uint32 color)
 {
+	BackendOnly2D backendOnly;
 	int rt;
 	int offY = 0;
 	PalEntry p = palcolor==-1 || color != 0? (PalEntry)color : GPalette.BaseColors[palcolor];

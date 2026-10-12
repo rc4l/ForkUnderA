@@ -103,7 +103,9 @@ cvar changed), compared Vulkan against Vulkan. `scenarios/pointlight.mjs` compar
 `fua_dg_clusters 0` against `1`, which match exactly once fixed, so its ceiling is 0.05. With no GL side
 nothing is read back from a window, and the harness runs even with other engines open.
 A side with `frame: "gl"` keeps GL's half of a Vulkan launch's pair instead, where GL replays walls
-through the backend's wall mesh; `invertedback.mjs` compares that against GL alone.
+through the backend's wall mesh; `invertedback.mjs` compares that against GL alone. A GL-only launch
+runs with the wall cache off (`gl_wallmesh 0`), so a fault in GL's drawing through it shows only on such
+a side; `mapreload.mjs` adds `commands: ["map MAP01"]` there to cover a level change.
 
 A box can name a `vantage`, when the vantages look at different parts of the frame. A model needs no
 assets: `kvxBox` and `voxelLumps` in `src/kvx.mjs` put a KVX voxel on every frame of a sprite.
@@ -184,6 +186,7 @@ Export the builder from the scenario; `runScenarioIfMain` keeps the import from 
 | `tools/fuactl/scenarios/cameratex.mjs` | an ANIMDEFS camera texture twice as wide as tall, fitted smaller than its pixels, on a one-sided wall, set by an OPEN script's SetCameraToTexture: the screen must show the camera's room upright, framed and sharp as GL shows it |
 | `tools/fuactl/scenarios/missingfillcache.mjs` | the missing-upper map in GL alone, wall cache off against on: the cache must not cost GL its missing-texture fill |
 | `tools/fuactl/scenarios/missinglower.mjs` | a recess with untextured steps, GL against Vulkan: GL's missing-texture fill must run every frame under the wall cache. GL does not clear its framebuffer, so a missing fill shows stale pixels, and the map looks at a red wall first to put red there |
+| `tools/fuactl/scenarios/mapreload.mjs` | a room loaded a second time inside a Vulkan session (`commands: ["map MAP01"]`), GL alone against GL's frame there: GL must still draw the world after a level change rebuilds the wall mesh |
 | `tools/fuactl/scenarios/invertedback.mjs` | a wall onto a sector whose floor is above its ceiling, GL alone against GL's frame from a Vulkan session (`frame: "gl"`): the backend's wall mesh must not change GL's picture |
 | `tools/fuactl/scenarios/watertint.mjs` | additive 3D-floor water whose control sector a puked script tints after the bake, over a grey pool floor, GL against Vulkan |
 | `tools/fuactl/scenarios/brightmap.mjs` | GLDEFS brightmaps on a wall and a sprite in a dark room, bindless against a binding per material; the brightmap PNG is a lump between `TX_START`/`TX_END` |
@@ -195,7 +198,7 @@ Export the builder from the scenario; `runScenarioIfMain` keeps the import from 
 | `tools/fuactl/scenarios/linemirror.mjs` | a one-sided `Line_Mirror` wall reflecting the room and the player under GL's sphere-mapped sheen, GL against Vulkan |
 | `tools/fuactl/scenarios/animdefs.mjs` | an ANIMDEFS lump whose discrete wall animation flips frame a second after the level is built and then holds, so a backend drawing its bake frame differs from GL in a still shot |
 | `tools/fuactl/scenarios/lightlinks.mjs` | a point light 16 units behind a solid wall with a radius reaching the next room, which GL leaves dark because a light's links stop at solid walls |
-| `tools/fuactl/scenarios/plainwall.mjs` | a one-sided wall wearing a see-through texture (`MIDGRATE`) with a lit room behind, which GL's solid pass draws without an alpha test |
+| `tools/fuactl/scenarios/plainwall.mjs` | a one-sided wall wearing a see-through texture (`MIDGRATE`) with a lit room behind, which GL's solid pass draws without an alpha test; pressed against it (`close`, per pixel), the edge texels GL's `SmoothEdges` colours |
 | `tools/fuactl/scenarios/polyobjwall.mjs` | a polyobject (a counter-clockwise template box with `Polyobj_StartLine`, `ENGINE_THING.PolyAnchor` and `PolySpawn`) moved in front of the player, whose u has to span the face |
 | `tools/fuactl/scenarios/selfref.mjs` | a raised sector hidden by self-referencing lines (`selfRef`), which GL draws as the surrounding room's floor through the subsector's render sector |
 | `tools/fuactl/scenarios/skywall.mjs` | a plain-sky room with a taller room behind its wall, which GL's sky walls (up to 32768) hide |

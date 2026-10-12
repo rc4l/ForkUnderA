@@ -63,7 +63,8 @@ port with no token hangs and reports `rpc timeout`.
 | where the camera is; save it as a spot | `here [--save NAME --note TEXT]` (see `fua-capture-spot`) |
 | stand at a saved spot | `goto --spot NAME` |
 | does a render cvar change the picture | `ab <cvar> <a> <b> --spot NAME [--box x0,y0,x1,y1]` |
-| matched GL/Vulkan pair, sim frozen | `shot <tag> --spot NAME` or `--at x,y,z --face yaw,pitch` |
+| matched GL/Vulkan pair, sim frozen | `shot <tag> --spot NAME` or `--at x,y,z --face yaw,pitch`; `--same-frame` takes both from one engine frame (an ANIMDEFS texture animates on the clock even paused) |
+| the engine's windows as Windows sees them, and what one really shows | `window [--shot gl\|vk --out FILE]`: minimized, not responding, position; the shot comes from the compositor, not GL's own buffer |
 | what the crosshair is on, and the mesh piece drawing it | `look --at x,y,z --face yaw,pitch`; `--pixel x,y --size WxH` aims through a capture's pixel, from the live camera when no `--spot`/`--at` is given |
 | what a linedef is, or every line near a point | `line <index>` or `line --at X,Y --radius R` |
 | a map's sectors, lines, specials, things and ACS source, from its files | `mapdata <MAP> --preset ID [--sector N] [--line N] [--special N] [--tag N] [--thing TYPE] [--scripts REGEX]` (9080 is a SkyViewpoint) |
@@ -76,7 +77,7 @@ port with no token hangs and reports `rpc timeout`.
 | pause / step the sim | `rpc sim.pause` · `rpc sim.step '{"tics":1}'` |
 | a fault that shows only mid-transition (a crouch, a lift) | `steps <tag> --hold +crouch [--count N] [--spot NAME]`: a GL/Vulkan pair and the eye height each tic |
 
-Console diagnostics worth knowing (run them with `ui exec`): `fua_dg_blendorder [z]` (the translucent
+Console diagnostics worth knowing (run them with `ui exec`): `fua_gl_viewstate` (the next main view's GL viewport, framebuffer, vertex array and GL errors before and after the world; a window showing 2D but no world), `fua_2d_list` (the 2D draws covering a quarter of the screen or more), `fua_dg_blendorder [z]` (the translucent
 pass in draw order with plane layers, or every draw spanning height z), `fua_models` (model draws and
 which walk drew them), `gl_portalinfo` (the portals GL ran last frame, a stacked view named by its plane
 and displacement), `fua_line_mesh <line>` (what the bake holds for a line), `fua_sector_at x y [x y ...]`

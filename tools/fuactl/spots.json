@@ -2094,6 +2094,84 @@
         "fua_dg_skyportal": "true",
         "gl_wallmesh": "true"
       }
+    },
+    "q39-fan-looks-different-on": {
+      "map": "AOW12",
+      "x": 4784.347,
+      "y": 5516.139,
+      "z": 135.737,
+      "angle": 180,
+      "pitch": 5.8887,
+      "shows": "Fan looks different on Vulkan vs GL; screenshot (one renderer, close-up): a square grey fan grille with a cross-shaped frame over a black circular opening, four grey blades behind it rotated at an angle to the cross",
+      "loaded": {
+        "iwad": "doom2.wad",
+        "pwads": [
+          "aow2.3_data_r260606.pk3 11109c8541a6b9b3982545d8ab79f986",
+          "aow2.3_code_r260606.pk3 46a08cbad4e08a795581e46ec97656c6",
+          "aow2.3_maps_r230122.pk3 273e4b7c31f825519acc9f9e25ff97cb",
+          "aow2.3_music_r230122.pk3 cca3692aabebc42d830a4f79737e2eee",
+          "aow2.3_patch_r260606.pk3 6675a80ed21d43e7bd101ef68166dc15"
+        ]
+      },
+      "renderer": {
+        "fua_vulkan": "true",
+        "fua_dg_standalone": "false",
+        "fua_dg_embed": "false",
+        "fua_dg_skyportal": "true",
+        "gl_wallmesh": "true"
+      }
+    },
+    "q40-vid-fps-side-by-side": {
+      "map": "AOW13",
+      "x": 14274.463,
+      "y": 10189.532,
+      "z": -38.166,
+      "angle": 48.1641,
+      "pitch": 6.7676,
+      "shows": "Not map specific: is vid_fps accurate with GL and Vulkan side by side? Both windows display the exact same fps value, which makes the user question whether each is measuring its own renderer",
+      "loaded": {
+        "iwad": "doom2.wad",
+        "pwads": [
+          "aow2.3_data_r260606.pk3 11109c8541a6b9b3982545d8ab79f986",
+          "aow2.3_code_r260606.pk3 46a08cbad4e08a795581e46ec97656c6",
+          "aow2.3_maps_r230122.pk3 273e4b7c31f825519acc9f9e25ff97cb",
+          "aow2.3_music_r230122.pk3 cca3692aabebc42d830a4f79737e2eee",
+          "aow2.3_patch_r260606.pk3 6675a80ed21d43e7bd101ef68166dc15"
+        ]
+      },
+      "renderer": {
+        "fua_vulkan": "true",
+        "fua_dg_standalone": "false",
+        "fua_dg_embed": "false",
+        "fua_dg_skyportal": "true",
+        "gl_wallmesh": "true"
+      }
+    },
+    "q41-gl-intermission-hang": {
+      "map": "AOW02",
+      "x": 7728,
+      "y": 9488,
+      "z": 144,
+      "angle": 180,
+      "pitch": 0,
+      "shows": "Side by side, GL hangs on the intermission while Vulkan loads quickly. Repro: start on AOW02 (or any map but AOW01), run 'changemap aow01'; the GL window stays on the intermission. Screenshot (GL): the 'FINISHED' intermission over the All Out War 2 / The Omega Project title art, a rankings table for AOW02: Barrens (teams tied at 0 points, one spectator 'Player'), with horizontal dark scanline streaks across the whole frame",
+      "loaded": {
+        "iwad": "doom2.wad",
+        "pwads": [
+          "aow2.3_data_r260606.pk3 11109c8541a6b9b3982545d8ab79f986",
+          "aow2.3_code_r260606.pk3 46a08cbad4e08a795581e46ec97656c6",
+          "aow2.3_maps_r230122.pk3 273e4b7c31f825519acc9f9e25ff97cb",
+          "aow2.3_music_r230122.pk3 cca3692aabebc42d830a4f79737e2eee",
+          "aow2.3_patch_r260606.pk3 6675a80ed21d43e7bd101ef68166dc15"
+        ]
+      },
+      "renderer": {
+        "fua_vulkan": "true",
+        "fua_dg_standalone": "true",
+        "fua_dg_embed": "true",
+        "fua_dg_skyportal": "true",
+        "gl_wallmesh": "true"
+      }
     }
   }
 }

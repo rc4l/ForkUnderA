@@ -217,11 +217,19 @@ export async function captureVulkan(c, file) {
 // [rc4l] The camera player.camera reports, as the position standAt and a spot take.
 export function atFromCamera(cam) { return { x: cam.x, y: cam.y, z: cam.z, angle: cam.yaw, pitch: cam.pitch }; }
 
-// [rc4l] Both renderers' frames into outDir as <tag>_gl.png and <tag>_vk.png, the sim already paused.
-async function capturePausedPair(c, tag, { engineBin, outDir }) {
+// [rc4l] The console line that captures both renderers in one engine frame, for a picture that changes between two (an ANIMDEFS texture runs on the clock, paused or not).
+export function sameFrameCommand(tag, vkFile) { return `screenshot sweep/${tag}_gl; fua_diligent_shot ${vkFile}`; }
+
+// [rc4l] Both renderers' frames into outDir as <tag>_gl.png and <tag>_vk.png, the sim already paused; sameFrame takes them from one engine frame.
+async function capturePausedPair(c, tag, { engineBin, outDir, sameFrame = false }) {
   const gl = path.posix.join(outDir, `${tag}_gl.png`);
   const vk = path.posix.join(outDir, `${tag}_vk.png`);
   for (const f of [gl, vk]) { try { fs.rmSync(f, { force: true }); } catch { /* fine */ } }
+  if (sameFrame) {
+    await exec(c, sameFrameCommand(tag, vk));
+    const gotGl = await waitForFile(gl);
+    return { gl: gotGl ? gl : null, vk: (await waitForFile(vk)) && pngIsUsable(vk) ? vk : null };
+  }
 
   // [rc4l] A blank GL frame is the readback's fault, not the renderer's, and a second ask inside the same pause comes back whole.
   let gotGl = false;
@@ -239,13 +247,13 @@ async function capturePausedPair(c, tag, { engineBin, outDir }) {
 
 // [rc4l] One camera, both renderers, one paused frame; `frozen` commands run inside the pause, since anything asked after it describes a later world.
 export async function shotPair(c, tag, {
-  at = null, engineBin, outDir = null, frozen = [],
+  at = null, engineBin, outDir = null, frozen = [], sameFrame = false,
 } = {}) {
   outDir = outDir || sweepDirFor(engineBin);
   fs.mkdirSync(outDir, { recursive: true });
   if (at) await moveTo(c, at);
   await c.rpc("sim.pause", {}).catch(() => {});
-  const pair = await capturePausedPair(c, tag, { engineBin, outDir });
+  const pair = await capturePausedPair(c, tag, { engineBin, outDir, sameFrame });
 
   const said = [];
   for (const cmd of frozen) said.push(await exec(c, cmd));

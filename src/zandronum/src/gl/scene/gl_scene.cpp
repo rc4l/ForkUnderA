@@ -78,6 +78,7 @@
 #include "gl/utility/gl_convert.h"
 #include "gl/utility/gl_templates.h"
 #include "features/hitboxviz/hitboxviz.h"
+#include "c_dispatch.h"   // [rc4l] fua_gl_viewstate
 #include "features/levelmesh/staticmesh.h"
 #include "features/levelmesh/levelmesh.h"
 #include "features/levelmesh/flatmesh.h"
@@ -1062,6 +1063,45 @@ void FGLRenderer::SetFixedColormap (player_t *player)
 
 extern bool CLIENTDEMO_IsInFreeSpectateMode(); // [AK]
 
+// [rc4l] fua_gl_viewstate -- the GL state the next main view draws the world with, for a window that shows 2D but no world.
+static bool g_viewStateArmed = false;
+CCMD(fua_gl_viewstate) { g_viewStateArmed = true; Printf("recording the next main view's GL state\n"); }
+
+// [rc4l] Armed by the probe below, so the same view also reports how its drawing went.
+static bool g_viewErrorsArmed = false;
+
+static void PrintViewErrorsIfArmed()
+{
+	if (!g_viewErrorsArmed) return;
+	g_viewErrorsArmed = false;
+	GLint arrayBuf = 0, vao = 0, program = 0;
+	glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &arrayBuf);
+	glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &vao);
+	glGetIntegerv(GL_CURRENT_PROGRAM, &program);
+	Printf("after the world: GL error 0x%x, array buffer %d, vertex array %d, program %d\n", glGetError(), arrayBuf, vao, program);
+}
+
+static void PrintViewStateIfArmed()
+{
+	if (!g_viewStateArmed) return;
+	g_viewStateArmed = false;
+	g_viewErrorsArmed = true;
+	Printf("before the world: GL error 0x%x\n", glGetError());
+	GLint vp[4], sc[4], fb = 0, rfb = 0, drawBuf = 0;
+	GLboolean cm[4], scissorOn, depthOn, stencilOn;
+	glGetIntegerv(GL_VIEWPORT, vp);
+	glGetIntegerv(GL_SCISSOR_BOX, sc);
+	glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &fb);
+	glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &rfb);
+	glGetIntegerv(GL_DRAW_BUFFER, &drawBuf);
+	glGetBooleanv(GL_COLOR_WRITEMASK, cm);
+	scissorOn = glIsEnabled(GL_SCISSOR_TEST); depthOn = glIsEnabled(GL_DEPTH_TEST); stencilOn = glIsEnabled(GL_STENCIL_TEST);
+	Printf("viewport %d,%d %dx%d, scissor %s %d,%d %dx%d, draw framebuffer %d (read %d, buffer 0x%x), colour mask %d%d%d%d, depth test %d, stencil test %d, screen %dx%d true height %d\n",
+		vp[0], vp[1], vp[2], vp[3], scissorOn ? "on" : "off", sc[0], sc[1], sc[2], sc[3], fb, rfb, drawBuf,
+		cm[0], cm[1], cm[2], cm[3], depthOn, stencilOn, screen->GetWidth(), screen->GetHeight(),
+		static_cast<OpenGLFrameBuffer*>(screen)->GetTrueHeight());
+}
+
 sector_t * FGLRenderer::RenderViewpoint (AActor * camera, GL_IRECT * bounds, float fov, float ratio, float fovratio, bool mainview, bool toscreen)
 {
 	// [rc4l] Which view the walks below belong to, for CreateScene's capture; restored on return in case one view nests in another.
@@ -1126,12 +1166,14 @@ sector_t * FGLRenderer::RenderViewpoint (AActor * camera, GL_IRECT * bounds, flo
 		s3d::ScopedViewShifter viewShifter(viewShift);
 		SetViewMatrix(viewx, viewy, viewz, false, false);
 		gl_RenderState.ApplyMatrices();
+		if (mainview && toscreen) PrintViewStateIfArmed();
 
 		clipper.Clear();
 		angle_t a1 = FrustumAngle();
 		clipper.SafeAddClipRangeRealAngles(viewangle+a1, viewangle-a1);
 
 		ProcessScene(toscreen);
+		if (mainview && toscreen) PrintViewErrorsIfArmed();
 		if (mainview) EndDrawScene(retval);	// do not call this for camera textures.
 		eye->TearDown();
 	}

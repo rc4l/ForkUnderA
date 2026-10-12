@@ -1648,6 +1648,7 @@ add_executable( zdoom WIN32
 	features/hwrender/computation/backendview_compute.cpp
 	features/hwrender/computation/texfilter_compute.cpp
 	features/hwrender/computation/slotremap_compute.cpp
+	features/hwrender/computation/rendererrate_compute.cpp
 	features/hwrender/computation/lighttouch_compute.cpp
 	features/fov-interp/fovinterp.cpp
 	features/fov-interp/fovcvar.cpp

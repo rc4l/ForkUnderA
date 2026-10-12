@@ -50,7 +50,22 @@ struct Quad2D
 	// interleave with the text drawn over them.
 	int         kind;
 	float       lx2, ly2;
+	// [rc4l] Which window it is for, a k2D target, stamped by Record2D from Set2DTarget.
+	int         target;
 };
+
+// [rc4l] A 2D draw for both windows, GL's alone (the backend skips it) or the backend's alone (GL draws it with colour writes off).
+enum { k2DBoth = 0, k2DGLOnly = 1, k2DBackendOnly = 2 };
+void Set2DTarget(int target);
+int  Get2DTarget();
+
+// [rc4l] vid_fps per renderer: GL's frame runs from D_Display's start to the backend's LiveFrame, the backend's from there until it has drawn.
+void FrameTimingBegin();
+void GLFrameDone();
+void BackendFrameDone();
+// [rc4l] Whether the backend drew within the last second, and a renderer's last whole second as vid_fps shows it.
+bool BackendRateLive();
+void RendererRateShown(bool backend, int &ms, int &fps);
 
 // [rc4l] Render one camera texture: the world from another viewpoint, into the backend's own target.
 //

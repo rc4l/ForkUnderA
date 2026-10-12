@@ -888,6 +888,7 @@ void D_Display ()
 	// Dropped here rather than after the render so that everything drawn this frame, including the
 	// console and menus which are drawn late, is captured. See hud2d.h.
 	zx::hwrender::Clear2D();
+	zx::hwrender::FrameTimingBegin();   // [rc4l] vid_fps per renderer, split at LiveFrame
 
 	cycle_t cycles;
 	

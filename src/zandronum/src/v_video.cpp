@@ -68,6 +68,8 @@
 #include "menu/menu.h"
 #include "r_data/voxels.h"
 #include "features/fua-caching/fua_caching.h"
+#include "features/hwrender/hud2d.h"                              // [rc4l] vid_fps per renderer
+#include "features/hwrender/computation/rendererrate_compute.h"
 
 // [TP] New includes.
 #include "cl_commands.h"
@@ -910,10 +912,23 @@ void DFrameBuffer::DrawRateStuff ()
 			int chars;
 			int rate_x;
 
-			chars = mysnprintf (fpsbuff, countof(fpsbuff), "%2u ms (%3u fps)", howlong, LastCount);
-			rate_x = Width - chars * 8;
-			Clear (rate_x, 0, Width, 8, GPalette.BlackIndex, 0);
-			DrawText (ConFont, CR_WHITE, rate_x, 0, (char *)&fpsbuff[0], TAG_DONE);
+			// [rc4l] features/hwrender: with the backend drawing too, both windows share this loop's rate, so each shows its own renderer's frame time instead, GL's line for GL's window and the backend's for its own.
+			const bool perRenderer = zx::hwrender::BackendRateLive();
+			for (int line = 0; line < (perRenderer ? 2 : 1); line++)
+			{
+				if (perRenderer)
+				{
+					int ms, fps;
+					zx::hwrender::RendererRateShown(line != 0, ms, fps);
+					chars = zx::hwrender::ComputeRateText(fpsbuff, countof(fpsbuff), line ? "VK" : "GL", ms, fps);
+					zx::hwrender::Set2DTarget(line ? zx::hwrender::k2DBackendOnly : zx::hwrender::k2DGLOnly);
+				}
+				else chars = mysnprintf (fpsbuff, countof(fpsbuff), "%2u ms (%3u fps)", howlong, LastCount);
+				rate_x = Width - chars * 8;
+				Clear (rate_x, 0, Width, 8, GPalette.BlackIndex, 0);
+				DrawText (ConFont, CR_WHITE, rate_x, 0, (char *)&fpsbuff[0], TAG_DONE);
+			}
+			zx::hwrender::Set2DTarget(zx::hwrender::k2DBoth);
 
 			DWORD thisSec = ms/1000;
 			if (LastSec < thisSec)

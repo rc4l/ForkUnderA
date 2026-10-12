@@ -16,6 +16,7 @@ import * as cap from "./capture.mjs";
 import { play, quitInstance, defaultPwadStore, resolvePreset } from "./play.mjs";
 import { loadQueue, saveQueue, nextId, spotNameFor, addItem, noteItem, closeItem, nextOpen, formatItem } from "./queue.mjs";
 import { findMapLumps, mapReport } from "./mapdata.mjs";
+import { engineWindows } from "./window.mjs";
 import * as shot from "./shot.mjs";
 import { sweepDirFor } from "./shot.mjs";
 import * as sweepMod from "./sweep.mjs";
@@ -161,7 +162,8 @@ const USAGE = `fuactl <command>
   goto (--spot NAME | --at x,y,z --face yaw,pitch) [--port P]   stand the player there
   motion [--spot NAME | --at x,y,z --face yaw,pitch] [--box x0,y0,x1,y1] [--interval MS]   per-pixel change between two captures apart, Vulkan and GL, sim running
   ab <cvar> <a> <b> [--spot NAME | --at x,y,z --face yaw,pitch] [--box x0,y0,x1,y1]   Vulkan under each value in ONE paused frame, plus a repeat as the noise floor
-  shot <tag> [--port P] [--spot NAME | --at x,y,z --face yaw,pitch] [--force]   matched GL/Vulkan pair from a running instance, one camera, sim frozen
+  shot <tag> [--port P] [--spot NAME | --at x,y,z --face yaw,pitch] [--force] [--same-frame]   matched GL/Vulkan pair from a running instance, one camera, sim frozen; --same-frame takes both from one engine frame, for an animated texture
+  window [--shot gl|vk --out FILE]   the engine's windows as Windows sees them (minimized, hung, where), and with --shot what that window really shows, read from the compositor rather than GL's own buffer
   shoot [--port P] --tag T --at x,y,z --face yaw,pitch [--look x,y,z] [--weapon W] [--map M] [--after TICS]   fire at a junction and capture a GL/Vulkan pair (--look frames a point, --after catches transient effects before they fade)
   sweep [--maps "MAP01 MAP07"] [--port P]   matched pairs across several maps, ranked by how much the renderers disagree
   doorshot <tag> [--port P] [--at x,y,z --face yaw] [--mid TICS]   a door caught MID-SWING in both renderers, plus a before pair
@@ -347,6 +349,16 @@ async function main() {
       });
       for (const r of out) console.log(`${r.i} t=${r.t}ms mean=${r.mean.toFixed(2)} ${r.file || "(no capture)"}`);
       c.close();
+      break;
+    }
+    // [rc4l] `fuactl window` -- the windows as Windows sees them and what one shows, instead of PowerShell beside the tool.
+    case "window": {
+      if (flags.shot && !["gl", "vk"].includes(String(flags.shot))) { console.error("usage: fuactl window [--shot gl|vk --out FILE]"); process.exit(2); }
+      const r = engineWindows({ shot: flags.shot ? String(flags.shot) : null,
+        out: flags.shot ? path.resolve(String(flags.out || `window_${flags.shot}.png`)) : null });
+      for (const w of r.windows)
+        console.log(`${(w.kind || "-").padEnd(3)} pid ${w.pid} ${w.minimized ? "minimized" : "shown"}${w.hung ? ", NOT RESPONDING" : ""} at ${w.rect.left},${w.rect.top}-${w.rect.right},${w.rect.bottom}  ${w.title}`);
+      if (flags.shot) console.log(r.shot ? `${r.shot.ok ? "saved" : "FAILED (minimized or no picture)"} ${r.shot.width}x${r.shot.height} -> ${r.shot.out}` : `no ${flags.shot} window`);
       break;
     }
     // [rc4l] `fuactl steps <tag> --hold +crouch` -- a transition caught tic by tic, instead of a stepping script beside the tool.
@@ -834,7 +846,7 @@ async function main() {
       if (engines > 1) console.error(`warning: ${engines} engines are running -- close the others, or the GL capture may be garbage`);
       const c = await connectTarget(flags);
       try {
-        const out = await shot.shotPair(c, tag, { at, engineBin: engineOf(flags) });
+        const out = await shot.shotPair(c, tag, { at, engineBin: engineOf(flags), sameFrame: !!flags["same-frame"] });
         console.log(JSON.stringify(out, null, 2));
         if (!out.gl || !out.vk) process.exitCode = 1;
       } finally { c.close(); }

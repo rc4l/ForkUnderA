@@ -215,6 +215,8 @@ Diligent::ITextureView *GetMaterialSRV(const void *materialPtr, int translation)
 		g_textures.Push(e);
 		return e.srv;
 	}
+	// [rc4l] GL's ProcessData: a see-through texture's edge texels take an opaque neighbour's colour, which a wall GL draws unmasked shows and filtering blends in.
+	if (mat->tex->bMasked && !mat->tex->bHasCanvas) FTexture::SmoothEdges(buf, w, h);
 
 	Diligent::TextureDesc td;
 	td.Name = "fua material";

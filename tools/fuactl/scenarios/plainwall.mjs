@@ -15,9 +15,16 @@ export function buildPlainWallWad() {
   return wad(mapLumps("MAP01", m));
 }
 
-export const VANTAGES = [{ name: "grate", at: { x: 96, y: 128, z: 0, angle: 0, pitch: 0 } }];
+// [rc4l] Across the room, and pressed against the grate, where each texel is many pixels and GL's smoothed edge texels (SmoothEdges) show as a rim on every bar (queue #39's fan).
+export const VANTAGES = [
+  { name: "grate", at: { x: 96, y: 128, z: 0, angle: 0, pitch: 0 } },
+  { name: "close", at: { x: 238, y: 128, z: 0, angle: 0, pitch: 0 } },
+];
 
-export const BOXES = { MAP01: { grate: { box: [0.2, 0.2, 0.8, 0.8], ceiling: 6 } } };
+export const BOXES = { MAP01: {
+  grate: { vantage: "grate", box: [0.2, 0.2, 0.8, 0.8], ceiling: 6 },
+  close: { vantage: "close", box: [0.1, 0.1, 0.9, 0.8], block: 1, ceiling: 0.5 },
+} };
 
 runScenarioIfMain(import.meta.url, () => ({ name: "plainwall", wad: buildPlainWallWad(), maps: ["MAP01"],
   vantages: VANTAGES, boxes: BOXES }));

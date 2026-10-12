@@ -237,11 +237,18 @@ void MeshInitForLevel()
 	g_pieceByOffset.Clear();
 }
 
+// [rc4l] Leave no vertex array bound and make GL's render state bind its own on the next draw, since it skips a binding it thinks is already there and a world drawn with none draws nothing (queue #41).
+static void HandBackVertexArray()
+{
+	glBindVertexArray(0);
+	gl_RenderState.ResetVertexBuffer();
+}
+
 void MeshFreeLevel()
 {
 	if (g_ibo) { glDeleteBuffers(1, &g_ibo); g_ibo = 0; }
 	if (g_vbo) { glDeleteBuffers(1, &g_vbo); g_vbo = 0; }
-	if (g_vao) { glDeleteVertexArrays(1, &g_vao); g_vao = 0; }
+	if (g_vao) { glDeleteVertexArrays(1, &g_vao); g_vao = 0; HandBackVertexArray(); }
 	g_verts.Clear();
 	g_used = 0;
 	g_dirtyLo = g_dirtyHi = 0;
@@ -271,7 +278,7 @@ static bool EnsureBuffer()
 	glVertexAttribPointer(VATTR_TEXCOORD, 2, GL_FLOAT, false, sizeof(FFlatVertex), &VTO->u);
 	glEnableVertexAttribArray(VATTR_VERTEX);
 	glEnableVertexAttribArray(VATTR_TEXCOORD);
-	glBindVertexArray(0);
+	HandBackVertexArray();
 	return true;
 }
 
@@ -548,7 +555,7 @@ void MeshIndexFlush()
 		// [rc4l] The element buffer binding is VAO state, so record it in the mesh's VAO.
 		glBindVertexArray(g_vao);
 		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, g_ibo);
-		glBindVertexArray(0);
+		HandBackVertexArray();
 	}
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, g_ibo);
 	glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, g_indexUsed * sizeof(unsigned int), &g_indices[0]);

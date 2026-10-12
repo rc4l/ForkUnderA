@@ -5,7 +5,7 @@ import { spawnSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
 import { resolveEngine, engineArgs, describeExit, countEngineLines, missingCoreData } from "../src/launch.mjs";
-import { sweepDirFor, pickCmake, resolveTarget, readSession, sessionFileFor, cameraFromFlags, cvarValueFrom, parseCvarFlag, spotLaunch, parkFileFor, parkedLaunch, PARKED, clearPortSessions, liveTarget, pidAlive, buildErrors, summarizeGtest, standAt, launchFileFor, holdingLaunchFile, launchInProgress, awaitLaunch, atFromCamera, releaseOf, stepTag } from "../src/shot.mjs";
+import { sweepDirFor, pickCmake, resolveTarget, readSession, sessionFileFor, cameraFromFlags, cvarValueFrom, parseCvarFlag, spotLaunch, parkFileFor, parkedLaunch, PARKED, clearPortSessions, liveTarget, pidAlive, buildErrors, summarizeGtest, standAt, launchFileFor, holdingLaunchFile, launchInProgress, awaitLaunch, atFromCamera, releaseOf, stepTag, sameFrameCommand } from "../src/shot.mjs";
 
 // Run `fn` with cwd moved to `dir` and FUACTL_ENGINE cleared, then put both back.
 function inDir(dir, fn) {
@@ -222,6 +222,11 @@ test("a held action is let go by its minus form, and each stepped tic's capture 
   assert.equal(releaseOf("+use"), "-use");
   assert.equal(stepTag("cs", 3), "cs_03");
   assert.equal(stepTag("cs", 12), "cs_12");
+});
+
+// [rc4l] Queue #39: the fan animates on the clock, so a GL frame and a Vulkan frame asked for apart showed different blades.
+test("one console line captures both renderers in the same frame", () => {
+  assert.equal(sameFrameCommand("fan", "F:/x/sweep/fan_vk.png"), "screenshot sweep/fan_gl; fua_diligent_shot F:/x/sweep/fan_vk.png");
 });
 
 test("a camera comes from --spot, else --at with --face, else nowhere", () => {

@@ -3958,6 +3958,8 @@ static void Draw2D(Diligent::IDeviceContext *ctx)
 	for (unsigned i = 0; i < (unsigned)nq; i++)
 	{
 		const zx::hwrender::Quad2D &q = quads[i];
+		// [rc4l] GL's own vid_fps line; this window shows the backend's (k2DBackendOnly).
+		if (q.target == zx::hwrender::k2DGLOnly) continue;
 		const int blendMode = (q.blend >= 0 && q.blend < 3) ? q.blend : 0;
 		if (blendMode != curBlend)
 		{
@@ -7660,6 +7662,7 @@ bool StandaloneActive()
 
 void LiveFrame()
 {
+	zx::hwrender::GLFrameDone();
 	// [rc4l] fua_vulkan is the user-facing switch and sets itself up; fua_diligent_live is the manual
 	// override that assumes someone already ran the bake by hand.
 	const bool autoReady = fua_vulkan ? AutoSetupForLevel() : false;
@@ -7695,6 +7698,7 @@ void LiveFrame()
 	// upload and the batch loop.
 	BuildMVP(g_mvp);
 	DrawSceneOnce(true, true);
+	zx::hwrender::BackendFrameDone();
 }
 
 // [rc4l] What the last dynamic pass actually drew, split by blend mode.
