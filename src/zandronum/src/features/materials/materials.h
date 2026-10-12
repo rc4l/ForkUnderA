@@ -30,8 +30,8 @@ struct MaterialInfo
 // [rc4l] Fill `info`; false when there is no material or it has no texture.
 bool DescribeMaterial(MaterialRef m, MaterialInfo &info);
 
-// [rc4l] The material for an engine texture (an FTexture), or for an index into the texture manager.
-MaterialRef MaterialForTexture(const void *texture);
+// [rc4l] The material for an engine texture (an FTexture), expanded with the border a face sprite is drawn with when asked, or for an index into the texture manager.
+MaterialRef MaterialForTexture(const void *texture, bool expand = false);
 MaterialRef MaterialForTextureIndex(int index);
 // [rc4l] The material a texture name looks up to, through animation and switch translation.
 MaterialRef MaterialForName(const char *name);
@@ -46,6 +46,16 @@ const char *MaterialName(MaterialRef m);
 
 // [rc4l] The material's brightmap, NULL when it has none.
 MaterialRef MaterialBrightmap(MaterialRef m);
+
+// [rc4l] What a sprite frame is drawn with: its rectangle about the actor's origin and the texture coordinates of its trimmed edges.
+struct SpriteFrameInfo
+{
+	float left, top, width, height;
+	float ul, ur, vt, vb;
+	bool  disableFullbright;   // [rc4l] GLDEFS turns the actor's fullbright off for this frame
+	bool  transparent;         // [rc4l] it has translucent texels, so it is blended rather than alpha-tested
+};
+bool MaterialSpriteFrame(MaterialRef m, SpriteFrameInfo &info);
 
 // [rc4l] Whether GL draws it alpha-tested, which a texture with a mask can still avoid.
 bool MaterialIsMasked(MaterialRef m);

@@ -211,6 +211,29 @@ Moved to P4, because each is the same work as taking Vulkan off GL's walk:
 **Accepts when:** `gl/` calls no module except through the renderer interface, the scenarios are
 green, and GL's frame rate side by side equals GL alone.
 
+**Status, 2026-10-12.** Standalone (`fua_dg_standalone 1`, the mode a player runs) already skipped GL's
+walk for walls and flats. The template harness turns standalone off for its Vulkan sides, so the suite
+had been testing Vulkan with GL walking. Run with standalone on, 41 of 42 GL-against-Vulkan scenarios
+pass. The exception is `stacksprite`: standalone draws no stacked views, because their list comes from
+GL's walk.
+
+| Item | Result |
+|---|---|
+| Sprites | `features/sprites` derives an actor's sprite as `GLSprite::Process`, `Draw` and `RegisterSprite` do: 31 unit tests, and `fua_sprite_check` matched GL bit for bit on about 1.6 million actor-frames, rare settings included. On by default (`fua_sprites_own`); the sprite section costs the same as GL's (0.34-0.36 ms against 0.35-0.38 on wdiex02). Models still go through GL's model code, CPU-only in standalone. |
+| Visibility | `features/visibility` walks the player's view as GL's BSP walk and clipper do, frustum seed included, marking and building nothing. `fua_vis_check` matched GL's walk exactly on about 4,500 frames across six maps. With `fua_vis_walk` the player's pass draws only what the walk reached (the walked-bit cull stacked views already used). This is the visible-set test `skybleed-scope.md` found the map bake lacked. It is off by default: on wdiex02 the walk costs 0.22 ms a frame and the cull 0.09 more, which a vertex-shader cull does not repay. It goes on with P6's CPU-side culling. |
+| Sky walls | `surfaces/computation/skywall_compute` is `GLWall::SkyNormal`, `SkyTop` and `SkyBottom` as pure functions, tested; not yet wired. |
+
+Found on the way: standalone's sky surfaces, skybox viewpoint, mirror sheens and stacked views are
+whatever GL's walk captured before standalone took over, stale ever after. A first version of the
+cull reset them every frame and nine scenarios failed (mirrors, the skybox, stacked sectors); the
+walk now resets only its own walk-bit slot. Deriving those per frame from the walk is the next item.
+
+Still to do: sky walls, sheens and stacked views per frame from the walk (stacked views: a walk from
+the displaced eye, the clipper seeded from the portal outline, sprites per view); models' data
+without GL's buffers; GL's view settings the new modules read (`glset`, `gl_fixedcolormap`,
+`FrustumAngle`, `gl_FakeFlat`), which the renderer interface supplies in P5; then the capture hooks
+and the harness's standalone default.
+
 ### P5: one renderer interface, Vulkan owning itself
 
 - The engine selects a backend at startup.

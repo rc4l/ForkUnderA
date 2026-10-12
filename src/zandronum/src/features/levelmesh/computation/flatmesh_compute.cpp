@@ -184,6 +184,12 @@ int ComputeStackVisWords(int ids)
 	return (ids * kWalkSlots + 31) / 32;
 }
 
+void ComputeClearStackVisible(unsigned int *bits, int id, int slot)
+{
+	const int bit = id * kWalkSlots + slot;
+	bits[bit >> 5] &= ~(1u << (bit & 31));
+}
+
 void ComputeMarkStackVisible(unsigned int *bits, int id, int slot)
 {
 	const int bit = id * kWalkSlots + slot;
@@ -197,16 +203,17 @@ int ComputeWalkSlot(bool skyboxWalk, bool stackWalk, int stackSlot, bool playerW
 	return playerWalk ? kMainWalkSlot : -1;
 }
 
-int ComputePassWalkSlot(bool bitsReady, int stackPassSlot, bool skyPortalPass, bool skyboxWalked)
+int ComputePassWalkSlot(bool bitsReady, int stackPassSlot, bool skyPortalPass, bool skyboxWalked, bool mainCull)
 {
 	if (!bitsReady) return -1;
 	if (skyPortalPass) return skyboxWalked ? kSkyboxWalkSlot : -1;
+	if (stackPassSlot < 0 && mainCull) return kMainWalkSlot;
 	return stackPassSlot;
 }
 
-bool ComputeWalkBitsNeeded(int stackViews, int skyHoles, bool skyboxWalked)
+bool ComputeWalkBitsNeeded(int stackViews, int skyHoles, bool skyboxWalked, bool mainWalked)
 {
-	return stackViews > 0 || skyHoles > 0 || skyboxWalked;
+	return stackViews > 0 || skyHoles > 0 || skyboxWalked || mainWalked;
 }
 
 int ComputeViewArea(bool hasTransfer, float viewz, float fakeFloor, float fakeCeiling, bool floorOnly)

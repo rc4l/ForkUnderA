@@ -181,6 +181,9 @@ bool ComputeTakesSkyViewpoint(int list, bool haveOne);
 // [rc4l] The words of a frame's bit set holding, for every id (the subsectors, then the sidedefs), one bit per walk slot: whether that walk drew it.
 int ComputeStackVisWords(int ids);
 
+// [rc4l] Clears what ComputeMarkStackVisible set, for one walk's slot alone.
+void ComputeClearStackVisible(unsigned int *bits, int id, int slot);
+
 // [rc4l] Marks an id drawn by a walk, at bit id * kWalkSlots + slot, which is where the scene shader looks.
 void ComputeMarkStackVisible(unsigned int *bits, int id, int slot);
 
@@ -191,10 +194,10 @@ bool ComputeStackVisible(const unsigned int *bits, int words, int id, int slot);
 int ComputeWalkSlot(bool skyboxWalk, bool stackWalk, int stackSlot, bool playerWalk);
 
 // [rc4l] The slot a backend pass draws only what that walk drew of: a stacked view's own, the sky portal's the skybox walk when GL made one this frame, else none (-1), and none at all without the frame's bits.
-int ComputePassWalkSlot(bool bitsReady, int stackPassSlot, bool skyPortalPass, bool skyboxWalked);
+int ComputePassWalkSlot(bool bitsReady, int stackPassSlot, bool skyPortalPass, bool skyboxWalked, bool mainCull = false);
 
 // [rc4l] Whether a frame's walk bits go to the backend: some pass reads them, a stacked view, a sky hole or the sky portal.
-bool ComputeWalkBitsNeeded(int stackViews, int skyHoles, bool skyboxWalked);
+bool ComputeWalkBitsNeeded(int stackViews, int skyHoles, bool skyboxWalked, bool mainWalked = false);
 
 // [rc4l] GL's view area (FGLRenderer::SetViewArea), which every height transfer's planes follow: below at or under the view sector's fake floor, above over its fake ceiling unless it transfers the floor alone, else normal, which is also the area with no transfer to read.
 enum { kViewAreaNormal = 0, kViewAreaBelow = 1, kViewAreaAbove = 2 };

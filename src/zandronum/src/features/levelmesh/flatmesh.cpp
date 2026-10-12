@@ -4,6 +4,7 @@
 #include "gl/system/gl_system.h"
 #include "features/levelmesh/flatmesh.h"
 #include "features/levelmesh/captureshading.h"   // [rc4l] CaptureShading, the light model for a GL colormap
+#include "features/sprites/spritebuild.h"   // [rc4l] NoteGLSprite, for fua_sprite_check
 #include "features/hwrender/computation/lightside_compute.h"   // the plane bake, tested off-engine
 #include "features/levelmesh/staticmesh.h"
 #include "features/levelmesh/modelmesh.h"
@@ -724,6 +725,10 @@ static int g_spritesThisFrame = 0;
 static int g_skyQuadsCaptured = 0;
 static int g_skyWalks[kSkyCaptureLists];   // [rc4l] Walks per list, so a second walk per frame shows up as a count.
 static AActor *g_skyViewpoint = NULL;
+// [rc4l] The player's view was walked outside GL this frame (features/visibility), and its slot holds what that walk reached.
+static bool g_mainVisibility = false;
+// [rc4l] GL's own walk filled the player's slot since the visibility walk last ran, so all of it must be cleared.
+static bool g_mainSlotNeedsClear = true;
 // [rc4l] One list per view the backend draws, indexed by the kSkyCapture* lists, and the one the walk in progress fills.
 static TArray<MeshVertex> g_skyVerts[kSkyCaptureLists];
 static int g_skyList = kSkyCaptureNone;
@@ -856,7 +861,7 @@ void NoteWalkedSide(int side) { if (side >= 0 && side < numsides) NoteWalked(num
 
 const unsigned int *StackVisibility(int &words)
 {
-	words = ComputeWalkBitsNeeded(g_stackUsed, (int)g_skyHoles.Size(), g_skyboxWalked) ? (int)g_stackVis.Size() : 0;
+	words = ComputeWalkBitsNeeded(g_stackUsed, (int)g_skyHoles.Size(), g_skyboxWalked, g_mainVisibility) ? (int)g_stackVis.Size() : 0;
 	return words ? &g_stackVis[0] : NULL;
 }
 
@@ -933,6 +938,8 @@ static int g_walkNoteCount = 0;
 // [rc4l] What the last frame's walks left: the skybox they named, the sky holes, the stacked views and the mirrors they reached.
 static void ForgetFrameWalks()
 {
+	g_mainVisibility = false;
+	g_mainSlotNeedsClear = true;
 	g_skyViewpoint = NULL;
 	g_skyHoles.Clear();
 	g_skyboxWalked = false;
@@ -956,6 +963,48 @@ int BeginSkyWalk()
 	if (g_skyList == kSkyCaptureMain) ForgetFrameWalks();
 	g_skyWalks[g_skyList]++;
 	return g_skyList;
+}
+
+// [rc4l] The ids the visibility walk marked last frame, so the next one clears just those; GL's walk filling the slot instead asks for the whole slot.
+static TArray<int> g_mainMarked;
+
+void BeginMainVisibility()
+{
+	// [rc4l] Only the player's slot: what GL's walks captured before standalone (sheens, skyboxes, stacked views) is all standalone has of them.
+	const int ids = numsubsectors + numsides;
+	const unsigned words = (unsigned)ComputeStackVisWords(ids);
+	if (g_stackVis.Size() != words)
+	{
+		g_stackVis.Resize(words);
+		if (words > 0) memset(&g_stackVis[0], 0, words * sizeof(unsigned int));
+		g_mainSlotNeedsClear = false;
+		g_mainMarked.Clear();
+	}
+	if (g_mainSlotNeedsClear)
+	{
+		for (int id = 0; id < ids; id++) ComputeClearStackVisible(&g_stackVis[0], id, kMainWalkSlot);
+		g_mainSlotNeedsClear = false;
+	}
+	else
+		for (unsigned i = 0; i < g_mainMarked.Size(); i++) ComputeClearStackVisible(&g_stackVis[0], g_mainMarked[i], kMainWalkSlot);
+	g_mainMarked.Clear();
+	g_mainVisibility = true;
+}
+
+void NoteMainVisible(int id)
+{
+	if (g_stackVis.Size() == 0 || id < 0 || id >= numsubsectors + numsides) return;
+	ComputeMarkStackVisible(&g_stackVis[0], id, kMainWalkSlot);
+	g_mainMarked.Push(id);
+}
+
+bool MainVisibility() { return g_mainVisibility; }
+void CancelMainVisibility() { g_mainVisibility = false; }
+
+const unsigned int *WalkBits(int &words)
+{
+	words = (int)g_stackVis.Size();
+	return words ? &g_stackVis[0] : NULL;
 }
 
 void ForgetWalks()
@@ -1172,6 +1221,7 @@ void RegisterSprite(const GLSprite &spr, const float *c1, const float *c2,
 	// [rc4l] Four corners, not six vertices -- the backend expands them when it writes its own.
 	mp.quad = true;
 
+	zx::sprites::NoteGLSprite(spr.actor, mp, q);
 	DynAppend(q, 4, mp);
 	g_spritesThisFrame++;
 

@@ -1,0 +1,26 @@
+# features/sprites
+
+The Vulkan backend's sprites, derived from the actors instead of taken from GL's `GLSprite`.
+`spritebuild.cpp` does what `GLSprite::Process`, `GLSprite::Draw` and `RegisterSprite` do for one
+actor: visibility, interpolation, the rotation the viewer sees, the trimmed frame and its scale, the
+floor and ceiling clip, light (glow, colormap, 3D-floor light bands, the actor's dynamic light),
+render style, and the quad, billboarded or rolled. The decisions are `Compute*` units in
+`computation/`; the glue reads the engine and appends to the level mesh's dynamic stream.
+
+Models still go through GL (`ProcessSprite`, then `gl_RenderModel` and `CaptureModelSurface`).
+
+`fua_sprite_check 1` derives every sprite beside GL's and compares the two bit for bit;
+`fua_sprite_report` prints what differed. It matched on about 1.6 million actor-frames across
+AOW03, wdiex02, WDI01, WDI09, WDI18 and dbab04, with XY billboards, `gl_spriteclip 2` and `3`,
+`gl_sprite_blend`, `gl_fuzztype`, dynamic sprite lights, invulnerability and light amplification.
+`fua_sprites_own 0` hands every sprite back to GL.
+
+## In-engine hooks
+
+- `gl/scene/gl_scene.cpp` `FGLRenderer::DrawScene`, the standalone sprite sweep: `BuildSprite` per
+  actor in view, `ProcessSprite` for a model or with the switch off, and `CheckFrameSprites` after
+  GL's sprites are drawn.
+- `features/levelmesh/flatmesh.cpp` `RegisterSprite`: `NoteGLSprite`, GL's piece for the check.
+
+GL settings it still reads, until the renderer interface supplies them (P5): `glset`,
+`gl_fixedcolormap`, `currentmapsection`, `getExtraLight`, `gl_FindModelFrame`, and GL's sprite cvars.

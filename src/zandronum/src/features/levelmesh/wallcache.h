@@ -165,6 +165,14 @@ AActor *SkyQuadViewpoint();
 int BeginSkyWalk();
 // [rc4l] Drop everything GL's walks captured, at level unload, since a backend frame before the next level's first walk would otherwise draw the old level's sky from its freed SkyViewpoint.
 void ForgetWalks();
+// [rc4l] A walk of the player's view outside GL (features/visibility): start the frame's bits afresh, then mark each subsector or sidedef id it reaches.
+void BeginMainVisibility();
+void NoteMainVisible(int id);
+bool MainVisibility();
+// [rc4l] Keep the walk's bits from the player's pass after all, for a frame the walk alone cannot describe.
+void CancelMainVisibility();
+// [rc4l] The frame's walk bits whatever filled them, for comparing one walk against another.
+const unsigned int *WalkBits(int &words);
 int SkyWalks(int list);
 // [rc4l] One view's sky quads: kSkyCaptureMain for the player, kSkyCaptureCamera for a camera texture.
 const MeshVertex *SkyQuadVertices(int &count, int list);

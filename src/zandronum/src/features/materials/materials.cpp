@@ -7,6 +7,7 @@
 #include "textures/textures.h"
 #include "gl/textures/gl_material.h"
 #include "gl/textures/gl_translate.h"   // GLTranslationPalette
+#include "gl/system/gl_interface.h"     // gl.flags, whether trimmed sprite coordinates are usable
 
 namespace zx { namespace materials {
 
@@ -32,9 +33,32 @@ bool DescribeMaterial(MaterialRef m, MaterialInfo &info)
 	return true;
 }
 
-MaterialRef MaterialForTexture(const void *texture)
+MaterialRef MaterialForTexture(const void *texture, bool expand)
 {
-	return texture ? FMaterial::ValidateTexture((FTexture *)texture, false) : NULL;
+	return texture ? FMaterial::ValidateTexture((FTexture *)texture, expand) : NULL;
+}
+
+bool MaterialSpriteFrame(MaterialRef m, SpriteFrameInfo &info)
+{
+	if (m == NULL || Mat(m)->tex == NULL) return false;
+	FMaterial *mat = (FMaterial *)m;
+	FloatRect r;
+	mat->GetSpriteRect(&r);
+	info.left = r.left; info.top = r.top; info.width = r.width; info.height = r.height;
+	// [rc4l] Trimming needs non-power-of-two textures, as GLSprite::Process checks.
+	if (gl.flags & RFL_NPOT_TEXTURE)
+	{
+		info.ul = mat->GetSpriteUL(); info.ur = mat->GetSpriteUR();
+		info.vt = mat->GetSpriteVT(); info.vb = mat->GetSpriteVB();
+	}
+	else
+	{
+		info.ul = mat->GetUL(); info.ur = mat->GetUR();
+		info.vt = mat->GetVT(); info.vb = mat->GetVB();
+	}
+	info.disableFullbright = mat->tex->gl_info.bDisableFullbright;
+	info.transparent = mat->GetTransparent();
+	return true;
 }
 
 MaterialRef MaterialForTextureIndex(int index)

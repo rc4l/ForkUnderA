@@ -1608,6 +1608,15 @@ add_executable( zdoom WIN32
 	features/levelmesh/modelmesh.cpp
 	features/levelmesh/captureshading.cpp
 	features/materials/materials.cpp
+	features/sprites/spritebuild.cpp
+	features/visibility/viswalk.cpp
+	features/visibility/computation/clipranges_compute.cpp
+	features/visibility/computation/closedline_compute.cpp
+	features/sprites/computation/spritestyle_compute.cpp
+	features/sprites/computation/spritequad_compute.cpp
+	features/sprites/computation/spritelight_compute.cpp
+	features/sprites/computation/spriteclip_compute.cpp
+	features/sprites/computation/spriteframe_compute.cpp
 	features/levelmesh/computation/shading_compute.cpp
 	features/levelmesh/computation/surfacebudget_compute.cpp
 	features/levelmesh/computation/lightband_compute.cpp

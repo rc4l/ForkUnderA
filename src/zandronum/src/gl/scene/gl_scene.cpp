@@ -83,6 +83,9 @@
 #include "features/levelmesh/levelmesh.h"
 #include "features/levelmesh/flatmesh.h"
 #include "features/levelmesh/wallcache.h"
+#include "features/sprites/spritebuild.h"   // [rc4l] the backend's sprites, derived from the actors
+#include "features/visibility/viswalk.h"   // [rc4l] the player's visible set, walked without GL
+EXTERN_CVAR(Bool, fua_vis_check)
 #include "features/levelmesh/computation/flatmesh_compute.h"   // [rc4l] kSkyCapture*, which walk fills which sky list
 #include "features/hwrender/hud2d.h"
 #include "features/fov-interp/fovinterp.h"
@@ -407,10 +410,21 @@ void FGLRenderer::CreateScene()
 		zx::levelmesh::SetBakePassActive(true);
 		clipper.bakeAll = true;
 	}
+	const area_t areaBefore = in_area;
 	gl_RenderBSPNode (nodes + numnodes - 1);
 	clipper.bakeAll = false;
 	zx::levelmesh::SetBakePassActive(false);
 	Bsp.Unclock();
+	// [rc4l] features/visibility: the player's walk, walked again without GL from the same view area, compared against what GL's marked.
+	if (!bake && zx::levelmesh::PlayerWalkActive() && fua_vis_check)
+	{
+		const area_t areaAfter = in_area;
+		in_area = areaBefore;
+		int words = 0;
+		const unsigned int *bits = zx::levelmesh::WalkBits(words);
+		zx::visibility::CheckAgainstGL(bits, words, zx::levelmesh::kWalkSlots, zx::levelmesh::kMainWalkSlot);
+		in_area = areaAfter;
+	}
 
 	// And now the crappy hacks that have to be done to avoid rendering anomalies:
 
@@ -625,6 +639,12 @@ void FGLRenderer::RenderTranslucent()
 //-----------------------------------------------------------------------------
 EXTERN_CVAR(Bool, gl_batch_walls)
 EXTERN_CVAR(Bool, gl_draw_sync)
+EXTERN_CVAR(Bool, fua_sprites_own)
+EXTERN_CVAR(Bool, fua_sprite_check)
+// [rc4l] Standalone walks the player's view without GL and draws only what that walk reached, as GL does; off until culling repays its 0.22-0.31 ms on wdiex02.
+CVAR(Bool, fua_vis_walk, false, 0)
+// [rc4l] Off walks without culling, so the walk's own cost and the cull's can be measured apart.
+CVAR(Bool, fua_vis_cull, true, 0)
 
 void FGLRenderer::DrawScene(bool toscreen)
 {
@@ -655,6 +675,11 @@ void FGLRenderer::DrawScene(bool toscreen)
 		}
 		zx::levelmesh::InvalidateMovedSectors();
 		zx::horizon::UpdateHorizons();
+		if (fua_vis_walk && zx::levelmesh::PlayerWalkActive())
+		{
+			PO_LinkToSubsectors();
+			zx::visibility::WalkView(fua_vis_cull);
+		}
 
 		// [rc4l] A frame where the world moved used to go back through GL, because the walk was what
 		// re-baked a seg whose sector had moved. It is not any more: InvalidateMovedSectors re-bakes
@@ -718,7 +743,8 @@ void FGLRenderer::DrawScene(bool toscreen)
 					}
 				}
 				nProcessed++;
-				ProcessSprite(thing, thing->Sector);
+				// [rc4l] features/sprites derives the backend's sprite itself; GL keeps the models, and with the check on it draws them all too.
+				if (!(fua_sprites_own || fua_sprite_check) || !zx::sprites::BuildSprite(thing)) ProcessSprite(thing, thing->Sector);
 			}
 			SetupSprite.Unclock();
 			zx::levelmesh::RecordSpriteSweep(nSeen, nNoSector, nBehind, nOffScreen, nProcessed);
@@ -741,6 +767,7 @@ void FGLRenderer::DrawScene(bool toscreen)
 			// it builds a vertex out of any of them. So the sort is work whose result is thrown away
 			// -- CompareSprite was 3.1% of the profile on Sunder MAP10 with monsters awake.
 			RenderTranslucentUnsorted();
+			zx::sprites::CheckFrameSprites();
 			return;
 		}
 	}

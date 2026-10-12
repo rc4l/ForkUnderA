@@ -558,6 +558,11 @@ TEST(FlatMeshCompute, AStackedViewMarksEachSubsectorItsWalkReached)
 	EXPECT_FALSE(ComputeStackVisible(bits, 2, 40, 0));        // [rc4l] past the words
 	EXPECT_FALSE(ComputeStackVisible(bits, 2, -1, 0));
 	EXPECT_FALSE(ComputeStackVisible(nullptr, 2, 0, 1));
+	// [rc4l] Clearing one slot leaves the others.
+	ComputeMarkStackVisible(bits, 12, 1);
+	ComputeClearStackVisible(bits, 12, 0);
+	EXPECT_FALSE(ComputeStackVisible(bits, 2, 12, 0));
+	EXPECT_TRUE(ComputeStackVisible(bits, 2, 12, 1));
 }
 
 TEST(FlatMeshCompute, AWallsProbeStepsOntoItsOwnSideAndAFlatsStaysAtItsCentre)
@@ -769,6 +774,16 @@ TEST(FlatMeshCompute, APassDrawsWhatItsOwnWalkDrew)
 	EXPECT_TRUE(ComputeWalkBitsNeeded(1, 0, false));
 	EXPECT_TRUE(ComputeWalkBitsNeeded(0, 2, false));
 	EXPECT_TRUE(ComputeWalkBitsNeeded(0, 0, true));
+}
+
+// [rc4l] Standalone: the player's pass draws only what features/visibility's walk reached, and only the player's pass does.
+TEST(FlatMeshCompute, ThePlayersPassDrawsWhatTheVisibilityWalkReached)
+{
+	EXPECT_EQ(kMainWalkSlot, ComputePassWalkSlot(true, -1, false, false, true));
+	EXPECT_EQ(1, ComputePassWalkSlot(true, 1, false, false, true));          // [rc4l] a stacked view keeps its own walk
+	EXPECT_EQ(-1, ComputePassWalkSlot(true, -1, true, false, true));         // [rc4l] and the sky portal its own rule
+	EXPECT_EQ(-1, ComputePassWalkSlot(false, -1, false, false, true));       // [rc4l] no bits uploaded, nothing culled
+	EXPECT_TRUE(ComputeWalkBitsNeeded(0, 0, false, true));
 }
 
 // [rc4l] AOW03's lake (queue #35): crouched under its fake floor the eye is below, and every height transfer then shows its underwater planes.

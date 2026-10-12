@@ -637,7 +637,10 @@ void WriteSceneConstants(float *cb, const float *clip, float targetW, float targ
 	in.targetW = targetW; in.targetH = targetH;
 	in.materialSlots = materialSlots;
 	in.frameMS = I_MSTime();
-	in.walkSlot = zx::levelmesh::ComputePassWalkSlot(g_scene.stackVisReady, g_pass.stackSlot, g_pass.inSkyPortal, zx::levelmesh::SkyboxWalked());
+	// [rc4l] The player's own pass, with no mirror plane, draws only what the visibility walk reached, as GL draws only what its walk reached.
+	const bool mainCull = g_pass.mainView && g_pass.lineMirror < 0 && !g_pass.inCameraPass && g_pass.clipPlane[0] == 0.f &&
+		g_pass.clipPlane[1] == 0.f && g_pass.clipPlane[2] == 0.f && g_pass.clipPlane[3] == 0.f && zx::levelmesh::MainVisibility();
+	in.walkSlot = zx::levelmesh::ComputePassWalkSlot(g_scene.stackVisReady, g_pass.stackSlot, g_pass.inSkyPortal, zx::levelmesh::SkyboxWalked(), mainCull);
 	in.playerPass = g_pass.mainView && g_pass.lineMirror < 0;
 	in.skyHoles = g_scene.skyHoleCount;
 	zx::hwrender::ComputeSceneConstants(in, cb);
