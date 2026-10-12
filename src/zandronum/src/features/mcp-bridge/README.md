@@ -12,6 +12,7 @@ therefore contains **zero** bridge code and no remote-control surface. Turn it o
 
 ```
 ZX_MCP_BRIDGE=1 ./mac_compile.sh        # -> -DFUA_MCP_BRIDGE=ON
+$env:ZX_MCP_BRIDGE=1; .\windows_compile.ps1 -SkipDeps   # Windows (PowerShell); same for windows_build.ps1
 ```
 
 When OFF, `mcp_bridge.h` makes the entry points `inline` no-ops, so the two call-site anchors stay
