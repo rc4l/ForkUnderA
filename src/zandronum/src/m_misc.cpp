@@ -391,25 +391,13 @@ static long ParseCommandLine (const char *args, int *argc, char **argv)
 
 bool M_SaveDefaults (const char *filename)
 {
-	FString oldpath;
-	bool success;
-
-	if (filename != NULL)
-	{
-		oldpath = GameConfig->GetPathName();
-		GameConfig->ChangePathName (filename);
-	}
 	GameConfig->ArchiveGlobalData ();
 	if (gameinfo.ConfigName.IsNotEmpty())
 	{
 		GameConfig->ArchiveGameData (gameinfo.ConfigName);
 	}
-	success = GameConfig->WriteConfigFile ();
-	if (filename != NULL)
-	{
-		GameConfig->ChangePathName (filename);
-	}
-	return success;
+	// [MobiusU9B] A filename writes a copy and leaves the config on its own path, which the old path swap never restored.
+	return (filename != NULL) ? GameConfig->WriteConfigFileTo (filename) : GameConfig->WriteConfigFile ();
 }
 
 void M_SaveDefaultsFinal ()
