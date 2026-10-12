@@ -16,7 +16,8 @@
 #include "features/surfaces/computation/skywall_compute.h"
 #include "features/surfaces/computation/wallgeom_compute.h"   // [rc4l] where a pinched wall ends, as SetWallCoordinates moves it
 #include "features/materials/materials.h"     // [rc4l] whether a one-sided wall has a texture, as GL asks
-#include "features/hwrender/spriteview.h"   // [rc4l] the view's actor, which a skybox may not be
+#include "features/hwrender/spriteview.h"   // [rc4l] the sprite view inside a portal view
+#include "features/viewsetup/viewsetup.h"    // [rc4l] the view's actor and frustum
 #include "features/fixed64/computation/angle_interp_compute.h"   // [rc4l] a skybox's turn, as GL interpolates it
 #include "g_shared/a_sharedglobal.h"        // [rc4l] ASkyViewpoint
 #include "p_lnspec.h"                       // [rc4l] Line_Horizon
@@ -713,7 +714,7 @@ void WalkSkybox(const PortalView &p, long long seenX, long long seenY)
 	GLRenderer->mViewActor = origin;
 	origin->flags |= MF_JUSTHIT;
 	GLRenderer->SetViewArea();
-	ComputeSeedPortal(g_clip, seenX, seenY, &p.lines[0], int(p.lines.size() / 4), viewangle - sa, viewangle, GLRenderer->FrustumAngle());
+	ComputeSeedPortal(g_clip, seenX, seenY, &p.lines[0], int(p.lines.size() / 4), viewangle - sa, viewangle, zx::viewsetup::CurrentView().frustumAngle);
 	const int mapsection = R_PointInSubsector(viewx, viewy)->mapsection;
 	TArray<BYTE> sections(currentmapsection);
 	if (currentmapsection.Size() > 0) memset(&currentmapsection[0], 0, currentmapsection.Size());
@@ -750,7 +751,7 @@ void WalkStack(const PortalView &p, void (*sprite)(AActor *thing))
 	EnsureCoverageNodes();
 	g_nodeCovered.assign(numnodes, 0);
 	if (numnodes > 0 && numsubsectors > 0) ComputeNodeCoverage(&g_coverageNodes[0], numnodes - 1, &g_covered[0], &g_nodeCovered[0]);
-	ComputeSeedPortal(g_clip, g_playerX, g_playerY, &p.lines[0], int(p.lines.size() / 4), 0, viewangle, GLRenderer->FrustumAngle());
+	ComputeSeedPortal(g_clip, g_playerX, g_playerY, &p.lines[0], int(p.lines.size() / 4), 0, viewangle, zx::viewsetup::CurrentView().frustumAngle);
 
 	const fixed_t sx = viewx, sy = viewy;
 	viewx += origin->xDisplacement;
@@ -792,7 +793,7 @@ void WalkMirror(const PortalView &p, void (*sprite)(AActor *thing))
 	viewy = fixed_t::FromRaw(my);
 	viewangle = 2 * ComputePointToAnglePrecise(double((line->v2->x - line->v1->x).Raw()), double((line->v2->y - line->v1->y).Raw())) - sa;
 	g_clip.Clear();
-	const unsigned half = GLRenderer->FrustumAngle();
+	const unsigned half = zx::viewsetup::CurrentView().frustumAngle;
 	if (half < 0x80000000u) ComputeSeedFrustum(g_clip, viewangle, half);
 	g_clip.SafeAddClipRange(ComputePseudoAngle(double((line->v2->x - viewx).Raw()), double((line->v2->y - viewy).Raw())),
 		ComputePseudoAngle(double((line->v1->x - viewx).Raw()), double((line->v1->y - viewy).Raw())));
@@ -905,7 +906,7 @@ int SlotDiffers(const TArray<unsigned int> &a, const TArray<unsigned int> &b, in
 void WalkView(bool publish, bool derive, void (*particles)(subsector_t *sub, sector_t *sector))
 {
 	const WalkSpec spec = { publish ? zx::levelmesh::kMainWalkSlot : -1, derive ? zx::levelmesh::kSkyCaptureMain : zx::levelmesh::kSkyCaptureNone,
-		derive, zx::hwrender::SpriteView().ViewActor(), derive ? &g_playerPortals : NULL, NULL, NULL, NULL, particles };
+		derive, zx::viewsetup::CurrentView().viewActor, derive ? &g_playerPortals : NULL, NULL, NULL, NULL, particles };
 	if (publish) zx::levelmesh::BeginSlotVisibility(zx::levelmesh::kMainWalkSlot);
 	if (derive)
 	{
@@ -930,8 +931,7 @@ void WalkView(bool publish, bool derive, void (*particles)(subsector_t *sub, sec
 		g_playerY = viewy.Raw();
 	}
 	g_clip.Clear();
-	// [rc4l] GL's frustum, from its field of view and pitch, until the view's own lens moves here (P5).
-	ComputeSeedFrustum(g_clip, viewangle, GLRenderer != NULL ? GLRenderer->FrustumAngle() : 0xffffffffu);
+	ComputeSeedFrustum(g_clip, viewangle, zx::viewsetup::CurrentView().frustumAngle);
 	Walk(spec);
 	if (derive) ProcessSectorStacks();
 	zx::levelmesh::SetMainVisibility(publish);

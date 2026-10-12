@@ -85,6 +85,8 @@
 #include "features/levelmesh/wallcache.h"
 #include "features/sprites/spritebuild.h"   // [rc4l] the backend's sprites, derived from the actors
 #include "features/visibility/viswalk.h"   // [rc4l] the player's visible set, walked without GL
+#include "features/viewsetup/viewsetup.h"   // [rc4l] the view, set up without GL
+#include "features/viewsetup/computation/viewsetup_compute.h"
 EXTERN_CVAR(Bool, fua_vis_check)
 #include "features/levelmesh/computation/flatmesh_compute.h"   // [rc4l] kSkyCapture*, which walk fills which sky list
 #include "features/hwrender/hud2d.h"
@@ -138,17 +140,8 @@ void gl_ParseDefs();
 //-----------------------------------------------------------------------------
 angle_t FGLRenderer::FrustumAngle()
 {
-	float tilt= fabs(mAngles.Pitch);
-
-	// If the pitch is larger than this you can look all around at a FOV of 90�
-	if (tilt>46.0f) return 0xffffffff;
-
-	// ok, this is a gross hack that barely works...
-	// but at least it doesn't overestimate too much...
-	double floatangle=2.0+(45.0+((tilt/1.9)))*mCurrentFoV*48.0/AspectMultiplier(WidescreenRatio)/90.0;
-	angle_t a1 = FLOAT_TO_ANGLE(floatangle);
-	if (a1>=ANGLE_180) return 0xffffffff;
-	return a1;
+	// [rc4l] features/viewsetup, which the walks without GL read too.
+	return zx::viewsetup::ComputeFrustumAngle(mAngles.Pitch, mCurrentFoV, AspectMultiplier(WidescreenRatio));
 }
 
 //-----------------------------------------------------------------------------
@@ -1154,17 +1147,11 @@ sector_t * FGLRenderer::RenderViewpoint (AActor * camera, GL_IRECT * bounds, flo
 	R_SetupFrame (camera);
 	SetViewArea();
 
-	// We have to scale the pitch to account for the pixel stretching, because the playsim doesn't know about this and treats it as 1:1.
-	double radPitch = bam2rad(viewpitch);
-	if (radPitch > PI) radPitch -= 2 * PI;
-	radPitch = clamp(radPitch, -PI / 2, PI / 2);
-
-	double angx = cos(radPitch);
-	double angy = sin(radPitch) * glset.pixelstretch;
-	double alen = sqrt(angx*angx + angy*angy);
-
-	mAngles.Pitch = (float)RAD2DEG(asin(angy / alen));
-	mAngles.Roll = (float)(camera->roll>>ANGLETOFINESHIFT)*360.0f/FINEANGLES; 
+	// [rc4l] features/viewsetup works the view out once, without GL: the stretched pitch, the roll, the actor the eye is in and the walks' frustum.
+	zx::viewsetup::SetupView(camera, fov);
+	const zx::viewsetup::ViewSetup &view = zx::viewsetup::CurrentView();
+	mAngles.Pitch = view.pitch;
+	mAngles.Roll = view.roll;
 
 	// Scroll the sky
 	mSky1Pos = (float)fmod(gl_frameMS * level.skyspeed1, 1024.f) * 90.f/256.f;
@@ -1172,19 +1159,7 @@ sector_t * FGLRenderer::RenderViewpoint (AActor * camera, GL_IRECT * bounds, flo
 
 
 
-	// [BB] consoleplayer should be able to toggle the chase cam.
-	// [AK] Don't use the chase cam if they're in free spectate mode.
-	if (camera->player && /*camera->player-players==consoleplayer &&*/
-		(CLIENTDEMO_IsInFreeSpectateMode() == false) &&
-		(camera->player - players != consoleplayer || players[consoleplayer].bSpectating == false) &&
-		((/*camera->player->*/players[consoleplayer].cheats & CF_CHASECAM) || (r_deathcamera && camera->health <= 0)) && camera==camera->player->mo)
-	{
-		mViewActor=NULL;
-	}
-	else
-	{
-		mViewActor=camera;
-	}
+	mViewActor = view.viewActor;
 
 	// 'viewsector' will not survive the rendering so it cannot be used anymore below.
 	retval = viewsector;
