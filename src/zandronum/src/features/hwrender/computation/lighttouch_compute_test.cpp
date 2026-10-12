@@ -6,12 +6,32 @@
 
 using namespace zx::hwrender;
 
+namespace {
+
+// [rc4l] Each light's ids sorted as the cache keeps them, and the pointers ComputeLightTouchLists takes.
+std::vector<const std::vector<unsigned> *> Sorted(std::vector<std::vector<unsigned> > &lists)
+{
+	std::vector<const std::vector<unsigned> *> out;
+	for (std::vector<unsigned> &l : lists) { ComputeSortedTouches(l); out.push_back(&l); }
+	return out;
+}
+
+} // namespace
+
+TEST(LightTouchCompute, ALightsIdsAreSortedOnceEach)
+{
+	std::vector<unsigned> ids = { 40, 7, 7, 12, 40 };
+	ComputeSortedTouches(ids);
+	EXPECT_EQ((std::vector<unsigned>{ 7, 12, 40 }), ids);
+}
+
 // [rc4l] WDI04's red torch sits behind a solid wall from subsector 2860, so its links name its own room and never 2860.
 TEST(LightTouchCompute, ALightTouchesOnlyWhatItWasLinkedTo)
 {
 	std::vector<LightTouchRange> ranges;
 	std::vector<unsigned> ids;
-	ComputeLightTouchLists({ { 40, 7, 7, 12 }, {}, { 2860 } }, 100, ranges, ids);
+	std::vector<std::vector<unsigned> > lists = { { 40, 7, 7, 12 }, {}, { 2860 } };
+	ComputeLightTouchLists(Sorted(lists), 100, ranges, ids);
 	ASSERT_EQ(3u, ranges.size());
 	EXPECT_EQ((std::vector<unsigned>{ 7, 12, 40, 2860 }), ids);
 	EXPECT_EQ(0u, ranges[0].offset); EXPECT_EQ(3u, ranges[0].count);
@@ -28,7 +48,8 @@ TEST(LightTouchCompute, ALightPastTheCapacityTouchesEverythingAndTheRestStillFit
 {
 	std::vector<LightTouchRange> ranges;
 	std::vector<unsigned> ids;
-	ComputeLightTouchLists({ { 1, 2 }, { 3, 4, 5 }, { 6 } }, 3, ranges, ids);
+	std::vector<std::vector<unsigned> > lists = { { 1, 2 }, { 3, 4, 5 }, { 6 } };
+	ComputeLightTouchLists(Sorted(lists), 3, ranges, ids);
 	EXPECT_EQ((std::vector<unsigned>{ 1, 2, 6 }), ids);
 	EXPECT_EQ(kLightTouchesAll, ranges[1].count);
 	EXPECT_TRUE(ComputeLightTouches(ids, ranges[1], 999));

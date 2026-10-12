@@ -221,15 +221,27 @@ static void CollectLightLinks(ADynamicLight *light, std::vector<unsigned> &out)
 		if (n->targLine != NULL) out.push_back((unsigned)(numsubsectors + (n->targLine - sides)));
 }
 
+// [rc4l] A light's links as last collected, sorted, with where it stood and how far it reached then: ADynamicLight relinks only when one of those changes, and walking every light's node lists each tic cost 4.7 ms on wdiex02's 767 lights.
+struct LightLinks
+{
+	const ADynamicLight *light;
+	fixed_t x, y, z;
+	float radius;
+	std::vector<unsigned> ids;
+};
+
 void CollectDynamicLights(Diligent::IDeviceContext *ctx)
 {
-	static std::vector<std::vector<unsigned> > touched;
+	static std::vector<LightLinks> links;
+	static std::vector<const std::vector<unsigned> *> touched;
 	// [rc4l] Once per tic: lights change only in the ticker, and every pass of a frame (mirrors, stacked views, sky, camera textures) reads the same ones.
 	static int s_tic = -1, s_gen = -1, s_flags = -1;
 	const int flags = (fua_dg_dynlights ? 1 : 0) | (fua_dg_lightlinks ? 2 : 0);
 	if (gametic == s_tic && zx::levelmesh::LevelGeneration() == s_gen && flags == s_flags) return;
+	if (zx::levelmesh::LevelGeneration() != s_gen) links.clear();
 	s_tic = gametic; s_gen = zx::levelmesh::LevelGeneration(); s_flags = flags;
 	g_lightCount = 0;
+	touched.clear();
 	if (fua_dg_dynlights && g_lightBuf)
 	{
 		// [rc4l] Straight from the level's thinkers, not from the engine's per-surface light buffer.
@@ -259,17 +271,25 @@ void CollectDynamicLights(Diligent::IDeviceContext *ctx)
 			g_lightData.Push(g);
 			g_lightData.Push(b);
 			g_lightData.Push(light->IsSubtractive() ? 1.0f : 0.0f);
-			if ((size_t)g_lightCount >= touched.size()) touched.resize(g_lightCount + 1);
-			CollectLightLinks(light, touched[g_lightCount]);
+			if ((size_t)g_lightCount >= links.size()) links.resize(g_lightCount + 1);
+			LightLinks &ll = links[g_lightCount];
+			if (ll.light != light || ll.x != light->x || ll.y != light->y || ll.z != light->z || ll.radius != light->GetRadius())
+			{
+				ll.light = light;
+				ll.x = light->x; ll.y = light->y; ll.z = light->z;
+				ll.radius = light->GetRadius();
+				CollectLightLinks(light, ll.ids);
+				zx::hwrender::ComputeSortedTouches(ll.ids);
+			}
 			g_lightCount++;
 		}
 		if (g_lightCount > 0)
 		{
 			ctx->UpdateBuffer(g_lightBuf, 0, (Diligent::Uint64)g_lightData.Size() * 4, &g_lightData[0],
 				Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-			touched.resize(g_lightCount);
 			static std::vector<zx::hwrender::LightTouchRange> ranges;
 			static std::vector<unsigned> ids;
+			for (int i = 0; i < g_lightCount; i++) touched.push_back(&links[i].ids);
 			zx::hwrender::ComputeLightTouchLists(touched, kLightTouchIdCapacity, ranges, ids);
 			if (!fua_dg_lightlinks)
 				for (zx::hwrender::LightTouchRange &r : ranges) r.count = zx::hwrender::kLightTouchesAll;

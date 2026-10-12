@@ -7,24 +7,26 @@
 
 namespace zx { namespace hwrender {
 
-void ComputeLightTouchLists(const std::vector<std::vector<unsigned> > &perLight, unsigned capacity,
+void ComputeSortedTouches(std::vector<unsigned> &touched)
+{
+	std::sort(touched.begin(), touched.end());
+	touched.erase(std::unique(touched.begin(), touched.end()), touched.end());
+}
+
+void ComputeLightTouchLists(const std::vector<const std::vector<unsigned> *> &perLight, unsigned capacity,
 	std::vector<LightTouchRange> &ranges, std::vector<unsigned> &ids)
 {
 	ranges.clear();
 	ids.clear();
-	std::vector<unsigned> sorted;
-	for (const std::vector<unsigned> &touched : perLight)
+	for (const std::vector<unsigned> *sorted : perLight)
 	{
-		sorted = touched;
-		std::sort(sorted.begin(), sorted.end());
-		sorted.erase(std::unique(sorted.begin(), sorted.end()), sorted.end());
 		LightTouchRange r;
-		if (ids.size() + sorted.size() > capacity) { r.offset = 0; r.count = kLightTouchesAll; }
+		if (ids.size() + sorted->size() > capacity) { r.offset = 0; r.count = kLightTouchesAll; }
 		else
 		{
 			r.offset = (unsigned)ids.size();
-			r.count = (unsigned)sorted.size();
-			ids.insert(ids.end(), sorted.begin(), sorted.end());
+			r.count = (unsigned)sorted->size();
+			ids.insert(ids.end(), sorted->begin(), sorted->end());
 		}
 		ranges.push_back(r);
 	}

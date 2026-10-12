@@ -19,8 +19,11 @@ struct LightTouchRange
 // [rc4l] The count that means the light was not linked here (switched off, or its ids did not fit) and so lights everything, as it did before linking.
 static const unsigned kLightTouchesAll = 0xFFFFFFFFu;
 
-// [rc4l] Every light's ids sorted, deduplicated and appended to ids, with its range; a light whose ids would pass capacity touches everything.
-void ComputeLightTouchLists(const std::vector<std::vector<unsigned> > &perLight, unsigned capacity,
+// [rc4l] One light's ids as the shader searches them: sorted, each once.
+void ComputeSortedTouches(std::vector<unsigned> &touched);
+
+// [rc4l] Every light's sorted ids appended to ids, with its range; a light whose ids would pass capacity touches everything.
+void ComputeLightTouchLists(const std::vector<const std::vector<unsigned> *> &perLight, unsigned capacity,
 	std::vector<LightTouchRange> &ranges, std::vector<unsigned> &ids);
 
 // [rc4l] Whether a light's range holds id, by the binary search the scene shader runs.
