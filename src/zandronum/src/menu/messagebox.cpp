@@ -161,8 +161,10 @@ void DMessageBoxMenu::HandleResult(bool res)
 		{
 			if (mAction == NAME_None) 
 			{
-				mParentMenu->MenuEvent(res? MKEY_MBYes : MKEY_MBNo, false);
+				// [MobiusU9B] Close before dispatching so a confirmed action can open its own popup on top of the parent.
+				DMenu *parent = mParentMenu;
 				Close();
+				parent->MenuEvent(res? MKEY_MBYes : MKEY_MBNo, false);
 			}
 			else 
 			{

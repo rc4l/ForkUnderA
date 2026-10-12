@@ -32,8 +32,8 @@ version (and tag it) only when upstream genuinely lacks it, or the fork's is del
 
 ## Format
 
-One link per **ported unit** — on that unit's header comment, using our existing `// [rc4l]`
-tag. Block-level only; never per-line.
+One link per **ported unit** — on that unit's header comment, using your own GitHub-name tag
+(`// [rc4l]` in the examples below, per `AGENTS.md`). Block-level only; never per-line.
 
 ```cpp
 // [rc4l] Ported from uzdoom@7bfbf612d9d8197c36bb77ab171005bce521a514: snd_alresampler applies the
@@ -110,7 +110,7 @@ one link on the enclosing unit.
 
 ## Quick check before committing ported code
 
-1. Is this adapted from upstream? → add `// [rc4l] Ported from <engine>@<full-sha>: <what>`.
+1. Is this adapted from upstream? → add `// [<you>] Ported from <engine>@<full-sha>: <what>`.
 2. Is it our own fix/glue? → add a "why" comment, no upstream link.
 2b. Is it ours *because upstream's fix is out of reach*? → add `PROVENANCE: NO UPSTREAM COMMIT`,
    `SUPERSEDED BY:` and `ON PORT:` so the sequential backport knows to delete it.

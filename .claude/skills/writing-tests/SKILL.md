@@ -14,6 +14,10 @@ ZandroX tests use **GoogleTest + GoogleMock**, built as a standalone project in 
   **right beside it**, colocated: `src/zandronum/src/vectors_test.cpp`.
 - **Testing one of our *feature* modules**: put the test **inside that feature folder**:
   `features/<name>/<thing>_test.cpp`, next to `<thing>.cpp`. See `features/README.md`.
+- **Testing vendored code that must be linked for real** (e.g. `configfile.cpp`,
+  `networkshared.cpp`): name it `<unit>_nettest.cpp`. That suffix routes it into the separate
+  `zandrox_tests_net` binary, which links those units against small shims; the main binary can't.
+  Its source list is in `tests/CMakeLists.txt`, and the 100% gate does not cover it.
 
 The engine build ignores every `*_test.cpp` (it compiles an explicit source list, not a
 glob), so test files never reach the shipped binary.
@@ -48,7 +52,7 @@ glob), so test files never reach the shipped binary.
 
 - GoogleTest: `TEST(Suite, Case)` / `TEST_F(Fixture, Case)`; put helpers in an anonymous
   `namespace {}`.
-- Comments: one sentence, prefixed `// [rc4l]` (per `AGENTS.md`).
+- Comments: one sentence, prefixed with your GitHub account name, e.g. `// [rc4l]` (per `AGENTS.md`).
 
 ## Run it locally (macOS or Linux)
 
@@ -61,6 +65,20 @@ ctest --test-dir build-tests --output-on-failure
 # 100%-coverage gate (auto-derives which units must be fully covered)
 bash tests/coverage.sh --auto
 ```
+
+## Run it locally (Windows)
+
+Visual Studio picks the configuration at build time, so name it and run the binaries from under it:
+
+```powershell
+cmake -S tests -B build-tests
+cmake --build build-tests --config Debug --target zandrox_tests zandrox_tests_net
+.\build-tests\Debug\zandrox_tests.exe
+.\build-tests\Debug\zandrox_tests_net.exe
+```
+
+Add `--gtest_filter=Suite.*` to run one suite. `coverage.sh` and the sanitizers need Clang and a POSIX
+toolchain, so on Windows the 100% coverage gate is checked by CI.
 
 Notes:
 - **LeakSanitizer is Linux-only** — on macOS ASan/UBSan run but leaks aren't reported; CI

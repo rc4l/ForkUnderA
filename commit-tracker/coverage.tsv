@@ -14994,7 +14994,7 @@ b3e020c087e617f6e194ab06a7b60ec349c619f0	2020-10-25T21:10:57Z	- fixed: accidenta
 6a9bfa2cb39a7d673f2bdee0034bcfbc6d3daebd	2020-10-26T05:15:13Z	- do not use the border flat for the fullscreen console.	pending		/
 d850ca6a0e31f80a52b34657e2b31279672fff76	2020-10-26T05:27:24Z	- fixed: MENUDEF did not take recusive parsing into account when checking the default scaling mode.	pending		/
 5b03e86a2b288726dd08c913024d07ac79ab8fb1	2020-10-26T07:33:02Z	- add 'sv_alwaysspawnmulti' dmflags2	pending		/
-190173bc442a0eab808f4d2c8a18a1f932e92547	2020-10-26T07:36:24Z	- add 'writeini' console command to the menu. Not committing this to master right now, since a release is pending and this requires a translation.	pending		/
+190173bc442a0eab808f4d2c8a18a1f932e92547	2020-10-26T07:36:24Z	- add 'writeini' console command to the menu. Not committing this to master right now, since a release is pending and this requires a translation.	ported	ported: OptionsMenu SafeCommand "Save current settings" runs writeini; literal label because our menudef has no OPTMNU_ strings; the menudef.simplified comment tweak has no counterpart here	af3f22d70fdb9b16d5047759e05a0189b9dc4ac4
 98282f710fa3e5d1ec0c87eeb9bc5742a5ca50ef	2020-10-26T07:36:24Z	- oops, missed this	pending		/
 b33e009209c649b328e317a46265f1ce017aec1e	2020-10-26T07:40:54Z	- add sv_alwaysspawnmulti to the menu	pending		/
 11954ef1ad454a8eba4b964c17d5596abf2b9331	2020-10-26T08:20:37Z	- add simplified 'miscelaneous' menu	pending		/

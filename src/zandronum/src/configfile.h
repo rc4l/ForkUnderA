@@ -71,6 +71,7 @@ public:
 
 	void LoadConfigFile ();
 	bool WriteConfigFile () const;
+	bool WriteConfigFileTo (const char *pathname) const;
 
 protected:
 	virtual void WriteCommentHeader (FILE *file) const;
