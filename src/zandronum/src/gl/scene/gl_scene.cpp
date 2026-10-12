@@ -644,7 +644,8 @@ static void WalkParticles(subsector_t *sub, sector_t *sector)
 {
 	if (!gl_render_things) return;
 	for (WORD i = ParticlesInSubsec[DWORD(sub - subsectors)]; i != NO_PARTICLE; i = Particles[i].snext)
-		GLRenderer->ProcessParticle(&Particles[i], sector);
+		if (!(fua_sprites_own || fua_sprite_check) || !zx::sprites::BuildParticle(&Particles[i], sector))
+			GLRenderer->ProcessParticle(&Particles[i], sector);
 }
 
 // [rc4l] An actor a stacked view's or mirror's walk reached, derived inside that view; a model there is not drawn yet, since GL's model path captures only what GL draws.

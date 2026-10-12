@@ -27,6 +27,7 @@
 #include "templates.h"
 #include "textures/textures.h"
 #include "g_shared/a_pickups.h"
+#include "p_effect.h"   // particle_t
 
 // [rc4l] GL's settings and view state the derivation still reads, until the renderer interface supplies them (P5).
 #include "gl/renderer/gl_colormap.h"
@@ -47,6 +48,9 @@ EXTERN_CVAR(Int, gl_enhanced_nv_stealth)
 EXTERN_CVAR(Int, gl_billboard_mode)
 EXTERN_CVAR(Bool, gl_lights)
 EXTERN_CVAR(Bool, gl_light_sprites)
+EXTERN_CVAR(Bool, gl_light_particles)
+EXTERN_CVAR(Int, gl_particles_style)
+EXTERN_CVAR(Bool, gl_billboard_particles)
 EXTERN_CVAR(Float, gl_lights_size)
 EXTERN_CVAR(Float, gl_lights_intensity)
 EXTERN_CVAR(Float, transsouls)
@@ -110,10 +114,10 @@ static void TakeListLight(const lightlist_t &entry, bool clampLight, int &lightl
 }
 
 // [rc4l] gl_SetDynSpriteLight for an actor, summed the way GL sums it.
-static void ActorLight(const AActor *self, float out[3])
+// [rc4l] gl_SetDynSpriteLight: the dynamic light at a point in a subsector, but not from a light `self` carries that does not light it.
+static void PointLight(fixed_t x, fixed_t y, fixed_t z, subsector_t *subsec, const AActor *self, float out[3])
 {
-	const fixed_t x = self->x, y = self->y, z = self->z + (self->height >> 1);
-	for (FLightNode *node = self->subsector->lighthead; node; node = node->nextLight)
+	for (FLightNode *node = subsec->lighthead; node; node = node->nextLight)
 	{
 		ADynamicLight *light = node->lightsource;
 		if ((light->flags2 & MF2_DORMANT) || ((light->flags4 & MF4_DONTLIGHTSELF) && light->target == self)) continue;
@@ -125,6 +129,19 @@ static void ActorLight(const AActor *self, float out[3])
 		const float bright = light->IsSubtractive() ? (float)FVector3(lr, lg, lb).Length() : 0.f;
 		ComputeSpriteLightTerm(dist, radius, lr, lg, lb, light->IsSubtractive(), bright, out);
 	}
+}
+
+static void ActorLight(const AActor *self, float out[3])
+{
+	PointLight(self->x, self->y, self->z + (self->height >> 1), self->subsector, self, out);
+}
+
+// [rc4l] GLSprite's ThingColor, which GL's shader multiplies the sprite by as the object colour, folded into the shading.
+static void ApplyThingColor(PalEntry color, MeshPiece &mp)
+{
+	mp.colorR *= color.r / 255.f;
+	mp.colorG *= color.g / 255.f;
+	mp.colorB *= color.b / 255.f;
 }
 
 // [rc4l] Derive an actor's sprite as GLSprite::Process, Draw and RegisterSprite do: the pieces drawn, 0 for none, -1 for a model GL must draw.
@@ -371,6 +388,7 @@ static int DeriveSprite(AActor *thing, SpritePiece *out, int max)
 		mp.lightColor = b.cm.LightColor.d;
 		mp.fadeColor = b.cm.FadeColor.d;
 		zx::levelmesh::CaptureShading(b.lightlevel, rel, b.cm, mp);
+		ApplyThingColor((thing->RenderStyle.Flags & STYLEF_ColorIsFixed) ? PalEntry(thing->fillcolor) : PalEntry(0xffffff), mp);
 		if (!fullbright) { mp.dynR = dyn[0]; mp.dynG = dyn[1]; mp.dynB = dyn[2]; }
 		mp.cpuLight = true;
 		mp.normX = mp.normY = mp.normZ = 0.f;
@@ -383,20 +401,108 @@ static int DeriveSprite(AActor *thing, SpritePiece *out, int max)
 	return drawn;
 }
 
+// [rc4l] Derive a particle as GLSprite::ProcessParticle, Draw and RegisterSprite do: false when it draws nothing, as an untextured square does not reach the backend.
+static bool DeriveParticle(particle_t *particle, sector_t *sector, SpritePiece &p)
+{
+	const zx::hwrender::SpriteViewProvider &view = zx::hwrender::SpriteView();
+	if (view.PortalRejectsPoint(particle->x, particle->y)) return false;
+	if (particle->trans == 0) return false;
+	// [rc4l] Only a round or smooth particle has a texture, and RegisterSprite takes no sprite without one.
+	FTexture *lump = gl_particles_style ? view.ParticleTexture(gl_particles_style) : NULL;
+	const void *material = lump != NULL ? zx::materials::MaterialForTexture(lump, true) : NULL;
+	if (material == NULL) return false;
+
+	int lightlevel = gl_ClampLight(sector->GetTexture(sector_t::ceiling) == skyflatnum ? sector->GetCeilingLight() : sector->GetFloorLight());
+	FColormap cm;
+	if (gl_fixedcolormap) cm.Clear();
+	else if (!particle->bright)
+	{
+		const TArray<lightlist_t> &lightlist = sector->e->XFloor.lightlist;
+		cm = sector->ColorMap;
+		for (unsigned i = 0; i < lightlist.Size(); i++)
+		{
+			const int lightbottom = i < lightlist.Size() - 1 ? (int)(lightlist[i + 1].plane.ZatPoint(particle->x, particle->y))
+				: (int)(sector->floorplane.ZatPoint(particle->x, particle->y));
+			// [rc4l] Against the particle's y, not its z, as GL compares it.
+			if (lightbottom < particle->y)
+			{
+				lightlevel = *lightlist[i].p_lightlevel;
+				cm.LightColor = (lightlist[i].extra_colormap)->Color;
+				break;
+			}
+		}
+	}
+	else
+	{
+		lightlevel = 255;
+		cm = sector->ColorMap;
+		cm.ClearColor();
+	}
+	const float trans = particle->trans / 255.0f;
+	PalEntry color = particle->color;
+	color.a = 255;
+	float ul = 0.f, vt = 0.f, ur = 1.f, vb = 1.f;
+	zx::materials::MaterialCorners(material, ul, vt, ur, vb);
+
+	const float x = FIXED2FLOAT(particle->x), y = FIXED2FLOAT(particle->y), z = FIXED2FLOAT(particle->z);
+	float scalefac = particle->size / 4.0f;
+	// [BB] The smooth particles are smaller than the other ones.
+	if (gl_particles_style == 2) scalefac *= 1.7;
+	float vx, vy;
+	view.ViewVector(vx, vy);
+	const SpriteEdges e = { x + vy * scalefac, y - vx * scalefac, x - vy * scalefac, y + vx * scalefac, z - scalefac, z + scalefac };
+	float viewYaw = 0.f, viewPitch = 0.f;
+	if (gl_billboard_particles) view.ViewAngles(viewYaw, viewPitch);
+	float c[4][3];
+	ComputeSpriteCorners(e, gl_billboard_particles, false, viewYaw, viewPitch, 0.f, c);
+
+	p.piece = MeshPiece();
+	p.quad[0].Set(c[0][0], c[0][1], c[0][2], ul, vt);
+	p.quad[1].Set(c[1][0], c[1][1], c[1][2], ur, vt);
+	p.quad[2].Set(c[2][0], c[2][1], c[2][2], ul, vb);
+	p.quad[3].Set(c[3][0], c[3][1], c[3][2], ur, vb);
+	MeshPiece &mp = p.piece;
+	mp.range.offset = 0;
+	mp.range.count = 0;
+	mp.material = material;
+	mp.mirrorLine = zx::levelmesh::MirrorCaptureLine();
+	mp.stackSlot = zx::levelmesh::StackCaptureSlot();
+	mp.dynLightIndex = -1;
+	mp.lightLevel = lightlevel;
+	mp.lightColor = cm.LightColor.d;
+	mp.fadeColor = cm.FadeColor.d;
+	zx::levelmesh::CaptureShading(lightlevel, getExtraLight(), cm, mp);
+	ApplyThingColor(color, mp);
+	float dyn[3] = { 0.f, 0.f, 0.f };
+	if (gl_lights && view.DynamicLightCount() && !gl_fixedcolormap && gl_light_particles)
+		PointLight(particle->x, particle->y, particle->z, particle->subsector, NULL, dyn);
+	mp.dynR = dyn[0]; mp.dynG = dyn[1]; mp.dynB = dyn[2];
+	mp.cpuLight = true;
+	mp.normX = mp.normY = mp.normZ = 0.f;
+	mp.translation = 0;
+	mp.alpha = trans;
+	// [rc4l] STYLE_Translucent: blended unless it is fully opaque.
+	mp.blendMode = trans < 1.f - 1.f / 256.f ? 1 : 0;
+	mp.sortX = x; mp.sortY = y; mp.sortZ = z;
+	mp.quad = true;
+	return true;
+}
+
 // ---------------------------------------------------------------------------
 // The check against GL
 // ---------------------------------------------------------------------------
 
-struct Noted { const AActor *actor; SpritePiece p; };
+struct Noted { const void *who; bool particle; SpritePiece p; };
 static TArray<Noted> g_gl, g_ours;
 static int g_checkedActors = 0, g_differedActors = 0, g_onlyGL = 0, g_onlyOurs = 0;
 static FString g_diffs;
 
-void NoteGLSprite(const AActor *actor, const MeshPiece &piece, const MeshVertex *quad)
+void NoteGLSprite(const void *who, bool particle, const MeshPiece &piece, const MeshVertex *quad)
 {
 	if (!fua_sprite_check) return;
 	Noted n;
-	n.actor = actor;
+	n.who = who;
+	n.particle = particle;
 	n.p.piece = piece;
 	memcpy(n.p.quad, quad, sizeof(n.p.quad));
 	g_gl.Push(n);
@@ -428,21 +534,21 @@ void CheckFrameSprites()
 {
 	if (!fua_sprite_check) { g_gl.Clear(); g_ours.Clear(); return; }
 	// [rc4l] Both lists are in actor order within an actor; match each actor's run of pieces against the other's.
-	TMap<const AActor *, int> glFirst;
-	for (unsigned i = 0; i < g_gl.Size(); i++) if (!glFirst.CheckKey(g_gl[i].actor)) glFirst[g_gl[i].actor] = (int)i;
-	TMap<const AActor *, bool> seen;
+	TMap<const void *, int> glFirst;
+	for (unsigned i = 0; i < g_gl.Size(); i++) if (!glFirst.CheckKey(g_gl[i].who)) glFirst[g_gl[i].who] = (int)i;
+	TMap<const void *, bool> seen;
 	for (unsigned i = 0; i < g_ours.Size(); )
 	{
-		const AActor *a = g_ours[i].actor;
+		const void *a = g_ours[i].who;
 		unsigned j = i;
-		while (j < g_ours.Size() && g_ours[j].actor == a) j++;
+		while (j < g_ours.Size() && g_ours[j].who == a) j++;
 		seen[a] = true;
 		g_checkedActors++;
 		int *first = glFirst.CheckKey(a);
 		if (first == NULL) { g_onlyOurs++; g_differedActors++; i = j; continue; }
 		unsigned k = (unsigned)*first, n = 0;
 		const char *why = NULL;
-		for (; k < g_gl.Size() && g_gl[k].actor == a; k++, n++)
+		for (; k < g_gl.Size() && g_gl[k].who == a; k++, n++)
 		{
 			if (i + n >= j) { why = "piece count"; break; }
 			why = Differs(g_gl[k].p, g_ours[i + n].p);
@@ -454,8 +560,11 @@ void CheckFrameSprites()
 			if (g_differedActors < 12)
 			{
 				const SpritePiece &gp = g_gl[*first].p, &op = g_ours[i].p;
+				const bool part = g_ours[i].particle;
 				g_diffs.AppendFormat("  %s at (%.0f, %.0f): %s; GL corner %.9g %.9g %.9g, ours %.9g %.9g %.9g\n",
-					a->GetClass()->TypeName.GetChars(), FIXED2FLOAT(a->x), FIXED2FLOAT(a->y), why,
+					part ? "particle" : ((const AActor *)a)->GetClass()->TypeName.GetChars(),
+					FIXED2FLOAT(part ? ((const particle_t *)a)->x : ((const AActor *)a)->x),
+					FIXED2FLOAT(part ? ((const particle_t *)a)->y : ((const AActor *)a)->y), why,
 					gp.quad[0].x, gp.quad[0].z, gp.quad[0].y, op.quad[0].x, op.quad[0].z, op.quad[0].y);
 			}
 			g_differedActors++;
@@ -463,7 +572,7 @@ void CheckFrameSprites()
 		i = j;
 	}
 	for (unsigned i = 0; i < g_gl.Size(); i++)
-		if (!seen.CheckKey(g_gl[i].actor)) { g_onlyGL++; seen[g_gl[i].actor] = true; }
+		if (!seen.CheckKey(g_gl[i].who)) { g_onlyGL++; seen[g_gl[i].who] = true; }
 	g_gl.Clear();
 	g_ours.Clear();
 }
@@ -476,11 +585,28 @@ bool BuildSprite(AActor *thing)
 	if (n < 0) return false;
 	if (fua_sprite_check)
 	{
-		for (int i = 0; i < n; i++) { Noted no; no.actor = thing; no.p = pieces[i]; g_ours.Push(no); }
+		for (int i = 0; i < n; i++) { Noted no; no.who = thing; no.particle = false; no.p = pieces[i]; g_ours.Push(no); }
 		return false;
 	}
 	if (!zx::levelmesh::DynamicCaptureActive()) return true;
 	for (int i = 0; i < n; i++) zx::levelmesh::DynAppend(pieces[i].quad, 4, pieces[i].piece);
+	return true;
+}
+
+bool BuildParticle(particle_t *particle, sector_t *sector)
+{
+	SpritePiece p;
+	const bool drawn = DeriveParticle(particle, sector, p);
+	if (fua_sprite_check)
+	{
+		if (drawn) { Noted no; no.who = particle; no.particle = true; no.p = p; g_ours.Push(no); }
+		return false;
+	}
+	if (drawn && zx::levelmesh::DynamicCaptureActive())
+	{
+		zx::levelmesh::DynAppend(p.quad, 4, p.piece);
+		zx::levelmesh::CountParticle();
+	}
 	return true;
 }
 

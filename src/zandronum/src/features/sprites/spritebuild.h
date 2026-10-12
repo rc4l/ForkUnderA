@@ -7,6 +7,8 @@
 #define ZX_SPRITEBUILD_H
 
 class AActor;
+struct particle_t;
+struct sector_t;
 
 namespace zx { namespace levelmesh { struct MeshPiece; struct MeshVertex; } }
 
@@ -18,8 +20,11 @@ struct SpritePiece;
 // [rc4l] Derive an actor's sprite into the dynamic stream; false when GL must draw it, which a model needs.
 bool BuildSprite(AActor *thing);
 
-// [rc4l] With fua_sprite_check on, what GL's RegisterSprite recorded for an actor, so the derivation can be compared against it.
-void NoteGLSprite(const AActor *actor, const zx::levelmesh::MeshPiece &piece, const zx::levelmesh::MeshVertex *quad);
+// [rc4l] Derive a particle in `sector` (as GL's walk sees it) into the dynamic stream; false when GL must draw it, which only the check asks.
+bool BuildParticle(particle_t *particle, sector_t *sector);
+
+// [rc4l] With fua_sprite_check on, what GL's RegisterSprite recorded for an actor or a particle, so the derivation can be compared against it.
+void NoteGLSprite(const void *who, bool particle, const zx::levelmesh::MeshPiece &piece, const zx::levelmesh::MeshVertex *quad);
 
 // [rc4l] Compare every actor GL drew this frame against the derivation; called once GL's sprites are in.
 void CheckFrameSprites();

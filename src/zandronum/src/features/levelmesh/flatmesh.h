@@ -53,6 +53,8 @@ int StackCaptureSlot();
 int MirrorCaptureLine();
 // [rc4l] Whether a sprite, model or decal GL draws now is captured: the player's walk's for the frame, a stacked view's or a line mirror's walk's for that pass alone.
 bool DynamicCaptureActive();
+// [rc4l] A particle handed to the backend this frame, for fua_particles.
+void CountParticle();
 
 // [rc4l] A stacked view the player's walk saw this frame: the eye's move into it in map units, and the plane it opens from.
 struct StackViewInfo

@@ -7,6 +7,11 @@ floor and ceiling clip, light (glow, colormap, 3D-floor light bands, the actor's
 render style, and the quad, billboarded or rolled. The decisions are `Compute*` units in
 `computation/`; the glue reads the engine and appends to the level mesh's dynamic stream.
 
+Particles too (`BuildParticle`, `GLSprite::ProcessParticle`'s light and quad), each walk handing over
+the particles in the subsectors it reaches. A sprite's `ThingColor` (a particle's colour, a stencil
+actor's fill), which GL's shader multiplies it by, is folded into its shading on both this path and
+GL's capture; without it every particle drew in its texture's white (scenario `particlecolor`).
+
 Models still go through GL (`ProcessSprite`, then `gl_RenderModel` and `CaptureModelSurface`), so a
 stacked view in standalone, whose actors `features/visibility` hands here from inside that view, draws
 no models yet.
@@ -21,8 +26,10 @@ AOW03, wdiex02, WDI01, WDI09, WDI18 and dbab04, with XY billboards, `gl_spritecl
 
 - `gl/scene/gl_scene.cpp` `FGLRenderer::DrawScene`, the standalone sprite sweep: `BuildSprite` per
   actor in view, `ProcessSprite` for a model or with the switch off, and `CheckFrameSprites` after
-  GL's sprites are drawn; `StackViewSprite`, `BuildSprite` for each actor a stacked view's walk reaches.
-- `features/levelmesh/flatmesh.cpp` `RegisterSprite`: `NoteGLSprite`, GL's piece for the check.
+  GL's sprites are drawn; `StackViewSprite`, `BuildSprite` for each actor a stacked view's walk reaches;
+  `WalkParticles`, `BuildParticle` for each particle the player's walk reaches.
+- `features/levelmesh/flatmesh.cpp` `RegisterSprite`: `NoteGLSprite`, GL's piece for the check, and the
+  `ThingColor` fold.
 
 GL settings it still reads, until the renderer interface supplies them (P5): `glset`,
 `gl_fixedcolormap`, `currentmapsection`, `getExtraLight`, `gl_FindModelFrame`, and GL's sprite cvars.

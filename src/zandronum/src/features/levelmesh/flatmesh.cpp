@@ -1100,6 +1100,7 @@ const MeshVertex *SkyQuadVertices(int &count, int list)
 }
 
 // [rc4l] Models are cleared with sprites because they arrive with them, and a stale count reads as a model still there.
+void CountParticle() { g_particlesThisFrame++; }
 void ClearSprites() { g_spritesThisFrame = 0; g_particlesThisFrame = 0; g_spriteNoteCount = 0; ModelStatsReset(); }
 
 // [rc4l] The sweep's own arithmetic, kept from the last frame that ran one.
@@ -1226,7 +1227,7 @@ void RegisterSprite(const GLSprite &spr, const float *c1, const float *c2,
 {
 	// [rc4l] Each walk the backend draws again keeps its own sprites, for its pass alone: the player's for the frame, a stacked view's or a line mirror's (the viewer and whatever stands behind the player) for that one.
 	if (spr.gltexture == NULL || !DynamicCaptureActive()) return;
-	if (spr.particle != NULL) g_particlesThisFrame++;
+	if (spr.particle != NULL) CountParticle();
 
 	// [rc4l] GLSprite emits a 4-vertex TRIANGLE STRIP; the mesh is triangle lists, so expand to
 	// (0,1,2) and (2,1,3) -- which preserves the strip's winding rather than flipping the second
@@ -1256,6 +1257,10 @@ void RegisterSprite(const GLSprite &spr, const float *c1, const float *c2,
 	// A cache keyed on the six inputs hits 98% of 3053 sprites on Sunder MAP16 and saves nothing:
 	// what it skips is two calls and eight getters, and writing the eight answers costs the same.
 	CaptureShading(spr.lightlevel, spr.fullbright ? 0 : getExtraLight(), spr.Colormap, mp);
+	// [rc4l] ThingColor, which GL's shader multiplies the sprite by: a particle's own colour, a stencil actor's fill.
+	mp.colorR *= spr.ThingColor.r / 255.f;
+	mp.colorG *= spr.ThingColor.g / 255.f;
+	mp.colorB *= spr.ThingColor.b / 255.f;
 
 	// [rc4l] The dynamic light GL worked out for this actor, folded in here.
 	//
@@ -1319,7 +1324,7 @@ void RegisterSprite(const GLSprite &spr, const float *c1, const float *c2,
 	// [rc4l] Four corners, not six vertices -- the backend expands them when it writes its own.
 	mp.quad = true;
 
-	zx::sprites::NoteGLSprite(spr.actor, mp, q);
+	zx::sprites::NoteGLSprite(spr.actor != NULL ? (const void *)spr.actor : (const void *)spr.particle, spr.actor == NULL, mp, q);
 	DynAppend(q, 4, mp);
 	g_spritesThisFrame++;
 
