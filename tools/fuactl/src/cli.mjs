@@ -588,7 +588,7 @@ async function main() {
         bakeAll: !!flags["bake-all"],
         log: (m) => console.error(`[diligent] ${m}`),
       });
-      console.error("[diligent] done -- results are in the engine log (fua_diligent_bench / fua_gl_meshbench lines)");
+      console.error("[diligent] done -- results are in the engine log (fua_diligent_bench lines)");
       break;
     }
     // [rc4l] Query the level's linedefs and print the matches. The engine prints to its console, so

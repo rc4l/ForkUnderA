@@ -63,11 +63,11 @@ long long ComputeBatchVertexCount(const int *fanVertexCounts, int fanCount);
 // of `fanVertices`, so a caller cannot silently read past the fan.
 int ComputeFanTriangleVertex(int fanVertices, int tri, int corner);
 
-// [rc4l] The three ways GL draws a list of walls.
-enum WallDrawPath { kWallsOneByOne, kWallsBatched, kWallsFromMesh };
+// [rc4l] The two ways GL draws a list of walls.
+enum WallDrawPath { kWallsOneByOne, kWallsBatched };
 
-// [rc4l] How GL draws one pass's walls: from the level mesh only when the mesh is kept and GL is asked to draw from it, else batched from its own vertices when batching is on, and only the opaque passes do either.
-WallDrawPath ComputeWallDrawPath(bool levelMesh, bool glDrawsMesh, bool batchWalls, bool opaquePass);
+// [rc4l] How GL draws one pass's walls: batched from its own vertices when batching is on, and only in the opaque passes.
+WallDrawPath ComputeWallDrawPath(bool batchWalls, bool opaquePass);
 
 }} // namespace zx::levelmesh
 

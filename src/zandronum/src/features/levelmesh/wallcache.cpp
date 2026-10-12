@@ -4,6 +4,8 @@
 #include "gl/system/gl_system.h"
 #include <stddef.h>   // offsetof, for the cached-record guard
 #include "features/levelmesh/wallcache.h"
+#include "features/levelmesh/captureshading.h"
+#include "features/levelmesh/glvertex.h"   // [rc4l] GL's fan vertices as mesh vertices   // [rc4l] CaptureShading, the light model for a GL colormap
 #include "features/levelmesh/flatmesh.h"
 #include "features/levelmesh/fakeplanes.h"   // [rc4l] SideTexturesChanged, for the fills a switch can open or close
 #include "features/levelmesh/levelmesh.h"
@@ -193,18 +195,7 @@ void FreeLevel()
 	g_cache.Clear();
 	g_uncacheable.Clear();
 	g_captureSeg = -1;
-}
-
-const MeshRange *StaticWallRange(int packedIndex)
-{
-	if (packedIndex < 0) return NULL;
-	const int seg = packedIndex / kMaxCachedPieces;
-	const int piece = packedIndex % kMaxCachedPieces;
-	if ((unsigned)seg >= g_cache.Size()) return NULL;
-	const SegCache &sc = g_cache[seg];
-	// [rc4l] NULL draws the wall from its own captured vertices, which is what GL must show once the map bake's ranges sit in these slots.
-	if (!ComputeReplaysFromMesh(sc.mapBaked, piece, sc.pieceCount, sc.pieces[piece].range.count)) return NULL;
-	return &sc.pieces[piece].range;
+	ForgetWalks();
 }
 
 // [rc4l] A wall piece into the mesh, filed under the sidedef it was baked from, since working it out again from where the piece lies picks a neighbour on a narrow wall (WDI14's painting wall).
@@ -325,8 +316,8 @@ void BakeSeg(int segIndex)
 	SegCache &sc = g_cache[segIndex];
 	sc.mapBaked = false;
 
-	static FFlatVertex fan[GLWall::MAX_BATCH_FAN_VERTICES];
-	static FFlatVertex tris[GLWall::MAX_BATCH_FAN_VERTICES * 3];
+	static MeshVertex fan[GLWall::MAX_BATCH_FAN_VERTICES];
+	static MeshVertex tris[GLWall::MAX_BATCH_FAN_VERTICES * 3];
 
 	// [rc4l] Collapse pieces this seg no longer produces.
 	//
@@ -342,14 +333,14 @@ void BakeSeg(int segIndex)
 		const unsigned int n = r.count;
 		if (n > (unsigned)(GLWall::MAX_BATCH_FAN_VERTICES * 3)) { r.count = 0; continue; }
 		// All vertices at one point: the triangles have no area and rasterise to nothing.
-		memset(tris, 0, n * sizeof(FFlatVertex));
+		memset(tris, 0, n * sizeof(MeshVertex));
 		MeshStore(r, tris, (int)n);
 	}
 	sc.bakedCount = sc.pieceCount;
 
 	for (int i = 0; i < sc.pieceCount; i++)
 	{
-		const int fanCount = sc.walls[i].BuildFanVertices(fan, GLWall::MAX_BATCH_FAN_VERTICES);
+		const int fanCount = sc.walls[i].BuildFanVertices(AsFlatVertices(fan), GLWall::MAX_BATCH_FAN_VERTICES);
 		// [rc4l] The first thing in this renderer that DERIVES a surface instead of transcribing one.
 		//
 		// features/surfaces has been able to work out a sidedef's vertical span and texture position
@@ -670,8 +661,8 @@ static int ReshadeSegFromMap(int segIndex)
 // [rc4l] One flooded gap: the wall quad, textured per fragment from the back plane and lit by DrawFloodedPlane's rule (that sector's plane light and colormap, extra light only).
 static bool BakeFloodPiece(MeshRange &range, const zx::surfaces::DerivedWallSpan &d)
 {
-	static FFlatVertex tris[6];
-	FFlatVertex fan[4];
+	static MeshVertex tris[6];
+	MeshVertex fan[4];
 	fan[0].Set(d.x1, d.zbottom[0], d.y1, d.uLeft,  d.vBottom[0]);
 	fan[1].Set(d.x1, d.ztop[0],    d.y1, d.uLeft,  d.vTop[0]);
 	fan[2].Set(d.x2, d.ztop[1],    d.y2, d.uRight, d.vTop[1]);
@@ -810,7 +801,7 @@ int BakeSegFromMap(int segIndex)
 	if (seg->sidedef == NULL || seg->linedef == NULL || seg->frontsector == NULL) return -1;
 
 	SegCache &sc = g_cache[segIndex];
-	static FFlatVertex tris[6];
+	static MeshVertex tris[6];
 
 	const int midType = (seg->backsector != NULL) ? RENDERWALL_M2S : RENDERWALL_M1S;
 	const int kParts[3] = { RENDERWALL_TOP, RENDERWALL_BOTTOM, midType };
@@ -907,7 +898,7 @@ int BakeSegFromMap(int segIndex)
 			const float vt1 = (h1 != 0.f) ? d.vTop[1] + (spanTop1 - band.ztop[1])    * (d.vBottom[1] - d.vTop[1]) / h1 : d.vTop[1];
 			const float vb1 = (h1 != 0.f) ? d.vTop[1] + (spanTop1 - band.zbottom[1]) * (d.vBottom[1] - d.vTop[1]) / h1 : d.vBottom[1];
 
-			FFlatVertex fan[4];
+			MeshVertex fan[4];
 			fan[0].Set(d.x1, band.zbottom[0], d.y1, d.uLeft,  vb0);
 			fan[1].Set(d.x1, band.ztop[0],    d.y1, d.uLeft,  vt0);
 			fan[2].Set(d.x2, band.ztop[1],    d.y2, d.uRight, vt1);
@@ -1087,7 +1078,7 @@ int BakeSegFromMap(int segIndex)
 						P_GetPlaneLight(rover->target, rover->top.plane, true) : NULL;
 					if (fl == NULL || fl->extra_colormap == NULL) { MeshSquash(range); continue; }
 
-					FFlatVertex ffan[4];
+					MeshVertex ffan[4];
 					ffan[0].Set(mid.x1, blk.bottom[0], mid.y1, 0.f, 0.f);
 					ffan[1].Set(mid.x1, blk.top[0],    mid.y1, 0.f, 0.f);
 					ffan[2].Set(mid.x2, blk.top[1],    mid.y2, 0.f, 0.f);
@@ -1162,7 +1153,7 @@ int BakeSegFromMap(int segIndex)
 				const float vb0 = tci.FloatToTexV(toV + texh - blk.bottom[0]);
 				const float vb1 = tci.FloatToTexV(toV + texh - blk.bottom[1]);
 
-				FFlatVertex fan[4];
+				MeshVertex fan[4];
 				fan[0].Set(mid.x1, blk.bottom[0], mid.y1, ul, vb0);
 				fan[1].Set(mid.x1, blk.top[0],    mid.y1, ul, vt0);
 				fan[2].Set(mid.x2, blk.top[1],    mid.y2, uR, vt1);
@@ -2054,7 +2045,7 @@ CCMD( fua_line_mesh )
 	if ( want < 0 || want >= numlines ) { Printf( "no such line\n" ); return; }
 
 	int nv = 0;
-	const FFlatVertex *verts = zx::levelmesh::MeshVertexData( nv );
+	const zx::levelmesh::MeshVertex *verts = zx::levelmesh::MeshVertexData( nv );
 	int found = 0;
 	for ( int i = 0; i < numsegs; i++ )
 	{

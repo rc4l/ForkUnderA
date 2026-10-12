@@ -72,9 +72,6 @@ bool ComputeWallPlainPass(int renderWallType);
 // [rc4l] Whether a setter counter moved since it was last seen, taking its new value so it reads unchanged until it moves again.
 bool ComputeTakeChange(int &seen, int now);
 
-// [rc4l] Whether GL draws captured wall `piece` from the seg's mesh range at that index: only while the capture baked the seg, since the map bake files its ranges by part and the one at a captured wall's index is then another wall or none.
-bool ComputeReplaysFromMesh(bool mapBaked, int piece, int pieceCount, unsigned rangeCount);
-
 // [rc4l] What a sector's bake shows of it: its light, both plane heights, both flat textures, and the colormap a script can recolour it with.
 struct SectorLook
 {

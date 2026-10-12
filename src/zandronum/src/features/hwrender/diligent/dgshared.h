@@ -55,7 +55,7 @@ Diligent::RefCntAutoPtr<Diligent::IShader> CompileShader(Diligent::SHADER_TYPE t
 // cache, so asking every frame is what they are for.
 Diligent::ITextureView          *GetMaterialSRV(const void *materialPtr, int translation);
 Diligent::IShaderResourceBinding *GetMaterialSRB(Diligent::IPipelineState *pso, const void *material,
-                                                 int translation);
+                                                 int translation = 0);
 
 // [rc4l] The G-buffer the world pass wrote: what is in front of each pixel, and which way it faces.
 // Null before the first frame, or when the pass that fills them is disabled.

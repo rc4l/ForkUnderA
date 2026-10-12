@@ -157,16 +157,6 @@ TEST(WallCache, ASectorsRecolourIsARelightAndItsMoveIsARebake)
 	EXPECT_EQ(kSectorMoved, ComputeSectorRebake(was, now));
 }
 
-// [rc4l] WDI18's mirror frame: GL replayed a closed column's lower wall from the map bake's top slot at the same index, and the mirror showed through the rest.
-TEST(WallCache, AReplayedWallDrawsFromItsMeshRangeOnlyWhileTheCaptureBakedIt)
-{
-	EXPECT_TRUE(ComputeReplaysFromMesh(false, 0, 1, 6));
-	EXPECT_FALSE(ComputeReplaysFromMesh(true, 0, 1, 6));    // [rc4l] the map bake's slot 0 is its top, not the captured bottom
-	EXPECT_FALSE(ComputeReplaysFromMesh(false, 0, 1, 0));   // [rc4l] squashed: nothing baked
-	EXPECT_FALSE(ComputeReplaysFromMesh(false, 1, 1, 6));   // [rc4l] past what the capture kept
-	EXPECT_FALSE(ComputeReplaysFromMesh(false, -1, 1, 6));
-}
-
 // [rc4l] A plain sidedef: STARTAN2 on every part, no offset, unit scale.
 static SideLook PlainSide()
 {

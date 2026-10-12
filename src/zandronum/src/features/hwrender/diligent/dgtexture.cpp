@@ -32,8 +32,7 @@
 #include "TextureView.h"
 #include "RefCntAutoPtr.hpp"
 
-#include "gl/textures/gl_material.h"
-#include "gl/textures/gl_translate.h"   // GLTranslationPalette
+#include "features/materials/materials.h"
 #include "tarray.h"
 #include "c_cvars.h"
 
@@ -148,10 +147,8 @@ static Diligent::ITextureView *EnsureBlack()
 Diligent::ITextureView *GetBrightmapSRV(const void *materialPtr)
 {
 	if (materialPtr == NULL) return EnsureBlack();
-	FMaterial *mat = (FMaterial *)materialPtr;
-	if (mat->tex == NULL || mat->tex->gl_info.Brightmap == NULL) return EnsureBlack();
-	FMaterial *bm = FMaterial::ValidateTexture(mat->tex->gl_info.Brightmap, false);
-	if (bm == NULL || bm == mat) return EnsureBlack();
+	const void *bm = zx::materials::MaterialBrightmap(materialPtr);
+	if (bm == NULL || bm == materialPtr) return EnsureBlack();
 	Diligent::ITextureView *srv = GetMaterialSRV(bm, 0);
 	// [rc4l] GetMaterialSRV falls back to WHITE when it cannot produce a texture -- a sane default
 	// for a base layer, and catastrophic for a brightmap, which is ADDED to the lit fragment. A white
@@ -173,8 +170,7 @@ Diligent::ITextureView *GetMaterialSRV(const void *materialPtr, int translation)
 	// index. Feeding a game translation straight to CreateTexBuffer indexes the palette array with a
 	// number from the wrong namespace, and the sprite comes out as scattered rainbow pixels, which is
 	// what capturing GLSprite::translation without this did.
-	if (translation <= 0) translation = -translation;
-	else translation = GLTranslationPalette::GetInternalTranslation(translation);
+	translation = zx::materials::MaterialTranslation(translation);
 
 	if (materialPtr == NULL) return EnsureWhite();
 
@@ -186,8 +182,8 @@ Diligent::ITextureView *GetMaterialSRV(const void *materialPtr, int translation)
 	// and never reached the camera at all. A camera's view changes every frame, so it has no business
 	// in a cache keyed on identity in the first place.
 	{
-		FMaterial *canvas = (FMaterial *)materialPtr;
-		if (canvas->tex != NULL && canvas->tex->bHasCanvas)
+		zx::materials::MaterialInfo info;
+		if (zx::materials::DescribeMaterial(materialPtr, info) && info.canvas)
 		{
 			Diligent::ITextureView *cam = GetCameraSRV(materialPtr);
 			return cam ? cam : EnsureWhite();
@@ -201,22 +197,15 @@ Diligent::ITextureView *GetMaterialSRV(const void *materialPtr, int translation)
 	auto *dev = GetDevice();
 	if (!dev) return EnsureWhite();
 
-	FMaterial *mat = (FMaterial *)materialPtr;
 	int w = 0, h = 0;
-	// [rc4l] A warp texture's CopyTrueColorPixels is its unwarped source, so it uploads as is and ripples in the scene shader.
-	// [rc4l] createexpanded=false: the expanded border exists for GL's clamp behaviour on sprites and
-	// would shift the UVs the mesh already baked.
-	unsigned char *buf = mat->CreateTexBuffer(translation, w, h, true, false);
-
-	if (buf == NULL || w <= 0 || h <= 0)
+	// [rc4l] A warp texture's pixels are its unwarped source, so it uploads as is and ripples in the scene shader.
+	unsigned char *buf = zx::materials::MaterialPixels(materialPtr, translation, w, h);
+	if (buf == NULL)
 	{
-		if (buf) delete[] buf;
 		TexEntry e; e.material = materialPtr; e.translation = translation; e.srv = EnsureWhite();
 		g_textures.Push(e);
 		return e.srv;
 	}
-	// [rc4l] GL's ProcessData: a see-through texture's edge texels take an opaque neighbour's colour, which a wall GL draws unmasked shows and filtering blends in.
-	if (mat->tex->bMasked && !mat->tex->bHasCanvas) FTexture::SmoothEdges(buf, w, h);
 
 	Diligent::TextureDesc td;
 	td.Name = "fua material";
@@ -287,8 +276,7 @@ int MaterialCount() { return (int)g_textures.Size(); }
 // masked pipeline at first and paid 1.78 ms for it.
 bool MaterialIsMasked(const void *materialPtr)
 {
-	if (materialPtr == NULL) return false;
-	return ((FMaterial *)materialPtr)->isMasked();
+	return zx::materials::MaterialIsMasked(materialPtr);
 }
 
 }} // namespace zx::hwrender
@@ -301,13 +289,11 @@ bool MaterialIsMasked(const void *materialPtr)
 CCMD(fua_dg_texalpha)
 {
 	if (argv.argc() < 2) { Printf("usage: fua_dg_texalpha [texture name]\n"); return; }
-	FTextureID id = TexMan.CheckForTexture(argv[1], FTexture::TEX_Any);
-	if (!id.isValid()) { Printf("no texture called %s\n", argv[1]); return; }
-	FMaterial *mat = FMaterial::ValidateTexture(id, false, true);
-	if (mat == NULL) { Printf("%s has no material\n", argv[1]); return; }
+	const void *mat = zx::materials::MaterialForName(argv[1]);
+	if (mat == NULL) { Printf("no material called %s\n", argv[1]); return; }
 	int w = 0, h = 0;
-	unsigned char *buf = mat->CreateTexBuffer(0, w, h, true, false);
-	if (buf == NULL || w <= 0 || h <= 0) { Printf("%s produced no buffer\n", argv[1]); return; }
+	unsigned char *buf = zx::materials::MaterialPixels(mat, 0, w, h);
+	if (buf == NULL) { Printf("%s produced no buffer\n", argv[1]); return; }
 	int zero = 0, low = 0, full = 0;
 	const int n = w * h;
 	for (int i = 0; i < n; i++)
@@ -320,7 +306,7 @@ CCMD(fua_dg_texalpha)
 	Printf("%s: %dx%d, alpha 0 in %.1f%%, under half in %.1f%%, fully opaque in %.1f%%\n",
 		argv[1], w, h, 100.0 * zero / n, 100.0 * low / n, 100.0 * full / n);
 	Printf("  isMasked %s, mIsTransparent %d\n",
-		mat->isMasked() ? "yes" : "no", (int)mat->tex->gl_info.mIsTransparent);
+		zx::materials::MaterialIsMasked(mat) ? "yes" : "no", zx::materials::MaterialTransparency(mat));
 	delete[] buf;
 }
 

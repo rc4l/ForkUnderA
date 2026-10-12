@@ -823,9 +823,6 @@ CUSTOM_CVAR(Bool, gl_wallmesh, false, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
 	zx::levelmesh::InvalidateAll();
 }
 
-// [rc4l] GL draws its walls from its own copy of the level mesh rather than its own vertices, off because uploading that copy cost a millisecond a frame on AOW03 (queue #42) and it ties GL's picture to the backend's mesh.
-CVAR(Bool, fua_gl_meshdraw, false, 0)
-
 // [rc4l] Draw the walls staged into the streaming buffer, when the batch staged any.
 static void FlushWallBatch(FFlatVertex *&ptr)
 {
@@ -834,113 +831,13 @@ static void FlushWallBatch(FFlatVertex *&ptr)
 	if (count > 0) GLRenderer->mVBO->RenderArray(GL_TRIANGLES, offset, count);
 }
 
-// [rc4l] features/levelmesh P2d: the state-grouped indexed path.
-//
-// Two passes, because the index buffer has to be uploaded before anything draws from it. Pass one
-// walks the sorted list, groups it into draw-state runs and appends each baked piece's indices;
-// pass two sets state once per run and issues ONE glDrawElements over that run's contiguous index
-// span. Walls with no baked geometry fall back to their own Draw().
-//
-// The (firstIndex, count) pair each run produces is literally a DrawElementsIndirectCommand minus
-// its instance fields, which is why this is the last CPU-side step before the swap.
-void GLDrawList::DrawWallsIndexed(int pass)
-{
-	struct Run { unsigned int first, count; unsigned int item; };
-	static TArray<Run> runs;
-	static TArray<unsigned int> loose;
-	runs.Clear();
-	loose.Clear();
-
-	zx::levelmesh::MeshIndexBegin();
-
-	zx::levelmesh::WallBatchKey curkey, key;
-	bool open = false;
-	unsigned int runItem = 0;
-
-	for (unsigned i = 0; i < drawitems.Size(); i++)
-	{
-		GLWall *wp = WallAt(i);
-		if (wp == NULL) continue;
-		// [rc4l] The lights this wall receives, which nothing else on this path computes.
-		//
-		// GLPASS_ALL means "draw it lit", and GLWall::Draw answers that by calling SetupLights
-		// first. Batching replaced Draw with SetupBatchState, which applies dynlightindex but never
-		// fills it -- so every batched wall passed UINT_MAX and came out with no dynamic light at
-		// all. Flats were untouched because DrawFlats still draws them one at a time, which is why
-		// a torch lit the floor under it and left the wall behind it dark.
-		//
-		// Before FillBatchKey, because dynlightindex is part of the key.
-		//
-		// [rc4l] And on the other pass it is CLEARED, not left alone. GLPASS_PLAIN is what runs once
-		// the last dynamic light dies (gl_scene.cpp picks it when mLightCount is zero), and a
-		// replayed wall is the same object it was while the light was alive -- so leaving its index
-		// be means it keeps lighting itself from a light that no longer exists.
-		if (pass == GLPASS_ALL) wp->SetupLights();
-		else wp->dynlightindex = zx::hwrender::ComputeWallLightIndex(false,
-			zx::hwrender::kNoWallLightIndex, wp->dynlightindex);
-		wp->FillBatchKey(key);
-
-		const zx::levelmesh::MeshRange *mr = (drawitems[i].rendertype == GLDIT_STATICWALL)
-			? zx::levelmesh::StaticWallRange(drawitems[i].index) : NULL;
-		if (mr == NULL || !zx::levelmesh::ComputeCanBatch(key, key))
-		{
-			loose.Push(i);
-			continue;
-		}
-
-		if (open && !zx::levelmesh::ComputeCanBatch(curkey, key))
-		{
-			Run r; zx::levelmesh::MeshIndexEndRun(r.first, r.count); r.item = runItem;
-			if (r.count) runs.Push(r);
-			open = false;
-		}
-		if (!open) { curkey = key; runItem = i; open = true; }
-
-		if (!zx::levelmesh::MeshIndexAppend(*mr)) loose.Push(i);
-	}
-	if (open)
-	{
-		Run r; zx::levelmesh::MeshIndexEndRun(r.first, r.count); r.item = runItem;
-		if (r.count) runs.Push(r);
-	}
-
-	zx::levelmesh::MeshIndexFlush();
-
-	if (runs.Size() > 0)
-	{
-		for (unsigned i = 0; i < runs.Size(); i++)
-		{
-			GLWall *w = WallAt(runs[i].item);
-			if (w == NULL) continue;
-			w->SetupBatchState(pass);
-			// [rc4l] Bound after the run's state, whose Apply rebinds GL's own buffer once the mesh's buffers were just created, and an indexed draw through that buffer reads the wrong vertices.
-			if (!zx::levelmesh::MeshBind()) break;
-			zx::levelmesh::MeshDrawIndexed(runs[i].first, runs[i].count);
-			vertexcount += runs[i].count;
-		}
-		GLRenderer->mVBO->BindVBO();
-	}
-
-	for (unsigned i = 0; i < loose.Size(); i++)
-	{
-		GLWall *w = WallAt(loose[i]);
-		if (w) w->Draw(pass);
-	}
-}
-
 void GLDrawList::DrawWalls(int pass)
 {
 	RenderWall.Clock();
 
 	// [rc4l] Only the opaque passes batch, since the light pass collects lights and the translucent one sets blending per wall.
-	const zx::levelmesh::WallDrawPath path = zx::levelmesh::ComputeWallDrawPath(gl_wallmesh, fua_gl_meshdraw,
-		gl_batch_walls, pass == GLPASS_PLAIN || pass == GLPASS_ALL);
-	if (path == zx::levelmesh::kWallsFromMesh)
-	{
-		DrawWallsIndexed(pass);
-		RenderWall.Unclock();
-		return;
-	}
+	const zx::levelmesh::WallDrawPath path = zx::levelmesh::ComputeWallDrawPath(gl_batch_walls,
+		pass == GLPASS_PLAIN || pass == GLPASS_ALL);
 	if (path == zx::levelmesh::kWallsOneByOne)
 	{
 		for(unsigned i=0;i<drawitems.Size();i++)
@@ -963,8 +860,20 @@ void GLDrawList::DrawWalls(int pass)
 		GLWall *wp = WallAt(i);
 		if (wp == NULL) continue;
 		GLWall &w = *wp;
-		// See DrawWallsIndexed: same omission, same fix, on the path that stages vertices -- and the
-		// same clearing of a carried-over light index on the pass that does not compute one.
+		// [rc4l] The lights this wall receives, which nothing else on this path computes.
+		//
+		// GLPASS_ALL means "draw it lit", and GLWall::Draw answers that by calling SetupLights
+		// first. Batching replaced Draw with SetupBatchState, which applies dynlightindex but never
+		// fills it -- so every batched wall passed UINT_MAX and came out with no dynamic light at
+		// all. Flats were untouched because DrawFlats still draws them one at a time, which is why
+		// a torch lit the floor under it and left the wall behind it dark.
+		//
+		// Before FillBatchKey, because dynlightindex is part of the key.
+		//
+		// [rc4l] And on the other pass it is CLEARED, not left alone. GLPASS_PLAIN is what runs once
+		// the last dynamic light dies (gl_scene.cpp picks it when mLightCount is zero), and a
+		// replayed wall is the same object it was while the light was alive -- so leaving its index
+		// be means it keeps lighting itself from a light that no longer exists.
 		if (pass == GLPASS_ALL) w.SetupLights();
 		else w.dynlightindex = zx::hwrender::ComputeWallLightIndex(false,
 			zx::hwrender::kNoWallLightIndex, w.dynlightindex);

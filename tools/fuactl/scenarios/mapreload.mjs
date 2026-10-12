@@ -18,8 +18,8 @@ export const VANTAGES = [{ name: "red", at: { x: 256, y: 200, z: 0, angle: 90, p
 
 export const BOXES = { MAP01: { red: { box: [0.2, 0.2, 0.8, 0.8], ceiling: 4 } } };
 
-// [rc4l] GL alone is the reference; the second is GL's frame from a Vulkan session after the level loads again, which rebuilds the wall mesh GL draws through with fua_gl_meshdraw.
-export const SIDES = [{ name: "gl", gl: true }, { name: "reload", frame: "gl", cvars: { fua_gl_meshdraw: 1 }, commands: ["map MAP01"] }];
+// [rc4l] GL alone is the reference; the second is GL's frame from a Vulkan session after the level loads again and the backend rebuilds its mesh.
+export const SIDES = [{ name: "gl", gl: true }, { name: "reload", frame: "gl", commands: ["map MAP01"] }];
 
 runScenarioIfMain(import.meta.url, () => ({ name: "mapreload", wad: buildMapReloadWad(), maps: ["MAP01"],
   vantages: VANTAGES, boxes: BOXES, sides: SIDES }));

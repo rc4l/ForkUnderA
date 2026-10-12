@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 rc4l
 //
-// [rc4l] What the Vulkan backend's own files share and nothing outside them includes: their headers, the pass record, the scene vertex, and the scene state and helpers split across dgscene.cpp and its passes.
+// [rc4l] What the Vulkan backend's own files share and nothing outside them includes: their headers, the pass record, the scene's records, and each file's calls.
 
 #ifndef ZX_DGSCENE_INTERNAL_H
 #define ZX_DGSCENE_INTERNAL_H
@@ -72,7 +72,7 @@
 #include "gl/renderer/gl_lightdata.h"
 #include "gl/data/gl_data.h"
 #include "gl/scene/gl_portal.h"
-#include "gl/textures/gl_material.h"
+#include "features/materials/materials.h"   // [rc4l] texture identity, frames, brightmaps and pixels
 #include "r_sky.h"
 #include "gl/textures/gl_skyboxtexture.h"   // FSkyBox: the six faces a skybox is
 #include "g_shared/a_sharedglobal.h"        // ASkyViewpoint: the sky that is a place, not a picture
@@ -80,7 +80,6 @@
 #include "textures/textures.h"
 #include "g_level.h"
 #include "ShaderResourceVariable.h"
-#include "gl/data/gl_vertexbuffer.h"
 #include "r_utility.h"
 #include "r_state.h"
 #include "doomtype.h"
@@ -105,6 +104,26 @@ EXTERN_CVAR(Bool, gl_mirrors)
 EXTERN_CVAR(Bool, fua_dg_skyportal)
 EXTERN_CVAR(Int, fua_dg_skyportal_scale)
 EXTERN_CVAR(Float, fua_dg_skyportal_reach)
+
+EXTERN_CVAR(Bool, fua_dg_animate)
+EXTERN_CVAR(Bool, fua_dg_bindless)
+EXTERN_CVAR(Bool, fua_dg_bindless_dyn)
+EXTERN_CVAR(Int, fua_dg_cull)
+EXTERN_CVAR(Bool, fua_dg_embed)
+EXTERN_CVAR(Int, fua_dg_lightmode)
+EXTERN_CVAR(Bool, fua_dg_loopcommits)
+EXTERN_CVAR(Bool, fua_dg_mirrors_on)
+EXTERN_CVAR(Int, fua_dg_planemirrors)
+EXTERN_CVAR(Bool, fua_dg_rtmirrors)
+EXTERN_CVAR(Int, fua_dg_stackportals)
+EXTERN_CVAR(Bool, fua_dg_stackshow)
+EXTERN_CVAR(Bool, fua_dg_standalone)
+EXTERN_CVAR(Bool, fua_diligent_live)
+EXTERN_CVAR(Bool, fua_surface_mapbake_auto)
+EXTERN_CVAR(Bool, fua_vulkan)
+
+// [rc4l] The camera pitch, which lives outside any header the backend already pulls in.
+extern int viewpitch;
 
 namespace zx { namespace hwrender {
 
@@ -136,13 +155,294 @@ struct SceneVertex
 	float pieceIndex;
 };
 
+// [rc4l] What a piece knows about itself, once, instead of once per vertex.
+//
+// Laid out in vec4s because std430 aligns a vec3 to 16 bytes anyway: writing it as four vec4s makes
+// the padding explicit rather than something the GLSL and the C++ have to agree about by luck.
+struct ScenePieceData
+{
+	float r, g, b, softLight;
+	float fogDensity, alpha, fogMode, matSlot;
+	float fogR, fogG, fogB, warpStyle;   // [rc4l] ANIMDEFS warp (1) or warp2 (2), else 0
+	float nx, ny, nz, warpSpeed;
+	// [rc4l] A flooded gap: u = floodU.xy . (x, y) + floodU.z on the plane at height floodU.w, v likewise, flood 1 to switch it on.
+	float floodUx, floodUy, floodU0, floodZ;
+	float floodVx, floodVy, floodV0, flood;
+	// [rc4l] A sprite's or model's light from the CPU (GL's gl_SetDynSpriteLight), cpuLight 1 to use it instead of the shader's loop.
+	float actorR, actorG, actorB, cpuLight;
+	// [rc4l] The slot holding this material's brightmap in the bindless array (0 for none), the piece's PieceStackId plus one (0 for a sprite or model, never culled), 1 when both slots go through SlotRemap, and 1 when GL draws it unmasked so no texel is discarded.
+	float brightSlot, stackId, animates, plain;
+	float desaturation, scrollU, scrollV, unused2;   // [rc4l] the colormap's desaturation, 0..1, which main.fp mixes every texel toward grey by, and the texture shift a scroller added since the bake
+};
+
+// [rc4l] One draw per material. Pieces arrive in bake order, so they are sorted by material first;
+// with a few hundred materials on a map that is a few hundred draws, which is what the GL path does
+// too once batched.
+struct SceneBatch
+{
+	const void  *material;
+	unsigned int first, count;
+	bool         masked;
+	// [rc4l] This batch's OWN resource binding -- see g_batchSRBs.
+	Diligent::IShaderResourceBinding *srb;
+	// [rc4l] Base texture and the frame we last resolved it to, so animated surfaces keep moving
+	// without re-uploading geometry. NULL means "not animatable", which is most of a level.
+	const void  *baseTex;
+	const void  *resolved;
+	// [rc4l] 0 opaque/alpha-tested, 1 translucent, 2 additive -- the same numbering the dynamic path
+	// uses. A translucent batch is never merged with its neighbour and is drawn in its own pass.
+	int          blend;
+	// Centroid and surface normal, for sorting the translucent pass back to front each frame and for
+	// dropping the face pointing away from the camera. Only meaningful when blend != 0; the opaque
+	// pass is sorted by material and never consults these.
+	float        sortX, sortY, sortZ;
+	float        normX, normY, normZ;   // mesh space: (x, z-up, y)
+	// [rc4l] The box this batch occupies, so a batch nobody can see costs nothing to skip.
+	//
+	// Every batch was drawn every frame, whatever the camera was looking at -- correct, and on a
+	// level with thousands of batches it is thousands of resource bindings a frame for geometry
+	// behind the player. The GPU never minded (0.18 ms for the whole world); the CPU did.
+	float        minX, minY, minZ;
+	float        maxX, maxY, maxZ;
+	// [rc4l] A reflective plane's sector (-1 for none) and side, and the reflection slot it drew from this frame.
+	int          mirrorSector;
+	bool         mirrorCeiling;
+	int          mirrorSlot;
+};
+
+// [rc4l] One dynamic draw: a contiguous span of this frame's sprite stream sharing a material, a
+// blend mode and a translation. File scope because the translucent ones are not drawn by the sprite
+// pass at all -- they are merged into the world's translucent pass and sorted against it.
+struct DynRun
+{
+	const void  *material;
+	unsigned int first, count;
+	int          blend;
+	int          translation;
+	bool         depthBias;    // decals: coplanar with their wall, so they need the biased pipeline
+	bool         redAlpha;     // the texture is an alpha mask, not a colour image
+	// [rc4l] A closed shell rather than a billboard, and the difference decides the pipeline.
+	//
+	// Sprites and decals are flat, so they cannot occlude themselves and the sorted depth-write-off
+	// pass is exactly right for them. A model is a solid: its near panels have to hide its far ones,
+	// and without depth writes whichever triangle the buffer happens to hold last wins. On a car
+	// that draws the interior floor and seats straight through the bodywork.
+	bool         solid;
+	int          mirrorLine;   // [rc4l] the viewer's own sprite, drawn only in this line mirror's reflection, or -1
+	int          stackSlot;    // [rc4l] drawn only in this stacked view, whose walk took it, or -1 for every other pass
+	float        cx, cy, cz;   // centroid, for the merged sort
+	float        lo, hi;       // [rc4l] its height span, which sides of a translucent plane it is on
+};
+
+enum { kMaterialSlots = 4096 };
+static_assert(kMaterialSlots == 4096, "FUA_MAT_SLOTS_STR must say the same number");
+
+struct MatSlot { const void *material; int translation; };
+// [rc4l] The translation a brightmap's slot is filed under: no real one is this, so a material and its brightmap never share a slot.
+static const int kBrightmapTranslation = -0x7fffffff;
+
+// [rc4l] The scene as the backend holds it on the GPU: one owner for the buffers and batches every pass draws from.
+struct SceneGeometry
+{
+	Diligent::RefCntAutoPtr<Diligent::IBuffer> vb;   // [rc4l] the material-sorted vertices
+	int          verts = 0;
+	TArray<SceneVertex> cpuVerts;                   // [rc4l] what the buffer is written from
+	unsigned int vbCapacity = 0;                    // [rc4l] vertices the buffer holds, more than it draws, so a piece can be appended
+	int          appendedVerts = 0;                 // [rc4l] how much of that slack has been spent since the last rebuild
+	unsigned int builtLayoutGen = 0;                // [rc4l] the mesh layout generation the buffer was built for
+	// [rc4l] The per-piece records the vertices index into, sized per level with slack like the vertex buffer.
+	TArray<ScenePieceData> pieces;
+	Diligent::RefCntAutoPtr<Diligent::IBuffer> pieceBuf;
+	unsigned int pieceCapacity = 0;
+	TArray<SceneBatch> batches;
+	TArray<int>  blendBatches;                      // [rc4l] the translucent batches, in build order
+	// [rc4l] The stacked views' subsector bits (ComputeMarkStackVisible), ready once this frame's are uploaded.
+	Diligent::RefCntAutoPtr<Diligent::IBuffer> stackVisBuf;
+	unsigned int stackVisCapacity = 0;
+	bool         stackVisReady = false;
+	// [rc4l] The player's sky holes (zx::levelmesh::SkyHoles), and how many this frame uploaded for the main pass to test.
+	Diligent::RefCntAutoPtr<Diligent::IBuffer> skyHoleBuf;
+	int          skyHoleCount = 0;
+	TArray<DynRun> dynRuns;                         // [rc4l] this frame's sprite, model and decal draws
+	bool         dynReady = false;
+};
+extern SceneGeometry g_scene;
+
+// [rc4l] The world pipelines, one per blend mode and variant, and the two bindings the per-material path draws through.
+struct ScenePipelines
+{
+	Diligent::RefCntAutoPtr<Diligent::IPipelineState> opaque;       // [rc4l] early-Z intact
+	Diligent::RefCntAutoPtr<Diligent::IPipelineState> masked;       // [rc4l] alpha-tested
+	Diligent::RefCntAutoPtr<Diligent::IPipelineState> maskedGBuf;   // [rc4l] alpha-tested and writing normals
+	Diligent::RefCntAutoPtr<Diligent::IPipelineState> trans;        // [rc4l] normal translucency
+	Diligent::RefCntAutoPtr<Diligent::IPipelineState> add;          // [rc4l] additive
+	// [rc4l] The same four with culling forced off, for SPRITES.
+	//
+	// Backface culling is right for the world and wrong for billboards: a sprite quad is built facing
+	// the camera and nothing guarantees its winding survives every view angle, so a world-wide cull mode
+	// would silently eat some of them. The world's setting must not be able to reach them, so they get
+	// their own pipelines rather than a promise that the winding works out.
+	Diligent::RefCntAutoPtr<Diligent::IPipelineState> maskedNoCull, transNoCull, addNoCull;
+	// [rc4l] And again with a depth bias, for DECALS.
+	//
+	// A decal is a quad glued flat against the wall it marks, exactly coplanar with it, so it z-fights
+	// without help -- GL wraps its decal pass in glPolygonOffset(-1, -128) for the same reason. The bias
+	// belongs in the pipeline rather than in the geometry: nudging the vertices towards the camera would
+	// have to know where the camera is, which is exactly what a baked or streamed vertex must not.
+	Diligent::RefCntAutoPtr<Diligent::IPipelineState> maskedDecal, transDecal, addDecal;
+	// [rc4l] And the alpha-mask variants of the same, for shaded decals. See kScenePSRedAlpha.
+	Diligent::RefCntAutoPtr<Diligent::IPipelineState> transRedAlpha, addRedAlpha;
+	Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding> srb, srbMasked;
+};
+extern ScenePipelines g_pso;
+
+// [rc4l] What the frame being drawn shares across its passes.
+struct FrameState
+{
+	// [rc4l] Bumped once a frame and once per camera texture, so the jobs every pass needs run once however many passes draw the world.
+	unsigned int serial = 1;
+	// [rc4l] A camera texture's own field of view and shape, zero for the screen's, which is every ordinary frame.
+	float fovOverride = 0.f, aspectOverride = 0.f;
+	int   drawRepeat = 1;   // [rc4l] how many times the bench draws the world a frame
+};
+extern FrameState g_frame;
+
+// [rc4l] What the passes counted, for fua_dg_dynstats and fua_frametimes to report.
+struct SceneStats
+{
+	// [rc4l] Why a patch gave up and rebuilt the scene: a translucent piece that moved or has no slot, one whose blend left its batch's, or one whose material did, and the last one's texture.
+	int     bailBlend = 0, bailBlendedSlot = 0, bailMaterial = 0;
+	FString bailLast;
+	int     geomUpdates = 0, geomRebuilds = 0;      // [rc4l] scene rebuilds this frame and since load, because the world moved
+	unsigned int lastDirtyLo = 0, lastDirtyHi = 0;
+	int     geomPatches = 0, geomPatchVerts = 0;    // [rc4l] patches and the vertices they moved, which tell nudged from rewritten
+	int     geomAppends = 0, appendNoSlot = 0, appendResized = 0, slotRevived = 0;   // [rc4l] pieces put on the end, and why
+	int     geomRepaints = 0, repaintRuns = 0;
+	int     fRepaints = 0, fRuns = 0, fPatchVerts = 0, fPatches = 0;   // [rc4l] what THIS frame did, so a p99 can be attributed
+	int     batchesDrawn = 0, worldDraws = 0;       // [rc4l] batches drawn, and the draw CALLS that took
+	// [rc4l] World passes in the last presented frame, their CPU time and kinds, and its phase times: geometry, lights, clusters, constants, animation, draw.
+	int     lastFramePasses = 0;
+	double  lastFrameWorldMs = 0.0;
+	FString lastFramePassList;
+	double  lastFramePhase[6] = {};
+	int     dynDraws = 0, dynTris = 0;              // [rc4l] the sorted list's entries, not what was submitted
+	int     blendSubmits = 0;                       // [rc4l] what was actually submitted
+	int     dynByBlend[4] = {};                     // [rc4l] per blend mode: opaque, translucent, additive, fuzz
+	double  dynBuildMs = 0.0;                       // [rc4l] the dynamic stream's cost, which no other clock covers
+	int     animSwaps = 0;                          // [rc4l] animation frame swaps since load
+	int     dynBindless = 0, dynPerMaterial = 0, dynMirrorRuns = 0;
+	int     dynSlotRefused = 0, dynSlotNoMaterial = 0, dynSlotSeen = 0, dynSlotMax = 0;
+	int     dynSlotUnfilled = 0, dynSlotUnfilledTotal = 0;   // [rc4l] dynamic slots past the array's fill this frame and since load
+	// [rc4l] Per pipeline: '-' untouched, 'x' the array is not there, 'f' filled, 'b' filled and bound.
+	char    fillState[14] = "-------------";
+	FString fillNames[8];
+	const void *fillViews[8] = {};
+	int     fillCount = 0, remapUploads = 0, matSlotsWhite = 0;
+};
+extern SceneStats g_stats;
+
+Diligent::IRenderDevice  *GetDevice();
+Diligent::ITextureView   *GetMaterialSRV(const void *materialPtr, int translation);
+Diligent::ITextureView   *GetBrightmapSRV(const void *materialPtr);
+int MaterialCount();
+bool MaterialIsMasked(const void *materialPtr);
+Diligent::IDeviceContext *GetContext();
+Diligent::ISwapChain     *GetSwapChain();
+bool DiligentShowWindow(FString &report);
+void  Fua_PumpBackendWindow(void *hwnd);
+void  Fua_SyncBackendWindowToParent(void *hwnd);
+void  Fua_ShowBackendWindow(void *hwnd, int visible);
+void *GetBackendWindow();
+void Fua_SetBackendWindowSize(int w, int h);
+
+// [rc4l] The texture cache (dgtexture.cpp) and the sky's fog (dgsky.cpp).
+void ReleaseMaterials();
+void GetSkyFog(float &r, float &g, float &b, float &density);
+
+// [rc4l] The world pass and frame composition (dgscene.cpp).
+bool CreateColorTarget(int w, int h, const char *name, Diligent::RefCntAutoPtr<Diligent::ITexture> &color);
+zx::hwrender::BackendCamera CurrentCamera();
+void DrawSceneOnce(bool present = true, bool pump = true);
+void PhaseReport(FString &out);
+
+// [rc4l] Pipelines and material bindings (dgpipelines.cpp).
+int AnimationOf(const void *material);
+Diligent::IPipelineState *BatchPSO(int blend);
+Diligent::IShaderResourceBinding *BatchSRB(SceneBatch &b);
+bool BindlessActive();
+void CommitInLoop(Diligent::IDeviceContext *ctx, zx::hwrender::LoopCommits &loop, Diligent::IShaderResourceBinding *srb);
+void DirtyMaterialSlots();
+bool EnsureScenePipeline(FString &err);
+void FlushTextureCache();
+void MaterialSRBCounts(int &cached, int &batch);
+int MaterialSlotCount();
+int MaterialSlotFor(const void *material, int translation);
+void RefreshBindless();
+void ReleaseBatchSRBs();
+void ReleaseMaterialSRBs();
+void ReleaseScenePipelines();
+void ReleaseWorldSRBs();
+void ResetMaterialSlots();
+void SlotReport(int n, FString &out);
+Diligent::IShaderResourceBinding *WorldSRB(Diligent::IPipelineState *pso);
+const TArray<MatSlot> &MaterialSlots();
+int FilledSlotCount();
+void MarkMaterialSlotsCurrent();
+
+// [rc4l] The per-frame stream (dgdynamic.cpp).
+void BuildDynamic(Diligent::IDeviceContext *ctx);
+void DrawBlended(Diligent::IDeviceContext *ctx);
+void DrawSolidDyn(Diligent::IDeviceContext *ctx);
+
+// [rc4l] The scene buffer (dgupload.cpp).
+void FillPieceData(const zx::levelmesh::MeshPiece &p, int translation, ScenePieceData &pd, bool inMesh);
+void ForgetBatchSRBs();
+void RefreshMovedGeometry(Diligent::IDeviceContext *ctx);
+void ReserveDynamicSlots();
+bool SceneUpload(FString &report);
+
+// [rc4l] Mirrors, reflective planes and stacked views (dgviews.cpp).
+void CollectMirrors();
+void DrawPlaneMirrorSurfaces(Diligent::IDeviceContext *ctx);
+void DrawStackSurfaces(Diligent::IDeviceContext *ctx);
+bool EnsureAccelerationStructure();
+bool EnsureMirrorResources();
+bool RayTracingAvailable();
+int RecollectMirrors();
+void ReleaseAccelerationStructures();
+void ReleaseLineMirrorPipeline();
+void ReleaseMirrorBinding();
+void ReleasePlaneMirrors();
+void ReleaseStackPortals();
+void RenderMirrors(Diligent::IDeviceContext *ctx);
+void RenderPlaneMirrors(Diligent::IDeviceContext *ctx);
+void RenderStackPortals(Diligent::IDeviceContext *ctx);
+void ShowStackView(Diligent::IDeviceContext *ctx);
+void StackInfo(FString &out);
+void UploadWalkVisibility(Diligent::IDeviceContext *ctx);
+void WriteSceneConstants(float *cb, const float *clip, float targetW, float targetH, float materialSlots);
+
+// [rc4l] Camera textures (dgcamera.cpp).
+void ReleaseCameraTargets();
+
+// [rc4l] The frame driver (dgframe.cpp).
+void LiveFrame();
+void RecordPresentInterval();
+bool StandaloneActive();
+
+#ifdef ZX_ENABLE_REPLAY
+// [rc4l] Measurements (dgdiag.cpp).
+void CaptureReplayFrame(Diligent::IDeviceContext *ctx, Diligent::ISwapChain *swap);
+#endif
+
+
 // [rc4l] The world camera's matrix and the scene constant buffer every pass writes before it draws.
 extern float g_mvp[16];
 extern Diligent::RefCntAutoPtr<Diligent::IBuffer> g_cb;
 void BuildMVP(float *m);
 void DrawWorld(Diligent::IDeviceContext *ctx);
 // [rc4l] A GL vertex (x, y, height) as the mesh stores it (x, height, y), tagged with its piece.
-SceneVertex ToSceneVertex(const FFlatVertex &sv, unsigned int pieceIndex);
+SceneVertex ToSceneVertex(const zx::levelmesh::MeshVertex &sv, unsigned int pieceIndex);
 Diligent::ITextureView *EnsureSceneDepth();
 bool CreateViewTextures(int w, int h, const char *name,
 	Diligent::RefCntAutoPtr<Diligent::ITexture> &color, Diligent::RefCntAutoPtr<Diligent::ITexture> &depth);

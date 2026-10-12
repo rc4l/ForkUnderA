@@ -20,11 +20,6 @@ bool ComputeTakeChange(int &seen, int now)
 	return true;
 }
 
-bool ComputeReplaysFromMesh(bool mapBaked, int piece, int pieceCount, unsigned rangeCount)
-{
-	return !mapBaked && piece >= 0 && piece < pieceCount && rangeCount > 0;
-}
-
 bool ComputeStampsEqual(const WallCacheStamp &a, const WallCacheStamp &b)
 {
 	return a.frontDirty == b.frontDirty

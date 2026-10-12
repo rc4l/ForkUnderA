@@ -51,9 +51,12 @@ decals a stacked view's or a line mirror's walk draws are kept for that pass alo
 - `gl/scene/gl_scene.cpp` `CreateScene`: `BeginSkyWalk`, and the frame's sprite, model and decal reset
   only on the player's scene; `RenderViewpoint` records which view is walking (`SetMainView`).
 - `gl/scene/gl_walls.cpp` `PutWall`: `RegisterSkyQuad` for `RENDERWALL_SKY` and `RENDERWALL_SKYBOX`.
-- `gl/scene/gl_drawinfo.cpp` `DrawWalls`: `ComputeWallDrawPath`, so GL batches its own vertices while the mesh is kept for
-  the backend, and draws from the mesh only with `fua_gl_meshdraw` (queue #42; `fua_mesh_blank` empties it to check).
+- `gl/scene/gl_drawinfo.cpp` `DrawWalls`: `ComputeWallDrawPath`, so GL batches its own vertices; GL never draws from the mesh,
+  which holds no GL buffer (queue #42, P3; `fua_mesh_blank` empties it to check).
 - `gl/models/gl_models.cpp` `gl_RenderModel`: `ModelCaptureBegin`/`ModelCaptureEnd` around the draw.
+- `gl/renderer/gl_lightdata.cpp` `gl_ShadingEnv`: GL's light settings (light mode, ambient, fog rules, fixed colormap,
+  skybox) for `ComputeShading`, the light model `ShadePiece` lights every piece with; `captureshading.cpp` turns a GL
+  colormap into its input.
 - `gl/scene/gl_walls.cpp` `PutWall`: `RegisterStackWall` for `RENDERWALL_SECTORSTACK`, the walls GL stencils a stacked
   view through, gathered per portal into a few views.
 - `r_defs.h` `sector_t`: the plane texture placement setters (`SetXOffset`, `AddXOffset`, the Y pair, scales, angle,

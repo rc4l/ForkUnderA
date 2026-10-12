@@ -23,12 +23,11 @@ struct FPortal;
 class GLWall;
 class GLFlat;
 class GLSprite;
-struct FFlatVertex;
 struct FColormap;
 struct sector_t;
 struct GLSectorPlane;
 class FMaterial;
-namespace zx { namespace levelmesh { struct MeshRange; struct PlaneUVTransform; struct MeshPiece; } }
+namespace zx { namespace levelmesh { struct MeshRange; struct PlaneUVTransform; struct MeshPiece; struct MeshVertex; } }
 
 namespace zx { namespace levelmesh {
 
@@ -64,7 +63,7 @@ struct StackViewInfo
 void RegisterStackWall(const GLWall &wall, const FPortal *portal);
 int StackViewCount();
 StackViewInfo StackView(int slot);
-const FFlatVertex *StackViewVertices(int slot, int &count);
+const MeshVertex *StackViewVertices(int slot, int &count);
 
 // [rc4l] A subsector GL's walk accepted (DoSubsector) and a sidedef whose seg its clipper let through (AddLine), kept for the stacked view or the player's walk whose it is.
 void NoteWalkedSubsector(int subsector);
@@ -180,7 +179,7 @@ void GetSpriteStyleDetail(int *dest16, int *classified4);
 // Decals live on a sidedef's AttachedDecals list and are re-walked every frame, so they belong in
 // the DYNAMIC stream with the sprites rather than the baked mesh: no invalidation to get wrong when
 // one spawns, fades or is replaced. `quad` is four FFlatVertex in the fan order GL emits.
-void RegisterDecal(const FFlatVertex *quad, const void *material, int translation,
+void RegisterDecal(const MeshVertex *quad, const void *material, int translation,
                    bool shadow, bool additive, float alpha,
                    int lightlevel, int rel, const FColormap &colormap,
                    bool redToAlpha, unsigned int alphaColor,
@@ -188,7 +187,7 @@ void RegisterDecal(const FFlatVertex *quad, const void *material, int translatio
 
 // [rc4l] The same, for a mark whose shape is not a quad: a projected decal, clipped to whatever
 // geometry it landed on. `tris` is a triangle LIST, so count is a multiple of three.
-void RegisterDecalTriangles(const FFlatVertex *tris, int count, const void *material, int translation,
+void RegisterDecalTriangles(const MeshVertex *tris, int count, const void *material, int translation,
                             bool shadow, bool additive, float alpha,
                             int lightlevel, int rel, const FColormap &colormap,
                             bool redToAlpha, unsigned int alphaColor,
@@ -205,7 +204,7 @@ int SpritePieceCount();
 void DumpSpriteNotes();
 
 // [rc4l] A vertical quad from (x1, y1) to (x2, y2), as six triangle-list vertices in fan order.
-void MakeWallQuad(FFlatVertex *out6, float x1, float y1, float x2, float y2,
+void MakeWallQuad(MeshVertex *out6, float x1, float y1, float x2, float y2,
 	const float *zbottom2, const float *ztop2);
 
 }} // namespace zx::levelmesh

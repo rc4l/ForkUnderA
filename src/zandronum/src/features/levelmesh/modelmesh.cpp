@@ -4,6 +4,7 @@
 #include "gl/system/gl_system.h"
 #include "features/levelmesh/modelmesh.h"
 #include "features/levelmesh/staticmesh.h"
+#include "features/levelmesh/captureshading.h"   // [rc4l] CaptureShading, the light model for a GL colormap
 #include "features/levelmesh/flatmesh.h"   // [rc4l] DynamicCaptureActive, StackCaptureSlot, MirrorCaptureLine
 #include "gl/scene/gl_portal.h"   // GLPortal::RenderDepth, for the walk a model was drawn in
 #include "features/levelmesh/computation/flatmesh_compute.h"   // ComputeStyleBlendMode
@@ -48,7 +49,7 @@ bool g_haveBB = false;
 
 // Scratch, kept across surfaces: a model surface is a few hundred triangles and this function runs
 // per surface per model per frame, so the allocation is worth not repeating.
-TArray<FFlatVertex> g_tris;
+TArray<MeshVertex> g_tris;
 
 // The model matrix, applied to one vertex. VSMatrix is column-major, as GL wants it, so a column is
 // four consecutive floats and the translation lives in the last one.

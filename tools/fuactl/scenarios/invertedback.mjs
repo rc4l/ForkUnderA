@@ -1,8 +1,8 @@
-// [rc4l] A wall onto a sector whose floor is above its ceiling, GL alone against GL in a Vulkan session: exit 0 when GL draws that wall whole in both, so the backend's wall mesh never changes GL's picture.
+// [rc4l] A wall onto a sector whose floor is above its ceiling, GL against Vulkan: exit 0 when both draw that wall whole.
 //
 // usage:  node scenarios/invertedback.mjs [port]
 import { UdmfMap, wad, mapLumps } from "../src/udmf.mjs";
-import { runScenarioIfMain } from "../src/template.mjs";
+import { runScenarioIfMain, GL_VS_VULKAN } from "../src/template.mjs";
 
 // [rc4l] WDI18's mirror frame: GL treats the inverted back sector as closed and draws one bottom wall there, the map bake derives a top too, and GL replayed its bottom from the map bake's top slot, leaving a hole onto the room behind.
 export function buildInvertedBackWad() {
@@ -37,8 +37,8 @@ export const VANTAGES = [{ name: "wall", at: { x: 256, y: 256, z: 0, angle: 90, 
 // [rc4l] The wall's lower part, below the map bake's top tier at 88.
 export const BOXES = { MAP01: { wall: { box: [0.1, 0.45, 0.45, 0.7], ceiling: 2 } } };
 
-// [rc4l] GL alone is the reference; the second is GL's frame from a Vulkan session with GL drawing replayed walls from the backend's mesh, the path fua_gl_meshdraw keeps.
-export const SIDES = [{ name: "gl", gl: true }, { name: "glmesh", frame: "gl", cvars: { fua_gl_meshdraw: 1 } }];
+// [rc4l] GL no longer draws from the backend's mesh, so the map bake's tiers for this wall are judged where they are drawn.
+export const SIDES = GL_VS_VULKAN;
 
 runScenarioIfMain(import.meta.url, () => ({ name: "invertedback", wad: buildInvertedBackWad(), maps: ["MAP01"],
   vantages: VANTAGES, boxes: BOXES, sides: SIDES }));

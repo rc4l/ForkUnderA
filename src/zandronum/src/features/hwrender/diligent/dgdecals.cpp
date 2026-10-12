@@ -22,7 +22,7 @@
 #include "r_state.h"                 // sectors, numsectors
 #include "m_fixed.h"                 // FIXED2FLOAT
 #include "r_data/r_translate.h"       // TRANSLATION, for the alpha-texture rule
-#include "gl/textures/gl_material.h"    // FMaterial::tex, to ask whether it uses the base palette
+#include "features/materials/materials.h"   // [rc4l] whether a mark's texture uses the base palette
 #include "c_cvars.h"
 #include "tarray.h"
 #include "templates.h"
@@ -618,8 +618,8 @@ void DrawDeferredDecals(Diligent::IDeviceContext *ctx)
 				int trans = d.translation;
 				if (d.redToAlpha)
 				{
-					FMaterial *fm = (FMaterial *)d.material;
-					if (fm != NULL && fm->tex != NULL && fm->tex->UseBasePalette())
+					zx::materials::MaterialInfo info;
+					if (zx::materials::DescribeMaterial(d.material, info) && info.basePalette)
 						trans = TRANSLATION(TRANSLATION_Standard, 8);
 				}
 				Diligent::IDeviceObject *srv = GetMaterialSRV(d.material, trans);
@@ -631,20 +631,21 @@ void DrawDeferredDecals(Diligent::IDeviceContext *ctx)
 				// that looks like a clipping fault, a blend fault or a UV fault in turn.
 				if (fua_dg_decaldebug > 0)
 				{
-					FMaterial *fm2 = (FMaterial *)d.material;
+					zx::materials::MaterialInfo i2;
+					const bool known = zx::materials::DescribeMaterial(d.material, i2);
 					Printf("decal tex %s %dx%d box %.0fx%.0f near %.0f far %.0f: slot %u, redToAlpha %d, additive %d, "
 						"rgba %.2f %.2f %.2f %.2f, basePalette %d, canvas %d, warp %d, complex %d, "
 						"translation %d%s\n",
-						(fm2 && fm2->tex && fm2->tex->Name != NULL) ? fm2->tex->Name : "?",
-						(fm2 && fm2->tex) ? fm2->tex->GetWidth() : -1,
-						(fm2 && fm2->tex) ? fm2->tex->GetHeight() : -1,
+						zx::materials::MaterialName(d.material),
+						known ? i2.width : -1,
+						known ? i2.height : -1,
 						d.halfW, d.halfH, d.near_, d.far_,
 						mats.Size(), d.redToAlpha ? 1 : 0, d.additive ? 1 : 0,
 						d.r, d.g, d.b, d.a,
-						(fm2 && fm2->tex && fm2->tex->UseBasePalette()) ? 1 : 0,
-						(fm2 && fm2->tex && fm2->tex->bHasCanvas) ? 1 : 0,
-						(fm2 && fm2->tex && fm2->tex->bWarped) ? 1 : 0,
-						(fm2 && fm2->tex && fm2->tex->bComplex) ? 1 : 0,
+						(known && i2.basePalette) ? 1 : 0,
+						(known && i2.canvas) ? 1 : 0,
+						(known && i2.warp) ? 1 : 0,
+						(known && i2.complex) ? 1 : 0,
 						(int)trans, (srv == GetMaterialSRV(NULL, 0)) ? "  <-- WHITE FALLBACK" : "");
 				}
 				slot = (int)mats.Size();

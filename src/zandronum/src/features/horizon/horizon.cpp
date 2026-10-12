@@ -6,6 +6,7 @@
 #include "features/horizon/computation/horizon_compute.h"
 #include "features/levelmesh/flatmesh.h"     // MakeWallQuad
 #include "features/levelmesh/wallcache.h"    // LevelGeneration
+#include "features/levelmesh/captureshading.h"   // [rc4l] CaptureShading, the light model for a GL colormap
 
 #include "r_defs.h"
 #include "r_state.h"
@@ -37,7 +38,7 @@ static TArray<HorizonSide>   g_sides;
 static int                   g_sidesFor = -1;
 static int                   g_sidesLines = -1;
 static TArray<HorizonWindow> g_windows;
-static TArray<FFlatVertex>   g_skyVerts;
+static TArray<zx::levelmesh::MeshVertex>   g_skyVerts;
 
 bool HorizonsActive() { return fua_dg_horizon; }
 
@@ -47,7 +48,7 @@ const HorizonWindow *HorizonWindows(int &count)
 	return count ? &g_windows[0] : NULL;
 }
 
-const FFlatVertex *HorizonSkyVertices(int &count, float eyeZ)
+const zx::levelmesh::MeshVertex *HorizonSkyVertices(int &count, float eyeZ)
 {
 	g_skyVerts.Clear();
 	for (unsigned i = 0; i < g_windows.Size(); i++)
@@ -57,7 +58,7 @@ const FFlatVertex *HorizonSkyVertices(int &count, float eyeZ)
 		const float bottom = ComputeHorizonSkyBottom(w.floor.valid, w.bottom, w.floorZ, w.ceilingZ, eyeZ);
 		if (bottom >= w.top) continue;
 		const float zb[2] = { bottom, bottom }, zt[2] = { w.top, w.top };
-		FFlatVertex q[6];
+		zx::levelmesh::MeshVertex q[6];
 		zx::levelmesh::MakeWallQuad(q, w.x1, w.y1, w.x2, w.y2, zb, zt);
 		for (int k = 0; k < 6; k++) g_skyVerts.Push(q[k]);
 	}

@@ -22,13 +22,19 @@
 #ifndef ZX_STATICMESH_H
 #define ZX_STATICMESH_H
 
-struct FFlatVertex;
-// [rc4l] Global scope, NOT inside zx::levelmesh -- a forward declaration in the namespace would
-// declare zx::levelmesh::FColormap, a different type from the engine's, and the mismatch only shows
-// up as a baffling overload-resolution error at the call site.
-struct FColormap;
+#include <stddef.h>
+#include "features/levelmesh/computation/shading_compute.h"
 
 namespace zx { namespace levelmesh {
+
+// [rc4l] A mesh vertex: position as (x, height, y) and texture coordinate, the layout GL's FFlatVertex has (glvertex.h asserts it).
+struct MeshVertex
+{
+	float x, z, y;
+	float u, v;
+
+	void Set(float xx, float zz, float yy, float uu, float vv) { x = xx; z = zz; y = yy; u = uu; v = vv; }
+};
 
 // One piece's geometry in the persistent buffer.
 struct MeshRange
@@ -194,12 +200,8 @@ struct MeshPiece
 	}
 };
 
-// [rc4l] Run the engine's own gl_SetColor/gl_SetFog for a surface and record what they produced into
-// `out`. Walls and flats share it so there is exactly one place that decides how a baked surface is
-// lit. `noFog` is the RENDERWALL_M2SNF case, which the wall path renders with fog forced off.
-// [rc4l] `additive` is gl_SetFog's own flag, which fogs an added-on surface to black rather than the fog colour.
-void CaptureShading(int lightlevel, int rellight, const FColormap &cm, MeshPiece &out,
-                    bool noFog = false, bool additive = false);
+// [rc4l] Shade a piece by the light model (ComputeShading), the one place that decides how a surface is lit, and reset what shading does not decide.
+void ShadePiece(const ShadingInput &in, const ShadingEnv &env, MeshPiece &out);
 
 void MeshInitForLevel();
 void MeshFreeLevel();
@@ -209,48 +211,9 @@ void MeshFreeLevel();
 // Make a range draw nothing without freeing it, so a re-bake can write straight back over it.
 void MeshSquash(const MeshRange &range);
 
-bool MeshStore(MeshRange &range, const FFlatVertex *verts, int count);
+bool MeshStore(MeshRange &range, const MeshVertex *verts, int count);
 
-// Bind the mesh's vertex array for drawing. Returns false if there is nothing baked yet.
-bool MeshBind();
-
-// ---------------------------------------------------------------------------
-// Indexed drawing (plan phase P2d) -- the state-grouped path.
-//
-// glMultiDrawArrays over N scattered ranges lost to streaming's single contiguous glDrawArrays
-// (P2c). An index buffer fixes that without moving any vertices: per frame, the visible pieces of
-// one draw-state run have their vertex indices appended contiguously, and the whole run draws with
-// ONE glDrawElements. Writing an index costs 4 bytes where streaming a vertex costs 20, so the
-// per-frame traffic drops 5x while the draw count stays at one per state run.
-//
-// This is also the shape the swap needs: a (firstIndex, count) pair over a shared buffer IS a
-// DrawElementsIndirectCommand, so a culling pass can later fill these in on the GPU untouched.
-// ---------------------------------------------------------------------------
-
-// Start a frame's index accumulation.
-void MeshIndexBegin();
-
-// Append one baked range's indices to the current run. Returns false if the buffer is full.
-bool MeshIndexAppend(const MeshRange &range);
-
-// Close the current run, returning its (firstIndex, count); count 0 if nothing was appended.
-void MeshIndexEndRun(unsigned int &firstIndex, unsigned int &count);
-
-// Upload the frame's indices, once, before any indexed draw.
-void MeshIndexFlush();
-
-// Draw one closed run.
-void MeshDrawIndexed(unsigned int firstIndex, unsigned int count);
-
-// Push any pending CPU-side writes to the GPU. Called once per frame before drawing.
-void MeshFlush();
-
-// [rc4l] A dirty range for a SECOND consumer, independent of MeshFlush's GL one.
-//
-// The level mesh is not as static as its name suggests: a door, lift or crusher moves a sector plane,
-// the wall cache's stamp invalidates, and BakeSeg rewrites that seg's vertices in place. The GL path
-// picks that up through MeshFlush; a foreign backend needs its own cursor, because MeshFlush clears
-// the range as it consumes it.
+// [rc4l] The span the backend must upload again, since a door, lift or crusher rewrites a seg's vertices in place.
 //
 // Reported in mesh-vertex units, and only when the bytes ACTUALLY changed -- uncacheable segs
 // re-capture every frame and rewrite identical vertices, so a naive "was written" flag would report
@@ -282,7 +245,7 @@ void MeshGetStats(int &bakedPieces, int &vertices, int &bytes, int &reallocs);
 // [rc4l] The CPU mirror of the baked geometry, for a backend that wants to own its own upload.
 // This is the seam the renderer swap consumes: plain interleaved position+uv vertices, no GLWall,
 // no draw list, nothing GL-specific -- exactly what a Vulkan/Diligent backend needs.
-const FFlatVertex *MeshVertexData(int &count);
+const MeshVertex *MeshVertexData(int &count);
 
 // [rc4l] Every baked piece, in bake order. A backend groups these by material itself.
 // [rc4l] Give a range back: its vertices are blanked and the piece registered against it is dropped.
@@ -337,10 +300,10 @@ void DynClear();
 
 // Append one piece's triangle-list vertices. `proto` carries the material and shading; its range is
 // filled in by this call.
-void DynAppend(const FFlatVertex *verts, int count, const MeshPiece &proto);
+void DynAppend(const MeshVertex *verts, int count, const MeshPiece &proto);
 
 // This frame's dynamic vertices and pieces.
-const FFlatVertex *DynVertices(int &count);
+const MeshVertex *DynVertices(int &count);
 const MeshPiece   *DynPieces(int &count);
 
 // [rc4l] Bumped by every DynClear, so a backend can tell "same data as last time" from "new frame".

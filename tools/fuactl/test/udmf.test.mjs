@@ -313,7 +313,7 @@ test("the inverted-back template's strip has its floor above its ceiling, which 
   assert.ok(inverted.heightfloor > inverted.heightceiling, "floor above ceiling");
   assert.equal(inverted.heightfloor, room.heightceiling, "so GL draws no top on the wall between them");
   assert.ok(u.sidedef.some((s) => s.texturemiddle === "REDWALL"));
-  assert.deepEqual(SIDES.map((s) => s.frame || (s.gl ? "gl alone" : "vk")), ["gl alone", "gl"]);
+  assert.deepEqual(SIDES.map((s) => s.frame || (s.gl ? "gl alone" : "vk")), ["gl alone", "vk"]);
 });
 
 test("the missing-lower template sinks an untextured recess into the floor and looks at a red wall before it", async () => {

@@ -1038,7 +1038,7 @@ CCMD( fua_surface_verify )
 	int flatChecked = 0, flatAgreed = 0, flatShown = 0, flatSkipped = 0;
 	{
 		int vertCount = 0;
-		const FFlatVertex *verts = zx::levelmesh::MeshVertexData( vertCount );
+		const zx::levelmesh::MeshVertex *verts = zx::levelmesh::MeshVertexData( vertCount );
 		for ( int i = 0; verts != NULL; i++ )
 		{
 			const subsector_t *sub = NULL;
@@ -1065,7 +1065,7 @@ CCMD( fua_surface_verify )
 			for ( unsigned int v = 0; v < range.count && ok; v++ )
 			{
 				if ( (int)( range.offset + v ) >= vertCount ) { ok = false; break; }
-				const FFlatVertex &fv = verts[range.offset + v];
+				const zx::levelmesh::MeshVertex &fv = verts[range.offset + v];
 				// The mesh stores (x, z-up, y); the plane is asked in map (x, y).
 				const float want = ComputePlaneHeightAt( plane, fv.x, fv.y );
 				if ( fabsf( want - fv.z ) > 0.05f ) ok = false;
@@ -1074,7 +1074,7 @@ CCMD( fua_surface_verify )
 			if ( ok ) flatAgreed++;
 			else if ( flatShown < 4 )
 			{
-				const FFlatVertex &fv = verts[range.offset];
+				const zx::levelmesh::MeshVertex &fv = verts[range.offset];
 				Printf( "  flat %d (sub %d, %s): vertex at (%.0f, %.0f) is z %.2f, plane says %.2f\n",
 					i, (int)( sub - subsectors ), ceiling ? "ceiling" : "floor", fv.x, fv.y, fv.z,
 					ComputePlaneHeightAt( plane, fv.x, fv.y ) );

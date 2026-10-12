@@ -10,7 +10,6 @@
 
 #include "features/hwrender/diligent/dgshared.h"
 #include "features/hwrender/hud2d.h"
-#include "gl/textures/gl_material.h"
 #include "v_video.h"
 #include "tarray.h"
 #include "c_cvars.h"

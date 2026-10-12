@@ -64,9 +64,6 @@ struct CachedWallPiece
 // Resolve a draw item's packed (seg, piece) reference to the GLWall it draws.
 GLWall *StaticWall(int packedIndex);
 
-// The baked geometry range for the same reference, or NULL if that piece is not baked.
-const MeshRange *StaticWallRange(int packedIndex);
-
 // [rc4l] Walk what was captured, so a derivation can be checked against it.
 //
 // features/surfaces is working out surfaces from the map instead of transcribing what GL made of
@@ -122,7 +119,7 @@ struct SegCache
 	// 3D-floor slots take their light from an F3DFloor rather than the band list; a seg carrying any
 	// falls back to a full bake rather than growing a second rule here.
 	bool            hasOwnLitPiece;   // [rc4l] a fog boundary or a flooded gap, whose light is not in bandLight
-	bool            mapBaked;         // [rc4l] pieces[] holds the map bake's slots by part, not the captured walls in order (ComputeReplaysFromMesh)
+	bool            mapBaked;         // [rc4l] pieces[] holds the map bake's slots by part, not the captured walls in order
 
 	// [rc4l] pieces[] must be cleared here, not left to whatever was in the memory.
 	//
@@ -166,9 +163,11 @@ int SkyQuadsCaptured();   // [rc4l] Since the level loaded, for fua_sky_quads.
 AActor *SkyQuadViewpoint();
 // [rc4l] A GL walk starting at this portal depth, for the main view or a camera texture; returns the kSkyCapture* list it fills.
 int BeginSkyWalk();
+// [rc4l] Drop everything GL's walks captured, at level unload, since a backend frame before the next level's first walk would otherwise draw the old level's sky from its freed SkyViewpoint.
+void ForgetWalks();
 int SkyWalks(int list);
 // [rc4l] One view's sky quads: kSkyCaptureMain for the player, kSkyCaptureCamera for a camera texture.
-const FFlatVertex *SkyQuadVertices(int &count, int list);
+const MeshVertex *SkyQuadVertices(int &count, int list);
 
 void RecordPiece(const GLWall &wall, int list);
 // [rc4l] The seg being captured hands GL per-frame state (a portal, a missing-texture fill, a sky hole), so it is never replayed.

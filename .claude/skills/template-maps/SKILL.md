@@ -103,13 +103,11 @@ cvar changed), compared Vulkan against Vulkan. `scenarios/pointlight.mjs` compar
 `fua_dg_clusters 0` against `1`, which match exactly once fixed, so its ceiling is 0.05. With no GL side
 nothing is read back from a window, and the harness runs even with other engines open.
 A side with `frame: "gl"` keeps GL's half of a Vulkan launch's pair instead. GL there draws its own
-vertices beside the backend's wall mesh, and draws through the mesh only with `fua_gl_meshdraw 1`;
-`invertedback.mjs` and `mapreload.mjs` (`commands: ["map MAP01"]`, a level change) set that cvar to keep
-the optional path covered, and `glplain.mjs` checks GL never reads the mesh by default. A side's
+vertices and never the backend's wall mesh; `mapreload.mjs` (`commands: ["map MAP01"]`, a level change)
+checks it still draws after the level loads again, and `glplain.mjs` checks it never reads the mesh. A side's
 `atVantage` commands run once it stands at each vantage, for a change the view's own walk must see first
 (`fua_mesh_blank` empties the mesh GL's capture just filled). `fuactl scenarios <name> --side S --cvar k=v`
-adds cvars to one side, which is how a test shows it fails under the behaviour it guards against
-(`glplain --side blanked --cvar fua_gl_meshdraw=1`). A side with `cvars: { fua_dg_standalone: 1 }` judges
+adds cvars to one side, which is how a test shows it fails under the behaviour it guards against. A side with `cvars: { fua_dg_standalone: 1 }` judges
 Vulkan carrying the frame alone; `standalonemove.mjs` runs its script after that, so the move is not baked in.
 
 A box can name a `vantage`, when the vantages look at different parts of the frame. A model needs no

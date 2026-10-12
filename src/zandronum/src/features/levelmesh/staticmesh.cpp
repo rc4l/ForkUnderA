@@ -1,22 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 rc4l
 
-#include "gl/system/gl_system.h"
 #include "features/levelmesh/staticmesh.h"
 #include "features/surfaces/computation/surfacechange_compute.h"
 
-#include "gl/data/gl_vertexbuffer.h"
-#include "gl/system/gl_interface.h"
-#include "gl/shaders/gl_shader.h"
-#include "gl/renderer/gl_renderstate.h"
-#include "gl/renderer/gl_lightdata.h"
 #include "tarray.h"
 #include "c_dispatch.h"
 #include "c_console.h"
 #include "i_system.h"
-
-EXTERN_CVAR(Int, gl_fogmode)
-EXTERN_CVAR(Bool, fua_gl_meshdraw)
 
 namespace zx { namespace levelmesh {
 
@@ -26,10 +17,8 @@ namespace zx { namespace levelmesh {
 // worst-case wall budget is 4.5 M vertices, and only the visible subset is ever baked).
 static const unsigned int kMaxVertices = 2000000;
 
-static TArray<FFlatVertex> g_verts;        // CPU mirror; the GPU copy is written from this
+static TArray<MeshVertex> g_verts;        // the arena; a backend copies it from here
 static unsigned int        g_used = 0;
-static unsigned int        g_dirtyLo = 0;  // pending upload range, in vertices
-static unsigned int        g_dirtyHi = 0;
 // [rc4l] A second, independent dirty cursor for a foreign backend -- see MeshTakeDirty.
 static unsigned int        g_bkDirtyLo = 0xffffffffu;
 static unsigned int        g_bkDirtyHi = 0;
@@ -114,38 +103,22 @@ static void FreeListClear()
 	g_freeReuses = g_freeStale = 0;
 }
 
-static unsigned int        g_vbo = 0;
-static unsigned int        g_vao = 0;
 static bool                g_full = false;
 static int                 g_pieces = 0, g_reallocs = 0;
-static unsigned int        g_ibo = 0;   // declared here; the indexed path below fills it
 static TArray<MeshPiece>   g_pieceList; // declared here; the piece registry below fills it
 // [rc4l] range offset -> index into g_pieceList, so re-registering a piece is a lookup not a scan.
 static TMap<unsigned int, unsigned int> g_pieceByOffset;
 
-// [rc4l] See staticmesh.h. This exists so the backend never re-derives lighting: a second
-// implementation of gl_SetColor/gl_SetFog drifted, silently losing rellight, extralight and
-// desaturation, and produced a Vulkan render visibly brighter and flatter than GL's.
-void CaptureShading(int lightlevel, int rellight, const FColormap &cm, MeshPiece &out, bool noFog, bool additive)
+// [rc4l] See staticmesh.h; a second, hand-kept copy of GL's lighting once drifted and lost rellight, extralight and desaturation, which is why this one is ComputeShading, tested against GL's arithmetic.
+void ShadePiece(const ShadingInput &in, const ShadingEnv &env, MeshPiece &out)
 {
-	// [rc4l] Put back what the two setters write: callers run inside GL's frame, and asking must not change what GL draws next.
-	const FRenderState::ShadingSnapshot before = gl_RenderState.SaveShading();
-	FColormap local = cm;
-	gl_SetColor(lightlevel, rellight, local, 1.0f);
-	if (noFog) gl_SetFog(255, 0, NULL, false);
-	else       gl_SetFog(lightlevel, rellight, &local, additive);
-
-	gl_RenderState.GetColorRGB(out.colorR, out.colorG, out.colorB);
-	const float *lp = gl_RenderState.GetLightParms();
-	out.softLight    = lp[3];    // -1 unless lightmode 8
-	out.fogDensity   = lp[2];    // already scaled by -log2(e)/64000, ready for exp2()
-	out.fogColor     = gl_RenderState.GetFogColor().d & 0xffffff;
-	out.desaturation = gl_RenderState.GetDesaturation();
-
-	// FRenderState::Apply turns the enable plus the fog colour into uFogEnabled's sign.
-	if (!gl_RenderState.IsFogEnabled()) out.fogMode = 0;
-	else out.fogMode = (out.fogColor == 0) ? (int)gl_fogmode : -(int)gl_fogmode;
-	gl_RenderState.RestoreShading(before);
+	const Shading s = ComputeShading(in, env);
+	out.colorR = s.r; out.colorG = s.g; out.colorB = s.b;
+	out.softLight    = s.softLight;
+	out.fogDensity   = s.fogDensity;
+	out.fogColor     = s.fogColor;
+	out.desaturation = s.desaturation;
+	out.fogMode      = s.fogMode;
 
 	// Opaque unless the caller says otherwise -- walls and flats always are.
 	out.blendMode = 0;
@@ -174,7 +147,7 @@ void CaptureShading(int lightlevel, int rellight, const FColormap &cm, MeshPiece
 // Dynamic stream -- see staticmesh.h
 // ---------------------------------------------------------------------------
 
-static TArray<FFlatVertex> g_dynVerts;
+static TArray<MeshVertex> g_dynVerts;
 static TArray<MeshPiece>   g_dynPieces;
 
 static unsigned int g_dynGen = 1;
@@ -190,7 +163,7 @@ void DynClear()
 
 unsigned int DynGeneration() { return g_dynGen; }
 
-void DynAppend(const FFlatVertex *verts, int count, const MeshPiece &proto)
+void DynAppend(const MeshVertex *verts, int count, const MeshPiece &proto)
 {
 	if (verts == NULL || count <= 0) return;
 	// [rc4l] A sane ceiling, so a pathological frame cannot eat memory the way the first wall cache
@@ -205,7 +178,7 @@ void DynAppend(const FFlatVertex *verts, int count, const MeshPiece &proto)
 	// and then copied it again into the array -- twice per sprite for a struct of seventeen fields.
 	const unsigned base = g_dynVerts.Size();
 	g_dynVerts.Resize(base + (unsigned)count);
-	memcpy(&g_dynVerts[base], verts, (size_t)count * sizeof(FFlatVertex));
+	memcpy(&g_dynVerts[base], verts, (size_t)count * sizeof(MeshVertex));
 
 	g_dynPieces.Push(proto);
 	MeshPiece &p = g_dynPieces[g_dynPieces.Size() - 1];
@@ -213,7 +186,7 @@ void DynAppend(const FFlatVertex *verts, int count, const MeshPiece &proto)
 	p.range.count = (unsigned)count;
 }
 
-const FFlatVertex *DynVertices(int &count)
+const MeshVertex *DynVertices(int &count)
 {
 	count = (int)g_dynVerts.Size();
 	return count ? &g_dynVerts[0] : NULL;
@@ -231,56 +204,19 @@ void MeshInitForLevel()
 	FreeListClear();   // offsets from the previous level mean nothing in this one
 	g_verts.Clear();
 	g_used = 0;
-	g_dirtyLo = g_dirtyHi = 0;
 	g_full = false;
 	g_pieces = g_reallocs = 0;
 	g_pieceList.Clear();
 	g_pieceByOffset.Clear();
 }
 
-// [rc4l] Leave no vertex array bound and make GL's render state bind its own on the next draw, since it skips a binding it thinks is already there and a world drawn with none draws nothing (queue #41).
-static void HandBackVertexArray()
-{
-	glBindVertexArray(0);
-	gl_RenderState.ResetVertexBuffer();
-}
-
 void MeshFreeLevel()
 {
-	if (g_ibo) { glDeleteBuffers(1, &g_ibo); g_ibo = 0; }
-	if (g_vbo) { glDeleteBuffers(1, &g_vbo); g_vbo = 0; }
-	if (g_vao) { glDeleteVertexArrays(1, &g_vao); g_vao = 0; HandBackVertexArray(); }
 	g_verts.Clear();
 	g_used = 0;
-	g_dirtyLo = g_dirtyHi = 0;
 	g_full = false;
 	g_pieces = g_reallocs = 0;
 	FreeListClear();
-}
-
-// [rc4l] Created lazily so a level with no baked geometry costs no GL objects, and so creation
-// happens on the render thread with a context current.
-static bool EnsureBuffer();
-static bool EnsureBuffer()
-{
-	if (g_vbo) return true;
-
-	glGenBuffers(1, &g_vbo);
-	glGenVertexArrays(1, &g_vao);
-	if (!g_vbo || !g_vao) return false;
-
-	glBindBuffer(GL_ARRAY_BUFFER, g_vbo);
-	glBufferData(GL_ARRAY_BUFFER, kMaxVertices * sizeof(FFlatVertex), NULL, GL_STATIC_DRAW);
-
-	// [rc4l] Same attribute layout as FFlatVertexBuffer, so the existing shaders bind unchanged.
-	glBindVertexArray(g_vao);
-	glBindBuffer(GL_ARRAY_BUFFER, g_vbo);
-	glVertexAttribPointer(VATTR_VERTEX,   3, GL_FLOAT, false, sizeof(FFlatVertex), &VTO->x);
-	glVertexAttribPointer(VATTR_TEXCOORD, 2, GL_FLOAT, false, sizeof(FFlatVertex), &VTO->u);
-	glEnableVertexAttribArray(VATTR_VERTEX);
-	glEnableVertexAttribArray(VATTR_TEXCOORD);
-	HandBackVertexArray();
-	return true;
 }
 
 // [rc4l] Retire a range the arena is about to abandon.
@@ -300,10 +236,8 @@ static void RetireRange(const MeshRange &old)
 {
 	if (old.count == 0 || old.offset + old.count > g_used) return;
 
-	memset(&g_verts[old.offset], 0, old.count * sizeof(FFlatVertex));
+	memset(&g_verts[old.offset], 0, old.count * sizeof(MeshVertex));
 	NoteBackendDirty(old.offset, old.count);
-	if (old.offset < g_dirtyLo || g_dirtyHi == 0) g_dirtyLo = old.offset;
-	if (old.offset + old.count > g_dirtyHi) g_dirtyHi = old.offset + old.count;
 	if (old.offset < g_bkDirtyLo || g_bkDirtyHi == 0) g_bkDirtyLo = old.offset;
 	if (old.offset + old.count > g_bkDirtyHi) g_bkDirtyHi = old.offset + old.count;
 
@@ -331,10 +265,8 @@ void MeshSquash(const MeshRange &range)
 {
 	if (range.count == 0 || range.offset + range.count > g_used) return;
 
-	memset(&g_verts[range.offset], 0, range.count * sizeof(FFlatVertex));
+	memset(&g_verts[range.offset], 0, range.count * sizeof(MeshVertex));
 	NoteBackendDirty(range.offset, range.count);
-	if (range.offset < g_dirtyLo || g_dirtyHi == 0) g_dirtyLo = range.offset;
-	if (range.offset + range.count > g_dirtyHi) g_dirtyHi = range.offset + range.count;
 	if (range.offset < g_bkDirtyLo || g_bkDirtyHi == 0) g_bkDirtyLo = range.offset;
 	if (range.offset + range.count > g_bkDirtyHi) g_bkDirtyHi = range.offset + range.count;
 
@@ -343,7 +275,7 @@ void MeshSquash(const MeshRange &range)
 		g_pieceList[*found].range.count = 0;   // emitters skip it; the slot is reused on re-bake
 }
 
-bool MeshStore(MeshRange &range, const FFlatVertex *verts, int count)
+bool MeshStore(MeshRange &range, const MeshVertex *verts, int count)
 {
 	if (verts == NULL || count <= 0) return false;
 	if (g_full) return false;
@@ -360,13 +292,11 @@ bool MeshStore(MeshRange &range, const FFlatVertex *verts, int count)
 		// merely "something was re-baked". Segs that are uncacheable re-capture every single frame
 		// and rewrite byte-identical vertices; without this the backend would re-upload the entire
 		// level every frame forever.
-		const size_t bytes = count * sizeof(FFlatVertex);
+		const size_t bytes = count * sizeof(MeshVertex);
 		if (memcmp(&g_verts[range.offset], verts, bytes) != 0)
 		{
 			memcpy(&g_verts[range.offset], verts, bytes);
 			NoteBackendDirty(range.offset, count);
-			if (range.offset < g_dirtyLo) g_dirtyLo = range.offset;
-			if (range.offset + count > g_dirtyHi) g_dirtyHi = range.offset + count;
 			if (range.offset < g_bkDirtyLo) g_bkDirtyLo = range.offset;
 			if (range.offset + count > g_bkDirtyHi) g_bkDirtyHi = range.offset + count;
 		}
@@ -385,10 +315,8 @@ bool MeshStore(MeshRange &range, const FFlatVertex *verts, int count)
 		{
 			range.offset = reuse;
 			range.count = (unsigned int)count;
-			memcpy(&g_verts[range.offset], verts, count * sizeof(FFlatVertex));
+			memcpy(&g_verts[range.offset], verts, count * sizeof(MeshVertex));
 			NoteBackendDirty(range.offset, range.count);
-			if (range.offset < g_dirtyLo || g_dirtyHi == 0) g_dirtyLo = range.offset;
-			if (range.offset + range.count > g_dirtyHi) g_dirtyHi = range.offset + range.count;
 			if (range.offset < g_bkDirtyLo) g_bkDirtyLo = range.offset;
 			if (range.offset + range.count > g_bkDirtyHi) g_bkDirtyHi = range.offset + range.count;
 			g_pieces++;
@@ -407,11 +335,9 @@ bool MeshStore(MeshRange &range, const FFlatVertex *verts, int count)
 	range.count = (unsigned int)count;
 	g_used += count;
 	g_verts.Resize(g_used);
-	memcpy(&g_verts[range.offset], verts, count * sizeof(FFlatVertex));
+	memcpy(&g_verts[range.offset], verts, count * sizeof(MeshVertex));
 
 	NoteBackendDirty(range.offset, range.count);
-	if (range.offset < g_dirtyLo || g_dirtyHi == 0) g_dirtyLo = range.offset;
-	g_dirtyHi = g_used;
 	if (range.offset < g_bkDirtyLo) g_bkDirtyLo = range.offset;
 	if (g_used > g_bkDirtyHi) g_bkDirtyHi = g_used;
 	g_pieces++;
@@ -453,96 +379,6 @@ void MeshClearDirtyRanges()
 {
 	g_bkDirtyList.Clear();
 	g_bkDirtyOverflow = false;
-}
-
-void MeshFlush()
-{
-	// [rc4l] GL's copy is uploaded only while GL draws from it, and the dirty span keeps growing meanwhile, so switching fua_gl_meshdraw on uploads everything it missed.
-	if (!fua_gl_meshdraw) return;
-	if (g_dirtyHi <= g_dirtyLo) return;
-	if (!EnsureBuffer()) { g_dirtyLo = g_dirtyHi = 0; return; }
-
-	glBindBuffer(GL_ARRAY_BUFFER, g_vbo);
-	glBufferSubData(GL_ARRAY_BUFFER,
-		(GLintptr)(g_dirtyLo * sizeof(FFlatVertex)),
-		(GLsizeiptr)((g_dirtyHi - g_dirtyLo) * sizeof(FFlatVertex)),
-		&g_verts[g_dirtyLo]);
-
-	g_dirtyLo = kMaxVertices;
-	g_dirtyHi = 0;
-}
-
-bool MeshBind()
-{
-	if (!g_vbo || g_used == 0) return false;
-	glBindVertexArray(g_vao);
-	return true;
-}
-
-// ---------------------------------------------------------------------------
-// Indexed path
-// ---------------------------------------------------------------------------
-
-static const unsigned int kMaxIndices = 4000000;   // 16 MB; refuses to grow, like the vertex arena
-
-static TArray<unsigned int> g_indices;
-static unsigned int         g_indexUsed = 0;
-static unsigned int         g_runStart = 0;
-static bool                 g_indexFull = false;
-
-void MeshIndexBegin()
-{
-	g_indexUsed = 0;
-	g_runStart = 0;
-	g_indexFull = false;
-	if (g_indices.Size() < kMaxIndices) g_indices.Resize(kMaxIndices);
-}
-
-bool MeshIndexAppend(const MeshRange &range)
-{
-	if (range.count == 0 || g_indexFull) return false;
-	if (g_indexUsed + range.count > kMaxIndices) { g_indexFull = true; return false; }
-
-	// [rc4l] The baked vertices are already a triangle list, so the indices are simply the range
-	// walked in order. The point is not compression -- it is that a run of pieces becomes one
-	// contiguous index span, which is what lets the whole run draw in a single call.
-	unsigned int *dst = &g_indices[g_indexUsed];
-	for (unsigned int i = 0; i < range.count; i++) dst[i] = range.offset + i;
-	g_indexUsed += range.count;
-	return true;
-}
-
-void MeshIndexEndRun(unsigned int &firstIndex, unsigned int &count)
-{
-	firstIndex = g_runStart;
-	count = g_indexUsed - g_runStart;
-	g_runStart = g_indexUsed;
-}
-
-void MeshIndexFlush()
-{
-	if (g_indexUsed == 0) return;
-	if (!EnsureBuffer()) return;
-	if (!g_ibo)
-	{
-		glGenBuffers(1, &g_ibo);
-		if (!g_ibo) return;
-		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, g_ibo);
-		glBufferData(GL_ELEMENT_ARRAY_BUFFER, kMaxIndices * sizeof(unsigned int), NULL, GL_STREAM_DRAW);
-		// [rc4l] The element buffer binding is VAO state, so record it in the mesh's VAO.
-		glBindVertexArray(g_vao);
-		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, g_ibo);
-		HandBackVertexArray();
-	}
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, g_ibo);
-	glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, g_indexUsed * sizeof(unsigned int), &g_indices[0]);
-}
-
-void MeshDrawIndexed(unsigned int firstIndex, unsigned int count)
-{
-	if (count == 0 || !g_ibo) return;
-	glDrawElements(GL_TRIANGLES, (GLsizei)count, GL_UNSIGNED_INT,
-		(const void *)(size_t)(firstIndex * sizeof(unsigned int)));
 }
 
 // [rc4l] Retire a range from OUTSIDE this file: blank the vertices and drop the piece that owns it.
@@ -753,7 +589,7 @@ void MeshClearPieces()
 	g_pieceByOffset.Clear();
 }
 
-const FFlatVertex *MeshVertexData(int &count)
+const MeshVertex *MeshVertexData(int &count)
 {
 	count = (int)g_used;
 	return (g_used > 0) ? &g_verts[0] : NULL;
@@ -763,47 +599,8 @@ void MeshGetStats(int &bakedPieces, int &vertices, int &bytes, int &reallocs)
 {
 	bakedPieces = g_pieces;
 	vertices = (int)g_used;
-	bytes = (int)(g_used * sizeof(FFlatVertex));
+	bytes = (int)(g_used * sizeof(MeshVertex));
 	reallocs = g_reallocs;
 }
 
 }} // namespace zx::levelmesh
-
-//==========================================================================
-//
-// [rc4l] GL-side half of the backend benchmark.
-//
-// The Diligent scene bench and this one submit THE SAME baked geometry, the same number of times,
-// and force a GPU sync before stopping the clock. Nothing else is equal between a Diligent frame and
-// a real engine frame -- textures, lighting, sprites, the BSP walk -- so comparing those directly
-// would be meaningless. Comparing pure submission of identical vertices is not.
-//
-//==========================================================================
-
-CCMD( fua_gl_meshbench )
-{
-	const int frames = ( argv.argc( ) > 1 ) ? atoi( argv[1] ) : 400;
-	int count = 0;
-	if ( zx::levelmesh::MeshVertexData( count ) == NULL || count <= 0 )
-	{
-		Printf( "no baked geometry -- set gl_wallmesh 1 and walk the level first\n" );
-		return;
-	}
-	if ( !zx::levelmesh::MeshBind( ) )
-	{
-		Printf( "mesh buffer not resident -- GL keeps its copy only with fua_gl_meshdraw 1\n" );
-		return;
-	}
-
-	for ( int i = 0; i < 20; i++ ) glDrawArrays( GL_TRIANGLES, 0, count );   // warmup
-	glFinish( );
-
-	const DWORD t0 = I_MSTime( );
-	for ( int i = 0; i < frames; i++ ) glDrawArrays( GL_TRIANGLES, 0, count );
-	glFinish( );
-	const DWORD t1 = I_MSTime( );
-
-	const double total = (double)( t1 - t0 );
-	Printf( "GL mesh: %d draws, %d verts (%d tris), %.4f ms/draw\n",
-		frames, count, count / 3, total / frames );
-}

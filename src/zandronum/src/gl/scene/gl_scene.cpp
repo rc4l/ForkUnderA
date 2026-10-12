@@ -418,10 +418,6 @@ void FGLRenderer::CreateScene()
 	gl_drawinfo->HandleHackedSubsectors();	// open sector hacks for deep water
 	gl_drawinfo->ProcessSectorStacks();		// merge visplanes of sector stacks
 
-	// [rc4l] features/levelmesh: push this frame's newly baked wall geometry to the GPU once,
-	// after the BSP walk has captured everything and before anything draws from it.
-	zx::levelmesh::MeshFlush();
-
 	ProcessAll.Unclock();
 
 }

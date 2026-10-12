@@ -78,7 +78,7 @@ port with no token hangs and reports `rpc timeout`.
 | pause / step the sim | `rpc sim.pause` · `rpc sim.step '{"tics":1}'` |
 | a fault that shows only mid-transition (a crouch, a lift) | `steps <tag> --hold +crouch [--count N] [--spot NAME]`: a GL/Vulkan pair and the eye height each tic |
 
-Console diagnostics worth knowing (run them with `ui exec`): `fua_mesh_blank` (empties the level mesh, so whatever still draws the world is not reading it; `fua_gl_meshdraw 1` makes GL draw from its own copy again, the pre-#42 path), `fua_gl_viewstate` (the next main view's GL viewport, framebuffer, vertex array and GL errors before and after the world; a window showing 2D but no world), `fua_2d_list` (the 2D draws covering a quarter of the screen or more), `fua_dg_blendorder [z]` (the translucent
+Console diagnostics worth knowing (run them with `ui exec`): `fua_mesh_blank` (empties the level mesh, so whatever still draws the world is not reading it), `fua_shading_check 1` then `fua_shading_report` (every surface the light model shades, compared bit for bit against GL's own `gl_SetColor`/`gl_SetFog`; read the count from the engine log), `fua_gl_viewstate` (the next main view's GL viewport, framebuffer, vertex array and GL errors before and after the world; a window showing 2D but no world), `fua_2d_list` (the 2D draws covering a quarter of the screen or more), `fua_dg_blendorder [z]` (the translucent
 pass in draw order with plane layers, or every draw spanning height z), `fua_models` (model draws and
 which walk drew them), `gl_portalinfo` (the portals GL ran last frame, a stacked view named by its plane
 and displacement), `fua_line_mesh <line>` (what the bake holds for a line), `fua_sector_at x y [x y ...]`

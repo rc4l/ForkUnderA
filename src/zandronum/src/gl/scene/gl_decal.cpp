@@ -55,6 +55,7 @@
 #include "gl/textures/gl_material.h"
 #include "gl/utility/gl_clock.h"
 #include "features/levelmesh/flatmesh.h"   // [rc4l] decal capture for the backend mesh
+#include "features/levelmesh/glvertex.h"   // [rc4l] the decal's quad as mesh vertices
 
 EXTERN_CVAR(Bool, gl_wallmesh)
 
@@ -380,7 +381,7 @@ void GLWall::DrawDecal(DBaseDecal *decal)
 		const bool additive = decal->RenderStyle.BlendOp == STYLEOP_Add &&
 		                      decal->RenderStyle.DestAlpha == STYLEALPHA_One;
 		const bool redAlpha = !!(decal->RenderStyle.Flags & STYLEF_RedIsAlpha);
-		zx::levelmesh::RegisterDecal(decalQuad, tex, decal->Translation, shadow, additive, a,
+		zx::levelmesh::RegisterDecal(zx::levelmesh::AsMeshVertices(decalQuad), tex, decal->Translation, shadow, additive, a,
 			light, rel, p, redAlpha, redAlpha ? (unsigned int)decal->AlphaColor : 0xffffffu,
 			(decalQuad[0].x + decalQuad[3].x) * 0.5f,
 			(decalQuad[0].z + decalQuad[3].z) * 0.5f,

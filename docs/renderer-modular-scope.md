@@ -146,6 +146,24 @@ data: batches, vertex and piece buffers, depth targets, stack visibility and sky
 now would only turn those into extern globals. They wait for P3's scene object, so they can be split
 against its API instead.
 
+**Finished in P3.** The shared state became four records in `dgscene_internal.h`: `g_scene`
+(buffers, batches, dynamic runs), `g_pso` (the world pipelines), `g_frame` and `g_stats`. The rest of
+`dgscene.cpp` then split along responsibility, and no file is over 1,310 lines.
+
+| File | Lines | What |
+|---|---|---|
+| `dgscene.cpp` | 894 | the world pass, frame prep, scene depth, `DrawSceneOnce` |
+| `dgpipelines.cpp` | 908 | pipelines and material bindings |
+| `dgupload.cpp` | 919 | the scene buffer and its patches |
+| `dgdynamic.cpp` | 595 | the per-frame stream and the translucent pass |
+| `dgviews.cpp` | 1,150 | line mirrors, plane mirrors, stacked views |
+| `dgcamera.cpp` | 157 | camera textures |
+| `dgframe.cpp` | 334 | the frame driver |
+| `dgdiag.cpp` | 543 | benches, statistics, readbacks |
+
+Against the pre-split binary, Vulkan frames of 13 template scenes were identical to the pixel, apart
+from content that varies between two runs of the same binary (animated textures, console text).
+
 ### P3: a scene module and a materials module
 
 - Move the map-derived surfaces, the piece registry and its arena, dirty tracking and the per-piece
@@ -157,12 +175,35 @@ against its API instead.
 **Accepts when:** scene and materials include nothing from `gl/` or Diligent, and their logic is
 unit-tested.
 
+**Status, 2026-10-12.**
+
+| Item | Result |
+|---|---|
+| GL's mesh path | Deleted: `fua_gl_meshdraw`, the indexed path, `fua_gl_meshbench`, `StaticWallRange`. `staticmesh.cpp` makes no GL call. |
+| The backend's own structure | P2's split finished against four records (`g_scene`, `g_pso`, `g_frame`, `g_stats`); see the table under P2. |
+| Light model | `ComputeShading` (`levelmesh/computation/shading_compute`) is `gl_SetColor` and `gl_SetFog` as pure functions, 100% covered. GL publishes its settings through `gl_ShadingEnv`. `fua_shading_check` compares every shaded surface bit for bit against GL's setters: 0 differences in about 28.5 million surfaces on AOW03, wdiex02, WDI01, WDI09, WDI18 and dbab04, including software lighting, bright fog and a fixed colormap. |
+| Materials | `features/materials` gives the backend texture identity, the frame an animated texture shows, brightmaps, pixels and size. No backend file includes `gl_material.h`. |
+| Vertex | `MeshVertex` replaces GL's `FFlatVertex` in the scene, backend, horizon and surfaces; `glvertex.h` asserts the shared layout where GL hands vertices over. |
+| A crash found on the way | A Vulkan frame after a level change, before GL's next walk, drew the skybox from the old level's freed `SkyViewpoint` (access violation; wdiex02 reloaded with a `goto` straight after: 7 deaths in 8 across the old and new binaries). The level's walk captures are now dropped at unload (`ForgetWalks`): 5 of 5 survive. |
+
+`staticmesh`, the light model, the vertex type and every `Compute*` unit include nothing from `gl/`.
+Frames of 15 template scenes are pixel-identical to the pre-P3 binary.
+
+Moved to P4, because each is the same work as taking Vulkan off GL's walk:
+
+- **The map bake out of `wallcache.cpp`.** `wallcache.cpp` holds GL's own replay cache, the capture from GL's walk and the map bake together. The bake (`surfaces/surfacebuild.cpp`) still reads `GLWall`'s part numbering, `FTexCoordInfo` and `GLSectorPlane`.
+- **Tic frames.** At the AOW03 view a frame that runs a game tic costs 2.4 ms against 0.75. The tic itself is 0.52 ms. The renderer's extra is about 1.1 ms: 70 sectors invalidated per tic (light changes and moving planes in about equal numbers), about 500 surfaces repainted and 60 extra uploads. The fix is sector light and plane heights in a table the shader reads, which is light taken from game state, P4's job.
+
 ### P4: Vulkan without GL's walk
 
 - Derive per-frame instances from game state, not from GL's capture:
   - sprites, through a neutral port of the sprite derivation, checked against GL as the oracle;
   - models, decals and dynamic lights;
   - sky, skybox, portals, mirrors and stacked views.
+- Light and plane heights from game state: a per-sector table the shader reads, so a light change or a
+  moving plane updates a table entry instead of repainting pieces (from P3).
+- The map bake out of `wallcache.cpp` into the scene, with its own part, texture-coordinate and plane
+  types; GL's replay cache moves into `gl/` (from P3).
 - Delete the capture hooks and standalone switches from `gl/`. GL goes back to being Zandronum's
   renderer plus its own wall cache.
 - Side by side becomes two independent renderers on one game state.

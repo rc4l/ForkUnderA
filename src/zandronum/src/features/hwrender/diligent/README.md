@@ -6,6 +6,25 @@ Apache-2.0 is GPL-3 compatible, so this does not endanger the fork's licensing p
 **Off by default.** Configure with `-DFUA_DILIGENT=ON`; a normal build compiles none of it, links none
 of it, and takes none of its build time.
 
+## Files
+
+The backend's files share `dgscene_internal.h` and nothing outside them includes it. The scene's
+state lives in four records there: `g_scene` (buffers, batches, the frame's dynamic runs), `g_pso`
+(the world pipelines), `g_frame` (what a frame's passes share) and `g_stats` (counters for the reports).
+
+| File | What |
+|---|---|
+| `dgscene.cpp` | the world pass: frame prep, `DrawWorld`, `DrawSceneOnce`, scene depth and constants |
+| `dgpipelines.cpp` | the world pipelines and their material bindings: bindless array, slots, animated slots |
+| `dgupload.cpp` | the scene buffer: the material-sorted build and its in-place patches |
+| `dgdynamic.cpp` | sprites, models and decals each frame, and the sorted translucent pass |
+| `dgviews.cpp` | line mirrors (raster and ray-traced), reflective planes, stacked sectors |
+| `dgsky.cpp`, `dglights.cpp`, `dg2d.cpp`, `dgdecals.cpp`, `dghorizon.cpp` | sky and portals, dynamic lights, 2D, projected decals, horizon lines |
+| `dgcamera.cpp` | camera textures |
+| `dgframe.cpp` | the frame driver: level arming, the live frame, the present clock |
+| `dgdiag.cpp` | benches, statistics, replay capture, screenshots and their console commands |
+| `dgtexture.cpp`, `dgwindow.cpp`, `dgwin32.cpp`, `dgprobe.cpp` | textures, the window and swapchain, the device |
+
 ## Status: TEXTURED world rendering on Sunder, through Vulkan
 
 Sunder MAP10 renders through Diligent with the engine's own materials — 24,558 vertices, 4093 mesh
@@ -69,8 +88,8 @@ Untextured and shaded by height — materials are a later milestone.
 
 ### The benchmark that matters
 
-`fua_gl_meshbench` and `fua_diligent_bench` submit **the same baked vertices, the same number of
-times, each GPU-synced before the clock stops.** Nothing else about a Diligent frame and an engine
+`fua_diligent_bench` and its GL half, `fua_gl_meshbench` (deleted with GL's mesh path in P3), submitted
+**the same baked vertices, the same number of times, each GPU-synced before the clock stops.** Nothing else about a Diligent frame and an engine
 frame is comparable — textures, lighting, sprites, the BSP walk — so only this is a fair number.
 
 | backend | submit-only, 8186 tris |
@@ -151,11 +170,10 @@ swapping anything.
 | `fua_diligent_frame N` | present N triangle frames |
 | `fua_diligent_scene` | upload the baked level mesh + snapshot the camera |
 | `fua_diligent_bench N` | presented and submit-only timings |
-| `fua_gl_meshbench N` | the GL half of the matched comparison |
 | `fua_diligent_shot [file]` | read the swapchain back to a PNG -- the only trustworthy visual check |
 
 Driven in one step by **`fuactl diligent --port P [--frames N] [--shot FILE]`**, which bakes the
-mesh, uploads, screenshots and runs both halves of the benchmark in the order they actually require.
+mesh, uploads, screenshots and runs the benchmark in the order they actually require.
 
 Requires `gl_wallmesh 1` and a walked level, so the mesh has baked geometry to hand over.
 

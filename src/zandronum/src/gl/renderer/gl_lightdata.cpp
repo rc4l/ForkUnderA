@@ -55,6 +55,7 @@
 
 // [BB] New #includes.
 #include "gl/gl_functions.h"
+#include "features/levelmesh/computation/shading_compute.h"
 
 // externally settable lighting properties
 static float distfogtable[2][256];	// light to fog conversion table for black fog
@@ -564,6 +565,26 @@ void gl_SetFog(int lightlevel, int rellight, const FColormap *cmap, bool isaddit
 	}
 }
 
+
+zx::levelmesh::ShadingEnv gl_ShadingEnv()
+{
+	OVERRIDE_INT_GL_CVAR_IF_NECESSARY( gl_light_ambient );
+	OVERRIDE_INT_GL_CVAR_IF_NECESSARY( gl_distfog );
+	OVERRIDE_FOGMODE_IF_NECESSARY
+	zx::levelmesh::ShadingEnv e;
+	e.lightMode = glset.lightmode;
+	e.ambient = gl_light_ambient;
+	e.fogMode = gl_fogmode;
+	e.distFog = gl_distfog;
+	e.fixedColormap = gl_fixedcolormap != CM_DEFAULT;
+	e.fadeTable = (level.flags & LEVEL_HASFADETABLE) != 0;
+	e.inSkybox = GLPortal::inskybox;
+	e.brightFog = glset.brightfog;
+	e.fogDensity = fogdensity;
+	e.outsideFogDensity = outsidefogdensity;
+	e.outsideFogColor = outsidefogcolor.d;
+	return e;
+}
 
 //==========================================================================
 //

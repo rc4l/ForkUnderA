@@ -502,7 +502,7 @@ static void BuildSkyBox(FSkyBox *sb)
 		face.count = pending[i].count;
 		g_skyBoxPSO->CreateShaderResourceBinding(&face.srb, true);
 		if (!face.srb) continue;
-		FMaterial *fm = pending[i].tex ? FMaterial::ValidateTexture(pending[i].tex, false) : NULL;
+		const void *fm = zx::materials::MaterialForTexture(pending[i].tex);
 		if (auto *v = face.srb->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "uTex"))
 			v->Set(GetMaterialSRV(fm, 0));
 		g_skyBoxFaces.Push(face);
@@ -527,19 +527,20 @@ void EnsureSky()
 	// cloudscape do not look like frames of anything -- they just look like a different sky.
 	FTextureID id = sky1texture;
 	FTexture *raw = id.isValid() ? TexMan(id) : NULL;
-	FMaterial *mat = raw ? FMaterial::ValidateTexture(raw, false) : NULL;
-	if (mat == NULL) { g_skyBuiltValid = false; return; }
+	const void *mat = zx::materials::MaterialForTexture(raw);
+	zx::materials::MaterialInfo info;
+	if (!zx::materials::DescribeMaterial(mat, info)) { g_skyBuiltValid = false; return; }
 
 	// [rc4l] Keyed on the RESOLVED material, so an animation frame counts as a change -- and only the
 	// binding is redone when the geometry cannot have moved. An animated sky advances several times a
 	// second; rebuilding a 128-column dome and reuploading it that often would be pure waste.
-	if (g_skyBuiltValid && g_skyMaterial == (const void *)mat) return;
-	const bool sameShape = g_skyBuiltValid && g_skyBuiltFor == mat->TextureHeight();
-	g_skyBuiltFor = mat->TextureHeight();
+	if (g_skyBuiltValid && g_skyMaterial == mat) return;
+	const bool sameShape = g_skyBuiltValid && g_skyBuiltFor == info.renderHeight;
+	g_skyBuiltFor = info.renderHeight;
 
-	g_skyTexOffset = (mat->tex != NULL) ? mat->tex->SkyOffset : 0;
-	g_skyCapColor[0] = (mat->tex != NULL) ? mat->tex->GetSkyCapColor(false) : PalEntry(0);
-	g_skyCapColor[1] = (mat->tex != NULL) ? mat->tex->GetSkyCapColor(true)  : PalEntry(0);
+	g_skyTexOffset = raw->SkyOffset;
+	g_skyCapColor[0] = raw->GetSkyCapColor(false);
+	g_skyCapColor[1] = raw->GetSkyCapColor(true);
 	// [rc4l] Say what the sky actually IS, once per genuinely new texture rather than per animation
 	// frame. Comparing this line against the engine's own is what identified both the skybox that is
 	// unimplemented and the animation that was frozen.
@@ -548,17 +549,17 @@ void EnsureSky()
 	// GLDEFS resolves the map's sky to an FSkyBox, which is six textures and no pixels of its own --
 	// so the dome sampled one face and wrapped it around a cylinder. The marker that used to print
 	// here said as much on every such sky.
-	const bool isBox = (mat->tex != NULL && mat->tex->gl_info.bSkybox);
+	const bool isBox = raw->gl_info.bSkybox;
 	if (isBox)
 	{
-		FSkyBox *sb = static_cast<FSkyBox *>(mat->tex);
+		FSkyBox *sb = static_cast<FSkyBox *>(raw);
 		if (!EnsureSkyBoxPipeline()) { g_skyBuiltValid = false; return; }
 		BuildSkyBox(sb);
 		if (g_skyBoxFaces.Size() == 0) { g_skyBuiltValid = false; return; }
 		if (!sameShape)
 		{
 			Printf("vulkan sky: %s  [SKYBOX, %s: %s %s %s %s %s %s]\n",
-				(mat->tex->Name != NULL) ? mat->tex->Name : "?",
+				info.name,
 				(sb->faces[5] != NULL) ? "six faces" : "wrapped",
 				(sb->faces[0] && sb->faces[0]->Name) ? sb->faces[0]->Name : "-",
 				(sb->faces[1] && sb->faces[1]->Name) ? sb->faces[1]->Name : "-",
@@ -577,12 +578,12 @@ void EnsureSky()
 	if (!sameShape)
 	{
 		Printf("vulkan sky: %s %dx%d skyoffset %d  cap %d,%d,%d / %d,%d,%d\n",
-			(mat->tex != NULL && mat->tex->Name != NULL) ? mat->tex->Name : "?",
-			mat->TextureWidth(), mat->TextureHeight(), g_skyTexOffset,
+			info.name,
+			info.renderWidth, info.renderHeight, g_skyTexOffset,
 			g_skyCapColor[0].r, g_skyCapColor[0].g, g_skyCapColor[0].b,
 			g_skyCapColor[1].r, g_skyCapColor[1].g, g_skyCapColor[1].b);
 	}
-	if (!sameShape) BuildSkyDome(mat->TextureWidth(), mat->TextureHeight());
+	if (!sameShape) BuildSkyDome(info.renderWidth, info.renderHeight);
 	g_skyMaterial = mat;
 	if (auto *v = g_skySRB->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "uTex"))
 		v->Set(GetMaterialSRV(g_skyMaterial, 0));
@@ -1199,11 +1200,11 @@ void DrawScreenSurfaceRun(Diligent::IDeviceContext *ctx, Diligent::IShaderResour
 static void GatherSkySurfaces(TArray<SceneVertex> &sv)
 {
 	int nverts = 0, nhorizon = 0;
-	const FFlatVertex *src = zx::levelmesh::SkyQuadVertices(nverts,
+	const zx::levelmesh::MeshVertex *src = zx::levelmesh::SkyQuadVertices(nverts,
 		zx::levelmesh::ComputeSkyDrawList(g_pass.inCameraPass, g_pass.stackSlot));
 	// [rc4l] A horizon line is built for the player's eye, so a stacked view, which stands somewhere else, takes none; the sky starts at this pass's eye, where the horizon pass stops the floor half.
 	float eye[3];
-	const FFlatVertex *hsrc = (g_pass.stackSlot < 0 && zx::horizon::ComputeEyeFromViewProjection(g_mvp, eye))
+	const zx::levelmesh::MeshVertex *hsrc = (g_pass.stackSlot < 0 && zx::horizon::ComputeEyeFromViewProjection(g_mvp, eye))
 		? zx::horizon::HorizonSkyVertices(nhorizon, eye[1]) : NULL;
 	if (src == NULL) nverts = 0;
 	if (hsrc == NULL) nhorizon = 0;

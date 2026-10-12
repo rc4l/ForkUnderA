@@ -3,6 +3,7 @@
 
 #include "gl/system/gl_system.h"
 #include "features/levelmesh/flatmesh.h"
+#include "features/levelmesh/captureshading.h"   // [rc4l] CaptureShading, the light model for a GL colormap
 #include "features/hwrender/computation/lightside_compute.h"   // the plane bake, tested off-engine
 #include "features/levelmesh/staticmesh.h"
 #include "features/levelmesh/modelmesh.h"
@@ -308,8 +309,8 @@ static void StoreFlat(const FlatSource &flat, subsector_t *sub, bool ceiling)
 
 		// [rc4l] Cap matches the wall path's staging array; a subsector with more edges than this is
 		// vanishingly rare and is simply left to the GL renderer.
-		static FFlatVertex fan[GLWall::MAX_BATCH_FAN_VERTICES];
-		static FFlatVertex tris[GLWall::MAX_BATCH_FAN_VERTICES * 3];
+		static MeshVertex fan[GLWall::MAX_BATCH_FAN_VERTICES];
+		static MeshVertex tris[GLWall::MAX_BATCH_FAN_VERTICES * 3];
 		const int n = (int)sub->numlines;
 		if (n > GLWall::MAX_BATCH_FAN_VERTICES) return;
 
@@ -724,7 +725,7 @@ static int g_skyQuadsCaptured = 0;
 static int g_skyWalks[kSkyCaptureLists];   // [rc4l] Walks per list, so a second walk per frame shows up as a count.
 static AActor *g_skyViewpoint = NULL;
 // [rc4l] One list per view the backend draws, indexed by the kSkyCapture* lists, and the one the walk in progress fills.
-static TArray<FFlatVertex> g_skyVerts[kSkyCaptureLists];
+static TArray<MeshVertex> g_skyVerts[kSkyCaptureLists];
 static int g_skyList = kSkyCaptureNone;
 // [rc4l] The player's walk's sky holes this frame, kSkyHoleFloats each, for the scene shader.
 static TArray<float> g_skyHoles;
@@ -783,7 +784,7 @@ void LeaveScene() { if (s_sceneNesting > 0) s_sceneNesting--; }
 // [rc4l] The stacked views the player's walk saw this frame, by slot, and the portal whose view GL is walking now.
 static const void *g_stackPortals[kMaxStackViews];
 static StackViewInfo g_stackInfo[kMaxStackViews];
-static TArray<FFlatVertex> g_stackVerts[kMaxStackViews];
+static TArray<MeshVertex> g_stackVerts[kMaxStackViews];
 static int g_stackUsed = 0;
 static const void *s_stackWalk = NULL;
 static TArray<unsigned int> g_stackVis;
@@ -869,7 +870,7 @@ int PieceStackId(const MeshPiece &p)
 {
 	if (p.linkId >= 0) return p.linkId;
 	int count = 0;
-	const FFlatVertex *v = MeshVertexData(count);
+	const MeshVertex *v = MeshVertexData(count);
 	float cx, cy, cz;
 	if (numsubsectors <= 0 || !ComputeCentroid(v, (unsigned)count, p.range.offset, p.range.count, cx, cy, cz)) return -1;
 	float px, py;
@@ -893,7 +894,7 @@ int PieceStackId(const MeshPiece &p)
 
 int StackViewCount() { return g_stackUsed; }
 StackViewInfo StackView(int slot) { return g_stackInfo[slot]; }
-const FFlatVertex *StackViewVertices(int slot, int &count)
+const MeshVertex *StackViewVertices(int slot, int &count)
 {
 	count = (int)g_stackVerts[slot].Size();
 	return count ? &g_stackVerts[slot][0] : NULL;
@@ -919,7 +920,7 @@ void RegisterStackWall(const GLWall &wall, const FPortal *portal)
 	if (portal == NULL || !PlayerWalkActive()) return;
 	const int slot = StackSlotFor(portal);
 	if (slot < 0) return;
-	FFlatVertex q[6];
+	MeshVertex q[6];
 	MakeWallQuad(q, wall.glseg.x1, wall.glseg.y1, wall.glseg.x2, wall.glseg.y2, wall.zbottom, wall.ztop);
 	for (int k = 0; k < 6; k++) g_stackVerts[slot].Push(q[k]);
 }
@@ -928,6 +929,20 @@ void RegisterStackWall(const GLWall &wall, const FPortal *portal)
 struct SkyWalkNote { bool mainView; int nesting; int list; int heldBefore; };
 static SkyWalkNote g_walkNotes[8];
 static int g_walkNoteCount = 0;
+
+// [rc4l] What the last frame's walks left: the skybox they named, the sky holes, the stacked views and the mirrors they reached.
+static void ForgetFrameWalks()
+{
+	g_skyViewpoint = NULL;
+	g_skyHoles.Clear();
+	g_skyboxWalked = false;
+	g_stackUsed = 0;
+	g_walkedMirrors.Clear();
+	g_mirrorSheens.Clear();
+	for (int i = 0; i < kMaxStackViews; i++) { g_stackVerts[i].Clear(); g_skyVerts[kSkyCaptureStack + i].Clear(); }
+	g_stackVis.Resize((unsigned)ComputeStackVisWords(numsubsectors + numsides));
+	if (g_stackVis.Size() > 0) memset(&g_stackVis[0], 0, g_stackVis.Size() * sizeof(unsigned int));
+}
 
 int BeginSkyWalk()
 {
@@ -938,20 +953,15 @@ int BeginSkyWalk()
 	if (g_skyList == kSkyCaptureNone) return g_skyList;
 	g_skyVerts[g_skyList].Clear();
 	// [rc4l] The player's walk starts the frame, so last frame's stacked views and their skies go with it.
-	if (g_skyList == kSkyCaptureMain)
-	{
-		g_skyViewpoint = NULL;
-		g_skyHoles.Clear();
-		g_skyboxWalked = false;
-		g_stackUsed = 0;
-		g_walkedMirrors.Clear();
-		g_mirrorSheens.Clear();
-		for (int i = 0; i < kMaxStackViews; i++) { g_stackVerts[i].Clear(); g_skyVerts[kSkyCaptureStack + i].Clear(); }
-		g_stackVis.Resize((unsigned)ComputeStackVisWords(numsubsectors + numsides));
-		if (g_stackVis.Size() > 0) memset(&g_stackVis[0], 0, g_stackVis.Size() * sizeof(unsigned int));
-	}
+	if (g_skyList == kSkyCaptureMain) ForgetFrameWalks();
 	g_skyWalks[g_skyList]++;
 	return g_skyList;
+}
+
+void ForgetWalks()
+{
+	for (int i = 0; i < kSkyCaptureLists; i++) g_skyVerts[i].Clear();
+	ForgetFrameWalks();
 }
 int SkyWalks(int list) { return g_skyWalks[list]; }
 void PrintSkyWalkNotes()
@@ -966,7 +976,7 @@ void PrintSkyWalkNotes()
 // The viewpoint the visible sky surfaces name; NULL until a walk has produced one.
 AActor *SkyQuadViewpoint() { return g_skyViewpoint; }
 
-const FFlatVertex *SkyQuadVertices(int &count, int list)
+const MeshVertex *SkyQuadVertices(int &count, int list)
 {
 	count = (int)g_skyVerts[list].Size();
 	return count ? &g_skyVerts[list][0] : NULL;
@@ -998,7 +1008,7 @@ int SpritePieceCount() { return g_spritesThisFrame; }
 static void PushSkyQuad(const GLWall &wall, const float *zb, const float *zt)
 {
 	if (zt[0] <= zb[0] && zt[1] <= zb[1]) return;
-	FFlatVertex q[6];
+	MeshVertex q[6];
 	MakeWallQuad(q, wall.glseg.x1, wall.glseg.y1, wall.glseg.x2, wall.glseg.y2, zb, zt);
 	for (int k = 0; k < 6; k++) g_skyVerts[g_skyList].Push(q[k]);
 	g_skyQuadsCaptured++;
@@ -1042,10 +1052,10 @@ void RegisterSkyHole(const GLWall &wall)
 	PushSkyQuad(wall, wall.zfloor, wall.zceil);
 }
 
-void MakeWallQuad(FFlatVertex *out6, float x1, float y1, float x2, float y2,
+void MakeWallQuad(MeshVertex *out6, float x1, float y1, float x2, float y2,
 	const float *zbottom2, const float *ztop2)
 {
-	FFlatVertex fan[4];
+	MeshVertex fan[4];
 	fan[0].Set(x1, zbottom2[0], y1, 0.f, 0.f);
 	fan[1].Set(x1, ztop2[0],    y1, 0.f, 0.f);
 	fan[2].Set(x2, ztop2[1],    y2, 0.f, 0.f);
@@ -1074,7 +1084,7 @@ void RegisterSprite(const GLSprite &spr, const float *c1, const float *c2,
 	// [rc4l] GLSprite emits a 4-vertex TRIANGLE STRIP; the mesh is triangle lists, so expand to
 	// (0,1,2) and (2,1,3) -- which preserves the strip's winding rather than flipping the second
 	// triangle.
-	FFlatVertex q[4];
+	MeshVertex q[4];
 	q[0].Set(c1[0], c1[1], c1[2], spr.ul, spr.vt);
 	q[1].Set(c2[0], c2[1], c2[2], spr.ur, spr.vt);
 	q[2].Set(c3[0], c3[1], c3[2], spr.ul, spr.vb);
@@ -1197,7 +1207,7 @@ void DumpSpriteNotes()
 	}
 }
 
-void RegisterDecal(const FFlatVertex *quad, const void *material, int translation,
+void RegisterDecal(const MeshVertex *quad, const void *material, int translation,
                    bool shadow, bool additive, float alpha,
                    int lightlevel, int rel, const FColormap &colormap,
                    bool redToAlpha, unsigned int alphaColor,
@@ -1207,7 +1217,7 @@ void RegisterDecal(const FFlatVertex *quad, const void *material, int translatio
 
 	// GL draws the decal as a 4-vertex TRIANGLE FAN, so the triangles are (0,1,2) and (0,2,3) --
 	// not the strip order the sprite path uses, which would fold the quad in half.
-	FFlatVertex tris[6];
+	MeshVertex tris[6];
 	tris[0] = quad[0]; tris[1] = quad[1]; tris[2] = quad[2];
 	tris[3] = quad[0]; tris[4] = quad[2]; tris[5] = quad[3];
 
@@ -1226,7 +1236,7 @@ void RegisterDecal(const FFlatVertex *quad, const void *material, int translatio
 // drew them. When they come out wrong there is nothing on screen to say which of the two it is,
 // what blend each took, or whether they even reached the backend -- so this prints it.
 
-void RegisterDecalTriangles(const FFlatVertex *tris, int count, const void *material, int translation,
+void RegisterDecalTriangles(const MeshVertex *tris, int count, const void *material, int translation,
                             bool shadow, bool additive, float alpha,
                             int lightlevel, int rel, const FColormap &colormap,
                             bool redToAlpha, unsigned int alphaColor,

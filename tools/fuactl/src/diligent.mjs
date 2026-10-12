@@ -66,9 +66,6 @@ export async function diligentRun({ port, token, frames = 500, shot = null, swee
     log(`benchmarking ${frames} frames (Diligent)`);
     await exec(`fua_diligent_bench ${frames}`, Math.max(6000, frames * 8));
 
-    log(`benchmarking ${frames} draws (GL, same geometry)`);
-    await exec(`fua_gl_meshbench ${frames}`, 4000);
-
     if (scale) {
       log("scale probe (GPU time at 1x..100x the visible set)");
       await exec("fua_diligent_scale 60", 30000);

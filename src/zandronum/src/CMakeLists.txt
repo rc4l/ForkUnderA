@@ -1606,6 +1606,9 @@ add_executable( zdoom WIN32
 	features/levelmesh/fakeplanes.cpp
 	features/levelmesh/projdecals.cpp
 	features/levelmesh/modelmesh.cpp
+	features/levelmesh/captureshading.cpp
+	features/materials/materials.cpp
+	features/levelmesh/computation/shading_compute.cpp
 	features/levelmesh/computation/surfacebudget_compute.cpp
 	features/levelmesh/computation/lightband_compute.cpp
 	features/levelmesh/computation/wallbatch_compute.cpp
@@ -1888,15 +1891,15 @@ source_group("Network\\Protocol\\Generator" REGULAR_EXPRESSION "^${CMAKE_SOURCE_
 # [rc4l] Diligent (Vulkan) backend for the renderer swap -- see features/hwrender/diligent/.
 # The probe is the only consumer today; it proves the library links and a device creates in-process.
 if( FUA_DILIGENT )
-	target_sources( zdoom PRIVATE features/hwrender/diligent/dgprobe.cpp features/hwrender/diligent/dgwindow.cpp features/hwrender/diligent/dgwin32.cpp features/hwrender/diligent/dgscene.cpp features/hwrender/diligent/dg2d.cpp features/hwrender/diligent/dglights.cpp features/hwrender/diligent/dgsky.cpp features/hwrender/diligent/dgdecals.cpp features/hwrender/diligent/dghorizon.cpp features/hwrender/diligent/dgtexture.cpp )
+	target_sources( zdoom PRIVATE features/hwrender/diligent/dgprobe.cpp features/hwrender/diligent/dgwindow.cpp features/hwrender/diligent/dgwin32.cpp features/hwrender/diligent/dgscene.cpp features/hwrender/diligent/dg2d.cpp features/hwrender/diligent/dglights.cpp features/hwrender/diligent/dgsky.cpp features/hwrender/diligent/dgpipelines.cpp features/hwrender/diligent/dgdynamic.cpp features/hwrender/diligent/dgupload.cpp features/hwrender/diligent/dgviews.cpp features/hwrender/diligent/dgcamera.cpp features/hwrender/diligent/dgframe.cpp features/hwrender/diligent/dgdiag.cpp features/hwrender/diligent/dgdecals.cpp features/hwrender/diligent/dghorizon.cpp features/hwrender/diligent/dgtexture.cpp )
 	# [rc4l] Diligent's RefCountedObjectImpl.hpp uses std::align_val_t (aligned new), which is C++17.
 	# The engine compiles at C++14, and raising the whole tree for one dependency is exactly the kind
 	# of change that breaks something unrelated three files away -- so the bump is confined to the one
 	# translation unit that includes Diligent headers.
 	if( MSVC )
-		set_source_files_properties( features/hwrender/diligent/dgprobe.cpp features/hwrender/diligent/dgwindow.cpp features/hwrender/diligent/dgscene.cpp features/hwrender/diligent/dg2d.cpp features/hwrender/diligent/dglights.cpp features/hwrender/diligent/dgsky.cpp features/hwrender/diligent/dgdecals.cpp features/hwrender/diligent/dghorizon.cpp features/hwrender/diligent/dgtexture.cpp PROPERTIES COMPILE_FLAGS "/std:c++17" )
+		set_source_files_properties( features/hwrender/diligent/dgprobe.cpp features/hwrender/diligent/dgwindow.cpp features/hwrender/diligent/dgscene.cpp features/hwrender/diligent/dg2d.cpp features/hwrender/diligent/dglights.cpp features/hwrender/diligent/dgsky.cpp features/hwrender/diligent/dgpipelines.cpp features/hwrender/diligent/dgdynamic.cpp features/hwrender/diligent/dgupload.cpp features/hwrender/diligent/dgviews.cpp features/hwrender/diligent/dgcamera.cpp features/hwrender/diligent/dgframe.cpp features/hwrender/diligent/dgdiag.cpp features/hwrender/diligent/dgdecals.cpp features/hwrender/diligent/dghorizon.cpp features/hwrender/diligent/dgtexture.cpp PROPERTIES COMPILE_FLAGS "/std:c++17" )
 	else()
-		set_source_files_properties( features/hwrender/diligent/dgprobe.cpp features/hwrender/diligent/dgwindow.cpp features/hwrender/diligent/dgscene.cpp features/hwrender/diligent/dg2d.cpp features/hwrender/diligent/dglights.cpp features/hwrender/diligent/dgsky.cpp features/hwrender/diligent/dgdecals.cpp features/hwrender/diligent/dghorizon.cpp features/hwrender/diligent/dgtexture.cpp PROPERTIES COMPILE_FLAGS "-std=c++17" )
+		set_source_files_properties( features/hwrender/diligent/dgprobe.cpp features/hwrender/diligent/dgwindow.cpp features/hwrender/diligent/dgscene.cpp features/hwrender/diligent/dg2d.cpp features/hwrender/diligent/dglights.cpp features/hwrender/diligent/dgsky.cpp features/hwrender/diligent/dgpipelines.cpp features/hwrender/diligent/dgdynamic.cpp features/hwrender/diligent/dgupload.cpp features/hwrender/diligent/dgviews.cpp features/hwrender/diligent/dgcamera.cpp features/hwrender/diligent/dgframe.cpp features/hwrender/diligent/dgdiag.cpp features/hwrender/diligent/dgdecals.cpp features/hwrender/diligent/dghorizon.cpp features/hwrender/diligent/dgtexture.cpp PROPERTIES COMPILE_FLAGS "-std=c++17" )
 	endif()
 	target_compile_definitions( zdoom PRIVATE FUA_DILIGENT PLATFORM_WIN32=1 )
 	target_link_libraries( zdoom Diligent-GraphicsEngineVk-static )

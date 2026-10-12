@@ -136,7 +136,6 @@ public:
 	void DrawSorted();
 	void Draw(int pass, bool trans = false);
 	void DrawWalls(int pass);
-	void DrawWallsIndexed(int pass);	// [rc4l] features/levelmesh state-grouped indexed path
 	void DrawFlats(int pass);
 	void DrawDecals();
 	

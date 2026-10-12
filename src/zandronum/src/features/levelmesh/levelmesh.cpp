@@ -29,6 +29,9 @@
 #include "textures/textures.h"
 #include "gl/textures/gl_material.h"   // FMaterial::GetTransparent, for fua_find_lines transparent=1
 
+// [rc4l] The console commands below sit outside the namespace and read mesh vertices.
+using zx::levelmesh::MeshVertex;
+
 namespace zx { namespace levelmesh {
 
 // [rc4l] Which end of the linedef this sidedef starts from. Mirrors GetSideVertices in
@@ -562,7 +565,7 @@ CCMD( fua_mesh_at )
 	const float rad = ( argv.argc( ) > 3 ) ? (float)atof( argv[3] ) : 64.f;
 
 	int nv = 0, np = 0;
-	const FFlatVertex *verts = zx::levelmesh::MeshVertexData( nv );
+	const MeshVertex *verts = zx::levelmesh::MeshVertexData( nv );
 	const zx::levelmesh::MeshPiece *pieces = zx::levelmesh::MeshPieces( np );
 	if ( verts == NULL || pieces == NULL ) { Printf( "no mesh\n" ); return; }
 
@@ -575,7 +578,7 @@ CCMD( fua_mesh_at )
 		bool near = false;
 		for ( unsigned v = 0; v < p.range.count && p.range.offset + v < (unsigned)nv; v++ )
 		{
-			const FFlatVertex &fv = verts[p.range.offset + v];
+			const MeshVertex &fv = verts[p.range.offset + v];
 			if ( fv.x < xlo ) xlo = fv.x;  if ( fv.x > xhi ) xhi = fv.x;
 			if ( fv.y < ylo ) ylo = fv.y;  if ( fv.y > yhi ) yhi = fv.y;
 			if ( fv.z < zlo ) zlo = fv.z;  if ( fv.z > zhi ) zhi = fv.z;
@@ -639,7 +642,7 @@ CCMD( fua_mesh_at )
 CCMD( fua_mesh_dupes )
 {
 	int nv = 0, np = 0;
-	const FFlatVertex *verts = zx::levelmesh::MeshVertexData( nv );
+	const MeshVertex *verts = zx::levelmesh::MeshVertexData( nv );
 	const zx::levelmesh::MeshPiece *pieces = zx::levelmesh::MeshPieces( np );
 	if ( verts == NULL || pieces == NULL ) { Printf( "no mesh\n" ); return; }
 
@@ -663,7 +666,7 @@ CCMD( fua_mesh_dupes )
 			bool degenerate = true;
 			for ( unsigned v = 0; v < p.range.count && p.range.offset + v < (unsigned)nv; v++ )
 			{
-				const FFlatVertex &fv = verts[p.range.offset + v];
+				const MeshVertex &fv = verts[p.range.offset + v];
 				if ( fv.x != 0.f || fv.y != 0.f || fv.z != 0.f ) { degenerate = false; break; }
 			}
 			if ( degenerate ) { squashed++; continue; }
@@ -672,7 +675,7 @@ CCMD( fua_mesh_dupes )
 		QWORD h = 1469598103934665603ULL;
 		for ( unsigned v = 0; v < p.range.count && p.range.offset + v < (unsigned)nv; v++ )
 		{
-			const FFlatVertex &fv = verts[p.range.offset + v];
+			const MeshVertex &fv = verts[p.range.offset + v];
 			const int q[3] = { (int)(fv.x * 16.f), (int)(fv.y * 16.f), (int)(fv.z * 16.f) };
 			for ( int k = 0; k < 3; k++ ) { h ^= (QWORD)q[k]; h *= 1099511628211ULL; }
 		}
@@ -708,7 +711,7 @@ CCMD( fua_mesh_dupes )
 		Box b = { 1e9f, -1e9f, 1e9f, -1e9f, 1e9f, -1e9f };
 		for ( unsigned v = 0; v < p.range.count && p.range.offset + v < (unsigned)nv; v++ )
 		{
-			const FFlatVertex &fv = verts[p.range.offset + v];
+			const MeshVertex &fv = verts[p.range.offset + v];
 			if ( fv.x < b.x0 ) b.x0 = fv.x;  if ( fv.x > b.x1 ) b.x1 = fv.x;
 			if ( fv.y < b.y0 ) b.y0 = fv.y;  if ( fv.y > b.y1 ) b.y1 = fv.y;
 			if ( fv.z < b.z0 ) b.z0 = fv.z;  if ( fv.z > b.z1 ) b.z1 = fv.z;
@@ -966,7 +969,7 @@ CCMD( fua_look )
 
 	// --- what the mesh holds there --------------------------------------------------------------
 	int nv = 0, np = 0;
-	const FFlatVertex *verts = zx::levelmesh::MeshVertexData( nv );
+	const MeshVertex *verts = zx::levelmesh::MeshVertexData( nv );
 	const zx::levelmesh::MeshPiece *pieces = zx::levelmesh::MeshPieces( np );
 	if ( verts == NULL || pieces == NULL ) { Printf( "  mesh: EMPTY\n" ); return; }
 
@@ -985,9 +988,9 @@ CCMD( fua_look )
 		for ( unsigned v = 0; v + 2 < p.range.count; v += 3 )
 		{
 			if ( p.range.offset + v + 2 >= (unsigned)nv ) break;
-			const FFlatVertex &a = verts[p.range.offset + v];
-			const FFlatVertex &b = verts[p.range.offset + v + 1];
-			const FFlatVertex &c = verts[p.range.offset + v + 2];
+			const MeshVertex &a = verts[p.range.offset + v];
+			const MeshVertex &b = verts[p.range.offset + v + 1];
+			const MeshVertex &c = verts[p.range.offset + v + 2];
 			// Moller-Trumbore. Two-sided on purpose: a surface facing away is still a surface, and
 			// "the piece is there but wound the wrong way" is exactly one of the bugs this is for.
 			const float e1x = b.x - a.x, e1y = b.y - a.y, e1z = b.z - a.z;
@@ -1071,13 +1074,13 @@ CCMD( fua_look )
 	// averaged away. Both look like "the texture is wrong" and neither is.
 	{
 		int nverts = 0;
-		const FFlatVertex *vp = zx::levelmesh::MeshVertexData(nverts);
+		const MeshVertex *vp = zx::levelmesh::MeshVertexData(nverts);
 		if (vp != NULL && p.range.count > 0 && (int)(p.range.offset + p.range.count) <= nverts)
 		{
 			float u0 = vp[p.range.offset].u, u1 = u0, v0 = vp[p.range.offset].v, v1 = v0;
 			for (unsigned k = 1; k < p.range.count; k++)
 			{
-				const FFlatVertex &q = vp[p.range.offset + k];
+				const MeshVertex &q = vp[p.range.offset + k];
 				if (q.u < u0) u0 = q.u; if (q.u > u1) u1 = q.u;
 				if (q.v < v0) v0 = q.v; if (q.v > v1) v1 = q.v;
 			}
@@ -1160,7 +1163,7 @@ CCMD( fua_sprites )
 CCMD( fua_mesh_verify )
 {
 	int nv = 0, np = 0;
-	const FFlatVertex *verts = zx::levelmesh::MeshVertexData( nv );
+	const MeshVertex *verts = zx::levelmesh::MeshVertexData( nv );
 	const zx::levelmesh::MeshPiece *pieces = zx::levelmesh::MeshPieces( np );
 	if ( verts == NULL || pieces == NULL || np == 0 )
 	{
@@ -1214,9 +1217,9 @@ CCMD( fua_mesh_verify )
 		if ( p.range.count < 3 ) continue;
 		// Only near-horizontal surfaces: a wall's winding says nothing about up and down.
 		if ( p.normY < 0.9f && p.normY > -0.9f ) continue;
-		const FFlatVertex &a = verts[p.range.offset];
-		const FFlatVertex &b = verts[p.range.offset + 1];
-		const FFlatVertex &c = verts[p.range.offset + 2];
+		const MeshVertex &a = verts[p.range.offset];
+		const MeshVertex &b = verts[p.range.offset + 1];
+		const MeshVertex &c = verts[p.range.offset + 2];
 		// z component of (b-a) x (c-a): the winding's own idea of which way the triangle faces.
 		const float nz = zx::levelmesh::ComputeTriangleWindingZ( a.x, a.y, b.x, b.y, c.x, c.y );
 		if ( fabsf( nz ) < 0.0001f ) continue;   // degenerate, e.g. a squashed piece
@@ -1259,7 +1262,7 @@ CCMD( fua_mesh_verify )
 			Box b = { 1e9f, -1e9f, 1e9f, -1e9f, 1e9f, -1e9f };
 			for ( unsigned v = 0; v < p.range.count && p.range.offset + v < (unsigned)nv; v++ )
 			{
-				const FFlatVertex &fv = verts[p.range.offset + v];
+				const MeshVertex &fv = verts[p.range.offset + v];
 				if ( fv.x < b.x0 ) b.x0 = fv.x;  if ( fv.x > b.x1 ) b.x1 = fv.x;
 				if ( fv.y < b.y0 ) b.y0 = fv.y;  if ( fv.y > b.y1 ) b.y1 = fv.y;
 				if ( fv.z < b.z0 ) b.z0 = fv.z;  if ( fv.z > b.z1 ) b.z1 = fv.z;
