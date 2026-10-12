@@ -4,6 +4,7 @@
 #include "features/draw2d/draw2d.h"
 
 #include "features/draw2d/computation/quad2d_compute.h"
+#include "features/draw2d/computation/flatfill_compute.h"
 #include "features/materials/materials.h"
 #include "r_data/renderstyle.h"
 #include "textures/textures.h"
@@ -59,6 +60,27 @@ zx::hwrender::Quad2D PrepareClear(int left, int top, int right, int bottom, PalE
 {
 	// [rc4l] A scissored glClear is still a filled rectangle as far as a backend is concerned: the console background and the menu backdrop.
 	return Fill((float)left, (float)top, (float)(right - left), (float)(bottom - top), color, 1.f);
+}
+
+void PrepareFlatFill(int left, int top, int right, int bottom, FTexture *src, bool localOrigin, std::vector<zx::hwrender::Quad2D> &out)
+{
+	out.clear();
+	const zx::materials::MaterialRef mat = zx::materials::MaterialForTexture(src, false);
+	if (mat == NULL) return;
+	float ul = 0.f, vt = 0.f, ur = 1.f, vb = 1.f;
+	zx::materials::MaterialCorners(mat, ul, vt, ur, vb);
+	std::vector<FlatTile> tiles;
+	ComputeFlatTiles(left, top, right, bottom, src->GetWidth(), src->GetHeight(), localOrigin, tiles);
+	for (size_t i = 0; i < tiles.size(); i++)
+	{
+		const FlatTile &t = tiles[i];
+		zx::hwrender::Quad2D q = Fill(t.x, t.y, t.w, t.h, PalEntry(255, 255, 255), 1.f);
+		q.material = mat;
+		q.u1 = ul + t.u1 * (ur - ul); q.u2 = ul + t.u2 * (ur - ul);
+		q.v1 = vt + t.v1 * (vb - vt); q.v2 = vt + t.v2 * (vb - vt);
+		q.texMode = kTexModulate;
+		out.push_back(q);
+	}
 }
 
 void PrepareTexture(FTexture *img, const DCanvas::DrawParms &parms, TextureDraw &out)

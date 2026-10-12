@@ -54,6 +54,7 @@
 
 #include "gl/system/gl_interface.h"
 #include "gl/renderer/gl_renderer.h"
+#include "gl/textures/gl_material.h"
 #include "gl/renderer/gl_lightdata.h"
 #include "gl/data/gl_data.h"
 #include "gl/dynlights/gl_dynlight.h"
@@ -112,7 +113,7 @@ void AdjustSpriteOffsets()
 	{
 		FScanner sc;
 		sc.OpenLumpNum(lump);
-		GLRenderer->FlushTextures();
+		FMaterial::FlushAll();   // [rc4l] not through GLRenderer, which a launch without GL does not have
 		int ofslumpno = Wads.GetLumpFile(lump);
 		while (sc.GetString())
 		{

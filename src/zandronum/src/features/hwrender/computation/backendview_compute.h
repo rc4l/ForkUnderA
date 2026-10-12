@@ -23,6 +23,27 @@ void ComputeBackendView(const BackendCamera &c, float out[16]);
 // [rc4l] The column-major view-projection for a camera: ComputeBackendView under GL's projection with Vulkan's depth, so every view keeps GL's framing.
 void ComputeBackendMVP(const BackendCamera &c, float out[16]);
 
+// [rc4l] A rectangle of the screen in top-down pixels.
+struct ScreenRect
+{
+	int x, y, w, h;
+};
+
+// [rc4l] Where GL's SetViewport puts the player's view: viewW wide at the view window's left, and the screen's height (a status bar's screenblocks) or screenblocks tenths of it, centred on the view window's rows.
+ScreenRect ComputeViewWindowViewport(int screenH, int screenblocks, int windowX, int windowY, int viewW, int viewH);
+
+// [rc4l] A clip-space scale and offset, x and y, that stand in for a viewport.
+struct NdcWindow
+{
+	float sx, sy, ox, oy;
+};
+
+// [rc4l] What draws a projection into rect of a screenW by screenH target as a viewport there would, with device y up.
+NdcWindow ComputeNdcWindow(const ScreenRect &rect, int screenW, int screenH);
+
+// [rc4l] Put a column-major view-projection through w, so it lands where the viewport would put it while the target stays whole and gl_FragCoord keeps meaning the same pixel.
+void ComputeApplyNdcWindow(const NdcWindow &w, float m[16]);
+
 }} // namespace zx::hwrender
 
 #endif // ZX_BACKENDVIEW_COMPUTE_H

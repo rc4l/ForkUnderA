@@ -23,6 +23,7 @@
 // namespace zx -- no engine types -- so it does not violate the "no engine headers" rule above
 // (it cannot clash with the platform system headers this file relies on).
 #include "features/crashreport/computation/signal_chain_compute.h"
+#include "features/crashreport/computation/fault_frame_compute.h"
 
 #include <stdlib.h>
 #include <cwchar>
@@ -70,6 +71,44 @@ namespace
 	}
 
 #ifdef _WIN32
+	// [rc4l] The faulting thread's own stack, walked from the exception's context, since the handler's frames above it say nothing about the fault.
+	void WriteFaultStack( FILE *f, HANDLE proc, const CONTEXT &faultCtx, SYMBOL_INFO *sym )
+	{
+#if defined( _M_X64 )
+		CONTEXT ctx = faultCtx;
+		const zx::FaultFrame start = zx::ComputeFaultFrame( ctx.Rip, ctx.Rsp, ctx.Rip == 0 ? *(const DWORD64 *)ctx.Rsp : 0 );
+		ctx.Rip = start.pc;
+		ctx.Rsp = start.sp;
+		STACKFRAME64 sf;
+		memset( &sf, 0, sizeof( sf ) );
+		sf.AddrPC.Offset = ctx.Rip;    sf.AddrPC.Mode = AddrModeFlat;
+		sf.AddrFrame.Offset = ctx.Rbp; sf.AddrFrame.Mode = AddrModeFlat;
+		sf.AddrStack.Offset = ctx.Rsp; sf.AddrStack.Mode = AddrModeFlat;
+		fprintf( f, "fault stack:\n" );
+		for ( int i = 0; i < 64; ++i )
+		{
+			if ( !StackWalk64( IMAGE_FILE_MACHINE_AMD64, proc, GetCurrentThread( ), &sf, &ctx, NULL,
+				SymFunctionTableAccess64, SymGetModuleBase64, NULL ) || sf.AddrPC.Offset == 0 )
+				break;
+			const DWORD64 addr = sf.AddrPC.Offset;
+			IMAGEHLP_LINE64 line;
+			memset( &line, 0, sizeof( line ) );
+			line.SizeOfStruct = sizeof( line );
+			DWORD disp = 0;
+			const bool hasLine = SymGetLineFromAddr64( proc, addr, &disp, &line ) != FALSE;
+			if ( SymFromAddr( proc, addr, 0, sym ) )
+				fprintf( f, "  #%d %s + 0x%llx", i, sym->Name, (unsigned long long)( addr - sym->Address ) );
+			else
+				fprintf( f, "  #%d [0x%llx]", i, (unsigned long long)addr );
+			if ( hasLine ) fprintf( f, "  %s:%lu", line.FileName, (unsigned long)line.LineNumber );
+			fprintf( f, "\n" );
+		}
+		fprintf( f, "\n" );
+#else
+		(void)f; (void)proc; (void)faultCtx; (void)sym;
+#endif
+	}
+
 	// Unhandled-exception filter: capture and symbolize the stack, write it out,
 	// then let the OS continue the normal crash path.
 	LONG WINAPI MCP_CrashFilter( EXCEPTION_POINTERS *info )
@@ -86,13 +125,16 @@ namespace
 			USHORT n = CaptureStackBackTrace( 0, 128, frames, NULL );
 
 			HANDLE proc = GetCurrentProcess();
-			SymSetOptions( SYMOPT_UNDNAME | SYMOPT_DEFERRED_LOADS );
+			SymSetOptions( SYMOPT_UNDNAME | SYMOPT_DEFERRED_LOADS | SYMOPT_LOAD_LINES );
 			SymInitialize( proc, NULL, TRUE );
 
 			char symbuf[sizeof( SYMBOL_INFO ) + 256];
 			SYMBOL_INFO *sym = (SYMBOL_INFO *)symbuf;
 			sym->SizeOfStruct = sizeof( SYMBOL_INFO );
 			sym->MaxNameLen = 255;
+
+			if ( info && info->ContextRecord ) WriteFaultStack( f, proc, *info->ContextRecord, sym );
+			fprintf( f, "handler stack:\n" );
 
 			for ( USHORT i = 0; i < n; ++i )
 			{

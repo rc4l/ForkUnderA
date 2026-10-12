@@ -12,6 +12,9 @@
 #include "r_data/colormaps.h"
 #include "v_palette.h"
 #include "tarray.h"
+#include "v_video.h"   // [rc4l] SCREENWIDTH, SCREENHEIGHT
+
+#include <string.h>
 
 namespace zx { namespace draw2d {
 
@@ -64,6 +67,17 @@ int ScreenBlends(sector_t *viewsector, int viewArea, bool fixedColormap, int pal
 	}
 	if (blend[3] > 0.0f) { const ScreenFill f = { blend[0], blend[1], blend[2], blend[3], false }; out[n++] = f; }
 	return n;
+}
+
+zx::hwrender::Quad2D PrepareScreenFill(const ScreenFill &f)
+{
+	zx::hwrender::Quad2D q;
+	memset(&q, 0, sizeof(q));
+	q.w = (float)SCREENWIDTH; q.h = (float)SCREENHEIGHT;
+	q.u2 = 1; q.v2 = 1;
+	q.r = f.r; q.g = f.g; q.b = f.b; q.a = f.a;
+	q.blend = f.multiply ? 2 : 0;
+	return q;
 }
 
 }} // namespace zx::draw2d

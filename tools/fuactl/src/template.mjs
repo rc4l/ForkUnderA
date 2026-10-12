@@ -57,17 +57,28 @@ export function judge(map, frames, boxes, size = [1280, 720], [a, b] = ["gl", "v
   return { lines, failed };
 }
 
+// [rc4l] The renderer `dumprenderer` names, or null when it printed none.
+export function launchRenderer(text) {
+  const m = /renderer=(\w+)/.exec(String(text || ""));
+  return m ? m[1] : null;
+}
+
 // [rc4l] One locked launch of the wad, handed to `body` and always torn down; a crash comes back as the error.
 async function withEngine({ port, map, iwad, wadPath, gl, side = {}, size }, body) {
   let inst = null;
   const c = new BridgeClient();
   try {
-    inst = await play({ port, map, iwad, file: wadPath, lock: true, gl, width: size[0], height: size[1] });
+    inst = await play({ port, map, iwad, file: wadPath, lock: true, gl, noGl: !!side.noGl, width: size[0], height: size[1] });
     await c.connect(inst.port, { token: inst.token });
     await c.waitHello();
+    // [rc4l] A side without GL must really have none: a binary that ignores -vulkan would pass as GL beside an embedded backend.
+    if (side.noGl) {
+      const renderer = launchRenderer(await cap.exec(c, "dumprenderer"));
+      if (renderer !== "vulkan") throw new Error(`side ${side.name} asked for no GL and the launch reports ${renderer || "no renderer"}`);
+    }
     await cap.exec(c, "r_drawplayersprites 0");
-    // [rc4l] GL keeps walking the scene, or nothing feeds the passes that still take from it.
-    if (!gl) await cap.exec(c, "fua_dg_standalone 0");
+    // [rc4l] GL keeps walking the scene, or nothing feeds the passes that still take from it; a launch without GL has only the standalone frame.
+    if (!gl && !side.noGl) await cap.exec(c, "fua_dg_standalone 0");
     for (const line of sideCommands(side)) await cap.exec(c, line);
     await cap.waitTics(c, 10);
     return await body(c);

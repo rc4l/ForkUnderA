@@ -23,7 +23,8 @@ The weapon too (`pspritebuild.cpp`, `computation/pspritequad_compute`): each lay
 `DrawPlayerSprites` and `DrawPSprite` draw it, with the weapon light (software lighting's curve, the
 brighten a fullbright layer gives, bright fog), the 3D floor band the eye is in, the style and alpha
 `AlterWeaponSprite` leaves, the overlay offsets and bob, and the targeter; recorded into the 2D capture
-where GL's quad was. GL's `P_BobWeapon` result is handed over, since it smooths the bob a step per call.
+where GL's quad was. GL's `P_BobWeapon` result is handed over, since it smooths the bob a step per call;
+`BuildPlayerSpritesBobbed` works it out itself for a frame with no GL renderer.
 `fua_psprite_check 1` compares the derived quads with GL's bit for bit (`fua_psprite_report`): about
 54,000 frames with a weapon drawn across Freedoom MAP01 and MAP04 firing and the Whodunit maps, 0 differed. GL's own record
 now carries a player-translated layer's colours and an additive layer's blend, which it dropped.
@@ -56,6 +57,8 @@ neither there. `fua_sprites_own 0` hands every sprite and model back to GL.
 - `gl/scene/gl_weapon.cpp` `DrawPlayerSprites`: `BuildPlayerSprites` with GL's bob; `DrawTargeterSprites`:
   `BuildTargeterSprites`; `DrawPSprite`: `NoteGLPSprite`, and records only when `PSpritesOwned` is false.
 - `gl/scene/gl_scene.cpp` `EndDrawScene`: `CheckFramePSprites` once the weapon and targeter are in.
+- `features/frame/playerview.cpp` `RenderPlayerView`: `BuildPlayerSpritesBobbed`, `BuildTargeterSprites` and
+  `CheckFramePSprites`, for a launch without GL.
 
 GL settings it still reads, until the renderer interface supplies them (P5): `glset`,
 `gl_fixedcolormap`, `currentmapsection`, `getExtraLight`, `gl_FindModelFrame`, and GL's sprite cvars.

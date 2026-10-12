@@ -133,6 +133,15 @@ int LayerTranslation(const player_t *player, const pspdef_t *psp)
 
 } // namespace
 
+// [rc4l] The player whose weapon is drawn, or NULL: as the software renderer, none from a chase camera or a dead camera's eye.
+static player_t *WeaponPlayer()
+{
+	player_t *player = players[consoleplayer].camera->player;
+	if (!player || !r_drawplayersprites || !camera->player || (players[consoleplayer].cheats & CF_CHASECAM) ||
+	    (r_deathcamera && camera->health <= 0)) return NULL;
+	return player;
+}
+
 bool PSpritesOwned()
 {
 	return fua_psprites_own && !fua_psprite_check;
@@ -142,10 +151,8 @@ void BuildPlayerSprites(sector_t *viewsector, int viewArea, fixed_t bobX, fixed_
 {
 	if (!fua_psprites_own && !fua_psprite_check) return;
 	AActor *playermo = players[consoleplayer].camera;
-	player_t *player = playermo->player;
-	// [rc4l] As the software renderer: no weapon from a chase camera or a dead camera's eye.
-	if (!player || !r_drawplayersprites || !camera->player || (players[consoleplayer].cheats & CF_CHASECAM) ||
-	    (r_deathcamera && camera->health <= 0)) return;
+	player_t *player = WeaponPlayer();
+	if (player == NULL) return;
 
 	// [rc4l] [overlay] The layers below the targeter in draw order, each fullbright unless its frame's GLDEFS says otherwise.
 	std::vector<pspdef_t *> layers;
@@ -308,6 +315,15 @@ void BuildPlayerSprites(sector_t *viewsector, int viewArea, fixed_t bobX, fixed_
 		LayerQuad(player, psp, drawsx + fixed_t::FromRaw(addxRaw), drawsy + fixed_t::FromRaw(addyRaw), LayerTranslation(player, psp), rgba, dyn,
 			zx::draw2d::ComputeQuadBlend(layerStyle.BlendOp, layerStyle.DestAlpha), zx::draw2d::ComputeTextureMode(layerStyle.Flags, false));
 	}
+}
+
+void BuildPlayerSpritesBobbed(sector_t *viewsector, int viewArea)
+{
+	player_t *player = WeaponPlayer();
+	if (player == NULL) return;
+	fixed_t bobX, bobY;
+	P_BobWeapon(player, &player->psprites[ps_weapon], &bobX, &bobY);
+	BuildPlayerSprites(viewsector, viewArea, bobX, bobY);
 }
 
 void BuildTargeterSprites(AActor *viewActor)

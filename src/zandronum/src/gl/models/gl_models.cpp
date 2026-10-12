@@ -120,9 +120,11 @@ void gl_FlushModels()
 
 FModelVertexBuffer::FModelVertexBuffer(bool needindex)
 {
+	ibo_id = 0;
+	mIndexed = needindex;
+	if (vao_id == 0) return;   // [rc4l] no GL: the CPU copy alone
 	glBindVertexArray(vao_id);
 
-	ibo_id = 0;
 	if (needindex)
 	{
 		glGenBuffers(1, &ibo_id);
@@ -173,6 +175,7 @@ FModelVertex *FModelVertexBuffer::LockVertexBuffer(unsigned int size)
 
 void FModelVertexBuffer::UnlockVertexBuffer()
 {
+	if (vbo_id == 0) return;
 	glBindBuffer(GL_ARRAY_BUFFER, vbo_id);
 	glBufferData(GL_ARRAY_BUFFER, mShadowVerts.Size() * sizeof(FModelVertex),
 		mShadowVerts.Size() ? &mShadowVerts[0] : NULL, GL_STATIC_DRAW);
@@ -186,7 +189,7 @@ void FModelVertexBuffer::UnlockVertexBuffer()
 
 unsigned int *FModelVertexBuffer::LockIndexBuffer(unsigned int size)
 {
-	if (ibo_id != 0)
+	if (mIndexed)
 	{
 		mShadowIndices.Resize(size);
 		return size ? &mShadowIndices[0] : NULL;
@@ -205,6 +208,7 @@ unsigned int *FModelVertexBuffer::LockIndexBuffer(unsigned int size)
 
 void FModelVertexBuffer::UnlockIndexBuffer()
 {
+	if (ibo_id == 0) return;
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ibo_id);
 	glBufferData(GL_ELEMENT_ARRAY_BUFFER, mShadowIndices.Size() * sizeof(unsigned int),
 		mShadowIndices.Size() ? &mShadowIndices[0] : NULL, GL_STATIC_DRAW);

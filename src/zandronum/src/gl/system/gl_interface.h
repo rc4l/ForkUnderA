@@ -53,4 +53,7 @@ struct RenderContext
 
 extern RenderContext gl;
 
+// [rc4l] Whether a GL context was ever made and its entry points loaded; a launch without GL (-vulkan) has none.
+inline bool gl_HasContext() { return gl.version > 0.f; }
+
 #endif

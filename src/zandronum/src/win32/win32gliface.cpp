@@ -29,6 +29,7 @@
 // features/borderless-video/computation/displaymode_compute.h. Backends ask it; never branch
 // on the raw CVAR. Easy to replace when upstream's video backend is cherry-picked wholesale.
 #include "features/borderless-video/computation/displaymode_compute.h"
+#include "features/hwrender/backendonly.h"   // [rc4l] -vulkan
 
 void gl_CalculateCPUSpeed();
 extern int NewWidth, NewHeight, NewBits, DisplayBits;
@@ -58,7 +59,7 @@ EXTERN_CVAR(Int, vid_refreshrate)
 //
 //==========================================================================
 
-Win32GLVideo::Win32GLVideo(int parm) : m_Modes(NULL), m_IsFullscreen(false)
+Win32GLVideo::Win32GLVideo(int parm, bool gl) : m_hDC(NULL), m_gl(gl), m_Modes(NULL), m_IsFullscreen(false), m_hRC(NULL)
 {
 	#ifdef _WIN32
 		 if (CPU.bRDTSC) gl_CalculateCPUSpeed();
@@ -71,7 +72,7 @@ Win32GLVideo::Win32GLVideo(int parm) : m_Modes(NULL), m_IsFullscreen(false)
 
 	GetDisplayDeviceName();
 	MakeModesList();
-	SetPixelFormat();
+	if (m_gl) SetPixelFormat();
 
 }
 
@@ -384,6 +385,8 @@ DFrameBuffer *Win32GLVideo::CreateFrameBuffer(int width, int height, bool fs, DF
 		//old->GetFlash(flashColor, flashAmount);
 		delete old;
 	}
+	// [rc4l] A launch without GL gets the backend's frame buffer on the same window and modes.
+	if (!m_gl) return zx::hwrender::CreateBackendFrameBuffer(m_hMonitor, m_DisplayWidth, m_DisplayHeight, m_DisplayBits, m_DisplayHz, fs);
 	fb = new OpenGLFrameBuffer(m_hMonitor, m_DisplayWidth, m_DisplayHeight, m_DisplayBits, m_DisplayHz, fs);
 	return fb;
 }
@@ -399,7 +402,7 @@ bool Win32GLVideo::SetResolution (int width, int height, int bits)
 	if (GLRenderer != NULL) GLRenderer->FlushTextures();
 	I_ShutdownGraphics();
 	
-	Video = new Win32GLVideo(0);
+	Video = new Win32GLVideo(0, m_gl);
 	if (Video == NULL) I_FatalError ("Failed to initialize display");
 	
 	bits=32;
@@ -883,7 +886,7 @@ IMPLEMENT_ABSTRACT_CLASS(Win32GLFrameBuffer)
 //
 //==========================================================================
 
-Win32GLFrameBuffer::Win32GLFrameBuffer(void *hMonitor, int width, int height, int bits, int refreshHz, bool fullscreen) : BaseWinFB(width, height) 
+Win32GLFrameBuffer::Win32GLFrameBuffer(void *hMonitor, int width, int height, int bits, int refreshHz, bool fullscreen, bool initGL) : BaseWinFB(width, height) 
 {
 	static int localmultisample=-1;
 	
@@ -995,13 +998,16 @@ Win32GLFrameBuffer::Win32GLFrameBuffer(void *hMonitor, int width, int height, in
 		I_RestoreWindowedPos();
 	}
 
-	if (!static_cast<Win32GLVideo *>(Video)->InitHardware(Window, localmultisample))
+	vsyncfunc = NULL;
+	if (initGL)
 	{
-		vid_renderer = 0;
-		return;
+		if (!static_cast<Win32GLVideo *>(Video)->InitHardware(Window, localmultisample))
+		{
+			vid_renderer = 0;
+			return;
+		}
+		vsyncfunc = (PFNWGLSWAPINTERVALEXTPROC)wglGetProcAddress("wglSwapIntervalEXT");
 	}
-
-	vsyncfunc = (PFNWGLSWAPINTERVALEXTPROC)wglGetProcAddress("wglSwapIntervalEXT");
 
 	HDC hDC = GetDC(Window);
 	m_supportsGamma = !!GetDeviceGammaRamp(hDC, (void *)m_origGamma);
@@ -1206,5 +1212,5 @@ void Win32GLFrameBuffer::NewRefreshRate ()
 
 IVideo *gl_CreateVideo()
 {
-	return new Win32GLVideo(0);
+	return new Win32GLVideo(0, !zx::hwrender::BackendOnly());
 }

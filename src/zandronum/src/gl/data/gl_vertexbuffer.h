@@ -199,6 +199,7 @@ class FModelVertexBuffer : public FVertexBuffer
 {
 	int mIndexFrame[2];
 	unsigned int ibo_id;
+	bool mIndexed;   // [rc4l] whether it keeps indices, which a buffer with no GL behind it still does
 
 public:
 

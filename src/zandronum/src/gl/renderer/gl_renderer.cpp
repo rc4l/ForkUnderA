@@ -251,12 +251,7 @@ void FGLRenderer::EndOffscreen()
 
 unsigned char *FGLRenderer::GetTextureBuffer(FTexture *tex, int &w, int &h)
 {
-	FMaterial * gltex = FMaterial::ValidateTexture(tex, false);
-	if (gltex)
-	{
-		return gltex->CreateTexBuffer(0, w, h);
-	}
-	return NULL;
+	return FMaterial::TextureBuffer(tex, w, h);
 }
 
 //===========================================================================
@@ -504,6 +499,11 @@ void FGLRenderer::FlatFill (int left, int top, int right, int bottom, FTexture *
 	ptr->Set(right, top, 0, fU2, fV1); ptr++;
 	ptr->Set(right, bottom, 0, fU2, fV2); ptr++;
 	GLRenderer->mVBO->RenderCurrent(ptr, GL_TRIANGLE_STRIP);
+
+	// [rc4l] features/draw2d: the same fill, as tiles, for the backend.
+	static std::vector<zx::hwrender::Quad2D> tiles;
+	zx::draw2d::PrepareFlatFill(left, top, right, bottom, src, local_origin, tiles);
+	for (size_t i = 0; i < tiles.size(); i++) zx::hwrender::Record2D(tiles[i]);
 }
 
 //==========================================================================

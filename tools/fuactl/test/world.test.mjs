@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ensureCheat, verifyWorld, playCvars, sameCvarValue, CHEATS } from "../src/play.mjs";
+import { ensureCheat, verifyWorld, playCvars, playArgs, sameCvarValue, CHEATS } from "../src/play.mjs";
 import { engineArgs } from "../src/launch.mjs";
 
 // A stand-in engine: answers console commands from a script of replies, and records what it was asked.
@@ -76,6 +76,12 @@ test("the hands-on build asks for no monsters and for freelook enabled", () => {
   // [rc4l] --cvar's come last, so they can turn off what the launch set.
   assert.equal(playCvars({ extra: { sv_nomonsters: "0" } }).sv_nomonsters, "0");
   assert.equal(playCvars({ extra: { fua_dg_standalone: "0" } }).fua_dg_standalone, "0");
+});
+
+test("--no-gl launches with -vulkan after the wads, and without it nothing extra", () => {
+  assert.deepEqual(playArgs(["a.pk3", "b.wad"]), ["-file", "a.pk3", "-file", "b.wad"]);
+  assert.deepEqual(playArgs(["a.pk3"], { noGl: true }), ["-file", "a.pk3", "-vulkan"]);
+  assert.deepEqual(playArgs([], { noGl: true }), ["-vulkan"]);
 });
 
 test("cheats run AFTER the map, cvars BEFORE it", () => {

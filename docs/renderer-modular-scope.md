@@ -254,8 +254,22 @@ weapon checked against GL's record on about 54,000 frames. `features/frame` driv
 scene, GL hooked in only for what the backend leaves it. The walks and the backend no longer read
 `GLRenderer`: the sky scroll, the view vector and angles, the view area and the particle and mirror
 textures come from `viewsetup` and `materials`, and `InstallSpriteView` gives a frame without GL its
-sprite view. Next: the player's view without GL (`RenderView`'s engine half), then a window,
-framebuffer and renderer of Vulkan's own, chosen at startup.
+sprite view.
+
+`-vulkan` now launches with no GL context. `I_CreateRenderer` installs the backend's renderer, whose
+`RenderView` is `features/frame`'s `RenderPlayerView`. `Win32GLVideo` keeps the window and modes, sets
+no pixel format, and makes the backend's frame buffer: 2D recorded through `features/draw2d`, palette
+and gamma from `features/display`, the window's size and scaling reconciled as GL's are, and
+`screenshot` read back from the swapchain. The title, menus, console and intermission draw over black;
+a level draws once the map bake is up. Without GL, model vertex buffers keep only their CPU copy, and
+texture reads and flushes no longer go through `GLRenderer`. Two fixes reach the GL launch's Vulkan
+view too: the view window (a status bar, a smaller `screenblocks`) frames the world as GL's
+`SetViewport` does (scenario `viewwindow`), and `FlatFill` (border, status-bar flanks, text screens)
+is recorded. Checked at 16 spots on MAP01, wdiex02, WDI01, WDI07 and WDI18: the `-vulkan`
+frame is within 0.3% of the GL launch's standalone frame, apart from HUD text and a randomised item
+that differed between the two launches (scenario
+`nogl`). Not yet: HUD models, wipes, the save picture (a placeholder), `FillSimplePoly`, and the
+internal render scale (the backend draws at the window's size).
 
 ### P6: visibility and threads
 

@@ -21,6 +21,9 @@ bool PSpritesOwned();
 // [rc4l] The weapon's layers below the targeter for a view in `viewsector`, given the frame's weapon bob, which P_BobWeapon smooths per call and so is computed once by the caller.
 void BuildPlayerSprites(sector_t *viewsector, int viewArea, fixed_t bobX, fixed_t bobY);
 
+// [rc4l] The same for a frame with no GL renderer to hand over its bob, which it works out itself.
+void BuildPlayerSpritesBobbed(sector_t *viewsector, int viewArea);
+
 // [rc4l] The targeter's three layers, drawn only from the player's own eye (`viewActor`).
 void BuildTargeterSprites(AActor *viewActor);
 

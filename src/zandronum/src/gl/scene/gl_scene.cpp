@@ -700,22 +700,6 @@ void FGLRenderer::DrawScene(bool toscreen)
 // It goes into the 2D quad list rather than anywhere new because the ordering falls out for free:
 // DrawBlend runs after the weapon sprite and before the status bar, so a quad recorded here lands
 // between them, exactly where GL puts it.
-static void RecordScreenBlend(float r, float g, float b, float a, int blendMode)
-{
-	zx::hwrender::Quad2D q;
-	memset(&q, 0, sizeof(q));
-	q.material = NULL;               // untextured fill
-	q.x = 0; q.y = 0;
-	q.w = (float)SCREENWIDTH; q.h = (float)SCREENHEIGHT;
-	q.u1 = 0; q.v1 = 0; q.u2 = 1; q.v2 = 1;
-	q.r = r; q.g = g; q.b = b; q.a = a;
-	q.clipR = 0; q.clipL = 0;        // no scissor
-	q.blend = blendMode;
-	q.translation = 0;
-	q.texMode = 0;
-	zx::hwrender::Record2D(q);
-}
-
 static void FillScreen()
 {
 	gl_RenderState.AlphaFunc(GL_GEQUAL, 0.f);
@@ -754,7 +738,7 @@ void FGLRenderer::DrawBlend(sector_t * viewsector)
 		else gl_RenderState.BlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 		gl_RenderState.SetColor(f.r, f.g, f.b, f.a);
 		FillScreen();
-		RecordScreenBlend(f.r, f.g, f.b, f.a, f.multiply ? 2 : 0);
+		zx::hwrender::Record2D(zx::draw2d::PrepareScreenFill(f));
 	}
 }
 
@@ -833,39 +817,8 @@ void FGLRenderer::ProcessScene(bool toscreen)
 
 void FGLRenderer::SetFixedColormap (player_t *player)
 {
-	gl_fixedcolormap=CM_DEFAULT;
-
-	// check for special colormaps
-	player_t * cplayer = player->camera->player;
-	if (cplayer) 
-	{
-		if (cplayer->extralight == INT_MIN)
-		{
-			gl_fixedcolormap=CM_FIRSTSPECIALCOLORMAP + INVERSECOLORMAP;
-			extralight=0;
-		}
-		else if (cplayer->fixedcolormap != NOFIXEDCOLORMAP)
-		{
-			gl_fixedcolormap = CM_FIRSTSPECIALCOLORMAP + cplayer->fixedcolormap;
-		}
-		else if (cplayer->fixedlightlevel != -1)
-		{
-			for(AInventory * in = cplayer->mo->Inventory; in; in = in->Inventory)
-			{
-				PalEntry color = in->GetBlend ();
-
-				// Need special handling for light amplifiers 
-				if (in->IsKindOf(RUNTIME_CLASS(APowerTorch)))
-				{
-					gl_fixedcolormap = cplayer->fixedlightlevel + CM_TORCH;
-				}
-				else if (in->IsKindOf(RUNTIME_CLASS(APowerLightAmp)))
-				{
-					gl_fixedcolormap = CM_LITE;
-				}
-			}
-		}
-	}
+	// [rc4l] features/viewsetup works the fixed colormap out, for a frame GL draws or not.
+	gl_fixedcolormap = zx::viewsetup::FixedColormap(player);
 	gl_RenderState.SetFixedColormap(gl_fixedcolormap);
 }
 
@@ -1081,14 +1034,7 @@ void FGLRenderer::RenderView (player_t* player)
 	//
 	// No upstream counterpart -- these GL files are not in the commit being ported.
 	float ratio = WidescreenRatio;
-	if (!AspectTallerThanWide(ratio))
-	{
-		fovratio = 1.333333f;
-	}
-	else
-	{
-		fovratio = ratio;
-	}
+	fovratio = zx::viewsetup::ComputeFovRatio(ratio, AspectTallerThanWide(ratio));
 
 	SetFixedColormap (player);
 

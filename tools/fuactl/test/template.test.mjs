@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { judge, judgeCounter, scenarioOutcome, isMain, sideCommands, vantageCommands, boxWithin, runScenarioIfMain, scenarioOptions, scenarioRun, templateScenarioFiles, probeChoices, pairFrame, withSideCvars, GL_VS_VULKAN } from "../src/template.mjs";
+import { judge, judgeCounter, scenarioOutcome, isMain, sideCommands, vantageCommands, boxWithin, runScenarioIfMain, scenarioOptions, scenarioRun, templateScenarioFiles, probeChoices, pairFrame, withSideCvars, launchRenderer, GL_VS_VULKAN } from "../src/template.mjs";
 import { pathToFileURL } from "node:url";
 import fs from "node:fs";
 import os from "node:os";
@@ -32,6 +32,13 @@ test("a counter with a floor passes at or over it and fails under it", () => {
     { line: "PASS MAP01 particles drawn: 40 (floor 1)", failed: 0 });
   assert.deepEqual(judgeCounter("MAP01", "particles: 0 drawn this frame", counter),
     { line: "FAIL MAP01 particles drawn: 0 (floor 1)", failed: 1 });
+});
+
+test("the renderer is read from dumprenderer's report, and none when it printed none", () => {
+  assert.equal(launchRenderer("MCP_RENDERER\nrenderer=vulkan\nscreen_width=1280\n"), "vulkan");
+  assert.equal(launchRenderer("MCP_RENDERER\nrenderer=opengl\n"), "opengl");
+  assert.equal(launchRenderer("Unknown command"), null);
+  assert.equal(launchRenderer(undefined), null);
 });
 
 test("a box under its ceiling passes and one over it fails", () => {

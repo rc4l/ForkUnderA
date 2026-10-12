@@ -153,7 +153,7 @@ const USAGE = `fuactl <command>
   renderer-info --port P [--token T]   renderer identity + whether GL timer queries work on this driver
   ui <action> [args] --port P [--token T]   drive the UI: read (menu as text), find <label>, nav <keys>, click <x> <y>, drag, type <text>, look --yaw D --pitch D, screenshot [name], exec <ccmd>
   diligent --port P [--frames N] [--shot FILE] [--sweep DIR]   drive the Diligent (Vulkan) backend: bake the level mesh, upload geometry, optional swapchain screenshot, optional debug-view sweep (lm0..lm4.png in DIR), the matched Diligent-vs-GL benchmark, and with --scale a GPU-time probe at 1x..100x the visible geometry
-  play [--restart] [--port P] [--token T] [--spot NAME | --unpark] [--map M] [--file a.pk3,b.pk3] [--cvar k=v,k2=v2] [--preset ID --variant V --store DIR] [--gl] [--side-by-side] [--rt] [--monsters] [--lock] [--res WxH]   a build to walk around in, Vulkan live in the window; stays up until Ctrl-C
+  play [--restart] [--port P] [--token T] [--spot NAME | --unpark] [--map M] [--file a.pk3,b.pk3] [--cvar k=v,k2=v2] [--preset ID --variant V --store DIR] [--gl | --no-gl] [--side-by-side] [--rt] [--monsters] [--lock] [--res WxH]   a build to walk around in, Vulkan live in the window; stays up until Ctrl-C
   build [--root DIR] [--no-stage] [--tests]   compile the engine (with --tests the unit tests too, and run them) and stage it unless --no-stage, failing loudly instead of staging a stale binary
   mapdata <MAP> (--preset ID | --file a.pk3,b.wad) [--sector N,..] [--line N,..] [--special N] [--tag N] [--thing TYPE,..] [--scripts REGEX]   a UDMF level's summary, sectors, lines, things of the given types and ACS source lines, read from its files
   actors [--near x,y] [--radius R] [--toward YAW | --ahead] [--cone DEG] [--class REGEX]   actors near a point (default the player), nearest first, optionally only in a direction
@@ -919,7 +919,7 @@ async function main() {
         // [rc4l] --res WxH, so a capture can be framed exactly like the window a report came from.
         width: flags.res ? Number(String(flags.res).split("x")[0]) : undefined,
         height: flags.res ? Number(String(flags.res).split("x")[1]) : undefined,
-        gl: !!flags.gl, sideBySide: !!flags["side-by-side"], rt: !!flags.rt,
+        gl: !!flags.gl, noGl: !!flags["no-gl"], sideBySide: !!flags["side-by-side"], rt: !!flags.rt,
         monsters: !!flags.monsters, lock: !!flags.lock,
         extra: shot.parseCvarFlag(flags.cvar) || {},
         at: spotAt,

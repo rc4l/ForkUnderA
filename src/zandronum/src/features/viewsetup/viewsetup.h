@@ -7,6 +7,7 @@
 #define ZX_VIEWSETUP_H
 
 class AActor;
+struct player_t;
 
 namespace zx { namespace viewsetup {
 
@@ -31,6 +32,9 @@ void TurnView(unsigned viewAngle);
 
 // [rc4l] SetViewArea: the render sector the eye is in, the eye kept inside it unless `viewActor` is an unrestricted spectator, and the area against a height transfer.
 void SetViewArea(AActor *viewActor);
+
+// [rc4l] SetFixedColormap: the colormap the player's powers fix the view in (invulnerability's inverse, which also clears extralight, a special one, light amplification or a torch), or CM_DEFAULT.
+int FixedColormap(player_t *player);
 
 // [rc4l] Register the sprite view this view answers, for a frame GL is not drawing.
 void InstallSpriteView();

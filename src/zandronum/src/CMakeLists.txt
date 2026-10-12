@@ -1612,6 +1612,9 @@ add_executable( zdoom WIN32
 	features/sprites/modelbuild.cpp
 	features/sprites/pspritebuild.cpp
 	features/frame/standaloneframe.cpp
+	features/frame/playerview.cpp
+	features/hwrender/backendvideo.cpp
+	features/hwrender/backendrenderer.cpp
 	features/visibility/viswalk.cpp
 	features/draw2d/draw2d.cpp
 	features/draw2d/screenblend.cpp
@@ -1632,6 +1635,8 @@ add_executable( zdoom WIN32
 	features/sprites/computation/modelpose_compute.cpp
 	features/sprites/computation/pspritequad_compute.cpp
 	features/frame/computation/actorcull_compute.cpp
+	features/display/computation/display_compute.cpp
+	features/draw2d/computation/flatfill_compute.cpp
 	features/levelmesh/computation/shading_compute.cpp
 	features/levelmesh/computation/surfacebudget_compute.cpp
 	features/levelmesh/computation/lightband_compute.cpp

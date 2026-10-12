@@ -4,6 +4,8 @@
 #include "features/viewsetup/viewsetup.h"
 #include "features/viewsetup/computation/viewsetup_compute.h"
 
+#include <limits.h>
+
 #include "actor.h"
 #include "d_player.h"
 #include "doomstat.h"
@@ -23,6 +25,9 @@
 #include "gl/data/gl_data.h"
 #include "gl/renderer/gl_renderer.h"     // in_area
 #include "gl/dynlights/gl_dynlight.h"    // ADynamicLight, STAT_DLIGHT
+#include "gl/renderer/gl_colormap.h"     // CM_*
+#include "g_shared/a_artifacts.h"        // APowerTorch, APowerLightAmp
+#include "r_data/colormaps.h"            // INVERSECOLORMAP
 
 EXTERN_CVAR(Bool, r_deathcamera)
 
@@ -33,8 +38,12 @@ static_assert(area_normal == kAreaNormal && area_below == kAreaBelow && area_abo
 
 static ViewSetup g_view = { NULL, NULL, 0.f, 0.f, 90.f, 0xffffffffu, 270.f, 1.f, 0.f, 0.f, 0.f, false };
 
+// [rc4l] The sprite order index InstallSpriteView hands out, from zero each view as GL's CreateScene starts gl_spriteindex.
+static int g_spriteIndex = 0;
+
 void SetupView(AActor *camera, float fov, long frameMS)
 {
+	g_spriteIndex = 0;
 	g_view.camera = camera;
 	g_view.fov = fov;
 	ComputeViewAngleVector(viewangle, g_view.yaw, g_view.vectorX, g_view.vectorY);
@@ -54,6 +63,27 @@ void SetupView(AActor *camera, float fov, long frameMS)
 }
 
 const ViewSetup &CurrentView() { return g_view; }
+
+int FixedColormap(player_t *player)
+{
+	player_t *cplayer = player->camera->player;
+	if (cplayer == NULL) return CM_DEFAULT;
+	if (cplayer->extralight == INT_MIN)
+	{
+		extralight = 0;
+		return CM_FIRSTSPECIALCOLORMAP + INVERSECOLORMAP;
+	}
+	if (cplayer->fixedcolormap != NOFIXEDCOLORMAP) return CM_FIRSTSPECIALCOLORMAP + cplayer->fixedcolormap;
+	if (cplayer->fixedlightlevel == -1) return CM_DEFAULT;
+	// [rc4l] Light amplifiers need their own handling; the last such power in the inventory wins.
+	int colormap = CM_DEFAULT;
+	for (AInventory *in = cplayer->mo->Inventory; in; in = in->Inventory)
+	{
+		if (in->IsKindOf(RUNTIME_CLASS(APowerTorch))) colormap = cplayer->fixedlightlevel + CM_TORCH;
+		else if (in->IsKindOf(RUNTIME_CLASS(APowerLightAmp))) colormap = CM_LITE;
+	}
+	return colormap;
+}
 
 void TurnView(unsigned viewAngle)
 {
@@ -77,8 +107,6 @@ void SetViewArea(AActor *viewActor)
 }
 
 namespace {
-
-int g_spriteIndex = 0;
 
 AActor *ViewActor() { return g_view.viewActor; }
 void ViewVector(float &x, float &y) { x = g_view.vectorX; y = g_view.vectorY; }

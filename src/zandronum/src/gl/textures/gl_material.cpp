@@ -815,6 +815,12 @@ again:
 	return NULL;
 }
 
+unsigned char *FMaterial::TextureBuffer(FTexture *tex, int &w, int &h)
+{
+	FMaterial *gltex = ValidateTexture(tex, false);
+	return gltex != NULL ? gltex->CreateTexBuffer(0, w, h) : NULL;
+}
+
 FMaterial * FMaterial::ValidateTexture(FTextureID no, bool expand, bool translate)
 {
 	return ValidateTexture(translate? TexMan(no) : TexMan[no], expand);

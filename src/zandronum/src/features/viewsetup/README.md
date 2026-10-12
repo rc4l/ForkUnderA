@@ -13,7 +13,8 @@ out for itself, and the walks read them back from `GLRenderer`; now both read `C
 
 `SetViewArea` places the eye in its render sector, inside its floor and ceiling, and finds its area
 against a height transfer (`in_area`), for GL's view and a skybox's walk alike. `InstallSpriteView`
-registers a sprite view answered from this view, for a frame GL does not draw.
+registers a sprite view answered from this view, for a frame GL does not draw. `FixedColormap` is the
+player's fixed colormap as GL's `SetFixedColormap` picks it, and `ComputeFovRatio` the lens's ratio.
 
 `computation/viewsetup_compute` holds the pitch, frustum, sky scroll, view vector, view area and eye
 clamp arithmetic, tested.
@@ -26,6 +27,8 @@ clamp arithmetic, tested.
 - `features/visibility/viswalk.cpp`: the player's view actor, every walk's frustum, a skybox walk's
   `SetViewArea` and a mirror walk's `TurnView`, and the view vector and angles inside a portal view.
 - `features/hwrender/diligent/dgsky.cpp`: the sky's scroll.
+- `gl/scene/gl_scene.cpp` `SetFixedColormap` and `RenderView`: `FixedColormap` and `ComputeFovRatio`; and
+  `features/frame/playerview.cpp` the same for a launch without GL.
 
 GL state it still reads, until it moves out of `gl/` (P5): `glset.pixelstretch`, `in_area`, and the
 `ADynamicLight` class.

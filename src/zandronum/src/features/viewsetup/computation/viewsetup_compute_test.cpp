@@ -66,3 +66,9 @@ TEST(ViewSetup, TheEyeStaysFourUnitsInside)
 	EXPECT_EQ(ComputeClampedViewZ(1 * u, 0, 100 * u), 4 * u);
 	EXPECT_EQ(ComputeClampedViewZ(1 * u, 0, 2 * u), 4 * u);   // [rc4l] crossed: the floor wins
 }
+
+TEST(ViewSetup, TheFovRatioIsFourThirdsUnlessTheScreenIsTall)
+{
+	EXPECT_FLOAT_EQ(ComputeFovRatio(16.f / 9.f, false), 1.333333f);
+	EXPECT_FLOAT_EQ(ComputeFovRatio(1.25f, true), 1.25f);
+}

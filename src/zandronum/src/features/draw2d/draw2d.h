@@ -9,6 +9,8 @@
 #include "v_video.h"                       // DCanvas::DrawParms
 #include "features/hwrender/hud2d.h"       // Quad2D
 
+#include <vector>
+
 class FTexture;
 
 namespace zx { namespace draw2d {
@@ -34,6 +36,9 @@ zx::hwrender::Quad2D PrepareLine(int x1, int y1, int x2, int y2, PalEntry color)
 zx::hwrender::Quad2D PreparePixel(int x, int y, PalEntry color);
 zx::hwrender::Quad2D PrepareDim(PalEntry color, float amount, int x, int y, int w, int h);
 zx::hwrender::Quad2D PrepareClear(int left, int top, int right, int bottom, PalEntry color);
+
+// [rc4l] A FlatFill: the rectangle tiled with `src` from the screen's origin or its own, as one quad per copy of the texture; out is replaced.
+void PrepareFlatFill(int left, int top, int right, int bottom, FTexture *src, bool localOrigin, std::vector<zx::hwrender::Quad2D> &out);
 
 }} // namespace zx::draw2d
 

@@ -4,6 +4,7 @@
 // [rc4l] The frame driver: arming a level for the backend, the per-frame entry point, and the present-to-present clock fua_frametimes reads.
 
 #include "features/hwrender/diligent/dgscene_internal.h"
+#include "features/hwrender/backendonly.h"
 
 namespace zx { namespace hwrender {
 
@@ -291,9 +292,9 @@ bool StandaloneActive()
 	return true;
 }
 
-void LiveFrame()
+// [rc4l] The level's scene, set up for the level and its standalone bake armed and settled; true once it can be drawn.
+static bool AdvanceLevelScene()
 {
-	zx::hwrender::GLFrameDone();
 	// [rc4l] fua_vulkan is the user-facing switch and sets itself up; fua_diligent_live is the manual
 	// override that assumes someone already ran the bake by hand.
 	const bool autoReady = fua_vulkan ? AutoSetupForLevel() : false;
@@ -311,6 +312,15 @@ void LiveFrame()
 		if (++g_standaloneArmed > 3) g_standaloneBaked = true;   // a frame to bake, one to upload
 	}
 	if (!fua_dg_standalone) { g_standaloneBaked = false; g_standaloneArmed = 0; }
+	return autoReady;
+}
+
+void LiveFrame()
+{
+	// [rc4l] A launch without GL presents from its frame buffer's Update, where every path of D_Display passes.
+	if (BackendOnly()) return;
+	zx::hwrender::GLFrameDone();
+	const bool autoReady = AdvanceLevelScene();
 
 	// Uncover the GL frame underneath when the backend is off, rather than leaving the last Vulkan
 	// frame frozen over it. This is what makes turning it off an A/B toggle you can hold.
@@ -329,6 +339,84 @@ void LiveFrame()
 	BuildMVP(g_mvp);
 	DrawSceneOnce(true, true);
 	zx::hwrender::BackendFrameDone();
+}
+
+// [rc4l] Whether the engine drew a view of the world this frame, so a launch without GL draws the world only under one.
+static bool g_worldViewThisFrame = false;
+
+void NoteWorldView() { g_worldViewThisFrame = true; }
+
+bool OpenBackendOutput(int width, int height)
+{
+	Fua_SetBackendWindowSize(width, height);
+	FString err;
+	if (!DiligentShowWindow(err))
+	{
+		Printf("-vulkan: %s\n", err.GetChars());
+		return false;
+	}
+	Fua_ShowBackendWindow(GetBackendWindow(), 1);
+	return true;
+}
+
+int BackendMaxTextureSize()
+{
+	auto *dev = GetDevice();
+	return dev != NULL ? (int)dev->GetAdapterInfo().Texture.MaxTexture2DDimension : 0;
+}
+
+// [rc4l] The 2D layer alone over black: the console, the menus, the title and the intermission, with no world under them.
+static void DrawOverlay(bool present)
+{
+	auto *ctx = GetContext();
+	auto *swap = GetSwapChain();
+	if (!ctx || !swap) return;
+	const auto &sd = swap->GetDesc();
+	if (sd.Width == 0 || sd.Height == 0) return;
+	Diligent::ITextureView *rtv = swap->GetCurrentBackBufferRTV();
+	ctx->SetRenderTargets(1, &rtv, NULL, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	const float black[4] = { 0.f, 0.f, 0.f, 1.f };
+	ctx->ClearRenderTarget(rtv, black, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	Draw2D(ctx);
+	if (!present) return;
+	swap->Present(0);
+	RecordPresentInterval();
+	Fua_PumpBackendWindow(GetBackendWindow());
+	Fua_SyncBackendWindowToParent(GetBackendWindow());
+}
+
+// [rc4l] Whether the last frame drew the world under its 2D, so a screenshot redraws what was shown.
+static bool g_lastFrameWorld = false;
+
+static void DrawBackendFrame(bool present)
+{
+	if (g_lastFrameWorld)
+	{
+		BuildMVP(g_mvp);
+		DrawSceneOnce(present, true);
+	}
+	else DrawOverlay(present);
+}
+
+void PresentBackendOnly()
+{
+	zx::hwrender::GLFrameDone();
+	const bool ready = AdvanceLevelScene();
+	g_lastFrameWorld = g_worldViewThisFrame && ready && g_scene.vb && g_pso.opaque && g_scene.verts > 0;
+	g_worldViewThisFrame = false;
+	DrawBackendFrame(true);
+	zx::hwrender::BackendFrameDone();
+}
+
+unsigned char *ReadBackendFrame(int &width, int &height)
+{
+	DrawBackendFrame(false);
+	int format = 0;
+	bool bgra = false;
+	FString report;
+	unsigned char *rgb = ReadBackBuffer(width, height, format, bgra, report);
+	if (rgb == NULL) Printf("screenshot: %s\n", report.GetChars());
+	return rgb;
 }
 
 }} // namespace zx::hwrender

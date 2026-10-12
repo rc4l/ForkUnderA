@@ -17,11 +17,17 @@ is not GL can take the 2D layer from here directly (P5), and the two cannot drif
   average brightened to the palette (`ComputeBrightenedBlend`), then pickups, pain, powerups and a
   script's fade; GL passes in its view area, fixed colormap and palette brightness.
 
-`FlatFill` (a tiled flat, which needs a repeating sampler in the backend) and `FillSimplePoly` (the
-textured automap, a polygon rather than a quad) are not recorded yet, so a backend does not draw them.
+- `computation/flatfill_compute` and `PrepareFlatFill`: a `FlatFill` (an intermission or text screen's
+  background, the status bar's flanks) as one quad per copy of the flat, cut at its edges, since the
+  backend's 2D layer clamps rather than wraps.
+
+`FillSimplePoly` (the textured automap, a polygon rather than a quad) is not recorded yet, so a backend
+does not draw it.
 
 ## In-engine hooks
 
 - `gl/renderer/gl_renderer.cpp` `FGLRenderer::DrawTexture`, `DrawLine`, `DrawPixel`, `Dim` and `Clear`:
-  each records what draw2d works out, and `DrawTexture` draws that quad.
+  each records what draw2d works out, and `DrawTexture` draws that quad; `FlatFill` records its tiles.
+- `features/hwrender/backendvideo.cpp` `DiligentFrameBuffer`: every one of them recorded, for a launch
+  without GL.
 - `gl/scene/gl_scene.cpp` `FGLRenderer::DrawBlend`: fills and records each of `ScreenBlends`' fills.

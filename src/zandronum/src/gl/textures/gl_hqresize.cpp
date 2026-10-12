@@ -37,6 +37,7 @@
 #include "gl/system/gl_system.h"
 #include "gl/system/gl_interface.h"
 #include "gl/renderer/gl_renderer.h"
+#include "gl/textures/gl_material.h"
 #include "gl/textures/gl_texture.h"
 #include "c_cvars.h"
 #include "gl/hqnx/hqx.h"
@@ -52,18 +53,18 @@ CUSTOM_CVAR(Int, gl_texture_hqresize, 0, CVAR_ARCHIVE | CVAR_GLOBALCONFIG | CVAR
 	if (self < 0 || self > 6)
 #endif
 		self = 0;
-	GLRenderer->FlushTextures();
+	FMaterial::FlushAll();   // [rc4l] not through GLRenderer, which a launch without GL does not have
 }
 
 CUSTOM_CVAR(Int, gl_texture_hqresize_maxinputsize, 512, CVAR_ARCHIVE | CVAR_GLOBALCONFIG | CVAR_NOINITCALL)
 {
 	if (self > 1024) self = 1024;
-	GLRenderer->FlushTextures();
+	FMaterial::FlushAll();   // [rc4l] not through GLRenderer, which a launch without GL does not have
 }
 
 CUSTOM_CVAR(Int, gl_texture_hqresize_targets, 7, CVAR_ARCHIVE | CVAR_GLOBALCONFIG | CVAR_NOINITCALL)
 {
-	GLRenderer->FlushTextures();
+	FMaterial::FlushAll();   // [rc4l] not through GLRenderer, which a launch without GL does not have
 }
 
 CVAR (Flag, gl_texture_hqresize_textures, gl_texture_hqresize_targets, 1);

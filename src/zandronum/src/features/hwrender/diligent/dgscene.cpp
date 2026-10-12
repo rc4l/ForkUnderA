@@ -24,6 +24,7 @@ EXTERN_CVAR(Float, gl_lights_size)
 EXTERN_CVAR(Float, gl_lights_intensity)
 EXTERN_CVAR(Bool, gl_lights_additive)
 EXTERN_CVAR(Bool, gl_mirrors)
+EXTERN_CVAR(Int, screenblocks)   // [rc4l] the view window the player's view is framed in
 
 // [rc4l] 0 flat multiply (pre-lighting-port behaviour), 1 the ported equation, 2 depth as grey,
 // 3 depth contours, 4 vertex colour only. Live per frame -- no rebake needed to switch.
@@ -414,7 +415,19 @@ zx::hwrender::BackendCamera CurrentCamera()
 	c.pixelStretch = glset.pixelstretch;
 	return c;
 }
-void BuildMVP(float *m) { zx::hwrender::ComputeBackendMVP(CurrentCamera(), m); }
+// [rc4l] The view window GL's SetViewport draws the player's view into, as a clip-space window over the whole target.
+static zx::hwrender::NdcWindow ScreenViewWindow()
+{
+	const int sw = screen->GetWidth(), sh = screen->GetHeight();
+	return zx::hwrender::ComputeNdcWindow(zx::hwrender::ComputeViewWindowViewport(sh, screenblocks, viewwindowx, viewwindowy, viewwidth, viewheight), sw, sh);
+}
+
+void BuildMVP(float *m)
+{
+	zx::hwrender::ComputeBackendMVP(CurrentCamera(), m);
+	// [rc4l] A view on the screen sits in the view window (a status bar, a smaller screenblocks); a camera texture fills its own target.
+	if (g_frame.aspectOverride <= 0.f && screen != NULL) zx::hwrender::ComputeApplyNdcWindow(ScreenViewWindow(), m);
+}
 static void PrepareFrame(Diligent::IDeviceContext *ctx);
 
 // [rc4l] Everything that draws the WORLD, with the render target already bound and cleared.

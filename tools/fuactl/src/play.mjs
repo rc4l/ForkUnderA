@@ -169,6 +169,11 @@ export async function verifyWorld(c, { exec }) {
   return report;
 }
 
+// [rc4l] The engine arguments past the cvars: each wad as -file, and -vulkan when the launch runs with no GL at all.
+export function playArgs(files, { noGl = false } = {}) {
+  return [...files.flatMap((f) => ["-file", f]), ...(noGl ? ["-vulkan"] : [])];
+}
+
 export async function play(opts = {}) {
   const port = opts.port || 7900;
   if (!opts.sessionFile) return launchChecked(opts, port);
@@ -198,7 +203,7 @@ async function launchChecked(opts, port) {
     allowOsInput: !opts.lock,
     // [rc4l] --res, forwarded. Without this it was accepted and silently dropped.
     width: opts.width, height: opts.height,
-    extraArgs: files.flatMap((f) => ["-file", f]),
+    extraArgs: playArgs(files, { noGl: opts.noGl }),
     cvars: playCvars(opts),
   });
 

@@ -1,0 +1,101 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 rc4l
+
+#include "features/frame/playerview.h"
+#include "features/frame/standaloneframe.h"
+
+#include "features/viewsetup/viewsetup.h"
+#include "features/viewsetup/computation/viewsetup_compute.h"
+#include "features/levelmesh/flatmesh.h"       // [rc4l] SetMainView, EnterScene, LeaveScene
+#include "features/hwrender/hud2d.h"           // [rc4l] StandaloneActive, Record2D
+#include "features/hwrender/diligent/dglive.h" // [rc4l] SetMainViewLens
+#include "features/sprites/pspritebuild.h"
+#include "features/draw2d/screenblend.h"
+#include "features/fov-interp/fovinterp.h"
+#include "features/hwrender/backendonly.h"   // [rc4l] NoteWorldView
+
+#include "c_cvars.h"
+#include "d_player.h"
+#include "doomstat.h"
+#include "i_system.h"
+#include "p_effect.h"
+#include "p_local.h"
+#include "r_state.h"
+#include "r_utility.h"
+#include "v_video.h"
+#include "r_data/r_interpolate.h"
+
+#include <string.h>
+
+// [rc4l] GL's frame globals, which the derivation and the backend read, until they move out of gl/ (P5).
+#include "gl/data/gl_data.h"           // gl_frameMS, currentmapsection
+#include "gl/renderer/gl_renderer.h"   // in_area
+#include "gl/renderer/gl_lightdata.h"  // gl_fixedcolormap
+#include "gl/models/gl_models.h"       // gl_IsHUDModelForPlayerAvailable
+
+EXTERN_CVAR(Bool, cl_capfps)
+extern long gl_frameCount;
+
+namespace zx { namespace frame {
+
+void RenderPlayerView(player_t *player, int paletteBrightness)
+{
+	// [rc4l] A new camera starts uninterpolated, or it sweeps across from the last one.
+	static AActor *lastCamera = NULL;
+	if (player->camera != lastCamera)
+	{
+		R_ResetViewInterpolation();
+		lastCamera = player->camera;
+	}
+	if (cl_capfps || r_NoInterpolate) r_TicFrac = FRACUNIT;
+	else r_TicFrac = I_GetTimeFrac(&r_FrameTime);
+	gl_frameMS = I_MSTime();
+	P_FindParticleSubsectors();
+	// [rc4l] Camera textures the last frame used, each drawn by the renderer's RenderTextureView.
+	FCanvasTextureInfo::UpdateAll();
+
+	const float ratio = WidescreenRatio;
+	const float fovratio = zx::viewsetup::ComputeFovRatio(ratio, AspectTallerThanWide(ratio));
+	gl_fixedcolormap = zx::viewsetup::FixedColormap(player);
+	const float fov = FOV_InterpolatedForFrame(player);
+	AActor *camera = player->camera;
+
+	// [rc4l] RenderViewpoint for the player's own view.
+	const bool savedMain = zx::levelmesh::MainView();
+	zx::levelmesh::SetMainView(true);
+	zx::hwrender::SetMainViewLens(fov, fovratio);
+	R_SetupFrame(camera);
+	zx::viewsetup::SetViewArea(zx::viewsetup::CurrentView().viewActor);
+	zx::viewsetup::SetupView(camera, fov, gl_frameMS);
+	zx::viewsetup::TurnView(viewangle);
+	sector_t *const sector = viewsector;
+	// [rc4l] ProcessScene: only the map section the eye is in is drawn.
+	if (currentmapsection.Size() > 0)
+	{
+		const int mapsection = R_PointInSubsector(viewx, viewy)->mapsection;
+		memset(&currentmapsection[0], 0, currentmapsection.Size());
+		currentmapsection[mapsection >> 3] |= 1 << (mapsection & 7);
+	}
+	if (zx::hwrender::StandaloneActive())
+	{
+		zx::levelmesh::EnterScene();
+		const SceneHooks none = { NULL, NULL };
+		StandaloneScene(none);
+		zx::levelmesh::LeaveScene();
+	}
+
+	// [rc4l] EndDrawScene: the weapon unless a HUD model replaces it, the targeter, and the screen's tint.
+	if (!gl_IsHUDModelForPlayerAvailable(players[consoleplayer].camera->player)) zx::sprites::BuildPlayerSpritesBobbed(sector, in_area);
+	zx::sprites::BuildTargeterSprites(zx::viewsetup::CurrentView().viewActor);
+	zx::sprites::CheckFramePSprites();
+	zx::draw2d::ScreenFill fills[2];
+	const int n = zx::draw2d::ScreenBlends(sector, in_area, gl_fixedcolormap != 0, paletteBrightness, fills);
+	for (int i = 0; i < n; i++) zx::hwrender::Record2D(zx::draw2d::PrepareScreenFill(fills[i]));
+
+	zx::hwrender::NoteWorldView();
+	gl_frameCount++;
+	interpolator.RestoreInterpolations();
+	zx::levelmesh::SetMainView(savedMain);
+}
+
+}} // namespace zx::frame

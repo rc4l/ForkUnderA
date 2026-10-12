@@ -20,6 +20,9 @@ float ComputeSkyScroll(long frameMS, float skySpeed);
 // [rc4l] SetViewAngle: the yaw GL's matrices take for a view angle (BAM), and the unit vector it faces in the plane.
 void ComputeViewAngleVector(unsigned viewAngle, float &yaw, float &vectorX, float &vectorY);
 
+// [rc4l] RenderView's fov ratio: 4:3 unless the screen is taller than wide, when it is the screen's own.
+float ComputeFovRatio(float ratio, bool tallerThanWide);
+
 // [rc4l] GL's area_t, where the eye is against a Boom height transfer.
 enum { kAreaNormal = 0, kAreaBelow = 1, kAreaAbove = 2, kAreaDefault = 3 };
 

@@ -106,3 +106,62 @@ TEST(BackendViewCompute, TheViewPutsTheEyeAtTheOriginFacingDownZ)
 	EXPECT_NEAR(12.f, eye(100.f, 60.f, 200.f, 1), 1e-3f);
 	EXPECT_FLOAT_EQ(1.f, v[15]);
 }
+
+namespace {
+
+TEST(ComputeViewWindowViewport, AFullScreenViewIsTheWholeScreen)
+{
+	const ScreenRect r = ComputeViewWindowViewport(640, 11, 0, 0, 1024, 640);
+	EXPECT_EQ(r.x, 0); EXPECT_EQ(r.y, 0); EXPECT_EQ(r.w, 1024); EXPECT_EQ(r.h, 640);
+}
+
+TEST(ComputeViewWindowViewport, AStatusBarRaisesTheWholeScreenByHalfItsHeight)
+{
+	// [rc4l] screenblocks 10 on 1024x640: the bar takes 100 rows, and GL keeps the screen's height so the view is cropped, not squashed.
+	const ScreenRect r = ComputeViewWindowViewport(640, 10, 0, 0, 1024, 540);
+	EXPECT_EQ(r.x, 0); EXPECT_EQ(r.y, -50); EXPECT_EQ(r.w, 1024); EXPECT_EQ(r.h, 640);
+}
+
+TEST(ComputeViewWindowViewport, ASmallerViewIsScreenblocksTenthsCentredOnItsWindow)
+{
+	// [rc4l] screenblocks 8: 640 * 8 / 10 = 512 rows, already a multiple of 8, around a 432-row window at row 40.
+	const ScreenRect r = ComputeViewWindowViewport(640, 8, 103, 40, 816, 432);
+	EXPECT_EQ(r.x, 103); EXPECT_EQ(r.y, 0); EXPECT_EQ(r.w, 816); EXPECT_EQ(r.h, 512);
+	// [rc4l] 7 * 600 / 10 = 420 rounds down to 416.
+	EXPECT_EQ(ComputeViewWindowViewport(600, 7, 0, 0, 560, 416).h, 416);
+}
+
+TEST(ComputeNdcWindow, TheWholeScreenChangesNothing)
+{
+	const NdcWindow w = ComputeNdcWindow(ComputeViewWindowViewport(640, 11, 0, 0, 1024, 640), 1024, 640);
+	EXPECT_FLOAT_EQ(w.sx, 1.f); EXPECT_FLOAT_EQ(w.sy, 1.f); EXPECT_FLOAT_EQ(w.ox, 0.f); EXPECT_FLOAT_EQ(w.oy, 0.f);
+}
+
+TEST(ComputeApplyNdcWindow, ThePointsLandWhereTheViewportWouldPutThem)
+{
+	// [rc4l] A raised status-bar view: the centre of the view goes to row 270 of 640, the middle of the 540 rows above the bar.
+	const ScreenRect rect = { 0, -50, 1024, 640 };
+	const NdcWindow w = ComputeNdcWindow(rect, 1024, 640);
+	float m[16];
+	ComputeBackendMVP(Corner(0.f, 1.2f), m);
+	float before[16];
+	for (int i = 0; i < 16; i++) before[i] = m[i];
+	ComputeApplyNdcWindow(w, m);
+	const float p[4] = { 100.f, 60.f, 50.f, 1.f };
+	float a[4], b[4];
+	for (int r = 0; r < 4; r++)
+	{
+		a[r] = before[r] * p[0] + before[4 + r] * p[1] + before[8 + r] * p[2] + before[12 + r] * p[3];
+		b[r] = m[r] * p[0] + m[4 + r] * p[1] + m[8 + r] * p[2] + m[12 + r] * p[3];
+	}
+	// [rc4l] The viewport's own mapping from the untouched matrix, against the window's from the touched one, as top-down pixels.
+	const float wantX = rect.x + (a[0] / a[3] + 1.f) * 0.5f * rect.w;
+	const float wantY = rect.y + (1.f - a[1] / a[3]) * 0.5f * rect.h;
+	EXPECT_NEAR((b[0] / b[3] + 1.f) * 0.5f * 1024.f, wantX, 1e-3f);
+	EXPECT_NEAR((1.f - b[1] / b[3]) * 0.5f * 640.f, wantY, 1e-3f);
+	EXPECT_FLOAT_EQ(b[2], a[2]);
+	EXPECT_FLOAT_EQ(b[3], a[3]);
+	EXPECT_NEAR(w.oy, 50.f / 320.f, 1e-6f);
+}
+
+} // namespace

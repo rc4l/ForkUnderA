@@ -89,7 +89,7 @@ CUSTOM_CVAR(Int, gl_texture_format, 0, CVAR_ARCHIVE|CVAR_GLOBALCONFIG|CVAR_NOINI
 	else if ( gl.flags & RFL_TEXTURE_COMPRESSION )
 		numOfAvailableTextureFormat = 5;
 	if (self < 0 || self > numOfAvailableTextureFormat-1) self=0;
-	GLRenderer->FlushTextures();
+	FMaterial::FlushAll();   // [rc4l] not through GLRenderer, which a launch without GL does not have
 }
 
 CUSTOM_CVAR(Bool, gl_texture_usehires, true, CVAR_ARCHIVE|CVAR_NOINITCALL)
@@ -367,7 +367,7 @@ void FTexture::GetGlowColor(float *data)
 	if (gl_info.bGlowing && gl_info.GlowColor == 0)
 	{
 		int w, h;
-		unsigned char *buffer = GLRenderer->GetTextureBuffer(this, w, h);
+		unsigned char *buffer = FMaterial::TextureBuffer(this, w, h);   // [rc4l] no GL needed, so a launch without it reads it too
 
 		if (buffer)
 		{
@@ -399,7 +399,7 @@ PalEntry FTexture::GetSkyCapColor(bool bottom)
 	{
 		gl_info.bSkyColorDone = true;
 
-		unsigned char *buffer = GLRenderer->GetTextureBuffer(this, w, h);
+		unsigned char *buffer = FMaterial::TextureBuffer(this, w, h);   // [rc4l] no GL needed, so a launch without it reads it too
 
 		if (buffer)
 		{

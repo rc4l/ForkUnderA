@@ -255,6 +255,8 @@ public:
 	static void FlushAll();
 	static FMaterial *ValidateTexture(FTexture * tex, bool expand);
 	static FMaterial *ValidateTexture(FTextureID no, bool expand, bool trans);
+	// [rc4l] A texture's base layer as true-colour pixels the caller deletes, read on the CPU so it needs no GL; NULL when it has none.
+	static unsigned char *TextureBuffer(FTexture *tex, int &w, int &h);
 	static void ClearLastTexture();
 
 };

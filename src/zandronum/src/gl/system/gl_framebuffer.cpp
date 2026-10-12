@@ -43,7 +43,6 @@
 #include "files.h"
 #include "m_swap.h"
 #include "v_video.h"
-#include "sbar.h"   // [rc4l] StatusBar->ScreenSizeChanged on an in-place resize
 #include "doomstat.h"
 #include "m_png.h"
 #include "m_crc32.h"
@@ -54,6 +53,7 @@
 
 #include "gl/system/gl_interface.h"
 #include "gl/system/gl_framebuffer.h"
+#include "features/display/computation/display_compute.h"   // [rc4l] the gamma ramp and palette brightness
 #include "features/hwrender/hud2d.h"   // StandaloneActive
 #include "gl/renderer/gl_renderer.h"
 #include "gl/renderer/gl_renderstate.h"
@@ -76,16 +76,8 @@ IMPLEMENT_CLASS(OpenGLFrameBuffer)
 EXTERN_CVAR (Float, vid_brightness)
 EXTERN_CVAR (Float, vid_contrast)
 EXTERN_CVAR (Bool, vid_vsync)
-// [rc4l] video-scale: the render-scale knob (features/video-scale/videoscale.cpp).
-EXTERN_CVAR (Int, vid_scalemode)
-EXTERN_CVAR (Float, vid_scalefactor)
-EXTERN_CVAR (Int, vid_scale_customwidth)
-EXTERN_CVAR (Int, vid_scale_customheight)
-EXTERN_CVAR (Float, vid_scale_custompixelaspect)
-EXTERN_CVAR (Bool, vid_cropaspect)
-extern bool setsizeneeded;
-extern int DisplayBits;
 #include "features/video-scale/computation/videoscale_compute.h"
+#include "features/video-scale/videoscale.h"
 
 CVAR(Bool, gl_aalines, false, CVAR_ARCHIVE)
 
@@ -428,22 +420,8 @@ void OpenGLFrameBuffer::BlitScaleBuffer()
 
 void OpenGLFrameBuffer::ResizeRenderInPlace(int w, int h)
 {
-	// Resize the render target without recreating the SDL window or GL context -- mirrors upstream's
-	// V_OutputResized. No black flash, no keyboard-focus loss (the window never goes away).
-	Resize(w, h);                                // canvas backing store + Width/Height/Pitch
-	V_RecalcVideoModeState(w, h, DisplayBits);   // Clean facs, DisplayW/H, mode-set recompute
-
-	// [rc4l] The status bar caches ST_Y, computed from SCREENHEIGHT in DBaseStatusBar::SetScaled.
-	// Resizing the render target without telling it leaves that cache pointing at the OLD height,
-	// and R_SetWindow then sizes the 3D view against a stale ST_Y -- a view TALLER than the buffer
-	// it draws into, which shows up as the status-bar strip rendering garbage while screenblocks 11
-	// (no status bar) looks fine. A real mode set goes through this; an in-place resize has to too.
-	if (StatusBar != NULL)
-	{
-		StatusBar->ScreenSizeChanged();
-	}
-
-	setsizeneeded = true;                        // recompute the 3D view for the new render size
+	// [rc4l] features/video-scale: the canvas, the mode state, the status bar and the view, shared with the backend's frame buffer.
+	zx::ResizeScreenInPlace(this, w, h);
 	UpdateScaleBuffer();                         // (re)build + bind the scale FBO, or drop to backbuffer
 }
 
@@ -477,16 +455,11 @@ void OpenGLFrameBuffer::MaybeResizeForScale()
 	// frame reconciles to it, which is the same path a drag already takes.
 	if (cw <= 0 || ch <= 0)
 		return;
-	zx::ScaledViewport v = zx::ComputeScaledViewport(cw, ch,
-		vid_scalemode, vid_scalefactor,
-		vid_scale_customwidth, vid_scale_customheight, vid_scale_custompixelaspect,
-		!!vid_cropaspect, 0.f,
-		zx::VID_SCALE_MIN_WIDTH, zx::VID_SCALE_MIN_HEIGHT);
-	switch (zx::ComputeScaleReconcile(cw, ch, GetWidth(), GetHeight(),
-		mScaleClientW, mScaleClientH, v.width, v.height))
+	int wantW = 0, wantH = 0;
+	switch (zx::ReconcileRenderSize(cw, ch, GetWidth(), GetHeight(), mScaleClientW, mScaleClientH, wantW, wantH))
 	{
 	case zx::SCALE_RECONCILE_RESIZE:
-		ResizeRenderInPlace(v.width, v.height);
+		ResizeRenderInPlace(wantW, wantH);
 		break;
 
 	case zx::SCALE_RECONCILE_REBUILD:
@@ -656,22 +629,8 @@ void OpenGLFrameBuffer::DoSetGamma()
 
 	if (m_supportsGamma)
 	{
-		// This formula is taken from Doomsday
-		float gamma = clamp<float>(Gamma, 0.1f, 4.f);
-		float contrast = clamp<float>(vid_contrast, 0.1f, 3.f);
-		float bright = clamp<float>(vid_brightness, -0.8f, 0.8f);
-
-		double invgamma = 1 / gamma;
-		double norm = pow(255., invgamma - 1);
-
-		for (int i = 0; i < 256; i++)
-		{
-			double val = i * contrast - (contrast - 1) * 127;
-			if(gamma != 1) val = pow(val, invgamma) / norm;
-			val += bright * 128;
-
-			gammaTable[i] = gammaTable[i + 256] = gammaTable[i + 512] = (WORD)clamp<double>(val*256, 0, 0xffff);
-		}
+		// [rc4l] Doomsday's curve, worked out in features/display for any frame buffer.
+		zx::display::ComputeGammaRamp(Gamma, vid_contrast, vid_brightness, gammaTable);
 		SetGammaTable(gammaTable);
 	}
 }
@@ -701,18 +660,8 @@ bool OpenGLFrameBuffer::SetContrast(float contrast)
 
 void OpenGLFrameBuffer::UpdatePalette()
 {
-	int rr=0,gg=0,bb=0;
-	for(int x=0;x<256;x++)
-	{
-		rr+=GPalette.BaseColors[x].r;
-		gg+=GPalette.BaseColors[x].g;
-		bb+=GPalette.BaseColors[x].b;
-	}
-	rr>>=8;
-	gg>>=8;
-	bb>>=8;
-
-	palette_brightness = (rr*77 + gg*143 + bb*35)/255;
+	// [rc4l] features/display works it out, for any frame buffer.
+	palette_brightness = zx::display::ComputePaletteBrightness(reinterpret_cast<const unsigned *>(&GPalette.BaseColors[0]), 256);
 }
 
 void OpenGLFrameBuffer::GetFlashedPalette (PalEntry pal[256])

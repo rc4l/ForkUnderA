@@ -46,6 +46,11 @@ void ComputeViewAngleVector(unsigned viewAngle, float &yaw, float &vectorX, floa
 	vectorY = (float)sin(angle * kPi / 180.f);
 }
 
+float ComputeFovRatio(float ratio, bool tallerThanWide)
+{
+	return tallerThanWide ? ratio : 1.333333f;
+}
+
 int ComputeViewArea(bool transfer, long long viewZ, long long transferFloorZ, long long transferCeilingZ, bool fakeFloorOnly)
 {
 	if (!transfer) return kAreaDefault;

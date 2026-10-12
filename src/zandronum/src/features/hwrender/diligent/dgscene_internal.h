@@ -428,6 +428,8 @@ void ReleaseCameraTargets();
 // [rc4l] The frame driver (dgframe.cpp).
 void LiveFrame();
 void RecordPresentInterval();
+// [rc4l] The back buffer as drawn and not yet presented, as top-down RGB the caller deletes; NULL with the reason in report.
+unsigned char *ReadBackBuffer(int &w, int &h, int &format, bool &bgra, FString &report);
 bool StandaloneActive();
 
 #ifdef ZX_ENABLE_REPLAY

@@ -33,6 +33,37 @@ void ComputeBackendView(const BackendCamera &c, float v[16])
 	v[14] = -(v[2] * px + v[6] * py + v[10] * pz);
 }
 
+ScreenRect ComputeViewWindowViewport(int screenH, int screenblocks, int windowX, int windowY, int viewW, int viewH)
+{
+	const int height = screenblocks >= 10 ? screenH : (screenblocks * screenH / 10) & ~7;
+	ScreenRect r;
+	r.x = windowX;
+	r.y = windowY - (height - viewH) / 2;
+	r.w = viewW;
+	r.h = height;
+	return r;
+}
+
+NdcWindow ComputeNdcWindow(const ScreenRect &rect, int screenW, int screenH)
+{
+	NdcWindow w;
+	w.sx = (float)rect.w / screenW;
+	w.sy = (float)rect.h / screenH;
+	w.ox = (float)(2 * rect.x + rect.w) / screenW - 1.f;
+	w.oy = 1.f - (float)(2 * rect.y + rect.h) / screenH;
+	return w;
+}
+
+void ComputeApplyNdcWindow(const NdcWindow &w, float m[16])
+{
+	for (int col = 0; col < 4; col++)
+	{
+		const float clipW = m[col * 4 + 3];
+		m[col * 4 + 0] = w.sx * m[col * 4 + 0] + w.ox * clipW;
+		m[col * 4 + 1] = w.sy * m[col * 4 + 1] + w.oy * clipW;
+	}
+}
+
 void ComputeBackendMVP(const BackendCamera &c, float out[16])
 {
 	const float zn = 5.0f, zf = 65536.0f;

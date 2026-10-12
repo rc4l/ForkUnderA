@@ -328,25 +328,13 @@ void CaptureReplayFrame(Diligent::IDeviceContext *ctx, Diligent::ISwapChain *swa
 }
 #endif // ZX_ENABLE_REPLAY
 
-bool SceneScreenshot(const char *path, FString &report)
+// [rc4l] The back buffer as drawn and not yet presented, as top-down RGB the caller deletes; NULL with the reason in report.
+unsigned char *ReadBackBuffer(int &w, int &h, int &format, bool &bgra, FString &report)
 {
-	if (!g_scene.vb || !g_pso.opaque) { report = "call fua_diligent_scene first"; return false; }
-
 	auto *ctx = GetContext();
 	auto *swap = GetSwapChain();
 	auto *dev = GetDevice();
-
-	// [rc4l] Always from the CURRENT camera. The MVP used to be whatever `fua_diligent_scene` had
-	// snapshotted, so a screenshot taken after the player turned showed the room they used to be
-	// looking at -- and every GL/Vulkan comparison made that way was of two different viewpoints.
-	// That cost a long detour: MAP01 looked like it was missing half its geometry when it was simply
-	// facing the other way.
-	BuildMVP(g_mvp);
-
-	// [rc4l] Draw WITHOUT presenting. Present flips to the next image in the swapchain, so reading
-	// GetCurrentBackBufferRTV afterwards returns a buffer whose contents are undefined -- which read
-	// back as a perfectly convincing all-black PNG the first time.
-	DrawSceneOnce(false);
+	if (!ctx || !swap || !dev) { report = "no backend device"; return NULL; }
 	ctx->WaitForIdle();
 
 	auto *backTex = swap->GetCurrentBackBufferRTV()->GetTexture();
@@ -367,7 +355,7 @@ bool SceneScreenshot(const char *path, FString &report)
 	sd.MipLevels = 1;
 	Diligent::RefCntAutoPtr<Diligent::ITexture> staging;
 	dev->CreateTexture(sd, nullptr, &staging);
-	if (!staging) { report = "staging texture creation failed"; return false; }
+	if (!staging) { report = "staging texture creation failed"; return NULL; }
 
 	Diligent::CopyTextureAttribs cta;
 	cta.pSrcTexture = backTex;
@@ -379,9 +367,10 @@ bool SceneScreenshot(const char *path, FString &report)
 
 	Diligent::MappedTextureSubresource mapped;
 	ctx->MapTextureSubresource(staging, 0, 0, Diligent::MAP_READ, Diligent::MAP_FLAG_DO_NOT_WAIT, nullptr, mapped);
-	if (mapped.pData == nullptr) { report = "readback map failed"; return false; }
+	if (mapped.pData == nullptr) { report = "readback map failed"; return NULL; }
 
-	const int w = (int)bd.Width, h = (int)bd.Height;
+	w = (int)bd.Width; h = (int)bd.Height;
+	format = (int)bd.Format;
 
 	// [rc4l] Channel order comes from the FORMAT, not from an assumption.
 	//
@@ -389,8 +378,8 @@ bool SceneScreenshot(const char *path, FString &report)
 	// a red/blue inversion in every screenshot, and since Doom textures are muddy browns and greys
 	// the result still looked like a plausible Doom scene -- just "cooler". It cost a long detour
 	// hunting a lighting bug that did not exist.
-	const bool bgra = (bd.Format == Diligent::TEX_FORMAT_BGRA8_UNORM ||
-	                   bd.Format == Diligent::TEX_FORMAT_BGRA8_UNORM_SRGB);
+	bgra = (bd.Format == Diligent::TEX_FORMAT_BGRA8_UNORM ||
+	        bd.Format == Diligent::TEX_FORMAT_BGRA8_UNORM_SRGB);
 	const int ri = bgra ? 2 : 0, bi = bgra ? 0 : 2;
 
 	BYTE *rgb = new BYTE[w * h * 3];
@@ -406,6 +395,28 @@ bool SceneScreenshot(const char *path, FString &report)
 		}
 	}
 	ctx->UnmapTextureSubresource(staging, 0, 0);
+	return rgb;
+}
+
+bool SceneScreenshot(const char *path, FString &report)
+{
+	if (!g_scene.vb || !g_pso.opaque) { report = "call fua_diligent_scene first"; return false; }
+
+	// [rc4l] Always from the CURRENT camera. The MVP used to be whatever `fua_diligent_scene` had
+	// snapshotted, so a screenshot taken after the player turned showed the room they used to be
+	// looking at -- and every GL/Vulkan comparison made that way was of two different viewpoints.
+	// That cost a long detour: MAP01 looked like it was missing half its geometry when it was simply
+	// facing the other way.
+	BuildMVP(g_mvp);
+
+	// [rc4l] Draw WITHOUT presenting. Present flips to the next image in the swapchain, so reading
+	// GetCurrentBackBufferRTV afterwards returns a buffer whose contents are undefined -- which read
+	// back as a perfectly convincing all-black PNG the first time.
+	DrawSceneOnce(false);
+	int w = 0, h = 0, format = 0;
+	bool bgra = false;
+	BYTE *rgb = ReadBackBuffer(w, h, format, bgra, report);
+	if (rgb == NULL) return false;
 
 	FILE *f = fopen(path, "wb");
 	bool ok = false;
@@ -421,7 +432,7 @@ bool SceneScreenshot(const char *path, FString &report)
 	// used the same one, and "are these two images of the same viewpoint" turned out to be a
 	// question worth answering with numbers rather than by eye -- twice.
 	report.Format("wrote %s (%dx%d, swapchain format %d, %s) cam=(%.1f, %.1f, %.1f) yaw=%.1f",
-		path, w, h, (int)bd.Format, bgra ? "BGRA" : "RGBA",
+		path, w, h, format, bgra ? "BGRA" : "RGBA",
 		FIXED2FLOAT(viewx), FIXED2FLOAT(viewy), FIXED2FLOAT(viewz),
 		(float)(viewangle >> ANGLETOFINESHIFT) * 360.0f / 8192.0f);
 	return true;
