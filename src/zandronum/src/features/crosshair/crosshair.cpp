@@ -56,6 +56,15 @@ CUSTOM_CVAR(Float, cl_fua_crosshair_y, 0.f, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
 	ClampCVar(self, zx::crosshair::ComputeCrosshairClampOffset);
 }
 
+// [MobiusU9B] The Target info toggles, replacing Zandronum's cl_identifytarget/cl_identifymonsters levels with the same defaults: player names and the Ally / Enemy label.
+CVAR(Bool, cl_fua_identify_players, true, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
+CVAR(Bool, cl_fua_identify_monsters, false, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
+CVAR(Bool, cl_fua_identify_health, false, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
+CVAR(Bool, cl_fua_identify_weapon, false, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
+CVAR(Bool, cl_fua_identify_class, false, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
+CVAR(Bool, cl_fua_identify_allyenemy, true, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
+CVAR(Bool, cl_fua_identify_ghost, false, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
+
 // [MobiusU9B] Bottom of the screen by default, so the identify text stays where Zandronum players expect it until they move it.
 CUSTOM_CVAR(Int, cl_fua_identify_position, zx::crosshair::kTargetInfoAtBottom, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
 {
@@ -181,6 +190,12 @@ CrosshairRect GetRect(FTexture *image, fixed_t growSize)
 	in.offsetXPercent = cl_fua_crosshair_x;
 	in.offsetYPercent = cl_fua_crosshair_y;
 	return ComputeCrosshairRect(in);
+}
+
+IdentifyToggles ReadIdentifyToggles()
+{
+	return IdentifyToggles{ cl_fua_identify_players, cl_fua_identify_monsters, cl_fua_identify_health, cl_fua_identify_weapon,
+		cl_fua_identify_class, cl_fua_identify_allyenemy, cl_fua_identify_ghost };
 }
 
 bool IsTargetInfoNextToCrosshair()

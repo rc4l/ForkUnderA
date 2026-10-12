@@ -18,6 +18,10 @@ using zx::crosshair::ComputeCrosshairInfoLayout;
 using zx::crosshair::ComputeCrosshairTextScale;
 using zx::crosshair::ComputeIdentifyFadeAlpha;
 using zx::crosshair::ComputeIdentifyHealthKnown;
+using zx::crosshair::ComputeIdentifyLines;
+using zx::crosshair::IdentifyLines;
+using zx::crosshair::IdentifyTarget;
+using zx::crosshair::IdentifyToggles;
 using zx::crosshair::ComputeLineCount;
 using zx::crosshair::CrosshairRect;
 using zx::crosshair::InfoCanvas;
@@ -39,6 +43,136 @@ namespace
 	{
 		return InfoElement{visible, lines, offsetX, offsetY};
 	}
+
+	IdentifyToggles AllOn()
+	{
+		return IdentifyToggles{true, true, true, true, true, true, true};
+	}
+
+	// [MobiusU9B] A teammate whose health the server shares, holding a weapon.
+	IdentifyTarget AllyPlayer()
+	{
+		return IdentifyTarget{true, false, true, true, true, false};
+	}
+
+	// [MobiusU9B] A hostile Heretic-style ghost monster.
+	IdentifyTarget GhostMonster()
+	{
+		return IdentifyTarget{false, true, false, true, false, true};
+	}
+}
+
+TEST(ComputeIdentifyLines, IdentifiesPlayersOnlyWhenAsked)
+{
+	EXPECT_TRUE(ComputeIdentifyLines(AllOn(), AllyPlayer()).show);
+	IdentifyToggles toggles = AllOn();
+	toggles.players = false;
+	EXPECT_FALSE(ComputeIdentifyLines(toggles, AllyPlayer()).show);
+}
+
+TEST(ComputeIdentifyLines, IdentifiesMonstersOnlyWhenAsked)
+{
+	EXPECT_TRUE(ComputeIdentifyLines(AllOn(), GhostMonster()).show);
+	IdentifyToggles toggles = AllOn();
+	toggles.monsters = false;
+	EXPECT_FALSE(ComputeIdentifyLines(toggles, GhostMonster()).show);
+}
+
+TEST(ComputeIdentifyLines, IgnoresEverythingElse)
+{
+	IdentifyTarget barrel = AllyPlayer();
+	barrel.isPlayer = false;
+	EXPECT_FALSE(ComputeIdentifyLines(AllOn(), barrel).show);
+}
+
+TEST(ComputeIdentifyLines, HidesEveryLineWithTheTarget)
+{
+	IdentifyToggles toggles = AllOn();
+	toggles.players = false;
+	const IdentifyLines lines = ComputeIdentifyLines(toggles, AllyPlayer());
+	EXPECT_FALSE(lines.health);
+	EXPECT_FALSE(lines.weapon);
+	EXPECT_FALSE(lines.playerClass);
+	EXPECT_FALSE(lines.ghost);
+	EXPECT_FALSE(lines.allyEnemy);
+}
+
+TEST(ComputeIdentifyLines, ShowsEverythingAskedForAboutAnAllyPlayer)
+{
+	const IdentifyLines lines = ComputeIdentifyLines(AllOn(), AllyPlayer());
+	EXPECT_TRUE(lines.health);
+	EXPECT_TRUE(lines.weapon);
+	EXPECT_TRUE(lines.playerClass);
+	EXPECT_TRUE(lines.allyEnemy);
+	EXPECT_FALSE(lines.ghost);
+}
+
+TEST(ComputeIdentifyLines, EachToggleTurnsItsLineOff)
+{
+	IdentifyToggles toggles = AllOn();
+	toggles.health = false;
+	toggles.weapon = false;
+	toggles.playerClass = false;
+	toggles.allyEnemy = false;
+	const IdentifyLines lines = ComputeIdentifyLines(toggles, AllyPlayer());
+	EXPECT_TRUE(lines.show);
+	EXPECT_FALSE(lines.health);
+	EXPECT_FALSE(lines.weapon);
+	EXPECT_FALSE(lines.playerClass);
+	EXPECT_FALSE(lines.allyEnemy);
+
+	toggles = AllOn();
+	toggles.ghost = false;
+	EXPECT_FALSE(ComputeIdentifyLines(toggles, GhostMonster()).ghost);
+}
+
+TEST(ComputeIdentifyLines, TellsAnEnemyOnlyItsNameAndSide)
+{
+	IdentifyTarget enemy = AllyPlayer();
+	enemy.friendly = false;
+	const IdentifyLines lines = ComputeIdentifyLines(AllOn(), enemy);
+	EXPECT_TRUE(lines.show);
+	EXPECT_FALSE(lines.health);
+	EXPECT_FALSE(lines.weapon);
+	EXPECT_FALSE(lines.playerClass);
+	EXPECT_TRUE(lines.allyEnemy);
+}
+
+TEST(ComputeIdentifyLines, NeedsHealthThisMachineIsSent)
+{
+	IdentifyTarget target = AllyPlayer();
+	target.healthKnown = false;
+	EXPECT_FALSE(ComputeIdentifyLines(AllOn(), target).health);
+}
+
+TEST(ComputeIdentifyLines, NeedsAWeaponToShowOne)
+{
+	IdentifyTarget target = AllyPlayer();
+	target.hasWeapon = false;
+	EXPECT_FALSE(ComputeIdentifyLines(AllOn(), target).weapon);
+}
+
+TEST(ComputeIdentifyLines, GivesAFriendlyMonsterHealthButNoWeaponOrClass)
+{
+	IdentifyTarget pet = GhostMonster();
+	pet.friendly = true;
+	const IdentifyLines lines = ComputeIdentifyLines(AllOn(), pet);
+	EXPECT_TRUE(lines.health);
+	EXPECT_FALSE(lines.weapon);
+	EXPECT_FALSE(lines.playerClass);
+}
+
+TEST(ComputeIdentifyLines, MarksOnlyMonstersThatAreGhosts)
+{
+	EXPECT_TRUE(ComputeIdentifyLines(AllOn(), GhostMonster()).ghost);
+	IdentifyTarget solid = GhostMonster();
+	solid.isGhost = false;
+	EXPECT_FALSE(ComputeIdentifyLines(AllOn(), solid).ghost);
+
+	// [MobiusU9B] A player under Heretic's invisibility is +GHOST too, but the marker is for monsters.
+	IdentifyTarget ghostPlayer = AllyPlayer();
+	ghostPlayer.isGhost = true;
+	EXPECT_FALSE(ComputeIdentifyLines(AllOn(), ghostPlayer).ghost);
 }
 
 TEST(ComputeCrosshairClampInt, KeepsValuesInRange)

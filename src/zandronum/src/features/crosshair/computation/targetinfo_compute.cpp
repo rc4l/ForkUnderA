@@ -16,6 +16,23 @@ namespace
 	}
 }
 
+IdentifyLines ComputeIdentifyLines(const IdentifyToggles &toggles, const IdentifyTarget &target)
+{
+	const bool show = target.isPlayer ? toggles.players : (target.isMonster && toggles.monsters);
+	if (!show) {
+		return IdentifyLines{false, false, false, false, false, false};
+	}
+	const bool allyPlayer = target.friendly && target.isPlayer;
+	return IdentifyLines{
+		true,
+		toggles.health && target.friendly && target.healthKnown,
+		toggles.weapon && allyPlayer && target.hasWeapon,
+		toggles.playerClass && allyPlayer,
+		toggles.ghost && target.isMonster && target.isGhost,
+		toggles.allyEnemy,
+	};
+}
+
 int ComputeCrosshairClampInt(int value, int lo, int hi)
 {
 	if (value < lo) {

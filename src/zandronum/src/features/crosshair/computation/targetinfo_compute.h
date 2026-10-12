@@ -46,6 +46,43 @@ struct InfoElement
 	int offsetY;
 };
 
+// [MobiusU9B] The Target info toggles: which targets to identify, and which lines to add under their name.
+struct IdentifyToggles
+{
+	bool players;
+	bool monsters;
+	bool health;
+	bool weapon;
+	bool playerClass;
+	bool allyEnemy;
+	bool ghost;
+};
+
+// [MobiusU9B] What the engine knows about the actor in the crosshair; friendly is to the local player.
+struct IdentifyTarget
+{
+	bool isPlayer;
+	bool isMonster;
+	bool friendly;
+	bool healthKnown;
+	bool hasWeapon;
+	bool isGhost;
+};
+
+// [MobiusU9B] Which identify lines to build for one target; nothing at all when show is false.
+struct IdentifyLines
+{
+	bool show;
+	bool health;
+	bool weapon;
+	bool playerClass;
+	bool ghost;
+	bool allyEnemy;
+};
+
+// [MobiusU9B] Applies the toggles to a target: players and monsters each need their own toggle, and health, weapon and class are for allies only.
+IdentifyLines ComputeIdentifyLines(const IdentifyToggles &toggles, const IdentifyTarget &target);
+
 // [MobiusU9B] value clamped to [lo, hi], shared by every integer setting this feature reads.
 int ComputeCrosshairClampInt(int value, int lo, int hi);
 

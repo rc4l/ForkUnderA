@@ -26,23 +26,6 @@ OptionValue ZA_OverridePlayerColors
 	3.0, "Always"
 }
 
-OptionValue ZA_IdentifyTargetLevels
-{
-	0.0, "Off"
-	1.0, "Name"
-	2.0, "Health and armor"
-	3.0, "Weapon and ammo"
-	4.0, "Class and skin"
-}
-
-OptionValue ZA_IdentifyMonsterLevels
-{
-	0.0, "Off"
-	1.0, "Name"
-	2.0, "Drop items"
-	3.0, "Ghost"
-}
-
 OptionValue ZA_SpectatorMode
 {
 	0.0, "With physical restrictions"
@@ -80,7 +63,7 @@ OptionMenu ZA_MultiplayerOptions
 	Option		"Icons",			"cl_icons",			"OnOff"
 	Option		"Show ally icon",		"cl_showallyicon",		"ZA_ShowIcons",			"cl_icons"
 	Option		"Show enemy icon",		"cl_showenemyicon",		"ZA_ShowIcons",			"cl_icons"
-	// [MobiusU9B] Identify player/monster level moved to HUD Options > Crosshair Options.
+	// [MobiusU9B] Identify player/monster level became the Target info toggles in HUD Options > Crosshair Options.
 	Option		"Show spawn spots",		"cl_showspawns",		"YesNo"
 	Option		"Free chasecam",		"cl_freechase",			"YesNo"
 	Option		"Teleport to spied player",	"cl_telespy",			"YesNo"
