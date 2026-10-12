@@ -20,7 +20,7 @@ void ComputeSceneConstants(const SceneConstantInputs &in, float *out)
 	out[32] = in.skyCapR / 255.f; out[33] = in.skyCapG / 255.f; out[34] = in.skyCapB / 255.f;
 	out[35] = in.materialSlots;
 	out[36] = ComputeWarpTimer(in.frameMS, 1.f);
-	out[37] = (float)(in.stackSlot + 1);
+	out[37] = (float)(in.walkSlot + 1);
 	out[38] = in.playerPass ? (float)in.skyHoles : 0.f;
 	out[39] = 0.f;
 }

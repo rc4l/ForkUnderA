@@ -172,9 +172,17 @@ export function boxStats(img, box) {
 
 // [rc4l] Files, then a box when the last four arguments are numbers (not merely when there are enough of them), else fallback.
 export function filesAndBox(args, fallback = [0, 0, 1, 1]) {
+  const last = String(args[args.length - 1]).split(",");
+  if (args.length >= 2 && last.length === 4 && last.every((v) => v !== "" && Number.isFinite(Number(v)))) return { files: args.slice(0, -1), box: last.map(Number) };
   const tail = args.slice(-4).map(Number);
   const has = args.length >= 5 && tail.every((v) => Number.isFinite(v));
   return { files: has ? args.slice(0, -4) : args, box: has ? tail : fallback };
+}
+
+// [rc4l] A box of fractions given as one "x0,y0,x1,y1" or as four numbers, the way the rest of fuactl writes it, and the arguments after it.
+export function boxArgs(args) {
+  const comma = String(args[0]).split(",");
+  return comma.length === 4 ? { box: comma.map(Number), rest: args.slice(1) } : { box: args.slice(0, 4).map(Number), rest: args.slice(4) };
 }
 
 // [rc4l] The mean brightness over a box of fractions, one number to follow across a burst of captures.

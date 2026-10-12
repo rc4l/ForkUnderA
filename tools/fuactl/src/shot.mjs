@@ -214,15 +214,11 @@ export async function captureVulkan(c, file) {
   return null;
 }
 
-// [rc4l] One camera, both renderers, one paused frame; `frozen` commands run inside the pause, since anything asked after it describes a later world.
-export async function shotPair(c, tag, {
-  at = null, engineBin, outDir = null, frozen = [],
-} = {}) {
-  outDir = outDir || sweepDirFor(engineBin);
-  fs.mkdirSync(outDir, { recursive: true });
-  if (at) await moveTo(c, at);
-  await c.rpc("sim.pause", {}).catch(() => {});
+// [rc4l] The camera player.camera reports, as the position standAt and a spot take.
+export function atFromCamera(cam) { return { x: cam.x, y: cam.y, z: cam.z, angle: cam.yaw, pitch: cam.pitch }; }
 
+// [rc4l] Both renderers' frames into outDir as <tag>_gl.png and <tag>_vk.png, the sim already paused.
+async function capturePausedPair(c, tag, { engineBin, outDir }) {
   const gl = path.posix.join(outDir, `${tag}_gl.png`);
   const vk = path.posix.join(outDir, `${tag}_vk.png`);
   for (const f of [gl, vk]) { try { fs.rmSync(f, { force: true }); } catch { /* fine */ } }
@@ -238,12 +234,54 @@ export async function shotPair(c, tag, {
     if ((await exec(c, "fua_window_restore")).includes("restored")) await sleep(300);
   }
   const gotVk = await captureVulkan(c, vk);
+  return { gl: gotGl ? gl : null, vk: gotVk };
+}
+
+// [rc4l] One camera, both renderers, one paused frame; `frozen` commands run inside the pause, since anything asked after it describes a later world.
+export async function shotPair(c, tag, {
+  at = null, engineBin, outDir = null, frozen = [],
+} = {}) {
+  outDir = outDir || sweepDirFor(engineBin);
+  fs.mkdirSync(outDir, { recursive: true });
+  if (at) await moveTo(c, at);
+  await c.rpc("sim.pause", {}).catch(() => {});
+  const pair = await capturePausedPair(c, tag, { engineBin, outDir });
 
   const said = [];
   for (const cmd of frozen) said.push(await exec(c, cmd));
 
   await c.rpc("sim.resume", {}).catch(() => {});
-  return { gl: gotGl ? gl : null, vk: gotVk, frozen: said };
+  return { ...pair, frozen: said };
+}
+
+// [rc4l] The command that lets go of a held action, "-crouch" for "+crouch".
+export function releaseOf(hold) { return String(hold).replace(/^\+/, "-"); }
+
+// [rc4l] One tic's name in a stepped series, zero-padded so the files sort in order.
+export function stepTag(tag, i) { return `${tag}_${String(i).padStart(2, "0")}`; }
+
+// [rc4l] An action held from a settled start and stepped one tic at a time, a pair and the eye height each tic, for a fault that shows for a tic or two of a transition.
+export async function captureSteps(c, { tag, hold, count = 8, engineBin, outDir = null, settleTics = 35 }) {
+  outDir = outDir || sweepDirFor(engineBin);
+  fs.mkdirSync(outDir, { recursive: true });
+  await exec(c, releaseOf(hold));
+  await c.rpc("sim.resume", {}).catch(() => {});
+  await waitTics(c, settleTics);
+  await c.rpc("sim.pause", {}).catch(() => {});
+  await exec(c, hold);
+  const steps = [];
+  try {
+    for (let i = 0; i < count; i++) {
+      await c.rpc("sim.step", { tics: 1 });
+      const cam = await c.rpc("player.camera", {});
+      const name = stepTag(tag, i);
+      steps.push({ name, viewz: cam.viewz, ...(await capturePausedPair(c, name, { engineBin, outDir })) });
+    }
+  } finally {
+    await exec(c, releaseOf(hold));
+    await c.rpc("sim.resume", {}).catch(() => {});
+  }
+  return steps;
 }
 
 // [rc4l] count captures from one renderer as fast as it gives them, sim RUNNING, each with its time and box mean: an animation's rate, or a light a pause would hide.

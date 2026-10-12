@@ -76,6 +76,11 @@ static const char *AdapterTypeName(Diligent::ADAPTER_TYPE t)
 Diligent::IRenderDevice  *GetDevice()  { return g_device; }
 Diligent::IDeviceContext *GetContext() { return g_context; }
 
+void ClampDepthLikeGL(Diligent::GraphicsPipelineDesc &gp)
+{
+	gp.RasterizerDesc.DepthClipEnable = !(g_device.RawPtr() != nullptr && g_device->GetDeviceInfo().Features.DepthClamp == Diligent::DEVICE_FEATURE_STATE_ENABLED);
+}
+
 bool ProbeVulkan(FString &report)
 {
 	if (g_device)
@@ -134,6 +139,8 @@ bool ProbeVulkan(FString &report)
 	ci.Features.BindlessResources = Diligent::DEVICE_FEATURE_STATE_OPTIONAL;
 	ci.Features.ShaderResourceStaticArrays = Diligent::DEVICE_FEATURE_STATE_OPTIONAL;
 	ci.Features.ShaderResourceRuntimeArrays = Diligent::DEVICE_FEATURE_STATE_OPTIONAL;
+	// [rc4l] Depth clamp too (ClampDepthLikeGL), optional so a device without it still starts and only clips at the near plane.
+	ci.Features.DepthClamp = Diligent::DEVICE_FEATURE_STATE_OPTIONAL;
 	factory->CreateDeviceAndContextsVk(ci, &g_device, &g_context);
 	if (!g_device)
 	{
@@ -147,11 +154,12 @@ bool ProbeVulkan(FString &report)
 	{
 		const auto &f = g_device->GetDeviceInfo().Features;
 		const auto &rt = g_device->GetAdapterInfo().RayTracing;
-		Printf("Diligent: ray tracing %s (max recursion %u, caps 0x%x), bindless %s, sampler arrays %s\n",
+		Printf("Diligent: ray tracing %s (max recursion %u, caps 0x%x), bindless %s, sampler arrays %s, depth clamp %s\n",
 			f.RayTracing ? "AVAILABLE" : "unavailable",
 			(unsigned)rt.MaxRecursionDepth, (unsigned)rt.CapFlags,
 			f.BindlessResources ? "yes" : "no",
-			f.ShaderResourceStaticArrays ? "yes" : "no");
+			f.ShaderResourceStaticArrays ? "yes" : "no",
+			f.DepthClamp ? "yes" : "no");
 	}
 
 	const auto &info = g_device->GetDeviceInfo();

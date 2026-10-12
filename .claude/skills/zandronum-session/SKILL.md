@@ -64,16 +64,17 @@ port with no token hangs and reports `rpc timeout`.
 | stand at a saved spot | `goto --spot NAME` |
 | does a render cvar change the picture | `ab <cvar> <a> <b> --spot NAME [--box x0,y0,x1,y1]` |
 | matched GL/Vulkan pair, sim frozen | `shot <tag> --spot NAME` or `--at x,y,z --face yaw,pitch` |
-| what the crosshair is on, and the mesh piece drawing it | `look --at x,y,z --face yaw,pitch` |
+| what the crosshair is on, and the mesh piece drawing it | `look --at x,y,z --face yaw,pitch`; `--pixel x,y --size WxH` aims through a capture's pixel, from the live camera when no `--spot`/`--at` is given |
 | what a linedef is, or every line near a point | `line <index>` or `line --at X,Y --radius R` |
-| a map's sectors, lines, specials and ACS source, from its files | `mapdata <MAP> --preset ID [--sector N] [--line N] [--special N] [--tag N] [--scripts REGEX]` |
+| a map's sectors, lines, specials, things and ACS source, from its files | `mapdata <MAP> --preset ID [--sector N] [--line N] [--special N] [--tag N] [--thing TYPE] [--scripts REGEX]` (9080 is a SkyViewpoint) |
 | does a region move over time (warp, scroller), Vulkan and GL | `motion --spot NAME --box x0,y0,x1,y1 [--interval MS]` |
-| compare two captures | `png --diff a b`, `png --boxdiff a b x0 y0 x1 y1 [block]`, `png --diffimg a b out` |
+| compare two captures | `png --diff a b`, `png --boxdiff a b x0,y0,x1,y1 [block]`, `png --diffimg a b out` |
 | a box's brightness and channel means, several captures | `png --range a b ... [x0 y0 x1 y1]` |
 | lines wearing a texture (any tier, by prefix) | `lines --texture NAME` |
 | frametime distribution (p50/p95/p99) | `capture [--frames N]` |
 | GPU ms per pass | `gl-timers` (check `renderer-info` first; no timer queries reads as zeros) |
 | pause / step the sim | `rpc sim.pause` · `rpc sim.step '{"tics":1}'` |
+| a fault that shows only mid-transition (a crouch, a lift) | `steps <tag> --hold +crouch [--count N] [--spot NAME]`: a GL/Vulkan pair and the eye height each tic |
 
 Console diagnostics worth knowing (run them with `ui exec`): `fua_dg_blendorder [z]` (the translucent
 pass in draw order with plane layers, or every draw spanning height z), `fua_models` (model draws and

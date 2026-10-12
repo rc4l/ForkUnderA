@@ -45,8 +45,10 @@ int g_fbMiddle = 0, g_fbSpecial = 0, g_fbNoTexture = 0, g_fbNoSpan = 0, g_fbSeam
 // error is zero exactly where anyone would think to check.
 void HeightsAt(const seg_t *seg, fixed_t x, fixed_t y, WallHeights &out)
 {
-	const sector_t *front = seg->frontsector;
-	const sector_t *back = seg->backsector;
+	// [rc4l] Both sides as GL's Process takes them, a height transfer's by its view area (gl_FakeFlat), while the texture keeps the real sectors' pegging.
+	sector_t fs, bs;
+	const sector_t *front = zx::levelmesh::TransferSector(seg->frontsector, &fs, false);
+	const sector_t *back = seg->backsector != NULL ? zx::levelmesh::TransferSector(seg->backsector, &bs, true) : NULL;
 	out.frontFloor   = FIXED2FLOAT(front->floorplane.ZatPoint(x, y));
 	out.frontCeiling = FIXED2FLOAT(front->ceilingplane.ZatPoint(x, y));
 	out.twoSided = (back != NULL);
@@ -129,10 +131,12 @@ void ResetDeriveStats()
 }
 void NoteDeriveFallback() { g_fellBack++; }
 
-bool BuildDerivedWallLight(const seg_t *seg, DerivedWallLight &out, const sector_t *&colormapFrom)
+bool BuildDerivedWallLight(const seg_t *seg, DerivedWallLight &out, FDynamicColormap *&colormap)
 {
 	if (seg == NULL || seg->sidedef == NULL || seg->frontsector == NULL) return false;
-	const sector_t *front = seg->frontsector;
+	// [rc4l] A height transfer's front lights its walls as gl_FakeFlat gives it for the view area: under a lake, the control sector's light and colour.
+	sector_t transfer;
+	const sector_t *front = zx::levelmesh::TransferSector(seg->frontsector, &transfer, false);
 	// [rc4l] A sector with a 3D floor light list does not have ONE light level -- and that is now the
 	// CALLER's problem rather than a reason to refuse.
 	//
@@ -145,7 +149,7 @@ bool BuildDerivedWallLight(const seg_t *seg, DerivedWallLight &out, const sector
 	// What comes back here is the wall's OWN light -- band zero, which SplitWall also leaves alone.
 	// The bands below it are the caller's to apply, from wallbands_compute.
 
-	colormapFrom = front;
+	colormap = front->ColorMap;
 	// Transcribed from GLWall::Process, which is the only place this is written down. gl_ClampLight
 	// and GetLightLevel are the engine's; the shape of the rellight clamp is not obvious and is not
 	// re-derived here on purpose.

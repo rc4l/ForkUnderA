@@ -299,7 +299,7 @@ static bool MapBakeOwnsSeg(int segIndex)
 	if (!fua_surface_mapbake_auto) return false;
 	if (segs == NULL || segIndex < 0 || segIndex >= numsegs) return false;
 	zx::surfaces::DerivedWallLight dl;
-	const sector_t *cmFrom = NULL;
+	FDynamicColormap *cmFrom = NULL;
 	return zx::surfaces::BuildDerivedWallLight(&segs[segIndex], dl, cmFrom) && cmFrom != NULL;
 }
 
@@ -418,13 +418,13 @@ void BakeSeg(int segIndex)
 		if (fua_surface_derive_light)
 		{
 			zx::surfaces::DerivedWallLight dl;
-			const sector_t *cmFrom = NULL;
+			FDynamicColormap *cmFrom = NULL;
 			if (zx::surfaces::BuildDerivedWallLight(sc.walls[i].seg, dl, cmFrom) && cmFrom != NULL)
 			{
 				// sector_t::ColorMap is an FDynamicColormap*, and GLWall::Process copies it into an
 				// FColormap by assignment -- the same conversion, spelled the same way.
 				FColormap cm;
-				cm = cmFrom->ColorMap;
+				cm = cmFrom;
 				zx::levelmesh::CaptureShading(dl.lightLevel, dl.relLight + getExtraLight(), cm, mp,
 					sc.walls[i].type == RENDERWALL_M2SNF);
 				mp.lightLevel = dl.lightLevel;
@@ -602,7 +602,7 @@ static int ReshadeSegFromMap(int segIndex)
 	if (sc.hasOwnLitPiece) { g_reshadeFF++; return -1; }   // [rc4l] its light is not in bandLight
 
 	zx::surfaces::DerivedWallLight dl;
-	const sector_t *cmFrom = NULL;
+	FDynamicColormap *cmFrom = NULL;
 	if (!zx::surfaces::BuildDerivedWallLight(seg, dl, cmFrom) || cmFrom == NULL) { g_reshadeNoLight++; return -1; }
 	if (!SegOwnsItsSide(segIndex)) { g_reshadeNotOwner++; return -1; }
 
@@ -626,7 +626,7 @@ static int ReshadeSegFromMap(int segIndex)
 		// The band's light, by the same rule the bake uses -- see the band loop.
 		int lightLevel = dl.lightLevel;
 		FColormap cm;
-		cm = cmFrom->ColorMap;
+		cm = cmFrom;
 		const int li = sc.bandLight[slot];
 		if (li >= 0 && li < nLights)
 		{
@@ -721,7 +721,7 @@ int BakeSegFromMap(int segIndex)
 	const int kParts[3] = { RENDERWALL_TOP, RENDERWALL_BOTTOM, midType };
 
 	zx::surfaces::DerivedWallLight dl;
-	const sector_t *cmFrom = NULL;
+	FDynamicColormap *cmFrom = NULL;
 	// Not ours: leave every range exactly as it is and let the capture keep this seg. Squashing here
 	// is what put a hole in dbab01 -- see MapBakeOwnsSeg.
 	if (!zx::surfaces::BuildDerivedWallLight(seg, dl, cmFrom) || cmFrom == NULL) return -1;
@@ -836,7 +836,7 @@ int BakeSegFromMap(int segIndex)
 			// SplitWall puts that one with PutWall, which alters neither.
 			int lightLevel = dl.lightLevel;
 			FColormap cm;
-			cm = cmFrom->ColorMap;
+			cm = cmFrom;
 			// Remembered so ReshadeSegFromMap can redo exactly this without re-deriving the wall.
 			sc.bandLight[slot0 + bi] =
 				(!band.ownLight && band.lightIndex < nLights) ? (signed char)band.lightIndex : -1;
@@ -1087,7 +1087,7 @@ int BakeSegFromMap(int segIndex)
 				// would have given it.
 				int ffLight = dl.lightLevel;
 				FColormap cm;
-				cm = cmFrom->ColorMap;
+				cm = cmFrom;
 				{
 					zx::surfaces::WallBand bb[kBandsPerPart];
 					const int nbb = zx::surfaces::ComputeWallBands(blk.top, blk.bottom,
@@ -1731,6 +1731,16 @@ static void RebakeChangedSeg(int idx, bool geometryChanged)
 		// [rc4l] Squash, not release, so the re-capture writes back over a range that stays allocated instead of the arena growing every frame the sector moves.
 		for (int i = 0; i < kMaxMapPieces; i++)
 			MeshSquash(sc.pieces[i].range);
+	}
+}
+
+void RebakeTransferSegs()
+{
+	if (!gl_wallmesh) return;
+	for (int s = 0; s < numsectors && (unsigned)s < g_sectorSegs.Size(); s++)
+	{
+		if (!ViewDependent(&sectors[s])) continue;
+		for (unsigned k = 0; k < g_sectorSegs[s].Size(); k++) RebakeChangedSeg(g_sectorSegs[s][k], true);
 	}
 }
 

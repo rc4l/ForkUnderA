@@ -11,4 +11,10 @@ bool ComputeBeyondSkyPortalReach(float minX, float maxX, float minY, float maxY,
 	return minX > camX + reach || maxX < camX - reach || minY > camY + reach || maxY < camY - reach;
 }
 
+void ComputePassEye(bool skyPortalPass, const float *player, const float *portal, float *out)
+{
+	const float *eye = skyPortalPass ? portal : player;
+	for (int i = 0; i < 3; i++) out[i] = eye[i];
+}
+
 }} // namespace zx::hwrender

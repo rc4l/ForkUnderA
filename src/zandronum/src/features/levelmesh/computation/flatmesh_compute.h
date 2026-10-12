@@ -159,8 +159,8 @@ PlaneUVAffine ComputePlaneUVAffine(const PlaneUVTransform &t);
 // [rc4l] The most stacked-sector views (GL's GLSectorStackPortal) a frame renders; a further portal in sight is left undrawn.
 enum { kMaxStackViews = 2 };
 
-// [rc4l] The walk-visibility slots each id has: one per stacked view, then the player's own walk, which says what GL drew behind a sky hole.
-enum { kMainWalkSlot = kMaxStackViews, kWalkSlots = kMaxStackViews + 1 };
+// [rc4l] The walk-visibility slots each id has: one per stacked view, the player's own walk (what GL drew behind a sky hole), then GL's walk from the skybox viewpoint.
+enum { kMainWalkSlot = kMaxStackViews, kSkyboxWalkSlot = kMaxStackViews + 1, kWalkSlots = kMaxStackViews + 2 };
 
 // [rc4l] The sky-surface lists a GL scene walk can fill: the player's view, a camera texture's, one per stacked view, or none.
 enum { kSkyCaptureNone = -1, kSkyCaptureMain = 0, kSkyCaptureCamera = 1, kSkyCaptureStack = 2,
@@ -187,8 +187,18 @@ void ComputeMarkStackVisible(unsigned int *bits, int id, int slot);
 // [rc4l] Whether a walk drew an id, read back as the scene shader reads it; an id outside the words is not drawn.
 bool ComputeStackVisible(const unsigned int *bits, int words, int id, int slot);
 
-// [rc4l] The slot a walk's drawing is marked in: a stacked view's own (stackSlot, -1 for one no slot took), the player's walk kMainWalkSlot, any other none (-1).
-int ComputeWalkSlot(bool stackWalk, int stackSlot, bool playerWalk);
+// [rc4l] The slot a walk's drawing is marked in: a skybox's kSkyboxWalkSlot wherever it was entered from, a stacked view's own (stackSlot, -1 for one no slot took), the player's walk kMainWalkSlot, any other none (-1).
+int ComputeWalkSlot(bool skyboxWalk, bool stackWalk, int stackSlot, bool playerWalk);
+
+// [rc4l] The slot a backend pass draws only what that walk drew of: a stacked view's own, the sky portal's the skybox walk when GL made one this frame, else none (-1), and none at all without the frame's bits.
+int ComputePassWalkSlot(bool bitsReady, int stackPassSlot, bool skyPortalPass, bool skyboxWalked);
+
+// [rc4l] Whether a frame's walk bits go to the backend: some pass reads them, a stacked view, a sky hole or the sky portal.
+bool ComputeWalkBitsNeeded(int stackViews, int skyHoles, bool skyboxWalked);
+
+// [rc4l] GL's view area (FGLRenderer::SetViewArea), which every height transfer's planes follow: below at or under the view sector's fake floor, above over its fake ceiling unless it transfers the floor alone, else normal, which is also the area with no transfer to read.
+enum { kViewAreaNormal = 0, kViewAreaBelow = 1, kViewAreaAbove = 2 };
+int ComputeViewArea(bool hasTransfer, float viewz, float fakeFloor, float fakeCeiling, bool floorOnly);
 
 // [rc4l] One sky hole as the scene shader reads it: the wall's ends (x1, y1, x2, y2), then floor and ceiling at each end (zb1, zt1, zb2, zt2), in map units; at most kMaxSkyHoles a frame.
 enum { kSkyHoleFloats = 8, kMaxSkyHoles = 256 };

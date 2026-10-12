@@ -69,7 +69,7 @@ async function captureSpot(c, name, note, file = SPOTS) {
   }
   const db = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf8")) : { spots: {} };
   db.spots[name] = Object.assign({}, db.spots[name], {
-    map: cam.map, x: cam.x, y: cam.y, z: cam.z, angle: cam.yaw, pitch: cam.pitch,
+    map: cam.map, ...shot.atFromCamera(cam),
     shows: note || (db.spots[name] && db.spots[name].shows) || "recorded from a live session",
     loaded, renderer,
   });
@@ -136,6 +136,7 @@ const USAGE = `fuactl <command>
   queue add <description> [--port P] [--name SPOT]   save the instance's vantage as a spot and queue the problem seen there (report-queue skill)
   queue list [--all] | next | note <id> <text> | done <id> [--unverified] [--note TEXT]   read and work the queue, oldest open item first
   burst <tag> [--side gl|vk] [--count N] [--box x0,y0,x1,y1] [--spot S | --at --face] [--port P]   timed captures with the sim running and each one's box brightness, for an animation's rate or a light a paused shot hides
+  steps <tag> --hold +ACTION [--count N] [--spot S | --at --face] [--port P]   an action (+crouch) held and stepped one tic at a time, a GL/Vulkan pair and the eye height each tic, for a fault that shows only mid-transition
   sector-of --pixel x,y [--side gl|vk] [--spot S | --at --face] [--port P]   which sector's colour that pixel of a capture follows, found by painting halves of the map red and green (fua_sector_color); the sectors stay painted
   travel --to MAP [--max N] [--port P]   nextmap until the instance is on MAP, the way a player reached it
   quit [--port P] [--token T] [--park]   quit an instance (else the last play session) and wait until its port closes; exit 1 if it would not go; --park files its camera, wads and renderer first
@@ -152,7 +153,7 @@ const USAGE = `fuactl <command>
   diligent --port P [--frames N] [--shot FILE] [--sweep DIR]   drive the Diligent (Vulkan) backend: bake the level mesh, upload geometry, optional swapchain screenshot, optional debug-view sweep (lm0..lm4.png in DIR), the matched Diligent-vs-GL benchmark, and with --scale a GPU-time probe at 1x..100x the visible geometry
   play [--restart] [--port P] [--token T] [--spot NAME | --unpark] [--map M] [--file a.pk3,b.pk3] [--cvar k=v,k2=v2] [--preset ID --variant V --store DIR] [--gl] [--side-by-side] [--rt] [--monsters] [--lock] [--res WxH]   a build to walk around in, Vulkan live in the window; stays up until Ctrl-C
   build [--root DIR] [--no-stage] [--tests]   compile the engine (with --tests the unit tests too, and run them) and stage it unless --no-stage, failing loudly instead of staging a stale binary
-  mapdata <MAP> (--preset ID | --file a.pk3,b.wad) [--sector N,..] [--line N,..] [--special N] [--tag N] [--scripts REGEX]   a UDMF level's summary, sectors, lines and ACS source lines, read from its files
+  mapdata <MAP> (--preset ID | --file a.pk3,b.wad) [--sector N,..] [--line N,..] [--special N] [--tag N] [--thing TYPE,..] [--scripts REGEX]   a UDMF level's summary, sectors, lines, things of the given types and ACS source lines, read from its files
   actors [--near x,y] [--radius R] [--toward YAW | --ahead] [--cone DEG] [--class REGEX]   actors near a point (default the player), nearest first, optionally only in a direction
   probe <scenario.mjs> [--map M] [--vantage V] [--side S] [--engine path/to/forkundera.exe] [<command> ...]   launch a template scenario's map at a vantage and run console commands there
   scenarios [name ...] [--engine path/to/forkundera.exe]   run every template scenario (or the named ones) in turn and summarise; --engine picks the binary, as FUACTL_ENGINE does
@@ -348,6 +349,20 @@ async function main() {
       c.close();
       break;
     }
+    // [rc4l] `fuactl steps <tag> --hold +crouch` -- a transition caught tic by tic, instead of a stepping script beside the tool.
+    case "steps": {
+      const usage = "usage: fuactl steps <tag> --hold +ACTION [--count N] [--spot NAME | --at x,y,z --face yaw,pitch] [--port P]";
+      if (!flags.hold || !String(flags.hold).startsWith("+")) { console.error(usage); process.exit(2); }
+      const c = await connectTarget(flags, usage);
+      try {
+        const at = shot.cameraFromFlags(flags, SPOTS);
+        if (at) await shot.moveTo(c, at);
+        const out = await shot.captureSteps(c, { tag: rest[0] || "steps", hold: String(flags.hold), count: Number(flags.count) || 8,
+          engineBin: engineOf(flags).split(path.sep).join("/") });
+        for (const s of out) console.log(`${s.name} viewz ${s.viewz} ${s.gl || "(no GL)"} ${s.vk || "(no Vulkan)"}`);
+      } finally { c.close(); }
+      break;
+    }
     // [rc4l] `fuactl sector-of --pixel x,y` -- whose sector a pixel takes its colour from, a first-class command instead of a bisect script beside the tool.
     case "sector-of": {
       const usage = "usage: fuactl sector-of --pixel x,y [--side gl|vk] [--spot NAME | --at x,y,z --face yaw,pitch] [--port P]";
@@ -398,7 +413,7 @@ async function main() {
         const cam = await captureSpot(c, flags.name ? String(flags.name) : spotNameFor(nextId(q), description), description);
         c.close();
         const r = addItem(q, { description, spot: flags.name ? String(flags.name) : undefined, map: cam.map,
-          at: { x: cam.x, y: cam.y, z: cam.z, angle: cam.yaw, pitch: cam.pitch } });
+          at: shot.atFromCamera(cam) });
         saveQueue(r.queue);
         console.log(formatItem(r.item));
       } else if (sub === "list") {
@@ -675,6 +690,8 @@ async function main() {
       const c = await connectTarget(flags);
       try {
         let cam = shot.cameraFromFlags(flags, SPOTS);
+        // [rc4l] --pixel with no camera aims from where the player stands, rather than ignoring the pixel and reading the crosshair.
+        if (flags.pixel && !cam) cam = shot.atFromCamera(await c.rpc("player.camera", {}));
         // [rc4l] --pixel turns a point on a capture into the facing that puts the crosshair on it, instead of a hand-worked angle.
         if (flags.pixel && cam) {
           const [px, py] = String(flags.pixel).split(",").map(Number);
@@ -718,7 +735,7 @@ async function main() {
     // [rc4l] `fuactl mapdata <MAP>` -- a level's sectors, lines, specials and ACS source read from its files, no engine needed.
     case "mapdata": {
       const map = rest[0];
-      const mdUsage = "usage: fuactl mapdata <MAP> (--preset ID [--variant V --store DIR] | --file a.pk3,b.wad) [--sector N,..] [--line N,..] [--special N] [--tag N] [--scripts REGEX]";
+      const mdUsage = "usage: fuactl mapdata <MAP> (--preset ID [--variant V --store DIR] | --file a.pk3,b.wad) [--sector N,..] [--line N,..] [--special N] [--tag N] [--thing TYPE,..] [--scripts REGEX]";
       if (!map || (!flags.preset && !flags.file)) { console.error(mdUsage); process.exit(2); }
       const { catalogueDir, storeDir } = presetDirs(flags);
       const paths = flags.preset ? resolvePreset(catalogueDir, storeDir, flags.preset, flags.variant)
@@ -728,7 +745,7 @@ async function main() {
       const list = (v) => (v ? String(v).split(",").map(Number) : []);
       console.log(JSON.stringify(mapReport(found, { sectors: list(flags.sector), lines: list(flags.line),
         scripts: flags.scripts ? String(flags.scripts) : null, special: flags.special ? Number(flags.special) : null,
-        tag: flags.tag !== undefined ? Number(flags.tag) : null }), null, 2));
+        tag: flags.tag !== undefined ? Number(flags.tag) : null, things: list(flags.thing) }), null, 2));
       break;
     }
     // [rc4l] `fuactl ready` -- wait until an instance answers, instead of a hand-rolled poll after every launch.

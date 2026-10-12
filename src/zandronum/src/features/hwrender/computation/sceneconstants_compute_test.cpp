@@ -23,7 +23,7 @@ SceneConstantInputs Inputs(const float *mvp, const float *clip)
 	in.skyCapR = 255; in.skyCapG = 0; in.skyCapB = 51;
 	in.materialSlots = 4096.f;
 	in.frameMS = 2500u;
-	in.stackSlot = 1;
+	in.walkSlot = 1;
 	in.playerPass = true;
 	in.skyHoles = 3;
 	return in;
@@ -58,7 +58,7 @@ TEST(SceneConstants, NoStackedViewReadsZero)
 {
 	float mvp[16] = {};
 	SceneConstantInputs in = Inputs(mvp, nullptr);
-	in.stackSlot = -1;
+	in.walkSlot = -1;
 	float out[kSceneConstantFloats];
 	ComputeSceneConstants(in, out);
 	EXPECT_EQ(0.f, out[37]);

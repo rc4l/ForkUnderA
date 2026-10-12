@@ -7,6 +7,7 @@
 #include "features/levelmesh/staticmesh.h"
 #include "features/levelmesh/modelmesh.h"
 #include "features/levelmesh/fakeplanes.h"   // [rc4l] GL's missing-texture fills, baked as fake planes
+#include "features/levelmesh/wallcache.h"    // [rc4l] RebakeTransferSegs, for a view area change
 #include "features/levelmesh/computation/wallbatch_compute.h"
 #include "features/levelmesh/computation/flatmesh_compute.h"
 #include "features/hwrender/computation/slot_compute.h"
@@ -25,6 +26,7 @@
 #include "p_3dfloors.h"   // F3DFloor, P_GetPlaneLight
 #include "r_sky.h"   // skyflatnum
 #include "gl/renderer/gl_lightdata.h"   // gl_ClampLight
+#include "gl/renderer/gl_renderer.h"    // [rc4l] gl_FakeFlat and its area_t, for a height transfer's planes
 #include "gl/renderer/gl_renderstate.h"   // gl_RenderState.GetDynLight, for the sprite light fold
 #include "c_dispatch.h"   // CCMD, for fua_sprite_sweep
 #include "c_cvars.h"
@@ -446,12 +448,14 @@ static void StoreFlat(const FlatSource &flat, subsector_t *sub, bool ceiling)
 // away -- which is what fua_dg_cull is for, and why a flat's winding is chosen by which side it is
 // seen from rather than by its plane's normal. The result is the same set of surfaces GL would have
 // produced across a walk that visited the sector from every side.
+// [rc4l] planeFrom, when given, is where the plane itself is read (a height transfer's gl_FakeFlat copy), model staying the flat's key.
 static void BakeOnePlane(subsector_t *sub, sector_t *model, int whichPlane, bool ceiling,
-	int lightlevel, FColormap cm, float alpha, ERenderStyle style, bool reflects = false, bool fake = false)
+	int lightlevel, FColormap cm, float alpha, ERenderStyle style, bool reflects = false, bool fake = false, sector_t *planeFrom = NULL)
 {
 	if (model == NULL || sub == NULL) return;
+	sector_t *from = planeFrom != NULL ? planeFrom : model;
 	FlatSource f;
-	f.plane.GetFromSector(model, whichPlane);
+	f.plane.GetFromSector(from, whichPlane);
 	// The sky is not a surface: GLFlat::Process returns before making one, and the sky pass draws it.
 	if (f.plane.texture == skyflatnum) return;
 	f.gltexture = FMaterial::ValidateTexture(f.plane.texture, false, true);
@@ -459,7 +463,7 @@ static void BakeOnePlane(subsector_t *sub, sector_t *model, int whichPlane, bool
 	ApplyFullbright(f.gltexture, cm, lightlevel);
 	// GLFlat::Process's own rule, and the reason a transfer-heights door's floor does not z-fight
 	// with the one it sits on.
-	f.dz = (whichPlane == sector_t::floor && model->transdoor) ? -1.f : 0.f;
+	f.dz = (whichPlane == sector_t::floor && from->transdoor) ? -1.f : 0.f;
 	f.lightlevel = lightlevel;
 	f.Colormap = cm;
 	f.alpha = alpha;
@@ -524,16 +528,23 @@ static void Bake3DFace(subsector_t *sub, sector_t *real, F3DFloor *rover, bool t
 	BakeOnePlane(sub, pr.model, pr.isceiling, ceiling, lightlevel, cm, alpha, style);
 }
 
+// [rc4l] The view area the height transfers' planes were last baked for, a kViewArea, which is GL's area_t.
+static int g_transferArea = kViewAreaNormal;
+static_assert(area_normal == kViewAreaNormal && area_below == kViewAreaBelow && area_above == kViewAreaAbove, "kViewArea spells GL's area_t");
+
 // [rc4l] A sector's own floor or ceiling as ProcessSector lights it, laid over sub: the sector's own subsector, or with fake another one GL's missing-texture fill covers with it.
 static int BakeSectorPlane(subsector_t *sub, sector_t *real, bool ceiling, bool fake)
 {
 	const int which = ceiling ? sector_t::ceiling : sector_t::floor;
-	int ll = gl_ClampLight(ceiling ? real->GetCeilingLight() : real->GetFloorLight());
+	// [rc4l] A height transfer draws its control sector's planes, and under or over them that sector's textures, light and colour.
+	sector_t transfer;
+	sector_t *src = fake ? real : TransferSector(real, &transfer, false);
+	int ll = gl_ClampLight(ceiling ? src->GetCeilingLight() : src->GetFloorLight());
 	FColormap cm;
-	cm = real->ColorMap;
-	const float alpha = ComputePlaneAlpha(real->portals[which] != NULL, FIXED2FLOAT(real->GetAlpha(which)), real->GetReflect(which));
+	cm = src->ColorMap;
+	const float alpha = ComputePlaneAlpha(src->portals[which] != NULL, FIXED2FLOAT(src->GetAlpha(which)), src->GetReflect(which));
 	// [rc4l] GL reflects a plane with no portal stack on it, and a fully reflective one still needs the surface the reflection is painted on.
-	const bool reflects = real->GetReflect(which) > 0 && real->portals[which] == NULL;
+	const bool reflects = src->GetReflect(which) > 0 && src->portals[which] == NULL;
 	if (real->e != NULL && real->e->XFloor.ffloors.Size() != 0)
 	{
 		lightlist_t *light = P_GetPlaneLight(real, ceiling ? &real->ceilingplane : &real->floorplane, ceiling);
@@ -543,8 +554,29 @@ static int BakeSectorPlane(subsector_t *sub, sector_t *real, bool ceiling, bool 
 		cm.CopyLightColor(light->extra_colormap);
 	}
 	if (alpha == 0.0f && !reflects) return 0;
-	BakeOnePlane(sub, real, which, ceiling, ll, cm, alpha, STYLE_Translucent, reflects, fake);
+	BakeOnePlane(sub, real, which, ceiling, ll, cm, alpha, STYLE_Translucent, reflects, fake, src);
 	return 1;
+}
+
+sector_t *TransferSector(sector_t *s, sector_t *scratch, bool back)
+{
+	return (s != NULL && ViewDependent(s)) ? gl_FakeFlat(s, scratch, (area_t)g_transferArea, back) : s;
+}
+
+void RefreshTransferArea()
+{
+	if (sectors == NULL || numsectors <= 0 || subsectors == NULL) return;
+	// [rc4l] The render sector, as SetViewArea takes it.
+	sector_t *vs = R_PointInSubsector(viewx, viewy)->render_sector;
+	sector_t *hs = vs != NULL ? vs->heightsec : NULL;
+	const bool has = hs != NULL && !(hs->MoreFlags & SECF_IGNOREHEIGHTSEC);
+	const int area = ComputeViewArea(has, FIXED2FLOAT(viewz), has ? FIXED2FLOAT(hs->floorplane.ZatPoint(viewx, viewy)) : 0.f,
+		has ? FIXED2FLOAT(hs->ceilingplane.ZatPoint(viewx, viewy)) : 0.f, has && (hs->MoreFlags & SECF_FAKEFLOORONLY) != 0);
+	if (area == g_transferArea) return;
+	g_transferArea = area;
+	for (int i = 0; i < numsectors; i++)
+		if (ViewDependent(&sectors[i])) BakeFlatsForSector(i);
+	RebakeTransferSegs();
 }
 
 static int BakeFlatsForSubsector(subsector_t *sub)
@@ -762,6 +794,12 @@ static TArray<unsigned int> g_stackVis;
 
 StackWalk::StackWalk(const void *portal) : saved(s_stackWalk) { s_stackWalk = portal; }
 
+static bool s_skyboxWalk = false;
+static bool g_skyboxWalked = false;
+SkyboxWalk::SkyboxWalk() : saved(s_skyboxWalk) { s_skyboxWalk = true; }
+SkyboxWalk::~SkyboxWalk() { s_skyboxWalk = saved; }
+bool SkyboxWalked() { return g_skyboxWalked; }
+
 static int s_mirrorLine = -1;
 // [rc4l] The line mirrors GL's walk went through since the player's walk began this frame.
 static TArray<int> g_walkedMirrors;
@@ -807,20 +845,21 @@ static int StackWalkSlot()
 
 int StackCaptureSlot() { return ComputeStackCaptureSlot(s_mainView, s_sceneNesting, StackWalkSlot()); }
 
-// [rc4l] Marks an id for the walk in progress: a stacked view's, or the player's own, which a sky hole lets through what it drew.
+// [rc4l] Marks an id for the walk in progress: a skybox's, a stacked view's, or the player's own, which a sky hole lets through what it drew.
 static void NoteWalked(int id)
 {
 	if (g_stackVis.Size() == 0) return;
-	const int slot = ComputeWalkSlot(s_stackWalk != NULL, StackCaptureSlot(), PlayerWalkActive());
+	const int slot = ComputeWalkSlot(s_skyboxWalk, s_stackWalk != NULL, StackCaptureSlot(), PlayerWalkActive());
 	if (slot < 0 || id < 0 || id >= numsubsectors + numsides) return;
 	ComputeMarkStackVisible(&g_stackVis[0], id, slot);
+	if (slot == kSkyboxWalkSlot) g_skyboxWalked = true;
 }
 void NoteWalkedSubsector(int subsector) { if (subsector < numsubsectors) NoteWalked(subsector); }
 void NoteWalkedSide(int side) { if (side >= 0 && side < numsides) NoteWalked(numsubsectors + side); }
 
 const unsigned int *StackVisibility(int &words)
 {
-	words = (g_stackUsed > 0 || g_skyHoles.Size() > 0) ? (int)g_stackVis.Size() : 0;
+	words = ComputeWalkBitsNeeded(g_stackUsed, (int)g_skyHoles.Size(), g_skyboxWalked) ? (int)g_stackVis.Size() : 0;
 	return words ? &g_stackVis[0] : NULL;
 }
 
@@ -907,6 +946,7 @@ int BeginSkyWalk()
 	{
 		g_skyViewpoint = NULL;
 		g_skyHoles.Clear();
+		g_skyboxWalked = false;
 		g_stackUsed = 0;
 		g_walkedMirrors.Clear();
 		g_mirrorSheens.Clear();

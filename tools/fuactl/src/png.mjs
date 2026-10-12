@@ -7,7 +7,7 @@
 // Minimal PNG decoder: enough for the engine's own RGB screenshots and readbacks.
 import fs from "node:fs";
 import path from "node:path";
-import { decodePNG, px, writePNG, boxDiff, cropImage, samplePoints, boxStats, filesAndBox } from "./pngcore.mjs";
+import { decodePNG, px, writePNG, boxDiff, cropImage, samplePoints, boxStats, filesAndBox, boxArgs } from "./pngcore.mjs";
 
 // [rc4l] Per-pixel agreement between two renders, because a mean cannot see shape.
 //
@@ -128,12 +128,12 @@ if (args[0] === "--px") {
 
 // [rc4l] Mean |d| of two frames over a box, in 16-pixel block means unless told otherwise -- see boxDiff.
 //
-// usage: fuactl png --boxdiff <a.png> <b.png> <x0> <y0> <x1> <y1> [block]   (fractions)
+// usage: fuactl png --boxdiff <a.png> <b.png> <x0,y0,x1,y1 | x0 y0 x1 y1> [block]   (fractions)
 if (args[0] === "--boxdiff") {
   const a = decodePNG(args[1]), b = decodePNG(args[2]);
   if (a.w !== b.w || a.h !== b.h) { console.error(`size mismatch ${a.w}x${a.h} vs ${b.w}x${b.h}`); process.exit(1); }
-  const box = args.slice(3, 7).map(Number);
-  const block = Number(args[7]) || 16;
+  const { box, rest } = boxArgs(args.slice(3));
+  const block = Number(rest[0]) || 16;
   try { console.log(`mean|d| ${boxDiff(a, b, box, block).toFixed(2)}  (block ${block}, box ${box.join(",")})`); }
   catch (e) { console.error(e.message); process.exit(1); }
   process.exit(0);

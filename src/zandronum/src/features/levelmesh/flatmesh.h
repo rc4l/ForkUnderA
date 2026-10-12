@@ -71,7 +71,7 @@ void NoteWalkedSubsector(int subsector);
 void NoteWalkedSide(int side);
 // [rc4l] The id a stacked view keeps or drops a level-mesh piece by, and GL's light links name it by: the sidedef it was baked from (MeshPiece::linkId), else its subsector for a flat or numsubsectors plus the nearest sidedef for a wall, -1 if it cannot be placed.
 int PieceStackId(const MeshPiece &p);
-// [rc4l] This frame's ComputeMarkStackVisible bits over the subsectors then the sidedefs, or NULL with no stacked view and no sky hole.
+// [rc4l] This frame's ComputeMarkStackVisible bits over the subsectors then the sidedefs, or NULL when no pass reads them (ComputeWalkBitsNeeded).
 const unsigned int *StackVisibility(int &words);
 // [rc4l] The player's walk's sky holes this frame (ComputeSkyHoleRecord, count of them), or NULL with none.
 const float *SkyHoles(int &count);
@@ -92,6 +92,16 @@ struct MirrorWalk
 	int saved;
 };
 
+// [rc4l] Marks GL's walk from a skybox viewpoint (GLSkyboxPortal::DrawContents), so what it reaches is the sky portal pass's to draw.
+struct SkyboxWalk
+{
+	SkyboxWalk();
+	~SkyboxWalk();
+	bool saved;
+};
+// [rc4l] Whether a skybox walk marked anything since the player's walk began this frame.
+bool SkyboxWalked();
+
 // [rc4l] Marks GL's walk through a stacked view (GLSectorStackPortal::DrawContents), so its sky quads fill that view's list.
 struct StackWalk
 {
@@ -105,6 +115,12 @@ void ApplyFullbright(const FMaterial *mat, FColormap &cm, int &lightLevel);
 
 // [rc4l] A sector plane's texture mapping, by gl_SetPlaneTextureRotation's inputs: its offsets, scale, angle and the texture's size.
 void PlaneUVFor(const GLSectorPlane &plane, FMaterial *mat, PlaneUVTransform &out);
+
+// [rc4l] s as GL draws it in the view area last baked for (gl_FakeFlat into scratch), or s itself without a height transfer; back as GL asks for a seg's far sector.
+sector_t *TransferSector(sector_t *s, sector_t *scratch, bool back);
+
+// [rc4l] Re-bakes every height transfer's planes when the view has crossed into another area (ComputeViewArea), as an eye dipping under a lake's surface does; call once a frame with the view set.
+void RefreshTransferArea();
 
 // [rc4l] Every flat in the level, from the map, with no GLFlat involved.
 //

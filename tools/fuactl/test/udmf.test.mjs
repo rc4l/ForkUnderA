@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { UdmfMap, wad, mapLumps, readWad, parseUdmf } from "../src/udmf.mjs";
-import { THING } from "../src/doomnums.mjs";
+import { THING, SPECIAL } from "../src/doomnums.mjs";
 import { PCD } from "../src/acs.mjs";
 import { buildHorizonWad } from "../scenarios/horizon.mjs";
 import { buildPointlightWad, VANTAGES } from "../scenarios/pointlight.mjs";
@@ -378,4 +378,33 @@ test("the camera-texture template declares a wide camera texture fitted smaller,
   const words = [];
   for (let i = 8; i + 4 <= behavior.readInt32LE(4); i += 4) words.push(behavior.readInt32LE(i));
   assert.deepEqual(words.slice(0, 7), [PCD.PUSHNUMBER, camera.id, PCD.PUSHNUMBER, 0, PCD.PUSHNUMBER, 90, PCD.SETCAMERATOTEXTURE]);
+});
+
+test("the sprite-slot template stands animated decorations both north and south of the player, so turning round shows frames never drawn", async () => {
+  const { buildSpriteSlotsWad, VANTAGES } = await import("../scenarios/spriteslots.mjs");
+  const [u] = textmaps(buildSpriteSlotsWad());
+  const start = u.thing.find((t) => t.type === 1);
+  const decorations = u.thing.filter((t) => t.type !== 1);
+  assert.ok(decorations.some((t) => t.y > start.y) && decorations.some((t) => t.y < start.y));
+  assert.deepEqual(VANTAGES.map((v) => v.at.angle), [90, 270]);
+});
+
+test("the skybox-beyond template puts a tower taller than the skybox area's walls in a sealed room beside it", async () => {
+  const { buildSkyboxBeyondWad } = await import("../scenarios/skyboxbeyond.mjs");
+  const [u] = textmaps(buildSkyboxBeyondWad());
+  const viewpoint = u.thing.find((t) => t.type === THING.SkyViewpoint);
+  const tower = u.sector.find((s) => s.heightfloor >= 1000);
+  const skyArea = u.sector.find((s) => s.texturefloor === "FLOOR0_1");
+  assert.ok(viewpoint && tower && skyArea);
+  assert.ok(tower.heightfloor > skyArea.heightceiling, "the tower rises over the skybox walls");
+});
+
+test("the transfer-heights template tags its lake from a control sector's Transfer_Heights line, the surface above the lake's own floor", async () => {
+  const { buildTransferHeightsWad } = await import("../scenarios/transferheights.mjs");
+  const [u] = textmaps(buildTransferHeightsWad());
+  const line = u.linedef.find((l) => l.special === SPECIAL.Transfer_Heights);
+  const lake = u.sector.find((s) => s.id === line.arg0);
+  const control = u.sector[u.sidedef[line.sidefront].sector];
+  assert.ok(control.heightfloor > lake.heightfloor);
+  assert.ok(control.lightcolor > 0);
 });

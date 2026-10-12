@@ -697,7 +697,10 @@ void GLSkyboxPortal::DrawContents()
 	SaveMapSection();
 	currentmapsection[mapsection>>3] |= 1 << (mapsection & 7);
 
-	GLRenderer->DrawScene();
+	{
+		zx::levelmesh::SkyboxWalk walk;	// [rc4l] features/levelmesh: what this walk reaches is the backend sky portal's to draw
+		GLRenderer->DrawScene();
+	}
 	origin->flags&=~MF_JUSTHIT;
 	inskybox=false;
 	gl_RenderState.SetDepthClamp(oldclamp);

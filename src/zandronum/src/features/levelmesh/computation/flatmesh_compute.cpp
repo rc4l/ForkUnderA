@@ -190,10 +190,30 @@ void ComputeMarkStackVisible(unsigned int *bits, int id, int slot)
 	bits[bit >> 5] |= 1u << (bit & 31);
 }
 
-int ComputeWalkSlot(bool stackWalk, int stackSlot, bool playerWalk)
+int ComputeWalkSlot(bool skyboxWalk, bool stackWalk, int stackSlot, bool playerWalk)
 {
+	if (skyboxWalk) return kSkyboxWalkSlot;
 	if (stackWalk) return stackSlot;
 	return playerWalk ? kMainWalkSlot : -1;
+}
+
+int ComputePassWalkSlot(bool bitsReady, int stackPassSlot, bool skyPortalPass, bool skyboxWalked)
+{
+	if (!bitsReady) return -1;
+	if (skyPortalPass) return skyboxWalked ? kSkyboxWalkSlot : -1;
+	return stackPassSlot;
+}
+
+bool ComputeWalkBitsNeeded(int stackViews, int skyHoles, bool skyboxWalked)
+{
+	return stackViews > 0 || skyHoles > 0 || skyboxWalked;
+}
+
+int ComputeViewArea(bool hasTransfer, float viewz, float fakeFloor, float fakeCeiling, bool floorOnly)
+{
+	if (!hasTransfer) return kViewAreaNormal;
+	if (viewz <= fakeFloor) return kViewAreaBelow;
+	return (viewz > fakeCeiling && !floorOnly) ? kViewAreaAbove : kViewAreaNormal;
 }
 
 void ComputeSkyHoleRecord(float x1, float y1, float x2, float y2, const float *zfloor, const float *zceil, float *out)

@@ -78,7 +78,9 @@ its full spot record.
 
 ### When it will not reproduce
 
-Use their exact steps (a map change, a mouse turn, the same window mode) before you give up. Then
+Use their exact steps (a map change, a mouse turn, the same window mode) before you give up; a fault
+they see only while something moves ("during the crouch") is caught with `steps <tag> --hold +crouch`,
+one paused tic at a time. Then
 audit lifetimes instead of re-shooting: a pipeline holding a static binding to a buffer that has been
 replaced usually still captures correctly. Fix what the audit finds, close the item with
 `queue done <id> --unverified --note "..."`, and tell the user plainly that the fix is unverified.

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { judge, scenarioOutcome, isMain, sideCommands, boxWithin, runScenarioIfMain, scenarioOptions, scenarioRun, templateScenarioFiles, probeChoices, pairFrame } from "../src/template.mjs";
+import { judge, judgeCounter, scenarioOutcome, isMain, sideCommands, boxWithin, runScenarioIfMain, scenarioOptions, scenarioRun, templateScenarioFiles, probeChoices, pairFrame } from "../src/template.mjs";
 import { pathToFileURL } from "node:url";
 import fs from "node:fs";
 import os from "node:os";
@@ -14,6 +14,17 @@ function flat(w, h, rgb) {
 }
 
 const BOXES = { sky: { box: [0, 0, 1, 0.5], ceiling: 6 } };
+
+// [rc4l] #33's white sprite lasted one frame, so its template reads the engine's count rather than a picture.
+test("a counter passes at or under its ceiling, and fails over it or when the engine never printed it", () => {
+  const counter = { label: "slots past the fill", pattern: "(\\d+) since load", ceiling: 0 };
+  assert.deepEqual(judgeCounter("MAP01", "dyn slots: 2 past the fill (0 since load)", counter),
+    { line: "PASS MAP01 slots past the fill: 0 (ceiling 0)", failed: 0 });
+  assert.deepEqual(judgeCounter("MAP01", "dyn slots: 2 past the fill (14 since load)", counter),
+    { line: "FAIL MAP01 slots past the fill: 14 (ceiling 0)", failed: 1 });
+  assert.deepEqual(judgeCounter("MAP01", "Unknown command", counter),
+    { line: "FAIL MAP01: no slots past the fill in the engine's answer", failed: 1 });
+});
 
 test("a box under its ceiling passes and one over it fails", () => {
   const frames = {

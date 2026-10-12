@@ -124,6 +124,11 @@ vantage captured twice `intervalMs` apart, and a box can carry a `floor` (it mus
 much) as well as a `ceiling`. Judge it per pixel (`block: 1`): a ripple shifts an even texture without
 moving its 16-pixel block means.
 
+For a fault that lasts ONE frame (a sprite drawn white the frame its material first appears), no paused
+capture can catch it: have the engine count it, and use `compareCounter`, which stands at each vantage
+with the sim running and holds a console command's number to a ceiling (`counter: { command, label,
+pattern, ceiling }`, `pattern`'s first group the number). `spriteslots.mjs` reads `fua_dg_dynstats`.
+
 `BOXES[map]` is `{ name: { box: [x0, y0, x1, y1], ceiling } }` in frame fractions. Set ceilings from
 measurement, not taste: run the FIXED build, take what it reads, add margin. A map with a known,
 unrelated difference gets its own ceiling (MAP01's dome reads ~10 in both builds; the horizon box ~2).
@@ -173,6 +178,9 @@ Export the builder from the scenario; `runScenarioIfMain` keeps the import from 
 | `tools/fuactl/scenarios/mirrorsky.mjs` | a mirror beside a window onto a low sky-roofed yard shallower than the player stands from the glass, so the sky GL sees through the window lies between the reflected eye and the mirror, GL against Vulkan |
 | `tools/fuactl/scenarios/missingupper.mjs` | a raised-ceiling island with untextured uppers, seen from inside, GL (wall cache off, the stock fill) against Vulkan: the map bake must draw the room's lower ceiling across it as GL's missing-texture fill does |
 | `tools/fuactl/scenarios/skyhole.mjs` | a one-sided wall with no texture under a sky, GL against Vulkan: on MAP01 a lit room behind it that nothing joins, which GL's walk clips, so the backend must show sky there rather than the room; on MAP02 (skybox) and MAP03 (plain sky) the yard's own sector reaches past it through a corridor, and GL draws a pillar in it and the field's floor and far wall through the hole, which the backend must keep |
+| `tools/fuactl/scenarios/spriteslots.mjs` | animated decorations ahead of and behind the player (`compareCounter`): no sprite frame may sample a material slot the bindless array was not yet filled with |
+| `tools/fuactl/scenarios/skyboxbeyond.mjs` | a skybox area with low walls and a tower in a sealed room beside it, GL against Vulkan: the sky over the skybox walls shows only what GL's walk from the skybox camera reached |
+| `tools/fuactl/scenarios/transferheights.mjs` | a lake whose surface is a Transfer_Heights control sector's floor, seen from the shore, from under it and from a step 2 under the eye: the surface at the control height, underwater its textures and blue light, and nearer than the near plane still drawn, as GL's depth clamp keeps it |
 | `tools/fuactl/scenarios/cameratex.mjs` | an ANIMDEFS camera texture twice as wide as tall, fitted smaller than its pixels, on a one-sided wall, set by an OPEN script's SetCameraToTexture: the screen must show the camera's room upright, framed and sharp as GL shows it |
 | `tools/fuactl/scenarios/missingfillcache.mjs` | the missing-upper map in GL alone, wall cache off against on: the cache must not cost GL its missing-texture fill |
 | `tools/fuactl/scenarios/missinglower.mjs` | a recess with untextured steps, GL against Vulkan: GL's missing-texture fill must run every frame under the wall cache. GL does not clear its framebuffer, so a missing fill shows stale pixels, and the map looks at a red wall first to put red there |

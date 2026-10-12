@@ -542,18 +542,19 @@ TEST(FlatMeshCompute, WhatAMirrorsWalkDrawsBelongsToThatMirror)
 TEST(FlatMeshCompute, AStackedViewMarksEachSubsectorItsWalkReached)
 {
 	EXPECT_EQ(0, ComputeStackVisWords(0));
-	EXPECT_EQ(1, ComputeStackVisWords(10));
-	EXPECT_EQ(2, ComputeStackVisWords(11));
+	static_assert(kWalkSlots == 4, "the bit positions below are four slots an id");
+	EXPECT_EQ(1, ComputeStackVisWords(8));
+	EXPECT_EQ(2, ComputeStackVisWords(9));
 	unsigned int bits[2] = { 0u, 0u };
 	ComputeMarkStackVisible(bits, 0, 1);
-	ComputeMarkStackVisible(bits, 16, 0);
-	ComputeMarkStackVisible(bits, 16, 0);
+	ComputeMarkStackVisible(bits, 12, 0);
+	ComputeMarkStackVisible(bits, 12, 0);
 	EXPECT_EQ(2u, bits[0]);              // [rc4l] subsector 0, second view
-	EXPECT_EQ(1u << 16, bits[1]);        // [rc4l] subsector 16, first view, set once
+	EXPECT_EQ(1u << 16, bits[1]);        // [rc4l] subsector 12, first view, set once
 	EXPECT_TRUE(ComputeStackVisible(bits, 2, 0, 1));
 	EXPECT_FALSE(ComputeStackVisible(bits, 2, 0, 0));
-	EXPECT_TRUE(ComputeStackVisible(bits, 2, 16, 0));
-	EXPECT_FALSE(ComputeStackVisible(bits, 2, 16, kMainWalkSlot));
+	EXPECT_TRUE(ComputeStackVisible(bits, 2, 12, 0));
+	EXPECT_FALSE(ComputeStackVisible(bits, 2, 12, kMainWalkSlot));
 	EXPECT_FALSE(ComputeStackVisible(bits, 2, 40, 0));        // [rc4l] past the words
 	EXPECT_FALSE(ComputeStackVisible(bits, 2, -1, 0));
 	EXPECT_FALSE(ComputeStackVisible(nullptr, 2, 0, 1));
@@ -745,14 +746,40 @@ TEST(FlatMeshCompute, APlaneTakesTheBandLightByProcessSectorsRule)
 // [rc4l] WDI18's forest: the player's walk marks its own slot, a stacked view's walk its view's, and a camera's or a mirror's none.
 TEST(FlatMeshCompute, EachWalkMarksItsOwnSlot)
 {
-	EXPECT_EQ(1, ComputeWalkSlot(true, 1, false));
-	EXPECT_EQ(-1, ComputeWalkSlot(true, -1, true));     // [rc4l] a stacked view no slot took
-	EXPECT_EQ(kMainWalkSlot, ComputeWalkSlot(false, -1, true));
-	EXPECT_EQ(-1, ComputeWalkSlot(false, -1, false));
+	EXPECT_EQ(1, ComputeWalkSlot(false, true, 1, false));
+	EXPECT_EQ(-1, ComputeWalkSlot(false, true, -1, true));     // [rc4l] a stacked view no slot took
+	EXPECT_EQ(kMainWalkSlot, ComputeWalkSlot(false, false, -1, true));
+	EXPECT_EQ(-1, ComputeWalkSlot(false, false, -1, false));
+	EXPECT_EQ(kSkyboxWalkSlot, ComputeWalkSlot(true, true, 1, false));    // [rc4l] a stacked view's sky is the same skybox
 	unsigned int bits[1] = { 0u };
 	ComputeMarkStackVisible(bits, 1, kMainWalkSlot);
 	EXPECT_TRUE(ComputeStackVisible(bits, 1, 1, kMainWalkSlot));
 	EXPECT_FALSE(ComputeStackVisible(bits, 1, 1, 0));
+}
+
+// [rc4l] AOW03's tower: the sky portal draws only what GL's skybox walk reached, a stacked view what its own walk did, any other pass everything.
+TEST(FlatMeshCompute, APassDrawsWhatItsOwnWalkDrew)
+{
+	EXPECT_EQ(1, ComputePassWalkSlot(true, 1, false, false));
+	EXPECT_EQ(-1, ComputePassWalkSlot(true, -1, false, true));
+	EXPECT_EQ(kSkyboxWalkSlot, ComputePassWalkSlot(true, -1, true, true));
+	EXPECT_EQ(-1, ComputePassWalkSlot(true, -1, true, false));    // [rc4l] no skybox walk this frame, so the reach test stands in
+	EXPECT_EQ(-1, ComputePassWalkSlot(false, 1, true, true));
+	EXPECT_FALSE(ComputeWalkBitsNeeded(0, 0, false));
+	EXPECT_TRUE(ComputeWalkBitsNeeded(1, 0, false));
+	EXPECT_TRUE(ComputeWalkBitsNeeded(0, 2, false));
+	EXPECT_TRUE(ComputeWalkBitsNeeded(0, 0, true));
+}
+
+// [rc4l] AOW03's lake (queue #35): crouched under its fake floor the eye is below, and every height transfer then shows its underwater planes.
+TEST(FlatMeshCompute, TheViewAreaIsWhereTheEyeStandsAgainstTheTransfer)
+{
+	EXPECT_EQ(kViewAreaBelow, ComputeViewArea(true, -35.5f, -26.f, 776.f, false));
+	EXPECT_EQ(kViewAreaBelow, ComputeViewArea(true, -26.f, -26.f, 776.f, false));     // [rc4l] at the surface is under it
+	EXPECT_EQ(kViewAreaNormal, ComputeViewArea(true, -15.f, -26.f, 776.f, false));
+	EXPECT_EQ(kViewAreaAbove, ComputeViewArea(true, 800.f, -26.f, 776.f, false));
+	EXPECT_EQ(kViewAreaNormal, ComputeViewArea(true, 800.f, -26.f, 776.f, true));     // [rc4l] a floor-only transfer has no above
+	EXPECT_EQ(kViewAreaNormal, ComputeViewArea(false, -35.5f, -26.f, 776.f, false));
 }
 
 // [rc4l] The player's walk's holes go to the scene shader until it is full, and a stacked view's or a camera's are painted as sky.

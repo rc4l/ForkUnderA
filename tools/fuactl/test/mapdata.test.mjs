@@ -75,6 +75,10 @@ test("the report summarises the map and describes the sectors and lines asked ab
   assert.deepEqual(mapReport(found, { tag: 0 }).tag, []);
   assert.deepEqual(mapReport(found, { tag: 5 }).tag.map((t) => [t.index, t.bounds]), [[1, [512, 0, 768, 256]]]);
   assert.equal(mapReport(found).special, undefined);
+  // [rc4l] The skybox camera of queue #38 was found by its thing type, which mapdata could not list.
+  assert.deepEqual(mapReport(found, { things: [1] }).things.map((t) => [t.index, t.x, t.y]), [[0, 128, 128]]);
+  assert.deepEqual(mapReport(found, { things: [9080] }).things, []);
+  assert.equal(mapReport(found).things, undefined);
   assert.throws(() => mapReport(found, { sectors: [5] }), /no sector 5: the map has 2/);
   assert.throws(() => mapReport(found, { lines: [99] }), /no line 99: the map has 8/);
 });

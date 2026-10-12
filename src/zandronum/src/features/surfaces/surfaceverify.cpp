@@ -327,7 +327,7 @@ CCMD( fua_surface_bakediff )
 			// so a disagreement there is not in the map-driven frame at all -- and counting it makes
 			// the number describe a wall nobody is going to build this way.
 			{
-				DerivedWallLight own; const sector_t *ocm = NULL;
+				DerivedWallLight own; FDynamicColormap *ocm = NULL;
 				if ( !BuildDerivedWallLight( &segs[s], own, ocm ) || ocm == NULL ) { notOurs++; continue; }
 			}
 
@@ -378,14 +378,14 @@ CCMD( fua_surface_bakediff )
 				// The capture takes the colormap off the GLWall; the map bake takes it off
 				// seg->frontsector, and those are not always the same sector.
 				DerivedWallLight dl;
-				const sector_t *cm = NULL;
+				FDynamicColormap *cm = NULL;
 				if ( BuildDerivedWallLight( &segs[s], dl, cm ) )
 				{
 					if ( dl.lightLevel != w->lightlevel || dl.relLight != w->rellight ) firstBad = 5;
-					else if ( cm != NULL && cm->ColorMap != NULL &&
-					          ( w->Colormap.LightColor.d != cm->ColorMap->Color.d ||
-					            w->Colormap.FadeColor.d != cm->ColorMap->Fade.d ||
-					            w->Colormap.desaturation != cm->ColorMap->Desaturate ) ) firstBad = 7;
+					else if ( cm != NULL &&
+					          ( w->Colormap.LightColor.d != cm->Color.d ||
+					            w->Colormap.FadeColor.d != cm->Fade.d ||
+					            w->Colormap.desaturation != cm->Desaturate ) ) firstBad = 7;
 				}
 			}
 
@@ -410,7 +410,7 @@ CCMD( fua_surface_bakediff )
 				Printf( "      capture u %.3f..%.3f v %.3f/%.3f z %.1f..%.1f light %d rel %d tex %s" "\n",
 					w->uplft.u, w->uprgt.u, w->uplft.v, w->uprgt.v, w->zbottom[0], w->ztop[0],
 					w->lightlevel, (int)w->rellight, w->gltexture->tex->Name.GetChars( ) );
-				DerivedWallLight dl2; const sector_t *cm2 = NULL;
+				DerivedWallLight dl2; FDynamicColormap *cm2 = NULL;
 				const bool haveL = BuildDerivedWallLight( &segs[s], dl2, cm2 );
 				Printf( "      derived u %.3f..%.3f v %.3f/%.3f z %.1f..%.1f light %d rel %d tex %s" "\n",
 					d.uLeft, d.uRight, d.vTop[0], d.vTop[1], d.zbottom[0], d.ztop[0],
@@ -529,7 +529,7 @@ CCMD( fua_surface_mapcover )
 		// with the capture. Asking only BuildDerivedWallSpan reported full coverage for segs the map
 		// bake never touches -- and a wall the map bake does not build is a wall that is missing from
 		// the map-driven frame, which is exactly what this command exists to catch.
-		DerivedWallLight ownLight; const sector_t *ownCm = NULL;
+		DerivedWallLight ownLight; FDynamicColormap *ownCm = NULL;
 		const bool mapOwns = BuildDerivedWallLight( &segs[sIdx], ownLight, ownCm ) && ownCm != NULL;
 
 		bool mapHas[8] = { false, false, false, false, false, false, false, false };

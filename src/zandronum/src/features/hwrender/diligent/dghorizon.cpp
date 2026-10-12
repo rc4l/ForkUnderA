@@ -163,6 +163,7 @@ static bool EnsureHorizonPipeline()
 	Diligent::GraphicsPipelineStateCreateInfo pci;
 	pci.PSODesc.Name = "fua horizon PSO";
 	pci.PSODesc.PipelineType = Diligent::PIPELINE_TYPE_GRAPHICS;
+	ClampDepthLikeGL(pci.GraphicsPipeline);
 	pci.GraphicsPipeline.NumRenderTargets = 1;
 	pci.GraphicsPipeline.RTVFormats[0] = swap->GetDesc().ColorBufferFormat;
 	pci.GraphicsPipeline.DSVFormat = swap->GetDesc().DepthBufferFormat;

@@ -12,6 +12,9 @@ namespace zx { namespace hwrender {
 bool ComputeBeyondSkyPortalReach(float minX, float maxX, float minY, float maxY,
                                  float camX, float camY, float reach);
 
+// [rc4l] The eye a pass's constants carry (x, y, z in map units): the portal camera's in the sky portal pass, whose view the player's has replaced again by the time it draws, else the player's.
+void ComputePassEye(bool skyPortalPass, const float *player, const float *portal, float *out);
+
 }} // namespace zx::hwrender
 
 #endif // ZX_SKYPORTAL_COMPUTE_H

@@ -76,3 +76,13 @@ TEST(SlotRemapCompute, AFillWithAWhiteLiveSlotIsTriedAgain)
 	EXPECT_FALSE(ComputeKeepsMaterialFill(true, false, 0));
 	EXPECT_FALSE(ComputeKeepsMaterialFill(false, true, 0));
 }
+
+// [rc4l] AoW's monsters: a sprite frame first drawn after the array was filled sampled white for that frame, and its brightmap added white light.
+TEST(SlotRemapCompute, ASlotPastTheFillSamplesThePlaceholder)
+{
+	EXPECT_EQ(0, ComputeSlotsUnfilled(5, 0, 10));
+	EXPECT_EQ(0, ComputeSlotsUnfilled(5, 9, 10));
+	EXPECT_EQ(1, ComputeSlotsUnfilled(10, 0, 10));     // [rc4l] no brightmap
+	EXPECT_EQ(1, ComputeSlotsUnfilled(5, 10, 10));
+	EXPECT_EQ(2, ComputeSlotsUnfilled(10, 11, 10));
+}

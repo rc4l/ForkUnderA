@@ -102,7 +102,7 @@ export function grepScripts(text, pattern) {
 }
 
 // [rc4l] Everything `fuactl mapdata` prints, from the map's lumps and the sectors, lines, special and script pattern asked about.
-export function mapReport(found, { sectors = [], lines = [], scripts = null, special = null, tag = null } = {}) {
+export function mapReport(found, { sectors = [], lines = [], scripts = null, special = null, tag = null, things = [] } = {}) {
   const textmap = found.lumps.get("TEXTMAP");
   if (!textmap) throw new Error(`${found.file} holds the map in binary format; mapdata reads UDMF only`);
   const udmf = parseUdmf(textmap.toString("latin1"));
@@ -113,6 +113,8 @@ export function mapReport(found, { sectors = [], lines = [], scripts = null, spe
     sectors: sectors.map((i) => describeSector(udmf, i)),
     lines: lines.map((i) => describeLine(udmf, i)),
     tag: tag === null ? undefined : describeTag(udmf, tag),
+    things: things.length === 0 ? undefined
+      : udmf.thing.map((t, index) => (things.includes(t.type) ? { index, ...t } : null)).filter(Boolean),
     special: special === null ? undefined
       : udmf.linedef.map((l, i) => (l.special === special ? describeLine(udmf, i) : null)).filter(Boolean),
     scripts: scripts === null ? undefined : (source ? grepScripts(source.toString("latin1"), scripts) : "no SCRIPTS source in the map"),

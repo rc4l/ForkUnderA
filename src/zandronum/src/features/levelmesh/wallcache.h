@@ -225,6 +225,9 @@ void GetCoverage(CoverageStats &out);
 // Drop baked geometry for any sector that moved since the last call. Runs before the BSP walk.
 void InvalidateMovedSectors();
 
+// [rc4l] Re-derives every seg on a height transfer's sector, whose heights and light follow the view area (RefreshTransferArea).
+void RebakeTransferSegs();
+
 // [rc4l] Sectors that moved the last time InvalidateMovedSectors ran. A standalone frame skips the
 // BSP walk, and the walk is what re-bakes a moved seg -- so a frame with movement in it is a frame
 // that has to go back through GL.

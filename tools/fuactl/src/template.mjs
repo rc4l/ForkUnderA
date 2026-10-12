@@ -190,6 +190,42 @@ export async function probeScenario(opts, choice = {}, commands = []) {
   });
 }
 
+// [rc4l] A counter the engine printed, held to its ceiling: the number pattern's first group captures in text, as a PASS/FAIL line and a failure count.
+export function judgeCounter(map, text, { label, pattern, ceiling }) {
+  const m = new RegExp(pattern).exec(String(text));
+  if (!m) return { line: `FAIL ${map}: no ${label} in the engine's answer`, failed: 1 };
+  const value = Number(m[1]);
+  const ok = value <= ceiling;
+  return { line: `${ok ? "PASS" : "FAIL"} ${map} ${label}: ${value} (ceiling ${ceiling})`, failed: ok ? 0 : 1 };
+}
+
+// [rc4l] One Vulkan launch per map, standing at each vantage with the sim running, then counter.command's number judged by judgeCounter: for a fault no paused frame can show, such as a one-frame flash the engine counts.
+export async function compareCounter({ name, wad, maps, vantages, counter, iwad = FREEDOOM2, port = 7796, size = [1280, 720] }) {
+  const wadPath = path.join(os.tmpdir(), `fua-${name}-template.wad`);
+  fs.writeFileSync(wadPath, wad);
+  const lines = [];
+  let failed = 0;
+  for (const map of maps) {
+    try {
+      const text = await withEngine({ port, map, iwad, wadPath, gl: false, size }, async (c) => {
+        for (const v of vantages) {
+          await c.rpc("sim.resume", {}).catch(() => {});
+          await c.rpc("player.setpos", v.at);
+          await cap.waitTics(c, 35);
+        }
+        return cap.exec(c, counter.command, { quietMs: 400 });
+      });
+      const r = judgeCounter(map, text, counter);
+      lines.push(r.line);
+      failed += r.failed;
+    } catch (e) {
+      lines.push(`FAIL ${map}: ${e.message}`);
+      failed++;
+    }
+  }
+  return { lines, failed };
+}
+
 // [rc4l] One Vulkan launch per map, each vantage captured twice intervalMs apart, judged before against after: for what must move (a warp) or must not.
 export async function compareOverTime({ name, wad, maps, vantages, boxes, intervalMs = 600, iwad = FREEDOOM2, port = 7796,
   size = [1280, 720] }) {

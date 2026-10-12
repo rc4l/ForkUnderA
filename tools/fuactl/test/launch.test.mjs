@@ -5,7 +5,7 @@ import { spawnSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
 import { resolveEngine, engineArgs, describeExit, countEngineLines, missingCoreData } from "../src/launch.mjs";
-import { sweepDirFor, pickCmake, resolveTarget, readSession, sessionFileFor, cameraFromFlags, cvarValueFrom, parseCvarFlag, spotLaunch, parkFileFor, parkedLaunch, PARKED, clearPortSessions, liveTarget, pidAlive, buildErrors, summarizeGtest, standAt, launchFileFor, holdingLaunchFile, launchInProgress, awaitLaunch } from "../src/shot.mjs";
+import { sweepDirFor, pickCmake, resolveTarget, readSession, sessionFileFor, cameraFromFlags, cvarValueFrom, parseCvarFlag, spotLaunch, parkFileFor, parkedLaunch, PARKED, clearPortSessions, liveTarget, pidAlive, buildErrors, summarizeGtest, standAt, launchFileFor, holdingLaunchFile, launchInProgress, awaitLaunch, atFromCamera, releaseOf, stepTag } from "../src/shot.mjs";
 
 // Run `fn` with cwd moved to `dir` and FUACTL_ENGINE cleared, then put both back.
 function inDir(dir, fn) {
@@ -210,6 +210,18 @@ test("ready connects only with a token whose engine is still running", () => {
   assert.equal(pidAlive(process.pid), true);
   const gone = spawnSync(process.execPath, ["-e", ""]).pid;
   assert.equal(pidAlive(gone), false);
+});
+
+test("the live camera stands as the position a spot or standAt takes", () => {
+  assert.deepEqual(atFromCamera({ x: 1, y: 2, z: 3, yaw: 90, pitch: -10, viewz: 44, map: "MAP01" }), { x: 1, y: 2, z: 3, angle: 90, pitch: -10 });
+});
+
+// [rc4l] Queue #38 showed only for two tics of a crouch, and a held action stepped tic by tic is how it was caught.
+test("a held action is let go by its minus form, and each stepped tic's capture sorts in order", () => {
+  assert.equal(releaseOf("+crouch"), "-crouch");
+  assert.equal(releaseOf("+use"), "-use");
+  assert.equal(stepTag("cs", 3), "cs_03");
+  assert.equal(stepTag("cs", 12), "cs_12");
 });
 
 test("a camera comes from --spot, else --at with --face, else nowhere", () => {

@@ -1964,6 +1964,136 @@
         "fua_dg_skyportal": "true",
         "gl_wallmesh": "true"
       }
+    },
+    "q34-vulkan-shows-a-structure": {
+      "map": "AOW03",
+      "x": -9912.818,
+      "y": 11097.646,
+      "z": 256,
+      "angle": 308.1445,
+      "pitch": -8.7891,
+      "shows": "Vulkan shows a structure in the skybox that GL does not; screenshot: a tall thin blue-textured pillar standing up into a blue cloudy sky above brown rock terrain, which GL's sky does not have.",
+      "loaded": {
+        "iwad": "doom2.wad",
+        "pwads": [
+          "aow2.3_data_r260606.pk3 11109c8541a6b9b3982545d8ab79f986",
+          "aow2.3_code_r260606.pk3 46a08cbad4e08a795581e46ec97656c6",
+          "aow2.3_maps_r230122.pk3 273e4b7c31f825519acc9f9e25ff97cb",
+          "aow2.3_music_r230122.pk3 cca3692aabebc42d830a4f79737e2eee",
+          "aow2.3_patch_r260606.pk3 6675a80ed21d43e7bd101ef68166dc15"
+        ]
+      },
+      "renderer": {
+        "fua_vulkan": "true",
+        "fua_dg_standalone": "false",
+        "fua_dg_embed": "false",
+        "fua_dg_skyportal": "true",
+        "gl_wallmesh": "true"
+      }
+    },
+    "q35-crouching-crouch-here-vulkan": {
+      "map": "AOW03",
+      "x": -12782.432,
+      "y": 11729.29,
+      "z": -56,
+      "angle": 134.1211,
+      "pitch": -7.8223,
+      "shows": "Crouching (+crouch) here, Vulkan does not render the underwater area correctly (GL does); repro needs +crouch at this spot. Screenshot (Vulkan): eye at the water surface, dark blue water plane over the bottom half, a dark channel/waterfall ahead with blue flames at its base, brown canyon walls and sky above; no underwater view.",
+      "loaded": {
+        "iwad": "doom2.wad",
+        "pwads": [
+          "aow2.3_data_r260606.pk3 11109c8541a6b9b3982545d8ab79f986",
+          "aow2.3_code_r260606.pk3 46a08cbad4e08a795581e46ec97656c6",
+          "aow2.3_maps_r230122.pk3 273e4b7c31f825519acc9f9e25ff97cb",
+          "aow2.3_music_r230122.pk3 cca3692aabebc42d830a4f79737e2eee",
+          "aow2.3_patch_r260606.pk3 6675a80ed21d43e7bd101ef68166dc15"
+        ]
+      },
+      "renderer": {
+        "fua_vulkan": "true",
+        "fua_dg_standalone": "false",
+        "fua_dg_embed": "false",
+        "fua_dg_skyportal": "true",
+        "gl_wallmesh": "true"
+      }
+    },
+    "q36-from-this-angle-the": {
+      "map": "AOW03",
+      "x": -11291.455,
+      "y": 10821.948,
+      "z": -56,
+      "angle": 29.707,
+      "pitch": 8.9648,
+      "shows": "From this angle the 3D water is not rendered at the correct level on Vulkan (GL fine). Screenshot (Vulkan): dark blue water surface over the left and bottom of the frame, a rock block on the right standing in it, and a separate water band below the block's right half, at a different height from the water on the left; the water levels do not line up.",
+      "loaded": {
+        "iwad": "doom2.wad",
+        "pwads": [
+          "aow2.3_data_r260606.pk3 11109c8541a6b9b3982545d8ab79f986",
+          "aow2.3_code_r260606.pk3 46a08cbad4e08a795581e46ec97656c6",
+          "aow2.3_maps_r230122.pk3 273e4b7c31f825519acc9f9e25ff97cb",
+          "aow2.3_music_r230122.pk3 cca3692aabebc42d830a4f79737e2eee",
+          "aow2.3_patch_r260606.pk3 6675a80ed21d43e7bd101ef68166dc15"
+        ]
+      },
+      "renderer": {
+        "fua_vulkan": "true",
+        "fua_dg_standalone": "false",
+        "fua_dg_embed": "false",
+        "fua_dg_skyportal": "true",
+        "gl_wallmesh": "true"
+      }
+    },
+    "q37-the-3d-green-nukage": {
+      "map": "AOW08",
+      "x": -1324.576,
+      "y": 1565.306,
+      "z": 55.122,
+      "angle": 198.6328,
+      "pitch": 31.7285,
+      "shows": "The 3D green nukage water here is not rendered correctly on Vulkan at all (GL fine); user thinks it may share a cause with #35/#36. Screenshot (spectating, looking down from above): a long rectangular channel filled with a bright green nukage surface, brown floor ledges on either side, dark brick walls, a yellow poison sign at the far end.",
+      "loaded": {
+        "iwad": "doom2.wad",
+        "pwads": [
+          "aow2.3_data_r260606.pk3 11109c8541a6b9b3982545d8ab79f986",
+          "aow2.3_code_r260606.pk3 46a08cbad4e08a795581e46ec97656c6",
+          "aow2.3_maps_r230122.pk3 273e4b7c31f825519acc9f9e25ff97cb",
+          "aow2.3_music_r230122.pk3 cca3692aabebc42d830a4f79737e2eee",
+          "aow2.3_patch_r260606.pk3 6675a80ed21d43e7bd101ef68166dc15"
+        ]
+      },
+      "renderer": {
+        "fua_vulkan": "true",
+        "fua_dg_standalone": "false",
+        "fua_dg_embed": "false",
+        "fua_dg_skyportal": "true",
+        "gl_wallmesh": "true"
+      }
+    },
+    "q38-half-submerged": {
+      "map": "AOW03",
+      "x": -12782.432,
+      "y": 11729.29,
+      "z": -56,
+      "angle": 134.1211,
+      "pitch": -7.8223,
+      "shows": "Crouching with the screen half submerged at the AOW03 lake (#35's spot), Vulkan renders the water wrong while GL does not; screenshot: Vulkan view with the eye at the waterline",
+      "loaded": {
+        "iwad": "doom2.wad",
+        "pwads": [
+          "aow2.3_data_r260606.pk3 11109c8541a6b9b3982545d8ab79f986",
+          "aow2.3_code_r260606.pk3 46a08cbad4e08a795581e46ec97656c6",
+          "aow2.3_maps_r230122.pk3 273e4b7c31f825519acc9f9e25ff97cb",
+          "aow2.3_music_r230122.pk3 cca3692aabebc42d830a4f79737e2eee",
+          "aow2.3_patch_r260606.pk3 6675a80ed21d43e7bd101ef68166dc15"
+        ]
+      },
+      "renderer": {
+        "fua_vulkan": "true",
+        "fua_dg_standalone": "false",
+        "fua_dg_embed": "true",
+        "fua_dg_skyportal": "true",
+        "gl_wallmesh": "true"
+      }
     }
   }
 }

@@ -876,6 +876,8 @@ static bool MaterialSlotsMatchFill()
 }
 
 static int g_dynSlotRefused = 0, g_dynSlotNoMaterial = 0, g_dynSlotSeen = 0, g_dynSlotMax = 0;
+// [rc4l] Dynamic piece slots past the array's fill this frame and since the level loaded, each a sprite drawn white or white-lit for a frame.
+static int g_dynSlotUnfilled = 0, g_dynSlotUnfilledTotal = 0;
 // [rc4l] Runs in this frame's dynamic stream that a line mirror's walk took, drawn only in that mirror's pass.
 static int g_dynMirrorRuns = 0;
 static int g_dynBindless = 0, g_dynPerMaterial = 0;
@@ -1290,9 +1292,9 @@ static TArray<SceneVertex> g_sceneVB;
 // [rc4l] Same vertex layout as FFlatVertex (3 float position, 2 float uv), so the level mesh's data
 // is uploaded byte-for-byte with no conversion pass.
 // [rc4l] kWalkSlots and kMainWalkSlot spelled for the scene shader, which reads one bit per walk for every subsector and sidedef.
-#define FUA_WALK_SLOTS_STR "3"
+#define FUA_WALK_SLOTS_STR "4"
 #define FUA_MAIN_WALK_SLOT_STR "2"
-static_assert(zx::levelmesh::kWalkSlots == 3, "FUA_WALK_SLOTS_STR spells kWalkSlots");
+static_assert(zx::levelmesh::kWalkSlots == 4, "FUA_WALK_SLOTS_STR spells kWalkSlots");
 static_assert(zx::levelmesh::kMainWalkSlot == 2, "FUA_MAIN_WALK_SLOT_STR spells kMainWalkSlot");
 static const char *kSceneVS =
 	"#version 450\n"
@@ -1952,7 +1954,7 @@ static bool g_inSkyPortal = false;
 static bool g_inCameraPass = false;   // [rc4l] Drawing a camera texture, whose sky quads are its own walk's.
 static int g_lineMirror = -1;   // [rc4l] The line mirror whose reflection is being drawn, the one pass that shows its viewer, or -1.
 // Where the portal camera stood, for the reach test in the world draw.
-static float g_skyPortalCamX = 0.f, g_skyPortalCamY = 0.f;
+static float g_skyPortalCamX = 0.f, g_skyPortalCamY = 0.f, g_skyPortalCamZ = 0.f;
 static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_skySurfPSO;
 static Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding> g_skySurfSRB;
 static int g_skyDraws = 0;
@@ -2766,6 +2768,7 @@ static Diligent::RefCntAutoPtr<Diligent::IPipelineState> CreateScreenSurfacePSO(
 	pci.GraphicsPipeline.DSVFormat = sd.DepthBufferFormat;
 	pci.GraphicsPipeline.PrimitiveTopology = Diligent::PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
 	pci.GraphicsPipeline.RasterizerDesc.CullMode = Diligent::CULL_MODE_NONE;
+	ClampDepthLikeGL(pci.GraphicsPipeline);
 	pci.GraphicsPipeline.DepthStencilDesc.DepthEnable = true;
 	// [rc4l] Depth tested AND written. Measured both ways on three vantages: writing is the
 	// better of the two everywhere (the car vantage 9.4%% of pixels against 9.9%%, the alley
@@ -2928,6 +2931,7 @@ static bool RenderSkyPortal(Diligent::IDeviceContext *ctx)
 	// the player, excluded the skybox room along with everything else, and drew nothing at all.
 	g_skyPortalCamX = FIXED2FLOAT(viewx);
 	g_skyPortalCamY = FIXED2FLOAT(viewy);
+	g_skyPortalCamZ = FIXED2FLOAT(viewz);
 	BuildMVP(g_mvp);
 	viewx = sx; viewy = sy; viewz = sz; viewangle = sa;
 
@@ -3068,6 +3072,7 @@ static void BuildDynamic(Diligent::IDeviceContext *ctx)
 	g_dynDraws = g_dynTris = 0;
 	g_blendSubmits = 0;
 	g_dynSlotRefused = g_dynSlotNoMaterial = g_dynSlotSeen = g_dynSlotMax = 0;
+	g_dynSlotUnfilled = 0;
 	g_dynBindless = g_dynPerMaterial = 0;
 	g_dynByBlend[0] = g_dynByBlend[1] = g_dynByBlend[2] = g_dynByBlend[3] = 0;
 	g_dynReady = false;
@@ -3211,6 +3216,12 @@ static void BuildDynamic(Diligent::IDeviceContext *ctx)
 				ScenePieceData pd;
 				FillPieceData(p, p.translation, pd, false);
 				if (!fua_dg_bindless_dyn) pd.matSlot = pd.brightSlot = 0.f;   // back to the bound texture and brightmap
+				else if (BindlessActive())
+				{
+					const int unfilled = zx::hwrender::ComputeSlotsUnfilled((int)pd.matSlot, (int)pd.brightSlot, (int)g_filledFrom.Size());
+					g_dynSlotUnfilled += unfilled;
+					g_dynSlotUnfilledTotal += unfilled;
+				}
 				dynPieces.Push(pd);
 			}
 			// [rc4l] A quad arrives as four CORNERS and becomes six vertices here.
@@ -4206,6 +4217,7 @@ static bool EnsureScenePipeline(FString &err)
 			(fua_dg_cull == 2) ? Diligent::CULL_MODE_FRONT : Diligent::CULL_MODE_NONE;
 		pci.GraphicsPipeline.DepthStencilDesc.DepthEnable = true;
 		pci.GraphicsPipeline.DepthStencilDesc.DepthWriteEnable = !blended;
+		ClampDepthLikeGL(pci.GraphicsPipeline);
 		if (decal)
 		{
 			// [rc4l] Slope-scaled dominates here. The constant term is expressed in units of the
@@ -4343,6 +4355,34 @@ static void ReleaseMirrorBinding();
 
 static bool RayTracingAvailable();
 
+// [rc4l] The material and brightmap slots a piece samples, made if it has none yet; a baked piece on an animated texture keys them on its untranslated base, which SlotRemap maps to the frame showing, since the bake froze whichever frame it saw.
+struct PieceSlotSet { float mat, bright; bool animates; };
+static PieceSlotSet PieceSlots(const zx::levelmesh::MeshPiece &p, int translation, bool inMesh)
+{
+	FMaterial *base = (inMesh && p.baseTex != NULL) ? FMaterial::ValidateTexture((FTexture *)p.baseTex, false) : NULL;
+	PieceSlotSet out;
+	out.animates = AnimationOf(base) >= 0;
+	const void *slotMat = out.animates ? (const void *)base : p.material;
+	const FMaterial *mat = (const FMaterial *)p.material;
+	const FTexture *tex = (mat != NULL) ? mat->tex : NULL;
+	out.mat = (float)MaterialSlotFor(slotMat, translation);
+	// [rc4l] An animated one always takes a brightmap slot, since another frame may have a brightmap where this one has none.
+	out.bright = (out.animates || (tex != NULL && tex->gl_info.Brightmap != NULL)) ? (float)MaterialSlotFor(slotMat, kBrightmapTranslation) : 0.f;
+	return out;
+}
+
+// [rc4l] This frame's sprites, models and decals given their slots before RefreshBindless fills the array, since BuildDynamic runs after it and a slot first made there sampled the white placeholder for a frame.
+static void ReserveDynamicSlots()
+{
+	static unsigned int reservedGen = 0;
+	const unsigned int gen = zx::levelmesh::DynGeneration();
+	if (gen == reservedGen) return;
+	reservedGen = gen;
+	int npieces = 0;
+	const zx::levelmesh::MeshPiece *pieces = zx::levelmesh::DynPieces(npieces);
+	for (int i = 0; i < npieces; i++) PieceSlots(pieces[i], pieces[i].translation, false);
+}
+
 // [rc4l] The piece's own record, written once. See ScenePieceData.
 static void FillPieceData(const zx::levelmesh::MeshPiece &p, int translation, ScenePieceData &pd, bool inMesh)
 {
@@ -4355,11 +4395,9 @@ static void FillPieceData(const zx::levelmesh::MeshPiece &p, int translation, Sc
 	// mirror, and it is a material slot because that is the one of the three that both the raster and
 	// the traced path want: a batch index only identifies a texture by accident, since a level has
 	// more batches than materials and the mirror had to mask it to 127 and hope.
-	// [rc4l] A baked piece on an animated texture keys its slots on the untranslated base, which SlotRemap maps to the frame showing, since the bake froze whichever frame it saw.
-	FMaterial *base = (inMesh && p.baseTex != NULL) ? FMaterial::ValidateTexture((FTexture *)p.baseTex, false) : NULL;
-	const bool animates = AnimationOf(base) >= 0;
-	const void *slotMat = animates ? (const void *)base : p.material;
-	pd.matSlot = (float)MaterialSlotFor(slotMat, translation);
+	const PieceSlotSet slots = PieceSlots(p, translation, inMesh);
+	pd.matSlot = slots.mat;
+	pd.brightSlot = slots.bright;
 	zx::levelmesh::ComputeUnpackRGB(p.fogColor, pd.fogR, pd.fogG, pd.fogB);
 	// [rc4l] A warp texture ripples in the shader, as GL's func_warp does; the upload already holds its unwarped source.
 	const FMaterial *mat = (const FMaterial *)p.material;
@@ -4370,10 +4408,8 @@ static void FillPieceData(const zx::levelmesh::MeshPiece &p, int translation, Sc
 	pd.floodUx = p.floodUV[0]; pd.floodUy = p.floodUV[1]; pd.floodU0 = p.floodUV[2]; pd.floodZ = p.floodZ;
 	pd.floodVx = p.floodUV[3]; pd.floodVy = p.floodUV[4]; pd.floodV0 = p.floodUV[5]; pd.flood = p.flood ? 1.f : 0.f;
 	pd.actorR = p.dynR; pd.actorG = p.dynG; pd.actorB = p.dynB; pd.cpuLight = p.cpuLight ? 1.f : 0.f;
-	// [rc4l] An animated one always takes a brightmap slot, since another frame may have a brightmap where this one has none.
-	pd.brightSlot = (animates || (tex != NULL && tex->gl_info.Brightmap != NULL)) ? (float)MaterialSlotFor(slotMat, kBrightmapTranslation) : 0.f;
 	pd.stackId = inMesh ? (float)(zx::levelmesh::PieceStackId(p) + 1) : 0.f;
-	pd.animates = animates ? 1.f : 0.f;
+	pd.animates = slots.animates ? 1.f : 0.f;
 	pd.plain = p.plain ? 1.f : 0.f;
 	pd.desaturation = zx::hwrender::ComputeDesaturationFactor(p.desaturation);
 	pd.unused0 = pd.unused1 = pd.unused2 = 0.f;
@@ -5987,6 +6023,7 @@ static bool EnsureMirrorResources()
 		Diligent::GraphicsPipelineStateCreateInfo pci;
 		pci.PSODesc.Name = "fua mirror PSO";
 		pci.PSODesc.PipelineType = Diligent::PIPELINE_TYPE_GRAPHICS;
+		ClampDepthLikeGL(pci.GraphicsPipeline);
 		pci.GraphicsPipeline.NumRenderTargets = 1;
 		pci.GraphicsPipeline.RTVFormats[0] = swap->GetDesc().ColorBufferFormat;
 		pci.GraphicsPipeline.DSVFormat = swap->GetDesc().DepthBufferFormat;
@@ -6155,7 +6192,11 @@ static void WriteSceneConstants(float *cb, const float *clip, float targetW, flo
 {
 	zx::hwrender::SceneConstantInputs in;
 	in.mvp = g_mvp;
-	in.camX = FIXED2FLOAT(viewx); in.camY = FIXED2FLOAT(viewy); in.camZ = FIXED2FLOAT(viewz);
+	const float player[3] = { FIXED2FLOAT(viewx), FIXED2FLOAT(viewy), FIXED2FLOAT(viewz) };
+	const float portal[3] = { g_skyPortalCamX, g_skyPortalCamY, g_skyPortalCamZ };
+	float eye[3];
+	zx::hwrender::ComputePassEye(g_inSkyPortal, player, portal, eye);
+	in.camX = eye[0]; in.camY = eye[1]; in.camZ = eye[2];
 	in.lightMode = (float)(int)fua_dg_lightmode;
 	in.lightCount = (float)g_lightCount;
 	in.skyAngle = g_skyAngle;
@@ -6166,7 +6207,7 @@ static void WriteSceneConstants(float *cb, const float *clip, float targetW, flo
 	in.skyCapR = g_skyCapColor[0].r; in.skyCapG = g_skyCapColor[0].g; in.skyCapB = g_skyCapColor[0].b;
 	in.materialSlots = materialSlots;
 	in.frameMS = I_MSTime();
-	in.stackSlot = g_stackVisReady ? g_stackPassSlot : -1;
+	in.walkSlot = zx::levelmesh::ComputePassWalkSlot(g_stackVisReady, g_stackPassSlot, g_inSkyPortal, zx::levelmesh::SkyboxWalked());
 	in.playerPass = g_drawingMainView && g_lineMirror < 0;
 	in.skyHoles = g_skyHoleCount;
 	zx::hwrender::ComputeSceneConstants(in, cb);
@@ -6309,6 +6350,7 @@ static bool EnsurePlaneMirrorResources()
 		Diligent::GraphicsPipelineStateCreateInfo pci;
 		pci.PSODesc.Name = "fua plane mirror PSO";
 		pci.PSODesc.PipelineType = Diligent::PIPELINE_TYPE_GRAPHICS;
+		ClampDepthLikeGL(pci.GraphicsPipeline);
 		pci.GraphicsPipeline.NumRenderTargets = 1;
 		pci.GraphicsPipeline.RTVFormats[0] = sd.ColorBufferFormat;
 		pci.GraphicsPipeline.DSVFormat = sd.DepthBufferFormat;
@@ -6493,9 +6535,9 @@ void StackInfo(FString &out)
 		for (int b = 0; b < 32; b++)
 			if (bits[w] & (1u << b)) reached[(w * 32 + b) % zx::levelmesh::kWalkSlots]++;
 	out.Format("stacked views: %d drawn, cull %s, %d words; subsectors and sidedefs drawn by view 0: %d, view 1: %d, "
-		"the player's walk: %d (of %d); %d sky holes",
+		"the player's walk: %d, the skybox walk: %d (of %d); %d sky holes",
 		g_stackDrawn, g_stackVisReady ? "on" : "off", words, reached[0], reached[1], reached[zx::levelmesh::kMainWalkSlot],
-		numsubsectors + numsides, g_skyHoleCount);
+		reached[zx::levelmesh::kSkyboxWalkSlot], numsubsectors + numsides, g_skyHoleCount);
 }
 
 // [rc4l] In the player's view, with the sky: each stacked plane painted from its view's picture, and depth-written so nothing behind it shows through.
@@ -6766,6 +6808,8 @@ static void DrawSceneOnce(bool present = true, bool pump = true)
 
 	// The sky portal is a whole second view of the map, so it is rendered here, beside the frame
 	// rather than inside it -- DrawWorld cannot be re-entered while it is deriving this frame.
+	// [rc4l] Before any pass: a height transfer's planes follow the eye across its surface, and a re-bake must land before the geometry is refreshed.
+	zx::levelmesh::RefreshTransferArea();
 	UploadWalkVisibility(ctx);
 	RenderSkyPortal(ctx);
 	RenderStackPortals(ctx);
@@ -7056,7 +7100,7 @@ static void DrawWorld(Diligent::IDeviceContext *ctx)
 	g_phase.clusters.Clock();  BuildLightClusters(ctx);     g_phase.clusters.Unclock();
 	// [rc4l] Before anything is recorded: rebuilding a binding that a command buffer already holds is
 	// a use-after-free, and this only does work on the frames the material table actually changed.
-	if (fua_dg_bindless) RefreshBindless();
+	if (fua_dg_bindless) { ReserveDynamicSlots(); RefreshBindless(); }
 	g_phase.constants.Clock();
 
 	{
@@ -7163,7 +7207,8 @@ static void DrawWorld(Diligent::IDeviceContext *ctx)
 			//
 			// A reach test rather than a sector flood, because a batch already carries its bounds
 			// and a skybox room is small and far from everything else. See docs/skybleed-scope.md.
-			if (take && g_inSkyPortal && fua_dg_skyportal_reach > 0.f &&
+			// [rc4l] Only when GL made no skybox walk this frame: with one, the scene shader drops what it did not reach, as a stacked view's pass does.
+			if (take && g_inSkyPortal && !zx::levelmesh::SkyboxWalked() && fua_dg_skyportal_reach > 0.f &&
 			    ComputeBeyondSkyPortalReach(b->minX, b->maxX, b->minZ, b->maxZ,
 			                                g_skyPortalCamX, g_skyPortalCamY, fua_dg_skyportal_reach))
 				take = false;
@@ -7378,6 +7423,7 @@ static bool AutoSetupForLevel()
 		// surface's texture. 93% of the frame on dbab04, and only ever after a map change, which is why
 		// it looked like the map rather than the transition.
 		ResetMaterialSlots();
+		g_dynSlotUnfilledTotal = 0;
 		ReleaseWorldSRBs();
 		// [rc4l] And the PIPELINES, because the material array lives on them.
 		//
@@ -7705,8 +7751,8 @@ void DynStats(FString &report)
 	cull.Format(" | batches: %d drawn in %d draw calls | bindless %s: %d slots, %d white",
 		g_batchesDrawn, g_worldDraws,
 		BindlessActive() ? "on" : "off", MaterialSlotCount(), g_matSlotsWhite);
-	cull.AppendFormat(", dyn slots: %d seen, max %d, %d refused, %d with no material",
-		g_dynSlotSeen, g_dynSlotMax, g_dynSlotRefused, g_dynSlotNoMaterial);
+	cull.AppendFormat(", dyn slots: %d seen, max %d, %d refused, %d with no material, %d past the fill (%d since load)",
+		g_dynSlotSeen, g_dynSlotMax, g_dynSlotRefused, g_dynSlotNoMaterial, g_dynSlotUnfilled, g_dynSlotUnfilledTotal);
 	cull.AppendFormat(", dyn draws: %d bindless, %d per-material, pipelines [%s]",
 		g_dynBindless, g_dynPerMaterial, g_fillState);
 	cull.AppendFormat(", sky surfaces: %d draws since load", g_skyDraws);

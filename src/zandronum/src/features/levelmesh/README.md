@@ -69,6 +69,8 @@ decals a stacked view's or a line mirror's walk draws are kept for that pass alo
   `AddLowerMissingTexture`): `NoteUnreplayable`, since both hand GL per-frame state, so the wall cache never replays that seg.
 - `gl/scene/gl_bsp.cpp` `DoSubsector` and `AddLine`: `NoteWalkedSubsector`/`NoteWalkedSide`, what a stacked view's walk or the
   player's drew.
+- `gl/scene/gl_portal.cpp` `GLSkyboxPortal::DrawContents`: a `SkyboxWalk` around its `DrawScene`, so what that walk reaches is all the
+  backend's sky portal pass draws of the level.
 - `gl/scene/gl_portal.cpp` `GLSectorStackPortal::DrawContents`: a `StackWalk` around its `DrawScene`, so
   that walk's sky quads fill its view's list and its sprites, models and decals are filed under its view.
 - `gl/scene/gl_portal.cpp` `GLMirrorPortal::DrawContents`: a `MirrorWalk(line)` around its `DrawScene`, so the sprites,

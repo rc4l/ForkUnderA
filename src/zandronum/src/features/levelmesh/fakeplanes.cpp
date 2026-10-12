@@ -24,7 +24,7 @@ static std::vector<int> g_planeStart;
 static std::vector<int> g_modelSubs, g_modelStart;   // [rc4l] the same by model sector, the subsectors carrying a plane modelled on it
 
 // [rc4l] A height transfer's planes depend on where the viewer stands, so a fill never crosses or starts from one.
-static bool ViewDependent(const sector_t *s)
+bool ViewDependent(const sector_t *s)
 {
 	return s->heightsec != NULL && s->heightsec != s && !(s->heightsec->MoreFlags & SECF_IGNOREHEIGHTSEC);
 }

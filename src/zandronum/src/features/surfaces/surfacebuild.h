@@ -28,6 +28,7 @@
 #define ZX_SURFACES_SURFACEBUILD_H
 
 struct seg_t;
+struct FDynamicColormap;
 struct sector_t;
 
 namespace zx { namespace surfaces {
@@ -93,9 +94,8 @@ struct DerivedWallLight
 	DerivedWallLight() : lightLevel(0), relLight(0), valid(false) {}
 };
 
-// Fills in the light and hands back the sector whose colormap goes with it. False for anything with
-// a 3D floor light list, which splits a wall into bands and is the capture's business.
-bool BuildDerivedWallLight(const seg_t *seg, DerivedWallLight &out, const sector_t *&colormapFrom);
+// [rc4l] Fills in the light and the colormap that goes with it, or false for a seg with a 3D floor light list, which splits a wall into bands and is the capture's business.
+bool BuildDerivedWallLight(const seg_t *seg, DerivedWallLight &out, FDynamicColormap *&colormap);
 
 // renderType is a RENDERWALL_* value. Answers only for the three ordinary sidedef parts; anything
 // else -- a 3D floor face, a sky, a horizon -- returns false and keeps whatever the capture made.
