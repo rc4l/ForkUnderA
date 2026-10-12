@@ -80,6 +80,9 @@
 // [BB] New #includes.
 #include "p_acs.h"
 
+#include "menu/menu.h"
+#include "features/save-settings/computation/savesettings_compute.h"
+
 FGameConfigFile *GameConfig;
 
 CVAR(Bool, screenshot_quiet, false, CVAR_ARCHIVE|CVAR_GLOBALCONFIG);
@@ -391,25 +394,13 @@ static long ParseCommandLine (const char *args, int *argc, char **argv)
 
 bool M_SaveDefaults (const char *filename)
 {
-	FString oldpath;
-	bool success;
-
-	if (filename != NULL)
-	{
-		oldpath = GameConfig->GetPathName();
-		GameConfig->ChangePathName (filename);
-	}
 	GameConfig->ArchiveGlobalData ();
 	if (gameinfo.ConfigName.IsNotEmpty())
 	{
 		GameConfig->ArchiveGameData (gameinfo.ConfigName);
 	}
-	success = GameConfig->WriteConfigFile ();
-	if (filename != NULL)
-	{
-		GameConfig->ChangePathName (filename);
-	}
-	return success;
+	// [MobiusU9B] A filename writes a copy and leaves the config on its own path, which the old path swap never restored.
+	return (filename != NULL) ? GameConfig->WriteConfigFileTo (filename) : GameConfig->WriteConfigFile ();
 }
 
 void M_SaveDefaultsFinal ()
@@ -429,13 +420,21 @@ UNSAFE_CCMD (writeini)
 		return;
 
 	const char *filename = (argv.argc() == 1) ? NULL : argv[1];
-	if (!M_SaveDefaults (filename))
+	const bool saved = M_SaveDefaults (filename);
+	const int err = errno;
+	if (!saved)
 	{
-		Printf ("Writing config failed: %s\n", strerror(errno));
+		Printf ("Writing config failed: %s\n", strerror(err));
 	}
 	else
 	{
 		Printf ("Config saved.\n");
+	}
+
+	// [MobiusU9B] Show the result on screen when saving from a menu, where the console line would go unseen.
+	if (menuactive != MENU_Off)
+	{
+		M_StartMessage (zx::ComputeSaveSettingsMessage(saved, strerror(err)).c_str(), 1);
 	}
 }
 

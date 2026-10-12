@@ -30,6 +30,25 @@ std::string TempPath(const char *name)
 	return std::string(dir) + "/" + name;
 }
 
+// [MobiusU9B] Gives config the one setting every test here writes, and points it at path.
+void SetSomeCvar(FConfigFile &config, const std::string &path, const std::string &value)
+{
+	config.SetSection("GlobalSettings", true);
+	config.SetValueForKey("some_cvar", value.c_str());
+	config.ChangePathName(path.c_str());
+}
+
+// [MobiusU9B] The value some_cvar holds in the ini at path, or a marker saying why there is none.
+std::string ReadSomeCvar(const std::string &path)
+{
+	FConfigFile in(path.c_str());
+	if (!in.SetSection("GlobalSettings"))
+		return "<no section>";
+
+	const char *got = in.GetValueForKey("some_cvar");
+	return got != NULL ? got : "<no key>";
+}
+
 // A config written to a temp file and read back, which is the trip a setting actually makes.
 std::string RoundTrip(const std::string &value)
 {
@@ -39,20 +58,13 @@ std::string RoundTrip(const std::string &value)
 
 	{
 		FConfigFile out;
-		out.SetSection("GlobalSettings", true);
-		out.SetValueForKey("some_cvar", value.c_str());
-		out.ChangePathName(path.c_str());
+		SetSomeCvar(out, path, value);
 		out.WriteConfigFile();
 	}
 
-	FConfigFile in(path.c_str());
+	const std::string got = ReadSomeCvar(path);
 	std::remove(path.c_str());
-
-	if (!in.SetSection("GlobalSettings"))
-		return "<no section>";
-
-	const char *got = in.GetValueForKey("some_cvar");
-	return got != NULL ? got : "<no key>";
+	return got;
 }
 
 // Seven WAD mirrors: the value whose length found this, at 250 bytes plus a 21-byte key.
@@ -104,9 +116,7 @@ TEST(ConfigFileRoundTrip, DoesNotTurnALongValueIntoASecondKey)
 
 	{
 		FConfigFile out;
-		out.SetSection("GlobalSettings", true);
-		out.SetValueForKey("some_cvar", value.c_str());
-		out.ChangePathName(path.c_str());
+		SetSomeCvar(out, path, value);
 		out.WriteConfigFile();
 	}
 
@@ -121,4 +131,50 @@ TEST(ConfigFileRoundTrip, DoesNotTurnALongValueIntoASecondKey)
 		++entries;
 
 	EXPECT_EQ(1, entries);
+}
+
+TEST(ConfigFileWriteTo, WritesTheCopyWhereAsked)
+{
+	const std::string original = TempPath("zx_cfgtest_writeto_original.ini");
+	const std::string copy = TempPath("zx_cfgtest_writeto_copy.ini");
+	std::remove(original.c_str());
+
+	FConfigFile config;
+	SetSomeCvar(config, original, "saved");
+	ASSERT_TRUE(config.WriteConfigFileTo(copy.c_str()));
+
+	EXPECT_EQ("saved", ReadSomeCvar(copy));
+	EXPECT_EQ("<no section>", ReadSomeCvar(original)) << "writing a copy must not create the original";
+	std::remove(copy.c_str());
+}
+
+TEST(ConfigFileWriteTo, LeavesLaterSavesOnTheOriginalPath)
+{
+	// [MobiusU9B] The regression: after `writeini other.ini`, the config's own path pointed at the copy, so every later save went there.
+	const std::string original = TempPath("zx_cfgtest_keep_original.ini");
+	const std::string copy = TempPath("zx_cfgtest_keep_copy.ini");
+
+	FConfigFile config;
+	SetSomeCvar(config, original, "first");
+	ASSERT_TRUE(config.WriteConfigFileTo(copy.c_str()));
+	EXPECT_EQ(original, config.GetPathName());
+
+	config.SetValueForKey("some_cvar", "second");
+	ASSERT_TRUE(config.WriteConfigFile());
+
+	EXPECT_EQ("second", ReadSomeCvar(original));
+	EXPECT_EQ("first", ReadSomeCvar(copy));
+	std::remove(original.c_str());
+	std::remove(copy.c_str());
+}
+
+TEST(ConfigFileWriteTo, ReportsAPathItCannotWrite)
+{
+	const std::string original = TempPath("zx_cfgtest_unwritable_original.ini");
+
+	FConfigFile config;
+	SetSomeCvar(config, original, "value");
+
+	EXPECT_FALSE(config.WriteConfigFileTo(TempPath("zx_no_such_dir/zx_cfgtest.ini").c_str()));
+	EXPECT_EQ(original, config.GetPathName());
 }

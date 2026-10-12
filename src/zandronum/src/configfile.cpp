@@ -791,6 +791,12 @@ char *FConfigFile::ReadLine (char *string, int n, void *file) const
 
 bool FConfigFile::WriteConfigFile () const
 {
+	return WriteConfigFileTo (PathName);
+}
+
+// [MobiusU9B] Writes to the given path without changing PathName, so a copy never redirects later saves.
+bool FConfigFile::WriteConfigFileTo (const char *pathname) const
+{
 	if (!OkayToWrite && FileExisted)
 	{ // Pretend it was written anyway so that the user doesn't get
 	  // any "config not written" notifications, but only if the file
@@ -798,7 +804,7 @@ bool FConfigFile::WriteConfigFile () const
 		return true;
 	}
 
-	FILE *file = fopen (PathName, "w");
+	FILE *file = fopen (pathname, "w");
 	FConfigSection *section;
 	FConfigEntry *entry;
 

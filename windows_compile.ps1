@@ -202,6 +202,13 @@ if ($env:ZX_OFFICIAL_BUILD -eq "1") {
     Write-Status "official build: crash reporting enabled"
     $symArgs += "-DZX_OFFICIAL_BUILD=ON"
 }
+
+# [MobiusU9B] Dev-only MCP bridge on the same ZX_MCP_BRIDGE=1 opt-in as mac_compile.sh, passed OFF otherwise so a cached ON never leaks into a normal build.
+$bridgeArgs = @("-DFUA_MCP_BRIDGE=OFF")
+if ($env:ZX_MCP_BRIDGE -eq "1") {
+    Write-Status "MCP bridge: ENABLED (dev build -- do not ship)"
+    $bridgeArgs = @("-DFUA_MCP_BRIDGE=ON")
+}
 & cmake -S (Join-Path $ScriptRoot "src\zandronum") -B $BuildDir -G "Visual Studio 17 2022" -A x64 -T v143 `
     "-DCMAKE_POLICY_VERSION_MINIMUM=3.5" `
     "-DCMAKE_PREFIX_PATH=$dep" `
@@ -221,7 +228,7 @@ if ($env:ZX_OFFICIAL_BUILD -eq "1") {
     "-DGLEW_INCLUDE_DIR=$dep/include" `
     "-DGLEW_LIBRARY=$($glewLib.FullName)" `
     "-DOPENSSL_ROOT_DIR=$dep" "-DOPENSSL_USE_STATIC_LIBS=ON" `
-    @symArgs | Tee-Object -FilePath $ConfigureLog
+    @symArgs @bridgeArgs | Tee-Object -FilePath $ConfigureLog
 if ($LASTEXITCODE -ne 0) { throw "cmake configure failed" }
 
 # [rc4l] Instant replay is OPTIONAL to CMake -- without FFmpeg it compiles as a no-capture stub and
