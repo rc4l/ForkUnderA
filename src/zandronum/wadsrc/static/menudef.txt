@@ -1080,7 +1080,8 @@ OptionMenu "FUACrosshairOptions"
 	Option	"Show target info",			"cl_fua_identify_position",		"FUAIdentifyPositions"
 	Option	"Actor name",				"cl_fua_identify_actorname",	"FUAActorNameModes"
 	StaticText " "
-	StaticText "Next to the crosshair: move each line from its place", 1
+	StaticText "Next to the crosshair", 1
+	Slider	"Text size",				"cl_fua_xhairinfo_textsize",	0.5, 4.0, 0.1, 1
 	Slider	"Name X offset",			"cl_fua_xhairinfo_name_x",		-200, 200, 1, 0
 	Slider	"Name Y offset",			"cl_fua_xhairinfo_name_y",		-200, 200, 1, 0
 	Slider	"Details X offset",			"cl_fua_xhairinfo_info_x",		-200, 200, 1, 0

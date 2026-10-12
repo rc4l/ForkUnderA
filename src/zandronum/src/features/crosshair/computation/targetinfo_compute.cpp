@@ -44,12 +44,24 @@ int ComputeCrosshairClampInt(int value, int lo, int hi)
 	return value;
 }
 
-double ComputeCrosshairTextScale(int screenHeight, int hudHeight)
+double ComputeTargetInfoClampTextSize(double size)
 {
-	if (hudHeight <= 0 || screenHeight <= 0) {
+	if (std::isnan(size)) {
 		return 1.0;
 	}
-	return static_cast<double>(screenHeight) / hudHeight;
+	if (size < kTargetInfoMinTextSize) {
+		return kTargetInfoMinTextSize;
+	}
+	if (size > kTargetInfoMaxTextSize) {
+		return kTargetInfoMaxTextSize;
+	}
+	return size;
+}
+
+double ComputeCrosshairTextScale(int screenHeight, int hudHeight, double textSize)
+{
+	const double hudScale = (hudHeight <= 0 || screenHeight <= 0) ? 1.0 : static_cast<double>(screenHeight) / hudHeight;
+	return hudScale * ComputeTargetInfoClampTextSize(textSize);
 }
 
 InfoCanvas ComputeCrosshairInfoCanvas(int screenWidth, int screenHeight, double textScale)

@@ -23,6 +23,10 @@ const int kActorNameTag = 2;
 // [MobiusU9B] How far an element's offset sliders can push it from its stacked place, in HUD-text pixels.
 const int kTargetInfoMaxOffset = 200;
 
+// [MobiusU9B] The text size slider's range, a multiple of the HUD text scale; 1 matches chat.
+const double kTargetInfoMinTextSize = 0.5;
+const double kTargetInfoMaxTextSize = 4.0;
+
 // [MobiusU9B] A point in the virtual (HUD-text) space the info is drawn in.
 struct InfoPos
 {
@@ -86,8 +90,11 @@ IdentifyLines ComputeIdentifyLines(const IdentifyToggles &toggles, const Identif
 // [MobiusU9B] value clamped to [lo, hi], shared by every integer setting this feature reads.
 int ComputeCrosshairClampInt(int value, int lo, int hi);
 
-// [MobiusU9B] Real pixels per HUD-text pixel, so the info scales like chat; 1 when hudHeight is not positive.
-double ComputeCrosshairTextScale(int screenHeight, int hudHeight);
+// [MobiusU9B] A text size cvar's value clamped to the slider's range, with NaN treated as 1.
+double ComputeTargetInfoClampTextSize(double size);
+
+// [MobiusU9B] Real pixels per drawn text pixel: the HUD text scale (1 when hudHeight is not positive) times the clamped text size.
+double ComputeCrosshairTextScale(int screenHeight, int hudHeight, double textSize);
 
 // [MobiusU9B] The virtual canvas that makes text drawn on it come out at textScale.
 InfoCanvas ComputeCrosshairInfoCanvas(int screenWidth, int screenHeight, double textScale);

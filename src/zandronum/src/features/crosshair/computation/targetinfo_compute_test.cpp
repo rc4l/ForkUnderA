@@ -24,6 +24,7 @@ using zx::crosshair::IdentifyLines;
 using zx::crosshair::IdentifyTarget;
 using zx::crosshair::IdentifyToggles;
 using zx::crosshair::ComputeLineCount;
+using zx::crosshair::ComputeTargetInfoClampTextSize;
 using zx::crosshair::CrosshairRect;
 using zx::crosshair::InfoCanvas;
 using zx::crosshair::InfoElement;
@@ -191,16 +192,48 @@ TEST(ComputeCrosshairClampInt, ClampsToTheEnds)
 
 TEST(ComputeCrosshairTextScale, IsTheScreenOverTheHudHeight)
 {
-	EXPECT_DOUBLE_EQ(2.25, ComputeCrosshairTextScale(1080, 480));
-	EXPECT_DOUBLE_EQ(1.0, ComputeCrosshairTextScale(1080, 1080));
-	EXPECT_DOUBLE_EQ(0.5, ComputeCrosshairTextScale(480, 960));
+	EXPECT_DOUBLE_EQ(2.25, ComputeCrosshairTextScale(1080, 480, 1.0));
+	EXPECT_DOUBLE_EQ(1.0, ComputeCrosshairTextScale(1080, 1080, 1.0));
+	EXPECT_DOUBLE_EQ(0.5, ComputeCrosshairTextScale(480, 960, 1.0));
 }
 
 TEST(ComputeCrosshairTextScale, FallsBackToOneForANonsenseSize)
 {
-	EXPECT_DOUBLE_EQ(1.0, ComputeCrosshairTextScale(1080, 0));
-	EXPECT_DOUBLE_EQ(1.0, ComputeCrosshairTextScale(1080, -5));
-	EXPECT_DOUBLE_EQ(1.0, ComputeCrosshairTextScale(0, 480));
+	EXPECT_DOUBLE_EQ(1.0, ComputeCrosshairTextScale(1080, 0, 1.0));
+	EXPECT_DOUBLE_EQ(1.0, ComputeCrosshairTextScale(1080, -5, 1.0));
+	EXPECT_DOUBLE_EQ(1.0, ComputeCrosshairTextScale(0, 480, 1.0));
+}
+
+TEST(ComputeCrosshairTextScale, MultipliesByTheTextSize)
+{
+	EXPECT_DOUBLE_EQ(4.5, ComputeCrosshairTextScale(1080, 480, 2.0));
+	EXPECT_DOUBLE_EQ(3.0, ComputeCrosshairTextScale(1080, 1080, 3.0));
+	EXPECT_DOUBLE_EQ(0.5, ComputeCrosshairTextScale(1080, 1080, 0.5));
+}
+
+TEST(ComputeCrosshairTextScale, ClampsTheTextSize)
+{
+	EXPECT_DOUBLE_EQ(4.0, ComputeCrosshairTextScale(1080, 1080, 100.0));
+	EXPECT_DOUBLE_EQ(1.0, ComputeCrosshairTextScale(1080, 1080, kNaN));
+}
+
+TEST(ComputeTargetInfoClampTextSize, KeepsValuesInRange)
+{
+	EXPECT_DOUBLE_EQ(0.5, ComputeTargetInfoClampTextSize(0.5));
+	EXPECT_DOUBLE_EQ(1.7, ComputeTargetInfoClampTextSize(1.7));
+	EXPECT_DOUBLE_EQ(4.0, ComputeTargetInfoClampTextSize(4.0));
+}
+
+TEST(ComputeTargetInfoClampTextSize, ClampsToTheSliderEnds)
+{
+	EXPECT_DOUBLE_EQ(0.5, ComputeTargetInfoClampTextSize(0.0));
+	EXPECT_DOUBLE_EQ(0.5, ComputeTargetInfoClampTextSize(-2.0));
+	EXPECT_DOUBLE_EQ(4.0, ComputeTargetInfoClampTextSize(4.5));
+}
+
+TEST(ComputeTargetInfoClampTextSize, TreatsNaNAsChatSize)
+{
+	EXPECT_DOUBLE_EQ(1.0, ComputeTargetInfoClampTextSize(kNaN));
 }
 
 TEST(ComputeCrosshairInfoCanvas, ShrinksTheScreenByTheScale)

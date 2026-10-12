@@ -75,6 +75,12 @@ CUSTOM_CVAR(Int, cl_fua_identify_actorname, zx::crosshair::kActorNameOff, CVAR_A
 	ClampIntCVar(self, zx::crosshair::kActorNameOff, zx::crosshair::kActorNameTag);
 }
 
+// [MobiusU9B] How big the text beside the crosshair is, as a multiple of chat's size; spacing and offsets grow with it.
+CUSTOM_CVAR(Float, cl_fua_xhairinfo_textsize, 1.f, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
+{
+	ClampCVar(self, zx::crosshair::ComputeTargetInfoClampTextSize);
+}
+
 // [MobiusU9B] Each element's nudge from its stacked place beside the crosshair, in HUD-text pixels.
 #define ZX_TARGETINFO_OFFSET_CVAR(name) \
 	CUSTOM_CVAR(Int, name, 0, CVAR_ARCHIVE | CVAR_GLOBALCONFIG) \
@@ -260,7 +266,7 @@ void DrawBesideCrosshair(AActor *viewer, const TargetText *identify)
 		return;
 
 	const int lineHeight = SmallFont->GetHeight() + 1;
-	const double textScale = ComputeCrosshairTextScale(SCREENHEIGHT, HUD_GetHeight());
+	const double textScale = ComputeCrosshairTextScale(SCREENHEIGHT, HUD_GetHeight(), cl_fua_xhairinfo_textsize);
 	const InfoCanvas canvas = ComputeCrosshairInfoCanvas(SCREENWIDTH, SCREENHEIGHT, textScale);
 	const InfoPos anchor = ComputeCrosshairInfoAnchor(GetRect(CrosshairImage, StatusBar->CrosshairSize), textScale, lineHeight, kGap);
 
