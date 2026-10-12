@@ -60,5 +60,23 @@ bool ComputeIsMirrorWall(int lineSpecial, bool oneSided, bool mirrorsOn)
 	return lineSpecial == kLineMirror && oneSided && mirrorsOn;
 }
 
+SideChange ComputeSideChange(const SideLook &baked, const SideLook &now)
+{
+	// [rc4l] A side's light (Transfer_WallLight) or flags change how its walls are lit, which a scroll cannot carry.
+	if (baked.light != now.light || baked.flags != now.flags) return kSideRebuild;
+	bool scrolled = false;
+	for (int p = 0; p < 3; p++)
+	{
+		if (baked.tex[p] != now.tex[p] || baked.xscale[p] != now.xscale[p] || baked.yscale[p] != now.yscale[p]) return kSideRebuild;
+		if (baked.xoff[p] != now.xoff[p] || baked.yoff[p] != now.yoff[p]) scrolled = true;
+	}
+	return scrolled ? kSideScrolled : kSideSame;
+}
+
+bool ComputeScrollInRange(float du, float dv)
+{
+	return du <= kMaxScrollShift && du >= -kMaxScrollShift && dv <= kMaxScrollShift && dv >= -kMaxScrollShift;
+}
+
 
 }} // namespace zx::levelmesh

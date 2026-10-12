@@ -142,6 +142,10 @@ void RebakeFakesModelledOn(int sector);
 // [rc4l] How often a visible flat was left alone rather than rebuilt. A cache whose hit rate
 // nobody can see is a cache nobody can tell has stopped working.
 void GetFlatCacheStats(int &hits, int &rebuilds);
+// [rc4l] Flats whose shade changed and were re-registered without rebuilding their vertices.
+int GetFlatReshades();
+// [rc4l] Flats whose offsets scrolled and were shifted in the piece without rebuilding their vertices.
+int GetFlatRescrolls();
 
 // [rc4l] One captured flat, read-only: which subsector and side it is, which sector and plane it
 // was taken from, and where its vertices live. For checking a derivation against the capture.

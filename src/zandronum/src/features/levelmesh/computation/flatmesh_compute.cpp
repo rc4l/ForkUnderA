@@ -328,4 +328,19 @@ bool ComputeOwnsFrameCapture(bool mainView, int sceneNesting)
 	return ComputeSkyCaptureList(mainView, sceneNesting, -1) == kSkyCaptureMain;
 }
 
+FlatChange ComputeFlatChange(bool stored, const FlatStamp &baked, const FlatStamp &now, bool scrolled)
+{
+	if (!stored) return kFlatRebuild;
+	const bool sameShape = baked.pa == now.pa && baked.pb == now.pb && baked.pc == now.pc && baked.pd == now.pd
+		&& baked.dz == now.dz && baked.xscale == now.xscale && baked.yscale == now.yscale && baked.angle == now.angle
+		&& baked.material == now.material && baked.baseTex == now.baseTex;
+	if (!sameShape) return kFlatRebuild;
+	if (scrolled || baked.xoffs != now.xoffs || baked.yoffs != now.yoffs) return kFlatRescroll;
+	const bool sameShade = baked.lightLevel == now.lightLevel && baked.extraLight == now.extraLight
+		&& baked.lightColor == now.lightColor && baked.fadeColor == now.fadeColor
+		&& baked.desaturation == now.desaturation && baked.blendFactor == now.blendFactor
+		&& baked.alpha == now.alpha && baked.renderStyle == now.renderStyle;
+	return sameShade ? kFlatSame : kFlatReshade;
+}
+
 }} // namespace zx::levelmesh

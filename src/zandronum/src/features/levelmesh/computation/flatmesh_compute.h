@@ -257,6 +257,28 @@ bool ComputeRendersMirror(bool walkedByGL, bool standalone, bool onScreen);
 // [rc4l] Whether a sprite, model or decal being captured belongs to the frame: the player's view from the outermost DrawScene (nesting 1, or 0 outside any), since GL raises the portal depth for the player's own scene once its walk is done.
 bool ComputeOwnsFrameCapture(bool mainView, int sceneNesting);
 
+// [rc4l] What a stored flat was built from, compared field by field: its plane, placement and texture shape its vertices, the rest only shades the piece, and dynLightIndex stays out because nothing reads it and it changes most frames.
+struct FlatStamp
+{
+	long long pa, pb, pc, pd;
+	float dz;
+	long long xoffs, yoffs, xscale, yscale;
+	unsigned int angle;
+	const void *material;
+	const void *baseTex;
+	int lightLevel, extraLight;
+	unsigned int lightColor, fadeColor;
+	int desaturation, blendFactor;
+	long long alpha;
+	int renderStyle;
+};
+
+// [rc4l] What a stored flat needs.
+enum FlatChange { kFlatSame, kFlatReshade, kFlatRescroll, kFlatRebuild };
+
+// [rc4l] Nothing, a new shade, a scroll from the offsets it was baked with (also to undo one), or its vertices built again; one never stored is built, since AOW03's lights and scrollers rebuilt every floor they touched.
+FlatChange ComputeFlatChange(bool stored, const FlatStamp &baked, const FlatStamp &now, bool scrolled);
+
 }} // namespace zx::levelmesh
 
 #endif // ZX_FLATMESH_COMPUTE_H

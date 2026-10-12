@@ -166,3 +166,60 @@ TEST(WallCache, AReplayedWallDrawsFromItsMeshRangeOnlyWhileTheCaptureBakedIt)
 	EXPECT_FALSE(ComputeReplaysFromMesh(false, 1, 1, 6));   // [rc4l] past what the capture kept
 	EXPECT_FALSE(ComputeReplaysFromMesh(false, -1, 1, 6));
 }
+
+// [rc4l] A plain sidedef: STARTAN2 on every part, no offset, unit scale.
+static SideLook PlainSide()
+{
+	SideLook s;
+	for (int p = 0; p < 3; p++) { s.tex[p] = 7; s.xoff[p] = s.yoff[p] = 0; s.xscale[p] = s.yscale[p] = 65536; }
+	s.light = 0; s.flags = 0;
+	return s;
+}
+
+// [rc4l] AOW03's 101 scrolling walls were baked again every frame while only their offsets moved.
+TEST(WallCache, AnOffsetAloneIsAScrollOfThePiecesAlreadyBaked)
+{
+	const SideLook baked = PlainSide();
+	EXPECT_EQ(kSideSame, ComputeSideChange(baked, baked));
+	for (int p = 0; p < 3; p++)
+	{
+		SideLook across = baked; across.xoff[p] = 8 * 65536;
+		EXPECT_EQ(kSideScrolled, ComputeSideChange(baked, across));
+		SideLook down = baked; down.yoff[p] = -3 * 65536;
+		EXPECT_EQ(kSideScrolled, ComputeSideChange(baked, down));
+	}
+}
+
+TEST(WallCache, ANewTextureOrScaleOnAnyPartIsABake)
+{
+	const SideLook baked = PlainSide();
+	for (int p = 0; p < 3; p++)
+	{
+		SideLook switched = baked; switched.tex[p] = 9; switched.xoff[0] = 65536;
+		EXPECT_EQ(kSideRebuild, ComputeSideChange(baked, switched));
+		SideLook wider = baked; wider.xscale[p] = 2 * 65536;
+		EXPECT_EQ(kSideRebuild, ComputeSideChange(baked, wider));
+		SideLook taller = baked; taller.yscale[p] = 32768;
+		EXPECT_EQ(kSideRebuild, ComputeSideChange(baked, taller));
+	}
+}
+
+// [rc4l] walllight: a Transfer_WallLight change marks the sidedef like a scroll does, and taking it for a scroll left the wall unlit.
+TEST(WallCache, ASidesOwnLightOrFlagsChangingIsABake)
+{
+	const SideLook baked = PlainSide();
+	SideLook lit = baked; lit.light = 64;
+	EXPECT_EQ(kSideRebuild, ComputeSideChange(baked, lit));
+	SideLook flagged = baked; flagged.flags = 4; flagged.xoff[1] = 65536;
+	EXPECT_EQ(kSideRebuild, ComputeSideChange(baked, flagged));
+}
+
+TEST(WallCache, AScrollPastTheLimitGoesBackIntoTheVertices)
+{
+	EXPECT_TRUE(ComputeScrollInRange(0.f, 0.f));
+	EXPECT_TRUE(ComputeScrollInRange(kMaxScrollShift, -kMaxScrollShift));
+	EXPECT_FALSE(ComputeScrollInRange(kMaxScrollShift + 1.f, 0.f));
+	EXPECT_FALSE(ComputeScrollInRange(-kMaxScrollShift - 1.f, 0.f));
+	EXPECT_FALSE(ComputeScrollInRange(0.f, kMaxScrollShift + 1.f));
+	EXPECT_FALSE(ComputeScrollInRange(0.f, -kMaxScrollShift - 1.f));
+}

@@ -7,7 +7,8 @@
 #include "features/levelmesh/staticmesh.h"
 #include "features/levelmesh/modelmesh.h"
 #include "features/levelmesh/fakeplanes.h"   // [rc4l] GL's missing-texture fills, baked as fake planes
-#include "features/levelmesh/wallcache.h"    // [rc4l] RebakeTransferSegs, for a view area change
+#include "features/levelmesh/wallcache.h"
+#include "features/levelmesh/computation/wallcache_compute.h"   // [rc4l] ComputeScrollInRange    // [rc4l] RebakeTransferSegs, for a view area change
 #include "features/levelmesh/computation/wallbatch_compute.h"
 #include "features/levelmesh/computation/flatmesh_compute.h"
 #include "features/hwrender/computation/slot_compute.h"
@@ -53,51 +54,16 @@ CVAR(Bool, fua_decal_log, false, 0)
 CVAR(Bool, fua_mesh_sky, true, CVAR_ARCHIVE)
 
 EXTERN_CVAR(Bool, fua_surface_mapbake_auto)
+EXTERN_CVAR(Bool, fua_mesh_rescroll)
 
 namespace zx { namespace levelmesh {
 
-// [rc4l] The state a stored flat was built from, so an unchanged one can be left alone.
-//
-// Compared field by field rather than by memcmp: a struct with padding compares unequal on bytes
-// nothing ever wrote, and the failure would be a cache that silently never hits -- which looks
-// exactly like no cache at all, and is what this is being added to fix.
-//
-// dynLightIndex is deliberately NOT here. It is written into the piece and into the vertex stream,
-// and the backend has not read it since the shader started testing every light for itself (see
-// dgscene.cpp, "unused now the shader tests every light"). It also changes most frames, so
-// including it would mean the cache never hits. If anything ever starts reading it again, it
-// belongs in this stamp on the same day.
-struct FlatStamp
-{
-	fixed_t pa, pb, pc, pd;          // the plane itself: moves when the floor does
-	float   dz;
-	fixed_t xoffs, yoffs, xscale, yscale;
-	angle_t angle;
-	const void *material;            // FMaterial: changes when an animated flat advances
-	const void *baseTex;
-	int     lightLevel;
-	int     extraLight;
-	DWORD   lightColor, fadeColor;
-	int     desaturation, blendFactor;
-	fixed_t alpha;
-	int     renderStyle;
-
-	bool operator==(const FlatStamp &o) const
-	{
-		return pa == o.pa && pb == o.pb && pc == o.pc && pd == o.pd && dz == o.dz
-			&& xoffs == o.xoffs && yoffs == o.yoffs && xscale == o.xscale && yscale == o.yscale
-			&& angle == o.angle && material == o.material && baseTex == o.baseTex
-			&& lightLevel == o.lightLevel && extraLight == o.extraLight
-			&& lightColor == o.lightColor && fadeColor == o.fadeColor
-			&& desaturation == o.desaturation && blendFactor == o.blendFactor
-			&& alpha == o.alpha && renderStyle == o.renderStyle;
-	}
-};
-
 // How often the flat cache answered without rebuilding anything. Printed by fua_wallcache_stats,
 // because a cache nobody can see the hit rate of is a cache nobody can tell has stopped working.
-static int g_flatHits = 0, g_flatRebuilds = 0;
+static int g_flatHits = 0, g_flatRebuilds = 0, g_flatReshades = 0, g_flatRescrolls = 0;
 void GetFlatCacheStats(int &hits, int &rebuilds) { hits = g_flatHits; rebuilds = g_flatRebuilds; }
+int GetFlatReshades() { return g_flatReshades; }
+int GetFlatRescrolls() { return g_flatRescrolls; }
 
 // [rc4l] Keyed on (subsector, plane) so a subsector's floor and ceiling are each baked once. The
 // range is kept so a re-bake at the same size overwrites in place, exactly like the wall path --
@@ -135,6 +101,7 @@ struct FlatKey
 	// The rest of the time the answer is the one already in the buffer.
 	FlatStamp stamp;
 	bool stamped;
+	bool scrolled;   // [rc4l] the piece carries a scroll from the offsets in stamp, which are the ones its vertices were baked with
 };
 static TArray<FlatKey> g_flats;
 
@@ -263,6 +230,7 @@ static void StoreFlat(const FlatSource &flat, subsector_t *sub, bool ceiling)
 		k.range.count = 0;
 		k.next = g_flatHead[subIndex];
 		k.stamped = false;
+		k.scrolled = false;
 		k.fake = flat.fake;
 		const unsigned pushed = g_flats.Push(k);
 		g_flatHead[subIndex] = (int)pushed;
@@ -291,10 +259,10 @@ static void StoreFlat(const FlatSource &flat, subsector_t *sub, bool ceiling)
 	FlatStamp now;
 	{
 		const secplane_t &pl = flat.plane.plane;
-		now.pa = pl.a; now.pb = pl.b; now.pc = pl.c; now.pd = pl.d;
+		now.pa = pl.a.Raw(); now.pb = pl.b.Raw(); now.pc = pl.c.Raw(); now.pd = pl.d.Raw();
 		now.dz = flat.dz;
-		now.xoffs = flat.plane.xoffs; now.yoffs = flat.plane.yoffs;
-		now.xscale = flat.plane.xscale; now.yscale = flat.plane.yscale;
+		now.xoffs = flat.plane.xoffs.Raw(); now.yoffs = flat.plane.yoffs.Raw();
+		now.xscale = flat.plane.xscale.Raw(); now.yscale = flat.plane.yscale.Raw();
 		now.angle = flat.plane.angle;
 		now.material = flat.gltexture;
 		now.baseTex = TexMan[flat.plane.texture];
@@ -307,65 +275,87 @@ static void StoreFlat(const FlatSource &flat, subsector_t *sub, bool ceiling)
 		now.alpha = FLOAT2FIXED(flat.alpha);
 		now.renderStyle = (int)flat.renderstyle;
 	}
-	if (slot->stamped && slot->range.count > 0 && slot->stamp == now)
+	FlatChange change = ComputeFlatChange(slot->stamped && slot->range.count > 0, slot->stamp, now, slot->scrolled);
+	// [rc4l] A scroll is where the plane maps the origin under the offsets now, less under the baked ones, and one a float cannot carry goes back into the vertices.
+	float scrollU = 0.f, scrollV = 0.f;
+	if (change == kFlatRescroll)
+	{
+		PlaneUVTransform t;
+		PlaneUVFor(flat.plane, flat.gltexture, t);
+		PlaneUVTransform t0 = t;
+		t0.xoffs = FIXED2FLOAT(fixed_t::FromRaw(slot->stamp.xoffs));
+		t0.yoffs = FIXED2FLOAT(fixed_t::FromRaw(slot->stamp.yoffs));
+		float u1, v1, u0, v0;
+		ComputePlaneUV(0.f, 0.f, t, u1, v1);
+		ComputePlaneUV(0.f, 0.f, t0, u0, v0);
+		scrollU = u1 - u0;
+		scrollV = v1 - v0;
+		if (!fua_mesh_rescroll || !ComputeScrollInRange(scrollU, scrollV)) { change = kFlatRebuild; scrollU = scrollV = 0.f; }
+	}
+	if (change == kFlatSame)
 	{
 		// The piece is still in the mesh's list from the last time it was registered -- pieces are
 		// keyed by range offset and replaced rather than appended, so nothing needs saying again.
 		g_flatHits++;
 		return;
 	}
-	g_flatRebuilds++;
-
-	// [rc4l] Cap matches the wall path's staging array; a subsector with more edges than this is
-	// vanishingly rare and is simply left to the GL renderer.
-	static FFlatVertex fan[GLWall::MAX_BATCH_FAN_VERTICES];
-	static FFlatVertex tris[GLWall::MAX_BATCH_FAN_VERTICES * 3];
-	const int n = (int)sub->numlines;
-	if (n > GLWall::MAX_BATCH_FAN_VERTICES) return;
-
-	// Mirrors GLFlat::DrawSubsector for the positions, and gl_SetPlaneTextureRotation for the texture
-	// coordinates -- which this used to skip entirely, baking the bare (x/64, -y/64) that is only
-	// right for an unoffset, unscaled, unrotated 64x64 flat.
-	const secplane_t &p = flat.plane.plane;
-	const bool sloped = (p.a | p.b) != 0;
-	const float zc = sloped ? 0.0f : (FIXED2FLOAT(p.Zat0()) + flat.dz);
-
-	PlaneUVTransform uvt;
-	PlaneUVFor(flat.plane, flat.gltexture, uvt);
-
-	for (int k = 0; k < n; k++)
-	{
-		vertex_t *vt = sub->firstline[k].v1;
-		fan[k].x = vt->fx;
-		fan[k].y = vt->fy;
-		fan[k].z = sloped ? (float)(p.ZatPoint(vt->fx, vt->fy) + flat.dz) : zc;
-		ComputePlaneUV(vt->fx, vt->fy, uvt, fan[k].u, fan[k].v);
-	}
-
-	const int triVerts = ComputeFanTriangleVertexCount(n);
-	if (triVerts <= 0) return;
-	// [rc4l] Wind a surface seen from below the other way round, so back-face culling keeps it.
-	//
-	// A subsector's vertices come in one fixed order, so a floor and a ceiling built from them have
-	// the SAME winding while facing opposite directions -- and a single cull mode then deletes one of
-	// them. Enabling culling for the world removed every ceiling in the level.
-	//
-	// The discriminator is `ceiling`, which is GLFlat's record of which SIDE the surface is being
-	// viewed from, and NOT the plane's normal. Using the normal looked more principled and was wrong:
-	// a 3D floor's walkable top surface is the control sector's CEILING plane, so its normal points
-	// down while the surface is seen from above, and the normal rule culled exactly those. See
-	// GLFlat::ProcessSector, which sets ceiling=true for the pass that draws 3D floor faces from
-	// below and ceiling=false for the pass that draws them from above.
 	const bool facesDown = ComputeFlatWindingReversed(ceiling);
-	int w = 0;
-	for (int t = 0; t < n - 2; t++)
-		for (int c = 0; c < 3; c++)
+	if (change == kFlatReshade) g_flatReshades++;
+	else if (change == kFlatRescroll) g_flatRescrolls++;
+	else
+	{
+		g_flatRebuilds++;
+
+		// [rc4l] Cap matches the wall path's staging array; a subsector with more edges than this is
+		// vanishingly rare and is simply left to the GL renderer.
+		static FFlatVertex fan[GLWall::MAX_BATCH_FAN_VERTICES];
+		static FFlatVertex tris[GLWall::MAX_BATCH_FAN_VERTICES * 3];
+		const int n = (int)sub->numlines;
+		if (n > GLWall::MAX_BATCH_FAN_VERTICES) return;
+
+		// Mirrors GLFlat::DrawSubsector for the positions, and gl_SetPlaneTextureRotation for the texture
+		// coordinates -- which this used to skip entirely, baking the bare (x/64, -y/64) that is only
+		// right for an unoffset, unscaled, unrotated 64x64 flat.
+		const secplane_t &p = flat.plane.plane;
+		const bool sloped = (p.a | p.b) != 0;
+		const float zc = sloped ? 0.0f : (FIXED2FLOAT(p.Zat0()) + flat.dz);
+
+		PlaneUVTransform uvt;
+		PlaneUVFor(flat.plane, flat.gltexture, uvt);
+
+		for (int k = 0; k < n; k++)
 		{
-			const int cc = facesDown ? (2 - c) : c;
-			tris[w++] = fan[ComputeFanTriangleVertex(n, t, cc)];
+			vertex_t *vt = sub->firstline[k].v1;
+			fan[k].x = vt->fx;
+			fan[k].y = vt->fy;
+			fan[k].z = sloped ? (float)(p.ZatPoint(vt->fx, vt->fy) + flat.dz) : zc;
+			ComputePlaneUV(vt->fx, vt->fy, uvt, fan[k].u, fan[k].v);
 		}
 
-	if (!MeshStore(slot->range, tris, w)) return;
+		const int triVerts = ComputeFanTriangleVertexCount(n);
+		if (triVerts <= 0) return;
+		// [rc4l] Wind a surface seen from below the other way round, so back-face culling keeps it.
+		//
+		// A subsector's vertices come in one fixed order, so a floor and a ceiling built from them have
+		// the SAME winding while facing opposite directions -- and a single cull mode then deletes one of
+		// them. Enabling culling for the world removed every ceiling in the level.
+		//
+		// The discriminator is `ceiling`, which is GLFlat's record of which SIDE the surface is being
+		// viewed from, and NOT the plane's normal. Using the normal looked more principled and was wrong:
+		// a 3D floor's walkable top surface is the control sector's CEILING plane, so its normal points
+		// down while the surface is seen from above, and the normal rule culled exactly those. See
+		// GLFlat::ProcessSector, which sets ceiling=true for the pass that draws 3D floor faces from
+		// below and ceiling=false for the pass that draws them from above.
+		int w = 0;
+		for (int t = 0; t < n - 2; t++)
+			for (int c = 0; c < 3; c++)
+			{
+				const int cc = facesDown ? (2 - c) : c;
+				tris[w++] = fan[ComputeFanTriangleVertex(n, t, cc)];
+			}
+
+		if (!MeshStore(slot->range, tris, w)) return;
+	}
 
 	MeshPiece mp;
 	mp.range = slot->range;
@@ -430,10 +420,16 @@ static void StoreFlat(const FlatSource &flat, subsector_t *sub, bool ceiling)
 	mp.mirrorCeiling = flat.mirrorCeiling;
 	// [rc4l] GLFlat::PutFlat puts a sector's own plane in the solid pass and masks a 3D floor's.
 	mp.plain = own;
+	mp.scrollU = scrollU;
+	mp.scrollV = scrollV;
 	MeshRegisterPiece(mp);
 
 	// Only now: a stamp recorded before the store would claim a surface that never made it in.
+	// [rc4l] Its offsets stay the ones baked into the vertices unless they were baked again just now.
+	const long long bakedX = slot->stamp.xoffs, bakedY = slot->stamp.yoffs;
 	slot->stamp = now;
+	if (change != kFlatRebuild) { slot->stamp.xoffs = bakedX; slot->stamp.yoffs = bakedY; }
+	slot->scrolled = scrollU != 0.f || scrollV != 0.f;
 	slot->stamped = true;
 }
 

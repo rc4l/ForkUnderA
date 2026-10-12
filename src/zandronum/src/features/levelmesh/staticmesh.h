@@ -161,6 +161,8 @@ struct MeshPiece
 	// [rc4l] A reflective floor or ceiling (Sector_SetPlaneReflection): its sector, -1 for none, and which plane.
 	int           mirrorSector;
 	bool          mirrorCeiling;
+	// [rc4l] How far a scroller has moved the texture since the vertices were baked, added to every u and v by the shader.
+	float         scrollU, scrollV;
 
 	// [rc4l] Zero-initialise. Every site fills the fields it cares about and leaves the rest, so a
 	// field added later is garbage at the sites that predate it -- which is how SegCache::pieces
@@ -182,6 +184,7 @@ struct MeshPiece
 		facesDown = false; depthBias = false; redToAlpha = false;
 		flood = false; floodZ = 0.f;
 		mirrorSector = -1; mirrorCeiling = false;
+		scrollU = scrollV = 0.f;
 		cpuLight = false;
 		mirrorLine = -1;
 		stackSlot = -1;

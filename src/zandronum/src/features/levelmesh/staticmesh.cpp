@@ -603,6 +603,7 @@ static zx::surfaces::SurfaceKey KeyOf(const MeshPiece &p)
 	k.fogColor = p.fogColor;
 	k.fogMode = p.fogMode;
 	k.normX = p.normX; k.normY = p.normY; k.normZ = p.normZ;
+	k.scrollU = p.scrollU; k.scrollV = p.scrollV;
 	return k;
 }
 

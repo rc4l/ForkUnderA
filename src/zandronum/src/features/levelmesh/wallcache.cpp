@@ -62,6 +62,8 @@ EXTERN_CVAR(Int, gl_fogmode)
 // console instead of from two builds. Off renders stale animation frames -- a measurement aid, not
 // a setting anyone should turn off.
 CVAR(Bool, gl_wallcache_anim, true, 0)
+// [rc4l] Off bakes a scrolled wall or floor again instead of shifting its texture, the old cost, for an A/B in one session.
+CVAR(Bool, fua_mesh_rescroll, true, 0)
 
 #include "features/surfaces/surfacebuild.h"
 #include "features/surfaces/computation/wallbands_compute.h"
@@ -262,6 +264,9 @@ static void CaptureWallShading(const GLWall &wall, MeshPiece &mp)
 // They are duplicates in the exact sense: same corners, same material, same shading. Nothing on
 // screen needs more than the first, and three of them are depth-buffer noise and wasted vertices.
 static TArray<int> g_sideOwner;      // sidedef index -> the one seg that bakes it
+// [rc4l] Each sidedef as its owner seg last baked it, so a scroller's offset can move the pieces already baked.
+static TArray<zx::levelmesh::SideLook> g_sideBaked;
+static TArray<bool> g_sideBakedValid;
 
 static void BuildSideOwners()
 {
@@ -603,8 +608,9 @@ static int ReshadeSegFromMap(int segIndex)
 
 	zx::surfaces::DerivedWallLight dl;
 	FDynamicColormap *cmFrom = NULL;
-	if (!zx::surfaces::BuildDerivedWallLight(seg, dl, cmFrom) || cmFrom == NULL) { g_reshadeNoLight++; return -1; }
+	// [rc4l] Owner first, since it is a table lookup and the light is not, and about 140 segs a tic on AOW03 are not owners.
 	if (!SegOwnsItsSide(segIndex)) { g_reshadeNotOwner++; return -1; }
+	if (!zx::surfaces::BuildDerivedWallLight(seg, dl, cmFrom) || cmFrom == NULL) { g_reshadeNoLight++; return -1; }
 
 	const sector_t *front = seg->frontsector;
 	const TArray<lightlist_t> *lights =
@@ -699,6 +705,95 @@ static bool BakeFloodPiece(MeshRange &range, const zx::surfaces::DerivedWallSpan
 	return true;
 }
 
+static int g_sidesRescrolled = 0;
+
+// [rc4l] A sidedef's parts (top, mid, bottom) as SideLook keeps them.
+static zx::levelmesh::SideLook SideLookOf(const side_t &sd)
+{
+	zx::levelmesh::SideLook l;
+	for (int p = 0; p < 3; p++)
+	{
+		l.tex[p] = sd.GetTexture(p).GetIndex();
+		l.xoff[p] = sd.GetTextureXOffset(p).Raw();
+		l.yoff[p] = sd.GetTextureYOffset(p).Raw();
+		l.xscale[p] = sd.GetTextureXScale(p).Raw();
+		l.yscale[p] = sd.GetTextureYScale(p).Raw();
+	}
+	l.light = sd.Light;
+	l.flags = sd.Flags;
+	return l;
+}
+
+// [rc4l] The look a sidedef's walls were just baked with, so a later scroll is measured from it.
+static void RecordSideBaked(int sideIndex)
+{
+	if (sides == NULL || sideIndex < 0 || sideIndex >= numsides) return;
+	if (g_sideBaked.Size() != (unsigned)numsides)
+	{
+		g_sideBaked.Resize((unsigned)numsides);
+		g_sideBakedValid.Resize((unsigned)numsides);
+		for (int i = 0; i < numsides; i++) g_sideBakedValid[i] = false;
+	}
+	g_sideBaked[sideIndex] = SideLookOf(sides[sideIndex]);
+	g_sideBakedValid[sideIndex] = true;
+}
+
+// [rc4l] Shift the pieces a sidedef's owner seg baked by how far its offsets moved since, true when that was all it needed; anything else (a gap fill, a 3D floor's light, a two-sided middle moving up or down) is baked again.
+static bool RescrollSide(int sideIndex)
+{
+	if (!fua_mesh_rescroll || (unsigned)sideIndex >= g_sideBakedValid.Size() || !g_sideBakedValid[sideIndex]) return false;
+	if ((unsigned)sideIndex >= g_sideOwner.Size()) return false;
+	const int segIndex = g_sideOwner[sideIndex];
+	if (segIndex < 0 || (unsigned)segIndex >= g_cache.Size()) return false;
+	SegCache &sc = g_cache[segIndex];
+	if (!sc.mapBaked || sc.hasOwnLitPiece) return false;
+	const side_t &sd = sides[sideIndex];
+	const zx::levelmesh::SideLook now = SideLookOf(sd);
+	const zx::levelmesh::SideLook &baked = g_sideBaked[sideIndex];
+	// [rc4l] Only a pure offset change scrolls in place; anything else, and a dirty side that looks unchanged, takes the bake it always took.
+	if (zx::levelmesh::ComputeSideChange(baked, now) != zx::levelmesh::kSideScrolled) return false;
+
+	// [rc4l] The parts in BakeSegFromMap's slot order, and the sidedef part each one draws.
+	static const int kPartTexpos[3] = { side_t::top, side_t::bottom, side_t::mid };
+	float du[3] = { 0.f, 0.f, 0.f }, dv[3] = { 0.f, 0.f, 0.f };
+	for (int part = 0; part < 3; part++)
+	{
+		const int tp = kPartTexpos[part];
+		const void *base = TexMan.ByIndex(sd.GetTexture(tp).GetIndex());
+		for (int k = 0; k < kBandsPerPart; k++)
+		{
+			const MeshRange &r = sc.pieces[part * kBandsPerPart + k].range;
+			if (r.count == 0) continue;
+			const MeshPiece *p = MeshFindPiece(r.offset);
+			if (p == NULL || p->baseTex != base) return false;   // [rc4l] a gap filled with another texture
+		}
+		if (baked.xoff[tp] == now.xoff[tp] && baked.yoff[tp] == now.yoff[tp]) continue;
+		FMaterial *mat = FMaterial::ValidateTexture(sd.GetTexture(tp), false, true);
+		if (mat == NULL) return false;
+		FTexCoordInfo tci;
+		mat->GetTexCoordInfo(&tci, sd.GetTextureXScale(tp), sd.GetTextureYScale(tp));
+		if (tci.mRenderHeight == 0) return false;
+		du[part] = tci.FloatToTexU(FIXED2FLOAT(tci.TextureOffset(fixed_t::FromRaw(now.xoff[tp]))))
+			- tci.FloatToTexU(FIXED2FLOAT(tci.TextureOffset(fixed_t::FromRaw(baked.xoff[tp]))));
+		dv[part] = (FIXED2FLOAT(tci.RowOffset(fixed_t::FromRaw(now.yoff[tp])))
+			- FIXED2FLOAT(tci.RowOffset(fixed_t::FromRaw(baked.yoff[tp])))) / (float)tci.mRenderHeight;
+		// [rc4l] A two-sided middle is cut to its texture's height, so moving it up or down moves its quad.
+		if (part == 2 && segs[segIndex].backsector != NULL && dv[part] != 0.f) return false;
+		if (!zx::levelmesh::ComputeScrollInRange(du[part], dv[part])) return false;
+	}
+	for (int part = 0; part < 3; part++)
+		for (int k = 0; k < kBandsPerPart; k++)
+		{
+			const MeshRange &r = sc.pieces[part * kBandsPerPart + k].range;
+			if (r.count == 0) continue;
+			MeshPiece moved = *MeshFindPiece(r.offset);
+			moved.scrollU = du[part];
+			moved.scrollV = dv[part];
+			MeshRegisterPiece(moved);
+		}
+	return true;
+}
+
 int BakeSegFromMap(int segIndex)
 {
 	// [rc4l] DECLINED (-1) and "took it, made nothing" (0) are different answers.
@@ -722,14 +817,14 @@ int BakeSegFromMap(int segIndex)
 
 	zx::surfaces::DerivedWallLight dl;
 	FDynamicColormap *cmFrom = NULL;
-	// Not ours: leave every range exactly as it is and let the capture keep this seg. Squashing here
-	// is what put a hole in dbab01 -- see MapBakeOwnsSeg.
-	if (!zx::surfaces::BuildDerivedWallLight(seg, dl, cmFrom) || cmFrom == NULL) return -1;
-
 	// One quad per sidedef -- see SegOwnsItsSide. Every other seg on it would build the same four
 	// corners again, in the same plane, and the two would stipple against each other.
 	if (!SegOwnsItsSide(segIndex)) return -1;
+	// Not ours: leave every range exactly as it is and let the capture keep this seg. Squashing here
+	// is what put a hole in dbab01 -- see MapBakeOwnsSeg.
+	if (!zx::surfaces::BuildDerivedWallLight(seg, dl, cmFrom) || cmFrom == NULL) return -1;
 	sc.mapBaked = true;
+	RecordSideBaked(int(seg->sidedef - sides));
 
 	// [rc4l] A horizon line or a mirror is taken and left empty, since GL draws no wall on either -- see features/horizon and RenderMirrors.
 	if (zx::horizon::ComputeIsHorizonLine(seg->linedef->special) ||
@@ -1686,6 +1781,7 @@ CCMD( fua_bake_dirty )
 	Printf( "sector invalidations since load: %d light-only, %d moved a plane, %d re-baked in the last frame\n",
 		g_dirtyLightOnly, g_dirtyGeometry, g_movedThisFrame );
 	Printf( "  %d were dirty with nothing visibly changed\n", g_dirtyNoChange );
+	Printf( "  scrolled in place: %d sides, %d flats\n", g_sidesRescrolled, zx::levelmesh::GetFlatRescrolls( ) );
 	Printf( "  reshade declined: %d 3D-floor, %d no light, %d not the side owner, %d piece missing\n",
 		g_reshadeFF, g_reshadeNoLight, g_reshadeNotOwner, g_reshadeNoPiece );
 	{
@@ -1706,6 +1802,7 @@ CCMD( fua_bake_dirty )
 		g_dirtyLightOnly = 0; g_dirtyGeometry = 0; g_dirtyNoChange = 0;
 		g_reshadeFF = 0; g_reshadeNoLight = 0; g_reshadeNotOwner = 0; g_reshadeNoPiece = 0;
 		g_invalMs = 0.0; g_invalFrames = 0; g_segsBaked = 0; g_segsReshaded = 0;
+		g_sidesRescrolled = 0;
 		Printf( "  (counters reset)\n" );
 	}
 }
@@ -1814,6 +1911,7 @@ void InvalidateMovedSectors()
 	{
 		if (!ComputeTakeChange(g_sideDirty[i], sides[i].fua_dirty)) continue;
 		if (zx::levelmesh::SideTexturesChanged(i)) fillSides.Push(i);
+		if (RescrollSide(i)) { g_sidesRescrolled++; continue; }
 		for (int k = 0; k < sides[i].numsegs; k++) RebakeChangedSeg(int(sides[i].segs[k] - segs), true);
 	}
 	// [rc4l] ...and every sector whose floor or ceiling texture a scroller, its interpolation or a script placed, re-baking its flats and those of any sector it is a 3D floor in, since no wall is drawn from it.
@@ -1927,7 +2025,7 @@ CCMD( fua_wallcache_stats )
 	int fh = 0, fr = 0;
 	zx::levelmesh::GetFlatCacheStats( fh, fr );
 	if ( fh + fr > 0 )
-		Printf( "  flats: %d left alone, %d rebuilt (%.1f%% hit)\n", fh, fr,
+		Printf( "  flats: %d left alone, %d rebuilt, %d reshaded (%.1f%% hit)\n", fh, fr, zx::levelmesh::GetFlatReshades( ),
 			100.0 * (double)fh / (double)( fh + fr ) );
 }
 

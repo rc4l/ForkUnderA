@@ -38,6 +38,8 @@
 #include "Shader.h"
 #include "RefCntAutoPtr.hpp"
 
+class FString;
+
 namespace zx { namespace hwrender {
 
 Diligent::IRenderDevice  *GetDevice();
@@ -88,6 +90,23 @@ bool SkyPortalReach(float &camX, float &camY, float &reach);
 
 // [rc4l] The horizon windows' planes, drawn after the opaque world -- see features/horizon.
 void DrawHorizonPlanes(Diligent::IDeviceContext *ctx);
+
+// [rc4l] Uploads count vertices of stride bytes into a grow-only vertex buffer, re-created when short; false if none can be had.
+bool UploadGrowingVB(Diligent::IDeviceContext *ctx, Diligent::RefCntAutoPtr<Diligent::IBuffer> &vb,
+	unsigned int &capacity, const void *data, unsigned int count, unsigned int stride, unsigned int pad, const char *name);
+
+// [rc4l] The 2D pass (dg2d.cpp): the captured HUD, menus and console over the frame, and what it drew last.
+void Draw2D(Diligent::IDeviceContext *ctx);
+void Get2DStats(int &quads, int &draws);
+
+// [rc4l] The light pass (dglights.cpp): its buffers, created once and bound statically to every world pipeline, the per-tic light list, the per-pass cluster grid and its counters.
+bool EnsureLightBuffers(FString &err);
+void BindLightBuffers(Diligent::IPipelineState *pso);
+void CollectDynamicLights(Diligent::IDeviceContext *ctx);
+void BuildLightClusters(Diligent::IDeviceContext *ctx);
+int LightCount();
+int ClusterCells();
+void AppendLightStats(FString &report);
 
 }} // namespace zx::hwrender
 

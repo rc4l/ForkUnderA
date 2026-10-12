@@ -828,3 +828,82 @@ TEST(FlatMeshCompute, APointIsBehindASkyHoleOnlyThroughItsSpan)
 	const float ahead[3] = { 100.f, 41.f, 900.f };
 	EXPECT_FALSE(ComputeBehindSkyHole(eye2, ahead, alongIt));
 }
+
+// [rc4l] A stamp for a plain floor at height 0, lit 160, opaque.
+static FlatStamp PlainFloorStamp()
+{
+	FlatStamp s = {};
+	s.pc = 65536; s.xscale = s.yscale = 65536;
+	s.material = &s; s.baseTex = &s;
+	s.lightLevel = 160; s.alpha = 65536;
+	return s;
+}
+
+// [rc4l] AOW03's lights change 56 sectors a tic, and each rebuilt every floor in them though only the shade moved.
+TEST(FlatMesh, ALightChangeReshadesThePieceAndKeepsItsVertices)
+{
+	const FlatStamp was = PlainFloorStamp();
+	FlatStamp now = was;
+	EXPECT_EQ(kFlatSame, ComputeFlatChange(true, was, now, false));
+	now.lightLevel = 192;
+	EXPECT_EQ(kFlatReshade, ComputeFlatChange(true, was, now, false));
+	now = was; now.extraLight = 8;
+	EXPECT_EQ(kFlatReshade, ComputeFlatChange(true, was, now, false));
+	now = was; now.lightColor = 0xff0000; now.fadeColor = 0x202020;
+	EXPECT_EQ(kFlatReshade, ComputeFlatChange(true, was, now, false));
+	now = was; now.desaturation = 10; now.blendFactor = 2;
+	EXPECT_EQ(kFlatReshade, ComputeFlatChange(true, was, now, false));
+	now = was; now.alpha = 32768; now.renderStyle = 2;
+	EXPECT_EQ(kFlatReshade, ComputeFlatChange(true, was, now, false));
+}
+
+TEST(FlatMesh, AMovedPlaneOrANewScaleAngleOrTextureRebuildsTheVertices)
+{
+	const FlatStamp was = PlainFloorStamp();
+	FlatStamp now = was; now.pd = -64 * 65536;
+	EXPECT_EQ(kFlatRebuild, ComputeFlatChange(true, was, now, false));
+	now = was; now.pa = 100; now.pb = 100;
+	EXPECT_EQ(kFlatRebuild, ComputeFlatChange(true, was, now, false));
+	now = was; now.dz = -1.f;
+	EXPECT_EQ(kFlatRebuild, ComputeFlatChange(true, was, now, false));
+	now = was; now.xscale = 2 * 65536;
+	EXPECT_EQ(kFlatRebuild, ComputeFlatChange(true, was, now, false));
+	now = was; now.yscale = 2 * 65536;
+	EXPECT_EQ(kFlatRebuild, ComputeFlatChange(true, was, now, false));
+	now = was; now.angle = 0x40000000u;
+	EXPECT_EQ(kFlatRebuild, ComputeFlatChange(true, was, now, false));
+	int other = 0;
+	now = was; now.material = &other;
+	EXPECT_EQ(kFlatRebuild, ComputeFlatChange(true, was, now, false));
+	now = was; now.baseTex = &other;
+	EXPECT_EQ(kFlatRebuild, ComputeFlatChange(true, was, now, false));
+	now = was; now.pb = 1;
+	EXPECT_EQ(kFlatRebuild, ComputeFlatChange(true, was, now, false));
+	now = was; now.pc = 1;
+	EXPECT_EQ(kFlatRebuild, ComputeFlatChange(true, was, now, false));
+}
+
+TEST(FlatMesh, AFlatNeverStoredIsBuilt)
+{
+	const FlatStamp was = PlainFloorStamp();
+	EXPECT_EQ(kFlatRebuild, ComputeFlatChange(false, was, was, false));
+}
+
+// [rc4l] AOW03's Scroll_Floor sectors rebuilt their floors every frame while only the offset moved.
+TEST(FlatMesh, AMovedOffsetScrollsThePieceFromItsBakedVertices)
+{
+	const FlatStamp baked = PlainFloorStamp();
+	FlatStamp now = baked; now.xoffs = 65536;
+	EXPECT_EQ(kFlatRescroll, ComputeFlatChange(true, baked, now, false));
+	now = baked; now.yoffs = 1; now.lightLevel = 200;
+	EXPECT_EQ(kFlatRescroll, ComputeFlatChange(true, baked, now, false));
+	now = baked; now.xoffs = 65536; now.angle = 0x40000000u;
+	EXPECT_EQ(kFlatRebuild, ComputeFlatChange(true, baked, now, false));
+}
+
+TEST(FlatMesh, AScrollThatReturnsToTheBakedOffsetIsUndoneNotLeftBehind)
+{
+	const FlatStamp baked = PlainFloorStamp();
+	EXPECT_EQ(kFlatRescroll, ComputeFlatChange(true, baked, baked, true));
+	EXPECT_EQ(kFlatRebuild, ComputeFlatChange(false, baked, baked, true));
+}

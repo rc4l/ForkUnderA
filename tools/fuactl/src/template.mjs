@@ -240,6 +240,40 @@ export async function compareCounter({ name, wad, maps, vantages, counter, iwad 
 }
 
 // [rc4l] One Vulkan launch per map, each vantage captured twice intervalMs apart, judged before against after: for what must move (a warp) or must not.
+// [rc4l] GL against Vulkan from ONE frame of one Vulkan launch, for what moves with time (a scroller, an animation), where two launches never agree on the moment.
+export async function compareSameFrame({ name, wad, maps, vantages, boxes, iwad = FREEDOOM2, port = 7796, size = [1280, 720], settleTics = 70 }) {
+  const others = engineProcessCount();
+  if (others > 0) return { lines: [`${others} other engine window(s) open -- close them first`], failed: 1, refused: true };
+  const exe = resolveEngine().split(path.sep).join("/");
+  const wadPath = path.join(os.tmpdir(), `fua-${name}-template.wad`);
+  fs.writeFileSync(wadPath, wad);
+  const lines = [];
+  let failed = 0;
+  for (const map of maps) {
+    const frames = {};
+    try {
+      await withEngine({ port, map, iwad, wadPath, gl: false, size }, async (c) => {
+        await cap.waitTics(c, settleTics);
+        for (const v of vantages) {
+          await c.rpc("sim.resume", {}).catch(() => {});
+          await c.rpc("player.setpos", v.at);
+          await cap.waitTics(c, 15);
+          const pair = await shot.shotPair(c, `${name}_${map}_${v.name}`, { engineBin: exe, sameFrame: true });
+          frames[v.name] = { gl: pair.gl ? decodePNG(pair.gl) : null, vk: pair.vk ? decodePNG(pair.vk) : null };
+        }
+      });
+    } catch (e) {
+      lines.push(`FAIL ${map}: ${e.message}`);
+      failed++;
+      continue;
+    }
+    const r = judge(map, frames, boxes[map], size);
+    lines.push(...r.lines);
+    failed += r.failed;
+  }
+  return { lines, failed };
+}
+
 export async function compareOverTime({ name, wad, maps, vantages, boxes, intervalMs = 600, iwad = FREEDOOM2, port = 7796,
   size = [1280, 720] }) {
   const exe = resolveEngine().split(path.sep).join("/");

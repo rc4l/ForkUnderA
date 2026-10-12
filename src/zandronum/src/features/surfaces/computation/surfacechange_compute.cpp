@@ -62,6 +62,8 @@ SurfaceChange ComputeSurfaceChange(const SurfaceKey &was, const SurfaceKey &now)
 	// slope that moves changes how it is lit without moving a single vertex of anything else.
 	if (!Same(was.normX, now.normX) || !Same(was.normY, now.normY) ||
 	    !Same(was.normZ, now.normZ)) return kSurfaceRepaint;
+	// [rc4l] A scrolled texture moves inside the same vertices, so a scroller is a repaint rather than new geometry.
+	if (!Same(was.scrollU, now.scrollU) || !Same(was.scrollV, now.scrollV)) return kSurfaceRepaint;
 
 	return kSurfaceUnchanged;
 }

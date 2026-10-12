@@ -51,11 +51,12 @@ struct SurfaceKey
 	unsigned int fogColor;
 	int          fogMode;
 	float        normX, normY, normZ;
+	float        scrollU, scrollV;   // [rc4l] the texture shift a scroller added since the bake, applied by the shader
 
 	SurfaceKey()
 		: material(0), baseTex(0), rangeOffset(0), rangeCount(0), blendMode(0), translation(0),
 		  alpha(1.f), colorR(1.f), colorG(1.f), colorB(1.f), softLight(-1.f), fogDensity(0.f),
-		  fogColor(0), fogMode(0), normX(0.f), normY(0.f), normZ(0.f) {}
+		  fogColor(0), fogMode(0), normX(0.f), normY(0.f), normZ(0.f), scrollU(0.f), scrollV(0.f) {}
 };
 
 // [rc4l] The three answers, ordered by how much work they cost.

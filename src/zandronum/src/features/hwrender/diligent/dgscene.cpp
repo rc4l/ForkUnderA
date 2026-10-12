@@ -23,88 +23,7 @@
 
 #ifdef FUA_DILIGENT
 
-#ifndef PLATFORM_WIN32
-#define PLATFORM_WIN32 1
-#endif
-
-#include "EngineFactoryVk.h"
-#include "RenderDevice.h"
-#include "DeviceContext.h"
-#include "SwapChain.h"
-#include "Buffer.h"
-#include "Texture.h"
-#include "TextureView.h"
-#include "Sampler.h"
-#include "MapHelper.hpp"
-// [rc4l] No #include "Query.h" here, deliberately: dxsdk/Include has a Query.h of its own that wins
-// the search and drags in the reshaped windows headers (DWORD gets redefined). DeviceContext.h
-// already pulls in Diligent's, since it declares BeginQuery/EndQuery over IQuery.
-#include "RefCntAutoPtr.hpp"
-#include "BottomLevelAS.h"
-#include "TopLevelAS.h"
-
-#include "features/levelmesh/staticmesh.h"
-#include "features/surfaces/surfacebuild.h"
-#include "features/levelmesh/wallcache.h"   // LevelGeneration, for the per-level auto setup
-#include "features/levelmesh/levelmesh.h"   // ArmFullBake
-#include "d_main.h"                          // gamestate
-#include "features/levelmesh/flatmesh.h"
-#include "features/horizon/horizon.h"   // [rc4l] the horizon lines' sky halves
-#include "features/hwrender/computation/skyportal_compute.h"   // [rc4l] what the portal pass may draw
-#include "features/levelmesh/computation/packedcolor_compute.h"
-#include "features/levelmesh/computation/flatmesh_compute.h"   // [rc4l] kSkyCapture*, the sky list a pass draws
-#include "features/hwrender/computation/warp_compute.h"   // [rc4l] the warp texture ripple
-#include "features/hwrender/computation/sceneconstants_compute.h"   // [rc4l] the constant block, packed in one place
-#include "features/hwrender/computation/scenebinding_compute.h"
-#include "features/hwrender/computation/planemirror_compute.h"   // [rc4l] reflective floors and ceilings   // [rc4l] a batch's pipeline, and when a resize rebuilds the targets
-#include "features/hwrender/computation/growbuffer_compute.h"   // [rc4l] the per-frame vertex streams
-#include "features/hwrender/computation/texfilter_compute.h"   // [rc4l] the engine's filter modes
-#include "features/hwrender/computation/slotremap_compute.h"   // [rc4l] ANIMDEFS frames in the material array
-#include "features/hwrender/computation/lighttouch_compute.h"   // [rc4l] GL's light links
-#include "features/hwrender/computation/backendview_compute.h"   // [rc4l] the camera, as GL builds it
-#include "features/hwrender/computation/sceneview_compute.h"   // [rc4l] GL's vertical field of view
-#include "features/hwrender/diligent/dgshared.h"          // [rc4l] FUA_CONSTANTS_GLSL, the constant block every pass declares
-#include "features/levelmesh/projdecals.h"   // [rc4l] the marks the decal pass draws
-#include "features/hwrender/computation/surfaceorder_compute.h"   // the draw order, tested off-engine
-#include "features/hwrender/computation/batch_compute.h"   // [rc4l] ComputeStaysInBatch, for patching animated surfaces
-#include "features/hwrender/computation/passname_compute.h"   // [rc4l] ComputeWorldPassName, for the per-pass timings
-#include "features/hwrender/computation/mirrorsheen_compute.h"   // [rc4l] GL's sheen over a line mirror
-#include "features/hwrender/computation/desaturate_compute.h"   // [rc4l] a sector's desaturation, as main.fp applies it
-#include "features/levelmesh/computation/wallbatch_compute.h"   // [rc4l] ComputeFanTriangleVertex, a mirror quad split as GL fans it
-#include "features/hwrender/hud2d.h"
-#include "features/horizon/computation/horizon_compute.h"   // [rc4l] ComputeQuadMayBeVisible for mirrors out of sight, ComputeEyeFromViewProjection for the horizon sky
-#include "features/hwrender/diligent/dglight_glsl.h"   // [rc4l] the sector light, shared with the horizon pass
-#include "v_video.h"
-#include "gl/renderer/gl_renderer.h"
-#include "gl/dynlights/gl_lightbuffer.h"
-#include "features/hwrender/computation/lightcluster_compute.h"
-#include "gl/dynlights/gl_dynlight.h"
-#include "p_local.h"
-#include "doomstat.h"
-#include "templates.h"   // gl_lightdata.h's inline gl_ClampLight uses clamp<>
-#include "gl/renderer/gl_lightdata.h"
-#include "gl/data/gl_data.h"
-#include "gl/scene/gl_portal.h"
-#include "gl/textures/gl_material.h"
-#include "r_sky.h"
-#include "gl/textures/gl_skyboxtexture.h"   // FSkyBox: the six faces a skybox is
-#include "g_shared/a_sharedglobal.h"        // ASkyViewpoint: the sky that is a place, not a picture
-#include "features/fixed64/computation/angle_interp_compute.h"   // InterpolateAngleBAM
-#include "textures/textures.h"
-#include "g_level.h"
-#include "ShaderResourceVariable.h"
-#include "gl/data/gl_vertexbuffer.h"
-#include "r_utility.h"
-#include "r_state.h"
-#include "doomtype.h"
-#include "i_system.h"
-#include <math.h>
-#include <algorithm>
-#include <stdio.h>
-#include "m_png.h"
-#ifdef ZX_ENABLE_REPLAY
-#include "features/replay/zx_replay.h"   // [rc4l] the Vulkan instant-replay stream
-#endif
+#include "features/hwrender/diligent/dgscene_internal.h"
 
 // [rc4l] Declared outside the namespace: EXTERN_CVAR builds a name from the identifier, so a
 // namespace-qualified one resolves to a symbol the engine never defines and fails only at link time.
@@ -132,8 +51,8 @@ CVAR(Int, fua_dg_lightmode, 1, CVAR_ARCHIVE)
 // glow" and "the glow is under the scorch" are the same screenshot. Two attempts at this were made
 // by reading pictures and both were wrong. The list itself is one Printf away.
 static bool g_dumpBlendOrder = false;
-// [rc4l] Whether the world being drawn is the player's own view, the only one that dumps its order or paints plane reflections.
-static bool g_drawingMainView = false;
+namespace zx { namespace hwrender { PassContext g_pass = { false, false, false, -1, -1, 0.f, 0.f, 0.f, { 0.f, 0.f, 0.f, 0.f }, false }; }}
+using zx::hwrender::g_pass;
 // [rc4l] With a height given, the dump lists every draw whose span holds it instead of the nearest 40.
 static bool g_dumpBlendAtZ = false;
 static float g_dumpBlendZ = 0.f;
@@ -339,7 +258,7 @@ void *GetBackendWindow();
 void Fua_SetBackendWindowSize(int w, int h);
 
 static Diligent::RefCntAutoPtr<Diligent::IBuffer>        g_vb;
-static Diligent::RefCntAutoPtr<Diligent::IBuffer>        g_cb;
+Diligent::RefCntAutoPtr<Diligent::IBuffer>        g_cb;
 static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_scenePSO;      // opaque, early-Z intact
 static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_maskedPSO;     // alpha-tested
 static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_maskedGBufPSO; // ...and writing normals
@@ -375,11 +294,7 @@ static Diligent::RefCntAutoPtr<Diligent::ITexture> g_sceneDepth;
 static Diligent::RefCntAutoPtr<Diligent::ITexture> g_sceneNormal;
 static Diligent::ITextureView *SceneNormalRTV();
 Diligent::ITextureView *SceneNormalSRV();
-// True while the world is being drawn INTO the G-buffer. The camera-texture and mirror paths draw
-// the same geometry with only a colour target bound, and a pipeline that writes two attachments
-// cannot be used against one.
-static bool g_gbufBound = false;
-static Diligent::ITextureView *EnsureSceneDepth();
+Diligent::ITextureView *EnsureSceneDepth();
 Diligent::ITextureView *SceneDepthSRV();
 // The same texture as a depth target, for putting the attachment back after a pass that samples it.
 Diligent::ITextureView *SceneDepthDSV();
@@ -407,7 +322,7 @@ struct ScenePieceData
 	float actorR, actorG, actorB, cpuLight;
 	// [rc4l] The slot holding this material's brightmap in the bindless array (0 for none), the piece's PieceStackId plus one (0 for a sprite or model, never culled), 1 when both slots go through SlotRemap, and 1 when GL draws it unmasked so no texel is discarded.
 	float brightSlot, stackId, animates, plain;
-	float desaturation, unused0, unused1, unused2;   // [rc4l] the colormap's desaturation, 0..1, which main.fp mixes every texel toward grey by
+	float desaturation, scrollU, scrollV, unused2;   // [rc4l] the colormap's desaturation, 0..1, which main.fp mixes every texel toward grey by, and the texture shift a scroller added since the bake
 };
 
 // [rc4l] The per-piece records the vertices index into, and the buffer that holds them.
@@ -427,7 +342,7 @@ static Diligent::RefCntAutoPtr<Diligent::IBuffer> g_skyHoleBuf;
 static int g_skyHoleCount = 0;
 static unsigned int g_pieceCapacity = 0;
 
-static float g_mvp[16];
+float g_mvp[16];
 static int   g_drawRepeat = 1;
 // [rc4l] Draw CALLS the opaque pass actually made, which is no longer the batch count.
 static int   g_worldDraws = 0;
@@ -513,6 +428,10 @@ static double g_frameWorldMs = 0.0, g_lastFrameWorldMs = 0.0;
 static FString g_framePassList, g_lastFramePassList;
 // [rc4l] The frame's phase times summed over its passes: geometry, lights, clusters, constants, animation, draw.
 static double g_framePhase[6] = { 0 }, g_lastFramePhase[6] = { 0 };
+// [rc4l] Bumped once a frame and once per camera texture, so the jobs every pass needs run once however many passes draw the world.
+static unsigned int g_frameSerial = 1, g_preparedSerial = 0;
+// [rc4l] Off runs the frame-wide jobs again in every pass, the old cost, for an A/B in one session.
+CVAR(Bool, fua_dg_frameprep, true, 0)
 // [rc4l] Why a patch gave up and rebuilt the scene: a translucent piece that moved or has no slot, one whose blend left its batch's, or one whose material did, and the last one's texture.
 static int g_bailBlend = 0, g_bailBlendedSlot = 0, g_bailMaterial = 0;
 static FString g_bailLast;
@@ -1044,6 +963,17 @@ void FlushTextureCache()
 
 bool BindlessActive() { return fua_dg_bindless && g_bindlessReady && !g_matSlotOverflow; }
 
+// [rc4l] Off makes every commit in a draw loop check every resource again, the old cost, for an A/B in one session.
+CVAR(Bool, fua_dg_loopcommits, true, 0)
+
+// [rc4l] Commit srb inside one draw loop, checking its resources' states only the first time the loop commits it.
+static void CommitInLoop(Diligent::IDeviceContext *ctx, zx::hwrender::LoopCommits &loop, Diligent::IShaderResourceBinding *srb)
+{
+	const bool transition = !fua_dg_loopcommits || zx::hwrender::ComputeCommitTransitions(loop, srb);
+	ctx->CommitShaderResources(srb, transition ? Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION
+		: Diligent::RESOURCE_STATE_TRANSITION_MODE_VERIFY);
+}
+
 // The binding to commit for a draw on this pipeline, or NULL if bindless is not carrying it.
 static Diligent::IShaderResourceBinding *WorldSRB(Diligent::IPipelineState *pso)
 {
@@ -1091,39 +1021,6 @@ static void ReleaseMaterialSRBs()
 	g_matSRBs.Clear();
 }
 
-// [rc4l] The dynamic light buffer, mirrored from the engine every frame.
-//
-// A structured (storage) buffer rather than a uniform block, matching the engine's own preferred
-// path: the light list is variable-length and indexed per surface, which is exactly what a UBO is
-// bad at. Grow-only, and uploaded once per engine frame -- the same generation guard the sprite
-// stream uses, for the same reason (Vulkan's dynamic heap is per frame, not per draw).
-// [rc4l] The cluster grid: which lights can reach each cell of the view.
-//
-// g_clusterBuf holds one (offset, count) pair per cell and g_lightIndexBuf the runs those point
-// into, so a fragment reads its own cell and tests a handful of lights instead of all of them. The
-// binning is on the CPU for now -- correct and measurable first, a compute shader after, in that
-// order, because a wrong answer computed on the GPU is far harder to look at.
-static Diligent::RefCntAutoPtr<Diligent::IBuffer> g_clusterBuf;
-static Diligent::RefCntAutoPtr<Diligent::IBuffer> g_lightIndexBuf;
-static unsigned int g_clusterCapacity = 0;     // cells
-static unsigned int g_lightIndexCapacity = 0;  // entries
-static int g_clusterCells = 0;                 // cells actually in use this frame
-static int g_clusterRefs = 0;                  // light-in-cell entries this frame, for the stats
-static int g_clusterTruncated = 0;             // cells that did not fit, this frame
-static bool g_clusterBindFailed = false;
-
-// The lights of this frame as the shader will see them: eight floats each, position (x, z, y),
-// radius, colour, mode. The binning pass reads THESE rather than walking the thinkers again, so a
-// light the collector rejected cannot reappear in a cell.
-static TArray<float> g_lightData;
-
-static Diligent::RefCntAutoPtr<Diligent::IBuffer> g_lightBuf;
-static unsigned int g_lightBufCapacity = 0;   // in vec4s
-// [rc4l] Each light's run in the sorted list of subsector and sidedef ids GL linked it to, made once at fixed sizes since the pipelines bind them statically.
-static Diligent::RefCntAutoPtr<Diligent::IBuffer> g_lightTouchRangeBuf, g_lightTouchIdBuf;
-static const unsigned int kLightTouchIdCapacity = 262144;
-static int g_lightCount = 0;
-static bool g_lightBindFailed = false;
 static bool g_pieceBindFailed = false;
 
 // [rc4l] The per-frame sprite geometry: uploaded fresh every frame, never cached.
@@ -1177,6 +1074,23 @@ static int g_dynByBlend[4] = { 0, 0, 0, 0 };
 // number rather than a squint at two screenshots.
 static int g_animSwaps = 0;
 
+// [rc4l] Draw this frame's dynamic geometry -- sprites.
+//
+// Rebuilt and re-uploaded every frame on purpose: billboards are view-dependent, so there is nothing
+// to cache. The cost is bounded by what is on screen (a few hundred quads), and at ~5.6M triangles
+// per GPU millisecond the upload dominates the draw by a wide margin.
+//
+// Drawn AFTER the world with the alpha-tested pipeline and normal depth, so sprites occlude and are
+// occluded correctly. Only the opaque sprites are drawn here: the translucent ones are handed to the
+// world's translucent pass so the two sort against each other -- an item lying under a glass 3D floor
+// has to be composited before the floor, and it cannot be if sprites are a separate pass afterwards.
+// [rc4l] What the dynamic stream costs, which no other clock covers.
+//
+// stat rendertimes wraps GL's own work: S: Render and S: Setup are Process and Draw. This runs in the
+// BACKEND, inside All= and outside every sub-clock, which is why Sunder MAP20 read 4.8 ms a frame
+// with its named parts summing to 2.
+double g_dynBuildMs = 0.0;
+
 // [rc4l] The backend's own vertex, laid out BY MATERIAL rather than in bake order.
 //
 // This is the material-keyed buffer the GL side could not profit from (see docs/levelmesh-PLAN.md,
@@ -1191,22 +1105,8 @@ static int g_animSwaps = 0;
 // sets them per *draw* (uLightLevel, uFogDensity, uFogColor, uFogEnabled are uniforms), and a port
 // that kept them as uniforms would be back to one draw per piece. They are constant across a piece,
 // so duplicating them per vertex costs 24 bytes and buys a single draw per material.
-struct SceneVertex
-{
-	float x, y, z;
-	float u, v;
-	// [rc4l] The piece this vertex belongs to. Everything else moved into ScenePieceData.
-	//
-	// Nineteen floats a vertex was the price of having no per-draw state: colour, light, fog, the
-	// surface normal and the material slot are all constant across a piece, and they were duplicated
-	// onto every one of its vertices because a uniform would have meant a draw per piece. An INDEX
-	// costs one float and buys the same thing -- the same trick bindless plays with textures, and for
-	// the same reason. On Sunder MAP16 that is 796,566 vertices at 76 bytes coming down to 24.
-	float pieceIndex;
-};
-
 // [rc4l] A GL vertex (x, y, height) as the mesh stores it (x, height, y), tagged with its piece: the one conversion the full build, a patch and every per-frame stream share.
-static SceneVertex ToSceneVertex(const FFlatVertex &sv, unsigned int pieceIndex)
+SceneVertex ToSceneVertex(const FFlatVertex &sv, unsigned int pieceIndex)
 {
 	SceneVertex dv;
 	dv.x = sv.x; dv.y = sv.z; dv.z = sv.y;
@@ -1236,7 +1136,7 @@ static bool CreateColorTarget(int w, int h, const char *name, Diligent::RefCntAu
 }
 
 // [rc4l] A w x h colour target the shaders can read and its depth buffer, in the swapchain's formats, for a view rendered off screen; false if either cannot be made.
-static bool CreateViewTextures(int w, int h, const char *name,
+bool CreateViewTextures(int w, int h, const char *name,
 	Diligent::RefCntAutoPtr<Diligent::ITexture> &color, Diligent::RefCntAutoPtr<Diligent::ITexture> &depth)
 {
 	if (!CreateColorTarget(w, h, name, color)) return false;
@@ -1252,7 +1152,7 @@ static bool CreateViewTextures(int w, int h, const char *name,
 }
 
 // [rc4l] A binding on pso with its pixel-stage texture var reading tex, the one way a picture drawn off screen is handed to the pass that paints it; false if pso makes none.
-static bool CreatePictureBinding(Diligent::IPipelineState *pso, const char *var, Diligent::ITexture *tex,
+bool CreatePictureBinding(Diligent::IPipelineState *pso, const char *var, Diligent::ITexture *tex,
 	Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding> &srb)
 {
 	srb.Release();
@@ -1267,7 +1167,7 @@ static bool CreatePictureBinding(Diligent::IPipelineState *pso, const char *var,
 //
 // USAGE_DEFAULT + UpdateBuffer rather than a mapped dynamic buffer: this data changes once per
 // frame, so it does not belong in the dynamic heap at all.
-static bool UploadGrowingVB(Diligent::IDeviceContext *ctx, Diligent::RefCntAutoPtr<Diligent::IBuffer> &vb,
+bool UploadGrowingVB(Diligent::IDeviceContext *ctx, Diligent::RefCntAutoPtr<Diligent::IBuffer> &vb,
 	unsigned int &capacity, const void *data, unsigned int count, unsigned int stride, unsigned int pad, const char *name)
 {
 	if (!vb || capacity < count)
@@ -1291,509 +1191,7 @@ static TArray<SceneVertex> g_sceneVB;
 
 // [rc4l] Same vertex layout as FFlatVertex (3 float position, 2 float uv), so the level mesh's data
 // is uploaded byte-for-byte with no conversion pass.
-// [rc4l] kWalkSlots and kMainWalkSlot spelled for the scene shader, which reads one bit per walk for every subsector and sidedef.
-#define FUA_WALK_SLOTS_STR "4"
-#define FUA_MAIN_WALK_SLOT_STR "2"
-static_assert(zx::levelmesh::kWalkSlots == 4, "FUA_WALK_SLOTS_STR spells kWalkSlots");
-static_assert(zx::levelmesh::kMainWalkSlot == 2, "FUA_MAIN_WALK_SLOT_STR spells kMainWalkSlot");
-static const char *kSceneVS =
-	"#version 450\n"
-	"layout(location = 0) in vec3 aPos;\n"
-	"layout(location = 1) in vec2 aUV;\n"
-	"layout(location = 2) in float aPiece;\n"
-	FUA_CONSTANTS_GLSL
-	// [rc4l] Everything constant across a piece, read once here instead of ridden in on every vertex.
-	FUA_PIECEDATA_GLSL
-	"layout(location = 0) out vec2 vUV;\n"
-	"layout(location = 1) out vec3 vColor;\n"
-	"layout(location = 2) out vec3 vLightParm;\n"
-	"layout(location = 3) out vec4 vFog;\n"
-	"layout(location = 4) out vec4 vPixelPos;\n"
-	"layout(location = 5) flat out int vLightIndex;\n"
-	"layout(location = 6) out vec3 vNormal;\n"
-	"layout(location = 7) flat out vec4 vPlane;\n"
-	"layout(location = 8) flat out vec2 vWarp;\n"
-	"layout(location = 9) flat out vec4 vFloodU;\n"
-	"layout(location = 10) flat out vec4 vFloodV;\n"
-	"layout(location = 11) flat out vec4 vActorLight;\n"
-	"layout(location = 12) flat out int vBrightSlot;\n"
-	"layout(location = 13) flat out int vLinkId;\n"
-	"layout(location = 14) flat out float vPlain;\n"
-	"layout(location = 15) flat out float vDesaturation;\n"
-	"layout(location = 16) flat out float vHoleCut;\n"
-	"layout(std430, binding = 10) readonly buffer StackVis { uint stackVis[]; };\n"
-	"layout(std430, binding = 11) readonly buffer SlotRemap { uint slotRemap[]; };\n"
-	// [rc4l] ComputeStackVisible, line for line: whether walk slot's walk drew id this frame.
-	"bool fuaWalked(int id, int slot) {\n"
-	"    int bit = id * " FUA_WALK_SLOTS_STR " + slot;\n"
-	"    return (stackVis[bit >> 5] & (1u << uint(bit & 31))) != 0u;\n"
-	"}\n"
-	"void main() {\n"
-	"    PieceData pd = pieces[int(aPiece + 0.5)];\n"
-	"    vWarp = vec2(pd.fogColor.w, pd.normal.w);\n"
-	"    vFloodU = pd.floodU;\n"
-	"    vFloodV = pd.floodV;\n"
-	"    vActorLight = pd.actorLight;\n"
-	"    vBrightSlot = int(pd.bright.x + 0.5);\n"
-	// [rc4l] bright.z marks a baked piece on an animated texture, whose slots SlotRemap turns into those of the frame showing.
-	"    if (pd.bright.z > 0.5) vBrightSlot = int(slotRemap[vBrightSlot]);\n"
-	// [rc4l] The piece's subsector or sidedef as GL's light links name it (bright.y is PieceStackId plus one), or -1 for a sprite or model.
-	"    vLinkId = int(pd.bright.y + 0.5) - 1;\n"
-	"    vPlain = pd.bright.w;\n"
-	"    vDesaturation = pd.extra.x;\n"
-	"    vec4 clip = uMVP * vec4(aPos, 1.0);\n"
-	// [rc4l] A stacked view draws only what GL's walk through it drew, subsector for a flat and sidedef for a wall (ComputeMarkStackVisible); any other piece's triangle goes off screen whole.
-	"    int stackSlot = int(uFrame.y + 0.5) - 1;\n"
-	"    int stackId = int(pd.bright.y + 0.5) - 1;\n"
-	// [rc4l] With the player's sky holes in uFrame.z, a piece the player's walk did not draw is one a hole may drop (fuaBehindSkyHole); a sprite or model GL drew is never one.
-	"    vHoleCut = (uFrame.z > 0.5 && stackId >= 0 && !fuaWalked(stackId, " FUA_MAIN_WALK_SLOT_STR ")) ? 1.0 : 0.0;\n"
-	"    if (stackSlot >= 0) {\n"
-	"        bool unseen = stackId >= 0 && !fuaWalked(stackId, stackSlot);\n"
-	// [rc4l] GL draws a surface only from its front, a floor from above and a ceiling from below, and a stacked view's eye sits under every rooftop it looks up at.
-	"        if (unseen || dot(pd.normal.xyz, uCameraPos.xyz - aPos) < -0.01) clip = vec4(2.0, 2.0, 2.0, 1.0);\n"
-	"    }\n"
-	"    gl_Position = clip;\n"
-	"    vUV = aUV;\n"
-	"    vColor = pd.colorLight.rgb;\n"
-	// softLight, fogDensity, alpha -- the three the fragment shader reads as vLightParm.
-	"    vLightParm = vec3(pd.colorLight.w, pd.fogAlphaMat.x, pd.fogAlphaMat.y);\n"
-	"    vFog = vec4(pd.fogColor.rgb, pd.fogAlphaMat.z);\n"
-	// [rc4l] main.vp keeps pixelpos as (world xyz, view depth). The view depth is what the plane
-	// fog mode measures along, and clip.w IS that depth for a standard perspective matrix -- the
-	// projection's -1 in the w row copies eye-space -z straight through.
-	"    vPixelPos = vec4(aPos, clip.w);\n"
-	"    vLightIndex = int(pd.fogAlphaMat.w);\n"
-	"    if (pd.bright.z > 0.5) vLightIndex = int(slotRemap[vLightIndex]);\n"
-	"    vNormal = pd.normal.xyz;\n"
-	// [rc4l] The surface PLANE, flat: its normal and its distance from the origin.
-	//
-	// Whether a light reaches a surface is a property of the SURFACE, not of the fragment -- one
-	// answer for the whole face. Asking it per fragment means asking it of an interpolated
-	// position, and the rasteriser returns a world height on a flat floor that wobbles in the last
-	// thousandth of a unit. That is harmless until a light sits exactly ON the plane it lights, and
-	// then the wobble is the entire answer: the test flips from fragment to fragment and the floor
-	// comes out in hard horizontal stripes of lit and unlit. Freedoom MAP01 has such a light at the
-	// map start -- a green one at z 8.0 on a floor at 8.0 -- which is how this was found.
-	//
-	// Interpolating nothing removes the wobble rather than hiding it under a tolerance: every
-	// vertex of a planar face gives the same dot(n, p), so the flat value is that number exactly and
-	// the test is identical across the face however far away or however oblique it is.
-	"    vPlane = vec4(pd.normal.xyz, dot(pd.normal.xyz, aPos));\n"
-	"}\n";
-
-// [rc4l] The engine's real lighting, ported.
-//
-// This is a transcription of wadsrc/static/shaders/glsl/main.fp -- R_DoomLightingEquation and the
-// getLightColor/applyFog pair -- not an approximation of it. Doom's light is not a multiply: it is a
-// colormap *index* that darkens with distance, and the band structure that produces is most of what
-// the game looks like. A flat multiply renders a world that is legible but visibly not Doom.
-//
-// The dist argument is gl_FragCoord.z exactly as the engine passes it, which is why the projection
-// matrix had to be moved to Vulkan's [0,1] depth range first -- feeding a [-1,1] z into a 1/dist
-// falloff would have produced light bands in the wrong places, and worse, plausible-looking ones.
-//
-// Ported here: software-mode light diminishing, fog-mode diminishing, coloured fog, both fog
-// distance modes. Not ported: dynamic lights, glowing walls, brightmaps, desaturation, fixed
-// colormaps (invulnerability et al). Those are separate uniforms//buffers rather than separate math.
-//
-// uCameraPos.w carries fua_dg_lightmode -- riding in the unused w of a vector already in the buffer
-// makes the debug views free (no resize, no extra binding) so they can stay in the shipped shader.
-// Two silent-failure bugs this port survived were caught only by looking at a picture; being able to
-// ask the shader what it thinks depth and colour are is worth the three lines.
-// Must match kMaterialSlots. A GLSL string cannot read a C++ constant, so the two are tied by the
-// static_assert below and by nothing else -- a mismatch is a fatal at pipeline setup, one message
-// per unassigned element.
-#define FUA_MAT_SLOTS_STR "4096"
-
-#define FUA_LIGHT_GLSL \
-	"#extension GL_EXT_nonuniform_qualifier : require\n" \
-	"layout(location = 0) in vec2 vUV;\n" \
-	"layout(location = 1) in vec3 vColor;\n" \
-	"layout(location = 2) in vec3 vLightParm;\n" \
-	"layout(location = 3) in vec4 vFog;\n" \
-	"layout(location = 4) in vec4 vPixelPos;\n" \
-	"layout(location = 5) flat in int vLightIndex;\n" \
-	"layout(location = 6) in vec3 vNormal;\n" \
-	"layout(location = 7) flat in vec4 vPlane;\n" \
-	"layout(location = 8) flat in vec2 vWarp;\n" \
-	"layout(location = 9) flat in vec4 vFloodU;\n" \
-	"layout(location = 10) flat in vec4 vFloodV;\n" \
-	"layout(location = 11) flat in vec4 vActorLight;\n" \
-	"layout(location = 12) flat in int vBrightSlot;\n" \
-	"layout(location = 13) flat in int vLinkId;\n" \
-	"layout(location = 14) flat in float vPlain;\n" \
-	"layout(location = 15) flat in float vDesaturation;\n" \
-	"layout(location = 16) flat in float vHoleCut;\n" \
-	/* [rc4l] ComputeDesaturate, line for line: main.fp's desaturate(), on the texel and the brightmap but never the light. */ \
-	"vec3 fuaDesaturate(vec3 c) {\n" \
-	"    if (vDesaturation <= 0.0) return c;\n" \
-	"    float gray = c.r * 0.3 + c.g * 0.56 + c.b * 0.14;\n" \
-	"    return mix(c, vec3(gray), vDesaturation);\n" \
-	"}\n" \
-	FUA_CONSTANTS_GLSL \
-	"layout(binding = 1) uniform sampler2D uTex;\n" \
-	/* [rc4l] The brightmap layer, present on EVERY material -- black where there is none.
-	   The brightmap is added to the lit colour, so black is the identity, and that removes the
-	   alternative: a per-batch flag, a branch here, and a second pipeline permutation. */ \
-	"layout(binding = 5) uniform sampler2D uBrightmap;\n" \
-	/* [rc4l] Every material in the level, reachable from one descriptor set.
-
-	   uSkyColor.w carries the live slot count, so zero means "use the bound texture" and the whole
-	   thing switches from one constant, with no second pipeline and no shader permutation. The index
-	   is vLightIndex -- the vertex field that used to hold a dynamic light index and has been dead
-	   since this shader started testing every light -- so bindless costs no vertex bytes.
-
-	   nonuniformEXT is not decoration: neighbouring fragments in one quad can sit on different
-	   surfaces with different slots, and without it the index is assumed uniform across the wave
-	   and the whole quad samples whichever one won. */ \
-	"layout(binding = 8) uniform sampler2D uMaterials[" FUA_MAT_SLOTS_STR "];\n" \
-	/* [rc4l] GL's func_warp1.fp and func_warp2.fp, line for line -- see warp_compute for the tested copy. */ \
-	"vec2 fuaWarp(vec2 uv) {\n" \
-	"    if (vWarp.x < 0.5) return uv;\n" \
-	"    const float twoPi = 6.28318530717958647692;\n" \
-	"    float t = uFrame.x * vWarp.y;\n" \
-	"    vec2 o;\n" \
-	"    if (vWarp.x < 1.5) {\n" \
-	"        o.y = sin(twoPi * (uv.x + t * 0.125)) * 0.1;\n" \
-	"        o.x = sin(twoPi * (uv.y + t * 0.125)) * 0.1;\n" \
-	"    } else {\n" \
-	"        float siny = sin(twoPi * (uv.y * 2.2 + t * 0.75)) * 0.03;\n" \
-	"        o.y = siny + sin(twoPi * (uv.x * 0.75 + t * 0.75)) * 0.03;\n" \
-	"        o.x = siny + sin(twoPi * (uv.x * 1.1 + t * 0.45)) * 0.02;\n" \
-	"    }\n" \
-	"    return uv + o;\n" \
-	"}\n" \
-	/* [rc4l] GL's flooded gap: where the eye's ray through this fragment meets the plane at vFloodU.w, w 1 when it does; flood_compute is the tested twin. */ \
-	"vec4 fuaFloodPoint() {\n" \
-	"    if (vFloodV.w < 0.5) return vec4(0.0);\n" \
-	"    float rise = vPixelPos.y - uCameraPos.y;\n" \
-	"    if (rise == 0.0) return vec4(0.0);\n" \
-	"    float t = (vFloodU.w - uCameraPos.y) / rise;\n" \
-	"    if (!(t > 0.0 && t <= 1.0)) return vec4(0.0);\n" \
-	"    return vec4(uCameraPos.xyz + t * (vPixelPos.xyz - uCameraPos.xyz), 1.0);\n" \
-	"}\n" \
-	/* [rc4l] The plane's own texture coordinate there (mesh x and z are map x and y), or the wall's own when the eye is on the plane's far side. */ \
-	"vec2 fuaFloodUV(vec2 uvIn) {\n" \
-	"    vec4 q = fuaFloodPoint();\n" \
-	"    if (q.w < 0.5) return uvIn;\n" \
-	"    return vec2(dot(vFloodU.xy, q.xz) + vFloodU.z, dot(vFloodV.xy, q.xz) + vFloodV.z);\n" \
-	"}\n" \
-	"vec4 fuaTexel(vec2 uvIn) {\n" \
-	"    vec2 uv = fuaWarp(fuaFloodUV(uvIn));\n" \
-	"    if (uSkyColor.w > 0.5 && vLightIndex > 0)\n" \
-	"        return texture(uMaterials[nonuniformEXT(vLightIndex)], uv);\n" \
-	"    return texture(uTex, uv);\n" \
-	"}\n" \
-	"layout(std430, binding = 2) readonly buffer LightBuffer { vec4 lights[]; };\n" \
-	/* [rc4l] ComputeBehindSkyHole, line for line: whether the eye's line to this fragment passes through one of the player's sky holes (two vec4s each, ComputeSkyHoleRecord) first. */ \
-	"layout(std430, binding = 14) readonly buffer SkyHoles { vec4 skyHoles[]; };\n" \
-	"bool fuaBehindSkyHole() {\n" \
-	"    if (vHoleCut < 0.5) return false;\n" \
-	"    vec2 d = vPixelPos.xz - uCameraPos.xz;\n" \
-	"    int n = int(uFrame.z + 0.5);\n" \
-	"    for (int i = 0; i < n; i++) {\n" \
-	"        vec4 seg = skyHoles[2 * i], zs = skyHoles[2 * i + 1];\n" \
-	"        vec2 e = seg.zw - seg.xy;\n" \
-	"        float den = d.x * e.y - d.y * e.x;\n" \
-	"        if (abs(den) < 1e-6) continue;\n" \
-	"        vec2 w = seg.xy - uCameraPos.xz;\n" \
-	"        float t = (w.x * e.y - w.y * e.x) / den;\n" \
-	"        float s = (w.x * d.y - w.y * d.x) / den;\n" \
-	"        if (s < 0.0 || s > 1.0 || t <= 0.0 || t >= 0.9999) continue;\n" \
-	"        float h = uCameraPos.y + t * (vPixelPos.y - uCameraPos.y);\n" \
-	"        if (h >= zs.x + s * (zs.z - zs.x) && h <= zs.y + s * (zs.w - zs.y)) return true;\n" \
-	"    }\n" \
-	"    return false;\n" \
-	"}\n" \
-	/* [rc4l] The cluster grid: (offset, count) per cell, and the runs those point into. */ \
-	"layout(std430, binding = 6) readonly buffer ClusterTable { uvec2 clusterCells[]; };\n" \
-	"layout(std430, binding = 7) readonly buffer ClusterLightIndices { uint clusterLights[]; };\n" \
-	/* [rc4l] ComputeLightTouches, line for line: a light lights only the ids GL linked it to, and a count of all ones lights everything. */ \
-	"layout(std430, binding = 12) readonly buffer LightTouchRanges { uvec2 lightTouch[]; };\n" \
-	"layout(std430, binding = 13) readonly buffer LightTouchIds { uint touchIds[]; };\n" \
-	"bool fuaLightTouches(int li, uint id) {\n" \
-	"    uvec2 r = lightTouch[li];\n" \
-	"    if (r.y == 0xFFFFFFFFu) return true;\n" \
-	"    uint lo = r.x, hi = r.x + r.y;\n" \
-	"    while (lo < hi) {\n" \
-	"        uint mid = (lo + hi) >> 1;\n" \
-	"        uint v = touchIds[mid];\n" \
-	"        if (v == id) return true;\n" \
-	"        if (v < id) lo = mid + 1u; else hi = mid;\n" \
-	"    }\n" \
-	"    return false;\n" \
-	"}\n" \
-	"layout(location = 0) out vec4 outColor;\n" \
-	/* [rc4l] Every light, tested per fragment -- no per-surface light list at all.
-
-	   The engine builds a list of lights touching each surface and hands the shader an index into it.
-	   That index is rebuilt EVERY FRAME, so it cannot live in a static mesh: baking it produced a
-	   world where the dynamic lights simply never appeared, because every piece had recorded -1 on
-	   the frame it was baked.
-
-	   Rather than re-upload geometry per frame to fix the index, this drops the whole mechanism: the
-	   buffer holds all active lights and the fragment shader tests each one. That machinery exists to
-	   save GPU work, and the scale probe measured this GPU at 0.018 ms/frame for the entire visible
-	   world -- roughly 0.1% utilisation -- so there is nothing to save. It is also the shape a
-	   clustered forward renderer wants next.
-
-	   Layout: pairs of (x, z, y, radius) and (r, g, b, mode), mode 1 meaning subtractive. Positions
-	   use the same axis swap as the mesh vertices, so they compare directly against vPixelPos.xyz. */ \
-	"vec3 fuaDynLight(vec3 base) {\n" \
-	"    int n = int(uLightParams.x);\n" \
-	"    if (n <= 0) return base;\n" \
-	/* [rc4l] A zero normal means the CPU already did this piece's dynamic lighting -- take none here.
-
-	   Sprites carry no normal, because a billboard turns to face the camera and has no side for a
-	   light to be in front of or behind. That much was already true; what it also means is that a
-	   sprite's dynamic light does not come from this loop at all. gl_SetDynSpriteLight computes it
-	   on the CPU and RegisterSprite folds the result into the vertex colour, so adding the lights
-	   again here counts them twice AND ignores everything that function knows.
-
-	   DONTLIGHTSELF is what makes that visible. An item does not light itself: gl_SetDynSpriteLight
-	   skips a light whose target is the actor being lit, so Freedoom MAP01's armor bonus is supposed
-	   to sit DARK in the green pool its own glow throws on the floor. GL draws it that way. This loop
-	   knows nothing of owners, lit it with its own light, and the sprite came out green: 48.7 against
-	   GL's 15.4 in the green channel, with the floor beneath it agreeing in both.
-
-	   So the marker now carries its full meaning -- no side, and no light from here. */ \
-	"    if (dot(vPlane.xyz, vPlane.xyz) <= 0.0001) return base;\n" \
-	"    vec3 dyn = vec3(0.0);\n" \
-	/* [rc4l] The cell this fragment is in, and the short list of lights that can reach it.
-
-	   uLightParams.zw carry the cluster depth range, and a zero in z means the grid is off -- in
-	   which case this loops over every light exactly as it always has. The two paths must draw the
-	   SAME picture, so fua_dg_clusters flips between them in a frozen frame and a diff says whether
-	   they do.
-
-	   Depth is 1.0 / gl_FragCoord.w: the clip w the hardware interpolated, which is the quantity
-	   ComputeLightClustersFromMVP slices the light by on the CPU. Two sides agreeing because they
-	   read the same number is worth more than two sides computing numbers that ought to match.
-
-	   The 64 and 24 are kClusterTilePixels and kClusterSlices; a static_assert keeps them honest. */ \
-	"    int first = 0;\n" \
-	"    int count = n;\n" \
-	"    bool clustered = uLightParams.z > 0.0 && uLightParams.w > uLightParams.z;\n" \
-	"    if (clustered) {\n" \
-	"        int tilesX = int((uScreen.x + 63.0) / 64.0);\n" \
-	"        int tilesY = int((uScreen.y + 63.0) / 64.0);\n" \
-	"        int tx = clamp(int(gl_FragCoord.x) / 64, 0, tilesX - 1);\n" \
-	"        int ty = clamp(int(gl_FragCoord.y) / 64, 0, tilesY - 1);\n" \
-	"        float depth = 1.0 / gl_FragCoord.w;\n" \
-	"        int slice = 0;\n" \
-	"        if (depth > uLightParams.z)\n" \
-	"            slice = clamp(int(floor(log(depth / uLightParams.z) /\n" \
-	"                log(uLightParams.w / uLightParams.z) * 24.0)), 0, 23);\n" \
-	"        uvec2 cell = clusterCells[(slice * tilesY + ty) * tilesX + tx];\n" \
-	"        first = int(cell.x);\n" \
-	"        count = int(cell.y);\n" \
-	/* [rc4l] CLAMP the loop bound. It comes out of a buffer, and a buffer can be stale.\
-	   Every light in the level is at most n, so anything larger is nonsense -- and nonsense is what\
-	   the cluster grid holds around a level change, before the CPU rebuilds it for the new map. A\
-	   garbage count runs this loop for millions of iterations, and a GPU loop that long IS a hang:\
-	   Windows times it out, resets the device, and the driver terminates the process -- no\
-	   exception, no dump, nothing in the log. See docs/tdr-crash-after-map-loads.md. One\
-	   instruction makes a stale grid a wrong pixel for one frame instead of a dead process. */ \
-	"        count = clamp(count, 0, n);\n" \
-	"        first = max(first, 0);\n" \
-	"    }\n" \
-	"    for (int i = 0; i < count; i++) {\n" \
-	/* ...and the index it reads: lights[] has n entries and a stale grid can name anything. An\
-	   out-of-range read is undefined, not merely wrong. */ \
-	"        int li = clustered ? int(clusterLights[first + i]) : i;\n" \
-	"        li = clamp(li, 0, max(n - 1, 0));\n" \
-	/* [rc4l] GL's flood stops at solid walls, so a light whose links do not name this surface does not light it. */ \
-	"        if (vLinkId >= 0 && !fuaLightTouches(li, uint(vLinkId))) continue;\n" \
-	"        vec4 lp = lights[li*2];\n" \
-	"        vec4 lc = lights[li*2+1];\n" \
-	"        vec3 d = lp.xyz - vPixelPos.xyz;\n" \
-	/* The side test gl_GetLight does per surface: a light behind the plane does not light it.
-	   Without this the backs of walls and the room next door get lit, which reads as a scene far
-	   more saturated than GL's. */ \
-	/* [rc4l] ...and the same test read off the plane instead of the fragment.
-
-	   dot(n, lightPos) - planeD is dot(n, lightPos - fragPos) for any fragment ON the plane, so this
-	   is the same quantity, computed from numbers that do not vary across the face. A light lying
-	   exactly in the plane gives exactly zero and is KEPT, which is what gl_flats.cpp does: it drops
-	   a light only when the plane is strictly on the wrong side of it. */ \
-	/* [rc4l] ...and a light sitting exactly ON the plane is KEPT, which needs slack to survive.
-
-	   gl_flats.cpp drops a light only when the plane is STRICTLY above it, so a light exactly in the
-	   plane stays -- and Doom puts lights exactly in planes constantly. A projectile that dies on a
-	   floor comes to rest ON it, so its z equals the plane there to the last bit of fixed point:
-	   measured on dbab04 as a plasma ball at -59.053 under a floor plane of -59.053. GL keeps that
-	   light. This test computes the same quantity in floats, from a normalised normal and a plane
-	   constant built out of vertex coordinates in the thousands, so the exact zero arrives as a few
-	   thousandths either side of it -- and on the wrong side an entire surface is culled at once.
-
-	   That is what the reported hard cut-off was. Every plasma bolt landing on that floor lit the
-	   walkway above and left the floor it was resting on completely black, along a dead straight line
-	   at the piece boundary, in Vulkan only. GL 30.6 against Vulkan 0.0 over the same rectangle of
-	   the same frozen frame.
-
-	   The slack is a tenth of a map unit: thousands of times the float error being covered, and far
-	   below anything a player could see -- a light a tenth of a unit behind a surface lights it now.
-	   It is not an attempt to place the boundary exactly, which floats cannot do; it is to keep the
-	   case Doom actually produces on the same side of it as GL. */ \
-	"        if (dot(vPlane.xyz, lp.xyz) - vPlane.w < -0.1) continue;\n" \
-	"        float a = max(lp.w - length(d), 0.0) / lp.w;\n" \
-	"        if (a <= 0.0) continue;\n" \
-	"        if (lc.a > 0.5) dyn -= lc.rgb * a;\n" \
-	"        else            dyn += lc.rgb * a;\n" \
-	"    }\n" \
-	"    return clamp(base + dyn, 0.0, 1.4);\n" \
-	"}\n" \
-	FUA_SECTOR_LIGHT_GLSL \
-	"vec3 fuaShadeEx(vec3 texel, bool wantDynLight) {\n" \
-	"    texel = fuaDesaturate(texel);\n" \
-	"    float dbg = uCameraPos.w;\n" \
-	"    if (dbg == 2.0) return vec3(gl_FragCoord.z);\n" \
-	"    if (dbg == 3.0) return vec3(fract(gl_FragCoord.z * 64.0));\n" \
-	"    if (dbg == 4.0) return vColor;\n" \
-	"    if (dbg == 10.0) return texel;\n" \
-	"    if (dbg == 11.0) return fuaDynLight(vec3(0.0));\n" \
-	"    if (dbg == 12.0) return vec3(uLightParams.x / 16.0);\n" \
-	"    if (dbg == 13.0) return vec3(lights[0].w / 256.0);\n" \
-	/* [rc4l] 14: the surface NORMAL, 15: whether the interpolated world height holds still.
-
-	   fuaDynLight decides whether a light reaches a surface with a SIGN TEST on the interpolated
-	   world position, and a sign test is only as trustworthy as its inputs. On a floor the world
-	   height is the same number at every fragment, so 15 has to come out flat black. Anything else
-	   is the rasteriser handing back a height that wobbles -- and a light sitting AT that height
-	   then switches on and off from fragment to fragment as the wobble crosses it. */ \
-	"    if (dbg == 14.0) return vNormal * 0.5 + 0.5;\n" \
-	"    if (dbg == 15.0) return vec3(fract(vPixelPos.y * 64.0));\n" \
-	/* [rc4l] 16: the MATERIAL SLOT the fragment is using, as a grey ramp; 17: whether it is
-	   taking the array at all. A surface that comes out white with bindless on looks the same
-	   whether the slot is zero, the array is empty, or the switch is off, and these separate the
-	   three without reading it off a guess. */ \
-	"    if (dbg == 16.0) return vec3(float(vLightIndex) / 255.0);\n" \
-	"    if (dbg == 17.0) return (uSkyColor.w > 0.5 && vLightIndex > 0) ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);\n" \
-	"    if (dbg == 0.0) return texel * vColor;\n" \
-	/* [rc4l] A flooded gap is lit and fogged where the plane it shows is, as DrawFloodedPlane's own polygon would be, and takes no dynamic light. */ \
-	"    vec4 surfPos = vPixelPos;\n" \
-	"    float surfDepth = gl_FragCoord.z;\n" \
-	"    vec4 fq = fuaFloodPoint();\n" \
-	"    if (fq.w > 0.5) { vec4 fc = uMVP * vec4(fq.xyz, 1.0); surfPos = vec4(fq.xyz, fc.w); surfDepth = fc.z / fc.w; wantDynLight = false; }\n" \
-	"    float fogMode = vFog.a;\n" \
-	"    float fogfactor = fuaFogFactor(fogMode, vLightParm.y, surfPos, uCameraPos.xyz);\n" \
-	"    if (dbg == 5.0) return vec3(fogfactor);\n" \
-	"    if (dbg == 6.0) return vFog.rgb;\n" \
-	"    if (dbg == 7.0) return vec3(clamp(vPixelPos.w / 2000.0, 0.0, 1.0));\n" \
-	"    if (dbg == 8.0) return vec3(clamp(-vLightParm.y * 20000.0, 0.0, 1.0));\n" \
-	"    if (dbg == 9.0) return vec3(fogMode > 0.0 ? 1.0 : 0.0, fogMode < 0.0 ? 1.0 : 0.0, 0.0);\n" \
-	/* [rc4l] Mirror clipping. Everything on the far side of the mirror plane is behind the glass and
-	   must not appear in the reflection -- without this the wall the mirror hangs on renders first
-	   from the reflected camera and fills the whole reflection. w == 0 means no mirror is active. */ \
-	FUA_MIRROR_CLIP_GLSL("vPixelPos.xyz") \
-	/* [rc4l] What GL's walk never drew behind a sky hole is GL's sky there, which the frame painted first. */ \
-	"    if (fuaBehindSkyHole()) discard;\n" \
-	"    vec3 color = fuaSectorLight(vColor, vLightParm.x, fogMode, fogfactor, surfDepth);\n" \
-	/* Dynamic lights add to the light COLOUR before the texture is modulated, exactly as
-	   getLightColor does -- adding after would light the black parts of a texture too. */ \
-	/* [rc4l] Brightmaps add to the LIGHT, not to the finished fragment.
-	   main.fp calls ProcessLight(color) while `color` is still the light colour -- the texel is
-	   multiplied in afterwards -- so a white brightmap texel means "light this texel fully", and the
-	   surface keeps its own colour. Adding the same white to texel * color instead means "make this
-	   texel white", and a lava floor came out as a washed-out pink slab: luminance 41 -> 162 at the
-	   same camera. Right value, right texture, wrong point in the pipeline. */ \
-	/* [rc4l] Under bindless the brightmap is the array's at its own slot, as the texel is, since one binding cannot carry every material's. */ \
-	"    vec2 bmUV = fuaFloodUV(vUV);\n" \
-	"    vec3 bm = (uSkyColor.w > 0.5 && vLightIndex > 0) ? (vBrightSlot > 0 ? texture(uMaterials[nonuniformEXT(vBrightSlot)], bmUV).rgb : vec3(0.0)) : texture(uBrightmap, bmUV).rgb;\n" \
-	"    color = min(color + fuaDesaturate(bm), vec3(1.0));\n" \
-	/* [rc4l] Dynamic lights are optional, because a SHADED DECAL must not take them.
-	   Its colour is its own -- a scorch mark is black -- and that colour arrives folded into the
-	   vertex light, so a black decal has vColor 0 and the dynamic light term is then the ONLY thing
-	   left in it. Firing a weapon lit every burn mark in the room with the muzzle flash's colour.
-	   GL never has this problem: it applies the decal's colour as an OBJECT COLOUR that multiplies
-	   the finished fragment, and zero times anything is still zero. */ \
-	/* [rc4l] A sprite or model takes the light GL worked out for its actor, added after the sector light as main.fp adds uDynLightColor, and never the per-light loop. */ \
-	"    if (vActorLight.w > 0.5) { if (wantDynLight) color = clamp(color + vActorLight.rgb, 0.0, 1.4); }\n" \
-	"    else if (wantDynLight) color = fuaDynLight(color);\n" \
-	"    vec3 frag = texel * color;\n" \
-	"    return fuaColouredFog(frag, vFog.rgb, fogMode, fogfactor);\n" \
-	"}\n" \
-	"vec3 fuaShade(vec3 texel) { return fuaShadeEx(texel, true); }\n"
-
-// [rc4l] Opaque: no discard, so early-Z survives and overdrawn fragments are never shaded.
-static const char *kScenePSOpaque =
-	"#version 450\n"
-	FUA_LIGHT_GLSL
-	"void main() {\n"
-	"    outColor = vec4(fuaShade(fuaTexel(vUV).rgb), 1.0);\n"
-	"}\n";
-
-static const char *kScenePS =
-	"#version 450\n"
-	FUA_LIGHT_GLSL
-	"void main() {\n"
-	"    vec4 t = fuaTexel(vUV);\n"
-	/* [rc4l] GL's solid pass tests no alpha, so an upper, lower or one-sided middle shows its see-through texels in their own colour. */
-	"    if (t.a < 0.5 && vPlain < 0.5) discard;\n"
-	"    outColor = vec4(fuaShade(t.rgb), 1.0);\n"
-	"}\n";
-
-// [rc4l] Translucent: no alpha test, and the texture's own alpha multiplied by the piece's. The
-// blend factors live in the pipeline, not here, so this one shader serves both the normal and the
-// additive pass -- additive differs only in its destination factor.
-// [rc4l] The world pass, writing its SURFACE NORMAL out alongside the colour.
-//
-// This is what makes a projected decal legitimate. A decal reads the depth buffer to find where a
-// surface is, and it needs to know which way that surface faces to lay a picture into it. Without a
-// normal to read it has to estimate one from neighbouring depth samples, and that estimate is wrong
-// in all the places that matter: across a silhouette it straddles two unrelated surfaces, on a
-// two-pixel sliver like the front of a low ledge there is no neighbourhood to sample, and at a
-// grazing angle it is a difference of nearly-equal large numbers. Every decal artifact reported today
-// traces back to that estimate -- a notch cut through a ledge, a mark that changed as the camera
-// moved, a scorch smeared into radial streaks.
-//
-// The estimate was never necessary. This shader has the exact normal already: it arrives per vertex
-// from the mesh, correct for walls, flats, slopes and both faces of a 3D floor. Writing it to a
-// second target costs one attachment and deletes an entire class of bug.
-//
-// It also handles moving geometry for free, which the alternative does not: a door's normal is
-// written fresh every frame from where the door actually is.
-static const char *kScenePSGBuffer =
-	"#version 450\n"
-	FUA_LIGHT_GLSL
-	"layout(location = 1) out vec4 outNormal;\n"
-	"void main() {\n"
-	"    vec4 t = fuaTexel(vUV);\n"
-	/* [rc4l] GL's solid pass tests no alpha, so an upper, lower or one-sided middle shows its see-through texels in their own colour. */
-	"    if (t.a < 0.5 && vPlain < 0.5) discard;\n"
-	"    outColor = vec4(fuaShade(t.rgb), 1.0);\n"
-	/* Encoded to 0..1 because the target is 8-bit unorm. That is coarse for lighting and ample here:
-	   the decal pass uses this to lay axes into a plane and to ask how far a surface is from the
-	   impact, and neither needs better than a degree or so. */
-	"    outNormal = vec4(normalize(vNormal) * 0.5 + 0.5, 1.0);\n"
-	"}\n";
-
-static const char *kScenePSTrans =
-	"#version 450\n"
-	FUA_LIGHT_GLSL
-	"void main() {\n"
-	"    vec4 t = fuaTexel(vUV);\n"
-	"    if (t.a < 0.04) discard;\n"
-	"    outColor = vec4(fuaShade(t.rgb), t.a * vLightParm.z);\n"
-	"}\n";
-
-// [rc4l] The texture is an ALPHA MASK: its red channel is the shape, the colour is the vertex light.
-//
-// Shaded decals -- scorch marks, most bullet impacts -- store their silhouette in red and carry
-// their colour on the decal itself, which RegisterDecal has already folded into the vertex light.
-// Sampling one as an ordinary image reads the red channel as brightness and paints a white blob
-// where GL paints a black burn. GL reaches the same result with TM_REDTOALPHA plus an object colour.
-static const char *kScenePSRedAlpha =
-	"#version 450\n"
-	FUA_LIGHT_GLSL
-	"void main() {\n"
-	"    float a = fuaTexel(vUV).r * vLightParm.z;\n"
-	"    if (a <= 0.0) discard;\n"
-	// No dynamic lights: see fuaShadeEx. A scorch mark is black, so its vertex colour is zero, and
-	// the dynamic light term would be the only thing left in it -- every burn mark in the room lit
-	// up with the muzzle flash's colour when the weapon fired.
-	"    outColor = vec4(fuaShadeEx(vec3(1.0), false), a);\n"
-	"}\n";
+#include "features/hwrender/diligent/dgscene_glsl.h"   // [rc4l] the world pass's shaders
 
 
 // [rc4l] PROJECTED DECALS.
@@ -1865,1203 +1263,13 @@ static zx::hwrender::BackendCamera CurrentCamera()
 	c.pixelStretch = glset.pixelstretch;
 	return c;
 }
-static void BuildMVP(float *m) { zx::hwrender::ComputeBackendMVP(CurrentCamera(), m); }
-// ---------------------------------------------------------------------------
-// Sky
-// ---------------------------------------------------------------------------
-//
-// [rc4l] Without this the world sits under a flat void, which is most of what "it's not all of it"
-// looks like: sky is not geometry in a Doom level, it is the *absence* of it. Sky walls and sky
-// flats are handed to the portal manager and never reach the mesh, so wherever the map opens to sky
-// the backend simply drew nothing.
-//
-// The dome is a transcription of FSkyVertexBuffer::SkyVertex (gl/scene/gl_skydome.cpp) -- same
-// maxSideAngle, same 10000-unit radius, same mirrored X, same +300 nudge on the non-horizon rows,
-// same UV convention. The per-texture-height model transform from RenderDome is baked into the
-// vertices instead of being a matrix, since it only changes when the sky texture does.
-//
-// Drawn first with depth test and depth write OFF, so it fills the frame and the world paints over
-// it. That is exactly Doom's rule -- sky is whatever is behind everything else -- and it means sky
-// flats need no special handling at all: nothing is drawn there, so the sky survives.
-// [rc4l] r,g,b,useTex carry the sky CAP.
-//
-// The dome only spans 60 degrees of elevation; above that there is a hole, and GZDoom fills it with
-// a flat-coloured fan in the sky texture's average top colour (GetSkyCapColor). Without it the hole
-// showed the backend's clear colour -- a dark navy disc straight overhead, which is what "the very
-// top of the sky is missing the coloured thing GL has" was.
-//
-// useTex is 1 for the textured dome and 0 for the caps, so one pipeline draws both.
-// [rc4l] alpha is separate from useTex because the dome's TOP ROW is translucent.
-//
-// GZDoom gives row 0 a vertex colour with zero alpha (SkyVertex: `r == 0 ? 0xffffff : 0xffffffff`),
-// so the texture fades out toward the zenith and blends into the flat cap underneath. Without it the
-// cap meets the dome at a hard circular seam -- a black disc stamped on the sky, which is what kept
-// getting reported as missing fog.
-struct SkyVertexData { float x, y, z, u, v, r, g, b, useTex, alpha; };
+void BuildMVP(float *m) { zx::hwrender::ComputeBackendMVP(CurrentCamera(), m); }
+static void PrepareFrame(Diligent::IDeviceContext *ctx);
 
-static Diligent::RefCntAutoPtr<Diligent::IBuffer>        g_skyVB;
-static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_skyPSO;
-static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_skyFadePSO;
-static Diligent::RefCntAutoPtr<Diligent::IBuffer>        g_skyFadeVB;
-static Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding> g_skySRB;
-static int          g_skyVerts = 0;
-static const void  *g_skyMaterial = NULL;
-static int          g_skyBuiltFor = -1;   // FTextureID index; == has ambiguous overloads
-static bool         g_skyBuiltValid = false;
-
-// [rc4l] A skybox is six textures on a cube, not one on a dome.
-//
-// GLDEFS resolves a map's sky name to an FSkyBox, which carries six FTextures and no pixels of its
-// own. This backend detected one and drew it as an ordinary dome anyway, so a six-sided sky came out
-// as one of its faces smeared around a cylinder -- it has been saying "[SKYBOX -- not implemented]"
-// per sky since the sky path was written. See docs/skybox-scope.md.
-//
-// Each face is its own material, so each needs its own binding and its own draw, exactly as a world
-// batch does. They share one vertex buffer; a face is a range in it.
-struct SkyBoxFace
-{
-	int first, count;
-	Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding> srb;
-};
-static TArray<SkyBoxFace> g_skyBoxFaces;
-static Diligent::RefCntAutoPtr<Diligent::IBuffer>        g_skyBoxVB;
-static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_skyBoxPSO;
-static bool g_skyIsBox = false;
-
-// [rc4l] ...and a third kind of sky: one that is a PLACE.
-//
-// ZDoom's other skybox is a portal. An ASkyViewpoint actor sits in a room built to look like the
-// horizon, and every sky surface shows the world as seen from it -- so the sky is a rendered scene,
-// not a texture. Maps that use one set no sky texture at all, and this backend was falling back to
-// the null placeholder and drawing a blue-and-white checkerboard. Proved by turning GL's own support
-// off: `gl_noskyboxes 1` makes GL draw exactly the checkerboard this did.
-//
-// Rendering it is the mirror pass again -- a second camera, an offscreen target, the same DrawWorld.
-// What this backend can do that GL cannot is skip the stencils: sky is drawn FIRST here, full-screen
-// and depth-off, with the world painted over it, and a skybox is at infinity, so its image simply IS
-// that background.
-static Diligent::RefCntAutoPtr<Diligent::ITexture>       g_skyPortalColor, g_skyPortalDepth;
-static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_skyPortalPSO;
-static Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding> g_skyPortalSRB;
-static int  g_skyPortalW = 0, g_skyPortalH = 0;
-static bool g_skyPortalActive = false;
-// [rc4l] True while the portal is rendering its own view.
-//
-// It does NOT suppress the sky inside that render, and suppressing it was tried: a skybox room
-// draws a sky of its own, and that sky is PART OF THE SKYBOX IMAGE -- the red cloudscape around
-// the city on wdiex02 is exactly that. Without it the city sits in a black surround.
-static bool g_inSkyPortal = false;
-static bool g_inCameraPass = false;   // [rc4l] Drawing a camera texture, whose sky quads are its own walk's.
-static int g_lineMirror = -1;   // [rc4l] The line mirror whose reflection is being drawn, the one pass that shows its viewer, or -1.
-// Where the portal camera stood, for the reach test in the world draw.
-static float g_skyPortalCamX = 0.f, g_skyPortalCamY = 0.f, g_skyPortalCamZ = 0.f;
-static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_skySurfPSO;
-static Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding> g_skySurfSRB;
-static int g_skyDraws = 0;
-static Diligent::RefCntAutoPtr<Diligent::IBuffer> g_skySurfVB;
-static unsigned int g_skySurfVBCapacity = 0;   // this level's sky is a portal
-// [rc4l] The stacked view being rendered (its slot), else -1, and the pipeline that paints a stacked plane from its view.
-static int g_stackPassSlot = -1;
+// [rc4l] The pipeline that paints a stacked plane from its view.
 static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_stackSurfPSO;
 static Diligent::RefCntAutoPtr<Diligent::IBuffer> g_stackSurfVB;
 static unsigned int g_stackSurfVBCapacity = 0;
-
-static const char *kSkyVS =
-	"#version 450\n"
-	"layout(location = 0) in vec3 aPos;\n"
-	"layout(location = 1) in vec2 aUV;\n"
-	"layout(location = 2) in vec4 aSkyColor;\n"
-	"layout(location = 3) in float aSkyAlpha;\n"
-	FUA_CONSTANTS_GLSL
-	"layout(location = 0) out vec2 vUV;\n"
-	"layout(location = 1) out vec4 vSkyColor;\n"
-	"layout(location = 2) out float vSkyAlpha;\n"
-	"void main() {\n"
-	// Centred on the camera, so the dome is effectively at infinity.
-	//
-	// [rc4l] The sky also SCROLLS. GLSkyInfo::x_offset carries mSky1Pos, which advances with
-	// wall-clock time, and RenderDome folds it into the dome's Y rotation together with its constant
-	// -180. Baking that into the vertices would mean rebuilding the buffer every frame, so it comes
-	// in as an angle and is applied here.
-	"    float sa = sin(uLightParams.y), ca = cos(uLightParams.y);\n"
-	"    vec3 p = vec3(aPos.x * ca + aPos.z * sa, aPos.y, -aPos.x * sa + aPos.z * ca);\n"
-	// [rc4l] Centred on the eye of whichever pass is drawing, read off its matrix as the horizon pass reads it, since uCameraPos holds only the player's and a skybox portal's sky sat around the player, thousands of units from its camera.
-	"    vec4 e = inverse(uMVP) * vec4(0.0, 0.0, 1.0, 0.0);\n"
-	"    gl_Position = uMVP * vec4(p + e.xyz / e.w, 1.0);\n"
-	"    vUV = aUV;\n"
-	"    vSkyColor = aSkyColor;\n"
-	"    vSkyAlpha = aSkyAlpha;\n"
-	"}\n";
-
-static const char *kSkyPS =
-	"#version 450\n"
-	"layout(location = 0) in vec2 vUV;\n"
-	"layout(location = 1) in vec4 vSkyColor;\n"
-	"layout(location = 2) in float vSkyAlpha;\n"
-	"layout(binding = 1) uniform sampler2D uTex;\n"
-	"layout(location = 0) out vec4 outColor;\n"
-	// vSkyColor.a selects: 1 takes the texture (the dome), 0 takes the flat colour (the caps).
-	"void main() {\n"
-	// [rc4l] vSkyColor.a does three jobs, so the fade layer needs no extra vertex attribute:
-	//   1  textured, opaque -- the dome
-	//   0  flat colour, opaque -- the caps
-	//  <0  flat colour, alpha = -a -- the sky fade layer GL draws over the whole sky
-	"    float sel = max(vSkyColor.a, 0.0);\n"
-	"    float al = vSkyColor.a < 0.0 ? -vSkyColor.a : 1.0;\n"
-	"    outColor = vec4(mix(vSkyColor.rgb, texture(uTex, vUV).rgb, sel), al * vSkyAlpha);\n"
-	"}\n";
-
-// [rc4l] One sky dome vertex, with RenderDome's model and texture transforms folded in.
-//
-// modelScaleY/modelTransY are the model matrix (which moves the dome in world space) and vscale is
-// the texture matrix's V scale. These are three separate things in the engine and were one here,
-// which only works for the short skies Doom itself ships.
-static void SkyVertexAt(int r, int c, int rows, int cols, bool yflip, float modelScaleY,
-	float modelTransY, float xscale, float vscale, SkyVertexData &out)
-{
-	const float maxSideAngle = 60.0f * 3.14159265f / 180.0f;   // ANGLE_180/3
-	const float scale = 10000.0f;
-
-	const float topAngle  = (float)c / cols * 2.0f * 3.14159265f;
-	const float sideAngle = maxSideAngle * (float)(rows - r) / rows;
-	const float height    = sinf(sideAngle);
-	const float realRadius = scale * cosf(sideAngle);
-
-	float x = realRadius * cosf(topAngle);
-	float y = yflip ? -(scale * height) : (scale * height);
-	float z = realRadius * sinf(topAngle);
-	if (r != rows) y += 300.0f;
-
-	// [rc4l] Only the vertex negation, NOT RenderDome's additional -180 degree Y rotation.
-	//
-	// Composing both (which leaves x alone and negates z) was tried and measured worse -- 18.5 against
-	// 16.7 on gvh04 -- so the rotation is evidently already accounted for by the view basis this
-	// backend uses. Recorded because it is the obvious "fix" to try, and it is wrong.
-	out.x = -x;
-	out.y = (y - 1.0f) * modelScaleY + modelTransY;   // RenderDome's scale-then-translate
-	out.z = z;
-	out.u = (-(float)c / cols) * xscale;
-	out.v = (yflip ? (1.0f + (float)(rows - r) / rows) : ((float)r / rows)) * vscale;
-}
-
-// The current sky texture's SkyOffset, captured in EnsureSky where the FTexture is in hand.
-static int g_skyTexOffset = 0;
-// [0] top cap, [1] bottom cap -- GetSkyCapColor(false/true), captured where the FTexture is in hand.
-static PalEntry g_skyCapColor[2];
-// Radians, recomputed per frame: -180 degrees (RenderDome's constant) plus the scroll offset.
-static float g_skyAngle = 0.f;
-// The dome's texture scales, so a ray that misses samples the sky the same way the dome draws it.
-static float g_skyXScale = 4.f, g_skyVScale = 1.f;
-// Mirror clip plane in mesh space (nx, ny, nz, d); all zero disables it.
-static float g_clipPlane[4] = { 0.f, 0.f, 0.f, 0.f };
-
-static void BuildSkyDome(int texw, int texh)
-{
-	const int rows = 4, cols = 128;
-
-	// [rc4l] RenderDome's four height cases, in full.
-	//
-	// Only the short-sky branch was implemented, and the -1250 world translate that goes with it was
-	// applied unconditionally. Doom's own skies are 256x128 so they land in that branch and looked
-	// right, which is exactly why this survived: every stock map agreed with GL. A mod with a TALL
-	// sky -- Ghouls vs Humans among them -- takes one of the other two branches, where both the scale
-	// and the translate are different, and its sky came out showing the wrong band of the texture.
-	//
-	// A tall sky also needs the texture matrix's V scale, which is a separate thing from the model
-	// matrix's Y scale and was not represented here at all.
-	const float skyoffsetfactor = 57.f;
-	float modelScaleY = 1.f, modelTransY = 0.f, vscale = 1.f;
-	if (texh < 128)
-	{
-		modelTransY = -1250.f; modelScaleY = 128 / 230.f;
-		vscale = (texh > 0) ? (float)(128 / texh) : 1.f;   // integer division, as upstream
-	}
-	else if (texh < 200)
-	{
-		modelTransY = -1250.f; modelScaleY = texh / 230.f;
-	}
-	else if (texh <= 240)
-	{
-		modelTransY = (200 - texh + g_skyTexOffset + skyoffset) * skyoffsetfactor;
-		modelScaleY = 1.f + ((texh - 200.f) / 200.f) * 1.17f;
-	}
-	else
-	{
-		modelTransY = (-40 + g_skyTexOffset + skyoffset) * skyoffsetfactor;
-		modelScaleY = 1.2f * 1.17f;
-		vscale = (texh > 0) ? 240.f / texh : 1.f;
-	}
-	const float xscale = texw > 0 ? 1024.f / texw : 1.f;
-	g_skyXScale = xscale; g_skyVScale = vscale;
-
-	TArray<SkyVertexData> verts;
-	for (int hemi = 0; hemi < 2; hemi++)
-	{
-		const bool yflip = (hemi == 1);
-
-		// [rc4l] Cap the hole the dome leaves -- BEFORE the strips, which is what RenderDome does.
-		//
-		// The dome only reaches 60 degrees of elevation, so straight up there is nothing, and what
-		// showed through was the backend's clear colour: a dark navy disc overhead on every open map.
-		// GZDoom fills it with a flat fan in the sky texture's own average edge colour.
-		//
-		// The order is not incidental. The cap is a flat lid at row 1's height, so from the centre it
-		// subtends everything from 45 degrees up -- it overlaps the textured 45-to-60 band rather than
-		// merely abutting it. Drawn afterwards, with no depth test on the sky, it painted flat colour
-		// over a third of the visible sky: a huge black disc where GL has cloud. Drawn first, the
-		// strips cover it back up and only the part above the dome remains.
-		{
-			const PalEntry cap = g_skyCapColor[hemi ? 1 : 0];
-			SkyVertexData centre;
-			SkyVertexAt(1, 0, rows, cols, yflip, modelScaleY, modelTransY, xscale, vscale, centre);
-			for (int c = 1; c < cols; c++)
-			{
-				SkyVertexData a, b;
-				SkyVertexAt(1, c,     rows, cols, yflip, modelScaleY, modelTransY, xscale, vscale, a);
-				SkyVertexAt(1, c + 1, rows, cols, yflip, modelScaleY, modelTransY, xscale, vscale, b);
-				SkyVertexData tri[3] = { centre, a, b };
-				for (int k = 0; k < 3; k++)
-				{
-					tri[k].r = cap.r / 255.f; tri[k].g = cap.g / 255.f; tri[k].b = cap.b / 255.f;
-					tri[k].useTex = 0.f;
-					tri[k].alpha = 1.f;
-					tri[k].y = centre.y;   // a lid, not part of the dome's curve
-				}
-				verts.Push(tri[0]); verts.Push(tri[1]); verts.Push(tri[2]);
-			}
-		}
-
-		for (int r = 0; r < rows; r++)
-		{
-			for (int c = 0; c < cols; c++)
-			{
-				SkyVertexData q[4];
-				SkyVertexAt(r,     c,     rows, cols, yflip, modelScaleY, modelTransY, xscale, vscale, q[0]);
-				SkyVertexAt(r + 1, c,     rows, cols, yflip, modelScaleY, modelTransY, xscale, vscale, q[1]);
-				SkyVertexAt(r,     c + 1, rows, cols, yflip, modelScaleY, modelTransY, xscale, vscale, q[2]);
-				SkyVertexAt(r + 1, c + 1, rows, cols, yflip, modelScaleY, modelTransY, xscale, vscale, q[3]);
-				// Row 0 is the zenith edge and fades out, exactly as SkyVertex's vertex colour does.
-				for (int k = 0; k < 4; k++) { q[k].r = q[k].g = q[k].b = 1.f; q[k].useTex = 1.f; }
-				q[0].alpha = q[2].alpha = (r == 0) ? 0.f : 1.f;
-				q[1].alpha = q[3].alpha = 1.f;
-				verts.Push(q[0]); verts.Push(q[1]); verts.Push(q[2]);
-				verts.Push(q[2]); verts.Push(q[1]); verts.Push(q[3]);
-			}
-		}
-	}
-
-	g_skyVerts = (int)verts.Size();
-	if (g_skyVerts == 0) return;
-
-	Diligent::BufferDesc bd;
-	bd.Name = "fua sky VB";
-	bd.Size = (Diligent::Uint64)g_skyVerts * sizeof(SkyVertexData);
-	bd.Usage = Diligent::USAGE_IMMUTABLE;
-	bd.BindFlags = Diligent::BIND_VERTEX_BUFFER;
-	Diligent::BufferData bdata;
-	bdata.pData = &verts[0];
-	bdata.DataSize = bd.Size;
-	g_skyVB.Release();
-	GetDevice()->CreateBuffer(bd, &bdata, &g_skyVB);
-}
-
-// [rc4l] One creator, two pipelines. The dome WRAPS horizontally -- a cylinder has to, the texture
-// meets itself -- and a box face must CLAMP both ways or its edge pixels bleed across the seam,
-// which is what GL asks for with CLAMP_XY. Everything else about the two is identical.
-static bool CreateSkyPipeline(Diligent::TEXTURE_ADDRESS_MODE addrU, const char *name,
-	Diligent::RefCntAutoPtr<Diligent::IPipelineState> &outPSO)
-{
-	if (outPSO) return true;
-	auto *dev = GetDevice();
-	auto *swap = GetSwapChain();
-	if (!dev || !swap) return false;
-
-	Diligent::RefCntAutoPtr<Diligent::IShader> vs, ps;
-	vs = CompileShader(Diligent::SHADER_TYPE_VERTEX, "fua sky VS", kSkyVS);
-	ps = CompileShader(Diligent::SHADER_TYPE_PIXEL, "fua sky PS", kSkyPS);
-	if (!vs || !ps) return false;
-
-	Diligent::LayoutElement layout[] = {
-		Diligent::LayoutElement{0, 0, 3, Diligent::VT_FLOAT32, false},
-		Diligent::LayoutElement{1, 0, 2, Diligent::VT_FLOAT32, false},
-		Diligent::LayoutElement{2, 0, 4, Diligent::VT_FLOAT32, false},
-		Diligent::LayoutElement{3, 0, 1, Diligent::VT_FLOAT32, false},
-	};
-	static Diligent::ShaderResourceVariableDesc vars[] = {
-		{ Diligent::SHADER_TYPE_PIXEL, "uTex", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
-		{ Diligent::SHADER_TYPE_PIXEL, "uBrightmap", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
-	};
-	// [rc4l] Not static: a static array is filled on the first call only, so the skybox's clamp took the dome's wrap and blended each face's edge with its opposite one.
-	Diligent::SamplerDesc samp;
-	// [rc4l] The engine's filter, as GL binds a sky texture with, where a fixed linear one smoothed every sky GL draws crisp.
-	FillSamplerFromEngine(samp);
-	samp.AddressU = addrU;
-	samp.AddressV = Diligent::TEXTURE_ADDRESS_CLAMP;   // no wrap top-to-bottom
-	const Diligent::ImmutableSamplerDesc samplers[] = {
-		{ Diligent::SHADER_TYPE_PIXEL, "uTex", samp },
-		{ Diligent::SHADER_TYPE_PIXEL, "uBrightmap", samp },
-	};
-
-	Diligent::GraphicsPipelineStateCreateInfo pci;
-	pci.PSODesc.Name = name;
-	pci.PSODesc.PipelineType = Diligent::PIPELINE_TYPE_GRAPHICS;
-	pci.GraphicsPipeline.NumRenderTargets = 1;
-	pci.GraphicsPipeline.RTVFormats[0] = swap->GetDesc().ColorBufferFormat;
-	pci.GraphicsPipeline.DSVFormat = swap->GetDesc().DepthBufferFormat;
-	pci.GraphicsPipeline.PrimitiveTopology = Diligent::PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-	pci.GraphicsPipeline.RasterizerDesc.CullMode = Diligent::CULL_MODE_NONE;
-	// The sky is behind everything: never tested, never written.
-	pci.GraphicsPipeline.DepthStencilDesc.DepthEnable = false;
-	pci.GraphicsPipeline.DepthStencilDesc.DepthWriteEnable = false;
-	// Blended, so the dome's fading top row composites over the cap drawn beneath it.
-	{
-		auto &rt = pci.GraphicsPipeline.BlendDesc.RenderTargets[0];
-		rt.BlendEnable = true;
-		rt.SrcBlend  = Diligent::BLEND_FACTOR_SRC_ALPHA;
-		rt.DestBlend = Diligent::BLEND_FACTOR_INV_SRC_ALPHA;
-		rt.BlendOp = Diligent::BLEND_OPERATION_ADD;
-		rt.SrcBlendAlpha = Diligent::BLEND_FACTOR_ONE;
-		rt.DestBlendAlpha = Diligent::BLEND_FACTOR_INV_SRC_ALPHA;
-		rt.BlendOpAlpha = Diligent::BLEND_OPERATION_ADD;
-	}
-	pci.GraphicsPipeline.InputLayout.LayoutElements = layout;
-	pci.GraphicsPipeline.InputLayout.NumElements = 4;
-	pci.PSODesc.ResourceLayout.DefaultVariableType = Diligent::SHADER_RESOURCE_VARIABLE_TYPE_STATIC;
-	pci.PSODesc.ResourceLayout.Variables = vars;
-	pci.PSODesc.ResourceLayout.NumVariables = 1;
-	pci.PSODesc.ResourceLayout.ImmutableSamplers = samplers;
-	pci.PSODesc.ResourceLayout.NumImmutableSamplers = 1;
-	pci.pVS = vs;
-	pci.pPS = ps;
-	dev->CreateGraphicsPipelineState(pci, &outPSO);
-	if (!outPSO) return false;
-	BindSceneConstants(outPSO);
-	return true;
-}
-
-static bool EnsureSkyPipeline()
-{
-	if (g_skyPSO && g_skySRB) return true;
-	if (!CreateSkyPipeline(Diligent::TEXTURE_ADDRESS_WRAP, "fua sky PSO", g_skyPSO)) return false;
-	if (!g_skySRB) g_skyPSO->CreateShaderResourceBinding(&g_skySRB, true);
-	// RefCntAutoPtr has several conversions, so `!= NULL` is ambiguous; ask it directly.
-	return g_skySRB.RawPtr() != nullptr;
-}
-
-// The box gets its own pipeline for the sampler, and a binding PER FACE rather than one shared.
-// [rc4l] The cube, transcribed from GL's RenderBox.
-//
-// Coordinates are GL's own: +/-128 with Y up, which is the space the sky vertex shader already works
-// in -- it adds uCameraPos and rotates (x, z) about Y by the same (-180 + scroll) angle GL puts on
-// its model matrix. So the box needs no new transform and no shader change; useTex 1 makes the pixel
-// shader take the texture, which is what a face is.
-//
-// GL draws each face as a four-vertex strip and this pipeline is a triangle list, so each becomes
-// (0,1,2) and (2,1,3). Winding does not matter: the sky pipeline culls nothing.
-static void PushSkyQuad(TArray<SkyVertexData> &v,
-	const float px[4], const float py[4], const float pz[4], const float uu[4], const float vv[4])
-{
-	static const int order[6] = { 0, 1, 2, 2, 1, 3 };
-	for (int i = 0; i < 6; i++)
-	{
-		const int k = order[i];
-		SkyVertexData d;
-		d.x = px[k]; d.y = py[k]; d.z = pz[k];
-		d.u = uu[k]; d.v = vv[k];
-		d.r = d.g = d.b = 1.f;
-		d.useTex = 1.f;    // textured and opaque -- see kSkyPS
-		d.alpha  = 1.f;
-		v.Push(d);
-	}
-}
-
-static void BuildSkyBox(FSkyBox *sb)
-{
-	g_skyBoxFaces.Clear();
-	g_skyBoxVB.Release();
-	if (sb == NULL) return;
-
-	TArray<SkyVertexData> verts;
-	struct Pending { int first, count; FTexture *tex; };
-	TArray<Pending> pending;
-
-	// [rc4l] Two forms, told apart exactly as RenderBox tells them apart.
-	//
-	// With six faces each wall is its own texture. With three, faces[0] is ONE texture wrapped right
-	// around the four walls -- its U runs 0, .25, .5, .75, 1 -- and the top and bottom move down to
-	// faces[1] and faces[2]. Getting this wrong shows up as three of the four walls being the same
-	// picture, which looks plausible enough to miss.
-	const bool sixFace = (sb->faces[5] != NULL);
-	const int  topIdx  = sixFace ? 4 : 1;
-	const int  botIdx  = sixFace ? 5 : 2;
-
-	const float T = 128.f;
-	if (sixFace)
-	{
-		//                      north              east               south              west
-		const float qx[4][4] = {{ T,-T, T,-T}, {-T,-T,-T,-T}, {-T, T,-T, T}, { T, T, T, T}};
-		const float qy[4][4] = {{ T, T,-T,-T}, { T, T,-T,-T}, { T, T,-T,-T}, { T, T,-T,-T}};
-		const float qz[4][4] = {{-T,-T,-T,-T}, {-T, T,-T, T}, { T, T, T, T}, { T,-T, T,-T}};
-		const float qu[4]    = { 0.f, 1.f, 0.f, 1.f };
-		const float qv[4]    = { 0.f, 0.f, 1.f, 1.f };
-		for (int f = 0; f < 4; f++)
-		{
-			const int first = (int)verts.Size();
-			PushSkyQuad(verts, qx[f], qy[f], qz[f], qu, qv);
-			Pending pd; pd.first = first; pd.count = (int)verts.Size() - first; pd.tex = sb->faces[f];
-			pending.Push(pd);
-		}
-	}
-	else
-	{
-		// One texture around all four walls: four quads sharing a material, so ONE draw.
-		const float wx[4][4] = {{ T,-T, T,-T}, {-T,-T,-T,-T}, {-T, T,-T, T}, { T, T, T, T}};
-		const float wy[4]    = { T, T,-T,-T };
-		const float wz[4][4] = {{-T,-T,-T,-T}, {-T, T,-T, T}, { T, T, T, T}, { T,-T, T,-T}};
-		const int first = (int)verts.Size();
-		for (int f = 0; f < 4; f++)
-		{
-			const float u0 = f * 0.25f, u1 = u0 + 0.25f;
-			const float uu[4] = { u0, u1, u0, u1 };
-			const float vv[4] = { 0.f, 0.f, 1.f, 1.f };
-			PushSkyQuad(verts, wx[f], wy, wz[f], uu, vv);
-		}
-		Pending pd; pd.first = first; pd.count = (int)verts.Size() - first; pd.tex = sb->faces[0];
-		pending.Push(pd);
-	}
-
-	// Top. fliptop swaps its V, which is how a skybox author turns the ceiling the right way up.
-	{
-		const float tx[4] = { T, -T,  T, -T };
-		const float ty[4] = { T,  T,  T,  T };
-		const float tz[4] = { -T, -T, T,  T };
-		const float ftop  = sb->fliptop ? 1.f : 0.f;
-		const float tu[4] = { 0.f, 1.f, 0.f, 1.f };
-		const float tv[4] = { ftop, ftop, 1.f - ftop, 1.f - ftop };
-		const int first = (int)verts.Size();
-		PushSkyQuad(verts, tx, ty, tz, tu, tv);
-		Pending pd; pd.first = first; pd.count = (int)verts.Size() - first; pd.tex = sb->faces[topIdx];
-		pending.Push(pd);
-	}
-	// Bottom.
-	{
-		const float bx[4] = { T, -T,  T, -T };
-		const float by[4] = { -T, -T, -T, -T };
-		const float bz[4] = { -T, -T,  T,  T };
-		const float bu[4] = { 0.f, 1.f, 0.f, 1.f };
-		const float bv[4] = { 0.f, 0.f, 1.f, 1.f };
-		const int first = (int)verts.Size();
-		PushSkyQuad(verts, bx, by, bz, bu, bv);
-		Pending pd; pd.first = first; pd.count = (int)verts.Size() - first; pd.tex = sb->faces[botIdx];
-		pending.Push(pd);
-	}
-
-	if (verts.Size() == 0) return;
-
-	Diligent::BufferDesc bd;
-	bd.Name = "fua skybox VB";
-	bd.Size = (Diligent::Uint64)verts.Size() * sizeof(SkyVertexData);
-	bd.Usage = Diligent::USAGE_IMMUTABLE;
-	bd.BindFlags = Diligent::BIND_VERTEX_BUFFER;
-	Diligent::BufferData bdata;
-	bdata.pData = &verts[0];
-	bdata.DataSize = bd.Size;
-	GetDevice()->CreateBuffer(bd, &bdata, &g_skyBoxVB);
-	if (!g_skyBoxVB) return;
-
-	// A binding per face, from the same material path the world uses -- a face that cannot be
-	// resolved falls back to white rather than dropping the face and leaving a hole.
-	for (unsigned i = 0; i < pending.Size(); i++)
-	{
-		SkyBoxFace face;
-		face.first = pending[i].first;
-		face.count = pending[i].count;
-		g_skyBoxPSO->CreateShaderResourceBinding(&face.srb, true);
-		if (!face.srb) continue;
-		FMaterial *fm = pending[i].tex ? FMaterial::ValidateTexture(pending[i].tex, false) : NULL;
-		if (auto *v = face.srb->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "uTex"))
-			v->Set(GetMaterialSRV(fm, 0));
-		g_skyBoxFaces.Push(face);
-	}
-}
-
-static bool EnsureSkyBoxPipeline()
-{
-	return CreateSkyPipeline(Diligent::TEXTURE_ADDRESS_CLAMP, "fua skybox PSO", g_skyBoxPSO);
-}
-
-// Rebuild the dome and its binding when the level's sky texture changes.
-static void EnsureSky()
-{
-	if (!EnsureSkyPipeline()) return;
-	// [rc4l] TexMan(id), not TexMan[id]. The subscript returns the texture as authored; the call
-	// applies the animation translation, which is what the engine's own sky path uses.
-	//
-	// GvH's skies are animated sequences, so with the subscript the backend pinned frame one forever
-	// while GL cycled: the engine reported drawing SKY_F049 and this drew SKY_F001. It reads as
-	// "the wrong sky for this map" rather than "a frozen animation", because the frames of a
-	// cloudscape do not look like frames of anything -- they just look like a different sky.
-	FTextureID id = sky1texture;
-	FTexture *raw = id.isValid() ? TexMan(id) : NULL;
-	FMaterial *mat = raw ? FMaterial::ValidateTexture(raw, false) : NULL;
-	if (mat == NULL) { g_skyBuiltValid = false; return; }
-
-	// [rc4l] Keyed on the RESOLVED material, so an animation frame counts as a change -- and only the
-	// binding is redone when the geometry cannot have moved. An animated sky advances several times a
-	// second; rebuilding a 128-column dome and reuploading it that often would be pure waste.
-	if (g_skyBuiltValid && g_skyMaterial == (const void *)mat) return;
-	const bool sameShape = g_skyBuiltValid && g_skyBuiltFor == mat->TextureHeight();
-	g_skyBuiltFor = mat->TextureHeight();
-
-	g_skyTexOffset = (mat->tex != NULL) ? mat->tex->SkyOffset : 0;
-	g_skyCapColor[0] = (mat->tex != NULL) ? mat->tex->GetSkyCapColor(false) : PalEntry(0);
-	g_skyCapColor[1] = (mat->tex != NULL) ? mat->tex->GetSkyCapColor(true)  : PalEntry(0);
-	// [rc4l] Say what the sky actually IS, once per genuinely new texture rather than per animation
-	// frame. Comparing this line against the engine's own is what identified both the skybox that is
-	// unimplemented and the animation that was frozen.
-	// [rc4l] A skybox is a CUBE, and until now this drew it as a dome anyway.
-	//
-	// GLDEFS resolves the map's sky to an FSkyBox, which is six textures and no pixels of its own --
-	// so the dome sampled one face and wrapped it around a cylinder. The marker that used to print
-	// here said as much on every such sky.
-	const bool isBox = (mat->tex != NULL && mat->tex->gl_info.bSkybox);
-	if (isBox)
-	{
-		FSkyBox *sb = static_cast<FSkyBox *>(mat->tex);
-		if (!EnsureSkyBoxPipeline()) { g_skyBuiltValid = false; return; }
-		BuildSkyBox(sb);
-		if (g_skyBoxFaces.Size() == 0) { g_skyBuiltValid = false; return; }
-		if (!sameShape)
-		{
-			Printf("vulkan sky: %s  [SKYBOX, %s: %s %s %s %s %s %s]\n",
-				(mat->tex->Name != NULL) ? mat->tex->Name : "?",
-				(sb->faces[5] != NULL) ? "six faces" : "wrapped",
-				(sb->faces[0] && sb->faces[0]->Name) ? sb->faces[0]->Name : "-",
-				(sb->faces[1] && sb->faces[1]->Name) ? sb->faces[1]->Name : "-",
-				(sb->faces[2] && sb->faces[2]->Name) ? sb->faces[2]->Name : "-",
-				(sb->faces[3] && sb->faces[3]->Name) ? sb->faces[3]->Name : "-",
-				(sb->faces[4] && sb->faces[4]->Name) ? sb->faces[4]->Name : "-",
-				(sb->faces[5] && sb->faces[5]->Name) ? sb->faces[5]->Name : "-");
-		}
-		g_skyIsBox = true;
-		g_skyMaterial = mat;
-		g_skyBuiltValid = true;
-		return;
-	}
-
-	g_skyIsBox = false;
-	if (!sameShape)
-	{
-		Printf("vulkan sky: %s %dx%d skyoffset %d  cap %d,%d,%d / %d,%d,%d\n",
-			(mat->tex != NULL && mat->tex->Name != NULL) ? mat->tex->Name : "?",
-			mat->TextureWidth(), mat->TextureHeight(), g_skyTexOffset,
-			g_skyCapColor[0].r, g_skyCapColor[0].g, g_skyCapColor[0].b,
-			g_skyCapColor[1].r, g_skyCapColor[1].g, g_skyCapColor[1].b);
-	}
-	if (!sameShape) BuildSkyDome(mat->TextureWidth(), mat->TextureHeight());
-	g_skyMaterial = mat;
-	if (auto *v = g_skySRB->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "uTex"))
-		v->Set(GetMaterialSRV(g_skyMaterial, 0));
-	g_skyBuiltValid = true;
-}
-
-// [rc4l] The sky's fade layer: a translucent sheet in the sector's fade colour, over the sky and
-// under the world.
-//
-// GL draws this and this backend did not, so a foggy map's sky came out as a black hole where GL had
-// haze -- reported as "fog missing".
-//
-// It gets its own shader pair rather than riding the dome's. GL's version is four triangles a single
-// unit across, drawn with depth clamping so that a shape entirely inside the near plane still covers
-// the screen. Reproducing that by placing world-space geometry is fighting the projection: the first
-// attempt put a horizontal sheet 60000 units overhead, which is a ceiling rather than something that
-// encloses the camera, and covered nothing but the top of the frame. A quad written straight into
-// clip space is what the thing actually is.
-static const char *kSkyFadeVS =
-	"#version 450\n"
-	"layout(location = 0) in vec3 aPos;\n"
-	"layout(location = 1) in vec2 aUV;\n"
-	"layout(location = 2) in vec4 aSkyColor;\n"
-	"layout(location = 0) out vec4 vFade;\n"
-	"void main() {\n"
-	"    vFade = vec4(aSkyColor.rgb, -aSkyColor.a);\n"
-	"    gl_Position = vec4(aPos.xy, 0.0, 1.0);\n"
-	"}\n";
-
-static const char *kSkyFadePS =
-	"#version 450\n"
-	"layout(location = 0) in vec4 vFade;\n"
-	"layout(location = 0) out vec4 outColor;\n"
-	"void main() { outColor = vFade; }\n";
-
-static bool EnsureSkyFadePipeline()
-{
-	if (g_skyFadePSO) return true;
-	auto *dev = GetDevice();
-	auto *swap = GetSwapChain();
-	if (!dev || !swap) return false;
-
-	Diligent::RefCntAutoPtr<Diligent::IShader> vs, ps;
-	vs = CompileShader(Diligent::SHADER_TYPE_VERTEX, "fua sky fade VS", kSkyFadeVS);
-	ps = CompileShader(Diligent::SHADER_TYPE_PIXEL, "fua sky fade PS", kSkyFadePS);
-	if (!vs || !ps) return false;
-
-	Diligent::LayoutElement layout[] = {
-		Diligent::LayoutElement{0, 0, 3, Diligent::VT_FLOAT32, false},
-		Diligent::LayoutElement{1, 0, 2, Diligent::VT_FLOAT32, false},
-		Diligent::LayoutElement{2, 0, 4, Diligent::VT_FLOAT32, false},
-		Diligent::LayoutElement{3, 0, 1, Diligent::VT_FLOAT32, false},
-	};
-	Diligent::GraphicsPipelineStateCreateInfo pci;
-	pci.PSODesc.Name = "fua sky fade PSO";
-	pci.PSODesc.PipelineType = Diligent::PIPELINE_TYPE_GRAPHICS;
-	pci.GraphicsPipeline.NumRenderTargets = 1;
-	pci.GraphicsPipeline.RTVFormats[0] = swap->GetDesc().ColorBufferFormat;
-	pci.GraphicsPipeline.DSVFormat = swap->GetDesc().DepthBufferFormat;
-	pci.GraphicsPipeline.PrimitiveTopology = Diligent::PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-	pci.GraphicsPipeline.RasterizerDesc.CullMode = Diligent::CULL_MODE_NONE;
-	pci.GraphicsPipeline.DepthStencilDesc.DepthEnable = false;
-	pci.GraphicsPipeline.DepthStencilDesc.DepthWriteEnable = false;
-	{
-		auto &rt = pci.GraphicsPipeline.BlendDesc.RenderTargets[0];
-		rt.BlendEnable = true;
-		rt.SrcBlend  = Diligent::BLEND_FACTOR_SRC_ALPHA;
-		rt.DestBlend = Diligent::BLEND_FACTOR_INV_SRC_ALPHA;
-		rt.BlendOp = Diligent::BLEND_OPERATION_ADD;
-		rt.SrcBlendAlpha = Diligent::BLEND_FACTOR_ONE;
-		rt.DestBlendAlpha = Diligent::BLEND_FACTOR_INV_SRC_ALPHA;
-		rt.BlendOpAlpha = Diligent::BLEND_OPERATION_ADD;
-	}
-	pci.GraphicsPipeline.InputLayout.LayoutElements = layout;
-	pci.GraphicsPipeline.InputLayout.NumElements = 4;
-	dev->CreateGraphicsPipelineState(pci, &g_skyFadePSO);
-	return g_skyFadePSO.RawPtr() != nullptr;
-}
-
-static void DrawSkyFade(Diligent::IDeviceContext *ctx)
-{
-	float fr, fg, fb, fa;
-	zx::hwrender::GetSkyFog(fr, fg, fb, fa);
-	if (fa <= 0.f) return;
-	if (!EnsureSkyFadePipeline()) return;
-
-	SkyVertexData v[6];
-	const float qx[6] = { -1.f, -1.f,  1.f,  1.f, -1.f,  1.f };
-	const float qy[6] = { -1.f,  1.f, -1.f,  1.f,  1.f, -1.f };
-	for (int i = 0; i < 6; i++)
-	{
-		v[i].x = qx[i]; v[i].y = qy[i]; v[i].z = 0.f;
-		v[i].u = 0.f; v[i].v = 0.f;
-		v[i].r = fr; v[i].g = fg; v[i].b = fb;
-		v[i].useTex = -fa;   // the fade VS negates it back into an alpha
-		v[i].alpha = 1.f;
-	}
-
-	if (!g_skyFadeVB)
-	{
-		Diligent::BufferDesc bd;
-		bd.Name = "fua sky fade VB";
-		bd.Size = sizeof(v);
-		bd.Usage = Diligent::USAGE_DEFAULT;
-		bd.BindFlags = Diligent::BIND_VERTEX_BUFFER;
-		GetDevice()->CreateBuffer(bd, nullptr, &g_skyFadeVB);
-		if (!g_skyFadeVB) return;
-	}
-	ctx->UpdateBuffer(g_skyFadeVB, 0, sizeof(v), v,
-		Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-
-	Diligent::IBuffer *vbs[] = { g_skyFadeVB };
-	const Diligent::Uint64 offsets[] = { 0 };
-	ctx->SetVertexBuffers(0, 1, vbs, offsets, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
-		Diligent::SET_VERTEX_BUFFERS_FLAG_RESET);
-	ctx->SetPipelineState(g_skyFadePSO);
-	Diligent::DrawAttribs d;
-	d.NumVertices = 6;
-	d.Flags = Diligent::DRAW_FLAG_VERIFY_ALL;
-	ctx->Draw(d);
-}
-
-// Defined below: the world pass, reused verbatim by the sky portal exactly as the mirror pass
-// reuses it.
-static void DrawWorld(Diligent::IDeviceContext *ctx);
-
-// [rc4l] Which skybox this level takes its sky from, or NULL if the sky is an ordinary one.
-//
-// GetSkyBox does the DefaultSkybox fallback and honours the per-sector SECF_NO*SKYBOX flags, so
-// ask it rather than reading the sector fields by hand. ONE skybox per frame, from the camera
-// sector: sectors may each name their own, and rendering one per sector would multiply a full
-// scene render by the count -- the shape that had the driver kill this process over the mirror
-// pass. See docs/tdr-crash-after-map-loads.md.
-static ASkyViewpoint *CurrentSkyViewpoint()
-{
-	if (!fua_dg_skyportal) return NULL;
-	// [rc4l] The viewpoint the VISIBLE SKY SURFACES name, first. GL renders one portal per unique
-	// skybox and stencils each through the walls that name it; this backend renders one image, so
-	// it has to be the one the sky in view actually belongs to. Falling back to the sector the
-	// player stands in gives the right city seen from the wrong room on any map with more than
-	// one skybox -- small and off-centre inside a hard-edged rectangle.
-	ASkyViewpoint *fromWalls = (ASkyViewpoint *)zx::levelmesh::SkyQuadViewpoint();
-	if (fromWalls != NULL) return fromWalls;
-	sector_t *sec = (consoleplayer >= 0 && players[consoleplayer].camera != NULL)
-		? players[consoleplayer].camera->Sector : NULL;
-	// [rc4l] A stacked ceiling's "skybox" is the stack's anchor, as GLWall::SkyPlane knows, and a sky rendered from it is the town seen from a rooftop.
-	ASkyViewpoint *sb = (sec != NULL && sec->portals[sector_t::ceiling] == NULL) ? sec->GetSkyBox(sector_t::ceiling) : NULL;
-	if (sb == NULL) sb = level.DefaultSkybox;
-	return sb;
-}
-
-// A full-screen triangle built from the vertex index -- no buffer, no input layout.
-static const char *kSkyPortalVS =
-	"#version 450\n"
-	"layout(location = 0) out vec2 vUV;\n"
-	"void main() {\n"
-	"    vec2 p = vec2(float((gl_VertexIndex << 1) & 2), float(gl_VertexIndex & 2));\n"
-	// [rc4l] V flipped: the portal is sampled by a triangle in clip space, where +Y is DOWN, while
-	// the texture it reads was rasterised with row 0 at the top. Sampling straight through hands back
-	// a skybox standing on its head -- and one that then appears to swing the wrong way when you look
-	// up, which reads as a broken camera rather than a flipped fetch.
-	"    vUV = vec2(p.x, 1.0 - p.y);\n"
-	"    gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);\n"
-	"}\n";
-
-static const char *kSkyPortalPS =
-	"#version 450\n"
-	"layout(location = 0) in vec2 vUV;\n"
-	"layout(binding = 1) uniform sampler2D uTex;\n"
-	"layout(location = 0) out vec4 outColor;\n"
-	"void main() { outColor = vec4(texture(uTex, vUV).rgb, 1.0); }\n";
-
-// [rc4l] A pipeline that paints one picture, uTex, over its whole target with kSkyPortalVS's triangle and the fragment stage ps, never against depth; dsvFormat is whatever depth buffer is bound beside it.
-static bool CreatePicturePSO(const char *name, const char *ps, Diligent::FILTER_TYPE filter, Diligent::TEXTURE_FORMAT dsvFormat,
-	Diligent::RefCntAutoPtr<Diligent::IPipelineState> &pso)
-{
-	auto *dev = GetDevice();
-	auto *swap = GetSwapChain();
-	if (!dev || !swap) return false;
-	FString vsName, psName, psoName;
-	vsName.Format("%s VS", name); psName.Format("%s PS", name); psoName.Format("%s PSO", name);
-	Diligent::RefCntAutoPtr<Diligent::IShader> vs, fs;
-	vs = CompileShader(Diligent::SHADER_TYPE_VERTEX, vsName.GetChars(), kSkyPortalVS);
-	fs = CompileShader(Diligent::SHADER_TYPE_PIXEL, psName.GetChars(), ps);
-	if (!vs || !fs) return false;
-	Diligent::SamplerDesc samp;
-	samp.MinFilter = samp.MagFilter = samp.MipFilter = filter;
-	samp.AddressU = Diligent::TEXTURE_ADDRESS_CLAMP;
-	samp.AddressV = Diligent::TEXTURE_ADDRESS_CLAMP;
-	Diligent::ImmutableSamplerDesc samplers[] = { { Diligent::SHADER_TYPE_PIXEL, "uTex", samp } };
-	Diligent::ShaderResourceVariableDesc vars[] = {
-		{ Diligent::SHADER_TYPE_PIXEL, "uTex", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
-	};
-	Diligent::GraphicsPipelineStateCreateInfo pci;
-	pci.PSODesc.Name = psoName.GetChars();
-	pci.PSODesc.PipelineType = Diligent::PIPELINE_TYPE_GRAPHICS;
-	pci.GraphicsPipeline.NumRenderTargets = 1;
-	pci.GraphicsPipeline.RTVFormats[0] = swap->GetDesc().ColorBufferFormat;
-	pci.GraphicsPipeline.DSVFormat = dsvFormat;
-	pci.GraphicsPipeline.PrimitiveTopology = Diligent::PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-	pci.GraphicsPipeline.RasterizerDesc.CullMode = Diligent::CULL_MODE_NONE;
-	pci.GraphicsPipeline.DepthStencilDesc.DepthEnable = false;
-	pci.GraphicsPipeline.DepthStencilDesc.DepthWriteEnable = false;
-	pci.PSODesc.ResourceLayout.Variables = vars;
-	pci.PSODesc.ResourceLayout.NumVariables = 1;
-	pci.PSODesc.ResourceLayout.ImmutableSamplers = samplers;
-	pci.PSODesc.ResourceLayout.NumImmutableSamplers = 1;
-	pci.pVS = vs;
-	pci.pPS = fs;
-	pso.Release();
-	dev->CreateGraphicsPipelineState(pci, &pso);
-	return pso.RawPtr() != nullptr;
-}
-
-// [rc4l] A surface painted from a picture of the world by its own screen position -- the sky's from the skybox's view, a stacked plane from its view -- and depth-written like any wall.
-static const char *kScreenSurfVS =
-	"#version 450\n"
-	"layout(location = 0) in vec3 aPos;\n"
-	"layout(location = 1) in vec2 aUV;\n"
-	"layout(location = 2) in float aPiece;\n"
-	FUA_CONSTANTS_GLSL
-	"layout(location = 0) out vec3 vWorld;\n"
-	"void main() {\n"
-	"    vWorld = aPos;\n"
-	"    gl_Position = uMVP * vec4(aPos, 1.0);\n"
-	"}\n";
-// [rc4l] No cut at the horizon: GL fills a sky wall through its stencil over the whole visible wall, below eye level too, which is what hides what stands behind it.
-// [rc4l] A mirror's pass draws these from the main walk, so one beyond the glass, between the reflected eye and the mirror, would paint over the reflection; the clip drops it as it drops the world there.
-static const char *kScreenSurfPS =
-	"#version 450\n"
-	FUA_CONSTANTS_GLSL
-	"layout(binding = 1) uniform sampler2D uSky;\n"
-	"layout(location = 0) in vec3 vWorld;\n"
-	"layout(location = 0) out vec4 outColor;\n"
-	"void main() {\n"
-	FUA_MIRROR_CLIP_GLSL("vWorld")
-	// [rc4l] Sampled by SCREEN FRACTION, not by texel.
-	//
-	// texelFetch indexes the sky image directly, which is only right while that image is
-	// exactly the size of the window. It is not: a side-by-side session gives the Vulkan
-	// window its own swapchain, and the portal texture is built from whichever size was
-	// current -- so every fragment past the texture edge fetched nothing and the sky came
-	// out as a hard-edged RECTANGLE with the map dark around it. It reproduces on no other
-	// window size, which is why an embedded capture at 1024x640 never showed it.
-	//
-	// A fraction is also what makes fua_dg_skyportal_scale work: a half-size portal image
-	// still covers the whole screen.
-	// [rc4l] Against the SKY IMAGE own size, not uScreen. uScreen is filled by whichever
-	// pass wrote the constants last and carries the mirror target size on some paths, which
-	// squeezed the whole sky into a fraction of the window -- the skyline sitting in a
-	// hard-edged rectangle. The portal texture is built from the swapchain, so its size IS
-	// the window size, and asking the sampler is self-consistent by construction.
-	"    vec2 uv = gl_FragCoord.xy / vec2(textureSize(uSky, 0));\n"
-	"    outColor = vec4(texture(uSky, uv).rgb, 1.0);\n"
-	"}\n";
-
-// [rc4l] A fragment stage for a pass that only writes depth, clipped at a mirror as the coloured one is.
-static const char *kScreenSurfDepthPS =
-	"#version 450\n"
-	FUA_CONSTANTS_GLSL
-	"layout(location = 0) in vec3 vWorld;\n"
-	"void main() {\n"
-	FUA_MIRROR_CLIP_GLSL("vWorld")
-	"}\n";
-
-// [rc4l] The pipeline for such surfaces: texType says whether uSky is one fixed picture (the sky) or one per binding (each stacked view).
-static Diligent::RefCntAutoPtr<Diligent::IPipelineState> CreateScreenSurfacePSO(const char *name,
-	Diligent::SHADER_RESOURCE_VARIABLE_TYPE texType, bool depthOnly = false)
-{
-	Diligent::RefCntAutoPtr<Diligent::IPipelineState> pso;
-	auto *dev = GetDevice();
-	auto *swap = GetSwapChain();
-	if (!dev || !swap || !g_cb) return pso;
-	const auto &sd = swap->GetDesc();
-	const char *ps = depthOnly ? kScreenSurfDepthPS : kScreenSurfPS;
-	Diligent::RefCntAutoPtr<Diligent::IShader> svs, sps;
-	svs = CompileShader(Diligent::SHADER_TYPE_VERTEX, name, kScreenSurfVS);
-	sps = CompileShader(Diligent::SHADER_TYPE_PIXEL, name, ps);
-	if (!svs || !sps) return pso;
-
-	Diligent::ShaderResourceVariableDesc surfVars[] = {
-		{ Diligent::SHADER_TYPE_PIXEL, "uSky", texType },
-		{ Diligent::SHADER_TYPE_PIXEL, "Constants", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_STATIC },
-	};
-	// uSky is a GLSL sampler2D -- a COMBINED image sampler. Without an immutable sampler half
-	// of that binding is unfilled, and the copy CreateShaderResourceBinding makes then faults
-	// inside the Vulkan loader, nowhere near the shader that caused it.
-	Diligent::SamplerDesc ssamp;
-	ssamp.MinFilter = Diligent::FILTER_TYPE_LINEAR;
-	ssamp.MagFilter = Diligent::FILTER_TYPE_LINEAR;
-	ssamp.MipFilter = Diligent::FILTER_TYPE_POINT;
-	ssamp.AddressU = Diligent::TEXTURE_ADDRESS_CLAMP;
-	ssamp.AddressV = Diligent::TEXTURE_ADDRESS_CLAMP;
-	Diligent::ImmutableSamplerDesc surfSamplers[] = {
-		{ Diligent::SHADER_TYPE_PIXEL, "uSky", ssamp },
-	};
-	Diligent::LayoutElement selems[] = {
-		Diligent::LayoutElement{0, 0, 3, Diligent::VT_FLOAT32, false},
-		Diligent::LayoutElement{1, 0, 2, Diligent::VT_FLOAT32, false},
-		Diligent::LayoutElement{2, 0, 1, Diligent::VT_FLOAT32, false},
-	};
-	Diligent::GraphicsPipelineStateCreateInfo pci;
-	pci.PSODesc.Name = name;
-	pci.PSODesc.PipelineType = Diligent::PIPELINE_TYPE_GRAPHICS;
-	pci.GraphicsPipeline.NumRenderTargets = 1;
-	pci.GraphicsPipeline.RTVFormats[0] = sd.ColorBufferFormat;
-	pci.GraphicsPipeline.DSVFormat = sd.DepthBufferFormat;
-	pci.GraphicsPipeline.PrimitiveTopology = Diligent::PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-	pci.GraphicsPipeline.RasterizerDesc.CullMode = Diligent::CULL_MODE_NONE;
-	ClampDepthLikeGL(pci.GraphicsPipeline);
-	pci.GraphicsPipeline.DepthStencilDesc.DepthEnable = true;
-	// [rc4l] Depth tested AND written. Measured both ways on three vantages: writing is the
-	// better of the two everywhere (the car vantage 9.4%% of pixels against 9.9%%, the alley
-	// 20.1%% against 21.1%%), so the sky occluding the passes after it costs less here than
-	// leaving them to draw over it.
-	pci.GraphicsPipeline.DepthStencilDesc.DepthWriteEnable = true;
-	// [rc4l] LESS_EQUAL, and it is the whole thing working or not.
-	//
-	// A sky surface is COPLANAR with the wall it replaces -- GL draws sky INSTEAD of that
-	// wall, not in front of it -- so it arrives at exactly the depth already in the buffer.
-	// Under the default LESS that is a fail, every time, and the pass draws nothing at all
-	// while looking perfectly correct from the outside: quads captured, runs built, draws
-	// submitted, no pixels. GL uses GL_LEQUAL here for the same reason.
-	pci.GraphicsPipeline.DepthStencilDesc.DepthFunc = Diligent::COMPARISON_FUNC_LESS_EQUAL;
-	// [rc4l] NO depth bias. A sky surface is usually COPLANAR with the wall it replaces --
-	// GL draws sky instead of that wall, not in front of it -- so biasing these away from
-	// the camera makes them lose every such contest and draw nothing at all. A bias was
-	// tried when the quads were derived from the map and over-emitted; taking them from GL
-	// removes the reason for it, because GL only emits the ones that belong.
-	pci.GraphicsPipeline.InputLayout.LayoutElements = selems;
-	pci.GraphicsPipeline.InputLayout.NumElements = 3;
-	pci.PSODesc.ResourceLayout.Variables = surfVars;
-	pci.PSODesc.ResourceLayout.NumVariables = 2;
-	pci.PSODesc.ResourceLayout.ImmutableSamplers = surfSamplers;
-	pci.PSODesc.ResourceLayout.NumImmutableSamplers = 1;
-	if (depthOnly)
-	{
-		// [rc4l] A depth-only pass reads no picture, so it declares just the constants, surfVars' second entry.
-		pci.PSODesc.ResourceLayout.Variables = &surfVars[1];
-		pci.PSODesc.ResourceLayout.NumVariables = 1;
-		pci.PSODesc.ResourceLayout.NumImmutableSamplers = 0;
-		pci.GraphicsPipeline.BlendDesc.RenderTargets[0].RenderTargetWriteMask = Diligent::COLOR_MASK_NONE;
-	}
-	pci.pVS = svs;
-	pci.pPS = sps;
-	dev->CreateGraphicsPipelineState(pci, &pso);
-	if (!pso) return pso;
-	if (!BindSceneConstants(pso))
-	{
-		Printf("vulkan %s OFF: pipeline missing its constants\n", name);
-		pso.Release();
-	}
-	return pso;
-}
-
-static bool EnsureSkyPortalResources()
-{
-	auto *dev = GetDevice();
-	auto *swap = GetSwapChain();
-	if (!dev || !swap) return false;
-
-	// [rc4l] FULL resolution, after half was tried and looked like it.
-	//
-	// The reasoning for halving it was that a skybox sits at infinity and is barely magnified. That
-	// is true of a sky TEXTURE and false of this: a sky portal is a view of a city, full of thin
-	// bright detail, and its pixels land on screen at 1:1 like any others. Halved, the skyline was
-	// visibly softer than GL's beside it -- which is what rc4l reported, in those words.
-	//
-	// The cost it was bounding is real (one extra scene render per frame, the shape that produced
-	// the TDR in tdr-crash-after-map-loads.md), so the divisor stays reachable rather than deleted:
-	// fua_dg_skyportal_scale 2 halves it again if a map ever needs the frame time back.
-	const auto &sd = swap->GetDesc();
-	int div = fua_dg_skyportal_scale;
-	if (div < 1) div = 1;
-	if (div > 4) div = 4;
-	const int w = (int)sd.Width / div, h = (int)sd.Height / div;
-	if (w <= 0 || h <= 0) return false;
-	if (!g_skyPortalColor || g_skyPortalW != w || g_skyPortalH != h)
-	{
-		g_skyPortalColor.Release();
-		g_skyPortalDepth.Release();
-		g_skyPortalSRB.Release();
-		g_skySurfPSO.Release();
-		g_skySurfSRB.Release();
-		if (!CreateViewTextures(w, h, "fua sky portal", g_skyPortalColor, g_skyPortalDepth)) return false;
-		g_skyPortalW = w; g_skyPortalH = h;
-	}
-
-	// [rc4l] Same standing as the dome it replaces: drawn first, never against the depth buffer, into the frame's own targets.
-	if (!g_skyPortalPSO && !CreatePicturePSO("fua sky portal", kSkyPortalPS, Diligent::FILTER_TYPE_LINEAR, sd.DepthBufferFormat, g_skyPortalPSO))
-		return false;
-	if (!g_skySurfPSO)
-	{
-		g_skySurfPSO = CreateScreenSurfacePSO("fua sky surface", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_STATIC);
-		auto *srv = g_skyPortalColor->GetDefaultView(Diligent::TEXTURE_VIEW_SHADER_RESOURCE);
-		auto *tv = g_skySurfPSO ? g_skySurfPSO->GetStaticVariableByName(Diligent::SHADER_TYPE_PIXEL, "uSky") : NULL;
-		if (tv && srv)
-		{
-			tv->Set(srv);
-			g_skySurfSRB.Release();
-			g_skySurfPSO->CreateShaderResourceBinding(&g_skySurfSRB, true);
-		}
-		else if (g_skySurfPSO)
-		{
-			Printf("vulkan sky surfaces OFF: pipeline missing its texture\n");
-			g_skySurfPSO.Release();
-		}
-	}
-	if (!g_skyPortalSRB && !CreatePictureBinding(g_skyPortalPSO, "uTex", g_skyPortalColor, g_skyPortalSRB)) return false;
-	return true;
-}
-
-// Render the world from the skybox viewpoint, then paint it as this frame background.
-// [rc4l] Rendered before the frame's own world pass, exactly as the camera-texture pass is. The sky
-// portal is a second view of the map, and a second view cannot be taken from inside the first: the
-// world draw derives its visible set and light clusters once per call, so re-entering it hands the
-// outer pass the skybox room's geometry to draw with the player's camera -- and the map disappears.
-static bool RenderSkyPortal(Diligent::IDeviceContext *ctx)
-{
-	g_skyPortalActive = false;
-	if (!fua_dg_skyportal) return false;
-	ASkyViewpoint *sb = CurrentSkyViewpoint();
-	if (sb == NULL) return false;
-	if (!EnsureSkyPortalResources()) return false;
-
-	auto *swap = GetSwapChain();
-	auto *brtv = swap->GetCurrentBackBufferRTV();
-	// [rc4l] The world pass renders into our own readable depth buffer, so restoring the swapchain's
-	// here would hand the screen a depth buffer nothing has written to.
-	Diligent::ITextureView *bdsv = EnsureSceneDepth();
-	if (!bdsv) bdsv = swap->GetDepthBufferDSV();
-	auto *prtv = g_skyPortalColor->GetDefaultView(Diligent::TEXTURE_VIEW_RENDER_TARGET);
-	auto *pdsv = g_skyPortalDepth->GetDefaultView(Diligent::TEXTURE_VIEW_DEPTH_STENCIL);
-	if (!prtv || !pdsv) return false;
-
-	const fixed_t sx = viewx, sy = viewy, sz = viewz;
-	const angle_t sa = viewangle;
-	float savedMVP[16];
-	for (int i = 0; i < 16; i++) savedMVP[i] = g_mvp[i];
-
-	// [rc4l] The viewpoint, interpolated, with its own angle ADDED to the camera -- which is how a
-	// skybox parallaxes and rotates. The BAM interpolation is the tested one; a hand-rolled version
-	// is already recorded in this tree as having made a rotating portal overshoot on right turns.
-	// [rc4l] Interpolated ONLY when the viewpoint has a previous position to interpolate from.
-	//
-	// A skybox viewpoint that never moves may carry PrevX/Y/Z of zero -- nothing has ever
-	// written them -- and then this lerps from the MAP ORIGIN to the actor, landing the camera
-	// somewhere out in the middle of the level and moving it with r_TicFrac. The skybox is then
-	// rendered from the wrong place, which makes the city small and off-centre, and it shifts
-	// as the frame fraction changes: the "sky moves with the mouse" this started from.
-	const fixed_t frac = r_TicFrac;
-	const bool moved = (sb->PrevX != 0 || sb->PrevY != 0 || sb->PrevZ != 0);
-	viewx = moved ? sb->PrevX + FixedMul(frac, sb->x - sb->PrevX) : sb->x;
-	viewy = moved ? sb->PrevY + FixedMul(frac, sb->y - sb->PrevY) : sb->y;
-	viewz = moved ? sb->PrevZ + FixedMul(frac, sb->z - sb->PrevZ) : sb->z;
-	viewangle = sa + (moved ? zx::InterpolateAngleBAM(sb->PrevAngle, sb->angle, (int64_t)frac)
-	                        : sb->angle);
-
-	// Never let the eye sit inside the skybox room floor or ceiling.
-	if (sb->Sector != NULL)
-	{
-		const fixed_t fl = sb->Sector->floorplane.ZatPoint(sb->x, sb->y);
-		const fixed_t ce = sb->Sector->ceilingplane.ZatPoint(sb->x, sb->y);
-		if (viewz < fl + 4 * FRACUNIT) viewz = fl + 4 * FRACUNIT;
-		if (viewz > ce - 4 * FRACUNIT) viewz = ce - 4 * FRACUNIT;
-	}
-
-	// [rc4l] Where the portal camera actually stands. Recorded HERE and not after the restore a
-	// few lines down, which hands back the player position -- the reach test then measured from
-	// the player, excluded the skybox room along with everything else, and drew nothing at all.
-	g_skyPortalCamX = FIXED2FLOAT(viewx);
-	g_skyPortalCamY = FIXED2FLOAT(viewy);
-	g_skyPortalCamZ = FIXED2FLOAT(viewz);
-	BuildMVP(g_mvp);
-	viewx = sx; viewy = sy; viewz = sz; viewangle = sa;
-
-	ctx->SetRenderTargets(1, &prtv, pdsv, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-	const float clearCol[4] = { 0.f, 0.f, 0.f, 1.f };
-	ctx->ClearRenderTarget(prtv, clearCol, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-	ctx->ClearDepthStencil(pdsv, Diligent::CLEAR_DEPTH_FLAG, 1.0f, 0,
-		Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-	{
-		Diligent::Viewport vp;
-		vp.TopLeftX = 0; vp.TopLeftY = 0;
-		vp.Width = (float)g_skyPortalW; vp.Height = (float)g_skyPortalH;
-		vp.MinDepth = 0.f; vp.MaxDepth = 1.f;
-		ctx->SetViewports(1, &vp, (Diligent::Uint32)g_skyPortalW, (Diligent::Uint32)g_skyPortalH);
-	}
-	if (g_cb)
-	{
-		Diligent::MapHelper<float> cb(ctx, g_cb, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD);
-		for (int k = 0; k < 16; k++) cb[k] = g_mvp[k];
-	}
-	g_inSkyPortal = true;
-	DrawWorld(ctx);
-	g_inSkyPortal = false;
-
-	// Hand the screen back its own target and full viewport; the frame assumes both.
-	for (int k = 0; k < 16; k++) g_mvp[k] = savedMVP[k];
-	ctx->SetRenderTargets(1, &brtv, bdsv, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-	ctx->SetViewports(1, nullptr, 0, 0);
-	if (g_cb)
-	{
-		Diligent::MapHelper<float> cb(ctx, g_cb, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD);
-		for (int k = 0; k < 16; k++) cb[k] = g_mvp[k];
-	}
-	// [rc4l] The picture changes hands HERE, outside the frame's render pass, not at the draw that
-	// samples it. A transition asked for mid-pass makes Diligent end the pass to place the barrier and
-	// begin a new one, and the world drawn afterwards lands in a pass the frame no longer owns -- which
-	// is how a working portal blit came to erase the map behind it.
-	{
-		Diligent::StateTransitionDesc barrier(g_skyPortalColor, Diligent::RESOURCE_STATE_UNKNOWN,
-			Diligent::RESOURCE_STATE_SHADER_RESOURCE, Diligent::STATE_TRANSITION_FLAG_UPDATE_STATE);
-		ctx->TransitionResourceStates(1, &barrier);
-	}
-	g_skyPortalActive = true;
-	return true;
-}
-
-// [rc4l] See dgshared.h: the portal pass's camera, for passes that apply the same reach as the world.
-bool SkyPortalReach(float &camX, float &camY, float &reach)
-{
-	if (!g_inSkyPortal || fua_dg_skyportal_reach <= 0.f) return false;
-	camX = g_skyPortalCamX;
-	camY = g_skyPortalCamY;
-	reach = fua_dg_skyportal_reach;
-	return true;
-}
-
-// [rc4l] What the viewpoint saw, laid down where the sky would otherwise be. Depth stays open, so
-// the world draws over it in the same pass -- the portal is a background, not geometry.
-static bool BlitSkyPortal(Diligent::IDeviceContext *ctx)
-{
-	if (!g_skyPortalActive || !g_skyPortalPSO || !g_skyPortalSRB) return false;
-	ctx->SetPipelineState(g_skyPortalPSO);
-	ctx->CommitShaderResources(g_skyPortalSRB, Diligent::RESOURCE_STATE_TRANSITION_MODE_VERIFY);
-	Diligent::DrawAttribs dr;
-	dr.NumVertices = 3;
-	dr.Flags = Diligent::DRAW_FLAG_VERIFY_ALL;
-	ctx->Draw(dr);
-	return true;
-}
-
-static void DrawSky(Diligent::IDeviceContext *ctx)
-{
-	// [rc4l] The box is one buffer and a draw per face, because each face is its own material -- the
-	// same shape as a world batch, which is one draw per binding.
-	if (g_skyIsBox)
-	{
-		if (!g_skyBuiltValid || !g_skyBoxVB || !g_skyBoxPSO || g_skyBoxFaces.Size() == 0) return;
-		Diligent::IBuffer *bvbs[] = { g_skyBoxVB };
-		const Diligent::Uint64 boffsets[] = { 0 };
-		ctx->SetVertexBuffers(0, 1, bvbs, boffsets, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
-			Diligent::SET_VERTEX_BUFFERS_FLAG_RESET);
-		ctx->SetPipelineState(g_skyBoxPSO);
-		for (unsigned i = 0; i < g_skyBoxFaces.Size(); i++)
-		{
-			const SkyBoxFace &f = g_skyBoxFaces[i];
-			if (!f.srb || f.count == 0) continue;
-			ctx->CommitShaderResources(f.srb, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-			Diligent::DrawAttribs d;
-			d.NumVertices = (Diligent::Uint32)f.count;
-			d.StartVertexLocation = (Diligent::Uint32)f.first;
-			d.Flags = Diligent::DRAW_FLAG_VERIFY_ALL;
-			ctx->Draw(d);
-		}
-		DrawSkyFade(ctx);
-		return;
-	}
-
-	if (!g_skyBuiltValid || !g_skyVB || !g_skyPSO || g_skyVerts == 0) return;
-
-	Diligent::IBuffer *vbs[] = { g_skyVB };
-	const Diligent::Uint64 offsets[] = { 0 };
-	ctx->SetVertexBuffers(0, 1, vbs, offsets, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
-		Diligent::SET_VERTEX_BUFFERS_FLAG_RESET);
-	ctx->SetPipelineState(g_skyPSO);
-	ctx->CommitShaderResources(g_skySRB, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-
-	Diligent::DrawAttribs draw;
-	draw.NumVertices = (Diligent::Uint32)g_skyVerts;
-	draw.Flags = Diligent::DRAW_FLAG_VERIFY_ALL;
-	ctx->Draw(draw);
-
-	DrawSkyFade(ctx);
-}
-
-// [rc4l] Draw this frame's dynamic geometry -- sprites.
-//
-// Rebuilt and re-uploaded every frame on purpose: billboards are view-dependent, so there is nothing
-// to cache. The cost is bounded by what is on screen (a few hundred quads), and at ~5.6M triangles
-// per GPU millisecond the upload dominates the draw by a wide margin.
-//
-// Drawn AFTER the world with the alpha-tested pipeline and normal depth, so sprites occlude and are
-// occluded correctly. Only the opaque sprites are drawn here: the translucent ones are handed to the
-// world's translucent pass so the two sort against each other -- an item lying under a glass 3D floor
-// has to be composited before the floor, and it cannot be if sprites are a separate pass afterwards.
-// [rc4l] What the dynamic stream costs, which no other clock covers.
-//
-// stat rendertimes wraps GL's own work: S: Render and S: Setup are Process and Draw. This runs in the
-// BACKEND, inside All= and outside every sub-clock, which is why Sunder MAP20 read 4.8 ms a frame
-// with its named parts summing to 2.
-double g_dynBuildMs = 0.0;
 
 static void BuildDynamic(Diligent::IDeviceContext *ctx)
 {
@@ -3275,80 +1483,6 @@ static void BuildDynamic(Diligent::IDeviceContext *ctx)
 // contribution is a batch in the static vertex buffer and a sprite's is a run in the dynamic one, so
 // the merged list carries which buffer it came from and the pass rebinds when it crosses over --
 // a few dozen draws, so the extra binds are not worth avoiding.
-// [rc4l] The sky as depth-writing surfaces -- GL's captured quads plus the horizon lines' -- painted from the sky image by screen position.
-// [rc4l] Uploads a frame's screen-sampled surfaces and binds them under pso, ready for a draw per picture; false when there is nothing to draw.
-static bool BindScreenSurfaces(Diligent::IDeviceContext *ctx, Diligent::RefCntAutoPtr<Diligent::IBuffer> &vb,
-	unsigned int &capacity, const TArray<SceneVertex> &sv, Diligent::IPipelineState *pso, const char *name)
-{
-	if (sv.Size() < 3 || !UploadGrowingVB(ctx, vb, capacity, &sv[0], sv.Size(), sizeof(SceneVertex), 256, name)) return false;
-	Diligent::IBuffer *vbs[] = { vb };
-	const Diligent::Uint64 offsets[] = { 0 };
-	ctx->SetVertexBuffers(0, 1, vbs, offsets, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
-		Diligent::SET_VERTEX_BUFFERS_FLAG_RESET);
-	ctx->SetPipelineState(pso);
-	return true;
-}
-
-// [rc4l] One run of bound surfaces, painted from the picture srb carries.
-static void DrawScreenSurfaceRun(Diligent::IDeviceContext *ctx, Diligent::IShaderResourceBinding *srb, unsigned int first, unsigned int count)
-{
-	ctx->CommitShaderResources(srb, Diligent::RESOURCE_STATE_TRANSITION_MODE_VERIFY);
-	Diligent::DrawAttribs dr;
-	dr.NumVertices = count;
-	dr.StartVertexLocation = first;
-	dr.Flags = Diligent::DRAW_FLAG_VERIFY_ALL;
-	ctx->Draw(dr);
-}
-
-// [rc4l] This pass's sky surfaces: GL's own sky quads for the view being drawn, plus the sky halves of the horizon lines, which come from the map.
-static void GatherSkySurfaces(TArray<SceneVertex> &sv)
-{
-	int nverts = 0, nhorizon = 0;
-	const FFlatVertex *src = zx::levelmesh::SkyQuadVertices(nverts,
-		zx::levelmesh::ComputeSkyDrawList(g_inCameraPass, g_stackPassSlot));
-	// [rc4l] A horizon line is built for the player's eye, so a stacked view, which stands somewhere else, takes none; the sky starts at this pass's eye, where the horizon pass stops the floor half.
-	float eye[3];
-	const FFlatVertex *hsrc = (g_stackPassSlot < 0 && zx::horizon::ComputeEyeFromViewProjection(g_mvp, eye))
-		? zx::horizon::HorizonSkyVertices(nhorizon, eye[1]) : NULL;
-	if (src == NULL) nverts = 0;
-	if (hsrc == NULL) nhorizon = 0;
-	sv.Clear();
-	for (int i = 0; i < nverts + nhorizon; i++) sv.Push(ToSceneVertex((i < nverts) ? src[i] : hsrc[i - nverts], 0));
-}
-
-// [rc4l] Under a plain sky dome, the same surfaces in depth only, before the world: GL's sky walls reach to 32768 and hide whatever stands behind them, and the dome is already the colour there.
-static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_skyOccluderPSO;
-static Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding> g_skyOccluderSRB;
-static Diligent::RefCntAutoPtr<Diligent::IBuffer> g_skyOccluderVB;
-static unsigned int g_skyOccluderVBCapacity = 0;
-
-static void DrawSkyOccluders(Diligent::IDeviceContext *ctx)
-{
-	if (g_skyPortalActive) return;
-	if (!g_skyOccluderPSO)
-	{
-		g_skyOccluderPSO = CreateScreenSurfacePSO("fua sky occluder", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_STATIC, true);
-		if (!g_skyOccluderPSO) return;
-		g_skyOccluderPSO->CreateShaderResourceBinding(&g_skyOccluderSRB, true);
-	}
-	if (!g_skyOccluderSRB) return;
-	static TArray<SceneVertex> sv;
-	GatherSkySurfaces(sv);
-	if (!BindScreenSurfaces(ctx, g_skyOccluderVB, g_skyOccluderVBCapacity, sv, g_skyOccluderPSO, "fua sky occluder VB")) return;
-	DrawScreenSurfaceRun(ctx, g_skyOccluderSRB, 0, sv.Size());
-}
-
-static void DrawSkySurfaces(Diligent::IDeviceContext *ctx)
-{
-	if (!g_skyPortalActive || !g_skySurfPSO || !g_skySurfSRB) return;
-
-	// [rc4l] Its own buffer, rebuilt each frame, since GL clears the shared dynamic stream when it re-enters its scene builder for the skybox portal, between the walk that produces these and the draw.
-	static TArray<SceneVertex> sv;
-	GatherSkySurfaces(sv);
-	if (!BindScreenSurfaces(ctx, g_skySurfVB, g_skySurfVBCapacity, sv, g_skySurfPSO, "fua sky surface VB")) return;
-	DrawScreenSurfaceRun(ctx, g_skySurfSRB, 0, sv.Size());
-	g_skyDraws++;
-}
 // [rc4l] The dynamic pieces that are SOLID, drawn with the world instead of in the sorted pass.
 //
 // GL draws an opaque model in the opaque pass, depth-writing, with culling off -- it only turns
@@ -3362,10 +1496,12 @@ static void DrawSolidDyn(Diligent::IDeviceContext *ctx)
 	Diligent::IBuffer *vbs[] = { g_dynVB };
 	const Diligent::Uint64 offsets[] = { 0 };
 	bool bound = false;
+	Diligent::IShaderResourceBinding *committed = NULL;
+	zx::hwrender::LoopCommits commits = zx::hwrender::ComputeLoopCommitsStart();
 	for (unsigned i = 0; i < g_dynRuns.Size(); i++)
 	{
 		const DynRun &r = g_dynRuns[i];
-		if (r.count == 0 || !r.solid || r.blend != 0 || !zx::levelmesh::ComputeDrawsDynamicPiece(r.mirrorLine, r.stackSlot, g_lineMirror, g_stackPassSlot)) continue;
+		if (r.count == 0 || !r.solid || r.blend != 0 || !zx::levelmesh::ComputeDrawsDynamicPiece(r.mirrorLine, r.stackSlot, g_pass.lineMirror, g_pass.stackSlot)) continue;
 		auto *srb = WorldSRB(g_maskedNoCullPSO.RawPtr());
 		if (srb) g_dynBindless++;
 		else { g_dynPerMaterial++; srb = GetMaterialSRB(g_maskedNoCullPSO.RawPtr(), r.material, r.translation); }
@@ -3377,7 +1513,7 @@ static void DrawSolidDyn(Diligent::IDeviceContext *ctx)
 			ctx->SetPipelineState(g_maskedNoCullPSO);
 			bound = true;
 		}
-		ctx->CommitShaderResources(srb, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+		if (srb != committed) { CommitInLoop(ctx, commits, srb); committed = srb; }
 		Diligent::DrawAttribs dr;
 		dr.NumVertices = r.count;
 		dr.StartVertexLocation = r.first;
@@ -3429,7 +1565,7 @@ static void DrawBlended(Diligent::IDeviceContext *ctx)
 		for (unsigned i = 0; i < g_dynRuns.Size(); i++)
 		{
 			const DynRun &r = g_dynRuns[i];
-			if (r.count == 0 || !zx::levelmesh::ComputeDrawsDynamicPiece(r.mirrorLine, r.stackSlot, g_lineMirror, g_stackPassSlot)) continue;
+			if (r.count == 0 || !zx::levelmesh::ComputeDrawsDynamicPiece(r.mirrorLine, r.stackSlot, g_pass.lineMirror, g_pass.stackSlot)) continue;
 			// [rc4l] An opaque solid is drawn with the world, not in this list. See DrawSolidDyn.
 			if (r.solid && r.blend == 0) continue;
 			// Blend mode 3 is the fuzz shadow; the engine draws it as a dark near-opaque overlay, and
@@ -3507,7 +1643,7 @@ static void DrawBlended(Diligent::IDeviceContext *ctx)
 			return zx::hwrender::ComputeDrawsBefore(da, db);
 		});
 
-	if (g_dumpBlendOrder && g_drawingMainView)
+	if (g_dumpBlendOrder && g_pass.mainView)
 	{
 		g_dumpBlendOrder = false;
 		// [rc4l] Why static translucent batches were left out, so a pass that lost them all says which test dropped them.
@@ -3573,6 +1709,7 @@ static void DrawBlended(Diligent::IDeviceContext *ctx)
 	// the same change is worth having. The lesson kept is that this must be measured on a CPU-bound
 	// frame, because on a fill-bound one it is invisible.
 	Diligent::IShaderResourceBinding *boundSRB = NULL;
+	zx::hwrender::LoopCommits commits = zx::hwrender::ComputeLoopCommitsStart();
 	int boundVB = -1;
 	const Diligent::Uint64 offsets[] = { 0 };
 	for (unsigned i = 0; i < list.Size(); i++)
@@ -3603,7 +1740,7 @@ static void DrawBlended(Diligent::IDeviceContext *ctx)
 		if (!srb) { idxCursor += d.count; continue; }
 		if (srb != boundSRB)
 		{
-			ctx->CommitShaderResources(srb, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+			CommitInLoop(ctx, commits, srb);
 			boundSRB = srb;
 		}
 
@@ -3677,21 +1814,7 @@ static void ReleaseScenePipelines()
 	for (unsigned i = 0; i < g_batches.Size(); i++) g_batches[i].srb = NULL;
 	g_srb.Release();
 	g_srbMasked.Release();
-	g_skySRB.Release();
-	g_skyPSO.Release();
-	// The face bindings are keyed on this level's materials, so they go with everything else that is.
-	g_skyBoxFaces.Clear();
-	g_skyBoxVB.Release();
-	g_skyBoxPSO.Release();
-	g_skyIsBox = false;
-	g_skyPortalSRB.Release();
-	g_skyPortalPSO.Release();
-	g_skyPortalColor.Release();
-	g_skyPortalDepth.Release();
-	g_skyPortalW = g_skyPortalH = 0;
-	g_skyFadePSO.Release();
-	g_skyOccluderSRB.Release();
-	g_skyOccluderPSO.Release();
+	ReleaseSkyPipelines();
 	g_scenePSO.Release();
 	g_maskedPSO.Release();
 	g_maskedGBufPSO.Release();
@@ -3705,313 +1828,8 @@ static void ReleaseScenePipelines()
 	g_addRedAlphaPSO.Release();
 	g_transPSO.Release();
 	g_addPSO.Release();
-	g_skyBuiltValid = false;
 }
 
-// ---------------------------------------------------------------------------
-// 2D / HUD
-// ---------------------------------------------------------------------------
-//
-// [rc4l] The status bar, weapon, messages, menus and console, from the quad list features/hwrender
-// captured off the engine's own 2D path (see hud2d.h). Its own pipeline because 2D is a different
-// problem from 3D: orthographic, no depth at all, painter's order, and blended throughout.
-//
-// Submission order is draw order and must not be reordered -- no material batching here. A 2D layer
-// sorted by texture would put the status bar behind the world and the console behind the menu.
-struct Vertex2D { float x, y, u, v, r, g, b, a, texMode; };
-
-// [rc4l] One 2D pipeline per blend mode: 0 alpha, 1 additive, 2 multiply.
-//
-// There used to be one, always alpha, and Quad2D::blend was recorded and then ignored -- so additive
-// 2D drew as ordinary alpha. Multiply is what a fixed colormap needs (invulnerability tints the
-// screen by multiplying it), and neither can be faked with the alpha state.
-static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_pso2D[3];
-static Diligent::RefCntAutoPtr<Diligent::IBuffer>        g_vb2D;
-static Diligent::RefCntAutoPtr<Diligent::IBuffer>        g_cb2D;
-static unsigned int g_vb2DCapacity = 0;
-static int g_draws2D = 0, g_quads2D = 0;
-
-static const char *k2DVS =
-	"#version 450\n"
-	"layout(location = 0) in vec2 aPos;\n"
-	"layout(location = 1) in vec2 aUV;\n"
-	"layout(location = 2) in vec4 aColor;\n"
-	"layout(location = 3) in float aTexMode;\n"
-	"layout(binding = 0) uniform Screen { vec4 uInvScreen; };\n"
-	"layout(location = 0) out vec2 vUV;\n"
-	"layout(location = 1) out vec4 vColor;\n"
-	"layout(location = 2) flat out int vTexMode;\n"
-	"void main() {\n"
-	// Engine 2D space is ortho(0, W, H, 0): origin top-left, Y down. The Y is INVERTED here rather
-	// than passed through, because Diligent's Vulkan backend renders with a negative-height viewport
-	// so that GL- and D3D-style projections both come out upright -- which means the shader has to
-	// hand it GL-style NDC (+1 at the top). Passing Vulkan-native NDC put the status bar along the
-	// top of the screen, mirrored.
-	"    vec2 ndc = vec2(aPos.x * uInvScreen.x * 2.0 - 1.0, 1.0 - aPos.y * uInvScreen.y * 2.0);\n"
-	"    gl_Position = vec4(ndc, 0.0, 1.0);\n"
-	"    vUV = aUV;\n"
-	"    vColor = aColor;\n"
-	"    vTexMode = int(aTexMode);\n"
-	"}\n";
-
-// [rc4l] The texture modes from gl_interface.h's TexMode, transcribed from getTexel() in main.fp.
-//
-// TM_MASK is the one that matters: coloured text is drawn with the glyph as a pure coverage MASK and
-// the vertex colour supplying RGB. Multiplying by the texel instead -- which is what a naive
-// `t * vColor` does -- renders every font muddy and dark, and it looks like a palette problem rather
-// than a texture-mode one. The mode is captured per quad off the render state.
-static const char *k2DPS =
-	"#version 450\n"
-	"layout(location = 0) in vec2 vUV;\n"
-	"layout(location = 1) in vec4 vColor;\n"
-	"layout(location = 2) flat in int vTexMode;\n"
-	"layout(binding = 1) uniform sampler2D uTex;\n"
-	"layout(location = 0) out vec4 outColor;\n"
-	"void main() {\n"
-	"    vec4 t = texture(uTex, vUV);\n"
-	"    if (vTexMode == 1)      t.rgb = vec3(1.0);\n"                       // TM_MASK
-	"    else if (vTexMode == 2) t.a = 1.0;\n"                               // TM_OPAQUE
-	"    else if (vTexMode == 3) t = vec4(1.0-t.r, 1.0-t.b, 1.0-t.g, t.a);\n"// TM_INVERSE
-	"    else if (vTexMode == 4) t = vec4(1.0, 1.0, 1.0, t.r);\n"            // TM_REDTOALPHA
-	"    else if (vTexMode == 5 && (vUV.t < 0.0 || vUV.t > 1.0)) t.a = 0.0;\n"// TM_CLAMPY
-	"    outColor = t * vColor;\n"
-	"}\n";
-
-static bool Ensure2DPipeline()
-{
-	if (g_pso2D[0]) return true;
-	auto *dev = GetDevice();
-	auto *swap = GetSwapChain();
-	if (!dev || !swap) return false;
-
-	Diligent::RefCntAutoPtr<Diligent::IShader> vs, ps;
-	vs = CompileShader(Diligent::SHADER_TYPE_VERTEX, "fua 2D VS", k2DVS);
-	ps = CompileShader(Diligent::SHADER_TYPE_PIXEL, "fua 2D PS", k2DPS);
-	if (!vs || !ps) return false;
-
-	Diligent::BufferDesc cbd;
-	cbd.Name = "fua 2D constants";
-	cbd.Size = sizeof(float) * 4;
-	cbd.Usage = Diligent::USAGE_DYNAMIC;
-	cbd.BindFlags = Diligent::BIND_UNIFORM_BUFFER;
-	cbd.CPUAccessFlags = Diligent::CPU_ACCESS_WRITE;
-	dev->CreateBuffer(cbd, nullptr, &g_cb2D);
-	if (!g_cb2D) return false;
-
-	Diligent::LayoutElement layout[] = {
-		Diligent::LayoutElement{0, 0, 2, Diligent::VT_FLOAT32, false},
-		Diligent::LayoutElement{1, 0, 2, Diligent::VT_FLOAT32, false},
-		Diligent::LayoutElement{2, 0, 4, Diligent::VT_FLOAT32, false},
-		Diligent::LayoutElement{3, 0, 1, Diligent::VT_FLOAT32, false},
-	};
-	static Diligent::ShaderResourceVariableDesc vars[] = {
-		{ Diligent::SHADER_TYPE_PIXEL, "uTex", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
-		{ Diligent::SHADER_TYPE_PIXEL, "uBrightmap", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
-	};
-	Diligent::SamplerDesc samp;
-	// [rc4l] CLAMP, and no mips: the engine draws 2D with CLAMP_XY_NOMIP. Wrapping would bleed the
-	// opposite edge of a font glyph into its neighbour, and a mipped status bar goes soft.
-	samp.MinFilter = Diligent::FILTER_TYPE_POINT;
-	samp.MagFilter = Diligent::FILTER_TYPE_POINT;
-	samp.MipFilter = Diligent::FILTER_TYPE_POINT;
-	samp.AddressU = Diligent::TEXTURE_ADDRESS_CLAMP;
-	samp.AddressV = Diligent::TEXTURE_ADDRESS_CLAMP;
-	const Diligent::ImmutableSamplerDesc samplers[] = {
-		{ Diligent::SHADER_TYPE_PIXEL, "uTex", samp },
-		{ Diligent::SHADER_TYPE_PIXEL, "uBrightmap", samp },
-	};
-
-	Diligent::GraphicsPipelineStateCreateInfo pci;
-	pci.PSODesc.Name = "fua 2D PSO";
-	pci.PSODesc.PipelineType = Diligent::PIPELINE_TYPE_GRAPHICS;
-	pci.GraphicsPipeline.NumRenderTargets = 1;
-	pci.GraphicsPipeline.RTVFormats[0] = swap->GetDesc().ColorBufferFormat;
-	pci.GraphicsPipeline.DSVFormat = swap->GetDesc().DepthBufferFormat;
-	pci.GraphicsPipeline.PrimitiveTopology = Diligent::PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-	pci.GraphicsPipeline.RasterizerDesc.CullMode = Diligent::CULL_MODE_NONE;
-	pci.GraphicsPipeline.RasterizerDesc.ScissorEnable = true;
-	pci.GraphicsPipeline.DepthStencilDesc.DepthEnable = false;
-	pci.GraphicsPipeline.DepthStencilDesc.DepthWriteEnable = false;
-	{
-		auto &rt = pci.GraphicsPipeline.BlendDesc.RenderTargets[0];
-		rt.BlendEnable = true;
-		rt.SrcBlend  = Diligent::BLEND_FACTOR_SRC_ALPHA;
-		rt.DestBlend = Diligent::BLEND_FACTOR_INV_SRC_ALPHA;
-		rt.BlendOp = Diligent::BLEND_OPERATION_ADD;
-		rt.SrcBlendAlpha  = Diligent::BLEND_FACTOR_ONE;
-		rt.DestBlendAlpha = Diligent::BLEND_FACTOR_INV_SRC_ALPHA;
-		rt.BlendOpAlpha = Diligent::BLEND_OPERATION_ADD;
-	}
-	pci.GraphicsPipeline.InputLayout.LayoutElements = layout;
-	pci.GraphicsPipeline.InputLayout.NumElements = 4;
-	pci.PSODesc.ResourceLayout.DefaultVariableType = Diligent::SHADER_RESOURCE_VARIABLE_TYPE_STATIC;
-	pci.PSODesc.ResourceLayout.Variables = vars;
-	pci.PSODesc.ResourceLayout.NumVariables = 1;
-	pci.PSODesc.ResourceLayout.ImmutableSamplers = samplers;
-	pci.PSODesc.ResourceLayout.NumImmutableSamplers = 1;
-	pci.pVS = vs;
-	pci.pPS = ps;
-	for (int mode = 0; mode < 3; mode++)
-	{
-		auto &rt = pci.GraphicsPipeline.BlendDesc.RenderTargets[0];
-		rt.BlendEnable = true;
-		if (mode == 2)
-		{
-			// GL_DST_COLOR / GL_ZERO -- the screen multiplied by the blend colour.
-			rt.SrcBlend  = Diligent::BLEND_FACTOR_DEST_COLOR;
-			rt.DestBlend = Diligent::BLEND_FACTOR_ZERO;
-		}
-		else
-		{
-			rt.SrcBlend  = Diligent::BLEND_FACTOR_SRC_ALPHA;
-			rt.DestBlend = (mode == 1) ? Diligent::BLEND_FACTOR_ONE
-			                           : Diligent::BLEND_FACTOR_INV_SRC_ALPHA;
-		}
-		dev->CreateGraphicsPipelineState(pci, &g_pso2D[mode]);
-		if (!g_pso2D[mode]) return false;
-		if (auto *v = g_pso2D[mode]->GetStaticVariableByName(Diligent::SHADER_TYPE_VERTEX, "Screen"))
-			v->Set(g_cb2D);
-	}
-	return true;
-}
-
-static void Draw2D(Diligent::IDeviceContext *ctx)
-{
-	g_draws2D = g_quads2D = 0;
-	if (!fua_dg_hud) return;
-
-	int nq = 0;
-	const zx::hwrender::Quad2D *quads = zx::hwrender::Quads2D(nq);
-	if (quads == NULL || nq <= 0) return;
-	if (!Ensure2DPipeline()) return;
-
-	int scrW = 0, scrH = 0;
-	zx::hwrender::GetScreen2D(scrW, scrH);
-	if (scrW <= 0 || scrH <= 0) return;
-
-	// [rc4l] Rebuilt once per engine frame, gated on the generation counter -- same reason as the
-	// sprite stream: DrawSceneOnce runs many times between frame boundaries and Vulkan's dynamic heap
-	// is per frame, not per draw.
-	static TArray<Vertex2D> vb;
-	static unsigned int built2D = 0;
-	const unsigned int gen = zx::hwrender::Generation2D();
-	if (gen != built2D)
-	{
-		built2D = gen;
-		vb.Clear();
-		for (int i = 0; i < nq; i++)
-		{
-			const zx::hwrender::Quad2D &q = quads[i];
-			Vertex2D v[4];
-			if (q.kind == 1)
-			{
-				// [rc4l] A line, widened into a quad along its own perpendicular. Doing it here rather
-				// than with a line topology keeps every 2D record in one buffer and one draw order,
-				// which is what a painter's-algorithm layer needs.
-				const float dx = q.lx2 - q.x, dy = q.ly2 - q.y;
-				const float len = sqrtf(dx * dx + dy * dy);
-				const float nx = (len > 0.0001f) ? (-dy / len) * 0.5f : 0.5f;
-				const float ny = (len > 0.0001f) ? ( dx / len) * 0.5f : 0.0f;
-				v[0].x = q.x   + nx; v[0].y = q.y   + ny;
-				v[1].x = q.x   - nx; v[1].y = q.y   - ny;
-				v[2].x = q.lx2 + nx; v[2].y = q.ly2 + ny;
-				v[3].x = q.lx2 - nx; v[3].y = q.ly2 - ny;
-				for (int k = 0; k < 4; k++) { v[k].u = 0.f; v[k].v = 0.f; }
-			}
-			else
-			{
-			v[0].x = q.x;       v[0].y = q.y;       v[0].u = q.u1; v[0].v = q.v1;
-			v[1].x = q.x;       v[1].y = q.y + q.h; v[1].u = q.u1; v[1].v = q.v2;
-			v[2].x = q.x + q.w; v[2].y = q.y;       v[2].u = q.u2; v[2].v = q.v1;
-			v[3].x = q.x + q.w; v[3].y = q.y + q.h; v[3].u = q.u2; v[3].v = q.v2;
-			}
-			for (int k = 0; k < 4; k++)
-			{ v[k].r = q.r; v[k].g = q.g; v[k].b = q.b; v[k].a = q.a; v[k].texMode = (float)q.texMode; }
-			vb.Push(v[0]); vb.Push(v[1]); vb.Push(v[2]);
-			vb.Push(v[2]); vb.Push(v[1]); vb.Push(v[3]);
-		}
-	if (vb.Size() == 0) return;
-
-		if (!UploadGrowingVB(ctx, g_vb2D, g_vb2DCapacity, &vb[0], vb.Size(), sizeof(Vertex2D), 1024, "fua 2D VB")) return;
-	}
-	if (vb.Size() == 0 || !g_vb2D) return;
-
-	{
-		Diligent::MapHelper<float> cb(ctx, g_cb2D, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD);
-		cb[0] = 1.0f / scrW; cb[1] = 1.0f / scrH; cb[2] = 0.f; cb[3] = 0.f;
-	}
-
-	Diligent::IBuffer *vbs[] = { g_vb2D };
-	const Diligent::Uint64 offsets[] = { 0 };
-	ctx->SetVertexBuffers(0, 1, vbs, offsets, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
-		Diligent::SET_VERTEX_BUFFERS_FLAG_RESET);
-	// The pipeline is chosen per quad now, so this only primes it.
-	int curBlend = -1;
-
-	// The backend window is its own size, so the engine's scissor rects scale with the viewport.
-	const auto &sd = GetSwapChain()->GetDesc();
-	const float sx = (float)sd.Width / scrW, sy = (float)sd.Height / scrH;
-
-	const void *curMat = (const void *)(size_t)-1;
-	int curTrans = -99999;
-	int cl = -1, ctp = -1, cr = -1, cb2 = -1;
-	for (unsigned i = 0; i < (unsigned)nq; i++)
-	{
-		const zx::hwrender::Quad2D &q = quads[i];
-		// [rc4l] GL's own vid_fps line; this window shows the backend's (k2DBackendOnly).
-		if (q.target == zx::hwrender::k2DGLOnly) continue;
-		const int blendMode = (q.blend >= 0 && q.blend < 3) ? q.blend : 0;
-		if (blendMode != curBlend)
-		{
-			curBlend = blendMode;
-			ctx->SetPipelineState(g_pso2D[curBlend]);
-			// A pipeline change drops what was committed, so the next quad has to commit again even
-			// if it wants the same material.
-			curMat = (const void *)(size_t)-1;
-		}
-		// [rc4l] Only ask for the binding when the material actually changed.
-		//
-		// This is a lookup keyed on (material, translation) and it ran once per QUAD -- for a status
-		// bar that is the same handful of textures over and over, and for a line of text it is the
-		// same font page for every glyph.
-		if (q.material != curMat || q.translation != curTrans)
-		{
-			auto *found = GetMaterialSRB(g_pso2D[curBlend], q.material, q.translation);
-			if (!found) continue;
-			ctx->CommitShaderResources(found, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-			curMat = q.material;
-			curTrans = q.translation;
-		}
-
-		if (q.clipL != cl || q.clipT != ctp || q.clipR != cr || q.clipB != cb2)
-		{
-			cl = q.clipL; ctp = q.clipT; cr = q.clipR; cb2 = q.clipB;
-			Diligent::Rect sc;
-			sc.left   = (Diligent::Int32)(cl * sx);
-			sc.top    = (Diligent::Int32)(ctp * sy);
-			sc.right  = (Diligent::Int32)(cr * sx);
-			sc.bottom = (Diligent::Int32)(cb2 * sy);
-			if (sc.right <= sc.left || sc.bottom <= sc.top)
-			{ sc.left = 0; sc.top = 0; sc.right = (Diligent::Int32)sd.Width; sc.bottom = (Diligent::Int32)sd.Height; }
-			ctx->SetScissorRects(1, &sc, sd.Width, sd.Height);
-		}
-
-		// [rc4l] One draw per quad, and that is fine.
-		//
-		// Merging runs of quads in the same state went in alongside the binding cache above and was
-		// measured afterwards: a frame's HUD is SIXTEEN quads, and the merge took it to thirteen
-		// draws. The pass costing 1.2 ms was the binding lookup, not the submissions -- so the merge
-		// came out again rather than stay as untested cleverness in a painter's-order path where
-		// getting the run condition wrong puts the status bar behind the world.
-		Diligent::DrawAttribs draw;
-		draw.NumVertices = 6;
-		draw.StartVertexLocation = (Diligent::Uint32)i * 6;
-		draw.Flags = Diligent::DRAW_FLAG_VERIFY_ALL;
-		ctx->Draw(draw);
-		g_draws2D++;
-	}
-	g_quads2D = nq;
-}
 
 // [rc4l] Sample textures the way the engine's own renderer is configured to, not the way that looks
 // best in isolation.
@@ -4092,45 +1910,10 @@ static bool EnsureScenePipeline(FString &err)
 		if (!CreateStructuredBuffer("fua slot remap", sizeof(unsigned), kMaterialSlots, &identity[0], g_slotRemapBuf))
 		{ err = "slot remap buffer creation failed"; return false; }
 	}
-	// [rc4l] The dynamic light buffer, created ONCE at a fixed capacity.
-	//
-	// It is bound to the pipelines as a STATIC variable, which Diligent copies into every SRB at
-	// creation -- so recreating the buffer to grow it would silently leave existing SRBs pointing at
-	// the freed one. 65536 vec4s is 1 MB and holds ~32000 lights; a Doom frame produces a handful.
-	if (!g_lightBuf)
-	{
-		g_lightBufCapacity = 65536;
-		if (!CreateStructuredBuffer("fua light buffer", 16, g_lightBufCapacity, NULL, g_lightBuf))
-		{ err = "light buffer creation failed"; return false; }
-		// [rc4l] The light links, one range per light the buffer holds and a fixed id list, created once like everything else the world pipelines bind.
-		if (!CreateStructuredBuffer("fua light link ranges", 2 * sizeof(unsigned), g_lightBufCapacity / 2, NULL, g_lightTouchRangeBuf) ||
-			!CreateStructuredBuffer("fua light link ids", sizeof(unsigned), kLightTouchIdCapacity, NULL, g_lightTouchIdBuf))
-		{ err = "light link buffer creation failed"; return false; }
+	if (!EnsureLightBuffers(err)) return false;
 	// [rc4l] The player's sky holes, two vec4s each, created once at kMaxSkyHoles for the same reason: every world pipeline binds them statically.
 	if (!g_skyHoleBuf && !CreateStructuredBuffer("fua sky holes", 16, zx::levelmesh::kMaxSkyHoles * 2, NULL, g_skyHoleBuf))
 	{ err = "sky hole buffer creation failed"; return false; }
-	// [rc4l] The cluster table and its index list, sized for the largest grid a window can produce.
-	//
-	// Created once at a fixed capacity for the same reason the light buffer is: a buffer recreated
-	// mid-frame leaves every SRB pointing at the freed one. 8192 cells covers a 4K screen at 64-pixel
-	// tiles with 24 slices to spare, and the index list is sized for every light landing in a
-	// generous share of them.
-	if (!g_clusterBuf)
-	{
-		g_clusterCapacity = 16384;
-		if (!CreateStructuredBuffer("fua cluster table", 8, g_clusterCapacity, NULL, g_clusterBuf))
-		{ err = "cluster table creation failed"; return false; }
-	}
-	if (!g_lightIndexBuf)
-	{
-		// [rc4l] A million entries, 4 MB, because a quarter of that was not enough and the shortfall
-		// was invisible. 4096 lights spread over a map bin to ~385k entries; 262144 truncated that
-		// and the picture went 85% wrong with nothing but a number in a stats line to say so.
-		g_lightIndexCapacity = 1048576;
-		if (!CreateStructuredBuffer("fua cluster light indices", 4, g_lightIndexCapacity, NULL, g_lightIndexBuf))
-		{ err = "cluster index buffer creation failed"; return false; }
-	}
-	}
 
 	// [rc4l] `false`, not Diligent::False -- something in the reshaped DXSDK headers defines False as
 	// a macro, so the qualified name does not survive the preprocessor here.
@@ -4296,15 +2079,7 @@ static bool EnsureScenePipeline(FString &err)
 	for (int i = 0; i < 13; i++)
 	{
 		BindSceneConstants(psos[i]);
-		// [rc4l] The light buffer is shared by every world pass, so it is STATIC and set once here.
-		//
-		// Reported rather than silently skipped: a `if (auto *v = GetStaticVariableByName(...))` that
-		// does not find its variable binds nothing and the shader reads zeros, which shows up as
-		// "dynamic lights do nothing" with no error anywhere. Diligent names an SSBO by its block
-		// name, but that is worth confirming rather than assuming.
-		auto *lv = psos[i]->GetStaticVariableByName(Diligent::SHADER_TYPE_PIXEL, "LightBuffer");
-		if (lv) lv->Set(g_lightBuf->GetDefaultView(Diligent::BUFFER_VIEW_SHADER_RESOURCE));
-		else g_lightBindFailed = true;
+		BindLightBuffers(psos[i]);
 
 		// [rc4l] The per-piece records, read by the VERTEX stage. Shared by every world pass, so it is
 		// static like the others -- and it is why a new piece buffer means new pipelines: a static
@@ -4323,18 +2098,6 @@ static bool EnsureScenePipeline(FString &err)
 		if (auto *hv = psos[i]->GetStaticVariableByName(Diligent::SHADER_TYPE_PIXEL, "SkyHoles"))
 			hv->Set(g_skyHoleBuf->GetDefaultView(Diligent::BUFFER_VIEW_SHADER_RESOURCE));
 
-		// The cluster table and its index list ride along on the same reasoning: shared by every world
-		// pass, set once, and reported rather than silently skipped.
-		if (auto *tv = psos[i]->GetStaticVariableByName(Diligent::SHADER_TYPE_PIXEL, "LightTouchRanges"))
-			tv->Set(g_lightTouchRangeBuf->GetDefaultView(Diligent::BUFFER_VIEW_SHADER_RESOURCE));
-		if (auto *tv = psos[i]->GetStaticVariableByName(Diligent::SHADER_TYPE_PIXEL, "LightTouchIds"))
-			tv->Set(g_lightTouchIdBuf->GetDefaultView(Diligent::BUFFER_VIEW_SHADER_RESOURCE));
-		auto *cv = psos[i]->GetStaticVariableByName(Diligent::SHADER_TYPE_PIXEL, "ClusterTable");
-		if (cv) cv->Set(g_clusterBuf->GetDefaultView(Diligent::BUFFER_VIEW_SHADER_RESOURCE));
-		else g_clusterBindFailed = true;
-		auto *iv = psos[i]->GetStaticVariableByName(Diligent::SHADER_TYPE_PIXEL, "ClusterLightIndices");
-		if (iv) iv->Set(g_lightIndexBuf->GetDefaultView(Diligent::BUFFER_VIEW_SHADER_RESOURCE));
-		else g_clusterBindFailed = true;
 	}
 
 	g_maskedPSO->CreateShaderResourceBinding(&g_srbMasked, true);
@@ -4414,7 +2177,8 @@ static void FillPieceData(const zx::levelmesh::MeshPiece &p, int translation, Sc
 	pd.animates = slots.animates ? 1.f : 0.f;
 	pd.plain = p.plain ? 1.f : 0.f;
 	pd.desaturation = zx::hwrender::ComputeDesaturationFactor(p.desaturation);
-	pd.unused0 = pd.unused1 = pd.unused2 = 0.f;
+	pd.scrollU = p.scrollU; pd.scrollV = p.scrollV;
+	pd.unused2 = 0.f;
 }
 
 
@@ -5274,272 +3038,6 @@ static void RefreshMovedGeometry(Diligent::IDeviceContext *ctx)
 	(void)src; (void)pieces; (void)npieces;
 }
 
-//==========================================================================
-//
-// fua_dg_lights
-//
-// [rc4l] Every dynamic light the backend can see, with the numbers the shader actually tests.
-//
-// The shader decides whether a light reaches a surface by comparing the light against the
-// surface plane, so a light sitting exactly ON a plane is the one case where that comparison has
-// no right answer -- and a floor lit by such a light is at the mercy of the last bit of an
-// interpolated coordinate. Height is printed against the player floor for that reason: it is the
-// difference, not the absolute position, that says whether a light is in that state.
-//
-//==========================================================================
-
-CCMD( fua_dg_lights )
-{
-	const float floorz = ( players[consoleplayer].mo != NULL )
-		? FIXED2FLOAT( players[consoleplayer].mo->floorz ) : 0.f;
-	int n = 0;
-	TThinkerIterator<ADynamicLight> it( STAT_DLIGHT );
-	ADynamicLight *light;
-	while ( ( light = it.Next( ) ) != NULL )
-	{
-		if ( !light->IsActive( ) ) continue;
-		const float radius = light->GetRadius( ) * gl_lights_size;
-		if ( radius <= 0.f ) continue;
-		const float lz = FIXED2FLOAT( light->z );
-		// [rc4l] DONTLIGHTSELF decides whether GL or the backend is the one in the wrong when an
-		// item carrying its own glow comes out unlit. gl_SetDynSpriteLight skips a light whose
-		// target is the very actor being lit when the flag is set, so an armor bonus standing in a
-		// green pool of its OWN making is supposed to stay dark -- and a renderer that lights it is
-		// the one that needs fixing, not the one that does not.
-		Printf( "light %d: pos %.1f, %.1f, %.1f  radius %.0f  rgb %d,%d,%d%s  dz-from-floor %+.2f  "
-				"owner %s%s%s",
-			n, FIXED2FLOAT( light->x ), FIXED2FLOAT( light->y ), lz, radius,
-			light->GetRed( ), light->GetGreen( ), light->GetBlue( ),
-			light->IsSubtractive( ) ? " SUBTRACTIVE" : "",
-			lz - floorz,
-			( light->target != NULL ) ? light->target->GetClass( )->TypeName.GetChars( ) : "none",
-			( light->flags4 & MF4_DONTLIGHTSELF ) ? " DONTLIGHTSELF" : "",
-			( fabsf( lz - floorz ) < 1.f ) ? "   <-- ON THE FLOOR PLANE\n" : "\n" );
-
-		// [rc4l] What GL DECIDES about this light, on the floor the player is standing on.
-		//
-		// gl_flats.cpp drops a light when the plane, evaluated at the LIGHT's x and y, is above it:
-		// that one comparison decides whether a whole surface is lit or not lit, and there is no
-		// middle. So when GL lights a floor and the port does not, the question is never "how much"
-		// but "which side of this number did each of them land on" -- and reading the number off a
-		// screenshot means bisecting a light's height by hand, ten captures at a time. It is right
-		// here, in the engine, exactly as gl_flats.cpp computes it.
-		if ( players[consoleplayer].mo != NULL && players[consoleplayer].mo->Sector != NULL )
-		{
-			const sector_t *sec = players[consoleplayer].mo->Sector;
-			const float ph = FIXED2FLOAT( sec->floorplane.ZatPoint( light->x, light->y ) );
-			Printf( "          floor plane under the light %.3f vs light z %.3f -> GL %s\n",
-				ph, lz, ( ph > lz ) ? "DROPS it" : "keeps it" );
-		}
-		n++;
-	}
-	Printf( "fua_dg_lights: %d active, player floor %.1f\n", n, floorz );
-}
-// [rc4l] Collect every active dynamic light in the level into the shared storage buffer.
-//
-// Rebuilt every frame -- lights move, spawn and die. See fuaDynLight in the shader for why there is
-// no per-surface light list at all.
-// [rc4l] The ids a light is linked to, as PieceStackId names surfaces: each subsector its flood reached, and numsubsectors plus each sidedef it lights.
-static void CollectLightLinks(ADynamicLight *light, std::vector<unsigned> &out)
-{
-	out.clear();
-	for (FLightNode *n = light->touching_subsectors; n != NULL; n = n->nextTarget)
-		if (n->targSubsector != NULL) out.push_back((unsigned)(n->targSubsector - subsectors));
-	for (FLightNode *n = light->touching_sides; n != NULL; n = n->nextTarget)
-		if (n->targLine != NULL) out.push_back((unsigned)(numsubsectors + (n->targLine - sides)));
-}
-
-static void CollectDynamicLights(Diligent::IDeviceContext *ctx)
-{
-	static std::vector<std::vector<unsigned> > touched;
-	// [rc4l] Once per tic: lights change only in the ticker, and every pass of a frame (mirrors, stacked views, sky, camera textures) reads the same ones.
-	static int s_tic = -1, s_gen = -1, s_flags = -1;
-	const int flags = (fua_dg_dynlights ? 1 : 0) | (fua_dg_lightlinks ? 2 : 0);
-	if (gametic == s_tic && zx::levelmesh::LevelGeneration() == s_gen && flags == s_flags) return;
-	s_tic = gametic; s_gen = zx::levelmesh::LevelGeneration(); s_flags = flags;
-	g_lightCount = 0;
-	if (fua_dg_dynlights && g_lightBuf)
-	{
-		// [rc4l] Straight from the level's thinkers, not from the engine's per-surface light buffer.
-		// Same filters gl_GetLight applies: dormant lights are skipped, and a zero radius means off.
-		g_lightData.Clear();
-		TThinkerIterator<ADynamicLight> it(STAT_DLIGHT);
-		ADynamicLight *light;
-		while ((light = it.Next()) != NULL)
-		{
-			if (!light->IsActive()) continue;
-			const float radius = light->GetRadius() * gl_lights_size;
-			if (radius <= 0.f) continue;
-			if ((unsigned)g_lightCount >= g_lightBufCapacity / 2) break;
-
-			// The additive/subtractive intensity scaling gl_GetLight applies.
-			const float cs = (gl_lights_additive || (light->flags4 & MF4_ADDITIVE)) ? 0.2f : 1.0f;
-			float r = light->GetRed()   / 255.0f * cs * gl_lights_intensity;
-			float g = light->GetGreen() / 255.0f * cs * gl_lights_intensity;
-			float b = light->GetBlue()  / 255.0f * cs * gl_lights_intensity;
-
-			// Same axis swap the mesh uses: (x, z, y).
-			g_lightData.Push(FIXED2FLOAT(light->x));
-			g_lightData.Push(FIXED2FLOAT(light->z));
-			g_lightData.Push(FIXED2FLOAT(light->y));
-			g_lightData.Push(radius);
-			g_lightData.Push(r);
-			g_lightData.Push(g);
-			g_lightData.Push(b);
-			g_lightData.Push(light->IsSubtractive() ? 1.0f : 0.0f);
-			if ((size_t)g_lightCount >= touched.size()) touched.resize(g_lightCount + 1);
-			CollectLightLinks(light, touched[g_lightCount]);
-			g_lightCount++;
-		}
-		if (g_lightCount > 0)
-		{
-			ctx->UpdateBuffer(g_lightBuf, 0, (Diligent::Uint64)g_lightData.Size() * 4, &g_lightData[0],
-				Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-			touched.resize(g_lightCount);
-			static std::vector<zx::hwrender::LightTouchRange> ranges;
-			static std::vector<unsigned> ids;
-			zx::hwrender::ComputeLightTouchLists(touched, kLightTouchIdCapacity, ranges, ids);
-			if (!fua_dg_lightlinks)
-				for (zx::hwrender::LightTouchRange &r : ranges) r.count = zx::hwrender::kLightTouchesAll;
-			if (g_lightTouchRangeBuf && g_lightTouchIdBuf)
-			{
-				ctx->UpdateBuffer(g_lightTouchRangeBuf, 0, (Diligent::Uint64)ranges.size() * sizeof(ranges[0]), &ranges[0],
-					Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-				if (!ids.empty())
-					ctx->UpdateBuffer(g_lightTouchIdBuf, 0, (Diligent::Uint64)ids.size() * sizeof(unsigned), &ids[0],
-						Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-			}
-		}
-	}
-}
-
-// [rc4l] Bin this frame's lights into the cluster grid.
-//
-// One pass to count what lands in each cell, a prefix sum, and a second pass to fill the runs --
-// the standard way, and worth stating why it is not simply a list per cell: a cell-of-vectors
-// allocates thousands of times a frame and hands the GPU a pointer chase. Two flat buffers is what
-// the shader can read and what a compute shader will produce later without changing the format.
-//
-// The grid math is in lightcluster_compute.h, tested off-engine. What is here is only the
-// bookkeeping, deliberately: the boundaries are where the faults live, and they should not be in a
-// file that needs a level loaded to run.
-static void BuildLightClusters(Diligent::IDeviceContext *ctx)
-{
-	g_clusterCells = 0;
-	g_clusterRefs = 0;
-	g_clusterTruncated = 0;
-	if (!fua_dg_clusters || !g_clusterBuf || !g_lightIndexBuf || g_lightCount <= 0) return;
-
-	auto *swap = GetSwapChain();
-	if (swap == NULL) return;
-	const auto &sd = swap->GetDesc();
-
-	// [rc4l] The slice range is the CLUSTER far plane, not the projection's.
-	//
-	// BuildMVP's far plane is 65536 so that nothing in a Doom map is ever clipped, and slicing that
-	// range would spend every slice on distance no light reaches. Anything beyond this falls in the
-	// last slice, which is correct rather than approximate: a light 8000 units away is not lighting
-	// you either way.
-	const zx::hwrender::ClusterGrid grid =
-		zx::hwrender::ComputeGridForScreen((int)sd.Width, (int)sd.Height,
-			zx::hwrender::kClusterZNear, zx::hwrender::kClusterZFar);
-	const int cells = zx::hwrender::ComputeClusterCount(grid);
-	if (cells <= 0 || (unsigned)cells > g_clusterCapacity) return;
-
-	static TArray<unsigned int> counts, offsets, table, indices;
-	counts.Resize((unsigned)cells);
-	for (int i = 0; i < cells; i++) counts[i] = 0;
-
-	// [rc4l] Pass one: how many lights land in each cell -- and keep the ranges.
-	//
-	// Pass two needs exactly the same answer, and recomputing it means projecting every light's box
-	// through the matrix twice a frame for nothing. Eight corners times four thousand lights is not
-	// free, and it was measurable: the whole binning pass is now the cost that grows with light
-	// count, so the half of it that is pure repetition goes first.
-	static TArray<zx::hwrender::ClusterRange> ranges;
-	ranges.Resize((unsigned)g_lightCount);
-	for (int l = 0; l < g_lightCount; l++)
-	{
-		const float *lp = &g_lightData[l * 8];
-		const zx::hwrender::ClusterRange r =
-			zx::hwrender::ComputeLightClustersFromMVP(grid, g_mvp, lp, lp[3]);
-		ranges[l] = r;
-		if (r.empty) continue;
-		for (int z = r.z0; z <= r.z1; z++)
-			for (int y = r.y0; y <= r.y1; y++)
-				for (int x = r.x0; x <= r.x1; x++)
-					counts[zx::hwrender::ComputeClusterIndex(grid, x, y, z)]++;
-	}
-
-	// [rc4l] A ceiling per CELL, not a ceiling on the buffer.
-	//
-	// Bounding the total is what a buffer needs; bounding each cell is what a picture needs. Left to
-	// run out of buffer, the cells that happen to come last lose everything -- black rectangles in
-	// whatever part of the world sorted late -- and 4096 lights packed round the camera made 85% of
-	// the frame disagree that way. Capping each cell instead drops only the excess in the cells that
-	// are genuinely overloaded, and 3840 cells at 256 apiece cannot overrun a million entries, so the
-	// buffer limit stops being reachable at all.
-	//
-	// 256 lights reaching one cell is already far past anything a map does; the packed stress field
-	// is the only thing that has ever hit it.
-	enum { kMaxLightsPerCell = 256 };
-	for (int i = 0; i < cells; i++)
-		if (counts[i] > (unsigned)kMaxLightsPerCell) { counts[i] = kMaxLightsPerCell; g_clusterTruncated++; }
-
-	// The prefix sum, and the ceiling that keeps a pathological frame from running off the buffer.
-	offsets.Resize((unsigned)cells);
-	unsigned int total = 0;
-	for (int i = 0; i < cells; i++)
-	{
-		offsets[i] = total;
-		// [rc4l] Overflow TRUNCATES this cell and says so. It does not empty it.
-		//
-		// Emptying a cell removes every light from a patch of the world at once, which is a black
-		// rectangle rather than a dim one -- and when this first ran it dropped enough cells to make
-		// 85% of the frame disagree with the brute-force path, reported by nothing louder than a
-		// number in a stats line. Keeping what fits degrades the picture gently; the flag is what
-		// makes the degradation visible, because a renderer that silently draws something else is
-		// worse than one that stops.
-		if (total + counts[i] > g_lightIndexCapacity)
-		{
-			counts[i] = (g_lightIndexCapacity > total) ? (g_lightIndexCapacity - total) : 0;
-			g_clusterTruncated++;
-		}
-		total += counts[i];
-	}
-
-	// Pass two: write the runs. `filled` walks each cell's slot as entries arrive.
-	static TArray<unsigned int> filled;
-	filled.Resize((unsigned)cells);
-	for (int i = 0; i < cells; i++) filled[i] = 0;
-	indices.Resize(total > 0 ? total : 1);
-	for (int l = 0; l < g_lightCount; l++)
-	{
-		const zx::hwrender::ClusterRange &r = ranges[l];
-		if (r.empty) continue;
-		for (int z = r.z0; z <= r.z1; z++)
-			for (int y = r.y0; y <= r.y1; y++)
-				for (int x = r.x0; x <= r.x1; x++)
-				{
-					const int cell = zx::hwrender::ComputeClusterIndex(grid, x, y, z);
-					if (filled[cell] >= counts[cell]) continue;   // the dropped cells above
-					indices[offsets[cell] + filled[cell]] = (unsigned int)l;
-					filled[cell]++;
-				}
-	}
-
-	table.Resize((unsigned)cells * 2);
-	for (int i = 0; i < cells; i++) { table[i * 2] = offsets[i]; table[i * 2 + 1] = counts[i]; }
-
-	ctx->UpdateBuffer(g_clusterBuf, 0, (Diligent::Uint64)table.Size() * 4, &table[0],
-		Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-	if (total > 0)
-		ctx->UpdateBuffer(g_lightIndexBuf, 0, (Diligent::Uint64)total * 4, &indices[0],
-			Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-
-	g_clusterCells = cells;
-	g_clusterRefs = (int)total;
-}
 
 // [rc4l] Everything that draws the WORLD, with the render target already bound and cleared.
 //
@@ -5576,7 +3074,6 @@ bool InvertMatrix4(const float *m, float *out)
 	return true;
 }
 
-static void DrawWorld(Diligent::IDeviceContext *ctx);
 
 // [rc4l] The decal pass, in dgdecals.cpp. Runs between the world and the sprites.
 void DrawDeferredDecals(Diligent::IDeviceContext *ctx);
@@ -6195,22 +3692,20 @@ static void WriteSceneConstants(float *cb, const float *clip, float targetW, flo
 	zx::hwrender::SceneConstantInputs in;
 	in.mvp = g_mvp;
 	const float player[3] = { FIXED2FLOAT(viewx), FIXED2FLOAT(viewy), FIXED2FLOAT(viewz) };
-	const float portal[3] = { g_skyPortalCamX, g_skyPortalCamY, g_skyPortalCamZ };
+	const float portal[3] = { g_pass.skyCamX, g_pass.skyCamY, g_pass.skyCamZ };
 	float eye[3];
-	zx::hwrender::ComputePassEye(g_inSkyPortal, player, portal, eye);
+	zx::hwrender::ComputePassEye(g_pass.inSkyPortal, player, portal, eye);
 	in.camX = eye[0]; in.camY = eye[1]; in.camZ = eye[2];
 	in.lightMode = (float)(int)fua_dg_lightmode;
-	in.lightCount = (float)g_lightCount;
-	in.skyAngle = g_skyAngle;
-	in.clusters = g_clusterCells > 0;
+	in.lightCount = (float)LightCount();
+	GetSkyConstants(in.skyAngle, in.skyXScale, in.skyVScale, in.skyCapR, in.skyCapG, in.skyCapB);
+	in.clusters = ClusterCells() > 0;
 	in.clip = clip;
 	in.targetW = targetW; in.targetH = targetH;
-	in.skyXScale = g_skyXScale; in.skyVScale = g_skyVScale;
-	in.skyCapR = g_skyCapColor[0].r; in.skyCapG = g_skyCapColor[0].g; in.skyCapB = g_skyCapColor[0].b;
 	in.materialSlots = materialSlots;
 	in.frameMS = I_MSTime();
-	in.walkSlot = zx::levelmesh::ComputePassWalkSlot(g_stackVisReady, g_stackPassSlot, g_inSkyPortal, zx::levelmesh::SkyboxWalked());
-	in.playerPass = g_drawingMainView && g_lineMirror < 0;
+	in.walkSlot = zx::levelmesh::ComputePassWalkSlot(g_stackVisReady, g_pass.stackSlot, g_pass.inSkyPortal, zx::levelmesh::SkyboxWalked());
+	in.playerPass = g_pass.mainView && g_pass.lineMirror < 0;
 	in.skyHoles = g_skyHoleCount;
 	zx::hwrender::ComputeSceneConstants(in, cb);
 }
@@ -6275,7 +3770,7 @@ static bool EnsureViewTarget(ViewTarget &t, Diligent::IPipelineState *pso, const
 	return true;
 }
 
-// [rc4l] The world into a target, from the eye now in viewx/viewy/viewz/viewpitch and through g_clipPlane.
+// [rc4l] The world into a target, from the eye now in viewx/viewy/viewz/viewpitch and through g_pass.clipPlane.
 static void RenderWorldInto(Diligent::IDeviceContext *ctx, ViewTarget &t)
 {
 	BuildMVP(g_mvp);
@@ -6419,27 +3914,27 @@ static void RenderPlaneMirrors(Diligent::IDeviceContext *ctx)
 	const int sp = viewpitch;
 	float savedMVP[16];
 	for (int k = 0; k < 16; k++) savedMVP[k] = g_mvp[k];
-	const bool savedGBuf = g_gbufBound;
-	g_gbufBound = false;
+	const bool savedGBuf = g_pass.gbufBound;
+	g_pass.gbufBound = false;
 	for (int k = 0; k < g_pmUsed; k++)
 	{
 		viewz = FLOAT2FIXED(zx::hwrender::ComputePlaneMirrorEyeZ(slots[k].z, vz));
 		viewpitch = -sp;
-		zx::hwrender::ComputePlaneMirrorClip(slots[k].ceiling, slots[k].z, g_clipPlane);
+		zx::hwrender::ComputePlaneMirrorClip(slots[k].ceiling, slots[k].z, g_pass.clipPlane);
 		RenderWorldInto(ctx, g_pm[k]);
 	}
 	viewz = sz;
 	viewpitch = sp;
 	for (int k = 0; k < 16; k++) g_mvp[k] = savedMVP[k];
-	g_clipPlane[0] = g_clipPlane[1] = g_clipPlane[2] = g_clipPlane[3] = 0.f;
-	g_gbufBound = savedGBuf;
+	g_pass.clipPlane[0] = g_pass.clipPlane[1] = g_pass.clipPlane[2] = g_pass.clipPlane[3] = 0.f;
+	g_pass.gbufBound = savedGBuf;
 	for (int k = 0; k < g_pmUsed; k++) HandOverViewTarget(ctx, g_pm[k]);
 }
 
 // [rc4l] In the player's view, before the translucent pass: each reflective piece painted from its plane's reflection.
 static void DrawPlaneMirrorSurfaces(Diligent::IDeviceContext *ctx)
 {
-	if (!g_drawingMainView || g_pmUsed == 0 || !g_pmPSO || !g_vb) return;
+	if (!g_pass.mainView || g_pmUsed == 0 || !g_pmPSO || !g_vb) return;
 	Diligent::IBuffer *vbs[] = { g_vb };
 	const Diligent::Uint64 offsets[] = { 0 };
 	ctx->SetVertexBuffers(0, 1, vbs, offsets, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
@@ -6507,8 +4002,8 @@ static void RenderStackPortals(Diligent::IDeviceContext *ctx)
 	const fixed_t sx = viewx, sy = viewy;
 	float savedMVP[16];
 	for (int k = 0; k < 16; k++) savedMVP[k] = g_mvp[k];
-	const bool savedGBuf = g_gbufBound;
-	g_gbufBound = false;
+	const bool savedGBuf = g_pass.gbufBound;
+	g_pass.gbufBound = false;
 	for (int k = 0; k < n; k++)
 	{
 		if (!EnsureViewTarget(g_stack[k], g_stackSurfPSO, "uSky", "fua stacked view")) break;
@@ -6516,14 +4011,14 @@ static void RenderStackPortals(Diligent::IDeviceContext *ctx)
 		// [rc4l] No clip plane: GL's stacked walk clips nothing, and the cull already keeps to what it drew.
 		viewx = sx + FLOAT2FIXED(v.dx);
 		viewy = sy + FLOAT2FIXED(v.dy);
-		g_stackPassSlot = k;
+		g_pass.stackSlot = k;
 		RenderWorldInto(ctx, g_stack[k]);
 		g_stackDrawn = k + 1;
 	}
-	g_stackPassSlot = -1;
+	g_pass.stackSlot = -1;
 	viewx = sx; viewy = sy;
 	for (int k = 0; k < 16; k++) g_mvp[k] = savedMVP[k];
-	g_gbufBound = savedGBuf;
+	g_pass.gbufBound = savedGBuf;
 	for (int k = 0; k < g_stackDrawn; k++) HandOverViewTarget(ctx, g_stack[k]);
 }
 
@@ -6545,7 +4040,7 @@ void StackInfo(FString &out)
 // [rc4l] In the player's view, with the sky: each stacked plane painted from its view's picture, and depth-written so nothing behind it shows through.
 static void DrawStackSurfaces(Diligent::IDeviceContext *ctx)
 {
-	if (!g_drawingMainView || g_stackDrawn == 0 || !g_stackSurfPSO) return;
+	if (!g_pass.mainView || g_stackDrawn == 0 || !g_stackSurfPSO) return;
 	static TArray<SceneVertex> sv;
 	unsigned int first[zx::levelmesh::kMaxStackViews], count[zx::levelmesh::kMaxStackViews];
 	sv.Clear();
@@ -6575,12 +4070,12 @@ static void DrawStackSurfaces(Diligent::IDeviceContext *ctx)
 // [rc4l] fua_dg_stackshow: the first stacked view's picture over the frame, through the sky portal's full-screen blit.
 static void ShowStackView(Diligent::IDeviceContext *ctx)
 {
-	if (!fua_dg_stackshow || g_stackDrawn == 0 || !g_skyPortalPSO || !g_stack[0].color) return;
-	if (!g_stackShowSRB) g_skyPortalPSO->CreateShaderResourceBinding(&g_stackShowSRB, true);
+	if (!fua_dg_stackshow || g_stackDrawn == 0 || !SkyPortalPicturePSO() || !g_stack[0].color) return;
+	if (!g_stackShowSRB) SkyPortalPicturePSO()->CreateShaderResourceBinding(&g_stackShowSRB, true);
 	if (!g_stackShowSRB) return;
 	if (auto *v = g_stackShowSRB->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "uTex"))
 		v->Set(g_stack[0].color->GetDefaultView(Diligent::TEXTURE_VIEW_SHADER_RESOURCE));
-	ctx->SetPipelineState(g_skyPortalPSO);
+	ctx->SetPipelineState(SkyPortalPicturePSO());
 	ctx->CommitShaderResources(g_stackShowSRB, Diligent::RESOURCE_STATE_TRANSITION_MODE_VERIFY);
 	Diligent::DrawAttribs dr;
 	dr.NumVertices = 3;
@@ -6696,21 +4191,21 @@ static void RenderMirrors(Diligent::IDeviceContext *ctx)
 		viewx = sx; viewy = sy; viewz = sz; viewangle = sa;
 
 		// Clip to the mirror's own plane, in MESH space: x and z there are the map's x and y.
-		g_clipPlane[0] = m.nx; g_clipPlane[1] = 0.f; g_clipPlane[2] = m.ny;
-		g_clipPlane[3] = -m.d;
-		if (g_clipPlane[3] == 0.f) g_clipPlane[3] = 0.0001f;   // w == 0 means "off"
+		g_pass.clipPlane[0] = m.nx; g_pass.clipPlane[1] = 0.f; g_pass.clipPlane[2] = m.ny;
+		g_pass.clipPlane[3] = -m.d;
+		if (g_pass.clipPlane[3] == 0.f) g_pass.clipPlane[3] = 0.0001f;   // w == 0 means "off"
 
 		ctx->SetRenderTargets(1, &mrtv, mdsv, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 		const float clear[4] = { 0.05f, 0.06f, 0.09f, 1.0f };
 		ctx->ClearRenderTarget(mrtv, clear, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 		ctx->ClearDepthStencil(mdsv, Diligent::CLEAR_DEPTH_FLAG, 1.0f, 0,
 			Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-		g_lineMirror = m.line;
+		g_pass.lineMirror = m.line;
 		DrawWorld(ctx);
-		g_lineMirror = -1;
+		g_pass.lineMirror = -1;
 
 		// Back to the screen, with the real camera, and draw this mirror's surface.
-		g_clipPlane[0] = g_clipPlane[1] = g_clipPlane[2] = g_clipPlane[3] = 0.f;
+		g_pass.clipPlane[0] = g_pass.clipPlane[1] = g_pass.clipPlane[2] = g_pass.clipPlane[3] = 0.f;
 		for (int k = 0; k < 16; k++) g_mvp[k] = savedMVP[k];
 		ctx->SetRenderTargets(1, &brtv, bdsv, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 		DrawMirrorSurface(ctx, i, view);
@@ -6723,7 +4218,7 @@ static void RenderMirrors(Diligent::IDeviceContext *ctx)
 // [rc4l] Keep the readable depth buffer matched to the swapchain, recreating it when the size
 // changes. Returns NULL if it cannot be made, and every caller then falls back to the swapchain's
 // own depth buffer -- a missing screen-space effect is a better failure than a black screen.
-static Diligent::ITextureView *EnsureSceneDepth()
+Diligent::ITextureView *EnsureSceneDepth()
 {
 	auto *swap = GetSwapChain();
 	auto *dev = GetDevice();
@@ -6813,6 +4308,8 @@ static void DrawSceneOnce(bool present = true, bool pump = true)
 	// [rc4l] Before any pass: a height transfer's planes follow the eye across its surface, and a re-bake must land before the geometry is refreshed.
 	zx::levelmesh::RefreshTransferArea();
 	UploadWalkVisibility(ctx);
+	g_frameSerial++;
+	PrepareFrame(ctx);
 	RenderSkyPortal(ctx);
 	RenderStackPortals(ctx);
 	RenderPlaneMirrors(ctx);
@@ -6823,13 +4320,13 @@ static void DrawSceneOnce(bool present = true, bool pump = true)
 	// [rc4l] Colour and the G-buffer together, for the opaque world only. DrawWorld drops back to
 	// colour alone before the decals, which read the G-buffer rather than write it.
 	Diligent::ITextureView *nrm = SceneNormalRTV();
-	g_gbufBound = (nrm != NULL);
+	g_pass.gbufBound = (nrm != NULL);
 	Diligent::ITextureView *targets[2] = { rtv, nrm };
-	ctx->SetRenderTargets(g_gbufBound ? 2 : 1, targets,
+	ctx->SetRenderTargets(g_pass.gbufBound ? 2 : 1, targets,
 		dsv, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 	const float clear[4] = { 0.05f, 0.06f, 0.09f, 1.0f };
 	ctx->ClearRenderTarget(rtv, clear, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-	if (g_gbufBound)
+	if (g_pass.gbufBound)
 	{
 		// Zero means "nothing drew here", which decodes to a zero-length normal -- and the decal pass
 		// treats that as a surface it knows nothing about rather than one facing a particular way.
@@ -6839,9 +4336,9 @@ static void DrawSceneOnce(bool present = true, bool pump = true)
 	ctx->ClearDepthStencil(dsv, Diligent::CLEAR_DEPTH_FLAG, 1.0f, 0,
 		Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
-	g_drawingMainView = true;
+	g_pass.mainView = true;
 	DrawWorld(ctx);
-	g_drawingMainView = false;
+	g_pass.mainView = false;
 	RenderMirrors(ctx);
 	ShowStackView(ctx);
 
@@ -6998,9 +4495,11 @@ void RenderCameraTexture(const void *material, int w, int h, float aspect,
 	ctx->ClearDepthStencil(cam->dsv, Diligent::CLEAR_DEPTH_FLAG, 1.0f, 0,
 		Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
-	g_inCameraPass = true;
+	// [rc4l] GL renders a camera texture during its own frame, before the backend's, so the frame-wide jobs run for it as they always have.
+	g_frameSerial++;
+	g_pass.inCameraPass = true;
 	DrawWorld(ctx);
-	g_inCameraPass = false;
+	g_pass.inCameraPass = false;
 	CopyCameraFlipped(ctx, *cam);
 
 	// Hand the screen back its own target and full viewport; the main pass assumes both.
@@ -7074,7 +4573,39 @@ void PhaseReport(FString &out)
 		g_phase.constants.TimeMS(), g_phase.animation.TimeMS(), g_phase.draw.TimeMS());
 }
 
-static void DrawWorld(Diligent::IDeviceContext *ctx)
+// [rc4l] The jobs every pass shares, once a frame: moved geometry, the light list, the bindless table, animated materials and the sprite stream, sorted from the player's eye rather than the first pass's.
+static void PrepareFrame(Diligent::IDeviceContext *ctx)
+{
+	if (fua_dg_frameprep && g_preparedSerial == g_frameSerial) return;
+	g_preparedSerial = g_frameSerial;
+	g_phase.Reset();
+	g_phase.geometry.Clock();  RefreshMovedGeometry(ctx);   g_phase.geometry.Unclock();
+	g_phase.lights.Clock();    CollectDynamicLights(ctx);   g_phase.lights.Unclock();
+	// [rc4l] Before anything is recorded: rebuilding a binding that a command buffer already holds is a use-after-free, and this only works on the frames the material table changed.
+	if (fua_dg_bindless) { ReserveDynamicSlots(); RefreshBindless(); }
+	g_phase.animation.Clock();
+	// [rc4l] Re-resolve animated textures, since a batch's material was resolved once at bake time and would freeze on its first frame.
+	if (fua_dg_animate)
+	{
+		for (unsigned i = 0; i < g_batches.Size(); i++)
+		{
+			SceneBatch &b = g_batches[i];
+			if (b.baseTex == NULL) continue;
+			FMaterial *now = FMaterial::ValidateTexture(((FTexture *)b.baseTex)->id, false, true);
+			if (now == NULL || now == b.resolved) continue;
+			b.resolved = now;
+			g_animSwaps++;
+			if (auto *srb = GetMaterialSRB(BatchPSO(b.blend), now)) b.srb = srb;
+		}
+	}
+	BuildDynamic(ctx);
+	g_phase.animation.Unclock();
+	g_framePhase[0] += g_phase.geometry.TimeMS();
+	g_framePhase[1] += g_phase.lights.TimeMS();
+	g_framePhase[4] += g_phase.animation.TimeMS();
+}
+
+void DrawWorld(Diligent::IDeviceContext *ctx)
 {
 	cycle_t whole;
 	whole.Reset();
@@ -7089,74 +4620,31 @@ static void DrawWorld(Diligent::IDeviceContext *ctx)
 			const double ph[6] = { g_phase.geometry.TimeMS(), g_phase.lights.TimeMS(), g_phase.clusters.TimeMS(),
 				g_phase.constants.TimeMS(), g_phase.animation.TimeMS(), g_phase.draw.TimeMS() };
 			for (int k = 0; k < 6; k++) g_framePhase[k] += ph[k];
-			g_framePassList.AppendFormat(" %s %.2f", zx::hwrender::ComputeWorldPassName(g_drawingMainView, g_lineMirror,
-				g_stackPassSlot, g_inCameraPass, g_inSkyPortal), c.TimeMS());
+			g_framePassList.AppendFormat(" %s %.2f", zx::hwrender::ComputeWorldPassName(g_pass.mainView, g_pass.lineMirror,
+				g_pass.stackSlot, g_pass.inCameraPass, g_pass.inSkyPortal), c.TimeMS());
 		}
 	} passTimer = { whole };
 	// [rc4l] Lights are collected BEFORE the constants are written -- the shader reads the count from
 	// there, so collecting afterwards would light every frame with the previous frame's count.
+	PrepareFrame(ctx);
 	g_phase.Reset();
 	g_batchesDrawn = g_worldDraws = 0;
-	g_phase.geometry.Clock();  RefreshMovedGeometry(ctx);   g_phase.geometry.Unclock();
-	g_phase.lights.Clock();    CollectDynamicLights(ctx);   g_phase.lights.Unclock();
+	// [rc4l] Per pass, because the clusters are binned against this pass's camera.
 	g_phase.clusters.Clock();  BuildLightClusters(ctx);     g_phase.clusters.Unclock();
-	// [rc4l] Before anything is recorded: rebuilding a binding that a command buffer already holds is
-	// a use-after-free, and this only does work on the frames the material table actually changed.
-	if (fua_dg_bindless) { ReserveDynamicSlots(); RefreshBindless(); }
 	g_phase.constants.Clock();
 
 	{
 		Diligent::MapHelper<float> cb(ctx, g_cb, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD);
-		WriteSceneConstants(&cb[0], g_clipPlane, (float)GetSwapChain()->GetDesc().Width,
+		WriteSceneConstants(&cb[0], g_pass.clipPlane, (float)GetSwapChain()->GetDesc().Width,
 			(float)GetSwapChain()->GetDesc().Height, BindlessActive() ? (float)MaterialSlotCount() : 0.f);
 	}
 
 	g_phase.constants.Unclock();
 
-	g_phase.animation.Clock();
-	// [rc4l] Re-resolve animated textures.
-	//
-	// A batch's material was resolved once at bake time, so without this every animated surface in
-	// the level freezes on whichever frame was showing: nukage stops flowing, computer screens stop
-	// flickering, and the world looks subtly dead. TexMan() applies the animation translation, so
-	// this is a table lookup per batch (~55 on Sunder MAP10) and only touches the SRB when the frame
-	// actually changed.
-	if (fua_dg_animate)
-	{
-		for (unsigned i = 0; i < g_batches.Size(); i++)
-		{
-			SceneBatch &b = g_batches[i];
-			if (b.baseTex == NULL) continue;
-			FMaterial *now = FMaterial::ValidateTexture(((FTexture *)b.baseTex)->id, false, true);
-			if (now == NULL || now == b.resolved) continue;
-			b.resolved = now;
-			g_animSwaps++;
-			if (auto *srb = GetMaterialSRB(BatchPSO(b.blend), now)) b.srb = srb;
-		}
-	}
-	g_phase.animation.Unclock();
-
 	g_phase.draw.Clock();
 
 	// [rc4l] Sky first, with depth off, so the world paints over whatever it does not cover.
-	if (fua_dg_sky)
-	{
-		// mSky1Pos is in degrees and advances with gl_frameMS, so it must be read every frame.
-		const float scroll = (GLRenderer != NULL) ? GLRenderer->mSky1Pos : 0.f;
-		g_skyAngle = (-180.0f + scroll) * 3.14159265f / 180.0f;
-		// [rc4l] A sky that is a PLACE takes precedence over any texture.
-		//
-		// When the map has an ASkyViewpoint, the sky is the world seen from it and there is no sky
-		// texture to speak of -- maps that use one leave sky1texture as the null placeholder, which
-		// is why this used to draw a blue-and-white checkerboard here.
-		// [rc4l] Painted full-screen first, as GL's RenderFirstSkyPortal does, so sky no captured wall covers is still sky; the surfaces drawn later only cut what lies beyond it.
-		if (!BlitSkyPortal(ctx))
-		{
-			EnsureSky();
-			DrawSky(ctx);
-			DrawSkyOccluders(ctx);
-		}
-	}
+	if (fua_dg_sky) DrawSkyBackground(ctx);
 
 	Diligent::IBuffer *vbs[] = { g_vb };
 	const Diligent::Uint64 offsets[] = { 0 };
@@ -7171,7 +4659,7 @@ static void DrawWorld(Diligent::IDeviceContext *ctx)
 	// materials FMaterial::isMasked() calls opaque made their transparent texels paint over detail
 	// behind them. The lesson is that isMasked() answers a GL-pipeline question, not "does this
 	// texture have see-through pixels", so it cannot drive a pass split on its own.
-	ctx->SetPipelineState(g_gbufBound ? g_maskedGBufPSO : g_maskedPSO);
+	ctx->SetPipelineState(g_pass.gbufBound ? g_maskedGBufPSO : g_maskedPSO);
 
 	// [rc4l] g_drawRepeat re-draws the whole scene N times per frame.
 	//
@@ -7210,9 +4698,9 @@ static void DrawWorld(Diligent::IDeviceContext *ctx)
 			// A reach test rather than a sector flood, because a batch already carries its bounds
 			// and a skybox room is small and far from everything else. See docs/skybleed-scope.md.
 			// [rc4l] Only when GL made no skybox walk this frame: with one, the scene shader drops what it did not reach, as a stacked view's pass does.
-			if (take && g_inSkyPortal && !zx::levelmesh::SkyboxWalked() && fua_dg_skyportal_reach > 0.f &&
+			if (take && g_pass.inSkyPortal && !zx::levelmesh::SkyboxWalked() && fua_dg_skyportal_reach > 0.f &&
 			    ComputeBeyondSkyPortalReach(b->minX, b->maxX, b->minZ, b->maxZ,
-			                                g_skyPortalCamX, g_skyPortalCamY, fua_dg_skyportal_reach))
+			                                g_pass.skyCamX, g_pass.skyCamY, fua_dg_skyportal_reach))
 				take = false;
 
 			Diligent::IShaderResourceBinding *srb = NULL;
@@ -7221,7 +4709,7 @@ static void DrawWorld(Diligent::IDeviceContext *ctx)
 				// [rc4l] One binding for the whole pass when the array is carrying the materials. This
 				// is the cost the culling experiment could not remove: 166 batches were 0.445 ms of
 				// submit on Sunder MAP16, almost all of it committing a descriptor set per batch.
-				srb = WorldSRB(g_gbufBound ? g_maskedGBufPSO.RawPtr() : g_maskedPSO.RawPtr());
+				srb = WorldSRB(g_pass.gbufBound ? g_maskedGBufPSO.RawPtr() : g_maskedPSO.RawPtr());
 				if (srb == NULL)
 				{
 					// Re-resolve rather than skip: a binding dropped by a resize would otherwise leave
@@ -7247,7 +4735,8 @@ static void DrawWorld(Diligent::IDeviceContext *ctx)
 				g_worldDraws++;
 				runCount = 0;
 			}
-			if (!take) { bound = NULL; continue; }
+			// [rc4l] A batch skipped draws nothing and binds nothing, so the binding stays committed across it; the sky pass skips most of the level.
+			if (!take) { if (!fua_dg_loopcommits) bound = NULL; continue; }
 			if (srb != bound)
 			{
 				ctx->CommitShaderResources(srb, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
@@ -7260,13 +4749,13 @@ static void DrawWorld(Diligent::IDeviceContext *ctx)
 
 	// [rc4l] The G-buffer is finished with: everything from here reads it or ignores it, and every
 	// pipeline after this point declares a single attachment.
-	if (g_gbufBound)
+	if (g_pass.gbufBound)
 	{
 		auto *swapNow = GetSwapChain();
 		Diligent::ITextureView *rtvNow = swapNow ? swapNow->GetCurrentBackBufferRTV() : NULL;
 		if (rtvNow) ctx->SetRenderTargets(1, &rtvNow, SceneDepthDSV(),
 			Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-		g_gbufBound = false;
+		g_pass.gbufBound = false;
 	}
 
 	// [rc4l] Decals mark surfaces, so they go with the surfaces -- after the world and before the
@@ -7284,15 +4773,11 @@ static void DrawWorld(Diligent::IDeviceContext *ctx)
 	// Two gates on one feature will drift; there is now one, and both sides call it.
 	if (zx::levelmesh::ProjectedDecalsActive()) DrawDeferredDecals(ctx);
 
-	// [rc4l] Sprites are built here but ALL of them draw in the sorted pass below, never in an
-	// opaque one. See DrawBlended.
-	BuildDynamic(ctx);
-
-	// [rc4l] ...except the solid ones, which belong with the world: a model has to occlude itself.
+	// [rc4l] Sprites were built in PrepareFrame and draw in the sorted pass below, except the solid ones, which belong with the world: a model has to occlude itself.
 	DrawSolidDyn(ctx);
 
 	// [rc4l] Horizon lines, painted with the planes they open onto -- see features/horizon; built for the player's eye, so a stacked view takes none.
-	if (g_stackPassSlot < 0) DrawHorizonPlanes(ctx);
+	if (g_pass.stackSlot < 0) DrawHorizonPlanes(ctx);
 
 	// [rc4l] ...and the sky as geometry, before the blend pass because it is opaque.
 	DrawSkySurfaces(ctx);
@@ -7441,8 +4926,7 @@ static bool AutoSetupForLevel()
 		ReleaseCameraTargets();
 		ReleaseAccelerationStructures();
 		CollectMirrors();
-		g_skyMaterial = NULL;
-		g_skyBuiltValid = false;
+		ResetSkyForLevel();
 		// [rc4l] The switch implies the level mesh. gl_wallmesh is off by default, so the first
 		// self-arming run baked nothing and reported "no baked geometry -- set gl_wallmesh 1, walk
 		// the level, then retry" -- advice aimed at a person typing commands, from a path whose whole
@@ -7739,13 +5223,15 @@ void SlotReport(int n, FString &out)
 void DynStats(FString &report)
 {
 	int sprites = zx::levelmesh::SpritePieceCount();
+	int quads2D = 0, draws2D = 0;
+	Get2DStats(quads2D, draws2D);
 	report.Format("2D: %d quads -> %d draws | dynamic: %d sprites -> %d draws (%d submitted), %d tris "
 		"[opaque %d, translucent %d, additive %d, fuzz %d]",
-		g_quads2D, g_draws2D, sprites, g_dynDraws, g_blendSubmits, g_dynTris,
+		quads2D, draws2D, sprites, g_dynDraws, g_blendSubmits, g_dynTris,
 		g_dynByBlend[0], g_dynByBlend[1], g_dynByBlend[2], g_dynByBlend[3]);
 	FString anim;
 	anim.Format(" | %d animation frame swaps since load | light buffer %d vec4s (~%d lights)",
-		g_animSwaps, g_lightCount * 2, g_lightCount);
+		g_animSwaps, LightCount() * 2, LightCount());
 	FString geo;
 	geo.Format(" | geometry: %d scene rebuilds since load, last dirty %u..%u, patches abandoned for %d translucent moved, %d blend changed, %d material, last %s",
 		g_geomRebuilds, g_lastDirtyLo, g_lastDirtyHi, g_bailBlend, g_bailBlendedSlot, g_bailMaterial,
@@ -7758,7 +5244,7 @@ void DynStats(FString &report)
 		g_dynSlotSeen, g_dynSlotMax, g_dynSlotRefused, g_dynSlotNoMaterial, g_dynSlotUnfilled, g_dynSlotUnfilledTotal);
 	cull.AppendFormat(", dyn draws: %d bindless, %d per-material, pipelines [%s]",
 		g_dynBindless, g_dynPerMaterial, g_fillState);
-	cull.AppendFormat(", sky surfaces: %d draws since load", g_skyDraws);
+	cull.AppendFormat(", sky surfaces: %d draws since load", SkyDraws());
 	cull.AppendFormat(", runs from mirror walks: %d", g_dynMirrorRuns);
 	cull.AppendFormat(", dyn build %.3f ms", g_dynBuildMs);
 	{
@@ -7801,19 +5287,7 @@ void DynStats(FString &report)
 	// [rc4l] What the grid actually did this frame. "0 cells" with lights alive means the binning
 	// pass bailed -- a screen bigger than the table, or the cvar off -- and the shader silently fell
 	// back to testing every light, which is correct but is not the thing being measured.
-	FString clusters;
-	clusters.Format(" | clusters: %d cells, %d light refs (%.1f per occupied cell)",
-		g_clusterCells, g_clusterRefs,
-		g_clusterCells > 0 ? (float)g_clusterRefs / (float)g_clusterCells : 0.f);
-	report += clusters;
-	if (g_clusterTruncated > 0)
-	{
-		FString trunc;
-		trunc.Format(" | WARNING: cluster index buffer full, %d cells truncated", g_clusterTruncated);
-		report += trunc;
-	}
-	if (g_clusterBindFailed) report += " | WARNING: ClusterTable not bound";
-	if (g_lightBindFailed) report += " | WARNING: LightBuffer not bound";
+	AppendLightStats(report);
 	report += anim;
 }
 

@@ -88,6 +88,22 @@ struct SectorLook
 enum { kSectorSame, kSectorRelit, kSectorRetextured, kSectorMoved };
 int ComputeSectorRebake(const SectorLook &before, const SectorLook &now);
 
+// [rc4l] A sidedef as its walls were last baked: per part (top, mid, bottom) the texture and its offsets and scales, and the side's own light and flags.
+struct SideLook
+{
+	int tex[3];
+	long long xoff[3], yoff[3], xscale[3], yscale[3];
+	int light, flags;
+};
+
+// [rc4l] What a dirty sidedef's walls need: nothing, a scroll applied to the pieces they have, or a bake.
+enum SideChange { kSideSame, kSideScrolled, kSideRebuild };
+SideChange ComputeSideChange(const SideLook &baked, const SideLook &now);
+
+// [rc4l] The largest texture shift a scroll carries before the walls are baked again with it in their vertices, so a float never loses the texel.
+const float kMaxScrollShift = 256.f;
+bool ComputeScrollInRange(float du, float dv);
+
 }} // namespace zx::levelmesh
 
 #endif // ZX_WALLCACHE_COMPUTE_H
