@@ -108,6 +108,30 @@ TEST(VersionRelation, AnUnreadableOwnVersionIsAlsoUnknown)
 	EXPECT_EQ(VersionRelation::Unknown, CompareFuaVersions("v0.2.19", ""));
 }
 
+// [MobiusU9B] A checkout without tags (CI's shallow clone, a source zip) names its build by the bare commit hash.
+TEST(VersionRelation, AnUntaggedBuildRecognisesItself)
+{
+	// [MobiusU9B] A hash starting with a letter has no number to read, and used to hide a server from its own build.
+	EXPECT_EQ(VersionRelation::Same, CompareFuaVersions("d3e5d73 on Linux 6.8.0-1015-azure", "d3e5d73"));
+	EXPECT_EQ(VersionRelation::Same, CompareFuaVersions("fabe367", "fabe367"));
+	EXPECT_EQ(VersionRelation::Same, CompareFuaVersions("  d3e5d73 on windows", "d3e5d73"));
+	EXPECT_EQ(VersionRelation::Same, CompareFuaVersions("1526181 on Linux", "1526181"));
+}
+
+TEST(VersionRelation, DifferentUntaggedBuildsStayUnknown)
+{
+	EXPECT_EQ(VersionRelation::Unknown, CompareFuaVersions("d3e5d73 on Linux", "fabe367"));
+	EXPECT_EQ(VersionRelation::Unknown, CompareFuaVersions("d3e5d73", kOurs));
+	EXPECT_EQ(VersionRelation::Unknown, CompareFuaVersions(kOurs, "d3e5d73"));
+}
+
+TEST(VersionRelation, EmptyVersionsDoNotMatchEachOther)
+{
+	// [MobiusU9B] Two blanks are two versions nobody can read, not one build.
+	EXPECT_EQ(VersionRelation::Unknown, CompareFuaVersions("", ""));
+	EXPECT_EQ(VersionRelation::Unknown, CompareFuaVersions("   ", " "));
+}
+
 TEST(VersionRelation, AnAbsurdlyLongNumberDoesNotWrapIntoLookingOlder)
 {
 	// A component big enough to overflow would compare SMALLER than ours if it wrapped, turning a
