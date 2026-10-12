@@ -286,6 +286,7 @@ GPU-bound), and Vulkan is clearly ahead of GL at the AOW03 view.
 |---|---|
 | Light links per tic | `CollectDynamicLights` walked and sorted all 767 lights' touching lists each tic, 4.7 ms on every tic frame. Each light's sorted links are now kept until it moves or changes radius (none stale in 600,000 checks). |
 | Re-bakes that track what is visible | Every frame a sector moved or relit, its walls and flats were re-baked, seen or not: about 0.78 ms a frame there. Now only what a walk reached this frame is re-baked, and the rest waits until a walk reaches it (scenario `movedbehind`). The loop costs 0.001 ms at that view; with the walks against without, p50 is 0.4 ms faster in every round and p99 goes from 6-7.5 ms to about 3.2 ms. |
+| Against the acceptance views, `-vulkan` (1024x640, `fuactl capture`, three rounds) | AOW03 at spot q36: GL alone 1.36-1.50 ms p50, `-vulkan` 0.57-0.60 ms, so Vulkan is clearly ahead. Sunder MAP10 at spawn: GL alone 6.04-6.07 ms, `-vulkan` 1.85-1.97 ms, waiting about 22% of the frame in `AcquireNextImage`. The main thread is busy about 1.6 ms a frame against the 1.5 ms target, and the player's walk is 1.37-1.48 ms of it: 7,411 of the level's 10,958 subsectors and 23,366 segs, with no single hot line. Meeting the target needs a cheaper or threaded walk, which is next. |
 
 ## Decisions taken
 
