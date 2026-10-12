@@ -129,8 +129,8 @@ unsigned char *MaterialPixels(MaterialRef m, int translation, int &width, int &h
 	width = height = 0;
 	if (m == NULL) return NULL;
 	FMaterial *mat = (FMaterial *)m;
-	// [rc4l] createexpanded=false: the expanded border exists for GL's clamp behaviour on sprites and would shift the UVs the mesh baked.
-	unsigned char *buf = mat->CreateTexBuffer(translation, width, height, true, false);
+	// [rc4l] A sprite's material is GL's framed one, a transparent texel round the picture that its sprite UVs and size count in, so its pixels come framed too; any other material has no frame to add.
+	unsigned char *buf = mat->CreateTexBuffer(translation, width, height, true, true);
 	if (buf == NULL || width <= 0 || height <= 0)
 	{
 		delete[] buf;

@@ -25,6 +25,12 @@ inline int ComputeXsFix(double val, int shift)
 	return ComputeXsRound(val, 6755399441055744.0 / double(1u << shift));
 }
 
+// [rc4l] xs_FloorToInt: down, by rounding a value nudged just under half a unit lower.
+inline int ComputeXsFloor(double val)
+{
+	return ComputeXsRound(val - (double(.5f) - 1.5e-8), 6755399441055744.0);
+}
+
 // [rc4l] xs_RoundToUInt: nearest with ties up (the second add nudges a tie over), the word taken unsigned.
 inline unsigned ComputeXsRoundToUInt(double val)
 {

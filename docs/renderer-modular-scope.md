@@ -218,7 +218,7 @@ passed; the exception was `stacksprite`. All 42 pass now.
 
 | Item | Result |
 |---|---|
-| Sprites | `features/sprites` derives an actor's sprite as `GLSprite::Process`, `Draw` and `RegisterSprite` do: 31 unit tests, and `fua_sprite_check` matched GL bit for bit on about 1.6 million actor-frames, rare settings included. On by default (`fua_sprites_own`); the sprite section costs the same as GL's (0.34-0.36 ms against 0.35-0.38 on wdiex02). Models still go through GL's model code, CPU-only in standalone. |
+| Sprites | `features/sprites` derives an actor's sprite as `GLSprite::Process`, `Draw` and `RegisterSprite` do: 31 unit tests, and `fua_sprite_check` matched GL bit for bit on about 1.6 million actor-frames, rare settings included. On by default (`fua_sprites_own`); the sprite section costs the same as GL's (0.34-0.36 ms against 0.35-0.38 on wdiex02). Models are derived too (`modelbuild`, `modelpose_compute`): standalone had drawn no solid model, since only `RenderScene` draws GL's model list, and none in stacked views or mirrors (`modelstandalone`). GL's model path shares the pose and frame blend; the check matched about 103,000 model surfaces bit for bit. |
 | Visibility | `features/visibility` walks the player's view as GL's BSP walk and clipper do, frustum seed included. The player's pass draws only what the walk reached (the walked-bit cull stacked views already used), the visible-set test `skybleed-scope.md` found the map bake lacked. On by default (`fua_vis_walk`): the sampler puts the walk at about 2.4% of a wdiex02 frame, 0.04 ms. |
 | Sky surfaces | The walk makes the player's sky surfaces, sky holes and skybox each frame, from `surfaces/computation/skywall_compute` (`SkyNormal`, `SkyTop`, `SkyBottom`, `DoHorizon`). `fua_vis_check` matched GL bit for bit on about 19,000 frames across nine maps, horizons on and off. |
 | Stacked views and skyboxes | The walk collects each stacked plane's walls and covered subsectors (GL's flats pass and `ProcessSectorStacks`) and each skybox its sky walls name; each is then walked from its own eye with GL's portal clipper (`ClearClipper`, `SetupCoverage`), giving its walk bits, sky surfaces and sprites. Matched GL on about 6,900 frames across seven maps, apart from views GL's occlusion query skipped. |
@@ -230,8 +230,7 @@ moves, the spawn view's), and it drew no actors in mirrors and no particles at a
 from the walks every frame; scenarios `skymove`, `stackturn`, `skyboxturn`, `mirrorsprite` and
 `particles` fail on the old binary and pass now.
 
-Still to do: models' data without GL's buffers (a stacked view's or mirror's models are not drawn in
-standalone yet); GL's view settings the new modules read (`glset`, `gl_fixedcolormap`, `FrustumAngle`,
+Still to do: models' data without GL's buffers (the loaders and `FModelVertexBuffer` are GL's); GL's view settings the new modules read (`glset`, `gl_fixedcolormap`, `FrustumAngle`,
 `gl_FakeFlat`, `SetViewArea`, `ProcessParticle`), which the renderer interface supplies in P5; light
 and plane heights from game state (on wdiex02, re-baking what moved or relit is about 30% of a
 standalone frame); then the capture hooks and the harness's standalone default.
@@ -248,8 +247,9 @@ every 2D quad (GL draws each one and records it), the view setup in `RenderViewp
 gamma, screenshots and save pictures, and materials (`FMaterial`). First step: `features/draw2d`
 works out a 2D draw once, without GL (`DrawTexture`'s quad and texture mode, lines, pixels, dims,
 clears), and GL draws and records that; GL and Vulkan frames of the HUD, console and menu are
-unchanged. Next: the view setup, then the frame driver out of `gl_scene.cpp`, then a window and
-framebuffer of Vulkan's own.
+unchanged. Then `features/viewsetup` works out the view once (the stretched pitch, the roll, the
+actor the eye is in, the walks' frustum), which GL's `RenderViewpoint` and the walks read. Next: the
+frame driver out of `gl_scene.cpp`, then a window and framebuffer of Vulkan's own.
 
 ### P6: visibility and threads
 

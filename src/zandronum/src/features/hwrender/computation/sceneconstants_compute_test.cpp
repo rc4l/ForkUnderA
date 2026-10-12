@@ -26,6 +26,7 @@ SceneConstantInputs Inputs(const float *mvp, const float *clip)
 	in.walkSlot = 1;
 	in.playerPass = true;
 	in.skyHoles = 3;
+	in.spriteAlphaCut = 0.499f;
 	return in;
 }
 
@@ -50,7 +51,7 @@ TEST(SceneConstants, EveryFieldLandsWhereTheShaderReadsIt)
 	EXPECT_FLOAT_EQ(1.f, out[32]); EXPECT_FLOAT_EQ(0.f, out[33]); EXPECT_FLOAT_EQ(0.2f, out[34]);
 	EXPECT_EQ(4096.f, out[35]);
 	EXPECT_FLOAT_EQ(2.5f, out[36]);
-	EXPECT_EQ(2.f, out[37]); EXPECT_EQ(3.f, out[38]); EXPECT_EQ(0.f, out[39]);
+	EXPECT_EQ(2.f, out[37]); EXPECT_EQ(3.f, out[38]); EXPECT_EQ(0.499f, out[39]);
 }
 
 // [rc4l] Every pass but a stacked view's reads zero, which the scene shader takes as "cull nothing".

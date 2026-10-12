@@ -104,6 +104,13 @@ TEST(SpriteStyle, EnhancedVisionRevealsShadowsAndStealth)
 	EXPECT_EQ(ComputeSpriteStyle(in).trans, 0.8f);
 }
 
+TEST(SpriteStyle, OnlyAnOpaqueParticleThatIsNotSmoothIsAlphaTested)
+{
+	EXPECT_TRUE(ComputeParticleAlphaTested(1, 1.f));
+	EXPECT_FALSE(ComputeParticleAlphaTested(2, 1.f));
+	EXPECT_FALSE(ComputeParticleAlphaTested(0, 0.5f));
+}
+
 TEST(SpriteStyle, BlendModesAsTheBackendDrawsThem)
 {
 	EXPECT_EQ(ComputeSpriteBlendMode(kOpShadow, kAlphaInvSrc, 1.f), 3);

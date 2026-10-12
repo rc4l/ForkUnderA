@@ -22,6 +22,14 @@ FTexture * LoadSkin(const char * path, const char * fn);
 // [JM] Necessary forward declaration
 typedef struct FSpriteModelFrame FSpriteModelFrame;
 
+// [rc4l] One surface of a model frame as RenderFrame draws it: its skin, its two keyframes' first vertices in mVBuf, and its triangles' first index and count.
+struct FModelSurface
+{
+	FTexture *skin;
+	unsigned int base1, base2;
+	unsigned int firstIndex, count;
+};
+
 class FModel
 {
 public:
@@ -35,6 +43,8 @@ public:
 	virtual bool Load(const char * fn, int lumpnum, const char * buffer, int length) = 0;
 	virtual int FindFrame(const char * name) = 0;
 	virtual void RenderFrame(FTexture * skin, int frame, int frame2, double inter, int translation=0) = 0;
+	// [rc4l] The surfaces RenderFrame draws for these frames, worked out without GL; how many, at most MD3_MAX_SURFACES.
+	virtual int FrameSurfaces(FTexture * skin, int frame, int frame2, FModelSurface * out) = 0;
 	virtual void BuildVertexBuffer() = 0;
 	void DestroyVertexBuffer()
 	{
@@ -160,6 +170,7 @@ public:
 	virtual bool Load(const char * fn, int lumpnum, const char * buffer, int length);
 	virtual int FindFrame(const char * name);
 	virtual void RenderFrame(FTexture * skin, int frame, int frame2, double inter, int translation=0);
+	virtual int FrameSurfaces(FTexture * skin, int frame, int frame2, FModelSurface * out);
 	virtual void LoadGeometry();
 	void UnloadGeometry();
 	void BuildVertexBuffer();
@@ -264,6 +275,7 @@ public:
 	virtual bool Load(const char * fn, int lumpnum, const char * buffer, int length);
 	virtual int FindFrame(const char * name);
 	virtual void RenderFrame(FTexture * skin, int frame, int frame2, double inter, int translation=0);
+	virtual int FrameSurfaces(FTexture * skin, int frame, int frame2, FModelSurface * out);
 	void LoadGeometry();
 	void BuildVertexBuffer();
 };
@@ -318,6 +330,7 @@ public:
 	void Initialize();
 	virtual int FindFrame(const char * name);
 	virtual void RenderFrame(FTexture * skin, int frame, int frame2, double inter, int translation=0);
+	virtual int FrameSurfaces(FTexture * skin, int frame, int frame2, FModelSurface * out);
 	FTexture *GetPaletteTexture() const { return mPalette; }
 	void BuildVertexBuffer();
 	float getAspectFactor();

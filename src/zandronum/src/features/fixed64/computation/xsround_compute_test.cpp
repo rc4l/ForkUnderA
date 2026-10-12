@@ -23,3 +23,11 @@ TEST(XsRound, AnUnsignedRoundingTakesTiesUpAndWrapsNegatives)
 	EXPECT_EQ(ComputeXsRoundToUInt(-1.0), 0xFFFFFFFFu);
 	EXPECT_EQ(ComputeXsRoundToUInt(1073741824.0), 0x40000000u);
 }
+
+TEST(XsRound, FloorRoundsDownEitherSideOfZero)
+{
+	EXPECT_EQ(ComputeXsFloor(2.75), 2);
+	EXPECT_EQ(ComputeXsFloor(3.0), 3);
+	EXPECT_EQ(ComputeXsFloor(-0.25), -1);
+	EXPECT_EQ(ComputeXsFloor(-2.0), -2);
+}

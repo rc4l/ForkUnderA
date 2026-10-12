@@ -328,12 +328,12 @@ int FMD3Model::FindFrame(const char * name)
 
 // [rc4l] upstream 03916d75d merged RenderFrame and RenderFrameInterpolated into one
 // function; the [BB] per-surface MODELDEF skin fallback is preserved.
-void FMD3Model::RenderFrame(FTexture * skin, int frameno, int frameno2, double inter, int translation)
+int FMD3Model::FrameSurfaces(FTexture * skin, int frameno, int frameno2, FModelSurface * out)
 {
-	if (frameno>=numFrames || frameno2>=numFrames) return;
+	if (frameno>=numFrames || frameno2>=numFrames) return 0;
 
-	gl_RenderState.SetInterpolationFactor((float)inter);
-	for(int i=0;i<numSurfaces;i++)
+	int n = 0;
+	for(int i=0;i<numSurfaces && i<MD3_MAX_SURFACES;i++)
 	{
 		MD3Surface * surf = &surfaces[i];
 
@@ -351,10 +351,29 @@ void FMD3Model::RenderFrame(FTexture * skin, int frameno, int frameno2, double i
 				surfaceSkin = surf->skins[0];
 			}
 
-			if (!surfaceSkin) return;
+			// [rc4l] A surface without a skin ends the frame there, as the draw loop returned on it.
+			if (!surfaceSkin) break;
 		}
+		out[n].skin = surfaceSkin;
+		out[n].base1 = surf->vindex + frameno * surf->numVertices;
+		out[n].base2 = surf->vindex + frameno2 * surf->numVertices;
+		out[n].firstIndex = surf->iindex;
+		out[n].count = surf->numTriangles * 3;
+		n++;
+	}
+	return n;
+}
 
-		FMaterial * tex = FMaterial::ValidateTexture(surfaceSkin, false);
+void FMD3Model::RenderFrame(FTexture * skin, int frameno, int frameno2, double inter, int translation)
+{
+	FModelSurface surfs[MD3_MAX_SURFACES];
+	const int n = FrameSurfaces(skin, frameno, frameno2, surfs);
+
+	gl_RenderState.SetInterpolationFactor((float)inter);
+	for(int i=0;i<n;i++)
+	{
+		const FModelSurface &surf = surfs[i];
+		FMaterial * tex = FMaterial::ValidateTexture(surf.skin, false);
 
 		gl_RenderState.SetMaterial(tex, CLAMP_NONE, translation, -1, false);
 
@@ -363,15 +382,12 @@ void FMD3Model::RenderFrame(FTexture * skin, int frameno, int frameno2, double i
 		// Same shape as the sprite branch in GLSprite::Draw: capture first, then return before the
 		// rasterisation when the backend is carrying the frame. Not gated on standalone alone --
 		// side by side, GL's own window is live and still needs the draw.
-		zx::levelmesh::CaptureModelSurface(mVBuf,
-			surf->vindex + frameno * surf->numVertices,
-			surf->vindex + frameno2 * surf->numVertices,
-			(float)inter, surf->iindex, surf->numTriangles * 3, tex, translation);
+		zx::levelmesh::CaptureModelSurface(mVBuf, surf.base1, surf.base2, (float)inter, surf.firstIndex, surf.count, tex, translation);
 		if (zx::hwrender::StandaloneActive()) continue;
 
 		gl_RenderState.Apply();
-		mVBuf->SetupFrame(surf->vindex + frameno * surf->numVertices, surf->vindex + frameno2 * surf->numVertices);
-		glDrawElements(GL_TRIANGLES, surf->numTriangles * 3, GL_UNSIGNED_INT, (void*)(intptr_t)(surf->iindex * sizeof(unsigned int)));
+		mVBuf->SetupFrame(surf.base1, surf.base2);
+		glDrawElements(GL_TRIANGLES, surf.count, GL_UNSIGNED_INT, (void*)(intptr_t)(surf.firstIndex * sizeof(unsigned int)));
 	}
 	gl_RenderState.SetInterpolationFactor(0.f);
 }

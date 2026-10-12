@@ -1609,11 +1609,14 @@ add_executable( zdoom WIN32
 	features/levelmesh/captureshading.cpp
 	features/materials/materials.cpp
 	features/sprites/spritebuild.cpp
+	features/sprites/modelbuild.cpp
 	features/visibility/viswalk.cpp
 	features/draw2d/draw2d.cpp
+	features/draw2d/screenblend.cpp
 	features/viewsetup/viewsetup.cpp
 	features/viewsetup/computation/viewsetup_compute.cpp
 	features/draw2d/computation/quad2d_compute.cpp
+	features/draw2d/computation/screenblend_compute.cpp
 	features/visibility/computation/clipranges_compute.cpp
 	features/visibility/computation/closedline_compute.cpp
 	features/visibility/computation/coverage_compute.cpp
@@ -1624,6 +1627,7 @@ add_executable( zdoom WIN32
 	features/sprites/computation/spritelight_compute.cpp
 	features/sprites/computation/spriteclip_compute.cpp
 	features/sprites/computation/spriteframe_compute.cpp
+	features/sprites/computation/modelpose_compute.cpp
 	features/levelmesh/computation/shading_compute.cpp
 	features/levelmesh/computation/surfacebudget_compute.cpp
 	features/levelmesh/computation/lightband_compute.cpp

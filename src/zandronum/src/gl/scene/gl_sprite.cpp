@@ -69,6 +69,7 @@
 #include "gamemode.h"
 #include "c_console.h"
 #include "features/sprite-roll/computation/spriteroll_compute.h"	// [rc4l]
+#include "features/sprites/computation/spritestyle_compute.h"	// [rc4l] kHw*, which hw_styleflags must match
 #include "features/damage-tint/damagetint.h"	// [rc4l] damaging-floor sprite glow
 
 EXTERN_CVAR(Bool, gl_wallmesh)
@@ -103,6 +104,8 @@ enum HWRenderStyle
 	STYLEHW_Solid,			// drawn solid (needs special treatment for sprites)
 	STYLEHW_NoAlphaTest,	// disable alpha test
 };
+static_assert(STYLEHW_Normal == zx::sprites::kHwNormal && STYLEHW_Solid == zx::sprites::kHwSolid && STYLEHW_NoAlphaTest == zx::sprites::kHwNoAlphaTest,
+	"HWRenderStyle must match spritestyle_compute.h");
 
 
 void gl_SetRenderStyle(FRenderStyle style, bool drawopaque, bool allowcolorblending)

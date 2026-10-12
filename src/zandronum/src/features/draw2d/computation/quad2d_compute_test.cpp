@@ -32,6 +32,13 @@ TEST(Quad2D, TheStyleDecidesTheTextureMode)
 	EXPECT_EQ(ComputeTextureMode(kStyleInvertSource, false), kTexInverse);
 }
 
+TEST(Quad2D, OnlyAStyleAddingOntoTheScreenWholeBlendsAdditively)
+{
+	EXPECT_EQ(ComputeQuadBlend(kStyleOpAdd, kStyleAlphaOne), kBlend2DAdditive);   // [rc4l] STYLE_Add
+	EXPECT_EQ(ComputeQuadBlend(kStyleOpAdd, 3), kBlend2DAlpha);                   // [rc4l] STYLE_Translucent's InvSrc
+	EXPECT_EQ(ComputeQuadBlend(2, kStyleAlphaOne), kBlend2DAlpha);                // [rc4l] a subtraction is no addition
+}
+
 TEST(Quad2D, APatchLandsAtItsOffsetScaledToItsSize)
 {
 	TextureQuadOut q;

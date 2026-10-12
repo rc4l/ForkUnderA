@@ -36,6 +36,7 @@ static const char *kSceneVS =
 	"layout(location = 14) flat out float vPlain;\n"
 	"layout(location = 15) flat out float vDesaturation;\n"
 	"layout(location = 16) flat out float vHoleCut;\n"
+	"layout(location = 17) flat out float vTexFlags;\n"
 	"layout(std430, binding = 10) readonly buffer StackVis { uint stackVis[]; };\n"
 	"layout(std430, binding = 11) readonly buffer SlotRemap { uint slotRemap[]; };\n"
 	// [rc4l] ComputeStackVisible, line for line: whether walk slot's walk drew id this frame.
@@ -56,6 +57,7 @@ static const char *kSceneVS =
 	"    vLinkId = int(pd.bright.y + 0.5) - 1;\n"
 	"    vPlain = pd.bright.w;\n"
 	"    vDesaturation = pd.extra.x;\n"
+	"    vTexFlags = pd.extra.w;\n"
 	"    vec4 clip = uMVP * vec4(aPos, 1.0);\n"
 	// [rc4l] A stacked view draws only what GL's walk through it drew, subsector for a flat and sidedef for a wall (ComputeMarkStackVisible); any other piece's triangle goes off screen whole.
 	"    int stackSlot = int(uFrame.y + 0.5) - 1;\n"
@@ -140,6 +142,9 @@ static const char *kSceneVS =
 	"layout(location = 14) flat in float vPlain;\n" \
 	"layout(location = 15) flat in float vDesaturation;\n" \
 	"layout(location = 16) flat in float vHoleCut;\n" \
+	"layout(location = 17) flat in float vTexFlags;\n" \
+	/* [rc4l] GL's TM_MASK: a stencil's texel is white where it is opaque, so the piece shows only its fill colour in the texture's shape. */ \
+	"vec4 fuaStencil(vec4 t) { return mod(vTexFlags, 2.0) > 0.5 ? vec4(vec3(1.0), t.a) : t; }\n" \
 	/* [rc4l] ComputeDesaturate, line for line: main.fp's desaturate(), on the texel and the brightmap but never the light. */ \
 	"vec3 fuaDesaturate(vec3 c) {\n" \
 	"    if (vDesaturation <= 0.0) return c;\n" \
@@ -443,7 +448,7 @@ static const char *kScenePS =
 	"#version 450\n"
 	FUA_LIGHT_GLSL
 	"void main() {\n"
-	"    vec4 t = fuaTexel(vUV);\n"
+	"    vec4 t = fuaStencil(fuaTexel(vUV));\n"
 	/* [rc4l] GL's solid pass tests no alpha, so an upper, lower or one-sided middle shows its see-through texels in their own colour. */
 	"    if (t.a < 0.5 && vPlain < 0.5) discard;\n"
 	"    outColor = vec4(fuaShade(t.rgb), 1.0);\n"
@@ -488,8 +493,9 @@ static const char *kScenePSTrans =
 	"#version 450\n"
 	FUA_LIGHT_GLSL
 	"void main() {\n"
-	"    vec4 t = fuaTexel(vUV);\n"
-	"    if (t.a < 0.04) discard;\n"
+	"    vec4 t = fuaStencil(fuaTexel(vUV));\n"
+	/* [rc4l] An alpha-tested sprite drops what GL's uAlphaThreshold drops (uFrame.w); anything else only what is all but invisible. */
+	"    if (vTexFlags > 1.5 ? t.a <= uFrame.w : t.a < 0.04) discard;\n"
 	"    outColor = vec4(fuaShade(t.rgb), t.a * vLightParm.z);\n"
 	"}\n";
 

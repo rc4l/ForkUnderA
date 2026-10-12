@@ -13,6 +13,11 @@ int ComputeTextureMode(int styleFlags, bool drawOpaque)
 	return drawOpaque ? kTexOpaque : kTexModulate;
 }
 
+int ComputeQuadBlend(int blendOp, int destAlpha)
+{
+	return (blendOp == kStyleOpAdd && destAlpha == kStyleAlphaOne) ? kBlend2DAdditive : kBlend2DAlpha;
+}
+
 void ComputeTextureQuad(const TextureQuadIn &in, TextureQuadOut &out)
 {
 	const double xscale = in.destWidth / in.texWidth;

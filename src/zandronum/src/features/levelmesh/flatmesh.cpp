@@ -5,6 +5,7 @@
 #include "features/levelmesh/flatmesh.h"
 #include "features/levelmesh/captureshading.h"   // [rc4l] CaptureShading, the light model for a GL colormap
 #include "features/sprites/spritebuild.h"   // [rc4l] NoteGLSprite, for fua_sprite_check
+#include "features/sprites/computation/spritestyle_compute.h"   // [rc4l] kHwNoAlphaTest, GLSprite's hw_styleflags
 #include "features/hwrender/computation/lightside_compute.h"   // the plane bake, tested off-engine
 #include "features/levelmesh/staticmesh.h"
 #include "features/levelmesh/modelmesh.h"
@@ -1261,6 +1262,9 @@ void RegisterSprite(const GLSprite &spr, const float *c1, const float *c2,
 	mp.colorR *= spr.ThingColor.r / 255.f;
 	mp.colorG *= spr.ThingColor.g / 255.f;
 	mp.colorB *= spr.ThingColor.b / 255.f;
+	// [rc4l] A fixed-colour style draws in TM_MASK, the texture only the shape.
+	mp.stencil = (spr.RenderStyle.Flags & STYLEF_ColorIsFixed) != 0;
+	mp.alphaTest = spr.hw_styleflags != zx::sprites::kHwNoAlphaTest;
 
 	// [rc4l] The dynamic light GL worked out for this actor, folded in here.
 	//
@@ -1324,7 +1328,7 @@ void RegisterSprite(const GLSprite &spr, const float *c1, const float *c2,
 	// [rc4l] Four corners, not six vertices -- the backend expands them when it writes its own.
 	mp.quad = true;
 
-	zx::sprites::NoteGLSprite(spr.actor != NULL ? (const void *)spr.actor : (const void *)spr.particle, spr.actor == NULL, mp, q);
+	zx::sprites::NoteGLSprite(spr.actor != NULL ? (const void *)spr.actor : (const void *)spr.particle, spr.actor == NULL, mp, q, 4);
 	DynAppend(q, 4, mp);
 	g_spritesThisFrame++;
 

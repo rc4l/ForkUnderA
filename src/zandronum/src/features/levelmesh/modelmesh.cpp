@@ -17,6 +17,7 @@
 #include "gl/renderer/gl_renderstate.h"   // GetDynLight, the CPU's answer for this actor
 #include "gl/renderer/gl_lightdata.h"
 #include "features/hwrender/hud2d.h"   // StandaloneActive, BackendPresenting
+#include "features/sprites/spritebuild.h"   // [rc4l] NoteGLSprite and NoteDerivedSprite, for fua_sprite_check
 #include "tarray.h"
 #include "c_dispatch.h"
 #include "c_cvars.h"
@@ -29,8 +30,11 @@ namespace zx { namespace levelmesh {
 
 namespace {
 
-const GLSprite *g_sprite = NULL;
-const VSMatrix *g_matrix = NULL;
+// [rc4l] The model being captured: its look, its matrix, its actor, and whether it was derived and only checked.
+MeshPiece g_look;
+const float *g_matrix = NULL;
+const void *g_who = NULL;
+bool g_derived = false, g_checkOnly = false;
 
 int g_models = 0, g_surfaces = 0, g_triangles = 0, g_skipped = 0;
 // [rc4l] Every model GL started to draw, captured or not, and the walk the last one was in, so "not drawn" and "not ours" read apart.
@@ -62,10 +66,56 @@ inline void Transform(const float *m, float x, float y, float z, float *out)
 
 } // namespace
 
+void ModelPieceLook(int lightLevel, int extraLight, const FColormap &cm, bool fullbright, const float dyn[3], unsigned thingColor,
+	float alpha, int blendMode, float x, float y, float z, MeshPiece &mp)
+{
+	mp = MeshPiece();
+	mp.range.offset = 0;
+	mp.range.count = 0;
+	mp.dynLightIndex = -1;
+	mp.lightLevel = lightLevel;
+	mp.lightColor = cm.LightColor.d;
+	mp.fadeColor = cm.FadeColor.d;
+	CaptureShading(lightLevel, extraLight, cm, mp);
+	// [rc4l] GL's shader multiplies a model by the actor's ThingColor as it does a sprite.
+	const PalEntry color(thingColor);
+	mp.colorR *= color.r / 255.f;
+	mp.colorG *= color.g / 255.f;
+	mp.colorB *= color.b / 255.f;
+	// [rc4l] The light is the CPU's, exactly as it is for a sprite: gl_SetDynSpriteLight has already
+	// run for this actor and left its answer in the render state, having applied gl_light_sprites and
+	// DONTLIGHTSELF. A shader loop over the level's lights knows neither.
+	if (!fullbright) { mp.dynR = dyn[0]; mp.dynG = dyn[1]; mp.dynB = dyn[2]; }
+	mp.cpuLight = true;   // [rc4l] see RegisterSprite
+	// [rc4l] No normal, and this one is a real limitation rather than a shortcut for its own sake.
+	// FModelVertex::SetNormal is a no-op in this tree -- the loaders read normals and throw them
+	// away, because GL's model shader never wanted them -- so there is nothing to capture. Zero
+	// means "no side" and the backend skips its dynamic-light facing test, which is the same
+	// treatment a billboard gets. A model lit from behind is therefore lit all over.
+	mp.normX = mp.normY = mp.normZ = 0.f;
+	mp.alpha = alpha;
+	mp.blendMode = blendMode;
+	// The actor's own position, so the back-to-front sort puts a translucent model where the actor
+	// is rather than where its first triangle happens to be.
+	mp.sortX = x; mp.sortY = y; mp.sortZ = z;
+	mp.quad = false;
+	// [rc4l] Solid, which is what separates a model from every other dynamic piece: it is a closed
+	// shell, so its near panels must hide its far ones. Left in the sorted depth-write-off pass
+	// with the sprites, a car draws its own interior floor and seats through the bodywork.
+	mp.solid = true;
+}
+
 void ModelCaptureBegin(const GLSprite *spr, const VSMatrix &modelToWorld)
 {
-	g_sprite = spr;
-	g_matrix = &modelToWorld;
+	float dyn[3] = { 0.f, 0.f, 0.f };
+	if (!spr->fullbright) gl_RenderState.GetDynLight(dyn[0], dyn[1], dyn[2]);
+	ModelPieceLook(spr->lightlevel, spr->fullbright ? 0 : getExtraLight(), spr->Colormap, spr->fullbright, dyn, spr->ThingColor.d,
+		spr->trans, ComputeStyleBlendMode(spr->RenderStyle.BlendOp == STYLEOP_Shadow,
+			spr->RenderStyle.BlendOp == STYLEOP_Add && spr->RenderStyle.DestAlpha == STYLEALPHA_One, spr->trans),
+		spr->x, spr->y, spr->z, g_look);
+	g_matrix = modelToWorld.get();
+	g_who = spr->actor;
+	g_derived = g_checkOnly = false;
 	g_begins++;
 	g_lastDepth = GLPortal::RenderDepth();
 	g_lastMainView = MainView();
@@ -74,10 +124,24 @@ void ModelCaptureBegin(const GLSprite *spr, const VSMatrix &modelToWorld)
 	if (ModelCaptureActive()) g_models++;
 }
 
+void ModelCaptureBeginDerived(const MeshPiece &look, const float *modelToWorld, const void *who, bool checkOnly)
+{
+	g_look = look;
+	g_matrix = modelToWorld;
+	g_who = who;
+	g_derived = true;
+	g_checkOnly = checkOnly;
+	g_begins++;
+	g_lastDepth = 0;
+	g_lastMainView = MainView();
+	g_lastPortalKind = 0;
+	if (ModelCaptureActive()) g_models++;
+}
+
 void ModelCaptureEnd()
 {
-	g_sprite = NULL;
 	g_matrix = NULL;
+	g_who = NULL;
 }
 
 bool ModelCaptureActive()
@@ -88,7 +152,7 @@ bool ModelCaptureActive()
 	// models in exactly the configuration used to compare the two renderers. The mesh is what a
 	// backend draws from, so it is filled whenever there is something to put in it.
 	// [rc4l] ...and only from a walk the backend draws again, each kept for its own pass, since wdiexsec's mirror walks once wiped a barrel the player's had already drawn.
-	return fua_mesh_models && g_sprite != NULL && g_matrix != NULL && DynamicCaptureActive();
+	return fua_mesh_models && g_matrix != NULL && DynamicCaptureActive();
 }
 
 void ModelStatsReset() { g_models = g_surfaces = g_triangles = g_skipped = g_begins = 0; g_haveBB = false; }
@@ -112,7 +176,7 @@ void ModelPieceGet(float &alpha, int &blend, int &light, float *rgb, const void 
 
 void CaptureModelSurface(const FModelVertexBuffer *vbuf, unsigned int base1, unsigned int base2,
 	float inter, unsigned int firstIndex, unsigned int indexCount,
-	FMaterial *material, int translation)
+	const void *material, int translation)
 {
 	if (!ModelCaptureActive() || vbuf == NULL || material == NULL) return;
 
@@ -135,8 +199,7 @@ void CaptureModelSurface(const FModelVertexBuffer *vbuf, unsigned int base1, uns
 		return;
 	}
 
-	const GLSprite &spr = *g_sprite;
-	const float *m = g_matrix->get();
+	const float *m = g_matrix;
 	const unsigned int nverts = vbuf->ShadowVertexCount();
 	const bool lerp = (base1 != base2) && (inter > 0.f);
 
@@ -172,56 +235,26 @@ void CaptureModelSurface(const FModelVertexBuffer *vbuf, unsigned int base1, uns
 		g_haveBB = true;
 	}
 
-	MeshPiece mp;
-	mp.range.offset = 0;
-	mp.range.count = 0;
+	MeshPiece mp = g_look;
 	// [rc4l] The FMaterial itself, not its FTexture. MeshPiece::material is an identity the backend
 	// resolves to its own texture, and it resolves it AS an FMaterial -- handing it the inner pointer
 	// type-checks, then faults inside CreateTexBuffer on the first frame that draws a model.
 	mp.material = material;
 	mp.mirrorLine = MirrorCaptureLine();
 	mp.stackSlot = StackCaptureSlot();
-	// [rc4l] The light is the CPU's, exactly as it is for a sprite: gl_SetDynSpriteLight has already
-	// run for this actor and left its answer in the render state, having applied gl_light_sprites and
-	// DONTLIGHTSELF. A shader loop over the level's lights knows neither.
-	mp.dynLightIndex = -1;
-	mp.lightLevel = spr.lightlevel;
-	mp.lightColor = spr.Colormap.LightColor.d;
-	mp.fadeColor = spr.Colormap.FadeColor.d;
-	CaptureShading(spr.lightlevel, spr.fullbright ? 0 : getExtraLight(), spr.Colormap, mp);
-	if (!spr.fullbright)
-	{
-		float dyn[3] = { 0.f, 0.f, 0.f };
-		gl_RenderState.GetDynLight(dyn[0], dyn[1], dyn[2]);
-		mp.dynR = dyn[0]; mp.dynG = dyn[1]; mp.dynB = dyn[2];
-	}
-	mp.cpuLight = true;   // [rc4l] see RegisterSprite
-	// [rc4l] No normal, and this one is a real limitation rather than a shortcut for its own sake.
-	// FModelVertex::SetNormal is a no-op in this tree -- the loaders read normals and throw them
-	// away, because GL's model shader never wanted them -- so there is nothing to capture. Zero
-	// means "no side" and the backend skips its dynamic-light facing test, which is the same
-	// treatment a billboard gets. A model lit from behind is therefore lit all over.
-	mp.normX = mp.normY = mp.normZ = 0.f;
 	mp.translation = translation;
-	mp.alpha = spr.trans;
-	mp.blendMode = ComputeStyleBlendMode(
-		spr.RenderStyle.BlendOp == STYLEOP_Shadow,
-		spr.RenderStyle.BlendOp == STYLEOP_Add && spr.RenderStyle.DestAlpha == STYLEALPHA_One,
-		spr.trans);
-	// The actor's own position, so the back-to-front sort puts a translucent model where the actor
-	// is rather than where its first triangle happens to be.
-	mp.sortX = spr.x; mp.sortY = spr.y; mp.sortZ = spr.z;
-	g_lastSort[0] = spr.x; g_lastSort[1] = spr.y; g_lastSort[2] = spr.z;
+	g_lastSort[0] = mp.sortX; g_lastSort[1] = mp.sortY; g_lastSort[2] = mp.sortZ;
 	g_lastAlpha = mp.alpha; g_lastBlend = mp.blendMode; g_lastLight = mp.lightLevel;
 	g_lastRGB[0] = mp.colorR; g_lastRGB[1] = mp.colorG; g_lastRGB[2] = mp.colorB;
 	g_lastMaterial = mp.material;
-	mp.quad = false;
-	// [rc4l] Solid, which is what separates a model from every other dynamic piece: it is a closed
-	// shell, so its near panels must hide its far ones. Left in the sorted depth-write-off pass
-	// with the sprites, a car draws its own interior floor and seats through the bodywork.
-	mp.solid = true;
 
+	if (g_derived && g_checkOnly)
+	{
+		zx::sprites::NoteDerivedSprite(g_who, mp, &g_tris[0], (int)indexCount);
+		return;
+	}
 	DynAppend(&g_tris[0], indexCount, mp);
+	if (!g_derived) zx::sprites::NoteGLSprite(g_who, false, mp, &g_tris[0], (int)indexCount);
 	g_surfaces++;
 	g_triangles += (int)(indexCount / 3);
 }

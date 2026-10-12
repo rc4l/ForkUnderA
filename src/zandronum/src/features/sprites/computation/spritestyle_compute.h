@@ -49,6 +49,9 @@ SpriteStyleOut ComputeSpriteStyle(const SpriteStyleIn &in);
 // [rc4l] The backend's blend for a resolved style: 0 opaque or alpha-tested, 1 translucent, 2 additive, 3 fuzz.
 int ComputeSpriteBlendMode(int blendOp, int destAlpha, float trans);
 
+// [rc4l] ProcessParticle's alpha test: a fully opaque particle that is not a smooth one (gl_particles_style 2).
+bool ComputeParticleAlphaTested(int particlesStyle, float trans);
+
 }} // namespace zx::sprites
 
 #endif // ZX_SPRITESTYLE_COMPUTE_H

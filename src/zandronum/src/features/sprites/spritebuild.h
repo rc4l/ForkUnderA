@@ -17,14 +17,17 @@ namespace zx { namespace sprites {
 // [rc4l] One drawn piece of a sprite: the quad's four corners and the record the backend shades it from.
 struct SpritePiece;
 
-// [rc4l] Derive an actor's sprite into the dynamic stream; false when GL must draw it, which a model needs.
+// [rc4l] Derive an actor's sprite or model into the dynamic stream; false when GL must draw it, which only the check asks.
 bool BuildSprite(AActor *thing);
 
 // [rc4l] Derive a particle in `sector` (as GL's walk sees it) into the dynamic stream; false when GL must draw it, which only the check asks.
 bool BuildParticle(particle_t *particle, sector_t *sector);
 
-// [rc4l] With fua_sprite_check on, what GL's RegisterSprite recorded for an actor or a particle, so the derivation can be compared against it.
-void NoteGLSprite(const void *who, bool particle, const zx::levelmesh::MeshPiece &piece, const zx::levelmesh::MeshVertex *quad);
+// [rc4l] With fua_sprite_check on, what GL's RegisterSprite or model capture recorded for an actor or a particle, its `count` vertices with it, so the derivation can be compared against it.
+void NoteGLSprite(const void *who, bool particle, const zx::levelmesh::MeshPiece &piece, const zx::levelmesh::MeshVertex *verts, int count);
+
+// [rc4l] With the check on, a derived model's surface, held for the comparison instead of drawn.
+void NoteDerivedSprite(const void *who, const zx::levelmesh::MeshPiece &piece, const zx::levelmesh::MeshVertex *verts, int count);
 
 // [rc4l] Compare every actor GL drew this frame against the derivation; called once GL's sprites are in.
 void CheckFrameSprites();

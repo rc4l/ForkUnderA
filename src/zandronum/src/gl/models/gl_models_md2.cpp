@@ -360,25 +360,36 @@ int FDMDModel::FindFrame(const char * name)
 //
 //===========================================================================
 
-void FDMDModel::RenderFrame(FTexture * skin, int frameno, int frameno2, double inter, int translation)
+int FDMDModel::FrameSurfaces(FTexture * skin, int frameno, int frameno2, FModelSurface * out)
 {
-	if (frameno >= info.numFrames || frameno2 >= info.numFrames) return;
+	if (frameno >= info.numFrames || frameno2 >= info.numFrames) return 0;
 
 	if (!skin)
 	{
-		if (info.numSkins == 0) return;
+		if (info.numSkins == 0) return 0;
 		skin = skins[0];
-		if (!skin) return;
+		if (!skin) return 0;
 	}
+	// [rc4l] Sequentially numbered rather than indexed -- see CaptureModelSurface.
+	out->skin = skin;
+	out->base1 = frames[frameno].vindex;
+	out->base2 = frames[frameno2].vindex;
+	out->firstIndex = 0;
+	out->count = lodInfo[0].numTriangles * 3;
+	return 1;
+}
 
-	FMaterial * tex = FMaterial::ValidateTexture(skin, false);
+void FDMDModel::RenderFrame(FTexture * skin, int frameno, int frameno2, double inter, int translation)
+{
+	FModelSurface surf;
+	if (!FrameSurfaces(skin, frameno, frameno2, &surf)) return;
+
+	FMaterial * tex = FMaterial::ValidateTexture(surf.skin, false);
 
 	gl_RenderState.SetMaterial(tex, CLAMP_NONE, translation, -1, false);
 	gl_RenderState.SetInterpolationFactor((float)inter);
 
-	// [rc4l] Sequentially numbered rather than indexed -- see CaptureModelSurface.
-	zx::levelmesh::CaptureModelSurface(mVBuf, frames[frameno].vindex, frames[frameno2].vindex,
-		(float)inter, 0, lodInfo[0].numTriangles * 3, tex, translation);
+	zx::levelmesh::CaptureModelSurface(mVBuf, surf.base1, surf.base2, (float)inter, surf.firstIndex, surf.count, tex, translation);
 	if (zx::hwrender::StandaloneActive())
 	{
 		gl_RenderState.SetInterpolationFactor(0.f);
@@ -386,8 +397,8 @@ void FDMDModel::RenderFrame(FTexture * skin, int frameno, int frameno2, double i
 	}
 
 	gl_RenderState.Apply();
-	mVBuf->SetupFrame(frames[frameno].vindex, frames[frameno2].vindex);
-	glDrawArrays(GL_TRIANGLES, 0, lodInfo[0].numTriangles * 3);
+	mVBuf->SetupFrame(surf.base1, surf.base2);
+	glDrawArrays(GL_TRIANGLES, 0, surf.count);
 	gl_RenderState.SetInterpolationFactor(0.f);
 }
 

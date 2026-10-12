@@ -16,6 +16,14 @@ enum { kStyleRedIsAlpha = 4, kStyleColorIsFixed = 8, kStyleInvertSource = 16 };
 // [rc4l] gl_GetRenderStyle's texture mode: opaque or modulated, unless the style samples red as alpha, fixes the colour, or inverts.
 int ComputeTextureMode(int styleFlags, bool drawOpaque);
 
+// [rc4l] renderstyle.h's ERenderOp and ERenderAlpha values read here.
+enum { kStyleOpAdd = 1, kStyleAlphaOne = 1 };
+// [rc4l] The 2D capture's blends: GL's usual source-alpha over, and source-alpha added.
+enum { kBlend2DAlpha = 0, kBlend2DAdditive = 1 };
+
+// [rc4l] The 2D blend gl_GetRenderStyle sets for a style: additive when it adds onto the screen whole, alpha otherwise.
+int ComputeQuadBlend(int blendOp, int destAlpha);
+
 // [rc4l] What DrawTexture reads of a DrawParms and the material.
 struct TextureQuadIn
 {

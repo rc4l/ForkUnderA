@@ -22,7 +22,7 @@ void ComputeSceneConstants(const SceneConstantInputs &in, float *out)
 	out[36] = ComputeWarpTimer(in.frameMS, 1.f);
 	out[37] = (float)(in.walkSlot + 1);
 	out[38] = in.playerPass ? (float)in.skyHoles : 0.f;
-	out[39] = 0.f;
+	out[39] = in.spriteAlphaCut;
 }
 
 }} // namespace zx::hwrender

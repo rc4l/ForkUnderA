@@ -9,10 +9,14 @@
 #include "features/sprites/computation/spritelight_compute.h"
 #include "features/sprites/computation/spriteclip_compute.h"
 #include "features/sprites/computation/spriteframe_compute.h"
+#include "features/sprites/computation/modelpose_compute.h"
+#include "features/sprites/modelbuild.h"
 #include "features/sprite-roll/computation/spriteroll_compute.h"
 #include "features/levelmesh/staticmesh.h"
 #include "features/levelmesh/flatmesh.h"            // [rc4l] the walk the stream's pieces belong to
 #include "features/levelmesh/captureshading.h"
+#include "features/levelmesh/modelmesh.h"           // [rc4l] a derived model's capture
+#include "features/levelmesh/computation/flatmesh_compute.h"   // [rc4l] ComputeStyleBlendMode, a model's blend as GL's capture takes it
 #include "features/hwrender/spriteview.h"
 #include "features/materials/materials.h"
 
@@ -37,6 +41,10 @@
 #include "gl/dynlights/gl_dynlight.h"  // ADynamicLight, FLightNode
 
 #include <string.h>
+#include <map>
+#include <set>
+#include <tuple>
+#include <vector>
 
 EXTERN_CVAR(Int, gl_spriteclip)
 EXTERN_CVAR(Float, gl_sclipfactor)
@@ -144,46 +152,180 @@ static void ApplyThingColor(PalEntry color, MeshPiece &mp)
 	mp.colorB *= color.b / 255.f;
 }
 
-// [rc4l] Derive an actor's sprite as GLSprite::Process, Draw and RegisterSprite do: the pieces drawn, 0 for none, -1 for a model GL must draw.
-static int DeriveSprite(AActor *thing, SpritePiece *out, int max)
+// [rc4l] An actor as GLSprite::Process first takes it: whether it is drawn from here at all, where, and the model it is drawn as, if any.
+struct Subject
+{
+	int spritenum;
+	fixed_t scaleX, scaleY;
+	fixed_t frac, thingx, thingy, thingz;
+	sector_t *rendersector;
+	float x, y, z;
+	FSpriteModelFrame *model;
+};
+
+static bool SubjectOf(AActor *thing, Subject &s)
 {
 	const zx::hwrender::SpriteViewProvider &view = zx::hwrender::SpriteView();
-	if (thing == view.ViewActor()) return 0;
-	if (thing == NULL || thing->sprite == 0 || !thing->IsVisibleToPlayer()) return 0;
+	if (thing == view.ViewActor()) return false;
+	if (thing == NULL || thing->sprite == 0 || !thing->IsVisibleToPlayer()) return false;
 
-	int spritenum = thing->sprite;
-	fixed_t scaleX = thing->scaleX, scaleY = thing->scaleY;
-	if (thing->player != NULL) P_CheckPlayerSprite(thing, spritenum, scaleX, scaleY);
+	s.spritenum = thing->sprite;
+	s.scaleX = thing->scaleX; s.scaleY = thing->scaleY;
+	if (thing->player != NULL) P_CheckPlayerSprite(thing, s.spritenum, s.scaleX, s.scaleY);
 
 	if (thing->renderflags & RF_INVISIBLE || !thing->RenderStyle.IsVisible(thing->alpha))
 	{
-		if (!(thing->flags & MF_STEALTH) || !gl_fixedcolormap || !gl_enhanced_nightvision) return 0;
+		if (!(thing->flags & MF_STEALTH) || !gl_fixedcolormap || !gl_enhanced_nightvision) return false;
 	}
-	if (!(currentmapsection[thing->subsector->mapsection >> 3] & (1 << (thing->subsector->mapsection & 7)))) return 0;
+	if (!(currentmapsection[thing->subsector->mapsection >> 3] & (1 << (thing->subsector->mapsection & 7)))) return false;
 	if (!view.PortalIsMirror() && !(players[consoleplayer].cheats & CF_CHASECAM) && players[consoleplayer].camera != nullptr &&
-	    players[consoleplayer].camera->player != nullptr && thing == players[consoleplayer].camera->player->pIcon) return 0;
+	    players[consoleplayer].camera->player != nullptr && thing == players[consoleplayer].camera->player->pIcon) return false;
 
-	const fixed_t frac = C_ShouldForceInterpolation() ? FRACUNIT : r_TicFrac;
-	const fixed_t thingx = thing->PrevX + FixedMul(frac, thing->x - thing->PrevX);
-	const fixed_t thingy = thing->PrevY + FixedMul(frac, thing->y - thing->PrevY);
-	const fixed_t thingz = thing->PrevZ + FixedMul(frac, thing->z - thing->PrevZ);
+	s.frac = C_ShouldForceInterpolation() ? FRACUNIT : r_TicFrac;
+	s.thingx = thing->PrevX + FixedMul(s.frac, thing->x - thing->PrevX);
+	s.thingy = thing->PrevY + FixedMul(s.frac, thing->y - thing->PrevY);
+	s.thingz = thing->PrevZ + FixedMul(s.frac, thing->z - thing->PrevZ);
 
-	// [rc4l] Too close to the camera to look like anything, unless it only moves up and down.
-	if (P_AproxDistance(thingx - viewx, thingy - viewy) < 2 * FRACUNIT && !(thing->velx == 0 && thing->vely == 0 && thing->velz != 0) &&
-	    !gl_FindModelFrame(RUNTIME_TYPE(thing), spritenum, thing->frame, false)) return 0;
+	// [rc4l] Too close to the camera to look like anything, unless it only moves up and down or is a model.
+	if (P_AproxDistance(s.thingx - viewx, s.thingy - viewy) < 2 * FRACUNIT && !(thing->velx == 0 && thing->vely == 0 && thing->velz != 0) &&
+	    !gl_FindModelFrame(RUNTIME_TYPE(thing), s.spritenum, thing->frame, false)) return false;
 	AActor *const viewActor = view.ViewActor();
 	if (thing->flags & MF_MISSILE && thing->target == viewActor && viewActor != NULL &&
-	    P_AproxDistance(thingx - viewx, thingy - viewy) < thing->Speed) return 0;
-	if (view.PortalRejectsPoint(thingx, thingy)) return 0;
+	    P_AproxDistance(s.thingx - viewx, s.thingy - viewy) < thing->Speed) return false;
+	if (view.PortalRejectsPoint(s.thingx, s.thingy)) return false;
 
 	// [rc4l] The sweep hands each actor its own sector, so GL never fakes the flat here.
-	sector_t *rendersector = thing->Sector;
-	const float x = FIXED2FLOAT(thingx);
-	float z = FIXED2FLOAT(thingz - thing->floorclip);
-	const float y = FIXED2FLOAT(thingy);
-	if (thing->flags2 & MF2_FLOATBOB) z += FIXED2FLOAT(thing->GetBobOffset(r_TicFrac));
+	s.rendersector = thing->Sector;
+	s.x = FIXED2FLOAT(s.thingx);
+	s.z = FIXED2FLOAT(s.thingz - thing->floorclip);
+	s.y = FIXED2FLOAT(s.thingy);
+	if (thing->flags2 & MF2_FLOATBOB) s.z += FIXED2FLOAT(thing->GetBobOffset(r_TicFrac));
+	s.model = gl_FindModelFrame(RUNTIME_TYPE(thing), s.spritenum, thing->frame, !!(thing->flags & MF_DROPPED));
+	return true;
+}
 
-	if (gl_FindModelFrame(RUNTIME_TYPE(thing), spritenum, thing->frame, !!(thing->flags & MF_DROPPED))) return -1;
+// [rc4l] The light, colormap and style Process gives an actor: false when it is fully transparent. A model has no frame to turn fullbright off or to be transparent.
+struct Look
+{
+	bool fullbright;
+	int lightlevel;
+	FColormap cm;
+	SpriteStyleOut so;
+};
+
+static bool LookOf(AActor *thing, const Subject &s, bool disableFullbright, bool textureTransparent, Look &l)
+{
+	// [rc4l] Fullbright unless GLDEFS turns it off for this frame, the sky-aware sector light, and a glowing floor.
+	l.fullbright = (thing->flags5 & MF5_BRIGHT) || ((thing->renderflags & RF_FULLBRIGHT) && !disableFullbright);
+	sector_t *rendersector = s.rendersector;
+	l.lightlevel = l.fullbright ? 255 : gl_ClampLight(rendersector->GetTexture(sector_t::ceiling) == skyflatnum ?
+		rendersector->GetCeilingLight() : rendersector->GetFloorLight());
+	{
+		FTexture *floortex = TexMan[rendersector->GetTexture(sector_t::floor)];
+		if (floortex != NULL && floortex->isGlowing())
+			l.lightlevel = ComputeSpriteGlow(l.lightlevel, (s.thingz - rendersector->floorplane.ZatPoint(s.thingx, s.thingy)).Raw(),
+				floortex->gl_info.GlowHeight);
+		l.lightlevel = (BYTE)l.lightlevel;
+	}
+
+	FRenderStyle style = thing->RenderStyle;
+	bool enhancedvision = false;
+	if (gl_fixedcolormap)
+	{
+		if ((gl_enhanced_nv_stealth > 0 && gl_fixedcolormap == CM_LITE) || (gl_enhanced_nv_stealth == 2 && gl_fixedcolormap >= CM_TORCH) ||
+		    (gl_enhanced_nv_stealth == 3)) enhancedvision = true;
+		l.cm.Clear();
+		if (gl_fixedcolormap == CM_LITE && gl_enhanced_nightvision &&
+		    (thing->IsKindOf(RUNTIME_CLASS(AInventory)) || thing->flags3 & MF3_ISMONSTER || thing->flags & MF_MISSILE || thing->flags & MF_CORPSE))
+			style.Flags |= STYLEF_InvertSource;
+	}
+	else
+	{
+		l.cm = rendersector->ColorMap;
+		if (l.fullbright)
+		{
+			int cr = l.cm.LightColor.r, cg = l.cm.LightColor.g, cb = l.cm.LightColor.b;
+			ComputeFullbrightColor(false, cr, cg, cb);
+			l.cm.LightColor.r = cr; l.cm.LightColor.g = cg; l.cm.LightColor.b = cb;
+		}
+		else if (glset.nocoloredspritelighting) l.cm.Decolorize();
+	}
+
+	if (style.BlendOp >= STYLEOP_Fuzz && style.BlendOp <= STYLEOP_FuzzOrRevSub) style.CheckFuzz();
+	SpriteStyleIn si;
+	si.style = StyleOf(style);
+	si.alpha = FIXED2FLOAT(thing->alpha);
+	si.transSouls = transsouls;
+	si.fuzzType = gl_fuzztype;
+	si.spriteBlend = gl_sprite_blend;
+	si.model = s.model != NULL;
+	si.textureTransparent = textureTransparent;
+	si.enhancedVision = enhancedvision && gl_enhanced_nightvision;
+	si.stealth = !!(thing->flags & MF_STEALTH);
+	si.translucent = StyleOf(LegacyRenderStyles[STYLE_Translucent]);
+	l.so = ComputeSpriteStyle(si);
+	return l.so.trans != 0.0f;
+}
+
+// [rc4l] Draw's touches to a piece's colormap before it is drawn: a fuzzy shadow's fade, and a style that fades to black.
+static void DrawFade(const SpriteStyleOut &so, int lightlevel, FColormap &cm)
+{
+	if (cm.FadeColor.a == 0 && so.style.blendOp == kOpShadow && !gl_isBlack(cm.FadeColor))
+		cm.FadeColor.a = ::clamp<int>(255 - lightlevel, 60, 255);
+	if (so.style.flags & STYLEF_FadeToBlack) cm.FadeColor = 0;
+}
+
+// [rc4l] GLSprite::Draw's dynamic light for an actor: its lights, unless it is a shadow, fullbright or under a fixed colormap.
+static void DrawLight(AActor *thing, const Look &l, float dyn[3])
+{
+	dyn[0] = dyn[1] = dyn[2] = 0.f;
+	if (l.so.style.blendOp != kOpShadow && gl_lights && zx::hwrender::SpriteView().DynamicLightCount() && !gl_fixedcolormap && !l.fullbright &&
+	    gl_light_sprites) ActorLight(thing, dyn);
+}
+
+// [rc4l] GL's ThingColor: a stencil actor's fill, else white.
+static PalEntry ThingColorOf(const AActor *thing)
+{
+	return (thing->RenderStyle.Flags & STYLEF_ColorIsFixed) ? PalEntry(thing->fillcolor) : PalEntry(0xffffff);
+}
+
+// [rc4l] A model as Process, Draw and gl_RenderModel take it: one band, lit from the light list entry at the actor's middle, its surfaces captured under the pose's matrix.
+static void DeriveModel(AActor *thing, const Subject &s, const Look &l, bool checkOnly)
+{
+	int lightlevel = l.lightlevel;
+	FColormap cm = l.cm;
+	if (!gl_fixedcolormap && !l.fullbright)
+	{
+		float bottoms[kMaxBands];
+		const int n = LightListBottoms(thing, thing->Sector, bottoms, kMaxBands);
+		// [rc4l] SetSpriteColor, against a model's single height and the actor's y as GL measures it.
+		const int entry = ComputeSpriteColorEntry(s.z, float(thing->y + (thing->height >> 1)), bottoms, n);
+		if (entry >= 0) TakeListLight(thing->Sector->e->XFloor.lightlist[entry], false, lightlevel, cm);
+	}
+	DrawFade(l.so, lightlevel, cm);
+	float dyn[3];
+	DrawLight(thing, l, dyn);
+	MeshPiece look;
+	zx::levelmesh::ModelPieceLook(lightlevel, l.fullbright ? 0 : getExtraLight(), cm, l.fullbright, dyn, ThingColorOf(thing).d, l.so.trans,
+		zx::levelmesh::ComputeStyleBlendMode(l.so.style.blendOp == kOpShadow, l.so.style.blendOp == kOpAdd && l.so.style.destAlpha == kAlphaOne,
+			l.so.trans), s.x, s.y, s.z, look);
+
+	ModelPose pose;
+	ModelPoseFor(thing, s.model, s.x, s.y, s.z, pose);
+	float modelToWorld[16];
+	ComputeModelMatrix(pose, modelToWorld);
+	zx::levelmesh::ModelCaptureBeginDerived(look, modelToWorld, thing, checkOnly);
+	CaptureModelFrames(s.model, thing->state, thing->tics, RUNTIME_TYPE(thing), (s.model->flags & MDL_IGNORETRANSLATION) ? 0 : int(thing->Translation));
+	zx::levelmesh::ModelCaptureEnd();
+}
+
+// [rc4l] Derive an actor's sprite as GLSprite::Process, Draw and RegisterSprite do: the pieces drawn, 0 for none.
+static int DeriveSprite(AActor *thing, const Subject &s, SpritePiece *out, int max)
+{
+	const zx::hwrender::SpriteViewProvider &view = zx::hwrender::SpriteView();
+	const int spritenum = s.spritenum;
+	const fixed_t scaleX = s.scaleX, scaleY = s.scaleY, thingx = s.thingx, thingy = s.thingy, frac = s.frac;
+	const float x = s.x, y = s.y, z = s.z;
 
 	// [rc4l] The rotation the viewer sees, as gl_GetSpriteFrame picks it.
 	spritedef_t *sprdef = &::sprites[spritenum];
@@ -259,56 +401,12 @@ static int DeriveSprite(AActor *thing, SpritePiece *out, int max)
 		ComputeSpriteClip(ci, e.z1, e.z2);
 	}
 
-	// [rc4l] Light: fullbright unless GLDEFS turns it off for this frame, the sky-aware sector light, and a glowing floor.
-	const bool fullbright = (thing->flags5 & MF5_BRIGHT) || ((thing->renderflags & RF_FULLBRIGHT) && !fi.disableFullbright);
-	int lightlevel = fullbright ? 255 : gl_ClampLight(rendersector->GetTexture(sector_t::ceiling) == skyflatnum ?
-		rendersector->GetCeilingLight() : rendersector->GetFloorLight());
-	{
-		FTexture *floortex = TexMan[rendersector->GetTexture(sector_t::floor)];
-		if (floortex != NULL && floortex->isGlowing())
-			lightlevel = ComputeSpriteGlow(lightlevel, (thingz - rendersector->floorplane.ZatPoint(thingx, thingy)).Raw(),
-				floortex->gl_info.GlowHeight);
-		lightlevel = (BYTE)lightlevel;
-	}
-
-	FRenderStyle style = thing->RenderStyle;
-	bool enhancedvision = false;
-	FColormap cm;
-	if (gl_fixedcolormap)
-	{
-		if ((gl_enhanced_nv_stealth > 0 && gl_fixedcolormap == CM_LITE) || (gl_enhanced_nv_stealth == 2 && gl_fixedcolormap >= CM_TORCH) ||
-		    (gl_enhanced_nv_stealth == 3)) enhancedvision = true;
-		cm.Clear();
-		if (gl_fixedcolormap == CM_LITE && gl_enhanced_nightvision &&
-		    (thing->IsKindOf(RUNTIME_CLASS(AInventory)) || thing->flags3 & MF3_ISMONSTER || thing->flags & MF_MISSILE || thing->flags & MF_CORPSE))
-			style.Flags |= STYLEF_InvertSource;
-	}
-	else
-	{
-		cm = rendersector->ColorMap;
-		if (fullbright)
-		{
-			int cr = cm.LightColor.r, cg = cm.LightColor.g, cb = cm.LightColor.b;
-			ComputeFullbrightColor(false, cr, cg, cb);
-			cm.LightColor.r = cr; cm.LightColor.g = cg; cm.LightColor.b = cb;
-		}
-		else if (glset.nocoloredspritelighting) cm.Decolorize();
-	}
-
-	if (style.BlendOp >= STYLEOP_Fuzz && style.BlendOp <= STYLEOP_FuzzOrRevSub) style.CheckFuzz();
-	SpriteStyleIn si;
-	si.style = StyleOf(style);
-	si.alpha = FIXED2FLOAT(thing->alpha);
-	si.transSouls = transsouls;
-	si.fuzzType = gl_fuzztype;
-	si.spriteBlend = gl_sprite_blend;
-	si.model = false;
-	si.textureTransparent = fi.transparent;
-	si.enhancedVision = enhancedvision && gl_enhanced_nightvision;
-	si.stealth = !!(thing->flags & MF_STEALTH);
-	si.translucent = StyleOf(LegacyRenderStyles[STYLE_Translucent]);
-	const SpriteStyleOut so = ComputeSpriteStyle(si);
-	if (so.trans == 0.0f) return 0;
+	Look look;
+	if (!LookOf(thing, s, fi.disableFullbright, fi.transparent, look)) return 0;
+	const bool fullbright = look.fullbright;
+	const int lightlevel = look.lightlevel;
+	const FColormap cm = look.cm;
+	const SpriteStyleOut so = look.so;
 
 	// [rc4l] Bands: one, unless a 3D floor's light list cuts the sprite; an XY billboard takes the band holding its centre instead.
 	struct Band { float z1, z2, vt, vb; int lightlevel; FColormap cm; };
@@ -346,9 +444,8 @@ static int DeriveSprite(AActor *thing, SpritePiece *out, int max)
 	}
 
 	// [rc4l] Draw: the actor's dynamic light, and the corners an XY billboard or a roll turns.
-	float dyn[3] = { 0.f, 0.f, 0.f };
-	if (so.style.blendOp != kOpShadow && gl_lights && view.DynamicLightCount() && !gl_fixedcolormap && !fullbright && gl_light_sprites)
-		ActorLight(thing, dyn);
+	float dyn[3];
+	DrawLight(thing, look, dyn);
 	const bool xyDraw = !(thing->renderflags & RF_FORCEYBILLBOARD) && (gl_billboard_mode == 1 || thing->renderflags & RF_FORCEXYBILLBOARD);
 	const bool roll = (thing->renderflags & RF_ROLLSPRITE) != 0;
 	float viewYaw = 0.f, viewPitch = 0.f;
@@ -360,9 +457,7 @@ static int DeriveSprite(AActor *thing, SpritePiece *out, int max)
 	for (int i = 0; i < nbands && drawn < max; i++)
 	{
 		Band &b = bands[i];
-		if (b.cm.FadeColor.a == 0 && so.style.blendOp == kOpShadow && !gl_isBlack(b.cm.FadeColor))
-			b.cm.FadeColor.a = ::clamp<int>(255 - b.lightlevel, 60, 255);
-		if (so.style.flags & STYLEF_FadeToBlack) b.cm.FadeColor = 0;
+		DrawFade(so, b.lightlevel, b.cm);
 
 		SpriteEdges be = e;
 		be.z1 = b.z1; be.z2 = b.z2;
@@ -388,7 +483,9 @@ static int DeriveSprite(AActor *thing, SpritePiece *out, int max)
 		mp.lightColor = b.cm.LightColor.d;
 		mp.fadeColor = b.cm.FadeColor.d;
 		zx::levelmesh::CaptureShading(b.lightlevel, rel, b.cm, mp);
-		ApplyThingColor((thing->RenderStyle.Flags & STYLEF_ColorIsFixed) ? PalEntry(thing->fillcolor) : PalEntry(0xffffff), mp);
+		ApplyThingColor(ThingColorOf(thing), mp);
+		mp.stencil = (so.style.flags & STYLEF_ColorIsFixed) != 0;
+		mp.alphaTest = so.hw != kHwNoAlphaTest;
 		if (!fullbright) { mp.dynR = dyn[0]; mp.dynG = dyn[1]; mp.dynB = dyn[2]; }
 		mp.cpuLight = true;
 		mp.normX = mp.normY = mp.normZ = 0.f;
@@ -483,6 +580,7 @@ static bool DeriveParticle(particle_t *particle, sector_t *sector, SpritePiece &
 	mp.alpha = trans;
 	// [rc4l] STYLE_Translucent: blended unless it is fully opaque.
 	mp.blendMode = trans < 1.f - 1.f / 256.f ? 1 : 0;
+	mp.alphaTest = ComputeParticleAlphaTested(gl_particles_style, trans);
 	mp.sortX = x; mp.sortY = y; mp.sortZ = z;
 	mp.quad = true;
 	return true;
@@ -492,33 +590,51 @@ static bool DeriveParticle(particle_t *particle, sector_t *sector, SpritePiece &
 // The check against GL
 // ---------------------------------------------------------------------------
 
-struct Noted { const void *who; bool particle; SpritePiece p; };
-static TArray<Noted> g_gl, g_ours;
+struct Noted
+{
+	const void *who;
+	bool particle;
+	MeshPiece piece;
+	std::vector<MeshVertex> verts;
+};
+static std::vector<Noted> g_gl, g_ours;
 static int g_checkedActors = 0, g_differedActors = 0, g_onlyGL = 0, g_onlyOurs = 0;
+// [rc4l] Model surfaces among the pieces compared, so a clean report is known to have had models in it.
+static int g_checkedModelSurfaces = 0;
 static FString g_diffs;
 
-void NoteGLSprite(const void *who, bool particle, const MeshPiece &piece, const MeshVertex *quad)
+static void Note(std::vector<Noted> &list, const void *who, bool particle, const MeshPiece &piece, const MeshVertex *verts, int count)
 {
-	if (!fua_sprite_check) return;
 	Noted n;
 	n.who = who;
 	n.particle = particle;
-	n.p.piece = piece;
-	memcpy(n.p.quad, quad, sizeof(n.p.quad));
-	g_gl.Push(n);
+	n.piece = piece;
+	n.verts.assign(verts, verts + count);
+	list.push_back(n);
+}
+
+void NoteGLSprite(const void *who, bool particle, const MeshPiece &piece, const MeshVertex *verts, int count)
+{
+	if (fua_sprite_check) Note(g_gl, who, particle, piece, verts, count);
+}
+
+void NoteDerivedSprite(const void *who, const MeshPiece &piece, const MeshVertex *verts, int count)
+{
+	if (fua_sprite_check) Note(g_ours, who, false, piece, verts, count);
 }
 
 static bool Same(float a, float b) { return memcmp(&a, &b, sizeof(float)) == 0; }
 
-// [rc4l] The fields the backend reads from a sprite piece, compared bit for bit; the first that differs, or NULL.
-static const char *Differs(const SpritePiece &a, const SpritePiece &b)
+// [rc4l] The fields the backend reads from a sprite piece or model surface, compared bit for bit; the first that differs, or NULL.
+static const char *Differs(const Noted &a, const Noted &b)
 {
 	const MeshPiece &x = a.piece, &y = b.piece;
 	if (x.material != y.material) return "material";
-	for (int i = 0; i < 4; i++)
-		if (!Same(a.quad[i].x, b.quad[i].x) || !Same(a.quad[i].y, b.quad[i].y) || !Same(a.quad[i].z, b.quad[i].z)) return "corner";
-	for (int i = 0; i < 4; i++)
-		if (!Same(a.quad[i].u, b.quad[i].u) || !Same(a.quad[i].v, b.quad[i].v)) return "uv";
+	if (a.verts.size() != b.verts.size()) return "vertex count";
+	for (size_t i = 0; i < a.verts.size(); i++)
+		if (!Same(a.verts[i].x, b.verts[i].x) || !Same(a.verts[i].y, b.verts[i].y) || !Same(a.verts[i].z, b.verts[i].z)) return "corner";
+	for (size_t i = 0; i < a.verts.size(); i++)
+		if (!Same(a.verts[i].u, b.verts[i].u) || !Same(a.verts[i].v, b.verts[i].v)) return "uv";
 	if (x.lightLevel != y.lightLevel || x.lightColor != y.lightColor || x.fadeColor != y.fadeColor) return "light";
 	if (!Same(x.colorR, y.colorR) || !Same(x.colorG, y.colorG) || !Same(x.colorB, y.colorB) || !Same(x.softLight, y.softLight) ||
 	    !Same(x.fogDensity, y.fogDensity) || x.fogColor != y.fogColor || x.fogMode != y.fogMode || x.desaturation != y.desaturation) return "shading";
@@ -527,31 +643,38 @@ static const char *Differs(const SpritePiece &a, const SpritePiece &b)
 	if (!Same(x.alpha, y.alpha) || x.blendMode != y.blendMode) return "style";
 	if (!Same(x.sortX, y.sortX) || !Same(x.sortY, y.sortY) || !Same(x.sortZ, y.sortZ)) return "sort point";
 	if (x.mirrorLine != y.mirrorLine || x.stackSlot != y.stackSlot) return "walk";
+	if (x.solid != y.solid) return "solid";
+	if (x.stencil != y.stencil) return "stencil";
+	if (x.alphaTest != y.alphaTest) return "alpha test";
 	return NULL;
 }
 
 void CheckFrameSprites()
 {
-	if (!fua_sprite_check) { g_gl.Clear(); g_ours.Clear(); return; }
-	// [rc4l] Both lists are in actor order within an actor; match each actor's run of pieces against the other's.
-	TMap<const void *, int> glFirst;
-	for (unsigned i = 0; i < g_gl.Size(); i++) if (!glFirst.CheckKey(g_gl[i].who)) glFirst[g_gl[i].who] = (int)i;
-	TMap<const void *, bool> seen;
-	for (unsigned i = 0; i < g_ours.Size(); )
+	if (!fua_sprite_check) { g_gl.clear(); g_ours.clear(); return; }
+	// [rc4l] Both lists are in actor order within an actor and a walk; match each actor's run of pieces in one walk against the other's in the same walk, so a mirror's view of an actor is not held against the player's.
+	typedef std::tuple<const void *, int, int> RunKey;
+	const auto keyOf = [](const Noted &n) { return RunKey(n.who, n.piece.mirrorLine, n.piece.stackSlot); };
+	std::map<RunKey, unsigned> glFirst;
+	for (unsigned i = 0; i < g_gl.size(); i++) glFirst.insert(std::make_pair(keyOf(g_gl[i]), i));
+	std::set<RunKey> seen;
+	for (unsigned i = 0; i < g_ours.size(); i++) if (!g_ours[i].piece.quad) g_checkedModelSurfaces++;
+	for (unsigned i = 0; i < g_ours.size(); )
 	{
+		const RunKey key = keyOf(g_ours[i]);
 		const void *a = g_ours[i].who;
 		unsigned j = i;
-		while (j < g_ours.Size() && g_ours[j].who == a) j++;
-		seen[a] = true;
+		while (j < g_ours.size() && keyOf(g_ours[j]) == key) j++;
+		seen.insert(key);
 		g_checkedActors++;
-		int *first = glFirst.CheckKey(a);
-		if (first == NULL) { g_onlyOurs++; g_differedActors++; i = j; continue; }
-		unsigned k = (unsigned)*first, n = 0;
+		const auto first = glFirst.find(key);
+		if (first == glFirst.end()) { g_onlyOurs++; g_differedActors++; i = j; continue; }
+		unsigned k = first->second, n = 0;
 		const char *why = NULL;
-		for (; k < g_gl.Size() && g_gl[k].who == a; k++, n++)
+		for (; k < g_gl.size() && keyOf(g_gl[k]) == key; k++, n++)
 		{
 			if (i + n >= j) { why = "piece count"; break; }
-			why = Differs(g_gl[k].p, g_ours[i + n].p);
+			why = Differs(g_gl[k], g_ours[i + n]);
 			if (why) break;
 		}
 		if (!why && i + n != j) why = "piece count";
@@ -559,33 +682,43 @@ void CheckFrameSprites()
 		{
 			if (g_differedActors < 12)
 			{
-				const SpritePiece &gp = g_gl[*first].p, &op = g_ours[i].p;
+				const MeshVertex none = {};
+				const MeshVertex &gp = g_gl[first->second].verts.empty() ? none : g_gl[first->second].verts[0];
+				const MeshVertex &op = g_ours[i].verts.empty() ? none : g_ours[i].verts[0];
 				const bool part = g_ours[i].particle;
 				g_diffs.AppendFormat("  %s at (%.0f, %.0f): %s; GL corner %.9g %.9g %.9g, ours %.9g %.9g %.9g\n",
 					part ? "particle" : ((const AActor *)a)->GetClass()->TypeName.GetChars(),
 					FIXED2FLOAT(part ? ((const particle_t *)a)->x : ((const AActor *)a)->x),
 					FIXED2FLOAT(part ? ((const particle_t *)a)->y : ((const AActor *)a)->y), why,
-					gp.quad[0].x, gp.quad[0].z, gp.quad[0].y, op.quad[0].x, op.quad[0].z, op.quad[0].y);
+					gp.x, gp.z, gp.y, op.x, op.z, op.y);
 			}
 			g_differedActors++;
 		}
 		i = j;
 	}
-	for (unsigned i = 0; i < g_gl.Size(); i++)
-		if (!seen.CheckKey(g_gl[i].who)) { g_onlyGL++; seen[g_gl[i].who] = true; }
-	g_gl.Clear();
-	g_ours.Clear();
+	for (unsigned i = 0; i < g_gl.size(); i++)
+		if (seen.insert(keyOf(g_gl[i])).second) g_onlyGL++;
+	g_gl.clear();
+	g_ours.clear();
 }
 
 bool BuildSprite(AActor *thing)
 {
+	Subject s;
+	if (!SubjectOf(thing, s)) return true;
+	if (s.model != NULL)
+	{
+		// [rc4l] With the check on, GL draws the model too and the derived surfaces are only compared.
+		Look l;
+		if (LookOf(thing, s, false, false, l)) DeriveModel(thing, s, l, fua_sprite_check);
+		return !fua_sprite_check;
+	}
 	// [rc4l] Kept between actors: constructing sixteen records an actor cost more than deriving it.
 	static SpritePiece pieces[kMaxBands];
-	const int n = DeriveSprite(thing, pieces, kMaxBands);
-	if (n < 0) return false;
+	const int n = DeriveSprite(thing, s, pieces, kMaxBands);
 	if (fua_sprite_check)
 	{
-		for (int i = 0; i < n; i++) { Noted no; no.who = thing; no.particle = false; no.p = pieces[i]; g_ours.Push(no); }
+		for (int i = 0; i < n; i++) Note(g_ours, thing, false, pieces[i].piece, pieces[i].quad, 4);
 		return false;
 	}
 	if (!zx::levelmesh::DynamicCaptureActive()) return true;
@@ -599,7 +732,7 @@ bool BuildParticle(particle_t *particle, sector_t *sector)
 	const bool drawn = DeriveParticle(particle, sector, p);
 	if (fua_sprite_check)
 	{
-		if (drawn) { Noted no; no.who = particle; no.particle = true; no.p = p; g_ours.Push(no); }
+		if (drawn) Note(g_ours, particle, true, p.piece, p.quad, 4);
 		return false;
 	}
 	if (drawn && zx::levelmesh::DynamicCaptureActive())
@@ -614,9 +747,10 @@ bool BuildParticle(particle_t *particle, sector_t *sector)
 
 CCMD( fua_sprite_report )
 {
-	Printf( "sprites: %d actors derived beside GL, %d differed (%d only ours, %d only GL's)\n%s",
-		zx::sprites::g_checkedActors, zx::sprites::g_differedActors, zx::sprites::g_onlyOurs, zx::sprites::g_onlyGL,
-		zx::sprites::g_diffs.GetChars( ) );
+	Printf( "sprites: %d actors derived beside GL (%d model surfaces), %d differed (%d only ours, %d only GL's)\n%s",
+		zx::sprites::g_checkedActors, zx::sprites::g_checkedModelSurfaces, zx::sprites::g_differedActors, zx::sprites::g_onlyOurs,
+		zx::sprites::g_onlyGL, zx::sprites::g_diffs.GetChars( ) );
 	zx::sprites::g_checkedActors = zx::sprites::g_differedActors = zx::sprites::g_onlyOurs = zx::sprites::g_onlyGL = 0;
+	zx::sprites::g_checkedModelSurfaces = 0;
 	zx::sprites::g_diffs = "";
 }

@@ -172,7 +172,7 @@ struct ScenePieceData
 	float actorR, actorG, actorB, cpuLight;
 	// [rc4l] The slot holding this material's brightmap in the bindless array (0 for none), the piece's PieceStackId plus one (0 for a sprite or model, never culled), 1 when both slots go through SlotRemap, and 1 when GL draws it unmasked so no texel is discarded.
 	float brightSlot, stackId, animates, plain;
-	float desaturation, scrollU, scrollV, unused2;   // [rc4l] the colormap's desaturation, 0..1, which main.fp mixes every texel toward grey by, and the texture shift a scroller added since the bake
+	float desaturation, scrollU, scrollV, texFlags;   // [rc4l] the colormap's desaturation, 0..1, which main.fp mixes every texel toward grey by, the texture shift a scroller added since the bake, and 1 for a stencil plus 2 for an alpha-tested sprite
 };
 
 // [rc4l] One draw per material. Pieces arrive in bake order, so they are sorted by material first;

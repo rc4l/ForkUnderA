@@ -441,15 +441,26 @@ float FVoxelModel::getAspectFactor()
 //
 //===========================================================================
 
-void FVoxelModel::RenderFrame(FTexture * skin, int frame, int frame2, double inter, int translation)
+int FVoxelModel::FrameSurfaces(FTexture * skin, int frame, int frame2, FModelSurface * out)
 {
-	FMaterial * tex = FMaterial::ValidateTexture(skin, false);
-	gl_RenderState.SetMaterial(tex, CLAMP_NOFILTER, translation, -1, false);
-
 	// [rc4l] A voxel model is one frame, so there is nothing to interpolate -- but it is the same
 	// geometry through the same buffers, which is why voxels come back with models rather than
 	// needing a path of their own.
-	zx::levelmesh::CaptureModelSurface(mVBuf, 0, 0, 0.f, 0, mNumIndices, tex, translation);
+	out->skin = skin;
+	out->base1 = out->base2 = 0;
+	out->firstIndex = 0;
+	out->count = mNumIndices;
+	return 1;
+}
+
+void FVoxelModel::RenderFrame(FTexture * skin, int frame, int frame2, double inter, int translation)
+{
+	FModelSurface surf;
+	FrameSurfaces(skin, frame, frame2, &surf);
+	FMaterial * tex = FMaterial::ValidateTexture(surf.skin, false);
+	gl_RenderState.SetMaterial(tex, CLAMP_NOFILTER, translation, -1, false);
+
+	zx::levelmesh::CaptureModelSurface(mVBuf, surf.base1, surf.base2, 0.f, surf.firstIndex, surf.count, tex, translation);
 	if (zx::hwrender::StandaloneActive()) return;
 
 	gl_RenderState.Apply();

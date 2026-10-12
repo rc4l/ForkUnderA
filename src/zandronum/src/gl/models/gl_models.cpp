@@ -56,6 +56,8 @@
 #include "gl/scene/gl_drawinfo.h"
 #include "gl/models/gl_models.h"
 #include "features/levelmesh/modelmesh.h"
+#include "features/sprites/modelbuild.h"   // [rc4l] the pose and frame blend the backend's derived models share
+#include "features/sprites/computation/modelpose_compute.h"
 #include "gl/textures/gl_material.h"
 #include "gl/utility/gl_geometric.h"
 #include "gl/utility/gl_convert.h"
@@ -64,11 +66,6 @@
 
 // [BB] New #includes. 
 #include "r_main.h"
-
-static inline float GetTimeFloat()
-{
-	return (float)I_MSTime() * (float)TICRATE / 1000.0f;
-}
 
 CVAR(Bool, gl_interpolate_model_frames, true, CVAR_ARCHIVE)
 CVAR(Bool, gl_light_models, true, CVAR_ARCHIVE)
@@ -847,50 +844,9 @@ void gl_RenderFrameModels( const FSpriteModelFrame *smf,
 {
 	// [BB] Frame interpolation: Find the FSpriteModelFrame smfNext which follows after smf in the animation
 	// and the scalar value inter ( element of [0,1) ), both necessary to determine the interpolated frame.
-	FSpriteModelFrame * smfNext = NULL;
+	// [rc4l] features/sprites works them out, for the backend's derived models as for this.
 	double inter = 0.;
-	if( gl_interpolate_model_frames && !(smf->flags & MDL_NOINTERPOLATION) )
-	{
-		FState *nextState = curState->GetNextState( );
-		if( curState != nextState && nextState )
-		{
-			// [BB] To interpolate at more than 35 fps we take tic fractions into account.
-			float ticFraction = 0.;
-			// [BB] In case the tic counter is frozen we have to leave ticFraction at zero.
-			if ( ConsoleState == c_up && menuactive != MENU_On && !(level.flags2 & LEVEL2_FROZEN) )
-			{
-				ticFraction = FIXED2FLOAT(I_GetTimeFrac(NULL)); // [JM] Model Interp Fix
-			}
-			inter = static_cast<double>(curState->Tics - curTics + ticFraction) / static_cast<double>(curState->Tics); // [JM] Model Interp Fix
-
-			// [BB] For some actors (e.g. ZPoisonShroom) spr->actor->tics can be bigger than curState->Tics.
-			// In this case inter is negative and we need to set it to zero.
-			if (curState->Tics < curTics) // [JM] Model Interp Fix
-				inter = 0.;
-			else
-			{
-				// [BB] Workaround for actors that use the same frame twice in a row.
-				// Most of the standard Doom monsters do this in their see state.
-				if ( (smf->flags & MDL_INTERPOLATEDOUBLEDFRAMES) )
-				{
-					const FState *prevState = curState - 1;
-					// [AK] Make sure the previous state is valid before trying to use it.
-					if ( (ti->ActorInfo->OwnsState(prevState)) && (curState->sprite == prevState->sprite) && ( curState->Frame == prevState->Frame) )
-					{
-						inter /= 2.;
-						inter += 0.5;
-					}
-					if ( (curState->sprite == nextState->sprite) && ( curState->Frame == nextState->Frame) )
-					{
-						inter /= 2.;
-						nextState = nextState->GetNextState( );
-					}
-				}
-				if ( inter != 0.0 )
-					smfNext = gl_FindModelFrame(ti, nextState->sprite, nextState->GetFrame(), false);
-			}
-		}
-	}
+	FSpriteModelFrame * smfNext = zx::sprites::NextModelFrame(smf, curState, curTics, ti, inter);
 
 	for(int i=0; i<MAX_MODELS_PER_FRAME; i++)
 	{
@@ -911,21 +867,6 @@ void gl_RenderFrameModels( const FSpriteModelFrame *smf,
 			gl_RenderState.SetVertexBuffer(GLRenderer->mVBO);
 		}
 	}
-}
-
-// [BB] Small helper function for MDL_ROLLAGAINSTANGLE.
-float gl_RollAgainstAngleHelper ( const AActor *actor )
-{
-	float angleDiff = ANGLE_TO_FLOAT ( R_PointToAngle ( actor->x, actor->y ) ) - ANGLE_TO_FLOAT ( actor->angle );
-	if ( angleDiff > 180 )
-		angleDiff -= 360;
-	else if ( angleDiff < -180 )
-		angleDiff += 360;
-	if ( actor->z > viewz )
-		angleDiff *= -1;
-	if ( ( angleDiff < 90 ) && ( angleDiff > - 90 ) )
-		angleDiff *= -1;
-	return angleDiff;
 }
 
 void gl_RenderModel(GLSprite * spr)
@@ -950,98 +891,14 @@ void gl_RenderModel(GLSprite * spr)
 		translation = spr->actor->Translation;
 
 
-	// y scale for a sprite means height, i.e. z in the world!
-	float scaleFactorX = FIXED2FLOAT(spr->actor->scaleX) * smf->xscale;
-	float scaleFactorY = FIXED2FLOAT(spr->actor->scaleX) * smf->yscale;
-	float scaleFactorZ = FIXED2FLOAT(spr->actor->scaleY) * smf->zscale;
-	float pitch = 0;
-	float roll = 0;
-	float rotateOffset = 0;
-	float angle = ANGLE_TO_FLOAT(spr->actor->angle);
-
-	// [BB] Workaround for the missing pitch information.
-	if ( (smf->flags & MDL_PITCHFROMMOMENTUM) )
-	{
-		const double x = static_cast<double>(spr->actor->velx);
-		const double y = static_cast<double>(spr->actor->vely);
-		const double z = static_cast<double>(spr->actor->velz);
-		
-		// [BB] Calculate the pitch using spherical coordinates.
-		if(z || x || y) pitch = float(atan( z/sqrt(x*x+y*y) ) / M_PI * 180);
-				
-        // Correcting pitch if model is moving backwards
-        if(x || y) 
-		{
-			if((x * cos(angle * M_PI / 180) + y * sin(angle * M_PI / 180)) / sqrt(x * x + y * y) < 0) pitch *= -1;
-		}
-		else pitch = fabs(pitch);
-	}
-
-	if( smf->flags & MDL_ROTATING )
-	{
-		const float time = smf->rotationSpeed*GetTimeFloat()/200.f;
-		rotateOffset = float((time - xs_FloorToInt(time)) *360.f );
-	}
-
-	// Added MDL_INHERITACTORPITCH and MDL_INHERITACTORROLL flags processing.
-	// If both flags MDL_INHERITACTORPITCH and MDL_PITCHFROMMOMENTUM are set, the pitch sums up the actor pitch and the momentum vector pitch.
-	// This is rather crappy way to transfer fixet_t type into angle in degrees, but its works!
-	if(smf->flags & MDL_INHERITACTORPITCH) pitch += float(static_cast<double>(spr->actor->pitch >> 16) / (1 << 13) * 45 + static_cast<double>(spr->actor->pitch & 0x0000FFFF) / (1 << 29) * 45);
-	if(smf->flags & MDL_INHERITACTORROLL) roll += float(static_cast<double>(spr->actor->roll >> 16) / (1 << 13) * 45 + static_cast<double>(spr->actor->roll & 0x0000FFFF) / (1 << 29) * 45);
-		
-	gl_RenderState.mModelMatrix.loadIdentity();
-
-	// Model space => World space
-	gl_RenderState.mModelMatrix.translate(spr->x, spr->z, spr->y );	
-	
-	// Applying model transformations:
-	// 1) Applying actor angle, pitch and roll to the model
-	if ( !(smf->flags & MDL_ALIGNANGLE) )
-		gl_RenderState.mModelMatrix.rotate(-angle, 0, 1, 0);
-	// [BB] Change the angle so that the object is exactly facing the camera in the x/y plane.
-	else
-		gl_RenderState.mModelMatrix.rotate( -ANGLE_TO_FLOAT ( R_PointToAngle ( spr->actor->x, spr->actor->y ) ), 0, 1, 0);
-
-	// [BB] Change the pitch so that the object is vertically facing the camera (only makes sense combined with MDL_ALIGNANGLE).
-	if ( (smf->flags & MDL_ALIGNPITCH) )
-	{
-		const fixed_t distance = R_PointToDist2( spr->actor->x - viewx, spr->actor->y - viewy );
-		const float pitch = RAD2DEG ( atan2( FIXED2FLOAT ( spr->actor->z - viewz ), FIXED2FLOAT ( distance ) ) );
-		gl_RenderState.mModelMatrix.rotate(pitch, 0, 0, 1);
-	}
-	else
-		gl_RenderState.mModelMatrix.rotate(pitch, 0, 0, 1);
-
-	// [BB] Special flag for flat, beam like models.
-	if ( (smf->flags & MDL_ROLLAGAINSTANGLE) )
-		gl_RenderState.mModelMatrix.rotate( gl_RollAgainstAngleHelper ( spr->actor ), 1, 0, 0);
-	else
-		gl_RenderState.mModelMatrix.rotate(-roll, 1, 0, 0);
-	
-	// 2) Applying Doomsday like rotation of the weapon pickup models
-	// The rotation angle is based on the elapsed time.
-	
-	if( smf->flags & MDL_ROTATING )
-	{
-		gl_RenderState.mModelMatrix.translate(smf->rotationCenterX, smf->rotationCenterY, smf->rotationCenterZ);
-		gl_RenderState.mModelMatrix.rotate(rotateOffset, smf->xrotate, smf->yrotate, smf->zrotate);
-		gl_RenderState.mModelMatrix.translate(-smf->rotationCenterX, -smf->rotationCenterY, -smf->rotationCenterZ);
-	}
-
-	// 3) Scaling model.
-	gl_RenderState.mModelMatrix.scale(scaleFactorX, scaleFactorZ, scaleFactorY);
-
-	// 4) Aplying model offsets (model offsets do not depend on model scalings).
-	gl_RenderState.mModelMatrix.translate(smf->xoffset / smf->xscale, smf->zoffset / smf->zscale, smf->yoffset / smf->yscale);
-	
-	// 5) Applying model rotations.
-	gl_RenderState.mModelMatrix.rotate(-ANGLE_TO_FLOAT(smf->angleoffset), 0, 1, 0);
-	gl_RenderState.mModelMatrix.rotate(smf->pitchoffset, 0, 0, 1);
-	gl_RenderState.mModelMatrix.rotate(-smf->rolloffset, 1, 0, 0);
-
-	// consider the pixel stretching. For non-voxels this must be factored out here
-	float stretch = (smf->models[0] != NULL ? smf->models[0]->getAspectFactor() : 1.f) / glset.pixelstretch;
-	gl_RenderState.mModelMatrix.scale(1, stretch, 1);
+	// [rc4l] Model space => world space: the actor's turn, pitch and roll, MODELDEF's spin, scale, offsets
+	// and rotations, and the pixel stretch, worked out by features/sprites so the backend's derived models
+	// stand exactly where GL's do.
+	zx::sprites::ModelPose pose;
+	zx::sprites::ModelPoseFor(spr->actor, smf, spr->x, spr->y, spr->z, pose);
+	float modelToWorld[16];
+	zx::sprites::ComputeModelMatrix(pose, modelToWorld);
+	gl_RenderState.mModelMatrix.loadMatrix(modelToWorld);
 
 	gl_RenderState.EnableModelMatrix(true);
 	// [rc4l] The matrix above is the whole reason this bracket exists. GL hands it to the vertex

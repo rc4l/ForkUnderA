@@ -79,4 +79,9 @@ int ComputeSpriteBlendMode(int blendOp, int destAlpha, float trans)
 	return trans < 1.f - 1.f / 256.f ? 1 : 0;
 }
 
+bool ComputeParticleAlphaTested(int particlesStyle, float trans)
+{
+	return particlesStyle != 2 && trans >= 1.0f - FLT_EPSILON;
+}
+
 }} // namespace zx::sprites

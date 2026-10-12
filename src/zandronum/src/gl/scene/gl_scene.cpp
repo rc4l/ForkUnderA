@@ -86,6 +86,7 @@
 #include "features/sprites/spritebuild.h"   // [rc4l] the backend's sprites, derived from the actors
 #include "features/visibility/viswalk.h"   // [rc4l] the player's visible set, walked without GL
 #include "features/viewsetup/viewsetup.h"   // [rc4l] the view, set up without GL
+#include "features/draw2d/screenblend.h"   // [rc4l] the screen's tint, worked out without GL
 #include "features/viewsetup/computation/viewsetup_compute.h"
 EXTERN_CVAR(Bool, fua_vis_check)
 #include "features/levelmesh/computation/flatmesh_compute.h"   // [rc4l] kSkyCapture*, which walk fills which sky list
@@ -648,7 +649,7 @@ static void WalkParticles(subsector_t *sub, sector_t *sector)
 			GLRenderer->ProcessParticle(&Particles[i], sector);
 }
 
-// [rc4l] An actor a stacked view's or mirror's walk reached, derived inside that view; a model there is not drawn yet, since GL's model path captures only what GL draws.
+// [rc4l] An actor a stacked view's or mirror's walk reached, its sprite or model derived inside that view.
 static void StackViewSprite(AActor *thing)
 {
 	if (fua_sprites_own) zx::sprites::BuildSprite(thing);
@@ -757,7 +758,7 @@ void FGLRenderer::DrawScene(bool toscreen)
 					}
 				}
 				nProcessed++;
-				// [rc4l] features/sprites derives the backend's sprite itself; GL keeps the models, and with the check on it draws them all too.
+				// [rc4l] features/sprites derives the backend's sprites and models itself; with the check on GL draws them all too.
 				if (!(fua_sprites_own || fua_sprite_check) || !zx::sprites::BuildSprite(thing)) ProcessSprite(thing, thing->Sector);
 			}
 			SetupSprite.Unclock();
@@ -781,6 +782,8 @@ void FGLRenderer::DrawScene(bool toscreen)
 			// it builds a vertex out of any of them. So the sort is work whose result is thrown away
 			// -- CompareSprite was 3.1% of the profile on Sunder MAP10 with monsters awake.
 			RenderTranslucentUnsorted();
+			// [rc4l] With the check on, GL's solid models as well, which only RenderScene draws, so the derived ones have GL's to be compared against.
+			if (fua_sprite_check) gl_drawinfo->drawlists[GLDL_MODELS].Draw(GLPASS_ALL);
 			zx::sprites::CheckFrameSprites();
 			return;
 		}
@@ -862,122 +865,23 @@ static void FillScreen()
 // Draws a blend over the entire view
 //
 //==========================================================================
+// [rc4l] features/draw2d spells the view areas as GL does.
+static_assert(area_normal == zx::draw2d::kViewAreaNormal && area_below == zx::draw2d::kViewAreaBelow && area_above == zx::draw2d::kViewAreaAbove,
+	"area_t must match screenblend.h");
+
 void FGLRenderer::DrawBlend(sector_t * viewsector)
 {
-	float blend[4]={0,0,0,0};
-	PalEntry blendv=0;
-	float extra_red;
-	float extra_green;
-	float extra_blue;
-	player_t *player = NULL;
-
-	if (players[consoleplayer].camera != NULL)
+	// [rc4l] features/draw2d works the tint out without GL; GL fills each part and the backend records it.
+	zx::draw2d::ScreenFill fills[2];
+	const int n = zx::draw2d::ScreenBlends(viewsector, in_area, gl_fixedcolormap != 0, framebuffer->palette_brightness, fills);
+	for (int i = 0; i < n; i++)
 	{
-		player=players[consoleplayer].camera->player;
-	}
-
-	// don't draw sector based blends when an invulnerability colormap is active
-	if (!gl_fixedcolormap)
-	{
-		if (!viewsector->e->XFloor.ffloors.Size())
-		{
-			if (viewsector->heightsec && !(viewsector->MoreFlags&SECF_IGNOREHEIGHTSEC))
-			{
-				switch (in_area)
-				{
-				default:
-				case area_normal: blendv = viewsector->heightsec->midmap; break;
-				case area_above: blendv = viewsector->heightsec->topmap; break;
-				case area_below: blendv = viewsector->heightsec->bottommap; break;
-				}
-			}
-		}
-		else
-		{
-			TArray<lightlist_t> & lightlist = viewsector->e->XFloor.lightlist;
-
-			for (unsigned int i = 0; i < lightlist.Size(); i++)
-			{
-				fixed_t lightbottom;
-				if (i < lightlist.Size() - 1)
-					lightbottom = lightlist[i + 1].plane.ZatPoint(viewx, viewy);
-				else
-					lightbottom = viewsector->floorplane.ZatPoint(viewx, viewy);
-
-				if (lightbottom < viewz && (!lightlist[i].caster || !(lightlist[i].caster->flags&FF_FADEWALLS)))
-				{
-					// 3d floor 'fog' is rendered as a blending value
-					blendv = lightlist[i].blend;
-					// If this is the same as the sector's it doesn't apply!
-					if (blendv == viewsector->ColorMap->Fade) blendv = 0;
-					// a little hack to make this work for Legacy maps.
-					if (blendv.a == 0 && blendv != 0) blendv.a = 128;
-					break;
-				}
-			}
-		}
-
-		if (blendv.a == 0)
-		{
-			blendv = R_BlendForColormap(blendv);
-			if (blendv.a == 255)
-			{
-				// The calculated average is too dark so brighten it according to the palettes's overall brightness
-				int maxcol = MAX<int>(MAX<int>(framebuffer->palette_brightness, blendv.r), MAX<int>(blendv.g, blendv.b));
-				blendv.r = blendv.r * 255 / maxcol;
-				blendv.g = blendv.g * 255 / maxcol;
-				blendv.b = blendv.b * 255 / maxcol;
-			}
-		}
-
-		if (blendv.a == 255)
-		{
-
-			extra_red = blendv.r / 255.0f;
-			extra_green = blendv.g / 255.0f;
-			extra_blue = blendv.b / 255.0f;
-
-			// If this is a multiplicative blend do it separately and add the additive ones on top of it.
-			blendv = 0;
-
-			// black multiplicative blends are ignored
-			if (extra_red || extra_green || extra_blue)
-			{
-				gl_RenderState.BlendFunc(GL_DST_COLOR, GL_ZERO);
-				gl_RenderState.SetColor(extra_red, extra_green, extra_blue, 1.0f);
-				FillScreen();
-				RecordScreenBlend(extra_red, extra_green, extra_blue, 1.0f, 2);
-			}
-		}
-		else if (blendv.a)
-		{
-			V_AddBlend(blendv.r / 255.f, blendv.g / 255.f, blendv.b / 255.f, blendv.a / 255.0f, blend);
-		}
-	}
-
-	// This mostly duplicates the code in shared_sbar.cpp
-	// When I was writing this the original was called too late so that I
-	// couldn't get the blend in time. However, since then I made some changes
-	// here that would get lost if I switched back so I won't do it.
-
-	if (player)
-	{
-		V_AddPlayerBlend(player, blend, 0.5, 175);
-	}
-	
-	if (players[consoleplayer].camera != NULL)
-	{
-		// except for fadeto effects
-		player_t *player = (players[consoleplayer].camera->player != NULL) ? players[consoleplayer].camera->player : &players[consoleplayer];
-		V_AddBlend (player->BlendR, player->BlendG, player->BlendB, player->BlendA, blend);
-	}
-
-	if (blend[3]>0.0f)
-	{
-		gl_RenderState.BlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-		gl_RenderState.SetColor(blend[0], blend[1], blend[2], blend[3]);
+		const zx::draw2d::ScreenFill &f = fills[i];
+		if (f.multiply) gl_RenderState.BlendFunc(GL_DST_COLOR, GL_ZERO);
+		else gl_RenderState.BlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+		gl_RenderState.SetColor(f.r, f.g, f.b, f.a);
 		FillScreen();
-		RecordScreenBlend(blend[0], blend[1], blend[2], blend[3], 0);
+		RecordScreenBlend(f.r, f.g, f.b, f.a, f.multiply ? 2 : 0);
 	}
 }
 

@@ -12,6 +12,8 @@
 
 #include <string.h>
 
+static_assert(STYLEOP_Add == zx::draw2d::kStyleOpAdd && STYLEALPHA_One == zx::draw2d::kStyleAlphaOne, "renderstyle.h must match quad2d_compute.h");
+
 namespace zx { namespace draw2d {
 
 // [rc4l] An untextured record of the rectangle at (x, y), w by h, in `color` at `alpha`, with no scissor.
@@ -90,7 +92,7 @@ void PrepareTexture(FTexture *img, const DCanvas::DrawParms &parms, TextureDraw 
 	d.u1 = q.u1; d.v1 = q.v1; d.u2 = q.u2; d.v2 = q.v2;
 	d.r = q.r / 255.f; d.g = q.g / 255.f; d.b = q.b / 255.f; d.a = q.a / 255.f;
 	d.clipL = parms.lclip; d.clipT = parms.uclip; d.clipR = parms.rclip; d.clipB = parms.dclip;
-	d.blend = 0;
+	d.blend = ComputeQuadBlend(parms.style.BlendOp, parms.style.DestAlpha);
 	// [rc4l] Negated: the backend reads a negative value as an internal palette index, as FGLTexture::Bind does, not a game translation.
 	d.translation = -out.translation;
 	d.texMode = img->bHasCanvas ? kTexOpaque : ComputeTextureMode(parms.style.Flags, !parms.masked);

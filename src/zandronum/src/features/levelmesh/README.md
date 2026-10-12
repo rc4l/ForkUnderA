@@ -53,7 +53,8 @@ decals a stacked view's or a line mirror's walk draws are kept for that pass alo
 - `gl/scene/gl_walls.cpp` `PutWall`: `RegisterSkyQuad` for `RENDERWALL_SKY` and `RENDERWALL_SKYBOX`.
 - `gl/scene/gl_drawinfo.cpp` `DrawWalls`: `ComputeWallDrawPath`, so GL batches its own vertices; GL never draws from the mesh,
   which holds no GL buffer (queue #42, P3; `fua_mesh_blank` empties it to check).
-- `gl/models/gl_models.cpp` `gl_RenderModel`: `ModelCaptureBegin`/`ModelCaptureEnd` around the draw.
+- `gl/models/gl_models.cpp` `gl_RenderModel`: `ModelCaptureBegin`/`ModelCaptureEnd` around the draw; a model
+  `features/sprites` derives brackets its own capture with `ModelCaptureBeginDerived`.
 - `gl/renderer/gl_lightdata.cpp` `gl_ShadingEnv`: GL's light settings (light mode, ambient, fog rules, fixed colormap,
   skybox) for `ComputeShading`, the light model `ShadePiece` lights every piece with; `captureshading.cpp` turns a GL
   colormap into its input.

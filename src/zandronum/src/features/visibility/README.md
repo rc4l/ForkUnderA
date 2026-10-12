@@ -48,7 +48,7 @@ WDI12 and WDI18. GL's occlusion query sometimes leaves a view it judges hidden u
 walks never do; the report counts such frames apart. `fua_particles` counts the particles handed over.
 
 `fua_vis_walk` (on) runs the walks in standalone; `fua_vis_cull 0` walks without culling the player's
-pass. A stacked view's or mirror's models are not drawn yet in standalone.
+pass. The actors a stacked view's or mirror's walk reaches go to `features/sprites`, models included.
 
 `fua_vis_report` also times the player's walks and counts what they reach, since a frame capped by vsync
 hides the walk from frame-time A/Bs. On Sunder MAP10 at the start a walk reaches 7,411 subsectors and

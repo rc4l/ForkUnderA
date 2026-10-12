@@ -145,6 +145,10 @@ struct MeshPiece
 	// object colour. Sampled as an ordinary texture instead, the red channel reads as bright colour
 	// and a black scorch mark renders as a white blob.
 	bool          redToAlpha;
+	// [rc4l] A stencil: GL's TM_MASK, the texture only its shape and the colour all the actor's fill, which the shading already carries.
+	bool          stencil;
+	// [rc4l] A sprite GL alpha-tests at gl_mask_sprite_threshold, which drops its soft edge texels rather than blending them.
+	bool          alphaTest;
 
 	// [rc4l] This piece is a QUAD: four corners, not six vertices.
 	//
@@ -187,7 +191,7 @@ struct MeshPiece
 		normX = normY = normZ = 0.f;
 		dynR = dynG = dynB = 0.f;
 		quad = false; solid = false;
-		facesDown = false; depthBias = false; redToAlpha = false;
+		facesDown = false; depthBias = false; redToAlpha = false; stencil = false; alphaTest = false;
 		flood = false; floodZ = 0.f;
 		mirrorSector = -1; mirrorCeiling = false;
 		scrollU = scrollV = 0.f;

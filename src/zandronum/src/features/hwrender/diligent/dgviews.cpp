@@ -6,6 +6,8 @@
 #include "features/hwrender/diligent/dgscene_internal.h"
 #include "features/hwrender/diligent/dgscene_glsl.h"   // [rc4l] FUA_MAT_SLOTS_STR, the material array's size
 
+EXTERN_CVAR(Float, gl_mask_sprite_threshold)
+
 namespace zx { namespace hwrender {
 
 // [rc4l] The pipeline that paints a stacked plane from its view.
@@ -643,6 +645,8 @@ void WriteSceneConstants(float *cb, const float *clip, float targetW, float targ
 	in.walkSlot = zx::levelmesh::ComputePassWalkSlot(g_scene.stackVisReady, g_pass.stackSlot, g_pass.inSkyPortal, zx::levelmesh::SkyboxWalked(), mainCull);
 	in.playerPass = g_pass.mainView && g_pass.lineMirror < 0;
 	in.skyHoles = g_scene.skyHoleCount;
+	// [rc4l] AlphaFunc(GL_GEQUAL, t) keeps a texel only above t - 0.001, as FRenderState stores it.
+	in.spriteAlphaCut = gl_mask_sprite_threshold - 0.001f;
 	zx::hwrender::ComputeSceneConstants(in, cb);
 }
 
