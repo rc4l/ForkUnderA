@@ -50,6 +50,12 @@ walks never do; the report counts such frames apart. `fua_particles` counts the 
 `fua_vis_walk` (on) runs the walks in standalone; `fua_vis_cull 0` walks without culling the player's
 pass. A stacked view's or mirror's models are not drawn yet in standalone.
 
+`fua_vis_report` also times the player's walks and counts what they reach, since a frame capped by vsync
+hides the walk from frame-time A/Bs. On Sunder MAP10 at the start a walk reaches 7,411 subsectors and
+22,621 segs, 10,198 of them visible, in about 1.3 ms (2.5 ms when the capped frame lets the CPU clock
+down). Sky walls are raised only from a sky or stacked plane, the back sector's heights are read once a
+seg, and a seg facing away never loads its sidedef; the rest is cache misses on the level's own structs.
+
 ## In-engine hooks
 
 - `gl/scene/gl_scene.cpp` `FGLRenderer::CreateScene`: `CheckAgainstGL` after GL's walk of the player's

@@ -32,6 +32,7 @@
 #include "textures/textures.h"
 #include "c_cvars.h"
 #include "c_dispatch.h"
+#include "stats.h"   // [rc4l] cycle_t, to time the player's walks
 
 // [rc4l] GL's fake flats, view area and portal coverage, which decide what a height transfer hides and where a stacked view starts, until they are ported (P5).
 #include "gl/renderer/gl_renderer.h"
@@ -83,8 +84,9 @@ ClipRanges g_clip;
 std::vector<unsigned char> g_subs, g_sides, g_sectors;
 // [rc4l] Sectors in the order the walk first reached them, as GL's RenderThings takes them.
 std::vector<sector_t *> g_sectorOrder;
-// [rc4l] Each vertex's pseudo-angle this walk, stamped so a shared vertex is measured once.
-std::vector<unsigned> g_vertAngle, g_vertStamp;
+// [rc4l] Each vertex's pseudo-angle this walk, stamped so a shared vertex is measured once, the stamp beside the angle so a vertex costs one cache miss.
+struct VertAngle { unsigned stamp, angle; };
+std::vector<VertAngle> g_vertAngles;
 unsigned g_stamp = 1;
 long long g_viewx = 0, g_viewy = 0;
 // [rc4l] Every walk's subsectors, sidedefs and sectors since the player's last derived walk, stamped with that walk's frame, and the sidedefs and sectors as lists.
@@ -108,6 +110,11 @@ std::vector<unsigned char> g_covered, g_nodeCovered;
 std::vector<unsigned> g_subStamp;
 unsigned g_subStampNow = 0;
 
+// [rc4l] What the player's walks cost since the last report, the main view's and its portal views' apart, since a frame capped by vsync hides both.
+int g_timedWalks = 0;
+double g_walkMs = 0, g_walkMaxMs = 0, g_portalWalkMs = 0;
+// [rc4l] And how much they reached: subsectors, segs, segs facing the eye, and segs the clipper let through.
+long long g_walkSubs = 0, g_walkSegs = 0, g_walkFacing = 0, g_walkOpen = 0;
 int g_checks = 0, g_checkDiffers = 0, g_onlyGL = 0, g_onlyOurs = 0;
 FString g_diffs;
 int g_skyChecks = 0, g_skyDiffers = 0;
@@ -131,12 +138,13 @@ unsigned ClipAngle(vertex_t *v)
 	const ptrdiff_t i = v - vertexes;
 	if (i < 0 || i >= numvertexes)
 		return ComputePseudoAngle((double)(v->x - g_viewx).Raw(), (double)(v->y - g_viewy).Raw());
-	if (g_vertStamp[i] != g_stamp)
+	VertAngle &va = g_vertAngles[i];
+	if (va.stamp != g_stamp)
 	{
-		g_vertStamp[i] = g_stamp;
-		g_vertAngle[i] = ComputePseudoAngle((double)(v->x - g_viewx).Raw(), (double)(v->y - g_viewy).Raw());
+		va.stamp = g_stamp;
+		va.angle = ComputePseudoAngle((double)(v->x - g_viewx).Raw(), (double)(v->y - g_viewy).Raw());
 	}
-	return g_vertAngle[i];
+	return va.angle;
 }
 
 // [rc4l] A sector whose change re-bakes something a walk reached, and the control sectors of the 3D floors in it, which re-bake it with them.
@@ -280,6 +288,16 @@ void NoteMirror(seg_t *seg, sector_t *fs, float x1, float y1, float x2, float y2
 // [rc4l] The sky and stacked walls GLWall::Process raises from this seg, from front sector `fs` and back `bs` as GL's walk hands them over, and a mirror's portal.
 void DeriveSkyWalls(seg_t *seg, sector_t *fs, sector_t *bs)
 {
+	const int special = seg->linedef->special;
+	const bool oneSided = special == Line_Horizon || !bs || !(seg->linedef->flags & (ML_TWOSIDED | ML_3DMIDTEX));
+	// [rc4l] SkyPlane makes something only of a sky or a stacked plane, so a plane that is neither raises nothing, and with neither, no hole and no mirror the seg is done.
+	const bool ceilingOut = fs->GetTexture(sector_t::ceiling) == skyflatnum || fs->portals[sector_t::ceiling] != NULL;
+	const bool floorOut = fs->GetTexture(sector_t::floor) == skyflatnum || fs->portals[sector_t::floor] != NULL;
+	// [rc4l] An untextured one-sided wall is a hole GL's sky fills.
+	const bool hole = oneSided && special != Line_Horizon && !zx::materials::MaterialForTexture(TexMan(seg->sidedef->GetTexture(side_t::mid)));
+	const bool mirror = oneSided && special == Line_Mirror && !hole && g_spec.player && gl_mirrors;
+	if (!ceilingOut && !floorOut && !hole && !mirror) return;
+
 	vertex_t *v1, *v2;
 	if (seg->sidedef->Flags & WALLF_POLYOBJ) { v1 = seg->v1; v2 = seg->v2; }
 	else if (seg->sidedef == seg->linedef->sidedef[0]) { v1 = seg->linedef->v1; v2 = seg->linedef->v2; }
@@ -298,9 +316,8 @@ void DeriveSkyWalls(seg_t *seg, sector_t *fs, sector_t *bs)
 		zceil[1] = FIXED2FLOAT(fs->ceilingplane.ZatPoint(v2));
 	}
 	else zceil[0] = zceil[1] = FIXED2FLOAT(fs->ceilingplane.d);
-	const int special = seg->linedef->special;
 
-	if (special == Line_Horizon || !bs || !(seg->linedef->flags & (ML_TWOSIDED | ML_3DMIDTEX)))
+	if (oneSided)
 	{
 		zx::surfaces::SkyWallQuad q[2];
 		zx::surfaces::ComputeSkyNormal(zfloor, zceil, q);
@@ -312,49 +329,61 @@ void DeriveSkyWalls(seg_t *seg, sector_t *fs, sector_t *bs)
 				fs->GetTexture(sector_t::ceiling) == skyflatnum, fs->GetTexture(sector_t::floor) == skyflatnum, q);
 			for (int i = 0; i < n; i++) SkyPlane(fs, q[i].ceiling ? sector_t::ceiling : sector_t::floor, x1, y1, x2, y2, q[i], special);
 		}
-		// [rc4l] An untextured one-sided wall is a hole GL's sky fills.
-		else if (!zx::materials::MaterialForTexture(TexMan(seg->sidedef->GetTexture(side_t::mid))))
-			zx::levelmesh::AddViewSkyHole(g_spec.skyList, x1, y1, x2, y2, zfloor, zceil);
-		else if (g_spec.player && special == Line_Mirror && gl_mirrors) NoteMirror(seg, fs, x1, y1, x2, y2, zfloor, zceil);
+		else if (hole) zx::levelmesh::AddViewSkyHole(g_spec.skyList, x1, y1, x2, y2, zfloor, zceil);
+		else if (mirror) NoteMirror(seg, fs, x1, y1, x2, y2, zfloor, zceil);
 		return;
 	}
-	zx::surfaces::SkyTopIn t;
-	t.frontSky = fs->GetTexture(sector_t::ceiling) == skyflatnum;
-	t.backSky = bs->GetTexture(sector_t::ceiling) == skyflatnum;
-	t.backNoSkyDraw = (bs->special & 0xff) == kNoSkyDraw;
-	t.backOpen = bs->ceilingplane.ZatPoint(v1) > bs->floorplane.ZatPoint(v1) || bs->ceilingplane.ZatPoint(v2) > bs->floorplane.ZatPoint(v2) || bs->transdoor;
-	t.icarus = bs->floorplane.a == 0 && bs->floorplane.b == 0 && fs->floorplane.a == 0 && fs->floorplane.b == 0 &&
-		bs->GetPlaneTexZ(sector_t::floor) == fs->GetPlaneTexZ(sector_t::floor) + FRACUNIT;
-	t.hasBottom = HasTexture(seg->sidedef, side_t::bottom);
-	t.midExists = TexMan(seg->sidedef->GetTexture(side_t::mid)) != NULL;
-	t.dontPegTop = (seg->linedef->flags & ML_DONTPEGTOP) != 0;
-	t.midOffsetDown = seg->sidedef->GetTextureYOffset(side_t::mid) > 0;
-	t.backCeilingPlusMid = FIXED2FLOAT(bs->ceilingplane.ZatPoint(v2) + seg->sidedef->GetTextureYOffset(side_t::mid));
-	t.zceil[0] = zceil[0]; t.zceil[1] = zceil[1];
-	t.backCeiling[0] = FIXED2FLOAT(bs->ceilingplane.ZatPoint(v1));
-	t.backCeiling[1] = FIXED2FLOAT(bs->ceilingplane.ZatPoint(v2));
-	t.frontReflect = fs->GetReflect(sector_t::ceiling) > 0;
-	t.backReflectSameHeight = bs->GetReflect(sector_t::ceiling) > 0 && bs->ceilingplane.d == fs->ceilingplane.d;
-	t.frontPortal = fs->portals[sector_t::ceiling] != NULL;
-	t.samePortal = fs->portals[sector_t::ceiling] == bs->portals[sector_t::ceiling];
+	// [rc4l] The back planes at the line's ends, read once for SkyTop and SkyBottom both.
+	const fixed_t backCeil1 = bs->ceilingplane.ZatPoint(v1), backCeil2 = bs->ceilingplane.ZatPoint(v2);
+	const fixed_t backFloor1 = bs->floorplane.ZatPoint(v1), backFloor2 = bs->floorplane.ZatPoint(v2);
+	const bool backOpen = backCeil1 > backFloor1 || backCeil2 > backFloor2;
+	const bool backNoSkyDraw = (bs->special & 0xff) == kNoSkyDraw;
 	zx::surfaces::SkyWallQuad q;
-	if (zx::surfaces::ComputeSkyTop(t, q)) SkyPlane(fs, sector_t::ceiling, x1, y1, x2, y2, q, special);
-
-	zx::surfaces::SkyBottomIn b;
-	b.frontSky = fs->GetTexture(sector_t::floor) == skyflatnum;
-	b.backSky = bs->GetTexture(sector_t::floor) == skyflatnum;
-	b.backNoSkyDraw = t.backNoSkyDraw;
-	b.bottomNull = !HasTexture(seg->sidedef, side_t::bottom);
-	b.backOpen = bs->ceilingplane.ZatPoint(v1) > bs->floorplane.ZatPoint(v1) || bs->ceilingplane.ZatPoint(v2) > bs->floorplane.ZatPoint(v2);
-	b.eyeBelowBackFloor = bs->floorplane.ZatPoint(FIXED2FLOAT(viewx), FIXED2FLOAT(viewy)) > FIXED2FLOAT(viewz);
-	b.zfloor[0] = zfloor[0]; b.zfloor[1] = zfloor[1];
-	b.backFloor[0] = FIXED2FLOAT(bs->floorplane.ZatPoint(v1));
-	b.backFloor[1] = FIXED2FLOAT(bs->floorplane.ZatPoint(v2));
-	b.frontReflect = fs->GetReflect(sector_t::floor) > 0;
-	b.backReflectSameHeight = bs->GetReflect(sector_t::floor) > 0 && bs->floorplane.d == fs->floorplane.d;
-	b.frontPortal = fs->portals[sector_t::floor] != NULL;
-	b.samePortal = fs->portals[sector_t::floor] == bs->portals[sector_t::floor];
-	if (zx::surfaces::ComputeSkyBottom(b, q)) SkyPlane(fs, sector_t::floor, x1, y1, x2, y2, q, special);
+	if (ceilingOut)
+	{
+		zx::surfaces::SkyTopIn t = {};
+		t.frontSky = fs->GetTexture(sector_t::ceiling) == skyflatnum;
+		t.backSky = bs->GetTexture(sector_t::ceiling) == skyflatnum;
+		t.backNoSkyDraw = backNoSkyDraw;
+		t.backOpen = backOpen || bs->transdoor;
+		t.icarus = bs->floorplane.a == 0 && bs->floorplane.b == 0 && fs->floorplane.a == 0 && fs->floorplane.b == 0 &&
+			bs->GetPlaneTexZ(sector_t::floor) == fs->GetPlaneTexZ(sector_t::floor) + FRACUNIT;
+		// [rc4l] SkyTop reads the side's textures only for Icarus's door, so their lookups wait for one.
+		if (t.icarus)
+		{
+			t.hasBottom = HasTexture(seg->sidedef, side_t::bottom);
+			t.midExists = TexMan(seg->sidedef->GetTexture(side_t::mid)) != NULL;
+			t.dontPegTop = (seg->linedef->flags & ML_DONTPEGTOP) != 0;
+			t.midOffsetDown = seg->sidedef->GetTextureYOffset(side_t::mid) > 0;
+			t.backCeilingPlusMid = FIXED2FLOAT(backCeil2 + seg->sidedef->GetTextureYOffset(side_t::mid));
+		}
+		t.zceil[0] = zceil[0]; t.zceil[1] = zceil[1];
+		t.backCeiling[0] = FIXED2FLOAT(backCeil1);
+		t.backCeiling[1] = FIXED2FLOAT(backCeil2);
+		t.frontReflect = fs->GetReflect(sector_t::ceiling) > 0;
+		t.backReflectSameHeight = bs->GetReflect(sector_t::ceiling) > 0 && bs->ceilingplane.d == fs->ceilingplane.d;
+		t.frontPortal = fs->portals[sector_t::ceiling] != NULL;
+		t.samePortal = fs->portals[sector_t::ceiling] == bs->portals[sector_t::ceiling];
+		if (zx::surfaces::ComputeSkyTop(t, q)) SkyPlane(fs, sector_t::ceiling, x1, y1, x2, y2, q, special);
+	}
+	if (floorOut)
+	{
+		zx::surfaces::SkyBottomIn b;
+		b.frontSky = fs->GetTexture(sector_t::floor) == skyflatnum;
+		b.backSky = bs->GetTexture(sector_t::floor) == skyflatnum;
+		b.backNoSkyDraw = backNoSkyDraw;
+		b.bottomNull = !HasTexture(seg->sidedef, side_t::bottom);
+		b.backOpen = backOpen;
+		b.eyeBelowBackFloor = bs->floorplane.ZatPoint(FIXED2FLOAT(viewx), FIXED2FLOAT(viewy)) > FIXED2FLOAT(viewz);
+		b.zfloor[0] = zfloor[0]; b.zfloor[1] = zfloor[1];
+		b.backFloor[0] = FIXED2FLOAT(backFloor1);
+		b.backFloor[1] = FIXED2FLOAT(backFloor2);
+		b.frontReflect = fs->GetReflect(sector_t::floor) > 0;
+		b.backReflectSameHeight = bs->GetReflect(sector_t::floor) > 0 && bs->floorplane.d == fs->floorplane.d;
+		b.frontPortal = fs->portals[sector_t::floor] != NULL;
+		b.samePortal = fs->portals[sector_t::floor] == bs->portals[sector_t::floor];
+		if (zx::surfaces::ComputeSkyBottom(b, q)) SkyPlane(fs, sector_t::floor, x1, y1, x2, y2, q, special);
+	}
 }
 
 // [rc4l] GLMirrorPortal::ClipSeg and ClipSubsector: in a mirror's walk, whatever lies wholly behind the mirror.
@@ -367,20 +396,25 @@ bool SubsectorBehindMirror(subsector_t *sub)
 	return true;
 }
 
-void AddLine(seg_t *seg)
+// [rc4l] `polyPass` is the polyobjects' own BSP; the level's segs leave a polyobject's sides to it, as GL's DoSubsector does.
+void AddLine(seg_t *seg, bool polyPass)
 {
 	if (g_spec.mirror != NULL && BehindMirror(seg->v1) && BehindMirror(seg->v2)) return;
 	const unsigned startAngle = ClipAngle(seg->v2);
 	const unsigned endAngle = ClipAngle(seg->v1);
+	g_walkSegs++;
 	// [rc4l] Backface culling: GL draws a seg only from its front.
 	if (startAngle - endAngle < 0x80000000u) return;
+	g_walkFacing++;
+	if (!polyPass && seg->sidedef != NULL && (seg->sidedef->Flags & WALLF_POLYOBJ)) return;
 	if (seg->sidedef == NULL)
 	{
 		if (!(g_sub->flags & SSECF_DRAWN) && g_clip.SafeCheckRange(startAngle, endAngle)) g_sub->flags |= SSECF_DRAWN;
 		return;
 	}
 	if (!g_clip.SafeCheckRange(startAngle, endAngle)) return;
-	g_sub->flags |= SSECF_DRAWN;
+	g_walkOpen++;
+	if (!(g_sub->flags & SSECF_DRAWN)) g_sub->flags |= SSECF_DRAWN;
 	const int side = int(seg->sidedef - sides);
 	g_sides[side] = 1;
 	if (g_sideSeen[side] != g_seenFrame)
@@ -411,7 +445,7 @@ void AddLine(seg_t *seg)
 	}
 	else backsector = g_sector;
 	// [rc4l] The automap reveals what the player has seen.
-	seg->linedef->flags |= ML_MAPPED;
+	if (!(seg->linedef->flags & ML_MAPPED)) seg->linedef->flags |= ML_MAPPED;
 	if (g_deriving)
 	{
 		const bool polyobj = (seg->sidedef->Flags & WALLF_POLYOBJ) != 0;
@@ -446,7 +480,7 @@ void PolySubsector(subsector_t *sub)
 {
 	seg_t *line = sub->firstline;
 	for (int count = sub->numlines; count--; line++)
-		if (line->linedef) AddLine(line);
+		if (line->linedef) AddLine(line, true);
 }
 
 void PolyNode(void *node)
@@ -508,6 +542,7 @@ void DoSubsector(subsector_t *sub)
 	const int si = int(sub - subsectors);
 	if (g_spec.covered != NULL && g_spec.covered[si]) UnclipSubsector(sub);
 	if (g_spec.mirror != NULL && SubsectorBehindMirror(sub)) return;
+	g_walkSubs++;
 	g_subs[si] = 1;
 	if (g_subSeen[si] != g_seenFrame)
 	{
@@ -537,9 +572,9 @@ void DoSubsector(subsector_t *sub)
 		{
 			if (seg->linedef == NULL)
 			{
-				if (!(sub->flags & SSECF_DRAWN)) AddLine(seg);
+				if (!(sub->flags & SSECF_DRAWN)) AddLine(seg, false);
 			}
-			else if (!(seg->sidedef->Flags & WALLF_POLYOBJ)) AddLine(seg);
+			else AddLine(seg, false);
 		}
 	}
 	if (g_spec.player) FlatsPass(sub, sector);
@@ -569,8 +604,9 @@ void Walk(const WalkSpec &spec)
 	g_sectors.assign(numsectors, 0);
 	g_sectorOrder.clear();
 	if (g_deriving) g_lineDone.assign(numlines, 0);
-	if ((int)g_vertStamp.size() != numvertexes) { g_vertStamp.assign(numvertexes, 0); g_vertAngle.assign(numvertexes, 0); }
-	if (++g_stamp == 0) { g_vertStamp.assign(numvertexes, 0); g_stamp = 1; }
+	const VertAngle unseen = { 0, 0 };
+	if ((int)g_vertAngles.size() != numvertexes) g_vertAngles.assign(numvertexes, unseen);
+	if (++g_stamp == 0) { g_vertAngles.assign(numvertexes, unseen); g_stamp = 1; }
 	g_viewx = viewx.Raw();
 	g_viewy = viewy.Raw();
 	if ((int)g_subSeen.size() != numsubsectors || (int)g_sideSeen.size() != numsides || (int)g_sectorSeen.size() != numsectors)
@@ -905,6 +941,9 @@ int SlotDiffers(const TArray<unsigned int> &a, const TArray<unsigned int> &b, in
 
 void WalkView(bool publish, bool derive, void (*particles)(subsector_t *sub, sector_t *sector))
 {
+	cycle_t clock;
+	clock.Reset();
+	clock.Clock();
 	const WalkSpec spec = { publish ? zx::levelmesh::kMainWalkSlot : -1, derive ? zx::levelmesh::kSkyCaptureMain : zx::levelmesh::kSkyCaptureNone,
 		derive, zx::viewsetup::CurrentView().viewActor, derive ? &g_playerPortals : NULL, NULL, NULL, NULL, particles };
 	if (publish) zx::levelmesh::BeginSlotVisibility(zx::levelmesh::kMainWalkSlot);
@@ -935,11 +974,19 @@ void WalkView(bool publish, bool derive, void (*particles)(subsector_t *sub, sec
 	Walk(spec);
 	if (derive) ProcessSectorStacks();
 	zx::levelmesh::SetMainVisibility(publish);
+	clock.Unclock();
+	if (!publish) return;
+	g_timedWalks++;
+	g_walkMs += clock.TimeMS();
+	if (clock.TimeMS() > g_walkMaxMs) g_walkMaxMs = clock.TimeMS();
 }
 
 void WalkPortalViews(void (*sprite)(AActor *thing))
 {
 	if (GLRenderer == NULL) return;
+	cycle_t clock;
+	clock.Reset();
+	clock.Clock();
 	// [rc4l] Last made first, as GLPortal::EndFrame pops them; GL renders only a portal with lines.
 	const std::vector<PortalView> portals(g_playerPortals);
 	for (size_t i = portals.size(); i-- > 0; )
@@ -953,6 +1000,8 @@ void WalkPortalViews(void (*sprite)(AActor *thing))
 		}
 		else WalkSkybox(portals[i], g_playerX, g_playerY);
 	}
+	clock.Unclock();
+	g_portalWalkMs += clock.TimeMS();
 }
 
 const int *SectorsWalkedThisFrame(int &count)
@@ -978,8 +1027,7 @@ void ForgetWalk()
 	g_sides.clear();
 	g_sectors.clear();
 	g_sectorOrder.clear();
-	g_vertStamp.clear();
-	g_vertAngle.clear();
+	g_vertAngles.clear();
 	g_playerPortals.clear();
 	g_coverageNodes.clear();
 	g_subStamp.clear();
@@ -1076,6 +1124,14 @@ void CheckPortalViews()
 
 CCMD( fua_vis_report )
 {
+	const int walks = zx::visibility::g_timedWalks;
+	Printf( "player walks: %d, mean %.3f ms (max %.3f), portal views %.3f ms a frame\n", walks,
+		walks ? zx::visibility::g_walkMs / walks : 0.0, zx::visibility::g_walkMaxMs, walks ? zx::visibility::g_portalWalkMs / walks : 0.0 );
+	if (walks) Printf( "  a frame's walks reach %lld subsectors and %lld segs, %lld facing the eye, %lld past the clipper\n",
+		zx::visibility::g_walkSubs / walks, zx::visibility::g_walkSegs / walks, zx::visibility::g_walkFacing / walks, zx::visibility::g_walkOpen / walks );
+	zx::visibility::g_walkSubs = zx::visibility::g_walkSegs = zx::visibility::g_walkFacing = zx::visibility::g_walkOpen = 0;
+	zx::visibility::g_timedWalks = 0;
+	zx::visibility::g_walkMs = zx::visibility::g_walkMaxMs = zx::visibility::g_portalWalkMs = 0;
 	Printf( "visibility: %d frames walked beside GL, %d differed (%d ids only GL reached, %d only ours)\n%s",
 		zx::visibility::g_checks, zx::visibility::g_checkDiffers, zx::visibility::g_onlyGL, zx::visibility::g_onlyOurs,
 		zx::visibility::g_diffs.GetChars( ) );
