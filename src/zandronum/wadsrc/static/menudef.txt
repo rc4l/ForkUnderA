@@ -377,6 +377,7 @@ OptionMenu "OptionsMenu"
 	StaticText " "
 	SafeCommand "Reset to defaults",	"reset2defaults"
 	SafeCommand	"Reset to last saved",	"reset2saved"
+	SafeCommand "Save current settings",	"writeini" // [MobiusU9B] Ported from uzdoom@190173bc442a0eab808f4d2c8a18a1f932e92547: saves the ini without quitting.
 	Command "Go to console",			"menuconsole"
 }
 
