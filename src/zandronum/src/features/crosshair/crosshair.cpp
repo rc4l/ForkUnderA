@@ -148,7 +148,7 @@ namespace
 		return zx::crosshair::ComputeActorScanPassesThrough(hitActor, hitActor && IsInvisible(res.Actor)) ? TRACE_Skip : TRACE_Stop;
 	}
 
-	// [MobiusU9B] Shows the name or class of the first visible actor in the crosshair, or leaves the line to fade.
+	// [MobiusU9B] Shows the name or class of the first visible item, decoration, projectile or corpse in the crosshair, or leaves the line to fade.
 	void UpdateActorName(AActor *viewer)
 	{
 		const int mode = zx::crosshair::ComputeCrosshairClampInt(cl_fua_identify_actorname, zx::crosshair::kActorNameOff, zx::crosshair::kActorNameTag);
@@ -163,10 +163,18 @@ namespace
 			|| (trace.Actor->STFlags & STFL_DONTIDENTIFYTARGET))
 			return;
 
+		// [MobiusU9B] A living monster or player belongs to the identify rows, so drop the line at once rather than let an older name sit beside theirs.
+		AActor *actor = trace.Actor;
+		if (!zx::crosshair::ComputeActorNameCoversTarget(actor->player != NULL, (actor->flags3 & MF3_ISMONSTER) != 0, (actor->flags & MF_SHOOTABLE) != 0))
+		{
+			g_ActorName.valid = false;
+			return;
+		}
+
 		// [MobiusU9B] Same as the identify name: a tag may carry unformatted colour codes.
-		FString tag = trace.Actor->GetTag();
+		FString tag = actor->GetTag();
 		V_ColorizeString(tag);
-		const std::string text = zx::crosshair::ComputeActorNameText(mode, tag.GetChars(), trace.Actor->GetClass()->TypeName.GetChars());
+		const std::string text = zx::crosshair::ComputeActorNameText(mode, tag.GetChars(), actor->GetClass()->TypeName.GetChars());
 		g_ActorName.Show(text.c_str(), kActorNameColor);
 	}
 }

@@ -1091,7 +1091,9 @@ OptionMenu "FUACrosshairOptions"
 	StaticText "Details are the lines under the name. Health, weapon", 1
 	StaticText "and class show for allies only. The ghost marker flags", 1
 	StaticText "monsters some attacks pass through (Heretic's ghosts).", 1
-	StaticText "The actor name is always drawn next to the crosshair.", 1
+	StaticText "Actor name is for items, decorations, projectiles and", 1
+	StaticText "corpses, always next to the crosshair. Monsters and", 1
+	StaticText "players use the identify rows above.", 1
 }
 	
 //-------------------------------------------------------------------------------------------

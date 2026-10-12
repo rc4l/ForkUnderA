@@ -9,6 +9,7 @@
 #include <vector>
 
 using zx::crosshair::ComputeActorNameAllowed;
+using zx::crosshair::ComputeActorNameCoversTarget;
 using zx::crosshair::ComputeActorNameText;
 using zx::crosshair::ComputeActorScanPassesThrough;
 using zx::crosshair::ComputeCrosshairClampInt;
@@ -354,6 +355,25 @@ TEST(ComputeActorNameText, IsEmptyForAMissingName)
 	EXPECT_EQ("", ComputeActorNameText(kActorNameTag, nullptr, "ZombieMan"));
 	EXPECT_EQ("", ComputeActorNameText(kActorNameClass, "Former Human", nullptr));
 	EXPECT_EQ("", ComputeActorNameText(99, "Former Human", "ZombieMan"));
+}
+
+TEST(ComputeActorNameCoversTarget, NamesThingsTheIdentifyRowsDoNot)
+{
+	// [MobiusU9B] Items, decorations and projectiles: neither player nor monster, shootable or not.
+	EXPECT_TRUE(ComputeActorNameCoversTarget(false, false, false));
+	EXPECT_TRUE(ComputeActorNameCoversTarget(false, false, true));
+}
+
+TEST(ComputeActorNameCoversTarget, LeavesLivingMonstersAndPlayersToIdentify)
+{
+	EXPECT_FALSE(ComputeActorNameCoversTarget(false, true, true));
+	EXPECT_FALSE(ComputeActorNameCoversTarget(true, false, true));
+}
+
+TEST(ComputeActorNameCoversTarget, NamesCorpses)
+{
+	EXPECT_TRUE(ComputeActorNameCoversTarget(false, true, false));
+	EXPECT_TRUE(ComputeActorNameCoversTarget(true, false, false));
 }
 
 TEST(ComputeActorScanPassesThrough, OnlyLooksPastInvisibleActors)

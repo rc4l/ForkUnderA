@@ -143,4 +143,10 @@ bool ComputeActorScanPassesThrough(bool hitActor, bool invisible)
 	return hitActor && invisible;
 }
 
+bool ComputeActorNameCoversTarget(bool isPlayer, bool isMonster, bool shootable)
+{
+	// [MobiusU9B] The identify scan only stops on shootable actors, so a corpse is left to the actor name.
+	return !((isPlayer || isMonster) && shootable);
+}
+
 } } // namespace zx::crosshair

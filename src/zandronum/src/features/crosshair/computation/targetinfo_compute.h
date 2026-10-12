@@ -116,6 +116,9 @@ std::string ComputeActorNameText(int mode, const char *tag, const char *classNam
 // [MobiusU9B] Whether the actor-name scan should look past what it hit: only actors the renderer would not draw.
 bool ComputeActorScanPassesThrough(bool hitActor, bool invisible);
 
+// [MobiusU9B] Whether the actor-name line may name what the scan stopped on: not a living player or monster, which the identify rows own.
+bool ComputeActorNameCoversTarget(bool isPlayer, bool isMonster, bool shootable);
+
 } } // namespace zx::crosshair
 
 #endif
