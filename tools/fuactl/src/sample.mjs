@@ -80,8 +80,13 @@ async function sampleLinux(pid, seconds, top, engineOnly, run) {
 //
 // Needs a bridge connection rather than a pid, which is why sampleProcess takes one. It is also the
 // only backend that can be scoped to a tic range, because it is inside the thing being measured.
-export async function sampleBridge(conn, seconds, top, engineOnly) {
-  const started = await conn.rpc("perf.sample", { seconds, top, engine: engineOnly ? 1 : 0 });
+// [rc4l] The engine's rows under the field names the external samplers' parsers emit.
+function asRows(rows) {
+  return (rows || []).map((f) => ({ symbol: f.symbol, binary: f.dso, samples: f.samples, percent: f.percent }));
+}
+
+export async function sampleBridge(conn, seconds, top, engineOnly, stacks = false) {
+  const started = await conn.rpc("perf.sample", { seconds, top, engine: engineOnly ? 1 : 0, ...(stacks ? { stacks: 1 } : {}) });
   if (!started) return { available: false, backend: "bridge", error: "perf.sample was refused", functions: [] };
 
   // The run itself takes `seconds`; symbolising thousands of addresses afterwards takes a moment
@@ -94,7 +99,9 @@ export async function sampleBridge(conn, seconds, top, engineOnly) {
     seconds: report.seconds,
     samples: report.samples,
     // Same field names the mac and Linux parsers emit, so a caller cannot tell which answered.
-    functions: (report.functions || []).map((f) => ({ symbol: f.symbol, binary: f.dso, samples: f.samples, percent: f.percent })),
+    functions: asRows(report.functions),
+    // [rc4l] With stacks, each function's share of the samples it was anywhere on the stack of: where the time went from, not just where it landed.
+    ...(stacks ? { inclusive: asRows(report.inclusive) } : {}),
   };
 }
 
@@ -103,11 +110,11 @@ export async function sampleBridge(conn, seconds, top, engineOnly) {
 // sampler where the OS has a good one, the in-engine sampler on Windows where it does not.
 // `_run`/`_platform` are test seams (default to the real spawn / host platform); production never
 // passes them.
-export function sampleProcess(pid, { seconds = 2, top = 12, engineOnly = false, conn = null, _run = realRun, _platform = os.platform() } = {}) {
+export function sampleProcess(pid, { seconds = 2, top = 12, engineOnly = false, stacks = false, conn = null, _run = realRun, _platform = os.platform() } = {}) {
   const plat = _platform;
   if (plat === "darwin") return sampleMac(pid, seconds, top, engineOnly, _run);
   if (plat === "linux") return sampleLinux(pid, seconds, top, engineOnly, _run);
-  if (conn) return sampleBridge(conn, seconds, top, engineOnly);
+  if (conn) return sampleBridge(conn, seconds, top, engineOnly, stacks);
   return Promise.resolve({
     available: false, backend: "none",
     error: "the Windows sampler is in-engine and needs a bridge connection: pass --port (and --token), not --pid",

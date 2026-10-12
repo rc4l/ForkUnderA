@@ -91,3 +91,9 @@ TEST(ClosedLine, SlopedEndsMustBothBeShut)
 	in.bsCeiling[1] = 40;   // [rc4l] one end open
 	EXPECT_FALSE(ComputeLineCloses(in));
 }
+
+TEST(ComputeFlatPlaneHeight, AFloorIsMinusDAndACeilingD)
+{
+	EXPECT_EQ(-64, zx::visibility::ComputeFlatPlaneHeight(true, 64));
+	EXPECT_EQ(64, zx::visibility::ComputeFlatPlaneHeight(false, 64));
+}

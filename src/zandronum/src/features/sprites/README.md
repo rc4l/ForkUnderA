@@ -24,7 +24,9 @@ The weapon too (`pspritebuild.cpp`, `computation/pspritequad_compute`): each lay
 brighten a fullbright layer gives, bright fog), the 3D floor band the eye is in, the style and alpha
 `AlterWeaponSprite` leaves, the overlay offsets and bob, and the targeter; recorded into the 2D capture
 where GL's quad was. GL's `P_BobWeapon` result is handed over, since it smooths the bob a step per call;
-`BuildPlayerSpritesBobbed` works it out itself for a frame with no GL renderer.
+`BuildPlayerSpritesBobbed` works it out itself for a frame with no GL renderer. The weapon's style and alpha
+are `ComputeWeaponStyle`, sharing the sprites' fuzz, transsouls and alpha1 rules, and a fullbright layer's
+colour is `ComputeFullbrightColor`; `StyleOf` and `RenderStyleOf` carry an engine style to them and back.
 `fua_psprite_check 1` compares the derived quads with GL's bit for bit (`fua_psprite_report`): about
 54,000 frames with a weapon drawn across Freedoom MAP01 and MAP04 firing and the Whodunit maps, 0 differed. GL's own record
 now carries a player-translated layer's colours and an additive layer's blend, which it dropped.

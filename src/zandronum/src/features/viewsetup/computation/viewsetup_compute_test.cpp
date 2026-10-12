@@ -72,3 +72,45 @@ TEST(ViewSetup, TheFovRatioIsFourThirdsUnlessTheScreenIsTall)
 	EXPECT_FLOAT_EQ(ComputeFovRatio(16.f / 9.f, false), 1.333333f);
 	EXPECT_FLOAT_EQ(ComputeFovRatio(1.25f, true), 1.25f);
 }
+
+TEST(ComputeMaxViewPitch, TheSoftwareLimitsOnlyWhenForced)
+{
+	EXPECT_EQ(90, zx::viewsetup::ComputeMaxViewPitch(true, false, true, 90));
+	EXPECT_EQ(56, zx::viewsetup::ComputeMaxViewPitch(true, true, true, 90));
+	EXPECT_EQ(32, zx::viewsetup::ComputeMaxViewPitch(false, true, true, 90));
+	EXPECT_EQ(56, zx::viewsetup::ComputeMaxViewPitch(false, true, false, 90));
+}
+
+TEST(ComputeFixedColormap, TheInverseMapThenThePlayersThenALightAmplifiers)
+{
+	using namespace zx::viewsetup;
+	FixedColormapIn in = { true, false, kNoFixedColormap, -1, kNoLightPower };
+	EXPECT_EQ(kCmDefault, ComputeFixedColormap(in));
+	in.lightPower = kTorchPower;
+	EXPECT_EQ(kCmDefault, ComputeFixedColormap(in));
+	in.fixedLightLevel = 3;
+	EXPECT_EQ(3 + kCmTorch, ComputeFixedColormap(in));
+	in.lightPower = kLightAmpPower;
+	EXPECT_EQ(kCmLite, ComputeFixedColormap(in));
+	in.lightPower = kNoLightPower;
+	EXPECT_EQ(kCmDefault, ComputeFixedColormap(in));
+	in.fixedColormap = 2;
+	EXPECT_EQ(kCmFirstSpecial + 2, ComputeFixedColormap(in));
+	in.inverse = true;
+	EXPECT_EQ(kCmFirstSpecial + kInverseColormap, ComputeFixedColormap(in));
+	in.hasPlayer = false;
+	EXPECT_EQ(kCmDefault, ComputeFixedColormap(in));
+}
+
+TEST(ComputeSeesOwnBody, TheChaseCameraOrADeadPlayersDeathCamera)
+{
+	using zx::viewsetup::ComputeSeesOwnBody;
+	EXPECT_TRUE(ComputeSeesOwnBody(true, false, true, false, true, false, false, true));
+	EXPECT_TRUE(ComputeSeesOwnBody(true, false, true, false, false, true, true, true));
+	EXPECT_FALSE(ComputeSeesOwnBody(true, false, true, false, false, true, false, true));
+	EXPECT_FALSE(ComputeSeesOwnBody(false, false, true, false, true, false, false, true));
+	EXPECT_FALSE(ComputeSeesOwnBody(true, true, true, false, true, false, false, true));
+	EXPECT_FALSE(ComputeSeesOwnBody(true, false, true, true, true, false, false, true));
+	EXPECT_TRUE(ComputeSeesOwnBody(true, false, false, true, true, false, false, true));
+	EXPECT_FALSE(ComputeSeesOwnBody(true, false, true, false, true, false, false, false));
+}

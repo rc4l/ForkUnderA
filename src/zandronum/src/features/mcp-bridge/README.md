@@ -80,6 +80,11 @@ hello    {"t":"hello","engine":"forkundera","bridge":"2.0.0","pid":N,"caps":[...
   disarmed). `total` is the whole `G_Ticker` including net-command execution, so a cheat like
   `kill monsters` shows up in the tic that runs it. Combine with `sim.pause` + `sim.step` to dissect
   a specific tic — this is how the kill-storm tic train was decomposed without external samplers.
+- **Sampling (Windows)**: `perf.sample {seconds, hz, top, engine, tic_min, tic_max, stacks}` → async
+  `sample` event with the functions the game thread was in (`mcp_sample.cpp`). `stacks 1` also walks each
+  sample's stack by the images' unwind data while the thread is held, with no allocation, and adds an
+  `inclusive` table (each function's share of the samples it was anywhere on the stack of,
+  `ComputeInclusiveRanks`); `fuactl sample --port P --stacks` prints both.
 - **GPU profiling**: `renderer.info` → vendor/renderer/GL version + whether GL timer queries work on this
   driver. `gl.timers {frames,warmup}` → async `glperf` event with **per-pass GPU milliseconds** — opaque
   `scene`, `translucent` (the usual fill-rate/overdraw killer), `hud2d`, plus the whole-frame `total`

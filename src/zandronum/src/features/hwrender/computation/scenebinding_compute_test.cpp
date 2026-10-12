@@ -23,7 +23,6 @@ TEST(SceneBinding, TargetsAreBuiltOnceAndRebuiltOnlyForANewSize)
 	EXPECT_TRUE(ComputeSceneTargetsRebuild(true, 1280, 720, 1280, 1080));
 }
 
-// [rc4l] A minimised Vulkan window is a 1x1 swapchain, so minimising and restoring rebuilds twice, and the bindings that dropped must come back.
 // [rc4l] AOW03's translucent pass re-checked every slot of the bindless array at each pipeline switch, a third of a standalone frame.
 TEST(SceneBinding, ALoopTransitionsEachBindingOnlyTheFirstTimeItIsCommitted)
 {
@@ -48,6 +47,7 @@ TEST(SceneBinding, ABindingPastAFullRecordIsAlwaysTransitioned)
 	EXPECT_EQ(kLoopCommitsMax, loop.count);
 }
 
+// [rc4l] A minimised Vulkan window is a 1x1 swapchain, so minimising and restoring rebuilds twice, and the bindings that dropped must come back.
 TEST(SceneBinding, MinimisingAndRestoringRebuildsBothWays)
 {
 	EXPECT_TRUE(ComputeSceneTargetsRebuild(true, 1024, 640, 1, 1));

@@ -7,6 +7,29 @@
 
 namespace zx { namespace hwrender {
 
+void ComputeDynLightColor(int r, int g, int b, bool additive, float intensity, float out[3])
+{
+	const float scale = (additive ? 0.2f : 1.0f) * intensity;
+	out[0] = r / 255.0f * scale;
+	out[1] = g / 255.0f * scale;
+	out[2] = b / 255.0f * scale;
+}
+
+bool ComputeLightsDue(LightsStamp &kept, int tic, int generation, int flags, bool &newLevel)
+{
+	newLevel = generation != kept.generation;
+	if (tic == kept.tic && !newLevel && flags == kept.flags) return false;
+	kept.tic = tic;
+	kept.generation = generation;
+	kept.flags = flags;
+	return true;
+}
+
+bool ComputeLightLinksStale(const LightLinkKey &kept, const LightLinkKey &now)
+{
+	return kept.light != now.light || kept.x != now.x || kept.y != now.y || kept.z != now.z || kept.radius != now.radius;
+}
+
 void ComputeSortedTouches(std::vector<unsigned> &touched)
 {
 	std::sort(touched.begin(), touched.end());

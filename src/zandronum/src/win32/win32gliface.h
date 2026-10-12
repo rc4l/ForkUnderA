@@ -110,6 +110,9 @@ public:
 	Win32GLFrameBuffer(void *hMonitor, int width, int height, int bits, int refreshHz, bool fullscreen, bool initGL = true);
 	virtual ~Win32GLFrameBuffer();
 
+	// [rc4l] The window's client area in pixels, false when it cannot be read.
+	bool ClientSize(int &w, int &h) const;
+
 
 	// unused but must be defined
 	virtual void Blank ();

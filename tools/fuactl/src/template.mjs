@@ -147,6 +147,17 @@ export function withSideCvars(opts, sideName, cvars) {
   return { ...opts, sides: sides.map((s) => (s.name === sideName ? { ...s, cvars: { ...(s.cvars || {}), ...cvars } } : s)) };
 }
 
+// [rc4l] withSideCvars for a whole run: a scenario without that side gives null, to be skipped rather than end the run.
+export function sideAdjust(sideName, cvars) {
+  return (opts) => ((opts.sides || GL_VS_VULKAN).some((s) => s.name === sideName) ? withSideCvars(opts, sideName, cvars) : null);
+}
+
+// [rc4l] A scenario as players run it: its own standalone side when it has one, else its Vulkan side with standalone on, else null.
+export function standaloneOptions(opts) {
+  if ((opts.sides || GL_VS_VULKAN).some((s) => s.name === "standalone")) return opts;
+  return sideAdjust("vk", { fua_dg_standalone: 1 })(opts);
+}
+
 // [rc4l] A scenario's verdict as printed lines and an exit code: 0 all under ceiling, 1 failed, 3 refused.
 export function scenarioOutcome(name, r) {
   const summary = r.failed ? `${r.failed} failed` : `all ${name} boxes within their limits`;
@@ -162,11 +173,16 @@ export function isMain(metaUrl, argv1 = process.argv[1]) {
 const registered = new Map();
 export function scenarioOptions(metaUrl) { const e = registered.get(metaUrl); return e ? e.options : null; }
 
-// [rc4l] An imported scenario as one call that runs its comparison (its options passed through adjust) and returns its outcome, or null if the module registered none.
+// [rc4l] An imported scenario as one call that runs its comparison (its options passed through adjust) and returns its outcome, or null if the module registered none; an adjust giving null skips it.
 export function scenarioRun(metaUrl, adjust = (o) => o) {
   const e = registered.get(metaUrl);
   if (!e) return null;
-  return async () => { const opts = adjust(e.options()); return scenarioOutcome(opts.name, await e.compare(opts)); };
+  return async () => {
+    const base = e.options();
+    const opts = adjust(base);
+    if (!opts) return { lines: [`skipped: no side to run (${(base.sides || GL_VS_VULKAN).map((s) => s.name).join(", ")})`], code: 0, skipped: true };
+    return scenarioOutcome(opts.name, await e.compare(opts));
+  };
 }
 
 // [rc4l] The template scenarios in dir (all, or those named), by file: the folder also holds measurement scripts that run as soon as they are imported.
@@ -224,25 +240,16 @@ export function judgeCounter(map, text, { label, pattern, ceiling, floor }) {
   return { line: `${ok ? "PASS" : "FAIL"} ${map} ${label}: ${value} (${limit})`, failed: ok ? 0 : 1 };
 }
 
-// [rc4l] One Vulkan launch per map, standing at each vantage with the sim running, then counter.command's number judged by judgeCounter: for a fault no paused frame can show, such as a one-frame flash the engine counts; the launch takes the first non-GL side's cvars.
-export async function compareCounter({ name, wad, maps, vantages, counter, sides = [], iwad = FREEDOOM2, port = 7796, size = [1280, 720] }) {
-  const side = sides.find((s) => !s.gl);
+// [rc4l] One Vulkan launch of the wad per map, body(c, map) giving that map's { lines, failed }, and a launch that throws one FAIL line: the shape the comparisons below share.
+async function eachVulkanLaunch({ name, wad, maps, iwad, port, size, side }, body) {
   const wadPath = path.join(os.tmpdir(), `fua-${name}-template.wad`);
   fs.writeFileSync(wadPath, wad);
   const lines = [];
   let failed = 0;
   for (const map of maps) {
     try {
-      const text = await withEngine({ port, map, iwad, wadPath, gl: false, side, size }, async (c) => {
-        for (const v of vantages) {
-          await c.rpc("sim.resume", {}).catch(() => {});
-          await c.rpc("player.setpos", v.at);
-          await cap.waitTics(c, 35);
-        }
-        return cap.exec(c, counter.command, { quietMs: 400 });
-      });
-      const r = judgeCounter(map, text, counter);
-      lines.push(r.line);
+      const r = await withEngine({ port, map, iwad, wadPath, gl: false, side, size }, (c) => body(c, map));
+      lines.push(...r.lines);
       failed += r.failed;
     } catch (e) {
       lines.push(`FAIL ${map}: ${e.message}`);
@@ -252,66 +259,49 @@ export async function compareCounter({ name, wad, maps, vantages, counter, sides
   return { lines, failed };
 }
 
-// [rc4l] One Vulkan launch per map, each vantage captured twice intervalMs apart, judged before against after: for what must move (a warp) or must not.
+// [rc4l] One Vulkan launch per map, standing at each vantage with the sim running, then counter.command's number judged by judgeCounter: for a fault no paused frame can show, such as a one-frame flash the engine counts; the launch takes the first non-GL side's cvars.
+export async function compareCounter({ name, wad, maps, vantages, counter, sides = [], iwad = FREEDOOM2, port = 7796, size = [1280, 720] }) {
+  return eachVulkanLaunch({ name, wad, maps, iwad, port, size, side: sides.find((s) => !s.gl) }, async (c, map) => {
+    for (const v of vantages) {
+      await c.rpc("sim.resume", {}).catch(() => {});
+      await c.rpc("player.setpos", v.at);
+      await cap.waitTics(c, 35);
+    }
+    const r = judgeCounter(map, await cap.exec(c, counter.command, { quietMs: 400 }), counter);
+    return { lines: [r.line], failed: r.failed };
+  });
+}
+
 // [rc4l] GL against Vulkan from ONE frame of one Vulkan launch, for what moves with time (a scroller, an animation), where two launches never agree on the moment.
 export async function compareSameFrame({ name, wad, maps, vantages, boxes, iwad = FREEDOOM2, port = 7796, size = [1280, 720], settleTics = 70 }) {
   const others = engineProcessCount();
   if (others > 0) return { lines: [`${others} other engine window(s) open -- close them first`], failed: 1, refused: true };
   const exe = resolveEngine().split(path.sep).join("/");
-  const wadPath = path.join(os.tmpdir(), `fua-${name}-template.wad`);
-  fs.writeFileSync(wadPath, wad);
-  const lines = [];
-  let failed = 0;
-  for (const map of maps) {
+  return eachVulkanLaunch({ name, wad, maps, iwad, port, size }, async (c, map) => {
     const frames = {};
-    try {
-      await withEngine({ port, map, iwad, wadPath, gl: false, size }, async (c) => {
-        await cap.waitTics(c, settleTics);
-        for (const v of vantages) {
-          await c.rpc("sim.resume", {}).catch(() => {});
-          await c.rpc("player.setpos", v.at);
-          await cap.waitTics(c, 15);
-          const pair = await shot.shotPair(c, `${name}_${map}_${v.name}`, { engineBin: exe, sameFrame: true });
-          frames[v.name] = { gl: pair.gl ? decodePNG(pair.gl) : null, vk: pair.vk ? decodePNG(pair.vk) : null };
-        }
-      });
-    } catch (e) {
-      lines.push(`FAIL ${map}: ${e.message}`);
-      failed++;
-      continue;
+    await cap.waitTics(c, settleTics);
+    for (const v of vantages) {
+      await c.rpc("sim.resume", {}).catch(() => {});
+      await c.rpc("player.setpos", v.at);
+      await cap.waitTics(c, 15);
+      const pair = await shot.shotPair(c, `${name}_${map}_${v.name}`, { engineBin: exe, sameFrame: true });
+      frames[v.name] = { gl: pair.gl ? decodePNG(pair.gl) : null, vk: pair.vk ? decodePNG(pair.vk) : null };
     }
-    const r = judge(map, frames, boxes[map], size);
-    lines.push(...r.lines);
-    failed += r.failed;
-  }
-  return { lines, failed };
+    return judge(map, frames, boxes[map], size);
+  });
 }
 
+// [rc4l] One Vulkan launch per map, each vantage captured twice intervalMs apart, judged before against after: for what must move (a warp) or must not.
 export async function compareOverTime({ name, wad, maps, vantages, boxes, intervalMs = 600, iwad = FREEDOOM2, port = 7796,
   size = [1280, 720] }) {
   const exe = resolveEngine().split(path.sep).join("/");
-  const wadPath = path.join(os.tmpdir(), `fua-${name}-template.wad`);
-  fs.writeFileSync(wadPath, wad);
-  const lines = [];
-  let failed = 0;
-  for (const map of maps) {
+  return eachVulkanLaunch({ name, wad, maps, iwad, port, size }, async (c, map) => {
     const frames = {};
-    try {
-      await withEngine({ port, map, iwad, wadPath, gl: false, size }, async (c) => {
-        for (const v of vantages) {
-          const { vk: [before, after] } = await shot.captureOverTime(c, { at: v.at, engineBin: exe,
-            tag: `${name}_${map}_${v.name}`, intervalMs });
-          frames[v.name] = { before: before ? decodePNG(before) : null, after: after ? decodePNG(after) : null };
-        }
-      });
-    } catch (e) {
-      lines.push(`FAIL ${map}: ${e.message}`);
-      failed++;
-      continue;
+    for (const v of vantages) {
+      const { vk: [before, after] } = await shot.captureOverTime(c, { at: v.at, engineBin: exe,
+        tag: `${name}_${map}_${v.name}`, intervalMs });
+      frames[v.name] = { before: before ? decodePNG(before) : null, after: after ? decodePNG(after) : null };
     }
-    const r = judge(map, frames, boxes[map], size, ["before", "after"]);
-    lines.push(...r.lines);
-    failed += r.failed;
-  }
-  return { lines, failed };
+    return judge(map, frames, boxes[map], size, ["before", "after"]);
+  });
 }

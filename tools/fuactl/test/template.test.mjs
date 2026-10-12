@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { judge, judgeCounter, scenarioOutcome, isMain, sideCommands, vantageCommands, boxWithin, runScenarioIfMain, scenarioOptions, scenarioRun, templateScenarioFiles, probeChoices, pairFrame, withSideCvars, launchRenderer, GL_VS_VULKAN } from "../src/template.mjs";
+import { judge, judgeCounter, scenarioOutcome, isMain, sideCommands, vantageCommands, boxWithin, runScenarioIfMain, scenarioOptions, scenarioRun, templateScenarioFiles, probeChoices, pairFrame, withSideCvars, launchRenderer, sideAdjust, standaloneOptions, GL_VS_VULKAN } from "../src/template.mjs";
 import { pathToFileURL } from "node:url";
 import fs from "node:fs";
 import os from "node:os";
@@ -180,4 +180,25 @@ test("a Vulkan side keeps Vulkan's frame of the pair, or GL's when it asks for i
   const pair = { gl: "a_gl.png", vk: "a_vk.png" };
   assert.equal(pairFrame({ name: "vk" }, pair), "a_vk.png");
   assert.equal(pairFrame({ name: "glmesh", frame: "gl" }, pair), "a_gl.png");
+});
+
+test("a run-wide side change skips a scenario without that side instead of ending the run", async () => {
+  const opts = { name: "x", sides: [{ name: "gl", gl: true }, { name: "vk" }] };
+  assert.deepEqual(sideAdjust("vk", { a: "1" })(opts).sides[1].cvars, { a: "1" });
+  assert.equal(sideAdjust("blanked", { a: "1" })(opts), null);
+  const url = "file:///scenarios/sideless.mjs";
+  let ran = false;
+  runScenarioIfMain(url, () => ({ name: "sideless", sides: [{ name: "flat" }, { name: "clustered" }] }), async () => { ran = true; return { lines: [], failed: 0 }; });
+  const out = await scenarioRun(url, sideAdjust("vk", {}))();
+  assert.equal(ran, false);
+  assert.equal(out.skipped, true);
+  assert.equal(out.code, 0);
+  assert.match(out.lines[0], /skipped: no side to run \(flat, clustered\)/);
+});
+
+test("--standalone runs a scenario's own standalone side, else its Vulkan side with standalone on, else nothing", () => {
+  const own = { name: "own", sides: [{ name: "gl", gl: true }, { name: "standalone", cvars: { fua_dg_standalone: 1 } }] };
+  assert.equal(standaloneOptions(own), own);
+  assert.deepEqual(standaloneOptions({ name: "pair" }).sides, [{ name: "gl", gl: true }, { name: "vk", gl: false, cvars: { fua_dg_standalone: 1 } }]);
+  assert.equal(standaloneOptions({ name: "ab", sides: [{ name: "flat" }, { name: "clustered" }] }), null);
 });

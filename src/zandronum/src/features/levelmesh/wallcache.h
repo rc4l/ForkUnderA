@@ -179,7 +179,6 @@ void NoteSlotVisible(int slot, int id);
 void SetMainVisibility(bool on);
 bool MainVisibility();
 // [rc4l] The frame's walk bits whatever filled them, for comparing one walk against another.
-const unsigned int *WalkBits(int &words);
 int SkyWalks(int list);
 // [rc4l] One view's sky quads: kSkyCaptureMain for the player, kSkyCaptureCamera for a camera texture.
 const MeshVertex *SkyQuadVertices(int &count, int list);
@@ -245,8 +244,7 @@ struct WalkedThisFrame
 	int sideCount;
 };
 
-// Drop baked geometry for any sector that moved since the last call. Runs before the BSP walk.
-// [rc4l] With `walked`, a sector or side nothing reached stays dirty until a walk reaches it.
+// [rc4l] Drops baked geometry for any sector that moved since the last call, before the BSP walk, and with `walked` leaves a sector or side nothing reached dirty until a walk reaches it.
 void InvalidateMovedSectors(const WalkedThisFrame *walked = NULL);
 
 // [rc4l] Re-derives every seg on a height transfer's sector, whose heights and light follow the view area (RefreshTransferArea).

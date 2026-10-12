@@ -6,6 +6,8 @@
 #include "win32gliface.h"
 #endif
 
+#include "features/display/display.h"   // [rc4l] ScreenColors
+
 class FHardwareTexture;
 
 extern long gl_frameMS;
@@ -117,8 +119,6 @@ private:
 	void DestroyReplayCapture();              // delete the PBOs while the context is still current
 #endif
 
-	PalEntry Flash;
-
 	// Texture creation info
 	int cm;
 	int translation;
@@ -126,7 +126,6 @@ private:
 	bool needsetgamma;
 	bool swapped;
 
-	PalEntry SourcePalette[256];
 	BYTE *ScreenshotBuffer;
 
 	class Wiper
@@ -145,8 +144,7 @@ private:
 	FHardwareTexture *wipeendscreen;
 
 public:
-	AActor * LastCamera;
-	int palette_brightness;
+	zx::display::ScreenColors Colors;   // [rc4l] the palette, its brightness and the flash, as the backend's frame buffer keeps them
 };
 
 

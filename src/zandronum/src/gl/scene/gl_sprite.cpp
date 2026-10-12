@@ -63,6 +63,7 @@
 #include "features/levelmesh/flatmesh.h"
 #include "features/hwrender/hud2d.h"
 #include "features/hwrender/spriteview.h"   // StandaloneActive
+#include "features/materials/materials.h"   // [rc4l] ParticleTexture
 #include "gl/utility/gl_clock.h"
 #include "gl/data/gl_vertexbuffer.h"
 // [BB] New #includes.
@@ -1050,7 +1051,7 @@ void GLSprite::ProcessParticle (particle_t *particle, sector_t *sector)//, int s
 	// [BB] Load the texture for round or smooth particles
 	if (gl_particles_style)
 	{
-		FTexture *lump = zx::hwrender::SpriteView().ParticleTexture(gl_particles_style);
+		FTexture *lump = zx::materials::ParticleTexture(gl_particles_style);
 
 		if (lump != NULL)
 		{

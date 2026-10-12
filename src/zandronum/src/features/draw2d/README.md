@@ -9,9 +9,12 @@ is not GL can take the 2D layer from here directly (P5), and the two cannot drif
   partial draw shows, flips, a camera texture's upside-down coordinates, the colour and a black
   overlay's darkening), and `gl_GetRenderStyle`'s texture mode and blend (additive for a style that
   adds onto the screen whole; a subtracting style still draws as alpha).
+  It also holds `Quad2D`, the 2D capture's record, its blend and kind values, and the untextured records
+  (`ComputeFillQuad`, `ComputeLineQuad`, `ComputePixelQuad`, `ComputeScreenFillQuad`); `ComputeDrawColorDirect`
+  is the rule for a clear given palette entry -1.
 - `draw2d.cpp`: `PrepareTexture`, the glue that reads the `DrawParms`, the material's corners and the
   remap's palette index through `features/materials`; and `PrepareLine`, `PreparePixel`, `PrepareDim`
-  and `PrepareClear`, the untextured records.
+  and `PrepareClear`, which take an engine colour to those records.
 - `screenblend.cpp` and `computation/screenblend_compute`: the screen's tint as `DrawBlend` fills it, a
   height transfer's colormap or the 3D floor fog the eye is under (`ComputeBandBlend`), a colormap's
   average brightened to the palette (`ComputeBrightenedBlend`), then pickups, pain, powerups and a

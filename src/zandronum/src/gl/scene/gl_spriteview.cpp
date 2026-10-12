@@ -45,17 +45,10 @@ void GLViewAngles(float &yaw, float &pitch)
 	pitch = float(GLRenderer->mAngles.Pitch);
 }
 
-FTexture *GLParticleTexture(int style)
-{
-	if (style == 1) return GLRenderer->glpart2;
-	if (style == 2) return GLRenderer->glpart;
-	return NULL;
-}
-
 const zx::hwrender::SpriteViewProvider g_glProvider =
 {
 	GLViewActor, GLViewVector, GLNextSpriteIndex, GLPortalRejectsPoint, GLPortalIsMirror,
-	GLDynamicLightCount, GLViewAngles, GLParticleTexture
+	GLDynamicLightCount, GLViewAngles
 };
 
 } // namespace

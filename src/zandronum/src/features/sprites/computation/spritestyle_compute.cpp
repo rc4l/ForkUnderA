@@ -7,6 +7,30 @@
 
 namespace zx { namespace sprites {
 
+namespace {
+
+// [rc4l] A fuzz style becomes the translucent one at 0.99 under a fuzz shader, else a shadow; true when it was one.
+bool ResolveFuzz(SpriteStyle &style, float &trans, int fuzzType, const SpriteStyle &translucent)
+{
+	if (style.blendOp != kOpFuzz) return false;
+	if (fuzzType != 0)
+	{
+		style = translucent;
+		trans = 0.99f;
+	}
+	else style.blendOp = kOpShadow;
+	return true;
+}
+
+// [rc4l] Transsouls and alpha1 set the alpha whatever it was.
+void ApplyStyleAlpha(const SpriteStyle &style, float transSouls, float &trans)
+{
+	if (style.flags & kFlagTransSouls) trans = transSouls;
+	else if (style.flags & kFlagAlpha1) trans = 1.f;
+}
+
+} // namespace
+
 SpriteStyleOut ComputeSpriteStyle(const SpriteStyleIn &in)
 {
 	SpriteStyleOut out;
@@ -15,20 +39,12 @@ SpriteStyleOut ComputeSpriteStyle(const SpriteStyleIn &in)
 	out.hw = kHwNormal;
 	out.overrideShader = -1;
 
-	if (out.style.blendOp == kOpFuzz)
+	if (ResolveFuzz(out.style, out.trans, in.fuzzType, in.translucent) && in.fuzzType != 0)
 	{
-		if (in.fuzzType != 0)
-		{
-			out.style = in.translucent;
-			out.overrideShader = in.fuzzType + 4;
-			out.trans = 0.99f;
-			out.hw |= kHwNoAlphaTest;
-		}
-		else out.style.blendOp = kOpShadow;
+		out.overrideShader = in.fuzzType + 4;
+		out.hw |= kHwNoAlphaTest;
 	}
-
-	if (out.style.flags & kFlagTransSouls) out.trans = in.transSouls;
-	else if (out.style.flags & kFlagAlpha1) out.trans = 1.f;
+	ApplyStyleAlpha(out.style, in.transSouls, out.trans);
 
 	if (out.trans >= 1.f - FLT_EPSILON && out.style.blendOp != kOpShadow &&
 	    ((out.style.srcAlpha == kAlphaOne && out.style.destAlpha == kAlphaZero) ||
@@ -69,6 +85,18 @@ SpriteStyleOut ComputeSpriteStyle(const SpriteStyleIn &in)
 		}
 		else if (in.stealth && out.trans < 0.5f) out.trans = 0.5f;
 	}
+	return out;
+}
+
+WeaponStyleOut ComputeWeaponStyle(const SpriteStyle &style, bool fuzzStyle, float alpha, float transSouls, int fuzzType, const SpriteStyle &translucent)
+{
+	WeaponStyleOut out;
+	out.style = style;
+	out.trans = 0.f;
+	out.noBright = fuzzStyle;
+	if (fuzzStyle) ResolveFuzz(out.style, out.trans, fuzzType, translucent);
+	ApplyStyleAlpha(out.style, transSouls, out.trans);
+	if (out.trans == 0.f && !(out.style.flags & (kFlagTransSouls | kFlagAlpha1))) out.trans = alpha;
 	return out;
 }
 

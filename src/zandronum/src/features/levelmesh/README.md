@@ -40,6 +40,9 @@ Load a map and run `fua_levelmesh_stats`. It prints side/sector/subsector counts
 vertices and their buffer size, the flat vertices `FFlatVertexBuffer` already reserves for
 comparison, and the mean/worst per side — the tail is what decides fixed ranges versus pooling.
 
+`LightListBottom` (`levelmesh.h`) is a 3D floor light list entry's lower edge at a point, for the sprites,
+the weapon and the screen tint alike.
+
 ## In-engine hooks
 
 The frame's captures -- sky surfaces, sprites, models, decals (`flatmesh.cpp`, `modelmesh.cpp`, see

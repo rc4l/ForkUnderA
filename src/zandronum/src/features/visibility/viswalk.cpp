@@ -3,6 +3,7 @@
 
 #include "gl/system/gl_system.h"
 #include "features/visibility/viswalk.h"
+#include "features/frame/computation/oracle_compute.h"   // [rc4l] OracleTally
 
 #include "features/visibility/computation/clipranges_compute.h"
 #include "features/visibility/computation/closedline_compute.h"
@@ -36,8 +37,8 @@
 
 // [rc4l] GL's fake flats, view area and portal coverage, which decide what a height transfer hides and where a stacked view starts, until they are ported (P5).
 #include "gl/renderer/gl_renderer.h"
-#include "gl/data/gl_data.h"           // currentmapsection, FPortal, gl_BuildPortalCoverage
-#include "gl/renderer/gl_lightdata.h"  // gl_ClampLight, gl_isBlack, gl_fixedcolormap: a mirror sheen's light
+#include "gl/data/gl_data.h"           // [rc4l] currentmapsection, FPortal, gl_BuildPortalCoverage
+#include "gl/renderer/gl_lightdata.h"  // [rc4l] gl_ClampLight, gl_isBlack, gl_fixedcolormap: a mirror sheen's light
 
 #include <string.h>
 #include <vector>
@@ -115,14 +116,10 @@ int g_timedWalks = 0;
 double g_walkMs = 0, g_walkMaxMs = 0, g_portalWalkMs = 0;
 // [rc4l] And how much they reached: subsectors, segs, segs facing the eye, and segs the clipper let through.
 long long g_walkSubs = 0, g_walkSegs = 0, g_walkFacing = 0, g_walkOpen = 0;
-int g_checks = 0, g_checkDiffers = 0, g_onlyGL = 0, g_onlyOurs = 0;
-FString g_diffs;
-int g_skyChecks = 0, g_skyDiffers = 0;
-FString g_skyDiffs;
-int g_portalChecks = 0, g_portalDiffers = 0, g_portalUnwalked = 0;
+zx::frame::OracleTally g_walkCheck, g_skyCheck, g_portalCheck;   // [rc4l] the player's walk, its sky, and the portal views, each against GL's
+int g_onlyGL = 0, g_onlyOurs = 0, g_portalUnwalked = 0;
 // [rc4l] What the portal-view check had to compare, summed over its frames.
 int g_stackViewsSeen = 0, g_mirrorsSeen = 0, g_sheensSeen = 0;
-FString g_portalDiffs;
 // [rc4l] The stacked views and skybox walks derived beside GL's walk, held until GL has walked its own portals.
 zx::levelmesh::PortalViewState g_oursPortals;
 bool g_oursReady = false;
@@ -180,8 +177,7 @@ bool LineCloses(side_t *sidedef, sector_t *front, sector_t *back)
 		}
 		else
 		{
-			// [rc4l] A flat floor's height is -d and a flat ceiling's d, as GL takes them.
-			const long long h = (p == 0 || p == 2) ? (-plane.d).Raw() : plane.d.Raw();
+			const long long h = ComputeFlatPlaneHeight(p == 0 || p == 2, plane.d.Raw());
 			heights[p][0] = heights[p][1] = h;
 		}
 	}
@@ -278,9 +274,9 @@ void NoteMirror(seg_t *seg, sector_t *fs, float x1, float y1, float x2, float y2
 		// [rc4l] GLWall::Put3DWall's light for the band.
 		const lightlist_t &l = bands[band];
 		const bool fadewall = l.caster && (l.caster->flags & FF_FADEWALLS) && !gl_isBlack(l.extra_colormap->Fade) && gl_isBlack(cm.FadeColor);
-		if (l.p_lightlevel != &seg->sidedef->sector->lightlevel) light = gl_ClampLight(*l.p_lightlevel);
+		const bool own = l.p_lightlevel != &seg->sidedef->sector->lightlevel;
+		light = ComputeSheenBandLight(light, own, own ? gl_ClampLight(*l.p_lightlevel) : light, fadewall);
 		cm.CopyLightColor(l.extra_colormap);
-		if (fadewall) light = 255;
 	}
 	zx::levelmesh::AddMirrorSheen(int(seg->linedef - lines), light, cm);
 }
@@ -709,10 +705,9 @@ bool PortalRejects(fixed_t x, fixed_t y) { return g_viewMirror != NULL && P_Poin
 bool PortalMirrors() { return g_viewMirror != NULL; }
 int PortalLightCount() { return g_outerView->DynamicLightCount(); }
 void PortalViewAngles(float &yaw, float &pitch) { yaw = zx::viewsetup::CurrentView().yaw; pitch = zx::viewsetup::CurrentView().pitch; }
-FTexture *PortalParticle(int style) { return g_outerView->ParticleTexture(style); }
 const zx::hwrender::SpriteViewProvider g_portalView =
 {
-	PortalViewActor, PortalViewVector, PortalSpriteIndex, PortalRejects, PortalMirrors, PortalLightCount, PortalViewAngles, PortalParticle
+	PortalViewActor, PortalViewVector, PortalSpriteIndex, PortalRejects, PortalMirrors, PortalLightCount, PortalViewAngles
 };
 
 // [rc4l] The actors in the sectors the last walk reached, handed to `sprite` inside a portal view, as GL's walk hands them to ProcessSprite.
@@ -856,7 +851,7 @@ void WalkMirror(const PortalView &p, void (*sprite)(AActor *thing))
 // [rc4l] The player's walk's marks against the bits GL's own walk left in the player's slot.
 void CompareMain(const TArray<unsigned int> &glBits)
 {
-	g_checks++;
+	g_walkCheck.checked++;
 	int onlyGL = 0, onlyOurs = 0;
 	const int ids = numsubsectors + numsides;
 	const long long words = glBits.Size();
@@ -868,11 +863,11 @@ void CompareMain(const TArray<unsigned int> &glBits)
 		const bool ours = id < numsubsectors ? g_subs[id] != 0 : g_sides[id - numsubsectors] != 0;
 		if (gl && !ours) onlyGL++;
 		if (ours && !gl) onlyOurs++;
-		if (gl != ours && g_checkDiffers < 8 && g_diffs.Len() < 2000)
-			g_diffs.AppendFormat("  %s %d: %s\n", id < numsubsectors ? "subsector" : "side",
+		if (gl != ours && zx::frame::ComputeOracleRoom(g_walkCheck, 8, 2000))
+			zx::frame::ComputeOracleNote(g_walkCheck, "  %s %d: %s\n", id < numsubsectors ? "subsector" : "side",
 				id < numsubsectors ? id : id - numsubsectors, gl ? "GL only" : "ours only");
 	}
-	if (onlyGL || onlyOurs) g_checkDiffers++;
+	if (onlyGL || onlyOurs) g_walkCheck.differed++;
 	g_onlyGL += onlyGL;
 	g_onlyOurs += onlyOurs;
 }
@@ -880,7 +875,7 @@ void CompareMain(const TArray<unsigned int> &glBits)
 // [rc4l] The walk's sky surfaces and holes against GL's for the same frame, bit for bit.
 void CheckSky(zx::levelmesh::MainSkyState &gl, zx::levelmesh::MainSkyState &ours)
 {
-	g_skyChecks++;
+	g_skyCheck.checked++;
 	const char *why = NULL;
 	if (gl.quads.Size() != ours.quads.Size()) why = "sky quad count";
 	else if (gl.quads.Size() && memcmp(&gl.quads[0], &ours.quads[0], gl.quads.Size() * sizeof(zx::levelmesh::MeshVertex))) why = "sky quad";
@@ -888,8 +883,8 @@ void CheckSky(zx::levelmesh::MainSkyState &gl, zx::levelmesh::MainSkyState &ours
 	else if (gl.holes.Size() && memcmp(&gl.holes[0], &ours.holes[0], gl.holes.Size() * sizeof(float))) why = "sky hole";
 	else if (gl.viewpoint != ours.viewpoint) why = "skybox";
 	if (!why) return;
-	if (g_skyDiffers++ < 6)
-		g_skyDiffs.AppendFormat("  %s: GL %u quads %u holes skybox %s, ours %u quads %u holes skybox %s\n", why, gl.quads.Size() / 6,
+	if (zx::frame::ComputeOracleDiffer(g_skyCheck, 6))
+		zx::frame::ComputeOracleNote(g_skyCheck, "  %s: GL %u quads %u holes skybox %s, ours %u quads %u holes skybox %s\n", why, gl.quads.Size() / 6,
 			gl.holes.Size() / zx::levelmesh::kSkyHoleFloats, gl.viewpoint ? gl.viewpoint->GetClass()->TypeName.GetChars() : "none",
 			ours.quads.Size() / 6, ours.holes.Size() / zx::levelmesh::kSkyHoleFloats, ours.viewpoint ? ours.viewpoint->GetClass()->TypeName.GetChars() : "none");
 }
@@ -1057,7 +1052,7 @@ void CheckPortalViews()
 	zx::levelmesh::PortalViewState gl;
 	zx::levelmesh::SwapPortalViews(gl);
 	const zx::levelmesh::PortalViewState &ours = g_oursPortals;
-	g_portalChecks++;
+	g_portalCheck.checked++;
 	g_stackViewsSeen += gl.stackUsed;
 	g_mirrorsSeen += int(gl.mirrors.Size());
 	g_sheensSeen += int(gl.sheens.Size());
@@ -1113,7 +1108,7 @@ void CheckPortalViews()
 	zx::levelmesh::SwapPortalViews(gl);
 	if (unwalked && why.IsEmpty()) g_portalUnwalked++;
 	if (why.IsEmpty()) return;
-	if (g_portalDiffers++ < 6) g_portalDiffs.AppendFormat("  %s\n", why.GetChars());
+	if (zx::frame::ComputeOracleDiffer(g_portalCheck, 6)) zx::frame::ComputeOracleNote(g_portalCheck, "  %s\n", why.GetChars());
 }
 
 }} // namespace zx::visibility
@@ -1128,19 +1123,17 @@ CCMD( fua_vis_report )
 	zx::visibility::g_walkSubs = zx::visibility::g_walkSegs = zx::visibility::g_walkFacing = zx::visibility::g_walkOpen = 0;
 	zx::visibility::g_timedWalks = 0;
 	zx::visibility::g_walkMs = zx::visibility::g_walkMaxMs = zx::visibility::g_portalWalkMs = 0;
+	const zx::frame::OracleTally &w = zx::visibility::g_walkCheck, &s = zx::visibility::g_skyCheck, &p = zx::visibility::g_portalCheck;
 	Printf( "visibility: %d frames walked beside GL, %d differed (%d ids only GL reached, %d only ours)\n%s",
-		zx::visibility::g_checks, zx::visibility::g_checkDiffers, zx::visibility::g_onlyGL, zx::visibility::g_onlyOurs,
-		zx::visibility::g_diffs.GetChars( ) );
-	Printf( "sky: %d frames derived beside GL, %d differed\n%s", zx::visibility::g_skyChecks, zx::visibility::g_skyDiffers,
-		zx::visibility::g_skyDiffs.GetChars( ) );
+		w.checked, w.differed, zx::visibility::g_onlyGL, zx::visibility::g_onlyOurs, w.firsts.c_str( ) );
+	Printf( "sky: %d frames derived beside GL, %d differed\n%s", s.checked, s.differed, s.firsts.c_str( ) );
 	Printf( "portal views: %d frames derived beside GL (%d stacked views, %d mirrors, %d sheens), %d differed, %d with a view GL's occlusion query left unwalked\n%s",
-		zx::visibility::g_portalChecks, zx::visibility::g_stackViewsSeen, zx::visibility::g_mirrorsSeen, zx::visibility::g_sheensSeen,
-		zx::visibility::g_portalDiffers, zx::visibility::g_portalUnwalked, zx::visibility::g_portalDiffs.GetChars( ) );
-	zx::visibility::g_skyChecks = zx::visibility::g_skyDiffers = 0;
-	zx::visibility::g_skyDiffs = "";
-	zx::visibility::g_portalChecks = zx::visibility::g_portalDiffers = zx::visibility::g_portalUnwalked = 0;
+		p.checked, zx::visibility::g_stackViewsSeen, zx::visibility::g_mirrorsSeen, zx::visibility::g_sheensSeen,
+		p.differed, zx::visibility::g_portalUnwalked, p.firsts.c_str( ) );
+	zx::frame::ComputeOracleReset( zx::visibility::g_walkCheck );
+	zx::frame::ComputeOracleReset( zx::visibility::g_skyCheck );
+	zx::frame::ComputeOracleReset( zx::visibility::g_portalCheck );
+	zx::visibility::g_portalUnwalked = 0;
 	zx::visibility::g_stackViewsSeen = zx::visibility::g_mirrorsSeen = zx::visibility::g_sheensSeen = 0;
-	zx::visibility::g_portalDiffs = "";
-	zx::visibility::g_checks = zx::visibility::g_checkDiffers = zx::visibility::g_onlyGL = zx::visibility::g_onlyOurs = 0;
-	zx::visibility::g_diffs = "";
+	zx::visibility::g_onlyGL = zx::visibility::g_onlyOurs = 0;
 }

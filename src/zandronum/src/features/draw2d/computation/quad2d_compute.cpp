@@ -3,7 +3,50 @@
 
 #include "features/draw2d/computation/quad2d_compute.h"
 
+#include <string.h>
+
 namespace zx { namespace draw2d {
+
+zx::hwrender::Quad2D ComputeFillQuad(float x, float y, float w, float h, unsigned rgb, float alpha)
+{
+	zx::hwrender::Quad2D q;
+	memset(&q, 0, sizeof(q));
+	q.x = x; q.y = y; q.w = w; q.h = h;
+	q.u2 = 1.f; q.v2 = 1.f;
+	q.r = ((rgb >> 16) & 0xff) / 255.f; q.g = ((rgb >> 8) & 0xff) / 255.f; q.b = (rgb & 0xff) / 255.f; q.a = alpha;
+	q.blend = kBlend2DAlpha;
+	q.kind = kQuadRect;
+	return q;
+}
+
+zx::hwrender::Quad2D ComputeLineQuad(int x1, int y1, int x2, int y2, unsigned rgb)
+{
+	zx::hwrender::Quad2D q = ComputeFillQuad((float)x1, (float)y1, 0.f, 0.f, rgb, 1.f);
+	q.u2 = q.v2 = 0.f;
+	q.kind = kQuadLine;
+	q.lx2 = (float)x2; q.ly2 = (float)y2;
+	return q;
+}
+
+zx::hwrender::Quad2D ComputePixelQuad(int x, int y, unsigned rgb)
+{
+	zx::hwrender::Quad2D q = ComputeFillQuad((float)x, (float)y, 1.f, 1.f, rgb, 1.f);
+	q.u2 = q.v2 = 0.f;
+	return q;
+}
+
+zx::hwrender::Quad2D ComputeScreenFillQuad(float w, float h, float r, float g, float b, float a, bool multiply)
+{
+	zx::hwrender::Quad2D q = ComputeFillQuad(0.f, 0.f, w, h, 0, a);
+	q.r = r; q.g = g; q.b = b;
+	q.blend = multiply ? kBlend2DMultiply : kBlend2DAlpha;
+	return q;
+}
+
+bool ComputeDrawColorDirect(int palcolor, unsigned color)
+{
+	return color != 0 || palcolor < 0;
+}
 
 int ComputeTextureMode(int styleFlags, bool drawOpaque)
 {

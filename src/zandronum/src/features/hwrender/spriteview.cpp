@@ -14,7 +14,6 @@ bool    NullPortalRejects(fixed_t, fixed_t) { return false; }
 bool    NullPortalIsMirror() { return false; }
 int     NullDynamicLightCount() { return 0; }
 void    NullViewAngles(float &yaw, float &pitch) { yaw = 0.f; pitch = 0.f; }
-FTexture *NullParticleTexture(int) { return NULL; }
 
 // [rc4l] The default answers "there is no camera and no portal", which is safe rather than merely
 // convenient: a sprite is dropped when it IS the view actor and when a portal rejects it, so a
@@ -22,7 +21,7 @@ FTexture *NullParticleTexture(int) { return NULL; }
 const SpriteViewProvider g_null =
 {
 	NullViewActor, NullViewVector, NullSpriteIndex, NullPortalRejects, NullPortalIsMirror,
-	NullDynamicLightCount, NullViewAngles, NullParticleTexture
+	NullDynamicLightCount, NullViewAngles
 };
 
 const SpriteViewProvider *g_provider = &g_null;

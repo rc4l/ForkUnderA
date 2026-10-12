@@ -38,7 +38,10 @@ Delete a stale `.play-session` before launching, or the wait above reads the pre
   engine off the user's mouse and keyboard — always on your own launches, never on one the user plays.
 - Pick a port of your own (7799, 7796, ...), never the one the user's instance is on.
 - `--file a.pk3,b.wad` for pwads, `--iwad` for another IWAD (an absolute path works), `--gl` for GL
-  only, `--side-by-side` for the user's two-window session (see `fua-side-by-side`).
+  only, `--no-gl` for Vulkan with no GL context at all (`-vulkan`; `ui exec dumprenderer` says
+  `renderer=vulkan`), `--side-by-side` for the user's two-window session (see `fua-side-by-side`).
+- A `--lock` launch is never focused, so it keeps its world running (`i_pauseinbackground 0`), but its
+  window presents only with `fua_render_in_background 1`: set it before timing frames or recording clips.
 - `--preset ID [--variant V]` loads a `catalogue/<ID>/addon.json` wad set from the download store
   (`--store DIR`, else `FUACTL_PWADS`, else the engine's own `pwads/` folder). A missing file is named;
   fetch it with `fua_download <file>` in the engine console.
@@ -46,8 +49,9 @@ Delete a stale `.play-session` before launching, or the wait above reads the pre
 - It stays up until stopped. Quit by port: `ui exec quit --port P --token T`. Never `reap --kill` or
   `reap --all` — the registry is shared with other sessions — and never kill by process name
   (`Stop-Process -Name`, `pkill`), which takes the user's instance and other harnesses with it.
-- `fua_dg_standalone` defaults on, which stops GL deriving the scene: set `fua_dg_standalone 0` before
-  any GL/Vulkan comparison, or GL's half is a still frame.
+- `fua_dg_standalone` defaults on, and players run it: set it to 0 for a GL/Vulkan pair, or GL's half is
+  a still frame, then check the Vulkan half at 1 as well, since standalone-only faults vanish at 0. A
+  `--no-gl` launch is always standalone.
 
 ## Drive
 
@@ -63,7 +67,7 @@ port with no token hangs and reports `rpc timeout`.
 | where the camera is; save it as a spot | `here [--save NAME --note TEXT]` (see `fua-capture-spot`) |
 | stand at a saved spot | `goto --spot NAME` |
 | does a render cvar change the picture | `ab <cvar> <a> <b> --spot NAME [--box x0,y0,x1,y1]` |
-| matched GL/Vulkan pair, sim frozen | `shot <tag> --spot NAME` or `--at x,y,z --face yaw,pitch`; `--same-frame` takes both from one engine frame (an ANIMDEFS texture animates on the clock even paused) |
+| matched GL/Vulkan pair, sim frozen | `shot <tag> --spot NAME` or `--at x,y,z --face yaw,pitch`; `--same-frame` takes both from one engine frame (an ANIMDEFS texture animates on the clock even paused); in a `--no-gl` launch `screenshot` reads back the swapchain, so both halves are Vulkan |
 | the engine's windows as Windows sees them, and what one really shows | `window [--shot gl\|vk --out FILE]`: minimized, not responding, position; the shot comes from the compositor, not GL's own buffer |
 | what the crosshair is on, and the mesh piece drawing it | `look --at x,y,z --face yaw,pitch`; `--pixel x,y --size WxH` aims through a capture's pixel, from the live camera when no `--spot`/`--at` is given |
 | what a linedef is, or every line near a point | `line <index>` or `line --at X,Y --radius R` |
@@ -74,9 +78,16 @@ port with no token hangs and reports `rpc timeout`.
 | lines wearing a texture (any tier, by prefix) | `lines --texture NAME` |
 | frametime distribution (p50/p95/p99) | `capture [--frames N]` |
 | what a setting costs | `abperf "<setting>" "<setting>" ... [--rounds N] [--spot S \| --at --face]`: p50/p99 under each console setting inside one session, the others' cvars put back before each, judged against the first within each round; separate launches drift 30% |
-| GPU ms per pass | `gl-timers` (check `renderer-info` first; no timer queries reads as zeros) |
+| GPU ms per pass | `gl-timers` (GL only; check `renderer-info` first; no timer queries reads as zeros) |
+| where the main thread's time goes | `sample --port P [--seconds N] [--stacks]`: on Windows the engine samples itself; `--stacks` adds each function's inclusive share, which is how a frame waiting in `AcquireNextImage` or the walk's share shows |
 | pause / step the sim | `rpc sim.pause` · `rpc sim.step '{"tics":1}'` |
 | a fault that shows only mid-transition (a crouch, a lift) | `steps <tag> --hold +crouch [--count N] [--spot NAME]`: a GL/Vulkan pair and the eye height each tic |
+
+Checks against GL, each deriving beside it every frame and comparing bit for bit, with a `*_report` that
+prints what differed: `fua_vis_check 1` / `fua_vis_report` (the walks, the sky, portal views, and the
+player walk's own time), `fua_sprite_check 1` / `fua_sprite_report` (sprites and models),
+`fua_psprite_check 1` / `fua_psprite_report` (the weapon), `fua_shading_check 1` / `fua_shading_report`.
+`fua_sprites_own 0` and `fua_psprites_own 0` hand them back to GL.
 
 Console diagnostics worth knowing (run them with `ui exec`): `fua_mesh_blank` (empties the level mesh, so whatever still draws the world is not reading it), `fua_shading_check 1` then `fua_shading_report` (every surface the light model shades, compared bit for bit against GL's own `gl_SetColor`/`gl_SetFog`; read the count from the engine log), `fua_gl_viewstate` (the next main view's GL viewport, framebuffer, vertex array and GL errors before and after the world; a window showing 2D but no world), `fua_2d_list` (the 2D draws covering a quarter of the screen or more), `fua_dg_blendorder [z]` (the translucent
 pass in draw order with plane layers, or every draw spanning height z), `fua_models` (model draws and

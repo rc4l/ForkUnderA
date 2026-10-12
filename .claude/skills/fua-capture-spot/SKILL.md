@@ -26,7 +26,7 @@ That writes one record into `tools/fuactl/spots.json` holding the camera at full
 (`x, y, z, angle, pitch`), the `map`, the `loaded` wad set — IWAD plus every PWAD **with its md5**,
 read from the engine's own `wads` command rather than from what the launch intended — and the
 `renderer` cvars that change the picture (`fua_vulkan`, `fua_dg_standalone`, `fua_dg_embed`,
-`fua_dg_skyportal`, `gl_wallmesh`).
+`fua_dg_skyportal`, `gl_wallmesh`), and `backend: "vulkan"` when the launch had no GL at all.
 
 **Capture before touching anything.** Do not warp, unpause, toggle a cvar or rebuild first: the
 vantage is whatever they are looking at right now, and every one of those actions can change it.
@@ -55,6 +55,7 @@ different wad set is a different picture wearing the same name.
   MAP01, and it renders perfectly — so every number taken there looks valid and is worthless. Relaunch
   with the same set the spot's `loaded` lists, via `--preset <id>` or `--file`; see `fua-side-by-side`.
 - **Never shoot from their instance.** Launch your own `--lock` instance on your own port with the
-  same wads, set `fua_dg_standalone 0`, and shoot `--spot <name>` there; leave theirs alone to look at.
+  same wads, set `fua_dg_standalone 0` for the pair, and shoot `--spot <name>` there, then the Vulkan
+  half again at 1 when the spot's `renderer` says standalone; leave theirs alone to look at.
 - **Close other engine windows first.** A GL capture is read back out of the window, and under another
   window it comes back black or scrambled — which looks like the renderer, not the tool.

@@ -24,7 +24,8 @@ or `--store`) and stands the player there.
 
 **Closing it for an exclusive run** (`scenarios`, a template comparison): `quit --park --port 7801` files
 their camera, wads and renderer first, and afterwards `play --unpark --port 7801 --store <wad folder>`
-(backgrounded as above) brings it back at that camera, side by side again.
+(backgrounded as above) brings it back at that camera, side by side again, or without GL if it was a
+`--no-gl` launch.
 
 - **A pwad map needs its wads.** Without them the map silently does not exist and the engine sits in
   the IWAD's MAP01 — which looks like a real level, renders fine, and quietly invalidates every
@@ -33,7 +34,8 @@ their camera, wads and renderer first, and afterwards `play --unpark --port 7801
   `--store DIR` (or set `FUACTL_PWADS`) when they live elsewhere. A missing one is named; fetch it
   with `fua_download <file>` in the console.
 - `--side-by-side` sets `fua_dg_embed 0`, which un-nests the Vulkan window, and `fua_dg_standalone 0`,
-  without which GL's window is a still frame.
+  without which GL's window is a still frame. So their Vulkan window is not the standalone frame players
+  get: show that with plain `play` or `play --no-gl`, never `--no-gl` with `--side-by-side`.
 - `play` runs the **staged** `dist-windows/forkundera.exe`, so restage a fix before relaunching the user's
   session. Your own instance on a fresh build takes `FUACTL_ENGINE=F:/ForkUnderA/build-win/Release/forkundera.exe`,
   and `shot`/`ab`/`burst`/`motion --port P` find its `sweep/` from the binary its play session recorded.

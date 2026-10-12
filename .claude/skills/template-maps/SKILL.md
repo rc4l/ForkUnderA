@@ -86,7 +86,9 @@ runScenarioIfMain(import.meta.url, () => ({ name: "horizon", wad: buildHorizonWa
 the engine it runs (the staged `dist-windows` one unless `FUACTL_ENGINE` names another) and each box's verdict, and exits 0 (all under ceiling), 1 (failed), 2 (crashed) or 3 (refused) -- so a test
 can import the builder without launching anything. The whole set runs as one command,
 `node src/cli.mjs scenarios [name ...] [--engine build-win/Release/forkundera.exe]`, which prints only
-the boxes that did not pass and exits 1 if any scenario failed.
+the boxes that did not pass and exits 1 if any scenario failed. Players run standalone and the
+default suite does not, so also run `scenarios --standalone` for anything standalone touches: each
+scenario's own `standalone` side, else its `vk` side with `fua_dg_standalone 1`, else skipped.
 
 `compareTemplate` refuses to run while another engine is open (GL readback under another window is
 undefined), launches each map twice — GL alone, then Vulkan with `fua_dg_standalone 0` — captures
@@ -107,8 +109,15 @@ vertices and never the backend's wall mesh; `mapreload.mjs` (`commands: ["map MA
 checks it still draws after the level loads again, and `glplain.mjs` checks it never reads the mesh. A side's
 `atVantage` commands run once it stands at each vantage, for a change the view's own walk must see first
 (`fua_mesh_blank` empties the mesh GL's capture just filled). `fuactl scenarios <name> --side S --cvar k=v`
-adds cvars to one side, which is how a test shows it fails under the behaviour it guards against. A side with `cvars: { fua_dg_standalone: 1 }` judges
+adds cvars to one side, which is how a test shows it fails under the behaviour it guards against; a
+scenario without that side is skipped rather than ending the run. A side with `cvars: { fua_dg_standalone: 1 }` judges
 Vulkan carrying the frame alone; `standalonemove.mjs` runs its script after that, so the move is not baked in.
+A standalone side that spawns facing away and then turns (`skymove`, `stackturn`, `skyboxturn`) catches
+what the frame kept from GL's last walk instead of walking itself.
+
+A side with `noGl: true` launches with `-vulkan`, which makes no GL context at all. The harness reads
+`dumprenderer` and fails the side unless it prints `renderer=vulkan`, since an old binary ignores the flag
+and runs GL; it leaves standalone on, the only frame such a launch has (`nogl.mjs`).
 
 A box can name a `vantage`, when the vantages look at different parts of the frame. A model needs no
 assets: `kvxBox` and `voxelLumps` in `src/kvx.mjs` put a KVX voxel on every frame of a sprite.
@@ -118,11 +127,16 @@ level that is right by construction: `waterseam.mjs` judges a pool split into tw
 same pool in one piece, and `underwatersprite.mjs` a medkit under all-but-opaque water against the
 empty pool.
 
-GL and Vulkan do not frame a view identically yet: GL applies Doom's 1.2 pixel stretch vertically and
-Vulkan does not, so a thin GL-vs-Vulkan box over a few rows of geometry reads several points of
-difference on a correct build. Prefer a Vulkan-vs-Vulkan oracle that is right by construction for the
+Binaries before be8a9500 drew Vulkan without GL's 1.2 pixel stretch, and binaries before 016073df
+drew Vulkan's view behind the status bar instead of in the view window (`viewwindow.mjs`), so when a
+scenario fails on an old binary check the framing first. Thin boxes still read sub-pixel framing
+differences, so prefer a Vulkan-vs-Vulkan oracle that is right by construction for the
 region (`water3d.mjs`: bands off is the wall's own light, which is what the part above the water must
 have), and prove it fails on a deliberately broken build.
+
+For a picture that changes between two captures of one paused frame (an ANIMDEFS texture runs on the
+clock), `compareSameFrame` takes GL and Vulkan from ONE engine frame (`scrollwall`, `particlecolor`); it
+refuses beside other engines and ignores `sides`, so `--side/--cvar` does nothing there.
 
 For something that must MOVE (a warp, a scroller), use `compareOverTime` instead: one launch, each
 vantage captured twice `intervalMs` apart, and a box can carry a `floor` (it must change at least this
@@ -132,7 +146,8 @@ moving its 16-pixel block means.
 For a fault that lasts ONE frame (a sprite drawn white the frame its material first appears), no paused
 capture can catch it: have the engine count it, and use `compareCounter`, which stands at each vantage
 with the sim running and holds a console command's number to a ceiling (`counter: { command, label,
-pattern, ceiling }`, `pattern`'s first group the number). `spriteslots.mjs` reads `fua_dg_dynstats`.
+pattern, ceiling | floor }`, `pattern`'s first group the number), launched with the first non-GL side's
+cvars. `spriteslots.mjs` reads `fua_dg_dynstats`; `particles.mjs` holds a floor.
 
 `BOXES[map]` is `{ name: { box: [x0, y0, x1, y1], ceiling } }` in frame fractions. Set ceilings from
 measurement, not taste: run the FIXED build, take what it reads, add margin. A map with a known,
@@ -155,7 +170,7 @@ Export the builder from the scenario; `runScenarioIfMain` keeps the import from 
 | file | role |
 |---|---|
 | `tools/fuactl/src/udmf.mjs` | UDMF map + PWAD writer |
-| `tools/fuactl/src/template.mjs` | `compareTemplate` (launch, capture, judge) and the pure `judge` |
+| `tools/fuactl/src/template.mjs` | `compareTemplate` (launch, capture, judge), `compareOverTime`, `compareCounter`, `compareSameFrame`, and the pure `judge` |
 | `tools/fuactl/src/pngcore.mjs` | PNG decode/encode, `boxDiff`; `fuactl png --boxdiff` on the CLI |
 | `tools/fuactl/scenarios/horizon.mjs` | the worked example |
 | `tools/fuactl/scenarios/pointlight.mjs` | two Vulkan sides, a light-grid switch against itself |
@@ -192,7 +207,7 @@ Export the builder from the scenario; `runScenarioIfMain` keeps the import from 
 | `tools/fuactl/scenarios/mapreload.mjs` | a room loaded a second time inside a Vulkan session (`commands: ["map MAP01"]`), GL alone against GL's frame there: GL must still draw the world after a level change rebuilds the wall mesh |
 | `tools/fuactl/scenarios/glplain.mjs` | a room reloaded in a Vulkan session with the map bake off, the mesh then emptied at the vantage (`atVantage: ["fua_mesh_blank"]`), GL alone against GL's frame there: GL must draw its own vertices, not the backend's mesh (queue #42) |
 | `tools/fuactl/scenarios/standalonemove.mjs` | a platform a closed script raises (`puke 2`) after Vulkan has gone standalone, GL alone against the standalone frame: the move must show with no GL walk behind it |
-| `tools/fuactl/scenarios/invertedback.mjs` | a wall onto a sector whose floor is above its ceiling, GL alone against GL's frame from a Vulkan session (`frame: "gl"`): the backend's wall mesh must not change GL's picture |
+| `tools/fuactl/scenarios/invertedback.mjs` | a wall onto a sector whose floor is above its ceiling, GL against Vulkan: both must draw it whole |
 | `tools/fuactl/scenarios/watertint.mjs` | additive 3D-floor water whose control sector a puked script tints after the bake, over a grey pool floor, GL against Vulkan |
 | `tools/fuactl/scenarios/brightmap.mjs` | GLDEFS brightmaps on a wall and a sprite in a dark room, bindless against a binding per material; the brightmap PNG is a lump between `TX_START`/`TX_END` |
 | `tools/fuactl/scenarios/stackportal.mjs` | a ceiling that is a stacked sector (`UpperStackLookOnly`/`LowerStackLookOnly` paired by TID) onto a room off the map's side, GL against Vulkan |
@@ -210,6 +225,18 @@ Export the builder from the scenario; `runScenarioIfMain` keeps the import from 
 | `tools/fuactl/scenarios/skyboxseam.mjs` | a six-face GLDEFS skybox (faces between `TX_START`/`TX_END`, `sky1` set by a MAPINFO lump) seen at its corners: the seam and the filter, GL against Vulkan |
 | `tools/fuactl/scenarios/translucentmid.mjs` | a two-sided middle texture at half alpha (`block`'s `line(edge)` sets the linedef's `alpha`), GL against Vulkan |
 | `tools/fuactl/scenarios/pitchframing.mjs` | a tall sky room level and looking up: the camera's 1.2 pixel stretch, GL against Vulkan |
+| `tools/fuactl/scenarios/nogl.mjs` | modelstandalone's voxel box and its two reflections, GL against a `-vulkan` launch (`noGl: true`): it must render them as GL does rather than crash on the model's GL vertex buffer |
+| `tools/fuactl/scenarios/viewwindow.mjs` | modelstandalone's room at `screenblocks 8`, GL against Vulkan: the view must sit in the view window above the status bar as GL's `SetViewport` puts it |
+| `tools/fuactl/scenarios/scrollwall.mjs` | a scrolling wall over a scrolling floor from one engine frame (`compareSameFrame`): textures stand where GL's do after the scrollers ran |
+| `tools/fuactl/scenarios/particles.mjs` | a particle fountain in standalone (`compareCounter`, a floor): the backend must be handed the particles from its own walk |
+| `tools/fuactl/scenarios/particlecolor.mjs` | particles' red fountain from one engine frame: Vulkan's particles take the fountain's colour, not the texture's white |
+| `tools/fuactl/scenarios/skymove.mjs` | skywall's rooms, spawning away from the sky wall and turning to it, in standalone: the sky above the wall made that frame |
+| `tools/fuactl/scenarios/stackturn.mjs` | stackportal's rooms, turning to look up through the stacked ceiling, in standalone: the upper room walked that frame |
+| `tools/fuactl/scenarios/skyboxturn.mjs` | a sky yard over a skybox room with a different texture per wall, turning west, in standalone: the skybox walked that frame |
+| `tools/fuactl/scenarios/mirrorsprite.mjs` | a line mirror facing pillars behind the player, in standalone: the mirror's own walk each frame |
+| `tools/fuactl/scenarios/modelstandalone.mjs` | a voxel model ahead and two seen only in a line mirror, in standalone: solid models drawn as GL draws them |
+| `tools/fuactl/scenarios/movedbehind.mjs` | a platform raised while behind the player, in standalone: re-baked when a walk first reaches it |
+| `tools/fuactl/scenarios/stencilsprite.mjs` | a stencil-style actor: a flat silhouette in its stencil colour with GL's framed outline (TM_MASK) |
 | `tools/fuactl/src/mapdata.mjs` | read a real map's sectors, lines and scripts, to find the ingredient to template |
 | `tools/fuactl/src/acs.mjs` | ACS0 BEHAVIOR writer for scripted template maps |
 | `tools/fuactl/test/{udmf,template,pngcore}.test.mjs` | their tests |

@@ -28,24 +28,31 @@
 #include <string.h>
 
 // [rc4l] GL's frame globals, which the derivation and the backend read, until they move out of gl/ (P5).
-#include "gl/data/gl_data.h"           // gl_frameMS, currentmapsection
-#include "gl/renderer/gl_renderer.h"   // in_area
-#include "gl/renderer/gl_lightdata.h"  // gl_fixedcolormap
-#include "gl/models/gl_models.h"       // gl_IsHUDModelForPlayerAvailable
+#include "gl/data/gl_data.h"           // [rc4l] gl_frameMS, currentmapsection
+#include "gl/renderer/gl_renderer.h"   // [rc4l] in_area
+#include "gl/renderer/gl_lightdata.h"  // [rc4l] gl_fixedcolormap
+#include "gl/models/gl_models.h"       // [rc4l] gl_IsHUDModelForPlayerAvailable
 
 EXTERN_CVAR(Bool, cl_capfps)
 extern long gl_frameCount;
 
 namespace zx { namespace frame {
 
-void RenderPlayerView(player_t *player, int paletteBrightness)
+namespace {
+
+// [rc4l] The camera the last frame was drawn from, so a new one starts uninterpolated instead of sweeping across from it.
+AActor *g_lastCamera = NULL;
+
+} // namespace
+
+void ForgetCamera() { g_lastCamera = NULL; }
+
+FrameLens BeginPlayerFrame(player_t *player)
 {
-	// [rc4l] A new camera starts uninterpolated, or it sweeps across from the last one.
-	static AActor *lastCamera = NULL;
-	if (player->camera != lastCamera)
+	if (player->camera != g_lastCamera)
 	{
 		R_ResetViewInterpolation();
-		lastCamera = player->camera;
+		g_lastCamera = player->camera;
 	}
 	if (cl_capfps || r_NoInterpolate) r_TicFrac = FRACUNIT;
 	else r_TicFrac = I_GetTimeFrac(&r_FrameTime);
@@ -54,32 +61,53 @@ void RenderPlayerView(player_t *player, int paletteBrightness)
 	// [rc4l] Camera textures the last frame used, each drawn by the renderer's RenderTextureView.
 	FCanvasTextureInfo::UpdateAll();
 
-	const float ratio = WidescreenRatio;
-	const float fovratio = zx::viewsetup::ComputeFovRatio(ratio, AspectTallerThanWide(ratio));
+	FrameLens lens;
+	lens.ratio = WidescreenRatio;
+	lens.fovRatio = zx::viewsetup::ComputeFovRatio(lens.ratio, AspectTallerThanWide(lens.ratio));
 	gl_fixedcolormap = zx::viewsetup::FixedColormap(player);
-	const float fov = FOV_InterpolatedForFrame(player);
-	AActor *camera = player->camera;
+	// [rc4l] fov-interp: the sub-tic position of the zoom P_PlayerThink is about to take.
+	lens.fov = FOV_InterpolatedForFrame(player);
+	return lens;
+}
 
-	// [rc4l] RenderViewpoint for the player's own view.
-	const bool savedMain = zx::levelmesh::MainView();
-	zx::levelmesh::SetMainView(true);
-	zx::hwrender::SetMainViewLens(fov, fovratio);
+bool BeginViewpoint(AActor *camera, float fov, float fovRatio, bool mainview, bool toscreen)
+{
+	const bool saved = zx::levelmesh::MainView();
+	zx::levelmesh::SetMainView(mainview);
+	if (mainview && toscreen) zx::hwrender::SetMainViewLens(fov, fovRatio);
 	R_SetupFrame(camera);
 	zx::viewsetup::SetViewArea(zx::viewsetup::CurrentView().viewActor);
 	zx::viewsetup::SetupView(camera, fov, gl_frameMS);
+	return saved;
+}
+
+void EndViewpoint(bool savedMainView)
+{
+	gl_frameCount++;   // [rc4l] right before the interpolations are restored
+	interpolator.RestoreInterpolations();
+	zx::levelmesh::SetMainView(savedMainView);
+}
+
+void MarkMapSection()
+{
+	if (currentmapsection.Size() == 0) return;
+	const int mapsection = R_PointInSubsector(viewx, viewy)->mapsection;
+	memset(&currentmapsection[0], 0, currentmapsection.Size());
+	currentmapsection[mapsection >> 3] |= 1 << (mapsection & 7);
+}
+
+void RenderPlayerView(player_t *player, int paletteBrightness)
+{
+	const FrameLens lens = BeginPlayerFrame(player);
+	const bool savedMain = BeginViewpoint(player->camera, lens.fov, lens.fovRatio, true, true);
 	zx::viewsetup::TurnView(viewangle);
 	sector_t *const sector = viewsector;
-	// [rc4l] ProcessScene: only the map section the eye is in is drawn.
-	if (currentmapsection.Size() > 0)
-	{
-		const int mapsection = R_PointInSubsector(viewx, viewy)->mapsection;
-		memset(&currentmapsection[0], 0, currentmapsection.Size());
-		currentmapsection[mapsection >> 3] |= 1 << (mapsection & 7);
-	}
+	MarkMapSection();
 	if (zx::hwrender::StandaloneActive())
 	{
 		zx::levelmesh::EnterScene();
 		const SceneHooks none = { NULL, NULL };
+		// [rc4l] Always true here, since BeginBackendOnly keeps the map bake on, which a moved sector otherwise waits for.
 		StandaloneScene(none);
 		zx::levelmesh::LeaveScene();
 	}
@@ -93,9 +121,7 @@ void RenderPlayerView(player_t *player, int paletteBrightness)
 	for (int i = 0; i < n; i++) zx::hwrender::Record2D(zx::draw2d::PrepareScreenFill(fills[i]));
 
 	zx::hwrender::NoteWorldView();
-	gl_frameCount++;
-	interpolator.RestoreInterpolations();
-	zx::levelmesh::SetMainView(savedMain);
+	EndViewpoint(savedMain);
 }
 
 }} // namespace zx::frame

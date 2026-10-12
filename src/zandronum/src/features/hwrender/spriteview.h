@@ -43,8 +43,6 @@ struct SpriteViewProvider
 	int     (*DynamicLightCount)();
 	// The camera's yaw and pitch in degrees, for billboarding.
 	void    (*ViewAngles)(float &yaw, float &pitch);
-	// The two particle textures, chosen by gl_particles_style. Either may be NULL.
-	FTexture *(*ParticleTexture)(int style);
 };
 
 // Register whoever is drawing. Passing NULL restores the do-nothing provider.

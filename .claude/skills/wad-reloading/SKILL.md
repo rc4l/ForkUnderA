@@ -1,6 +1,6 @@
 ---
 name: wad-reloading
-description: Swap the running ZandroX engine's IWAD/PWAD set at runtime with the in-engine `wad_reload` command — no process relaunch. Covers syntax, how it drives ZDoom's restart cycle, the validate-before-teardown safety model, and driving it over the MCP bridge.
+description: Swap the running ZandroX engine's IWAD/PWAD set at runtime with the in-engine `wad_reload` command — no process relaunch. Covers syntax, how it drives ZDoom's restart cycle, the validate-before-teardown safety model, and driving it with fuactl.
 ---
 
 # In-engine WAD reloading (`wad_reload`)
@@ -47,14 +47,14 @@ from a programmatic entry point.
   appending the new set. **Correct at the array tail**, where `DArgs::RemoveArgs`
   leaves the last value behind (that bug is why this helper is owned + 100% covered).
 
-## Driving it over MCP
-- `run_command "wad_reload …"` **times out (~5 s)** — the restart drops the bridge.
-  That's expected: the reload still happens; the **next** MCP call reconnects to the
+## Driving it with fuactl
+- `ui exec "wad_reload …"` **times out (~5 s)** — the restart drops the bridge.
+  That's expected: the reload still happens; the **next** fuactl call reconnects to the
   same instance/port.
-- After a reload, do a `screenshot` (or `map_info`) to confirm the new set/map loaded.
+- After a reload, `rpc player.camera` (or a `shot`) confirms the new set/map loaded.
   Heavy TCs (MM8BDM ~170 MB, big gameplay mods) take several seconds; a too-early
   screenshot returns black/empty — retry.
-- **One reload per `run_command`.** `CRestartException` unwinds immediately, so
+- **One reload per `ui exec`.** `CRestartException` unwinds immediately, so
   anything after `wad_reload` in the same command buffer is lost — you can't chain
   reloads (or append `; fua_clip`) in one string.
 

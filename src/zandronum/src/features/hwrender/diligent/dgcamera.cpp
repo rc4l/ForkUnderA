@@ -98,7 +98,7 @@ Diligent::ITextureView *GetCameraSRV(const void *material)
 // them around this call is smaller and less error-prone than threading a viewpoint through the
 // matrix builder and every one of its callers, and they are restored before anything else can look.
 void RenderCameraTexture(const void *material, int w, int h, float aspect,
-                         int px, int py, int pz, unsigned int pangle, int ppitch, float fovDeg)
+                         fixed_t px, fixed_t py, fixed_t pz, unsigned int pangle, int ppitch, float fovDeg)
 {
 	if (!GetDevice() || !g_scene.vb || !g_pso.opaque) return;
 	CameraTarget *cam = GetCameraTarget(material, w, h);

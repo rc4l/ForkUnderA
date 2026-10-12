@@ -46,6 +46,29 @@ void ComputeViewAngleVector(unsigned viewAngle, float &yaw, float &vectorX, floa
 	vectorY = (float)sin(angle * kPi / 180.f);
 }
 
+int ComputeFixedColormap(const FixedColormapIn &in)
+{
+	if (!in.hasPlayer) return kCmDefault;
+	if (in.inverse) return kCmFirstSpecial + kInverseColormap;
+	if (in.fixedColormap != kNoFixedColormap) return kCmFirstSpecial + in.fixedColormap;
+	if (in.fixedLightLevel == -1) return kCmDefault;
+	if (in.lightPower == kTorchPower) return in.fixedLightLevel + kCmTorch;
+	if (in.lightPower == kLightAmpPower) return kCmLite;
+	return kCmDefault;
+}
+
+bool ComputeSeesOwnBody(bool cameraIsPlayer, bool freeSpectate, bool isConsolePlayer, bool consoleSpectating, bool chaseCam,
+	bool deathCamera, bool dead, bool cameraIsPlayerBody)
+{
+	return cameraIsPlayer && !freeSpectate && (!isConsolePlayer || !consoleSpectating) && (chaseCam || (deathCamera && dead)) && cameraIsPlayerBody;
+}
+
+int ComputeMaxViewPitch(bool down, bool softwareLimits, bool oldFreelookLimit, int maxViewPitch)
+{
+	if (!softwareLimits) return maxViewPitch;
+	return down ? 56 : (oldFreelookLimit ? 32 : 56);
+}
+
 float ComputeFovRatio(float ratio, bool tallerThanWide)
 {
 	return tallerThanWide ? ratio : 1.333333f;

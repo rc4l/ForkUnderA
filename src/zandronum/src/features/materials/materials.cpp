@@ -7,9 +7,9 @@
 
 #include "textures/textures.h"
 #include "gl/textures/gl_material.h"
-#include "gl/textures/gl_translate.h"   // GLTranslationPalette
-#include "r_data/r_translate.h"         // FRemapTable
-#include "gl/system/gl_interface.h"     // gl.flags, whether trimmed sprite coordinates are usable
+#include "gl/textures/gl_translate.h"   // [rc4l] GLTranslationPalette
+#include "r_data/r_translate.h"         // [rc4l] FRemapTable
+#include "gl/system/gl_interface.h"     // [rc4l] gl.flags, whether trimmed sprite coordinates are usable
 
 namespace zx { namespace materials {
 

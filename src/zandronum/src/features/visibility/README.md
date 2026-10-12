@@ -55,6 +55,8 @@ hides the walk from frame-time A/Bs. On Sunder MAP10 at the start a walk reaches
 22,621 segs, 10,198 of them visible, in about 1.3 ms (2.5 ms when the capped frame lets the CPU clock
 down). Sky walls are raised only from a sky or stacked plane, the back sector's heights are read once a
 seg, and a seg facing away never loads its sidedef; the rest is cache misses on the level's own structs.
+A flat plane's height (`ComputeFlatPlaneHeight`) and a mirror sheen band's light (`ComputeSheenBandLight`)
+are tested rules; the three checks keep `features/frame`'s `OracleTally`.
 
 ## In-engine hooks
 

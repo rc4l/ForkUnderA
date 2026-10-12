@@ -438,8 +438,8 @@ void DrawBlended(Diligent::IDeviceContext *ctx)
 	// picture cannot say which of two draws landed second. As a function over stated inputs it can:
 	// the rule that required two distances to be EXACTLY equal, and therefore never once fired, fails
 	// a test written with the real numbers off a real wall.
-	// [rc4l] Sorted as small keys and the draws then moved once, since the comparator rebuilt both keys and the sort moved whole draws on every step.
 	{
+		// [rc4l] Sorted as small keys and the draws then moved once, since the comparator rebuilt both keys and the sort moved whole draws on every step.
 		struct SortKey { zx::hwrender::TranslucentDraw key; unsigned index; };
 		static TArray<SortKey> keys;
 		static TArray<BlendDraw> sorted;

@@ -6,8 +6,8 @@
 #ifndef ZX_DRAW2D_H
 #define ZX_DRAW2D_H
 
-#include "v_video.h"                       // DCanvas::DrawParms
-#include "features/hwrender/hud2d.h"       // Quad2D
+#include "v_video.h"                       // [rc4l] DCanvas::DrawParms
+#include "features/hwrender/hud2d.h"       // [rc4l] Quad2D
 
 #include <vector>
 
@@ -28,7 +28,7 @@ struct TextureDraw
 // [rc4l] Work out a DrawTexture call, as FGLRenderer::DrawTexture would draw it.
 void PrepareTexture(FTexture *img, const DCanvas::DrawParms &parms, TextureDraw &out);
 
-// [rc4l] The colour a line, pixel or clear is drawn in: `color` when it has one, else palette entry `palcolor`.
+// [rc4l] The colour a line, pixel or clear is drawn in: `color` when it has one or palcolor is -1, else palette entry `palcolor`.
 PalEntry DrawColor(int palcolor, uint32 color);
 
 // [rc4l] An automap line from (x1, y1) to (x2, y2), a single pixel, a translucent dim and an opaque clear, as the capture records them.

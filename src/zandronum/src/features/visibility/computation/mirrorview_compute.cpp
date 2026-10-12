@@ -76,6 +76,12 @@ static bool Crossing(const float z[2], float clen, float &left, float &right, fl
 	return false;
 }
 
+int ComputeSheenBandLight(int wallLight, bool bandOwnsLevel, int bandLight, bool fadeWall)
+{
+	if (fadeWall) return 255;
+	return bandOwnsLevel ? bandLight : wallLight;
+}
+
 int ComputeSheenBand(const SheenWall &w, const SheenPlane *planes, int bands)
 {
 	if (w.x1 == w.x2 && w.y1 == w.y2) return kSheenNothing;

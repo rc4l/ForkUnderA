@@ -203,3 +203,12 @@ TEST(EncodableFramesAcrossSaves, SaveIsNonDestructive)
 	// Empty sequence.
 	EXPECT_EQ(ComputeEncodableFramesAcrossSaves(nullptr, 0, true), 0);
 }
+
+TEST(ComputeStreamLive, AStreamIsLiveWhileItIsFedAndNotOnceItStops)
+{
+	// [rc4l] Standalone: GL's stream took the first frame at launch and nothing since, and saved a one-frame clip beside the real one.
+	EXPECT_FALSE(zx::ComputeStreamLive(0, 0, 0));
+	EXPECT_TRUE(zx::ComputeStreamLive(1, 5000000, 5033000));
+	EXPECT_TRUE(zx::ComputeStreamLive(300, 5000000, 6000000));
+	EXPECT_FALSE(zx::ComputeStreamLive(1, 5000000, 6000001));
+}

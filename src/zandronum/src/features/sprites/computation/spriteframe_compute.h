@@ -8,8 +8,7 @@
 
 namespace zx { namespace sprites {
 
-// [rc4l] The rotation for a view angle relative to the actor (BAM), and whether that rotation is drawn mirrored.
-// [rc4l] A frame whose first two rotations share a texture is a symmetric one and is not offset by half a step.
+// [rc4l] The rotation for a view angle relative to the actor (BAM) and whether it is drawn mirrored, a symmetric frame (first two rotations sharing a texture) not being offset by half a step.
 int ComputeSpriteRotation(unsigned int angle, bool symmetric, unsigned int flipMask, bool &mirror);
 
 }} // namespace zx::sprites

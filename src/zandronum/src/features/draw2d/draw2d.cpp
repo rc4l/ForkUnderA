@@ -9,7 +9,7 @@
 #include "r_data/renderstyle.h"
 #include "textures/textures.h"
 #include "m_fixed.h"
-#include "v_palette.h"   // GPalette
+#include "v_palette.h"   // [rc4l] GPalette
 
 #include <string.h>
 
@@ -17,49 +17,35 @@ static_assert(STYLEOP_Add == zx::draw2d::kStyleOpAdd && STYLEALPHA_One == zx::dr
 
 namespace zx { namespace draw2d {
 
-// [rc4l] An untextured record of the rectangle at (x, y), w by h, in `color` at `alpha`, with no scissor.
-static zx::hwrender::Quad2D Fill(float x, float y, float w, float h, PalEntry color, float alpha)
-{
-	zx::hwrender::Quad2D q;
-	memset(&q, 0, sizeof(q));
-	q.x = x; q.y = y; q.w = w; q.h = h;
-	q.u2 = 1.f; q.v2 = 1.f;
-	q.r = color.r / 255.f; q.g = color.g / 255.f; q.b = color.b / 255.f; q.a = alpha;
-	return q;
-}
+// [rc4l] A palette colour as the 0xRRGGBB the record builders take.
+static unsigned RGBOf(PalEntry color) { return (unsigned(color.r) << 16) | (unsigned(color.g) << 8) | color.b; }
 
 PalEntry DrawColor(int palcolor, uint32 color)
 {
-	return color ? PalEntry(color) : GPalette.BaseColors[palcolor];
+	return ComputeDrawColorDirect(palcolor, color) ? PalEntry(color) : GPalette.BaseColors[palcolor];
 }
 
 zx::hwrender::Quad2D PrepareLine(int x1, int y1, int x2, int y2, PalEntry color)
 {
 	// [rc4l] The automap is made of these, and a backend that only replays rects drew its background and nothing else.
-	zx::hwrender::Quad2D q = Fill((float)x1, (float)y1, 0.f, 0.f, color, 1.f);
-	q.u2 = q.v2 = 0.f;
-	q.kind = 1;
-	q.lx2 = (float)x2; q.ly2 = (float)y2;
-	return q;
+	return ComputeLineQuad(x1, y1, x2, y2, RGBOf(color));
 }
 
 zx::hwrender::Quad2D PreparePixel(int x, int y, PalEntry color)
 {
-	zx::hwrender::Quad2D q = Fill((float)x, (float)y, 1.f, 1.f, color, 1.f);
-	q.u2 = q.v2 = 0.f;
-	return q;
+	return ComputePixelQuad(x, y, RGBOf(color));
 }
 
 zx::hwrender::Quad2D PrepareDim(PalEntry color, float amount, int x, int y, int w, int h)
 {
 	// [rc4l] The menu's background dim and the pill behind every menu tab; material NULL means flat colour.
-	return Fill((float)x, (float)y, (float)w, (float)h, color, amount);
+	return ComputeFillQuad((float)x, (float)y, (float)w, (float)h, RGBOf(color), amount);
 }
 
 zx::hwrender::Quad2D PrepareClear(int left, int top, int right, int bottom, PalEntry color)
 {
 	// [rc4l] A scissored glClear is still a filled rectangle as far as a backend is concerned: the console background and the menu backdrop.
-	return Fill((float)left, (float)top, (float)(right - left), (float)(bottom - top), color, 1.f);
+	return ComputeFillQuad((float)left, (float)top, (float)(right - left), (float)(bottom - top), RGBOf(color), 1.f);
 }
 
 void PrepareFlatFill(int left, int top, int right, int bottom, FTexture *src, bool localOrigin, std::vector<zx::hwrender::Quad2D> &out)
@@ -74,7 +60,7 @@ void PrepareFlatFill(int left, int top, int right, int bottom, FTexture *src, bo
 	for (size_t i = 0; i < tiles.size(); i++)
 	{
 		const FlatTile &t = tiles[i];
-		zx::hwrender::Quad2D q = Fill(t.x, t.y, t.w, t.h, PalEntry(255, 255, 255), 1.f);
+		zx::hwrender::Quad2D q = ComputeFillQuad(t.x, t.y, t.w, t.h, 0xffffffu, 1.f);
 		q.material = mat;
 		q.u1 = ul + t.u1 * (ur - ul); q.u2 = ul + t.u2 * (ur - ul);
 		q.v1 = vt + t.v1 * (vb - vt); q.v2 = vt + t.v2 * (vb - vt);
@@ -118,7 +104,7 @@ void PrepareTexture(FTexture *img, const DCanvas::DrawParms &parms, TextureDraw 
 	// [rc4l] Negated: the backend reads a negative value as an internal palette index, as FGLTexture::Bind does, not a game translation.
 	d.translation = -out.translation;
 	d.texMode = img->bHasCanvas ? kTexOpaque : ComputeTextureMode(parms.style.Flags, !parms.masked);
-	d.kind = 0;
+	d.kind = kQuadRect;
 	d.lx2 = d.ly2 = 0.f;
 	d.target = 0;
 }

@@ -5,6 +5,11 @@
 
 namespace zx { namespace visibility {
 
+long long ComputeFlatPlaneHeight(bool floor, long long d)
+{
+	return floor ? -d : d;
+}
+
 bool ComputeLineCloses(const ClosedLineIn &in)
 {
 	if (in.stacked) return false;

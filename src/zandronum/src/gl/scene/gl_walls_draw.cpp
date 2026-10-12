@@ -61,6 +61,7 @@
 #include "gl/utility/gl_clock.h"
 #include "gl/utility/gl_templates.h"
 #include "features/hwrender/computation/walllight_compute.h"
+#include "features/materials/materials.h"   // [rc4l] MirrorSheenTexture
 
 EXTERN_CVAR(Bool, gl_seamless)
 
@@ -356,7 +357,8 @@ void GLWall::RenderFogBoundary()
 //==========================================================================
 void GLWall::RenderMirrorSurface()
 {
-	if (GLRenderer->mirrortexture == NULL) return;
+	FTexture *const sheen = zx::materials::MirrorSheenTexture();   // [rc4l] features/materials keeps it, for GL and the backend
+	if (sheen == NULL) return;
 
 	// For the sphere map effect we need a normal of the mirror surface,
 	Vector v(glseg.y2-glseg.y1, 0 ,-glseg.x2+glseg.x1);
@@ -378,7 +380,7 @@ void GLWall::RenderMirrorSurface()
 	gl_RenderState.AlphaFunc(GL_GREATER,0);
 	glDepthFunc(GL_LEQUAL);
 
-	FMaterial * pat=FMaterial::ValidateTexture(GLRenderer->mirrortexture, false);
+	FMaterial * pat=FMaterial::ValidateTexture(sheen, false);
 	gl_RenderState.SetMaterial(pat, CLAMP_NONE, 0, -1, false);
 
 	flags &= ~GLWF_GLOW;

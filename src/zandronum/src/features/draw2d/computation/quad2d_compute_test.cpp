@@ -115,3 +115,40 @@ TEST(Quad2D, AFixedColourStyleTakesTheFillColour)
 	EXPECT_EQ(q.g, 0x20);
 	EXPECT_EQ(q.b, 0x30);
 }
+
+TEST(ComputeDrawColorDirect, AColourOrNoPaletteEntryIsDrawnDirect)
+{
+	// [rc4l] The player setup menu clears to black with palcolor -1 and colour 0, which read palette entry -1 when only GL knew the rule.
+	EXPECT_TRUE(zx::draw2d::ComputeDrawColorDirect(-1, 0));
+	EXPECT_TRUE(zx::draw2d::ComputeDrawColorDirect(4, 0xff102030u));
+	EXPECT_FALSE(zx::draw2d::ComputeDrawColorDirect(4, 0));
+}
+
+TEST(Quad2D, AFillIsAnUntexturedRectangleInItsColour)
+{
+	const zx::hwrender::Quad2D q = ComputeFillQuad(2.f, 3.f, 40.f, 50.f, 0xff8000u, 0.5f);
+	EXPECT_EQ(nullptr, q.material);
+	EXPECT_FLOAT_EQ(40.f, q.w); EXPECT_FLOAT_EQ(50.f, q.h);
+	EXPECT_FLOAT_EQ(1.f, q.r); EXPECT_FLOAT_EQ(128.f / 255.f, q.g); EXPECT_FLOAT_EQ(0.f, q.b); EXPECT_FLOAT_EQ(0.5f, q.a);
+	EXPECT_EQ(kBlend2DAlpha, q.blend); EXPECT_EQ(kQuadRect, q.kind);
+	EXPECT_EQ(0, q.clipR - q.clipL);
+}
+
+TEST(Quad2D, ALineCarriesItsFarEndAndAPixelIsOneSquare)
+{
+	const zx::hwrender::Quad2D l = ComputeLineQuad(1, 2, 30, 40, 0x00ff00u);
+	EXPECT_EQ(kQuadLine, l.kind);
+	EXPECT_FLOAT_EQ(30.f, l.lx2); EXPECT_FLOAT_EQ(40.f, l.ly2);
+	EXPECT_FLOAT_EQ(1.f, l.g);
+	const zx::hwrender::Quad2D p = ComputePixelQuad(5, 6, 0);
+	EXPECT_FLOAT_EQ(1.f, p.w); EXPECT_FLOAT_EQ(1.f, p.h); EXPECT_FLOAT_EQ(0.f, p.u2);
+}
+
+TEST(Quad2D, TheScreenTintCoversTheScreenMultipliedOrOver)
+{
+	const zx::hwrender::Quad2D m = ComputeScreenFillQuad(640.f, 400.f, 0.5f, 0.25f, 1.f, 0.75f, true);
+	EXPECT_FLOAT_EQ(640.f, m.w); EXPECT_FLOAT_EQ(400.f, m.h);
+	EXPECT_FLOAT_EQ(0.25f, m.g); EXPECT_FLOAT_EQ(0.75f, m.a);
+	EXPECT_EQ(kBlend2DMultiply, m.blend);
+	EXPECT_EQ(kBlend2DAlpha, ComputeScreenFillQuad(1.f, 1.f, 0.f, 0.f, 0.f, 1.f, false).blend);
+}

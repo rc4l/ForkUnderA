@@ -3,6 +3,8 @@
 
 #include "features/draw2d/screenblend.h"
 #include "features/draw2d/computation/screenblend_compute.h"
+#include "features/draw2d/computation/quad2d_compute.h"   // [rc4l] ComputeScreenFillQuad
+#include "features/levelmesh/levelmesh.h"   // [rc4l] LightListBottom
 
 #include "d_player.h"
 #include "doomstat.h"
@@ -32,8 +34,7 @@ static PalEntry SectorBlend(sector_t *viewsector, int viewArea)
 	bands.Resize(lightlist.Size());
 	for (unsigned i = 0; i < lightlist.Size(); i++)
 	{
-		const fixed_t bottom = (i < lightlist.Size() - 1) ? lightlist[i + 1].plane.ZatPoint(viewx, viewy) : viewsector->floorplane.ZatPoint(viewx, viewy);
-		bands[i].bottom = bottom.Raw();
+		bands[i].bottom = zx::levelmesh::LightListBottom(viewsector, i, viewx, viewy).Raw();
 		bands[i].blend = lightlist[i].blend.d;
 		bands[i].fadeWalls = lightlist[i].caster != NULL && (lightlist[i].caster->flags & FF_FADEWALLS);
 	}
@@ -71,13 +72,7 @@ int ScreenBlends(sector_t *viewsector, int viewArea, bool fixedColormap, int pal
 
 zx::hwrender::Quad2D PrepareScreenFill(const ScreenFill &f)
 {
-	zx::hwrender::Quad2D q;
-	memset(&q, 0, sizeof(q));
-	q.w = (float)SCREENWIDTH; q.h = (float)SCREENHEIGHT;
-	q.u2 = 1; q.v2 = 1;
-	q.r = f.r; q.g = f.g; q.b = f.b; q.a = f.a;
-	q.blend = f.multiply ? 2 : 0;
-	return q;
+	return ComputeScreenFillQuad((float)SCREENWIDTH, (float)SCREENHEIGHT, f.r, f.g, f.b, f.a, f.multiply);
 }
 
 }} // namespace zx::draw2d

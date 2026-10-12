@@ -4,12 +4,13 @@
 // [rc4l] Measurements and readbacks: the scene bench and scale probe, the statistics report, replay capture and screenshots, and their console commands.
 
 #include "features/hwrender/diligent/dgscene_internal.h"
+#include "features/hwrender/backendonly.h"   // [rc4l] BackendOnly
 
 namespace zx { namespace hwrender {
 
 bool SceneBench(int frames, FString &report)
 {
-	if (!g_scene.vb || !g_pso.opaque) { report = "call fua_diligent_scene first"; return false; }
+	if (!SceneDrawable()) { report = "call fua_diligent_scene first"; return false; }
 	if (frames < 1) frames = 1;
 
 	for (int i = 0; i < 20; i++) DrawSceneOnce(true, true);   // warmup
@@ -179,7 +180,7 @@ static double MeasureGpuMs(int frames)
 // the form the answer is actually needed in.
 bool SceneScale(int frames, FString &report)
 {
-	if (!g_scene.vb || !g_pso.opaque) { report = "call fua_diligent_scene first"; return false; }
+	if (!SceneDrawable()) { report = "call fua_diligent_scene first"; return false; }
 	if (frames < 1) frames = 60;
 
 	static const int kSteps[] = { 1, 2, 5, 10, 25, 50, 100 };
@@ -245,7 +246,9 @@ static void ReleaseReplayStaging()
 
 void CaptureReplayFrame(Diligent::IDeviceContext *ctx, Diligent::ISwapChain *swap)
 {
-	if (!zx::replay::WantsFrameVulkan()) return;
+	// [rc4l] Without GL the backend's frames are the session's own stream, asked every frame since that keeps the session alive; beside GL they are its "_vk" stream.
+	const bool primary = BackendOnly();
+	if (!(primary ? zx::replay::WantsFrame() : zx::replay::WantsFrameVulkan())) return;
 
 	auto *dev = GetDevice();
 	if (!dev || !ctx || !swap) return;
@@ -319,7 +322,7 @@ void CaptureReplayFrame(Diligent::IDeviceContext *ctx, Diligent::ISwapChain *swa
 			}
 			ctx->UnmapTextureSubresource(g_replayStaging[read], 0, 0);
 			// Already top-down, so a positive pitch.
-			zx::replay::SubmitFrameVulkan(&rgb[0], w, h, w * 3);
+			(primary ? zx::replay::SubmitFrame : zx::replay::SubmitFrameVulkan)(&rgb[0], w, h, w * 3);
 		}
 	}
 
@@ -400,7 +403,7 @@ unsigned char *ReadBackBuffer(int &w, int &h, int &format, bool &bgra, FString &
 
 bool SceneScreenshot(const char *path, FString &report)
 {
-	if (!g_scene.vb || !g_pso.opaque) { report = "call fua_diligent_scene first"; return false; }
+	if (!SceneDrawable()) { report = "call fua_diligent_scene first"; return false; }
 
 	// [rc4l] Always from the CURRENT camera. The MVP used to be whatever `fua_diligent_scene` had
 	// snapshotted, so a screenshot taken after the player turned showed the room they used to be

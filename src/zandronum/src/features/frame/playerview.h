@@ -1,16 +1,38 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 rc4l
 //
-// [rc4l] The player's view for a frame no GL renderer draws: the engine half of FGLRenderer::RenderView, RenderViewpoint and EndDrawScene.
+// [rc4l] The player's view: the frame and viewpoint set-up GL's RenderView and RenderViewpoint share with a frame no GL renderer draws, and that frame itself.
 
 #ifndef ZX_PLAYERVIEW_H
 #define ZX_PLAYERVIEW_H
 
 struct player_t;
+class AActor;
 
 namespace zx { namespace frame {
 
-// [rc4l] The frame's clocks and camera textures, the view set up, the standalone scene, and the weapon, targeter and screen tint into the 2D capture; `paletteBrightness` darkens a colormap's tint.
+// [rc4l] The lens a frame's player view is drawn with.
+struct FrameLens
+{
+	float fov, ratio, fovRatio;
+};
+
+// [rc4l] Before any view of a frame: a new camera's interpolation reset, the tic fraction and clock, particles, last frame's camera textures, the fixed colormap and the lens.
+FrameLens BeginPlayerFrame(player_t *player);
+
+// [rc4l] Forget the last camera, so the next frame starts uninterpolated (a new frame buffer, a game restart).
+void ForgetCamera();
+
+// [rc4l] Before a viewpoint's walks: which view they belong to, the backend's lens for the player's, the frame set up from the camera, its view area and features/viewsetup's view; returns what EndViewpoint restores.
+bool BeginViewpoint(AActor *camera, float fov, float fovRatio, bool mainview, bool toscreen);
+
+// [rc4l] After it: the frame count, the interpolations restored, and the walks' view as it was.
+void EndViewpoint(bool savedMainView);
+
+// [rc4l] Only the map section the eye is in is drawn.
+void MarkMapSection();
+
+// [rc4l] The frame no GL renderer draws: its views, the standalone scene, and the weapon, targeter and screen tint into the 2D capture; `paletteBrightness` darkens a colormap's tint.
 void RenderPlayerView(player_t *player, int paletteBrightness);
 
 }} // namespace zx::frame

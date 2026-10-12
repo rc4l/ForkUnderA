@@ -157,7 +157,7 @@ SDLGLVideo::SDLGLVideo (int parm)
 
 SDLGLVideo::~SDLGLVideo ()
 {
-	if (GLRenderer != NULL) GLRenderer->FlushTextures();
+	FMaterial::FlushAll();
 }
 
 void SDLGLVideo::StartModeIterator (int bits, bool fs)
@@ -304,7 +304,7 @@ bool SDLGLVideo::SetResolution (int width, int height, int bits)
 	// interface?
 #ifndef NO_GL
 
-	if (GLRenderer != NULL) GLRenderer->FlushTextures();
+	FMaterial::FlushAll();
 	I_ShutdownGraphics();
 
 	Video = new SDLGLVideo(0);

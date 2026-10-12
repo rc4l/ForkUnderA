@@ -13,7 +13,7 @@
 #ifndef ZX_LEVELMESH_MODELMESH_H
 #define ZX_LEVELMESH_MODELMESH_H
 
-#include "features/levelmesh/staticmesh.h"   // MeshPiece
+#include "features/levelmesh/staticmesh.h"   // [rc4l] MeshPiece
 
 class GLSprite;
 class FMaterial;
@@ -37,8 +37,7 @@ void ModelCaptureEnd();
 // True when a backend is carrying the frame and a surface should be captured rather than rasterised.
 bool ModelCaptureActive();
 
-// One surface: an index range into the model's own buffers, the two frames to lerp between, and the
-// skin's material to draw it with. base1/base2 are vertex offsets, already including the frame stride.
+// [rc4l] One surface: an index range into the model's buffers, the two frames to lerp between (base1/base2, vertex offsets including the frame stride) and the skin's material.
 void CaptureModelSurface(const FModelVertexBuffer *vbuf, unsigned int base1, unsigned int base2,
 	float inter, unsigned int firstIndex, unsigned int indexCount,
 	const void *material, int translation);

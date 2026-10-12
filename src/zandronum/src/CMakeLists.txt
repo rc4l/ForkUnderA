@@ -1613,6 +1613,8 @@ add_executable( zdoom WIN32
 	features/sprites/pspritebuild.cpp
 	features/frame/standaloneframe.cpp
 	features/frame/playerview.cpp
+	features/frame/levelrenderer.cpp
+	features/display/display.cpp
 	features/hwrender/backendvideo.cpp
 	features/hwrender/backendrenderer.cpp
 	features/visibility/viswalk.cpp
@@ -1917,6 +1919,11 @@ source_group("Network\\Protocol\\Generator" REGULAR_EXPRESSION "^${CMAKE_SOURCE_
 # release binaries ship without it (no remote-control surface). Enable with -DFUA_MCP_BRIDGE=ON.
 # mcp_bridge.cpp = transport/lifecycle (header-pure); mcp_rpc.cpp = typed RPC dispatch + determinism/
 # state/session handlers (engine-facing); the rest are reader/crash/input/hud backends.
+# [rc4l] Without the backend its entry points answer that there is none, so GL carries every frame.
+if( NOT FUA_DILIGENT )
+	target_sources( zdoom PRIVATE features/hwrender/backendstubs.cpp )
+endif()
+
 # [rc4l] Diligent (Vulkan) backend for the renderer swap -- see features/hwrender/diligent/.
 # The probe is the only consumer today; it proves the library links and a device creates in-process.
 if( FUA_DILIGENT )

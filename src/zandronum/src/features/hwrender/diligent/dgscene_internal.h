@@ -363,6 +363,10 @@ void GetSkyFog(float &r, float &g, float &b, float &density);
 bool CreateColorTarget(int w, int h, const char *name, Diligent::RefCntAutoPtr<Diligent::ITexture> &color);
 zx::hwrender::BackendCamera CurrentCamera();
 void DrawSceneOnce(bool present = true, bool pump = true);
+// [rc4l] Whether the uploaded scene can be drawn: its geometry and pipelines are up.
+bool SceneDrawable();
+// [rc4l] Record, roll the frame's pass stats, present, and keep the window in step; the world's frames and the 2D-only ones alike.
+void PresentFrame(Diligent::IDeviceContext *ctx, Diligent::ISwapChain *swap, bool pump);
 void PhaseReport(FString &out);
 
 // [rc4l] Pipelines and material bindings (dgpipelines.cpp).

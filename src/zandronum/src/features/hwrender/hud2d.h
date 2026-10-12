@@ -22,37 +22,11 @@
 #ifndef ZX_HUD2D_H
 #define ZX_HUD2D_H
 
+#include "basictypes.h"   // [rc4l] fixed_t
+#include "features/draw2d/computation/quad2d_compute.h"   // [rc4l] Quad2D, the record draw2d works out
+
 namespace zx { namespace hwrender {
 
-// One screen-space textured quad. Coordinates are in the engine's 2D space -- ortho(0, W, H, 0),
-// origin top-left, Y down -- exactly as OpenGLFrameBuffer::Begin2D sets it up.
-struct Quad2D
-{
-	const void *material;              // FMaterial*, identity only; NULL means an untextured fill
-	float       x, y, w, h;            // destination rect, screen pixels
-	float       u1, v1, u2, v2;        // source rect, already flipped/windowed by the caller
-	float       r, g, b, a;            // colour modulation, 0..1
-	int         clipL, clipT, clipR, clipB;   // scissor, screen pixels; clipR <= clipL means none
-	int         blend;                 // 0 normal alpha, 1 additive
-	// [rc4l] Palette remap index, in FMaterial::CreateTexBuffer's convention. Coloured text is the
-	// same glyph under a different translation; ignoring it renders every font in the base palette.
-	int         translation;
-	// [rc4l] TexMode from gl_interface.h. Coloured text is drawn with TM_MASK, where the texture is
-	// only a coverage mask and the vertex colour supplies RGB -- multiplying by the texel instead
-	// renders the whole font muddy and dark.
-	int         texMode;
-	// [rc4l] What this record IS: 0 a textured/solid rect, 1 a line from (x,y) to (lx2,ly2).
-	//
-	// The automap is drawn with GL_LINES through FGLRenderer::DrawLine, not with DrawTexture, so a
-	// capture that only understood rects recorded the background and none of the map -- the automap
-	// came up as a flat fill. A line cannot be expressed as an axis-aligned rect because it is
-	// diagonal, and it cannot go in a separate list either: 2D is painter's algorithm, and lines
-	// interleave with the text drawn over them.
-	int         kind;
-	float       lx2, ly2;
-	// [rc4l] Which window it is for, a k2D target, stamped by Record2D from Set2DTarget.
-	int         target;
-};
 
 // [rc4l] A 2D draw for both windows, GL's alone (the backend skips it) or the backend's alone (GL draws it with colour writes off).
 enum { k2DBoth = 0, k2DGLOnly = 1, k2DBackendOnly = 2 };
@@ -74,7 +48,7 @@ void RendererRateShown(bool backend, int &ms, int &fps);
 // Same machinery a portal, a mirror or a skybox needs.
 // [rc4l] w by h is the picture's size in pixels, aspect the shape GL frames it to (the texture's scaled size), which differ when ANIMDEFS fits it smaller.
 void RenderCameraTexture(const void *material, int w, int h, float aspect,
-                         int px, int py, int pz, unsigned int pangle, int ppitch, float fovDeg);
+                         fixed_t px, fixed_t py, fixed_t pz, unsigned int pangle, int ppitch, float fovDeg);
 
 // [rc4l] The sky's fade layer: a translucent sheet in the sector's fade colour that GL draws over
 // the sky after the dome. Set every frame the sky portal runs, zeroed when it should not be drawn.

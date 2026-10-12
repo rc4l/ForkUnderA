@@ -130,6 +130,12 @@ void CollectSideBudgets(Collected &out)
 // [rc4l] Full-level bake arming. One frame, consumed once -- see levelmesh.h.
 static bool g_pendingFullBake = false;
 void ArmFullBake() { g_pendingFullBake = true; }
+
+fixed_t LightListBottom(const sector_t *sector, unsigned entry, fixed_t x, fixed_t y)
+{
+	const TArray<lightlist_t> &lightlist = sector->e->XFloor.lightlist;
+	return entry + 1 < lightlist.Size() ? lightlist[entry + 1].plane.ZatPoint(x, y) : sector->floorplane.ZatPoint(x, y);
+}
 bool TakePendingFullBake()
 {
 	const bool v = g_pendingFullBake;

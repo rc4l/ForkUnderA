@@ -207,10 +207,6 @@ CCMD( fua_dg_lights )
 	}
 	Printf( "fua_dg_lights: %d active, player floor %.1f\n", n, floorz );
 }
-// [rc4l] Collect every active dynamic light in the level into the shared storage buffer.
-//
-// Rebuilt every frame -- lights move, spawn and die. See fuaDynLight in the shader for why there is
-// no per-surface light list at all.
 // [rc4l] The ids a light is linked to, as PieceStackId names surfaces: each subsector its flood reached, and numsubsectors plus each sidedef it lights.
 static void CollectLightLinks(ADynamicLight *light, std::vector<unsigned> &out)
 {
@@ -230,16 +226,25 @@ struct LightLinks
 	std::vector<unsigned> ids;
 };
 
+// [rc4l] The lights as last collected: each one's links, kept until it moves or changes reach, and what they were collected under.
+struct LightCollection
+{
+	std::vector<LightLinks> links;
+	std::vector<const std::vector<unsigned> *> touched;
+	zx::hwrender::LightsStamp stamp;
+};
+static LightCollection g_collected = { {}, {}, { -1, -1, -1 } };
+
+// [rc4l] Every active dynamic light in the level, collected into the shared storage buffer once per tic (see fuaDynLight in the shader for why there is no per-surface light list).
 void CollectDynamicLights(Diligent::IDeviceContext *ctx)
 {
-	static std::vector<LightLinks> links;
-	static std::vector<const std::vector<unsigned> *> touched;
+	std::vector<LightLinks> &links = g_collected.links;
+	std::vector<const std::vector<unsigned> *> &touched = g_collected.touched;
 	// [rc4l] Once per tic: lights change only in the ticker, and every pass of a frame (mirrors, stacked views, sky, camera textures) reads the same ones.
-	static int s_tic = -1, s_gen = -1, s_flags = -1;
 	const int flags = (fua_dg_dynlights ? 1 : 0) | (fua_dg_lightlinks ? 2 : 0);
-	if (gametic == s_tic && zx::levelmesh::LevelGeneration() == s_gen && flags == s_flags) return;
-	if (zx::levelmesh::LevelGeneration() != s_gen) links.clear();
-	s_tic = gametic; s_gen = zx::levelmesh::LevelGeneration(); s_flags = flags;
+	bool newLevel = false;
+	if (!zx::hwrender::ComputeLightsDue(g_collected.stamp, gametic, zx::levelmesh::LevelGeneration(), flags, newLevel)) return;
+	if (newLevel) links.clear();
 	g_lightCount = 0;
 	touched.clear();
 	if (fua_dg_dynlights && g_lightBuf)
@@ -256,24 +261,24 @@ void CollectDynamicLights(Diligent::IDeviceContext *ctx)
 			if (radius <= 0.f) continue;
 			if ((unsigned)g_lightCount >= g_lightBufCapacity / 2) break;
 
-			// The additive/subtractive intensity scaling gl_GetLight applies.
-			const float cs = (gl_lights_additive || (light->flags4 & MF4_ADDITIVE)) ? 0.2f : 1.0f;
-			float r = light->GetRed()   / 255.0f * cs * gl_lights_intensity;
-			float g = light->GetGreen() / 255.0f * cs * gl_lights_intensity;
-			float b = light->GetBlue()  / 255.0f * cs * gl_lights_intensity;
+			float rgb[3];
+			zx::hwrender::ComputeDynLightColor(light->GetRed(), light->GetGreen(), light->GetBlue(),
+				gl_lights_additive || (light->flags4 & MF4_ADDITIVE), gl_lights_intensity, rgb);
 
 			// Same axis swap the mesh uses: (x, z, y).
 			g_lightData.Push(FIXED2FLOAT(light->x));
 			g_lightData.Push(FIXED2FLOAT(light->z));
 			g_lightData.Push(FIXED2FLOAT(light->y));
 			g_lightData.Push(radius);
-			g_lightData.Push(r);
-			g_lightData.Push(g);
-			g_lightData.Push(b);
+			g_lightData.Push(rgb[0]);
+			g_lightData.Push(rgb[1]);
+			g_lightData.Push(rgb[2]);
 			g_lightData.Push(light->IsSubtractive() ? 1.0f : 0.0f);
 			if ((size_t)g_lightCount >= links.size()) links.resize(g_lightCount + 1);
 			LightLinks &ll = links[g_lightCount];
-			if (ll.light != light || ll.x != light->x || ll.y != light->y || ll.z != light->z || ll.radius != light->GetRadius())
+			const zx::hwrender::LightLinkKey kept = { ll.light, ll.x.Raw(), ll.y.Raw(), ll.z.Raw(), ll.radius };
+			const zx::hwrender::LightLinkKey now = { light, light->x.Raw(), light->y.Raw(), light->z.Raw(), light->GetRadius() };
+			if (zx::hwrender::ComputeLightLinksStale(kept, now))
 			{
 				ll.light = light;
 				ll.x = light->x; ll.y = light->y; ll.z = light->z;

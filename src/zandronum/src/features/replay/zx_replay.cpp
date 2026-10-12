@@ -98,6 +98,7 @@ struct Stream
 	// longer fed -- see OpenGLFrameBuffer::Swap. It stays "running", so without this fua_clip wrote a
 	// second file of nothing beside the real one and announced both.
 	unsigned int            framesIn = 0;
+	int64_t                 lastFrameUs = 0;   // [rc4l] when it was last given a frame, game thread only
 	const char             *tag = "";          // filename suffix; "" for the primary stream
 	bool                    takesAudio = false;
 };
@@ -346,6 +347,7 @@ void PushFrame(Stream *st, const unsigned char *rgbTopRow, int w, int h, int pit
 
 	RawFrame f;
 	f.w = w; f.h = h; f.tUs = NowUs();
+	st->lastFrameUs = f.tUs;
 	f.rgb.resize((size_t)w * h * 3);
 	// Copy to a top-down tightly-packed buffer (pitch may be negative for GL bottom-up readback).
 	for (int y = 0; y < h; ++y)
@@ -481,7 +483,7 @@ CCMD(fua_clip)
 	for (int i = 0; i < STREAM_COUNT; i++)
 	{
 		Stream &st = g_streams[i];
-		if (!st.running || st.framesIn == 0) continue;
+		if (!st.running || !zx::ComputeStreamLive(st.framesIn, st.lastFrameUs, NowUs())) continue;
 		std::string p = path;
 		if (st.tag[0] != 0)
 		{

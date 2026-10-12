@@ -7,20 +7,21 @@
 #include "features/hwrender/backendonly.h"
 #include "features/hwrender/hud2d.h"
 #include "features/draw2d/draw2d.h"
-#include "features/display/computation/display_compute.h"
+#include "features/display/display.h"
+#include "features/frame/playerview.h"   // [rc4l] ForgetCamera
 #include "features/hwrender/computation/imageresize_compute.h"
 #include "features/video-scale/videoscale.h"
 
 #include "c_cvars.h"
-#include "i_system.h"   // atterm
+#include "i_system.h"   // [rc4l] atterm
 #include "m_argv.h"
 #include "v_palette.h"
 #include "v_video.h"
 
 // [rc4l] GL's capability flags and CPU-side palette and brightmap code, which need no context.
 #include "gl/system/gl_interface.h"
-#include "gl/textures/gl_texture.h"     // gl_GenerateGlobalBrightmapFromColormap
-#include "gl/textures/gl_translate.h"   // GLTranslationPalette
+#include "gl/textures/gl_texture.h"     // [rc4l] gl_GenerateGlobalBrightmapFromColormap
+#include "gl/textures/gl_translate.h"   // [rc4l] GLTranslationPalette
 
 #if defined(_WIN32) && defined(FUA_DILIGENT)
 #include "win32gliface.h"
@@ -29,6 +30,7 @@
 EXTERN_CVAR(Bool, fua_vulkan)
 EXTERN_CVAR(Bool, fua_dg_standalone)
 EXTERN_CVAR(Bool, fua_dg_embed)
+EXTERN_CVAR(Bool, fua_surface_mapbake_auto)
 
 namespace zx { namespace hwrender {
 
@@ -37,13 +39,14 @@ int g_backendOnly = -1;
 
 #if defined(_WIN32) && defined(FUA_DILIGENT)
 // [rc4l] The switches as the user's config had them, put back before it is written so a -vulkan launch leaves no trace there.
-bool g_savedVulkan, g_savedStandalone, g_savedEmbed;
+bool g_savedVulkan, g_savedStandalone, g_savedEmbed, g_savedMapBake;
 
 void RestoreSavedSwitches()
 {
 	fua_vulkan = g_savedVulkan;
 	fua_dg_standalone = g_savedStandalone;
 	fua_dg_embed = g_savedEmbed;
+	fua_surface_mapbake_auto = g_savedMapBake;
 }
 #endif
 }
@@ -64,11 +67,14 @@ void BeginBackendOnly()
 	g_savedVulkan = fua_vulkan;
 	g_savedStandalone = fua_dg_standalone;
 	g_savedEmbed = fua_dg_embed;
+	g_savedMapBake = fua_surface_mapbake_auto;
 	// [rc4l] Registered after the config's own save, so it runs before it.
 	atterm(RestoreSavedSwitches);
 	fua_vulkan = true;
 	fua_dg_standalone = true;
 	fua_dg_embed = true;
+	// [rc4l] With no GL derivation to fall back on, a moved sector must re-bake from the map.
+	fua_surface_mapbake_auto = true;
 	// [rc4l] What gl_LoadExtensions would have found on any card the backend runs on; the sprite UVs read it.
 	gl.flags |= RFL_NPOT_TEXTURE;
 #endif
@@ -77,10 +83,6 @@ void BeginBackendOnly()
 }} // namespace zx::hwrender
 
 #if defined(_WIN32) && defined(FUA_DILIGENT)
-
-EXTERN_CVAR(Float, Gamma)
-EXTERN_CVAR(Float, vid_contrast)
-EXTERN_CVAR(Float, vid_brightness)
 
 // [rc4l] Win32GLFrameBuffer without its context: the window, the modes and the gamma ramp, and nothing GL.
 class DiligentFrameBuffer : public Win32GLFrameBuffer
@@ -91,8 +93,8 @@ public:
 	DiligentFrameBuffer(void *hMonitor, int width, int height, int bits, int refreshHz, bool fullscreen)
 		: Win32GLFrameBuffer(hMonitor, width, height, bits, refreshHz, fullscreen, false)
 	{
-		memcpy(mSourcePalette, GPalette.BaseColors, sizeof(PalEntry) * 256);
-		UpdatePalette();
+		mColors.Load();
+		zx::frame::ForgetCamera();
 		gl_GenerateGlobalBrightmapFromColormap();
 		DoSetGamma();
 		Accel2D = true;
@@ -105,10 +107,15 @@ public:
 
 	void Update()
 	{
-		if (!CanUpdate()) return;
+		// [rc4l] An inactive window is not presented to, as GL's is not, but its level is still set up and baked.
+		if (!CanUpdate())
+		{
+			zx::hwrender::PresentBackendOnly(false);
+			return;
+		}
 		Begin2D(false);
 		DrawRateStuff();
-		zx::hwrender::PresentBackendOnly();
+		zx::hwrender::PresentBackendOnly(true);
 		Unlock();
 		// [rc4l] After Unlock, as GL's, since resizing reallocates the canvas a lock aliases.
 		FollowClientSize();
@@ -118,15 +125,20 @@ public:
 	bool SetBrightness(float) { DoSetGamma(); return true; }
 	bool SetContrast(float) { DoSetGamma(); return true; }
 
-	void UpdatePalette()
-	{
-		mPaletteBrightness = zx::display::ComputePaletteBrightness(reinterpret_cast<const unsigned *>(&GPalette.BaseColors[0]), 256);
-	}
-	void GetFlashedPalette(PalEntry pal[256]) { memcpy(pal, mSourcePalette, 256 * sizeof(PalEntry)); }
-	PalEntry *GetPalette() { return mSourcePalette; }
-	bool SetFlash(PalEntry rgb, int amount) { mFlash = PalEntry(amount, rgb.r, rgb.g, rgb.b); return true; }
-	void GetFlash(PalEntry &rgb, int &amount) { rgb = mFlash; rgb.a = 0; amount = mFlash.a; }
+	// [rc4l] The palette, its brightness and the flash are features/display's, as GL's frame buffer keeps them.
+	void UpdatePalette() { mColors.UpdateBrightness(); }
+	void GetFlashedPalette(PalEntry pal[256]) { memcpy(pal, mColors.palette, 256 * sizeof(PalEntry)); }
+	PalEntry *GetPalette() { return mColors.palette; }
+	bool SetFlash(PalEntry rgb, int amount) { mColors.SetFlash(rgb, amount); return true; }
+	void GetFlash(PalEntry &rgb, int &amount) { mColors.GetFlash(rgb, amount); }
 	int GetPageCount() { return 1; }
+	// [rc4l] A game restart reloads the palette and the brightmap colormap, as GL's does.
+	void GameRestart()
+	{
+		mColors.Load();
+		zx::frame::ForgetCamera();
+		gl_GenerateGlobalBrightmapFromColormap();
+	}
 
 	// [rc4l] 2D is recorded rather than drawn, so there is no state to set up for it.
 	bool Begin2D(bool) { return true; }
@@ -174,7 +186,7 @@ public:
 	void WipeCleanup() {}
 	bool Is8BitMode() { return false; }
 
-	int PaletteBrightness() const { return mPaletteBrightness; }
+	int PaletteBrightness() const { return mColors.brightness; }
 
 	// [rc4l] The screenshot is the backend's frame, read back and brought to the screen's size when the window it is drawn for is another (video scaling, a windowed mode change).
 	void GetScreenshotBuffer(const BYTE *&buffer, int &pitch, ESSType &color_type)
@@ -207,11 +219,9 @@ private:
 	// [rc4l] GL's per-frame reconcile without its scale buffer: the screen follows the window's client area and the scale cvars, and the backend draws at the window's size.
 	void FollowClientSize()
 	{
-		RECT r;
-		if (Window == NULL || !GetClientRect(Window, &r)) return;
-		const int cw = int(r.right - r.left), ch = int(r.bottom - r.top);
+		int cw = 0, ch = 0;
 		// [rc4l] A minimized window has no client area; the last good size is kept until it comes back.
-		if (cw <= 0 || ch <= 0) return;
+		if (!ClientSize(cw, ch) || cw <= 0 || ch <= 0) return;
 		int wantW = 0, wantH = 0;
 		if (zx::ReconcileRenderSize(cw, ch, GetWidth(), GetHeight(), mClientW, mClientH, wantW, wantH) == zx::SCALE_RECONCILE_RESIZE)
 			zx::ResizeScreenInPlace(this, wantW, wantH);
@@ -223,13 +233,11 @@ private:
 	{
 		if (!m_supportsGamma) return;
 		WORD ramp[768];
-		zx::display::ComputeGammaRamp(Gamma, vid_contrast, vid_brightness, ramp);
+		zx::display::CurrentGammaRamp(ramp);
 		SetGammaTable(ramp);
 	}
 
-	PalEntry mFlash;
-	PalEntry mSourcePalette[256];
-	int mPaletteBrightness = 0;
+	zx::display::ScreenColors mColors;
 	BYTE *mShot = NULL;
 	int mClientW = 0, mClientH = 0;   // [rc4l] the client size last reconciled
 	std::vector<zx::hwrender::Quad2D> mFlatQuads;   // [rc4l] kept, so a fill settles at its high-water mark
@@ -253,16 +261,4 @@ int BackendPaletteBrightness()
 
 }} // namespace zx::hwrender
 
-#else
-
-namespace zx { namespace hwrender {
-DFrameBuffer *CreateBackendFrameBuffer(void *, int, int, int, int, bool) { return NULL; }
-int BackendPaletteBrightness() { return 0; }
-bool OpenBackendOutput(int, int) { return false; }
-int BackendMaxTextureSize() { return 0; }
-void NoteWorldView() {}
-void PresentBackendOnly() {}
-unsigned char *ReadBackendFrame(int &, int &) { return NULL; }
-}} // namespace zx::hwrender
-
-#endif
+#endif   // [rc4l] a build without the backend takes these from backendstubs.cpp

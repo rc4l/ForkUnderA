@@ -14,6 +14,9 @@ namespace zx {
 // elapsed since the last captured frame to grab another. targetFps <= 0 disables capture.
 bool ComputeFrameDue(int64_t lastCaptureUs, int64_t nowUs, int targetFps);
 
+// [rc4l] Whether a stream is still being fed, so a clip is saved from it: frames have arrived and the last within a second, which a stream a renderer stopped drawing to fails.
+bool ComputeStreamLive(unsigned framesIn, int64_t lastFrameUs, int64_t nowUs);
+
 // Downscale target: cap the height to maxH (0 or a source already within the cap = keep native),
 // preserving aspect ratio. Both dimensions are forced even (H.264/NV12 wants even dims) with a floor
 // of 2 so a valid encode surface always results.

@@ -217,11 +217,7 @@ void MeshSquash(const MeshRange &range);
 
 bool MeshStore(MeshRange &range, const MeshVertex *verts, int count);
 
-// [rc4l] The span the backend must upload again, since a door, lift or crusher rewrites a seg's vertices in place.
-//
-// Reported in mesh-vertex units, and only when the bytes ACTUALLY changed -- uncacheable segs
-// re-capture every frame and rewrite identical vertices, so a naive "was written" flag would report
-// the whole level dirty on every frame forever.
+// [rc4l] The span the backend must upload again after a door, lift or crusher rewrote a seg's vertices, in mesh-vertex units and only when the bytes actually changed.
 void MeshTakeDirty(unsigned int &lo, unsigned int &hi);
 
 // [rc4l] The dirty spans, itemised. One lo..hi covers everything BETWEEN two changes, which on a

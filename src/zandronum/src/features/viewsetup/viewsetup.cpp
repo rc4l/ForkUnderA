@@ -9,9 +9,9 @@
 #include "actor.h"
 #include "d_player.h"
 #include "doomstat.h"
-#include "r_utility.h"   // viewpitch
-#include "v_video.h"     // AspectMultiplier, WidescreenRatio
-#include "cl_demo.h"     // CLIENTDEMO_IsInFreeSpectateMode
+#include "r_utility.h"   // [rc4l] viewpitch
+#include "v_video.h"     // [rc4l] AspectMultiplier, WidescreenRatio
+#include "cl_demo.h"     // [rc4l] CLIENTDEMO_IsInFreeSpectateMode
 #include "c_cvars.h"
 #include "dthinker.h"
 #include "g_level.h"
@@ -23,11 +23,11 @@
 
 // [rc4l] GL's level settings and view state until they move out of gl/ (P5): the pixel stretch, the view's area, and the light class.
 #include "gl/data/gl_data.h"
-#include "gl/renderer/gl_renderer.h"     // in_area
-#include "gl/dynlights/gl_dynlight.h"    // ADynamicLight, STAT_DLIGHT
-#include "gl/renderer/gl_colormap.h"     // CM_*
-#include "g_shared/a_artifacts.h"        // APowerTorch, APowerLightAmp
-#include "r_data/colormaps.h"            // INVERSECOLORMAP
+#include "gl/renderer/gl_renderer.h"     // [rc4l] in_area
+#include "gl/dynlights/gl_dynlight.h"    // [rc4l] ADynamicLight, STAT_DLIGHT
+#include "gl/renderer/gl_colormap.h"     // [rc4l] CM_*
+#include "g_shared/a_artifacts.h"        // [rc4l] APowerTorch, APowerLightAmp
+#include "r_data/colormaps.h"            // [rc4l] INVERSECOLORMAP
 
 EXTERN_CVAR(Bool, r_deathcamera)
 
@@ -55,34 +55,36 @@ void SetupView(AActor *camera, float fov, long frameMS)
 	g_view.pitch = ComputeStretchedPitch(viewpitch, glset.pixelstretch);
 	g_view.roll = (float)(camera->roll >> ANGLETOFINESHIFT) * 360.0f / FINEANGLES;
 	g_view.frustumAngle = ComputeFrustumAngle(g_view.pitch, fov, AspectMultiplier(WidescreenRatio));
-	// [BB] consoleplayer can toggle the chase cam; [AK] not in free spectate. The chase camera and a dead player's death camera see the player's own body.
-	const bool outside = camera->player != NULL && !CLIENTDEMO_IsInFreeSpectateMode() &&
-		(camera->player - players != consoleplayer || !players[consoleplayer].bSpectating) &&
-		((players[consoleplayer].cheats & CF_CHASECAM) || (r_deathcamera && camera->health <= 0)) && camera == camera->player->mo;
+	// [rc4l] The chase camera (consoleplayer only, never in free spectate) and a dead player's death camera see the player's own body.
+	const bool outside = camera->player != NULL && ComputeSeesOwnBody(true, CLIENTDEMO_IsInFreeSpectateMode(), camera->player - players == consoleplayer,
+		players[consoleplayer].bSpectating, (players[consoleplayer].cheats & CF_CHASECAM) != 0, r_deathcamera, camera->health <= 0,
+		camera == camera->player->mo);
 	g_view.viewActor = outside ? NULL : camera;
 }
 
 const ViewSetup &CurrentView() { return g_view; }
 
+static_assert(CM_DEFAULT == kCmDefault && CM_FIRSTSPECIALCOLORMAP == kCmFirstSpecial && CM_LITE == kCmLite && CM_TORCH == kCmTorch &&
+	NOFIXEDCOLORMAP == kNoFixedColormap && INVERSECOLORMAP == kInverseColormap, "the colormap values must match viewsetup_compute.h");
+
 int FixedColormap(player_t *player)
 {
 	player_t *cplayer = player->camera->player;
-	if (cplayer == NULL) return CM_DEFAULT;
-	if (cplayer->extralight == INT_MIN)
+	FixedColormapIn in = { cplayer != NULL, false, kNoFixedColormap, -1, kNoLightPower };
+	if (cplayer != NULL)
 	{
-		extralight = 0;
-		return CM_FIRSTSPECIALCOLORMAP + INVERSECOLORMAP;
+		in.inverse = cplayer->extralight == INT_MIN;
+		// [rc4l] The inverse map draws without the extra light it was signalled through.
+		if (in.inverse) extralight = 0;
+		in.fixedColormap = cplayer->fixedcolormap;
+		in.fixedLightLevel = cplayer->fixedlightlevel;
+		for (AInventory *inv = cplayer->mo->Inventory; inv; inv = inv->Inventory)
+		{
+			if (inv->IsKindOf(RUNTIME_CLASS(APowerTorch))) in.lightPower = kTorchPower;
+			else if (inv->IsKindOf(RUNTIME_CLASS(APowerLightAmp))) in.lightPower = kLightAmpPower;
+		}
 	}
-	if (cplayer->fixedcolormap != NOFIXEDCOLORMAP) return CM_FIRSTSPECIALCOLORMAP + cplayer->fixedcolormap;
-	if (cplayer->fixedlightlevel == -1) return CM_DEFAULT;
-	// [rc4l] Light amplifiers need their own handling; the last such power in the inventory wins.
-	int colormap = CM_DEFAULT;
-	for (AInventory *in = cplayer->mo->Inventory; in; in = in->Inventory)
-	{
-		if (in->IsKindOf(RUNTIME_CLASS(APowerTorch))) colormap = cplayer->fixedlightlevel + CM_TORCH;
-		else if (in->IsKindOf(RUNTIME_CLASS(APowerLightAmp))) colormap = CM_LITE;
-	}
-	return colormap;
+	return ComputeFixedColormap(in);
 }
 
 void TurnView(unsigned viewAngle)
@@ -115,11 +117,10 @@ bool NoPortalRejects(fixed_t, fixed_t) { return false; }
 bool NoPortalMirrors() { return false; }
 int DynamicLightCount() { return g_view.dynamicLights ? 1 : 0; }
 void ViewAngles(float &yaw, float &pitch) { yaw = g_view.yaw; pitch = g_view.pitch; }
-FTexture *ParticleTexture(int style) { return zx::materials::ParticleTexture(style); }
 
 const zx::hwrender::SpriteViewProvider g_provider =
 {
-	ViewActor, ViewVector, NextSpriteIndex, NoPortalRejects, NoPortalMirrors, DynamicLightCount, ViewAngles, ParticleTexture
+	ViewActor, ViewVector, NextSpriteIndex, NoPortalRejects, NoPortalMirrors, DynamicLightCount, ViewAngles
 };
 
 } // namespace

@@ -21,8 +21,7 @@ SpriteRect ComputeSpriteRect(const SpriteRect &frame, float ul, float ur, bool m
 // [rc4l] Edges for a sprite facing along (dirX, dirY): the view vector for a face sprite, the actor's angle for a wall sprite.
 SpriteEdges ComputeSpriteEdges(float x, float y, float z, const SpriteRect &r, bool wallSprite, float dirX, float dirY);
 
-// [rc4l] The four corners GLSprite::Draw hands GL, as (x, height, y): top left, top right, bottom left, bottom right.
-// [rc4l] An XY billboard tilts with the camera's pitch and a rolled sprite turns about the sight line, both about the quad's centre.
+// [rc4l] The four corners GLSprite::Draw hands GL as (x, height, y), top left to bottom right, an XY billboard tilted by the camera's pitch and a rolled sprite turned about the sight line, both about the quad's centre.
 void ComputeSpriteCorners(const SpriteEdges &e, bool xyBillboard, bool roll, float viewYaw, float viewPitch,
 	float rollDegrees, float out[4][3]);
 

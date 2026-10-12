@@ -594,32 +594,30 @@ void DrawSceneOnce(bool present, bool pump)
 	// [rc4l] 2D last, over everything, with depth off entirely -- it is the frame's top layer.
 	Draw2D(ctx);
 
-#ifdef ZX_ENABLE_REPLAY
-	// [rc4l] Instant replay: hand this frame to the Vulkan recorder stream before presenting.
-	//
-	// Present flips to the next swapchain image, after which the current back buffer's contents are
-	// undefined -- reading it afterwards gave a convincing all-black PNG the first time
-	// SceneScreenshot did it. So the copy has to happen here.
-	if (present) CaptureReplayFrame(ctx, swap);
-#endif
+	if (present) PresentFrame(ctx, swap, pump);
+}
 
-	if (present)
-	{
-		g_stats.lastFramePasses = g_framePasses; g_stats.lastFrameWorldMs = g_frameWorldMs;
-		g_stats.lastFramePassList = g_framePassList;
-		for (int k = 0; k < 6; k++) { g_stats.lastFramePhase[k] = g_framePhase[k]; g_framePhase[k] = 0.0; }
-		g_framePasses = 0; g_frameWorldMs = 0.0;
-		g_framePassList = "";
-		swap->Present(0);
-		RecordPresentInterval();
-		// [rc4l] The Win32 message pump is NOT free -- PeekMessage on a window with pending paint
-		// work costs more than the draw at these scales. Pumping every frame put 1.5 ms into a
-		// 0.01 ms submission, so the benchmark pumps sparsely and a real backend would pump once
-		// per engine frame, not once per present.
-		if (pump) Fua_PumpBackendWindow(GetBackendWindow());
-		// The embedded surface follows the engine's client area, which can change at runtime.
-		Fua_SyncBackendWindowToParent(GetBackendWindow());
-	}
+bool SceneDrawable() { return g_scene.vb && g_pso.opaque && g_scene.verts > 0; }
+
+void PresentFrame(Diligent::IDeviceContext *ctx, Diligent::ISwapChain *swap, bool pump)
+{
+#ifdef ZX_ENABLE_REPLAY
+	// [rc4l] Recorded before Present, which flips to an image whose contents are undefined.
+	CaptureReplayFrame(ctx, swap);
+#else
+	(void)ctx;
+#endif
+	g_stats.lastFramePasses = g_framePasses; g_stats.lastFrameWorldMs = g_frameWorldMs;
+	g_stats.lastFramePassList = g_framePassList;
+	for (int k = 0; k < 6; k++) { g_stats.lastFramePhase[k] = g_framePhase[k]; g_framePhase[k] = 0.0; }
+	g_framePasses = 0; g_frameWorldMs = 0.0;
+	g_framePassList = "";
+	swap->Present(0);
+	RecordPresentInterval();
+	// [rc4l] The message pump costs more than the draw at these scales, so a benchmark pumps sparsely and a live frame once.
+	if (pump) Fua_PumpBackendWindow(GetBackendWindow());
+	// [rc4l] The embedded surface follows the engine's client area, which can change at runtime.
+	Fua_SyncBackendWindowToParent(GetBackendWindow());
 }
 
 // [rc4l] Read-only handles for passes that live in their own file. See dgshared.h.
@@ -895,12 +893,4 @@ void DrawWorld(Diligent::IDeviceContext *ctx)
 }
 
 }} // namespace zx::hwrender
-#else // !FUA_DILIGENT
-
-CCMD( fua_diligent_scene ) { Printf( "This build has no Diligent backend (-DFUA_DILIGENT=ON).\n" ); }
-CCMD( fua_diligent_bench ) { Printf( "This build has no Diligent backend (-DFUA_DILIGENT=ON).\n" ); }
-CCMD( fua_diligent_scale ) { Printf( "This build has no Diligent backend (-DFUA_DILIGENT=ON).\n" ); }
-
-namespace zx { namespace hwrender { void LiveFrame() {} void SetMainViewLens(float, float) {} }}
-
 #endif // FUA_DILIGENT

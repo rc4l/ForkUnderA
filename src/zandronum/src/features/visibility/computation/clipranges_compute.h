@@ -47,8 +47,7 @@ void ComputeSeedFrustum(ClipRanges &clip, unsigned viewAngle, unsigned halfAngle
 // [rc4l] R_PointToAnglePrecise for the offset (dx, dy) from the eye: the true angle in BAM, rounded as xs_RoundToUInt rounds.
 unsigned ComputePointToAnglePrecise(double dx, double dy);
 
-// [rc4l] GLPortal::ClearClipper: everything blocked but what the portal's lines span from the eye that saw them, turned by angleOffset, then the frustum when it is narrower than half a turn, kept as the silhouette.
-// `lines` holds x1, y1, x2, y2 for each line, raw 16.16 as the eye is.
+// [rc4l] GLPortal::ClearClipper: everything blocked but what the portal's lines (x1, y1, x2, y2 each, raw 16.16 like the eye) span from the eye that saw them, turned by angleOffset, then the frustum when narrower than half a turn, kept as the silhouette.
 void ComputeSeedPortal(ClipRanges &clip, long long eyeX, long long eyeY, const long long *lines, int count,
 	unsigned angleOffset, unsigned viewAngle, unsigned halfAngle);
 

@@ -19,10 +19,17 @@ window and modes but sets no pixel format, and makes `DiligentFrameBuffer` (`bac
 recorded through `features/draw2d`, the palette and gamma from `features/display`, `screenshot` read back from
 the swapchain, and every frame presented from its `Update` by `PresentBackendOnly`, with the world only under
 a frame that drew a view of it (the title, menus and console otherwise). The launch turns `fua_vulkan`,
-`fua_dg_standalone` and `fua_dg_embed` on, and puts the config's values back before it is written.
+`fua_dg_standalone`, `fua_dg_embed` and `fua_surface_mapbake_auto` on, and puts the config's values back
+before it is written. An unfocused window is not presented to, as GL's is not, but its level still sets up.
 `backendonly.h` is the Diligent-free interface between them. Wipes are cut straight over, the save picture is
 a placeholder, and `FillSimplePoly` is not drawn yet. `fuactl play --no-gl` launches one, `dumprenderer`
-says `renderer=vulkan` in one, and a scenario side with `noGl` runs as one (scenario `nogl`).
+says `renderer=vulkan` in one, and a scenario side with `noGl` runs as one (scenario `nogl`). Its frames are
+the instant replay's own stream, the menus' included (`PresentFrame` records every presented frame).
+
+`computation/levelsetup_compute` steps a level's set-up (arm the bake, wait, upload, retry, give up) and the
+standalone bake's arming; `PresentFrame` and `SceneDrawable` are shared by the world's frames and the 2D-only
+ones. A build without the backend (`FUA_DILIGENT` off, every non-Windows build) takes its entry points from
+`backendstubs.cpp`, each answering that there is none.
 
 ## Engine hooks
 

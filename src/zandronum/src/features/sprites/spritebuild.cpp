@@ -3,6 +3,9 @@
 
 #include "gl/system/gl_system.h"
 #include "features/sprites/spritebuild.h"
+#include "features/levelmesh/levelmesh.h"   // [rc4l] LightListBottom
+#include "features/hwrender/computation/lighttouch_compute.h"   // [rc4l] ComputeDynLightColor
+#include "features/frame/computation/oracle_compute.h"   // [rc4l] OracleTally
 
 #include "features/sprites/computation/spritestyle_compute.h"
 #include "features/sprites/computation/spritequad_compute.h"
@@ -31,14 +34,14 @@
 #include "templates.h"
 #include "textures/textures.h"
 #include "g_shared/a_pickups.h"
-#include "p_effect.h"   // particle_t
+#include "p_effect.h"   // [rc4l] particle_t
 
 // [rc4l] GL's settings and view state the derivation still reads, until the renderer interface supplies them (P5).
 #include "gl/renderer/gl_colormap.h"
 #include "gl/renderer/gl_lightdata.h"
-#include "gl/data/gl_data.h"           // glset, getExtraLight, currentmapsection
-#include "gl/models/gl_models.h"       // gl_FindModelFrame
-#include "gl/dynlights/gl_dynlight.h"  // ADynamicLight, FLightNode
+#include "gl/data/gl_data.h"           // [rc4l] glset, getExtraLight, currentmapsection
+#include "gl/models/gl_models.h"       // [rc4l] gl_FindModelFrame
+#include "gl/dynlights/gl_dynlight.h"  // [rc4l] ADynamicLight, FLightNode
 
 #include <string.h>
 #include <map>
@@ -88,10 +91,21 @@ struct SpritePiece
 
 static const int kMaxBands = 16;
 
-static zx::sprites::SpriteStyle StyleOf(const FRenderStyle &s)
+SpriteStyle StyleOf(const FRenderStyle &s)
 {
 	SpriteStyle o = { s.BlendOp, s.SrcAlpha, s.DestAlpha, s.Flags };
 	return o;
+}
+
+FRenderStyle RenderStyleOf(const SpriteStyle &s)
+{
+	FRenderStyle r;
+	r.AsDWORD = 0;
+	r.BlendOp = (BYTE)s.blendOp;
+	r.SrcAlpha = (BYTE)s.srcAlpha;
+	r.DestAlpha = (BYTE)s.destAlpha;
+	r.Flags = (BYTE)s.flags;
+	return r;
 }
 
 // [rc4l] The lower edge of each light list entry at the actor, as SplitSprite and SetSpriteColor measure it.
@@ -100,11 +114,7 @@ static int LightListBottoms(const AActor *actor, const sector_t *sector, float *
 	const TArray<lightlist_t> &lightlist = actor->Sector->e->XFloor.lightlist;
 	int n = 0;
 	for (unsigned i = 0; i < lightlist.Size() && n < max; i++)
-	{
-		const fixed_t bottom = (i < lightlist.Size() - 1) ? lightlist[i + 1].plane.ZatPoint(actor->x, actor->y)
-		                                                  : sector->floorplane.ZatPoint(actor->x, actor->y);
-		bottoms[n++] = FIXED2FLOAT(bottom);
-	}
+		bottoms[n++] = FIXED2FLOAT(zx::levelmesh::LightListBottom(sector, i, actor->x, actor->y));
 	return n;
 }
 
@@ -121,7 +131,6 @@ static void TakeListLight(const lightlist_t &entry, bool clampLight, int &lightl
 	}
 }
 
-// [rc4l] gl_SetDynSpriteLight for an actor, summed the way GL sums it.
 // [rc4l] gl_SetDynSpriteLight: the dynamic light at a point in a subsector, but not from a light `self` carries that does not light it.
 static void PointLight(fixed_t x, fixed_t y, fixed_t z, subsector_t *subsec, const AActor *self, float out[3])
 {
@@ -131,14 +140,15 @@ static void PointLight(fixed_t x, fixed_t y, fixed_t z, subsector_t *subsec, con
 		if ((light->flags2 & MF2_DORMANT) || ((light->flags4 & MF4_DONTLIGHTSELF) && light->target == self)) continue;
 		const float dist = FVector3(FIXED2FLOAT(x - light->x), FIXED2FLOAT(y - light->y), FIXED2FLOAT(z - light->z)).Length();
 		const float radius = light->GetRadius() * gl_lights_size;
-		const float lr = light->GetRed() / 255.0f * gl_lights_intensity;
-		const float lg = light->GetGreen() / 255.0f * gl_lights_intensity;
-		const float lb = light->GetBlue() / 255.0f * gl_lights_intensity;
-		const float bright = light->IsSubtractive() ? (float)FVector3(lr, lg, lb).Length() : 0.f;
-		ComputeSpriteLightTerm(dist, radius, lr, lg, lb, light->IsSubtractive(), bright, out);
+		// [rc4l] gl_SetDynSpriteLight takes the light's colour without the additive scaling a surface's light has.
+		float c[3];
+		zx::hwrender::ComputeDynLightColor(light->GetRed(), light->GetGreen(), light->GetBlue(), false, gl_lights_intensity, c);
+		const float bright = light->IsSubtractive() ? (float)FVector3(c[0], c[1], c[2]).Length() : 0.f;
+		ComputeSpriteLightTerm(dist, radius, c[0], c[1], c[2], light->IsSubtractive(), bright, out);
 	}
 }
 
+// [rc4l] gl_SetDynSpriteLight for an actor, summed the way GL sums it.
 static void ActorLight(const AActor *self, float out[3])
 {
 	PointLight(self->x, self->y, self->z + (self->height >> 1), self->subsector, self, out);
@@ -210,7 +220,7 @@ static bool SubjectOf(AActor *thing, Subject &s)
 	return true;
 }
 
-// [rc4l] The light, colormap and style Process gives an actor: false when it is fully transparent. A model has no frame to turn fullbright off or to be transparent.
+// [rc4l] The light, colormap and style Process gives an actor, false when it is fully transparent; a model has no frame that could turn fullbright off or make it transparent.
 struct Look
 {
 	bool fullbright;
@@ -511,7 +521,7 @@ static bool DeriveParticle(particle_t *particle, sector_t *sector, SpritePiece &
 	if (view.PortalRejectsPoint(particle->x, particle->y)) return false;
 	if (particle->trans == 0) return false;
 	// [rc4l] Only a round or smooth particle has a texture, and RegisterSprite takes no sprite without one.
-	FTexture *lump = gl_particles_style ? view.ParticleTexture(gl_particles_style) : NULL;
+	FTexture *lump = gl_particles_style ? zx::materials::ParticleTexture(gl_particles_style) : NULL;
 	const void *material = lump != NULL ? zx::materials::MaterialForTexture(lump, true) : NULL;
 	if (material == NULL) return false;
 
@@ -592,9 +602,7 @@ static bool DeriveParticle(particle_t *particle, sector_t *sector, SpritePiece &
 	return true;
 }
 
-// ---------------------------------------------------------------------------
-// The check against GL
-// ---------------------------------------------------------------------------
+// [rc4l] The check against GL.
 
 struct Noted
 {
@@ -604,10 +612,10 @@ struct Noted
 	std::vector<MeshVertex> verts;
 };
 static std::vector<Noted> g_gl, g_ours;
-static int g_checkedActors = 0, g_differedActors = 0, g_onlyGL = 0, g_onlyOurs = 0;
+static zx::frame::OracleTally g_check;   // [rc4l] actors compared, and how many differed
+static int g_onlyGL = 0, g_onlyOurs = 0;
 // [rc4l] Model surfaces among the pieces compared, so a clean report is known to have had models in it.
 static int g_checkedModelSurfaces = 0;
-static FString g_diffs;
 
 static void Note(std::vector<Noted> &list, const void *who, bool particle, const MeshPiece &piece, const MeshVertex *verts, int count)
 {
@@ -672,9 +680,9 @@ void CheckFrameSprites()
 		unsigned j = i;
 		while (j < g_ours.size() && keyOf(g_ours[j]) == key) j++;
 		seen.insert(key);
-		g_checkedActors++;
+		g_check.checked++;
 		const auto first = glFirst.find(key);
-		if (first == glFirst.end()) { g_onlyOurs++; g_differedActors++; i = j; continue; }
+		if (first == glFirst.end()) { g_onlyOurs++; g_check.differed++; i = j; continue; }
 		unsigned k = first->second, n = 0;
 		const char *why = NULL;
 		for (; k < g_gl.size() && keyOf(g_gl[k]) == key; k++, n++)
@@ -686,19 +694,18 @@ void CheckFrameSprites()
 		if (!why && i + n != j) why = "piece count";
 		if (why)
 		{
-			if (g_differedActors < 12)
+			if (zx::frame::ComputeOracleDiffer(g_check, 12))
 			{
 				const MeshVertex none = {};
 				const MeshVertex &gp = g_gl[first->second].verts.empty() ? none : g_gl[first->second].verts[0];
 				const MeshVertex &op = g_ours[i].verts.empty() ? none : g_ours[i].verts[0];
 				const bool part = g_ours[i].particle;
-				g_diffs.AppendFormat("  %s at (%.0f, %.0f): %s; GL corner %.9g %.9g %.9g, ours %.9g %.9g %.9g\n",
+				zx::frame::ComputeOracleNote(g_check, "  %s at (%.0f, %.0f): %s; GL corner %.9g %.9g %.9g, ours %.9g %.9g %.9g\n",
 					part ? "particle" : ((const AActor *)a)->GetClass()->TypeName.GetChars(),
 					FIXED2FLOAT(part ? ((const particle_t *)a)->x : ((const AActor *)a)->x),
 					FIXED2FLOAT(part ? ((const particle_t *)a)->y : ((const AActor *)a)->y), why,
 					gp.x, gp.z, gp.y, op.x, op.z, op.y);
 			}
-			g_differedActors++;
 		}
 		i = j;
 	}
@@ -753,10 +760,10 @@ bool BuildParticle(particle_t *particle, sector_t *sector)
 
 CCMD( fua_sprite_report )
 {
+	const zx::frame::OracleTally &t = zx::sprites::g_check;
 	Printf( "sprites: %d actors derived beside GL (%d model surfaces), %d differed (%d only ours, %d only GL's)\n%s",
-		zx::sprites::g_checkedActors, zx::sprites::g_checkedModelSurfaces, zx::sprites::g_differedActors, zx::sprites::g_onlyOurs,
-		zx::sprites::g_onlyGL, zx::sprites::g_diffs.GetChars( ) );
-	zx::sprites::g_checkedActors = zx::sprites::g_differedActors = zx::sprites::g_onlyOurs = zx::sprites::g_onlyGL = 0;
+		t.checked, zx::sprites::g_checkedModelSurfaces, t.differed, zx::sprites::g_onlyOurs, zx::sprites::g_onlyGL, t.firsts.c_str( ) );
+	zx::frame::ComputeOracleReset( zx::sprites::g_check );
+	zx::sprites::g_onlyOurs = zx::sprites::g_onlyGL = 0;
 	zx::sprites::g_checkedModelSurfaces = 0;
-	zx::sprites::g_diffs = "";
 }

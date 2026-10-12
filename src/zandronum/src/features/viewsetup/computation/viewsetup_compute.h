@@ -23,6 +23,30 @@ void ComputeViewAngleVector(unsigned viewAngle, float &yaw, float &vectorX, floa
 // [rc4l] RenderView's fov ratio: 4:3 unless the screen is taller than wide, when it is the screen's own.
 float ComputeFovRatio(float ratio, bool tallerThanWide);
 
+// [rc4l] gl_colormap.h's and colormaps.h's values the fixed colormap choice reads (viewsetup.cpp asserts they match).
+enum { kCmDefault = 0, kCmFirstSpecial = 1, kCmLite = 0x20000000, kCmTorch = 0x20000010, kNoFixedColormap = -1, kInverseColormap = 0 };
+// [rc4l] The light power a player carries, the last in the inventory winning.
+enum { kNoLightPower = 0, kTorchPower = 1, kLightAmpPower = 2 };
+
+struct FixedColormapIn
+{
+	bool hasPlayer;        // [rc4l] the camera is a player
+	bool inverse;          // [rc4l] extralight is INT_MIN, invulnerability's inverse map
+	int  fixedColormap;    // [rc4l] the player's, or kNoFixedColormap
+	int  fixedLightLevel;  // [rc4l] -1 for none
+	int  lightPower;       // [rc4l] k*Power
+};
+
+// [rc4l] SetFixedColormap's choice: the inverse map, the player's fixed one, or a light amplifier's.
+int ComputeFixedColormap(const FixedColormapIn &in);
+
+// [rc4l] Whether the view is the player's own eye seeing its body from outside: the chase camera (consoleplayer's, never in free spectate) or a dead player's death camera on the player's own body.
+bool ComputeSeesOwnBody(bool cameraIsPlayer, bool freeSpectate, bool isConsolePlayer, bool consoleSpectating, bool chaseCam,
+	bool deathCamera, bool dead, bool cameraIsPlayerBody);
+
+// [rc4l] GetMaxViewPitch: Zandronum's software limits (56 down, 56 up or 32 with the old freelook limit) when forced, else maxviewpitch.
+int ComputeMaxViewPitch(bool down, bool softwareLimits, bool oldFreelookLimit, int maxViewPitch);
+
 // [rc4l] GL's area_t, where the eye is against a Boom height transfer.
 enum { kAreaNormal = 0, kAreaBelow = 1, kAreaAbove = 2, kAreaDefault = 3 };
 

@@ -52,6 +52,12 @@ struct SampleFunc
 // reorders between runs cannot be diffed.
 std::vector<SampleFunc> RankSamples(const std::vector<SampleHit> &hits, std::size_t top);
 
+// [rc4l] Whether a sample stamped with leveltime `tic` falls in the window ticMin..ticMax, either bound 0 meaning open.
+bool ComputeInTicWindow(int tic, int ticMin, int ticMax);
+
+// [rc4l] Each function's share of the samples whose stack it was on, counted once per stack however deep it recurses, hottest first; stacks[i] is one sample's frames.
+std::vector<SampleFunc> ComputeInclusiveRanks(const std::vector<std::vector<SampleHit> > &stacks, std::size_t top);
+
 // Only the hits from one module, for the "what in OUR code is hot" question. Matched
 // case-insensitively: Windows hands module names back in whatever case the loader recorded.
 std::vector<SampleHit> OnlyFrom(const std::vector<SampleHit> &hits, const std::string &dso);
@@ -60,6 +66,10 @@ std::vector<SampleHit> OnlyFrom(const std::vector<SampleHit> &hits, const std::s
 // not care which one answered.
 std::string SampleReportJson(const std::vector<SampleFunc> &funcs, double seconds,
 	unsigned long long total);
+
+// [rc4l] The same report with the inclusive table beside the self one, for a run that walked stacks.
+std::string SampleReportJson(const std::vector<SampleFunc> &funcs, const std::vector<SampleFunc> &inclusive,
+	double seconds, unsigned long long total);
 
 } // namespace zx
 

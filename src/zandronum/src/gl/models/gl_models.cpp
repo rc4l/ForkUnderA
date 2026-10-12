@@ -848,9 +848,8 @@ void gl_RenderFrameModels( const FSpriteModelFrame *smf,
 {
 	// [BB] Frame interpolation: Find the FSpriteModelFrame smfNext which follows after smf in the animation
 	// and the scalar value inter ( element of [0,1) ), both necessary to determine the interpolated frame.
-	// [rc4l] features/sprites works them out, for the backend's derived models as for this.
 	double inter = 0.;
-	FSpriteModelFrame * smfNext = zx::sprites::NextModelFrame(smf, curState, curTics, ti, inter);
+	FSpriteModelFrame * smfNext = zx::sprites::NextModelFrame(smf, curState, curTics, ti, inter);   // [rc4l] features/sprites works these out for GL and the backend's derived models alike
 
 	for(int i=0; i<MAX_MODELS_PER_FRAME; i++)
 	{
@@ -895,9 +894,7 @@ void gl_RenderModel(GLSprite * spr)
 		translation = spr->actor->Translation;
 
 
-	// [rc4l] Model space => world space: the actor's turn, pitch and roll, MODELDEF's spin, scale, offsets
-	// and rotations, and the pixel stretch, worked out by features/sprites so the backend's derived models
-	// stand exactly where GL's do.
+	// [rc4l] Model space to world space (turn, pitch, roll, MODELDEF spin, scale, offsets, rotations and pixel stretch) comes from features/sprites so the backend's derived models stand exactly where GL's do.
 	zx::sprites::ModelPose pose;
 	zx::sprites::ModelPoseFor(spr->actor, smf, spr->x, spr->y, spr->z, pose);
 	float modelToWorld[16];

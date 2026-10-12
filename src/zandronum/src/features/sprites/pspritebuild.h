@@ -6,7 +6,7 @@
 #ifndef ZX_PSPRITEBUILD_H
 #define ZX_PSPRITEBUILD_H
 
-#include "basictypes.h"   // fixed_t
+#include "basictypes.h"   // [rc4l] fixed_t
 
 struct sector_t;
 class AActor;

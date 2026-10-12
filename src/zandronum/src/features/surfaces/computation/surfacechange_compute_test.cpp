@@ -103,9 +103,6 @@ TEST(SurfaceChange, ShadingAloneIsRepaintedInPlace)
 	EXPECT_EQ(kSurfaceRepaint, ComputeSurfaceChange(Wall(), faded));
 }
 
-// [rc4l] The normal decides which dynamic lights reach a surface at all -- see MeshPiece::normX. A
-// slope that moves changes it without moving anything else, and a surface lit from the wrong side is
-// the fault that reads as "the torch lights the back of the wall".
 // [rc4l] AOW03's 101 scrolling walls were rebuilt every frame while only their texture moved.
 TEST(SurfaceChange, AScrolledTextureIsRepaintedInPlace)
 {
@@ -115,6 +112,7 @@ TEST(SurfaceChange, AScrolledTextureIsRepaintedInPlace)
 	EXPECT_EQ(kSurfaceRepaint, ComputeSurfaceChange(Wall(), down));
 }
 
+// [rc4l] The normal decides which dynamic lights reach a surface (MeshPiece::normX), so a slope that turns without moving must be repainted or it lights from the wrong side.
 TEST(SurfaceChange, ANormalThatTurnedIsRepainted)
 {
 	SurfaceKey now = Wall();

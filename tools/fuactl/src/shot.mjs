@@ -101,12 +101,12 @@ export async function awaitLaunch(sessionFile, port, { timeoutMs = 120000, pollM
 export const PARKED = "parked";
 export function parkFileFor(sessionFile, port) { return `${sessionFileFor(sessionFile, port)}.park`; }
 
-// [rc4l] How `play --unpark` relaunches a parked instance: spotLaunch's map and wads, its camera, and whether its Vulkan window was un-embedded.
+// [rc4l] How `play --unpark` relaunches a parked instance: spotLaunch's map and wads, its camera, whether its Vulkan window was un-embedded, and whether it had no GL.
 export function parkedLaunch(parkPath, storeDir, listing) {
   const s = JSON.parse(fs.readFileSync(parkPath, "utf8")).spots[PARKED];
   const embed = String((s && s.renderer && s.renderer.fua_dg_embed) ?? "");
   return { ...spotLaunch(parkPath, PARKED, storeDir, listing), at: readSpot(parkPath, PARKED),
-    sideBySide: embed === "false" || embed === "0" };
+    sideBySide: embed === "false" || embed === "0", noGl: !!(s && s.renderer && s.renderer.backend === "vulkan") };
 }
 
 // [rc4l] Which instance a command means: --port and --token, else the last play session's.
@@ -376,6 +376,28 @@ export function summarizeGtest(out) {
   return { passed: passed ? Number(passed[1]) : 0, failed: [...new Set(failed)] };
 }
 
+// [rc4l] Sources ending in one of suffixes as one sorted listing, so a build can tell when a new one appeared; the trees glob them at configure time only.
+export function sourcesStamp(files) {
+  return [...files].map((f) => f.split(String.fromCharCode(92)).join("/")).sort().join("\n");
+}
+
+function listSources(dir, suffixes) {
+  return fs.readdirSync(dir, { recursive: true }).map(String).filter((f) => suffixes.some((s) => f.endsWith(s)));
+}
+
+// [rc4l] Configure dir again when the globbed sources changed since it last was, so a new *_compute.cpp or *_test.cpp builds without a CMake edit.
+function refreshGlobs(cm, root, dir, suffixes, log) {
+  const stamp = sourcesStamp(listSources(path.join(root, "src/zandronum/src"), suffixes));
+  const file = path.join(root, dir, ".globbed-sources");
+  if (fs.existsSync(file) && fs.readFileSync(file, "utf8") === stamp) return;
+  const r = spawnSync(cm, [path.join(root, dir)], { encoding: "utf8", env: { ...process.env, DXSDK_DIR: path.join(root, "dxsdk") } });
+  if (r.status !== 0) {
+    log(((r.stdout || "") + (r.stderr || "")).split(/\r?\n/).filter((l) => /error/i.test(l)).slice(0, 10).join("\n"));
+    throw new Error(`configuring ${dir} again failed`);
+  }
+  fs.writeFileSync(file, stamp);
+}
+
 // [rc4l] One cmake build of the tree in dir (one target, or all of it), its log beside it, throwing with the first errors when it fails.
 function compile(cm, root, dir, target, log) {
   const r = spawnSync(cm, ["--build", path.join(root, dir), "--config", "Release", ...(target ? ["--target", target] : []), "--", "-m"], {
@@ -396,9 +418,11 @@ function compile(cm, root, dir, target, log) {
 // [rc4l] Compile the engine, and with tests the unit tests too and run them; then stage it unless stage is false, which leaves the user's binary alone mid-investigation.
 export function build({ root = REPO_ROOT, cmake = null, log = console.error, stage = true, tests = false } = {}) {
   const cm = cmake || pickCmake();
+  refreshGlobs(cm, root, "build-win", ["_compute.cpp"], log);
   compile(cm, root, "build-win", "zdoom", log);
   let testRun = null;
   if (tests) {
+    refreshGlobs(cm, root, "build-tests", ["_compute.cpp", "_test.cpp"], log);
     compile(cm, root, "build-tests", null, log);
     const r = spawnSync(path.join(root, "build-tests/Release/zandrox_tests.exe"), ["--gtest_brief=1"], { encoding: "utf8" });
     testRun = summarizeGtest((r.stdout || "") + (r.stderr || ""));

@@ -31,6 +31,10 @@ them together. The three answers are different bugs that look identical from out
 Cost of not having this: four rebuild-and-re-check cycles on one surface, each ending in a
 guess. The probe found it on first use.
 
+Here, `fua_vis_check`, `fua_sprite_check`, `fua_psprite_check` and `fua_shading_check` are such probes,
+each deriving beside GL every frame with a `*_report` of what differed; they share one tally
+(`features/frame/computation/oracle_compute`), so a new one is a counter and a description, not a copy.
+
 ## 2. Instrument the data, not the rendered result
 
 A screenshot cannot distinguish *absent* from *present but culled* from *present with the

@@ -6,6 +6,8 @@
 #include "vectors.h"
 #include "r_renderer.h"
 #include "gl/data/gl_matrix.h"
+#include "features/draw2d/computation/quad2d_compute.h"   // [rc4l] Quad2D
+#include <vector>
 
 struct particle_t;
 class FCanvasTexture;
@@ -64,9 +66,6 @@ public:
 	// this instead of hard-coding 0, so camera textures don't unbind the scale buffer.
 	unsigned int mOutputFB;
 
-	FTexture *glpart2;
-	FTexture *glpart;
-	FTexture *mirrortexture;
 	
 	float mSky1Pos, mSky2Pos;
 
@@ -76,6 +75,7 @@ public:
 	FFlatVertexBuffer *mVBO;
 	FSkyVertexBuffer *mSkyVBO;
 	FLightBuffer *mLights;
+	std::vector<zx::hwrender::Quad2D> mFlatTiles;   // [rc4l] FlatFill's tiles for the 2D capture, kept so a fill settles at its high-water mark
 
 
 	FGLRenderer(OpenGLFrameBuffer *fb);
@@ -118,8 +118,6 @@ public:
 	void ProcessSprite(AActor *thing, sector_t *sector);
 	void ProcessParticle(particle_t *part, sector_t *sector);
 	void ProcessSector(sector_t *fakesector);
-	void FlushTextures();
-	unsigned char *GetTextureBuffer(FTexture *tex, int &w, int &h);
 	void SetupLevel();
 
 	void SetFixedColormap (player_t *player);

@@ -16,8 +16,8 @@
 #include "v_video.h"
 #include "features/video-scale/computation/videoscale_compute.h"
 #include "features/video-scale/videoscale.h"
-#include "doomstat.h"   // setsizeneeded
-#include "sbar.h"       // StatusBar
+#include "doomstat.h"   // [rc4l] setsizeneeded
+#include "sbar.h"       // [rc4l] StatusBar
 
 // The scale CVARs do NOT trigger a mode reset. A mode reset would destroy and recreate the window +
 // GL context (black flash + keyboard-focus loss on every slider tick). Instead the framebuffer's

@@ -15,6 +15,11 @@ bool ComputeFrameDue(int64_t lastCaptureUs, int64_t nowUs, int targetFps)
 	return (nowUs - lastCaptureUs) >= intervalUs;
 }
 
+bool ComputeStreamLive(unsigned framesIn, int64_t lastFrameUs, int64_t nowUs)
+{
+	return framesIn > 0 && nowUs - lastFrameUs <= 1000000;
+}
+
 ScaledDims ComputeScaledDims(int srcW, int srcH, int maxH)
 {
 	int w = srcW;

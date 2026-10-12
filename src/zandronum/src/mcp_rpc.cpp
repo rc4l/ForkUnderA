@@ -643,7 +643,7 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 			return;
 		}
 
-		long seconds = 2, hz = 1000, top = 20, engineOnly = 0, ticMin = 0, ticMax = 0;
+		long seconds = 2, hz = 1000, top = 20, engineOnly = 0, ticMin = 0, ticMax = 0, stacks = 0;
 		GetInt( args, "seconds", seconds );
 		GetInt( args, "hz", hz );
 		GetInt( args, "top", top );
@@ -652,9 +652,11 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 		// perf.ticprof which tics were expensive, then ask here for exactly those.
 		GetInt( args, "tic_min", ticMin );
 		GetInt( args, "tic_max", ticMax );
+		// [rc4l] stacks 1 walks each sample's stack too, for an inclusive table of where the time went from.
+		GetInt( args, "stacks", stacks );
 
 		if ( !MCP_Sample_Arm( (double)seconds, (int)hz, engineOnly != 0, (int)top,
-			(int)ticMin, (int)ticMax ) )
+			(int)ticMin, (int)ticMax, stacks != 0 ) )
 		{
 			SendErr( id, "no in-engine sampler on this platform (macOS and Linux use fuactl's "
 				"external sample/perf backend)" );

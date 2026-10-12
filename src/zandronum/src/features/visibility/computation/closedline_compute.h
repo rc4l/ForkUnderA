@@ -19,6 +19,9 @@ struct ClosedLineIn
 
 bool ComputeLineCloses(const ClosedLineIn &in);
 
+// [rc4l] A flat plane's height as GL takes it from the plane's d: a floor's is -d and a ceiling's d.
+long long ComputeFlatPlaneHeight(bool floor, long long d);
+
 // [rc4l] Whether the heights alone could close the line, so a caller reads the textures and skies only when they might matter.
 bool ComputeLineMayClose(const ClosedLineIn &in);
 

@@ -53,7 +53,8 @@
 
 #include "gl/system/gl_interface.h"
 #include "gl/system/gl_framebuffer.h"
-#include "features/display/computation/display_compute.h"   // [rc4l] the gamma ramp and palette brightness
+#include "features/display/display.h"   // [rc4l] the palette, flash and gamma ramp
+#include "features/frame/playerview.h"   // [rc4l] ForgetCamera
 #include "features/hwrender/hud2d.h"   // StandaloneActive
 #include "gl/renderer/gl_renderer.h"
 #include "gl/renderer/gl_renderstate.h"
@@ -73,10 +74,7 @@
 #endif
 
 IMPLEMENT_CLASS(OpenGLFrameBuffer)
-EXTERN_CVAR (Float, vid_brightness)
-EXTERN_CVAR (Float, vid_contrast)
 EXTERN_CVAR (Bool, vid_vsync)
-#include "features/video-scale/computation/videoscale_compute.h"
 #include "features/video-scale/videoscale.h"
 
 CVAR(Bool, gl_aalines, false, CVAR_ARCHIVE)
@@ -97,10 +95,9 @@ OpenGLFrameBuffer::OpenGLFrameBuffer(void *hMonitor, int width, int height, int 
 	Super(hMonitor, width, height, bits, refreshHz, fullscreen) 
 {
 	GLRenderer = new FGLRenderer(this);
-	memcpy (SourcePalette, GPalette.BaseColors, sizeof(PalEntry)*256);
-	UpdatePalette ();
+	Colors.Load();
 	ScreenshotBuffer = NULL;
-	LastCamera = NULL;
+	zx::frame::ForgetCamera();
 
 	// [rc4l] video-scale: no scale buffer until UpdateScaleBuffer decides one is needed.
 	mScaleFB = mScaleColorTex = mScaleDepthRB = 0;
@@ -287,15 +284,8 @@ void OpenGLFrameBuffer::Update()
 void OpenGLFrameBuffer::GetClientSize(int &w, int &h)
 {
 #ifdef _WIN32
-	// Win32 native backend: the window's client rectangle in pixels (the borderless popup covers the
-	// monitor when fullscreen; a normal window when windowed). Window is the global HWND.
-	RECT r;
-	if (Window != NULL && GetClientRect(Window, &r))
-	{
-		w = int(r.right - r.left);
-		h = int(r.bottom - r.top);
-	}
-	else
+	// [rc4l] The window's client rectangle in pixels, which is the whole monitor for the fullscreen borderless popup.
+	if (!ClientSize(w, h))
 	{
 		w = GetWidth();
 		h = GetHeight();
@@ -630,7 +620,7 @@ void OpenGLFrameBuffer::DoSetGamma()
 	if (m_supportsGamma)
 	{
 		// [rc4l] Doomsday's curve, worked out in features/display for any frame buffer.
-		zx::display::ComputeGammaRamp(Gamma, vid_contrast, vid_brightness, gammaTable);
+		zx::display::CurrentGammaRamp(gammaTable);
 		SetGammaTable(gammaTable);
 	}
 }
@@ -658,33 +648,31 @@ bool OpenGLFrameBuffer::SetContrast(float contrast)
 //
 //===========================================================================
 
+// [rc4l] The palette, its brightness and the flash are features/display's, shared with the backend's frame buffer.
 void OpenGLFrameBuffer::UpdatePalette()
 {
-	// [rc4l] features/display works it out, for any frame buffer.
-	palette_brightness = zx::display::ComputePaletteBrightness(reinterpret_cast<const unsigned *>(&GPalette.BaseColors[0]), 256);
+	Colors.UpdateBrightness();
 }
 
 void OpenGLFrameBuffer::GetFlashedPalette (PalEntry pal[256])
 {
-	memcpy(pal, SourcePalette, 256*sizeof(PalEntry));
+	memcpy(pal, Colors.palette, 256*sizeof(PalEntry));
 }
 
 PalEntry *OpenGLFrameBuffer::GetPalette ()
 {
-	return SourcePalette;
+	return Colors.palette;
 }
 
 bool OpenGLFrameBuffer::SetFlash(PalEntry rgb, int amount)
 {
-	Flash = PalEntry(amount, rgb.r, rgb.g, rgb.b);
+	Colors.SetFlash(rgb, amount);
 	return true;
 }
 
 void OpenGLFrameBuffer::GetFlash(PalEntry &rgb, int &amount)
 {
-	rgb = Flash;
-	rgb.a = 0;
-	amount = Flash.a;
+	Colors.GetFlash(rgb, amount);
 }
 
 int OpenGLFrameBuffer::GetPageCount()
@@ -900,9 +888,8 @@ void OpenGLFrameBuffer::ReleaseScreenshotBuffer()
 
 void OpenGLFrameBuffer::GameRestart()
 {
-	memcpy (SourcePalette, GPalette.BaseColors, sizeof(PalEntry)*256);
-	UpdatePalette ();
+	Colors.Load();
 	ScreenshotBuffer = NULL;
-	LastCamera = NULL;
+	zx::frame::ForgetCamera();
 	gl_GenerateGlobalBrightmapFromColormap();
 }

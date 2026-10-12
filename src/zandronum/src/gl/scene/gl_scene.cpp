@@ -98,6 +98,8 @@ EXTERN_CVAR(Bool, fua_vis_check)
 #include "features/levelmesh/projdecals.h"   // [rc4l] projected mesh decals
 #include "features/horizon/horizon.h"   // [rc4l] horizon windows, rebuilt per frame
 #include "features/hwrender/diligent/dglive.h"   // [rc4l] SetMainViewLens
+#include "features/frame/levelrenderer.h"   // [rc4l] FLevelRenderer, RenderBackendCamera
+#include "features/frame/playerview.h"      // [rc4l] BeginPlayerFrame, BeginViewpoint, EndViewpoint, MarkMapSection
 #include "mcp_glperf.h" // [rc4l] GPU render-pass timer anchors (no-op unless FUA_MCP_BRIDGE)
 
 //==========================================================================
@@ -623,14 +625,7 @@ void FGLRenderer::DrawScene(bool toscreen)
 	// [rc4l] Which scene the captures below belong to: this one is outermost only when nothing encloses it.
 	struct SceneNest { SceneNest() { zx::levelmesh::EnterScene(); } ~SceneNest() { zx::levelmesh::LeaveScene(); } } nest;
 
-	// [rc4l] STANDALONE: the backend draws the world and GL stops deriving it.
-	//
-	// Everything below this line is GL working out what the world looks like from here -- the BSP
-	// walk, a GLWall built per visible seg, the clipper, the draw lists. The backend does not need
-	// any of it: its geometry is resident and its frame is a matrix upload and a batch loop, which
-	// measures 0.25 ms of submit and 0.15 ms of GPU on Sunder MAP16 against roughly 7 ms of this.
-	//
-	// So with fua_dg_standalone the whole derivation is skipped, and features/frame runs the upkeep, the walks, the sprite sweep and the moved sectors' re-bake instead (scenario standalonemove).
+	// [rc4l] With fua_dg_standalone the backend draws the world, so GL's derivation is skipped and features/frame runs the upkeep, walks, sprite sweep and moved sectors' re-bake instead (scenario standalonemove).
 	if (zx::hwrender::StandaloneActive())
 	{
 		// [rc4l] features/frame drives the scene; GL keeps the actors and particles the backend leaves it, and its own window's draw of them.
@@ -717,20 +712,21 @@ static void FillScreen()
 	GLRenderer->mVBO->RenderCurrent(ptr, GL_TRIANGLE_STRIP);
 }
 
+// [rc4l] features/draw2d spells the view areas as GL does.
+static_assert(area_normal == zx::draw2d::kViewAreaNormal && area_below == zx::draw2d::kViewAreaBelow && area_above == zx::draw2d::kViewAreaAbove,
+	"area_t must match screenblend.h");
+
 //==========================================================================
 //
 // Draws a blend over the entire view
 //
 //==========================================================================
-// [rc4l] features/draw2d spells the view areas as GL does.
-static_assert(area_normal == zx::draw2d::kViewAreaNormal && area_below == zx::draw2d::kViewAreaBelow && area_above == zx::draw2d::kViewAreaAbove,
-	"area_t must match screenblend.h");
 
 void FGLRenderer::DrawBlend(sector_t * viewsector)
 {
 	// [rc4l] features/draw2d works the tint out without GL; GL fills each part and the backend records it.
 	zx::draw2d::ScreenFill fills[2];
-	const int n = zx::draw2d::ScreenBlends(viewsector, in_area, gl_fixedcolormap != 0, framebuffer->palette_brightness, fills);
+	const int n = zx::draw2d::ScreenBlends(viewsector, in_area, gl_fixedcolormap != 0, framebuffer->Colors.brightness, fills);
 	for (int i = 0; i < n; i++)
 	{
 		const zx::draw2d::ScreenFill &f = fills[i];
@@ -801,9 +797,7 @@ void FGLRenderer::ProcessScene(bool toscreen)
 	iter_dlightf = iter_dlight = draw_dlight = draw_dlightf = 0;
 	GLPortal::BeginScene();
 
-	int mapsection = R_PointInSubsector(viewx, viewy)->mapsection;
-	memset(&currentmapsection[0], 0, currentmapsection.Size());
-	currentmapsection[mapsection>>3] |= 1 << (mapsection & 7);
+	zx::frame::MarkMapSection();   // [rc4l] shared with a frame no GL renderer draws
 	DrawScene(toscreen);
 	FDrawInfo::EndDrawInfo();
 
@@ -871,16 +865,9 @@ static void PrintViewStateIfArmed()
 
 sector_t * FGLRenderer::RenderViewpoint (AActor * camera, GL_IRECT * bounds, float fov, float ratio, float fovratio, bool mainview, bool toscreen)
 {
-	// [rc4l] Which view the walks below belong to, for CreateScene's capture; restored on return in case one view nests in another.
-	const bool savedMainview = zx::levelmesh::MainView();
-	zx::levelmesh::SetMainView(mainview);
-	if (mainview && toscreen) zx::hwrender::SetMainViewLens(fov, fovratio);	// [rc4l] features/hwrender: the backend frames the player's view with GL's lens
+	// [rc4l] features/frame sets the viewpoint up as a frame without GL does: which view the walks belong to, the backend's lens, the camera, the view area and features/viewsetup's view.
+	const bool savedMainview = zx::frame::BeginViewpoint(camera, fov, fovratio, mainview, toscreen);
 	sector_t * retval;
-	R_SetupFrame (camera);
-	SetViewArea();
-
-	// [rc4l] features/viewsetup works the view out once, without GL: the stretched pitch, the roll, the actor the eye is in and the walks' frustum.
-	zx::viewsetup::SetupView(camera, fov, gl_frameMS);
 	const zx::viewsetup::ViewSetup &view = zx::viewsetup::CurrentView();
 	mAngles.Pitch = view.pitch;
 	mAngles.Roll = view.roll;
@@ -888,7 +875,6 @@ sector_t * FGLRenderer::RenderViewpoint (AActor * camera, GL_IRECT * bounds, flo
 	// Scroll the sky
 	mSky1Pos = view.sky1Pos;
 	mSky2Pos = view.sky2Pos;
-
 
 
 	mViewActor = view.viewActor;
@@ -928,9 +914,7 @@ sector_t * FGLRenderer::RenderViewpoint (AActor * camera, GL_IRECT * bounds, flo
 	}
 	stereo3dMode.TearDown();
 
-	gl_frameCount++;	// This counter must be increased right before the interpolations are restored.
-	interpolator.RestoreInterpolations ();
-	zx::levelmesh::SetMainView(savedMainview);
+	zx::frame::EndViewpoint(savedMainview);
 	return retval;
 }
 
@@ -988,17 +972,7 @@ void FGLRenderer::RenderView (player_t* player)
 
 	MCP_GLPerf_FrameBegin(); // [rc4l] earliest GL work of the frame -- open the GPU-time frame span
 
-	OpenGLFrameBuffer* GLTarget = static_cast<OpenGLFrameBuffer*>(screen);
-	AActor *&LastCamera = GLTarget->LastCamera;
-
 	checkBenchActive();
-	if (player->camera != LastCamera)
-	{
-		// If the camera changed don't interpolate
-		// Otherwise there will be some not so nice effects.
-		R_ResetViewInterpolation();
-		LastCamera=player->camera;
-	}
 
 	gl_RenderState.SetVertexBuffer(mVBO);
 	GLRenderer->mVBO->Reset();
@@ -1006,17 +980,11 @@ void FGLRenderer::RenderView (player_t* player)
 	// reset statistics counters
 	ResetProfilingData();
 
-	// Get this before everything else
-	if (cl_capfps || r_NoInterpolate) r_TicFrac = FRACUNIT;
-	else r_TicFrac = I_GetTimeFrac (&r_FrameTime);
-	gl_frameMS = I_MSTime();
-
-	P_FindParticleSubsectors ();
-
+	// [rc4l] Cleared before the camera textures BeginPlayerFrame draws, which light through it.
 	GLRenderer->mLights->Clear();
 
-	// prepare all camera textures that have been used in the last frame
-	FCanvasTextureInfo::UpdateAll();
+	// [rc4l] features/frame: the camera reset, tic fraction, clock, particles, camera textures, fixed colormap and lens, as a frame without GL takes them.
+	const zx::frame::FrameLens lens = zx::frame::BeginPlayerFrame(player);
 
 
 	// I stopped using BaseRatioSizes here because the information there wasn't well presented.
@@ -1033,10 +1001,10 @@ void FGLRenderer::RenderView (player_t* player)
 	// than wide; the float test says the same thing without needing a bucket to exist.
 	//
 	// No upstream counterpart -- these GL files are not in the commit being ported.
-	float ratio = WidescreenRatio;
-	fovratio = zx::viewsetup::ComputeFovRatio(ratio, AspectTallerThanWide(ratio));
+	float ratio = lens.ratio;
+	fovratio = lens.fovRatio;
 
-	SetFixedColormap (player);
+	gl_RenderState.SetFixedColormap(gl_fixedcolormap);
 
 	// Check if there's some lights. If not some code can be skipped.
 	TThinkerIterator<ADynamicLight> it(STAT_DLIGHT);
@@ -1047,7 +1015,7 @@ void FGLRenderer::RenderView (player_t* player)
 	// position of the very step P_PlayerThink is about to take instead. All the arithmetic lives
 	// in features/fov-interp/computation/ so this stays a single line for the renderer staircase
 	// to re-apply. Ported from Q-Zandronum d2475b676 + 390ea5ac2.
-	sector_t * viewsector = RenderViewpoint(player->camera, NULL, FOV_InterpolatedForFrame(player), ratio, fovratio, true, true);
+	sector_t * viewsector = RenderViewpoint(player->camera, NULL, lens.fov, ratio, fovratio, true, true);
 
 	All.Unclock();
 }
@@ -1104,38 +1072,15 @@ void FGLRenderer::WriteSavePic (player_t *player, FILE *file, int width, int hei
 //
 //===========================================================================
 
-struct FGLInterface : public FRenderer
+// [rc4l] The level, lights, fog and pitch limits are features/frame's FLevelRenderer, shared with the backend's renderer.
+struct FGLInterface : public zx::frame::FLevelRenderer
 {
-	bool UsesColormap() const;
 	void PrecacheTexture(FTexture *tex, int cache);
 	void RenderView(player_t *player);
 	void WriteSavePic (player_t *player, FILE *file, int width, int height);
-	void StateChanged(AActor *actor);
-	void StartSerialize(FArchive &arc);
-	void EndSerialize(FArchive &arc);
 	void RenderTextureView (FCanvasTexture *self, AActor *viewpoint, int fov);
-	sector_t *FakeFlat(sector_t *sec, sector_t *tempsec, int *floorlightlevel, int *ceilinglightlevel, bool back);
-	void SetFogParams(int _fogdensity, PalEntry _outsidefogcolor, int _outsidefogdensity, int _skyfog);
-	void PreprocessLevel();
-	void CleanLevelData();
-	bool RequireGLNodes();
-
-	int GetMaxViewPitch(bool down);
 	void ClearBuffer(int color);
-	void Init();
 };
-
-//===========================================================================
-//
-// The GL renderer has no use for colormaps so let's
-// not create them and save us some time.
-//
-//===========================================================================
-
-bool FGLInterface::UsesColormap() const
-{
-	return false;
-}
 
 //==========================================================================
 //
@@ -1166,54 +1111,9 @@ void FGLInterface::PrecacheTexture(FTexture *tex, int cache)
 	}
 }
 
-//==========================================================================
-//
-// DFrameBuffer :: StateChanged
-//
-//==========================================================================
-
-void FGLInterface::StateChanged(AActor *actor)
-{
-	gl_SetActorLights(actor);
-}
-
-//===========================================================================
-//
-// notify the renderer that serialization of the curent level is about to start/end
-//
-//===========================================================================
-
-void FGLInterface::StartSerialize(FArchive &arc)
-{
-	gl_DeleteAllAttachedLights();
-}
-
 void gl_SerializeGlobals(FArchive &arc)
 {
 	arc << fogdensity << outsidefogdensity << skyfog;
-}
-
-void FGLInterface::EndSerialize(FArchive &arc)
-{
-	gl_RecreateAllAttachedLights();
-	if (arc.IsLoading()) gl_InitPortals();
-}
-
-//===========================================================================
-//
-// Get max. view angle (renderer specific information so it goes here now)
-//
-//===========================================================================
-
-EXTERN_CVAR(Float, maxviewpitch)
-
-int FGLInterface::GetMaxViewPitch(bool down)
-{
-	// [BB] Zandronum clamps the pitch differently
-	// [AK] Check if we should limit the pitch based on ZADF_FORCE_SOFTWARE_PITCH_LIMITS.
-	if (cl_disallowfullpitch || zadmflags & ZADF_FORCE_SOFTWARE_PITCH_LIMITS)
-		return down ? 56 : ( cl_oldfreelooklimit ? 32 : 56 );
-	else return maxviewpitch;
 }
 
 //===========================================================================
@@ -1251,16 +1151,6 @@ void FGLInterface::RenderView(player_t *player)
 	GLRenderer->RenderView(player);
 }
 
-//===========================================================================
-//
-// 
-//
-//===========================================================================
-
-void FGLInterface::Init()
-{
-	gl_ParseDefs();
-}
 
 //===========================================================================
 //
@@ -1312,18 +1202,8 @@ void FGLInterface::RenderTextureView (FCanvasTexture *tex, AActor *Viewpoint, in
 
 	GLRenderer->RenderViewpoint(Viewpoint, &bounds, FOV, (float)width/height, (float)width/height, false, false);
 
-	// [rc4l] features/hwrender: render the same view into the backend's own target.
-	//
-	// A camera texture is GL-rendered into a GL texture, which a foreign backend cannot read, so this
-	// is the one case where replaying the engine's capture is not an option -- the backend has to
-	// draw it. Same viewpoint, same field of view, its own texture.
-	if (Viewpoint != NULL)
-	{
-		zx::hwrender::RenderCameraTexture(gltex, bounds.width, bounds.height, (float)width / height,
-			(int)Viewpoint->x, (int)Viewpoint->y,
-			(int)(Viewpoint->z + (Viewpoint->height >> 1)),
-			(unsigned int)Viewpoint->angle, 0, (float)FOV);
-	}
+	// [rc4l] features/frame: the same view into the backend's own target, since a foreign backend cannot read GL's texture.
+	zx::frame::RenderBackendCamera(gltex, Viewpoint, FOV);
 
 	if (!usefb)
 	{
@@ -1339,50 +1219,6 @@ void FGLInterface::RenderTextureView (FCanvasTexture *tex, AActor *Viewpoint, in
 	tex->SetUpdated();
 }
 
-//==========================================================================
-//
-//
-//
-//==========================================================================
-
-sector_t *FGLInterface::FakeFlat(sector_t *sec, sector_t *tempsec, int *floorlightlevel, int *ceilinglightlevel, bool back)
-{
-	if (floorlightlevel != NULL)
-	{
-		*floorlightlevel = sec->GetFloorLight ();
-	}
-	if (ceilinglightlevel != NULL)
-	{
-		*ceilinglightlevel = sec->GetCeilingLight ();
-	}
-	return gl_FakeFlat(sec, tempsec, back);
-}
-
-//===========================================================================
-//
-// 
-//
-//===========================================================================
-
-void FGLInterface::SetFogParams(int _fogdensity, PalEntry _outsidefogcolor, int _outsidefogdensity, int _skyfog)
-{
-	gl_SetFogParams(_fogdensity, _outsidefogcolor, _outsidefogdensity, _skyfog);
-}
-
-void FGLInterface::PreprocessLevel() 
-{
-	gl_PreprocessLevel();
-}
-
-void FGLInterface::CleanLevelData() 
-{
-	gl_CleanLevelData();
-}
-
-bool FGLInterface::RequireGLNodes() 
-{ 
-	return true; 
-}
 
 //===========================================================================
 //

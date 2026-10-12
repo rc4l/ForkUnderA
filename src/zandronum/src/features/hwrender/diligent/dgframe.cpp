@@ -5,15 +5,15 @@
 
 #include "features/hwrender/diligent/dgscene_internal.h"
 #include "features/hwrender/backendonly.h"
+#include "features/hwrender/computation/levelsetup_compute.h"
+#include "features/mcp-bridge/computation/mcprpc_compute.h"   // [rc4l] SummarizeFrameTimes
 
 namespace zx { namespace hwrender {
 
-// Set once the level has been baked under standalone -- the bake itself needs GL frames.
-static bool g_standaloneBaked = false;
-static int  g_standaloneArmed = 0;
+// [rc4l] Where this level's set-up stands, and the standalone bake's arming, as levelsetup_compute steps them.
+static LevelSetup g_setup = ComputeLevelSetupStart();
+static StandaloneBake g_standalone = { false, 0 };
 
-// [rc4l] One live frame from the current camera. See dglive.h for why the engine-side declaration
-// lives in its own header.
 // [rc4l] Bake and upload this level, once, without anyone typing anything.
 //
 // The bake does not happen when it is asked for -- ArmFullBake only sets a flag that the next
@@ -23,17 +23,11 @@ static int  g_standaloneArmed = 0;
 
 static bool AutoSetupForLevel()
 {
-	static int  s_gen = -1;
-	static int  s_state = 0;   // 0 arm, 1 waiting for the bake, 2 ready, 3 gave up
-	static int  s_wait = 0;
-	static int  s_tries = 0;
+	ComputeLevelSetupForLevel(g_setup, zx::levelmesh::LevelGeneration());
 
-	const int gen = zx::levelmesh::LevelGeneration();
-	if (gen != s_gen) { s_gen = gen; s_state = 0; s_wait = 0; s_tries = 0; }
-
-	switch (s_state)
+	switch (g_setup.state)
 	{
-	case 0:
+	case kSetupArm:
 		if (gamestate != GS_LEVEL) return false;
 		// [rc4l] Drop everything keyed on a pointer the old level owned.
 		//
@@ -96,32 +90,21 @@ static bool AutoSetupForLevel()
 			if (built > 0 || flats > 0)
 				Printf("vulkan: %d wall parts and %d planes built from the map\n", built, flats);
 		}
-		s_state = 1; s_wait = 0;
+		ComputeLevelSetupArmed(g_setup);
 		return false;
-	case 1:
+	case kSetupWaiting:
 		// The bake runs on a rendered frame, and a big level needs more than one. Retry rather than
 		// give up on the first miss: giving up is permanent for the level, and the cost of being
 		// wrong is a black screen with no way back short of a restart.
-		if (++s_wait < 4) return false;
+		if (!ComputeLevelSetupWaited(g_setup)) return false;
 		{
 			FString report;
-			if (SceneUpload(report))
-			{
-				s_state = 2;
-				Printf("vulkan: %s\n", report.GetChars());
-			}
-			else if (++s_tries < 8)
-			{
-				s_state = 0;   // re-arm and try again
-			}
-			else
-			{
-				s_state = 3;
-				Printf("vulkan: setup failed after %d attempts -- %s\n", s_tries, report.GetChars());
-			}
+			ComputeLevelSetupUploaded(g_setup, SceneUpload(report));
+			if (g_setup.state == kSetupReady) Printf("vulkan: %s\n", report.GetChars());
+			else if (g_setup.state == kSetupGaveUp) Printf("vulkan: setup failed after %d attempts -- %s\n", g_setup.tries, report.GetChars());
 		}
-		return s_state == 2;
-	case 2:
+		return g_setup.state == kSetupReady;
+	case kSetupReady:
 		return true;
 	default:
 		return false;
@@ -131,14 +114,6 @@ static bool AutoSetupForLevel()
 // [rc4l] Read by dgwin32.cpp when it creates the window; see fua_dg_embed.
 bool Fua_WantEmbeddedWindow() { return !!fua_dg_embed; }
 
-// [rc4l] Is the standalone path actually carrying the frame?
-//
-// Three things must be true and the cvar is one of them: the backend has to be up, the level has to
-// have been baked (a bake runs inside GL's BSP walk, so the first frames after switching are still
-// GL frames), and there has to be geometry. Anything else and GL keeps the frame -- falling back
-// silently is right here, because the alternative is a black screen.
-// [rc4l] See hud2d.h. Deliberately does NOT ask about fua_dg_standalone: with the embedded window
-// up, GL's output is discarded either way.
 // [rc4l] THE FRAME, which nothing else in this backend measures.
 //
 // Every clock in this file and in stat rendertimes is a COMPONENT: All= is GL's render, the backend
@@ -195,19 +170,13 @@ void ResetFrameTimes() { g_frameCount = 0; g_frameHead = 0; g_frameHavePrev = fa
 CCMD( fua_frametimes )
 {
 	if (g_frameCount < 8) { Printf( "fua_frametimes: not enough frames yet -- play for a second.\n" ); return; }
-	TArray<double> v;
-	v.Resize( (unsigned)g_frameCount );
-	for (int i = 0; i < g_frameCount; i++) v[i] = g_frameMs[i];
-	std::sort( &v[0], &v[0] + g_frameCount );
-	const double med = v[g_frameCount / 2];
-	const double p95 = v[(int)(g_frameCount * 0.95)];
-	const double p99 = v[(int)(g_frameCount * 0.99)];
-	double sum = 0.0; for (int i = 0; i < g_frameCount; i++) sum += v[i];
-	const double mean = sum / g_frameCount;
+	// [rc4l] The bridge's frame-time summary, so this and perf.capture agree on what a percentile is.
+	const zx::mcp::PerfSummary s = zx::mcp::SummarizeFrameTimes(std::vector<double>(g_frameMs, g_frameMs + g_frameCount));
+	const double med = s.p50, p99 = s.p99;
 	// How many frames took more than twice the median -- that is what a stutter IS.
-	int hitches = 0; for (int i = 0; i < g_frameCount; i++) if (v[i] > med * 2.0) hitches++;
+	int hitches = 0; for (int i = 0; i < g_frameCount; i++) if (g_frameMs[i] > med * 2.0) hitches++;
 	Printf( "fua_frametimes over %d frames: min %.2f  med %.2f  mean %.2f  p95 %.2f  p99 %.2f  max %.2f ms\n",
-		g_frameCount, v[0], med, mean, p95, p99, v[g_frameCount - 1] );
+		g_frameCount, s.min, med, s.mean, s.p95, p99, s.max );
 	Printf( "  %.0f fps at the median, %.0f at p99   |   %d frames (%.1f%%) took over twice the median\n",
 		1000.0 / med, 1000.0 / p99, hitches, 100.0 * hitches / g_frameCount );
 	// [rc4l] WHAT the slow frames were carrying, next to what a median frame carries.
@@ -279,16 +248,18 @@ CCMD( fua_frametimes )
 	ResetFrameTimes();
 }
 
+// [rc4l] See hud2d.h; it does not ask about fua_dg_standalone, since with the embedded window up GL's output is discarded either way.
 bool BackendPresenting()
 {
 	if (!fua_vulkan || !fua_dg_embed) return false;
 	return GetSwapChain() != NULL;
 }
 
+// [rc4l] Whether the standalone path carries the frame: the backend up, the level baked and geometry there, GL keeping the frame otherwise rather than leaving a black screen.
 bool StandaloneActive()
 {
 	if (!fua_dg_standalone || !fua_vulkan) return false;
-	if (!g_standaloneBaked || !g_scene.vb || g_scene.verts == 0) return false;
+	if (!g_standalone.baked || !SceneDrawable()) return false;
 	return true;
 }
 
@@ -299,22 +270,16 @@ static bool AdvanceLevelScene()
 	// override that assumes someone already ran the bake by hand.
 	const bool autoReady = fua_vulkan ? AutoSetupForLevel() : false;
 
-	// [rc4l] Bake the level the moment standalone is asked for, because from then on nothing else
-	// will: the bake runs inside GL's BSP walk, and that walk is what this mode stops. Armed rather
-	// than run here, and only once per switch-on.
-	if (fua_dg_standalone && autoReady && !g_standaloneBaked)
+	// [rc4l] Bake the level the moment standalone is asked for, once per switch-on, since from then on GL's walk that bakes it no longer runs.
+	if (ComputeStandaloneBakeStep(g_standalone, fua_dg_standalone, autoReady))
 	{
-		if (g_standaloneArmed == 0)
-		{
-			zx::levelmesh::ArmFullBake();
-			Printf("standalone: baking the level once, then GL stops deriving the scene.\n");
-		}
-		if (++g_standaloneArmed > 3) g_standaloneBaked = true;   // a frame to bake, one to upload
+		zx::levelmesh::ArmFullBake();
+		Printf("standalone: baking the level once, then GL stops deriving the scene.\n");
 	}
-	if (!fua_dg_standalone) { g_standaloneBaked = false; g_standaloneArmed = 0; }
 	return autoReady;
 }
 
+// [rc4l] One live frame from the current camera, its engine-side declaration in dglive.h.
 void LiveFrame()
 {
 	// [rc4l] A launch without GL presents from its frame buffer's Update, where every path of D_Display passes.
@@ -330,7 +295,7 @@ void LiveFrame()
 		return;
 	}
 	Fua_ShowBackendWindow(GetBackendWindow(), 1);
-	if (!g_scene.vb || !g_pso.opaque || g_scene.verts == 0) return;
+	if (!SceneDrawable()) return;
 	if (GetBackendWindow() == NULL) return;
 
 	// The camera is rebuilt every frame -- that is the entire point of this path. Everything else
@@ -378,11 +343,7 @@ static void DrawOverlay(bool present)
 	const float black[4] = { 0.f, 0.f, 0.f, 1.f };
 	ctx->ClearRenderTarget(rtv, black, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 	Draw2D(ctx);
-	if (!present) return;
-	swap->Present(0);
-	RecordPresentInterval();
-	Fua_PumpBackendWindow(GetBackendWindow());
-	Fua_SyncBackendWindowToParent(GetBackendWindow());
+	if (present) PresentFrame(ctx, swap, true);
 }
 
 // [rc4l] Whether the last frame drew the world under its 2D, so a screenshot redraws what was shown.
@@ -398,12 +359,14 @@ static void DrawBackendFrame(bool present)
 	else DrawOverlay(present);
 }
 
-void PresentBackendOnly()
+void PresentBackendOnly(bool present)
 {
-	zx::hwrender::GLFrameDone();
 	const bool ready = AdvanceLevelScene();
-	g_lastFrameWorld = g_worldViewThisFrame && ready && g_scene.vb && g_pso.opaque && g_scene.verts > 0;
+	const bool world = g_worldViewThisFrame && ready && SceneDrawable();
 	g_worldViewThisFrame = false;
+	if (!present) return;
+	zx::hwrender::GLFrameDone();
+	g_lastFrameWorld = world;
 	DrawBackendFrame(true);
 	zx::hwrender::BackendFrameDone();
 }

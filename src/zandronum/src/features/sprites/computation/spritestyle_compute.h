@@ -46,6 +46,16 @@ struct SpriteStyleOut
 // [rc4l] The style, alpha and alpha-test choice GLSprite::Process makes; trans 0 means GL draws nothing.
 SpriteStyleOut ComputeSpriteStyle(const SpriteStyleIn &in);
 
+struct WeaponStyleOut
+{
+	SpriteStyle style;
+	float trans;
+	bool noBright;   // [rc4l] a fuzz style is never drawn fullbright
+};
+
+// [rc4l] DrawPlayerSprites' style and alpha: the sprites' fuzz, transsouls and alpha1 rules without their solid-sprite normalisation; `fuzzStyle` is whether the style was a fuzz one before FRenderStyle::CheckFuzz settled `style`.
+WeaponStyleOut ComputeWeaponStyle(const SpriteStyle &style, bool fuzzStyle, float alpha, float transSouls, int fuzzType, const SpriteStyle &translucent);
+
 // [rc4l] The backend's blend for a resolved style: 0 opaque or alpha-tested, 1 translucent, 2 additive, 3 fuzz.
 int ComputeSpriteBlendMode(int blendOp, int destAlpha, float trans);
 

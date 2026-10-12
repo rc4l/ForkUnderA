@@ -427,8 +427,7 @@ static void StoreFlat(const FlatSource &flat, subsector_t *sub, bool ceiling)
 	mp.scrollV = scrollV;
 	MeshRegisterPiece(mp);
 
-	// Only now: a stamp recorded before the store would claim a surface that never made it in.
-	// [rc4l] Its offsets stay the ones baked into the vertices unless they were baked again just now.
+	// [rc4l] Stamped only now, since an earlier stamp would claim a surface that never made it in, keeping the baked offsets unless they were baked again just now.
 	const long long bakedX = slot->stamp.xoffs, bakedY = slot->stamp.yoffs;
 	slot->stamp = now;
 	if (change != kFlatRebuild) { slot->stamp.xoffs = bakedX; slot->stamp.yoffs = bakedY; }
@@ -1068,12 +1067,6 @@ PortalViewState::PortalViewState() : stackUsed(0), skyboxWalked(false)
 {
 	for (int i = 0; i < kMaxStackViews; i++) { portals[i] = NULL; info[i].dx = info[i].dy = 0.f; info[i].ceiling = false; }
 	for (int s = 0; s < kWalkSlots; s++) needsClear[s] = false;
-}
-
-const unsigned int *WalkBits(int &words)
-{
-	words = (int)g_stackVis.Size();
-	return words ? &g_stackVis[0] : NULL;
 }
 
 void ForgetWalks()

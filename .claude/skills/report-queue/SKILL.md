@@ -51,7 +51,9 @@ its full spot record.
    `play --spot` takes the spot's map and wads (by name, from `FUACTL_PWADS` or `--store`) and stands
    the player there. Reproduce it two ways: loaded directly, and reached the way the user did, with
    `travel --to <MAP>` (`nextmap` until there) from where they started. Note which route shows it,
-   since a fault only one shows is a level-change bug. Check it is the fault they reported and not a
+   since a fault only one shows is a level-change bug. When it does not show with standalone off, try
+   `--cvar fua_dg_standalone=1` (what players run) and then `play --no-gl`: a fault only standalone
+   shows is in the walks or the backend, and one only `--no-gl` shows is in the GL-free path. Check it is the fault they reported and not a
    cousin, and pin it to a pixel: `look --spot <spot> --pixel x,y` names the surface (and, under a
    floor, its subsector, sectors, textures and linked lights); `png --px`, `png --boxdiff` and
    `png --diffimg` compare captures (`reproducing-a-report`), and `sector-of --pixel x,y --side gl` names the
@@ -73,7 +75,7 @@ its full spot record.
 7. **Verify, all of it:** `build --no-stage --tests` (the engine and `zandrox_tests`, run, the user's binary
    left alone), `node --test`, the
    new scenario now passes, and `node src/cli.mjs scenarios --engine F:/ForkUnderA/build-win/Release/forkundera.exe`
-   is green. Re-shoot the item's spot GL against Vulkan and look at it.
+   is green, with `--standalone` as well for anything standalone touches. Re-shoot the item's spot GL against Vulkan and look at it.
 8. **Close it:** `queue done <id> --note "<cause>; <fix>; scenario <name>"`.
 9. **Hand the build back:** `build` stages it (or copy `forkundera.exe` and `.pdb` from `build-win/Release` to `dist-windows`),
    relaunch their session (`play --unpark --port 7801` if you parked it, else `fua-side-by-side`), then take the next item.
@@ -89,8 +91,9 @@ replaced usually still captures correctly. Fix what the audit finds, close the i
 
 ## Sharing the machine
 
-- **One harness at a time.** `scenarios` and every template comparison refuse while any other engine
-  window is open, the user's included, because a GL frame read back from under another window is garbage.
+- **One harness at a time.** Every scenario with a GL side, and every same-frame one, refuses while any
+  other engine window is open, the user's included, because a GL frame read back from under another
+  window is garbage.
   Before running them, say in one line that you are closing their window and run
   `quit --park --port 7801`, which files their camera, wads and renderer first; afterwards
   `nohup node src/cli.mjs play --unpark --port 7801 --store <their wad folder> &` brings it back

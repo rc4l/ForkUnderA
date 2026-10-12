@@ -5,7 +5,7 @@ import { spawnSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
 import { resolveEngine, engineArgs, describeExit, countEngineLines, missingCoreData } from "../src/launch.mjs";
-import { sweepDirFor, pickCmake, resolveTarget, readSession, sessionFileFor, cameraFromFlags, cvarValueFrom, parseCvarFlag, spotLaunch, parkFileFor, parkedLaunch, PARKED, clearPortSessions, liveTarget, pidAlive, buildErrors, summarizeGtest, standAt, launchFileFor, holdingLaunchFile, launchInProgress, awaitLaunch, atFromCamera, releaseOf, stepTag, sameFrameCommand } from "../src/shot.mjs";
+import { sweepDirFor, pickCmake, resolveTarget, readSession, sessionFileFor, cameraFromFlags, cvarValueFrom, parseCvarFlag, spotLaunch, parkFileFor, parkedLaunch, PARKED, clearPortSessions, liveTarget, pidAlive, buildErrors, summarizeGtest, sourcesStamp, standAt, launchFileFor, holdingLaunchFile, launchInProgress, awaitLaunch, atFromCamera, releaseOf, stepTag, sameFrameCommand } from "../src/shot.mjs";
 
 // Run `fn` with cwd moved to `dir` and FUACTL_ENGINE cleared, then put both back.
 function inDir(dir, fn) {
@@ -292,6 +292,12 @@ test("a parked instance relaunches at its camera with its wads, side by side whe
   assert.equal(parkedLaunch(park, "/store", []).sideBySide, false);
   fs.writeFileSync(park, JSON.stringify(record(undefined)));
   assert.equal(parkedLaunch(park, "/store", []).sideBySide, false);
+  assert.equal(parkedLaunch(park, "/store", []).noGl, false);
+  // [rc4l] A -vulkan launch comes back without GL, since dumprenderer's backend was filed with it.
+  const vk = record("true");
+  vk.spots[PARKED].renderer.backend = "vulkan";
+  fs.writeFileSync(park, JSON.stringify(vk));
+  assert.equal(parkedLaunch(park, "/store", []).noGl, true);
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
@@ -369,4 +375,11 @@ test("a spot refused as occupied is stood on anyway, and any other refusal still
   const forced = fake(() => "that spot is solid or occupied");
   await assert.rejects(standAt(forced, { ...at, force: 1 }, () => {}), /occupied/);
   assert.equal(forced.calls.length, 1);
+});
+
+// [rc4l] A new *_compute.cpp linked only on the second build, since the glob is read at configure time.
+test("the globbed sources' stamp ignores order and path separators, and changes when a file appears", () => {
+  const a = sourcesStamp(["features/b/x_compute.cpp", "features\\a\\y_compute.cpp"]);
+  assert.equal(a, sourcesStamp(["features/a/y_compute.cpp", "features/b/x_compute.cpp"]));
+  assert.notEqual(a, sourcesStamp(["features/a/y_compute.cpp", "features/b/x_compute.cpp", "features/c/z_compute.cpp"]));
 });

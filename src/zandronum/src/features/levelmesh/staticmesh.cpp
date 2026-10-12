@@ -17,7 +17,7 @@ namespace zx { namespace levelmesh {
 // worst-case wall budget is 4.5 M vertices, and only the visible subset is ever baked).
 static const unsigned int kMaxVertices = 2000000;
 
-static TArray<MeshVertex> g_verts;        // the arena; a backend copies it from here
+static TArray<MeshVertex> g_verts;        // [rc4l] the arena; a backend copies it from here
 static unsigned int        g_used = 0;
 // [rc4l] A second, independent dirty cursor for a foreign backend -- see MeshTakeDirty.
 static unsigned int        g_bkDirtyLo = 0xffffffffu;

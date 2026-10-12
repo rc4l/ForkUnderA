@@ -6,6 +6,10 @@
 #ifndef ZX_SPRITEBUILD_H
 #define ZX_SPRITEBUILD_H
 
+#include "basictypes.h"          // [rc4l] fixed_t, which renderstyle.h uses without including
+#include "r_data/renderstyle.h"   // [rc4l] FRenderStyle
+#include "features/sprites/computation/spritestyle_compute.h"
+
 class AActor;
 struct particle_t;
 struct sector_t;
@@ -34,6 +38,10 @@ void CheckFrameSprites();
 
 // [rc4l] gl_SetDynSpriteLight for an actor: the dynamic light at its middle, into `out`, which starts from nothing.
 void ActorDynamicLight(const AActor *actor, float out[3]);
+
+// [rc4l] An engine render style as spritestyle_compute takes it, and back.
+SpriteStyle StyleOf(const FRenderStyle &s);
+FRenderStyle RenderStyleOf(const SpriteStyle &s);
 
 }} // namespace zx::sprites
 

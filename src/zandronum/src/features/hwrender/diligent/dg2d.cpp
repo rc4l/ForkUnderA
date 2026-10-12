@@ -213,7 +213,7 @@ void Draw2D(Diligent::IDeviceContext *ctx)
 		{
 			const zx::hwrender::Quad2D &q = quads[i];
 			Vertex2D v[4];
-			if (q.kind == 1)
+			if (q.kind == zx::draw2d::kQuadLine)
 			{
 				// [rc4l] A line, widened into a quad along its own perpendicular. Doing it here rather
 				// than with a line topology keeps every 2D record in one buffer and one draw order,

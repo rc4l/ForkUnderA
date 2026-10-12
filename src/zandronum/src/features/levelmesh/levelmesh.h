@@ -12,6 +12,9 @@
 
 #include "features/levelmesh/computation/surfacebudget_compute.h"
 #include "tarray.h"
+#include "basictypes.h"   // [rc4l] fixed_t
+
+struct sector_t;
 
 namespace zx { namespace levelmesh {
 
@@ -47,6 +50,9 @@ void CollectSideBudgets(Collected &out);
 // inside a real render frame -- it needs the view, the draw lists, gl_drawinfo and the portal state
 // all set up, and reproducing that outside the renderer would be a second, divergent copy of it.
 void ArmFullBake();
+
+// [rc4l] The lower edge at (x, y) of a sector's 3D floor light list entry: the next entry's plane, or the sector's floor under the last.
+fixed_t LightListBottom(const sector_t *sector, unsigned entry, fixed_t x, fixed_t y);
 bool TakePendingFullBake();
 
 // [rc4l] Claim a sidedef for the current bake pass; false if it was already taken.

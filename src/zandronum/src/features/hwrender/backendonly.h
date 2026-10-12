@@ -2,12 +2,11 @@
 // Copyright (C) 2026 rc4l
 //
 // [rc4l] A launch with no GL at all (-vulkan): the backend's own frame buffer and renderer, chosen at startup, so no GL context is ever made.
-//
-// Deliberately Diligent-free, like hud2d.h: the engine's video code includes it, and every Diligent
-// header drags in a reshaped windows.h that fights with the engine's own.
 
 #ifndef ZX_BACKENDONLY_H
 #define ZX_BACKENDONLY_H
+
+// [rc4l] Diligent-free like hud2d.h, since the engine's video code includes it and every Diligent header drags in a windows.h that fights the engine's own.
 
 class DFrameBuffer;
 class FRenderer;
@@ -38,8 +37,8 @@ int BackendMaxTextureSize();
 // [rc4l] The engine drew a view of the world this frame, which the present draws under the 2D layer.
 void NoteWorldView();
 
-// [rc4l] Present a frame: the world when a view of it was drawn and the level is baked, else the 2D layer alone.
-void PresentBackendOnly();
+// [rc4l] Advance the level's scene, and with `present` draw and present the frame: the world when a view of it was drawn and the level is baked, else the 2D layer alone.
+void PresentBackendOnly(bool present);
 
 // [rc4l] The last presented frame drawn again and read back, as top-down RGB the caller deletes; NULL when there is no device.
 unsigned char *ReadBackendFrame(int &width, int &height);

@@ -53,6 +53,11 @@ bindable command is **`fua_clip`** (commands don't take the `cl_` cvar prefix).
   nobody noticed, because CMake treats this feature as optional and silently compiles the stub —
   both scripts now assert on `FUA replay: FFmpeg found` in the configure output rather than trusting
   that a build which succeeded is a build that can record.
+- **Vulkan (done):** the backend's swapchain is read back through a pair of staging textures. Beside GL it
+  is a second stream (`<name>_vk.mp4`); in a `-vulkan` launch it is the session's own stream. `fua_clip`
+  saves each stream fed within the last second (`ComputeStreamLive`), so GL's stream, which standalone
+  stops feeding, writes no stale clip. Hooks: `features/hwrender/diligent/dgdiag.cpp` `CaptureReplayFrame`
+  and `dgscene.cpp` `PresentFrame`.
 - **Capture perf (done):** the capture hook uses a **double-buffered PBO async readback** — it issues
   `glReadPixels` into one pixel-pack buffer (returns immediately) and hands the previous frame's
   already-completed readback to the encoder, so the render thread never stalls (design §3.1).

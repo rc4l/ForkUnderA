@@ -17,6 +17,9 @@ Who/What/Where/Why on the issue, and close it.
 - **Bottom-up for the trigger:** the *lower* frames are the calling context (a thinker, a floor
   mover, a map change, a net packet). The bug is almost always "a legitimate path reached this frame
   with an argument that's invalid **right now**."
+- **On Windows**, a fuactl launch that crashes leaves `<log>.crash` with a `fault stack:` walked from the
+  exception's context (a call through a null pointer starts from its caller), and a template run prints
+  `engine crashed -- <log>.crash`.
 - **Confirm with lldb** when you can reproduce: `lldb --batch -o run -o "bt" -o "register read" -- <bin> <args>`.
   `EXC_BAD_ACCESS (code=1, address=0x…)` + the faulting register tells you which pointer is bad and
   the offset tells you which field (e.g. `[x1, #0x143]` = the field at that struct offset off a null base).
@@ -52,6 +55,8 @@ one — reproduce instead:
    bots, sequence.
 3. Before the fix it died within seconds; after, confirm it **survives well past that point** (watch
    `pgrep` for ~20s past the trigger).
+4. A render crash that only a `--no-gl` launch shows is a GL-context dependency: model vertex buffers
+   once called a null `glGenBuffers` there. Give it a scenario with a `noGl` side (`template-maps`).
 
 ## 5. Write Who/What/Where/Why on the issue, then close
 Post one comment, four short paragraphs, **~3 sentences each**:

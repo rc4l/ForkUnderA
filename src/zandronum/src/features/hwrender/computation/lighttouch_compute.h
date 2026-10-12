@@ -22,6 +22,29 @@ static const unsigned kLightTouchesAll = 0xFFFFFFFFu;
 // [rc4l] One light's ids as the shader searches them: sorted, each once.
 void ComputeSortedTouches(std::vector<unsigned> &touched);
 
+// [rc4l] A dynamic light's colour as gl_GetLight scales it: each 0..255 channel times gl_lights_intensity, an additive light's a fifth of that.
+void ComputeDynLightColor(int r, int g, int b, bool additive, float intensity, float out[3]);
+
+// [rc4l] The tic, level and light switches the lights were last collected under.
+struct LightsStamp
+{
+	int tic, generation, flags;
+};
+
+// [rc4l] Whether the lights must be collected again, once per tic or on a new level or switch setting; `newLevel` says the kept links belong to another level.
+bool ComputeLightsDue(LightsStamp &kept, int tic, int generation, int flags, bool &newLevel);
+
+// [rc4l] What a light's links were collected for: the light, where it stood and how far it reached.
+struct LightLinkKey
+{
+	const void *light;
+	long long x, y, z;
+	float radius;
+};
+
+// [rc4l] Whether a light's kept links must be collected again, ADynamicLight relinking only when one of these changes.
+bool ComputeLightLinksStale(const LightLinkKey &kept, const LightLinkKey &now);
+
 // [rc4l] Every light's sorted ids appended to ids, with its range; a light whose ids would pass capacity touches everything.
 void ComputeLightTouchLists(const std::vector<const std::vector<unsigned> *> &perLight, unsigned capacity,
 	std::vector<LightTouchRange> &ranges, std::vector<unsigned> &ids);

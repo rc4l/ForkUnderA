@@ -87,6 +87,24 @@ test("sampleProcess: Windows with a connection uses the in-engine sampler", asyn
   assert.deepEqual(r.functions, [{ symbol: "P_CheckPosition", binary: "forkundera", samples: 900, percent: 60 }]);
 });
 
+test("sampleProcess: --stacks asks the engine to walk stacks and returns the inclusive table beside the self one", async () => {
+  const asked = [];
+  const conn = {
+    rpc: async (cmd, args) => { asked.push([cmd, args]); return { sampling: true }; },
+    waitEvent: async () => ({
+      seconds: 1, samples: 10,
+      functions: [{ symbol: "ClipAngle", dso: "forkundera", samples: 2, percent: 20 }],
+      inclusive: [{ symbol: "D_Display", dso: "forkundera", samples: 10, percent: 100 }],
+    }),
+  };
+
+  const r = await sampleProcess(1, { _platform: "win32", conn, seconds: 1, top: 5, stacks: true });
+
+  assert.deepEqual(asked, [["perf.sample", { seconds: 1, top: 5, engine: 0, stacks: 1 }]]);
+  assert.deepEqual(r.inclusive, [{ symbol: "D_Display", binary: "forkundera", samples: 10, percent: 100 }]);
+  assert.equal(r.functions[0].symbol, "ClipAngle");
+});
+
 test("sampleProcess: a refused sample run is reported, not treated as empty", async () => {
   const conn = { rpc: async () => null, waitEvent: async () => { throw new Error("must not wait"); } };
 

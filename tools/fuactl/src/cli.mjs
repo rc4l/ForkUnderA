@@ -24,7 +24,7 @@ import { png } from "./png.mjs";
 import { actorsNear } from "./actors.mjs";
 import { pixelToFace } from "./camera.mjs";
 import { sectorOf } from "./sectorof.mjs";
-import { scenarioOptions, scenarioRun, templateScenarioFiles, probeScenario, withSideCvars } from "./template.mjs";
+import { scenarioOptions, scenarioRun, templateScenarioFiles, probeScenario, sideAdjust, standaloneOptions, launchRenderer } from "./template.mjs";
 import { abPerf } from "./abperf.mjs";
 import { decodePNG, abDiff, boxDiff } from "./pngcore.mjs";
 import fs from "node:fs";
@@ -69,6 +69,9 @@ async function captureSpot(c, name, note, file = SPOTS) {
     const v = shot.cvarValueFrom(await cap.exec(c, cv, { quietMs: 300, maxMs: 6000 }).catch(() => ""));
     if (v !== null) renderer[cv] = v;
   }
+  // [rc4l] Whether the launch had GL at all, which no cvar says: "vulkan" for a -vulkan launch.
+  const backend = launchRenderer(await cap.exec(c, "dumprenderer", { quietMs: 300, maxMs: 6000 }).catch(() => ""));
+  if (backend) renderer.backend = backend;
   const db = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf8")) : { spots: {} };
   db.spots[name] = Object.assign({}, db.spots[name], {
     map: cam.map, ...shot.atFromCamera(cam),
@@ -131,7 +134,7 @@ const USAGE = `fuactl <command>
   ls                                 list registered engine instances
   reap [--kill] [--all]              prune dead; --kill SIGTERMs ORPHANS only (other sessions safe); --all kills every live instance
   launch [--map M] [--seed S] [--port P] [--token T] [--iwad W] [--skill N] [--file a.wad,b.pk3] [--cvar k=v,k2=v2] [--play]   launch one supervised bridge instance (stays up until Ctrl-C)
-  sample --pid P | --port P [--seconds N] [--engine]   hottest functions (macOS sample / Linux perf; unavailable on Windows)
+  sample --pid P | --port P [--seconds N] [--engine] [--stacks]   hottest functions (macOS sample / Linux perf / Windows in-engine, which needs --port); --stacks adds each function's inclusive share on Windows
   net-bw [--seed S] [--map M] [--spawn CLS] [--count N] [--seconds N]   client/server bandwidth, baseline vs perturbation
   cycle --port P [--token T] [--count N] [--settle MS]   advance the map rotation N times, confirming intermissions
   rpc <cmd> [jsonArgs] --port P [--token T]   send one RPC to an instance and print the result
@@ -152,13 +155,13 @@ const USAGE = `fuactl <command>
   here --port P [--token T] [--save NAME] [--note TEXT]   the live camera (position + facing, full precision) and what the crosshair is on; --save records it in spots.json as a named repro
   renderer-info --port P [--token T]   renderer identity + whether GL timer queries work on this driver
   ui <action> [args] --port P [--token T]   drive the UI: read (menu as text), find <label>, nav <keys>, click <x> <y>, drag, type <text>, look --yaw D --pitch D, screenshot [name], exec <ccmd>
-  diligent --port P [--frames N] [--shot FILE] [--sweep DIR]   drive the Diligent (Vulkan) backend: bake the level mesh, upload geometry, optional swapchain screenshot, optional debug-view sweep (lm0..lm4.png in DIR), the matched Diligent-vs-GL benchmark, and with --scale a GPU-time probe at 1x..100x the visible geometry
+  diligent --port P [--frames N] [--shot FILE] [--sweep DIR]   drive the Diligent (Vulkan) backend: bake the level mesh, upload geometry, optional swapchain screenshot, optional debug-view sweep (lm0..lm4.png in DIR), the Diligent frame benchmark (fua_diligent_bench), and with --scale a GPU-time probe at 1x..100x the visible geometry
   play [--restart] [--port P] [--token T] [--spot NAME | --unpark] [--map M] [--file a.pk3,b.pk3] [--cvar k=v,k2=v2] [--preset ID --variant V --store DIR] [--gl | --no-gl] [--side-by-side] [--rt] [--monsters] [--lock] [--res WxH]   a build to walk around in, Vulkan live in the window; stays up until Ctrl-C
   build [--root DIR] [--no-stage] [--tests]   compile the engine (with --tests the unit tests too, and run them) and stage it unless --no-stage, failing loudly instead of staging a stale binary
   mapdata <MAP> (--preset ID | --file a.pk3,b.wad) [--sector N,..] [--line N,..] [--special N] [--tag N] [--thing TYPE,..] [--scripts REGEX]   a UDMF level's summary, sectors, lines, things of the given types and ACS source lines, read from its files
   actors [--near x,y] [--radius R] [--toward YAW | --ahead] [--cone DEG] [--class REGEX]   actors near a point (default the player), nearest first, optionally only in a direction
   probe <scenario.mjs> [--map M] [--vantage V] [--side S] [--engine path/to/forkundera.exe] [<command> ...]   launch a template scenario's map at a vantage and run console commands there
-  scenarios [name ...] [--engine path/to/forkundera.exe] [--side S --cvar k=v,...]   run every template scenario (or the named ones) in turn and summarise; --engine picks the binary, as FUACTL_ENGINE does; --side/--cvar adds cvars to one side, to show a test fails under the old behaviour
+  scenarios [name ...] [--engine path/to/forkundera.exe] [--side S --cvar k=v,...] [--standalone]   run every template scenario (or the named ones) in turn and summarise; --engine picks the binary, as FUACTL_ENGINE does; --side/--cvar adds cvars to one side, to show a test fails under the old behaviour (scenarios without that side are skipped); --standalone runs each as players do: its own standalone side, else its vk side with fua_dg_standalone 1, else skipped
   ready [--port P --token T] [--timeout S]   wait until an instance answers (defaults to the last play session)
   goto (--spot NAME | --at x,y,z --face yaw,pitch) [--port P]   stand the player there
   motion [--spot NAME | --at x,y,z --face yaw,pitch] [--box x0,y0,x1,y1] [--interval MS]   per-pixel change between two captures apart, Vulkan and GL, sim running
@@ -324,9 +327,10 @@ async function main() {
       const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "scenarios");
       const files = templateScenarioFiles(dir, rest);
       // [rc4l] --side S --cvar k=v runs a scenario with one side changed, to show a regression test fails under the behaviour it guards against.
-      const adjust = flags.side ? (o) => withSideCvars(o, String(flags.side), shot.parseCvarFlag(flags.cvar) || {}) : undefined;
+      const adjust = flags.standalone ? standaloneOptions
+        : flags.side ? sideAdjust(String(flags.side), shot.parseCvarFlag(flags.cvar) || {}) : undefined;
       console.log(`engine ${resolveEngine()}`);
-      let failed = 0;
+      let failed = 0, skipped = 0;
       for (const f of files) {
         const url = pathToFileURL(path.join(dir, f)).href;
         await import(url);
@@ -334,9 +338,11 @@ async function main() {
         if (!run) continue;
         const out = await run();
         for (const l of out.lines.filter((x) => !x.startsWith("PASS"))) console.log(`${f.slice(0, -4).padEnd(18)} ${l}`);
+        if (out.skipped) skipped++;
         if (out.code !== 0) failed++;
       }
-      console.log(failed ? `${failed} scenario(s) failed` : "every scenario within its limits");
+      const ran = skipped ? ` (${skipped} skipped)` : "";
+      console.log(failed ? `${failed} scenario(s) failed${ran}` : `every scenario within its limits${ran}`);
       process.exitCode = failed ? 1 : 0;
       break;
     }
@@ -509,6 +515,7 @@ async function main() {
         seconds: flags.seconds ? Number(flags.seconds) : 2,
         top: flags.top ? Number(flags.top) : 12,
         engineOnly: !!flags.engine,
+        stacks: !!flags.stacks,
       };
       // [rc4l] The Windows backend lives inside the engine, so it needs a connection rather than a
       // pid. Opened only when --port was given; the external backends never touch it.
@@ -908,6 +915,7 @@ async function main() {
         const pl = shot.parkedLaunch(park, store);
         takeLaunch("the parked instance", pl);
         flags["side-by-side"] = flags["side-by-side"] || pl.sideBySide;
+        flags["no-gl"] = flags["no-gl"] || pl.noGl;
         spotAt = pl.at;
       }
       const inst = await play({

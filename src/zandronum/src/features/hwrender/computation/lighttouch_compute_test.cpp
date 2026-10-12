@@ -64,3 +64,40 @@ TEST(LightTouchCompute, ListsStartAgainEachCall)
 	EXPECT_TRUE(ranges.empty());
 	EXPECT_TRUE(ids.empty());
 }
+
+TEST(ComputeDynLightColor, AnAdditiveLightIsAFifthAsBright)
+{
+	float c[3];
+	zx::hwrender::ComputeDynLightColor(255, 0, 51, false, 2.f, c);
+	EXPECT_FLOAT_EQ(2.f, c[0]); EXPECT_FLOAT_EQ(0.f, c[1]); EXPECT_FLOAT_EQ(0.4f, c[2]);
+	zx::hwrender::ComputeDynLightColor(255, 0, 51, true, 2.f, c);
+	EXPECT_FLOAT_EQ(0.4f, c[0]);
+}
+
+TEST(ComputeLightLinksStale, AnyChangeOfLightPlaceOrReach)
+{
+	int a, b;
+	const zx::hwrender::LightLinkKey kept = { &a, 1, 2, 3, 64.f };
+	zx::hwrender::LightLinkKey now = kept;
+	EXPECT_FALSE(zx::hwrender::ComputeLightLinksStale(kept, now));
+	now.light = &b; EXPECT_TRUE(zx::hwrender::ComputeLightLinksStale(kept, now)); now = kept;
+	now.x = 9; EXPECT_TRUE(zx::hwrender::ComputeLightLinksStale(kept, now)); now = kept;
+	now.y = 9; EXPECT_TRUE(zx::hwrender::ComputeLightLinksStale(kept, now)); now = kept;
+	now.z = 9; EXPECT_TRUE(zx::hwrender::ComputeLightLinksStale(kept, now)); now = kept;
+	now.radius = 65.f; EXPECT_TRUE(zx::hwrender::ComputeLightLinksStale(kept, now));
+}
+
+TEST(ComputeLightsDue, OncePerTicAndAgainOnANewLevelOrSwitch)
+{
+	zx::hwrender::LightsStamp kept = { -1, -1, -1 };
+	bool newLevel = false;
+	EXPECT_TRUE(zx::hwrender::ComputeLightsDue(kept, 10, 1, 3, newLevel));
+	EXPECT_TRUE(newLevel);
+	EXPECT_FALSE(zx::hwrender::ComputeLightsDue(kept, 10, 1, 3, newLevel));
+	EXPECT_FALSE(newLevel);
+	EXPECT_TRUE(zx::hwrender::ComputeLightsDue(kept, 11, 1, 3, newLevel));
+	EXPECT_FALSE(newLevel);
+	EXPECT_TRUE(zx::hwrender::ComputeLightsDue(kept, 11, 1, 1, newLevel));
+	EXPECT_TRUE(zx::hwrender::ComputeLightsDue(kept, 11, 2, 1, newLevel));
+	EXPECT_TRUE(newLevel);
+}

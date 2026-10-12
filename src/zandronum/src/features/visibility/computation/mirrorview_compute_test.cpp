@@ -110,3 +110,11 @@ TEST(MirrorView, ACrossingSnappedAtTheFarEndLeavesTheWallToTheNextBand)
 	const SheenPlane planes[2] = { Sloped(130, -2.0001 / 256), Flat(-10) };
 	EXPECT_EQ(ComputeSheenBand(w, planes, 3), 1);
 }
+
+TEST(ComputeSheenBandLight, TheBandsLevelUnlessTheWallsAndFullUnderAFadeWall)
+{
+	EXPECT_EQ(120, zx::visibility::ComputeSheenBandLight(120, false, 200, false));
+	EXPECT_EQ(200, zx::visibility::ComputeSheenBandLight(120, true, 200, false));
+	EXPECT_EQ(255, zx::visibility::ComputeSheenBandLight(120, true, 200, true));
+	EXPECT_EQ(255, zx::visibility::ComputeSheenBandLight(120, false, 200, true));
+}

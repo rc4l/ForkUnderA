@@ -100,7 +100,6 @@ FGLRenderer::FGLRenderer(OpenGLFrameBuffer *fb)
 	mSkyVBO = NULL;
 	gl_spriteindex = 0;
 	mShaderManager = NULL;
-	glpart2 = glpart = mirrortexture = NULL;
 	mLights = NULL;
 }
 
@@ -109,11 +108,6 @@ void gl_FlushModels();
 
 void FGLRenderer::Initialize()
 {
-	// [rc4l] features/materials owns these, so a backend has them without GL.
-	glpart2 = zx::materials::ParticleTexture(1);
-	glpart = zx::materials::ParticleTexture(2);
-	mirrortexture = zx::materials::MirrorSheenTexture();
-
 	mVBO = new FFlatVertexBuffer;
 	mSkyVBO = new FSkyVertexBuffer;
 	mLights = new FLightBuffer();
@@ -136,7 +130,6 @@ FGLRenderer::~FGLRenderer()
 	if (mVBO != NULL) delete mVBO;
 	if (mSkyVBO != NULL) delete mSkyVBO;
 	if (mLights != NULL) delete mLights;
-	// [rc4l] glpart, glpart2 and mirrortexture are features/materials', which keeps them.
 	if (mFBID != 0) glDeleteFramebuffers(1, &mFBID);
 }
 
@@ -212,10 +205,7 @@ void FGLRenderer::ProcessSector(sector_t *fakesector)
 //
 //===========================================================================
 
-void FGLRenderer::FlushTextures()
-{
-	FMaterial::FlushAll();
-}
+
 
 //===========================================================================
 // 
@@ -249,10 +239,7 @@ void FGLRenderer::EndOffscreen()
 //
 //===========================================================================
 
-unsigned char *FGLRenderer::GetTextureBuffer(FTexture *tex, int &w, int &h)
-{
-	return FMaterial::TextureBuffer(tex, w, h);
-}
+
 
 //===========================================================================
 // 
@@ -365,7 +352,7 @@ void FGLRenderer::DrawTexture(FTexture *img, DCanvas::DrawParms &parms)
 	ptr->Set(x2, y2, 0, u2, v2); ptr++;
 	GLRenderer->mVBO->RenderCurrent(ptr, GL_TRIANGLE_STRIP);
 
-	// [rc4l] features/hwrender: the same quad to the 2D capture, so a foreign backend gets the HUD, the menus and the console. See hud2d.h.
+	// [rc4l] features/hwrender: the same quad goes to the 2D capture (see hud2d.h), so a foreign backend gets the HUD, the menus and the console.
 	zx::hwrender::Record2D(d.quad);
 
 	if (parms.colorOverlay)
@@ -501,9 +488,8 @@ void FGLRenderer::FlatFill (int left, int top, int right, int bottom, FTexture *
 	GLRenderer->mVBO->RenderCurrent(ptr, GL_TRIANGLE_STRIP);
 
 	// [rc4l] features/draw2d: the same fill, as tiles, for the backend.
-	static std::vector<zx::hwrender::Quad2D> tiles;
-	zx::draw2d::PrepareFlatFill(left, top, right, bottom, src, local_origin, tiles);
-	for (size_t i = 0; i < tiles.size(); i++) zx::hwrender::Record2D(tiles[i]);
+	zx::draw2d::PrepareFlatFill(left, top, right, bottom, src, local_origin, mFlatTiles);
+	for (size_t i = 0; i < mFlatTiles.size(); i++) zx::hwrender::Record2D(mFlatTiles[i]);
 }
 
 //==========================================================================
@@ -516,7 +502,7 @@ void FGLRenderer::Clear(int left, int top, int right, int bottom, int palcolor, 
 	BackendOnly2D backendOnly;
 	int rt;
 	int offY = 0;
-	const PalEntry p = palcolor == -1 ? PalEntry(color) : zx::draw2d::DrawColor(palcolor, color);
+	const PalEntry p = zx::draw2d::DrawColor(palcolor, color);
 	int width = right-left;
 	int height= bottom-top;
 	

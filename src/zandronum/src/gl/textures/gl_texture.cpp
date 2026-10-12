@@ -68,7 +68,7 @@ CUSTOM_CVAR(Float,gl_texture_filter_anisotropic,1.0f,CVAR_ARCHIVE|CVAR_GLOBALCON
 
 CCMD(gl_flush)
 {
-	if (GLRenderer != NULL) GLRenderer->FlushTextures();
+	FMaterial::FlushAll();
 }
 
 // [BB] Changed default
@@ -94,7 +94,7 @@ CUSTOM_CVAR(Int, gl_texture_format, 0, CVAR_ARCHIVE|CVAR_GLOBALCONFIG|CVAR_NOINI
 
 CUSTOM_CVAR(Bool, gl_texture_usehires, true, CVAR_ARCHIVE|CVAR_NOINITCALL)
 {
-	if (GLRenderer != NULL) GLRenderer->FlushTextures();
+	FMaterial::FlushAll();
 }
 
 CVAR(Bool, gl_precache, false, CVAR_ARCHIVE)

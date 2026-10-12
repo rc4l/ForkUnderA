@@ -3,10 +3,13 @@
 
 #include "gl/system/gl_system.h"
 #include "features/sprites/pspritebuild.h"
+#include "features/frame/computation/oracle_compute.h"   // [rc4l] OracleTally
 
 #include "features/sprites/spritebuild.h"     // [rc4l] ActorDynamicLight
 #include "features/sprites/computation/pspritequad_compute.h"
 #include "features/sprites/computation/spritelight_compute.h"
+#include "features/sprites/computation/spritestyle_compute.h"   // [rc4l] ComputeWeaponStyle
+#include "features/levelmesh/levelmesh.h"   // [rc4l] LightListBottom
 #include "features/draw2d/computation/quad2d_compute.h"
 #include "features/levelmesh/computation/shading_compute.h"
 #include "features/hwrender/hud2d.h"
@@ -29,11 +32,11 @@
 #include "g_shared/a_pickups.h"
 
 // [rc4l] GL's view state and settings the derivation still reads, until the renderer interface supplies them (P5).
-#include "gl/renderer/gl_renderer.h"    // gl_FakeFlat, area_below
-#include "gl/renderer/gl_lightdata.h"   // gl_ShadingEnv, gl_ClampLight, getExtraLight
+#include "gl/renderer/gl_renderer.h"    // [rc4l] gl_FakeFlat, area_below
+#include "gl/renderer/gl_lightdata.h"   // [rc4l] gl_ShadingEnv, gl_ClampLight, getExtraLight
 #include "gl/renderer/gl_colormap.h"
-#include "gl/data/gl_data.h"            // glset, gl_GetSpriteFrame
-#include "gl/system/gl_cvars.h"         // screenblocks
+#include "gl/data/gl_data.h"            // [rc4l] glset, gl_GetSpriteFrame
+#include "gl/system/gl_cvars.h"         // [rc4l] screenblocks
 
 #include <string.h>
 #include <vector>
@@ -56,8 +59,8 @@ namespace zx { namespace sprites {
 namespace {
 
 std::vector<zx::hwrender::Quad2D> g_gl, g_ours;
-int g_checkedFrames = 0, g_differedFrames = 0, g_checkedQuads = 0;
-FString g_diffs;
+zx::frame::OracleTally g_check;   // [rc4l] frames compared, and how many differed
+int g_checkedQuads = 0;
 
 // [rc4l] A derived quad, recorded for the backend or, with the check on, held for the comparison.
 void Emit(const zx::hwrender::Quad2D &q)
@@ -201,9 +204,7 @@ void BuildPlayerSprites(sector_t *viewsector, int viewArea, fixed_t bobX, fixed_
 			TArray<lightlist_t> &lightlist = viewsector->e->XFloor.lightlist;
 			for (unsigned i = 0; i < lightlist.Size(); i++)
 			{
-				const fixed_t lightbottom = i < lightlist.Size() - 1 ? lightlist[i + 1].plane.ZatPoint(viewx, viewy)
-					: viewsector->floorplane.ZatPoint(viewx, viewy);
-				if (lightbottom < player->viewz)
+				if (zx::levelmesh::LightListBottom(viewsector, i, viewx, viewy) < player->viewz)
 				{
 					cm = lightlist[i].extra_colormap;
 					lightlevel = *lightlist[i].p_lightlevel;
@@ -232,24 +233,14 @@ void BuildPlayerSprites(sector_t *viewsector, int viewArea, fixed_t bobX, fixed_
 		if (vis.colormap >= SpecialColormaps[0].Colormap && vis.colormap < SpecialColormaps[SpecialColormaps.Size()].Colormap &&
 		    gl_fixedcolormap == CM_DEFAULT) vis.RenderStyle.Flags |= STYLEF_InvertSource;
 	}
-	float trans = 0.f;
-	if (vis.RenderStyle.BlendOp >= STYLEOP_Fuzz && vis.RenderStyle.BlendOp <= STYLEOP_FuzzOrRevSub)
-	{
-		vis.RenderStyle.CheckFuzz();
-		if (vis.RenderStyle.BlendOp == STYLEOP_Fuzz)
-		{
-			if (gl_fuzztype != 0)
-			{
-				vis.RenderStyle = LegacyRenderStyles[STYLE_Translucent];
-				trans = 0.99f;
-			}
-			else vis.RenderStyle.BlendOp = STYLEOP_Shadow;
-		}
-		nobright = true;
-	}
-	if (vis.RenderStyle.Flags & STYLEF_TransSoulsAlpha) trans = transsouls;
-	else if (vis.RenderStyle.Flags & STYLEF_Alpha1) trans = 1.f;
-	else if (trans == 0.f) trans = FIXED2FLOAT(vis.alpha);
+	// [rc4l] The sprites' fuzz, transsouls and alpha1 rules, without their solid-sprite normalisation.
+	const bool fuzzStyle = vis.RenderStyle.BlendOp >= STYLEOP_Fuzz && vis.RenderStyle.BlendOp <= STYLEOP_FuzzOrRevSub;
+	if (fuzzStyle) vis.RenderStyle.CheckFuzz();
+	const WeaponStyleOut weaponStyle = ComputeWeaponStyle(StyleOf(vis.RenderStyle), fuzzStyle, FIXED2FLOAT(vis.alpha), transsouls, gl_fuzztype,
+		StyleOf(LegacyRenderStyles[STYLE_Translucent]));
+	vis.RenderStyle = RenderStyleOf(weaponStyle.style);
+	const float trans = weaponStyle.trans;
+	nobright = nobright || weaponStyle.noBright;
 
 	bool anybright = false;
 	for (size_t i = 0; i < layers.size() && !anybright; i++) anybright = !nobright && (allbright || stateBright[i]);
@@ -267,14 +258,10 @@ void BuildPlayerSprites(sector_t *viewsector, int viewArea, fixed_t bobX, fixed_
 		FColormap cmc = cm;
 		if (bright)
 		{
-			// [rc4l] Under water a fullbright layer keeps most of the colour.
-			if (fakesec == viewsector || viewArea != area_below) cmc.LightColor.r = cmc.LightColor.g = cmc.LightColor.b = 0xff;
-			else
-			{
-				cmc.LightColor.r = (3 * cmc.LightColor.r + 0xff) / 4;
-				cmc.LightColor.g = (3 * cmc.LightColor.g + 0xff) / 4;
-				cmc.LightColor.b = (3 * cmc.LightColor.b + 0xff) / 4;
-			}
+			// [rc4l] Under water a fullbright layer keeps most of the colour, as a fullbright sprite does.
+			int r = cmc.LightColor.r, g = cmc.LightColor.g, b = cmc.LightColor.b;
+			ComputeFullbrightColor(fakesec != viewsector && viewArea == area_below, r, g, b);
+			cmc.LightColor.r = (BYTE)r; cmc.LightColor.g = (BYTE)g; cmc.LightColor.b = (BYTE)b;
 		}
 		FRenderStyle layerStyle = vis.RenderStyle;
 		if ((psp->Flags & (PSPF_RENDERSTYLE | PSPF_FORCESTYLE)) && psp->RenderStyle.AsDWORD != 0) layerStyle = psp->RenderStyle;
@@ -352,22 +339,21 @@ void NoteGLPSprite(const zx::hwrender::Quad2D &q)
 void CheckFramePSprites()
 {
 	if (!fua_psprite_check) { g_gl.clear(); g_ours.clear(); return; }
-	g_checkedFrames++;
+	g_check.checked++;
 	g_checkedQuads += (int)g_gl.size();
 	const char *why = g_gl.size() != g_ours.size() ? "quad count" : NULL;
 	for (size_t i = 0; why == NULL && i < g_gl.size(); i++)
 		if (!SameQuad(g_gl[i], g_ours[i])) why = "quad";
 	if (why != NULL)
 	{
-		if (g_differedFrames < 8)
+		if (zx::frame::ComputeOracleDiffer(g_check, 8))
 		{
 			const zx::hwrender::Quad2D none = {};
 			const zx::hwrender::Quad2D &a = g_gl.empty() ? none : g_gl[0], &b = g_ours.empty() ? none : g_ours[0];
-			g_diffs.AppendFormat("  %s: GL %u quads at %.6g,%.6g %.6gx%.6g rgba %.6g %.6g %.6g %.6g blend %d tm %d tr %d; ours %u at %.6g,%.6g %.6gx%.6g rgba %.6g %.6g %.6g %.6g blend %d tm %d tr %d\n",
+			zx::frame::ComputeOracleNote(g_check, "  %s: GL %u quads at %.6g,%.6g %.6gx%.6g rgba %.6g %.6g %.6g %.6g blend %d tm %d tr %d; ours %u at %.6g,%.6g %.6gx%.6g rgba %.6g %.6g %.6g %.6g blend %d tm %d tr %d\n",
 				why, (unsigned)g_gl.size(), a.x, a.y, a.w, a.h, a.r, a.g, a.b, a.a, a.blend, a.texMode, a.translation,
 				(unsigned)g_ours.size(), b.x, b.y, b.w, b.h, b.r, b.g, b.b, b.a, b.blend, b.texMode, b.translation);
 		}
-		g_differedFrames++;
 	}
 	// [rc4l] GL's quads were recorded and drawn; ours were only compared.
 	g_gl.clear();
@@ -378,8 +364,8 @@ void CheckFramePSprites()
 
 CCMD( fua_psprite_report )
 {
-	Printf( "weapon: %d frames derived beside GL (%d quads), %d differed\n%s", zx::sprites::g_checkedFrames, zx::sprites::g_checkedQuads,
-		zx::sprites::g_differedFrames, zx::sprites::g_diffs.GetChars( ) );
-	zx::sprites::g_checkedFrames = zx::sprites::g_differedFrames = zx::sprites::g_checkedQuads = 0;
-	zx::sprites::g_diffs = "";
+	const zx::frame::OracleTally &t = zx::sprites::g_check;
+	Printf( "weapon: %d frames derived beside GL (%d quads), %d differed\n%s", t.checked, zx::sprites::g_checkedQuads, t.differed, t.firsts.c_str( ) );
+	zx::frame::ComputeOracleReset( zx::sprites::g_check );
+	zx::sprites::g_checkedQuads = 0;
 }

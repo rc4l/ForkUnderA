@@ -25,7 +25,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // freelook OFF. It is `2` that enables it. sv_nofreeaim decides whether a projectile follows the
 // crosshair or is auto-aimed at whatever is nearest -- the difference between hitting a wall/floor
 // join on purpose and hitting it by luck.
-export function playCvars({ gl = false, sideBySide = false, rt = false, monsters = false, extra = {} } = {}) {
+export function playCvars({ gl = false, sideBySide = false, rt = false, monsters = false, lock = false, extra = {} } = {}) {
   const cv = {
     sv_nofreelook: 0, sv_freelook: 2, freelook: 1,
     sv_nofreeaim: 0, autoaim: 0,
@@ -50,6 +50,8 @@ export function playCvars({ gl = false, sideBySide = false, rt = false, monsters
   // Being shot at halfway through showing someone a texture seam is pure friction. Monsters go back
   // when the thing to look at IS a monster sprite.
   if (!monsters) cv.sv_nomonsters = 1;
+  // [rc4l] A locked launch never has the focus, and the background pause would hold its world at leveltime 1 with the weapon still lowered.
+  if (lock) cv.i_pauseinbackground = 0;
   // [rc4l] --cvar's, last, so a launch can set what it needs before the map loads.
   return { ...cv, ...extra };
 }

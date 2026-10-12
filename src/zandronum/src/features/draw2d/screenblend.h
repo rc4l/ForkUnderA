@@ -6,7 +6,7 @@
 #ifndef ZX_SCREENBLEND_H
 #define ZX_SCREENBLEND_H
 
-#include "features/hwrender/hud2d.h"   // Quad2D
+#include "features/hwrender/hud2d.h"   // [rc4l] Quad2D
 
 struct sector_t;
 

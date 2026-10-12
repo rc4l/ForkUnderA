@@ -19,8 +19,8 @@
 
 // [rc4l] GL's model data and settings the derivation still reads, until model data leaves gl/ (P5).
 #include "gl/models/gl_models.h"
-#include "gl/data/gl_data.h"           // glset.pixelstretch
-#include "gl/utility/gl_convert.h"     // ANGLE_TO_FLOAT
+#include "gl/data/gl_data.h"           // [rc4l] glset.pixelstretch
+#include "gl/utility/gl_convert.h"     // [rc4l] ANGLE_TO_FLOAT
 
 EXTERN_CVAR(Bool, gl_interpolate_model_frames)
 

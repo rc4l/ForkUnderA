@@ -119,3 +119,28 @@ TEST(SpriteStyle, BlendModesAsTheBackendDrawsThem)
 	EXPECT_EQ(ComputeSpriteBlendMode(kOpAdd, kAlphaInvSrc, 1.f), 0);
 	EXPECT_EQ(ComputeSpriteBlendMode(kOpSub, kAlphaInvSrc, 1.f), 0);
 }
+
+TEST(SpriteStyle, TheWeaponTakesTheFuzzAndAlphaRulesWithoutBeingMadeSolid)
+{
+	const SpriteStyle normal = { kOpAdd, kAlphaSrc, kAlphaInvSrc, 0 };
+	const SpriteStyle translucent = { kOpAdd, kAlphaSrc, kAlphaInvSrc, 0 };
+	WeaponStyleOut w = ComputeWeaponStyle(normal, false, 0.75f, 0.5f, 0, translucent);
+	EXPECT_FLOAT_EQ(0.75f, w.trans);
+	EXPECT_EQ(kAlphaSrc, w.style.srcAlpha);
+	EXPECT_FALSE(w.noBright);
+	const SpriteStyle fuzz = { kOpFuzz, kAlphaSrc, kAlphaInvSrc, 0 };
+	w = ComputeWeaponStyle(fuzz, true, 1.f, 0.5f, 0, translucent);
+	EXPECT_EQ(kOpShadow, w.style.blendOp);
+	EXPECT_TRUE(w.noBright);
+	EXPECT_FLOAT_EQ(1.f, w.trans);
+	w = ComputeWeaponStyle(fuzz, true, 1.f, 0.5f, 2, translucent);
+	EXPECT_FLOAT_EQ(0.99f, w.trans);
+	const SpriteStyle souls = { kOpAdd, kAlphaSrc, kAlphaInvSrc, kFlagTransSouls };
+	EXPECT_FLOAT_EQ(0.5f, ComputeWeaponStyle(souls, false, 1.f, 0.5f, 0, translucent).trans);
+	const SpriteStyle one = { kOpAdd, kAlphaSrc, kAlphaInvSrc, kFlagAlpha1 };
+	EXPECT_FLOAT_EQ(1.f, ComputeWeaponStyle(one, false, 0.25f, 0.5f, 0, translucent).trans);
+	// [rc4l] A zero transsouls stays zero rather than falling back to the actor's alpha.
+	EXPECT_FLOAT_EQ(0.f, ComputeWeaponStyle(souls, false, 1.f, 0.f, 0, translucent).trans);
+	// [rc4l] An invisible actor's weapon at alpha 0 stays at 0.
+	EXPECT_FLOAT_EQ(0.f, ComputeWeaponStyle(normal, false, 0.f, 0.5f, 0, translucent).trans);
+}

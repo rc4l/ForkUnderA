@@ -68,11 +68,61 @@ std::string SymbolFor( HANDLE proc, DWORD64 addr, std::string &dsoOut )
 	return std::string( );
 }
 
+// [rc4l] An address's name and module, looked up once however many samples land on it.
+const zx::SampleHit &Resolve( HANDLE proc, std::map<DWORD64, zx::SampleHit> &resolved, DWORD64 addr )
+{
+	std::map<DWORD64, zx::SampleHit>::iterator at = resolved.find( addr );
+	if ( at == resolved.end( ))
+	{
+		std::string dso;
+		const std::string symbol = SymbolFor( proc, addr, dso );
+		at = resolved.insert( std::make_pair( addr, zx::SampleHit( symbol, dso ))).first;
+	}
+	return at->second;
+}
+
+// [rc4l] The deepest stack a sample keeps, enough to reach D_Display from the walk's leaves.
+const unsigned kMaxDepth = 48;
+
+// [rc4l] The suspended thread's frames from its context by each image's unwind data, innermost first, kept inside [ctx.Rsp, stackHigh) and with no allocation or dbghelp while it is held.
+unsigned WalkStack( CONTEXT ctx, DWORD64 stackHigh, std::vector<DWORD64> &frames )
+{
+	unsigned n = 0;
+#if defined( _M_X64 )
+	const DWORD64 stackLow = ctx.Rsp;
+	while (( n < kMaxDepth ) && ( ctx.Rip != 0 ) && ( ctx.Rsp >= stackLow ) && ( ctx.Rsp + 8 <= stackHigh ))
+	{
+		frames.push_back( ctx.Rip );
+		n++;
+		DWORD64 imageBase = 0;
+		PRUNTIME_FUNCTION fn = RtlLookupFunctionEntry( ctx.Rip, &imageBase, NULL );
+		if ( fn == NULL )
+		{
+			// [rc4l] A leaf keeps no unwind data, and its return address is on top of its stack.
+			ctx.Rip = *(const DWORD64 *)ctx.Rsp;
+			ctx.Rsp += 8;
+		}
+		else
+		{
+			PVOID handlerData = NULL;
+			DWORD64 establisher = 0;
+			RtlVirtualUnwind( UNW_FLAG_NHANDLER, imageBase, ctx.Rip, fn, &ctx, &handlerData, &establisher, NULL );
+		}
+	}
+#else
+	(void)ctx; (void)stackHigh; (void)frames;
+#endif
+	return n;
+}
+
 // One run: interrupt `thread` at `hz`, then resolve what was collected. Owns `thread` and closes it.
-void SampleRun( HANDLE thread, double seconds, int hz, bool engineOnly, int top, int ticMin, int ticMax )
+void SampleRun( HANDLE thread, double seconds, int hz, bool engineOnly, int top, int ticMin, int ticMax,
+	bool stacks, DWORD64 stackHigh )
 {
 	std::vector<DWORD64> pcs;
 	std::vector<int> tics;					// the leveltime each sample landed in, parallel to pcs
+	std::vector<DWORD64> frames;			// [rc4l] every sample's stack, back to back
+	std::vector<unsigned> depths;			// [rc4l] how many of those frames each sample has, parallel to pcs
 
 	const int intervalUs = ( hz > 0 ) ? ( 1000000 / hz ) : 1000;
 
@@ -94,7 +144,17 @@ void SampleRun( HANDLE thread, double seconds, int hz, bool engineOnly, int top,
 	const double budget = ( seconds > 0.0 ) ? seconds : 1.0;
 	double elapsed = 0.0;
 
-	while ( elapsed < budget )
+	// [rc4l] Room for every sample up front, since growing a vector while the game thread is suspended can wait on a heap lock that thread holds.
+	const size_t capacity = (size_t)( budget * ( hz > 0 ? hz : 1000 ) * 1.25 ) + 64;
+	pcs.reserve( capacity );
+	tics.reserve( capacity );
+	if ( stacks )
+	{
+		frames.reserve( capacity * kMaxDepth );
+		depths.reserve( capacity );
+	}
+
+	while (( elapsed < budget ) && ( pcs.size( ) < capacity ))
 	{
 		// Suspend, read the instruction pointer, resume. Nothing else happens in here: every
 		// microsecond between these two calls is a microsecond the game is not running, so the
@@ -103,7 +163,8 @@ void SampleRun( HANDLE thread, double seconds, int hz, bool engineOnly, int top,
 		{
 			CONTEXT ctx;
 			memset( &ctx, 0, sizeof( ctx ));
-			ctx.ContextFlags = CONTEXT_CONTROL;
+			// [rc4l] Unwinding restores the non-volatile registers, so a stack walk needs them too.
+			ctx.ContextFlags = stacks ? CONTEXT_FULL : CONTEXT_CONTROL;
 
 			if ( GetThreadContext( thread, &ctx ))
 			{
@@ -115,6 +176,7 @@ void SampleRun( HANDLE thread, double seconds, int hz, bool engineOnly, int top,
 				pcs.push_back( (DWORD64)ctx.Eip );
 #endif
 				tics.push_back( g_publishedTic.load( std::memory_order_relaxed ));
+				if ( stacks ) depths.push_back( WalkStack( ctx, stackHigh, frames ));
 			}
 
 			ResumeThread( thread );
@@ -155,26 +217,21 @@ void SampleRun( HANDLE thread, double seconds, int hz, bool engineOnly, int top,
 	// 0,0 means the whole run. This is the point of an in-engine sampler: ask perf.ticprof which
 	// tics were expensive, then ask for exactly those, instead of averaging a spike into the calm
 	// either side of it and being told the wrong answer.
-	const bool bWindowed = ( ticMin > 0 ) || ( ticMax > 0 );
-
+	// [rc4l] Each kept sample's place, its stack's frames named through the same table, for the inclusive ranking.
+	std::vector<std::vector<zx::SampleHit> > stackHits;
+	size_t frameAt = 0;
 	for ( size_t i = 0; i < pcs.size( ); ++i )
 	{
-		if ( bWindowed )
-		{
-			const int at_tic = ( i < tics.size( )) ? tics[i] : 0;
-			if (( ticMin > 0 ) && ( at_tic < ticMin ))	continue;
-			if (( ticMax > 0 ) && ( at_tic > ticMax ))	continue;
-		}
+		const unsigned depth = ( i < depths.size( )) ? depths[i] : 0;
+		const size_t first = frameAt;
+		frameAt += depth;
+		if ( !zx::ComputeInTicWindow(( i < tics.size( )) ? tics[i] : 0, ticMin, ticMax )) continue;
 
-		std::map<DWORD64, zx::SampleHit>::iterator at = resolved.find( pcs[i] );
-		if ( at == resolved.end( ))
-		{
-			std::string dso;
-			const std::string symbol = SymbolFor( proc, pcs[i], dso );
-			at = resolved.insert( std::make_pair( pcs[i], zx::SampleHit( symbol, dso ))).first;
-		}
-
-		hits.push_back( at->second );
+		hits.push_back( Resolve( proc, resolved, pcs[i] ));
+		if ( !stacks ) continue;
+		std::vector<zx::SampleHit> stack;
+		for ( unsigned k = 0; k < depth; ++k ) stack.push_back( Resolve( proc, resolved, frames[first + k] ));
+		stackHits.push_back( stack );
 	}
 
 	SymCleanup( proc );
@@ -183,9 +240,9 @@ void SampleRun( HANDLE thread, double seconds, int hz, bool engineOnly, int top,
 	if ( engineOnly )
 		hits = zx::OnlyFrom( hits, "forkundera" );
 
-	const std::string json = zx::SampleReportJson(
-		zx::RankSamples( hits, ( top > 0 ) ? (size_t)top : 0 ), elapsed,
-		(unsigned long long)hits.size( ));
+	const size_t rows = ( top > 0 ) ? (size_t)top : 0;
+	const std::string json = zx::SampleReportJson( zx::RankSamples( hits, rows ), zx::ComputeInclusiveRanks( stackHits, rows ),
+		elapsed, (unsigned long long)hits.size( ));
 
 	CloseHandle( thread );
 
@@ -199,7 +256,7 @@ void SampleRun( HANDLE thread, double seconds, int hz, bool engineOnly, int top,
 
 } // namespace
 
-bool MCP_Sample_Arm( double seconds, int hz, bool engineOnly, int top, int ticMin, int ticMax )
+bool MCP_Sample_Arm( double seconds, int hz, bool engineOnly, int top, int ticMin, int ticMax, bool stacks )
 {
 #ifdef _WIN32
 	{
@@ -224,11 +281,15 @@ bool MCP_Sample_Arm( double seconds, int hz, bool engineOnly, int top, int ticMi
 		return false;
 	}
 
-	std::thread( SampleRun, thread, seconds, hz, engineOnly, top, ticMin, ticMax ).detach( );
+	// [rc4l] The top of the game thread's stack, read here on that thread, which bounds every walk of it.
+	ULONG_PTR stackLow = 0, stackHigh = 0;
+	GetCurrentThreadStackLimits( &stackLow, &stackHigh );
+
+	std::thread( SampleRun, thread, seconds, hz, engineOnly, top, ticMin, ticMax, stacks, (DWORD64)stackHigh ).detach( );
 	return true;
 #else
 	// mac and Linux keep the external samplers, which walk the whole stack and see every thread.
-	(void)seconds; (void)hz; (void)engineOnly; (void)top; (void)ticMin; (void)ticMax;
+	(void)seconds; (void)hz; (void)engineOnly; (void)top; (void)ticMin; (void)ticMax; (void)stacks;
 	return false;
 #endif
 }

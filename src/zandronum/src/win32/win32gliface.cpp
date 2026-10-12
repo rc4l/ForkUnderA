@@ -23,6 +23,7 @@
 
 #include "gl/renderer/gl_renderer.h"
 #include "gl/system/gl_framebuffer.h"
+#include "gl/textures/gl_material.h"   // [rc4l] FMaterial::FlushAll
 #include "gl/shaders/gl_shader.h"
 #include "gl/utility/gl_templates.h"
 // [rc4l] borderless-video: single pure source of truth for what `fullscreen` means. See
@@ -85,7 +86,7 @@ Win32GLVideo::Win32GLVideo(int parm, bool gl) : m_hDC(NULL), m_gl(gl), m_Modes(N
 Win32GLVideo::~Win32GLVideo()
 {
 	FreeModes();
-	if (GLRenderer != NULL) GLRenderer->FlushTextures();
+	FMaterial::FlushAll();
 }
 
 //==========================================================================
@@ -399,7 +400,7 @@ DFrameBuffer *Win32GLVideo::CreateFrameBuffer(int width, int height, bool fs, DF
 
 bool Win32GLVideo::SetResolution (int width, int height, int bits)
 {
-	if (GLRenderer != NULL) GLRenderer->FlushTextures();
+	FMaterial::FlushAll();
 	I_ShutdownGraphics();
 	
 	Video = new Win32GLVideo(0, m_gl);
@@ -1019,6 +1020,15 @@ Win32GLFrameBuffer::Win32GLFrameBuffer(void *hMonitor, int width, int height, in
 // 
 //
 //==========================================================================
+
+bool Win32GLFrameBuffer::ClientSize(int &w, int &h) const
+{
+	RECT r;
+	if (Window == NULL || !GetClientRect(Window, &r)) return false;
+	w = int(r.right - r.left);
+	h = int(r.bottom - r.top);
+	return true;
+}
 
 Win32GLFrameBuffer::~Win32GLFrameBuffer()
 {
