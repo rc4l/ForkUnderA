@@ -69,9 +69,12 @@ Notes:
 
 ## CI
 
-`.github/workflows/_test.yml` runs the same three steps (sanitized build+run, coverage
-`--auto`, clang-tidy) on every push/PR, and the macOS engine build is gated behind it
+`.github/workflows/test-and-build.yml` runs `_test.yml` (sanitized build+run, coverage
+`--auto`) on every PR and every push to main, and the platform engine builds are gated behind it
 (`needs: test`). Green tests are required before anything builds.
+
+clang-tidy no longer runs in CI (deleted in 48c1264); `.clang-tidy` stays for editors and clangd.
+On Windows, VS Build Tools ships `clang-tidy.exe` under `VC\Tools\Llvm\x64\bin` for running it by hand.
 
 ## Misc
 
