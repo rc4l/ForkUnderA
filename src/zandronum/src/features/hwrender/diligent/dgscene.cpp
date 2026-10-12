@@ -7676,7 +7676,6 @@ void LiveFrame()
 		{
 			zx::levelmesh::ArmFullBake();
 			Printf("standalone: baking the level once, then GL stops deriving the scene.\n");
-			Printf("standalone: sprites and moving geometry are NOT fed in this mode yet.\n");
 		}
 		if (++g_standaloneArmed > 3) g_standaloneBaked = true;   // a frame to bake, one to upload
 	}

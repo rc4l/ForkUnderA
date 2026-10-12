@@ -102,10 +102,15 @@ with the cvars it sets and any `commands` to run after them (`fua_mapbake_now` r
 cvar changed), compared Vulkan against Vulkan. `scenarios/pointlight.mjs` compares
 `fua_dg_clusters 0` against `1`, which match exactly once fixed, so its ceiling is 0.05. With no GL side
 nothing is read back from a window, and the harness runs even with other engines open.
-A side with `frame: "gl"` keeps GL's half of a Vulkan launch's pair instead, where GL replays walls
-through the backend's wall mesh; `invertedback.mjs` compares that against GL alone. A GL-only launch
-runs with the wall cache off (`gl_wallmesh 0`), so a fault in GL's drawing through it shows only on such
-a side; `mapreload.mjs` adds `commands: ["map MAP01"]` there to cover a level change.
+A side with `frame: "gl"` keeps GL's half of a Vulkan launch's pair instead. GL there draws its own
+vertices beside the backend's wall mesh, and draws through the mesh only with `fua_gl_meshdraw 1`;
+`invertedback.mjs` and `mapreload.mjs` (`commands: ["map MAP01"]`, a level change) set that cvar to keep
+the optional path covered, and `glplain.mjs` checks GL never reads the mesh by default. A side's
+`atVantage` commands run once it stands at each vantage, for a change the view's own walk must see first
+(`fua_mesh_blank` empties the mesh GL's capture just filled). `fuactl scenarios <name> --side S --cvar k=v`
+adds cvars to one side, which is how a test shows it fails under the behaviour it guards against
+(`glplain --side blanked --cvar fua_gl_meshdraw=1`). A side with `cvars: { fua_dg_standalone: 1 }` judges
+Vulkan carrying the frame alone; `standalonemove.mjs` runs its script after that, so the move is not baked in.
 
 A box can name a `vantage`, when the vantages look at different parts of the frame. A model needs no
 assets: `kvxBox` and `voxelLumps` in `src/kvx.mjs` put a KVX voxel on every frame of a sprite.
@@ -187,6 +192,8 @@ Export the builder from the scenario; `runScenarioIfMain` keeps the import from 
 | `tools/fuactl/scenarios/missingfillcache.mjs` | the missing-upper map in GL alone, wall cache off against on: the cache must not cost GL its missing-texture fill |
 | `tools/fuactl/scenarios/missinglower.mjs` | a recess with untextured steps, GL against Vulkan: GL's missing-texture fill must run every frame under the wall cache. GL does not clear its framebuffer, so a missing fill shows stale pixels, and the map looks at a red wall first to put red there |
 | `tools/fuactl/scenarios/mapreload.mjs` | a room loaded a second time inside a Vulkan session (`commands: ["map MAP01"]`), GL alone against GL's frame there: GL must still draw the world after a level change rebuilds the wall mesh |
+| `tools/fuactl/scenarios/glplain.mjs` | a room reloaded in a Vulkan session with the map bake off, the mesh then emptied at the vantage (`atVantage: ["fua_mesh_blank"]`), GL alone against GL's frame there: GL must draw its own vertices, not the backend's mesh (queue #42) |
+| `tools/fuactl/scenarios/standalonemove.mjs` | a platform a closed script raises (`puke 2`) after Vulkan has gone standalone, GL alone against the standalone frame: the move must show with no GL walk behind it |
 | `tools/fuactl/scenarios/invertedback.mjs` | a wall onto a sector whose floor is above its ceiling, GL alone against GL's frame from a Vulkan session (`frame: "gl"`): the backend's wall mesh must not change GL's picture |
 | `tools/fuactl/scenarios/watertint.mjs` | additive 3D-floor water whose control sector a puked script tints after the bake, over a grey pool floor, GL against Vulkan |
 | `tools/fuactl/scenarios/brightmap.mjs` | GLDEFS brightmaps on a wall and a sprite in a dark room, bindless against a binding per material; the brightmap PNG is a lump between `TX_START`/`TX_END` |

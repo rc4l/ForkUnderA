@@ -3,6 +3,7 @@ export const SPECIAL = Object.freeze({
   Polyobj_StartLine: 1,
   Line_Horizon: 9,
   Transfer_WallLight: 16,
+  Floor_RaiseByValue: 23,
   FloorAndCeiling_RaiseByValue: 96,
   Light_ChangeToValue: 112,
   Sector_SetPlaneReflection: 159,

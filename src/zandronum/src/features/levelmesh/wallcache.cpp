@@ -305,7 +305,7 @@ static bool MapBakeOwnsSeg(int segIndex)
 
 void BakeSeg(int segIndex)
 {
-	if (!gl_wallmesh) return;   // [rc4l] the mesh draw path is off; baking would be pure cost
+	if (!gl_wallmesh) return;   // [rc4l] no level mesh is kept, so baking would be pure cost
 	if (segIndex < 0 || (unsigned)segIndex >= g_cache.Size()) return;
 	// [rc4l] When the map OWNS this seg, the capture stands down for it.
 	//

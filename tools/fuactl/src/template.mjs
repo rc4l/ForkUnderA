@@ -19,6 +19,11 @@ export function sideCommands(side) {
   return [...Object.entries(side.cvars || {}).map(([k, v]) => `${k} ${v}`), ...(side.commands || [])];
 }
 
+// [rc4l] The console lines a side runs once it stands at a vantage, for a change the view's own walk has to see first.
+export function vantageCommands(side) {
+  return side.atVantage || [];
+}
+
 // [rc4l] The two launches a template compares by default; a scenario may name its own, each with the cvars it sets.
 export const GL_VS_VULKAN = [{ name: "gl", gl: true }, { name: "vk", gl: false }];
 
@@ -75,7 +80,7 @@ async function withEngine({ port, map, iwad, wadPath, gl, side = {}, size }, bod
   }
 }
 
-// [rc4l] Which half of a Vulkan launch's GL/Vulkan pair a side keeps: Vulkan's, or with `frame: "gl"` GL's, which there draws through the backend's wall mesh.
+// [rc4l] Which half of a Vulkan launch's GL/Vulkan pair a side keeps: Vulkan's, or with `frame: "gl"` GL's, drawn beside the backend's wall mesh.
 export function pairFrame(side, pair) {
   return side.frame === "gl" ? pair.gl : pair.vk;
 }
@@ -85,6 +90,7 @@ async function grab(c, exe, tag, at, side) {
   await c.rpc("sim.resume", {}).catch(() => {});
   await c.rpc("player.setpos", at);
   await cap.waitTics(c, 15);
+  for (const line of vantageCommands(side)) await cap.exec(c, line);
   if (side.gl) return (await ui.screenshot(c, exe, `sweep/${tag}`)).path;
   return pairFrame(side, await shot.shotPair(c, tag, { engineBin: exe }));
 }
@@ -123,6 +129,13 @@ export async function compareTemplate({ name, wad, maps, vantages, boxes, sides 
   return { lines, failed };
 }
 
+// [rc4l] A scenario's options with cvars added to one named side, for running a regression test under the behaviour it guards against.
+export function withSideCvars(opts, sideName, cvars) {
+  const sides = opts.sides || GL_VS_VULKAN;
+  if (!sides.some((s) => s.name === sideName)) throw new Error(`${opts.name} has no side ${sideName} (${sides.map((s) => s.name).join(", ")})`);
+  return { ...opts, sides: sides.map((s) => (s.name === sideName ? { ...s, cvars: { ...(s.cvars || {}), ...cvars } } : s)) };
+}
+
 // [rc4l] A scenario's verdict as printed lines and an exit code: 0 all under ceiling, 1 failed, 3 refused.
 export function scenarioOutcome(name, r) {
   const summary = r.failed ? `${r.failed} failed` : `all ${name} boxes within their limits`;
@@ -138,11 +151,11 @@ export function isMain(metaUrl, argv1 = process.argv[1]) {
 const registered = new Map();
 export function scenarioOptions(metaUrl) { const e = registered.get(metaUrl); return e ? e.options : null; }
 
-// [rc4l] An imported scenario as one call that runs its comparison and returns its outcome, or null if the module registered none.
-export function scenarioRun(metaUrl) {
+// [rc4l] An imported scenario as one call that runs its comparison (its options passed through adjust) and returns its outcome, or null if the module registered none.
+export function scenarioRun(metaUrl, adjust = (o) => o) {
   const e = registered.get(metaUrl);
   if (!e) return null;
-  return async () => { const opts = e.options(); return scenarioOutcome(opts.name, await e.compare(opts)); };
+  return async () => { const opts = adjust(e.options()); return scenarioOutcome(opts.name, await e.compare(opts)); };
 }
 
 // [rc4l] The template scenarios in dir (all, or those named), by file: the folder also holds measurement scripts that run as soon as they are imported.

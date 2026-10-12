@@ -58,4 +58,11 @@ int ComputeFanTriangleVertex(int fanVertices, int tri, int corner)
 	return tri + corner;
 }
 
+WallDrawPath ComputeWallDrawPath(bool levelMesh, bool glDrawsMesh, bool batchWalls, bool opaquePass)
+{
+	if (!opaquePass) return kWallsOneByOne;
+	if (levelMesh && glDrawsMesh) return kWallsFromMesh;
+	return batchWalls ? kWallsBatched : kWallsOneByOne;
+}
+
 }} // namespace zx::levelmesh

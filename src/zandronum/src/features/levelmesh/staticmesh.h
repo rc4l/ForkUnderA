@@ -211,10 +211,6 @@ bool MeshStore(MeshRange &range, const FFlatVertex *verts, int count);
 // Bind the mesh's vertex array for drawing. Returns false if there is nothing baked yet.
 bool MeshBind();
 
-// Draw one baked range, and the batched form over many ranges.
-void MeshDraw(const MeshRange &range);
-void MeshDrawMulti(const MeshRange *ranges, int n);
-
 // ---------------------------------------------------------------------------
 // Indexed drawing (plan phase P2d) -- the state-grouped path.
 //

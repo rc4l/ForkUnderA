@@ -16,6 +16,7 @@
 #include "i_system.h"
 
 EXTERN_CVAR(Int, gl_fogmode)
+EXTERN_CVAR(Bool, fua_gl_meshdraw)
 
 namespace zx { namespace levelmesh {
 
@@ -456,6 +457,8 @@ void MeshClearDirtyRanges()
 
 void MeshFlush()
 {
+	// [rc4l] GL's copy is uploaded only while GL draws from it, and the dirty span keeps growing meanwhile, so switching fua_gl_meshdraw on uploads everything it missed.
+	if (!fua_gl_meshdraw) return;
 	if (g_dirtyHi <= g_dirtyLo) return;
 	if (!EnsureBuffer()) { g_dirtyLo = g_dirtyHi = 0; return; }
 
@@ -474,32 +477,6 @@ bool MeshBind()
 	if (!g_vbo || g_used == 0) return false;
 	glBindVertexArray(g_vao);
 	return true;
-}
-
-void MeshDraw(const MeshRange &range)
-{
-	if (range.count == 0) return;
-	glDrawArrays(GL_TRIANGLES, range.offset, range.count);
-}
-
-void MeshDrawMulti(const MeshRange *ranges, int n)
-{
-	if (ranges == NULL || n <= 0) return;
-
-	// [rc4l] One call for the whole run. This is the shape an indirect draw command takes later, so
-	// the batching decision made here is the one a GPU culling pass would be writing.
-	static TArray<GLint>   firsts;
-	static TArray<GLsizei> counts;
-	firsts.Clear();
-	counts.Clear();
-	for (int i = 0; i < n; i++)
-	{
-		if (ranges[i].count == 0) continue;
-		firsts.Push((GLint)ranges[i].offset);
-		counts.Push((GLsizei)ranges[i].count);
-	}
-	if (firsts.Size() == 0) return;
-	glMultiDrawArrays(GL_TRIANGLES, &firsts[0], &counts[0], (GLsizei)firsts.Size());
 }
 
 // ---------------------------------------------------------------------------
@@ -748,6 +725,20 @@ CCMD( fua_mesh_change )
 		idx, rb0, g_rebatchRevision, rp0, g_repaintRevision);
 }
 
+// [rc4l] fua_mesh_blank -- empty every piece of the level mesh, so whatever still draws the world is not reading it.
+CCMD( fua_mesh_blank )
+{
+	unsigned int blanked = 0;
+	for (unsigned i = 0; i < g_pieceList.Size(); i++)
+	{
+		const MeshRange range = g_pieceList[i].range;
+		if (range.count == 0) continue;
+		MeshSquash(range);
+		blanked++;
+	}
+	Printf("%u mesh pieces blanked" "\n", blanked);
+}
+
 const MeshPiece *MeshPieces(int &count)
 {
 	count = (int)g_pieceList.Size();
@@ -799,7 +790,7 @@ CCMD( fua_gl_meshbench )
 	}
 	if ( !zx::levelmesh::MeshBind( ) )
 	{
-		Printf( "mesh buffer not resident\n" );
+		Printf( "mesh buffer not resident -- GL keeps its copy only with fua_gl_meshdraw 1\n" );
 		return;
 	}
 

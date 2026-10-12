@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { judge, judgeCounter, scenarioOutcome, isMain, sideCommands, boxWithin, runScenarioIfMain, scenarioOptions, scenarioRun, templateScenarioFiles, probeChoices, pairFrame } from "../src/template.mjs";
+import { judge, judgeCounter, scenarioOutcome, isMain, sideCommands, vantageCommands, boxWithin, runScenarioIfMain, scenarioOptions, scenarioRun, templateScenarioFiles, probeChoices, pairFrame, withSideCvars, GL_VS_VULKAN } from "../src/template.mjs";
 import { pathToFileURL } from "node:url";
 import fs from "node:fs";
 import os from "node:os";
@@ -73,6 +73,19 @@ test("an imported scenario runs as one call through the comparison it named", as
   assert.deepEqual(seen, [7]);
   assert.deepEqual(out, { lines: ["PASS a", "all runnable boxes within their limits"], code: 0 });
   assert.equal(scenarioRun("file:///scenarios/never.mjs"), null);
+  await scenarioRun(url, (o) => ({ ...o, port: 9 }))();
+  assert.deepEqual(seen, [7, 9]);
+});
+
+// [rc4l] Queue #42's test was shown to catch the old behaviour by running its blanked side with fua_gl_meshdraw 1.
+test("one side of a scenario takes extra cvars, and a side that is not there is named", () => {
+  const opts = { name: "glplain", sides: [{ name: "gl", gl: true }, { name: "blanked", cvars: { a: 1 }, commands: ["map MAP01"] }] };
+  const out = withSideCvars(opts, "blanked", { fua_gl_meshdraw: "1" });
+  assert.deepEqual(out.sides[1], { name: "blanked", cvars: { a: 1, fua_gl_meshdraw: "1" }, commands: ["map MAP01"] });
+  assert.equal(out.sides[0], opts.sides[0]);
+  assert.deepEqual(opts.sides[1].cvars, { a: 1 });
+  assert.deepEqual(withSideCvars({ name: "x" }, "vk", { b: 2 }).sides, [GL_VS_VULKAN[0], { ...GL_VS_VULKAN[1], cvars: { b: 2 } }]);
+  assert.throws(() => withSideCvars(opts, "nope", {}), /glplain has no side nope \(gl, blanked\)/);
 });
 
 test("only files that register a template scenario are run, all of them or those named", () => {
@@ -124,6 +137,8 @@ test("a side sets its cvars first and then runs its commands, in order", () => {
   assert.deepEqual(sideCommands({ cvars: { fua_surface_bands: 0, gl_lights: 1 }, commands: ["fua_mapbake_now"] }),
     ["fua_surface_bands 0", "gl_lights 1", "fua_mapbake_now"]);
   assert.deepEqual(sideCommands({ name: "gl", gl: true }), []);
+  assert.deepEqual(vantageCommands({ atVantage: ["fua_mesh_blank"] }), ["fua_mesh_blank"]);
+  assert.deepEqual(vantageCommands({ name: "gl", gl: true }), []);
 });
 
 test("a box with a floor must change by at least that much, and one with a ceiling by no more", () => {

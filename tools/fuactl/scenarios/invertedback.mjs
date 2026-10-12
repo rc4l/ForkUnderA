@@ -37,8 +37,8 @@ export const VANTAGES = [{ name: "wall", at: { x: 256, y: 256, z: 0, angle: 90, 
 // [rc4l] The wall's lower part, below the map bake's top tier at 88.
 export const BOXES = { MAP01: { wall: { box: [0.1, 0.45, 0.45, 0.7], ceiling: 2 } } };
 
-// [rc4l] GL alone is the reference; the second is GL's frame from a Vulkan session, where replayed walls draw from the backend's mesh.
-export const SIDES = [{ name: "gl", gl: true }, { name: "glmesh", frame: "gl" }];
+// [rc4l] GL alone is the reference; the second is GL's frame from a Vulkan session with GL drawing replayed walls from the backend's mesh, the path fua_gl_meshdraw keeps.
+export const SIDES = [{ name: "gl", gl: true }, { name: "glmesh", frame: "gl", cvars: { fua_gl_meshdraw: 1 } }];
 
 runScenarioIfMain(import.meta.url, () => ({ name: "invertedback", wad: buildInvertedBackWad(), maps: ["MAP01"],
   vantages: VANTAGES, boxes: BOXES, sides: SIDES }));

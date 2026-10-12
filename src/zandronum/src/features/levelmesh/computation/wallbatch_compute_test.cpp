@@ -183,6 +183,27 @@ TEST(WallBatch, FanExpansionRejectsOutOfRange)
 	EXPECT_EQ(ComputeFanTriangleVertex(2, 0, 0), -1);  // no triangles at all
 }
 
+// [rc4l] Queue #42: a Vulkan session keeps the level mesh, and GL keeping its own copy to draw from cost a millisecond a frame on AOW03.
+TEST(WallBatch, GLDrawsItsOwnVerticesWhileTheMeshIsKeptForTheBackend)
+{
+	EXPECT_EQ(ComputeWallDrawPath(true, false, true, true), kWallsBatched);
+	EXPECT_EQ(ComputeWallDrawPath(true, false, false, true), kWallsOneByOne);
+}
+
+TEST(WallBatch, GLDrawsFromTheMeshOnlyWhenAskedAndTheMeshIsKept)
+{
+	EXPECT_EQ(ComputeWallDrawPath(true, true, true, true), kWallsFromMesh);
+	EXPECT_EQ(ComputeWallDrawPath(true, true, false, true), kWallsFromMesh);
+	EXPECT_EQ(ComputeWallDrawPath(false, true, true, true), kWallsBatched);
+	EXPECT_EQ(ComputeWallDrawPath(false, false, true, true), kWallsBatched);
+}
+
+TEST(WallBatch, TranslucentAndLightPassesDrawEachWallAlone)
+{
+	EXPECT_EQ(ComputeWallDrawPath(true, true, true, false), kWallsOneByOne);
+	EXPECT_EQ(ComputeWallDrawPath(false, false, true, false), kWallsOneByOne);
+}
+
 TEST(WallBatch, FanExpansionNeverReadsPastTheFan)
 {
 	// Every index a full expansion produces must be a real vertex of the fan.

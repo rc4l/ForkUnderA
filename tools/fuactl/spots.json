@@ -2172,6 +2172,32 @@
         "fua_dg_skyportal": "true",
         "gl_wallmesh": "true"
       }
+    },
+    "q42-gl-draws-plain-with-vulkan": {
+      "map": "AOW03",
+      "x": -6664,
+      "y": 14304,
+      "z": 496,
+      "angle": 270,
+      "pitch": 0,
+      "shows": "GL draws through the wall cache whenever Vulkan is on, so side by side GL runs ~285-309 fps here against stock Zandronum's 445 and our own 476-573 with gl_wallmesh 0 (bench, GL only, 1280x800, this exact view). fua_vulkan 1 forces gl_wallmesh on (dgscene.cpp:7450) and it stays on after fua_vulkan 0. Want: GL draws the plain way (streamed + gl_batch_walls) while the cache keeps feeding Vulkan, including runtime updates (doors, lifts). Measure: stat rendertimes; bench, with fua_vulkan 0 and 1; stock comparison via scratch stockbench.mjs against F:/ShitDronum/zandronum-vscode-windows/build/Release/zandronum.exe.",
+      "loaded": {
+        "iwad": "doom2.wad",
+        "pwads": [
+          "aow2.3_data_r260606.pk3 11109c8541a6b9b3982545d8ab79f986",
+          "aow2.3_code_r260606.pk3 46a08cbad4e08a795581e46ec97656c6",
+          "aow2.3_maps_r230122.pk3 273e4b7c31f825519acc9f9e25ff97cb",
+          "aow2.3_music_r230122.pk3 cca3692aabebc42d830a4f79737e2eee",
+          "aow2.3_patch_r260606.pk3 6675a80ed21d43e7bd101ef68166dc15"
+        ]
+      },
+      "renderer": {
+        "fua_vulkan": "true",
+        "fua_dg_standalone": "false",
+        "fua_dg_embed": "false",
+        "fua_dg_skyportal": "true",
+        "gl_wallmesh": "true"
+      }
     }
   }
 }

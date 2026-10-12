@@ -52,6 +52,13 @@ export async function exec(c, text, { quietMs = 220, maxMs = 4000 } = {}) {
 }
 
 // [rc4l] Wait until the instance is playing a level, which a map change leaves for a while; returns the sim.tic reply.
+// [rc4l] The engine's frametime distribution over the next `frames` frames, as the perf event reports it.
+export async function capturePerf(c, { frames = 300, warmup = 0 } = {}) {
+  const done = c.waitEvent("perf", 120000);
+  await c.rpc("perf.capture", { frames, warmup });
+  return done;
+}
+
 export async function waitInLevel(c, timeoutMs = 20000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {

@@ -59,12 +59,14 @@ its full spot record.
    `shot` can hide, `burst <tag> --side gl|vk --box ...` takes timed captures with the sim running.
 3. **Bisect before theorising.** Flip render cvars inside one paused frame (`ab <cvar> a b --spot`),
    switch features off (`fua_dg_*`), and run the old staged binary against your build. Read how GL
-   does it, since GL is the spec this backend matches.
+   does it, since GL is the spec this backend matches. For a frame-rate item, `abperf` the suspects
+   inside one session before changing anything: a clock's name is not what it measures (#42).
 4. **Write findings down as you go**: `queue note <id> "<what you ruled in or out>"`. Context gets
    compacted on long items; the queue does not.
 5. **Template regression first** (`template-maps`): the smallest generated map with just the one
    ingredient, as `scenarios/<name>.mjs`. It must FAIL on the current binary before you fix anything;
-   if it passes on both builds it tests nothing, so redesign it rather than ship it.
+   if it passes on both builds it tests nothing, so redesign it rather than ship it. When the fix keeps
+   the old behaviour behind a cvar, `scenarios <name> --side S --cvar k=v` shows the failure instead.
 6. **Fix** following `AGENTS.md`: pure logic in `Compute*` helpers with colocated `*_test.cpp`
    (`writing-tests`), thin engine glue, GL hooks listed in the feature README, one-sentence
    `// [rc4l]` comments.

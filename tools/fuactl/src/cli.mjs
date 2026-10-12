@@ -24,7 +24,8 @@ import { png } from "./png.mjs";
 import { actorsNear } from "./actors.mjs";
 import { pixelToFace } from "./camera.mjs";
 import { sectorOf } from "./sectorof.mjs";
-import { scenarioOptions, scenarioRun, templateScenarioFiles, probeScenario } from "./template.mjs";
+import { scenarioOptions, scenarioRun, templateScenarioFiles, probeScenario, withSideCvars } from "./template.mjs";
+import { abPerf } from "./abperf.mjs";
 import { decodePNG, abDiff, boxDiff } from "./pngcore.mjs";
 import fs from "node:fs";
 import os from "node:os";
@@ -157,11 +158,12 @@ const USAGE = `fuactl <command>
   mapdata <MAP> (--preset ID | --file a.pk3,b.wad) [--sector N,..] [--line N,..] [--special N] [--tag N] [--thing TYPE,..] [--scripts REGEX]   a UDMF level's summary, sectors, lines, things of the given types and ACS source lines, read from its files
   actors [--near x,y] [--radius R] [--toward YAW | --ahead] [--cone DEG] [--class REGEX]   actors near a point (default the player), nearest first, optionally only in a direction
   probe <scenario.mjs> [--map M] [--vantage V] [--side S] [--engine path/to/forkundera.exe] [<command> ...]   launch a template scenario's map at a vantage and run console commands there
-  scenarios [name ...] [--engine path/to/forkundera.exe]   run every template scenario (or the named ones) in turn and summarise; --engine picks the binary, as FUACTL_ENGINE does
+  scenarios [name ...] [--engine path/to/forkundera.exe] [--side S --cvar k=v,...]   run every template scenario (or the named ones) in turn and summarise; --engine picks the binary, as FUACTL_ENGINE does; --side/--cvar adds cvars to one side, to show a test fails under the old behaviour
   ready [--port P --token T] [--timeout S]   wait until an instance answers (defaults to the last play session)
   goto (--spot NAME | --at x,y,z --face yaw,pitch) [--port P]   stand the player there
   motion [--spot NAME | --at x,y,z --face yaw,pitch] [--box x0,y0,x1,y1] [--interval MS]   per-pixel change between two captures apart, Vulkan and GL, sim running
   ab <cvar> <a> <b> [--spot NAME | --at x,y,z --face yaw,pitch] [--box x0,y0,x1,y1]   Vulkan under each value in ONE paused frame, plus a repeat as the noise floor
+  abperf "<setting>" "<setting>" ... [--rounds N] [--frames N] [--spot NAME | --at x,y,z --face yaw,pitch]   frame time (p50/p99) under each console setting in turn inside one running session, round by round, each judged against the first within its round (default 3 rounds)
   shot <tag> [--port P] [--spot NAME | --at x,y,z --face yaw,pitch] [--force] [--same-frame]   matched GL/Vulkan pair from a running instance, one camera, sim frozen; --same-frame takes both from one engine frame, for an animated texture
   window [--shot gl|vk --out FILE]   the engine's windows as Windows sees them (minimized, hung, where), and with --shot what that window really shows, read from the compositor rather than GL's own buffer
   shoot [--port P] --tag T --at x,y,z --face yaw,pitch [--look x,y,z] [--weapon W] [--map M] [--after TICS]   fire at a junction and capture a GL/Vulkan pair (--look frames a point, --after catches transient effects before they fade)
@@ -321,12 +323,14 @@ async function main() {
       if (flags.engine) process.env.FUACTL_ENGINE = String(flags.engine);
       const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "scenarios");
       const files = templateScenarioFiles(dir, rest);
+      // [rc4l] --side S --cvar k=v runs a scenario with one side changed, to show a regression test fails under the behaviour it guards against.
+      const adjust = flags.side ? (o) => withSideCvars(o, String(flags.side), shot.parseCvarFlag(flags.cvar) || {}) : undefined;
       console.log(`engine ${resolveEngine()}`);
       let failed = 0;
       for (const f of files) {
         const url = pathToFileURL(path.join(dir, f)).href;
         await import(url);
-        const run = scenarioRun(url);
+        const run = scenarioRun(url, adjust);
         if (!run) continue;
         const out = await run();
         for (const l of out.lines.filter((x) => !x.startsWith("PASS"))) console.log(`${f.slice(0, -4).padEnd(18)} ${l}`);
@@ -531,11 +535,7 @@ async function main() {
     // closes the socket before the report exists and can never see one. These hold the connection.
     case "capture": {
       if (!flags.port) { console.error("usage: fuactl capture --port P [--token T] [--frames N] [--warmup M]"); process.exit(2); }
-      const report = await withUi(flags, async (c) => {
-        const done = c.waitEvent("perf", 120000);
-        await c.rpc("perf.capture", { frames: num(flags.frames) ?? 300, warmup: num(flags.warmup) ?? 0 });
-        return done;
-      });
+      const report = await withUi(flags, (c) => cap.capturePerf(c, { frames: num(flags.frames) ?? 300, warmup: num(flags.warmup) ?? 0 }));
       console.error(`[capture] p50=${report.total.p50_ms}ms p99=${report.total.p99_ms}ms max=${report.total.max_ms}ms (sim ${report.sim_mean_ms.toFixed(2)} / render ${report.render_mean_ms.toFixed(2)})`);
       console.log(JSON.stringify(report, null, 2));
       break;
@@ -808,6 +808,20 @@ async function main() {
         const box = flags.box ? String(flags.box).split(",").map(Number) : [0, 0.05, 1, 1];
         const moved = (pair) => (pair && pair[0] && pair[1] ? boxDiff(decodePNG(pair[0]), decodePNG(pair[1]), box, 1) : null);
         console.log(JSON.stringify({ box, vulkan: moved(got.vk), gl: moved(got.gl), files: [...got.vk, ...got.gl] }, null, 2));
+      } finally { c.close(); }
+      break;
+    }
+    // [rc4l] `fuactl abperf "<setting>" ...` -- frame cost per console setting inside one session, the A/B that separate launches drift too much for.
+    case "abperf": {
+      const usage = 'usage: fuactl abperf "<setting>" "<setting>" ... [--rounds N] [--frames N] [--spot NAME | --at x,y,z --face yaw,pitch] [--port P]';
+      if (rest.length < 2) { console.error(usage); process.exit(2); }
+      const c = await connectTarget(flags, usage);
+      try {
+        const at = shot.cameraFromFlags(flags, SPOTS);
+        if (at) await shot.moveTo(c, at);
+        const { verdicts } = await abPerf(c, rest, { rounds: num(flags.rounds) ?? 3, frames: num(flags.frames) ?? 400,
+          log: (r) => console.log(`round ${r.round}  ${r.setting.padEnd(36)} p50 ${r.p50.toFixed(3)} ms  p99 ${r.p99.toFixed(3)} ms`) });
+        for (const v of verdicts) console.log(`${v.label}: ${v.verdict}, median ${v.median} ms (by round: ${v.deltas.join(", ")})`);
       } finally { c.close(); }
       break;
     }

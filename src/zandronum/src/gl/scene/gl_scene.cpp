@@ -643,10 +643,7 @@ void FGLRenderer::DrawScene(bool toscreen)
 	// any of it: its geometry is resident and its frame is a matrix upload and a batch loop, which
 	// measures 0.25 ms of submit and 0.15 ms of GPU on Sunder MAP16 against roughly 7 ms of this.
 	//
-	// So with fua_dg_standalone the whole derivation is skipped. What GL still supplies is named in
-	// zx::hwrender::StandaloneActive(): a level that has been fully baked once, and sprites and
-	// moving geometry, which are not yet fed from anywhere else. It is a switch and it is off by
-	// default, because a mode that drops moving doors is not a default.
+	// So with fua_dg_standalone the whole derivation is skipped, and what runs below instead is the upkeep, the sprite sweep and the moved sectors' re-bake (scenario standalonemove).
 	if (zx::hwrender::StandaloneActive())
 	{
 		// [rc4l] The per-frame bookkeeping CreateScene owns, minus the derivation.
