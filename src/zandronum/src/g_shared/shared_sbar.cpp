@@ -66,6 +66,7 @@
 #include "gamemode.h"
 #include "st_hud.h"
 #include "features/damage-tint/damagetint.h"	// [rc4l] mugshot damage tint
+#include "features/crosshair/crosshair.h"	// [MobiusU9B] Crosshair Options size and offsets
 
 #define XHAIRSHRINKSIZE		(FRACUNIT/18)
 #define XHAIRPICKUPSIZE		(FRACUNIT*2+XHAIRSHRINKSIZE)
@@ -1213,8 +1214,6 @@ void DBaseStatusBar::DrawCrosshair ()
 	static int palettecolor = 0;
 
 	DWORD color;
-	fixed_t size;
-	int w, h;
 
 	// [AK] The crosshair doesn't look good while using the free chasecam, so don't draw it.
 	if (FreeChasecam::IsBeingUsed())
@@ -1243,21 +1242,8 @@ void DBaseStatusBar::DrawCrosshair ()
 	if ( zacompatflags & ZACOMPATF_NO_CROSSHAIR )
 		return;
 
-	if (crosshairscale)
-	{
-		size = SCREENHEIGHT * FRACUNIT / 200;
-	}
-	else
-	{
-		size = FRACUNIT;
-	}
-
-	if (crosshairgrow)
-	{
-		size = FixedMul (size, CrosshairSize);
-	}
-	w = (int)((CrosshairImage->GetWidth() * size) >> FRACBITS);
-	h = (int)((CrosshairImage->GetHeight() * size) >> FRACBITS);
+	// [MobiusU9B] The stock crosshairscale/crosshairgrow sizing plus the Crosshair Options size and offset sliders.
+	const zx::crosshair::CrosshairRect rect = zx::crosshair::GetRect (CrosshairImage, CrosshairSize);
 
 	if (crosshairhealth)
 	{
@@ -1304,10 +1290,10 @@ void DBaseStatusBar::DrawCrosshair ()
 	}
 
 	screen->DrawTexture (CrosshairImage,
-		viewwidth / 2 + viewwindowx,
-		viewheight / 2 + viewwindowy,
-		DTA_DestWidth, w,
-		DTA_DestHeight, h,
+		rect.x,
+		rect.y,
+		DTA_DestWidth, rect.width,
+		DTA_DestHeight, rect.height,
 		DTA_AlphaChannel, true,
 		DTA_FillColor, (palettecolor << 24) | (color & 0xFFFFFF),
 		TAG_DONE);

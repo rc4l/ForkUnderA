@@ -1016,13 +1016,8 @@ OptionMenu "HUDOptions"
 	Submenu "Alternative HUD",			"AltHudOptions"
 	Submenu "Message Options", 			"MessageOptions"
 	Submenu "Scoreboard Options", 			"ScoreboardOptions" // [AK]
+	Submenu "Crosshair Options",			"FUACrosshairOptions" // [MobiusU9B]
 	StaticText " "
-	Option "Default Crosshair",			"crosshair", "Crosshairs"
-	Option "Force default crosshair",	"crosshairforce", "OnOff"
-	Option "Grow crosshair when picking up items",	"crosshairgrow", "OnOff"
-	ColorPicker "Crosshair color", 		"crosshaircolor"
-	Option "Crosshair shows health",	"crosshairhealth", "OnOff"
-	Option "Scale crosshair",			"crosshairscale", "OnOff"
 	Option "Voting display",			"cl_showfullscreenvote", "ZA_VotingDisplay"
 	Option "Hide vote screen after vote",		"cl_hidevotescreen", "YesNo" // [AK]
 	Option "Fullscreen HUD",			"cl_stfullscreenhud", "ZA_FullscreenHUD"
@@ -1039,6 +1034,25 @@ OptionMenu "HUDOptions"
 	Option "Poison damage flashes",		"pf_poison",		"ZDoomHexen"
 	Option "Ice death flashes",			"pf_ice",			"ZDoomHexen"
 	Option "Poison Buildup flashes",	"pf_hazard",		"ZDoomStrife"
+}
+
+// [MobiusU9B] features/crosshair: every crosshair setting in one place, plus size and offset sliders.
+OptionMenu "FUACrosshairOptions"
+{
+	Title "CROSSHAIR OPTIONS"
+	Option "Default Crosshair",			"crosshair", "Crosshairs"
+	Option "Force default crosshair",	"crosshairforce", "OnOff"
+	Option "Grow crosshair when picking up items",	"crosshairgrow", "OnOff"
+	ColorPicker "Crosshair color", 		"crosshaircolor"
+	Option "Crosshair shows health",	"crosshairhealth", "OnOff"
+	Option "Scale crosshair with resolution",	"crosshairscale", "OnOff"
+	StaticText " "
+	Slider	"Crosshair size",			"cl_fua_crosshair_scale",	0.25, 4.0, 0.05, 2
+	Slider	"Horizontal offset",		"cl_fua_crosshair_x",		-50.0, 50.0, 0.5, 1
+	Slider	"Vertical offset",			"cl_fua_crosshair_y",		-50.0, 50.0, 0.5, 1
+	StaticText " "
+	StaticText "Offsets are % of the view from its centre, + is right / down.", 1
+	StaticText "They move the crosshair, not where you shoot.", 1
 }
 	
 //-------------------------------------------------------------------------------------------
