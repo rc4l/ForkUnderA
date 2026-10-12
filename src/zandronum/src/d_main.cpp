@@ -78,6 +78,7 @@
 #include "features/server-hosting/zx_hostwatchdog.h" // [rc4l] and dying with the game that started us
 #include "features/port-mapping/zx_portmap.h" // [rc4l] and giving back any port we asked for
 #include "features/server-browser/zx_joinserver.h" // [rc4l] a failed join lands in the browser
+#include "features/speedometer/speedometer.h" // [MobiusU9B] on-screen speed readout
 #include "s_sound.h"
 #include "v_video.h"
 #include "intermission/intermission.h"
@@ -1090,7 +1091,12 @@ drawfullconsole:
 				POSSESSION_Render( );
 
 				// [BC] Render the scoreboard [BB] respecting free spectate mode.
-				HUD_Render( CLIENTDEMO_IsInFreeSpectateMode( ) == false ? HUD_GetViewPlayer( ) : consoleplayer );
+				// [MobiusU9B] Hoisted so the speedometer reads the same player the HUD shows.
+				const ULONG ulDisplayPlayer = CLIENTDEMO_IsInFreeSpectateMode( ) == false ? HUD_GetViewPlayer( ) : consoleplayer;
+				HUD_Render( ulDisplayPlayer );
+
+				// [MobiusU9B] The speedometer, see features/speedometer/README.md.
+				zx::speedometer::Draw( ulDisplayPlayer );
 
 				// Render any medals the player might have been awarded.
 				MEDAL_Render( );

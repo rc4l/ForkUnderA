@@ -406,6 +406,7 @@ OptionMenu "FUAOptions"
 	Submenu "Crash Reporting",			"CrashReportOptions"
 	Submenu "Hitbox Visualization",		"HitboxVizOptions"
 	Submenu "Damage Tint",				"FUADamageTintOptions"
+	Submenu "Speedometer",				"FUASpeedometerOptions"
 	StaticText " "
 	// [rc4l] Auto-update notice: check GitHub for a newer release at startup and show the main-menu
 	// notice. On by default; off means no update check and no network call.
@@ -431,6 +432,21 @@ OptionMenu "FUADamageTintOptions"
 	Slider	"Face tint coverage",		"cl_damagetint_face_coverage",		0.0, 100.0, 5.0, 0
 	StaticText " "
 	StaticText "Coverage: how far up each sprite the tint reaches (50 = half).", 1
+}
+
+// [MobiusU9B] features/speedometer: the displayed player's speed in map units per second, placed by percentage of the screen.
+OptionMenu "FUASpeedometerOptions"
+{
+	Title "SPEEDOMETER"
+	Option	"Show speedometer",			"cl_fua_speedometer",			"OnOff"
+	Option	"Include vertical speed",	"cl_fua_speedometer_vertical",	"OnOff",		"cl_fua_speedometer"
+	Option	"Text color",				"cl_fua_speedometer_color",		"TextColors",	"cl_fua_speedometer"
+	StaticText " "
+	Slider	"Horizontal position",		"cl_fua_speedometer_x",			0.0, 100.0, 0.5, 1
+	Slider	"Vertical position",		"cl_fua_speedometer_y",			0.0, 100.0, 0.5, 1
+	StaticText " "
+	StaticText "Position is a percentage of the screen:", 1
+	StaticText "0 = left / top, 100 = right / bottom.", 1
 }
 
 // [rc4l] fov-interp: FOV and how fast the view tweens to it. Its own submenu rather than rows in
