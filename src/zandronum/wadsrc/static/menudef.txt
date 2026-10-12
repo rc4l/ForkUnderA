@@ -1036,6 +1036,21 @@ OptionMenu "HUDOptions"
 	Option "Poison Buildup flashes",	"pf_hazard",		"ZDoomStrife"
 }
 
+// [MobiusU9B] cl_fua_identify_position: where Zandronum's target identification is drawn.
+OptionValue "FUAIdentifyPositions"
+{
+	0, "Bottom of screen"
+	1, "Next to crosshair"
+}
+
+// [MobiusU9B] cl_fua_identify_actorname: what the actor-name line beside the crosshair shows.
+OptionValue "FUAActorNameModes"
+{
+	0, "Off"
+	1, "DECORATE class"
+	2, "Tag"
+}
+
 // [MobiusU9B] features/crosshair: every crosshair setting in one place, plus size and offset sliders.
 OptionMenu "FUACrosshairOptions"
 {
@@ -1053,6 +1068,23 @@ OptionMenu "FUACrosshairOptions"
 	StaticText " "
 	StaticText "Offsets are % of the view from its centre, + is right / down.", 1
 	StaticText "They move the crosshair, not where you shoot.", 1
+	StaticText " "
+	StaticText "Target info", 1
+	Option	"Identify player level",	"cl_identifytarget",			"ZA_IdentifyTargetLevels"
+	Option	"Identify monster level",	"cl_identifymonsters",			"ZA_IdentifyMonsterLevels"
+	Option	"Show target info",			"cl_fua_identify_position",		"FUAIdentifyPositions"
+	Option	"Actor name",				"cl_fua_identify_actorname",	"FUAActorNameModes"
+	StaticText " "
+	StaticText "Next to the crosshair: move each line from its place", 1
+	Slider	"Name X offset",			"cl_fua_xhairinfo_name_x",		-200, 200, 1, 0
+	Slider	"Name Y offset",			"cl_fua_xhairinfo_name_y",		-200, 200, 1, 0
+	Slider	"Details X offset",			"cl_fua_xhairinfo_info_x",		-200, 200, 1, 0
+	Slider	"Details Y offset",			"cl_fua_xhairinfo_info_y",		-200, 200, 1, 0
+	Slider	"Actor name X offset",		"cl_fua_xhairinfo_actor_x",		-200, 200, 1, 0
+	Slider	"Actor name Y offset",		"cl_fua_xhairinfo_actor_y",		-200, 200, 1, 0
+	StaticText " "
+	StaticText "Details are ally health and armor, weapon, class and drops.", 1
+	StaticText "The actor name is always drawn next to the crosshair.", 1
 }
 	
 //-------------------------------------------------------------------------------------------
@@ -1632,6 +1664,7 @@ OptionMenu GameplayOptions
 	Option "End sector counts for kill %",	"sv_nocountendmonst", "NoYes"
 	// [TP] Zandronum dmflags
 	Option "Allow player identification",	"sv_noidentifytarget", "NoYes"
+	Option "Allow actor identification",	"sv_fua_noidentifyactors", "NoYes" // [MobiusU9B]
 	Option "Unblock players",		"sv_unblockplayers", "YesNo"
 	Option "Unblock allies",		"sv_unblockallies", "YesNo"
 	Option "Allow rocket jumping",	"sv_norocketjumping", "NoYes"

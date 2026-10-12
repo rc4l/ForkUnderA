@@ -5,36 +5,57 @@ anything drawn at or next to the crosshair is configured.
 
 The stock crosshair rows moved here from HUD Options unchanged: `crosshair`, `crosshairforce`,
 `crosshairgrow`, `crosshaircolor`, `crosshairhealth` and `crosshairscale`. `crosshairscale` is now labelled
-"Scale crosshair with resolution" so it doesn't read like the size slider.
+"Scale crosshair with resolution" so it doesn't read like the size slider. Zandronum's "Identify player level"
+and "Identify monster level" (`cl_identifytarget`, `cl_identifymonsters`) moved here from Multiplayer Options.
 
-Client-side display only: nothing here touches aiming, the network, savegames or demos.
+Client-side display only: nothing here touches aiming, savegames or demos. The one network-facing piece is a
+server flag, which rides in `zadmflags` and so reaches clients through the existing flag sync.
 
 ## Files
 
 | file | role |
 |------|------|
-| `crosshair.h/.cpp` | Engine glue: the CVARs and `zx::crosshair::GetRect`, which reads the image, the stock cvars and the 3D view's window. |
-| `computation/crosshair_compute.{h,cpp,_test.cpp}` | Pure math: the clamps and `ComputeCrosshairRect`. 100% unit coverage. |
+| `crosshair.h/.cpp` | Engine glue: the CVARs, `GetRect`, the shared view trace, and the per-frame draw of the text beside the crosshair. |
+| `computation/crosshair_compute.{h,cpp,_test.cpp}` | Pure math for the crosshair: the clamps and `ComputeCrosshairRect`. 100% unit coverage. |
+| `computation/targetinfo_compute.{h,cpp,_test.cpp}` | Pure logic for the text: scale, anchor, stacking, fade, and the actor-name and health rules. 100% unit coverage. |
 
 ## Cvars
 
-All are `CVAR_ARCHIVE | CVAR_GLOBALCONFIG` and clamped on set.
+The client cvars are all `CVAR_ARCHIVE | CVAR_GLOBALCONFIG` and clamped on set.
 
 - `cl_fua_crosshair_scale` (float 0.25–4, default 1) multiplies the crosshair's size, on top of `crosshairscale` and `crosshairgrow`.
 - `cl_fua_crosshair_x` and `cl_fua_crosshair_y` (float −50 to 50, default 0) move the crosshair by a percentage of the 3D view from its centre. Positive is right or down, and ±50 reaches the view's edge.
+- `cl_fua_identify_position` (0 bottom of screen, the default; 1 next to the crosshair) sets where Zandronum's identify text goes.
+- `cl_fua_identify_actorname` (0 off, the default; 1 DECORATE class; 2 tag) adds a line naming whatever is in the crosshair: monsters, projectiles, lamps, trees, corpses, pickups.
+- `cl_fua_xhairinfo_{name,info,actor}_{x,y}` (int −200 to 200, default 0) nudge each line from its stacked place, in HUD-text pixels.
+- `sv_fua_noidentifyactors` is a server flag: `zadmflags` bit 29, `ZADF_FUA_NO_IDENTIFY_ACTORS`. It hides the actor-name line for everyone. `sv_noidentifytarget` hides it too, because servers that set that flag (Whodunit, GvH and others) would otherwise leak what it protects.
 
 ## How it is drawn
 
 - `ComputeCrosshairRect` runs the stock size maths on the same 64-bit fixed-point values and with the same `Fixed64Mul` as `FixedMul`. At scale 1 and offset 0 it is bit-identical to the old inline code, and a test pins that against a copy of the old formula.
 - The offsets are relative to the 3D view, not the screen. With the status bar showing (`screenblocks` 10), the centre is the middle of the area above the bar, as it always was.
-- The offset moves the reticle only. Shots and the target identifier still use the view's centre.
+- The offset moves the reticle only. Shots and both scans still use the view's centre.
+
+### Text beside the crosshair
+
+- `HUD_DrawTargetName` builds the same text as before, split into the name and the lines below it. At the bottom of the screen it posts the same `'PNAM'` message, byte for byte. Next to the crosshair, the three lines (name, details, actor name) are drawn every frame by `DrawBesideCrosshair`. They linger 2 s and fade over 0.35 s, timed in `gametic` like the message. The strings are cached, never an actor pointer, so a target that dies or despawns can't dangle.
+- Stacking: the lines start just right of the crosshair's drawn rectangle, with the first line centred on it. They follow the crosshair's offset and size. Hidden lines take no rows, and each line's X/Y offsets apply on top. A new line, such as the planned telemeter, is one more row in `g_Beside`.
+- Text scale follows the HUD text, like chat: the canvas is the screen divided by `SCREENHEIGHT / HUD_GetHeight()`. It is drawn with `DTA_KeepRatio`, so virtual-to-real is a plain scale and the real-pixel crosshair converts exactly.
+- The actor-name scan is the identify trace with every actor flag in its mask, so it also stops on things that can't be shot. A trace callback passes through anything the renderer wouldn't draw (sprite 0, `MF_NOSECTOR`, `RF_INVISIBLE`, an invisible render style or alpha, or not visible to this player), so invisible bridges and hidden actors are never named. An actor with `STFL_DONTIDENTIFYTARGET` stops the scan and shows nothing.
+- The health in the details line is only shown when this machine is actually sent it. Offline it always is. Online, a player's health is only shown when `SERVER_IsPlayerAllowedToKnowHealth` allows it, and a friendly monster's never is, because the server doesn't sync monster health.
 
 ## In-place anchors (the only edits outside this feature)
 
 1. `g_shared/shared_sbar.cpp`: an include, and in `DBaseStatusBar::DrawCrosshair` the inline `size`/`w`/`h`
    maths and the centre point are replaced by `zx::crosshair::GetRect (CrosshairImage, CrosshairSize)`. Every
    gate before it is untouched. The alternative HUD draws through the same function, so it gets the sliders too.
-2. `CMakeLists.txt`: `features/crosshair/crosshair.cpp` is in the zdoom source list. It has no `IMPLEMENT_CLASS`,
-   so its position doesn't matter. The `*_compute.cpp` is picked up by the existing glob.
-3. `wadsrc/static/menudef.txt`: the `Crosshair Options` row in `HUDOptions` and the `FUACrosshairOptions` menu.
-   The six stock rows were removed from `HUDOptions`.
+2. `g_shared/st_hud.cpp`: `HUD_ScanForTarget` calls `zx::crosshair::TraceFromView` with its old `MF_SHOOTABLE`
+   mask. `HUD_DrawTargetName` is split into `HUD_CanIdentifyFrom` (the shared checks), `HUD_BuildTargetText`
+   (its old body, now filling a `TargetText`) and the draw. The health line also checks `HUD_IsTargetHealthKnown`.
+3. `doomdef.h` / `d_main.cpp`: the `ZADF_FUA_NO_IDENTIFY_ACTORS` bit and its `sv_fua_noidentifyactors` flag cvar.
+   `features/server-browser/computation/flaghelp_compute.cpp` gives it a tooltip.
+4. `CMakeLists.txt`: `features/crosshair/crosshair.cpp` is in the zdoom source list. It has no `IMPLEMENT_CLASS`,
+   so its position doesn't matter. The `*_compute.cpp` files are picked up by the existing glob.
+5. `wadsrc/static/menudef.txt`: the `Crosshair Options` row in `HUDOptions`, the `FUACrosshairOptions` menu and its
+   two value lists, and the "Allow actor identification" server option. `wadsrc/static/menudef.za`: the two
+   identify rows are removed from Multiplayer Options.

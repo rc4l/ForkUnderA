@@ -75,6 +75,8 @@
 #include "win32/g15/g15.h"
 #include "voicechat.h"
 #include "possession.h"
+#include "features/crosshair/crosshair.h"	// [MobiusU9B] target info beside the crosshair
+#include "features/crosshair/computation/targetinfo_compute.h"
 
 // [AK] Message levels used for cl_identifytarget.
 enum
@@ -423,89 +425,81 @@ static AActor *HUD_ScanForTarget( AActor *pSource )
 {
 	FTraceResults trace;
 
-	angle_t angle = pSource->angle >> ANGLETOFINESHIFT;
-	angle_t pitch = static_cast<angle_t>( pSource->pitch ) >> ANGLETOFINESHIFT;
-	fixed_t vx = FixedMul( finecosine[pitch], finecosine[angle] );
-	fixed_t vy = FixedMul( finecosine[pitch], finesine[angle] );
-	fixed_t vz = -finesine[pitch];
-	fixed_t eyez = pSource->player ? pSource->player->viewz : pSource->z + pSource->height / 2;
-
-	if ( Trace( pSource->x,	// Actor x
-		pSource->y, // Actor y
-		eyez,	// Actor z
-		pSource->Sector,
-		vx,
-		vy,
-		vz,
-		( 32 * 64 * FRACUNIT ) /* MISSILERANGE */,	// Maximum distance
-		MF_SHOOTABLE,	// Actor mask
-		ML_BLOCKEVERYTHING,	// Wall mask
-		pSource,		// Actor to ignore
-		trace,	// Result
-		TRACE_NoSky,	// Trace flags
-		NULL ) == false )	// Callback
-	// Did not spot anything anything.
-	{
+	// [MobiusU9B] The trace itself moved to features/crosshair, which shares it with the crosshair's actor-name scan.
+	if (( zx::crosshair::TraceFromView( pSource, MF_SHOOTABLE, false, trace ) == false ) || ( trace.HitType != TRACE_HitActor ))
 		return ( NULL );
-	}
-	else
-	{
-		// Return NULL if we did not hit an actor.
-		if ( trace.HitType != TRACE_HitActor )
-			return ( NULL );
 
-		// Return the actor we found.
-		return ( trace.Actor );
-	}
+	// Return the actor we found.
+	return ( trace.Actor );
 }
 
 //*****************************************************************************
 //
-void HUD_DrawTargetName( player_t *pPlayer )
+// [MobiusU9B] The checks every identify readout shares, so the crosshair's actor name obeys them too.
+static bool HUD_CanIdentifyFrom( player_t *pPlayer )
 {
 	// [BC] The player may not have a body between intermission-less maps.
 	if (( pPlayer->camera == NULL ) || ( viewactive == false ))
-		return;
-
-	// Break out if we don't want to identify the target, or
-	// a medal has just been awarded and is being displayed.
-	if (( cl_identifytarget == IDENTIFY_TARGET_OFF ) || ( zadmflags & ZADF_NO_IDENTIFY_TARGET ) || ( MEDAL_GetDisplayedMedal( pPlayer->camera->player - players ) != nullptr ))
-		return;
+		return ( false );
 
 	// Don't do any of this while still receiving a snapshot.
 	if (( NETWORK_GetState( ) == NETSTATE_CLIENT ) && ( CLIENT_GetConnectionState( ) == CTS_RECEIVINGSNAPSHOT ))
-		return;
+		return ( false );
 
 	if (( pPlayer->bSpectating ) && ( lastmanstanding || teamlms ) && ( LASTMANSTANDING_GetState( ) == LMSS_INPROGRESS ))
-		return;
+		return ( false );
+
+	return ( camera != NULL );
+}
+
+//*****************************************************************************
+//
+// [MobiusU9B] Whether pTarget's health on this machine is real: online a friendly monster's never is, and a player's only when the server shares it.
+static bool HUD_IsTargetHealthKnown( AActor *pTarget )
+{
+	const bool bServerShares = ( pTarget->player != NULL ) && SERVER_IsPlayerAllowedToKnowHealth( consoleplayer, static_cast<ULONG>( pTarget->player - players ));
+	return ( zx::crosshair::ComputeIdentifyHealthKnown( NETWORK_InClientMode( ), bServerShares ));
+}
+
+//*****************************************************************************
+//
+// [MobiusU9B] What HUD_DrawTargetName used to build and post; it now only fills target and says whether there is anything to show.
+static bool HUD_BuildTargetText( player_t *pPlayer, zx::crosshair::TargetText &target )
+{
+	// Break out if we don't want to identify the target, or
+	// a medal has just been awarded and is being displayed.
+	if (( cl_identifytarget == IDENTIFY_TARGET_OFF ) || ( zadmflags & ZADF_NO_IDENTIFY_TARGET ) || ( MEDAL_GetDisplayedMedal( pPlayer->camera->player - players ) != nullptr ))
+		return ( false );
 
 	// Look for players directly in front of the player.
-	if ( camera )
+	// [MobiusU9B] Was the body of an if ( camera ) block, which HUD_CanIdentifyFrom now guarantees; kept as a block so the diff stays small.
 	{
 		// Search for a player or monster directly in front of the camera. If none are found, exit.
 		AActor *pTargetActor = HUD_ScanForTarget( camera );
 		if (( pTargetActor == NULL ) || (( pTargetActor->player == NULL ) && (( pTargetActor->flags3 & MF3_ISMONSTER ) == false )))
-			return;
+			return ( false );
 
 		// [CK] If the actor shouldn't be identified from decorate flags, ignore them.
 		// [AK] Likewise, ignore monsters if we don't want to identify them.
 		if ((( pTargetActor->STFlags & STFL_DONTIDENTIFYTARGET ) != 0 ) || (( cl_identifymonsters == IDENTIFY_MONSTERS_OFF ) && ( pTargetActor->flags3 & MF3_ISMONSTER )))
-			return;
+			return ( false );
 
 		// Build the string and text color;
-		EColorRange color = CR_GRAY;
-		FString targetInfoMsg;
+		// [MobiusU9B] The name goes in target.name and every later line, each led by its newline, in target.details.
+		EColorRange &color = target.color;
+		FString &targetInfoMsg = target.details;
+		color = CR_GRAY;
 
 		if ( pTargetActor->player )
 		{
-			targetInfoMsg = pTargetActor->player->userinfo.GetName( );
+			target.name = pTargetActor->player->userinfo.GetName( );
 		}
 		else
 		{
-			targetInfoMsg = pTargetActor->GetTag( );
+			target.name = pTargetActor->GetTag( );
 
 			// [AK] Colorize the string in case the actor's name tag contains unformatted color codes.
-			V_ColorizeString( targetInfoMsg );
+			V_ColorizeString( target.name );
 		}
 
 		// Attempt to use the team color.
@@ -528,7 +522,8 @@ void HUD_DrawTargetName( player_t *pPlayer )
 		if ( pTargetActor->IsFriend( players[consoleplayer].mo ))
 		{
 			// [AK] Print this actor's current health and armor.
-			if ( cl_identifytarget >= IDENTIFY_TARGET_HEALTH )
+			// [MobiusU9B] Only when this machine is actually sent that health.
+			if (( cl_identifytarget >= IDENTIFY_TARGET_HEALTH ) && ( HUD_IsTargetHealthKnown( pTargetActor )))
 			{
 				int healthPercentage = ( 100 * pTargetActor->health ) / ( pTargetActor->player ? pTargetActor->player->mo->GetMaxHealth( ) : pTargetActor->SpawnHealth( ));
 				targetInfoMsg += '\n';
@@ -673,10 +668,28 @@ void HUD_DrawTargetName( player_t *pPlayer )
 			if (( terminator ) && ( pTargetActor->player ) && ( pTargetActor->player->cheats2 & CF2_TERMINATORARTIFACT ))
 				color = CR_RED;
 		}
+	}
 
-		DHUDMessageFadeOut *pMsg = new DHUDMessageFadeOut( SmallFont, targetInfoMsg, 1.5f, gameinfo.gametype == GAME_Doom ? 0.96f : 0.95f, 0, 0, color, 2.f, 0.35f );
+	return ( true );
+}
+
+//*****************************************************************************
+//
+void HUD_DrawTargetName( player_t *pPlayer )
+{
+	const bool bCanIdentify = HUD_CanIdentifyFrom( pPlayer );
+	const bool bBesideCrosshair = zx::crosshair::IsTargetInfoNextToCrosshair( );
+	zx::crosshair::TargetText target;
+	const bool bFound = bCanIdentify && HUD_BuildTargetText( pPlayer, target );
+
+	if (( bFound ) && ( bBesideCrosshair == false ))
+	{
+		DHUDMessageFadeOut *pMsg = new DHUDMessageFadeOut( SmallFont, target.name + target.details, 1.5f, gameinfo.gametype == GAME_Doom ? 0.96f : 0.95f, 0, 0, target.color, 2.f, 0.35f );
 		StatusBar->AttachMessage( pMsg, MAKE_ID( 'P', 'N', 'A', 'M' ));
 	}
+
+	// [MobiusU9B] Everything beside the crosshair, the actor name included, is drawn every frame by features/crosshair.
+	zx::crosshair::DrawBesideCrosshair( bCanIdentify ? camera : NULL, ( bFound && bBesideCrosshair ) ? &target : NULL );
 }
 
 //*****************************************************************************

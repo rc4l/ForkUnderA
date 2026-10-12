@@ -662,6 +662,7 @@ CUSTOM_CVAR (Int, zadmflags, 0, CVAR_SERVERINFO | CVAR_CAMPAIGNLOCK | CVAR_GAMEP
 }
 
 CVAR (Flag, sv_noidentifytarget,			zadmflags, ZADF_NO_IDENTIFY_TARGET);
+CVAR (Flag, sv_fua_noidentifyactors,		zadmflags, ZADF_FUA_NO_IDENTIFY_ACTORS); // [MobiusU9B] features/crosshair
 CVAR (Flag, sv_applylmsspectatorsettings,	zadmflags, ZADF_ALWAYS_APPLY_LMS_SPECTATORSETTINGS);
 CVAR (Flag, sv_nocoopinfo,			zadmflags, ZADF_NO_COOP_INFO);
 CVAR (Flag, sv_unblockplayers,			zadmflags, ZADF_UNBLOCK_PLAYERS);
