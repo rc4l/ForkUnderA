@@ -8,8 +8,9 @@
 #include "doomstat.h"
 #include "p_local.h"
 #include "p_trace.h"
+#include "r_main.h"
 #include "r_state.h"
-#include "tables.h"
+#include "r_utility.h"
 #include "v_font.h"
 #include "v_text.h"
 #include "v_video.h"
@@ -17,16 +18,20 @@
 #include "g_shared/a_pickups.h"
 #include "g_shared/sbar.h"
 #include "g_shared/st_hud.h"
+#include "gl/data/gl_data.h"
 
 #include "features/crosshair/crosshair.h"
 #include "features/crosshair/computation/targetinfo_compute.h"
 #include "features/crosshair/computation/telemeter_compute.h"
+#include "features/fov-interp/fovinterp.h"
 
+#include <cmath>
 #include <string>
 #include <vector>
 
 EXTERN_CVAR(Bool, crosshairscale)
 EXTERN_CVAR(Bool, crosshairgrow)
+EXTERN_CVAR(Int, screenblocks)
 
 namespace
 {
@@ -163,27 +168,36 @@ namespace
 	int g_SweepTic = -1;
 	const AActor *g_SweepViewer = NULL;
 
-	// [MobiusU9B] The line straight out of an actor's eyes, as every scan here aims it.
-	struct ViewRay
+	// [MobiusU9B] Where an actor looks from, as HUD_ScanForTarget always aimed it.
+	fixed_t EyeZ(AActor *source)
 	{
-		fixed_t x;
-		fixed_t y;
-		fixed_t z;
-		fixed_t vx;
-		fixed_t vy;
-		fixed_t vz;
-	};
+		return source->player ? source->player->viewz : source->z + source->height / 2;
+	}
 
-	ViewRay GetViewRay(AActor *source)
+	fixed_t DoubleToFixed(double value)
 	{
-		// [MobiusU9B] Moved unchanged from HUD_ScanForTarget, so the identify scan and the view sweep aim the same way.
-		angle_t angle = source->angle >> ANGLETOFINESHIFT;
-		angle_t pitch = static_cast<angle_t>( source->pitch ) >> ANGLETOFINESHIFT;
-		fixed_t vx = FixedMul( finecosine[pitch], finecosine[angle] );
-		fixed_t vy = FixedMul( finecosine[pitch], finesine[angle] );
-		fixed_t vz = -finesine[pitch];
-		fixed_t eyez = source->player ? source->player->viewz : source->z + source->height / 2;
-		return ViewRay{ source->x, source->y, eyez, vx, vy, vz };
+		return fixed_t(std::llround(value * 65536.0));
+	}
+
+	// [MobiusU9B] How the running renderer maps the screen to the world, so a line can be aimed through any pixel of the view.
+	zx::crosshair::ReticleProjection ReadProjection()
+	{
+		if (currentrenderer == 1)
+		{
+			return zx::crosshair::ComputeGLReticleProjection(FOV_InterpolatedForFrame(&players[consoleplayer]), WidescreenRatio,
+				viewwidth, zx::crosshair::ComputeGLViewportHeight(screenblocks, SCREENHEIGHT), glset.pixelstretch);
+		}
+		return zx::crosshair::ReticleProjection{ FIXED2DBL(FocalLengthX), FIXED2DBL(FocalLengthY), 1.0, true };
+	}
+
+	// [MobiusU9B] The line out of an actor's eyes through the drawn crosshair, which the offset sliders may have moved off the view's centre.
+	zx::crosshair::SweepRay GetViewRay(AActor *source)
+	{
+		const zx::crosshair::CrosshairRect reticle = zx::crosshair::GetRect(NULL, 0);
+		const zx::crosshair::SweepVector line = zx::crosshair::ComputeReticleDirection(
+			zx::crosshair::ComputeBamRadians(static_cast<int64_t>(source->angle)), -zx::crosshair::ComputeBamRadians(source->pitch.Raw()),
+			reticle.x - (viewwindowx + viewwidth / 2), reticle.y - (viewwindowy + viewheight / 2), ReadProjection());
+		return zx::crosshair::SweepRay{ FIXED2DBL(source->x), FIXED2DBL(source->y), FIXED2DBL(EyeZ(source)), line.x, line.y, line.z };
 	}
 
 	// [MobiusU9B] The renderer's own reasons for not drawing a sprite, so the sweep never names or measures something you cannot see.
@@ -274,9 +288,7 @@ namespace
 		const double traced = FIXED2DBL(wall.Distance);
 		const double wallDistance = traced < range ? traced : range;
 
-		const ViewRay view = GetViewRay(viewer);
-		const zx::crosshair::SweepRay ray{ FIXED2DBL(view.x), FIXED2DBL(view.y), FIXED2DBL(view.z),
-			FIXED2DBL(view.vx), FIXED2DBL(view.vy), FIXED2DBL(view.vz) };
+		const zx::crosshair::SweepRay ray = GetViewRay(viewer);
 
 		std::vector<zx::crosshair::SweepHit> hits;
 		std::vector<AActor *> hitActors;
@@ -380,8 +392,8 @@ bool IsTargetInfoNextToCrosshair()
 
 bool TraceFromView(AActor *source, DWORD actorMask, int range, FTraceResults &trace)
 {
-	const ViewRay ray = GetViewRay(source);
-	return Trace( ray.x, ray.y, ray.z, source->Sector, ray.vx, ray.vy, ray.vz,
+	const SweepRay ray = GetViewRay(source);
+	return Trace( source->x, source->y, EyeZ(source), source->Sector, DoubleToFixed(ray.dx), DoubleToFixed(ray.dy), DoubleToFixed(ray.dz),
 		range * FRACUNIT, actorMask, ML_BLOCKEVERYTHING, source, trace, TRACE_NoSky );
 }
 

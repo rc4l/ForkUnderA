@@ -4,6 +4,7 @@
 #ifndef ZX_VIEWSWEEP_COMPUTE_H
 #define ZX_VIEWSWEEP_COMPUTE_H
 
+#include <cstdint>
 #include <vector>
 
 namespace zx { namespace crosshair {
@@ -71,6 +72,35 @@ struct SweepHit
 	double distance;
 	bool measurable;
 };
+
+// [MobiusU9B] A direction in the world: x and y across the map, z up.
+struct SweepVector
+{
+	double x;
+	double y;
+	double z;
+};
+
+// [MobiusU9B] How a renderer maps screen pixels to the world: focal lengths in pixels per unit of slope at a level view, and whether it looks up and down by shearing (software) or by turning a world stretched by stretch (GL).
+struct ReticleProjection
+{
+	double focalX;
+	double focalY;
+	double stretch;
+	bool shear;
+};
+
+// [MobiusU9B] A BAM angle, where a full turn is 2^32, as radians in [-pi, pi).
+double ComputeBamRadians(int64_t bam);
+
+// [MobiusU9B] GL's main-view viewport height: the whole screen from screenblocks 10 up, which the renderer centres on the 3D view, else the shrunken window rounded down to 8.
+int ComputeGLViewportHeight(int screenblocks, int screenHeight);
+
+// [MobiusU9B] GL's main-view projection: fovDegrees across a 4:3 frame (or the screen, when taller than 4:3), aspect the screen's width over height, and its viewport and pixel stretch.
+ReticleProjection ComputeGLReticleProjection(double fovDegrees, double aspect, int viewportWidth, int viewportHeight, double stretch);
+
+// [MobiusU9B] The unit direction through the screen point offsetX/offsetY pixels right of and below the view's centre, for a view turned yaw and pitched pitchUp radians.
+SweepVector ComputeReticleDirection(double yaw, double pitchUp, double offsetX, double offsetY, const ReticleProjection &projection);
 
 // [MobiusU9B] Where ray first enters box within maxDistance; a box behind, around the eye or without size is missed.
 SweepEntry ComputeRayBoxEntry(const SweepRay &ray, const SweepBox &box, double maxDistance);

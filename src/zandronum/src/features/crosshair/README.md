@@ -22,7 +22,7 @@ server flag, which rides in `zadmflags` and so reaches clients through the exist
 | `crosshair.h/.cpp` | Engine glue: the CVARs, `GetRect`, the view trace and view sweep, and the per-frame draw of the text beside the crosshair. |
 | `computation/crosshair_compute.{h,cpp,_test.cpp}` | Pure math for the crosshair: the clamps and `ComputeCrosshairRect`. 100% unit coverage. |
 | `computation/targetinfo_compute.{h,cpp,_test.cpp}` | Pure logic for the text: which identify lines a target gets, scale, anchor, stacking, fade, and the actor-name and health rules. 100% unit coverage. |
-| `computation/viewsweep_compute.{h,cpp,_test.cpp}` | Pure logic for the view sweep: the ray-box entry and exit, which actors it looks at, their kind, and the nearest hit. 100% unit coverage. |
+| `computation/viewsweep_compute.{h,cpp,_test.cpp}` | Pure logic for the view sweep: the line through the drawn crosshair, the ray-box entry and exit, which actors it looks at, their kind, and the nearest hit. 100% unit coverage. |
 | `computation/telemeter_compute.{h,cpp,_test.cpp}` | Pure logic for the telemeter: when it runs, which kinds it measures, the sweep's range, the body-to-body gap and the `384 u` text. 100% unit coverage. |
 
 ## Cvars
@@ -43,7 +43,12 @@ The client cvars are all `CVAR_ARCHIVE | CVAR_GLOBALCONFIG` and clamped on set.
 
 - `ComputeCrosshairRect` runs the stock size maths on the same 64-bit fixed-point values and with the same `Fixed64Mul` as `FixedMul`. At scale 1 and offset 0 it is bit-identical to the old inline code, and a test pins that against a copy of the old formula.
 - The offsets are relative to the 3D view, not the screen. With the status bar showing (`screenblocks` 10), the centre is the middle of the area above the bar, as it always was.
-- The offset moves the reticle only. Shots and every scan still use the view's centre.
+- The offset moves the reticle, not where you shoot: shots still use the view's centre. The identify scan, the actor name and the telemeter aim through the drawn crosshair instead (`ComputeReticleDirection`), so the text beside it always describes what is under it. Otherwise a crosshair lowered 2.5% at 1080p reads about 51 units high at 1647 units out.
+- That line is worked out from the running renderer's own projection:
+  - GL (`ComputeGLReticleProjection`): the FOV across a 4:3 frame, the aspect ratio, the viewport and the 1.2 pixel stretch with its pitch correction;
+  - software: `FocalLengthX`/`FocalLengthY` and y-shearing.
+
+  At offset 0 it is the playsim's view direction, in exact trig rather than fine-angle tables.
 
 ### Text beside the crosshair
 
@@ -72,7 +77,7 @@ The client cvars are all `CVAR_ARCHIVE | CVAR_GLOBALCONFIG` and clamped on set.
    maths and the centre point are replaced by `zx::crosshair::GetRect (CrosshairImage, CrosshairSize)`. Every
    gate before it is untouched. The alternative HUD draws through the same function, so it gets the sliders too.
 2. `g_shared/st_hud.cpp`: `HUD_ScanForTarget` calls `zx::crosshair::TraceFromView` with its old `MF_SHOOTABLE`
-   mask and 2048-unit range (`kIdentifyRange`). `HUD_DrawTargetName` is split into `HUD_CanIdentifyFrom` (the shared checks), `HUD_BuildTargetText`
+   mask and 2048-unit range (`kIdentifyRange`), aimed through the drawn crosshair. `HUD_DrawTargetName` is split into `HUD_CanIdentifyFrom` (the shared checks), `HUD_BuildTargetText`
    (now driven by the Target info toggles through `ComputeIdentifyLines`, filling a `TargetText`) and the draw. The
    health line also checks `HUD_IsTargetHealthKnown`. The `cl_identifytarget`/`cl_identifymonsters` cvars and their
    level enums are gone.

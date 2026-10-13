@@ -9,9 +9,15 @@
 #include <limits>
 #include <vector>
 
+using zx::crosshair::ComputeBamRadians;
+using zx::crosshair::ComputeGLReticleProjection;
+using zx::crosshair::ComputeGLViewportHeight;
 using zx::crosshair::ComputeNearestSweepHit;
 using zx::crosshair::ComputeRayBoxEntry;
 using zx::crosshair::ComputeRayBoxExit;
+using zx::crosshair::ComputeReticleDirection;
+using zx::crosshair::ReticleProjection;
+using zx::crosshair::SweepVector;
 using zx::crosshair::ComputeSweepConsiders;
 using zx::crosshair::ComputeSweepDue;
 using zx::crosshair::ComputeSweepKind;
@@ -45,6 +51,120 @@ namespace
 	{
 		return SweepActor{false, false, true, false, false, false, false, false};
 	}
+
+	const double kHalfPi = 1.5707963267948966;
+
+	// [MobiusU9B] GL at 1920x1080 with fov 90 and Doom's 1.2 pixel stretch.
+	const ReticleProjection kGL1080 = ComputeGLReticleProjection(90.0, 16.0 / 9.0, 1920, 1080, 1.2);
+
+	// [MobiusU9B] The software renderer at the same size, from its FocalLengthX/FocalLengthY.
+	const ReticleProjection kSoftware{720.0, 864.0, 1.0, true};
+
+	void ExpectDirection(const SweepVector &actual, double x, double y, double z)
+	{
+		EXPECT_NEAR(x, actual.x, 1e-9);
+		EXPECT_NEAR(y, actual.y, 1e-9);
+		EXPECT_NEAR(z, actual.z, 1e-9);
+	}
+}
+
+TEST(ComputeBamRadians, TurnsBamIntoSignedRadians)
+{
+	EXPECT_DOUBLE_EQ(0.0, ComputeBamRadians(0));
+	EXPECT_DOUBLE_EQ(kHalfPi, ComputeBamRadians(INT64_C(0x40000000)));
+	EXPECT_DOUBLE_EQ(-kHalfPi, ComputeBamRadians(INT64_C(0xC0000000)));
+	EXPECT_DOUBLE_EQ(-kHalfPi, ComputeBamRadians(-INT64_C(0x40000000)));
+	EXPECT_DOUBLE_EQ(-2.0 * kHalfPi, ComputeBamRadians(INT64_C(0x80000000)));
+}
+
+TEST(ComputeGLViewportHeight, IsTheWholeScreenFromScreenblocks10)
+{
+	EXPECT_EQ(1080, ComputeGLViewportHeight(11, 1080));
+	EXPECT_EQ(1080, ComputeGLViewportHeight(10, 1080));
+	EXPECT_EQ(968, ComputeGLViewportHeight(9, 1080));
+}
+
+TEST(ComputeGLReticleProjection, WidensA4By3FrameOnAWideScreen)
+{
+	// [MobiusU9B] fov 90 across 4:3 gives a vertical half-angle tangent of 0.75, and the 1.2 stretch lengthens the vertical focal.
+	EXPECT_NEAR(720.0, kGL1080.focalX, 1e-3);
+	EXPECT_NEAR(864.0, kGL1080.focalY, 1e-3);
+	EXPECT_DOUBLE_EQ(1.2, kGL1080.stretch);
+	EXPECT_FALSE(kGL1080.shear);
+}
+
+TEST(ComputeGLReticleProjection, UsesTheScreenAsTheFrameWhenTallerThan4By3)
+{
+	const ReticleProjection tall = ComputeGLReticleProjection(90.0, 1.25, 1280, 1024, 1.2);
+	EXPECT_NEAR(640.0, tall.focalX, 1e-9);
+	EXPECT_NEAR(768.0, tall.focalY, 1e-9);
+}
+
+TEST(ComputeGLReticleProjection, HasNoFocalLengthForANonsenseFrame)
+{
+	EXPECT_EQ(0.0, ComputeGLReticleProjection(0.0, 16.0 / 9.0, 1920, 1080, 1.2).focalX);
+	EXPECT_EQ(0.0, ComputeGLReticleProjection(90.0, 0.0, 1920, 1080, 1.2).focalY);
+	EXPECT_EQ(0.0, ComputeGLReticleProjection(90.0, -1.0, 1920, 1080, 1.2).focalX);
+}
+
+TEST(ComputeReticleDirection, LooksAlongTheYawAtTheCentre)
+{
+	ExpectDirection(ComputeReticleDirection(0.0, 0.0, 0.0, 0.0, kGL1080), 1.0, 0.0, 0.0);
+	ExpectDirection(ComputeReticleDirection(kHalfPi, 0.0, 0.0, 0.0, kSoftware), 0.0, 1.0, 0.0);
+}
+
+TEST(ComputeReticleDirection, PitchesTheCentreAsThePlaysimDoesInBothRenderers)
+{
+	const double r = std::sqrt(0.5);
+	ExpectDirection(ComputeReticleDirection(0.0, kHalfPi / 2.0, 0.0, 0.0, kGL1080), r, 0.0, r);
+	ExpectDirection(ComputeReticleDirection(0.0, kHalfPi / 2.0, 0.0, 0.0, kSoftware), r, 0.0, r);
+}
+
+TEST(ComputeReticleDirection, TurnsRightAndDownByAnOffsetAtALevelView)
+{
+	// [MobiusU9B] One focal length off the centre is a slope of 1 in either renderer.
+	const double r = std::sqrt(0.5);
+	ExpectDirection(ComputeReticleDirection(0.0, 0.0, kSoftware.focalX, 0.0, kSoftware), r, -r, 0.0);
+	ExpectDirection(ComputeReticleDirection(0.0, 0.0, 0.0, kSoftware.focalY, kSoftware), r, 0.0, -r);
+	ExpectDirection(ComputeReticleDirection(0.0, 0.0, 0.0, kGL1080.focalY, kGL1080), r, 0.0, -r);
+}
+
+TEST(ComputeReticleDirection, DropsALowered1080pCrosshairByOneIn32)
+{
+	// [MobiusU9B] cl_fua_crosshair_y 2.5 is 27 pixels at 1080p, the offset that made the telemeter miss far targets.
+	const SweepVector line = ComputeReticleDirection(0.0, 0.0, 0.0, 27.0, kGL1080);
+	EXPECT_NEAR(-1.0 / 32.0, line.z / line.x, 1e-6);
+}
+
+TEST(ComputeReticleDirection, LevelsOutThePointAsFarBelowTheCentreAsThePitchIsUp)
+{
+	const double pitch = kHalfPi / 3.0;
+	const double slope = std::tan(pitch);
+	ExpectDirection(ComputeReticleDirection(0.0, pitch, 0.0, kSoftware.focalY * slope, kSoftware), 1.0, 0.0, 0.0);
+	ExpectDirection(ComputeReticleDirection(0.0, pitch, 0.0, kGL1080.focalY * slope, kGL1080), 1.0, 0.0, 0.0);
+}
+
+TEST(ComputeReticleDirection, TurnsASidewaysOffsetWithTheCameraOnlyInGL)
+{
+	// [MobiusU9B] GL pitches the whole picture, so looking 45 degrees up a point right of the centre is raised too; software only shears.
+	const ReticleProjection turned{100.0, 100.0, 1.0, false};
+	ExpectDirection(ComputeReticleDirection(0.0, kHalfPi / 2.0, 100.0, 0.0, turned), 0.5, -std::sqrt(0.5), 0.5);
+	const ReticleProjection sheared{100.0, 100.0, 1.0, true};
+	const double third = 1.0 / std::sqrt(3.0);
+	ExpectDirection(ComputeReticleDirection(0.0, kHalfPi / 2.0, 100.0, 0.0, sheared), third, -third, third);
+}
+
+TEST(ComputeReticleDirection, StaysOnTheCentreWithoutAFocalLength)
+{
+	const ReticleProjection none{0.0, 0.0, 1.2, false};
+	ExpectDirection(ComputeReticleDirection(0.0, 0.0, 50.0, 50.0, none), 1.0, 0.0, 0.0);
+}
+
+TEST(ComputeReticleDirection, TreatsAMissingStretchAsNone)
+{
+	const ReticleProjection flat{100.0, 100.0, 0.0, false};
+	const double r = std::sqrt(0.5);
+	ExpectDirection(ComputeReticleDirection(0.0, 0.0, 0.0, 100.0, flat), r, 0.0, -r);
 }
 
 TEST(ComputeRayBoxEntry, HitsTheNearFaceHeadOn)

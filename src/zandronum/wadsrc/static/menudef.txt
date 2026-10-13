@@ -1084,6 +1084,7 @@ OptionMenu "FUACrosshairOptions"
 	StaticText " "
 	StaticText "Offsets are % of the view from its centre, + is right / down.", 1
 	StaticText "They move the crosshair, not where you shoot.", 1
+	StaticText "Target info and the telemeter follow the crosshair.", 1
 	StaticText " "
 	StaticText "Target info", 1
 	Option	"Identify players",			"cl_fua_identify_players",		"OnOff"

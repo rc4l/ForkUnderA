@@ -34,7 +34,7 @@ IdentifyToggles ReadIdentifyToggles();
 // [MobiusU9B] Whether cl_fua_identify_position puts the identify text beside the crosshair instead of at the bottom of the screen.
 bool IsTargetInfoNextToCrosshair();
 
-// [MobiusU9B] Traces straight out of source's eyes for up to range map units; actorMask picks which actors can stop it, 0 for walls only.
+// [MobiusU9B] Traces out of source's eyes through the drawn crosshair for up to range map units; actorMask picks which actors can stop it, 0 for walls only.
 bool TraceFromView(AActor *source, DWORD actorMask, int range, FTraceResults &trace);
 
 // [MobiusU9B] Draws the identify text, actor name and telemeter beside the crosshair; viewer is NULL when the shared identify checks say nothing may show.

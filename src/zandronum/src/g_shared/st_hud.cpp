@@ -404,7 +404,7 @@ static AActor *HUD_ScanForTarget( AActor *pSource )
 {
 	FTraceResults trace;
 
-	// [MobiusU9B] The trace itself moved to features/crosshair, which aims the crosshair's view sweep the same way.
+	// [MobiusU9B] The trace itself moved to features/crosshair, which aims it through the drawn crosshair like the view sweep.
 	if (( zx::crosshair::TraceFromView( pSource, MF_SHOOTABLE, zx::crosshair::kIdentifyRange, trace ) == false ) || ( trace.HitType != TRACE_HitActor ))
 		return ( NULL );
 
