@@ -38,9 +38,9 @@
 #include "g_shared/a_pickups.h"
 
 // [rc4l] GL's view state and settings the derivation still reads, until the renderer interface supplies them (P5).
-#include "gl/renderer/gl_renderer.h"    // [rc4l] gl_FakeFlat, area_below
-#include "gl/renderer/gl_lightdata.h"   // [rc4l] gl_ShadingEnv, gl_ClampLight, getExtraLight
-#include "gl/renderer/gl_colormap.h"
+#include "features/fakeflat/fakeflat.h"   // [rc4l] gl_FakeFlat
+#include "features/rendersettings/rendersettings.h"   // [rc4l] RenderShadingEnv, gl_ClampLight, getExtraLight
+#include "features/rendersettings/colormap.h"   // [rc4l] FColormap
 #include "gl/data/gl_data.h"            // [rc4l] glset, gl_GetSpriteFrame
 #include "gl/system/gl_cvars.h"         // [rc4l] screenblocks
 
@@ -208,7 +208,7 @@ static void BuildLayers(sector_t *viewsector, int viewArea, fixed_t bobX, fixed_
 		stateBright.push_back(bright);
 	}
 
-	zx::levelmesh::ShadingEnv env = gl_ShadingEnv();
+	zx::levelmesh::ShadingEnv env = RenderShadingEnv(false);
 	int lightlevel = 0;
 	FColormap cm;
 	sector_t fs;

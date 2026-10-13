@@ -7,7 +7,7 @@
 #include "features/draw2d/computation/flatfill_compute.h"
 #include "features/materials/materials.h"
 #include "features/levelmesh/captureshading.h"   // [rc4l] CapturePolyColor
-#include "gl/renderer/gl_colormap.h"             // [rc4l] FColormap, a polygon's colormap as GL takes it
+#include "features/rendersettings/colormap.h"   // [rc4l] FColormap
 #include "r_data/renderstyle.h"
 #include "textures/textures.h"
 #include "m_fixed.h"

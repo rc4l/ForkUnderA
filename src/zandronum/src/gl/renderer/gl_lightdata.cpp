@@ -58,19 +58,8 @@
 #include "features/levelmesh/computation/shading_compute.h"
 
 // externally settable lighting properties
-static float distfogtable[2][256];	// light to fog conversion table for black fog
-static PalEntry outsidefogcolor;
-int fogdensity;
-int outsidefogdensity;
-int skyfog;
 
-CUSTOM_CVAR (Int, gl_light_ambient, 20, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
-{
-	// ambient of 0 does not work correctly because light level 0 is special.
-	if (self < 1) self = 1;
-}
 
-CVAR(Int, gl_weaponlight, 8, CVAR_ARCHIVE);
 CUSTOM_CVAR(Bool, gl_enhanced_nightvision, true, CVAR_ARCHIVE|CVAR_NOINITCALL)
 {
 	// The fixed colormap state needs to be reset because if this happens when
@@ -90,41 +79,6 @@ CVAR(Bool, gl_brightfog, false, CVAR_ARCHIVE);
 //
 //==========================================================================
 
-CUSTOM_CVAR (Int, gl_distfog, 70, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
-{
-	// [BB/EP] Take care of gl_distfog and ZADF_FORCE_VIDEO_DEFAULTS.
-	OVERRIDE_INT_GL_CVAR_IF_NECESSARY( gl_distfog );
-
-	for (int i=0;i<256;i++)
-	{
-
-		if (i<164)
-		{
-			distfogtable[0][i]= (gl_distfog>>1) + (gl_distfog)*(164-i)/164;
-		}
-		else if (i<230)
-		{											    
-			distfogtable[0][i]= (gl_distfog>>1) - (gl_distfog>>1)*(i-164)/(230-164);
-		}
-		else distfogtable[0][i]=0;
-
-		if (i<128)
-		{
-			distfogtable[1][i]= 6.f + (gl_distfog>>1) + (gl_distfog)*(128-i)/48;
-		}
-		else if (i<216)
-		{											    
-			distfogtable[1][i]= (216.f-i) / ((216.f-128.f)) * gl_distfog / 10;
-		}
-		else distfogtable[1][i]=0;
-	}
-}
-
-CUSTOM_CVAR(Int,gl_fogmode,1,CVAR_ARCHIVE|CVAR_NOINITCALL)
-{
-	if (self>2) self=2;
-	if (self<0) self=0;
-}
 
 CUSTOM_CVAR(Int, gl_lightmode, 3 ,CVAR_ARCHIVE|CVAR_NOINITCALL)
 {
@@ -202,18 +156,6 @@ void gl_GetRenderStyle(FRenderStyle style, bool drawopaque, bool allowcolorblend
 // Set fog parameters for the level
 //
 //==========================================================================
-void gl_SetFogParams(int _fogdensity, PalEntry _outsidefogcolor, int _outsidefogdensity, int _skyfog)
-{
-	fogdensity=_fogdensity;
-	outsidefogcolor=_outsidefogcolor;
-	outsidefogdensity=_outsidefogdensity;
-	skyfog=_skyfog;
-
-	outsidefogdensity>>=1;
-	fogdensity>>=1;
-}
-
-
 //==========================================================================
 //
 // Get current light level
@@ -568,22 +510,7 @@ void gl_SetFog(int lightlevel, int rellight, const FColormap *cmap, bool isaddit
 
 zx::levelmesh::ShadingEnv gl_ShadingEnv()
 {
-	OVERRIDE_INT_GL_CVAR_IF_NECESSARY( gl_light_ambient );
-	OVERRIDE_INT_GL_CVAR_IF_NECESSARY( gl_distfog );
-	OVERRIDE_FOGMODE_IF_NECESSARY
-	zx::levelmesh::ShadingEnv e;
-	e.lightMode = glset.lightmode;
-	e.ambient = gl_light_ambient;
-	e.fogMode = gl_fogmode;
-	e.distFog = gl_distfog;
-	e.fixedColormap = gl_fixedcolormap != CM_DEFAULT;
-	e.fadeTable = (level.flags & LEVEL_HASFADETABLE) != 0;
-	e.inSkybox = GLPortal::inskybox;
-	e.brightFog = glset.brightfog;
-	e.fogDensity = fogdensity;
-	e.outsideFogDensity = outsidefogdensity;
-	e.outsideFogColor = outsidefogcolor.d;
-	return e;
+	return RenderShadingEnv(GLPortal::inskybox);
 }
 
 //==========================================================================

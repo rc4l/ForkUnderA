@@ -12,10 +12,9 @@
 #include "gl/scene/gl_wall.h"   // GLSprite
 #include "gl/data/gl_vertexbuffer.h"
 #include "gl/data/gl_matrix.h"
-#include "gl/data/gl_data.h"   // getExtraLight
+#include "features/rendersettings/rendersettings.h"   // [rc4l] the render settings it reads
 #include "gl/textures/gl_material.h"
 #include "gl/renderer/gl_renderstate.h"   // GetDynLight, the CPU's answer for this actor
-#include "gl/renderer/gl_lightdata.h"
 #include "features/hwrender/hud2d.h"   // StandaloneActive, BackendPresenting
 #include "features/sprites/spritebuild.h"   // [rc4l] NoteGLSprite and NoteDerivedSprite, for fua_sprite_check
 #include "tarray.h"

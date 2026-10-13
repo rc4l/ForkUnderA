@@ -17,7 +17,7 @@
 #include "features/levelmesh/wallcache.h"
 #include "gl/dynlights/gl_dynlight.h"
 #include "gl/dynlights/gl_lightbuffer.h"
-#include "gl/renderer/gl_lightdata.h"
+#include "features/rendersettings/rendersettings.h"   // [rc4l] the render settings it reads
 #include "p_local.h"
 #include "doomstat.h"
 #include "c_cvars.h"

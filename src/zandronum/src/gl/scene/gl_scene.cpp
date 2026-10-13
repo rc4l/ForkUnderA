@@ -117,10 +117,7 @@ EXTERN_CVAR (Bool, cl_oldfreelooklimit)
 
 extern int viewpitch;
  
-DWORD			gl_fixedcolormap;
 FGLObserver		*gl_observer = NULL;
-area_t			in_area;
-TArray<BYTE> currentmapsection;
 
 void gl_ParseDefs();
 

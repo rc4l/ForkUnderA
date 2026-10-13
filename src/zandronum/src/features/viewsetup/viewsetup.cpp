@@ -22,10 +22,8 @@
 #include "features/materials/materials.h"   // [rc4l] the particle textures
 
 // [rc4l] GL's level settings and view state until they move out of gl/ (P5): the pixel stretch, the view's area, and the light class.
-#include "gl/data/gl_data.h"
-#include "gl/renderer/gl_renderer.h"     // [rc4l] in_area
+#include "features/rendersettings/rendersettings.h"   // [rc4l] the render settings it reads
 #include "gl/dynlights/gl_dynlight.h"    // [rc4l] ADynamicLight, STAT_DLIGHT
-#include "gl/renderer/gl_colormap.h"     // [rc4l] CM_*
 #include "g_shared/a_artifacts.h"        // [rc4l] APowerTorch, APowerLightAmp
 #include "r_data/colormaps.h"            // [rc4l] INVERSECOLORMAP
 

@@ -29,8 +29,8 @@
 #include "tarray.h"
 #include "p_3dfloors.h"   // F3DFloor, P_GetPlaneLight
 #include "r_sky.h"   // skyflatnum
-#include "gl/renderer/gl_lightdata.h"   // gl_ClampLight
-#include "gl/renderer/gl_renderer.h"    // [rc4l] gl_FakeFlat and its area_t, for a height transfer's planes
+#include "features/rendersettings/rendersettings.h"   // [rc4l] the render settings it reads
+#include "features/fakeflat/fakeflat.h"   // [rc4l] gl_FakeFlat
 #include "gl/renderer/gl_renderstate.h"   // gl_RenderState.GetDynLight, for the sprite light fold
 #include "c_dispatch.h"   // CCMD, for fua_sprite_sweep
 #include "c_cvars.h"

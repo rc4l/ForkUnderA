@@ -19,8 +19,7 @@
 #include "r_data/renderstyle.h"
 #include "textures/textures.h"
 #include "c_cvars.h"
-#include "gl/renderer/gl_colormap.h"   // [rc4l] FColormap, gl_fixedcolormap
-#include "gl/data/gl_data.h"           // [rc4l] glset, getExtraLight
+#include "features/rendersettings/rendersettings.h"   // [rc4l] the render settings it reads
 
 EXTERN_CVAR(Bool, gl_lights)
 EXTERN_CVAR(Bool, gl_light_sprites)

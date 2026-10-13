@@ -903,7 +903,6 @@ if( NOT NO_GL )
 		gl/textures/gl_skyboxtexture.cpp
 		gl/scene/gl_bsp.cpp
 		gl/scene/gl_wallcache.cpp
-		gl/scene/gl_fakeflat.cpp
 		gl/scene/gl_clipper.cpp
 		gl/scene/gl_decal.cpp
 		gl/scene/gl_drawinfo.cpp
@@ -1601,6 +1600,8 @@ add_executable( zdoom WIN32
 	features/levelmesh/levelmesh.cpp
 	features/levelmesh/wallcache.cpp
 	features/levelmesh/walldecals.cpp
+	features/rendersettings/rendersettings.cpp
+	features/fakeflat/fakeflat.cpp
 	features/hwrender/hud2d.cpp
 	features/hwrender/spriteview.cpp
 	features/levelmesh/staticmesh.cpp

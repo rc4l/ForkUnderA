@@ -44,9 +44,9 @@
 #include "stats.h"   // [rc4l] cycle_t, to time the player's walks
 
 // [rc4l] GL's fake flats, view area and portal coverage, which decide what a height transfer hides and where a stacked view starts, until they are ported (P5).
-#include "gl/renderer/gl_renderer.h"
+#include "features/fakeflat/fakeflat.h"   // [rc4l] gl_FakeFlat
 #include "gl/data/gl_data.h"           // [rc4l] currentmapsection, FPortal, gl_BuildPortalCoverage
-#include "gl/renderer/gl_lightdata.h"  // [rc4l] gl_ClampLight, gl_isBlack, gl_fixedcolormap: a mirror sheen's light
+#include "features/rendersettings/rendersettings.h"   // [rc4l] the render settings it reads
 
 #include <string.h>
 #include <algorithm>

@@ -42,9 +42,9 @@
 #include "p_local.h"
 #include "a_sharedglobal.h"
 #include "r_sky.h"
-#include "gl/renderer/gl_renderer.h"
-#include "gl/scene/gl_clipper.h"
-#include "gl/data/gl_data.h"
+#include "r_defs.h"
+#include "c_cvars.h"
+#include "features/fakeflat/fakeflat.h"
 
 
 //==========================================================================

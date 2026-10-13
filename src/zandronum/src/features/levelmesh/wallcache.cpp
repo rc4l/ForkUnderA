@@ -20,11 +20,9 @@
 #include "r_sky.h"   // skyflatnum, for the sky surfaces
 #include "gl/scene/gl_drawinfo.h"
 #include "features/hwrender/computation/walllight_compute.h"
-#include "gl/data/gl_data.h"
+#include "features/rendersettings/rendersettings.h"   // [rc4l] the render settings it reads
 #include "gl/data/gl_vertexbuffer.h"   // FFlatVertex
-#include "gl/renderer/gl_renderer.h"   // in_area, area_default
 #include "gl/renderer/gl_renderstate.h"
-#include "gl/renderer/gl_lightdata.h"  // gl_SetColor / gl_SetFog
 #include "c_dispatch.h"
 #include "stats.h"   // cycle_t, to time the invalidation loop
 #include "c_cvars.h"

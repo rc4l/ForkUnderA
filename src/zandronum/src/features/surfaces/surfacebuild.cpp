@@ -6,7 +6,7 @@
 #include "r_state.h"
 #include "r_sky.h"   // skyflatnum, for the lower texture's sky reference
 #include "g_level.h"   // level.flags, for the fog test GLWall::Process makes
-#include "gl/renderer/gl_lightdata.h"   // gl_ClampLight, gl_isBlack
+#include "features/rendersettings/rendersettings.h"   // [rc4l] the render settings it reads
 
 #include "textures/textures.h"
 #include "gl/textures/gl_material.h"

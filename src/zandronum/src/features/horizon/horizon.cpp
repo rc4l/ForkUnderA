@@ -13,11 +13,10 @@
 #include "r_sky.h"                        // skyflatnum
 #include "p_3dfloors.h"                   // P_GetPlaneLight
 #include "gl/scene/gl_wall.h"             // GLSectorPlane
-#include "gl/data/gl_data.h"              // getExtraLight
+#include "features/rendersettings/rendersettings.h"   // [rc4l] the render settings it reads
 #include "gl/data/gl_vertexbuffer.h"      // FFlatVertex
 #include "gl/textures/gl_material.h"      // FMaterial
 #include "gl/utility/gl_convert.h"        // ANGLE_TO_FLOAT
-#include "gl/renderer/gl_lightdata.h"     // gl_ClampLight
 #include "c_cvars.h"
 #include "tarray.h"
 

@@ -62,15 +62,13 @@
 #include "features/horizon/computation/horizon_compute.h"   // [rc4l] ComputeQuadMayBeVisible for mirrors out of sight, ComputeEyeFromViewProjection for the horizon sky
 #include "features/hwrender/diligent/dglight_glsl.h"   // [rc4l] the sector light, shared with the horizon pass
 #include "v_video.h"
-#include "gl/renderer/gl_renderer.h"
+#include "features/rendersettings/rendersettings.h"   // [rc4l] the render settings it reads
 #include "gl/dynlights/gl_lightbuffer.h"
 #include "features/hwrender/computation/lightcluster_compute.h"
 #include "gl/dynlights/gl_dynlight.h"
 #include "p_local.h"
 #include "doomstat.h"
 #include "templates.h"   // gl_lightdata.h's inline gl_ClampLight uses clamp<>
-#include "gl/renderer/gl_lightdata.h"
-#include "gl/data/gl_data.h"
 #include "gl/scene/gl_portal.h"
 #include "features/materials/materials.h"   // [rc4l] texture identity, frames, brightmaps and pixels
 #include "r_sky.h"

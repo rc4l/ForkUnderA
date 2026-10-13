@@ -10,7 +10,7 @@
 #include "features/hwrender/computation/rendererrate_compute.h"
 #include "c_dispatch.h"
 #include "gl/textures/gl_material.h"   // [rc4l] fua_2d_list names a quad's texture
-#include "gl/data/gl_data.h"           // [rc4l] glset.pixelstretch
+#include "features/rendersettings/rendersettings.h"   // [rc4l] the render settings it reads
 #include "r_utility.h"                 // [rc4l] the view's eye and angles
 #include "tables.h"                    // [rc4l] bam2rad
 

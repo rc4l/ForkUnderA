@@ -440,7 +440,7 @@ bool SceneUpload(FString &report)
 		Printf("  mesh light: level %d..%d (mean %.1f), lightColor %08x, fadeColor %08x, "
 			"fogdensity(first) %.2f\n",
 			lmin, lmax, npieces ? lsum / npieces : 0.0, lc, fc,
-			gl_GetFogDensity(lmin, PalEntry(fc)));
+			zx::levelmesh::ComputeFogDensity(lmin, fc, RenderShadingEnv(false)));
 	}
 
 	// [rc4l] Which lighting path is live decides how the picture should be read: lightmode 8 takes

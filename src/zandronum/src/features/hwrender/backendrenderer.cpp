@@ -14,8 +14,7 @@
 #include "features/draw2d/screenblend.h"     // [rc4l] the screen's tint over the save picture
 #include "features/draw2d/computation/screenblend_compute.h"
 #include "templates.h"                       // [rc4l] clamp, which gl_lightdata.h uses without including
-#include "gl/renderer/gl_lightdata.h"        // [rc4l] gl_fixedcolormap
-#include "gl/renderer/gl_renderer.h"         // [rc4l] in_area
+#include "features/rendersettings/rendersettings.h"   // [rc4l] the render settings it reads
 #include "r_utility.h"                       // [rc4l] viewsector, FieldOfView
 
 #include "d_player.h"

@@ -6,7 +6,7 @@
 #include "features/frame/computation/oracle_compute.h"   // [rc4l] OracleTally
 
 #include "templates.h"   // [rc4l] gl_lightdata.h's inline gl_ClampLight uses clamp<>
-#include "gl/renderer/gl_colormap.h"
+#include "features/rendersettings/colormap.h"   // [rc4l] FColormap
 #include "gl/renderer/gl_lightdata.h"
 #include "gl/renderer/gl_renderstate.h"
 #include "c_dispatch.h"
@@ -45,7 +45,7 @@ static void GLShading(int lightlevel, int rellight, const FColormap &cm, bool no
 
 void CapturePolyColor(int lightlevel, const FColormap &cm, float &r, float &g, float &b)
 {
-	ShadingEnv env = gl_ShadingEnv();
+	ShadingEnv env = RenderShadingEnv(false);
 	if (env.lightMode == 8) env.lightMode = 0;
 	ShadingInput in;
 	in.lightLevel = lightlevel;
@@ -73,7 +73,7 @@ void CaptureShading(int lightlevel, int rellight, const FColormap &cm, MeshPiece
 	in.desaturation = cm.desaturation;
 	in.noFog = noFog;
 	in.additive = additive;
-	ShadePiece(in, gl_ShadingEnv(), out);
+	ShadePiece(in, RenderShadingEnv(false), out);
 
 	if (!fua_shading_check) return;
 	MeshPiece gl = out;

@@ -18,7 +18,7 @@
 // [rc4l] GL's CPU-side level, light and fog code, which needs no context.
 #include "gl/gl_functions.h"               // [rc4l] gl_PreprocessLevel, gl_CleanLevelData, gl_SetActorLights
 #include "gl/data/gl_data.h"               // [rc4l] gl_InitPortals
-#include "gl/renderer/gl_renderer.h"       // [rc4l] gl_FakeFlat
+#include "features/fakeflat/fakeflat.h"   // [rc4l] gl_FakeFlat
 #include "gl/renderer/gl_lightdata.h"      // [rc4l] gl_SetFogParams, the attached lights
 #include "gl/textures/gl_material.h"
 #include "gl/textures/gl_hwtexture.h"      // [rc4l] GetTexDimension

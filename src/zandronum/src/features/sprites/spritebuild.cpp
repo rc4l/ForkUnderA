@@ -38,9 +38,7 @@
 #include "p_effect.h"   // [rc4l] particle_t
 
 // [rc4l] GL's settings and view state the derivation still reads, until the renderer interface supplies them (P5).
-#include "gl/renderer/gl_colormap.h"
-#include "gl/renderer/gl_lightdata.h"
-#include "gl/data/gl_data.h"           // [rc4l] glset, getExtraLight, currentmapsection
+#include "features/rendersettings/rendersettings.h"   // [rc4l] the render settings it reads
 #include "gl/models/gl_models.h"       // [rc4l] gl_FindModelFrame
 #include "gl/dynlights/gl_dynlight.h"  // [rc4l] ADynamicLight, FLightNode
 

@@ -67,8 +67,6 @@
 #include "network.h"
 #include "sv_commands.h"
 
-GLRenderSettings glset;
-long gl_frameMS;
 long gl_frameCount;
 
 EXTERN_CVAR(Int, gl_lightmode)

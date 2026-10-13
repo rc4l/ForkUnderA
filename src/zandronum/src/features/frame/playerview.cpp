@@ -29,9 +29,7 @@
 #include <string.h>
 
 // [rc4l] GL's frame globals, which the derivation and the backend read, until they move out of gl/ (P5).
-#include "gl/data/gl_data.h"           // [rc4l] gl_frameMS, currentmapsection
-#include "gl/renderer/gl_renderer.h"   // [rc4l] in_area
-#include "gl/renderer/gl_lightdata.h"  // [rc4l] gl_fixedcolormap
+#include "features/rendersettings/rendersettings.h"   // [rc4l] the render settings it reads
 #include "gl/models/gl_models.h"       // [rc4l] gl_IsHUDModelForPlayerAvailable
 
 EXTERN_CVAR(Bool, cl_capfps)
