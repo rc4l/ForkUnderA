@@ -1,11 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 rc4l
 //
-// [rc4l] GL's answers to its own sprite code's questions about the view, from the renderer and the portal being drawn.
-//
-// The functions GLSprite asks, in one place, so gl_sprite.cpp holds no reference to GLRenderer at
-// all. The backend's sprite derivation asks features/viewsetup's answers instead, so the two
-// renderers can draw the same frame each from its own view.
+// [rc4l] GL's answers to its own sprite code's questions about the view, in one place so gl_sprite.cpp never references GLRenderer.
 
 #include "gl/system/gl_system.h"
 #include "features/hwrender/spriteview.h"

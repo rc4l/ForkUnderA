@@ -1,21 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 rc4l
 //
-// [rc4l] Does the derivation agree with what GL actually produced?
-//
-// features/surfaces works out what a sidedef looks like from the map. The capture path transcribes
-// what GLWall::Process made of the same sidedef. Until those two agree on real maps, the derivation
-// is a claim; once they agree everywhere, the capture is redundant and can go -- and with it the
-// wall/flat split, which only exists because there are two transcriptions of GL's two shapes.
-//
-// This is that comparison, run on demand over a loaded level. It reads the capture and never writes
-// it. What it prints is not a pass/fail: it is a coverage figure and the first handful of
-// disagreements with their numbers, because the way this gets finished is by picking off the largest
-// remaining category of disagreement, not by waiting for a green light.
-//
-// The alternative -- wiring the derivation in and looking at the screen -- is how a thousand lines of
-// special cases get re-learned one screenshot at a time. A sidedef that comes out 8 units too short
-// is invisible in a corridor and obvious only in the one room nobody walks through.
+// [rc4l] fua_surface_verify: the map-derived walls scored against the GLWalls GL's wall cache captured, run on demand over a loaded level.
 
 #include "doomtype.h"
 #include "c_dispatch.h"
@@ -210,15 +196,15 @@ CCMD( fua_surface_mapbake )
 		if ( n > 0 ) { made += n; segsDone++; }
 		else if ( segs[i].sidedef != NULL && segs[i].linedef != NULL ) noLight++;
 	}
-	int derived = 0, fellBack = 0, fbMid = 0, fbSpecial = 0, fbNoTex = 0, fbNoSpan = 0, fbSeam = 0;
+	int derived = 0, fellBack = 0, fbMid = 0, fbSpecial = 0, fbNoTex = 0, fbNoSpan = 0;
 	zx::surfaces::GetDeriveStats( derived, fellBack );
-	zx::surfaces::GetDeriveFallbacks( fbMid, fbSpecial, fbNoTex, fbNoSpan, fbSeam );
+	zx::surfaces::GetDeriveFallbacks( fbMid, fbSpecial, fbNoTex, fbNoSpan );
 	Printf( "fua_surface_mapbake: %d parts on %d segs, built from the map with no GLWall involved" "\n",
 		made, segsDone );
 	Printf( "  %d segs produced nothing at all; of the parts refused: %d no texture, %d no span," "\n",
 		noLight, fbNoTex, fbNoSpan );
-	Printf( "  %d a two-sided middle, %d a special wall, %d a seam" "\n",
-		fbMid, fbSpecial, fbSeam );
+	Printf( "  %d a two-sided middle, %d a special wall" "\n",
+		fbMid, fbSpecial );
 	{
 		int lightlist = 0, heightsec = 0;
 		for ( int i = 0; i < numsectors; i++ )

@@ -19,6 +19,7 @@
 #include "tarray.h"   // [rc4l] the moved sectors and changed sides RefreshFakePlanes takes
 #include "features/levelmesh/staticmesh.h"                   // [rc4l] MeshVertex, which PortalViewState holds
 #include "features/levelmesh/computation/flatmesh_compute.h" // [rc4l] kMaxStackViews and kWalkSlots
+#include "features/materials/materials.h"                    // [rc4l] MaterialRef
 
 struct subsector_t;
 struct FPortal;
@@ -113,6 +114,13 @@ struct MirrorWalk
 	int saved;
 };
 
+// [rc4l] A scene entered for as long as it is in scope, as EnterScene and LeaveScene pair.
+struct SceneScope
+{
+	SceneScope() { EnterScene(); }
+	~SceneScope() { LeaveScene(); }
+};
+
 // [rc4l] Marks GL's walk from a skybox viewpoint (GLSkyboxPortal::DrawContents), so what it reaches is the sky portal pass's to draw.
 struct SkyboxWalk
 {
@@ -132,10 +140,10 @@ struct StackWalk
 };
 
 // [rc4l] A fullbright texture draws at light 255 and white light, as GLFlat::Process and DrawFloodedPlane both decide it.
-void ApplyFullbright(const void *mat, FColormap &cm, int &lightLevel);
+void ApplyFullbright(zx::materials::MaterialRef mat, FColormap &cm, int &lightLevel);
 
 // [rc4l] A sector plane's texture mapping, by gl_SetPlaneTextureRotation's inputs: its offsets, scale, angle and the texture's size.
-void PlaneUVFor(const GLSectorPlane &plane, const void *mat, PlaneUVTransform &out);
+void PlaneUVFor(const GLSectorPlane &plane, zx::materials::MaterialRef mat, PlaneUVTransform &out);
 
 // [rc4l] s as GL draws it in the view area last baked for (gl_FakeFlat into scratch), or s itself without a height transfer; back as GL asks for a seg's far sector.
 sector_t *TransferSector(sector_t *s, sector_t *scratch, bool back);
@@ -180,20 +188,12 @@ void GetFlatStats(int &own, int &threeD);
 
 int FlatPieceCount();
 
-// [rc4l] One decal quad, four corners in the fan order GLWall::DrawDecal emits, into the dynamic stream with the sprites: no invalidation to get wrong when one spawns, fades or is replaced.
+// [rc4l] One decal quad, four corners in the fan order GLWall::DrawDecal emits and drawn with `blendMode` (MeshPiece::blendMode), into the dynamic stream with the sprites: no invalidation to get wrong when one spawns, fades or is replaced.
 void RegisterDecal(const MeshVertex *quad, const void *material, int translation,
-                   bool shadow, bool additive, float alpha,
+                   int blendMode, float alpha,
                    int lightlevel, int rel, const FColormap &colormap,
                    bool redToAlpha, unsigned int alphaColor,
                    float sortX, float sortY, float sortZ, const float *dynLight);
-
-// [rc4l] The same, for a mark whose shape is not a quad: a projected decal, clipped to whatever
-// geometry it landed on. `tris` is a triangle LIST, so count is a multiple of three.
-void RegisterDecalTriangles(const MeshVertex *tris, int count, const void *material, int translation,
-                            bool shadow, bool additive, float alpha,
-                            int lightlevel, int rel, const FColormap &colormap,
-                            bool redToAlpha, unsigned int alphaColor,
-                            float sortX, float sortY, float sortZ, const float *dynLight);
 
 void ClearSprites();
 
@@ -201,10 +201,6 @@ void ClearSprites();
 // a number rather than from the shape of the loop. Reported by fua_sprite_sweep.
 void RecordSpriteSweep(int seen, int noSector, int behind, int offScreen, int processed);
 int SpritePieceCount();
-
-// [rc4l] Print this frame's sprite pieces -- z range, texture-coordinate range, light, resolved
-// colour, alpha, blend. See fua_sprites.
-void DumpSpriteNotes();
 
 // [rc4l] A vertical quad from (x1, y1) to (x2, y2), as six triangle-list vertices in fan order.
 void MakeWallQuad(MeshVertex *out6, float x1, float y1, float x2, float y2,

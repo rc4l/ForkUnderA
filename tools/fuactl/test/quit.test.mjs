@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { quitInstance } from "../src/play.mjs";
+import { quitInstance, withLockedInstance } from "../src/play.mjs";
 
 // [rc4l] A bridge that answers for the first `alive` connections and refuses after, recording what it was sent.
 function fakeBridge(alive) {
@@ -38,4 +38,30 @@ test("a quit whose reply never comes, because the engine closed first, still cou
     return { rpc: async () => { throw new Error("bridge closed"); }, close: () => {} };
   };
   assert.equal(await quitInstance({ port: 7801, token: "t" }, { connect, pollMs: 1 }), "stopped");
+});
+
+// [rc4l] The template harness and fps share one launch-measure-teardown path, so it must always tear down.
+test("a locked instance is launched locked, handed over connected, and stopped and closed after", async () => {
+  const seen = [];
+  const inst = { port: 7799, token: "t", log: "nowhere.log" };
+  const deps = {
+    launch: async (o) => { seen.push(`launch lock=${o.lock} map=${o.map}`); return inst; },
+    connect: async (port, token) => { seen.push(`connect ${port} ${token}`); return { close: () => seen.push("close") }; },
+    stop: async (i) => { seen.push(`stop ${i.port}`); },
+  };
+  const out = await withLockedInstance({ map: "MAP10" }, async (c, i) => { seen.push(`body ${i.port}`); return 42; }, deps);
+  assert.equal(out, 42);
+  assert.deepEqual(seen, ["launch lock=true map=MAP10", "connect 7799 t", "body 7799", "close", "stop 7799"]);
+});
+
+test("a locked instance that crashed reports its crash log, and one that failed otherwise its own error", async () => {
+  const fs = await import("node:fs");
+  const os = await import("node:os");
+  const path = await import("node:path");
+  const log = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "fuactl-wl-")), "engine-7799.log");
+  const deps = { launch: async () => ({ port: 7799, token: "t", log }), connect: async () => ({ close: () => {} }), stop: async () => {} };
+  await assert.rejects(() => withLockedInstance({}, async () => { throw new Error("capture timed out"); }, deps), /capture timed out/);
+  fs.writeFileSync(`${log}.crash`, "boom");
+  await assert.rejects(() => withLockedInstance({}, async () => { throw new Error("capture timed out"); }, deps), /engine crashed -- .*\.crash/);
+  await assert.rejects(() => withLockedInstance({}, async () => 1, { ...deps, launch: async () => { throw new Error("no engine"); } }), /no engine/);
 });

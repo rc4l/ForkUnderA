@@ -55,6 +55,9 @@ float ComputeAlignPitch(float dz, float distance);
 // [rc4l] How far into the next frame a model is; `doubledBefore`/`doubledAfter` are MDL_INTERPOLATEDOUBLEDFRAMES finding the state repeated behind or ahead.
 double ComputeModelInter(int stateTics, int ticsLeft, float ticFraction, bool doubledBefore, bool doubledAfter);
 
+// [rc4l] How far a model slot blends toward the next frame: `inter` when its frames differ and the model interpolates, else none.
+float ComputeModelSlotBlend(bool framesDiffer, bool interpolates, double inter);
+
 }} // namespace zx::sprites
 
 #endif // ZX_MODELPOSE_COMPUTE_H

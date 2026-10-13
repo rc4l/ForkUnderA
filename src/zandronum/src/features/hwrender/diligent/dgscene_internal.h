@@ -33,7 +33,6 @@
 #include "features/levelmesh/staticmesh.h"
 #include "features/surfaces/surfacebuild.h"
 #include "features/levelmesh/wallcache.h"   // LevelGeneration, for the per-level auto setup
-#include "features/levelmesh/levelmesh.h"   // ArmFullBake
 #include "d_main.h"                          // gamestate
 #include "features/levelmesh/flatmesh.h"
 #include "features/horizon/horizon.h"   // [rc4l] the horizon lines' sky halves

@@ -136,13 +136,16 @@ export async function typeText(c, text, { delay = 30 } = {}) { for (const ch of 
 
 // Capture the frame via the engine's built-in `screenshot` CCMD (writes <name>.png beside the binary),
 // then read it back. engineBinPath is FUACTL_ENGINE (the folder that also holds the IWAD/pk3).
-export async function screenshot(c, engineBinPath, name = "fuactl_shot", { tries = 40, delay = 150 } = {}) {
-  const dir = path.dirname(engineBinPath);
-  const file = path.join(dir, `${name}.png`);
+export function screenshot(c, engineBinPath, name = "fuactl_shot", opts = {}) {
+  return commandShot(c, `screenshot ${name}`, path.join(path.dirname(engineBinPath), `${name}.png`), opts);
+}
+
+// [rc4l] Run a console command that writes the image at file and read it back once it lands.
+export async function commandShot(c, command, file, { tries = 40, delay = 150 } = {}) {
   // [rc4l] The engine will not make the folder, and a missing sweep/ reads as a screenshot that never arrives.
   fs.mkdirSync(path.dirname(file), { recursive: true });
   try { fs.rmSync(file, { force: true }); } catch { /* ignore */ }
-  await c.rpc("console.exec", { text: `screenshot ${name}` });
+  await c.rpc("console.exec", { text: command });
   for (let i = 0; i < tries; i++) { // wait for the PNG to land (a busy frame can take a moment)
     if (fs.existsSync(file) && fs.statSync(file).size > 0) return { path: file, base64: fs.readFileSync(file).toString("base64") };
     await sleep(delay);

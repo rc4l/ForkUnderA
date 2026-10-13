@@ -121,14 +121,10 @@ void GLFlat::SetupSubsectorLights(int pass, subsector_t * sub, int *dli)
 
 	if (dli != NULL && *dli != -1)
 	{
-		// [rc4l] features/levelmesh: remember what was applied, so RegisterFlatSubsector can record
-		// it without re-deriving the index from the caller's cursor.
-		mMeshLightIndex = GLRenderer->mLights->GetIndex(*dli);
-		gl_RenderState.ApplyLightIndex(mMeshLightIndex);
+		gl_RenderState.ApplyLightIndex(GLRenderer->mLights->GetIndex(*dli));
 		(*dli)++;
 		return;
 	}
-	mMeshLightIndex = -1;
 
 	lightdata.Clear();
 	FLightNode * node = sub->lighthead;
@@ -164,7 +160,6 @@ void GLFlat::SetupSubsectorLights(int pass, subsector_t * sub, int *dli)
 	}
 	else
 	{
-		mMeshLightIndex = d;   // [rc4l] features/levelmesh
 		gl_RenderState.ApplyLightIndex(d);
 	}
 }
@@ -426,8 +421,6 @@ inline void GLFlat::PutFlat(bool fog)
 
 void GLFlat::Process(sector_t * model, int whichplane, bool fog)
 {
-	mMeshWhichPlane = whichplane;   // [rc4l] features/levelmesh: part of the flat mesh key
-	mMeshModel = model;
 	plane.GetFromSector(model, whichplane);
 
 	if (!fog)
@@ -511,7 +504,6 @@ void GLFlat::ProcessSector(sector_t * frontsector)
 	extsector_t::xfloor &x = sector->e->XFloor;
 	this->sub=NULL;
 	dynlightindex = -1;
-	mMeshLightIndex = -1;
 
 	byte &srf = gl_drawinfo->sectorrenderflags[sector->sectornum];
 

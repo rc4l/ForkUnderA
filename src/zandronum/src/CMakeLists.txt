@@ -1652,6 +1652,8 @@ add_executable( zdoom WIN32
 	features/sprites/computation/pspritequad_compute.cpp
 	features/frame/computation/actorcull_compute.cpp
 	features/frame/computation/cameraseen_compute.cpp
+	features/frame/computation/frameroute_compute.cpp
+	features/rendersettings/computation/forcedvideo_compute.cpp
 	features/display/computation/display_compute.cpp
 	features/draw2d/computation/flatfill_compute.cpp
 	features/levelmesh/computation/shading_compute.cpp

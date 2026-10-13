@@ -1,7 +1,5 @@
 /*
 ** stackportals.cpp (from gl/data/gl_portaldata.cpp)
-** The stacked sectors' portals and the subsectors each covers, which the
-** GL renderer and the backend's walks both read
 **
 **---------------------------------------------------------------------------
 ** Copyright 2005 Christoph Oelckers
@@ -38,6 +36,8 @@
 **---------------------------------------------------------------------------
 **
 */
+
+// [rc4l] The stacked sectors' portals and the subsectors each covers, which the GL renderer and the backend's walks both read.
 
 #include "doomtype.h"
 #include "colormatcher.h"

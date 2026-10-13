@@ -101,6 +101,13 @@ export function resolutionOf(opts = {}) {
   };
 }
 
+// [rc4l] A --res WxH flag as the width and height a launch takes, both undefined when the flag is absent.
+export function resFlag(flag) {
+  if (!flag || flag === true) return { width: undefined, height: undefined };
+  const [width, height] = String(flag).split("x").map(Number);
+  return { width, height };
+}
+
 // [rc4l] Seed the per-instance ini, because +set is too late for the video mode.
 //
 // vid_defwidth and vid_defheight are CVAR_GLOBALCONFIG: the engine reads them out of the ini while

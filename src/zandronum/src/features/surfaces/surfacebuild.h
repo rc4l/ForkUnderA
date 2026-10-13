@@ -109,9 +109,8 @@ bool BuildDerivedWallSpan(const seg_t *seg, int renderType, DerivedWallSpan &out
 void GetDeriveStats(int &derived, int &fellBack);
 void ResetDeriveStats();
 void NoteDeriveFallback();
-void NoteDeriveSeamFallback();
 // [rc4l] Why the fallbacks fell back, so the next category to build is a number rather than a hunch.
-void GetDeriveFallbacks(int &twoSidedMiddle, int &special, int &noTexture, int &noSpan, int &seam);
+void GetDeriveFallbacks(int &twoSidedMiddle, int &special, int &noTexture, int &noSpan);
 
 }} // namespace zx::surfaces
 

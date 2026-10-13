@@ -8,8 +8,8 @@
 
 namespace zx { namespace hwrender {
 
-// [rc4l] The fence value to wait for once frame `signalled` is queued, 0 for none (the first frames, or pacing off with `maxAhead` 0).
-unsigned long long ComputeFenceWaitValue(unsigned long long signalled, unsigned long long maxAhead);
+// [rc4l] The fence value to wait for once frame `signalled` is queued, 0 for none (the first frames, or pacing off with `maxAhead` 0 or below).
+unsigned long long ComputeFenceWaitValue(unsigned long long signalled, int maxAhead);
 
 }} // namespace zx::hwrender
 

@@ -85,6 +85,14 @@ FSpriteModelFrame *NextModelFrame(const FSpriteModelFrame *smf, const FState *cu
 	return gl_FindModelFrame(ti, nextState->sprite, nextState->GetFrame(), false);
 }
 
+int ModelSlotSurfaces(const FSpriteModelFrame *smf, int i, const FSpriteModelFrame *smfNext, double inter, FModelSurface *surfs, float &blend)
+{
+	FModel *mdl = smf->models[i];
+	const bool differ = smfNext != NULL && smf->modelframes[i] != smfNext->modelframes[i];
+	blend = ComputeModelSlotBlend(differ, mdl->Interpolates(), inter);
+	return mdl->FrameSurfaces(smf->skins[i], smf->modelframes[i], differ ? smfNext->modelframes[i] : smf->modelframes[i], surfs);
+}
+
 void CaptureModelFrames(const FSpriteModelFrame *smf, const FState *curState, int curTics, const PClass *ti, int translation)
 {
 	double inter = 0.;
@@ -95,11 +103,11 @@ void CaptureModelFrames(const FSpriteModelFrame *smf, const FState *curState, in
 		if (mdl == NULL) continue;
 		mdl->PushSpriteMDLFrame(smf, i);
 		mdl->BuildGeometry();
-		const bool blend = smfNext && smf->modelframes[i] != smfNext->modelframes[i];
 		FModelSurface surfs[MD3_MAX_SURFACES];
-		const int n = mdl->FrameSurfaces(smf->skins[i], smf->modelframes[i], blend ? smfNext->modelframes[i] : smf->modelframes[i], surfs);
+		float blend;
+		const int n = ModelSlotSurfaces(smf, i, smfNext, inter, surfs, blend);
 		for (int k = 0; k < n; k++)
-			zx::levelmesh::CaptureModelSurface(&mdl->mGeometry, surfs[k].base1, surfs[k].base2, blend ? (float)inter : 0.f,
+			zx::levelmesh::CaptureModelSurface(&mdl->mGeometry, surfs[k].base1, surfs[k].base2, blend,
 				surfs[k].firstIndex, surfs[k].count, zx::materials::MaterialForTexture(surfs[k].skin), translation);
 	}
 }

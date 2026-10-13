@@ -107,9 +107,9 @@ were drawn through the town's stacked sky from a copy of the tower a thousand un
 on screen says. A report naming several symptoms is several reports; measure each, since one of them
 (the clouds' colour there) matched to half a level.
 
-Pin the renderer mode as exactly as the camera. One view can be drawn by GL, by Vulkan with GL walking
-(`fua_dg_standalone 0`), by Vulkan standalone (what players run), or by a launch with no GL at all
-(`play --no-gl`, where `dumprenderer` says `renderer=vulkan`). Find the first mode that shows the fault:
+Pin the renderer mode as exactly as the camera. One view can be drawn by GL, by Vulkan (which always
+derives its own walks; `fua_dg_standalone 0` only keeps GL drawing beside it), or by a launch with no GL
+at all (`play --no-gl`, where `dumprenderer` says `renderer=vulkan`). Find the first mode that shows the fault:
 one only `--no-gl` shows is a dependency on the GL launch, not the renderer's maths.
 
 Once it reproduces in the reporter's content, rebuild the fault on a **template map** that carries

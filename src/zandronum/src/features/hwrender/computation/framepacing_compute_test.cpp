@@ -23,3 +23,8 @@ TEST(FramePacing, NoneAheadMeansNoPacing)
 {
 	EXPECT_EQ(0ull, ComputeFenceWaitValue(100, 0));
 }
+
+TEST(FramePacing, ANegativeAheadIsPacingOff)
+{
+	EXPECT_EQ(0ull, ComputeFenceWaitValue(10, -3));
+}

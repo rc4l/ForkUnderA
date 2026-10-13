@@ -53,10 +53,12 @@ field is populated with a meaningless value.
 > `FLOAT2FIXED`'s ints silently selected. `fua_line_mesh <line>` lists a wall's baked slots with
 > their heights and band light.
 
-## 3. Capture the reference's decision; never re-derive it
+## 3. Derive the reference's decision, never a look-alike of it
 
-If the reference computed something, **store what it computed**. Recomputing it from the same
-inputs is a second implementation, and it will drift.
+The backend derives its own scene, so a derived value must come from the same decision the reference
+makes (the same flag, the same resolved object, the same list), and a check in
+`features/sidebyside/glchecks.cpp` compares it with the reference's own value bit for bit. Rebuilding
+it from look-alike inputs is a second implementation, and it will drift.
 
 Three separate bugs in one session, all this mistake:
 
@@ -187,6 +189,6 @@ human happened to look again.
 1. Reproduce, and **record the reproduction as data**.
 2. Query both implementations at the point of disagreement. Do not guess a cause first.
 3. Classify: coverage, classification, or staleness (§1).
-4. Fix at the source — prefer capturing the reference's own decision (§3).
+4. Fix the derivation at the source, and have the check read the reference's own decision (§3).
 5. Prove the fix by the mechanism, and prove the *proof* against the broken build (§7).
 6. Extract the decision and unit-test it by symptom (§8).

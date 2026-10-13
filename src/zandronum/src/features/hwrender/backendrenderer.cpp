@@ -61,12 +61,7 @@ struct FBackendRenderer : public zx::frame::FLevelRenderer
 			zx::materials::MaterialRenderSize(mat, w, h);
 			const float ratio = (float)w / h;
 			const bool savedMain = zx::frame::BeginViewpoint(viewpoint, (float)fov, ratio, false, false);
-			if (zx::hwrender::StandaloneActive())
-			{
-				zx::levelmesh::EnterScene();
-				zx::frame::StandaloneScene();
-				zx::levelmesh::LeaveScene();
-			}
+			zx::frame::StandaloneScene();
 			zx::frame::RenderBackendCamera(mat, viewpoint, fov);
 			zx::frame::EndViewpoint(savedMain);
 		}

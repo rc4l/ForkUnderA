@@ -12,15 +12,15 @@ bool ComputeDecalHeight(const DecalHeightIn &in, double &zpos)
 	switch (in.rel)
 	{
 	case kDecalRelUpper:
-		if (in.part != kDecalPartUpper) return false;
+		if (in.part != kPartUpper) return false;
 		zpos = in.z + (in.unpegTop ? in.frontCeiling : in.backCeiling);
 		return true;
 	case kDecalRelLower:
-		if (in.part != kDecalPartLower) return false;
+		if (in.part != kPartLower) return false;
 		zpos = in.z + (in.unpegBottom ? in.frontCeiling : in.backFloor);
 		return true;
 	case kDecalRelMid:
-		if (in.part != kDecalPartMiddle) return false;
+		if (in.part != kPartMiddle) return false;
 		zpos = in.z + (in.unpegBottom ? in.frontFloor : in.frontCeiling);
 		return true;
 	default:
@@ -87,6 +87,12 @@ bool ComputeWallDecalQuad(const DecalWall &w, const DecalPicture &d, DecalCorner
 	if (d.flipx) for (int i = 0; i < 4; i++) dv[i].u = 1.f - dv[i].u;
 	if (d.flipy) for (int i = 0; i < 4; i++) dv[i].v = 1.f - dv[i].v;
 	return true;
+}
+
+void ComputeDecalLight(bool fullbright, int bandLevel, int relLight, int &light, int &rel)
+{
+	light = fullbright ? 255 : bandLevel;
+	rel = fullbright ? 0 : relLight;
 }
 
 }} // namespace zx::levelmesh

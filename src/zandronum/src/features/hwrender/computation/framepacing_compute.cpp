@@ -5,10 +5,10 @@
 
 namespace zx { namespace hwrender {
 
-unsigned long long ComputeFenceWaitValue(unsigned long long signalled, unsigned long long maxAhead)
+unsigned long long ComputeFenceWaitValue(unsigned long long signalled, int maxAhead)
 {
-	if (maxAhead == 0 || signalled <= maxAhead) return 0;
-	return signalled - maxAhead;
+	if (maxAhead <= 0 || signalled <= (unsigned long long)maxAhead) return 0;
+	return signalled - (unsigned long long)maxAhead;
 }
 
 }} // namespace zx::hwrender

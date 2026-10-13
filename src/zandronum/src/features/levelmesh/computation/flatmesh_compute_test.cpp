@@ -321,34 +321,6 @@ TEST(FlatMeshCompute, AnAdditiveWallIsAdditiveWhicheverListItIsIn)
 	EXPECT_EQ(ComputeWallBlendMode(false, true, 1.0f), 2);
 }
 
-// ---- render-style blend classification -------------------------------------
-//
-// Shared by sprites and decals. A decal is a small quad glued to a wall and its style decides
-// whether a scorch mark burns the wall darker or a blood splat merely covers it.
-
-TEST(FlatMeshCompute, ShadowStyleIsFuzz)
-{
-	EXPECT_EQ(ComputeStyleBlendMode(true, false, 1.0f), 3);
-	// Shadow wins over everything, including an additive flag set at the same time.
-	EXPECT_EQ(ComputeStyleBlendMode(true, true, 0.5f), 3);
-}
-
-TEST(FlatMeshCompute, AdditiveStyleIsAdditive)
-{
-	EXPECT_EQ(ComputeStyleBlendMode(false, true, 1.0f), 2);
-}
-
-TEST(FlatMeshCompute, AnOpaqueStyleIsOpaque)
-{
-	EXPECT_EQ(ComputeStyleBlendMode(false, false, 1.0f), 0);
-}
-
-TEST(FlatMeshCompute, APartlyFadedDecalIsTranslucent)
-{
-	// Decals fade out over their lifetime, so this is the common case, not the exception.
-	EXPECT_EQ(ComputeStyleBlendMode(false, false, 0.4f), 1);
-}
-
 // [rc4l] The normal has to face the side the surface is SEEN from, not the way its plane points.
 //
 // This is the winding bug's quieter twin. A wound-away surface disappears and someone reports it
@@ -921,4 +893,26 @@ TEST(FlatMesh, AScrollThatReturnsToTheBakedOffsetIsUndoneNotLeftBehind)
 	const FlatStamp baked = PlainFloorStamp();
 	EXPECT_EQ(kFlatRescroll, ComputeFlatChange(true, baked, baked, true));
 	EXPECT_EQ(kFlatRebuild, ComputeFlatChange(false, baked, baked, true));
+}
+
+// [rc4l] The wall bake and the decals each worked out a two-sided middle's blend from the linedef.
+TEST(FlatMeshCompute, ATwoSidedMiddleBlendsByItsLinedef)
+{
+	MidTextureBlend b = ComputeMidTextureBlend(0.5f, false, false);
+	EXPECT_FLOAT_EQ(0.5f, b.alpha);
+	EXPECT_FALSE(b.additive);
+	EXPECT_TRUE(b.translucent);
+	EXPECT_EQ(1, b.blendMode);
+	b = ComputeMidTextureBlend(0.75f, true, false);
+	EXPECT_TRUE(b.additive);
+	EXPECT_EQ(2, b.blendMode);
+	// [rc4l] No alpha is opaque and never additive, ML_ADDTRANS or not, unless the texture is see-through.
+	b = ComputeMidTextureBlend(0.f, true, false);
+	EXPECT_FLOAT_EQ(1.f, b.alpha);
+	EXPECT_FALSE(b.additive);
+	EXPECT_FALSE(b.translucent);
+	EXPECT_EQ(0, b.blendMode);
+	b = ComputeMidTextureBlend(1.f, false, true);
+	EXPECT_TRUE(b.translucent);
+	EXPECT_EQ(1, b.blendMode);
 }

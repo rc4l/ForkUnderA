@@ -5,7 +5,6 @@
 #include "features/frame/levelrenderer.h"
 #include "features/frame/playerview.h"
 #include "features/hwrender/backendonly.h"
-#include "features/hwrender/hud2d.h"   // [rc4l] StandaloneActive, whether the backend's scene is up
 #include "features/viewsetup/viewsetup.h"   // [rc4l] InstallSpriteView
 
 #include "textures/textures.h"
@@ -25,12 +24,8 @@ struct FFrameDriver : public FLevelRenderer
 		delete backend;
 	}
 
-	bool BackendDraws() const { return backend != NULL && zx::hwrender::BackendDrawsFrames(); }
-	// [rc4l] GL draws while the backend does not, while the backend's scene is not up yet (its window then stands aside), or when GL's own view is wanted.
-	bool GLDraws() const
-	{
-		return gl != NULL && (!BackendDraws() || !zx::hwrender::StandaloneActive() || zx::hwrender::GLViewWanted());
-	}
+	// [rc4l] Which renderer draws this frame and whose picture shows.
+	FrameRoute Route() const { return zx::hwrender::FrameRouteNow(gl != NULL, backend != NULL); }
 
 	void PrecacheTexture(FTexture *tex, int cache)
 	{
@@ -39,29 +34,30 @@ struct FFrameDriver : public FLevelRenderer
 
 	void RenderView(player_t *player)
 	{
-		const bool glDraws = GLDraws(), backendDraws = BackendDraws();
-		if (glDraws) gl->BeginFrame(player);
+		const FrameRoute r = Route();
+		if (r.glDraws) gl->BeginFrame(player);
 		BeginPlayerFrame(player);
-		if (glDraws) gl->RenderView(player);
-		if (backendDraws) backend->RenderView(player);
+		if (r.glDraws) gl->RenderView(player);
+		if (r.backendDraws) backend->RenderView(player);
 	}
 
 	// [rc4l] The picture of what the player sees: the backend's while it presents its scene, else GL's.
 	void WriteSavePic(player_t *player, FILE *file, int width, int height)
 	{
-		if (gl == NULL || (BackendDraws() && zx::hwrender::StandaloneActive())) backend->WriteSavePic(player, file, width, height);
+		if (Route().savePicFromBackend) backend->WriteSavePic(player, file, width, height);
 		else gl->WriteSavePic(player, file, width, height);
 	}
 
 	void RenderTextureView(FCanvasTexture *tex, AActor *viewpoint, int fov)
 	{
-		if (GLDraws()) gl->RenderTextureView(tex, viewpoint, fov);
-		if (BackendDraws()) backend->RenderTextureView(tex, viewpoint, fov);
+		const FrameRoute r = Route();
+		if (r.glDraws) gl->RenderTextureView(tex, viewpoint, fov);
+		if (r.backendDraws) backend->RenderTextureView(tex, viewpoint, fov);
 	}
 
 	void ClearBuffer(int color)
 	{
-		if (GLDraws()) gl->ClearBuffer(color);
+		if (Route().glDraws) gl->ClearBuffer(color);
 	}
 
 	void Init()

@@ -29,34 +29,34 @@ DecalPicture Picture()
 
 TEST(WallDecal, HeightFollowsThePartAndThePegging)
 {
-	DecalHeightIn in = { kDecalRelUpper, kDecalPartUpper, false, false, 4.0, 128.0, 0.0, 96.0, 16.0 };
+	DecalHeightIn in = { kDecalRelUpper, kPartUpper, false, false, 4.0, 128.0, 0.0, 96.0, 16.0 };
 	double z = 0;
 	EXPECT_TRUE(ComputeDecalHeight(in, z));
 	EXPECT_EQ(100.0, z);
 	in.unpegTop = true;
 	EXPECT_TRUE(ComputeDecalHeight(in, z));
 	EXPECT_EQ(132.0, z);
-	in.part = kDecalPartMiddle;
+	in.part = kPartMiddle;
 	EXPECT_FALSE(ComputeDecalHeight(in, z));
 
 	in.rel = kDecalRelLower;
-	in.part = kDecalPartLower;
+	in.part = kPartLower;
 	EXPECT_TRUE(ComputeDecalHeight(in, z));
 	EXPECT_EQ(20.0, z);
 	in.unpegBottom = true;
 	EXPECT_TRUE(ComputeDecalHeight(in, z));
 	EXPECT_EQ(132.0, z);
-	in.part = kDecalPartUpper;
+	in.part = kPartUpper;
 	EXPECT_FALSE(ComputeDecalHeight(in, z));
 
 	in.rel = kDecalRelMid;
-	in.part = kDecalPartMiddle;
+	in.part = kPartMiddle;
 	EXPECT_TRUE(ComputeDecalHeight(in, z));
 	EXPECT_EQ(4.0, z);
 	in.unpegBottom = false;
 	EXPECT_TRUE(ComputeDecalHeight(in, z));
 	EXPECT_EQ(132.0, z);
-	in.part = kDecalPartLower;
+	in.part = kPartLower;
 	EXPECT_FALSE(ComputeDecalHeight(in, z));
 
 	in.rel = kDecalRelNone;
@@ -174,4 +174,15 @@ TEST(WallDecal, TheTopOffsetIsAddedInFixedPoint)
 	d.topOffset = 8.3f;
 	ASSERT_TRUE(ComputeWallDecalQuad(Wall(), d, dv, top));
 	EXPECT_EQ(64.0 + std::trunc(65536.0 * 8.3f) / 65536.0, top);
+}
+
+TEST(WallDecalCompute, AFullbrightDecalIsLitFullAndTheRestByTheirBand)
+{
+	int light = -1, rel = -1;
+	ComputeDecalLight(true, 96, 16, light, rel);
+	EXPECT_EQ(255, light);
+	EXPECT_EQ(0, rel);
+	ComputeDecalLight(false, 96, 16, light, rel);
+	EXPECT_EQ(96, light);
+	EXPECT_EQ(16, rel);
 }

@@ -11,14 +11,8 @@ class AActor;
 
 namespace zx { namespace frame {
 
-// [rc4l] The lens a frame's player view is drawn with.
-struct FrameLens
-{
-	float fov, ratio, fovRatio;
-};
-
-// [rc4l] Before any view of a frame, once whichever renderers draw it: a new camera's interpolation reset, the tic fraction and clock, the frame's serial, particles, last frame's camera textures, the fixed colormap, and the lens, also left in r_viewLens.
-FrameLens BeginPlayerFrame(player_t *player);
+// [rc4l] Before any view of a frame, once whichever renderers draw it: a new camera's interpolation reset, the tic fraction and clock, the frame's serial, particles, last frame's camera textures, the fixed colormap, and the lens in r_viewLens.
+void BeginPlayerFrame(player_t *player);
 
 // [rc4l] Forget the last camera, so the next frame starts uninterpolated (a new frame buffer, a game restart).
 void ForgetCamera();

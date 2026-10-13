@@ -8,7 +8,7 @@
 
 namespace zx { namespace frame {
 
-// [rc4l] The scene for the view set up now: the frame's upkeep, the walks with what they reach, the re-bake of what moved among it, and the actors in view.
+// [rc4l] The scene for the view set up now, once the backend's scene is up: the frame's upkeep, the walks with what they reach, the re-bake of what moved among it, and the actors in view.
 void StandaloneScene();
 
 }} // namespace zx::frame

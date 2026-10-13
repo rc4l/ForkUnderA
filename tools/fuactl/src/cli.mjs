@@ -5,7 +5,7 @@
 // -DFUA_MCP_BRIDGE=ON (ZX_MCP_BRIDGE=1 ./mac_compile.sh) and armed with ZANDRONUM_BRIDGE_PORT.
 import { reap, readRegistry } from "./registry.mjs";
 import { runDeterminismCheck, runPerfAblation, runNetBandwidth, runGlTimers } from "./session.mjs";
-import { launchInstance, stopInstance, resolveEngine, engineProcessCount } from "./launch.mjs";
+import { launchInstance, stopInstance, resolveEngine, engineProcessCount, resFlag } from "./launch.mjs";
 import { BridgeClient } from "./client.mjs";
 import { diligentRun } from "./diligent.mjs";
 import { sampleProcess } from "./sample.mjs";
@@ -26,6 +26,8 @@ import { pixelToFace } from "./camera.mjs";
 import { sectorOf } from "./sectorof.mjs";
 import { scenarioOptions, scenarioRun, templateScenarioFiles, probeScenario, sideAdjust, standaloneOptions, launchRenderer } from "./template.mjs";
 import { abPerf } from "./abperf.mjs";
+import { runFps, fpsModes } from "./fps.mjs";
+import { refreshNote } from "./stats.mjs";
 import { decodePNG, abDiff, boxDiff } from "./pngcore.mjs";
 import fs from "node:fs";
 import os from "node:os";
@@ -149,6 +151,7 @@ const USAGE = `fuactl <command>
   perf-ab [--seed S] [--map M] [--spawn CLS] [--count N] [--frames F]   deterministic perf ablation (baseline vs perturbation, causal ms delta + sim/render verdict)
   gl-timers --port P [--token T] [--frames N] [--warmup M]   GPU render profiling: per-pass GPU ms (scene/translucent/hud2d) of a running instance
   capture --port P [--frames N] [--warmup M]   frametime distribution (p50/p95/p99/max, sim vs render split)
+  fps --map M [--iwad W] [--file a.wad,...] [--modes gl,embed,vulkan] [--res WxH] [--rounds N] [--frames N] [--warmup N] [--vsync] [--sample SEC] [--no-shot] [--engine PATH] [--port P] [--cvar k=v] [--label L]   frame rate under GL alone, the backend in the GL launch and the backend alone, each a locked launch of its own, one at a time; notes a median that sits on a display refresh
   ticprof --port P [--tics N]          per-tic sim phase split (P_Ticker / thinkers / effects / specials)
   bench --port P --scenario F.json [--runs N] [--metric total.p99_ms]   repeat a scenario, report median + spread, discard runs whose expectations failed
   lines --port P [--special N] [--door] [--use] [--cross] [--tag N] [--texture NAME] [--limit N]   query linedefs; prints a stand position and facing for each match
@@ -544,7 +547,25 @@ async function main() {
       if (!flags.port) { console.error("usage: fuactl capture --port P [--token T] [--frames N] [--warmup M]"); process.exit(2); }
       const report = await withUi(flags, (c) => cap.capturePerf(c, { frames: num(flags.frames) ?? 300, warmup: num(flags.warmup) ?? 0 }));
       console.error(`[capture] p50=${report.total.p50_ms}ms p99=${report.total.p99_ms}ms max=${report.total.max_ms}ms (sim ${report.sim_mean_ms.toFixed(2)} / render ${report.render_mean_ms.toFixed(2)})`);
+      const note = refreshNote(report.total.p50_ms);
+      if (note) console.error(`[capture] p50 ${note}`);
       console.log(JSON.stringify(report, null, 2));
+      break;
+    }
+    case "fps": {
+      if (!flags.map) { console.error(usageFor(USAGE, "fps")); process.exit(2); }
+      const rows = await runFps({
+        modes: fpsModes(flags.modes),
+        rounds: num(flags.rounds) ?? 3, frames: num(flags.frames) ?? 600, warmup: num(flags.warmup) ?? 300,
+        vsync: !!flags.vsync, sample: num(flags.sample), shot: !flags["no-shot"], label: flags.label || "run",
+        launch: {
+          port: num(flags.port), map: flags.map, iwad: flags.iwad, file: flags.file,
+          ...resFlag(flags.res),
+          engine: flags.engine && flags.engine !== true ? String(flags.engine) : undefined,
+          extra: shot.parseCvarFlag(flags.cvar) || {},
+        },
+      }, { log: (line) => console.error(`[fps] ${line}`) });
+      console.log(JSON.stringify(rows, null, 2));
       break;
     }
     case "ticprof": {
@@ -714,7 +735,7 @@ async function main() {
         // [rc4l] --pixel turns a point on a capture into the facing that puts the crosshair on it, instead of a hand-worked angle.
         if (flags.pixel && cam) {
           const [px, py] = String(flags.pixel).split(",").map(Number);
-          const [w, h] = String(flags.size || "1024x640").split("x").map(Number);
+          const { width: w, height: h } = resFlag(flags.size || "1024x640");
           cam = { ...cam, ...pixelToFace(cam, px, py, w, h) };
         }
         process.stdout.write(await sweepMod.look(c, cam, flags.stack ? "fua_look stack" : "fua_look"));
@@ -925,8 +946,7 @@ async function main() {
         preset: flags.preset, variant: flags.variant,
         ...presetDirs(flags),
         // [rc4l] --res WxH, so a capture can be framed exactly like the window a report came from.
-        width: flags.res ? Number(String(flags.res).split("x")[0]) : undefined,
-        height: flags.res ? Number(String(flags.res).split("x")[1]) : undefined,
+        ...resFlag(flags.res),
         gl: !!flags.gl, noGl: !!flags["no-gl"], sideBySide: !!flags["side-by-side"], rt: !!flags.rt,
         monsters: !!flags.monsters, lock: !!flags.lock,
         extra: shot.parseCvarFlag(flags.cvar) || {},
@@ -943,7 +963,7 @@ async function main() {
         console.log(`  ${cv.ok ? "ok " : "BAD"} ${cv.name} = ${cv.actual}${cv.ok ? "" : `   (wanted ${cv.expected})`}`);
       }
       console.log(`\n  ready -- the window is showing the ${flags.gl ? "GL" : "VULKAN"} render.`);
-      if (!flags.lock) console.log("  mouse and keyboard work normally. walking into unbaked areas bakes them in as you go.");
+      if (!flags.lock) console.log("  mouse and keyboard work normally.");
       console.log(`  fua_vulkan 0 / 1 in the console is a live A/B against GL.\n`);
       console.log(`  PORT=${inst.port} TOKEN=${inst.token}   (also in ${sessionFile})`);
       console.log(`  capture a pair:  fuactl shot <tag> --port ${inst.port} --token ${inst.token}`);

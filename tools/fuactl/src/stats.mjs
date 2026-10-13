@@ -76,3 +76,18 @@ export function compare(baseline, candidate, { label = "value" } = {}) {
 export function pluck(report, path) {
   return path.split(".").reduce((o, k) => (o == null ? undefined : o[k]), report);
 }
+
+// [rc4l] Display refresh rates a median frame can sit on when presentation, not the frame's cost, sets the pace.
+export const DISPLAY_RATES = [60, 75, 90, 100, 120, 144, 165, 170, 180, 200, 240, 280, 300, 360, 480, 500, 540];
+
+// [rc4l] The refresh rate a median frame time is within tolerance of, or null: 2.081 ms is 480 Hz, the swapchain's pace rather than the frame's.
+export function refreshBoundHz(p50Ms, { rates = DISPLAY_RATES, tolerance = 0.004 } = {}) {
+  if (!(p50Ms > 0)) return null;
+  return rates.find((hz) => Math.abs((p50Ms * hz) / 1000 - 1) <= tolerance) ?? null;
+}
+
+// [rc4l] What a capture should say when its median sits on a refresh rate, or "" when it does not.
+export function refreshNote(p50Ms) {
+  const hz = refreshBoundHz(p50Ms);
+  return hz ? `sits on the ${hz} Hz refresh: presentation sets the pace and frame time hides the CPU` : "";
+}

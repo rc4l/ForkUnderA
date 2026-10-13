@@ -52,7 +52,7 @@ after an upstream pull; it appends new commits as `pending` and preserves every 
 
 - New feature → `features/<kebab-name>/` with a README listing every in-place engine edit.
 - Pure decisions → `features/<name>/computation/<x>_compute.{h,cpp}` + colocated `_test.cpp`.
-  Auto-globbed into engine and tests — **must be header-pure** (no engine/GL/SDL includes) and
+  Globbed into the tests only, so list each in the engine's `add_executable` too — **must be header-pure** (no engine/GL/SDL includes) and
   C++14-clean (no namespace-scope `inline constexpr` variables).
 - Feature glue `.cpp` → add to `add_executable( zdoom … )` **before `zzautozend.cpp`** (the creg
   link-order rule); never a trailing `target_sources` for anything with `IMPLEMENT_CLASS`.
@@ -67,15 +67,10 @@ after an upstream pull; it appends new commits as `pending` and preserves every 
    the tripwire. Never rely on one platform's strictness to catch stragglers (the gluPerspective
    lesson: mac/linux tolerated a missed call for a full CI round because GLU was still linked
    there; only Windows enforced it).
-1. **Tripwires**: `tools/zscript-tripwire.sh`, `tools/removed-api-tripwire.sh`, and
-   `tools/ff-parity-tripwire.sh` (all in CI). ZScript false-positive traps already excluded:
+1. **Tripwires**: `tools/zscript-tripwire.sh` and `tools/removed-api-tripwire.sh` (both in CI). ZScript false-positive traps already excluded:
    `GC::WriteBarrier` (2008 GC, ours) and `DEFINE_ACTION_FUNCTION` (classic DECORATE macro). If a
    ported file needs its VM surface stripped, the F2DDrawer precedent says script exports are
-   typically self-contained blocks under ~6% of the file. FF-parity (the white-decal lesson,
-   flight 6): upstream freely moves state into shader-only uniforms because it dropped GL 2.x at
-   the core flip — we keep fixed-function alive on macOS until OUR core flip, so any render-state
-   field consumed only in `ApplyShader()` needs an FF fallback (`[rc4l]` shim in `Apply()`, see
-   the mObjectColor precedent) or a justified allowlist entry in the tripwire.
+   typically self-contained blocks under ~6% of the file.
 2. **fixed64 audit** (see the `fixed64-widening` skill): every fixed→float crossing goes
    `int64 → double → float` (`features/hwrender/computation/vertexconvert_compute` is the tested
    reference); grep applied hunks for `fixed_t`, `FRACBITS`, `<<16`, `(int)` casts. Upstream code
@@ -112,8 +107,8 @@ after an upstream pull; it appends new commits as `pending` and preserves every 
 5. **Tests**: `cmake --build build-tests && ctest` all green; new computation units at 100%
    coverage (`bash tests/coverage.sh --auto`).
 6. **Manual E2E by the user is the verification standard** (their eye has overruled screenshot
-   reads repeatedly). **Rebuild + refresh with `mac_build_run.sh` (`--run`) or `windows_build_run.ps1`
-   (`-Run`) — never hand-roll `cmake --build --target zdoom` + manual copies.** That target does NOT
+   reads repeatedly). **Rebuild + refresh with `mac_build_run.sh` (`--run`), or on Windows `fuactl build`
+   (see `zandronum-rebuild`) — never hand-roll `cmake --build --target zdoom` + manual copies.** That target does NOT
    rebuild the pk3s (`add_pk3` depends on the zipdir *tool*, not on `wadsrc/` content), so a
    hand-rolled build ships a stale or missing `zandronum.pk3` and a silently-failed link as if they
    were fine — the exact trap that has burned whole sessions. Both scripts fail CLOSED: stop on a bad

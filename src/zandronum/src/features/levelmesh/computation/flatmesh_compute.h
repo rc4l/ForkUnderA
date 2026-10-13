@@ -78,13 +78,6 @@ int ComputeSurfaceBlendMode(bool additive, float alpha);
 // it from the inputs it made it from.
 int ComputeWallBlendMode(bool inTranslucentList, bool additive, float alpha);
 
-// [rc4l] Which blend mode a render STYLE needs -- sprites, decals, anything with an FRenderStyle.
-//
-// The full style matrix resolves to GL blend enums, which would then have to be mapped back into
-// another API's. These four cases are what Doom content actually uses: opaque/masked, normal
-// translucency, additive (plasma, fireballs, explosions, scorch decals) and the fuzz shadow.
-// Anything exotic lands on normal translucency -- wrong, but visible rather than invisible.
-int ComputeStyleBlendMode(bool shadow, bool additive, float alpha);
 
 // [rc4l] Twice the signed area of a triangle projected onto the horizontal plane.
 //
@@ -218,6 +211,16 @@ void ComputeStackCapCorner(bool ceiling, int corner, float &x, float &y, float &
 
 // [rc4l] Whether GL draws a two-sided middle in its translucent pass (GLWall::DoMidTexture, PutWall): a linedef alpha below opaque or additive, or a texture with see-through texels; an alpha of 0 skips the linedef's part.
 bool ComputeMidTextureTranslucent(float lineAlpha, bool additive, bool textureTransparent);
+
+// [rc4l] How a two-sided middle blends as GL draws it, from its linedef's alpha and ML_ADDTRANS and whether its texture has see-through texels.
+struct MidTextureBlend
+{
+	float alpha;        // [rc4l] the linedef's alpha, opaque when it has none
+	bool  additive;     // [rc4l] ML_ADDTRANS on a line with an alpha
+	bool  translucent;  // [rc4l] drawn in GL's translucent pass
+	int   blendMode;    // [rc4l] MeshPiece::blendMode
+};
+MidTextureBlend ComputeMidTextureBlend(float lineAlpha, bool addTrans, bool textureTransparent);
 
 // [rc4l] How opaque GLFlat::ProcessSector draws a sector plane: a stacked one by its own alpha (0 for a stack seen straight through, which is not drawn), any other by what its reflection leaves.
 float ComputePlaneAlpha(bool stacked, float stackAlpha, float reflect);

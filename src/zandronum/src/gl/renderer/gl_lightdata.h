@@ -19,10 +19,6 @@ bool gl_CheckFog(sector_t *frontsector, sector_t *backsector);
 
 void gl_SetFog(int lightlevel, int rellight, const FColormap *cm, bool isadditive);
 
-// [rc4l] The settings gl_SetColor and gl_SetFog read besides the surface, for the level mesh's light model.
-namespace zx { namespace levelmesh { struct ShadingEnv; } }
-zx::levelmesh::ShadingEnv gl_ShadingEnv();
-
 inline bool gl_isFullbright(PalEntry color, int lightlevel)
 {
 	return gl_fixedcolormap || (gl_isWhite(color) && lightlevel==255);

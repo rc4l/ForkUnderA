@@ -33,9 +33,9 @@ their camera, wads and renderer first, and afterwards `play --unpark --port 7801
   wdi/wdiex maps), which loads its files in catalogue order from the download store; add
   `--store DIR` (or set `FUACTL_PWADS`) when they live elsewhere. A missing one is named; fetch it
   with `fua_download <file>` in the console.
-- `--side-by-side` sets `fua_dg_embed 0`, which un-nests the Vulkan window, and `fua_dg_standalone 0`,
-  without which GL's window is a still frame. So their Vulkan window is not the standalone frame players
-  get: show that with plain `play` or `play --no-gl`, never `--no-gl` with `--side-by-side`.
+- `--side-by-side` sets `fua_dg_embed 0`, which un-nests the Vulkan window, and GL draws whenever that
+  window is separate (`ComputeFrameRoute`), so both windows are live. The Vulkan window is the same derived
+  frame players get; `--no-gl` has no GL window, so never combine it with `--side-by-side`.
 - `play` runs the **staged** `dist-windows/forkundera.exe`, so restage a fix before relaunching the user's
   session. Your own instance on a fresh build takes `FUACTL_ENGINE=F:/ForkUnderA/build-win/Release/forkundera.exe`,
   and `shot`/`ab`/`burst`/`motion --port P` find its `sweep/` from the binary its play session recorded.
@@ -88,6 +88,6 @@ The tail of the command line names the map, which is the quickest way to tell tw
 - `fuactl shot` does **not** work against a side-by-side instance: the un-embedded Vulkan window hands
   back a 1x1 PNG and the tool refuses it. For pixel work launch a SECOND instance without
   `--side-by-side`, with `--lock`, on your own port, and shoot there — theirs stays untouched to look
-  at. Either way `fua_dg_standalone 0` is required, or GL's half of the pair is a dead buffer.
+  at. Set `fua_dg_standalone 0` on that embedded instance, or GL's half of the pair is a dead buffer.
 - To aim both at the same place, save the vantage first with the `fua-capture-spot` skill and shoot
   `--spot <name>`.

@@ -86,12 +86,13 @@ runScenarioIfMain(import.meta.url, () => ({ name: "horizon", wad: buildHorizonWa
 the engine it runs (the staged `dist-windows` one unless `FUACTL_ENGINE` names another) and each box's verdict, and exits 0 (all under ceiling), 1 (failed), 2 (crashed) or 3 (refused) -- so a test
 can import the builder without launching anything. The whole set runs as one command,
 `node src/cli.mjs scenarios [name ...] [--engine build-win/Release/forkundera.exe]`, which prints only
-the boxes that did not pass and exits 1 if any scenario failed. Players run standalone and the
-default suite does not, so also run `scenarios --standalone` for anything standalone touches: each
-scenario's own `standalone` side, else its `vk` side with `fua_dg_standalone 1`, else skipped.
+the boxes that did not pass and exits 1 if any scenario failed. It runs every Vulkan side standalone,
+as players do (`fua_dg_standalone 1`, except `frame: "gl"` and `glDraws` sides), so `scenarios
+--standalone` adds nothing beyond a narrower set.
 
 `compareTemplate` refuses to run while another engine is open (GL readback under another window is
-undefined), launches each map twice — GL alone, then Vulkan with `fua_dg_standalone 0` — captures
+undefined), launches each map once per side — GL alone, then Vulkan with `fua_dg_standalone 1` (0 only for a side
+judged by GL's frame) — captures
 every vantage, and judges each box by `boxDiff`: mean |d| in 16-pixel block means, so the renderers'
 sub-pixel framing averages out while a block-sized fault stays loud. Its GL frames come from the
 Vulkan-off launch on purpose: with Vulkan on, GL captures on a skybox map were unreliable in every build.
@@ -108,12 +109,11 @@ A side with `frame: "gl"` keeps GL's half of a Vulkan launch's pair instead. GL 
 vertices and never the backend's wall mesh; `mapreload.mjs` (`commands: ["map MAP01"]`, a level change)
 checks it still draws after the level loads again, and `glplain.mjs` checks it never reads the mesh. A side's
 `atVantage` commands run once it stands at each vantage, for a change the view's own walk must see first
-(`fua_mesh_blank` empties the mesh GL's capture just filled). `fuactl scenarios <name> --side S --cvar k=v`
+(`fua_mesh_blank` empties the mesh the map bake filled). `fuactl scenarios <name> --side S --cvar k=v`
 adds cvars to one side, which is how a test shows it fails under the behaviour it guards against; a
-scenario without that side is skipped rather than ending the run. A side with `cvars: { fua_dg_standalone: 1 }` judges
-Vulkan carrying the frame alone; `standalonemove.mjs` runs its script after that, so the move is not baked in.
-A standalone side that spawns facing away and then turns (`skymove`, `stackturn`, `skyboxturn`) catches
-what the frame kept from GL's last walk instead of walking itself.
+scenario without that side is skipped rather than ending the run. `standalonemove.mjs` runs its script
+after the level is up, so the move is not baked in. A side that spawns facing away and then turns
+(`skymove`, `stackturn`, `skyboxturn`) catches a frame that reuses an earlier walk instead of walking itself.
 
 A side with `noGl: true` launches with `-vulkan`, which makes no GL context at all. The harness reads
 `dumprenderer` and fails the side unless it prints `renderer=vulkan`, since an old binary ignores the flag
@@ -205,7 +205,7 @@ Export the builder from the scenario; `runScenarioIfMain` keeps the import from 
 | `tools/fuactl/scenarios/missingfillcache.mjs` | the missing-upper map in GL alone, wall cache off against on: the cache must not cost GL its missing-texture fill |
 | `tools/fuactl/scenarios/missinglower.mjs` | a recess with untextured steps, GL against Vulkan: GL's missing-texture fill must run every frame under the wall cache. GL does not clear its framebuffer, so a missing fill shows stale pixels, and the map looks at a red wall first to put red there |
 | `tools/fuactl/scenarios/mapreload.mjs` | a room loaded a second time inside a Vulkan session (`commands: ["map MAP01"]`), GL alone against GL's frame there: GL must still draw the world after a level change rebuilds the wall mesh |
-| `tools/fuactl/scenarios/glplain.mjs` | a room reloaded in a Vulkan session with the map bake off, the mesh then emptied at the vantage (`atVantage: ["fua_mesh_blank"]`), GL alone against GL's frame there: GL must draw its own vertices, not the backend's mesh (queue #42) |
+| `tools/fuactl/scenarios/glplain.mjs` | a room in a Vulkan session, the mesh emptied at the vantage (`atVantage: ["fua_mesh_blank"]`), GL alone against GL's frame there: GL must draw its own vertices, not the backend's mesh (queue #42) |
 | `tools/fuactl/scenarios/standalonemove.mjs` | a platform a closed script raises (`puke 2`) after Vulkan has gone standalone, GL alone against the standalone frame: the move must show with no GL walk behind it |
 | `tools/fuactl/scenarios/invertedback.mjs` | a wall onto a sector whose floor is above its ceiling, GL against Vulkan: both must draw it whole |
 | `tools/fuactl/scenarios/watertint.mjs` | additive 3D-floor water whose control sector a puked script tints after the bake, over a grey pool floor, GL against Vulkan |
@@ -237,6 +237,9 @@ Export the builder from the scenario; `runScenarioIfMain` keeps the import from 
 | `tools/fuactl/scenarios/modelstandalone.mjs` | a voxel model ahead and two seen only in a line mirror, in standalone: solid models drawn as GL draws them |
 | `tools/fuactl/scenarios/movedbehind.mjs` | a platform raised while behind the player, in standalone: re-baked when a walk first reaches it |
 | `tools/fuactl/scenarios/stencilsprite.mjs` | a stencil-style actor: a flat silhouette in its stencil colour with GL's framed outline (TM_MASK) |
+| `tools/fuactl/scenarios/walldecal.mjs` | decal things glued to a wall by DECALDEF, a shaded scorch and an additive glow, from one frame: Vulkan draws the marks GL draws |
+| `tools/fuactl/scenarios/skyfog.mjs` | a sky-lit sector under MAPINFO `skyfog`, looking up, from one frame: Vulkan hazes the sky as GL does |
+| `tools/fuactl/scenarios/polyobjmove.mjs` | a polyobject a script slides after the bake, GL against Vulkan: drawn where it moved to |
 | `tools/fuactl/src/mapdata.mjs` | read a real map's sectors, lines and scripts, to find the ingredient to template |
 | `tools/fuactl/src/acs.mjs` | ACS0 BEHAVIOR writer for scripted template maps |
 | `tools/fuactl/test/{udmf,template,pngcore}.test.mjs` | their tests |

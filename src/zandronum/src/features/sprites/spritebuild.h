@@ -31,7 +31,7 @@ void BuildSprites(AActor *const *things, int count);
 // [rc4l] Derive a particle in `sector` (as GL's walk sees it) into the dynamic stream, noted for the check likewise.
 void BuildParticle(particle_t *particle, sector_t *sector);
 
-// [rc4l] With fua_sprite_check on, what GL's RegisterSprite or model capture recorded for an actor or a particle, its `count` vertices with it, so the derivation can be compared against it.
+// [rc4l] With fua_sprite_check on, what GL drew for an actor or a particle, its `count` vertices with it, so the derivation can be compared against it.
 void NoteGLSprite(const void *who, bool particle, const zx::levelmesh::MeshPiece &piece, const zx::levelmesh::MeshVertex *verts, int count);
 
 // [rc4l] With the check on, a derived model's surface, held for the comparison instead of drawn.
@@ -48,6 +48,11 @@ void PointDynamicLight(fixed_t x, fixed_t y, fixed_t z, subsector_t *subsec, flo
 // [rc4l] An engine render style as spritestyle_compute takes it, and back.
 SpriteStyle StyleOf(const FRenderStyle &s);
 FRenderStyle RenderStyleOf(const SpriteStyle &s);
+// [rc4l] The blend (MeshPiece::blendMode) an engine render style draws with at `alpha`.
+int StyleBlendMode(const FRenderStyle &s, float alpha);
+
+// [rc4l] Whether sprites, the weapon and decals take dynamic light this frame: lights on and in the view, no fixed colormap, and gl_light_sprites.
+bool SpritesTakeDynamicLight();
 
 }} // namespace zx::sprites
 

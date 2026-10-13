@@ -91,11 +91,13 @@ void SweepActors()
 // [rc4l] The camera textures on what the player's walk saw, drawn again next frame, as GL's binding one marks it; the rest keep their last picture, as GL's do.
 void MarkSeenCameraTextures(const zx::levelmesh::WalkedThisFrame &walked)
 {
+	static std::vector<FCanvasTextureInfo *> infos;
 	static std::vector<int> cameras, textures;
 	static std::vector<unsigned char> seen;
+	infos.clear();
 	cameras.clear();
 	for (FCanvasTextureInfo *p = FCanvasTextureInfo::GetList(); p != NULL; p = p->Next)
-		if (p->Texture != NULL) cameras.push_back(p->PicNum.GetIndex());
+		if (p->Texture != NULL) { infos.push_back(p); cameras.push_back(p->PicNum.GetIndex()); }
 	if (cameras.empty()) return;
 	textures.clear();
 	for (int i = 0; i < walked.sideCount; i++)
@@ -106,15 +108,16 @@ void MarkSeenCameraTextures(const zx::levelmesh::WalkedThisFrame &walked)
 		textures.push_back(sectors[walked.sectors[i]].GetTexture(sector_t::ceiling).GetIndex());
 	}
 	ComputeCamerasSeen(cameras, textures, seen);
-	int i = 0;
-	for (FCanvasTextureInfo *p = FCanvasTextureInfo::GetList(); p != NULL; p = p->Next)
-		if (p->Texture != NULL && seen[i++]) p->Texture->NeedUpdate();
+	for (size_t i = 0; i < infos.size(); i++)
+		if (seen[i]) infos[i]->Texture->NeedUpdate();
 }
 
 } // namespace
 
 void StandaloneScene()
 {
+	if (!zx::hwrender::StandaloneActive()) return;
+	const zx::levelmesh::SceneScope scene;
 	// [rc4l] Last frame's sprites are dead the moment the camera moves, marks age on the frame clock, and a sector that moved has invalidated its cached geometry.
 	if (zx::levelmesh::PlayerWalkActive())
 	{

@@ -80,14 +80,10 @@ static bool AutoSetupForLevel()
 			if (built > 0 || flats > 0)
 				Printf("vulkan: %d wall parts and %d planes built from the map\n", built, flats);
 		}
-		ComputeLevelSetupArmed(g_setup);
+		ComputeLevelSetupBaked(g_setup);
 		return false;
-	case kSetupWaiting:
-		// The bake runs on a rendered frame, and a big level needs more than one. Retry rather than
-		// give up on the first miss: giving up is permanent for the level, and the cost of being
-		// wrong is a black screen with no way back short of a restart.
-		// [rc4l] Beside GL the bake waits for GL's walk; without it the map has baked the level whole already.
-		// [rc4l] The map bakes the level whole, so nothing waits for GL's walk.
+	case kSetupBaked:
+		// [rc4l] Upload the level the map baked whole, retrying a failed upload on later frames, since giving up is permanent for the level.
 		{
 			FString report;
 			ComputeLevelSetupUploaded(g_setup, SceneUpload(report));
@@ -252,16 +248,21 @@ bool StandaloneActive()
 	return fua_vulkan && g_setup.state == kSetupReady && SceneDrawable();
 }
 
-bool BackendDrawsFrames() { return BackendOnly() || fua_vulkan; }
-
-bool BackendCoversGL() { return BackendPresenting() && StandaloneActive(); }
-
-bool GLViewWanted()
+zx::frame::FrameRoute FrameRouteNow(bool hasGL, bool hasBackend)
 {
-	return !fua_dg_standalone || !fua_dg_embed || fua_vis_check || fua_sprite_check || fua_psprite_check || fua_shading_check;
+	zx::frame::FrameRouteIn in;
+	in.hasGL = hasGL;
+	in.hasBackend = hasBackend;
+	in.backendOn = BackendOnly() || fua_vulkan;
+	in.sceneUp = StandaloneActive();
+	in.backendPresenting = BackendPresenting();
+	in.standalone = fua_dg_standalone;
+	in.embedded = fua_dg_embed;
+	in.checking = fua_vis_check || fua_sprite_check || fua_psprite_check || fua_shading_check;
+	return zx::frame::ComputeFrameRoute(in);
 }
 
-// [rc4l] The level's scene, set up for the level; true once it can be drawn. fua_vulkan is the user-facing switch and sets itself up; fua_diligent_live is the manual override that assumes someone already ran the bake by hand.
+// [rc4l] Steps this level's scene set-up while fua_vulkan is on, true once it can be drawn.
 static bool AdvanceLevelScene()
 {
 	return fua_vulkan ? AutoSetupForLevel() : false;
@@ -269,7 +270,7 @@ static bool AdvanceLevelScene()
 
 void SettleLevelScene()
 {
-	// [rc4l] Arming, uploading and the standalone bake each take a step, so a few settle this level's, whatever the last level left standing.
+	// [rc4l] Baking and uploading each take a step, so a few settle this level's set-up whatever the last level left.
 	for (int i = 0; i < 4; i++)
 		if (AdvanceLevelScene() && StandaloneActive()) return;
 }

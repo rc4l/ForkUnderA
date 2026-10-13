@@ -15,6 +15,12 @@ static void EndUnpresentedFrame(Diligent::IDeviceContext *ctx)
 	ctx->FinishFrame();
 }
 
+// [rc4l] `n` frames of the scene drawn and finished without presenting.
+static void DrawUnpresentedFrames(int n)
+{
+	for (int i = 0; i < n; i++) { DrawSceneOnce(false, false); EndUnpresentedFrame(GetContext()); }
+}
+
 // [rc4l] GPU time for the current scene, a duration query a frame and each frame finished as Present would finish it: one query held across many unfinished frames left their dynamic memory unrecycled.
 static double MeasureGpuMs(int frames)
 {
@@ -27,7 +33,7 @@ static double MeasureGpuMs(int frames)
 	if (!q) return -1.0;
 
 	auto *ctx = GetContext();
-	for (int i = 0; i < 5; i++) { DrawSceneOnce(false, false); EndUnpresentedFrame(ctx); }   // warmup at this multiplier
+	DrawUnpresentedFrames(5);   // [rc4l] warm-up at this multiplier
 	ctx->WaitForIdle();
 
 	double total = 0.0;
@@ -61,10 +67,10 @@ bool SceneBench(int frames, FString &report)
 	const DWORD p1 = I_MSTime();
 
 	// [rc4l] Submission only, so the number is the backend's draw cost for the baked geometry; each frame is finished as Present would finish it, or its dynamic memory is never recycled and wdiex02 ran the heap dry inside the 300.
-	for (int i = 0; i < 20; i++) { DrawSceneOnce(false, false); EndUnpresentedFrame(GetContext()); }
+	DrawUnpresentedFrames(20);
 	GetContext()->WaitForIdle();
 	const DWORD s0 = I_MSTime();
-	for (int i = 0; i < frames; i++) { DrawSceneOnce(false, false); EndUnpresentedFrame(GetContext()); }
+	DrawUnpresentedFrames(frames);
 	GetContext()->WaitForIdle();
 	const DWORD s1 = I_MSTime();
 
@@ -124,11 +130,11 @@ void DynStats(FString &report)
 		// number is the point of features/surfaces: it goes up as categories move across.
 		int derived = 0, fellBack = 0;
 		zx::surfaces::GetDeriveStats(derived, fellBack);
-		int mid = 0, special = 0, notex = 0, nospan = 0, seam = 0;
-		zx::surfaces::GetDeriveFallbacks(mid, special, notex, nospan, seam);
-		cull.AppendFormat(" | derived surfaces: %d built, %d from the capture"
-			" (%d two-sided middles, %d special walls, %d no texture, %d no span, %d seam-split)",
-			derived, fellBack, mid, special, notex, nospan, seam);
+		int mid = 0, special = 0, notex = 0, nospan = 0;
+		zx::surfaces::GetDeriveFallbacks(mid, special, notex, nospan);
+		cull.AppendFormat(" | derived surfaces: %d built, %d refused"
+			" (%d two-sided middles, %d special walls, %d no texture, %d no span)",
+			derived, fellBack, mid, special, notex, nospan);
 	}
 	cull.AppendFormat(" | array built %d times, %d remap uploads, slots 1..7 got:", g_stats.fillCount, g_stats.remapUploads);
 	for (int fi = 1; fi < 8; fi++)

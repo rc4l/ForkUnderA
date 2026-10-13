@@ -20,7 +20,7 @@ struct SheenWall { float x1, y1, x2, y2; float ztop[2], zbottom[2]; };
 
 enum { kSheenOwnLight = -1, kSheenNothing = -2 };
 
-// [rc4l] GLWall::SplitWall as far as its first piece, the one RegisterMirrorSheen takes: the light-list entry it is put with (Put3DWall), kSheenOwnLight for the wall's own (PutWall), or kSheenNothing; planes[i] is lightlist[i + 1]'s, of `bands` entries.
+// [rc4l] GLWall::SplitWall as far as its first piece, the one AddMirrorSheen takes: the light-list entry it is put with (Put3DWall), kSheenOwnLight for the wall's own (PutWall), or kSheenNothing; planes[i] is lightlist[i + 1]'s, of `bands` entries.
 int ComputeSheenBand(const SheenWall &wall, const SheenPlane *planes, int bands);
 
 // [rc4l] GLWall::Put3DWall's light for a sheen in a band: the band's own level unless it is the wall's sector's, and full under a fade wall.

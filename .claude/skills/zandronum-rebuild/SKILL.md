@@ -48,7 +48,7 @@ cp build-win/Release/forkundera.exe build-win/Release/forkundera.pdb dist-window
 
 **A running engine holds that binary on Windows**, and the copy fails with "Device or resource busy" --
 unchecked, the next run silently measures the OLD build. Quit every instance first, BY PORT
-(`node src/cli.mjs ui exec quit --port P --token T`), never by process name, which would also kill the
+(`node src/cli.mjs quit --port P [--token T]`), never by process name, which would also kill the
 user's own instance and other sessions' harnesses. Then confirm none are left: `tasklist /FI
 "IMAGENAME eq forkundera.exe"` on Windows, `pgrep -l forkundera` elsewhere.
 

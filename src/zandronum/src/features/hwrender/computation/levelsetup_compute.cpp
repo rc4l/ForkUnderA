@@ -19,9 +19,9 @@ void ComputeLevelSetupForLevel(LevelSetup &s, int generation)
 	s.tries = 0;
 }
 
-void ComputeLevelSetupArmed(LevelSetup &s)
+void ComputeLevelSetupBaked(LevelSetup &s)
 {
-	s.state = kSetupWaiting;
+	s.state = kSetupBaked;
 }
 
 void ComputeLevelSetupUploaded(LevelSetup &s, bool ok)

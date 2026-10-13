@@ -72,8 +72,8 @@ ones. A build without the backend (`FUA_DILIGENT` off, every non-Windows build) 
 | `d_main.cpp` | `Clear2D`, `FrameTimingBegin`, `LiveFrame` | start the frame's 2D capture and renderer clock; draw the backend's frame after GL's |
 | `gl/scene/gl_sprite.cpp`, `gl_spriteview.cpp` | `SpriteViewProvider` | GL's sprites ask GL's own view, the backend's ask `SpriteView()` |
 | `gl/scene/gl_drawinfo.cpp`, `gl_walls_draw.cpp` | `ComputeGLSpritesBefore`, `ComputeWallLightIndex` | GL's draw order and wall light lists, shared with the backend |
-| `features/frame/framedriver.cpp` | `BackendDrawsFrames`, `StandaloneActive`, `GLViewWanted` | which renderers draw the frame |
-| `features/sidebyside/sidebyside.cpp` | `BackendCoversGL`, `GLViewWanted` | whether GL presents |
+| `features/frame/framedriver.cpp` | `FrameRouteNow` (`features/frame/computation/frameroute_compute`) | which renderers draw the frame |
+| `features/sidebyside/sidebyside.cpp` | `FrameRouteNow` | whether GL presents, which is whenever it draws |
 | `features/visibility/viswalk.cpp` | `SetSkyFog` | the sky's fade layer, derived from the walk |
 | `v_video.cpp` | `BackendRateLive`, `RendererRateShown`, `ComputeRateText`, `Set2DTarget` | `vid_fps` shows each window its own renderer's frame time |
 | `win32/hardware.cpp` | `BackendOnly`, `BeginBackendOnly`, `CreateBackendRenderer` | the renderer of a launch without GL |

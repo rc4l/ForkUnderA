@@ -150,7 +150,7 @@ answer had been sitting.
 
 ## Wired in, and on: the derivation builds the walls
 
-`fua_surface_derive` is on. The bake takes a wall part's vertical SPAN and BOTH of its texture
+The derivation is always on. The bake takes a wall part's vertical SPAN and BOTH of its texture
 coordinates from the map instead of from `GLWall`. What still comes from the capture is which
 surfaces exist at all, the special kinds -- 3D floor faces, skies, horizons -- and the shading, which
 is deliberately last.
@@ -207,7 +207,7 @@ part GL draws that the map does not claim, and none the map claims that GL does 
 
 ## ...and its light, which was the last of it
 
-`fua_surface_derive_light` is on too. A wall's light level, its fake-contrast term and its colormap
+Its light is derived too. A wall's light level, its fake-contrast term and its colormap
 come from the sector and the sidedef now, not from a `GLWall`.
 
 **This is not a second lighting implementation, and that distinction is the whole reason it was safe

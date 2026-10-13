@@ -698,7 +698,7 @@ void GLSkyboxPortal::DrawContents()
 	currentmapsection[mapsection>>3] |= 1 << (mapsection & 7);
 
 	{
-		FGLObservedWalk walk(0, NULL, 0);	// [rc4l] a walk from the skybox's viewpoint, for a check against GL's
+		FGLObservedWalk walk(EObservedWalk::Skybox);	// [rc4l] a walk from the skybox's viewpoint, for a check against GL's
 		GLRenderer->DrawScene();
 	}
 	origin->flags&=~MF_JUSTHIT;
@@ -802,7 +802,7 @@ void GLSectorStackPortal::DrawContents()
 	SetupCoverage();
 	ClearClipper();
 	{
-		FGLObservedWalk walk(1, origin, 0);	// [rc4l] a walk through the stacked view, for a check against GL's
+		FGLObservedWalk walk(EObservedWalk::Stack, origin);	// [rc4l] a walk through the stacked view, for a check against GL's
 		GLRenderer->DrawScene();
 	}
 	RestoreMapSection();
@@ -972,7 +972,7 @@ void GLMirrorPortal::DrawContents()
 	clipper.SafeAddClipRange(a1,a2);
 
 	{
-		FGLObservedWalk walk(2, NULL, int(linedef - ::lines));	// [rc4l] a walk into the mirror, for a check against GL's
+		FGLObservedWalk walk(EObservedWalk::Mirror, NULL, int(linedef - ::lines));	// [rc4l] a walk into the mirror, for a check against GL's
 		GLRenderer->DrawScene();
 	}
 

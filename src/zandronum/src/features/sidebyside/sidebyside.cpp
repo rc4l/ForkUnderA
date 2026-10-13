@@ -10,7 +10,7 @@
 #if defined(_WIN32) && defined(FUA_DILIGENT)
 #include "features/hwrender/hud2d.h"         // [rc4l] Get2DTarget
 #include "features/hwrender/record2d.h"      // [rc4l] Record2DCanvas
-#include "features/hwrender/backendonly.h"   // [rc4l] BackendCoversGL, GLViewWanted
+#include "features/hwrender/backendonly.h"   // [rc4l] FrameRouteNow
 
 // [rc4l] GL's frame buffer, each 2D draw also recorded for the backend's window; GL leaves out one meant for the backend's window alone, and draws and presents nothing while its window is covered and not wanted.
 class SideBySideFrameBuffer : public OpenGLFrameBuffer
@@ -25,7 +25,7 @@ public:
 	void Update()
 	{
 		OpenGLFrameBuffer::Update();
-		mPresents = !zx::hwrender::BackendCoversGL() || zx::hwrender::GLViewWanted();
+		mPresents = zx::hwrender::FrameRouteNow(true, true).glDraws;
 		zx::sidebyside::WatchGLForChecks();
 	}
 

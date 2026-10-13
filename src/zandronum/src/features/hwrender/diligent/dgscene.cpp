@@ -579,7 +579,7 @@ static void SignalFrame(Diligent::IDeviceContext *ctx)
 static void PaceFrames()
 {
 	if (!g_frameFence) return;
-	const Diligent::Uint64 wait = zx::hwrender::ComputeFenceWaitValue(g_frameSignalled, (unsigned long long)(fua_dg_frames_ahead < 0 ? 0 : *fua_dg_frames_ahead));
+	const Diligent::Uint64 wait = zx::hwrender::ComputeFenceWaitValue(g_frameSignalled, fua_dg_frames_ahead);
 	if (wait != 0) g_frameFence->Wait(wait);
 }
 

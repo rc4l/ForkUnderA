@@ -1,11 +1,7 @@
 #ifndef __GL_OBSERVER_H
 #define __GL_OBSERVER_H
 
-// [rc4l] What GL reports of its own walk and draw to whoever checks another renderer against it.
-//
-// None of it is needed to draw: GL calls these only while gl_observer is set, which features/sidebyside
-// does while a check that compares against GL is on (fua_vis_check, fua_sprite_check, fua_psprite_check).
-// GL owns this interface, so GL depends on no renderer module to be watched.
+// [rc4l] What GL reports of its own walk and draw to a check against it, called only while gl_observer is set (features/sidebyside), so GL depends on no renderer module.
 
 #include "features/draw2d/computation/quad2d_compute.h"   // [rc4l] Quad2D, the weapon quad GL draws
 
@@ -52,18 +48,29 @@ struct FGLObserver
 // [rc4l] The observer GL reports to, NULL while nothing watches.
 extern FGLObserver *gl_observer;
 
-// [rc4l] A portal walk reported for as long as it is in scope.
+// [rc4l] The kinds of portal walk GL reports.
+enum class EObservedWalk { Skybox, Stack, Mirror };
+
+// [rc4l] A portal walk reported for as long as it is in scope: a stack's by its portal, a mirror's by its line.
 struct FGLObservedWalk
 {
 	bool on;
-	FGLObservedWalk(int kind, const void *portal, int line) : on(gl_observer != NULL)
+	FGLObservedWalk(EObservedWalk kind, const void *portal = NULL, int line = 0) : on(gl_observer != NULL)
 	{
 		if (!on) return;
-		if (kind == 0) gl_observer->SkyboxWalkBegins();
-		else if (kind == 1) gl_observer->StackWalkBegins(portal);
+		if (kind == EObservedWalk::Skybox) gl_observer->SkyboxWalkBegins();
+		else if (kind == EObservedWalk::Stack) gl_observer->StackWalkBegins(portal);
 		else gl_observer->MirrorWalkBegins(line);
 	}
 	~FGLObservedWalk() { if (on && gl_observer != NULL) gl_observer->PortalWalkEnds(); }
+};
+
+// [rc4l] A scene reported for as long as it is in scope, so a check knows which scene is outermost.
+struct FGLObservedScene
+{
+	bool on;
+	FGLObservedScene() : on(gl_observer != NULL) { if (on) gl_observer->EnterScene(); }
+	~FGLObservedScene() { if (on && gl_observer != NULL) gl_observer->LeaveScene(); }
 };
 
 #endif

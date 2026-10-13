@@ -46,17 +46,18 @@ Delete a stale `.play-session` before launching, or the wait above reads the pre
   (`--store DIR`, else `FUACTL_PWADS`, else the engine's own `pwads/` folder). A missing file is named;
   fetch it with `fua_download <file>` in the engine console.
 - `.play-session` is written by whichever launch went last. Keep each instance's token yourself.
-- It stays up until stopped. Quit by port: `ui exec quit --port P --token T`. Never `reap --kill` or
+- It stays up until stopped. Quit by port: `quit --port P [--token T]`, which waits for the port to close. Never `reap --kill` or
   `reap --all` — the registry is shared with other sessions — and never kill by process name
   (`Stop-Process -Name`, `pkill`), which takes the user's instance and other harnesses with it.
-- `fua_dg_standalone` defaults on, and players run it: set it to 0 for a GL/Vulkan pair, or GL's half is
-  a still frame, then check the Vulkan half at 1 as well, since standalone-only faults vanish at 0. A
-  `--no-gl` launch is always standalone.
+- `fua_dg_standalone` defaults on and only decides whether GL also draws: set it to 0 in an embedded
+  launch for a GL/Vulkan pair, or GL's half is a still frame. The Vulkan picture is derived the same way
+  at either value, and a side-by-side launch or any `fua_*_check 1` keeps GL drawing by itself. A
+  `--no-gl` launch has no GL at all.
 
 ## Drive
 
-Every command takes `--port P --token T`, and without them uses the last launch's `.play-session`; a
-port with no token hangs and reports `rpc timeout`.
+Every command takes `--port P --token T`; `--port P` alone takes the token from `.play-session-P`, which
+`play` writes, and with neither it uses the last launch's `.play-session`.
 
 | goal | command |
 |---|---|
@@ -76,7 +77,8 @@ port with no token hangs and reports `rpc timeout`.
 | compare two captures | `png --diff a b`, `png --boxdiff a b x0,y0,x1,y1 [block]`, `png --diffimg a b out` |
 | a box's brightness and channel means, several captures | `png --range a b ... [x0 y0 x1 y1]` |
 | lines wearing a texture (any tier, by prefix) | `lines --texture NAME` |
-| frametime distribution (p50/p95/p99) | `capture [--frames N]` |
+| frametime distribution (p50/p95/p99) | `capture [--frames N]`; it says so when the median sits on a display refresh, where presentation and not the frame sets the pace |
+| frame rate under GL alone, the backend in the GL launch, and `--no-gl` | `fps --map M [--iwad W] [--file ...] [--res WxH] [--modes gl,embed,vulkan] [--engine PATH]`: one locked launch per mode in turn, warmed, three rounds, and a shot of what each window shows |
 | what a setting costs | `abperf "<setting>" "<setting>" ... [--rounds N] [--spot S \| --at --face]`: p50/p99 under each console setting inside one session, the others' cvars put back before each, judged against the first within each round; separate launches drift 30% |
 | GPU ms per pass | `gl-timers` (GL only; check `renderer-info` first; no timer queries reads as zeros) |
 | where the main thread's time goes | `sample --port P [--seconds N] [--stacks]`: on Windows the engine samples itself; `--stacks` adds each function's inclusive share, which is how a frame waiting in `AcquireNextImage` or the walk's share shows |
@@ -87,7 +89,7 @@ Checks against GL, each deriving beside it every frame and comparing bit for bit
 prints what differed: `fua_vis_check 1` / `fua_vis_report` (the walks, the sky, portal views, and the
 player walk's own time), `fua_sprite_check 1` / `fua_sprite_report` (sprites and models),
 `fua_psprite_check 1` / `fua_psprite_report` (the weapon), `fua_shading_check 1` / `fua_shading_report`.
-`fua_sprites_own 0` and `fua_psprites_own 0` hand them back to GL.
+Any check on keeps GL drawing (`ComputeFrameRoute`), so a frame time taken with one on includes GL's.
 
 Console diagnostics worth knowing (run them with `ui exec`): `fua_mesh_blank` (empties the level mesh, so whatever still draws the world is not reading it), `fua_shading_check 1` then `fua_shading_report` (every surface the light model shades, compared bit for bit against GL's own `gl_SetColor`/`gl_SetFog`; read the count from the engine log), `fua_gl_viewstate` (the next main view's GL viewport, framebuffer, vertex array and GL errors before and after the world; a window showing 2D but no world), `fua_2d_list` (the 2D draws covering a quarter of the screen or more), `fua_dg_blendorder [z]` (the translucent
 pass in draw order with plane layers, or every draw spanning height z), `fua_models` (model draws and

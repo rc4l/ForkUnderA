@@ -3,8 +3,6 @@
 
 #include "features/levelmesh/flatmesh.h"
 #include "features/levelmesh/captureshading.h"   // [rc4l] CaptureShading, the light model for a GL colormap
-#include "features/sprites/spritebuild.h"   // [rc4l] NoteGLSprite, for fua_sprite_check
-#include "features/sprites/computation/spritestyle_compute.h"   // [rc4l] kHwNoAlphaTest, GLSprite's hw_styleflags
 #include "features/hwrender/computation/lightside_compute.h"   // the plane bake, tested off-engine
 #include "features/levelmesh/staticmesh.h"
 #include "features/levelmesh/modelmesh.h"
@@ -20,7 +18,7 @@
 
 #include "r_defs.h"
 #include "r_state.h"
-#include "features/stackportals/stackportals.h"   // [rc4l] FPortal, portals, gl_BuildPortalCoverage
+#include "features/stackportals/stackportals.h"   // [rc4l] FPortal
 #include "features/surfaces/sectorplane.h"   // [rc4l] GLSectorPlane
 #include "features/materials/materials.h"
 #include "tarray.h"
@@ -33,11 +31,8 @@
 #include "r_utility.h"   // R_PointInSubsector, for PieceStackId
 #include "d_player.h"    // players, for the viewer a mirror walk draws
 #include "doomstat.h"    // consoleplayer
-#include "features/hwrender/hud2d.h"   // StandaloneActive
 
 
-// [rc4l] Print every new flat-mesh key. See RegisterFlatSubsector: a key that misses when it should
-// have hit is a surface about to be stored, and drawn, twice.
 CVAR(Bool, fua_flat_keylog, false, 0)
 
 // [rc4l] At FILE scope, not inside the namespace: p_mobj.cpp externs it to say whether a missile
@@ -59,8 +54,7 @@ static const int kMaxFanVertices = 128;
 
 namespace zx { namespace levelmesh {
 
-// How often the flat cache answered without rebuilding anything. Printed by fua_flatcache_stats,
-// because a cache nobody can see the hit rate of is a cache nobody can tell has stopped working.
+// [rc4l] How often the flat cache answered without rebuilding, printed by fua_flatcache_stats so a cache that stopped working shows.
 static int g_flatHits = 0, g_flatRebuilds = 0, g_flatReshades = 0, g_flatRescrolls = 0;
 void GetFlatCacheStats(int &hits, int &rebuilds) { hits = g_flatHits; rebuilds = g_flatRebuilds; }
 int GetFlatReshades() { return g_flatReshades; }
@@ -473,14 +467,14 @@ static void BakeOnePlane(subsector_t *sub, sector_t *model, int whichPlane, bool
 	StoreFlat(f, sub, ceiling);
 }
 
-void ApplyFullbright(const void *mat, FColormap &cm, int &lightLevel)
+void ApplyFullbright(zx::materials::MaterialRef mat, FColormap &cm, int &lightLevel)
 {
-	if (mat == NULL || !zx::materials::MaterialTexture(mat)->isFullbright()) return;
+	if (!zx::materials::MaterialIsFullbright(mat)) return;
 	cm.LightColor.r = cm.LightColor.g = cm.LightColor.b = 0xff;
 	lightLevel = 255;
 }
 
-void PlaneUVFor(const GLSectorPlane &plane, const void *mat, PlaneUVTransform &out)
+void PlaneUVFor(const GLSectorPlane &plane, zx::materials::MaterialRef mat, PlaneUVTransform &out)
 {
 	out = ComputeIdentityPlaneUV();
 	out.xoffs = FIXED2FLOAT(plane.xoffs);
@@ -492,7 +486,7 @@ void PlaneUVFor(const GLSectorPlane &plane, const void *mat, PlaneUVTransform &o
 	zx::materials::MaterialRenderSize(mat, w, h);
 	out.texWidth = (float)w;
 	out.texHeight = (float)h;
-	out.hasCanvas = zx::materials::MaterialTexture(mat)->bHasCanvas;
+	out.hasCanvas = zx::materials::MaterialIsCanvas(mat);
 }
 
 // One face of a 3D floor, by GLFlat::SetFrom3DFloor's rule with the viewer test taken out.
@@ -682,10 +676,8 @@ void RebakeFakesModelledOn(int sector)
 
 // [rc4l] One sector's planes again, because it moved.
 //
-// The flat cache notices a plane has changed by stamping what it was made of and comparing -- which
-// works because RegisterFlatSubsector is called every frame by GL's walk. With the walk gone nothing
-// asks, and a lift's floor keeps the height it was baked at while the player rides it. Walls already
-// had this: InvalidateMovedSectors re-bakes their segs from the map for exactly the same reason.
+// Nothing re-asks the flat cache each frame, so a lift's floor would keep the height it was baked at
+// while the player rides it; InvalidateMovedSectors re-bakes walls from the map for the same reason.
 int BakeFlatsForSector(int sectorIndex)
 {
 	if (sectors == NULL || sectorIndex < 0 || sectorIndex >= numsectors) return 0;
@@ -1158,42 +1150,20 @@ bool DynamicCaptureActive() { return PlayerWalkActive() || StackCaptureSlot() >=
 
 
 void RegisterDecal(const MeshVertex *quad, const void *material, int translation,
-                   bool shadow, bool additive, float alpha,
+                   int blendMode, float alpha,
                    int lightlevel, int rel, const FColormap &colormap,
                    bool redToAlpha, unsigned int alphaColor,
                    float sortX, float sortY, float sortZ, const float *dynLight)
 {
-	if (quad == NULL) return;
+	if (!DynamicCaptureActive()) return;   // [rc4l] only a walk the backend draws again
+	if (quad == NULL || material == NULL) return;
 
 	// GL draws the decal as a 4-vertex TRIANGLE FAN, so the triangles are (0,1,2) and (0,2,3) --
 	// not the strip order the sprite path uses, which would fold the quad in half.
 	MeshVertex tris[6];
 	tris[0] = quad[0]; tris[1] = quad[1]; tris[2] = quad[2];
 	tris[3] = quad[0]; tris[4] = quad[2]; tris[5] = quad[3];
-
-	RegisterDecalTriangles(tris, 6, material, translation, shadow, additive, alpha,
-		lightlevel, rel, colormap, redToAlpha, alphaColor, sortX, sortY, sortZ, dynLight);
-}
-
-// [rc4l] The same piece, for a mark that is not a quad.
-//
-// A projected decal is whatever geometry fell inside its box, clipped -- three vertices or thirty,
-// spread over a wall and the floor under it. Everything below the vertex list is identical to the
-// glued quad's, and it stayed identical by being one function rather than two that drift.
-// [rc4l] Say what each decal was captured AS, in the order it was captured.
-//
-// Two decals of a `lowerdecal` pair land at the same point and have to composite in the order GL
-// drew them. When they come out wrong there is nothing on screen to say which of the two it is,
-// what blend each took, or whether they even reached the backend -- so this prints it.
-
-void RegisterDecalTriangles(const MeshVertex *tris, int count, const void *material, int translation,
-                            bool shadow, bool additive, float alpha,
-                            int lightlevel, int rel, const FColormap &colormap,
-                            bool redToAlpha, unsigned int alphaColor,
-                            float sortX, float sortY, float sortZ, const float *dynLight)
-{
-	if (!DynamicCaptureActive()) return;   // [rc4l] see RegisterSprite
-	if (tris == NULL || count < 3 || material == NULL) return;
+	const int count = 6;
 
 	MeshPiece mp;
 	mp.range.offset = 0;
@@ -1221,7 +1191,7 @@ void RegisterDecalTriangles(const MeshVertex *tris, int count, const void *mater
 
 	mp.translation = translation;
 	mp.alpha = alpha;
-	mp.blendMode = ComputeStyleBlendMode(shadow, additive, alpha);
+	mp.blendMode = blendMode;
 	// [rc4l] Coplanar with the wall it is glued to, so it needs the depth bias GL gets from
 	// glPolygonOffset. See MeshPiece::depthBias.
 	mp.depthBias = true;
@@ -1267,7 +1237,7 @@ void RegisterDecalTriangles(const MeshVertex *tris, int count, const void *mater
 	// it back afterwards. Additive blending only ever brightens, so fogging one toward the sector's
 	// fade colour tints light that should simply get weaker with distance: in a fogged room a BFG's
 	// glow came out carrying the fog's colour in Vulkan and clean in GL.
-	if (additive) mp.fadeColor = 0;
+	if (blendMode == 2) mp.fadeColor = 0;
 
 	mp.sortX = sortX; mp.sortY = sortY; mp.sortZ = sortZ;
 

@@ -3,12 +3,10 @@
 
 #include "features/levelmesh/walldecals.h"
 #include "features/levelmesh/computation/walldecal_compute.h"
-#include "features/levelmesh/computation/flatmesh_compute.h"   // [rc4l] ComputeMidTextureTranslucent
 #include "features/levelmesh/flatmesh.h"                       // [rc4l] RegisterDecal
 #include "features/levelmesh/wallcache.h"                      // [rc4l] the bake's parts and bands
 #include "features/materials/materials.h"
-#include "features/sprites/spritebuild.h"                      // [rc4l] PointDynamicLight
-#include "features/hwrender/spriteview.h"                      // [rc4l] DynamicLightCount
+#include "features/sprites/spritebuild.h"                      // [rc4l] PointDynamicLight, StyleBlendMode
 
 #include "a_sharedglobal.h"   // [rc4l] DBaseDecal
 #include "actor.h"            // [rc4l] RF_*
@@ -25,6 +23,9 @@ EXTERN_CVAR(Bool, gl_light_sprites)
 
 namespace zx { namespace levelmesh {
 
+static_assert((RF_RELUPPER >> 8) == kDecalRelUpper && (RF_RELLOWER >> 8) == kDecalRelLower && (RF_RELMID >> 8) == kDecalRelMid,
+              "RF_REL* must match walldecal_compute.h");
+
 namespace {
 
 // [rc4l] The planes' texture heights a decal on seg's part hangs from, the front plane a 3D floor's model sector for a mid-clipped one, as DrawDecal picks them.
@@ -34,7 +35,7 @@ DecalHeightIn HeightIn(const DBaseDecal *decal, const seg_t *seg, int part)
 	const sector_t *back = seg->backsector;
 	DecalHeightIn in;
 	in.rel = int((decal->RenderFlags & RF_RELMASK) >> 8);
-	in.part = part == kPartUpper ? kDecalPartUpper : part == kPartLower ? kDecalPartLower : kDecalPartMiddle;
+	in.part = part;
 	in.unpegTop = (seg->linedef->flags & ML_DONTPEGTOP) != 0;
 	in.unpegBottom = (seg->linedef->flags & ML_DONTPEGBOTTOM) != 0;
 	in.z = FIXED2DBL(decal->Z);
@@ -81,15 +82,15 @@ void BuildDecal(DBaseDecal *decal, side_t *side, const seg_t *seg, int part, con
 	if (!ComputeWallDecalQuad(wall, pic, dv, top)) return;
 
 	const bool fullbright = (decal->RenderFlags & RF_FULLBRIGHT) != 0;
-	const int light = fullbright ? 255 : band.lightLevel;
-	const int rel = fullbright ? 0 : dl.relLight + getExtraLight();
+	int light, rel;
+	ComputeDecalLight(fullbright, band.lightLevel, dl.relLight + getExtraLight(), light, rel);
 	FColormap cm = partColormap;
 	if (band.lightEntry >= 0) cm.CopyLightColor(band.lightFrom);
 	if (gl_fixedcolormap) cm.Clear();
 	if (glset.nocoloredspritelighting) cm.Decolorize();
 
 	float dyn[3];
-	const bool lit = gl_lights && zx::hwrender::SpriteView().DynamicLightCount() && !gl_fixedcolormap && gl_light_sprites;
+	const bool lit = zx::sprites::SpritesTakeDynamicLight();
 	if (lit)
 	{
 		fixed_t x, y;
@@ -100,8 +101,7 @@ void BuildDecal(DBaseDecal *decal, side_t *side, const seg_t *seg, int part, con
 	for (int i = 0; i < 4; i++) quad[i].Set(dv[i].x, dv[i].z, dv[i].y, dv[i].u, dv[i].v);
 	const FRenderStyle &style = decal->RenderStyle;
 	const bool redAlpha = (style.Flags & STYLEF_RedIsAlpha) != 0;
-	RegisterDecal(quad, mat, decal->Translation, style.BlendOp == STYLEOP_Shadow,
-		style.BlendOp == STYLEOP_Add && style.DestAlpha == STYLEALPHA_One, FIXED2FLOAT(decal->Alpha),
+	RegisterDecal(quad, mat, decal->Translation, zx::sprites::StyleBlendMode(style, FIXED2FLOAT(decal->Alpha)), FIXED2FLOAT(decal->Alpha),
 		light, rel, cm, redAlpha, redAlpha ? (unsigned int)decal->AlphaColor : 0xffffffu,
 		(quad[0].x + quad[3].x) * 0.5f, (quad[0].z + quad[3].z) * 0.5f, (quad[0].y + quad[3].y) * 0.5f, lit ? dyn : NULL);
 }
@@ -131,13 +131,9 @@ void BuildWallDecals(const int *sideList, int count)
 			if (!DerivedPart(seg, part, d, twoSidedMiddle) || d.flood) continue;
 			if (twoSidedMiddle)
 			{
-				const line_t *ln = seg->linedef;
-				const float lineAlpha = FIXED2FLOAT(ln->Alpha);
-				const bool additive = lineAlpha != 0.f && (ln->flags & ML_ADDTRANS) != 0;
 				zx::materials::MaterialInfo info;
 				const bool masked = zx::materials::DescribeMaterial(d.material, info) && info.masked;
-				if (!ComputeDecalsOnPart(true, ComputeMidTextureTranslucent(lineAlpha, additive, zx::materials::MaterialTransparent(d.material)), masked))
-					continue;
+				if (!ComputeDecalsOnPart(true, LineMidBlend(seg->linedef, d.material).translucent, masked)) continue;
 			}
 			PartBand bands[kBandsPerPart];
 			const int n = DerivedPartBands(seg, d, dl, bands);

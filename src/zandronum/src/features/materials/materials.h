@@ -67,6 +67,9 @@ bool MaterialTransparent(MaterialRef m);
 MaterialRef MaterialForTextureId(FTextureID id, bool translate = true);
 // [rc4l] The engine texture a material draws, NULL for none.
 FTexture *MaterialTexture(MaterialRef m);
+// [rc4l] Whether a material is a camera texture, and whether it is drawn fullbright; false for none.
+bool MaterialIsCanvas(MaterialRef m);
+bool MaterialIsFullbright(MaterialRef m);
 // [rc4l] The size GL draws a material at, and the size of the texture it lives in, which a canvas rounds to the hardware's rule.
 void MaterialRenderSize(MaterialRef m, int &width, int &height);
 void MaterialStoredSize(MaterialRef m, int &width, int &height);

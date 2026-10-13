@@ -11,6 +11,8 @@ struct PClass;
 struct FState;
 struct FSpriteModelFrame;
 
+struct FModelSurface;
+
 namespace zx { namespace sprites {
 
 struct ModelPose;
@@ -20,6 +22,9 @@ void ModelPoseFor(const AActor *actor, const FSpriteModelFrame *smf, float x, fl
 
 // [rc4l] The frame a model blends toward and how far, as gl_RenderFrameModels finds them; NULL when it does not blend.
 FSpriteModelFrame *NextModelFrame(const FSpriteModelFrame *smf, const FState *curState, int curTics, const PClass *ti, double &inter);
+
+// [rc4l] Model slot `i` of frame `smf` as GL draws it: its surfaces toward `smfNext` where their frames differ, how many, and in `blend` how far between.
+int ModelSlotSurfaces(const FSpriteModelFrame *smf, int i, const FSpriteModelFrame *smfNext, double inter, FModelSurface *surfs, float &blend);
 
 // [rc4l] Every surface of a model's frame into the model capture already begun, blended toward the next frame: gl_RenderFrameModels without GL.
 void CaptureModelFrames(const FSpriteModelFrame *smf, const FState *curState, int curTics, const PClass *ti, int translation);

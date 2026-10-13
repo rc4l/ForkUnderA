@@ -42,13 +42,6 @@ int ComputeWallBlendMode(bool inTranslucentList, bool additive, float alpha)
 	return ComputeSurfaceBlendMode(false, alpha);
 }
 
-int ComputeStyleBlendMode(bool shadow, bool additive, float alpha)
-{
-	if (shadow) return 3;
-	if (additive) return 2;
-	return ComputeSurfaceBlendMode(false, alpha);
-}
-
 float ComputeTriangleWindingZ(float ax, float ay, float bx, float by, float cx, float cy)
 {
 	return (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
@@ -255,6 +248,16 @@ bool ComputeMidTextureTranslucent(float lineAlpha, bool additive, bool textureTr
 {
 	if (textureTransparent) return true;
 	return lineAlpha != 0.f && (additive || lineAlpha < 1.f);
+}
+
+MidTextureBlend ComputeMidTextureBlend(float lineAlpha, bool addTrans, bool textureTransparent)
+{
+	MidTextureBlend b;
+	b.additive = lineAlpha != 0.f && addTrans;
+	b.translucent = ComputeMidTextureTranslucent(lineAlpha, b.additive, textureTransparent);
+	b.alpha = lineAlpha != 0.f ? lineAlpha : 1.f;
+	b.blendMode = ComputeWallBlendMode(b.translucent, b.additive, b.alpha);
+	return b;
 }
 
 float ComputePlaneAlpha(bool stacked, float stackAlpha, float reflect)

@@ -84,8 +84,8 @@
 #include "features/draw2d/screenblend.h"   // [rc4l] the screen's tint, worked out without GL
 #include "features/viewsetup/computation/viewsetup_compute.h"
 #include "features/fua-caching/fua_caching.h"
-#include "features/frame/levelrenderer.h"   // [rc4l] FLevelRenderer, RenderBackendCamera
-#include "features/frame/playerview.h"      // [rc4l] BeginPlayerFrame, BeginViewpoint, EndViewpoint, MarkMapSection
+#include "features/frame/levelrenderer.h"   // [rc4l] FLevelRenderer
+#include "features/frame/playerview.h"      // [rc4l] BeginViewpoint, EndViewpoint, MarkMapSection
 #include "mcp_glperf.h" // [rc4l] GPU render-pass timer anchors (no-op unless FUA_MCP_BRIDGE)
 
 //==========================================================================
@@ -545,12 +545,7 @@ void FGLRenderer::DrawScene(bool toscreen)
 {
 	static int recursion=0;
 	// [rc4l] Which scene a check against GL is told about: this one is outermost only when nothing encloses it.
-	struct SceneNest
-	{
-		bool on;
-		SceneNest() : on(gl_observer != NULL) { if (on) gl_observer->EnterScene(); }
-		~SceneNest() { if (on && gl_observer != NULL) gl_observer->LeaveScene(); }
-	} nest;
+	const FGLObservedScene nest;
 
 	CreateScene();
 	GLRenderer->mCurrentPortal = NULL;	// this must be reset before any portal recursion takes place.

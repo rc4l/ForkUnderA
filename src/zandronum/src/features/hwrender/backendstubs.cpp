@@ -10,8 +10,6 @@
 #include "c_dispatch.h"
 #include "c_console.h"
 
-// [rc4l] Read by the standalone frame and the -vulkan launch, which neither runs here.
-
 CCMD( fua_diligent_scene ) { Printf( "This build has no Diligent backend (-DFUA_DILIGENT=ON).\n" ); }
 CCMD( fua_diligent_bench ) { Printf( "This build has no Diligent backend (-DFUA_DILIGENT=ON).\n" ); }
 CCMD( fua_diligent_scale ) { Printf( "This build has no Diligent backend (-DFUA_DILIGENT=ON).\n" ); }
@@ -21,9 +19,11 @@ class DFrameBuffer;
 namespace zx { namespace hwrender {
 
 bool BackendPresenting() { return false; }
-bool BackendDrawsFrames() { return false; }
-bool BackendCoversGL() { return false; }
-bool GLViewWanted() { return true; }
+zx::frame::FrameRoute FrameRouteNow(bool hasGL, bool hasBackend)
+{
+	const zx::frame::FrameRouteIn in = { hasGL, hasBackend, false, false, false, true, true, false };
+	return zx::frame::ComputeFrameRoute(in);
+}
 bool StandaloneActive() { return false; }
 const float *SceneMVP() { return NULL; }
 void LiveFrame() {}

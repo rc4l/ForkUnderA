@@ -609,7 +609,7 @@ CCMD( fua_mesh_dupes )
 		if ( p.range.count == 0 ) continue;
 		// [rc4l] A SQUASHED piece is not a duplicate, however identical it looks.
 		//
-		// BakeSeg collapses a piece a seg no longer produces by rewriting its vertices to all zeros --
+		// BakeSegFromMap collapses a piece a seg no longer produces by rewriting its vertices to all zeros --
 		// it cannot free the range, so it makes it rasterise nothing. Every squashed piece is therefore
 		// byte-identical to every other, and hashing the vertex data counts them all as duplicates of
 		// each other. They draw nothing and fight nothing; counting them made this number useless and
@@ -968,8 +968,7 @@ CCMD( fua_look )
 
 	if ( hits == 0 )
 	{
-		Printf( "  mesh: NOTHING along that ray -- the surface is not baked. Walk to it, or it is "
-				"refused by the wall cache (fua_wallcache_census).\n" );
+		Printf( "  mesh: NOTHING along that ray -- the surface is not baked; fua_surface_mapcover says what the map bake left out.\n" );
 		return;
 	}
 

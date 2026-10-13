@@ -508,11 +508,6 @@ void gl_SetFog(int lightlevel, int rellight, const FColormap *cmap, bool isaddit
 }
 
 
-zx::levelmesh::ShadingEnv gl_ShadingEnv()
-{
-	return RenderShadingEnv(GLPortal::inskybox);
-}
-
 //==========================================================================
 //
 // For testing sky fog sheets

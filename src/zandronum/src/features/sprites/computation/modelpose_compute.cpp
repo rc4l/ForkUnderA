@@ -160,4 +160,9 @@ double ComputeModelInter(int stateTics, int ticsLeft, float ticFraction, bool do
 	return inter;
 }
 
+float ComputeModelSlotBlend(bool framesDiffer, bool interpolates, double inter)
+{
+	return framesDiffer && interpolates ? (float)inter : 0.f;
+}
+
 }} // namespace zx::sprites

@@ -4,7 +4,7 @@
 #include "gl/scene/gl_drawinfo.h"
 #include "gl/renderer/gl_renderer.h"   // in_area, area_default
 #include "gl/textures/gl_material.h"
-#include "features/hwrender/computation/walllight_compute.h"   // kNoWallLightIndex
+#include "features/hwrender/computation/walllight_compute.h"   // [rc4l] kNoWallLightIndex
 
 #include "c_cvars.h"
 #include "c_dispatch.h"
@@ -40,20 +40,7 @@ int  g_hits = 0, g_misses = 0, g_uncacheableHits = 0, g_animRefresh = 0;
 //
 // ForgetFrameState
 //
-// [rc4l] The fields of a wall that describe THIS FRAME rather than the wall.
-//
-// A cached wall is stored once and replayed for the life of the level, which is only sound for
-// values that describe the world. Everything computed per frame -- indices into per-frame arrays,
-// distances from wherever the camera stood, pointers into per-frame pools -- means something
-// different by the next frame, and a replayed wall carrying one reads data that has since been
-// overwritten. dynlightindex once kept a dead plasma bolt lighting a wall.
-//
-// WORLD, and therefore cached: glseg, vertexes, ztop/zbottom, the four texcoords, alpha, gltexture
-// (re-resolved on replay, so animation keeps running), Colormap, RenderStyle, lightlevel, type,
-// flags, rellight, the glow colours, topflat/bottomflat, topplane/bottomplane, zceil/zfloor, seg, sub.
-//
-// FRAME, and therefore cleared: dynlightindex, viewdistance, firstwall and numwalls, and the
-// skybox/sky/horizon/portal/planemirror union.
+// [rc4l] Clears what describes this frame rather than the wall (dynlightindex, viewdistance, firstwall, numwalls, the skybox/sky/horizon/portal union), since a replayed wall would read data since overwritten.
 //
 //==========================================================================
 
@@ -107,11 +94,6 @@ void gl_WallCacheFree()
 	g_uncacheable.Clear();
 	g_segFate.Clear();
 	g_captureSeg = -1;
-}
-
-void gl_WallCacheInvalidateAll()
-{
-	for (unsigned i = 0; i < g_cache.Size(); i++) g_cache[i].filled = false;
 }
 
 void gl_WallCacheBuildStamp(const seg_t *seg, const sector_t *frontsector, const sector_t *backsector, zx::levelmesh::WallCacheStamp &out)
@@ -268,7 +250,7 @@ const char *gl_WallCacheFateName(int fate)
 	return (fate >= GLSEG_UNSEEN && fate <= GLSEG_OTHER) ? kName[fate] : "?";
 }
 
-CCMD( gl_wallcache_stats )
+CCMD( fua_gl_wallcache_stats )
 {
 	const int total = g_hits + g_misses + g_uncacheableHits;
 	Printf( "wallcache since last reset: %d hits, %d misses, %d uncacheable (%d total)\n", g_hits, g_misses, g_uncacheableHits, total );
@@ -278,13 +260,13 @@ CCMD( gl_wallcache_stats )
 	g_hits = g_misses = g_uncacheableHits = g_animRefresh = 0;
 }
 
-CCMD( gl_wallcache_census )
+CCMD( fua_gl_wallcache_census )
 {
 	int fate[GLSEG_OTHER + 1] = { 0 };
 	int drawable = 0;
 	for ( int i = 0; i < numsegs; i++ )
 	{
-		if ( segs[i].sidedef == NULL || segs[i].linedef == NULL ) continue;   // a miniseg
+		if ( segs[i].sidedef == NULL || segs[i].linedef == NULL ) continue;   // [rc4l] a miniseg
 		drawable++;
 		fate[gl_WallCacheSegFate( i )]++;
 	}

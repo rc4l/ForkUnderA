@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 rc4l
 //
-// [rc4l] The level's walls baked from the map, per seg: the mesh ranges each seg owns, what each took
-// its light from, and the sweep that re-bakes what moved or relit. GL's own replay cache of its GLWalls
-// is gl/scene/gl_wallcache.h.
+// [rc4l] The level's walls baked from the map, per seg: the ranges each owns, what each took its light from, and the sweep that re-bakes what moved or relit.
 
 #ifndef ZX_WALLCACHE_H
 #define ZX_WALLCACHE_H
@@ -11,9 +9,13 @@
 #include "features/levelmesh/staticmesh.h"
 #include "features/surfaces/surfacebuild.h"                 // [rc4l] DerivedWallSpan, DerivedWallLight
 #include "features/surfaces/computation/wallbands_compute.h"   // [rc4l] WallBand
+#include "features/levelmesh/computation/wallcache_compute.h"   // [rc4l] kPart*
+#include "features/levelmesh/computation/flatmesh_compute.h"    // [rc4l] MidTextureBlend
+#include "features/materials/materials.h"                       // [rc4l] MaterialRef
 #include "tarray.h"
 
 struct seg_t;
+struct line_t;
 struct sector_t;
 
 class AActor;
@@ -31,8 +33,7 @@ struct CachedWallPiece
 	MeshRange range;
 };
 
-// [rc4l] Bake one seg from the MAP, with no GLWall involved -- see the definition for what it costs
-// and what it cannot do yet.
+// [rc4l] Bake one seg from the map with no GLWall, each part and band in a fixed slot so a re-bake reuses the same mesh range.
 int BakeSegFromMap(int segIndex);
 
 // How many vertices the mesh holds for one part of one seg (0 upper, 1 lower, 2 middle).
@@ -59,11 +60,11 @@ int DerivedPartBands(const seg_t *seg, const zx::surfaces::DerivedWallSpan &d, c
 // [rc4l] The seg that bakes sidedef `side`'s walls, or -1.
 int SideOwnerSeg(int side);
 
-// [rc4l] The parts of a wall the bake builds, in its slot order.
-enum { kPartUpper, kPartLower, kPartMiddle, kWallParts };
-
 // [rc4l] Part `part` (kPart*) of seg as the bake derives it, false when the seg has none; `twoSidedMiddle` says the middle is a two-sided line's, which blends.
 bool DerivedPart(const seg_t *seg, int part, zx::surfaces::DerivedWallSpan &d, bool &twoSidedMiddle);
+
+// [rc4l] How a two-sided middle of `line` drawn with `mat` blends, as GL draws it.
+MidTextureBlend LineMidBlend(const line_t *line, zx::materials::MaterialRef mat);
 
 // [rc4l] Whether seg's line draws no wall of its own, as a horizon or a line mirror does.
 bool LineDrawsNoWall(const seg_t *seg);
@@ -78,7 +79,7 @@ struct SegCache
 	// that an open one does not, so re-baking can leave slots occupied in the mesh that nothing
 	// writes to any more. Those slots keep their old vertices and keep drawing -- the closed door
 	// stayed painted across the doorway while the GL view showed the room beyond it. Knowing the
-	// previous count is what lets BakeSeg collapse the abandoned ones.
+	// previous count is what lets BakeSegFromMap collapse the abandoned ones.
 	int             bakedCount;
 
 	// [rc4l] What each baked slot took its LIGHT from, so a light change need not re-derive the wall.
@@ -101,7 +102,7 @@ struct SegCache
 	//
 	// MeshRange is a POD and this constructor used to skip the array entirely, which is invisible on
 	// the first level and wrong on every one after it: TArray reuses its heap block, so a new level's
-	// segs came up holding the PREVIOUS level's vertex ranges. BakeSeg then saw a nonzero count, took
+	// segs came up holding the PREVIOUS level's vertex ranges. BakeSegFromMap then saw a nonzero count, took
 	// MeshStore's reuse-in-place path, and wrote the new wall over whatever legitimately occupied that
 	// offset in the new arena -- while never allocating space of its own. The map came up with walls
 	// missing and geometry smeared across the ones that survived, and only after a map CHANGE:
@@ -185,9 +186,6 @@ void InvalidateMovedSectors(const WalkedThisFrame *walked = NULL);
 
 // [rc4l] Re-derives every seg on a height transfer's sector, whose heights and light follow the view area (RefreshTransferArea).
 void RebakeTransferSegs();
-
-// [rc4l] Sectors that moved the last time InvalidateMovedSectors ran.
-int SectorsMovedLastFrame();
 
 // One seg's cache state, for the fua_line_mesh dump.
 void GetSegMeshInfo(int segIndex, int &pieces, int &baked);

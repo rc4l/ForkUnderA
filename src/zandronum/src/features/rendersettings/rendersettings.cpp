@@ -1,6 +1,7 @@
 // [rc4l] The render settings' storage, moved from GL's files so a launch or build without GL has them too.
 
 #include "features/rendersettings/rendersettings.h"
+#include "features/rendersettings/computation/forcedvideo_compute.h"
 #include "features/levelmesh/computation/shading_compute.h"   // [rc4l] ShadingEnv
 #include "doomstat.h"   // [rc4l] zadmflags
 #include "g_level.h"    // [rc4l] level.flags
@@ -18,10 +19,16 @@ TArray<BYTE> currentmapsection;
 
 CVAR(Int, gl_weaponlight, 8, CVAR_ARCHIVE);
 
-// [rc4l] OVERRIDE_INT_GL_CVAR_IF_NECESSARY: an int setting at its default when the server forces video defaults.
+// [rc4l] Whether the server forces video defaults (ZADF_FORCE_VIDEO_DEFAULTS).
+static bool VideoDefaultsForced()
+{
+	return (zadmflags & ZADF_FORCE_VIDEO_DEFAULTS) != 0;
+}
+
+// [rc4l] OVERRIDE_INT_GL_CVAR_IF_NECESSARY: an int setting as read under the server's forced defaults.
 static int ServerForcedInt(FIntCVar &cvar)
 {
-	return (zadmflags & ZADF_FORCE_VIDEO_DEFAULTS) ? cvar.GetGenericRepDefault(CVAR_Int).Int : *cvar;
+	return zx::rendersettings::ComputeForcedVideoInt(VideoDefaultsForced(), *cvar, cvar.GetGenericRepDefault(CVAR_Int).Int);
 }
 
 float distfogtable[2][256];	// light to fog conversion table for black fog
@@ -86,7 +93,7 @@ zx::levelmesh::ShadingEnv RenderShadingEnv(bool inSkybox)
 	const int gl_light_ambient = ServerForcedInt(::gl_light_ambient);
 	const int gl_distfog = ServerForcedInt(::gl_distfog);
 	// [rc4l] As OVERRIDE_FOGMODE_IF_NECESSARY, forced defaults never turn fog off.
-	const int gl_fogmode = ((zadmflags & ZADF_FORCE_VIDEO_DEFAULTS) && ::gl_fogmode == 0) ? 1 : *::gl_fogmode;
+	const int gl_fogmode = zx::rendersettings::ComputeForcedFogMode(VideoDefaultsForced(), ::gl_fogmode);
 	zx::levelmesh::ShadingEnv e;
 	e.lightMode = glset.lightmode;
 	e.ambient = gl_light_ambient;

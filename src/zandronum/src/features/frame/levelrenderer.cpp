@@ -81,7 +81,7 @@ int FLevelRenderer::GetMaxViewPitch(bool down)
 
 void FLevelRenderer::Init() { gl_ParseDefs(); }
 
-void RenderBackendCamera(const void *mat, AActor *viewpoint, int fov)
+void RenderBackendCamera(zx::materials::MaterialRef mat, AActor *viewpoint, int fov)
 {
 	if (mat == NULL || viewpoint == NULL) return;
 	int width, height, storedW, storedH;

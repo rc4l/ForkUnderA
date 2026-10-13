@@ -11,7 +11,7 @@
 #include "features/sprites/computation/spritequad_compute.h"
 #include "features/sprites/computation/spritelight_compute.h"
 #include "features/sprites/computation/spriteclip_compute.h"
-#include "features/sprites/computation/spriteframe_compute.h"
+#include "features/sprites/spriteframe.h"   // [rc4l] gl_GetSpriteFrame
 #include "features/sprites/computation/modelpose_compute.h"
 #include "features/sprites/modelbuild.h"
 #include "features/sprite-roll/computation/spriteroll_compute.h"
@@ -19,7 +19,7 @@
 #include "features/levelmesh/flatmesh.h"            // [rc4l] the walk the stream's pieces belong to
 #include "features/levelmesh/captureshading.h"
 #include "features/levelmesh/modelmesh.h"           // [rc4l] a derived model's capture
-#include "features/levelmesh/computation/flatmesh_compute.h"   // [rc4l] ComputeStyleBlendMode, a model's blend as GL's capture takes it
+#include "features/levelmesh/computation/flatmesh_compute.h"
 #include "features/hwrender/spriteview.h"
 #include "features/materials/materials.h"
 
@@ -102,6 +102,16 @@ FRenderStyle RenderStyleOf(const SpriteStyle &s)
 	r.DestAlpha = (BYTE)s.destAlpha;
 	r.Flags = (BYTE)s.flags;
 	return r;
+}
+
+int StyleBlendMode(const FRenderStyle &s, float alpha)
+{
+	return ComputeSpriteBlendMode(s.BlendOp, s.DestAlpha, alpha);
+}
+
+bool SpritesTakeDynamicLight()
+{
+	return gl_lights && zx::hwrender::SpriteView().DynamicLightCount() && !gl_fixedcolormap && gl_light_sprites;
 }
 
 // [rc4l] The lower edge of each light list entry at the actor, as SplitSprite and SetSpriteColor measure it.
@@ -297,8 +307,7 @@ static void DrawFade(const SpriteStyleOut &so, int lightlevel, FColormap &cm)
 static void DrawLight(AActor *thing, const Look &l, float dyn[3])
 {
 	dyn[0] = dyn[1] = dyn[2] = 0.f;
-	if (l.so.style.blendOp != kOpShadow && gl_lights && zx::hwrender::SpriteView().DynamicLightCount() && !gl_fixedcolormap && !l.fullbright &&
-	    gl_light_sprites) ActorLight(thing, dyn);
+	if (l.so.style.blendOp != kOpShadow && !l.fullbright && SpritesTakeDynamicLight()) ActorLight(thing, dyn);
 }
 
 // [rc4l] GL's ThingColor: a stencil actor's fill, else white.
@@ -325,8 +334,7 @@ static void DeriveModel(AActor *thing, const Subject &s, const Look &l, bool che
 	DrawLight(thing, l, dyn);
 	MeshPiece look;
 	zx::levelmesh::ModelPieceLook(lightlevel, l.fullbright ? 0 : getExtraLight(), cm, l.fullbright, dyn, ThingColorOf(thing).d, l.so.trans,
-		zx::levelmesh::ComputeStyleBlendMode(l.so.style.blendOp == kOpShadow, l.so.style.blendOp == kOpAdd && l.so.style.destAlpha == kAlphaOne,
-			l.so.trans), s.x, s.y, s.z, look);
+		ComputeSpriteBlendMode(l.so.style.blendOp, l.so.style.destAlpha, l.so.trans), s.x, s.y, s.z, look);
 
 	ModelPose pose;
 	ModelPoseFor(thing, s.model, s.x, s.y, s.z, pose);
@@ -337,7 +345,7 @@ static void DeriveModel(AActor *thing, const Subject &s, const Look &l, bool che
 	zx::levelmesh::ModelCaptureEnd();
 }
 
-// [rc4l] Derive an actor's sprite as GLSprite::Process, Draw and RegisterSprite do: the pieces drawn, 0 for none; on a worker thread (`lane`), -1 when its material is not made yet, which only the game thread may do.
+// [rc4l] Derive an actor's sprite as GLSprite::Process and Draw do: the pieces drawn, 0 for none; on a worker thread (`lane`), -1 when its material is not made yet, which only the game thread may do.
 static int DeriveSprite(AActor *thing, const Subject &s, SpritePiece *out, int max, bool lane = false)
 {
 	const zx::hwrender::SpriteViewProvider &view = zx::hwrender::SpriteView();
@@ -345,14 +353,9 @@ static int DeriveSprite(AActor *thing, const Subject &s, SpritePiece *out, int m
 	const fixed_t scaleX = s.scaleX, scaleY = s.scaleY, thingx = s.thingx, thingy = s.thingy, frac = s.frac;
 	const float x = s.x, y = s.y, z = s.z;
 
-	// [rc4l] The rotation the viewer sees, as gl_GetSpriteFrame picks it.
-	spritedef_t *sprdef = &::sprites[spritenum];
-	if (thing->frame >= sprdef->numframes) return 0;
-	const spriteframe_t *sprframe = &SpriteFrames[sprdef->spriteframes + thing->frame];
+	// [rc4l] The rotation the viewer sees, as GL picks it.
 	bool mirror = false;
-	const int rot = ComputeSpriteRotation(R_PointToAngle(thingx, thingy) - thing->angle,
-		sprframe->Texture[0] == sprframe->Texture[1], sprframe->Flip, mirror);
-	const FTextureID patch = sprframe->Texture[rot];
+	const FTextureID patch = gl_GetSpriteFrame(spritenum, thing->frame, -1, R_PointToAngle(thingx, thingy) - thing->angle, &mirror);
 	if (!patch.isValid()) return 0;
 	const int type = thing->renderflags & RF_SPRITETYPEMASK;
 	// [rc4l] A floor sprite leaves GL's quad unset, so it is not drawn here either.
@@ -485,7 +488,7 @@ static int DeriveSprite(AActor *thing, const Subject &s, SpritePiece *out, int m
 		ComputeSpriteCorners(be, xyDraw, roll, viewYaw, viewPitch, rollDegrees, c);
 
 		SpritePiece &p = out[drawn++];
-		// [rc4l] A fresh record per piece, as RegisterSprite makes one, and only for the pieces drawn.
+		// [rc4l] A fresh record per piece, and only for the pieces drawn.
 		p.piece = MeshPiece();
 		p.quad[0].Set(c[0][0], c[0][1], c[0][2], ul, b.vt);
 		p.quad[1].Set(c[1][0], c[1][1], c[1][2], ur, b.vt);
@@ -518,13 +521,13 @@ static int DeriveSprite(AActor *thing, const Subject &s, SpritePiece *out, int m
 	return drawn;
 }
 
-// [rc4l] Derive a particle as GLSprite::ProcessParticle, Draw and RegisterSprite do: false when it draws nothing, as an untextured square does not reach the backend.
+// [rc4l] Derive a particle as GLSprite::ProcessParticle and Draw do: false when it draws nothing, as an untextured square does not reach the backend.
 static bool DeriveParticle(particle_t *particle, sector_t *sector, SpritePiece &p)
 {
 	const zx::hwrender::SpriteViewProvider &view = zx::hwrender::SpriteView();
 	if (view.PortalRejectsPoint(particle->x, particle->y)) return false;
 	if (particle->trans == 0) return false;
-	// [rc4l] Only a round or smooth particle has a texture, and RegisterSprite takes no sprite without one.
+	// [rc4l] Only a round or smooth particle has a texture, and the backend draws no sprite without one.
 	FTexture *lump = gl_particles_style ? zx::materials::ParticleTexture(gl_particles_style) : NULL;
 	const void *material = lump != NULL ? zx::materials::MaterialForTexture(lump, true) : NULL;
 	if (material == NULL) return false;

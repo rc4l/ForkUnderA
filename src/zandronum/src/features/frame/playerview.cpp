@@ -30,7 +30,7 @@
 
 // [rc4l] GL's frame globals, which the derivation and the backend read, until they move out of gl/ (P5).
 #include "features/rendersettings/rendersettings.h"   // [rc4l] the render settings it reads
-#include "features/models/models.h"   // [rc4l] gl_FindModelFrame and the models
+#include "features/models/models.h"   // [rc4l] gl_IsHUDModelForPlayerAvailable
 
 EXTERN_CVAR(Bool, cl_capfps)
 extern long gl_frameCount;
@@ -46,7 +46,7 @@ AActor *g_lastCamera = NULL;
 
 void ForgetCamera() { g_lastCamera = NULL; }
 
-FrameLens BeginPlayerFrame(player_t *player)
+void BeginPlayerFrame(player_t *player)
 {
 	if (player->camera != g_lastCamera)
 	{
@@ -61,16 +61,11 @@ FrameLens BeginPlayerFrame(player_t *player)
 	// [rc4l] Camera textures the last frame used, each drawn by the renderer's RenderTextureView.
 	FCanvasTextureInfo::UpdateAll();
 
-	FrameLens lens;
-	lens.ratio = WidescreenRatio;
-	lens.fovRatio = zx::viewsetup::ComputeFovRatio(lens.ratio, AspectTallerThanWide(lens.ratio));
+	r_viewLens.ratio = WidescreenRatio;
+	r_viewLens.fovRatio = zx::viewsetup::ComputeFovRatio(r_viewLens.ratio, AspectTallerThanWide(r_viewLens.ratio));
 	gl_fixedcolormap = zx::viewsetup::FixedColormap(player);
 	// [rc4l] fov-interp: the sub-tic position of the zoom P_PlayerThink is about to take.
-	lens.fov = FOV_InterpolatedForFrame(player);
-	r_viewLens.fov = lens.fov;
-	r_viewLens.ratio = lens.ratio;
-	r_viewLens.fovRatio = lens.fovRatio;
-	return lens;
+	r_viewLens.fov = FOV_InterpolatedForFrame(player);
 }
 
 bool BeginViewpoint(AActor *camera, float fov, float fovRatio, bool mainview, bool toscreen)
@@ -105,12 +100,7 @@ void RenderPlayerView(player_t *player, int paletteBrightness)
 	zx::viewsetup::TurnView(viewangle);
 	sector_t *const sector = viewsector;
 	MarkMapSection();
-	if (zx::hwrender::StandaloneActive())
-	{
-		zx::levelmesh::EnterScene();
-		StandaloneScene();
-		zx::levelmesh::LeaveScene();
-	}
+	StandaloneScene();
 	// [rc4l] GL drew the frame first when a check was on, so its sprites are there to compare the derived ones against.
 	zx::sprites::CheckFrameSprites();
 

@@ -285,7 +285,7 @@ void SkyPlane(sector_t *sector, int plane, float x1, float y1, float x2, float y
 	FPortal *portal = sector->portals[plane];
 	if (portal != NULL)
 	{
-		// [rc4l] Only the player's walk's stacked walls are captured, as RegisterStackWall takes only its.
+		// [rc4l] Only the player's walk's stacked walls are captured, as AddStackWall takes only its.
 		if (g_spec.player) PushSkyEvent(out, SkyEvent::kStackWall, x1, y1, x2, y2, q.zbottom, q.ztop).portal = portal;
 		return;
 	}
@@ -1534,13 +1534,10 @@ void WalkStack(const PortalView &p, const WalkHooks *hooks)
 	// [rc4l] The view's actors, as GL's walk hands them to ProcessSprite, and its decals, captured into the view's slot while its map sections still stand.
 	if (hooks != NULL && p.slot >= 0)
 	{
-		zx::levelmesh::EnterScene();
-		{
-			const zx::levelmesh::StackWalk walk(origin);
-			if (hooks->sprite != NULL) PortalSprites(hooks->sprite, NULL);
-			HandDecals(hooks);
-		}
-		zx::levelmesh::LeaveScene();
+		const zx::levelmesh::SceneScope scene;
+		const zx::levelmesh::StackWalk walk(origin);
+		if (hooks->sprite != NULL) PortalSprites(hooks->sprite, NULL);
+		HandDecals(hooks);
 	}
 	const long long ex = viewx.Raw(), ey = viewy.Raw();
 	for (size_t i = skyboxes.size(); i-- > 0; )
@@ -1573,13 +1570,12 @@ void WalkMirror(const PortalView &p, const WalkHooks *hooks)
 	{
 		// [rc4l] Billboarded to the reflected view, as GL's SetupView turns its view vector for the mirror.
 		zx::viewsetup::TurnView(viewangle);
-		zx::levelmesh::EnterScene();
 		{
+			const zx::levelmesh::SceneScope scene;
 			const zx::levelmesh::MirrorWalk walk(int(line - lines));
 			if (hooks->sprite != NULL) PortalSprites(hooks->sprite, line);
 			HandDecals(hooks);
 		}
-		zx::levelmesh::LeaveScene();
 		zx::viewsetup::TurnView(sa);
 	}
 	const long long ex = viewx.Raw(), ey = viewy.Raw();

@@ -166,11 +166,8 @@ unsigned int FModelVertexBuffer::SetupFrame(unsigned int frame1, unsigned int fr
 //
 //===========================================================================
 
-static void gl_RenderModelFrame(FModel *mdl, FModelVertexBuffer *buffer, FTexture *skin, int frame, int frame2, double inter, int translation)
+static void gl_RenderModelFrame(FModel *mdl, FModelVertexBuffer *buffer, const FModelSurface *surfs, int n, float blend, int translation)
 {
-	FModelSurface surfs[MD3_MAX_SURFACES];
-	const int n = mdl->FrameSurfaces(skin, frame, frame2, surfs);
-	const float blend = mdl->Interpolates() ? (float)inter : 0.f;
 	gl_RenderState.SetInterpolationFactor(blend);
 	for (int i = 0; i < n; i++)
 	{
@@ -219,10 +216,11 @@ void gl_RenderFrameModels( const FSpriteModelFrame *smf,
 			FModelVertexBuffer *buffer = gl_ModelBuffer(mdl);
 			gl_RenderState.SetVertexBuffer(buffer);
 
-			if ( smfNext && smf->modelframes[i] != smfNext->modelframes[i] )
-				gl_RenderModelFrame(mdl, buffer, smf->skins[i], smf->modelframes[i], smfNext->modelframes[i], inter, translation);
-			else
-				gl_RenderModelFrame(mdl, buffer, smf->skins[i], smf->modelframes[i], smf->modelframes[i], 0.f, translation);
+			// [rc4l] The slot's surfaces and blend, as the backend's derived models take them.
+			FModelSurface surfs[MD3_MAX_SURFACES];
+			float blend;
+			const int n = zx::sprites::ModelSlotSurfaces(smf, i, smfNext, inter, surfs, blend);
+			gl_RenderModelFrame(mdl, buffer, surfs, n, blend, translation);
 
 			gl_RenderState.SetVertexBuffer(GLRenderer->mVBO);
 		}

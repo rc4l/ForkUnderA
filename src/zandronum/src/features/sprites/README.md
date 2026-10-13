@@ -59,8 +59,8 @@ neither there.
   `CaptureModelSurface` notes GL's surfaces for the check (`NoteGLSprite`) and holds a checked derived
   model's (`NoteDerivedSprite`).
 - `gl/models/gl_models.cpp` `gl_RenderModel` and `gl_RenderFrameModels`: `ModelPoseFor` with
-  `ComputeModelMatrix`, and `NextModelFrame`.
-- `gl/models/gl_models_md2.cpp`, `gl_models_md3.cpp`, `gl_voxels.cpp`: `FrameSurfaces`, each `RenderFrame`'s
+  `ComputeModelMatrix`, `NextModelFrame`, and each slot's surfaces and blend from `ModelSlotSurfaces`.
+- `features/models/md2model.cpp`, `md3model.cpp`, `voxelmodel.cpp`: `FrameSurfaces`, each model's
   surfaces worked out without GL and drawn from.
 - `features/frame/playerview.cpp` `RenderPlayerView`, every frame the backend draws: `CheckFrameSprites` after
   the scene, then `BuildPlayerSprites`, `BuildTargeterSprites` and `CheckFramePSprites`.

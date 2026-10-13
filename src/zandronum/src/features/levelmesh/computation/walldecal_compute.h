@@ -6,17 +6,18 @@
 #ifndef ZX_WALLDECAL_COMPUTE_H
 #define ZX_WALLDECAL_COMPUTE_H
 
+#include "features/levelmesh/computation/wallcache_compute.h"   // [rc4l] kPart*, the parts a decal hangs on
+
 namespace zx { namespace levelmesh {
 
-// [rc4l] Which wall part a fragment is, and which a decal names (DBaseDecal's RF_REL* bits, as kDecalRel*).
-enum { kDecalPartUpper, kDecalPartLower, kDecalPartMiddle };
+// [rc4l] Which wall part a decal names (DBaseDecal's RF_REL* bits, as kDecalRel*).
 enum { kDecalRelNone, kDecalRelUpper, kDecalRelLower, kDecalRelMid };
 
 // [rc4l] What fixes a decal's height on a part: its own offset, the line's unpegging, and the planes' texture heights (front plane for a 3D floor's middle is the model sector's).
 struct DecalHeightIn
 {
 	int rel;                  // [rc4l] kDecalRel*
-	int part;                 // [rc4l] kDecalPart*
+	int part;                 // [rc4l] kPart*
 	bool unpegTop, unpegBottom;
 	double z;                 // [rc4l] the decal's Z
 	double frontCeiling, frontFloor, backCeiling, backFloor;
@@ -49,8 +50,11 @@ struct DecalPicture
 // [rc4l] One corner as DrawDecal's dv[]: world position (z the height) and texture coordinates.
 struct DecalCorner { float x, y, z, u, v; };
 
-// [rc4l] The decal's quad on the fragment, bottom-left, top-left, top-right, bottom-right as DrawDecal fills dv[]; false when none of it lands there. `top` is the height the top edge stood at before clipping, which GL lights the decal from.
+// [rc4l] The decal's quad on the fragment (bottom-left, top-left, top-right, bottom-right as DrawDecal fills dv[]) and in `top` the unclipped top height GL lights it from; false when none of it lands there.
 bool ComputeWallDecalQuad(const DecalWall &w, const DecalPicture &d, DecalCorner out[4], double &top);
+
+// [rc4l] A decal's light level and relative light: full and none when it is fullbright, else its band's and its wall's.
+void ComputeDecalLight(bool fullbright, int bandLevel, int relLight, int &light, int &rel);
 
 }} // namespace zx::levelmesh
 

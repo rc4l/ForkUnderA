@@ -4,6 +4,7 @@
 #include <gtest/gtest.h>
 
 #include "features/levelmesh/computation/wallcache_compute.h"
+#include "features/surfaces/walltypes.h"   // [rc4l] RENDERWALL_*
 
 using namespace zx::levelmesh;
 
@@ -45,7 +46,7 @@ TEST(WallCache, AnyCounterBumpInvalidates)
 
 TEST(WallCache, OneSidedLinesUseZeroForTheBackCounter)
 {
-	// BuildStamp writes 0 for a missing back sector; two one-sided segs must still compare equal.
+	// gl_WallCacheBuildStamp writes 0 for a missing back sector; two one-sided segs must still compare equal.
 	WallCacheStamp a = Stamp(); a.backDirty = 0;
 	WallCacheStamp b = Stamp(); b.backDirty = 0;
 	EXPECT_TRUE(ComputeStampsEqual(a, b));
@@ -212,4 +213,15 @@ TEST(WallCache, AScrollPastTheLimitGoesBackIntoTheVertices)
 	EXPECT_FALSE(ComputeScrollInRange(-kMaxScrollShift - 1.f, 0.f));
 	EXPECT_FALSE(ComputeScrollInRange(0.f, kMaxScrollShift + 1.f));
 	EXPECT_FALSE(ComputeScrollInRange(0.f, -kMaxScrollShift - 1.f));
+}
+
+// [rc4l] The bake, its reshade and the decals all took a middle's kind from one rule spelled three times.
+TEST(WallCacheCompute, APartIsDrawnAsItsKindOfWallPiece)
+{
+	EXPECT_EQ(RENDERWALL_TOP, ComputePartRenderType(kPartUpper, true));
+	EXPECT_EQ(RENDERWALL_BOTTOM, ComputePartRenderType(kPartLower, false));
+	EXPECT_EQ(RENDERWALL_M2S, ComputePartRenderType(kPartMiddle, true));
+	EXPECT_EQ(RENDERWALL_M1S, ComputePartRenderType(kPartMiddle, false));
+	EXPECT_EQ(RENDERWALL_NONE, ComputePartRenderType(kWallParts, true));
+	EXPECT_EQ(RENDERWALL_NONE, ComputePartRenderType(-1, false));
 }

@@ -101,6 +101,12 @@ SideChange ComputeSideChange(const SideLook &baked, const SideLook &now);
 const float kMaxScrollShift = 256.f;
 bool ComputeScrollInRange(float du, float dv);
 
+// [rc4l] The parts of a wall the bake builds, in its slot order.
+enum { kPartUpper, kPartLower, kPartMiddle, kWallParts };
+
+// [rc4l] The kind of wall piece (RENDERWALL_*) part `part` is drawn as: a two-sided line's middle blends (M2S), a one-sided one's does not (M1S); RENDERWALL_NONE for no such part.
+int ComputePartRenderType(int part, bool twoSided);
+
 }} // namespace zx::levelmesh
 
 #endif // ZX_WALLCACHE_COMPUTE_H

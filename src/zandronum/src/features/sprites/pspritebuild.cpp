@@ -18,7 +18,6 @@
 #include "features/sprites/modelbuild.h"                           // [rc4l] CaptureModelFrames, a HUD model's surfaces
 #include "features/sprites/computation/modelpose_compute.h"        // [rc4l] ComputeHUDModelMatrix
 #include "features/levelmesh/modelmesh.h"                          // [rc4l] the model capture
-#include "features/levelmesh/computation/flatmesh_compute.h"       // [rc4l] ComputeStyleBlendMode
 #include "features/models/models.h"   // [rc4l] gl_FindModelFrame and the models
 #include "p_pspr.h"                                                // [rc4l] WEAPONTOP
 
@@ -140,7 +139,7 @@ void HUDModelLayer(player_t *player, pspdef_t *psp, fixed_t sx, fixed_t sy, cons
 	FColormap none;
 	none.Clear();
 	zx::levelmesh::MeshPiece look;
-	const int blend = zx::levelmesh::ComputeStyleBlendMode(style.BlendOp == STYLEOP_Shadow, style.BlendOp == STYLEOP_Add && style.DestAlpha == STYLEALPHA_One, rgba[3]);
+	const int blend = StyleBlendMode(style, rgba[3]);
 	// [rc4l] Sorted at the eye, so a translucent one is drawn last.
 	zx::levelmesh::ModelPieceLook(255, 0, none, false, dyn, 0xffffff, rgba[3], blend, cam.x, cam.y, cam.z, look);
 	look.colorR = rgba[0];
@@ -306,7 +305,7 @@ static void BuildLayers(sector_t *viewsector, int viewArea, fixed_t bobX, fixed_
 		}
 		else
 		{
-			if (gl_lights && zx::hwrender::SpriteView().DynamicLightCount() && !gl_fixedcolormap && gl_light_sprites) ActorDynamicLight(playermo, dyn);
+			if (SpritesTakeDynamicLight()) ActorDynamicLight(playermo, dyn);
 			// [rc4l] gl_SetColor for a weapon: white under a fixed colormap, else the light colour at the weapon's light level.
 			if (gl_fixedcolormap != CM_DEFAULT) rgba[0] = rgba[1] = rgba[2] = 1.f;
 			else

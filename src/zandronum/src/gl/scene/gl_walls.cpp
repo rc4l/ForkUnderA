@@ -164,8 +164,8 @@ void GLWall::PutWall(bool translucent)
 		gl_WallCacheRecord(*this, list);
 
 	}
-	// [rc4l] Portal walls go to the portal manager, which keeps per-frame state, so a seg producing one can never be replayed from the cache.
-	else if (gl_WallCacheNoteUnreplayable(), false) { /* never taken; the call above is the point */ }
+	// [rc4l] Portal walls go to the portal manager, which keeps per-frame state, so the seg is marked never to be replayed; the branch itself is never taken.
+	else if (gl_WallCacheNoteUnreplayable(), false) {}
 	else switch (type)
 	{
 	case RENDERWALL_COLORLAYER:

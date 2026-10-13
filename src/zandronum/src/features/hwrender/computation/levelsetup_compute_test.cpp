@@ -12,8 +12,8 @@ TEST(LevelSetup, ANewLevelBakesThenUploads)
 	LevelSetup s = ComputeLevelSetupStart();
 	ComputeLevelSetupForLevel(s, 3);
 	EXPECT_EQ(kSetupArm, s.state);
-	ComputeLevelSetupArmed(s);
-	EXPECT_EQ(kSetupWaiting, s.state);
+	ComputeLevelSetupBaked(s);
+	EXPECT_EQ(kSetupBaked, s.state);
 	ComputeLevelSetupUploaded(s, true);
 	EXPECT_EQ(kSetupReady, s.state);
 	// [rc4l] The same level again changes nothing; a new one starts over.

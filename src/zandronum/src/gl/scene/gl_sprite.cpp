@@ -329,18 +329,7 @@ void GLSprite::Draw(int pass)
 	}
 	else
 	{
-		// [rc4l] A model drawn into GL's back buffer is a model nobody sees.
-		//
-		// RegisterSprite is in the branch above, so a model never reaches the mesh, and this draws it
-		// through GL -- into a surface the Diligent child window is covering. So it has been invisible
-		// for as long as the backend has been presenting, and every one of these draws was GL driver
-		// and GPU work for no pixels. On rc4l's Whodunit content that is hundreds a frame, on the same
-		// device Vulkan is driving, and it is the OpenGL driver that TDR'd.
-		//
-		// It is called unconditionally again now, because it is how models reach the mesh: the
-		// capture is bracketed around the frame draw inside it, where the model matrix and this
-		// sprite are both in scope. The rasterisation it used to be skipped for is now skipped one
-		// level down, per surface, exactly as the sprite branch above skips its own.
+		// [rc4l] The model as GL draws it, its surfaces also reported to a check against GL (gl_observer).
 		gl_RenderModel(this);
 	}
 

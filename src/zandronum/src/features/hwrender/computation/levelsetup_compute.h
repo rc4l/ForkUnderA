@@ -8,7 +8,7 @@
 
 namespace zx { namespace hwrender {
 
-enum { kSetupArm = 0, kSetupWaiting = 1, kSetupReady = 2, kSetupGaveUp = 3 };
+enum { kSetupArm = 0, kSetupBaked = 1, kSetupReady = 2, kSetupGaveUp = 3 };
 
 // [rc4l] Uploads tried before giving up for the level.
 const int kSetupMaxTries = 8;
@@ -27,7 +27,7 @@ LevelSetup ComputeLevelSetupStart();
 void ComputeLevelSetupForLevel(LevelSetup &s, int generation);
 
 // [rc4l] The level is baked: upload it next.
-void ComputeLevelSetupArmed(LevelSetup &s);
+void ComputeLevelSetupBaked(LevelSetup &s);
 
 // [rc4l] The upload's outcome: ready, armed again for another try, or given up after kSetupMaxTries.
 void ComputeLevelSetupUploaded(LevelSetup &s, bool ok);

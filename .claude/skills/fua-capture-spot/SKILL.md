@@ -55,7 +55,7 @@ different wad set is a different picture wearing the same name.
   MAP01, and it renders perfectly — so every number taken there looks valid and is worthless. Relaunch
   with the same set the spot's `loaded` lists, via `--preset <id>` or `--file`; see `fua-side-by-side`.
 - **Never shoot from their instance.** Launch your own `--lock` instance on your own port with the
-  same wads, set `fua_dg_standalone 0` for the pair, and shoot `--spot <name>` there, then the Vulkan
-  half again at 1 when the spot's `renderer` says standalone; leave theirs alone to look at.
+  same wads, set `fua_dg_standalone 0` so GL draws for the pair (the Vulkan half is the same at either
+  value), and shoot `--spot <name>` there; leave theirs alone to look at.
 - **Close other engine windows first.** A GL capture is read back out of the window, and under another
   window it comes back black or scrambled — which looks like the renderer, not the tool.

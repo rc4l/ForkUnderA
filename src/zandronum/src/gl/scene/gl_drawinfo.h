@@ -8,10 +8,7 @@ enum GLDrawItemType
 	GLDIT_WALL,
 	GLDIT_FLAT,
 	GLDIT_SPRITE,
-	// [rc4l] GL's wall cache (gl_wallcache.h): a wall whose geometry is owned by the per-level cache rather
-	// than copied into this list. The draw item is 8 bytes instead of a ~200-byte GLWall copy --
-	// removing that copy is the whole point, since attempt 1 proved regenerating is cheap and
-	// copying is not. `index` addresses gl_WallCacheStaticWall().
+	// [rc4l] A wall whose geometry the wall cache owns, an 8-byte reference (index into gl_WallCacheStaticWall()) instead of a ~200-byte GLWall copy.
 	GLDIT_STATICWALL,
 };
 

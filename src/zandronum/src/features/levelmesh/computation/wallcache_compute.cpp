@@ -2,6 +2,7 @@
 // Copyright (C) 2026 rc4l
 
 #include "features/levelmesh/computation/wallcache_compute.h"
+#include "features/surfaces/walltypes.h"   // [rc4l] RENDERWALL_*
 
 namespace zx { namespace levelmesh {
 
@@ -73,5 +74,16 @@ bool ComputeScrollInRange(float du, float dv)
 	return du <= kMaxScrollShift && du >= -kMaxScrollShift && dv <= kMaxScrollShift && dv >= -kMaxScrollShift;
 }
 
+
+int ComputePartRenderType(int part, bool twoSided)
+{
+	switch (part)
+	{
+	case kPartUpper:  return RENDERWALL_TOP;
+	case kPartLower:  return RENDERWALL_BOTTOM;
+	case kPartMiddle: return twoSided ? RENDERWALL_M2S : RENDERWALL_M1S;
+	default:          return RENDERWALL_NONE;
+	}
+}
 
 }} // namespace zx::levelmesh

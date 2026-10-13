@@ -1,6 +1,7 @@
-// [rc4l] GL's sprite frame lookup, unchanged.
+// [rc4l] GL's sprite frame lookup, its rotation from the computation the derived sprites share.
 
 #include "features/sprites/spriteframe.h"
+#include "features/sprites/computation/spriteframe_compute.h"   // [rc4l] ComputeSpriteRotation
 #include "r_data/sprites.h"
 #include "r_state.h"   // [rc4l] sprites
 
@@ -23,18 +24,11 @@ FTextureID gl_GetSpriteFrame(unsigned sprite, int frame, int rot, angle_t ang, b
 		//picnum = SpriteFrames[sprdef->spriteframes + thing->frame].Texture[0];
 		// choose a different rotation based on player view
 		spriteframe_t *sprframe = &SpriteFrames[sprdef->spriteframes + frame];
-		if (rot==-1)
-		{
-			if (sprframe->Texture[0] == sprframe->Texture[1])
-			{
-				rot = (ang + (angle_t)(ANGLE_45/2)*9) >> 28;
-			}
-			else
-			{
-				rot = (ang + (angle_t)(ANGLE_45/2)*9-(angle_t)(ANGLE_180/16)) >> 28;
-			}
-		}
-		if (mirror) *mirror = !!(sprframe->Flip&(1<<rot));
+		bool flip;
+		// [rc4l] The rotation the viewer sees, by the rule the backend's sprites share.
+		if (rot==-1) rot = zx::sprites::ComputeSpriteRotation(ang, sprframe->Texture[0] == sprframe->Texture[1], sprframe->Flip, flip);
+		else flip = !!(sprframe->Flip&(1<<rot));
+		if (mirror) *mirror = flip;
 		return sprframe->Texture[rot];
 	}
 }

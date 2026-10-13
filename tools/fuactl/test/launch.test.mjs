@@ -4,7 +4,7 @@ import fs from "node:fs";
 import { spawnSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
-import { resolveEngine, engineArgs, describeExit, countEngineLines, missingCoreData } from "../src/launch.mjs";
+import { resolveEngine, engineArgs, describeExit, countEngineLines, missingCoreData, resFlag } from "../src/launch.mjs";
 import { sweepDirFor, pickCmake, resolveTarget, readSession, sessionFileFor, cameraFromFlags, cvarValueFrom, parseCvarFlag, spotLaunch, parkFileFor, parkedLaunch, PARKED, clearPortSessions, liveTarget, pidAlive, buildErrors, summarizeGtest, sourcesStamp, standAt, launchFileFor, holdingLaunchFile, launchInProgress, awaitLaunch, atFromCamera, releaseOf, stepTag, sameFrameCommand } from "../src/shot.mjs";
 
 // Run `fn` with cwd moved to `dir` and FUACTL_ENGINE cleared, then put both back.
@@ -382,4 +382,11 @@ test("the globbed sources' stamp ignores order and path separators, and changes 
   const a = sourcesStamp(["features/b/x_compute.cpp", "features\\a\\y_compute.cpp"]);
   assert.equal(a, sourcesStamp(["features/a/y_compute.cpp", "features/b/x_compute.cpp"]));
   assert.notEqual(a, sourcesStamp(["features/a/y_compute.cpp", "features/b/x_compute.cpp", "features/c/z_compute.cpp"]));
+});
+
+// [rc4l] play, fps and the sweep's --size each split WxH by hand until they shared this.
+test("a --res flag is a width and height, and an absent one leaves both to the launch default", () => {
+  assert.deepEqual(resFlag("1280x800"), { width: 1280, height: 800 });
+  assert.deepEqual(resFlag(undefined), { width: undefined, height: undefined });
+  assert.deepEqual(resFlag(true), { width: undefined, height: undefined });
 });

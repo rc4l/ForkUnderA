@@ -78,7 +78,7 @@ void ModelPieceLook(int lightLevel, int extraLight, const FColormap &cm, bool fu
 	// run for this actor and left its answer in the render state, having applied gl_light_sprites and
 	// DONTLIGHTSELF. A shader loop over the level's lights knows neither.
 	if (!fullbright) { mp.dynR = dyn[0]; mp.dynG = dyn[1]; mp.dynB = dyn[2]; }
-	mp.cpuLight = true;   // [rc4l] see RegisterSprite
+	mp.cpuLight = true;   // [rc4l] its dynamic light is the CPU's, as a sprite's is
 	// [rc4l] No normal, and this one is a real limitation rather than a shortcut for its own sake.
 	// FModelVertex::SetNormal is a no-op in this tree -- the loaders read normals and throw them
 	// away, because GL's model shader never wanted them -- so there is nothing to capture. Zero
@@ -116,7 +116,7 @@ void ModelCaptureEnd()
 
 bool ModelCaptureActive()
 {
-	// [rc4l] NOT gated on the backend presenting, and that is deliberate -- RegisterSprite is not
+	// [rc4l] NOT gated on the backend presenting, and that is deliberate -- the sprites are not
 	// either. BackendPresenting means the Diligent window is covering GL's, which is false in a
 	// side-by-side session where BOTH windows are live: gating on it left the Vulkan window with no
 	// models in exactly the configuration used to compare the two renderers. The mesh is what a

@@ -118,6 +118,12 @@ TEST(SpriteStyle, BlendModesAsTheBackendDrawsThem)
 	EXPECT_EQ(ComputeSpriteBlendMode(kOpAdd, kAlphaInvSrc, 0.5f), 1);
 	EXPECT_EQ(ComputeSpriteBlendMode(kOpAdd, kAlphaInvSrc, 1.f), 0);
 	EXPECT_EQ(ComputeSpriteBlendMode(kOpSub, kAlphaInvSrc, 1.f), 0);
+	// [rc4l] Shadow wins over an additive destination, and a decal fading out over its life is translucent.
+	EXPECT_EQ(ComputeSpriteBlendMode(kOpShadow, kAlphaOne, 0.5f), 3);
+	EXPECT_EQ(ComputeSpriteBlendMode(kOpAdd, kAlphaInvSrc, 0.4f), 1);
+	// [rc4l] One 8-bit step: 255/255 is opaque and 254/255 is not.
+	EXPECT_EQ(ComputeSpriteBlendMode(kOpAdd, kAlphaInvSrc, 255.f / 255.f), 0);
+	EXPECT_EQ(ComputeSpriteBlendMode(kOpAdd, kAlphaInvSrc, 254.f / 255.f), 1);
 }
 
 TEST(SpriteStyle, TheWeaponTakesTheFuzzAndAlphaRulesWithoutBeingMadeSolid)

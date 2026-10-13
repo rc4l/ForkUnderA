@@ -1,8 +1,7 @@
 // [rc4l] A build you can actually walk around in, with the Vulkan view live in the window.
 //
 // One window. The backend renders into a disabled child covering the engine's client area, so the
-// pixels on screen are Vulkan while the mouse and keyboard reach the engine exactly as always. GL
-// still draws underneath, unseen -- that is what keeps the wall cache fed as you walk.
+// pixels on screen are Vulkan while the mouse and keyboard reach the engine exactly as always.
 //
 // This was a shell script for a long time, which meant the one launch path a human uses was the one
 // path with no tests. The argument-ordering bug that shipped a "no monsters" build full of monsters
@@ -41,8 +40,8 @@ export function playCvars({ gl = false, sideBySide = false, rt = false, monsters
   if (!gl) cv.fua_vulkan = 1;
   // Its own window beside the engine's instead of embedded, so both renderers are on screen at
   // once. Easier to point at a difference than toggling and trying to remember the other one.
-  // [rc4l] ...and with standalone off, or GL's window is a still frame beside the live one.
-  if (sideBySide) { cv.fua_dg_embed = 0; cv.fua_dg_standalone = 0; }
+  // [rc4l] GL draws whenever the backend's window is its own, so nothing else is needed for both to be live.
+  if (sideBySide) cv.fua_dg_embed = 0;
   // Ray-traced reflections must be on at LAUNCH: the acceleration structure is built at scene
   // upload, which has already happened by the time a level is playable, so setting it later leaves
   // nothing for the rays to hit.
@@ -207,6 +206,7 @@ async function launchChecked(opts, port) {
     width: opts.width, height: opts.height,
     extraArgs: playArgs(files, { noGl: opts.noGl }),
     cvars: playCvars(opts),
+    engine: opts.engine,
   });
 
   await waitInLevel(inst);
@@ -242,6 +242,23 @@ async function launchChecked(opts, port) {
 }
 
 export { stopInstance };
+
+// [rc4l] A locked launch handed to body with its bridge connected and always torn down; a crash comes back as the error naming its crash log.
+export async function withLockedInstance(opts, body, { launch = play, connect = bridgeConnect, stop = stopInstance } = {}) {
+  let inst = null;
+  let c = null;
+  try {
+    inst = await launch({ ...opts, lock: true });
+    c = await connect(inst.port, inst.token);
+    return await body(c, inst);
+  } catch (e) {
+    const died = inst && inst.log && fs.existsSync(`${inst.log}.crash`);
+    throw new Error(died ? `engine crashed -- ${inst.log}.crash` : e.message);
+  } finally {
+    if (c) c.close();
+    if (inst) await stop(inst);
+  }
+}
 
 // [rc4l] A bridge connection that has said hello, or a throw when nothing answers on port.
 async function bridgeConnect(port, token) {

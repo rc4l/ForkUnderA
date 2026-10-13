@@ -11,6 +11,8 @@
 class DFrameBuffer;
 class FRenderer;
 
+#include "features/frame/computation/frameroute_compute.h"
+
 namespace zx { namespace hwrender {
 
 // [rc4l] Whether this launch runs without GL, decided once from the command line (-vulkan) on first ask; always false in a build without the backend.
@@ -22,12 +24,8 @@ void BeginBackendOnly();
 // [rc4l] The renderer the backend draws the world with, in a launch without GL or beside it.
 FRenderer *CreateBackendRenderer();
 
-// [rc4l] Whether the backend draws this frame: always without GL, else while it is switched on (fua_vulkan).
-bool BackendDrawsFrames();
-// [rc4l] Whether the backend's window covers GL's: switched on, embedded, and its scene up.
-bool BackendCoversGL();
-// [rc4l] Whether GL's own view is wanted although the backend presents: its window shown beside (fua_dg_embed 0), asked for (fua_dg_standalone 0), or a check comparing against it.
-bool GLViewWanted();
+// [rc4l] Which renderer draws this frame and whose picture shows, from the launch's renderers and the backend's state and cvars.
+zx::frame::FrameRoute FrameRouteNow(bool hasGL, bool hasBackend);
 
 // [rc4l] The frame buffer it draws the screen with, on the engine's own window.
 DFrameBuffer *CreateBackendFrameBuffer(void *hMonitor, int width, int height, int bits, int refreshHz, bool fullscreen);

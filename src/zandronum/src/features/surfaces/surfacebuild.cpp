@@ -26,8 +26,6 @@
 #include "features/horizon/computation/horizon_compute.h"
 #include "features/levelmesh/computation/wallcache_compute.h"   // [rc4l] ComputeIsMirrorWall
 
-// [rc4l] Declared at global scope: EXTERN_CVAR inside the namespace would name a different symbol
-// than the CVAR defined in surfaceverify.cpp, and only the linker would notice.
 // [rc4l] GL's CheckTexturePosition in the derivation, a switch so it stays a measurement: it took dbab04's clamping faults from 75 to 0.
 CVAR(Bool, fua_surface_vshift, true, 0)
 EXTERN_CVAR(Bool, gl_mirrors)
@@ -38,7 +36,7 @@ namespace {
 
 int g_derived = 0, g_fellBack = 0;
 // [rc4l] WHY a piece fell back, because "1073 fell back" does not say what to build next.
-int g_fbMiddle = 0, g_fbSpecial = 0, g_fbNoTexture = 0, g_fbNoSpan = 0, g_fbSeam = 0;
+int g_fbMiddle = 0, g_fbSpecial = 0, g_fbNoTexture = 0, g_fbNoSpan = 0;
 
 // [rc4l] The sector heights AT A POINT, not at the seg's midpoint.
 //
@@ -121,16 +119,15 @@ bool SpanBothEnds(int renderType, const WallHeights &h1, const WallHeights &h2,
 } // namespace
 
 void GetDeriveStats(int &derived, int &fellBack) { derived = g_derived; fellBack = g_fellBack; }
-void GetDeriveFallbacks(int &twoSidedMiddle, int &special, int &noTexture, int &noSpan, int &seam)
+void GetDeriveFallbacks(int &twoSidedMiddle, int &special, int &noTexture, int &noSpan)
 {
 	twoSidedMiddle = g_fbMiddle; special = g_fbSpecial; noTexture = g_fbNoTexture;
-	noSpan = g_fbNoSpan; seam = g_fbSeam;
+	noSpan = g_fbNoSpan;
 }
-void NoteDeriveSeamFallback() { g_fbSeam++; g_fellBack++; }
 void ResetDeriveStats()
 {
 	g_derived = g_fellBack = 0;
-	g_fbMiddle = g_fbSpecial = g_fbNoTexture = g_fbNoSpan = g_fbSeam = 0;
+	g_fbMiddle = g_fbSpecial = g_fbNoTexture = g_fbNoSpan = 0;
 }
 void NoteDeriveFallback() { g_fellBack++; }
 
@@ -385,7 +382,7 @@ bool BuildDerivedWallSpan(const seg_t *seg, int renderType, DerivedWallSpan &out
 	//
 	// Not for a two-sided middle: DoMidTexture writes its coordinates directly and never calls this.
 	// Not for a canvas texture, which GL also skips.
-	const bool canvas = zx::materials::MaterialTexture(mat)->bHasCanvas;
+	const bool canvas = zx::materials::MaterialIsCanvas(mat);
 	if (fua_surface_vshift && !twoSidedMid && !canvas)
 	{
 		const float lead = (out.vTop[0] < out.vTop[1]) ? out.vTop[0] : out.vTop[1];

@@ -560,10 +560,7 @@ void OpenGLFrameBuffer::Swap()
 {
 	Finish.Reset();
 	Finish.Clock();
-	// [rc4l] When GL's window is covered, it has nothing to finish or to present.
-	//
-	// glFinish() is a full stall on the GL queue and SwapBuffers presents a back buffer the other
-	// renderer's window is covering; together they were the largest single item left in the frame.
+	// [rc4l] With GL's window covered there is nothing to finish or present, so glFinish's full stall and SwapBuffers are skipped.
 	const bool glIdle = !mPresents;
 	if (!glIdle) glFinish();
 #ifdef ZX_ENABLE_REPLAY

@@ -270,7 +270,7 @@ static const char *kSceneVS =
 	   Sprites carry no normal, because a billboard turns to face the camera and has no side for a
 	   light to be in front of or behind. That much was already true; what it also means is that a
 	   sprite's dynamic light does not come from this loop at all. gl_SetDynSpriteLight computes it
-	   on the CPU and RegisterSprite folds the result into the vertex colour, so adding the lights
+	   on the CPU and the sprite derivation carries the result with the vertex colour, so adding the lights
 	   again here counts them twice AND ignores everything that function knows.
 
 	   DONTLIGHTSELF is what makes that visible. An item does not light itself: gl_SetDynSpriteLight

@@ -1,13 +1,7 @@
 #ifndef __GL_WALLCACHE_H
 #define __GL_WALLCACHE_H
 
-// [rc4l] GL's per-seg wall cache: the GLWalls a seg produced, kept with a stamp of their inputs and
-// replayed straight into the draw lists while nothing those inputs cover has changed.
-//
-// GLWall::Process regenerates every visible wall every frame -- 8251 of them on Sunder MAP10, for a
-// level whose geometry did not move. Sunder MAP10: off 4.60 ms, on 4.00 ms, a 98.6% hit rate, wall
-// Setup 0.979 -> 0.228 ms. The validity rule is pure and shared, in
-// features/levelmesh/computation/wallcache_compute.h; this is GL's storage and its two hooks.
+// [rc4l] GL's per-seg wall cache: the GLWalls a seg produced, replayed into the draw lists while their stamp (wallcache_compute.h) holds, which took Sunder MAP10 from 4.60 ms to 4.00 ms.
 
 #include "features/levelmesh/computation/wallcache_compute.h"
 #include "gl/scene/gl_wall.h"
@@ -21,7 +15,6 @@ const int kGLCachedWalls = 4;
 // [rc4l] Sized per level, cleared when the level goes.
 void gl_WallCacheAlloc(int numsegs);
 void gl_WallCacheFree();
-void gl_WallCacheInvalidateAll();
 
 // [rc4l] The stamp and eligibility of a seg from its current sectors.
 void gl_WallCacheBuildStamp(const seg_t *seg, const sector_t *frontsector, const sector_t *backsector, zx::levelmesh::WallCacheStamp &out);

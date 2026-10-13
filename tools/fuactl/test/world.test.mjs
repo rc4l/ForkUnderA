@@ -70,9 +70,8 @@ test("the hands-on build asks for no monsters and for freelook enabled", () => {
   assert.equal(cv.sv_bfgfreeaim, 1);
   assert.equal(playCvars({ monsters: true }).sv_nomonsters, undefined);
   assert.equal(playCvars({ sideBySide: true }).fua_dg_embed, 0, "both renderers on screen at once");
-  // [rc4l] Every relaunch of the user's session needed a separate `fua_dg_standalone 0`, without which GL's window is a still frame.
-  assert.equal(playCvars({ sideBySide: true }).fua_dg_standalone, 0, "GL's window drawing live");
-  assert.equal(playCvars({}).fua_dg_standalone, undefined);
+  // [rc4l] GL draws whenever the backend's window is separate (ComputeFrameRoute), so side by side no longer sets standalone.
+  assert.equal(playCvars({ sideBySide: true }).fua_dg_standalone, undefined);
   // [rc4l] A locked launch is always in the background, so its world must not pause there.
   assert.equal(playCvars({ lock: true }).i_pauseinbackground, 0);
   assert.equal(playCvars({}).i_pauseinbackground, undefined);

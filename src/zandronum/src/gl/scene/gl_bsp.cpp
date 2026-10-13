@@ -58,21 +58,7 @@
 
 EXTERN_CVAR(Bool, gl_render_segs)
 
-// [rc4l] GL's wall cache (gl_wallcache.h): reuse a seg's generated walls when nothing they were
-// generated from has changed.
-//
-// Sunder MAP10: off 4.60 ms, on 4.00 ms -- ~13% faster, 98.6% hit rate, memory flat. `stat
-// rendertimes` attributes it precisely: wall Setup 0.979 -> 0.228 ms.
-//
-// Two earlier versions of this were SLOWER, and both failures are worth remembering:
-//   1. Storage grew without bound. A capture that turned out uncacheable stranded its walls, and
-//      ineligible segs were re-captured every frame, so it reached 47 GB and killed the process.
-//      Storage is now fixed per seg, so leaking is structurally impossible.
-//   2. Validity was a content hash over ~18 fields including twelve int64 multiplies. That cost
-//      about as much as the GLWall::Process it avoided, so the cache measured neutral. It is now
-//      three integer compares against sector_t::fua_dirty / side_t::fua_dirty.
-//
-// Mode 2 is a diagnostic that skips validation entirely -- it renders stale geometry, never ship it.
+// [rc4l] GL's wall cache (gl_wallcache.h): 0 off, 1 replays a seg's walls while its fua_dirty stamp holds, 2 skips validation (stale geometry, diagnostic only).
 CUSTOM_CVAR(Int, gl_wallcache, 1, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
 {
 	gl_wallcacheMode = self;
@@ -219,7 +205,7 @@ static void AddLine (seg_t *seg)
 				zx::levelmesh::WallCacheStamp stamp;
 				zx::levelmesh::WallCacheEligibility elig;
 				// [rc4l] Mode 2 skips stamp construction as well as the compare, so the cost of
-				// BuildStamp itself is isolated. Mode 1 leaves it in. Renders stale geometry.
+				// gl_WallCacheBuildStamp itself is isolated. Mode 1 leaves it in. Renders stale geometry.
 				if (gl_wallcache != 2)
 				{
 					gl_WallCacheBuildStamp(seg, currentsector, backsector, stamp);

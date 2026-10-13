@@ -103,17 +103,8 @@ static void BuildPlane(sector_t *sec, int which, HorizonPlane &out)
 		return;
 	}
 
-	zx::levelmesh::PlaneUVTransform t = zx::levelmesh::ComputeIdentityPlaneUV();
-	t.xoffs = FIXED2FLOAT(sp.xoffs);
-	t.yoffs = FIXED2FLOAT(sp.yoffs);
-	t.xscale = FIXED2FLOAT(sp.xscale);
-	t.yscale = FIXED2FLOAT(sp.yscale);
-	t.angleDegrees = ANGLE2FLOAT(sp.angle);
-	int w, h;
-	zx::materials::MaterialRenderSize(mat, w, h);
-	t.texWidth = (float)w;
-	t.texHeight = (float)h;
-	t.hasCanvas = zx::materials::MaterialTexture(mat)->bHasCanvas;
+	zx::levelmesh::PlaneUVTransform t;
+	zx::levelmesh::PlaneUVFor(sp, mat, t);
 	out.uv = zx::levelmesh::ComputePlaneUVAffine(t);
 
 	const bool ceiling = (which == sector_t::ceiling);
@@ -127,7 +118,7 @@ static void BuildPlane(sector_t *sec, int which, HorizonPlane &out)
 		cm.LightColor = (light->extra_colormap)->Color;
 	}
 	int level, rel;
-	ComputeHorizonLightInputs(zx::materials::MaterialTexture(mat)->isFullbright(), lightlevel, getExtraLight(), level, rel);
+	ComputeHorizonLightInputs(zx::materials::MaterialIsFullbright(mat), lightlevel, getExtraLight(), level, rel);
 	zx::levelmesh::CaptureShading(level, rel, cm, out.shade);
 }
 

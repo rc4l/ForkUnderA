@@ -26,8 +26,7 @@ bool DescribeMaterial(MaterialRef m, MaterialInfo &info)
 	info.textureIndex = tex->id.GetIndex();
 	info.width = tex->GetWidth();
 	info.height = tex->GetHeight();
-	info.renderWidth = Mat(m)->TextureWidth();
-	info.renderHeight = Mat(m)->TextureHeight();
+	MaterialRenderSize(m, info.renderWidth, info.renderHeight);
 	info.materialWidth = Mat(m)->GetWidth();
 	info.leftOffset = Mat(m)->GetLeftOffset();
 	info.topOffset = Mat(m)->GetTopOffset();
@@ -49,6 +48,16 @@ MaterialRef MaterialForTextureId(FTextureID id, bool translate)
 FTexture *MaterialTexture(MaterialRef m)
 {
 	return m != NULL ? Mat(m)->tex : NULL;
+}
+
+bool MaterialIsCanvas(MaterialRef m)
+{
+	return m != NULL && Mat(m)->tex->bHasCanvas;
+}
+
+bool MaterialIsFullbright(MaterialRef m)
+{
+	return m != NULL && Mat(m)->tex->isFullbright();
 }
 
 void MaterialRenderSize(MaterialRef m, int &width, int &height)

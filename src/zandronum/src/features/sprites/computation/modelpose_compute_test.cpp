@@ -162,3 +162,11 @@ TEST(ComputeHUDModelMatrix, ScalesOffsetsThenTurnsAQuarterAboutUp)
 	EXPECT_NEAR(0.f, m[5], 1e-4f);
 	EXPECT_NEAR(-4.f, m[6], 1e-4f);
 }
+
+// [rc4l] GL blended a slot only for a model that interpolates, and the derived models blended every one.
+TEST(ModelPose, ASlotBlendsOnlyBetweenDifferentFramesOfAModelThatInterpolates)
+{
+	EXPECT_FLOAT_EQ(0.25f, ComputeModelSlotBlend(true, true, 0.25));
+	EXPECT_FLOAT_EQ(0.f, ComputeModelSlotBlend(false, true, 0.25));
+	EXPECT_FLOAT_EQ(0.f, ComputeModelSlotBlend(true, false, 0.25));
+}
