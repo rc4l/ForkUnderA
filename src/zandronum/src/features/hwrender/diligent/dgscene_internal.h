@@ -168,7 +168,7 @@ struct ScenePieceData
 	float actorR, actorG, actorB, cpuLight;
 	// [rc4l] The slot holding this material's brightmap in the bindless array (0 for none), the piece's PieceStackId plus one (0 for a sprite or model, never culled), 1 when both slots go through SlotRemap, and 1 when GL draws it unmasked so no texel is discarded.
 	float brightSlot, stackId, animates, plain;
-	float desaturation, scrollU, scrollV, texFlags;   // [rc4l] the colormap's desaturation, 0..1, which main.fp mixes every texel toward grey by, the texture shift a scroller added since the bake, and 1 for a stencil plus 2 for an alpha-tested sprite plus 4 for a HUD model's surface plus 8 for a level surface, whose colour is its light alone, plus 16 for TM_INVERSE and 32 for a sprite blended by its own colour
+	float desaturation, scrollU, scrollV, texFlags;   // [rc4l] the colormap's desaturation, 0..1, which main.fp mixes every texel toward grey by, the texture shift a scroller added since the bake, and 1 for a stencil plus 2 for an alpha-tested sprite plus 4 for a HUD model's surface plus 8 for a level surface, whose colour is its light alone, plus 16 for TM_INVERSE, 32 for a sprite blended by its own colour and 64 for a 3D fog layer's panel
 };
 
 // [rc4l] One draw per material. Pieces arrive in bake order, so they are sorted by material first;

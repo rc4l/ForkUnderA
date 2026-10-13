@@ -416,7 +416,11 @@ static const char *kSceneVS =
 	/* [rc4l] What GL's walk never drew behind a sky hole is GL's sky there, which the frame painted first. */ \
 	"    if (fuaBehindSkyHole()) discard;\n" \
 	/* [rc4l] Under a fixed colormap main.fp takes no light, fog, desaturation or dynamic light, recolouring the texel in the piece's own colour: white for a level surface (texFlags 8), whose baked colour is its light, and a sprite's or decal's built under the colormap. */ \
-	"    if (uFixedColormap.w > 0.5) return fuaFixedColormap(undesaturated * ((int(vTexFlags + 0.5) & 8) != 0 ? vec3(1.0) : vColor));\n" \
+	/* [rc4l] ...and a 3D fog layer's panel (texFlags 64) is not drawn at all, as GL's walls leave out an untextured one. */ \
+	"    if (uFixedColormap.w > 0.5) {\n" \
+	"        if ((int(vTexFlags + 0.5) & 64) != 0) discard;\n" \
+	"        return fuaFixedColormap(undesaturated * ((int(vTexFlags + 0.5) & 8) != 0 ? vec3(1.0) : vColor));\n" \
+	"    }\n" \
 	"    vec3 color = fuaSectorLight(vColor, vLightParm.x, fogMode, fogfactor, surfDepth);\n" \
 	/* Dynamic lights add to the light COLOUR before the texture is modulated, exactly as
 	   getLightColor does -- adding after would light the black parts of a texture too. */ \

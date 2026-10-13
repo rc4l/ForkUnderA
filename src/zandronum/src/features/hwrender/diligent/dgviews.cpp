@@ -256,11 +256,14 @@ int RecollectMirrors()
 // [rc4l] GL's sheen as RenderMirrorSurface draws it, for a mirror shader to add: mirror.png at the sphere-map coordinate, in the wall's light fogged to black, at uSheenColor.a.
 #define FUA_MIRROR_SHEEN_PS_GLSL \
 	FUA_SECTOR_LIGHT_GLSL \
+	FUA_FIXED_COLORMAP_GLSL \
 	FUA_MIRROR_SHEEN_BLOCK_GLSL \
 	"layout(binding = 7) uniform sampler2D uSheen;\n" \
 	"layout(location = 2) in vec2 vSheenUV;\n" \
 	"vec3 fuaMirrorSheen() {\n" \
 	"    vec4 texel = texture(uSheen, vSheenUV);\n" \
+	/* [rc4l] Under a fixed colormap GL draws the sheen through main.fp in white light, recoloured by the colormap alone. */ \
+	"    if (uFixedColormap.w > 0.5) return fuaFixedColormap(texel.rgb) * (texel.a * uSheenColor.a);\n" \
 	"    vec4 clip = uMVP * vec4(vWorld, 1.0);\n" \
 	"    float fogfactor = fuaFogFactor(uSheenLight.y, uSheenLight.z, vec4(vWorld, clip.w), uCameraPos.xyz);\n" \
 	"    vec3 light = fuaSectorLight(uSheenColor.rgb, uSheenLight.x, uSheenLight.y, fogfactor, gl_FragCoord.z);\n" \
@@ -361,7 +364,10 @@ static const char *kMirrorPS =
 	// 127, which on any level with more than 128 batches reflected the wrong texture and could not
 	// say so.
 	"    uint mat = uint(pieces[vertPiece(i0)].fogAlphaMat.w + 0.5) & 511u;\n"
-	"    c *= texture(uMaterials[nonuniformEXT(mat)], uv).rgb;\n"
+	"    vec3 texel = texture(uMaterials[nonuniformEXT(mat)], uv).rgb;\n"
+	// [rc4l] A fixed colormap recolours what the ray hit in white light, as the raster path does a level surface.
+	"    if (uFixedColormap.w > 0.5) { outColor = vec4(min(fuaFixedColormap(texel) + sheen, vec3(1.0)), 1.0); return; }\n"
+	"    c *= texel;\n"
 	// Distance falls off the same way the raster path's fog does, so a far reflection reads as far.
 	"    float t = rayQueryGetIntersectionTEXT(rq, true);\n"
 	"    c *= clamp(1.0 - t / 4000.0, 0.15, 1.0);\n"

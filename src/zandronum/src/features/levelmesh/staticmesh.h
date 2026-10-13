@@ -151,6 +151,7 @@ struct MeshPiece
 	bool          alphaTest;
 	bool          inverse;      // [rc4l] GL's TM_INVERSE, the texel's colour inverted, as night vision shows monsters and items
 	bool          colorBlend;   // [rc4l] gl_usecolorblending's additive sprite, blended by its own colour (ComputeColorBlending)
+	bool          fogLayer;     // [rc4l] a 3D fog floor's untextured panel, which GL leaves out under a fixed colormap
 	bool          hud;          // [rc4l] a HUD model's surface, drawn over the world as GL draws one after clearing the depth buffer
 
 	// [rc4l] This piece is a QUAD: four corners, not six vertices.
@@ -194,7 +195,7 @@ struct MeshPiece
 		normX = normY = normZ = 0.f;
 		dynR = dynG = dynB = 0.f;
 		quad = false; solid = false;
-		facesDown = false; depthBias = false; redToAlpha = false; stencil = false; alphaTest = false; inverse = false; colorBlend = false; hud = false;
+		facesDown = false; depthBias = false; redToAlpha = false; stencil = false; alphaTest = false; inverse = false; colorBlend = false; fogLayer = false; hud = false;
 		flood = false; floodZ = 0.f;
 		mirrorSector = -1; mirrorCeiling = false;
 		scrollU = scrollV = 0.f;

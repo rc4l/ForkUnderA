@@ -788,6 +788,7 @@ int BakeSegFromMap(int segIndex)
 					MeshPiece fmp;
 					fmp.range = range;
 					fmp.material = NULL;   // no texture: the panel is its colour and nothing else
+					fmp.fogLayer = true;
 					FColormap fcm;
 					fcm.Clear();
 					fcm.LightColor = fl->extra_colormap->Fade;

@@ -73,8 +73,6 @@ The world, sprites, models, the 2D layer, wipes, fixed colormaps (invulnerabilit
 torches, `fixedcolormap` and `lightamp`), mirrors, stacked sectors, skyboxes and horizons are ported, each
 with a GL-against-Vulkan scenario in `tools/fuactl/scenarios`. Still missing or different:
 
-- a line mirror's sheen, which a fixed colormap does not recolour, and a 3D floor's fog layer, which GL
-  leaves out under one;
 - glow from GLDEFS glowing flats onto walls (sprites do glow);
 - the fuzz shaders `gl_fuzztype` 1-7 picks, drawn as plain translucency (the default 0 is a shadow in both),
   and the subtract styles, drawn as alpha;
