@@ -53,7 +53,7 @@
 #include "gl/scene/gl_observer.h"
 #include "gl/data/gl_data.h"
 #include "gl/data/gl_vertexbuffer.h"
-#include "gl/dynlights/gl_glow.h"
+#include "features/gldefs/glow.h"
 #include "gl/scene/gl_drawinfo.h"
 #include "gl/models/gl_models.h"
 #include "gl/shaders/gl_shader.h"

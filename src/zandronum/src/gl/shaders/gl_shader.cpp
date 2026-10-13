@@ -571,26 +571,4 @@ void FShaderManager::ApplyMatrices(VSMatrix *proj, VSMatrix *view)
 	if (mActiveShader != NULL) mActiveShader->Bind();
 }
 
-//==========================================================================
-//
-//
-//
-//==========================================================================
-
-void gl_DestroyUserShaders()
-{
-	// todo
-}
-
-//==========================================================================
-//
-// Parses a shader definition
-//
-//==========================================================================
-
-// [rc4l] features/hwshaders keeps the shader list now, so the backend compiles the same ones; this name stays for GLDEFS' parser.
-void gl_ParseHardwareShader(FScanner &sc, int deflump)
-{
-	zx::hwshaders::ParseHardwareShader(sc, deflump);
-}
 

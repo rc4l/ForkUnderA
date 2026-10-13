@@ -1,5 +1,5 @@
 /*
-** gl_dynlight.cpp
+** gldefs.cpp
 ** Light definitions for actors.
 **
 **---------------------------------------------------------------------------
@@ -56,20 +56,20 @@
 #include "d_dehacked.h"
 
 
-#include "gl/dynlights/gl_dynlight.h"
+// [rc4l] Moved from gl/dynlights/gl_dynlight.cpp, as both renderers draw what GLDEFS defines.
+#include "xs_Float.h"
+#include "features/dynlights/dynlight.h"
+#include "features/gldefs/gldefs.h"
+#include "features/gldefs/glow.h"
+#include "features/hwshaders/hwshaders.h"
 #include "features/materials/skyboxtexture.h"
-#include "gl/utility/gl_clock.h"
-#include "gl/utility/gl_convert.h"
 // [BB] New #includes.
 #include "network.h"
 
 EXTERN_CVAR (Float, gl_lights_intensity);
 EXTERN_CVAR (Float, gl_lights_size);
 int ScriptDepth;
-void gl_InitGlow(FScanner &sc);
 void gl_ParseBrightmap(FScanner &sc, int);
-void gl_DestroyUserShaders();
-void gl_ParseHardwareShader(FScanner &sc, int deflump);
 void gl_ParseSkybox(FScanner &sc);
 void gl_ParseDetailTexture(FScanner &sc);
 void gl_ParseVavoomSkybox();
@@ -434,7 +434,7 @@ void gl_ParsePulseLight(FScanner &sc)
 				break;
 			case LIGHTTAG_INTERVAL:
 				floatVal = gl_ParseFloat(sc);
-				defaults->SetAngle(FLOAT_TO_ANGLE(floatVal * TICRATE));
+				defaults->SetAngle(xs_RoundToUInt(floatVal * TICRATE / 180. * ANGLE_180));
 				break;
 			case LIGHTTAG_SUBTRACTIVE:
 				defaults->SetSubtractive(gl_ParseInt(sc) != 0);
@@ -1156,7 +1156,6 @@ void gl_SetActorLights(AActor *actor)
 	TArray<FInternalLightAssociation *> * l = gl_GetActorLights(actor);
 	unsigned int count = 0;
 
-	All.Clock();
 	if (actor->state == NULL) return;
 	if (l)
 	{
@@ -1195,7 +1194,6 @@ void gl_SetActorLights(AActor *actor)
 		actor->dynamiclights[count]->flags2|=MF2_DORMANT;
 		memset(actor->dynamiclights[count]->args, 0, sizeof(actor->args));
 	}
-	All.Unclock();
 }
 
 //==========================================================================
@@ -1316,7 +1314,7 @@ void gl_DoParseDefs(FScanner &sc, int workingLump)
 			gl_ParseBrightmap(sc, workingLump);
 			break;
 		case TAG_HARDWARESHADER:
-			gl_ParseHardwareShader(sc, workingLump);
+			zx::hwshaders::ParseHardwareShader(sc, workingLump);
 			break;
 		case TAG_DETAIL:
 			gl_ParseDetailTexture(sc);
@@ -1368,7 +1366,6 @@ void gl_ParseDefs()
 
 	atterm( gl_ReleaseLights ); 
 	gl_ReleaseLights();
-	gl_DestroyUserShaders();
 	switch (gameinfo.gametype)
 	{
 	case GAME_Heretic:

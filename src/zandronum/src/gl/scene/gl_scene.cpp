@@ -119,7 +119,6 @@ extern int viewpitch;
  
 FGLObserver		*gl_observer = NULL;
 
-void gl_ParseDefs();
 
 //-----------------------------------------------------------------------------
 //

@@ -87,4 +87,4 @@ ones. A build without the backend (`FUA_DILIGENT` off, every non-Windows build) 
 | `features/hwrender/backendrenderer.cpp` | `SettleLevelScene`, `RenderSavePicture`, `RenderBackendCamera` | a level settled before its first view; the save picture; camera textures |
 | `features/hwrender/backendvideo.cpp` | `WipeStart`, `WipeEnd`, `WipeTic`, `WipeCleanup`, `PreparePoly` | the screen wipes and the textured automap |
 | `gl/data/gl_vertexbuffer.cpp`, `gl/models/gl_models.cpp`, `gl/system/gl_interface.h` | `gl_HasContext` | vertex buffers keep only their CPU copy without GL |
-| `features/materials/textureinfo.cpp`, `material.cpp`, `hqresize.cpp`, `gl/data/gl_data.cpp` | `FMaterial::TextureBuffer`, `FMaterial::FlushAll` | texture reads and flushes that do not go through `GLRenderer` |
+| `features/materials/textureinfo.cpp`, `material.cpp`, `hqresize.cpp`, `features/levelprep/levelprep.cpp` | `FMaterial::TextureBuffer`, `FMaterial::FlushAll` | texture reads and flushes that do not go through `GLRenderer` |

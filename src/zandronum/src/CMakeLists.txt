@@ -877,7 +877,6 @@ endif( DYN_FLUIDSYNTH )
 if( NOT NO_GL )
 	set( GL_SOURCES
 		gl/data/gl_data.cpp
-		gl/data/gl_setup.cpp
 	gl/data/gl_matrix.cpp
 		gl/data/gl_vertexbuffer.cpp
 		gl/utility/gl_clock.cpp
@@ -912,8 +911,6 @@ if( NOT NO_GL )
 		gl/stereo3d/gl_stereo_leftright.cpp
 		gl/stereo3d/scoped_view_shifter.cpp
 		gl/stereo3d/gl_anaglyph.cpp
-		gl/dynlights/gl_dynlight.cpp
-		gl/dynlights/gl_glow.cpp
 		gl/dynlights/gl_dynlight1.cpp
 	gl/dynlights/gl_lightbuffer.cpp
 			gl/shaders/gl_shader.cpp
@@ -1586,12 +1583,18 @@ add_executable( zdoom WIN32
 	features/levelmesh/wallcache.cpp
 	features/levelmesh/walldecals.cpp
 	features/rendersettings/rendersettings.cpp
+	features/rendersettings/mapoptions.cpp
+	features/rendersettings/computation/mapoptions_compute.cpp
+	features/levelprep/levelprep.cpp
+	features/gldefs/gldefs.cpp
+	features/gldefs/glow.cpp
 	features/fakeflat/fakeflat.cpp
 	features/models/modeldef.cpp
 	features/models/md2model.cpp
 	features/models/md3model.cpp
 	features/models/voxelmodel.cpp
 	features/dynlights/a_dynlight.cpp
+	features/dynlights/lightsettings.cpp
 	features/dynlights/cycler.cpp
 	features/sprites/spriteframe.cpp
 	features/stackportals/stackportals.cpp

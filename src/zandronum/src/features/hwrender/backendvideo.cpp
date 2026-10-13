@@ -20,7 +20,6 @@
 #include "v_palette.h"
 #include "v_video.h"
 
-// [rc4l] GL's capability flags and CPU-side palette and brightmap code, which need no context.
 #include "features/materials/materials.h"   // [rc4l] the texture system's setup without GL
 
 #if defined(_WIN32) && defined(FUA_DILIGENT)

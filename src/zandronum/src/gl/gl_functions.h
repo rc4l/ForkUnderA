@@ -37,6 +37,5 @@ bool IsLightmodeValid();
 	const int cvar = ( zadmflags & ZADF_FORCE_VIDEO_DEFAULTS ) ? TEMP_DEFAULT_CVAR( cvar ) : TEMP_CVAR( cvar )
 
 void gl_LinkLights();
-void gl_SetActorLights(AActor *);
 
 #endif

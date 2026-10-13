@@ -11,7 +11,7 @@ GL's stacked-sector portals and the backend's walks of the stacked views both re
 ## In-engine hooks
 
 - `gl/data/gl_data.h`: includes `stackportals.h` in place of the declarations it held.
-- `gl/data/gl_setup.cpp` `gl_PreprocessLevel` and `features/frame/levelrenderer.cpp` `EndSerialize`:
+- `features/levelprep/levelprep.cpp` `PrepareLevel` and `features/frame/levelrenderer.cpp` `EndSerialize`:
   `gl_InitPortals` at level setup and on a loaded game.
 - `features/visibility/viswalk.cpp`, `features/levelmesh/flatmesh.cpp`, `features/sidebyside/glchecks.cpp`: the
   portals and their coverage.

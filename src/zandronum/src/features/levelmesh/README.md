@@ -102,12 +102,12 @@ and writes nothing. The dirty-tracking hooks the later phases need are enumerate
 
 ## Things that will bite
 
-- **`side_t::numsegs` and `vertex_t::numsectors` come from `gl_PreprocessLevel`** (`PrepareSegs` and
-  `InitVertexData` in `gl/data/gl_setup.cpp`). A dedicated server skips that, so both read zero and
+- **`side_t::numsegs` and `vertex_t::numsectors` come from `zx::levelprep::PrepareLevel`** (`PrepareSegs` and
+  `InitVertexData` in `features/levelprep/levelprep.cpp`). A dedicated server skips that, so both read zero and
   the budget understates. `CollectSideBudgets` detects this and `fua_levelmesh_stats` says so rather
   than printing a confident wrong number.
 - **The budget assumes the equal-height dedupe in `gl_RecalcVertexHeights` is dropped** (plan P2b).
   With the dedupe in place the per-edge vertex count varies as sectors move, which is exactly what a
   fixed range forbids.
 - **`side_t::V1()`/`V2()` are `inline` inside `po_man.cpp`** and cannot be reused. `SideVertices` in
-  `levelmesh.cpp` re-derives the same thing, mirroring `GetSideVertices` in `gl/data/gl_setup.cpp`.
+  `levelmesh.cpp` re-derives the same thing, mirroring `GetSideVertices` in `features/levelprep/levelprep.cpp`.

@@ -3,7 +3,6 @@
 //
 // [rc4l] Where a frame is drawn: beside GL the window's own back buffer, and in a launch without GL an offscreen target at the screen's size, drawn up to the window at present as GL's scale buffer is, which keeps the last frame for a wipe.
 
-#include "gl/system/gl_system.h"
 #include "features/hwrender/diligent/dgscene_internal.h"
 #include "features/hwrender/backendonly.h"   // [rc4l] BackendOnly
 

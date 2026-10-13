@@ -56,29 +56,7 @@
 #include "gl/textures/gl_material.h"
 
 
-//==========================================================================
-//
-// Light related CVARs
-//
-//==========================================================================
-
-CUSTOM_CVAR (Bool, gl_lights, true, CVAR_ARCHIVE | CVAR_GLOBALCONFIG | CVAR_NOINITCALL)
-{
-	if (self) gl_RecreateAllAttachedLights();
-	else gl_DeleteAllAttachedLights();
-}
-
-CVAR (Bool, gl_attachedlights, true, CVAR_ARCHIVE | CVAR_GLOBALCONFIG);
-CVAR (Bool, gl_lights_checkside, true, CVAR_ARCHIVE | CVAR_GLOBALCONFIG);
-CVAR (Float, gl_lights_intensity, 1.0f, CVAR_ARCHIVE | CVAR_GLOBALCONFIG);
-CVAR (Float, gl_lights_size, 1.0f, CVAR_ARCHIVE | CVAR_GLOBALCONFIG);
-CVAR (Bool, gl_light_sprites, true, CVAR_ARCHIVE | CVAR_GLOBALCONFIG);
-CVAR (Bool, gl_light_particles, true, CVAR_ARCHIVE | CVAR_GLOBALCONFIG);
-CUSTOM_CVAR (Bool, gl_lights_additive, false,  CVAR_ARCHIVE | CVAR_GLOBALCONFIG | CVAR_NOINITCALL)
-{
-	gl_DeleteAllAttachedLights();
-	gl_RecreateAllAttachedLights();
-}
+// [rc4l] The light settings live in features/dynlights/lightsettings.cpp.
 
 //==========================================================================
 //

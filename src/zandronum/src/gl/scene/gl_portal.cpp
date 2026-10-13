@@ -52,7 +52,7 @@
 #include "gl/renderer/gl_lightdata.h"
 #include "gl/renderer/gl_renderer.h"
 #include "gl/renderer/gl_renderstate.h"
-#include "gl/dynlights/gl_glow.h"
+#include "features/gldefs/glow.h"
 #include "gl/data/gl_data.h"
 #include "gl/data/gl_vertexbuffer.h"
 #include "gl/scene/gl_clipper.h"

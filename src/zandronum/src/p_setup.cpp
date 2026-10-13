@@ -96,7 +96,7 @@
 #include "domination.h"
 
 // [BB] New #includes..
-#include "gl/dynlights/gl_dynlight.h"
+#include "features/dynlights/dynlight.h"
 
 #define MISSING_TEXTURE_WARN_LIMIT		20
 

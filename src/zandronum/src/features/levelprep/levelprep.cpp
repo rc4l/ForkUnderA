@@ -1,5 +1,5 @@
 /*
-** gl_setup.cpp
+** levelprep.cpp
 ** Initializes the data structures required by the GL renderer to handle
 ** a level
 **
@@ -39,7 +39,8 @@
 **
 */
 
-#include "gl/system/gl_system.h"
+// [rc4l] A loaded level readied for either renderer, moved from gl/data/gl_setup.cpp: map sections, each sector's subsectors and vertices, transparent doors, the vertices' sectors and side segs; GL's own part stays in gl/data/gl_data.cpp.
+
 #include "doomtype.h"
 #include "colormatcher.h"
 #include "i_system.h"
@@ -53,17 +54,106 @@
 #include "p_setup.h"
 #include "g_level.h"
 
-#include "gl/renderer/gl_renderer.h"
-#include "gl/data/gl_data.h"
-#include "gl/data/gl_vertexbuffer.h"
-#include "gl/dynlights/gl_dynlight.h"
-#include "gl/dynlights/gl_glow.h"
-#include "gl/utility/gl_clock.h"
-#include "gl/gl_functions.h"
-#include "gl/scene/gl_wallcache.h"
+#include "m_misc.h"
+#include "c_cvars.h"
+#include "features/levelprep/levelprep.h"
+#include "features/rendersettings/rendersettings.h"   // [rc4l] fogdensity, outsidefogdensity, skyfog
+#include "features/stackportals/stackportals.h"   // [rc4l] gl_InitPortals, portals
+#include "features/dynlights/dynlight.h"   // [rc4l] ADynamicLight
+#include "features/materials/material.h"   // [rc4l] FMaterial::FlushAll
 
 void InitGLRMapinfoData();
-void gl_InitData();
+
+//-----------------------------------------------------------------------------
+//
+// Adjust sprite offsets for GL rendering (IWAD resources only)
+//
+//-----------------------------------------------------------------------------
+
+void AdjustSpriteOffsets()
+{
+	static bool done=false;
+	char name[30];
+
+	if (done) return;
+	done=true;
+
+	mysnprintf(name, countof(name), "sprofs/%s.sprofs", GameNames[gameinfo.gametype]);
+	int lump = Wads.CheckNumForFullName(name);
+	if (lump>=0)
+	{
+		FScanner sc;
+		sc.OpenLumpNum(lump);
+		FMaterial::FlushAll();   // [rc4l] not through GLRenderer, which a launch without GL does not have
+		int ofslumpno = Wads.GetLumpFile(lump);
+		while (sc.GetString())
+		{
+			int x,y;
+			FTextureID texno = TexMan.CheckForTexture(sc.String, FTexture::TEX_Sprite);
+			sc.GetNumber();
+			x=sc.Number;
+			sc.GetNumber();
+			y=sc.Number;
+
+			if (texno.isValid())
+			{
+				FTexture * tex = TexMan[texno];
+
+				int lumpnum = tex->GetSourceLump();
+				// We only want to change texture offsets for sprites in the IWAD or the file this lump originated from.
+				if (lumpnum >= 0 && lumpnum < Wads.GetNumLumps())
+				{
+					int wadno = Wads.GetLumpFile(lumpnum);
+					if (wadno==FWadCollection::IWAD_FILENUM || wadno == ofslumpno)
+					{
+						tex->LeftOffset=x;
+						tex->TopOffset=y;
+						tex->KillNative();
+					}
+				}
+			}
+		}
+	}
+}
+
+static int LS_SetGlobalFogParameter (line_t *ln, AActor *it, bool backSide,
+	int arg0, int arg1, int arg2, int arg3, int arg4)
+{
+// SetGlobalFogParameter (type, value)
+	switch(arg0)
+	{
+	case 0:
+		fogdensity = arg1>>1;
+		return true;
+
+	case 1:
+		outsidefogdensity = arg1>>1;
+		return true;
+
+	case 2:
+		skyfog = arg1;
+		return true;
+
+	default:
+		return false;
+	}
+}
+
+
+
+//==========================================================================
+//
+// Once per game start: the light special GL's MAPINFO fog needs, and the IWAD's sprite offsets
+//
+//==========================================================================
+
+static void InitData()
+{
+	LineSpecials[157] = LS_SetGlobalFogParameter;
+	// [BB] This is set in p_lnspec.cpp
+	//LineSpecials[159] = LS_Sector_SetPlaneReflection;
+	AdjustSpriteOffsets();
+}
 
 //==========================================================================
 //
@@ -606,12 +696,14 @@ static void PrepareSegs()
 
 //==========================================================================
 //
-// Initialize the level data for the GL renderer
+// Initialize the level data for either renderer
 //
 //==========================================================================
 extern int restart;
 
-void gl_PreprocessLevel()
+namespace zx { namespace levelprep {
+
+void PrepareLevel()
 {
 	int i;
 
@@ -621,7 +713,7 @@ void gl_PreprocessLevel()
 	if (datadone != restart)
 	{
 		datadone = restart;
-		gl_InitData();
+		InitData();
 	}
 
 	PrepareSegs();
@@ -660,19 +752,7 @@ void gl_PreprocessLevel()
 	}
 	delete[] checkmap;
 
-	// [rc4l] GL's per-seg wall cache lives for the level.
-	gl_WallCacheAlloc(numsegs);
-
 	gl_InitPortals();
-
-	if (GLRenderer != NULL) 
-	{
-		GLRenderer->SetupLevel();
-	}
-
-#if 0
-	gl_CreateSections();
-#endif
 
 	InitGLRMapinfoData();
 }
@@ -681,14 +761,12 @@ void gl_PreprocessLevel()
 
 //==========================================================================
 //
-// Cleans up all the GL data for the last level
+// Cleans up all the level data for the last level
 //
 //==========================================================================
 
-void gl_CleanLevelData()
+void CleanLevel()
 {
-	gl_WallCacheFree();
-
 	// Dynamic lights must be destroyed before the sector information here is deleted.
 	TThinkerIterator<ADynamicLight> it(STAT_DLIGHT);
 	AActor * mo=it.Next();
@@ -744,6 +822,8 @@ void gl_CleanLevelData()
 	portals.Clear();
 }
 
+}} // namespace zx::levelprep
+
 
 //==========================================================================
 //
@@ -761,6 +841,55 @@ CCMD(listmapsections)
 			{
 				Printf("Mapsection %d, sector %d, line %d\n", i, subsectors[j].render_sector->sectornum, int(subsectors[j].firstline->linedef-lines));
 				break;
+			}
+		}
+	}
+}
+
+//==========================================================================
+//
+// dumpgeometry
+//
+//==========================================================================
+
+CCMD(dumpgeometry)
+{
+	for(int i=0;i<numsectors;i++)
+	{
+		sector_t * sector = &sectors[i];
+
+		Printf(PRINT_LOG, "Sector %d\n",i);
+		for(int j=0;j<sector->subsectorcount;j++)
+		{
+			subsector_t * sub = sector->subsectors[j];
+
+			Printf(PRINT_LOG, "    Subsector %d - real sector = %d - %s\n", int(sub-subsectors), sub->sector->sectornum, sub->hacked&1? "hacked":"");
+			for(DWORD k=0;k<sub->numlines;k++)
+			{
+				seg_t * seg = sub->firstline + k;
+				if (seg->linedef)
+				{
+				Printf(PRINT_LOG, "      (%4.4f, %4.4f), (%4.4f, %4.4f) - seg %d, linedef %d, side %d", 
+					FIXED2FLOAT(seg->v1->x), FIXED2FLOAT(seg->v1->y), FIXED2FLOAT(seg->v2->x), FIXED2FLOAT(seg->v2->y),
+					int(seg-segs), int(seg->linedef-lines), seg->sidedef != seg->linedef->sidedef[0]);
+				}
+				else
+				{
+					Printf(PRINT_LOG, "      (%4.4f, %4.4f), (%4.4f, %4.4f) - seg %d, miniseg", 
+						FIXED2FLOAT(seg->v1->x), FIXED2FLOAT(seg->v1->y), FIXED2FLOAT(seg->v2->x), FIXED2FLOAT(seg->v2->y),
+						int(seg-segs));
+				}
+				if (seg->PartnerSeg) 
+				{
+					subsector_t * sub2 = seg->PartnerSeg->Subsector;
+					Printf(PRINT_LOG, ", back sector = %d, real back sector = %d", sub2->render_sector->sectornum, seg->PartnerSeg->frontsector->sectornum);
+				}
+				else if (seg->backsector)
+				{
+					Printf(PRINT_LOG, ", back sector = %d (no partnerseg)", seg->backsector->sectornum);
+				}
+
+				Printf(PRINT_LOG, "\n");
 			}
 		}
 	}

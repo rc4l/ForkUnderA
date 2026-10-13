@@ -15,15 +15,19 @@
 #include "farchive.h"
 #include "r_defs.h"
 
-// [rc4l] GL's CPU-side level, light and fog code, which needs no context.
-#include "gl/gl_functions.h"               // [rc4l] gl_PreprocessLevel, gl_CleanLevelData, gl_SetActorLights
+#include "gl/gl_functions.h"               // [rc4l] gl_PreprocessLevel, gl_CleanLevelData: GL's own data for a level
+#include "features/levelprep/levelprep.h"
+#include "features/gldefs/gldefs.h"
 #include "features/stackportals/stackportals.h"   // [rc4l] gl_InitPortals
 #include "features/fakeflat/fakeflat.h"   // [rc4l] gl_FakeFlat
-#include "gl/renderer/gl_lightdata.h"      // [rc4l] gl_SetFogParams, the attached lights
+#include "features/rendersettings/rendersettings.h"   // [rc4l] gl_SetFogParams
 #include "features/materials/materials.h"
 
-void gl_ParseDefs();
-EXTERN_CVAR(Float, maxviewpitch)
+CUSTOM_CVAR(Float, maxviewpitch, 90.f, CVAR_ARCHIVE|CVAR_SERVERINFO)
+{
+	if (self>90.f) self=90.f;
+	else if (self<-90.f) self=-90.f;
+}
 EXTERN_CVAR(Bool, cl_disallowfullpitch)
 EXTERN_CVAR(Bool, cl_oldfreelooklimit)
 
@@ -54,9 +58,10 @@ void FLevelRenderer::SetFogParams(int fogdensity, PalEntry outsidefogcolor, int 
 	gl_SetFogParams(fogdensity, outsidefogcolor, outsidefogdensity, skyfog);
 }
 
-// [rc4l] The level's shared data, then the backend's mesh and per-seg bake state for it.
+// [rc4l] The level's shared data, then GL's, then the backend's mesh and per-seg bake state for it.
 void FLevelRenderer::PreprocessLevel()
 {
+	zx::levelprep::PrepareLevel();
 	gl_PreprocessLevel();
 	zx::levelmesh::AllocForLevel(numsegs);
 	zx::levelmesh::MeshInitForLevel();
@@ -69,6 +74,7 @@ void FLevelRenderer::CleanLevelData()
 	zx::visibility::ForgetWalk();
 	zx::levelmesh::MeshFreeLevel();
 	gl_CleanLevelData();
+	zx::levelprep::CleanLevel();
 }
 bool FLevelRenderer::RequireGLNodes() { return true; }
 

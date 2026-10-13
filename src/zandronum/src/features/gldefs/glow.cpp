@@ -44,7 +44,7 @@
 #include "r_defs.h"
 #include "textures/textures.h"
 
-#include "gl/dynlights/gl_glow.h"
+#include "features/gldefs/glow.h"
 
 //===========================================================================
 // 

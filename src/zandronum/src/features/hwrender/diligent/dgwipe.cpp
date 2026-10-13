@@ -3,7 +3,6 @@
 //
 // [rc4l] The screen wipes in a launch without GL: the last frame and the new one kept as pictures, and each tic's mix of them drawn under the console and menus, as GL's wipers draw it (features/wipe works the mix out).
 
-#include "gl/system/gl_system.h"
 #include "features/hwrender/diligent/dgscene_internal.h"
 #include "features/wipe/computation/wipe_compute.h"
 
