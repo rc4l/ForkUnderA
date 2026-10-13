@@ -902,6 +902,7 @@ if( NOT NO_GL )
 		gl/textures/gl_hqresize.cpp
 		gl/textures/gl_skyboxtexture.cpp
 		gl/scene/gl_bsp.cpp
+		gl/scene/gl_wallcache.cpp
 		gl/scene/gl_fakeflat.cpp
 		gl/scene/gl_clipper.cpp
 		gl/scene/gl_decal.cpp
@@ -1599,6 +1600,7 @@ add_executable( zdoom WIN32
 	features/hitboxviz/computation/vizgate_compute.cpp
 	features/levelmesh/levelmesh.cpp
 	features/levelmesh/wallcache.cpp
+	features/levelmesh/walldecals.cpp
 	features/hwrender/hud2d.cpp
 	features/hwrender/spriteview.cpp
 	features/levelmesh/staticmesh.cpp
@@ -1614,10 +1616,12 @@ add_executable( zdoom WIN32
 	features/frame/standaloneframe.cpp
 	features/frame/playerview.cpp
 	features/frame/levelrenderer.cpp
+	features/frame/framedriver.cpp
 	features/display/display.cpp
 	features/hwrender/backendvideo.cpp
 	features/hwrender/record2d.cpp
 	features/sidebyside/sidebyside.cpp
+	features/sidebyside/glchecks.cpp
 	features/hwrender/backendrenderer.cpp
 	features/visibility/viswalk.cpp
 	features/jobs/jobs.cpp
@@ -1643,6 +1647,7 @@ add_executable( zdoom WIN32
 	features/sprites/computation/modelpose_compute.cpp
 	features/sprites/computation/pspritequad_compute.cpp
 	features/frame/computation/actorcull_compute.cpp
+	features/frame/computation/cameraseen_compute.cpp
 	features/display/computation/display_compute.cpp
 	features/draw2d/computation/flatfill_compute.cpp
 	features/levelmesh/computation/shading_compute.cpp
@@ -1656,6 +1661,7 @@ add_executable( zdoom WIN32
 	features/udmf-desaturation/computation/udmfdesaturation_compute.cpp
 	features/levelmesh/computation/packedcolor_compute.cpp
 	features/levelmesh/computation/decalproject_compute.cpp
+	features/levelmesh/computation/walldecal_compute.cpp
 	features/levelmesh/computation/wallcache_compute.cpp
 	features/surfaces/computation/wallgeom_compute.cpp
 	features/surfaces/computation/wallbands_compute.cpp
@@ -1687,6 +1693,7 @@ add_executable( zdoom WIN32
 	features/hwrender/computation/growbuffer_compute.cpp
 	features/hwrender/computation/backendview_compute.cpp
 	features/hwrender/computation/dynlayout_compute.cpp
+	features/hwrender/computation/skyfog_compute.cpp
 	features/hwrender/computation/texfilter_compute.cpp
 	features/hwrender/computation/slotremap_compute.cpp
 	features/hwrender/computation/rendererrate_compute.cpp

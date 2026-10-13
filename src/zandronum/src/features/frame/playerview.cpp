@@ -10,6 +10,7 @@
 #include "features/hwrender/hud2d.h"           // [rc4l] StandaloneActive, Record2D
 #include "features/hwrender/diligent/dglive.h" // [rc4l] SetMainViewLens
 #include "features/sprites/pspritebuild.h"
+#include "features/sprites/spritebuild.h"      // [rc4l] CheckFrameSprites
 #include "features/draw2d/screenblend.h"
 #include "features/fov-interp/fovinterp.h"
 #include "features/hwrender/backendonly.h"   // [rc4l] NoteWorldView
@@ -56,6 +57,7 @@ FrameLens BeginPlayerFrame(player_t *player)
 	}
 	if (cl_capfps || r_NoInterpolate) r_TicFrac = FRACUNIT;
 	else r_TicFrac = I_GetTimeFrac(&r_FrameTime);
+	r_frameSerial++;
 	gl_frameMS = I_MSTime();
 	P_FindParticleSubsectors();
 	// [rc4l] Camera textures the last frame used, each drawn by the renderer's RenderTextureView.
@@ -67,6 +69,9 @@ FrameLens BeginPlayerFrame(player_t *player)
 	gl_fixedcolormap = zx::viewsetup::FixedColormap(player);
 	// [rc4l] fov-interp: the sub-tic position of the zoom P_PlayerThink is about to take.
 	lens.fov = FOV_InterpolatedForFrame(player);
+	r_viewLens.fov = lens.fov;
+	r_viewLens.ratio = lens.ratio;
+	r_viewLens.fovRatio = lens.fovRatio;
 	return lens;
 }
 
@@ -98,22 +103,21 @@ void MarkMapSection()
 
 void RenderPlayerView(player_t *player, int paletteBrightness)
 {
-	const FrameLens lens = BeginPlayerFrame(player);
-	const bool savedMain = BeginViewpoint(player->camera, lens.fov, lens.fovRatio, true, true);
+	const bool savedMain = BeginViewpoint(player->camera, r_viewLens.fov, r_viewLens.fovRatio, true, true);
 	zx::viewsetup::TurnView(viewangle);
 	sector_t *const sector = viewsector;
 	MarkMapSection();
 	if (zx::hwrender::StandaloneActive())
 	{
 		zx::levelmesh::EnterScene();
-		const SceneHooks none = { NULL, NULL };
-		// [rc4l] Always true here, since BeginBackendOnly keeps the map bake on, which a moved sector otherwise waits for.
-		StandaloneScene(none);
+		StandaloneScene();
 		zx::levelmesh::LeaveScene();
 	}
+	// [rc4l] GL drew the frame first when a check was on, so its sprites are there to compare the derived ones against.
+	zx::sprites::CheckFrameSprites();
 
 	// [rc4l] EndDrawScene: the weapon unless a HUD model replaces it, the targeter, and the screen's tint.
-	zx::sprites::BuildPlayerSpritesBobbed(sector, in_area, gl_IsHUDModelForPlayerAvailable(players[consoleplayer].camera->player));
+	zx::sprites::BuildPlayerSprites(sector, in_area, gl_IsHUDModelForPlayerAvailable(players[consoleplayer].camera->player));
 	zx::sprites::BuildTargeterSprites(zx::viewsetup::CurrentView().viewActor);
 	zx::sprites::CheckFramePSprites();
 	zx::draw2d::ScreenFill fills[2];

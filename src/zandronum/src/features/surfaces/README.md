@@ -288,9 +288,9 @@ everywhere before it can be run once.
 
 ## Where the map-driven bake stands now
 
-`fua_dg_standalone` and `fua_surface_mapbake_auto` are **on by default**. The two things holding them
-off were the residual against the GL-driven picture and the surface kinds only the BSP walk built;
-what closed them:
+`fua_dg_standalone` is **on by default**, and the map-driven bake is the only bake: GL's walk no longer
+fills the mesh, so `fua_surface_mapbake_auto` is gone. The two things holding them off were the residual
+against the GL-driven picture and the surface kinds only the BSP walk built; what closed them:
 
 - **3D floor wall faces** (`ffblocks_compute`). A slab hanging in the sector on the other side of a
   line cuts a block out of the wall behind it, and `GLWall::DoFFloorBlocks` builds those during the

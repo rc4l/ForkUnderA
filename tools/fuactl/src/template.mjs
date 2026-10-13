@@ -77,8 +77,8 @@ async function withEngine({ port, map, iwad, wadPath, gl, side = {}, size }, bod
       if (renderer !== "vulkan") throw new Error(`side ${side.name} asked for no GL and the launch reports ${renderer || "no renderer"}`);
     }
     await cap.exec(c, "r_drawplayersprites 0");
-    // [rc4l] A Vulkan side derives its own scene, as players run it, rather than taking GL's walk; one judged by GL's frame keeps GL drawing.
-    if (!gl && !side.noGl) await cap.exec(c, `fua_dg_standalone ${side.frame === "gl" ? 0 : 1}`);
+    // [rc4l] A Vulkan side derives its own scene, as players run it, rather than taking GL's walk; one judged by GL's frame, or by both renderers' from one frame (glDraws), keeps GL drawing.
+    if (!gl && !side.noGl) await cap.exec(c, `fua_dg_standalone ${side.frame === "gl" || side.glDraws ? 0 : 1}`);
     for (const line of sideCommands(side)) await cap.exec(c, line);
     await cap.waitTics(c, 10);
     return await body(c);
@@ -277,7 +277,7 @@ export async function compareSameFrame({ name, wad, maps, vantages, boxes, iwad 
   const others = engineProcessCount();
   if (others > 0) return { lines: [`${others} other engine window(s) open -- close them first`], failed: 1, refused: true };
   const exe = resolveEngine().split(path.sep).join("/");
-  return eachVulkanLaunch({ name, wad, maps, iwad, port, size }, async (c, map) => {
+  return eachVulkanLaunch({ name, wad, maps, iwad, port, size, side: { name: "pair", glDraws: true } }, async (c, map) => {
     const frames = {};
     await cap.waitTics(c, settleTics);
     for (const v of vantages) {

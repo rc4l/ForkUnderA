@@ -9,8 +9,8 @@ render style, and the quad, billboarded or rolled. The decisions are `Compute*` 
 
 Particles too (`BuildParticle`, `GLSprite::ProcessParticle`'s light and quad), each walk handing over
 the particles in the subsectors it reaches. A sprite's `ThingColor` (a particle's colour, a stencil
-actor's fill), which GL's shader multiplies it by, is folded into its shading on both this path and
-GL's capture; without it every particle drew in its texture's white (scenario `particlecolor`).
+actor's fill), which GL's shader multiplies it by, is folded into its shading here and in the copy of GL's
+sprite the check reads; without it every particle drew in its texture's white (scenario `particlecolor`).
 
 Models too (`modelbuild.cpp`): the actor's light and style as a single-band sprite's, the pose from
 `computation/modelpose_compute` (`ComputeModelMatrix`, `gl_RenderModel`'s VSMatrix calls; the momentum,
@@ -23,8 +23,8 @@ The weapon too (`pspritebuild.cpp`, `computation/pspritequad_compute`): each lay
 `DrawPlayerSprites` and `DrawPSprite` draw it, with the weapon light (software lighting's curve, the
 brighten a fullbright layer gives, bright fog), the 3D floor band the eye is in, the style and alpha
 `AlterWeaponSprite` leaves, the overlay offsets and bob, and the targeter; recorded into the 2D capture
-where GL's quad was. GL's `P_BobWeapon` result is handed over, since it smooths the bob a step per call;
-`BuildPlayerSpritesBobbed` works it out itself for a frame with no GL renderer. The weapon's style and alpha
+where GL's quad was. The bob is `P_BobWeapon`'s, which steps once a frame (`r_frameSerial`), so the
+weapon bobs alike whichever renderers draw the frame. The weapon's style and alpha
 are `ComputeWeaponStyle`, sharing the sprites' fuzz, transsouls and alpha1 rules, and a fullbright layer's
 colour is `ComputeFullbrightColor`; `StyleOf` and `RenderStyleOf` carry an engine style to them and back.
 `fua_psprite_check 1` compares the derived quads with GL's bit for bit (`fua_psprite_report`): about
@@ -44,16 +44,15 @@ actor-frames across AOW03, wdiex02, WDI01, WDI09, WDI18 and dbab04, with XY bill
 and `3`, `gl_sprite_blend`, `gl_fuzztype`, dynamic sprite lights, invulnerability and light amplification;
 and with models on about 4.2 million more actor-frames and 103,000 model surfaces across the Whodunit
 maps. In standalone the actors only a mirror or stacked view sees count as "only ours", since GL walks
-neither there. `fua_sprites_own 0` hands every sprite and model back to GL.
+neither there.
 
 ## In-engine hooks
 
-- `features/frame/standaloneframe.cpp`, the standalone sprite sweep: `BuildSprites` for the actors in view,
-  derived in chunks on `features/jobs`' pool (a model, or a sprite whose material is not made yet, on the game
-  thread) and appended in sweep order, or GL's `ProcessSprite` through a hook with the switch off or a check on; `BuildSprite` for each actor a stacked
+- `features/frame/standaloneframe.cpp`, the sprite sweep: `BuildSprites` for the actors in view, derived in
+  chunks on `features/jobs`' pool (a model, or a sprite whose material is not made yet, on the game thread)
+  and appended in sweep order, or one at a time with a check on; `BuildSprite` for each actor a stacked
   view's or mirror's walk reaches; `BuildParticle` for each particle the player's walk reaches.
-- `gl/scene/gl_scene.cpp` `FGLRenderer::DrawScene`: GL's model list with the check on, and
-  `CheckFrameSprites` after GL's sprites are drawn.
+- `features/sidebyside/glchecks.cpp`: GL's sprites, models and weapon as GL reports them, for the checks.
 - `features/levelmesh/flatmesh.cpp` `RegisterSprite`: `NoteGLSprite`, GL's piece for the check, and the
   `ThingColor` fold.
 - `features/levelmesh/modelmesh.cpp`: `ModelPieceLook`, a model's look for GL's capture and ours;
@@ -63,11 +62,8 @@ neither there. `fua_sprites_own 0` hands every sprite and model back to GL.
   `ComputeModelMatrix`, and `NextModelFrame`.
 - `gl/models/gl_models_md2.cpp`, `gl_models_md3.cpp`, `gl_voxels.cpp`: `FrameSurfaces`, each `RenderFrame`'s
   surfaces worked out without GL and drawn from.
-- `gl/scene/gl_weapon.cpp` `DrawPlayerSprites`: `BuildPlayerSprites` with GL's bob, its HUD models on GL's HUD model step; `DrawTargeterSprites`:
-  `BuildTargeterSprites`; `DrawPSprite`: `NoteGLPSprite`, and records only when `PSpritesOwned` is false.
-- `gl/scene/gl_scene.cpp` `EndDrawScene`: `CheckFramePSprites` once the weapon and targeter are in.
-- `features/frame/playerview.cpp` `RenderPlayerView`: `BuildPlayerSpritesBobbed`, `BuildTargeterSprites` and
-  `CheckFramePSprites`, for a launch without GL.
+- `features/frame/playerview.cpp` `RenderPlayerView`, every frame the backend draws: `CheckFrameSprites` after
+  the scene, then `BuildPlayerSprites`, `BuildTargeterSprites` and `CheckFramePSprites`.
 
 GL settings it still reads, until the renderer interface supplies them (P5): `glset`,
 `gl_fixedcolormap`, `currentmapsection`, `getExtraLight`, `gl_FindModelFrame`, and GL's sprite cvars.

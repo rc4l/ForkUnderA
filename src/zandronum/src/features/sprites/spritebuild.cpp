@@ -67,8 +67,6 @@ EXTERN_CVAR(Float, gl_lights_size)
 EXTERN_CVAR(Float, gl_lights_intensity)
 EXTERN_CVAR(Float, transsouls)
 
-// [rc4l] The backend's sprites derived here rather than by GLSprite, models excepted; fua_sprite_check matched GL on 1.6 million actor-frames before this went on.
-CVAR(Bool, fua_sprites_own, true, 0)
 // [rc4l] Derive every sprite beside GL's and compare them bit for bit, counting what differs for fua_sprite_report.
 CVAR(Bool, fua_sprite_check, false, 0)
 
@@ -159,6 +157,12 @@ void ActorDynamicLight(const AActor *actor, float out[3])
 {
 	out[0] = out[1] = out[2] = 0.f;
 	ActorLight(actor, out);
+}
+
+void PointDynamicLight(fixed_t x, fixed_t y, fixed_t z, subsector_t *subsec, float out[3])
+{
+	out[0] = out[1] = out[2] = 0.f;
+	if (subsec != NULL) PointLight(x, y, z, subsec, NULL, out);
 }
 
 // [rc4l] GLSprite's ThingColor, which GL's shader multiplies the sprite by as the object colour, folded into the shading.
@@ -683,9 +687,10 @@ void CheckFrameSprites()
 		unsigned j = i;
 		while (j < g_ours.size() && keyOf(g_ours[j]) == key) j++;
 		seen.insert(key);
-		g_check.checked++;
 		const auto first = glFirst.find(key);
-		if (first == glFirst.end()) { g_onlyOurs++; g_check.differed++; i = j; continue; }
+		// [rc4l] An actor GL's walk did not reach but the frustum sweep did is not GL's to compare, so it is only counted.
+		if (first == glFirst.end()) { g_onlyOurs++; i = j; continue; }
+		g_check.checked++;
 		unsigned k = first->second, n = 0;
 		const char *why = NULL;
 		for (; k < g_gl.size() && keyOf(g_gl[k]) == key; k++, n++)

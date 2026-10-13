@@ -21,9 +21,9 @@ export const VANTAGES = [
 
 export const BOXES = { MAP01: { red: { box: [0.2, 0.2, 0.8, 0.8], ceiling: 4, vantage: "red" } } };
 
-// [rc4l] The level reloads with the map bake off so GL's own capture fills the mesh, then the mesh is emptied while GL looks away; a GL that drew from it leaves the red wall grey.
+// [rc4l] The mesh is emptied while GL looks away; a GL that drew from it leaves the red wall grey.
 export const SIDES = [{ name: "gl", gl: true },
-  { name: "blanked", frame: "gl", commands: ["fua_surface_mapbake_auto 0", "map MAP01"], atVantage: ["fua_mesh_blank"] }];
+  { name: "blanked", frame: "gl", atVantage: ["fua_mesh_blank"] }];
 
 runScenarioIfMain(import.meta.url, () => ({ name: "glplain", wad: buildGlPlainWad(), maps: ["MAP01"],
   vantages: VANTAGES, boxes: BOXES, sides: SIDES }));

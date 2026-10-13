@@ -50,7 +50,7 @@
 #include "gl/renderer/gl_renderer.h"
 #include "gl/renderer/gl_lightdata.h"
 #include "gl/renderer/gl_renderstate.h"
-#include "features/hwrender/hud2d.h"
+#include "gl/scene/gl_observer.h"
 #include "gl/data/gl_data.h"
 #include "gl/data/gl_vertexbuffer.h"
 #include "gl/dynlights/gl_glow.h"
@@ -60,7 +60,6 @@
 #include "gl/textures/gl_material.h"
 #include "computation/psprite_overlay_compute.h"
 #include "features/damage-tint/damagetint.h"	// [rc4l] damaging-floor weapon tint
-#include "features/sprites/pspritebuild.h"	// [rc4l] the weapon derived without GL
 #include "features/draw2d/computation/quad2d_compute.h"	// [rc4l] a layer's 2D blend
 
 EXTERN_CVAR (Bool, r_drawplayersprites)
@@ -89,10 +88,7 @@ void FGLRenderer::DrawPSprite (player_t * player,pspdef_t *psp,fixed_t sx, fixed
 	// [BB] In the HUD model step we just render the model and break out. 
 	if ( hudModelStep )
 	{
-		// [rc4l] Same as the world models: this draws into GL's back buffer, which the Diligent
-		// child window is covering, so a weapon replaced by a model has been invisible rather than
-		// merely unported. See features/hwrender/hud2d.h and docs/models-scope.md.
-		if (!zx::hwrender::BackendPresenting()) gl_RenderHUDModel( psp, sx, sy);
+		gl_RenderHUDModel( psp, sx, sy);
 		return;
 	}
 	
@@ -222,9 +218,8 @@ void FGLRenderer::DrawPSprite (player_t * player,pspdef_t *psp,fixed_t sx, fixed
 	}
 	gl_RenderState.Apply();
 
-	// [rc4l] features/hwrender: the weapon is already a screen-space quad -- x1/y1/x2/y2 are pixels
-	// including viewwindowx/y -- so it belongs in the 2D capture rather than the sprite stream, which
-	// carries world geometry. Recorded after Apply so the colour is the final shaded one.
+	// [rc4l] The weapon's screen-space quad (x1/y1/x2/y2 are pixels including viewwindowx/y), for a check against GL's weapon; built after Apply so the colour is the final shaded one.
+	if (gl_observer)
 	{
 		zx::hwrender::Quad2D q;
 		q.material = tex;
@@ -246,9 +241,7 @@ void FGLRenderer::DrawPSprite (player_t * player,pspdef_t *psp,fixed_t sx, fixed
 		q.texMode = gl_RenderState.GetTextureMode();
 		q.kind = 0;
 		q.lx2 = q.ly2 = 0.f;
-		// [rc4l] features/sprites records the weapon itself; GL's quad is only compared against it with the check on.
-		zx::sprites::NoteGLPSprite(q);
-		if (!zx::sprites::PSpritesOwned()) zx::hwrender::Record2D(q);
+		gl_observer->WeaponQuad(q);
 	}
 
 	FFlatVertex *ptr = GLRenderer->mVBO->GetBuffer();
@@ -300,8 +293,6 @@ void FGLRenderer::DrawPlayerSprites(sector_t * viewsector, bool hudModelStep)
 		return;
 
 	P_BobWeapon (player, &player->psprites[ps_weapon], &ofsx, &ofsy);
-	// [rc4l] features/sprites derives the weapon from the same bob, since P_BobWeapon smooths it a step per call, as a HUD model on the HUD model step.
-	zx::sprites::BuildPlayerSprites(viewsector, in_area, ofsx, ofsy, hudModelStep);
 
 	// [overlay] Collect the weapon-pass layers (everything below the targeter) in ascending
 	// draw order, and compute each layer's fullbright exactly as the old statebright[] did.
@@ -578,7 +569,6 @@ void FGLRenderer::DrawTargeterSprites()
 	pspdef_t *psp;
 	AActor * playermo=players[consoleplayer].camera;
 	player_t * player=playermo->player;
-	zx::sprites::BuildTargeterSprites(mViewActor);	// [rc4l] features/sprites derives the targeter too
 	
 	if(!player || playermo->renderflags&RF_INVISIBLE || !r_drawplayersprites ||
 		mViewActor!=playermo) return;

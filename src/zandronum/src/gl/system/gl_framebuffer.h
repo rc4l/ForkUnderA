@@ -86,6 +86,9 @@ public:
 	// v_video.h.
 	void ScaleCoordsFromWindow(int &x, int &y);
 
+	// [rc4l] Whether GL's window is shown, so a frame it is covered in skips the finish, the replay read and the swap; whoever composes GL with another renderer sets it.
+	bool mPresents = true;
+
 
 private:
 	// [rc4l] video-scale: offscreen render target for internal-resolution scaling. When

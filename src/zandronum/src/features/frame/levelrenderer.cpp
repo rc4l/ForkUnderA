@@ -5,6 +5,10 @@
 #include "features/frame/levelrenderer.h"
 #include "features/hwrender/hud2d.h"                          // [rc4l] RenderCameraTexture
 #include "features/viewsetup/computation/viewsetup_compute.h"  // [rc4l] ComputeMaxViewPitch
+#include "features/levelmesh/wallcache.h"                      // [rc4l] AllocForLevel, FreeLevel
+#include "features/levelmesh/staticmesh.h"                     // [rc4l] MeshInitForLevel, MeshFreeLevel
+#include "features/visibility/viswalk.h"                       // [rc4l] ForgetWalk
+#include "r_state.h"                                           // [rc4l] numsegs
 
 #include "c_cvars.h"
 #include "doomstat.h"   // zadmflags
@@ -51,8 +55,22 @@ void FLevelRenderer::SetFogParams(int fogdensity, PalEntry outsidefogcolor, int 
 	gl_SetFogParams(fogdensity, outsidefogcolor, outsidefogdensity, skyfog);
 }
 
-void FLevelRenderer::PreprocessLevel() { gl_PreprocessLevel(); }
-void FLevelRenderer::CleanLevelData() { gl_CleanLevelData(); }
+// [rc4l] The level's shared data, then the backend's mesh and per-seg bake state for it.
+void FLevelRenderer::PreprocessLevel()
+{
+	gl_PreprocessLevel();
+	zx::levelmesh::AllocForLevel(numsegs);
+	zx::levelmesh::MeshInitForLevel();
+}
+
+// [rc4l] The backend's mesh, bake state and walks go first, while the level they point into is still whole.
+void FLevelRenderer::CleanLevelData()
+{
+	zx::levelmesh::FreeLevel();
+	zx::visibility::ForgetWalk();
+	zx::levelmesh::MeshFreeLevel();
+	gl_CleanLevelData();
+}
 bool FLevelRenderer::RequireGLNodes() { return true; }
 
 int FLevelRenderer::GetMaxViewPitch(bool down)

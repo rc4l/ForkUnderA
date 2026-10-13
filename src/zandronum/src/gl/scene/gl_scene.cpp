@@ -79,25 +79,11 @@
 #include "gl/utility/gl_templates.h"
 #include "features/hitboxviz/hitboxviz.h"
 #include "c_dispatch.h"   // [rc4l] fua_gl_viewstate
-#include "features/levelmesh/staticmesh.h"
-#include "features/levelmesh/levelmesh.h"
-#include "features/levelmesh/flatmesh.h"
-#include "features/levelmesh/wallcache.h"
-#include "features/sprites/spritebuild.h"   // [rc4l] the backend's sprites, derived from the actors
-#include "features/visibility/viswalk.h"   // [rc4l] the player's visible set, walked without GL
+#include "gl/scene/gl_observer.h"   // [rc4l] what GL reports to a check against it
 #include "features/viewsetup/viewsetup.h"   // [rc4l] the view, set up without GL
 #include "features/draw2d/screenblend.h"   // [rc4l] the screen's tint, worked out without GL
-#include "features/sprites/pspritebuild.h"   // [rc4l] the weapon derived without GL, and its check
-#include "features/frame/standaloneframe.h"   // [rc4l] the standalone scene, driven without GL
 #include "features/viewsetup/computation/viewsetup_compute.h"
-EXTERN_CVAR(Bool, fua_vis_check)
-#include "features/levelmesh/computation/flatmesh_compute.h"   // [rc4l] kSkyCapture*, which walk fills which sky list
-#include "features/hwrender/hud2d.h"
-#include "features/fov-interp/fovinterp.h"
 #include "features/fua-caching/fua_caching.h"
-#include "features/levelmesh/projdecals.h"   // [rc4l] projected mesh decals
-#include "features/horizon/horizon.h"   // [rc4l] horizon windows, rebuilt per frame
-#include "features/hwrender/diligent/dglive.h"   // [rc4l] SetMainViewLens
 #include "features/frame/levelrenderer.h"   // [rc4l] FLevelRenderer, RenderBackendCamera
 #include "features/frame/playerview.h"      // [rc4l] BeginPlayerFrame, BeginViewpoint, EndViewpoint, MarkMapSection
 #include "mcp_glperf.h" // [rc4l] GPU render-pass timer anchors (no-op unless FUA_MCP_BRIDGE)
@@ -113,7 +99,6 @@ CVAR(Bool, gl_no_skyclear, false, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 CVAR(Float, gl_mask_threshold, 0.5f,CVAR_ARCHIVE|CVAR_GLOBALCONFIG|CVAR_DEBUGONLY)
 CVAR(Float, gl_mask_sprite_threshold, 0.5f,CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 CVAR(Bool, gl_sort_textures, false, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
-EXTERN_CVAR(Bool, fua_surface_mapbake_auto)
 EXTERN_CVAR(Bool, gl_batch_walls)  // [rc4l] features/levelmesh wall batching
 
 
@@ -133,6 +118,7 @@ EXTERN_CVAR (Bool, cl_oldfreelooklimit)
 extern int viewpitch;
  
 DWORD			gl_fixedcolormap;
+FGLObserver		*gl_observer = NULL;
 area_t			in_area;
 TArray<BYTE> currentmapsection;
 
@@ -337,22 +323,8 @@ void FGLRenderer::CreateScene()
 	// collecting actors. Paired with the Draw() at the end of RenderTranslucent.
 	zx::hitboxviz::BeginFrame();
 
-	// [rc4l] Only the player's outer walk fills the player's sky surfaces; a mirror, skybox or camera-texture walk must not replace them.
-	if (zx::levelmesh::BeginSkyWalk() == zx::levelmesh::kSkyCaptureMain)
-	{
-		// [rc4l] features/levelmesh: the frame's sprites, models and decals start again, only here, since a mirror walk later in the frame wiped what the player's had drawn.
-		zx::levelmesh::DynClear();
-		zx::levelmesh::ClearSprites();
-		// [rc4l] features/horizon: this frame's horizon windows, from the map.
-		zx::horizon::UpdateHorizons();
-		// [rc4l] features/levelmesh: age the projected decals by a frame, once, which is simulation time the backend only draws.
-		zx::levelmesh::UpdateProjectedDecals();
-	}
-	// [rc4l] features/levelmesh: geometry whose sector moved is no longer valid, and this has to run
-	// BEFORE the BSP walk so anything still visible re-bakes in the same frame. See
-	// InvalidateMovedSectors -- a door's far face is never walked, so without this it kept the
-	// full-height quad it was baked with while the door was shut, standing in the open doorway.
-	zx::levelmesh::InvalidateMovedSectors();
+	// [rc4l] A check against GL's walk learns which view this walk's sky surfaces belong to.
+	if (gl_observer) gl_observer->WalkBegins();
 
 	// reset the portal manager
 	GLPortal::StartFrame();
@@ -364,32 +336,15 @@ void FGLRenderer::CreateScene()
 	for(unsigned i=0;i<portals.Size(); i++) portals[i]->glportal = NULL;
 	gl_spriteindex=0;
 	Bsp.Clock();
-	// [rc4l] features/levelmesh: a bake pass walks the ENTIRE BSP with clipping disabled, so every
-	// seg and subsector in the level lands in the static mesh. It runs for one frame and disarms
-	// itself -- the frame it runs on is slow and its draw lists are the whole level, which is fine
-	// for a bake and would be ruinous as a steady state.
-	//
-	// This is what the scale probe justified: 3.7M tris per GPU millisecond means a whole Doom level
-	// is well under a millisecond of GPU work, so the BSP walk and the clipper are spending CPU to
-	// avoid GPU time the GPU does not need saving.
-	const bool bake = zx::levelmesh::TakePendingFullBake();
-	if (bake)
-	{
-		zx::levelmesh::BeginBakePass();
-		zx::levelmesh::SetBakePassActive(true);
-		clipper.bakeAll = true;
-	}
 	const area_t areaBefore = in_area;
 	gl_RenderBSPNode (nodes + numnodes - 1);
-	clipper.bakeAll = false;
-	zx::levelmesh::SetBakePassActive(false);
 	Bsp.Unclock();
-	// [rc4l] features/visibility: the player's walk, walked again without GL from the same view area, compared against what GL's marked.
-	if (!bake && zx::levelmesh::PlayerWalkActive() && fua_vis_check)
+	// [rc4l] A check against GL's walk compares now, while the draw info holds it, from the view area GL started with.
+	if (gl_observer)
 	{
 		const area_t areaAfter = in_area;
 		in_area = areaBefore;
-		zx::visibility::CheckAgainstGL();
+		gl_observer->PlayerWalkDone();
 		in_area = areaAfter;
 	}
 
@@ -550,23 +505,6 @@ void FGLRenderer::RenderScene(int recursion)
 //
 //-----------------------------------------------------------------------------
 
-// [rc4l] The translucent pass without the sort -- see the standalone call site for why.
-void FGLRenderer::RenderTranslucentUnsorted()
-{
-	RenderAll.Clock();
-	glDepthMask(false);
-	gl_RenderState.SetCameraPos(FIXED2FLOAT(viewx), FIXED2FLOAT(viewy), FIXED2FLOAT(viewz));
-	gl_RenderState.AlphaFunc(GL_GEQUAL, gl_mask_sprite_threshold);
-	gl_RenderState.BlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-	gl_RenderState.EnableBrightmap(true);
-	gl_drawinfo->drawlists[GLDL_TRANSLUCENTBORDER].Draw(GLPASS_TRANSLUCENT);
-	gl_drawinfo->drawlists[GLDL_TRANSLUCENT].Draw(GLPASS_TRANSLUCENT);
-	gl_RenderState.EnableBrightmap(false);
-	glDepthMask(true);
-	gl_RenderState.AlphaFunc(GL_GEQUAL, 0.5f);
-	RenderAll.Unclock();
-}
-
 void FGLRenderer::RenderTranslucent()
 {
 	RenderAll.Clock();
@@ -606,56 +544,16 @@ void FGLRenderer::RenderTranslucent()
 //-----------------------------------------------------------------------------
 EXTERN_CVAR(Bool, gl_batch_walls)
 EXTERN_CVAR(Bool, gl_draw_sync)
-EXTERN_CVAR(Bool, fua_sprites_own)
-EXTERN_CVAR(Bool, fua_sprite_check)
-// [rc4l] An actor or particle features/frame leaves to GL, which draws it into its own window.
-static void GLActorFallback(AActor *thing)
-{
-	GLRenderer->ProcessSprite(thing, thing->Sector);
-}
-
-static void GLParticleFallback(particle_t *particle, sector_t *sector)
-{
-	GLRenderer->ProcessParticle(particle, sector);
-}
-
 void FGLRenderer::DrawScene(bool toscreen)
 {
 	static int recursion=0;
-	// [rc4l] Which scene the captures below belong to: this one is outermost only when nothing encloses it.
-	struct SceneNest { SceneNest() { zx::levelmesh::EnterScene(); } ~SceneNest() { zx::levelmesh::LeaveScene(); } } nest;
-
-	// [rc4l] With fua_dg_standalone the backend draws the world, so GL's derivation is skipped and features/frame runs the upkeep, walks, sprite sweep and moved sectors' re-bake instead (scenario standalonemove).
-	if (zx::hwrender::StandaloneActive())
+	// [rc4l] Which scene a check against GL is told about: this one is outermost only when nothing encloses it.
+	struct SceneNest
 	{
-		// [rc4l] features/frame drives the scene; GL keeps the actors and particles the backend leaves it, and its own window's draw of them.
-		static const zx::frame::SceneHooks hooks = { GLActorFallback, GLParticleFallback };
-		if (zx::frame::StandaloneScene(hooks))
-		{
-			if (!gl_draw_sync && toscreen)
-			{
-				All.Unclock();
-				static_cast<OpenGLFrameBuffer*>(screen)->Swap();
-				All.Clock();
-			}
-
-			// Drawing the list is what runs GLSprite::Draw, and RegisterSprite with it. The geometry
-			// lists are empty in this mode, so this is the sprites and nothing else.
-			//
-			// [rc4l] UNSORTED, because the only consumer sorts them again itself.
-			//
-			// DrawSorted builds a BSP of the draw items and orders them back to front, which is what
-			// GL needs to composite them correctly. Nothing is being composited here: the pixels come
-			// from the backend, and BuildDynamic sorts the sprites it was handed by distance before
-			// it builds a vertex out of any of them. So the sort is work whose result is thrown away
-			// -- CompareSprite was 3.1% of the profile on Sunder MAP10 with monsters awake.
-			RenderTranslucentUnsorted();
-			// [rc4l] With the check on, GL's solid models as well, which only RenderScene draws, so the derived ones have GL's to be compared against.
-			if (fua_sprite_check) gl_drawinfo->drawlists[GLDL_MODELS].Draw(GLPASS_ALL);
-			zx::sprites::CheckFrameSprites();
-			return;
-		}
-	}
+		bool on;
+		SceneNest() : on(gl_observer != NULL) { if (on) gl_observer->EnterScene(); }
+		~SceneNest() { if (on && gl_observer != NULL) gl_observer->LeaveScene(); }
+	} nest;
 
 	CreateScene();
 	GLRenderer->mCurrentPortal = NULL;	// this must be reset before any portal recursion takes place.
@@ -677,8 +575,8 @@ void FGLRenderer::DrawScene(bool toscreen)
 	recursion++;
 	GLPortal::EndFrame();
 	recursion--;
-	// [rc4l] features/visibility: GL has walked its stacked views and skyboxes now, so the ones derived beside its walk are compared.
-	if (zx::levelmesh::PlayerWalkActive()) zx::visibility::CheckPortalViews();
+	// [rc4l] GL has walked its stacked views and skyboxes now, for a check against GL's walk.
+	if (gl_observer) gl_observer->PortalViewsDone();
 	MCP_GLPerf_ZoneBegin(MCP_GLZ_TRANSLUCENT); // [rc4l] GPU-time the translucent/overdraw pass
 	RenderTranslucent();
 	MCP_GLPerf_ZoneEnd(MCP_GLZ_TRANSLUCENT);
@@ -724,7 +622,7 @@ static_assert(area_normal == zx::draw2d::kViewAreaNormal && area_below == zx::dr
 
 void FGLRenderer::DrawBlend(sector_t * viewsector)
 {
-	// [rc4l] features/draw2d works the tint out without GL; GL fills each part and the backend records it.
+	// [rc4l] features/draw2d works the tint out without GL, and GL fills each part.
 	zx::draw2d::ScreenFill fills[2];
 	const int n = zx::draw2d::ScreenBlends(viewsector, in_area, gl_fixedcolormap != 0, framebuffer->Colors.brightness, fills);
 	for (int i = 0; i < n; i++)
@@ -734,7 +632,6 @@ void FGLRenderer::DrawBlend(sector_t * viewsector)
 		else gl_RenderState.BlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 		gl_RenderState.SetColor(f.r, f.g, f.b, f.a);
 		FillScreen();
-		zx::hwrender::Record2D(zx::draw2d::PrepareScreenFill(f));
 	}
 }
 
@@ -774,7 +671,6 @@ void FGLRenderer::EndDrawScene(sector_t * viewsector)
 	gl_RenderState.SetFixedColormap(CM_DEFAULT);
 	gl_RenderState.SetSoftLightLevel(-1);
 	DrawTargeterSprites();
-	zx::sprites::CheckFramePSprites();
 	DrawBlend(viewsector);
 
 	// Restore standard rendering state
@@ -930,7 +826,7 @@ extern char myGlBeginCharArray[4];
 int crashoutTic = 0;
 #endif
 
-void FGLRenderer::RenderView (player_t* player)
+void FGLRenderer::BeginFrame()
 {
 #ifdef _WIN32 // [BB] Detect some kinds of glBegin hooking.
 	// [BB] Continuously make this check, otherwise a hack could bypass the check by activating
@@ -980,12 +876,13 @@ void FGLRenderer::RenderView (player_t* player)
 	// reset statistics counters
 	ResetProfilingData();
 
-	// [rc4l] Cleared before the camera textures BeginPlayerFrame draws, which light through it.
+	// [rc4l] Cleared before the frame's camera textures are drawn, which light through it.
 	GLRenderer->mLights->Clear();
+}
 
-	// [rc4l] features/frame: the camera reset, tic fraction, clock, particles, camera textures, fixed colormap and lens, as a frame without GL takes them.
-	const zx::frame::FrameLens lens = zx::frame::BeginPlayerFrame(player);
-
+// [rc4l] The player's view, once the frame is set up and its lens worked out (r_viewLens).
+void FGLRenderer::RenderView (player_t* player)
+{
 
 	// I stopped using BaseRatioSizes here because the information there wasn't well presented.
 	//							4:3				16:9		16:10		17:10		5:4
@@ -1001,8 +898,8 @@ void FGLRenderer::RenderView (player_t* player)
 	// than wide; the float test says the same thing without needing a bucket to exist.
 	//
 	// No upstream counterpart -- these GL files are not in the commit being ported.
-	float ratio = lens.ratio;
-	fovratio = lens.fovRatio;
+	float ratio = r_viewLens.ratio;
+	fovratio = r_viewLens.fovRatio;
 
 	gl_RenderState.SetFixedColormap(gl_fixedcolormap);
 
@@ -1015,7 +912,7 @@ void FGLRenderer::RenderView (player_t* player)
 	// position of the very step P_PlayerThink is about to take instead. All the arithmetic lives
 	// in features/fov-interp/computation/ so this stays a single line for the renderer staircase
 	// to re-apply. Ported from Q-Zandronum d2475b676 + 390ea5ac2.
-	sector_t * viewsector = RenderViewpoint(player->camera, NULL, lens.fov, ratio, fovratio, true, true);
+	sector_t * viewsector = RenderViewpoint(player->camera, NULL, r_viewLens.fov, ratio, fovratio, true, true);
 
 	All.Unclock();
 }
@@ -1076,6 +973,7 @@ void FGLRenderer::WriteSavePic (player_t *player, FILE *file, int width, int hei
 struct FGLInterface : public zx::frame::FLevelRenderer
 {
 	void PrecacheTexture(FTexture *tex, int cache);
+	void BeginFrame(player_t *player);
 	void RenderView(player_t *player);
 	void WriteSavePic (player_t *player, FILE *file, int width, int height);
 	void RenderTextureView (FCanvasTexture *self, AActor *viewpoint, int fov);
@@ -1146,6 +1044,11 @@ void FGLInterface::WriteSavePic (player_t *player, FILE *file, int width, int he
 //
 //===========================================================================
 
+void FGLInterface::BeginFrame(player_t *)
+{
+	GLRenderer->BeginFrame();
+}
+
 void FGLInterface::RenderView(player_t *player)
 {
 	GLRenderer->RenderView(player);
@@ -1201,9 +1104,6 @@ void FGLInterface::RenderTextureView (FCanvasTexture *tex, AActor *Viewpoint, in
 	bounds.height=FHardwareTexture::GetTexDimension(gltex->GetHeight());
 
 	GLRenderer->RenderViewpoint(Viewpoint, &bounds, FOV, (float)width/height, (float)width/height, false, false);
-
-	// [rc4l] features/frame: the same view into the backend's own target, since a foreign backend cannot read GL's texture.
-	zx::frame::RenderBackendCamera(gltex, Viewpoint, FOV);
 
 	if (!usefb)
 	{

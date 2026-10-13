@@ -31,7 +31,6 @@
 EXTERN_CVAR(Bool, fua_vulkan)
 EXTERN_CVAR(Bool, fua_dg_standalone)
 EXTERN_CVAR(Bool, fua_dg_embed)
-EXTERN_CVAR(Bool, fua_surface_mapbake_auto)
 
 namespace zx { namespace hwrender {
 
@@ -40,14 +39,13 @@ int g_backendOnly = -1;
 
 #if defined(_WIN32) && defined(FUA_DILIGENT)
 // [rc4l] The switches as the user's config had them, put back before it is written so a -vulkan launch leaves no trace there.
-bool g_savedVulkan, g_savedStandalone, g_savedEmbed, g_savedMapBake;
+bool g_savedVulkan, g_savedStandalone, g_savedEmbed;
 
 void RestoreSavedSwitches()
 {
 	fua_vulkan = g_savedVulkan;
 	fua_dg_standalone = g_savedStandalone;
 	fua_dg_embed = g_savedEmbed;
-	fua_surface_mapbake_auto = g_savedMapBake;
 }
 #endif
 }
@@ -68,14 +66,11 @@ void BeginBackendOnly()
 	g_savedVulkan = fua_vulkan;
 	g_savedStandalone = fua_dg_standalone;
 	g_savedEmbed = fua_dg_embed;
-	g_savedMapBake = fua_surface_mapbake_auto;
 	// [rc4l] Registered after the config's own save, so it runs before it.
 	atterm(RestoreSavedSwitches);
 	fua_vulkan = true;
 	fua_dg_standalone = true;
 	fua_dg_embed = true;
-	// [rc4l] With no GL derivation to fall back on, a moved sector must re-bake from the map.
-	fua_surface_mapbake_auto = true;
 	// [rc4l] What gl_LoadExtensions would have found on any card the backend runs on; the sprite UVs read it.
 	gl.flags |= RFL_NPOT_TEXTURE;
 #endif

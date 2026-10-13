@@ -19,7 +19,7 @@ window and modes but sets no pixel format, and makes `DiligentFrameBuffer` (`bac
 recorded through `features/draw2d`, the palette and gamma from `features/display`, `screenshot` read back from
 the frame, and every frame presented from its `Update` by `PresentBackendOnly`, with the world only under
 a frame that drew a view of it (the title, menus and console otherwise). The launch turns `fua_vulkan`,
-`fua_dg_standalone`, `fua_dg_embed` and `fua_surface_mapbake_auto` on, and puts the config's values back
+`fua_dg_standalone` and `fua_dg_embed` on, and puts the config's values back
 before it is written. An unfocused window is not presented to, as GL's is not, but its level still sets up.
 `backendonly.h` is the Diligent-free interface between them. `fuactl play --no-gl` launches one, `dumprenderer`
 says `renderer=vulkan` in one, and a scenario side with `noGl` runs as one (scenario `nogl`). Its frames are
@@ -39,12 +39,18 @@ Every 2D draw is recorded through `Record2DCanvas` (`record2d.cpp`), `features/d
 backend's own frame buffer draws its 2D with it, and in a launch with GL the frame buffer `features/sidebyside`
 makes records GL's 2D with it beside GL drawing it, so GL's renderer records nothing itself.
 
+A decal glued to a wall is drawn with GL's polygon offset, `-1` times the slope and `-128` resolvable steps
+(`RasterizerDesc.SlopeScaledDepthBias` and `DepthBias`). The two were swapped before, so a decal seen square
+on had no slope term to lift it and fought its wall (scenario `walldecal`). The sky's fade layer is drawn over
+the dome in the fog `features/visibility` derives, and not over a sky box, as GL's `RenderBox` draws none
+(scenario `skyfog`; its pipeline was refused every frame before, for want of its shaders).
+
 A frame's sprites, models and decals are laid out on the game thread (`computation/dynlayout_compute`, each
 slot found there, since finding one may make it) and their records and vertices written on the job pool in
 chunks of 64. On Sunder MAP10 with the monsters awake that took `BuildDynamic` from 0.13 to 0.09 ms.
 
-`computation/levelsetup_compute` steps a level's set-up (arm the bake, wait, upload, retry, give up) and the
-standalone bake's arming; `PresentFrame` and `SceneDrawable` are shared by the world's frames and the 2D-only
+`computation/levelsetup_compute` steps a level's set-up (bake from the map, upload, retry, give up);
+`PresentFrame` and `SceneDrawable` are shared by the world's frames and the 2D-only
 ones. A build without the backend (`FUA_DILIGENT` off, every non-Windows build) takes its entry points from
 `backendstubs.cpp`, each answering that there is none.
 
@@ -53,18 +59,17 @@ ones. A build without the backend (`FUA_DILIGENT` off, every non-Windows build) 
 | file | hook | what for |
 |---|---|---|
 | `d_main.cpp` | `Clear2D`, `FrameTimingBegin`, `LiveFrame` | start the frame's 2D capture and renderer clock; draw the backend's frame after GL's |
-| `gl/scene/gl_scene.cpp` | `Record2D`, `RenderCameraTexture`, `SceneMVP`, `SetMainViewLens`, `StandaloneActive` | the blend quad, camera textures, the player's lens, and skipping GL's world in standalone |
-| `gl/scene/gl_weapon.cpp` | `Record2D`, `BackendPresenting` | the weapon sprite; no HUD model under an embedded backend |
-| `gl/scene/gl_sprite.cpp`, `gl_spriteview.cpp` | `SpriteView`, `SetSpriteViewProvider`, `StandaloneActive` | sprites the backend draws itself |
+| `gl/scene/gl_sprite.cpp`, `gl_spriteview.cpp` | `SpriteViewProvider` | GL's sprites ask GL's own view, the backend's ask `SpriteView()` |
 | `gl/scene/gl_drawinfo.cpp`, `gl_walls_draw.cpp` | `ComputeGLSpritesBefore`, `ComputeWallLightIndex` | GL's draw order and wall light lists, shared with the backend |
-| `gl/scene/gl_skydome.cpp` | `SetSkyFog` | the sky's fade layer |
-| `gl/models/*.cpp`, `gl/system/gl_framebuffer.cpp` | `StandaloneActive` | GL idle while the backend carries the frame |
+| `features/frame/framedriver.cpp` | `BackendDrawsFrames`, `StandaloneActive`, `GLViewWanted` | which renderers draw the frame |
+| `features/sidebyside/sidebyside.cpp` | `BackendCoversGL`, `GLViewWanted` | whether GL presents |
+| `features/visibility/viswalk.cpp` | `SetSkyFog` | the sky's fade layer, derived from the walk |
 | `v_video.cpp` | `BackendRateLive`, `RendererRateShown`, `ComputeRateText`, `Set2DTarget` | `vid_fps` shows each window its own renderer's frame time |
 | `win32/hardware.cpp` | `BackendOnly`, `BeginBackendOnly`, `CreateBackendRenderer` | the renderer of a launch without GL |
 | `win32/win32gliface.cpp` | `BackendOnly`, `CreateBackendFrameBuffer` | no pixel format or context, and the backend's frame buffer |
 | `features/sidebyside/sidebyside.cpp` | `Record2DCanvas`, `Get2DTarget` | GL's frame buffer records every 2D draw for the backend, and GL leaves out one meant for the backend's window alone |
-| `features/frame/playerview.cpp` | `NoteWorldView`, `SetMainViewLens` | the frame drew the world, through the player's lens |
-| `features/hwrender/backendrenderer.cpp` | `SettleLevelScene`, `RenderSavePicture` | a level settled before its first view; the save picture |
+| `features/frame/playerview.cpp` | `NoteWorldView`, `SetMainViewLens`, `StandaloneActive` | the frame drew the world, through the player's lens |
+| `features/hwrender/backendrenderer.cpp` | `SettleLevelScene`, `RenderSavePicture`, `RenderBackendCamera` | a level settled before its first view; the save picture; camera textures |
 | `features/hwrender/backendvideo.cpp` | `WipeStart`, `WipeEnd`, `WipeTic`, `WipeCleanup`, `PreparePoly` | the screen wipes and the textured automap |
 | `gl/data/gl_vertexbuffer.cpp`, `gl/models/gl_models.cpp`, `gl/system/gl_interface.h` | `gl_HasContext` | vertex buffers keep only their CPU copy without GL |
 | `gl/textures/gl_texture.cpp`, `gl_material.cpp`, `gl_hqresize.cpp`, `gl/data/gl_data.cpp` | `FMaterial::TextureBuffer`, `FMaterial::FlushAll` | texture reads and flushes that do not go through `GLRenderer` |

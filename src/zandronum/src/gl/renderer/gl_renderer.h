@@ -87,6 +87,7 @@ public:
 	void ResetViewport();
 	void SetViewport(GL_IRECT *bounds);
 	sector_t *RenderViewpoint (AActor * camera, GL_IRECT * bounds, float fov, float ratio, float fovratio, bool mainview, bool toscreen);
+	void BeginFrame();
 	void RenderView(player_t *player);
 	void SetViewAngle(angle_t viewangle);
 	void SetupView(fixed_t viewx, fixed_t viewy, fixed_t viewz, angle_t viewangle, bool mirror, bool planemirror);
@@ -98,7 +99,6 @@ public:
 	void RenderTranslucent();
 	// [rc4l] The same pass without the back-to-front sort, for the standalone path -- the backend
 	// sorts the sprites it is handed, so sorting them here twice is work thrown away.
-	void RenderTranslucentUnsorted();
 	void DrawScene(bool toscreen = false);
 	void DrawBlend(sector_t * viewsector);
 

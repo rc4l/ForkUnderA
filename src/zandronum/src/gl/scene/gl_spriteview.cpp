@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 rc4l
 //
-// [rc4l] GL's answers to the sprite derivation's questions about the view.
+// [rc4l] GL's answers to its own sprite code's questions about the view, from the renderer and the portal being drawn.
 //
-// The five functions the derivation needs, in one place, so gl_sprite.cpp holds no reference to
-// GLRenderer at all. See features/hwrender/spriteview.h for why this is an interface and not a
-// snapshot of the state.
+// The functions GLSprite asks, in one place, so gl_sprite.cpp holds no reference to GLRenderer at
+// all. The backend's sprite derivation asks features/viewsetup's answers instead, so the two
+// renderers can draw the same frame each from its own view.
 
 #include "gl/system/gl_system.h"
 #include "features/hwrender/spriteview.h"
@@ -53,7 +53,4 @@ const zx::hwrender::SpriteViewProvider g_glProvider =
 
 } // namespace
 
-void gl_RegisterSpriteView()
-{
-	zx::hwrender::SetSpriteViewProvider(&g_glProvider);
-}
+const zx::hwrender::SpriteViewProvider &gl_SpriteView() { return g_glProvider; }

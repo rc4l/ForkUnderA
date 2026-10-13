@@ -137,6 +137,8 @@ AActor			*camera;	// [RH] camera to draw from. doesn't have to be a player
 
 fixed_t			r_TicFrac;			// [RH] Fractional tic to render
 DWORD			r_FrameTime;		// [RH] Time this frame started drawing (in ms)
+FViewLens		r_viewLens = { 90.f, 4.f / 3.f, 1.f };
+unsigned		r_frameSerial;
 bool			r_NoInterpolate;
 bool			r_showviewer;
 

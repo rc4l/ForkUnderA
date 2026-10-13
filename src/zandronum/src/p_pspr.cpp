@@ -25,6 +25,7 @@
 #include "gi.h"
 #include "p_pspr.h"
 #include "templates.h"
+#include "r_utility.h"   // [rc4l] r_frameSerial
 #include "thingdef/thingdef.h"
 #include "g_level.h"
 #include "farchive.h"
@@ -671,6 +672,10 @@ void P_DropWeapon (player_t *player)
 void P_BobWeapon (player_t *player, pspdef_t *psp, fixed_t *x, fixed_t *y)
 {
 	static fixed_t curbob;
+	// [rc4l] The smoothing below steps once a frame, so GL and the backend drawing the same frame bob alike.
+	static unsigned steppedFrame = ~0u;
+	const bool step = steppedFrame != r_frameSerial;
+	steppedFrame = r_frameSerial;
 
 	AWeapon *weapon;
 	fixed_t bobtarget;
@@ -702,7 +707,7 @@ void P_BobWeapon (player_t *player, pspdef_t *psp, fixed_t *x, fixed_t *y)
 	// shooting it when it's at the peak of its swing.
 	// [AK] Keep bobbing the weapon while firing if cl_alwaysbob is enabled.
 	bobtarget = ((player->WeaponState & WF_WEAPONBOBBING) || (cl_alwaysbob)) ? player->bob : 0;
-	if (curbob != bobtarget)
+	if (step && curbob != bobtarget)
 	{
 		if (abs (bobtarget - curbob) <= 1*FRACUNIT)
 		{

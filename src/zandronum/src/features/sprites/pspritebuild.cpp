@@ -55,8 +55,6 @@ EXTERN_CVAR(Int, gl_fuzztype)
 EXTERN_CVAR(Bool, gl_lights)
 EXTERN_CVAR(Bool, gl_light_sprites)
 
-// [rc4l] The backend's weapon derived here rather than recorded from GL's DrawPSprite.
-CVAR(Bool, fua_psprites_own, true, 0)
 // [rc4l] Derive the weapon beside GL's and compare the two quad for quad, for fua_psprite_report.
 CVAR(Bool, fua_psprite_check, false, 0)
 
@@ -183,14 +181,9 @@ static player_t *WeaponPlayer()
 	return player;
 }
 
-bool PSpritesOwned()
+// [rc4l] The layers at the bob given, which P_BobWeapon steps once a frame.
+static void BuildLayers(sector_t *viewsector, int viewArea, fixed_t bobX, fixed_t bobY, bool hudModels)
 {
-	return fua_psprites_own && !fua_psprite_check;
-}
-
-void BuildPlayerSprites(sector_t *viewsector, int viewArea, fixed_t bobX, fixed_t bobY, bool hudModels)
-{
-	if (!fua_psprites_own && !fua_psprite_check) return;
 	AActor *playermo = players[consoleplayer].camera;
 	player_t *player = WeaponPlayer();
 	if (player == NULL) return;
@@ -344,18 +337,17 @@ void BuildPlayerSprites(sector_t *viewsector, int viewArea, fixed_t bobX, fixed_
 	}
 }
 
-void BuildPlayerSpritesBobbed(sector_t *viewsector, int viewArea, bool hudModels)
+void BuildPlayerSprites(sector_t *viewsector, int viewArea, bool hudModels)
 {
 	player_t *player = WeaponPlayer();
 	if (player == NULL) return;
 	fixed_t bobX, bobY;
 	P_BobWeapon(player, &player->psprites[ps_weapon], &bobX, &bobY);
-	BuildPlayerSprites(viewsector, viewArea, bobX, bobY, hudModels);
+	BuildLayers(viewsector, viewArea, bobX, bobY, hudModels);
 }
 
 void BuildTargeterSprites(AActor *viewActor)
 {
-	if (!fua_psprites_own && !fua_psprite_check) return;
 	AActor *playermo = players[consoleplayer].camera;
 	player_t *player = playermo->player;
 	if (!player || (playermo->renderflags & RF_INVISIBLE) || !r_drawplayersprites || viewActor != playermo) return;

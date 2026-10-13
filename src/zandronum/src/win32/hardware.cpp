@@ -57,6 +57,7 @@
 #include "r_nullrenderer.h"
 #endif
 #include "features/hwrender/backendonly.h"   // [rc4l] -vulkan
+#include "features/frame/framedriver.h"     // [rc4l] the engine's renderer over GL and the backend
 
 EXTERN_CVAR (Bool, ticker)
 EXTERN_CVAR (Bool, fullscreen)
@@ -185,13 +186,13 @@ void I_CreateRenderer()
 	if (Renderer == NULL)
 	{
 #ifndef NO_GL
-		// [rc4l] GL-only build: the OpenGL renderer, unless the launch runs without GL (-vulkan).
+		// [rc4l] GL and the backend under features/frame's driver, which draws each when it is wanted; a launch without GL (-vulkan) has the backend alone.
 		if (zx::hwrender::BackendOnly())
 		{
 			zx::hwrender::BeginBackendOnly();
-			Renderer = zx::hwrender::CreateBackendRenderer();
+			Renderer = zx::frame::CreateFrameDriver(NULL, zx::hwrender::CreateBackendRenderer());
 		}
-		else Renderer = gl_CreateInterface();
+		else Renderer = zx::frame::CreateFrameDriver(gl_CreateInterface(), zx::hwrender::CreateBackendRenderer());
 #else
 		// [rc4l] Dedicated server (no OpenGL): use the trivial null renderer.
 		Renderer = new FNullRenderer;

@@ -20,6 +20,8 @@ struct MaterialInfo
 	int   textureIndex;   // [rc4l] its index in the texture manager, which ANIMDEFS frames are numbered by
 	int   width, height;
 	int   renderWidth, renderHeight;   // [rc4l] the size GL draws it at, after scaling and trimming
+	int   materialWidth;               // [rc4l] its width in texels as a u is measured, border included
+	int   leftOffset, topOffset;       // [rc4l] its offsets in render units, as a decal hangs it
 	bool  masked;         // [rc4l] has see-through texels
 	bool  canvas;         // [rc4l] a camera texture, drawn every frame rather than loaded
 	int   warp;           // [rc4l] ANIMDEFS warp: 0 none, 1 warp, 2 warp2
@@ -53,6 +55,9 @@ MaterialRef MaterialShowing(const void *texture);
 
 // [rc4l] The texture's name, "?" when there is none, for reports.
 const char *MaterialName(MaterialRef m);
+
+// [rc4l] Whether the material has partly see-through texels, which send a two-sided middle to GL's translucent pass; the first ask decodes the picture, so only the main thread asks.
+bool MaterialTransparent(MaterialRef m);
 
 // [rc4l] The material's brightmap, NULL when it has none.
 MaterialRef MaterialBrightmap(MaterialRef m);

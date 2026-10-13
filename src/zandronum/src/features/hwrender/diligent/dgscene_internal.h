@@ -119,7 +119,6 @@ EXTERN_CVAR(Int, fua_dg_stackportals)
 EXTERN_CVAR(Bool, fua_dg_stackshow)
 EXTERN_CVAR(Bool, fua_dg_standalone)
 EXTERN_CVAR(Bool, fua_diligent_live)
-EXTERN_CVAR(Bool, fua_surface_mapbake_auto)
 EXTERN_CVAR(Bool, fua_vulkan)
 
 // [rc4l] The camera pitch, which lives outside any header the backend already pulls in.

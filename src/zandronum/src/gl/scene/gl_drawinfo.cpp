@@ -50,9 +50,8 @@
 #include "gl/data/gl_vertexbuffer.h"
 #include "gl/scene/gl_drawinfo.h"
 #include "features/hwrender/computation/surfaceorder_compute.h"
-#include "features/levelmesh/wallcache.h"
+#include "gl/scene/gl_wallcache.h"
 #include "features/hwrender/computation/walllight_compute.h"
-#include "features/levelmesh/staticmesh.h"
 #include "gl/scene/gl_portal.h"
 #include "gl/renderer/gl_lightdata.h"
 #include "gl/renderer/gl_renderstate.h"
@@ -817,12 +816,6 @@ void GLDrawList::Draw(int pass, bool trans)
 // trades ~1.5x the vertices for 1/Nth the draw calls, which is the right way round at these counts.
 CVAR(Bool, gl_batch_walls, true, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
 
-// [rc4l] Keep the level mesh the backend draws from, and CUSTOM so flipping it invalidates the wall cache, whose segs cached without it would never get a mesh range.
-CUSTOM_CVAR(Bool, gl_wallmesh, false, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
-{
-	zx::levelmesh::InvalidateAll();
-}
-
 // [rc4l] Draw the walls staged into the streaming buffer, when the batch staged any.
 static void FlushWallBatch(FFlatVertex *&ptr)
 {
@@ -974,8 +967,8 @@ static int __cdecl diwcmp (const void *a, const void *b)
 	const GLDrawItem * di1 = (const GLDrawItem *)a;
 	const GLDrawItem * di2 = (const GLDrawItem *)b;
 	// [rc4l] Either item may be cache-owned; resolve through the right store.
-	GLWall * w1 = (di1->rendertype == GLDIT_STATICWALL) ? zx::levelmesh::StaticWall(di1->index) : &sortinfo->walls[di1->index];
-	GLWall * w2 = (di2->rendertype == GLDIT_STATICWALL) ? zx::levelmesh::StaticWall(di2->index) : &sortinfo->walls[di2->index];
+	GLWall * w1 = (di1->rendertype == GLDIT_STATICWALL) ? gl_WallCacheStaticWall(di1->index) : &sortinfo->walls[di1->index];
+	GLWall * w2 = (di2->rendertype == GLDIT_STATICWALL) ? gl_WallCacheStaticWall(di2->index) : &sortinfo->walls[di2->index];
 	if (w1 == NULL || w2 == NULL) return 0;
 
 	// [rc4l] Sort by the whole batch key, not just texture and clamp flags. Batching in DrawWalls
@@ -1052,7 +1045,7 @@ GLWall *GLDrawList::WallAt(unsigned i)
 	if (i >= drawitems.Size()) return NULL;
 	const GLDrawItem &di = drawitems[i];
 	if (di.rendertype == GLDIT_WALL) return &walls[di.index];
-	if (di.rendertype == GLDIT_STATICWALL) return zx::levelmesh::StaticWall(di.index);
+	if (di.rendertype == GLDIT_STATICWALL) return gl_WallCacheStaticWall(di.index);
 	return NULL;
 }
 

@@ -51,6 +51,7 @@
 #endif
 // [rc4l] video-scale: faithful port of upstream's r_videoscale math. See features/video-scale.
 #include "features/video-scale/computation/videoscale_compute.h"
+#include "features/frame/framedriver.h"   // [rc4l] the engine's renderer over GL
 #include "r_renderer.h"
 // [rc4l] Software renderer removed (GL-only build); NO_GL server uses the null renderer.
 #ifdef NO_GL
@@ -150,8 +151,8 @@ void I_CreateRenderer()
 	if (Renderer == NULL)
 	{
 #ifndef NO_GL
-		// [rc4l] GL-only build: always use the OpenGL renderer.
-		Renderer = gl_CreateInterface();
+		// [rc4l] GL-only build: the OpenGL renderer, under features/frame's driver, which sets each frame up.
+		Renderer = zx::frame::CreateFrameDriver(gl_CreateInterface(), NULL);
 #else
 		// [rc4l] Dedicated server (no OpenGL): use the trivial null renderer.
 		Renderer = new FNullRenderer;

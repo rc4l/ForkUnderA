@@ -55,7 +55,6 @@
 #include "gl/system/gl_framebuffer.h"
 #include "features/display/display.h"   // [rc4l] the palette, flash and gamma ramp
 #include "features/frame/playerview.h"   // [rc4l] ForgetCamera
-#include "features/hwrender/hud2d.h"   // StandaloneActive
 #include "gl/renderer/gl_renderer.h"
 #include "gl/renderer/gl_renderstate.h"
 #include "gl/renderer/gl_lightdata.h"
@@ -561,13 +560,11 @@ void OpenGLFrameBuffer::Swap()
 {
 	Finish.Reset();
 	Finish.Clock();
-	// [rc4l] When the backend is carrying the frame, GL has drawn nothing to finish or to present.
+	// [rc4l] When GL's window is covered, it has nothing to finish or to present.
 	//
-	// glFinish() is a full stall on the GL queue and SwapBuffers presents a back buffer the Diligent
-	// child window is covering. Both were written for a renderer that was drawing the world; with
-	// fua_dg_standalone on, neither has anything to do -- and together they are the largest single
-	// item left in the frame.
-	const bool glIdle = zx::hwrender::StandaloneActive();
+	// glFinish() is a full stall on the GL queue and SwapBuffers presents a back buffer the other
+	// renderer's window is covering; together they were the largest single item left in the frame.
+	const bool glIdle = !mPresents;
 	if (!glIdle) glFinish();
 #ifdef ZX_ENABLE_REPLAY
 	// [rc4l] FUA instant replay: when a frame is due, kick off an async PBO readback of the just-

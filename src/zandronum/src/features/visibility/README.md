@@ -21,7 +21,12 @@ Each frame the player's walk also makes what GL's walk used to hand the backend:
 - the line mirrors: each `Line_Mirror` wall reached, its sheen's light (the light band `SplitWall`
   gives its first piece), and a walk from the reflected eye that leaves out what lies behind the
   mirror, giving the reflection's sprites;
-- the particles in each subsector reached, handed to GL's sprite path as its walk hands them over;
+- the particles in each subsector reached, handed to `features/sprites` as GL's walk hands them over;
+- the sidedefs carrying decals each view saw (the player's, a stacked view's, a mirror's), handed over
+  from inside that view so `features/levelmesh` glues their decals into its pass;
+- the sky's fog: `GLSkyPortal::DrawContents` lays the fade of the sky it draws over the dome, and the
+  sky portal GL makes first is drawn last, so the fade is that of the first sky wall the player's walk
+  meets (`features/hwrender/computation/skyfog_compute`; scenario `skyfog`);
 - what every walk reached, as lists (`SectorsWalkedThisFrame`, `SidesWalkedThisFrame`): a sector or
   side that moved, relit or scrolled is re-baked once a walk reaches it rather than every frame it
   changes (scenario `movedbehind`).
@@ -89,13 +94,13 @@ included, and GL's walk on all of them.
 
 ## In-engine hooks
 
-- `gl/scene/gl_scene.cpp` `FGLRenderer::CreateScene`: `CheckAgainstGL` after GL's walk of the player's
-  view, from the view area GL started with.
-- `gl/scene/gl_scene.cpp` `FGLRenderer::DrawScene`: `CheckPortalViews` after `GLPortal::EndFrame`.
+- `features/sidebyside/glchecks.cpp`: `CheckAgainstGL` when GL reports its walk of the player's view done,
+  from the view area GL started with, and `CheckPortalViews` when it reports its portal views done.
 - `features/frame/standaloneframe.cpp` `StandaloneScene`: `PO_LinkToSubsectors`, `WalkView` (publishing to
-  the player's walk slot unless `fua_vis_cull` is off, with the walked particles) and `WalkPortalViews`
-  with the actors they reach.
-- `gl/data/gl_setup.cpp` `gl_CleanLevelData`: `ForgetWalk`.
+  the player's walk slot unless `fua_vis_cull` is off) and `WalkPortalViews`, with `WalkHooks` for the
+  particles, actors and decals they reach.
+- `features/frame/levelrenderer.cpp` `FLevelRenderer::CleanLevelData`: `ForgetWalk`.
+- `features/hwrender/hud2d.cpp` `SetSkyFog`: the sky's fog, which the sky pass lays over its dome.
 - `features/levelmesh/wallcache.cpp` `InvalidateMovedSectors`: with the walks' lists, only what they reached.
 - `features/levelmesh/flatmesh.cpp`: `BeginSlotVisibility`/`NoteSlotVisible`, the walk slots;
   `BeginViewSky`/`AddViewSkyQuad`/`AddViewSkyHole`, a view's sky surfaces; `BeginPortalViews`,

@@ -757,13 +757,9 @@ bool EnsureScenePipeline(FString &err)
 		ClampDepthLikeGL(pci.GraphicsPipeline);
 		if (decal)
 		{
-			// [rc4l] Slope-scaled dominates here. The constant term is expressed in units of the
-			// depth format's smallest resolvable difference, which for a FLOAT depth buffer varies
-			// with distance and is close to meaningless as a fixed number; the slope-scaled term
-			// scales with how obliquely the surface is viewed, which is exactly when a coplanar quad
-			// fights. GL's own decal offset is (-1, -128) in the same two roles.
-			pci.GraphicsPipeline.RasterizerDesc.DepthBias = -1;
-			pci.GraphicsPipeline.RasterizerDesc.SlopeScaledDepthBias = -128.f;
+			// [rc4l] GL's glPolygonOffset(-1, -128): -1 times the slope and -128 resolvable steps, which on a float buffer scale with the primitive's depth; swapped, a decal seen square on had no slope to lift it and fought its wall.
+			pci.GraphicsPipeline.RasterizerDesc.DepthBias = -128;
+			pci.GraphicsPipeline.RasterizerDesc.SlopeScaledDepthBias = -1.f;
 		}
 		if (blended)
 		{

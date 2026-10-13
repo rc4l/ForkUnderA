@@ -230,10 +230,25 @@ moves, the spawn view's), and it drew no actors in mirrors and no particles at a
 from the walks every frame; scenarios `skymove`, `stackturn`, `skyboxturn`, `mirrorsprite` and
 `particles` fail on the old binary and pass now.
 
-Still to do: models' data without GL's buffers (the loaders and `FModelVertexBuffer` are GL's); GL's view settings the new modules read (`glset`, `gl_fixedcolormap`, `FrustumAngle`,
-`gl_FakeFlat`, `SetViewArea`, `ProcessParticle`), which the renderer interface supplies in P5; light
-and plane heights from game state (on wdiex02, re-baking what moved or relit is about 30% of a
-standalone frame); then the capture hooks and the harness's standalone default.
+Then the capture went. `features/frame`'s frame driver is the engine's renderer: it sets each frame
+up once (`BeginFrame`, `BeginPlayerFrame`, the lens in `r_viewLens`, the weapon bob once a frame by
+`r_frameSerial`) and runs GL's view and the backend's each when it is drawn, so neither drives the
+other. GL's walk fills nothing of the backend's any more. The map bake is the only bake
+(`fua_surface_mapbake_auto` is gone), level set-up and teardown are `FLevelRenderer`'s, and GL's
+replay cache lives in `gl/scene/gl_wallcache.cpp`. GL reports its walk and draw to an observer it owns
+(`gl_observer.h`) only while a check against GL is on, and `features/sidebyside` turns that into the
+checks. The last two things only GL's capture drew are derived too: the decals glued to walls
+(`levelmesh/walldecals`, scenario `walldecal`) and the sky's fog (`skyfog_compute`, scenario `skyfog`).
+Both were missing from standalone and `-vulkan` before. The harness runs Vulkan sides standalone, as a
+player does.
+
+`gl/` now reaches modules only for shared rules (`Compute*`), GL's own sprite view, and the frame
+modules both renderers use (`frame`, `viewsetup`, `draw2d`, `display`, `replay`).
+
+Still to do: models' data without GL's buffers (the loaders and `FModelVertexBuffer` are GL's); GL's
+light settings the modules read (`glset`, `gl_fixedcolormap`, `getExtraLight`, `gl_ClampLight`), which
+want a neutral owner; and light and plane heights from game state (on wdiex02, re-baking what moved or
+relit is about 30% of a standalone frame).
 
 ### P5: one renderer interface, Vulkan owning itself
 
@@ -295,7 +310,9 @@ GPU-bound), and Vulkan is clearly ahead of GL at the AOW03 view.
 |---|---|
 | Light links per tic | `CollectDynamicLights` walked and sorted all 767 lights' touching lists each tic, 4.7 ms on every tic frame. Each light's sorted links are now kept until it moves or changes radius (none stale in 600,000 checks). |
 | Re-bakes that track what is visible | Every frame a sector moved or relit, its walls and flats were re-baked, seen or not: about 0.78 ms a frame there. Now only what a walk reached this frame is re-baked, and the rest waits until a walk reaches it (scenario `movedbehind`). The loop costs 0.001 ms at that view; with the walks against without, p50 is 0.4 ms faster in every round and p99 goes from 6-7.5 ms to about 3.2 ms. |
-| Against the acceptance views, `-vulkan` (1024x640, `fuactl capture`, three rounds) | AOW03 at spot q36: GL alone 1.36-1.50 ms p50, `-vulkan` 0.57-0.60 ms, so Vulkan is clearly ahead. Sunder MAP10 at spawn: GL alone 6.04-6.07 ms, `-vulkan` 1.85-1.97 ms, waiting about 22% of the frame in `AcquireNextImage`. The main thread is busy about 1.6 ms a frame against the 1.5 ms target, and the player's walk is 1.37-1.48 ms of it: 7,411 of the level's 10,958 subsectors and 23,366 segs, with no single hot line. Meeting the target needs a cheaper or threaded walk, which is next. |
+| Against the acceptance views, `-vulkan` (1024x640, `fuactl capture`, three rounds) | AOW03 at spot q36: GL alone 1.36-1.50 ms p50, `-vulkan` 0.57-0.60 ms, so Vulkan is clearly ahead. Sunder MAP10 at spawn: GL alone 6.04-6.07 ms, `-vulkan` 1.85-1.97 ms, waiting about 22% of the frame in `AcquireNextImage`. The main thread is busy about 1.6 ms a frame against the 1.5 ms target, and the player's walk is 1.37-1.48 ms of it: 7,411 of the level's 10,958 subsectors and 23,366 segs, with no single hot line. |
+| The sliced walk (`features/jobs`, `features/visibility`) | The player's walk runs in one slice a lane, each clipper blocked outside its share of the view, the union exactly one walk (leaky node boxes included). Sunder MAP10: the walk from about 1.15 to 0.42 ms, the frame p50 from 1.58 to 0.79-0.82 ms, under the 1.5 ms target. The GPU takes 0.24 ms of it (`fua_diligent_bench`), so the frame is CPU-bound by design now: culling cut the GPU's work faster than the CPU's. |
+| Dynamic instances on workers | A frame's sprites, models and decals are laid out on the game thread and written on the job pool: `BuildDynamic` 0.13 to 0.09 ms on Sunder MAP10 with the monsters awake. The actors' sprites are derived in chunks on the pool too. |
 
 ## Decisions taken
 

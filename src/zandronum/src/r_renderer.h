@@ -30,6 +30,9 @@ struct FRenderer
 	// precache one texture
 	virtual void PrecacheTexture(FTexture *tex, int cache) = 0;
 
+	// [rc4l] The frame's start, before the camera textures it draws: a renderer clears what one frame of it keeps.
+	virtual void BeginFrame(player_t *player) {}
+
 	// render 3D view
 	virtual void RenderView(player_t *player) = 0;
 

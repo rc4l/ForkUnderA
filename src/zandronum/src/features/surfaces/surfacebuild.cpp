@@ -414,6 +414,8 @@ bool BuildDerivedWallSpan(const seg_t *seg, int renderType, DerivedWallSpan &out
 		const float texLength = tci.FloatToTexU(seg->sidedef->TexelLength);
 		out.uLeft = ul + texLength * fracLeft;
 		out.uRight = ul + texLength * fracRight;
+		out.fracLeft = fracLeft;
+		out.fracRight = fracRight;
 		out.x1 = ax + fracLeft * (bx - ax);
 		out.y1 = ay + fracLeft * (by - ay);
 		out.x2 = ax + fracRight * (bx - ax);

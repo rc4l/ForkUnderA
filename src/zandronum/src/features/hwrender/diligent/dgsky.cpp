@@ -660,6 +660,9 @@ static bool EnsureSkyFadePipeline()
 	}
 	pci.GraphicsPipeline.InputLayout.LayoutElements = layout;
 	pci.GraphicsPipeline.InputLayout.NumElements = 4;
+	// [rc4l] Without these the pipeline was refused every frame, so no foggy sky was ever hazed.
+	pci.pVS = vs;
+	pci.pPS = ps;
 	dev->CreateGraphicsPipelineState(pci, &g_skyFadePSO);
 	return g_skyFadePSO.RawPtr() != nullptr;
 }
@@ -1148,7 +1151,7 @@ static void DrawSky(Diligent::IDeviceContext *ctx)
 			d.Flags = Diligent::DRAW_FLAG_VERIFY_ALL;
 			ctx->Draw(d);
 		}
-		DrawSkyFade(ctx);
+		// [rc4l] No fade over a sky box, as GL's RenderBox draws none.
 		return;
 	}
 

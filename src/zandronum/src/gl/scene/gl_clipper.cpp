@@ -437,7 +437,6 @@ angle_t R_PointToPseudoAngle (fixed_t viewx, fixed_t viewy, fixed_t x, fixed_t y
 
 bool Clipper::CheckBox(const fixed_t *bspcoord)
 {
-	if (bakeAll) return true;   // [rc4l] features/levelmesh full-level bake -- see gl_clipper.h
 	angle_t angle1, angle2;
 
 	int        boxpos;

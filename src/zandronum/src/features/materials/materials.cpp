@@ -25,6 +25,9 @@ bool DescribeMaterial(MaterialRef m, MaterialInfo &info)
 	info.height = tex->GetHeight();
 	info.renderWidth = Mat(m)->TextureWidth();
 	info.renderHeight = Mat(m)->TextureHeight();
+	info.materialWidth = Mat(m)->GetWidth();
+	info.leftOffset = Mat(m)->GetLeftOffset();
+	info.topOffset = Mat(m)->GetTopOffset();
 	info.masked = tex->bMasked;
 	info.canvas = tex->bHasCanvas;
 	info.warp = tex->bWarped;
@@ -33,6 +36,11 @@ bool DescribeMaterial(MaterialRef m, MaterialInfo &info)
 	info.brightmap = tex->gl_info.Brightmap != NULL;
 	info.shaderSpeed = tex->gl_info.shaderspeed;
 	return true;
+}
+
+bool MaterialTransparent(MaterialRef m)
+{
+	return m != NULL && Mat(m)->GetTransparent();
 }
 
 // [rc4l] glstuff's particle and mirror pictures, which FGLRenderer::Initialize created for itself before.

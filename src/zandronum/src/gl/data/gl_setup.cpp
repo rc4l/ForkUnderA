@@ -60,9 +60,7 @@
 #include "gl/dynlights/gl_glow.h"
 #include "gl/utility/gl_clock.h"
 #include "gl/gl_functions.h"
-#include "features/levelmesh/wallcache.h"
-#include "features/visibility/viswalk.h"
-#include "features/levelmesh/staticmesh.h"
+#include "gl/scene/gl_wallcache.h"
 
 void InitGLRMapinfoData();
 void gl_InitData();
@@ -662,9 +660,8 @@ void gl_PreprocessLevel()
 	}
 	delete[] checkmap;
 
-	// [rc4l] features/levelmesh: per-seg wall cache lives for the level.
-	zx::levelmesh::AllocForLevel(numsegs);
-	zx::levelmesh::MeshInitForLevel();
+	// [rc4l] GL's per-seg wall cache lives for the level.
+	gl_WallCacheAlloc(numsegs);
 
 	gl_InitPortals();
 
@@ -690,9 +687,7 @@ void gl_PreprocessLevel()
 
 void gl_CleanLevelData()
 {
-	zx::levelmesh::FreeLevel();
-	zx::visibility::ForgetWalk();   // [rc4l] features/visibility: the level's coverage nodes and portals
-	zx::levelmesh::MeshFreeLevel();
+	gl_WallCacheFree();
 
 	// Dynamic lights must be destroyed before the sector information here is deleted.
 	TThinkerIterator<ADynamicLight> it(STAT_DLIGHT);

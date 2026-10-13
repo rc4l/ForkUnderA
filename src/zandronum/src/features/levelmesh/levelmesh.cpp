@@ -127,48 +127,16 @@ void CollectSideBudgets(Collected &out)
 	}
 }
 
-// [rc4l] Full-level bake arming. One frame, consumed once -- see levelmesh.h.
-static bool g_pendingFullBake = false;
-void ArmFullBake() { g_pendingFullBake = true; }
 
 fixed_t LightListBottom(const sector_t *sector, unsigned entry, fixed_t x, fixed_t y)
 {
 	const TArray<lightlist_t> &lightlist = sector->e->XFloor.lightlist;
 	return entry + 1 < lightlist.Size() ? lightlist[entry + 1].plane.ZatPoint(x, y) : sector->floorplane.ZatPoint(x, y);
 }
-bool TakePendingFullBake()
-{
-	const bool v = g_pendingFullBake;
-	g_pendingFullBake = false;
-	return v;
-}
 
-// [rc4l] Generation-stamped rather than cleared, so arming a second bake costs nothing.
-static TArray<int> g_bakeSideStamp;
-static int         g_bakeGen = 0;
 
-void BeginBakePass()
-{
-	g_bakeGen++;
-	if ((int)g_bakeSideStamp.Size() != numsides)
-	{
-		g_bakeSideStamp.Clear();
-		g_bakeSideStamp.Resize(numsides > 0 ? numsides : 0);
-		for (unsigned i = 0; i < g_bakeSideStamp.Size(); i++) g_bakeSideStamp[i] = 0;
-	}
-}
 
-static bool g_inBakePass = false;
-void SetBakePassActive(bool on) { g_inBakePass = on; }
-bool IsBakePassActive() { return g_inBakePass; }
 
-bool ClaimSideForBake(int sideIndex)
-{
-	if (sideIndex < 0 || (unsigned)sideIndex >= g_bakeSideStamp.Size()) return true;
-	if (g_bakeSideStamp[sideIndex] == g_bakeGen) return false;
-	g_bakeSideStamp[sideIndex] = g_bakeGen;
-	return true;
-}
 
 }} // namespace zx::levelmesh
 
@@ -306,20 +274,6 @@ static void PrintOneLine( int idx )
 			}
 			Printf( "\n" );
 		}
-		// [rc4l] Each of its segs in GL's wall cache: what became of it, and the walls a replay draws (type, bottom..top at v1, ends).
-		for ( int s = 0; s < side->numsegs; s++ )
-		{
-			const int seg = int( side->segs[s] - segs );
-			const int n = zx::levelmesh::CachedPieceCount( seg );
-			Printf( "    seg %d: %s, %d cached wall%s", seg, zx::levelmesh::SegFateName( zx::levelmesh::SegFate( seg ) ), n, n == 1 ? "" : "s" );
-			for ( int p = 0; p < n; p++ )
-			{
-				const GLWall *w = zx::levelmesh::CachedPiece( seg, p );
-				Printf( "%s type %d %.0f..%.0f (%.0f, %.0f)-(%.0f, %.0f)", p ? "," : ":", w->type, w->zbottom[0], w->ztop[0],
-						w->glseg.x1, w->glseg.y1, w->glseg.x2, w->glseg.y2 );
-			}
-			Printf( "\n" );
-		}
 	}
 }
 
@@ -453,8 +407,7 @@ CCMD( fua_find_lines )
 
 CCMD( fua_levelmesh_bakeall )
 {
-	zx::levelmesh::ArmFullBake( );
-	Printf( "levelmesh: full-level bake armed -- it runs on the next rendered frame.\n" );
+	Printf( "levelmesh: %d wall parts and %d planes baked from the map.\n", zx::levelmesh::BakeLevelFromMap( ), zx::levelmesh::BakeFlatsFromMap( ) );
 }
 
 //==========================================================================
@@ -534,16 +487,10 @@ CCMD( fua_levelmesh_stats )
 	CoverageStats cov;
 	GetCoverage( cov );
 	Printf( "  coverage: %d/%d drawable segs baked (%.1f%%; %d segs total incl. minisegs), "
-			"%d uncacheable, %d wall pieces; %d flat pieces of %d planes, %d sprites\n",
+			"%d wall pieces; %d flat pieces of %d planes, %d sprites\n",
 			cov.baked, cov.drawableSegs,
 			cov.drawableSegs ? 100.0 * cov.baked / cov.drawableSegs : 0.0, cov.segs,
-			cov.uncacheable, cov.pieces,
-			FlatPieceCount( ), numsubsectors * 2, SpritePieceCount( ) );
-
-	int rp, rpoly, rff, ra, ro, ok;
-	GetRejects( rp, rpoly, rff, ra, ro, ok );
-	Printf( "  captures: %d ok, refused %d portal / %d polyobj / %d 3D-floor / %d area / %d other\n",
-			ok, rp, rpoly, rff, ra, ro );
+			cov.pieces, FlatPieceCount( ), numsubsectors * 2, SpritePieceCount( ) );
 }
 
 //==========================================================================

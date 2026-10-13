@@ -67,7 +67,7 @@
 // [AK] New #includes.
 #include "c_console.h"
 #include "features/fixed64/computation/angle_interp_compute.h"
-#include "features/levelmesh/flatmesh.h"
+#include "gl/scene/gl_observer.h"
 #include "features/glportal/computation/glportal_compute.h"
 
 static bool gl_portalinfo;
@@ -698,7 +698,7 @@ void GLSkyboxPortal::DrawContents()
 	currentmapsection[mapsection>>3] |= 1 << (mapsection & 7);
 
 	{
-		zx::levelmesh::SkyboxWalk walk;	// [rc4l] features/levelmesh: what this walk reaches is the backend sky portal's to draw
+		FGLObservedWalk walk(0, NULL, 0);	// [rc4l] a walk from the skybox's viewpoint, for a check against GL's
 		GLRenderer->DrawScene();
 	}
 	origin->flags&=~MF_JUSTHIT;
@@ -795,7 +795,7 @@ void GLSectorStackPortal::DrawContents()
 	SetupCoverage();
 	ClearClipper();
 	{
-		zx::levelmesh::StackWalk walk(origin);	// [rc4l] features/levelmesh: this walk's sky belongs to the stacked view
+		FGLObservedWalk walk(1, origin, 0);	// [rc4l] a walk through the stacked view, for a check against GL's
 		GLRenderer->DrawScene();
 	}
 	RestoreMapSection();
@@ -965,7 +965,7 @@ void GLMirrorPortal::DrawContents()
 	clipper.SafeAddClipRange(a1,a2);
 
 	{
-		zx::levelmesh::MirrorWalk walk(int(linedef - ::lines));	// [rc4l] features/levelmesh: the viewer this walk draws belongs to this mirror's pass in the backend
+		FGLObservedWalk walk(2, NULL, int(linedef - ::lines));	// [rc4l] a walk into the mirror, for a check against GL's
 		GLRenderer->DrawScene();
 	}
 

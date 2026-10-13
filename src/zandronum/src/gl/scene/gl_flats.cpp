@@ -63,7 +63,6 @@
 #include "gl/utility/gl_clock.h"
 #include "gl/utility/gl_convert.h"
 #include "gl/utility/gl_templates.h"
-#include "features/levelmesh/flatmesh.h"
 
 #ifdef _DEBUG
 CVAR(Int, gl_breaksec, -1, 0)
@@ -176,15 +175,8 @@ void GLFlat::SetupSubsectorLights(int pass, subsector_t * sub, int *dli)
 //
 //==========================================================================
 
-EXTERN_CVAR(Bool, gl_wallmesh)
-
 void GLFlat::DrawSubsector(subsector_t * sub)
 {
-	// [rc4l] features/levelmesh: hand this subsector's plane to the mesh as well, so a backend gets
-	// floors and ceilings and not only walls. Idempotent -- a (subsector, plane) already baked at the
-	// same size overwrites in place.
-	if (gl_wallmesh) zx::levelmesh::RegisterFlatSubsector(*this, sub, ceiling);
-
 	FFlatVertex *ptr = GLRenderer->mVBO->GetBuffer();
 	if (plane.plane.a | plane.plane.b)
 	{
@@ -293,9 +285,6 @@ void GLFlat::DrawSubsectors(int pass, bool processlights, bool istrans)
 				if (gl_drawinfo->ss_renderflags[sub-subsectors]&renderflags || istrans)
 				{
 					if (processlights) SetupSubsectorLights(GLPASS_ALL, sub, &dli);
-					// [rc4l] features/levelmesh: this fast path draws straight from the sector VBO and
-					// never calls DrawSubsector, so the mesh has to be fed here too.
-					if (gl_wallmesh) zx::levelmesh::RegisterFlatSubsector(*this, sub, ceiling);
 					drawcalls.Clock();
 					glDrawArrays(GL_TRIANGLE_FAN, index, sub->numlines);
 					drawcalls.Unclock();

@@ -7,6 +7,9 @@
 #include "features/hwrender/backendonly.h"
 #include "features/frame/levelrenderer.h"
 #include "features/frame/playerview.h"
+#include "features/frame/standaloneframe.h"   // [rc4l] the camera's own scene
+#include "features/levelmesh/flatmesh.h"      // [rc4l] EnterScene, LeaveScene
+#include "features/hwrender/hud2d.h"          // [rc4l] StandaloneActive
 #include "features/viewsetup/viewsetup.h"   // [rc4l] InstallSpriteView
 #include "features/draw2d/screenblend.h"     // [rc4l] the screen's tint over the save picture
 #include "features/draw2d/computation/screenblend_compute.h"
@@ -50,10 +53,23 @@ struct FBackendRenderer : public zx::frame::FLevelRenderer
 		delete[] rgb;
 	}
 
-	// [rc4l] A camera texture is the backend's own view into its own target, as GL's RenderTextureView hands it over.
+	// [rc4l] A camera texture is the backend's own view into its own target: the camera's viewpoint set up and its scene swept, as GL's RenderViewpoint does for it, then drawn.
 	void RenderTextureView(FCanvasTexture *tex, AActor *viewpoint, int fov)
 	{
-		zx::frame::RenderBackendCamera(FMaterial::ValidateTexture(tex, false), viewpoint, fov);
+		FMaterial *mat = FMaterial::ValidateTexture(tex, false);
+		if (mat != NULL && viewpoint != NULL)
+		{
+			const float ratio = (float)mat->TextureWidth() / mat->TextureHeight();
+			const bool savedMain = zx::frame::BeginViewpoint(viewpoint, (float)fov, ratio, false, false);
+			if (zx::hwrender::StandaloneActive())
+			{
+				zx::levelmesh::EnterScene();
+				zx::frame::StandaloneScene();
+				zx::levelmesh::LeaveScene();
+			}
+			zx::frame::RenderBackendCamera(mat, viewpoint, fov);
+			zx::frame::EndViewpoint(savedMain);
+		}
 		tex->SetUpdated();
 	}
 

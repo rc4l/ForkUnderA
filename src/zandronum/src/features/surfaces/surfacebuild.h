@@ -48,6 +48,8 @@ struct DerivedWallSpan
 	// sidedef's x offset and the right edge is that plus the line's texel length, with no
 	// seg-along-line bookkeeping involved at all. A polyobject is drawn per seg, so it takes its seg's share.
 	float uLeft, uRight;
+	// [rc4l] Where the two ends sit along the linedef, 0 its first vertex in side order and 1 its second, as GLWall's glseg.fracleft and fracright.
+	float fracLeft, fracRight;
 	// [rc4l] The two ends in world space, taken from the LINEDEF and ordered by which side this
 	// sidedef is -- which is how GLWall::Process orders them, and getting it backwards mirrors every
 	// texture on that wall.
@@ -66,7 +68,7 @@ struct DerivedWallSpan
 	float floodUV[6];
 	const sector_t *floodSector;
 
-	DerivedWallSpan() : uLeft(0.f), uRight(0.f),
+	DerivedWallSpan() : uLeft(0.f), uRight(0.f), fracLeft(0.f), fracRight(1.f),
 		x1(0.f), y1(0.f), x2(0.f), y2(0.f), material(0), baseTex(0), valid(false),
 		flood(false), floodCeiling(false), floodZ(0.f), floodSector(0)
 	{

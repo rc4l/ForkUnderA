@@ -60,8 +60,8 @@
 #include "gl/utility/gl_geometric.h"
 #include "gl/utility/gl_templates.h"
 #include "gl/shaders/gl_shader.h"
-#include "features/levelmesh/wallcache.h"
-#include "features/levelmesh/flatmesh.h"   // [rc4l] RegisterStackWall
+#include "gl/scene/gl_wallcache.h"
+#include "gl/scene/gl_observer.h"
 
 
 //==========================================================================
@@ -143,7 +143,7 @@ void GLWall::PutWall(bool translucent)
 		viewdistance = P_AproxDistance( ((seg->linedef->v1->x+seg->linedef->v2->x)>>1) - viewx,
 											((seg->linedef->v1->y+seg->linedef->v2->y)>>1) - viewy);
 		gl_drawinfo->drawlists[GLDL_TRANSLUCENT].AddWall(this);
-		zx::levelmesh::RecordPiece(*this, GLDL_TRANSLUCENT);	// [rc4l] features/levelmesh wall cache
+		gl_WallCacheRecord(*this, GLDL_TRANSLUCENT);
 	}
 	else if (passflag[type]!=4)	// non-translucent walls
 	{
@@ -161,12 +161,11 @@ void GLWall::PutWall(bool translucent)
 			list = masked ? GLDL_MASKEDWALLS : GLDL_PLAINWALLS;
 		}
 		gl_drawinfo->drawlists[list].AddWall(this);
-		zx::levelmesh::RecordPiece(*this, list);	// [rc4l] features/levelmesh wall cache
+		gl_WallCacheRecord(*this, list);
 
 	}
-	// [rc4l] features/levelmesh: portal walls go to the portal manager, which keeps per-frame
-	// state, so a seg producing one can never be replayed from cache.
-	else if (zx::levelmesh::NoteUnreplayable(), false) { /* never taken; the call above is the point */ }
+	// [rc4l] Portal walls go to the portal manager, which keeps per-frame state, so a seg producing one can never be replayed from the cache.
+	else if (gl_WallCacheNoteUnreplayable(), false) { /* never taken; the call above is the point */ }
 	else switch (type)
 	{
 	case RENDERWALL_COLORLAYER:
@@ -183,19 +182,15 @@ void GLWall::PutWall(bool translucent)
 		break;
 
 	case RENDERWALL_SKYBOX:
-		// [rc4l] The quad GL is about to stencil its sky through, taken as geometry as well. GL
-		// keeps drawing its portal exactly as before; this only adds the surface to the mesh, and
-		// with it the visibility GL already worked out. A map with a sky PORTAL never produces
-		// RENDERWALL_SKY at all -- SkyPlane picks SKYBOX when the sector names a skybox -- so both
-		// cases have to be taken or exactly the maps with this bug capture nothing.
-		zx::levelmesh::RegisterSkyQuad(*this, skybox);
+		// [rc4l] The quad GL stencils its sky through, for a check against GL's walk.
+		if (gl_observer) gl_observer->SkyQuad(*this, skybox);
 		portal=GLPortal::FindPortal(skybox);
 		if (!portal) portal=new GLSkyboxPortal(skybox);
 		portal->AddLine(this);
 		break;
 
 	case RENDERWALL_SECTORSTACK:
-		zx::levelmesh::RegisterStackWall(*this, this->portal);	// [rc4l] features/levelmesh: the stacked view's surface
+		if (gl_observer) gl_observer->StackWall(*this, this->portal);	// [rc4l] for a check against GL's walk
 		portal = this->portal->GetGLPortal();
 		portal->AddLine(this);
 		break;
@@ -217,8 +212,7 @@ void GLWall::PutWall(bool translucent)
 		portal->AddLine(this);
 		if (gl_mirror_envmap) 
 		{
-			// [rc4l] The sheen's light, for the backend's mirror surface (features/levelmesh).
-			zx::levelmesh::RegisterMirrorSheen(*this);
+			if (gl_observer) gl_observer->MirrorSheen(*this);	// [rc4l] the sheen's light, for a check against GL's walk
 			// draw a reflective layer over the mirror
 			type=RENDERWALL_MIRRORSURFACE;
 			gl_drawinfo->drawlists[GLDL_TRANSLUCENTBORDER].AddWall(this);
@@ -226,13 +220,8 @@ void GLWall::PutWall(bool translucent)
 		break;
 
 	case RENDERWALL_SKY:
-		// [rc4l] The quad GL is about to stencil its sky through, taken as geometry as well. GL
-		// keeps drawing its portal exactly as before; this only adds the surface to the mesh, and
-		// with it the visibility GL already worked out. A map with a sky PORTAL never produces
-		// RENDERWALL_SKY at all -- SkyPlane picks SKYBOX when the sector names a skybox -- so both
-		// cases have to be taken or exactly the maps with this bug capture nothing.
-		// [rc4l] NULL, never `skybox`: on a plain sky that union member is this wall's GLSkyInfo.
-		zx::levelmesh::RegisterSkyQuad(*this, NULL);
+		// [rc4l] The quad GL stencils its sky through, for a check against GL's walk; NULL, never `skybox`, since on a plain sky that union member is this wall's GLSkyInfo.
+		if (gl_observer) gl_observer->SkyQuad(*this, NULL);
 		portal=GLPortal::FindPortal(sky);
 		if (!portal) portal=new GLSkyPortal(sky);
 		portal->AddLine(this);
@@ -1603,11 +1592,11 @@ void GLWall::Process(seg_t *seg, sector_t * frontsector, sector_t * backsector)
 							  (int)(realfront->GetPlaneTexZ(sector_t::ceiling)),(int)(realfront->GetPlaneTexZ(sector_t::floor)),	// must come from the original!
 							  (int)(fch1),(int)(fch2),(int)(ffh1),(int)(ffh2),0);
 		}
-		// [rc4l] features/levelmesh: an untextured one-sided wall shows the sky GL fills the screen with first, so the backend drops what this walk did not draw behind it, registered every frame and so never replayed.
+		// [rc4l] An untextured one-sided wall shows the sky GL fills the screen with first; its seg is never replayed, and a check against GL hears of it.
 		else
 		{
-			zx::levelmesh::NoteUnreplayable();
-			zx::levelmesh::RegisterSkyHole(*this);
+			gl_WallCacheNoteUnreplayable();
+			if (gl_observer) gl_observer->SkyHole(*this);
 		}
 	}
 	else // two sided
@@ -1682,7 +1671,7 @@ void GLWall::Process(seg_t *seg, sector_t * frontsector, sector_t * backsector)
 					// skip processing if the back is a malformed subsector
 					if (seg->PartnerSeg != NULL && !(seg->PartnerSeg->Subsector->hacked & 4))
 					{
-						zx::levelmesh::NoteUnreplayable();	// [rc4l] features/levelmesh: the fill is per-frame, so the cache must not replay this seg
+						gl_WallCacheNoteUnreplayable();	// [rc4l] the fill is per-frame, so the cache must not replay this seg
 						gl_drawinfo->AddUpperMissingTexture(seg->sidedef, sub, bch1a);
 					}
 				}
@@ -1756,7 +1745,7 @@ void GLWall::Process(seg_t *seg, sector_t * frontsector, sector_t * backsector)
 				// skip processing if the back is a malformed subsector
 				if (seg->PartnerSeg != NULL && !(seg->PartnerSeg->Subsector->hacked & 4))
 				{
-					zx::levelmesh::NoteUnreplayable();	// [rc4l] features/levelmesh: the fill is per-frame, so the cache must not replay this seg
+					gl_WallCacheNoteUnreplayable();	// [rc4l] the fill is per-frame, so the cache must not replay this seg
 					gl_drawinfo->AddLowerMissingTexture(seg->sidedef, sub, bfh1);
 				}
 			}

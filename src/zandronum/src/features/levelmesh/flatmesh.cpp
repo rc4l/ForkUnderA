@@ -56,12 +56,11 @@ CVAR(Bool, fua_decal_log, false, 0)
 // reads 30+. Off restores the old behaviour. See docs/skybleed-scope.md.
 CVAR(Bool, fua_mesh_sky, true, CVAR_ARCHIVE)
 
-EXTERN_CVAR(Bool, fua_surface_mapbake_auto)
 EXTERN_CVAR(Bool, fua_mesh_rescroll)
 
 namespace zx { namespace levelmesh {
 
-// How often the flat cache answered without rebuilding anything. Printed by fua_wallcache_stats,
+// How often the flat cache answered without rebuilding anything. Printed by fua_flatcache_stats,
 // because a cache nobody can see the hit rate of is a cache nobody can tell has stopped working.
 static int g_flatHits = 0, g_flatRebuilds = 0, g_flatReshades = 0, g_flatRescrolls = 0;
 void GetFlatCacheStats(int &hits, int &rebuilds) { hits = g_flatHits; rebuilds = g_flatRebuilds; }
@@ -695,25 +694,6 @@ int BakeFlatsForSector(int sectorIndex)
 	return made;
 }
 
-// [rc4l] The capture's way in: a GLFlat, unpacked into the same fields the map bake fills.
-void RegisterFlatSubsector(const GLFlat &flat, subsector_t *sub, bool ceiling)
-{
-	// When the map is driving, the capture stands down for flats exactly as it does for walls --
-	// both writing the same slots is a fight over them, not twice the coverage.
-	if (fua_surface_mapbake_auto) return;
-	FlatSource f;
-	f.plane           = flat.plane;
-	f.dz              = flat.dz;
-	f.gltexture       = flat.gltexture;
-	f.lightlevel      = flat.lightlevel;
-	f.Colormap        = flat.Colormap;
-	f.alpha           = flat.alpha;
-	f.renderstyle     = flat.renderstyle;
-	f.mMeshLightIndex = flat.mMeshLightIndex;
-	f.mMeshModel      = flat.mMeshModel;
-	f.mMeshWhichPlane = flat.mMeshWhichPlane;
-	StoreFlat(f, sub, ceiling);
-}
 
 // ---------------------------------------------------------------------------
 // Sprites

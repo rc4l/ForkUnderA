@@ -8,18 +8,17 @@
 #include "features/hwrender/computation/levelsetup_compute.h"
 #include "features/mcp-bridge/computation/mcprpc_compute.h"   // [rc4l] SummarizeFrameTimes
 
+EXTERN_CVAR(Bool, fua_vis_check)
+EXTERN_CVAR(Bool, fua_sprite_check)
+EXTERN_CVAR(Bool, fua_psprite_check)
+EXTERN_CVAR(Bool, fua_shading_check)
+
 namespace zx { namespace hwrender {
 
-// [rc4l] Where this level's set-up stands, and the standalone bake's arming, as levelsetup_compute steps them.
+// [rc4l] Where this level's set-up stands, as levelsetup_compute steps it.
 static LevelSetup g_setup = ComputeLevelSetupStart();
-static StandaloneBake g_standalone = { false, 0 };
 
-// [rc4l] Bake and upload this level, once, without anyone typing anything.
-//
-// The bake does not happen when it is asked for -- ArmFullBake only sets a flag that the next
-// rendered frame acts on -- so the upload cannot follow in the same breath, and an upload with no
-// mesh behind it fails with "no baked geometry" and would leave the backend permanently blank. Hence
-// the wait: arm, let a frame or two go by, then upload.
+// [rc4l] Bake this level from the map and upload it, once, without anyone typing anything.
 
 static bool AutoSetupForLevel()
 {
@@ -74,18 +73,9 @@ static bool AutoSetupForLevel()
 		// the level, then retry" -- advice aimed at a person typing commands, from a path whose whole
 		// point is that nobody is.
 		if (!gl_wallmesh) gl_wallmesh = true;
-		zx::levelmesh::ArmFullBake();
-		// [rc4l] ...and the walls straight from the map, without waiting for the traversal.
-		//
-		// ArmFullBake pushes GL's own walk along until every subsector has been visited, which is how
-		// the mesh has always been filled. A seg either has wall parts or it does not, and the sidedef
-		// says which -- so this asks the map directly and the traversal is left to fill in the kinds
-		// the derivation does not do yet.
-		if (fua_surface_mapbake_auto)
 		{
+			// [rc4l] Every wall and plane straight from the map, so the level is baked whole before its first view.
 			const int built = zx::levelmesh::BakeLevelFromMap();
-			// ...and the FLATS, which are the other half of not needing the traversal. GLFlats come
-			// from the same walk, so without this the level renders every wall over a bare sky.
 			const int flats = zx::levelmesh::BakeFlatsFromMap();
 			if (built > 0 || flats > 0)
 				Printf("vulkan: %d wall parts and %d planes built from the map\n", built, flats);
@@ -97,7 +87,7 @@ static bool AutoSetupForLevel()
 		// give up on the first miss: giving up is permanent for the level, and the cost of being
 		// wrong is a black screen with no way back short of a restart.
 		// [rc4l] Beside GL the bake waits for GL's walk; without it the map has baked the level whole already.
-		if (!BackendOnly() && !ComputeLevelSetupWaited(g_setup)) return false;
+		// [rc4l] The map bakes the level whole, so nothing waits for GL's walk.
 		{
 			FString report;
 			ComputeLevelSetupUploaded(g_setup, SceneUpload(report));
@@ -256,28 +246,25 @@ bool BackendPresenting()
 	return GetSwapChain() != NULL;
 }
 
-// [rc4l] Whether the standalone path carries the frame: the backend up, the level baked and geometry there, GL keeping the frame otherwise rather than leaving a black screen.
+// [rc4l] Whether the backend's scene is up: switched on, the level baked and geometry there, GL keeping the frame otherwise rather than leaving a black screen.
 bool StandaloneActive()
 {
-	if (!fua_dg_standalone || !fua_vulkan) return false;
-	if (!g_standalone.baked || !SceneDrawable()) return false;
-	return true;
+	return fua_vulkan && g_setup.state == kSetupReady && SceneDrawable();
 }
 
-// [rc4l] The level's scene, set up for the level and its standalone bake armed and settled; true once it can be drawn.
+bool BackendDrawsFrames() { return BackendOnly() || fua_vulkan; }
+
+bool BackendCoversGL() { return BackendPresenting() && StandaloneActive(); }
+
+bool GLViewWanted()
+{
+	return !fua_dg_standalone || !fua_dg_embed || fua_vis_check || fua_sprite_check || fua_psprite_check || fua_shading_check;
+}
+
+// [rc4l] The level's scene, set up for the level; true once it can be drawn. fua_vulkan is the user-facing switch and sets itself up; fua_diligent_live is the manual override that assumes someone already ran the bake by hand.
 static bool AdvanceLevelScene()
 {
-	// [rc4l] fua_vulkan is the user-facing switch and sets itself up; fua_diligent_live is the manual
-	// override that assumes someone already ran the bake by hand.
-	const bool autoReady = fua_vulkan ? AutoSetupForLevel() : false;
-
-	// [rc4l] Bake the level the moment standalone is asked for, once per switch-on, since from then on GL's walk that bakes it no longer runs.
-	if (ComputeStandaloneBakeStep(g_standalone, fua_dg_standalone, autoReady, BackendOnly() ? 0 : kStandaloneSettleFrames))
-	{
-		zx::levelmesh::ArmFullBake();
-		Printf("standalone: baking the level once, then GL stops deriving the scene.\n");
-	}
-	return autoReady;
+	return fua_vulkan ? AutoSetupForLevel() : false;
 }
 
 void SettleLevelScene()

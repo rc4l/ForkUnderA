@@ -30,6 +30,7 @@
 #include "gl/scene/gl_wall.h"
 
 #include "features/levelmesh/wallcache.h"
+#include "gl/scene/gl_wallcache.h"   // [rc4l] GL's cached walls, which the derivation is scored against
 #include "features/levelmesh/flatmesh.h"
 #include "features/levelmesh/staticmesh.h"
 #include "gl/data/gl_vertexbuffer.h"   // FFlatVertex, whose layout the mesh stores
@@ -249,14 +250,14 @@ CCMD( fua_surface_mapbake )
 	{
 		static const int kPartOf[3] = { RENDERWALL_TOP, RENDERWALL_BOTTOM, RENDERWALL_M1S };
 		int empty = 0, emptyShown = 0;
-		const int segCount = zx::levelmesh::CachedSegCount( );
+		const int segCount = gl_WallCacheSegCount( );
 		for ( int i = 0; i < segCount && i < numsegs; i++ )
 		{
-			const int pieces = zx::levelmesh::CachedPieceCount( i );
+			const int pieces = gl_WallCacheWallCount( i );
 			if ( pieces <= 0 || segs[i].sidedef == NULL ) continue;
 			for ( int q = 0; q < pieces; q++ )
 			{
-				const GLWall *w = zx::levelmesh::CachedPiece( i, q );
+				const GLWall *w = gl_WallCacheWall( i, q );
 				if ( w == NULL || w->gltexture == NULL ) continue;
 				int part = -1;
 				if ( w->type == RENDERWALL_TOP ) part = 0;
@@ -307,16 +308,16 @@ CCMD( fua_surface_bakediff )
 	int notOurs = 0, dColormap = 0;
 	int shown = 0;
 
-	const int segCount = zx::levelmesh::CachedSegCount( );
+	const int segCount = gl_WallCacheSegCount( );
 	for ( int s = 0; s < segCount && s < numsegs; s++ )
 	{
-		const int pieces = zx::levelmesh::CachedPieceCount( s );
+		const int pieces = gl_WallCacheWallCount( s );
 		if ( pieces <= 0 ) continue;
 		if ( segs[s].sidedef == NULL || segs[s].linedef == NULL ) continue;
 
 		for ( int q = 0; q < pieces; q++ )
 		{
-			const GLWall *w = zx::levelmesh::CachedPiece( s, q );
+			const GLWall *w = gl_WallCacheWall( s, q );
 			if ( w == NULL || w->gltexture == NULL ) continue;
 			// Only the ordinary parts: the derivation does not claim skies, horizons or 3D floor
 			// faces, and counting them as disagreements would drown the ones it does claim.
@@ -470,10 +471,10 @@ CCMD( fua_surface_mapcover )
 	int shownSegs = 0;
 	int unseenMapOnly = 0, shownUnseen = 0;
 
-	const int segCount = zx::levelmesh::CachedSegCount( );
+	const int segCount = gl_WallCacheSegCount( );
 	for ( int sIdx = 0; sIdx < segCount && sIdx < numsegs; sIdx++ )
 	{
-		const int pieces = zx::levelmesh::CachedPieceCount( sIdx );
+		const int pieces = gl_WallCacheWallCount( sIdx );
 		if ( segs[sIdx].sidedef == NULL || segs[sIdx].linedef == NULL ) continue;
 		// [rc4l] A seg GL never drew is the half of this question that was not being asked.
 		//
@@ -509,7 +510,7 @@ CCMD( fua_surface_mapcover )
 		bool glHas[8] = { false, false, false, false, false, false, false, false };
 		for ( int q = 0; q < pieces; q++ )
 		{
-			const GLWall *w = zx::levelmesh::CachedPiece( sIdx, q );
+			const GLWall *w = gl_WallCacheWall( sIdx, q );
 			if ( w == NULL ) continue;
 			if ( w->type >= 0 && w->type < 8 ) glHas[w->type] = true;
 			else glSpecial++;
@@ -622,10 +623,10 @@ CCMD( fua_surface_verify )
 	int uvPostOk[5] = { 0, 0, 0, 0, 0 }, uvPostNo[5] = { 0, 0, 0, 0, 0 };
 	int uvPegByType[5] = { 0, 0, 0, 0, 0 }, uvUnpegByType[5] = { 0, 0, 0, 0, 0 };
 
-	const int segCount = zx::levelmesh::CachedSegCount( );
+	const int segCount = gl_WallCacheSegCount( );
 	for ( int s = 0; s < segCount; s++ )
 	{
-		const int pieces = zx::levelmesh::CachedPieceCount( s );
+		const int pieces = gl_WallCacheWallCount( s );
 		if ( pieces <= 0 ) continue;
 		if ( (unsigned)s >= (unsigned)numsegs ) continue;
 
@@ -649,7 +650,7 @@ CCMD( fua_surface_verify )
 
 		for ( int p = 0; p < pieces; p++ )
 		{
-			const GLWall *w = zx::levelmesh::CachedPiece( s, p );
+			const GLWall *w = gl_WallCacheWall( s, p );
 			if ( w == NULL ) continue;
 			int slot;
 			switch ( w->type )
@@ -700,7 +701,7 @@ CCMD( fua_surface_verify )
 				const GLWall *first = NULL;
 				for ( int q = 0; q < pieces && first == NULL; q++ )
 				{
-					const GLWall *pw = zx::levelmesh::CachedPiece( s, q );
+					const GLWall *pw = gl_WallCacheWall( s, q );
 					if ( pw != NULL && pw->type == kTypeOf[slot] ) first = pw;
 				}
 				// [rc4l] A cached piece is only comparable while everything it points at is still there.
@@ -1018,7 +1019,7 @@ CCMD( fua_surface_verify )
 				}
 				for ( int q = 0; q < pieces; q++ )
 				{
-					const GLWall *pw = zx::levelmesh::CachedPiece( s, q );
+					const GLWall *pw = gl_WallCacheWall( s, q );
 					if ( pw == NULL ) continue;
 					Printf( "      piece %d: type %d z %.1f..%.1f / %.1f..%.1f flags %02x alpha %.2f\n",
 						q, (int)pw->type, pw->zbottom[0], pw->ztop[0], pw->zbottom[1], pw->ztop[1],
@@ -1115,17 +1116,6 @@ CCMD( fua_surface_verify )
 		uvPostOk[0], uvPostOk[0] + uvPostNo[0], uvPostOk[1], uvPostOk[1] + uvPostNo[1],
 		uvPostOk[2], uvPostOk[2] + uvPostNo[2], uvPostOk[3], uvPostOk[3] + uvPostNo[3],
 		uvPostOk[4], uvPostOk[4] + uvPostNo[4] );
-	Printf( "    the same question asked AT CAPTURE, before anything could rewrite it:\n" );
-	for ( int t = 0; t < 5; t++ )
-	{
-		int inRange = 0, outOfRange = 0;
-		static const int kReportTypes[5] = { RENDERWALL_TOP, RENDERWALL_BOTTOM, RENDERWALL_M1S,
-			RENDERWALL_M2S, RENDERWALL_M2SNF };
-		zx::levelmesh::GetCaptureVRangeStats( kReportTypes[t], inRange, outOfRange );
-		Printf( "      %-14s %d in range, %d outside\n", TypeName( kReportTypes[t] ), inRange, outOfRange );
-	}
-	Printf( "      of the outside ones, %d were fragments SplitWall made\n",
-		zx::levelmesh::CaptureVOutOfRangeSplits( ) );
 	Printf( "    the something-else by part: upper %d, lower %d, middle-1s %d, middle %d, middle-nofog %d\n",
 		uvFlipByType[0], uvFlipByType[1], uvFlipByType[2], uvFlipByType[3], uvFlipByType[4] );
 	Printf( "  %d skipped as sloped, %d skipped as another surface type, %d the derivation does not place at all\n",

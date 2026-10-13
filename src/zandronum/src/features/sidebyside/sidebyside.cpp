@@ -8,10 +8,11 @@
 #include "gl/renderer/gl_renderer.h"   // [rc4l] GLRenderer, which draws GL's 2D
 
 #if defined(_WIN32) && defined(FUA_DILIGENT)
-#include "features/hwrender/hud2d.h"      // [rc4l] Get2DTarget
-#include "features/hwrender/record2d.h"   // [rc4l] Record2DCanvas
+#include "features/hwrender/hud2d.h"         // [rc4l] Get2DTarget
+#include "features/hwrender/record2d.h"      // [rc4l] Record2DCanvas
+#include "features/hwrender/backendonly.h"   // [rc4l] BackendCoversGL, GLViewWanted
 
-// [rc4l] GL's frame buffer, each 2D draw also recorded for the backend's window; GL leaves out one meant for the backend's window alone.
+// [rc4l] GL's frame buffer, each 2D draw also recorded for the backend's window; GL leaves out one meant for the backend's window alone, and draws and presents nothing while its window is covered and not wanted.
 class SideBySideFrameBuffer : public OpenGLFrameBuffer
 {
 	DECLARE_CLASS(SideBySideFrameBuffer, OpenGLFrameBuffer)
@@ -19,6 +20,14 @@ public:
 	SideBySideFrameBuffer() {}
 	SideBySideFrameBuffer(void *hMonitor, int width, int height, int bits, int refreshHz, bool fullscreen)
 		: OpenGLFrameBuffer(hMonitor, width, height, bits, refreshHz, fullscreen) {}
+
+	// [rc4l] Whether GL's window shows next frame, decided at the end of this one, since the frame's draws come before it is presented.
+	void Update()
+	{
+		OpenGLFrameBuffer::Update();
+		mPresents = !zx::hwrender::BackendCoversGL() || zx::hwrender::GLViewWanted();
+		zx::sidebyside::WatchGLForChecks();
+	}
 
 	void STACK_ARGS DrawTextureV(FTexture *img, double x, double y, uint32 tag, va_list tags)
 	{
@@ -62,7 +71,7 @@ public:
 	}
 
 private:
-	static bool GLDraws() { return GLRenderer != NULL && zx::hwrender::Get2DTarget() != zx::hwrender::k2DBackendOnly; }
+	bool GLDraws() const { return GLRenderer != NULL && mPresents && zx::hwrender::Get2DTarget() != zx::hwrender::k2DBackendOnly; }
 
 	zx::hwrender::Record2DCanvas m2D;
 };

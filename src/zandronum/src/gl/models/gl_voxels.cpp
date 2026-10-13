@@ -55,8 +55,7 @@
 #include "gl/data/gl_vertexbuffer.h"
 #include "gl/scene/gl_drawinfo.h"
 #include "gl/models/gl_models.h"
-#include "features/levelmesh/modelmesh.h"
-#include "features/hwrender/hud2d.h"
+#include "gl/scene/gl_observer.h"
 #include "gl/textures/gl_material.h"
 #include "gl/utility/gl_geometric.h"
 #include "gl/utility/gl_convert.h"
@@ -460,9 +459,7 @@ void FVoxelModel::RenderFrame(FTexture * skin, int frame, int frame2, double int
 	FMaterial * tex = FMaterial::ValidateTexture(surf.skin, false);
 	gl_RenderState.SetMaterial(tex, CLAMP_NOFILTER, translation, -1, false);
 
-	zx::levelmesh::CaptureModelSurface(mVBuf, surf.base1, surf.base2, 0.f, surf.firstIndex, surf.count, tex, translation);
-	if (zx::hwrender::StandaloneActive()) return;
-
+	if (gl_observer) gl_observer->ModelSurface(mVBuf, surf.base1, surf.base2, 0.f, surf.firstIndex, surf.count, tex, translation);
 	gl_RenderState.Apply();
 	mVBuf->SetupFrame(0, 0);
 	glDrawElements(GL_TRIANGLES, mNumIndices, GL_UNSIGNED_INT, (void*)(intptr_t)0);

@@ -46,50 +46,48 @@ keep the ids for the slot's next start; `CapturePolyColor` is `gl_SetColor`'s co
 `LightListBottom` (`levelmesh.h`) is a 3D floor light list entry's lower edge at a point, for the sprites,
 the weapon and the screen tint alike.
 
+## The frame's pieces
+
+The level is baked from the map (`wallcache.cpp`, `flatmesh.cpp`), whole at load and again where a walk
+reaches something that moved, relit or scrolled; GL's walk fills nothing. GL keeps its own replay cache of
+`GLWall`s in `gl/scene/gl_wallcache.cpp`, keyed on the same dirty counters.
+
+The dynamic stream is refilled each frame for each view: sprites, models and particles from
+`features/sprites`, projected decals (`projdecals.cpp`), and with `fua_decalmode 0` the decals glued to
+walls (`walldecals.cpp`). Those are built for the sidedefs each view's walk saw, on each plain wall piece
+GL would draw them on, a light band at a time: `computation/walldecal_compute` is `GLWall::DrawDecal`'s
+height, quad and clipping, and `DerivedPartBands` the bake's own band split and light. A stacked view's or
+mirror's pieces are kept for that view's pass (`StackCaptureSlot`, `MirrorCaptureLine`). Decals on a 3D
+floor's face, on a mirror's sheen and on a mid texture GL draws through a sky (`GLWF_SKYHACK`) are not built
+yet. Scenario `walldecal`.
+
 ## In-engine hooks
 
-The frame's captures -- sky surfaces, sprites, models, decals (`flatmesh.cpp`, `modelmesh.cpp`, see
-`docs/skybleed-scope.md`) -- belong to the player's outermost scene only, except that the sprites, models and
-decals a stacked view's or a line mirror's walk draws are kept for that pass alone (`StackCaptureSlot`, `MirrorCaptureLine`):
-
-- `gl/scene/gl_scene.cpp` `DrawScene`: a nesting guard (`EnterScene`/`LeaveScene`), since GL raises the
-  portal depth for the player's own scene once its walk is done; `PlayerWalkActive` asks it.
-- `gl/scene/gl_scene.cpp` `CreateScene`: `BeginSkyWalk`, and the frame's sprite, model and decal reset
-  only on the player's scene; `RenderViewpoint` records which view is walking (`SetMainView`).
-- `gl/scene/gl_walls.cpp` `PutWall`: `RegisterSkyQuad` for `RENDERWALL_SKY` and `RENDERWALL_SKYBOX`.
-- `gl/scene/gl_drawinfo.cpp` `DrawWalls`: `ComputeWallDrawPath`, so GL batches its own vertices; GL never draws from the mesh,
-  which holds no GL buffer (queue #42, P3; `fua_mesh_blank` empties it to check).
-- `gl/models/gl_models.cpp` `gl_RenderModel`: `ModelCaptureBegin`/`ModelCaptureEnd` around the draw; a model
-  `features/sprites` derives brackets its own capture with `ModelCaptureBeginDerived`.
-- `gl/renderer/gl_lightdata.cpp` `gl_ShadingEnv`: GL's light settings (light mode, ambient, fog rules, fixed colormap,
-  skybox) for `ComputeShading`, the light model `ShadePiece` lights every piece with; `captureshading.cpp` turns a GL
-  colormap into its input.
-- `gl/scene/gl_walls.cpp` `PutWall`: `RegisterStackWall` for `RENDERWALL_SECTORSTACK`, the walls GL stencils a stacked
-  view through, gathered per portal into a few views.
-- `r_defs.h` `sector_t`: the plane texture placement setters (`SetXOffset`, `AddXOffset`, the Y pair, scales, angle,
-  `SetBase`) bump `fua_placement`, so `InvalidateMovedSectors` re-bakes a scrolled floor's flats under the map bake.
-- `r_defs.h` `side_t::SetLight`: bumps the side's `fua_dirty`, so a wall `Transfer_WallLight` re-lights when its source
-  sector's light changes re-bakes, in GL's wall cache and the map bake alike.
-- `p_sectors.cpp` `sector_t::SetColor` and `SetFade`: bump `fua_dirty`, so a sector recoloured after the bake, and every
-  sector it is a 3D floor in, re-bakes with its new colormap.
-- `gl/scene/gl_walls.cpp` `PutWall`: `RegisterMirrorSheen` for a `RENDERWALL_MIRROR` with `gl_mirror_envmap` on, the light
-  `RenderMirrorSurface` draws the mirror's sheen in, which the backend's mirror surface adds as GL does.
-- `gl/scene/gl_walls.cpp` `Process`: `RegisterSkyHole` for a one-sided wall with no texture, which GL leaves undrawn: its
-  full-screen sky shows through except where its walk already reached past it, every thing in a sector it entered and every
-  seg and subsector it let through drawn whole, so the scene shader drops only the pieces behind a hole that walk did not draw.
-- `gl/scene/gl_walls.cpp` `PutWall` (a portal wall) and `Process` (before `AddUpperMissingTexture` and
-  `AddLowerMissingTexture`): `NoteUnreplayable`, since both hand GL per-frame state, so the wall cache never replays that seg.
-- `gl/scene/gl_bsp.cpp` `DoSubsector` and `AddLine`: `NoteWalkedSubsector`/`NoteWalkedSide`, what a stacked view's walk or the
-  player's drew.
-- `gl/scene/gl_portal.cpp` `GLSkyboxPortal::DrawContents`: a `SkyboxWalk` around its `DrawScene`, so what that walk reaches is all the
-  backend's sky portal pass draws of the level.
-- `gl/scene/gl_portal.cpp` `GLSectorStackPortal::DrawContents`: a `StackWalk` around its `DrawScene`, so
-  that walk's sky quads fill its view's list and its sprites, models and decals are filed under its view.
-- `gl/scene/gl_portal.cpp` `GLMirrorPortal::DrawContents`: a `MirrorWalk(line)` around its `DrawScene`, so the sprites,
-  models and decals it draws (the viewer's, and anything behind the player) are filed under that mirror and only that
-  mirror's pass in the backend shows them.
-- `textures/textures.h` `FTextureManager::GetAnimations`: the ANIMDEFS list, read-only, so the backend gives every frame
-  of an animated texture a material slot and remaps baked pieces to the frame showing.
+- `features/frame/levelrenderer.cpp` `FLevelRenderer::PreprocessLevel` and `CleanLevelData`: `AllocForLevel`,
+  `MeshInitForLevel`, `FreeLevel` and `MeshFreeLevel`, the mesh and bake state for each level.
+- `features/sidebyside/glchecks.cpp`: what GL reports to its observer (`gl/scene/gl_observer.h`), for the
+  checks against GL only. That is GL's scenes (`EnterScene`/`LeaveScene`), walks (`BeginSkyWalk`,
+  `NoteWalkedSubsector`/`NoteWalkedSide`, and `SkyboxWalk`, `StackWalk` and `MirrorWalk` around a portal's
+  walk), sky quads and holes, stacked walls, mirror sheens, sprites and models (`RegisterSkyQuad`,
+  `RegisterSkyHole`, `RegisterStackWall`, `RegisterMirrorSheen`, `RegisterSprite`, `ModelCaptureBegin`,
+  `CaptureModelSurface`, `ModelCaptureEnd`).
+- `gl/scene/gl_drawinfo.cpp` `DrawWalls`: `ComputeWallDrawPath`, so GL batches its own vertices. GL never
+  draws from the mesh, which holds no GL buffer (queue #42, P3; `fua_mesh_blank` empties it to check).
+- `gl/scene/gl_bsp.cpp` and `gl_wallcache.cpp`: `WallCacheEligibility`, `WallCacheStamp` and `ComputeCanReuse`,
+  the rules GL's cache shares with the bake.
+- `gl/renderer/gl_lightdata.cpp` `gl_ShadingEnv`: GL's light settings (light mode, ambient, fog rules, fixed
+  colormap, skybox) for `ComputeShading`, the light model `ShadePiece` lights every piece with;
+  `captureshading.cpp` turns a GL colormap into its input.
+- `r_defs.h` `sector_t`: the plane texture placement setters (`SetXOffset`, `AddXOffset`, the Y pair, scales,
+  angle, `SetBase`) bump `fua_placement`, so `InvalidateMovedSectors` re-bakes a scrolled floor's flats.
+- `r_defs.h` `side_t::SetLight`: bumps the side's `fua_dirty`, so a wall `Transfer_WallLight` re-lights when its
+  source sector's light changes re-bakes, in GL's wall cache and the bake alike.
+- `p_sectors.cpp` `sector_t::SetColor` and `SetFade`: bump `fua_dirty`, so a sector recoloured after the bake,
+  and every sector it is a 3D floor in, re-bakes with its new colormap.
+- `textures/textures.h` `FTextureManager::GetAnimations`: the ANIMDEFS list, read-only, so the backend gives every
+  frame of an animated texture a material slot and remaps baked pieces to the frame showing.
+- `features/frame/standaloneframe.cpp` `StandaloneScene`: `DynClear`, `ClearSprites`, `UpdateProjectedDecals`,
+  `InvalidateMovedSectors` with what the walks reached, and `BuildWallDecals` as the walks' decal hook.
 - `hwrender/diligent/dgscene.cpp` `DrawSkySurfaces`: reads the list of the view it is drawing;
   `RenderStackPortals`/`DrawStackSurfaces` render each stacked view and paint its planes from it.
 

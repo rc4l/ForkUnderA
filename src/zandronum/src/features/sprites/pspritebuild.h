@@ -15,14 +15,8 @@ namespace zx { namespace hwrender { struct Quad2D; } }
 
 namespace zx { namespace sprites {
 
-// [rc4l] Whether the weapon is derived here, so GL's DrawPSprite draws without recording (fua_psprites_own, the check off).
-bool PSpritesOwned();
-
-// [rc4l] The weapon's layers below the targeter for a view in `viewsector`, given the frame's weapon bob, which P_BobWeapon smooths per call and so is computed once by the caller; `hudModels` captures each layer's HUD model over the world instead of its sprite.
-void BuildPlayerSprites(sector_t *viewsector, int viewArea, fixed_t bobX, fixed_t bobY, bool hudModels = false);
-
-// [rc4l] The same for a frame with no GL renderer to hand over its bob, which it works out itself.
-void BuildPlayerSpritesBobbed(sector_t *viewsector, int viewArea, bool hudModels = false);
+// [rc4l] The weapon's layers below the targeter for a view in `viewsector`, at this frame's bob; `hudModels` captures each layer's HUD model over the world instead of its sprite.
+void BuildPlayerSprites(sector_t *viewsector, int viewArea, bool hudModels = false);
 
 // [rc4l] The targeter's three layers, drawn only from the player's own eye (`viewActor`).
 void BuildTargeterSprites(AActor *viewActor);

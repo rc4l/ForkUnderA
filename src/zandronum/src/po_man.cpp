@@ -1337,6 +1337,7 @@ bool FPolyObj::MovePolyobj (int x, int y, bool force)
 	CenterSpot.y += y;
 	LinkPolyobj ();
 	ClearSubsectorLinks();
+	MarkSidesMoved();
 	RecalcActorFloorCeil(Bounds | oldbounds);
 
 	// [BC/BB] Polyobject has moved.
@@ -1441,6 +1442,7 @@ bool FPolyObj::RotatePolyobj (angle_t angle, bool fromsave)
 	this->angle += angle;
 	LinkPolyobj();
 	ClearSubsectorLinks();
+	MarkSidesMoved();
 	RecalcActorFloorCeil(Bounds | oldbounds);
 
 	// [BC] Polyobject has rotated.
@@ -2251,6 +2253,12 @@ void FPolyObj::ClearSubsectorLinks()
 		subsectorlinks = next;
 	}
 	subsectorlinks = NULL;
+}
+
+// [rc4l] features/levelmesh: the sides stand somewhere new, so the bake and GL's wall cache take them again once a walk sees them.
+void FPolyObj::MarkSidesMoved()
+{
+	for (unsigned i = 0; i < Sidedefs.Size(); i++) Sidedefs[i]->fua_dirty++;
 }
 
 void FPolyObj::ClearAllSubsectorLinks()

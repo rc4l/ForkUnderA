@@ -1,80 +1,35 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 rc4l
 //
-// [rc4l] Per-seg wall geometry cache (plan phase P2b).
-//
-// GLWall::Process regenerates every visible wall every frame -- 8251 of them on Sunder MAP10, for a
-// level whose geometry did not move. This keeps the GLWalls a seg produced, together with a stamp of
-// the inputs they were generated from, and replays them straight into the draw lists when nothing
-// those inputs cover has changed.
-//
-// The validity rule itself is pure and lives in computation/wallcache_compute.h; this file is the
-// storage plus the two hooks (capture during Process, replay instead of it).
+// [rc4l] The level's walls baked from the map, per seg: the mesh ranges each seg owns, what each took
+// its light from, and the sweep that re-bakes what moved or relit. GL's own replay cache of its GLWalls
+// is gl/scene/gl_wallcache.h.
 
 #ifndef ZX_WALLCACHE_H
 #define ZX_WALLCACHE_H
 
-#include "features/levelmesh/computation/wallcache_compute.h"
 #include "features/levelmesh/staticmesh.h"
-#include "gl/scene/gl_wall.h"
+#include "features/surfaces/surfacebuild.h"                 // [rc4l] DerivedWallSpan, DerivedWallLight
+#include "features/surfaces/computation/wallbands_compute.h"   // [rc4l] WallBand
 #include "tarray.h"
 
 struct seg_t;
 struct sector_t;
 
 class AActor;
+class GLWall;
 
 namespace zx { namespace levelmesh {
 
-// [rc4l] Storage is FIXED per seg, not a growing level-wide array.
-//
-// The growing version leaked: any re-capture -- and a sector with a flickering light re-captures
-// every tic, because its light level is part of the stamp -- stranded the seg's previous walls
-// forever. That reached 47 GB and killed the process. With a fixed slot per seg, re-capture
-// overwrites in place and leaking is structurally impossible.
-//
-// A seg needing more pieces than this is simply not cached. Four covers upper/mid/lower plus one
-// spare; 3D-floor segs, which are the ones that need more, are already ineligible.
-const int kMaxCachedPieces = 4;
-
-// [rc4l] How many MESH RANGES a seg can own, which is not the same question.
-//
-// The number above is how many GLWalls the capture keeps, and it is expensive to raise because a
-// GLWall is a couple of hundred bytes and there is one array per seg. A mesh range is twelve, and
-// the map-driven bake needs more of them than the capture ever did: a wall in a sector with 3D
-// floors is cut into one piece per light band, because each band lights it differently.
-//
-// That limit is why those sectors were handed back to the capture at all -- and handing them back is
-// what makes them vanish when GL stops walking the level. Sixteen is three parts by five bands with
-// room over; a wall crossing more bands than that keeps as many as fit, which is a wrong light on
-// the tail of one wall rather than a missing wall.
-//
-// The packed (seg, piece) reference GL replay uses keeps the SMALLER stride, because it only ever
-// addresses captured pieces.
-// [rc4l] Three parts by five bands, then the 3D-floor faces.
+// [rc4l] How many mesh ranges a seg can own: a wall in a sector with 3D floors is cut into a piece per light band, so three parts by five bands, then the 3D-floor faces.
 const int kMaxMapPieces = 24;
 
-// One GLWall as PutWall routed it, so replay can put it back in the same list without re-deciding.
+// [rc4l] One baked piece of a seg: its geometry in the persistent buffer, count 0 for none.
 struct CachedWallPiece
 {
 	int       list;
-	MeshRange range;   // [rc4l] baked geometry in the persistent buffer; count 0 = stream instead
+	MeshRange range;
 };
-
-// Resolve a draw item's packed (seg, piece) reference to the GLWall it draws.
-GLWall *StaticWall(int packedIndex);
-
-// [rc4l] Walk what was captured, so a derivation can be checked against it.
-//
-// features/surfaces is working out surfaces from the map instead of transcribing what GL made of
-// it, and the only honest way to promote that over the capture is to check it against the capture
-// on real maps, piece by piece. Read-only: the verifier looks, it does not bake.
-int CachedSegCount();
-int CachedPieceCount(int segIndex);
-const GLWall *CachedPiece(int segIndex, int piece);
-
-// Bake a captured seg's pieces into the persistent buffer. Called after a successful capture.
-void BakeSeg(int segIndex);
 
 // [rc4l] Bake one seg from the MAP, with no GLWall involved -- see the definition for what it costs
 // and what it cannot do yet.
@@ -86,12 +41,35 @@ int MapBakePartCount(int segIndex, int part);
 // Every wall in the level, from the map, in one pass. Returns the number of parts built.
 int BakeLevelFromMap();
 
-// Pack/unpack the reference a draw item carries.
-inline int PackWallRef(int segIndex, int piece) { return segIndex * kMaxCachedPieces + piece; }
+// [rc4l] The most light bands a wall part is cut into.
+const int kBandsPerPart = 5;
+
+// [rc4l] One light band of a wall part as GLWall::SplitWall cuts it, lit by Put3DWall's rule: its level, the colormap whose light colour it takes (when lightEntry is not -1), and which light list entry that was.
+struct PartBand
+{
+	zx::surfaces::WallBand band;
+	int lightLevel;
+	FDynamicColormap *lightFrom;
+	int lightEntry;
+};
+
+// [rc4l] The bands of seg's part with span `d` and own light `dl`, top down; how many, at most kBandsPerPart.
+int DerivedPartBands(const seg_t *seg, const zx::surfaces::DerivedWallSpan &d, const zx::surfaces::DerivedWallLight &dl, PartBand *out);
+
+// [rc4l] The seg that bakes sidedef `side`'s walls, or -1.
+int SideOwnerSeg(int side);
+
+// [rc4l] The parts of a wall the bake builds, in its slot order.
+enum { kPartUpper, kPartLower, kPartMiddle, kWallParts };
+
+// [rc4l] Part `part` (kPart*) of seg as the bake derives it, false when the seg has none; `twoSidedMiddle` says the middle is a two-sided line's, which blends.
+bool DerivedPart(const seg_t *seg, int part, zx::surfaces::DerivedWallSpan &d, bool &twoSidedMiddle);
+
+// [rc4l] Whether seg's line draws no wall of its own, as a horizon or a line mirror does.
+bool LineDrawsNoWall(const seg_t *seg);
 
 struct SegCache
 {
-	GLWall          walls[kMaxCachedPieces];
 	CachedWallPiece pieces[kMaxMapPieces];
 	int             pieceCount;
 	// [rc4l] How many pieces were in the mesh last time this seg baked.
@@ -102,8 +80,6 @@ struct SegCache
 	// stayed painted across the doorway while the GL view showed the room beyond it. Knowing the
 	// previous count is what lets BakeSeg collapse the abandoned ones.
 	int             bakedCount;
-	WallCacheStamp  stamp;
-	bool            filled;
 
 	// [rc4l] What each baked slot took its LIGHT from, so a light change need not re-derive the wall.
 	//
@@ -130,7 +106,7 @@ struct SegCache
 	// offset in the new arena -- while never allocating space of its own. The map came up with walls
 	// missing and geometry smeared across the ones that survived, and only after a map CHANGE:
 	// launching straight into the same map was always fine, because the block started zeroed.
-	SegCache() : pieceCount(0), bakedCount(0), filled(false), hasOwnLitPiece(false), mapBaked(false)
+	SegCache() : pieceCount(0), bakedCount(0), hasOwnLitPiece(false), mapBaked(false)
 	{
 		for (int i = 0; i < kMaxMapPieces; i++)
 		{
@@ -150,11 +126,6 @@ int LevelGeneration();
 void FreeLevel();
 void InvalidateAll();
 
-// Capture: while a capture is open, GLWall::PutWall records what it routed instead of only pushing.
-// Opening a capture on a seg that turns out to produce a portal marks it uncacheable for the level.
-void BeginCapture(int segIndex);
-void EndCapture(const WallCacheStamp &stamp, const WallCacheEligibility &e);
-bool IsCapturing();
 // [rc4l] A sky quad GL builds for its stencil, taken as geometry, with the skybox a RENDERWALL_SKYBOX names (NULL for a plain sky).
 void RegisterSkyQuad(const GLWall &wall, AActor *viewpoint);
 // [rc4l] An untextured one-sided wall's floor-to-ceiling span, which GL leaves undrawn: its walk clips what lies behind it except what it already reached, and its full-screen sky shows through the rest.
@@ -186,41 +157,6 @@ int SkyWalks(int list);
 // [rc4l] One view's sky quads: kSkyCaptureMain for the player, kSkyCaptureCamera for a camera texture.
 const MeshVertex *SkyQuadVertices(int &count, int list);
 
-void RecordPiece(const GLWall &wall, int list);
-// [rc4l] The seg being captured hands GL per-frame state (a portal, a missing-texture fill, a sky hole), so it is never replayed.
-void NoteUnreplayable();
-
-// Replay: push the cached pieces for this seg back into the draw lists. Returns false if there is
-// nothing usable, in which case the caller must run Process as normal.
-bool TryReplay(int segIndex, const WallCacheEligibility &e, const WallCacheStamp &current);
-
-// Build the stamp and eligibility for a seg from its current sectors.
-void BuildStamp(const seg_t *seg, const sector_t *frontsector, const sector_t *backsector,
-                WallCacheStamp &out);
-void BuildEligibility(const seg_t *seg, const sector_t *frontsector, const sector_t *backsector,
-                      WallCacheEligibility &out);
-
-// Stats for fua_levelmesh_stats / tuning.
-void GetStats(int &hits, int &misses, int &uncacheable);
-
-// [rc4l] Replayed walls whose material changed under them -- animated textures the cache froze.
-int GetAnimRefreshes();
-
-// [rc4l] Per-seg census: what became of this seg (see the SEG_* enum) and whether it baked anything.
-int  SegFate(int segIndex);
-// [rc4l] A SegFate as the census and fua_line print it.
-const char *SegFateName(int fate);
-bool SegHasBakedGeometry(int segIndex);
-void ResetStats();
-
-// [rc4l] How many captured walls of a RENDERWALL_ type arrived with their top v inside the first
-// copy of the texture, counted at capture rather than read back from the cache -- see RecordPiece.
-void GetCaptureVRangeStats(int type, int &inRange, int &outOfRange);
-
-// How many of those out-of-range walls were fragments SplitWall made.
-int CaptureVOutOfRangeSplits();
-
-void ResetCaptureVRangeStats();
 
 // [rc4l] How much of the level the wall mesh actually holds, as opposed to how much it could.
 //
@@ -233,7 +169,6 @@ struct CoverageStats
 	int segs;            // segs in the level
 	int drawableSegs;    // segs with a sidedef (minisegs draw nothing)
 	int baked;           // segs with at least one baked piece
-	int uncacheable;     // segs permanently excluded (portals and friends)
 	int pieces;          // baked wall pieces
 };
 void GetCoverage(CoverageStats &out);
@@ -253,9 +188,7 @@ void InvalidateMovedSectors(const WalkedThisFrame *walked = NULL);
 // [rc4l] Re-derives every seg on a height transfer's sector, whose heights and light follow the view area (RefreshTransferArea).
 void RebakeTransferSegs();
 
-// [rc4l] Sectors that moved the last time InvalidateMovedSectors ran. A standalone frame skips the
-// BSP walk, and the walk is what re-bakes a moved seg -- so a frame with movement in it is a frame
-// that has to go back through GL.
+// [rc4l] Sectors that moved the last time InvalidateMovedSectors ran.
 int SectorsMovedLastFrame();
 
 // One seg's cache state, for the fua_line_mesh dump.
@@ -263,8 +196,6 @@ void GetSegMeshInfo(int segIndex, int &pieces, int &baked);
 void GetSegPieceRange(int segIndex, int piece, unsigned int &offset, unsigned int &count);
 int GetSegBandLight(int segIndex, int piece);
 
-// Why captures were refused, split by cause, plus how many succeeded.
-void GetRejects(int &portal, int &poly, int &ffloor, int &area, int &other, int &ok);
 
 // [rc4l] Why sectors were invalidated: only their light changed, or their planes actually moved.
 //

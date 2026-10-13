@@ -47,8 +47,7 @@
 #include "gl/renderer/gl_renderstate.h"
 #include "gl/scene/gl_drawinfo.h"
 #include "gl/models/gl_models.h"
-#include "features/levelmesh/modelmesh.h"
-#include "features/hwrender/hud2d.h"
+#include "gl/scene/gl_observer.h"
 #include "gl/textures/gl_material.h"
 #include "gl/shaders/gl_shader.h"
 #include "gl/data/gl_vertexbuffer.h"
@@ -389,13 +388,7 @@ void FDMDModel::RenderFrame(FTexture * skin, int frameno, int frameno2, double i
 	gl_RenderState.SetMaterial(tex, CLAMP_NONE, translation, -1, false);
 	gl_RenderState.SetInterpolationFactor((float)inter);
 
-	zx::levelmesh::CaptureModelSurface(mVBuf, surf.base1, surf.base2, (float)inter, surf.firstIndex, surf.count, tex, translation);
-	if (zx::hwrender::StandaloneActive())
-	{
-		gl_RenderState.SetInterpolationFactor(0.f);
-		return;
-	}
-
+	if (gl_observer) gl_observer->ModelSurface(mVBuf, surf.base1, surf.base2, (float)inter, surf.firstIndex, surf.count, tex, translation);
 	gl_RenderState.Apply();
 	mVBuf->SetupFrame(surf.base1, surf.base2);
 	glDrawArrays(GL_TRIANGLES, 0, surf.count);

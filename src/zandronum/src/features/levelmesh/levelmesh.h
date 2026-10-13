@@ -45,33 +45,8 @@ struct Collected
 
 void CollectSideBudgets(Collected &out);
 
-// [rc4l] Full-level bake, armed from the console (`fua_levelmesh_bakeall`) and consumed by the next
-// CreateScene. Arming is a flag rather than a direct call because the BSP walk only makes sense
-// inside a real render frame -- it needs the view, the draw lists, gl_drawinfo and the portal state
-// all set up, and reproducing that outside the renderer would be a second, divergent copy of it.
-void ArmFullBake();
-
 // [rc4l] The lower edge at (x, y) of a sector's 3D floor light list entry: the next entry's plane, or the sector's floor under the last.
 fixed_t LightListBottom(const sector_t *sector, unsigned entry, fixed_t x, fixed_t y);
-bool TakePendingFullBake();
-
-// [rc4l] Claim a sidedef for the current bake pass; false if it was already taken.
-//
-// GLWall::Process builds its wall from the LINEDEF's endpoints, not the seg's -- so a linedef split
-// by the BSP into eight segs would, without a guard, produce eight identical full-length coplanar
-// walls. That is what the engine's per-linedef validcount is for. A bake cannot use validcount,
-// because it is per linedef and would then drop the second SIDE of every two-sided line; keying the
-// guard on the sidedef instead gives exactly one wall per drawable surface, which is what a static
-// mesh wants. Skipping this produced a level rendered as z-fighting noise.
-void BeginBakePass();
-bool ClaimSideForBake(int sideIndex);
-
-// [rc4l] True while the full-level bake frame is walking the BSP. The wall cache needs to know:
-// outside a bake it bakes a refused seg only on the first refusal (they re-capture every frame, so
-// doing it repeatedly would be quadratic), but that edge has long since passed for anything the
-// player already walked past, and skipping those left most of the level out of the mesh.
-void SetBakePassActive(bool on);
-bool IsBakePassActive();
 
 }} // namespace zx::levelmesh
 

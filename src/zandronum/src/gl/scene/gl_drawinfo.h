@@ -8,10 +8,10 @@ enum GLDrawItemType
 	GLDIT_WALL,
 	GLDIT_FLAT,
 	GLDIT_SPRITE,
-	// [rc4l] features/levelmesh P2b: a wall whose geometry is owned by the per-level cache rather
+	// [rc4l] GL's wall cache (gl_wallcache.h): a wall whose geometry is owned by the per-level cache rather
 	// than copied into this list. The draw item is 8 bytes instead of a ~200-byte GLWall copy --
 	// removing that copy is the whole point, since attempt 1 proved regenerating is cheap and
-	// copying is not. `index` addresses zx::levelmesh::StaticWall().
+	// copying is not. `index` addresses gl_WallCacheStaticWall().
 	GLDIT_STATICWALL,
 };
 

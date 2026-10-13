@@ -55,7 +55,7 @@
 #include "gl/renderer/gl_renderer.h"
 #include "gl/scene/gl_drawinfo.h"
 #include "gl/models/gl_models.h"
-#include "features/levelmesh/modelmesh.h"
+#include "gl/scene/gl_observer.h"
 #include "features/sprites/modelbuild.h"   // [rc4l] the pose and frame blend the backend's derived models share
 #include "features/sprites/computation/modelpose_compute.h"
 #include "gl/textures/gl_material.h"
@@ -902,13 +902,10 @@ void gl_RenderModel(GLSprite * spr)
 	gl_RenderState.mModelMatrix.loadMatrix(modelToWorld);
 
 	gl_RenderState.EnableModelMatrix(true);
-	// [rc4l] The matrix above is the whole reason this bracket exists. GL hands it to the vertex
-	// shader; the mesh has no per-piece transform, so the capture reads it from here and applies it
-	// on the CPU. Everything the surfaces need that is not geometry -- light, translucency, sort
-	// position -- comes from the sprite, which is only in scope at this level.
-	zx::levelmesh::ModelCaptureBegin(spr, gl_RenderState.mModelMatrix);
+	// [rc4l] The model's surfaces with the matrix above and the sprite's light, for a check against GL's models.
+	if (gl_observer) gl_observer->ModelBegins(spr, gl_RenderState.mModelMatrix);
 	gl_RenderFrameModels( smf, spr->actor->state, spr->actor->tics, RUNTIME_TYPE(spr->actor), NULL, translation );
-	zx::levelmesh::ModelCaptureEnd();
+	if (gl_observer) gl_observer->ModelEnds();
 	gl_RenderState.EnableModelMatrix(false);
 
 	glDepthFunc(GL_LESS);

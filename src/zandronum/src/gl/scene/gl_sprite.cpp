@@ -60,9 +60,9 @@
 #include "gl/models/gl_models.h"
 #include "gl/shaders/gl_shader.h"
 #include "gl/textures/gl_material.h"
-#include "features/levelmesh/flatmesh.h"
-#include "features/hwrender/hud2d.h"
-#include "features/hwrender/spriteview.h"   // StandaloneActive
+#include "gl/scene/gl_observer.h"
+#include "features/hwrender/spriteview.h"   // [rc4l] SpriteViewProvider, which gl_spriteview.cpp answers
+const zx::hwrender::SpriteViewProvider &gl_SpriteView();   // [rc4l] gl/scene/gl_spriteview.cpp
 #include "features/materials/materials.h"   // [rc4l] ParticleTexture
 #include "gl/utility/gl_clock.h"
 #include "gl/data/gl_vertexbuffer.h"
@@ -73,10 +73,6 @@
 #include "features/sprites/computation/spritestyle_compute.h"	// [rc4l] kHw*, which hw_styleflags must match
 #include "features/damage-tint/damagetint.h"	// [rc4l] damaging-floor sprite glow
 
-EXTERN_CVAR(Bool, gl_wallmesh)
-// [rc4l] features/levelmesh: collect sprites into the per-frame dynamic stream. On by default now
-// that they no longer contaminate the static mesh -- see the call site.
-CVAR(Bool, fua_mesh_sprites, true, 0)
 CVAR(Bool, gl_usecolorblending, true, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 CVAR(Bool, gl_spritebrightfog, false, CVAR_ARCHIVE|CVAR_GLOBALCONFIG);
 CVAR(Bool, gl_sprite_blend, false, CVAR_ARCHIVE|CVAR_GLOBALCONFIG);
@@ -192,7 +188,7 @@ void GLSprite::Draw(int pass)
 	}
 	if (RenderStyle.BlendOp!=STYLEOP_Shadow)
 	{
-		if (gl_lights && zx::hwrender::SpriteView().DynamicLightCount() && !gl_fixedcolormap && !fullbright)
+		if (gl_lights && gl_SpriteView().DynamicLightCount() && !gl_fixedcolormap && !fullbright)
 		{
 			gl_SetDynSpriteLight(gl_light_sprites ? actor : NULL, gl_light_particles ? particle : NULL);
 		}
@@ -250,17 +246,7 @@ void GLSprite::Draw(int pass)
 		// between tics rather than stepping.
 		const bool drawRollSpriteActor = ( actor != NULL && ( actor->renderflags & RF_ROLLSPRITE ) );
 
-		// [rc4l] Nothing to push into GL when GL is not going to rasterise this.
-		//
-		// Apply() writes the CPU-side render state through to the API, and this function returns a
-		// few lines below without drawing when the backend carries the frame. RegisterSprite reads
-		// the state's FIELDS, which the setters above have already written, so there is nothing here
-		// for it to depend on. Worth 11% of the sprite clocks on Sunder MAP16 and 14% of the frame.
-		//
-		// This was rejected once on a single 0.2% picture difference on MAP04, taken against one
-		// 0.0% floor reading. It was the map's own variance: three loads per config on MAP10 and
-		// MAP04 give 0.0% in all nine comparisons. One reading is not a floor.
-		if (!zx::hwrender::StandaloneActive()) gl_RenderState.Apply();
+		gl_RenderState.Apply();
 
 		Vector v1;
 		Vector v2;
@@ -276,7 +262,7 @@ void GLSprite::Draw(int pass)
 			float ycenter = (y1 + y2)*0.5;
 			float zcenter = (z1 + z2)*0.5;
 			float viewYaw, viewPitch;
-			zx::hwrender::SpriteView().ViewAngles(viewYaw, viewPitch);
+			gl_SpriteView().ViewAngles(viewYaw, viewPitch);
 			float angleRad = DEG2RAD(270. - viewYaw);
 
 			Matrix3x4 mat;
@@ -307,34 +293,14 @@ void GLSprite::Draw(int pass)
 			v4 = Vector(x2, z2, y2);
 		}
 
-		// [rc4l] features/levelmesh: hand this sprite to the DYNAMIC stream, which is rebuilt every
-		// frame. It used to go into the static level mesh, which looked right only because it was
-		// checked against a screenshot taken from the very camera the geometry was baked from -- a
-		// sprite quad faces one viewpoint, so the moment the player turned, every actor on the map
-		// was drawn edge-on from wherever it had first been seen.
-		//
-		// Not gated on gl_wallmesh: the dynamic stream is independent of the static mesh, and a
-		// backend wants actors even when the world geometry came from somewhere else.
-		if (fua_mesh_sprites)
+		// [rc4l] The sprite's corners, for a check against GL's sprites.
+		if (gl_observer)
 		{
 			const float c1[3] = { v1[0], v1[1], v1[2] }, c2[3] = { v2[0], v2[1], v2[2] };
 			const float c3[3] = { v3[0], v3[1], v3[2] }, c4[3] = { v4[0], v4[1], v4[2] };
-			zx::levelmesh::RegisterSprite(*this, c1, c2, c3, c4);
+			gl_observer->Sprite(*this, c1, c2, c3, c4);
 		}
 
-		// [rc4l] ...and when the backend is carrying the frame, that was the whole job.
-		//
-		// Everything above still has to run: Process worked out what this sprite looks like and the
-		// render state above it is where RegisterSprite reads the dynamic light back from. What comes
-		// BELOW is rasterisation -- four vertices into GL's buffer and a draw call -- into a
-		// framebuffer that is never presented, because the Diligent child window is covering it and
-		// the backend has already been handed this sprite. On Sunder MAP10's arena that is 1380 draw
-		// calls a frame for pixels nobody sees.
-		//
-		// This is also the shape of what a Vulkan-only build needs. GLSprite::Process touches no GL
-		// state at all -- upstream reached the same conclusion and its hw_sprites.cpp is API-agnostic
-		// -- so the port of sprites is not a rewrite of the hard part, it is severing the easy one.
-		if (zx::hwrender::StandaloneActive()) return;
 
 		FFlatVertex *ptr;
 		unsigned int offset, count;
@@ -613,7 +579,7 @@ void GLSprite::Process(AActor* thing,sector_t * sector)
 	sector_t rs;
 	sector_t * rendersector;
 	// don't draw the thing that's used as camera (for viewshifts during quakes!)
-	if (thing == zx::hwrender::SpriteView().ViewActor()) return;
+	if (thing == gl_SpriteView().ViewActor()) return;
 
 	// Don't waste time projecting sprites that are definitely not visible.
 	if (thing == NULL || thing->sprite == 0 || !thing->IsVisibleToPlayer())
@@ -641,7 +607,7 @@ void GLSprite::Process(AActor* thing,sector_t * sector)
 	// [AK] Unless the sprite's in a horizontal mirror or the local player's using
 	// the chasecam, don't render icons above the heads of players being spied on.
 	// TODO: Use the ONLYVISIBLEINMIRRORS actor flag from GZDoom when we support it.
-	if (!zx::hwrender::SpriteView().PortalIsMirror())
+	if (!gl_SpriteView().PortalIsMirror())
 	{
 		if (((players[consoleplayer].cheats & CF_CHASECAM) == false) && (players[consoleplayer].camera != nullptr))
 		{
@@ -672,13 +638,13 @@ void GLSprite::Process(AActor* thing,sector_t * sector)
 	}
 
 	// don't draw first frame of a player missile
-	AActor *const viewActor = zx::hwrender::SpriteView().ViewActor();
+	AActor *const viewActor = gl_SpriteView().ViewActor();
 	if (thing->flags&MF_MISSILE && thing->target == viewActor && viewActor != NULL)
 	{
 		if (P_AproxDistance(thingx-viewx, thingy-viewy) < thing->Speed ) return;
 	}
 
-	if (zx::hwrender::SpriteView().PortalRejectsPoint(thingx, thingy)) return;
+	if (gl_SpriteView().PortalRejectsPoint(thingx, thingy)) return;
 
 	player_t *player=&players[consoleplayer];
 	FloatRect r;
@@ -773,7 +739,7 @@ void GLSprite::Process(AActor* thing,sector_t * sector)
 		switch (thing->renderflags & RF_SPRITETYPEMASK)
 		{
 		case RF_FACESPRITE:
-			zx::hwrender::SpriteView().ViewVector(viewvecX, viewvecY);
+			gl_SpriteView().ViewVector(viewvecX, viewvecY);
 
 			x1 = x - viewvecY*leftfac;
 			x2 = x - viewvecY*rightfac;
@@ -964,7 +930,7 @@ void GLSprite::Process(AActor* thing,sector_t * sector)
 	// end of light calculation
 
 	actor=thing;
-	index = zx::hwrender::SpriteView().NextSpriteIndex();
+	index = gl_SpriteView().NextSpriteIndex();
 	particle=NULL;
 	
 	const bool drawWithXYBillboard = ( !(actor->renderflags & RF_FORCEYBILLBOARD)
@@ -998,7 +964,7 @@ void GLSprite::Process(AActor* thing,sector_t * sector)
 
 void GLSprite::ProcessParticle (particle_t *particle, sector_t *sector)//, int shade, int fakeside)
 {
-	if (zx::hwrender::SpriteView().PortalRejectsPoint(particle->x, particle->y)) return;
+	if (gl_SpriteView().PortalRejectsPoint(particle->x, particle->y)) return;
 
 	player_t *player=&players[consoleplayer];
 	
@@ -1077,7 +1043,7 @@ void GLSprite::ProcessParticle (particle_t *particle, sector_t *sector)//, int s
 		scalefac *= 1.7;
 
 	float viewvecX, viewvecY;
-	zx::hwrender::SpriteView().ViewVector(viewvecX, viewvecY);
+	gl_SpriteView().ViewVector(viewvecX, viewvecY);
 
 	x1=x+viewvecY*scalefac;
 	x2=x-viewvecY*scalefac;

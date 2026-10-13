@@ -21,10 +21,13 @@
 #include "features/surfaces/computation/wallgeom_compute.h"   // [rc4l] where a pinched wall ends, as SetWallCoordinates moves it
 #include "features/materials/materials.h"     // [rc4l] whether a one-sided wall has a texture, as GL asks
 #include "features/hwrender/spriteview.h"   // [rc4l] the sprite view inside a portal view
+#include "features/hwrender/hud2d.h"        // [rc4l] SetSkyFog
+#include "features/hwrender/computation/skyfog_compute.h"
 #include "features/viewsetup/viewsetup.h"    // [rc4l] the view's actor and frustum
 #include "features/fixed64/computation/angle_interp_compute.h"   // [rc4l] a skybox's turn, as GL interpolates it
 #include "g_shared/a_sharedglobal.h"        // [rc4l] ASkyViewpoint
 #include "p_lnspec.h"                       // [rc4l] Line_Horizon
+#include "r_defs.h"                         // [rc4l] secplane_t, which p_3dfloors.h uses without including
 #include "p_3dfloors.h"                     // [rc4l] F3DFloor, a 3D floor's control sector
 #include "c_console.h"                      // [rc4l] C_ShouldForceInterpolation
 #include "p_local.h"                        // [rc4l] P_PointOnLineSide, a mirror's clip
@@ -107,6 +110,8 @@ long long g_viewx = 0, g_viewy = 0;
 // [rc4l] Every walk's subsectors, sidedefs and sectors since the player's last derived walk, stamped with that walk's frame, and the sidedefs and sectors as lists in index order, made when first asked for.
 zx::jobs::SharedArray<unsigned> g_subSeen, g_sideSeen, g_sectorSeen;
 std::vector<int> g_seenSides, g_seenSectors;
+// [rc4l] The sidedefs with decals the last walk saw, each once, in index order.
+std::vector<int> g_decalSides;
 unsigned g_seenFrame = 1;
 bool g_seenListsReady = false;
 // [rc4l] Linedefs whose walls this walk has built, since GL builds a line's once a walk from its first visible seg.
@@ -261,6 +266,7 @@ struct SkyEvent
 	bool sheen;              // [rc4l] whether a mirror's sheen is drawn, in `light` and `cm`
 	int light;
 	FColormap cm;
+	unsigned fade;           // [rc4l] a sky wall's sector fade colour, which GLWall::SkyPlane gives its sky
 };
 
 SkyEvent &PushSkyEvent(std::vector<SkyEvent> &out, int kind, float x1, float y1, float x2, float y2, const float *zb, const float *zt)
@@ -290,7 +296,12 @@ void SkyPlane(sector_t *sector, int plane, float x1, float y1, float x2, float y
 	SkyEvent &e = PushSkyEvent(out, SkyEvent::kSkyWall, x1, y1, x2, y2, q.zbottom, q.ztop);
 	e.skybox = skybox;
 	e.special = special;
+	e.fade = sector->ColorMap != NULL ? sector->ColorMap->Fade.d & 0xffffff : 0;
 }
+
+// [rc4l] The fade of the first sky the player's walk met, whose portal GL makes first and so draws last, leaving its fog on the sky.
+bool g_skyFadeSeen = false;
+unsigned g_skyFade = 0;
 
 // [rc4l] A sky event into the walk's sky list, portals and mirrors, in the order the walk made it.
 void ApplySkyEvent(const SkyEvent &e)
@@ -307,6 +318,7 @@ void ApplySkyEvent(const SkyEvent &e)
 	}
 	case SkyEvent::kSkyWall:
 		if (e.skybox != NULL && g_spec.portals != NULL) AddPortalLine(PortalFor(NULL, e.skybox), e.x1, e.y1, e.x2, e.y2);
+		if (g_spec.player && e.skybox == NULL && !g_skyFadeSeen) { g_skyFadeSeen = true; g_skyFade = e.fade; }
 		zx::levelmesh::AddViewSkyQuad(g_spec.skyList, e.x1, e.y1, e.x2, e.y2, e.zb, e.zt, e.skybox, e.special);
 		break;
 	case SkyEvent::kSkyHole:
@@ -507,6 +519,8 @@ struct Slice
 	std::vector<WORD *> drawnSectors;
 	// [rc4l] The node children it passed over though a seg under them showed in it, and those it entered only because it was told to.
 	std::vector<LeakBox> leaks;
+	// [rc4l] The sidedefs it saw that carry decals, each as often as a seg of it showed.
+	std::vector<int> decalSides;
 };
 
 // [rc4l] Each vertex's pseudo-angle on one lane this walk, stamped with the walk, the stamp beside the angle so a vertex costs one cache miss.
@@ -637,6 +651,7 @@ void ClipSeg(ClipWalk &w, seg_t *seg, bool polyPass, subsector_t *sub, sector_t 
 	if (!drawn) { drawn = true; SetFlag(sub->flags, SSECF_DRAWN, w.direct, slice.drawnSubs); }
 	const int side = int(seg->sidedef - sides);
 	g_sideWalked.Store(side, g_walkStamp);
+	if (seg->sidedef->AttachedDecals != NULL) slice.decalSides.push_back(side);
 	if (g_sideSeen.Load(side) != g_seenFrame)
 	{
 		g_sideSeen.Store(side, g_seenFrame);
@@ -1111,6 +1126,7 @@ void ClipSlices(int count, const unsigned *bounds)
 		s.drawnSubs.clear();
 		s.drawnSectors.clear();
 		s.leaks.clear();
+		s.decalSides.clear();
 	}
 	if (count == 1) { ClipInto(g_slices[0], 0, true, ~0ull, in_area); return; }
 	struct Run { void operator()(int index, int lane) const { ClipInto(g_slices[index], lane, false, g_switchKey, g_switchTo); } } run;
@@ -1328,12 +1344,22 @@ void Walk(const WalkSpec &spec, int count = 1, const unsigned *bounds = NULL)
 	for (int k = 0; k < count; k++) g_slices[k].cursor = 0;
 	ForEachRank(count, [count](int r) { ReplayRank(r, count); });
 	in_area = after;
+	g_decalSides.clear();
 	for (int k = 0; k < count; k++)
 	{
 		g_walkSegs += g_slices[k].tried;
 		g_walkFacing += g_slices[k].facing;
 		g_walkOpen += g_slices[k].open;
+		g_decalSides.insert(g_decalSides.end(), g_slices[k].decalSides.begin(), g_slices[k].decalSides.end());
 	}
+	std::sort(g_decalSides.begin(), g_decalSides.end());
+	g_decalSides.erase(std::unique(g_decalSides.begin(), g_decalSides.end()), g_decalSides.end());
+}
+
+// [rc4l] The last walk's decal sidedefs to `hooks`, when it wants them.
+void HandDecals(const WalkHooks *hooks)
+{
+	if (hooks != NULL && hooks->decals != NULL && !g_decalSides.empty()) hooks->decals(&g_decalSides[0], (int)g_decalSides.size());
 }
 
 // [rc4l] Whether a subsector's plane looks the same as the stacked plane's, as CollectSectorStacksCeiling and Floor ask.
@@ -1467,7 +1493,7 @@ void WalkSkybox(const PortalView &p, long long seenX, long long seenY)
 }
 
 // [rc4l] GLSectorStackPortal::DrawContents's walk: from the eye moved by the portal's displacement, over the map sections its subsectors cover, the clipper opened only where its walls were seen from; then its actors to `sprite` from inside the view, and the skyboxes it looks into.
-void WalkStack(const PortalView &p, void (*sprite)(AActor *thing))
+void WalkStack(const PortalView &p, const WalkHooks *hooks)
 {
 	FPortal *origin = p.stack;
 	const int plane = origin->plane;
@@ -1499,13 +1525,14 @@ void WalkStack(const PortalView &p, void (*sprite)(AActor *thing))
 		numnodes > 0 ? &g_nodeCovered[0] : NULL };
 	Walk(spec);
 
-	// [rc4l] The view's actors, as GL's walk hands them to ProcessSprite, captured into the view's slot while its map sections still stand.
-	if (sprite != NULL && p.slot >= 0)
+	// [rc4l] The view's actors, as GL's walk hands them to ProcessSprite, and its decals, captured into the view's slot while its map sections still stand.
+	if (hooks != NULL && p.slot >= 0)
 	{
 		zx::levelmesh::EnterScene();
 		{
 			const zx::levelmesh::StackWalk walk(origin);
-			PortalSprites(sprite, NULL);
+			if (hooks->sprite != NULL) PortalSprites(hooks->sprite, NULL);
+			HandDecals(hooks);
 		}
 		zx::levelmesh::LeaveScene();
 	}
@@ -1518,7 +1545,7 @@ void WalkStack(const PortalView &p, void (*sprite)(AActor *thing))
 }
 
 // [rc4l] GLMirrorPortal::DrawContents's walk: from the eye reflected in the line, turned to match, the frustum and the mirror's own span blocked and nothing behind the mirror walked; then its actors to `sprite` inside the reflection, and the skyboxes it looks into.
-void WalkMirror(const PortalView &p, void (*sprite)(AActor *thing))
+void WalkMirror(const PortalView &p, const WalkHooks *hooks)
 {
 	line_t *line = p.mirror;
 	const fixed_t sx = viewx, sy = viewy;
@@ -1536,14 +1563,15 @@ void WalkMirror(const PortalView &p, void (*sprite)(AActor *thing))
 	std::vector<PortalView> skyboxes;
 	WalkSpec spec = { -1, zx::levelmesh::kSkyCaptureNone, false, NULL, &skyboxes, NULL, NULL, line };
 	Walk(spec);
-	if (sprite != NULL)
+	if (hooks != NULL)
 	{
 		// [rc4l] Billboarded to the reflected view, as GL's SetupView turns its view vector for the mirror.
 		zx::viewsetup::TurnView(viewangle);
 		zx::levelmesh::EnterScene();
 		{
 			const zx::levelmesh::MirrorWalk walk(int(line - lines));
-			PortalSprites(sprite, line);
+			if (hooks->sprite != NULL) PortalSprites(hooks->sprite, line);
+			HandDecals(hooks);
 		}
 		zx::levelmesh::LeaveScene();
 		zx::viewsetup::TurnView(sa);
@@ -1639,13 +1667,13 @@ int SlotDiffers(const TArray<unsigned int> &a, const TArray<unsigned int> &b, in
 
 } // namespace
 
-void WalkView(bool publish, bool derive, void (*particles)(subsector_t *sub, sector_t *sector))
+void WalkView(bool publish, bool derive, const WalkHooks *hooks)
 {
 	cycle_t clock;
 	clock.Reset();
 	clock.Clock();
 	const WalkSpec spec = { publish ? zx::levelmesh::kMainWalkSlot : -1, derive ? zx::levelmesh::kSkyCaptureMain : zx::levelmesh::kSkyCaptureNone,
-		derive, zx::viewsetup::CurrentView().viewActor, derive ? &g_playerPortals : NULL, NULL, NULL, NULL, particles };
+		derive, zx::viewsetup::CurrentView().viewActor, derive ? &g_playerPortals : NULL, NULL, NULL, NULL, hooks != NULL ? hooks->particles : NULL };
 	if (publish) zx::levelmesh::BeginSlotVisibility(zx::levelmesh::kMainWalkSlot);
 	if (derive)
 	{
@@ -1659,6 +1687,7 @@ void WalkView(bool publish, bool derive, void (*particles)(subsector_t *sub, sec
 			g_seenFrame = 1;
 		}
 		g_seenListsReady = false;
+		g_skyFadeSeen = false;
 		zx::levelmesh::BeginViewSky(zx::levelmesh::kSkyCaptureMain);
 		zx::levelmesh::BeginPortalViews();
 		g_playerPortals.clear();
@@ -1694,7 +1723,13 @@ void WalkView(bool publish, bool derive, void (*particles)(subsector_t *sub, sec
 		ComputeBalancedSlices(&g_sliceEdges[0], &g_sliceWork[0], count, 0.25 / count, &g_sliceNext[0]);
 		g_sliceEdges.swap(g_sliceNext);
 	}
-	if (derive) ProcessSectorStacks();
+	HandDecals(hooks);
+	if (derive)
+	{
+		ProcessSectorStacks();
+		const zx::hwrender::SkyFog fog = zx::hwrender::ComputeSkyFog(skyfog, gl_fixedcolormap != CM_DEFAULT, g_skyFadeSeen ? g_skyFade : 0);
+		zx::hwrender::SetSkyFog(fog.r, fog.g, fog.b, fog.a);
+	}
 	zx::levelmesh::SetMainVisibility(publish);
 	clock.Unclock();
 	if (!publish) return;
@@ -1704,7 +1739,7 @@ void WalkView(bool publish, bool derive, void (*particles)(subsector_t *sub, sec
 	if (clock.TimeMS() > g_walkMaxMs) g_walkMaxMs = clock.TimeMS();
 }
 
-void WalkPortalViews(void (*sprite)(AActor *thing))
+void WalkPortalViews(const WalkHooks *hooks)
 {
 	cycle_t clock;
 	clock.Reset();
@@ -1714,11 +1749,11 @@ void WalkPortalViews(void (*sprite)(AActor *thing))
 	for (size_t i = portals.size(); i-- > 0; )
 	{
 		if (portals[i].lines.empty()) continue;
-		if (portals[i].stack != NULL) WalkStack(portals[i], sprite);
+		if (portals[i].stack != NULL) WalkStack(portals[i], hooks);
 		else if (portals[i].mirror != NULL)
 		{
 			zx::levelmesh::AddWalkedMirror(int(portals[i].mirror - lines));
-			WalkMirror(portals[i], sprite);
+			WalkMirror(portals[i], hooks);
 		}
 		else WalkSkybox(portals[i], g_playerX, g_playerY);
 	}

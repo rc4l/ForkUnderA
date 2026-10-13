@@ -4,6 +4,7 @@
 #include "gl/system/gl_system.h"
 #include <stddef.h>   // offsetof, for the cached-record guard
 #include "features/levelmesh/wallcache.h"
+#include "features/levelmesh/computation/wallcache_compute.h"   // [rc4l] SideLook, SectorLook
 #include "features/levelmesh/captureshading.h"
 #include "features/levelmesh/glvertex.h"   // [rc4l] GL's fan vertices as mesh vertices   // [rc4l] CaptureShading, the light model for a GL colormap
 #include "features/levelmesh/flatmesh.h"
@@ -29,11 +30,11 @@
 #include "c_cvars.h"
 #include "c_console.h"
 
-// [rc4l] Declared at global scope: EXTERN_CVAR inside the namespace would name a different symbol
-// than the CVAR defined in gl_drawinfo.cpp, and only the linker would notice.
-EXTERN_CVAR(Bool, gl_wallmesh)
-EXTERN_CVAR(Bool, fua_surface_mapbake_auto)
-EXTERN_CVAR(Bool, fua_mesh_sky)
+// [rc4l] Keep the level mesh the backend draws from, and CUSTOM so turning it over drops what the mesh held; the name is GL's, from when GL's walk filled it.
+CUSTOM_CVAR(Bool, gl_wallmesh, false, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
+{
+	zx::levelmesh::InvalidateAll();
+}
 EXTERN_CVAR(Bool, gl_mirrors)
 EXTERN_CVAR(Bool, fua_surface_bands)
 // [rc4l] Print each banded wall the map bake splits: its span, the first boundary and the band that lights its top.
@@ -43,10 +44,6 @@ CVAR(Bool, fua_band_log, false, 0)
 // ON. A wall's vertical span and both of its texture coordinates come from the map now, and the
 // frame is pixel-identical to GL's on every map tested -- including Sunder MAP16, where 71,743
 // surfaces are derived and six fall back. See features/surfaces/README.md for the table.
-//
-// What still comes from the capture is which surfaces exist at all, the special kinds (3D floor
-// faces, skies, horizons), and the shading -- which is deliberately last, being the part where a
-// second implementation drifted before.
 CVAR(Bool, fua_surface_derive, true, 0)
 // [rc4l] ...and its light, which was the last of a wall's appearance still taken from GLWall.
 //
@@ -60,10 +57,6 @@ CVAR(Bool, fua_surface_derive, true, 0)
 // sidedef rather than off a GLWall that GL had to walk the BSP to produce.
 CVAR(Bool, fua_surface_derive_light, true, 0)
 EXTERN_CVAR(Int, gl_fogmode)
-// [rc4l] The animated-texture re-resolve on replay, as a switch, so its cost can be A/B'd from the
-// console instead of from two builds. Off renders stale animation frames -- a measurement aid, not
-// a setting anyone should turn off.
-CVAR(Bool, gl_wallcache_anim, true, 0)
 // [rc4l] Off bakes a scrolled wall or floor again instead of shifting its texture, the old cost, for an A/B in one session.
 CVAR(Bool, fua_mesh_rescroll, true, 0)
 
@@ -86,26 +79,6 @@ static TArray<int>          g_sideDirty;
 // [rc4l] Per-sector fua_placement as of the last sweep, so a scrolled floor reaches the map bake.
 static TArray<int>          g_sectorPlacement;
 static TArray<TArray<int> > g_sectorSegs;
-static TArray<bool>     g_uncacheable;   // sticky: this seg produced a portal, never cache it
-static int              g_captureSeg = -1;
-static bool             g_sawPortal = false;
-static int              g_hits = 0, g_misses = 0, g_uncacheableHits = 0;
-// [rc4l] How many replayed walls came back with a DIFFERENT material than the one they were
-// captured with -- which is the count of animated wall textures the cache would otherwise have
-// frozen. Zero means the re-resolve below is dead weight; nonzero is the bug, measured.
-static int              g_animRefresh = 0;
-// [rc4l] Why each seg ended up as it did, ONE entry per seg rather than one per capture attempt.
-//
-// The reject counters below count attempts, and a refused seg re-captures every frame, so they say
-// 541713 3D-floor rejects on a map with 1317 segs touching a 3D floor. That number cannot answer
-// "how much of the level is missing and because of what", which is the only question that matters
-// when a grate is absent from the Vulkan view. This can.
-enum { SEG_UNSEEN = 0, SEG_OK, SEG_PORTAL, SEG_POLY, SEG_FFLOOR, SEG_AREA, SEG_OTHER };
-static TArray<unsigned char> g_segFate;
-// [rc4l] Why captures fail, split by cause. See EndCapture.
-static int g_rejPortal = 0, g_rejPoly = 0, g_rejFFloor = 0, g_rejArea = 0, g_rejOther = 0,
-           g_captureOk = 0;
-int                     g_wallcacheMode = 1;
 // [rc4l] Bumped once per level load. A backend that wants to set itself up per level needs to know a
 // level happened, and "numsegs changed" is not that -- reloading the same map gives the same count.
 static int              g_levelGeneration = 0;
@@ -132,13 +105,8 @@ void AllocForLevel(int numsegs)
 	zx::levelmesh::ClearFlats();
 	zx::levelmesh::ClearSprites();
 	g_cache.Clear();
-	g_uncacheable.Clear();
 	if (numsegs <= 0) return;
 	g_cache.Resize(numsegs);
-	g_uncacheable.Resize(numsegs);
-	g_segFate.Clear();
-	g_segFate.Resize(numsegs);
-	for (int i = 0; i < numsegs; i++) g_segFate[i] = SEG_UNSEEN;
 	g_sectorDirty.Clear();
 	g_sectorPlacement.Clear();
 	g_sectorSegs.Clear();
@@ -173,7 +141,6 @@ void AllocForLevel(int numsegs)
 		// Belt and braces with SegCache's constructor: Resize is not guaranteed to construct a
 		// recycled slot, and a stale range here corrupts the new level's mesh rather than merely
 		// wasting a slot.
-		g_cache[i].filled = false;
 		g_cache[i].pieceCount = 0;
 		g_cache[i].bakedCount = 0;
 		g_cache[i].mapBaked = false;
@@ -183,18 +150,12 @@ void AllocForLevel(int numsegs)
 			g_cache[i].pieces[k].range.offset = 0;
 			g_cache[i].pieces[k].range.count = 0;
 		}
-		g_uncacheable[i] = false;
 	}
-	g_captureSeg = -1;
-	ResetCaptureVRangeStats();
-	ResetStats();
 }
 
 void FreeLevel()
 {
 	g_cache.Clear();
-	g_uncacheable.Clear();
-	g_captureSeg = -1;
 	ForgetWalks();
 }
 
@@ -205,52 +166,12 @@ static void RegisterSegPiece(MeshPiece &mp, const seg_t *seg)
 	MeshRegisterPiece(mp);
 }
 
-// [rc4l] Mirrors GLWall::SetupBatchState's first two lines -- deliberately, because those two lines
-// ARE the definition of how a wall is lit. The shared CaptureShading does the work; this just supplies
-// the wall's own rellight and its RENDERWALL_M2SNF exception (that type renders with fog forced off).
-static void CaptureWallShading(const GLWall &wall, MeshPiece &mp)
-{
-	CaptureShading(wall.lightlevel, wall.rellight + getExtraLight(), wall.Colormap, mp,
-		wall.type == RENDERWALL_M2SNF);
-}
 
-// [rc4l] Turn a captured seg's walls into persistent geometry. The fan the streaming path would have
-// emitted is expanded to an independent triangle list, because a baked range is drawn with
-// glMultiDrawArrays and a GL_TRIANGLE_FAN restarts at its own first vertex.
-// [rc4l] Which of the two bakes owns this seg -- and it is a per-SEG question, not a per-level one.
-//
-// The map bake needs a light level for the wall, and there is one sector kind it cannot give one
-// for: a sector with a 3D floor light list has no single light level, because SplitWall cuts the
-// wall at every band and gives each fragment that band's own light and colormap. Deriving one number
-// for the whole wall would be wrong in exactly the rooms people build 3D floors for, so
-// BuildDerivedWallLight declines.
-//
-// What that must NOT mean is "there is no wall". It meant exactly that for a while: BakeSegFromMap
-// squashed all three parts of every seg in such a sector, and on dbab01 an entire brick wall went
-// missing and the lava room behind it came through -- 10.5% of the frame, and the ladder read 100%
-// because the ladder never asks about light. So the seg stays with the capture, which knows how to
-// take GL's split walls with their per-band shading, and the two paths divide the level cleanly
-// instead of one path leaving holes in it.
-// [rc4l] Which of the two bakes owns this seg -- and it is a per-SEG question, not a per-level one.
-//
-// The map bake needs a light level for the wall, and there is one sector kind it cannot give one
-// for: a sector with a 3D floor light list has no single light level, because SplitWall cuts the
-// wall at every band and gives each fragment that band's own light and colormap. Deriving one number
-// for the whole wall would be wrong in exactly the rooms people build 3D floors for, so
-// BuildDerivedWallLight declines.
-//
-// What that must NOT mean is "there is no wall". It meant exactly that for a while: BakeSegFromMap
-// squashed all three parts of every seg in such a sector, and on dbab01 an entire brick wall went
-// missing and the lava room behind it came through -- 10.5% of the frame, and the ladder read 100%
-// because the ladder never asks about light. So the seg stays with the capture, which knows how to
-// take GL's split walls with their per-band shading, and the two paths divide the level cleanly
-// instead of one path leaving holes in it.
 // [rc4l] One quad per SIDEDEF, not one per seg.
 //
 // The derivation draws the WHOLE LINEDEF -- fracleft 0, fracright 1, the line's own vertices -- which
 // is what GLWall::Process does. Doing that once per seg means a linedef the BSP split into four segs
-// contributes four identical coplanar quads, and the map bake walks every seg in the level, so it
-// makes all four where the capture only ever made the ones GL happened to walk.
+// contributes four identical coplanar quads, since the map bake walks every seg in the level.
 //
 // They are duplicates in the exact sense: same corners, same material, same shading. Nothing on
 // screen needs more than the first, and three of them are depth-buffer noise and wasted vertices.
@@ -276,6 +197,27 @@ static void BuildSideOwners()
 
 void ClearSideOwners() { g_sideOwner.Clear(); }
 
+int SideOwnerSeg(int side)
+{
+	if (sides == NULL || side < 0 || side >= numsides) return -1;
+	if (g_sideOwner.Size() != (unsigned)numsides) BuildSideOwners();
+	return (unsigned)side < g_sideOwner.Size() ? g_sideOwner[side] : -1;
+}
+
+bool DerivedPart(const seg_t *seg, int part, zx::surfaces::DerivedWallSpan &d, bool &twoSidedMiddle)
+{
+	static const int kParts[kWallParts] = { RENDERWALL_TOP, RENDERWALL_BOTTOM, RENDERWALL_M1S };
+	if (part < 0 || part >= kWallParts) return false;
+	twoSidedMiddle = part == kPartMiddle && seg->backsector != NULL;
+	return zx::surfaces::BuildDerivedWallSpan(seg, twoSidedMiddle ? RENDERWALL_M2S : kParts[part], d);
+}
+
+bool LineDrawsNoWall(const seg_t *seg)
+{
+	return zx::horizon::ComputeIsHorizonLine(seg->linedef->special) ||
+		ComputeIsMirrorWall(seg->linedef->special, seg->backsector == NULL, gl_mirrors);
+}
+
 static bool SegOwnsItsSide(int segIndex)
 {
 	if (segs == NULL || segIndex < 0 || segIndex >= numsegs) return false;
@@ -290,236 +232,17 @@ static bool SegOwnsItsSide(int segIndex)
 	return g_sideOwner[idx] == segIndex;
 }
 
-static bool MapBakeOwnsSeg(int segIndex)
-{
-	if (!fua_surface_mapbake_auto) return false;
-	if (segs == NULL || segIndex < 0 || segIndex >= numsegs) return false;
-	zx::surfaces::DerivedWallLight dl;
-	FDynamicColormap *cmFrom = NULL;
-	return zx::surfaces::BuildDerivedWallLight(&segs[segIndex], dl, cmFrom) && cmFrom != NULL;
-}
 
-void BakeSeg(int segIndex)
-{
-	if (!gl_wallmesh) return;   // [rc4l] no level mesh is kept, so baking would be pure cost
-	if (segIndex < 0 || (unsigned)segIndex >= g_cache.Size()) return;
-	// [rc4l] When the map OWNS this seg, the capture stands down for it.
-	//
-	// Both baking the same seg is not twice the work, it is a fight: the map bake assigns slots by
-	// PART and the capture assigns them in the order pieces happen to arrive, so each overwrites the
-	// other's slots with a different material and a different range, every frame, and every one of
-	// those counts as a rebatch. Measured before this line existed: 11,820 scene rebuilds on Doom 2
-	// MAP03 in under a minute.
-	//
-	// Per SEG and not per level, because the map bake cannot do every seg -- see MapBakeOwnsSeg.
-	if (MapBakeOwnsSeg(segIndex)) return;
-	SegCache &sc = g_cache[segIndex];
-	sc.mapBaked = false;
-
-	static MeshVertex fan[GLWall::MAX_BATCH_FAN_VERTICES];
-	static MeshVertex tris[GLWall::MAX_BATCH_FAN_VERTICES * 3];
-
-	// [rc4l] Collapse pieces this seg no longer produces.
-	//
-	// The mesh hands a backend fixed vertex ranges, and a backend draws them until told otherwise --
-	// there is no "remove" in a bump-allocated arena. So a piece that stops existing has to be
-	// squashed to zero area rather than abandoned, or it keeps rendering. Opening a door is exactly
-	// this case: its middle texture disappears, and without this the shut door stayed drawn across
-	// the doorway in the Vulkan view while GL showed the room behind it.
-	for (int i = sc.pieceCount; i < sc.bakedCount && i < kMaxMapPieces; i++)
-	{
-		MeshRange &r = sc.pieces[i].range;
-		if (r.count == 0) continue;
-		const unsigned int n = r.count;
-		if (n > (unsigned)(GLWall::MAX_BATCH_FAN_VERTICES * 3)) { r.count = 0; continue; }
-		// All vertices at one point: the triangles have no area and rasterise to nothing.
-		memset(tris, 0, n * sizeof(MeshVertex));
-		MeshStore(r, tris, (int)n);
-	}
-	sc.bakedCount = sc.pieceCount;
-
-	for (int i = 0; i < sc.pieceCount; i++)
-	{
-		const int fanCount = sc.walls[i].BuildFanVertices(AsFlatVertices(fan), GLWall::MAX_BATCH_FAN_VERTICES);
-		// [rc4l] The first thing in this renderer that DERIVES a surface instead of transcribing one.
-		//
-		// features/surfaces has been able to work out a sidedef's vertical span and texture position
-		// from the map for a while, and until now nothing read the answer -- three ladders scored it and
-		// the renderer went on using GL's. This puts the derived numbers in the mesh, for the two things
-		// the ladders actually measure and nothing else: the heights, and where the picture sits on
-		// them. The horizontal coordinate is derived too, by GLWall::Process's own rule: the whole
-		// linedef for an ordinary wall and the seg's share of it for a polyobject.
-		//
-		// Only the plain four-corner case: gl_seamless adds vertices along the edges to hide cracks,
-		// and their heights are interpolated rather than derived. Those fall back and are counted, so
-		// "how much of the world is derived" is a number rather than an impression.
-		if (fua_surface_derive && fanCount != 4) zx::surfaces::NoteDeriveSeamFallback();
-		if (fua_surface_derive && fanCount == 4)
-		{
-			zx::surfaces::DerivedWallSpan d;
-			if (zx::surfaces::BuildDerivedWallSpan(sc.walls[i].seg, sc.walls[i].type, d))
-			{
-				// The fan is bottom-left, top-left, top-right, bottom-right -- see BuildFanVertices.
-				fan[0].z = d.zbottom[0]; fan[0].v = d.vBottom[0];
-				fan[1].z = d.ztop[0];    fan[1].v = d.vTop[0];
-				fan[2].z = d.ztop[1];    fan[2].v = d.vTop[1];
-				fan[3].z = d.zbottom[1]; fan[3].v = d.vBottom[1];
-				fan[0].u = fan[1].u = d.uLeft;
-				fan[2].u = fan[3].u = d.uRight;
-			}
-		}
-		const int triVerts = ComputeFanTriangleVertexCount(fanCount);
-		// [rc4l] Give the range back before forgetting it, or the piece registered against it is
-		// orphaned: it stays in the piece list drawing the geometry that was there, and the next
-		// successful store allocates a FRESH range -- so the surface ends up in the list twice.
-		//
-		// Zeroing the count also disables the retire inside MeshStore, which only fires when the count
-		// is non-zero. Two ways of saying "this is empty now" that do not agree is what left 13% of
-		// live pieces duplicating another piece's geometry.
-		if (triVerts <= 0) { MeshRetireRange(sc.pieces[i].range); sc.pieces[i].range.count = 0; continue; }
-
-		int w = 0;
-		for (int t = 0; t < fanCount - 2; t++)
-			for (int c = 0; c < 3; c++)
-				tris[w++] = fan[ComputeFanTriangleVertex(fanCount, t, c)];
-
-		// MeshStore has already retired the old range if it reallocated; if it FAILED there is nothing
-		// stored, and the same reasoning as above applies to whatever was there before.
-		if (!MeshStore(sc.pieces[i].range, tris, w))
-		{
-			MeshRetireRange(sc.pieces[i].range);
-			sc.pieces[i].range.count = 0;
-			continue;
-		}
-
-		// [rc4l] Register the shading state alongside the geometry, so a backend can group and draw
-		// without ever seeing a GLWall.
-		MeshPiece mp;
-		mp.range = sc.pieces[i].range;
-		mp.material = sc.walls[i].gltexture;
-		mp.lightLevel = sc.walls[i].lightlevel;
-		mp.lightColor = sc.walls[i].Colormap.LightColor.d;
-		mp.fadeColor = sc.walls[i].Colormap.FadeColor.d;
-		// [rc4l] The light this wall is shaded with, derived rather than taken from GLWall.
-		//
-		// Not a second lighting implementation -- CaptureShading calls the engine's own gl_SetColor
-		// and gl_SetFog either way, which is what has kept the two renderers agreeing. What changes
-		// is where its three INPUTS come from: the sector's light, the sidedef's fake contrast, and
-		// the colormap are map data, and taking them from the map is the last thing standing between
-		// a wall's appearance and needing GL to have walked the BSP first.
-		//
-		// A sector with a 3D floor light list has no single light level -- SplitWall cuts the wall
-		// into bands, each with its own -- so those keep the capture and are counted.
-		bool litFromMap = false;
-		if (fua_surface_derive_light)
-		{
-			zx::surfaces::DerivedWallLight dl;
-			FDynamicColormap *cmFrom = NULL;
-			if (zx::surfaces::BuildDerivedWallLight(sc.walls[i].seg, dl, cmFrom) && cmFrom != NULL)
-			{
-				// sector_t::ColorMap is an FDynamicColormap*, and GLWall::Process copies it into an
-				// FColormap by assignment -- the same conversion, spelled the same way.
-				FColormap cm;
-				cm = cmFrom;
-				zx::levelmesh::CaptureShading(dl.lightLevel, dl.relLight + getExtraLight(), cm, mp,
-					sc.walls[i].type == RENDERWALL_M2SNF);
-				mp.lightLevel = dl.lightLevel;
-				mp.lightColor = cm.LightColor.d;
-				mp.fadeColor = cm.FadeColor.d;
-				litFromMap = true;
-			}
-		}
-		if (!litFromMap) CaptureWallShading(sc.walls[i], mp);
-
-		// [rc4l] AFTER CaptureShading, which resets alpha to 1 and blendMode to 0 on the way past.
-		//
-		// Setting them before it is silently undone, and the surface renders opaque with no sign
-		// anything was captured -- which is precisely how a pane of glass survived a fix that was
-		// otherwise correct. The flat path already had this ordering; the wall path did not, and the
-		// two were written a day apart.
-		//
-		// A wall is not always opaque: two-sided middle textures carry the LINEDEF's alpha, and the
-		// sides of a translucent 3D floor carry the rover's. The draw list the engine chose is what
-		// settles it -- a frosted-glass texture keeps alpha 1 and hides its transparency in the
-		// texture's own alpha channel.
-		mp.alpha = sc.walls[i].alpha;
-		{
-			const int list = sc.pieces[i].list;
-			const bool trans = (list == GLDL_TRANSLUCENT || list == GLDL_TRANSLUCENTBORDER);
-			mp.blendMode = ComputeWallBlendMode(trans, sc.walls[i].RenderStyle == STYLE_Add,
-			                                    sc.walls[i].alpha);
-		}
-		mp.dynLightIndex = sc.walls[i].dynlightindex;
-
-		// [rc4l] Wall normal: perpendicular to the seg's horizontal direction, in mesh space
-		// (x, z-up, y). Which of the two perpendiculars is the front follows the same winding the
-		// geometry uses, so the front face and its normal agree.
-		{
-			const float dx = sc.walls[i].glseg.x2 - sc.walls[i].glseg.x1;
-			const float dy = sc.walls[i].glseg.y2 - sc.walls[i].glseg.y1;
-			const float len = sqrtf(dx*dx + dy*dy);
-			if (len > 0.0001f)
-			{
-				mp.normX = dy / len;
-				mp.normY = 0.f;
-				mp.normZ = -dx / len;
-			}
-		}
-
-		// [rc4l] The sidedef part this wall came from, so animated textures keep animating. See
-		// MeshPiece::texId. Only the three ordinary parts map cleanly; 3D-floor and special walls
-		// are left unresolved and simply do not animate.
-		mp.baseTex = NULL;
-		if (sc.walls[i].seg != NULL && sc.walls[i].seg->sidedef != NULL)
-		{
-			const side_t *sd = sc.walls[i].seg->sidedef;
-			switch (sc.walls[i].type)
-			{
-			// [rc4l] ByIndex, not operator[]: the latter applies the animation translation and hands
-			// back whichever frame is showing, which makes the BASE texture a moving target. See
-			// the same note in features/surfaces/surfacebuild.cpp.
-			case RENDERWALL_TOP:    mp.baseTex = TexMan.ByIndex(sd->GetTexture(side_t::top).GetIndex()); break;
-			case RENDERWALL_BOTTOM: mp.baseTex = TexMan.ByIndex(sd->GetTexture(side_t::bottom).GetIndex()); break;
-			case RENDERWALL_M1S:
-			case RENDERWALL_M2S:
-			case RENDERWALL_M2SNF:  mp.baseTex = TexMan.ByIndex(sd->GetTexture(side_t::mid).GetIndex()); break;
-			default: break;
-			}
-		}
-		// [rc4l] ...and anything the switch does not name still needs A base texture.
-		//
-		// Leaving it null was described above as "simply does not animate", and it is worse than
-		// that: the piece is registered with no identity for the animation pass to re-resolve from,
-		// and fua_mesh_verify counts it as a fault -- 435 pieces on dbab02 in the GL-driven mesh
-		// alone. A 3D floor block or a special wall still knows what it is drawing; the GLWall's own
-		// material is that answer, and it is what the piece is already being drawn with.
-		if (mp.baseTex == NULL && sc.walls[i].gltexture != NULL)
-			mp.baseTex = sc.walls[i].gltexture->tex;
-		mp.plain = ComputeWallPlainPass(sc.walls[i].type);
-		RegisterSegPiece(mp, sc.walls[i].seg);
-	}
-}
-
-// [rc4l] Bake a seg from the MAP, with no GLWall involved at all.
-//
-// This is the last dependency in the phase: everything about a wall is derived now except WHICH
-// walls there are, and that still comes from GL walking the BSP and telling us what it drew. A bake
-// driven by the map answers it from the sidedef, which is where Doom keeps it.
-//
-// fua_surface_mapcover measured whether that is possible before this was written: on dbab04 the map
-// accounts for 1332 of the 1336 parts GL draws, and on Sunder MAP16 for 59,477 of 59,483 across
-// 52,052 segs. The handful left over are why the capture is still there.
+// [rc4l] Bake a seg from the MAP, with no GLWall involved at all; fua_surface_mapcover says how much of a level the map accounts for.
 //
 // Slots are assigned by PART -- upper, lower, middle -- rather than in the order pieces happen to
-// arrive, which the capture path cannot do and which makes a re-bake reuse the same mesh range every
-// time.
+// arrive, which makes a re-bake reuse the same mesh range every time.
 // [rc4l] Slots per part, so a part+band always lands in the SAME mesh range across re-bakes.
 //
 // Assigning slots in the order pieces happen to come out would move a part's range whenever the band
 // count changed -- a lift crossing a 3D floor does that several times a second -- and a range that
 // moves is a rebatch, which is a full scene rebuild. Fixed arithmetic keeps the property the
 // per-part assignment had before bands existed.
-static const int kBandsPerPart = 5;
 
 // [rc4l] Where the 3D floor faces live, above the parts. A sidedef with more slabs than this keeps
 // as many as fit, which is a missing face on one wall rather than a wrong one everywhere.
@@ -541,6 +264,38 @@ static void BandBottoms(const TArray<lightlist_t> &lights, int nLights, float x1
 {
 	for (int i = 0; i + 1 < nLights; i++)
 		zx::levelmesh::ComputeBandBottomAtEnds(ToBandPlane(lights[i + 1].plane), x1, y1, x2, y2, out[i]);
+}
+
+int DerivedPartBands(const seg_t *seg, const zx::surfaces::DerivedWallSpan &d, const zx::surfaces::DerivedWallLight &dl, PartBand *out)
+{
+	const sector_t *front = seg->frontsector;
+	const TArray<lightlist_t> *lights = (front != NULL && front->e != NULL) ? &front->e->XFloor.lightlist : NULL;
+	int nLights = (fua_surface_bands && lights != NULL) ? (int)lights->Size() : 0;
+	if (nLights > kBandsPerPart) nLights = kBandsPerPart;
+	float bandBottom[kBandsPerPart][2];
+	if (nLights > 1) BandBottoms(*lights, nLights, d.x1, d.y1, d.x2, d.y2, bandBottom);
+	zx::surfaces::WallBand bands[kBandsPerPart];
+	const int n = zx::surfaces::ComputeWallBands(d.ztop, d.zbottom, bandBottom, nLights, bands, kBandsPerPart);
+	if (fua_band_log && nLights > 1)
+		Printf("bands seg %d: wall %.1f..%.1f, %d lights, first boundary %.1f, %d bands, first lit by %d\n",
+			int(seg - segs), d.ztop[0], d.zbottom[0], nLights, bandBottom[0][0], n, n > 0 ? bands[0].lightIndex : -1);
+	for (int bi = 0; bi < n; bi++)
+	{
+		PartBand &b = out[bi];
+		b.band = bands[bi];
+		b.lightLevel = dl.lightLevel;
+		b.lightFrom = NULL;
+		b.lightEntry = -1;
+		// [rc4l] Put3DWall's rule: the level is the band's unless it points back at the wall's own sector, and the colour is the band's whenever the piece is one.
+		if (!bands[bi].ownLight && bands[bi].lightIndex < nLights)
+		{
+			const lightlist_t &ll = (*lights)[bands[bi].lightIndex];
+			if (ll.p_lightlevel != &seg->sidedef->sector->lightlevel) b.lightLevel = gl_ClampLight(*ll.p_lightlevel);
+			b.lightFrom = ll.extra_colormap;
+			b.lightEntry = bands[bi].lightIndex;
+		}
+	}
+	return n;
 }
 
 // A 3D floor plane evaluated at the wall's two ends, the way GLWall::GetPlanePos does it.
@@ -787,13 +542,7 @@ static bool RescrollSide(int sideIndex)
 
 int BakeSegFromMap(int segIndex)
 {
-	// [rc4l] DECLINED (-1) and "took it, made nothing" (0) are different answers.
-	//
-	// InvalidateMovedSectors needs to tell them apart: a seg this bake declined still belongs to
-	// GL's capture and has to be squashed so the walk re-fills it, while a seg the bake took has
-	// already had every slot it did not fill squashed by the loops below. Returning 0 for both meant
-	// the second kind was squashed a second time -- zeroing ranges that had just been written and
-	// marking them dirty again, every frame, which is the cost this whole change exists to remove.
+	// [rc4l] DECLINED (-1) and "took it, made nothing" (0) differ: a declined seg is squashed by its caller, while one taken has already squashed every slot it did not fill, and squashing it again re-dirtied ranges just written, every frame.
 	if (!gl_wallmesh) return -1;
 	if (segIndex < 0 || (unsigned)segIndex >= g_cache.Size()) return -1;
 	if (segs == NULL || segIndex >= numsegs) return -1;
@@ -811,15 +560,13 @@ int BakeSegFromMap(int segIndex)
 	// One quad per sidedef -- see SegOwnsItsSide. Every other seg on it would build the same four
 	// corners again, in the same plane, and the two would stipple against each other.
 	if (!SegOwnsItsSide(segIndex)) return -1;
-	// Not ours: leave every range exactly as it is and let the capture keep this seg. Squashing here
-	// is what put a hole in dbab01 -- see MapBakeOwnsSeg.
+	// [rc4l] A seg whose light cannot be derived keeps its ranges as they are; squashing them here is what put a hole in dbab01.
 	if (!zx::surfaces::BuildDerivedWallLight(seg, dl, cmFrom) || cmFrom == NULL) return -1;
 	sc.mapBaked = true;
 	RecordSideBaked(int(seg->sidedef - sides));
 
 	// [rc4l] A horizon line or a mirror is taken and left empty, since GL draws no wall on either -- see features/horizon and RenderMirrors.
-	if (zx::horizon::ComputeIsHorizonLine(seg->linedef->special) ||
-	    ComputeIsMirrorWall(seg->linedef->special, seg->backsector == NULL, gl_mirrors))
+	if (LineDrawsNoWall(seg))
 	{
 		for (int k = 0; k < kMaxMapPieces; k++) MeshSquash(sc.pieces[k].range);
 		return 0;
@@ -865,17 +612,8 @@ int BakeSegFromMap(int segIndex)
 			continue;
 		}
 
-		float bandBottom[kBandsPerPart][2];
-		if (nLights > 1) BandBottoms(*lights, nLights, d.x1, d.y1, d.x2, d.y2, bandBottom);
-
-		zx::surfaces::WallBand bands[kBandsPerPart];
-		const int n = zx::surfaces::ComputeWallBands(d.ztop, d.zbottom, bandBottom, nLights,
-			bands, kBandsPerPart);
-		if (fua_band_log && nLights > 1)
-		{
-			Printf("bands seg %d part %d: wall %.1f..%.1f, %d lights, first boundary %.1f, %d bands, first lit by %d\n",
-				segIndex, part, d.ztop[0], d.zbottom[0], nLights, bandBottom[0][0], n, n > 0 ? bands[0].lightIndex : -1);
-		}
+		PartBand bands[kBandsPerPart];
+		const int n = DerivedPartBands(seg, d, dl, bands);
 		if (n <= 0)
 		{
 			for (int k = 0; k < kBandsPerPart; k++) MeshSquash(sc.pieces[slot0 + k].range);
@@ -887,7 +625,7 @@ int BakeSegFromMap(int segIndex)
 		const float h0 = spanTop0 - spanBottom0, h1 = spanTop1 - spanBottom1;
 		for (int bi = 0; bi < n; bi++)
 		{
-			const zx::surfaces::WallBand &band = bands[bi];
+			const zx::surfaces::WallBand &band = bands[bi].band;
 			MeshRange &range = sc.pieces[slot0 + bi].range;
 
 			// v follows z linearly across the whole wall, so a band takes its own v off the parent's
@@ -920,19 +658,12 @@ int BakeSegFromMap(int segIndex)
 			// sector is a light-transfer effect and must not override it -- while the colormap is
 			// copied whenever the piece went through Put3DWall at all. The uppermost piece does not:
 			// SplitWall puts that one with PutWall, which alters neither.
-			int lightLevel = dl.lightLevel;
+			const int lightLevel = bands[bi].lightLevel;
 			FColormap cm;
 			cm = cmFrom;
 			// Remembered so ReshadeSegFromMap can redo exactly this without re-deriving the wall.
-			sc.bandLight[slot0 + bi] =
-				(!band.ownLight && band.lightIndex < nLights) ? (signed char)band.lightIndex : -1;
-			if (!band.ownLight && band.lightIndex < nLights)
-			{
-				const lightlist_t &ll = (*lights)[band.lightIndex];
-				if (ll.p_lightlevel != &seg->sidedef->sector->lightlevel)
-					lightLevel = gl_ClampLight(*ll.p_lightlevel);
-				cm.CopyLightColor(ll.extra_colormap);
-			}
+			sc.bandLight[slot0 + bi] = (signed char)bands[bi].lightEntry;
+			if (bands[bi].lightEntry >= 0) cm.CopyLightColor(bands[bi].lightFrom);
 
 			zx::levelmesh::CaptureShading(lightLevel, dl.relLight + getExtraLight(), cm, mp,
 				kParts[part] == RENDERWALL_M2SNF);
@@ -1261,52 +992,14 @@ int MapBakePartCount(int segIndex, int part)
 	return total;
 }
 
-int CachedSegCount() { return (int)g_cache.Size(); }
-
-int CachedPieceCount(int segIndex)
-{
-	if ((unsigned)segIndex >= g_cache.Size()) return 0;
-	return g_cache[segIndex].filled ? g_cache[segIndex].pieceCount : 0;
-}
-
-const GLWall *CachedPiece(int segIndex, int piece)
-{
-	if ((unsigned)segIndex >= g_cache.Size()) return NULL;
-	if (piece < 0 || piece >= g_cache[segIndex].pieceCount) return NULL;
-	return &g_cache[segIndex].walls[piece];
-}
-
-GLWall *StaticWall(int packedIndex)
-{
-	if (packedIndex < 0) return NULL;
-	const int seg = packedIndex / kMaxCachedPieces;
-	const int piece = packedIndex % kMaxCachedPieces;
-	if ((unsigned)seg >= g_cache.Size()) return NULL;
-	if (piece >= g_cache[seg].pieceCount) return NULL;
-	return &g_cache[seg].walls[piece];
-}
 
 void InvalidateAll()
 {
-	for (unsigned i = 0; i < g_cache.Size(); i++) g_cache[i].filled = false;
 	// [rc4l] Flats share the same mesh, so they invalidate together or a backend sees a half-stale world.
 	zx::levelmesh::ClearFlats();
 	zx::levelmesh::ClearSprites();
 }
 
-bool IsCapturing()
-{
-	return g_captureSeg >= 0;
-}
-
-void BeginCapture(int segIndex)
-{
-	if (segIndex < 0 || (unsigned)segIndex >= g_cache.Size()) { g_captureSeg = -1; return; }
-	g_captureSeg = segIndex;
-	g_sawPortal = false;
-	g_cache[segIndex].pieceCount = 0;
-	g_cache[segIndex].filled = false;
-}
 
 //==========================================================================
 //
@@ -1351,345 +1044,11 @@ void BeginCapture(int segIndex)
 //
 //==========================================================================
 
-static void ForgetFrameState(GLWall &w)
-{
-	w.dynlightindex = zx::hwrender::kNoWallLightIndex;
-	w.viewdistance = 0;
-	w.firstwall = 0;
-	w.numwalls = 0;
-	w.skybox = NULL;   // the union: every member of it is a per-frame pointer
-}
-
-// [rc4l] What this guard does, and -- measured -- what it does not.
-//
-// A field added to GLWall changes its size or shifts the fields after it, and either way this stops
-// the build until someone has classified it above. That is the mechanism: the fault this file
-// exists to prevent was never a hard question, it was a question nobody was asked.
-//
-// It is not airtight, and the gap was measured rather than guessed. Adding `int f;` directly after
-// dynlightindex first compiled CLEAN: the int landed in the padding before the 8-aligned union, so
-// the size stayed 912 and seg did not move. A small field dropped into an interior hole is
-// invisible to a check written only in terms of size.
-//
-// So the holes get named too. With numwalls pinned -- it sits immediately before that padding --
-// the same insertion now fails the build, verified by making it. Other holes may exist; the
-// honest statement is "everything that changes the shape, plus the hole we found", and the
-// structural answer is the cache holding a record built for it rather than a whole GLWall, which
-// is where Phase 2b goes (docs/renderer-modernization-PLAN.md).
-#if defined(_M_X64) || defined(__x86_64__) || defined(__aarch64__)
-static_assert(RENDERWALL_TOP == kRenderWallTop && RENDERWALL_M1S == kRenderWallM1S && RENDERWALL_BOTTOM == kRenderWallBottom &&
-	RENDERWALL_MIRRORSURFACE == kRenderWallMirrorSurface, "gl_wall.h's RENDERWALL_ order moved: update wallcache_compute.h");
-static_assert(sizeof(GLWall) == 912,
-	"GLWall changed size. Classify the new field as world state or frame state in ForgetFrameState "
-	"above, clear it there if it is frame state, then update this number.");
-// The tail, so an insertion that keeps the size the same still has to move something.
-static_assert(offsetof(GLWall, seg) == 896, "GLWall fields moved: see ForgetFrameState above.");
-// numwalls sits immediately before the union's alignment padding, which is the hole an added int
-// disappeared into when this was tested. Nailing it down closes that particular slip.
-static_assert(offsetof(GLWall, numwalls) == 184, "GLWall fields moved: see ForgetFrameState above.");
-static_assert(offsetof(GLWall, dynlightindex) == 176, "GLWall fields moved: see ForgetFrameState above.");
-#endif
-
-// [rc4l] Whether the wall arrives here already inside the first copy of its texture.
-//
-// CheckTexturePosition is supposed to guarantee that for everything DoTexture makes, and the
-// derivation in features/surfaces is scored against it. Reading the cache afterwards said 129 walls
-// on one map were outside it, which is either a producer that skips the step or something
-// rewriting v after capture -- and those two have completely different fixes. This counts it at
-// the moment of capture, which is the only place the two can be told apart.
-static int g_recTopInRange[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
-static int g_recTopOutOfRange[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
-static int g_recTopOutOfRangeSplit = 0;
-
-int CaptureVOutOfRangeSplits() { return g_recTopOutOfRangeSplit; }
-
-// Cleared per level. Cumulative counts across a session say more about which segs were re-processed
-// every frame than about the level, and a diagnostic that answers a different question than the one
-// asked is worse than none.
-void ResetCaptureVRangeStats()
-{
-	for (int i = 0; i < 8; i++) { g_recTopInRange[i] = 0; g_recTopOutOfRange[i] = 0; }
-	g_recTopOutOfRangeSplit = 0;
-}
-
-void GetCaptureVRangeStats(int type, int &inRange, int &outOfRange)
-{
-	if (type < 0 || type >= 8) { inRange = outOfRange = 0; return; }
-	inRange = g_recTopInRange[type];
-	outOfRange = g_recTopOutOfRange[type];
-}
-
-void RecordPiece(const GLWall &wall, int list)
-{
-	if (g_captureSeg < 0) return;
-	if (wall.gltexture != NULL)
-	{
-		const float topV = (wall.uplft.v < wall.uprgt.v) ? wall.uplft.v : wall.uprgt.v;
-		int *bucket = (topV >= 0.f && topV < 1.f) ? g_recTopInRange : g_recTopOutOfRange;
-		if (wall.type >= 0 && wall.type < 8) bucket[wall.type]++;
-		// SplitWall marks the fragments it makes, and a fragment's v is interpolated from a parent
-		// that CheckTexturePosition already normalised -- so a fragment can start deep inside the
-		// texture while its parent did not. If the out-of-range walls are the fragments, the
-		// derivation is not missing a rule, it is being compared against a piece of a wall.
-		if (!(topV >= 0.f && topV < 1.f) && (wall.flags & (GLWall::GLWF_NOSPLITUPPER | GLWall::GLWF_NOSPLITLOWER)))
-			g_recTopOutOfRangeSplit++;
-	}
-	// [rc4l] A translucent wall may be BAKED but must never be REPLAYED.
-	//
-	// GLDrawList's BSP sorter indexes the per-frame walls[] array directly in a dozen places
-	// (SortWallIntoPlane, SortWallIntoWall, DoDrawSorted...) and would read garbage for a cache-owned
-	// item, so replaying one into a GL draw list is not safe. This used to `return` before storing
-	// it, which kept GL correct and also meant the geometry never reached the mesh at all -- so the
-	// Vulkan backend had no translucent walls anywhere, in any map. The give-away was sitting in its
-	// own upload report for weeks: "51 material batches (0 translucent)" on a map full of them.
-	//
-	// Marking the seg uncacheable is what keeps GL safe: TryReplay refuses it forever, so GL keeps
-	// processing the seg itself every frame, exactly as before. EndCapture still bakes the seg once,
-	// and now the translucent piece is in it.
-	if (list == GLDL_TRANSLUCENT || list == GLDL_TRANSLUCENTBORDER)
-		g_sawPortal = true;   // reuses the sticky uncacheable path -- but keep the piece
-	// [rc4l] Written into the seg's own fixed slots -- re-capture overwrites, never appends, so a
-	// flickering-light sector cannot strand geometry. Overflowing the slots gives up on the seg.
-	SegCache &sc = g_cache[g_captureSeg];
-	if (sc.pieceCount >= kMaxCachedPieces)
-	{
-		g_sawPortal = true;   // reuses the sticky give-up path
-		return;
-	}
-	sc.walls[sc.pieceCount] = wall;
-	// [rc4l] Crossing into the cache: the frame it was captured in does not come with it.
-	ForgetFrameState( sc.walls[sc.pieceCount] );
-	// [rc4l] The one field of a captured wall that must not be kept: which lights it had.
-	//
-	// Everything else here describes the wall, and a wall does not change. A light index describes
-	// one FRAME -- it points into a buffer that is rewritten as lights come and go -- so a replay
-	// carrying it lights the wall from whatever happens to sit at that offset later. See
-	// walllight_compute.h; the draw paths clear it again, and it should never have been stored.
-	sc.walls[sc.pieceCount].dynlightindex = zx::hwrender::kNoWallLightIndex;
-	sc.pieces[sc.pieceCount].list = list;
-	sc.pieceCount++;
-}
-
-void NoteUnreplayable()
-{
-	// [rc4l] A portal wall goes to the portal manager, a missing texture to the fill hack and a bare one-sided wall to the sky list, all per-frame state a replay never rebuilds, so such a seg is processed every frame, sticky for the level.
-	if (g_captureSeg < 0) return;
-	g_sawPortal = true;
-}
-
-void EndCapture(const WallCacheStamp &stamp, const WallCacheEligibility &e)
-{
-	if (g_captureSeg < 0) return;
-	const int idx = g_captureSeg;
-	g_captureSeg = -1;
-
-	bool refuse = false;
-	if (g_sawPortal)
-	{
-		g_rejPortal++;
-		if ((unsigned)idx < g_segFate.Size()) g_segFate[idx] = SEG_PORTAL;
-		refuse = true;
-	}
-	else if (!ComputeIsCacheable(e))
-	{
-		// [rc4l] Which rule fired, not just that one did -- the bake reaches only a fraction of the
-		// level and "it is the eligibility check" is not actionable without knowing which clause.
-		if (e.isPolyobject)  { g_rejPoly++;   if ((unsigned)idx < g_segFate.Size()) g_segFate[idx] = SEG_POLY; }
-		else if (e.hasFFloors) { g_rejFFloor++; if ((unsigned)idx < g_segFate.Size()) g_segFate[idx] = SEG_FFLOOR; }
-		else if (e.inArea)     { g_rejArea++;   if ((unsigned)idx < g_segFate.Size()) g_segFate[idx] = SEG_AREA; }
-		else                   { g_rejOther++;  if ((unsigned)idx < g_segFate.Size()) g_segFate[idx] = SEG_OTHER; }
-		refuse = true;
-	}
-
-	if (refuse)
-	{
-		// [rc4l] Refused for REPLAY is not the same as having nothing worth baking.
-		//
-		// A seg is refused when any of its pieces is a portal, is translucent, or overflows the slots
-		// -- and the whole seg was then thrown away. But those pieces are never recorded in the first
-		// place (portals go to the portal manager, translucents bail out of RecordPiece), so what is
-		// sitting in sc.pieces is exactly the seg's SOLID geometry, which is static and perfectly
-		// drawable. Discarding it cost most of the level: on Sunder MAP10, 289142 captures were
-		// refused against 38683 kept, because in a huge open map most walls sit under sky, and sky is
-		// a portal.
-		//
-		// Baked once only, on the false->true edge -- these segs re-capture every frame, since
-		// TryReplay always refuses them. The exception is a full-level bake pass, which bakes them
-		// regardless: by the time a bake is asked for, everything the player already walked past is
-		// long since marked uncacheable, so the edge would never fire again and the bake would add
-		// almost nothing. ClaimSideForBake keeps that to one visit per sidedef.
-		if (!g_uncacheable[idx] || IsBakePassActive()) BakeSeg(idx);
-		g_uncacheable[idx] = true;
-		g_cache[idx].pieceCount = 0;
-		g_cache[idx].filled = false;
-		return;
-	}
-
-	g_captureOk++;
-	if ((unsigned)idx < g_segFate.Size()) g_segFate[idx] = SEG_OK;
-	g_cache[idx].stamp = stamp;
-	g_cache[idx].filled = true;
-	BakeSeg(idx);
-}
-
-bool TryReplay(int segIndex, const WallCacheEligibility &e, const WallCacheStamp &current)
-{
-	if (segIndex < 0 || (unsigned)segIndex >= g_cache.Size()) return false;
-	if (g_uncacheable[segIndex]) { g_uncacheableHits++; return false; }
-
-	// [rc4l] A seg that borders the SKY is always processed, never replayed.
-	//
-	// GL builds its sky quads inside GLWall::Process, and a replayed seg never runs it -- so the
-	// sky surfaces the backend needs simply never existed for any cached seg, which is why
-	// capturing them caught nothing at all the first time. Refusing the cache for these segs costs
-	// the derivation on the few that border sky (four linedefs were in view on the vantage this
-	// was found from) and buys the one thing the map cannot provide: GL's own visibility.
-	if (fua_mesh_sky && segIndex < numsegs)
-	{
-		const seg_t *sg = &segs[segIndex];
-		// [rc4l] BOTH sides. SkyTop and SkyBottom look at the front sector AND the back one -- the sky
-		// boundary of a two-sided line belongs to whichever side carries the sky flat, and a seg is
-		// walked from either side depending on which subsector the traversal reaches first. Checking
-		// only the front left every seg whose sky is on the far side replayed from cache, so its quad
-		// was never built and the sky covered part of the view: at 1280x720 that read as the skyline
-		// sitting inside a hard-edged rectangle with the map dark around it.
-		const sector_t *fsec = sg->frontsector;
-		const sector_t *bsec = sg->backsector;
-		const bool frontSky = fsec != NULL && (fsec->GetTexture(sector_t::ceiling) == skyflatnum ||
-		                                       fsec->GetTexture(sector_t::floor) == skyflatnum);
-		const bool backSky = bsec != NULL && (bsec->GetTexture(sector_t::ceiling) == skyflatnum ||
-		                                      bsec->GetTexture(sector_t::floor) == skyflatnum);
-		if (frontSky || backSky) return false;
-	}
-
-	// [rc4l] DIAGNOSTIC ONLY (gl_wallcache 2): skip validation to isolate how much of the cache's
-	// cost is the stamp compare versus the replay itself. Renders stale geometry -- never ship on.
-	extern int g_wallcacheMode;
-	SegCache &sc = g_cache[segIndex];
-	if (g_wallcacheMode == 2 ? !sc.filled : !ComputeCanReuse(e, sc.filled, sc.stamp, current))
-	{
-		g_misses++;
-		return false;
-	}
-
-	for (int i = 0; i < sc.pieceCount; i++)
-	{
-		// [rc4l] Re-resolve the texture before replaying, because the cache freezes it otherwise.
-		//
-		// A replayed GLWall carries the FMaterial it was captured with, and the stamp is built from
-		// geometry and lighting generation counters -- an ANIMDEFS frame change moves none of them.
-		// So a cached wall kept drawing frame 1 forever: LAVFALL1..4 on dbab02 was a still image in
-		// GL while the Vulkan backend, which re-resolves every batch from its base texture each
-		// frame, animated it correctly. The cache was making the GL renderer WRONG, not just fast.
-		//
-		// Only the three ordinary sidedef parts map cleanly, the same three BakeSeg resolves; 3D
-		// floor and special walls are left alone and keep whatever they were captured with.
-		GLWall &w = sc.walls[i];
-		// [rc4l] And crossing back OUT: the frame that last drew this wall wrote its own state
-		// into it, and this is a different frame. The draw paths clear it too, but the invariant
-		// belongs at the boundary -- a wall leaving the cache carries no frame with it.
-		ForgetFrameState(w);
-		if (gl_wallcache_anim && w.gltexture != NULL && w.seg != NULL && w.seg->sidedef != NULL)
-		{
-			const side_t *sd = w.seg->sidedef;
-			int part = -1;
-			switch (w.type)
-			{
-			case RENDERWALL_TOP:    part = side_t::top; break;
-			case RENDERWALL_BOTTOM: part = side_t::bottom; break;
-			case RENDERWALL_M1S:
-			case RENDERWALL_M2S:
-			case RENDERWALL_M2SNF:  part = side_t::mid; break;
-			default: break;
-			}
-			if (part >= 0)
-			{
-				// The same call gl_walls.cpp makes: translate == true is what follows the animation.
-				FMaterial *now = FMaterial::ValidateTexture(sd->GetTexture(part), false, true);
-				if (now != NULL && now != w.gltexture) { w.gltexture = now; g_animRefresh++; }
-			}
-		}
-		// [rc4l] An 8-byte reference, not a struct copy -- this is the change attempt 1 was missing.
-		gl_drawinfo->drawlists[sc.pieces[i].list].AddStaticWall(PackWallRef(segIndex, i));
-	}
-	g_hits++;
-	return true;
-}
-
-void BuildStamp(const seg_t *seg, const sector_t *frontsector, const sector_t *backsector,
-                WallCacheStamp &out)
-{
-	out.frontDirty = frontsector->fua_dirty;
-	out.backDirty  = backsector ? backsector->fua_dirty : 0;
-	out.sideDirty  = seg->sidedef ? seg->sidedef->fua_dirty : 0;
-}
-
-void BuildEligibility(const seg_t *seg, const sector_t *frontsector, const sector_t *backsector,
-                      WallCacheEligibility &out)
-{
-	out.isPolyobject = (seg->sidedef != NULL) && !!(seg->sidedef->Flags & WALLF_POLYOBJ);
-	out.hasHeightsec = (frontsector->heightsec != NULL) ||
-	                   (backsector != NULL && backsector->heightsec != NULL);
-	out.hasFFloors   = (frontsector->e != NULL && frontsector->e->XFloor.ffloors.Size() > 0) ||
-	                   (backsector != NULL && backsector->e != NULL && backsector->e->XFloor.ffloors.Size() > 0);
-	out.producesPortal = false;   // discovered during capture, kept sticky in g_uncacheable
-	// [rc4l] area_default means gl_CheckViewArea resolves the area from the viewpoint as the BSP
-	// walk runs, so the same seg can generate different geometry from different positions.
-	// [rc4l] gl_CheckViewArea only resolves the area when a BACK sector has a heightsec, so an
-	// undetermined area is harmless without one. Testing in_area alone disqualified nearly every
-	// seg on nearly every map, which is why the cache never got a fair measurement.
-	out.inArea = (in_area == area_default) && out.hasHeightsec;
-}
-
-void GetStats(int &hits, int &misses, int &uncacheable)
-{
-	hits = g_hits;
-	misses = g_misses;
-	uncacheable = g_uncacheableHits;
-}
-
-int GetAnimRefreshes() { return g_animRefresh; }
-
-// [rc4l] For fua_wallcache_census: what became of this seg, and does it have geometry a backend
-// could actually draw. bakedCount is the honest test -- a seg can be "cached" and still have baked
-// nothing if every piece it produced was refused by MeshStore.
-int SegFate(int segIndex)
-{
-	if (segIndex < 0 || (unsigned)segIndex >= g_segFate.Size()) return 0;
-	return g_segFate[segIndex];
-}
-
-const char *SegFateName(int fate)
-{
-	static const char *kName[] = { "never captured", "cached", "portal or fill", "polyobject", "3D floor", "heightsec area", "other" };
-	return (fate >= SEG_UNSEEN && fate <= SEG_OTHER) ? kName[fate] : "?";
-}
-
-bool SegHasBakedGeometry(int segIndex)
-{
-	if (segIndex < 0 || (unsigned)segIndex >= g_cache.Size()) return false;
-	const SegCache &sc = g_cache[segIndex];
-	for (int i = 0; i < sc.bakedCount && i < kMaxMapPieces; i++)
-		if (sc.pieces[i].range.count > 0) return true;
-	return false;
-}
-
-void ResetStats()
-{
-	g_hits = g_misses = g_uncacheableHits = 0;
-	g_animRefresh = 0;
-}
-
-void GetRejects(int &portal, int &poly, int &ffloor, int &area, int &other, int &ok)
-{
-	portal = g_rejPortal; poly = g_rejPoly; ffloor = g_rejFFloor;
-	area = g_rejArea; other = g_rejOther; ok = g_captureOk;
-}
 
 void GetCoverage(CoverageStats &out)
 {
 	out.segs = (int)g_cache.Size();
-	out.baked = out.uncacheable = out.pieces = 0;
+	out.baked = out.pieces = 0;
 	// [rc4l] Minisegs -- BSP-generated segs with no sidedef -- draw nothing at all, so counting them
 	// against coverage understates it badly. Sunder MAP10 has 54845 segs but only 26691 sides, and
 	// without this split "28% of segs baked" reads as a bug rather than as arithmetic.
@@ -1698,7 +1057,6 @@ void GetCoverage(CoverageStats &out)
 		if (segs[i].sidedef != NULL) out.drawableSegs++;
 	for (unsigned i = 0; i < g_cache.Size(); i++)
 	{
-		if (i < g_uncacheable.Size() && g_uncacheable[i]) out.uncacheable++;
 		int p = 0;
 		for (int k = 0; k < g_cache[i].pieceCount; k++)
 			if (g_cache[i].pieces[k].range.count > 0) p++;
@@ -1798,14 +1156,11 @@ CCMD( fua_bake_dirty )
 	}
 }
 
-// [rc4l] Re-bake one seg whose sector or sidedef changed: re-light it when only the light moved, re-derive it otherwise, and hand it back to GL's walk if the map bake declines it.
+// [rc4l] Re-bake one seg whose sector or sidedef changed: re-light it when only the light moved, re-derive it otherwise.
 static void RebakeChangedSeg(int idx, bool geometryChanged)
 {
 	if ((unsigned)idx >= g_cache.Size()) return;
 	SegCache &sc = g_cache[idx];
-	sc.filled = false;   // [rc4l] force a re-capture when the BSP next reaches it
-	// [rc4l] Re-arm the once-per-seg bake, or a seg GL refused once (every 3D floor, everything under sky) is squashed and never baked again, as dbab02's lava grate was.
-	g_uncacheable[idx] = false;
 	// [rc4l] Bake first and squash only what the bake declined, since squashing zeroes the range and defeats MeshStore's compare-before-upload (3.7x slower on wdiex02's flickering lights).
 	int made = geometryChanged ? -2 : ReshadeSegFromMap(idx);
 	if (made == -1 || made == -2)
@@ -1814,9 +1169,9 @@ static void RebakeChangedSeg(int idx, bool geometryChanged)
 		g_segsBaked++;
 	}
 	else g_segsReshaded++;
-	if (made < 0)   // [rc4l] declined: this seg is GL's, hand it back
+	if (made < 0)   // [rc4l] declined: nothing of this seg is drawn now
 	{
-		// [rc4l] Squash, not release, so the re-capture writes back over a range that stays allocated instead of the arena growing every frame the sector moves.
+		// [rc4l] Squash, not release, so a later bake writes back over a range that stays allocated instead of the arena growing every frame the sector moves.
 		for (int i = 0; i < kMaxMapPieces; i++)
 			MeshSquash(sc.pieces[i].range);
 	}
@@ -1882,7 +1237,7 @@ static void InvalidateSector(int s, TArray<int> &fillMoved)
 		const TArray<int> &segList = g_sectorSegs[t];
 		// [rc4l] Planes that held still cannot have moved the walls, so those segs only re-light (ReshadeSegFromMap) and anything else takes the full bake.
 		for (unsigned k = 0; k < segList.Size(); k++) RebakeChangedSeg(segList[k], sectorMoved);
-		if (fua_surface_mapbake_auto) RebakeSectorFlats(t);
+		RebakeSectorFlats(t);
 	});
 }
 
@@ -1921,8 +1276,8 @@ void InvalidateMovedSectors(const WalkedThisFrame *walked)
 	const int sideCount = walked != NULL ? walked->sideCount : numsides;
 	for (int k = 0; k < sectorCount; k++) InvalidateSector(walked != NULL ? walked->sectors[k] : k, fillMoved);
 	for (int k = 0; k < sideCount; k++) InvalidateSide(walked != NULL ? walked->sides[k] : k, fillSides);
-	for (int k = 0; fua_surface_mapbake_auto && k < sectorCount; k++) ReplaceSectorFlats(walked != NULL ? walked->sectors[k] : k);
-	if (fua_surface_mapbake_auto && (fillMoved.Size() > 0 || fillSides.Size() > 0)) zx::levelmesh::RefreshFakePlanes(fillMoved, fillSides);
+	for (int k = 0; k < sectorCount; k++) ReplaceSectorFlats(walked != NULL ? walked->sectors[k] : k);
+	if (fillMoved.Size() > 0 || fillSides.Size() > 0) zx::levelmesh::RefreshFakePlanes(fillMoved, fillSides);
 	invalClock.Unclock();
 	g_invalMs += invalClock.TimeMS();
 	g_invalMsLast = invalClock.TimeMS();
@@ -1957,78 +1312,13 @@ void GetSegPieceRange(int segIndex, int piece, unsigned int &offset, unsigned in
 
 }} // namespace zx::levelmesh
 
-//==========================================================================
-//
-// [rc4l] Is the wall cache actually being exercised? A hit rate near zero means any timing A/B was
-// measuring nothing at all, which is exactly the trap the first two attempts fell into.
-//
-//==========================================================================
-
-//==========================================================================
-//
-// fua_wallcache_census
-//
-// [rc4l] One line per OUTCOME, counting segs -- not capture attempts.
-//
-// A grate went missing from the Vulkan view and the available numbers were 541713 3D-floor rejects
-// against 1317 segs that touch a 3D floor, because a refused seg re-captures every frame. Attempt
-// counts cannot say how much of the level is absent or why. This walks every seg once and reports
-// what became of it, and how many actually have baked geometry, which is the number that decides
-// whether the backend can draw it.
-//
-//==========================================================================
-
-CCMD( fua_wallcache_census )
+// [rc4l] The flat cache, which had no cache at all until it was measured: every visible flat was rebuilt from scratch every frame, 3406 times a frame on Sunder MAP16.
+CCMD( fua_flatcache_stats )
 {
-	int fate[7] = { 0, 0, 0, 0, 0, 0, 0 };
-	int bakedBy[7] = { 0, 0, 0, 0, 0, 0, 0 };
-	int drawable = 0, ffloorSegs = 0, ffloorBaked = 0;
-	for ( int i = 0; i < numsegs; i++ )
-	{
-		if ( segs[i].sidedef == NULL || segs[i].linedef == NULL ) continue;   // miniseg
-		drawable++;
-		const int f = zx::levelmesh::SegFate( i );
-		const bool baked = zx::levelmesh::SegHasBakedGeometry( i );
-		fate[f]++;
-		if ( baked ) bakedBy[f]++;
-		const sector_t *fs = segs[i].frontsector, *bs = segs[i].backsector;
-		const bool touches3d = ( fs != NULL && fs->e != NULL && fs->e->XFloor.ffloors.Size() > 0 ) ||
-		                       ( bs != NULL && bs->e != NULL && bs->e->XFloor.ffloors.Size() > 0 );
-		if ( touches3d ) { ffloorSegs++; if ( baked ) ffloorBaked++; }
-	}
-	Printf( "wallcache census over %d drawable segs:\n", drawable );
-	for ( int i = 0; i < 7; i++ )
-		if ( fate[i] > 0 )
-			Printf( "  %-15s %5d segs (%4.1f%%), %5d with baked geometry (%4.1f%% of them)\n",
-					zx::levelmesh::SegFateName( i ), fate[i], 100.0 * fate[i] / MAX( 1, drawable ),
-					bakedBy[i], 100.0 * bakedBy[i] / MAX( 1, fate[i] ) );
-	Printf( "  segs touching a 3D floor: %d, of which %d have baked geometry (%.1f%%)\n",
-			ffloorSegs, ffloorBaked, 100.0 * ffloorBaked / MAX( 1, ffloorSegs ) );
-}
-
-CCMD( fua_wallcache_stats )
-{
-	int hits = 0, misses = 0, uncacheable = 0;
-	zx::levelmesh::GetStats( hits, misses, uncacheable );
-	const int total = hits + misses + uncacheable;
-	Printf( "wallcache since last reset: %d hits, %d misses, %d uncacheable (%d total)\n",
-			hits, misses, uncacheable, total );
-	if ( total > 0 )
-		Printf( "  hit rate %.1f%%, uncacheable %.1f%%\n",
-				100.0 * hits / total, 100.0 * uncacheable / total );
-	Printf( "  animated texture refreshes on replay: %d\n", zx::levelmesh::GetAnimRefreshes( ) );
-	zx::levelmesh::ResetStats( );
-
-	// [rc4l] And the flats, which had no cache at all until they were measured.
-	//
-	// Every visible flat was rebuilt from scratch every frame -- vertices, UVs, triangles, a memcpy
-	// into the mesh and a piece re-registered -- 3406 times a frame on Sunder MAP16. Reported beside
-	// the wall numbers because the two answer the same question and only one of them was being asked.
 	int fh = 0, fr = 0;
 	zx::levelmesh::GetFlatCacheStats( fh, fr );
-	if ( fh + fr > 0 )
-		Printf( "  flats: %d left alone, %d rebuilt, %d reshaded (%.1f%% hit)\n", fh, fr, zx::levelmesh::GetFlatReshades( ),
-			100.0 * (double)fh / (double)( fh + fr ) );
+	Printf( "flats: %d left alone, %d rebuilt, %d reshaded (%.1f%% hit)\n", fh, fr, zx::levelmesh::GetFlatReshades( ),
+		fh + fr > 0 ? 100.0 * (double)fh / (double)( fh + fr ) : 0.0 );
 }
 
 //==========================================================================

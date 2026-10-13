@@ -168,16 +168,6 @@ CVAR(Bool, fua_dg_standalone, true, CVAR_ARCHIVE)
 CVAR(Bool, fua_dg_bindless, true, CVAR_ARCHIVE)
 // Sprites and decals on the shared binding as well. Off: see WorldSRB.
 CVAR(Bool, fua_dg_bindless_dyn, true, 0)
-// [rc4l] Build the level's walls from the map at load, rather than waiting for GL's walk of the BSP.
-//
-// ON by default. It was off while the BSP traversal was still what filled in the kinds the
-// derivation did not do; the last of those was the 3D floor face -- the block a hanging slab cuts
-// out of the wall behind it -- which is ffblocks_compute now, and closing it took dbab02 from 4.0%
-// against the GL-driven picture to 0.0%.
-//
-// fua_surface_mapcover is the number that says how much of a level the map accounts for: 1332 of
-// dbab04's 1336 wall parts, and 59,477 of Sunder MAP16's 59,483.
-CVAR(Bool, fua_surface_mapbake_auto, true, 0)
 // [rc4l] Collapse adjacent batches into one draw. Only ever possible with bindless on, and separable
 // from it so "the array is wrong" and "the merge is wrong" can be told apart in one run.
 CVAR(Bool, fua_dg_mergedraws, true, 0)

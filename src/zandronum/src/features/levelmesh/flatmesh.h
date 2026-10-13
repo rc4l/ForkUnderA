@@ -33,9 +33,6 @@ namespace zx { namespace levelmesh { struct MeshRange; struct PlaneUVTransform; 
 
 namespace zx { namespace levelmesh {
 
-// Bake one subsector's plane into the mesh and register it as a piece. Cheap and idempotent: a
-// (subsector, plane) already baked at the same geometry is skipped.
-void RegisterFlatSubsector(const GLFlat &flat, subsector_t *sub, bool ceiling);
 
 // [rc4l] Whether the walk in progress belongs to the player's view (true) or a camera texture's, as RenderViewpoint was told.
 void SetMainView(bool mainView);

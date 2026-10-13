@@ -17,7 +17,7 @@ struct FrameLens
 	float fov, ratio, fovRatio;
 };
 
-// [rc4l] Before any view of a frame: a new camera's interpolation reset, the tic fraction and clock, particles, last frame's camera textures, the fixed colormap and the lens.
+// [rc4l] Before any view of a frame, once whichever renderers draw it: a new camera's interpolation reset, the tic fraction and clock, the frame's serial, particles, last frame's camera textures, the fixed colormap, and the lens, also left in r_viewLens.
 FrameLens BeginPlayerFrame(player_t *player);
 
 // [rc4l] Forget the last camera, so the next frame starts uninterpolated (a new frame buffer, a game restart).
@@ -32,7 +32,7 @@ void EndViewpoint(bool savedMainView);
 // [rc4l] Only the map section the eye is in is drawn.
 void MarkMapSection();
 
-// [rc4l] The frame no GL renderer draws: its views, the standalone scene, and the weapon, targeter and screen tint into the 2D capture; `paletteBrightness` darkens a colormap's tint.
+// [rc4l] The backend's frame, once BeginPlayerFrame has set it up: its views, the standalone scene, and the weapon, targeter and screen tint into the 2D capture; `paletteBrightness` darkens a colormap's tint.
 void RenderPlayerView(player_t *player, int paletteBrightness);
 
 }} // namespace zx::frame

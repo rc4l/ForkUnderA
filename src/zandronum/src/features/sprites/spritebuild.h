@@ -13,6 +13,7 @@
 class AActor;
 struct particle_t;
 struct sector_t;
+struct subsector_t;
 
 namespace zx { namespace levelmesh { struct MeshPiece; struct MeshVertex; } }
 
@@ -41,6 +42,8 @@ void CheckFrameSprites();
 
 // [rc4l] gl_SetDynSpriteLight for an actor: the dynamic light at its middle, into `out`, which starts from nothing.
 void ActorDynamicLight(const AActor *actor, float out[3]);
+// [rc4l] gl_SetDynSpriteLight at a point of a subsector with no actor, as a decal takes it, into `out`, which starts from nothing.
+void PointDynamicLight(fixed_t x, fixed_t y, fixed_t z, subsector_t *subsec, float out[3]);
 
 // [rc4l] An engine render style as spritestyle_compute takes it, and back.
 SpriteStyle StyleOf(const FRenderStyle &s);

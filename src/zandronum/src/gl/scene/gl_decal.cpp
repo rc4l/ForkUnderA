@@ -54,10 +54,7 @@
 #include "gl/textures/gl_texture.h"
 #include "gl/textures/gl_material.h"
 #include "gl/utility/gl_clock.h"
-#include "features/levelmesh/flatmesh.h"   // [rc4l] decal capture for the backend mesh
-#include "features/levelmesh/glvertex.h"   // [rc4l] the decal's quad as mesh vertices
 
-EXTERN_CVAR(Bool, gl_wallmesh)
 
 // [rc4l] What a decal actually receives from the dynamic lights, per draw.
 //
@@ -77,7 +74,6 @@ struct DecalVertex
 //
 //
 //==========================================================================
-EXTERN_CVAR(Int, fua_decalmode)
 
 void GLWall::DrawDecal(DBaseDecal *decal)
 {
@@ -307,12 +303,7 @@ void GLWall::DrawDecal(DBaseDecal *decal)
 	}
 
 	// calculate dynamic light effect.
-	// [rc4l] features/levelmesh: whatever this puts in the render state has to travel with the
-	// captured quad. It is a UNIFORM that main.fp adds after the vertex colour, so a capture that
-	// reads the vertex colour alone gets a decal lit by the sector and nothing else -- lit in GL,
-	// flat in the backend, in exactly the rooms where a decal is most visible.
 	float decalDyn[3] = { 0.f, 0.f, 0.f };
-	bool haveDecalDyn = false;
 	if (gl_lights && GLRenderer->mLightCount && !gl_fixedcolormap && gl_light_sprites)
 	{
 		// Note: This should be replaced with proper shader based lighting.
@@ -320,7 +311,6 @@ void GLWall::DrawDecal(DBaseDecal *decal)
 		decal->GetXY(seg->sidedef, x, y);
 		gl_SetDynSpriteLight(NULL, x, y, zpos, sub);
 		gl_RenderState.GetDynLight(decalDyn[0], decalDyn[1], decalDyn[2]);
-		haveDecalDyn = true;
 		if (fua_decal_lightlog)
 			Printf("decal %s: shaded %d  alphaColor %06x  dynLight %.3f %.3f %.3f\n",
 				texture ? texture->Name.GetChars() : "?", decal->RenderStyle.Flags & STYLEF_RedIsAlpha ? 1 : 0,
@@ -353,41 +343,6 @@ void GLWall::DrawDecal(DBaseDecal *decal)
 
 	gl_RenderState.Apply();
 	FFlatVertex *ptr = GLRenderer->mVBO->GetBuffer();
-	// [rc4l] features/levelmesh: capture the same four vertices for the backend.
-	//
-	// Taken HERE rather than reconstructed, because everything above this line -- the decal's
-	// clipping against the wall's own extent, its flipping, its scaling, its light -- has already
-	// been applied to dv[]. Rebuilding a decal quad from DBaseDecal would be a second implementation
-	// of all of it.
-	FFlatVertex decalQuad[4];
-	for (i = 0; i < 4; i++) decalQuad[i].Set(dv[i].x, dv[i].z, dv[i].y, dv[i].u, dv[i].v);
-	// [rc4l] Every decal GL draws, the backend draws -- unless something else is already drawing it.
-	//
-	// In either projected mode an impact decal reaches the backend as a PROJECTION, so capturing the
-	// quad as well would paint the same mark twice, the second time in the shape the projection exists
-	// to replace. Decals placed BY THE MAP are never projected -- they are authored to sit on one
-	// sidedef and never spread -- so they always come through here.
-	//
-	// The gate is a cvar and not a constant because that is what makes the modes comparable: change
-	// fua_decalmode in the console and the same mark is drawn the other way, in the same frame.
-	// [rc4l] ...and it is no longer only IMPACT decals. A decal the mapper placed is projected at
-	// creation too now, so capturing it here as well would paint the same mark twice -- once cut from
-	// the geometry and once glued to the texture -- and the two do not agree about depth. The port
-	// has one decal path; GL keeps its own quad, which is what the port is still compared against.
-	const bool projected = (fua_decalmode != 0);
-	if (gl_wallmesh && !projected)
-	{
-		const bool shadow = decal->RenderStyle.BlendOp == STYLEOP_Shadow;
-		const bool additive = decal->RenderStyle.BlendOp == STYLEOP_Add &&
-		                      decal->RenderStyle.DestAlpha == STYLEALPHA_One;
-		const bool redAlpha = !!(decal->RenderStyle.Flags & STYLEF_RedIsAlpha);
-		zx::levelmesh::RegisterDecal(zx::levelmesh::AsMeshVertices(decalQuad), tex, decal->Translation, shadow, additive, a,
-			light, rel, p, redAlpha, redAlpha ? (unsigned int)decal->AlphaColor : 0xffffffu,
-			(decalQuad[0].x + decalQuad[3].x) * 0.5f,
-			(decalQuad[0].z + decalQuad[3].z) * 0.5f,
-			(decalQuad[0].y + decalQuad[3].y) * 0.5f,
-			haveDecalDyn ? decalDyn : NULL);
-	}
 	for (i = 0; i < 4; i++)
 	{
 		ptr->Set(dv[i].x, dv[i].z, dv[i].y, dv[i].u, dv[i].v);

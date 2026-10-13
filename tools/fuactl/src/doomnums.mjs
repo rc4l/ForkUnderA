@@ -1,6 +1,7 @@
 // [rc4l] The action specials and editor numbers template maps use, named as the engine names them and checked against its own definitions by test/doomnums.test.mjs.
 export const SPECIAL = Object.freeze({
   Polyobj_StartLine: 1,
+  Polyobj_Move: 4,
   Line_Horizon: 9,
   Transfer_WallLight: 16,
   Floor_RaiseByValue: 23,
