@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 rc4l
 
-#include "gl/system/gl_system.h"
 #include "features/levelmesh/projdecals.h"
 #include "features/levelmesh/computation/decalproject_compute.h"
 #include "features/levelmesh/computation/packedcolor_compute.h"
@@ -16,7 +15,7 @@
 #include "c_cvars.h"
 #include "c_dispatch.h"
 #include "tarray.h"
-#include "gl/textures/gl_material.h"
+#include "features/materials/materials.h"
 
 #include <math.h>
 
@@ -209,8 +208,10 @@ void BuildProjection(const MarkStyle &style, DBaseDecal *owner, int fadeStart, i
 {
 	FTexture *texture = TexMan[style.pic];
 	if (texture == NULL) { if (fua_decal_log) Printf("  mark dropped: no texture\n"); return; }
-	FMaterial *mat = FMaterial::ValidateTexture(texture, true);
+	const void *mat = zx::materials::MaterialForTexture(texture, true);
 	if (mat == NULL) { if (fua_decal_log) Printf("  mark dropped: no material\n"); return; }
+	int matW, matH;
+	zx::materials::MaterialRenderSize(mat, matW, matH);
 
 	// A missing context is a real case -- a decal placed by a script, a puff with no direction -- and
 	// it is spelled "no velocity", which BuildDecalBasis turns into a head-on projection.
@@ -219,13 +220,13 @@ void BuildProjection(const MarkStyle &style, DBaseDecal *owner, int fadeStart, i
 	BuildDecalBasis(g_impact.valid ? g_impact.vel : noVelocity, surfN, fua_projdecal_maxskew,
 		right, up, axis);
 
-	const float halfW = mat->TextureWidth()  * FIXED2FLOAT(style.scaleX) * 0.5f;
-	const float halfH = mat->TextureHeight() * FIXED2FLOAT(style.scaleY) * 0.5f;
+	const float halfW = matW * FIXED2FLOAT(style.scaleX) * 0.5f;
+	const float halfH = matH * FIXED2FLOAT(style.scaleY) * 0.5f;
 	if (halfW < 0.5f || halfH < 0.5f)
 	{
 		if (fua_decal_log)
 			Printf("  mark dropped: box %.2fx%.2f from %dx%d at scale %.3f,%.3f\n",
-				halfW, halfH, mat->TextureWidth(), mat->TextureHeight(),
+				halfW, halfH, matW, matH,
 				FIXED2FLOAT(style.scaleX), FIXED2FLOAT(style.scaleY));
 		return;
 	}
@@ -518,7 +519,7 @@ int GetProjectedDecalsGpu(const GpuDecal **out)
 
 		FTexture *texture = TexMan[d.pic];
 		if (texture == NULL) continue;
-		FMaterial *mat = FMaterial::ValidateTexture(texture, true);
+		const void *mat = zx::materials::MaterialForTexture(texture, true);
 		if (mat == NULL) continue;
 
 		GpuDecal g;

@@ -26,23 +26,7 @@ enum
 
 
 
-struct FTexCoordInfo
-{
-	int mRenderWidth;
-	int mRenderHeight;
-	int mWidth;
-	fixed_t mScaleX;
-	fixed_t mScaleY;
-	fixed_t mTempScaleX;
-	fixed_t mTempScaleY;
-	bool mWorldPanning;
-
-	float FloatToTexU(float v) const { return v / mRenderWidth; }
-	float FloatToTexV(float v) const { return v / mRenderHeight; }
-	fixed_t RowOffset(fixed_t ofs) const;
-	fixed_t TextureOffset(fixed_t ofs) const;
-	fixed_t TextureAdjustWidth() const;
-};
+#include "features/materials/computation/texcoord_compute.h"   // [rc4l] FTexCoordInfo, which the bake maps walls by too
 
 //===========================================================================
 // 

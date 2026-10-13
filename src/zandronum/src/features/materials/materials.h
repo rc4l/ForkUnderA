@@ -7,6 +7,8 @@
 #define ZX_MATERIALS_H
 
 class FTexture;
+struct FTexCoordInfo;
+#include "textures/textures.h"   // [rc4l] FTextureID
 
 namespace zx { namespace materials {
 
@@ -58,6 +60,16 @@ const char *MaterialName(MaterialRef m);
 
 // [rc4l] Whether the material has partly see-through texels, which send a two-sided middle to GL's translucent pass; the first ask decodes the picture, so only the main thread asks.
 bool MaterialTransparent(MaterialRef m);
+
+// [rc4l] The material a texture id is drawn with on a wall or flat (no border, through animation and switches unless `translate` is off), NULL for none.
+MaterialRef MaterialForTextureId(FTextureID id, bool translate = true);
+// [rc4l] The engine texture a material draws, NULL for none.
+FTexture *MaterialTexture(MaterialRef m);
+// [rc4l] The size GL draws a material at, and the size of the texture it lives in, which a canvas rounds to the hardware's rule.
+void MaterialRenderSize(MaterialRef m, int &width, int &height);
+void MaterialStoredSize(MaterialRef m, int &width, int &height);
+// [rc4l] How a wall's texture coordinates scale and offset on the material at a sidedef's scale, as FMaterial::GetTexCoordInfo works them out.
+void MaterialTexCoordInfo(MaterialRef m, FTexCoordInfo *tci, fixed_t xscale, fixed_t yscale);
 
 // [rc4l] The material's brightmap, NULL when it has none.
 MaterialRef MaterialBrightmap(MaterialRef m);

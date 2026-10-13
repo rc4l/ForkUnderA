@@ -10,25 +10,10 @@
 #include "c_cvars.h"
 
 void gl_RecalcVertexHeights(vertex_t * v);
-FTextureID gl_GetSpriteFrame(unsigned sprite, int frame, int rot, angle_t ang, bool *mirror);
+#include "features/sprites/spriteframe.h"   // [rc4l] gl_GetSpriteFrame
 
 class AStackPoint;
-struct GLSectorStackPortal;
-
-struct FPortal
-{
-	fixed_t xDisplacement;
-	fixed_t yDisplacement;
-	int plane;
-	GLSectorStackPortal *glportal;	// for quick access to the render data. This is only valid during BSP traversal!
-
-	GLSectorStackPortal *GetGLPortal();
-};
-
-extern TArray<FPortal *> portals;
-
-void gl_InitPortals();
-void gl_BuildPortalCoverage(FPortalCoverage *coverage, subsector_t *subsector, FPortal *portal);
+#include "features/stackportals/stackportals.h"   // [rc4l] FPortal, portals, gl_InitPortals and gl_BuildPortalCoverage
 
 
 #endif

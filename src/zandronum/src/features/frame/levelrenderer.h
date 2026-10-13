@@ -9,7 +9,6 @@
 #include "v_palette.h"   // [rc4l] PalEntry, which r_renderer.h uses without including
 #include "r_renderer.h"
 
-class FMaterial;
 
 namespace zx { namespace frame {
 
@@ -30,7 +29,7 @@ struct FLevelRenderer : public FRenderer
 };
 
 // [rc4l] A camera texture's view handed to the backend, which draws it into its own target whichever renderer drew the screen.
-void RenderBackendCamera(FMaterial *mat, AActor *viewpoint, int fov);
+void RenderBackendCamera(const void *mat, AActor *viewpoint, int fov);
 
 }} // namespace zx::frame
 

@@ -8,6 +8,13 @@ A `MaterialRef` is an `FMaterial` address, stable for the level and compared by 
 `materials.cpp` looks inside it. Pixels still come from `FMaterial::CreateTexBuffer`, which is where
 Doom's texture composition (multipatch, translations, hires replacements) lives.
 
+The other modules ask it what they used to ask `FMaterial` directly: the material a wall or flat's texture
+id is drawn with (`MaterialForTextureId`), its texture (`MaterialTexture`), the size GL draws it at and the
+size it is stored at (`MaterialRenderSize`, `MaterialStoredSize`), whether it has see-through texels
+(`MaterialTransparent`), and how a wall's texture coordinates scale on it (`MaterialTexCoordInfo`).
+`computation/texcoord_compute` is `FTexCoordInfo`, those coordinates' offset and width rules, moved from
+`gl/textures/gl_material.h`, which includes it.
+
 `MaterialIfMade` answers without making a material, so a worker thread may ask; the sprite batch hands a
 sprite whose material is not made yet back to the game thread.
 
@@ -18,5 +25,6 @@ It also keeps glstuff's round and smooth particle pictures and the mirror sheen
 
 - `gl/renderer/gl_renderer.cpp` `FGLRenderer::Initialize`: `glpart`, `glpart2` and `mirrortexture` are
   taken from here, and no longer freed by GL.
+- `gl/textures/gl_material.h`: includes `computation/texcoord_compute.h` for `FTexCoordInfo`.
 
 `materials.cpp` reads `FMaterial`, `FTexture`, `TexMan` and `GLTranslationPalette`.

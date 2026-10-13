@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 rc4l
 
-#include "gl/system/gl_system.h"
 #include "features/horizon/horizon.h"
 #include "features/horizon/computation/horizon_compute.h"
 #include "features/levelmesh/flatmesh.h"     // MakeWallQuad
@@ -12,11 +11,9 @@
 #include "r_state.h"
 #include "r_sky.h"                        // skyflatnum
 #include "p_3dfloors.h"                   // P_GetPlaneLight
-#include "gl/scene/gl_wall.h"             // GLSectorPlane
 #include "features/rendersettings/rendersettings.h"   // [rc4l] the render settings it reads
-#include "gl/data/gl_vertexbuffer.h"      // FFlatVertex
-#include "gl/textures/gl_material.h"      // FMaterial
-#include "gl/utility/gl_convert.h"        // ANGLE_TO_FLOAT
+#include "features/materials/materials.h"
+#include "features/surfaces/sectorplane.h"   // [rc4l] GLSectorPlane
 #include "c_cvars.h"
 #include "tarray.h"
 
@@ -97,7 +94,7 @@ static void BuildPlane(sector_t *sec, int which, HorizonPlane &out)
 	out.shade = zx::levelmesh::MeshPiece();
 	out.uv = zx::levelmesh::ComputePlaneUVAffine(zx::levelmesh::ComputeIdentityPlaneUV());
 
-	FMaterial *mat = FMaterial::ValidateTexture(sp.texture, false, true);
+	const void *mat = zx::materials::MaterialForTextureId(sp.texture);
 	out.material = mat;
 	if (mat == NULL)
 	{
@@ -111,10 +108,12 @@ static void BuildPlane(sector_t *sec, int which, HorizonPlane &out)
 	t.yoffs = FIXED2FLOAT(sp.yoffs);
 	t.xscale = FIXED2FLOAT(sp.xscale);
 	t.yscale = FIXED2FLOAT(sp.yscale);
-	t.angleDegrees = ANGLE_TO_FLOAT(sp.angle);
-	t.texWidth = (float)mat->TextureWidth();
-	t.texHeight = (float)mat->TextureHeight();
-	t.hasCanvas = mat->tex->bHasCanvas;
+	t.angleDegrees = ANGLE2FLOAT(sp.angle);
+	int w, h;
+	zx::materials::MaterialRenderSize(mat, w, h);
+	t.texWidth = (float)w;
+	t.texHeight = (float)h;
+	t.hasCanvas = zx::materials::MaterialTexture(mat)->bHasCanvas;
 	out.uv = zx::levelmesh::ComputePlaneUVAffine(t);
 
 	const bool ceiling = (which == sector_t::ceiling);
@@ -128,7 +127,7 @@ static void BuildPlane(sector_t *sec, int which, HorizonPlane &out)
 		cm.LightColor = (light->extra_colormap)->Color;
 	}
 	int level, rel;
-	ComputeHorizonLightInputs(mat->tex->isFullbright(), lightlevel, getExtraLight(), level, rel);
+	ComputeHorizonLightInputs(zx::materials::MaterialTexture(mat)->isFullbright(), lightlevel, getExtraLight(), level, rel);
 	zx::levelmesh::CaptureShading(level, rel, cm, out.shade);
 }
 

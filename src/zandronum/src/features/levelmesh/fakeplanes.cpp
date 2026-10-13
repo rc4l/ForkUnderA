@@ -1,14 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 rc4l
 
-#include "gl/system/gl_system.h"
 #include "features/levelmesh/fakeplanes.h"
 #include "r_defs.h"
 #include "r_state.h"
 #include "r_sky.h"        // skyflatnum
 #include "p_lnspec.h"     // Line_Horizon
 #include "p_3dfloors.h"   // FF_FIX, for AddLowerMissingTexture's exception
-#include "gl/textures/gl_material.h"   // FMaterial::ValidateTexture, the test Process makes for a tier's texture
+#include "features/materials/materials.h"   // [rc4l] MaterialForTextureId, the test Process makes for a tier's texture
 #include "features/levelmesh/flatmesh.h"   // RefreshFakePlanes, for fua_fakeplanes
 #include "c_dispatch.h"   // CCMD
 #include "stats.h"        // cycle_t
@@ -65,7 +64,7 @@ static bool g_staticBuilt = false;
 static double g_stageMs[4];   // [rc4l] the last recompute's stages: candidates, filing, fills, grouping
 static int g_lastEvaluated = 0, g_lastEntries = 0;
 
-static bool Validates(const side_t *side, int part) { return FMaterial::ValidateTexture(side->GetTexture(part), false, true) != NULL; }
+static bool Validates(const side_t *side, int part) { return zx::materials::MaterialForTextureId(side->GetTexture(part)) != NULL; }
 
 // [rc4l] What the fill reads of the level that holds still: which segs join which subsectors, which could leave a gap at all, and which sectors each depends on, with textures read again when a side's change (RefreshSide).
 static void BuildStatic()

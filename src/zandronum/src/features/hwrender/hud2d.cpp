@@ -9,7 +9,7 @@
 #include "i_system.h"
 #include "features/hwrender/computation/rendererrate_compute.h"
 #include "c_dispatch.h"
-#include "gl/textures/gl_material.h"   // [rc4l] fua_2d_list names a quad's texture
+#include "features/materials/materials.h"   // [rc4l] fua_2d_list names a quad's texture
 #include "features/rendersettings/rendersettings.h"   // [rc4l] the render settings it reads
 #include "r_utility.h"                 // [rc4l] the view's eye and angles
 #include "tables.h"                    // [rc4l] bam2rad
@@ -115,8 +115,7 @@ CCMD(fua_2d_list)
 	{
 		const Quad2D &q = g_quads[i];
 		if (q.w * q.h < screenArea * 0.25f) continue;
-		const FMaterial *m = (const FMaterial *)q.material;
-		Printf("  %u: %.0f,%.0f %.0fx%.0f %s alpha %.2f target %d\n", i, q.x, q.y, q.w, q.h, (m != NULL && m->tex != NULL) ? m->tex->Name.GetChars() : "(fill)", q.a, q.target);
+		Printf("  %u: %.0f,%.0f %.0fx%.0f %s alpha %.2f target %d\n", i, q.x, q.y, q.w, q.h, q.material != NULL ? zx::materials::MaterialName(q.material) : "(fill)", q.a, q.target);
 		shown++;
 	}
 	Printf("%u 2D draws, %d of them a quarter of the screen or more\n", g_quads.Size(), shown);

@@ -63,13 +63,12 @@
 #include "features/hwrender/diligent/dglight_glsl.h"   // [rc4l] the sector light, shared with the horizon pass
 #include "v_video.h"
 #include "features/rendersettings/rendersettings.h"   // [rc4l] the render settings it reads
-#include "gl/dynlights/gl_lightbuffer.h"
 #include "features/hwrender/computation/lightcluster_compute.h"
-#include "gl/dynlights/gl_dynlight.h"
+#include "features/dynlights/dynlight.h"   // [rc4l] ADynamicLight, FLightNode
 #include "p_local.h"
 #include "doomstat.h"
-#include "templates.h"   // gl_lightdata.h's inline gl_ClampLight uses clamp<>
-#include "gl/scene/gl_portal.h"
+#include "templates.h"
+#include "stats.h"   // [rc4l] cycle_t, the backend's clocks
 #include "features/materials/materials.h"   // [rc4l] texture identity, frames, brightmaps and pixels
 #include "r_sky.h"
 #include "gl/textures/gl_skyboxtexture.h"   // FSkyBox: the six faces a skybox is

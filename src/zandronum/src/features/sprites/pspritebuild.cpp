@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 rc4l
 
-#include "gl/system/gl_system.h"
 #include "features/sprites/pspritebuild.h"
 #include "features/frame/computation/oracle_compute.h"   // [rc4l] OracleTally
 
@@ -41,8 +40,8 @@
 #include "features/fakeflat/fakeflat.h"   // [rc4l] gl_FakeFlat
 #include "features/rendersettings/rendersettings.h"   // [rc4l] RenderShadingEnv, gl_ClampLight, getExtraLight
 #include "features/rendersettings/colormap.h"   // [rc4l] FColormap
-#include "gl/data/gl_data.h"            // [rc4l] glset, gl_GetSpriteFrame
-#include "gl/system/gl_cvars.h"         // [rc4l] screenblocks
+#include "features/sprites/spriteframe.h"   // [rc4l] gl_GetSpriteFrame
+EXTERN_CVAR(Int, screenblocks)
 
 #include <string.h>
 #include <vector>

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 rc4l
 
-#include "gl/system/gl_system.h"
 #include "features/visibility/viswalk.h"
 #include "features/frame/computation/oracle_compute.h"   // [rc4l] OracleTally
 
@@ -45,7 +44,7 @@
 
 // [rc4l] GL's fake flats, view area and portal coverage, which decide what a height transfer hides and where a stacked view starts, until they are ported (P5).
 #include "features/fakeflat/fakeflat.h"   // [rc4l] gl_FakeFlat
-#include "gl/data/gl_data.h"           // [rc4l] currentmapsection, FPortal, gl_BuildPortalCoverage
+#include "features/stackportals/stackportals.h"   // [rc4l] FPortal, portals, gl_BuildPortalCoverage
 #include "features/rendersettings/rendersettings.h"   // [rc4l] the render settings it reads
 
 #include <string.h>
@@ -536,6 +535,8 @@ seg_t *g_lastTransfer = NULL;
 int g_transferReruns = 0;
 // [rc4l] Per rank the subsector there and the walk that last reached it; per subsector that walk, its flags and its view areas; per sidedef the walk that last saw it.
 zx::jobs::SharedArray<unsigned> g_rankWalked, g_subWalked, g_sideWalked;
+// [rc4l] The walk a rank last had a sky or stacked wall candidate in, so the replay skips the ranks that have none without asking every slice.
+zx::jobs::SharedArray<unsigned> g_rankDerived;
 zx::jobs::SharedArray<int> g_rankSub;
 zx::jobs::SharedArray<unsigned char> g_subFlags, g_subAreaIn, g_subAreaOut;
 // [rc4l] Per linedef the walk key of the first seg a deriving walk saw of it, under the walk's epoch: GL builds a line's walls from that seg alone.
@@ -690,7 +691,9 @@ void ClipSeg(ClipWalk &w, seg_t *seg, bool polyPass, subsector_t *sub, sector_t 
 	DeriveCandidate c = { key, seg, (int)slice.events.size(), 0 };
 	DeriveSkyWalls(seg, front, back, sub, slice.events);
 	c.count = (int)slice.events.size() - c.first;
-	if (c.count > 0) slice.derive.push_back(c);
+	if (c.count == 0) return;
+	slice.derive.push_back(c);
+	g_rankDerived.Store(rank, g_walkStamp);
 }
 
 // [rc4l] UnclipSubsector: a subsector a stacked view's portal covers was seen from the other side, so the clipper opens over its segs.
@@ -878,6 +881,7 @@ std::vector<CandidateRef> g_rankCandidates;
 void TakeRankCandidates(int rank, int count)
 {
 	g_rankCandidates.clear();
+	if (g_rankDerived.Load(rank) != g_walkStamp) return;
 	for (int k = 0; k < count; k++)
 	{
 		Slice &sl = g_slices[k];
@@ -1066,6 +1070,7 @@ void EnsureLevelArrays()
 	g_transferSectors.clear();
 	for (int i = 0; i < numsectors; i++) if (sectors[i].heightsec != NULL) g_transferSectors.push_back(&sectors[i]);
 	g_rankWalked.Resize(numsubsectors, 0);
+	g_rankDerived.Resize(numsubsectors, 0);
 	g_rankSub.Resize(numsubsectors, 0);
 	g_subWalked.Resize(numsubsectors, 0);
 	g_subFlags.Resize(numsubsectors, 0);
@@ -1088,6 +1093,7 @@ void NextWalkStamp()
 	if (++g_walkStamp == 0 || (g_walkStamp & 0xffffff) == 0)
 	{
 		g_rankWalked.Fill(0);
+		g_rankDerived.Fill(0);
 		g_subWalked.Fill(0);
 		g_sideWalked.Fill(0);
 		g_lineFirst.Fill(0);
@@ -1802,6 +1808,7 @@ void ForgetWalk()
 	g_subUp.clear();
 	g_lastTransfer = NULL;
 	g_rankWalked.Clear();
+	g_rankDerived.Clear();
 	g_rankSub.Clear();
 	g_subWalked.Clear();
 	g_subFlags.Clear();

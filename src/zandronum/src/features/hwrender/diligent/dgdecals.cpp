@@ -11,7 +11,6 @@
 // What the marks themselves are, and why they are boxes, is in features/levelmesh/projdecals.h.
 
 
-#include "gl/system/gl_system.h"
 #include "MapHelper.hpp"
 #include "RefCntAutoPtr.hpp"
 

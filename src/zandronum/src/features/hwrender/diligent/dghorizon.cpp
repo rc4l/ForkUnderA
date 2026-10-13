@@ -4,7 +4,6 @@
 // [rc4l] The horizon pass: each window writes its own depth and is painted by ray-casting the plane beyond -- see features/horizon.
 
 
-#include "gl/system/gl_system.h"
 #include "MapHelper.hpp"
 #include "RefCntAutoPtr.hpp"
 

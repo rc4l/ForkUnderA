@@ -4,7 +4,6 @@
 // [rc4l] The 2D pass: the status bar, weapon, messages, menus and console, drawn over the world from the quads hud2d captured.
 
 
-#include "gl/system/gl_system.h"
 #include "MapHelper.hpp"
 #include "RefCntAutoPtr.hpp"
 

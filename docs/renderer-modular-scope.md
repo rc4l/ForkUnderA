@@ -245,10 +245,27 @@ player does.
 `gl/` now reaches modules only for shared rules (`Compute*`), GL's own sprite view, and the frame
 modules both renderers use (`frame`, `viewsetup`, `draw2d`, `display`, `replay`).
 
-Still to do: models' data without GL's buffers (the loaders and `FModelVertexBuffer` are GL's); GL's
-light settings the modules read (`glset`, `gl_fixedcolormap`, `getExtraLight`, `gl_ClampLight`), which
-want a neutral owner; and light and plane heights from game state (on wdiex02, re-baking what moved or
-relit is about 30% of a standalone frame).
+The other direction followed: what the modules took from `gl/` because GL happened to own it moved to
+modules both renderers read, GL's headers including them so GL's code reads the same names.
+
+| Module | What moved there |
+|---|---|
+| `features/rendersettings` | `FColormap`, `glset`, the fog settings and tables, the fixed colormap, the view area and map sections, the frame clock, the weapon light, the light helpers, and the light model's settings (`RenderShadingEnv`) |
+| `features/fakeflat` | `gl_FakeFlat`, `gl_CheckViewArea`, `gl_CheckClip` |
+| `features/models` | the MD2, MD3 and voxel loaders, MODELDEF and the frame lookup; each model's geometry is on the CPU, and GL keeps only a buffer per model |
+| `features/dynlights` | the dynamic light actors and their links, and `FCycler` |
+| `features/stackportals` | the stacked sectors' portals and coverage |
+| `features/surfaces` | the wall types (`RENDERWALL_*`) and `GLSectorPlane` |
+| `features/materials` | `FTexCoordInfo` (`texcoord_compute`), and what a module asks of a material (`MaterialForTextureId`, `MaterialTexture`, `MaterialRenderSize`, `MaterialTexCoordInfo`) in place of `FMaterial` |
+| `features/sidebyside` | every adapter that reads GL's `GLWall` and `GLSprite`: the checks' sky, portal, sprite and model reports, the shading oracle, and the surface verifier |
+
+What modules still take from `gl/`: `materials` is `FMaterial`'s adapter and `sidebyside` GL's; the
+features that draw with GL (`damage-tint`, `hitboxviz`, `fua-caching`) are GL's by nature; GLDEFS' sky box
+textures (`FSkyBox`), GL's level preprocessing behind `FLevelRenderer`, and `gl_system.h`, the precompiled
+header the remaining GL includes need.
+
+Still to do: light and plane heights from game state, if measuring says re-baking what moved or relit
+still costs a frame anything.
 
 ### P5: one renderer interface, Vulkan owning itself
 

@@ -17,11 +17,10 @@
 
 // [rc4l] GL's CPU-side level, light and fog code, which needs no context.
 #include "gl/gl_functions.h"               // [rc4l] gl_PreprocessLevel, gl_CleanLevelData, gl_SetActorLights
-#include "gl/data/gl_data.h"               // [rc4l] gl_InitPortals
+#include "features/stackportals/stackportals.h"   // [rc4l] gl_InitPortals
 #include "features/fakeflat/fakeflat.h"   // [rc4l] gl_FakeFlat
 #include "gl/renderer/gl_lightdata.h"      // [rc4l] gl_SetFogParams, the attached lights
-#include "gl/textures/gl_material.h"
-#include "gl/textures/gl_hwtexture.h"      // [rc4l] GetTexDimension
+#include "features/materials/materials.h"
 
 void gl_ParseDefs();
 EXTERN_CVAR(Float, maxviewpitch)
@@ -82,11 +81,13 @@ int FLevelRenderer::GetMaxViewPitch(bool down)
 
 void FLevelRenderer::Init() { gl_ParseDefs(); }
 
-void RenderBackendCamera(FMaterial *mat, AActor *viewpoint, int fov)
+void RenderBackendCamera(const void *mat, AActor *viewpoint, int fov)
 {
 	if (mat == NULL || viewpoint == NULL) return;
-	const int width = mat->TextureWidth(), height = mat->TextureHeight();
-	zx::hwrender::RenderCameraTexture(mat, FHardwareTexture::GetTexDimension(mat->GetWidth()), FHardwareTexture::GetTexDimension(mat->GetHeight()),
+	int width, height, storedW, storedH;
+	zx::materials::MaterialRenderSize(mat, width, height);
+	zx::materials::MaterialStoredSize(mat, storedW, storedH);
+	zx::hwrender::RenderCameraTexture(mat, storedW, storedH,
 		(float)width / height, viewpoint->x, viewpoint->y, viewpoint->z + (viewpoint->height >> 1), (unsigned int)viewpoint->angle, 0, (float)fov);
 }
 

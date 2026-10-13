@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 rc4l
 
-#include "gl/system/gl_system.h"
 #include "features/sprites/spritebuild.h"
 #include "features/levelmesh/levelmesh.h"   // [rc4l] LightListBottom
 #include "features/hwrender/computation/lighttouch_compute.h"   // [rc4l] ComputeDynLightColor
@@ -40,7 +39,7 @@
 // [rc4l] GL's settings and view state the derivation still reads, until the renderer interface supplies them (P5).
 #include "features/rendersettings/rendersettings.h"   // [rc4l] the render settings it reads
 #include "features/models/models.h"   // [rc4l] gl_FindModelFrame and the models
-#include "gl/dynlights/gl_dynlight.h"  // [rc4l] ADynamicLight, FLightNode
+#include "features/dynlights/dynlight.h"   // [rc4l] ADynamicLight, FLightNode
 
 #include <string.h>
 #include <map>

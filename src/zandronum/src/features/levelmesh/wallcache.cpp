@@ -1,12 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 rc4l
 
-#include "gl/system/gl_system.h"
 #include <stddef.h>   // offsetof, for the cached-record guard
 #include "features/levelmesh/wallcache.h"
 #include "features/levelmesh/computation/wallcache_compute.h"   // [rc4l] SideLook, SectorLook
 #include "features/levelmesh/captureshading.h"
-#include "features/levelmesh/glvertex.h"   // [rc4l] GL's fan vertices as mesh vertices   // [rc4l] CaptureShading, the light model for a GL colormap
 #include "features/levelmesh/flatmesh.h"
 #include "features/levelmesh/fakeplanes.h"   // [rc4l] SideTexturesChanged, for the fills a switch can open or close
 #include "features/levelmesh/levelmesh.h"
@@ -18,11 +16,12 @@
 #include "features/levelmesh/computation/lightband_compute.h"   // [rc4l] BandPlane, the band boundaries in map units
 #include "doomdata.h"
 #include "r_sky.h"   // skyflatnum, for the sky surfaces
-#include "gl/scene/gl_drawinfo.h"
+#include "features/surfaces/walltypes.h"   // [rc4l] RENDERWALL_*
+#include "features/levelmesh/computation/wallbatch_compute.h"   // [rc4l] ComputeFanTriangleVertex
+#include "features/materials/materials.h"
+#include "features/materials/computation/texcoord_compute.h"   // [rc4l] FTexCoordInfo
 #include "features/hwrender/computation/walllight_compute.h"
 #include "features/rendersettings/rendersettings.h"   // [rc4l] the render settings it reads
-#include "gl/data/gl_vertexbuffer.h"   // FFlatVertex
-#include "gl/renderer/gl_renderstate.h"
 #include "c_dispatch.h"
 #include "stats.h"   // cycle_t, to time the invalidation loop
 #include "c_cvars.h"
@@ -34,7 +33,8 @@ CUSTOM_CVAR(Bool, gl_wallmesh, false, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
 	zx::levelmesh::InvalidateAll();
 }
 EXTERN_CVAR(Bool, gl_mirrors)
-EXTERN_CVAR(Bool, fua_surface_bands)
+// [rc4l] Cut a wall at its 3D floor light bands (wallbands_compute), a switch so the banding can be A/B'd.
+CVAR(Bool, fua_surface_bands, true, 0)
 // [rc4l] Print each banded wall the map bake splits: its span, the first boundary and the band that lights its top.
 CVAR(Bool, fua_band_log, false, 0)
 // [rc4l] Build wall heights and texture position from the MAP rather than from GLWall.
@@ -427,7 +427,7 @@ static bool BakeFloodPiece(MeshRange &range, const zx::surfaces::DerivedWallSpan
 	if (!MeshStore(range, tris, w)) { MeshSquash(range); return false; }
 
 	const sector_t *sec = d.floodSector;
-	const FMaterial *mat = (const FMaterial *)d.material;
+	const void *mat = d.material;
 	FColormap cm;
 	cm = sec->ColorMap;
 	int lightLevel = d.floodCeiling ? sec->GetCeilingLight() : sec->GetFloorLight();
@@ -512,10 +512,10 @@ static bool RescrollSide(int sideIndex)
 			if (p == NULL || p->baseTex != base) return false;   // [rc4l] a gap filled with another texture
 		}
 		if (baked.xoff[tp] == now.xoff[tp] && baked.yoff[tp] == now.yoff[tp]) continue;
-		FMaterial *mat = FMaterial::ValidateTexture(sd.GetTexture(tp), false, true);
+		const void *mat = zx::materials::MaterialForTextureId(sd.GetTexture(tp));
 		if (mat == NULL) return false;
 		FTexCoordInfo tci;
-		mat->GetTexCoordInfo(&tci, sd.GetTextureXScale(tp), sd.GetTextureYScale(tp));
+		zx::materials::MaterialTexCoordInfo(mat, &tci, sd.GetTextureXScale(tp), sd.GetTextureYScale(tp));
 		if (tci.mRenderHeight == 0) return false;
 		du[part] = tci.FloatToTexU(FIXED2FLOAT(tci.TextureOffset(fixed_t::FromRaw(now.xoff[tp]))))
 			- tci.FloatToTexU(FIXED2FLOAT(tci.TextureOffset(fixed_t::FromRaw(baked.xoff[tp]))));
@@ -683,8 +683,7 @@ int BakeSegFromMap(int segIndex)
 				const line_t *ln = seg->linedef;
 				const float lineAlpha = FIXED2FLOAT(ln->Alpha);
 				const bool additive = lineAlpha != 0.f && (ln->flags & ML_ADDTRANS) != 0;
-				const FMaterial *fm = (const FMaterial *)d.material;
-				const bool trans = ComputeMidTextureTranslucent(lineAlpha, additive, fm != NULL && fm->GetTransparent());
+				const bool trans = ComputeMidTextureTranslucent(lineAlpha, additive, zx::materials::MaterialTransparent(d.material));
 				mp.alpha = (lineAlpha != 0.f) ? lineAlpha : 1.f;
 				mp.blendMode = ComputeWallBlendMode(trans, additive, mp.alpha);
 			}
@@ -853,13 +852,13 @@ int BakeSegFromMap(int segIndex)
 				else if (mastersd != NULL)               { texid = mastersd->GetTexture(side_t::mid);        texpos = side_t::mid; }
 				else continue;
 
-				FMaterial *fmat = FMaterial::ValidateTexture(texid, false, true);
+				const void *fmat = zx::materials::MaterialForTextureId(texid);
 				if (fmat == NULL) { MeshSquash(range); continue; }
 
 				FTexCoordInfo tci;
 				const side_t *scalesd = (rover->flags & (FF_UPPERTEXTURE | FF_LOWERTEXTURE)) ?
 					seg->sidedef : mastersd;
-				fmat->GetTexCoordInfo(&tci, scalesd->GetTextureXScale((side_t::ETexpart)texpos),
+				zx::materials::MaterialTexCoordInfo(fmat, &tci, scalesd->GetTextureXScale((side_t::ETexpart)texpos),
 					scalesd->GetTextureYScale((side_t::ETexpart)texpos));
 				if (tci.mRenderHeight == 0) { MeshSquash(range); continue; }
 

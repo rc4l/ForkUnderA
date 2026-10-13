@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 rc4l
 
-#include "gl/system/gl_system.h"
 #include "features/levelmesh/captureshading.h"
 #include "features/frame/computation/oracle_compute.h"   // [rc4l] OracleTally
 

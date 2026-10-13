@@ -27,7 +27,7 @@
 
 namespace zx { namespace levelmesh {
 
-// [rc4l] A mesh vertex: position as (x, height, y) and texture coordinate, the layout GL's FFlatVertex has (glvertex.h asserts it).
+// [rc4l] A mesh vertex: position as (x, height, y) and texture coordinate, the layout GL's FFlatVertex has.
 struct MeshVertex
 {
 	float x, z, y;

@@ -23,7 +23,7 @@
 
 // [rc4l] GL's level settings and view state until they move out of gl/ (P5): the pixel stretch, the view's area, and the light class.
 #include "features/rendersettings/rendersettings.h"   // [rc4l] the render settings it reads
-#include "gl/dynlights/gl_dynlight.h"    // [rc4l] ADynamicLight, STAT_DLIGHT
+#include "features/dynlights/dynlight.h"   // [rc4l] ADynamicLight, FLightNode
 #include "g_shared/a_artifacts.h"        // [rc4l] APowerTorch, APowerLightAmp
 #include "r_data/colormaps.h"            // [rc4l] INVERSECOLORMAP
 

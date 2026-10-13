@@ -22,6 +22,9 @@ module talks to GL only through the renderer interface.
   surfaces, portal views, sprites, models and weapon to the captures those checks compare against, through
   the same calls the backend's own walks and sprites use.
 
+- `surfaceverify.cpp`: `fua_surface_verify` and its ladders, the map-derived walls against the `GLWall`s GL's
+  wall cache recorded (moved from `features/surfaces`).
+
 ## In-engine hooks
 
 - `win32/win32gliface.cpp` `Win32GLVideo::CreateFrameBuffer`: `CreateGLFrameBuffer` in place of

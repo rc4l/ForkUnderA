@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 rc4l
 
-#include "gl/system/gl_system.h"
 #include "features/levelmesh/flatmesh.h"
 #include "features/levelmesh/captureshading.h"   // [rc4l] CaptureShading, the light model for a GL colormap
 #include "features/sprites/spritebuild.h"   // [rc4l] NoteGLSprite, for fua_sprite_check
@@ -21,17 +20,14 @@
 
 #include "r_defs.h"
 #include "r_state.h"
-#include "gl/scene/gl_wall.h"
-#include "gl/data/gl_vertexbuffer.h"
-#include "gl/data/gl_data.h"   // getExtraLight
-#include "gl/textures/gl_material.h"   // FMaterial::TextureWidth, for the plane UV transform
-#include "gl/utility/gl_convert.h"      // ANGLE_TO_FLOAT
+#include "features/stackportals/stackportals.h"   // [rc4l] FPortal, portals, gl_BuildPortalCoverage
+#include "features/surfaces/sectorplane.h"   // [rc4l] GLSectorPlane
+#include "features/materials/materials.h"
 #include "tarray.h"
 #include "p_3dfloors.h"   // F3DFloor, P_GetPlaneLight
 #include "r_sky.h"   // skyflatnum
 #include "features/rendersettings/rendersettings.h"   // [rc4l] the render settings it reads
 #include "features/fakeflat/fakeflat.h"   // [rc4l] gl_FakeFlat
-#include "gl/renderer/gl_renderstate.h"   // gl_RenderState.GetDynLight, for the sprite light fold
 #include "c_dispatch.h"   // CCMD, for fua_sprite_sweep
 #include "c_cvars.h"
 #include "r_utility.h"   // R_PointInSubsector, for PieceStackId
@@ -57,6 +53,9 @@ CVAR(Bool, fua_decal_log, false, 0)
 CVAR(Bool, fua_mesh_sky, true, CVAR_ARCHIVE)
 
 EXTERN_CVAR(Bool, fua_mesh_rescroll)
+
+// [rc4l] The most corners a flat's fan has, GLWall::MAX_BATCH_FAN_VERTICES as GL caps it.
+static const int kMaxFanVertices = 128;
 
 namespace zx { namespace levelmesh {
 
@@ -184,7 +183,7 @@ struct FlatSource
 {
 	GLSectorPlane plane;
 	float         dz;
-	FMaterial    *gltexture;
+	const void   *gltexture;   // [rc4l] a features/materials MaterialRef
 	int           lightlevel;
 	FColormap     Colormap;
 	float         alpha;
@@ -310,10 +309,10 @@ static void StoreFlat(const FlatSource &flat, subsector_t *sub, bool ceiling)
 
 		// [rc4l] Cap matches the wall path's staging array; a subsector with more edges than this is
 		// vanishingly rare and is simply left to the GL renderer.
-		static MeshVertex fan[GLWall::MAX_BATCH_FAN_VERTICES];
-		static MeshVertex tris[GLWall::MAX_BATCH_FAN_VERTICES * 3];
+		static MeshVertex fan[kMaxFanVertices];
+		static MeshVertex tris[kMaxFanVertices * 3];
 		const int n = (int)sub->numlines;
-		if (n > GLWall::MAX_BATCH_FAN_VERTICES) return;
+		if (n > kMaxFanVertices) return;
 
 		// Mirrors GLFlat::DrawSubsector for the positions, and gl_SetPlaneTextureRotation for the texture
 		// coordinates -- which this used to skip entirely, baking the bare (x/64, -y/64) that is only
@@ -455,7 +454,7 @@ static void BakeOnePlane(subsector_t *sub, sector_t *model, int whichPlane, bool
 	f.plane.GetFromSector(from, whichPlane);
 	// The sky is not a surface: GLFlat::Process returns before making one, and the sky pass draws it.
 	if (f.plane.texture == skyflatnum) return;
-	f.gltexture = FMaterial::ValidateTexture(f.plane.texture, false, true);
+	f.gltexture = zx::materials::MaterialForTextureId(f.plane.texture);
 	if (f.gltexture == NULL) return;
 	ApplyFullbright(f.gltexture, cm, lightlevel);
 	// GLFlat::Process's own rule, and the reason a transfer-heights door's floor does not z-fight
@@ -474,24 +473,26 @@ static void BakeOnePlane(subsector_t *sub, sector_t *model, int whichPlane, bool
 	StoreFlat(f, sub, ceiling);
 }
 
-void ApplyFullbright(const FMaterial *mat, FColormap &cm, int &lightLevel)
+void ApplyFullbright(const void *mat, FColormap &cm, int &lightLevel)
 {
-	if (mat == NULL || !mat->tex->isFullbright()) return;
+	if (mat == NULL || !zx::materials::MaterialTexture(mat)->isFullbright()) return;
 	cm.LightColor.r = cm.LightColor.g = cm.LightColor.b = 0xff;
 	lightLevel = 255;
 }
 
-void PlaneUVFor(const GLSectorPlane &plane, FMaterial *mat, PlaneUVTransform &out)
+void PlaneUVFor(const GLSectorPlane &plane, const void *mat, PlaneUVTransform &out)
 {
 	out = ComputeIdentityPlaneUV();
 	out.xoffs = FIXED2FLOAT(plane.xoffs);
 	out.yoffs = FIXED2FLOAT(plane.yoffs);
 	out.xscale = FIXED2FLOAT(plane.xscale);
 	out.yscale = FIXED2FLOAT(plane.yscale);
-	out.angleDegrees = ANGLE_TO_FLOAT(plane.angle);
-	out.texWidth = (float)mat->TextureWidth();
-	out.texHeight = (float)mat->TextureHeight();
-	out.hasCanvas = mat->tex->bHasCanvas;
+	out.angleDegrees = ANGLE2FLOAT(plane.angle);
+	int w, h;
+	zx::materials::MaterialRenderSize(mat, w, h);
+	out.texWidth = (float)w;
+	out.texHeight = (float)h;
+	out.hasCanvas = zx::materials::MaterialTexture(mat)->bHasCanvas;
 }
 
 // One face of a 3D floor, by GLFlat::SetFrom3DFloor's rule with the viewer test taken out.

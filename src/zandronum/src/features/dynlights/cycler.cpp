@@ -34,7 +34,7 @@
 */
 
 #include <math.h>
-#include "gl/utility/gl_cycler.h"
+#include "features/dynlights/cycler.h"
 
 //==========================================================================
 //

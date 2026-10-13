@@ -75,6 +75,9 @@ in, the particles, each line's first seen seg's sky and stacked walls (worked ou
 only appended here), and the flats pass that feeds the stacked views. The edges move walk to walk so the slices
 carry about equal work (`ComputeBalancedSlices`, `fua_vis_balance`).
 
+A rank is stamped when a slice finds a sky or stacked wall candidate in it, so the replay skips the ranks
+with none without asking every slice: on Sunder MAP10 the walk went from 0.42 to 0.39 ms.
+
 The first line from the open into a height transfer in force switches the view area (`gl_CheckViewArea`), which
 changes the fake flats behind it. Slices take last walk's switch line as a guess, and clip again from what they
 saw until the guess holds, at most three times (`fua_vis_report` counts these). `fua_vis_threadcheck 1` walks

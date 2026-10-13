@@ -49,7 +49,6 @@
 #include "g_level.h"
 #include "colormatcher.h"
 #include "textures/bitmap.h"
-//#include "gl/gl_intern.h"
 
 
 

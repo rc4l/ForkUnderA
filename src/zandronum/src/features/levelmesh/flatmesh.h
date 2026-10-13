@@ -132,10 +132,10 @@ struct StackWalk
 };
 
 // [rc4l] A fullbright texture draws at light 255 and white light, as GLFlat::Process and DrawFloodedPlane both decide it.
-void ApplyFullbright(const FMaterial *mat, FColormap &cm, int &lightLevel);
+void ApplyFullbright(const void *mat, FColormap &cm, int &lightLevel);
 
 // [rc4l] A sector plane's texture mapping, by gl_SetPlaneTextureRotation's inputs: its offsets, scale, angle and the texture's size.
-void PlaneUVFor(const GLSectorPlane &plane, FMaterial *mat, PlaneUVTransform &out);
+void PlaneUVFor(const GLSectorPlane &plane, const void *mat, PlaneUVTransform &out);
 
 // [rc4l] s as GL draws it in the view area last baked for (gl_FakeFlat into scratch), or s itself without a height transfer; back as GL asks for a seg's far sector.
 sector_t *TransferSector(sector_t *s, sector_t *scratch, bool back);

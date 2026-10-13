@@ -877,13 +877,10 @@ endif( DYN_FLUIDSYNTH )
 if( NOT NO_GL )
 	set( GL_SOURCES
 		gl/data/gl_data.cpp
-		gl/data/gl_portaldata.cpp
 		gl/data/gl_setup.cpp
 	gl/data/gl_matrix.cpp
 		gl/data/gl_vertexbuffer.cpp
-		gl/dynlights/a_dynlight.cpp
 		gl/utility/gl_clock.cpp
-		gl/utility/gl_cycler.cpp
 		gl/utility/gl_geometric.cpp
 		gl/renderer/gl_renderer.cpp
 		gl/renderer/gl_renderstate.cpp
@@ -1603,6 +1600,11 @@ add_executable( zdoom WIN32
 	features/models/md2model.cpp
 	features/models/md3model.cpp
 	features/models/voxelmodel.cpp
+	features/dynlights/a_dynlight.cpp
+	features/dynlights/cycler.cpp
+	features/sprites/spriteframe.cpp
+	features/stackportals/stackportals.cpp
+	features/materials/computation/texcoord_compute.cpp
 	features/hwrender/hud2d.cpp
 	features/hwrender/spriteview.cpp
 	features/levelmesh/staticmesh.cpp
@@ -1672,7 +1674,7 @@ add_executable( zdoom WIN32
 	features/surfaces/computation/walluv_compute.cpp
 	features/surfaces/computation/planegeom_compute.cpp
 	features/surfaces/computation/surfacechange_compute.cpp
-	features/surfaces/surfaceverify.cpp
+	features/sidebyside/surfaceverify.cpp
 	features/surfaces/surfacebuild.cpp
 	features/horizon/horizon.cpp
 	features/horizon/computation/horizon_compute.cpp

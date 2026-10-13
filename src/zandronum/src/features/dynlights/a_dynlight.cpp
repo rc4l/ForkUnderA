@@ -47,11 +47,8 @@
 // [BB] New #includes.
 #include "network.h"
 
-#include "gl/renderer/gl_renderer.h"
-#include "gl/data/gl_data.h"
-#include "gl/dynlights/gl_dynlight.h"
-#include "gl/utility/gl_convert.h"
-#include "gl/utility/gl_templates.h"
+#include "features/dynlights/dynlight.h"
+#include "features/sprites/spriteframe.h"   // [rc4l] gl_GetSpriteFrame, for the light list's frame names
 
 EXTERN_CVAR (Float, gl_lights_size);
 EXTERN_CVAR (Bool, gl_lights_additive);
@@ -199,7 +196,7 @@ void ADynamicLight::Activate(AActor *activator)
 
 	if (lighttype == PulseLight)
 	{
-		float pulseTime = ANGLE_TO_FLOAT(this->angle) / TICRATE;
+		float pulseTime = ANGLE2FLOAT(this->angle) / TICRATE;
 		
 		m_lastUpdate = level.maptime;
 		m_cycler.SetParams(float(m_intensity[1]), float(m_intensity[0]), pulseTime);
@@ -263,7 +260,7 @@ void ADynamicLight::Tick()
 	case FlickerLight:
 	{
 		BYTE rnd = randLight();
-		float pct = ANGLE_TO_FLOAT(angle)/360.f;
+		float pct = ANGLE2FLOAT(angle)/360.f;
 		
 		m_currentIntensity = float(m_intensity[rnd >= pct * 255]);
 		break;
@@ -276,7 +273,7 @@ void ADynamicLight::Tick()
 		
 		m_tickCount++;
 		
-		if (m_tickCount > ANGLE_TO_FLOAT(angle))
+		if (m_tickCount > ANGLE2FLOAT(angle))
 		{
 			m_currentIntensity = float(m_intensity[0] + (amt * flickerRange));
 			m_tickCount = 0;
@@ -289,7 +286,7 @@ void ADynamicLight::Tick()
 	case ColorFlickerLight:
 	{
 		BYTE rnd = randLight();
-		float pct = ANGLE_TO_FLOAT(angle)/360.f;
+		float pct = ANGLE2FLOAT(angle)/360.f;
 		
 		m_currentIntensity = m_intensity[rnd >= pct * 255];
 		break;
@@ -302,7 +299,7 @@ void ADynamicLight::Tick()
 		
 		m_tickCount++;
 		
-		if (m_tickCount > ANGLE_TO_FLOAT(angle))
+		if (m_tickCount > ANGLE2FLOAT(angle))
 		{
 			m_currentIntensity = m_intensity[0] + (amt * flickerRange);
 			m_tickCount = 0;

@@ -41,8 +41,9 @@ looking at a picture costs a day the first time it is wrong.
 - `computation/planegeom_compute` — the same questions for a floor or a ceiling: height at a point,
   sloped or not, which side it is seen from, and the normal that follows the viewed side rather than
   the plane.
-- `surfaceverify.cpp` — `fua_surface_verify`, which compares all of it against what the capture
-  recorded, on a real level.
+- `features/sidebyside/surfaceverify.cpp` — `fua_surface_verify`, `fua_surface_mapbake`, `fua_surface_bakediff`
+  and `fua_surface_mapcover`, which compare all of it against the walls GL's wall cache recorded on a real
+  level. It reads GL's types, so it lives with the other checks against GL.
 
 ## Where it stands, measured
 

@@ -1,7 +1,7 @@
 /*
-** gl_setup.cpp
-** Initializes the data structures required by the GL renderer to handle
-** a level
+** stackportals.cpp (from gl/data/gl_portaldata.cpp)
+** The stacked sectors' portals and the subsectors each covers, which the
+** GL renderer and the backend's walks both read
 **
 **---------------------------------------------------------------------------
 ** Copyright 2005 Christoph Oelckers
@@ -52,15 +52,7 @@
 #include "g_level.h"
 #include "a_sharedglobal.h"
 
-#include "gl/renderer/gl_renderer.h"
-#include "gl/data/gl_data.h"
-#include "gl/data/gl_vertexbuffer.h"
-#include "gl/scene/gl_clipper.h"
-#include "gl/scene/gl_portal.h"
-#include "gl/dynlights/gl_dynlight.h"
-#include "gl/dynlights/gl_glow.h"
-#include "gl/utility/gl_clock.h"
-#include "gl/gl_functions.h"
+#include "features/stackportals/stackportals.h"
 
 struct FPortalID
 {
@@ -94,11 +86,6 @@ TArray<FPortal *> portals;
 //
 //==========================================================================
 
-GLSectorStackPortal *FPortal::GetGLPortal()
-{
-	if (glportal == NULL) glportal = new GLSectorStackPortal(this);
-	return glportal;
-}
 
 //==========================================================================
 //

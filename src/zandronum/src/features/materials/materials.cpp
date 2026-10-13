@@ -7,6 +7,7 @@
 
 #include "textures/textures.h"
 #include "gl/textures/gl_material.h"
+#include "gl/textures/gl_hwtexture.h"   // [rc4l] GetTexDimension
 #include "gl/textures/gl_translate.h"   // [rc4l] GLTranslationPalette
 #include "r_data/r_translate.h"         // [rc4l] FRemapTable
 #include "gl/system/gl_interface.h"     // [rc4l] gl.flags, whether trimmed sprite coordinates are usable
@@ -36,6 +37,33 @@ bool DescribeMaterial(MaterialRef m, MaterialInfo &info)
 	info.brightmap = tex->gl_info.Brightmap != NULL;
 	info.shaderSpeed = tex->gl_info.shaderspeed;
 	return true;
+}
+
+MaterialRef MaterialForTextureId(FTextureID id, bool translate)
+{
+	return FMaterial::ValidateTexture(id, false, translate);
+}
+
+FTexture *MaterialTexture(MaterialRef m)
+{
+	return m != NULL ? Mat(m)->tex : NULL;
+}
+
+void MaterialRenderSize(MaterialRef m, int &width, int &height)
+{
+	width = Mat(m)->TextureWidth();
+	height = Mat(m)->TextureHeight();
+}
+
+void MaterialStoredSize(MaterialRef m, int &width, int &height)
+{
+	width = FHardwareTexture::GetTexDimension(Mat(m)->GetWidth());
+	height = FHardwareTexture::GetTexDimension(Mat(m)->GetHeight());
+}
+
+void MaterialTexCoordInfo(MaterialRef m, FTexCoordInfo *tci, fixed_t xscale, fixed_t yscale)
+{
+	Mat(m)->GetTexCoordInfo(tci, xscale, yscale);
 }
 
 bool MaterialTransparent(MaterialRef m)

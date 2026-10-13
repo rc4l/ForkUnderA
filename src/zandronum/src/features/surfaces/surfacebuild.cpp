@@ -9,8 +9,10 @@
 #include "features/rendersettings/rendersettings.h"   // [rc4l] the render settings it reads
 
 #include "textures/textures.h"
-#include "gl/textures/gl_material.h"
-#include "gl/scene/gl_wall.h"
+#include "features/materials/materials.h"
+#include "features/surfaces/sectorplane.h"   // [rc4l] GLSectorPlane
+#include "features/materials/computation/texcoord_compute.h"
+#include "features/surfaces/walltypes.h"   // [rc4l] RENDERWALL_*
 
 #include <math.h>
 
@@ -26,7 +28,8 @@
 
 // [rc4l] Declared at global scope: EXTERN_CVAR inside the namespace would name a different symbol
 // than the CVAR defined in surfaceverify.cpp, and only the linker would notice.
-EXTERN_CVAR(Bool, fua_surface_vshift)
+// [rc4l] GL's CheckTexturePosition in the derivation, a switch so it stays a measurement: it took dbab04's clamping faults from 75 to 0.
+CVAR(Bool, fua_surface_vshift, true, 0)
 EXTERN_CVAR(Bool, gl_mirrors)
 
 namespace zx { namespace surfaces {
@@ -179,8 +182,7 @@ bool BuildDerivedWallSpan(const seg_t *seg, int renderType, DerivedWallSpan &out
 	const bool twoSidedMid = (renderType == RENDERWALL_M2S || renderType == RENDERWALL_M2SNF);
 	if (twoSidedMid && seg->backsector == NULL) { g_fbMiddle++; g_fellBack++; return false; }
 
-	FMaterial *mat = FMaterial::ValidateTexture(seg->sidedef->GetTexture((side_t::ETexpart)texpos),
-		false, true);
+	const void *mat = zx::materials::MaterialForTextureId(seg->sidedef->GetTexture((side_t::ETexpart)texpos));
 	// [rc4l] The sector flat a gap is filled with, by its BASE id, so an animated floor keeps animating there.
 	FTextureID gapTex;
 	gapTex.SetInvalid();
@@ -218,12 +220,12 @@ bool BuildDerivedWallSpan(const seg_t *seg, int renderType, DerivedWallSpan &out
 		if (fill == zx::surfaces::kGapFrontFlat)
 		{
 			gapTex = fs->GetTexture(which);
-			mat = FMaterial::ValidateTexture(gapTex, false, true);
+			mat = zx::materials::MaterialForTextureId(gapTex);
 		}
 		else if (fill == zx::surfaces::kGapFlood)
 		{
 			gapTex = bs->GetTexture(which);
-			mat = FMaterial::ValidateTexture(gapTex, false, true);
+			mat = zx::materials::MaterialForTextureId(gapTex);
 			if (mat != NULL)
 			{
 				GLSectorPlane sp;
@@ -244,7 +246,7 @@ bool BuildDerivedWallSpan(const seg_t *seg, int renderType, DerivedWallSpan &out
 	if (mat == NULL) { g_fbNoTexture++; g_fellBack++; return false; }
 
 	FTexCoordInfo tci;
-	mat->GetTexCoordInfo(&tci, seg->sidedef->GetTextureXScale((side_t::ETexpart)texpos),
+	zx::materials::MaterialTexCoordInfo(mat, &tci, seg->sidedef->GetTextureXScale((side_t::ETexpart)texpos),
 		seg->sidedef->GetTextureYScale((side_t::ETexpart)texpos));
 	const float th = (float)tci.mRenderHeight;
 	if (th == 0.f) { g_fbNoTexture++; g_fellBack++; return false; }
@@ -383,7 +385,7 @@ bool BuildDerivedWallSpan(const seg_t *seg, int renderType, DerivedWallSpan &out
 	//
 	// Not for a two-sided middle: DoMidTexture writes its coordinates directly and never calls this.
 	// Not for a canvas texture, which GL also skips.
-	const bool canvas = ((FMaterial *)mat)->tex->bHasCanvas;
+	const bool canvas = zx::materials::MaterialTexture(mat)->bHasCanvas;
 	if (fua_surface_vshift && !twoSidedMid && !canvas)
 	{
 		const float lead = (out.vTop[0] < out.vTop[1]) ? out.vTop[0] : out.vTop[1];
@@ -433,7 +435,7 @@ bool BuildDerivedWallSpan(const seg_t *seg, int renderType, DerivedWallSpan &out
 	// rebuild. ByIndex skips the translation, which is what MeshPiece::baseTex says it wants.
 	out.baseTex = TexMan.ByIndex((gapTex.isValid() ? gapTex : seg->sidedef->GetTexture((side_t::ETexpart)texpos)).GetIndex());
 	if (out.baseTex == NULL || ((FTexture *)out.baseTex)->Name.Len() == 0)
-		out.baseTex = (mat != NULL) ? (const void *)((FMaterial *)mat)->tex : NULL;
+		out.baseTex = (mat != NULL) ? (const void *)zx::materials::MaterialTexture(mat) : NULL;
 	out.valid = true;
 	g_derived++;
 	return true;

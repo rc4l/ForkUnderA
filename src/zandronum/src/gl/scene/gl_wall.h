@@ -24,27 +24,7 @@ struct FPortal;
 struct FFlatVertex;
 
 
-enum WallTypes
-{
-	RENDERWALL_NONE,
-	RENDERWALL_TOP,
-	RENDERWALL_M1S,
-	RENDERWALL_M2S,
-	RENDERWALL_BOTTOM,
-	RENDERWALL_SKY,
-	RENDERWALL_FOGBOUNDARY,
-	RENDERWALL_HORIZON,
-	RENDERWALL_SKYBOX,
-	RENDERWALL_SECTORSTACK,
-	RENDERWALL_PLANEMIRROR,
-	RENDERWALL_MIRROR,
-	RENDERWALL_MIRRORSURFACE,
-	RENDERWALL_M2SNF,
-	RENDERWALL_COLOR,
-	RENDERWALL_FFBLOCK,
-	RENDERWALL_COLORLAYER,
-	// Insert new types at the end!
-};
+#include "features/surfaces/walltypes.h"   // [rc4l] WallTypes, which the bake parts walls by too
 
 struct GLSeg
 {
@@ -64,27 +44,7 @@ struct texcoord
 //
 //==========================================================================
 
-struct GLSectorPlane
-{
-	FTextureID texture;
-	secplane_t plane;
-	fixed_t texheight;
-	fixed_t xoffs,  yoffs;
-	fixed_t	xscale, yscale;
-	angle_t	angle;
-
-	void GetFromSector(sector_t * sec, int ceiling)
-	{
-		xoffs = sec->GetXOffset(ceiling);
-		yoffs = sec->GetYOffset(ceiling);
-		xscale = sec->GetXScale(ceiling);
-		yscale = sec->GetYScale(ceiling);
-		angle = sec->GetAngle(ceiling);
-		texture = sec->GetTexture(ceiling);
-		plane = sec->GetSecPlane(ceiling);
-		texheight = (ceiling == sector_t::ceiling)? plane.d : -plane.d;
-	}
-};
+#include "features/surfaces/sectorplane.h"   // [rc4l] GLSectorPlane, which the bake reads planes by too
 
 
 

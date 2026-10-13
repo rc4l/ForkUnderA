@@ -168,24 +168,7 @@ const char *TypeName(int type)
 //
 //==========================================================================
 
-// [rc4l] GL's CheckTexturePosition, in the derivation, with a switch so it stays a measurement.
-//
-// GL slides every wall DoTexture makes back into the first copy of its texture -- subtract
-// floor(min(uplft.v, uprgt.v)) from all four v values -- immediately before putting it in the render
-// list. On a wall that repeats this is invisible. On a wall that CLAMPS it is the whole picture, and
-// 75 pieces on dbab04 sat outside their texture without it.
-//
-// The switch is here because the shift moves BOTH ways: it takes dbab04's clamping faults from 75 to
-// 0 and dbab01's from 10 to 0, while moving pieces that repeat by a whole copy in either direction.
-// One run A/Bs it rather than one memory.
-CVAR( Bool, fua_surface_vshift, true, 0 )
 
-// [rc4l] Cut a wall at its 3D floor light bands. ON -- see wallbands_compute for the rule.
-//
-// The switch is here because the banding is the newest thing in the map-driven bake and the residual
-// against the GL-driven picture is the oldest unexplained thing in it, and one run should be able to
-// say whether they are the same thing.
-CVAR( Bool, fua_surface_bands, true, 0 )
 
 
 // [rc4l] Could the bake be driven by the MAP instead of by GL's walk of the BSP?

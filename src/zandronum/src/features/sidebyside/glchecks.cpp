@@ -8,7 +8,7 @@
 
 #include "gl/scene/gl_observer.h"
 #include "gl/scene/gl_wall.h"
-#include "gl/data/gl_data.h"     // [rc4l] FPortal
+#include "features/stackportals/stackportals.h"   // [rc4l] FPortal, portals, gl_BuildPortalCoverage
 #include "gl/data/gl_matrix.h"   // [rc4l] VSMatrix
 #include "gl/renderer/gl_lightdata.h"     // [rc4l] gl_SetColor and gl_SetFog, the shading GL's answer comes from
 #include "gl/renderer/gl_renderstate.h"   // [rc4l] the dynamic light GL left for a sprite, and the shading it set

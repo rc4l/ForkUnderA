@@ -9,7 +9,6 @@
 #include "features/levelmesh/computation/linequery_compute.h"   // [rc4l] fua_find_lines' key=value and texture-prefix matching
 #include "features/levelmesh/computation/lookhits_compute.h"   // [rc4l] fua_look's pieces behind the nearest
 #include "r_sky.h"   // skyflatnum, for fua_find_sky
-#include "gl/data/gl_vertexbuffer.h"   // FFlatVertex, for fua_mesh_at
 #include "features/levelmesh/wallcache.h"
 #include "features/levelmesh/flatmesh.h"
 
@@ -22,12 +21,13 @@
 #include "p_trace.h"      // Trace, so fua_look can say what the ENGINE thinks is there
 #include "p_3dfloors.h"   // lightlist_t, for fua_sector_lights
 #include "p_lnspec.h"    // Line_Mirror, for fua_make_mirror
-#include "gl/dynlights/gl_dynlight.h"   // ADynamicLight, for fua_light
+#include "features/dynlights/dynlight.h"   // [rc4l] ADynamicLight, FLightNode
 #include "a_sharedglobal.h"                // DBaseDecal, for fua_decals
 #include "d_player.h"     // players, consoleplayer
 #include "tables.h"       // finesine/finecosine
 #include "textures/textures.h"
-#include "gl/textures/gl_material.h"   // FMaterial::GetTransparent, for fua_find_lines transparent=1
+#include "features/materials/materials.h"
+#include "r_data/colormaps.h"   // [rc4l] FDynamicColormap
 
 // [rc4l] The console commands below sit outside the namespace and read mesh vertices.
 using zx::levelmesh::MeshVertex;
@@ -366,8 +366,7 @@ CCMD( fua_find_lines )
 		else if ( wantTrans )
 		{
 			if ( !AnyLineTexture( ln, true, []( FTextureID id ) {
-					FMaterial *m = id.isValid( ) ? FMaterial::ValidateTexture( id, false, true ) : NULL;
-					return m != NULL && m->GetTransparent( ); } ) ) continue;
+					return id.isValid( ) && zx::materials::MaterialTransparent( zx::materials::MaterialForTextureId( id ) ); } ) ) continue;
 		}
 		else if ( ln->special == 0 ) continue;
 		scanned++;
@@ -1014,8 +1013,7 @@ CCMD( fua_look )
 		// surface was built from and is used for sorting and reporting; material is the pointer the
 		// draw resolves to a texture. When they disagree the picture is a correct surface wearing
 		// someone else s texture, and every other field in this report looks perfect.
-		FMaterial *fm = (FMaterial *)p.material;
-		FTexture *mt = (fm != NULL) ? fm->tex : NULL;
+		FTexture *mt = zx::materials::MaterialTexture(p.material);
 		const char *mn = mt ? (mt->Name.Len() ? mt->Name.GetChars() : "(unnamed)") : "(none)";
 		Printf("        material %s%s\n", mn,
 			(mt != NULL && bt != NULL && mt != bt) ? "   <-- DIFFERENT from baseTex" : "");
@@ -1047,10 +1045,10 @@ CCMD( fua_look )
 	// the second one can be checked by looking at a screenshot of this wall.
 	if ( p.material != NULL )
 	{
-		FMaterial *m = (FMaterial *)p.material;
+		FTexture *mt = zx::materials::MaterialTexture(p.material);
 		Printf( "        brightmap: %s\n",
-				( m->tex != NULL && m->tex->gl_info.Brightmap != NULL )
-					? m->tex->gl_info.Brightmap->Name.GetChars( ) : "none (adds black)" );
+				( mt != NULL && mt->gl_info.Brightmap != NULL )
+					? mt->gl_info.Brightmap->Name.GetChars( ) : "none (adds black)" );
 	}
 	// [rc4l] The id a light's links and a stacked view name this piece by, so a light the backend withholds can be checked against what GL linked it to.
 	const int linkId = zx::levelmesh::PieceStackId( p );

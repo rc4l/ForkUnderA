@@ -729,6 +729,13 @@ GLSectorStackPortal::~GLSectorStackPortal()
 	}
 }
 
+// [rc4l] Moved from gl_portaldata.cpp, now features/stackportals, which keeps the portal data.
+GLSectorStackPortal *FPortal::GetGLPortal()
+{
+	if (glportal == NULL) glportal = new GLSectorStackPortal(this);
+	return glportal;
+}
+
 //-----------------------------------------------------------------------------
 //
 // GLSectorStackPortal::SetupCoverage

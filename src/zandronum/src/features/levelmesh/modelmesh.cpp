@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 rc4l
 
-#include "gl/system/gl_system.h"
 #include "features/levelmesh/modelmesh.h"
 #include "features/levelmesh/staticmesh.h"
 #include "features/levelmesh/captureshading.h"   // [rc4l] CaptureShading, the light model for a GL colormap
@@ -9,7 +8,6 @@
 
 #include "features/models/modelgeometry.h"
 #include "features/rendersettings/rendersettings.h"   // [rc4l] the render settings it reads
-#include "gl/textures/gl_material.h"
 #include "features/hwrender/hud2d.h"   // StandaloneActive, BackendPresenting
 #include "features/sprites/spritebuild.h"   // [rc4l] NoteGLSprite and NoteDerivedSprite, for fua_sprite_check
 #include "tarray.h"

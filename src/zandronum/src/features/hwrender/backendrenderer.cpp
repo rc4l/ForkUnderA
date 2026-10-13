@@ -3,7 +3,6 @@
 //
 // [rc4l] The renderer of a launch without GL: the engine's view through features/frame, on the level, light and fog half both renderers share.
 
-#include "gl/system/gl_system.h"
 #include "features/hwrender/backendonly.h"
 #include "features/frame/levelrenderer.h"
 #include "features/frame/playerview.h"
@@ -20,7 +19,7 @@
 #include "d_player.h"
 #include "m_png.h"
 #include "textures/textures.h"
-#include "gl/textures/gl_material.h"
+#include "features/materials/materials.h"
 
 namespace {
 
@@ -55,10 +54,12 @@ struct FBackendRenderer : public zx::frame::FLevelRenderer
 	// [rc4l] A camera texture is the backend's own view into its own target: the camera's viewpoint set up and its scene swept, as GL's RenderViewpoint does for it, then drawn.
 	void RenderTextureView(FCanvasTexture *tex, AActor *viewpoint, int fov)
 	{
-		FMaterial *mat = FMaterial::ValidateTexture(tex, false);
+		const void *mat = zx::materials::MaterialForTexture(tex, false);
 		if (mat != NULL && viewpoint != NULL)
 		{
-			const float ratio = (float)mat->TextureWidth() / mat->TextureHeight();
+			int w, h;
+			zx::materials::MaterialRenderSize(mat, w, h);
+			const float ratio = (float)w / h;
 			const bool savedMain = zx::frame::BeginViewpoint(viewpoint, (float)fov, ratio, false, false);
 			if (zx::hwrender::StandaloneActive())
 			{

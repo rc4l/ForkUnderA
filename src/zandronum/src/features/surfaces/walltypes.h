@@ -1,0 +1,28 @@
+// [rc4l] The kinds of wall piece GL's GLWall draws (RENDERWALL_*), which the map bake parts a sidedef by too: moved here from gl/scene/gl_wall.h, which includes it.
+
+#ifndef ZX_WALLTYPES_H
+#define ZX_WALLTYPES_H
+
+enum WallTypes
+{
+	RENDERWALL_NONE,
+	RENDERWALL_TOP,
+	RENDERWALL_M1S,
+	RENDERWALL_M2S,
+	RENDERWALL_BOTTOM,
+	RENDERWALL_SKY,
+	RENDERWALL_FOGBOUNDARY,
+	RENDERWALL_HORIZON,
+	RENDERWALL_SKYBOX,
+	RENDERWALL_SECTORSTACK,
+	RENDERWALL_PLANEMIRROR,
+	RENDERWALL_MIRROR,
+	RENDERWALL_MIRRORSURFACE,
+	RENDERWALL_M2SNF,
+	RENDERWALL_COLOR,
+	RENDERWALL_FFBLOCK,
+	RENDERWALL_COLORLAYER,
+	// Insert new types at the end!
+};
+
+#endif // ZX_WALLTYPES_H

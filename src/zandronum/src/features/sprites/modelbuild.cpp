@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 rc4l
 
-#include "gl/system/gl_system.h"
 #include "features/sprites/modelbuild.h"
 
 #include "features/sprites/computation/modelpose_compute.h"
@@ -20,7 +19,6 @@
 // [rc4l] GL's model data and settings the derivation still reads, until model data leaves gl/ (P5).
 #include "features/models/models.h"   // [rc4l] gl_FindModelFrame and the models
 #include "features/rendersettings/rendersettings.h"   // [rc4l] the render settings it reads
-#include "gl/utility/gl_convert.h"     // [rc4l] ANGLE_TO_FLOAT
 
 EXTERN_CVAR(Bool, gl_interpolate_model_frames)
 
@@ -28,7 +26,7 @@ namespace zx { namespace sprites {
 
 void ModelPoseFor(const AActor *actor, const FSpriteModelFrame *smf, float x, float y, float z, ModelPose &p)
 {
-	const float angle = ANGLE_TO_FLOAT(actor->angle);
+	const float angle = ANGLE2FLOAT(actor->angle);
 	float pitch = 0, roll = 0;
 	if (smf->flags & MDL_PITCHFROMMOMENTUM)
 		pitch = ComputeMomentumPitch(static_cast<double>(actor->velx), static_cast<double>(actor->vely), static_cast<double>(actor->velz), angle);
@@ -38,12 +36,12 @@ void ModelPoseFor(const AActor *actor, const FSpriteModelFrame *smf, float x, fl
 
 	// [rc4l] Model space is GL's (x, up, y).
 	p.position[0] = x; p.position[1] = z; p.position[2] = y;
-	p.yaw = (smf->flags & MDL_ALIGNANGLE) ? -ANGLE_TO_FLOAT(R_PointToAngle(actor->x, actor->y)) : -angle;
+	p.yaw = (smf->flags & MDL_ALIGNANGLE) ? -ANGLE2FLOAT(R_PointToAngle(actor->x, actor->y)) : -angle;
 	if (smf->flags & MDL_ALIGNPITCH)
 		p.pitch = ComputeAlignPitch(FIXED2FLOAT(actor->z - viewz), FIXED2FLOAT(R_PointToDist2(actor->x - viewx, actor->y - viewy)));
 	else p.pitch = pitch;
 	p.roll = (smf->flags & MDL_ROLLAGAINSTANGLE)
-		? ComputeRollAgainstAngle(ANGLE_TO_FLOAT(R_PointToAngle(actor->x, actor->y)), angle, actor->z > viewz) : -roll;
+		? ComputeRollAgainstAngle(ANGLE2FLOAT(R_PointToAngle(actor->x, actor->y)), angle, actor->z > viewz) : -roll;
 
 	p.rotating = (smf->flags & MDL_ROTATING) != 0;
 	p.spin = p.rotating ? ComputeModelSpin(smf->rotationSpeed, (float)I_MSTime() * (float)TICRATE / 1000.0f) : 0.f;
@@ -57,7 +55,7 @@ void ModelPoseFor(const AActor *actor, const FSpriteModelFrame *smf, float x, fl
 	p.offset[0] = smf->xoffset / smf->xscale;
 	p.offset[1] = smf->zoffset / smf->zscale;
 	p.offset[2] = smf->yoffset / smf->yscale;
-	p.yawOffset = -ANGLE_TO_FLOAT(smf->angleoffset);
+	p.yawOffset = -ANGLE2FLOAT(smf->angleoffset);
 	p.pitchOffset = smf->pitchoffset;
 	p.rollOffset = -smf->rolloffset;
 	// [rc4l] Voxels carry the pixel stretch in their aspect factor; every other model has it taken out.

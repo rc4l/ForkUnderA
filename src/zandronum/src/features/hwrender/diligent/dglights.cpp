@@ -4,7 +4,6 @@
 // [rc4l] Dynamic lights: the light list mirrored from the engine, GL's light links, and the cluster grid that tells a fragment which lights can reach it.
 
 
-#include "gl/system/gl_system.h"
 #include <vector>
 
 #include "MapHelper.hpp"
@@ -15,8 +14,7 @@
 #include "features/hwrender/computation/lighttouch_compute.h"
 #include "features/levelmesh/levelmesh.h"
 #include "features/levelmesh/wallcache.h"
-#include "gl/dynlights/gl_dynlight.h"
-#include "gl/dynlights/gl_lightbuffer.h"
+#include "features/dynlights/dynlight.h"
 #include "features/rendersettings/rendersettings.h"   // [rc4l] the render settings it reads
 #include "p_local.h"
 #include "doomstat.h"
