@@ -552,7 +552,7 @@ void DrawSceneOnce(bool present, bool pump)
 	if (present) PresentFrame(ctx, swap, pump);
 }
 
-bool SceneDrawable() { return g_scene.vb && g_pso.opaque && g_scene.verts > 0; }
+bool SceneDrawable() { return g_scene.vb && g_pso.world[kWpOpaque] && g_scene.verts > 0; }
 
 // [rc4l] Frames the CPU may queue ahead of the GPU; 0 lets it run free.
 CVAR(Int, fua_dg_frames_ahead, 2, CVAR_ARCHIVE)
@@ -748,7 +748,7 @@ void DrawWorld(Diligent::IDeviceContext *ctx)
 	const Diligent::Uint64 offsets[] = { 0 };
 	ctx->SetVertexBuffers(0, 1, vbs, offsets, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
 		Diligent::SET_VERTEX_BUFFERS_FLAG_RESET);
-	ctx->SetPipelineState(g_pso.opaque);
+	ctx->SetPipelineState(g_pso.world[kWpOpaque]);
 
 	// [rc4l] One alpha-tested pipeline for everything.
 	//
@@ -757,7 +757,7 @@ void DrawWorld(Diligent::IDeviceContext *ctx)
 	// materials FMaterial::isMasked() calls opaque made their transparent texels paint over detail
 	// behind them. The lesson is that isMasked() answers a GL-pipeline question, not "does this
 	// texture have see-through pixels", so it cannot drive a pass split on its own.
-	ctx->SetPipelineState(g_pass.gbufBound ? g_pso.maskedGBuf : g_pso.masked);
+	ctx->SetPipelineState(g_pass.gbufBound ? g_pso.world[kWpMaskedGBuffer] : g_pso.world[kWpMasked]);
 
 	// [rc4l] g_frame.drawRepeat re-draws the whole scene N times per frame.
 	//
@@ -807,7 +807,7 @@ void DrawWorld(Diligent::IDeviceContext *ctx)
 				// [rc4l] One binding for the whole pass when the array is carrying the materials. This
 				// is the cost the culling experiment could not remove: 166 batches were 0.445 ms of
 				// submit on Sunder MAP16, almost all of it committing a descriptor set per batch.
-				srb = WorldSRB(g_pass.gbufBound ? g_pso.maskedGBuf.RawPtr() : g_pso.masked.RawPtr());
+				srb = WorldSRB(g_pass.gbufBound ? g_pso.world[kWpMaskedGBuffer].RawPtr() : g_pso.world[kWpMasked].RawPtr());
 				if (srb == NULL)
 				{
 					// Re-resolve rather than skip: a binding dropped by a resize would otherwise leave

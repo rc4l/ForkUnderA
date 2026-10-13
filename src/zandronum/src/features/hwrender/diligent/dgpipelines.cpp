@@ -6,6 +6,8 @@
 #include "features/hwrender/diligent/dgscene_internal.h"
 #include "features/hwrender/diligent/dgscene_glsl.h"   // [rc4l] the world pass's shaders
 
+#include <string.h>
+
 // [rc4l] Off makes every commit in a draw loop check every resource again, the old cost, for an A/B in one session.
 CVAR(Bool, fua_dg_loopcommits, true, 0)
 
@@ -88,12 +90,7 @@ Diligent::IShaderResourceBinding *GetMaterialSRB(Diligent::IPipelineState *pso,
 // [rc4l] The scene pipeline a static batch draws with.
 Diligent::IPipelineState *BatchPSO(int blend)
 {
-	switch (zx::hwrender::ComputeBatchPipeline(blend))
-	{
-	case zx::hwrender::kBatchPipelineMasked: return g_pso.masked.RawPtr();
-	case zx::hwrender::kBatchPipelineAdd: return g_pso.add.RawPtr();
-	default: return g_pso.trans.RawPtr();
-	}
+	return g_pso.world[ComputeBatchPipeline(blend)].RawPtr();
 }
 
 // [rc4l] A batch's binding, made again for the frame it last resolved to whenever a flush, a resize or a minimise dropped it.
@@ -313,9 +310,8 @@ void DirtyMaterialSlots() { g_matSlotsDirty = true; g_matSlotRetries = 0; }
 // one SRB per (pipeline, material) -- so a 256-slot array bound the old way would cost 256 times the
 // material count in descriptors and take the device down. Bindless replaces those bindings rather
 // than joining them: with the array in place there is nothing left that varies per material, so
-// thirteen bindings serve the whole world. See docs/bindless-attempt-notes.md.
-static Diligent::IPipelineState *g_worldPSOs[13] = { 0 };
-static Diligent::IShaderResourceBinding *g_worldSRBs[13] = { 0 };
+// one binding per world pipeline serves the whole world. See docs/bindless-attempt-notes.md.
+static Diligent::IShaderResourceBinding *g_worldSRBs[kWorldPipelines] = { 0 };
 static bool g_bindlessReady = false;
 // [rc4l] What the array was last filled FROM, so a rebuild that changes nothing rebuilds nothing.
 //
@@ -341,7 +337,7 @@ static FString g_scenePSResources;
 
 void ReleaseWorldSRBs()
 {
-	for (int i = 0; i < 13; i++)
+	for (int i = 0; i < kWorldPipelines; i++)
 		if (g_worldSRBs[i]) { g_worldSRBs[i]->Release(); g_worldSRBs[i] = NULL; }
 }
 
@@ -430,10 +426,12 @@ void RefreshBindless()
 	g_bindlessReady = false;
 	g_filledFrom.Clear();
 	ReleaseWorldSRBs();
-	for (int i = 0; i < 13; i++)
+	// [rc4l] '-' for a pipeline the fill has not reached.
+	memset(g_stats.fillState, '-', kWorldPipelines);
+	for (int i = 0; i < kWorldPipelines; i++)
 	{
-		if (!g_worldPSOs[i]) return;
-		g_worldPSOs[i]->CreateShaderResourceBinding(&g_worldSRBs[i], true);
+		if (!g_pso.world[i]) return;
+		g_pso.world[i]->CreateShaderResourceBinding(&g_worldSRBs[i], true);
 		if (!g_worldSRBs[i]) { ReleaseWorldSRBs(); return; }
 		g_stats.fillState[i] = 'b';
 		// uTex and uBrightmap are still declared and still mutable. The shader does not read them
@@ -461,8 +459,8 @@ void RefreshBindless()
 	if (!announced)
 	{
 		announced = true;
-		Printf("Diligent bindless: %d materials in %d slots, 13 bindings for the whole world" "\n",
-			MaterialSlotCount(), (int)kMaterialSlots);
+		Printf("Diligent bindless: %d materials in %d slots, %d bindings for the whole world" "\n",
+			MaterialSlotCount(), (int)kMaterialSlots, (int)kWorldPipelines);
 	}
 }
 
@@ -500,8 +498,8 @@ void CommitInLoop(Diligent::IDeviceContext *ctx, zx::hwrender::LoopCommits &loop
 Diligent::IShaderResourceBinding *WorldSRB(Diligent::IPipelineState *pso)
 {
 	if (!BindlessActive()) return NULL;
-	for (int i = 0; i < 13; i++)
-		if (g_worldPSOs[i] == pso)
+	for (int i = 0; i < kWorldPipelines; i++)
+		if (g_pso.world[i].RawPtr() == pso)
 		{
 			// [rc4l] Sprites and decals are on the array too, and the switch stays for bisecting.
 			//
@@ -509,7 +507,7 @@ Diligent::IShaderResourceBinding *WorldSRB(Diligent::IPipelineState *pso)
 			// one: a sprite whose material joined the table after the array had been filled could not be
 			// added to it, because a static variable cannot be rewritten once its pipeline has handed out
 			// a binding. Rebuilding the pipelines fixed both at once.
-			if (i >= 4 && i < 12 && !fua_dg_bindless_dyn) return NULL;
+			if (!ComputeWorldPipelineDesc(i).level && !fua_dg_bindless_dyn) return NULL;
 			return g_worldSRBs[i];
 		}
 	return NULL;
@@ -559,7 +557,6 @@ void ReleaseScenePipelines()
 	ReleasePlaneMirrors();
 	ReleaseLineMirrorPipeline();
 	ReleaseStackPortals();
-	for (int i = 0; i < 13; i++) g_worldPSOs[i] = NULL;
 	g_bindlessReady = false;
 	ReleaseBatchSRBs();
 	ReleaseMaterialSRBs();
@@ -568,19 +565,7 @@ void ReleaseScenePipelines()
 	ReleaseDecalPipelines();
 	for (unsigned i = 0; i < g_scene.batches.Size(); i++) g_scene.batches[i].srb = NULL;
 	ReleaseSkyPipelines();
-	g_pso.opaque.Release();
-	g_pso.masked.Release();
-	g_pso.maskedGBuf.Release();
-	g_pso.maskedNoCull.Release();
-	g_pso.transNoCull.Release();
-	g_pso.addNoCull.Release();
-	g_pso.maskedDecal.Release();
-	g_pso.transDecal.Release();
-	g_pso.addDecal.Release();
-	g_pso.transRedAlpha.Release();
-	g_pso.addRedAlpha.Release();
-	g_pso.trans.Release();
-	g_pso.add.Release();
+	for (auto &p : g_pso.world) p.Release();
 }
 
 // [rc4l] Sample textures the way the engine's own renderer is configured to, not the way that looks
@@ -607,11 +592,11 @@ void FillSamplerFromEngine(Diligent::SamplerDesc &samp)
 bool EnsureScenePipeline(FString &err)
 {
 	// The sampler is immutable in the PSO, so a filter change means a new PSO. Cheap and rare.
-	if (g_pso.opaque && g_builtFilter != (int)gl_texture_filter) ReleaseScenePipelines();
+	if (g_pso.world[kWpOpaque] && g_builtFilter != (int)gl_texture_filter) ReleaseScenePipelines();
 	g_builtFilter = (int)gl_texture_filter;
-	if (g_pso.opaque && g_builtCull != (int)fua_dg_cull) ReleaseScenePipelines();
+	if (g_pso.world[kWpOpaque] && g_builtCull != (int)fua_dg_cull) ReleaseScenePipelines();
 	g_builtCull = (int)fua_dg_cull;
-	if (g_pso.opaque) return true;
+	if (g_pso.world[kWpOpaque]) return true;
 	auto *dev = GetDevice();
 	auto *swap = GetSwapChain();
 	if (!dev || !swap) { err = "no device/swapchain"; return false; }
@@ -707,55 +692,30 @@ bool EnsureScenePipeline(FString &err)
 		{ Diligent::SHADER_TYPE_PIXEL, "uMaterials", samp },
 	};
 
-	// [rc4l] Four pipelines over the same vertex layout and resources:
-	//   0 opaque        no discard, depth write -- early-Z survives
-	//   1 masked        alpha test, depth write -- the world and opaque sprites
-	//   2 translucent   src-alpha blend, depth test but NO depth write
-	//   3 additive      src-alpha / one, likewise
-	// Blended geometry must not write depth, or a nearer translucent sprite would occlude the one
-	// behind it instead of letting it show through.
-	// Passes 0..3 are the world's, 4..6 repeat masked/translucent/additive with culling off for
-	// sprites. See g_pso.maskedNoCull.
-	// Passes 0..3 world, 4..6 sprites (no culling), 7..9 decals (no culling + depth bias).
-	// 10..11 are the alpha-mask decal variants (translucent and additive).
-	for (int pass = 0; pass < 13; pass++)
+	// [rc4l] Every world pipeline over the same vertex layout and resources, as ComputeWorldPipelineDesc describes it.
+	// Blended ones test depth and never write it, or a nearer translucent sprite would hide the one behind it.
+	Diligent::IShader *stages[] = { psOpaque, psMasked, psTrans, psRedAlpha, psGBuffer };
+	for (int pass = 0; pass < kWorldPipelines; pass++)
 	{
-		static const char *kNames[13] = { "fua scene PSO opaque", "fua scene PSO masked",
-		                                  "fua scene PSO translucent", "fua scene PSO additive",
-		                                  "fua sprite PSO masked", "fua sprite PSO translucent",
-		                                  "fua sprite PSO additive",
-		                                  "fua decal PSO masked", "fua decal PSO translucent",
-		                                  "fua decal PSO additive",
-		                                  "fua decal PSO redalpha translucent",
-		                                  "fua decal PSO redalpha additive",
-		                                  "fua scene PSO masked + gbuffer" };
-		// 4..6 and 7..9 both map onto shapes 1..3.
-		// [rc4l] Pass 12 is pass 1 over again with the G-buffer attached -- see kScenePSGBuffer.
-		// Only the OPAQUE world runs before the decals, and it runs through one pipeline, so this is
-		// one extra pipeline rather than a second set of twelve.
-		const bool gbuffer = (pass == 12);
-		const int shape = gbuffer ? 1 : ((pass < 4) ? pass : ((pass < 7) ? pass - 3 :
-		                  ((pass < 10) ? pass - 6 : pass - 8)));   // 10->2 trans, 11->3 additive
-		const bool noCull = (pass >= 4 && pass < 12);
-		const bool decal  = (pass >= 7 && pass < 12);
-		const bool redAlpha = (pass >= 10 && pass < 12);
-		const bool blended = (shape >= 2);
+		const WorldPipelineDesc d = ComputeWorldPipelineDesc(pass);
+		const bool gbuffer = d.stage == kWpStageGBuffer;
+		const bool blended = d.blend != kWpBlendNone;
 
 		Diligent::GraphicsPipelineStateCreateInfo pci;
-		pci.PSODesc.Name = kNames[pass];
+		pci.PSODesc.Name = d.name;
 		pci.PSODesc.PipelineType = Diligent::PIPELINE_TYPE_GRAPHICS;
 		pci.GraphicsPipeline.NumRenderTargets = gbuffer ? 2 : 1;
 		pci.GraphicsPipeline.RTVFormats[0] = swap->GetDesc().ColorBufferFormat;
 		if (gbuffer) pci.GraphicsPipeline.RTVFormats[1] = Diligent::TEX_FORMAT_RGBA8_UNORM;
 		pci.GraphicsPipeline.DSVFormat = swap->GetDesc().DepthBufferFormat;
 		pci.GraphicsPipeline.PrimitiveTopology = Diligent::PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-		pci.GraphicsPipeline.RasterizerDesc.CullMode = noCull ? Diligent::CULL_MODE_NONE :
+		pci.GraphicsPipeline.RasterizerDesc.CullMode = !d.level ? Diligent::CULL_MODE_NONE :
 			(fua_dg_cull == 1) ? Diligent::CULL_MODE_BACK :
 			(fua_dg_cull == 2) ? Diligent::CULL_MODE_FRONT : Diligent::CULL_MODE_NONE;
 		pci.GraphicsPipeline.DepthStencilDesc.DepthEnable = true;
 		pci.GraphicsPipeline.DepthStencilDesc.DepthWriteEnable = !blended;
 		ClampDepthLikeGL(pci.GraphicsPipeline);
-		if (decal)
+		if (d.depthBias)
 		{
 			// [rc4l] GL's glPolygonOffset(-1, -128): -1 times the slope and -128 resolvable steps, which on a float buffer scale with the primitive's depth; swapped, a decal seen square on had no slope to lift it and fought its wall.
 			pci.GraphicsPipeline.RasterizerDesc.DepthBias = -128;
@@ -766,8 +726,7 @@ bool EnsureScenePipeline(FString &err)
 			auto &rt = pci.GraphicsPipeline.BlendDesc.RenderTargets[0];
 			rt.BlendEnable = true;
 			rt.SrcBlend  = Diligent::BLEND_FACTOR_SRC_ALPHA;
-			rt.DestBlend = (shape == 3) ? Diligent::BLEND_FACTOR_ONE
-			                           : Diligent::BLEND_FACTOR_INV_SRC_ALPHA;
+			rt.DestBlend = (d.blend == kWpBlendAdd) ? Diligent::BLEND_FACTOR_ONE : Diligent::BLEND_FACTOR_INV_SRC_ALPHA;
 			rt.BlendOp = Diligent::BLEND_OPERATION_ADD;
 			rt.SrcBlendAlpha  = Diligent::BLEND_FACTOR_ONE;
 			rt.DestBlendAlpha = Diligent::BLEND_FACTOR_INV_SRC_ALPHA;
@@ -783,67 +742,38 @@ bool EnsureScenePipeline(FString &err)
 		pci.PSODesc.ResourceLayout.NumImmutableSamplers =
 			(Diligent::Uint32)(sizeof(samplers) / sizeof(samplers[0]));
 		pci.pVS = vs;
-		pci.pPS = gbuffer ? psGBuffer : redAlpha ? psRedAlpha :
-			(shape == 0) ? psOpaque : (shape == 1) ? psMasked : psTrans;
-
-		Diligent::RefCntAutoPtr<Diligent::IPipelineState> made;
-		dev->CreateGraphicsPipelineState(pci, &made);
-		if (pass == 0)      g_pso.opaque  = made;
-		else if (pass == 1) g_pso.masked = made;
-		else if (pass == 2) g_pso.trans  = made;
-		else if (pass == 3) g_pso.add    = made;
-		else if (pass == 4) g_pso.maskedNoCull = made;
-		else if (pass == 5) g_pso.transNoCull  = made;
-		else if (pass == 6) g_pso.addNoCull    = made;
-		else if (pass == 7) g_pso.maskedDecal  = made;
-		else if (pass == 8)  g_pso.transDecal    = made;
-		else if (pass == 9)  g_pso.addDecal      = made;
-		else if (pass == 10) g_pso.transRedAlpha = made;
-		else if (pass == 11) g_pso.addRedAlpha   = made;
-		else                 g_pso.maskedGBuf    = made;
+		pci.pPS = stages[d.stage];
+		dev->CreateGraphicsPipelineState(pci, &g_pso.world[pass]);
+		if (!g_pso.world[pass]) { err = "scene pipeline creation failed"; return false; }
 	}
-	if (!g_pso.opaque || !g_pso.masked || !g_pso.trans || !g_pso.add ||
-		!g_pso.maskedNoCull || !g_pso.transNoCull || !g_pso.addNoCull ||
-		!g_pso.maskedDecal || !g_pso.transDecal || !g_pso.addDecal ||
-		!g_pso.transRedAlpha || !g_pso.addRedAlpha || !g_pso.maskedGBuf)
-	{ err = "scene pipeline creation failed"; return false; }
 
-	// [rc4l] The sprite pipelines belong in here too. They were left out when they were added and the
-	// backend died on launch with "No resource is assigned to static shader variable 'Constants'" --
-	// a pipeline that is created but never has its statics bound is not a working pipeline.
-	Diligent::IPipelineState *psos[] = { g_pso.opaque, g_pso.masked, g_pso.trans, g_pso.add,
-	                                     g_pso.maskedNoCull, g_pso.transNoCull, g_pso.addNoCull,
-	                                     g_pso.maskedDecal, g_pso.transDecal, g_pso.addDecal,
-	                                     g_pso.transRedAlpha, g_pso.addRedAlpha, g_pso.maskedGBuf };
-	// [rc4l] Remembered as a list, because every later question about these thirteen -- fill the
-	// material array, make one binding each, find the binding for a pipeline -- is a loop over
-	// them, and a hand-written list of "the world pipelines" missed five of them once already.
+	// [rc4l] Every one has its statics bound, sprites' and decals' included: a pipeline created with none bound died on launch with "No resource is assigned to static shader variable 'Constants'".
 	ReleaseWorldSRBs();
-	for (int i = 0; i < 13; i++) g_worldPSOs[i] = psos[i];
 	g_matSlotsDirty = true;
 	// [rc4l] Nothing to pre-fill: the material array is mutable, so it belongs to each binding and is
 	// filled when that binding is made. A pipeline can hand out as many as it likes without the array
 	// ever being read from it -- which is exactly the property that was missing when it was static.
-	for (int i = 0; i < 13; i++)
+	for (int i = 0; i < kWorldPipelines; i++)
 	{
-		BindSceneConstants(psos[i]);
-		BindLightBuffers(psos[i]);
+		Diligent::IPipelineState *pso = g_pso.world[i];
+		BindSceneConstants(pso);
+		BindLightBuffers(pso);
 
 		// [rc4l] The per-piece records, read by the VERTEX stage. Shared by every world pass, so it is
 		// static like the others -- and it is why a new piece buffer means new pipelines: a static
 		// variable cannot be re-pointed once its pipeline has handed out a binding.
 		if (g_scene.pieceBuf)
 		{
-			auto *pv = psos[i]->GetStaticVariableByName(Diligent::SHADER_TYPE_VERTEX, "Pieces");
+			auto *pv = pso->GetStaticVariableByName(Diligent::SHADER_TYPE_VERTEX, "Pieces");
 			if (pv) pv->Set(g_scene.pieceBuf->GetDefaultView(Diligent::BUFFER_VIEW_SHADER_RESOURCE));
 			else g_pieceBindFailed = true;
 		}
 		if (g_scene.stackVisBuf)
-			if (auto *sv = psos[i]->GetStaticVariableByName(Diligent::SHADER_TYPE_VERTEX, "StackVis"))
+			if (auto *sv = pso->GetStaticVariableByName(Diligent::SHADER_TYPE_VERTEX, "StackVis"))
 				sv->Set(g_scene.stackVisBuf->GetDefaultView(Diligent::BUFFER_VIEW_SHADER_RESOURCE));
-		if (auto *rv = psos[i]->GetStaticVariableByName(Diligent::SHADER_TYPE_VERTEX, "SlotRemap"))
+		if (auto *rv = pso->GetStaticVariableByName(Diligent::SHADER_TYPE_VERTEX, "SlotRemap"))
 			rv->Set(g_slotRemapBuf->GetDefaultView(Diligent::BUFFER_VIEW_SHADER_RESOURCE));
-		if (auto *hv = psos[i]->GetStaticVariableByName(Diligent::SHADER_TYPE_PIXEL, "SkyHoles"))
+		if (auto *hv = pso->GetStaticVariableByName(Diligent::SHADER_TYPE_PIXEL, "SkyHoles"))
 			hv->Set(g_scene.skyHoleBuf->GetDefaultView(Diligent::BUFFER_VIEW_SHADER_RESOURCE));
 
 	}

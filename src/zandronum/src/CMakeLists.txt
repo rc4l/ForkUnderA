@@ -1702,6 +1702,7 @@ add_executable( zdoom WIN32
 	features/hwrender/computation/warp_compute.cpp
 	features/hwrender/computation/sceneconstants_compute.cpp
 	features/hwrender/computation/scenebinding_compute.cpp
+	features/hwrender/computation/worldpipelines_compute.cpp
 	features/hwrender/computation/flood_compute.cpp
 	features/hwrender/computation/planemirror_compute.cpp
 	features/hwrender/computation/skyportal_compute.cpp

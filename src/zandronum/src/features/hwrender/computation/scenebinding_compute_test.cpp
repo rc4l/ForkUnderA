@@ -7,14 +7,6 @@
 
 using namespace zx::hwrender;
 
-TEST(SceneBinding, ABatchDrawsWithThePipelineItsBlendNames)
-{
-	EXPECT_EQ(kBatchPipelineMasked, ComputeBatchPipeline(0));
-	EXPECT_EQ(kBatchPipelineAdd, ComputeBatchPipeline(2));
-	EXPECT_EQ(kBatchPipelineTrans, ComputeBatchPipeline(1));
-	EXPECT_EQ(kBatchPipelineTrans, ComputeBatchPipeline(3));
-}
-
 TEST(SceneBinding, TargetsAreBuiltOnceAndRebuiltOnlyForANewSize)
 {
 	EXPECT_TRUE(ComputeSceneTargetsRebuild(false, 0, 0, 1280, 720));

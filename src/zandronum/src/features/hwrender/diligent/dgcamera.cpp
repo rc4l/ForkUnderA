@@ -87,7 +87,7 @@ unsigned char *RenderSavePicture(int w, int h, float fovDeg)
 {
 	// [rc4l] A camera target of its own, keyed by an address no material has.
 	static const int key = 0;
-	if (!GetDevice() || !g_scene.vb || !g_pso.opaque || w <= 0 || h <= 0) return NULL;
+	if (!GetDevice() || !g_scene.vb || !g_pso.world[kWpOpaque] || w <= 0 || h <= 0) return NULL;
 	// [rc4l] GL draws it at a 1.6 ratio whatever its size, as RenderViewpoint is handed for a save.
 	RenderCameraTexture(&key, w, h, 1.6f, viewx, viewy, viewz, (unsigned int)viewangle, viewpitch, fovDeg);
 	CameraTarget *cam = GetCameraTarget(&key, w, h);
@@ -117,7 +117,7 @@ Diligent::ITextureView *GetCameraSRV(const void *material)
 void RenderCameraTexture(const void *material, int w, int h, float aspect,
                          fixed_t px, fixed_t py, fixed_t pz, unsigned int pangle, int ppitch, float fovDeg)
 {
-	if (!GetDevice() || !g_scene.vb || !g_pso.opaque) return;
+	if (!GetDevice() || !g_scene.vb || !g_pso.world[kWpOpaque]) return;
 	CameraTarget *cam = GetCameraTarget(material, w, h);
 	if (!cam) return;
 

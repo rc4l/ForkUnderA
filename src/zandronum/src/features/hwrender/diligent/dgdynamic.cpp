@@ -324,7 +324,7 @@ void BuildDynamic(Diligent::IDeviceContext *ctx)
 // which is the exact combination a model wants and the reason it needs no pipeline of its own.
 void DrawSolidDyn(Diligent::IDeviceContext *ctx)
 {
-	if (!g_dynVB || g_scene.dynRuns.Size() == 0 || !g_pso.maskedNoCull) return;
+	if (!g_dynVB || g_scene.dynRuns.Size() == 0 || !g_pso.world[kWpMaskedNoCull]) return;
 
 	Diligent::IBuffer *vbs[] = { g_dynVB };
 	const Diligent::Uint64 offsets[] = { 0 };
@@ -335,15 +335,15 @@ void DrawSolidDyn(Diligent::IDeviceContext *ctx)
 	{
 		const DynRun &r = g_scene.dynRuns[i];
 		if (r.count == 0 || !r.solid || r.blend != 0 || !zx::levelmesh::ComputeDrawsDynamicPiece(r.mirrorLine, r.stackSlot, g_pass.lineMirror, g_pass.stackSlot)) continue;
-		auto *srb = WorldSRB(g_pso.maskedNoCull.RawPtr());
+		auto *srb = WorldSRB(g_pso.world[kWpMaskedNoCull].RawPtr());
 		if (srb) g_stats.dynBindless++;
-		else { g_stats.dynPerMaterial++; srb = GetMaterialSRB(g_pso.maskedNoCull.RawPtr(), r.material, r.translation); }
+		else { g_stats.dynPerMaterial++; srb = GetMaterialSRB(g_pso.world[kWpMaskedNoCull].RawPtr(), r.material, r.translation); }
 		if (!srb) continue;
 		if (!bound)
 		{
 			ctx->SetVertexBuffers(0, 1, vbs, offsets, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
 				Diligent::SET_VERTEX_BUFFERS_FLAG_RESET);
-			ctx->SetPipelineState(g_pso.maskedNoCull);
+			ctx->SetPipelineState(g_pso.world[kWpMaskedNoCull]);
 			bound = true;
 		}
 		if (srb != committed) { CommitInLoop(ctx, commits, srb); committed = srb; }
@@ -410,11 +410,7 @@ void DrawBlended(Diligent::IDeviceContext *ctx)
 			// sprites live in one sorted list with depth writes off, and splitting them into an
 			// opaque depth-writing pass let an alpha-tested impact sprite occlude the additive glow
 			// behind it: black holes where a plasma burst's bright core should be.
-			Diligent::IPipelineState *pso = r.redAlpha
-				? ((r.blend == 2) ? g_pso.addRedAlpha.RawPtr() : g_pso.transRedAlpha.RawPtr())
-				: r.depthBias
-					? ((r.blend == 2) ? g_pso.addDecal.RawPtr()  : g_pso.transDecal.RawPtr())
-					: ((r.blend == 2) ? g_pso.addNoCull.RawPtr() : g_pso.transNoCull.RawPtr());
+			Diligent::IPipelineState *pso = g_pso.world[ComputeDynamicPipeline(r.blend, r.redAlpha, r.depthBias)].RawPtr();
 			auto *srb = WorldSRB(pso);
 			if (srb) g_stats.dynBindless++; else { g_stats.dynPerMaterial++; srb = GetMaterialSRB(pso, r.material, r.translation); }
 			if (!srb) continue;
@@ -499,7 +495,7 @@ void DrawBlended(Diligent::IDeviceContext *ctx)
 			else if (b.srb == NULL) unbound++;
 		}
 		Printf( "%u blended batches: %d empty, %d with no binding (trans PSO %s, add PSO %s)\n", g_scene.blendBatches.Size(),
-			empty, unbound, g_pso.trans ? "ok" : "NULL", g_pso.add ? "ok" : "NULL" );
+			empty, unbound, g_pso.world[kWpTrans] ? "ok" : "NULL", g_pso.world[kWpAdd] ? "ok" : "NULL" );
 		Printf( "%d translucent plane heights split the order\n", g_blendPlaneHeights );
 		Printf( "translucent pass, in draw order (first drawn = furthest back):\n" );
 		const unsigned from = (list.Size() > 40 && !g_dumpBlendAtZ) ? list.Size() - 40 : 0;   // [rc4l] the NEAREST 40; the far end is scenery
@@ -570,11 +566,7 @@ void DrawBlended(Diligent::IDeviceContext *ctx)
 		}
 		Diligent::IPipelineState *pso = !d.dyn
 			? BatchPSO(d.blend)
-			: d.red
-				? ((d.blend == 2) ? g_pso.addRedAlpha.RawPtr() : g_pso.transRedAlpha.RawPtr())
-				: d.bias
-					? ((d.blend == 2) ? g_pso.addDecal.RawPtr()  : g_pso.transDecal.RawPtr())
-					: ((d.blend == 2) ? g_pso.addNoCull.RawPtr() : g_pso.transNoCull.RawPtr());
+			: g_pso.world[ComputeDynamicPipeline(d.blend, d.red, d.bias)].RawPtr();
 		if (!pso) { idxCursor += d.count; continue; }
 		if (pso != bound) { ctx->SetPipelineState(pso); bound = pso; boundSRB = NULL; }
 		// The pipeline is only known here -- the pass sorts by distance, not by material -- so this is

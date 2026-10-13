@@ -534,7 +534,7 @@ CCMD( fua_dg_srbcost )
 	Printf( "a %d-slot STATIC sampler array would add %lld combined-image-sampler descriptors" "\n",
 		slots, (long long)slots * (long long)srbs );
 	Printf( "one SRB per pipeline instead -- which is what bindless is FOR -- would add %d" "\n",
-		slots * 13 );
+		slots * (int)zx::hwrender::kWorldPipelines );
 }
 
 CCMD( fua_diligent_scale )

@@ -42,6 +42,7 @@
 #include "features/hwrender/computation/warp_compute.h"   // [rc4l] the warp texture ripple
 #include "features/hwrender/computation/sceneconstants_compute.h"   // [rc4l] the constant block, packed in one place
 #include "features/hwrender/computation/scenebinding_compute.h"
+#include "features/hwrender/computation/worldpipelines_compute.h"   // [rc4l] the world pipelines, described once
 #include "features/hwrender/computation/planemirror_compute.h"   // [rc4l] reflective floors and ceilings   // [rc4l] a batch's pipeline, and when a resize rebuilds the targets
 #include "features/hwrender/computation/growbuffer_compute.h"   // [rc4l] the per-frame vertex streams
 #include "features/hwrender/computation/texfilter_compute.h"   // [rc4l] the engine's filter modes
@@ -265,27 +266,24 @@ extern SceneGeometry g_scene;
 // [rc4l] The world pipelines, one per blend mode and variant, and the two bindings the per-material path draws through.
 struct ScenePipelines
 {
-	Diligent::RefCntAutoPtr<Diligent::IPipelineState> opaque;       // [rc4l] early-Z intact
-	Diligent::RefCntAutoPtr<Diligent::IPipelineState> masked;       // [rc4l] alpha-tested
-	Diligent::RefCntAutoPtr<Diligent::IPipelineState> maskedGBuf;   // [rc4l] alpha-tested and writing normals
-	Diligent::RefCntAutoPtr<Diligent::IPipelineState> trans;        // [rc4l] normal translucency
-	Diligent::RefCntAutoPtr<Diligent::IPipelineState> add;          // [rc4l] additive
-	// [rc4l] The same four with culling forced off, for SPRITES.
+	// [rc4l] One per WorldPipeline, as ComputeWorldPipelineDesc describes it.
+	//
+	// The sprite pipelines have culling forced off:
 	//
 	// Backface culling is right for the world and wrong for billboards: a sprite quad is built facing
 	// the camera and nothing guarantees its winding survives every view angle, so a world-wide cull mode
 	// would silently eat some of them. The world's setting must not be able to reach them, so they get
 	// their own pipelines rather than a promise that the winding works out.
-	Diligent::RefCntAutoPtr<Diligent::IPipelineState> maskedNoCull, transNoCull, addNoCull;
-	// [rc4l] And again with a depth bias, for DECALS.
+	//
+	// The decal pipelines add a depth bias:
 	//
 	// A decal is a quad glued flat against the wall it marks, exactly coplanar with it, so it z-fights
 	// without help -- GL wraps its decal pass in glPolygonOffset(-1, -128) for the same reason. The bias
 	// belongs in the pipeline rather than in the geometry: nudging the vertices towards the camera would
 	// have to know where the camera is, which is exactly what a baked or streamed vertex must not.
-	Diligent::RefCntAutoPtr<Diligent::IPipelineState> maskedDecal, transDecal, addDecal;
-	// [rc4l] And the alpha-mask variants of the same, for shaded decals. See kScenePSRedAlpha.
-	Diligent::RefCntAutoPtr<Diligent::IPipelineState> transRedAlpha, addRedAlpha;
+	//
+	// The red-alpha decal pipelines take kScenePSRedAlpha, for shaded decals.
+	Diligent::RefCntAutoPtr<Diligent::IPipelineState> world[kWorldPipelines];
 };
 extern ScenePipelines g_pso;
 
@@ -327,7 +325,7 @@ struct SceneStats
 	int     dynSlotRefused = 0, dynSlotNoMaterial = 0, dynSlotSeen = 0, dynSlotMax = 0;
 	int     dynSlotUnfilled = 0, dynSlotUnfilledTotal = 0;   // [rc4l] dynamic slots past the array's fill this frame and since load
 	// [rc4l] Per pipeline: '-' untouched, 'x' the array is not there, 'f' filled, 'b' filled and bound.
-	char    fillState[14] = "-------------";
+	char    fillState[kWorldPipelines + 1] = {};
 	FString fillNames[8];
 	const void *fillViews[8] = {};
 	int     fillCount = 0, remapUploads = 0, matSlotsWhite = 0;
