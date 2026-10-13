@@ -1662,6 +1662,7 @@ add_executable( zdoom WIN32
 	features/frame/computation/debugorbit_compute.cpp
 	features/framephase/computation/framephase_compute.cpp
 	features/frameclock/computation/frameclock_compute.cpp
+	features/dynlights/computation/nodeindex_compute.cpp
 	features/cvar-alias/computation/cvaralias_compute.cpp
 	features/rendersettings/computation/forcedvideo_compute.cpp
 	features/display/computation/display_compute.cpp

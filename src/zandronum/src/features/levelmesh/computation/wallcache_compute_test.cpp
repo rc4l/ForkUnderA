@@ -225,3 +225,15 @@ TEST(WallCacheCompute, APartIsDrawnAsItsKindOfWallPiece)
 	EXPECT_EQ(RENDERWALL_NONE, ComputePartRenderType(kWallParts, true));
 	EXPECT_EQ(RENDERWALL_NONE, ComputePartRenderType(-1, false));
 }
+
+// [rc4l] A frame past its budget leaves a relight for the next frames, but none past the next tic, and never a moved or retextured sector.
+TEST(RelightBudget, OnlyARelightPastTheBudgetWaitsAndNotPastTheNextTic)
+{
+	EXPECT_TRUE(ComputeHoldRelight(kSectorRelit, true, -1, 10));
+	EXPECT_TRUE(ComputeHoldRelight(kSectorRelit, true, 10, 10));
+	EXPECT_FALSE(ComputeHoldRelight(kSectorRelit, true, 9, 10));
+	EXPECT_FALSE(ComputeHoldRelight(kSectorRelit, false, -1, 10));
+	EXPECT_FALSE(ComputeHoldRelight(kSectorMoved, true, -1, 10));
+	EXPECT_FALSE(ComputeHoldRelight(kSectorRetextured, true, -1, 10));
+	EXPECT_FALSE(ComputeHoldRelight(kSectorSame, true, -1, 10));
+}

@@ -49,6 +49,7 @@
 
 #include "features/dynlights/dynlight.h"
 #include "features/sprites/spriteframe.h"   // [rc4l] gl_GetSpriteFrame, for the light list's frame names
+#include "features/dynlights/computation/nodeindex_compute.h"   // [rc4l] a relinking light's nodes by what they link to
 
 EXTERN_CVAR (Float, gl_lights_size);
 EXTERN_CVAR (Bool, gl_lights_additive);
@@ -360,8 +361,9 @@ void ADynamicLight::UpdateLocation()
 
 		// The radius being used here is always the maximum possible with the
 		// current settings. This avoids constant relinking of flickering lights
+		// [rc4l] ...and of pulsing ones, as later GZDoom does: a pulse relinked every tic it grew or shrank, 18 lights touching 77 subsectors each a tic on Sunder MAP14, while both renderers light by the current radius (GetRadius) and stop at it.
 
-		if (lighttype == FlickerLight || lighttype == RandomFlickerLight) 
+		if (lighttype == FlickerLight || lighttype == RandomFlickerLight || lighttype == PulseLight) 
 		{
 			intensity = float(MAX(m_intensity[0], m_intensity[1]));
 		}
@@ -436,20 +438,19 @@ size_t ADynamicLight::PointerSubstitution (DObject *old, DObject *notOld)
 //
 //=============================================================================
 
+// [rc4l] The relinking light's nodes by target, built by LinkLight: walking the light's list for each target made a relink of a light touching n of them n*n, half of a Sunder MAP14 tic.
+static zx::dynlights::PointerIndex g_linkIndex;
+
 FLightNode * AddLightNode(FLightNode ** thread, void * linkto, ADynamicLight * light, FLightNode *& nextnode)
 {
 	FLightNode * node;
 
-	node = nextnode;
-	while (node)
-    {
-		if (node->targ==linkto)   // Already have a node for this sector?
-		{
-			node->lightsource = light; // Yes. Setting m_thing says 'keep it'.
-			return(nextnode);
-		}
-		node = node->nextTarget;
-    }
+	node = (FLightNode *)zx::dynlights::ComputePointerIndexFind(g_linkIndex, linkto);
+	if (node != NULL)   // Already have a node for this sector?
+	{
+		node->lightsource = light; // Yes. Setting m_thing says 'keep it'.
+		return(nextnode);
+	}
 
 	// Couldn't find an existing node for this sector. Add one at the head
 	// of the list.
@@ -470,6 +471,8 @@ FLightNode * AddLightNode(FLightNode ** thread, void * linkto, ADynamicLight * l
 	node->nextLight = *thread; 
 	if (node->nextLight) node->nextLight->prevLight=&node->nextLight;
 	*thread = node;
+	// [rc4l] A sidedef two linedefs share is reached twice in one relink, and the second time must find this node as the list walk did.
+	zx::dynlights::ComputePointerIndexPut(g_linkIndex, linkto, node);
 	return(node);
 }
 
@@ -593,23 +596,28 @@ void ADynamicLight::LinkLight()
 {
 	// mark the old light nodes
 	FLightNode * node;
+	// [rc4l] ...and index them by target for AddLightNode; a side, a subsector and a sector are never the same object, so one index serves all three lists.
+	zx::dynlights::ComputePointerIndexReset(g_linkIndex, 64);
 	
 	node = touching_sides;
 	while (node)
     {
 		node->lightsource = NULL;
+		zx::dynlights::ComputePointerIndexPut(g_linkIndex, node->targ, node);
 		node = node->nextTarget;
     }
 	node = touching_subsectors;
 	while (node)
     {
 		node->lightsource = NULL;
+		zx::dynlights::ComputePointerIndexPut(g_linkIndex, node->targ, node);
 		node = node->nextTarget;
     }
 	node = touching_sector;
 	while (node)
 	{
 		node->lightsource = NULL;
+		zx::dynlights::ComputePointerIndexPut(g_linkIndex, node->targ, node);
 		node = node->nextTarget;
 	}
 

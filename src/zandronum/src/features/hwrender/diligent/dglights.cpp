@@ -275,12 +275,13 @@ void CollectDynamicLights(Diligent::IDeviceContext *ctx)
 			if ((size_t)g_lightCount >= links.size()) links.resize(g_lightCount + 1);
 			LightLinks &ll = links[g_lightCount];
 			const zx::hwrender::LightLinkKey kept = { ll.light, ll.x.Raw(), ll.y.Raw(), ll.z.Raw(), ll.radius };
-			const zx::hwrender::LightLinkKey now = { light, light->x.Raw(), light->y.Raw(), light->z.Raw(), light->GetRadius() };
+			// [rc4l] Keyed on how far the light is linked (radius), not how far it lights (GetRadius), which a pulse changes every tic without relinking.
+			const zx::hwrender::LightLinkKey now = { light, light->x.Raw(), light->y.Raw(), light->z.Raw(), FIXED2FLOAT(light->radius) };
 			if (zx::hwrender::ComputeLightLinksStale(kept, now))
 			{
 				ll.light = light;
 				ll.x = light->x; ll.y = light->y; ll.z = light->z;
-				ll.radius = light->GetRadius();
+				ll.radius = FIXED2FLOAT(light->radius);
 				CollectLightLinks(light, ll.ids);
 				zx::hwrender::ComputeSortedTouches(ll.ids);
 			}
