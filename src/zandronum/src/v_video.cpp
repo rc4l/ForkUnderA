@@ -168,6 +168,8 @@ CVAR (Int, vid_defheight, 480, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 int zx_pendingClientWidth = 0, zx_pendingClientHeight = 0;
 CVAR (Int, vid_defbits, 8, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 CVAR (Bool, vid_fps, false, 0)
+// [rc4l] How many times larger vid_fps draws its 8x8 text, which is otherwise tiny at high resolutions.
+CVAR (Int, fua_fps_scale, 1, CVAR_ARCHIVE)
 CVAR (Bool, ticker, false, 0)
 CVAR (Int, vid_showpalette, 0, 0)
 
@@ -910,7 +912,6 @@ void DFrameBuffer::DrawRateStuff ()
 		{
 			char fpsbuff[40];
 			int chars;
-			int rate_x;
 
 			// [rc4l] features/hwrender: with the backend drawing too, both windows share this loop's rate, so each shows its own renderer's frame time instead, GL's line for GL's window and the backend's for its own.
 			const bool perRenderer = zx::hwrender::BackendRateLive();
@@ -924,9 +925,11 @@ void DFrameBuffer::DrawRateStuff ()
 					zx::hwrender::Set2DTarget(line ? zx::hwrender::k2DBackendOnly : zx::hwrender::k2DGLOnly);
 				}
 				else chars = mysnprintf (fpsbuff, countof(fpsbuff), "%2u ms (%3u fps)", howlong, LastCount);
-				rate_x = Width - chars * 8;
-				Clear (rate_x, 0, Width, 8, GPalette.BlackIndex, 0);
-				DrawText (ConFont, CR_WHITE, rate_x, 0, (char *)&fpsbuff[0], TAG_DONE);
+				// [rc4l] Drawn on a canvas fua_fps_scale times smaller than the screen, so each glyph comes out that many times larger.
+				const zx::hwrender::RateBox box = zx::hwrender::ComputeRateBox(Width, Height, chars, fua_fps_scale);
+				Clear (box.boxLeft, 0, Width, box.boxHeight, GPalette.BlackIndex, 0);
+				DrawText (ConFont, CR_WHITE, box.x, 0, (char *)&fpsbuff[0],
+					DTA_VirtualWidth, box.virtualWidth, DTA_VirtualHeight, box.virtualHeight, DTA_KeepRatio, true, TAG_DONE);
 			}
 			zx::hwrender::Set2DTarget(zx::hwrender::k2DBoth);
 

@@ -75,7 +75,7 @@ ones. A build without the backend (`FUA_DILIGENT` off, every non-Windows build) 
 | `features/frame/framedriver.cpp` | `FrameRouteNow` (`features/frame/computation/frameroute_compute`) | which renderers draw the frame |
 | `features/sidebyside/sidebyside.cpp` | `FrameRouteNow` | whether GL presents, which is whenever it draws |
 | `features/visibility/viswalk.cpp` | `SetSkyFog` | the sky's fade layer, derived from the walk |
-| `v_video.cpp` | `BackendRateLive`, `RendererRateShown`, `ComputeRateText`, `Set2DTarget` | `vid_fps` shows each window its own renderer's frame time |
+| `v_video.cpp` | `BackendRateLive`, `RendererRateShown`, `ComputeRateText`, `ComputeRateBox`, `Set2DTarget` | `vid_fps` shows each window its own renderer's frame time, `fua_fps_scale` times larger |
 | `win32/hardware.cpp` | `BackendOnly`, `BeginBackendOnly`, `CreateBackendRenderer` | the renderer of a launch without GL |
 | `win32/win32gliface.cpp` | `BackendOnly`, `CreateBackendFrameBuffer` | no pixel format or context, and the backend's frame buffer |
 | `features/sidebyside/sidebyside.cpp` | `Record2DCanvas`, `Get2DTarget` | GL's frame buffer records every 2D draw for the backend, and GL leaves out one meant for the backend's window alone |

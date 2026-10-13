@@ -53,3 +53,41 @@ TEST(RendererRateCompute, TheLineNamesTheRendererAndFitsItsBuffer)
 	EXPECT_EQ(0, ComputeRateText(NULL, 0, "VK", 1, 1));
 	EXPECT_EQ(0, ComputeRateText(buf, 0, "VK", 1, 1));
 }
+
+// [rc4l] The counter's 8x8 glyphs were a fixed size in screen pixels, unreadable at high resolutions.
+TEST(RendererRateCompute, TheCounterScalesFromTheTopRight)
+{
+	RateBox b = ComputeRateBox(1280, 800, 20, 1);
+	EXPECT_EQ(1, b.scale);
+	EXPECT_EQ(1280, b.virtualWidth);
+	EXPECT_EQ(800, b.virtualHeight);
+	EXPECT_EQ(1280 - 160, b.x);
+	EXPECT_EQ(1280 - 160, b.boxLeft);
+	EXPECT_EQ(8, b.boxHeight);
+	b = ComputeRateBox(1280, 800, 20, 2);
+	EXPECT_EQ(640, b.virtualWidth);
+	EXPECT_EQ(400, b.virtualHeight);
+	EXPECT_EQ(640 - 160, b.x);
+	EXPECT_EQ(1280 - 320, b.boxLeft);
+	EXPECT_EQ(16, b.boxHeight);
+}
+
+TEST(RendererRateCompute, AScaleThatDoesNotDivideTheScreenStillCoversTheText)
+{
+	const RateBox b = ComputeRateBox(1280, 800, 20, 3);
+	EXPECT_EQ(426, b.virtualWidth);
+	EXPECT_EQ(266, b.virtualHeight);
+	EXPECT_EQ(426 - 160, b.x);
+	EXPECT_EQ(266 * 1280 / 426, b.boxLeft);   // [rc4l] where the draw puts the first glyph
+	EXPECT_EQ(25, b.boxHeight);               // [rc4l] 8 * 800 / 266 = 24.06, rounded up
+}
+
+TEST(RendererRateCompute, TheScaleIsAtLeastOneAndNoLargerThanFits)
+{
+	EXPECT_EQ(1, ComputeRateBox(1280, 800, 20, 0).scale);
+	EXPECT_EQ(1, ComputeRateBox(1280, 800, 20, -4).scale);
+	EXPECT_EQ(8, ComputeRateBox(1280, 800, 20, 8).scale);
+	EXPECT_EQ(4, ComputeRateBox(640, 480, 20, 8).scale);    // [rc4l] 20 glyphs of 32 is the whole width
+	EXPECT_EQ(2, ComputeRateBox(320, 20, 2, 8).scale);      // [rc4l] and as tall as the screen allows
+}
+
