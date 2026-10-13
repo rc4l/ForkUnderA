@@ -74,7 +74,7 @@ void FillPieceDataWith(const zx::levelmesh::MeshPiece &p, const PieceSlotSet &sl
 	}
 	pd.scrollU = p.scrollU; pd.scrollV = p.scrollV;
 	pd.texFlags = (p.stencil ? 1.f : 0.f) + (p.alphaTest ? 2.f : 0.f) + (p.hud ? 4.f : 0.f) + (inMesh ? 8.f : 0.f) +
-		(p.inverse ? 16.f : 0.f) + (p.colorBlend ? 32.f : 0.f) + (p.fogLayer ? 64.f : 0.f) + (float)(p.fuzz * 128);
+		(p.inverse ? 16.f : 0.f) + (p.colorBlend ? 32.f : 0.f) + (p.fogLayer ? 64.f : 0.f) + (float)(p.fuzz * 128) + (p.fogBoundary ? 1024.f : 0.f);
 }
 
 // [rc4l] Where each piece's vertices ended up, so a moved one can be patched instead of rebuilt.

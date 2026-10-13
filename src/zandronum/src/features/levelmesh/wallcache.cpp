@@ -18,6 +18,7 @@
 #include "features/surfaces/walltypes.h"   // [rc4l] RENDERWALL_*
 #include "features/levelmesh/computation/wallbatch_compute.h"   // [rc4l] ComputeFanTriangleVertex
 #include "features/levelmesh/computation/wallglow_compute.h"   // [rc4l] ComputeWallTakesGlow
+#include "features/levelmesh/computation/fogboundary_compute.h"   // [rc4l] ComputeFogBoundary, ComputeFogSheetOpening
 #include "features/materials/materials.h"
 #include "features/materials/computation/texcoord_compute.h"   // [rc4l] FTexCoordInfo
 #include "features/hwrender/computation/walllight_compute.h"
@@ -214,7 +215,9 @@ static bool SegOwnsItsSide(int segIndex)
 // [rc4l] Where the 3D floor faces live, above the parts. A sidedef with more slabs than this keeps
 // as many as fit, which is a missing face on one wall rather than a wrong one everywhere.
 static const int kFFSlot0 = 3 * kBandsPerPart;
-static const int kMaxFFBlocks = kMaxMapPieces - kFFSlot0;
+// [rc4l] The last slot holds the fog boundary sheet, so the slabs take the rest.
+static const int kFogSheetSlot = kMaxMapPieces - 1;
+static const int kMaxFFBlocks = kFogSheetSlot - kFFSlot0;
 
 // The rovers that produced each block, so the emitter can read their flags back.
 static F3DFloor *g_ffRoverOf[16];
@@ -529,6 +532,70 @@ static bool RescrollSide(int sideIndex)
 			moved.scrollV = dv[part];
 			MeshRegisterPiece(moved);
 		}
+	return true;
+}
+
+// [rc4l] Whether a missing upper or lower: no texture, or the null one.
+static bool PartMissing(const side_t *side, int part)
+{
+	FTexture *tex = TexMan(side->GetTexture(part));
+	return tex == NULL || tex->UseType == FTexture::TEX_Null;
+}
+
+// [rc4l] GL's fog boundary sheet on a line from a fogged sector into a clear one (gl_CheckFog), over the opening DoMidTexture gives it: one translucent piece the shader paints in the fog's colour at its density.
+static bool BakeFogSheet(const seg_t *seg, MeshRange &range, const zx::surfaces::DerivedWallLight &dl, FDynamicColormap *cmFrom)
+{
+	sector_t *front = seg->frontsector, *back = seg->backsector;
+	if (back == NULL || (seg->sidedef->Flags & WALLF_POLYOBJ)) return false;
+	const zx::levelmesh::FogRules rules = { outsidefogdensity, outsidefogcolor.d, fogdensity, (glset.lightmode & 4) != 0 };
+	const zx::levelmesh::FogSide fs = { front->ColorMap->Fade.d & 0xffffff, front->lightlevel };
+	const zx::levelmesh::FogSide bs = { back->ColorMap->Fade.d & 0xffffff, back->lightlevel };
+	if (!zx::levelmesh::ComputeFogBoundary(fs, bs, rules, front == back)) return false;
+
+	// [rc4l] The whole linedef, in the order its side is drawn, as GLWall::Process takes an ordinary wall.
+	const line_t *line = seg->linedef;
+	const bool frontSide = seg->sidedef == line->sidedef[0];
+	const vertex_t *va = frontSide ? line->v1 : line->v2, *vb = frontSide ? line->v2 : line->v1;
+	const float x1 = FIXED2FLOAT(va->x), y1 = FIXED2FLOAT(va->y), x2 = FIXED2FLOAT(vb->x), y2 = FIXED2FLOAT(vb->y);
+	zx::levelmesh::MidOpeningIn in;
+	zx::levelmesh::ComputeBandBottomAtEnds(ToBandPlane(front->ceilingplane), x1, y1, x2, y2, in.frontCeiling);
+	zx::levelmesh::ComputeBandBottomAtEnds(ToBandPlane(front->floorplane), x1, y1, x2, y2, in.frontFloor);
+	zx::levelmesh::ComputeBandBottomAtEnds(ToBandPlane(back->ceilingplane), x1, y1, x2, y2, in.backCeiling);
+	zx::levelmesh::ComputeBandBottomAtEnds(ToBandPlane(back->floorplane), x1, y1, x2, y2, in.backFloor);
+	in.upperMissing = PartMissing(seg->sidedef, side_t::top);
+	in.lowerMissing = PartMissing(seg->sidedef, side_t::bottom);
+	in.frontCeilingSky = front->GetTexture(sector_t::ceiling) == skyflatnum;
+	in.backCeilingSky = back->GetTexture(sector_t::ceiling) == skyflatnum;
+	float top[2], bottom[2];
+	if (!zx::levelmesh::ComputeFogSheetOpening(in, top, bottom)) return false;
+
+	MeshVertex fan[4], tris[6];
+	fan[0].Set(x1, bottom[0], y1, 0.f, 0.f);
+	fan[1].Set(x1, top[0],    y1, 0.f, 0.f);
+	fan[2].Set(x2, top[1],    y2, 0.f, 0.f);
+	fan[3].Set(x2, bottom[1], y2, 0.f, 0.f);
+	int w = 0;
+	for (int t = 0; t < 2; t++)
+		for (int c = 0; c < 3; c++)
+			tris[w++] = fan[ComputeFanTriangleVertex(4, t, c)];
+	if (!MeshStore(range, tris, w)) return false;
+
+	MeshPiece mp;
+	mp.range = range;
+	mp.material = NULL;
+	FColormap cm;
+	cm = cmFrom;
+	// [rc4l] RenderFogBoundary's gl_SetFog: the wall's own light and its sector's fog.
+	zx::levelmesh::CaptureLevelShading(dl.lightLevel, dl.relLight + getExtraLight(), cm, mp, false);
+	mp.lightLevel = dl.lightLevel;
+	mp.lightColor = cm.LightColor.d;
+	mp.fadeColor = cm.FadeColor.d;
+	mp.fogBoundary = true;
+	mp.blendMode = 1;
+	const float dx = x2 - x1, dy = y2 - y1;
+	const float len = sqrtf(dx*dx + dy*dy);
+	if (len > 0.0001f) { mp.normX = dy / len; mp.normY = 0.f; mp.normZ = -dx / len; }
+	RegisterSegPiece(mp, seg);
 	return true;
 }
 
@@ -940,6 +1007,10 @@ int BakeSegFromMap(int segIndex)
 	{
 		for (int k = 0; k < kMaxFFBlocks; k++) MeshSquash(sc.pieces[kFFSlot0 + k].range);
 	}
+
+	// [rc4l] ...and a fog boundary sheet where a fogged sector meets a clear one.
+	if (BakeFogSheet(seg, sc.pieces[kFogSheetSlot].range, dl, cmFrom)) { sc.hasOwnLitPiece = true; made++; }
+	else MeshSquash(sc.pieces[kFogSheetSlot].range);
 
 	sc.bakedCount = kMaxMapPieces;
 	return made;

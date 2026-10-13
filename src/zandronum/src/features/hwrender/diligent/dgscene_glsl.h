@@ -522,8 +522,15 @@ static const char *kScenePSTrans =
 	"#version 450\n"
 	FUA_LIGHT_GLSL
 	"void main() {\n"
+	/* [rc4l] A fog boundary sheet (texFlags 1024) is fogboundary.fp: its fog's colour at the fog's opacity there, none with fog off or under a fixed colormap, as gl_CheckFog and RenderFogBoundary decide. */
+	"    if ((int(vTexFlags + 0.5) & 1024) != 0) {\n"
+	"        if (uFixedColormap.w > 0.5 || vFog.a == 0.0) discard;\n"
+	FUA_MIRROR_CLIP_GLSL("vPixelPos.xyz")
+	"        outColor = vec4(vFog.rgb, 1.0 - fuaFogFactor(vFog.a, vLightParm.y, vPixelPos, uCameraPos.xyz));\n"
+	"        return;\n"
+	"    }\n"
 	/* [rc4l] A fuzzy sprite under gl_fuzztype takes GL's fuzz shader (texFlags / 128), the jagged one sampling a splat of its coordinate. */
-	"    int fuzz = int(vTexFlags + 0.5) >> 7;\n"
+	"    int fuzz = (int(vTexFlags + 0.5) >> 7) & 7;\n"
 	"    vec4 t = fuaTexMode(fuaTexel(fuzz == 5 ? fuaFuzzSplat(vUV, uFrame.x) : vUV));\n"
 	"    if (fuzz > 0) t = fuaFuzz(fuzz, vUV, uFrame.x, t);\n"
 	/* [rc4l] An alpha-tested sprite drops what GL's uAlphaThreshold drops (uFrame.w); anything else only what is all but invisible. */

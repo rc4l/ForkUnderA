@@ -170,7 +170,7 @@ struct ScenePieceData
 	float brightSlot, stackId, animates, plain;
 	// [rc4l] A wall's glow (MeshPiece::glowTop and the rest): two colours with their heights, and the ceiling and floor planes they are measured from.
 	float glowTop[4], glowBottom[4], glowTopPlane[4], glowBottomPlane[4];
-	float desaturation, scrollU, scrollV, texFlags;   // [rc4l] the colormap's desaturation, 0..1, which main.fp mixes every texel toward grey by, the texture shift a scroller added since the bake, and 1 for a stencil plus 2 for an alpha-tested sprite plus 4 for a HUD model's surface plus 8 for a level surface, whose colour is its light alone, plus 16 for TM_INVERSE, 32 for a sprite blended by its own colour, 64 for a 3D fog layer's panel and 128 times its fuzz shader
+	float desaturation, scrollU, scrollV, texFlags;   // [rc4l] the colormap's desaturation, 0..1, which main.fp mixes every texel toward grey by, the texture shift a scroller added since the bake, and 1 for a stencil plus 2 for an alpha-tested sprite plus 4 for a HUD model's surface plus 8 for a level surface, whose colour is its light alone, plus 16 for TM_INVERSE, 32 for a sprite blended by its own colour, 64 for a 3D fog layer's panel, 128 times its fuzz shader and 1024 for a fog boundary sheet
 };
 
 // [rc4l] One draw per material. Pieces arrive in bake order, so they are sorted by material first;
