@@ -51,7 +51,7 @@
 #include "gl/renderer/gl_renderstate.h"
 #include "gl/scene/gl_drawinfo.h"
 #include "gl/shaders/gl_shader.h"
-#include "gl/textures/gl_texture.h"
+#include "features/materials/textureinfo.h"
 #include "gl/textures/gl_material.h"
 #include "gl/utility/gl_clock.h"
 

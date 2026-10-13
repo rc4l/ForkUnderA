@@ -1,20 +1,21 @@
-#ifndef __GL_BITMAP_H
-#define __GL_BITMAP_H
+// [rc4l] GL's FGLBitmap, moved from gl/textures/gl_bitmap.h: a true-colour bitmap that pixels are composed into under a translation, for any renderer.
+
+#ifndef ZX_TEXTUREBITMAP_H
+#define ZX_TEXTUREBITMAP_H
 
 #include "textures/bitmap.h"
-#include "gl/textures/gl_material.h"
 
 
-class FGLBitmap : public FBitmap
+class FTextureBitmap : public FBitmap
 {
 	int translation;
 public:
 
-	FGLBitmap()
+	FTextureBitmap()
 	{
 		translation = 0;
 	}
-	FGLBitmap(BYTE *buffer, int pitch, int width, int height)
+	FTextureBitmap(BYTE *buffer, int pitch, int width, int height)
 		: FBitmap(buffer, pitch, width, height)
 	{
 		translation = 0;

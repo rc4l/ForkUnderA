@@ -51,9 +51,9 @@
 #include "gl/scene/gl_drawinfo.h"
 #include "gl/scene/gl_portal.h"
 #include "gl/shaders/gl_shader.h"
-#include "gl/textures/gl_bitmap.h"
-#include "gl/textures/gl_texture.h"
-#include "gl/textures/gl_skyboxtexture.h"
+#include "features/materials/texturebitmap.h"
+#include "features/materials/textureinfo.h"
+#include "features/materials/skyboxtexture.h"
 #include "gl/textures/gl_material.h"
 
 

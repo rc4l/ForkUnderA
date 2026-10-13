@@ -392,7 +392,7 @@ void FHardwareTexture::UnbindAll()
 	{
 		Unbind(texunit);
 	}
-	FMaterial::ClearLastTexture();
+	gl_ClearLastMaterial();
 }
 
 //===========================================================================

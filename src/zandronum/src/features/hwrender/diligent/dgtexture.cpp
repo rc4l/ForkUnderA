@@ -159,11 +159,11 @@ Diligent::ITextureView *GetBrightmapSRV(const void *materialPtr)
 
 Diligent::ITextureView *GetMaterialSRV(const void *materialPtr, int translation)
 {
-	// [rc4l] Normalise the translation exactly as FGLTexture::Bind does, because the number arrives
+	// [rc4l] Normalise the translation exactly as GL binding a material does, because the number arrives
 	// in one of two different namespaces and they are indistinguishable by sign alone at the call
 	// site that consumes it.
 	//
-	// Negative means "already a GLTranslationPalette index, negate it". Positive means "a game
+	// Negative means "already a FTranslationPalette index, negate it". Positive means "a game
 	// translation" -- an actor's thing->Translation -- which has to be looked up to get the internal
 	// index. Feeding a game translation straight to CreateTexBuffer indexes the palette array with a
 	// number from the wrong namespace, and the sprite comes out as scattered rainbow pixels, which is

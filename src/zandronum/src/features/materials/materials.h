@@ -81,6 +81,8 @@ void MaterialStoredSize(MaterialRef m, int &width, int &height);
 // [rc4l] How a wall's texture coordinates scale and offset on the material at a sidedef's scale, as FMaterial::GetTexCoordInfo works them out.
 void MaterialTexCoordInfo(MaterialRef m, FTexCoordInfo *tci, fixed_t xscale, fixed_t yscale);
 
+// [rc4l] What the device textures are made for holds: whether a side may be any size, and the largest side (0 for no limit); GL sets them from its context.
+void SetTextureLimits(bool anySize, int maxSize);
 // [rc4l] Set up the texture system for a launch with no GL context: what gl_LoadExtensions would find on any card the backend runs on, and its largest texture.
 void AssumeBackendTextures(int maxTextureSize);
 // [rc4l] The brightmap colormap textures are made against, again after the palette loads.

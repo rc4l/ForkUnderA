@@ -2,18 +2,15 @@
 // Copyright (C) 2026 rc4l
 
 #include "features/hwshaders/hwshaders.h"   // [rc4l] UserShaderOf
-#include "gl/system/gl_system.h"
 #include "features/materials/materials.h"
 #include "w_wad.h"   // [rc4l] the special textures' lumps
 
 #include "textures/textures.h"
-#include "gl/textures/gl_material.h"
-#include "gl/textures/gl_skyboxtexture.h"   // [rc4l] FSkyBox
-#include "gl/textures/gl_texture.h"   // [rc4l] gl_GenerateGlobalBrightmapFromColormap
-#include "gl/textures/gl_hwtexture.h"   // [rc4l] GetTexDimension
-#include "gl/textures/gl_translate.h"   // [rc4l] GLTranslationPalette
+#include "features/materials/material.h"
+#include "features/materials/skyboxtexture.h"   // [rc4l] FSkyBox
+#include "features/materials/textureinfo.h"   // [rc4l] gl_GenerateGlobalBrightmapFromColormap
+#include "features/materials/translationpalette.h"   // [rc4l] FTranslationPalette
 #include "r_data/r_translate.h"         // [rc4l] FRemapTable
-#include "gl/system/gl_interface.h"     // [rc4l] gl.flags, whether trimmed sprite coordinates are usable
 
 namespace zx { namespace materials {
 
@@ -68,10 +65,19 @@ void MaterialRenderSize(MaterialRef m, int &width, int &height)
 	height = Mat(m)->TextureHeight();
 }
 
+static bool g_anySize = false;
+static int g_maxTextureSize = 0;
+
+void SetTextureLimits(bool anySize, int maxSize)
+{
+	g_anySize = anySize;
+	g_maxTextureSize = maxSize;
+}
+
 void MaterialStoredSize(MaterialRef m, int &width, int &height)
 {
-	width = FHardwareTexture::GetTexDimension(Mat(m)->GetWidth());
-	height = FHardwareTexture::GetTexDimension(Mat(m)->GetHeight());
+	width = ComputeStoredDimension(Mat(m)->GetWidth(), g_maxTextureSize);
+	height = ComputeStoredDimension(Mat(m)->GetHeight(), g_maxTextureSize);
 }
 
 void MaterialTexCoordInfo(MaterialRef m, FTexCoordInfo *tci, fixed_t xscale, fixed_t yscale)
@@ -81,8 +87,7 @@ void MaterialTexCoordInfo(MaterialRef m, FTexCoordInfo *tci, fixed_t xscale, fix
 
 void AssumeBackendTextures(int maxTextureSize)
 {
-	gl.flags |= RFL_NPOT_TEXTURE;
-	if (maxTextureSize > 0) gl.max_texturesize = maxTextureSize;
+	SetTextureLimits(true, maxTextureSize > 0 ? maxTextureSize : g_maxTextureSize);
 }
 
 void GenerateGlobalBrightmap()
@@ -92,7 +97,7 @@ void GenerateGlobalBrightmap()
 
 FNativePalette *CreateTranslationPalette(FRemapTable *remap)
 {
-	return GLTranslationPalette::CreatePalette(remap);
+	return FTranslationPalette::CreatePalette(remap);
 }
 
 bool SkyBoxFacesOf(FTexture *tex, SkyBoxFaces &out)
@@ -161,7 +166,7 @@ bool MaterialSpriteFrame(MaterialRef m, SpriteFrameInfo &info)
 	mat->GetSpriteRect(&r);
 	info.left = r.left; info.top = r.top; info.width = r.width; info.height = r.height;
 	// [rc4l] Trimming needs non-power-of-two textures, as GLSprite::Process checks.
-	if (gl.flags & RFL_NPOT_TEXTURE)
+	if (g_anySize)
 	{
 		info.ul = mat->GetSpriteUL(); info.ur = mat->GetSpriteUR();
 		info.vt = mat->GetSpriteVT(); info.vb = mat->GetSpriteVB();
@@ -218,15 +223,15 @@ int MaterialTransparency(MaterialRef m)
 
 int MaterialTranslation(int translation)
 {
-	// [rc4l] As FGLTexture::Bind does: negative is already a GLTranslationPalette index, positive a game translation to look up.
-	return translation <= 0 ? -translation : GLTranslationPalette::GetInternalTranslation(translation);
+	// [rc4l] As GL's BindPixels does: negative is already a FTranslationPalette index, positive a game translation to look up.
+	return translation <= 0 ? -translation : FTranslationPalette::GetInternalTranslation(translation);
 }
 
 int MaterialRemapIndex(const void *remap)
 {
 	const FRemapTable *table = (const FRemapTable *)remap;
 	if (table == NULL || table->Inactive) return 0;
-	GLTranslationPalette *pal = static_cast<GLTranslationPalette *>(const_cast<FRemapTable *>(table)->GetNative());
+	FTranslationPalette *pal = static_cast<FTranslationPalette *>(const_cast<FRemapTable *>(table)->GetNative());
 	return pal != NULL ? pal->GetIndex() : 0;
 }
 

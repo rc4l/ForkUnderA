@@ -1,5 +1,7 @@
-#ifndef __GL_TRANSLATE__
-#define __GL_TRANSLATE__
+// [rc4l] GL's GLTranslationPalette, moved from gl/textures/gl_translate.h: the translations' palettes as the texture system numbers them, for any renderer.
+
+#ifndef ZX_TRANSLATIONPALETTE_H
+#define ZX_TRANSLATIONPALETTE_H
 
 #include "doomtype.h"
 #include "v_video.h"
@@ -12,7 +14,7 @@ enum
 };
 
 
-class GLTranslationPalette : public FNativePalette
+class FTranslationPalette : public FNativePalette
 {
 	struct PalData
 	{
@@ -24,11 +26,11 @@ class GLTranslationPalette : public FNativePalette
 	int Index;
 	FRemapTable *remap;
 
-	GLTranslationPalette(FRemapTable *r) { remap=r; Index=-1; }
+	FTranslationPalette(FRemapTable *r) { remap=r; Index=-1; }
 
 public:
 
-	static GLTranslationPalette *CreatePalette(FRemapTable *remap);
+	static FTranslationPalette *CreatePalette(FRemapTable *remap);
 	static int GetInternalTranslation(int trans);
 	static PalEntry *GetPalette(unsigned int index)
 	{

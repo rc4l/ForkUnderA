@@ -57,7 +57,7 @@
 
 
 #include "gl/dynlights/gl_dynlight.h"
-#include "gl/textures/gl_skyboxtexture.h"
+#include "features/materials/skyboxtexture.h"
 #include "gl/utility/gl_clock.h"
 #include "gl/utility/gl_convert.h"
 // [BB] New #includes.

@@ -129,7 +129,7 @@ void PrepareTexture(FTexture *img, const DCanvas::DrawParms &parms, TextureDraw 
 	d.material = mat;
 	d.clipL = parms.lclip; d.clipT = parms.uclip; d.clipR = parms.rclip; d.clipB = parms.dclip;
 	d.blend = ComputeQuadBlend(parms.style.BlendOp, parms.style.DestAlpha);
-	// [rc4l] Negated: the backend reads a negative value as an internal palette index, as FGLTexture::Bind does, not a game translation.
+	// [rc4l] Negated: the backend reads a negative value as an internal palette index, as GL binding a material does (gl_material.cpp), not a game translation.
 	d.translation = -out.translation;
 	d.texMode = img->bHasCanvas ? kTexOpaque : ComputeTextureMode(parms.style.Flags, !parms.masked);
 }

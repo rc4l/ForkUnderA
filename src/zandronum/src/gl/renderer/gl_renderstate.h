@@ -114,9 +114,9 @@ public:
 		{
 			if (mat->tex->UseBasePalette()) translation = TRANSLATION(TRANSLATION_Standard, 8);
 		}
-		mEffectState = overrideshader >= 0? overrideshader : mat->mShaderIndex;
+		mEffectState = overrideshader >= 0? overrideshader : mat->GetShaderIndex();
 		mShaderTimer = mat->tex->gl_info.shaderspeed;
-		mat->Bind(clampmode, translation);
+		gl_BindMaterial(mat, clampmode, translation);
 	}
 
 	void Apply();

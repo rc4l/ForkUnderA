@@ -36,6 +36,7 @@
 **
 */
 #include "gl/system/gl_system.h"
+#include "features/materials/materials.h"   // [rc4l] SetTextureLimits
 #include "tarray.h"
 #include "doomtype.h"
 #include "m_argv.h"
@@ -204,6 +205,7 @@ void gl_LoadExtensions()
 	gl.flags |= RFL_NPOT_TEXTURE | RFL_OCCLUSION_QUERY;
 
 	glGetIntegerv(GL_MAX_TEXTURE_SIZE,&gl.max_texturesize);
+	zx::materials::SetTextureLimits(true, gl.max_texturesize);   // [rc4l] the texture system's own copy, which a launch without GL sets from the backend
 	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 
 	// [rc4l] upstream cfc8f3dbb's intent, completed: capability values must be read at

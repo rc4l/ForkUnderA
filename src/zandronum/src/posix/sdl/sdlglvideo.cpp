@@ -28,7 +28,7 @@
 #include "gl/system/gl_framebuffer.h"
 #include "gl/shaders/gl_shader.h"
 #include "gl/utility/gl_templates.h"
-#include "gl/textures/gl_material.h"
+#include "features/materials/material.h"   // [rc4l] FMaterial::FlushAll
 #include "gl/system/gl_cvars.h"
 #include "features/hwrender/computation/glcontext_compute.h"
 

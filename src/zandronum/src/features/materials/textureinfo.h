@@ -35,6 +35,8 @@
 #ifndef __GL_HQRESIZE_H__
 #define __GL_HQRESIZE_H__
 
+// [rc4l] Moved from gl/textures/gl_texture.h: brightmaps, average colours, hires replacements and upsampling, for any renderer.
+
 #include "r_defs.h"
 
 class FBrightmapTexture : public FTexture

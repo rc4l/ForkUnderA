@@ -1,17 +1,14 @@
-
 #ifndef __GL_TEXTURE_H
 #define __GL_TEXTURE_H
 
 #include "m_fixed.h"
 #include "textures/textures.h"
+#include "features/materials/material.h"   // [rc4l] FMaterial and FTexturePixels, which any renderer reads; GL binds them here
 #include "gl/textures/gl_hwtexture.h"
 #include "gl/renderer/gl_colormap.h"
 #include "i_system.h"
 
 EXTERN_CVAR(Bool, gl_precache)
-
-struct FRemapTable;
-class FTextureShader;
 
 enum
 {
@@ -24,225 +21,12 @@ enum
 	CLAMP_CAMTEX = 6,
 };
 
-
-
-#include "features/materials/computation/texcoord_compute.h"   // [rc4l] FTexCoordInfo, which the bake maps walls by too
-
-//===========================================================================
-// 
-// this is the texture maintenance class for OpenGL. 
-//
-//===========================================================================
-class FMaterial;
-
-
-class FGLTexture
-{
-	friend class FMaterial;
-public:
-	FTexture * tex;
-	FTexture * hirestexture;
-	char bIsTransparent;
-	int HiresLump;
-
-private:
-	FHardwareTexture *mHwTexture;
-
-	bool bHasColorkey;		// only for hires
-	bool bExpandFlag;
-
-	unsigned char * LoadHiresTexture(FTexture *hirescheck, int *width, int *height);
-
-	FHardwareTexture *CreateHwTexture();
-
-	const FHardwareTexture *Bind(int texunit, int clamp, int translation, FTexture *hirescheck);
-	
-public:
-	FGLTexture(FTexture * tx, bool expandpatches);
-	~FGLTexture();
-
-	unsigned char * CreateTexBuffer(int translation, int & w, int & h, FTexture *hirescheck, bool createexpanded = true);
-
-	void Clean(bool all);
-	int Dump(int i);
-
-};
-
-//===========================================================================
-// 
-// this is the material class for OpenGL. 
-//
-//===========================================================================
-
-class FMaterial
-{
-	friend class FRenderState;
-
-	struct FTextureLayer
-	{
-		FTexture *texture;
-		bool animated;
-	};
-
-	static TArray<FMaterial *> mMaterials;
-	static int mMaxBound;
-
-	FGLTexture *mBaseLayer;	
-	TArray<FTextureLayer> mTextureLayers;
-	int mShaderIndex;
-
-	short mLeftOffset;
-	short mTopOffset;
-	short mWidth;
-	short mHeight;
-	short mRenderWidth;
-	short mRenderHeight;
-	bool mExpanded;
-
-	float mSpriteU[2], mSpriteV[2];
-	FloatRect mSpriteRect;
-
-	FGLTexture * ValidateSysTexture(FTexture * tex, bool expand);
-	bool TrimBorders(int *rect);
-
-public:
-	FTexture *tex;
-	
-	FMaterial(FTexture *tex, bool forceexpand);
-	~FMaterial();
-	void Precache();
-	bool isMasked() const
-	{
-		return !!mBaseLayer->tex->bMasked;
-	}
-
-	int GetLayers() const
-	{
-		return mTextureLayers.Size() + 1;
-	}
-
-	void Bind(int clamp, int translation);
-
-	unsigned char * CreateTexBuffer(int translation, int & w, int & h, bool allowhires=true, bool createexpanded = true) const
-	{
-		return mBaseLayer->CreateTexBuffer(translation, w, h, allowhires? tex : NULL, createexpanded);
-	}
-
-	void Clean(bool f)
-	{
-		mBaseLayer->Clean(f);
-	}
-
-	void BindToFrameBuffer();
-	// Patch drawing utilities
-
-	void GetSpriteRect(FloatRect * r) const
-	{
-		*r = mSpriteRect;
-	}
-
-	void GetTexCoordInfo(FTexCoordInfo *tci, fixed_t x, fixed_t y) const;
-
-	// This is scaled size in integer units as needed by walls and flats
-	int TextureHeight() const { return mRenderHeight; }
-	int TextureWidth() const { return mRenderWidth; }
-
-	int GetAreas(FloatRect **pAreas) const;
-
-	int GetWidth() const
-	{
-		return mWidth;
-	}
-
-	int GetHeight() const
-	{
-		return mHeight;
-	}
-
-	int GetLeftOffset() const
-	{
-		return mLeftOffset;
-	}
-
-	int GetTopOffset() const
-	{
-		return mTopOffset;
-	}
-
-	int GetScaledLeftOffset() const
-	{
-		// [rc4l] fixed64: DivScale16 on the widened type returns zx::Fixed; the result
-		// here is a texel count, so convert explicitly.
-		return (int)DivScale16(mLeftOffset, tex->xScale);
-	}
-
-	int GetScaledTopOffset() const
-	{
-		return (int)DivScale16(mTopOffset, tex->yScale);
-	}
-
-	float GetScaledLeftOffsetFloat() const
-	{
-		return mLeftOffset / FIXED2FLOAT(tex->xScale);
-	}
-
-	float GetScaledTopOffsetFloat() const
-	{
-		return mTopOffset/ FIXED2FLOAT(tex->yScale);
-	}
-
-	// This is scaled size in floating point as needed by sprites
-	float GetScaledWidthFloat() const
-	{
-		return mWidth / FIXED2FLOAT(tex->xScale);
-	}
-
-	float GetScaledHeightFloat() const
-	{
-		return mHeight / FIXED2FLOAT(tex->yScale);
-	}
-
-	// Get right/bottom UV coordinates for patch drawing
-	float GetUL() const { return 0; }
-	float GetVT() const { return 0; }
-	float GetUR() const { return 1; }
-	float GetVB() const { return 1; }
-	float GetU(float upix) const { return upix/(float)mWidth; }
-	float GetV(float vpix) const { return vpix/(float)mHeight; }
-
-	float GetSpriteUL() const { return mSpriteU[0]; }
-	float GetSpriteVT() const { return mSpriteV[0]; }
-	float GetSpriteUR() const { return mSpriteU[1]; }
-	float GetSpriteVB() const { return mSpriteV[1]; }
-
-
-
-	bool GetTransparent() const
-	{
-		if (mBaseLayer->bIsTransparent == -1) 
-		{
-			if (!mBaseLayer->tex->bHasCanvas)
-			{
-				int w, h;
-				unsigned char *buffer = CreateTexBuffer(0, w, h);
-				delete [] buffer;
-			}
-			else
-			{
-				mBaseLayer->bIsTransparent = 0;
-			}
-		}
-		return !!mBaseLayer->bIsTransparent;
-	}
-
-	static void DeleteAll();
-	static void FlushAll();
-	static FMaterial *ValidateTexture(FTexture * tex, bool expand);
-	static FMaterial *ValidateTexture(FTextureID no, bool expand, bool trans);
-	// [rc4l] A texture's base layer as true-colour pixels the caller deletes, read on the CPU so it needs no GL; NULL when it has none.
-	static unsigned char *TextureBuffer(FTexture *tex, int &w, int &h);
-	static void ClearLastTexture();
-
-};
+// [rc4l] GL's side of a material: binding its layers to texture units, uploading their pixels the first time.
+void gl_BindMaterial(FMaterial *mat, int clampmode, int translation);
+void gl_PrecacheMaterial(FMaterial *mat);
+// [rc4l] Render into a camera texture's material.
+void gl_BindMaterialToFrameBuffer(FMaterial *mat);
+// [rc4l] Forget which material is bound, so the next bind binds again.
+void gl_ClearLastMaterial();
 
 #endif

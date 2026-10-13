@@ -35,11 +35,12 @@
 **
 */
 
+// [rc4l] Moved from gl/textures/gl_skyboxtexture.cpp, as any renderer draws GLDEFS sky boxes.
 #include "doomtype.h"
 #include "sc_man.h"
 #include "w_wad.h"
 #include "textures/textures.h"
-#include "gl/textures/gl_skyboxtexture.h"
+#include "features/materials/skyboxtexture.h"
 
 
 

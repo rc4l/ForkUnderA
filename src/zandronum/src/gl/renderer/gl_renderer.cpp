@@ -62,8 +62,8 @@
 #include "gl/scene/gl_drawinfo.h"
 #include "features/draw2d/draw2d.h"   // [rc4l] the 2D draws, worked out without GL
 #include "gl/shaders/gl_shader.h"
-#include "gl/textures/gl_texture.h"
-#include "gl/textures/gl_translate.h"
+#include "features/materials/textureinfo.h"
+#include "features/materials/translationpalette.h"
 #include "gl/textures/gl_material.h"
 #include "gl/textures/gl_samplers.h"
 #include "gl/utility/gl_clock.h"

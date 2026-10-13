@@ -2,7 +2,7 @@
 #include "r_state.h"
 #include "v_video.h"
 
-#include "gl/textures/gl_texture.h"
+#include "features/materials/textureinfo.h"
 
 #ifdef NO_GL
 CVAR (Float, vid_brightness, 0.f, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)

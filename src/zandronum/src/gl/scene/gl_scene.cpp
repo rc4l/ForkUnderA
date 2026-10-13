@@ -1077,7 +1077,7 @@ void FGLInterface::RenderTextureView (FCanvasTexture *tex, AActor *Viewpoint, in
 #endif
 		{
 			GLRenderer->StartOffscreen();
-			gltex->BindToFrameBuffer();
+			gl_BindMaterialToFrameBuffer(gltex);
 		}
 #if defined(_WIN32) && (defined(_MSC_VER) || defined(__INTEL_COMPILER))
 		__except(1)

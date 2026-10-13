@@ -23,7 +23,7 @@
 
 #include "gl/renderer/gl_renderer.h"
 #include "gl/system/gl_framebuffer.h"
-#include "gl/textures/gl_material.h"   // [rc4l] FMaterial::FlushAll
+#include "features/materials/material.h"   // [rc4l] FMaterial::FlushAll
 #include "gl/shaders/gl_shader.h"
 #include "gl/utility/gl_templates.h"
 // [rc4l] borderless-video: single pure source of truth for what `fullscreen` means. See

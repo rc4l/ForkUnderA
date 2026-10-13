@@ -46,6 +46,7 @@
 #include <unistd.h>
 #endif
 
+// [rc4l] Moved from gl/textures/gl_hirestex.cpp, as any renderer's textures take hires replacements.
 #include "w_wad.h"
 #include "m_png.h"
 #include "sbar.h"

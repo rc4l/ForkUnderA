@@ -39,10 +39,8 @@
 
 #include "v_palette.h"
 #include "templates.h"
-#include "gl/renderer/gl_lightdata.h"
-#include "gl/textures/gl_translate.h"
-#include "gl/textures/gl_bitmap.h"
-#include "gl/system/gl_interface.h"
+#include "features/materials/translationpalette.h"
+#include "features/materials/texturebitmap.h"
 
 //===========================================================================
 // 
@@ -90,7 +88,7 @@ static CopyFunc copyfuncs[]={
 // base palette because they wouldn't be used anyway.
 //
 //===========================================================================
-void FGLBitmap::CopyPixelDataRGB(int originx, int originy,
+void FTextureBitmap::CopyPixelDataRGB(int originx, int originy,
 								const BYTE * patch, int srcwidth, int srcheight, int step_x, int step_y,
 								int rotate, int ct, FCopyInfo *inf)
 {
@@ -109,7 +107,7 @@ void FGLBitmap::CopyPixelDataRGB(int originx, int originy,
 // Paletted to True Color texture copy function
 //
 //===========================================================================
-void FGLBitmap::CopyPixelData(int originx, int originy, const BYTE * patch, int srcwidth, int srcheight, 
+void FTextureBitmap::CopyPixelData(int originx, int originy, const BYTE * patch, int srcwidth, int srcheight, 
 										int step_x, int step_y, int rotate, PalEntry * palette, FCopyInfo *inf)
 {
 	PalEntry penew[256];
@@ -122,7 +120,7 @@ void FGLBitmap::CopyPixelData(int originx, int originy, const BYTE * patch, int 
 
 		if (translation > 0)
 		{
-			PalEntry *ptrans = GLTranslationPalette::GetPalette(translation);
+			PalEntry *ptrans = FTranslationPalette::GetPalette(translation);
 			if (ptrans)
 			{
 				for (i = 0; i < 256; i++)

@@ -40,20 +40,20 @@
 
 #include "doomtype.h"
 #include "r_data/r_translate.h"
-#include "gl/textures/gl_translate.h"
+#include "features/materials/translationpalette.h"
 #include "m_crc32.h"
 
-TArray<GLTranslationPalette::PalData> GLTranslationPalette::AllPalettes;
+TArray<FTranslationPalette::PalData> FTranslationPalette::AllPalettes;
 
 
-GLTranslationPalette *GLTranslationPalette::CreatePalette(FRemapTable *remap)
+FTranslationPalette *FTranslationPalette::CreatePalette(FRemapTable *remap)
 {
-	GLTranslationPalette *p = new GLTranslationPalette(remap);
+	FTranslationPalette *p = new FTranslationPalette(remap);
 	p->Update();
 	return p;
 }
 
-bool GLTranslationPalette::Update()
+bool FTranslationPalette::Update()
 {
 	PalData pd;
 
@@ -75,14 +75,14 @@ bool GLTranslationPalette::Update()
 	return true;
 }
 
-int GLTranslationPalette::GetInternalTranslation(int trans)
+int FTranslationPalette::GetInternalTranslation(int trans)
 {
 	if (trans <= 0) return 0;
 
 	FRemapTable *remap = TranslationToTable(trans);
 	if (remap == NULL || remap->Inactive) return 0;
 
-	GLTranslationPalette *tpal = static_cast<GLTranslationPalette*>(remap->GetNative());
+	FTranslationPalette *tpal = static_cast<FTranslationPalette*>(remap->GetNative());
 	if (tpal == NULL) return 0;
 	return tpal->GetIndex();
 }

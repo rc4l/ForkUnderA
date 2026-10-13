@@ -659,10 +659,10 @@ endif( NOT NO_GL )
 
 # Start defining source files for ZDoom
 set( PLAT_WIN32_SOURCES
-	gl/hqnx_asm/hq2x_asm.cpp
-	gl/hqnx_asm/hq3x_asm.cpp
-	gl/hqnx_asm/hq4x_asm.cpp
-	gl/hqnx_asm/hqnx_asm_Image.cpp
+	features/materials/hqnx_asm/hq2x_asm.cpp
+	features/materials/hqnx_asm/hq3x_asm.cpp
+	features/materials/hqnx_asm/hq4x_asm.cpp
+	features/materials/hqnx_asm/hqnx_asm_Image.cpp
 	win32/eaxedit.cpp
 	win32/fb_d3d9.cpp
 	win32/fb_d3d9_wipe.cpp
@@ -885,19 +885,10 @@ if( NOT NO_GL )
 		gl/renderer/gl_renderer.cpp
 		gl/renderer/gl_renderstate.cpp
 		gl/renderer/gl_lightdata.cpp
-		gl/hqnx/init.cpp
-		gl/hqnx/hq2x.cpp
-		gl/hqnx/hq3x.cpp
-		gl/hqnx/hq4x.cpp
 		gl/textures/gl_hwtexture.cpp
 		gl/textures/gl_texture.cpp
 		gl/textures/gl_material.cpp
-		gl/textures/gl_hirestex.cpp
-		gl/textures/gl_bitmap.cpp
 	gl/textures/gl_samplers.cpp
-		gl/textures/gl_translate.cpp
-		gl/textures/gl_hqresize.cpp
-		gl/textures/gl_skyboxtexture.cpp
 		gl/scene/gl_bsp.cpp
 		gl/scene/gl_wallcache.cpp
 		gl/scene/gl_clipper.cpp
@@ -971,8 +962,8 @@ file( GLOB HEADER_FILES
 	gl/api/*.h
 	gl/data/*.h
 	gl/dynlights/*.h
-	gl/hqnx/*.h
-	gl/hqnx_asm/*.h
+	features/materials/hqnx/*.h
+	features/materials/hqnx_asm/*.h
 	gl/models/*.h
 	gl/renderer/*.h
 	gl/scene/*.h
@@ -1605,6 +1596,7 @@ add_executable( zdoom WIN32
 	features/sprites/spriteframe.cpp
 	features/stackportals/stackportals.cpp
 	features/materials/computation/texcoord_compute.cpp
+	features/materials/computation/materiallayout_compute.cpp
 	features/hwrender/hud2d.cpp
 	features/hwrender/spriteview.cpp
 	features/levelmesh/staticmesh.cpp
@@ -1614,6 +1606,17 @@ add_executable( zdoom WIN32
 	features/levelmesh/modelmesh.cpp
 	features/levelmesh/captureshading.cpp
 	features/materials/materials.cpp
+	features/materials/material.cpp
+	features/materials/textureinfo.cpp
+	features/materials/texturebitmap.cpp
+	features/materials/translationpalette.cpp
+	features/materials/skyboxtexture.cpp
+	features/materials/hqresize.cpp
+	features/materials/hirestex.cpp
+	features/materials/hqnx/init.cpp
+	features/materials/hqnx/hq2x.cpp
+	features/materials/hqnx/hq3x.cpp
+	features/materials/hqnx/hq4x.cpp
 	features/hwshaders/hwshaders.cpp
 	features/hwshaders/computation/hwshader_compute.cpp
 	features/sprites/spritebuild.cpp
@@ -1926,8 +1929,8 @@ source_group("OpenGL Renderer" REGULAR_EXPRESSION "^${CMAKE_CURRENT_SOURCE_DIR}/
 source_group("OpenGL Renderer\\API" REGULAR_EXPRESSION "^${CMAKE_CURRENT_SOURCE_DIR}/gl/api/.+")
 source_group("OpenGL Renderer\\Data" REGULAR_EXPRESSION "^${CMAKE_CURRENT_SOURCE_DIR}/gl/data/.+")
 source_group("OpenGL Renderer\\Dynamic Lights" REGULAR_EXPRESSION "^${CMAKE_CURRENT_SOURCE_DIR}/gl/dynlights/.+")
-source_group("OpenGL Renderer\\HQ Resize" REGULAR_EXPRESSION "^${CMAKE_CURRENT_SOURCE_DIR}/gl/hqnx/.+")
-source_group("OpenGL Renderer\\HQ Resize Assembly version" REGULAR_EXPRESSION "^${CMAKE_CURRENT_SOURCE_DIR}/gl/hqnx_asm/.+")
+source_group("Materials\\HQ Resize" REGULAR_EXPRESSION "^${CMAKE_CURRENT_SOURCE_DIR}/features/materials/hqnx/.+")
+source_group("Materials\\HQ Resize Assembly version" REGULAR_EXPRESSION "^${CMAKE_CURRENT_SOURCE_DIR}/features/materials/hqnx_asm/.+")
 source_group("OpenGL Renderer\\Models" REGULAR_EXPRESSION "^${CMAKE_CURRENT_SOURCE_DIR}/gl/models/.+")
 source_group("OpenGL Renderer\\Renderer" REGULAR_EXPRESSION "^${CMAKE_CURRENT_SOURCE_DIR}/gl/renderer/.+")
 source_group("OpenGL Renderer\\Scene" REGULAR_EXPRESSION "^${CMAKE_CURRENT_SOURCE_DIR}/gl/scene/.+")

@@ -54,7 +54,7 @@
 #include "gl/renderer/gl_renderstate.h"
 #include "gl/system/gl_framebuffer.h"
 #include "gl/shaders/gl_shader.h"
-#include "gl/textures/gl_translate.h"
+#include "features/materials/translationpalette.h"
 #include "gl/textures/gl_material.h"
 #include "gl/textures/gl_samplers.h"
 #include "gl/utility/gl_templates.h"
@@ -242,7 +242,7 @@ void OpenGLFrameBuffer::WipeCleanup()
 		delete wipeendscreen;
 		wipeendscreen = NULL;
 	}
-	FMaterial::ClearLastTexture();
+	gl_ClearLastMaterial();
 }
 
 //==========================================================================

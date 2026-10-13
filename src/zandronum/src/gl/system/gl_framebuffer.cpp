@@ -60,9 +60,9 @@
 #include "gl/renderer/gl_lightdata.h"
 #include "gl/data/gl_data.h"
 #include "gl/textures/gl_hwtexture.h"
-#include "gl/textures/gl_texture.h"
-#include "gl/textures/gl_translate.h"
-#include "gl/textures/gl_skyboxtexture.h"
+#include "features/materials/textureinfo.h"
+#include "features/materials/translationpalette.h"
+#include "features/materials/skyboxtexture.h"
 #include "gl/utility/gl_clock.h"
 #include "gl/utility/gl_templates.h"
 #include "gl/gl_functions.h"
@@ -715,7 +715,7 @@ void OpenGLFrameBuffer::GetHitlist(BYTE *hitlist)
 
 FNativePalette *OpenGLFrameBuffer::CreatePalette(FRemapTable *remap)
 {
-	return GLTranslationPalette::CreatePalette(remap);
+	return FTranslationPalette::CreatePalette(remap);
 }
 
 //==========================================================================

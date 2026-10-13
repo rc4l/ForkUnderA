@@ -32,4 +32,15 @@ struct FTexCoordInfo
 	fixed_t TextureAdjustWidth() const { return ComputeTexAdjustWidth(mRenderWidth, mWidth, mTempScaleX, mWorldPanning); }
 };
 
+// [rc4l] A material's FTexCoordInfo (GL's FMaterial::GetTexCoordInfo): its texel and drawn sizes and its texture's scale, at a sidedef's scale `x` and `y`, a camera texture drawn upside down.
+struct TexCoordSource
+{
+	int width, height;
+	int renderWidth, renderHeight;
+	fixed_t xScale, yScale;
+	bool canvas;
+	bool worldPanning;
+};
+void ComputeTexCoordInfo(const TexCoordSource &src, fixed_t x, fixed_t y, FTexCoordInfo *tci);
+
 #endif // ZX_TEXCOORD_COMPUTE_H

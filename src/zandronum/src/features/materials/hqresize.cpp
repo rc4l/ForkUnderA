@@ -34,15 +34,13 @@
 **
 */
 
-#include "gl/system/gl_system.h"
-#include "gl/system/gl_interface.h"
-#include "gl/renderer/gl_renderer.h"
-#include "gl/textures/gl_material.h"
-#include "gl/textures/gl_texture.h"
+// [rc4l] Moved from gl/textures/gl_hqresize.cpp, as any renderer's textures are upsampled.
+#include "features/materials/material.h"
+#include "features/materials/textureinfo.h"
 #include "c_cvars.h"
-#include "gl/hqnx/hqx.h"
+#include "features/materials/hqnx/hqx.h"
 #ifdef _MSC_VER
-#include "gl/hqnx_asm/hqnx_asm.h"
+#include "features/materials/hqnx_asm/hqnx_asm.h"
 #endif
 
 CUSTOM_CVAR(Int, gl_texture_hqresize, 0, CVAR_ARCHIVE | CVAR_GLOBALCONFIG | CVAR_NOINITCALL)
