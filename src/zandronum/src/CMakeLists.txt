@@ -1703,6 +1703,7 @@ add_executable( zdoom WIN32
 	features/hwrender/computation/sceneconstants_compute.cpp
 	features/hwrender/computation/scenebinding_compute.cpp
 	features/hwrender/computation/worldpipelines_compute.cpp
+	features/hwrender/computation/materialslots_compute.cpp
 	features/hwrender/computation/flood_compute.cpp
 	features/hwrender/computation/planemirror_compute.cpp
 	features/hwrender/computation/skyportal_compute.cpp
@@ -1970,7 +1971,8 @@ if( FUA_DILIGENT )
 		set_source_files_properties( features/hwrender/diligent/dgprobe.cpp features/hwrender/diligent/dgwindow.cpp features/hwrender/diligent/dgscene.cpp features/hwrender/diligent/dg2d.cpp features/hwrender/diligent/dglights.cpp features/hwrender/diligent/dgsky.cpp features/hwrender/diligent/dgpipelines.cpp features/hwrender/diligent/dgdynamic.cpp features/hwrender/diligent/dgupload.cpp features/hwrender/diligent/dgviews.cpp features/hwrender/diligent/dgcamera.cpp features/hwrender/diligent/dgframe.cpp features/hwrender/diligent/dgdiag.cpp features/hwrender/diligent/dgdecals.cpp features/hwrender/diligent/dghorizon.cpp features/hwrender/diligent/dgtexture.cpp features/hwrender/diligent/dgtarget.cpp features/hwrender/diligent/dgwipe.cpp PROPERTIES COMPILE_FLAGS "-std=c++17" )
 	endif()
 	target_compile_definitions( zdoom PRIVATE FUA_DILIGENT PLATFORM_WIN32=1 )
-	target_link_libraries( zdoom Diligent-GraphicsEngineVk-static )
+	# [rc4l] volk for the Vulkan entry points Diligent loaded, which dgprobe.cpp reads the device's limits through.
+	target_link_libraries( zdoom Diligent-GraphicsEngineVk-static volk::volk Vulkan::Headers )
 	target_include_directories( zdoom PRIVATE
 		"${CMAKE_SOURCE_DIR}/../../deps/DiligentCore/Graphics/GraphicsEngineVulkan/interface"
 		"${CMAKE_SOURCE_DIR}/../../deps/DiligentCore/Graphics/GraphicsEngine/interface"

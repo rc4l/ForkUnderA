@@ -126,11 +126,9 @@ Diligent::IShaderResourceBinding *BatchSRB(SceneBatch &b)
 // 4096 is chosen to be past what content plausibly asks for rather than tuned to 835. The cost is a
 // larger descriptor array, not a larger frame -- the array is sized once and indexed per pixel.
 //
-// The assumption worth naming: the device must support an array of this many sampled images in one
-// descriptor set. Desktop Vulkan drivers report far more than this, but the Vulkan SPEC minimum is
-// much lower, so a device that cannot will fail pipeline creation rather than degrade. If that is
-// ever seen, the fix is to query maxPerStageDescriptorSampledImages and build the shader string at
-// runtime instead of pinning it to FUA_MAT_SLOTS_STR.
+// [rc4l] 4096 is the most it is given: SizeMaterialSlots (dgprobe.cpp) sizes it from the device's own
+// descriptor limits, which the Vulkan minimum puts far lower than a desktop driver, and a device left
+// with too few draws with a binding per material instead of failing pipeline creation.
 
 // [rc4l] `resolved` is what the slot actually POINTS AT, which is not always what it is keyed on.
 //
@@ -165,7 +163,7 @@ static int g_bindlessGen = -1;
 // This only answers "which index" without walking. Open addressing, no allocation, cleared with the
 // table it indexes -- there are exactly two places that mutate it and both are next to this comment.
 struct MatIndexEntry { const void *material; int translation; int slot; };
-const int kMatIndexSize = 16384;   // power of two, comfortably over kMaterialSlots
+const int kMatIndexSize = 16384;   // power of two, comfortably over kMaxMaterialSlots
 static MatIndexEntry g_matIndex[kMatIndexSize];
 
 static inline unsigned MatIndexHash(const void *m, int t)
@@ -277,13 +275,13 @@ int MaterialSlotFor(const void *material, int translation)
 		const int found = MatIndexFind(material, translation);
 		if (found >= 0) return found;
 	}
-	if (g_matSlotTable.Size() >= (unsigned)kMaterialSlots)
+	if (g_matSlotTable.Size() >= MaterialSlotCapacity())
 	{
 		// Loud, once: a level past the slot count draws its extra materials white, and white walls
 		// with no message is the kind of thing that gets diagnosed as a texture-loading fault.
 		if (!g_matSlotOverflow)
-			Printf("Diligent bindless: more than %d materials on this level -- falling back to a binding per material"
-				"\n", (int)kMaterialSlots);
+			Printf("Diligent bindless: more than %u materials on this level -- falling back to a binding per material"
+				"\n", MaterialSlotCapacity());
 		g_matSlotOverflow = true;
 		return 0;
 	}
@@ -294,7 +292,7 @@ int MaterialSlotFor(const void *material, int translation)
 		for (const int frame : zx::hwrender::ComputeAnimationFrames(g_anims[anim]))
 		{
 			const void *fm = zx::materials::MaterialForTextureIndex(frame);
-			if (fm != NULL && MatIndexFind(fm, translation) < 0 && g_matSlotTable.Size() < (unsigned)kMaterialSlots)
+			if (fm != NULL && MatIndexFind(fm, translation) < 0 && g_matSlotTable.Size() < MaterialSlotCapacity())
 				PushMaterialSlot(fm, translation);
 		}
 	return slot;
@@ -363,7 +361,7 @@ static bool FillMaterialArraySRB(Diligent::IShaderResourceBinding *srb)
 		return false;
 	}
 	g_stats.matSlotsWhite = 0;
-	for (Diligent::Uint32 i = 0; i < (Diligent::Uint32)kMaterialSlots; i++)
+	for (Diligent::Uint32 i = 0; i < (Diligent::Uint32)MaterialSlotCapacity(); i++)
 	{
 		Diligent::IDeviceObject *obj = NULL;
 		if (i < g_matSlotTable.Size())
@@ -460,7 +458,7 @@ void RefreshBindless()
 	{
 		announced = true;
 		Printf("Diligent bindless: %d materials in %d slots, %d bindings for the whole world" "\n",
-			MaterialSlotCount(), (int)kMaterialSlots, (int)kWorldPipelines);
+			MaterialSlotCount(), (int)MaterialSlotCapacity(), (int)kWorldPipelines);
 	}
 }
 
@@ -483,7 +481,7 @@ void FlushTextureCache()
 	DirtyMaterialSlots();
 }
 
-bool BindlessActive() { return fua_dg_bindless && g_bindlessReady && !g_matSlotOverflow; }
+bool BindlessActive() { return fua_dg_bindless && MaterialSlotCapacity() > 0 && g_bindlessReady && !g_matSlotOverflow; }
 
 
 // [rc4l] Commit srb inside one draw loop, checking its resources' states only the first time the loop commits it.
@@ -543,6 +541,7 @@ static bool g_pieceBindFailed = false;
 // [rc4l] Drop the pipelines and everything bound to them, so the next upload rebuilds with current
 // settings. SRBs are created from a PSO and cannot outlive it.
 static int g_builtCull = -1;
+static unsigned g_builtSlots = 0;   // [rc4l] the material array size the pipelines were built for
 static int g_builtFilter = -1;
 
 void ReleaseScenePipelines()
@@ -596,6 +595,9 @@ bool EnsureScenePipeline(FString &err)
 	g_builtFilter = (int)gl_texture_filter;
 	if (g_pso.world[kWpOpaque] && g_builtCull != (int)fua_dg_cull) ReleaseScenePipelines();
 	g_builtCull = (int)fua_dg_cull;
+	// [rc4l] The shaders declare the array at its size, so a new size is new pipelines.
+	if (g_pso.world[kWpOpaque] && g_builtSlots != MaterialSlotCapacity()) ReleaseScenePipelines();
+	g_builtSlots = MaterialSlotCapacity();
 	if (g_pso.world[kWpOpaque]) return true;
 	auto *dev = GetDevice();
 	auto *swap = GetSwapChain();
@@ -642,9 +644,9 @@ bool EnsureScenePipeline(FString &err)
 
 	if (!g_slotRemapBuf)
 	{
-		std::vector<unsigned> identity(kMaterialSlots);
+		std::vector<unsigned> identity(kMaxMaterialSlots);
 		for (unsigned i = 0; i < identity.size(); i++) identity[i] = i;
-		if (!CreateStructuredBuffer("fua slot remap", sizeof(unsigned), kMaterialSlots, &identity[0], g_slotRemapBuf))
+		if (!CreateStructuredBuffer("fua slot remap", sizeof(unsigned), kMaxMaterialSlots, &identity[0], g_slotRemapBuf))
 		{ err = "slot remap buffer creation failed"; return false; }
 	}
 	if (!EnsureLightBuffers(err)) return false;

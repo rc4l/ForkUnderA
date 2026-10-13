@@ -1,0 +1,38 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 rc4l
+
+#include <gtest/gtest.h>
+
+#include "features/hwrender/computation/materialslots_compute.h"
+
+using namespace zx::hwrender;
+
+// [rc4l] A desktop driver's limits run to the millions, so the array takes its full 4096.
+TEST(MaterialSlots, ADesktopDeviceGetsTheWholeArray)
+{
+	const DescriptorLimits big = { 1048576, 1048576, 4294967295u, 1048576, 1048576 };
+	EXPECT_EQ((unsigned)kMaxMaterialSlots, ComputeMaterialSlotCapacity(big));
+}
+
+// [rc4l] The smallest of the five limits decides, less what the stage binds beside the array.
+TEST(MaterialSlots, TheSmallestLimitDecidesLessTheStagesOtherResources)
+{
+	EXPECT_EQ(1024u - kOtherStageResources, ComputeMaterialSlotCapacity({ 1024, 1048576, 1048576, 1048576, 1048576 }));
+	EXPECT_EQ(2048u - kOtherStageResources, ComputeMaterialSlotCapacity({ 1048576, 1048576, 1048576, 1048576, 2048 }));
+	EXPECT_EQ(500u - kOtherStageResources, ComputeMaterialSlotCapacity({ 1048576, 500, 1048576, 1048576, 1048576 }));
+}
+
+// [rc4l] The Vulkan minimum (16 sampled images a stage) leaves nothing worth an array, so bindless is off and every material gets its own binding.
+TEST(MaterialSlots, ASmallDeviceTurnsBindlessOff)
+{
+	EXPECT_EQ(0u, ComputeMaterialSlotCapacity({ 16, 16, 128, 96, 96 }));
+	EXPECT_EQ(0u, ComputeMaterialSlotCapacity({ 0, 0, 0, 0, 0 }));
+	EXPECT_EQ(0u, ComputeMaterialSlotCapacity({ kMinMaterialSlots + kOtherStageResources - 1, 4096, 4096, 4096, 4096 }));
+	EXPECT_EQ((unsigned)kMinMaterialSlots, ComputeMaterialSlotCapacity({ kMinMaterialSlots + kOtherStageResources, 4096, 4096, 4096, 4096 }));
+}
+
+TEST(MaterialSlots, DefinesGoRightAfterTheVersionLine)
+{
+	EXPECT_EQ("#version 450\n#define N 7\nvoid main() {}\n", ComputeShaderWithDefines("#version 450\nvoid main() {}\n", "#define N 7\n"));
+	EXPECT_EQ("#version 450", ComputeShaderWithDefines("#version 450", "#define N 7\n"));
+}

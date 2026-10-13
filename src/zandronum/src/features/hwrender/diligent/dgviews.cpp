@@ -4,7 +4,7 @@
 // [rc4l] Views drawn into targets of their own: line mirrors, raster and ray-traced, reflective planes, and stacked sectors.
 
 #include "features/hwrender/diligent/dgscene_internal.h"
-#include "features/hwrender/diligent/dgscene_glsl.h"   // [rc4l] FUA_MAT_SLOTS_STR, the material array's size
+#include "features/hwrender/diligent/dgscene_glsl.h"   // [rc4l] the scene's light model, shared with the mirror pass
 #include "features/viewsetup/viewsetup.h"   // [rc4l] FixedColormapShadeFor
 
 EXTERN_CVAR(Float, gl_mask_sprite_threshold)
@@ -311,7 +311,7 @@ static const char *kMirrorPS =
 	"layout(binding = 1) uniform sampler2D uTex;\n"
 	"layout(binding = 2) uniform accelerationStructureEXT uTLAS;\n"
 	"layout(std430, binding = 3) readonly buffer Verts { float vtx[]; };\n"
-	"layout(binding = 4) uniform sampler2D uMaterials[" FUA_MAT_SLOTS_STR "];\n"
+	"layout(binding = 4) uniform sampler2D uMaterials[FUA_MAT_SLOTS];\n"
 	"layout(binding = 5) uniform sampler2D uSky;\n"
 	"layout(location = 0) in vec3 vWorld;\n"
 	"layout(location = 1) in vec3 vNormal;\n"
@@ -533,7 +533,7 @@ bool EnsureMirrorResources()
 				return false;
 			}
 			unsigned fellBack = 0;
-			for (Diligent::Uint32 mi = 0; mi < (Diligent::Uint32)kMaterialSlots; mi++)
+			for (Diligent::Uint32 mi = 0; mi < (Diligent::Uint32)MaterialSlotCapacity(); mi++)
 			{
 				const void *mat = (mi < MaterialSlots().Size()) ? MaterialSlots()[mi].material : NULL;
 				const int tr = (mi < MaterialSlots().Size()) ? MaterialSlots()[mi].translation : 0;

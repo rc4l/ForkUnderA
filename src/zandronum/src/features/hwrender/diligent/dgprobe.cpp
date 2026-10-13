@@ -26,11 +26,14 @@
 #define PLATFORM_WIN32 1
 #endif
 
+#include "volk.h"   // [rc4l] the Vulkan entry points Diligent loaded, for the device's limits
 #include "EngineFactoryVk.h"
+#include "RenderDeviceVk.h"
 #include "RenderDevice.h"
 #include "DeviceContext.h"
 #include "RefCntAutoPtr.hpp"
 #include "DebugOutput.h"
+#include "features/hwrender/computation/materialslots_compute.h"
 
 namespace zx { namespace hwrender {
 
@@ -38,6 +41,39 @@ namespace zx { namespace hwrender {
 // rather than churning one. A real backend would own these; for now they only prove creation works.
 static Diligent::RefCntAutoPtr<Diligent::IRenderDevice>  g_device;
 static Diligent::RefCntAutoPtr<Diligent::IDeviceContext> g_context;
+// [rc4l] The device's descriptor limits, read once it exists; all zero (no bindless) before that or without the feature.
+static DescriptorLimits g_limits = { 0, 0, 0, 0, 0 };
+
+}} // namespace zx::hwrender
+
+// [rc4l] A smaller device's limits, for drawing as one would (0 is the device's own); the pipelines are rebuilt with the new array size.
+CVAR(Int, fua_dg_slotcap, 0, 0)
+
+namespace zx { namespace hwrender {
+
+unsigned MaterialSlotCapacity()
+{
+	DescriptorLimits l = g_limits;
+	const unsigned cap = fua_dg_slotcap > 0 ? (unsigned)fua_dg_slotcap : 0;
+	if (cap > 0)
+		for (unsigned *v : { &l.perStageSampledImages, &l.perStageSamplers, &l.perStageResources, &l.setSampledImages, &l.setSamplers })
+			if (*v > cap) *v = cap;
+	return ComputeMaterialSlotCapacity(l);
+}
+
+// [rc4l] Size the material array from the device's own descriptor limits, so a GPU smaller than a desktop one draws with a binding per material instead of failing pipeline creation.
+static void SizeMaterialSlots()
+{
+	Diligent::RefCntAutoPtr<Diligent::IRenderDeviceVk> vk(g_device, Diligent::IID_RenderDeviceVk);
+	if (!vk || !g_device->GetDeviceInfo().Features.BindlessResources || vkGetPhysicalDeviceProperties == NULL) return;
+	VkPhysicalDeviceProperties props;
+	vkGetPhysicalDeviceProperties(vk->GetVkPhysicalDevice(), &props);
+	const VkPhysicalDeviceLimits &l = props.limits;
+	g_limits = { l.maxPerStageDescriptorSampledImages, l.maxPerStageDescriptorSamplers, l.maxPerStageResources,
+		l.maxDescriptorSetSampledImages, l.maxDescriptorSetSamplers };
+	Printf("Diligent: %u material slots (stage limits %u images, %u samplers)\n", MaterialSlotCapacity(),
+		g_limits.perStageSampledImages, g_limits.perStageSamplers);
+}
 
 // [rc4l] Route Diligent's own diagnostics to the engine console. Without this a shader that fails to
 // compile reports only "failed" and the actual glslang error is invisible -- which cost a build/run
@@ -100,13 +136,14 @@ bool ProbeVulkan(FString &report)
 				"  ray tracing: %s (max recursion %u, caps 0x%x)\n"
 				"  bindless resources: %s\n"
 				"  shader resource static arrays: %s\n"
-				"  shader resource runtime arrays: %s",
+				"  shader resource runtime arrays: %s\n"
+				"  material slots: %u",
 				ad.Description,
 				f.RayTracing ? "AVAILABLE" : "unavailable",
 				(unsigned)rt.MaxRecursionDepth, (unsigned)rt.CapFlags,
 				f.BindlessResources ? "yes" : "NO",
 				f.ShaderResourceStaticArrays ? "yes" : "NO",
-				f.ShaderResourceRuntimeArrays ? "yes" : "NO" );
+				f.ShaderResourceRuntimeArrays ? "yes" : "NO", MaterialSlotCapacity() );
 		}
 		return true;
 	}
@@ -147,6 +184,8 @@ bool ProbeVulkan(FString &report)
 		report = "CreateDeviceAndContextsVk failed -- no usable Vulkan device.";
 		return false;
 	}
+
+	SizeMaterialSlots();
 
 	// [rc4l] Say whether inline ray tracing is actually available, and at what capability. Building a
 	// reflection path on an assumption about the device is how a backend ends up failing on someone

@@ -234,11 +234,16 @@ Diligent::RefCntAutoPtr<Diligent::IShader> CompileShader(Diligent::SHADER_TYPE t
 	Diligent::RefCntAutoPtr<Diligent::IShader> shader;
 	auto *dev = GetDevice();
 	if (dev == NULL) return shader;
+	// [rc4l] Every shader learns the material array's size on this device, at least one so a declaration stays legal with bindless off.
+	char defines[64];
+	const unsigned slots = MaterialSlotCapacity();
+	snprintf(defines, sizeof(defines), "#define FUA_MAT_SLOTS %u\n", slots > 0 ? slots : 1u);
+	const std::string text = zx::hwrender::ComputeShaderWithDefines(source, defines);
 	Diligent::ShaderCreateInfo ci;
 	ci.SourceLanguage = Diligent::SHADER_SOURCE_LANGUAGE_GLSL_VERBATIM;
 	ci.Desc.ShaderType = type;
 	ci.Desc.Name = name;
-	ci.Source = source;
+	ci.Source = text.c_str();
 	dev->CreateShader(ci, &shader);
 	return shader;
 }

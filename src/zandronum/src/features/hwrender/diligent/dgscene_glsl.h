@@ -120,10 +120,7 @@ static const char *kSceneVS =
 // makes the debug views free (no resize, no extra binding) so they can stay in the shipped shader.
 // Two silent-failure bugs this port survived were caught only by looking at a picture; being able to
 // ask the shader what it thinks depth and colour are is worth the three lines.
-// Must match kMaterialSlots. A GLSL string cannot read a C++ constant, so the two are tied by the
-// static_assert below and by nothing else -- a mismatch is a fatal at pipeline setup, one message
-// per unassigned element.
-#define FUA_MAT_SLOTS_STR "4096"
+// [rc4l] FUA_MAT_SLOTS, the material array's size, is defined by CompileShader from the device's limits (MaterialSlotCapacity).
 
 #define FUA_LIGHT_GLSL \
 	"#extension GL_EXT_nonuniform_qualifier : require\n" \
@@ -175,7 +172,7 @@ static const char *kSceneVS =
 	   nonuniformEXT is not decoration: neighbouring fragments in one quad can sit on different
 	   surfaces with different slots, and without it the index is assumed uniform across the wave
 	   and the whole quad samples whichever one won. */ \
-	"layout(binding = 8) uniform sampler2D uMaterials[" FUA_MAT_SLOTS_STR "];\n" \
+	"layout(binding = 8) uniform sampler2D uMaterials[FUA_MAT_SLOTS];\n" \
 	/* [rc4l] GL's func_warp1.fp and func_warp2.fp, line for line -- see warp_compute for the tested copy. */ \
 	"vec2 fuaWarp(vec2 uv) {\n" \
 	"    if (vWarp.x < 0.5) return uv;\n" \

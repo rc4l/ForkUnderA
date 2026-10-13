@@ -43,6 +43,7 @@
 #include "features/hwrender/computation/sceneconstants_compute.h"   // [rc4l] the constant block, packed in one place
 #include "features/hwrender/computation/scenebinding_compute.h"
 #include "features/hwrender/computation/worldpipelines_compute.h"   // [rc4l] the world pipelines, described once
+#include "features/hwrender/computation/materialslots_compute.h"    // [rc4l] the material array's size and the shader defines that carry it
 #include "features/hwrender/computation/planemirror_compute.h"   // [rc4l] reflective floors and ceilings   // [rc4l] a batch's pipeline, and when a resize rebuilds the targets
 #include "features/hwrender/computation/growbuffer_compute.h"   // [rc4l] the per-frame vertex streams
 #include "features/hwrender/computation/texfilter_compute.h"   // [rc4l] the engine's filter modes
@@ -229,8 +230,8 @@ struct DynRun
 	float        lo, hi;       // [rc4l] its height span, which sides of a translucent plane it is on
 };
 
-enum { kMaterialSlots = 4096 };
-static_assert(kMaterialSlots == 4096, "FUA_MAT_SLOTS_STR must say the same number");
+// [rc4l] The array's size on this device (ComputeMaterialSlotCapacity), which CompileShader hands every shader as FUA_MAT_SLOTS; 0 means a binding per material.
+unsigned MaterialSlotCapacity();
 
 struct MatSlot { const void *material; int translation; };
 // [rc4l] The translation a brightmap's slot is filed under: no real one is this, so a material and its brightmap never share a slot.
