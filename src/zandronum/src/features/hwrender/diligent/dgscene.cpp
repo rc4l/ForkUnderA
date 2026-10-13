@@ -534,6 +534,7 @@ void DrawSceneOnce(bool present, bool pump)
 	g_frame.serial++;
 	PrepareFrame(ctx);
 	RenderSkyPortal(ctx);
+	RenderSkyLooks(ctx);
 	RenderStackPortals(ctx);
 	RenderPlaneMirrors(ctx);
 

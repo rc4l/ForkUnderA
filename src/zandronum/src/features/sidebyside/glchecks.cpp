@@ -137,7 +137,8 @@ struct FGLChecks : public FGLObserver
 	void SkyQuad(const GLWall &wall, AActor *skybox)
 	{
 		zx::levelmesh::AddViewSkyQuad(zx::levelmesh::WalkSkyList(), wall.glseg.x1, wall.glseg.y1, wall.glseg.x2, wall.glseg.y2,
-			wall.zbottom, wall.ztop, skybox, (wall.seg != NULL && wall.seg->linedef != NULL) ? wall.seg->linedef->special : 0);
+			wall.zbottom, wall.ztop, skybox, (wall.seg != NULL && wall.seg->linedef != NULL) ? wall.seg->linedef->special : 0,
+			0);   // [rc4l] GL's own captured quads are only compared, so they keep the level's sky
 	}
 	void SkyHole(const GLWall &wall)
 	{

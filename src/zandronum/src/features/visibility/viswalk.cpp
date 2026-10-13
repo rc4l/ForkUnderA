@@ -7,6 +7,7 @@
 #include "features/visibility/computation/clipranges_compute.h"
 #include "features/visibility/computation/closedline_compute.h"
 #include "features/visibility/computation/coverage_compute.h"
+#include "features/hwrender/computation/skylook_compute.h"   // [rc4l] ComputeSkyQuadKey, which sky a sky wall shows
 #include "features/visibility/computation/mirrorview_compute.h"
 #include "features/visibility/computation/walkslices_compute.h"
 #include "features/jobs/jobs.h"   // [rc4l] the pool a sliced walk runs on
@@ -266,6 +267,7 @@ struct SkyEvent
 	int light;
 	FColormap cm;
 	unsigned fade;           // [rc4l] a sky wall's sector fade colour, which GLWall::SkyPlane gives its sky
+	int sky;                 // [rc4l] a sky wall's sector's sky (sector_t::sky), which picks the sky it shows
 };
 
 SkyEvent &PushSkyEvent(std::vector<SkyEvent> &out, int kind, float x1, float y1, float x2, float y2, const float *zb, const float *zt)
@@ -296,6 +298,7 @@ void SkyPlane(sector_t *sector, int plane, float x1, float y1, float x2, float y
 	e.skybox = skybox;
 	e.special = special;
 	e.fade = sector->ColorMap != NULL ? sector->ColorMap->Fade.d & 0xffffff : 0;
+	e.sky = sector->sky;
 }
 
 // [rc4l] The fade of the first sky the player's walk met, whose portal GL makes first and so draws last, leaving its fog on the sky.
@@ -318,7 +321,7 @@ void ApplySkyEvent(const SkyEvent &e)
 	case SkyEvent::kSkyWall:
 		if (e.skybox != NULL && g_spec.portals != NULL) AddPortalLine(PortalFor(NULL, e.skybox), e.x1, e.y1, e.x2, e.y2);
 		if (g_spec.player && e.skybox == NULL && !g_skyFadeSeen) { g_skyFadeSeen = true; g_skyFade = e.fade; }
-		zx::levelmesh::AddViewSkyQuad(g_spec.skyList, e.x1, e.y1, e.x2, e.y2, e.zb, e.zt, e.skybox, e.special);
+		zx::levelmesh::AddViewSkyQuad(g_spec.skyList, e.x1, e.y1, e.x2, e.y2, e.zb, e.zt, e.skybox, e.special, zx::hwrender::ComputeSkyQuadKey(e.sky));
 		break;
 	case SkyEvent::kSkyHole:
 		zx::levelmesh::AddViewSkyHole(g_spec.skyList, e.x1, e.y1, e.x2, e.y2, e.zb, e.zt);

@@ -1064,12 +1064,13 @@ int SpritePieceCount()
 }
 
 // [rc4l] One quad of the wall between heights zb and zt at its two ends into a view's sky list, a list of its own because GL's skybox re-entry clears the dynamic stream with DynClear.
-static void PushSkyQuad(int list, float x1, float y1, float x2, float y2, const float *zb, const float *zt)
+static void PushSkyQuad(int list, float x1, float y1, float x2, float y2, const float *zb, const float *zt, int skyKey)
 {
 	if (zt[0] <= zb[0] && zt[1] <= zb[1]) return;
 	MeshVertex q[6];
 	MakeWallQuad(q, x1, y1, x2, y2, zb, zt);
-	for (int k = 0; k < 6; k++) g_skyVerts[list].Push(q[k]);
+	// [rc4l] Which sky it shows rides in u, which a sky surface is never textured by (ComputeSkyQuadKey).
+	for (int k = 0; k < 6; k++) { q[k].u = (float)skyKey; g_skyVerts[list].Push(q[k]); }
 	g_skyQuadsCaptured++;
 }
 
@@ -1084,13 +1085,13 @@ static void PushSkyQuad(int list, float x1, float y1, float x2, float y2, const 
 // walk reaches, so the set carries GL VISIBILITY with it. Deriving them from the map was tried
 // three ways and every one over-emitted -- on the reported vantage GL produces sky quads for FOUR
 // linedefs where the map has thousands of sky segs. See docs/skybleed-scope.md.
-void AddViewSkyQuad(int list, float x1, float y1, float x2, float y2, const float *zb, const float *zt, AActor *viewpoint, int lineSpecial)
+void AddViewSkyQuad(int list, float x1, float y1, float x2, float y2, const float *zb, const float *zt, AActor *viewpoint, int lineSpecial, int skyKey)
 {
 	if (!fua_mesh_sky || list == kSkyCaptureNone) return;
 	if (viewpoint != NULL && ComputeTakesSkyViewpoint(list, g_skyViewpoint != NULL)) g_skyViewpoint = viewpoint;
 	// [rc4l] A horizon line's sky belongs to features/horizon, which builds it for every eye height.
 	if (zx::horizon::HorizonsActive() && zx::horizon::ComputeIsHorizonLine(lineSpecial)) return;
-	PushSkyQuad(list, x1, y1, x2, y2, zb, zt);
+	PushSkyQuad(list, x1, y1, x2, y2, zb, zt, skyKey);
 }
 
 int WalkSkyList() { return g_skyList; }
@@ -1106,7 +1107,7 @@ void AddViewSkyHole(int list, float x1, float y1, float x2, float y2, const floa
 		for (int i = 0; i < kSkyHoleFloats; i++) g_skyHoles.Push(rec[i]);
 		return;
 	}
-	PushSkyQuad(list, x1, y1, x2, y2, zfloor, zceil);
+	PushSkyQuad(list, x1, y1, x2, y2, zfloor, zceil, 0);
 }
 
 

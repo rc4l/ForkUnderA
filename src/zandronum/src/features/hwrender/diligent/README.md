@@ -74,11 +74,11 @@ torches, `fixedcolormap` and `lightamp`), mirrors, stacked sectors, skyboxes and
 with a GL-against-Vulkan scenario in `tools/fuactl/scenarios`. Still missing or different:
 
 - a model or decal in a subtract style, drawn translucent (a sprite subtracts), or a sprite in one over coloured fog, which GL draws in two layers;
-- skies other than `sky1texture`: MBF line skies, `sky2`, swapped and double skies;
+- another sky than the level's (a line's, `sky2`) seen in a mirror, stacked view or camera, which shows the level's sky;
 - GLDEFS hardware shaders;
 - one level of mirror (GL recurses), at most 4 plane mirrors and 2 stacked views a frame;
 - stereo 3D, which is GL's alone;
-- `gl_seamless` and `r_mirror_recursions`, which it ignores;
+- `r_mirror_recursions`, which it ignores;
 - no GL fallback when the Vulkan device fails, and Windows only.
 
 ## Earlier: untextured geometry, benchmarked

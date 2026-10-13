@@ -162,7 +162,8 @@ AActor *SkyQuadViewpoint();
 int BeginSkyWalk();
 // [rc4l] A view's sky: start kSkyCapture* list `list` afresh (the player's with its skybox and holes), then add each sky wall, with the skybox it names (NULL for a plain sky), and each sky hole, an untextured one-sided wall's span its full-screen sky shows through.
 void BeginViewSky(int list);
-void AddViewSkyQuad(int list, float x1, float y1, float x2, float y2, const float *zb, const float *zt, AActor *viewpoint, int lineSpecial);
+// [rc4l] skyKey is the sector's sky as ComputeSkyQuadKey numbers it, 0 for the level's.
+void AddViewSkyQuad(int list, float x1, float y1, float x2, float y2, const float *zb, const float *zt, AActor *viewpoint, int lineSpecial, int skyKey);
 void AddViewSkyHole(int list, float x1, float y1, float x2, float y2, const float *zfloor, const float *zceil);
 // [rc4l] The player's sky surfaces, holes and skybox, exchanged with `other`, so a second derivation can be compared against the first.
 struct MainSkyState { TArray<MeshVertex> quads; TArray<float> holes; AActor *viewpoint = nullptr; };

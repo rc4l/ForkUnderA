@@ -5,6 +5,11 @@
 
 #include "features/hwrender/diligent/dgscene_internal.h"
 #include "features/viewsetup/viewsetup.h"   // [rc4l] the sky's scroll this frame
+#include "features/hwrender/computation/skylook_compute.h"   // [rc4l] which sky a sector shows, and its dome's constants
+#include "g_level.h"   // [rc4l] level.flags, the double and swapped skies
+#include "r_sky.h"     // [rc4l] sky1texture and sky2texture
+
+EXTERN_CVAR(Bool, fua_dg_sky)
 
 namespace zx { namespace hwrender {
 
@@ -41,15 +46,32 @@ namespace zx { namespace hwrender {
 // getting reported as missing fog.
 struct SkyVertexData { float x, y, z, u, v, r, g, b, useTex, alpha; };
 
-static Diligent::RefCntAutoPtr<Diligent::IBuffer>        g_skyVB;
 static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_skyPSO;
 static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_skyFadePSO;
 static Diligent::RefCntAutoPtr<Diligent::IBuffer>        g_skyFadeVB;
-static Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding> g_skySRB;
-static int          g_skyVerts = 0;
-static const void  *g_skyMaterial = NULL;
-static int          g_skyBuiltFor = -1;   // FTextureID index; == has ambiguous overloads
-static bool         g_skyBuiltValid = false;
+// [rc4l] A dome draw's own constants (ComputeSkyDrawConstants), written before each layer, since one frame can draw several skies.
+static Diligent::RefCntAutoPtr<Diligent::IBuffer>        g_skyDrawCB;
+
+// [rc4l] One sky texture's dome, built for its size and sky offset and bound to its material, as RenderDome sets its matrices per texture: the level's sky, a double sky's second layer, sky2 or a line's sky.
+struct SkyDome
+{
+	int texture = -1;              // [rc4l] the FTextureID index it shows, -1 for an empty slot
+	const void *material = nullptr;
+	int builtWidth = -1, builtHeight = -1, skyOffset = 0;
+	Diligent::RefCntAutoPtr<Diligent::IBuffer> vb;
+	int verts = 0;
+	Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding> srb;
+	PalEntry cap[2];               // [rc4l] [0] top cap, [1] bottom cap, GetSkyCapColor(false/true)
+	float xscale = 4.f, vscale = 1.f;
+	bool valid = false;
+};
+static const int kSkyDomes = 12;
+static SkyDome g_domes[kSkyDomes];
+// [rc4l] The level's own sky this frame (a sector with no sky of its own), which the background draws, and its two layers' domes.
+static zx::hwrender::SkyLook g_defaultLook = { -1, 0.f, 0.f, false, -1, 0.f };
+static SkyDome *g_defaultDome = NULL, *g_secondDome = NULL;
+// [rc4l] The skybox's material the faces were built for, so an animation frame rebinds them only when it changes.
+static const void *g_boxMaterial = NULL;
 
 // [rc4l] A skybox is six textures on a cube, not one on a dome.
 //
@@ -93,6 +115,9 @@ static int g_skyDraws = 0;
 static Diligent::RefCntAutoPtr<Diligent::IBuffer> g_skySurfVB;
 static unsigned int g_skySurfVBCapacity = 0;   // this level's sky is a portal
 
+// [rc4l] The dome draw's constants: its turn in radians, u's sign, v's raise and the layer (ComputeSkyDrawConstants).
+#define FUA_SKYDRAW_GLSL "layout(binding = 4) uniform SkyDraw { vec4 uSkyDraw; };\n"
+
 static const char *kSkyVS =
 	"#version 450\n"
 	"layout(location = 0) in vec3 aPos;\n"
@@ -100,6 +125,7 @@ static const char *kSkyVS =
 	"layout(location = 2) in vec4 aSkyColor;\n"
 	"layout(location = 3) in float aSkyAlpha;\n"
 	FUA_CONSTANTS_GLSL
+	FUA_SKYDRAW_GLSL
 	"layout(location = 0) out vec2 vUV;\n"
 	"layout(location = 1) out vec4 vSkyColor;\n"
 	"layout(location = 2) out float vSkyAlpha;\n"
@@ -110,12 +136,13 @@ static const char *kSkyVS =
 	// wall-clock time, and RenderDome folds it into the dome's Y rotation together with its constant
 	// -180. Baking that into the vertices would mean rebuilding the buffer every frame, so it comes
 	// in as an angle and is applied here.
-	"    float sa = sin(uLightParams.y), ca = cos(uLightParams.y);\n"
+	"    float sa = sin(uSkyDraw.x), ca = cos(uSkyDraw.x);\n"
 	"    vec3 p = vec3(aPos.x * ca + aPos.z * sa, aPos.y, -aPos.x * sa + aPos.z * ca);\n"
 	// [rc4l] Centred on the eye of whichever pass is drawing, read off its matrix as the horizon pass reads it, since uCameraPos holds only the player's and a skybox portal's sky sat around the player, thousands of units from its camera.
 	"    vec4 e = inverse(uMVP) * vec4(0.0, 0.0, 1.0, 0.0);\n"
 	"    gl_Position = uMVP * vec4(p + e.xyz / e.w, 1.0);\n"
-	"    vUV = aUV;\n"
+	// [rc4l] RenderDome's texture matrix: u negated for a mirrored sky, v raised by the sky's y offset.
+	"    vUV = vec2(aUV.x * uSkyDraw.y, aUV.y + uSkyDraw.z);\n"
 	"    vSkyColor = aSkyColor;\n"
 	"    vSkyAlpha = aSkyAlpha;\n"
 	"}\n";
@@ -124,6 +151,7 @@ static const char *kSkyPS =
 	"#version 450\n"
 	FUA_CONSTANTS_GLSL
 	FUA_FIXED_COLORMAP_GLSL
+	FUA_SKYDRAW_GLSL
 	"layout(location = 0) in vec2 vUV;\n"
 	"layout(location = 1) in vec4 vSkyColor;\n"
 	"layout(location = 2) in float vSkyAlpha;\n"
@@ -136,6 +164,13 @@ static const char *kSkyPS =
 	//   0  flat colour, opaque -- the caps
 	//  <0  flat colour, alpha = -a -- the sky fade layer GL draws over the whole sky
 	"    float sel = max(vSkyColor.a, 0.0);\n"
+	// [rc4l] A double sky's second layer (SKYMODE_SECONDLAYER): no caps, and the texture's own alpha over the first, below 0.05 dropped.
+	"    if (uSkyDraw.w > 0.5) {\n"
+	"        vec4 t = texture(uTex, vUV);\n"
+	"        if (sel < 0.5 || t.a < 0.05) discard;\n"
+	"        outColor = vec4(uFixedColormap.w > 0.5 ? fuaFixedColormap(t.rgb) : t.rgb, t.a * vSkyAlpha);\n"
+	"        return;\n"
+	"    }\n"
 	"    float al = vSkyColor.a < 0.0 ? -vSkyColor.a : 1.0;\n"
 	"    vec3 c = mix(vSkyColor.rgb, texture(uTex, vUV).rgb, sel);\n"
 	// [rc4l] GL draws the dome and its caps through main.fp, so a fixed colormap recolours the sky too.
@@ -176,16 +211,10 @@ static void SkyVertexAt(int r, int c, int rows, int cols, bool yflip, float mode
 	out.v = (yflip ? (1.0f + (float)(rows - r) / rows) : ((float)r / rows)) * vscale;
 }
 
-// The current sky texture's SkyOffset, captured in EnsureSky where the FTexture is in hand.
-static int g_skyTexOffset = 0;
-// [0] top cap, [1] bottom cap -- GetSkyCapColor(false/true), captured where the FTexture is in hand.
-static PalEntry g_skyCapColor[2];
-// Radians, recomputed per frame: -180 degrees (RenderDome's constant) plus the scroll offset.
+// Radians, recomputed per frame: -180 degrees (RenderDome's constant) plus the level sky's scroll, which the scene constants carry for a traced ray that misses.
 static float g_skyAngle = 0.f;
-// The dome's texture scales, so a ray that misses samples the sky the same way the dome draws it.
-static float g_skyXScale = 4.f, g_skyVScale = 1.f;
 
-static void BuildSkyDome(int texw, int texh)
+static void BuildSkyDome(SkyDome &d, int texw, int texh)
 {
 	const int rows = 4, cols = 128;
 
@@ -212,17 +241,17 @@ static void BuildSkyDome(int texw, int texh)
 	}
 	else if (texh <= 240)
 	{
-		modelTransY = (200 - texh + g_skyTexOffset + skyoffset) * skyoffsetfactor;
+		modelTransY = (200 - texh + d.skyOffset + skyoffset) * skyoffsetfactor;
 		modelScaleY = 1.f + ((texh - 200.f) / 200.f) * 1.17f;
 	}
 	else
 	{
-		modelTransY = (-40 + g_skyTexOffset + skyoffset) * skyoffsetfactor;
+		modelTransY = (-40 + d.skyOffset + skyoffset) * skyoffsetfactor;
 		modelScaleY = 1.2f * 1.17f;
 		vscale = (texh > 0) ? 240.f / texh : 1.f;
 	}
 	const float xscale = texw > 0 ? 1024.f / texw : 1.f;
-	g_skyXScale = xscale; g_skyVScale = vscale;
+	d.xscale = xscale; d.vscale = vscale;
 
 	TArray<SkyVertexData> verts;
 	for (int hemi = 0; hemi < 2; hemi++)
@@ -241,7 +270,7 @@ static void BuildSkyDome(int texw, int texh)
 		// over a third of the visible sky: a huge black disc where GL has cloud. Drawn first, the
 		// strips cover it back up and only the part above the dome remains.
 		{
-			const PalEntry cap = g_skyCapColor[hemi ? 1 : 0];
+			const PalEntry cap = d.cap[hemi ? 1 : 0];
 			SkyVertexData centre;
 			SkyVertexAt(1, 0, rows, cols, yflip, modelScaleY, modelTransY, xscale, vscale, centre);
 			for (int c = 1; c < cols; c++)
@@ -280,19 +309,19 @@ static void BuildSkyDome(int texw, int texh)
 		}
 	}
 
-	g_skyVerts = (int)verts.Size();
-	if (g_skyVerts == 0) return;
+	d.verts = (int)verts.Size();
+	d.vb.Release();
+	if (d.verts == 0) return;
 
 	Diligent::BufferDesc bd;
 	bd.Name = "fua sky VB";
-	bd.Size = (Diligent::Uint64)g_skyVerts * sizeof(SkyVertexData);
+	bd.Size = (Diligent::Uint64)d.verts * sizeof(SkyVertexData);
 	bd.Usage = Diligent::USAGE_IMMUTABLE;
 	bd.BindFlags = Diligent::BIND_VERTEX_BUFFER;
 	Diligent::BufferData bdata;
 	bdata.pData = &verts[0];
 	bdata.DataSize = bd.Size;
-	g_skyVB.Release();
-	GetDevice()->CreateBuffer(bd, &bdata, &g_skyVB);
+	GetDevice()->CreateBuffer(bd, &bdata, &d.vb);
 }
 
 // [rc4l] One creator, two pipelines. The dome WRAPS horizontally -- a cylinder has to, the texture
@@ -363,19 +392,141 @@ static bool CreateSkyPipeline(Diligent::TEXTURE_ADDRESS_MODE addrU, const char *
 	pci.PSODesc.ResourceLayout.NumImmutableSamplers = 1;
 	pci.pVS = vs;
 	pci.pPS = ps;
+	if (!g_skyDrawCB)
+	{
+		Diligent::BufferDesc cbd;
+		cbd.Name = "fua sky draw constants";
+		cbd.Size = sizeof(float) * 4;
+		cbd.Usage = Diligent::USAGE_DYNAMIC;
+		cbd.BindFlags = Diligent::BIND_UNIFORM_BUFFER;
+		cbd.CPUAccessFlags = Diligent::CPU_ACCESS_WRITE;
+		dev->CreateBuffer(cbd, nullptr, &g_skyDrawCB);
+		if (!g_skyDrawCB) return false;
+	}
 	dev->CreateGraphicsPipelineState(pci, &outPSO);
 	if (!outPSO) return false;
 	BindSceneConstants(outPSO);
+	for (Diligent::SHADER_TYPE stage : { Diligent::SHADER_TYPE_VERTEX, Diligent::SHADER_TYPE_PIXEL })
+		if (auto *v = outPSO->GetStaticVariableByName(stage, "SkyDraw")) v->Set(g_skyDrawCB);
 	return true;
 }
 
 static bool EnsureSkyPipeline()
 {
-	if (g_skyPSO && g_skySRB) return true;
-	if (!CreateSkyPipeline(Diligent::TEXTURE_ADDRESS_WRAP, "fua sky PSO", g_skyPSO)) return false;
-	if (!g_skySRB) g_skyPSO->CreateShaderResourceBinding(&g_skySRB, true);
-	// RefCntAutoPtr has several conversions, so `!= NULL` is ambiguous; ask it directly.
-	return g_skySRB.RawPtr() != nullptr;
+	return CreateSkyPipeline(Diligent::TEXTURE_ADDRESS_WRAP, "fua sky PSO", g_skyPSO);
+}
+
+// [rc4l] The next dome draw's constants, for its sky's scroll, mirror and raise and its layer.
+static void SetSkyDraw(Diligent::IDeviceContext *ctx, float xOffset, bool mirrored, float yOffset, const SkyDome *d, bool secondLayer)
+{
+	float c[4];
+	zx::hwrender::ComputeSkyDrawConstants(xOffset, mirrored, yOffset, d != NULL ? d->vscale : 1.f, d != NULL ? d->builtHeight : 0, secondLayer, c);
+	Diligent::MapHelper<float> cb(ctx, g_skyDrawCB, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD);
+	for (int i = 0; i < 4; i++) cb[i] = c[i];
+}
+
+// [rc4l] Whether texture id draws, as GLSkyInfo's ValidateTexture and its TEX_Null test ask of a transfer line's.
+static bool SkyTextureDraws(FTextureID id)
+{
+	FTexture *tex = id.isValid() ? TexMan[id] : NULL;
+	return tex != NULL && tex->UseType != FTexture::TEX_Null;
+}
+
+// [rc4l] The sky a sector whose sky field is sectorSky shows this frame, as GLWall::SkyPlane reads the level, the transfer line and the scroll.
+static zx::hwrender::SkyLook LookOfSky(int sectorSky)
+{
+	zx::hwrender::SkyLookIn in = {};
+	in.sectorSky = sectorSky;
+	const int line = (sectorSky & (zx::hwrender::kSkyFlatFlag - 1)) - 1;
+	if ((sectorSky & zx::hwrender::kSkyFlatFlag) && line >= 0 && line < numlines && lines[line].sidedef[0] != NULL)
+	{
+		const side_t *s = lines[line].sidedef[0];
+		const FTextureID top = s->GetTexture(side_t::top), bottom = s->GetTexture(side_t::bottom);
+		in.lineTop = top.GetIndex(); in.lineBottom = bottom.GetIndex();
+		in.lineTopDraws = SkyTextureDraws(top);
+		in.lineBottomValid = bottom.isValid();
+		in.lineBottomDraws = SkyTextureDraws(bottom);
+		// [rc4l] ANGLE_TO_FLOAT: the x offset read as an angle, in degrees.
+		in.lineTopX = (float)(s->GetTextureXOffset(side_t::top).Raw() * 180. / ANGLE_180);
+		in.lineBottomX = (float)(s->GetTextureXOffset(side_t::bottom).Raw() * 180. / ANGLE_180);
+		in.lineTopY = FIXED2FLOAT(s->GetTextureYOffset(side_t::top));
+		in.lineBottomY = FIXED2FLOAT(s->GetTextureYOffset(side_t::bottom));
+		in.lineMirrored = !lines[line].args[2];
+	}
+	in.swapSkies = (level.flags & LEVEL_SWAPSKIES) != 0;
+	in.doubleSky = (level.flags & LEVEL_DOUBLESKY) != 0;
+	in.sky1 = sky1texture.GetIndex();
+	in.sky2 = sky2texture.GetIndex();
+	in.sky1Pos = zx::viewsetup::CurrentView().sky1Pos;
+	in.sky2Pos = zx::viewsetup::CurrentView().sky2Pos;
+	return zx::hwrender::ComputeSkyLook(in);
+}
+
+// [rc4l] Fills d for texture index `texture` as it shows now (an animated sky's frame), rebuilding the dome only when its size or sky offset changed and the binding when its frame did; false when it has no material.
+static bool PrepareDome(SkyDome &d, int texture)
+{
+	FTexture *raw = texture >= 0 ? TexMan.ByIndexTranslated(texture) : NULL;
+	const void *mat = zx::materials::MaterialForTexture(raw);
+	zx::materials::MaterialInfo info;
+	if (raw == NULL || !zx::materials::DescribeMaterial(mat, info)) { d.valid = false; return false; }
+	if (d.valid && d.texture == texture && d.material == mat) return true;
+	const bool sameShape = d.valid && d.builtWidth == info.renderWidth && d.builtHeight == info.renderHeight && d.skyOffset == raw->SkyOffset;
+	d.texture = texture;
+	d.skyOffset = raw->SkyOffset;
+	d.cap[0] = raw->GetSkyCapColor(false);
+	d.cap[1] = raw->GetSkyCapColor(true);
+	if (!sameShape)
+	{
+		// [rc4l] Said once per genuinely new texture rather than per animation frame, which is what identified a frozen animation before.
+		Printf("vulkan sky: %s %dx%d skyoffset %d  cap %d,%d,%d / %d,%d,%d\n", info.name, info.renderWidth, info.renderHeight, d.skyOffset,
+			d.cap[0].r, d.cap[0].g, d.cap[0].b, d.cap[1].r, d.cap[1].g, d.cap[1].b);
+		BuildSkyDome(d, info.renderWidth, info.renderHeight);
+		d.builtWidth = info.renderWidth;
+		d.builtHeight = info.renderHeight;
+	}
+	if (!d.srb) g_skyPSO->CreateShaderResourceBinding(&d.srb, true);
+	if (!d.srb) { d.valid = false; return false; }
+	if (auto *v = d.srb->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "uTex")) v->Set(GetMaterialSRV(mat, 0));
+	d.material = mat;
+	d.valid = d.verts > 0;
+	return d.valid;
+}
+
+// [rc4l] The dome showing texture index `texture`, from the slot already holding it or else a free one (the last slot taken over when none is), or NULL when it cannot be drawn.
+static SkyDome *DomeFor(int texture)
+{
+	if (texture < 0 || !EnsureSkyPipeline()) return NULL;
+	SkyDome *slot = NULL;
+	for (int i = 0; i < kSkyDomes && slot == NULL; i++) if (g_domes[i].texture == texture) slot = &g_domes[i];
+	for (int i = 0; i < kSkyDomes && slot == NULL; i++) if (g_domes[i].texture < 0) slot = &g_domes[i];
+	if (slot == NULL) { slot = &g_domes[kSkyDomes - 1]; slot->valid = false; }
+	return PrepareDome(*slot, texture) ? slot : NULL;
+}
+
+// [rc4l] One layer of a sky: RenderDome with its scroll, mirror and raise, the second layer of a double sky without its caps.
+static void DrawDome(Diligent::IDeviceContext *ctx, const SkyDome &d, float xOffset, bool mirrored, float yOffset, bool secondLayer)
+{
+	if (!d.valid || !d.vb || !d.srb) return;
+	SetSkyDraw(ctx, xOffset, mirrored, yOffset, &d, secondLayer);
+	Diligent::IBuffer *vbs[] = { d.vb };
+	const Diligent::Uint64 offsets[] = { 0 };
+	ctx->SetVertexBuffers(0, 1, vbs, offsets, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION, Diligent::SET_VERTEX_BUFFERS_FLAG_RESET);
+	ctx->SetPipelineState(g_skyPSO);
+	ctx->CommitShaderResources(d.srb, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	Diligent::DrawAttribs draw;
+	draw.NumVertices = (Diligent::Uint32)d.verts;
+	draw.Flags = Diligent::DRAW_FLAG_VERIFY_ALL;
+	ctx->Draw(draw);
+}
+
+static void DrawSkyFade(Diligent::IDeviceContext *ctx);
+
+// [rc4l] A sky look as GLSkyPortal::DrawContents draws it: the main layer, a double sky's second over it, and the fade.
+static void DrawLook(Diligent::IDeviceContext *ctx, const zx::hwrender::SkyLook &look, const SkyDome *main, const SkyDome *second)
+{
+	if (main != NULL) DrawDome(ctx, *main, look.xOffset, look.mirrored, look.yOffset, false);
+	if (second != NULL) DrawDome(ctx, *second, look.secondXOffset, false, look.yOffset, true);
+	DrawSkyFade(ctx);
 }
 
 // The box gets its own pipeline for the sampler, and a binding PER FACE rather than one shared.
@@ -524,29 +675,14 @@ static bool EnsureSkyBoxPipeline()
 void EnsureSky()
 {
 	if (!EnsureSkyPipeline()) return;
-	// [rc4l] TexMan(id), not TexMan[id]. The subscript returns the texture as authored; the call
-	// applies the animation translation, which is what the engine's own sky path uses.
-	//
-	// GvH's skies are animated sequences, so with the subscript the backend pinned frame one forever
-	// while GL cycled: the engine reported drawing SKY_F049 and this drew SKY_F001. It reads as
-	// "the wrong sky for this map" rather than "a frozen animation", because the frames of a
-	// cloudscape do not look like frames of anything -- they just look like a different sky.
-	FTextureID id = sky1texture;
-	FTexture *raw = id.isValid() ? TexMan(id) : NULL;
+	// [rc4l] The level's sky for a sector with none of its own: sky1, or sky2 for a double or swapped sky, under sky1 as a double sky's second layer.
+	g_defaultLook = LookOfSky(0);
+	g_defaultDome = g_secondDome = NULL;
+	// [rc4l] Translated, not as authored: GvH's skies are animated sequences, and the subscript pinned frame one forever while GL cycled.
+	FTexture *raw = g_defaultLook.texture >= 0 ? TexMan.ByIndexTranslated(g_defaultLook.texture) : NULL;
 	const void *mat = zx::materials::MaterialForTexture(raw);
 	zx::materials::MaterialInfo info;
-	if (!zx::materials::DescribeMaterial(mat, info)) { g_skyBuiltValid = false; return; }
-
-	// [rc4l] Keyed on the RESOLVED material, so an animation frame counts as a change -- and only the
-	// binding is redone when the geometry cannot have moved. An animated sky advances several times a
-	// second; rebuilding a 128-column dome and reuploading it that often would be pure waste.
-	if (g_skyBuiltValid && g_skyMaterial == mat) return;
-	const bool sameShape = g_skyBuiltValid && g_skyBuiltFor == info.renderHeight;
-	g_skyBuiltFor = info.renderHeight;
-
-	g_skyTexOffset = raw->SkyOffset;
-	g_skyCapColor[0] = raw->GetSkyCapColor(false);
-	g_skyCapColor[1] = raw->GetSkyCapColor(true);
+	if (raw == NULL || !zx::materials::DescribeMaterial(mat, info)) { g_skyIsBox = false; return; }
 	// [rc4l] Say what the sky actually IS, once per genuinely new texture rather than per animation
 	// frame. Comparing this line against the engine's own is what identified both the skybox that is
 	// unimplemented and the animation that was frozen.
@@ -560,10 +696,12 @@ void EnsureSky()
 	if (isBox)
 	{
 		const zx::materials::SkyBoxFaces *sb = &box;
-		if (!EnsureSkyBoxPipeline()) { g_skyBuiltValid = false; return; }
+		if (g_skyIsBox && g_boxMaterial == mat && g_skyBoxFaces.Size() > 0) return;
+		const bool sameBox = g_skyIsBox && g_boxMaterial == mat;
+		if (!EnsureSkyBoxPipeline()) { g_skyIsBox = false; return; }
 		BuildSkyBox(box);
-		if (g_skyBoxFaces.Size() == 0) { g_skyBuiltValid = false; return; }
-		if (!sameShape)
+		if (g_skyBoxFaces.Size() == 0) { g_skyIsBox = false; return; }
+		if (!sameBox)
 		{
 			Printf("vulkan sky: %s  [SKYBOX, %s: %s %s %s %s %s %s]\n",
 				info.name,
@@ -576,25 +714,14 @@ void EnsureSky()
 				(sb->faces[5] && sb->faces[5]->Name) ? sb->faces[5]->Name : "-");
 		}
 		g_skyIsBox = true;
-		g_skyMaterial = mat;
-		g_skyBuiltValid = true;
+		g_boxMaterial = mat;
 		return;
 	}
 
 	g_skyIsBox = false;
-	if (!sameShape)
-	{
-		Printf("vulkan sky: %s %dx%d skyoffset %d  cap %d,%d,%d / %d,%d,%d\n",
-			info.name,
-			info.renderWidth, info.renderHeight, g_skyTexOffset,
-			g_skyCapColor[0].r, g_skyCapColor[0].g, g_skyCapColor[0].b,
-			g_skyCapColor[1].r, g_skyCapColor[1].g, g_skyCapColor[1].b);
-	}
-	if (!sameShape) BuildSkyDome(info.renderWidth, info.renderHeight);
-	g_skyMaterial = mat;
-	if (auto *v = g_skySRB->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "uTex"))
-		v->Set(GetMaterialSRV(g_skyMaterial, 0));
-	g_skyBuiltValid = true;
+	g_boxMaterial = NULL;
+	g_defaultDome = DomeFor(g_defaultLook.texture);
+	g_secondDome = g_defaultLook.secondTexture >= 0 ? DomeFor(g_defaultLook.secondTexture) : NULL;
 }
 
 // [rc4l] The sky's fade layer: a translucent sheet in the sector's fade colour, over the sky and
@@ -1140,7 +1267,9 @@ static void DrawSky(Diligent::IDeviceContext *ctx)
 	// same shape as a world batch, which is one draw per binding.
 	if (g_skyIsBox)
 	{
-		if (!g_skyBuiltValid || !g_skyBoxVB || !g_skyBoxPSO || g_skyBoxFaces.Size() == 0) return;
+		if (!g_skyBoxVB || !g_skyBoxPSO || g_skyBoxFaces.Size() == 0) return;
+		// [rc4l] RenderBox turns the box by the sky's scroll as RenderDome turns the dome.
+		SetSkyDraw(ctx, g_defaultLook.xOffset, false, 0.f, NULL, false);
 		Diligent::IBuffer *bvbs[] = { g_skyBoxVB };
 		const Diligent::Uint64 boffsets[] = { 0 };
 		ctx->SetVertexBuffers(0, 1, bvbs, boffsets, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
@@ -1161,21 +1290,7 @@ static void DrawSky(Diligent::IDeviceContext *ctx)
 		return;
 	}
 
-	if (!g_skyBuiltValid || !g_skyVB || !g_skyPSO || g_skyVerts == 0) return;
-
-	Diligent::IBuffer *vbs[] = { g_skyVB };
-	const Diligent::Uint64 offsets[] = { 0 };
-	ctx->SetVertexBuffers(0, 1, vbs, offsets, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
-		Diligent::SET_VERTEX_BUFFERS_FLAG_RESET);
-	ctx->SetPipelineState(g_skyPSO);
-	ctx->CommitShaderResources(g_skySRB, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-
-	Diligent::DrawAttribs draw;
-	draw.NumVertices = (Diligent::Uint32)g_skyVerts;
-	draw.Flags = Diligent::DRAW_FLAG_VERIFY_ALL;
-	ctx->Draw(draw);
-
-	DrawSkyFade(ctx);
+	DrawLook(ctx, g_defaultLook, g_defaultDome, g_secondDome);
 }
 
 
@@ -1245,8 +1360,134 @@ static void DrawSkyOccluders(Diligent::IDeviceContext *ctx)
 	DrawScreenSurfaceRun(ctx, g_skyOccluderSRB, 0, sv.Size());
 }
 
+// [rc4l] Skies other than the level's that this frame's sky surfaces show (a line's, sky2), each drawn into a picture of its own and painted onto its surfaces by screen position, as GL draws each GLSkyInfo through a portal of its own.
+struct SkyLookPicture
+{
+	zx::hwrender::SkyLook look;
+	Diligent::RefCntAutoPtr<Diligent::ITexture> color, depth;
+	Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding> srb;
+	int w = 0, h = 0;
+};
+static const int kSkyLookPictures = 4;
+static SkyLookPicture g_lookPictures[kSkyLookPictures];
+static int g_lookPictureCount = 0;
+// [rc4l] Each sky key the player's sky surfaces carry this frame, and the picture it paints from, -1 for the level's sky.
+struct SkyKeyPicture { int key, picture; };
+static TArray<SkyKeyPicture> g_keyPictures;
+static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_lookSurfPSO;
+static Diligent::RefCntAutoPtr<Diligent::IBuffer> g_lookSurfVB;
+static unsigned int g_lookSurfVBCapacity = 0;
+
+static void ReleaseSkyLookPictures()
+{
+	for (int i = 0; i < kSkyLookPictures; i++) g_lookPictures[i] = SkyLookPicture();
+	g_lookPictureCount = 0;
+	g_keyPictures.Clear();
+	g_lookSurfPSO.Release();
+}
+
+// [rc4l] Where key stands in this frame's list, or -1 when no surface carries it.
+static int FindSkyKey(int key)
+{
+	for (unsigned i = 0; i < g_keyPictures.Size(); i++) if (g_keyPictures[i].key == key) return (int)i;
+	return -1;
+}
+
+void RenderSkyLooks(Diligent::IDeviceContext *ctx)
+{
+	g_lookPictureCount = 0;
+	g_keyPictures.Clear();
+	if (!fua_dg_sky || g_skyPortalActive || !EnsureSkyPipeline()) return;
+	int nverts = 0;
+	const zx::levelmesh::MeshVertex *q = zx::levelmesh::SkyQuadVertices(nverts, zx::levelmesh::kSkyCaptureMain);
+	if (q == NULL) return;
+	const zx::hwrender::SkyLook level = LookOfSky(0);
+	for (int i = 0; i + 5 < nverts; i += 6)
+	{
+		const int key = (int)q[i].u;
+		if (key == 0 || FindSkyKey(key) >= 0) continue;
+		const zx::hwrender::SkyLook look = LookOfSky(zx::hwrender::ComputeSkyFromQuadKey(key));
+		int picture = -1;
+		if (!zx::hwrender::ComputeSameSkyLook(look, level))
+		{
+			for (int p = 0; p < g_lookPictureCount && picture < 0; p++)
+				if (zx::hwrender::ComputeSameSkyLook(look, g_lookPictures[p].look)) picture = p;
+			if (picture < 0 && g_lookPictureCount < kSkyLookPictures) { picture = g_lookPictureCount++; g_lookPictures[picture].look = look; }
+		}
+		const SkyKeyPicture kp = { key, picture };
+		g_keyPictures.Push(kp);
+	}
+	if (g_lookPictureCount == 0) return;
+	if (!g_lookSurfPSO) g_lookSurfPSO = CreateScreenSurfacePSO("fua sky look surface", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE);
+	if (!g_lookSurfPSO) { g_lookPictureCount = 0; return; }
+
+	auto *brtv = FrameRTV();
+	Diligent::ITextureView *bdsv = EnsureSceneDepth();
+	if (!bdsv) bdsv = FrameDSV();
+	const int w = FrameWidth(), h = FrameHeight();
+	// [rc4l] The player's matrix and the frame's colormap, which the dome shaders read from the scene block.
+	{
+		Diligent::MapHelper<float> cb(ctx, g_cb, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD);
+		WriteSceneConstants(&cb[0], nullptr, (float)w, (float)h, BindlessActive() ? (float)MaterialSlotCount() : 0.f);
+	}
+	for (int p = 0; p < g_lookPictureCount; p++)
+	{
+		SkyLookPicture &pic = g_lookPictures[p];
+		if (!pic.color || pic.w != w || pic.h != h)
+		{
+			if (!CreateViewTextures(w, h, "fua sky look", pic.color, pic.depth) ||
+				!CreatePictureBinding(g_lookSurfPSO, "uSky", pic.color, pic.srb)) { g_lookPictureCount = p; break; }
+			pic.w = w; pic.h = h;
+		}
+		auto *prtv = pic.color->GetDefaultView(Diligent::TEXTURE_VIEW_RENDER_TARGET);
+		auto *pdsv = pic.depth->GetDefaultView(Diligent::TEXTURE_VIEW_DEPTH_STENCIL);
+		ctx->SetRenderTargets(1, &prtv, pdsv, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+		const float clearCol[4] = { 0.f, 0.f, 0.f, 1.f };
+		ctx->ClearRenderTarget(prtv, clearCol, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+		const SkyDome *second = pic.look.secondTexture >= 0 ? DomeFor(pic.look.secondTexture) : NULL;
+		DrawLook(ctx, pic.look, DomeFor(pic.look.texture), second);
+	}
+	ctx->SetRenderTargets(1, &brtv, bdsv, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	// [rc4l] Each picture changes hands here, outside the frame's render pass, for the reason RenderSkyPortal gives.
+	for (int p = 0; p < g_lookPictureCount; p++)
+	{
+		Diligent::StateTransitionDesc barrier(g_lookPictures[p].color, Diligent::RESOURCE_STATE_UNKNOWN,
+			Diligent::RESOURCE_STATE_SHADER_RESOURCE, Diligent::STATE_TRANSITION_FLAG_UPDATE_STATE);
+		ctx->TransitionResourceStates(1, &barrier);
+	}
+}
+
+// [rc4l] The player's sky surfaces that show another sky than the level's, each run painted from its look's picture.
+static void DrawSkyLookSurfaces(Diligent::IDeviceContext *ctx)
+{
+	if (g_lookPictureCount == 0 || !g_lookSurfPSO) return;
+	if (!g_pass.mainView || g_pass.lineMirror >= 0 || g_pass.stackSlot >= 0 || g_pass.inCameraPass || g_pass.inSkyPortal) return;
+	int nverts = 0;
+	const zx::levelmesh::MeshVertex *q = zx::levelmesh::SkyQuadVertices(nverts, zx::levelmesh::kSkyCaptureMain);
+	if (q == NULL) return;
+	static TArray<SceneVertex> sv;
+	unsigned int first[kSkyLookPictures], count[kSkyLookPictures];
+	sv.Clear();
+	for (int p = 0; p < g_lookPictureCount; p++)
+	{
+		first[p] = sv.Size();
+		for (int i = 0; i + 5 < nverts; i += 6)
+		{
+			const int at = FindSkyKey((int)q[i].u);
+			if (at < 0 || g_keyPictures[at].picture != p) continue;
+			for (int k = 0; k < 6; k++) sv.Push(ToSceneVertex(q[i + k], 0));
+		}
+		count[p] = sv.Size() - first[p];
+	}
+	if (!BindScreenSurfaces(ctx, g_lookSurfVB, g_lookSurfVBCapacity, sv, g_lookSurfPSO, "fua sky look surface VB")) return;
+	for (int p = 0; p < g_lookPictureCount; p++)
+		if (count[p] > 0 && g_lookPictures[p].srb) DrawScreenSurfaceRun(ctx, g_lookPictures[p].srb, first[p], count[p]);
+	g_skyDraws++;
+}
+
 void DrawSkySurfaces(Diligent::IDeviceContext *ctx)
 {
+	DrawSkyLookSurfaces(ctx);
 	if (!g_skyPortalActive || !g_skySurfPSO || !g_skySurfSRB) return;
 
 	// [rc4l] Its own buffer, rebuilt each frame, since GL clears the shared dynamic stream when it re-enters its scene builder for the skybox portal, between the walk that produces these and the draw.
@@ -1259,7 +1500,9 @@ void DrawSkySurfaces(Diligent::IDeviceContext *ctx)
 // [rc4l] The sky's pipelines and bindings, released with the scene's when a level or a filter change rebuilds them.
 void ReleaseSkyPipelines()
 {
-	g_skySRB.Release();
+	for (int i = 0; i < kSkyDomes; i++) g_domes[i] = SkyDome();
+	g_defaultDome = g_secondDome = NULL;
+	ReleaseSkyLookPictures();
 	g_skyPSO.Release();
 	// The face bindings are keyed on this level's materials, so they go with everything else that is.
 	g_skyBoxFaces.Clear();
@@ -1274,22 +1517,23 @@ void ReleaseSkyPipelines()
 	g_skyFadePSO.Release();
 	g_skyOccluderSRB.Release();
 	g_skyOccluderPSO.Release();
-	g_skyBuiltValid = false;
+	g_boxMaterial = NULL;
 }
 
-// [rc4l] A new level's sky is built again from its own texture.
+// [rc4l] A new level's sky is built again from its own textures.
 void ResetSkyForLevel()
 {
-	g_skyMaterial = NULL;
-	g_skyBuiltValid = false;
+	for (int i = 0; i < kSkyDomes; i++) { g_domes[i].valid = false; g_domes[i].texture = -1; g_domes[i].material = nullptr; }
+	g_defaultDome = g_secondDome = NULL;
+	g_boxMaterial = NULL;
 }
 
 // [rc4l] The sky behind the world, painted first with depth off: the skybox's picture, or the dome and its occluders.
 void DrawSkyBackground(Diligent::IDeviceContext *ctx)
 {
-	// mSky1Pos is in degrees and advances with gl_frameMS, so it must be read every frame.
-	const float scroll = zx::viewsetup::CurrentView().sky1Pos;
-	g_skyAngle = (-180.0f + scroll) * 3.14159265f / 180.0f;
+	// [rc4l] The level's sky scrolls with gl_frameMS, so its look is read every frame.
+	g_defaultLook = LookOfSky(0);
+	g_skyAngle = (-180.0f + g_defaultLook.xOffset) * 3.14159265f / 180.0f;
 	// [rc4l] A sky that is a PLACE takes precedence over any texture.
 	//
 	// When the map has an ASkyViewpoint, the sky is the world seen from it and there is no sky
@@ -1308,8 +1552,9 @@ void DrawSkyBackground(Diligent::IDeviceContext *ctx)
 void GetSkyConstants(float &angle, float &xScale, float &vScale, unsigned char &capR, unsigned char &capG, unsigned char &capB)
 {
 	angle = g_skyAngle;
-	xScale = g_skyXScale; vScale = g_skyVScale;
-	capR = g_skyCapColor[0].r; capG = g_skyCapColor[0].g; capB = g_skyCapColor[0].b;
+	const SkyDome *d = g_defaultDome;
+	xScale = d != NULL ? d->xscale : 4.f; vScale = d != NULL ? d->vscale : 1.f;
+	capR = d != NULL ? d->cap[0].r : 0; capG = d != NULL ? d->cap[0].g : 0; capB = d != NULL ? d->cap[0].b : 0;
 }
 
 int SkyDraws() { return g_skyDraws; }
