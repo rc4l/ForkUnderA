@@ -194,7 +194,7 @@ static const char *kSceneVS =
 	"layout(binding = 8) uniform sampler2D uMaterials[FUA_MAT_SLOTS];\n" \
 	/* [rc4l] GL's func_warp1.fp and func_warp2.fp, line for line -- see warp_compute for the tested copy. */ \
 	"vec2 fuaWarp(vec2 uv) {\n" \
-	"    if (vWarp.x < 0.5) return uv;\n" \
+	"    if (vWarp.x < 0.5 || vWarp.x > 2.5) return uv;\n" \
 	"    const float twoPi = 6.28318530717958647692;\n" \
 	"    float t = uFrame.x * vWarp.y;\n" \
 	"    vec2 o;\n" \
@@ -470,21 +470,23 @@ static const char *kSceneVS =
 	"    vec3 frag = texel * color;\n" \
 	"    return fuaColouredFog(frag, vFog.rgb, fogMode, fogfactor);\n" \
 	"}\n" \
-	"vec3 fuaShade(vec3 texel) { return fuaShadeEx(texel, true); }\n"
+	"vec3 fuaShade(vec3 texel) { return fuaShadeEx(texel, true); }\n" \
+	/* [rc4l] CompileShader puts GLDEFS' hardware shaders here, with fuaSurfaceTexel, which runs a piece's or samples its texture (features/hwshaders). */ \
+	"//FUA_USER_SHADERS\n"
 
 // [rc4l] Opaque: no discard, so early-Z survives and overdrawn fragments are never shaded.
 static const char *kScenePSOpaque =
 	"#version 450\n"
 	FUA_LIGHT_GLSL
 	"void main() {\n"
-	"    outColor = vec4(fuaShade(fuaTexel(vUV).rgb), 1.0);\n"
+	"    outColor = vec4(fuaShade(fuaSurfaceTexel(vUV).rgb), 1.0);\n"
 	"}\n";
 
 static const char *kScenePS =
 	"#version 450\n"
 	FUA_LIGHT_GLSL
 	"void main() {\n"
-	"    vec4 t = fuaTexMode(fuaTexel(vUV));\n"
+	"    vec4 t = fuaSurfaceTexel(vUV);\n"
 	/* [rc4l] GL's solid pass tests no alpha, so an upper, lower or one-sided middle shows its see-through texels in their own colour. */
 	"    if (t.a < 0.5 && vPlain < 0.5) discard;\n"
 	"    outColor = vec4(fuaShade(t.rgb), 1.0);\n"
@@ -515,7 +517,7 @@ static const char *kScenePSGBuffer =
 	FUA_LIGHT_GLSL
 	"layout(location = 1) out vec4 outNormal;\n"
 	"void main() {\n"
-	"    vec4 t = fuaTexel(vUV);\n"
+	"    vec4 t = fuaSurfaceTexel(vUV);\n"
 	/* [rc4l] GL's solid pass tests no alpha, so an upper, lower or one-sided middle shows its see-through texels in their own colour. */
 	"    if (t.a < 0.5 && vPlain < 0.5) discard;\n"
 	"    outColor = vec4(fuaShade(t.rgb), 1.0);\n"
@@ -538,7 +540,7 @@ static const char *kScenePSTrans =
 	"    }\n"
 	/* [rc4l] A fuzzy sprite under gl_fuzztype takes GL's fuzz shader (texFlags / 128), the jagged one sampling a splat of its coordinate. */
 	"    int fuzz = (int(vTexFlags + 0.5) >> 7) & 7;\n"
-	"    vec4 t = fuaTexMode(fuaTexel(fuzz == 5 ? fuaFuzzSplat(vUV, uFrame.x) : vUV));\n"
+	"    vec4 t = fuzz == 5 ? fuaTexMode(fuaTexel(fuaFuzzSplat(vUV, uFrame.x))) : fuaSurfaceTexel(vUV);\n"
 	"    if (fuzz > 0) t = fuaFuzz(fuzz, vUV, uFrame.x, t);\n"
 	/* [rc4l] An alpha-tested sprite drops what GL's uAlphaThreshold drops (uFrame.w); anything else only what is all but invisible. */
 	"    if ((int(vTexFlags + 0.5) & 2) != 0 ? t.a <= uFrame.w : t.a < 0.04) discard;\n"

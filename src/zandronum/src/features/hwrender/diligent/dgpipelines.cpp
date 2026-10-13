@@ -3,10 +3,13 @@
 //
 // [rc4l] The world pipelines and what binds to them: the bindless material array and its slots, animated slots, and the per-material bindings.
 
+#include "features/hwshaders/hwshaders.h"   // [rc4l] the GLDEFS shader list
+#include "features/hwshaders/computation/hwshader_compute.h"
 #include "features/hwrender/diligent/dgscene_internal.h"
 #include "features/hwrender/diligent/dgscene_glsl.h"   // [rc4l] the world pass's shaders
 
 #include <string.h>
+#include "w_wad.h"   // [rc4l] the shader lumps
 
 // [rc4l] Off makes every commit in a draw loop check every resource again, the old cost, for an A/B in one session.
 CVAR(Bool, fua_dg_loopcommits, true, 0)
@@ -597,6 +600,52 @@ void FillSamplerFromEngine(Diligent::SamplerDesc &samp)
 	}
 }
 
+// [rc4l] Off once the scene shaders failed with the hardware shaders in them, so the world still draws, plainly.
+static bool g_userShadersOff = false;
+
+const std::string &UserShaderBlock()
+{
+	static std::string block;
+	static int builtFor = -1;
+	static bool builtOff = false;
+	const int count = g_userShadersOff ? 0 : zx::hwshaders::UserShaderCount();
+	if (builtFor == count && builtOff == g_userShadersOff) return block;
+	builtFor = count;
+	builtOff = g_userShadersOff;
+	std::vector<std::string> adapted;
+	std::vector<bool> styles;
+	for (int i = 0; i < count; i++)
+	{
+		std::string code, probeCode;
+		bool style = false;
+		const int lump = Wads.CheckNumForFullName(zx::hwshaders::UserShaderLump(i));
+		if (lump >= 0)
+		{
+			FMemLump data = Wads.ReadLump(lump);
+			const std::string src = data.GetString().GetChars();
+			style = zx::hwshaders::ComputeAdaptUserShader(src, i, code);
+			// [rc4l] Alone, against stand-ins for what the scene shader gives it, so one that leans on more of GL's main.fp than the backend offers is left out rather than taking the world down.
+			const bool probeStyle = zx::hwshaders::ComputeAdaptUserShader(src, 0, probeCode);
+			const std::string probe = std::string("#version 450\n"
+				"layout(location = 0) in vec2 vUV;\n"
+				"layout(location = 1) flat in vec2 vWarp;\n"
+				"layout(binding = 0) uniform Probe { vec4 uFrame; };\n"
+				"layout(binding = 1) uniform sampler2D uTex;\n"
+				"layout(location = 0) out vec4 outColor;\n"
+				"vec4 fuaTexel(vec2 uv) { return texture(uTex, uv); }\n"
+				"vec4 fuaTexMode(vec4 t) { return t; }\n") +
+				zx::hwshaders::ComputeUserShaderBlock({ probeCode }, { probeStyle }) +
+				"void main() { outColor = fuaSurfaceTexel(vUV); }\n";
+			if (!CompileShader(Diligent::SHADER_TYPE_PIXEL, "fua hardware shader probe", probe.c_str())) code.clear();
+		}
+		if (code.empty()) Printf("vulkan: hardware shader %s does not compile here; its textures draw without it\n", zx::hwshaders::UserShaderLump(i));
+		adapted.push_back(code);
+		styles.push_back(style);
+	}
+	block = zx::hwshaders::ComputeUserShaderBlock(adapted, styles);
+	return block;
+}
+
 bool EnsureScenePipeline(FString &err)
 {
 	// The sampler is immutable in the PSO, so a filter change means a new PSO. Cheap and rare.
@@ -637,7 +686,16 @@ bool EnsureScenePipeline(FString &err)
 	psTrans = CompileShader(Diligent::SHADER_TYPE_PIXEL, "fua scene PS translucent", kScenePSTrans);
 	psRedAlpha = CompileShader(Diligent::SHADER_TYPE_PIXEL, "fua scene PS red alpha", kScenePSRedAlpha);
 	if (!vs || !psOpaque || !psMasked || !psTrans || !psRedAlpha)
-	{ err = "scene shader compilation failed"; return false; }
+	{
+		// [rc4l] Shaders that compiled alone can still clash together, over a helper both define, so the world is drawn without them rather than not at all.
+		if (!g_userShadersOff && zx::hwshaders::UserShaderCount() > 0)
+		{
+			Printf("vulkan: the hardware shaders together break the scene shaders; drawing without them\n");
+			g_userShadersOff = true;
+			return EnsureScenePipeline(err);
+		}
+		err = "scene shader compilation failed"; return false;
+	}
 
 	// [rc4l] Created once and never replaced, since pipelines that outlive a level change bind it statically and a replaced one is never mapped again.
 	if (!g_cb)

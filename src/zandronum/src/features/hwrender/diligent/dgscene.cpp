@@ -3,6 +3,7 @@
 //
 // [rc4l] The Vulkan backend's world pass: the scene's records, frame prep, the world draw and the frame it composes; dgscene_internal.h lists the files the rest is split into.
 
+#include "features/hwshaders/computation/hwshader_compute.h"   // [rc4l] ComputeSpliceShaderBlock
 #include "features/hwrender/computation/framepacing_compute.h"
 #include "features/framephase/framephase.h"   // [rc4l] the backend, upload, lights and present phases
 #include "c_dispatch.h"
@@ -238,7 +239,10 @@ Diligent::RefCntAutoPtr<Diligent::IShader> CompileShader(Diligent::SHADER_TYPE t
 	char defines[64];
 	const unsigned slots = MaterialSlotCapacity();
 	snprintf(defines, sizeof(defines), "#define FUA_MAT_SLOTS %u\n", slots > 0 ? slots : 1u);
-	const std::string text = zx::hwrender::ComputeShaderWithDefines(source, defines);
+	std::string text = zx::hwrender::ComputeShaderWithDefines(source, defines);
+	// [rc4l] A scene shader takes GLDEFS' hardware shaders at its marker; nothing else has one, so checking each of them alone cannot come back here.
+	if (text.find(kUserShaderMarker) != std::string::npos)
+		text = zx::hwshaders::ComputeSpliceShaderBlock(text, kUserShaderMarker, UserShaderBlock());
 	Diligent::ShaderCreateInfo ci;
 	ci.SourceLanguage = Diligent::SHADER_SOURCE_LANGUAGE_GLSL_VERBATIM;
 	ci.Desc.ShaderType = type;

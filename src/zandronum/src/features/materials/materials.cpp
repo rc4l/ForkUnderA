@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 rc4l
 
+#include "features/hwshaders/hwshaders.h"   // [rc4l] UserShaderOf
 #include "gl/system/gl_system.h"
 #include "features/materials/materials.h"
 #include "w_wad.h"   // [rc4l] the special textures' lumps
@@ -37,6 +38,7 @@ bool DescribeMaterial(MaterialRef m, MaterialInfo &info)
 	info.basePalette = tex->UseBasePalette();
 	info.brightmap = tex->gl_info.Brightmap != NULL;
 	info.shaderSpeed = tex->gl_info.shaderspeed;
+	info.userShader = zx::hwshaders::UserShaderOf(tex->gl_info.shaderindex);
 	return true;
 }
 

@@ -1614,6 +1614,8 @@ add_executable( zdoom WIN32
 	features/levelmesh/modelmesh.cpp
 	features/levelmesh/captureshading.cpp
 	features/materials/materials.cpp
+	features/hwshaders/hwshaders.cpp
+	features/hwshaders/computation/hwshader_compute.cpp
 	features/sprites/spritebuild.cpp
 	features/sprites/modelbuild.cpp
 	features/sprites/pspritebuild.cpp

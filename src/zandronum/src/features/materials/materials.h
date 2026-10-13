@@ -32,7 +32,8 @@ struct MaterialInfo
 	bool  complex;
 	bool  basePalette;    // [rc4l] drawn in the base palette, which decals use as an alpha mask
 	bool  brightmap;      // [rc4l] has a brightmap (GLDEFS, or the default one GZDoom makes)
-	float shaderSpeed;    // [rc4l] GLDEFS speed for a warp
+	float shaderSpeed;    // [rc4l] GLDEFS speed for a warp or a hardware shader
+	int   userShader;     // [rc4l] its GLDEFS HardwareShader (features/hwshaders), -1 for none
 };
 
 // [rc4l] Fill `info`; false when there is no material or it has no texture.

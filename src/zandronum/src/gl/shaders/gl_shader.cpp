@@ -56,6 +56,9 @@
 #include "gl/renderer/gl_renderstate.h"
 #include "gl/system/gl_cvars.h"
 #include "gl/shaders/gl_shader.h"
+#include "features/hwshaders/hwshaders.h"   // [rc4l] the GLDEFS shader list
+#include "features/hwshaders/computation/hwshader_compute.h"
+static_assert(FIRST_USER_SHADER == zx::hwshaders::kFirstUserShader, "features/hwshaders numbers user shaders as GL does");
 #include "gl/textures/gl_material.h"
 #include "gl/dynlights/gl_lightbuffer.h"
 
@@ -366,7 +369,6 @@ static const FDefaultShader defaultshaders[]=
 	{NULL,NULL}
 };
 
-static TArray<FString> usershaders;
 
 struct FEffectShader
 {
@@ -436,12 +438,13 @@ void FShaderManager::CompileShaders()
 		}
 	}
 
-	for(unsigned i = 0; i < usershaders.Size(); i++)
+	// [rc4l] The lumps GLDEFS named, kept by features/hwshaders so the backend compiles the same ones.
+	for(int i = 0; i < zx::hwshaders::UserShaderCount(); i++)
 	{
-		FString name = ExtractFileBase(usershaders[i]);
+		FString name = ExtractFileBase(zx::hwshaders::UserShaderLump(i));
 		FName sfn = name;
 
-		FShader *shc = Compile(sfn, usershaders[i], true);
+		FShader *shc = Compile(sfn, zx::hwshaders::UserShaderLump(i), true);
 		mTextureEffects.Push(shc);
 	}
 
@@ -585,63 +588,9 @@ void gl_DestroyUserShaders()
 //
 //==========================================================================
 
+// [rc4l] features/hwshaders keeps the shader list now, so the backend compiles the same ones; this name stays for GLDEFS' parser.
 void gl_ParseHardwareShader(FScanner &sc, int deflump)
 {
-	int type = FTexture::TEX_Any;
-	bool disable_fullbright=false;
-	bool thiswad = false;
-	bool iwad = false;
-	int maplump = -1;
-	FString maplumpname;
-	float speed = 1.f;
-
-	sc.MustGetString();
-	if (sc.Compare("texture")) type = FTexture::TEX_Wall;
-	else if (sc.Compare("flat")) type = FTexture::TEX_Flat;
-	else if (sc.Compare("sprite")) type = FTexture::TEX_Sprite;
-	else sc.UnGet();
-
-	sc.MustGetString();
-	FTextureID no = TexMan.CheckForTexture(sc.String, type);
-	FTexture *tex = TexMan[no];
-
-	sc.MustGetToken('{');
-	while (!sc.CheckToken('}'))
-	{
-		sc.MustGetString();
-		if (sc.Compare("shader"))
-		{
-			sc.MustGetString();
-			maplumpname = sc.String;
-		}
-		else if (sc.Compare("speed"))
-		{
-			sc.MustGetFloat();
-			speed = float(sc.Float);
-		}
-	}
-	if (!tex)
-	{
-		return;
-	}
-
-	if (maplumpname.IsNotEmpty())
-	{
-		if (tex->bWarped != 0)
-		{
-			Printf("Cannot combine warping with hardware shader on texture '%s'\n", tex->Name.GetChars());
-			return;
-		}
-		tex->gl_info.shaderspeed = speed; 
-		for(unsigned i=0;i<usershaders.Size();i++)
-		{
-			if (!usershaders[i].CompareNoCase(maplumpname))
-			{
-				tex->gl_info.shaderindex = i + FIRST_USER_SHADER;
-				return;
-			}
-		}
-		tex->gl_info.shaderindex = usershaders.Push(maplumpname) + FIRST_USER_SHADER;
-	}	
+	zx::hwshaders::ParseHardwareShader(sc, deflump);
 }
 

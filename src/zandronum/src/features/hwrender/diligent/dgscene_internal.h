@@ -471,6 +471,9 @@ bool CreatePictureBinding(Diligent::IPipelineState *pso, const char *var, Dilige
 
 // [rc4l] The sky (dgsky.cpp).
 void EnsureSky();
+// [rc4l] The marker a scene shader takes GLDEFS' hardware shaders at, and the block that replaces it (dgpipelines.cpp), each shader checked to compile alone and all of them dropped if together they break the scene shaders.
+#define kUserShaderMarker "//FUA_USER_SHADERS"
+const std::string &UserShaderBlock();
 // [rc4l] Each sky other than the level's that the player's sky surfaces show this frame, drawn into a picture of its own before the frame, which DrawSkySurfaces paints them from.
 void RenderSkyLooks(Diligent::IDeviceContext *ctx);
 bool EnsureSkyPortalResources();

@@ -3,6 +3,7 @@
 //
 // [rc4l] The scene buffer: built from the level mesh sorted by material, and patched in place as pieces move, repaint or appear.
 
+#include "features/hwshaders/computation/hwshader_compute.h"   // [rc4l] ComputePieceShader
 #include "features/hwrender/diligent/dgscene_internal.h"
 
 namespace zx { namespace hwrender {
@@ -57,7 +58,8 @@ void FillPieceDataWith(const zx::levelmesh::MeshPiece &p, const PieceSlotSet &sl
 	// [rc4l] A warp texture ripples in the shader, as GL's func_warp does; the upload already holds its unwarped source.
 	zx::materials::MaterialInfo info;
 	const bool described = zx::materials::DescribeMaterial(p.material, info);
-	pd.warpStyle = (float)zx::hwrender::ComputeWarpStyle(described ? info.warp : 0);
+	// [rc4l] A warp, or a GLDEFS hardware shader from 3 up, in the slot the shaders read the piece's effect from.
+	pd.warpStyle = (float)zx::hwshaders::ComputePieceShader(zx::hwrender::ComputeWarpStyle(described ? info.warp : 0), described ? info.userShader : -1);
 	pd.nx = p.normX; pd.ny = p.normY; pd.nz = p.normZ;
 	pd.warpSpeed = described ? info.shaderSpeed : 1.f;
 	pd.floodUx = p.floodUV[0]; pd.floodUy = p.floodUV[1]; pd.floodU0 = p.floodUV[2]; pd.floodZ = p.floodZ;
