@@ -7,6 +7,29 @@
 
 using namespace zx::frame;
 
+// [rc4l] A frame's mouse input from the window's messages to the view, and a take that starts it again.
+TEST(MouseTally, MessagesMovementAndEventsAreCountedAndTakenOnce)
+{
+	MouseTally t = MouseTally();
+	ComputeMouseTallyRaw(t, 3, -1, true);
+	ComputeMouseTallyRaw(t, 2, 4, true);
+	ComputeMouseTallyRaw(t, 50, 50, false);
+	ComputeMouseTallyEvent(t, true);
+	ComputeMouseTallyEvent(t, false);
+	ComputeMouseTallyEvent(t, false);
+	const MouseTally a = ComputeMouseTallyTake(t);
+	EXPECT_EQ(3, a.messages);
+	EXPECT_EQ(1, a.ignored);
+	EXPECT_EQ(5, a.dx);
+	EXPECT_EQ(3, a.dy);
+	EXPECT_EQ(1, a.toView);
+	EXPECT_EQ(2, a.keptFromView);
+	const MouseTally b = ComputeMouseTallyTake(t);
+	EXPECT_EQ(0, b.messages);
+	EXPECT_EQ(0, b.dx);
+	EXPECT_EQ(0, b.keptFromView);
+}
+
 namespace {
 
 const unsigned kDeg = 11930465u;   // [rc4l] one degree in BAM, near enough

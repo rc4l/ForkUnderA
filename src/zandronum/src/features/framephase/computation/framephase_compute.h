@@ -8,8 +8,8 @@
 
 namespace zx { namespace framephase {
 
-// [rc4l] Where a frame's time goes; Upload and Lights are inside Backend, which is the backend's whole scene draw.
-enum EFramePhase { kPhaseSim, kPhaseWalk, kPhaseRebake, kPhaseActors, kPhaseBackend, kPhaseUpload, kPhaseLights, kPhasePresent, kPhaseCount };
+// [rc4l] Where a frame's time goes; Upload and Lights are inside Backend, the backend's whole scene draw, and Display holds everything D_Display does, its Flip and the scene phases among it.
+enum EFramePhase { kPhaseSim, kPhaseWalk, kPhaseRebake, kPhaseActors, kPhaseBackend, kPhaseUpload, kPhaseLights, kPhasePresent, kPhaseInput, kPhaseDisplay, kPhaseFlip, kPhaseCount };
 
 // [rc4l] The phase's short name, for reports and CSV headers.
 const char *ComputePhaseName(int phase);

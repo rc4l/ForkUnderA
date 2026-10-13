@@ -19,6 +19,7 @@
 #include "win32iface.h"
 #include "rawinput.h"
 #include "menu/menu.h"
+#include "features/frame/viewtrace.h"   // [rc4l] NoteRawMouse, NoteMouseGrabbed
 
 // MACROS ------------------------------------------------------------------
 
@@ -569,6 +570,7 @@ void FRawMouse::Grab()
 		{
 			GetCursorPos(&UngrabbedPointerPos);
 			Grabbed = true;
+			zx::frame::NoteMouseGrabbed(true);   // [rc4l] fua_viewtrace
 			SetCursorState(false);
 			// By setting the cursor position, we force the pointer image
 			// to change right away instead of having it delayed until
@@ -597,6 +599,7 @@ void FRawMouse::Ungrab()
 		if (MyRegisterRawInputDevices(&rid, 1, sizeof(rid)))
 		{
 			Grabbed = false;
+			zx::frame::NoteMouseGrabbed(false);   // [rc4l] fua_viewtrace
 			ClearButtonState();
 		}
 		SetCursorState(true);
@@ -612,6 +615,8 @@ void FRawMouse::Ungrab()
 
 bool FRawMouse::ProcessRawInput(RAWINPUT *raw, int code)
 {
+	if (raw->header.dwType == RIM_TYPEMOUSE)
+		zx::frame::NoteRawMouse(raw->data.mouse.lLastX, raw->data.mouse.lLastY, Grabbed && use_mouse);   // [rc4l] fua_viewtrace
 	if (!Grabbed || raw->header.dwType != RIM_TYPEMOUSE || !use_mouse)
 	{
 		return false;

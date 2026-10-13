@@ -51,7 +51,8 @@ screen itself):
 - `fua_viewtrace [frames] [file.csv]` (`viewtrace`, `computation/viewtrace_compute`): the angle each
   frame's main view was drawn with, whether a tic ran, and the gaps and lumps in the turning; the file has
   each frame's phases and when its view was set up and its present began on the steady clock, which
-  `fuactl screen` lines up against the compositor's frames. `fua_viewtrace end` writes it early.
+  `fuactl screen` lines up against the compositor's frames. `fua_viewtrace end` writes it early; it holds up
+  to 300000 frames, minutes at any frame rate.
 - `fua_debug_orbit <degrees>` and `fua_debug_orbit_period` (`debugorbit`, `computation/debugorbit_compute`):
   the aim swept in a circle every frame through the mouse's own path, for repeatable motion.
 - `fua_debug_ticstall_us` and `fua_debug_framestall_us` (`framestall`, `computation/framestall_compute`):
@@ -74,3 +75,6 @@ screen itself):
 - `features/levelmesh/captureshading.cpp`, `features/sprites/spritebuild.cpp`, `pspritebuild.cpp` and
   `features/visibility/viswalk.cpp`: an `OracleTally` each for their check against GL.
 - `d_main.cpp` `D_DoomLoop`: `DebugFrameStall` after the tics run, `DebugOrbit` before the frame is drawn.
+- `fua_viewtrace`'s mouse columns: `win32/i_mouse.cpp` `FRawMouse::ProcessRawInput` (`NoteRawMouse`), `Grab`
+  and `Ungrab` (`NoteMouseGrabbed`); `win32/i_input.cpp` `WM_ACTIVATEAPP` (`NoteAppActive`); `d_main.cpp`
+  `D_PostEvent` (`NoteMouseEvent`).

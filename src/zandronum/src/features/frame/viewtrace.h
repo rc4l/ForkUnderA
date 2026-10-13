@@ -17,6 +17,18 @@ void ArmViewTrace(int frames, const char *csv);
 // [rc4l] Report an armed trace now, with however many frames it has.
 void EndViewTrace();
 
+// [rc4l] A raw mouse message the window received, `taken` when the engine used it (win32/i_mouse.cpp).
+void NoteRawMouse(int dx, int dy, bool taken);
+
+// [rc4l] A mouse event posted to the game, `toView` when it turned the view (D_PostEvent).
+void NoteMouseEvent(bool toView);
+
+// [rc4l] The window grabbed or let go of the mouse.
+void NoteMouseGrabbed(bool grabbed);
+
+// [rc4l] The game became the active app or stopped being it.
+void NoteAppActive(bool active);
+
 }} // namespace zx::frame
 
 #endif // ZX_VIEWTRACE_H

@@ -5,9 +5,9 @@
 #include "features/frame/computation/viewtrace_compute.h"
 #include "features/framephase/framephase.h"   // [rc4l] each frame's phases
 
-#include "c_console.h"
+#include "c_console.h"  // [rc4l] ConsoleState
 #include "c_dispatch.h"
-#include "doomstat.h"   // [rc4l] gametic
+#include "doomstat.h"   // [rc4l] gametic, paused, menuactive
 #include "r_utility.h"  // [rc4l] viewangle, LocalViewAngle, r_frameSerial
 
 #include <chrono>
@@ -22,6 +22,9 @@ std::vector<ViewTraceSample> g_trace;
 int g_want = 0;
 unsigned g_lastSerial = 0;
 FString g_csv;   // [rc4l] where every frame is written when the trace is done, empty for none
+MouseTally g_mouse = MouseTally();
+bool g_grabbed = false;
+bool g_active = true;
 
 long long NowUs()
 {
@@ -44,7 +47,7 @@ void Report()
 		{
 			fprintf(f, "us,deg,tic,local,view_at,present_at");
 			for (int p = 0; p < zx::framephase::kPhaseCount; p++) fprintf(f, ",%s", zx::framephase::ComputePhaseName(p));
-			fprintf(f, "\n");
+			fprintf(f, ",mouse_msgs,mouse_ignored,mouse_dx,mouse_dy,mouse_to_view,mouse_kept,grabbed,active,paused,menu,console\n");
 			for (size_t i = 1; i < g_trace.size(); i++)
 			{
 				fprintf(f, "%lld,%.4f,%d,%u,%lld", g_trace[i].us - g_trace[0].us, ComputeTurnDegrees(g_trace[i - 1].angle, g_trace[i].angle),
@@ -53,7 +56,9 @@ void Report()
 				const float *ph = i + 1 < g_trace.size() ? g_trace[i + 1].phases : NULL;
 				fprintf(f, ",%lld", i + 1 < g_trace.size() ? g_trace[i + 1].presentAt : 0LL);
 				for (int p = 0; p < zx::framephase::kPhaseCount; p++) fprintf(f, ",%.0f", ph != NULL ? ph[p] : 0.f);
-				fprintf(f, "\n");
+				const ViewTraceSample &v = g_trace[i];
+				fprintf(f, ",%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d\n", v.mouse.messages, v.mouse.ignored, v.mouse.dx, v.mouse.dy, v.mouse.toView,
+					v.mouse.keptFromView, v.grabbed, v.active, v.paused, v.menu, v.console);
 			}
 			fclose(f);
 			Printf("  every frame written to %s\n", g_csv.GetChars());
@@ -84,7 +89,13 @@ void NoteMainView()
 	s.gametic = gametic;
 	const float *phases = zx::framephase::LastFramePhases();
 	s.presentAt = zx::framephase::LastFramePhaseStarts()[zx::framephase::kPhasePresent];
-	for (int p = 0; p < 8; p++) s.phases[p] = p < zx::framephase::kPhaseCount ? phases[p] : 0.f;
+	for (int p = 0; p < zx::framephase::kPhaseCount; p++) s.phases[p] = phases[p];
+	s.mouse = ComputeMouseTallyTake(g_mouse);
+	s.grabbed = g_grabbed;
+	s.active = g_active;
+	s.paused = paused != 0;
+	s.menu = menuactive != MENU_Off;
+	s.console = ConsoleState == c_down || ConsoleState == c_falling;
 	g_trace.push_back(s);
 	if ((int)g_trace.size() < g_want) return;
 	Report();
@@ -98,21 +109,42 @@ void EndViewTrace()
 	if (g_trace.size() >= 2) Report();
 }
 
+void NoteRawMouse(int dx, int dy, bool taken)
+{
+	if (g_want > 0) ComputeMouseTallyRaw(g_mouse, dx, dy, taken);
+}
+
+void NoteMouseEvent(bool toView)
+{
+	if (g_want > 0) ComputeMouseTallyEvent(g_mouse, toView);
+}
+
+void NoteMouseGrabbed(bool grabbed)
+{
+	g_grabbed = grabbed;
+}
+
+void NoteAppActive(bool active)
+{
+	g_active = active;
+}
+
 void ArmViewTrace(int frames, const char *csv)
 {
 	g_csv = csv != NULL ? csv : "";
 	g_trace.clear();
 	g_trace.reserve(frames);
+	g_mouse = MouseTally();
 	g_want = frames;
 	Printf("fua_viewtrace: recording %d frames\n", frames);
 }
 
 }} // namespace zx::frame
 
-// [rc4l] fua_viewtrace [frames] [file.csv]: record the next frames' main view (default 1000, 16 to 20000), say whether it turned between tics or only at them, and write every frame to the file when one is named; `fua_viewtrace end` reports early.
+// [rc4l] fua_viewtrace [frames] [file.csv]: record the next frames' main view (default 1000, 16 to 300000, minutes at any frame rate), say whether it turned between tics or only at them, and write every frame to the file when one is named; `fua_viewtrace end` reports early.
 CCMD( fua_viewtrace )
 {
 	if (argv.argc() > 1 && stricmp(argv[1], "end") == 0) { zx::frame::EndViewTrace(); return; }
 	const int n = argv.argc() > 1 ? atoi(argv[1]) : 1000;
-	zx::frame::ArmViewTrace(n < 16 ? 16 : n > 20000 ? 20000 : n, argv.argc() > 2 ? argv[2] : NULL);
+	zx::frame::ArmViewTrace(n < 16 ? 16 : n > 300000 ? 300000 : n, argv.argc() > 2 ? argv[2] : NULL);
 }

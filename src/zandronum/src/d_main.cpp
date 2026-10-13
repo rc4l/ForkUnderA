@@ -167,7 +167,8 @@
 #include "r_renderer.h"
 #include "features/frame/framestall.h"   // [rc4l] DebugFrameStall
 #include "features/frame/debugorbit.h"   // [rc4l] DebugOrbit
-#include "features/framephase/framephase.h"   // [rc4l] FrameBoundary, the sim phase
+#include "features/frame/viewtrace.h"   // [rc4l] NoteMouseEvent
+#include "features/framephase/framephase.h"   // [rc4l] FrameBoundary and the main loop's phases
 #include "p_local.h"
 
 
@@ -356,6 +357,8 @@ void D_PostEvent (const event_t *ev)
 		return;
 	}
 	events[eventhead] = *ev;
+	if (ev->type == EV_Mouse)
+		zx::frame::NoteMouseEvent(!paused && menuactive == MENU_Off && ConsoleState != c_down && ConsoleState != c_falling);   // [rc4l] fua_viewtrace
 	if (ev->type == EV_Mouse && !paused && menuactive == MENU_Off && ConsoleState != c_down && ConsoleState != c_falling)
 	{
 		if (Button_Mlook.bDown || freelook)
@@ -1184,7 +1187,10 @@ drawfullconsole:
 
 	if (!wipe || NoWipe < 0)
 	{
-		NetUpdate ();			// send out any new accumulation
+		{
+			const zx::framephase::Scope inputPhase( zx::framephase::kPhaseInput );   // [rc4l] it reads the window's messages, the mouse among them
+			NetUpdate ();			// send out any new accumulation
+		}
 		// normal update
 		C_DrawConsole (hw2d);	// draw console
 		M_Drawer ();			// menu is drawn even on top of everything
@@ -1195,7 +1201,10 @@ drawfullconsole:
 		// See features/server-browser/zx_joinserver.h.
 		zx::DrawJoinReadyNotice ( true );
 		FStat::PrintStat ();
-		screen->Update ();		// page flip or blit buffer
+		{
+			const zx::framephase::Scope flipPhase( zx::framephase::kPhaseFlip );
+			screen->Update ();		// page flip or blit buffer
+		}
 
 		// [rc4l] features/hwrender: mirror the frame into the Diligent backend window.
 		//
@@ -1369,11 +1378,17 @@ void D_DoomLoop ()
 				// [AK] Don't call I_StartTic() if we're currently using the old
 				// Skulltag mouse behaviour.
 				if ( cl_useskulltagmouse == false )
+				{
+					const zx::framephase::Scope inputPhase( zx::framephase::kPhaseInput );
 					I_StartTic( );
+				}
 				zx::frame::DebugOrbit();   // [rc4l] fua_debug_orbit
 
 				MCP_RPC_MarkRender(); // [rc4l] coarse sim|render split for the MCP perf profiler (no-op when off)
-				D_Display( );
+				{
+					const zx::framephase::Scope displayPhase( zx::framephase::kPhaseDisplay );
+					D_Display( );
+				}
 				break;
 			case NETSTATE_SERVER:
 
@@ -1427,10 +1442,16 @@ void D_DoomLoop ()
 				BROWSER_BackgroundTick( );
 
 				// Update display, next frame, with current state.
-				I_StartTic ();
+				{
+					const zx::framephase::Scope inputPhase( zx::framephase::kPhaseInput );
+					I_StartTic ();
+				}
 				zx::frame::DebugOrbit();   // [rc4l] fua_debug_orbit
 				MCP_RPC_MarkRender(); // [rc4l] coarse sim|render split for the MCP perf profiler (no-op when off)
-				D_Display ();
+				{
+					const zx::framephase::Scope displayPhase( zx::framephase::kPhaseDisplay );
+					D_Display ();
+				}
 				break;
 			}
 		}

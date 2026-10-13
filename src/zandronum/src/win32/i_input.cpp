@@ -108,6 +108,7 @@
 #include "version.h"
 #include "features/video-scale/computation/videoscale_compute.h" // [rc4l] VID_SCALE_UI_MIN_*
 #include "mcp_bridge.h" // [rc4l] MCP_InputLocked: drop OS input on a hands-off harness-driven instance
+#include "features/frame/viewtrace.h" // [rc4l] NoteAppActive
 
 // Prototypes and declarations.
 #include "rawinput.h"
@@ -644,6 +645,7 @@ LRESULT CALLBACK WndProc (HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
 	case WM_ACTIVATEAPP:
 		AppActive = wParam;
+		zx::frame::NoteAppActive(wParam != 0);   // [rc4l] fua_viewtrace
 		if (wParam)
 		{
 			SetPriorityClass (GetCurrentProcess (), INGAME_PRIORITY_CLASS);

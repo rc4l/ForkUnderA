@@ -12,6 +12,9 @@ TEST(FramePhase, EachPhaseHasItsNameAndAnythingElseIsUnknown)
 {
 	EXPECT_STREQ("sim", ComputePhaseName(kPhaseSim));
 	EXPECT_STREQ("present", ComputePhaseName(kPhasePresent));
+	EXPECT_STREQ("input", ComputePhaseName(kPhaseInput));
+	EXPECT_STREQ("display", ComputePhaseName(kPhaseDisplay));
+	EXPECT_STREQ("flip", ComputePhaseName(kPhaseFlip));
 	EXPECT_STREQ("?", ComputePhaseName(kPhaseCount));
 	EXPECT_STREQ("?", ComputePhaseName(-1));
 }

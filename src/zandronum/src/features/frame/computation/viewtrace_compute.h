@@ -6,17 +6,44 @@
 #ifndef ZX_VIEWTRACE_COMPUTE_H
 #define ZX_VIEWTRACE_COMPUTE_H
 
+#include "features/framephase/computation/framephase_compute.h"   // [rc4l] kPhaseCount
+
 namespace zx { namespace frame {
+
+// [rc4l] The mouse input that came in between two frames, from the window's raw messages to the view.
+struct MouseTally
+{
+	int messages;    // [rc4l] raw mouse messages the window received
+	int ignored;     // [rc4l] of them, ones dropped because the mouse was not grabbed or use_mouse was off
+	int dx, dy;      // [rc4l] the raw movement of the messages taken, in mouse counts
+	int toView;      // [rc4l] mouse events that turned the view
+	int keptFromView;   // [rc4l] mouse events the console, a menu or a pause kept from the view
+};
+
+// [rc4l] A raw mouse message of `dx`, `dy` counts, `taken` when the engine used it.
+void ComputeMouseTallyRaw(MouseTally &t, int dx, int dy, bool taken);
+
+// [rc4l] A mouse event posted to the game, `toView` when it turned the view.
+void ComputeMouseTallyEvent(MouseTally &t, bool toView);
+
+// [rc4l] The tally so far, which starts again from nothing.
+MouseTally ComputeMouseTallyTake(MouseTally &t);
 
 // [rc4l] One frame's main view: when it was set up, the angle it was drawn with, the mouse turn not yet in a tic, and the tic it belongs to.
 struct ViewTraceSample
 {
 	long long us;
 	long long presentAt;   // [rc4l] when the frame before this one began presenting, on the same clock as `us`, 0 for not at all
-	float phases[8];       // [rc4l] the frame before this one's microseconds per phase (features/framephase)
+	float phases[zx::framephase::kPhaseCount];   // [rc4l] the frame before this one's microseconds per phase (features/framephase)
 	unsigned angle;        // [rc4l] viewangle, BAM
 	unsigned localAngle;   // [rc4l] LocalViewAngle, BAM
 	int gametic;
+	MouseTally mouse;      // [rc4l] the mouse input since the sample before
+	bool grabbed;          // [rc4l] the window held the mouse
+	bool active;           // [rc4l] the game was the active app
+	bool paused;           // [rc4l] the game was paused
+	bool menu;             // [rc4l] a menu was up
+	bool console;          // [rc4l] the console was down or coming down
 };
 
 struct ViewTraceSummary

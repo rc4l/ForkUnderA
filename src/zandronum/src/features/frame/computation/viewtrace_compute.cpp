@@ -7,6 +7,26 @@
 
 namespace zx { namespace frame {
 
+void ComputeMouseTallyRaw(MouseTally &t, int dx, int dy, bool taken)
+{
+	t.messages++;
+	if (!taken) { t.ignored++; return; }
+	t.dx += dx;
+	t.dy += dy;
+}
+
+void ComputeMouseTallyEvent(MouseTally &t, bool toView)
+{
+	(toView ? t.toView : t.keptFromView)++;
+}
+
+MouseTally ComputeMouseTallyTake(MouseTally &t)
+{
+	const MouseTally r = t;
+	t = MouseTally();
+	return r;
+}
+
 double ComputeTurnDegrees(unsigned from, unsigned to)
 {
 	return (double)(int)(to - from) * 360.0 / 4294967296.0;
