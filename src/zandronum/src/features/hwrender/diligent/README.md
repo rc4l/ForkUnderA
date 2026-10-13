@@ -67,11 +67,23 @@ Two hypotheses were tested and both were wrong, which is worth recording so they
 A real backend presents once per engine frame, so this cost is a property of the benchmark harness
 rather than of the renderer.
 
-### Not yet ported
+### Not yet matching GL (2026-10-13)
 
-Real lighting (`R_DoomLightingEquation`, distance falloff, fog, dynamic lights), texture animation,
-translations, warp/brightmap shaders, flats, sprites, and the 2D/HUD layer. Light is currently a flat
-per-piece multiply.
+The world, sprites, models, the 2D layer, wipes, mirrors, stacked sectors, skyboxes and horizons are
+ported, each with a GL-against-Vulkan scenario in `tools/fuactl/scenarios`. Still missing or different:
+
+- fixed colormaps (invulnerability, light amp, torch): light goes full and fog off, with no recolouring;
+- glow from GLDEFS glowing flats onto walls (sprites do glow);
+- the fuzz shaders, drawn as plain translucency, and the subtract styles, drawn as alpha;
+- fog boundary sheets between a fogged and a clear sector;
+- skies other than `sky1texture`: MBF line skies, `sky2`, swapped and double skies;
+- GLDEFS hardware shaders, and inverted (`TM_INVERSE`) world sprites;
+- one level of mirror (GL recurses), at most 4 plane mirrors and 2 stacked views a frame;
+- `ClipFFloors`, and decals on 3D-floor faces and mirror sheens;
+- damage tint, the hitbox view and stereo 3D, which are GL's alone;
+- `gl_texture_filter_anisotropic`, `gl_lights_checkside`, `gl_usecolorblending`, `gl_seamless` and
+  `r_mirror_recursions`, which it ignores; changing hqresize or hires at runtime leaves its textures stale;
+- no GL fallback when the Vulkan device fails, and Windows only.
 
 ## Earlier: untextured geometry, benchmarked
 
@@ -157,9 +169,9 @@ swapping anything.
 | 3 pipeline + shaders | done — GLSL to SPIR-V via `GLSL_VERBATIM` |
 | 4 backend seam | skipped for now; went straight to geometry |
 | 5 scene geometry | **done — Sunder MAP10 renders, benchmarked** |
-| 6 textures | next, and large: `FMaterial`, translations, warp/brightmap shaders |
-| 7 lighting, sprites, flats | after textures |
-| 8 visibility | where the frametime actually is — GPU culling, not the backend |
+| 6 textures | done — materials, translations, warp and brightmap shaders |
+| 7 lighting, sprites, flats | done — see "Not yet matching GL" for what is left |
+| 8 visibility | the walk runs on the job pool; GPU culling with indirect draws is not started |
 
 ### Console commands
 

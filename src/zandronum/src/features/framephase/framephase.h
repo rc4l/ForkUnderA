@@ -25,6 +25,9 @@ const float *LastFramePhases();
 // [rc4l] When each phase of the last whole frame first began, on NowUs's clock, 0 for a phase it did not run.
 const long long *LastFramePhaseStarts();
 
+// [rc4l] The last whole frame's length, boundary to boundary, in microseconds; 0 until a frame has closed.
+long long LastFrameUs();
+
 // [rc4l] Times the scope it lives in into a phase.
 struct Scope
 {

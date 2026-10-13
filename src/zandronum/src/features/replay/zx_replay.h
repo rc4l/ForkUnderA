@@ -15,8 +15,7 @@ namespace replay {
 // configured capture rate. Also drives lazy start/stop and flushes any pending user messages.
 bool WantsFrame();
 
-// Hand the just-rendered frame to the capture pipeline. topRow points at the top row of pixels in
-// `format` (a ReplayPixels); pitch may be negative (OpenGL bottom-up readback). Copies out immediately.
+// [rc4l] Hands the just-rendered frame to the capture pipeline, which copies it out at once: `topRow` is its top row in `format` (a ReplayPixels), and `pitch` is negative for GL's bottom-up readback.
 void SubmitFrame(const unsigned char *topRow, int w, int h, int pitch, int format = kReplayRGB24);
 
 // [rc4l] The same, from the Vulkan backend's swapchain, recorded as its OWN stream.

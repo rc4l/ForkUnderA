@@ -13,6 +13,8 @@ float g_now[kPhaseCount];
 float g_last[kPhaseCount];
 long long g_nowStart[kPhaseCount];
 long long g_lastStart[kPhaseCount];
+long long g_frameStart = 0;
+long long g_lastFrameUs = 0;
 
 } // namespace
 
@@ -30,6 +32,9 @@ void AddPhase(int phase, long long startUs, long long endUs)
 
 void FrameBoundary()
 {
+	const long long now = NowUs();
+	if (g_frameStart != 0) g_lastFrameUs = now - g_frameStart;
+	g_frameStart = now;
 	for (int p = 0; p < kPhaseCount; p++)
 	{
 		g_last[p] = g_now[p]; g_now[p] = 0.f;
@@ -45,6 +50,11 @@ const float *LastFramePhases()
 const long long *LastFramePhaseStarts()
 {
 	return g_lastStart;
+}
+
+long long LastFrameUs()
+{
+	return g_lastFrameUs;
 }
 
 }} // namespace zx::framephase

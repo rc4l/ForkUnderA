@@ -28,6 +28,8 @@ import { scenarioOptions, scenarioRun, templateScenarioFiles, probeScenario, sid
 import { abPerf } from "./abperf.mjs";
 import { runFps, fpsModes } from "./fps.mjs";
 import * as screen from "./screen.mjs";
+import * as trace from "./trace.mjs";
+import * as present from "./present.mjs";
 import { refreshNote } from "./stats.mjs";
 import { decodePNG, abDiff, boxDiff } from "./pngcore.mjs";
 import fs from "node:fs";
@@ -161,6 +163,8 @@ const USAGE = `fuactl <command>
   renderer-info --port P [--token T]   renderer identity + whether GL timer queries work on this driver
   ui <action> [args] --port P [--token T]   drive the UI: read (menu as text), find <label>, nav <keys>, click <x> <y>, drag, type <text>, look --yaw D --pitch D, screenshot [name], exec <ccmd>
   diligent --port P [--frames N] [--shot FILE] [--sweep DIR]   drive the Diligent (Vulkan) backend: bake the level mesh, upload geometry, optional swapchain screenshot, optional debug-view sweep (lm0..lm4.png in DIR), the Diligent frame benchmark (fua_diligent_bench), and with --scale a GPU-time probe at 1x..100x the visible geometry
+  trace --port P [--token T] [--seconds N] [--out FILE.csv]   every frame of a running instance for N seconds (fua_viewtrace): frame lengths apart from tic waits, what the slow frames spent more on, where it sat paused or unfocused, and the mouse input it got, gaps included
+  present [--seconds N] [--process NAME.exe] [--port P [--token T]] [--out FILE.csv]   what Windows put on screen, from PresentMon run as administrator (a UAC prompt): each app's frames handed over and shown a second and the compositor's own updates; with --port the instance's frames are recorded alongside and lined up second by second
   play [--restart] [--port P] [--token T] [--spot NAME | --unpark] [--map M] [--file a.pk3,b.pk3] [--cvar k=v,k2=v2] [--preset ID --variant V --store DIR] [--gl | --no-gl] [--side-by-side] [--rt] [--monsters] [--lock] [--res WxH]   a build to walk around in, Vulkan live in the window; stays up until Ctrl-C
   build [--root DIR] [--no-stage] [--tests]   compile the engine (with --tests the unit tests too, and run them) and stage it unless --no-stage, failing loudly instead of staging a stale binary
   mapdata <MAP> (--preset ID | --file a.pk3,b.wad) [--sector N,..] [--line N,..] [--special N] [--tag N] [--thing TYPE,..] [--scripts REGEX]   a UDMF level's summary, sectors, lines, things of the given types and ACS source lines, read from its files
@@ -589,6 +593,46 @@ async function main() {
       console.log(JSON.stringify(result, null, 2));
       break;
     }
+    case "trace": {
+      if (!flags.port) { console.error(usageFor(USAGE, "trace")); process.exit(2); }
+      const out = flags.out && flags.out !== true ? String(flags.out) : path.join(os.tmpdir(), `fuactl-trace-${flags.port}.csv`);
+      const rows = await withUi(flags, (c) => trace.recordViewTrace(c, { seconds: num(flags.seconds) ?? 10, out, exec: cap.exec }));
+      const analysis = trace.analyzeViewTrace(rows);
+      for (const line of trace.formatViewTrace(analysis)) console.error(`[trace] ${line}`);
+      console.error(`[trace] every frame: ${out}`);
+      console.log(JSON.stringify(analysis, null, 2));
+      break;
+    }
+    case "present": {
+      const exe = present.ensurePresentMon({ log: (m) => console.error(`[present] ${m}`) });
+      const seconds = num(flags.seconds) ?? 15;
+      const out = flags.out && flags.out !== true ? path.resolve(String(flags.out)) : path.join(os.tmpdir(), `fuactl-present-${Date.now()}.csv`);
+      const ps1 = path.join(os.tmpdir(), "fuactl-present.ps1");
+      fs.rmSync(out, { force: true });
+      fs.writeFileSync(ps1, present.adminScript(exe, { out, seconds, processName: flags.process && flags.process !== true ? String(flags.process) : null }));
+      console.error(`[present] approve the Windows admin prompt; PresentMon then records ${seconds} s`);
+      let traceRows = null, app = null;
+      if (flags.port) {
+        // [rc4l] The instance's own frames for exactly as long as PresentMon runs, on the same clock.
+        const session = shot.readSession(shot.sessionFileFor(SESSION(), Number(flags.port)));
+        app = path.basename((session && session.engine) || "forkundera.exe");
+        traceRows = await withUi(flags, (c) => trace.recordViewTrace(c, { out: path.join(os.tmpdir(), `fuactl-present-trace-${flags.port}.csv`), exec: cap.exec,
+          during: () => present.runAdminScript(ps1) }));
+      } else await present.runAdminScript(ps1);
+      if (!fs.existsSync(out)) { console.error("[present] PresentMon wrote nothing: was the admin prompt declined, or was nothing drawing?"); process.exit(1); }
+      const rows = present.parsePresentMon(fs.readFileSync(out, "utf8"));
+      const qpcHz = present.qpcFrequency();
+      const analysis = present.analyzePresentMon(rows, { qpcHz });
+      for (const line of present.formatPresentMon(analysis)) console.error(`[present] ${line}`);
+      const bySecond = traceRows ? present.alignSeconds(rows, traceRows, { app, qpcHz }) : null;
+      if (bySecond) {
+        console.error(`[present] second by second, ${app}: drawn by the engine / handed to Windows / shown`);
+        for (const s of bySecond) console.error(`[present]   ${String(s.second).padStart(3)}  ${String(s.drawn).padStart(5)} ${String(s.handed).padStart(5)} ${String(s.shown).padStart(5)}`);
+      }
+      console.error(`[present] every frame: ${out}`);
+      console.log(JSON.stringify({ ...analysis, bySecond: bySecond || undefined }, null, 2));
+      break;
+    }
     case "ticprof": {
       if (!flags.port) { console.error("usage: fuactl ticprof --port P [--token T] [--tics N]"); process.exit(2); }
       const report = await withUi(flags, async (c) => {
@@ -930,7 +974,7 @@ async function main() {
       // instances come from: the old one still holding the port, the new one silently falling back
       // to another, and a capture then taken from whichever answered. One flag, one instance.
       if (flags.restart) {
-        const prev = shot.readSession(sessionFile);
+        const prev = shot.readSession(shot.restartSessionFile(sessionFile, flags.port));
         const outcome = prev && prev.port ? await quitInstance({ port: prev.port, token: prev.token || null }) : "absent";
         if (outcome !== "absent") console.error(`${outcome}: the instance on port ${prev.port}`);
       }

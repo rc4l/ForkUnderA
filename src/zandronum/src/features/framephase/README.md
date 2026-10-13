@@ -6,7 +6,8 @@ upload and light-list parts inside it), the present, the main loop's input reads
 `D_Display` with its page flip, so the time a frame spends outside every phase is the frame less sim,
 input and display. Modules mark their work with a `Scope`; the main
 loop closes each frame with `FrameBoundary`; `fua_viewtrace` records the last frame's phases with each
-sample and reports what its slow frames spent more on (`computation/framephase_compute`).
+sample, and `fuactl trace` reports what the slow frames spent more on (`computation/framephase_compute` names
+the phases).
 
 ## In-engine hooks
 

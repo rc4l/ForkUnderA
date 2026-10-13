@@ -83,7 +83,8 @@ its full spot record.
 
 Use their exact steps (a map change, a mouse turn, the same window mode) before you give up; a fault
 they see only while something moves ("during the crouch") is caught with `steps <tag> --hold +crouch`,
-one paused tic at a time. Then
+one paused tic at a time. Judder, freezes or "choppy while vid_fps is high" are timing, not pixels: take
+`fuactl present --port 7801` while they play before touching the engine (`zandronum-session`). Then
 audit lifetimes instead of re-shooting: a pipeline holding a static binding to a buffer that has been
 replaced usually still captures correctly. Fix what the audit finds, close the item with
 `queue done <id> --unverified --note "..."`, and tell the user plainly that the fix is unverified.

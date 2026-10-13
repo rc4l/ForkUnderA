@@ -357,9 +357,11 @@ void D_PostEvent (const event_t *ev)
 		return;
 	}
 	events[eventhead] = *ev;
+	// [rc4l] A mouse move turns the view unless the game is paused or a menu or the console is up.
+	const bool mouseTurnsView = !paused && menuactive == MENU_Off && ConsoleState != c_down && ConsoleState != c_falling;
 	if (ev->type == EV_Mouse)
-		zx::frame::NoteMouseEvent(!paused && menuactive == MENU_Off && ConsoleState != c_down && ConsoleState != c_falling);   // [rc4l] fua_viewtrace
-	if (ev->type == EV_Mouse && !paused && menuactive == MENU_Off && ConsoleState != c_down && ConsoleState != c_falling)
+		zx::frame::NoteMouseEvent(mouseTurnsView);   // [rc4l] fua_viewtrace
+	if (ev->type == EV_Mouse && mouseTurnsView)
 	{
 		if (Button_Mlook.bDown || freelook)
 		{

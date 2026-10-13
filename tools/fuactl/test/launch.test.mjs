@@ -5,7 +5,7 @@ import { spawnSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
 import { resolveEngine, engineArgs, describeExit, countEngineLines, missingCoreData, resFlag } from "../src/launch.mjs";
-import { sweepDirFor, pickCmake, resolveTarget, readSession, sessionFileFor, cameraFromFlags, cvarValueFrom, parseCvarFlag, spotLaunch, parkFileFor, parkedLaunch, PARKED, clearPortSessions, liveTarget, pidAlive, buildErrors, summarizeGtest, sourcesStamp, standAt, launchFileFor, holdingLaunchFile, launchInProgress, awaitLaunch, atFromCamera, releaseOf, stepTag, sameFrameCommand } from "../src/shot.mjs";
+import { sweepDirFor, pickCmake, resolveTarget, readSession, sessionFileFor, restartSessionFile, cameraFromFlags, cvarValueFrom, parseCvarFlag, spotLaunch, parkFileFor, parkedLaunch, PARKED, clearPortSessions, liveTarget, pidAlive, buildErrors, summarizeGtest, sourcesStamp, standAt, launchFileFor, holdingLaunchFile, launchInProgress, awaitLaunch, atFromCamera, releaseOf, stepTag, sameFrameCommand } from "../src/shot.mjs";
 
 // Run `fn` with cwd moved to `dir` and FUACTL_ENGINE cleared, then put both back.
 function inDir(dir, fn) {
@@ -186,6 +186,9 @@ test("a command means --port first, then the last play session, and nothing when
   assert.deepEqual(resolveTarget({ token: "t" }, s).pid, null);
   assert.deepEqual(resolveTarget({ port: "7799" }, s), { port: 7799, token: null, engine: null, pid: null });
   assert.equal(sessionFileFor("/x/.play-session", 7801), "/x/.play-session-7801");
+  // [rc4l] play --restart --port 7801 replaces the instance on 7801, never the last launch on another port.
+  assert.equal(restartSessionFile("/x/.play-session", "7801"), "/x/.play-session-7801");
+  assert.equal(restartSessionFile("/x/.play-session", undefined), "/x/.play-session");
 });
 
 // [rc4l] A build launched from build-win writes its captures beside itself, so a shot that looked beside the staged binary found nothing.

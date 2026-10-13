@@ -22,6 +22,9 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // [rc4l] Each launch's own session file beside the shared one, so two instances do not overwrite each other's token.
 export function sessionFileFor(sessionFile, port) { return `${sessionFile}-${port}`; }
 
+// [rc4l] The session `play --restart` replaces: the one on `port` when it is given, never the last launch's on another port, and the last launch's otherwise.
+export function restartSessionFile(sessionFile, port) { return port ? sessionFileFor(sessionFile, Number(port)) : sessionFile; }
+
 export function readSession(file = ".play-session") {
   if (!fs.existsSync(file)) return null;
   const text = fs.readFileSync(file, "utf8");

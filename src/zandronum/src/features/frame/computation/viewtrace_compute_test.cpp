@@ -5,6 +5,9 @@
 
 #include <gtest/gtest.h>
 
+#include <string.h>
+#include <string>
+
 using namespace zx::frame;
 
 // [rc4l] A frame's mouse input from the window's messages to the view, and a take that starts it again.
@@ -100,4 +103,69 @@ TEST(ViewTrace, TooFewFramesSayNothing)
 	EXPECT_EQ(1, r.frames);
 	EXPECT_EQ(0, r.turnedFrames);
 	EXPECT_DOUBLE_EQ(0.0, r.spanMs);
+}
+
+namespace {
+
+// [rc4l] Three samples: a tic and a 2 degree turn between the first two, the third closing the second frame with its phases and present.
+void ThreeSamples(ViewTraceSample *s)
+{
+	memset(s, 0, sizeof(ViewTraceSample) * 3);
+	s[0].us = 1000; s[0].gametic = 5;
+	s[1].us = 3000; s[1].gametic = 6; s[1].angle = 2 * kDeg; s[1].localAngle = 7;
+	s[1].mouse.messages = 2; s[1].mouse.dx = 3; s[1].mouse.dy = -1; s[1].mouse.toView = 2; s[1].grabbed = true; s[1].active = true;
+	s[2].us = 4500; s[2].gametic = 6; s[2].angle = 2 * kDeg; s[2].presentAt = 3900; s[2].frameUs = 1600;
+	s[2].phases[zx::framephase::kPhaseSim] = 120.f; s[2].phases[zx::framephase::kPhaseWalk] = 800.f;
+}
+
+int Commas(const char *s)
+{
+	int n = 0;
+	for (; *s != 0; s++) n += *s == ',';
+	return n;
+}
+
+} // namespace
+
+// [rc4l] fuactl trace reads the file by these names, one column per phase among them.
+TEST(ViewTraceCsv, TheHeaderNamesEveryColumn)
+{
+	char h[1024];
+	const int len = ComputeViewTraceCsvHeader(h, sizeof(h));
+	EXPECT_EQ((int)strlen(h), len);
+	EXPECT_EQ(0, strncmp(h, "us,deg,tic,local,view_at,present_at,frame_us,sim,walk,", 54));
+	EXPECT_NE(nullptr, strstr(h, ",flip,mouse_msgs,"));
+	EXPECT_EQ(std::string(",menu,console"), std::string(h + len - 13));
+	EXPECT_EQ(6 + zx::framephase::kPhaseCount + 11, Commas(h));
+}
+
+// [rc4l] A row is its own frame's view and mouse with the next sample's length, phases and present, which closed it.
+TEST(ViewTraceCsv, ARowTakesItsPhasesFromTheSampleThatClosedIt)
+{
+	ViewTraceSample s[3];
+	ThreeSamples(s);
+	char r[1024], h[1024];
+	ComputeViewTraceCsvHeader(h, sizeof(h));
+	ComputeViewTraceCsvRow(r, sizeof(r), s, 3, 1);
+	EXPECT_EQ(Commas(h), Commas(r));
+	EXPECT_EQ(0, strncmp(r, "2000,2.0000,1,7,3000,3900,1600,120,800,0,", 41)) << r;
+	EXPECT_EQ(std::string(",2,0,3,-1,2,0,1,1,0,0,0"), std::string(r + strlen(r) - 23)) << r;
+}
+
+// [rc4l] The last sample has nothing after it, so its frame's length, phases and present are zero.
+TEST(ViewTraceCsv, TheLastRowHasNoPhases)
+{
+	ViewTraceSample s[3];
+	ThreeSamples(s);
+	char r[1024];
+	ComputeViewTraceCsvRow(r, sizeof(r), s, 3, 2);
+	EXPECT_EQ(0, strncmp(r, "3500,0.0000,0,0,4500,0,0,0,0,", 29)) << r;
+}
+
+TEST(ViewTraceCsv, ASmallBufferIsCutAndTerminated)
+{
+	char full[1024], small[16];
+	ComputeViewTraceCsvHeader(full, sizeof(full));
+	EXPECT_EQ(15, ComputeViewTraceCsvHeader(small, sizeof(small)));
+	EXPECT_EQ(std::string(full, 15), std::string(small));
 }

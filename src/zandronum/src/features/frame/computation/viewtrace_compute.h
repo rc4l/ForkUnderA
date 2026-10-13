@@ -34,6 +34,7 @@ struct ViewTraceSample
 {
 	long long us;
 	long long presentAt;   // [rc4l] when the frame before this one began presenting, on the same clock as `us`, 0 for not at all
+	long long frameUs;     // [rc4l] the frame before this one's length, boundary to boundary
 	float phases[zx::framephase::kPhaseCount];   // [rc4l] the frame before this one's microseconds per phase (features/framephase)
 	unsigned angle;        // [rc4l] viewangle, BAM
 	unsigned localAngle;   // [rc4l] LocalViewAngle, BAM
@@ -70,6 +71,12 @@ ViewTraceSummary ComputeViewTraceSummary(const ViewTraceSample *s, int n);
 
 // [rc4l] The turn from angle `from` to `to` in degrees, the short way round.
 double ComputeTurnDegrees(unsigned from, unsigned to);
+
+// [rc4l] The header of the CSV fua_viewtrace writes, which fuactl trace reads by column name; its length, cut to fit `size`.
+int ComputeViewTraceCsvHeader(char *out, int size);
+
+// [rc4l] Frame `i`'s CSV row, `i` from 1 of `n` samples: sample i+1 carries frame i's length, phases and present start, recorded at the boundary that closed it; the row's length, cut to fit `size`.
+int ComputeViewTraceCsvRow(char *out, int size, const ViewTraceSample *s, int n, int i);
 
 }} // namespace zx::frame
 

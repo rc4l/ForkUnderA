@@ -112,9 +112,9 @@ static const char *kSceneVS =
 // matrix had to be moved to Vulkan's [0,1] depth range first -- feeding a [-1,1] z into a 1/dist
 // falloff would have produced light bands in the wrong places, and worse, plausible-looking ones.
 //
-// Ported here: software-mode light diminishing, fog-mode diminishing, coloured fog, both fog
-// distance modes. Not ported: dynamic lights, glowing walls, brightmaps, desaturation, fixed
-// colormaps (invulnerability et al). Those are separate uniforms//buffers rather than separate math.
+// [rc4l] Ported here: software-mode light diminishing, fog-mode diminishing, coloured fog and both fog
+// distance modes, with dynamic lights, brightmaps and desaturation as separate uniforms and buffers
+// elsewhere here, and glowing walls and fixed colormaps (invulnerability et al) not ported yet.
 //
 // uCameraPos.w carries fua_dg_lightmode -- riding in the unused w of a vector already in the buffer
 // makes the debug views free (no resize, no extra binding) so they can stay in the shipped shader.

@@ -10,7 +10,6 @@
 #include "doomstat.h"   // [rc4l] gametic, paused, menuactive
 #include "r_utility.h"  // [rc4l] viewangle, LocalViewAngle, r_frameSerial
 
-#include <chrono>
 #include <stdlib.h>
 #include <vector>
 
@@ -26,11 +25,6 @@ MouseTally g_mouse = MouseTally();
 bool g_grabbed = false;
 bool g_active = true;
 
-long long NowUs()
-{
-	return std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
-}
-
 void Report()
 {
 	const ViewTraceSummary r = ComputeViewTraceSummary(g_trace.data(), (int)g_trace.size());
@@ -45,20 +39,13 @@ void Report()
 		FILE *f = fopen(g_csv.GetChars(), "w");
 		if (f != NULL)
 		{
-			fprintf(f, "us,deg,tic,local,view_at,present_at");
-			for (int p = 0; p < zx::framephase::kPhaseCount; p++) fprintf(f, ",%s", zx::framephase::ComputePhaseName(p));
-			fprintf(f, ",mouse_msgs,mouse_ignored,mouse_dx,mouse_dy,mouse_to_view,mouse_kept,grabbed,active,paused,menu,console\n");
-			for (size_t i = 1; i < g_trace.size(); i++)
+			char line[1024];
+			ComputeViewTraceCsvHeader(line, sizeof(line));
+			fprintf(f, "%s\n", line);
+			for (int i = 1; i < (int)g_trace.size(); i++)
 			{
-				fprintf(f, "%lld,%.4f,%d,%u,%lld", g_trace[i].us - g_trace[0].us, ComputeTurnDegrees(g_trace[i - 1].angle, g_trace[i].angle),
-					g_trace[i].gametic != g_trace[i - 1].gametic ? 1 : 0, g_trace[i].localAngle, g_trace[i].us);
-				// [rc4l] Sample i+1 carries frame i's phases, recorded at the boundary that closed it; its present is on the absolute clock, for lining up with a screen capture.
-				const float *ph = i + 1 < g_trace.size() ? g_trace[i + 1].phases : NULL;
-				fprintf(f, ",%lld", i + 1 < g_trace.size() ? g_trace[i + 1].presentAt : 0LL);
-				for (int p = 0; p < zx::framephase::kPhaseCount; p++) fprintf(f, ",%.0f", ph != NULL ? ph[p] : 0.f);
-				const ViewTraceSample &v = g_trace[i];
-				fprintf(f, ",%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d\n", v.mouse.messages, v.mouse.ignored, v.mouse.dx, v.mouse.dy, v.mouse.toView,
-					v.mouse.keptFromView, v.grabbed, v.active, v.paused, v.menu, v.console);
+				ComputeViewTraceCsvRow(line, sizeof(line), g_trace.data(), (int)g_trace.size(), i);
+				fprintf(f, "%s\n", line);
 			}
 			fclose(f);
 			Printf("  every frame written to %s\n", g_csv.GetChars());
@@ -83,12 +70,13 @@ void NoteMainView()
 	if (g_want <= 0 || r_frameSerial == g_lastSerial) return;
 	g_lastSerial = r_frameSerial;
 	ViewTraceSample s;
-	s.us = NowUs();
+	s.us = zx::framephase::NowUs();
 	s.angle = (unsigned)viewangle;
 	s.localAngle = (unsigned)LocalViewAngle;
 	s.gametic = gametic;
 	const float *phases = zx::framephase::LastFramePhases();
 	s.presentAt = zx::framephase::LastFramePhaseStarts()[zx::framephase::kPhasePresent];
+	s.frameUs = zx::framephase::LastFrameUs();
 	for (int p = 0; p < zx::framephase::kPhaseCount; p++) s.phases[p] = phases[p];
 	s.mouse = ComputeMouseTallyTake(g_mouse);
 	s.grabbed = g_grabbed;

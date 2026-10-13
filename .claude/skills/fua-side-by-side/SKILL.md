@@ -66,8 +66,9 @@ after asking for a pwad map means the wads did not load; fix that before believi
 ## Cleaning up
 
 `node src/cli.mjs quit --port 7801 --token <T>` quits by token and waits for the port to close,
-printing `stopped`, `absent` or `running` (exit 1); `play --restart` does the same for the last
-session. A quit that did not take leaves the old engine on the port while the new one starts beside
+printing `stopped`, `absent` or `running` (exit 1); `play --restart --port 7801` does the same for
+the instance on that port before relaunching (without `--port`, for the last launch, whatever port it
+is on). A quit that did not take leaves the old engine on the port while the new one starts beside
 it — the user then looks at the stale window and reasonably concludes the tool is broken. So on
 `running`, check what is actually up, and stop a stray by **PID**, never by name, which also kills
 the user's own instance and any other harness:
