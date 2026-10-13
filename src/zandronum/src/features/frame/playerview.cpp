@@ -15,6 +15,7 @@
 #include "features/draw2d/screenblend.h"
 #include "features/fov-interp/fovinterp.h"
 #include "features/hwrender/backendonly.h"   // [rc4l] NoteWorldView
+#include "features/rendersettings/rendersettings.h"   // [rc4l] gl_frameCount
 
 #include "c_cvars.h"
 #include "d_player.h"
@@ -36,7 +37,6 @@
 EXTERN_CVAR(Bool, cl_capfps)
 // [rc4l] A frame clock pinned at this many milliseconds (0 runs it), so captures from two launches show shader animation, warps and fuzz, at the same moment.
 CVAR(Int, fua_debug_frameclock, 0, 0)
-extern long gl_frameCount;
 
 namespace zx { namespace frame {
 

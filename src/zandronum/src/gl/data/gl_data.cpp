@@ -50,8 +50,6 @@
 #include "gl/scene/gl_wallcache.h"
 #include "features/levelmesh/wallcache.h"   // [rc4l] RecalcVertexHeights
 
-long gl_frameCount;
-
 //==========================================================================
 //
 // Recalculate all heights affectting this vertex.

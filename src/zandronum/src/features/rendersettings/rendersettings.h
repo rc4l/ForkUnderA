@@ -63,6 +63,8 @@ extern TArray<BYTE> currentmapsection;
 
 // [rc4l] The frame's clock in milliseconds, which warps and glows run on.
 extern long gl_frameMS;
+// [rc4l] How many frames have been drawn, counted once a frame by the player view.
+extern long gl_frameCount;
 
 extern int extralight;
 EXTERN_CVAR(Int, gl_weaponlight);

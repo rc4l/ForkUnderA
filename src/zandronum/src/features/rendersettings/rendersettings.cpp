@@ -8,6 +8,7 @@
 
 GLRenderSettings glset;
 long gl_frameMS;
+long gl_frameCount;
 
 int fogdensity;
 int outsidefogdensity;

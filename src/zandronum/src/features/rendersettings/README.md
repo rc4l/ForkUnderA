@@ -9,7 +9,7 @@ GL's headers include this module.
 - `rendersettings.h`: `glset` (MAPINFO's light mode, coloured sprite lighting, bright fog, pixel stretch),
   the fog densities, the outside fog's colour, black fog's distance table and the sky's fog strength
   (`gl_SetFogParams`), the view area (`area_t`, `in_area`) and map sections (`currentmapsection`), the
-  frame clock (`gl_frameMS`), the weapon flash's extra light (`getExtraLight`, `gl_weaponlight`), and the
+  frame clock and count (`gl_frameMS`, `gl_frameCount`), the weapon flash's extra light (`getExtraLight`, `gl_weaponlight`), and the
   light helpers `gl_ClampLight`, `gl_isBlack` and `gl_isWhite`.
 - `RenderShadingEnv(inSkybox)`: what the light model (`levelmesh/computation/shading_compute`) reads besides
   the surface, with the server's forced video defaults applied as GL applies them. GL's `gl_ShadingEnv` is
