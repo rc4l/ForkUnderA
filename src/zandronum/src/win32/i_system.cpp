@@ -201,6 +201,9 @@ static long long UsClock()
 	return zx::frameclock::ComputeCounterMicros(counter.QuadPart, freq.QuadPart);
 }
 
+// [rc4l] The tic fraction from whole milliseconds as timeGetTime gave it, to compare against the microsecond one (debug).
+CVAR(Bool, fua_debug_ticfrac_ms, false, 0)
+
 // [rc4l] The game's millisecond clock, wrapping as timeGetTime did but on the counter UsClock reads, so a tic's fraction can be taken in microseconds.
 static DWORD MsClock()
 {
@@ -557,7 +560,8 @@ fixed_t I_GetTimeFrac(uint32 *ms)
 		*ms = TicNext;
 	}
 	// [rc4l] In microseconds: whole milliseconds put the content of frames 2 ms apart 1, 2 or 3 ms apart.
-	return zx::frameclock::ComputeTicFrac(zx::frameclock::ComputeSinceMsUs(UsClock(), TicStart), (long long)(DWORD)(TicNext - TicStart) * 1000);
+	const long long sinceUs = zx::frameclock::ComputeSinceMsUs(UsClock(), TicStart);
+	return zx::frameclock::ComputeTicFrac(fua_debug_ticfrac_ms ? zx::frameclock::ComputeWholeMsUs(sinceUs) : sinceUs, (long long)(DWORD)(TicNext - TicStart) * 1000);
 }
 
 //==========================================================================

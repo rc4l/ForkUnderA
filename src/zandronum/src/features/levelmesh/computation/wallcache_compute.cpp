@@ -6,11 +6,6 @@
 
 namespace zx { namespace levelmesh {
 
-bool ComputeHoldRelight(int change, bool overBudget, int heldSinceTic, int nowTic)
-{
-	return change == kSectorRelit && overBudget && (heldSinceTic < 0 || heldSinceTic == nowTic);
-}
-
 int ComputeSectorRebake(const SectorLook &before, const SectorLook &now)
 {
 	if (now.floorD != before.floorD || now.ceilD != before.ceilD) return kSectorMoved;

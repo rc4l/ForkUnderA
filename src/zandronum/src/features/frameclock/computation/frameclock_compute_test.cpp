@@ -37,6 +37,16 @@ TEST(FrameClock, TheTicFractionIsMicrosecondExact)
 	EXPECT_EQ(2342, ComputeTicFrac(1001, 28000));
 }
 
+// [rc4l] fua_debug_ticfrac_ms: the old clock's whole milliseconds, for an A/B against the microsecond fraction.
+TEST(FrameClock, WholeMillisecondsAreWhatAMillisecondClockCounted)
+{
+	EXPECT_EQ(2000, ComputeWholeMsUs(2999));
+	EXPECT_EQ(3000, ComputeWholeMsUs(3000));
+	EXPECT_EQ(0, ComputeWholeMsUs(0));
+	EXPECT_EQ(0, ComputeWholeMsUs(-500));
+	EXPECT_EQ(ComputeTicFrac(1000, 28000), ComputeTicFrac(ComputeWholeMsUs(1999), 28000));
+}
+
 TEST(FrameClock, TheTicFractionStaysWithinTheTic)
 {
 	EXPECT_EQ(0, ComputeTicFrac(-300, 28000));

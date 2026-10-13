@@ -25,9 +25,6 @@
 #include "stats.h"   // cycle_t, to time the invalidation loop
 #include "c_cvars.h"
 #include "c_console.h"
-#include "doomstat.h"   // [rc4l] gametic, which bounds how long a relight may wait
-
-#include <chrono>
 
 // [rc4l] Keep the level mesh the backend draws from, and CUSTOM so turning it over drops what the mesh held; the name is GL's, from when GL's walk filled it.
 CUSTOM_CVAR(Bool, gl_wallmesh, false, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
@@ -42,8 +39,6 @@ CVAR(Bool, fua_band_log, false, 0)
 EXTERN_CVAR(Int, gl_fogmode)
 // [rc4l] Off bakes a scrolled wall or floor again instead of shifting its texture, the old cost, for an A/B in one session.
 CVAR(Bool, fua_mesh_rescroll, true, 0)
-// [rc4l] Microseconds a frame spends re-lighting sectors whose light alone changed before leaving the rest to the next frames, none past the next tic; 0 re-lights every one at once.
-CVAR(Int, fua_relight_budget_us, 80, CVAR_ARCHIVE)
 
 #include "features/surfaces/surfacebuild.h"
 #include "features/surfaces/computation/wallbands_compute.h"
@@ -1008,9 +1003,6 @@ static int g_segsReshaded = 0;
 static double g_invalMsLast = 0.0; static int g_sectorsLast = 0;   // segs that took the light-only path instead of a full re-derive
 static TArray<SectorLook> g_lastLook;
 static int g_dirtyNoChange = 0;   // dirty, but nothing that shows on a wall actually differed
-// [rc4l] Per sector the tic a relight was first left for a later frame, -1 for none.
-static TArray<int> g_relightHeld;
-static int g_relightsHeld = 0;
 
 double InvalidationMsLastFrame() { return g_invalMsLast; }
 int    SectorsDirtyLastFrame()   { return g_sectorsLast; }
@@ -1032,7 +1024,6 @@ CCMD( fua_bake_dirty )
 	Printf( "sector invalidations since load: %d light-only, %d moved a plane, %d re-baked in the last frame\n",
 		g_dirtyLightOnly, g_dirtyGeometry, g_movedThisFrame );
 	Printf( "  %d were dirty with nothing visibly changed\n", g_dirtyNoChange );
-	Printf( "  %d relights left for a later frame by fua_relight_budget_us\n", g_relightsHeld );
 	Printf( "  scrolled in place: %d sides, %d flats\n", g_sidesRescrolled, zx::levelmesh::GetFlatRescrolls( ) );
 	Printf( "  reshade declined: %d 3D-floor, %d no light, %d not the side owner, %d piece missing\n",
 		g_reshadeFF, g_reshadeNoLight, g_reshadeNotOwner, g_reshadeNoPiece );
@@ -1051,7 +1042,7 @@ CCMD( fua_bake_dirty )
 			(double)g_segsBaked / g_invalFrames, (double)g_segsReshaded / g_invalFrames );
 	if ( argv.argc() > 1 )
 	{
-		g_dirtyLightOnly = 0; g_dirtyGeometry = 0; g_dirtyNoChange = 0; g_relightsHeld = 0;
+		g_dirtyLightOnly = 0; g_dirtyGeometry = 0; g_dirtyNoChange = 0;
 		g_reshadeFF = 0; g_reshadeNoLight = 0; g_reshadeNotOwner = 0; g_reshadeNoPiece = 0;
 		g_invalMs = 0.0; g_invalFrames = 0; g_segsBaked = 0; g_segsReshaded = 0;
 		g_sidesRescrolled = 0;
@@ -1119,31 +1110,15 @@ static SectorLook LookOf(const sector_t &s)
 	return l;
 }
 
-static long long RelightClockUs()
-{
-	return std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
-}
-
-// [rc4l] A sector's change since the last look, re-baking its walls and flats and those of any sector it is a 3D floor in; a relight past the frame's budget waits, still dirty, for a later frame.
-static void InvalidateSector(int s, TArray<int> &fillMoved, long long budgetStartUs)
+// [rc4l] A sector's change since the last look, re-baking its walls and flats and those of any sector it is a 3D floor in.
+static void InvalidateSector(int s, TArray<int> &fillMoved)
 {
 	if (s < 0 || s >= numsectors || (unsigned)s >= g_sectorDirty.Size()) return;
-	if (g_sectorDirty[s] == sectors[s].fua_dirty) return;
+	if (!ComputeTakeChange(g_sectorDirty[s], sectors[s].fua_dirty)) return;
+	g_movedThisFrame++;
 	// [rc4l] fua_dirty says only that a setter ran (SetLightLevel, ChangeLightLevel, SetTexture, SetPlaneTexZ, ChangePlaneTexZ, SetColor, SetFade), and a strobe re-asserts its held level every tic, so a sector whose look did not change is skipped.
 	const SectorLook now = LookOf(sectors[s]);
 	const int change = ComputeSectorRebake(g_lastLook[s], now);
-	// [rc4l] Every light effect in a level changes its sector on the tic, so the frame after it re-lit them all at once.
-	// [rc4l] The clock is read only for a relight: once for each of a few thousand walked sectors a frame cost more than the budget saved.
-	const bool overBudget = change == kSectorRelit && fua_relight_budget_us > 0 && RelightClockUs() - budgetStartUs > fua_relight_budget_us;
-	if (ComputeHoldRelight(change, overBudget, g_relightHeld[s], gametic))
-	{
-		if (g_relightHeld[s] < 0) g_relightHeld[s] = gametic;
-		g_relightsHeld++;
-		return;
-	}
-	g_relightHeld[s] = -1;
-	g_sectorDirty[s] = sectors[s].fua_dirty;
-	g_movedThisFrame++;
 	g_lastLook[s] = now;
 	if (change == kSectorSame) { g_dirtyNoChange++; return; }
 	if (change == kSectorMoved) g_dirtyGeometry++; else g_dirtyLightOnly++;
@@ -1187,8 +1162,6 @@ void InvalidateMovedSectors(const WalkedThisFrame *walked)
 	{
 		g_lastLook.Resize((unsigned)numsectors);
 		for (int i = 0; i < numsectors; i++) g_lastLook[i] = LookOf(sectors[i]);
-		g_relightHeld.Resize((unsigned)numsectors);
-		for (int i = 0; i < numsectors; i++) g_relightHeld[i] = -1;
 	}
 	if (!gl_wallmesh || g_sectorDirty.Size() == 0) return;
 	// [rc4l] GL's missing-texture fills hang on the heights and textures round them, so a move or a texture change works them out again below.
@@ -1196,8 +1169,7 @@ void InvalidateMovedSectors(const WalkedThisFrame *walked)
 	// [rc4l] With the walks' lists only what they reached is looked at, and the rest stays dirty until a walk reaches it.
 	const int sectorCount = walked != NULL ? walked->sectorCount : numsectors;
 	const int sideCount = walked != NULL ? walked->sideCount : numsides;
-	const long long budgetStart = RelightClockUs();
-	for (int k = 0; k < sectorCount; k++) InvalidateSector(walked != NULL ? walked->sectors[k] : k, fillMoved, budgetStart);
+	for (int k = 0; k < sectorCount; k++) InvalidateSector(walked != NULL ? walked->sectors[k] : k, fillMoved);
 	for (int k = 0; k < sideCount; k++) InvalidateSide(walked != NULL ? walked->sides[k] : k, fillSides);
 	for (int k = 0; k < sectorCount; k++) ReplaceSectorFlats(walked != NULL ? walked->sectors[k] : k);
 	if (fillMoved.Size() > 0 || fillSides.Size() > 0) zx::levelmesh::RefreshFakePlanes(fillMoved, fillSides);

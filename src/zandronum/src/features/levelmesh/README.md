@@ -89,10 +89,6 @@ yet. Scenario `walldecal`.
   frame of an animated texture a material slot and remaps baked pieces to the frame showing.
 - `features/frame/standaloneframe.cpp` `StandaloneScene`: `DynClear`, `ClearSprites`, `UpdateProjectedDecals`,
   `InvalidateMovedSectors` with what the walks reached, and `BuildWallDecals` as the walks' decal hook.
-  Every light effect changes its sector on the tic, so the frame after one re-lit them all at once: past
-  `fua_relight_budget_us` (80) a frame leaves a sector whose light alone changed, still dirty, for the next
-  frames, and none waits past the next tic (`ComputeHoldRelight`). On Sunder MAP14 the tic frame went from 2.6
-  to 2.2 ms with the same re-bake a frame on average; a moved or retextured sector never waits.
 - `hwrender/diligent/dgscene.cpp` `DrawSkySurfaces`: reads the list of the view it is drawing;
   `RenderStackPortals`/`DrawStackSurfaces` render each stacked view and paint its planes from it.
 

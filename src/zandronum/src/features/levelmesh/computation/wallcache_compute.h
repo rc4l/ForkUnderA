@@ -85,9 +85,6 @@ struct SectorLook
 enum { kSectorSame, kSectorRelit, kSectorRetextured, kSectorMoved };
 int ComputeSectorRebake(const SectorLook &before, const SectorLook &now);
 
-// [rc4l] Whether a frame past its re-light budget leaves a sector's change for a later frame: only a relight, and only one first held this tic (`heldSinceTic`, -1 for not held), so none waits past the next tic.
-bool ComputeHoldRelight(int change, bool overBudget, int heldSinceTic, int nowTic);
-
 // [rc4l] A sidedef as its walls were last baked: per part (top, mid, bottom) the texture and its offsets and scales, and the side's own light and flags.
 struct SideLook
 {

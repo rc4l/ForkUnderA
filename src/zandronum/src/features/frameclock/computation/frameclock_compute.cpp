@@ -24,4 +24,9 @@ int ComputeTicFrac(long long sinceUs, long long lengthUs)
 	return (int)(sinceUs * 65536 / lengthUs);
 }
 
+long long ComputeWholeMsUs(long long us)
+{
+	return us - us % 1000;
+}
+
 }} // namespace zx::frameclock
