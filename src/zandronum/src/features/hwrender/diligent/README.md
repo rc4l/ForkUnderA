@@ -73,7 +73,6 @@ The world, sprites, models, the 2D layer, wipes, fixed colormaps (invulnerabilit
 torches, `fixedcolormap` and `lightamp`), mirrors, stacked sectors, skyboxes and horizons are ported, each
 with a GL-against-Vulkan scenario in `tools/fuactl/scenarios`. Still missing or different:
 
-- glow from GLDEFS glowing flats onto walls (sprites do glow);
 - a model or decal in a subtract style, drawn translucent (a sprite subtracts), or a sprite in one over coloured fog, which GL draws in two layers;
 - fog boundary sheets between a fogged and a clear sector;
 - skies other than `sky1texture`: MBF line skies, `sky2`, swapped and double skies;

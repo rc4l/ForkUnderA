@@ -67,6 +67,11 @@ void FillPieceDataWith(const zx::levelmesh::MeshPiece &p, const PieceSlotSet &sl
 	pd.animates = slots.animates ? 1.f : 0.f;
 	pd.plain = p.plain ? 1.f : 0.f;
 	pd.desaturation = zx::hwrender::ComputeDesaturationFactor(p.desaturation);
+	for (int i = 0; i < 4; i++)
+	{
+		pd.glowTop[i] = p.glowTop[i]; pd.glowBottom[i] = p.glowBottom[i];
+		pd.glowTopPlane[i] = p.glowTopPlane[i]; pd.glowBottomPlane[i] = p.glowBottomPlane[i];
+	}
 	pd.scrollU = p.scrollU; pd.scrollV = p.scrollV;
 	pd.texFlags = (p.stencil ? 1.f : 0.f) + (p.alphaTest ? 2.f : 0.f) + (p.hud ? 4.f : 0.f) + (inMesh ? 8.f : 0.f) +
 		(p.inverse ? 16.f : 0.f) + (p.colorBlend ? 32.f : 0.f) + (p.fogLayer ? 64.f : 0.f) + (float)(p.fuzz * 128);

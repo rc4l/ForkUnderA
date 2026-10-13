@@ -17,6 +17,7 @@
 #include "r_sky.h"   // skyflatnum, for the sky surfaces
 #include "features/surfaces/walltypes.h"   // [rc4l] RENDERWALL_*
 #include "features/levelmesh/computation/wallbatch_compute.h"   // [rc4l] ComputeFanTriangleVertex
+#include "features/levelmesh/computation/wallglow_compute.h"   // [rc4l] ComputeWallTakesGlow
 #include "features/materials/materials.h"
 #include "features/materials/computation/texcoord_compute.h"   // [rc4l] FTexCoordInfo
 #include "features/hwrender/computation/walllight_compute.h"
@@ -319,6 +320,25 @@ static int g_reshadeFF = 0, g_reshadeNoLight = 0, g_reshadeNotOwner = 0, g_resha
 // It declines rather than guesses whenever it is not certain the geometry is untouched: a seg it
 // never baked, one carrying 3D-floor pieces (whose light comes from an F3DFloor, not the band list),
 // or one whose stored piece has gone. The caller falls back to the full bake, which is always right.
+// [rc4l] A plane as GL hands it to the glow shader: a, b, 1/c and d.
+static void GlowPlaneOf(const secplane_t &p, float out[4])
+{
+	out[0] = FIXED2FLOAT(p.a); out[1] = FIXED2FLOAT(p.b); out[2] = FIXED2FLOAT(p.ic); out[3] = FIXED2FLOAT(p.d);
+}
+
+// [rc4l] GLWall::CheckGlowing for a baked wall: its sector's glowing ceiling and floor, unless the wall is drawn fullbright, with the planes the shader measures the glow from.
+static void BakeWallGlow(MeshPiece &mp, sector_t *sec, int lightLevel, unsigned lightColor)
+{
+	for (int i = 0; i < 4; i++) mp.glowTop[i] = mp.glowBottom[i] = 0.f;
+	if (sec == NULL || !zx::levelmesh::ComputeWallTakesGlow(lightColor, lightLevel)) return;
+	FTexture *top = TexMan[sec->GetTexture(sector_t::ceiling)];
+	FTexture *bottom = TexMan[sec->GetTexture(sector_t::floor)];
+	if (top != NULL && top->isGlowing()) { top->GetGlowColor(mp.glowTop); mp.glowTop[3] = (float)top->gl_info.GlowHeight; }
+	if (bottom != NULL && bottom->isGlowing()) { bottom->GetGlowColor(mp.glowBottom); mp.glowBottom[3] = (float)bottom->gl_info.GlowHeight; }
+	GlowPlaneOf(sec->ceilingplane, mp.glowTopPlane);
+	GlowPlaneOf(sec->floorplane, mp.glowBottomPlane);
+}
+
 static int ReshadeSegFromMap(int segIndex)
 {
 	if (!gl_wallmesh) return -1;
@@ -370,6 +390,7 @@ static int ReshadeSegFromMap(int segIndex)
 		const float savedAlpha = mp.alpha;
 		const int   savedBlend = mp.blendMode;
 		zx::levelmesh::CaptureLevelShading(lightLevel, dl.relLight + getExtraLight(), cm, mp);
+		BakeWallGlow(mp, seg->frontsector, lightLevel, cm.LightColor.d);
 		// AFTER CaptureShading, which clears baseTex and resets alpha and blend mode on the way past.
 		mp.baseTex    = savedBase;
 		mp.alpha      = savedAlpha;
@@ -636,6 +657,7 @@ int BakeSegFromMap(int segIndex)
 			if (bands[bi].lightEntry >= 0) cm.CopyLightColor(bands[bi].lightFrom);
 
 			zx::levelmesh::CaptureLevelShading(lightLevel, dl.relLight + getExtraLight(), cm, mp);
+			BakeWallGlow(mp, seg->frontsector, lightLevel, cm.LightColor.d);
 			// [rc4l] AFTER CaptureShading, which ends by clearing baseTex.
 			//
 			// It sets the fields a surface has no opinion about -- blend mode, alpha, sort position,
@@ -887,6 +909,7 @@ int BakeSegFromMap(int segIndex)
 					}
 				}
 				zx::levelmesh::CaptureLevelShading(ffLight, dl.relLight + getExtraLight(), cm, mp, false);
+				BakeWallGlow(mp, seg->frontsector, ffLight, cm.LightColor.d);
 				mp.baseTex = TexMan.ByIndex(texid.GetIndex());
 				mp.lightLevel = ffLight;
 				mp.lightColor = cm.LightColor.d;

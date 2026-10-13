@@ -37,6 +37,9 @@ static const char *kSceneVS =
 	"layout(location = 15) flat out float vDesaturation;\n"
 	"layout(location = 16) flat out float vHoleCut;\n"
 	"layout(location = 17) flat out float vTexFlags;\n"
+	"layout(location = 18) out vec2 vGlowDist;\n"
+	"layout(location = 19) flat out vec4 vGlowTop;\n"
+	"layout(location = 20) flat out vec4 vGlowBottom;\n"
 	"layout(std430, binding = 10) readonly buffer StackVis { uint stackVis[]; };\n"
 	"layout(std430, binding = 11) readonly buffer SlotRemap { uint slotRemap[]; };\n"
 	// [rc4l] ComputeStackVisible, line for line: whether walk slot's walk drew id this frame.
@@ -58,6 +61,11 @@ static const char *kSceneVS =
 	"    vPlain = pd.bright.w;\n"
 	"    vDesaturation = pd.extra.x;\n"
 	"    vTexFlags = pd.extra.w;\n"
+	// [rc4l] main.vp's glow distances, below the ceiling and above the floor the glow is measured from, the mesh's (x, height, y) being GL's world coordinate.
+	"    vGlowTop = pd.glowTop;\n"
+	"    vGlowBottom = pd.glowBottom;\n"
+	"    vGlowDist = vec2(-((pd.glowTopPlane.w + pd.glowTopPlane.x * aPos.x + pd.glowTopPlane.y * aPos.z) * pd.glowTopPlane.z) - aPos.y,\n"
+	"                     aPos.y + ((pd.glowBottomPlane.w + pd.glowBottomPlane.x * aPos.x + pd.glowBottomPlane.y * aPos.z) * pd.glowBottomPlane.z));\n"
 	"    vec4 clip = uMVP * vec4(aPos, 1.0);\n"
 	// [rc4l] A stacked view draws only what GL's walk through it drew, subsector for a flat and sidedef for a wall (ComputeMarkStackVisible); any other piece's triangle goes off screen whole.
 	"    int stackSlot = int(uFrame.y + 0.5) - 1;\n"
@@ -113,8 +121,8 @@ static const char *kSceneVS =
 // falloff would have produced light bands in the wrong places, and worse, plausible-looking ones.
 //
 // [rc4l] Ported here: software-mode light diminishing, fog-mode diminishing, coloured fog and both fog
-// distance modes, with dynamic lights, brightmaps, desaturation and the fixed colormaps as separate
-// uniforms and buffers elsewhere here; glowing walls are not ported yet.
+// distance modes, with dynamic lights, brightmaps, desaturation, glowing walls and the fixed colormaps
+// as separate uniforms and buffers elsewhere here.
 //
 // uCameraPos.w carries fua_dg_lightmode -- riding in the unused w of a vector already in the buffer
 // makes the debug views free (no resize, no extra binding) so they can stay in the shipped shader.
@@ -142,6 +150,9 @@ static const char *kSceneVS =
 	"layout(location = 15) flat in float vDesaturation;\n" \
 	"layout(location = 16) flat in float vHoleCut;\n" \
 	"layout(location = 17) flat in float vTexFlags;\n" \
+	"layout(location = 18) in vec2 vGlowDist;\n" \
+	"layout(location = 19) flat in vec4 vGlowTop;\n" \
+	"layout(location = 20) flat in vec4 vGlowBottom;\n" \
 	/* [rc4l] GL's texture modes, as getTexel applies them: TM_MASK (texFlags 1) keeps only a stencil's shape, white, for its fill colour, and TM_INVERSE (16) inverts the colour, green and blue swapped as main.fp swaps them. */ \
 	"vec4 fuaTexMode(vec4 t) {\n" \
 	"    int f = int(vTexFlags + 0.5);\n" \
@@ -424,6 +435,10 @@ static const char *kSceneVS =
 	"        return fuaFixedColormap(undesaturated * ((int(vTexFlags + 0.5) & 8) != 0 ? vec3(1.0) : vColor));\n" \
 	"    }\n" \
 	"    vec3 color = fuaSectorLight(vColor, vLightParm.x, fogMode, fogfactor, surfDepth);\n" \
+	/* [rc4l] main.fp's glowing walls (wallglow_compute): a glowing flat's colour added to the light, fading over its height from the plane. */ \
+	"    if (vGlowTop.w > 0.0 && vGlowDist.x < vGlowTop.w) color += fuaDesaturate(vGlowTop.rgb * (1.0 - vGlowDist.x / vGlowTop.w));\n" \
+	"    if (vGlowBottom.w > 0.0 && vGlowDist.y < vGlowBottom.w) color += fuaDesaturate(vGlowBottom.rgb * (1.0 - vGlowDist.y / vGlowBottom.w));\n" \
+	"    color = min(color, vec3(1.0));\n" \
 	/* Dynamic lights add to the light COLOUR before the texture is modulated, exactly as
 	   getLightColor does -- adding after would light the black parts of a texture too. */ \
 	/* [rc4l] Brightmaps add to the LIGHT, not to the finished fragment.

@@ -153,6 +153,8 @@ struct MeshPiece
 	bool          colorBlend;   // [rc4l] gl_usecolorblending's additive sprite, blended by its own colour (ComputeColorBlending)
 	bool          fogLayer;     // [rc4l] a 3D fog floor's untextured panel, which GL leaves out under a fixed colormap
 	int           fuzz;         // [rc4l] the fuzz shader it draws with (fuzz_compute's kFuzz*), 0 for none
+	// [rc4l] A wall's glow from its sector's GLDEFS glowing ceiling and floor (GLWall::CheckGlowing): each colour with its height in w (0 for none), and the planes the glow is measured from as a, b, 1/c, d.
+	float         glowTop[4], glowBottom[4], glowTopPlane[4], glowBottomPlane[4];
 	bool          hud;          // [rc4l] a HUD model's surface, drawn over the world as GL draws one after clearing the depth buffer
 
 	// [rc4l] This piece is a QUAD: four corners, not six vertices.
@@ -197,6 +199,7 @@ struct MeshPiece
 		dynR = dynG = dynB = 0.f;
 		quad = false; solid = false;
 		facesDown = false; depthBias = false; redToAlpha = false; stencil = false; alphaTest = false; inverse = false; colorBlend = false; fogLayer = false; fuzz = 0; hud = false;
+		for (int i = 0; i < 4; i++) glowTop[i] = glowBottom[i] = glowTopPlane[i] = glowBottomPlane[i] = 0.f;
 		flood = false; floodZ = 0.f;
 		mirrorSector = -1; mirrorCeiling = false;
 		scrollU = scrollV = 0.f;
