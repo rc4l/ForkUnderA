@@ -150,11 +150,6 @@ std::string ComputeActorNameText(int mode, const char *tag, const char *classNam
 	return text != nullptr ? std::string(text) : std::string();
 }
 
-bool ComputeActorScanPassesThrough(bool hitActor, bool invisible)
-{
-	return hitActor && invisible;
-}
-
 bool ComputeActorNameCoversTarget(bool isPlayer, bool isMonster, bool shootable)
 {
 	// [MobiusU9B] The identify scan only stops on shootable actors, so a corpse is left to the actor name.

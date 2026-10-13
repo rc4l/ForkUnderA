@@ -1096,6 +1096,13 @@ OptionMenu "FUACrosshairOptions"
 	Option	"Show target info",			"cl_fua_identify_position",		"FUAIdentifyPositions"
 	Option	"Actor name",				"cl_fua_identify_actorname",	"FUAActorNameModes"
 	StaticText " "
+	StaticText "Telemeter", 1
+	Option	"Telemeter",				"cl_fua_telemeter",				"OnOff"
+	Option	"Measure decorations",		"cl_fua_telemeter_decorations",	"OnOff", "cl_fua_telemeter"
+	Option	"Measure monsters",			"cl_fua_telemeter_monsters",	"OnOff", "cl_fua_telemeter"
+	Option	"Measure players",			"cl_fua_telemeter_players",		"OnOff", "cl_fua_telemeter"
+	Option	"Measure projectiles",		"cl_fua_telemeter_projectiles",	"OnOff", "cl_fua_telemeter"
+	StaticText " "
 	StaticText "Next to the crosshair", 1
 	Slider	"Text size",				"cl_fua_xhairinfo_textsize",	0.5, 4.0, 0.1, 1
 	Slider	"Name X offset",			"cl_fua_xhairinfo_name_x",		-200, 200, 1, 0
@@ -1104,6 +1111,8 @@ OptionMenu "FUACrosshairOptions"
 	Slider	"Details Y offset",			"cl_fua_xhairinfo_info_y",		-200, 200, 1, 0
 	Slider	"Actor name X offset",		"cl_fua_xhairinfo_actor_x",		-200, 200, 1, 0
 	Slider	"Actor name Y offset",		"cl_fua_xhairinfo_actor_y",		-200, 200, 1, 0
+	Slider	"Telemeter X offset",		"cl_fua_xhairinfo_telemeter_x",	-200, 200, 1, 0
+	Slider	"Telemeter Y offset",		"cl_fua_xhairinfo_telemeter_y",	-200, 200, 1, 0
 	StaticText " "
 	StaticText "Details are the lines under the name. Health, weapon", 1
 	StaticText "and class show for allies only. The ghost marker flags", 1
@@ -1111,6 +1120,8 @@ OptionMenu "FUACrosshairOptions"
 	StaticText "Actor name is for items, decorations, projectiles and", 1
 	StaticText "corpses, always next to the crosshair. Monsters and", 1
 	StaticText "players use the identify rows above.", 1
+	StaticText "The telemeter shows how far away what the crosshair is", 1
+	StaticText "on is, in map units. It skips items and your own shots.", 1
 }
 	
 //-------------------------------------------------------------------------------------------

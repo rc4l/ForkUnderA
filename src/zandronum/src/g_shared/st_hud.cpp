@@ -404,8 +404,8 @@ static AActor *HUD_ScanForTarget( AActor *pSource )
 {
 	FTraceResults trace;
 
-	// [MobiusU9B] The trace itself moved to features/crosshair, which shares it with the crosshair's actor-name scan.
-	if (( zx::crosshair::TraceFromView( pSource, MF_SHOOTABLE, false, trace ) == false ) || ( trace.HitType != TRACE_HitActor ))
+	// [MobiusU9B] The trace itself moved to features/crosshair, which aims the crosshair's view sweep the same way.
+	if (( zx::crosshair::TraceFromView( pSource, MF_SHOOTABLE, zx::crosshair::kIdentifyRange, trace ) == false ) || ( trace.HitType != TRACE_HitActor ))
 		return ( NULL );
 
 	// Return the actor we found.
