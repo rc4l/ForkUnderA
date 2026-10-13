@@ -1611,6 +1611,7 @@ add_executable( zdoom WIN32
 	features/quake-movement/quakemove.cpp
 	features/quake-movement/elevatorjump.cpp
 	features/speedometer/speedometer.cpp
+	features/crosshair/crosshair.cpp
 	zzautozend.cpp
 )
 

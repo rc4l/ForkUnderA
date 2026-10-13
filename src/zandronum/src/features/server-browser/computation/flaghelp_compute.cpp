@@ -116,6 +116,7 @@ const HelpEntry kHelp[] =
 	{ "sv_dontkeepjoinqueue",	"The join queue is emptied between maps." },
 	{ "sv_dontoverrideplayercolors", "Team play leaves everyone's own colours alone." },
 	{ "sv_forcesoftwarepitchlimits", "Looking up and down is limited to the software renderer's range." },
+	{ "sv_fua_noidentifyactors",	"Aiming at something does not show its actor name." },
 
 	// ------------------------------------------------------------------ compatflags
 	{ "compat_shortTex",		"Shortest textures are found the way Doom found them." },

@@ -415,6 +415,9 @@ enum
 
 	// [AK] Enemy icons won't appear over a player's head.
 	ZADF_NO_ENEMY_ICONS = 1 << 28,
+
+	// [MobiusU9B] The crosshair's actor-name line (features/crosshair) shows nothing, like sv_noidentifytarget does for players.
+	ZADF_FUA_NO_IDENTIFY_ACTORS = 1 << 29,
 };
 
 // [RH] Compatibility flags.
