@@ -91,9 +91,9 @@ CVAR(Bool, fua_dg_sky, true, 0)
 CVAR(Bool, fua_dg_rtmirrors, false, CVAR_ARCHIVE)
 // Planar mirror reflections. On by default; 0 takes the whole pass out, for bisecting a GPU hang.
 CVAR(Bool, fua_dg_mirrors_on, true, CVAR_ARCHIVE)
-// [rc4l] How many reflective planes get a reflection a frame, each a render of the world; 0 turns them off.
+// [rc4l] Reflective planes get their reflections, each a render of the world, up to kMaxPlaneMirrors; 0 turns them off.
 CVAR(Int, fua_dg_planemirrors, 4, CVAR_ARCHIVE)
-// [rc4l] How many stacked-sector views (GL's GLSectorStackPortal) get rendered a frame, each a render of the world; 0 turns them off.
+// [rc4l] Stacked-sector views (GL's GLSectorStackPortal) get rendered, each a render of the world, up to kMaxStackViews; 0 turns them off.
 CVAR(Int, fua_dg_stackportals, 2, CVAR_ARCHIVE)
 // [rc4l] Shows the first stacked view's picture over the whole frame, to see what it holds beyond the planes it is painted on.
 CVAR(Bool, fua_dg_stackshow, false, 0)
@@ -537,6 +537,7 @@ void DrawSceneOnce(bool present, bool pump)
 	RenderSkyLooks(ctx);
 	RenderStackPortals(ctx);
 	RenderPlaneMirrors(ctx);
+	RenderMirrors(ctx);
 
 	auto *rtv = FrameRTV();
 	Diligent::ITextureView *dsv = EnsureSceneDepth();
@@ -563,7 +564,6 @@ void DrawSceneOnce(bool present, bool pump)
 	g_pass.mainView = true;
 	DrawWorld(ctx);
 	g_pass.mainView = false;
-	RenderMirrors(ctx);
 	ShowStackView(ctx);
 	DrawHitboxes(ctx);
 
@@ -902,6 +902,7 @@ void DrawWorld(Diligent::IDeviceContext *ctx)
 	DrawStackSurfaces(ctx);
 
 	DrawPlaneMirrorSurfaces(ctx);
+	DrawLineMirrorSurfaces(ctx);
 
 	// [rc4l] Then everything that blends -- translucent 3D floors, translucent middle textures and
 	// translucent sprites -- in ONE back-to-front pass, so the world and the sprites sort against each

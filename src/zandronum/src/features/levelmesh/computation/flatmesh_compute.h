@@ -150,7 +150,7 @@ struct PlaneUVAffine
 PlaneUVAffine ComputePlaneUVAffine(const PlaneUVTransform &t);
 
 // [rc4l] The most stacked-sector views (GL's GLSectorStackPortal) a frame renders; a further portal in sight is left undrawn.
-enum { kMaxStackViews = 2 };
+enum { kMaxStackViews = 8 };
 
 // [rc4l] The walk-visibility slots each id has: one per stacked view, the player's own walk (what GL drew behind a sky hole), then GL's walk from the skybox viewpoint.
 enum { kMainWalkSlot = kMaxStackViews, kSkyboxWalkSlot = kMaxStackViews + 1, kWalkSlots = kMaxStackViews + 2 };

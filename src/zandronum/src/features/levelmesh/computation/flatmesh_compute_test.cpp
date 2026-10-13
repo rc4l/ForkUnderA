@@ -514,27 +514,27 @@ TEST(FlatMeshCompute, WhatAMirrorsWalkDrawsBelongsToThatMirror)
 TEST(FlatMeshCompute, AStackedViewMarksEachSubsectorItsWalkReached)
 {
 	EXPECT_EQ(0, ComputeStackVisWords(0));
-	static_assert(kWalkSlots == 4, "the bit positions below are four slots an id");
-	EXPECT_EQ(1, ComputeStackVisWords(8));
-	EXPECT_EQ(2, ComputeStackVisWords(9));
-	unsigned int bits[2] = { 0u, 0u };
+	static_assert(kWalkSlots == 10, "the bit positions below are ten slots an id");
+	EXPECT_EQ(1, ComputeStackVisWords(3));
+	EXPECT_EQ(2, ComputeStackVisWords(4));
+	unsigned int bits[4] = { 0u, 0u, 0u, 0u };
 	ComputeMarkStackVisible(bits, 0, 1);
 	ComputeMarkStackVisible(bits, 12, 0);
 	ComputeMarkStackVisible(bits, 12, 0);
 	EXPECT_EQ(2u, bits[0]);              // [rc4l] subsector 0, second view
-	EXPECT_EQ(1u << 16, bits[1]);        // [rc4l] subsector 12, first view, set once
-	EXPECT_TRUE(ComputeStackVisible(bits, 2, 0, 1));
-	EXPECT_FALSE(ComputeStackVisible(bits, 2, 0, 0));
-	EXPECT_TRUE(ComputeStackVisible(bits, 2, 12, 0));
-	EXPECT_FALSE(ComputeStackVisible(bits, 2, 12, kMainWalkSlot));
-	EXPECT_FALSE(ComputeStackVisible(bits, 2, 40, 0));        // [rc4l] past the words
-	EXPECT_FALSE(ComputeStackVisible(bits, 2, -1, 0));
-	EXPECT_FALSE(ComputeStackVisible(nullptr, 2, 0, 1));
+	EXPECT_EQ(1u << 24, bits[3]);        // [rc4l] subsector 12, first view (bit 120), set once
+	EXPECT_TRUE(ComputeStackVisible(bits, 4, 0, 1));
+	EXPECT_FALSE(ComputeStackVisible(bits, 4, 0, 0));
+	EXPECT_TRUE(ComputeStackVisible(bits, 4, 12, 0));
+	EXPECT_FALSE(ComputeStackVisible(bits, 4, 12, kMainWalkSlot));
+	EXPECT_FALSE(ComputeStackVisible(bits, 4, 40, 0));        // [rc4l] past the words
+	EXPECT_FALSE(ComputeStackVisible(bits, 4, -1, 0));
+	EXPECT_FALSE(ComputeStackVisible(nullptr, 4, 0, 1));
 	// [rc4l] Clearing one slot leaves the others.
 	ComputeMarkStackVisible(bits, 12, 1);
 	ComputeClearStackVisible(bits, 12, 0);
-	EXPECT_FALSE(ComputeStackVisible(bits, 2, 12, 0));
-	EXPECT_TRUE(ComputeStackVisible(bits, 2, 12, 1));
+	EXPECT_FALSE(ComputeStackVisible(bits, 4, 12, 0));
+	EXPECT_TRUE(ComputeStackVisible(bits, 4, 12, 1));
 }
 
 TEST(FlatMeshCompute, AWallsProbeStepsOntoItsOwnSideAndAFlatsStaysAtItsCentre)

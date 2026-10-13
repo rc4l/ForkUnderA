@@ -7,10 +7,10 @@
 #define ZX_DGSCENE_GLSL_H
 
 // [rc4l] kWalkSlots and kMainWalkSlot spelled for the scene shader, which reads one bit per walk for every subsector and sidedef.
-#define FUA_WALK_SLOTS_STR "4"
-#define FUA_MAIN_WALK_SLOT_STR "2"
-static_assert(zx::levelmesh::kWalkSlots == 4, "FUA_WALK_SLOTS_STR spells kWalkSlots");
-static_assert(zx::levelmesh::kMainWalkSlot == 2, "FUA_MAIN_WALK_SLOT_STR spells kMainWalkSlot");
+#define FUA_WALK_SLOTS_STR "10"
+#define FUA_MAIN_WALK_SLOT_STR "8"
+static_assert(zx::levelmesh::kWalkSlots == 10, "FUA_WALK_SLOTS_STR spells kWalkSlots");
+static_assert(zx::levelmesh::kMainWalkSlot == 8, "FUA_MAIN_WALK_SLOT_STR spells kMainWalkSlot");
 static const char *kSceneVS =
 	"#version 450\n"
 	"layout(location = 0) in vec3 aPos;\n"

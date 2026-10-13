@@ -1717,6 +1717,7 @@ add_executable( zdoom WIN32
 	features/hwrender/computation/backendview_compute.cpp
 	features/hwrender/computation/wideline_compute.cpp
 	features/hwrender/computation/skylook_compute.cpp
+	features/hwrender/computation/linemirror_compute.cpp
 	features/hwrender/computation/dynlayout_compute.cpp
 	features/hwrender/computation/skyfog_compute.cpp
 	features/hwrender/computation/framepacing_compute.cpp

@@ -6,10 +6,12 @@
 #include "features/hwrender/diligent/dgscene_internal.h"
 #include "features/hwrender/diligent/dgscene_glsl.h"   // [rc4l] the scene's light model, shared with the mirror pass
 #include "features/viewsetup/viewsetup.h"   // [rc4l] FixedColormapShadeFor
+#include "features/hwrender/computation/linemirror_compute.h"   // [rc4l] the reflected eye and how deep mirrors nest
 
 EXTERN_CVAR(Bool, gl_lights_checkside)
 
 EXTERN_CVAR(Float, gl_mask_sprite_threshold)
+EXTERN_CVAR(Int, r_mirror_recursions)
 
 namespace zx { namespace hwrender {
 
@@ -32,8 +34,15 @@ static Diligent::RefCntAutoPtr<Diligent::IBottomLevelAS> g_blas;
 static Diligent::RefCntAutoPtr<Diligent::ITopLevelAS>    g_tlas;
 static Diligent::RefCntAutoPtr<Diligent::IBuffer>        g_asScratch;
 static Diligent::RefCntAutoPtr<Diligent::IBuffer>        g_tlasInstances;
+// [rc4l] The line mirrors' faces, a second instance (custom index 1) a traced ray reflects off again, and each mirror's plane, two triangles a mirror.
+static Diligent::RefCntAutoPtr<Diligent::IBottomLevelAS> g_mirrorBlas;
+static Diligent::RefCntAutoPtr<Diligent::IBuffer>        g_mirrorASVB;
+static Diligent::RefCntAutoPtr<Diligent::IBuffer>        g_mirrorPlanes;
 static bool g_asBuilt = false;
 static int  g_asVerts = 0;
+// [rc4l] The mirrors a structure was built with, so a new level's are built in.
+static int  g_asMirrors = -1;
+static TArray<float> g_mirrorVerts;
 
 bool RayTracingAvailable()
 {
@@ -45,6 +54,10 @@ void ReleaseAccelerationStructures()
 {
 	g_tlas.Release();
 	g_blas.Release();
+	g_mirrorBlas.Release();
+	g_mirrorASVB.Release();
+	g_mirrorPlanes.Release();
+	g_asMirrors = -1;
 	g_asScratch.Release();
 	g_tlasInstances.Release();
 	g_asBuilt = false;
@@ -53,9 +66,81 @@ void ReleaseAccelerationStructures()
 }
 
 // Build (or rebuild) the level's acceleration structure from the scene vertex buffer.
+// [rc4l] The mirrors' bottom-level structure from their faces, and the plane buffer the shader reads a hit mirror's normal from; false when there are none.
+static bool BuildMirrorStructure(Diligent::IRenderDevice *dev, Diligent::IDeviceContext *ctx, const TArray<float> &verts)
+{
+	const Diligent::Uint32 vertCount = verts.Size() / 6;
+	if (vertCount < 3) return false;
+	Diligent::BufferDesc vb;
+	vb.Name = "fua mirror AS VB";
+	vb.Usage = Diligent::USAGE_IMMUTABLE;
+	vb.BindFlags = Diligent::BIND_RAY_TRACING;
+	vb.Size = (Diligent::Uint64)verts.Size() * sizeof(float);
+	Diligent::BufferData vbData(&verts[0], vb.Size);
+	dev->CreateBuffer(vb, &vbData, &g_mirrorASVB);
+	if (!g_mirrorASVB) return false;
+	TArray<float> planes;
+	for (Diligent::Uint32 v = 0; v < vertCount; v += 6)
+	{
+		const float *p = &verts[v * 6];
+		planes.Push(p[3]); planes.Push(p[4]); planes.Push(p[5]); planes.Push(0.f);
+	}
+	Diligent::BufferDesc pb;
+	pb.Name = "fua mirror planes";
+	pb.Usage = Diligent::USAGE_IMMUTABLE;
+	pb.BindFlags = Diligent::BIND_SHADER_RESOURCE;
+	pb.Mode = Diligent::BUFFER_MODE_STRUCTURED;
+	pb.ElementByteStride = sizeof(float) * 4;
+	pb.Size = (Diligent::Uint64)planes.Size() * sizeof(float);
+	Diligent::BufferData pbData(&planes[0], pb.Size);
+	dev->CreateBuffer(pb, &pbData, &g_mirrorPlanes);
+	if (!g_mirrorPlanes) return false;
+
+	Diligent::BLASTriangleDesc tri;
+	tri.GeometryName = "mirrors";
+	tri.MaxVertexCount = vertCount;
+	tri.VertexValueType = Diligent::VT_FLOAT32;
+	tri.VertexComponentCount = 3;
+	tri.MaxPrimitiveCount = vertCount / 3;
+	tri.IndexType = Diligent::VT_UNDEFINED;
+	Diligent::BottomLevelASDesc desc;
+	desc.Name = "fua mirror BLAS";
+	desc.pTriangles = &tri;
+	desc.TriangleCount = 1;
+	dev->CreateBLAS(desc, &g_mirrorBlas);
+	if (!g_mirrorBlas) return false;
+	Diligent::BufferDesc sb;
+	sb.Name = "fua mirror AS scratch";
+	sb.Usage = Diligent::USAGE_DEFAULT;
+	sb.BindFlags = Diligent::BIND_RAY_TRACING;
+	sb.Size = g_mirrorBlas->GetScratchBufferSizes().Build;
+	Diligent::RefCntAutoPtr<Diligent::IBuffer> scratch;
+	dev->CreateBuffer(sb, nullptr, &scratch);
+	if (!scratch) return false;
+	Diligent::BLASBuildTriangleData data;
+	data.GeometryName = tri.GeometryName;
+	data.pVertexBuffer = g_mirrorASVB;
+	data.VertexStride = sizeof(float) * 6;
+	data.VertexCount = vertCount;
+	data.VertexValueType = tri.VertexValueType;
+	data.VertexComponentCount = tri.VertexComponentCount;
+	data.PrimitiveCount = vertCount / 3;
+	data.Flags = Diligent::RAYTRACING_GEOMETRY_FLAG_OPAQUE;
+	Diligent::BuildBLASAttribs attribs;
+	attribs.pBLAS = g_mirrorBlas;
+	attribs.pTriangleData = &data;
+	attribs.TriangleDataCount = 1;
+	attribs.pScratchBuffer = scratch;
+	attribs.BLASTransitionMode = Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
+	attribs.GeometryTransitionMode = Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
+	attribs.ScratchBufferTransitionMode = Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
+	ctx->BuildBLAS(attribs);
+	return true;
+}
+
 bool EnsureAccelerationStructure()
 {
-	if (g_asBuilt && g_asVerts == (int)g_scene.cpuVerts.Size()) return true;
+	if (g_asBuilt && g_asVerts == (int)g_scene.cpuVerts.Size() && g_asMirrors == (int)g_mirrorVerts.Size()) return true;
 	if (!RayTracingAvailable() || !g_scene.vb || g_scene.cpuVerts.Size() < 3) return false;
 
 	auto *dev = GetDevice();
@@ -111,9 +196,10 @@ bool EnsureAccelerationStructure()
 	blasAttribs.ScratchBufferTransitionMode = Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
 	ctx->BuildBLAS(blasAttribs);
 
+	const bool mirrors = BuildMirrorStructure(dev, ctx, g_mirrorVerts);
 	Diligent::TopLevelASDesc tlasDesc;
 	tlasDesc.Name             = "fua level TLAS";
-	tlasDesc.MaxInstanceCount = 1;
+	tlasDesc.MaxInstanceCount = 2;
 	tlasDesc.Flags            = Diligent::RAYTRACING_BUILD_AS_PREFER_FAST_TRACE;
 	dev->CreateTLAS(tlasDesc, &g_tlas);
 	if (!g_tlas) return false;
@@ -122,7 +208,7 @@ bool EnsureAccelerationStructure()
 	ib.Name      = "fua TLAS instances";
 	ib.Usage     = Diligent::USAGE_DEFAULT;
 	ib.BindFlags = Diligent::BIND_RAY_TRACING;
-	ib.Size      = Diligent::TLAS_INSTANCE_DATA_SIZE;
+	ib.Size      = Diligent::TLAS_INSTANCE_DATA_SIZE * 2;
 	dev->CreateBuffer(ib, nullptr, &g_tlasInstances);
 	if (!g_tlasInstances) return false;
 
@@ -135,15 +221,20 @@ bool EnsureAccelerationStructure()
 		if (!g_asScratch) return false;
 	}
 
-	Diligent::TLASBuildInstanceData inst;
-	inst.InstanceName = "level";
-	inst.pBLAS        = g_blas;
-	inst.Mask         = 0xFF;
+	Diligent::TLASBuildInstanceData inst[2];
+	inst[0].InstanceName = "level";
+	inst[0].pBLAS        = g_blas;
+	inst[0].Mask         = 0xFF;
+	inst[0].CustomId     = 0;
+	inst[1].InstanceName = "mirrors";
+	inst[1].pBLAS        = g_mirrorBlas;
+	inst[1].Mask         = 0xFF;
+	inst[1].CustomId     = 1;
 
 	Diligent::BuildTLASAttribs tlasAttribs;
 	tlasAttribs.pTLAS                        = g_tlas;
-	tlasAttribs.pInstances                   = &inst;
-	tlasAttribs.InstanceCount                = 1;
+	tlasAttribs.pInstances                   = inst;
+	tlasAttribs.InstanceCount                = mirrors ? 2 : 1;
 	tlasAttribs.pInstanceBuffer              = g_tlasInstances;
 	tlasAttribs.pScratchBuffer               = g_asScratch;
 	tlasAttribs.TLASTransitionMode           = Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
@@ -154,6 +245,7 @@ bool EnsureAccelerationStructure()
 
 	g_asBuilt = true;
 	g_asVerts = (int)g_scene.cpuVerts.Size();
+	g_asMirrors = (int)g_mirrorVerts.Size();
 	Printf("vulkan: acceleration structure built -- %u triangles\n", (unsigned)triCount);
 	return true;
 }
@@ -176,13 +268,13 @@ struct MirrorSurface
 	int line;             // [rc4l] its linedef, which the sprites, models and decals GL's walk through it drew are filed under
 };
 static TArray<MirrorSurface> g_mirrors;
-// [rc4l] Every mirror's face as two triangles, in g_mirrors' order.
-static TArray<float> g_mirrorVerts;
+// [rc4l] Every mirror's face as two triangles, in g_mirrors' order: g_mirrorVerts, declared with the structure that is built from it.
 static Diligent::RefCntAutoPtr<Diligent::IBuffer> g_mirrorVB;
 static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_mirrorPSO;
 static Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding> g_mirrorSRB;
 // [rc4l] Its traced path binds the level's materials and piece buffer on the pipeline, so a level change makes it again.
-void ReleaseLineMirrorPipeline() { g_mirrorSRB.Release(); g_mirrorPSO.Release(); }
+static void ReleaseMirrorLevels();
+void ReleaseLineMirrorPipeline() { ReleaseMirrorLevels(); g_mirrorSRB.Release(); g_mirrorPSO.Release(); }
 static Diligent::RefCntAutoPtr<Diligent::ITexture> g_mirrorColor, g_mirrorDepth;
 static int g_mirrorW = 0, g_mirrorH = 0;
 static Diligent::RefCntAutoPtr<Diligent::IBuffer> g_sheenCB;   // [rc4l] ComputeMirrorSheenConstants for the mirror being drawn
@@ -318,6 +410,7 @@ static const char *kMirrorPS =
 	"layout(std430, binding = 3) readonly buffer Verts { float vtx[]; };\n"
 	"layout(binding = 4) uniform sampler2D uMaterials[FUA_MAT_SLOTS];\n"
 	"layout(binding = 5) uniform sampler2D uSky;\n"
+	"layout(std430, binding = 7) readonly buffer MirrorPlanes { vec4 mirrorPlanes[]; };\n"
 	"layout(location = 0) in vec3 vWorld;\n"
 	"layout(location = 1) in vec3 vNormal;\n"
 	FUA_MIRROR_SHEEN_PS_GLSL
@@ -331,13 +424,32 @@ static const char *kMirrorPS =
 	"vec2 vertUV(uint v)    { uint b = v * STRIDE + 3u; return vec2(vtx[b], vtx[b + 1u]); }\n"
 	"void main() {\n"
 	"    vec3 sheen = fuaMirrorSheen();\n"
+	// [rc4l] GL draws a mirror past r_mirror_recursions deep (uSheenLight.w) black under its sheen, ClearScreen's dim, and with 0 that is the first one.
+	"    int levels = int(uSheenLight.w + 0.5);\n"
+	"    if (levels < 1) { outColor = vec4(min(sheen, vec3(1.0)), 1.0); return; }\n"
 	"    vec3 n = normalize(vNormal);\n"
 	"    vec3 eye = normalize(vWorld - uCameraPos.xyz);\n"
 	"    vec3 dir = reflect(eye, n);\n"
-	"    rayQueryEXT rq;\n"
 	// Nudged off the surface, or the mirror hits itself at t = 0.
-	"    rayQueryInitializeEXT(rq, uTLAS, gl_RayFlagsOpaqueEXT, 0xFF, vWorld + n * 0.5, 0.1, dir, 20000.0);\n"
-	"    while (rayQueryProceedEXT(rq)) {}\n"
+	"    vec3 origin = vWorld + n * 0.5;\n"
+	// [rc4l] Each mirror the ray passes on the way adds its sheen, as each of GL's nested mirror surfaces does.
+	"    vec3 glaze = sheen;\n"
+	"    float travelled = 0.0;\n"
+	"    rayQueryEXT rq;\n"
+	"    for (int level = 1; ; level++) {\n"
+	"        rayQueryInitializeEXT(rq, uTLAS, gl_RayFlagsOpaqueEXT, 0xFF, origin, 0.1, dir, 20000.0);\n"
+	"        while (rayQueryProceedEXT(rq)) {}\n"
+	"        if (rayQueryGetIntersectionTypeEXT(rq, true) == gl_RayQueryCommittedIntersectionNoneEXT) break;\n"
+	"        if (rayQueryGetIntersectionInstanceCustomIndexEXT(rq, true) != 1) break;\n"
+	// [rc4l] Another mirror: GL renders it a level deeper, reflecting the view again, unless that is past its recursions.
+	"        if (level >= levels) { outColor = vec4(min(glaze, vec3(1.0)), 1.0); return; }\n"
+	"        vec3 m = mirrorPlanes[uint(rayQueryGetIntersectionPrimitiveIndexEXT(rq, true)) / 2u].xyz;\n"
+	"        float hit = rayQueryGetIntersectionTEXT(rq, true);\n"
+	"        travelled += hit;\n"
+	"        origin = origin + dir * hit + m * 0.5;\n"
+	"        dir = reflect(dir, m);\n"
+	"        glaze += sheen;\n"
+	"    }\n"
 	// [rc4l] A miss means the ray left the level, and what is out there is the sky.
 	//
 	// Sky ceilings are portals and deliberately not mesh geometry, so upward rays SHOULD miss. Paint
@@ -351,7 +463,7 @@ static const char *kMirrorPS =
 	"        float su = (atan(d.z, d.x) + uLightParams.y) / 6.28318531;\n"
 	// The dome spans the horizon to 60 degrees over its texture, so map elevation the same way.
 	"        float sv = clamp((1.0472 - el) / 1.0472, 0.0, 1.0);\n"
-	"        outColor = vec4(min(texture(uSky, vec2(su * uScreen.z, sv * uScreen.w)).rgb + sheen, vec3(1.0)), 1.0);\n"
+	"        outColor = vec4(min(texture(uSky, vec2(su * uScreen.z, sv * uScreen.w)).rgb + glaze, vec3(1.0)), 1.0);\n"
 	"        return;\n"
 	"    }\n"
 	"    uint prim = uint(rayQueryGetIntersectionPrimitiveIndexEXT(rq, true));\n"
@@ -368,12 +480,12 @@ static const char *kMirrorPS =
 	"    uint mat = uint(pieces[vertPiece(i0)].fogAlphaMat.w + 0.5) & 511u;\n"
 	"    vec3 texel = texture(uMaterials[nonuniformEXT(mat)], uv).rgb;\n"
 	// [rc4l] A fixed colormap recolours what the ray hit in white light, as the raster path does a level surface.
-	"    if (uFixedColormap.w > 0.5) { outColor = vec4(min(fuaFixedColormap(texel) + sheen, vec3(1.0)), 1.0); return; }\n"
+	"    if (uFixedColormap.w > 0.5) { outColor = vec4(min(fuaFixedColormap(texel) + glaze, vec3(1.0)), 1.0); return; }\n"
 	"    c *= texel;\n"
 	// Distance falls off the same way the raster path's fog does, so a far reflection reads as far.
-	"    float t = rayQueryGetIntersectionTEXT(rq, true);\n"
+	"    float t = travelled + rayQueryGetIntersectionTEXT(rq, true);\n"
 	"    c *= clamp(1.0 - t / 4000.0, 0.15, 1.0);\n"
-	"    outColor = vec4(min(c + sheen, vec3(1.0)), 1.0);\n"
+	"    outColor = vec4(min(c + glaze, vec3(1.0)), 1.0);\n"
 	"}\n";
 
 // [rc4l] The planar path's surface: the reflection RenderMirrors rendered from the mirrored eye, by screen position, with no ray query so an adapter without one can still draw it.
@@ -396,6 +508,34 @@ static const char *kMirrorPlanarPS =
 // [rc4l] Which shader g_mirrorPSO was built with; the traced one only where the structure exists and fua_dg_rtmirrors asks for it.
 static bool g_mirrorPSOTraced = false;
 
+// [rc4l] The deepest picture level, one past r_mirror_recursions' ceiling of 10, whose mirrors are cleared.
+static const int kMirrorLevels = 12;
+static void ReleaseMirrorLevels();
+
+// [rc4l] A binding of the mirror pipeline that paints from picture `color`, with GL's sheen texture beside it.
+static bool BindMirrorPicture(Diligent::ITexture *color, Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding> &srb)
+{
+	srb.Release();
+	// [rc4l] InitStaticResources = false. With true, Diligent copies the pipeline's static resources
+	// into the binding at creation, and a static ARRAY with any element left unbound takes the
+	// process down rather than reporting it.
+	g_mirrorPSO->CreateShaderResourceBinding(&srb, false);
+	if (!srb) return false;
+	// Static resources are copied in explicitly, so a failure here is reported rather than being a
+	// silent crash inside CreateShaderResourceBinding.
+	g_mirrorPSO->InitializeStaticSRBResources(srb);
+	if (auto *v = srb->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "uTex"))
+		v->Set(color->GetDefaultView(Diligent::TEXTURE_VIEW_SHADER_RESOURCE));
+	// [rc4l] glstuff/mirror.png, or the white placeholder so the binding is whole when GL has none and draws no sheen.
+	if (auto *v = srb->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "uSheen"))
+	{
+		const void *sheen = zx::materials::MaterialForTexture(zx::materials::MirrorSheenTexture());
+		Diligent::IDeviceObject *srv = sheen ? GetMaterialSRV(sheen, 0) : NULL;
+		v->Set(srv ? srv : GetMaterialSRV(NULL, 0));
+	}
+	return true;
+}
+
 bool EnsureMirrorResources()
 {
 	auto *dev = GetDevice();
@@ -412,7 +552,7 @@ bool EnsureMirrorResources()
 
 	// [rc4l] A pipeline built for the other path is rebuilt, since the two shaders bind different resources.
 	const bool wantTraced = g_tlas && fua_dg_rtmirrors;
-	if (g_mirrorPSO && g_mirrorPSOTraced != wantTraced) { g_mirrorSRB.Release(); g_mirrorPSO.Release(); }
+	if (g_mirrorPSO && g_mirrorPSOTraced != wantTraced) { ReleaseMirrorLevels(); g_mirrorSRB.Release(); g_mirrorPSO.Release(); }
 	if (!g_mirrorPSO)
 	{
 		Diligent::RefCntAutoPtr<Diligent::IShader> vs, ps;
@@ -431,6 +571,7 @@ bool EnsureMirrorResources()
 			{ Diligent::SHADER_TYPE_PIXEL, "Verts", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
 			{ Diligent::SHADER_TYPE_PIXEL, "uSky", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
 			{ Diligent::SHADER_TYPE_PIXEL, "uSheen", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
+			{ Diligent::SHADER_TYPE_PIXEL, "MirrorPlanes", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
 		};
 		Diligent::SamplerDesc samp;
 		samp.MinFilter = Diligent::FILTER_TYPE_LINEAR;
@@ -566,23 +707,7 @@ bool EnsureMirrorResources()
 	// structure is built once at upload, where there is no pass open.
 	if (!g_mirrorSRB)
 	{
-		// [rc4l] InitStaticResources = false. With true, Diligent copies the pipeline's static resources
-		// into the binding at creation, and a static ARRAY with any element left unbound takes the
-		// process down rather than reporting it.
-		g_mirrorPSO->CreateShaderResourceBinding(&g_mirrorSRB, false);
-		if (!g_mirrorSRB) return false;
-		// Static resources are copied in explicitly, so a failure here is reported rather than being a
-		// silent crash inside CreateShaderResourceBinding.
-		g_mirrorPSO->InitializeStaticSRBResources(g_mirrorSRB);
-		if (auto *v = g_mirrorSRB->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "uTex"))
-			v->Set(g_mirrorColor->GetDefaultView(Diligent::TEXTURE_VIEW_SHADER_RESOURCE));
-		// [rc4l] glstuff/mirror.png, or the white placeholder so the binding is whole when GL has none and draws no sheen.
-		if (auto *v = g_mirrorSRB->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "uSheen"))
-		{
-			const void *sheen = zx::materials::MaterialForTexture(zx::materials::MirrorSheenTexture());
-			Diligent::IDeviceObject *srv = sheen ? GetMaterialSRV(sheen, 0) : NULL;
-			v->Set(srv ? srv : GetMaterialSRV(NULL, 0));
-		}
+		if (!BindMirrorPicture(g_mirrorColor, g_mirrorSRB)) return false;
 		// The traced path is only taken if the binding actually took. A variable the shader does not
 		// declare, or a structure that failed to build, means falling back rather than committing an
 		// SRB with a hole in it.
@@ -598,6 +723,9 @@ bool EnsureMirrorResources()
 			{
 				v->Set(g_scene.vb->GetDefaultView(Diligent::BUFFER_VIEW_SHADER_RESOURCE));
 			}
+			// [rc4l] The mirrors' planes, or the level's buffer standing in when there are no mirror faces to reflect off a second time.
+			if (auto *v = g_mirrorSRB->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "MirrorPlanes"))
+				v->Set((g_mirrorPlanes ? g_mirrorPlanes.RawPtr() : g_scene.vb.RawPtr())->GetDefaultView(Diligent::BUFFER_VIEW_SHADER_RESOURCE));
 			// [rc4l] The sky, resolved here rather than reused from EnsureSky: that runs mid-frame with
 			// a render pass open, and this may have to upload the texture.
 			if (auto *v2 = g_mirrorSRB->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "uSky"))
@@ -628,7 +756,7 @@ bool EnsureMirrorResources()
 	return g_mirrors.Size() == 0 || g_mirrorVB.RawPtr() != nullptr;
 }
 
-void ReleaseMirrorBinding() { g_mirrorSRB.Release(); g_mirrorTraced = false; }
+void ReleaseMirrorBinding() { ReleaseMirrorLevels(); g_mirrorSRB.Release(); g_mirrorTraced = false; }
 
 // [rc4l] The scene constant block for this frame's camera; passes differ only in clip plane, target size and bindless.
 void WriteSceneConstants(float *cb, const float *clip, float targetW, float targetH, float materialSlots)
@@ -670,17 +798,14 @@ static void WriteMirrorSheen(Diligent::IDeviceContext *ctx, const MirrorSurface 
 	const float rgb[3] = { shade ? shade->colorR : 0.f, shade ? shade->colorG : 0.f, shade ? shade->colorB : 0.f };
 	Diligent::MapHelper<float> cb(ctx, g_sheenCB, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD);
 	zx::hwrender::ComputeMirrorSheenConstants(view, m.nx, m.ny, rgb, shade ? shade->softLight : -1.f,
-		shade ? (float)shade->fogMode : 0.f, shade ? shade->fogDensity : 0.f, shade != NULL, &cb[0]);
+		shade ? (float)shade->fogMode : 0.f, shade ? shade->fogDensity : 0.f, shade != NULL, (int)r_mirror_recursions, &cb[0]);
 }
 
 // [rc4l] One mirror's face under the camera now, its sheen included: the traced path traces from it, the planar one samples the reflection just rendered.
-static void DrawMirrorSurface(Diligent::IDeviceContext *ctx, unsigned index, const float view[16])
+static void DrawMirrorSurface(Diligent::IDeviceContext *ctx, unsigned index, const float view[16], Diligent::IShaderResourceBinding *srb)
 {
+	// [rc4l] No scene constants of its own: it is drawn inside the pass that shows it, whose block already holds that eye.
 	WriteMirrorSheen(ctx, g_mirrors[index], view);
-	{
-		Diligent::MapHelper<float> cb(ctx, g_cb, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD);
-		WriteSceneConstants(&cb[0], nullptr, (float)g_mirrorW, (float)g_mirrorH, 0.f);
-	}
 	if (g_mirrorTraced)
 	{
 		static bool said = false;
@@ -691,7 +816,7 @@ static void DrawMirrorSurface(Diligent::IDeviceContext *ctx, unsigned index, con
 	ctx->SetVertexBuffers(0, 1, vbs, offsets, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
 		Diligent::SET_VERTEX_BUFFERS_FLAG_RESET);
 	ctx->SetPipelineState(g_mirrorPSO);
-	ctx->CommitShaderResources(g_mirrorSRB, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	ctx->CommitShaderResources(srb, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 	Diligent::DrawAttribs d;
 	d.NumVertices = 6;
 	d.Flags = Diligent::DRAW_FLAG_VERIFY_ALL;
@@ -746,7 +871,8 @@ static void HandOverViewTarget(Diligent::IDeviceContext *ctx, ViewTarget &t)
 
 // Render each mirror's reflection and draw its surface. Called after the world, before the 2D layer.
 // [rc4l] Reflective floors and ceilings as GL's GLPlaneMirrorPortal draws them: each visible plane gets the world rendered from the mirrored eye into a slot before the frame, and the world pass paints its pieces from that picture, flipped, under the translucent floor (decisions in planemirror_compute).
-static const int kMaxPlaneMirrors = 4;
+// [rc4l] Distinct reflective planes a frame, each a render of the world; GL has no limit, and a target is made only for a plane in view.
+static const int kMaxPlaneMirrors = 16;
 static ViewTarget g_pm[kMaxPlaneMirrors];
 static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_pmPSO;
 // [rc4l] Reflections rendered this frame.
@@ -838,8 +964,7 @@ void RenderPlaneMirrors(Diligent::IDeviceContext *ctx)
 {
 	g_pmUsed = 0;
 	for (unsigned i = 0; i < g_scene.blendBatches.Size(); i++) g_scene.batches[g_scene.blendBatches[i]].mirrorSlot = -1;
-	int maxSlots = fua_dg_planemirrors;
-	if (maxSlots > kMaxPlaneMirrors) maxSlots = kMaxPlaneMirrors;
+	const int maxSlots = fua_dg_planemirrors > 0 ? kMaxPlaneMirrors : 0;
 	if (maxSlots <= 0 || sectors == NULL || !g_scene.vb) return;
 
 	float mvp[16];
@@ -946,7 +1071,7 @@ void RenderStackPortals(Diligent::IDeviceContext *ctx)
 {
 	g_stackDrawn = 0;
 	int n = zx::levelmesh::StackViewCount();
-	if (n > fua_dg_stackportals) n = fua_dg_stackportals;
+	if (fua_dg_stackportals <= 0) n = 0;
 	if (n <= 0 || !g_scene.vb || !g_cb) return;
 	if (!g_stackSurfPSO)
 		g_stackSurfPSO = CreateScreenSurfacePSO("fua stack surface", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE);
@@ -1035,8 +1160,130 @@ void ShowStackView(Diligent::IDeviceContext *ctx)
 	ctx->Draw(dr);
 }
 
+// [rc4l] An eye a mirror pass looks from.
+struct MirrorEye { fixed_t x, y, z; angle_t angle; };
+
+// [rc4l] Runs `body` with the engine's view set to eye, and puts the engine's own back after.
+template <class F> static void WithEye(const MirrorEye &e, F body)
+{
+	const fixed_t sx = viewx, sy = viewy, sz = viewz;
+	const angle_t sa = viewangle;
+	viewx = e.x; viewy = e.y; viewz = e.z; viewangle = e.angle;
+	body();
+	viewx = sx; viewy = sy; viewz = sz; viewangle = sa;
+}
+
+// [rc4l] The eye that sees mirror m's reflection of eye (ComputeMirrorEye), or false when eye is behind m.
+static bool ReflectedEye(const MirrorSurface &m, const MirrorEye &eye, MirrorEye &out)
+{
+	float rx, ry;
+	unsigned angle;
+	if (!zx::hwrender::ComputeMirrorEye(m.nx, m.ny, m.d, FIXED2FLOAT(eye.x), FIXED2FLOAT(eye.y), eye.angle, rx, ry, angle)) return false;
+	out.x = FLOAT2FIXED(rx); out.y = FLOAT2FIXED(ry); out.z = eye.z; out.angle = angle;
+	return true;
+}
+
+// [rc4l] The pictures planar reflections are drawn into, by level and then by slot among one pass's mirrors, made the first time a mirror is seen that deep.
+struct MirrorPicture
+{
+	Diligent::RefCntAutoPtr<Diligent::ITexture> color, depth;
+	Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding> srb;
+	int w = 0, h = 0;
+};
+static TArray<MirrorPicture> g_mirrorPool[kMirrorLevels];
+
+static void ReleaseMirrorLevels()
+{
+	for (int i = 0; i < kMirrorLevels; i++) g_mirrorPool[i].Clear();
+}
+
+// [rc4l] Picture `slot` of level `level` at the window's size, or NULL past the deepest level.
+static MirrorPicture *PoolPicture(int level, int slot)
+{
+	if (level < 1 || level >= kMirrorLevels || slot < 0) return NULL;
+	TArray<MirrorPicture> &pool = g_mirrorPool[level];
+	while ((int)pool.Size() <= slot) pool.Push(MirrorPicture());
+	MirrorPicture &p = pool[slot];
+	if (!p.color || !p.srb || p.w != g_mirrorW || p.h != g_mirrorH)
+	{
+		if (!CreateViewTextures(g_mirrorW, g_mirrorH, "fua mirror picture", p.color, p.depth) || !BindMirrorPicture(p.color, p.srb)) return NULL;
+		p.w = g_mirrorW; p.h = g_mirrorH;
+	}
+	return &p;
+}
+
+// [rc4l] A picture ready to be painted from, handed over outside any render pass, for the reason RenderSkyPortal gives.
+static void ReadyMirrorPicture(Diligent::IDeviceContext *ctx, Diligent::ITexture *color)
+{
+	Diligent::StateTransitionDesc barrier(color, Diligent::RESOURCE_STATE_UNKNOWN, Diligent::RESOURCE_STATE_SHADER_RESOURCE,
+		Diligent::STATE_TRANSITION_FLAG_UPDATE_STATE);
+	ctx->TransitionResourceStates(1, &barrier);
+}
+
+// [rc4l] One mirror a pass shows: which, the pass showing it (-1 the player's view, else that node's reflection), how deep, the eye seeing it and the eye of its reflection, and the binding its surface paints from.
+struct MirrorNode
+{
+	unsigned mirror;
+	int parent, level;
+	MirrorEye viewer, reflected;
+	Diligent::IShaderResourceBinding *srb;
+};
+static TArray<MirrorNode> g_mirrorNodes;
+// [rc4l] The node whose reflection is being drawn, -1 for the player's view.
+static int g_mirrorPass = -1;
+
+// [rc4l] Mirror i's reflection of `viewer` into picture `slot` of level `level`, the mirrors it shows drawn a level deeper first, so its pass paints them before its sprites as GL draws a mirror portal before the translucent pass; a mirror past r_mirror_recursions is GLPortal::ClearScreen's black.
+static void RenderMirrorNode(Diligent::IDeviceContext *ctx, unsigned i, int level, int slot, const MirrorEye &viewer, int parent)
+{
+	const MirrorSurface &m = g_mirrors[i];
+	MirrorEye reflected;
+	MirrorPicture *pic = PoolPicture(level, slot);
+	if (!ReflectedEye(m, viewer, reflected) || pic == NULL) return;
+	const int node = (int)g_mirrorNodes.Size();
+	const MirrorNode n = { i, parent, level, viewer, reflected, pic->srb };
+	g_mirrorNodes.Push(n);
+	if (!zx::hwrender::ComputeMirrorLevelDrawn(level, r_mirror_recursions))
+	{
+		auto *rtv = pic->color->GetDefaultView(Diligent::TEXTURE_VIEW_RENDER_TARGET);
+		ctx->SetRenderTargets(1, &rtv, nullptr, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+		const float black[4] = { 0.f, 0.f, 0.f, 1.f };
+		ctx->ClearRenderTarget(rtv, black, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+		ReadyMirrorPicture(ctx, pic->color);
+		return;
+	}
+	WithEye(reflected, [] { BuildMVP(g_mvp); });
+	int childSlot = 0;
+	for (unsigned k = 0; k < g_mirrors.Size(); k++)
+	{
+		MirrorEye seen;
+		if (k == i || !ReflectedEye(g_mirrors[k], reflected, seen) || !zx::horizon::ComputeQuadMayBeVisible(g_mvp, g_mirrors[k].corners)) continue;
+		RenderMirrorNode(ctx, k, level + 1, childSlot++, reflected, node);
+		WithEye(reflected, [] { BuildMVP(g_mvp); });
+	}
+	auto *rtv = pic->color->GetDefaultView(Diligent::TEXTURE_VIEW_RENDER_TARGET);
+	auto *dsv = pic->depth->GetDefaultView(Diligent::TEXTURE_VIEW_DEPTH_STENCIL);
+	// Clip to the mirror's own plane, in MESH space: x and z there are the map's x and y.
+	g_pass.clipPlane[0] = m.nx; g_pass.clipPlane[1] = 0.f; g_pass.clipPlane[2] = m.ny;
+	g_pass.clipPlane[3] = -m.d;
+	if (g_pass.clipPlane[3] == 0.f) g_pass.clipPlane[3] = 0.0001f;   // w == 0 means "off"
+	ctx->SetRenderTargets(1, &rtv, dsv, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	const float clear[4] = { 0.05f, 0.06f, 0.09f, 1.0f };
+	ctx->ClearRenderTarget(rtv, clear, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	ctx->ClearDepthStencil(dsv, Diligent::CLEAR_DEPTH_FLAG, 1.0f, 0, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	const int outer = g_mirrorPass;
+	g_mirrorPass = node;
+	g_pass.lineMirror = m.line;
+	DrawWorld(ctx);
+	g_pass.lineMirror = -1;
+	g_mirrorPass = outer;
+	g_pass.clipPlane[0] = g_pass.clipPlane[1] = g_pass.clipPlane[2] = g_pass.clipPlane[3] = 0.f;
+	ReadyMirrorPicture(ctx, pic->color);
+}
+
 void RenderMirrors(Diligent::IDeviceContext *ctx)
 {
+	g_mirrorNodes.Clear();
+	g_mirrorPass = -1;
 	// [rc4l] A switch, so the pass can be BISECTED against the TDR.
 	//
 	// A planar mirror re-renders the world from the mirror's viewpoint, once per mirror. These maps
@@ -1052,22 +1299,6 @@ void RenderMirrors(Diligent::IDeviceContext *ctx)
 	{
 		if (!EnsureMirrorResources()) return;
 	}
-
-	auto *brtv = FrameRTV();
-	// [rc4l] The world pass renders into our own readable depth buffer, so restoring the frame's
-	// here would hand the screen a depth buffer nothing has written to.
-	Diligent::ITextureView *bdsv = EnsureSceneDepth();
-	if (!bdsv) bdsv = FrameDSV();
-	Diligent::ITextureView *mrtv = g_mirrorColor->GetDefaultView(Diligent::TEXTURE_VIEW_RENDER_TARGET);
-	Diligent::ITextureView *mdsv = g_mirrorDepth->GetDefaultView(Diligent::TEXTURE_VIEW_DEPTH_STENCIL);
-
-	const fixed_t sx = viewx, sy = viewy, sz = viewz;
-	const angle_t sa = viewangle;
-	float savedMVP[16];
-	for (int i = 0; i < 16; i++) savedMVP[i] = g_mvp[i];
-	// [rc4l] The player's view alone, which GL's sheen reflects the eye ray in.
-	float view[16];
-	zx::hwrender::ComputeBackendView(CurrentCamera(), view);
 
 	// [rc4l] With ray tracing there is no reflection pass at all: the mirror's own fragment shader
 	// traces, so this collapses to drawing the surfaces. The planar path below stays for adapters
@@ -1085,22 +1316,14 @@ void RenderMirrors(Diligent::IDeviceContext *ctx)
 		}
 	}
 
+	float savedMVP[16];
+	for (int i = 0; i < 16; i++) savedMVP[i] = g_mvp[i];
+	const MirrorEye player = { viewx, viewy, viewz, viewangle };
+	int slot = 0;
 	for (unsigned i = 0; i < g_mirrors.Size(); i++)
 	{
 		const MirrorSurface &m = g_mirrors[i];
-		if (traced)
-		{
-			DrawMirrorSurface(ctx, i, view);
-			DrawMirrorFaceDecals(ctx, m.line);
-			continue;
-		}
-
-		// Reflect the camera through the mirror plane. Position mirrors across the plane; the facing
-		// reflects as 2*mirrorAngle - viewangle, which is the same rotation expressed in Doom's
-		// integer angles rather than as a matrix.
-		const float px = FIXED2FLOAT(sx), py = FIXED2FLOAT(sy);
-		const float dist = m.nx * px + m.ny * py - m.d;
-
+		MirrorEye reflected;
 		// [rc4l] A mirror you are BEHIND cannot be seen, so do not render the world into it.
 		//
 		// This loop re-rendered the entire scene once per mirror, unconditionally. These maps carry
@@ -1110,64 +1333,38 @@ void RenderMirrors(Diligent::IDeviceContext *ctx)
 		// resets the device and the driver terminates the process: the TDR that reads as a silent
 		// crash after ~20 map loads. Measured, same build, same session, four sequences each:
 		// mirrors on, 2 failures and 2 TDRs; mirrors off, 0 and 0.
-		//
-		// `dist` is which side of the mirror plane the camera is on, and it was already being
-		// computed and then ignored. Negative means the surface faces away -- there is nothing to
-		// see and nothing to draw, so the reflection is pure waste. This is exact, not an
-		// approximation: it removes renders that could not have contributed a pixel.
-		if (dist <= 0.f) continue;
+		if (!ReflectedEye(m, player, reflected)) continue;
+		if (traced)
+		{
+			const MirrorNode n = { i, -1, 1, player, reflected, g_mirrorSRB };
+			g_mirrorNodes.Push(n);
+			continue;
+		}
 		// [rc4l] ...and one nobody can see is not rendered either, since each costs a whole scene render and WDI07 holds four out of sight.
 		if (!zx::levelmesh::ComputeRendersMirror(zx::levelmesh::MirrorWalkedThisFrame(m.line),
 				zx::hwrender::StandaloneActive() && !zx::levelmesh::PortalViewsDerived(),
 				zx::horizon::ComputeQuadMayBeVisible(savedMVP, m.corners)))
 			continue;
-		const float rx = px - 2.f * dist * m.nx;
-		const float ry = py - 2.f * dist * m.ny;
-
-		// The line's own direction. n = (dy, -dx)/len, so the direction is (-ny, nx) -- getting this
-		// backwards is invisible on an axis-aligned mirror, where the two answers differ by exactly
-		// 360 degrees, and wrong on every other one.
-		const float mirrorAng = atan2f(m.nx, -m.ny);
-		const float camAng = (float)(sa >> ANGLETOFINESHIFT) * 2.f * 3.14159265f / 8192.f;
-		const float TWOPI = 2.f * 3.14159265f;
-
-		// [rc4l] Wrap before converting. 2*mirrorAngle - camAngle is negative for a large share of
-		// camera angles, and converting a negative double to angle_t -- an UNSIGNED type -- is
-		// undefined. It came out as a direction unrelated to the reflection and lurching as the player
-		// turned, which reads as the mirror tracking the camera rather than reflecting it.
-		float refAng = 2.f * mirrorAng - camAng;
-		refAng = fmodf(refAng, TWOPI);
-		if (refAng < 0.f) refAng += TWOPI;
-
-		viewx = FLOAT2FIXED(rx); viewy = FLOAT2FIXED(ry); viewz = sz;
-		viewangle = (angle_t)(refAng / TWOPI * 4294967296.0);
-		BuildMVP(g_mvp);
-		viewx = sx; viewy = sy; viewz = sz; viewangle = sa;
-
-		// Clip to the mirror's own plane, in MESH space: x and z there are the map's x and y.
-		g_pass.clipPlane[0] = m.nx; g_pass.clipPlane[1] = 0.f; g_pass.clipPlane[2] = m.ny;
-		g_pass.clipPlane[3] = -m.d;
-		if (g_pass.clipPlane[3] == 0.f) g_pass.clipPlane[3] = 0.0001f;   // w == 0 means "off"
-
-		ctx->SetRenderTargets(1, &mrtv, mdsv, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-		const float clear[4] = { 0.05f, 0.06f, 0.09f, 1.0f };
-		ctx->ClearRenderTarget(mrtv, clear, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-		ctx->ClearDepthStencil(mdsv, Diligent::CLEAR_DEPTH_FLAG, 1.0f, 0,
-			Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-		g_pass.lineMirror = m.line;
-		DrawWorld(ctx);
-		g_pass.lineMirror = -1;
-
-		// Back to the screen, with the real camera, and draw this mirror's surface.
-		g_pass.clipPlane[0] = g_pass.clipPlane[1] = g_pass.clipPlane[2] = g_pass.clipPlane[3] = 0.f;
+		RenderMirrorNode(ctx, i, 1, slot++, player, -1);
 		for (int k = 0; k < 16; k++) g_mvp[k] = savedMVP[k];
-		ctx->SetRenderTargets(1, &brtv, bdsv, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-		DrawMirrorSurface(ctx, i, view);
-		DrawMirrorFaceDecals(ctx, m.line);
 	}
-
-	viewx = sx; viewy = sy; viewz = sz; viewangle = sa;
 	for (int i = 0; i < 16; i++) g_mvp[i] = savedMVP[i];
+}
+
+void DrawLineMirrorSurfaces(Diligent::IDeviceContext *ctx)
+{
+	// [rc4l] Only the pass whose mirrors they are: the player's view's in the main pass, a reflection's in its own.
+	if (g_mirrorPass < 0 ? (!g_pass.mainView || g_pass.lineMirror >= 0) : g_pass.lineMirror != g_mirrors[g_mirrorNodes[g_mirrorPass].mirror].line) return;
+	for (unsigned n = 0; n < g_mirrorNodes.Size(); n++)
+	{
+		const MirrorNode &node = g_mirrorNodes[n];
+		if (node.parent != g_mirrorPass || node.srb == NULL) continue;
+		// [rc4l] The sheen is reflected in the view of the eye that sees the mirror, as RenderMirrorSurface works it out.
+		float view[16];
+		WithEye(node.viewer, [&view] { zx::hwrender::ComputeBackendView(CurrentCamera(), view); });
+		DrawMirrorSurface(ctx, node.mirror, view, node.srb);
+		if (g_mirrorPass < 0) DrawMirrorFaceDecals(ctx, g_mirrors[node.mirror].line);
+	}
 }
 
 }} // namespace zx::hwrender

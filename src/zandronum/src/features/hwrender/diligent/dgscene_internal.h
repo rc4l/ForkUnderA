@@ -430,7 +430,9 @@ void ReleaseLineMirrorPipeline();
 void ReleaseMirrorBinding();
 void ReleasePlaneMirrors();
 void ReleaseStackPortals();
+// [rc4l] Every line mirror the player sees, and the mirrors in their reflections to r_mirror_recursions, drawn into pictures before the frame; DrawLineMirrorSurfaces paints each pass's own before its translucent pass.
 void RenderMirrors(Diligent::IDeviceContext *ctx);
+void DrawLineMirrorSurfaces(Diligent::IDeviceContext *ctx);
 void RenderPlaneMirrors(Diligent::IDeviceContext *ctx);
 void RenderStackPortals(Diligent::IDeviceContext *ctx);
 void ShowStackView(Diligent::IDeviceContext *ctx);
