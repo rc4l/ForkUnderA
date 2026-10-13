@@ -11,6 +11,7 @@
 #include "features/display/display.h"
 #include "features/frame/playerview.h"   // [rc4l] ForgetCamera
 #include "features/hwrender/computation/imageresize_compute.h"
+#include "features/hwrender/computation/backendchoice_compute.h"
 #include "features/video-scale/videoscale.h"
 
 #include "c_cvars.h"
@@ -25,6 +26,9 @@
 #if defined(_WIN32) && defined(FUA_DILIGENT)
 #include "win32gliface.h"
 #endif
+
+// [rc4l] The renderer a launch draws with (ComputeWantsBackendOnly): 1 Vulkan (Recommended), 0 GL (Legacy); -vulkan and -gl override it for one launch.
+CVAR(Int, vid_backend, zx::hwrender::kVidBackendVulkan, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
 
 EXTERN_CVAR(Bool, fua_vulkan)
 EXTERN_CVAR(Bool, fua_dg_standalone)
@@ -50,12 +54,17 @@ void RestoreSavedSwitches()
 
 bool BackendOnly()
 {
+	if (g_backendOnly < 0)
+	{
 #if defined(_WIN32) && defined(FUA_DILIGENT)
-	if (g_backendOnly < 0) g_backendOnly = Args->CheckParm("-vulkan") ? 1 : 0;
-	return g_backendOnly == 1;
+		const bool built = true;
 #else
-	return false;
+		const bool built = false;
 #endif
+		const bool wants = ComputeWantsBackendOnly(vid_backend, Args->CheckParm("-vulkan") != 0, Args->CheckParm("-gl") != 0, built);
+		g_backendOnly = (wants && BackendDeviceStarts()) ? 1 : 0;
+	}
+	return g_backendOnly == 1;
 }
 
 void BeginBackendOnly()

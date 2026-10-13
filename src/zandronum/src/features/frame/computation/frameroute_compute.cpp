@@ -16,4 +16,14 @@ FrameRoute ComputeFrameRoute(const FrameRouteIn &in)
 	return r;
 }
 
+bool ComputeKindDraws(const FrameRoute &route, int kind)
+{
+	return kind == kRendererGL ? route.glDraws : route.backendDraws;
+}
+
+int ComputeSavePicKind(const FrameRoute &route)
+{
+	return route.savePicFromBackend ? kRendererBackend : kRendererGL;
+}
+
 }} // namespace zx::frame

@@ -29,6 +29,15 @@ struct FrameRoute
 // [rc4l] GL draws unless the backend's scene covers its window and its own picture is not wanted (standalone on, embedded, no check).
 FrameRoute ComputeFrameRoute(const FrameRouteIn &in);
 
+// [rc4l] What a renderer the frame driver holds is, which decides on which frames it draws.
+enum RendererKind { kRendererGL, kRendererBackend };
+
+// [rc4l] Whether a renderer of `kind` draws a frame on `route`.
+bool ComputeKindDraws(const FrameRoute &route, int kind);
+
+// [rc4l] The kind whose picture a save takes on `route`.
+int ComputeSavePicKind(const FrameRoute &route);
+
 }} // namespace zx::frame
 
 #endif // ZX_FRAMEROUTE_COMPUTE_H

@@ -15,8 +15,11 @@ class FRenderer;
 
 namespace zx { namespace hwrender {
 
-// [rc4l] Whether this launch runs without GL, decided once from the command line (-vulkan) on first ask; always false in a build without the backend.
+// [rc4l] Whether this launch runs without GL, decided once on first ask from vid_backend, -vulkan and -gl (ComputeWantsBackendOnly) and whether a Vulkan device starts; always false in a build without the backend.
 bool BackendOnly();
+
+// [rc4l] Whether the backend's device comes up, saying why on the console when it does not, so the launch falls back to GL (Legacy).
+bool BackendDeviceStarts();
 
 // [rc4l] Set the launch up for it before any video exists: the backend switched on, standalone and embedded, and GL's capability flags as a modern card has them.
 void BeginBackendOnly();

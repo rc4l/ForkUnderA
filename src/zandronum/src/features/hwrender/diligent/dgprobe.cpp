@@ -18,6 +18,7 @@
 #include "c_dispatch.h"
 #include "c_cvars.h"
 #include "c_console.h"
+#include "v_text.h"   // [rc4l] TEXTCOLOR_ORANGE
 
 #ifdef FUA_DILIGENT
 
@@ -211,6 +212,14 @@ bool ProbeVulkan(FString &report)
 		(int)info.APIVersion.Major, (int)info.APIVersion.Minor,
 		(unsigned long long)(adapter.Memory.LocalMemory / (1024 * 1024)));
 	return true;
+}
+
+bool BackendDeviceStarts()
+{
+	FString report;
+	if (ProbeVulkan(report)) return true;
+	Printf(TEXTCOLOR_ORANGE "Vulkan could not start (%s); drawing with GL (Legacy) instead.\n", report.GetChars());
+	return false;
 }
 
 }} // namespace zx::hwrender

@@ -187,12 +187,11 @@ void I_CreateRenderer()
 	{
 #ifndef NO_GL
 		// [rc4l] GL and the backend under features/frame's driver, which draws each when it is wanted; a launch without GL (-vulkan) has the backend alone.
-		if (zx::hwrender::BackendOnly())
-		{
-			zx::hwrender::BeginBackendOnly();
-			Renderer = zx::frame::CreateFrameDriver(NULL, zx::hwrender::CreateBackendRenderer());
-		}
-		else Renderer = zx::frame::CreateFrameDriver(gl_CreateInterface(), zx::hwrender::CreateBackendRenderer());
+		std::vector<zx::frame::DrivenRenderer> renderers;
+		if (zx::hwrender::BackendOnly()) zx::hwrender::BeginBackendOnly();
+		else renderers.push_back({ gl_CreateInterface(), zx::frame::kRendererGL });
+		renderers.push_back({ zx::hwrender::CreateBackendRenderer(), zx::frame::kRendererBackend });
+		Renderer = zx::frame::CreateFrameDriver(renderers);
 #else
 		// [rc4l] Dedicated server (no OpenGL): use the trivial null renderer.
 		Renderer = new FNullRenderer;

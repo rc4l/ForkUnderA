@@ -76,3 +76,17 @@ TEST(FrameRoute, ALaunchWithNoGLDrawsAndSavesTheBackendOnly)
 	EXPECT_TRUE(r.backendDraws);
 	EXPECT_TRUE(r.savePicFromBackend);
 }
+
+// [rc4l] Each kind draws on its own half of the route, and the save takes the backend's picture exactly when the route says so.
+TEST(FrameRoute, EachKindDrawsOnItsHalfOfTheRoute)
+{
+	FrameRoute r;
+	r.glDraws = true; r.backendDraws = false; r.savePicFromBackend = false;
+	EXPECT_TRUE(ComputeKindDraws(r, kRendererGL));
+	EXPECT_FALSE(ComputeKindDraws(r, kRendererBackend));
+	EXPECT_EQ(kRendererGL, ComputeSavePicKind(r));
+	r.glDraws = false; r.backendDraws = true; r.savePicFromBackend = true;
+	EXPECT_FALSE(ComputeKindDraws(r, kRendererGL));
+	EXPECT_TRUE(ComputeKindDraws(r, kRendererBackend));
+	EXPECT_EQ(kRendererBackend, ComputeSavePicKind(r));
+}

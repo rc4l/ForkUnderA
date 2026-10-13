@@ -167,6 +167,8 @@ export function engineArgs(opts = {}, configPath) {
     for (const [k, v] of Object.entries(opts.cvars)) args.push("+set", k, String(v));
   }
   if (opts.extraArgs) args.push(...opts.extraArgs);
+  // [rc4l] The engine's own default is now Vulkan alone (vid_backend 1), so a harness launch asks for GL unless it asked for -vulkan or for the engine's own choice (engineDefault).
+  if (!args.includes("-vulkan") && !opts.engineDefault) args.push("-gl");
 
   // [rc4l] The map goes LAST, because the engine runs `+` commands in the order they appear.
   //

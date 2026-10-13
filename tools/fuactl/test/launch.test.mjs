@@ -393,3 +393,11 @@ test("a --res flag is a width and height, and an absent one leaves both to the l
   assert.deepEqual(resFlag(undefined), { width: undefined, height: undefined });
   assert.deepEqual(resFlag(true), { width: undefined, height: undefined });
 });
+
+test("a launch draws with GL unless it asks for -vulkan, since the engine's default is Vulkan alone", () => {
+  assert.ok(engineArgs({}, "x.ini").includes("-gl"));
+  const vk = engineArgs({ extraArgs: ["-vulkan"] }, "x.ini");
+  assert.ok(vk.includes("-vulkan"));
+  assert.ok(!vk.includes("-gl"));
+  assert.ok(!engineArgs({ engineDefault: true }, "x.ini").includes("-gl"));
+});

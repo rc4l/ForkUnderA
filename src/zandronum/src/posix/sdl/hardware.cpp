@@ -152,7 +152,7 @@ void I_CreateRenderer()
 	{
 #ifndef NO_GL
 		// [rc4l] GL-only build: the OpenGL renderer, under features/frame's driver, which sets each frame up.
-		Renderer = zx::frame::CreateFrameDriver(gl_CreateInterface(), NULL);
+		Renderer = zx::frame::CreateFrameDriver({ { gl_CreateInterface(), zx::frame::kRendererGL } });
 #else
 		// [rc4l] Dedicated server (no OpenGL): use the trivial null renderer.
 		Renderer = new FNullRenderer;

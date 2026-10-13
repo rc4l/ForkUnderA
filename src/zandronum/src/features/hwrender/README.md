@@ -10,9 +10,13 @@ GL's viewport, and `ComputeNdcWindow`/`ComputeApplyNdcWindow` fold it into the p
 makes, so the target stays whole and every pass that reads `gl_FragCoord` against the MVP stays in step.
 Scenario `viewwindow`.
 
-## A launch without GL (`-vulkan`)
+## A launch without GL (the default)
 
-`-vulkan` on the command line makes no GL context at all (Windows builds with the backend). `I_CreateRenderer`
+A launch draws with the backend alone, with no GL context at all (Windows builds with the backend), unless the
+player chose GL: `vid_backend` (the video mode menu's Renderer, "Vulkan (Recommended)" or "GL (Legacy)", read
+at startup), with `-vulkan` and `-gl` overriding it for one launch (`computation/backendchoice_compute`). When
+Vulkan was chosen and its device does not start, the launch says why on the console and draws with GL instead
+(`BackendDeviceStarts`). `I_CreateRenderer`
 installs `FBackendRenderer` (`backendrenderer.cpp`), whose `RenderView` is `features/frame`'s
 `RenderPlayerView` and whose level, light and fake-flat work is GL's CPU-side code. `Win32GLVideo` keeps the
 window and modes but sets no pixel format, and makes `DiligentFrameBuffer` (`backendvideo.cpp`): the 2D draws

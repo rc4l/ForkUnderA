@@ -19,6 +19,7 @@ class DFrameBuffer;
 namespace zx { namespace hwrender {
 
 bool BackendPresenting() { return false; }
+bool BackendDeviceStarts() { return false; }
 zx::frame::FrameRoute FrameRouteNow(bool hasGL, bool hasBackend)
 {
 	const zx::frame::FrameRouteIn in = { hasGL, hasBackend, false, false, false, true, true, false };
