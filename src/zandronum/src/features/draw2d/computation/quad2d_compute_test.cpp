@@ -4,6 +4,7 @@
 #include "features/draw2d/computation/quad2d_compute.h"
 
 #include <gtest/gtest.h>
+#include <string.h>
 
 using namespace zx::draw2d;
 
@@ -53,6 +54,26 @@ TEST(Quad2D, APatchLandsAtItsOffsetScaledToItsSize)
 	EXPECT_EQ(q.r, 255);
 	EXPECT_EQ(q.a, 255);
 	EXPECT_EQ(q.colorOverlay, 0u);
+}
+
+// [rc4l] Every field the texture does not give is zero: a HUD quad that carried a weapon's fixed colormap or fuzz from the stack drew black.
+TEST(Quad2D, ATextureRecordIsItsQuadAndNothingElse)
+{
+	TextureQuadOut q;
+	ComputeTextureQuad(Patch(), q);
+	q.r = 51; q.a = 102;
+	zx::hwrender::Quad2D garbage;
+	memset(&garbage, 0x5a, sizeof(garbage));
+	zx::hwrender::Quad2D d = garbage;
+	d = ComputeTextureQuadRecord(q);
+	EXPECT_FLOAT_EQ(d.x, 84.f); EXPECT_FLOAT_EQ(d.y, 42.f); EXPECT_FLOAT_EQ(d.w, 128.f); EXPECT_FLOAT_EQ(d.h, 64.f);
+	EXPECT_FLOAT_EQ(d.u2, 1.f); EXPECT_FLOAT_EQ(d.v2, 1.f);
+	EXPECT_FLOAT_EQ(d.r, 0.2f); EXPECT_FLOAT_EQ(d.g, 1.f); EXPECT_FLOAT_EQ(d.a, 0.4f);
+	EXPECT_EQ(d.fixedColormap, 0);
+	EXPECT_EQ(d.fuzz, 0);
+	EXPECT_EQ(d.kind, kQuadRect);
+	EXPECT_EQ(d.blend, kBlend2DAlpha);
+	EXPECT_EQ(d.material, (const void *)NULL);
 }
 
 TEST(Quad2D, AWindowCropsTheQuadAndItsTexture)

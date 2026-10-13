@@ -144,4 +144,12 @@ void ComputeTextureQuad(const TextureQuadIn &in, TextureQuadOut &out)
 	out.a = (unsigned char)(in.alpha * 255.f);
 }
 
+zx::hwrender::Quad2D ComputeTextureQuadRecord(const TextureQuadOut &q)
+{
+	zx::hwrender::Quad2D d = ComputeFillQuad(q.x, q.y, q.w, q.h, 0xffffffu, q.a / 255.f);
+	d.u1 = q.u1; d.v1 = q.v1; d.u2 = q.u2; d.v2 = q.v2;
+	d.r = q.r / 255.f; d.g = q.g / 255.f; d.b = q.b / 255.f;
+	return d;
+}
+
 }} // namespace zx::draw2d

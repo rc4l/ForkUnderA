@@ -125,18 +125,13 @@ void PrepareTexture(FTexture *img, const DCanvas::DrawParms &parms, TextureDraw 
 	out.x2 = q.x2; out.y2 = q.y2;
 
 	zx::hwrender::Quad2D &d = out.quad;
+	d = ComputeTextureQuadRecord(q);
 	d.material = mat;
-	d.x = q.x; d.y = q.y; d.w = q.w; d.h = q.h;
-	d.u1 = q.u1; d.v1 = q.v1; d.u2 = q.u2; d.v2 = q.v2;
-	d.r = q.r / 255.f; d.g = q.g / 255.f; d.b = q.b / 255.f; d.a = q.a / 255.f;
 	d.clipL = parms.lclip; d.clipT = parms.uclip; d.clipR = parms.rclip; d.clipB = parms.dclip;
 	d.blend = ComputeQuadBlend(parms.style.BlendOp, parms.style.DestAlpha);
 	// [rc4l] Negated: the backend reads a negative value as an internal palette index, as FGLTexture::Bind does, not a game translation.
 	d.translation = -out.translation;
 	d.texMode = img->bHasCanvas ? kTexOpaque : ComputeTextureMode(parms.style.Flags, !parms.masked);
-	d.kind = kQuadRect;
-	d.lx2 = d.ly2 = 0.f;
-	d.target = 0;
 }
 
 }} // namespace zx::draw2d

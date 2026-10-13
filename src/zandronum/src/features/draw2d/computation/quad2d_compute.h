@@ -118,6 +118,9 @@ struct TextureQuadOut
 
 void ComputeTextureQuad(const TextureQuadIn &in, TextureQuadOut &out);
 
+// [rc4l] A texture quad's 2D record: its rectangle, coordinates and colour, and every other field zero for the caller to fill, so none is ever stack garbage.
+zx::hwrender::Quad2D ComputeTextureQuadRecord(const TextureQuadOut &q);
+
 }} // namespace zx::draw2d
 
 #endif // ZX_QUAD2D_COMPUTE_H
