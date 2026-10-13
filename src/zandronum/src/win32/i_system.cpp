@@ -87,7 +87,6 @@
 #include "doomstat.h"
 #include "features/crashreport/zx_crashreport.h" // [rc4l] report graceful fatals to GlitchTip
 #include "features/updater/computation/openurl_compute.h" // [rc4l] scheme allowlist for I_OpenURL
-#include "features/frameclock/computation/frameclock_compute.h" // [rc4l] the game clock in microseconds
 #include "v_palette.h"
 #include "stats.h"
 #include "textures/bitmap.h"
@@ -191,25 +190,6 @@ static int TicFrozen;
 static int tics;
 static DWORD ted_start, ted_next;
 
-// [rc4l] Microseconds on the performance counter, as std::chrono::steady_clock counts them.
-static long long UsClock()
-{
-	static LARGE_INTEGER freq = {};
-	if (freq.QuadPart == 0) QueryPerformanceFrequency(&freq);
-	LARGE_INTEGER counter;
-	QueryPerformanceCounter(&counter);
-	return zx::frameclock::ComputeCounterMicros(counter.QuadPart, freq.QuadPart);
-}
-
-// [rc4l] The tic fraction from whole milliseconds as timeGetTime gave it, to compare against the microsecond one (debug).
-CVAR(Bool, fua_debug_ticfrac_ms, false, 0)
-
-// [rc4l] The game's millisecond clock, wrapping as timeGetTime did but on the counter UsClock reads, so a tic's fraction can be taken in microseconds.
-static DWORD MsClock()
-{
-	return (DWORD)(UsClock() / 1000);
-}
-
 static WadStuff *WadList;
 static int NumWads;
 static int DefaultWad;
@@ -307,7 +287,7 @@ static void I_SelectTimer()
 		TimerEventID = timeSetEvent(delay, 0, TimerTicked, 0, TIME_PERIODIC);
 	}
 	// Get the current time as the basetime.
-	basetime = MsClock();
+	basetime = timeGetTime();
 	// Set timer functions.
 	/* [Leo] Zandronum needs a consistent ticrate across clients/servers
 	if (TimerEventID != 0)
@@ -337,7 +317,7 @@ static void I_SelectTimer()
 unsigned int I_MSTime()
 {
 	// assert(basetime != 0);
-	return MsClock() - basetime;
+	return timeGetTime() - basetime;
 }
 
 //==========================================================================
@@ -374,7 +354,7 @@ static int I_GetTimePolled(bool saveMS)
 		return TicFrozen;
 	}
 
-	tm = MsClock();
+	tm = timeGetTime();
 	if (basetime == 0)
 	{
 		basetime = tm;
@@ -398,7 +378,7 @@ float I_GetTimeFloat( void )
 {
 	DWORD tm;
 
-	tm = MsClock();
+	tm = timeGetTime();
 	if (!basetime)
 		basetime = tm;
 
@@ -539,7 +519,7 @@ static void CALLBACK TimerTicked(UINT id, UINT msg, DWORD_PTR user, DWORD_PTR dw
 	{
 		tics++;
 	}
-	ted_start = MsClock ();
+	ted_start = timeGetTime ();
 	ted_next = ted_start + MillisecondsPerTic;
 	SetEvent(NewTicArrived);
 }
@@ -555,13 +535,21 @@ static void CALLBACK TimerTicked(UINT id, UINT msg, DWORD_PTR user, DWORD_PTR dw
 
 fixed_t I_GetTimeFrac(uint32 *ms)
 {
+	DWORD now = timeGetTime();
 	if (ms != NULL)
 	{
 		*ms = TicNext;
 	}
-	// [rc4l] In microseconds: whole milliseconds put the content of frames 2 ms apart 1, 2 or 3 ms apart.
-	const long long sinceUs = zx::frameclock::ComputeSinceMsUs(UsClock(), TicStart);
-	return zx::frameclock::ComputeTicFrac(fua_debug_ticfrac_ms ? zx::frameclock::ComputeWholeMsUs(sinceUs) : sinceUs, (long long)(DWORD)(TicNext - TicStart) * 1000);
+	DWORD step = TicNext - TicStart;
+	if (step == 0)
+	{
+		return FRACUNIT;
+	}
+	else
+	{
+		fixed_t frac = clamp<fixed_t> ((now - TicStart)*FRACUNIT/step, 0, FRACUNIT);
+		return frac;
+	}
 }
 
 //==========================================================================
@@ -846,7 +834,7 @@ void I_Init()
 
 		// [BB] The server doesn't call I_SelectTimer, so we have to set basetime manually.
 		if (!basetime)
-			basetime = MsClock();
+			basetime = timeGetTime();
 	}
 
 	I_GetTime = I_GetTimeSelect;
