@@ -10,6 +10,9 @@
 #include "features/hwrender/computation/rendererrate_compute.h"
 #include "c_dispatch.h"
 #include "gl/textures/gl_material.h"   // [rc4l] fua_2d_list names a quad's texture
+#include "gl/data/gl_data.h"           // [rc4l] glset.pixelstretch
+#include "r_utility.h"                 // [rc4l] the view's eye and angles
+#include "tables.h"                    // [rc4l] bam2rad
 
 namespace zx { namespace hwrender {
 
@@ -27,6 +30,20 @@ void Clear2D()
 	g_quads.Clear();
 	g_gen++;
 	g_screenW = g_screenH = 0;
+}
+
+void ViewCameraFromEngine(BackendCamera &c)
+{
+	c.x = FIXED2FLOAT(viewx); c.y = FIXED2FLOAT(viewy); c.z = FIXED2FLOAT(viewz);
+	c.yaw = (float)(viewangle >> ANGLETOFINESHIFT) * 2.0f * 3.14159265f / 8192.0f;
+	double radPitch = bam2rad((angle_t)viewpitch);
+	if (radPitch > PI) radPitch -= 2 * PI;
+	// Not clamp(): inside this namespace that resolves to the Fixed-point overload.
+	if (radPitch < -PI / 2) radPitch = -PI / 2;
+	if (radPitch >  PI / 2) radPitch =  PI / 2;
+	c.pitch = (float)radPitch;
+	// [rc4l] GL draws the world 1.2 times taller than square at every pitch, and the camera must too, or every wall above or below the eye sits off GL's by a fifth.
+	c.pixelStretch = glset.pixelstretch;
 }
 
 void Record2D(const Quad2D &q)

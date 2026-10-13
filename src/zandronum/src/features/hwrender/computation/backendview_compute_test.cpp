@@ -165,3 +165,43 @@ TEST(ComputeApplyNdcWindow, ThePointsLandWhereTheViewportWouldPutThem)
 }
 
 } // namespace
+
+TEST(ComputeMatrix4, MultiplyComposesAndTheInverseUndoes)
+{
+	using namespace zx::hwrender;
+	// [rc4l] A translation by (1, 2, 3) then a scale by 2, column-major.
+	const float t[16] = { 1,0,0,0, 0,1,0,0, 0,0,1,0, 1,2,3,1 };
+	const float s[16] = { 2,0,0,0, 0,2,0,0, 0,0,2,0, 0,0,0,1 };
+	float ts[16], inv[16], back[16];
+	ComputeMultiplyMatrix4(t, s, ts);
+	EXPECT_FLOAT_EQ(2.f, ts[0]);
+	EXPECT_FLOAT_EQ(3.f, ts[14]);
+	ASSERT_TRUE(ComputeInvertMatrix4(ts, inv));
+	ComputeMultiplyMatrix4(ts, inv, back);
+	for (int i = 0; i < 16; i++) EXPECT_NEAR(i % 5 == 0 ? 1.f : 0.f, back[i], 1e-5f) << i;
+	const float flat[16] = { 0 };
+	EXPECT_FALSE(ComputeInvertMatrix4(flat, inv));
+}
+
+TEST(ComputeEyeToMesh, TheEyesOriginIsTheCameraAndTheViewThenUndoesIt)
+{
+	using namespace zx::hwrender;
+	BackendCamera c;
+	c.x = 100.f; c.y = 200.f; c.z = 40.f;
+	c.yaw = 0.7f; c.pitch = 0.2f; c.pixelStretch = 1.2f;
+	c.fovY = 1.2f; c.aspect = 1.6f;
+	const float eye[16] = { 1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1 };
+	float m[16], v[16], round[16];
+	ASSERT_TRUE(ComputeEyeToMesh(c, eye, m));
+	// [rc4l] Mesh space is (x, up, y).
+	EXPECT_NEAR(100.f, m[12], 1e-3f);
+	EXPECT_NEAR(40.f, m[13], 1e-3f);
+	EXPECT_NEAR(200.f, m[14], 1e-3f);
+	ComputeBackendView(c, v);
+	ComputeMultiplyMatrix4(v, m, round);
+	for (int i = 0; i < 16; i++) EXPECT_NEAR(eye[i], round[i], 1e-4f) << i;
+	c.pixelStretch = 0.f;
+	c.yaw = 0.f; c.pitch = 0.f;
+	const float none[16] = { 0 };
+	EXPECT_TRUE(ComputeEyeToMesh(c, none, m));
+}

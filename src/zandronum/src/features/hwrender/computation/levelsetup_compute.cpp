@@ -37,7 +37,7 @@ void ComputeLevelSetupUploaded(LevelSetup &s, bool ok)
 	else s.state = ++s.tries < kSetupMaxTries ? kSetupArm : kSetupGaveUp;
 }
 
-bool ComputeStandaloneBakeStep(StandaloneBake &b, bool standalone, bool levelReady)
+bool ComputeStandaloneBakeStep(StandaloneBake &b, bool standalone, bool levelReady, int settleFrames)
 {
 	if (!standalone)
 	{
@@ -47,8 +47,7 @@ bool ComputeStandaloneBakeStep(StandaloneBake &b, bool standalone, bool levelRea
 	}
 	if (!levelReady || b.baked) return false;
 	const bool arm = b.armed == 0;
-	// [rc4l] A frame to bake and one to upload.
-	if (++b.armed > 3) b.baked = true;
+	if (++b.armed > settleFrames) b.baked = true;
 	return arm;
 }
 

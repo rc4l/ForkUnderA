@@ -24,8 +24,9 @@ is not GL can take the 2D layer from here directly (P5), and the two cannot drif
   background, the status bar's flanks) as one quad per copy of the flat, cut at its edges, since the
   backend's 2D layer clamps rather than wraps.
 
-`FillSimplePoly` (the textured automap, a polygon rather than a quad) is not recorded yet, so a backend
-does not draw it.
+- `PreparePoly`: a `FillSimplePoly` (the textured automap's floors), its points' texture coordinates
+  (`ComputePolyTexCoords`) and colour (`CapturePolyColor`) as GL works them, recorded as the fan's triangles
+  (`ComputePolyTriangles`, records of kind `kQuadTri`), which the backend draws with the texture repeating.
 
 ## In-engine hooks
 
@@ -34,3 +35,4 @@ does not draw it.
 - `features/hwrender/backendvideo.cpp` `DiligentFrameBuffer`: every one of them recorded, for a launch
   without GL.
 - `gl/scene/gl_scene.cpp` `FGLRenderer::DrawBlend`: fills and records each of `ScreenBlends`' fills.
+- `gl/renderer/gl_renderer.cpp` `FGLRenderer::FillSimplePoly`: draws from `PreparePoly` and records its triangles.

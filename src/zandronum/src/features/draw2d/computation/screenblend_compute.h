@@ -22,6 +22,9 @@ unsigned ComputeBandBlend(const BlendBand *bands, int count, long long viewz, un
 // [rc4l] A colormap's average as R_BlendForColormap gives it (alpha 255), too dark alone, brightened to the palette's brightness; any other blend unchanged.
 unsigned ComputeBrightenedBlend(unsigned argb, int paletteBrightness);
 
+// [rc4l] A screen fill applied to `count` RGB pixels as GL's blend draws it over them: the colour multiplied in, or blended over at its alpha.
+void ComputeApplyScreenFill(float r, float g, float b, float a, bool multiply, unsigned char *rgb, int count);
+
 }} // namespace zx::draw2d
 
 #endif // ZX_SCREENBLEND_COMPUTE_H

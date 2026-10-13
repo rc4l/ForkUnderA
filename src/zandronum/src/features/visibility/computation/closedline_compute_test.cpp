@@ -97,3 +97,14 @@ TEST(ComputeFlatPlaneHeight, AFloorIsMinusDAndACeilingD)
 	EXPECT_EQ(-64, zx::visibility::ComputeFlatPlaneHeight(true, 64));
 	EXPECT_EQ(64, zx::visibility::ComputeFlatPlaneHeight(false, 64));
 }
+
+TEST(ComputeEyeBelowTransfer, TheCeilingMustSitAtOrUnderTheWaterAtBothEnds)
+{
+	using zx::visibility::ComputeEyeBelowTransfer;
+	EXPECT_TRUE(ComputeEyeBelowTransfer(0, 0, 0, 0));
+	// [rc4l] GL allows 1/100 of a unit over, 655 raw, and no more.
+	EXPECT_TRUE(ComputeEyeBelowTransfer(655, 0, 0, 0));
+	EXPECT_FALSE(ComputeEyeBelowTransfer(656, 0, 0, 0));
+	EXPECT_FALSE(ComputeEyeBelowTransfer(0, 656, 0, 0));
+	EXPECT_TRUE(ComputeEyeBelowTransfer(-65536, 10, 0, 65536));
+}

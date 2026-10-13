@@ -96,7 +96,8 @@ static bool AutoSetupForLevel()
 		// The bake runs on a rendered frame, and a big level needs more than one. Retry rather than
 		// give up on the first miss: giving up is permanent for the level, and the cost of being
 		// wrong is a black screen with no way back short of a restart.
-		if (!ComputeLevelSetupWaited(g_setup)) return false;
+		// [rc4l] Beside GL the bake waits for GL's walk; without it the map has baked the level whole already.
+		if (!BackendOnly() && !ComputeLevelSetupWaited(g_setup)) return false;
 		{
 			FString report;
 			ComputeLevelSetupUploaded(g_setup, SceneUpload(report));
@@ -271,12 +272,19 @@ static bool AdvanceLevelScene()
 	const bool autoReady = fua_vulkan ? AutoSetupForLevel() : false;
 
 	// [rc4l] Bake the level the moment standalone is asked for, once per switch-on, since from then on GL's walk that bakes it no longer runs.
-	if (ComputeStandaloneBakeStep(g_standalone, fua_dg_standalone, autoReady))
+	if (ComputeStandaloneBakeStep(g_standalone, fua_dg_standalone, autoReady, BackendOnly() ? 0 : kStandaloneSettleFrames))
 	{
 		zx::levelmesh::ArmFullBake();
 		Printf("standalone: baking the level once, then GL stops deriving the scene.\n");
 	}
 	return autoReady;
+}
+
+void SettleLevelScene()
+{
+	// [rc4l] Arming, uploading and the standalone bake each take a step, so a few settle this level's, whatever the last level left standing.
+	for (int i = 0; i < 4; i++)
+		if (AdvanceLevelScene() && StandaloneActive()) return;
 }
 
 // [rc4l] One live frame from the current camera, its engine-side declaration in dglive.h.
@@ -338,10 +346,15 @@ static void DrawOverlay(bool present)
 	if (!ctx || !swap) return;
 	const auto &sd = swap->GetDesc();
 	if (sd.Width == 0 || sd.Height == 0) return;
-	Diligent::ITextureView *rtv = swap->GetCurrentBackBufferRTV();
+	Diligent::ITextureView *rtv = FrameRTV();
 	ctx->SetRenderTargets(1, &rtv, NULL, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-	const float black[4] = { 0.f, 0.f, 0.f, 1.f };
-	ctx->ClearRenderTarget(rtv, black, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	// [rc4l] A wipe under way is the picture under the console and menus.
+	if (WipeActive()) WipeDraw(ctx);
+	else
+	{
+		const float black[4] = { 0.f, 0.f, 0.f, 1.f };
+		ctx->ClearRenderTarget(rtv, black, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	}
 	Draw2D(ctx);
 	if (present) PresentFrame(ctx, swap, true);
 }
@@ -357,6 +370,17 @@ static void DrawBackendFrame(bool present)
 		DrawSceneOnce(present, true);
 	}
 	else DrawOverlay(present);
+}
+
+void WipeEnd()
+{
+	// [rc4l] The frame the wipe goes to, drawn without a present as the next Update would draw it, then its 2D dropped: the console and menus over the wipe come afresh each tic.
+	const bool ready = AdvanceLevelScene();
+	g_lastFrameWorld = g_worldViewThisFrame && ready && SceneDrawable();
+	g_worldViewThisFrame = false;
+	DrawBackendFrame(false);
+	WipeTakeEnd();
+	zx::hwrender::Clear2D();
 }
 
 void PresentBackendOnly(bool present)

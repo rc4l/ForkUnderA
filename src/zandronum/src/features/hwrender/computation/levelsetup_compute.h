@@ -13,6 +13,8 @@ enum { kSetupArm = 0, kSetupWaiting = 1, kSetupReady = 2, kSetupGaveUp = 3 };
 // [rc4l] Frames the bake gets before the upload is tried, and uploads tried before giving up for the level.
 const int kSetupWaitFrames = 4;
 const int kSetupMaxTries = 8;
+// [rc4l] Frames a standalone bake takes to settle beside GL: one to bake, one to upload, and one to spare.
+const int kStandaloneSettleFrames = 3;
 
 struct LevelSetup
 {
@@ -45,7 +47,8 @@ struct StandaloneBake
 };
 
 // [rc4l] One frame of it: true when the full bake must be armed now; switching standalone off forgets it.
-bool ComputeStandaloneBakeStep(StandaloneBake &b, bool standalone, bool levelReady);
+// [rc4l] `settleFrames` is how many frames after arming it counts as settled: a bake's and an upload's beside GL, none without it, where the map bakes the level whole.
+bool ComputeStandaloneBakeStep(StandaloneBake &b, bool standalone, bool levelReady, int settleFrames = kStandaloneSettleFrames);
 
 }} // namespace zx::hwrender
 

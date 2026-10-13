@@ -134,3 +134,31 @@ TEST(ModelPose, InterIsHowFarIntoTheStateTheActorIs)
 	EXPECT_DOUBLE_EQ(ComputeModelInter(4, 2, 0.f, false, true), 0.25);
 	EXPECT_DOUBLE_EQ(ComputeModelInter(4, 2, 0.f, true, true), 0.375);
 }
+
+TEST(ComputeHUDModelMatrix, ScalesOffsetsThenTurnsAQuarterAboutUp)
+{
+	zx::sprites::HUDModelPose p = { { 2.f, 3.f, 4.f }, { 1.f, 0.f, 0.f }, 0.f, 0.f, 0.f, 0.f, 0.f };
+	float m[16];
+	zx::sprites::ComputeHUDModelMatrix(p, m);
+	// [rc4l] The offset lands scaled; the quarter turn takes the model's x onto -z, its z onto x.
+	EXPECT_NEAR(2.f, m[12], 1e-5f);
+	EXPECT_NEAR(0.f, m[0], 1e-5f);
+	EXPECT_NEAR(-4.f, m[2], 1e-5f);
+	EXPECT_NEAR(2.f, m[8], 1e-5f);
+	EXPECT_NEAR(3.f, m[5], 1e-5f);
+	// [rc4l] The model's own turn about up cancels the quarter turn.
+	p.angleOffset = 90.f;
+	zx::sprites::ComputeHUDModelMatrix(p, m);
+	EXPECT_NEAR(2.f, m[0], 1e-5f);
+	EXPECT_NEAR(0.f, m[2], 1e-5f);
+	// [rc4l] The bob turns it a quarter as many degrees as pixels: 360 across adds a quarter turn about up, 360 down tips up onto -z.
+	p.angleOffset = 0.f;
+	p.bobX = 360.f;
+	zx::sprites::ComputeHUDModelMatrix(p, m);
+	EXPECT_NEAR(-2.f, m[0], 1e-4f);
+	p.bobX = 0.f;
+	p.bobY = 360.f;
+	zx::sprites::ComputeHUDModelMatrix(p, m);
+	EXPECT_NEAR(0.f, m[5], 1e-4f);
+	EXPECT_NEAR(-4.f, m[6], 1e-4f);
+}

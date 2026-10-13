@@ -543,17 +543,9 @@ void FGLRenderer::FillSimplePoly(FTexture *texture, FVector2 *points, int npoint
 	double originx, double originy, double scalex, double scaley,
 	angle_t rotation, FDynamicColormap *colormap, int lightlevel)
 {
-	if (npoints < 3)
-	{ // This is no polygon.
-		return;
-	}
-
-	FMaterial *gltexture = FMaterial::ValidateTexture(texture, false);
-
-	if (gltexture == NULL)
-	{
-		return;
-	}
+	// [rc4l] features/draw2d works out the points' texture coordinates and the fan the 2D capture records.
+	if (!zx::draw2d::PreparePoly(texture, points, npoints, originx, originy, scalex, scaley, rotation, colormap, lightlevel, mPoly, mPolyTris)) return;
+	FMaterial *gltexture = (FMaterial *)mPoly.material;
 
 	FColormap cm;
 	cm = colormap;
@@ -567,40 +559,15 @@ void FGLRenderer::FillSimplePoly(FTexture *texture, FVector2 *points, int npoint
 	glset.lightmode = savedlightmode;
 
 	gl_RenderState.SetMaterial(gltexture, CLAMP_NONE, 0, -1, false);
-
-	int i;
-	float rot = float(rotation * M_PI / float(1u << 31));
-	bool dorotate = rot != 0;
-
-	float cosrot = cos(rot);
-	float sinrot = sin(rot);
-
-	//float yoffs = GatheringWipeScreen ? 0 : LBOffset;
-	float uscale = float(1.f / (texture->GetScaledWidth() * scalex));
-	float vscale = float(1.f / (texture->GetScaledHeight() * scaley));
-	if (gltexture->tex->bHasCanvas)
-	{
-		vscale = 0 - vscale;
-	}
-	float ox = float(originx);
-	float oy = float(originy);
-
 	gl_RenderState.Apply();
 
 	FFlatVertex *ptr = GLRenderer->mVBO->GetBuffer();
-	for (i = 0; i < npoints; ++i)
+	for (int i = 0; i < npoints; ++i)
 	{
-		float u = points[i].X - 0.5f - ox;
-		float v = points[i].Y - 0.5f - oy;
-		if (dorotate)
-		{
-			float t = u;
-			u = t * cosrot - v * sinrot;
-			v = v * cosrot + t * sinrot;
-		}
-		ptr->Set(points[i].X, points[i].Y, 0, u*uscale, v*vscale);
+		ptr->Set(points[i].X, points[i].Y, 0, mPoly.uv[2 * i], mPoly.uv[2 * i + 1]);
 		ptr++;
 	}
 	GLRenderer->mVBO->RenderCurrent(ptr, GL_TRIANGLE_FAN);
+	for (size_t i = 0; i < mPolyTris.size(); i++) zx::hwrender::Record2D(mPolyTris[i]);
 }
 

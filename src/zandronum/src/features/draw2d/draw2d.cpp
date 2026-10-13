@@ -6,6 +6,8 @@
 #include "features/draw2d/computation/quad2d_compute.h"
 #include "features/draw2d/computation/flatfill_compute.h"
 #include "features/materials/materials.h"
+#include "features/levelmesh/captureshading.h"   // [rc4l] CapturePolyColor
+#include "gl/renderer/gl_colormap.h"             // [rc4l] FColormap, a polygon's colormap as GL takes it
 #include "r_data/renderstyle.h"
 #include "textures/textures.h"
 #include "m_fixed.h"
@@ -46,6 +48,34 @@ zx::hwrender::Quad2D PrepareClear(int left, int top, int right, int bottom, PalE
 {
 	// [rc4l] A scissored glClear is still a filled rectangle as far as a backend is concerned: the console background and the menu backdrop.
 	return ComputeFillQuad((float)left, (float)top, (float)(right - left), (float)(bottom - top), RGBOf(color), 1.f);
+}
+
+bool PreparePoly(FTexture *tex, const FVector2 *points, int npoints, double originx, double originy, double scalex, double scaley,
+	angle_t rotation, FDynamicColormap *colormap, int lightlevel, PolyDraw &draw, std::vector<zx::hwrender::Quad2D> &tris)
+{
+	tris.clear();
+	if (npoints < 3) return false;
+	draw.material = zx::materials::MaterialForTexture(tex, false);
+	if (draw.material == NULL) return false;
+	FColormap cm;
+	cm = colormap;
+	zx::levelmesh::CapturePolyColor(lightlevel, cm, draw.r, draw.g, draw.b);
+	draw.points.resize(2 * npoints);
+	draw.uv.resize(2 * npoints);
+	for (int i = 0; i < npoints; i++)
+	{
+		draw.points[2 * i] = points[i].X;
+		draw.points[2 * i + 1] = points[i].Y;
+	}
+	const PolyTexIn in = { originx, originy, scalex, scaley, rotation, tex->GetScaledWidth(), tex->GetScaledHeight(), tex->bHasCanvas };
+	ComputePolyTexCoords(in, &draw.points[0], npoints, &draw.uv[0]);
+	zx::hwrender::Quad2D base = ComputeFillQuad(0.f, 0.f, 0.f, 0.f, 0xffffffu, 1.f);
+	base.material = draw.material;
+	base.r = draw.r;
+	base.g = draw.g;
+	base.b = draw.b;
+	ComputePolyTriangles(base, &draw.points[0], &draw.uv[0], npoints, tris);
+	return true;
 }
 
 void PrepareFlatFill(int left, int top, int right, int bottom, FTexture *src, bool localOrigin, std::vector<zx::hwrender::Quad2D> &out)

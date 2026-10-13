@@ -69,6 +69,8 @@ static const char *kSceneVS =
 	// [rc4l] GL draws a surface only from its front, a floor from above and a ceiling from below, and a stacked view's eye sits under every rooftop it looks up at.
 	"        if (unseen || dot(pd.normal.xyz, uCameraPos.xyz - aPos) < -0.01) clip = vec4(2.0, 2.0, 2.0, 1.0);\n"
 	"    }\n"
+	// [rc4l] A HUD model's surface (texFlags 4) at the near end of the depth range, kept in order among its own, so the world never covers it.
+	"    if ((int(pd.extra.w + 0.5) & 4) != 0) clip.z *= 0.0001;\n"
 	"    gl_Position = clip;\n"
 	// [rc4l] extra.yz is the piece's scroll since the bake, so a scroller moves the texture without new vertices.
 	"    vUV = aUV + pd.extra.yz;\n"
@@ -495,7 +497,7 @@ static const char *kScenePSTrans =
 	"void main() {\n"
 	"    vec4 t = fuaStencil(fuaTexel(vUV));\n"
 	/* [rc4l] An alpha-tested sprite drops what GL's uAlphaThreshold drops (uFrame.w); anything else only what is all but invisible. */
-	"    if (vTexFlags > 1.5 ? t.a <= uFrame.w : t.a < 0.04) discard;\n"
+	"    if ((int(vTexFlags + 0.5) & 2) != 0 ? t.a <= uFrame.w : t.a < 0.04) discard;\n"
 	"    outColor = vec4(fuaShade(t.rgb), t.a * vLightParm.z);\n"
 	"}\n";
 

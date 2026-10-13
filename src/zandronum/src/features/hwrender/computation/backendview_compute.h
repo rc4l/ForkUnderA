@@ -23,6 +23,15 @@ void ComputeBackendView(const BackendCamera &c, float out[16]);
 // [rc4l] The column-major view-projection for a camera: ComputeBackendView under GL's projection with Vulkan's depth, so every view keeps GL's framing.
 void ComputeBackendMVP(const BackendCamera &c, float out[16]);
 
+// [rc4l] a times b, column-major; out may not be either.
+void ComputeMultiplyMatrix4(const float *a, const float *b, float *out);
+
+// [rc4l] The inverse of a column-major 4x4, false when it has none.
+bool ComputeInvertMatrix4(const float *m, float *out);
+
+// [rc4l] What takes a matrix into a camera's eye space, as GL's HUD model loads its own in place of the view, to mesh space instead: the camera's view undone after it.
+bool ComputeEyeToMesh(const BackendCamera &c, const float *eye, float *out);
+
 // [rc4l] A rectangle of the screen in top-down pixels.
 struct ScreenRect
 {

@@ -8,6 +8,9 @@ A `MaterialRef` is an `FMaterial` address, stable for the level and compared by 
 `materials.cpp` looks inside it. Pixels still come from `FMaterial::CreateTexBuffer`, which is where
 Doom's texture composition (multipatch, translations, hires replacements) lives.
 
+`MaterialIfMade` answers without making a material, so a worker thread may ask; the sprite batch hands a
+sprite whose material is not made yet back to the game thread.
+
 It also keeps glstuff's round and smooth particle pictures and the mirror sheen
 (`ParticleTexture`, `MirrorSheenTexture`), which GL created for itself at startup.
 

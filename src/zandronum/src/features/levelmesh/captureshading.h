@@ -17,6 +17,9 @@ namespace zx { namespace levelmesh {
 void CaptureShading(int lightlevel, int rellight, const FColormap &cm, MeshPiece &out,
                     bool noFog = false, bool additive = false);
 
+// [rc4l] gl_SetColor's colour alone, as FillSimplePoly sets it for a textured automap floor: software lighting's curve swapped for the standard one.
+void CapturePolyColor(int lightlevel, const FColormap &cm, float &r, float &g, float &b);
+
 }} // namespace zx::levelmesh
 
 #endif // ZX_CAPTURESHADING_H

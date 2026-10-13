@@ -1021,6 +1021,21 @@ void NoteSlotVisible(int slot, int id)
 	if (slot == kSkyboxWalkSlot) g_skyboxWalked = true;
 }
 
+void MarkSlotBits(int slot, const int *ids, int count)
+{
+	if (g_stackVis.Size() == 0) return;
+	for (int i = 0; i < count; i++)
+		if (ids[i] >= 0 && ids[i] < numsubsectors + numsides) ComputeMarkStackVisible(&g_stackVis[0], ids[i], slot);
+}
+
+void NoteSlotMarked(int slot, const int *ids, int count)
+{
+	if (g_stackVis.Size() == 0 || count <= 0) return;
+	TArray<int> &marked = g_slotMarked[slot];
+	for (int i = 0; i < count; i++) marked.Push(ids[i]);
+	if (slot == kSkyboxWalkSlot) g_skyboxWalked = true;
+}
+
 void SetMainVisibility(bool on) { g_mainVisibility = on; }
 bool MainVisibility() { return g_mainVisibility; }
 

@@ -31,6 +31,12 @@ colour is `ComputeFullbrightColor`; `StyleOf` and `RenderStyleOf` carry an engin
 54,000 frames with a weapon drawn across Freedoom MAP01 and MAP04 firing and the Whodunit maps, 0 differed. GL's own record
 now carries a player-translated layer's colours and an additive layer's blend, which it dropped.
 
+A weapon MODELDEF gives a model is a HUD model (`HUDModelLayer`): the layer's model frame captured over the
+world, posed as `gl_RenderHUDModel` poses it (`ComputeHUDModelMatrix`, in eye space, then into the mesh with
+`ComputeEyeToMesh`), in the layer's colour and light without fog, and drawn at the near end of the depth
+range so the world never covers it, as GL draws it after clearing the depth buffer. Scenario `hudmodel` puts
+a voxel box on the pistol: beside GL, standalone and without GL it covers the pixels GL's does.
+
 `fua_sprite_check 1` derives every sprite and model beside GL's and compares the two bit for bit, every
 vertex of a model surface included, matching an actor's pieces within one walk; `fua_sprite_report`
 prints what differed and how many model surfaces were compared. It matched on about 1.6 million
@@ -42,8 +48,9 @@ neither there. `fua_sprites_own 0` hands every sprite and model back to GL.
 
 ## In-engine hooks
 
-- `features/frame/standaloneframe.cpp`, the standalone sprite sweep: `BuildSprite` per actor in view, GL's
-  `ProcessSprite` through a hook with the switch off or the check on; `BuildSprite` for each actor a stacked
+- `features/frame/standaloneframe.cpp`, the standalone sprite sweep: `BuildSprites` for the actors in view,
+  derived in chunks on `features/jobs`' pool (a model, or a sprite whose material is not made yet, on the game
+  thread) and appended in sweep order, or GL's `ProcessSprite` through a hook with the switch off or a check on; `BuildSprite` for each actor a stacked
   view's or mirror's walk reaches; `BuildParticle` for each particle the player's walk reaches.
 - `gl/scene/gl_scene.cpp` `FGLRenderer::DrawScene`: GL's model list with the check on, and
   `CheckFrameSprites` after GL's sprites are drawn.
@@ -56,7 +63,7 @@ neither there. `fua_sprites_own 0` hands every sprite and model back to GL.
   `ComputeModelMatrix`, and `NextModelFrame`.
 - `gl/models/gl_models_md2.cpp`, `gl_models_md3.cpp`, `gl_voxels.cpp`: `FrameSurfaces`, each `RenderFrame`'s
   surfaces worked out without GL and drawn from.
-- `gl/scene/gl_weapon.cpp` `DrawPlayerSprites`: `BuildPlayerSprites` with GL's bob; `DrawTargeterSprites`:
+- `gl/scene/gl_weapon.cpp` `DrawPlayerSprites`: `BuildPlayerSprites` with GL's bob, its HUD models on GL's HUD model step; `DrawTargeterSprites`:
   `BuildTargeterSprites`; `DrawPSprite`: `NoteGLPSprite`, and records only when `PSpritesOwned` is false.
 - `gl/scene/gl_scene.cpp` `EndDrawScene`: `CheckFramePSprites` once the weapon and targeter are in.
 - `features/frame/playerview.cpp` `RenderPlayerView`: `BuildPlayerSpritesBobbed`, `BuildTargeterSprites` and

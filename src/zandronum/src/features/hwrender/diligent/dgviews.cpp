@@ -392,7 +392,7 @@ bool EnsureMirrorResources()
 	auto *dev = GetDevice();
 	auto *swap = GetSwapChain();
 	if (!dev || !swap) return false;
-	const int w = (int)swap->GetDesc().Width, h = (int)swap->GetDesc().Height;
+	const int w = FrameWidth(), h = FrameHeight();
 
 	if (!g_mirrorColor || g_mirrorW != w || g_mirrorH != h)
 	{
@@ -701,12 +701,12 @@ static bool EnsureViewTarget(ViewTarget &t, Diligent::IPipelineState *pso, const
 	auto *dev = GetDevice();
 	auto *swap = GetSwapChain();
 	if (!dev || !swap || !pso) return false;
-	const auto &sd = swap->GetDesc();
-	if (t.color && t.depth && t.srb && t.w == (int)sd.Width && t.h == (int)sd.Height) return true;
+	const int w = FrameWidth(), h = FrameHeight();
+	if (t.color && t.depth && t.srb && t.w == w && t.h == h) return true;
 	t.Release();
-	if (!CreateViewTextures((int)sd.Width, (int)sd.Height, name, t.color, t.depth) ||
+	if (!CreateViewTextures(w, h, name, t.color, t.depth) ||
 		!CreatePictureBinding(pso, var, t.color, t.srb)) return false;
-	t.w = (int)sd.Width; t.h = (int)sd.Height;
+	t.w = w; t.h = h;
 	return true;
 }
 
@@ -1040,12 +1040,11 @@ void RenderMirrors(Diligent::IDeviceContext *ctx)
 		if (!EnsureMirrorResources()) return;
 	}
 
-	auto *swap = GetSwapChain();
-	auto *brtv = swap->GetCurrentBackBufferRTV();
-	// [rc4l] The world pass renders into our own readable depth buffer, so restoring the swapchain's
+	auto *brtv = FrameRTV();
+	// [rc4l] The world pass renders into our own readable depth buffer, so restoring the frame's
 	// here would hand the screen a depth buffer nothing has written to.
 	Diligent::ITextureView *bdsv = EnsureSceneDepth();
-	if (!bdsv) bdsv = swap->GetDepthBufferDSV();
+	if (!bdsv) bdsv = FrameDSV();
 	Diligent::ITextureView *mrtv = g_mirrorColor->GetDefaultView(Diligent::TEXTURE_VIEW_RENDER_TARGET);
 	Diligent::ITextureView *mdsv = g_mirrorDepth->GetDefaultView(Diligent::TEXTURE_VIEW_DEPTH_STENCIL);
 

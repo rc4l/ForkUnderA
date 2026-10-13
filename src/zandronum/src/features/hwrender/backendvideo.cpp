@@ -174,16 +174,29 @@ public:
 		zx::draw2d::PrepareFlatFill(left, top, right, bottom, src, local_origin, mFlatQuads);
 		for (size_t i = 0; i < mFlatQuads.size(); i++) zx::hwrender::Record2D(mFlatQuads[i]);
 	}
-	// [rc4l] Not recorded for the backend yet, on GL's launch either: the textured automap.
-	void FillSimplePoly(FTexture *, FVector2 *, int, double, double, double, double, angle_t, FDynamicColormap *, int) {}
+	// [rc4l] The textured automap's floors, recorded as the fan GL draws.
+	void FillSimplePoly(FTexture *tex, FVector2 *points, int npoints, double originx, double originy, double scalex, double scaley,
+		angle_t rotation, FDynamicColormap *colormap, int lightlevel)
+	{
+		if (!zx::draw2d::PreparePoly(tex, points, npoints, originx, originy, scalex, scaley, rotation, colormap, lightlevel, mPoly, mPolyTris)) return;
+		for (size_t i = 0; i < mPolyTris.size(); i++) zx::hwrender::Record2D(mPolyTris[i]);
+	}
 
 	FNativePalette *CreatePalette(FRemapTable *remap) { return GLTranslationPalette::CreatePalette(remap); }
 
-	// [rc4l] No wipe yet: a screen change cuts straight over.
-	bool WipeStartScreen(int) { return false; }
-	void WipeEndScreen() {}
-	bool WipeDo(int) { return true; }
-	void WipeCleanup() {}
+	// [rc4l] The screen wipes, drawn by the backend from the last frame and the new one, locked and unlocked as GL's frame buffer is.
+	bool WipeStartScreen(int type) { return zx::hwrender::WipeStart(type); }
+	void WipeEndScreen()
+	{
+		zx::hwrender::WipeEnd();
+		Unlock();
+	}
+	bool WipeDo(int ticks)
+	{
+		Lock(true);
+		return zx::hwrender::WipeTic(ticks);
+	}
+	void WipeCleanup() { zx::hwrender::WipeCleanup(); }
 	bool Is8BitMode() { return false; }
 
 	int PaletteBrightness() const { return mColors.brightness; }
@@ -241,6 +254,8 @@ private:
 	BYTE *mShot = NULL;
 	int mClientW = 0, mClientH = 0;   // [rc4l] the client size last reconciled
 	std::vector<zx::hwrender::Quad2D> mFlatQuads;   // [rc4l] kept, so a fill settles at its high-water mark
+	zx::draw2d::PolyDraw mPoly;                      // [rc4l] and a polygon's points and fan, likewise
+	std::vector<zx::hwrender::Quad2D> mPolyTris;
 };
 
 IMPLEMENT_CLASS(DiligentFrameBuffer)

@@ -22,6 +22,9 @@ bool ComputeLineCloses(const ClosedLineIn &in);
 // [rc4l] A flat plane's height as GL takes it from the plane's d: a floor's is -d and a ceiling's d.
 long long ComputeFlatPlaneHeight(bool floor, long long d);
 
+// [rc4l] gl_CheckViewArea's test on a line from the open into a height transfer: the eye is below the water when the front ceiling sits at or under the transfer's floor at both ends (raw 16.16, with GL's 1/100 tolerance).
+bool ComputeEyeBelowTransfer(long long ceiling1, long long ceiling2, long long transferFloor1, long long transferFloor2);
+
 // [rc4l] Whether the heights alone could close the line, so a caller reads the textures and skies only when they might matter.
 bool ComputeLineMayClose(const ClosedLineIn &in);
 

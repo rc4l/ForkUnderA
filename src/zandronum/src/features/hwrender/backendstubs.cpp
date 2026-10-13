@@ -39,7 +39,9 @@ int BackendPaletteBrightness() { return 0; }
 bool OpenBackendOutput(int, int) { return false; }
 int BackendMaxTextureSize() { return 0; }
 void NoteWorldView() {}
+void SettleLevelScene() {}
 void PresentBackendOnly(bool) {}
 unsigned char *ReadBackendFrame(int &, int &) { return NULL; }
+unsigned char *RenderSavePicture(int, int, float) { return NULL; }
 
 }} // namespace zx::hwrender

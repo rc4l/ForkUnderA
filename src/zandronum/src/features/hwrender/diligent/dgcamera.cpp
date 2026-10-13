@@ -83,6 +83,23 @@ static CameraTarget *GetCameraTarget(const void *material, int w, int h)
 }
 
 // The rendered view for a canvas material, or NULL if it has never been rendered.
+unsigned char *RenderSavePicture(int w, int h, float fovDeg)
+{
+	// [rc4l] A camera target of its own, keyed by an address no material has.
+	static const int key = 0;
+	if (!GetDevice() || !g_scene.vb || !g_pso.opaque || w <= 0 || h <= 0) return NULL;
+	// [rc4l] GL draws it at a 1.6 ratio whatever its size, as RenderViewpoint is handed for a save.
+	RenderCameraTexture(&key, w, h, 1.6f, viewx, viewy, viewz, (unsigned int)viewangle, viewpitch, fovDeg);
+	CameraTarget *cam = GetCameraTarget(&key, w, h);
+	if (cam == NULL) return NULL;
+	int rw = 0, rh = 0, format = 0;
+	bool bgra = false;
+	FString report;
+	unsigned char *rgb = ReadTextureRGB(cam->scratch, rw, rh, format, bgra, report);
+	if (rgb == NULL) Printf("save picture: %s\n", report.GetChars());
+	return rgb;
+}
+
 Diligent::ITextureView *GetCameraSRV(const void *material)
 {
 	for (unsigned i = 0; i < g_cameraTargets.Size(); i++)
@@ -137,12 +154,11 @@ void RenderCameraTexture(const void *material, int w, int h, float aspect,
 	CopyCameraFlipped(ctx, *cam);
 
 	// Hand the screen back its own target and full viewport; the main pass assumes both.
-	auto *swap = GetSwapChain();
-	auto *brtv = swap->GetCurrentBackBufferRTV();
-	// [rc4l] The world pass renders into our own readable depth buffer, so restoring the swapchain's
+	auto *brtv = FrameRTV();
+	// [rc4l] The world pass renders into our own readable depth buffer, so restoring the frame's
 	// here would hand the screen a depth buffer nothing has written to.
 	Diligent::ITextureView *bdsv = EnsureSceneDepth();
-	if (!bdsv) bdsv = swap->GetDepthBufferDSV();
+	if (!bdsv) bdsv = FrameDSV();
 	ctx->SetRenderTargets(1, &brtv, bdsv, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 	ctx->SetViewports(1, nullptr, 0, 0);
 	BuildMVP(g_mvp);

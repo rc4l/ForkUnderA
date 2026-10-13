@@ -65,7 +65,7 @@ void FillPieceData(const zx::levelmesh::MeshPiece &p, int translation, ScenePiec
 	pd.plain = p.plain ? 1.f : 0.f;
 	pd.desaturation = zx::hwrender::ComputeDesaturationFactor(p.desaturation);
 	pd.scrollU = p.scrollU; pd.scrollV = p.scrollV;
-	pd.texFlags = (p.stencil ? 1.f : 0.f) + (p.alphaTest ? 2.f : 0.f);
+	pd.texFlags = (p.stencil ? 1.f : 0.f) + (p.alphaTest ? 2.f : 0.f) + (p.hud ? 4.f : 0.f);
 }
 
 // [rc4l] Where each piece's vertices ended up, so a moved one can be patched instead of rebuilt.

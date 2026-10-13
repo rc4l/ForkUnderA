@@ -252,7 +252,7 @@ void CaptureReplayFrame(Diligent::IDeviceContext *ctx, Diligent::ISwapChain *swa
 
 	auto *dev = GetDevice();
 	if (!dev || !ctx || !swap) return;
-	auto *backTex = swap->GetCurrentBackBufferRTV()->GetTexture();
+	auto *backTex = FrameTexture();
 	if (!backTex) return;
 	const auto &bd = backTex->GetDesc();
 
@@ -334,13 +334,17 @@ void CaptureReplayFrame(Diligent::IDeviceContext *ctx, Diligent::ISwapChain *swa
 // [rc4l] The back buffer as drawn and not yet presented, as top-down RGB the caller deletes; NULL with the reason in report.
 unsigned char *ReadBackBuffer(int &w, int &h, int &format, bool &bgra, FString &report)
 {
+	if (!GetContext() || !GetSwapChain() || !GetDevice()) { report = "no backend device"; return NULL; }
+	return ReadTextureRGB(FrameTexture(), w, h, format, bgra, report);
+}
+
+unsigned char *ReadTextureRGB(Diligent::ITexture *backTex, int &w, int &h, int &format, bool &bgra, FString &report)
+{
 	auto *ctx = GetContext();
-	auto *swap = GetSwapChain();
 	auto *dev = GetDevice();
-	if (!ctx || !swap || !dev) { report = "no backend device"; return NULL; }
+	if (!ctx || !dev || !backTex) { report = "no backend device"; return NULL; }
 	ctx->WaitForIdle();
 
-	auto *backTex = swap->GetCurrentBackBufferRTV()->GetTexture();
 	const auto &bd = backTex->GetDesc();
 
 	// Same as the replay path: unbind before copying from the back buffer, or Diligent does it for

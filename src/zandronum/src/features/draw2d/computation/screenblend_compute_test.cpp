@@ -34,3 +34,21 @@ TEST(ScreenBlend, AColormapsAverageIsBrightenedToThePalette)
 	EXPECT_EQ(ComputeBrightenedBlend(0x80402010u, 128), 0x80402010u);   // [rc4l] not a colormap's
 	EXPECT_EQ(ComputeBrightenedBlend(0xff000000u, 0), 0xff000000u);
 }
+
+TEST(ComputeApplyScreenFill, AFillMultipliesOrBlendsOverEachPixel)
+{
+	unsigned char rgb[6] = { 200, 100, 50, 0, 255, 255 };
+	zx::draw2d::ComputeApplyScreenFill(0.5f, 1.f, 0.f, 1.f, true, rgb, 2);
+	EXPECT_EQ(100, rgb[0]);
+	EXPECT_EQ(100, rgb[1]);
+	EXPECT_EQ(0, rgb[2]);
+	EXPECT_EQ(255, rgb[4]);
+	unsigned char over[3] = { 0, 200, 100 };
+	zx::draw2d::ComputeApplyScreenFill(1.f, 0.f, 2.f, 0.5f, false, over, 1);
+	EXPECT_EQ(128, over[0]);
+	EXPECT_EQ(100, over[1]);
+	EXPECT_EQ(255, over[2]);
+	unsigned char under[3] = { 10, 10, 10 };
+	zx::draw2d::ComputeApplyScreenFill(-1.f, 0.f, 0.f, 1.f, false, under, 1);
+	EXPECT_EQ(0, under[0]);
+}

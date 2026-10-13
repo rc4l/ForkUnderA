@@ -25,6 +25,18 @@ struct ModelPose
 // [rc4l] The model-to-world matrix, column-major, multiplied as VSMatrix multiplies.
 void ComputeModelMatrix(const ModelPose &pose, float out[16]);
 
+// [rc4l] What gl_RenderHUDModel loads in place of the view: MODELDEF's scales and offsets in GL's (x, up, y), the weapon's bob in pixels (its y below WEAPONTOP) and its own turns in degrees.
+struct HUDModelPose
+{
+	float scale[3];
+	float offset[3];   // [rc4l] already divided by the scales, as GL translates after scaling
+	float bobX, bobY;
+	float angleOffset, pitchOffset, rollOffset;
+};
+
+// [rc4l] The HUD model's matrix into eye space, column-major, built as gl_RenderHUDModel builds it.
+void ComputeHUDModelMatrix(const HUDModelPose &pose, float out[16]);
+
 // [rc4l] MDL_PITCHFROMMOMENTUM: the climb of the velocity, flipped when the model moves backwards, from any consistent units.
 float ComputeMomentumPitch(double velx, double vely, double velz, float angleDegrees);
 

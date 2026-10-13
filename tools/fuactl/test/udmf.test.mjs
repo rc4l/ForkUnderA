@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { UdmfMap, wad, mapLumps, readWad, parseUdmf } from "../src/udmf.mjs";
+import { UdmfMap, wad, mapLumps, readWad, parseUdmf, pk3, readPk3 } from "../src/udmf.mjs";
 import { THING, SPECIAL } from "../src/doomnums.mjs";
 import { PCD } from "../src/acs.mjs";
 import { buildHorizonWad } from "../scenarios/horizon.mjs";
@@ -407,4 +407,21 @@ test("the transfer-heights template tags its lake from a control sector's Transf
   const control = u.sector[u.sidedef[line.sidefront].sector];
   assert.ok(control.heightfloor > lake.heightfloor);
   assert.ok(control.lightcolor > 0);
+});
+
+test("a pk3 reads back as the files it was written from, in order", () => {
+  const files = [{ name: "maps/MAP01.wad", data: wad([{ name: "MAP01", data: "" }]) }, { name: "modeldef.txt", data: "Model Pistol { }" },
+    { name: "models/empty.kvx", data: "" }];
+  const back = readPk3(pk3(files));
+  assert.deepEqual(back.map((f) => f.name), files.map((f) => f.name));
+  assert.equal(back[1].data.toString("latin1"), "Model Pistol { }");
+  assert.equal(back[2].data.length, 0);
+  assert.deepEqual(readWad(back[0].data).map((l) => l.name), ["MAP01"]);
+});
+
+test("a pk3 that is not one, or whose file was changed, is refused", () => {
+  assert.throws(() => readPk3(Buffer.from("PWAD")), /not a pk3/);
+  const buf = pk3([{ name: "a.txt", data: "abc" }]);
+  buf[30 + "a.txt".length] ^= 1;
+  assert.throws(() => readPk3(buf), /a\.txt: CRC mismatch/);
 });

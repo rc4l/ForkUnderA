@@ -40,6 +40,9 @@ Load a map and run `fua_levelmesh_stats`. It prints side/sector/subsector counts
 vertices and their buffer size, the flat vertices `FFlatVertexBuffer` already reserves for
 comparison, and the mean/worst per side — the tail is what decides fixed ranges versus pooling.
 
+`MarkSlotBits` and `NoteSlotMarked` set a walk slot's bits from several lanes, each owning whole words, and
+keep the ids for the slot's next start; `CapturePolyColor` is `gl_SetColor`'s colour for a polygon.
+
 `LightListBottom` (`levelmesh.h`) is a 3D floor light list entry's lower edge at a point, for the sprites,
 the weapon and the screen tint alike.
 

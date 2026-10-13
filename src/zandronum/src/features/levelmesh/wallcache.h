@@ -175,6 +175,9 @@ void ForgetWalks();
 // [rc4l] A walk outside GL (features/visibility) into walk slot `slot` (kMainWalkSlot, a stacked view's, kSkyboxWalkSlot): start the slot afresh, then mark each subsector or sidedef id it reaches.
 void BeginSlotVisibility(int slot);
 void NoteSlotVisible(int slot, int id);
+// [rc4l] NoteSlotVisible split for a walk run on several lanes: MarkSlotBits sets the bits of ids one lane owns (ranges aligned to whole words of bits, so no two lanes share one), and NoteSlotMarked then keeps them for the slot's next start, on one thread.
+void MarkSlotBits(int slot, const int *ids, int count);
+void NoteSlotMarked(int slot, const int *ids, int count);
 // [rc4l] Whether the player's pass culls to its slot this frame: set by the player's visibility walk, cleared when GL walks.
 void SetMainVisibility(bool on);
 bool MainVisibility();

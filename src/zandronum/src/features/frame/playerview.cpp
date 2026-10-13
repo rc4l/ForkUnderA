@@ -113,7 +113,7 @@ void RenderPlayerView(player_t *player, int paletteBrightness)
 	}
 
 	// [rc4l] EndDrawScene: the weapon unless a HUD model replaces it, the targeter, and the screen's tint.
-	if (!gl_IsHUDModelForPlayerAvailable(players[consoleplayer].camera->player)) zx::sprites::BuildPlayerSpritesBobbed(sector, in_area);
+	zx::sprites::BuildPlayerSpritesBobbed(sector, in_area, gl_IsHUDModelForPlayerAvailable(players[consoleplayer].camera->player));
 	zx::sprites::BuildTargeterSprites(zx::viewsetup::CurrentView().viewActor);
 	zx::sprites::CheckFramePSprites();
 	zx::draw2d::ScreenFill fills[2];

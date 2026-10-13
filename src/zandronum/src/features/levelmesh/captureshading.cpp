@@ -43,6 +43,25 @@ static void GLShading(int lightlevel, int rellight, const FColormap &cm, bool no
 	gl_RenderState.RestoreShading(before);
 }
 
+void CapturePolyColor(int lightlevel, const FColormap &cm, float &r, float &g, float &b)
+{
+	ShadingEnv env = gl_ShadingEnv();
+	if (env.lightMode == 8) env.lightMode = 0;
+	ShadingInput in;
+	in.lightLevel = lightlevel;
+	in.relLight = 0;
+	in.lightColor = cm.LightColor.d;
+	in.fadeColor = cm.FadeColor.d;
+	in.blendFactor = cm.blendfactor;
+	in.desaturation = cm.desaturation;
+	in.noFog = true;
+	in.additive = false;
+	const Shading s = ComputeShading(in, env);
+	r = s.r;
+	g = s.g;
+	b = s.b;
+}
+
 void CaptureShading(int lightlevel, int rellight, const FColormap &cm, MeshPiece &out, bool noFog, bool additive)
 {
 	ShadingInput in;

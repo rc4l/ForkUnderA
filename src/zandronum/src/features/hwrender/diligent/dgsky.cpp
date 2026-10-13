@@ -955,11 +955,10 @@ bool EnsureSkyPortalResources()
 	// The cost it was bounding is real (one extra scene render per frame, the shape that produced
 	// the TDR in tdr-crash-after-map-loads.md), so the divisor stays reachable rather than deleted:
 	// fua_dg_skyportal_scale 2 halves it again if a map ever needs the frame time back.
-	const auto &sd = swap->GetDesc();
 	int div = fua_dg_skyportal_scale;
 	if (div < 1) div = 1;
 	if (div > 4) div = 4;
-	const int w = (int)sd.Width / div, h = (int)sd.Height / div;
+	const int w = FrameWidth() / div, h = FrameHeight() / div;
 	if (w <= 0 || h <= 0) return false;
 	if (!g_skyPortalColor || g_skyPortalW != w || g_skyPortalH != h)
 	{
@@ -973,7 +972,7 @@ bool EnsureSkyPortalResources()
 	}
 
 	// [rc4l] Same standing as the dome it replaces: drawn first, never against the depth buffer, into the frame's own targets.
-	if (!g_skyPortalPSO && !CreatePicturePSO("fua sky portal", kSkyPortalPS, Diligent::FILTER_TYPE_LINEAR, sd.DepthBufferFormat, g_skyPortalPSO))
+	if (!g_skyPortalPSO && !CreatePicturePSO("fua sky portal", kSkyPortalPS, Diligent::FILTER_TYPE_LINEAR, swap->GetDesc().DepthBufferFormat, g_skyPortalPSO))
 		return false;
 	if (!g_skySurfPSO)
 	{
@@ -1009,12 +1008,11 @@ bool RenderSkyPortal(Diligent::IDeviceContext *ctx)
 	if (sb == NULL) return false;
 	if (!EnsureSkyPortalResources()) return false;
 
-	auto *swap = GetSwapChain();
-	auto *brtv = swap->GetCurrentBackBufferRTV();
-	// [rc4l] The world pass renders into our own readable depth buffer, so restoring the swapchain's
+	auto *brtv = FrameRTV();
+	// [rc4l] The world pass renders into our own readable depth buffer, so restoring the frame's
 	// here would hand the screen a depth buffer nothing has written to.
 	Diligent::ITextureView *bdsv = EnsureSceneDepth();
-	if (!bdsv) bdsv = swap->GetDepthBufferDSV();
+	if (!bdsv) bdsv = FrameDSV();
 	auto *prtv = g_skyPortalColor->GetDefaultView(Diligent::TEXTURE_VIEW_RENDER_TARGET);
 	auto *pdsv = g_skyPortalDepth->GetDefaultView(Diligent::TEXTURE_VIEW_DEPTH_STENCIL);
 	if (!prtv || !pdsv) return false;

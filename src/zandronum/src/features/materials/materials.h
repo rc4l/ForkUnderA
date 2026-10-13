@@ -34,6 +34,8 @@ bool DescribeMaterial(MaterialRef m, MaterialInfo &info);
 
 // [rc4l] The material for an engine texture (an FTexture), expanded with the border a face sprite is drawn with when asked, or for an index into the texture manager.
 MaterialRef MaterialForTexture(const void *texture, bool expand = false);
+// [rc4l] MaterialForTexture without making one, so a worker thread may ask: false when the material is not made yet, true with `out` the material or NULL for a texture that has none.
+bool MaterialIfMade(const void *texture, bool expand, MaterialRef &out);
 
 // [rc4l] The round (1) and smooth (2) particle pictures gl_particles_style picks, NULL for square ones; loaded once and kept.
 FTexture *ParticleTexture(int style);

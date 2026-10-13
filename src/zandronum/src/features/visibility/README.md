@@ -58,6 +58,35 @@ seg, and a seg facing away never loads its sidedef; the rest is cache misses on 
 A flat plane's height (`ComputeFlatPlaneHeight`) and a mirror sheen band's light (`ComputeSheenBandLight`)
 are tested rules; the three checks keep `features/frame`'s `OracleTally`.
 
+## The sliced walk
+
+The player's walk runs on `features/jobs`' pool in one slice a lane (`fua_vis_slices`, -1): each slice's
+clipper is GL's seeded with the frustum and blocked outside its own share of the view, so the union of what
+the slices see is what one walk sees (`computation/walkslices_compute`, tested against one walk on random
+walls). Each subsector is numbered by its place in the front-to-back order from the eye (`ComputeLeafCounts`),
+and a slice marks what it reaches in shared stamp arrays rather than lists, so nothing needs merging. What only
+walk order decides is applied afterwards on the game thread, rank by rank: the order sectors were first reached
+in, the particles, each line's first seen seg's sky and stacked walls (worked out on the lanes as events and
+only appended here), and the flats pass that feeds the stacked views. The edges move walk to walk so the slices
+carry about equal work (`ComputeBalancedSlices`, `fua_vis_balance`).
+
+The first line from the open into a height transfer in force switches the view area (`gl_CheckViewArea`), which
+changes the fake flats behind it. Slices take last walk's switch line as a guess, and clip again from what they
+saw until the guess holds, at most three times (`fua_vis_report` counts these). `fua_vis_threadcheck 1` walks
+in one slice beside the slices every frame and compares the two visit for visit.
+
+A node's box keeps whole units, so a vertex between them can lie just outside it (WDIEX02 has one half a unit
+past). One walk enters such a box through any gap in it and then sees the seg that sticks out; a slice whose
+share holds only the part that sticks out passes the box over and sees past that seg. So a slice notes each seg
+past a box it passes over that shows in its share (`ComputeLeakySegs`), and if another slice reached that seg's
+subsector, the slices clip again with the boxes down to it forced open (`ComputeLeakForces`), until a forced box
+is one some slice entered by its own test. The forced boxes carry over to the next walk as its guess, so a still
+view clips once; turning on the spot, about one walk in 25 clips again.
+
+On Sunder MAP10 at the start the walk went from about 1.15 ms to 0.42 ms, and the frame from 1.58 to 0.81 ms.
+It matched one walk across the saved spots and turning on the spot, stacked views, mirrors and height transfers
+included, and GL's walk on all of them.
+
 ## In-engine hooks
 
 - `gl/scene/gl_scene.cpp` `FGLRenderer::CreateScene`: `CheckAgainstGL` after GL's walk of the player's

@@ -567,8 +567,6 @@ void ReleaseScenePipelines()
 	ReleaseHorizonPipeline();
 	ReleaseDecalPipelines();
 	for (unsigned i = 0; i < g_scene.batches.Size(); i++) g_scene.batches[i].srb = NULL;
-	g_pso.srb.Release();
-	g_pso.srbMasked.Release();
 	ReleaseSkyPipelines();
 	g_pso.opaque.Release();
 	g_pso.masked.Release();
@@ -853,9 +851,6 @@ bool EnsureScenePipeline(FString &err)
 			hv->Set(g_scene.skyHoleBuf->GetDefaultView(Diligent::BUFFER_VIEW_SHADER_RESOURCE));
 
 	}
-
-	g_pso.masked->CreateShaderResourceBinding(&g_pso.srbMasked, true);
-	g_pso.opaque->CreateShaderResourceBinding(&g_pso.srb, true);
 	return true;
 }
 

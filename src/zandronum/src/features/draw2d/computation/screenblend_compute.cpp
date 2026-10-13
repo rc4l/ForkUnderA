@@ -18,6 +18,16 @@ unsigned ComputeBandBlend(const BlendBand *bands, int count, long long viewz, un
 	return blend;
 }
 
+void ComputeApplyScreenFill(float r, float g, float b, float a, bool multiply, unsigned char *rgb, int count)
+{
+	const float c[3] = { r, g, b };
+	for (int i = 0; i < count * 3; i++)
+	{
+		const float v = multiply ? rgb[i] * c[i % 3] : c[i % 3] * 255.f * a + rgb[i] * (1.f - a);
+		rgb[i] = (unsigned char)(v < 0.f ? 0 : v > 255.f ? 255 : int(v + 0.5f));
+	}
+}
+
 unsigned ComputeBrightenedBlend(unsigned argb, int paletteBrightness)
 {
 	if ((argb >> 24) != 255) return argb;

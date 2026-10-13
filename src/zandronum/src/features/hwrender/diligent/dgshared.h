@@ -44,6 +44,15 @@ namespace zx { namespace hwrender {
 
 Diligent::IRenderDevice  *GetDevice();
 Diligent::ISwapChain     *GetSwapChain();
+// [rc4l] Where the frame is drawn (dgtarget.cpp): beside GL the window's back buffer, without GL an offscreen target at the screen's size, which FinishFrame draws up to the window before the present; its texture is what a screenshot, a replay or a wipe reads.
+bool FrameOffscreen();
+Diligent::ITextureView *FrameRTV();
+Diligent::ITextureView *FrameDSV();
+Diligent::ITexture *FrameTexture();
+int FrameWidth();
+int FrameHeight();
+void FinishFrame(Diligent::IDeviceContext *ctx);
+void ReleaseFrameTarget();
 
 // [rc4l] GL draws its views with GL_DEPTH_CLAMP, keeping a surface nearer than the near plane at the near depth instead of cutting it away; a pipeline drawing the world asks for the same when the device can.
 void ClampDepthLikeGL(Diligent::GraphicsPipelineDesc &gp);
@@ -75,7 +84,6 @@ bool CreateStructuredBuffer(const char *name, unsigned stride, unsigned long lon
 // [rc4l] Bind the scene constants on every stage of pso that declares them; false when its vertex stage does not.
 bool BindSceneConstants(Diligent::IPipelineState *pso);
 
-bool InvertMatrix4(const float *m, float *out);
 
 // The engine's texture filter, as a sampler. Shared so a second pass cannot quietly disagree with
 // the world about how textures are filtered.

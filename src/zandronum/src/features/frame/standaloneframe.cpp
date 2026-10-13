@@ -21,12 +21,15 @@
 #include "r_defs.h"
 #include "r_state.h"   // [rc4l] subsectors
 
+#include <vector>
+
 // [rc4l] Standalone walks the player's view without GL for its sky surfaces, the automap and the cull, as GL's walk serves GL; about 0.04 ms on wdiex02.
 CVAR(Bool, fua_vis_walk, true, 0)
 // [rc4l] Off walks without culling, so the walk's own cost and the cull's can be measured apart.
 CVAR(Bool, fua_vis_cull, true, 0)
 EXTERN_CVAR(Bool, fua_sprites_own)
 EXTERN_CVAR(Bool, fua_sprite_check)
+EXTERN_CVAR(Bool, fua_shading_check)
 EXTERN_CVAR(Bool, fua_surface_mapbake_auto)
 EXTERN_CVAR(Bool, gl_render_things)
 
@@ -51,10 +54,16 @@ void PortalActor(AActor *thing)
 	if (fua_sprites_own) zx::sprites::BuildSprite(thing);
 }
 
+// [rc4l] The actors the sweep keeps, reused frame to frame.
+std::vector<AActor *> g_swept;
+
 // [rc4l] The actors the frustum may hold, derived, or handed back when the backend leaves them; taken from the thinker list, which is where they live, rather than found by a walk.
 void SweepActors()
 {
 	int seen = 0, noSector = 0, behind = 0, offScreen = 0, processed = 0;
+	// [rc4l] Derived in one batch across the job pool unless a check compares them one at a time against GL.
+	const bool batch = fua_sprites_own && !fua_sprite_check && !fua_shading_check;
+	g_swept.clear();
 	const float *mvp = zx::hwrender::SceneMVP();
 	TThinkerIterator<AActor> it;
 	AActor *thing;
@@ -72,9 +81,11 @@ void SweepActors()
 			if (cull == kActorOffScreen) { offScreen++; continue; }
 		}
 		processed++;
-		if (!(fua_sprites_own || fua_sprite_check) || !zx::sprites::BuildSprite(thing))
+		if (batch) g_swept.push_back(thing);
+		else if (!(fua_sprites_own || fua_sprite_check) || !zx::sprites::BuildSprite(thing))
 			if (g_hooks->actor != NULL) g_hooks->actor(thing);
 	}
+	if (!g_swept.empty()) zx::sprites::BuildSprites(&g_swept[0], (int)g_swept.size());
 	zx::levelmesh::RecordSpriteSweep(seen, noSector, behind, offScreen, processed);
 }
 

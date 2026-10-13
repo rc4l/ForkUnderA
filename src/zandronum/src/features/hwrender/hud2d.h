@@ -24,8 +24,12 @@
 
 #include "basictypes.h"   // [rc4l] fixed_t
 #include "features/draw2d/computation/quad2d_compute.h"   // [rc4l] Quad2D, the record draw2d works out
+#include "features/hwrender/computation/backendview_compute.h"   // [rc4l] BackendCamera
 
 namespace zx { namespace hwrender {
+
+// [rc4l] The current view's eye and turn as the backend's camera takes them: where it stands, its yaw, its pitch as the playsim aims it, and GL's pixel stretch; the projection is left to the caller.
+void ViewCameraFromEngine(BackendCamera &c);
 
 
 // [rc4l] A 2D draw for both windows, GL's alone (the backend skips it) or the backend's alone (GL draws it with colour writes off).

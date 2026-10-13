@@ -152,3 +152,53 @@ TEST(Quad2D, TheScreenTintCoversTheScreenMultipliedOrOver)
 	EXPECT_EQ(kBlend2DMultiply, m.blend);
 	EXPECT_EQ(kBlend2DAlpha, ComputeScreenFillQuad(1.f, 1.f, 0.f, 0.f, 0.f, 1.f, false).blend);
 }
+
+TEST(Quad2D, APolygonsTextureRunsFromItsOriginOverItsScaledSize)
+{
+	using namespace zx::draw2d;
+	PolyTexIn in = { 10.0, 20.0, 1.0, 2.0, 0u, 64, 32, false };
+	const float points[4] = { 10.5f, 20.5f, 74.5f, 84.5f };
+	float uv[4];
+	ComputePolyTexCoords(in, points, 2, uv);
+	EXPECT_FLOAT_EQ(0.f, uv[0]);
+	EXPECT_FLOAT_EQ(0.f, uv[1]);
+	EXPECT_FLOAT_EQ(1.f, uv[2]);
+	EXPECT_FLOAT_EQ(1.f, uv[3]);
+	// [rc4l] A camera texture runs upside down.
+	in.canvas = true;
+	ComputePolyTexCoords(in, points, 2, uv);
+	EXPECT_FLOAT_EQ(-1.f, uv[3]);
+}
+
+TEST(Quad2D, APolygonsTextureTurnsWithIt)
+{
+	using namespace zx::draw2d;
+	// [rc4l] A quarter turn takes the u axis onto v.
+	const PolyTexIn in = { 0.0, 0.0, 1.0, 1.0, 0x40000000u, 64, 64, false };
+	const float points[2] = { 64.5f, 0.5f };
+	float uv[2];
+	ComputePolyTexCoords(in, points, 1, uv);
+	EXPECT_NEAR(0.f, uv[0], 1e-6f);
+	EXPECT_NEAR(1.f, uv[1], 1e-6f);
+}
+
+TEST(Quad2D, APolygonIsAFanOfTrianglesFromItsFirstPoint)
+{
+	using namespace zx::draw2d;
+	zx::hwrender::Quad2D base = ComputeFillQuad(0, 0, 0, 0, 0xffffffu, 1.f);
+	base.material = &base;
+	const float points[8] = { 0, 0, 10, 0, 10, 10, 0, 10 };
+	const float uv[8] = { 0, 0, 1, 0, 1, 1, 0, 1 };
+	std::vector<zx::hwrender::Quad2D> tris;
+	ComputePolyTriangles(base, points, uv, 4, tris);
+	ASSERT_EQ(2u, tris.size());
+	EXPECT_EQ(kQuadTri, tris[0].kind);
+	EXPECT_EQ(&base, tris[0].material);
+	EXPECT_EQ(10.f, tris[0].lx2);
+	EXPECT_EQ(10.f, tris[0].y3);
+	EXPECT_EQ(1.f, tris[1].u2);
+	EXPECT_EQ(0.f, tris[1].x3);
+	EXPECT_EQ(1.f, tris[1].v3);
+	ComputePolyTriangles(base, points, uv, 2, tris);
+	EXPECT_TRUE(tris.empty());
+}

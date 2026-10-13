@@ -36,6 +36,8 @@ struct Vertex2D { float x, y, u, v, r, g, b, a, texMode; };
 // 2D drew as ordinary alpha. Multiply is what a fixed colormap needs (invulnerability tints the
 // screen by multiplying it), and neither can be faked with the alpha state.
 static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_pso2D[3];
+// [rc4l] A polygon's triangles, alpha-blended with the texture repeating, as FillSimplePoly samples a flat.
+static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_pso2DWrap;
 static Diligent::RefCntAutoPtr<Diligent::IBuffer>        g_vb2D;
 static Diligent::RefCntAutoPtr<Diligent::IBuffer>        g_cb2D;
 static unsigned int g_vb2DCapacity = 0;
@@ -182,6 +184,23 @@ static bool Ensure2DPipeline()
 		if (auto *v = g_pso2D[mode]->GetStaticVariableByName(Diligent::SHADER_TYPE_VERTEX, "Screen"))
 			v->Set(g_cb2D);
 	}
+	{
+		auto &rt = pci.GraphicsPipeline.BlendDesc.RenderTargets[0];
+		rt.SrcBlend  = Diligent::BLEND_FACTOR_SRC_ALPHA;
+		rt.DestBlend = Diligent::BLEND_FACTOR_INV_SRC_ALPHA;
+		Diligent::SamplerDesc wrap = samp;
+		wrap.AddressU = Diligent::TEXTURE_ADDRESS_WRAP;
+		wrap.AddressV = Diligent::TEXTURE_ADDRESS_WRAP;
+		const Diligent::ImmutableSamplerDesc wrapSamplers[] = {
+			{ Diligent::SHADER_TYPE_PIXEL, "uTex", wrap },
+			{ Diligent::SHADER_TYPE_PIXEL, "uBrightmap", wrap },
+		};
+		pci.PSODesc.Name = "fua 2D polygon PSO";
+		pci.PSODesc.ResourceLayout.ImmutableSamplers = wrapSamplers;
+		dev->CreateGraphicsPipelineState(pci, &g_pso2DWrap);
+		if (!g_pso2DWrap) return false;
+		if (auto *v = g_pso2DWrap->GetStaticVariableByName(Diligent::SHADER_TYPE_VERTEX, "Screen")) v->Set(g_cb2D);
+	}
 	return true;
 }
 
@@ -228,6 +247,14 @@ void Draw2D(Diligent::IDeviceContext *ctx)
 				v[3].x = q.lx2 - nx; v[3].y = q.ly2 - ny;
 				for (int k = 0; k < 4; k++) { v[k].u = 0.f; v[k].v = 0.f; }
 			}
+			else if (q.kind == zx::draw2d::kQuadTri)
+			{
+				// [rc4l] One triangle of a polygon's fan; the record's second triangle folds onto its third corner and draws nothing.
+				v[0].x = q.x;   v[0].y = q.y;   v[0].u = q.u1; v[0].v = q.v1;
+				v[1].x = q.lx2; v[1].y = q.ly2; v[1].u = q.u2; v[1].v = q.v2;
+				v[2].x = q.x3;  v[2].y = q.y3;  v[2].u = q.u3; v[2].v = q.v3;
+				v[3] = v[2];
+			}
 			else
 			{
 			v[0].x = q.x;       v[0].y = q.y;       v[0].u = q.u1; v[0].v = q.v1;
@@ -259,8 +286,8 @@ void Draw2D(Diligent::IDeviceContext *ctx)
 	int curBlend = -1;
 
 	// The backend window is its own size, so the engine's scissor rects scale with the viewport.
-	const auto &sd = GetSwapChain()->GetDesc();
-	const float sx = (float)sd.Width / scrW, sy = (float)sd.Height / scrH;
+	const int fw = FrameWidth(), fh = FrameHeight();
+	const float sx = (float)fw / scrW, sy = (float)fh / scrH;
 
 	const void *curMat = (const void *)(size_t)-1;
 	int curTrans = -99999;
@@ -270,11 +297,13 @@ void Draw2D(Diligent::IDeviceContext *ctx)
 		const zx::hwrender::Quad2D &q = quads[i];
 		// [rc4l] GL's own vid_fps line; this window shows the backend's (k2DBackendOnly).
 		if (q.target == zx::hwrender::k2DGLOnly) continue;
-		const int blendMode = (q.blend >= 0 && q.blend < 3) ? q.blend : 0;
+		// [rc4l] A polygon's triangles take the repeating pipeline, numbered past the three blends.
+		const int blendMode = q.kind == zx::draw2d::kQuadTri ? 3 : (q.blend >= 0 && q.blend < 3) ? q.blend : 0;
+		Diligent::IPipelineState *pso = blendMode == 3 ? g_pso2DWrap.RawPtr() : g_pso2D[blendMode].RawPtr();
 		if (blendMode != curBlend)
 		{
 			curBlend = blendMode;
-			ctx->SetPipelineState(g_pso2D[curBlend]);
+			ctx->SetPipelineState(pso);
 			// A pipeline change drops what was committed, so the next quad has to commit again even
 			// if it wants the same material.
 			curMat = (const void *)(size_t)-1;
@@ -286,7 +315,7 @@ void Draw2D(Diligent::IDeviceContext *ctx)
 		// same font page for every glyph.
 		if (q.material != curMat || q.translation != curTrans)
 		{
-			auto *found = GetMaterialSRB(g_pso2D[curBlend], q.material, q.translation);
+			auto *found = GetMaterialSRB(pso, q.material, q.translation);
 			if (!found) continue;
 			ctx->CommitShaderResources(found, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 			curMat = q.material;
@@ -302,8 +331,8 @@ void Draw2D(Diligent::IDeviceContext *ctx)
 			sc.right  = (Diligent::Int32)(cr * sx);
 			sc.bottom = (Diligent::Int32)(cb2 * sy);
 			if (sc.right <= sc.left || sc.bottom <= sc.top)
-			{ sc.left = 0; sc.top = 0; sc.right = (Diligent::Int32)sd.Width; sc.bottom = (Diligent::Int32)sd.Height; }
-			ctx->SetScissorRects(1, &sc, sd.Width, sd.Height);
+			{ sc.left = 0; sc.top = 0; sc.right = (Diligent::Int32)fw; sc.bottom = (Diligent::Int32)fh; }
+			ctx->SetScissorRects(1, &sc, fw, fh);
 		}
 
 		// [rc4l] One draw per quad, and that is fine.

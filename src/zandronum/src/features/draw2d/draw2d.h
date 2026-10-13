@@ -40,6 +40,10 @@ zx::hwrender::Quad2D PrepareClear(int left, int top, int right, int bottom, PalE
 // [rc4l] A FlatFill: the rectangle tiled with `src` from the screen's origin or its own, as one quad per copy of the texture; out is replaced.
 void PrepareFlatFill(int left, int top, int right, int bottom, FTexture *src, bool localOrigin, std::vector<zx::hwrender::Quad2D> &out);
 
+// [rc4l] Work out a FillSimplePoly into `draw`, and its fan as the capture records it into `tris` (replaced); false for fewer than three points or a texture with no material.
+bool PreparePoly(FTexture *tex, const FVector2 *points, int npoints, double originx, double originy, double scalex, double scaley,
+	angle_t rotation, FDynamicColormap *colormap, int lightlevel, PolyDraw &draw, std::vector<zx::hwrender::Quad2D> &tris);
+
 }} // namespace zx::draw2d
 
 #endif // ZX_DRAW2D_H

@@ -16,6 +16,12 @@
 #include "features/hwrender/spriteview.h"
 #include "features/materials/materials.h"
 #include "computation/psprite_overlay_compute.h"
+#include "features/sprites/modelbuild.h"                           // [rc4l] CaptureModelFrames, a HUD model's surfaces
+#include "features/sprites/computation/modelpose_compute.h"        // [rc4l] ComputeHUDModelMatrix
+#include "features/levelmesh/modelmesh.h"                          // [rc4l] the model capture
+#include "features/levelmesh/computation/flatmesh_compute.h"       // [rc4l] ComputeStyleBlendMode
+#include "gl/models/gl_models.h"                                   // [rc4l] gl_FindModelFrame, FSpriteModelFrame
+#include "p_pspr.h"                                                // [rc4l] WEAPONTOP
 
 #include "sbar.h"
 #include "r_state.h"
@@ -120,6 +126,38 @@ void LayerQuad(player_t *player, pspdef_t *psp, fixed_t sx, fixed_t sy, int tran
 }
 
 // [rc4l] Every field the backend draws from, bit for bit; the window a quad is for is stamped later and left out.
+// [rc4l] gl_RenderHUDModel for one layer: the layer's model frame, when MODELDEF gives it one, captured over the world in the layer's colour and dynamic light and without fog, as GL draws it after clearing the depth buffer.
+void HUDModelLayer(player_t *player, pspdef_t *psp, fixed_t sx, fixed_t sy, const float rgba[4], const float dyn[3], const FRenderStyle &style)
+{
+	const PClass *weapon = player->ReadyWeapon->GetClass();
+	FSpriteModelFrame *smf = gl_FindModelFrame(weapon, psp->state->sprite, psp->state->GetFrame(), false);
+	if (smf == NULL) return;
+	const HUDModelPose pose = { { smf->xscale, smf->zscale, smf->yscale },
+		{ smf->xoffset / smf->xscale, smf->zoffset / smf->zscale, smf->yoffset / smf->yscale },
+		FIXED2FLOAT(sx), FIXED2FLOAT(sy - WEAPONTOP), float(double(smf->angleoffset) * 180. / ANGLE_180), smf->pitchoffset, smf->rolloffset };
+	float eye[16], toMesh[16];
+	ComputeHUDModelMatrix(pose, eye);
+	zx::hwrender::BackendCamera cam = {};
+	zx::hwrender::ViewCameraFromEngine(cam);
+	if (!zx::hwrender::ComputeEyeToMesh(cam, eye, toMesh)) return;
+	FColormap none;
+	none.Clear();
+	zx::levelmesh::MeshPiece look;
+	const int blend = zx::levelmesh::ComputeStyleBlendMode(style.BlendOp == STYLEOP_Shadow, style.BlendOp == STYLEOP_Add && style.DestAlpha == STYLEALPHA_One, rgba[3]);
+	// [rc4l] Sorted at the eye, so a translucent one is drawn last.
+	zx::levelmesh::ModelPieceLook(255, 0, none, false, dyn, 0xffffff, rgba[3], blend, cam.x, cam.y, cam.z, look);
+	look.colorR = rgba[0];
+	look.colorG = rgba[1];
+	look.colorB = rgba[2];
+	look.softLight = -1.f;
+	look.fogDensity = 0.f;
+	look.fogMode = 0;
+	look.hud = true;
+	zx::levelmesh::ModelCaptureBeginDerived(look, toMesh, player->mo, false);
+	CaptureModelFrames(smf, psp->state, psp->tics, weapon, 0);
+	zx::levelmesh::ModelCaptureEnd();
+}
+
 bool SameQuad(const zx::hwrender::Quad2D &a, const zx::hwrender::Quad2D &b)
 {
 	const float fa[] = { a.x, a.y, a.w, a.h, a.u1, a.v1, a.u2, a.v2, a.r, a.g, a.b, a.a, a.lx2, a.ly2 };
@@ -150,7 +188,7 @@ bool PSpritesOwned()
 	return fua_psprites_own && !fua_psprite_check;
 }
 
-void BuildPlayerSprites(sector_t *viewsector, int viewArea, fixed_t bobX, fixed_t bobY)
+void BuildPlayerSprites(sector_t *viewsector, int viewArea, fixed_t bobX, fixed_t bobY, bool hudModels)
 {
 	if (!fua_psprites_own && !fua_psprite_check) return;
 	AActor *playermo = players[consoleplayer].camera;
@@ -299,18 +337,20 @@ void BuildPlayerSprites(sector_t *viewsector, int viewArea, fixed_t bobX, fixed_
 			drawsx = psp->oldx + FixedMul(psp->sx - psp->oldx, r_TicFrac);
 			drawsy = psp->oldy + FixedMul(psp->sy - psp->oldy, r_TicFrac);
 		}
-		LayerQuad(player, psp, drawsx + fixed_t::FromRaw(addxRaw), drawsy + fixed_t::FromRaw(addyRaw), LayerTranslation(player, psp), rgba, dyn,
+		const fixed_t layerx = drawsx + fixed_t::FromRaw(addxRaw), layery = drawsy + fixed_t::FromRaw(addyRaw);
+		if (hudModels) HUDModelLayer(player, psp, layerx, layery, rgba, dyn, layerStyle);
+		else LayerQuad(player, psp, layerx, layery, LayerTranslation(player, psp), rgba, dyn,
 			zx::draw2d::ComputeQuadBlend(layerStyle.BlendOp, layerStyle.DestAlpha), zx::draw2d::ComputeTextureMode(layerStyle.Flags, false));
 	}
 }
 
-void BuildPlayerSpritesBobbed(sector_t *viewsector, int viewArea)
+void BuildPlayerSpritesBobbed(sector_t *viewsector, int viewArea, bool hudModels)
 {
 	player_t *player = WeaponPlayer();
 	if (player == NULL) return;
 	fixed_t bobX, bobY;
 	P_BobWeapon(player, &player->psprites[ps_weapon], &bobX, &bobY);
-	BuildPlayerSprites(viewsector, viewArea, bobX, bobY);
+	BuildPlayerSprites(viewsector, viewArea, bobX, bobY, hudModels);
 }
 
 void BuildTargeterSprites(AActor *viewActor)

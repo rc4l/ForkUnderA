@@ -8,6 +8,12 @@
 #include "features/frame/levelrenderer.h"
 #include "features/frame/playerview.h"
 #include "features/viewsetup/viewsetup.h"   // [rc4l] InstallSpriteView
+#include "features/draw2d/screenblend.h"     // [rc4l] the screen's tint over the save picture
+#include "features/draw2d/computation/screenblend_compute.h"
+#include "templates.h"                       // [rc4l] clamp, which gl_lightdata.h uses without including
+#include "gl/renderer/gl_lightdata.h"        // [rc4l] gl_fixedcolormap
+#include "gl/renderer/gl_renderer.h"         // [rc4l] in_area
+#include "r_utility.h"                       // [rc4l] viewsector, FieldOfView
 
 #include "d_player.h"
 #include "m_png.h"
@@ -21,10 +27,28 @@ struct FBackendRenderer : public zx::frame::FLevelRenderer
 	// [rc4l] Textures go to the backend as it first draws them, so there is nothing to warm.
 	void PrecacheTexture(FTexture *, int) {}
 
-	void RenderView(player_t *player) { zx::frame::RenderPlayerView(player, zx::hwrender::BackendPaletteBrightness()); }
+	void RenderView(player_t *player)
+	{
+		zx::hwrender::SettleLevelScene();
+		zx::frame::RenderPlayerView(player, zx::hwrender::BackendPaletteBrightness());
+	}
 
-	// [rc4l] No picture of the view yet: the save is written with the placeholder the software path writes when it has none.
-	void WriteSavePic(player_t *, FILE *file, int, int) { M_CreateDummyPNG(file); }
+	// [rc4l] The player's view drawn at the picture's size with the screen's tint over it, as GL's WriteSavePic draws it; the placeholder only when there is no scene.
+	void WriteSavePic(player_t *, FILE *file, int width, int height)
+	{
+		unsigned char *rgb = zx::hwrender::RenderSavePicture(width, height, FieldOfView * 360.0f / FINEANGLES);
+		if (rgb == NULL)
+		{
+			M_CreateDummyPNG(file);
+			return;
+		}
+		zx::draw2d::ScreenFill fills[2];
+		const int n = zx::draw2d::ScreenBlends(viewsector, in_area, gl_fixedcolormap != 0, zx::hwrender::BackendPaletteBrightness(), fills);
+		for (int i = 0; i < n; i++)
+			zx::draw2d::ComputeApplyScreenFill(fills[i].r, fills[i].g, fills[i].b, fills[i].a, fills[i].multiply, rgb, width * height);
+		M_CreatePNG(file, rgb, NULL, SS_RGB, width, height, width * 3);
+		delete[] rgb;
+	}
 
 	// [rc4l] A camera texture is the backend's own view into its own target, as GL's RenderTextureView hands it over.
 	void RenderTextureView(FCanvasTexture *tex, AActor *viewpoint, int fov)

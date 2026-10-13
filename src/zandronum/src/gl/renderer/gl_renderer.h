@@ -75,7 +75,9 @@ public:
 	FFlatVertexBuffer *mVBO;
 	FSkyVertexBuffer *mSkyVBO;
 	FLightBuffer *mLights;
-	std::vector<zx::hwrender::Quad2D> mFlatTiles;   // [rc4l] FlatFill's tiles for the 2D capture, kept so a fill settles at its high-water mark
+	std::vector<zx::hwrender::Quad2D> mFlatTiles;
+	zx::draw2d::PolyDraw mPoly;                  // [rc4l] FillSimplePoly's points and texture coordinates, worked out by features/draw2d
+	std::vector<zx::hwrender::Quad2D> mPolyTris;   // [rc4l] and its fan for the 2D capture   // [rc4l] FlatFill's tiles for the 2D capture, kept so a fill settles at its high-water mark
 
 
 	FGLRenderer(OpenGLFrameBuffer *fb);

@@ -55,3 +55,10 @@ TEST(StandaloneBake, ArmedOnceThenSettledAfterABakeAndAnUpload)
 	EXPECT_FALSE(b.baked);
 	EXPECT_TRUE(ComputeStandaloneBakeStep(b, true, true));
 }
+
+TEST(StandaloneBake, WithoutGLItSettlesTheFrameItArms)
+{
+	StandaloneBake b = { false, 0 };
+	EXPECT_TRUE(ComputeStandaloneBakeStep(b, true, true, 0));
+	EXPECT_TRUE(b.baked);
+}

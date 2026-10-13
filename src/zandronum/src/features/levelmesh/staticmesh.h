@@ -149,6 +149,7 @@ struct MeshPiece
 	bool          stencil;
 	// [rc4l] A sprite GL alpha-tests at gl_mask_sprite_threshold, which drops its soft edge texels rather than blending them.
 	bool          alphaTest;
+	bool          hud;          // [rc4l] a HUD model's surface, drawn over the world as GL draws one after clearing the depth buffer
 
 	// [rc4l] This piece is a QUAD: four corners, not six vertices.
 	//
@@ -191,7 +192,7 @@ struct MeshPiece
 		normX = normY = normZ = 0.f;
 		dynR = dynG = dynB = 0.f;
 		quad = false; solid = false;
-		facesDown = false; depthBias = false; redToAlpha = false; stencil = false; alphaTest = false;
+		facesDown = false; depthBias = false; redToAlpha = false; stencil = false; alphaTest = false; hud = false;
 		flood = false; floodZ = 0.f;
 		mirrorSector = -1; mirrorCeiling = false;
 		scrollU = scrollV = 0.f;

@@ -6,6 +6,7 @@
 #include "features/levelmesh/levelmesh.h"   // [rc4l] LightListBottom
 #include "features/hwrender/computation/lighttouch_compute.h"   // [rc4l] ComputeDynLightColor
 #include "features/frame/computation/oracle_compute.h"   // [rc4l] OracleTally
+#include "features/jobs/jobs.h"   // [rc4l] the pool BuildSprites derives on
 
 #include "features/sprites/computation/spritestyle_compute.h"
 #include "features/sprites/computation/spritequad_compute.h"
@@ -335,8 +336,8 @@ static void DeriveModel(AActor *thing, const Subject &s, const Look &l, bool che
 	zx::levelmesh::ModelCaptureEnd();
 }
 
-// [rc4l] Derive an actor's sprite as GLSprite::Process, Draw and RegisterSprite do: the pieces drawn, 0 for none.
-static int DeriveSprite(AActor *thing, const Subject &s, SpritePiece *out, int max)
+// [rc4l] Derive an actor's sprite as GLSprite::Process, Draw and RegisterSprite do: the pieces drawn, 0 for none; on a worker thread (`lane`), -1 when its material is not made yet, which only the game thread may do.
+static int DeriveSprite(AActor *thing, const Subject &s, SpritePiece *out, int max, bool lane = false)
 {
 	const zx::hwrender::SpriteViewProvider &view = zx::hwrender::SpriteView();
 	const int spritenum = s.spritenum;
@@ -355,7 +356,9 @@ static int DeriveSprite(AActor *thing, const Subject &s, SpritePiece *out, int m
 	const int type = thing->renderflags & RF_SPRITETYPEMASK;
 	// [rc4l] A floor sprite leaves GL's quad unset, so it is not drawn here either.
 	if (type != RF_FACESPRITE && type != RF_WALLSPRITE) return 0;
-	const void *material = zx::materials::MaterialForTexture(TexMan[patch], type == RF_FACESPRITE);
+	zx::materials::MaterialRef material = NULL;
+	if (!lane) material = zx::materials::MaterialForTexture(TexMan[patch], type == RF_FACESPRITE);
+	else if (!zx::materials::MaterialIfMade(TexMan[patch], type == RF_FACESPRITE, material)) return -1;
 	zx::materials::SpriteFrameInfo fi;
 	if (!zx::materials::MaterialSpriteFrame(material, fi)) return 0;
 
@@ -737,6 +740,76 @@ bool BuildSprite(AActor *thing)
 	if (!zx::levelmesh::DynamicCaptureActive()) return true;
 	for (int i = 0; i < n; i++) zx::levelmesh::DynAppend(pieces[i].quad, 4, pieces[i].piece);
 	return true;
+}
+
+// [rc4l] An actor a lane derived: its pieces in the lane's list, or that the game thread derives it.
+struct LaneSprite
+{
+	int first, count;
+	bool onGameThread;
+};
+
+// [rc4l] One chunk of a batch's actors, derived on a lane.
+struct SpriteChunk
+{
+	std::vector<SpritePiece> pieces;
+	std::vector<LaneSprite> sprites;
+};
+
+static std::vector<SpriteChunk> g_spriteChunks;
+// [rc4l] Actors a lane derives at a time: enough that a chunk outweighs taking it, few enough to spread a frame's actors.
+static const int kSpriteChunk = 32;
+
+static void DeriveChunk(AActor *const *things, int count, int chunk)
+{
+	SpriteChunk &c = g_spriteChunks[chunk];
+	c.pieces.clear();
+	c.sprites.clear();
+	const int end = (chunk + 1) * kSpriteChunk < count ? (chunk + 1) * kSpriteChunk : count;
+	for (int i = chunk * kSpriteChunk; i < end; i++)
+	{
+		LaneSprite ls = { (int)c.pieces.size(), 0, false };
+		Subject s;
+		if (SubjectOf(things[i], s))
+		{
+			if (s.model != NULL) ls.onGameThread = true;
+			else
+			{
+				c.pieces.resize(ls.first + kMaxBands);
+				const int n = DeriveSprite(things[i], s, &c.pieces[ls.first], kMaxBands, true);
+				ls.onGameThread = n < 0;
+				ls.count = n < 0 ? 0 : n;
+				c.pieces.resize(ls.first + ls.count);
+			}
+		}
+		c.sprites.push_back(ls);
+	}
+}
+
+void BuildSprites(AActor *const *things, int count)
+{
+	if (count <= 0) return;
+	const int chunks = (count + kSpriteChunk - 1) / kSpriteChunk;
+	if ((int)g_spriteChunks.size() < chunks) g_spriteChunks.resize(chunks);
+	struct Derive
+	{
+		AActor *const *things;
+		int count;
+		void operator()(int chunk, int) const { DeriveChunk(things, count, chunk); }
+	} derive = { things, count };
+	zx::jobs::Pool().ParallelFor(chunks, derive);
+	const bool capture = zx::levelmesh::DynamicCaptureActive();
+	for (int c = 0; c < chunks; c++)
+	{
+		const SpriteChunk &chunk = g_spriteChunks[c];
+		for (size_t k = 0; k < chunk.sprites.size(); k++)
+		{
+			const LaneSprite &ls = chunk.sprites[k];
+			if (ls.onGameThread) BuildSprite(things[c * kSpriteChunk + (int)k]);
+			else if (capture)
+				for (int i = 0; i < ls.count; i++) zx::levelmesh::DynAppend(chunk.pieces[ls.first + i].quad, 4, chunk.pieces[ls.first + i].piece);
+		}
+	}
 }
 
 bool BuildParticle(particle_t *particle, sector_t *sector)

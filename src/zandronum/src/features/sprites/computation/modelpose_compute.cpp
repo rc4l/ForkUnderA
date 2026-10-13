@@ -97,6 +97,20 @@ void ComputeModelMatrix(const ModelPose &p, float out[16])
 	Scale(out, 1, p.stretch, 1);
 }
 
+void ComputeHUDModelMatrix(const HUDModelPose &p, float out[16])
+{
+	Identity(out);
+	Scale(out, p.scale[0], p.scale[1], p.scale[2]);
+	Translate(out, p.offset[0], p.offset[1], p.offset[2]);
+	// [rc4l] The weapon's bob, like Doom's; then the quarter turn the jDoom models need, then the model's own.
+	Rotate(out, p.bobX / 4, 0, 1, 0);
+	Rotate(out, -p.bobY / 4, 1, 0, 0);
+	Rotate(out, 90.f, 0, 1, 0);
+	Rotate(out, -p.angleOffset, 0, 1, 0);
+	Rotate(out, p.pitchOffset, 0, 0, 1);
+	Rotate(out, -p.rollOffset, 1, 0, 0);
+}
+
 float ComputeMomentumPitch(double x, double y, double z, float angle)
 {
 	float pitch = 0;

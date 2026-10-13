@@ -36,12 +36,21 @@ int BackendMaxTextureSize();
 
 // [rc4l] The engine drew a view of the world this frame, which the present draws under the 2D layer.
 void NoteWorldView();
+// [rc4l] Step the level's set-up through at once before its first view, which a launch without GL can since the map bakes the level whole, so that view, and a wipe's new screen, are drawn rather than black.
+void SettleLevelScene();
 
 // [rc4l] Advance the level's scene, and with `present` draw and present the frame: the world when a view of it was drawn and the level is baked, else the 2D layer alone.
 void PresentBackendOnly(bool present);
 
 // [rc4l] The last presented frame drawn again and read back, as top-down RGB the caller deletes; NULL when there is no device.
 unsigned char *ReadBackendFrame(int &width, int &height);
+// [rc4l] The player's last view as a w by h savegame picture, `fovDeg` across, read back as top-down RGB the caller deletes; NULL when the scene is not up.
+unsigned char *RenderSavePicture(int w, int h, float fovDeg);
+// [rc4l] The screen wipe: the last frame kept as the old screen (false for a type there is none of), this frame drawn and kept as the new one with its 2D dropped, a tic's mix drawn under the 2D from then on (true once done), and the end of it.
+bool WipeStart(int type);
+void WipeEnd();
+bool WipeTic(int ticks);
+void WipeCleanup();
 
 }} // namespace zx::hwrender
 

@@ -3,6 +3,7 @@
 
 #include "features/draw2d/computation/quad2d_compute.h"
 
+#include <math.h>
 #include <string.h>
 
 namespace zx { namespace draw2d {
@@ -41,6 +42,46 @@ zx::hwrender::Quad2D ComputeScreenFillQuad(float w, float h, float r, float g, f
 	q.r = r; q.g = g; q.b = b;
 	q.blend = multiply ? kBlend2DMultiply : kBlend2DAlpha;
 	return q;
+}
+
+void ComputePolyTexCoords(const PolyTexIn &in, const float *points, int count, float *uv)
+{
+	// [rc4l] As GL works them, in float from the turn's radians on.
+	const float rot = float(in.rotation * 3.14159265358979323846 / float(1u << 31));
+	const bool rotate = rot != 0;
+	const float cosrot = cosf(rot), sinrot = sinf(rot);
+	const float uscale = float(1.f / (in.textureWidth * in.scaleX));
+	float vscale = float(1.f / (in.textureHeight * in.scaleY));
+	if (in.canvas) vscale = 0 - vscale;
+	const float ox = float(in.originX), oy = float(in.originY);
+	for (int i = 0; i < count; i++)
+	{
+		float u = points[2 * i] - 0.5f - ox;
+		float v = points[2 * i + 1] - 0.5f - oy;
+		if (rotate)
+		{
+			const float t = u;
+			u = t * cosrot - v * sinrot;
+			v = v * cosrot + t * sinrot;
+		}
+		uv[2 * i] = u * uscale;
+		uv[2 * i + 1] = v * vscale;
+	}
+}
+
+void ComputePolyTriangles(const zx::hwrender::Quad2D &base, const float *points, const float *uv, int count, std::vector<zx::hwrender::Quad2D> &out)
+{
+	out.clear();
+	// [rc4l] GL draws it as a fan from the first point.
+	for (int i = 1; i + 1 < count; i++)
+	{
+		zx::hwrender::Quad2D q = base;
+		q.kind = kQuadTri;
+		q.x = points[0];              q.y = points[1];              q.u1 = uv[0];            q.v1 = uv[1];
+		q.lx2 = points[2 * i];        q.ly2 = points[2 * i + 1];    q.u2 = uv[2 * i];        q.v2 = uv[2 * i + 1];
+		q.x3 = points[2 * i + 2];     q.y3 = points[2 * i + 3];     q.u3 = uv[2 * i + 2];    q.v3 = uv[2 * i + 3];
+		out.push_back(q);
+	}
 }
 
 bool ComputeDrawColorDirect(int palcolor, unsigned color)

@@ -10,6 +10,12 @@ long long ComputeFlatPlaneHeight(bool floor, long long d)
 	return floor ? -d : d;
 }
 
+bool ComputeEyeBelowTransfer(long long ceiling1, long long ceiling2, long long transferFloor1, long long transferFloor2)
+{
+	const long long tolerance = 65536 / 100;
+	return ceiling1 <= transferFloor1 + tolerance && ceiling2 <= transferFloor2 + tolerance;
+}
+
 bool ComputeLineCloses(const ClosedLineIn &in)
 {
 	if (in.stacked) return false;

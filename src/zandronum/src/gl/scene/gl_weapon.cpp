@@ -300,8 +300,8 @@ void FGLRenderer::DrawPlayerSprites(sector_t * viewsector, bool hudModelStep)
 		return;
 
 	P_BobWeapon (player, &player->psprites[ps_weapon], &ofsx, &ofsy);
-	// [rc4l] features/sprites derives the weapon from the same bob, since P_BobWeapon smooths it a step per call.
-	if (!hudModelStep) zx::sprites::BuildPlayerSprites(viewsector, in_area, ofsx, ofsy);
+	// [rc4l] features/sprites derives the weapon from the same bob, since P_BobWeapon smooths it a step per call, as a HUD model on the HUD model step.
+	zx::sprites::BuildPlayerSprites(viewsector, in_area, ofsx, ofsy, hudModelStep);
 
 	// [overlay] Collect the weapon-pass layers (everything below the targeter) in ascending
 	// draw order, and compute each layer's fullbright exactly as the old statebright[] did.

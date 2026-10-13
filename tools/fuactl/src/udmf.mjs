@@ -1,6 +1,7 @@
 // [rc4l] A small UDMF map writer, so a regression carries its own level and needs only an IWAD -- the engine builds the nodes.
 import { THING } from "./doomnums.mjs";
 import { Buffer } from "node:buffer";
+import zlib from "node:zlib";
 
 // [rc4l] A float written bare with its point, since UDMF refuses a quoted number.
 class Float {
@@ -166,6 +167,63 @@ export function readWad(buf) {
     const e = dir + 16 * i;
     const pos = buf.readInt32LE(e), size = buf.readInt32LE(e + 4);
     out.push({ name: buf.toString("latin1", e + 8, e + 16).replace(/\0.*$/, ""), data: buf.subarray(pos, pos + size) });
+  }
+  return out;
+}
+
+// [rc4l] A pk3 from files by path ({ name, data }), stored rather than deflated: what MODELDEF needs, since it finds a model by full path and a wad's lumps have none.
+export function pk3(files) {
+  const datas = files.map((f) => (Buffer.isBuffer(f.data) ? f.data : Buffer.from(f.data || "", "latin1")));
+  const names = files.map((f) => Buffer.from(f.name, "latin1"));
+  const locals = [], central = [];
+  let at = 0;
+  files.forEach((f, i) => {
+    const crc = zlib.crc32(datas[i]);
+    // [rc4l] The fields a local header and its central directory entry share, from the version needed on: 1980-01-01, no flags, method 0.
+    const common = Buffer.alloc(26);
+    common.writeUInt16LE(20, 0);
+    common.writeUInt16LE(0x21, 8);
+    common.writeUInt32LE(crc, 10);
+    common.writeUInt32LE(datas[i].length, 14);
+    common.writeUInt32LE(datas[i].length, 18);
+    common.writeUInt16LE(names[i].length, 22);
+    const local = Buffer.alloc(4);
+    local.writeUInt32LE(0x04034b50, 0);
+    locals.push(local, common, names[i], datas[i]);
+    const entry = Buffer.alloc(46);
+    entry.writeUInt32LE(0x02014b50, 0);
+    entry.writeUInt16LE(20, 4);
+    common.copy(entry, 6);
+    entry.writeUInt32LE(at, 42);
+    central.push(entry, names[i]);
+    at += 30 + names[i].length + datas[i].length;
+  });
+  const dir = Buffer.concat(central);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(files.length, 8);
+  end.writeUInt16LE(files.length, 10);
+  end.writeUInt32LE(dir.length, 12);
+  end.writeUInt32LE(at, 16);
+  return Buffer.concat([...locals, dir, end]);
+}
+
+// [rc4l] A stored pk3's files in directory order, as { name, data }, each checked against its CRC; pk3() written backwards.
+export function readPk3(buf) {
+  const endAt = buf.length - 22;
+  if (endAt < 0 || buf.readUInt32LE(endAt) !== 0x06054b50) throw new Error("not a pk3: no end of central directory");
+  const count = buf.readUInt16LE(endAt + 10);
+  let e = buf.readUInt32LE(endAt + 16);
+  const out = [];
+  for (let i = 0; i < count; i++) {
+    const nameLen = buf.readUInt16LE(e + 28), crc = buf.readUInt32LE(e + 16), size = buf.readUInt32LE(e + 20);
+    const name = buf.toString("latin1", e + 46, e + 46 + nameLen);
+    const local = buf.readUInt32LE(e + 42);
+    const start = local + 30 + buf.readUInt16LE(local + 26) + buf.readUInt16LE(local + 28);
+    const data = buf.subarray(start, start + size);
+    if (zlib.crc32(data) !== crc) throw new Error(`${name}: CRC mismatch`);
+    out.push({ name, data });
+    e += 46 + nameLen;
   }
   return out;
 }

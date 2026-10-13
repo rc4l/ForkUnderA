@@ -16,6 +16,7 @@
 #include "RefCntAutoPtr.hpp"
 
 #include "features/hwrender/diligent/dgshared.h"
+#include "features/hwrender/computation/backendview_compute.h"   // [rc4l] ComputeInvertMatrix4
 #include "features/levelmesh/projdecals.h"
 
 #include "r_defs.h"                  // sector_t
@@ -562,7 +563,7 @@ void DrawDeferredDecals(Diligent::IDeviceContext *ctx)
 	if (!normalSRV) { g_ddBail = "no scene normal"; return; }
 
 	float invMVP[16];
-	if (!InvertMatrix4(SceneMVP(), invMVP)) { g_ddBail = "view matrix not invertible"; return; }
+	if (!ComputeInvertMatrix4(SceneMVP(), invMVP)) { g_ddBail = "view matrix not invertible"; return; }
 	{
 		Diligent::MapHelper<float> cb(ctx, g_ddCB, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD);
 		for (int i = 0; i < 16; i++) cb[i] = invMVP[i];
@@ -746,8 +747,7 @@ void DrawDeferredDecals(Diligent::IDeviceContext *ctx)
 		&all[0], Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
 	// The depth buffer comes off the render target for this pass -- it is being READ.
-	auto *swap = GetSwapChain();
-	Diligent::ITextureView *rtv = swap ? swap->GetCurrentBackBufferRTV() : NULL;
+	Diligent::ITextureView *rtv = GetSwapChain() ? FrameRTV() : NULL;
 	if (rtv) ctx->SetRenderTargets(1, &rtv, NULL, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
 	// [rc4l] TWO draws for the whole level, whatever it is wearing.

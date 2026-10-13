@@ -59,6 +59,7 @@
 #include "gl/textures/gl_samplers.h"
 #include "gl/utility/gl_templates.h"
 #include "gl/data/gl_vertexbuffer.h"
+#include "features/wipe/computation/wipe_compute.h"   // [rc4l] the melt, crossfade and burn mask, shared with the backend
 
 #ifndef _WIN32
 struct POINT {
@@ -98,8 +99,7 @@ public:
 	bool Run(int ticks, OpenGLFrameBuffer *fb);
 
 private:
-	static const int WIDTH = 320, HEIGHT = 200;
-	int y[WIDTH];
+	int y[zx::wipe::kMeltColumns];
 };
 
 class OpenGLFrameBuffer::Wiper_Burn : public OpenGLFrameBuffer::Wiper
@@ -112,6 +112,7 @@ public:
 private:
 	static const int WIDTH = 64, HEIGHT = 64;
 	BYTE BurnArray[WIDTH * (HEIGHT + 5)];
+	BYTE BurnMask[WIDTH * HEIGHT];
 	FHardwareTexture *BurnTexture;
 	int Density;
 	int BurnTime;
@@ -302,7 +303,7 @@ bool OpenGLFrameBuffer::Wiper_Crossfade::Run(int ticks, OpenGLFrameBuffer *fb)
 	GLRenderer->mVBO->RenderCurrent(ptr, GL_TRIANGLE_STRIP, &offset, &count);
 
 	fb->wipeendscreen->Bind(0, 0, false);
-	gl_RenderState.SetColorAlpha(0xffffff, clamp(Clock/32.f, 0.f, 1.f));
+	gl_RenderState.SetColorAlpha(0xffffff, zx::wipe::ComputeCrossfadeAlpha(Clock));
 	gl_RenderState.Apply();
 	GLRenderer->mVBO->RenderArray(GL_TRIANGLE_STRIP, offset, count);
 	gl_RenderState.AlphaFunc(GL_GEQUAL, 0.5f);
@@ -319,16 +320,10 @@ bool OpenGLFrameBuffer::Wiper_Crossfade::Run(int ticks, OpenGLFrameBuffer *fb)
 
 OpenGLFrameBuffer::Wiper_Melt::Wiper_Melt()
 {
-	int i, r;
-
-	// setup initial column positions
-	// (y<0 => not ready to scroll yet)
-	y[0] = -(M_Random() & 15);
-	for (i = 1; i < WIDTH; ++i)
-	{
-		r = (M_Random()%3) - 1;
-		y[i] = clamp(y[i-1] + r, -15, 0);
-	}
+	// [rc4l] One random byte a column, drawn in the order the columns were.
+	unsigned char randoms[zx::wipe::kMeltColumns];
+	for (int i = 0; i < zx::wipe::kMeltColumns; ++i) randoms[i] = (unsigned char)M_Random();
+	zx::wipe::ComputeMeltStart(randoms, y);
 }
 
 //==========================================================================
@@ -361,60 +356,32 @@ bool OpenGLFrameBuffer::Wiper_Melt::Run(int ticks, OpenGLFrameBuffer *fb)
 	ptr++;
 	GLRenderer->mVBO->RenderCurrent(ptr, GL_TRIANGLE_STRIP);
 
-	int i, dy;
 	bool done = false;
+	const bool ticked = ticks > 0;
 
 	fb->wipestartscreen->Bind(0, 0, false);
+	// [rc4l] features/wipe moves the columns; only the final tick is drawn, as before.
+	while (ticks--) done = zx::wipe::ComputeMeltTic(y);
 	// Copy the old screen in vertical strips on top of the new one.
-	while (ticks--)
+	for (int i = 0; ticked && i < zx::wipe::kMeltColumns; i++)
 	{
-		done = true;
-		for (i = 0; i < WIDTH; i++)
-		{
-			if (y[i] < 0)
-			{
-				y[i]++;
-				done = false;
-			} 
-			else if (y[i] < HEIGHT)
-			{
-				dy = (y[i] < 16) ? y[i]+1 : 8;
-				y[i] = MIN(y[i] + dy, HEIGHT);
-				done = false;
-			}
-			if (ticks == 0)
-			{ 
-				// Only draw for the final tick.
-				// No need for optimization. Wipes won't ever be drawn with anything else.
-				RECT rect;
-				POINT dpt;
+		zx::wipe::MeltStrip strip;
+		if (!zx::wipe::ComputeMeltStrip(i, y[i], fb->Width, fb->Height, strip)) continue;
+		// [rc4l] The strip in GL's rows, which count up from the bottom of the screen texture.
+		const float tw = (float)FHardwareTexture::GetTexDimension(fb->Width);
+		const float th = (float)FHardwareTexture::GetTexDimension(fb->Height);
+		const float left = strip.x, right = strip.x + strip.w, bottom = strip.y, top = (float)fb->Height;
 
-				dpt.x = i * fb->Width / WIDTH;
-				dpt.y = MAX(0, y[i] * fb->Height / HEIGHT);
-				rect.left = dpt.x;
-				rect.top = 0;
-				rect.right = (i + 1) * fb->Width / WIDTH;
-				rect.bottom = fb->Height - dpt.y;
-				if (rect.bottom > rect.top)
-				{
-					float tw = (float)FHardwareTexture::GetTexDimension(fb->Width);
-					float th = (float)FHardwareTexture::GetTexDimension(fb->Height);
-					rect.bottom = fb->Height - rect.bottom;
-					rect.top = fb->Height - rect.top;
-
-					ptr = GLRenderer->mVBO->GetBuffer();
-					ptr->Set(rect.left, rect.bottom, 0, rect.left / tw, rect.top / th);
-					ptr++;
-					ptr->Set(rect.left, rect.top, 0, rect.left / tw, rect.bottom / th);
-					ptr++;
-					ptr->Set(rect.right, rect.bottom, 0, rect.right / tw, rect.top / th);
-					ptr++;
-					ptr->Set(rect.right, rect.top, 0, rect.right / tw, rect.bottom / th);
-					ptr++;
-					GLRenderer->mVBO->RenderCurrent(ptr, GL_TRIANGLE_STRIP);
-				}
-			}
-		}
+		ptr = GLRenderer->mVBO->GetBuffer();
+		ptr->Set(left, bottom, 0, left / tw, top / th);
+		ptr++;
+		ptr->Set(left, top, 0, left / tw, bottom / th);
+		ptr++;
+		ptr->Set(right, bottom, 0, right / tw, top / th);
+		ptr++;
+		ptr->Set(right, top, 0, right / tw, bottom / th);
+		ptr++;
+		GLRenderer->mVBO->RenderCurrent(ptr, GL_TRIANGLE_STRIP);
 	}
 	gl_RenderState.SetTextureMode(TM_MODULATE);
 	return done;
@@ -476,16 +443,9 @@ bool OpenGLFrameBuffer::Wiper_Burn::Run(int ticks, OpenGLFrameBuffer *fb)
 	// Update the burn texture with the new burn data
 	BYTE rgb_buffer[WIDTH*HEIGHT*4];
 
-	const BYTE *src = BurnArray;
+	zx::wipe::ComputeBurnMask(BurnArray, WIDTH * HEIGHT, BurnMask);
 	DWORD *dest = (DWORD *)rgb_buffer;
-	for (int y = HEIGHT; y != 0; --y)
-	{
-		for (int x = WIDTH; x != 0; --x)
-		{
-			BYTE s = clamp<int>((*src++)*2, 0, 255);
-			*dest++ = MAKEARGB(s,255,255,255);
-		}
-	}
+	for (int i = 0; i < WIDTH * HEIGHT; i++) *dest++ = MAKEARGB(BurnMask[i], 255, 255, 255);
 
 	float ur = fb->GetWidth() / FHardwareTexture::GetTexDimension(fb->GetWidth());
 	float vb = fb->GetHeight() / FHardwareTexture::GetTexDimension(fb->GetHeight());

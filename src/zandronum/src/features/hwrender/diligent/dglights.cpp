@@ -327,9 +327,7 @@ void BuildLightClusters(Diligent::IDeviceContext *ctx)
 	g_clusterTruncated = 0;
 	if (!fua_dg_clusters || !g_clusterBuf || !g_lightIndexBuf || g_lightCount <= 0) return;
 
-	auto *swap = GetSwapChain();
-	if (swap == NULL) return;
-	const auto &sd = swap->GetDesc();
+	if (GetSwapChain() == NULL) return;
 
 	// [rc4l] The slice range is the CLUSTER far plane, not the projection's.
 	//
@@ -338,7 +336,7 @@ void BuildLightClusters(Diligent::IDeviceContext *ctx)
 	// last slice, which is correct rather than approximate: a light 8000 units away is not lighting
 	// you either way.
 	const zx::hwrender::ClusterGrid grid =
-		zx::hwrender::ComputeGridForScreen((int)sd.Width, (int)sd.Height,
+		zx::hwrender::ComputeGridForScreen(FrameWidth(), FrameHeight(),
 			zx::hwrender::kClusterZNear, zx::hwrender::kClusterZFar);
 	const int cells = zx::hwrender::ComputeClusterCount(grid);
 	if (cells <= 0 || (unsigned)cells > g_clusterCapacity) return;

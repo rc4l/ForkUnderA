@@ -172,7 +172,7 @@ struct ScenePieceData
 	float actorR, actorG, actorB, cpuLight;
 	// [rc4l] The slot holding this material's brightmap in the bindless array (0 for none), the piece's PieceStackId plus one (0 for a sprite or model, never culled), 1 when both slots go through SlotRemap, and 1 when GL draws it unmasked so no texel is discarded.
 	float brightSlot, stackId, animates, plain;
-	float desaturation, scrollU, scrollV, texFlags;   // [rc4l] the colormap's desaturation, 0..1, which main.fp mixes every texel toward grey by, the texture shift a scroller added since the bake, and 1 for a stencil plus 2 for an alpha-tested sprite
+	float desaturation, scrollU, scrollV, texFlags;   // [rc4l] the colormap's desaturation, 0..1, which main.fp mixes every texel toward grey by, the texture shift a scroller added since the bake, and 1 for a stencil plus 2 for an alpha-tested sprite plus 4 for a HUD model's surface
 };
 
 // [rc4l] One draw per material. Pieces arrive in bake order, so they are sorted by material first;
@@ -292,7 +292,6 @@ struct ScenePipelines
 	Diligent::RefCntAutoPtr<Diligent::IPipelineState> maskedDecal, transDecal, addDecal;
 	// [rc4l] And the alpha-mask variants of the same, for shaded decals. See kScenePSRedAlpha.
 	Diligent::RefCntAutoPtr<Diligent::IPipelineState> transRedAlpha, addRedAlpha;
-	Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding> srb, srbMasked;
 };
 extern ScenePipelines g_pso;
 
@@ -347,6 +346,12 @@ Diligent::ITextureView   *GetBrightmapSRV(const void *materialPtr);
 int MaterialCount();
 bool MaterialIsMasked(const void *materialPtr);
 Diligent::IDeviceContext *GetContext();
+// [rc4l] A texture read back top-down as RGB the caller deletes, its channel order taken from its format; NULL with a reason in `report`.
+unsigned char *ReadTextureRGB(Diligent::ITexture *tex, int &w, int &h, int &format, bool &bgra, FString &report);
+// [rc4l] The screen wipe (dgwipe.cpp): the new screen taken from the frame just drawn, whether one is under way, and its mix drawn into the bound frame target.
+void WipeTakeEnd();
+bool WipeActive();
+void WipeDraw(Diligent::IDeviceContext *ctx);
 Diligent::ISwapChain     *GetSwapChain();
 bool DiligentShowWindow(FString &report);
 void  Fua_PumpBackendWindow(void *hwnd);

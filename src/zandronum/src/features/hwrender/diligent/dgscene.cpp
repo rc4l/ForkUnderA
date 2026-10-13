@@ -398,21 +398,8 @@ zx::hwrender::BackendCamera CurrentCamera()
 	// pixel-for-pixel -- the same screen position was a different part of the level in each.
 	c.aspect = 16.0f / 10.0f;
 	if (g_frame.aspectOverride > 0.f) c.aspect = g_frame.aspectOverride;
-	else if (auto *swap = GetSwapChain())
-	{
-		const auto &sd = swap->GetDesc();
-		if (sd.Height > 0) c.aspect = (float)sd.Width / (float)sd.Height;
-	}
-	c.x = FIXED2FLOAT(viewx); c.y = FIXED2FLOAT(viewy); c.z = FIXED2FLOAT(viewz);
-	c.yaw = (float)(viewangle >> ANGLETOFINESHIFT) * 2.0f * 3.14159265f / 8192.0f;
-	double radPitch = bam2rad((angle_t)viewpitch);
-	if (radPitch > PI) radPitch -= 2 * PI;
-	// Not clamp(): inside this namespace that resolves to the Fixed-point overload.
-	if (radPitch < -PI / 2) radPitch = -PI / 2;
-	if (radPitch >  PI / 2) radPitch =  PI / 2;
-	c.pitch = (float)radPitch;
-	// [rc4l] GL draws the world 1.2 times taller than square at every pitch, and this drew it square, so every wall above or below the eye sat off GL's by a fifth.
-	c.pixelStretch = glset.pixelstretch;
+	else if (GetSwapChain() != NULL && FrameHeight() > 0) c.aspect = (float)FrameWidth() / (float)FrameHeight();
+	ViewCameraFromEngine(c);
 	return c;
 }
 // [rc4l] The view window GL's SetViewport draws the player's view into, as a clip-space window over the whole target.
@@ -437,33 +424,6 @@ static void PrepareFrame(Diligent::IDeviceContext *ctx);
 // screen-only parts -- no 2D layer, no present, no window pump. Portals and mirrors will want the
 // same seam.
 
-// [rc4l] Invert a 4x4. Needed once a frame to turn a depth sample back into a world position.
-bool InvertMatrix4(const float *m, float *out)
-{
-	float inv[16];
-	inv[0]  =  m[5]*m[10]*m[15] - m[5]*m[11]*m[14] - m[9]*m[6]*m[15] + m[9]*m[7]*m[14] + m[13]*m[6]*m[11] - m[13]*m[7]*m[10];
-	inv[4]  = -m[4]*m[10]*m[15] + m[4]*m[11]*m[14] + m[8]*m[6]*m[15] - m[8]*m[7]*m[14] - m[12]*m[6]*m[11] + m[12]*m[7]*m[10];
-	inv[8]  =  m[4]*m[9]*m[15]  - m[4]*m[11]*m[13] - m[8]*m[5]*m[15] + m[8]*m[7]*m[13] + m[12]*m[5]*m[11] - m[12]*m[7]*m[9];
-	inv[12] = -m[4]*m[9]*m[14]  + m[4]*m[10]*m[13] + m[8]*m[5]*m[14] - m[8]*m[6]*m[13] - m[12]*m[5]*m[10] + m[12]*m[6]*m[9];
-	inv[1]  = -m[1]*m[10]*m[15] + m[1]*m[11]*m[14] + m[9]*m[2]*m[15] - m[9]*m[3]*m[14] - m[13]*m[2]*m[11] + m[13]*m[3]*m[10];
-	inv[5]  =  m[0]*m[10]*m[15] - m[0]*m[11]*m[14] - m[8]*m[2]*m[15] + m[8]*m[3]*m[14] + m[12]*m[2]*m[11] - m[12]*m[3]*m[10];
-	inv[9]  = -m[0]*m[9]*m[15]  + m[0]*m[11]*m[13] + m[8]*m[1]*m[15] - m[8]*m[3]*m[13] - m[12]*m[1]*m[11] + m[12]*m[3]*m[9];
-	inv[13] =  m[0]*m[9]*m[14]  - m[0]*m[10]*m[13] - m[8]*m[1]*m[14] + m[8]*m[2]*m[13] + m[12]*m[1]*m[10] - m[12]*m[2]*m[9];
-	inv[2]  =  m[1]*m[6]*m[15]  - m[1]*m[7]*m[14]  - m[5]*m[2]*m[15] + m[5]*m[3]*m[14] + m[13]*m[2]*m[7]  - m[13]*m[3]*m[6];
-	inv[6]  = -m[0]*m[6]*m[15]  + m[0]*m[7]*m[14]  + m[4]*m[2]*m[15] - m[4]*m[3]*m[14] - m[12]*m[2]*m[7]  + m[12]*m[3]*m[6];
-	inv[10] =  m[0]*m[5]*m[15]  - m[0]*m[7]*m[13]  - m[4]*m[1]*m[15] + m[4]*m[3]*m[13] + m[12]*m[1]*m[7]  - m[12]*m[3]*m[5];
-	inv[14] = -m[0]*m[5]*m[14]  + m[0]*m[6]*m[13]  + m[4]*m[1]*m[14] - m[4]*m[2]*m[13] - m[12]*m[1]*m[6]  + m[12]*m[2]*m[5];
-	inv[3]  = -m[1]*m[6]*m[11]  + m[1]*m[7]*m[10]  + m[5]*m[2]*m[11] - m[5]*m[3]*m[10] - m[9]*m[2]*m[7]   + m[9]*m[3]*m[6];
-	inv[7]  =  m[0]*m[6]*m[11]  - m[0]*m[7]*m[10]  - m[4]*m[2]*m[11] + m[4]*m[3]*m[10] + m[8]*m[2]*m[7]   - m[8]*m[3]*m[6];
-	inv[11] = -m[0]*m[5]*m[11]  + m[0]*m[7]*m[9]   + m[4]*m[1]*m[11] - m[4]*m[3]*m[9]  - m[8]*m[1]*m[7]   + m[8]*m[3]*m[5];
-	inv[15] =  m[0]*m[5]*m[10]  - m[0]*m[6]*m[9]   - m[4]*m[1]*m[10] + m[4]*m[2]*m[9]  + m[8]*m[1]*m[6]   - m[8]*m[2]*m[5];
-
-	float det = m[0]*inv[0] + m[1]*inv[4] + m[2]*inv[8] + m[3]*inv[12];
-	if (det > -1e-12f && det < 1e-12f) return false;
-	det = 1.0f / det;
-	for (int i = 0; i < 16; i++) out[i] = inv[i] * det;
-	return true;
-}
 
 // [rc4l] The decal pass, in dgdecals.cpp. Runs between the world and the sprites.
 void DrawDeferredDecals(Diligent::IDeviceContext *ctx);
@@ -478,10 +438,11 @@ Diligent::ITextureView *EnsureSceneDepth()
 	auto *dev = GetDevice();
 	if (!swap || !dev) return NULL;
 	const auto &sd = swap->GetDesc();
-	if (!ComputeSceneTargetsRebuild(g_sceneDepth.RawPtr() != nullptr, g_sceneDepthW, g_sceneDepthH, (int)sd.Width, (int)sd.Height))
+	const int fw = FrameWidth(), fh = FrameHeight();
+	if (!ComputeSceneTargetsRebuild(g_sceneDepth.RawPtr() != nullptr, g_sceneDepthW, g_sceneDepthH, fw, fh))
 		return g_sceneDepth->GetDefaultView(Diligent::TEXTURE_VIEW_DEPTH_STENCIL);
 	if (fua_dg_verbose)
-		Printf("Diligent scene targets rebuilt at %ux%u (were %dx%d)\n", sd.Width, sd.Height, g_sceneDepthW, g_sceneDepthH);
+		Printf("Diligent scene targets rebuilt at %dx%d (were %dx%d)\n", fw, fh, g_sceneDepthW, g_sceneDepthH);
 
 	// [rc4l] Every cached binding of the OLD depth texture goes with it.
 	//
@@ -496,7 +457,7 @@ Diligent::ITextureView *EnsureSceneDepth()
 	Diligent::TextureDesc td;
 	td.Name = "fua scene depth";
 	td.Type = Diligent::RESOURCE_DIM_TEX_2D;
-	td.Width = sd.Width; td.Height = sd.Height;
+	td.Width = fw; td.Height = fh;
 	td.MipLevels = 1;
 	td.Format = sd.DepthBufferFormat;
 	td.BindFlags = Diligent::BIND_DEPTH_STENCIL | Diligent::BIND_SHADER_RESOURCE;
@@ -508,13 +469,13 @@ Diligent::ITextureView *EnsureSceneDepth()
 		Diligent::TextureDesc nd;
 		nd.Name = "fua scene normal";
 		nd.Type = Diligent::RESOURCE_DIM_TEX_2D;
-		nd.Width = sd.Width; nd.Height = sd.Height;
+		nd.Width = fw; nd.Height = fh;
 		nd.MipLevels = 1;
 		nd.Format = Diligent::TEX_FORMAT_RGBA8_UNORM;
 		nd.BindFlags = Diligent::BIND_RENDER_TARGET | Diligent::BIND_SHADER_RESOURCE;
 		dev->CreateTexture(nd, nullptr, &g_sceneNormal);
 	}
-	g_sceneDepthW = (int)sd.Width; g_sceneDepthH = (int)sd.Height;
+	g_sceneDepthW = fw; g_sceneDepthH = fh;
 	return g_sceneDepth->GetDefaultView(Diligent::TEXTURE_VIEW_DEPTH_STENCIL);
 }
 
@@ -563,9 +524,9 @@ void DrawSceneOnce(bool present, bool pump)
 	RenderStackPortals(ctx);
 	RenderPlaneMirrors(ctx);
 
-	auto *rtv = swap->GetCurrentBackBufferRTV();
+	auto *rtv = FrameRTV();
 	Diligent::ITextureView *dsv = EnsureSceneDepth();
-	if (!dsv) dsv = swap->GetDepthBufferDSV();
+	if (!dsv) dsv = FrameDSV();
 	// [rc4l] Colour and the G-buffer together, for the opaque world only. DrawWorld drops back to
 	// colour alone before the decals, which read the G-buffer rather than write it.
 	Diligent::ITextureView *nrm = SceneNormalRTV();
@@ -612,6 +573,7 @@ void PresentFrame(Diligent::IDeviceContext *ctx, Diligent::ISwapChain *swap, boo
 	for (int k = 0; k < 6; k++) { g_stats.lastFramePhase[k] = g_framePhase[k]; g_framePhase[k] = 0.0; }
 	g_framePasses = 0; g_frameWorldMs = 0.0;
 	g_framePassList = "";
+	FinishFrame(ctx);
 	swap->Present(0);
 	RecordPresentInterval();
 	// [rc4l] The message pump costs more than the draw at these scales, so a benchmark pumps sparsely and a live frame once.
@@ -735,8 +697,8 @@ void DrawWorld(Diligent::IDeviceContext *ctx)
 
 	{
 		Diligent::MapHelper<float> cb(ctx, g_cb, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD);
-		WriteSceneConstants(&cb[0], g_pass.clipPlane, (float)GetSwapChain()->GetDesc().Width,
-			(float)GetSwapChain()->GetDesc().Height, BindlessActive() ? (float)MaterialSlotCount() : 0.f);
+		WriteSceneConstants(&cb[0], g_pass.clipPlane, (float)FrameWidth(), (float)FrameHeight(),
+			BindlessActive() ? (float)MaterialSlotCount() : 0.f);
 	}
 
 	g_phase.constants.Unclock();
@@ -851,8 +813,7 @@ void DrawWorld(Diligent::IDeviceContext *ctx)
 	// pipeline after this point declares a single attachment.
 	if (g_pass.gbufBound)
 	{
-		auto *swapNow = GetSwapChain();
-		Diligent::ITextureView *rtvNow = swapNow ? swapNow->GetCurrentBackBufferRTV() : NULL;
+		Diligent::ITextureView *rtvNow = GetSwapChain() ? FrameRTV() : NULL;
 		if (rtvNow) ctx->SetRenderTargets(1, &rtvNow, SceneDepthDSV(),
 			Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 		g_pass.gbufBound = false;
