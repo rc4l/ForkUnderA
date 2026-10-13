@@ -26,6 +26,7 @@ EXTERN_CVAR(Float, gl_lights_intensity)
 EXTERN_CVAR(Bool, gl_lights_additive)
 EXTERN_CVAR(Bool, gl_mirrors)
 EXTERN_CVAR(Int, screenblocks)   // [rc4l] the view window the player's view is framed in
+EXTERN_CVAR(Bool, vid_vsync)   // [rc4l] picks the present interval, FIFO when on and mailbox when off
 
 // [rc4l] 0 flat multiply (pre-lighting-port behaviour), 1 the ported equation, 2 depth as grey,
 // 3 depth contours, 4 vertex colour only. Live per frame -- no rebake needed to switch.
@@ -597,7 +598,7 @@ void PresentFrame(Diligent::IDeviceContext *ctx, Diligent::ISwapChain *swap, boo
 	g_framePassList = "";
 	FinishFrame(ctx);
 	SignalFrame(ctx);
-	swap->Present(0);
+	swap->Present(vid_vsync ? 1 : 0);
 	PaceFrames();
 	RecordPresentInterval();
 	// [rc4l] The message pump costs more than the draw at these scales, so a benchmark pumps sparsely and a live frame once.

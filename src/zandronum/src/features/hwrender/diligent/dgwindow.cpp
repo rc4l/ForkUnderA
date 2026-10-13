@@ -146,6 +146,8 @@ bool DiligentShowWindow(FString &report)
 		// screen, but their BUFFERS differ -- which made every readback comparison against GL wrong,
 		// and sent a long hunt after a lighting bug that was really a screenshot bug.
 		scd.ColorBufferFormat = Diligent::TEX_FORMAT_RGBA8_UNORM;
+		// [rc4l] Three images, or mailbox has none free to draw into until the next vblank and runs no faster than the monitor.
+		scd.BufferCount = 3;
 		Diligent::Win32NativeWindow win(g_hwnd);
 		factory->CreateSwapChainVk(GetDevice(), GetContext(), scd, win, &g_swap);
 		if (!g_swap) { report = "CreateSwapChainVk failed"; return false; }
