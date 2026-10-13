@@ -30,7 +30,7 @@
 
 // [rc4l] GL's frame globals, which the derivation and the backend read, until they move out of gl/ (P5).
 #include "features/rendersettings/rendersettings.h"   // [rc4l] the render settings it reads
-#include "gl/models/gl_models.h"       // [rc4l] gl_IsHUDModelForPlayerAvailable
+#include "features/models/models.h"   // [rc4l] gl_FindModelFrame and the models
 
 EXTERN_CVAR(Bool, cl_capfps)
 extern long gl_frameCount;

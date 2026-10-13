@@ -7,7 +7,7 @@
 #include "features/levelmesh/captureshading.h"   // [rc4l] CaptureShading, the light model for a GL colormap
 #include "features/levelmesh/flatmesh.h"   // [rc4l] DynamicCaptureActive, StackCaptureSlot, MirrorCaptureLine
 
-#include "gl/data/gl_vertexbuffer.h"
+#include "features/models/modelgeometry.h"
 #include "features/rendersettings/rendersettings.h"   // [rc4l] the render settings it reads
 #include "gl/textures/gl_material.h"
 #include "features/hwrender/hud2d.h"   // StandaloneActive, BackendPresenting
@@ -146,17 +146,17 @@ void ModelPieceGet(float &alpha, int &blend, int &light, float *rgb, const void 
 	for (int c = 0; c < 3; c++) rgb[c] = g_lastRGB[c];
 }
 
-void CaptureModelSurface(const FModelVertexBuffer *vbuf, unsigned int base1, unsigned int base2,
+void CaptureModelSurface(const FModelGeometry *geometry, unsigned int base1, unsigned int base2,
 	float inter, unsigned int firstIndex, unsigned int indexCount,
 	const void *material, int translation)
 {
-	if (!ModelCaptureActive() || vbuf == NULL || material == NULL) return;
+	if (!ModelCaptureActive() || geometry == NULL || material == NULL) return;
 
-	const FModelVertex *verts = vbuf->ShadowVertices();
+	const FModelVertex *verts = geometry->verts.Size() ? &geometry->verts[0] : NULL;
 	// [rc4l] No index buffer means the draw was sequential, not that there is nothing to draw. MD2
 	// keeps one vertex per corner and calls glDrawArrays; MD3 and voxels are indexed. Both arrive
 	// here, so the absence of indices is a numbering scheme rather than a failure.
-	const unsigned int *idx = vbuf->ShadowIndices();
+	const unsigned int *idx = geometry->indexed && geometry->indices.Size() ? &geometry->indices[0] : NULL;
 	if (verts == NULL || indexCount < 3)
 	{
 		g_skipped++;
@@ -165,14 +165,14 @@ void CaptureModelSurface(const FModelVertexBuffer *vbuf, unsigned int base1, uns
 	// [rc4l] Bounds checked rather than trusted. These offsets come from a file on disk -- a model
 	// whose surface header disagrees with its vertex count would otherwise walk off the array, and
 	// the loaders do not validate them.
-	if (idx != NULL && firstIndex + indexCount > vbuf->ShadowIndexCount())
+	if (idx != NULL && firstIndex + indexCount > geometry->indices.Size())
 	{
 		g_skipped++;
 		return;
 	}
 
 	const float *m = g_matrix;
-	const unsigned int nverts = vbuf->ShadowVertexCount();
+	const unsigned int nverts = geometry->verts.Size();
 	const bool lerp = (base1 != base2) && (inter > 0.f);
 
 	g_tris.Resize(indexCount);
@@ -220,13 +220,14 @@ void CaptureModelSurface(const FModelVertexBuffer *vbuf, unsigned int base1, uns
 	g_lastRGB[0] = mp.colorR; g_lastRGB[1] = mp.colorG; g_lastRGB[2] = mp.colorB;
 	g_lastMaterial = mp.material;
 
-	if (g_kind == kModelCheckOnly)
+	// [rc4l] GL's surfaces are only compared: GL draws its frame before the backend's scene, which clears the stream they would go to.
+	if (g_kind == kModelFromGL)
 	{
-		zx::sprites::NoteDerivedSprite(g_who, mp, &g_tris[0], (int)indexCount);
+		zx::sprites::NoteGLSprite(g_who, false, mp, &g_tris[0], (int)indexCount);
 		return;
 	}
+	if (g_kind == kModelChecked) zx::sprites::NoteDerivedSprite(g_who, mp, &g_tris[0], (int)indexCount);
 	DynAppend(&g_tris[0], indexCount, mp);
-	if (g_kind == kModelFromGL) zx::sprites::NoteGLSprite(g_who, false, mp, &g_tris[0], (int)indexCount);
 	g_surfaces++;
 	g_triangles += (int)(indexCount / 3);
 }

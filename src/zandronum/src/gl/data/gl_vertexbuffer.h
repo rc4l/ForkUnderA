@@ -174,63 +174,19 @@ public:
 
 #define VSO ((FSkyVertex*)NULL)
 
-struct FModelVertex
-{
-	float x, y, z;	// world position
-	float u, v;		// texture coordinates
+#include "features/models/modelgeometry.h"   // [rc4l] FModelVertex and a model's geometry, which features/models keeps on the CPU
 
-	void Set(float xx, float yy, float zz, float uu, float vv)
-	{
-		x = xx;
-		y = yy;
-		z = zz;
-		u = uu;
-		v = vv;
-	}
-
-	void SetNormal(float nx, float ny, float nz)
-	{
-		// GZDoom currently doesn't use normals. This function is so that the high level code can pretend it does.
-	}
-};
-
-
+// [rc4l] A model's geometry uploaded for GL's vertex shader, which lerps its two keyframes.
 class FModelVertexBuffer : public FVertexBuffer
 {
-	int mIndexFrame[2];
 	unsigned int ibo_id;
-	bool mIndexed;   // [rc4l] whether it keeps indices, which a buffer with no GL behind it still does
 
 public:
 
-	FModelVertexBuffer(bool needindex);
+	FModelVertexBuffer(const FModelGeometry &geometry);
 	~FModelVertexBuffer();
 
-	FModelVertex *LockVertexBuffer(unsigned int size);
-	void UnlockVertexBuffer();
-
-	unsigned int *LockIndexBuffer(unsigned int size);
-	void UnlockIndexBuffer();
-
 	unsigned int SetupFrame(unsigned int frame1, unsigned int frame2);
-
-	// [rc4l] The geometry stays on the CPU as well as going to the GPU.
-	//
-	// A model's vertices used to be written straight into a mapped GL buffer and then dropped -- the
-	// loaders even free their own copies once BuildVertexBuffer has run. That is fine for a renderer
-	// that lerps two frames in a vertex shader, and useless for a backend that has to resolve the
-	// frame itself. So Lock hands back plain memory, Unlock uploads it, and what was uploaded is
-	// still here to be read. Model data is small (tens of KB per model); the world mesh it feeds is
-	// megabytes.
-	const FModelVertex *ShadowVertices() const { return mShadowVerts.Size() ? &mShadowVerts[0] : NULL; }
-	unsigned int ShadowVertexCount() const { return mShadowVerts.Size(); }
-	const unsigned int *ShadowIndices() const { return mShadowIndices.Size() ? &mShadowIndices[0] : NULL; }
-	unsigned int ShadowIndexCount() const { return mShadowIndices.Size(); }
-
-private:
-
-	TArray<FModelVertex> mShadowVerts;
-	TArray<unsigned int> mShadowIndices;
 };
 
 #define VMO ((FModelVertex*)NULL)

@@ -1,5 +1,5 @@
 /*
-** gl_voxels.cpp
+** voxelmodel.cpp (from gl/models/gl_voxels.cpp)
 **
 ** Voxel management
 **
@@ -37,7 +37,8 @@
 **
 */
 
-#include "gl/system/gl_system.h"
+#include "features/models/models.h"
+#include "features/rendersettings/rendersettings.h"   // [rc4l] glset.pixelstretch
 #include "w_wad.h"
 #include "cmdlib.h"
 #include "sc_man.h"
@@ -50,16 +51,6 @@
 #include "textures/bitmap.h"
 //#include "gl/gl_intern.h"
 
-#include "gl/system/gl_interface.h"
-#include "gl/renderer/gl_renderer.h"
-#include "gl/data/gl_vertexbuffer.h"
-#include "gl/scene/gl_drawinfo.h"
-#include "gl/models/gl_models.h"
-#include "gl/scene/gl_observer.h"
-#include "gl/textures/gl_material.h"
-#include "gl/utility/gl_geometric.h"
-#include "gl/utility/gl_convert.h"
-#include "gl/renderer/gl_renderstate.h"
 
 
 //===========================================================================
@@ -92,7 +83,7 @@ protected:
 
 //===========================================================================
 //
-// 
+//
 //
 //===========================================================================
 
@@ -111,7 +102,7 @@ FVoxelTexture::FVoxelTexture(FVoxel *vox)
 
 //===========================================================================
 //
-// 
+//
 //
 //===========================================================================
 
@@ -145,13 +136,13 @@ const BYTE *FVoxelTexture::GetPixels ()
 				Pixels[i] = ColorMatcher.Pick(pe);
 			}
 		}
-		else 
+		else
 		{
 			for(int i=0;i<256;i++, pp+=3)
 			{
 				Pixels[i] = (BYTE)i;
 			}
-		}  
+		}
 	}
 	return Pixels;
 }
@@ -191,7 +182,7 @@ int FVoxelTexture::CopyTrueColorPixels(FBitmap *bmp, int x, int y, int rotate, F
 			pe[i].a = 255;
 		}
 	}
-	else 
+	else
 	{
 		for(int i=0;i<256;i++, pp+=3)
 		{
@@ -199,14 +190,14 @@ int FVoxelTexture::CopyTrueColorPixels(FBitmap *bmp, int x, int y, int rotate, F
 			pe[i] = GPalette.BaseColors[i];
 			pe[i].a = 255;
 		}
-	}    
+	}
 	bmp->CopyPixelData(x, y, bitmap, Width, Height, 1, 16, rotate, pe, inf);
 	return 0;
-}	
+}
 
 //===========================================================================
 //
-// 
+//
 //
 //===========================================================================
 
@@ -219,7 +210,7 @@ FVoxelModel::FVoxelModel(FVoxel *voxel, bool owned)
 
 //===========================================================================
 //
-// 
+//
 //
 //===========================================================================
 
@@ -232,7 +223,7 @@ FVoxelModel::~FVoxelModel()
 
 //===========================================================================
 //
-// 
+//
 //
 //===========================================================================
 
@@ -248,7 +239,7 @@ unsigned int FVoxelModel::AddVertex(FModelVertex &vert, FVoxelMap &check)
 
 //===========================================================================
 //
-// 
+//
 //
 //===========================================================================
 
@@ -296,7 +287,7 @@ void FVoxelModel::AddFace(int x1, int y1, int z1, int x2, int y2, int z2, int x3
 
 //===========================================================================
 //
-// 
+//
 //
 //===========================================================================
 
@@ -345,7 +336,7 @@ void FVoxelModel::MakeSlabPolys(int x, int y, kvxslab_t *voxptr, FVoxelMap &chec
 
 //===========================================================================
 //
-// 
+//
 //
 //===========================================================================
 
@@ -371,25 +362,20 @@ void FVoxelModel::Initialize()
 
 //===========================================================================
 //
-// 
+//
 //
 //===========================================================================
 
-void FVoxelModel::BuildVertexBuffer()
+void FVoxelModel::BuildGeometry()
 {
-	if (mVBuf == NULL)
+	if (!mGeometry.built)
 	{
 		Initialize();
 
-		mVBuf = new FModelVertexBuffer(true);
-		FModelVertex *vertptr = mVBuf->LockVertexBuffer(mVertices.Size());
-		unsigned int *indxptr = mVBuf->LockIndexBuffer(mIndices.Size());
-
-		memcpy(vertptr, &mVertices[0], sizeof(FModelVertex)* mVertices.Size());
-		memcpy(indxptr, &mIndices[0], sizeof(unsigned int)* mIndices.Size());
-
-		mVBuf->UnlockVertexBuffer();
-		mVBuf->UnlockIndexBuffer();
+		mGeometry.verts = mVertices;
+		mGeometry.indices = mIndices;
+		mGeometry.indexed = true;
+		mGeometry.built = true;
 		mNumIndices = mIndices.Size();
 
 		// delete our temporary buffers
@@ -403,7 +389,7 @@ void FVoxelModel::BuildVertexBuffer()
 
 //===========================================================================
 //
-// 
+//
 //
 //===========================================================================
 
@@ -452,16 +438,4 @@ int FVoxelModel::FrameSurfaces(FTexture * skin, int frame, int frame2, FModelSur
 	return 1;
 }
 
-void FVoxelModel::RenderFrame(FTexture * skin, int frame, int frame2, double inter, int translation)
-{
-	FModelSurface surf;
-	FrameSurfaces(skin, frame, frame2, &surf);
-	FMaterial * tex = FMaterial::ValidateTexture(surf.skin, false);
-	gl_RenderState.SetMaterial(tex, CLAMP_NOFILTER, translation, -1, false);
-
-	if (gl_observer) gl_observer->ModelSurface(mVBuf, surf.base1, surf.base2, 0.f, surf.firstIndex, surf.count, tex, translation);
-	gl_RenderState.Apply();
-	mVBuf->SetupFrame(0, 0);
-	glDrawElements(GL_TRIANGLES, mNumIndices, GL_UNSIGNED_INT, (void*)(intptr_t)0);
-}
 

@@ -934,10 +934,7 @@ if( NOT NO_GL )
 		gl/system/gl_framebuffer.cpp
 		gl/system/gl_menu.cpp
 		gl/system/gl_wipe.cpp
-		gl/models/gl_models_md3.cpp
-		gl/models/gl_models_md2.cpp
 		gl/models/gl_models.cpp
-		gl/models/gl_voxels.cpp
 	)
 else( NOT NO_GL )
 	set( GL_SOURCES posix/sdl/glstubs.cpp )
@@ -1602,6 +1599,10 @@ add_executable( zdoom WIN32
 	features/levelmesh/walldecals.cpp
 	features/rendersettings/rendersettings.cpp
 	features/fakeflat/fakeflat.cpp
+	features/models/modeldef.cpp
+	features/models/md2model.cpp
+	features/models/md3model.cpp
+	features/models/voxelmodel.cpp
 	features/hwrender/hud2d.cpp
 	features/hwrender/spriteview.cpp
 	features/levelmesh/staticmesh.cpp

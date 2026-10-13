@@ -16,7 +16,7 @@
 #include "features/levelmesh/staticmesh.h"   // [rc4l] MeshPiece
 
 class FMaterial;
-class FModelVertexBuffer;
+struct FModelGeometry;
 struct FColormap;
 
 namespace zx { namespace levelmesh {
@@ -25,8 +25,8 @@ namespace zx { namespace levelmesh {
 void ModelPieceLook(int lightLevel, int extraLight, const FColormap &cm, bool fullbright, const float dyn[3], unsigned thingColor,
 	float alpha, int blendMode, float x, float y, float z, MeshPiece &mp);
 
-// [rc4l] What becomes of a model's surfaces: drawn, only noted for fua_sprite_check, or drawn and noted as GL's for that check.
-enum ModelCaptureKind { kModelDraw, kModelCheckOnly, kModelFromGL };
+// [rc4l] What becomes of a model's surfaces: drawn, drawn and noted as derived for fua_sprite_check, or GL's, only noted for it.
+enum ModelCaptureKind { kModelDraw, kModelChecked, kModelFromGL };
 
 // [rc4l] Bracket one actor's model: its look, its column-major model-to-world matrix and its actor, which is where its surfaces' light, translucency and sort position come from.
 void ModelCaptureBegin(const MeshPiece &look, const float *modelToWorld, const void *who, ModelCaptureKind kind);
@@ -35,8 +35,8 @@ void ModelCaptureEnd();
 // True when a backend is carrying the frame and a surface should be captured rather than rasterised.
 bool ModelCaptureActive();
 
-// [rc4l] One surface: an index range into the model's buffers, the two frames to lerp between (base1/base2, vertex offsets including the frame stride) and the skin's material.
-void CaptureModelSurface(const FModelVertexBuffer *vbuf, unsigned int base1, unsigned int base2,
+// [rc4l] One surface: an index range into the model's geometry, the two frames to lerp between (base1/base2, vertex offsets including the frame stride) and the skin's material.
+void CaptureModelSurface(const FModelGeometry *geometry, unsigned int base1, unsigned int base2,
 	float inter, unsigned int firstIndex, unsigned int indexCount,
 	const void *material, int translation);
 

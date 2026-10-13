@@ -20,7 +20,7 @@
 #include "features/sprites/computation/modelpose_compute.h"        // [rc4l] ComputeHUDModelMatrix
 #include "features/levelmesh/modelmesh.h"                          // [rc4l] the model capture
 #include "features/levelmesh/computation/flatmesh_compute.h"       // [rc4l] ComputeStyleBlendMode
-#include "gl/models/gl_models.h"                                   // [rc4l] gl_FindModelFrame, FSpriteModelFrame
+#include "features/models/models.h"   // [rc4l] gl_FindModelFrame and the models
 #include "p_pspr.h"                                                // [rc4l] WEAPONTOP
 
 #include "sbar.h"

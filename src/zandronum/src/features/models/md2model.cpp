@@ -1,5 +1,5 @@
 /*
-** gl_models.cpp
+** md2model.cpp (from gl/models/gl_models_md2.cpp)
 **
 ** MD2/DMD model format code
 **
@@ -37,20 +37,12 @@
 **
 */
 
-#include "gl/system/gl_system.h"
+#include "features/models/models.h"
 #include "w_wad.h"
 #include "cmdlib.h"
 #include "sc_man.h"
 #include "m_crc32.h"
 
-#include "gl/renderer/gl_renderer.h"
-#include "gl/renderer/gl_renderstate.h"
-#include "gl/scene/gl_drawinfo.h"
-#include "gl/models/gl_models.h"
-#include "gl/scene/gl_observer.h"
-#include "gl/textures/gl_material.h"
-#include "gl/shaders/gl_shader.h"
-#include "gl/data/gl_vertexbuffer.h"
 
 static float   avertexnormals[NUMVERTEXNORMALS][3] = {
 #include "tab_anorms.h"
@@ -90,7 +82,7 @@ struct dmd_chunk_t
 #pragma pack(1)
 struct dmd_packedVertex_t
 {
-	byte            vertex[3];
+	BYTE            vertex[3];
 	unsigned short  normal;		   // Yaw and pitch.
 };
 
@@ -214,7 +206,7 @@ void FDMDModel::LoadGeometry()
 			for(c = 0; c < 3; c++)
 			{
 				framev->vertices[k].xyz[axis[c]] =
-					(pVtx->vertex[c] * FLOAT(pfr->scale[c]) + FLOAT(pfr->translate[c]));
+					(pVtx->vertex[c] * float(pfr->scale[c]) + float(pfr->translate[c]));
 			}
 		}
 	}
@@ -296,17 +288,18 @@ FDMDModel::~FDMDModel()
 //
 //===========================================================================
 
-void FDMDModel::BuildVertexBuffer()
+void FDMDModel::BuildGeometry()
 {
-	if (mVBuf == NULL)
+	if (!mGeometry.built)
 	{
 		LoadGeometry();
 
 		int VertexBufferSize = info.numFrames * lodInfo[0].numTriangles * 3;
 		unsigned int vindex = 0;
 
-		mVBuf = new FModelVertexBuffer(false);
-		FModelVertex *vertptr = mVBuf->LockVertexBuffer(VertexBufferSize);
+		mGeometry.verts.Resize(VertexBufferSize);
+		mGeometry.indexed = false;
+		FModelVertex *vertptr = VertexBufferSize ? &mGeometry.verts[0] : NULL;
 
 		for (int i = 0; i < info.numFrames; i++)
 		{
@@ -332,7 +325,7 @@ void FDMDModel::BuildVertexBuffer()
 				tri++;
 			}
 		}
-		mVBuf->UnlockVertexBuffer();
+		mGeometry.built = true;
 		UnloadGeometry();
 	}
 }
@@ -369,7 +362,7 @@ int FDMDModel::FrameSurfaces(FTexture * skin, int frameno, int frameno2, FModelS
 		skin = skins[0];
 		if (!skin) return 0;
 	}
-	// [rc4l] Sequentially numbered rather than indexed -- see CaptureModelSurface.
+	// [rc4l] Consecutive vertices rather than indexed, so firstIndex is 0 and count the vertices.
 	out->skin = skin;
 	out->base1 = frames[frameno].vindex;
 	out->base2 = frames[frameno2].vindex;
@@ -378,22 +371,6 @@ int FDMDModel::FrameSurfaces(FTexture * skin, int frameno, int frameno2, FModelS
 	return 1;
 }
 
-void FDMDModel::RenderFrame(FTexture * skin, int frameno, int frameno2, double inter, int translation)
-{
-	FModelSurface surf;
-	if (!FrameSurfaces(skin, frameno, frameno2, &surf)) return;
-
-	FMaterial * tex = FMaterial::ValidateTexture(surf.skin, false);
-
-	gl_RenderState.SetMaterial(tex, CLAMP_NONE, translation, -1, false);
-	gl_RenderState.SetInterpolationFactor((float)inter);
-
-	if (gl_observer) gl_observer->ModelSurface(mVBuf, surf.base1, surf.base2, (float)inter, surf.firstIndex, surf.count, tex, translation);
-	gl_RenderState.Apply();
-	mVBuf->SetupFrame(surf.base1, surf.base2);
-	glDrawArrays(GL_TRIANGLES, 0, surf.count);
-	gl_RenderState.SetInterpolationFactor(0.f);
-}
 
 
 
@@ -426,8 +403,8 @@ struct md2_header_t
 
 struct md2_triangleVertex_t
 {
-	byte            vertex[3];
-	byte            lightNormalIndex;
+	BYTE            vertex[3];
+	BYTE            lightNormalIndex;
 };
 
 struct md2_packedFrame_t
@@ -448,7 +425,7 @@ bool FMD2Model::Load(const char * path, int lumpnum, const char * buffer, int le
 {
 	md2_header_t * md2header = (md2_header_t *)buffer;
 	ModelFrame *frame;
-	byte   *md2_frames;
+	BYTE   *md2_frames;
 	int     i;
 
 	// Convert it to DMD.
@@ -492,7 +469,7 @@ bool FMD2Model::Load(const char * path, int lumpnum, const char * buffer, int le
 	}
 
 	// The frames need to be unpacked.
-	md2_frames = (byte*)buffer + info.offsetFrames;
+	md2_frames = (BYTE*)buffer + info.offsetFrames;
 	frames = new ModelFrame[info.numFrames];
 
 	for (i = 0, frame = frames; i < info.numFrames; i++, frame++)
@@ -515,14 +492,14 @@ bool FMD2Model::Load(const char * path, int lumpnum, const char * buffer, int le
 void FMD2Model::LoadGeometry()
 {
 	static int axis[3] = { VX, VY, VZ };
-	byte   *md2_frames;
+	BYTE   *md2_frames;
 	FMemLump lumpdata = Wads.ReadLump(mLumpNum);
 	const char *buffer = (const char *)lumpdata.GetMem();
 
 	texCoords = new FTexCoord[info.numTexCoords];
-	memcpy(texCoords, (byte*)buffer + info.offsetTexCoords, info.numTexCoords * sizeof(FTexCoord));
+	memcpy(texCoords, (BYTE*)buffer + info.offsetTexCoords, info.numTexCoords * sizeof(FTexCoord));
 
-	md2_frames = (byte*)buffer + info.offsetFrames;
+	md2_frames = (BYTE*)buffer + info.offsetFrames;
 	framevtx = new ModelFrameVertexData[info.numFrames];
 	ModelFrameVertexData *framev;
 	int i, k, c;
@@ -550,7 +527,7 @@ void FMD2Model::LoadGeometry()
 	}
 
 	lods[0].triangles = new FTriangle[lodInfo[0].numTriangles];
-		
+
 	int cnt = lodInfo[0].numTriangles;
 	memcpy(lods[0].triangles, buffer + lodInfo[0].offsetTriangles, sizeof(FTriangle) * cnt);
 	for (int j = 0; j < cnt; j++)

@@ -1,5 +1,5 @@
 /*
-** gl_models_md3.cpp
+** md3model.cpp (from gl/models/gl_models_md3.cpp)
 **
 **---------------------------------------------------------------------------
 ** Copyright 2006 Christoph Oelckers
@@ -35,19 +35,12 @@
 **
 */
 
-#include "gl/system/gl_system.h"
+#include "features/models/models.h"
 #include "w_wad.h"
 #include "cmdlib.h"
 #include "sc_man.h"
 #include "m_crc32.h"
 
-#include "gl/renderer/gl_renderstate.h"
-#include "gl/renderer/gl_renderer.h"
-#include "gl/scene/gl_drawinfo.h"
-#include "gl/models/gl_models.h"
-#include "gl/scene/gl_observer.h"
-#include "gl/textures/gl_material.h"
-#include "gl/shaders/gl_shader.h"
 
 #define MAX_QPATH 64
 
@@ -254,9 +247,9 @@ void FMD3Model::LoadGeometry()
 //
 //===========================================================================
 
-void FMD3Model::BuildVertexBuffer()
+void FMD3Model::BuildGeometry()
 {
-	if (mVBuf == NULL)
+	if (!mGeometry.built)
 	{
 		LoadGeometry();
 
@@ -270,9 +263,11 @@ void FMD3Model::BuildVertexBuffer()
 			ibufsize += 3 * surf->numTriangles;
 		}
 
-		mVBuf = new FModelVertexBuffer(true);
-		FModelVertex *vertptr = mVBuf->LockVertexBuffer(vbufsize);
-		unsigned int *indxptr = mVBuf->LockIndexBuffer(ibufsize);
+		mGeometry.verts.Resize(vbufsize);
+		mGeometry.indices.Resize(ibufsize);
+		mGeometry.indexed = true;
+		FModelVertex *vertptr = vbufsize ? &mGeometry.verts[0] : NULL;
+		unsigned int *indxptr = ibufsize ? &mGeometry.indices[0] : NULL;
 
 		assert(vertptr != NULL && indxptr != NULL);
 
@@ -304,8 +299,7 @@ void FMD3Model::BuildVertexBuffer()
 			}
 			surf->UnloadGeometry();
 		}
-		mVBuf->UnlockVertexBuffer();
-		mVBuf->UnlockIndexBuffer();
+		mGeometry.built = true;
 	}
 }
 
@@ -363,27 +357,6 @@ int FMD3Model::FrameSurfaces(FTexture * skin, int frameno, int frameno2, FModelS
 	return n;
 }
 
-void FMD3Model::RenderFrame(FTexture * skin, int frameno, int frameno2, double inter, int translation)
-{
-	FModelSurface surfs[MD3_MAX_SURFACES];
-	const int n = FrameSurfaces(skin, frameno, frameno2, surfs);
-
-	gl_RenderState.SetInterpolationFactor((float)inter);
-	for(int i=0;i<n;i++)
-	{
-		const FModelSurface &surf = surfs[i];
-		FMaterial * tex = FMaterial::ValidateTexture(surf.skin, false);
-
-		gl_RenderState.SetMaterial(tex, CLAMP_NONE, translation, -1, false);
-
-		// [rc4l] The surface, for a check against GL's models.
-		if (gl_observer) gl_observer->ModelSurface(mVBuf, surf.base1, surf.base2, (float)inter, surf.firstIndex, surf.count, tex, translation);
-		gl_RenderState.Apply();
-		mVBuf->SetupFrame(surf.base1, surf.base2);
-		glDrawElements(GL_TRIANGLES, surf.count, GL_UNSIGNED_INT, (void*)(intptr_t)(surf.firstIndex * sizeof(unsigned int)));
-	}
-	gl_RenderState.SetInterpolationFactor(0.f);
-}
 
 //===========================================================================
 //

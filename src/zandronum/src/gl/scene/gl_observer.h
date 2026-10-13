@@ -11,7 +11,7 @@
 
 class AActor;
 class FMaterial;
-class FModelVertexBuffer;
+struct FModelGeometry;
 class VSMatrix;
 class GLWall;
 class GLSprite;
@@ -43,7 +43,7 @@ struct FGLObserver
 	// [rc4l] A sprite GL drew, by its four corners; a model's surfaces between ModelBegins and ModelEnds; the weapon's quad.
 	virtual void Sprite(const GLSprite &sprite, const float *c1, const float *c2, const float *c3, const float *c4) {}
 	virtual void ModelBegins(const GLSprite *sprite, const VSMatrix &model) {}
-	virtual void ModelSurface(FModelVertexBuffer *vbuf, unsigned int base1, unsigned int base2, float inter,
+	virtual void ModelSurface(const FModelGeometry *geometry, unsigned int base1, unsigned int base2, float inter,
 		unsigned int firstIndex, unsigned int count, FMaterial *tex, int translation) {}
 	virtual void ModelEnds() {}
 	virtual void WeaponQuad(const zx::hwrender::Quad2D &q) {}

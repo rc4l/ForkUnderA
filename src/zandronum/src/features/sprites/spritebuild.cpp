@@ -39,7 +39,7 @@
 
 // [rc4l] GL's settings and view state the derivation still reads, until the renderer interface supplies them (P5).
 #include "features/rendersettings/rendersettings.h"   // [rc4l] the render settings it reads
-#include "gl/models/gl_models.h"       // [rc4l] gl_FindModelFrame
+#include "features/models/models.h"   // [rc4l] gl_FindModelFrame and the models
 #include "gl/dynlights/gl_dynlight.h"  // [rc4l] ADynamicLight, FLightNode
 
 #include <string.h>
@@ -309,7 +309,7 @@ static PalEntry ThingColorOf(const AActor *thing)
 }
 
 // [rc4l] A model as Process, Draw and gl_RenderModel take it: one band, lit from the light list entry at the actor's middle, its surfaces captured under the pose's matrix.
-static void DeriveModel(AActor *thing, const Subject &s, const Look &l, bool checkOnly)
+static void DeriveModel(AActor *thing, const Subject &s, const Look &l, bool checked)
 {
 	int lightlevel = l.lightlevel;
 	FColormap cm = l.cm;
@@ -333,7 +333,7 @@ static void DeriveModel(AActor *thing, const Subject &s, const Look &l, bool che
 	ModelPoseFor(thing, s.model, s.x, s.y, s.z, pose);
 	float modelToWorld[16];
 	ComputeModelMatrix(pose, modelToWorld);
-	zx::levelmesh::ModelCaptureBegin(look, modelToWorld, thing, checkOnly ? zx::levelmesh::kModelCheckOnly : zx::levelmesh::kModelDraw);
+	zx::levelmesh::ModelCaptureBegin(look, modelToWorld, thing, checked ? zx::levelmesh::kModelChecked : zx::levelmesh::kModelDraw);
 	CaptureModelFrames(s.model, thing->state, thing->tics, RUNTIME_TYPE(thing), (s.model->flags & MDL_IGNORETRANSLATION) ? 0 : int(thing->Translation));
 	zx::levelmesh::ModelCaptureEnd();
 }
@@ -721,28 +721,23 @@ void CheckFrameSprites()
 	g_ours.clear();
 }
 
-bool BuildSprite(AActor *thing)
+void BuildSprite(AActor *thing)
 {
 	Subject s;
-	if (!SubjectOf(thing, s)) return true;
+	if (!SubjectOf(thing, s)) return;
 	if (s.model != NULL)
 	{
-		// [rc4l] With the check on, GL draws the model too and the derived surfaces are only compared.
 		Look l;
 		if (LookOf(thing, s, false, false, l)) DeriveModel(thing, s, l, fua_sprite_check);
-		return !fua_sprite_check;
+		return;
 	}
 	// [rc4l] Kept between actors: constructing sixteen records an actor cost more than deriving it.
 	static SpritePiece pieces[kMaxBands];
 	const int n = DeriveSprite(thing, s, pieces, kMaxBands);
 	if (fua_sprite_check)
-	{
 		for (int i = 0; i < n; i++) Note(g_ours, thing, false, pieces[i].piece, pieces[i].quad, 4);
-		return false;
-	}
-	if (!zx::levelmesh::DynamicCaptureActive()) return true;
+	if (!zx::levelmesh::DynamicCaptureActive()) return;
 	for (int i = 0; i < n; i++) zx::levelmesh::DynAppend(pieces[i].quad, 4, pieces[i].piece);
-	return true;
 }
 
 // [rc4l] An actor a lane derived: its pieces in the lane's list, or that the game thread derives it.
@@ -815,21 +810,16 @@ void BuildSprites(AActor *const *things, int count)
 	}
 }
 
-bool BuildParticle(particle_t *particle, sector_t *sector)
+void BuildParticle(particle_t *particle, sector_t *sector)
 {
 	SpritePiece p;
 	const bool drawn = DeriveParticle(particle, sector, p);
-	if (fua_sprite_check)
-	{
-		if (drawn) Note(g_ours, particle, true, p.piece, p.quad, 4);
-		return false;
-	}
+	if (drawn && fua_sprite_check) Note(g_ours, particle, true, p.piece, p.quad, 4);
 	if (drawn && zx::levelmesh::DynamicCaptureActive())
 	{
 		zx::levelmesh::DynAppend(p.quad, 4, p.piece);
 		zx::levelmesh::CountParticle();
 	}
-	return true;
 }
 
 }} // namespace zx::sprites

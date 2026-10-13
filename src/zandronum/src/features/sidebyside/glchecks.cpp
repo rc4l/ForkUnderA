@@ -36,13 +36,12 @@ EXTERN_CVAR(Int, gl_fogmode)
 
 namespace {
 
-// [rc4l] GL's sprite as RegisterSprite once took it: its corners, light, colour and blend, noted for fua_sprite_check and drawn in the check's frame in place of the derived one.
+// [rc4l] GL's sprite as RegisterSprite once took it, its corners, light, colour and blend, noted for fua_sprite_check; only noted, since GL draws before the backend's scene clears the stream.
 void GLSpritePiece(const GLSprite &spr, const float *c1, const float *c2, const float *c3, const float *c4)
 {
 	using namespace zx::levelmesh;
 	// [rc4l] Each walk the backend draws again keeps its own sprites, for its pass alone: the player's for the frame, a stacked view's or a line mirror's (the viewer and whatever stands behind the player) for that one.
 	if (spr.gltexture == NULL || !DynamicCaptureActive()) return;
-	if (spr.particle != NULL) CountParticle();
 
 	// [rc4l] GLSprite emits a 4-vertex TRIANGLE STRIP; the mesh is triangle lists, so expand to
 	// (0,1,2) and (2,1,3) -- which preserves the strip's winding rather than flipping the second
@@ -129,7 +128,6 @@ void GLSpritePiece(const GLSprite &spr, const float *c1, const float *c2, const 
 	mp.quad = true;
 
 	zx::sprites::NoteGLSprite(spr.actor != NULL ? (const void *)spr.actor : (const void *)spr.particle, spr.actor == NULL, mp, q, 4);
-	DynAppend(q, 4, mp);
 }
 
 // [rc4l] GL's own shading of a surface, read back out of the render state gl_SetColor and gl_SetFog leave, for fua_shading_check.
@@ -216,10 +214,10 @@ struct FGLChecks : public FGLObserver
 			spr->x, spr->y, spr->z, look);
 		zx::levelmesh::ModelCaptureBegin(look, model.get(), spr->actor, zx::levelmesh::kModelFromGL);
 	}
-	void ModelSurface(FModelVertexBuffer *vbuf, unsigned int base1, unsigned int base2, float inter,
+	void ModelSurface(const FModelGeometry *geometry, unsigned int base1, unsigned int base2, float inter,
 		unsigned int firstIndex, unsigned int count, FMaterial *tex, int translation)
 	{
-		zx::levelmesh::CaptureModelSurface(vbuf, base1, base2, inter, firstIndex, count, tex, translation);
+		zx::levelmesh::CaptureModelSurface(geometry, base1, base2, inter, firstIndex, count, tex, translation);
 	}
 	void ModelEnds() { zx::levelmesh::ModelCaptureEnd(); }
 	void WeaponQuad(const zx::hwrender::Quad2D &q) { zx::sprites::NoteGLPSprite(q); }

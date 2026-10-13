@@ -65,7 +65,7 @@ neither there.
 - `features/frame/playerview.cpp` `RenderPlayerView`, every frame the backend draws: `CheckFrameSprites` after
   the scene, then `BuildPlayerSprites`, `BuildTargeterSprites` and `CheckFramePSprites`.
 
-GL settings it still reads, until the renderer interface supplies them (P5): `glset`,
-`gl_fixedcolormap`, `currentmapsection`, `getExtraLight`, `gl_FindModelFrame`, and GL's sprite cvars.
-Model data is still GL's: the loaders in `gl/models`, and the vertices `CaptureModelSurface` reads from the
-CPU copy `FModelVertexBuffer` keeps beside its GL buffer.
+The render settings it reads (`glset`, `gl_fixedcolormap`, `currentmapsection`, `getExtraLight`) are
+`features/rendersettings`'; GL's sprite cvars (`gl_spriteclip`, `gl_sprite_blend` and the rest) are still GL's.
+Models are `features/models`: the loaders, MODELDEF and each model's geometry, which `CaptureModelSurface`
+lerps on the CPU.
