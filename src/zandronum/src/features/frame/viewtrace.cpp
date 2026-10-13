@@ -3,6 +3,7 @@
 
 #include "features/frame/viewtrace.h"
 #include "features/frame/computation/viewtrace_compute.h"
+#include "features/framephase/framephase.h"   // [rc4l] each frame's phases
 
 #include "c_console.h"
 #include "c_dispatch.h"
@@ -41,10 +42,18 @@ void Report()
 		FILE *f = fopen(g_csv.GetChars(), "w");
 		if (f != NULL)
 		{
-			fprintf(f, "us,deg,tic,local\n");
+			fprintf(f, "us,deg,tic,local");
+			for (int p = 0; p < zx::framephase::kPhaseCount; p++) fprintf(f, ",%s", zx::framephase::ComputePhaseName(p));
+			fprintf(f, "\n");
 			for (size_t i = 1; i < g_trace.size(); i++)
-				fprintf(f, "%lld,%.4f,%d,%u\n", g_trace[i].us - g_trace[0].us, ComputeTurnDegrees(g_trace[i - 1].angle, g_trace[i].angle),
+			{
+				fprintf(f, "%lld,%.4f,%d,%u", g_trace[i].us - g_trace[0].us, ComputeTurnDegrees(g_trace[i - 1].angle, g_trace[i].angle),
 					g_trace[i].gametic != g_trace[i - 1].gametic ? 1 : 0, g_trace[i].localAngle);
+				// [rc4l] Sample i+1 carries frame i's phases, recorded at the boundary that closed it.
+				const float *ph = i + 1 < g_trace.size() ? g_trace[i + 1].phases : NULL;
+				for (int p = 0; p < zx::framephase::kPhaseCount; p++) fprintf(f, ",%.0f", ph != NULL ? ph[p] : 0.f);
+				fprintf(f, "\n");
+			}
 			fclose(f);
 			Printf("  every frame written to %s\n", g_csv.GetChars());
 		}
@@ -67,7 +76,13 @@ void NoteMainView()
 {
 	if (g_want <= 0 || r_frameSerial == g_lastSerial) return;
 	g_lastSerial = r_frameSerial;
-	const ViewTraceSample s = { NowUs(), (unsigned)viewangle, (unsigned)LocalViewAngle, gametic };
+	ViewTraceSample s;
+	s.us = NowUs();
+	s.angle = (unsigned)viewangle;
+	s.localAngle = (unsigned)LocalViewAngle;
+	s.gametic = gametic;
+	const float *phases = zx::framephase::LastFramePhases();
+	for (int p = 0; p < 8; p++) s.phases[p] = p < zx::framephase::kPhaseCount ? phases[p] : 0.f;
 	g_trace.push_back(s);
 	if ((int)g_trace.size() < g_want) return;
 	Report();

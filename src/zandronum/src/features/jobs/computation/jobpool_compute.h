@@ -30,6 +30,9 @@ public:
 	int Lanes() const { return Workers() + 1; }
 	// [rc4l] Workers asleep waiting for a job, past their spin.
 	int Sleeping() const { return m_sleeping.load(); }
+	// [rc4l] How long an idle worker polls for the next job before it sleeps, from its next idle spell on.
+	void SetSpinMicros(int micros) { m_spinMicros.store(micros < 0 ? 0 : micros); }
+	int SpinMicros() const { return m_spinMicros.load(); }
 
 	// [rc4l] Run fn(user, index, lane) once for each index in [0, count): the caller is lane 0 and each worker its own lane, and the call returns once every index has run.
 	void ParallelFor(int count, IndexFn fn, void *user);
@@ -52,7 +55,7 @@ private:
 	std::vector<std::thread> m_threads;
 	std::mutex m_mutex;
 	std::condition_variable m_wake;
-	int m_spinMicros;
+	std::atomic<int> m_spinMicros;
 
 	// [rc4l] The job in flight, written only while no worker is inside one (m_active is 0) and published by m_open and m_generation.
 	IndexFn m_fn;

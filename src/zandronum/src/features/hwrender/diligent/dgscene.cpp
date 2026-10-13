@@ -4,6 +4,7 @@
 // [rc4l] The Vulkan backend's world pass: the scene's records, frame prep, the world draw and the frame it composes; dgscene_internal.h lists the files the rest is split into.
 
 #include "features/hwrender/computation/framepacing_compute.h"
+#include "features/framephase/framephase.h"   // [rc4l] the backend, upload, lights and present phases
 #include "c_dispatch.h"
 #include "c_console.h"
 
@@ -493,6 +494,7 @@ Diligent::ITextureView *SceneDepthSRV()
 
 void DrawSceneOnce(bool present, bool pump)
 {
+	const zx::framephase::Scope backendPhase(zx::framephase::kPhaseBackend);
 	auto *ctx = GetContext();
 	auto *swap = GetSwapChain();
 
@@ -598,8 +600,11 @@ void PresentFrame(Diligent::IDeviceContext *ctx, Diligent::ISwapChain *swap, boo
 	g_framePassList = "";
 	FinishFrame(ctx);
 	SignalFrame(ctx);
-	swap->Present(vid_vsync ? 1 : 0);
-	PaceFrames();
+	{
+		const zx::framephase::Scope presentPhase(zx::framephase::kPhasePresent);
+		swap->Present(vid_vsync ? 1 : 0);
+		PaceFrames();
+	}
 	RecordPresentInterval();
 	// [rc4l] The message pump costs more than the draw at these scales, so a benchmark pumps sparsely and a live frame once.
 	if (pump) Fua_PumpBackendWindow(GetBackendWindow());
@@ -666,8 +671,14 @@ static void PrepareFrame(Diligent::IDeviceContext *ctx)
 	if (fua_dg_frameprep && g_preparedSerial == g_frame.serial) return;
 	g_preparedSerial = g_frame.serial;
 	g_phase.Reset();
-	g_phase.geometry.Clock();  RefreshMovedGeometry(ctx);   g_phase.geometry.Unclock();
-	g_phase.lights.Clock();    CollectDynamicLights(ctx);   g_phase.lights.Unclock();
+	{
+		const zx::framephase::Scope uploadPhase(zx::framephase::kPhaseUpload);
+		g_phase.geometry.Clock();  RefreshMovedGeometry(ctx);   g_phase.geometry.Unclock();
+	}
+	{
+		const zx::framephase::Scope lightsPhase(zx::framephase::kPhaseLights);
+		g_phase.lights.Clock();    CollectDynamicLights(ctx);   g_phase.lights.Unclock();
+	}
 	// [rc4l] Before anything is recorded: rebuilding a binding that a command buffer already holds is a use-after-free, and this only works on the frames the material table changed.
 	if (fua_dg_bindless) { ReserveDynamicSlots(); RefreshBindless(); }
 	g_phase.animation.Clock();

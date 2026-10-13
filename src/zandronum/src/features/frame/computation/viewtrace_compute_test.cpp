@@ -43,7 +43,10 @@ TEST(ViewTrace, AViewTurningEveryFrameSpreadsItsTurningBetweenTics)
 // [rc4l] A stall: the view stands still for 30 ms mid-turn and then catches up in one lump.
 TEST(ViewTrace, AStallIsAGapFollowedByALump)
 {
-	ViewTraceSample s[4] = { { 0, 0u, 0u, 1 }, { 1000, kDeg, 0u, 1 }, { 31000, kDeg, 0u, 1 }, { 32000, 9 * kDeg, 0u, 1 } };
+	ViewTraceSample s[4] = {};
+	const long long us[4] = { 0, 1000, 31000, 32000 };
+	const unsigned angle[4] = { 0u, kDeg, kDeg, 9 * kDeg };
+	for (int i = 0; i < 4; i++) { s[i].us = us[i]; s[i].angle = angle[i]; s[i].gametic = 1; }
 	const ViewTraceSummary r = ComputeViewTraceSummary(s, 4);
 	EXPECT_EQ(2, r.turnedFrames);
 	EXPECT_EQ(1, r.longGaps);
@@ -69,7 +72,7 @@ TEST(ViewTrace, AViewTurningOnlyAtTicsLeavesTheMouseUnseenBetweenThem)
 
 TEST(ViewTrace, TooFewFramesSayNothing)
 {
-	ViewTraceSample s[1] = { { 0, 0u, 0u, 0 } };
+	ViewTraceSample s[1] = {};
 	const ViewTraceSummary r = ComputeViewTraceSummary(s, 1);
 	EXPECT_EQ(1, r.frames);
 	EXPECT_EQ(0, r.turnedFrames);

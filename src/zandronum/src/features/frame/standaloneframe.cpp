@@ -9,6 +9,7 @@
 #include "features/levelmesh/flatmesh.h"       // [rc4l] PlayerWalkActive, ClearSprites, RecordSpriteSweep
 #include "features/levelmesh/projdecals.h"     // [rc4l] UpdateProjectedDecals
 #include "features/levelmesh/wallcache.h"      // [rc4l] InvalidateMovedSectors
+#include "features/framephase/framephase.h"     // [rc4l] the walk, rebake and actor phases
 #include "features/levelmesh/walldecals.h"     // [rc4l] BuildWallDecals
 #include "features/horizon/horizon.h"
 #include "features/visibility/viswalk.h"
@@ -132,14 +133,19 @@ void StandaloneScene()
 	{
 		PO_LinkToSubsectors();
 		const zx::visibility::WalkHooks hooks = { WalkParticles, PortalActor, fua_decalmode == 0 ? zx::levelmesh::BuildWallDecals : NULL };
+		const zx::framephase::Scope walkPhase(zx::framephase::kPhaseWalk);
 		zx::visibility::WalkView(fua_vis_cull, true, &hooks);
 		zx::visibility::WalkPortalViews(&hooks);
 	}
 	zx::levelmesh::WalkedThisFrame walkedSet;
 	walkedSet.sectors = zx::visibility::SectorsWalkedThisFrame(walkedSet.sectorCount);
 	walkedSet.sides = zx::visibility::SidesWalkedThisFrame(walkedSet.sideCount);
-	zx::levelmesh::InvalidateMovedSectors(walked ? &walkedSet : NULL);
+	{
+		const zx::framephase::Scope rebakePhase(zx::framephase::kPhaseRebake);
+		zx::levelmesh::InvalidateMovedSectors(walked ? &walkedSet : NULL);
+	}
 	if (walked) MarkSeenCameraTextures(walkedSet);
+	const zx::framephase::Scope actorsPhase(zx::framephase::kPhaseActors);
 	SweepActors();
 }
 

@@ -167,6 +167,7 @@
 #include "r_renderer.h"
 #include "features/frame/framestall.h"   // [rc4l] DebugFrameStall
 #include "features/frame/debugorbit.h"   // [rc4l] DebugOrbit
+#include "features/framephase/framephase.h"   // [rc4l] FrameBoundary, the sim phase
 #include "p_local.h"
 
 
@@ -1330,6 +1331,7 @@ void D_DoomLoop ()
 			zx::wadserve::Tick(); // [rc4l] server side: binds/rebinds the WAD listener, snapshots its config, drains its log
 			zx::JoinTick(); // [rc4l] puts a failed join back in the server browser instead of a bare console
 			zx::HostTick(); // [rc4l] client side: drains our own server's output and watches it come up or fall over
+			zx::framephase::FrameBoundary();   // [rc4l] the last iteration's phases become the last frame's
 			MCP_Bridge_Poll();
 			switch ( NETWORK_GetState( ))
 			{
@@ -1352,6 +1354,7 @@ void D_DoomLoop ()
 				// Run at least 1 tick.
 				{
 					const int ticBefore = gametic;
+					const zx::framephase::Scope simPhase( zx::framephase::kPhaseSim );
 					TryRunTics( );
 					zx::frame::DebugFrameStall( gametic != ticBefore );   // [rc4l] fua_debug_ticstall_us
 				}
@@ -1413,6 +1416,7 @@ void D_DoomLoop ()
 				else
 				{
 					const int ticBefore = gametic;
+					const zx::framephase::Scope simPhase( zx::framephase::kPhaseSim );
 					TryRunTics (); // will run at least one tic
 					zx::frame::DebugFrameStall( gametic != ticBefore );   // [rc4l] fua_debug_ticstall_us
 				}

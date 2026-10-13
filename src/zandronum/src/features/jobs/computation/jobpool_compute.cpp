@@ -39,7 +39,7 @@ void JobPool::Resize(int workers)
 
 bool JobPool::SpinFor(unsigned seen)
 {
-	const std::chrono::steady_clock::time_point until = std::chrono::steady_clock::now() + std::chrono::microseconds(m_spinMicros);
+	const std::chrono::steady_clock::time_point until = std::chrono::steady_clock::now() + std::chrono::microseconds(m_spinMicros.load());
 	for (int spins = 0; ; spins++)
 	{
 		if (m_generation.load() != seen || m_stop.load()) return true;

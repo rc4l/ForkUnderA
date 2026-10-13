@@ -1624,6 +1624,7 @@ add_executable( zdoom WIN32
 	features/frame/viewtrace.cpp
 	features/frame/framestall.cpp
 	features/frame/debugorbit.cpp
+	features/framephase/framephase.cpp
 	features/display/display.cpp
 	features/hwrender/backendvideo.cpp
 	features/hwrender/record2d.cpp
@@ -1659,6 +1660,7 @@ add_executable( zdoom WIN32
 	features/frame/computation/viewtrace_compute.cpp
 	features/frame/computation/framestall_compute.cpp
 	features/frame/computation/debugorbit_compute.cpp
+	features/framephase/computation/framephase_compute.cpp
 	features/cvar-alias/computation/cvaralias_compute.cpp
 	features/rendersettings/computation/forcedvideo_compute.cpp
 	features/display/computation/display_compute.cpp
