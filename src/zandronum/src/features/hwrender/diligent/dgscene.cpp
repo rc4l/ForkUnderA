@@ -516,6 +516,15 @@ void DrawSceneOnce(bool present, bool pump)
 		FString err;
 		if (!EnsureScenePipeline(err)) return;
 	}
+	// [rc4l] Textures the engine flushed (hqresize, hires, the texture format) are made again from the new pixels.
+	{
+		static unsigned flushedSeen = zx::materials::TexturesFlushed();
+		if (flushedSeen != zx::materials::TexturesFlushed())
+		{
+			flushedSeen = zx::materials::TexturesFlushed();
+			FlushTextureCache();
+		}
+	}
 
 	// The sky portal is a whole second view of the map, so it is rendered here, beside the frame
 	// rather than inside it -- DrawWorld cannot be re-entered while it is deriving this frame.

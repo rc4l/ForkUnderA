@@ -59,6 +59,7 @@
 #include "gl/textures/gl_translate.h"
 #include "gl/textures/gl_bitmap.h"
 #include "gl/textures/gl_material.h"
+#include "features/materials/materials.h"   // [rc4l] NoteTexturesFlushed
 #include "gl/textures/gl_samplers.h"
 #include "gl/shaders/gl_shader.h"
 
@@ -800,6 +801,7 @@ FMaterial * FMaterial::ValidateTexture(FTextureID no, bool expand, bool translat
 
 void FMaterial::FlushAll()
 {
+	zx::materials::NoteTexturesFlushed();   // [rc4l] the backend's copies go too, at its next frame
 	for(int i=mMaterials.Size()-1;i>=0;i--)
 	{
 		mMaterials[i]->Clean(true);

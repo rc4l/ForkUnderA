@@ -63,6 +63,10 @@ const char *MaterialName(MaterialRef m);
 // [rc4l] Whether the material has partly see-through texels, which send a two-sided middle to GL's translucent pass; the first ask decodes the picture, so only the main thread asks.
 bool MaterialTransparent(MaterialRef m);
 
+// [rc4l] Every material's pixels were thrown away (FMaterial::FlushAll, as hqresize, hires or the texture format changing does); TexturesFlushed counts how often, so a renderer holding its own copies knows to drop them.
+void NoteTexturesFlushed();
+unsigned TexturesFlushed();
+
 // [rc4l] The material a texture id is drawn with on a wall or flat (no border, through animation and switches unless `translate` is off), NULL for none.
 MaterialRef MaterialForTextureId(FTextureID id, bool translate = true);
 // [rc4l] The engine texture a material draws, NULL for none.

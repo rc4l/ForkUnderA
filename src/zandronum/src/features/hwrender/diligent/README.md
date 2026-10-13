@@ -82,7 +82,7 @@ with a GL-against-Vulkan scenario in `tools/fuactl/scenarios`. Still missing or 
 - one level of mirror (GL recurses), at most 4 plane mirrors and 2 stacked views a frame;
 - `ClipFFloors`, and decals on 3D-floor faces and mirror sheens;
 - damage tint, the hitbox view and stereo 3D, which are GL's alone;
-- `gl_seamless` and `r_mirror_recursions`, which it ignores; changing hqresize or hires at runtime leaves its textures stale;
+- `gl_seamless` and `r_mirror_recursions`, which it ignores;
 - no GL fallback when the Vulkan device fails, and Windows only.
 
 ## Earlier: untextured geometry, benchmarked

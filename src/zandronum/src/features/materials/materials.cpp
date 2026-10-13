@@ -102,6 +102,10 @@ bool SkyBoxFacesOf(FTexture *tex, SkyBoxFaces &out)
 	return true;
 }
 
+static unsigned g_texturesFlushed = 0;
+void NoteTexturesFlushed() { g_texturesFlushed++; }
+unsigned TexturesFlushed() { return g_texturesFlushed; }
+
 bool MaterialTransparent(MaterialRef m)
 {
 	return m != NULL && Mat(m)->GetTransparent();
