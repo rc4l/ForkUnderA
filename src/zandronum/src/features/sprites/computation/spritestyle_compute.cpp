@@ -107,6 +107,12 @@ int ComputeSpriteBlendMode(int blendOp, int destAlpha, float trans)
 	return trans < 1.f - 1.f / 256.f ? 1 : 0;
 }
 
+bool ComputeColorBlending(const SpriteStyle &style, float trans, const ColorBlendIn &in)
+{
+	const bool allowed = trans > 1.f - FLT_EPSILON && in.enabled && !in.fixedColormap && in.sprite && in.fullbright && !in.textureTransparent;
+	return allowed && style.blendOp == kOpAdd && style.srcAlpha == kAlphaSrc && style.destAlpha == kAlphaOne;
+}
+
 bool ComputeParticleAlphaTested(int particlesStyle, float trans)
 {
 	return particlesStyle != 2 && trans >= 1.0f - FLT_EPSILON;

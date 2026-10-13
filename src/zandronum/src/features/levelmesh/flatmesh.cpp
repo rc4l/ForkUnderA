@@ -382,7 +382,7 @@ static void StoreFlat(const FlatSource &flat, subsector_t *sub, bool ceiling)
 	mp.lightColor = flat.Colormap.LightColor.d;
 	mp.fadeColor = flat.Colormap.FadeColor.d;
 	// GLFlat::Draw's GLPASS_PLAIN arm, with its `rel = getExtraLight()`.
-	CaptureShading(flat.lightlevel, getExtraLight(), flat.Colormap, mp);
+	CaptureLevelShading(flat.lightlevel, getExtraLight(), flat.Colormap, mp);
 
 	// [rc4l] Flats are NOT all opaque, and 3D floors are where that shows.
 	//

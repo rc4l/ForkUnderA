@@ -113,8 +113,8 @@ static const char *kSceneVS =
 // falloff would have produced light bands in the wrong places, and worse, plausible-looking ones.
 //
 // [rc4l] Ported here: software-mode light diminishing, fog-mode diminishing, coloured fog and both fog
-// distance modes, with dynamic lights, brightmaps and desaturation as separate uniforms and buffers
-// elsewhere here, and glowing walls and fixed colormaps (invulnerability et al) not ported yet.
+// distance modes, with dynamic lights, brightmaps, desaturation and the fixed colormaps as separate
+// uniforms and buffers elsewhere here; glowing walls are not ported yet.
 //
 // uCameraPos.w carries fua_dg_lightmode -- riding in the unused w of a vector already in the buffer
 // makes the debug views free (no resize, no extra binding) so they can stay in the shipped shader.
@@ -145,8 +145,13 @@ static const char *kSceneVS =
 	"layout(location = 15) flat in float vDesaturation;\n" \
 	"layout(location = 16) flat in float vHoleCut;\n" \
 	"layout(location = 17) flat in float vTexFlags;\n" \
-	/* [rc4l] GL's TM_MASK: a stencil's texel is white where it is opaque, so the piece shows only its fill colour in the texture's shape. */ \
-	"vec4 fuaStencil(vec4 t) { return mod(vTexFlags, 2.0) > 0.5 ? vec4(vec3(1.0), t.a) : t; }\n" \
+	/* [rc4l] GL's texture modes, as getTexel applies them: TM_MASK (texFlags 1) keeps only a stencil's shape, white, for its fill colour, and TM_INVERSE (16) inverts the colour, green and blue swapped as main.fp swaps them. */ \
+	"vec4 fuaTexMode(vec4 t) {\n" \
+	"    int f = int(vTexFlags + 0.5);\n" \
+	"    if ((f & 1) != 0) return vec4(vec3(1.0), t.a);\n" \
+	"    if ((f & 16) != 0) return vec4(1.0 - t.r, 1.0 - t.b, 1.0 - t.g, t.a);\n" \
+	"    return t;\n" \
+	"}\n" \
 	/* [rc4l] ComputeDesaturate, line for line: main.fp's desaturate(), on the texel and the brightmap but never the light. */ \
 	"vec3 fuaDesaturate(vec3 c) {\n" \
 	"    if (vDesaturation <= 0.0) return c;\n" \
@@ -154,6 +159,7 @@ static const char *kSceneVS =
 	"    return mix(c, vec3(gray), vDesaturation);\n" \
 	"}\n" \
 	FUA_CONSTANTS_GLSL \
+	FUA_FIXED_COLORMAP_GLSL \
 	"layout(binding = 1) uniform sampler2D uTex;\n" \
 	/* [rc4l] The brightmap layer, present on EVERY material -- black where there is none.
 	   The brightmap is added to the lit colour, so black is the identity, and that removes the
@@ -368,6 +374,7 @@ static const char *kSceneVS =
 	"}\n" \
 	FUA_SECTOR_LIGHT_GLSL \
 	"vec3 fuaShadeEx(vec3 texel, bool wantDynLight) {\n" \
+	"    vec3 undesaturated = texel;\n" \
 	"    texel = fuaDesaturate(texel);\n" \
 	"    float dbg = uCameraPos.w;\n" \
 	"    if (dbg == 2.0) return vec3(gl_FragCoord.z);\n" \
@@ -411,6 +418,8 @@ static const char *kSceneVS =
 	FUA_MIRROR_CLIP_GLSL("vPixelPos.xyz") \
 	/* [rc4l] What GL's walk never drew behind a sky hole is GL's sky there, which the frame painted first. */ \
 	"    if (fuaBehindSkyHole()) discard;\n" \
+	/* [rc4l] Under a fixed colormap main.fp takes no light, fog, desaturation or dynamic light, recolouring the texel in the piece's own colour: white for a level surface (texFlags 8), whose baked colour is its light, and a sprite's or decal's built under the colormap. */ \
+	"    if (uFixedColormap.w > 0.5) return fuaFixedColormap(undesaturated * ((int(vTexFlags + 0.5) & 8) != 0 ? vec3(1.0) : vColor));\n" \
 	"    vec3 color = fuaSectorLight(vColor, vLightParm.x, fogMode, fogfactor, surfDepth);\n" \
 	/* Dynamic lights add to the light COLOUR before the texture is modulated, exactly as
 	   getLightColor does -- adding after would light the black parts of a texture too. */ \
@@ -450,7 +459,7 @@ static const char *kScenePS =
 	"#version 450\n"
 	FUA_LIGHT_GLSL
 	"void main() {\n"
-	"    vec4 t = fuaStencil(fuaTexel(vUV));\n"
+	"    vec4 t = fuaTexMode(fuaTexel(vUV));\n"
 	/* [rc4l] GL's solid pass tests no alpha, so an upper, lower or one-sided middle shows its see-through texels in their own colour. */
 	"    if (t.a < 0.5 && vPlain < 0.5) discard;\n"
 	"    outColor = vec4(fuaShade(t.rgb), 1.0);\n"
@@ -495,10 +504,12 @@ static const char *kScenePSTrans =
 	"#version 450\n"
 	FUA_LIGHT_GLSL
 	"void main() {\n"
-	"    vec4 t = fuaStencil(fuaTexel(vUV));\n"
+	"    vec4 t = fuaTexMode(fuaTexel(vUV));\n"
 	/* [rc4l] An alpha-tested sprite drops what GL's uAlphaThreshold drops (uFrame.w); anything else only what is all but invisible. */
 	"    if ((int(vTexFlags + 0.5) & 2) != 0 ? t.a <= uFrame.w : t.a < 0.04) discard;\n"
-	"    outColor = vec4(fuaShade(t.rgb), t.a * vLightParm.z);\n"
+	"    vec3 c = fuaShade(t.rgb);\n"
+	/* [rc4l] A sprite blended by its own colour (texFlags 32) is GL's GL_SRC_COLOR onto one, colour squared onto the screen, which the additive pipeline draws at alpha 1. */
+	"    outColor = (int(vTexFlags + 0.5) & 32) != 0 ? vec4(c * c, 1.0) : vec4(c, t.a * vLightParm.z);\n"
 	"}\n";
 
 // [rc4l] The texture is an ALPHA MASK: its red channel is the shape, the colour is the vertex light.

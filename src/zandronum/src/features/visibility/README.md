@@ -114,4 +114,4 @@ included, and GL's walk on all of them.
 
 GL state it still reads, until the renderer interface supplies the view (P5): `gl_FakeFlat`,
 `gl_CheckViewArea` and `in_area`,
-`currentmapsection`, `FPortal` and `gl_BuildPortalCoverage`, `gl_ClampLight`, and `ProcessParticle`.
+`currentmapsection`, `FPortal` and `gl_BuildPortalCoverage`, and `gl_ClampLight`.

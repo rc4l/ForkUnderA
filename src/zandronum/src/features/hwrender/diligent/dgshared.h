@@ -16,7 +16,14 @@
 
 // [rc4l] The scene constant block every pass binds, declared once; uFrame.x is the warp clock in seconds.
 #define FUA_CONSTANTS_GLSL \
-	"layout(binding = 0) uniform Constants { mat4 uMVP; vec4 uCameraPos; vec4 uLightParams; vec4 uClipPlane; vec4 uScreen; vec4 uSkyColor; vec4 uFrame; };\n"
+	"layout(binding = 0) uniform Constants { mat4 uMVP; vec4 uCameraPos; vec4 uLightParams; vec4 uClipPlane; vec4 uScreen; vec4 uSkyColor; vec4 uFrame; vec4 uFixedColormap; vec4 uFixedRange; };\n"
+
+// [rc4l] main.fp's fixed colormap on a lit texel, after a block declaring uFixedColormap and uFixedRange: mode 1 (w) maps its grey into the ramp, as invulnerability inverts, and mode 2 multiplies it, as light amplification and a torch tint.
+#define FUA_FIXED_COLORMAP_GLSL \
+	"vec3 fuaFixedColormap(vec3 c) {\n" \
+	"    if (uFixedColormap.w < 1.5) return clamp(uFixedColormap.rgb + dot(c, vec3(0.3, 0.56, 0.14)) * uFixedRange.rgb, 0.0, 1.0);\n" \
+	"    return c * uFixedColormap.rgb;\n" \
+	"}\n"
 
 // [rc4l] A line mirror's pass drops every fragment at world position p behind the glass; uClipPlane.w of 0 means no mirror.
 #define FUA_MIRROR_CLIP_GLSL(p) \

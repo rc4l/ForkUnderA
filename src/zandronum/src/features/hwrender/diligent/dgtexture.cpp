@@ -13,9 +13,7 @@
 // stays on the engine side, and the backend sees a texture. It is also what makes this portable --
 // the same call would feed a Metal or D3D12 backend unchanged.
 //
-// Deliberately NOT ported here: animation (the material for a frame is whatever the mesh recorded),
-// translations beyond the default, warp and brightmap shaders. Those are shading features, and the
-// milestone is "textured world", not "pixel-identical world".
+// [rc4l] Animation (slotremap_compute), warps and brightmaps are the scene shader's, and each translation is its own cache entry.
 
 #include "c_dispatch.h"
 #include "c_console.h"

@@ -30,6 +30,8 @@ struct Quad2D
 	float       x3, y3, u3, v3;
 	// [rc4l] Which window it is for, a k2D target, stamped by Record2D from Set2DTarget.
 	int         target;
+	// [rc4l] The fixed colormap (gl_fixedcolormap) a weapon layer is drawn under, as GL draws the weapon before resetting it for the HUD; 0 for everything else.
+	int         fixedColormap;
 };
 
 }} // namespace zx::hwrender

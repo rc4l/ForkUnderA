@@ -150,3 +150,27 @@ TEST(SpriteStyle, TheWeaponTakesTheFuzzAndAlphaRulesWithoutBeingMadeSolid)
 	// [rc4l] An invisible actor's weapon at alpha 0 stays at 0.
 	EXPECT_FLOAT_EQ(0.f, ComputeWeaponStyle(normal, false, 0.f, 0.5f, 0, translucent).trans);
 }
+
+// [rc4l] An imp's fireball: additive, opaque and fullbright from a sprite with no translucent texels, which gl_usecolorblending blends by its own colour.
+TEST(SpriteStyle, AnOpaqueFullbrightAdditiveSpriteBlendsByItsColour)
+{
+	const SpriteStyle add = { kOpAdd, kAlphaSrc, kAlphaOne, 0 };
+	const ColorBlendIn in = { true, false, true, true, false };
+	EXPECT_TRUE(ComputeColorBlending(add, 1.f, in));
+	// [rc4l] Not when anything GL checks says otherwise: translucent, off, a fixed colormap, a model, not fullbright, a translucent texture.
+	EXPECT_FALSE(ComputeColorBlending(add, 0.75f, in));
+	ColorBlendIn off = in; off.enabled = false;
+	EXPECT_FALSE(ComputeColorBlending(add, 1.f, off));
+	ColorBlendIn fixed = in; fixed.fixedColormap = true;
+	EXPECT_FALSE(ComputeColorBlending(add, 1.f, fixed));
+	ColorBlendIn model = in; model.sprite = false;
+	EXPECT_FALSE(ComputeColorBlending(add, 1.f, model));
+	ColorBlendIn dim = in; dim.fullbright = false;
+	EXPECT_FALSE(ComputeColorBlending(add, 1.f, dim));
+	ColorBlendIn soft = in; soft.textureTransparent = true;
+	EXPECT_FALSE(ComputeColorBlending(add, 1.f, soft));
+	// [rc4l] Nor for a style that is not source alpha added onto one.
+	EXPECT_FALSE(ComputeColorBlending(kTranslucent, 1.f, in));
+	EXPECT_FALSE(ComputeColorBlending({ kOpSub, kAlphaSrc, kAlphaOne, 0 }, 1.f, in));
+	EXPECT_FALSE(ComputeColorBlending({ kOpAdd, kAlphaOne, kAlphaOne, 0 }, 1.f, in));
+}

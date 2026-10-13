@@ -8,6 +8,7 @@
 #include "features/jobs/jobs.h"   // [rc4l] the pool BuildSprites derives on
 
 #include "features/sprites/computation/spritestyle_compute.h"
+#include "features/draw2d/computation/quad2d_compute.h"   // [rc4l] ComputeTextureMode
 #include "features/sprites/computation/spritequad_compute.h"
 #include "features/sprites/computation/spritelight_compute.h"
 #include "features/sprites/computation/spriteclip_compute.h"
@@ -52,6 +53,7 @@ EXTERN_CVAR(Float, gl_sclipfactor)
 EXTERN_CVAR(Float, gl_sclipthreshold)
 EXTERN_CVAR(Int, gl_fuzztype)
 EXTERN_CVAR(Bool, gl_sprite_blend)
+EXTERN_CVAR(Bool, gl_usecolorblending)
 EXTERN_CVAR(Bool, gl_enhanced_nightvision)
 EXTERN_CVAR(Int, gl_enhanced_nv_stealth)
 EXTERN_CVAR(Int, gl_billboard_mode)
@@ -239,6 +241,8 @@ struct Look
 	int lightlevel;
 	FColormap cm;
 	SpriteStyleOut so;
+	bool inverse;      // [rc4l] drawn in TM_INVERSE, as gl_GetRenderStyle takes InvertSource
+	bool colorBlend;   // [rc4l] blended by its own colour (ComputeColorBlending)
 };
 
 static bool LookOf(AActor *thing, const Subject &s, bool disableFullbright, bool textureTransparent, Look &l)
@@ -292,6 +296,9 @@ static bool LookOf(AActor *thing, const Subject &s, bool disableFullbright, bool
 	si.stealth = !!(thing->flags & MF_STEALTH);
 	si.translucent = StyleOf(LegacyRenderStyles[STYLE_Translucent]);
 	l.so = ComputeSpriteStyle(si);
+	l.inverse = zx::draw2d::ComputeTextureMode(l.so.style.flags, false) == zx::draw2d::kTexInverse;
+	const ColorBlendIn cb = { gl_usecolorblending, gl_fixedcolormap != CM_DEFAULT, s.model == NULL, l.fullbright, textureTransparent };
+	l.colorBlend = ComputeColorBlending(l.so.style, l.so.trans, cb);
 	return l.so.trans != 0.0f;
 }
 
@@ -335,6 +342,7 @@ static void DeriveModel(AActor *thing, const Subject &s, const Look &l, bool che
 	MeshPiece look;
 	zx::levelmesh::ModelPieceLook(lightlevel, l.fullbright ? 0 : getExtraLight(), cm, l.fullbright, dyn, ThingColorOf(thing).d, l.so.trans,
 		ComputeSpriteBlendMode(l.so.style.blendOp, l.so.style.destAlpha, l.so.trans), s.x, s.y, s.z, look);
+	look.inverse = l.inverse;
 
 	ModelPose pose;
 	ModelPoseFor(thing, s.model, s.x, s.y, s.z, pose);
@@ -509,6 +517,8 @@ static int DeriveSprite(AActor *thing, const Subject &s, SpritePiece *out, int m
 		ApplyThingColor(ThingColorOf(thing), mp);
 		mp.stencil = (so.style.flags & STYLEF_ColorIsFixed) != 0;
 		mp.alphaTest = so.hw != kHwNoAlphaTest;
+		mp.inverse = look.inverse;
+		mp.colorBlend = look.colorBlend;
 		if (!fullbright) { mp.dynR = dyn[0]; mp.dynG = dyn[1]; mp.dynB = dyn[2]; }
 		mp.cpuLight = true;
 		mp.normX = mp.normY = mp.normZ = 0.f;

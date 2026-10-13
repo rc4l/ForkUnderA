@@ -100,13 +100,13 @@ export function analyzePresentMon(rows, { qpcHz = 1e7 } = {}) {
   };
 }
 
-// [rc4l] Frames a second the engine drew (fua_viewtrace rows, `view_at` on the same performance-counter clock in microseconds) against what PresentMon saw `app` hand over and Windows show, second by second.
+// [rc4l] Frames a second the engine drew (fua_viewtrace rows, `view_at` on the same performance-counter clock in microseconds) against what PresentMon saw `app` hand over and Windows show, second by second over PresentMon's own capture, since the trace starts before the admin prompt is approved.
 export function alignSeconds(pmRows, traceRows, { app, qpcHz = 1e7 }) {
+  if (!pmRows.length) return [];
+  const pmTimes = pmRows.map((r) => Number(r.TimeInQPC) / qpcHz);
+  const t0 = Math.min(...pmTimes), t1 = Math.max(...pmTimes), n = Math.floor(t1 - t0) + 1;
   const mine = pmRows.filter((r) => r.Application === app).map((r) => ({ s: Number(r.TimeInQPC) / qpcHz, shown: num(r.MsUntilDisplayed) !== null }));
-  const drawn = traceRows.map((r) => r.view_at / 1e6);
-  const all = [...mine.map((m) => m.s), ...drawn];
-  if (!all.length) return [];
-  const t0 = Math.min(...all), n = Math.floor(Math.max(...all) - t0) + 1;
+  const drawn = traceRows.map((r) => r.view_at / 1e6).filter((s) => s >= t0 && s <= t1);
   const out = Array.from({ length: n }, (_, i) => ({ second: i, drawn: 0, handed: 0, shown: 0 }));
   for (const s of drawn) out[Math.floor(s - t0)].drawn++;
   for (const m of mine) { const o = out[Math.floor(m.s - t0)]; o.handed++; if (m.shown) o.shown++; }

@@ -239,6 +239,7 @@ void FGLRenderer::DrawPSprite (player_t * player,pspdef_t *psp,fixed_t sx, fixed
 		q.blend = blend2d;
 		q.translation = psptranslation;
 		q.texMode = gl_RenderState.GetTextureMode();
+		q.fixedColormap = gl_fixedcolormap;
 		q.kind = 0;
 		q.lx2 = q.ly2 = 0.f;
 		gl_observer->WeaponQuad(q);

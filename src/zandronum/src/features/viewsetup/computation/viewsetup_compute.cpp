@@ -57,6 +57,32 @@ int ComputeFixedColormap(const FixedColormapIn &in)
 	return kCmDefault;
 }
 
+FixedColormapShade ComputeFixedColormapShade(int colormap, int specialCount, const float colorizeStart[3], const float colorizeEnd[3], bool enhancedNightvision)
+{
+	FixedColormapShade s = { kShadeNone, { 0.f, 0.f, 0.f }, { 0.f, 0.f, 0.f } };
+	if (colormap >= kCmFirstSpecial && colormap < kCmFirstSpecial + specialCount)
+	{
+		s.mode = kShadeRamp;
+		for (int i = 0; i < 3; i++) { s.start[i] = colorizeStart[i]; s.range[i] = colorizeEnd[i] - colorizeStart[i]; }
+	}
+	else if (colormap == kCmFogLayer) s.mode = kShadeFogLayer;
+	else if (colormap == kCmLite)
+	{
+		s.mode = kShadeTint;
+		s.start[0] = s.start[2] = enhancedNightvision ? 0.375f : 1.f;
+		s.start[1] = 1.f;
+	}
+	else if (colormap >= kCmTorch)
+	{
+		// [rc4l] A torch's light level, 0 to 7 as APowerTorch keeps it, flickers it between 0.9 and 0.8, its blue lower in night vision.
+		const float r = 0.8f + (7 - (colormap - kCmTorch)) / 70.0f;
+		s.mode = kShadeTint;
+		s.start[0] = s.start[1] = r;
+		s.start[2] = enhancedNightvision ? r * 0.75f : r;
+	}
+	return s;
+}
+
 bool ComputeSeesOwnBody(bool cameraIsPlayer, bool freeSpectate, bool isConsolePlayer, bool consoleSpectating, bool chaseCam,
 	bool deathCamera, bool dead, bool cameraIsPlayerBody)
 {

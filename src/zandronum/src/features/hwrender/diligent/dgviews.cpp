@@ -5,6 +5,7 @@
 
 #include "features/hwrender/diligent/dgscene_internal.h"
 #include "features/hwrender/diligent/dgscene_glsl.h"   // [rc4l] FUA_MAT_SLOTS_STR, the material array's size
+#include "features/viewsetup/viewsetup.h"   // [rc4l] FixedColormapShadeFor
 
 EXTERN_CVAR(Float, gl_mask_sprite_threshold)
 
@@ -647,6 +648,8 @@ void WriteSceneConstants(float *cb, const float *clip, float targetW, float targ
 	in.skyHoles = g_scene.skyHoleCount;
 	// [rc4l] AlphaFunc(GL_GEQUAL, t) keeps a texel only above t - 0.001, as FRenderState stores it.
 	in.spriteAlphaCut = gl_mask_sprite_threshold - 0.001f;
+	// [rc4l] GL draws a camera texture with no fixed colormap (RenderTextureView), and every other view under the player's.
+	in.fixedColormap = zx::viewsetup::FixedColormapShadeFor(g_pass.inCameraPass ? CM_DEFAULT : (int)gl_fixedcolormap);
 	zx::hwrender::ComputeSceneConstants(in, cb);
 }
 

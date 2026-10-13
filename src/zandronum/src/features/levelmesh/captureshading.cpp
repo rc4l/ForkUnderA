@@ -43,7 +43,8 @@ void CapturePolyColor(int lightlevel, const FColormap &cm, float &r, float &g, f
 	b = s.b;
 }
 
-void CaptureShading(int lightlevel, int rellight, const FColormap &cm, MeshPiece &out, bool noFog, bool additive)
+// [rc4l] Shade `out` in the frame's light model, the fixed colormap left out for a level surface.
+static void Capture(int lightlevel, int rellight, const FColormap &cm, MeshPiece &out, bool noFog, bool additive, bool levelSurface)
 {
 	ShadingInput in;
 	in.lightLevel = lightlevel;
@@ -54,9 +55,12 @@ void CaptureShading(int lightlevel, int rellight, const FColormap &cm, MeshPiece
 	in.desaturation = cm.desaturation;
 	in.noFog = noFog;
 	in.additive = additive;
-	ShadePiece(in, RenderShadingEnv(false), out);
+	ShadingEnv env = RenderShadingEnv(false);
+	if (levelSurface) env.fixedColormap = false;
+	ShadePiece(in, env, out);
 
-	if (!fua_shading_check || g_oracle == NULL) return;
+	// [rc4l] GL's setters light a level surface under the fixed colormap, which this one leaves to the shader.
+	if (!fua_shading_check || g_oracle == NULL || (levelSurface && gl_fixedcolormap != CM_DEFAULT)) return;
 	MeshPiece gl = out;
 	g_oracle(lightlevel, rellight, cm, noFog, additive, gl);
 	g_check.checked++;
@@ -68,6 +72,16 @@ void CaptureShading(int lightlevel, int rellight, const FColormap &cm, MeshPiece
 			lightlevel, rellight, cm.LightColor.d, cm.FadeColor.d, cm.blendfactor, noFog, additive,
 			gl.colorR, gl.colorG, gl.colorB, gl.softLight, gl.fogDensity, gl.fogColor, gl.fogMode, gl.desaturation,
 			out.colorR, out.colorG, out.colorB, out.softLight, out.fogDensity, out.fogColor, out.fogMode, out.desaturation);
+}
+
+void CaptureShading(int lightlevel, int rellight, const FColormap &cm, MeshPiece &out, bool noFog, bool additive)
+{
+	Capture(lightlevel, rellight, cm, out, noFog, additive, false);
+}
+
+void CaptureLevelShading(int lightlevel, int rellight, const FColormap &cm, MeshPiece &out, bool noFog)
+{
+	Capture(lightlevel, rellight, cm, out, noFog, false, true);
 }
 
 }} // namespace zx::levelmesh

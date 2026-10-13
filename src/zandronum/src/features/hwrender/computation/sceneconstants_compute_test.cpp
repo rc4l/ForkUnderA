@@ -27,6 +27,7 @@ SceneConstantInputs Inputs(const float *mvp, const float *clip)
 	in.playerPass = true;
 	in.skyHoles = 3;
 	in.spriteAlphaCut = 0.499f;
+	in.fixedColormap = { zx::viewsetup::kShadeRamp, { 1.f, 0.5f, 0.25f }, { -1.f, -0.5f, 0.125f } };
 	return in;
 }
 
@@ -52,6 +53,21 @@ TEST(SceneConstants, EveryFieldLandsWhereTheShaderReadsIt)
 	EXPECT_EQ(4096.f, out[35]);
 	EXPECT_FLOAT_EQ(2.5f, out[36]);
 	EXPECT_EQ(2.f, out[37]); EXPECT_EQ(3.f, out[38]); EXPECT_EQ(0.499f, out[39]);
+	EXPECT_EQ(1.f, out[40]); EXPECT_EQ(0.5f, out[41]); EXPECT_EQ(0.25f, out[42]); EXPECT_EQ(1.f, out[43]);
+	EXPECT_EQ(-1.f, out[44]); EXPECT_EQ(-0.5f, out[45]); EXPECT_EQ(0.125f, out[46]); EXPECT_EQ(0.f, out[47]);
+}
+
+// [rc4l] A tint keeps its colour and mode 2; no colormap, or a sprite's fog layer, which is never a view's, reads as all zeros.
+TEST(SceneConstants, OnlyARampOrATintReachesTheShader)
+{
+	float out[8];
+	ComputeFixedColormapConstants({ zx::viewsetup::kShadeTint, { 0.375f, 1.f, 0.375f }, { 0.f, 0.f, 0.f } }, out);
+	EXPECT_EQ(0.375f, out[0]); EXPECT_EQ(1.f, out[1]); EXPECT_EQ(2.f, out[3]);
+	for (int mode : { zx::viewsetup::kShadeNone, zx::viewsetup::kShadeFogLayer })
+	{
+		ComputeFixedColormapConstants({ mode, { 1.f, 1.f, 1.f }, { 1.f, 1.f, 1.f } }, out);
+		for (int i = 0; i < 8; i++) EXPECT_EQ(0.f, out[i]);
+	}
 }
 
 // [rc4l] Every pass but a stacked view's reads zero, which the scene shader takes as "cull nothing".

@@ -122,6 +122,8 @@ static const char *kSkyVS =
 
 static const char *kSkyPS =
 	"#version 450\n"
+	FUA_CONSTANTS_GLSL
+	FUA_FIXED_COLORMAP_GLSL
 	"layout(location = 0) in vec2 vUV;\n"
 	"layout(location = 1) in vec4 vSkyColor;\n"
 	"layout(location = 2) in float vSkyAlpha;\n"
@@ -135,7 +137,10 @@ static const char *kSkyPS =
 	//  <0  flat colour, alpha = -a -- the sky fade layer GL draws over the whole sky
 	"    float sel = max(vSkyColor.a, 0.0);\n"
 	"    float al = vSkyColor.a < 0.0 ? -vSkyColor.a : 1.0;\n"
-	"    outColor = vec4(mix(vSkyColor.rgb, texture(uTex, vUV).rgb, sel), al * vSkyAlpha);\n"
+	"    vec3 c = mix(vSkyColor.rgb, texture(uTex, vUV).rgb, sel);\n"
+	// [rc4l] GL draws the dome and its caps through main.fp, so a fixed colormap recolours the sky too.
+	"    if (uFixedColormap.w > 0.5) c = fuaFixedColormap(c);\n"
+	"    outColor = vec4(c, al * vSkyAlpha);\n"
 	"}\n";
 
 // [rc4l] One sky dome vertex, with RenderDome's model and texture transforms folded in.

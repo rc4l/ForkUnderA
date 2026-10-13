@@ -11,6 +11,9 @@ Particles too (`BuildParticle`, `GLSprite::ProcessParticle`'s light and quad), e
 the particles in the subsectors it reaches. A sprite's `ThingColor` (a particle's colour, a stencil
 actor's fill), which GL's shader multiplies it by, is folded into its shading here and in the copy of GL's
 sprite the check reads; without it every particle drew in its texture's white (scenario `particlecolor`).
+Night vision's inverted monsters and items take GL's `TM_INVERSE` (`ComputeTextureMode`, scenario `lightamp`), and
+`gl_usecolorblending` blends an opaque fullbright additive sprite by its own colour (`ComputeColorBlending`,
+scenario `colorblend`), as `gl_GetRenderStyle` does.
 
 Models too (`modelbuild.cpp`): the actor's light and style as a single-band sprite's, the pose from
 `computation/modelpose_compute` (`ComputeModelMatrix`, `gl_RenderModel`'s VSMatrix calls; the momentum,

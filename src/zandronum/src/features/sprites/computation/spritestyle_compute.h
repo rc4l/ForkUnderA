@@ -59,6 +59,19 @@ WeaponStyleOut ComputeWeaponStyle(const SpriteStyle &style, bool fuzzStyle, floa
 // [rc4l] The backend's blend for a resolved style, for sprites, the weapon and decals alike: 0 opaque or alpha-tested, 1 translucent, 2 additive, 3 fuzz.
 int ComputeSpriteBlendMode(int blendOp, int destAlpha, float trans);
 
+// [rc4l] What GLSprite::Draw's allowcolorblending reads of an actor besides its style.
+struct ColorBlendIn
+{
+	bool enabled;              // [rc4l] gl_usecolorblending
+	bool fixedColormap;        // [rc4l] a fixed colormap is on
+	bool sprite;               // [rc4l] drawn from a sprite texture, which a model is not
+	bool fullbright;
+	bool textureTransparent;   // [rc4l] the frame's texture has translucent texels
+};
+
+// [rc4l] gl_GetRenderStyle's colour blending: an opaque additive style (source alpha onto one) that blends by the source's own colour instead, colour squared onto the screen, when ColorBlendIn allows it.
+bool ComputeColorBlending(const SpriteStyle &style, float trans, const ColorBlendIn &in);
+
 // [rc4l] ProcessParticle's alpha test: a fully opaque particle that is not a smooth one (gl_particles_style 2).
 bool ComputeParticleAlphaTested(int particlesStyle, float trans);
 

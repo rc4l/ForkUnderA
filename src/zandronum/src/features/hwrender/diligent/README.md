@@ -69,19 +69,22 @@ rather than of the renderer.
 
 ### Not yet matching GL (2026-10-13)
 
-The world, sprites, models, the 2D layer, wipes, mirrors, stacked sectors, skyboxes and horizons are
-ported, each with a GL-against-Vulkan scenario in `tools/fuactl/scenarios`. Still missing or different:
+The world, sprites, models, the 2D layer, wipes, fixed colormaps (invulnerability, light amplification and
+torches, `fixedcolormap` and `lightamp`), mirrors, stacked sectors, skyboxes and horizons are ported, each
+with a GL-against-Vulkan scenario in `tools/fuactl/scenarios`. Still missing or different:
 
-- fixed colormaps (invulnerability, light amp, torch): light goes full and fog off, with no recolouring;
+- a line mirror's sheen, which a fixed colormap does not recolour, and a 3D floor's fog layer, which GL
+  leaves out under one;
 - glow from GLDEFS glowing flats onto walls (sprites do glow);
-- the fuzz shaders, drawn as plain translucency, and the subtract styles, drawn as alpha;
+- the fuzz shaders `gl_fuzztype` 1-7 picks, drawn as plain translucency (the default 0 is a shadow in both),
+  and the subtract styles, drawn as alpha;
 - fog boundary sheets between a fogged and a clear sector;
 - skies other than `sky1texture`: MBF line skies, `sky2`, swapped and double skies;
-- GLDEFS hardware shaders, and inverted (`TM_INVERSE`) world sprites;
+- GLDEFS hardware shaders;
 - one level of mirror (GL recurses), at most 4 plane mirrors and 2 stacked views a frame;
 - `ClipFFloors`, and decals on 3D-floor faces and mirror sheens;
 - damage tint, the hitbox view and stereo 3D, which are GL's alone;
-- `gl_texture_filter_anisotropic`, `gl_lights_checkside`, `gl_usecolorblending`, `gl_seamless` and
+- `gl_texture_filter_anisotropic`, `gl_lights_checkside`, `gl_seamless` and
   `r_mirror_recursions`, which it ignores; changing hqresize or hires at runtime leaves its textures stale;
 - no GL fallback when the Vulkan device fails, and Windows only.
 

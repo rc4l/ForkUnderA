@@ -118,6 +118,7 @@ void LayerQuad(player_t *player, pspdef_t *psp, fixed_t sx, fixed_t sy, int tran
 	q.blend = blend;
 	q.translation = translation;
 	q.texMode = texMode;
+	q.fixedColormap = (int)gl_fixedcolormap;
 	Emit(q);
 }
 
@@ -159,7 +160,8 @@ bool SameQuad(const zx::hwrender::Quad2D &a, const zx::hwrender::Quad2D &b)
 	const float fa[] = { a.x, a.y, a.w, a.h, a.u1, a.v1, a.u2, a.v2, a.r, a.g, a.b, a.a, a.lx2, a.ly2 };
 	const float fb[] = { b.x, b.y, b.w, b.h, b.u1, b.v1, b.u2, b.v2, b.r, b.g, b.b, b.a, b.lx2, b.ly2 };
 	return a.material == b.material && memcmp(fa, fb, sizeof(fa)) == 0 && a.clipL == b.clipL && a.clipT == b.clipT && a.clipR == b.clipR &&
-		a.clipB == b.clipB && a.blend == b.blend && a.translation == b.translation && a.texMode == b.texMode && a.kind == b.kind;
+		a.clipB == b.clipB && a.blend == b.blend && a.translation == b.translation && a.texMode == b.texMode && a.kind == b.kind &&
+		a.fixedColormap == b.fixedColormap;
 }
 
 // [rc4l] PSPF_PLAYERTRANSLATED takes the player's own colours.

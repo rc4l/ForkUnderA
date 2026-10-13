@@ -9,6 +9,8 @@
 
 #include "features/hwrender/diligent/dgshared.h"
 #include "features/hwrender/hud2d.h"
+#include "features/hwrender/computation/sceneconstants_compute.h"   // [rc4l] ComputeFixedColormapConstants
+#include "features/viewsetup/viewsetup.h"   // [rc4l] FixedColormapShadeFor
 #include "v_video.h"
 #include "tarray.h"
 #include "c_cvars.h"
@@ -27,7 +29,11 @@ namespace zx { namespace hwrender {
 //
 // Submission order is draw order and must not be reordered -- no material batching here. A 2D layer
 // sorted by texture would put the status bar behind the world and the console behind the menu.
-struct Vertex2D { float x, y, u, v, r, g, b, a, texMode; };
+// [rc4l] fixedCm is 1 for a weapon layer, which takes the view's fixed colormap.
+struct Vertex2D { float x, y, u, v, r, g, b, a, texMode, fixedCm; };
+
+// [rc4l] The 2D constant block both stages read: the screen's reciprocal size, then the weapon's fixed colormap as the scene block carries it.
+#define FUA_SCREEN2D_GLSL "layout(binding = 0) uniform Screen { vec4 uInvScreen; vec4 uFixedColormap; vec4 uFixedRange; };\n"
 
 // [rc4l] One 2D pipeline per blend mode: 0 alpha, 1 additive, 2 multiply.
 //
@@ -48,10 +54,12 @@ static const char *k2DVS =
 	"layout(location = 1) in vec2 aUV;\n"
 	"layout(location = 2) in vec4 aColor;\n"
 	"layout(location = 3) in float aTexMode;\n"
-	"layout(binding = 0) uniform Screen { vec4 uInvScreen; };\n"
+	"layout(location = 4) in float aFixed;\n"
+	FUA_SCREEN2D_GLSL
 	"layout(location = 0) out vec2 vUV;\n"
 	"layout(location = 1) out vec4 vColor;\n"
 	"layout(location = 2) flat out int vTexMode;\n"
+	"layout(location = 3) flat out float vFixed;\n"
 	"void main() {\n"
 	// Engine 2D space is ortho(0, W, H, 0): origin top-left, Y down. The Y is INVERTED here rather
 	// than passed through, because Diligent's Vulkan backend renders with a negative-height viewport
@@ -63,6 +71,7 @@ static const char *k2DVS =
 	"    vUV = aUV;\n"
 	"    vColor = aColor;\n"
 	"    vTexMode = int(aTexMode);\n"
+	"    vFixed = aFixed;\n"
 	"}\n";
 
 // [rc4l] The texture modes from gl_interface.h's TexMode, transcribed from getTexel() in main.fp.
@@ -76,6 +85,9 @@ static const char *k2DPS =
 	"layout(location = 0) in vec2 vUV;\n"
 	"layout(location = 1) in vec4 vColor;\n"
 	"layout(location = 2) flat in int vTexMode;\n"
+	"layout(location = 3) flat in float vFixed;\n"
+	FUA_SCREEN2D_GLSL
+	FUA_FIXED_COLORMAP_GLSL
 	"layout(binding = 1) uniform sampler2D uTex;\n"
 	"layout(location = 0) out vec4 outColor;\n"
 	"void main() {\n"
@@ -86,7 +98,15 @@ static const char *k2DPS =
 	"    else if (vTexMode == 4) t = vec4(1.0, 1.0, 1.0, t.r);\n"            // TM_REDTOALPHA
 	"    else if (vTexMode == 5 && (vUV.t < 0.0 || vUV.t > 1.0)) t.a = 0.0;\n"// TM_CLAMPY
 	"    outColor = t * vColor;\n"
+	"    if (vFixed > 0.5 && uFixedColormap.w > 0.5) outColor.rgb = fuaFixedColormap(outColor.rgb);\n"
 	"}\n";
+
+// [rc4l] The 2D constants on both stages of a 2D pipeline.
+static void BindScreen2D(Diligent::IPipelineState *pso)
+{
+	for (Diligent::SHADER_TYPE stage : { Diligent::SHADER_TYPE_VERTEX, Diligent::SHADER_TYPE_PIXEL })
+		if (auto *v = pso->GetStaticVariableByName(stage, "Screen")) v->Set(g_cb2D);
+}
 
 static bool Ensure2DPipeline()
 {
@@ -102,7 +122,7 @@ static bool Ensure2DPipeline()
 
 	Diligent::BufferDesc cbd;
 	cbd.Name = "fua 2D constants";
-	cbd.Size = sizeof(float) * 4;
+	cbd.Size = sizeof(float) * 12;
 	cbd.Usage = Diligent::USAGE_DYNAMIC;
 	cbd.BindFlags = Diligent::BIND_UNIFORM_BUFFER;
 	cbd.CPUAccessFlags = Diligent::CPU_ACCESS_WRITE;
@@ -114,6 +134,7 @@ static bool Ensure2DPipeline()
 		Diligent::LayoutElement{1, 0, 2, Diligent::VT_FLOAT32, false},
 		Diligent::LayoutElement{2, 0, 4, Diligent::VT_FLOAT32, false},
 		Diligent::LayoutElement{3, 0, 1, Diligent::VT_FLOAT32, false},
+		Diligent::LayoutElement{4, 0, 1, Diligent::VT_FLOAT32, false},
 	};
 	static Diligent::ShaderResourceVariableDesc vars[] = {
 		{ Diligent::SHADER_TYPE_PIXEL, "uTex", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
@@ -154,7 +175,7 @@ static bool Ensure2DPipeline()
 		rt.BlendOpAlpha = Diligent::BLEND_OPERATION_ADD;
 	}
 	pci.GraphicsPipeline.InputLayout.LayoutElements = layout;
-	pci.GraphicsPipeline.InputLayout.NumElements = 4;
+	pci.GraphicsPipeline.InputLayout.NumElements = 5;
 	pci.PSODesc.ResourceLayout.DefaultVariableType = Diligent::SHADER_RESOURCE_VARIABLE_TYPE_STATIC;
 	pci.PSODesc.ResourceLayout.Variables = vars;
 	pci.PSODesc.ResourceLayout.NumVariables = 1;
@@ -180,8 +201,7 @@ static bool Ensure2DPipeline()
 		}
 		dev->CreateGraphicsPipelineState(pci, &g_pso2D[mode]);
 		if (!g_pso2D[mode]) return false;
-		if (auto *v = g_pso2D[mode]->GetStaticVariableByName(Diligent::SHADER_TYPE_VERTEX, "Screen"))
-			v->Set(g_cb2D);
+		BindScreen2D(g_pso2D[mode]);
 	}
 	{
 		auto &rt = pci.GraphicsPipeline.BlendDesc.RenderTargets[0];
@@ -198,7 +218,7 @@ static bool Ensure2DPipeline()
 		pci.PSODesc.ResourceLayout.ImmutableSamplers = wrapSamplers;
 		dev->CreateGraphicsPipelineState(pci, &g_pso2DWrap);
 		if (!g_pso2DWrap) return false;
-		if (auto *v = g_pso2DWrap->GetStaticVariableByName(Diligent::SHADER_TYPE_VERTEX, "Screen")) v->Set(g_cb2D);
+		BindScreen2D(g_pso2DWrap);
 	}
 	return true;
 }
@@ -222,11 +242,14 @@ void Draw2D(Diligent::IDeviceContext *ctx)
 	// is per frame, not per draw.
 	static TArray<Vertex2D> vb;
 	static unsigned int built2D = 0;
+	// [rc4l] The fixed colormap this frame's weapon was recorded under, one for the whole frame as GL's render state holds one.
+	static int fixed2D = 0;
 	const unsigned int gen = zx::hwrender::Generation2D();
 	if (gen != built2D)
 	{
 		built2D = gen;
 		vb.Clear();
+		fixed2D = 0;
 		for (int i = 0; i < nq; i++)
 		{
 			const zx::hwrender::Quad2D &q = quads[i];
@@ -261,8 +284,9 @@ void Draw2D(Diligent::IDeviceContext *ctx)
 			v[2].x = q.x + q.w; v[2].y = q.y;       v[2].u = q.u2; v[2].v = q.v1;
 			v[3].x = q.x + q.w; v[3].y = q.y + q.h; v[3].u = q.u2; v[3].v = q.v2;
 			}
+			if (q.fixedColormap != 0) fixed2D = q.fixedColormap;
 			for (int k = 0; k < 4; k++)
-			{ v[k].r = q.r; v[k].g = q.g; v[k].b = q.b; v[k].a = q.a; v[k].texMode = (float)q.texMode; }
+			{ v[k].r = q.r; v[k].g = q.g; v[k].b = q.b; v[k].a = q.a; v[k].texMode = (float)q.texMode; v[k].fixedCm = q.fixedColormap != 0 ? 1.f : 0.f; }
 			vb.Push(v[0]); vb.Push(v[1]); vb.Push(v[2]);
 			vb.Push(v[2]); vb.Push(v[1]); vb.Push(v[3]);
 		}
@@ -275,6 +299,7 @@ void Draw2D(Diligent::IDeviceContext *ctx)
 	{
 		Diligent::MapHelper<float> cb(ctx, g_cb2D, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD);
 		cb[0] = 1.0f / scrW; cb[1] = 1.0f / scrH; cb[2] = 0.f; cb[3] = 0.f;
+		ComputeFixedColormapConstants(zx::viewsetup::FixedColormapShadeFor(fixed2D), &cb[4]);
 	}
 
 	Diligent::IBuffer *vbs[] = { g_vb2D };

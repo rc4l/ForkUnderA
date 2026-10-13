@@ -24,7 +24,7 @@ void ComputeViewAngleVector(unsigned viewAngle, float &yaw, float &vectorX, floa
 float ComputeFovRatio(float ratio, bool tallerThanWide);
 
 // [rc4l] gl_colormap.h's and colormaps.h's values the fixed colormap choice reads (viewsetup.cpp asserts they match).
-enum { kCmDefault = 0, kCmFirstSpecial = 1, kCmLite = 0x20000000, kCmTorch = 0x20000010, kNoFixedColormap = -1, kInverseColormap = 0 };
+enum { kCmDefault = 0, kCmFirstSpecial = 1, kCmFogLayer = 0x10000000, kCmLite = 0x20000000, kCmTorch = 0x20000010, kNoFixedColormap = -1, kInverseColormap = 0 };
 // [rc4l] The light power a player carries, the last in the inventory winning.
 enum { kNoLightPower = 0, kTorchPower = 1, kLightAmpPower = 2 };
 
@@ -39,6 +39,19 @@ struct FixedColormapIn
 
 // [rc4l] SetFixedColormap's choice: the inverse map, the player's fixed one, or a light amplifier's.
 int ComputeFixedColormap(const FixedColormapIn &in);
+
+// [rc4l] What main.fp does to a texel under a fixed colormap: nothing, map its grey into a special colormap's ramp, multiply it by a colour, or draw a sprite's fog layer.
+enum { kShadeNone = 0, kShadeRamp = 1, kShadeTint = 2, kShadeFogLayer = 3 };
+
+struct FixedColormapShade
+{
+	int   mode;       // [rc4l] a kShade* value, uFixedColormap
+	float start[3];   // [rc4l] the ramp's colour at black, or the tint, uFixedColormapStart
+	float range[3];   // [rc4l] the ramp from black to white, uFixedColormapRange
+};
+
+// [rc4l] FRenderState::ApplyShader's uniforms for `colormap`: a special colormap's ramp from `colorizeStart` to `colorizeEnd` (read only when it names one of `specialCount`), light amplification's white or night-vision green, or a torch's flicker.
+FixedColormapShade ComputeFixedColormapShade(int colormap, int specialCount, const float colorizeStart[3], const float colorizeEnd[3], bool enhancedNightvision);
 
 // [rc4l] Whether the view is the player's own eye seeing its body from outside: the chase camera (consoleplayer's, never in free spectate) or a dead player's death camera on the player's own body.
 bool ComputeSeesOwnBody(bool cameraIsPlayer, bool freeSpectate, bool isConsolePlayer, bool consoleSpectating, bool chaseCam,

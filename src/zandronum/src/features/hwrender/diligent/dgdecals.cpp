@@ -173,6 +173,7 @@ static const char *kDeferredDecalVS =
 static const char *kDeferredDecalPS =
 	"#version 450\n"
 	FUA_CONSTANTS_GLSL
+	FUA_FIXED_COLORMAP_GLSL
 	"layout(binding = 6) uniform Decal { mat4 uInvMVP; vec4 uDecalDebug; };\n"
 	"layout(binding = 7) uniform sampler2D uSceneDepth;\n"
 	"layout(binding = 8) uniform sampler2D uSceneNormal;\n"
@@ -346,6 +347,8 @@ static const char *kDeferredDecalPS =
 	   own scorch. An ordinary decal is the other way round -- the texture is the picture and the
 	   colour is white. */
 	"    vec3 rgb = redAlpha ? vColor.rgb : (vColor.rgb * texel.rgb);\n"
+	// [rc4l] GL draws a decal through main.fp, so a fixed colormap recolours it as it does the wall beneath.
+	"    if (uFixedColormap.w > 0.5) rgb = fuaFixedColormap(rgb);\n"
 	"    outColor = vec4(rgb, a);\n"
 	"}\n";
 

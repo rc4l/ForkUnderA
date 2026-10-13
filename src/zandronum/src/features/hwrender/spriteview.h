@@ -35,8 +35,7 @@ struct SpriteViewProvider
 	void    (*ViewVector)(float &x, float &y);
 	// A running count, which sprites use to keep a stable order among themselves.
 	int     (*NextSpriteIndex)();
-	// Portal questions. Both answer harmlessly when no portal is being drawn, which is every frame
-	// the standalone path renders today -- portals are not ported yet, and this is where they attach.
+	// [rc4l] Portal questions: GL's provider answers them for the portal it is drawing, and features/viewsetup's always answers none.
 	bool    (*PortalRejectsPoint)(fixed_t x, fixed_t y);
 	bool    (*PortalIsMirror)();
 	// How many dynamic lights the frame has, which decides whether a sprite is lit per-pixel at all.

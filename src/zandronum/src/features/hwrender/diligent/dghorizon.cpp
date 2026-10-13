@@ -76,6 +76,7 @@ static const char *kHorizonPS =
 	"#version 450\n"
 	FUA_SECTOR_LIGHT_GLSL
 	FUA_CONSTANTS_GLSL
+	FUA_FIXED_COLORMAP_GLSL
 	"layout(binding = 1) uniform sampler2D uTex;\n"
 	"layout(binding = 5) uniform sampler2D uBrightmap;\n"
 	"layout(location = 0) in vec3 vWorld;\n"
@@ -106,6 +107,8 @@ static const char *kHorizonPS =
 	"    bool wrongHalf = (vPlane.w > 0.5) ? vWorld.y < split - 1.0 : vWorld.y > split + 1.0;\n"
 	"    if (wrongHalf) discard;\n"
 	FUA_MIRROR_CLIP_GLSL("vWorld")
+	// [rc4l] A fixed colormap recolours the plane's texel in its colour instead of lighting it, as on any flat.
+	"    if (uFixedColormap.w > 0.5) { outColor = vec4(fuaFixedColormap(texel * vColorLight.rgb), 1.0); return; }\n"
 	"    if (uCameraPos.w == 0.0) { outColor = vec4(texel * vColorLight.rgb, 1.0); return; }\n"
 	"    vec4 clip = uMVP * vec4(hit, 1.0);\n"
 	"    float fogfactor = fuaFogFactor(vFog.a, vUVu.w, vec4(hit, clip.w), vEye);\n"

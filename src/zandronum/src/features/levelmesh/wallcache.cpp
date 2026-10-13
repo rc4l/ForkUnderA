@@ -369,7 +369,7 @@ static int ReshadeSegFromMap(int segIndex)
 		// turn solid, so they are preserved here exactly as the base texture and normal are.
 		const float savedAlpha = mp.alpha;
 		const int   savedBlend = mp.blendMode;
-		zx::levelmesh::CaptureShading(lightLevel, dl.relLight + getExtraLight(), cm, mp);
+		zx::levelmesh::CaptureLevelShading(lightLevel, dl.relLight + getExtraLight(), cm, mp);
 		// AFTER CaptureShading, which clears baseTex and resets alpha and blend mode on the way past.
 		mp.baseTex    = savedBase;
 		mp.alpha      = savedAlpha;
@@ -409,7 +409,7 @@ static bool BakeFloodPiece(MeshRange &range, const zx::surfaces::DerivedWallSpan
 	MeshPiece mp;
 	mp.range = range;
 	mp.material = d.material;
-	zx::levelmesh::CaptureShading(lightLevel, getExtraLight(), cm, mp, false);
+	zx::levelmesh::CaptureLevelShading(lightLevel, getExtraLight(), cm, mp, false);
 	// [rc4l] After CaptureShading, which resets what it does not decide.
 	mp.baseTex = d.baseTex;
 	mp.lightLevel = lightLevel;
@@ -635,7 +635,7 @@ int BakeSegFromMap(int segIndex)
 			sc.bandLight[slot0 + bi] = (signed char)bands[bi].lightEntry;
 			if (bands[bi].lightEntry >= 0) cm.CopyLightColor(bands[bi].lightFrom);
 
-			zx::levelmesh::CaptureShading(lightLevel, dl.relLight + getExtraLight(), cm, mp);
+			zx::levelmesh::CaptureLevelShading(lightLevel, dl.relLight + getExtraLight(), cm, mp);
 			// [rc4l] AFTER CaptureShading, which ends by clearing baseTex.
 			//
 			// It sets the fields a surface has no opinion about -- blend mode, alpha, sort position,
@@ -791,7 +791,7 @@ int BakeSegFromMap(int segIndex)
 					FColormap fcm;
 					fcm.Clear();
 					fcm.LightColor = fl->extra_colormap->Fade;
-					zx::levelmesh::CaptureShading(gl_ClampLight(*fl->p_lightlevel), 0, fcm, fmp, false);
+					zx::levelmesh::CaptureLevelShading(gl_ClampLight(*fl->p_lightlevel), 0, fcm, fmp, false);
 					fmp.baseTex = NULL;
 					fmp.lightLevel = gl_ClampLight(*fl->p_lightlevel);
 					fmp.lightColor = fcm.LightColor.d;
@@ -885,7 +885,7 @@ int BakeSegFromMap(int segIndex)
 						cm.CopyLightColor(ll.extra_colormap);
 					}
 				}
-				zx::levelmesh::CaptureShading(ffLight, dl.relLight + getExtraLight(), cm, mp, false);
+				zx::levelmesh::CaptureLevelShading(ffLight, dl.relLight + getExtraLight(), cm, mp, false);
 				mp.baseTex = TexMan.ByIndex(texid.GetIndex());
 				mp.lightLevel = ffLight;
 				mp.lightColor = cm.LightColor.d;

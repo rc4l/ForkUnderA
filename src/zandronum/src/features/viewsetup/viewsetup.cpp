@@ -28,6 +28,7 @@
 #include "r_data/colormaps.h"            // [rc4l] INVERSECOLORMAP
 
 EXTERN_CVAR(Bool, r_deathcamera)
+EXTERN_CVAR(Bool, gl_enhanced_nightvision)
 
 namespace zx { namespace viewsetup {
 
@@ -62,7 +63,7 @@ void SetupView(AActor *camera, float fov, long frameMS)
 
 const ViewSetup &CurrentView() { return g_view; }
 
-static_assert(CM_DEFAULT == kCmDefault && CM_FIRSTSPECIALCOLORMAP == kCmFirstSpecial && CM_LITE == kCmLite && CM_TORCH == kCmTorch &&
+static_assert(CM_DEFAULT == kCmDefault && CM_FIRSTSPECIALCOLORMAP == kCmFirstSpecial && CM_FOGLAYER == kCmFogLayer && CM_LITE == kCmLite && CM_TORCH == kCmTorch &&
 	NOFIXEDCOLORMAP == kNoFixedColormap && INVERSECOLORMAP == kInverseColormap, "the colormap values must match viewsetup_compute.h");
 
 int FixedColormap(player_t *player)
@@ -83,6 +84,15 @@ int FixedColormap(player_t *player)
 		}
 	}
 	return ComputeFixedColormap(in);
+}
+
+FixedColormapShade FixedColormapShadeFor(int colormap)
+{
+	static const float none[3] = { 0.f, 0.f, 0.f };
+	const int special = colormap - CM_FIRSTSPECIALCOLORMAP;
+	const bool isSpecial = special >= 0 && special < (int)SpecialColormaps.Size();
+	return ComputeFixedColormapShade(colormap, SpecialColormaps.Size(), isSpecial ? SpecialColormaps[special].ColorizeStart : none,
+		isSpecial ? SpecialColormaps[special].ColorizeEnd : none, gl_enhanced_nightvision);
 }
 
 void TurnView(unsigned viewAngle)

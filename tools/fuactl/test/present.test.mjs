@@ -82,11 +82,11 @@ test("each app's frames handed over and shown, and the compositor's updates a se
   assert.equal(analyzePresentMon(parsePresentMon([HEAD, pm(COMPOSITOR, 0, 1), pm("a.exe", 0.5)].join("\n"))).compositor.gapMs, null);
 });
 
-test("the engine's frames line up with what Windows was handed and showed, second by second", () => {
+test("the engine's frames line up with what Windows was handed and showed, second by second over PresentMon's capture alone", () => {
   const pmRows = parsePresentMon([HEAD, pm("game.exe", 10.1, 2), pm("game.exe", 10.5), pm("game.exe", 11.2, 2), pm("other.exe", 10.2, 2)].join("\n"));
-  const traceRows = [{ view_at: 10.0e6 }, { view_at: 10.4e6 }, { view_at: 11.1e6 }];
+  const traceRows = [{ view_at: 9.5e6 }, { view_at: 10.4e6 }, { view_at: 10.6e6 }, { view_at: 11.1e6 }, { view_at: 12.0e6 }];
   assert.deepEqual(alignSeconds(pmRows, traceRows, { app: "game.exe" }), [{ second: 0, drawn: 2, handed: 2, shown: 1 }, { second: 1, drawn: 1, handed: 1, shown: 1 }]);
-  assert.deepEqual(alignSeconds([], [], { app: "game.exe" }), []);
+  assert.deepEqual(alignSeconds([], traceRows, { app: "game.exe" }), []);
 });
 
 test("the report says how often the compositor updated, and what to do when nothing was seen", () => {

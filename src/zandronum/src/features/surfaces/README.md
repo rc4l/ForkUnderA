@@ -170,8 +170,8 @@ Pixel-identical everywhere. MAP16's own control -- two map reloads with nothing 
 carried as the hard one for a long time. `GLWall::Process` draws an ordinary wall over the whole
 LINEDEF with `fracleft` 0 and `fracright` 1 -- not per seg -- so the two edges are just the sidedef's
 x offset and that plus the line's texel length. There is no seg-along-line bookkeeping to model.
-Polyobjects are the exception, are drawn per seg with real fractions, and are left to the capture.
-Deriving it took Sunder MAP16 from 2.3% to 0.0%.
+Polyobjects are the exception, drawn per seg with real fractions, which `ComputePolyobjSegFractions`
+derives. Deriving it took Sunder MAP16 from 2.3% to 0.0%.
 
 ## And the walk itself: a level's walls built without GL
 
@@ -275,9 +275,8 @@ now.
    movement between load and capture; dynamic lights; `gl_seamless`; incomplete capture coverage
    (`fua_levelmesh_bakeall` first, no change); and reload noise, whose floor is 0.0%.
 
-2. **Special surface kinds** -- 3D floor faces, skies, horizons. These never reach the mesh from
-   either path (`RecordPiece` is only called for the plain wall lists), so this is about drawing them
-   at all, not about the two bakes disagreeing.
+2. **Special surface kinds** -- done: 3D floor faces (`ffblocks_compute`, below), skies (a view's sky
+   surfaces in `levelmesh/flatmesh.cpp`) and horizons (`features/horizon`) all draw without GL's walk.
 
 3. **Retiring `GLWall`/`GLFlat` and collapsing `wallcache.cpp` and `flatmesh.cpp` into one cache**,
    which is the point of all of it: one surface type, derived once, instead of two transcriptions of

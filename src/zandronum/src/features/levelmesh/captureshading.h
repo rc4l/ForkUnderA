@@ -17,6 +17,9 @@ namespace zx { namespace levelmesh {
 void CaptureShading(int lightlevel, int rellight, const FColormap &cm, MeshPiece &out,
                     bool noFog = false, bool additive = false);
 
+// [rc4l] A level surface's shading, as CaptureShading but with no fixed colormap: the cached mesh keeps its light through a power, and the shader applies the colormap over it, so a power starting, blinking or ending never re-bakes the level.
+void CaptureLevelShading(int lightlevel, int rellight, const FColormap &cm, MeshPiece &out, bool noFog = false);
+
 // [rc4l] gl_SetColor's colour alone, as FillSimplePoly sets it for a textured automap floor: software lighting's curve swapped for the standard one.
 void CapturePolyColor(int lightlevel, const FColormap &cm, float &r, float &g, float &b);
 

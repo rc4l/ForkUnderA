@@ -114,3 +114,39 @@ TEST(ComputeSeesOwnBody, TheChaseCameraOrADeadPlayersDeathCamera)
 	EXPECT_TRUE(ComputeSeesOwnBody(true, false, false, true, true, false, false, true));
 	EXPECT_FALSE(ComputeSeesOwnBody(true, false, true, false, true, false, false, false));
 }
+
+// [rc4l] Invulnerability's inverse map: grey 0 is the start colour, white the end, as main.fp's case 1 ramps it.
+TEST(ComputeFixedColormapShade, ASpecialColormapIsItsRampFromStartToEnd)
+{
+	const float start[3] = { 1.f, 0.5f, 0.25f }, end[3] = { 0.f, 1.f, 0.25f };
+	const FixedColormapShade s = ComputeFixedColormapShade(kCmFirstSpecial + 1, 2, start, end, false);
+	EXPECT_EQ(kShadeRamp, s.mode);
+	EXPECT_FLOAT_EQ(1.f, s.start[0]); EXPECT_FLOAT_EQ(0.5f, s.start[1]); EXPECT_FLOAT_EQ(0.25f, s.start[2]);
+	EXPECT_FLOAT_EQ(-1.f, s.range[0]); EXPECT_FLOAT_EQ(0.5f, s.range[1]); EXPECT_FLOAT_EQ(0.f, s.range[2]);
+	// [rc4l] One past the specials, or none at all, is no colormap.
+	EXPECT_EQ(kShadeNone, ComputeFixedColormapShade(kCmFirstSpecial + 2, 2, start, end, false).mode);
+	EXPECT_EQ(kShadeNone, ComputeFixedColormapShade(kCmDefault, 2, start, end, false).mode);
+}
+
+// [rc4l] Light amplification is white, or night-vision green with gl_enhanced_nightvision; a fog layer is the sprite's mode 3.
+TEST(ComputeFixedColormapShade, LightAmplificationTintsAndAFogLayerIsItsOwnMode)
+{
+	const float z[3] = { 0.f, 0.f, 0.f };
+	FixedColormapShade s = ComputeFixedColormapShade(kCmLite, 1, z, z, false);
+	EXPECT_EQ(kShadeTint, s.mode);
+	EXPECT_EQ(1.f, s.start[0]); EXPECT_EQ(1.f, s.start[1]); EXPECT_EQ(1.f, s.start[2]);
+	s = ComputeFixedColormapShade(kCmLite, 1, z, z, true);
+	EXPECT_EQ(0.375f, s.start[0]); EXPECT_EQ(1.f, s.start[1]); EXPECT_EQ(0.375f, s.start[2]);
+	EXPECT_EQ(kShadeFogLayer, ComputeFixedColormapShade(kCmFogLayer, 1, z, z, false).mode);
+}
+
+// [rc4l] A torch flickers from 0.9 at light 0 down to 0.8 at 7, its blue a quarter lower in night vision.
+TEST(ComputeFixedColormapShade, ATorchFlickersByItsLightLevel)
+{
+	const float z[3] = { 0.f, 0.f, 0.f };
+	FixedColormapShade s = ComputeFixedColormapShade(kCmTorch, 1, z, z, false);
+	EXPECT_EQ(kShadeTint, s.mode);
+	EXPECT_FLOAT_EQ(0.9f, s.start[0]); EXPECT_FLOAT_EQ(0.9f, s.start[2]);
+	s = ComputeFixedColormapShade(kCmTorch + 7, 1, z, z, true);
+	EXPECT_FLOAT_EQ(0.8f, s.start[0]); EXPECT_FLOAT_EQ(0.8f, s.start[1]); EXPECT_FLOAT_EQ(0.6f, s.start[2]);
+}

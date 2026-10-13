@@ -78,7 +78,8 @@ yet. Scenario `walldecal`.
   the rules GL's cache shares with the bake.
 - `gl/renderer/gl_lightdata.cpp` `gl_ShadingEnv`: GL's light settings (light mode, ambient, fog rules, fixed
   colormap, skybox) for `ComputeShading`, the light model `ShadePiece` lights every piece with;
-  `captureshading.cpp` turns a GL colormap into its input.
+  `captureshading.cpp` turns a GL colormap into its input, and `CaptureLevelShading` bakes a level surface
+  without the fixed colormap, which the backend's shader applies.
 - `r_defs.h` `sector_t`: the plane texture placement setters (`SetXOffset`, `AddXOffset`, the Y pair, scales,
   angle, `SetBase`) bump `fua_placement`, so `InvalidateMovedSectors` re-bakes a scrolled floor's flats.
 - `r_defs.h` `side_t::SetLight`: bumps the side's `fua_dirty`, so a wall `Transfer_WallLight` re-lights when its

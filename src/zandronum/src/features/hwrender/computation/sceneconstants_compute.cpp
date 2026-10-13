@@ -7,6 +7,14 @@
 
 namespace zx { namespace hwrender {
 
+void ComputeFixedColormapConstants(const zx::viewsetup::FixedColormapShade &shade, float out[8])
+{
+	const bool drawn = shade.mode == zx::viewsetup::kShadeRamp || shade.mode == zx::viewsetup::kShadeTint;
+	for (int i = 0; i < 3; i++) { out[i] = drawn ? shade.start[i] : 0.f; out[4 + i] = drawn ? shade.range[i] : 0.f; }
+	out[3] = drawn ? (float)shade.mode : 0.f;
+	out[7] = 0.f;
+}
+
 void ComputeSceneConstants(const SceneConstantInputs &in, float *out)
 {
 	for (int i = 0; i < 16; i++) out[i] = in.mvp[i];
@@ -23,6 +31,7 @@ void ComputeSceneConstants(const SceneConstantInputs &in, float *out)
 	out[37] = (float)(in.walkSlot + 1);
 	out[38] = in.playerPass ? (float)in.skyHoles : 0.f;
 	out[39] = in.spriteAlphaCut;
+	ComputeFixedColormapConstants(in.fixedColormap, out + 40);
 }
 
 }} // namespace zx::hwrender
