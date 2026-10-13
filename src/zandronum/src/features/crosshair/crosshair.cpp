@@ -18,7 +18,9 @@
 #include "g_shared/a_pickups.h"
 #include "g_shared/sbar.h"
 #include "g_shared/st_hud.h"
+#ifndef NO_GL
 #include "gl/data/gl_data.h"
+#endif
 
 #include "features/crosshair/crosshair.h"
 #include "features/crosshair/computation/targetinfo_compute.h"
@@ -182,11 +184,14 @@ namespace
 	// [MobiusU9B] How the running renderer maps the screen to the world, so a line can be aimed through any pixel of the view.
 	zx::crosshair::ReticleProjection ReadProjection()
 	{
+		// [MobiusU9B] A NO_GL build (the headless server) has no glset to read, and no GL renderer to match.
+#ifndef NO_GL
 		if (currentrenderer == 1)
 		{
 			return zx::crosshair::ComputeGLReticleProjection(FOV_InterpolatedForFrame(&players[consoleplayer]), WidescreenRatio,
 				viewwidth, zx::crosshair::ComputeGLViewportHeight(screenblocks, SCREENHEIGHT), glset.pixelstretch);
 		}
+#endif
 		return zx::crosshair::ReticleProjection{ FIXED2DBL(FocalLengthX), FIXED2DBL(FocalLengthY), 1.0, true };
 	}
 
