@@ -1616,6 +1616,8 @@ add_executable( zdoom WIN32
 	features/frame/levelrenderer.cpp
 	features/display/display.cpp
 	features/hwrender/backendvideo.cpp
+	features/hwrender/record2d.cpp
+	features/sidebyside/sidebyside.cpp
 	features/hwrender/backendrenderer.cpp
 	features/visibility/viswalk.cpp
 	features/jobs/jobs.cpp
@@ -1684,6 +1686,7 @@ add_executable( zdoom WIN32
 	features/hwrender/computation/batch_compute.cpp
 	features/hwrender/computation/growbuffer_compute.cpp
 	features/hwrender/computation/backendview_compute.cpp
+	features/hwrender/computation/dynlayout_compute.cpp
 	features/hwrender/computation/texfilter_compute.cpp
 	features/hwrender/computation/slotremap_compute.cpp
 	features/hwrender/computation/rendererrate_compute.cpp

@@ -405,6 +405,11 @@ void DrawSolidDyn(Diligent::IDeviceContext *ctx);
 
 // [rc4l] The scene buffer (dgupload.cpp).
 void FillPieceData(const zx::levelmesh::MeshPiece &p, int translation, ScenePieceData &pd, bool inMesh);
+// [rc4l] A piece's material and brightmap slots and whether its texture animates, which may give a material a slot, so they are found on one thread before records are filled on many.
+struct PieceSlotSet { float mat, bright; bool animates; };
+PieceSlotSet PieceSlots(const zx::levelmesh::MeshPiece &p, int translation, bool inMesh);
+// [rc4l] FillPieceData with the slots already found, which only reads, so lanes can run it.
+void FillPieceDataWith(const zx::levelmesh::MeshPiece &p, const PieceSlotSet &slots, ScenePieceData &pd, bool inMesh);
 void ForgetBatchSRBs();
 void RefreshMovedGeometry(Diligent::IDeviceContext *ctx);
 void ReserveDynamicSlots();

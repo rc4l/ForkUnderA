@@ -31,6 +31,7 @@
 // on the raw CVAR. Easy to replace when upstream's video backend is cherry-picked wholesale.
 #include "features/borderless-video/computation/displaymode_compute.h"
 #include "features/hwrender/backendonly.h"   // [rc4l] -vulkan
+#include "features/sidebyside/sidebyside.h"   // [rc4l] GL's frame buffer, its 2D recorded for the backend too
 
 void gl_CalculateCPUSpeed();
 extern int NewWidth, NewHeight, NewBits, DisplayBits;
@@ -388,7 +389,7 @@ DFrameBuffer *Win32GLVideo::CreateFrameBuffer(int width, int height, bool fs, DF
 	}
 	// [rc4l] A launch without GL gets the backend's frame buffer on the same window and modes.
 	if (!m_gl) return zx::hwrender::CreateBackendFrameBuffer(m_hMonitor, m_DisplayWidth, m_DisplayHeight, m_DisplayBits, m_DisplayHz, fs);
-	fb = new OpenGLFrameBuffer(m_hMonitor, m_DisplayWidth, m_DisplayHeight, m_DisplayBits, m_DisplayHz, fs);
+	fb = static_cast<Win32GLFrameBuffer *>(zx::sidebyside::CreateGLFrameBuffer(m_hMonitor, m_DisplayWidth, m_DisplayHeight, m_DisplayBits, m_DisplayHz, fs));
 	return fb;
 }
 

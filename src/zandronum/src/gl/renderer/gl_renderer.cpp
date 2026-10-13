@@ -56,13 +56,11 @@ void gl_RegisterSpriteView();   // gl/scene/gl_spriteview.cpp
 #include "gl/system/gl_framebuffer.h"
 #include "gl/system/gl_cvars.h"
 #include "gl/renderer/gl_renderer.h"
-#include "features/materials/materials.h"   // [rc4l] the particle and mirror textures
 #include "gl/renderer/gl_lightdata.h"
 #include "gl/renderer/gl_renderstate.h"
 #include "gl/data/gl_data.h"
 #include "gl/data/gl_vertexbuffer.h"
 #include "gl/scene/gl_drawinfo.h"
-#include "features/hwrender/hud2d.h"
 #include "features/draw2d/draw2d.h"   // [rc4l] the 2D draws, worked out without GL
 #include "gl/shaders/gl_shader.h"
 #include "gl/textures/gl_texture.h"
@@ -289,29 +287,9 @@ void FGLRenderer::ClearBorders()
 //
 //==========================================================================
 
-// [rc4l] features/hwrender: a 2D draw meant for the backend's window alone still runs here to be recorded, with GL's colour writes off.
-struct BackendOnly2D
-{
-	bool on, r, g, b, a;
-	BackendOnly2D() : on(zx::hwrender::Get2DTarget() == zx::hwrender::k2DBackendOnly), r(true), g(true), b(true), a(true)
-	{
-		if (!on) return;
-		gl_RenderState.GetColorMask(r, g, b, a);
-		gl_RenderState.SetColorMask(false, false, false, false);
-		gl_RenderState.ApplyColorMask();
-	}
-	~BackendOnly2D()
-	{
-		if (!on) return;
-		gl_RenderState.SetColorMask(r, g, b, a);
-		gl_RenderState.ApplyColorMask();
-	}
-};
-
 void FGLRenderer::DrawTexture(FTexture *img, DCanvas::DrawParms &parms)
 {
-	BackendOnly2D backendOnly;
-	// [rc4l] features/draw2d works the draw out, the quad the 2D capture records and GL draws alike.
+	// [rc4l] features/draw2d works the draw out, the quad GL draws and the backend records alike.
 	zx::draw2d::TextureDraw d;
 	zx::draw2d::PrepareTexture(img, parms, d);
 	FMaterial *gltex = (FMaterial *)d.quad.material;
@@ -351,9 +329,6 @@ void FGLRenderer::DrawTexture(FTexture *img, DCanvas::DrawParms &parms)
 	ptr->Set(x2, y, 0, u2, v1); ptr++;
 	ptr->Set(x2, y2, 0, u2, v2); ptr++;
 	GLRenderer->mVBO->RenderCurrent(ptr, GL_TRIANGLE_STRIP);
-
-	// [rc4l] features/hwrender: the same quad goes to the 2D capture (see hud2d.h), so a foreign backend gets the HUD, the menus and the console.
-	zx::hwrender::Record2D(d.quad);
 
 	if (parms.colorOverlay)
 	{
@@ -395,8 +370,6 @@ void FGLRenderer::DrawLine(int x1, int y1, int x2, int y2, int palcolor, uint32 
 	ptr->Set(x2, y2, 0, 0, 0); ptr++;
 	GLRenderer->mVBO->RenderCurrent(ptr, GL_LINES);
 
-	zx::hwrender::Record2D(zx::draw2d::PrepareLine(x1, y1, x2, y2, p));   // [rc4l] features/draw2d
-
 	gl_RenderState.EnableTexture(true);
 }
 
@@ -416,8 +389,6 @@ void FGLRenderer::DrawPixel(int x1, int y1, int palcolor, uint32 color)
 	ptr->Set(x1, y1, 0, 0, 0); ptr++;
 	GLRenderer->mVBO->RenderCurrent(ptr, GL_POINTS);
 
-	zx::hwrender::Record2D(zx::draw2d::PreparePixel(x1, y1, p));   // [rc4l] features/draw2d
-
 	gl_RenderState.EnableTexture(true);
 }
 
@@ -434,8 +405,6 @@ void FGLRenderer::Dim(PalEntry color, float damount, int x1, int y1, int w, int 
 	gl_RenderState.AlphaFunc(GL_GREATER,0);
 	gl_RenderState.SetColorAlpha(color, damount);
 	gl_RenderState.Apply();
-	
-	zx::hwrender::Record2D(zx::draw2d::PrepareDim(color, damount, x1, y1, w, h));   // [rc4l] features/draw2d
 
 	FFlatVertex *ptr = GLRenderer->mVBO->GetBuffer();
 	ptr->Set(x1, y1, 0, 0, 0); ptr++;
@@ -486,10 +455,6 @@ void FGLRenderer::FlatFill (int left, int top, int right, int bottom, FTexture *
 	ptr->Set(right, top, 0, fU2, fV1); ptr++;
 	ptr->Set(right, bottom, 0, fU2, fV2); ptr++;
 	GLRenderer->mVBO->RenderCurrent(ptr, GL_TRIANGLE_STRIP);
-
-	// [rc4l] features/draw2d: the same fill, as tiles, for the backend.
-	zx::draw2d::PrepareFlatFill(left, top, right, bottom, src, local_origin, mFlatTiles);
-	for (size_t i = 0; i < mFlatTiles.size(); i++) zx::hwrender::Record2D(mFlatTiles[i]);
 }
 
 //==========================================================================
@@ -499,7 +464,6 @@ void FGLRenderer::FlatFill (int left, int top, int right, int bottom, FTexture *
 //==========================================================================
 void FGLRenderer::Clear(int left, int top, int right, int bottom, int palcolor, uint32 color)
 {
-	BackendOnly2D backendOnly;
 	int rt;
 	int offY = 0;
 	const PalEntry p = zx::draw2d::DrawColor(palcolor, color);
@@ -518,8 +482,6 @@ void FGLRenderer::Clear(int left, int top, int right, int bottom, int palcolor, 
 		rt += offY;
 	}
 	*/
-	
-	zx::hwrender::Record2D(zx::draw2d::PrepareClear(left, top, right, bottom, p));   // [rc4l] features/draw2d
 
 	glEnable(GL_SCISSOR_TEST);
 	glScissor(left, rt - height, width, height);
@@ -543,7 +505,7 @@ void FGLRenderer::FillSimplePoly(FTexture *texture, FVector2 *points, int npoint
 	double originx, double originy, double scalex, double scaley,
 	angle_t rotation, FDynamicColormap *colormap, int lightlevel)
 {
-	// [rc4l] features/draw2d works out the points' texture coordinates and the fan the 2D capture records.
+	// [rc4l] features/draw2d works out the points' texture coordinates.
 	if (!zx::draw2d::PreparePoly(texture, points, npoints, originx, originy, scalex, scaley, rotation, colormap, lightlevel, mPoly, mPolyTris)) return;
 	FMaterial *gltexture = (FMaterial *)mPoly.material;
 
@@ -568,6 +530,5 @@ void FGLRenderer::FillSimplePoly(FTexture *texture, FVector2 *points, int npoint
 		ptr++;
 	}
 	GLRenderer->mVBO->RenderCurrent(ptr, GL_TRIANGLE_FAN);
-	for (size_t i = 0; i < mPolyTris.size(); i++) zx::hwrender::Record2D(mPolyTris[i]);
 }
 

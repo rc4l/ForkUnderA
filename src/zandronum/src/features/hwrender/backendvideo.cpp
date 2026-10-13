@@ -6,6 +6,7 @@
 #include "gl/system/gl_system.h"
 #include "features/hwrender/backendonly.h"
 #include "features/hwrender/hud2d.h"
+#include "features/hwrender/record2d.h"   // [rc4l] Record2DCanvas, the 2D recorded rather than drawn
 #include "features/draw2d/draw2d.h"
 #include "features/display/display.h"
 #include "features/frame/playerview.h"   // [rc4l] ForgetCamera
@@ -146,40 +147,20 @@ public:
 	void STACK_ARGS DrawTextureV(FTexture *img, double x, double y, uint32 tag, va_list tags)
 	{
 		DrawParms parms;
-		if (!ParseDrawTextureTags(img, x, y, tag, tags, &parms, true)) return;
-		zx::draw2d::TextureDraw d;
-		zx::draw2d::PrepareTexture(img, parms, d);
-		zx::hwrender::Record2D(d.quad);
+		if (ParseDrawTextureTags(img, x, y, tag, tags, &parms, true)) m2D.Texture(img, parms);
 	}
-	void DrawLine(int x1, int y1, int x2, int y2, int palcolor, uint32 color)
-	{
-		zx::hwrender::Record2D(zx::draw2d::PrepareLine(x1, y1, x2, y2, zx::draw2d::DrawColor(palcolor, color)));
-	}
-	void DrawPixel(int x, int y, int palcolor, uint32 color)
-	{
-		zx::hwrender::Record2D(zx::draw2d::PreparePixel(x, y, zx::draw2d::DrawColor(palcolor, color)));
-	}
-	void Clear(int left, int top, int right, int bottom, int palcolor, uint32 color)
-	{
-		zx::hwrender::Record2D(zx::draw2d::PrepareClear(left, top, right, bottom, zx::draw2d::DrawColor(palcolor, color)));
-	}
+	void DrawLine(int x1, int y1, int x2, int y2, int palcolor, uint32 color) { m2D.Line(x1, y1, x2, y2, palcolor, color); }
+	void DrawPixel(int x, int y, int palcolor, uint32 color) { m2D.Pixel(x, y, palcolor, color); }
+	void Clear(int left, int top, int right, int bottom, int palcolor, uint32 color) { m2D.Clear(left, top, right, bottom, palcolor, color); }
 	// [rc4l] As GL's: the view's blend belongs to the view, so the screen dim ignores the colour.
 	void Dim(PalEntry) { Super::Dim(0); }
-	void Dim(PalEntry color, float damount, int x1, int y1, int w, int h)
-	{
-		zx::hwrender::Record2D(zx::draw2d::PrepareDim(color, damount, x1, y1, w, h));
-	}
-	void FlatFill(int left, int top, int right, int bottom, FTexture *src, bool local_origin)
-	{
-		zx::draw2d::PrepareFlatFill(left, top, right, bottom, src, local_origin, mFlatQuads);
-		for (size_t i = 0; i < mFlatQuads.size(); i++) zx::hwrender::Record2D(mFlatQuads[i]);
-	}
+	void Dim(PalEntry color, float damount, int x1, int y1, int w, int h) { m2D.Dim(color, damount, x1, y1, w, h); }
+	void FlatFill(int left, int top, int right, int bottom, FTexture *src, bool local_origin) { m2D.FlatFill(left, top, right, bottom, src, local_origin); }
 	// [rc4l] The textured automap's floors, recorded as the fan GL draws.
 	void FillSimplePoly(FTexture *tex, FVector2 *points, int npoints, double originx, double originy, double scalex, double scaley,
 		angle_t rotation, FDynamicColormap *colormap, int lightlevel)
 	{
-		if (!zx::draw2d::PreparePoly(tex, points, npoints, originx, originy, scalex, scaley, rotation, colormap, lightlevel, mPoly, mPolyTris)) return;
-		for (size_t i = 0; i < mPolyTris.size(); i++) zx::hwrender::Record2D(mPolyTris[i]);
+		m2D.Poly(tex, points, npoints, originx, originy, scalex, scaley, rotation, colormap, lightlevel);
 	}
 
 	FNativePalette *CreatePalette(FRemapTable *remap) { return GLTranslationPalette::CreatePalette(remap); }
@@ -253,9 +234,7 @@ private:
 	zx::display::ScreenColors mColors;
 	BYTE *mShot = NULL;
 	int mClientW = 0, mClientH = 0;   // [rc4l] the client size last reconciled
-	std::vector<zx::hwrender::Quad2D> mFlatQuads;   // [rc4l] kept, so a fill settles at its high-water mark
-	zx::draw2d::PolyDraw mPoly;                      // [rc4l] and a polygon's points and fan, likewise
-	std::vector<zx::hwrender::Quad2D> mPolyTris;
+	zx::hwrender::Record2DCanvas m2D;   // [rc4l] the 2D, recorded rather than drawn
 };
 
 IMPLEMENT_CLASS(DiligentFrameBuffer)

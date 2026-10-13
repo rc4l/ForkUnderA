@@ -268,8 +268,17 @@ view too: the view window (a status bar, a smaller `screenblocks`) frames the wo
 is recorded. Checked at 16 spots on MAP01, wdiex02, WDI01, WDI07 and WDI18: the `-vulkan`
 frame is within 0.3% of the GL launch's standalone frame, apart from HUD text and a randomised item
 that differed between the two launches (scenario
-`nogl`). Not yet: HUD models, wipes, the save picture (a placeholder), `FillSimplePoly`, and the
-internal render scale (the backend draws at the window's size).
+`nogl`).
+
+The rest followed. `FillSimplePoly` (the textured automap's floors) is worked out once in
+`draw2d` (`ComputePolyTexCoords`, `ComputePolyTriangles`) and drawn as GL's fan by both. The wipes are
+`features/wipe` (melt, crossfade, burn as `Compute*`, GL's `gl_wipe.cpp` reading them too) and the
+backend draws them from the last frame and the new one. The save picture is the player's view rendered
+at the picture's size with the screen's blend applied (`ComputeApplyScreenFill`). The internal render
+scale is an offscreen frame target at the screen's size, drawn up to the window at present as GL's
+scale buffer is (`vid_scalefactor 0.5` gives 512x320 shown in the window). HUD models are posed as
+`gl_RenderHUDModel` poses them and drawn over the world (scenario `hudmodel`: beside GL, standalone and
+without GL the box covers the 20,986 pixels GL's does, to one).
 
 ### P6: visibility and threads
 

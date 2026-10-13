@@ -8,8 +8,7 @@
 namespace zx { namespace hwrender {
 
 // [rc4l] The material and brightmap slots a piece samples, made if it has none yet; a baked piece on an animated texture keys them on its untranslated base, which SlotRemap maps to the frame showing, since the bake froze whichever frame it saw.
-struct PieceSlotSet { float mat, bright; bool animates; };
-static PieceSlotSet PieceSlots(const zx::levelmesh::MeshPiece &p, int translation, bool inMesh)
+PieceSlotSet PieceSlots(const zx::levelmesh::MeshPiece &p, int translation, bool inMesh)
 {
 	const void *base = inMesh ? zx::materials::MaterialForTexture(p.baseTex) : NULL;
 	PieceSlotSet out;
@@ -38,6 +37,11 @@ void ReserveDynamicSlots()
 // [rc4l] The piece's own record, written once. See ScenePieceData.
 void FillPieceData(const zx::levelmesh::MeshPiece &p, int translation, ScenePieceData &pd, bool inMesh)
 {
+	FillPieceDataWith(p, PieceSlots(p, translation, inMesh), pd, inMesh);
+}
+
+void FillPieceDataWith(const zx::levelmesh::MeshPiece &p, const PieceSlotSet &slots, ScenePieceData &pd, bool inMesh)
+{
 	pd.r = p.colorR; pd.g = p.colorG; pd.b = p.colorB;
 	pd.softLight = p.softLight;
 	pd.fogDensity = p.fogDensity;
@@ -47,7 +51,6 @@ void FillPieceData(const zx::levelmesh::MeshPiece &p, int translation, ScenePiec
 	// mirror, and it is a material slot because that is the one of the three that both the raster and
 	// the traced path want: a batch index only identifies a texture by accident, since a level has
 	// more batches than materials and the mirror had to mask it to 127 and hope.
-	const PieceSlotSet slots = PieceSlots(p, translation, inMesh);
 	pd.matSlot = slots.mat;
 	pd.brightSlot = slots.bright;
 	zx::levelmesh::ComputeUnpackRGB(p.fogColor, pd.fogR, pd.fogG, pd.fogB);

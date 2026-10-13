@@ -4,6 +4,8 @@
 // [rc4l] The per-frame stream: sprites, models and decals, the solid ones drawn after the world and the translucent ones sorted into one pass with the world's.
 
 #include "features/hwrender/diligent/dgscene_internal.h"
+#include "features/hwrender/computation/dynlayout_compute.h"   // [rc4l] ComputeDynLayout
+#include "features/jobs/jobs.h"                                 // [rc4l] the pool the records are written on
 
 // [rc4l] Dump the ORDER the translucent pass actually draws in, for one frame.
 //
@@ -24,6 +26,9 @@ CCMD( fua_dg_blendorder )
 }
 
 namespace zx { namespace hwrender {
+
+// [rc4l] Dynamic pieces a job writes at once.
+static const int kDynChunk = 64;
 
 // [rc4l] The per-frame sprite geometry: uploaded fresh every frame, never cached.
 static Diligent::RefCntAutoPtr<Diligent::IBuffer> g_dynVB;
@@ -162,98 +167,121 @@ void BuildDynamic(Diligent::IDeviceContext *ctx)
 				return ia < ib;
 			});
 
-		vb.Clear();
-		runs.Clear();
+		// [rc4l] Laid out first, and every slot found, on this thread; then the records and vertices are written on the pool, each piece into its own place.
+		static TArray<unsigned> dynVerts;
+		dynVerts.Resize(npieces);
+		for (int i = 0; i < npieces; i++) dynVerts[i] = pieces[i].range.count == 0 ? 0u : pieces[i].quad ? 6u : pieces[i].range.count;
+		const int recordsLeft = g_scene.pieceCapacity > g_scene.pieces.Size() ? int(g_scene.pieceCapacity - g_scene.pieces.Size()) : 0;
+		static std::vector<zx::hwrender::DynSlot> layout;
+		const unsigned nv = zx::hwrender::ComputeDynLayout(&order[0], npieces, &dynVerts[0], recordsLeft, layout);
+		static std::vector<PieceSlotSet> slots;
+		slots.resize(layout.size());
 		g_stats.dynMirrorRuns = 0;
-		dynPieces.Clear();
-		const void *cur = (const void *)(size_t)-1;
-		int curBlend = -1;
-		int curTrans = -99999;
-		bool curBias = false;
-		bool curRed = false;
-		for (int i = 0; i < npieces; i++)
+		int records = 0;
+		for (size_t k = 0; k < layout.size(); k++)
 		{
-			const zx::levelmesh::MeshPiece &p = pieces[order[i]];
-			if (p.range.count == 0) continue;
-			// [rc4l] Every dynamic piece is its own run.
-			//
-			// Sprites are all drawn in one back-to-front pass now, the way GL does it, so any two
-			// merged into a shared run could no longer be ordered against each other. There are a few
-			// hundred sprites in a busy frame, so the batching this gives up is not worth having.
-			//
-			// MEASURED, because "1234 sprites, 1234 draw calls" reads like the whole problem and is
-			// not. Reusing the sorted pass's binding between draws that want the same one, and
-			// collapsing draws the sort happened to leave adjacent, took a 786-sprite frame from 786
-			// submissions and 786 descriptor binds to 95 and 21 -- and moved the frame time by
-			// nothing, over four alternating runs. The same scene at a ninth of the pixels went from
-			// 30.98 ms to 7.98 ms. This pass is FILL bound, not submission bound, and the sprites
-			// cost fragments rather than draw calls.
-			//
-			// So the lever is overdraw, not batching: these are drawn back-to-front with depth writes
-			// off, which is what lets an additive glow show through the alpha-tested sprite in front
-			// of it, and also means every overlapping layer is shaded in full. The quads themselves
-			// are already trimmed to their opaque borders by FMaterial's TrimBorders, so that easy
-			// win is spent.
+			const zx::levelmesh::MeshPiece &p = pieces[layout[k].piece];
+			slots[k] = PieceSlots(p, p.translation, false);
+			if (p.mirrorLine >= 0) g_stats.dynMirrorRuns++;
+			if (layout[k].record >= 0) records++;
+		}
+		vb.Resize(nv);
+		runs.Resize((unsigned)layout.size());
+		dynPieces.Resize(records);
+
+		// [rc4l] Every dynamic piece is its own run.
+		//
+		// Sprites are all drawn in one back-to-front pass now, the way GL does it, so any two
+		// merged into a shared run could no longer be ordered against each other. There are a few
+		// hundred sprites in a busy frame, so the batching this gives up is not worth having.
+		//
+		// MEASURED, because "1234 sprites, 1234 draw calls" reads like the whole problem and is
+		// not. Reusing the sorted pass's binding between draws that want the same one, and
+		// collapsing draws the sort happened to leave adjacent, took a 786-sprite frame from 786
+		// submissions and 786 descriptor binds to 95 and 21 -- and moved the frame time by
+		// nothing, over four alternating runs. The same scene at a ninth of the pixels went from
+		// 30.98 ms to 7.98 ms. This pass is FILL bound, not submission bound, and the sprites
+		// cost fragments rather than draw calls.
+		//
+		// So the lever is overdraw, not batching: these are drawn back-to-front with depth writes
+		// off, which is what lets an additive glow show through the alpha-tested sprite in front
+		// of it, and also means every overlapping layer is shaded in full. The quads themselves
+		// are already trimmed to their opaque borders by FMaterial's TrimBorders, so that easy
+		// win is spent.
+		// [rc4l] A dynamic piece gets a record too, appended behind the level's own.
+		//
+		// The static level owns the front of the buffer and never moves; sprites and decals are
+		// rebuilt every frame into the back of it. A sprite that overflows the slack draws with the
+		// last record rather than reading past the end, which is a wrong colour on one sprite rather
+		// than undefined behaviour on the whole frame.
+		// [rc4l] The dynamic region starts after ALL of the static records, asked fresh every frame.
+		//
+		// This used to be a count snapshotted when the scene was last rebuilt, and AppendPiece pushes
+		// records past it -- baking the room behind a door that just opened does exactly that. The
+		// sprites and decals of the next frame then wrote over those appended records, so a surface
+		// that had just come into the world started rendering with some sprite's material. It reads
+		// as textures changing at random when you open a door or fire a shot, which is how it was
+		// reported.
+		// [rc4l] A quad arrives as four CORNERS and becomes six vertices here.
+		//
+		// It used to arrive as six, with two of the four duplicated on the engine's side and then
+		// copied again into this format -- so the duplication was paid for twice. Expanding at the
+		// only place that writes SceneVertex costs the same six writes and saves the other pass.
+		struct Fill
+		{
+			const zx::levelmesh::MeshPiece *pieces;
+			const zx::levelmesh::MeshVertex *src;
+			int count;
+			std::vector<int> *unfilled;
+			void operator()(int chunk, int) const
 			{
-				DynRun r; r.material = p.material; r.first = vb.Size(); r.count = 0; r.blend = p.blendMode;
-				r.translation = p.translation;
-				r.depthBias = p.depthBias;
-				r.redAlpha = p.redToAlpha;
-				r.solid = p.solid;
-				r.mirrorLine = p.mirrorLine;
-				r.stackSlot = p.stackSlot;
-				if (p.mirrorLine >= 0) g_stats.dynMirrorRuns++;
-				r.cx = p.sortX; r.cy = p.sortY; r.cz = p.sortZ;
-				r.lo = 1e30f; r.hi = -1e30f;
-				runs.Push(r);
-			}
-			// [rc4l] A dynamic piece gets a record too, appended behind the level's own.
-			//
-			// The static level owns the front of the buffer and never moves; sprites and decals are
-			// rebuilt every frame into the back of it. A sprite that overflows the slack draws with the
-			// last record rather than reading past the end, which is a wrong colour on one sprite rather
-			// than undefined behaviour on the whole frame.
-			// [rc4l] The dynamic region starts after ALL of the static records, asked fresh every frame.
-			//
-			// This used to be a count snapshotted when the scene was last rebuilt, and AppendPiece pushes
-			// records past it -- baking the room behind a door that just opened does exactly that. The
-			// sprites and decals of the next frame then wrote over those appended records, so a surface
-			// that had just come into the world started rendering with some sprite's material. It reads
-			// as textures changing at random when you open a door or fire a shot, which is how it was
-			// reported.
-			unsigned int dynPieceIndex = g_scene.pieces.Size() + dynPieces.Size();
-			if (dynPieceIndex >= g_scene.pieceCapacity)
-				dynPieceIndex = (g_scene.pieceCapacity > 0) ? g_scene.pieceCapacity - 1 : 0;
-			else
-			{
-				ScenePieceData pd;
-				FillPieceData(p, p.translation, pd, false);
-				if (!fua_dg_bindless_dyn) pd.matSlot = pd.brightSlot = 0.f;   // back to the bound texture and brightmap
-				else if (BindlessActive())
+				static const int kQuadOrder[6] = { 0, 1, 2, 2, 1, 3 };
+				const unsigned base = g_scene.pieces.Size();
+				const unsigned lastRecord = g_scene.pieceCapacity > 0 ? g_scene.pieceCapacity - 1 : 0;
+				int missed = 0;
+				for (int k = chunk * kDynChunk; k < count && k < (chunk + 1) * kDynChunk; k++)
 				{
-					const int unfilled = zx::hwrender::ComputeSlotsUnfilled((int)pd.matSlot, (int)pd.brightSlot, (int)FilledSlotCount());
-					g_stats.dynSlotUnfilled += unfilled;
-					g_stats.dynSlotUnfilledTotal += unfilled;
+					const zx::hwrender::DynSlot &slot = layout[k];
+					const zx::levelmesh::MeshPiece &p = pieces[slot.piece];
+					DynRun &r = g_scene.dynRuns[k];
+					r.material = p.material; r.first = slot.first; r.count = slot.count; r.blend = p.blendMode;
+					r.translation = p.translation;
+					r.depthBias = p.depthBias;
+					r.redAlpha = p.redToAlpha;
+					r.solid = p.solid;
+					r.mirrorLine = p.mirrorLine;
+					r.stackSlot = p.stackSlot;
+					r.cx = p.sortX; r.cy = p.sortY; r.cz = p.sortZ;
+					r.lo = 1e30f; r.hi = -1e30f;
+					const unsigned int dynPieceIndex = slot.record >= 0 ? base + (unsigned)slot.record : lastRecord;
+					if (slot.record >= 0)
+					{
+						ScenePieceData &pd = dynPieces[slot.record];
+						FillPieceDataWith(p, slots[k], pd, false);
+						if (!fua_dg_bindless_dyn) pd.matSlot = pd.brightSlot = 0.f;   // back to the bound texture and brightmap
+						else if (BindlessActive()) missed += zx::hwrender::ComputeSlotsUnfilled((int)pd.matSlot, (int)pd.brightSlot, (int)FilledSlotCount());
+					}
+					for (unsigned v = 0; v < slot.count; v++)
+					{
+						const unsigned srcIndex = p.quad ? (unsigned)kQuadOrder[v] : v;
+						const SceneVertex dv = ToSceneVertex(src[p.range.offset + srcIndex], dynPieceIndex);
+						vb[slot.first + v] = dv;
+						if (dv.y < r.lo) r.lo = dv.y;
+						if (dv.y > r.hi) r.hi = dv.y;
+					}
 				}
-				dynPieces.Push(pd);
+				(*unfilled)[chunk] = missed;
 			}
-			// [rc4l] A quad arrives as four CORNERS and becomes six vertices here.
-			//
-			// It used to arrive as six, with two of the four duplicated on the engine's side and then
-			// copied again into this format -- so the duplication was paid for twice. Expanding at the
-			// only place that writes SceneVertex costs the same six writes and saves the other pass.
-			static const int kQuadOrder[6] = { 0, 1, 2, 2, 1, 3 };
-			const unsigned outCount = p.quad ? 6 : p.range.count;
-			DynRun &run = runs[runs.Size() - 1];
-			for (unsigned v = 0; v < outCount; v++)
-			{
-				const unsigned srcIndex = p.quad ? (unsigned)kQuadOrder[v] : v;
-				const SceneVertex dv = ToSceneVertex(src[p.range.offset + srcIndex], (unsigned int)dynPieceIndex);
-				vb.Push(dv);
-				if (dv.y < run.lo) run.lo = dv.y;
-				if (dv.y > run.hi) run.hi = dv.y;
-			}
-			run.count += outCount;
+		};
+		static std::vector<int> unfilled;
+		const int chunks = (int)((layout.size() + kDynChunk - 1) / kDynChunk);
+		unfilled.assign(chunks, 0);
+		Fill fill = { pieces, src, (int)layout.size(), &unfilled };
+		zx::jobs::Pool().ParallelFor(chunks, fill);
+		for (int c = 0; c < chunks; c++)
+		{
+			g_stats.dynSlotUnfilled += unfilled[c];
+			g_stats.dynSlotUnfilledTotal += unfilled[c];
 		}
 	if (vb.Size() == 0) return;
 
