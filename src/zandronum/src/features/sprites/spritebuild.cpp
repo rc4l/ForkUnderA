@@ -14,6 +14,8 @@
 #include "features/sprites/computation/spritelight_compute.h"
 #include "features/sprites/computation/spriteclip_compute.h"
 #include "features/sprites/spriteframe.h"   // [rc4l] gl_GetSpriteFrame
+#include "features/damage-tint/damagetint.h"   // [rc4l] DamageTint_SpriteGradient
+#include "features/sprites/computation/spriteframe_compute.h"   // [rc4l] ComputeSpriteOnGameThread
 #include "features/sprites/computation/modelpose_compute.h"
 #include "features/sprites/modelbuild.h"
 #include "features/sprite-roll/computation/spriteroll_compute.h"
@@ -521,6 +523,8 @@ static int DeriveSprite(AActor *thing, const Subject &s, SpritePiece *out, int m
 		mp.inverse = look.inverse;
 		mp.colorBlend = look.colorBlend;
 		mp.fuzz = zx::hwrender::ComputeFuzzKind(gl_fuzztype, so.overrideShader >= 0);
+		// [rc4l] GLSprite::Draw's damage tint, over this band's own texture span as GL takes each band's.
+		DamageTint_SpriteGradient(thing, so.style.blendOp, so.style.flags, b.vt, b.vb, mp.tint);
 		if (!fullbright) { mp.dynR = dyn[0]; mp.dynG = dyn[1]; mp.dynB = dyn[2]; }
 		mp.cpuLight = true;
 		mp.normX = mp.normY = mp.normZ = 0.f;
@@ -784,7 +788,7 @@ static void DeriveChunk(AActor *const *things, int count, int chunk)
 		Subject s;
 		if (SubjectOf(things[i], s))
 		{
-			if (s.model != NULL) ls.onGameThread = true;
+			if (ComputeSpriteOnGameThread(s.model != NULL, things[i]->player != NULL)) ls.onGameThread = true;
 			else
 			{
 				c.pieces.resize(ls.first + kMaxBands);

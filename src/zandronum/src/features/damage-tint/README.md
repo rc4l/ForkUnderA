@@ -33,9 +33,15 @@ against the actor's own floor plane) — per-pixel falloff on the GPU, no new sh
 1. `gl/scene/gl_sprite.cpp` — include + `DamageTint_BeginSpriteGlow(...)` right after the
    `SetObjectColor(ThingColor)` in `GLSprite::Draw`, and the paired `DamageTint_EndSpriteGlow()`
    in the state-restore block at the end of `Draw`.
-2. `gl/scene/gl_weapon.cpp` — include + `DamageTint_ModulateWeapon(ThingColor, ...)` right after
-   the psprite's ThingColor is computed.
-3. `CMakeLists.txt` — `features/damage-tint/damagetint.cpp` in the zdoom source list (no
+2. `gl/scene/gl_weapon.cpp` — include + `DamageTint_WeaponGradient(...)` before the psprite's
+   `Apply`, setting GL's tint and the weapon record's `tint`.
+3. `g_shared/shared_sbar.cpp` — `DamageTint_Arm2D` / `DamageTint_Disarm2D` around the face's
+   `DrawTexture`.
+4. The Vulkan backend reads the same gradients: `features/sprites/spritebuild.cpp`
+   (`DamageTint_SpriteGradient` per band into `MeshPiece::tint`), `features/sprites/pspritebuild.cpp`
+   (`DamageTint_WeaponGradient` into `Quad2D::tint`) and `features/hwrender/record2d.cpp`
+   (`DamageTint_Armed2D` for the face); the shaders' `fuaDamageTint` is `ComputeTintTexel`.
+5. `CMakeLists.txt` — `features/damage-tint/damagetint.cpp` in the zdoom source list (no
    IMPLEMENT_CLASS, so ordering is irrelevant; kept with the other features).
 
 ## Known trade-offs
@@ -44,4 +50,4 @@ against the actor's own floor plane) — per-pixel falloff on the GPU, no new sh
   actor can inherit at most one frame of a stale fade-out. Cosmetic, self-correcting.
 - `averageColor()` expects GL-order RGBA but `FBitmap` stores BGRA — the glue swaps r/b on the way
   out (same gotcha the sky-tint trial hit).
-- GL renderer only; the software renderer is untouched.
+- GL and Vulkan; the software renderer is untouched.

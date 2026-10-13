@@ -50,13 +50,22 @@
 	"    return texel;\n" \
 	"}\n"
 
+// [rc4l] main.fp's damage tint, line for line with ComputeTintTexel: `tint` the colour and strength, `range` the texture-V span (none at x, full at y) and z 1 for a glow.
+#define FUA_DAMAGE_TINT_GLSL \
+	"vec4 fuaDamageTint(vec4 t, float v, vec4 tint, vec3 range) {\n" \
+	"    if (tint.a <= 0.0) return t;\n" \
+	"    float f = clamp((v - range.x) / max(range.y - range.x, 0.0001), 0.0, 1.0);\n" \
+	"    vec3 tinted = range.z > 0.5 ? 1.0 - (1.0 - t.rgb) * (1.0 - tint.rgb) : t.rgb * tint.rgb;\n" \
+	"    return vec4(mix(t.rgb, tinted, f * tint.a), t.a);\n" \
+	"}\n"
+
 // [rc4l] A line mirror's pass drops every fragment at world position p behind the glass; uClipPlane.w of 0 means no mirror.
 #define FUA_MIRROR_CLIP_GLSL(p) \
 	"    if (uClipPlane.w != 0.0 && dot(" p ", uClipPlane.xyz) + uClipPlane.w < 0.0) discard;\n"
 
 // [rc4l] One piece's record as every shader reads it, declared once so its stride cannot drift from ScenePieceData's.
 #define FUA_PIECEDATA_GLSL \
-	"struct PieceData { vec4 colorLight; vec4 fogAlphaMat; vec4 fogColor; vec4 normal; vec4 floodU; vec4 floodV; vec4 actorLight; vec4 bright; vec4 glowTop; vec4 glowBottom; vec4 glowTopPlane; vec4 glowBottomPlane; vec4 extra; };\n" \
+	"struct PieceData { vec4 colorLight; vec4 fogAlphaMat; vec4 fogColor; vec4 normal; vec4 floodU; vec4 floodV; vec4 actorLight; vec4 bright; vec4 glowTop; vec4 glowBottom; vec4 glowTopPlane; vec4 glowBottomPlane; vec4 tint; vec4 tintRange; vec4 extra; };\n" \
 	"layout(std430, binding = 9) readonly buffer Pieces { PieceData pieces[]; };\n"
 
 #include "RenderDevice.h"

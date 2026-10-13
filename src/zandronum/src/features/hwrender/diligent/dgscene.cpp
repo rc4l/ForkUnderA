@@ -564,6 +564,7 @@ void DrawSceneOnce(bool present, bool pump)
 	g_pass.mainView = false;
 	RenderMirrors(ctx);
 	ShowStackView(ctx);
+	DrawHitboxes(ctx);
 
 	// [rc4l] 2D last, over everything, with depth off entirely -- it is the frame's top layer.
 	Draw2D(ctx);

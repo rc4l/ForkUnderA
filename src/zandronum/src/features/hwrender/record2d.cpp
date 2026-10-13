@@ -3,6 +3,7 @@
 
 #include "features/hwrender/record2d.h"
 #include "features/hwrender/hud2d.h"   // [rc4l] Record2D
+#include "features/damage-tint/damagetint.h"   // [rc4l] DamageTint_Armed2D
 
 namespace zx { namespace hwrender {
 
@@ -10,6 +11,8 @@ void Record2DCanvas::Texture(FTexture *img, const DCanvas::DrawParms &parms)
 {
 	zx::draw2d::TextureDraw d;
 	zx::draw2d::PrepareTexture(img, parms, d);
+	// [rc4l] The status bar face's tint, which GL's render state holds for this one draw.
+	DamageTint_Armed2D(d.quad.tint);
 	Record2D(d.quad);
 }
 

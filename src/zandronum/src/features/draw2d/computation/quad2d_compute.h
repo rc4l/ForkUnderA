@@ -8,6 +8,8 @@
 
 #include <vector>
 
+#include "features/damage-tint/computation/damagetint_compute.h"   // [rc4l] TintGradient
+
 namespace zx { namespace hwrender {
 
 // [rc4l] The 2D capture's record, one quad in the engine's 2D space (origin top-left, y down, as Begin2D sets it): features/draw2d works it out and the backend draws it.
@@ -34,6 +36,8 @@ struct Quad2D
 	int         fixedColormap;
 	// [rc4l] The fuzz shader a fuzzy weapon layer draws with under gl_fuzztype (fuzz_compute's kFuzz*), 0 for everything else.
 	int         fuzz;
+	// [rc4l] The damage tint the weapon or status bar face is drawn with (features/damage-tint), strength 0 for none.
+	zx::damagetint::TintGradient tint;
 };
 
 }} // namespace zx::hwrender

@@ -6,6 +6,7 @@
 #include "features/frame/computation/cameraseen_compute.h"
 
 #include "features/levelmesh/staticmesh.h"     // [rc4l] DynClear
+#include "features/hitboxviz/hitboxviz.h"         // [rc4l] CollectBackendFrame
 #include "features/levelmesh/flatmesh.h"       // [rc4l] PlayerWalkActive, ClearSprites, RecordSpriteSweep
 #include "features/levelmesh/projdecals.h"     // [rc4l] UpdateProjectedDecals
 #include "features/levelmesh/wallcache.h"      // [rc4l] InvalidateMovedSectors
@@ -145,6 +146,8 @@ void StandaloneScene()
 		zx::levelmesh::InvalidateMovedSectors(walked ? &walkedSet : NULL);
 	}
 	if (walked) MarkSeenCameraTextures(walkedSet);
+	// [rc4l] The hitbox view's boxes for the player's view, from the sectors its walk reached as GL's RenderThings takes them.
+	if (zx::levelmesh::PlayerWalkActive()) zx::hitboxviz::CollectBackendFrame(camera, walkedSet.sectors, walkedSet.sectorCount);
 	const zx::framephase::Scope actorsPhase(zx::framephase::kPhaseActors);
 	SweepActors();
 }

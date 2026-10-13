@@ -40,6 +40,8 @@ static const char *kSceneVS =
 	"layout(location = 18) out vec2 vGlowDist;\n"
 	"layout(location = 19) flat out vec4 vGlowTop;\n"
 	"layout(location = 20) flat out vec4 vGlowBottom;\n"
+	"layout(location = 21) flat out vec4 vTint;\n"
+	"layout(location = 22) flat out vec3 vTintRange;\n"
 	"layout(std430, binding = 10) readonly buffer StackVis { uint stackVis[]; };\n"
 	"layout(std430, binding = 11) readonly buffer SlotRemap { uint slotRemap[]; };\n"
 	// [rc4l] ComputeStackVisible, line for line: whether walk slot's walk drew id this frame.
@@ -62,6 +64,8 @@ static const char *kSceneVS =
 	"    vDesaturation = pd.extra.x;\n"
 	"    vTexFlags = pd.extra.w;\n"
 	// [rc4l] main.vp's glow distances, below the ceiling and above the floor the glow is measured from, the mesh's (x, height, y) being GL's world coordinate.
+	"    vTint = pd.tint;\n"
+	"    vTintRange = pd.tintRange.xyz;\n"
 	"    vGlowTop = pd.glowTop;\n"
 	"    vGlowBottom = pd.glowBottom;\n"
 	"    vGlowDist = vec2(-((pd.glowTopPlane.w + pd.glowTopPlane.x * aPos.x + pd.glowTopPlane.y * aPos.z) * pd.glowTopPlane.z) - aPos.y,\n"
@@ -153,12 +157,15 @@ static const char *kSceneVS =
 	"layout(location = 18) in vec2 vGlowDist;\n" \
 	"layout(location = 19) flat in vec4 vGlowTop;\n" \
 	"layout(location = 20) flat in vec4 vGlowBottom;\n" \
-	/* [rc4l] GL's texture modes, as getTexel applies them: TM_MASK (texFlags 1) keeps only a stencil's shape, white, for its fill colour, and TM_INVERSE (16) inverts the colour, green and blue swapped as main.fp swaps them. */ \
+	"layout(location = 21) flat in vec4 vTint;\n" \
+	"layout(location = 22) flat in vec3 vTintRange;\n" \
+	FUA_DAMAGE_TINT_GLSL \
+	/* [rc4l] GL's texture modes, as getTexel applies them: TM_MASK (texFlags 1) keeps only a stencil's shape, white, for its fill colour, and TM_INVERSE (16) inverts the colour, green and blue swapped as main.fp swaps them; then the damage tint getTexel mixes in. */ \
 	"vec4 fuaTexMode(vec4 t) {\n" \
 	"    int f = int(vTexFlags + 0.5);\n" \
-	"    if ((f & 1) != 0) return vec4(vec3(1.0), t.a);\n" \
-	"    if ((f & 16) != 0) return vec4(1.0 - t.r, 1.0 - t.b, 1.0 - t.g, t.a);\n" \
-	"    return t;\n" \
+	"    if ((f & 1) != 0) t = vec4(vec3(1.0), t.a);\n" \
+	"    else if ((f & 16) != 0) t = vec4(1.0 - t.r, 1.0 - t.b, 1.0 - t.g, t.a);\n" \
+	"    return fuaDamageTint(t, vUV.t, vTint, vTintRange);\n" \
 	"}\n" \
 	/* [rc4l] ComputeDesaturate, line for line: main.fp's desaturate(), on the texel and the brightmap but never the light. */ \
 	"vec3 fuaDesaturate(vec3 c) {\n" \

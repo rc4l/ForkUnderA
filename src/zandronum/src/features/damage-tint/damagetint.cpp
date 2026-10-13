@@ -304,43 +304,56 @@ namespace
 	}
 } // namespace
 
+namespace
+{
+	// [rc4l] An actor's gradient at its hook's strength and coverage cvars: full at the larger V, as the sprite, weapon and face all take it.
+	bool Gradient( AActor *actor, int blendOp, DWORD styleFlags, int basePct, int coveragePct, float vt, float vb, TintGradient &out )
+	{
+		PalEntry avg;
+		bool glow;
+		const int pct = TintStrength( actor, blendOp, styleFlags, basePct, avg, glow );
+		const int cov = clamp<int>( coveragePct, 0, 100 );
+		if ( pct <= 0 || cov <= 0 )
+			return false;
+		out = ComputeTintGradient( avg.r / 255.0f, avg.g / 255.0f, avg.b / 255.0f, pct / 100.0f, vt, vb, cov / 100.0f, glow );
+		return true;
+	}
+
+	void SetGLTint( const TintGradient &g )
+	{
+		gl_RenderState.SetDamageTint( g.r, g.g, g.b, g.strength, g.top, g.bottom, g.glow );
+	}
+
+	// [rc4l] What DamageTint_Arm2D armed, held for a renderer that records the 2D draw rather than drawing it at once.
+	TintGradient g_armed2D;
+	bool g_armed2DOn = false;
+} // namespace
+
+bool DamageTint_SpriteGradient( AActor *actor, int blendOp, DWORD styleFlags, float vt, float vb, TintGradient &out )
+{
+	return Gradient( actor, blendOp, styleFlags, cl_damagetint, cl_damagetint_coverage, vt, vb, out );
+}
+
+bool DamageTint_WeaponGradient( AActor *playermo, int blendOp, DWORD styleFlags, float vt, float vb, TintGradient &out )
+{
+	return Gradient( playermo, blendOp, styleFlags, cl_damagetint_weapon, cl_damagetint_weapon_coverage, vt, vb, out );
+}
+
 bool DamageTint_BeginSpriteGlow( AActor *actor, int blendOp, DWORD styleFlags, float vt, float vb )
 {
-	PalEntry avg;
-	bool glow;
-	int pct = TintStrength( actor, blendOp, styleFlags, cl_damagetint, avg, glow );
-	if ( pct <= 0 )
-		return false;
-	int cov = clamp<int>( cl_damagetint_coverage, 0, 100 );
-	if ( cov <= 0 )
-		return false;
-
 	// Per-pixel gradient across the sprite's vertical texture span: full tint at the feet (the
 	// larger V), fading to none at the coverage point. Same shader path as the weapon and
 	// mugshot, so it reads identically on any clothing color; protected players glow instead.
-	float vBottom = vb > vt ? vb : vt;
-	float vTop    = vb > vt ? vt : vb;
-	float covFrac = cov / 100.0f;
-	gl_RenderState.SetDamageTint( avg.r / 255.0f, avg.g / 255.0f, avg.b / 255.0f,
-		pct / 100.0f, vBottom - ( vBottom - vTop ) * covFrac, vBottom, glow );
+	TintGradient g;
+	if ( !DamageTint_SpriteGradient( actor, blendOp, styleFlags, vt, vb, g ))
+		return false;
+	SetGLTint( g );
 	return true;
 }
 
 void DamageTint_EndSpriteGlow()
 {
 	gl_RenderState.ClearDamageTint();
-}
-
-bool DamageTint_WeaponParams( AActor *playermo, int blendOp, DWORD styleFlags, PalEntry &avgOut, int &pctOut, float &coverageFracOut, bool &glowOut )
-{
-	pctOut = TintStrength( playermo, blendOp, styleFlags, cl_damagetint_weapon, avgOut, glowOut );
-	if ( pctOut <= 0 )
-		return false;
-	int cov = clamp<int>( cl_damagetint_weapon_coverage, 0, 100 );
-	if ( cov <= 0 )
-		return false;
-	coverageFracOut = cov / 100.0f;
-	return true;
 }
 
 PalEntry DamageTint_Blend( PalEntry avg, int pct )
@@ -353,13 +366,24 @@ void DamageTint_Arm2D( PalEntry overlay, float coverageFrac, bool glow )
 	if ( overlay.a == 0 || coverageFrac <= 0.0f )
 		return;
 	// Texture-V runs 0 (top) to 1 (bottom) on a 2D graphic: gradient bottom = 1, top = 1 - coverage.
-	gl_RenderState.SetDamageTint( overlay.r / 255.0f, overlay.g / 255.0f, overlay.b / 255.0f,
-		overlay.a / 255.0f, 1.0f - coverageFrac, 1.0f, glow );
+	g_armed2D = ComputeTintGradient( overlay.r / 255.0f, overlay.g / 255.0f, overlay.b / 255.0f, overlay.a / 255.0f,
+		0.0f, 1.0f, coverageFrac, glow );
+	g_armed2DOn = true;
+	SetGLTint( g_armed2D );
 }
 
 void DamageTint_Disarm2D()
 {
+	g_armed2DOn = false;
 	gl_RenderState.ClearDamageTint();
+}
+
+bool DamageTint_Armed2D( TintGradient &out )
+{
+	if ( !g_armed2DOn )
+		return false;
+	out = g_armed2D;
+	return true;
 }
 
 // Diagnostic: why is (or isn't) the tint firing right here? Also prints a histogram of every
@@ -441,7 +465,9 @@ PalEntry DamageTint_FaceOverlay( float *coverageFracOut, bool *glowOut )
 #include "features/damage-tint/damagetint.h"
 bool DamageTint_BeginSpriteGlow( AActor *, int, DWORD, float, float ) { return false; }
 void DamageTint_EndSpriteGlow() {}
-bool DamageTint_WeaponParams( AActor *, int, DWORD, PalEntry &, int &, float &, bool & ) { return false; }
+bool DamageTint_SpriteGradient( AActor *, int, DWORD, float, float, zx::damagetint::TintGradient & ) { return false; }
+bool DamageTint_WeaponGradient( AActor *, int, DWORD, float, float, zx::damagetint::TintGradient & ) { return false; }
+bool DamageTint_Armed2D( zx::damagetint::TintGradient & ) { return false; }
 PalEntry DamageTint_Blend( PalEntry, int ) { return PalEntry( 255, 255, 255, 255 ); }
 PalEntry DamageTint_FaceOverlay( float *cov, bool *glow ) { if ( cov ) *cov = 0.0f; if ( glow ) *glow = false; return PalEntry( 0 ); }
 void DamageTint_Arm2D( PalEntry, float, bool ) {}

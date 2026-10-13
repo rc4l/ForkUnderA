@@ -11,6 +11,7 @@
 #define ZX_HITBOXVIZ_H
 
 #include "doomtype.h"
+#include "features/hitboxviz/computation/boxedges_compute.h"   // [rc4l] Vertex3
 
 class AActor;
 
@@ -30,6 +31,24 @@ void CollectActor(AActor *thing);
 // Emits everything collected this frame. Called at the tail of FGLRenderer::RenderTranslucent,
 // where the 3D projection is still current and the depth buffer is writable again.
 void Draw();
+
+// --- a renderer that collects its own frame (the Vulkan backend) ------------
+
+// [rc4l] One colour's edges as world-space line pairs, and the colour as 0xRRGGBB.
+struct LineBatch
+{
+	const Vertex3 *verts;
+	unsigned int count;
+	unsigned int rgb;
+};
+// [rc4l] The collision boxes, the attack boxes and the blasts, drawn in that order as GL draws them.
+enum { kLineBatches = 3 };
+
+// [rc4l] The player's view's boxes, kept apart from GL's nested scenes: every thing in the given sectors (the walk's, as GL's RenderThings offers the things of each sector its walk reached) seen from viewActor, and the live blasts.
+void CollectBackendFrame(AActor *viewActor, const int *sectorList, int count);
+
+// [rc4l] What CollectBackendFrame gathered, the non-empty batches of it into out (kLineBatches long), whether they ignore depth, and the line width in pixels; how many.
+int BackendLines(LineBatch *out, bool &xray, float &widthPx);
 
 // --- explosion regions -----------------------------------------------------
 

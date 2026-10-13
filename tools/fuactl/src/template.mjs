@@ -260,12 +260,12 @@ export async function compareCounter({ name, wad, maps, vantages, counter, sides
   });
 }
 
-// [rc4l] GL against Vulkan from ONE frame of one Vulkan launch, for what moves with time (a scroller, an animation), where two launches never agree on the moment.
-export async function compareSameFrame({ name, wad, maps, vantages, boxes, iwad = FREEDOOM2, port = 7796, size = [1280, 720], settleTics = 70 }) {
+// [rc4l] GL against Vulkan from ONE frame of one Vulkan launch, for what moves with time (a scroller, an animation), where two launches never agree on the moment; `commands` run once the level is up, as a side's do.
+export async function compareSameFrame({ name, wad, maps, vantages, boxes, iwad = FREEDOOM2, port = 7796, size = [1280, 720], settleTics = 70, commands = [] }) {
   const others = engineProcessCount();
   if (others > 0) return { lines: [`${others} other engine window(s) open -- close them first`], failed: 1, refused: true };
   const exe = resolveEngine().split(path.sep).join("/");
-  return eachVulkanLaunch({ name, wad, maps, iwad, port, size, side: { name: "pair", glDraws: true } }, async (c, map) => {
+  return eachVulkanLaunch({ name, wad, maps, iwad, port, size, side: { name: "pair", glDraws: true, commands } }, async (c, map) => {
     const frames = {};
     await cap.waitTics(c, settleTics);
     for (const v of vantages) {

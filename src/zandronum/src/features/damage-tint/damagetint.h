@@ -22,12 +22,16 @@ class AActor;
 bool DamageTint_BeginSpriteGlow( AActor *actor, int blendOp, DWORD styleFlags, float vt, float vb );
 void DamageTint_EndSpriteGlow();
 
-// First-person weapon sprite: multiplicative gradient, drawn as horizontal slices (multiply
-// preserves the gun's own shading; the additive glow read as nonsense lighting up close).
-// Returns true with the floor color, strength percent, and coverage fraction (0..1 of the quad,
-// from its bottom edge) when the tint is active. The caller slices; per-slice strength comes from
-// zx::damagetint::SliceTintPct and colors from DamageTint_Blend.
-bool DamageTint_WeaponParams( AActor *playermo, int blendOp, DWORD styleFlags, PalEntry &avgOut, int &pctOut, float &coverageFracOut, bool &glowOut );
+namespace zx { namespace damagetint { struct TintGradient; } }
+
+// [rc4l] A body sprite's gradient over its texture span vt..vb when the actor qualifies, for whichever renderer draws it; false for none.
+bool DamageTint_SpriteGradient( AActor *actor, int blendOp, DWORD styleFlags, float vt, float vb, zx::damagetint::TintGradient &out );
+
+// [rc4l] The first-person weapon's gradient over its frame's vt..vb, judged by the player's own style; false for none.
+bool DamageTint_WeaponGradient( AActor *playermo, int blendOp, DWORD styleFlags, float vt, float vb, zx::damagetint::TintGradient &out );
+
+// [rc4l] The gradient DamageTint_Arm2D armed for the next 2D draw, for a renderer that records 2D; false while none is.
+bool DamageTint_Armed2D( zx::damagetint::TintGradient &out );
 
 // White blended toward `avg` by pct -- the multiplicative tint color for a slice.
 PalEntry DamageTint_Blend( PalEntry avg, int pct );

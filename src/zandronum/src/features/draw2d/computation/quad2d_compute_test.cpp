@@ -71,6 +71,7 @@ TEST(Quad2D, ATextureRecordIsItsQuadAndNothingElse)
 	EXPECT_FLOAT_EQ(d.r, 0.2f); EXPECT_FLOAT_EQ(d.g, 1.f); EXPECT_FLOAT_EQ(d.a, 0.4f);
 	EXPECT_EQ(d.fixedColormap, 0);
 	EXPECT_EQ(d.fuzz, 0);
+	EXPECT_EQ(d.tint.strength, 0.f);
 	EXPECT_EQ(d.kind, kQuadRect);
 	EXPECT_EQ(d.blend, kBlend2DAlpha);
 	EXPECT_EQ(d.material, (const void *)NULL);

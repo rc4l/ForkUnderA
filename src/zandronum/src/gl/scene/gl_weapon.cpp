@@ -207,15 +207,9 @@ void FGLRenderer::DrawPSprite (player_t * player,pspdef_t *psp,fixed_t sx, fixed
 	// [rc4l] features/damage-tint: while a damaging floor hurts the player, arm the shader's
 	// per-pixel multiplicative gradient -- full tint at the weapon's bottom edge (fV2), fading to
 	// none at the coverage point. Cleared right after the draw.
-	PalEntry dtAvg;
-	int dtPct;
-	float dtCov;
-	bool dtGlow;
-	if (DamageTint_WeaponParams(player->mo, player->mo->RenderStyle.BlendOp, player->mo->RenderStyle.Flags, dtAvg, dtPct, dtCov, dtGlow))
-	{
-		gl_RenderState.SetDamageTint(dtAvg.r / 255.0f, dtAvg.g / 255.0f, dtAvg.b / 255.0f,
-			dtPct / 100.0f, fV2 - (fV2 - fV1) * dtCov, fV2, dtGlow);
-	}
+	zx::damagetint::TintGradient dt = zx::damagetint::TintGradient();
+	if (DamageTint_WeaponGradient(player->mo, player->mo->RenderStyle.BlendOp, player->mo->RenderStyle.Flags, fV1, fV2, dt))
+		gl_RenderState.SetDamageTint(dt.r, dt.g, dt.b, dt.strength, dt.top, dt.bottom, dt.glow);
 	gl_RenderState.Apply();
 
 	// [rc4l] The weapon's screen-space quad (x1/y1/x2/y2 are pixels including viewwindowx/y), for a check against GL's weapon; built after Apply so the colour is the final shaded one.
@@ -241,6 +235,7 @@ void FGLRenderer::DrawPSprite (player_t * player,pspdef_t *psp,fixed_t sx, fixed
 		q.texMode = gl_RenderState.GetTextureMode();
 		q.fixedColormap = gl_fixedcolormap;
 		q.fuzz = OverrideShader > 4 ? OverrideShader - 4 : 0;
+		q.tint = dt;
 		q.kind = 0;
 		q.lx2 = q.ly2 = 0.f;
 		gl_observer->WeaponQuad(q);

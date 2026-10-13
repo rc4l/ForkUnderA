@@ -41,6 +41,7 @@
 #include "features/rendersettings/rendersettings.h"   // [rc4l] RenderShadingEnv, gl_ClampLight, getExtraLight
 #include "features/rendersettings/colormap.h"   // [rc4l] FColormap
 #include "features/sprites/spriteframe.h"   // [rc4l] gl_GetSpriteFrame
+#include "features/damage-tint/damagetint.h"   // [rc4l] DamageTint_WeaponGradient
 EXTERN_CVAR(Int, screenblocks)
 
 #include <string.h>
@@ -121,6 +122,8 @@ void LayerQuad(player_t *player, pspdef_t *psp, fixed_t sx, fixed_t sy, int tran
 	q.texMode = texMode;
 	q.fixedColormap = (int)gl_fixedcolormap;
 	q.fuzz = fuzz;
+	// [rc4l] DrawPSprite's damage tint, by the player's own style over the frame's span.
+	DamageTint_WeaponGradient(player->mo, player->mo->RenderStyle.BlendOp, player->mo->RenderStyle.Flags, fi.vt, fi.vb, q.tint);
 	Emit(q);
 }
 
@@ -163,7 +166,7 @@ bool SameQuad(const zx::hwrender::Quad2D &a, const zx::hwrender::Quad2D &b)
 	const float fb[] = { b.x, b.y, b.w, b.h, b.u1, b.v1, b.u2, b.v2, b.r, b.g, b.b, b.a, b.lx2, b.ly2 };
 	return a.material == b.material && memcmp(fa, fb, sizeof(fa)) == 0 && a.clipL == b.clipL && a.clipT == b.clipT && a.clipR == b.clipR &&
 		a.clipB == b.clipB && a.blend == b.blend && a.translation == b.translation && a.texMode == b.texMode && a.kind == b.kind &&
-		a.fixedColormap == b.fixedColormap && a.fuzz == b.fuzz;
+		a.fixedColormap == b.fixedColormap && a.fuzz == b.fuzz && memcmp(&a.tint, &b.tint, sizeof(a.tint)) == 0;
 }
 
 // [rc4l] PSPF_PLAYERTRANSLATED takes the player's own colours.

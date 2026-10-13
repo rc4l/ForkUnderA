@@ -32,3 +32,11 @@ TEST(SpriteFrame, TheFlipMaskMirrorsItsRotations)
 	EXPECT_EQ(rot, 1);
 	EXPECT_TRUE(mirror);
 }
+
+// [rc4l] A model captures through the engine and a player keeps the damage tint's per-actor state, so neither is derived on a lane.
+TEST(SpriteFrame, ModelsAndPlayersAreDerivedOnTheGameThread)
+{
+	EXPECT_FALSE(ComputeSpriteOnGameThread(false, false));
+	EXPECT_TRUE(ComputeSpriteOnGameThread(true, false));
+	EXPECT_TRUE(ComputeSpriteOnGameThread(false, true));
+}

@@ -32,7 +32,7 @@ namespace zx { namespace hwrender {
 // Submission order is draw order and must not be reordered -- no material batching here. A 2D layer
 // sorted by texture would put the status bar behind the world and the console behind the menu.
 // [rc4l] fixedCm is 1 for a weapon layer, which takes the view's fixed colormap, and fuzz its fuzz shader (fuzz_compute's kFuzz*).
-struct Vertex2D { float x, y, u, v, r, g, b, a, texMode, fixedCm, fuzz; };
+struct Vertex2D { float x, y, u, v, r, g, b, a, texMode, fixedCm, fuzz, tint[4], tintRange[3]; };
 
 // [rc4l] The 2D constant block both stages read: the screen's reciprocal size and the fuzz clock in seconds (z), then the weapon's fixed colormap as the scene block carries it.
 #define FUA_SCREEN2D_GLSL "layout(binding = 0) uniform Screen { vec4 uInvScreen; vec4 uFixedColormap; vec4 uFixedRange; };\n"
@@ -58,12 +58,16 @@ static const char *k2DVS =
 	"layout(location = 3) in float aTexMode;\n"
 	"layout(location = 4) in float aFixed;\n"
 	"layout(location = 5) in float aFuzz;\n"
+	"layout(location = 6) in vec4 aTint;\n"
+	"layout(location = 7) in vec3 aTintRange;\n"
 	FUA_SCREEN2D_GLSL
 	"layout(location = 0) out vec2 vUV;\n"
 	"layout(location = 1) out vec4 vColor;\n"
 	"layout(location = 2) flat out int vTexMode;\n"
 	"layout(location = 3) flat out float vFixed;\n"
 	"layout(location = 4) flat out float vFuzz;\n"
+	"layout(location = 5) flat out vec4 vTint;\n"
+	"layout(location = 6) flat out vec3 vTintRange;\n"
 	"void main() {\n"
 	// Engine 2D space is ortho(0, W, H, 0): origin top-left, Y down. The Y is INVERTED here rather
 	// than passed through, because Diligent's Vulkan backend renders with a negative-height viewport
@@ -77,6 +81,8 @@ static const char *k2DVS =
 	"    vTexMode = int(aTexMode);\n"
 	"    vFixed = aFixed;\n"
 	"    vFuzz = aFuzz;\n"
+	"    vTint = aTint;\n"
+	"    vTintRange = aTintRange;\n"
 	"}\n";
 
 // [rc4l] The texture modes from gl_interface.h's TexMode, transcribed from getTexel() in main.fp.
@@ -92,9 +98,12 @@ static const char *k2DPS =
 	"layout(location = 2) flat in int vTexMode;\n"
 	"layout(location = 3) flat in float vFixed;\n"
 	"layout(location = 4) flat in float vFuzz;\n"
+	"layout(location = 5) flat in vec4 vTint;\n"
+	"layout(location = 6) flat in vec3 vTintRange;\n"
 	FUA_SCREEN2D_GLSL
 	FUA_FIXED_COLORMAP_GLSL
 	FUA_FUZZ_GLSL
+	FUA_DAMAGE_TINT_GLSL
 	"layout(binding = 1) uniform sampler2D uTex;\n"
 	"layout(location = 0) out vec4 outColor;\n"
 	"void main() {\n"
@@ -106,6 +115,8 @@ static const char *k2DPS =
 	"    else if (vTexMode == 3) t = vec4(1.0-t.r, 1.0-t.b, 1.0-t.g, t.a);\n"// TM_INVERSE
 	"    else if (vTexMode == 4) t = vec4(1.0, 1.0, 1.0, t.r);\n"            // TM_REDTOALPHA
 	"    else if (vTexMode == 5 && (vUV.t < 0.0 || vUV.t > 1.0)) t.a = 0.0;\n"// TM_CLAMPY
+	/* [rc4l] getTexel's damage tint on the weapon or the status bar face, before the fuzz shader takes the texel. */
+	"    t = fuaDamageTint(t, vUV.t, vTint, vTintRange);\n"
 	"    if (fuzz > 0) t = fuaFuzz(fuzz, vUV, uInvScreen.z, t);\n"
 	"    outColor = t * vColor;\n"
 	"    if (vFixed > 0.5 && uFixedColormap.w > 0.5) outColor.rgb = fuaFixedColormap(outColor.rgb);\n"
@@ -146,6 +157,8 @@ static bool Ensure2DPipeline()
 		Diligent::LayoutElement{3, 0, 1, Diligent::VT_FLOAT32, false},
 		Diligent::LayoutElement{4, 0, 1, Diligent::VT_FLOAT32, false},
 		Diligent::LayoutElement{5, 0, 1, Diligent::VT_FLOAT32, false},
+		Diligent::LayoutElement{6, 0, 4, Diligent::VT_FLOAT32, false},
+		Diligent::LayoutElement{7, 0, 3, Diligent::VT_FLOAT32, false},
 	};
 	static Diligent::ShaderResourceVariableDesc vars[] = {
 		{ Diligent::SHADER_TYPE_PIXEL, "uTex", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
@@ -186,7 +199,7 @@ static bool Ensure2DPipeline()
 		rt.BlendOpAlpha = Diligent::BLEND_OPERATION_ADD;
 	}
 	pci.GraphicsPipeline.InputLayout.LayoutElements = layout;
-	pci.GraphicsPipeline.InputLayout.NumElements = 6;
+	pci.GraphicsPipeline.InputLayout.NumElements = sizeof(layout) / sizeof(layout[0]);
 	pci.PSODesc.ResourceLayout.DefaultVariableType = Diligent::SHADER_RESOURCE_VARIABLE_TYPE_STATIC;
 	pci.PSODesc.ResourceLayout.Variables = vars;
 	pci.PSODesc.ResourceLayout.NumVariables = 1;
@@ -297,7 +310,11 @@ void Draw2D(Diligent::IDeviceContext *ctx)
 			}
 			if (q.fixedColormap != 0) fixed2D = q.fixedColormap;
 			for (int k = 0; k < 4; k++)
-			{ v[k].r = q.r; v[k].g = q.g; v[k].b = q.b; v[k].a = q.a; v[k].texMode = (float)q.texMode; v[k].fixedCm = q.fixedColormap != 0 ? 1.f : 0.f; v[k].fuzz = (float)q.fuzz; }
+			{
+				v[k].r = q.r; v[k].g = q.g; v[k].b = q.b; v[k].a = q.a; v[k].texMode = (float)q.texMode; v[k].fixedCm = q.fixedColormap != 0 ? 1.f : 0.f; v[k].fuzz = (float)q.fuzz;
+				v[k].tint[0] = q.tint.r; v[k].tint[1] = q.tint.g; v[k].tint[2] = q.tint.b; v[k].tint[3] = q.tint.strength;
+				v[k].tintRange[0] = q.tint.top; v[k].tintRange[1] = q.tint.bottom; v[k].tintRange[2] = q.tint.glow ? 1.f : 0.f;
+			}
 			vb.Push(v[0]); vb.Push(v[1]); vb.Push(v[2]);
 			vb.Push(v[2]); vb.Push(v[1]); vb.Push(v[3]);
 		}

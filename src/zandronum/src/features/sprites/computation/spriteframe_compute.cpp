@@ -15,4 +15,9 @@ int ComputeSpriteRotation(unsigned int angle, bool symmetric, unsigned int flipM
 	return rot;
 }
 
+bool ComputeSpriteOnGameThread(bool model, bool player)
+{
+	return model || player;
+}
+
 }} // namespace zx::sprites

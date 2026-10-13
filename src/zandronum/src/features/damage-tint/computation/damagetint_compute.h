@@ -40,6 +40,15 @@ float CoverageSpan(int coveragePct, float span);
 // are 0..1 of the same span. Used for the weapon slices and the face bands.
 int SliceTintPct(int basePct, float fracFromBottom, float coverageFrac);
 
+// [rc4l] The shader's tint for one draw, as main.fp's uDamageTint and uDamageTintRange take it: colour (0..1) and strength (0 for none), the texture-V span it fades over, none at top and full at bottom, and whether it glows (screen) rather than stains (multiply).
+struct TintGradient { float r, g, b, strength, top, bottom; bool glow; };
+
+// [rc4l] A draw's gradient over its texture-V span va..vb: full at the larger V, gone coverageFrac of the span above it.
+TintGradient ComputeTintGradient(float r, float g, float b, float strength, float va, float vb, float coverageFrac, bool glow);
+
+// [rc4l] main.fp's tint on a texel's colour `rgb` at texture V `v`, line for line with the backends' fuaDamageTint.
+void ComputeTintTexel(const TintGradient &t, float v, float rgb[3]);
+
 }} // namespace zx::damagetint
 
 #endif

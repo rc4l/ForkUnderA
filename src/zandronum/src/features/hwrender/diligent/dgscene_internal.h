@@ -170,6 +170,8 @@ struct ScenePieceData
 	float brightSlot, stackId, animates, plain;
 	// [rc4l] A wall's glow (MeshPiece::glowTop and the rest): two colours with their heights, and the ceiling and floor planes they are measured from.
 	float glowTop[4], glowBottom[4], glowTopPlane[4], glowBottomPlane[4];
+	// [rc4l] A player's damage tint (MeshPiece::tint): colour and strength, then its texture-V span and 1 when it glows.
+	float tint[4], tintRange[4];
 	float desaturation, scrollU, scrollV, texFlags;   // [rc4l] the colormap's desaturation, 0..1, which main.fp mixes every texel toward grey by, the texture shift a scroller added since the bake, and 1 for a stencil plus 2 for an alpha-tested sprite plus 4 for a HUD model's surface plus 8 for a level surface, whose colour is its light alone, plus 16 for TM_INVERSE, 32 for a sprite blended by its own colour, 64 for a 3D fog layer's panel, 128 times its fuzz shader and 1024 for a fog boundary sheet
 };
 
@@ -400,6 +402,8 @@ void DrawBlended(Diligent::IDeviceContext *ctx);
 void DrawSolidDyn(Diligent::IDeviceContext *ctx);
 // [rc4l] The decals on line mirror `line`'s face, over the surface just drawn, in the order its side holds them.
 void DrawMirrorFaceDecals(Diligent::IDeviceContext *ctx, int line);
+// [rc4l] The hitbox view's boxes over the player's view (dglines.cpp), before the 2D.
+void DrawHitboxes(Diligent::IDeviceContext *ctx);
 
 // [rc4l] The scene buffer (dgupload.cpp).
 void FillPieceData(const zx::levelmesh::MeshPiece &p, int translation, ScenePieceData &pd, bool inMesh);
