@@ -32,6 +32,8 @@ void ComputeSceneConstants(const SceneConstantInputs &in, float *out)
 	out[38] = in.playerPass ? (float)in.skyHoles : 0.f;
 	out[39] = in.spriteAlphaCut;
 	ComputeFixedColormapConstants(in.fixedColormap, out + 40);
+	out[48] = in.lightsCheckSide ? 1.f : 0.f;
+	out[49] = out[50] = out[51] = 0.f;
 }
 
 }} // namespace zx::hwrender

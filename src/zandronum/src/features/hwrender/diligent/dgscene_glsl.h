@@ -361,7 +361,8 @@ static const char *kSceneVS =
 	   below anything a player could see -- a light a tenth of a unit behind a surface lights it now.
 	   It is not an attempt to place the boundary exactly, which floats cannot do; it is to keep the
 	   case Doom actually produces on the same side of it as GL. */ \
-	"        if (dot(vPlane.xyz, lp.xyz) - vPlane.w < -0.1) continue;\n" \
+	/* [rc4l] ...and only while gl_lights_checkside asks for it (uOptions.x), as gl_GetLight and the flats' test do. */ \
+	"        if (uOptions.x > 0.5 && dot(vPlane.xyz, lp.xyz) - vPlane.w < -0.1) continue;\n" \
 	"        float a = max(lp.w - length(d), 0.0) / lp.w;\n" \
 	"        if (a <= 0.0) continue;\n" \
 	"        if (lc.a > 0.5) dyn -= lc.rgb * a;\n" \

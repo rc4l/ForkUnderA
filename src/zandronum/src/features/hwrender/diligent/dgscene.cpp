@@ -511,6 +511,11 @@ void DrawSceneOnce(bool present, bool pump)
 		const auto &sd = swap->GetDesc();
 		if (sd.Width == 0 || sd.Height == 0) return;
 	}
+	// [rc4l] The pipelines follow the texture filter, anisotropy, cull mode and material array size as they change in play, not only at the next level's upload.
+	{
+		FString err;
+		if (!EnsureScenePipeline(err)) return;
+	}
 
 	// The sky portal is a whole second view of the map, so it is rendered here, beside the frame
 	// rather than inside it -- DrawWorld cannot be re-entered while it is deriving this frame.

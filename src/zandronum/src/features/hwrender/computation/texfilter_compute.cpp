@@ -15,4 +15,10 @@ TextureFilter ComputeTextureFilter(int mode)
 	return f;
 }
 
+unsigned ComputeAnisotropy(const TextureFilter &filter, float setting)
+{
+	if (!filter.minLinear || !filter.magLinear || !filter.mipmapped || !(setting >= 1.5f)) return 0;
+	return setting >= 16.f ? 16u : (unsigned)(setting + 0.5f);
+}
+
 }} // namespace zx::hwrender

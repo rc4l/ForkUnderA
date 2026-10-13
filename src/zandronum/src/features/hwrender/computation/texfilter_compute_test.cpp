@@ -37,3 +37,16 @@ TEST(TexFilterCompute, AModeOutOfRangeIsNearestWithNoMips)
 		EXPECT_FALSE(f.minLinear || f.magLinear || f.mipLinear || f.mipmapped) << m;
 	}
 }
+
+// [rc4l] Trilinear takes the setting rounded and capped at 16; 1 and below, or a nearest or unmipped filter, take none.
+TEST(TextureFilter, AnisotropyOnlyForALinearMipmappedFilter)
+{
+	const TextureFilter trilinear = { true, true, true, true };
+	EXPECT_EQ(8u, ComputeAnisotropy(trilinear, 8.f));
+	EXPECT_EQ(2u, ComputeAnisotropy(trilinear, 1.5f));
+	EXPECT_EQ(16u, ComputeAnisotropy(trilinear, 32.f));
+	EXPECT_EQ(0u, ComputeAnisotropy(trilinear, 1.f));
+	EXPECT_EQ(0u, ComputeAnisotropy({ false, true, true, true }, 8.f));
+	EXPECT_EQ(0u, ComputeAnisotropy({ true, false, true, true }, 8.f));
+	EXPECT_EQ(0u, ComputeAnisotropy({ true, true, true, false }, 8.f));
+}

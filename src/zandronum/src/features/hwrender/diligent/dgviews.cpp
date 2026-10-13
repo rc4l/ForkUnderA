@@ -7,6 +7,8 @@
 #include "features/hwrender/diligent/dgscene_glsl.h"   // [rc4l] the scene's light model, shared with the mirror pass
 #include "features/viewsetup/viewsetup.h"   // [rc4l] FixedColormapShadeFor
 
+EXTERN_CVAR(Bool, gl_lights_checkside)
+
 EXTERN_CVAR(Float, gl_mask_sprite_threshold)
 
 namespace zx { namespace hwrender {
@@ -656,6 +658,7 @@ void WriteSceneConstants(float *cb, const float *clip, float targetW, float targ
 	in.spriteAlphaCut = gl_mask_sprite_threshold - 0.001f;
 	// [rc4l] GL draws a camera texture with no fixed colormap (RenderTextureView), and every other view under the player's.
 	in.fixedColormap = zx::viewsetup::FixedColormapShadeFor(g_pass.inCameraPass ? CM_DEFAULT : (int)gl_fixedcolormap);
+	in.lightsCheckSide = gl_lights_checkside;
 	zx::hwrender::ComputeSceneConstants(in, cb);
 }
 

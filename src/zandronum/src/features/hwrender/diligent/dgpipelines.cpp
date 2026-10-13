@@ -10,6 +10,7 @@
 
 // [rc4l] Off makes every commit in a draw loop check every resource again, the old cost, for an A/B in one session.
 CVAR(Bool, fua_dg_loopcommits, true, 0)
+EXTERN_CVAR(Float, gl_texture_filter_anisotropic)
 
 namespace zx { namespace hwrender {
 
@@ -542,6 +543,7 @@ static bool g_pieceBindFailed = false;
 // settings. SRBs are created from a PSO and cannot outlive it.
 static int g_builtCull = -1;
 static unsigned g_builtSlots = 0;   // [rc4l] the material array size the pipelines were built for
+static float g_builtAniso = 0.f;    // [rc4l] the anisotropy the samplers were built with
 static int g_builtFilter = -1;
 
 void ReleaseScenePipelines()
@@ -586,13 +588,21 @@ void FillSamplerFromEngine(Diligent::SamplerDesc &samp)
 	samp.MagFilter = f.magLinear ? Diligent::FILTER_TYPE_LINEAR : Diligent::FILTER_TYPE_POINT;
 	samp.MipFilter = f.mipLinear ? Diligent::FILTER_TYPE_LINEAR : Diligent::FILTER_TYPE_POINT;
 	samp.MaxLOD = f.mipmapped ? 1000.0f : 0.0f;
+	// [rc4l] gl_texture_filter_anisotropic, as GL's samplers take it.
+	const unsigned aniso = zx::hwrender::ComputeAnisotropy(f, gl_texture_filter_anisotropic);
+	if (aniso > 0)
+	{
+		samp.MinFilter = samp.MagFilter = samp.MipFilter = Diligent::FILTER_TYPE_ANISOTROPIC;
+		samp.MaxAnisotropy = aniso;
+	}
 }
 
 bool EnsureScenePipeline(FString &err)
 {
 	// The sampler is immutable in the PSO, so a filter change means a new PSO. Cheap and rare.
-	if (g_pso.world[kWpOpaque] && g_builtFilter != (int)gl_texture_filter) ReleaseScenePipelines();
+	if (g_pso.world[kWpOpaque] && (g_builtFilter != (int)gl_texture_filter || g_builtAniso != (float)gl_texture_filter_anisotropic)) ReleaseScenePipelines();
 	g_builtFilter = (int)gl_texture_filter;
+	g_builtAniso = gl_texture_filter_anisotropic;
 	if (g_pso.world[kWpOpaque] && g_builtCull != (int)fua_dg_cull) ReleaseScenePipelines();
 	g_builtCull = (int)fua_dg_cull;
 	// [rc4l] The shaders declare the array at its size, so a new size is new pipelines.

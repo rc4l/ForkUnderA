@@ -28,6 +28,7 @@ SceneConstantInputs Inputs(const float *mvp, const float *clip)
 	in.skyHoles = 3;
 	in.spriteAlphaCut = 0.499f;
 	in.fixedColormap = { zx::viewsetup::kShadeRamp, { 1.f, 0.5f, 0.25f }, { -1.f, -0.5f, 0.125f } };
+	in.lightsCheckSide = true;
 	return in;
 }
 
@@ -55,6 +56,11 @@ TEST(SceneConstants, EveryFieldLandsWhereTheShaderReadsIt)
 	EXPECT_EQ(2.f, out[37]); EXPECT_EQ(3.f, out[38]); EXPECT_EQ(0.499f, out[39]);
 	EXPECT_EQ(1.f, out[40]); EXPECT_EQ(0.5f, out[41]); EXPECT_EQ(0.25f, out[42]); EXPECT_EQ(1.f, out[43]);
 	EXPECT_EQ(-1.f, out[44]); EXPECT_EQ(-0.5f, out[45]); EXPECT_EQ(0.125f, out[46]); EXPECT_EQ(0.f, out[47]);
+	EXPECT_EQ(1.f, out[48]); EXPECT_EQ(0.f, out[49]); EXPECT_EQ(0.f, out[51]);
+	SceneConstantInputs off = Inputs(mvp, clip);
+	off.lightsCheckSide = false;
+	ComputeSceneConstants(off, out);
+	EXPECT_EQ(0.f, out[48]);
 }
 
 // [rc4l] A tint keeps its colour and mode 2; no colormap, or a sprite's fog layer, which is never a view's, reads as all zeros.
