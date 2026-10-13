@@ -66,6 +66,7 @@
 // [BC]
 #include "network.h"
 #include "sv_commands.h"
+#include "features/levelmesh/wallcache.h"   // [rc4l] RecalcVertexHeights
 
 long gl_frameCount;
 
@@ -426,35 +427,10 @@ CCMD(gl_resetmap)
 // Recalculate all heights affectting this vertex.
 //
 //==========================================================================
+// [rc4l] Shared with the backend's bake, which splits its walls at the same heights (features/levelmesh, ComputeVertexHeights).
 void gl_RecalcVertexHeights(vertex_t * v)
 {
-	int i,j,k;
-	float height;
-
-	v->numheights=0;
-	for(i=0;i<v->numsectors;i++)
-	{
-		for(j=0;j<2;j++)
-		{
-			if (j==0) height=FIXED2FLOAT(v->sectors[i]->ceilingplane.ZatPoint(v));
-			else height=FIXED2FLOAT(v->sectors[i]->floorplane.ZatPoint(v));
-
-			for(k=0;k<v->numheights;k++)
-			{
-				if (height == v->heightlist[k]) break;
-				if (height < v->heightlist[k])
-				{
-					memmove(&v->heightlist[k+1], &v->heightlist[k], sizeof(float) * (v->numheights-k));
-					v->heightlist[k]=height;
-					v->numheights++;
-					break;
-				}
-			}
-			if (k==v->numheights) v->heightlist[v->numheights++]=height;
-		}
-	}
-	if (v->numheights<=2) v->numheights=0;	// is not in need of any special attention
-	v->dirty = false;
+	zx::levelmesh::RecalcVertexHeights(v);
 }
 
 

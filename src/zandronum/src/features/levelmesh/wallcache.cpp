@@ -19,6 +19,7 @@
 #include "features/levelmesh/computation/wallbatch_compute.h"   // [rc4l] ComputeFanTriangleVertex
 #include "features/levelmesh/computation/wallglow_compute.h"   // [rc4l] ComputeWallTakesGlow
 #include "features/levelmesh/computation/fogboundary_compute.h"   // [rc4l] ComputeFogBoundary, ComputeFogSheetOpening
+#include "features/levelmesh/computation/seamless_compute.h"   // [rc4l] gl_seamless's splits
 #include "features/materials/materials.h"
 #include "features/materials/computation/texcoord_compute.h"   // [rc4l] FTexCoordInfo
 #include "features/hwrender/computation/walllight_compute.h"
@@ -34,6 +35,7 @@ CUSTOM_CVAR(Bool, gl_wallmesh, false, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
 	zx::levelmesh::InvalidateAll();
 }
 EXTERN_CVAR(Bool, gl_mirrors)
+EXTERN_CVAR(Bool, gl_seamless)
 // [rc4l] Cut a wall at its 3D floor light bands (wallbands_compute), a switch so the banding can be A/B'd.
 CVAR(Bool, fua_surface_bands, true, 0)
 // [rc4l] Print each banded wall the map bake splits: its span, the first boundary and the band that lights its top.
@@ -194,6 +196,81 @@ MidTextureBlend LineMidBlend(const line_t *line, zx::materials::MaterialRef mat)
 bool LineIsMirror(const seg_t *seg)
 {
 	return ComputeIsMirrorWall(seg->linedef->special, seg->backsector == NULL, gl_mirrors);
+}
+
+void RecalcVertexHeights(vertex_t *v)
+{
+	static TArray<float> planes;
+	planes.Resize(v->numsectors * 2);
+	for (int i = 0; i < v->numsectors; i++)
+	{
+		planes[2 * i] = FIXED2FLOAT(v->sectors[i]->ceilingplane.ZatPoint(v));
+		planes[2 * i + 1] = FIXED2FLOAT(v->sectors[i]->floorplane.ZatPoint(v));
+	}
+	v->numheights = v->numsectors > 0 ? ComputeVertexHeights(&planes[0], v->numsectors * 2, v->heightlist) : 0;
+	v->dirty = false;
+}
+
+// [rc4l] The level's walls were last baked with gl_seamless this way, so a change bakes them again.
+static bool g_bakedSeamless = false;
+
+// [rc4l] No splits, for a piece GL does not draw through RenderWall's split.
+static SeamSplits NoSeams()
+{
+	SeamSplits s = {};
+	s.fracLeft = 0.f;
+	s.fracRight = 1.f;
+	return s;
+}
+
+// [rc4l] Where gl_seamless splits a wall on seg over fracLeft..fracRight of its sidedef: its line's end vertices' heights and its sidedef's seg ends, on the edges `takes` and the band flags allow, as RenderWall decides.
+static SeamSplits SeamSplitsOf(const seg_t *seg, float fracLeft, float fracRight, bool takes, bool upper, bool lower)
+{
+	static TArray<float> segX, segY, segFrac;
+	SeamSplits s = NoSeams();
+	s.fracLeft = fracLeft;
+	s.fracRight = fracRight;
+	if (!gl_seamless || !takes || (seg->sidedef->Flags & WALLF_POLYOBJ)) return s;
+	vertex_t *v1 = seg->linedef->v1, *v2 = seg->linedef->v2;
+	if (seg->sidedef != seg->linedef->sidedef[0]) { vertex_t *t = v1; v1 = v2; v2 = t; }
+	if (v1->dirty) RecalcVertexHeights(v1);
+	if (v2->dirty) RecalcVertexHeights(v2);
+	s.leftHeights = v1->heightlist; s.leftCount = v1->numheights;
+	s.rightHeights = v2->heightlist; s.rightCount = v2->numheights;
+	const side_t *sd = seg->sidedef;
+	segX.Clear(); segY.Clear(); segFrac.Clear();
+	for (int i = 0; i + 1 < sd->numsegs; i++)
+	{
+		segX.Push(sd->segs[i]->v2->fx);
+		segY.Push(sd->segs[i]->v2->fy);
+		segFrac.Push(sd->segs[i]->sidefrac);
+	}
+	if (segFrac.Size() > 0) { s.segX = &segX[0]; s.segY = &segY[0]; s.segFrac = &segFrac[0]; s.segCount = (int)segFrac.Size(); }
+	s.left = fracLeft == 0.f;
+	s.right = fracRight == 1.f;
+	s.upper = upper;
+	s.lower = lower;
+	return s;
+}
+
+// [rc4l] The most vertices a split fan keeps; more falls back to the four corners.
+static const int kMaxSeamFan = 256;
+
+// [rc4l] A wall's fan from its corners (lower left, upper left, upper right, lower right), split as `seams` says, stored into range as triangles.
+static bool StoreWallFan(MeshRange &range, const SeamVertex corners[4], const SeamSplits &seams)
+{
+	static SeamVertex fan[kMaxSeamFan];
+	static MeshVertex tris[3 * (kMaxSeamFan - 2)];
+	int n = ComputeSeamlessFan(corners, seams, fan, kMaxSeamFan);
+	if (n == 0) n = ComputeSeamlessFan(corners, NoSeams(), fan, kMaxSeamFan);
+	int w = 0;
+	for (int t = 0; t < n - 2; t++)
+		for (int c = 0; c < 3; c++)
+		{
+			const SeamVertex &v = fan[ComputeFanTriangleVertex(n, t, c)];
+			tris[w++].Set(v.x, v.z, v.y, v.u, v.v);
+		}
+	return MeshStore(range, tris, w);
 }
 
 bool LineDrawsNoWall(const seg_t *seg)
@@ -516,17 +593,10 @@ static int ReshadeSegFromMap(int segIndex)
 // [rc4l] One flooded gap: the wall quad, textured per fragment from the back plane and lit by DrawFloodedPlane's rule (that sector's plane light and colormap, extra light only).
 static bool BakeFloodPiece(MeshRange &range, const zx::surfaces::DerivedWallSpan &d)
 {
-	static MeshVertex tris[6];
-	MeshVertex fan[4];
-	fan[0].Set(d.x1, d.zbottom[0], d.y1, d.uLeft,  d.vBottom[0]);
-	fan[1].Set(d.x1, d.ztop[0],    d.y1, d.uLeft,  d.vTop[0]);
-	fan[2].Set(d.x2, d.ztop[1],    d.y2, d.uRight, d.vTop[1]);
-	fan[3].Set(d.x2, d.zbottom[1], d.y2, d.uRight, d.vBottom[1]);
-	int w = 0;
-	for (int t = 0; t < 2; t++)
-		for (int c = 0; c < 3; c++)
-			tris[w++] = fan[ComputeFanTriangleVertex(4, t, c)];
-	if (!MeshStore(range, tris, w)) { MeshSquash(range); return false; }
+	// [rc4l] DrawFloodedPlane draws no RenderWall fan, so it takes no seams.
+	const SeamVertex corners[4] = { { d.x1, d.y1, d.zbottom[0], d.uLeft, d.vBottom[0] }, { d.x1, d.y1, d.ztop[0], d.uLeft, d.vTop[0] },
+		{ d.x2, d.y2, d.ztop[1], d.uRight, d.vTop[1] }, { d.x2, d.y2, d.zbottom[1], d.uRight, d.vBottom[1] } };
+	if (!StoreWallFan(range, corners, NoSeams())) { MeshSquash(range); return false; }
 
 	const sector_t *sec = d.floodSector;
 	const void *mat = d.material;
@@ -674,16 +744,10 @@ static bool BakeFogSheet(const seg_t *seg, MeshRange &range, const zx::surfaces:
 	float top[2], bottom[2];
 	if (!zx::levelmesh::ComputeFogSheetOpening(in, top, bottom)) return false;
 
-	MeshVertex fan[4], tris[6];
-	fan[0].Set(x1, bottom[0], y1, 0.f, 0.f);
-	fan[1].Set(x1, top[0],    y1, 0.f, 0.f);
-	fan[2].Set(x2, top[1],    y2, 0.f, 0.f);
-	fan[3].Set(x2, bottom[1], y2, 0.f, 0.f);
-	int w = 0;
-	for (int t = 0; t < 2; t++)
-		for (int c = 0; c < 3; c++)
-			tris[w++] = fan[ComputeFanTriangleVertex(4, t, c)];
-	if (!MeshStore(range, tris, w)) return false;
+	// [rc4l] Split at its ends only, since GL flags the sheet GLWF_NOSPLITUPPER and GLWF_NOSPLITLOWER.
+	const SeamVertex corners[4] = { { x1, y1, bottom[0], 0.f, 0.f }, { x1, y1, top[0], 0.f, 0.f },
+		{ x2, y2, top[1], 0.f, 0.f }, { x2, y2, bottom[1], 0.f, 0.f } };
+	if (!StoreWallFan(range, corners, SeamSplitsOf(seg, 0.f, 1.f, true, false, false))) return false;
 
 	MeshPiece mp;
 	mp.range = range;
@@ -715,7 +779,6 @@ int BakeSegFromMap(int segIndex)
 	if (seg->sidedef == NULL || seg->linedef == NULL || seg->frontsector == NULL) return -1;
 
 	SegCache &sc = g_cache[segIndex];
-	static MeshVertex tris[6];
 
 	zx::surfaces::DerivedWallLight dl;
 	FDynamicColormap *cmFrom = NULL;
@@ -783,6 +846,10 @@ int BakeSegFromMap(int segIndex)
 			continue;
 		}
 
+		// [rc4l] GL draws a blended middle, or one between a sector and itself, unsplit.
+		const bool twoSidedMid = partType == RENDERWALL_M2S;
+		const bool takesSeams = ComputeWallTakesSeams(twoSidedMid && LineMidBlend(seg->linedef, d.material).blendMode != 0,
+			twoSidedMid && seg->frontsector == seg->backsector);
 		const float spanTop0 = d.ztop[0], spanBottom0 = d.zbottom[0];
 		const float spanTop1 = d.ztop[1], spanBottom1 = d.zbottom[1];
 		const float h0 = spanTop0 - spanBottom0, h1 = spanTop1 - spanBottom1;
@@ -799,17 +866,11 @@ int BakeSegFromMap(int segIndex)
 			const float vt1 = (h1 != 0.f) ? d.vTop[1] + (spanTop1 - band.ztop[1])    * (d.vBottom[1] - d.vTop[1]) / h1 : d.vTop[1];
 			const float vb1 = (h1 != 0.f) ? d.vTop[1] + (spanTop1 - band.zbottom[1]) * (d.vBottom[1] - d.vTop[1]) / h1 : d.vBottom[1];
 
-			MeshVertex fan[4];
-			fan[0].Set(d.x1, band.zbottom[0], d.y1, d.uLeft,  vb0);
-			fan[1].Set(d.x1, band.ztop[0],    d.y1, d.uLeft,  vt0);
-			fan[2].Set(d.x2, band.ztop[1],    d.y2, d.uRight, vt1);
-			fan[3].Set(d.x2, band.zbottom[1], d.y2, d.uRight, vb1);
-			int w = 0;
-			for (int t = 0; t < 2; t++)
-				for (int c = 0; c < 3; c++)
-					tris[w++] = fan[ComputeFanTriangleVertex(4, t, c)];
-
-			if (!MeshStore(range, tris, w)) { MeshSquash(range); continue; }
+			const SeamVertex corners[4] = { { d.x1, d.y1, band.zbottom[0], d.uLeft, vb0 }, { d.x1, d.y1, band.ztop[0], d.uLeft, vt0 },
+				{ d.x2, d.y2, band.ztop[1], d.uRight, vt1 }, { d.x2, d.y2, band.zbottom[1], d.uRight, vb1 } };
+			bool seamUpper, seamLower;
+			ComputeBandSeams(bi, n, seamUpper, seamLower);
+			if (!StoreWallFan(range, corners, SeamSplitsOf(seg, d.fracLeft, d.fracRight, takesSeams, seamUpper, seamLower))) { MeshSquash(range); continue; }
 
 			MeshPiece mp;
 			mp.range = range;
@@ -894,16 +955,10 @@ int BakeSegFromMap(int segIndex)
 					P_GetPlaneLight(rover->target, rover->top.plane, true) : NULL;
 				if (fl == NULL || fl->extra_colormap == NULL) { MeshSquash(range); continue; }
 
-				MeshVertex ffan[4];
-				ffan[0].Set(f.x1, f.bottom[0], f.y1, 0.f, 0.f);
-				ffan[1].Set(f.x1, f.top[0],    f.y1, 0.f, 0.f);
-				ffan[2].Set(f.x2, f.top[1],    f.y2, 0.f, 0.f);
-				ffan[3].Set(f.x2, f.bottom[1], f.y2, 0.f, 0.f);
-				int fgw = 0;
-				for (int t = 0; t < 2; t++)
-					for (int cc = 0; cc < 3; cc++)
-						tris[fgw++] = ffan[ComputeFanTriangleVertex(4, t, cc)];
-				if (!MeshStore(range, tris, fgw)) { MeshSquash(range); continue; }
+				// [rc4l] A colour layer RenderTranslucentWall draws unsplit.
+				const SeamVertex fogCorners[4] = { { f.x1, f.y1, f.bottom[0], 0.f, 0.f }, { f.x1, f.y1, f.top[0], 0.f, 0.f },
+					{ f.x2, f.y2, f.top[1], 0.f, 0.f }, { f.x2, f.y2, f.bottom[1], 0.f, 0.f } };
+				if (!StoreWallFan(range, fogCorners, NoSeams())) { MeshSquash(range); continue; }
 
 				MeshPiece fmp;
 				fmp.range = range;
@@ -967,17 +1022,11 @@ int BakeSegFromMap(int segIndex)
 			const float vb0 = tci.FloatToTexV(toV + texh - f.bottom[0]);
 			const float vb1 = tci.FloatToTexV(toV + texh - f.bottom[1]);
 
-			MeshVertex fan[4];
-			fan[0].Set(f.x1, f.bottom[0], f.y1, ul, vb0);
-			fan[1].Set(f.x1, f.top[0],    f.y1, ul, vt0);
-			fan[2].Set(f.x2, f.top[1],    f.y2, uR, vt1);
-			fan[3].Set(f.x2, f.bottom[1], f.y2, uR, vb1);
-			int fw = 0;
-			for (int t = 0; t < 2; t++)
-				for (int cc = 0; cc < 3; cc++)
-					tris[fw++] = fan[ComputeFanTriangleVertex(4, t, cc)];
-
-			if (!MeshStore(range, tris, fw)) { MeshSquash(range); continue; }
+			// [rc4l] A blended slab's face is drawn unsplit, an opaque one split all round.
+			const SeamVertex faceCorners[4] = { { f.x1, f.y1, f.bottom[0], ul, vb0 }, { f.x1, f.y1, f.top[0], ul, vt0 },
+				{ f.x2, f.y2, f.top[1], uR, vt1 }, { f.x2, f.y2, f.bottom[1], uR, vb1 } };
+			const bool faceSeams = ComputeWallTakesSeams((rover->flags & (FF_TRANSLUCENT | FF_ADDITIVETRANS)) != 0, false);
+			if (!StoreWallFan(range, faceCorners, SeamSplitsOf(seg, 0.f, 1.f, faceSeams, true, true))) { MeshSquash(range); continue; }
 
 			MeshPiece mp;
 			mp.range = range;
@@ -1023,6 +1072,7 @@ int BakeSegFromMap(int segIndex)
 int BakeLevelFromMap()
 {
 	if (segs == NULL || numsegs <= 0) return 0;
+	g_bakedSeamless = gl_seamless;
 	int made = 0;
 	for (int i = 0; i < numsegs; i++) { const int m = BakeSegFromMap(i); if (m > 0) made += m; }
 	return made;
@@ -1262,6 +1312,8 @@ void InvalidateMovedSectors(const WalkedThisFrame *walked)
 		for (int i = 0; i < numsectors; i++) g_lastLook[i] = LookOf(sectors[i]);
 	}
 	if (!gl_wallmesh || g_sectorDirty.Size() == 0) return;
+	// [rc4l] gl_seamless reshapes every wall's fan, so a change bakes the level's walls again.
+	if (g_bakedSeamless != (bool)gl_seamless) BakeLevelFromMap();
 	// [rc4l] GL's missing-texture fills hang on the heights and textures round them, so a move or a texture change works them out again below.
 	TArray<int> fillMoved, fillSides;
 	// [rc4l] With the walks' lists only what they reached is looked at, and the rest stays dirty until a walk reaches it.

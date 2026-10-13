@@ -1708,6 +1708,7 @@ add_executable( zdoom WIN32
 	features/hwrender/computation/fuzz_compute.cpp
 	features/levelmesh/computation/wallglow_compute.cpp
 	features/levelmesh/computation/fogboundary_compute.cpp
+	features/levelmesh/computation/seamless_compute.cpp
 	features/hwrender/computation/flood_compute.cpp
 	features/hwrender/computation/planemirror_compute.cpp
 	features/hwrender/computation/skyportal_compute.cpp

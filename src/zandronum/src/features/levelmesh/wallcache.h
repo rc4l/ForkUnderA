@@ -17,6 +17,7 @@
 struct seg_t;
 struct line_t;
 struct sector_t;
+struct vertex_t;
 struct F3DFloor;
 class FTextureID;
 
@@ -88,6 +89,9 @@ MidTextureBlend LineMidBlend(const line_t *line, zx::materials::MaterialRef mat)
 
 // [rc4l] Whether seg's line draws no wall of its own, as a horizon or a line mirror does.
 bool LineDrawsNoWall(const seg_t *seg);
+
+// [rc4l] gl_RecalcVertexHeights: the heights of the planes meeting at v, which gl_seamless splits wall ends at, worked out again.
+void RecalcVertexHeights(vertex_t *v);
 
 // [rc4l] Whether seg's line is a line mirror, which draws its reflection where the wall would be.
 bool LineIsMirror(const seg_t *seg);
