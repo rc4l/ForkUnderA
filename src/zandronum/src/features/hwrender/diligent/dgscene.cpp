@@ -413,7 +413,12 @@ static zx::hwrender::NdcWindow ScreenViewWindow()
 
 void BuildMVP(float *m)
 {
-	zx::hwrender::ComputeBackendMVP(CurrentCamera(), m);
+	// [rc4l] The stereo eye being drawn, if any: moved across the view, its frustum leaning toward the middle.
+	zx::hwrender::BackendCamera c = CurrentCamera();
+	float eyeNdc = 0.f;
+	ShiftCameraForEye(c, eyeNdc);
+	zx::hwrender::ComputeBackendMVP(c, m);
+	if (eyeNdc != 0.f) zx::hwrender::ComputeShiftNdcX(eyeNdc, m);
 	// [rc4l] A view on the screen sits in the view window (a status bar, a smaller screenblocks); a camera texture fills its own target.
 	if (g_frame.aspectOverride <= 0.f && screen != NULL) zx::hwrender::ComputeApplyNdcWindow(ScreenViewWindow(), m);
 }
@@ -537,37 +542,48 @@ void DrawSceneOnce(bool present, bool pump)
 	UploadWalkVisibility(ctx);
 	g_frame.serial++;
 	PrepareFrame(ctx);
-	RenderSkyPortal(ctx);
-	RenderSkyLooks(ctx);
-	RenderStackPortals(ctx);
-	RenderPlaneMirrors(ctx);
-	RenderMirrors(ctx);
-
-	auto *rtv = FrameRTV();
-	Diligent::ITextureView *dsv = EnsureSceneDepth();
-	if (!dsv) dsv = FrameDSV();
-	// [rc4l] Colour and the G-buffer together, for the opaque world only. DrawWorld drops back to
-	// colour alone before the decals, which read the G-buffer rather than write it.
-	Diligent::ITextureView *nrm = SceneNormalRTV();
-	g_pass.gbufBound = (nrm != NULL);
-	Diligent::ITextureView *targets[2] = { rtv, nrm };
-	ctx->SetRenderTargets(g_pass.gbufBound ? 2 : 1, targets,
-		dsv, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-	const float clear[4] = { 0.05f, 0.06f, 0.09f, 1.0f };
-	ctx->ClearRenderTarget(rtv, clear, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-	if (g_pass.gbufBound)
+	// [rc4l] GL's stereo 3D (vr_mode): each eye draws the world from its own place, an anaglyph keeping its first eye's picture to blend under the 2D.
+	const zx::hwrender::StereoMode stereo = CurrentStereoMode();
+	for (int eye = 0; eye < stereo.eyes; eye++)
 	{
-		// Zero means "nothing drew here", which decodes to a zero-length normal -- and the decal pass
-		// treats that as a surface it knows nothing about rather than one facing a particular way.
-		const float clearN[4] = { 0.5f, 0.5f, 0.5f, 0.0f };
-		ctx->ClearRenderTarget(nrm, clearN, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-	}
-	ctx->ClearDepthStencil(dsv, Diligent::CLEAR_DEPTH_FLAG, 1.0f, 0,
-		Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+		SetStereoEye(stereo.shift[eye]);
+		BuildMVP(g_mvp);
+		RenderSkyPortal(ctx);
+		RenderSkyLooks(ctx);
+		RenderStackPortals(ctx);
+		RenderPlaneMirrors(ctx);
+		RenderMirrors(ctx);
 
-	g_pass.mainView = true;
-	DrawWorld(ctx);
-	g_pass.mainView = false;
+		auto *rtv = FrameRTV();
+		Diligent::ITextureView *dsv = EnsureSceneDepth();
+		if (!dsv) dsv = FrameDSV();
+		// [rc4l] Colour and the G-buffer together, for the opaque world only. DrawWorld drops back to
+		// colour alone before the decals, which read the G-buffer rather than write it.
+		Diligent::ITextureView *nrm = SceneNormalRTV();
+		g_pass.gbufBound = (nrm != NULL);
+		Diligent::ITextureView *targets[2] = { rtv, nrm };
+		ctx->SetRenderTargets(g_pass.gbufBound ? 2 : 1, targets,
+			dsv, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+		const float clear[4] = { 0.05f, 0.06f, 0.09f, 1.0f };
+		ctx->ClearRenderTarget(rtv, clear, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+		if (g_pass.gbufBound)
+		{
+			// Zero means "nothing drew here", which decodes to a zero-length normal -- and the decal pass
+			// treats that as a surface it knows nothing about rather than one facing a particular way.
+			const float clearN[4] = { 0.5f, 0.5f, 0.5f, 0.0f };
+			ctx->ClearRenderTarget(nrm, clearN, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+		}
+		ctx->ClearDepthStencil(dsv, Diligent::CLEAR_DEPTH_FLAG, 1.0f, 0,
+			Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+
+		g_pass.mainView = true;
+		DrawWorld(ctx);
+		g_pass.mainView = false;
+		if (stereo.eyes > 1) KeepEyePicture(ctx, eye);
+	}
+	SetStereoEye(0.f);
+	BuildMVP(g_mvp);
+	if (stereo.eyes > 1) BlendEyes(ctx, stereo);
 	ShowStackView(ctx);
 	DrawHitboxes(ctx);
 

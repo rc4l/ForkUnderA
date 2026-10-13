@@ -1720,6 +1720,7 @@ add_executable( zdoom WIN32
 	features/hwrender/computation/wideline_compute.cpp
 	features/hwrender/computation/skylook_compute.cpp
 	features/hwrender/computation/linemirror_compute.cpp
+	features/hwrender/computation/stereo_compute.cpp
 	features/hwrender/computation/dynlayout_compute.cpp
 	features/hwrender/computation/skyfog_compute.cpp
 	features/hwrender/computation/framepacing_compute.cpp
@@ -1971,7 +1972,7 @@ endif()
 # The probe is the only consumer today; it proves the library links and a device creates in-process.
 if( FUA_DILIGENT )
 	# [rc4l] The sources that include Diligent's headers, listed once for the build and the C++17 flag below.
-	set( FUA_DILIGENT_SOURCES features/hwrender/diligent/dgprobe.cpp features/hwrender/diligent/dgwindow.cpp features/hwrender/diligent/dgscene.cpp features/hwrender/diligent/dg2d.cpp features/hwrender/diligent/dglights.cpp features/hwrender/diligent/dgsky.cpp features/hwrender/diligent/dgpipelines.cpp features/hwrender/diligent/dgdynamic.cpp features/hwrender/diligent/dgupload.cpp features/hwrender/diligent/dgviews.cpp features/hwrender/diligent/dgcamera.cpp features/hwrender/diligent/dgframe.cpp features/hwrender/diligent/dgdiag.cpp features/hwrender/diligent/dgdecals.cpp features/hwrender/diligent/dghorizon.cpp features/hwrender/diligent/dgtexture.cpp features/hwrender/diligent/dgtarget.cpp features/hwrender/diligent/dgwipe.cpp features/hwrender/diligent/dglines.cpp )
+	set( FUA_DILIGENT_SOURCES features/hwrender/diligent/dgprobe.cpp features/hwrender/diligent/dgwindow.cpp features/hwrender/diligent/dgscene.cpp features/hwrender/diligent/dg2d.cpp features/hwrender/diligent/dglights.cpp features/hwrender/diligent/dgsky.cpp features/hwrender/diligent/dgpipelines.cpp features/hwrender/diligent/dgdynamic.cpp features/hwrender/diligent/dgupload.cpp features/hwrender/diligent/dgviews.cpp features/hwrender/diligent/dgcamera.cpp features/hwrender/diligent/dgframe.cpp features/hwrender/diligent/dgdiag.cpp features/hwrender/diligent/dgdecals.cpp features/hwrender/diligent/dghorizon.cpp features/hwrender/diligent/dgtexture.cpp features/hwrender/diligent/dgtarget.cpp features/hwrender/diligent/dgwipe.cpp features/hwrender/diligent/dglines.cpp features/hwrender/diligent/dgstereo.cpp )
 	target_sources( zdoom PRIVATE ${FUA_DILIGENT_SOURCES} features/hwrender/diligent/dgwin32.cpp )
 	# [rc4l] Diligent's RefCountedObjectImpl.hpp uses std::align_val_t (aligned new), which is C++17.
 	# The engine compiles at C++14, and raising the whole tree for one dependency is exactly the kind

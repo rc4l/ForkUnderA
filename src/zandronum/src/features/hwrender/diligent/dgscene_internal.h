@@ -31,6 +31,8 @@
 #include "TopLevelAS.h"
 
 #include "features/levelmesh/staticmesh.h"
+#include "features/hwrender/computation/stereo_compute.h"   // [rc4l] StereoMode
+#include "features/hwrender/computation/backendview_compute.h"   // [rc4l] BackendCamera
 #include "features/surfaces/surfacebuild.h"
 #include "features/levelmesh/wallcache.h"   // LevelGeneration, for the per-level auto setup
 #include "d_main.h"                          // gamestate
@@ -402,6 +404,12 @@ void DrawBlended(Diligent::IDeviceContext *ctx);
 void DrawSolidDyn(Diligent::IDeviceContext *ctx);
 // [rc4l] The decals on line mirror `line`'s face, over the surface just drawn, in the order its side holds them.
 void DrawMirrorFaceDecals(Diligent::IDeviceContext *ctx, int line);
+// [rc4l] Stereo 3D (dgstereo.cpp): vr_mode's eyes, the one being drawn (0 the middle), how it moves the camera and leans BuildMVP's frustum, and an anaglyph's eyes kept and blended.
+zx::hwrender::StereoMode CurrentStereoMode();
+void SetStereoEye(float shift);
+void ShiftCameraForEye(zx::hwrender::BackendCamera &c, float &ndcShift);
+void KeepEyePicture(Diligent::IDeviceContext *ctx, int eye);
+void BlendEyes(Diligent::IDeviceContext *ctx, const zx::hwrender::StereoMode &mode);
 // [rc4l] The hitbox view's boxes over the player's view (dglines.cpp), before the 2D.
 void DrawHitboxes(Diligent::IDeviceContext *ctx);
 
