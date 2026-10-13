@@ -1091,6 +1091,7 @@ void RenderMirrors(Diligent::IDeviceContext *ctx)
 		if (traced)
 		{
 			DrawMirrorSurface(ctx, i, view);
+			DrawMirrorFaceDecals(ctx, m.line);
 			continue;
 		}
 
@@ -1162,6 +1163,7 @@ void RenderMirrors(Diligent::IDeviceContext *ctx)
 		for (int k = 0; k < 16; k++) g_mvp[k] = savedMVP[k];
 		ctx->SetRenderTargets(1, &brtv, bdsv, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 		DrawMirrorSurface(ctx, i, view);
+		DrawMirrorFaceDecals(ctx, m.line);
 	}
 
 	viewx = sx; viewy = sy; viewz = sz; viewangle = sa;

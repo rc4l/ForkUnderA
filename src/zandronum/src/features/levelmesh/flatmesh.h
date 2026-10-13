@@ -193,7 +193,7 @@ void RegisterDecal(const MeshVertex *quad, const void *material, int translation
                    int blendMode, float alpha,
                    int lightlevel, int rel, const FColormap &colormap,
                    bool redToAlpha, unsigned int alphaColor,
-                   float sortX, float sortY, float sortZ, const float *dynLight);
+                   float sortX, float sortY, float sortZ, const float *dynLight, int onMirror = -1);
 
 void ClearSprites();
 

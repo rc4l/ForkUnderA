@@ -17,6 +17,8 @@
 struct seg_t;
 struct line_t;
 struct sector_t;
+struct F3DFloor;
+class FTextureID;
 
 class AActor;
 class GLWall;
@@ -61,13 +63,34 @@ int DerivedPartBands(const seg_t *seg, const zx::surfaces::DerivedWallSpan &d, c
 int SideOwnerSeg(int side);
 
 // [rc4l] Part `part` (kPart*) of seg as the bake derives it, false when the seg has none; `twoSidedMiddle` says the middle is a two-sided line's, which blends.
-bool DerivedPart(const seg_t *seg, int part, zx::surfaces::DerivedWallSpan &d, bool &twoSidedMiddle);
+bool DerivedPart(const seg_t *seg, int part, zx::surfaces::DerivedWallSpan &d, bool &twoSidedMiddle, bool mirrorFace = false);
+
+// [rc4l] One 3D floor face on a seg (DoFFloorBlocks, BuildFFBlock): the opening's ends in side order, the block cut from it, its slab, and the light it takes, the front sector's band its top falls in (lightIndex -1 for the wall's own).
+struct FFFace
+{
+	float x1, y1, x2, y2;
+	float top[2], bottom[2];
+	F3DFloor *rover;
+	int light;
+	FDynamicColormap *lightFrom;   // [rc4l] the band's colour, or NULL for the wall's own
+	int lightIndex;
+};
+enum { kMaxFFFaces = 16 };
+
+// [rc4l] A face's texture by BuildFFBlock's rule: the sidedef's upper or lower when the slab asks for one, else the master sidedef's middle; false with no master.
+bool FFFaceTexture(const seg_t *seg, const F3DFloor *rover, FTextureID &texid, int &texpos);
+
+// [rc4l] The faces seg's back sector's slabs put on it, top down, at most `max`, `dl` the wall's own light; how many.
+int DerivedFFFaces(const seg_t *seg, const zx::surfaces::DerivedWallLight &dl, FFFace *out, int max);
 
 // [rc4l] How a two-sided middle of `line` drawn with `mat` blends, as GL draws it.
 MidTextureBlend LineMidBlend(const line_t *line, zx::materials::MaterialRef mat);
 
 // [rc4l] Whether seg's line draws no wall of its own, as a horizon or a line mirror does.
 bool LineDrawsNoWall(const seg_t *seg);
+
+// [rc4l] Whether seg's line is a line mirror, which draws its reflection where the wall would be.
+bool LineIsMirror(const seg_t *seg);
 
 struct SegCache
 {

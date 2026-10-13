@@ -228,6 +228,7 @@ struct DynRun
 	bool         solid;
 	int          mirrorLine;   // [rc4l] the viewer's own sprite, drawn only in this line mirror's reflection, or -1
 	int          stackSlot;    // [rc4l] drawn only in this stacked view, whose walk took it, or -1 for every other pass
+	int          onMirror;     // [rc4l] a decal on this line mirror's face, drawn over its surface by DrawMirrorFaceDecals, or -1
 	float        cx, cy, cz;   // centroid, for the merged sort
 	float        lo, hi;       // [rc4l] its height span, which sides of a translucent plane it is on
 };
@@ -397,6 +398,8 @@ void MarkMaterialSlotsCurrent();
 void BuildDynamic(Diligent::IDeviceContext *ctx);
 void DrawBlended(Diligent::IDeviceContext *ctx);
 void DrawSolidDyn(Diligent::IDeviceContext *ctx);
+// [rc4l] The decals on line mirror `line`'s face, over the surface just drawn, in the order its side holds them.
+void DrawMirrorFaceDecals(Diligent::IDeviceContext *ctx, int line);
 
 // [rc4l] The scene buffer (dgupload.cpp).
 void FillPieceData(const zx::levelmesh::MeshPiece &p, int translation, ScenePieceData &pd, bool inMesh);

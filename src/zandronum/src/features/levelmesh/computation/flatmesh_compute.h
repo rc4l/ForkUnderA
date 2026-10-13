@@ -254,8 +254,8 @@ bool ComputeCentroid(const V *verts, unsigned total, unsigned offset, unsigned c
 // [rc4l] The line mirror a sprite, model or decal GL draws now is kept for: mirrorLine while GL walks that mirror from the player's view (nesting 2), else -1.
 int ComputeMirrorCaptureLine(int mirrorLine, bool mainView, int sceneNesting);
 
-// [rc4l] Whether a pass draws a sprite, model or decal: only the pass whose walk took it, a line mirror's or a stacked view's (each -1 for the player's view), as GL draws each from its own walk.
-bool ComputeDrawsDynamicPiece(int pieceMirrorLine, int pieceStackSlot, int drawingMirrorLine, int drawingStackSlot);
+// [rc4l] Whether a pass draws a sprite, model or decal: only the pass whose walk took it, a line mirror's or a stacked view's (each -1 for the player's view), as GL draws each from its own walk, and a decal on a mirror's face only in the pass over that mirror's surface (-1 for every other).
+bool ComputeDrawsDynamicPiece(int pieceMirrorLine, int pieceStackSlot, int pieceOnMirror, int drawingMirrorLine, int drawingStackSlot, int drawingMirrorFace);
 
 // [rc4l] Whether the backend renders a line mirror's reflection this frame: when GL's walk went through it, or in standalone, where nothing walks, when its quad is on screen.
 bool ComputeRendersMirror(bool walkedByGL, bool standalone, bool onScreen);

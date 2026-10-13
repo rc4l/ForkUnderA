@@ -357,7 +357,7 @@ Ruled out by measurement, in order:
   one being right, and worth 2.6% of the raw figure until it was excluded.
 
 `ClipFFloors` -- the clip GL applies when a slab is `FF_SWIMMABLE|FF_TRANSLUCENT`, against the *front*
-sector's slabs of the same kind -- is the next thing to try, and is not implemented.
+sector's slabs of the same kind -- is implemented since cb31f2ba (`ComputeFFBlocks`' near rovers).
 
 ### `fua_dg_cullbatches`, removed
 

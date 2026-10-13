@@ -1153,7 +1153,7 @@ void RegisterDecal(const MeshVertex *quad, const void *material, int translation
                    int blendMode, float alpha,
                    int lightlevel, int rel, const FColormap &colormap,
                    bool redToAlpha, unsigned int alphaColor,
-                   float sortX, float sortY, float sortZ, const float *dynLight)
+                   float sortX, float sortY, float sortZ, const float *dynLight, int onMirror)
 {
 	if (!DynamicCaptureActive()) return;   // [rc4l] only a walk the backend draws again
 	if (quad == NULL || material == NULL) return;
@@ -1171,6 +1171,7 @@ void RegisterDecal(const MeshVertex *quad, const void *material, int translation
 	mp.material = material;
 	mp.mirrorLine = MirrorCaptureLine();
 	mp.stackSlot = StackCaptureSlot();
+	mp.onMirror = onMirror;
 	// [rc4l] A decal takes its dynamic light from the CPU, and its NORMAL is what says so.
 	//
 	// gl_SetDynSpriteLight computes the light for this decal and RegisterDecal folds it into the

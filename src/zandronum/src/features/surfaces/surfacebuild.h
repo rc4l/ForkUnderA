@@ -101,7 +101,8 @@ bool BuildDerivedWallLight(const seg_t *seg, DerivedWallLight &out, FDynamicColo
 
 // renderType is a RENDERWALL_* value. Answers only for the three ordinary sidedef parts; anything
 // else -- a 3D floor face, a sky, a horizon -- returns false and keeps whatever the capture made.
-bool BuildDerivedWallSpan(const seg_t *seg, int renderType, DerivedWallSpan &out);
+// [rc4l] A line mirror's face answers only with `mirrorFace`, for the decals stuck to it, since the mirror pass draws the face itself.
+bool BuildDerivedWallSpan(const seg_t *seg, int renderType, DerivedWallSpan &out, bool mirrorFace = false);
 
 // How many pieces the bake derived, and how many fell back, since the level loaded. A coverage
 // figure rather than a pass: this gets finished by moving the largest remaining category across, and

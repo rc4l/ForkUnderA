@@ -680,15 +680,25 @@ TEST(FlatMeshCompute, AFlatIsDrawnWithItsRenderSector)
 // [rc4l] A stacked view or a mirror draws the sprites its own walk took, as GL's does, and the frame's other passes never draw them.
 TEST(FlatMeshCompute, ASpriteIsDrawnOnlyInThePassWhoseWalkTookIt)
 {
-	EXPECT_TRUE(ComputeDrawsDynamicPiece(-1, -1, -1, -1));
-	EXPECT_TRUE(ComputeDrawsDynamicPiece(-1, 1, -1, 1));
-	EXPECT_FALSE(ComputeDrawsDynamicPiece(-1, 1, -1, -1));   // [rc4l] the player's view
-	EXPECT_FALSE(ComputeDrawsDynamicPiece(-1, 1, -1, 0));    // [rc4l] the other stacked view
-	EXPECT_FALSE(ComputeDrawsDynamicPiece(-1, -1, -1, 0));   // [rc4l] the player's walk's sprites are not this view's
-	EXPECT_TRUE(ComputeDrawsDynamicPiece(5776, -1, 5776, -1));
-	EXPECT_FALSE(ComputeDrawsDynamicPiece(5776, -1, -1, -1));    // [rc4l] the player's view never shows the viewer
-	EXPECT_FALSE(ComputeDrawsDynamicPiece(5765, -1, 5776, -1));  // [rc4l] WDI07: another mirror's viewer, faced to its camera
-	EXPECT_FALSE(ComputeDrawsDynamicPiece(-1, -1, 5776, -1));    // [rc4l] the mirror draws its own walk's room, not the player's
+	EXPECT_TRUE(ComputeDrawsDynamicPiece(-1, -1, -1, -1, -1, -1));
+	EXPECT_TRUE(ComputeDrawsDynamicPiece(-1, 1, -1, -1, 1, -1));
+	EXPECT_FALSE(ComputeDrawsDynamicPiece(-1, 1, -1, -1, -1, -1));   // [rc4l] the player's view
+	EXPECT_FALSE(ComputeDrawsDynamicPiece(-1, 1, -1, -1, 0, -1));    // [rc4l] the other stacked view
+	EXPECT_FALSE(ComputeDrawsDynamicPiece(-1, -1, -1, -1, 0, -1));   // [rc4l] the player's walk's sprites are not this view's
+	EXPECT_TRUE(ComputeDrawsDynamicPiece(5776, -1, -1, 5776, -1, -1));
+	EXPECT_FALSE(ComputeDrawsDynamicPiece(5776, -1, -1, -1, -1, -1));    // [rc4l] the player's view never shows the viewer
+	EXPECT_FALSE(ComputeDrawsDynamicPiece(5765, -1, -1, 5776, -1, -1));  // [rc4l] WDI07: another mirror's viewer, faced to its camera
+	EXPECT_FALSE(ComputeDrawsDynamicPiece(-1, -1, -1, 5776, -1, -1));    // [rc4l] the mirror draws its own walk's room, not the player's
+}
+
+// [rc4l] A decal on a mirror's face waits for the pass over that mirror's surface, which draws nothing else, as RenderMirrorSurface follows the sheen with DoDrawDecals.
+TEST(FlatMeshCompute, AMirrorsDecalIsDrawnOnlyOverItsSurface)
+{
+	EXPECT_TRUE(ComputeDrawsDynamicPiece(-1, -1, 12, -1, -1, 12));
+	EXPECT_FALSE(ComputeDrawsDynamicPiece(-1, -1, 12, -1, -1, -1));   // [rc4l] the player's world pass, which the surface would cover
+	EXPECT_FALSE(ComputeDrawsDynamicPiece(-1, -1, 12, -1, -1, 13));   // [rc4l] another mirror's surface
+	EXPECT_FALSE(ComputeDrawsDynamicPiece(-1, -1, -1, -1, -1, 12));   // [rc4l] a sprite is the world's
+	EXPECT_FALSE(ComputeDrawsDynamicPiece(12, -1, 12, -1, -1, 12));   // [rc4l] one the reflection's own walk took
 }
 
 // [rc4l] The same subsector 3796: a plane modelled on 164 or 385 is its own and goes in GL's solid pass, one modelled on a 3D floor's control sector is masked.

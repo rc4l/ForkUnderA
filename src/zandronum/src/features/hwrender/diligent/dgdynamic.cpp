@@ -251,6 +251,7 @@ void BuildDynamic(Diligent::IDeviceContext *ctx)
 					r.solid = p.solid;
 					r.mirrorLine = p.mirrorLine;
 					r.stackSlot = p.stackSlot;
+					r.onMirror = p.onMirror;
 					r.cx = p.sortX; r.cy = p.sortY; r.cz = p.sortZ;
 					r.lo = 1e30f; r.hi = -1e30f;
 					const unsigned int dynPieceIndex = slot.record >= 0 ? base + (unsigned)slot.record : lastRecord;
@@ -334,7 +335,7 @@ void DrawSolidDyn(Diligent::IDeviceContext *ctx)
 	for (unsigned i = 0; i < g_scene.dynRuns.Size(); i++)
 	{
 		const DynRun &r = g_scene.dynRuns[i];
-		if (r.count == 0 || !r.solid || r.blend != 0 || !zx::levelmesh::ComputeDrawsDynamicPiece(r.mirrorLine, r.stackSlot, g_pass.lineMirror, g_pass.stackSlot)) continue;
+		if (r.count == 0 || !r.solid || r.blend != 0 || !zx::levelmesh::ComputeDrawsDynamicPiece(r.mirrorLine, r.stackSlot, r.onMirror, g_pass.lineMirror, g_pass.stackSlot, -1)) continue;
 		auto *srb = WorldSRB(g_pso.world[kWpMaskedNoCull].RawPtr());
 		if (srb) g_stats.dynBindless++;
 		else { g_stats.dynPerMaterial++; srb = GetMaterialSRB(g_pso.world[kWpMaskedNoCull].RawPtr(), r.material, r.translation); }
@@ -354,6 +355,47 @@ void DrawSolidDyn(Diligent::IDeviceContext *ctx)
 		ctx->Draw(dr);
 		g_stats.dynDraws++;
 		g_stats.dynTris += r.count / 3;
+	}
+}
+
+void DrawMirrorFaceDecals(Diligent::IDeviceContext *ctx, int line)
+{
+	if (!g_dynVB || !g_scene.dynReady) return;
+	bool started = false;
+	Diligent::IPipelineState *bound = NULL;
+	Diligent::IShaderResourceBinding *committed = NULL;
+	zx::hwrender::LoopCommits commits = zx::hwrender::ComputeLoopCommitsStart();
+	for (unsigned i = 0; i < g_scene.dynRuns.Size(); i++)
+	{
+		const DynRun &r = g_scene.dynRuns[i];
+		if (r.count == 0 || !zx::levelmesh::ComputeDrawsDynamicPiece(r.mirrorLine, r.stackSlot, r.onMirror, -1, -1, line)) continue;
+		Diligent::IPipelineState *pso = g_pso.world[ComputeDynamicPipeline(r.blend, r.redAlpha, r.depthBias)].RawPtr();
+		if (!pso) continue;
+		Diligent::IShaderResourceBinding *srb = WorldSRB(pso);
+		if (!srb) srb = GetMaterialSRB(pso, r.material, r.translation);
+		if (!srb) continue;
+		if (!started)
+		{
+			// [rc4l] The surface left its own constants in the scene block, so the player's go back before the first decal.
+			{
+				Diligent::MapHelper<float> cb(ctx, g_cb, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD);
+				WriteSceneConstants(&cb[0], nullptr, (float)FrameWidth(), (float)FrameHeight(),
+					BindlessActive() ? (float)MaterialSlotCount() : 0.f);
+			}
+			Diligent::IBuffer *vbs[] = { g_dynVB };
+			const Diligent::Uint64 offsets[] = { 0 };
+			ctx->SetVertexBuffers(0, 1, vbs, offsets, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
+				Diligent::SET_VERTEX_BUFFERS_FLAG_RESET);
+			started = true;
+		}
+		if (pso != bound) { ctx->SetPipelineState(pso); bound = pso; committed = NULL; }
+		if (srb != committed) { CommitInLoop(ctx, commits, srb); committed = srb; }
+		Diligent::DrawAttribs dr;
+		dr.NumVertices = r.count;
+		dr.StartVertexLocation = r.first;
+		dr.Flags = Diligent::DRAW_FLAG_VERIFY_ALL;
+		ctx->Draw(dr);
+		g_stats.dynDraws++;
 	}
 }
 
@@ -398,7 +440,7 @@ void DrawBlended(Diligent::IDeviceContext *ctx)
 		for (unsigned i = 0; i < g_scene.dynRuns.Size(); i++)
 		{
 			const DynRun &r = g_scene.dynRuns[i];
-			if (r.count == 0 || !zx::levelmesh::ComputeDrawsDynamicPiece(r.mirrorLine, r.stackSlot, g_pass.lineMirror, g_pass.stackSlot)) continue;
+			if (r.count == 0 || !zx::levelmesh::ComputeDrawsDynamicPiece(r.mirrorLine, r.stackSlot, r.onMirror, g_pass.lineMirror, g_pass.stackSlot, -1)) continue;
 			// [rc4l] An opaque solid is drawn with the world, not in this list. See DrawSolidDyn.
 			if (r.solid && r.blend == 0) continue;
 			// Blend mode 3 is the fuzz shadow; the engine draws it as a dark near-opaque overlay, and

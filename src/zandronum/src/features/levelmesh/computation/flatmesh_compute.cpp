@@ -323,9 +323,9 @@ int ComputeMirrorCaptureLine(int mirrorLine, bool mainView, int sceneNesting)
 	return (mirrorLine >= 0 && mainView && sceneNesting == 2) ? mirrorLine : -1;
 }
 
-bool ComputeDrawsDynamicPiece(int pieceMirrorLine, int pieceStackSlot, int drawingMirrorLine, int drawingStackSlot)
+bool ComputeDrawsDynamicPiece(int pieceMirrorLine, int pieceStackSlot, int pieceOnMirror, int drawingMirrorLine, int drawingStackSlot, int drawingMirrorFace)
 {
-	return pieceMirrorLine == drawingMirrorLine && pieceStackSlot == drawingStackSlot;
+	return pieceMirrorLine == drawingMirrorLine && pieceStackSlot == drawingStackSlot && pieceOnMirror == drawingMirrorFace;
 }
 
 bool ComputeRendersMirror(bool walkedByGL, bool standalone, bool onScreen)

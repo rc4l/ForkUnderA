@@ -14,6 +14,7 @@
 #include "r_defs.h"
 #include "r_state.h"
 #include "r_data/renderstyle.h"
+#include "p_3dfloors.h"   // [rc4l] F3DFloor's flags, for the faces a decal lands on
 #include "textures/textures.h"
 #include "c_cvars.h"
 #include "features/rendersettings/rendersettings.h"   // [rc4l] the render settings it reads
@@ -48,7 +49,7 @@ DecalHeightIn HeightIn(const DBaseDecal *decal, const seg_t *seg, int part)
 
 // [rc4l] One decal on one band of one part, registered as DrawDecal would draw it there.
 void BuildDecal(DBaseDecal *decal, side_t *side, const seg_t *seg, int part, const zx::surfaces::DerivedWallSpan &d,
-	const zx::surfaces::DerivedWallLight &dl, const FColormap &partColormap, const PartBand &band)
+	const zx::surfaces::DerivedWallLight &dl, const FColormap &partColormap, const PartBand &band, int onMirror)
 {
 	if (decal->RenderFlags & RF_INVISIBLE) return;
 	FTexture *texture = TexMan[decal->PicNum];
@@ -103,7 +104,7 @@ void BuildDecal(DBaseDecal *decal, side_t *side, const seg_t *seg, int part, con
 	const bool redAlpha = (style.Flags & STYLEF_RedIsAlpha) != 0;
 	RegisterDecal(quad, mat, decal->Translation, zx::sprites::StyleBlendMode(style, FIXED2FLOAT(decal->Alpha)), FIXED2FLOAT(decal->Alpha),
 		light, rel, cm, redAlpha, redAlpha ? (unsigned int)decal->AlphaColor : 0xffffffu,
-		(quad[0].x + quad[3].x) * 0.5f, (quad[0].z + quad[3].z) * 0.5f, (quad[0].y + quad[3].y) * 0.5f, lit ? dyn : NULL);
+		(quad[0].x + quad[3].x) * 0.5f, (quad[0].z + quad[3].z) * 0.5f, (quad[0].y + quad[3].y) * 0.5f, lit ? dyn : NULL, onMirror);
 }
 
 } // namespace
@@ -117,7 +118,11 @@ void BuildWallDecals(const int *sideList, int count)
 		const int segIndex = SideOwnerSeg(sideList[i]);
 		if (segIndex < 0) continue;
 		const seg_t *seg = &segs[segIndex];
-		if (seg->linedef == NULL || seg->frontsector == NULL || LineDrawsNoWall(seg)) continue;
+		if (seg->linedef == NULL || seg->frontsector == NULL) continue;
+		// [rc4l] A line mirror draws no wall but keeps its decals, which go on its face over its surface as RenderMirrorSurface draws them; a horizon keeps neither.
+		const bool mirror = LineIsMirror(seg);
+		if (!mirror && LineDrawsNoWall(seg)) continue;
+		const int onMirror = mirror ? int(seg->linedef - lines) : -1;
 		// [rc4l] Lit as the bake lit the wall, which bakes none it cannot light.
 		zx::surfaces::DerivedWallLight dl;
 		FDynamicColormap *cmFrom = NULL;
@@ -128,7 +133,7 @@ void BuildWallDecals(const int *sideList, int count)
 		{
 			zx::surfaces::DerivedWallSpan d;
 			bool twoSidedMiddle;
-			if (!DerivedPart(seg, part, d, twoSidedMiddle) || d.flood) continue;
+			if (!DerivedPart(seg, part, d, twoSidedMiddle, mirror) || d.flood) continue;
 			if (twoSidedMiddle)
 			{
 				zx::materials::MaterialInfo info;
@@ -140,7 +145,30 @@ void BuildWallDecals(const int *sideList, int count)
 			// [rc4l] Each band is a wall piece of its own in GL, which draws every decal of the side on it in turn.
 			for (int b = 0; b < n; b++)
 				for (DBaseDecal *decal = side->AttachedDecals; decal != NULL; decal = decal->WallNext)
-					BuildDecal(decal, side, seg, part, d, dl, partColormap, bands[b]);
+					BuildDecal(decal, side, seg, part, d, dl, partColormap, bands[b], onMirror);
+		}
+		// [rc4l] ...and on each face the back sector's 3D floors put on this side, which GL draws with the plain walls unless the slab is fog, blends, or its texture is masked.
+		FFFace faces[kMaxFFFaces];
+		const int nf = DerivedFFFaces(seg, dl, faces, kMaxFFFaces);
+		for (int fi = 0; fi < nf; fi++)
+		{
+			const FFFace &f = faces[fi];
+			if (f.rover->flags & (FF_FOG | FF_TRANSLUCENT | FF_ADDITIVETRANS)) continue;
+			FTextureID texid;
+			int texpos;
+			if (!FFFaceTexture(seg, f.rover, texid, texpos)) continue;
+			zx::materials::MaterialInfo info;
+			if (zx::materials::DescribeMaterial(zx::materials::MaterialForTextureId(texid), info) && info.masked) continue;
+			zx::surfaces::DerivedWallSpan d;
+			d.x1 = f.x1; d.y1 = f.y1; d.x2 = f.x2; d.y2 = f.y2;
+			d.fracLeft = 0.f; d.fracRight = 1.f;
+			PartBand band;
+			for (int e = 0; e < 2; e++) { band.band.ztop[e] = f.top[e]; band.band.zbottom[e] = f.bottom[e]; }
+			band.lightLevel = f.light;
+			band.lightFrom = f.lightFrom;
+			band.lightEntry = f.lightIndex;
+			for (DBaseDecal *decal = side->AttachedDecals; decal != NULL; decal = decal->WallNext)
+				BuildDecal(decal, side, seg, kPartMiddle, d, dl, partColormap, band, onMirror);
 		}
 	}
 }
