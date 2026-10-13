@@ -72,3 +72,6 @@ build-diligent/
 # fuactl play sessions (port/token of a running instance, and one per port) and the report queue
 tools/fuactl/.play-session*
 tools/fuactl/queue.json
+
+# fuactl screen capture helper build tree (tools/fuactl/native/screencap)
+tools/fuactl/native/screencap/build/

@@ -27,6 +27,7 @@ import { sectorOf } from "./sectorof.mjs";
 import { scenarioOptions, scenarioRun, templateScenarioFiles, probeScenario, sideAdjust, standaloneOptions, launchRenderer } from "./template.mjs";
 import { abPerf } from "./abperf.mjs";
 import { runFps, fpsModes } from "./fps.mjs";
+import * as screen from "./screen.mjs";
 import { refreshNote } from "./stats.mjs";
 import { decodePNG, abDiff, boxDiff } from "./pngcore.mjs";
 import fs from "node:fs";
@@ -151,6 +152,7 @@ const USAGE = `fuactl <command>
   perf-ab [--seed S] [--map M] [--spawn CLS] [--count N] [--frames F]   deterministic perf ablation (baseline vs perturbation, causal ms delta + sim/render verdict)
   gl-timers --port P [--token T] [--frames N] [--warmup M]   GPU render profiling: per-pass GPU ms (scene/translucent/hud2d) of a running instance
   capture --port P [--frames N] [--warmup M]   frametime distribution (p50/p95/p99/max, sim vs render split)
+  screen --port P [--token T] [--seconds N] [--orbit DEG] [--period S] [--class WINDOWCLASS] [--pid N]   what reaches the screen of a running instance (Windows): new images shown, refreshes repeated and stalls a second, from the compositor's own frames, with the aim orbiting so every refresh should bring a new image
   fps --map M [--iwad W] [--file a.wad,...] [--modes gl,embed,vulkan] [--res WxH] [--rounds N] [--frames N] [--warmup N] [--vsync] [--sample SEC] [--no-shot] [--engine PATH] [--port P] [--cvar k=v] [--label L]   frame rate under GL alone, the backend in the GL launch and the backend alone, each a locked launch of its own, one at a time; notes a median that sits on a display refresh
   ticprof --port P [--tics N]          per-tic sim phase split (P_Ticker / thinkers / effects / specials)
   bench --port P --scenario F.json [--runs N] [--metric total.p99_ms]   repeat a scenario, report median + spread, discard runs whose expectations failed
@@ -566,6 +568,23 @@ async function main() {
         },
       }, { log: (line) => console.error(`[fps] ${line}`) });
       console.log(JSON.stringify(rows, null, 2));
+      break;
+    }
+    case "screen": {
+      if (!flags.port) { console.error(usageFor(USAGE, "screen")); process.exit(2); }
+      // [rc4l] The port's own session file names its engine process, token given or not.
+      const session = shot.readSession(shot.sessionFileFor(SESSION(), Number(flags.port)));
+      const pid = num(flags.pid) ?? (session && session.pid);
+      if (!pid) { console.error("screen needs the engine's process: launch it with play (which records it) or pass --pid"); process.exit(2); }
+      const exe = screen.ensureScreencap(shot.pickCmake(), { log: (m) => console.error(`[screen] ${m}`) });
+      const out = path.join(os.tmpdir(), `fuactl-screen-${pid}.csv`);
+      const result = await withUi(flags, (c) => screen.captureScreen(c, {
+        pid, exe, out, exec: cap.exec,
+        seconds: num(flags.seconds) ?? 8, orbit: flags.orbit !== undefined ? Number(flags.orbit) : 6, period: num(flags.period) ?? 1.5,
+        windowClass: flags.class && flags.class !== true ? String(flags.class) : null,
+      }));
+      console.error(`[screen] ${screen.formatCapture(result)}`);
+      console.log(JSON.stringify(result, null, 2));
       break;
     }
     case "ticprof": {

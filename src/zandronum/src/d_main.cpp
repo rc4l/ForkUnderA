@@ -165,6 +165,8 @@
 #include "po_man.h"
 #include "resourcefiles/resourcefile.h"
 #include "r_renderer.h"
+#include "features/frame/framestall.h"   // [rc4l] DebugFrameStall
+#include "features/frame/debugorbit.h"   // [rc4l] DebugOrbit
 #include "p_local.h"
 
 
@@ -1348,7 +1350,11 @@ void D_DoomLoop ()
 				}
 
 				// Run at least 1 tick.
-				TryRunTics( );
+				{
+					const int ticBefore = gametic;
+					TryRunTics( );
+					zx::frame::DebugFrameStall( gametic != ticBefore );   // [rc4l] fua_debug_ticstall_us
+				}
 
 				// Move positional sounds.
 				// NOTE: .camera can be NULL if player has loaded the level but
@@ -1361,6 +1367,7 @@ void D_DoomLoop ()
 				// Skulltag mouse behaviour.
 				if ( cl_useskulltagmouse == false )
 					I_StartTic( );
+				zx::frame::DebugOrbit();   // [rc4l] fua_debug_orbit
 
 				MCP_RPC_MarkRender(); // [rc4l] coarse sim|render split for the MCP perf profiler (no-op when off)
 				D_Display( );
@@ -1405,7 +1412,9 @@ void D_DoomLoop ()
 				}
 				else
 				{
+					const int ticBefore = gametic;
 					TryRunTics (); // will run at least one tic
+					zx::frame::DebugFrameStall( gametic != ticBefore );   // [rc4l] fua_debug_ticstall_us
 				}
 
 				// [rc4l] Asks the server registries once, a few seconds in, and pumps the browser's
@@ -1415,6 +1424,7 @@ void D_DoomLoop ()
 
 				// Update display, next frame, with current state.
 				I_StartTic ();
+				zx::frame::DebugOrbit();   // [rc4l] fua_debug_orbit
 				MCP_RPC_MarkRender(); // [rc4l] coarse sim|render split for the MCP perf profiler (no-op when off)
 				D_Display ();
 				break;

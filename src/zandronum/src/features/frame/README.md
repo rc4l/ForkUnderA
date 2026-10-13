@@ -4,8 +4,8 @@ The frame, driven the same way whichever renderers are drawing it.
 
 `framedriver` is the engine's renderer (`CreateFrameDriver(gl, backend)`). It owns GL's renderer and the
 backend's, either of which may be missing. Each frame it runs GL's `BeginFrame`, then `BeginPlayerFrame`
-once, then GL's `RenderView` when GL draws (`GLDraws`) and the backend's when the backend draws
-(`BackendDraws`). The save picture, camera textures, `ClearBuffer` and `Init` go to whichever renderer
+once, then GL's `RenderView` and the backend's as the frame route says (`computation/frameroute_compute`,
+which also decides whether GL presents and whose picture a save takes). The save picture, camera textures, `ClearBuffer` and `Init` go to whichever renderer
 draws them. So neither renderer drives the other, and the frame's shared state is set up once:
 `r_viewLens`, the player's field of view and aspect, and `r_frameSerial`, which `P_BobWeapon` steps
 `curbob` by, so a frame both renderers draw bobs once.
@@ -43,6 +43,18 @@ mesh, bake state and walks. `RenderBackendCamera` hands a camera texture's view 
 `fua_sprite_check`, `fua_psprite_check`, `fua_shading_check`): comparisons, differences and the first
 few described.
 
+## Diagnostics
+
+For judging what a player sees rather than what the engine counts (queue #43; `fuactl screen` reads the
+screen itself):
+
+- `fua_viewtrace [frames] [file.csv]` (`viewtrace`, `computation/viewtrace_compute`): the angle each
+  frame's main view was drawn with, whether a tic ran, and the gaps and lumps in the turning.
+- `fua_debug_orbit <degrees>` and `fua_debug_orbit_period` (`debugorbit`, `computation/debugorbit_compute`):
+  the aim swept in a circle every frame through the mouse's own path, for repeatable motion.
+- `fua_debug_ticstall_us` and `fua_debug_framestall_us` (`framestall`, `computation/framestall_compute`):
+  CPU time burned on tic frames or on every frame, to test what a slow frame does to the picture.
+
 ## In-engine hooks
 
 - `win32/hardware.cpp` and `posix/sdl/hardware.cpp` `I_CreateRenderer`: `CreateFrameDriver` over GL's
@@ -59,3 +71,4 @@ few described.
   `RenderBackendCamera`.
 - `features/levelmesh/captureshading.cpp`, `features/sprites/spritebuild.cpp`, `pspritebuild.cpp` and
   `features/visibility/viswalk.cpp`: an `OracleTally` each for their check against GL.
+- `d_main.cpp` `D_DoomLoop`: `DebugFrameStall` after the tics run, `DebugOrbit` before the frame is drawn.

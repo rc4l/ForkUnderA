@@ -1621,6 +1621,9 @@ add_executable( zdoom WIN32
 	features/frame/playerview.cpp
 	features/frame/levelrenderer.cpp
 	features/frame/framedriver.cpp
+	features/frame/viewtrace.cpp
+	features/frame/framestall.cpp
+	features/frame/debugorbit.cpp
 	features/display/display.cpp
 	features/hwrender/backendvideo.cpp
 	features/hwrender/record2d.cpp
@@ -1653,6 +1656,9 @@ add_executable( zdoom WIN32
 	features/frame/computation/actorcull_compute.cpp
 	features/frame/computation/cameraseen_compute.cpp
 	features/frame/computation/frameroute_compute.cpp
+	features/frame/computation/viewtrace_compute.cpp
+	features/frame/computation/framestall_compute.cpp
+	features/frame/computation/debugorbit_compute.cpp
 	features/cvar-alias/computation/cvaralias_compute.cpp
 	features/rendersettings/computation/forcedvideo_compute.cpp
 	features/display/computation/display_compute.cpp

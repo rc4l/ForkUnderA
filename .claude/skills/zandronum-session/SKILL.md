@@ -78,6 +78,7 @@ Every command takes `--port P --token T`; `--port P` alone takes the token from 
 | a box's brightness and channel means, several captures | `png --range a b ... [x0 y0 x1 y1]` |
 | lines wearing a texture (any tier, by prefix) | `lines --texture NAME` |
 | frametime distribution (p50/p95/p99) | `capture [--frames N]`; it says so when the median sits on a display refresh, where presentation and not the frame sets the pace |
+| what reaches the SCREEN (judder the engine's counters cannot see) | `screen --port P [--seconds N] [--orbit DEG]`: new images shown, refreshes repeated and stalls a second from the compositor's own frames (DXGI Desktop Duplication), the aim orbiting via `fua_debug_orbit`; the window must be visible on screen. vid_fps counts frames drawn, not shown |
 | frame rate under GL alone, the backend in the GL launch, and `--no-gl` | `fps --map M [--iwad W] [--file ...] [--res WxH] [--modes gl,embed,vulkan] [--engine PATH]`: one locked launch per mode in turn, warmed, three rounds, and a shot of what each window shows |
 | what a setting costs | `abperf "<setting>" "<setting>" ... [--rounds N] [--spot S \| --at --face]`: p50/p99 under each console setting inside one session, the others' cvars put back before each, judged against the first within each round; separate launches drift 30% |
 | GPU ms per pass | `gl-timers` (GL only; check `renderer-info` first; no timer queries reads as zeros) |

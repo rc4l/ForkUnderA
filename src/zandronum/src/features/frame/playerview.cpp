@@ -3,6 +3,7 @@
 
 #include "features/frame/playerview.h"
 #include "features/frame/standaloneframe.h"
+#include "features/frame/viewtrace.h"
 
 #include "features/viewsetup/viewsetup.h"
 #include "features/viewsetup/computation/viewsetup_compute.h"
@@ -74,6 +75,7 @@ bool BeginViewpoint(AActor *camera, float fov, float fovRatio, bool mainview, bo
 	zx::levelmesh::SetMainView(mainview);
 	if (mainview && toscreen) zx::hwrender::SetMainViewLens(fov, fovRatio);
 	R_SetupFrame(camera);
+	if (mainview && toscreen) NoteMainView();   // [rc4l] fua_viewtrace
 	zx::viewsetup::SetViewArea(zx::viewsetup::CurrentView().viewActor);
 	zx::viewsetup::SetupView(camera, fov, gl_frameMS);
 	return saved;
