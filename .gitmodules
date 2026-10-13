@@ -1,3 +1,6 @@
 [submodule "src/zandronum/sentry-native"]
 	path = src/zandronum/sentry-native
 	url = https://github.com/getsentry/sentry-native
+[submodule "deps/DiligentCore"]
+	path = deps/DiligentCore
+	url = https://github.com/DiligentGraphics/DiligentCore.git

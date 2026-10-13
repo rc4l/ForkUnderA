@@ -142,6 +142,10 @@ option( FUA_MCP_BRIDGE "Build the in-engine MCP control bridge (DEV ONLY -- neve
 # because the point is a portable modern backend, not a second D3D path.
 option( FUA_DILIGENT "Build the Diligent (Vulkan) render backend -- WIP renderer swap" OFF )
 if( FUA_DILIGENT )
+	# [rc4l] DiligentCore is a submodule; a clone without its submodules gets told how to fetch them rather than a wall of missing-file errors.
+	if( NOT EXISTS "${CMAKE_SOURCE_DIR}/../../deps/DiligentCore/ThirdParty/glslang/CMakeLists.txt" )
+		message( FATAL_ERROR "deps/DiligentCore and its submodules are missing: run `git submodule update --init --recursive`, or configure with -DFUA_DILIGENT=OFF for GL alone." )
+	endif()
 	# [rc4l] The engine links the STATIC CRT (/MT, set in REL_C_FLAGS below); Diligent defaults to the
 	# dynamic one, and the two cannot link -- LNK2038 on RuntimeLibrary across every Diligent object.
 	# Exactly the failure the tests build documents for GoogleTest, and it must be set BEFORE

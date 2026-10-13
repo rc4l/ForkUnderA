@@ -1,5 +1,6 @@
-# Build artifacts (fetched/built by mac_compile.sh)
-deps/
+# Build artifacts (fetched/built by mac_compile.sh), except DiligentCore, the Vulkan backend's submodule
+deps/*
+!deps/DiligentCore
 build/
 
 # Visual Studio outputs

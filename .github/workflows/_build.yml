@@ -26,7 +26,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          submodules: true
+          submodules: recursive   # [rc4l] DiligentCore brings its own (glslang, SPIRV, volk)
 
       # [rc4l] On a real release, tag HEAD with the release version BEFORE building so updaterevision's
       # `git describe` bakes the correct version into GIT_DESCRIPTION. Otherwise the tag is created only
@@ -109,7 +109,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          submodules: true
+          submodules: recursive   # [rc4l] DiligentCore brings its own (glslang, SPIRV, volk)
 
       - name: Bake release version into git describe
         if: inputs.upload_symbols
@@ -175,7 +175,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          submodules: true
+          submodules: recursive   # [rc4l] DiligentCore brings its own (glslang, SPIRV, volk)
 
       - name: Bake release version into git describe
         if: inputs.upload_symbols
@@ -235,7 +235,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          submodules: true
+          submodules: recursive   # [rc4l] DiligentCore brings its own (glslang, SPIRV, volk)
 
       - name: Bake release version into git describe
         if: inputs.upload_symbols
