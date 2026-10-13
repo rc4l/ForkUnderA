@@ -157,6 +157,7 @@ static const char *kSceneVS =
 	"}\n" \
 	FUA_CONSTANTS_GLSL \
 	FUA_FIXED_COLORMAP_GLSL \
+	FUA_FUZZ_GLSL \
 	"layout(binding = 1) uniform sampler2D uTex;\n" \
 	/* [rc4l] The brightmap layer, present on EVERY material -- black where there is none.
 	   The brightmap is added to the lit colour, so black is the identity, and that removes the
@@ -506,7 +507,10 @@ static const char *kScenePSTrans =
 	"#version 450\n"
 	FUA_LIGHT_GLSL
 	"void main() {\n"
-	"    vec4 t = fuaTexMode(fuaTexel(vUV));\n"
+	/* [rc4l] A fuzzy sprite under gl_fuzztype takes GL's fuzz shader (texFlags / 128), the jagged one sampling a splat of its coordinate. */
+	"    int fuzz = int(vTexFlags + 0.5) >> 7;\n"
+	"    vec4 t = fuaTexMode(fuaTexel(fuzz == 5 ? fuaFuzzSplat(vUV, uFrame.x) : vUV));\n"
+	"    if (fuzz > 0) t = fuaFuzz(fuzz, vUV, uFrame.x, t);\n"
 	/* [rc4l] An alpha-tested sprite drops what GL's uAlphaThreshold drops (uFrame.w); anything else only what is all but invisible. */
 	"    if ((int(vTexFlags + 0.5) & 2) != 0 ? t.a <= uFrame.w : t.a < 0.04) discard;\n"
 	"    vec3 c = fuaShade(t.rgb);\n"

@@ -140,9 +140,11 @@ TEST(SpriteStyle, TheWeaponTakesTheFuzzAndAlphaRulesWithoutBeingMadeSolid)
 	w = ComputeWeaponStyle(fuzz, true, 1.f, 0.5f, 0, translucent);
 	EXPECT_EQ(kOpShadow, w.style.blendOp);
 	EXPECT_TRUE(w.noBright);
+	EXPECT_FALSE(w.fuzzShader);
 	EXPECT_FLOAT_EQ(1.f, w.trans);
 	w = ComputeWeaponStyle(fuzz, true, 1.f, 0.5f, 2, translucent);
 	EXPECT_FLOAT_EQ(0.99f, w.trans);
+	EXPECT_TRUE(w.fuzzShader);
 	const SpriteStyle souls = { kOpAdd, kAlphaSrc, kAlphaInvSrc, kFlagTransSouls };
 	EXPECT_FLOAT_EQ(0.5f, ComputeWeaponStyle(souls, false, 1.f, 0.5f, 0, translucent).trans);
 	const SpriteStyle one = { kOpAdd, kAlphaSrc, kAlphaInvSrc, kFlagAlpha1 };

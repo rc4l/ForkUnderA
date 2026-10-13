@@ -240,6 +240,7 @@ void FGLRenderer::DrawPSprite (player_t * player,pspdef_t *psp,fixed_t sx, fixed
 		q.translation = psptranslation;
 		q.texMode = gl_RenderState.GetTextureMode();
 		q.fixedColormap = gl_fixedcolormap;
+		q.fuzz = OverrideShader > 4 ? OverrideShader - 4 : 0;
 		q.kind = 0;
 		q.lx2 = q.ly2 = 0.f;
 		gl_observer->WeaponQuad(q);

@@ -94,6 +94,7 @@ WeaponStyleOut ComputeWeaponStyle(const SpriteStyle &style, bool fuzzStyle, floa
 	out.style = style;
 	out.trans = 0.f;
 	out.noBright = fuzzStyle;
+	out.fuzzShader = fuzzStyle && fuzzType != 0;
 	if (fuzzStyle) ResolveFuzz(out.style, out.trans, fuzzType, translucent);
 	ApplyStyleAlpha(out.style, transSouls, out.trans);
 	if (out.trans == 0.f && !(out.style.flags & (kFlagTransSouls | kFlagAlpha1))) out.trans = alpha;

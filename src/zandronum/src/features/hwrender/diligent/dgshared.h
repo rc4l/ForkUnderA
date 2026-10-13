@@ -25,6 +25,31 @@
 	"    return c * uFixedColormap.rgb;\n" \
 	"}\n"
 
+// [rc4l] GL's fuzz shaders, line for line with fuzz_compute: fuaFuzzSplat is where the jagged kind (5) samples, fuaFuzz what a kind (1-7) leaves of the texel at tc, `timer` seconds in.
+#define FUA_FUZZ_GLSL \
+	"float fuaFuzzFlicker(float texX, float texY, float timer) {\n" \
+	"    return mod(timer * 2.0 + ((texX / texY) * 21.0 + (texY / texX) * 13.0), 0.5);\n" \
+	"}\n" \
+	"vec2 fuaFuzzSplat(vec2 tc, float timer) {\n" \
+	"    const float pi = 3.14159265358979323846;\n" \
+	"    return vec2(tc.x + mod(sin(pi * 2.0 * (tc.y + timer * 2.0)), 0.1) * 0.1, tc.y + mod(cos(pi * 2.0 * (tc.x + timer * 2.0)), 0.1) * 0.1);\n" \
+	"}\n" \
+	"vec4 fuaFuzz(int kind, vec2 tc, float timer, vec4 texel) {\n" \
+	"    float test = 1.0;\n" \
+	"    if (kind == 1 || kind == 2) {\n" \
+	"        vec2 c = kind == 1 ? vec2(ivec2(tc * 128.0)) / 128.0 : tc;\n" \
+	"        test = fuaFuzzFlicker(c.x / 3.0 + 0.66, 0.34 - c.y / 3.0, timer);\n" \
+	"    } else if (kind >= 3 && kind <= 5) {\n" \
+	"        test = fuaFuzzFlicker(sin(tc.x * 100.0 + timer * 5.0), cos(tc.x * 100.0 + timer * 5.0), timer);\n" \
+	"    } else if (kind == 6 || kind == 7) {\n" \
+	"        vec2 c = kind == 6 ? vec2(ivec2(tc * 128.0)) / 128.0 : tc;\n" \
+	"        test = fuaFuzzFlicker(sin(mod(c.x * 100.0 + timer * 5.0, 3.489)) + c.x / 4.0, cos(mod(c.y * 100.0 + timer * 5.0, 3.489)) + c.y / 4.0, timer);\n" \
+	"    } else return texel;\n" \
+	"    texel.a *= test;\n" \
+	"    if (kind != 4 && kind != 5) texel.rgb = vec3(0.0);\n" \
+	"    return texel;\n" \
+	"}\n"
+
 // [rc4l] A line mirror's pass drops every fragment at world position p behind the glass; uClipPlane.w of 0 means no mirror.
 #define FUA_MIRROR_CLIP_GLSL(p) \
 	"    if (uClipPlane.w != 0.0 && dot(" p ", uClipPlane.xyz) + uClipPlane.w < 0.0) discard;\n"

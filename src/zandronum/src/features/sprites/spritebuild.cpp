@@ -9,6 +9,7 @@
 
 #include "features/sprites/computation/spritestyle_compute.h"
 #include "features/draw2d/computation/quad2d_compute.h"   // [rc4l] ComputeTextureMode
+#include "features/hwrender/computation/fuzz_compute.h"   // [rc4l] ComputeFuzzKind
 #include "features/sprites/computation/spritequad_compute.h"
 #include "features/sprites/computation/spritelight_compute.h"
 #include "features/sprites/computation/spriteclip_compute.h"
@@ -519,6 +520,7 @@ static int DeriveSprite(AActor *thing, const Subject &s, SpritePiece *out, int m
 		mp.alphaTest = so.hw != kHwNoAlphaTest;
 		mp.inverse = look.inverse;
 		mp.colorBlend = look.colorBlend;
+		mp.fuzz = zx::hwrender::ComputeFuzzKind(gl_fuzztype, so.overrideShader >= 0);
 		if (!fullbright) { mp.dynR = dyn[0]; mp.dynG = dyn[1]; mp.dynB = dyn[2]; }
 		mp.cpuLight = true;
 		mp.normX = mp.normY = mp.normZ = 0.f;

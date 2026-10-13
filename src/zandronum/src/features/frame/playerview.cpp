@@ -34,6 +34,8 @@
 #include "features/models/models.h"   // [rc4l] gl_IsHUDModelForPlayerAvailable
 
 EXTERN_CVAR(Bool, cl_capfps)
+// [rc4l] A frame clock pinned at this many milliseconds (0 runs it), so captures from two launches show shader animation, warps and fuzz, at the same moment.
+CVAR(Int, fua_debug_frameclock, 0, 0)
 extern long gl_frameCount;
 
 namespace zx { namespace frame {
@@ -57,7 +59,7 @@ void BeginPlayerFrame(player_t *player)
 	if (cl_capfps || r_NoInterpolate) r_TicFrac = FRACUNIT;
 	else r_TicFrac = I_GetTimeFrac(&r_FrameTime);
 	r_frameSerial++;
-	gl_frameMS = I_MSTime();
+	gl_frameMS = fua_debug_frameclock > 0 ? (long)fua_debug_frameclock : (long)I_MSTime();
 	P_FindParticleSubsectors();
 	// [rc4l] Camera textures the last frame used, each drawn by the renderer's RenderTextureView.
 	FCanvasTextureInfo::UpdateAll();

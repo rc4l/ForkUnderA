@@ -51,6 +51,7 @@ struct WeaponStyleOut
 	SpriteStyle style;
 	float trans;
 	bool noBright;   // [rc4l] a fuzz style is never drawn fullbright
+	bool fuzzShader; // [rc4l] it was a fuzz style and gl_fuzztype draws it with a fuzz shader, as GL's OverrideShader
 };
 
 // [rc4l] DrawPlayerSprites' style and alpha: the sprites' fuzz, transsouls and alpha1 rules without their solid-sprite normalisation; `fuzzStyle` is whether the style was a fuzz one before FRenderStyle::CheckFuzz settled `style`.

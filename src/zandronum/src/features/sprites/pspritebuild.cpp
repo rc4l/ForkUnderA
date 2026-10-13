@@ -10,6 +10,7 @@
 #include "features/sprites/computation/spritestyle_compute.h"   // [rc4l] ComputeWeaponStyle
 #include "features/levelmesh/levelmesh.h"   // [rc4l] LightListBottom
 #include "features/draw2d/computation/quad2d_compute.h"
+#include "features/hwrender/computation/fuzz_compute.h"   // [rc4l] ComputeFuzzKind
 #include "features/levelmesh/computation/shading_compute.h"
 #include "features/hwrender/hud2d.h"
 #include "features/hwrender/spriteview.h"
@@ -73,7 +74,7 @@ void Emit(const zx::hwrender::Quad2D &q)
 
 // [rc4l] DrawPSprite for one layer at (sx, sy): its frame, its screen rectangle, and the colour the caller worked out, with the dynamic light folded in as GL's record folds it.
 void LayerQuad(player_t *player, pspdef_t *psp, fixed_t sx, fixed_t sy, int translation, const float rgba[4], const float dyn[3],
-	int blend, int texMode)
+	int blend, int texMode, int fuzz)
 {
 	bool mirror;
 	FTextureID lump = gl_GetSpriteFrame(psp->sprite, psp->frame, 0, 0, &mirror);
@@ -119,6 +120,7 @@ void LayerQuad(player_t *player, pspdef_t *psp, fixed_t sx, fixed_t sy, int tran
 	q.translation = translation;
 	q.texMode = texMode;
 	q.fixedColormap = (int)gl_fixedcolormap;
+	q.fuzz = fuzz;
 	Emit(q);
 }
 
@@ -161,7 +163,7 @@ bool SameQuad(const zx::hwrender::Quad2D &a, const zx::hwrender::Quad2D &b)
 	const float fb[] = { b.x, b.y, b.w, b.h, b.u1, b.v1, b.u2, b.v2, b.r, b.g, b.b, b.a, b.lx2, b.ly2 };
 	return a.material == b.material && memcmp(fa, fb, sizeof(fa)) == 0 && a.clipL == b.clipL && a.clipT == b.clipT && a.clipR == b.clipR &&
 		a.clipB == b.clipB && a.blend == b.blend && a.translation == b.translation && a.texMode == b.texMode && a.kind == b.kind &&
-		a.fixedColormap == b.fixedColormap;
+		a.fixedColormap == b.fixedColormap && a.fuzz == b.fuzz;
 }
 
 // [rc4l] PSPF_PLAYERTRANSLATED takes the player's own colours.
@@ -333,7 +335,8 @@ static void BuildLayers(sector_t *viewsector, int viewArea, fixed_t bobX, fixed_
 		const fixed_t layerx = drawsx + fixed_t::FromRaw(addxRaw), layery = drawsy + fixed_t::FromRaw(addyRaw);
 		if (hudModels) HUDModelLayer(player, psp, layerx, layery, rgba, dyn, layerStyle);
 		else LayerQuad(player, psp, layerx, layery, LayerTranslation(player, psp), rgba, dyn,
-			zx::draw2d::ComputeQuadBlend(layerStyle.BlendOp, layerStyle.DestAlpha), zx::draw2d::ComputeTextureMode(layerStyle.Flags, false));
+			zx::draw2d::ComputeQuadBlend(layerStyle.BlendOp, layerStyle.DestAlpha), zx::draw2d::ComputeTextureMode(layerStyle.Flags, false),
+			zx::hwrender::ComputeFuzzKind(gl_fuzztype, weaponStyle.fuzzShader));
 	}
 }
 
@@ -359,7 +362,7 @@ void BuildTargeterSprites(AActor *viewActor)
 	{
 		pspdef_t *psp = player->psprites.Find(targetLayers[i]);
 		if (psp && psp->state)
-			LayerQuad(player, psp, psp->sx, psp->sy, LayerTranslation(player, psp), white, none, zx::draw2d::kBlend2DAlpha, zx::draw2d::kTexModulate);
+			LayerQuad(player, psp, psp->sx, psp->sy, LayerTranslation(player, psp), white, none, zx::draw2d::kBlend2DAlpha, zx::draw2d::kTexModulate, zx::hwrender::kFuzzNone);
 	}
 }
 
