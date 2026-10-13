@@ -20,6 +20,7 @@ TEST(WorldPipelines, EachPipelineIsBuiltForWhatItDraws)
 		names.insert(d.name);
 		EXPECT_EQ(p <= kWpAdd || p == kWpMaskedGBuffer, d.level) << d.name;
 		EXPECT_EQ(p >= kWpMaskedDecal && p <= kWpAddRedAlpha, d.depthBias) << d.name;
+		EXPECT_EQ(p == kWpRevSubNoCull || p == kWpSubNoCull, d.blend == kWpBlendRevSub || d.blend == kWpBlendSub) << d.name;
 	}
 	EXPECT_EQ((size_t)kWorldPipelines, names.size());
 	EXPECT_EQ(kWpStageOpaque, ComputeWorldPipelineDesc(kWpOpaque).stage);
@@ -50,4 +51,9 @@ TEST(WorldPipelines, ADynamicDrawTakesItsMaskDecalOrSpritePipeline)
 	EXPECT_EQ(kWpTransDecal, ComputeDynamicPipeline(0, false, true));
 	EXPECT_EQ(kWpAddNoCull, ComputeDynamicPipeline(2, false, false));
 	EXPECT_EQ(kWpTransNoCull, ComputeDynamicPipeline(3, false, false));
+	// [rc4l] The subtract styles have sprite pipelines of their own, and a decal in one draws translucent.
+	EXPECT_EQ(kWpRevSubNoCull, ComputeDynamicPipeline(4, false, false));
+	EXPECT_EQ(kWpSubNoCull, ComputeDynamicPipeline(5, false, false));
+	EXPECT_EQ(kWpTransDecal, ComputeDynamicPipeline(4, false, true));
+	EXPECT_EQ(kWpTransRedAlpha, ComputeDynamicPipeline(5, true, false));
 }

@@ -21,6 +21,8 @@ WorldPipelineDesc ComputeWorldPipelineDesc(int pipeline)
 		{ "fua decal PSO redalpha translucent", kWpStageRedAlpha, kWpBlendAlpha, false, true  },
 		{ "fua decal PSO redalpha additive",    kWpStageRedAlpha, kWpBlendAdd,   false, true  },
 		{ "fua scene PSO masked + gbuffer",     kWpStageGBuffer,  kWpBlendNone,  true,  false },
+		{ "fua sprite PSO reverse subtract",    kWpStageTrans,    kWpBlendRevSub, false, false },
+		{ "fua sprite PSO subtract",            kWpStageTrans,    kWpBlendSub,   false, false },
 	};
 	return kDescs[(pipeline >= 0 && pipeline < kWorldPipelines) ? pipeline : kWpOpaque];
 }
@@ -36,6 +38,8 @@ int ComputeDynamicPipeline(int blendMode, bool redAlpha, bool depthBias)
 	const bool add = blendMode == 2;
 	if (redAlpha) return add ? kWpAddRedAlpha : kWpTransRedAlpha;
 	if (depthBias) return add ? kWpAddDecal : kWpTransDecal;
+	if (blendMode == 4) return kWpRevSubNoCull;
+	if (blendMode == 5) return kWpSubNoCull;
 	return add ? kWpAddNoCull : kWpTransNoCull;
 }
 

@@ -117,7 +117,9 @@ TEST(SpriteStyle, BlendModesAsTheBackendDrawsThem)
 	EXPECT_EQ(ComputeSpriteBlendMode(kOpAdd, kAlphaOne, 1.f), 2);
 	EXPECT_EQ(ComputeSpriteBlendMode(kOpAdd, kAlphaInvSrc, 0.5f), 1);
 	EXPECT_EQ(ComputeSpriteBlendMode(kOpAdd, kAlphaInvSrc, 1.f), 0);
-	EXPECT_EQ(ComputeSpriteBlendMode(kOpSub, kAlphaInvSrc, 1.f), 0);
+	// [rc4l] The subtract styles subtract whatever their alpha, as GL's blend equation does.
+	EXPECT_EQ(ComputeSpriteBlendMode(kOpSub, kAlphaInvSrc, 1.f), kBlendSubtract);
+	EXPECT_EQ(ComputeSpriteBlendMode(kOpRevSub, kAlphaOne, 0.5f), kBlendRevSubtract);
 	// [rc4l] Shadow wins over an additive destination, and a decal fading out over its life is translucent.
 	EXPECT_EQ(ComputeSpriteBlendMode(kOpShadow, kAlphaOne, 0.5f), 3);
 	EXPECT_EQ(ComputeSpriteBlendMode(kOpAdd, kAlphaInvSrc, 0.4f), 1);

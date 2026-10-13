@@ -102,9 +102,11 @@ WeaponStyleOut ComputeWeaponStyle(const SpriteStyle &style, bool fuzzStyle, floa
 
 int ComputeSpriteBlendMode(int blendOp, int destAlpha, float trans)
 {
-	if (blendOp == kOpShadow) return 3;
-	if (blendOp == kOpAdd && destAlpha == kAlphaOne) return 2;
-	return trans < 1.f - 1.f / 256.f ? 1 : 0;
+	if (blendOp == kOpShadow) return kBlendFuzz;
+	if (blendOp == kOpRevSub) return kBlendRevSubtract;
+	if (blendOp == kOpSub) return kBlendSubtract;
+	if (blendOp == kOpAdd && destAlpha == kAlphaOne) return kBlendAdditive;
+	return trans < 1.f - 1.f / 256.f ? kBlendTranslucent : kBlendOpaque;
 }
 
 bool ComputeColorBlending(const SpriteStyle &style, float trans, const ColorBlendIn &in)

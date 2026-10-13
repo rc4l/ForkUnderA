@@ -56,7 +56,10 @@ struct WeaponStyleOut
 // [rc4l] DrawPlayerSprites' style and alpha: the sprites' fuzz, transsouls and alpha1 rules without their solid-sprite normalisation; `fuzzStyle` is whether the style was a fuzz one before FRenderStyle::CheckFuzz settled `style`.
 WeaponStyleOut ComputeWeaponStyle(const SpriteStyle &style, bool fuzzStyle, float alpha, float transSouls, int fuzzType, const SpriteStyle &translucent);
 
-// [rc4l] The backend's blend for a resolved style, for sprites, the weapon and decals alike: 0 opaque or alpha-tested, 1 translucent, 2 additive, 3 fuzz.
+// [rc4l] The backend's blends: opaque or alpha-tested, translucent, additive, fuzz, and GL_FUNC_REVERSE_SUBTRACT's and GL_FUNC_SUBTRACT's, the screen less the sprite and the sprite less the screen.
+enum { kBlendOpaque = 0, kBlendTranslucent = 1, kBlendAdditive = 2, kBlendFuzz = 3, kBlendRevSubtract = 4, kBlendSubtract = 5 };
+
+// [rc4l] The backend's blend (a kBlend* value) for a resolved style, for sprites, the weapon and decals alike.
 int ComputeSpriteBlendMode(int blendOp, int destAlpha, float trans);
 
 // [rc4l] What GLSprite::Draw's allowcolorblending reads of an actor besides its style.

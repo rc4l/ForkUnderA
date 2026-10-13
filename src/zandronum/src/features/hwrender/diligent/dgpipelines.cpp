@@ -738,8 +738,10 @@ bool EnsureScenePipeline(FString &err)
 			auto &rt = pci.GraphicsPipeline.BlendDesc.RenderTargets[0];
 			rt.BlendEnable = true;
 			rt.SrcBlend  = Diligent::BLEND_FACTOR_SRC_ALPHA;
-			rt.DestBlend = (d.blend == kWpBlendAdd) ? Diligent::BLEND_FACTOR_ONE : Diligent::BLEND_FACTOR_INV_SRC_ALPHA;
-			rt.BlendOp = Diligent::BLEND_OPERATION_ADD;
+			// [rc4l] Additive and the subtract styles take the source onto the screen whole, as STYLE_Add and STYLE_Subtract's ONE does.
+			rt.DestBlend = (d.blend == kWpBlendAlpha) ? Diligent::BLEND_FACTOR_INV_SRC_ALPHA : Diligent::BLEND_FACTOR_ONE;
+			rt.BlendOp = (d.blend == kWpBlendRevSub) ? Diligent::BLEND_OPERATION_REV_SUBTRACT :
+				(d.blend == kWpBlendSub) ? Diligent::BLEND_OPERATION_SUBTRACT : Diligent::BLEND_OPERATION_ADD;
 			rt.SrcBlendAlpha  = Diligent::BLEND_FACTOR_ONE;
 			rt.DestBlendAlpha = Diligent::BLEND_FACTOR_INV_SRC_ALPHA;
 			rt.BlendOpAlpha = Diligent::BLEND_OPERATION_ADD;
