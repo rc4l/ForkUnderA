@@ -1120,8 +1120,9 @@ OptionMenu "FUACrosshairOptions"
 	StaticText "Actor name is for items, decorations, projectiles and", 1
 	StaticText "corpses, always next to the crosshair. Monsters and", 1
 	StaticText "players use the identify rows above.", 1
-	StaticText "The telemeter shows how far away what the crosshair is", 1
-	StaticText "on is, in map units. It skips items and your own shots.", 1
+	StaticText "The telemeter shows the gap in map units between your", 1
+	StaticText "hitbox and what the crosshair is on; touching reads 0.", 1
+	StaticText "It skips items and your own shots.", 1
 }
 	
 //-------------------------------------------------------------------------------------------

@@ -22,8 +22,8 @@ server flag, which rides in `zadmflags` and so reaches clients through the exist
 | `crosshair.h/.cpp` | Engine glue: the CVARs, `GetRect`, the view trace and view sweep, and the per-frame draw of the text beside the crosshair. |
 | `computation/crosshair_compute.{h,cpp,_test.cpp}` | Pure math for the crosshair: the clamps and `ComputeCrosshairRect`. 100% unit coverage. |
 | `computation/targetinfo_compute.{h,cpp,_test.cpp}` | Pure logic for the text: which identify lines a target gets, scale, anchor, stacking, fade, and the actor-name and health rules. 100% unit coverage. |
-| `computation/viewsweep_compute.{h,cpp,_test.cpp}` | Pure logic for the view sweep: the ray-box entry, which actors it looks at, their kind, and the nearest hit. 100% unit coverage. |
-| `computation/telemeter_compute.{h,cpp,_test.cpp}` | Pure logic for the telemeter: when it runs, which kinds it measures, the sweep's range and the `384 u` text. 100% unit coverage. |
+| `computation/viewsweep_compute.{h,cpp,_test.cpp}` | Pure logic for the view sweep: the ray-box entry and exit, which actors it looks at, their kind, and the nearest hit. 100% unit coverage. |
+| `computation/telemeter_compute.{h,cpp,_test.cpp}` | Pure logic for the telemeter: when it runs, which kinds it measures, the sweep's range, the body-to-body gap and the `384 u` text. 100% unit coverage. |
 
 ## Cvars
 
@@ -61,7 +61,7 @@ The client cvars are all `CVAR_ARCHIVE | CVAR_GLOBALCONFIG` and clamped on set.
 
 ### Telemeter
 
-- It shows the distance in map units, from the eyes to where the view line enters the box, as `384 u`. It measures the nearest hit within 8192 units, as far as hitscan weapons reach, whose kind is switched on: player (any player body), monster (corpses included), projectile, then decoration. Items are never measured.
+- It shows the gap in map units along the view line, as `384 u`. The gap runs from where the line leaves the viewer's own collision box to where it enters the target's (`ComputeRayBoxExit`, `ComputeTelemeterGap`), so touching reads `0 u`. Both boxes are the actors' live radius and height, which covers mods that resize the player and crouching. If a mod widens the target's shootable box and the line only crosses that, the gap is measured to that box instead. It measures the nearest hit within 8192 units, as far as hitscan weapons reach, whose kind is switched on: player (any player body), monster (corpses included), projectile, then decoration. Items are never measured.
 - It shows only while the crosshair is on something: no linger, no fade.
 - On `sv_noidentifytarget` servers the kind toggles are ignored and everything is measured, so the toggles can't tell a disguised player from a real prop.
 - The health in the details line is only shown when this machine is actually sent it. Offline it always is. Online, a player's health is only shown when `SERVER_IsPlayerAllowedToKnowHealth` allows it, and a friendly monster's never is, because the server doesn't sync monster health.

@@ -75,6 +75,9 @@ struct SweepHit
 // [MobiusU9B] Where ray first enters box within maxDistance; a box behind, around the eye or without size is missed.
 SweepEntry ComputeRayBoxEntry(const SweepRay &ray, const SweepBox &box, double maxDistance);
 
+// [MobiusU9B] How far ray goes before it leaves a box it starts inside, such as the viewer's own body; 0 when it starts outside.
+double ComputeRayBoxExit(const SweepRay &ray, const SweepBox &box);
+
 // [MobiusU9B] Whether the sweep looks at an actor: not the viewer, drawn, and in the blockmap unless it is someone else's projectile.
 bool ComputeSweepConsiders(const SweepActor &actor);
 

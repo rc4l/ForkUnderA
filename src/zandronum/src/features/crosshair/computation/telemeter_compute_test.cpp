@@ -9,6 +9,7 @@
 
 using zx::crosshair::ComputeSweepRange;
 using zx::crosshair::ComputeTelemeterActive;
+using zx::crosshair::ComputeTelemeterGap;
 using zx::crosshair::ComputeTelemeterMeasures;
 using zx::crosshair::ComputeTelemeterText;
 using zx::crosshair::kIdentifyRange;
@@ -18,6 +19,7 @@ using zx::crosshair::kSweepMonster;
 using zx::crosshair::kSweepPlayer;
 using zx::crosshair::kSweepProjectile;
 using zx::crosshair::kTelemeterRange;
+using zx::crosshair::SweepEntry;
 using zx::crosshair::TelemeterToggles;
 
 namespace
@@ -85,6 +87,24 @@ TEST(ComputeSweepRange, ReachesFurtherForTheTelemeter)
 {
 	EXPECT_EQ(kTelemeterRange, ComputeSweepRange(true));
 	EXPECT_EQ(kIdentifyRange, ComputeSweepRange(false));
+}
+
+TEST(ComputeTelemeterGap, MeasuresBetweenTheTwoBodies)
+{
+	// [MobiusU9B] The line leaves a Doom player's body 16 units out and enters the target's 460 units out.
+	EXPECT_DOUBLE_EQ(444.0, ComputeTelemeterGap(SweepEntry{true, 460.0}, 460.0, 16.0));
+}
+
+TEST(ComputeTelemeterGap, ReadsZeroWhenTheBodiesTouchOrOverlap)
+{
+	EXPECT_DOUBLE_EQ(0.0, ComputeTelemeterGap(SweepEntry{true, 16.0}, 16.0, 16.0));
+	EXPECT_DOUBLE_EQ(0.0, ComputeTelemeterGap(SweepEntry{true, 10.0}, 10.0, 16.0));
+	EXPECT_DOUBLE_EQ(0.0, ComputeTelemeterGap(SweepEntry{true, kNaN}, 10.0, 16.0));
+}
+
+TEST(ComputeTelemeterGap, FallsBackToAWidenedAttackBoxWhenTheLineMissesTheBody)
+{
+	EXPECT_DOUBLE_EQ(84.0, ComputeTelemeterGap(SweepEntry{false, 0.0}, 100.0, 16.0));
 }
 
 TEST(ComputeTelemeterText, RoundsToWholeMapUnits)

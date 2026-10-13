@@ -193,6 +193,20 @@ namespace
 			|| !actor->RenderStyle.IsVisible(actor->alpha) || !actor->IsVisibleToPlayer();
 	}
 
+	// [MobiusU9B] An actor's collision box, the one that touches other bodies.
+	zx::crosshair::SweepBox BodyBox(AActor *actor)
+	{
+		return zx::crosshair::SweepBox{ FIXED2DBL(actor->x), FIXED2DBL(actor->y), FIXED2DBL(actor->z),
+			FIXED2DBL(actor->radius), FIXED2DBL(actor->height) };
+	}
+
+	// [MobiusU9B] An actor's shootable box, which only a mod makes bigger than its body.
+	zx::crosshair::SweepBox AttackBox(AActor *actor)
+	{
+		return zx::crosshair::SweepBox{ FIXED2DBL(actor->x), FIXED2DBL(actor->y), FIXED2DBL(actor->z),
+			FIXED2DBL(actor->GetAttackRadius()), FIXED2DBL(actor->GetAttackHeight()) };
+	}
+
 	zx::crosshair::SweepActor DescribeForSweep(AActor *actor, AActor *viewer)
 	{
 		const bool isMissile = (actor->flags & MF_MISSILE) != 0;
@@ -270,9 +284,7 @@ namespace
 		{
 			for (AActor *actor = sectors[i].thinglist; actor != NULL; actor = actor->snext)
 			{
-				const zx::crosshair::SweepBox box{ FIXED2DBL(actor->x), FIXED2DBL(actor->y), FIXED2DBL(actor->z),
-					FIXED2DBL(actor->GetAttackRadius()), FIXED2DBL(actor->GetAttackHeight()) };
-				const zx::crosshair::SweepEntry entry = zx::crosshair::ComputeRayBoxEntry(ray, box, wallDistance);
+				const zx::crosshair::SweepEntry entry = zx::crosshair::ComputeRayBoxEntry(ray, AttackBox(actor), wallDistance);
 				if (!entry.hit)
 					continue;
 
@@ -300,9 +312,17 @@ namespace
 		{
 			const int measured = zx::crosshair::ComputeNearestSweepHit(hits, true, zx::crosshair::kTelemeterRange);
 			if (measured >= 0)
-				g_Telemeter.Show(zx::crosshair::ComputeTelemeterText(hits[static_cast<size_t>(measured)].distance).c_str(), kTelemeterColor);
+			{
+				// [MobiusU9B] Body to body along the view line, so the reading is 0 when they touch.
+				const size_t index = static_cast<size_t>(measured);
+				const zx::crosshair::SweepEntry body = zx::crosshair::ComputeRayBoxEntry(ray, BodyBox(hitActors[index]), wallDistance);
+				const double gap = zx::crosshair::ComputeTelemeterGap(body, hits[index].distance, zx::crosshair::ComputeRayBoxExit(ray, BodyBox(viewer)));
+				g_Telemeter.Show(zx::crosshair::ComputeTelemeterText(gap).c_str(), kTelemeterColor);
+			}
 			else
+			{
 				g_Telemeter.valid = false;
+			}
 		}
 	}
 

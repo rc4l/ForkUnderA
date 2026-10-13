@@ -29,6 +29,9 @@ bool ComputeTelemeterMeasures(const TelemeterToggles &toggles, SweepKind kind, b
 // [MobiusU9B] How far the sweep must reach in map units: the telemeter's range while it is active, else the actor name's.
 int ComputeSweepRange(bool telemeterActive);
 
+// [MobiusU9B] The gap from where the view line leaves the viewer's body (viewerExit) to where it enters the target's, so touching reads 0; a mod-widened attack box (targetBox) stands in when the line misses the body.
+double ComputeTelemeterGap(const SweepEntry &targetBody, double targetBox, double viewerExit);
+
 // [MobiusU9B] The telemeter's line for a distance in map units, rounded, as "384 u"; nothing sensible reads 0.
 std::string ComputeTelemeterText(double distance);
 

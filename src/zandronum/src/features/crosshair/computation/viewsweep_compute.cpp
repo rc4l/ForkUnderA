@@ -4,6 +4,7 @@
 #include "features/crosshair/computation/viewsweep_compute.h"
 
 #include <algorithm>
+#include <cmath>
 #include <limits>
 #include <utility>
 
@@ -26,27 +27,42 @@ namespace
 		tExit = std::min(tExit, tHi);
 		return tEnter <= tExit;
 	}
+
+	// [MobiusU9B] The span [tEnter, tExit] of the whole line that lies inside box, false when none does or the box has no size.
+	bool ClipBox(const SweepRay &ray, const SweepBox &box, double &tEnter, double &tExit)
+	{
+		// [MobiusU9B] Written as "not greater" so a NaN size is a miss too.
+		if (!(box.radius > 0.0) || !(box.height > 0.0)) {
+			return false;
+		}
+		tEnter = -std::numeric_limits<double>::infinity();
+		tExit = std::numeric_limits<double>::infinity();
+		return ClipAxis(ray.x, ray.dx, box.x - box.radius, box.x + box.radius, tEnter, tExit)
+			&& ClipAxis(ray.y, ray.dy, box.y - box.radius, box.y + box.radius, tEnter, tExit)
+			&& ClipAxis(ray.z, ray.dz, box.z, box.z + box.height, tEnter, tExit);
+	}
 }
 
 SweepEntry ComputeRayBoxEntry(const SweepRay &ray, const SweepBox &box, double maxDistance)
 {
-	const SweepEntry miss{false, 0.0};
-	// [MobiusU9B] Written as "not greater" so a NaN size is a miss too.
-	if (!(box.radius > 0.0) || !(box.height > 0.0)) {
-		return miss;
-	}
-	double tEnter = -std::numeric_limits<double>::infinity();
-	double tExit = std::numeric_limits<double>::infinity();
-	if (!ClipAxis(ray.x, ray.dx, box.x - box.radius, box.x + box.radius, tEnter, tExit)
-		|| !ClipAxis(ray.y, ray.dy, box.y - box.radius, box.y + box.radius, tEnter, tExit)
-		|| !ClipAxis(ray.z, ray.dz, box.z, box.z + box.height, tEnter, tExit)) {
-		return miss;
-	}
+	double tEnter = 0.0;
+	double tExit = 0.0;
 	// [MobiusU9B] Entering at or before the eye means the box is behind it or around it, and neither is what it looks at.
-	if (tEnter <= 0.0 || tEnter > maxDistance) {
-		return miss;
+	if (!ClipBox(ray, box, tEnter, tExit) || tEnter <= 0.0 || tEnter > maxDistance) {
+		return SweepEntry{false, 0.0};
 	}
 	return SweepEntry{true, tEnter};
+}
+
+double ComputeRayBoxExit(const SweepRay &ray, const SweepBox &box)
+{
+	double tEnter = 0.0;
+	double tExit = 0.0;
+	// [MobiusU9B] Only a box around the eye has an exit, and a line with no direction never reaches it.
+	if (!ClipBox(ray, box, tEnter, tExit) || tEnter > 0.0 || tExit < 0.0 || std::isinf(tExit)) {
+		return 0.0;
+	}
+	return tExit;
 }
 
 bool ComputeSweepConsiders(const SweepActor &actor)

@@ -5,11 +5,13 @@
 
 #include <gtest/gtest.h>
 
+#include <cmath>
 #include <limits>
 #include <vector>
 
 using zx::crosshair::ComputeNearestSweepHit;
 using zx::crosshair::ComputeRayBoxEntry;
+using zx::crosshair::ComputeRayBoxExit;
 using zx::crosshair::ComputeSweepConsiders;
 using zx::crosshair::ComputeSweepDue;
 using zx::crosshair::ComputeSweepKind;
@@ -34,6 +36,9 @@ namespace
 
 	// [MobiusU9B] A 20-radius, 56-high actor standing on the floor, its centre 100 units east.
 	const SweepBox kImpAhead{100.0, 0.0, 0.0, 20.0, 56.0};
+
+	// [MobiusU9B] A Doom player's 16-radius, 56-high body around that eye.
+	const SweepBox kPlayerBody{0.0, 0.0, 0.0, 16.0, 56.0};
 
 	// [MobiusU9B] A plain decoration in the blockmap, which the sweep looks at.
 	SweepActor Decoration()
@@ -137,6 +142,37 @@ TEST(ComputeRayBoxEntry, MissesForAZeroLengthLine)
 {
 	const SweepRay still{0.0, 0.0, 41.0, 0.0, 0.0, 0.0};
 	EXPECT_FALSE(ComputeRayBoxEntry(still, kImpAhead, kFar).hit);
+}
+
+TEST(ComputeRayBoxExit, LeavesADoomPlayersBodyAtItsRadiusLookingStraight)
+{
+	EXPECT_DOUBLE_EQ(16.0, ComputeRayBoxExit(kLookEast, kPlayerBody));
+}
+
+TEST(ComputeRayBoxExit, LeavesThroughACornerFurtherOut)
+{
+	const double half = std::sqrt(0.5);
+	const SweepRay diagonal{0.0, 0.0, 41.0, half, half, 0.0};
+	EXPECT_NEAR(16.0 * std::sqrt(2.0), ComputeRayBoxExit(diagonal, kPlayerBody), 1e-9);
+}
+
+TEST(ComputeRayBoxExit, LeavesThroughTheFeetLookingSteeplyDown)
+{
+	const SweepRay steep{0.0, 0.0, 41.0, 1.0, 0.0, -4.0};
+	EXPECT_DOUBLE_EQ(10.25, ComputeRayBoxExit(steep, kPlayerBody));
+}
+
+TEST(ComputeRayBoxExit, IsZeroForABoxTheLineDoesNotStartIn)
+{
+	EXPECT_DOUBLE_EQ(0.0, ComputeRayBoxExit(kLookEast, kImpAhead));
+	EXPECT_DOUBLE_EQ(0.0, ComputeRayBoxExit(kLookEast, SweepBox{-100.0, 0.0, 0.0, 20.0, 56.0}));
+	EXPECT_DOUBLE_EQ(0.0, ComputeRayBoxExit(kLookEast, SweepBox{0.0, 0.0, 0.0, 0.0, 56.0}));
+}
+
+TEST(ComputeRayBoxExit, IsZeroForALineWithNoDirection)
+{
+	const SweepRay still{0.0, 0.0, 41.0, 0.0, 0.0, 0.0};
+	EXPECT_DOUBLE_EQ(0.0, ComputeRayBoxExit(still, kPlayerBody));
 }
 
 TEST(ComputeSweepConsiders, LooksAtDrawnActorsInTheBlockmap)

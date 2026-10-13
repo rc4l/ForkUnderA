@@ -39,6 +39,13 @@ int ComputeSweepRange(bool telemeterActive)
 	return telemeterActive ? kTelemeterRange : kIdentifyRange;
 }
 
+double ComputeTelemeterGap(const SweepEntry &targetBody, double targetBox, double viewerExit)
+{
+	const double gap = (targetBody.hit ? targetBody.distance : targetBox) - viewerExit;
+	// [MobiusU9B] Overlapping bodies have touched, and the "not greater" test also turns NaN into 0.
+	return gap > 0.0 ? gap : 0.0;
+}
+
 std::string ComputeTelemeterText(double distance)
 {
 	// [MobiusU9B] Written as "not greater" so NaN reads 0, and capped at the range so lround always has a value it can return.
