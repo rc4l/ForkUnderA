@@ -400,11 +400,11 @@ static void PushSkyQuad(TArray<SkyVertexData> &v,
 	}
 }
 
-static void BuildSkyBox(FSkyBox *sb)
+static void BuildSkyBox(const zx::materials::SkyBoxFaces &box)
 {
 	g_skyBoxFaces.Clear();
 	g_skyBoxVB.Release();
-	if (sb == NULL) return;
+	const zx::materials::SkyBoxFaces *sb = &box;
 
 	TArray<SkyVertexData> verts;
 	struct Pending { int first, count; FTexture *tex; };
@@ -460,7 +460,7 @@ static void BuildSkyBox(FSkyBox *sb)
 		const float tx[4] = { T, -T,  T, -T };
 		const float ty[4] = { T,  T,  T,  T };
 		const float tz[4] = { -T, -T, T,  T };
-		const float ftop  = sb->fliptop ? 1.f : 0.f;
+		const float ftop  = sb->flipTop ? 1.f : 0.f;
 		const float tu[4] = { 0.f, 1.f, 0.f, 1.f };
 		const float tv[4] = { ftop, ftop, 1.f - ftop, 1.f - ftop };
 		const int first = (int)verts.Size();
@@ -550,12 +550,13 @@ void EnsureSky()
 	// GLDEFS resolves the map's sky to an FSkyBox, which is six textures and no pixels of its own --
 	// so the dome sampled one face and wrapped it around a cylinder. The marker that used to print
 	// here said as much on every such sky.
-	const bool isBox = raw->gl_info.bSkybox;
+	zx::materials::SkyBoxFaces box;
+	const bool isBox = zx::materials::SkyBoxFacesOf(raw, box);
 	if (isBox)
 	{
-		FSkyBox *sb = static_cast<FSkyBox *>(raw);
+		const zx::materials::SkyBoxFaces *sb = &box;
 		if (!EnsureSkyBoxPipeline()) { g_skyBuiltValid = false; return; }
-		BuildSkyBox(sb);
+		BuildSkyBox(box);
 		if (g_skyBoxFaces.Size() == 0) { g_skyBuiltValid = false; return; }
 		if (!sameShape)
 		{

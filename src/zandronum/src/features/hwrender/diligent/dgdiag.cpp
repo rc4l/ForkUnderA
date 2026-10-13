@@ -8,6 +8,43 @@
 
 namespace zx { namespace hwrender {
 
+// [rc4l] A frame drawn without presenting, submitted and finished as Present does both, so its dynamic memory is recycled.
+static void EndUnpresentedFrame(Diligent::IDeviceContext *ctx)
+{
+	ctx->Flush();
+	ctx->FinishFrame();
+}
+
+// [rc4l] GPU time for the current scene, a duration query a frame and each frame finished as Present would finish it: one query held across many unfinished frames left their dynamic memory unrecycled.
+static double MeasureGpuMs(int frames)
+{
+	if (!GetDevice()->GetDeviceInfo().Features.TimestampQueries) return -1.0;
+	Diligent::QueryDesc qd;
+	qd.Name = "fua scene duration";
+	qd.Type = Diligent::QUERY_TYPE_DURATION;
+	Diligent::RefCntAutoPtr<Diligent::IQuery> q;
+	GetDevice()->CreateQuery(qd, &q);
+	if (!q) return -1.0;
+
+	auto *ctx = GetContext();
+	for (int i = 0; i < 5; i++) { DrawSceneOnce(false, false); EndUnpresentedFrame(ctx); }   // warmup at this multiplier
+	ctx->WaitForIdle();
+
+	double total = 0.0;
+	for (int i = 0; i < frames; i++)
+	{
+		ctx->BeginQuery(q);
+		DrawSceneOnce(false, false);
+		ctx->EndQuery(q);
+		EndUnpresentedFrame(ctx);
+		ctx->WaitForIdle();
+		Diligent::QueryDataDuration d;
+		if (!q->GetData(&d, sizeof(d)) || d.Frequency == 0) return -1.0;
+		total += 1000.0 * (double)d.Duration / (double)d.Frequency;
+	}
+	return total / frames;
+}
+
 bool SceneBench(int frames, FString &report)
 {
 	if (!SceneDrawable()) { report = "call fua_diligent_scene first"; return false; }
@@ -23,11 +60,11 @@ bool SceneBench(int frames, FString &report)
 	GetContext()->WaitForIdle();
 	const DWORD p1 = I_MSTime();
 
-	// [rc4l] Submission only, so the number is the backend's draw cost for the baked geometry.
-	for (int i = 0; i < 20; i++) DrawSceneOnce(false, false);
+	// [rc4l] Submission only, so the number is the backend's draw cost for the baked geometry; each frame is finished as Present would finish it, or its dynamic memory is never recycled and wdiex02 ran the heap dry inside the 300.
+	for (int i = 0; i < 20; i++) { DrawSceneOnce(false, false); EndUnpresentedFrame(GetContext()); }
 	GetContext()->WaitForIdle();
 	const DWORD s0 = I_MSTime();
-	for (int i = 0; i < frames; i++) DrawSceneOnce(false, false);
+	for (int i = 0; i < frames; i++) { DrawSceneOnce(false, false); EndUnpresentedFrame(GetContext()); }
 	GetContext()->WaitForIdle();
 	const DWORD s1 = I_MSTime();
 
@@ -41,27 +78,7 @@ bool SceneBench(int frames, FString &report)
 	// be occluded decides how long Present blocks, and it has nothing to do with the renderer. A
 	// number that answers "is this backend fast" cannot be a number the window manager gets a vote
 	// in, so ask the GPU how long it actually spent.
-	double gpuMs = -1.0;
-	if (GetDevice()->GetDeviceInfo().Features.TimestampQueries)
-	{
-		Diligent::QueryDesc qd;
-		qd.Name = "fua scene duration";
-		qd.Type = Diligent::QUERY_TYPE_DURATION;
-		Diligent::RefCntAutoPtr<Diligent::IQuery> q;
-		GetDevice()->CreateQuery(qd, &q);
-		if (q)
-		{
-			const int gframes = frames < 64 ? frames : 64;
-			auto *ctx = GetContext();
-			ctx->BeginQuery(q);
-			for (int i = 0; i < gframes; i++) DrawSceneOnce(false, false);
-			ctx->EndQuery(q);
-			ctx->WaitForIdle();
-			Diligent::QueryDataDuration d;
-			if (q->GetData(&d, sizeof(d)) && d.Frequency != 0)
-				gpuMs = 1000.0 * (double)d.Duration / (double)d.Frequency / gframes;
-		}
-	}
+	const double gpuMs = MeasureGpuMs(frames < 64 ? frames : 64);
 
 	FString gpu;
 	if (gpuMs >= 0.0) gpu.Format(", GPU %.4f ms/frame", gpuMs);
@@ -144,31 +161,6 @@ void DynStats(FString &report)
 	// back to testing every light, which is correct but is not the thing being measured.
 	AppendLightStats(report);
 	report += anim;
-}
-
-// [rc4l] Measure GPU time for the current scene at a given draw multiplier.
-static double MeasureGpuMs(int frames)
-{
-	if (!GetDevice()->GetDeviceInfo().Features.TimestampQueries) return -1.0;
-	Diligent::QueryDesc qd;
-	qd.Name = "fua scale duration";
-	qd.Type = Diligent::QUERY_TYPE_DURATION;
-	Diligent::RefCntAutoPtr<Diligent::IQuery> q;
-	GetDevice()->CreateQuery(qd, &q);
-	if (!q) return -1.0;
-
-	auto *ctx = GetContext();
-	for (int i = 0; i < 5; i++) DrawSceneOnce(false, false);   // warmup at this multiplier
-	ctx->WaitForIdle();
-
-	ctx->BeginQuery(q);
-	for (int i = 0; i < frames; i++) DrawSceneOnce(false, false);
-	ctx->EndQuery(q);
-	ctx->WaitForIdle();
-
-	Diligent::QueryDataDuration d;
-	if (!q->GetData(&d, sizeof(d)) || d.Frequency == 0) return -1.0;
-	return 1000.0 * (double)d.Duration / (double)d.Frequency / frames;
 }
 
 // [rc4l] The scale probe: how much geometry can this GPU draw before it costs a frame's worth of

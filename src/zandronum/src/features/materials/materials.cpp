@@ -7,6 +7,8 @@
 
 #include "textures/textures.h"
 #include "gl/textures/gl_material.h"
+#include "gl/textures/gl_skyboxtexture.h"   // [rc4l] FSkyBox
+#include "gl/textures/gl_texture.h"   // [rc4l] gl_GenerateGlobalBrightmapFromColormap
 #include "gl/textures/gl_hwtexture.h"   // [rc4l] GetTexDimension
 #include "gl/textures/gl_translate.h"   // [rc4l] GLTranslationPalette
 #include "r_data/r_translate.h"         // [rc4l] FRemapTable
@@ -64,6 +66,31 @@ void MaterialStoredSize(MaterialRef m, int &width, int &height)
 void MaterialTexCoordInfo(MaterialRef m, FTexCoordInfo *tci, fixed_t xscale, fixed_t yscale)
 {
 	Mat(m)->GetTexCoordInfo(tci, xscale, yscale);
+}
+
+void AssumeBackendTextures(int maxTextureSize)
+{
+	gl.flags |= RFL_NPOT_TEXTURE;
+	if (maxTextureSize > 0) gl.max_texturesize = maxTextureSize;
+}
+
+void GenerateGlobalBrightmap()
+{
+	gl_GenerateGlobalBrightmapFromColormap();
+}
+
+FNativePalette *CreateTranslationPalette(FRemapTable *remap)
+{
+	return GLTranslationPalette::CreatePalette(remap);
+}
+
+bool SkyBoxFacesOf(FTexture *tex, SkyBoxFaces &out)
+{
+	if (tex == NULL || !tex->gl_info.bSkybox) return false;
+	const FSkyBox *sb = static_cast<const FSkyBox *>(tex);
+	for (int i = 0; i < 6; i++) out.faces[i] = sb->faces[i];
+	out.flipTop = sb->fliptop;
+	return true;
 }
 
 bool MaterialTransparent(MaterialRef m)

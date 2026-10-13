@@ -12,7 +12,9 @@ The other modules ask it what they used to ask `FMaterial` directly: the materia
 id is drawn with (`MaterialForTextureId`), its texture (`MaterialTexture`), the size GL draws it at and the
 size it is stored at (`MaterialRenderSize`, `MaterialStoredSize`), whether it has see-through texels
 (`MaterialTransparent`), and how a wall's texture coordinates scale on it (`MaterialTexCoordInfo`).
-`computation/texcoord_compute` is `FTexCoordInfo`, those coordinates' offset and width rules, moved from
+A launch with no GL context sets the texture system up through it too (`AssumeBackendTextures`,
+`GenerateGlobalBrightmap`, `CreateTranslationPalette`), and the backend's sky reads a GLDEFS sky box's
+faces from it (`SkyBoxFacesOf`). `computation/texcoord_compute` is `FTexCoordInfo`, those coordinates' offset and width rules, moved from
 `gl/textures/gl_material.h`, which includes it.
 
 `MaterialIfMade` answers without making a material, so a worker thread may ask; the sprite batch hands a

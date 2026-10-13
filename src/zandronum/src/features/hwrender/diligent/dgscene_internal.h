@@ -71,7 +71,6 @@
 #include "stats.h"   // [rc4l] cycle_t, the backend's clocks
 #include "features/materials/materials.h"   // [rc4l] texture identity, frames, brightmaps and pixels
 #include "r_sky.h"
-#include "gl/textures/gl_skyboxtexture.h"   // FSkyBox: the six faces a skybox is
 #include "g_shared/a_sharedglobal.h"        // ASkyViewpoint: the sky that is a place, not a picture
 #include "features/fixed64/computation/angle_interp_compute.h"   // InterpolateAngleBAM
 #include "textures/textures.h"

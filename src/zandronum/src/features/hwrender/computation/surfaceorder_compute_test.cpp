@@ -11,6 +11,8 @@
 
 #include <gtest/gtest.h>
 
+#include <vector>
+
 #include "features/hwrender/computation/surfaceorder_compute.h"
 
 using namespace zx::hwrender;
@@ -398,4 +400,42 @@ TEST(SurfaceOrder, AScrolledSurfaceKeepsItsPositionsAndAMovedOneDoesNot)
 		EXPECT_FALSE(ComputeSamePositions(before, moved, 2)) << axis;
 	}
 	EXPECT_TRUE(ComputeSamePositions(before, moved, 0));
+}
+
+// [rc4l] The key orders every pair as the rule does, over draws mixing every field the rule reads.
+TEST(SurfaceOrder, TheSortKeyIsTheRule)
+{
+	std::vector<TranslucentDraw> draws;
+	const float dists[] = { 0.f, 1.f, 1.5f, 64.f, 4096.f, 1.e9f };
+	unsigned first = 0;
+	for (int decal = 0; decal < 2; decal++)
+		for (int blend = 1; blend <= 2; blend++)
+			for (int layer = 0; layer < 3; layer++)
+				for (int plane = 0; plane < 2; plane++)
+					for (float dist : dists)
+						for (int age = 0; age < 2; age++)
+						{
+							TranslucentDraw d;
+							d.distSq = dist; d.blend = blend; d.decal = decal != 0; d.layer = layer; d.plane = plane != 0;
+							d.first = (first++ * 2654435761u) >> (age * 3);
+							draws.push_back(d);
+						}
+	for (size_t i = 0; i < draws.size(); i++)
+		for (size_t j = 0; j < draws.size(); j++)
+			ASSERT_EQ(ComputeDrawsBefore(draws[i], draws[j]),
+				ComputeTranslucentSortKey(draws[i]) < ComputeTranslucentSortKey(draws[j])) << i << " " << j;
+}
+
+TEST(SurfaceOrder, TheSortKeyClampsTheLayer)
+{
+	TranslucentDraw deep, beyond;
+	deep.distSq = beyond.distSq = 1.f; deep.blend = beyond.blend = 1; deep.decal = beyond.decal = false; deep.first = beyond.first = 0;
+	deep.layer = 0x20000;
+	beyond.layer = 0xffff;
+	EXPECT_FALSE(ComputeTranslucentSortKey(deep) < ComputeTranslucentSortKey(beyond));
+	EXPECT_FALSE(ComputeTranslucentSortKey(beyond) < ComputeTranslucentSortKey(deep));
+	deep.layer = -3;
+	beyond.layer = 0;
+	EXPECT_FALSE(ComputeTranslucentSortKey(deep) < ComputeTranslucentSortKey(beyond));
+	EXPECT_FALSE(ComputeTranslucentSortKey(beyond) < ComputeTranslucentSortKey(deep));
 }

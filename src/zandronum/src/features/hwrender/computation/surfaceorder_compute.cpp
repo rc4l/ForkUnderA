@@ -4,6 +4,7 @@
 #include "features/hwrender/computation/surfaceorder_compute.h"
 
 #include <algorithm>
+#include <string.h>
 #include <vector>
 
 namespace zx { namespace hwrender {
@@ -55,6 +56,25 @@ bool ComputeDrawsBefore(const TranslucentDraw &a, const TranslucentDraw &b)
 	// same way every frame.
 	if (IsAdditive(a) != IsAdditive(b)) return !IsAdditive(a);
 	return a.first < b.first;
+}
+
+TranslucentSortKey ComputeTranslucentSortKey(const TranslucentDraw &d)
+{
+	TranslucentSortKey k;
+	k.lo = d.first;
+	const unsigned long long additive = IsAdditive(d) ? 1ull : 0ull;
+	// [rc4l] Decals are a stage ahead of everything (the top bit clear), ordered additive last then oldest first.
+	if (d.decal)
+	{
+		k.hi = additive << 62;
+		return k;
+	}
+	// [rc4l] Then farther plane layers first, a plane ahead of its layer, farther first, additive last; a non-negative float's bits rise with it, so their complement falls.
+	unsigned bits;
+	memcpy(&bits, &d.distSq, sizeof(bits));
+	const unsigned long long layer = (unsigned long long)(0xffff - (d.layer < 0 ? 0 : d.layer > 0xffff ? 0xffff : d.layer));
+	k.hi = (1ull << 63) | (layer << 47) | ((d.plane ? 0ull : 1ull) << 46) | ((unsigned long long)(~bits) << 14) | (additive << 13);
+	return k;
 }
 
 int ComputeBlendLayers(const BlendSpan *spans, int n, float viewZ, int *layers, bool *planes)

@@ -20,9 +20,7 @@
 #include "v_video.h"
 
 // [rc4l] GL's capability flags and CPU-side palette and brightmap code, which need no context.
-#include "gl/system/gl_interface.h"
-#include "gl/textures/gl_texture.h"     // [rc4l] gl_GenerateGlobalBrightmapFromColormap
-#include "gl/textures/gl_translate.h"   // [rc4l] GLTranslationPalette
+#include "features/materials/materials.h"   // [rc4l] the texture system's setup without GL
 
 #if defined(_WIN32) && defined(FUA_DILIGENT)
 #include "win32gliface.h"
@@ -72,7 +70,7 @@ void BeginBackendOnly()
 	fua_dg_standalone = true;
 	fua_dg_embed = true;
 	// [rc4l] What gl_LoadExtensions would have found on any card the backend runs on; the sprite UVs read it.
-	gl.flags |= RFL_NPOT_TEXTURE;
+	zx::materials::AssumeBackendTextures(0);
 #endif
 }
 
@@ -91,12 +89,12 @@ public:
 	{
 		mColors.Load();
 		zx::frame::ForgetCamera();
-		gl_GenerateGlobalBrightmapFromColormap();
+		zx::materials::GenerateGlobalBrightmap();
 		DoSetGamma();
 		Accel2D = true;
 		if (!zx::hwrender::OpenBackendOutput(width, height)) I_FatalError("-vulkan: the Vulkan backend could not start.");
 		// [rc4l] What gl_LoadExtensions reads from GL, from the device instead.
-		gl.max_texturesize = zx::hwrender::BackendMaxTextureSize();
+		zx::materials::AssumeBackendTextures(zx::hwrender::BackendMaxTextureSize());
 	}
 
 	~DiligentFrameBuffer() { ReleaseScreenshotBuffer(); }
@@ -133,7 +131,7 @@ public:
 	{
 		mColors.Load();
 		zx::frame::ForgetCamera();
-		gl_GenerateGlobalBrightmapFromColormap();
+		zx::materials::GenerateGlobalBrightmap();
 	}
 
 	// [rc4l] 2D is recorded rather than drawn, so there is no state to set up for it.
@@ -158,7 +156,7 @@ public:
 		m2D.Poly(tex, points, npoints, originx, originy, scalex, scaley, rotation, colormap, lightlevel);
 	}
 
-	FNativePalette *CreatePalette(FRemapTable *remap) { return GLTranslationPalette::CreatePalette(remap); }
+	FNativePalette *CreatePalette(FRemapTable *remap) { return zx::materials::CreateTranslationPalette(remap); }
 
 	// [rc4l] The screen wipes, drawn by the backend from the last frame and the new one, locked and unlocked as GL's frame buffer is.
 	bool WipeStartScreen(int type) { return zx::hwrender::WipeStart(type); }

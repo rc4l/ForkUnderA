@@ -264,8 +264,9 @@ features that draw with GL (`damage-tint`, `hitboxviz`, `fua-caching`) are GL's 
 textures (`FSkyBox`), GL's level preprocessing behind `FLevelRenderer`, and `gl_system.h`, the precompiled
 header the remaining GL includes need.
 
-Still to do: light and plane heights from game state, if measuring says re-baking what moved or relit
-still costs a frame anything.
+Light and plane heights from game state were to replace re-baking what moved or relit. Measured with the
+re-bakes now limited to what the walks reach, that costs 0.03 ms a frame on Sunder MAP10 and 0.002 ms on
+wdiex02, so a table the shader reads has nothing left to save.
 
 ### P5: one renderer interface, Vulkan owning itself
 
@@ -329,6 +330,8 @@ GPU-bound), and Vulkan is clearly ahead of GL at the AOW03 view.
 | Re-bakes that track what is visible | Every frame a sector moved or relit, its walls and flats were re-baked, seen or not: about 0.78 ms a frame there. Now only what a walk reached this frame is re-baked, and the rest waits until a walk reaches it (scenario `movedbehind`). The loop costs 0.001 ms at that view; with the walks against without, p50 is 0.4 ms faster in every round and p99 goes from 6-7.5 ms to about 3.2 ms. |
 | Against the acceptance views, `-vulkan` (1024x640, `fuactl capture`, three rounds) | AOW03 at spot q36: GL alone 1.36-1.50 ms p50, `-vulkan` 0.57-0.60 ms, so Vulkan is clearly ahead. Sunder MAP10 at spawn: GL alone 6.04-6.07 ms, `-vulkan` 1.85-1.97 ms, waiting about 22% of the frame in `AcquireNextImage`. The main thread is busy about 1.6 ms a frame against the 1.5 ms target, and the player's walk is 1.37-1.48 ms of it: 7,411 of the level's 10,958 subsectors and 23,366 segs, with no single hot line. |
 | The sliced walk (`features/jobs`, `features/visibility`) | The player's walk runs in one slice a lane, each clipper blocked outside its share of the view, the union exactly one walk (leaky node boxes included). Sunder MAP10: the walk from about 1.15 to 0.42 ms, the frame p50 from 1.58 to 0.79-0.82 ms, under the 1.5 ms target. The GPU takes 0.24 ms of it (`fua_diligent_bench`), so the frame is CPU-bound by design now: culling cut the GPU's work faster than the CPU's. |
+| Where the rest of a frame goes (Sunder MAP10, stack sampler, main thread) | The walk 51%, the actor sweep 9%, recording the world pass 13%, the translucent pass 9% (its sort 5.5%), the dynamic stream 8%, Present 6%. The re-bake loop (patches) is 0.03 ms a frame there and 0.002 ms on wdiex02, so neither moving it to a worker nor a per-sector light table has anything to save. Recording the passes on deferred contexts could save at most the world and translucent recording, about 0.1 ms, against Diligent's rule that a deferred context cannot transition resources; not done. |
+| The walk's replay and the translucent sort | A rank is stamped when a slice finds a sky or stacked wall candidate in it, so the replay skips the rest (walk 0.42 to 0.39 ms), and the translucent order is one 128-bit key per draw (`ComputeTranslucentSortKey`, equal to the rule on every pair tested). Sunder MAP10 p50 0.80 to 0.70-0.72 ms. |
 | Dynamic instances on workers | A frame's sprites, models and decals are laid out on the game thread and written on the job pool: `BuildDynamic` 0.13 to 0.09 ms on Sunder MAP10 with the monsters awake. The actors' sprites are derived in chunks on the pool too. |
 
 ## Decisions taken

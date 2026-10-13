@@ -48,6 +48,14 @@ struct TranslucentDraw
 // against each other by distance answers a question the numbers cannot actually settle.
 bool ComputeDrawsBefore(const TranslucentDraw &a, const TranslucentDraw &b);
 
+// [rc4l] ComputeDrawsBefore as one 128-bit number per draw, compared high then low, so a sort compares two integers rather than walking the rule; `distSq` must not be negative, as a squared distance is not.
+struct TranslucentSortKey
+{
+	unsigned long long hi, lo;
+	bool operator<(const TranslucentSortKey &o) const { return hi != o.hi ? hi < o.hi : lo < o.lo; }
+};
+TranslucentSortKey ComputeTranslucentSortKey(const TranslucentDraw &d);
+
 // [rc4l] A translucent draw's height span, and whether it is a piece of the level (a sprite never splits the order).
 struct BlendSpan
 {

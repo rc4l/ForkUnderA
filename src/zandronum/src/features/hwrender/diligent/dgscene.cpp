@@ -3,6 +3,7 @@
 //
 // [rc4l] The Vulkan backend's world pass: the scene's records, frame prep, the world draw and the frame it composes; dgscene_internal.h lists the files the rest is split into.
 
+#include "features/hwrender/computation/framepacing_compute.h"
 #include "c_dispatch.h"
 #include "c_console.h"
 
@@ -550,6 +551,37 @@ void DrawSceneOnce(bool present, bool pump)
 
 bool SceneDrawable() { return g_scene.vb && g_pso.opaque && g_scene.verts > 0; }
 
+// [rc4l] Frames the CPU may queue ahead of the GPU; 0 lets it run free.
+CVAR(Int, fua_dg_frames_ahead, 2, CVAR_ARCHIVE)
+
+namespace {
+
+Diligent::RefCntAutoPtr<Diligent::IFence> g_frameFence;
+Diligent::Uint64 g_frameSignalled = 0;
+
+}
+
+// [rc4l] Each frame signals the fence with its number, and one too far ahead waits for the GPU to finish the frame that many back: unpaced, a frame on wdiex02 queued until Diligent's dynamic heap ran out and the frame died.
+static void SignalFrame(Diligent::IDeviceContext *ctx)
+{
+	if (!g_frameFence)
+	{
+		Diligent::FenceDesc fd;
+		fd.Name = "fua frame fence";
+		fd.Type = Diligent::FENCE_TYPE_CPU_WAIT_ONLY;
+		GetDevice()->CreateFence(fd, &g_frameFence);
+		if (!g_frameFence) return;
+	}
+	ctx->EnqueueSignal(g_frameFence, ++g_frameSignalled);
+}
+
+static void PaceFrames()
+{
+	if (!g_frameFence) return;
+	const Diligent::Uint64 wait = zx::hwrender::ComputeFenceWaitValue(g_frameSignalled, (unsigned long long)(fua_dg_frames_ahead < 0 ? 0 : *fua_dg_frames_ahead));
+	if (wait != 0) g_frameFence->Wait(wait);
+}
+
 void PresentFrame(Diligent::IDeviceContext *ctx, Diligent::ISwapChain *swap, bool pump)
 {
 #ifdef ZX_ENABLE_REPLAY
@@ -564,7 +596,9 @@ void PresentFrame(Diligent::IDeviceContext *ctx, Diligent::ISwapChain *swap, boo
 	g_framePasses = 0; g_frameWorldMs = 0.0;
 	g_framePassList = "";
 	FinishFrame(ctx);
+	SignalFrame(ctx);
 	swap->Present(0);
+	PaceFrames();
 	RecordPresentInterval();
 	// [rc4l] The message pump costs more than the draw at these scales, so a benchmark pumps sparsely and a live frame once.
 	if (pump) Fua_PumpBackendWindow(GetBackendWindow());

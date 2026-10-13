@@ -467,21 +467,21 @@ void DrawBlended(Diligent::IDeviceContext *ctx)
 	// the rule that required two distances to be EXACTLY equal, and therefore never once fired, fails
 	// a test written with the real numbers off a real wall.
 	{
-		// [rc4l] Sorted as small keys and the draws then moved once, since the comparator rebuilt both keys and the sort moved whole draws on every step.
-		struct SortKey { zx::hwrender::TranslucentDraw key; unsigned index; };
+		// [rc4l] Sorted as 128-bit keys holding the rule, and the draws then moved once.
+		struct SortKey { zx::hwrender::TranslucentSortKey key; unsigned index; };
 		static TArray<SortKey> keys;
 		static TArray<BlendDraw> sorted;
 		keys.Resize(list.Size());
 		for (unsigned i = 0; i < list.Size(); i++)
 		{
 			const BlendDraw &d = list[i];
-			zx::hwrender::TranslucentDraw &k = keys[i].key;
+			zx::hwrender::TranslucentDraw k;
 			k.distSq = d.dist; k.blend = d.blend; k.decal = d.bias; k.first = d.first;
 			k.layer = d.layer; k.plane = d.plane;
+			keys[i].key = zx::hwrender::ComputeTranslucentSortKey(k);
 			keys[i].index = i;
 		}
-		std::sort(&keys[0], &keys[0] + keys.Size(),
-			[](const SortKey &a, const SortKey &b) { return zx::hwrender::ComputeDrawsBefore(a.key, b.key); });
+		std::sort(&keys[0], &keys[0] + keys.Size(), [](const SortKey &a, const SortKey &b) { return a.key < b.key; });
 		sorted.Resize(list.Size());
 		for (unsigned i = 0; i < keys.Size(); i++) sorted[i] = list[keys[i].index];
 		for (unsigned i = 0; i < sorted.Size(); i++) list[i] = sorted[i];

@@ -45,6 +45,15 @@ on had no slope term to lift it and fought its wall (scenario `walldecal`). The 
 the dome in the fog `features/visibility` derives, and not over a sky box, as GL's `RenderBox` draws none
 (scenario `skyfog`; its pipeline was refused every frame before, for want of its shaders).
 
+A frame signals a fence as it is presented, and one more than `fua_dg_frames_ahead` (2) ahead of the GPU waits
+for it (`computation/framepacing_compute`). The benchmark's unpresented frames are submitted and finished as
+Present does both; it finished none, so on wdiex02 Diligent's dynamic heap ran out inside `fua_diligent_bench`
+and the engine died.
+
+The translucent pass sorts by `ComputeTranslucentSortKey`, the order `ComputeDrawsBefore` states packed into
+one 128-bit number per draw (tested to agree with the rule on every pair of 576 draws), so the sort compares
+integers rather than walking the rule.
+
 A frame's sprites, models and decals are laid out on the game thread (`computation/dynlayout_compute`, each
 slot found there, since finding one may make it) and their records and vertices written on the job pool in
 chunks of 64. On Sunder MAP10 with the monsters awake that took `BuildDynamic` from 0.13 to 0.09 ms.

@@ -8,6 +8,8 @@
 
 class FTexture;
 struct FTexCoordInfo;
+class FNativePalette;
+struct FRemapTable;
 #include "textures/textures.h"   // [rc4l] FTextureID
 
 namespace zx { namespace materials {
@@ -70,6 +72,18 @@ void MaterialRenderSize(MaterialRef m, int &width, int &height);
 void MaterialStoredSize(MaterialRef m, int &width, int &height);
 // [rc4l] How a wall's texture coordinates scale and offset on the material at a sidedef's scale, as FMaterial::GetTexCoordInfo works them out.
 void MaterialTexCoordInfo(MaterialRef m, FTexCoordInfo *tci, fixed_t xscale, fixed_t yscale);
+
+// [rc4l] Set up the texture system for a launch with no GL context: what gl_LoadExtensions would find on any card the backend runs on, and its largest texture.
+void AssumeBackendTextures(int maxTextureSize);
+// [rc4l] The brightmap colormap textures are made against, again after the palette loads.
+void GenerateGlobalBrightmap();
+// [rc4l] A translation's palette as the texture system keeps it.
+FNativePalette *CreateTranslationPalette(FRemapTable *remap);
+
+// [rc4l] A GLDEFS sky box's faces (front, right, back, left, top, bottom; with three, one wrapped wall then top and bottom) and whether its top is flipped.
+struct SkyBoxFaces { FTexture *faces[6]; bool flipTop; };
+// [rc4l] The sky box `tex` is, false when it is an ordinary texture.
+bool SkyBoxFacesOf(FTexture *tex, SkyBoxFaces &out);
 
 // [rc4l] The material's brightmap, NULL when it has none.
 MaterialRef MaterialBrightmap(MaterialRef m);
