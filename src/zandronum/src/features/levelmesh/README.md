@@ -66,11 +66,12 @@ yet. Scenario `walldecal`.
 - `features/frame/levelrenderer.cpp` `FLevelRenderer::PreprocessLevel` and `CleanLevelData`: `AllocForLevel`,
   `MeshInitForLevel`, `FreeLevel` and `MeshFreeLevel`, the mesh and bake state for each level.
 - `features/sidebyside/glchecks.cpp`: what GL reports to its observer (`gl/scene/gl_observer.h`), for the
-  checks against GL only. That is GL's scenes (`EnterScene`/`LeaveScene`), walks (`BeginSkyWalk`,
-  `NoteWalkedSubsector`/`NoteWalkedSide`, and `SkyboxWalk`, `StackWalk` and `MirrorWalk` around a portal's
-  walk), sky quads and holes, stacked walls, mirror sheens, sprites and models (`RegisterSkyQuad`,
-  `RegisterSkyHole`, `RegisterStackWall`, `RegisterMirrorSheen`, `RegisterSprite`, `ModelCaptureBegin`,
-  `CaptureModelSurface`, `ModelCaptureEnd`).
+  checks against GL only, read off GL's types there and handed over through the same calls the walks use.
+  That is GL's scenes (`EnterScene`/`LeaveScene`), walks (`BeginSkyWalk`, `NoteWalkedSubsector`/`NoteWalkedSide`,
+  and `SkyboxWalk`, `StackWalk` and `MirrorWalk` around a portal's walk), sky quads and holes into the walk's
+  list (`WalkSkyList`, `AddViewSkyQuad`, `AddViewSkyHole`), stacked walls (`AddStackWall`), mirror sheens
+  (`AddMirrorSheen`), sprites (`DynAppend`), models (`ModelCaptureBegin` with `kModelFromGL`,
+  `CaptureModelSurface`, `ModelCaptureEnd`) and GL's shading for `fua_shading_check` (`SetShadingOracle`).
 - `gl/scene/gl_drawinfo.cpp` `DrawWalls`: `ComputeWallDrawPath`, so GL batches its own vertices. GL never
   draws from the mesh, which holds no GL buffer (queue #42, P3; `fua_mesh_blank` empties it to check).
 - `gl/scene/gl_bsp.cpp` and `gl_wallcache.cpp`: `WallCacheEligibility`, `WallCacheStamp` and `ComputeCanReuse`,

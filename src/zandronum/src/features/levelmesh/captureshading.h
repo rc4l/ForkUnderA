@@ -20,6 +20,10 @@ void CaptureShading(int lightlevel, int rellight, const FColormap &cm, MeshPiece
 // [rc4l] gl_SetColor's colour alone, as FillSimplePoly sets it for a textured automap floor: software lighting's curve swapped for the standard one.
 void CapturePolyColor(int lightlevel, const FColormap &cm, float &r, float &g, float &b);
 
+// [rc4l] Another renderer's shading of the same surface, which fua_shading_check compares the light model against; features/sidebyside sets GL's while the check is on.
+typedef void (*ShadingOracle)(int lightlevel, int rellight, const FColormap &cm, bool noFog, bool additive, MeshPiece &out);
+void SetShadingOracle(ShadingOracle oracle);
+
 }} // namespace zx::levelmesh
 
 #endif // ZX_CAPTURESHADING_H

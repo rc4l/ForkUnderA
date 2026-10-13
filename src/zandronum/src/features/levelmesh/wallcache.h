@@ -126,15 +126,13 @@ int LevelGeneration();
 void FreeLevel();
 void InvalidateAll();
 
-// [rc4l] A sky quad GL builds for its stencil, taken as geometry, with the skybox a RENDERWALL_SKYBOX names (NULL for a plain sky).
-void RegisterSkyQuad(const GLWall &wall, AActor *viewpoint);
-// [rc4l] An untextured one-sided wall's floor-to-ceiling span, which GL leaves undrawn: its walk clips what lies behind it except what it already reached, and its full-screen sky shows through the rest.
-void RegisterSkyHole(const GLWall &wall);
+// [rc4l] The kSkyCapture* list the GL walk in progress fills, which BeginSkyWalk picked.
+int WalkSkyList();
 int SkyQuadsCaptured();   // [rc4l] Since the level loaded, for fua_sky_quads.
 AActor *SkyQuadViewpoint();
 // [rc4l] A GL walk starting at this portal depth, for the main view or a camera texture; returns the kSkyCapture* list it fills.
 int BeginSkyWalk();
-// [rc4l] A view's sky from a visibility walk (features/visibility) rather than GL's: start kSkyCapture* list `list` afresh (the player's with its skybox and holes), then add each surface as RegisterSkyQuad and RegisterSkyHole take GL's.
+// [rc4l] A view's sky: start kSkyCapture* list `list` afresh (the player's with its skybox and holes), then add each sky wall, with the skybox it names (NULL for a plain sky), and each sky hole, an untextured one-sided wall's span its full-screen sky shows through.
 void BeginViewSky(int list);
 void AddViewSkyQuad(int list, float x1, float y1, float x2, float y2, const float *zb, const float *zt, AActor *viewpoint, int lineSpecial);
 void AddViewSkyHole(int list, float x1, float y1, float x2, float y2, const float *zfloor, const float *zceil);

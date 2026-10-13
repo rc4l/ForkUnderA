@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 rc4l
 
-#include "gl/system/gl_system.h"
 #include "features/levelmesh/walldecals.h"
 #include "features/levelmesh/computation/walldecal_compute.h"
 #include "features/levelmesh/computation/flatmesh_compute.h"   // [rc4l] ComputeMidTextureTranslucent

@@ -3,8 +3,8 @@
 //
 // [rc4l] Dynamic lights: the light list mirrored from the engine, GL's light links, and the cluster grid that tells a fragment which lights can reach it.
 
-#include "gl/system/gl_system.h"
 
+#include "gl/system/gl_system.h"
 #include <vector>
 
 #include "MapHelper.hpp"

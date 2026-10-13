@@ -15,10 +15,8 @@
 
 #include "features/levelmesh/staticmesh.h"   // [rc4l] MeshPiece
 
-class GLSprite;
 class FMaterial;
 class FModelVertexBuffer;
-class VSMatrix;
 struct FColormap;
 
 namespace zx { namespace levelmesh {
@@ -27,11 +25,11 @@ namespace zx { namespace levelmesh {
 void ModelPieceLook(int lightLevel, int extraLight, const FColormap &cm, bool fullbright, const float dyn[3], unsigned thingColor,
 	float alpha, int blendMode, float x, float y, float z, MeshPiece &mp);
 
-// Bracket one actor's model draw. Between these the surfaces know which actor they belong to, which
-// is where their lighting, translucency and sort position come from.
-void ModelCaptureBegin(const GLSprite *spr, const VSMatrix &modelToWorld);
-// [rc4l] The same for a model features/sprites derived: its look, its column-major model-to-world matrix and its actor; `checkOnly` notes its surfaces for fua_sprite_check instead of drawing them.
-void ModelCaptureBeginDerived(const MeshPiece &look, const float *modelToWorld, const void *who, bool checkOnly);
+// [rc4l] What becomes of a model's surfaces: drawn, only noted for fua_sprite_check, or drawn and noted as GL's for that check.
+enum ModelCaptureKind { kModelDraw, kModelCheckOnly, kModelFromGL };
+
+// [rc4l] Bracket one actor's model: its look, its column-major model-to-world matrix and its actor, which is where its surfaces' light, translucency and sort position come from.
+void ModelCaptureBegin(const MeshPiece &look, const float *modelToWorld, const void *who, ModelCaptureKind kind);
 void ModelCaptureEnd();
 
 // True when a backend is carrying the frame and a surface should be captured rather than rasterised.

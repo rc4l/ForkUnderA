@@ -17,8 +17,10 @@ module talks to GL only through the renderer interface.
   and the frame driver runs GL's `RenderView` by the same rule (`GLDraws`).
 - `glchecks.cpp`: the checks against GL. GL reports its walk and draw to an observer it owns
   (`gl/scene/gl_observer.h`), and only while one is set. `WatchGLForChecks` sets `FGLChecks` while
-  `fua_vis_check`, `fua_sprite_check` or `fua_psprite_check` is on. It hands GL's walk bits, sky
-  surfaces, portal views, sprites, models and weapon to the captures those checks compare against.
+  `fua_vis_check`, `fua_sprite_check` or `fua_psprite_check` is on, and GL's shading as the light model's
+  oracle while `fua_shading_check` is. It reads GL's `GLWall`s and `GLSprite`s and hands their walk bits, sky
+  surfaces, portal views, sprites, models and weapon to the captures those checks compare against, through
+  the same calls the backend's own walks and sprites use.
 
 ## In-engine hooks
 

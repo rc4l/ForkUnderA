@@ -701,7 +701,6 @@ int BakeFlatsForSector(int sectorIndex)
 
 // [rc4l] Sprites go into the DYNAMIC stream, rebuilt every frame -- see staticmesh.h. They are
 // billboards built for one viewpoint, so they are not level geometry and must never be baked.
-static int g_spritesThisFrame = 0;
 // [rc4l] Particles among them, for fua_particles.
 static int g_particlesThisFrame = 0;
 static int g_skyQuadsCaptured = 0;
@@ -720,48 +719,6 @@ static TArray<MeshVertex> g_skyVerts[kSkyCaptureLists];
 static int g_skyList = kSkyCaptureNone;
 // [rc4l] The player's walk's sky holes this frame, kSkyHoleFloats each, for the scene shader.
 static TArray<float> g_skyHoles;
-
-// [rc4l] What each sprite piece was registered WITH, for one frame, so a seam can be read off
-// numbers instead of guessed at from a screenshot.
-//
-// A sprite is not always one quad. GLSprite::SplitSprite cuts it wherever a 3D floor's light band
-// starts, gives each piece that band's light and colormap, and draws them as separate sprites. When
-// two pieces of one explosion come out different in the backend and identical in GL, the question is
-// which of those inputs diverged -- and every candidate (light, colour, alpha, blend, the texture
-// coordinates of the cut) is a number that is already in hand right here.
-struct SpriteNote
-{
-	float z1, z2, vt, vb;
-	int   light;
-	unsigned int lightColor, fadeColor;
-	float alpha, r, g, b;
-	int   blend;
-	const void *material;
-};
-static const int kMaxSpriteNotes = 64;
-static SpriteNote g_spriteNotes[kMaxSpriteNotes];
-static int g_spriteNoteCount = 0;
-// [rc4l] What render styles sprites actually arrive with, counted rather than assumed.
-//
-// Plasma impacts came out with black holes where their bright cores should be, which is what an
-// ADDITIVE or SUBTRACTIVE sprite looks like when it is drawn with ordinary alpha blending: its dark
-// texels paint dark instead of adding nothing. Guessing which styles a mod uses is how the last
-// four of these went; this counts them.
-static int g_styleOps[16];
-static int g_styleFlagsSeen = 0;
-static int g_styleDest[16];
-static int g_classified[4];
-void GetSpriteStyleStats(int *ops, int &flags)
-{
-	for (int i = 0; i < 16; i++) ops[i] = g_styleOps[i];
-	flags = g_styleFlagsSeen;
-}
-
-void GetSpriteStyleDetail(int *dest16, int *classified4)
-{
-	for (int i = 0; i < 16; i++) dest16[i] = g_styleDest[i];
-	for (int i = 0; i < 4; i++) classified4[i] = g_classified[i];
-}
 
 int SkyQuadsCaptured() { return g_skyQuadsCaptured; }
 
@@ -822,11 +779,6 @@ void AddMirrorSheen(int line, int lightlevel, const FColormap &cm)
 	// [rc4l] gl_SetColor and gl_SetFog as RenderMirrorSurface calls them: no relative light, and fogged to black as an added surface.
 	CaptureShading(lightlevel, 0, cm, s.shade, false, true);
 	g_mirrorSheens.Push(s);
-}
-void RegisterMirrorSheen(const GLWall &wall)
-{
-	if (!PlayerWalkActive() || wall.seg == NULL || wall.seg->linedef == NULL) return;
-	AddMirrorSheen(int(wall.seg->linedef - lines), wall.lightlevel, wall.Colormap);
 }
 StackWalk::~StackWalk() { s_stackWalk = saved; }
 
@@ -922,11 +874,6 @@ int AddStackWall(const FPortal *portal, float x1, float y1, float x2, float y2, 
 	return slot;
 }
 
-void RegisterStackWall(const GLWall &wall, const FPortal *portal)
-{
-	if (portal == NULL || !PlayerWalkActive()) return;
-	AddStackWall(portal, wall.glseg.x1, wall.glseg.y1, wall.glseg.x2, wall.glseg.y2, wall.zbottom, wall.ztop);
-}
 
 // [rc4l] The last walks begun, newest last: which view, how deep, and what the list they emptied held.
 struct SkyWalkNote { bool mainView; int nesting; int list; int heldBefore; };
@@ -1090,7 +1037,7 @@ const MeshVertex *SkyQuadVertices(int &count, int list)
 
 // [rc4l] Models are cleared with sprites because they arrive with them, and a stale count reads as a model still there.
 void CountParticle() { g_particlesThisFrame++; }
-void ClearSprites() { g_spritesThisFrame = 0; g_particlesThisFrame = 0; g_spriteNoteCount = 0; ModelStatsReset(); }
+void ClearSprites() { g_particlesThisFrame = 0; ModelStatsReset(); }
 
 // [rc4l] The sweep's own arithmetic, kept from the last frame that ran one.
 static int g_swSeen = 0, g_swNoSector = 0, g_swBehind = 0, g_swOffScreen = 0, g_swProcessed = 0;
@@ -1112,10 +1059,16 @@ CCMD( fua_sprite_sweep )
 	const int culled = g_swNoSector + g_swBehind + g_swOffScreen;
 	Printf( "fua_sprite_sweep: %d actors iterated, %d culled (%d no sector, %d behind, %d off screen),\n",
 		g_swSeen, culled, g_swNoSector, g_swBehind, g_swOffScreen );
-	Printf( "  %d handed to GLSprite::Process, of which %d registered a sprite\n",
-		g_swProcessed, g_spritesThisFrame );
+	Printf( "  %d derived, %d sprite pieces in the dynamic stream\n", g_swProcessed, SpritePieceCount() );
 }
-int SpritePieceCount() { return g_spritesThisFrame; }
+
+int SpritePieceCount()
+{
+	int count = 0, quads = 0;
+	const MeshPiece *pieces = DynPieces(count);
+	for (int i = 0; i < count; i++) if (pieces[i].quad) quads++;
+	return quads;
+}
 
 // [rc4l] One quad of the wall between heights zb and zt at its two ends into a view's sky list, a list of its own because GL's skybox re-entry clears the dynamic stream with DynClear.
 static void PushSkyQuad(int list, float x1, float y1, float x2, float y2, const float *zb, const float *zt)
@@ -1147,12 +1100,7 @@ void AddViewSkyQuad(int list, float x1, float y1, float x2, float y2, const floa
 	PushSkyQuad(list, x1, y1, x2, y2, zb, zt);
 }
 
-void RegisterSkyQuad(const GLWall &wall, AActor *viewpoint)
-{
-	// [rc4l] The viewpoint is passed in, never read off wall.skybox: that shares a union with wall.sky, so on a plain sky it is a GLSkyInfo.
-	AddViewSkyQuad(g_skyList, wall.glseg.x1, wall.glseg.y1, wall.glseg.x2, wall.glseg.y2, wall.zbottom, wall.ztop, viewpoint,
-		(wall.seg != NULL && wall.seg->linedef != NULL) ? wall.seg->linedef->special : 0);
-}
+int WalkSkyList() { return g_skyList; }
 
 void AddViewSkyHole(int list, float x1, float y1, float x2, float y2, const float *zfloor, const float *zceil)
 {
@@ -1168,10 +1116,6 @@ void AddViewSkyHole(int list, float x1, float y1, float x2, float y2, const floa
 	PushSkyQuad(list, x1, y1, x2, y2, zfloor, zceil);
 }
 
-void RegisterSkyHole(const GLWall &wall)
-{
-	AddViewSkyHole(g_skyList, wall.glseg.x1, wall.glseg.y1, wall.glseg.x2, wall.glseg.y2, wall.zfloor, wall.zceil);
-}
 
 void BeginViewSky(int list)
 {
@@ -1211,146 +1155,6 @@ int MirrorCaptureLine() { return ComputeMirrorCaptureLine(s_mirrorLine, s_mainVi
 
 bool DynamicCaptureActive() { return PlayerWalkActive() || StackCaptureSlot() >= 0 || MirrorCaptureLine() >= 0; }
 
-void RegisterSprite(const GLSprite &spr, const float *c1, const float *c2,
-	const float *c3, const float *c4)
-{
-	// [rc4l] Each walk the backend draws again keeps its own sprites, for its pass alone: the player's for the frame, a stacked view's or a line mirror's (the viewer and whatever stands behind the player) for that one.
-	if (spr.gltexture == NULL || !DynamicCaptureActive()) return;
-	if (spr.particle != NULL) CountParticle();
-
-	// [rc4l] GLSprite emits a 4-vertex TRIANGLE STRIP; the mesh is triangle lists, so expand to
-	// (0,1,2) and (2,1,3) -- which preserves the strip's winding rather than flipping the second
-	// triangle.
-	MeshVertex q[4];
-	q[0].Set(c1[0], c1[1], c1[2], spr.ul, spr.vt);
-	q[1].Set(c2[0], c2[1], c2[2], spr.ur, spr.vt);
-	q[2].Set(c3[0], c3[1], c3[2], spr.ul, spr.vb);
-	q[3].Set(c4[0], c4[1], c4[2], spr.ur, spr.vb);
-
-	MeshPiece mp;
-	mp.range.offset = 0;
-	mp.range.count = 0;
-	mp.material = spr.gltexture;
-	mp.mirrorLine = MirrorCaptureLine();
-	mp.stackSlot = StackCaptureSlot();
-	// [rc4l] GLSprite has no light index. Its dynamic light is computed per actor on the CPU and
-	// folded into the vertex colour below -- see the fold after CaptureShading, which is what makes
-	// that true. It was asserted here before it was done, and sprites went dark when the shader
-	// stopped adding lights for them on the strength of this comment.
-	mp.dynLightIndex = -1;
-	mp.lightLevel = spr.lightlevel;
-	mp.lightColor = spr.Colormap.LightColor.d;
-	mp.fadeColor = spr.Colormap.FadeColor.d;
-	// GLSprite::Draw's own `rel`: fullbright sprites take no extra light.
-	// [rc4l] Not memoised, and that was measured rather than assumed -- see docs/sprites-scope.md.
-	// A cache keyed on the six inputs hits 98% of 3053 sprites on Sunder MAP16 and saves nothing:
-	// what it skips is two calls and eight getters, and writing the eight answers costs the same.
-	CaptureShading(spr.lightlevel, spr.fullbright ? 0 : getExtraLight(), spr.Colormap, mp);
-	// [rc4l] ThingColor, which GL's shader multiplies the sprite by: a particle's own colour, a stencil actor's fill.
-	mp.colorR *= spr.ThingColor.r / 255.f;
-	mp.colorG *= spr.ThingColor.g / 255.f;
-	mp.colorB *= spr.ThingColor.b / 255.f;
-	// [rc4l] A fixed-colour style draws in TM_MASK, the texture only the shape.
-	mp.stencil = (spr.RenderStyle.Flags & STYLEF_ColorIsFixed) != 0;
-	mp.alphaTest = spr.hw_styleflags != zx::sprites::kHwNoAlphaTest;
-
-	// [rc4l] The dynamic light GL worked out for this actor, folded in here.
-	//
-	// gl_SetDynSpriteLight runs just before this and leaves its answer in the render state, where
-	// main.fp picks it up as a uniform and ADDS it after the vertex colour. CaptureShading reads
-	// only gl_SetColor, so the captured colour is the sector light and nothing else -- a sprite
-	// standing in a green pool came out grey while GL drew it green.
-	//
-	// Taking it from the render state rather than walking the light list again is the whole point:
-	// that function has already applied gl_light_sprites, and DONTLIGHTSELF, which is why an item is
-	// not lit by the glow it carries itself. A shader loop over every light in the level knows none
-	// of that, and lit each armor bonus with its own light until it was stopped.
-	if (!spr.fullbright)
-	{
-		float dyn[3] = { 0.f, 0.f, 0.f };
-		gl_RenderState.GetDynLight(dyn[0], dyn[1], dyn[2]);
-		// Carried, not folded: it has to survive the lighting equation the shader applies to vColor,
-		// which is where GL adds it too. Mixed into the colour it would be attenuated by distance and
-		// by how dark the sector is, and a bonus in a dark room came out a quarter dimmer than GL's.
-		mp.dynR = dyn[0]; mp.dynG = dyn[1]; mp.dynB = dyn[2];
-	}
-	// [rc4l] A sprite takes this light and no other, fullbright ones none at all: GL never runs the per-light loop on one.
-	mp.cpuLight = true;
-
-	// [rc4l] Classify the render style into the handful of blends a backend actually needs.
-	//
-	// gl_GetRenderStyle resolves the full matrix into GL blend enums, which would then have to be
-	// mapped back into Diligent's. These four cases cover what Doom content uses: opaque/masked,
-	// normal translucency, additive (plasma, fireballs, explosions) and the fuzz shadow. Anything
-	// exotic falls into normal translucency, which is wrong but visible rather than invisible.
-	{
-		const int op = (int)spr.RenderStyle.BlendOp;
-		if (op >= 0 && op < 16) g_styleOps[op]++;
-		const int da = (int)spr.RenderStyle.DestAlpha;
-		if (da >= 0 && da < 16) g_styleDest[da]++;
-		g_styleFlagsSeen |= (int)spr.RenderStyle.Flags;
-	}
-	// [rc4l] A billboard has NO side, so it gets no normal.
-	//
-	// CaptureShading leaves a default of straight up, which is right for a flat and meaningless for a
-	// sprite: a quad that turns to face the camera has no fixed facing for a light to be in front of
-	// or behind. The backend's dynamic-light side test took the default at its word and lit only the
-	// fragments below the light, cutting the rest off along a dead straight horizontal line at the
-	// light's own height -- a hard seam across the middle of every rocket explosion, which carries a
-	// large light at its centre. Zero means "no side", and the test is skipped.
-	mp.normX = mp.normY = mp.normZ = 0.f;
-	mp.translation = spr.translation;
-	mp.alpha = spr.trans;
-	if (spr.RenderStyle.BlendOp == STYLEOP_Shadow)
-		mp.blendMode = 3;
-	else if (spr.RenderStyle.BlendOp == STYLEOP_Add && spr.RenderStyle.DestAlpha == STYLEALPHA_One)
-		mp.blendMode = 2;
-	else if (spr.trans < 1.f - 1.f/256.f || spr.RenderStyle.BlendOp != STYLEOP_Add)
-		mp.blendMode = (spr.trans < 1.f - 1.f/256.f) ? 1 : 0;
-	else
-		mp.blendMode = 0;
-
-	if (mp.blendMode >= 0 && mp.blendMode < 4) g_classified[mp.blendMode]++;
-	// Sprite centre, for the back-to-front sort.
-	mp.sortX = spr.x; mp.sortY = spr.y; mp.sortZ = spr.z;
-	// [rc4l] Four corners, not six vertices -- the backend expands them when it writes its own.
-	mp.quad = true;
-
-	zx::sprites::NoteGLSprite(spr.actor != NULL ? (const void *)spr.actor : (const void *)spr.particle, spr.actor == NULL, mp, q, 4);
-	DynAppend(q, 4, mp);
-	g_spritesThisFrame++;
-
-	if (g_spriteNoteCount < kMaxSpriteNotes)
-	{
-		SpriteNote &n = g_spriteNotes[g_spriteNoteCount++];
-		n.z1 = spr.z1; n.z2 = spr.z2; n.vt = spr.vt; n.vb = spr.vb;
-		n.light = spr.lightlevel;
-		n.lightColor = spr.Colormap.LightColor.d;
-		n.fadeColor = spr.Colormap.FadeColor.d;
-		n.alpha = mp.alpha;
-		n.r = mp.colorR; n.g = mp.colorG; n.b = mp.colorB;
-		n.blend = mp.blendMode;
-		n.material = spr.gltexture;
-	}
-}
-
-// [rc4l] fua_sprites: this frame's sprite pieces, in the order they were registered.
-//
-// Pause on the frame in question first -- the list is rebuilt every frame, and an explosion lasts
-// about a quarter of a second.
-void DumpSpriteNotes()
-{
-	Printf("fua_sprites: %d piece(s) this frame (%d recorded)\n",
-		g_spritesThisFrame, g_spriteNoteCount);
-	for (int i = 0; i < g_spriteNoteCount; i++)
-	{
-		const SpriteNote &n = g_spriteNotes[i];
-		Printf("  %2d  z %8.2f..%8.2f  v %.4f..%.4f  light %3d  lit %.3f,%.3f,%.3f\n"
-		       "      alpha %.3f  blend %d  lightcol %06x  fade %06x  mat %p\n",
-			i, n.z1, n.z2, n.vt, n.vb, n.light, n.r, n.g, n.b,
-			n.alpha, n.blend, n.lightColor & 0xffffff, n.fadeColor & 0xffffff, n.material);
-	}
-}
 
 void RegisterDecal(const MeshVertex *quad, const void *material, int translation,
                    bool shadow, bool additive, float alpha,

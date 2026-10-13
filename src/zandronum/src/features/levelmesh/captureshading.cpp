@@ -5,15 +5,12 @@
 #include "features/levelmesh/captureshading.h"
 #include "features/frame/computation/oracle_compute.h"   // [rc4l] OracleTally
 
-#include "templates.h"   // [rc4l] gl_lightdata.h's inline gl_ClampLight uses clamp<>
-#include "features/rendersettings/colormap.h"   // [rc4l] FColormap
-#include "gl/renderer/gl_lightdata.h"
-#include "gl/renderer/gl_renderstate.h"
+#include "features/rendersettings/rendersettings.h"   // [rc4l] FColormap and RenderShadingEnv
+#include "features/levelmesh/computation/shading_compute.h"
 #include "c_dispatch.h"
 #include "c_console.h"
 #include <string.h>
 
-EXTERN_CVAR(Int, gl_fogmode)
 
 // [rc4l] Compare every captured surface's light model against GL's own setters, the oracle, counting what differs for fua_shading_report.
 CVAR(Bool, fua_shading_check, false, 0)
@@ -25,23 +22,8 @@ static zx::frame::OracleTally g_check;
 static bool SameBits(float a, float b) { return memcmp(&a, &b, sizeof(float)) == 0; }
 
 // [rc4l] What GL's setters leave in the render state for this surface, put back afterwards.
-static void GLShading(int lightlevel, int rellight, const FColormap &cm, bool noFog, bool additive, MeshPiece &out)
-{
-	const FRenderState::ShadingSnapshot before = gl_RenderState.SaveShading();
-	FColormap local = cm;
-	gl_SetColor(lightlevel, rellight, local, 1.0f);
-	if (noFog) gl_SetFog(255, 0, NULL, false);
-	else       gl_SetFog(lightlevel, rellight, &local, additive);
-	gl_RenderState.GetColorRGB(out.colorR, out.colorG, out.colorB);
-	const float *lp = gl_RenderState.GetLightParms();
-	out.softLight    = lp[3];
-	out.fogDensity   = lp[2];
-	out.fogColor     = gl_RenderState.GetFogColor().d & 0xffffff;
-	out.desaturation = gl_RenderState.GetDesaturation();
-	if (!gl_RenderState.IsFogEnabled()) out.fogMode = 0;
-	else out.fogMode = (out.fogColor == 0) ? (int)gl_fogmode : -(int)gl_fogmode;
-	gl_RenderState.RestoreShading(before);
-}
+static ShadingOracle g_oracle = NULL;
+void SetShadingOracle(ShadingOracle oracle) { g_oracle = oracle; }
 
 void CapturePolyColor(int lightlevel, const FColormap &cm, float &r, float &g, float &b)
 {
@@ -75,9 +57,9 @@ void CaptureShading(int lightlevel, int rellight, const FColormap &cm, MeshPiece
 	in.additive = additive;
 	ShadePiece(in, RenderShadingEnv(false), out);
 
-	if (!fua_shading_check) return;
+	if (!fua_shading_check || g_oracle == NULL) return;
 	MeshPiece gl = out;
-	GLShading(lightlevel, rellight, cm, noFog, additive, gl);
+	g_oracle(lightlevel, rellight, cm, noFog, additive, gl);
 	g_check.checked++;
 	if (SameBits(gl.colorR, out.colorR) && SameBits(gl.colorG, out.colorG) && SameBits(gl.colorB, out.colorB) &&
 	    SameBits(gl.softLight, out.softLight) && SameBits(gl.fogDensity, out.fogDensity) &&

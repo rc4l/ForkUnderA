@@ -151,7 +151,7 @@ void HUDModelLayer(player_t *player, pspdef_t *psp, fixed_t sx, fixed_t sy, cons
 	look.fogDensity = 0.f;
 	look.fogMode = 0;
 	look.hud = true;
-	zx::levelmesh::ModelCaptureBeginDerived(look, toMesh, player->mo, false);
+	zx::levelmesh::ModelCaptureBegin(look, toMesh, player->mo, zx::levelmesh::kModelDraw);
 	CaptureModelFrames(smf, psp->state, psp->tics, weapon, 0);
 	zx::levelmesh::ModelCaptureEnd();
 }

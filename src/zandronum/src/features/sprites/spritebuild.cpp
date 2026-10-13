@@ -333,7 +333,7 @@ static void DeriveModel(AActor *thing, const Subject &s, const Look &l, bool che
 	ModelPoseFor(thing, s.model, s.x, s.y, s.z, pose);
 	float modelToWorld[16];
 	ComputeModelMatrix(pose, modelToWorld);
-	zx::levelmesh::ModelCaptureBeginDerived(look, modelToWorld, thing, checkOnly);
+	zx::levelmesh::ModelCaptureBegin(look, modelToWorld, thing, checkOnly ? zx::levelmesh::kModelCheckOnly : zx::levelmesh::kModelDraw);
 	CaptureModelFrames(s.model, thing->state, thing->tics, RUNTIME_TYPE(thing), (s.model->flags & MDL_IGNORETRANSLATION) ? 0 : int(thing->Translation));
 	zx::levelmesh::ModelCaptureEnd();
 }

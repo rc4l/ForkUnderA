@@ -10,6 +10,7 @@
 // the floor TEXTURE, not the sector's light -- and mods that restyle a sprite (stencil/fuzz/...)
 // win automatically via the blend-op gate.
 
+#include "gl/system/gl_system.h"
 #include "doomtype.h"
 #include "doomstat.h"
 #include "g_level.h"
@@ -103,7 +104,6 @@ int DamageTint_SectorDamage( const sector_t *sec )
 
 #ifndef NO_GL
 
-#include "gl/system/gl_system.h"
 #include "gl/renderer/gl_renderstate.h"
 
 // Strength (color intensity) and coverage (how far up the sprite the gradient reaches, as a percent

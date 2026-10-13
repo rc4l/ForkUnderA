@@ -6,15 +6,10 @@
 #include "features/levelmesh/staticmesh.h"
 #include "features/levelmesh/captureshading.h"   // [rc4l] CaptureShading, the light model for a GL colormap
 #include "features/levelmesh/flatmesh.h"   // [rc4l] DynamicCaptureActive, StackCaptureSlot, MirrorCaptureLine
-#include "gl/scene/gl_portal.h"   // GLPortal::RenderDepth, for the walk a model was drawn in
-#include "features/levelmesh/computation/flatmesh_compute.h"   // ComputeStyleBlendMode
 
-#include "gl/scene/gl_wall.h"   // GLSprite
 #include "gl/data/gl_vertexbuffer.h"
-#include "gl/data/gl_matrix.h"
 #include "features/rendersettings/rendersettings.h"   // [rc4l] the render settings it reads
 #include "gl/textures/gl_material.h"
-#include "gl/renderer/gl_renderstate.h"   // GetDynLight, the CPU's answer for this actor
 #include "features/hwrender/hud2d.h"   // StandaloneActive, BackendPresenting
 #include "features/sprites/spritebuild.h"   // [rc4l] NoteGLSprite and NoteDerivedSprite, for fua_sprite_check
 #include "tarray.h"
@@ -33,11 +28,11 @@ namespace {
 MeshPiece g_look;
 const float *g_matrix = NULL;
 const void *g_who = NULL;
-bool g_derived = false, g_checkOnly = false;
+ModelCaptureKind g_kind = kModelDraw;
 
 int g_models = 0, g_surfaces = 0, g_triangles = 0, g_skipped = 0;
 // [rc4l] Every model GL started to draw, captured or not, and the walk the last one was in, so "not drawn" and "not ours" read apart.
-int g_begins = 0, g_lastDepth = -1, g_lastPortalKind = 0;
+int g_begins = 0;
 bool g_lastMainView = false;
 
 // [rc4l] Where the triangles LANDED. A count proves the capture ran and says nothing about whether
@@ -104,36 +99,14 @@ void ModelPieceLook(int lightLevel, int extraLight, const FColormap &cm, bool fu
 	mp.solid = true;
 }
 
-void ModelCaptureBegin(const GLSprite *spr, const VSMatrix &modelToWorld)
-{
-	float dyn[3] = { 0.f, 0.f, 0.f };
-	if (!spr->fullbright) gl_RenderState.GetDynLight(dyn[0], dyn[1], dyn[2]);
-	ModelPieceLook(spr->lightlevel, spr->fullbright ? 0 : getExtraLight(), spr->Colormap, spr->fullbright, dyn, spr->ThingColor.d,
-		spr->trans, ComputeStyleBlendMode(spr->RenderStyle.BlendOp == STYLEOP_Shadow,
-			spr->RenderStyle.BlendOp == STYLEOP_Add && spr->RenderStyle.DestAlpha == STYLEALPHA_One, spr->trans),
-		spr->x, spr->y, spr->z, g_look);
-	g_matrix = modelToWorld.get();
-	g_who = spr->actor;
-	g_derived = g_checkOnly = false;
-	g_begins++;
-	g_lastDepth = GLPortal::RenderDepth();
-	g_lastMainView = MainView();
-	g_lastPortalKind = (GLPortal::IsMirroring() ? 1 : 0) | (GLPortal::inskybox ? 4 : 0) |
-		((GLPortal::instack[0] || GLPortal::instack[1]) ? 8 : 0);
-	if (ModelCaptureActive()) g_models++;
-}
-
-void ModelCaptureBeginDerived(const MeshPiece &look, const float *modelToWorld, const void *who, bool checkOnly)
+void ModelCaptureBegin(const MeshPiece &look, const float *modelToWorld, const void *who, ModelCaptureKind kind)
 {
 	g_look = look;
 	g_matrix = modelToWorld;
 	g_who = who;
-	g_derived = true;
-	g_checkOnly = checkOnly;
+	g_kind = kind;
 	g_begins++;
-	g_lastDepth = 0;
 	g_lastMainView = MainView();
-	g_lastPortalKind = 0;
 	if (ModelCaptureActive()) g_models++;
 }
 
@@ -155,7 +128,7 @@ bool ModelCaptureActive()
 }
 
 void ModelStatsReset() { g_models = g_surfaces = g_triangles = g_skipped = g_begins = 0; g_haveBB = false; }
-static void ModelBeginsGet(int &begins, int &depth, bool &mainView, int &kind) { begins = g_begins; depth = g_lastDepth; mainView = g_lastMainView; kind = g_lastPortalKind; }
+static void ModelBeginsGet(int &begins, bool &mainView) { begins = g_begins; mainView = g_lastMainView; }
 
 void ModelStatsGet(int &models, int &surfaces, int &triangles, int &skipped)
 {
@@ -247,13 +220,13 @@ void CaptureModelSurface(const FModelVertexBuffer *vbuf, unsigned int base1, uns
 	g_lastRGB[0] = mp.colorR; g_lastRGB[1] = mp.colorG; g_lastRGB[2] = mp.colorB;
 	g_lastMaterial = mp.material;
 
-	if (g_derived && g_checkOnly)
+	if (g_kind == kModelCheckOnly)
 	{
 		zx::sprites::NoteDerivedSprite(g_who, mp, &g_tris[0], (int)indexCount);
 		return;
 	}
 	DynAppend(&g_tris[0], indexCount, mp);
-	if (!g_derived) zx::sprites::NoteGLSprite(g_who, false, mp, &g_tris[0], (int)indexCount);
+	if (g_kind == kModelFromGL) zx::sprites::NoteGLSprite(g_who, false, mp, &g_tris[0], (int)indexCount);
 	g_surfaces++;
 	g_triangles += (int)(indexCount / 3);
 }
@@ -281,11 +254,10 @@ CCMD(fua_models)
 			alpha, blend, light, rgb[0], rgb[1], rgb[2], material ? "yes" : "NULL");
 	}
 	{
-		int begins = 0, depth = -1, kind = 0;
+		int begins = 0;
 		bool mainView = false;
-		zx::levelmesh::ModelBeginsGet(begins, depth, mainView, kind);
-		Printf("  %d model draws started since the reset, the last at portal depth %d (mirror 1, skybox 4, stack 8: %d) in %s view\n",
-			begins, depth, kind, mainView ? "the player's" : "a camera's");
+		zx::levelmesh::ModelBeginsGet(begins, mainView);
+		Printf("  %d model draws started since the reset, the last in %s view\n", begins, mainView ? "the player's" : "a camera's");
 	}
 	Printf("  capture is %s; the backend %s presenting\n", fua_mesh_models ? "on" : "off",
 		zx::hwrender::BackendPresenting() ? "is" : "is not (GL's own window, or side by side)");

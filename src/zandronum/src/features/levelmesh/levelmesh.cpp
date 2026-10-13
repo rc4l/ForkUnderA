@@ -1074,45 +1074,6 @@ CCMD( fua_look )
 	}
 }
 
-//==========================================================================
-//
-// fua_spritestyles
-//
-// [rc4l] Which render styles the sprites in this session actually use.
-//
-// A sprite whose style is not handled is drawn with ordinary alpha blending, and an additive or
-// subtractive effect then paints its dark texels dark -- black holes where a plasma impact's bright
-// core should be. Which styles a given mod reaches for is a question about content, not about the
-// renderer, so it is counted rather than assumed.
-//
-//==========================================================================
-
-CCMD( fua_spritestyles )
-{
-	static const char *kOp[16] = { "None", "Add", "Sub", "RevSub", "Fuzz", "FuzzOrAdd",
-	                               "FuzzOrSub", "FuzzOrRevSub", "?8", "Shadow", "?10", "?11",
-	                               "?12", "?13", "?14", "?15" };
-	int ops[16], flags = 0;
-	zx::levelmesh::GetSpriteStyleStats( ops, flags );
-	Printf( "sprite render styles since load:\n" );
-	for ( int i = 0; i < 16; i++ )
-		if ( ops[i] > 0 ) Printf( "  %-12s %d\n", kOp[i], ops[i] );
-	Printf( "  style flags seen: 0x%x\n", flags );
-}
-
-// [rc4l] Every sprite piece registered on the current frame.
-//
-// A sprite is not always one quad -- GLSprite::SplitSprite cuts it wherever a 3D floor's light band
-// begins and gives each piece that band's light and colormap. When two pieces of one explosion come
-// out visibly different in the backend and identical in GL, this says which input diverged instead
-// of leaving it to be inferred from a screenshot.
-//
-// Pause first: the list is rebuilt every frame and an explosion lasts about a quarter of a second.
-CCMD( fua_sprites )
-{
-	zx::levelmesh::DumpSpriteNotes();
-}
-
 CCMD( fua_mesh_verify )
 {
 	int nv = 0, np = 0;
