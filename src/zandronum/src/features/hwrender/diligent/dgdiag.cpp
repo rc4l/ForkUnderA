@@ -303,24 +303,11 @@ void CaptureReplayFrame(Diligent::IDeviceContext *ctx, Diligent::ISwapChain *swa
 			// red/blue inversion that still looked like a plausible Doom scene, just cooler.
 			const bool bgra = (bd.Format == Diligent::TEX_FORMAT_BGRA8_UNORM ||
 			                   bd.Format == Diligent::TEX_FORMAT_BGRA8_UNORM_SRGB);
-			const int ri = bgra ? 2 : 0, bi = bgra ? 0 : 2;
-
-			static TArray<unsigned char> rgb;
-			rgb.Resize((unsigned)(w * h * 3));
-			for (int y = 0; y < h; y++)
-			{
-				const unsigned char *srcRow = (const unsigned char *)mapped.pData + (size_t)y * mapped.Stride;
-				unsigned char *dstRow = &rgb[0] + (size_t)y * w * 3;
-				for (int x = 0; x < w; x++)
-				{
-					dstRow[x*3+0] = srcRow[x*4+ri];
-					dstRow[x*3+1] = srcRow[x*4+1];
-					dstRow[x*3+2] = srcRow[x*4+bi];
-				}
-			}
-			ctx->UnmapTextureSubresource(g_replayStaging[read], 0, 0);
+			// [rc4l] Handed over as the image holds it, for the encoder's scaler to convert: swizzling every pixel to RGB here cost the game thread about 1.3 ms a capture at 1280x800.
+			const int format = bgra ? zx::kReplayBGRA : zx::kReplayRGBA;
 			// Already top-down, so a positive pitch.
-			(primary ? zx::replay::SubmitFrame : zx::replay::SubmitFrameVulkan)(&rgb[0], w, h, w * 3);
+			(primary ? zx::replay::SubmitFrame : zx::replay::SubmitFrameVulkan)((const unsigned char *)mapped.pData, w, h, (int)mapped.Stride, format);
+			ctx->UnmapTextureSubresource(g_replayStaging[read], 0, 0);
 		}
 	}
 

@@ -14,6 +14,9 @@ void NoteMainView();
 // [rc4l] Record the next `frames` frames' main view and report them once they are in, every frame written to `csv` when it is named.
 void ArmViewTrace(int frames, const char *csv);
 
+// [rc4l] Report an armed trace now, with however many frames it has.
+void EndViewTrace();
+
 }} // namespace zx::frame
 
 #endif // ZX_VIEWTRACE_H

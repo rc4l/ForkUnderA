@@ -9,6 +9,33 @@
 
 using namespace zx;
 
+TEST(ReplayPixels, GLReadbacksAreThreeBytesAndSwapchainImagesFour)
+{
+	EXPECT_EQ(3, zx::ComputeReplayPixelBytes(zx::kReplayRGB24));
+	EXPECT_EQ(4, zx::ComputeReplayPixelBytes(zx::kReplayRGBA));
+	EXPECT_EQ(4, zx::ComputeReplayPixelBytes(zx::kReplayBGRA));
+}
+
+// [rc4l] 800 rows in 16 bands for the job pool's lanes, every row copied once.
+TEST(ReplayPixels, RowBandsCoverEveryRowOnce)
+{
+	int next = 0, first = 0, last = 0;
+	for (int b = 0; b < 16; b++)
+	{
+		zx::ComputeRowBand(800, 16, b, first, last);
+		EXPECT_EQ(next, first);
+		EXPECT_EQ(50, last - first);
+		next = last;
+	}
+	EXPECT_EQ(800, next);
+	zx::ComputeRowBand(7, 3, 2, first, last);
+	EXPECT_EQ(4, first);
+	EXPECT_EQ(7, last);
+	zx::ComputeRowBand(9, 0, 0, first, last);
+	EXPECT_EQ(0, first);
+	EXPECT_EQ(9, last);
+}
+
 TEST(FrameDue, DisabledWhenFpsNonPositive)
 {
 	EXPECT_FALSE(ComputeFrameDue(0, 1000000, 0));

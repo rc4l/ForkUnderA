@@ -29,10 +29,10 @@ public:
 	// srcW/srcH: incoming framebuffer size; dstW/dstH: encoded (downscaled) size. encName e.g.
 	// "libx264" (software) or "h264_videotoolbox" (hardware). Returns false if unavailable.
 	bool Init(int srcW, int srcH, int dstW, int dstH, int fps, int bitrateKbps, const char *encName);
-	// Top-down RGB24 of the CURRENT framebuffer (srcW x srcH, srcStride may be negative); tUs is a
-	// monotonic capture timestamp in microseconds. srcW/srcH are per-frame so a mid-capture window or
-	// render-scale resize is handled -- the frame is scaled to the fixed output size.
-	void AddFrameTopDownRGB(const uint8_t *rgb, int srcW, int srcH, int srcStride, int64_t tUs);
+	// Top-down pixels of the CURRENT framebuffer (srcW x srcH, srcStride may be negative) in `format`, a
+	// ReplayPixels; tUs is a monotonic capture timestamp in microseconds. srcW/srcH are per-frame so a
+	// mid-capture window or render-scale resize is handled -- the frame is scaled to the fixed output size.
+	void AddFrameTopDown(const uint8_t *pixels, int srcW, int srcH, int srcStride, int format, int64_t tUs);
 	// Optional audio: set up an AAC stream at the given rate (stereo assumed). AddAudioInterleaved
 	// takes interleaved float samples (nSamples = per-channel count) captured at time tUs; they are
 	// framed, encoded, and ring-buffered alongside the video, then muxed as a 2nd stream by SaveClip.

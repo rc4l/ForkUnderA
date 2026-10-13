@@ -4,8 +4,10 @@
 // [rc4l] What the compositor actually put on screen of one window, frame by frame, through DXGI Desktop Duplication.
 //
 // usage: screencap <pid> <seconds> <out.csv> [window class]
-// Prints one JSON line (the refresh rate and the patch watched); each CSV row is one composed desktop frame:
-// when it was presented (QPC microseconds from the start) and whether the window's centre patch changed.
+// Prints one JSON line (the refresh rate, the patch watched, the start on the QPC clock in microseconds, and whether
+// another window covered the patch's centre at the start or the end, when the capture shows that window); each CSV
+// row is one composed desktop frame: when it was presented (QPC microseconds from the start), whether the window's
+// centre patch changed, and how many desktop frames it stands for (more than one when the capture fell behind).
 
 #include <windows.h>
 #include <d3d11.h>
@@ -21,6 +23,14 @@
 namespace {
 
 struct Find { DWORD pid; HWND best; LONG area; const char *cls; };
+
+// [rc4l] Whether the window at screen point (x, y) belongs to some other top-level window than `own`.
+int Covered(HWND own, int x, int y)
+{
+	POINT p = { x, y };
+	HWND at = WindowFromPoint(p);
+	return at != NULL && GetAncestor(at, GA_ROOT) != own ? 1 : 0;
+}
 
 BOOL CALLBACK EnumProc(HWND h, LPARAM lp)
 {
@@ -98,16 +108,16 @@ int main(int argc, char **argv)
 	ID3D11Texture2D *staging = NULL;
 	dev->CreateTexture2D(&sd, NULL, &staging);
 
-	printf("{\"refreshHz\":%lu,\"patch\":[%d,%d,%d,%d]}\n", dm.dmDisplayFrequency, px, py, pw, ph);
-	fflush(stdout);
-
 	LARGE_INTEGER freq, start, now;
 	QueryPerformanceFrequency(&freq);
 	QueryPerformanceCounter(&start);
+	// [rc4l] As std::chrono::steady_clock counts it, so an engine's own timestamps line up with these.
+	const long long startUs = (start.QuadPart / freq.QuadPart) * 1000000 + (start.QuadPart % freq.QuadPart) * 1000000 / freq.QuadPart;
+	const int coveredAtStart = Covered(f.best, px + pw / 2, py + ph / 2);
 	const double seconds = atof(argv[2]);
 	FILE *csv = fopen(argv[3], "w");
 	if (csv == NULL) { fprintf(stderr, "cannot write %s\n", argv[3]); return 1; }
-	fprintf(csv, "present_us,changed\n");
+	fprintf(csv, "present_us,changed,frames\n");
 	uint64_t last = 0;
 	const int sx = px - od.DesktopCoordinates.left, sy = py - od.DesktopCoordinates.top;
 	for (;;)
@@ -128,7 +138,8 @@ int main(int argc, char **argv)
 			D3D11_MAPPED_SUBRESOURCE m;
 			uint64_t hash = last;
 			if (SUCCEEDED(ctx->Map(staging, 0, D3D11_MAP_READ, 0, &m))) { hash = PatchHash(m, pw, ph); ctx->Unmap(staging, 0); }
-			fprintf(csv, "%lld,%d\n", (long long)((fi.LastPresentTime.QuadPart - start.QuadPart) * 1000000 / freq.QuadPart), hash != last ? 1 : 0);
+			fprintf(csv, "%lld,%d,%u\n", (long long)((fi.LastPresentTime.QuadPart - start.QuadPart) * 1000000 / freq.QuadPart), hash != last ? 1 : 0,
+				fi.AccumulatedFrames);
 			last = hash;
 			tex->Release();
 		}
@@ -136,5 +147,8 @@ int main(int argc, char **argv)
 		dup->ReleaseFrame();
 	}
 	fclose(csv);
+	const int covered = coveredAtStart | Covered(f.best, px + pw / 2, py + ph / 2);
+	printf("{\"refreshHz\":%lu,\"patch\":[%d,%d,%d,%d],\"startUs\":%lld,\"covered\":%d}\n", dm.dmDisplayFrequency, px, py, pw, ph, startUs, covered);
+	fflush(stdout);
 	return 0;
 }

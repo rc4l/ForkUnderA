@@ -49,7 +49,9 @@ For judging what a player sees rather than what the engine counts (queue #43; `f
 screen itself):
 
 - `fua_viewtrace [frames] [file.csv]` (`viewtrace`, `computation/viewtrace_compute`): the angle each
-  frame's main view was drawn with, whether a tic ran, and the gaps and lumps in the turning.
+  frame's main view was drawn with, whether a tic ran, and the gaps and lumps in the turning; the file has
+  each frame's phases and when its view was set up and its present began on the steady clock, which
+  `fuactl screen` lines up against the compositor's frames. `fua_viewtrace end` writes it early.
 - `fua_debug_orbit <degrees>` and `fua_debug_orbit_period` (`debugorbit`, `computation/debugorbit_compute`):
   the aim swept in a circle every frame through the mouse's own path, for repeatable motion.
 - `fua_debug_ticstall_us` and `fua_debug_framestall_us` (`framestall`, `computation/framestall_compute`):

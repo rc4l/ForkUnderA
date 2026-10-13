@@ -20,6 +20,18 @@ bool ComputeStreamLive(unsigned framesIn, int64_t lastFrameUs, int64_t nowUs)
 	return framesIn > 0 && nowUs - lastFrameUs <= 1000000;
 }
 
+int ComputeReplayPixelBytes(int format)
+{
+	return format == kReplayRGB24 ? 3 : 4;
+}
+
+void ComputeRowBand(int rows, int bands, int band, int &first, int &last)
+{
+	if (bands < 1) bands = 1;
+	first = (int)((long long)rows * band / bands);
+	last = (int)((long long)rows * (band + 1) / bands);
+}
+
 ScaledDims ComputeScaledDims(int srcW, int srcH, int maxH)
 {
 	int w = srcW;

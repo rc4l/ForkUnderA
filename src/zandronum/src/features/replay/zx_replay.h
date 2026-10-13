@@ -6,6 +6,8 @@
 #ifndef ZX_REPLAY_H
 #define ZX_REPLAY_H
 
+#include "features/replay/computation/replay_compute.h"   // [rc4l] ReplayPixels
+
 namespace zx {
 namespace replay {
 
@@ -13,9 +15,9 @@ namespace replay {
 // configured capture rate. Also drives lazy start/stop and flushes any pending user messages.
 bool WantsFrame();
 
-// Hand the just-rendered frame to the capture pipeline. rgbTopRow points at the top row of tightly
-// packed RGB24; pitch may be negative (OpenGL bottom-up readback). Copies out immediately.
-void SubmitFrame(const unsigned char *rgbTopRow, int w, int h, int pitch);
+// Hand the just-rendered frame to the capture pipeline. topRow points at the top row of pixels in
+// `format` (a ReplayPixels); pitch may be negative (OpenGL bottom-up readback). Copies out immediately.
+void SubmitFrame(const unsigned char *topRow, int w, int h, int pitch, int format = kReplayRGB24);
 
 // [rc4l] The same, from the Vulkan backend's swapchain, recorded as its OWN stream.
 //
@@ -27,7 +29,7 @@ void SubmitFrame(const unsigned char *rgbTopRow, int w, int h, int pitch);
 // does not work: WantsFrame reports a frame due and SubmitFrame consumes it, so whichever renderer
 // presents first takes it and the other captures nothing.
 bool WantsFrameVulkan();
-void SubmitFrameVulkan(const unsigned char *rgbTopRow, int w, int h, int pitch);
+void SubmitFrameVulkan(const unsigned char *topRow, int w, int h, int pitch, int format);
 
 // Experimental audio capture (cl_fua_replay_audio). AudioCaptureEnabled() is checked once by the
 // OpenAL backend at startup to decide whether to run in loopback mode; SubmitAudio() receives the

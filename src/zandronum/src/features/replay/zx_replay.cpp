@@ -62,6 +62,7 @@ CVAR(Bool, cl_fua_replay_audio,     false, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
 
 #include "features/replay/zx_replay.h"
 #include "features/replay/zx_replay_encoder.h"
+#include "features/jobs/jobs.h"   // [rc4l] the frame's rows copied out on the job pool
 #include "i_system.h"   // atterm(): clean-shutdown hook. Join the capture worker before the process
                         // exits, else the global std::thread is destroyed while joinable ->
                         // std::terminate (and an in-flight clip mux is truncated).
@@ -70,8 +71,11 @@ namespace {
 
 void ReplayAtTerm(); // joins the worker on engine shutdown (defined below)
 
+const size_t kSpareFrames = 3;   // [rc4l] buffers kept for reuse, beside the up to 8 queued
+const int kCopyBands = 16;       // [rc4l] row bands a frame is copied in, a few to each of the job pool's lanes
 
-struct RawFrame  { std::vector<unsigned char> rgb; int w; int h; int64_t tUs; };
+
+struct RawFrame  { std::vector<unsigned char> pixels; int w; int h; int format; int64_t tUs; };
 struct AudioChunk { std::vector<float> pcm; int rate; int64_t tUs; };  // interleaved stereo
 
 // [rc4l] One independent recorder per RENDERER, so a side-by-side session records both.
@@ -89,6 +93,8 @@ struct Stream
 	std::mutex              mtx;
 	std::condition_variable cv;
 	std::deque<RawFrame>    queue;
+	// [rc4l] Buffers the worker is done with, kept for the next frames: a fresh 4-15 MB buffer faults every page in as the copy first touches it.
+	std::vector<std::vector<unsigned char> > spare;
 	std::string             saveReq;
 	bool                    stop = false;
 	bool                    running = false;   // game-thread view of worker liveness
@@ -262,7 +268,9 @@ void WorkerLoopInner(Stream *st)
 			}
 			enc.SetWindow(cl_fua_replay_duration);
 			if (inited)
-				enc.AddFrameTopDownRGB(frame.rgb.data(), frame.w, frame.h, frame.w * 3, frame.tUs);
+				enc.AddFrameTopDown(frame.pixels.data(), frame.w, frame.h, frame.w * zx::ComputeReplayPixelBytes(frame.format), frame.format, frame.tUs);
+			std::lock_guard<std::mutex> lk(st->mtx);
+			if (st->spare.size() < kSpareFrames) st->spare.push_back(std::move(frame.pixels));
 		}
 
 		if (!saveReq.empty())
@@ -340,18 +348,33 @@ void StopCapture()
 //
 // The Vulkan stream starts on its FIRST frame rather than alongside the GL one, so a session with no
 // Vulkan window never spins up a second encoder thread for nothing.
-void PushFrame(Stream *st, const unsigned char *rgbTopRow, int w, int h, int pitch)
+void PushFrame(Stream *st, const unsigned char *topRow, int w, int h, int pitch, int format)
 {
-	if (rgbTopRow == nullptr || w <= 0 || h <= 0) return;
+	if (topRow == nullptr || w <= 0 || h <= 0) return;
 	if (!st->running) StartStream(st);
 
 	RawFrame f;
-	f.w = w; f.h = h; f.tUs = NowUs();
+	f.w = w; f.h = h; f.format = format; f.tUs = NowUs();
 	st->lastFrameUs = f.tUs;
-	f.rgb.resize((size_t)w * h * 3);
+	{
+		std::lock_guard<std::mutex> lk(st->mtx);
+		if (!st->spare.empty()) { f.pixels.swap(st->spare.back()); st->spare.pop_back(); }
+	}
+	const size_t row = (size_t)w * zx::ComputeReplayPixelBytes(format);
+	f.pixels.resize(row * h);
 	// Copy to a top-down tightly-packed buffer (pitch may be negative for GL bottom-up readback).
-	for (int y = 0; y < h; ++y)
-		std::memcpy(f.rgb.data() + (size_t)y * w * 3, rgbTopRow + (ptrdiff_t)y * pitch, (size_t)w * 3);
+	// [rc4l] In bands on the job pool, so a large window's frame is not one thread's copy on the game thread's frame.
+	struct Copy
+	{
+		unsigned char *dst; const unsigned char *src; size_t row; int h, pitch;
+		void operator()(int band, int) const
+		{
+			int first, last;
+			zx::ComputeRowBand(h, kCopyBands, band, first, last);
+			for (int y = first; y < last; ++y) std::memcpy(dst + (size_t)y * row, src + (ptrdiff_t)y * pitch, row);
+		}
+	} copy = { f.pixels.data(), topRow, row, h, pitch };
+	zx::jobs::Pool().ParallelFor(kCopyBands, copy);
 
 	{
 		std::lock_guard<std::mutex> lk(st->mtx);
@@ -402,12 +425,12 @@ bool WantsFrame()
 	return zx::ComputeFrameDue(g_lastCaptureUs, NowUs(), fps);
 }
 
-void SubmitFrame(const unsigned char *rgbTopRow, int w, int h, int pitch)
+void SubmitFrame(const unsigned char *topRow, int w, int h, int pitch, int format)
 {
 	if (!g_streams[STREAM_GL].running) return;
 	g_lastCaptureUs = NowUs();
 	g_streams[STREAM_GL].framesIn++;
-	PushFrame(&g_streams[STREAM_GL], rgbTopRow, w, h, pitch);
+	PushFrame(&g_streams[STREAM_GL], topRow, w, h, pitch, format);
 }
 
 bool WantsFrameVulkan()
@@ -419,12 +442,12 @@ bool WantsFrameVulkan()
 	return zx::ComputeFrameDue(g_lastCaptureUsVk, NowUs(), fps);
 }
 
-void SubmitFrameVulkan(const unsigned char *rgbTopRow, int w, int h, int pitch)
+void SubmitFrameVulkan(const unsigned char *topRow, int w, int h, int pitch, int format)
 {
 	if (!cl_fua_replay) return;
 	g_lastCaptureUsVk = NowUs();
 	g_streams[STREAM_VK].framesIn++;
-	PushFrame(&g_streams[STREAM_VK], rgbTopRow, w, h, pitch);
+	PushFrame(&g_streams[STREAM_VK], topRow, w, h, pitch, format);
 }
 
 bool AudioCaptureEnabled()

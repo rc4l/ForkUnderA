@@ -42,15 +42,16 @@ void Report()
 		FILE *f = fopen(g_csv.GetChars(), "w");
 		if (f != NULL)
 		{
-			fprintf(f, "us,deg,tic,local");
+			fprintf(f, "us,deg,tic,local,view_at,present_at");
 			for (int p = 0; p < zx::framephase::kPhaseCount; p++) fprintf(f, ",%s", zx::framephase::ComputePhaseName(p));
 			fprintf(f, "\n");
 			for (size_t i = 1; i < g_trace.size(); i++)
 			{
-				fprintf(f, "%lld,%.4f,%d,%u", g_trace[i].us - g_trace[0].us, ComputeTurnDegrees(g_trace[i - 1].angle, g_trace[i].angle),
-					g_trace[i].gametic != g_trace[i - 1].gametic ? 1 : 0, g_trace[i].localAngle);
-				// [rc4l] Sample i+1 carries frame i's phases, recorded at the boundary that closed it.
+				fprintf(f, "%lld,%.4f,%d,%u,%lld", g_trace[i].us - g_trace[0].us, ComputeTurnDegrees(g_trace[i - 1].angle, g_trace[i].angle),
+					g_trace[i].gametic != g_trace[i - 1].gametic ? 1 : 0, g_trace[i].localAngle, g_trace[i].us);
+				// [rc4l] Sample i+1 carries frame i's phases, recorded at the boundary that closed it; its present is on the absolute clock, for lining up with a screen capture.
 				const float *ph = i + 1 < g_trace.size() ? g_trace[i + 1].phases : NULL;
+				fprintf(f, ",%lld", i + 1 < g_trace.size() ? g_trace[i + 1].presentAt : 0LL);
 				for (int p = 0; p < zx::framephase::kPhaseCount; p++) fprintf(f, ",%.0f", ph != NULL ? ph[p] : 0.f);
 				fprintf(f, "\n");
 			}
@@ -82,11 +83,19 @@ void NoteMainView()
 	s.localAngle = (unsigned)LocalViewAngle;
 	s.gametic = gametic;
 	const float *phases = zx::framephase::LastFramePhases();
+	s.presentAt = zx::framephase::LastFramePhaseStarts()[zx::framephase::kPhasePresent];
 	for (int p = 0; p < 8; p++) s.phases[p] = p < zx::framephase::kPhaseCount ? phases[p] : 0.f;
 	g_trace.push_back(s);
 	if ((int)g_trace.size() < g_want) return;
 	Report();
 	g_want = 0;
+}
+
+void EndViewTrace()
+{
+	if (g_want <= 0) return;
+	g_want = 0;
+	if (g_trace.size() >= 2) Report();
 }
 
 void ArmViewTrace(int frames, const char *csv)
@@ -100,9 +109,10 @@ void ArmViewTrace(int frames, const char *csv)
 
 }} // namespace zx::frame
 
-// [rc4l] fua_viewtrace [frames] [file.csv]: record the next frames' main view (default 1000, 16 to 20000), say whether it turned between tics or only at them, and write every frame to the file when one is named.
+// [rc4l] fua_viewtrace [frames] [file.csv]: record the next frames' main view (default 1000, 16 to 20000), say whether it turned between tics or only at them, and write every frame to the file when one is named; `fua_viewtrace end` reports early.
 CCMD( fua_viewtrace )
 {
+	if (argv.argc() > 1 && stricmp(argv[1], "end") == 0) { zx::frame::EndViewTrace(); return; }
 	const int n = argv.argc() > 1 ? atoi(argv[1]) : 1000;
 	zx::frame::ArmViewTrace(n < 16 ? 16 : n > 20000 ? 20000 : n, argv.argc() > 2 ? argv[2] : NULL);
 }

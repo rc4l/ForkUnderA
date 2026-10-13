@@ -12,6 +12,7 @@ namespace zx { namespace frame {
 struct ViewTraceSample
 {
 	long long us;
+	long long presentAt;   // [rc4l] when the frame before this one began presenting, on the same clock as `us`, 0 for not at all
 	float phases[8];       // [rc4l] the frame before this one's microseconds per phase (features/framephase)
 	unsigned angle;        // [rc4l] viewangle, BAM
 	unsigned localAngle;   // [rc4l] LocalViewAngle, BAM
