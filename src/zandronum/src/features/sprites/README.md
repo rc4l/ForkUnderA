@@ -15,6 +15,17 @@ Night vision's inverted monsters and items take GL's `TM_INVERSE` (`ComputeTextu
 `r_usecolorblending` blends an opaque fullbright additive sprite by its own colour (`ComputeColorBlending`,
 scenario `colorblend`), as `gl_GetRenderStyle` does.
 
+The rest of `GLSprite::Draw`'s translucent setup is `ComputeSpriteDrawLook`, which every sprite, model and
+GL's copy for the check shade through (`CaptureSpriteShading`): a fuzzy actor under `r_fuzztype 0` is GL's
+shadow, grey 0.2 at alpha 0.44 thinned by coloured fog over its distance, and additive and shadow styles fog
+toward black. Every op `gl_GetRenderStyle` has no equation for (the shadow, a fuzzy decal's raw fuzz) blends
+with its `DST_COLOR` / `ONE_MINUS_SRC_ALPHA` fallback, the projected decals' fuzz pass included. Before this a
+spectre drew solid at the default fuzz type. A model whose actor is not in exactly `STYLE_Normal` loses the
+faces `gl_RenderModel` culls (clockwise front faces, counter-clockwise on the HUD; `ComputeModelCull`, tested
+against `gl_FrontFacing` in the shader), and a blended HUD model writes depth as GL's HUD step does. GL does
+subtract a subtract-style model: `Draw` turns its style to fuzz only after setting the subtract blend.
+Scenarios `shadowstyles` and `hudmodelcull`.
+
 Models too (`modelbuild.cpp`): the actor's light and style as a single-band sprite's, the pose from
 `computation/modelpose_compute` (`ComputeModelMatrix`, `gl_RenderModel`'s VSMatrix calls; the momentum,
 inherited, spin, align and roll-against angles; `ComputeModelInter`, the frame blend), and each model's

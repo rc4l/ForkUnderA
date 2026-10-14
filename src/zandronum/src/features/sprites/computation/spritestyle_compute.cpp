@@ -4,6 +4,7 @@
 #include "features/sprites/computation/spritestyle_compute.h"
 
 #include <float.h>
+#include <math.h>
 
 namespace zx { namespace sprites {
 
@@ -103,11 +104,27 @@ WeaponStyleOut ComputeWeaponStyle(const SpriteStyle &style, bool fuzzStyle, floa
 
 int ComputeSpriteBlendMode(int blendOp, int destAlpha, float trans)
 {
-	if (blendOp == kOpShadow) return kBlendFuzz;
+	if (blendOp >= kOpFuzz) return kBlendFuzz;
 	if (blendOp == kOpRevSub) return kBlendRevSubtract;
 	if (blendOp == kOpSub) return kBlendSubtract;
 	if (blendOp == kOpAdd && destAlpha == kAlphaOne) return kBlendAdditive;
 	return trans < 1.f - 1.f / 256.f ? kBlendTranslucent : kBlendOpaque;
+}
+
+int ComputeModelCull(bool normalStyle, bool hud)
+{
+	if (normalStyle) return kCullNone;
+	return hud ? kCullFrontCounterClockwise : kCullFrontClockwise;
+}
+
+SpriteDrawLook ComputeSpriteDrawLook(const SpriteStyle &style, float trans, bool blackFog, int fadeAlpha, float dist)
+{
+	SpriteDrawLook out;
+	out.shadow = style.blendOp == kOpShadow;
+	out.additiveFog = out.shadow || (style.blendOp == kOpAdd && style.destAlpha == kAlphaOne) || (style.flags & kFlagFadeToBlack) != 0;
+	// [rc4l] The factor was found by trial in GL and is scale dependent, so it is GL's to the digit.
+	out.alpha = !out.shadow ? trans : blackFog ? 0.44f : 0.44f * (0.05f + expf(-fadeAlpha * dist / 62500.f));
+	return out;
 }
 
 bool ComputeColorBlending(const SpriteStyle &style, float trans, const ColorBlendIn &in)

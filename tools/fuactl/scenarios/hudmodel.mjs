@@ -7,7 +7,7 @@ import { encodePNG } from "../src/pngcore.mjs";
 import { runScenarioIfMain } from "../src/template.mjs";
 
 // [rc4l] A plain room and a MODELDEF that puts a 16-unit voxel box, skinned plain green, on every frame of the pistol, 64 units ahead of the eye and below it.
-export function buildHudModelPk3({ offset = "0 -64 -24", scale = "1.0 1.0 1.0" } = {}) {
+export function buildHudModelPk3({ offset = "0 -64 -24", scale = "1.0 1.0 1.0", voxel = kvxBox(16, 16, 16) } = {}) {
   const m = new UdmfMap();
   m.room(0, 0, 512, 512, { heightfloor: 0, heightceiling: 192, texturefloor: "FLOOR4_8", textureceiling: "CEIL3_5", lightlevel: 192 },
     () => ({ side: { texturemiddle: "STARTAN2" } }));
@@ -19,7 +19,7 @@ export function buildHudModelPk3({ offset = "0 -64 -24", scale = "1.0 1.0 1.0" }
   return pk3([
     { name: "maps/MAP01.wad", data: wad(mapLumps("MAP01", m)) },
     { name: "modeldef.txt", data: modeldef },
-    { name: "models/hudbox.kvx", data: kvxBox(16, 16, 16) },
+    { name: "models/hudbox.kvx", data: voxel },
     { name: "models/hudskin.png", data: encodePNG(16, 16, skin) },
   ]);
 }

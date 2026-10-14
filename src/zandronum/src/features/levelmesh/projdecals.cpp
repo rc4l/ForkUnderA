@@ -4,6 +4,7 @@
 #include "features/levelmesh/projdecals.h"
 #include "features/levelmesh/computation/decalproject_compute.h"
 #include "features/levelmesh/computation/packedcolor_compute.h"
+#include "features/sprites/computation/spritestyle_compute.h"   // [rc4l] ComputeSpriteBlendMode
 
 #include "r_defs.h"
 #include "p_local.h"                 // P_PointInSector, for the plane a mark rides
@@ -119,7 +120,7 @@ struct ProjDecal
 	int          translation;
 	unsigned int alphaColor;
 	bool         redToAlpha;
-	bool         additive;
+	int          blend;
 	bool         fullbright;
 
 	// [rc4l] See GpuDecal: the plane this mark rides, and its height above it.
@@ -265,7 +266,7 @@ void BuildProjection(const MarkStyle &style, DBaseDecal *owner, int fadeStart, i
 	decal.translation = style.translation;
 	decal.alphaColor = style.alphaColor;
 	decal.redToAlpha = !!(style.style.Flags & STYLEF_RedIsAlpha);
-	decal.additive = (style.style.BlendOp == STYLEOP_Add && style.style.DestAlpha == STYLEALPHA_One);
+	decal.blend = zx::sprites::ComputeSpriteBlendMode(style.style.BlendOp, style.style.DestAlpha, style.alpha);
 	decal.fullbright = !!(style.renderFlags & RF_FULLBRIGHT);
 
 	if (fua_projdecal_debug)
@@ -543,7 +544,7 @@ int GetProjectedDecalsGpu(const GpuDecal **out)
 		// white; multiplied into the tint, a green glow times (mask, 0, 0) is black.
 		g.redToAlpha = d.redToAlpha;
 		g.translation = d.translation;
-		g.additive = d.additive;
+		g.blend = d.blend;
 		g.fullbright = d.fullbright;
 		if (d.redToAlpha)
 		{

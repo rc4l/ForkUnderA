@@ -13,7 +13,8 @@
 #ifndef ZX_LEVELMESH_MODELMESH_H
 #define ZX_LEVELMESH_MODELMESH_H
 
-#include "features/levelmesh/staticmesh.h"   // [rc4l] MeshPiece
+#include "features/levelmesh/staticmesh.h"
+#include "features/sprites/computation/spritestyle_compute.h"   // [rc4l] SpriteDrawLook   // [rc4l] MeshPiece
 
 class FMaterial;
 struct FModelGeometry;
@@ -21,9 +22,9 @@ struct FColormap;
 
 namespace zx { namespace levelmesh {
 
-// [rc4l] The look a model's surfaces share, the same for GL's capture and the derived model: light, colour, the actor's dynamic light, translucency and sort point.
+// [rc4l] The look a model's surfaces share, the same for GL's capture and the derived model: light, colour, the actor's dynamic light, Draw's translucent setup and sort point.
 void ModelPieceLook(int lightLevel, int extraLight, const FColormap &cm, bool fullbright, const float dyn[3], unsigned thingColor,
-	float alpha, int blendMode, float x, float y, float z, MeshPiece &mp);
+	const zx::sprites::SpriteDrawLook &look, int blendMode, float x, float y, float z, MeshPiece &mp);
 
 // [rc4l] What becomes of a model's surfaces: drawn, drawn and noted as derived for fua_sprite_check, or GL's, only noted for it.
 enum ModelCaptureKind { kModelDraw, kModelChecked, kModelFromGL };

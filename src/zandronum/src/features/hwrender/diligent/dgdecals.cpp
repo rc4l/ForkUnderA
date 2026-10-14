@@ -17,6 +17,7 @@
 #include "features/hwrender/diligent/dgshared.h"
 #include "features/hwrender/computation/backendview_compute.h"   // [rc4l] ComputeInvertMatrix4
 #include "features/levelmesh/projdecals.h"
+#include "features/levelmesh/computation/decalproject_compute.h"   // [rc4l] ComputeDecalPass
 
 #include "r_defs.h"                  // sector_t
 #include "r_state.h"                 // sectors, numsectors
@@ -371,10 +372,9 @@ struct DeferredDecalInstance
 	float anchor[4];
 };
 
-static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_ddPSO;      // ordinary blend
-static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_ddAddPSO;   // additive
-static Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding> g_ddSRB;
-static Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding> g_ddAddSRB;
+using zx::levelmesh::kDecalPasses;
+static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_ddPSO[kDecalPasses];   // [rc4l] one per ComputeDecalPass draw
+static Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding> g_ddSRB[kDecalPasses];
 static Diligent::RefCntAutoPtr<Diligent::IBuffer> g_ddInstBuf;
 static Diligent::IBufferView *g_ddInstSRV = NULL;
 // [rc4l] One record per sector: (floor height, ceiling height, unused, unused).
@@ -398,15 +398,14 @@ void GetDeferredDecalStats(int &boxes, int &draws, int &textures, const char **b
 
 void ReleaseDecalPipelines()
 {
-	g_ddSRB.Release(); g_ddAddSRB.Release();
-	g_ddPSO.Release(); g_ddAddPSO.Release();
+	for (int p = 0; p < kDecalPasses; p++) { g_ddSRB[p].Release(); g_ddPSO[p].Release(); }
 }
 
 static bool EnsureDeferredDecalPass()
 {
 	// [rc4l] The pipeline binds the plane table, so a level with more sectors than it holds makes both again before anything is written past its end.
-	if (g_ddPSO && g_ddPlaneCapacity < numsectors) ReleaseDecalPipelines();
-	if (g_ddPSO) return true;
+	if (g_ddPSO[0] && g_ddPlaneCapacity < numsectors) ReleaseDecalPipelines();
+	if (g_ddPSO[0]) return true;
 	auto *dev = GetDevice();
 	auto *swap = GetSwapChain();
 	if (!dev || !swap) return false;
@@ -479,11 +478,11 @@ static bool EnsureDeferredDecalPass()
 		{ Diligent::SHADER_TYPE_PIXEL, "uSceneNormal", depthSamp },
 	};
 
-	for (int pass = 0; pass < 2; pass++)
+	static const char *const kNames[kDecalPasses] = { "fua deferred decal PSO", "fua deferred decal PSO fuzz", "fua deferred decal PSO additive" };
+	for (int pass = 0; pass < kDecalPasses; pass++)
 	{
-		const bool additive = (pass == 1);
 		Diligent::GraphicsPipelineStateCreateInfo pci;
-		pci.PSODesc.Name = additive ? "fua deferred decal PSO additive" : "fua deferred decal PSO";
+		pci.PSODesc.Name = kNames[pass];
 		pci.PSODesc.PipelineType = Diligent::PIPELINE_TYPE_GRAPHICS;
 		pci.GraphicsPipeline.NumRenderTargets = 1;
 		pci.GraphicsPipeline.RTVFormats[0] = swap->GetDesc().ColorBufferFormat;
@@ -504,8 +503,9 @@ static bool EnsureDeferredDecalPass()
 		{
 			auto &rt = pci.GraphicsPipeline.BlendDesc.RenderTargets[0];
 			rt.BlendEnable = true;
-			rt.SrcBlend  = Diligent::BLEND_FACTOR_SRC_ALPHA;
-			rt.DestBlend = additive ? Diligent::BLEND_FACTOR_ONE : Diligent::BLEND_FACTOR_INV_SRC_ALPHA;
+			// [rc4l] A fuzzy mark is GL's DST_COLOR fallback, as a fuzzy decal on a wall is.
+			rt.SrcBlend  = pass == zx::levelmesh::kDecalPassFuzz ? Diligent::BLEND_FACTOR_DEST_COLOR : Diligent::BLEND_FACTOR_SRC_ALPHA;
+			rt.DestBlend = pass == zx::levelmesh::kDecalPassAdditive ? Diligent::BLEND_FACTOR_ONE : Diligent::BLEND_FACTOR_INV_SRC_ALPHA;
 			rt.BlendOp = Diligent::BLEND_OPERATION_ADD;
 			rt.SrcBlendAlpha  = Diligent::BLEND_FACTOR_ONE;
 			rt.DestBlendAlpha = Diligent::BLEND_FACTOR_INV_SRC_ALPHA;
@@ -531,12 +531,10 @@ static bool EnsureDeferredDecalPass()
 			if (auto *v = made->GetStaticVariableByName(stage, "Decals")) v->Set(g_ddInstSRV);
 			if (auto *v = made->GetStaticVariableByName(stage, "Planes")) v->Set(g_ddPlaneSRV);
 		}
-		if (additive) g_ddAddPSO = made; else g_ddPSO = made;
+		g_ddPSO[pass] = made;
+		made->CreateShaderResourceBinding(&g_ddSRB[pass], true);
+		if (!g_ddSRB[pass]) { g_ddBail = "resource binding creation failed"; return false; }
 	}
-
-	g_ddPSO->CreateShaderResourceBinding(&g_ddSRB, true);
-	g_ddAddPSO->CreateShaderResourceBinding(&g_ddAddSRB, true);
-	if (!g_ddSRB || !g_ddAddSRB) { g_ddBail = "resource binding creation failed"; return false; }
 
 	return true;
 }
@@ -584,10 +582,9 @@ void DrawDeferredDecals(Diligent::IDeviceContext *ctx)
 	static TArray<const void *> mats;
 	static TArray<int> matTrans;
 	static TArray<Diligent::IDeviceObject *> views;
-	static TArray<DeferredDecalInstance> instAlpha, instAdd;
-	static TArray<const void *> matAlpha, matAdd, matOf;
-	mats.Clear(); matTrans.Clear(); views.Clear(); instAlpha.Clear(); instAdd.Clear();
-	matAlpha.Clear(); matAdd.Clear(); matOf.Clear();
+	static TArray<DeferredDecalInstance> inst[kDecalPasses];
+	mats.Clear(); matTrans.Clear(); views.Clear();
+	for (int p = 0; p < kDecalPasses; p++) inst[p].Clear();
 
 	Diligent::IDeviceObject *fallback = GetMaterialSRV(NULL, 0);
 	for (int i = 0; i < n; i++)
@@ -636,14 +633,14 @@ void DrawDeferredDecals(Diligent::IDeviceContext *ctx)
 				{
 					zx::materials::MaterialInfo i2;
 					const bool known = zx::materials::DescribeMaterial(d.material, i2);
-					Printf("decal tex %s %dx%d box %.0fx%.0f near %.0f far %.0f: slot %u, redToAlpha %d, additive %d, "
+					Printf("decal tex %s %dx%d box %.0fx%.0f near %.0f far %.0f: slot %u, redToAlpha %d, blend %d, "
 						"rgba %.2f %.2f %.2f %.2f, basePalette %d, canvas %d, warp %d, complex %d, "
 						"translation %d%s\n",
 						zx::materials::MaterialName(d.material),
 						known ? i2.width : -1,
 						known ? i2.height : -1,
 						d.halfW, d.halfH, d.near_, d.far_,
-						mats.Size(), d.redToAlpha ? 1 : 0, d.additive ? 1 : 0,
+						mats.Size(), d.redToAlpha ? 1 : 0, d.blend,
 						d.r, d.g, d.b, d.a,
 						(known && i2.basePalette) ? 1 : 0,
 						(known && i2.canvas) ? 1 : 0,
@@ -658,26 +655,25 @@ void DrawDeferredDecals(Diligent::IDeviceContext *ctx)
 			}
 		}
 
-		DeferredDecalInstance inst;
-		inst.centre[0] = d.centre[0]; inst.centre[1] = d.centre[1]; inst.centre[2] = d.centre[2];
-		inst.centre[3] = (float)slot;
-		inst.axisU[0] = d.right[0]; inst.axisU[1] = d.right[1]; inst.axisU[2] = d.right[2]; inst.axisU[3] = 0.f;
-		inst.axisV[0] = d.up[0];    inst.axisV[1] = d.up[1];    inst.axisV[2] = d.up[2];    inst.axisV[3] = 0.f;
-		inst.axisN[0] = d.axis[0];  inst.axisN[1] = d.axis[1];  inst.axisN[2] = d.axis[2];  inst.axisN[3] = 0.f;
-		inst.color[0] = d.r; inst.color[1] = d.g; inst.color[2] = d.b; inst.color[3] = d.a;
-		inst.params[0] = d.near_;
-		inst.params[1] = d.far_;
+		DeferredDecalInstance mark;
+		mark.centre[0] = d.centre[0]; mark.centre[1] = d.centre[1]; mark.centre[2] = d.centre[2];
+		mark.centre[3] = (float)slot;
+		mark.axisU[0] = d.right[0]; mark.axisU[1] = d.right[1]; mark.axisU[2] = d.right[2]; mark.axisU[3] = 0.f;
+		mark.axisV[0] = d.up[0];    mark.axisV[1] = d.up[1];    mark.axisV[2] = d.up[2];    mark.axisV[3] = 0.f;
+		mark.axisN[0] = d.axis[0];  mark.axisN[1] = d.axis[1];  mark.axisN[2] = d.axis[2];  mark.axisN[3] = 0.f;
+		mark.color[0] = d.r; mark.color[1] = d.g; mark.color[2] = d.b; mark.color[3] = d.a;
+		mark.params[0] = d.near_;
+		mark.params[1] = d.far_;
 		// Where the run-out ends: the picture's own corner radius plus the box's reach behind it.
 		// Inside the corner radius nothing fades, which is stated in the shader.
-		inst.params[2] = sqrtf(d.halfW*d.halfW + d.halfH*d.halfH) + d.near_;
-		inst.params[3] = d.redToAlpha ? 1.f : 0.f;
+		mark.params[2] = sqrtf(d.halfW*d.halfW + d.halfH*d.halfH) + d.near_;
+		mark.params[3] = d.redToAlpha ? 1.f : 0.f;
 		// [rc4l] The plane this mark rides, straight from the record that made it.
-		inst.anchor[0] = (float)d.anchorSector;
-		inst.anchor[1] = (float)d.anchorPlane;
-		inst.anchor[2] = d.anchorOffset;
-		inst.anchor[3] = 0.f;
-		if (d.additive) { instAdd.Push(inst); matAdd.Push(d.material); }
-		else { instAlpha.Push(inst); matAlpha.Push(d.material); }
+		mark.anchor[0] = (float)d.anchorSector;
+		mark.anchor[1] = (float)d.anchorPlane;
+		mark.anchor[2] = d.anchorOffset;
+		mark.anchor[3] = 0.f;
+		inst[zx::levelmesh::ComputeDecalPass(d.blend)].Push(mark);
 	}
 
 	if (fua_dg_decaldebug > 0)
@@ -688,20 +684,17 @@ void DrawDeferredDecals(Diligent::IDeviceContext *ctx)
 		// wrong, or the mark is reading a slot nothing was put in, which is the white padding. The
 		// range says which, and it is two numbers.
 		int lo = 1 << 30, hi = -1;
-		for (unsigned i = 0; i < instAlpha.Size(); i++)
-		{
-			const int s = (int)instAlpha[i].centre[3];
-			if (s < lo) lo = s;  if (s > hi) hi = s;
-		}
-		for (unsigned i = 0; i < instAdd.Size(); i++)
-		{
-			const int s = (int)instAdd[i].centre[3];
-			if (s < lo) lo = s;  if (s > hi) hi = s;
-		}
+		for (int p = 0; p < kDecalPasses; p++)
+			for (unsigned i = 0; i < inst[p].Size(); i++)
+			{
+				const int s = (int)inst[p][i].centre[3];
+				if (s < lo) lo = s;  if (s > hi) hi = s;
+			}
 		Printf("decal slots used %d..%d, %u filled of %d\n", lo, hi, mats.Size(), FUA_DECAL_TEXTURES);
 	}
 
-	const unsigned total = instAlpha.Size() + instAdd.Size();
+	unsigned total = 0;
+	for (int p = 0; p < kDecalPasses; p++) total += inst[p].Size();
 	if (total == 0) { g_ddBail = "every mark filtered out (no texture, or faded to nothing)"; return; }
 	g_ddBoxes = (int)total;
 	g_ddTextures = (int)mats.Size();
@@ -709,14 +702,19 @@ void DrawDeferredDecals(Diligent::IDeviceContext *ctx)
 	// Pad the array: an unbound slot in a sampler array reads as undefined, and the shader may index
 	// any of them from any instance in the draw.
 
-	// [rc4l] Ordinary blend first, additive second. Additive only ever brightens, so nothing can
+	// [rc4l] In ComputeDecalPass's order, additive last: it only ever brightens, so nothing can
 	// meaningfully be drawn over it and it can very easily be drawn under something and lost -- a
 	// scorch and the glow that belongs on top of it land in exactly the same place.
 	static TArray<DeferredDecalInstance> all;
 	all.Clear();
-	for (unsigned i = 0; i < instAlpha.Size(); i++) { all.Push(instAlpha[i]); matOf.Push(matAlpha[i]); }
-	for (unsigned i = 0; i < instAdd.Size(); i++) { all.Push(instAdd[i]); matOf.Push(matAdd[i]); }
+	unsigned passFirst[kDecalPasses + 1];
+	for (int p = 0; p < kDecalPasses; p++)
+	{
+		passFirst[p] = all.Size();
+		for (unsigned i = 0; i < inst[p].Size(); i++) all.Push(inst[p][i]);
+	}
 	if (all.Size() > g_ddCapacity) all.Resize(g_ddCapacity);
+	passFirst[kDecalPasses] = all.Size();
 	// [rc4l] Refresh the plane heights. O(sectors), and nothing here depends on how many marks
 	// exist -- which is the reason the anchor is resolved on the GPU rather than folded into every
 	// decal record by the CPU.
@@ -752,28 +750,26 @@ void DrawDeferredDecals(Diligent::IDeviceContext *ctx)
 	Diligent::ITextureView *rtv = GetSwapChain() ? FrameRTV() : NULL;
 	if (rtv) ctx->SetRenderTargets(1, &rtv, NULL, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
-	// [rc4l] TWO draws for the whole level, whatever it is wearing.
+	// [rc4l] One draw per blend for the whole level, whatever it is wearing.
 	//
 	// The instance record has carried its texture slot all along and the shader now indexes the
 	// sampler array with it, so a draw no longer has to be one material wide. What is left that can
 	// force a break is the BLEND MODE, because that is fixed-function state and not something an
-	// instance can choose: ordinary marks first, additive over them. The array is built alpha-then-
-	// additive above, so those two groups are already contiguous.
+	// instance can choose. The array is built pass by pass above, so each group is already contiguous.
 	//
 	// Measured on dbab04 with a plasma load: 43 marks were 21 draws, and are now 2. It matters
 	// because this renderer is CPU-bound -- roughly 4 ms of CPU against 1.7 ms of GPU -- so a draw
 	// call is spent from the scarce budget and the pixels the box shades are spent from the spare
 	// one. The trade only goes one way.
-	const unsigned alphaCount = (instAlpha.Size() > all.Size()) ? all.Size() : instAlpha.Size();
-	for (int pass = 0; pass < 2; pass++)
+	for (int pass = 0; pass < kDecalPasses; pass++)
 	{
-		const bool additive = (pass == 1);
-		const unsigned first = additive ? alphaCount : 0;
-		const unsigned count = additive ? (all.Size() - alphaCount) : alphaCount;
+		const unsigned first = passFirst[pass] < all.Size() ? passFirst[pass] : all.Size();
+		const unsigned last = passFirst[pass + 1] < all.Size() ? passFirst[pass + 1] : all.Size();
+		const unsigned count = last - first;
 		if (count == 0) continue;
 
-		Diligent::IPipelineState *pso = additive ? g_ddAddPSO.RawPtr() : g_ddPSO.RawPtr();
-		Diligent::IShaderResourceBinding *srb = additive ? g_ddAddSRB.RawPtr() : g_ddSRB.RawPtr();
+		Diligent::IPipelineState *pso = g_ddPSO[pass].RawPtr();
+		Diligent::IShaderResourceBinding *srb = g_ddSRB[pass].RawPtr();
 		if (!pso || !srb) continue;
 
 		auto *vTexVar = srb->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "uTex");

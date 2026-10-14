@@ -79,6 +79,18 @@ void CaptureShading(int lightlevel, int rellight, const FColormap &cm, MeshPiece
 	Capture(lightlevel, rellight, cm, out, noFog, additive, false);
 }
 
+void CaptureSpriteShading(int lightlevel, int rellight, const FColormap &cm, const zx::sprites::SpriteDrawLook &look,
+                          unsigned thingColor, MeshPiece &out)
+{
+	Capture(lightlevel, rellight, cm, out, false, look.additiveFog, false);
+	if (look.shadow) out.colorR = out.colorG = out.colorB = zx::sprites::kShadowColor;
+	const PalEntry color(thingColor);
+	out.colorR *= color.r / 255.f;
+	out.colorG *= color.g / 255.f;
+	out.colorB *= color.b / 255.f;
+	out.alpha = look.alpha;
+}
+
 void CaptureLevelShading(int lightlevel, int rellight, const FColormap &cm, MeshPiece &out, bool noFog)
 {
 	Capture(lightlevel, rellight, cm, out, noFog, false, true);

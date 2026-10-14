@@ -435,6 +435,9 @@ static const char *kSceneVS =
 	FUA_MIRROR_CLIP_GLSL("vPixelPos.xyz") \
 	/* [rc4l] What GL's walk never drew behind a sky hole is GL's sky there, which the frame painted first. */ \
 	"    if (fuaBehindSkyHole()) discard;\n" \
+	/* [rc4l] A model GL culls (texFlags 2048 with its front faces clockwise, 4096 counter-clockwise) loses the faces GL loses; the test follows the view, so a mirror culls what GL's mirror culls. */ \
+	"    int fuaCull = (int(vTexFlags + 0.5) >> 11) & 3;\n" \
+	"    if (fuaCull != 0 && gl_FrontFacing != (fuaCull == 1)) discard;\n" \
 	/* [rc4l] Under a fixed colormap main.fp takes no light, fog, desaturation or dynamic light, recolouring the texel in the piece's own colour: white for a level surface (texFlags 8), whose baked colour is its light, and a sprite's or decal's built under the colormap. */ \
 	/* [rc4l] ...and a 3D fog layer's panel (texFlags 64) is not drawn at all, as GL's walls leave out an untextured one. */ \
 	"    if (uFixedColormap.w > 0.5) {\n" \

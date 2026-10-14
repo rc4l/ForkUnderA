@@ -60,8 +60,28 @@ WeaponStyleOut ComputeWeaponStyle(const SpriteStyle &style, bool fuzzStyle, floa
 // [rc4l] The backend's blends: opaque or alpha-tested, translucent, additive, fuzz, and GL_FUNC_REVERSE_SUBTRACT's and GL_FUNC_SUBTRACT's, the screen less the sprite and the sprite less the screen.
 enum { kBlendOpaque = 0, kBlendTranslucent = 1, kBlendAdditive = 2, kBlendFuzz = 3, kBlendRevSubtract = 4, kBlendSubtract = 5 };
 
-// [rc4l] The backend's blend (a kBlend* value) for a resolved style, for sprites, the weapon and decals alike.
+// [rc4l] The backend's blend (a kBlend* value) for a resolved style, for sprites, the weapon and decals alike; every op from fuzz up is GL's DST_COLOR fallback, as gl_GetRenderStyle has no equation for them.
 int ComputeSpriteBlendMode(int blendOp, int destAlpha, float trans);
+
+// [rc4l] Which faces of a model GL culls: none, or the back ones with its front faces clockwise (a world model) or counter-clockwise (a HUD model).
+enum { kCullNone = 0, kCullFrontClockwise = 1, kCullFrontCounterClockwise = 2 };
+
+// [rc4l] gl_RenderModel's and gl_RenderHUDModel's culling, which covers every actor not in exactly STYLE_Normal to hide the far side GL cannot sort.
+int ComputeModelCull(bool normalStyle, bool hud);
+
+// [rc4l] What GLSprite::Draw sets for a resolved style besides its blend.
+struct SpriteDrawLook
+{
+	bool  additiveFog;   // [rc4l] fogged toward black: a shadow, an additive style or one that fades to black
+	bool  shadow;        // [rc4l] drawn in kShadowColor rather than its light
+	float alpha;
+};
+
+// [rc4l] The grey GL draws a shadow in.
+const float kShadowColor = 0.2f;
+
+// [rc4l] GLSprite::Draw's translucent setup for `style` at alpha `trans`: a shadow is 0.44 alpha, thinned in coloured fog by its fade alpha over its distance from the eye.
+SpriteDrawLook ComputeSpriteDrawLook(const SpriteStyle &style, float trans, bool blackFog, int fadeAlpha, float dist);
 
 // [rc4l] What GLSprite::Draw's allowcolorblending reads of an actor besides its style.
 struct ColorBlendIn

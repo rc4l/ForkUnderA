@@ -782,7 +782,7 @@ bool EnsureScenePipeline(FString &err)
 			(fua_dg_cull == 1) ? Diligent::CULL_MODE_BACK :
 			(fua_dg_cull == 2) ? Diligent::CULL_MODE_FRONT : Diligent::CULL_MODE_NONE;
 		pci.GraphicsPipeline.DepthStencilDesc.DepthEnable = true;
-		pci.GraphicsPipeline.DepthStencilDesc.DepthWriteEnable = !blended;
+		pci.GraphicsPipeline.DepthStencilDesc.DepthWriteEnable = !blended || d.depthWrite;
 		ClampDepthLikeGL(pci.GraphicsPipeline);
 		if (d.depthBias)
 		{
@@ -794,9 +794,10 @@ bool EnsureScenePipeline(FString &err)
 		{
 			auto &rt = pci.GraphicsPipeline.BlendDesc.RenderTargets[0];
 			rt.BlendEnable = true;
-			rt.SrcBlend  = Diligent::BLEND_FACTOR_SRC_ALPHA;
+			// [rc4l] Fuzz is GL's fallback for an op it has no equation for, the screen times the source plus the screen the source leaves.
+			rt.SrcBlend  = (d.blend == kWpBlendFuzz) ? Diligent::BLEND_FACTOR_DEST_COLOR : Diligent::BLEND_FACTOR_SRC_ALPHA;
 			// [rc4l] Additive and the subtract styles take the source onto the screen whole, as STYLE_Add and STYLE_Subtract's ONE does.
-			rt.DestBlend = (d.blend == kWpBlendAlpha) ? Diligent::BLEND_FACTOR_INV_SRC_ALPHA : Diligent::BLEND_FACTOR_ONE;
+			rt.DestBlend = (d.blend == kWpBlendAlpha || d.blend == kWpBlendFuzz) ? Diligent::BLEND_FACTOR_INV_SRC_ALPHA : Diligent::BLEND_FACTOR_ONE;
 			rt.BlendOp = (d.blend == kWpBlendRevSub) ? Diligent::BLEND_OPERATION_REV_SUBTRACT :
 				(d.blend == kWpBlendSub) ? Diligent::BLEND_OPERATION_SUBTRACT : Diligent::BLEND_OPERATION_ADD;
 			rt.SrcBlendAlpha  = Diligent::BLEND_FACTOR_ONE;

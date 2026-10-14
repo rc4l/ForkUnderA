@@ -17,22 +17,25 @@ enum WorldPipeline
 	kWpTransRedAlpha, kWpAddRedAlpha,                // [rc4l] shaded decals, whose texture's red channel is their coverage
 	kWpMaskedGBuffer,                                // [rc4l] the masked world writing its normals for the decal pass
 	kWpRevSubNoCull, kWpSubNoCull,                   // [rc4l] sprites in the subtract styles, the screen less the sprite and the sprite less the screen
+	kWpFuzzNoCull, kWpFuzzDecal,                     // [rc4l] shadows and fuzzy decals, the screen multiplied by the source
+	kWpTransHud, kWpAddHud, kWpFuzzHud, kWpRevSubHud, kWpSubHud,   // [rc4l] a blended HUD model, writing depth as GL's HUD step does so it hides its own far side
 	kWorldPipelines
 };
 
 // [rc4l] The fragment stages they are built from (dgscene_glsl.h).
 enum { kWpStageOpaque, kWpStageMasked, kWpStageTrans, kWpStageRedAlpha, kWpStageGBuffer };
 
-// [rc4l] Their blends: none, which writes depth, source alpha over, source alpha added, and source alpha taken from the screen or the screen from it.
-enum { kWpBlendNone, kWpBlendAlpha, kWpBlendAdd, kWpBlendRevSub, kWpBlendSub };
+// [rc4l] Their blends: none, which writes depth, source alpha over, source alpha added, source alpha taken from the screen or the screen from it, and GL's DST_COLOR / ONE_MINUS_SRC_ALPHA fuzz fallback.
+enum { kWpBlendNone, kWpBlendAlpha, kWpBlendAdd, kWpBlendRevSub, kWpBlendSub, kWpBlendFuzz };
 
 struct WorldPipelineDesc
 {
 	const char *name;
 	int  stage;       // [rc4l] a kWpStage* value
-	int  blend;       // [rc4l] a kWpBlend* value; anything blended writes no depth
+	int  blend;       // [rc4l] a kWpBlend* value; anything blended writes no depth unless depthWrite says so
 	bool level;       // [rc4l] draws the level's own surfaces, which take fua_dg_cull's culling; the others draw the dynamic stream
 	bool depthBias;   // [rc4l] a decal's
+	bool depthWrite;  // [rc4l] blended and still writing depth, a HUD model's
 };
 
 // [rc4l] What `pipeline` (a WorldPipeline) is built with.
@@ -41,8 +44,8 @@ WorldPipelineDesc ComputeWorldPipelineDesc(int pipeline);
 // [rc4l] A level batch's pipeline from its blend mode (MeshPiece::blendMode): 0 masked, 2 additive, anything else translucent.
 int ComputeBatchPipeline(int blendMode);
 
-// [rc4l] A sprite's, model's or decal's pipeline in the translucent pass, from its blend mode (2 additive, 4 and 5 the subtract styles), whether its texture is a red-channel mask and whether it is a decal; a decal in a subtract style draws translucent.
-int ComputeDynamicPipeline(int blendMode, bool redAlpha, bool depthBias);
+// [rc4l] A sprite's, model's or decal's pipeline in the translucent pass, from its blend mode (2 additive, 3 fuzz, 4 and 5 the subtract styles), whether its texture is a red-channel mask, whether it is a decal and whether it is a HUD model's; DECALDEF has no subtract style, so a decal never asks for one.
+int ComputeDynamicPipeline(int blendMode, bool redAlpha, bool depthBias, bool hud);
 
 }} // namespace zx::hwrender
 

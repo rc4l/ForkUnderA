@@ -11,6 +11,7 @@
 #include <gtest/gtest.h>
 
 #include "features/levelmesh/computation/decalproject_compute.h"
+#include "features/sprites/computation/spritestyle_compute.h"
 
 #include <cmath>
 
@@ -275,4 +276,13 @@ TEST(DecalProject, AMissileLeavingTheSurfaceFacesItHeadOn)
 	EXPECT_NEAR(axis[0], 0.f, 1e-5f);
 	EXPECT_NEAR(axis[1], 0.f, 1e-5f);
 	EXPECT_NEAR(axis[2], -1.f, 1e-5f);
+}
+
+// [rc4l] A mark draws with the pass its blend needs, additive last and fuzz between.
+TEST(DecalProject, EachBlendHasItsPass)
+{
+	EXPECT_EQ(kDecalPassAdditive, ComputeDecalPass(zx::sprites::kBlendAdditive));
+	EXPECT_EQ(kDecalPassFuzz, ComputeDecalPass(zx::sprites::kBlendFuzz));
+	EXPECT_EQ(kDecalPassOrdinary, ComputeDecalPass(zx::sprites::kBlendTranslucent));
+	EXPECT_EQ(kDecalPassOrdinary, ComputeDecalPass(zx::sprites::kBlendOpaque));
 }

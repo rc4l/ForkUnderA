@@ -59,7 +59,7 @@ inline void Transform(const float *m, float x, float y, float z, float *out)
 } // namespace
 
 void ModelPieceLook(int lightLevel, int extraLight, const FColormap &cm, bool fullbright, const float dyn[3], unsigned thingColor,
-	float alpha, int blendMode, float x, float y, float z, MeshPiece &mp)
+	const zx::sprites::SpriteDrawLook &look, int blendMode, float x, float y, float z, MeshPiece &mp)
 {
 	mp = MeshPiece();
 	mp.range.offset = 0;
@@ -68,12 +68,8 @@ void ModelPieceLook(int lightLevel, int extraLight, const FColormap &cm, bool fu
 	mp.lightLevel = lightLevel;
 	mp.lightColor = cm.LightColor.d;
 	mp.fadeColor = cm.FadeColor.d;
-	CaptureShading(lightLevel, extraLight, cm, mp);
 	// [rc4l] GL's shader multiplies a model by the actor's ThingColor as it does a sprite.
-	const PalEntry color(thingColor);
-	mp.colorR *= color.r / 255.f;
-	mp.colorG *= color.g / 255.f;
-	mp.colorB *= color.b / 255.f;
+	CaptureSpriteShading(lightLevel, extraLight, cm, look, thingColor, mp);
 	// [rc4l] The light is the CPU's, exactly as it is for a sprite: gl_SetDynSpriteLight has already
 	// run for this actor and left its answer in the render state, having applied r_light_sprites and
 	// DONTLIGHTSELF. A shader loop over the level's lights knows neither.
@@ -85,7 +81,6 @@ void ModelPieceLook(int lightLevel, int extraLight, const FColormap &cm, bool fu
 	// means "no side" and the backend skips its dynamic-light facing test, which is the same
 	// treatment a billboard gets. A model lit from behind is therefore lit all over.
 	mp.normX = mp.normY = mp.normZ = 0.f;
-	mp.alpha = alpha;
 	mp.blendMode = blendMode;
 	// The actor's own position, so the back-to-front sort puts a translucent model where the actor
 	// is rather than where its first triangle happens to be.

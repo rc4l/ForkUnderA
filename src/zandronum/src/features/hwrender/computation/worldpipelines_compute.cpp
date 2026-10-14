@@ -23,6 +23,13 @@ WorldPipelineDesc ComputeWorldPipelineDesc(int pipeline)
 		{ "fua scene PSO masked + gbuffer",     kWpStageGBuffer,  kWpBlendNone,  true,  false },
 		{ "fua sprite PSO reverse subtract",    kWpStageTrans,    kWpBlendRevSub, false, false },
 		{ "fua sprite PSO subtract",            kWpStageTrans,    kWpBlendSub,   false, false },
+		{ "fua sprite PSO fuzz",                kWpStageTrans,    kWpBlendFuzz,  false, false },
+		{ "fua decal PSO fuzz",                 kWpStageTrans,    kWpBlendFuzz,  false, true  },
+		{ "fua HUD model PSO translucent",      kWpStageTrans,    kWpBlendAlpha, false, false, true },
+		{ "fua HUD model PSO additive",         kWpStageTrans,    kWpBlendAdd,   false, false, true },
+		{ "fua HUD model PSO fuzz",             kWpStageTrans,    kWpBlendFuzz,  false, false, true },
+		{ "fua HUD model PSO reverse subtract", kWpStageTrans,    kWpBlendRevSub, false, false, true },
+		{ "fua HUD model PSO subtract",         kWpStageTrans,    kWpBlendSub,   false, false, true },
 	};
 	return kDescs[(pipeline >= 0 && pipeline < kWorldPipelines) ? pipeline : kWpOpaque];
 }
@@ -33,14 +40,18 @@ int ComputeBatchPipeline(int blendMode)
 	return (blendMode == 2) ? kWpAdd : kWpTrans;
 }
 
-int ComputeDynamicPipeline(int blendMode, bool redAlpha, bool depthBias)
+int ComputeDynamicPipeline(int blendMode, bool redAlpha, bool depthBias, bool hud)
 {
 	const bool add = blendMode == 2;
 	if (redAlpha) return add ? kWpAddRedAlpha : kWpTransRedAlpha;
+	if (blendMode == 3 && depthBias) return kWpFuzzDecal;
 	if (depthBias) return add ? kWpAddDecal : kWpTransDecal;
-	if (blendMode == 4) return kWpRevSubNoCull;
-	if (blendMode == 5) return kWpSubNoCull;
-	return add ? kWpAddNoCull : kWpTransNoCull;
+	// [rc4l] Sprites and models by blend mode 0 to 5, in the world and on the HUD.
+	static const int kByBlend[6][2] = {
+		{ kWpTransNoCull, kWpTransHud }, { kWpTransNoCull, kWpTransHud }, { kWpAddNoCull, kWpAddHud },
+		{ kWpFuzzNoCull, kWpFuzzHud }, { kWpRevSubNoCull, kWpRevSubHud }, { kWpSubNoCull, kWpSubHud },
+	};
+	return kByBlend[(blendMode >= 0 && blendMode < 6) ? blendMode : 1][hud ? 1 : 0];
 }
 
 }} // namespace zx::hwrender

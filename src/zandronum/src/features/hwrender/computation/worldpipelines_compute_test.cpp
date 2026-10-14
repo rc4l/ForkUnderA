@@ -19,8 +19,11 @@ TEST(WorldPipelines, EachPipelineIsBuiltForWhatItDraws)
 		const WorldPipelineDesc d = ComputeWorldPipelineDesc(p);
 		names.insert(d.name);
 		EXPECT_EQ(p <= kWpAdd || p == kWpMaskedGBuffer, d.level) << d.name;
-		EXPECT_EQ(p >= kWpMaskedDecal && p <= kWpAddRedAlpha, d.depthBias) << d.name;
-		EXPECT_EQ(p == kWpRevSubNoCull || p == kWpSubNoCull, d.blend == kWpBlendRevSub || d.blend == kWpBlendSub) << d.name;
+		EXPECT_EQ((p >= kWpMaskedDecal && p <= kWpAddRedAlpha) || p == kWpFuzzDecal, d.depthBias) << d.name;
+		EXPECT_EQ(p == kWpFuzzNoCull || p == kWpFuzzDecal || p == kWpFuzzHud, d.blend == kWpBlendFuzz) << d.name;
+		EXPECT_EQ(p >= kWpTransHud && p <= kWpSubHud, d.depthWrite) << d.name;
+		EXPECT_EQ(p == kWpRevSubNoCull || p == kWpSubNoCull || p == kWpRevSubHud || p == kWpSubHud,
+			d.blend == kWpBlendRevSub || d.blend == kWpBlendSub) << d.name;
 	}
 	EXPECT_EQ((size_t)kWorldPipelines, names.size());
 	EXPECT_EQ(kWpStageOpaque, ComputeWorldPipelineDesc(kWpOpaque).stage);
@@ -45,15 +48,32 @@ TEST(WorldPipelines, ABatchIsMaskedAdditiveOrTranslucent)
 // [rc4l] A red-alpha mask wins over a decal's bias, which wins over a sprite's, each additive or not.
 TEST(WorldPipelines, ADynamicDrawTakesItsMaskDecalOrSpritePipeline)
 {
-	EXPECT_EQ(kWpAddRedAlpha, ComputeDynamicPipeline(2, true, true));
-	EXPECT_EQ(kWpTransRedAlpha, ComputeDynamicPipeline(1, true, false));
-	EXPECT_EQ(kWpAddDecal, ComputeDynamicPipeline(2, false, true));
-	EXPECT_EQ(kWpTransDecal, ComputeDynamicPipeline(0, false, true));
-	EXPECT_EQ(kWpAddNoCull, ComputeDynamicPipeline(2, false, false));
-	EXPECT_EQ(kWpTransNoCull, ComputeDynamicPipeline(3, false, false));
+	EXPECT_EQ(kWpAddRedAlpha, ComputeDynamicPipeline(2, true, true, false));
+	EXPECT_EQ(kWpTransRedAlpha, ComputeDynamicPipeline(1, true, false, false));
+	EXPECT_EQ(kWpAddDecal, ComputeDynamicPipeline(2, false, true, false));
+	EXPECT_EQ(kWpTransDecal, ComputeDynamicPipeline(0, false, true, false));
+	EXPECT_EQ(kWpAddNoCull, ComputeDynamicPipeline(2, false, false, false));
+	EXPECT_EQ(kWpTransNoCull, ComputeDynamicPipeline(1, false, false, false));
+	EXPECT_EQ(kWpTransNoCull, ComputeDynamicPipeline(0, false, false, false));
+	// [rc4l] A shadow and a fuzzy decal multiply the screen, the decal biased onto its wall.
+	EXPECT_EQ(kWpFuzzNoCull, ComputeDynamicPipeline(3, false, false, false));
+	EXPECT_EQ(kWpFuzzDecal, ComputeDynamicPipeline(3, false, true, false));
 	// [rc4l] The subtract styles have sprite pipelines of their own, and a decal in one draws translucent.
-	EXPECT_EQ(kWpRevSubNoCull, ComputeDynamicPipeline(4, false, false));
-	EXPECT_EQ(kWpSubNoCull, ComputeDynamicPipeline(5, false, false));
-	EXPECT_EQ(kWpTransDecal, ComputeDynamicPipeline(4, false, true));
-	EXPECT_EQ(kWpTransRedAlpha, ComputeDynamicPipeline(5, true, false));
+	EXPECT_EQ(kWpRevSubNoCull, ComputeDynamicPipeline(4, false, false, false));
+	EXPECT_EQ(kWpSubNoCull, ComputeDynamicPipeline(5, false, false, false));
+	EXPECT_EQ(kWpTransDecal, ComputeDynamicPipeline(4, false, true, false));
+	EXPECT_EQ(kWpTransRedAlpha, ComputeDynamicPipeline(5, true, false, false));
+	// [rc4l] An unknown mode draws translucent rather than reading past the table.
+	EXPECT_EQ(kWpTransNoCull, ComputeDynamicPipeline(9, false, false, false));
+}
+
+// [rc4l] A blended HUD model writes depth in every blend, as GL's HUD step leaves glDepthMask on.
+TEST(WorldPipelines, AHudModelTakesItsDepthWritingBlend)
+{
+	EXPECT_EQ(kWpTransHud, ComputeDynamicPipeline(1, false, false, true));
+	EXPECT_EQ(kWpAddHud, ComputeDynamicPipeline(2, false, false, true));
+	EXPECT_EQ(kWpFuzzHud, ComputeDynamicPipeline(3, false, false, true));
+	EXPECT_EQ(kWpRevSubHud, ComputeDynamicPipeline(4, false, false, true));
+	EXPECT_EQ(kWpSubHud, ComputeDynamicPipeline(5, false, false, true));
+	EXPECT_EQ(kWpTransHud, ComputeDynamicPipeline(-1, false, false, true));
 }

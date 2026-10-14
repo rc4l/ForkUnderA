@@ -63,12 +63,9 @@ void GLSpritePiece(const GLSprite &spr, const float *c1, const float *c2, const 
 	mp.lightLevel = spr.lightlevel;
 	mp.lightColor = spr.Colormap.LightColor.d;
 	mp.fadeColor = spr.Colormap.FadeColor.d;
-	// [rc4l] GLSprite::Draw's own rel, none for fullbright, not memoised since a cache measured no gain (docs/sprites-scope.md).
-	CaptureShading(spr.lightlevel, spr.fullbright ? 0 : getExtraLight(), spr.Colormap, mp);
-	// [rc4l] ThingColor, which GL's shader multiplies the sprite by: a particle's own colour, a stencil actor's fill.
-	mp.colorR *= spr.ThingColor.r / 255.f;
-	mp.colorG *= spr.ThingColor.g / 255.f;
-	mp.colorB *= spr.ThingColor.b / 255.f;
+	// [rc4l] GLSprite::Draw's own rel, none for fullbright, and ThingColor over it: a particle's own colour, a stencil actor's fill.
+	CaptureSpriteShading(spr.lightlevel, spr.fullbright ? 0 : getExtraLight(), spr.Colormap,
+		zx::sprites::SpriteDrawLookAt(zx::sprites::StyleOf(spr.RenderStyle), spr.trans, spr.Colormap, spr.x, spr.y), spr.ThingColor.d, mp);
 	// [rc4l] A fixed-colour style draws in TM_MASK, the texture only the shape.
 	mp.stencil = (spr.RenderStyle.Flags & STYLEF_ColorIsFixed) != 0;
 	mp.alphaTest = spr.hw_styleflags != zx::sprites::kHwNoAlphaTest;
@@ -86,7 +83,6 @@ void GLSpritePiece(const GLSprite &spr, const float *c1, const float *c2, const 
 	// [rc4l] A billboard has no side, so a zero normal makes the backend skip its dynamic-light side test.
 	mp.normX = mp.normY = mp.normZ = 0.f;
 	mp.translation = spr.translation;
-	mp.alpha = spr.trans;
 	mp.blendMode = zx::sprites::StyleBlendMode(spr.RenderStyle, spr.trans);
 
 	// [rc4l] Sprite centre, for the back-to-front sort.
@@ -172,10 +168,14 @@ struct FGLChecks : public FGLObserver
 	{
 		float dyn[3] = { 0.f, 0.f, 0.f };
 		if (!spr->fullbright) gl_RenderState.GetDynLight(dyn[0], dyn[1], dyn[2]);
+		// [rc4l] Draw turns a subtract model's style to fuzz only after setting the subtract blend, so the blend GL draws it with is the actor's.
+		FRenderStyle blend = spr->RenderStyle;
+		if (blend.BlendOp == STYLEOP_Fuzz) blend.BlendOp = spr->actor->RenderStyle.BlendOp;
 		zx::levelmesh::MeshPiece look;
 		zx::levelmesh::ModelPieceLook(spr->lightlevel, spr->fullbright ? 0 : getExtraLight(), spr->Colormap, spr->fullbright, dyn,
-			spr->ThingColor.d, spr->trans, zx::sprites::StyleBlendMode(spr->RenderStyle, spr->trans),
-			spr->x, spr->y, spr->z, look);
+			spr->ThingColor.d, zx::sprites::SpriteDrawLookAt(zx::sprites::StyleOf(spr->RenderStyle), spr->trans, spr->Colormap, spr->x, spr->y),
+			zx::sprites::StyleBlendMode(blend, spr->trans), spr->x, spr->y, spr->z, look);
+		look.cullFace = zx::sprites::ComputeModelCull(spr->actor->RenderStyle == LegacyRenderStyles[STYLE_Normal], false);
 		zx::levelmesh::ModelCaptureBegin(look, model.get(), spr->actor, zx::levelmesh::kModelFromGL);
 	}
 	void ModelSurface(const FModelGeometry *geometry, unsigned int base1, unsigned int base2, float inter,

@@ -171,7 +171,7 @@ struct ScenePieceData
 	float glowTop[4], glowBottom[4], glowTopPlane[4], glowBottomPlane[4];
 	// [rc4l] A player's damage tint (MeshPiece::tint): colour and strength, then its texture-V span and 1 when it glows.
 	float tint[4], tintRange[4];
-	float desaturation, scrollU, scrollV, texFlags;   // [rc4l] the colormap's desaturation, 0..1, which main.fp mixes every texel toward grey by, the texture shift a scroller added since the bake, and 1 for a stencil plus 2 for an alpha-tested sprite plus 4 for a HUD model's surface plus 8 for a level surface, whose colour is its light alone, plus 16 for TM_INVERSE, 32 for a sprite blended by its own colour, 64 for a 3D fog layer's panel, 128 times its fuzz shader and 1024 for a fog boundary sheet
+	float desaturation, scrollU, scrollV, texFlags;   // [rc4l] the colormap's desaturation, 0..1, which main.fp mixes every texel toward grey by, the texture shift a scroller added since the bake, and 1 for a stencil plus 2 for an alpha-tested sprite plus 4 for a HUD model's surface plus 8 for a level surface, whose colour is its light alone, plus 16 for TM_INVERSE, 32 for a sprite blended by its own colour, 64 for a 3D fog layer's panel, 128 times its fuzz shader, 1024 for a fog boundary sheet and 2048 times the faces GL culls of a model
 };
 
 // [rc4l] One draw per material. Pieces arrive in bake order, so they are sorted by material first;
@@ -227,6 +227,7 @@ struct DynRun
 	// and without depth writes whichever triangle the buffer happens to hold last wins. On a car
 	// that draws the interior floor and seats straight through the bodywork.
 	bool         solid;
+	bool         hud;          // [rc4l] a HUD model's surface, whose blended pipelines write depth
 	int          mirrorLine;   // [rc4l] the viewer's own sprite, drawn only in this line mirror's reflection, or -1
 	int          stackSlot;    // [rc4l] drawn only in this stacked view, whose walk took it, or -1 for every other pass
 	int          onMirror;     // [rc4l] a decal on this line mirror's face, drawn over its surface by DrawMirrorFaceDecals, or -1

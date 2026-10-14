@@ -114,6 +114,12 @@ void ComputeDecalBoxDepth(float size, float cosTheta, float spreadFraction,
 // ended up as two marks side by side.
 void ApplyDecalFlip(bool flipX, bool flipY, float right[3], float up[3]);
 
+// [rc4l] The projected-decal pass's draws, one per fixed-function blend: ordinary marks, then fuzzy ones that multiply the screen, then additive ones, which only brighten and so go over the rest.
+enum { kDecalPassOrdinary, kDecalPassFuzz, kDecalPassAdditive, kDecalPasses };
+
+// [rc4l] Which draw a mark of blend `blendMode` (spritestyle_compute's kBlend*, as the wall path takes it) goes in; DECALDEF has no subtract style, so anything else is ordinary.
+int ComputeDecalPass(int blendMode);
+
 }} // namespace zx::levelmesh
 
 #endif // ZX_DECALPROJECT_COMPUTE_H

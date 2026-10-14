@@ -22,7 +22,7 @@ export const VANTAGES = [{ name: "facing", at: { x: 256, y: 160, z: 0, angle: 90
 export const BOXES = { MAP01: { pillar: { box: [0.45, 0.42, 0.55, 0.72], ceiling: 3 } } };
 
 // [rc4l] The fuzz type the scenario draws, 5 (jagged, which also splats the texture) unless FUA_FUZZTYPE says.
-const FUZZTYPE = Number(process.env.FUA_FUZZTYPE) || 5;
+const FUZZTYPE = process.env.FUA_FUZZTYPE ? Number(process.env.FUA_FUZZTYPE) : 5;
 export const SIDES = GL_VS_VULKAN.map((s) => ({ ...s, cvars: { r_fuzztype: FUZZTYPE, fua_debug_frameclock: 4321 } }));
 
 runScenarioIfMain(import.meta.url, () => ({ name: "fuzz", wad: buildFuzzWad(), maps: ["MAP01"],

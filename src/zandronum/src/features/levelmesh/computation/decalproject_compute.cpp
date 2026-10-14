@@ -2,6 +2,7 @@
 // Copyright (C) 2026 rc4l
 
 #include "features/levelmesh/computation/decalproject_compute.h"
+#include "features/sprites/computation/spritestyle_compute.h"
 
 #include <cmath>
 
@@ -155,6 +156,12 @@ void ApplyDecalFlip(bool flipX, bool flipY, float right[3], float up[3])
 {
 	if (flipX) { right[0] = -right[0]; right[1] = -right[1]; right[2] = -right[2]; }
 	if (flipY) { up[0] = -up[0]; up[1] = -up[1]; up[2] = -up[2]; }
+}
+
+int ComputeDecalPass(int blendMode)
+{
+	if (blendMode == zx::sprites::kBlendAdditive) return kDecalPassAdditive;
+	return blendMode == zx::sprites::kBlendFuzz ? kDecalPassFuzz : kDecalPassOrdinary;
 }
 
 }} // namespace zx::levelmesh

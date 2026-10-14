@@ -128,6 +128,51 @@ TEST(SpriteStyle, BlendModesAsTheBackendDrawsThem)
 	EXPECT_EQ(ComputeSpriteBlendMode(kOpAdd, kAlphaInvSrc, 254.f / 255.f), 1);
 }
 
+// [rc4l] A fuzzy decal keeps the raw fuzz op, and GL draws it and every op past it with the DST_COLOR fallback.
+TEST(SpriteStyle, EveryFuzzOpTakesTheFuzzBlend)
+{
+	EXPECT_EQ(kBlendFuzz, ComputeSpriteBlendMode(kOpFuzz, kAlphaInvSrc, 1.f));
+	EXPECT_EQ(kBlendFuzz, ComputeSpriteBlendMode(kOpFuzz + 3, kAlphaInvSrc, 0.5f));
+	EXPECT_EQ(kBlendRevSubtract, ComputeSpriteBlendMode(kOpRevSub, kAlphaOne, 1.f));
+}
+
+// [rc4l] An actor in STYLE_Normal draws its model whole; any other culls, clockwise front faces in the world and counter-clockwise on the HUD.
+TEST(SpriteStyle, AModelIsCulledUnlessItsActorIsNormal)
+{
+	EXPECT_EQ(kCullNone, ComputeModelCull(true, false));
+	EXPECT_EQ(kCullNone, ComputeModelCull(true, true));
+	EXPECT_EQ(kCullFrontClockwise, ComputeModelCull(false, false));
+	EXPECT_EQ(kCullFrontCounterClockwise, ComputeModelCull(false, true));
+}
+
+// [rc4l] A shadow is grey at 0.44 alpha, fogged to black and thinned by coloured fog; additive and fade-to-black styles fog to black; the rest keep their alpha and fog.
+TEST(SpriteStyle, DrawLookIsGLSpritesTranslucentSetup)
+{
+	const SpriteStyle shadow = { kOpShadow, kAlphaSrc, kAlphaInvSrc, 0 };
+	SpriteDrawLook l = ComputeSpriteDrawLook(shadow, 1.f, true, 0, 300.f);
+	EXPECT_TRUE(l.shadow);
+	EXPECT_TRUE(l.additiveFog);
+	EXPECT_FLOAT_EQ(0.44f, l.alpha);
+	l = ComputeSpriteDrawLook(shadow, 1.f, false, 95, 350.f);
+	EXPECT_NEAR(0.44f * (0.05f + 0.587f), l.alpha, 1e-3f);
+	l = ComputeSpriteDrawLook(shadow, 1.f, false, 255, 1e6f);
+	EXPECT_NEAR(0.44f * 0.05f, l.alpha, 1e-6f);
+
+	const SpriteStyle add = { kOpAdd, kAlphaSrc, kAlphaOne, 0 };
+	l = ComputeSpriteDrawLook(add, 0.7f, false, 95, 350.f);
+	EXPECT_FALSE(l.shadow);
+	EXPECT_TRUE(l.additiveFog);
+	EXPECT_FLOAT_EQ(0.7f, l.alpha);
+
+	const SpriteStyle faded = { kOpAdd, kAlphaSrc, kAlphaInvSrc, kFlagFadeToBlack };
+	EXPECT_TRUE(ComputeSpriteDrawLook(faded, 1.f, true, 0, 0.f).additiveFog);
+	const SpriteStyle translucent = { kOpAdd, kAlphaSrc, kAlphaInvSrc, 0 };
+	l = ComputeSpriteDrawLook(translucent, 0.5f, false, 95, 350.f);
+	EXPECT_FALSE(l.additiveFog);
+	EXPECT_FALSE(l.shadow);
+	EXPECT_FLOAT_EQ(0.5f, l.alpha);
+}
+
 TEST(SpriteStyle, TheWeaponTakesTheFuzzAndAlphaRulesWithoutBeingMadeSolid)
 {
 	const SpriteStyle normal = { kOpAdd, kAlphaSrc, kAlphaInvSrc, 0 };

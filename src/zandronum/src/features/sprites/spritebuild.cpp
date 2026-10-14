@@ -177,14 +177,6 @@ void PointDynamicLight(fixed_t x, fixed_t y, fixed_t z, subsector_t *subsec, flo
 	if (subsec != NULL) PointLight(x, y, z, subsec, NULL, out);
 }
 
-// [rc4l] GLSprite's ThingColor, which GL's shader multiplies the sprite by as the object colour, folded into the shading.
-static void ApplyThingColor(PalEntry color, MeshPiece &mp)
-{
-	mp.colorR *= color.r / 255.f;
-	mp.colorG *= color.g / 255.f;
-	mp.colorB *= color.b / 255.f;
-}
-
 // [rc4l] An actor as GLSprite::Process first takes it: whether it is drawn from here at all, where, and the model it is drawn as, if any.
 struct Subject
 {
@@ -313,6 +305,12 @@ static void DrawFade(const SpriteStyleOut &so, int lightlevel, FColormap &cm)
 	if (so.style.flags & STYLEF_FadeToBlack) cm.FadeColor = 0;
 }
 
+SpriteDrawLook SpriteDrawLookAt(const SpriteStyle &style, float trans, const FColormap &cm, float x, float y)
+{
+	const float dx = x - FIXED2FLOAT(viewx), dy = y - FIXED2FLOAT(viewy);
+	return ComputeSpriteDrawLook(style, trans, gl_isBlack(cm.FadeColor), cm.FadeColor.a, sqrtf(dx * dx + dy * dy));
+}
+
 // [rc4l] GLSprite::Draw's dynamic light for an actor: its lights, unless it is a shadow, fullbright or under a fixed colormap.
 static void DrawLight(AActor *thing, const Look &l, float dyn[3])
 {
@@ -343,9 +341,11 @@ static void DeriveModel(AActor *thing, const Subject &s, const Look &l, bool che
 	float dyn[3];
 	DrawLight(thing, l, dyn);
 	MeshPiece look;
-	zx::levelmesh::ModelPieceLook(lightlevel, l.fullbright ? 0 : getExtraLight(), cm, l.fullbright, dyn, ThingColorOf(thing).d, l.so.trans,
+	zx::levelmesh::ModelPieceLook(lightlevel, l.fullbright ? 0 : getExtraLight(), cm, l.fullbright, dyn, ThingColorOf(thing).d,
+		SpriteDrawLookAt(l.so.style, l.so.trans, cm, s.x, s.y),
 		ComputeSpriteBlendMode(l.so.style.blendOp, l.so.style.destAlpha, l.so.trans), s.x, s.y, s.z, look);
 	look.inverse = l.inverse;
+	look.cullFace = ComputeModelCull(thing->RenderStyle == LegacyRenderStyles[STYLE_Normal], false);
 
 	ModelPose pose;
 	ModelPoseFor(thing, s.model, s.x, s.y, s.z, pose);
@@ -516,8 +516,7 @@ static int DeriveSprite(AActor *thing, const Subject &s, SpritePiece *out, int m
 		mp.lightLevel = b.lightlevel;
 		mp.lightColor = b.cm.LightColor.d;
 		mp.fadeColor = b.cm.FadeColor.d;
-		zx::levelmesh::CaptureShading(b.lightlevel, rel, b.cm, mp);
-		ApplyThingColor(ThingColorOf(thing), mp);
+		zx::levelmesh::CaptureSpriteShading(b.lightlevel, rel, b.cm, SpriteDrawLookAt(so.style, so.trans, b.cm, x, y), ThingColorOf(thing).d, mp);
 		mp.stencil = (so.style.flags & STYLEF_ColorIsFixed) != 0;
 		mp.alphaTest = so.hw != kHwNoAlphaTest;
 		mp.inverse = look.inverse;
@@ -529,7 +528,6 @@ static int DeriveSprite(AActor *thing, const Subject &s, SpritePiece *out, int m
 		mp.cpuLight = true;
 		mp.normX = mp.normY = mp.normZ = 0.f;
 		mp.translation = thing->Translation;
-		mp.alpha = so.trans;
 		mp.blendMode = ComputeSpriteBlendMode(so.style.blendOp, so.style.destAlpha, so.trans);
 		mp.sortX = x; mp.sortY = y; mp.sortZ = z;
 		mp.quad = true;
@@ -607,8 +605,8 @@ static bool DeriveParticle(particle_t *particle, sector_t *sector, SpritePiece &
 	mp.lightLevel = lightlevel;
 	mp.lightColor = cm.LightColor.d;
 	mp.fadeColor = cm.FadeColor.d;
-	zx::levelmesh::CaptureShading(lightlevel, getExtraLight(), cm, mp);
-	ApplyThingColor(color, mp);
+	const SpriteDrawLook plain = { false, false, trans };
+	zx::levelmesh::CaptureSpriteShading(lightlevel, getExtraLight(), cm, plain, color.d, mp);
 	float dyn[3] = { 0.f, 0.f, 0.f };
 	if (r_lights && view.DynamicLightCount() && !gl_fixedcolormap && r_light_particles)
 		PointLight(particle->x, particle->y, particle->z, particle->subsector, NULL, dyn);
@@ -616,7 +614,6 @@ static bool DeriveParticle(particle_t *particle, sector_t *sector, SpritePiece &
 	mp.cpuLight = true;
 	mp.normX = mp.normY = mp.normZ = 0.f;
 	mp.translation = 0;
-	mp.alpha = trans;
 	// [rc4l] STYLE_Translucent: blended unless it is fully opaque.
 	mp.blendMode = trans < 1.f - 1.f / 256.f ? 1 : 0;
 	mp.alphaTest = ComputeParticleAlphaTested(r_particles_style, trans);
@@ -681,6 +678,7 @@ static const char *Differs(const Noted &a, const Noted &b)
 	if (!Same(x.sortX, y.sortX) || !Same(x.sortY, y.sortY) || !Same(x.sortZ, y.sortZ)) return "sort point";
 	if (x.mirrorLine != y.mirrorLine || x.stackSlot != y.stackSlot) return "walk";
 	if (x.solid != y.solid) return "solid";
+	if (x.cullFace != y.cullFace) return "cull";
 	if (x.stencil != y.stencil) return "stencil";
 	if (x.alphaTest != y.alphaTest) return "alpha test";
 	return NULL;

@@ -133,7 +133,7 @@ struct GpuDecal
 	int          anchorPlane;    // 0 floor, 1 ceiling
 	float        anchorOffset;   // world height at spawn, minus that plane's height there
 	bool         redToAlpha;
-	bool         additive;
+	int          blend;          // [rc4l] spritestyle_compute's kBlend*, as the wall path takes a decal's style
 	bool         fullbright;
 };
 
