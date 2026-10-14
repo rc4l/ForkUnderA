@@ -1,8 +1,22 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  drainLines, frameRequest, classify, desyncVerdict, partitionRegistry, classifyInstances, candidatePort,
+  drainLines, frameRequest, classify, desyncVerdict, partitionRegistry, classifyInstances, candidatePort, liveOnPort,
 } from "../src/proto.mjs";
+
+// [rc4l] Hundreds of dead entries share a port, so `sample --port` took a dead pid and `quit` had nothing to fall back on.
+test("liveOnPort keeps the port's live instances and marks the orphans", () => {
+  const alive = new Set([300, 400, 401]);
+  const entries = [
+    { pid: 100, port: 7799, ppid: 101 },   // dead
+    { pid: 300, port: 7799, ppid: 301 },   // orphan: launcher 301 gone
+    { pid: 400, port: 7799, ppid: 401 },   // owned
+    { pid: 500, port: 7801, ppid: 501 },   // another port
+    null,
+  ];
+  assert.deepEqual(liveOnPort(entries, "7799", (p) => alive.has(p)).map((e) => [e.pid, e.orphan]), [[400, false], [300, true]]);
+  assert.deepEqual(liveOnPort(entries, 7900, (p) => alive.has(p)), []);
+});
 
 test("drainLines splits complete NDJSON and keeps the partial remainder", () => {
   const { messages, rest } = drainLines('{"a":1}\n{"b":2}\n{"c":');

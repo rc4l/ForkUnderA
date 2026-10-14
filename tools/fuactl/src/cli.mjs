@@ -3,13 +3,13 @@
 //   fuactl <cmd>     humans / CI          fuactl mcp     agents (MCP stdio server)
 // Both talk to the engine's native bridge (features/mcp-bridge), which must be built with
 // -DFUA_MCP_BRIDGE=ON (ZX_MCP_BRIDGE=1 ./mac_compile.sh) and armed with ZANDRONUM_BRIDGE_PORT.
-import { reap, readRegistry } from "./registry.mjs";
+import { reap, readRegistry, pidAlive } from "./registry.mjs";
 import { runDeterminismCheck, runPerfAblation, runNetBandwidth, runGlTimers } from "./session.mjs";
 import { launchInstance, stopInstance, resolveEngine, engineProcessCount, resFlag } from "./launch.mjs";
 import { BridgeClient } from "./client.mjs";
 import { diligentRun } from "./diligent.mjs";
 import { sampleProcess } from "./sample.mjs";
-import { summarizeGlTimers } from "./proto.mjs";
+import { summarizeGlTimers, liveOnPort } from "./proto.mjs";
 import * as ui from "./ui.mjs";
 import { runBench } from "./bench.mjs";
 import * as cap from "./capture.mjs";
@@ -26,6 +26,7 @@ import { pixelToFace } from "./camera.mjs";
 import { sectorOf } from "./sectorof.mjs";
 import { scenarioOptions, scenarioRun, templateScenarioFiles, probeScenario, sideAdjust, standaloneOptions, launchRenderer } from "./template.mjs";
 import { abPerf } from "./abperf.mjs";
+import { measureCosts, formatCosts } from "./costs.mjs";
 import { runFps, fpsModes } from "./fps.mjs";
 import * as screen from "./screen.mjs";
 import * as trace from "./trace.mjs";
@@ -140,7 +141,7 @@ const USAGE = `fuactl <command>
   ls                                 list registered engine instances
   reap [--kill] [--all]              prune dead; --kill SIGTERMs ORPHANS only (other sessions safe); --all kills every live instance
   launch [--map M] [--seed S] [--port P] [--token T] [--iwad W] [--skill N] [--file a.wad,b.pk3] [--cvar k=v,k2=v2] [--play]   launch one supervised bridge instance (stays up until Ctrl-C)
-  sample --pid P | --port P [--seconds N] [--engine] [--stacks]   hottest functions (macOS sample / Linux perf / Windows in-engine, which needs --port); --stacks adds each function's inclusive share on Windows
+  sample --pid P | --port P [--seconds N] [--top N] [--engine] [--stacks]   hottest functions (macOS sample / Linux perf / Windows in-engine, which needs --port); --stacks adds each function's inclusive share on Windows
   net-bw [--seed S] [--map M] [--spawn CLS] [--count N] [--seconds N]   client/server bandwidth, baseline vs perturbation
   cycle --port P [--token T] [--count N] [--settle MS]   advance the map rotation N times, confirming intermissions
   rpc <cmd> [jsonArgs] --port P [--token T]   send one RPC to an instance and print the result
@@ -150,7 +151,7 @@ const USAGE = `fuactl <command>
   steps <tag> --hold +ACTION [--count N] [--spot S | --at --face] [--port P]   an action (+crouch) held and stepped one tic at a time, a GL/Vulkan pair and the eye height each tic, for a fault that shows only mid-transition
   sector-of --pixel x,y [--side gl|vk] [--spot S | --at --face] [--port P]   which sector's colour that pixel of a capture follows, found by painting halves of the map red and green (fua_sector_color); the sectors stay painted
   travel --to MAP [--max N] [--port P]   nextmap until the instance is on MAP, the way a player reached it
-  quit [--port P] [--token T] [--park]   quit an instance (else the last play session) and wait until its port closes; exit 1 if it would not go; --park files its camera, wads and renderer first
+  quit [--port P] [--token T] [--park]   quit an instance (else the last play session) and wait until its port closes; one that refuses (no token) and whose launcher is gone is stopped as \`reap --kill\` would; exit 1 if it would not go; --park files its camera, wads and renderer first
   session [--instances N] [--seed S] [--map M] [--tics T]   run the determinism + desync check
   perf-ab [--seed S] [--map M] [--spawn CLS] [--count N] [--frames F]   deterministic perf ablation (baseline vs perturbation, causal ms delta + sim/render verdict)
   gl-timers --port P [--token T] [--frames N] [--warmup M]   GPU render profiling: per-pass GPU ms (scene/translucent/hud2d) of a running instance
@@ -177,6 +178,7 @@ const USAGE = `fuactl <command>
   goto (--spot NAME | --at x,y,z --face yaw,pitch) [--port P]   stand the player there
   motion [--spot NAME | --at x,y,z --face yaw,pitch] [--box x0,y0,x1,y1] [--interval MS]   per-pixel change between two captures apart, Vulkan and GL, sim running
   ab <cvar> <a> <b> [--spot NAME | --at x,y,z --face yaw,pitch] [--box x0,y0,x1,y1]   Vulkan under each value in ONE paused frame, plus a repeat as the noise floor
+  costs [--port P] [--spot NAME | --at x,y,z --face yaw,pitch] [--frames N] [--rounds N] [--bench N]   what a frame costs at one view of a running instance: frame p50/p99, GPU and submit time, the world passes and phases, the walk's clipping, batches and sprites (the performance scope's step 0)
   abperf "<setting>" "<setting>" ... [--rounds N] [--frames N] [--spot NAME | --at x,y,z --face yaw,pitch]   frame time (p50/p99) under each console setting in turn inside one running session, round by round, each judged against the first within its round (default 3 rounds)
   shot <tag> [--port P] [--spot NAME | --at x,y,z --face yaw,pitch] [--force] [--same-frame]   matched GL/Vulkan pair from a running instance, one camera, sim frozen; --same-frame takes both from one engine frame, for an animated texture
   window [--shot gl|vk --out FILE]   the engine's windows as Windows sees them (minimized, hung, where), and with --shot what that window really shows, read from the compositor rather than GL's own buffer
@@ -473,9 +475,15 @@ async function main() {
         const cam = await captureSpot(c, shot.PARKED, `parked from port ${t.port}`, shot.parkFileFor(SESSION(), t.port)).finally(() => c.close());
         console.log(`parked ${cam.map} at ${cam.x},${cam.y},${cam.z} facing ${cam.yaw},${cam.pitch}`);
       }
-      const outcome = await quitInstance(t);
+      let outcome = await quitInstance(t);
+      // [rc4l] A launch whose session file is gone leaves no token, so its orphan on this port is stopped as `reap --kill` stops orphans.
+      if (outcome === "refused" || outcome === "running") {
+        const orphans = liveOnPort(readRegistry(), t.port, pidAlive).filter((e) => e.orphan);
+        for (const e of orphans) { try { process.kill(e.pid, "SIGTERM"); } catch { /* gone already */ } }
+        if (orphans.length) outcome = `stopped orphan pid ${orphans.map((e) => e.pid).join(", ")}`;
+      }
       console.log(`${outcome}: port ${t.port}`);
-      process.exitCode = outcome === "running" ? 1 : 0;
+      process.exitCode = outcome === "running" || outcome === "refused" ? 1 : 0;
       break;
     }
     case "rpc": {
@@ -518,8 +526,8 @@ async function main() {
       // function-level hotspots of a running instance (by --pid, or --port -> registry lookup)
       let pid = flags.pid ? Number(flags.pid) : null;
       if (!pid && flags.port) {
-        const e = readRegistry().find((x) => String(x.port) === String(flags.port));
-        if (e) pid = e.pid;
+        const live = liveOnPort(readRegistry(), flags.port, pidAlive);
+        if (live.length) pid = live[0].pid;
       }
       if (!pid) { console.error("usage: fuactl sample --pid P | --port P [--seconds N]"); process.exit(2); }
       const opts = {
@@ -898,6 +906,17 @@ async function main() {
         const { verdicts } = await abPerf(c, rest, { rounds: num(flags.rounds) ?? 3, frames: num(flags.frames) ?? 400,
           log: (r) => console.log(`round ${r.round}  ${r.setting.padEnd(36)} p50 ${r.p50.toFixed(3)} ms  p99 ${r.p99.toFixed(3)} ms`) });
         for (const v of verdicts) console.log(`${v.label}: ${v.verdict}, median ${v.median} ms (by round: ${v.deltas.join(", ")})`);
+      } finally { c.close(); }
+      break;
+    }
+    // [rc4l] `fuactl costs` -- the step-0 numbers for one view, where they took abperf, three console reports and a script.
+    case "costs": {
+      const usage = "usage: fuactl costs [--port P] [--spot NAME | --at x,y,z --face yaw,pitch] [--frames N] [--rounds N] [--bench N]";
+      const c = await connectTarget(flags, usage);
+      try {
+        const at = shot.cameraFromFlags(flags, SPOTS);
+        if (at) await shot.moveTo(c, at);
+        console.log(formatCosts(await measureCosts(c, { frames: num(flags.frames) ?? 400, rounds: num(flags.rounds) ?? 3, bench: num(flags.bench) ?? 120 })));
       } finally { c.close(); }
       break;
     }

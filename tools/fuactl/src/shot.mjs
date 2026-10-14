@@ -421,6 +421,11 @@ export function compile(cm, root, dir, target, log, config = "Release") {
 // [rc4l] The data pk3s the engine loads from beside its binary, as the build names their targets.
 export const PK3_TARGETS = ["pk3", "brightmaps_pk3", "skulltag_actors_pk3"];
 
+// [rc4l] What is staged beside the exe from the build's output: the data pk3s it loads and its symbols, without which a sample or a crash of the staged binary names no function.
+export function stageCompanions(names) {
+  return names.filter((f) => f.endsWith(".pk3") || f === "forkundera.pdb");
+}
+
 // [rc4l] Compile the engine, and with tests the unit tests too and run them; then stage it unless stage is false, which leaves the user's binary alone mid-investigation.
 export function build({ root = REPO_ROOT, cmake = null, log = console.error, stage = true, tests = false } = {}) {
   const cm = cmake || pickCmake();
@@ -455,8 +460,8 @@ export function build({ root = REPO_ROOT, cmake = null, log = console.error, sta
     catch (e) { lastErr = e; Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 250); }
   }
   if (lastErr) throw new Error(`could not stage over the running binary after 10s: ${lastErr.message}`);
-  for (const pk3 of fs.readdirSync(path.dirname(from)).filter((f) => f.endsWith(".pk3"))) {
-    fs.copyFileSync(path.join(path.dirname(from), pk3), path.join(root, "dist-windows", pk3));
+  for (const f of stageCompanions(fs.readdirSync(path.dirname(from)))) {
+    fs.copyFileSync(path.join(path.dirname(from), f), path.join(root, "dist-windows", f));
   }
 
   // [rc4l] The addon catalogue, alongside the binary, because the HOST tab reads it from progdir.

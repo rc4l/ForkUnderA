@@ -175,8 +175,19 @@ export function playArgs(files, { noGl = false } = {}) {
   return [...files.flatMap((f) => ["-file", f]), ...(noGl ? ["-vulkan"] : [])];
 }
 
-export async function play(opts = {}) {
+// [rc4l] Whether an engine still answers on port once a closing one has had graceMs to go.
+export async function portStillAnswers(port, { connect = bridgeConnect, graceMs = 2000, pollMs = 200 } = {}) {
+  for (const deadline = Date.now() + graceMs; ;) {
+    try { (await connect(Number(port), null)).close(); } catch { return false; }
+    if (Date.now() >= deadline) return true;
+    await sleep(pollMs);
+  }
+}
+
+export async function play(opts = {}, { connect = bridgeConnect, graceMs = 2000 } = {}) {
   const port = opts.port || 7900;
+  // [rc4l] An engine still answering on the port keeps its session files, since clearing them left it with no token to be quit by.
+  if (await portStillAnswers(port, { connect, graceMs })) throw new Error(`port ${port} is in use: quit it first (fuactl quit --port ${port}) or launch with --restart`);
   if (!opts.sessionFile) return launchChecked(opts, port);
   clearPortSessions(opts.sessionFile, port);
   return holdingLaunchFile(opts.sessionFile, port, () => launchChecked(opts, port));
@@ -271,8 +282,11 @@ async function bridgeConnect(port, token) {
 export async function quitInstance({ port, token = null }, { connect = bridgeConnect, timeoutMs = 10000, pollMs = 200 } = {}) {
   let c;
   try { c = await connect(Number(port), token); } catch { return "absent"; }
-  await c.rpc("console.exec", { text: "quit" }).catch(() => {});
+  let failed = false;
+  await c.rpc("console.exec", { text: "quit" }).catch(() => { failed = true; });
   c.close();
+  // [rc4l] A failed quit on a port that still answers was refused (a caller without its token), which waiting cannot change; one that closed has gone.
+  if (failed) { try { (await connect(Number(port), token)).close(); return "refused"; } catch { return "stopped"; } }
   for (const deadline = Date.now() + timeoutMs; Date.now() < deadline;) {
     await sleep(pollMs);
     try { (await connect(Number(port), token)).close(); } catch { return "stopped"; }

@@ -5,7 +5,7 @@ import { spawnSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
 import { resolveEngine, engineArgs, describeExit, countEngineLines, missingCoreData, resFlag } from "../src/launch.mjs";
-import { sweepDirFor, pickCmake, resolveTarget, readSession, sessionFileFor, restartSessionFile, cameraFromFlags, cvarValueFrom, parseCvarFlag, spotLaunch, parkFileFor, parkedLaunch, PARKED, clearPortSessions, liveTarget, pidAlive, buildErrors, summarizeGtest, sourcesStamp, standAt, launchFileFor, holdingLaunchFile, launchInProgress, awaitLaunch, atFromCamera, releaseOf, stepTag, sameFrameCommand } from "../src/shot.mjs";
+import { sweepDirFor, pickCmake, resolveTarget, readSession, sessionFileFor, restartSessionFile, cameraFromFlags, cvarValueFrom, parseCvarFlag, spotLaunch, parkFileFor, parkedLaunch, PARKED, clearPortSessions, liveTarget, pidAlive, buildErrors, summarizeGtest, sourcesStamp, standAt, launchFileFor, holdingLaunchFile, launchInProgress, awaitLaunch, atFromCamera, releaseOf, stepTag, sameFrameCommand, stageCompanions } from "../src/shot.mjs";
 
 // Run `fn` with cwd moved to `dir` and FUACTL_ENGINE cleared, then put both back.
 function inDir(dir, fn) {
@@ -400,4 +400,10 @@ test("a launch draws with GL unless it asks for -vulkan, since the engine's defa
   assert.ok(vk.includes("-vulkan"));
   assert.ok(!vk.includes("-gl"));
   assert.ok(!engineArgs({ engineDefault: true }, "x.ini").includes("-gl"));
+});
+
+// [rc4l] The staged binary's symbols went stale while its exe moved on, so samples and crashes of it named no function.
+test("the pk3s and the symbols are staged beside the exe, and nothing else from the build", () => {
+  assert.deepEqual(stageCompanions(["forkundera.exe", "forkundera.pdb", "fua_core.pk3", "brightmaps.pk3", "zdoom.ilk", "other.pdb"]),
+    ["forkundera.pdb", "fua_core.pk3", "brightmaps.pk3"]);
 });

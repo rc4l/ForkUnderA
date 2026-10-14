@@ -1,6 +1,30 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { quitInstance, withLockedInstance } from "../src/play.mjs";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { quitInstance, withLockedInstance, portStillAnswers, play } from "../src/play.mjs";
+
+// [rc4l] A second launch on a busy port cleared the first's session file, and that engine could no longer be quit by its token.
+test("a port an engine still answers on is in use, and one that closes within the grace is not", async () => {
+  const ok = async () => ({ close: () => {} });
+  const refused = async () => { throw new Error("connect ECONNREFUSED"); };
+  assert.equal(await portStillAnswers(7799, { connect: ok, graceMs: 5, pollMs: 1 }), true);
+  assert.equal(await portStillAnswers(7799, { connect: refused, graceMs: 5, pollMs: 1 }), false);
+  let n = 0;
+  const closing = async () => { if (n++ > 0) throw new Error("gone"); return { close: () => {} }; };
+  assert.equal(await portStillAnswers(7799, { connect: closing, graceMs: 1000, pollMs: 1 }), false);
+});
+
+test("play refuses a port in use and leaves its session files alone", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fuactl-play-"));
+  const sessionFile = path.join(dir, ".play-session");
+  const record = "PORT=7799\nTOKEN=abc\n";
+  fs.writeFileSync(`${sessionFile}-7799`, record);
+  await assert.rejects(play({ port: 7799, sessionFile }, { connect: async () => ({ close: () => {} }), graceMs: 1 }), /port 7799 is in use/);
+  assert.equal(fs.readFileSync(`${sessionFile}-7799`, "utf8"), record);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
 
 // [rc4l] A bridge that answers for the first `alive` connections and refuses after, recording what it was sent.
 function fakeBridge(alive) {
@@ -24,6 +48,14 @@ test("nothing listening is absent, and nothing is sent", async () => {
   const b = fakeBridge(0);
   assert.equal(await quitInstance({ port: 7801 }, { connect: b.connect, pollMs: 1 }), "absent");
   assert.deepEqual(b.sent, []);
+});
+
+// [rc4l] A launch whose session file was lost has no token, and its bridge turns the quit away.
+test("a quit the bridge refuses is reported refused at once, without waiting for the port", async () => {
+  let connects = 0;
+  const connect = async () => { connects++; return { rpc: async () => { throw new Error("unauthorized"); }, close: () => {} }; };
+  assert.equal(await quitInstance({ port: 7799 }, { connect, timeoutMs: 10000, pollMs: 1 }), "refused");
+  assert.equal(connects, 2);   // [rc4l] the quit, then one look that the port still answers
 });
 
 test("an instance still answering at the deadline is reported running", async () => {
