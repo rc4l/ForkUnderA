@@ -8,7 +8,7 @@
 
 namespace zx { namespace hwrender {
 
-// [rc4l] What a swapchain is made on: an HWND on Windows; an X11 window and display, or a Wayland surface and display, on Linux; a Metal-layered NSView on macOS.
+// [rc4l] What a swapchain is made on: an HWND on Windows; an X11 window and display, or a Wayland surface and display, on Linux; a Metal-layered NSView on macOS; a canvas's CSS selector in a browser.
 struct BackendWindowHandles
 {
 	void *hwnd;
@@ -17,6 +17,7 @@ struct BackendWindowHandles
 	void *waylandSurface;
 	void *waylandDisplay;
 	void *nsView;
+	const char *canvasId;
 };
 
 // [rc4l] A window for the backend `w` by `h`: the engine's own when GL does not draw into it, inside it where the platform can nest one, else beside it; NULL when none could be made.

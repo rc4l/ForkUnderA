@@ -47,7 +47,7 @@
 #include "doomstat.h"
 #include "m_argv.h"
 #ifndef NO_GL
-#include "sdlglvideo.h"
+#include "sdlvideo.h"
 #endif
 // [rc4l] video-scale: faithful port of upstream's r_videoscale math. See features/video-scale.
 #include "features/video-scale/computation/videoscale_compute.h"
@@ -125,9 +125,9 @@ void I_InitGraphics ()
 	val.Bool = !!Args->CheckParm ("-devparm");
 	ticker.SetGenericRepDefault (val, CVAR_Bool);
 
-#ifndef NO_GL
-	// [rc4l] GL-only build: OpenGL is the only renderer, so there is no software video backend to fall back to.
-	Video = new SDLGLVideo(0);
+#if !defined(NO_GL) || defined(FUA_DILIGENT)
+	// [rc4l] A build with a renderer, GL or the backend, opens the engine's window; there is no software video backend to fall back to.
+	Video = new SDLVideo(0);
 #else
 	// [rc4l] The dedicated server has no renderer and must never try to open a window.
 	I_FatalError ("This is a server-only build; it cannot initialize graphics");

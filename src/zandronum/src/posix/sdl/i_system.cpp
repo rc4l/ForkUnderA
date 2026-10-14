@@ -86,6 +86,9 @@
 #include "cl_demo.h"
 #include "cl_main.h"
 #include "v_text.h"
+#ifdef __EMSCRIPTEN__
+#include "features/web/webdriver.h"   // [rc4l] Fatal, the page's error
+#endif
 
 EXTERN_CVAR (String, language)
 
@@ -405,6 +408,10 @@ void STACK_ARGS I_FatalError (const char *error, ...)
 #ifdef __APPLE__
 		Mac_I_FatalError(errortext);
 #endif // __APPLE__
+#ifdef __EMSCRIPTEN__
+		// [rc4l] A page has no stderr to look at, so the loop stops and the message shows on it.
+		zx::web::Fatal(errortext);
+#endif
 		
 		// Record error to log (if logging)
 		if (Logfile)

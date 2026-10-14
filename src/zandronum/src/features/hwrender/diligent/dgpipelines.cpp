@@ -646,9 +646,9 @@ const std::string &UserShaderBlock()
 				"layout(location = 0) in vec2 vUV;\n"
 				"layout(location = 1) flat in vec2 vWarp;\n"
 				"layout(binding = 0) uniform Probe { vec4 uFrame; };\n"
-				"layout(binding = 1) uniform sampler2D uTex;\n"
+				"layout(binding = 1) uniform texture2D uTex; uniform sampler uTex_sampler;\n"
 				"layout(location = 0) out vec4 outColor;\n"
-				"vec4 fuaTexel(vec2 uv) { return texture(uTex, uv); }\n"
+				"vec4 fuaTexel(vec2 uv) { return texture(sampler2D(uTex, uTex_sampler), uv); }\n"
 				"vec4 fuaTexMode(vec4 t) { return t; }\n") +
 				zx::hwshaders::ComputeUserShaderBlock({ probeCode }, { probeStyle }) +
 				"void main() { outColor = fuaSurfaceTexel(vUV); }\n";
@@ -768,13 +768,7 @@ bool EnsureScenePipeline(FString &err)
 	const Diligent::ImmutableSamplerDesc samplers[] = {
 		{ Diligent::SHADER_TYPE_PIXEL, "uTex", samp },
 		{ Diligent::SHADER_TYPE_PIXEL, "uBrightmap", samp },
-		// [rc4l] The material array needs its own, and this is not optional.
-		//
-		// A GLSL sampler2D is a COMBINED image sampler, so an ARRAY of them needs a sampler
-		// declared for the array too. Without one the variable does not reach the pipeline's
-		// resource list at all -- GetStaticVariableByName returns null and the pixel statics are
-		// Constants, LightBuffer and the two cluster buffers, with no sign that a sampler array
-		// was ever declared. That reads as the shader having dropped it.
+		// [rc4l] The material array's sampler, uMaterials_sampler, is immutable as well, or it is a variable nothing binds.
 		{ Diligent::SHADER_TYPE_PIXEL, "uMaterials", samp },
 	};
 
@@ -810,15 +804,17 @@ bool EnsureScenePipeline(FString &err)
 		pci.GraphicsPipeline.InputLayout.LayoutElements = layout;
 		pci.GraphicsPipeline.InputLayout.NumElements = 3;
 		pci.PSODesc.ResourceLayout.DefaultVariableType = Diligent::SHADER_RESOURCE_VARIABLE_TYPE_STATIC;
+		// [rc4l] The material array is the last of each, left out where the shaders have none (FUA_BINDLESS).
+		const Diligent::Uint32 noArray = MaterialSlotCapacity() > 0 ? 0 : 1;
 		pci.PSODesc.ResourceLayout.Variables = vars;
 		pci.PSODesc.ResourceLayout.NumVariables =
-			(Diligent::Uint32)(sizeof(vars) / sizeof(vars[0]));
+			(Diligent::Uint32)(sizeof(vars) / sizeof(vars[0])) - noArray;
 		pci.PSODesc.ResourceLayout.ImmutableSamplers = samplers;
 		pci.PSODesc.ResourceLayout.NumImmutableSamplers =
-			(Diligent::Uint32)(sizeof(samplers) / sizeof(samplers[0]));
+			(Diligent::Uint32)(sizeof(samplers) / sizeof(samplers[0])) - noArray;
 		pci.pVS = vs;
 		pci.pPS = stages[d.stage];
-		dev->CreateGraphicsPipelineState(pci, &g_pso.world[pass]);
+		CreatePipeline(pci, &g_pso.world[pass]);
 		if (!g_pso.world[pass]) { err = "scene pipeline creation failed"; return false; }
 	}
 

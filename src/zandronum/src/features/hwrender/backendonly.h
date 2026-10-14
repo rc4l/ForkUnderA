@@ -46,6 +46,8 @@ void ForgetBackendWindow(void *window);
 
 // [rc4l] The largest 2D texture the device takes, which camera textures are sized against; 0 before the device is up.
 int BackendMaxTextureSize();
+// [rc4l] The graphics API the backend's device is made on ("Vulkan" or "WebGPU"); "" in a build without the backend.
+const char *BackendApiName();
 
 // [rc4l] The engine drew a view of the world this frame, which the present draws under the 2D layer.
 void NoteWorldView();

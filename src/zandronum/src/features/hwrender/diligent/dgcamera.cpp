@@ -32,9 +32,9 @@ static TArray<CameraTarget *> g_cameraTargets;
 static const char *kCameraFlipPS =
 	"#version 450\n"
 	"layout(location = 0) in vec2 vUV;\n"
-	"layout(binding = 1) uniform sampler2D uTex;\n"
+	"layout(binding = 1) uniform texture2D uTex; uniform sampler uTex_sampler;\n"
 	"layout(location = 0) out vec4 outColor;\n"
-	"void main() { outColor = vec4(texture(uTex, vec2(vUV.x, 1.0 - vUV.y)).rgb, 1.0); }\n";
+	"void main() { outColor = vec4(texture(sampler2D(uTex, uTex_sampler), vec2(vUV.x, 1.0 - vUV.y)).rgb, 1.0); }\n";
 static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_cameraFlipPSO;
 
 // [rc4l] The scratch picture into the camera texture upside down, outside any pass that samples it.

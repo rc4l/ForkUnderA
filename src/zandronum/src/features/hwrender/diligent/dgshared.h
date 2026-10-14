@@ -66,7 +66,7 @@
 // [rc4l] One piece's record as every shader reads it, declared once so its stride cannot drift from ScenePieceData's.
 #define FUA_PIECEDATA_GLSL \
 	"struct PieceData { vec4 colorLight; vec4 fogAlphaMat; vec4 fogColor; vec4 normal; vec4 floodU; vec4 floodV; vec4 actorLight; vec4 bright; vec4 glowTop; vec4 glowBottom; vec4 glowTopPlane; vec4 glowBottomPlane; vec4 tint; vec4 tintRange; vec4 extra; };\n" \
-	"layout(std430, binding = 9) readonly buffer Pieces { PieceData pieces[]; };\n"
+	"layout(std430, binding = 9) readonly buffer Pieces { PieceData pieces[]; } PiecesIn;\n"
 
 #include "RenderDevice.h"
 #include "DeviceContext.h"
@@ -102,6 +102,8 @@ void SetBlendEquation(Diligent::RenderTargetBlendDesc &rt, int blend);
 
 // [rc4l] One GLSL stage compiled as written, or null when it fails (Diligent says why through its message callback).
 Diligent::RefCntAutoPtr<Diligent::IShader> CompileShader(Diligent::SHADER_TYPE type, const char *name, const char *source);
+// [rc4l] Every backend pipeline is made here, its shaders' storage buffers marked as never bound with a dynamic offset (none is), since WebGPU allows a pipeline only 8 that are.
+void CreatePipeline(const Diligent::GraphicsPipelineStateCreateInfo &pci, Diligent::IPipelineState **pso);
 
 // The texture a material draws with, and a resource binding for one against a given pipeline. Both
 // cache, so asking every frame is what they are for.

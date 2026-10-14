@@ -5,6 +5,9 @@
 
 #include "features/hwshaders/computation/hwshader_compute.h"   // [rc4l] ComputeSpliceShaderBlock
 #include "features/hwrender/computation/framepacing_compute.h"
+#include "features/hwrender/computation/shaderdump_compute.h"
+#include "features/hwrender/computation/layoutvars_compute.h"
+#include "cmdlib.h"   // [rc4l] CreatePath
 #include "features/framephase/framephase.h"   // [rc4l] the backend, upload, lights and present phases
 #include "c_dispatch.h"
 #include "c_console.h"
@@ -193,6 +196,9 @@ static_assert(zx::hwrender::kClusterTilePixels == 64 && zx::hwrender::kClusterSl
 // declares a DIFFERENT symbol that links against nothing.
 EXTERN_CVAR(Int, fua_decalmode)
 
+// [rc4l] A directory every composed shader is written into as it compiles, to check each against the WebGPU conversion off the engine.
+CVAR(String, fua_dg_shaderdump, "", 0)
+
 namespace zx { namespace hwrender {
 
 // [rc4l] Backend chatter, off by default: here, when the scene targets are rebuilt and at what size.
@@ -232,26 +238,69 @@ static unsigned int g_preparedSerial = 0;
 // [rc4l] Off runs the frame-wide jobs again in every pass, the old cost, for an A/B in one session.
 CVAR(Bool, fua_dg_frameprep, true, 0)
 
+static void DumpShader(Diligent::SHADER_TYPE type, const char *name, const std::string &text)
+{
+	const char *dir = fua_dg_shaderdump;
+	if (*dir == '\0') return;
+	CreatePath(dir);
+	FString path;
+	path.Format("%s/%s", dir, ComputeShaderDumpName(name, type == Diligent::SHADER_TYPE_PIXEL).c_str());
+	FILE *f = fopen(path.GetChars(), "wb");
+	if (f == NULL) { Printf("fua_dg_shaderdump: cannot write %s\n", path.GetChars()); return; }
+	fwrite(text.data(), 1, text.size(), f);
+	fclose(f);
+}
+
 Diligent::RefCntAutoPtr<Diligent::IShader> CompileShader(Diligent::SHADER_TYPE type, const char *name, const char *source)
 {
 	Diligent::RefCntAutoPtr<Diligent::IShader> shader;
 	auto *dev = GetDevice();
 	if (dev == NULL) return shader;
-	// [rc4l] Every shader learns the material array's size on this device, at least one so a declaration stays legal with bindless off.
-	char defines[64];
-	const unsigned slots = MaterialSlotCapacity();
-	snprintf(defines, sizeof(defines), "#define FUA_MAT_SLOTS %u\n", slots > 0 ? slots : 1u);
-	std::string text = zx::hwrender::ComputeShaderWithDefines(source, defines);
+	// [rc4l] Every shader learns the material array's size on this device, and whether it has the array at all.
+	std::string text = zx::hwrender::ComputeShaderWithDefines(source, zx::hwrender::ComputeMaterialShaderDefines(MaterialSlotCapacity()));
 	// [rc4l] A scene shader takes GLDEFS' hardware shaders at its marker; nothing else has one, so checking each of them alone cannot come back here.
 	if (text.find(kUserShaderMarker) != std::string::npos)
 		text = zx::hwshaders::ComputeSpliceShaderBlock(text, kUserShaderMarker, UserShaderBlock());
+	DumpShader(type, name, text);
 	Diligent::ShaderCreateInfo ci;
 	ci.SourceLanguage = Diligent::SHADER_SOURCE_LANGUAGE_GLSL_VERBATIM;
+	// [rc4l] Each texture's sampler is declared apart as <texture>_sampler, since WGSL has no combined sampler, and this pairs the two for the bindings and immutable samplers named by texture.
+	ci.Desc.UseCombinedTextureSamplers = true;
 	ci.Desc.ShaderType = type;
 	ci.Desc.Name = name;
 	ci.Source = text.c_str();
 	dev->CreateShader(ci, &shader);
 	return shader;
+}
+
+void CreatePipeline(const Diligent::GraphicsPipelineStateCreateInfo &pci, Diligent::IPipelineState **pso)
+{
+	const Diligent::PipelineResourceLayoutDesc &layout = pci.PSODesc.ResourceLayout;
+	std::vector<zx::hwrender::LayoutVar> vars;
+	for (Diligent::Uint32 i = 0; i < layout.NumVariables; i++)
+		vars.push_back({ (unsigned)layout.Variables[i].ShaderStages, layout.Variables[i].Name, (int)layout.Variables[i].Type, (unsigned)layout.Variables[i].Flags });
+	std::vector<zx::hwrender::StageBuffer> buffers;
+	for (Diligent::IShader *shader : { pci.pVS, pci.pPS })
+	{
+		if (shader == nullptr) continue;
+		for (Diligent::Uint32 r = 0; r < shader->GetResourceCount(); r++)
+		{
+			Diligent::ShaderResourceDesc d;
+			shader->GetResourceDesc(r, d);
+			if (d.Type == Diligent::SHADER_RESOURCE_TYPE_BUFFER_SRV || d.Type == Diligent::SHADER_RESOURCE_TYPE_BUFFER_UAV)
+				buffers.push_back({ (unsigned)shader->GetDesc().ShaderType, d.Name });
+		}
+	}
+	vars = zx::hwrender::ComputeFlagStorageBuffers(vars, buffers, (int)layout.DefaultVariableType,
+		(unsigned)Diligent::SHADER_VARIABLE_FLAG_NO_DYNAMIC_BUFFERS);
+	std::vector<Diligent::ShaderResourceVariableDesc> descs;
+	for (const zx::hwrender::LayoutVar &v : vars)
+		descs.push_back(Diligent::ShaderResourceVariableDesc((Diligent::SHADER_TYPE)v.stages, v.name.c_str(),
+			(Diligent::SHADER_RESOURCE_VARIABLE_TYPE)v.type, (Diligent::SHADER_VARIABLE_FLAGS)v.flags));
+	Diligent::GraphicsPipelineStateCreateInfo flagged = pci;
+	flagged.PSODesc.ResourceLayout.Variables = descs.empty() ? nullptr : descs.data();
+	flagged.PSODesc.ResourceLayout.NumVariables = (Diligent::Uint32)descs.size();
+	GetDevice()->CreateGraphicsPipelineState(flagged, pso);
 }
 
 // [rc4l] The backend's own vertex, laid out BY MATERIAL rather than in bake order.
@@ -734,7 +783,7 @@ static void PrepareFrame(Diligent::IDeviceContext *ctx)
 		g_phase.lights.Clock();    CollectDynamicLights(ctx);   g_phase.lights.Unclock();
 	}
 	// [rc4l] Before anything is recorded: rebuilding a binding that a command buffer already holds is a use-after-free, and this only works on the frames the material table changed.
-	if (fua_dg_bindless) { ReserveDynamicSlots(); RefreshBindless(); }
+	if (fua_dg_bindless && MaterialSlotCapacity() > 0) { ReserveDynamicSlots(); RefreshBindless(); }
 	g_phase.animation.Clock();
 	// [rc4l] Re-resolve animated textures, since a batch's material was resolved once at bake time and would freeze on its first frame.
 	// [rc4l] Each base texture asked once, its batches gathered by ComputeGroupByKey: wdiex01's 48,000 batches share about 700 textures, and asking per batch cost 0.06 ms a frame.
@@ -782,6 +831,13 @@ static void PrepareFrame(Diligent::IDeviceContext *ctx)
 	g_framePhase[4] += g_phase.animation.TimeMS();
 }
 
+// [rc4l] The main view's targets: the frame's colour and the scene's depth, with the G-buffer's normal beside them when `normal`.
+static void BindWorldTargets(Diligent::IDeviceContext *ctx, bool normal)
+{
+	Diligent::ITextureView *targets[2] = { FrameRTV(), SceneNormalRTV() };
+	ctx->SetRenderTargets(normal ? 2 : 1, targets, SceneDepthDSV(), Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+}
+
 void DrawWorld(Diligent::IDeviceContext *ctx)
 {
 	cycle_t whole;
@@ -821,7 +877,14 @@ void DrawWorld(Diligent::IDeviceContext *ctx)
 	g_phase.draw.Clock();
 
 	// [rc4l] Sky first, with depth off, so the world paints over whatever it does not cover.
-	if (fua_dg_sky) DrawSkyBackground(ctx);
+	if (fua_dg_sky)
+	{
+		// [rc4l] Under colour and depth alone, the G-buffer bound again after, since the sky's pipelines declare one colour target and WebGPU holds a pipeline to its pass's.
+		const bool gbuf = g_pass.gbufBound;
+		if (gbuf) BindWorldTargets(ctx, false);
+		DrawSkyBackground(ctx);
+		if (gbuf) BindWorldTargets(ctx, true);
+	}
 
 	Diligent::IBuffer *vbs[] = { g_scene.vb };
 	const Diligent::Uint64 offsets[] = { 0 };

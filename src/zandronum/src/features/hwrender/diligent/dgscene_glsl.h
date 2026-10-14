@@ -46,22 +46,22 @@ static const char *kSceneVS =
 	"layout(location = 20) flat out vec4 vGlowBottom;\n"
 	"layout(location = 21) flat out vec4 vTint;\n"
 	"layout(location = 22) flat out vec3 vTintRange;\n"
-	"layout(std430, binding = 10) readonly buffer StackVis { uint stackVis[]; };\n"
-	"layout(std430, binding = 11) readonly buffer SlotRemap { uint slotRemap[]; };\n"
+	"layout(std430, binding = 10) readonly buffer StackVis { uint stackVis[]; } StackVisIn;\n"
+	"layout(std430, binding = 11) readonly buffer SlotRemap { uint slotRemap[]; } SlotRemapIn;\n"
 	// [rc4l] ComputeStackVisible, line for line: whether walk slot's walk drew id this frame.
 	"bool fuaWalked(int id, int slot) {\n"
 	"    int bit = id * int(uOptions.y + 0.5) + slot;\n"
-	"    return (stackVis[bit >> 5] & (1u << uint(bit & 31))) != 0u;\n"
+	"    return (StackVisIn.stackVis[bit >> 5] & (1u << uint(bit & 31))) != 0u;\n"
 	"}\n"
 	"void main() {\n"
-	"    PieceData pd = pieces[int(aPiece + 0.5)];\n"
+	"    PieceData pd = PiecesIn.pieces[int(aPiece + 0.5)];\n"
 	"    vWarp = vec2(pd.fogColor.w, pd.normal.w);\n"
 	"    vFloodU = pd.floodU;\n"
 	"    vFloodV = pd.floodV;\n"
 	"    vActorLight = pd.actorLight;\n"
 	"    vBrightSlot = int(pd.bright.x + 0.5);\n"
 	// [rc4l] bright.z marks a baked piece on an animated texture, whose slots SlotRemap turns into those of the frame showing.
-	"    if (pd.bright.z > 0.5) vBrightSlot = int(slotRemap[vBrightSlot]);\n"
+	"    if (pd.bright.z > 0.5) vBrightSlot = int(SlotRemapIn.slotRemap[vBrightSlot]);\n"
 	// [rc4l] The piece's subsector or sidedef as GL's light links name it (bright.y is PieceStackId plus one), or -1 for a sprite or model.
 	"    vLinkId = int(pd.bright.y + 0.5) - 1;\n"
 	"    vPlain = pd.bright.w;\n"
@@ -99,7 +99,7 @@ static const char *kSceneVS =
 	// projection's -1 in the w row copies eye-space -z straight through.
 	"    vPixelPos = vec4(aPos, clip.w);\n"
 	"    vLightIndex = int(pd.fogAlphaMat.w);\n"
-	"    if (pd.bright.z > 0.5) vLightIndex = int(slotRemap[vLightIndex]);\n"
+	"    if (pd.bright.z > 0.5) vLightIndex = int(SlotRemapIn.slotRemap[vLightIndex]);\n"
 	"    vNormal = pd.normal.xyz;\n"
 	// [rc4l] The surface PLANE, flat: its normal and its distance from the origin.
 	//
@@ -139,7 +139,9 @@ static const char *kSceneVS =
 // [rc4l] FUA_MAT_SLOTS, the material array's size, is defined by CompileShader from the device's limits (MaterialSlotCapacity).
 
 #define FUA_LIGHT_GLSL \
+	"#ifdef FUA_BINDLESS\n" \
 	"#extension GL_EXT_nonuniform_qualifier : require\n" \
+	"#endif\n" \
 	"layout(location = 0) in vec2 vUV;\n" \
 	"layout(location = 1) in vec3 vColor;\n" \
 	"layout(location = 2) in vec3 vLightParm;\n" \
@@ -180,11 +182,11 @@ static const char *kSceneVS =
 	FUA_CONSTANTS_GLSL \
 	FUA_FIXED_COLORMAP_GLSL \
 	FUA_FUZZ_GLSL \
-	"layout(binding = 1) uniform sampler2D uTex;\n" \
+	"layout(binding = 1) uniform texture2D uTex; uniform sampler uTex_sampler;\n" \
 	/* [rc4l] The brightmap layer, present on EVERY material -- black where there is none.
 	   The brightmap is added to the lit colour, so black is the identity, and that removes the
 	   alternative: a per-batch flag, a branch here, and a second pipeline permutation. */ \
-	"layout(binding = 5) uniform sampler2D uBrightmap;\n" \
+	"layout(binding = 5) uniform texture2D uBrightmap; uniform sampler uBrightmap_sampler;\n" \
 	/* [rc4l] Every material in the level, reachable from one descriptor set.
 
 	   uSkyColor.w carries the live slot count, so zero means "use the bound texture" and the whole
@@ -195,7 +197,10 @@ static const char *kSceneVS =
 	   nonuniformEXT is not decoration: neighbouring fragments in one quad can sit on different
 	   surfaces with different slots, and without it the index is assumed uniform across the wave
 	   and the whole quad samples whichever one won. */ \
-	"layout(binding = 8) uniform sampler2D uMaterials[FUA_MAT_SLOTS];\n" \
+	/* [rc4l] Only where the device has the array (FUA_BINDLESS); WebGPU has no texture arrays, so it draws with a binding per material. */ \
+	"#ifdef FUA_BINDLESS\n" \
+	"layout(binding = 8) uniform texture2D uMaterials[FUA_MAT_SLOTS]; uniform sampler uMaterials_sampler;\n" \
+	"#endif\n" \
 	/* [rc4l] GL's func_warp1.fp and func_warp2.fp, line for line -- see warp_compute for the tested copy. */ \
 	"vec2 fuaWarp(vec2 uv) {\n" \
 	"    if (vWarp.x < 0.5 || vWarp.x > 2.5) return uv;\n" \
@@ -229,19 +234,21 @@ static const char *kSceneVS =
 	"}\n" \
 	"vec4 fuaTexel(vec2 uvIn) {\n" \
 	"    vec2 uv = fuaWarp(fuaFloodUV(uvIn));\n" \
+	"#ifdef FUA_BINDLESS\n" \
 	"    if (uSkyColor.w > 0.5 && vLightIndex > 0)\n" \
-	"        return texture(uMaterials[nonuniformEXT(vLightIndex)], uv);\n" \
-	"    return texture(uTex, uv);\n" \
+	"        return texture(sampler2D(uMaterials[nonuniformEXT(vLightIndex)], uMaterials_sampler), uv);\n" \
+	"#endif\n" \
+	"    return texture(sampler2D(uTex, uTex_sampler), uv);\n" \
 	"}\n" \
-	"layout(std430, binding = 2) readonly buffer LightBuffer { vec4 lights[]; };\n" \
+	"layout(std430, binding = 2) readonly buffer LightBuffer { vec4 lights[]; } LightBufferIn;\n" \
 	/* [rc4l] ComputeBehindSkyHole, line for line: whether the eye's line to this fragment passes through one of the player's sky holes (two vec4s each, ComputeSkyHoleRecord) first. */ \
-	"layout(std430, binding = 14) readonly buffer SkyHoles { vec4 skyHoles[]; };\n" \
+	"layout(std430, binding = 14) readonly buffer SkyHoles { vec4 skyHoles[]; } SkyHolesIn;\n" \
 	"bool fuaBehindSkyHole() {\n" \
 	"    if (vHoleCut < 0.5) return false;\n" \
 	"    vec2 d = vPixelPos.xz - uCameraPos.xz;\n" \
 	"    int n = int(uFrame.z + 0.5);\n" \
 	"    for (int i = 0; i < n; i++) {\n" \
-	"        vec4 seg = skyHoles[2 * i], zs = skyHoles[2 * i + 1];\n" \
+	"        vec4 seg = SkyHolesIn.skyHoles[2 * i], zs = SkyHolesIn.skyHoles[2 * i + 1];\n" \
 	"        vec2 e = seg.zw - seg.xy;\n" \
 	"        float den = d.x * e.y - d.y * e.x;\n" \
 	"        if (abs(den) < 1e-6) continue;\n" \
@@ -255,18 +262,18 @@ static const char *kSceneVS =
 	"    return false;\n" \
 	"}\n" \
 	/* [rc4l] The cluster grid: (offset, count) per cell, and the runs those point into. */ \
-	"layout(std430, binding = 6) readonly buffer ClusterTable { uvec2 clusterCells[]; };\n" \
-	"layout(std430, binding = 7) readonly buffer ClusterLightIndices { uint clusterLights[]; };\n" \
+	"layout(std430, binding = 6) readonly buffer ClusterTable { uvec2 clusterCells[]; } ClusterTableIn;\n" \
+	"layout(std430, binding = 7) readonly buffer ClusterLightIndices { uint clusterLights[]; } ClusterLightIndicesIn;\n" \
 	/* [rc4l] ComputeLightTouches, line for line: a light lights only the ids GL linked it to, and a count of all ones lights everything. */ \
-	"layout(std430, binding = 12) readonly buffer LightTouchRanges { uvec2 lightTouch[]; };\n" \
-	"layout(std430, binding = 13) readonly buffer LightTouchIds { uint touchIds[]; };\n" \
+	"layout(std430, binding = 12) readonly buffer LightTouchRanges { uvec2 lightTouch[]; } LightTouchRangesIn;\n" \
+	"layout(std430, binding = 13) readonly buffer LightTouchIds { uint touchIds[]; } LightTouchIdsIn;\n" \
 	"bool fuaLightTouches(int li, uint id) {\n" \
-	"    uvec2 r = lightTouch[li];\n" \
+	"    uvec2 r = LightTouchRangesIn.lightTouch[li];\n" \
 	"    if (r.y == 0xFFFFFFFFu) return true;\n" \
 	"    uint lo = r.x, hi = r.x + r.y;\n" \
 	"    while (lo < hi) {\n" \
 	"        uint mid = (lo + hi) >> 1;\n" \
-	"        uint v = touchIds[mid];\n" \
+	"        uint v = LightTouchIdsIn.touchIds[mid];\n" \
 	"        if (v == id) return true;\n" \
 	"        if (v < id) lo = mid + 1u; else hi = mid;\n" \
 	"    }\n" \
@@ -333,7 +340,7 @@ static const char *kSceneVS =
 	"        if (depth > uLightParams.z)\n" \
 	"            slice = clamp(int(floor(log(depth / uLightParams.z) /\n" \
 	"                log(uLightParams.w / uLightParams.z) * 24.0)), 0, 23);\n" \
-	"        uvec2 cell = clusterCells[(slice * tilesY + ty) * tilesX + tx];\n" \
+	"        uvec2 cell = ClusterTableIn.clusterCells[(slice * tilesY + ty) * tilesX + tx];\n" \
 	"        first = int(cell.x);\n" \
 	"        count = int(cell.y);\n" \
 	/* [rc4l] CLAMP the loop bound. It comes out of a buffer, and a buffer can be stale.\
@@ -349,12 +356,12 @@ static const char *kSceneVS =
 	"    for (int i = 0; i < count; i++) {\n" \
 	/* ...and the index it reads: lights[] has n entries and a stale grid can name anything. An\
 	   out-of-range read is undefined, not merely wrong. */ \
-	"        int li = clustered ? int(clusterLights[first + i]) : i;\n" \
+	"        int li = clustered ? int(ClusterLightIndicesIn.clusterLights[first + i]) : i;\n" \
 	"        li = clamp(li, 0, max(n - 1, 0));\n" \
 	/* [rc4l] GL's flood stops at solid walls, so a light whose links do not name this surface does not light it. */ \
 	"        if (vLinkId >= 0 && !fuaLightTouches(li, uint(vLinkId))) continue;\n" \
-	"        vec4 lp = lights[li*2];\n" \
-	"        vec4 lc = lights[li*2+1];\n" \
+	"        vec4 lp = LightBufferIn.lights[li*2];\n" \
+	"        vec4 lc = LightBufferIn.lights[li*2+1];\n" \
 	"        vec3 d = lp.xyz - vPixelPos.xyz;\n" \
 	/* The side test gl_GetLight does per surface: a light behind the plane does not light it.
 	   Without this the backs of walls and the room next door get lit, which reads as a scene far
@@ -404,7 +411,7 @@ static const char *kSceneVS =
 	"    if (dbg == 10.0) return texel;\n" \
 	"    if (dbg == 11.0) return fuaDynLight(vec3(0.0));\n" \
 	"    if (dbg == 12.0) return vec3(uLightParams.x / 16.0);\n" \
-	"    if (dbg == 13.0) return vec3(lights[0].w / 256.0);\n" \
+	"    if (dbg == 13.0) return vec3(LightBufferIn.lights[0].w / 256.0);\n" \
 	/* [rc4l] 14: the surface NORMAL, 15: whether the interpolated world height holds still.
 
 	   fuaDynLight decides whether a light reaches a surface with a SIGN TEST on the interpolated
@@ -463,7 +470,11 @@ static const char *kSceneVS =
 	   same camera. Right value, right texture, wrong point in the pipeline. */ \
 	/* [rc4l] Under bindless the brightmap is the array's at its own slot, as the texel is, since one binding cannot carry every material's. */ \
 	"    vec2 bmUV = fuaFloodUV(vUV);\n" \
-	"    vec3 bm = (uSkyColor.w > 0.5 && vLightIndex > 0) ? (vBrightSlot > 0 ? texture(uMaterials[nonuniformEXT(vBrightSlot)], bmUV).rgb : vec3(0.0)) : texture(uBrightmap, bmUV).rgb;\n" \
+	"#ifdef FUA_BINDLESS\n" \
+	"    vec3 bm = (uSkyColor.w > 0.5 && vLightIndex > 0) ? (vBrightSlot > 0 ? texture(sampler2D(uMaterials[nonuniformEXT(vBrightSlot)], uMaterials_sampler), bmUV).rgb : vec3(0.0)) : texture(sampler2D(uBrightmap, uBrightmap_sampler), bmUV).rgb;\n" \
+	"#else\n" \
+	"    vec3 bm = texture(sampler2D(uBrightmap, uBrightmap_sampler), bmUV).rgb;\n" \
+	"#endif\n" \
 	"    color = min(color + fuaDesaturate(bm), vec3(1.0));\n" \
 	/* [rc4l] Dynamic lights are optional, because a SHADED DECAL must not take them.
 	   Its colour is its own -- a scorch mark is black -- and that colour arrives folded into the

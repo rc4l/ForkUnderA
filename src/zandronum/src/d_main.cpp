@@ -102,6 +102,8 @@
 #include "r_utility.h"
 #include "r_sky.h"
 #include "d_main.h"
+#include "features/mainloop/mainloop.h"
+#include "features/mainloop/computation/mainloop_compute.h"
 #include "features/wadreload/zx_wadreload.h" // [rc4l] ResetStartupStateForRestart()
 #include "d_dehacked.h"
 #include "cmdlib.h"
@@ -893,6 +895,11 @@ CVAR (Flag, compat_noobituaries, zacompatflags, ZACOMPATF_NO_OBITUARIES);
 //
 //==========================================================================
 
+// [rc4l] A running wipe: when its last tic was drawn, the 2D state it started with, and whether one is running.
+static unsigned int s_wipeStart;
+static bool s_wipeHw2d;
+static bool s_wiping;
+
 void D_Display ()
 {
 	bool wipe;
@@ -1240,38 +1247,60 @@ drawfullconsole:
 	else
 	{
 		// wipe update
-		unsigned int wipestart, nowtime, diff;
-		bool done;
-
 		GSnd->SetSfxPaused(true, 1);
 		I_FreezeTime(true);
 		screen->WipeEndScreen ();
 
-		wipestart = I_MSTime();
+		s_wipeStart = I_MSTime();
+		s_wipeHw2d = hw2d;
+		s_wiping = true;
 		NetUpdate();		// send out any new accumulation
 
-		do
+		// [rc4l] Run to its end here, unless the loop is stepped a frame at a time, which advances it through D_WipeStep instead.
+		if (!zx::mainloop::Stepped())
 		{
 			do
-			{
 				I_WaitVBL(2);
-				nowtime = I_MSTime();
-				diff = (nowtime - wipestart) * 40 / 1000;	// Using 35 here feels too slow.
-			} while (diff < 1);
-			wipestart = nowtime;
-			done = screen->WipeDo (1);
-			C_DrawConsole (hw2d);	// console and
-			M_Drawer ();			// menu are drawn even on top of wipes
-			screen->Update ();		// page flip or blit buffer
-			NetUpdate ();			// [RH] not sure this is needed anymore
-		} while (!done);
-		screen->WipeCleanup();
-		I_FreezeTime(false);
-		GSnd->SetSfxPaused(false, 1);
+			while (!D_WipeStep ());
+		}
 	}
 
 	cycles.Unclock();
 	FrameCycles = cycles;
+}
+
+//==========================================================================
+//
+// D_WipeStep
+//
+// [rc4l] One tic of a running wipe once one is due, with the console and menu drawn over it; true once it has ended.
+//==========================================================================
+
+bool D_WipeStep ()
+{
+	const unsigned int nowtime = I_MSTime();
+	// Using 35 here feels too slow.
+	if (zx::mainloop::ComputeWipeTicsDue(s_wipeStart, nowtime) < 1)
+		return false;
+	s_wipeStart = nowtime;
+	const bool done = screen->WipeDo (1);
+	C_DrawConsole (s_wipeHw2d);	// console and
+	M_Drawer ();			// menu are drawn even on top of wipes
+	screen->Update ();		// page flip or blit buffer
+	NetUpdate ();			// [RH] not sure this is needed anymore
+	if (done)
+	{
+		screen->WipeCleanup();
+		I_FreezeTime(false);
+		GSnd->SetSfxPaused(false, 1);
+		s_wiping = false;
+	}
+	return done;
+}
+
+bool D_WipeRunning ()
+{
+	return s_wiping;
 }
 
 //==========================================================================
@@ -1337,9 +1366,12 @@ void D_ErrorCleanup ()
 //
 //==========================================================================
 
+// [rc4l] The last tic I_StartFrame ran for, reset each time the loop is entered.
+static int s_lastTic;
+
 void D_DoomLoop ()
 {
-	int lasttic = 0;
+	s_lastTic = 0;
 
 	// Clamp the timer to TICRATE until the playloop has been entered.
 	r_NoInterpolate = true;
@@ -1351,7 +1383,23 @@ void D_DoomLoop ()
 	// at the bottom of the log alongside the sound/VoIP init lines, not scrolled off mid-startup.
 	ZX_CrashReportLogStatus ();
 
+	// [rc4l] A browser's driver takes the frames from here, and D_DoomMain unwinds back to it.
+	if (zx::mainloop::Stepped ())
+		zx::mainloop::StartStepped (D_RunFrame);
+
 	for (;;)
+		D_RunFrame ();
+}
+
+//==========================================================================
+//
+// D_RunFrame
+//
+// [rc4l] One pass of the main loop, which D_DoomLoop repeats and a browser calls once an animation frame.
+//==========================================================================
+
+void D_RunFrame ()
+{
 	{
 		try
 		{
@@ -1361,6 +1409,15 @@ void D_DoomLoop ()
 			{
 				s_restartRequested = false;
 				throw CRestartException();
+			}
+
+			zx::mainloop::FinishPendingQuit ();
+
+			// [rc4l] A wipe a stepped loop is running takes the whole frame, as D_Display's own loop does on the desktop.
+			if (D_WipeRunning ())
+			{
+				D_WipeStep ();
+				return;
 			}
 
 			zx::updater::Tick(); // [rc4l] fires the deferred update check + drains its verdict log (main thread)
@@ -1383,9 +1440,9 @@ void D_DoomLoop ()
 					CLIENT_GetPackets( );
 
 				// frame syncronous IO operations
-				if (gametic > lasttic)
+				if (gametic > s_lastTic)
 				{
-					lasttic = gametic;
+					s_lastTic = gametic;
 					I_StartFrame ();
 				}
 
@@ -1432,9 +1489,9 @@ void D_DoomLoop ()
 			default:
 
 				// frame syncronous IO operations
-				if (gametic > lasttic)
+				if (gametic > s_lastTic)
 				{
-					lasttic = gametic;
+					s_lastTic = gametic;
 					I_StartFrame ();
 				}
 				

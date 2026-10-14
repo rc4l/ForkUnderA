@@ -35,11 +35,11 @@ const char *kBlendPS =
 	"#version 450\n"
 	"layout(location = 0) in vec2 vUV;\n"
 	"layout(binding = 0) uniform Masks { vec4 uLeftMask; vec4 uRightMask; };\n"
-	"layout(binding = 1) uniform sampler2D uLeft;\n"
-	"layout(binding = 2) uniform sampler2D uRight;\n"
+	"layout(binding = 1) uniform texture2D uLeft; uniform sampler uLeft_sampler;\n"
+	"layout(binding = 2) uniform texture2D uRight; uniform sampler uRight_sampler;\n"
 	"layout(location = 0) out vec4 outColor;\n"
 	"void main() {\n"
-	"    outColor = vec4(texture(uLeft, vUV).rgb * uLeftMask.rgb + texture(uRight, vUV).rgb * uRightMask.rgb, 1.0);\n"
+	"    outColor = vec4(texture(sampler2D(uLeft, uLeft_sampler), vUV).rgb * uLeftMask.rgb + texture(sampler2D(uRight, uRight_sampler), vUV).rgb * uRightMask.rgb, 1.0);\n"
 	"}\n";
 
 bool EnsureEyePictures(int w, int h)

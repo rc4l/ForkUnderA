@@ -28,3 +28,19 @@ TEST(BackendChoice, ABuildWithoutTheBackendIsAlwaysGL)
 {
 	EXPECT_FALSE(ComputeWantsBackendOnly(kVidBackendVulkan, true, false, false));
 }
+
+// [rc4l] A desktop build with both draws on Vulkan unless the setting or -webgpu asks for WebGPU, and -vulkan wins over either.
+TEST(BackendChoice, WebGPUIsChosenOnlyWhenAskedFor)
+{
+	EXPECT_EQ(kBackendApiVulkan, ComputeBackendApi(kVidBackendVulkan, false, false, true, true));
+	EXPECT_EQ(kBackendApiWebGPU, ComputeBackendApi(kVidBackendWebGPU, false, false, true, true));
+	EXPECT_EQ(kBackendApiWebGPU, ComputeBackendApi(kVidBackendVulkan, false, true, true, true));
+	EXPECT_EQ(kBackendApiVulkan, ComputeBackendApi(kVidBackendWebGPU, true, true, true, true));
+}
+
+// [rc4l] A build with one API draws on it whatever was asked: the browser's has only WebGPU, a desktop one without Dawn only Vulkan.
+TEST(BackendChoice, ABuildWithOneApiUsesIt)
+{
+	EXPECT_EQ(kBackendApiWebGPU, ComputeBackendApi(kVidBackendVulkan, true, false, false, true));
+	EXPECT_EQ(kBackendApiVulkan, ComputeBackendApi(kVidBackendWebGPU, false, true, true, false));
+}

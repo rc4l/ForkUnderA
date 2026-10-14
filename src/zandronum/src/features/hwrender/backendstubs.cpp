@@ -42,6 +42,7 @@ int BackendPaletteBrightness() { return 0; }
 bool OpenBackendOutput(int, int) { return false; }
 void ForgetBackendWindow(void *) {}
 int BackendMaxTextureSize() { return 0; }
+const char *BackendApiName() { return ""; }
 void NoteWorldView() {}
 void SettleLevelScene() {}
 void PresentBackendOnly(bool) {}

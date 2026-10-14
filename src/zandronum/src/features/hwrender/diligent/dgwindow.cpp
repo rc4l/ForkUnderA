@@ -20,7 +20,7 @@
 
 #ifdef FUA_DILIGENT
 
-#include "EngineFactoryVk.h"
+#include "features/hwrender/diligent/dgdevice.h"
 #include "RenderDevice.h"
 #include "DeviceContext.h"
 #include "SwapChain.h"
@@ -128,7 +128,6 @@ bool DiligentShowWindow(FString &report)
 
 	if (!g_swap)
 	{
-		auto *factory = Diligent::GetEngineFactoryVk();
 		Diligent::SwapChainDesc scd;
 		// [rc4l] Match the engine's own framebuffer: plain UNORM, not Diligent's default sRGB.
 		//
@@ -152,9 +151,11 @@ bool DiligentShowWindow(FString &report)
 		win.pWaylandSurface = handles.waylandSurface;
 #elif PLATFORM_MACOS
 		win.pNSView = handles.nsView;
+#elif PLATFORM_WEB
+		win.pCanvasId = handles.canvasId;
 #endif
-		factory->CreateSwapChainVk(GetDevice(), GetContext(), scd, win, &g_swap);
-		if (!g_swap) { report = "CreateSwapChainVk failed"; return false; }
+		ChosenDeviceApi()->createSwapChain(GetDevice(), GetContext(), scd, win, &g_swap);
+		if (!g_swap) { report = "swapchain creation failed"; return false; }
 		// [rc4l] Say what depth format we actually got. Z-fighting the GL renderer does not have is
 		// first a question about depth precision, and "Diligent probably defaults to D32" is not an
 		// answer -- a 16-bit depth buffer against a 5..65536 frustum would fight everywhere.

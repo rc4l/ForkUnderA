@@ -12,6 +12,12 @@ if( COMMAND cmake_policy )
 endif( COMMAND cmake_policy )
 
 list( APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR} )
+
+# [rc4l] The browser build (the `web` preset): WebAssembly's own exceptions for the engine's throws, and threads, which Diligent's web build is compiled with, on every object so they all link together.
+if( EMSCRIPTEN )
+	add_compile_options( -fwasm-exceptions -pthread )
+	add_link_options( -fwasm-exceptions -pthread )
+endif()
 include( FindPackageHandleStandardArgs )
 
 # Generator expression are available some time in CMake 2.8. Due to
@@ -147,7 +153,14 @@ else()
 	set( FUA_DILIGENT_DEFAULT ON )
 endif()
 option( FUA_DILIGENT "Build the Diligent (Vulkan) render backend" ${FUA_DILIGENT_DEFAULT} )
-if( FUA_DILIGENT AND ( SERVERONLY OR NO_GL ) )
+# [rc4l] Voice chat (Opus and RNNoise), which a build can leave out on its own as well as with its sound.
+option( ZX_VOIP "Build voice chat (Opus, RNNoise)" ON )
+# [rc4l] Signed anonymous accounts (OpenSSL's Ed25519 and X25519); without them the identity reports failure and online play goes unsigned.
+option( ZX_ACCOUNTS "Build signed accounts (OpenSSL)" ON )
+# [rc4l] The same backend on WebGPU: Dawn beside Vulkan on the desktop (-webgpu), where the browser build's renderer is checked against Vulkan.
+option( FUA_WEBGPU "Build the Diligent backend's WebGPU device (Dawn on the desktop)" OFF )
+# [rc4l] Off only for a server: a build without GL may still ask for the backend alone (the browser's, -DFUA_DILIGENT=ON).
+if( FUA_DILIGENT AND SERVERONLY )
 	message( STATUS "FUA_DILIGENT: off for a build without a renderer" )
 	set( FUA_DILIGENT OFF CACHE BOOL "Build the Diligent (Vulkan) render backend" FORCE )
 endif()
@@ -178,6 +191,11 @@ if( FUA_DILIGENT )
 	set( DILIGENT_NO_ARCHIVER      ON  CACHE BOOL "" FORCE )
 	# [rc4l] Super resolution is unused, and its NVIDIA library is built against the dynamic CRT, which a whole-solution build fails to link beside /MT.
 	set( DILIGENT_NO_SUPER_RESOLUTION ON CACHE BOOL "" FORCE )
+	if( FUA_WEBGPU )
+		set( DILIGENT_NO_WEBGPU OFF CACHE BOOL "" FORCE )
+	else()
+		set( DILIGENT_NO_WEBGPU ON CACHE BOOL "" FORCE )
+	endif()
 	add_subdirectory( "${CMAKE_SOURCE_DIR}/../../deps/DiligentCore" "${CMAKE_BINARY_DIR}/DiligentCore" )
 endif()
 if( MSVC )
@@ -366,7 +384,10 @@ endif( RELEASE_WITH_DEBUG_FILE )
 # [BB] Library that allows to map IP addresses to country names.
 add_subdirectory( GeoIP )
 # [BB]
-add_subdirectory( server-registry )
+# [rc4l] The registry is a native server program, so the browser build leaves it out.
+if( NOT EMSCRIPTEN )
+	add_subdirectory( server-registry )
+endif()
 # [BB] Library for the database backend.
 add_subdirectory( sqlite )
 add_subdirectory( lzma )
@@ -426,9 +447,9 @@ add_subdirectory( wadsrc_st )
 add_subdirectory( src )
 
 # [AK] Library for noise suppression for VoIP.
-if ( NOT NO_SOUND )
+if ( NOT NO_SOUND AND ZX_VOIP )
 	add_subdirectory( rnnoise )
-endif ( NOT NO_SOUND )
+endif ( NOT NO_SOUND AND ZX_VOIP )
 
 if( NOT CMAKE_CROSSCOMPILING )
 	export(TARGETS ${CROSS_EXPORTS} FILE "${CMAKE_BINARY_DIR}/ImportExecutables.cmake" )

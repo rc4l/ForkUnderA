@@ -3,7 +3,6 @@
 //
 // [rc4l] The frame buffer of a launch without GL: the engine's window as GL's sets it up, minus the context, with every 2D draw recorded for the backend and the frame presented by it.
 
-#include "gl/system/gl_system.h"
 #include "features/hwrender/backendonly.h"
 #include "features/hwrender/hud2d.h"
 #include "features/hwrender/record2d.h"   // [rc4l] Record2DCanvas, the 2D recorded rather than drawn
@@ -26,16 +25,16 @@
 
 #if defined(FUA_DILIGENT)
 #ifdef _WIN32
+#include "gl/system/gl_system.h"   // [rc4l] before win32gliface.h, which leans on its Windows headers
 #include "win32gliface.h"
 // [rc4l] Each platform's frame buffer without its GL context: the window, the modes and the gamma ramp.
 typedef Win32GLFrameBuffer BackendFrameBufferBase;
 #else
-#include "sdlglvideo.h"   // [rc4l] posix/sdl's or posix/cocoa's, whichever backend the build uses
-typedef SDLGLFB BackendFrameBufferBase;
+#include "backendfb.h"   // [rc4l] posix/sdl's or posix/cocoa's, whichever backend the build uses
 #endif
 #endif
 
-// [rc4l] The renderer a launch draws with (ComputeWantsBackendOnly): 1 Vulkan (Recommended), 0 GL (Legacy); -vulkan and -gl override it for one launch.
+// [rc4l] The renderer a launch draws with (ComputeWantsBackendOnly): 1 Vulkan (Recommended), 0 GL (Legacy), 2 the backend on WebGPU where built; -vulkan, -webgpu and -gl override it for one launch.
 CVAR(Int, vid_backend, zx::hwrender::kVidBackendVulkan, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
 
 EXTERN_CVAR(Bool, fua_vulkan)
@@ -78,7 +77,8 @@ bool BackendOnly()
 #else
 		const bool built = false;
 #endif
-		const bool wants = ComputeWantsBackendOnly(vid_backend, Args->CheckParm("-vulkan") != 0, Args->CheckParm("-gl") != 0, built);
+		const bool argBackend = Args->CheckParm("-vulkan") != 0 || Args->CheckParm("-webgpu") != 0;
+		const bool wants = ComputeWantsBackendOnly(vid_backend, argBackend, Args->CheckParm("-gl") != 0, built);
 		g_backendOnly = (wants && BackendDeviceStarts()) ? 1 : 0;
 	}
 	return g_backendOnly == 1;

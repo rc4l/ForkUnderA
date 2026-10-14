@@ -39,6 +39,7 @@
 #include "c_console.h"
 #include "d_netinf.h"
 #include "d_net.h"
+#include "features/mainloop/mainloop.h"   // [rc4l] Stepped
 #include "cmdlib.h"
 #include "s_sound.h"
 #include "m_cheat.h"
@@ -1753,7 +1754,8 @@ void TryRunTics (void)
 	bool doWait = cl_capfps || r_NoInterpolate /*|| netgame*/;
 
 	// get real tics
-	if (doWait)
+	// [rc4l] A stepped loop never waits for a tic; its driver calls again next frame.
+	if (doWait && !zx::mainloop::Stepped())
 	{
 		entertic = I_WaitForTic (oldentertics);
 	}
@@ -1797,7 +1799,8 @@ void TryRunTics (void)
 		counts = availabletics;
 
 
-	if (counts == 0 && !doWait)
+	// [rc4l] Nor does it run a tic before one is due, which waiting would have made due.
+	if (counts == 0 && (!doWait || zx::mainloop::Stepped()))
 	{
 		// Check possible stall conditions
 		Net_CheckLastReceived(counts);

@@ -60,7 +60,7 @@
 #include "team.h"
 #include "chat.h"
 
-#if !defined(NO_SOUND) && !defined(NO_OPENAL)
+#if !defined(NO_VOIP)
 #include <al.h>
 #include <alc.h>
 #endif
@@ -275,7 +275,7 @@ CCMD( voice_unignore_idx )
 // [AK] Everything past this point only compiles if compiling with sound.
 // [ZandroX] OpenAL is the only backend; the Opus, RNNoise, networking and jitter-buffer
 // code is backend-agnostic and the audio calls below are OpenAL throughout.
-#if !defined(NO_SOUND) && !defined(NO_OPENAL)
+#if !defined(NO_VOIP)
 
 // [ZandroX] Forward declaration so the OpenAL capture path in Tick() can reuse the
 // same float byte-array serialization the playback path uses (defined further down).
@@ -2201,7 +2201,7 @@ bool FOptionMenuMicTestBar::Selectable( void )
 //*****************************************************************************
 //	STATISTICS
 
-#if !defined(NO_SOUND) && !defined(NO_OPENAL)
+#if !defined(NO_VOIP)
 
 ADD_STAT( voice )
 {

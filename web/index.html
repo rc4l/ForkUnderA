@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ForkUnderA</title>
+<link rel="stylesheet" href="fua.css">
+</head>
+<body>
+<main>
+  <canvas id="canvas" tabindex="0" oncontextmenu="event.preventDefault()"></canvas>
+  <div id="status" role="status">
+    <p id="status-text">Loading…</p>
+    <progress id="progress" max="1" value="0"></progress>
+  </div>
+  <pre id="error" hidden></pre>
+</main>
+<footer>
+  <span>Freedoom is bundled under its own <a href="data/freedoom-license.txt">licence</a>.</span>
+  <button id="fullscreen" type="button">Fullscreen</button>
+  <details>
+    <summary>Console</summary>
+    <pre id="console"></pre>
+  </details>
+</footer>
+<script src="fua.js"></script>
+<script src="forkundera.js"></script>
+</body>
+</html>

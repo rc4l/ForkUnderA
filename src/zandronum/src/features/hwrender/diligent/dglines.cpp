@@ -105,7 +105,7 @@ bool EnsureLinePipelines()
 		pci.PSODesc.ResourceLayout.DefaultVariableType = Diligent::SHADER_RESOURCE_VARIABLE_TYPE_STATIC;
 		pci.pVS = vs;
 		pci.pPS = ps;
-		dev->CreateGraphicsPipelineState(pci, &g_linePSO[xray]);
+		CreatePipeline(pci, &g_linePSO[xray]);
 		if (!g_linePSO[xray]) return false;
 		if (auto *v = g_linePSO[xray]->GetStaticVariableByName(Diligent::SHADER_TYPE_VERTEX, "Lines")) v->Set(g_lineCB);
 		g_linePSO[xray]->CreateShaderResourceBinding(&g_lineSRB[xray], true);

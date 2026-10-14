@@ -65,6 +65,10 @@
 #include "r_utility.h"
 #include "doomstat.h"
 #include "za_misc.h"
+#include "features/mainloop/mainloop.h"   // [rc4l] SteppedLoopStarted
+#ifdef __EMSCRIPTEN__
+#include "features/web/webdriver.h"
+#endif
 
 // MACROS ------------------------------------------------------------------
 
@@ -237,12 +241,16 @@ void I_ShutdownJoysticks();
 
 int main (int argc, char **argv)
 {
-#if !defined (__APPLE__)
+#if !defined (__APPLE__) && !defined (__EMSCRIPTEN__)
 	{
 		int s[4] = { SIGSEGV, SIGILL, SIGFPE, SIGBUS };
 		cc_install_handlers(argc, argv, 4, s, GAMENAMELOWERCASE "-crash.log", DoomSpecificInfo);
  	}
-#endif // !__APPLE__
+#endif // !__APPLE__ && !__EMSCRIPTEN__
+#ifdef __EMSCRIPTEN__
+	// [rc4l] The page calls the loop once an animation frame, so D_DoomLoop hands its frames to the browser.
+	zx::web::InstallDriver();
+#endif
  	
 	// [SB] Moved ZDoom's version info down below for Zan's --version
 
@@ -266,6 +274,9 @@ int main (int argc, char **argv)
 	setlocale (LC_ALL, "C");
 
 	Args = new DArgs(argc, argv);
+#ifdef __EMSCRIPTEN__
+	zx::web::AppendQueryArgs(Args);
+#endif
 
 	// [SB] Zandronum version
 	if (ZA_PrintVersion())
@@ -388,6 +399,11 @@ int main (int argc, char **argv)
 		I_StartupJoysticks();
 		C_InitConsole (80*8, 25*8, false);
 		D_DoomMain ();
+    }
+    catch (zx::mainloop::SteppedLoopStarted &)
+    {
+		// [rc4l] A browser's driver now calls the loop once a frame, so main returns and the runtime stays up.
+		return 0;
     }
     catch (class CDoomError &error)
     {

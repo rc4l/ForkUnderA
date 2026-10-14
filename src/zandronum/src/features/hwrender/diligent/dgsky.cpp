@@ -157,7 +157,7 @@ static const char *kSkyPS =
 	"layout(location = 0) in vec2 vUV;\n"
 	"layout(location = 1) in vec4 vSkyColor;\n"
 	"layout(location = 2) in float vSkyAlpha;\n"
-	"layout(binding = 1) uniform sampler2D uTex;\n"
+	"layout(binding = 1) uniform texture2D uTex; uniform sampler uTex_sampler;\n"
 	"layout(location = 0) out vec4 outColor;\n"
 	// vSkyColor.a selects: 1 takes the texture (the dome), 0 takes the flat colour (the caps).
 	"void main() {\n"
@@ -168,13 +168,13 @@ static const char *kSkyPS =
 	"    float sel = max(vSkyColor.a, 0.0);\n"
 	// [rc4l] A double sky's second layer (SKYMODE_SECONDLAYER): no caps, and the texture's own alpha over the first, below 0.05 dropped.
 	"    if (uSkyDraw.w > 0.5) {\n"
-	"        vec4 t = texture(uTex, vUV);\n"
+	"        vec4 t = texture(sampler2D(uTex, uTex_sampler), vUV);\n"
 	"        if (sel < 0.5 || t.a < 0.05) discard;\n"
 	"        outColor = vec4(uFixedColormap.w > 0.5 ? fuaFixedColormap(t.rgb) : t.rgb, t.a * vSkyAlpha);\n"
 	"        return;\n"
 	"    }\n"
 	"    float al = vSkyColor.a < 0.0 ? -vSkyColor.a : 1.0;\n"
-	"    vec3 c = mix(vSkyColor.rgb, texture(uTex, vUV).rgb, sel);\n"
+	"    vec3 c = mix(vSkyColor.rgb, texture(sampler2D(uTex, uTex_sampler), vUV).rgb, sel);\n"
 	// [rc4l] GL draws the dome and its caps through main.fp, so a fixed colormap recolours the sky too.
 	"    if (uFixedColormap.w > 0.5) c = fuaFixedColormap(c);\n"
 	"    outColor = vec4(c, al * vSkyAlpha);\n"
@@ -405,7 +405,7 @@ static bool CreateSkyPipeline(Diligent::TEXTURE_ADDRESS_MODE addrU, const char *
 		dev->CreateBuffer(cbd, nullptr, &g_skyDrawCB);
 		if (!g_skyDrawCB) return false;
 	}
-	dev->CreateGraphicsPipelineState(pci, &outPSO);
+	CreatePipeline(pci, &outPSO);
 	if (!outPSO) return false;
 	BindSceneConstants(outPSO);
 	for (Diligent::SHADER_TYPE stage : { Diligent::SHADER_TYPE_VERTEX, Diligent::SHADER_TYPE_PIXEL })
@@ -795,7 +795,7 @@ static bool EnsureSkyFadePipeline()
 	// [rc4l] Without these the pipeline was refused every frame, so no foggy sky was ever hazed.
 	pci.pVS = vs;
 	pci.pPS = ps;
-	dev->CreateGraphicsPipelineState(pci, &g_skyFadePSO);
+	CreatePipeline(pci, &g_skyFadePSO);
 	return g_skyFadePSO.RawPtr() != nullptr;
 }
 
@@ -887,9 +887,9 @@ static const char *kSkyPortalVS =
 static const char *kSkyPortalPS =
 	"#version 450\n"
 	"layout(location = 0) in vec2 vUV;\n"
-	"layout(binding = 1) uniform sampler2D uTex;\n"
+	"layout(binding = 1) uniform texture2D uTex; uniform sampler uTex_sampler;\n"
 	"layout(location = 0) out vec4 outColor;\n"
-	"void main() { outColor = vec4(texture(uTex, vUV).rgb, 1.0); }\n";
+	"void main() { outColor = vec4(texture(sampler2D(uTex, uTex_sampler), vUV).rgb, 1.0); }\n";
 
 // [rc4l] A pipeline that paints one picture, uTex, over its whole target with kSkyPortalVS's triangle and the fragment stage ps, never against depth; dsvFormat is whatever depth buffer is bound beside it.
 bool CreatePicturePSO(const char *name, const char *ps, Diligent::FILTER_TYPE filter, Diligent::TEXTURE_FORMAT dsvFormat,
@@ -939,7 +939,7 @@ bool CreatePicturesPSO(const char *name, const char *ps, Diligent::FILTER_TYPE f
 	pci.pVS = vs;
 	pci.pPS = fs;
 	pso.Release();
-	dev->CreateGraphicsPipelineState(pci, &pso);
+	CreatePipeline(pci, &pso);
 	return pso.RawPtr() != nullptr;
 }
 
@@ -960,7 +960,7 @@ static const char *kScreenSurfVS =
 static const char *kScreenSurfPS =
 	"#version 450\n"
 	FUA_CONSTANTS_GLSL
-	"layout(binding = 1) uniform sampler2D uSky;\n"
+	"layout(binding = 1) uniform texture2D uSky; uniform sampler uSky_sampler;\n"
 	"layout(location = 0) in vec3 vWorld;\n"
 	"layout(location = 0) out vec4 outColor;\n"
 	"void main() {\n"
@@ -981,8 +981,8 @@ static const char *kScreenSurfPS =
 	// squeezed the whole sky into a fraction of the window -- the skyline sitting in a
 	// hard-edged rectangle. The portal texture is built from the swapchain, so its size IS
 	// the window size, and asking the sampler is self-consistent by construction.
-	"    vec2 uv = gl_FragCoord.xy / vec2(textureSize(uSky, 0));\n"
-	"    outColor = vec4(texture(uSky, uv).rgb, 1.0);\n"
+	"    vec2 uv = gl_FragCoord.xy / vec2(textureSize(sampler2D(uSky, uSky_sampler), 0));\n"
+	"    outColor = vec4(texture(sampler2D(uSky, uSky_sampler), uv).rgb, 1.0);\n"
 	"}\n";
 
 // [rc4l] A fragment stage for a pass that only writes depth, clipped at a mirror as the coloured one is.
@@ -1013,9 +1013,7 @@ Diligent::RefCntAutoPtr<Diligent::IPipelineState> CreateScreenSurfacePSO(const c
 		{ Diligent::SHADER_TYPE_PIXEL, "uSky", texType },
 		{ Diligent::SHADER_TYPE_PIXEL, "Constants", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_STATIC },
 	};
-	// uSky is a GLSL sampler2D -- a COMBINED image sampler. Without an immutable sampler half
-	// of that binding is unfilled, and the copy CreateShaderResourceBinding makes then faults
-	// inside the Vulkan loader, nowhere near the shader that caused it.
+	// [rc4l] uSky's sampler, uSky_sampler, is immutable, or it is a variable nothing binds.
 	Diligent::SamplerDesc ssamp;
 	ssamp.MinFilter = Diligent::FILTER_TYPE_LINEAR;
 	ssamp.MagFilter = Diligent::FILTER_TYPE_LINEAR;
@@ -1074,7 +1072,7 @@ Diligent::RefCntAutoPtr<Diligent::IPipelineState> CreateScreenSurfacePSO(const c
 	}
 	pci.pVS = svs;
 	pci.pPS = sps;
-	dev->CreateGraphicsPipelineState(pci, &pso);
+	CreatePipeline(pci, &pso);
 	if (!pso) return pso;
 	if (!BindSceneConstants(pso))
 	{

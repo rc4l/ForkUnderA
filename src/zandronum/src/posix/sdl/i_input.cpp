@@ -46,7 +46,7 @@ extern SDL_Rect cursorBlit;
 
 #include "computation/keymap_compute.h"
 
-// [rc4l] The engine's window (posix/sdl/sdlglvideo.cpp), which has no GL context to find it by in a launch without GL.
+// [rc4l] The engine's window (posix/sdl/sdlvideo.cpp), which has no GL context to find it by in a launch without GL.
 SDL_Window *I_EngineWindow();
 
 // [rc4l] SDL2 keysyms for non-ASCII keys are >= 1<<30, so they cannot index a table; scancodes are a

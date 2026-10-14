@@ -104,12 +104,12 @@ static const char *k2DPS =
 	FUA_FIXED_COLORMAP_GLSL
 	FUA_FUZZ_GLSL
 	FUA_DAMAGE_TINT_GLSL
-	"layout(binding = 1) uniform sampler2D uTex;\n"
+	"layout(binding = 1) uniform texture2D uTex; uniform sampler uTex_sampler;\n"
 	"layout(location = 0) out vec4 outColor;\n"
 	"void main() {\n"
 	// [rc4l] A fuzzy weapon under r_fuzztype takes GL's fuzz shader on its texel, the jagged one sampling a splat of its coordinate.
 	"    int fuzz = int(vFuzz + 0.5);\n"
-	"    vec4 t = texture(uTex, fuzz == 5 ? fuaFuzzSplat(vUV, uInvScreen.z) : vUV);\n"
+	"    vec4 t = texture(sampler2D(uTex, uTex_sampler), fuzz == 5 ? fuaFuzzSplat(vUV, uInvScreen.z) : vUV);\n"
 	"    if (vTexMode == 1)      t.rgb = vec3(1.0);\n"                       // TM_MASK
 	"    else if (vTexMode == 2) t.a = 1.0;\n"                               // TM_OPAQUE
 	"    else if (vTexMode == 3) t = vec4(1.0-t.r, 1.0-t.b, 1.0-t.g, t.a);\n"// TM_INVERSE
@@ -182,7 +182,7 @@ static bool Ensure2DPipeline()
 	pci.PSODesc.PipelineType = Diligent::PIPELINE_TYPE_GRAPHICS;
 	pci.GraphicsPipeline.NumRenderTargets = 1;
 	pci.GraphicsPipeline.RTVFormats[0] = swap->GetDesc().ColorBufferFormat;
-	pci.GraphicsPipeline.DSVFormat = swap->GetDesc().DepthBufferFormat;
+	pci.GraphicsPipeline.DSVFormat = Diligent::TEX_FORMAT_UNKNOWN;
 	pci.GraphicsPipeline.PrimitiveTopology = Diligent::PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
 	pci.GraphicsPipeline.RasterizerDesc.CullMode = Diligent::CULL_MODE_NONE;
 	pci.GraphicsPipeline.RasterizerDesc.ScissorEnable = true;
@@ -223,7 +223,7 @@ static bool Ensure2DPipeline()
 			rt.DestBlend = (mode == 1) ? Diligent::BLEND_FACTOR_ONE
 			                           : Diligent::BLEND_FACTOR_INV_SRC_ALPHA;
 		}
-		dev->CreateGraphicsPipelineState(pci, &g_pso2D[mode]);
+		CreatePipeline(pci, &g_pso2D[mode]);
 		if (!g_pso2D[mode]) return false;
 		BindScreen2D(g_pso2D[mode]);
 	}
@@ -240,7 +240,7 @@ static bool Ensure2DPipeline()
 		};
 		pci.PSODesc.Name = "fua 2D polygon PSO";
 		pci.PSODesc.ResourceLayout.ImmutableSamplers = wrapSamplers;
-		dev->CreateGraphicsPipelineState(pci, &g_pso2DWrap);
+		CreatePipeline(pci, &g_pso2DWrap);
 		if (!g_pso2DWrap) return false;
 		BindScreen2D(g_pso2DWrap);
 	}
@@ -323,6 +323,10 @@ void Draw2D(Diligent::IDeviceContext *ctx)
 		if (!UploadGrowingVB(ctx, g_vb2D, g_vb2DCapacity, &vb[0], vb.Size(), sizeof(Vertex2D), 1024, "fua 2D VB")) return;
 	}
 	if (vb.Size() == 0 || !g_vb2D) return;
+
+	// [rc4l] The frame's colour alone, whichever pass this follows, since the 2D pipelines declare no depth and WebGPU holds a pipeline to its pass's attachments.
+	Diligent::ITextureView *rtv2D = FrameRTV();
+	ctx->SetRenderTargets(1, &rtv2D, NULL, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
 	{
 		Diligent::MapHelper<float> cb(ctx, g_cb2D, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD);

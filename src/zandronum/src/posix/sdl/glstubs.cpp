@@ -44,9 +44,9 @@ void FTexture::PrecacheGL(int cache)
 // [rc4l] The two light settings whose callbacks reset GL's shader state stay in gl/, so a build without GL defines them plainly.
 CVAR(Bool, r_enhanced_nightvision, true, CVAR_ARCHIVE|CVAR_NOINITCALL)
 CVAR(Int, r_lightmode, 3, CVAR_ARCHIVE|CVAR_NOINITCALL)
-// [rc4l] The engine's window lives in posix/sdl/sdlglvideo.cpp, which a build without GL leaves out, so input finds none.
-struct SDL_Window;
-SDL_Window *I_EngineWindow()
+// [rc4l] A build without GL has no GL frame buffer, so only the backend's draws the screen.
+class DFrameBuffer;
+DFrameBuffer *I_CreateGLFrameBuffer(int, int, bool)
 {
 	return NULL;
 }

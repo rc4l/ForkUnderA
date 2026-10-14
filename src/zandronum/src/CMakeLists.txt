@@ -177,7 +177,11 @@ else( WIN32 )
 	# the instant-replay sink moved to AudioQueue, not the audio either. Linking it anyway would
 	# leave a dependency nothing calls, and SDL2main in particular would fight our own main() in
 	# posix/cocoa/i_main.mm for the entry point. Linux still needs both.
-	if( NOT ( APPLE AND ZX_COCOA_BACKEND ) )
+	if( EMSCRIPTEN )
+		# [rc4l] Emscripten's own SDL2 port, whose window is the page's canvas.
+		add_compile_options( -sUSE_SDL=2 )
+		set( ZDOOM_LIBS ${ZDOOM_LIBS} -sUSE_SDL=2 )
+	elseif( NOT ( APPLE AND ZX_COCOA_BACKEND ) )
 		find_package( SDL2 REQUIRED )
 		set( ZDOOM_LIBS ${ZDOOM_LIBS} SDL2::SDL2 SDL2::SDL2main )
 	endif()
@@ -225,7 +229,13 @@ endif( NOT NO_GL )
 
 
 if( NOT NO_OPENAL )
-	find_package( OpenAL )
+	if( EMSCRIPTEN )
+		# [rc4l] Emscripten's OpenAL is a JavaScript library over Web Audio, linked by name, with its headers in the sysroot.
+		set( OPENAL_INCLUDE_DIR "${EMSCRIPTEN_SYSROOT}/include/AL" )
+		set( OPENAL_LIBRARY -lopenal )
+	else()
+		find_package( OpenAL )
+	endif()
 	if( OPENAL_INCLUDE_DIR AND OPENAL_LIBRARY )
 		message( STATUS "OpenAL found at ${OPENAL_LIBRARY}" )
 		include_directories( ${OPENAL_INCLUDE_DIR} )
@@ -628,20 +638,28 @@ if( NOT NO_REPLAY )
 	endif()
 endif()
 
-# [BB] We need OpenSSL for csrp.
-FIND_PACKAGE ( OpenSSL REQUIRED )
-include_directories( ${OPENSSL_INCLUDE_DIR} )
-set ( ZDOOM_LIBS ${ZDOOM_LIBS} ${OPENSSL_LIBRARIES} )
-if( WIN32 )
-	set ( ZDOOM_LIBS ${ZDOOM_LIBS} crypt32 )
-endif ( WIN32 )
+# [rc4l] OpenSSL for the accounts' Ed25519 and X25519 (features/identity/zx_identitycrypto_openssl.cpp), and nothing else.
+if ( ZX_ACCOUNTS )
+	FIND_PACKAGE ( OpenSSL REQUIRED )
+	include_directories( ${OPENSSL_INCLUDE_DIR} )
+	set ( ZDOOM_LIBS ${ZDOOM_LIBS} ${OPENSSL_LIBRARIES} )
+	if( WIN32 )
+		set ( ZDOOM_LIBS ${ZDOOM_LIBS} crypt32 )
+	endif ( WIN32 )
+	set( ZX_IDENTITY_CRYPTO features/identity/zx_identitycrypto_openssl.cpp )
+else ( ZX_ACCOUNTS )
+	set( ZX_IDENTITY_CRYPTO features/identity/zx_identitycrypto_none.cpp )
+endif ( ZX_ACCOUNTS )
 
 # [AK] We need Opus for encoding/decoding VoIP audio packets, and RNNoise for noise suppression.
-if ( NOT NO_SOUND )
+# [rc4l] voicechat.cpp's stubs stand in under NO_VOIP: no sound, no OpenAL, or ZX_VOIP off.
+if ( NO_SOUND OR NO_OPENAL OR NOT ZX_VOIP )
+	add_definitions( -DNO_VOIP=1 )
+else ()
 	find_package( Opus REQUIRED )
 	include_directories( ${OPUS_INCLUDE_DIR} )
 	set( ZDOOM_LIBS ${ZDOOM_LIBS} ${OPUS_LIBRARIES} rnnoise )
-endif ( NOT NO_SOUND )
+endif ()
 
 if( NOT DYN_FLUIDSYNTH)
 	if( FLUIDSYNTH_FOUND )
@@ -707,6 +725,7 @@ set( PLAT_SDL_SOURCES
 	posix/sdl/i_joystick.cpp
 	posix/sdl/i_main.cpp
 	posix/sdl/i_system.cpp
+	posix/sdl/sdlvideo.cpp
 	posix/sdl/sdlglvideo.cpp
 	posix/sdl/st_start.cpp
 	features/app-icon/appicon.cpp )
@@ -789,6 +808,11 @@ else( WIN32 )
 	else()
 		set( SYSTEM_BACKEND_DIR posix/sdl )
 		set( SYSTEM_SOURCES ${PLAT_POSIX_SOURCES} ${PLAT_SDL_SOURCES} )
+		# [rc4l] A browser has no signals to catch a crash with, and its frame loop is the page's (features/web).
+		if( EMSCRIPTEN )
+			list( REMOVE_ITEM SYSTEM_SOURCES posix/sdl/crashcatcher.c )
+			list( APPEND SYSTEM_SOURCES features/web/webdriver.cpp )
+		endif()
 		if( APPLE )
 			set( SYSTEM_SOURCES ${SYSTEM_SOURCES} ${PLAT_MAC_SOURCES} )
 			set( OTHER_SYSTEM_SOURCES ${PLAT_WIN32_SOURCES} ${PLAT_COCOA_SOURCES} )
@@ -1489,6 +1513,7 @@ add_executable( zdoom WIN32
 	features/fua-caching/fua_warmup.cpp
 	features/iwad-registry/zx_iwadregistry.cpp
 	features/identity/zx_identity.cpp
+	${ZX_IDENTITY_CRYPTO}
 	features/identity/zx_identitynet.cpp
 	features/net/zx_httpsget.cpp
 	features/net/zx_resolve.cpp
@@ -1648,6 +1673,7 @@ add_executable( zdoom WIN32
 	features/frame/framestall.cpp
 	features/frame/debugorbit.cpp
 	features/framephase/framephase.cpp
+	features/mainloop/mainloop.cpp
 	features/display/display.cpp
 	features/hwrender/backendvideo.cpp
 	features/hwrender/record2d.cpp
@@ -1856,12 +1882,27 @@ if( MSVC )
 	endif( NO_GENERATOR_EXPRESSIONS )
 endif( MSVC )
 
-if( NOT WIN32 )
+if( NOT WIN32 AND NOT EMSCRIPTEN )
 	FILE( WRITE ${CMAKE_CURRENT_BINARY_DIR}/link-make "if [ ! -e ${ZDOOM_OUTPUT_DIR}/${ZDOOM_EXE_NAME} ]; then ln -sf ${CMAKE_CURRENT_BINARY_DIR}/${ZDOOM_EXE_NAME} ${ZDOOM_OUTPUT_DIR}/${ZDOOM_EXE_NAME}; fi" )
 	add_custom_command( TARGET zdoom POST_BUILD
 		COMMAND chmod +x ${CMAKE_CURRENT_BINARY_DIR}/link-make
 		COMMAND /bin/sh -c ${CMAKE_CURRENT_BINARY_DIR}/link-make )
-endif( NOT WIN32 )
+endif( NOT WIN32 AND NOT EMSCRIPTEN )
+
+# [rc4l] The browser module: a heap that grows, a stack deep enough for the node builder, workers ready for the job pool (whose threads a page cannot start mid-frame), and main run by the page once its WebGPU device is ready.
+if( EMSCRIPTEN )
+	set_target_properties( zdoom PROPERTIES SUFFIX ".js" )
+	target_link_options( zdoom PRIVATE
+		"SHELL: -s ALLOW_MEMORY_GROWTH=1"
+		"SHELL: -s INITIAL_MEMORY=256MB"
+		"SHELL: -s STACK_SIZE=8MB"
+		"SHELL: -s PTHREAD_POOL_SIZE=8"
+		"SHELL: -s EXIT_RUNTIME=0"
+		"SHELL: -s INVOKE_RUN=0"
+		"SHELL: -s FORCE_FILESYSTEM=1"
+		"SHELL: -s EXPORTED_RUNTIME_METHODS=callMain,FS,IDBFS"
+		"SHELL: -lidbfs.js" )
+endif()
 if( "${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU" )
 	# GCC misoptimizes this file
 	set_source_files_properties( oplsynth/fmopl.cpp PROPERTIES COMPILE_FLAGS "-fno-tree-dominator-opts -fno-tree-fre" )
@@ -1992,9 +2033,14 @@ endif()
 # The probe is the only consumer today; it proves the library links and a device creates in-process.
 if( FUA_DILIGENT )
 	# [rc4l] The sources that include Diligent's headers, listed once for the build and the C++17 flag below.
-	set( FUA_DILIGENT_SOURCES features/hwrender/diligent/dgprobe.cpp features/hwrender/diligent/dgwindow.cpp features/hwrender/diligent/dgscene.cpp features/hwrender/diligent/dg2d.cpp features/hwrender/diligent/dglights.cpp features/hwrender/diligent/dgsky.cpp features/hwrender/diligent/dgpipelines.cpp features/hwrender/diligent/dgdynamic.cpp features/hwrender/diligent/dgupload.cpp features/hwrender/diligent/dgviews.cpp features/hwrender/diligent/dgcamera.cpp features/hwrender/diligent/dgframe.cpp features/hwrender/diligent/dgdiag.cpp features/hwrender/diligent/dgdecals.cpp features/hwrender/diligent/dghorizon.cpp features/hwrender/diligent/dgtexture.cpp features/hwrender/diligent/dgtarget.cpp features/hwrender/diligent/dgwipe.cpp features/hwrender/diligent/dglines.cpp features/hwrender/diligent/dgstereo.cpp )
+	set( FUA_DILIGENT_SOURCES features/hwrender/diligent/dgprobe.cpp features/hwrender/diligent/dgdevice_vk.cpp features/hwrender/diligent/dgdevice_wgpu.cpp features/hwrender/diligent/dgwindow.cpp features/hwrender/diligent/dgscene.cpp features/hwrender/diligent/dg2d.cpp features/hwrender/diligent/dglights.cpp features/hwrender/diligent/dgsky.cpp features/hwrender/diligent/dgpipelines.cpp features/hwrender/diligent/dgdynamic.cpp features/hwrender/diligent/dgupload.cpp features/hwrender/diligent/dgviews.cpp features/hwrender/diligent/dgcamera.cpp features/hwrender/diligent/dgframe.cpp features/hwrender/diligent/dgdiag.cpp features/hwrender/diligent/dgdecals.cpp features/hwrender/diligent/dghorizon.cpp features/hwrender/diligent/dgtexture.cpp features/hwrender/diligent/dgtarget.cpp features/hwrender/diligent/dgwipe.cpp features/hwrender/diligent/dglines.cpp features/hwrender/diligent/dgstereo.cpp )
 	# [rc4l] Each platform's window for it: Win32, Cocoa with a Metal layer through MoltenVK, or SDL2 on X11 and Wayland.
-	if( WIN32 )
+	if( EMSCRIPTEN )
+		# [rc4l] The browser's canvas, drawn on through WebGPU alone.
+		set( FUA_DILIGENT_PLATFORM_SOURCES features/hwrender/diligent/dgweb.cpp )
+		set( FUA_DILIGENT_PLATFORM PLATFORM_WEB=1 PLATFORM_EMSCRIPTEN=1 )
+		set( FUA_DILIGENT_PLATFORM_DIR Emscripten )
+	elseif( WIN32 )
 		set( FUA_DILIGENT_PLATFORM_SOURCES features/hwrender/diligent/dgwin32.cpp )
 		set( FUA_DILIGENT_PLATFORM PLATFORM_WIN32=1 )
 		set( FUA_DILIGENT_PLATFORM_DIR Win32 )
@@ -2023,8 +2069,16 @@ if( FUA_DILIGENT )
 		set_source_files_properties( ${FUA_DILIGENT_SOURCES} PROPERTIES COMPILE_FLAGS "-std=c++17" )
 	endif()
 	target_compile_definitions( zdoom PRIVATE FUA_DILIGENT ${FUA_DILIGENT_PLATFORM} )
-	# [rc4l] volk for the Vulkan entry points Diligent loaded, which dgprobe.cpp reads the device's limits through.
-	target_link_libraries( zdoom Diligent-GraphicsEngineVk-static volk::volk Vulkan::Headers )
+	# [rc4l] Vulkan everywhere but the browser; volk for the entry points Diligent loaded, which dgdevice_vk.cpp reads the device's limits through.
+	if( NOT EMSCRIPTEN )
+		target_compile_definitions( zdoom PRIVATE FUA_DILIGENT_VULKAN )
+		target_link_libraries( zdoom Diligent-GraphicsEngineVk-static volk::volk Vulkan::Headers )
+	endif()
+	if( FUA_WEBGPU )
+		target_compile_definitions( zdoom PRIVATE FUA_WEBGPU )
+		target_link_libraries( zdoom Diligent-GraphicsEngineWebGPU-static )
+		target_include_directories( zdoom PRIVATE "${CMAKE_SOURCE_DIR}/../../deps/DiligentCore/Graphics/GraphicsEngineWebGPU/interface" )
+	endif()
 	target_include_directories( zdoom PRIVATE
 		"${CMAKE_SOURCE_DIR}/../../deps/DiligentCore/Graphics/GraphicsEngineVulkan/interface"
 		"${CMAKE_SOURCE_DIR}/../../deps/DiligentCore/Graphics/GraphicsEngine/interface"

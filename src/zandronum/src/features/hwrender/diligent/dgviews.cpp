@@ -423,10 +423,10 @@ int RecollectMirrors()
 	FUA_SECTOR_LIGHT_GLSL \
 	FUA_FIXED_COLORMAP_GLSL \
 	FUA_MIRROR_SHEEN_BLOCK_GLSL \
-	"layout(binding = 7) uniform sampler2D uSheen;\n" \
+	"layout(binding = 7) uniform texture2D uSheen; uniform sampler uSheen_sampler;\n" \
 	"layout(location = 2) in vec2 vSheenUV;\n" \
 	"vec3 fuaMirrorSheen() {\n" \
-	"    vec4 texel = texture(uSheen, vSheenUV);\n" \
+	"    vec4 texel = texture(sampler2D(uSheen, uSheen_sampler), vSheenUV);\n" \
 	/* [rc4l] Under a fixed colormap GL draws the sheen through main.fp in white light, recoloured by the colormap alone. */ \
 	"    if (uFixedColormap.w > 0.5) return fuaFixedColormap(texel.rgb) * (texel.a * uSheenColor.a);\n" \
 	"    vec4 clip = uMVP * vec4(vWorld, 1.0);\n" \
@@ -480,14 +480,14 @@ static const char *kMirrorPS =
 	"#extension GL_EXT_ray_query : require\n"
 	"#extension GL_EXT_nonuniform_qualifier : require\n"
 	FUA_CONSTANTS_GLSL
-	"layout(binding = 1) uniform sampler2D uTex;\n"
+	"layout(binding = 1) uniform texture2D uTex; uniform sampler uTex_sampler;\n"
 	"layout(binding = 2) uniform accelerationStructureEXT uTLAS;\n"
-	"layout(std430, binding = 3) readonly buffer Verts { float vtx[]; };\n"
-	"layout(binding = 4) uniform sampler2D uMaterials[FUA_MAT_SLOTS];\n"
-	"layout(binding = 5) uniform sampler2D uSky;\n"
-	"layout(std430, binding = 7) readonly buffer MirrorPlanes { vec4 mirrorPlanes[]; };\n"
+	"layout(std430, binding = 3) readonly buffer Verts { float vtx[]; } VertsIn;\n"
+	"layout(binding = 4) uniform texture2D uMaterials[FUA_MAT_SLOTS]; uniform sampler uMaterials_sampler;\n"
+	"layout(binding = 5) uniform texture2D uSky; uniform sampler uSky_sampler;\n"
+	"layout(std430, binding = 7) readonly buffer MirrorPlanes { vec4 mirrorPlanes[]; } MirrorPlanesIn;\n"
 	// [rc4l] This frame's steps between mirror views (ComputeTracedSpriteHeader), then its sprites, four vec4s each (ComputeTracedSpriteRecord), the boxes of the third instance.
-	"layout(std430, binding = 8) readonly buffer TracedSprites { vec4 tracedSprites[]; };\n"
+	"layout(std430, binding = 8) readonly buffer TracedSprites { vec4 tracedSprites[]; } TracedSpritesIn;\n"
 	"layout(location = 0) in vec3 vWorld;\n"
 	"layout(location = 1) in vec3 vNormal;\n"
 	FUA_MIRROR_SHEEN_PS_GLSL
@@ -496,15 +496,15 @@ static const char *kMirrorPS =
 	// that holds everything else. The colour and the material this ray hits come from there.
 	"const uint STRIDE = 6u;\n"
 	FUA_PIECEDATA_GLSL
-	"uint vertPiece(uint v) { return uint(vtx[v * STRIDE + 5u] + 0.5); }\n"
-	"vec3 vertColor(uint v) { return pieces[vertPiece(v)].colorLight.rgb; }\n"
-	"vec2 vertUV(uint v)    { uint b = v * STRIDE + 3u; return vec2(vtx[b], vtx[b + 1u]); }\n"
+	"uint vertPiece(uint v) { return uint(VertsIn.vtx[v * STRIDE + 5u] + 0.5); }\n"
+	"vec3 vertColor(uint v) { return PiecesIn.pieces[vertPiece(v)].colorLight.rgb; }\n"
+	"vec2 vertUV(uint v)    { uint b = v * STRIDE + 3u; return vec2(VertsIn.vtx[b], VertsIn.vtx[b + 1u]); }\n"
 	// [rc4l] ComputeTracedSpriteHit, line for line: where the ray from o along d meets sprite s's quad from either side, between tMin and tMax, and its texture coordinate there.
-	"uint spriteAt(uint s) { return 1u + uint(tracedSprites[0].x) + s * 4u; }\n"
+	"uint spriteAt(uint s) { return 1u + uint(TracedSpritesIn.tracedSprites[0].x) + s * 4u; }\n"
 	"bool fuaSpriteHit(uint s, vec3 o, vec3 d, float tMin, float tMax, out float t, out vec2 uv) {\n"
 	"    uint r = spriteAt(s);\n"
-	"    vec3 p0 = tracedSprites[r].xyz, eu = tracedSprites[r + 1u].xyz, ev = tracedSprites[r + 2u].xyz;\n"
-	"    vec4 tex = tracedSprites[r + 3u];\n"
+	"    vec3 p0 = TracedSpritesIn.tracedSprites[r].xyz, eu = TracedSpritesIn.tracedSprites[r + 1u].xyz, ev = TracedSpritesIn.tracedSprites[r + 2u].xyz;\n"
+	"    vec4 tex = TracedSpritesIn.tracedSprites[r + 3u];\n"
 	"    t = 0.0; uv = vec2(0.0);\n"
 	"    vec3 n = cross(eu, ev);\n"
 	"    float den = dot(d, n);\n"
@@ -519,25 +519,25 @@ static const char *kMirrorPS =
 	"    uv = vec2(tex.x + (tex.y - tex.x) * a, tex.z + (tex.w - tex.z) * b);\n"
 	"    return true;\n"
 	"}\n"
-	"uint spritePiece(uint s) { return uint(tracedSprites[spriteAt(s)].w + 0.5); }\n"
-	"int spriteView(uint s)   { return int(tracedSprites[spriteAt(s) + 1u].w); }\n"
+	"uint spritePiece(uint s) { return uint(TracedSpritesIn.tracedSprites[spriteAt(s)].w + 0.5); }\n"
+	"int spriteView(uint s)   { return int(TracedSpritesIn.tracedSprites[spriteAt(s) + 1u].w); }\n"
 	// [rc4l] The view a ray in `view` is in after bouncing off line mirror `line`, or none when no walk went that way.
 	"int fuaNextView(int view, int line) {\n"
-	"    uint n = uint(tracedSprites[0].x);\n"
-	"    for (uint i = 1u; i <= n; i++) { vec4 e = tracedSprites[i]; if (int(e.x) == view && int(e.y) == line) return int(e.z); }\n"
+	"    uint n = uint(TracedSpritesIn.tracedSprites[0].x);\n"
+	"    for (uint i = 1u; i <= n; i++) { vec4 e = TracedSpritesIn.tracedSprites[i]; if (int(e.x) == view && int(e.y) == line) return int(e.z); }\n"
 	"    return " FUA_NO_MIRROR_VIEW_STR ";\n"
 	"}\n"
 	// [rc4l] A piece's material slot, the whole array's worth: a mask left from a 512-slot array sent every slot past 511 to another texture.
-	"uint pieceMat(uint p)    { return min(uint(pieces[p].fogAlphaMat.w + 0.5), uint(FUA_MAT_SLOTS - 1)); }\n"
+	"uint pieceMat(uint p)    { return min(uint(PiecesIn.pieces[p].fogAlphaMat.w + 0.5), uint(FUA_MAT_SLOTS - 1)); }\n"
 	"uint spriteMat(uint s)   { return pieceMat(spritePiece(s)); }\n"
 	// [rc4l] A traced hit lit and fogged as GL's reflected view does it, at `dist` along the eye's ray through the mirrors, where it appears.
 	"vec3 fuaTracedShade(vec3 texel, uint p, vec3 color, float dist) {\n"
 	"    vec3 seen = uCameraPos.xyz + normalize(vWorld - uCameraPos.xyz) * dist;\n"
 	"    vec4 clip = uMVP * vec4(seen, 1.0);\n"
-	"    float fogMode = pieces[p].fogAlphaMat.z;\n"
-	"    float fogfactor = fuaFogFactor(fogMode, pieces[p].fogAlphaMat.x, vec4(seen, clip.w), uCameraPos.xyz);\n"
-	"    vec3 light = fuaSectorLight(color, pieces[p].colorLight.w, fogMode, fogfactor, clip.z / clip.w);\n"
-	"    return fuaColouredFog(texel * light, pieces[p].fogColor.rgb, fogMode, fogfactor);\n"
+	"    float fogMode = PiecesIn.pieces[p].fogAlphaMat.z;\n"
+	"    float fogfactor = fuaFogFactor(fogMode, PiecesIn.pieces[p].fogAlphaMat.x, vec4(seen, clip.w), uCameraPos.xyz);\n"
+	"    vec3 light = fuaSectorLight(color, PiecesIn.pieces[p].colorLight.w, fogMode, fogfactor, clip.z / clip.w);\n"
+	"    return fuaColouredFog(texel * light, PiecesIn.pieces[p].fogColor.rgb, fogMode, fogfactor);\n"
 	"}\n"
 	"void main() {\n"
 	"    vec3 sheen = fuaMirrorSheen();\n"
@@ -569,7 +569,7 @@ static const char *kMirrorPS =
 	"            float st;\n"
 	"            vec2 suv;\n"
 	"            if (!fuaSpriteHit(s, origin, dir, 0.1, tMax, st, suv)) continue;\n"
-	"            if (textureLod(uMaterials[nonuniformEXT(spriteMat(s))], suv, 0.0).a <= uFrame.w) continue;\n"
+	"            if (textureLod(sampler2D(uMaterials[nonuniformEXT(spriteMat(s))], uMaterials_sampler), suv, 0.0).a <= uFrame.w) continue;\n"
 	"            hitSprite = s;\n"
 	"            hitUV = suv;\n"
 	"            rayQueryGenerateIntersectionEXT(rq, st);\n"
@@ -578,7 +578,7 @@ static const char *kMirrorPS =
 	"        if (rayQueryGetIntersectionInstanceCustomIndexEXT(rq, true) != 1) break;\n"
 	// [rc4l] Another mirror: GL renders it a level deeper, reflecting the view again, unless that is past its recursions.
 	"        if (level >= levels) { outColor = vec4(min(glaze, vec3(1.0)), 1.0); return; }\n"
-	"        vec4 mp = mirrorPlanes[uint(rayQueryGetIntersectionPrimitiveIndexEXT(rq, true)) / 2u];\n"
+	"        vec4 mp = MirrorPlanesIn.mirrorPlanes[uint(rayQueryGetIntersectionPrimitiveIndexEXT(rq, true)) / 2u];\n"
 	"        vec3 m = mp.xyz;\n"
 	"        view = fuaNextView(view, int(mp.w));\n"
 	"        float hit = rayQueryGetIntersectionTEXT(rq, true);\n"
@@ -600,15 +600,15 @@ static const char *kMirrorPS =
 	"        float su = (atan(d.z, d.x) + uLightParams.y) / 6.28318531;\n"
 	// The dome spans the horizon to 60 degrees over its texture, so map elevation the same way.
 	"        float sv = clamp((1.0472 - el) / 1.0472, 0.0, 1.0);\n"
-	"        outColor = vec4(min(texture(uSky, vec2(su * uScreen.z, sv * uScreen.w)).rgb + glaze, vec3(1.0)), 1.0);\n"
+	"        outColor = vec4(min(texture(sampler2D(uSky, uSky_sampler), vec2(su * uScreen.z, sv * uScreen.w)).rgb + glaze, vec3(1.0)), 1.0);\n"
 	"        return;\n"
 	"    }\n"
 	// [rc4l] A sprite: its texel in the light its own record carries, shaded as the level's surfaces are.
 	"    if (rayQueryGetIntersectionTypeEXT(rq, true) == gl_RayQueryCommittedIntersectionGeneratedEXT) {\n"
-	"        vec3 st = textureLod(uMaterials[nonuniformEXT(spriteMat(hitSprite))], hitUV, 0.0).rgb;\n"
+	"        vec3 st = textureLod(sampler2D(uMaterials[nonuniformEXT(spriteMat(hitSprite))], uMaterials_sampler), hitUV, 0.0).rgb;\n"
 	"        if (uFixedColormap.w > 0.5) { outColor = vec4(min(fuaFixedColormap(st) + glaze, vec3(1.0)), 1.0); return; }\n"
 	"        uint sp = spritePiece(hitSprite);\n"
-	"        vec3 sc = fuaTracedShade(st, sp, pieces[sp].colorLight.rgb, travelled + rayQueryGetIntersectionTEXT(rq, true));\n"
+	"        vec3 sc = fuaTracedShade(st, sp, PiecesIn.pieces[sp].colorLight.rgb, travelled + rayQueryGetIntersectionTEXT(rq, true));\n"
 	"        outColor = vec4(min(sc + glaze, vec3(1.0)), 1.0);\n"
 	"        return;\n"
 	"    }\n"
@@ -624,7 +624,7 @@ static const char *kMirrorPS =
 	// 127, which on any level with more than 128 batches reflected the wrong texture and could not
 	// say so.
 	"    uint mat = pieceMat(vertPiece(i0));\n"
-	"    vec3 texel = texture(uMaterials[nonuniformEXT(mat)], uv).rgb;\n"
+	"    vec3 texel = texture(sampler2D(uMaterials[nonuniformEXT(mat)], uMaterials_sampler), uv).rgb;\n"
 	// [rc4l] A fixed colormap recolours what the ray hit in white light, as the raster path does a level surface.
 	"    if (uFixedColormap.w > 0.5) { outColor = vec4(min(fuaFixedColormap(texel) + glaze, vec3(1.0)), 1.0); return; }\n"
 	"    c = fuaTracedShade(texel, vertPiece(i0), c, travelled + rayQueryGetIntersectionTEXT(rq, true));\n"
@@ -637,15 +637,15 @@ static const char *kMirrorPS =
 static const char *kMirrorPlanarPS =
 	"#version 450\n"
 	FUA_CONSTANTS_GLSL
-	"layout(binding = 1) uniform sampler2D uTex;\n"
+	"layout(binding = 1) uniform texture2D uTex; uniform sampler uTex_sampler;\n"
 	"layout(location = 0) in vec3 vWorld;\n"
 	"layout(location = 1) in vec3 vNormal;\n"
 	FUA_MIRROR_SHEEN_PS_GLSL
 	"layout(location = 0) out vec4 outColor;\n"
 	"void main() {\n"
 	"    vec3 sheen = fuaMirrorSheen();\n"
-	"    vec2 uv = gl_FragCoord.xy / vec2(textureSize(uTex, 0));\n"
-	"    outColor = vec4(min(texture(uTex, vec2(1.0 - uv.x, uv.y)).rgb + sheen, vec3(1.0)), 1.0);\n"
+	"    vec2 uv = gl_FragCoord.xy / vec2(textureSize(sampler2D(uTex, uTex_sampler), 0));\n"
+	"    outColor = vec4(min(texture(sampler2D(uTex, uTex_sampler), vec2(1.0 - uv.x, uv.y)).rgb + sheen, vec3(1.0)), 1.0);\n"
 	"}\n";
 
 // [rc4l] Which shader g_mirrorPSO was built with; the traced one only where the structure exists and fua_dg_rtmirrors asks for it.
@@ -754,7 +754,7 @@ bool EnsureMirrorResources()
 	}
 
 	// [rc4l] A pipeline built for the other path is rebuilt, since the two shaders bind different resources.
-	const bool wantTraced = g_tlas && fua_dg_rtmirrors;
+	const bool wantTraced = g_tlas && fua_dg_rtmirrors && MaterialSlotCapacity() > 0;
 	if (g_mirrorPSO && g_mirrorPSOTraced != wantTraced) { ReleaseMirrorLevels(); g_mirrorSRB.Release(); g_mirrorPSO.Release(); }
 	if (!g_mirrorPSO)
 	{
@@ -802,10 +802,7 @@ bool EnsureMirrorResources()
 		const Diligent::ImmutableSamplerDesc samplers[] = {
 			{ Diligent::SHADER_TYPE_PIXEL, "uSheen", sheenSamp },
 			{ Diligent::SHADER_TYPE_PIXEL, "uTex", samp },
-			// [rc4l] uMaterials needs its own immutable sampler. A GLSL sampler2D is a COMBINED image
-			// sampler, so an array of them needs a sampler declared for the array too -- without it the
-			// binding is incomplete and the process dies inside CreateShaderResourceBinding with nothing
-			// in the log, which looks like the array size or the feature rather than a missing sampler.
+			// [rc4l] The material array's sampler, uMaterials_sampler, is immutable as well, or it is a variable nothing binds.
 			{ Diligent::SHADER_TYPE_PIXEL, "uMaterials", matSamp },
 			{ Diligent::SHADER_TYPE_PIXEL, "uSky", samp },
 		};
@@ -840,7 +837,7 @@ bool EnsureMirrorResources()
 		pci.PSODesc.ResourceLayout.NumImmutableSamplers =
 			(Diligent::Uint32)(sizeof(samplers) / sizeof(samplers[0]));
 		pci.pVS = vs; pci.pPS = ps;
-		dev->CreateGraphicsPipelineState(pci, &g_mirrorPSO);
+		CreatePipeline(pci, &g_mirrorPSO);
 		if (!g_mirrorPSO) { Printf("mirror: PSO failed\n"); return false; }
 		// The traced path reads the same per-piece records the raster path does, so a reflection can
 		// never disagree with the surface it reflects about what colour or texture that surface is.
@@ -1118,12 +1115,12 @@ static bool EnsurePlaneMirrorResources(int planes)
 		// [rc4l] The mirrored eye sees the reflection upright, so the plane samples it upside down at its own screen position.
 		static const char *kPlaneMirrorPS =
 			"#version 450\n"
-			"layout(binding = 1) uniform sampler2D uReflection;\n"
+			"layout(binding = 1) uniform texture2D uReflection; uniform sampler uReflection_sampler;\n"
 			"layout(location = 0) out vec4 outColor;\n"
 			"void main() {\n"
-			"    ivec2 size = textureSize(uReflection, 0);\n"
+			"    ivec2 size = textureSize(sampler2D(uReflection, uReflection_sampler), 0);\n"
 			"    ivec2 p = ivec2(gl_FragCoord.xy);\n"
-			"    outColor = vec4(texelFetch(uReflection, ivec2(p.x, size.y - 1 - p.y), 0).rgb, 1.0);\n"
+			"    outColor = vec4(texelFetch(sampler2D(uReflection, uReflection_sampler), ivec2(p.x, size.y - 1 - p.y), 0).rgb, 1.0);\n"
 			"}\n";
 		Diligent::RefCntAutoPtr<Diligent::IShader> vs, ps;
 		vs = CompileShader(Diligent::SHADER_TYPE_VERTEX, "fua plane mirror VS", kPlaneMirrorVS);
@@ -1165,7 +1162,7 @@ static bool EnsurePlaneMirrorResources(int planes)
 		pci.PSODesc.ResourceLayout.NumImmutableSamplers = 1;
 		pci.pVS = vs;
 		pci.pPS = ps;
-		dev->CreateGraphicsPipelineState(pci, &g_pmPSO);
+		CreatePipeline(pci, &g_pmPSO);
 		if (!g_pmPSO) return false;
 		BindSceneConstants(g_pmPSO);
 	}

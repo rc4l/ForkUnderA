@@ -1,0 +1,21 @@
+:root {
+  --bg: #0d0f12;
+  --fg: #d8dade;
+  --muted: #8a9099;
+  --accent: #d0402a;
+  --panel: #171a1f;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font: 14px/1.4 system-ui, sans-serif; }
+body { display: flex; flex-direction: column; }
+main { position: relative; flex: 1; min-height: 0; }
+canvas { display: block; width: 100%; height: 100%; outline: none; background: #000; }
+#status { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; background: var(--bg); }
+#status[hidden] { display: none; }
+#progress { width: min(360px, 80vw); accent-color: var(--accent); }
+#error { position: absolute; inset: 16px; margin: 0; padding: 16px; overflow: auto; background: var(--panel); border-left: 4px solid var(--accent); white-space: pre-wrap; }
+footer { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 6px 16px; color: var(--muted); }
+footer a { color: var(--fg); }
+footer button { background: var(--panel); color: var(--fg); border: 1px solid #2a2f37; border-radius: 4px; padding: 4px 10px; cursor: pointer; }
+footer details { flex-basis: 100%; }
+#console { max-height: 30vh; overflow: auto; margin: 4px 0 0; font: 12px/1.3 ui-monospace, monospace; color: var(--muted); }

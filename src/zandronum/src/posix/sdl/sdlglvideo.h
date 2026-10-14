@@ -1,9 +1,7 @@
 #ifndef __SDLGLVIDEO_H__
 #define __SDLGLVIDEO_H__
 
-#include "hardware.h"
-#include "v_video.h"
-#include <SDL.h>
+#include "sdlvideo.h"
 #include "gl/system/gl_system.h"
 
 EXTERN_CVAR (Float, dimamount)
@@ -12,81 +10,25 @@ EXTERN_CVAR (Color, dimcolor)
 struct FRenderer;
 FRenderer *gl_CreateInterface();
 
-class SDLGLVideo : public IVideo
+// [rc4l] The engine's window with a GL context in it, which GL's own frame buffer draws through.
+class SDLGLFB : public SDLFB
 {
- public:
-	SDLGLVideo (int parm);
-	~SDLGLVideo ();
+	DECLARE_CLASS(SDLGLFB, SDLFB)
+public:
+	// this must have the same parameters as the Windows version, even if they are not used!
+	SDLGLFB (void *hMonitor, int width, int height, int, int, bool fullscreen);
+	~SDLGLFB ();
 
-	EDisplayType GetDisplayType () { return DISPLAY_Both; }
-	void SetWindowedScale (float scale);
-
-	DFrameBuffer *CreateFrameBuffer (int width, int height, bool fs, DFrameBuffer *old);
-
-	void StartModeIterator (int bits, bool fs);
-	bool NextMode (int *width, int *height, bool *letterbox);
-	bool SetResolution (int width, int height, int bits);
-
-	bool SetupPixelFormat(bool allowsoftware, int multisample);
-	bool InitHardware (bool allowsoftware, int multisample);
+	virtual void SetVSync( bool vsync );
+	void SwapBuffers();
 
 	// [rc4l] True once a core-profile context was actually obtained; the legacy renderer must not draw into one.
 	static bool IsCoreProfile();
 
-private:
-	int IteratorMode;
-	int IteratorBits;
-	bool IteratorFS;
-};
-class SDLGLFB : public DFrameBuffer
-{
-	DECLARE_CLASS(SDLGLFB, DFrameBuffer)
-public:
-	// this must have the same parameters as the Windows version, even if they are not used!
-	SDLGLFB (void *hMonitor, int width, int height, int, int, bool fullscreen, bool withGL = true); 
-	~SDLGLFB ();
-
-	void ForceBuffering (bool force);
-	bool Lock(bool buffered);
-	bool Lock ();
-	void Unlock();
-	bool IsLocked ();
-
-	bool IsValid ();
-	bool IsFullscreen ();
-
-	// [rc4l] windowed-video: resize the OS window (windowed only); the render target follows live.
-	void SetWindowSize (int w, int h);
-
-	virtual void SetVSync( bool vsync );
-	void SwapBuffers();
-	
-	void NewRefreshRate ();
-	// [rc4l] The window's size in pixels; false while it has none.
-	bool ClientSize (int &w, int &h);
-
-	friend class SDLGLVideo;
-
-//[C]
-	int GetTrueHeight() { return GetHeight();}
-
 protected:
-	bool CanUpdate();
-	void SetGammaTable(WORD *tbl);
-	void InitializeState();
-
 	SDLGLFB () {}
-	BYTE GammaTable[3][256];
-	bool UpdatePending;
-	
-	// [rc4l] SDL2 splits SDL 1.2's single screen surface into a window plus an explicit GL context.
-	SDL_Window *Screen;
-	SDL_GLContext GLContext;
-	
-	void UpdateColors ();
 
-	int m_Lock;
-	Uint16 m_origGamma[3][256];
-	bool m_supportsGamma;
+	// [rc4l] SDL2 splits SDL 1.2's single screen surface into a window plus an explicit GL context.
+	SDL_GLContext GLContext;
 };
 #endif
