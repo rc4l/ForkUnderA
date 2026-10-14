@@ -170,9 +170,9 @@ export async function verifyWorld(c, { exec }) {
   return report;
 }
 
-// [rc4l] The engine arguments past the cvars: each wad as -file, and -vulkan when the launch runs with no GL at all.
-export function playArgs(files, { noGl = false } = {}) {
-  return [...files.flatMap((f) => ["-file", f]), ...(noGl ? ["-vulkan"] : [])];
+// [rc4l] The engine arguments past the cvars: each wad as -file, and -vulkan when the launch runs with no GL at all, or -webgpu for the same backend on WebGPU.
+export function playArgs(files, { noGl = false, webgpu = false } = {}) {
+  return [...files.flatMap((f) => ["-file", f]), ...(webgpu ? ["-webgpu"] : noGl ? ["-vulkan"] : [])];
 }
 
 // [rc4l] Whether an engine still answers on port once a closing one has had graceMs to go.
@@ -215,7 +215,7 @@ async function launchChecked(opts, port) {
     allowOsInput: !opts.lock,
     // [rc4l] --res, forwarded. Without this it was accepted and silently dropped.
     width: opts.width, height: opts.height,
-    extraArgs: playArgs(files, { noGl: opts.noGl }),
+    extraArgs: playArgs(files, { noGl: opts.noGl, webgpu: opts.webgpu }),
     cvars: playCvars(opts),
     engine: opts.engine,
   });

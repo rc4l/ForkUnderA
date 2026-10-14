@@ -76,3 +76,8 @@ tools/fuactl/queue.json
 
 # fuactl screen capture helper build tree (tools/fuactl/native/screencap)
 tools/fuactl/native/screencap/build/
+
+# Web builds (web_compile.sh, tools/web/webgpu-check/build.sh)
+build-web/
+build-webgpu-check/
+dist-web/

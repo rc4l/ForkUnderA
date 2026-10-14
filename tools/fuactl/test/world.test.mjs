@@ -84,6 +84,7 @@ test("--no-gl launches with -vulkan after the wads, and without it nothing extra
   assert.deepEqual(playArgs(["a.pk3", "b.wad"]), ["-file", "a.pk3", "-file", "b.wad"]);
   assert.deepEqual(playArgs(["a.pk3"], { noGl: true }), ["-file", "a.pk3", "-vulkan"]);
   assert.deepEqual(playArgs([], { noGl: true }), ["-vulkan"]);
+  assert.deepEqual(playArgs(["a.pk3"], { noGl: true, webgpu: true }), ["-file", "a.pk3", "-webgpu"]);
 });
 
 test("cheats run AFTER the map, cvars BEFORE it", () => {

@@ -24,7 +24,7 @@ import { png } from "./png.mjs";
 import { actorsNear } from "./actors.mjs";
 import { pixelToFace } from "./camera.mjs";
 import { sectorOf } from "./sectorof.mjs";
-import { scenarioOptions, scenarioRun, templateScenarioFiles, probeScenario, sideAdjust, standaloneOptions, launchRenderer } from "./template.mjs";
+import { scenarioOptions, scenarioRun, templateScenarioFiles, probeScenario, sideAdjust, standaloneOptions, webgpuOptions, launchRenderer } from "./template.mjs";
 import { abPerf } from "./abperf.mjs";
 import { measureCosts, formatCosts } from "./costs.mjs";
 import { runFps, fpsModes } from "./fps.mjs";
@@ -170,13 +170,13 @@ const USAGE = `fuactl <command>
   diligent --port P [--frames N] [--shot FILE] [--sweep DIR]   drive the Diligent (Vulkan) backend: bake the level mesh, upload geometry, optional swapchain screenshot, optional debug-view sweep (lm0..lm4.png in DIR), the Diligent frame benchmark (fua_diligent_bench), and with --scale a GPU-time probe at 1x..100x the visible geometry
   trace --port P [--token T] [--seconds N] [--out FILE.csv]   every frame of a running instance for N seconds (fua_viewtrace): frame lengths apart from tic waits, what the slow frames spent more on, where it sat paused or unfocused, and the mouse input it got, gaps included
   present [--seconds N] [--process NAME.exe] [--port P [--token T]] [--out FILE.csv]   what Windows put on screen, from PresentMon run as administrator (a UAC prompt): each app's frames handed over and shown a second and the compositor's own updates; with --port the instance's frames are recorded alongside and lined up second by second
-  play [--restart] [--port P] [--token T] [--spot NAME | --unpark] [--map M] [--file a.pk3,b.pk3] [--cvar k=v,k2=v2] [--preset ID --variant V --store DIR] [--gl | --no-gl] [--side-by-side] [--rt] [--monsters] [--lock] [--res WxH]   a build to walk around in, Vulkan live in the window; stays up until Ctrl-C
+  play [--restart] [--port P] [--token T] [--spot NAME | --unpark] [--map M] [--file a.pk3,b.pk3] [--cvar k=v,k2=v2] [--preset ID --variant V --store DIR] [--gl | --no-gl | --webgpu] [--side-by-side] [--rt] [--monsters] [--lock] [--res WxH]   a build to walk around in, Vulkan live in the window; stays up until Ctrl-C
   build [--root DIR] [--no-stage] [--tests]   compile the engine (with --tests the unit tests too, and run them) and stage it unless --no-stage, failing loudly instead of staging a stale binary
   coverage [--since REF] [--tool PATH]   the 100% line-coverage gate on Windows: builds the Debug unit tests and runs them under OpenCppCoverage, then checks every unit a NAME_test.cpp gates, or with --since only those changed since REF (new files included); exit 1 on any miss
   mapdata <MAP> (--preset ID | --file a.pk3,b.wad) [--sector N,..] [--line N,..] [--special N] [--tag N] [--thing TYPE,..] [--scripts REGEX]   a UDMF level's summary, sectors, lines, things of the given types and ACS source lines, read from its files
   actors [--near x,y] [--radius R] [--toward YAW | --ahead] [--cone DEG] [--class REGEX]   actors near a point (default the player), nearest first, optionally only in a direction
   probe <scenario.mjs> [--map M] [--vantage V] [--side S] [--engine path/to/forkundera.exe] [<command> ...]   launch a template scenario's map at a vantage and run console commands there
-  scenarios [name ...] [--engine path/to/forkundera.exe] [--side S --cvar k=v,...] [--standalone]   run every template scenario (or the named ones) in turn and summarise; --engine picks the binary, as FUACTL_ENGINE does; --side/--cvar adds cvars to one side, to show a test fails under the old behaviour (scenarios without that side are skipped); --standalone runs each as players do: its own standalone side, else its vk side with fua_dg_standalone 1, else skipped
+  scenarios [name ...] [--engine path/to/forkundera.exe] [--side S --cvar k=v,...] [--standalone | --webgpu]   run every template scenario (or the named ones) in turn and summarise; --engine picks the binary, as FUACTL_ENGINE does; --side/--cvar adds cvars to one side, to show a test fails under the old behaviour (scenarios without that side are skipped); --standalone runs each as players do: its own standalone side, else its vk side with fua_dg_standalone 1, else skipped; --webgpu runs each one's Vulkan side on WebGPU against Vulkan, every box at WEBGPU_CEILING
   ready [--port P --token T] [--timeout S]   wait until an instance answers (defaults to the last play session)
   goto (--spot NAME | --at x,y,z --face yaw,pitch) [--port P]   stand the player there
   motion [--spot NAME | --at x,y,z --face yaw,pitch] [--box x0,y0,x1,y1] [--interval MS]   per-pixel change between two captures apart, Vulkan and GL, sim running
@@ -349,7 +349,7 @@ async function main() {
       const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "scenarios");
       const files = templateScenarioFiles(dir, rest);
       // [rc4l] --side S --cvar k=v runs a scenario with one side changed, to show a regression test fails under the behaviour it guards against.
-      const adjust = flags.standalone ? standaloneOptions
+      const adjust = flags.webgpu ? webgpuOptions : flags.standalone ? standaloneOptions
         : flags.side ? sideAdjust(String(flags.side), shot.parseCvarFlag(flags.cvar) || {}) : undefined;
       console.log(`engine ${resolveEngine()}`);
       let failed = 0, skipped = 0;
@@ -1060,7 +1060,7 @@ async function main() {
         ...presetDirs(flags),
         // [rc4l] --res WxH, so a capture can be framed exactly like the window a report came from.
         ...resFlag(flags.res),
-        gl: !!flags.gl, noGl: !!flags["no-gl"], sideBySide: !!flags["side-by-side"], rt: !!flags.rt,
+        gl: !!flags.gl, noGl: !!flags["no-gl"] || !!flags.webgpu, webgpu: !!flags.webgpu, sideBySide: !!flags["side-by-side"], rt: !!flags.rt,
         monsters: !!flags.monsters, lock: !!flags.lock,
         extra: shot.parseCvarFlag(flags.cvar) || {},
         at: spotAt,

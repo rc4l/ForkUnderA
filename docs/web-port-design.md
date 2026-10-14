@@ -34,7 +34,8 @@ Paths are relative to `src/zandronum/src/` unless noted. The order is deliberate
   - depth read through `sampler2D` (`dgdecals.cpp:180, 474-478`);
   - ray queries (`dgviews.cpp:479-487`).
 - **2e.** Build Diligent's WebGPU backend under Emscripten from our CMake, and clear a canvas in a bare test page. This proves the binding choice (1a) and the build flags.
-- **2f.** In that test page, confirm how adapter and device creation finish. Diligent spins on `IsReady` with a no-op event pump on web (`EngineFactoryWebGPU.cpp:102-107, 183-184, 328-329`), which can't finish inside a single browser task. Decide whether the device is created before the engine starts, from JS or a pre-main callback, or whether Diligent's web factory is patched to take callbacks.
+- **2f.** In that test page, confirm how adapter and device creation finish. Diligent spins on `IsReady` with a no-op event pump on web (`EngineFactoryWebGPU.cpp:102-107, 183-184, 328-329`), which can't finish inside a single browser task.
+  - **Decided:** the page creates the device before `main` runs, with the adapter's full limits, and the engine attaches to it (`AttachToWebGPUDevice`, `emscripten_webgpu_get_device()`). This is what Diligent's own web samples do. `tools/web/webgpu-check` proves it.
 - **2g.** Write the spike's findings into `docs/web-port-scope.md` under its risks.
 
 ## 3. Build profiles
@@ -47,6 +48,8 @@ Paths are relative to `src/zandronum/src/` unless noted. The order is deliberate
 
 - **4a.** Split `D_DoomLoop` (`d_main.cpp:1354-1499`) into `D_RunFrame`, one pass of the loop body, plus a desktop driver that calls it until exit. The scenario suite must stay green.
 - **4b.** Move the restart handling (`do{}while(1)` with `CRestartException`, `d_main.cpp:3054-3696`) into the driver, so a restart is a driver state rather than a throw out of an endless loop.
+  - **Decided:** with a driver installed (`features/mainloop`), `D_DoomLoop` hands `D_RunFrame` to it and unwinds `D_DoomMain` to `main` with `SteppedLoopStarted`.
+  - A restart the frame callback catches reloads the page with the new arguments. The engine's own restart re-initialises everything anyway, so `D_DoomMain`'s restart loop stays as it is.
 - **4c.** Turn the screen-wipe loop (`d_main.cpp:1253-1267`, `I_WaitVBL(2)` between passes) into a state the frame step advances.
 - **4d.** Make the quit sequence non-blocking: `I_WaitVBL(105)` for the quit sound (`menu/messagebox.cpp:420`), then `ST_Endoom` → `exit(0)` (`posix/sdl/st_start.cpp:350-354`), becomes a timed state ending in a driver-owned shutdown.
 - **4e.** Add a clock implementation beside the signal-based and polled ones in `I_SelectTimer` (`posix/sdl/i_system.cpp:268-296`), driven by a monotonic millisecond source. The tic arithmetic goes in a tested `ComputeTicsDue`.
@@ -95,7 +98,7 @@ Paths are relative to `src/zandronum/src/` unless noted. The order is deliberate
 - **7e.** Add `ComputeRenderTier` in `features/hwrender/computation/`. It maps device capabilities to the tier's flags (bindless, resource arrays, ray tracing, depth clamp, inter-stage variable limit, storage buffers per stage), with tests, and a cvar can force any tier on Vulkan.
 - **7f.** Make the texture array a tier define in the scene shaders: `GL_EXT_nonuniform_qualifier` and `uMaterials[]` only in the bindless tier (`dgscene_glsl.h:142, 198, 233, 466`; `dgscene.cpp:241-243`). The resource layout drops `uMaterials` outside it (`dgpipelines.cpp:761, 778`).
 - **7g.** In the non-array tier, draw through the per-batch `uTex`/`uBrightmap` binding the non-bindless path uses (`fua_dg_bindless`, `dgscene.cpp:174`; `BindlessActive`, `dgpipelines.cpp:504`), and check the batch count it costs on the heaviest maps.
-- **7h.** Fit the scene vertex-to-pixel interface in 16 locations (`dgscene_glsl.h:26-48`, 23 today) by packing scalars into shared vectors, or by reading per-piece fields from the `Pieces` buffer in the pixel stage.
+- **7h.** The scene vertex-to-pixel interface uses 23 locations. Desktop adapters allow 28, so the device asks for the adapter's limit and startup checks it. For a device capped at 16, packing scalars into shared vectors, or reading per-piece fields from the `Pieces` buffer in the pixel stage, is the fallback.
 - **7i.** Read scene depth in the decal pass as a depth texture with a non-filtering sampler (`dgdecals.cpp:180, 474-478`).
 - **7j.** Keep ray-traced mirrors off in the WebGPU tier. The planar path (`kMirrorPlanarPS`, `dgviews.cpp:637`) already covers them.
 - **7k.** Request depth-clip control when the tier wants depth clamp. Diligent asks for it only with `DepthBiasClamp` (`EngineFactoryWebGPU.cpp:252`), so patch it or accept GL-style clipping in that tier.

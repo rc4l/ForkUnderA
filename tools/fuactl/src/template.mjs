@@ -62,13 +62,23 @@ export function launchRenderer(text) {
   return m ? m[1] : null;
 }
 
+// [rc4l] The API `dumprenderer` says the backend's device runs on ("Vulkan", "WebGPU"), or null when it printed none.
+export function launchBackendApi(text) {
+  const m = /backend_api=(\w+)/.exec(String(text || ""));
+  return m ? m[1] : null;
+}
+
 // [rc4l] One locked launch of the wad with the side's settings applied, handed to `body` and always torn down.
 function withEngine({ port, map, iwad, wadPath, gl, side = {}, size }, body) {
-  return withLockedInstance({ port, map, iwad, file: wadPath, gl, noGl: !!side.noGl, width: size[0], height: size[1] }, async (c) => {
+  return withLockedInstance({ port, map, iwad, file: wadPath, gl, noGl: !!side.noGl, webgpu: !!side.webgpu, width: size[0], height: size[1] }, async (c) => {
     // [rc4l] A side without GL must really have none: a binary that ignores -vulkan would pass as GL beside an embedded backend.
     if (side.noGl) {
-      const renderer = launchRenderer(await cap.exec(c, "dumprenderer"));
+      const report = await cap.exec(c, "dumprenderer");
+      const renderer = launchRenderer(report);
       if (renderer !== "vulkan") throw new Error(`side ${side.name} asked for no GL and the launch reports ${renderer || "no renderer"}`);
+      // [rc4l] And a WebGPU side really runs on WebGPU, since a device that fails falls back to Vulkan and would pass as itself.
+      const api = launchBackendApi(report);
+      if (side.webgpu && api !== "WebGPU") throw new Error(`side ${side.name} asked for WebGPU and the launch reports ${api || "no backend API"}`);
     }
     await cap.exec(c, "r_drawplayersprites 0");
     // [rc4l] A Vulkan side derives its own scene, as players run it, rather than taking GL's walk; one judged by GL's frame, or by both renderers' from one frame (glDraws), keeps GL drawing.
@@ -144,6 +154,19 @@ export function sideAdjust(sideName, cvars) {
 export function standaloneOptions(opts) {
   if ((opts.sides || GL_VS_VULKAN).some((s) => s.name === "standalone")) return opts;
   return sideAdjust("vk", { fua_dg_standalone: 1 })(opts);
+}
+
+// [rc4l] The mean |d| every box is held to when WebGPU is judged against Vulkan: the same backend over two APIs, so near the same picture.
+export const WEBGPU_CEILING = 1.5;
+
+// [rc4l] A scenario on WebGPU against Vulkan: its first Vulkan side launched on each without GL, each box at WEBGPU_CEILING with no floor; null for a scenario with no Vulkan side of its own.
+export function webgpuOptions(opts) {
+  const vk = (opts.sides || GL_VS_VULKAN).find((s) => !s.gl && s.frame !== "gl");
+  if (!vk) return null;
+  const { frame, glDraws, ...rest } = vk;
+  const boxes = Object.fromEntries(Object.entries(opts.boxes).map(([map, bs]) => [map, Object.fromEntries(Object.entries(bs).map(
+    ([n, b]) => [n, { box: b.box, block: b.block, vantage: b.vantage, ceiling: WEBGPU_CEILING }]))]));
+  return { ...opts, sides: [{ ...rest, name: "vk", noGl: true }, { ...rest, name: "wgpu", noGl: true, webgpu: true }], boxes };
 }
 
 // [rc4l] A scenario's verdict as printed lines and an exit code: 0 all under ceiling, 1 failed, 3 refused.

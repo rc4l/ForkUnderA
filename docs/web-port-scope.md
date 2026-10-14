@@ -271,6 +271,25 @@ The repo's conventions decide most of the layout:
 3. **Binary size.** Shaders compile at runtime, so glslang, SPIRV-Tools and Tint all end up in the wasm. Pre-compiling our own shaders to WGSL at build time would remove most of that. GLDEFS user shaders would still compile at runtime, or stay off on the web.
 4. **CPU cost, single-threaded.** The visibility walk and level mesh would run single-threaded, with wasm running perhaps 1.5–2.5× slower than native. Measure on the heaviest maps; threads, through a service worker that adds the isolation headers, are the follow-up.
 
+## What the spike found
+
+- **Toolchain.**
+  - Emscripten 4.0.0 is the pin, the version Diligent's own web CI builds with.
+  - Our Diligent submodule codes against Emscripten's built-in WebGPU header through compatibility aliases (`GraphicsEngineWebGPU/include/pch.h:38-74`), so the newer emdawnwebgpu port isn't needed.
+- **Device creation.**
+  - Diligent's web samples make the adapter and device in the page's JavaScript, then attach to it (`AttachToWebGPUDevice` with `emscripten_webgpu_get_device()`). That settles the blocking wait in Diligent's own creation path.
+  - The page must ask for the adapter's full limits, as Diligent's native path does (`requiredLimits` from `adapter.limits`). WebGPU's defaults are too small for us.
+- **It runs.** `tools/web/webgpu-check` builds Diligent's WebGPU backend from our tree. Headless Chrome draws the engine's GLSL triangle through it, with glslang and Tint inside the module, which is 7.2 MB uncompressed.
+- **Shaders.** The 16 shaders a launch makes went through the conversion (`fua_dg_shaderdump`, `shadercheck.js`):
+  - **Combined image-samplers.** Tint's SPIR-V reader rejects `sampler2D` outright.
+    - Every backend shader now declares a `texture2D` and a `sampler` named `<texture>_sampler`. Diligent pairs the two by that suffix, so the bindings and immutable samplers keep their names.
+    - Vulkan draws through the same source.
+  - **Texture arrays.** Rejected, as expected. The material array now sits behind `FUA_BINDLESS`, defined only where the device has the array; WebGPU draws with a binding per material.
+  - **Vertex outputs.** The scene shader uses 23, over WebGPU's default of 16 but under the 28 that desktop adapters report. Asking for the adapter's limit covers it, and packing the outputs becomes the fallback for a device capped at 16.
+  - **Storage buffers per stage.** The default is 8 and adapters report 16; the same request covers it.
+  - **Depth clamp.** Desktop adapters offer `depth-clip-control`, so GL's depth clamp can stay.
+- **Not yet checked:** the shaders that need content to appear (decals, mirrors, portals, horizon, lines, stereo). They come through when the scenario suite runs on desktop WebGPU (design 7o).
+
 ## Milestones
 1. **Spike:** Tint over every shader. Diligent's WebGPU backend clearing a canvas from our CMake under Emscripten.
 2. **Boot:** single-threaded, offline, reaching the title screen with menus and sound (2D through `dg2d` on WebGPU).

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { judge, judgeCounter, scenarioOutcome, isMain, sideCommands, vantageCommands, boxWithin, runScenarioIfMain, scenarioOptions, scenarioRun, templateScenarioFiles, probeChoices, pairFrame, withSideCvars, launchRenderer, sideAdjust, standaloneOptions, GL_VS_VULKAN } from "../src/template.mjs";
+import { judge, judgeCounter, scenarioOutcome, isMain, sideCommands, vantageCommands, boxWithin, runScenarioIfMain, scenarioOptions, scenarioRun, templateScenarioFiles, probeChoices, pairFrame, withSideCvars, launchRenderer, sideAdjust, standaloneOptions, webgpuOptions, launchBackendApi, WEBGPU_CEILING, GL_VS_VULKAN } from "../src/template.mjs";
 import { pathToFileURL } from "node:url";
 import fs from "node:fs";
 import os from "node:os";
@@ -201,4 +201,26 @@ test("--standalone runs a scenario's own standalone side, else its Vulkan side w
   assert.equal(standaloneOptions(own), own);
   assert.deepEqual(standaloneOptions({ name: "pair" }).sides, [{ name: "gl", gl: true }, { name: "vk", gl: false, cvars: { fua_dg_standalone: 1 } }]);
   assert.equal(standaloneOptions({ name: "ab", sides: [{ name: "flat" }, { name: "clustered" }] }), null);
+});
+
+test("the backend's API is read from dumprenderer", () => {
+  assert.equal(launchBackendApi("MCP_RENDERER\nrenderer=vulkan\nbackend_api=WebGPU\n"), "WebGPU");
+  assert.equal(launchBackendApi("renderer=opengl\n"), null);
+  assert.equal(launchBackendApi(undefined), null);
+});
+
+test("a WebGPU run launches the Vulkan side on each API without GL, every box at one ceiling", () => {
+  const opts = {
+    name: "s",
+    sides: [{ name: "gl", gl: true }, { name: "vk", gl: false, glDraws: true, cvars: { r_x: 1 } }],
+    boxes: { MAP01: { wall: { box: [0, 0, 8, 8], ceiling: 9, floor: 3, block: 8, vantage: "a" } } },
+  };
+  const w = webgpuOptions(opts);
+  assert.deepEqual(w.sides, [
+    { name: "vk", gl: false, cvars: { r_x: 1 }, noGl: true },
+    { name: "wgpu", gl: false, cvars: { r_x: 1 }, noGl: true, webgpu: true },
+  ]);
+  assert.deepEqual(w.boxes.MAP01.wall, { box: [0, 0, 8, 8], block: 8, vantage: "a", ceiling: WEBGPU_CEILING });
+  assert.equal(webgpuOptions({ name: "glonly", sides: [{ name: "gl", gl: true }, { name: "vk2", frame: "gl" }], boxes: {} }), null);
+  assert.equal(webgpuOptions({ name: "pair", boxes: {} }).sides[0].name, "vk");
 });
