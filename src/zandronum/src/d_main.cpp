@@ -70,6 +70,7 @@
 #include "features/crashreport/zx_crashreport.h"
 #include "features/hwrender/diligent/dglive.h"   // [rc4l] one call, no Diligent headers -- see dglive.h
 #include "features/hwrender/hud2d.h"             // [rc4l] per-frame 2D capture
+#include "features/continue/zx_continue.h"
 #include "features/identity/zx_identity.h"
 #include "features/updater/zx_updater.h" // [rc4l] background auto-update check
 #include "features/wad-download/zx_waddownload.h" // [rc4l] background WAD downloads
@@ -79,6 +80,7 @@
 #include "features/server-hosting/zx_hostwatchdog.h" // [rc4l] and dying with the game that started us
 #include "features/port-mapping/zx_portmap.h" // [rc4l] and giving back any port we asked for
 #include "features/server-browser/zx_joinserver.h" // [rc4l] a failed join lands in the browser
+#include "features/speedometer/speedometer.h" // [MobiusU9B] on-screen speed readout
 #include "s_sound.h"
 #include "v_video.h"
 #include "intermission/intermission.h"
@@ -276,6 +278,7 @@ FString StoredWarp;
 extern FString StoredReloadMap; // [rc4l] set by wad_reload to boot into a map after a restart
 bool advancedemo;
 FILE *debugfile;
+FILE *hashfile;
 event_t events[MAXEVENTS];
 int eventhead;
 int eventtail;
@@ -287,6 +290,15 @@ bool nospriterename;
 FStartupInfo DoomStartupInfo;
 FString lastIWAD;
 int restart = 0;
+
+// [rc4l] See D_RequestRestart in d_main.h: the throw is deferred to the top of D_DoomLoop so it
+// never has to unwind through Objective-C frames.
+static bool s_restartRequested = false;
+
+void D_RequestRestart()
+{
+	s_restartRequested = true;
+}
 
 cycle_t FrameCycles;
 
@@ -661,6 +673,7 @@ CUSTOM_CVAR (Int, zadmflags, 0, CVAR_SERVERINFO | CVAR_CAMPAIGNLOCK | CVAR_GAMEP
 }
 
 CVAR (Flag, sv_noidentifytarget,			zadmflags, ZADF_NO_IDENTIFY_TARGET);
+CVAR (Flag, sv_fua_noidentifyactors,		zadmflags, ZADF_FUA_NO_IDENTIFY_ACTORS); // [MobiusU9B] features/crosshair
 CVAR (Flag, sv_applylmsspectatorsettings,	zadmflags, ZADF_ALWAYS_APPLY_LMS_SPECTATORSETTINGS);
 CVAR (Flag, sv_nocoopinfo,			zadmflags, ZADF_NO_COOP_INFO);
 CVAR (Flag, sv_unblockplayers,			zadmflags, ZADF_UNBLOCK_PLAYERS);
@@ -1095,7 +1108,12 @@ drawfullconsole:
 				POSSESSION_Render( );
 
 				// [BC] Render the scoreboard [BB] respecting free spectate mode.
-				HUD_Render( CLIENTDEMO_IsInFreeSpectateMode( ) == false ? HUD_GetViewPlayer( ) : consoleplayer );
+				// [MobiusU9B] Hoisted so the speedometer reads the same player the HUD shows.
+				const ULONG ulDisplayPlayer = CLIENTDEMO_IsInFreeSpectateMode( ) == false ? HUD_GetViewPlayer( ) : consoleplayer;
+				HUD_Render( ulDisplayPlayer );
+
+				// [MobiusU9B] The speedometer, see features/speedometer/README.md.
+				zx::speedometer::Draw( ulDisplayPlayer );
 
 				// Render any medals the player might have been awarded.
 				MEDAL_Render( );
@@ -1337,10 +1355,19 @@ void D_DoomLoop ()
 	{
 		try
 		{
+			// [rc4l] The only place a restart is thrown from. Anything that wants one sets the flag
+			// and returns normally; see D_RequestRestart.
+			if (s_restartRequested)
+			{
+				s_restartRequested = false;
+				throw CRestartException();
+			}
+
 			zx::updater::Tick(); // [rc4l] fires the deferred update check + drains its verdict log (main thread)
 			zx::waddownload::Tick(); // [rc4l] drains the WAD downloader's log + fires its completion (main thread)
 			zx::wadserve::Tick(); // [rc4l] server side: binds/rebinds the WAD listener, snapshots its config, drains its log
 			zx::JoinTick(); // [rc4l] puts a failed join back in the server browser instead of a bare console
+			zx::Continue_Tick(); // [rc4l] finishes a Continue that had to reload the WAD set first
 			zx::HostTick(); // [rc4l] client side: drains our own server's output and watches it come up or fall over
 			zx::framephase::FrameBoundary();   // [rc4l] the last iteration's phases become the last frame's
 			MCP_Bridge_Poll();
@@ -2240,7 +2267,8 @@ static const char *BaseFileSearch (const char *file, const char *ext, bool lookf
 		return wad;
 	}
 
-	if (GameConfig->SetSection ("FileSearch.Directories"))
+	// [rc4l] uzdoom@a013703e1 -- BaseFileSearch can run before the config exists.
+	if (GameConfig != NULL && GameConfig->SetSection ("FileSearch.Directories"))
 	{
 		const char *key;
 		const char *value;
@@ -2656,9 +2684,6 @@ static void D_DoomInit()
 
 	FRandom::StaticClearRandom ();
 
-	Printf ("M_LoadDefaults: Load system defaults.\n");
-	M_LoadDefaults ();			// load before initing other systems
-
 }
 
 //==========================================================================
@@ -2667,8 +2692,12 @@ static void D_DoomInit()
 //
 //==========================================================================
 
-static void AddAutoloadFiles(const char *gamesection)
+static void AddAutoloadFiles(const char *autoname)
 {
+	// [rc4l] uzdoom@258822ef3 -- the Autoname is a dotted hierarchy now, walked prefix by
+	// prefix, so the separate Group mechanism is gone. The trailing dot simplifies that walk.
+	LumpFilterIWAD.Format("%s.", autoname);
+
 	if (!(gameinfo.flags & GI_SHAREWARE) && !Args->CheckParm("-noautoload"))
 	{
 		FString file;
@@ -2700,12 +2729,16 @@ static void AddAutoloadFiles(const char *gamesection)
 		file += ".Autoload";
 		D_AddConfigWads (allwads, file);
 
-		// Add IWAD-specific wads
-		if (gamesection != NULL)
+		// Add IWAD-specific wads, one section per dotted prefix. This supersedes both the group
+		// section and the uzdoom@a91997d12 empty-name guard: an empty name yields no prefixes.
+		long len;
+		int lastpos = -1;
+
+		while ((len = LumpFilterIWAD.IndexOf('.', lastpos+1)) > 0)
 		{
-			file = gamesection;
-			file += ".Autoload";
+			file = LumpFilterIWAD.Left(len) + ".Autoload";
 			D_AddConfigWads(allwads, file);
+			lastpos = len;
 		}
 	}
 }
@@ -2951,6 +2984,7 @@ void D_DoomMain (void)
 	const char *v;
 	const char *wad;
 	DArgs *execFiles;
+	FIWadManager *iwad_man = NULL;
 	TArray<FString> pwads;
 	/* [BB] Zandronum uses different bot code and thus doesn't need these.
 	FString *args;
@@ -2966,9 +3000,27 @@ void D_DoomMain (void)
 	}
   */
 
+	if (Args->CheckParm("-hashfiles"))
+	{
+		const char *filename = "fileinfo.txt";
+		Printf("Hashing loaded content to: %s\n", filename);
+		hashfile = fopen(filename, "w");
+		if (hashfile)
+		{
+			fprintf(hashfile, "%s version %s (%s)\n", GAMENAME, GetVersionString(), GetGitHash());
+#ifdef __VERSION__
+			fprintf(hashfile, "Compiler version: %s\n", __VERSION__);
+#endif
+			fprintf(hashfile, "Command line:");
+			for (int i = 0; i < Args->NumArgs(); ++i)
+			{
+				fprintf(hashfile, " %s", Args->GetArg(i));
+			}
+			fprintf(hashfile, "\n");
+		}
+	}
+
 	D_DoomInit();
-	PClass::StaticInit ();
-	atterm(FinalGC);
 
 	// [RH] Make sure zdoom.pk3 is always loaded,
 	// as it contains magic stuff we need.
@@ -2982,6 +3034,19 @@ void D_DoomMain (void)
 		I_FatalError ("Cannot find %s.\n%s", BASEWAD, d_FuaDescribeFoundCores( ).GetChars( ));
 	}
 	FString basewad = wad;
+
+	// [rc4l] uzdoom@dfda74ffe -- the IWAD list is parsed before the config loads, so the config
+	// can generate an autoload section per IWAD. M_LoadDefaults moves out of D_DoomInit to here;
+	// Zandronum's map rotation, pathing and callvote constructors still run ahead of it inside
+	// D_DoomInit, which is what the comment there requires.
+	iwad_man = new FIWadManager;
+	iwad_man->ParseIWadInfos(basewad);
+
+	Printf ("M_LoadDefaults: Load system defaults.\n");
+	M_LoadDefaults (iwad_man);			// load before initing other systems
+
+	PClass::StaticInit ();
+	atterm(FinalGC);
 
 
 	// reinit from here
@@ -3024,16 +3089,27 @@ void D_DoomMain (void)
 		// [rc4l] And our own download folder, before anything searches it.
 		zx::waddownload::RegisterDownloadDirEarly();
 
+		// [rc4l] And any mirror shipped since this player's saved list was written.
+		zx::waddownload::MergeShippedDownloadSites();
+
 		// [rc4l] Anonymous accounts: load or create this machine's identity before any join can
 		// need it, so the handshake itself never touches the disk.
 		{
-			zx::Identity_MigrateLegacyRoot( );
-
 			const std::string identityRoot = zx::Identity_ConfigRoot( );
 			zx::Identity_InitClientHere( identityRoot.c_str( ));
 		}
 
-		FIWadManager *iwad_man = new FIWadManager;
+		// [rc4l] iwad_man is created earlier now (uzdoom@dfda74ffe moved it ahead of M_LoadDefaults,
+		// which needs it to generate the autoload sections), so this only fills it in if that did
+		// not already happen. The registration above still lands before any searching.
+		// [rc4l] A restart arrives here with no manager (see the delete at the end of the loop),
+		// and a fresh one has no IWADINFO in it -- FindIWAD reads those tables, so parse before
+		// asking. The first boot path does this above, ahead of M_LoadDefaults.
+		if (iwad_man == NULL)
+		{
+			iwad_man = new FIWadManager;
+			iwad_man->ParseIWadInfos(basewad);
+		}
 		const FIWADInfo *iwad_info = iwad_man->FindIWAD(allwads, iwad, basewad);
 		gameinfo.gametype = iwad_info->gametype;
 		gameinfo.flags = iwad_info->flags;
@@ -3077,6 +3153,11 @@ void D_DoomMain (void)
 		pwads.Clear();
 		pwads.ShrinkToFit();
 
+		if (hashfile)
+		{
+			Printf("Notice: File hashing is incredibly verbose. Expect loading files to take much longer than usual.\n");
+		}
+
 		Printf ("W_Init: Init WADfiles.\n");
 		Wads.InitMultipleFiles (/*allwads*/); // [BB] Removed argument.
 		// [rc4l] Tag crash reports with the IWAD + full load order (bare filenames only).
@@ -3084,6 +3165,10 @@ void D_DoomMain (void)
 		allwads.Clear();
 		allwads.ShrinkToFit();
 		SetMapxxFlag();
+
+		// [rc4l] uzdoom@c36222d2e -- key setup happens here now, after the wads are loaded,
+		// because the default bindings come from DEFBINDS lumps.
+		GameConfig->DoKeySetup(gameinfo.ConfigName);
 
 		// Now that wads are loaded, define mod-specific cvars.
 		ParseCVarInfo();
@@ -3267,6 +3352,10 @@ void D_DoomMain (void)
 		// Create replacements for dehacked pickups
 		FinishDehPatch();
 
+		// [rc4l] uzdoom@15dbbc913 -- seed the map from MAPINFO first, then let DECORATE's numbers
+		// overwrite it. That order is what makes a DECORATE doomed number win.
+		InitActorNumsFromMapinfo();
+		InitSpawnablesFromMapinfo();
 		FActorInfo::StaticSetActorNums ();
 
 		// [TP] Init preferred weapon order
@@ -3377,6 +3466,12 @@ void D_DoomMain (void)
 		FBaseCVar::EnableNoSet ();
 
 		delete iwad_man;	// now we won't need this anymore
+		// [rc4l] ...and the restart path comes back around to the `if (iwad_man == NULL)` test
+		// above, so the pointer has to say it is gone. Leaving it dangling meant a restart
+		// (wad_reload, hosting from the catalogue, joining a server) ran FindIWAD against freed
+		// memory: the tables read back as garbage sizes and the first name it touched was not a
+		// string any more. That is the crash on the second trip through D_DoomMain.
+		iwad_man = NULL;
 
 		// [RH] Run any saved commands from the command line or autoexec.cfg now.
 		gamestate = GS_FULLCONSOLE;
@@ -3637,7 +3732,9 @@ UNSAFE_CCMD(restart)
 	}
 
 	// initiate the restart
-	throw CRestartException();
+	// [rc4l] Deferred for the same reason as wad_reload: a console command can be dispatched from
+	// inside the Cocoa event pump, and the throw must not unwind through Objective-C frames.
+	D_RequestRestart();
 }
 
 //==========================================================================

@@ -2018,12 +2018,8 @@ void DPlaneWatcher::Tick ()
 // own behavior is loaded (if it has one).
 void FBehavior::StaticLoadDefaultModules ()
 {
-	// When playing Strife, STRFHELP is always loaded.
-	if (gameinfo.gametype == GAME_Strife)
-	{
-		StaticLoadModule (Wads.CheckNumForName ("STRFHELP", ns_acslibrary));
-	}
-
+	// [rc4l] uzdoom@89054f5d6 -- strfhelp moves to filter/strife/acs and is loaded through
+	// LOADACS like any other library, rather than by a hardcoded game check here.
 	// Scan each LOADACS lump and load the specified modules in order
 	int lump, lastlump = 0;
 
@@ -3697,35 +3693,35 @@ void DACSThinker::ReplaceActivator (AActor *actor, AActor *newactor)
 // the function could only ever clear the fog. uzdoom@7bc2e5c67 fixes it to `check == NULL`, which
 // is the form taken here: an unresolvable name (or "none"/"null") clears the fog, anything that
 // resolves sets it.
-static void SetActorTeleFog(AActor *activator, int tid, FName telefogsrc, FName telefogdest)
+static void SetActorTeleFog(AActor *activator, int tid, FString telefogsrc, FString telefogdest)
 {
-	const PClass *check;
+	// [rc4l] uzdoom@5f56fb5a1 -- Set the actor's telefog to the specified actor. Handle "" as
+	// "don't change" since "None" should work just fine for disabling the fog (given that it
+	// will resolve to NAME_None which is not a valid actor name). The old form treated an
+	// unknown class name the same as "none" and silently cleared the fog.
 	if (tid == 0)
 	{
 		if (activator != NULL)
 		{
-			check = PClass::FindClass(telefogsrc);
-			if (check == NULL || !stricmp(telefogsrc, "none") || !stricmp(telefogsrc, "null")) activator->TeleFogSourceType = NULL;
-			else activator->TeleFogSourceType = check;
-
-			check = PClass::FindClass(telefogdest);
-			if (check == NULL || !stricmp(telefogdest, "none") || !stricmp(telefogdest, "null")) activator->TeleFogDestType = NULL;
-			else activator->TeleFogDestType = check;
+			if (telefogsrc.IsNotEmpty())
+				activator->TeleFogSourceType = PClass::FindClass(telefogsrc);
+			if (telefogdest.IsNotEmpty())
+				activator->TeleFogDestType = PClass::FindClass(telefogdest);
 		}
 	}
 	else
 	{
 		FActorIterator iterator(tid);
 		AActor *actor;
+
+		const PClass * const src = telefogsrc.IsNotEmpty() ? PClass::FindClass(telefogsrc) : NULL;
+		const PClass * const dest = telefogdest.IsNotEmpty() ? PClass::FindClass(telefogdest) : NULL;
 		while ((actor = iterator.Next()))
 		{
-			check = PClass::FindClass(telefogsrc);
-			if (check == NULL || !stricmp(telefogsrc, "none") || !stricmp(telefogsrc, "null")) actor->TeleFogSourceType = NULL;
-			else actor->TeleFogSourceType = check;
-
-			check = PClass::FindClass(telefogdest);
-			if (check == NULL || !stricmp(telefogdest, "none") || !stricmp(telefogdest, "null")) actor->TeleFogDestType = NULL;
-			else actor->TeleFogDestType = check;
+			if (telefogsrc.IsNotEmpty())
+				actor->TeleFogSourceType = src;
+			if (telefogdest.IsNotEmpty())
+				actor->TeleFogDestType = dest;
 		}
 	}
 }
@@ -4269,7 +4265,7 @@ int DLevelScript::DoSpawn (int type, fixed_t x, fixed_t y, fixed_t z, int tid, i
 		actor = Spawn (info, x, y, z, ALLOW_REPLACE);
 		if (actor != NULL)
 		{
-			DWORD oldFlags2 = actor->flags2;
+			ActorFlags2 oldFlags2 = actor->flags2;
 			actor->flags2 |= MF2_PASSMOBJ;
 			if (force || P_TestMobjLocation (actor))
 			{
@@ -5655,6 +5651,7 @@ enum EACSFunctions
 	ACSF_SetActorRoll,
 	ACSF_ChangeActorRoll,
 	ACSF_GetActorRoll,
+	ACSF_QuakeEx,
 
 	// [BB] Out of order ZDoom backport.
 	ACSF_Warp = 92,
@@ -9145,6 +9142,18 @@ doplaysound:			if (funcIndex == ACSF_PlayActorSound)
 		case ACSF_GetActorRoll:
 			actor = SingleActorFromTID(args[0], activator);
 			return actor != NULL ? actor->roll >> 16 : 0;
+
+		// [rc4l] uzdoom@b6ca1947f, with the fixed->double conversion from uzdoom@e29b8b209.
+		// The three wave-speed arguments arrive from ACS as fixed point and P_StartQuakeXYZ
+		// takes doubles, so they go through FIXED2DBL rather than being passed raw.
+		case ACSF_QuakeEx:
+		{
+			return P_StartQuakeXYZ(activator, args[0], args[1], args[2], args[3], args[4], args[5], args[6], FBehavior::StaticLookupString(args[7]),
+				argCount > 8 ? args[8] : 0,
+				argCount > 9 ? FIXED2DBL(args[9]) : 1.0,
+				argCount > 10 ? FIXED2DBL(args[10]) : 1.0,
+				argCount > 11 ? FIXED2DBL(args[11]) : 1.0 );
+		}
 
 		case ACSF_GetActorFloorTexture:
 		{

@@ -247,3 +247,80 @@ TEST( ReachProbe, NothingIsClaimedBeforeTheCheckHasFinished )
 	EXPECT_EQ( ProbeDisplay::Unknown, ProbeDisplayFor( ProbePhase::AwaitingCookie ));
 	EXPECT_EQ( ProbeDisplay::Unknown, ProbeDisplayFor( ProbePhase::AwaitingProbe ));
 }
+
+// ---------------------------------------------------------------- asking the other family
+
+using zx::ComputeShouldTryOtherFamily;
+
+// Reachable over the family we asked is the whole answer; the other one is not worth a round trip.
+TEST(ReachProbeFamily, ReachableIsFinalAndAsksNothingFurther)
+{
+	EXPECT_FALSE(ComputeShouldTryOtherFamily(ProbePhase::Reachable, true, false, false, true));
+	EXPECT_FALSE(ComputeShouldTryOtherFamily(ProbePhase::Reachable, false, false, false, true));
+}
+
+TEST(ReachProbeFamily, AnUnfinishedAttemptIsNotAVerdictToSpend)
+{
+	EXPECT_FALSE(ComputeShouldTryOtherFamily(ProbePhase::Idle, true, false, false, true));
+	EXPECT_FALSE(ComputeShouldTryOtherFamily(ProbePhase::AwaitingCookie, true, false, false, true));
+	EXPECT_FALSE(ComputeShouldTryOtherFamily(ProbePhase::AwaitingProbe, true, false, false, true));
+}
+
+// The point of the whole change: v6 saying no must not be reported before v4 has been asked.
+TEST(ReachProbeFamily, ANonReachableVerdictSpendsTheOtherFamily)
+{
+	EXPECT_TRUE(ComputeShouldTryOtherFamily(ProbePhase::Unreachable, true, false, false, true));
+	EXPECT_TRUE(ComputeShouldTryOtherFamily(ProbePhase::Unreachable, false, false, false, true));
+
+	// The registry never answering is equally only this family's story.
+	EXPECT_TRUE(ComputeShouldTryOtherFamily(ProbePhase::Failed, true, false, false, true));
+}
+
+TEST(ReachProbeFamily, AFamilyIsNeverAskedTwice)
+{
+	EXPECT_FALSE(ComputeShouldTryOtherFamily(ProbePhase::Unreachable, true, true, false, true));
+	EXPECT_FALSE(ComputeShouldTryOtherFamily(ProbePhase::Unreachable, false, false, true, true));
+}
+
+// A host with no v6 has no v6 question, and must not stall waiting to ask one.
+TEST(ReachProbeFamily, AFamilyThisMachineCannotReachIsNotAsked)
+{
+	EXPECT_FALSE(ComputeShouldTryOtherFamily(ProbePhase::Unreachable, true, false, false, false));
+	EXPECT_FALSE(ComputeShouldTryOtherFamily(ProbePhase::Unreachable, false, false, false, false));
+}
+
+// ---------------------------------------------------------------- joinability, not dialability
+
+using zx::ComputeJoinableDisplay;
+using zx::ComputeJoinableViaRelay;
+
+TEST(ReachProbeJoinable, AnOpenPortIsJoinable)
+{
+	EXPECT_EQ(ProbeDisplay::Reachable, ComputeJoinableDisplay(ProbePhase::Reachable));
+	EXPECT_FALSE(ComputeJoinableViaRelay(ProbePhase::Reachable));
+}
+
+// The whole point: a shut port is not a shut server, because the registry brokers the punch.
+TEST(ReachProbeJoinable, AShutPortWithALiveRegistryIsStillJoinable)
+{
+	EXPECT_EQ(ProbeDisplay::Reachable, ComputeJoinableDisplay(ProbePhase::Unreachable));
+	EXPECT_TRUE(ComputeJoinableViaRelay(ProbePhase::Unreachable));
+
+	// And it is NOT what the old dialability answer said, which is the bug this replaces.
+	EXPECT_EQ(ProbeDisplay::Unreachable, zx::ProbeDisplayFor(ProbePhase::Unreachable));
+}
+
+// No registry means no direct path and nobody to introduce us: the one genuinely bad state.
+TEST(ReachProbeJoinable, NoRegistryIsTheOnlyUnjoinableAnswer)
+{
+	EXPECT_EQ(ProbeDisplay::Unreachable, ComputeJoinableDisplay(ProbePhase::Failed));
+	EXPECT_FALSE(ComputeJoinableViaRelay(ProbePhase::Failed));
+}
+
+TEST(ReachProbeJoinable, NothingIsClaimedBeforeThereIsAnAnswer)
+{
+	EXPECT_EQ(ProbeDisplay::Unknown, ComputeJoinableDisplay(ProbePhase::Idle));
+	EXPECT_EQ(ProbeDisplay::Unknown, ComputeJoinableDisplay(ProbePhase::AwaitingCookie));
+	EXPECT_EQ(ProbeDisplay::Unknown, ComputeJoinableDisplay(ProbePhase::AwaitingProbe));
+	EXPECT_FALSE(ComputeJoinableViaRelay(ProbePhase::AwaitingProbe));
+}

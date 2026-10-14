@@ -37,6 +37,7 @@
 #include "d_main.h"
 #include "features/crashreport/zx_crashreport.h"
 #include "g_level.h"
+#include "features/continue/zx_continue.h"
 #include "features/skywire/computation/sky_wire_compute.h"
 #include "g_game.h"
 #include "s_sound.h"
@@ -215,7 +216,14 @@ CCMD (map)
 						return;
 					}
 
+					// [rc4l] This disconnect is on the way to the map just named, not a player
+					// leaving a server. Continue routes every departure back to the last session,
+					// so without saying so here it takes them there instead of to the map -- and
+					// if that session was one we hosted, it starts the server again, whose join
+					// tears down through here as well.
+					zx::Continue_NoteChoosingDestination( true );
 					CLIENT_QuitNetworkGame( NULL );
+					zx::Continue_NoteChoosingDestination( false );
 				}
 
 				if ( sv_maprotation )
@@ -2334,7 +2342,10 @@ void G_SerializeLevel (FArchive &arc, bool hubLoad)
 		<< level.maptime
 		<< i;
 
-	arc << level.nextmusic;
+	// [rc4l] uzdoom@3463b8787 -- MUSINFO state is a player property now. The field stays in
+	// the stream so the format is unchanged and old saves still parse.
+	int nextmusic;
+	arc << nextmusic;
 
 	// Hub transitions must keep the current total time
 	if (!hubLoad)

@@ -86,7 +86,7 @@ bool FileHasBootPalette(const char *path)
 		// A WAD lump exposes its bare name; a pk3 entry also has a FullName ("PLAYPAL.pal", possibly
 		// in a subdirectory). Either matching is enough -- IsBootPaletteName handles basename + ext.
 		if (IsBootPaletteName(lump->Name) ||
-		    (lump->FullName != NULL && IsBootPaletteName(lump->FullName)))
+		    (lump->FullName.IsNotEmpty() && IsBootPaletteName(lump->FullName.GetChars())))
 			found = true;
 	}
 	delete rf;
@@ -330,8 +330,11 @@ ReloadResult RequestReload(const char *iwad, const TArray<FString> &pwads, const
 		Printf("wad_reload: restarting onto the new WAD set, into map %s...\n", startMap);
 	else
 		Printf("wad_reload: restarting onto the new WAD set...\n");
-	throw CRestartException();
-	// not reached
+	// [rc4l] Request rather than throw. The throw used to happen right here, which meant it
+	// unwound from wherever the reload was asked for -- and on macOS that is inside AppKit's event
+	// dispatch, where a C++ exception cannot pass. D_DoomLoop throws it at a safe point instead.
+	D_RequestRestart();
+	return ReloadResult::Restarting;
 }
 
 }} // namespace zx::wadreload

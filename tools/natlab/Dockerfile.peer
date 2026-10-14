@@ -1,0 +1,25 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 rc4l
+
+# [rc4l] A peer in the NAT lab: the real engine, plus just enough to run it with no screen and
+# drive it from a script.
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# xvfb + llvmpipe because the client half of the engine initialises OpenGL before it will run at all,
+# and CI has no GPU. Software rendering is slow and completely irrelevant here -- nothing in this lab
+# looks at a frame, it only needs the engine to reach its main loop.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        xvfb libgl1 libglx-mesa0 libgl1-mesa-dri libglu1 libglew2.2 libsdl2-2.0-0 \
+        libopenal1 libsndfile1 libmpg123-0 libopus0 libgme0 \
+        libssl3 zlib1g libbz2-1.0 libjpeg-turbo8 \
+        iproute2 iputils-ping ca-certificates nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+# The engine build (binary + pk3s + an IWAD) and fuactl, which is how every assertion is made.
+COPY engine/ /engine/
+COPY fuactl/ /fuactl/
+
+WORKDIR /engine
+ENV LIBGL_ALWAYS_SOFTWARE=1

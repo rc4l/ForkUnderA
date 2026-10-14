@@ -73,6 +73,20 @@ ParsedVersion ParseVersion(const std::string &text)
 	return out;
 }
 
+// [MobiusU9B] The first word of a build string, which is the version the server leads with before " on <os>".
+std::string LeadingWord(const std::string &text)
+{
+	size_t begin = 0;
+	while ((begin < text.size()) && std::isspace(static_cast<unsigned char>(text[begin])))
+		++begin;
+
+	size_t end = begin;
+	while ((end < text.size()) && !std::isspace(static_cast<unsigned char>(text[end])))
+		++end;
+
+	return text.substr(begin, end - begin);
+}
+
 int ComponentAt(const ParsedVersion &v, size_t index)
 {
 	// Missing components are zero, so "v0.2" and "v0.2.0" are one version rather than two.
@@ -83,6 +97,11 @@ int ComponentAt(const ParsedVersion &v, size_t index)
 
 VersionRelation CompareFuaVersions(const std::string &theirs, const std::string &ours)
 {
+	// [MobiusU9B] Our own build string is our own build. Without this, an untagged build whose hash starts with a letter (d3e5d73) could not read its own version and hid its own servers.
+	const std::string theirWord = LeadingWord(theirs);
+	if (!theirWord.empty() && (theirWord == LeadingWord(ours)))
+		return VersionRelation::Same;
+
 	const ParsedVersion a = ParseVersion(theirs);
 	const ParsedVersion b = ParseVersion(ours);
 

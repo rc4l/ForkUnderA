@@ -157,8 +157,28 @@ void ReportLastOutcome( void )
 
 std::vector<ServerRegistryEntry> ServerRegistryList_Resolve( const char *userCSV )
 {
+	// [rc4l] Say what was thrown away, ONCE.
+	//
+	// A bad entry is skipped rather than failing the whole list, which is right -- one typo must not
+	// cost a player every registry they have. But skipping it silently is how a registry named by an
+	// IPv6 address disappeared while the browser looked perfectly healthy, falling back to the
+	// built-in list with nothing on screen to say so.
+	//
+	// One summary line, not one per entry: a mistyped cvar should not produce a wall of console.
+	std::vector<std::string> skipped;
 	const std::vector<ServerRegistryEntry> user =
-		ParseServerRegistryCSV( userCSV != NULL ? userCSV : "" );
+		ParseServerRegistryCSV( userCSV != NULL ? userCSV : "", &skipped );
+
+	if ( skipped.empty( ) == false )
+	{
+		FString list;
+		for ( size_t i = 0; i < skipped.size( ) && i < 3; ++i )
+			list += ( i ? ", " : "" ) + FString( skipped[i].c_str( ));
+
+		Printf( "cl_fua_serverregistry_list: %u entr%s skipped as unreadable (%s%s).\n",
+			static_cast<unsigned int>( skipped.size( )), ( skipped.size( ) == 1 ) ? "y" : "ies",
+			list.GetChars( ), ( skipped.size( ) > 3 ) ? ", ..." : "" );
+	}
 
 	// [rc4l] The deliberate opt-out: fetching off AND a list of your own means we add nothing at all,
 	// not even the built-in default. Someone running a private network has to be able to leave ours

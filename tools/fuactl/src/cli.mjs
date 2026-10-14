@@ -39,6 +39,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { usageFor } from "./usage.mjs";
+import { diagnoseHang, doctorEngine } from "./diagnose.mjs";
 
 const num = (v) => (v != null && v !== true ? Number(v) : undefined);
 
@@ -140,8 +141,10 @@ function parseFlags(argv) {
 const USAGE = `fuactl <command>
   ls                                 list registered engine instances
   reap [--kill] [--all]              prune dead; --kill SIGTERMs ORPHANS only (other sessions safe); --all kills every live instance
-  launch [--map M] [--seed S] [--port P] [--token T] [--iwad W] [--skill N] [--file a.wad,b.pk3] [--cvar k=v,k2=v2] [--play]   launch one supervised bridge instance (stays up until Ctrl-C)
+  launch [--map M] [--seed S] [--port P] [--token T] [--iwad W] [--skill N] [--file a.wad,b.pk3] [--cvar k=v,k2=v2] [--arg "-host,+sv_hostname,X"] [--play]   launch one supervised bridge instance (stays up until Ctrl-C)
   sample --pid P | --port P [--seconds N] [--top N] [--engine] [--stacks]   hottest functions (macOS sample / Linux perf / Windows in-engine, which needs --port); --stacks adds each function's inclusive share on Windows
+  hang --port P [--token T] [--pid P] [--gap MS]   why an instance stopped answering: gone / unreachable / stalled / paused / healthy, plus the function it is stuck in
+  doctor [--exe PATH] [--src DIR]      is the configured engine driveable at all (bridge compiled in?) and is it older than the source?
   net-bw [--seed S] [--map M] [--spawn CLS] [--count N] [--seconds N]   client/server bandwidth, baseline vs perturbation
   cycle --port P [--token T] [--count N] [--settle MS]   advance the map rotation N times, confirming intermissions
   rpc <cmd> [jsonArgs] --port P [--token T]   send one RPC to an instance and print the result
@@ -188,6 +191,9 @@ const USAGE = `fuactl <command>
   look [--port P] [--spot S | --at x,y,z --face yaw,pitch] [--pixel x,y [--size WxH]] [--stack]   what the crosshair is on and what the level mesh holds for it; --pixel aims through that pixel of a capture from the camera, --stack casts through the first stacked view
   line <index> | --at X,Y [--radius R]   what a linedef IS: blocking flags, front/back sector heights, and which tier carries a texture over which span of height -- the three things that decide whether a mark can exist there. --at finds every line near a point, which is what tells two lines in the same place apart.
   png <mode> ...                     pixel arithmetic on captures: --diff, --boxdiff, --diffimg, --align, --crop, --rows, --blob, --px, --range (a box's brightness and channel means, over several files)
+  browser --port P [--token T] [--wait S] [--expect-lan] [--expect-country XXX]   refresh the server browser and report what it sees (LAN vs registry, country)
+  hostdiag --port P [--token T] [--wait S] [--expect-listed]           ask the registry whether THIS server is reachable from outside (per family)
+  continue --port P [--token T] [--expect shown|hidden]   what the Continue button is offering, and whether it is on the bar
   mcp                                run as an MCP stdio server for agents
 `;
 
@@ -241,9 +247,12 @@ async function main() {
         })() : {}),
         // [rc4l] PWADs, comma-separated. Without this the only launchable thing was a bare IWAD, so
         // a mod could be profiled only by hosting a server first and measuring through the netcode.
-        extraArgs: flags.file
-          ? String(flags.file).split(",").flatMap((f) => ["-file", f.trim()])
-          : undefined,
+        // [rc4l] --arg passes raw engine arguments through (repeat with commas), so a harness can
+        // start a host, a dedicated server or any other mode without inventing a flag per mode.
+        extraArgs: [
+          ...(flags.file ? String(flags.file).split(",").flatMap((f) => ["-file", f.trim()]) : []),
+          ...(flags.arg ? String(flags.arg).split(",").map((a) => a.trim()) : []),
+        ],
         // [rc4l] --cvar name=value, repeatable as a comma-separated list. Applied before the map
         // loads, which is the only time some of them take effect (sv_nomonsters being the one that
         // matters for hands-off testing).
@@ -542,6 +551,43 @@ async function main() {
         ? await withUi(flags, (c) => sampleProcess(pid, { ...opts, conn: c }))
         : await sampleProcess(pid, opts);
       console.log(JSON.stringify(r, null, 2));
+      break;
+    }
+    case "hang": {
+      // [rc4l] An instance that stops answering looks the same whether it died, wedged inside one
+      // function, froze its tic, or is just paused. Probe, classify, and -- when it is wedged --
+      // sample it so the report names the function to go read.
+      if (!flags.port && !flags.pid) { console.error("usage: fuactl hang --port P [--token T] [--pid P]"); process.exit(2); }
+      const r = await diagnoseHang({
+        // num() so a bare `--pid` (no value) stays unset instead of becoming pid 1.
+        port: num(flags.port) ?? null,
+        token: flags.token || null,
+        pid: num(flags.pid) ?? null,
+        gapMs: num(flags.gap) ?? 1500,
+      });
+      console.log(JSON.stringify(r, null, 2));
+      if (!r.healthy) process.exitCode = 1;
+      break;
+    }
+    case "doctor": {
+      // [rc4l] fuactl and the MCP resolve the engine differently (FUACTL_ENGINE vs ZANDRONUM_EXE),
+      // so check both: a release build sitting in one of those paths cannot be driven at all, and
+      // says so with "bridge port never opened" rather than anything about the bridge.
+      const src = flags.src || path.resolve(process.cwd(), "src/zandronum/src");
+      const srcDir = fs.existsSync(src) ? src : null;
+      const targets = [];
+      if (flags.exe) targets.push({ label: "--exe", exe: String(flags.exe) });
+      else {
+        let fuactlExe = null;
+        try { fuactlExe = resolveEngine(); } catch { /* reported as a missing engine below */ }
+        targets.push({ label: "fuactl (FUACTL_ENGINE)", exe: fuactlExe });
+        if (process.env.ZANDRONUM_EXE && process.env.ZANDRONUM_EXE !== fuactlExe) {
+          targets.push({ label: "MCP (ZANDRONUM_EXE)", exe: process.env.ZANDRONUM_EXE });
+        }
+      }
+      const reports = targets.map((t) => doctorEngine({ ...t, srcDir }));
+      console.log(JSON.stringify(reports, null, 2));
+      if (reports.some((r) => r.problems.length)) process.exitCode = 1;
       break;
     }
     case "gl-timers": {
@@ -1132,6 +1178,97 @@ async function main() {
       });
       // exec has already written the command's own output; a bare "null" under it is noise.
       if (r !== null && r !== undefined) console.log(JSON.stringify(r, null, 2));
+      break;
+    }
+    case "browser": {
+      // End-to-end check of server discovery: refresh both paths, wait for replies, and report
+      // what the browser actually holds. --expect-lan / --expect-country turn it into an
+      // assertion that exits non-zero, so it can gate a release the same way a test would.
+      if (!flags.port) { console.error("usage: fuactl browser --port P [--token T] [--wait S] [--expect-lan] [--expect-country USA]"); process.exit(2); }
+      const waitS = flags.wait != null ? Number(flags.wait) : 12;
+      const c = new BridgeClient();
+      await c.connect(Number(flags.port), { token: flags.token || null });
+      await c.waitHello();
+      await c.rpc("browser.refresh");
+      let list = { servers: [], count: 0 };
+      const deadline = Date.now() + waitS * 1000;
+      // Poll rather than sleep once: LAN replies land in milliseconds, registry ones take a round trip.
+      while (Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 1000));
+        list = await c.rpc("browser.list", {}, 15000);
+        if (list.count > 0 && Date.now() > deadline - (waitS - 4) * 1000) break;
+      }
+      c.close();
+      const lan = list.servers.filter((x) => x.lan);
+      const net = list.servers.filter((x) => !x.lan);
+      console.log(JSON.stringify({ count: list.count, lan: lan.length, internet: net.length, servers: list.servers }, null, 2));
+      let failed = false;
+      if (flags["expect-lan"] && lan.length === 0) { console.error("FAIL: expected at least one LAN server, saw none"); failed = true; }
+      if (flags["expect-country"]) {
+        const want = String(flags["expect-country"]).toUpperCase();
+        // Match either the code the server reported or the flag the browser resolved, since a
+        // server whose own lookup failed reports nothing and the client geolocates it instead.
+        const matches = (x) => [x.country, x.flag].some((v) => (v || "").toUpperCase() === want);
+        if (!net.some(matches)) {
+          console.error(`FAIL: expected a non-LAN server with country/flag ${want}; saw ${JSON.stringify(net.map((x) => x.flag || x.country || null))}`);
+          failed = true;
+        }
+      }
+      if (failed) process.exit(1);
+      break;
+    }
+    case "continue": {
+      // The Continue button's decision, reported rather than eyeballed. `shown` and the record are
+      // separate facts on purpose: a perfectly good record is still hidden while a game is running,
+      // and an E2E that only checked one of them would pass on the wrong reason.
+      if (!flags.port) { console.error("usage: fuactl continue --port P [--token T] [--expect shown|hidden]"); process.exit(2); }
+      const c = new BridgeClient();
+      await c.connect(Number(flags.port), { token: flags.token || null });
+      await c.waitHello();
+      const info = await c.rpc("ui.continue");
+      c.close();
+      console.log(JSON.stringify(info, null, 2));
+      if (flags.expect) {
+        const want = String(flags.expect) === "shown";
+        if (info.shown !== want) {
+          console.error(`expected the button ${want ? "shown" : "hidden"}, it was ${info.shown ? "shown" : "hidden"}`);
+          process.exit(1);
+        }
+      }
+      break;
+    }
+
+    case "hostdiag": {
+      // "Is my server visible to anyone else?" answered by the only witness that counts, the
+      // registry. Distinct from `browser`, which reports what the local browser BELIEVES -- a host's
+      // own public row is fabricated from its LAN row, so it lights up either way and cannot
+      // distinguish a dead port forward from a router that will not hairpin.
+      //
+      // --wait polls, because verification arrives on the registry's schedule (announce every 30s),
+      // so the honest answer to "is it reachable" is simply not available in the first second.
+      if (!flags.port) { console.error("usage: fuactl hostdiag --port P [--token T] [--wait S] [--expect-listed]"); process.exit(2); }
+      const waitS = flags.wait != null ? Number(flags.wait) : 0;
+      const c = new BridgeClient();
+      await c.connect(Number(flags.port), { token: flags.token || null });
+      await c.waitHello();
+      let diag = await c.rpc("net.hostdiag");
+      const deadline = Date.now() + waitS * 1000;
+      while (!diag.registryReplied && Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 2000));
+        diag = await c.rpc("net.hostdiag");
+      }
+      c.close();
+      console.log(JSON.stringify(diag, null, 2));
+      if (!diag.hosting) console.error("note: not hosting, so there is nothing to be listed as");
+      else if (diag.registryReplied) {
+        // Deliberately not "you are reachable". The registry's reply comes back through the mapping
+        // this server's own announce opened, so it arrives from behind a closed port too.
+        console.error("the registry is listing this server and can talk to it; that is NOT proof players can join");
+      }
+      if (flags["expect-listed"] && !diag.registryReplied) {
+        console.error("FAIL: expected the registry to be answering this server, it is not");
+        process.exit(1);
+      }
       break;
     }
     case "mcp": {

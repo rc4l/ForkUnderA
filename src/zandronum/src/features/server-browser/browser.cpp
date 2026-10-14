@@ -48,6 +48,7 @@
 //
 //-----------------------------------------------------------------------------
 
+#include <map>
 #include "networkheaders.h"
 #include "features/server-browser/browser.h"
 #include "features/server-browser/computation/launcherfields_compute.h"
@@ -55,6 +56,8 @@
 #include "features/server-browser/computation/querypunch_compute.h"   // [rc4l] punch-on-query schedule
 #include "features/server-browser/computation/rowlifetime_compute.h"  // [rc4l] what keeps a row mortal
 #include "features/server-browser/computation/rowstep_compute.h"      // [rc4l] what to do with a row
+#include "features/net/zx_resolve.h"                            // [rc4l] the registry's AAAA
+#include "features/server-browser/computation/registrymemory_compute.h"
 #include "features/server-hosting/zx_punchclient.h"                   // [rc4l] PunchRequestFor
 #include "features/launcher-protocol/computation/segmentreassembly_compute.h"
 #include "features/server-hosting/zx_hosting.h" // [rc4l] which rows are the server WE started
@@ -87,6 +90,14 @@ static	SERVER_t		g_BrowserServerList[MAX_BROWSER_SERVERS];
 // addresses carries no authority, so fanning it out costs nothing.
 static	TArray<NETADDRESS_s>	g_ServerRegistryAddresses;
 
+// [rc4l] The registry address that last answered, so a punch is asked of a family we know works.
+static	NETADDRESS_s	g_LastAnsweringRegistry;
+static	bool			g_bHaveAnsweringRegistry = false;
+
+// [rc4l] Which registry listed which server. A static, which survives the join reload because
+// RequestReload unwinds inside the same process; see registrymemory_compute.h.
+static	zx::RegistryMemory	g_ServerRegistryMemory;
+
 // [rc4l] What became of each registry in the list, kept so the browser can SHOW it.
 //
 // One row per entry in cl_fua_serverregistry_list, including the ones that never produced an address:
@@ -104,6 +115,13 @@ struct SERVERREGISTRYSTATE_s
 	// [rc4l] When `status` was recorded. Only THROTTLED reads it, to know when the registry has
 	// stopped ignoring us; every other status is a finished verdict that time does not change.
 	ULONG				ulStatusMS;
+
+	// [rc4l] The last thing this registry actually TOLD us, kept across the wipe that starts every
+	// query. `status` cannot carry it: asking again sets every row back to Pending, and the whole
+	// table is rebuilt from the list besides, so by the time a reply lands there is nothing left to
+	// compare it against. Without this, a refusal arriving after a successful answer looks like the
+	// first news we ever had, and the row that was green a second ago goes amber and then red.
+	zx::RegistryStatus	priorStatus;
 };
 
 static	std::vector<SERVERREGISTRYSTATE_s>	g_ServerRegistryStates;
@@ -143,6 +161,48 @@ static	int				g_lServerRegistryAttempts;
 // make on whichever of those servers appears. Reset wherever a sweep of queries starts.
 static	LONG			g_lPunchesThisSweep;
 static	const LONG		kMaxPunchesPerSweep = 4;
+
+//*****************************************************************************
+//
+// [rc4l] Addresses that went unanswered, a small ring because this is a hint about which servers need
+// help rather than a database.
+#define MAX_REMEMBERED_UNREACHABLE 32
+static	NETADDRESS_s	g_UnreachableAddresses[MAX_REMEMBERED_UNREACHABLE];
+static	ULONG			g_ulUnreachableNext = 0;
+
+static bool browser_IsKnownUnreachable( const NETADDRESS_s &Address )
+{
+	for ( ULONG ulIdx = 0; ulIdx < MAX_REMEMBERED_UNREACHABLE; ulIdx++ )
+	{
+		if ( g_UnreachableAddresses[ulIdx].usPort == 0 )
+			continue;
+
+		// [rc4l] CompareNoPort, since a punch may have re-aimed the row at the port its NAT opened.
+		if ( g_UnreachableAddresses[ulIdx].CompareNoPort( Address ))
+			return true;
+	}
+
+	return false;
+}
+
+static void browser_RememberUnreachable( const NETADDRESS_s &Address )
+{
+	if ( browser_IsKnownUnreachable( Address ))
+		return;
+
+	g_UnreachableAddresses[g_ulUnreachableNext] = Address;
+	g_ulUnreachableNext = ( g_ulUnreachableNext + 1 ) % MAX_REMEMBERED_UNREACHABLE;
+}
+
+static void browser_ForgetUnreachable( const NETADDRESS_s &Address )
+{
+	// [rc4l] It answered, so spending more punches on it would starve one that still needs them.
+	for ( ULONG ulIdx = 0; ulIdx < MAX_REMEMBERED_UNREACHABLE; ulIdx++ )
+	{
+		if ( g_UnreachableAddresses[ulIdx].CompareNoPort( Address ))
+			g_UnreachableAddresses[ulIdx].Clear( );
+	}
+}
 
 // [rc4l] Four seconds, not the second and a half this started as.
 //
@@ -235,7 +295,12 @@ static void browser_NoteRegistryStatus( const NETADDRESS_s &from, zx::RegistrySt
 	{
 		if ( g_ServerRegistryStates[i].bResolved && g_ServerRegistryStates[i].address.Compare( from ))
 		{
-			g_ServerRegistryStates[i].status = status;
+			// [rc4l] What survives is computation/registrystatus_compute's answer: a throttle does
+			// not unseat an Ok, because "you asked too soon" says nothing about reachability.
+			g_ServerRegistryStates[i].status = zx::ComputeRecordedStatus(
+				zx::ComputeKnownStatus( g_ServerRegistryStates[i].status,
+					g_ServerRegistryStates[i].priorStatus ),
+				status );
 			g_ServerRegistryStates[i].ulStatusMS = I_MSTime( );
 			return;
 		}
@@ -332,7 +397,23 @@ bool BROWSER_IsListable( ULONG ulServer )
 		return ( false );
 
 	const ULONG ulState = g_BrowserServerList[ulServer].ulActiveState;
-	return (( ulState == AS_ACTIVE ) || ( ulState == AS_VERSIONMISMATCH ));
+	if (( ulState != AS_ACTIVE ) && ( ulState != AS_VERSIONMISMATCH ))
+		return ( false );
+
+	// [rc4l] One server, one row, hidden only once the v6 row has ANSWERED so a player with no IPv6
+	// keeps the row they can actually use.
+	if ( g_BrowserServerList[ulServer].bHasGroupPeer && ( g_BrowserServerList[ulServer].Address.bIsIPv6 == false ))
+	{
+		const LONG lPeer = browser_GetListIDByAddress( g_BrowserServerList[ulServer].GroupPeer );
+
+		if (( lPeer >= 0 ) && g_BrowserServerList[lPeer].Address.bIsIPv6
+			&& ( g_BrowserServerList[lPeer].ulActiveState == AS_ACTIVE ))
+		{
+			return ( false );
+		}
+	}
+
+	return ( true );
 }
 
 //*****************************************************************************
@@ -761,6 +842,19 @@ void BROWSER_QueryTick( void )
 		else if ( act.markTimedOut )
 		{
 			g_BrowserServerList[ulIdx].ulActiveState = AS_TIMEDOUT;
+
+			// [rc4l] Remember it, so the next sweep punches before it challenges.
+			if ( g_BrowserServerList[ulIdx].bLAN == false )
+				browser_RememberUnreachable( g_BrowserServerList[ulIdx].Address );
+		}
+
+		// [rc4l] The held-back first challenge, once the punch has had its head start.
+		if ( zx::FirstChallengeDue( g_BrowserServerList[ulIdx].bPunchLed,
+				g_BrowserServerList[ulIdx].bFirstChallengeSent,
+				static_cast<int>( lNow - g_BrowserServerList[ulIdx].lPunchLedMS )))
+		{
+			browser_QueryServer( ulIdx );
+			g_BrowserServerList[ulIdx].bFirstChallengeSent = true;
 		}
 	}
 }
@@ -922,8 +1016,36 @@ bool BROWSER_GetServerRegistryAddress( NETADDRESS_s &out )
 	if ( g_ServerRegistryAddresses.Size( ) == 0 )
 		return false;
 
-	out = g_ServerRegistryAddresses[0];
+	// [rc4l] The one that answered, since holding two families means [0] is no longer a statement
+	// about which of them this client can actually reach.
+	out = g_bHaveAnsweringRegistry ? g_LastAnsweringRegistry : g_ServerRegistryAddresses[0];
 	return true;
+}
+
+//*****************************************************************************
+//
+// [rc4l] A registry address of a PARTICULAR family, for the one question that has to be asked of
+// both: can anyone out there reach this port.
+//
+// The registry probes back to whatever address it saw the request arrive from, so the family a reach
+// test exercises is decided by the address we send it to -- and BROWSER_GetServerRegistryAddress
+// hands back whichever family last answered, which makes that choice arbitrary. Asking for a family
+// by name is what lets the probe try v4, and then v6, rather than one of them by accident.
+bool BROWSER_GetServerRegistryAddressForFamily( bool bIPv6, NETADDRESS_s &out )
+{
+	if ( g_ServerRegistryAddresses.Size( ) == 0 )
+		browser_ResolveServerRegistries( );
+
+	for ( unsigned int i = 0; i < g_ServerRegistryAddresses.Size( ); i++ )
+	{
+		if ( g_ServerRegistryAddresses[i].bIsIPv6 == bIPv6 )
+		{
+			out = g_ServerRegistryAddresses[i];
+			return true;
+		}
+	}
+
+	return false;
 }
 
 //*****************************************************************************
@@ -933,6 +1055,32 @@ bool BROWSER_GetServerRegistryAddress( NETADDRESS_s &out )
 // Deliberately the WHOLE list, because browser_QueryServerRegistries sends to the whole list. Judging
 // a reply by one address, or by the server-side announce cvar, meant we could send to a registry and
 // then throw its answer away.
+void BROWSER_NoteRegistryAnswered( const NETADDRESS_s &address )
+{
+	g_LastAnsweringRegistry = address;
+	g_bHaveAnsweringRegistry = true;
+}
+
+//*****************************************************************************
+//
+void BROWSER_NoteServerRegistry( const NETADDRESS_s &server, const NETADDRESS_s &registry )
+{
+	g_ServerRegistryMemory.Remember( server.ToString( ), registry.ToString( ));
+}
+
+//*****************************************************************************
+//
+bool BROWSER_GetRegistryForServer( const NETADDRESS_s &server, NETADDRESS_s &out )
+{
+	std::string remembered;
+	if ( g_ServerRegistryMemory.Recall( server.ToString( ), remembered ) == false )
+		return false;
+
+	return out.LoadFromString( remembered.c_str( ));
+}
+
+//*****************************************************************************
+//
 bool BROWSER_IsServerRegistryAddress( const NETADDRESS_s &address )
 {
 	for ( unsigned int i = 0; i < g_ServerRegistryAddresses.Size( ); ++i )
@@ -1040,6 +1188,8 @@ void BROWSER_ClearServerList( void )
 		g_BrowserServerList[ulIdx].bRefreshing = false;
 		g_BrowserServerList[ulIdx].lRefreshMS = 0;
 		g_BrowserServerList[ulIdx].lRecheckMisses = 0;
+		g_BrowserServerList[ulIdx].bHasGroupPeer = false;
+		g_BrowserServerList[ulIdx].GroupPeer.Clear();
 
 		g_BrowserServerList[ulIdx].Address.Clear();
 
@@ -1179,6 +1329,13 @@ void BROWSER_DeactivateAllServers( void )
 
 //*****************************************************************************
 //
+LONG BROWSER_GetListIDByAddress( const NETADDRESS_s &Address )
+{
+	return browser_GetListIDByAddress( Address );
+}
+
+//*****************************************************************************
+//
 void BROWSER_AddServerToList( const NETADDRESS_s &Address )
 {
 	// [rc4l] A server may be announced by more than one server registry, and each answers our query
@@ -1202,6 +1359,12 @@ void BROWSER_AddServerToList( const NETADDRESS_s &Address )
 			g_BrowserServerList[lExisting].lMSTime = 0;
 			g_BrowserServerList[lExisting].bPunchRequested = false;
 			g_BrowserServerList[lExisting].lPunchResendsSent = 0;
+
+			// [rc4l] The lead state too, or a row that once held a challenge is skipped as
+			// already-led and refused as already-sent, and is never challenged again.
+			g_BrowserServerList[lExisting].bPunchLed = false;
+			g_BrowserServerList[lExisting].bFirstChallengeSent = false;
+			g_BrowserServerList[lExisting].lPunchLedMS = 0;
 		}
 		return;
 	}
@@ -1245,6 +1408,9 @@ bool BROWSER_GetServerList( BYTESTREAM_s *pByteStream )
 	// This one answered, whatever the others are doing.
 	browser_NoteRegistryStatus( NETWORK_GetFromAddress( ), zx::RegistryStatus::Ok );
 
+	// [rc4l] And it is the family a punch should be asked of, since it is the one proven to reach us.
+	BROWSER_NoteRegistryAnswered( NETWORK_GetFromAddress( ));
+
 	while ( true )
 	{
 		const LONG lCommand = pByteStream->ReadByte();
@@ -1258,6 +1424,10 @@ bool BROWSER_GetServerList( BYTESTREAM_s *pByteStream )
 				serverAddress.ReadFromStream ( pByteStream );
 
 				BROWSER_AddServerToList ( serverAddress );
+
+				// [rc4l] Whose list this arrived on, because only that registry can introduce
+				// anybody to it -- see registrymemory_compute.h.
+				BROWSER_NoteServerRegistry( serverAddress, NETWORK_GetFromAddress( ));
 			}
 			break;
 
@@ -1273,9 +1443,30 @@ bool BROWSER_GetServerList( BYTESTREAM_s *pByteStream )
 					{
 						serverAddress.usPort = htons( pByteStream->ReadShort());
 						BROWSER_AddServerToList ( serverAddress );
+						BROWSER_NoteServerRegistry( serverAddress, NETWORK_GetFromAddress( ));
 					}
 				}
 
+			}
+			break;
+
+		case SRSC_SERVERGROUP:
+			{
+				// [rc4l] Believed only from the registry, since claiming to be somebody else's machine
+				// is how you would hide their row.
+				const int count = pByteStream->ReadByte();
+
+				NETADDRESS_s first;
+				for ( int i = 0; i < count; ++i )
+				{
+					NETADDRESS_s address;
+					address.ReadFromStream( pByteStream );
+
+					if ( i == 0 )
+						first = address;
+					else
+						BROWSER_MarkSameServer( first, address );
+				}
 			}
 			break;
 
@@ -1376,6 +1567,11 @@ void BROWSER_ParseServerQuery( BYTESTREAM_s *pByteStream, bool bLAN )
 
 	// This server is now active.
 	g_BrowserServerList[lServer].ulActiveState = AS_ACTIVE;
+
+	// [rc4l] It answered, so stop treating it as needing a punch ahead of every challenge. Leaving it
+	// remembered would spend the sweep's small budget on a server that is reachable and starve one
+	// that is not.
+	browser_ForgetUnreachable( g_BrowserServerList[lServer].Address );
 
 	// [rc4l] ONE MACHINE, TWO ROWS, ONE ANSWER.
 	//
@@ -1799,6 +1995,15 @@ void BROWSER_ParseServerQuery( BYTESTREAM_s *pByteStream, bool bLAN )
 // of querying several.
 static void browser_ResolveServerRegistries( void )
 {
+	// [rc4l] What each registry last told us, saved before the table goes. Keyed on the host as
+	// written, which is the one part of a row that survives a re-resolve unchanged.
+	std::map<std::string, zx::RegistryStatus> priorByHost;
+	for ( size_t i = 0; i < g_ServerRegistryStates.size( ); ++i )
+	{
+		const SERVERREGISTRYSTATE_s &old = g_ServerRegistryStates[i];
+		priorByHost[old.host] = zx::ComputeKnownStatus( old.status, old.priorStatus );
+	}
+
 	g_ServerRegistryAddresses.Clear();
 	g_ServerRegistryStates.clear();
 
@@ -1821,6 +2026,10 @@ static void browser_ResolveServerRegistries( void )
 		state.status = zx::RegistryStatus::LookupFailed;
 		state.ulStatusMS = I_MSTime( );
 
+		const std::map<std::string, zx::RegistryStatus>::const_iterator prior =
+			priorByHost.find( state.host );
+		state.priorStatus = ( prior != priorByHost.end( )) ? prior->second : zx::RegistryStatus::Pending;
+
 		NETADDRESS_s address;
 		if ( address.LoadFromString( entries[i].host.c_str( )) == false )
 		{
@@ -1832,6 +2041,15 @@ static void browser_ResolveServerRegistries( void )
 		// [rc4l] The parser already split any ":port" off the host, so an entry either carries its own
 		// port or takes the default. LoadFromString never sees a port here.
 		address.SetPort( entries[i].port != 0 ? static_cast<USHORT>( entries[i].port ) : g_usServerRegistryPort );
+
+		// [rc4l] And the AAAA, because LoadFromString above asks only for an A record -- which is why
+		// a client with no IPv4 at all could not reach any registry and saw an empty browser.
+		NETADDRESS_s v6;
+		if ( zx::ResolveHostV6( entries[i].host.c_str( ), v6 ))
+		{
+			v6.SetPort( entries[i].port != 0 ? static_cast<USHORT>( entries[i].port ) : g_usServerRegistryPort );
+			g_ServerRegistryAddresses.Push( v6 );
+		}
 
 		state.address = address;
 		state.bResolved = true;
@@ -1858,6 +2076,10 @@ static void browser_SendServerRegistryQuery( void )
 	g_ServerRegistryBuffer.Clear();
 	g_ServerRegistryBuffer.ByteStream.WriteLong( LAUNCHER_SERVERREGISTRY_CHALLENGE );
 	g_ServerRegistryBuffer.ByteStream.WriteShort( SERVERREGISTRY_VERSION );
+
+	// [rc4l] Say we understand grouping, opt-in because the list is positional and an older client
+	// would read the new opcode as an address.
+	g_ServerRegistryBuffer.ByteStream.WriteByte( 1 );
 
 	for ( unsigned int i = 0; i < g_ServerRegistryAddresses.Size( ); ++i )
 		NETWORK_LaunchPacket( &g_ServerRegistryBuffer, g_ServerRegistryAddresses[i] );
@@ -2061,6 +2283,43 @@ bool BROWSER_WaitingForServerRegistryResponse( void )
 
 //*****************************************************************************
 //
+void BROWSER_MarkSameServer( const NETADDRESS_s &First, const NETADDRESS_s &Second )
+{
+	const LONG lFirst = browser_GetListIDByAddress( First );
+	const LONG lSecond = browser_GetListIDByAddress( Second );
+
+	// [rc4l] Both rows must exist, and IsListable re-checks the peer rather than trusting the flag.
+	if (( lFirst < 0 ) || ( lSecond < 0 ) || ( lFirst == lSecond ))
+		return;
+
+	// [rc4l] Both directions, since either row may be asked about first.
+	g_BrowserServerList[lFirst].bHasGroupPeer = true;
+	g_BrowserServerList[lFirst].GroupPeer = Second;
+	g_BrowserServerList[lSecond].bHasGroupPeer = true;
+	g_BrowserServerList[lSecond].GroupPeer = First;
+}
+
+//*****************************************************************************
+//
+void BROWSER_PunchBrokered( void )
+{
+	// [rc4l] Every held row, because the verdict carries no address and a sweep holds at most four.
+	for ( ULONG ulIdx = 0; ulIdx < MAX_BROWSER_SERVERS; ulIdx++ )
+	{
+		if (( g_BrowserServerList[ulIdx].ulActiveState != AS_WAITINGFORREPLY )
+			|| ( g_BrowserServerList[ulIdx].bPunchLed == false )
+			|| g_BrowserServerList[ulIdx].bFirstChallengeSent )
+		{
+			continue;
+		}
+
+		browser_QueryServer( ulIdx );
+		g_BrowserServerList[ulIdx].bFirstChallengeSent = true;
+	}
+}
+
+//*****************************************************************************
+//
 void BROWSER_QueryAllServers( void )
 {
 	ULONG	ulIdx;
@@ -2069,8 +2328,56 @@ void BROWSER_QueryAllServers( void )
 
 	for ( ulIdx = 0; ulIdx < MAX_BROWSER_SERVERS; ulIdx++ )
 	{
-		if ( g_BrowserServerList[ulIdx].ulActiveState == AS_WAITINGFORREPLY )
-			browser_QueryServer( ulIdx );
+		if ( g_BrowserServerList[ulIdx].ulActiveState != AS_WAITINGFORREPLY )
+			continue;
+
+		g_BrowserServerList[ulIdx].bPunchLed = false;
+		g_BrowserServerList[ulIdx].bFirstChallengeSent = false;
+		g_BrowserServerList[ulIdx].lPunchLedMS = 0;
+	}
+
+	// [rc4l] Two passes so the small budget goes to rows known to need a punch before speculative
+	// ones, or the first four rows in the list spend it regardless.
+	for ( int pass = 0; pass < 2; ++pass )
+	{
+		for ( ulIdx = 0; ulIdx < MAX_BROWSER_SERVERS; ulIdx++ )
+		{
+			if (( g_BrowserServerList[ulIdx].ulActiveState != AS_WAITINGFORREPLY )
+				|| g_BrowserServerList[ulIdx].bPunchLed )
+			{
+				continue;
+			}
+
+			const bool bBudget = ( g_lPunchesThisSweep < kMaxPunchesPerSweep );
+			const bool bWant = ( pass == 0 )
+				? zx::ShouldPunchBeforeFirstChallenge( g_BrowserServerList[ulIdx].bLAN,
+					browser_IsKnownUnreachable( g_BrowserServerList[ulIdx].Address ), bBudget )
+				: zx::ShouldPunchOnFirstContact( g_BrowserServerList[ulIdx].bLAN, bBudget );
+
+			if ( bWant == false )
+				continue;
+
+			if ( zx::PunchRequestFor( g_BrowserServerList[ulIdx].Address, true ) == false )
+				continue;
+
+			g_BrowserServerList[ulIdx].bPunchRequested = true;
+			g_BrowserServerList[ulIdx].bPunchLed = true;
+			g_BrowserServerList[ulIdx].lPunchLedMS = I_MSTime( );
+			g_lPunchesThisSweep++;
+		}
+	}
+
+	// [rc4l] Everything that did not lead speaks now, exactly as it always did.
+	for ( ulIdx = 0; ulIdx < MAX_BROWSER_SERVERS; ulIdx++ )
+	{
+		if (( g_BrowserServerList[ulIdx].ulActiveState != AS_WAITINGFORREPLY )
+			|| g_BrowserServerList[ulIdx].bPunchLed )
+		{
+			continue;
+		}
+
+		browser_QueryServer( ulIdx );
+		g_BrowserServerList[ulIdx].bFirstChallengeSent = true;
 	}
 }
 
@@ -2235,6 +2542,26 @@ static void browser_QueryServer( ULONG ulServer )
 //*****************************************************************************
 //
 
+// [rc4l] What each registry is currently saying, as text.
+//
+// The screen shows this as a three-pixel colour bar with the detail on hover, which is fine to
+// glance at and impossible to diagnose with: "it went green then orange then red" is a sequence
+// nobody can screenshot in time, and the bar cannot be read by a script at all. Five different
+// places write these statuses, so when they disagree the only way to see which one did it is to
+// print the field itself.
+CCMD( dumpregistries )
+{
+	for ( size_t i = 0; i < g_ServerRegistryStates.size( ); ++i )
+	{
+		const SERVERREGISTRYSTATE_s &state = g_ServerRegistryStates[i];
+		Printf( "REGISTRY %s:%d now=%s prior=%s age=%dms\n", state.host.c_str( ), state.port,
+			zx::RegistryStatusCode( state.status ), zx::RegistryStatusCode( state.priorStatus ),
+			(int)( I_MSTime( ) - state.ulStatusMS ));
+	}
+}
+
+//*****************************************************************************
+//
 CCMD( dumpserverlist )
 {
 	ULONG	ulIdx;

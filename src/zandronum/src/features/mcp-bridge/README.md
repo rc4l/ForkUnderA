@@ -12,6 +12,7 @@ therefore contains **zero** bridge code and no remote-control surface. Turn it o
 
 ```
 ZX_MCP_BRIDGE=1 ./mac_compile.sh        # -> -DFUA_MCP_BRIDGE=ON
+$env:ZX_MCP_BRIDGE=1; .\windows_compile.ps1 -SkipDeps   # Windows (PowerShell); same for windows_build.ps1
 ```
 
 When OFF, `mcp_bridge.h` makes the entry points `inline` no-ops, so the two call-site anchors stay
@@ -85,6 +86,13 @@ hello    {"t":"hello","engine":"forkundera","bridge":"2.0.0","pid":N,"caps":[...
   sample's stack by the images' unwind data while the thread is held, with no allocation, and adds an
   `inclusive` table (each function's share of the samples it was anywhere on the stack of,
   `ComputeInclusiveRanks`); `fuactl sample --port P --stacks` prints both.
+- **Server discovery**: `browser.refresh` kicks both halves of a browser refresh (LAN broadcast and
+  the federated registry); `browser.list` returns the browser's servers as data -- name, address,
+  `lan`, the reported `country`, the resolved `flag` and its index, players, ping. The console's
+  `dumpserverlist` prints none of the discovery fields, which is why this exists. Assert on `flag`:
+  a server whose own GeoIP lookup failed reports `XIP` and the browser geolocates it from the
+  address instead, leaving `country` empty by design. Driven by `fuactl browser` and the
+  `server-discovery-e2e` skill.
 - **GPU profiling**: `renderer.info` → vendor/renderer/GL version + whether GL timer queries work on this
   driver. `gl.timers {frames,warmup}` → async `glperf` event with **per-pass GPU milliseconds** — opaque
   `scene`, `translucent` (the usual fill-rate/overdraw killer), `hud2d`, plus the whole-frame `total`

@@ -119,4 +119,46 @@ bool ProbeCacheUsable(const ProbeCacheKey &cached, const ProbeCacheKey &now, int
 	return ProbeCacheKeyMatches(cached, now);
 }
 
+bool ComputeShouldTryOtherFamily(ProbePhase verdict, bool bTryingV6, bool bTriedV4, bool bTriedV6,
+                                 bool bOtherFamilyAvailable)
+{
+	// Not a verdict yet: nothing to spend a second attempt on.
+	if (ProbeIsFinished(verdict) == false)
+		return false;
+
+	// One family answering yes is the whole answer.
+	if (ProbeSaysReachable(verdict))
+		return false;
+
+	if (bOtherFamilyAvailable == false)
+		return false;
+
+	return bTryingV6 ? (bTriedV4 == false) : (bTriedV6 == false);
+}
+
+ProbeDisplay ComputeJoinableDisplay(ProbePhase phase)
+{
+	// The port is open: dialable by anyone, no introduction needed.
+	if (phase == ProbePhase::Reachable)
+		return ProbeDisplay::Reachable;
+
+	// The port is shut, but the registry answered our cookie leg to tell us so -- which is the same
+	// registry, reachable the same way, that brokers a punch. People get in.
+	if (phase == ProbePhase::Unreachable)
+		return ProbeDisplay::Reachable;
+
+	// The registry never answered: no direct path and nobody to introduce us. This is the one state
+	// where nothing is going to work, and the only one worth painting as a problem.
+	if (phase == ProbePhase::Failed)
+		return ProbeDisplay::Unreachable;
+
+	// Idle and both waiting states: nothing is known yet.
+	return ProbeDisplay::Unknown;
+}
+
+bool ComputeJoinableViaRelay(ProbePhase phase)
+{
+	return (phase == ProbePhase::Unreachable);
+}
+
 } // namespace zx

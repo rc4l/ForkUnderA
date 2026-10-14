@@ -432,8 +432,10 @@ DEFINE_INFO_PROPERTY(conversationid, IiI, Actor)
 
 	}
 
+	// [rc4l] uzdoom@b6a4511dd -- record it on the actor info and let RegisterIDs enter it, the
+	// same way spawn and editor numbers work, so a MAPINFO definition can be overridden by DECORATE.
 	if (convid <= 0) return;	// 0 is not usable because the dialogue scripts use it as 'no object'.
-	SetStrifeType(convid, info->Class);
+	info->ConversationID = convid;
 }
 
 //==========================================================================
@@ -1014,7 +1016,10 @@ DEFINE_PROPERTY(translation, L, Actor)
 	if (type == 0)
 	{
 		PROP_INT_PARM(trans, 1);
-		int max = (gameinfo.gametype==GAME_Strife || (info->GameFilter&GAME_Strife)) ? 6:2;
+		// [rc4l] uzdoom@2ec8e2c2a -- the Game directives are gone from DECORATE, so this can no
+		// longer narrow the range by game filter: every actor is parsed under every game now, and
+		// Strife's Translation 3 to 6 would be rejected while running Doom.
+		int max = 6;// (gameinfo.gametype == GAME_Strife || (info->GameFilter&GAME_Strife)) ? 6 : 2;
 		if (trans < 0 || trans > max)
 		{
 			I_Error ("Translation must be in the range [0,%d]", max);
@@ -1100,7 +1105,7 @@ DEFINE_PROPERTY(bloodtype, Sss, Actor)
 DEFINE_PROPERTY(bouncetype, S, Actor)
 {
 	static const char *names[] = { "None", "Doom", "Heretic", "Hexen", "DoomCompat", "HereticCompat", "HexenCompat", "Grenade", "Classic", NULL };
-	static const int flags[] = { BOUNCE_None,
+	static const ActorBounceFlag flags[] = { BOUNCE_None,
 		BOUNCE_Doom, BOUNCE_Heretic, BOUNCE_Hexen,
 		BOUNCE_DoomCompat, BOUNCE_HereticCompat, BOUNCE_HexenCompat,
 		BOUNCE_Grenade, BOUNCE_Classic, };
@@ -1186,7 +1191,7 @@ DEFINE_PROPERTY(ripperdamagefactor, F, Actor)
 DEFINE_PROPERTY(telefogsourcetype, S, Actor)
 {
 	PROP_STRING_PARM(str, 0);
-	if (!stricmp(str, "") || (!stricmp(str, "none")) || (!stricmp(str, "null")) || *str == 0) defaults->TeleFogSourceType = NULL;
+	if (!stricmp(str, "") || !stricmp(str, "none")) defaults->TeleFogSourceType = NULL;
 	else defaults->TeleFogSourceType = FindClassTentative(str, "TeleportFog");
 }
 
@@ -1196,7 +1201,7 @@ DEFINE_PROPERTY(telefogsourcetype, S, Actor)
 DEFINE_PROPERTY(telefogdesttype, S, Actor)
 {
 	PROP_STRING_PARM(str, 0);
-	if (!stricmp(str, "") || (!stricmp(str, "none")) || (!stricmp(str, "null")) || *str == 0) defaults->TeleFogDestType = NULL;
+	if (!stricmp(str, "") || !stricmp(str, "none")) defaults->TeleFogDestType = NULL;
 	else defaults->TeleFogDestType = FindClassTentative(str, "TeleportFog");
 }
 
@@ -1451,13 +1456,16 @@ DEFINE_PROPERTY(species, S, Actor)
 //==========================================================================
 DEFINE_PROPERTY(clearflags, 0, Actor)
 {
-	defaults->flags =
-		defaults->flags3 =
-		defaults->flags4 =
-		defaults->flags5 =
-		defaults->flags6 =
-		defaults->flags7 = 0;
+	// [rc4l] uzdoom@ca012bc9b -- each word is cleared separately now that they are distinct types.
+	defaults->flags = 0;
 	defaults->flags2 &= MF2_ARGSDEFINED;	// this flag must not be cleared
+	defaults->flags3 = 0;
+	defaults->flags4 = 0;
+	defaults->flags5 = 0;
+	defaults->flags6 = 0;
+	defaults->flags7 = 0;
+	defaults->flags8 = 0;
+	defaults->flags9 = 0;
 
 	// [BC] Also zero out ST's flags.
 	defaults->STFlags = 0;

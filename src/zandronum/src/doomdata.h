@@ -344,6 +344,7 @@ struct mapthinghexen_t
 };
 
 class FArchive;
+struct FDoomEdEntry;
 
 // Internal representation of a mapthing
 struct FMapThing
@@ -353,9 +354,13 @@ struct FMapThing
 	fixed_t		y;
 	fixed_t		z;
 	short		angle;
-	short		type;
+	// [rc4l] uzdoom@51591d10b -- the editor number and the entry it resolves to are both kept, so
+	// code that runs outside P_SpawnMapThing (slope things, polyobject spots) can consult the
+	// entry without repeating the lookup.
 	WORD		SkillFilter;
 	WORD		ClassFilter;
+	short		EdNum;
+	FDoomEdEntry *info;
 	DWORD		flags;
 	int			special;
 	int			args[5];
@@ -370,8 +375,6 @@ struct FMapThing
 	short		pitch;
 	short		roll;
 	DWORD		RenderStyle;
-
-	void Serialize (FArchive &);
 };
 
 
@@ -444,10 +447,13 @@ struct FPlayerStart
 	short angle, type;
 
 	FPlayerStart() { }
-	FPlayerStart(const FMapThing *mthing)
+	// [rc4l] uzdoom@9e5bf3812 -- `type` is the player number plus one for a real player start, so
+	// the widespread "type != 0 means this start exists" tests keep working. Zandronum's team,
+	// possession and terminator starts pass mthing->type here to keep the value they always had.
+	FPlayerStart(const FMapThing *mthing, int pnum)
 	: x(mthing->x), y(mthing->y), z(mthing->z),
 	  angle(mthing->angle),
-	  type(mthing->type)
+	  type(pnum)
 	{ }
 };
 // Player spawn spots for deathmatch.

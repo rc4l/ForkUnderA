@@ -14,6 +14,10 @@ ZandroX tests use **GoogleTest + GoogleMock**, built as a standalone project in 
   **right beside it**, colocated: `src/zandronum/src/vectors_test.cpp`.
 - **Testing one of our *feature* modules**: put the test **inside that feature folder**:
   `features/<name>/<thing>_test.cpp`, next to `<thing>.cpp`. See `features/README.md`.
+- **Testing vendored code that must be linked for real** (e.g. `configfile.cpp`,
+  `networkshared.cpp`): name it `<unit>_nettest.cpp`. That suffix routes it into the separate
+  `zandrox_tests_net` binary, which links those units against small shims; the main binary can't.
+  Its source list is in `tests/CMakeLists.txt`, and the 100% gate does not cover it.
 
 The engine build never compiles a `*_test.cpp`, so test files never reach the shipped binary. It does
 glob `*_compute.cpp` (`ZX_COMPUTE_SOURCES` in `src/zandronum/src/CMakeLists.txt`), and the test binary
@@ -51,7 +55,7 @@ beside it: no CMake edit either side, and a helper defined in any other `.cpp` d
 
 - GoogleTest: `TEST(Suite, Case)` / `TEST_F(Fixture, Case)`; put helpers in an anonymous
   `namespace {}`.
-- Comments: one sentence, prefixed `// [rc4l]` (per `AGENTS.md`).
+- Comments: one sentence, prefixed with your GitHub account name, e.g. `// [rc4l]` (per `AGENTS.md`).
 
 ## Run it locally (macOS or Linux)
 
@@ -64,6 +68,20 @@ ctest --test-dir build-tests --output-on-failure
 # 100%-coverage gate (auto-derives which units must be fully covered)
 bash tests/coverage.sh --auto
 ```
+
+## Run it locally (Windows)
+
+Visual Studio picks the configuration at build time, so name it and run the binaries from under it:
+
+```powershell
+cmake -S tests -B build-tests
+cmake --build build-tests --config Debug --target zandrox_tests zandrox_tests_net
+.\build-tests\Debug\zandrox_tests.exe
+.\build-tests\Debug\zandrox_tests_net.exe
+```
+
+Add `--gtest_filter=Suite.*` to run one suite. `coverage.sh` and the sanitizers need Clang and a POSIX
+toolchain, so on Windows the 100% coverage gate is checked by CI.
 
 Notes:
 - **LeakSanitizer is Linux-only** — on macOS ASan/UBSan run but leaks aren't reported; CI
@@ -103,9 +121,13 @@ its tests by reading them, and say so.
 
 ## CI
 
-`.github/workflows/_test.yml` runs on pull requests and pushes to `main`: sanitized tests plus
-`coverage.sh --auto` on Linux, sanitized tests on macOS, and a plain MSVC build and run on Windows.
-Every engine build is gated behind it (`needs: test`), so green tests come before anything builds.
+`.github/workflows/test-and-build.yml` runs `_test.yml` on pull requests and pushes to `main`: sanitized
+tests plus `coverage.sh --auto` on Linux, sanitized tests on macOS, and a plain MSVC build and run on
+Windows. The platform engine builds are gated behind it (`needs: test`), so green tests come before
+anything builds.
+
+clang-tidy no longer runs in CI (deleted in 48c1264); `.clang-tidy` stays for editors and clangd.
+On Windows, VS Build Tools ships `clang-tidy.exe` under `VC\Tools\Llvm\x64\bin` for running it by hand.
 
 ## Misc
 

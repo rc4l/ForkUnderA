@@ -11,6 +11,7 @@
 #include "features/server-hosting/zx_punchclient.h"
 #include "features/server-browser/browser.h"
 #include "features/server-hosting/computation/punchbroker_compute.h"
+#include "features/server-browser/computation/registrymemory_compute.h"
 
 #include "doomtype.h"
 #include "c_console.h"
@@ -79,10 +80,39 @@ bool IsLocalAddress( const NETADDRESS_s &address )
 	return false;
 }
 
+// [rc4l] The registry to ask about `target`, which is the one that listed it wherever we know.
+//
+// Asking the registry that answered a refresh most recently is right the moment a refresh finishes
+// and wrong afterwards, and on the reconnect path there has been no refresh at all. A registry
+// holding no entry for a server can only answer NotListed, so asking the wrong one is the same as
+// not asking. See features/server-browser/computation/registrymemory_compute.h.
+bool RegistryFor( const FString &target, NETADDRESS_s &out )
+{
+	NETADDRESS_s server;
+	const bool bHaveRemembered = server.LoadFromString( target.GetChars( ))
+		&& BROWSER_GetRegistryForServer( server, out );
+
+	NETADDRESS_s answering;
+	const bool bHaveAnswering = BROWSER_GetServerRegistryAddress( answering );
+
+	switch ( ChooseRegistry( bHaveRemembered, bHaveAnswering ))
+	{
+	case RegistryChoice::Remembered:
+		return true;
+
+	case RegistryChoice::Answering:
+		out = answering;
+		return true;
+
+	default:
+		return false;
+	}
+}
+
 void Send( const FString &cookie, const FString &target )
 {
 	NETADDRESS_s registry;
-	if ( BROWSER_GetServerRegistryAddress( registry ) == false )
+	if ( RegistryFor( target, registry ) == false )
 		return;
 
 	NETBUFFER_s buffer;
@@ -155,6 +185,13 @@ void PunchResultArrived( int verdict )
 
 	if ( pszWhy != NULL )
 		DPrintf( "Hole punch: %s.\n", pszWhy );
+
+	// [rc4l] A brokered punch is the starting gun for any challenge the browser is holding back. The
+	// server is being told to open at this instant, so this is the one moment when our packet and its
+	// packet are both in flight and neither has landed on the other's router to take the tuple the
+	// other needs. See BROWSER_PunchBrokered.
+	if ( static_cast<PunchVerdict>( verdict ) == PunchVerdict::Broker )
+		BROWSER_PunchBrokered( );
 }
 
 void PunchRequestForced( const NETADDRESS_s &server )

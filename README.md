@@ -21,7 +21,12 @@ ForkUnderA is a GPL-compliant fork of Zandronum. You can track our [development 
 - GZDoom base > 2.0.5
 - OpenGL renderer upgraded
 - Borderless Windows
-- MBF21 Support
-- Freeform Menus (Ported from QZandronum)
+- Freeform Menus (and other things ported from QZandronum)
+- Full IPV6 support
 - In-engine video recording
 - Advanced crash reporter
+
+## Incoming Changes
+
+- Vulkan rendering pipeline
+- MBF21 Support

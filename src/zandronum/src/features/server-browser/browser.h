@@ -216,6 +216,17 @@ typedef struct
 	bool			bPunchRequested;
 	LONG			lPunchResendsSent;
 
+	// [rc4l] This row punched before it spoke, because a challenge sent first is tracked by the host's
+	// router even as it drops it and takes the very tuple the punch then needs.
+	bool			bPunchLed;
+	bool			bFirstChallengeSent;
+	LONG			lPunchLedMS;
+
+	// [rc4l] The other address this server is listed under, believed only from the registry because
+	// claiming to be somebody else's machine is how you would hide their row.
+	bool			bHasGroupPeer;
+	NETADDRESS_s	GroupPeer;
+
 	// [rc4l] This server answered, and we hid it because it runs a different build.
 	//
 	// Kept separately because the hiding is done by setting AS_INACTIVE, which is also what an empty
@@ -304,6 +315,10 @@ LONG			BROWSER_GetPlayerSpectating( ULONG ulServer, ULONG ulPlayer );
 // packets at a port we opened for two seconds.
 bool			BROWSER_GetServerRegistryAddress( NETADDRESS_s &out );
 
+// [rc4l] A registry address of one family, so a question whose answer differs per family can ask
+// both -- see the reach probe, where the family tested is decided by the address we send to.
+bool			BROWSER_GetServerRegistryAddressForFamily( bool bIPv6, NETADDRESS_s &out );
+
 // [rc4l] Whether a reply came from a registry this client actually queries.
 //
 // The receive path used to judge that by fua_serverregistry_host, which is the SERVER's announce
@@ -342,6 +357,16 @@ void			BROWSER_RefreshListedServers( void );
 // does not need a floor of its own.
 void			BROWSER_RecheckServer( ULONG ulServer );
 
+// [rc4l] Make a slot for an address the browser has not been told about, deduping against one it
+// already has. Exposed so a feature that knows an address -- Continue remembering a server -- can
+// ask about it through the browser's own query path rather than reimplementing the protocol.
+void			BROWSER_AddServerToList( const NETADDRESS_s &Address );
+
+// [rc4l] The slot holding this address, or -1. Distinct from scanning BROWSER_GetAddress, which
+// answers with a cleared dummy for any slot that is not AS_ACTIVE -- so a server that has been asked
+// and not yet answered, or that never will, is invisible to that scan by construction.
+LONG			BROWSER_GetListIDByAddress( const NETADDRESS_s &Address );
+
 // [rc4l] A punch packet knocked on our socket. The server we asked the registry to punch sends its
 // packets from whatever public port ITS NAT hands out -- under endpoint-dependent (carrier) NAT
 // that is a DIFFERENT port from the one the registry listed, so the challenges we aim at the
@@ -349,6 +374,24 @@ void			BROWSER_RecheckServer( ULONG ulServer );
 // waiting slot at it and re-send the challenge immediately. Joins then use the same corrected
 // address, which is the one that actually works.
 void			BROWSER_PunchKnockFrom( const NETADDRESS_s &From );
+
+// [rc4l] Send the held challenges now, while the server's punch is in flight, because whichever
+// packet lands first takes the tuple the other one needs.
+// [rc4l] Remember which registry address answered, so a punch is asked of a family that works.
+void			BROWSER_NoteRegistryAnswered( const NETADDRESS_s &address );
+
+// [rc4l] Record that `registry` listed `server`, so a later punch for it is asked of a registry that
+// can answer about it rather than of whichever one replied most recently.
+void			BROWSER_NoteServerRegistry( const NETADDRESS_s &server, const NETADDRESS_s &registry );
+
+// [rc4l] The registry that listed `server`, if we were ever told.
+bool			BROWSER_GetRegistryForServer( const NETADDRESS_s &server, NETADDRESS_s &out );
+
+void			BROWSER_PunchBrokered( void );
+
+// [rc4l] The registry saying two addresses are one server, which only it can know and which nothing
+// here may guess at.
+void			BROWSER_MarkSameServer( const NETADDRESS_s &First, const NETADDRESS_s &Second );
 
 // [rc4l] Per-row version of the fact BROWSER_GetNumHumanPlayers already uses in aggregate.
 bool			BROWSER_IsPlayerBot( ULONG ulServer, ULONG ulPlayer );

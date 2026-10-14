@@ -1005,6 +1005,7 @@ set( NOT_COMPILED_SOURCE_FILES
 	g_heretic/a_knight.cpp
 	g_heretic/a_wizard.cpp
 	g_hexen/a_bats.cpp
+	g_hexen/a_flies.cpp
 	g_hexen/a_bishop.cpp
 	g_hexen/a_blastradius.cpp
 	g_hexen/a_boostarmor.cpp
@@ -1151,6 +1152,7 @@ add_executable( zdoom WIN32
 	files.cpp
 	g_game.cpp
 	g_hub.cpp
+	g_doomedmap.cpp
 	g_level.cpp
 	g_mapinfo.cpp
 	g_skill.cpp
@@ -1475,6 +1477,9 @@ add_executable( zdoom WIN32
 	features/replay/zx_replay_encoder.cpp
 	features/replay/computation/replay_compute.cpp
 	features/wadreload/zx_wadreload.cpp
+	features/bot-save/zx_botsave.cpp
+	features/continue/zx_continue.cpp
+	features/host-command/zx_hostcommand.cpp
 	features/playerclass-fallback/zx_playerclassfallback.cpp
 	features/fua-caching/fua_caching.cpp
 	features/fua-caching/fua_warmup.cpp
@@ -1482,11 +1487,13 @@ add_executable( zdoom WIN32
 	features/identity/zx_identity.cpp
 	features/identity/zx_identitynet.cpp
 	features/net/zx_httpsget.cpp
+	features/net/zx_resolve.cpp
 	features/net/zx_httpfile.cpp
 	features/net/zx_httpfile_win.cpp
 	features/wad-library/zx_wadlibrary.cpp
 	features/wad-library/computation/wadlibrary_compute.cpp
 	features/wad-library/computation/loadorder_compute.cpp
+	features/wad-library/computation/pathdisplay_compute.cpp
 	features/wad-download/zx_waddownload.cpp
 	features/wad-download/zx_resolvejob.cpp
 	features/wad-download/zx_filehash.cpp
@@ -1513,7 +1520,10 @@ add_executable( zdoom WIN32
 	features/net/computation/v6prefix_compute.cpp
 	features/server-hosting/computation/punchbroker_compute.cpp
 	features/server-hosting/zx_punchclient.cpp
+	features/server-browser/computation/mapselect_compute.cpp
+	features/server-browser/computation/toolgrid_compute.cpp
 	features/server-hosting/computation/hostfocus_compute.cpp
+	features/server-hosting/computation/hostsettings_compute.cpp
 	features/server-hosting/computation/reachprobe_compute.cpp
 	features/server-hosting/zx_reachprobe.cpp
 	features/addon-catalogue/zx_catalogue.cpp
@@ -1739,6 +1749,8 @@ add_executable( zdoom WIN32
 	features/fov-interp/fovcvar.cpp
 	features/quake-movement/quakemove.cpp
 	features/quake-movement/elevatorjump.cpp
+	features/speedometer/speedometer.cpp
+	features/crosshair/crosshair.cpp
 	zzautozend.cpp
 )
 

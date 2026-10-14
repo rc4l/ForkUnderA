@@ -40,6 +40,8 @@
 #include "configfile.h"
 #include "m_random.h"
 
+#include <vector>
+
 #define READBUFFERSIZE	256
 
 static FRandom pr_endtag;
@@ -66,15 +68,13 @@ FConfigFile::FConfigFile ()
 //
 //====================================================================
 
-FConfigFile::FConfigFile (const char *pathname,
-	void (*nosechandler)(const char *pathname, FConfigFile *config, void *userdata),
-	void *userdata)
+FConfigFile::FConfigFile (const char *pathname)
 {
 	Sections = CurrentSection = NULL;
 	LastSectionPtr = &Sections;
 	CurrentEntry = NULL;
 	ChangePathName (pathname);
-	LoadConfigFile (nosechandler, userdata);
+	LoadConfigFile ();
 	OkayToWrite = true;
 	FileExisted = true;
 }
@@ -118,8 +118,9 @@ FConfigFile::~FConfigFile ()
 			delete[] (char *)entry;
 			entry = nextentry;
 		}
-		section->~FConfigSection();
-		delete[] (char *)section;
+		// [rc4l] uzdoom@c584e9ec9 -- FConfigSection holds an FString now, so it is deleted
+		// rather than destructed by hand over a char array.
+		delete section;
 		section = nextsection;
 	}
 }
@@ -140,7 +141,7 @@ FConfigFile &FConfigFile::operator = (const FConfigFile &other)
 	while (fromsection != NULL)
 	{
 		fromentry = fromsection->RootEntry;
-		tosection = NewConfigSection (fromsection->Name);
+		tosection = NewConfigSection (fromsection->SectionName);
 		while (fromentry != NULL)
 		{
 			NewConfigEntry (tosection, fromentry->Key, fromentry->Value);
@@ -311,7 +312,7 @@ const char *FConfigFile::GetCurrentSection () const
 {
 	if (CurrentSection != NULL)
 	{
-		return CurrentSection->Name;
+		return CurrentSection->SectionName.GetChars();
 	}
 	return NULL;
 }
@@ -508,11 +509,27 @@ FConfigFile::FConfigSection *FConfigFile::FindSection (const char *name) const
 {
 	FConfigSection *section = Sections;
 
-	while (section != NULL && stricmp (section->Name, name) != 0)
+	while (section != NULL && section->SectionName.CompareNoCase(name) != 0)
 	{
 		section = section->Next;
 	}
 	return section;
+}
+
+//====================================================================
+//
+// FConfigFile :: RenameSection
+//
+//====================================================================
+
+void FConfigFile::RenameSection (const char *oldname, const char *newname) const
+{
+	FConfigSection *section = FindSection(oldname);
+
+	if (section != NULL)
+	{
+		section->SectionName = newname;
+	}
 }
 
 //====================================================================
@@ -542,19 +559,15 @@ FConfigFile::FConfigEntry *FConfigFile::FindEntry (
 FConfigFile::FConfigSection *FConfigFile::NewConfigSection (const char *name)
 {
 	FConfigSection *section;
-	char *memblock;
 
 	section = FindSection (name);
 	if (section == NULL)
 	{
-		size_t namelen = strlen (name);
-		memblock = new char[sizeof(*section)+namelen];
-		section = ::new(memblock) FConfigSection;
+		section = new FConfigSection;
 		section->RootEntry = NULL;
 		section->LastEntryPtr = &section->RootEntry;
 		section->Next = NULL;
-		memcpy (section->Name, name, namelen);
-		section->Name[namelen] = 0;
+		section->SectionName = name;
 		*LastSectionPtr = section;
 		LastSectionPtr = &section->Next;
 	}
@@ -591,7 +604,7 @@ FConfigFile::FConfigEntry *FConfigFile::NewConfigEntry (
 //
 //====================================================================
 
-void FConfigFile::LoadConfigFile (void (*nosechandler)(const char *pathname, FConfigFile *config, void *userdata), void *userdata)
+void FConfigFile::LoadConfigFile ()
 {
 	FILE *file = fopen (PathName, "r");
 	bool succ;
@@ -605,14 +618,6 @@ void FConfigFile::LoadConfigFile (void (*nosechandler)(const char *pathname, FCo
 	succ = ReadConfig (file);
 	fclose (file);
 	FileExisted = succ;
-
-	if (!succ)
-	{ // First valid line did not define a section
-		if (nosechandler != NULL)
-		{
-			nosechandler (PathName, this, userdata);
-		}
-	}
 }
 
 //====================================================================
@@ -621,15 +626,38 @@ void FConfigFile::LoadConfigFile (void (*nosechandler)(const char *pathname, FCo
 //
 //====================================================================
 
-bool FConfigFile::ReadConfig (void *file)
+// [rc4l] One whole line however long it is, because ReadLine is fgets and fgets stops at the buffer.
+//
+// A line longer than READBUFFERSIZE used to arrive as two: the head parsed as key=truncated-value and
+// the tail as a line with no '=' that was then dropped, so the value was silently cut at 255 bytes
+// with no error anywhere. Found when a seventh WAD mirror pushed cl_fua_downloadsites past the
+// buffer and the list came back with a half a URL in it.
+bool FConfigFile::ReadFullLine (FString &line, void *file) const
 {
 	char readbuf[READBUFFERSIZE];
-	FConfigSection *section = NULL;
-	ClearConfig ();
 
+	line = "";
 	while (ReadLine (readbuf, READBUFFERSIZE, file) != NULL)
 	{
-		char *start = readbuf;
+		line += readbuf;
+		const size_t got = strlen (readbuf);
+		if (got > 0 && readbuf[got - 1] == '\n')
+			return true;			// the whole line, terminator and all
+	}
+	return line.Len() > 0;			// a last line with no newline after it
+}
+
+bool FConfigFile::ReadConfig (void *file)
+{
+	FConfigSection *section = NULL;
+	FString line;
+	ClearConfig ();
+
+	while (ReadFullLine (line, file))
+	{
+		// The parse below writes terminators into the line, so it needs a buffer of its own.
+		std::vector<char> linebuf (line.GetChars(), line.GetChars() + line.Len() + 1);
+		char *start = &linebuf[0];
 		char *equalpt;
 		char *endpt;
 
@@ -763,6 +791,12 @@ char *FConfigFile::ReadLine (char *string, int n, void *file) const
 
 bool FConfigFile::WriteConfigFile () const
 {
+	return WriteConfigFileTo (PathName);
+}
+
+// [MobiusU9B] Writes to the given path without changing PathName, so a copy never redirects later saves.
+bool FConfigFile::WriteConfigFileTo (const char *pathname) const
+{
 	if (!OkayToWrite && FileExisted)
 	{ // Pretend it was written anyway so that the user doesn't get
 	  // any "config not written" notifications, but only if the file
@@ -770,7 +804,7 @@ bool FConfigFile::WriteConfigFile () const
 		return true;
 	}
 
-	FILE *file = fopen (PathName, "w");
+	FILE *file = fopen (pathname, "w");
 	FConfigSection *section;
 	FConfigEntry *entry;
 
@@ -787,7 +821,7 @@ bool FConfigFile::WriteConfigFile () const
 		{
 			fputs (section->Note.GetChars(), file);
 		}
-		fprintf (file, "[%s]\n", section->Name);
+		fprintf (file, "[%s]\n", section->SectionName.GetChars());
 		while (entry != NULL)
 		{
 			if (strpbrk(entry->Value, "\r\n") == NULL)

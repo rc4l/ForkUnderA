@@ -38,8 +38,10 @@
 //
 // What exists depends on the panel. With the settings closed there are no fields and no visibility
 // row, so up from the foot leaves the form; while a server is running there is no toggle either, so
-// the foot is one button wide. Both are told to this unit rather than assumed, because a focus that
-// can land on something not drawn is the invisible-but-reachable bug in its keyboard form.
+// the foot is one button wide; and the SERVER box CUSTOM and NEW open has the fields and the
+// visibility row with NO experience list above them. All of it is told to this unit rather than
+// assumed, because a focus that can land on something not drawn is the invisible-but-reachable bug
+// in its keyboard form.
 //
 // Header-pure by the features/ rules -- no engine types.
 
@@ -129,20 +131,26 @@ struct HostNavResult
 // A position that no longer exists -- a field while the settings are shut, a gameplay row on an
 // experience that has none -- is corrected rather than honoured, because the panel can change
 // underneath a focus that was legitimate when it was set.
+//
+// `hasList` is whether the experience list is on screen at all. False on the SERVER box that CUSTOM
+// and NEW open, which is this same form with nothing above it -- so every crossing that would reach
+// the list is answered here instead of by a caller inventing its own rule for a screen the diagram
+// above does not describe.
 HostNavResult ComputeHostNav(HostFocusPos pos, HostNavKey key, int fieldCount,
-                             bool hasFields, bool hasToggle, int gameplayRows, bool hasCopy);
+                             bool hasFields, bool hasToggle, int gameplayRows, bool hasCopy,
+                             bool hasList);
 
 // The position to correct to when `pos` names something not currently on screen. Returns `pos`
 // unchanged when it is already valid.
 HostFocusPos ClampHostFocus(HostFocusPos pos, int fieldCount, bool hasFields, bool hasToggle,
-                            int gameplayRows, bool hasCopy);
+                            int gameplayRows, bool hasCopy, bool hasList);
 
 // [rc4l] Where LEFT lands when a text field finally gives it back.
 //
 // The field owns WHEN -- only it knows whether the caret still has anywhere to go, and that rule is
 // textinput_compute's ArrowLeavesField. This owns WHERE, so the destination is written once and the
 // answer cannot drift from the one the action button gives for the same key.
-HostFocusPos HostLeftOfTheForm();
+HostFocusPos HostLeftOfTheForm(bool hasList);
 
 } // namespace zx
 

@@ -50,17 +50,17 @@ One folder per user, shared by every copy of the engine on the machine, includin
 | macOS | `~/Library/Application Support/ForkUnderA/identity/` |
 | Linux | `~/.config/ForkUnderA/identity/` |
 
-`client-auth.key` is the player. `server-auth.key` is the identity their server presents when they
+`client-account-auth.key` is the player. `server-account-auth.key` is the identity their server presents when they
 host. Numbered files like `client-auth.2.key` belong to a second copy of the engine running at the
 same time, so two windows are two players.
 
 ## Transferring an account
 
-If you're on a new machine and want to keep your old account, just replace the new `client-auth.key` with your old one. For server administrators transferring machines, this also means you'll need to transfer your old `server-auth.key` alongside any database files for a seamless transition.
+If you're on a new machine and want to keep your old account, just replace the new `client-account-auth.key` with your old one. For server administrators transferring machines, this also means you'll need to transfer your old `server-account-auth.key` alongside any database files for a seamless transition.
 
 ## Deleting an account
 
-Delete `client-auth.key` file. The next launch generates a brand new anonymous account. **If you permanently delete the `client-auth.key` there is no way to get your account back.**
+Delete `client-account-auth.key` file. The next launch generates a brand new anonymous account. **If you permanently delete the `client-account-auth.key` there is no way to get your account back.**
 
 ## Recovering an account
-There is **no way** to recover a compromised account. This is the cost of this system. Never share your `client-auth.key` with anyone.
+There is **no way** to recover a compromised account. This is the cost of this system. Never share your `client-account-auth.key` with anyone.

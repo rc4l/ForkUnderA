@@ -42,6 +42,31 @@ QueryPunchStep StepQueryPunch(int elapsedMs, bool punchEligible, bool punchReque
 	return step;
 }
 
+bool ShouldPunchBeforeFirstChallenge(bool lan, bool knownUnreachable, bool punchBudgetLeft)
+{
+	// [rc4l] A LAN machine crosses no router, so there is no hole to open.
+	if (lan)
+		return false;
+
+	return knownUnreachable && punchBudgetLeft;
+}
+
+bool ShouldPunchOnFirstContact(bool lan, bool punchBudgetLeft)
+{
+	if (lan)
+		return false;
+
+	return punchBudgetLeft;
+}
+
+bool FirstChallengeDue(bool punchLed, bool firstChallengeSent, int punchLedMs)
+{
+	if (!punchLed || firstChallengeSent)
+		return false;
+
+	return punchLedMs >= kQueryPunchLeadMs;
+}
+
 bool ShouldAdoptPunchKnock(bool slotWaiting, bool slotPunchRequested, bool sameHost)
 {
 	return slotWaiting && slotPunchRequested && sameHost;

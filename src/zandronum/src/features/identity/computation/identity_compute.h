@@ -3,7 +3,7 @@
 
 // [rc4l] The decisions behind anonymous accounts, with no crypto and no filesystem in them.
 //
-// Every player holds one secret, client-auth.key, and derives a separate account from it for each
+// Every player holds one secret, client-account-auth.key, and derives a separate account from it for each
 // server operator, with nothing registered anywhere.
 //
 // What this unit owns is the part that must be identical on both sides of the wire: where the key
@@ -31,19 +31,13 @@ extern const size_t kAccountNameLength;
 // rather than inventing an account.
 std::string AccountNameFromDigest(const std::vector<unsigned char> &digest);
 
-// Where a local instance keeps its secret, instance 0 being client-auth.key and every further one
+// Where a local instance keeps its secret, instance 0 being client-account-auth.key and every further one
 // on the same machine getting a numbered file, since a shared account is refused as a duplicate.
 std::string ClientAuthKeyPath(const std::string &configRoot, int instance);
 
 // Where a host keeps the identity its server presents, one per machine so an operator running
 // several servers offers one account namespace across all of them.
 std::string ServerAuthKeyPath(const std::string &configRoot);
-
-// [rc4l] The folder the keys live under, given a base directory.
-//
-// Called with the per-user base to get the real one, and with the old config directory to get the
-// folder a build before this one wrote to, which is what the migration moves from.
-std::string IdentityRootUnder(const std::string &base);
 
 // [rc4l] The bytes a client signs to prove it holds the key, which carry THREE things and drop any
 // of them at their peril:

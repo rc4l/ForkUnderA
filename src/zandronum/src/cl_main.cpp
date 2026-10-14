@@ -64,6 +64,8 @@
 #include "announcer.h"
 #include "features/server-browser/browser.h"
 #include "features/server-hosting/zx_punchclient.h"
+#include "features/continue/zx_continue.h"
+#include "features/server-browser/computation/reconnect_compute.h"
 #include "features/server-browser/computation/replyrouting_compute.h"
 #include "features/server-browser/zx_joinserver.h" // [rc4l] a failed join lands in the browser
 #include "features/server-hosting/zx_hosting.h" // [rc4l] admin on a server we started ourselves
@@ -873,6 +875,7 @@ void CLIENT_SendServerPacket( void )
 //
 void CLIENT_AttemptConnection( void )
 {
+
 	ULONG	ulIdx;
 
 	if ( g_ulRetryTicks )
@@ -2616,6 +2619,10 @@ static unsigned g_ConnectedHostGeneration = 0;
 
 void CLIENT_QuitNetworkGame( const char *pszString )
 {
+	// [rc4l] Every way of leaving a server is the same way of leaving. The gate decides whether this
+	// teardown is one at all -- a join tidying up on its way in, and a reconnect, are not.
+	zx::Continue_NoteLeftServer( );
+
 	if ( pszString )
 		Printf( "%s\n", pszString );
 
@@ -3552,6 +3559,14 @@ void ServerCommands::EndSnapshot::Execute()
 {
 	// We're all done! Set the new client connection state to active.
 	CLIENT_SetConnectionState( CTS_ACTIVE );
+
+	// [rc4l] Remember this server, whichever way we got here.
+	//
+	// Hooked at the moment the connection COMPLETES rather than at either place that starts one:
+	// the browser's join had its own hook and the console's connect had none, so typing an address
+	// left nothing to come back to. Every route ends here, and ending here also means we never
+	// record a server we failed to reach.
+	zx::Continue_NoteJoined( );
 
 	// [rc4l] Anonymous accounts: open the identity exchange now that we are a client the server
 	// will take commands from. Doing it during the level check was too early, and the hello was
@@ -5561,7 +5576,7 @@ void ServerCommands::SetThingFlags::Execute()
 			if ( relinkActor )
 				actor->UnlinkFromWorld ();
 
-			actor->flags = flags;
+			actor->flags = ActorFlags::FromInt (flags);
 
 			// [BB] Link based on the new flags.
 			if ( relinkActor )
@@ -5570,36 +5585,36 @@ void ServerCommands::SetThingFlags::Execute()
 		break;
 	case FLAGSET_FLAGS2:
 
-		actor->flags2 = flags;
+		actor->flags2 = ActorFlags2::FromInt (flags);
 		break;
 	case FLAGSET_FLAGS3:
 
-		actor->flags3 = flags;
+		actor->flags3 = ActorFlags3::FromInt (flags);
 		break;
 	case FLAGSET_FLAGS4:
 
-		actor->flags4 = flags;
+		actor->flags4 = ActorFlags4::FromInt (flags);
 		break;
 	case FLAGSET_FLAGS5:
 
-		actor->flags5 = flags;
+		actor->flags5 = ActorFlags5::FromInt (flags);
 		break;
 	case FLAGSET_FLAGS6:
 
-		actor->flags6 = flags;
+		actor->flags6 = ActorFlags6::FromInt (flags);
 		break;
 	case FLAGSET_FLAGS7:
 
-		actor->flags7 = flags;
+		actor->flags7 = ActorFlags7::FromInt (flags);
 		break;
 	// [MGOOOOOO] flags8 (MBF21) and flags9 (ZandroX's own word, see actor.h MF9_*).
 	case FLAGSET_FLAGS8:
 
-		actor->flags8 = flags;
+		actor->flags8 = ActorFlags8::FromInt (flags);
 		break;
 	case FLAGSET_FLAGS9:
 
-		actor->flags9 = flags;
+		actor->flags9 = ActorFlags9::FromInt (flags);
 		break;
 	// [rc4l] Movement-model flags (see actor.h MV_*).
 	case FLAGSET_MVFLAGS:
@@ -9425,7 +9440,9 @@ static void client_EarthQuake( BYTESTREAM_s *pByteStream )
 		return;
 
 	// Create the earthquake. Since this is client-side, damage is always 0.
-	new DEarthquake( pCenter, lIntensityX, lIntensityY, lIntensityZ, lDuration, 0, lTremorRadius, quakesound, lQuakeFlags );
+	// [rc4l] Wave speeds are not on the wire (see the note in DEarthquake's constructor), so a
+	// client reconstructs the quake without wave motion. Zero is the "no wave" value.
+	new DEarthquake( pCenter, lIntensityX, lIntensityY, lIntensityZ, lDuration, 0, lTremorRadius, quakesound, lQuakeFlags, 0, 0, 0 );
 }
 
 //*****************************************************************************
@@ -9920,6 +9937,10 @@ CCMD( connect )
 		CLIENT_QuitNetworkGame( NULL );
 
 	// Put the game in client mode.
+	// [rc4l] Remember the local game BEFORE the netstate flips, because after this line we look
+	// like a client and there is nothing left that says we were playing something of our own.
+	zx::Continue_NoteLeavingLocalGame( );
+
 	NETWORK_SetState( NETSTATE_CLIENT );
 
 	// [AK] Make sure the server setup menu is closed if we're connecting.
@@ -9940,11 +9961,17 @@ CCMD( connect )
 	// Put the game in the full console.
 	gameaction = ga_fullconsole;
 
+	// [rc4l] Tell the departure gate this teardown belongs to a reconnect, so it does not send the
+	// player back to an offline game instead. Cleared once the attempt has been made.
+	zx::Continue_NoteReconnecting( true );
+
 	// Send out a connection signal.
 	CLIENT_AttemptConnection( );
 
 	// Update the connection state.
 	CLIENT_SetConnectionState( CTS_ATTEMPTINGCONNECTION );
+
+	zx::Continue_NoteReconnecting( false );
 
 	// If we've elected to record a demo, begin that process now.
 	pszDemoName = Args->CheckValue( "-record" );
@@ -10000,11 +10027,22 @@ CCMD( reconnect )
 		CLIENT_QuitNetworkGame( NULL );
 	
 	// Store the address of the server we were on.
-	if ( g_AddressLastConnected.IsSet() == false )
+	const zx::ReconnectAction ReconnectPlan = zx::DecideReconnect( g_AddressLastConnected.IsSet( ));
+
+	if ( zx::ReconnectConnects( ReconnectPlan ) == false )
 	{
 		Printf( "Unknown IP for last server. Use \"connect <server ip>\".\n" );
 		return;
 	}
+
+	// [rc4l] Ask the server's router to let us back in, exactly as joining from the browser does.
+	//
+	// Without this a reconnect only worked while the mapping the original join opened was still
+	// alive, which is tens of seconds, so anyone who dropped from a server behind a router had to go
+	// back to the browser to be introduced again. Asking cannot delay or refuse the connection
+	// below; if it fails we end where the old behaviour ended.
+	if ( ReconnectPlan == zx::ReconnectAction::AskThenConnect )
+		zx::PunchRequestFor( g_AddressLastConnected, true );
 
 	// Put the game in client mode.
 	NETWORK_SetState( NETSTATE_CLIENT );

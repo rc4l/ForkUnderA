@@ -155,6 +155,13 @@ Write-Status "Configuring CMake (Visual Studio 2022, x64, OpenAL, prebuilt deps)
 # full build and a feature-stripped one is visible.
 New-Item -ItemType Directory -Force -Path $BuildDir | Out-Null
 $ConfigureLog = Join-Path $BuildDir "configure.log"
+
+# [MobiusU9B] Dev-only MCP bridge on the same ZX_MCP_BRIDGE=1 opt-in as mac_compile.sh, passed OFF otherwise so a cached ON never leaks into a normal build.
+$bridgeArgs = @("-DFUA_MCP_BRIDGE=OFF")
+if ($env:ZX_MCP_BRIDGE -eq "1") {
+    Write-Status "MCP bridge: ENABLED (dev build -- do not ship)"
+    $bridgeArgs = @("-DFUA_MCP_BRIDGE=ON")
+}
 & $CMake -S (Join-Path $ScriptRoot "src\zandronum") -B $BuildDir -G "Visual Studio 17 2022" -A x64 -T v143 `
     "-DCMAKE_POLICY_VERSION_MINIMUM=3.5" `
     "-DCMAKE_PREFIX_PATH=$Deps" `
@@ -176,7 +183,7 @@ $ConfigureLog = Join-Path $BuildDir "configure.log"
     "-DFFMPEG_AVFORMAT_LIB=$Deps/lib/avformat.lib" `
     "-DFFMPEG_AVUTIL_LIB=$Deps/lib/avutil.lib" `
     "-DFFMPEG_SWSCALE_LIB=$Deps/lib/swscale.lib" `
-    "-DOPENSSL_ROOT_DIR=$Deps" "-DOPENSSL_USE_STATIC_LIBS=OFF" | Tee-Object -FilePath $ConfigureLog
+    "-DOPENSSL_ROOT_DIR=$Deps" "-DOPENSSL_USE_STATIC_LIBS=OFF" @bridgeArgs | Tee-Object -FilePath $ConfigureLog
 if ($LASTEXITCODE -ne 0) { $ErrorActionPreference = $PrevEAP; throw "cmake configure failed" }
 
 # [rc4l] Belt and braces over the avcodec.lib check above: the libs can be present and CMake still

@@ -503,7 +503,8 @@ public:
 				break;
 
 			case NAME_Type:
-				th->type = (short)CheckInt(key);
+				th->EdNum = (short)CheckInt(key);
+				th->info = DoomEdMap.CheckKey(th->EdNum);
 				break;
 
 			case NAME_Conversation:

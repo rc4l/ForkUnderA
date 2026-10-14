@@ -34,6 +34,12 @@
 #include "mcp_glperf.h"
 #include "mcp_ticprof.h"
 #include "mcp_simtrace.h"
+#include "features/server-browser/browser.h"
+#include "features/continue/zx_continue.h"
+#include "features/identity/zx_identity.h"
+#include "version.h"
+#include "network.h"
+#include "sv_main.h" // [rc4l] SERVER_SERVERREGISTRY_GetListingProof, for net.hostdiag
 #include "mcp_sample.h"
 #include "textures/textures.h"
 #include "features/damage-tint/damagetint.h"
@@ -133,6 +139,22 @@ namespace
 
 	std::string I( long long v ) { return std::to_string( v ); }
 	std::string B( bool v )      { return v ? "true" : "false"; }
+
+	// [rc4l] A stable token per state, so a test matches on that rather than on English that is free
+	// to be reworded.
+	const char *HostDiagStateToken( zx::ListingState state )
+	{
+		switch ( state )
+		{
+		case zx::ListingState::NeverAnnounced:   return "never_announced";
+		case zx::ListingState::AwaitingAnswer:   return "awaiting_answer";
+		case zx::ListingState::Refused:          return "refused";
+		case zx::ListingState::ListedUnverified: return "listed_unverified";
+		case zx::ListingState::ListedVerified:   return "listed_verified";
+		case zx::ListingState::ListedStale:      return "listed_stale";
+		}
+		return "unknown";
+	}
 
 	bool InLevel() { return gamestate == GS_LEVEL; }
 
@@ -362,7 +384,7 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 	{
 		SendOk( id, "{\"commands\":["
 			"\"ping\",\"capabilities\",\"console.exec\","
-			"\"sim.tic\",\"sim.hash\",\"sim.seed\",\"sim.pause\",\"sim.resume\",\"sim.step\",\"sim.cheatat\",\"sim.pauseat\",\"sim.rngdump\",\"sim.trace\","
+			"\"sim.tic\",\"sim.hash\",\"sim.seed\",\"sim.pause\",\"sim.resume\",\"sim.step\",\"sim.cheatat\",\"sim.pauseat\",\"browser.refresh\",\"browser.list\",\"net.hostdiag\",\"net.clients\",\"sim.rngdump\",\"sim.trace\","
 			"\"sim.snapshot\",\"sim.restore\",\"state.player\",\"state.actors\",\"input.event\",\"input.axis\",\"input.look\","
 			"\"perf.capture\",\"perf.ticprof\",\"perf.counters\",\"net.bandwidth\",\"gl.timers\",\"renderer.info\","
 			"\"world.sectors\",\"player.setpos\",\"player.camera\""
@@ -469,6 +491,142 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 			*c->out += "{\"c\":" + I( (long long)crc ) + ",\"i\":" + I( (long long)idx ) + ",\"u\":" + I( (long long)u0 ) + "}";
 		}, &ctx );
 		body += "],\"leveltime\":" + I( level.time ) + "}";
+		SendOk( id, body );
+	}
+	else if ( cmd == "browser.refresh" )
+	{
+		// Ask both halves of the browser: the LAN broadcast and the federated registry. A
+		// driver polls browser.list afterwards until the replies land.
+		BROWSER_RefreshListedServers();
+		BROWSER_QueryServerRegistry();
+		SendOk( id, "{\"refreshing\":true}" );
+	}
+	else if ( cmd == "browser.list" )
+	{
+		// The browser's current server list as data, including the two things the console dump
+		// leaves out: whether the entry arrived by LAN broadcast, and the country the registry
+		// (or the server) reported for it. Those are exactly what an end-to-end check of
+		// "does my server appear, and does it appear the right way" has to assert on.
+		std::string body = "{\"servers\":[";
+		int n = 0;
+		for ( ULONG i = 0; i < MAX_BROWSER_SERVERS; ++i )
+		{
+			if ( !BROWSER_IsActive( i ) )
+				continue;
+			if ( n ) body += ",";
+			std::string name, addr, country;
+			JsonEscape( std::string( BROWSER_GetHostName( i ) ? BROWSER_GetHostName( i ) : "" ), name );
+			JsonEscape( std::string( BROWSER_GetAddress( i ).ToString() ), addr );
+			JsonEscape( std::string( BROWSER_GetCountryCode( i ) ? BROWSER_GetCountryCode( i ) : "" ), country );
+			body += "{\"name\":\"" + name + "\",\"address\":\"" + addr + "\"";
+			body += ",\"lan\":" + B( BROWSER_IsLAN( i ) );
+			// The reported code is blank whenever a server's own lookup failed (it sends XIP), and
+			// the browser then resolves the flag from the address itself. Report both: the claim
+			// and the flag actually drawn, or an assertion tests the wrong one.
+			std::string flag;
+			const char *fromindex = NETWORK_GetCountryCodeFromIndex( BROWSER_GetCountryIndex( i ), true );
+			JsonEscape( std::string( fromindex ? fromindex : "" ), flag );
+			body += ",\"country\":\"" + country + "\"";
+			body += ",\"flag\":\"" + flag + "\"";
+			body += ",\"countryIndex\":" + I( (long long)BROWSER_GetCountryIndex( i ) );
+			// [rc4l] Whether a PLAYER would see this row, since asserting on what the browser holds
+			// would miss the collapse entirely.
+			body += ",\"listed\":" + B( BROWSER_IsListable( i ) );
+			body += ",\"players\":" + I( BROWSER_GetNumPlayers( i ) );
+			body += ",\"ping\":" + I( BROWSER_GetPing( i ) ) + "}";
+			++n;
+		}
+		body += "],\"count\":" + I( n ) + "}";
+		SendOk( id, body );
+	}
+	else if ( cmd == "net.clients" )
+	{
+		// [rc4l] How many peers actually got in, which is the only signal a connection that never
+		// happened cannot produce.
+		if ( NETWORK_GetState() != NETSTATE_SERVER ) { SendErr( id, "net.clients requires a server" ); return; }
+		std::string body = "{\"connected\":" + I( (long long)SERVER_CalcNumConnectedClients() );
+		body += ",\"players\":" + I( (long long)SERVER_CountPlayers( false ) ) + "}";
+		SendOk( id, body );
+	}
+	else if ( cmd == "ui.continue" )
+	{
+		// [rc4l] What the Continue button is doing, so an E2E can assert on the decision rather than
+		// on pixels. Reports the record and whether the button is on the bar, which are separate
+		// facts: a perfectly good record is still hidden while a game is running.
+		std::string kind = "none";
+		if ( zx::Continue_RecordKind( ) == 1 ) kind = "single";
+		else if ( zx::Continue_RecordKind( ) == 2 ) kind = "server";
+		// [rc4l] Hosted was missing, so a perfectly good hosted record read back as "none" and every
+		// question asked of this surface about one started from a false answer.
+		else if ( zx::Continue_RecordKind( ) == 3 ) kind = "hosted";
+
+		std::string escaped;
+		JsonEscape( std::string( zx::Continue_RecordTarget( ) ), escaped );
+
+		std::string tip;
+		JsonEscape( std::string( zx::Continue_Tooltip( ) ), tip );
+
+		std::string body = "{\"shown\":" + B( zx::Continue_IsShown( ) );
+		body += ",\"kind\":\"" + kind + "\"";
+		body += ",\"target\":\"" + escaped + "\"";
+		body += ",\"tooltip\":\"" + tip + "\"";
+		body += ",\"saveExists\":" + B( zx::Continue_DebugSaveExists( ) );
+		body += ",\"saveVersion\":" + I( (long long)zx::Continue_DebugSaveVersion( ) );
+		body += ",\"minSaveVersion\":" + I( (long long)MINSAVEVER );
+		body += ",\"busy\":" + B( zx::Continue_DebugBusy( ) );
+		body += ",\"probe\":" + I( (long long)zx::Continue_DebugProbe( ) );
+		body += ",\"probeSlot\":" + I( (long long)zx::Continue_DebugProbeSlot( ) );
+		// [rc4l] Which copy of the engine is answering. Records are per instance, so a test that
+		// writes one in instance 1 and reads in instance 2 sees an empty answer that looks exactly
+		// like a bug in the feature.
+		body += ",\"instance\":" + I( (long long)zx::Identity_Instance( ) );
+		body += ",\"departCalls\":" + I( (long long)zx::Continue_DebugDepartCalls( ) );
+		body += ",\"departReturns\":" + I( (long long)zx::Continue_DebugDepartReturns( ) );
+		body += ",\"returnPending\":" + B( zx::Continue_DebugReturnPending( ) );
+		body += "}";
+		SendOk( id, body );
+	}
+	else if ( cmd == "net.hostdiag" )
+	{
+		// [rc4l] The machine-readable half of fua_hostdiag, so a reachability check can be asserted on
+		// rather than eyeballed.
+		std::string body = "{\"hosting\":" + B( NETWORK_GetState() == NETSTATE_SERVER );
+		body += ",\"port\":" + I( (long long)NETWORK_GetLocalPort() );
+
+		bool registryReplied = false;
+		if ( NETWORK_GetState() == NETSTATE_SERVER )
+		{
+			body += ",\"families\":{";
+			for ( int fam = 0; fam < 2; ++fam )
+			{
+				const zx::ListingProof proof = SERVER_SERVERREGISTRY_GetListingProof( fam == 1 );
+				const bool verified = ( proof.state == zx::ListingState::ListedVerified );
+				const bool possible = ( fam == 0 ) || SERVER_SERVERREGISTRY_HasV6Registry();
+				registryReplied = registryReplied || verified;
+
+				std::string describe;
+				JsonEscape( std::string( zx::DescribeListing( proof.state ) ), describe );
+
+				body += std::string( fam ? ",\"ipv6\":{" : "\"ipv4\":{" );
+				// [rc4l] False means this family has nowhere to announce to, so an absent listing is
+				// expected rather than a fault.
+				body += "\"possible\":" + B( possible );
+				body += ",\"state\":\"" + std::string( HostDiagStateToken( proof.state ) ) + "\"";
+				body += ",\"verified\":" + B( verified );
+				body += ",\"secondsSinceVerified\":" + I( proof.secondsSinceVerified );
+				// [rc4l] Nothing to attend to when the family was never possible.
+				body += ",\"needsAttention\":" + B( possible && zx::ListingNeedsAttention( proof.state ) );
+				body += ",\"describe\":\"" + describe + "\"}";
+			}
+			body += "}";
+		}
+
+		// [rc4l] `reachable` is null because the verification arrives through the mapping our own
+		// announce opened, so it proves nothing about anyone else reaching us.
+		body += ",\"registryReplied\":" + B( registryReplied );
+		body += ",\"reachable\":null";
+		body += ",\"reachableNote\":\"the registry's reply arrives through the NAT mapping our own announce opened, so it does not prove strangers can reach us\"";
+		body += "}";
 		SendOk( id, body );
 	}
 	else if ( cmd == "sim.pauseat" )

@@ -7,9 +7,18 @@ import { SPECIAL, THING, ENGINE_THING, SECTOR_TYPE } from "../src/doomnums.mjs";
 
 const ENGINE = fileURLToPath(new URL("../../../src/zandronum/", import.meta.url));
 
-// [rc4l] Every DECORATE actor with an editor number, from the engine's own actor tree.
-function editorNumbers() {
+// [rc4l] The names a MAPINFO file's DoomEdNums blocks number, "$"-prefixed special mapthings included.
+function doomEdNums(file) {
   const found = {};
+  const text = fs.readFileSync(path.join(ENGINE, "wadsrc/static/mapinfo", file), "latin1");
+  for (const block of text.matchAll(/^\s*DoomEdNums\s*\{([^}]*)\}/gim))
+    for (const m of block[1].matchAll(/^\s*(\d+)\s*=\s*"?(\$?\w+)"?/gm)) found[m[2]] = Number(m[1]);
+  return found;
+}
+
+// [rc4l] Every actor's editor number as the engine resolves it: Doom's and the common DoomEdNums, then any a DECORATE actor still declares, which overrides them.
+function editorNumbers() {
+  const found = { ...doomEdNums("common.txt"), ...doomEdNums("doomitems.txt") };
   const walk = (dir) => {
     for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
       const p = path.join(dir, e.name);
@@ -39,12 +48,10 @@ test("every named thing but PointLight has the editor number its DECORATE gives 
   }
 });
 
-test("the polyobject anchor and spawn numbers are p_local.h's PO_ANCHOR_TYPE and the one after it", () => {
-  const header = fs.readFileSync(path.join(ENGINE, "src/p_local.h"), "latin1");
-  const m = /PO_ANCHOR_TYPE\s*=\s*(\d+),\s*PO_SPAWN_TYPE\s*,/.exec(header);
-  assert.ok(m, "PO_ANCHOR_TYPE / PO_SPAWN_TYPE not found in p_local.h");
-  assert.equal(ENGINE_THING.PolyAnchor, Number(m[1]));
-  assert.equal(ENGINE_THING.PolySpawn, Number(m[1]) + 1);
+test("the polyobject anchor and spawn numbers are the common DoomEdNums' $PolyAnchor and $PolySpawn", () => {
+  const common = doomEdNums("common.txt");
+  assert.equal(ENGINE_THING.PolyAnchor, common.$PolyAnchor);
+  assert.equal(ENGINE_THING.PolySpawn, common.$PolySpawn);
 });
 
 test("every named sector type has the number p_lnspec.h's enum gives it", () => {

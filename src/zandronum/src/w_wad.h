@@ -55,6 +55,9 @@ struct wadlump_t
 
 // [RH] Namespaces from BOOM.
 typedef enum {
+	// [rc4l] uzdoom@431542320 -- named, since it marks a lump hidden from the name lookups.
+	ns_hidden = -1,
+
 	ns_global = 0,
 	ns_sprites,
 	ns_flats,
@@ -257,6 +260,15 @@ private:
 };
 
 extern FWadCollection Wads;
+
+// [rc4l] Where a file we already have open actually lives, by its bare name, or NULL if we are not
+// holding one by that name.
+//
+// A bare name is not a file. Anything handed one -- a child server told to load it, a record asked
+// to resolve it -- searches the wad directories and comes up empty for anything the player loaded
+// from somewhere else, which is where downloaded mods live by default. The path is not lost in
+// those cases, only unasked for: the collection opened the file and kept its name.
+const char *W_GetLoadedWadPath (const char *bareName);
 
 // [AK] A list of all duplicate lumps found during startup.
 extern TArray<FString> DuplicateLumps;

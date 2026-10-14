@@ -36,6 +36,7 @@
 #import <Foundation/NSRunLoop.h>
 
 #include "c_cvars.h"
+#include "m_argv.h"	// [rc4l] Args, to ask whether this process is a -host server
 #include "st_console.h"
 #include "st_start.h"
 #include "v_text.h"
@@ -76,13 +77,34 @@ public:
 };
 
 
+// [rc4l] Whether there is a console window this process may actually talk to.
+//
+// FConsoleWindow::InstanceExists() alone is NOT that question, and trusting it crashed every server
+// the hosting panel ever started. main() hands a -host process straight to the engine without
+// opening an NSApplication, so no window is created and nothing in it may legally be sent an
+// Objective-C message -- yet in that child the pointer reads back NON-NULL anyway. Logging both
+// sides showed it plainly: the child prints "-host detected" and "instance exists", and never prints
+// the line inside CreateInstance, because the server is forked from a game that already had a window
+// and the pointer survives into the exec'd image. So the guard passed, SetTitleText sent -frame to a
+// view that was never built, and the server died at startup every time anyone pressed PLAY NOW.
+//
+// Ask what the PROCESS is, and only then whether the window is there.
+static bool ZX_ConsoleWindowUsable()
+{
+	if ((Args != NULL) && (Args->CheckParm("-host") != 0))
+		return false;
+
+	return FConsoleWindow::InstanceExists();
+}
+
+
 FBasicStartupScreen::FBasicStartupScreen(int maxProgress, bool showBar)
 : FStartupScreen(maxProgress)
 {
-	// [rc4l] The -host server child never creates the console window (no NSApplication, no user);
-	// drawing progress on a window that does not exist was the second null dereference in a hosted
-	// game's startup, right after the fullscreen cvar callback. Same guard on every method below.
-	if (!FConsoleWindow::InstanceExists())
+	// [rc4l] Nothing here belongs to a -host server child: no window, no user, no run loop. Same
+	// guard on every method below, and it is ZX_ConsoleWindowUsable rather than the raw pointer test
+	// for the reason spelled out above it.
+	if (!ZX_ConsoleWindowUsable())
 	{
 		return;
 	}
@@ -118,7 +140,7 @@ FBasicStartupScreen::FBasicStartupScreen(int maxProgress, bool showBar)
 
 FBasicStartupScreen::~FBasicStartupScreen()
 {
-	if (FConsoleWindow::InstanceExists())
+	if (ZX_ConsoleWindowUsable())
 	{
 		FConsoleWindow::GetInstance().SetProgressBar(false);
 	}
@@ -132,7 +154,7 @@ void FBasicStartupScreen::Progress()
 		++CurPos;
 	}
 
-	if (FConsoleWindow::InstanceExists())
+	if (ZX_ConsoleWindowUsable())
 	{
 		FConsoleWindow::GetInstance().Progress(CurPos, MaxPos);
 	}
@@ -141,7 +163,7 @@ void FBasicStartupScreen::Progress()
 
 void FBasicStartupScreen::NetInit(const char* const message, const int playerCount)
 {
-	if (FConsoleWindow::InstanceExists())
+	if (ZX_ConsoleWindowUsable())
 	{
 		FConsoleWindow::GetInstance().NetInit(message, playerCount);
 	}
@@ -149,7 +171,7 @@ void FBasicStartupScreen::NetInit(const char* const message, const int playerCou
 
 void FBasicStartupScreen::NetProgress(const int count)
 {
-	if (FConsoleWindow::InstanceExists())
+	if (ZX_ConsoleWindowUsable())
 	{
 		FConsoleWindow::GetInstance().NetProgress(count);
 	}
@@ -169,7 +191,7 @@ void FBasicStartupScreen::NetMessage(const char* const format, ...)
 
 void FBasicStartupScreen::NetDone()
 {
-	if (FConsoleWindow::InstanceExists())
+	if (ZX_ConsoleWindowUsable())
 	{
 		FConsoleWindow::GetInstance().NetDone();
 	}

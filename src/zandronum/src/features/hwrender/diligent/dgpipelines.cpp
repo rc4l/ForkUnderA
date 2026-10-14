@@ -277,7 +277,7 @@ int AnimationOf(const void *material)
 			zx::hwrender::AnimationDef a;
 			a.basePic = defs[i]->BasePic.GetIndex();
 			a.numFrames = defs[i]->NumFrames;
-			a.discrete = defs[i]->AnimType == FAnimDef::ANIM_DiscreteFrames;
+			a.discrete = defs[i]->bDiscrete;
 			if (a.discrete)
 				for (int f = 0; f < defs[i]->NumFrames; f++) a.pics.push_back(defs[i]->Frames[f].FramePic.GetIndex());
 			g_anims.push_back(a);

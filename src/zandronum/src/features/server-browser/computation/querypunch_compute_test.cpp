@@ -137,3 +137,70 @@ TEST(ShouldRearmListedSlot, LiveAndAnsweredSlotsAreTrueDuplicates)
 	EXPECT_FALSE(zx::ShouldRearmListedSlot(false, false, false));
 	EXPECT_FALSE(zx::ShouldRearmListedSlot(false, false, true));
 }
+
+// --- punching before the first challenge ----------------------------------------------------------
+//
+// The joiner's first challenge lands on the host's router as unsolicited traffic, and the router
+// tracks it even while dropping it -- taking the very tuple the host's punch then needs. Verified
+// with conntrack in the NAT lab: the punch left on a rewritten source port and the hole opened where
+// nobody was knocking.
+
+TEST(QueryPunchLead, AKnownUnreachableInternetServerPunchesFirst)
+{
+	EXPECT_TRUE( zx::ShouldPunchBeforeFirstChallenge( false, true, true ));
+}
+
+TEST(QueryPunchLead, AServerThatHasNeverBeenTriedJustAsks)
+{
+	// Most listed servers answer.
+	EXPECT_FALSE( zx::ShouldPunchBeforeFirstChallenge( false, false, true ));
+}
+
+TEST(QueryPunchLead, ALanServerNeverPunchesFirst)
+{
+	// No router is crossed, so there is no hole to open.
+	EXPECT_FALSE( zx::ShouldPunchBeforeFirstChallenge( true, true, true ));
+}
+
+TEST(QueryPunchLead, NoBudgetMeansNoLead)
+{
+	// Without the ask actually going out, holding the challenge back would only delay the row.
+	EXPECT_FALSE( zx::ShouldPunchBeforeFirstChallenge( false, true, false ));
+}
+
+TEST(QueryPunchLead, TheHeldChallengeWaitsForTheLeadThenGoes)
+{
+	EXPECT_FALSE( zx::FirstChallengeDue( true, false, 0 ));
+	EXPECT_FALSE( zx::FirstChallengeDue( true, false, zx::kQueryPunchLeadMs - 1 ));
+	EXPECT_TRUE( zx::FirstChallengeDue( true, false, zx::kQueryPunchLeadMs ));
+	EXPECT_TRUE( zx::FirstChallengeDue( true, false, zx::kQueryPunchLeadMs + 5000 ));
+}
+
+TEST(QueryPunchLead, ARowThatDidNotLeadIsNeverHeld)
+{
+	// Its challenge already went out with the sweep; there is nothing being waited for.
+	EXPECT_FALSE( zx::FirstChallengeDue( false, false, 10000 ));
+}
+
+TEST(QueryPunchLead, TheChallengeIsSentOnlyOnce)
+{
+	EXPECT_FALSE( zx::FirstChallengeDue( true, true, 10000 ));
+}
+
+TEST(QueryPunchLead, FirstContactWithAnInternetServerLeadsWhenBudgetRemains)
+{
+	// Leading on a later sweep is too late: the entry the first challenge created is refreshed by
+	// every retry, so the tuple stays taken for as long as the joiner keeps talking.
+	EXPECT_TRUE( zx::ShouldPunchOnFirstContact( false, true ));
+}
+
+TEST(QueryPunchLead, FirstContactOnTheLanStillNeverPunches)
+{
+	EXPECT_FALSE( zx::ShouldPunchOnFirstContact( true, true ));
+}
+
+TEST(QueryPunchLead, FirstContactYieldsWhenTheBudgetIsGone)
+{
+	// The known-unreachable rows take theirs first; these are the speculative ones.
+	EXPECT_FALSE( zx::ShouldPunchOnFirstContact( false, false ));
+}
