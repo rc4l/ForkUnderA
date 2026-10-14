@@ -7,7 +7,7 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <pwd.h>
-#if !defined(__sun)
+#if !defined(__sun) && !defined(__EMSCRIPTEN__)
 #include <fts.h>
 #endif
 #endif
@@ -906,11 +906,13 @@ FString NicePath(const char *path)
 		FString who(path, slash - path);
 		pwstruct = getpwnam(who);
 	}
-	if (pwstruct == NULL)
+	// [rc4l] With no passwd entry (a browser has none), my home is $HOME, which Emscripten sets and the page keeps between visits.
+	const char *home = (pwstruct == NULL && slash == path + 1) ? getenv("HOME") : NULL;
+	if (pwstruct == NULL && (home == NULL || *home == '\0'))
 	{
 		return ExpandEnvVars(path);
 	}
-	FString where(pwstruct->pw_dir);
+	FString where(pwstruct != NULL ? pwstruct->pw_dir : home);
 	if (*slash != '\0')
 	{
 		where += ExpandEnvVars(slash);
@@ -980,7 +982,7 @@ void ScanDirectory(TArray<FFileList> &list, const char *dirpath)
 	}
 }
 
-#elif defined(__sun) || defined(__linux__)
+#elif defined(__sun) || defined(__linux__) || defined(__EMSCRIPTEN__)
 
 //==========================================================================
 //

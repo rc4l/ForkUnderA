@@ -1248,14 +1248,7 @@ OpenALSoundRenderer::OpenALSoundRenderer()
         // although it can generate reasonable number of sources.
 
         const int numChannels = MAX<int>(*snd_channels, 2);
-        int numSources = numMono + numStereo;
-
-        if (0 == numSources)
-        {
-            numSources = numChannels;
-        }
-
-        Sources.Resize(MIN<int>(numChannels, numSources));
+        Sources.Resize(ComputeSourceCount(numMono, numStereo, numChannels));
         for (unsigned i = 0; i < Sources.Size(); i++)
         {
             alGenSources(1, &Sources[i]);

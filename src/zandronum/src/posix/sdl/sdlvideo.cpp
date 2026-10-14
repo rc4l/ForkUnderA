@@ -20,6 +20,7 @@
 #include "c_cvars.h"
 
 #include "sdlvideo.h"
+#include "v_palette.h"   // [rc4l] MAKEARGB
 #include "features/hwrender/backendonly.h"   // [rc4l] a launch without GL
 #include "features/materials/material.h"   // [rc4l] FMaterial::FlushAll
 #include "features/app-icon/appicon.h"   // [rc4l] the window icon

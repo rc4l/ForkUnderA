@@ -13,6 +13,7 @@
   const HOME = '/home/web_user';
 
   function log(text) {
+    console.log(text);
     consoleEl.textContent += text + '\n';
     if (consoleEl.textContent.length > 200000) consoleEl.textContent = consoleEl.textContent.slice(-100000);
   }
@@ -108,6 +109,8 @@
   makeDevice().then((d) => { Module.preinitializedWebGPUDevice = d; deviceReady(); }).catch((e) => fail(String(e.message || e)));
 
   Promise.all([device, runtime]).then(() => {
+    // [rc4l] A console command, for the page's controls and for tests driving the engine.
+    Module.fuaCommand = (text) => Module.ccall('fua_command', null, ['string'], [text]);
     statusEl.hidden = true;
     keepHome(Module.FS);
     canvas.focus();

@@ -9,6 +9,7 @@
 #include "d_main.h"   // [rc4l] CRestartException
 #include "doomerrors.h"
 #include "m_argv.h"
+#include "c_dispatch.h"   // [rc4l] AddCommandString
 #include <stdlib.h>
 #include <string>
 
@@ -52,6 +53,14 @@ void AppendQueryArgs(DArgs *args)
 	for (const std::string &arg : ComputeArgsFromQuery(query != nullptr ? query : ""))
 		args->AppendArg(arg.c_str());
 	free(query);
+}
+
+// [rc4l] A console command from the page (Module.fuaCommand), for its controls and for tests driving the engine from the browser.
+extern "C" EMSCRIPTEN_KEEPALIVE void fua_command(const char *text)
+{
+	// [rc4l] AddCommandString edits the line as it splits it, so it gets a copy.
+	std::string line = text != nullptr ? text : "";
+	AddCommandString(&line[0]);
 }
 
 void Fatal(const char *message)

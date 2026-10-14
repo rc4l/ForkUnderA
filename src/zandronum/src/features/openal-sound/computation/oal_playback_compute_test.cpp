@@ -92,3 +92,13 @@ TEST(ComputeShouldSetLoopPoints, AllConditions)
 	EXPECT_FALSE(ComputeShouldSetLoopPoints(5, 10, false)); // [rc4l] AL lacks SOFT loop points
 }
 } // namespace
+
+// [rc4l] The device's counts cap the channels, nothing reported means the channels, and Emscripten's two INT_MAX counts do not overflow into a negative size.
+TEST(ComputeSourceCount, TheDeviceCapsTheChannels)
+{
+	EXPECT_EQ(32, ComputeSourceCount(255, 1, 32));
+	EXPECT_EQ(16, ComputeSourceCount(15, 1, 32));
+	EXPECT_EQ(32, ComputeSourceCount(0, 0, 32));
+	EXPECT_EQ(32, ComputeSourceCount(2147483647, 2147483647, 32));
+	EXPECT_EQ(32, ComputeSourceCount(-5, -1, 32));
+}

@@ -48,7 +48,7 @@ async function waitForJson(url, deadline) {
   }
 }
 
-export async function smoke({ url, until, seconds = 30, shot, chrome, headless = true, port = 9333, onLine = console.log }) {
+export async function smoke({ url, until, seconds = 30, shot, chrome, headless = true, port = 9333, onLine = console.log, evaluate, after = 10 }) {
   const exe = chrome ?? CHROME_CANDIDATES.find(p => fs.existsSync(p));
   if (!exe) throw new Error('no Chrome found');
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'fua-smoke-'));
@@ -78,6 +78,15 @@ export async function smoke({ url, until, seconds = 30, shot, chrome, headless =
     await send('Log.enable');
     await send('Page.enable');
     await send('Page.navigate', { url });
+    // [rc4l] JavaScript run in the page `after` seconds in, such as Module.fuaCommand('map MAP02'), its result printed.
+    if (evaluate) {
+      setTimeout(async () => {
+        const r = await send('Runtime.evaluate', { expression: evaluate, awaitPromise: true });
+        const line = `[eval] ${r.result?.exceptionDetails ? 'threw ' + r.result.exceptionDetails.text : JSON.stringify(r.result?.result?.value ?? null)}`;
+        lines.push(line);
+        onLine(line);
+      }, Number(after) * 1000).unref();
+    }
     await new Promise(res => { wake = res; setTimeout(res, Math.max(0, deadline - Date.now())); });
     if (shot) {
       const r = await send('Page.captureScreenshot', { format: 'png' });

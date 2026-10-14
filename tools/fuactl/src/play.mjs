@@ -220,36 +220,48 @@ async function launchChecked(opts, port) {
     engine: opts.engine,
   });
 
-  await waitInLevel(inst);
+  return stoppingOnFailure(inst, async () => {
+    await waitInLevel(inst);
 
-  // [rc4l] And now CHECK, rather than trust the command line.
-  //
-  // Every setting here has been wrong at least once while the launch reported success, and each
-  // time it was discovered by the failure it caused rather than by anyone looking: a build "with no
-  // monsters" full of monsters, a session that could not look up or down, a god-mode script that
-  // turned god mode off. Reading them back costs one round trip and turns all of that into a line
-  // of output at launch.
-  const { BridgeClient } = await import("./client.mjs");
-  const cap = await import("./capture.mjs");
-  const c = new BridgeClient();
-  await c.connect(inst.port, { token: inst.token });
-  await c.waitHello();
-  let world;
+    // [rc4l] And now CHECK, rather than trust the command line.
+    //
+    // Every setting here has been wrong at least once while the launch reported success, and each
+    // time it was discovered by the failure it caused rather than by anyone looking: a build "with no
+    // monsters" full of monsters, a session that could not look up or down, a god-mode script that
+    // turned god mode off. Reading them back costs one round trip and turns all of that into a line
+    // of output at launch.
+    const { BridgeClient } = await import("./client.mjs");
+    const cap = await import("./capture.mjs");
+    const c = new BridgeClient();
+    await c.connect(inst.port, { token: inst.token });
+    await c.waitHello();
+    let world;
+    try {
+      const cheats = [];
+      for (const ch of CHEATS) cheats.push(await ensureCheat(c, ch, cap));
+      world = { cheats, cvars: await verifyWorld(c, cap) };
+      // [rc4l] opts.at (x, y, z, angle, pitch) stands the player there before anyone is told the instance is up.
+      if (opts.at) await standAt(c, opts.at);
+    } finally { c.close(); }
+    inst.world = world;
+
+    if (opts.sessionFile) {
+      const text = `PORT=${inst.port}\nTOKEN=${inst.token}\nPID=${inst.pid}\n${inst.engine ? `ENGINE=${inst.engine}\n` : ""}`;
+      fs.writeFileSync(opts.sessionFile, text);
+      fs.writeFileSync(sessionFileFor(opts.sessionFile, inst.port), text);
+    }
+    return inst;
+  });
+}
+
+// [rc4l] body(inst), with the engine stopped if it throws: a launch that timed out kept its port, and every launch after it timed out too.
+export async function stoppingOnFailure(inst, body, stop = stopInstance) {
   try {
-    const cheats = [];
-    for (const ch of CHEATS) cheats.push(await ensureCheat(c, ch, cap));
-    world = { cheats, cvars: await verifyWorld(c, cap) };
-    // [rc4l] opts.at (x, y, z, angle, pitch) stands the player there before anyone is told the instance is up.
-    if (opts.at) await standAt(c, opts.at);
-  } finally { c.close(); }
-  inst.world = world;
-
-  if (opts.sessionFile) {
-    const text = `PORT=${inst.port}\nTOKEN=${inst.token}\nPID=${inst.pid}\n${inst.engine ? `ENGINE=${inst.engine}\n` : ""}`;
-    fs.writeFileSync(opts.sessionFile, text);
-    fs.writeFileSync(sessionFileFor(opts.sessionFile, inst.port), text);
+    return await body(inst);
+  } catch (e) {
+    await stop(inst);
+    throw e;
   }
-  return inst;
 }
 
 export { stopInstance };

@@ -25,12 +25,13 @@ Serves a build from `localhost`. It sends wasm's MIME type, plus the cross-origi
 ## smoke.mjs
 
 ```bash
-node tools/web/smoke.mjs <url> [--until REGEX] [--seconds N] [--shot out.png] [--headless false]
+node tools/web/smoke.mjs <url> [--until REGEX] [--seconds N] [--shot out.png] [--headless false] [--evaluate JS --after N]
 ```
 
 Loads a page in headless Chrome with WebGPU on and prints its console.
 - It stops at the first console line matching `--until`, or when time runs out, and saves a screenshot if asked.
 - The exit status is 1 when `--until` never matched.
+- `--evaluate` runs JavaScript in the page `--after` seconds in (10 by default), such as `Module.fuaCommand("map MAP02")`, and prints its result.
 
 ## webgpu-check
 

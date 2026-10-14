@@ -63,7 +63,7 @@ FRenderer *CreateLaunchRenderer(FRenderer *(*createGL)())
 {
 	std::vector<zx::frame::DrivenRenderer> renderers;
 	if (BackendOnly()) BeginBackendOnly();
-	else renderers.push_back({ createGL(), zx::frame::kRendererGL });
+	else if (createGL != NULL) renderers.push_back({ createGL(), zx::frame::kRendererGL });
 	renderers.push_back({ CreateBackendRenderer(), zx::frame::kRendererBackend });
 	return zx::frame::CreateFrameDriver(renderers);
 }

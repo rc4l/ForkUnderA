@@ -38,17 +38,11 @@
 #include "gl/stereo3d/gl_anaglyph.h"
 #include "gl/system/gl_cvars.h"
 
-// Set up 3D-specific console variables:
-CVAR(Int, vr_mode, 0, CVAR_GLOBALCONFIG)
-
-// intraocular distance in meters
-CVAR(Float, vr_ipd, 0.062f, CVAR_ARCHIVE|CVAR_GLOBALCONFIG) // METERS
-
-// distance between viewer and the display screen
-CVAR(Float, vr_screendist, 0.80f, CVAR_ARCHIVE | CVAR_GLOBALCONFIG) // METERS
-
-// default conversion between (vertical) DOOM units and meters
-CVAR(Float, vr_hunits_per_meter, 41.0f, CVAR_ARCHIVE | CVAR_GLOBALCONFIG) // METERS
+// [rc4l] The 3D settings live in features/rendersettings, since the backend draws stereo too.
+EXTERN_CVAR(Int, vr_mode)
+EXTERN_CVAR(Float, vr_ipd)
+EXTERN_CVAR(Float, vr_screendist)
+EXTERN_CVAR(Float, vr_hunits_per_meter)
 
 // Manage changing of 3D modes:
 namespace s3d {

@@ -7,6 +7,7 @@
 #include "features/hwrender/computation/framepacing_compute.h"
 #include "features/hwrender/computation/shaderdump_compute.h"
 #include "features/hwrender/computation/layoutvars_compute.h"
+#include "features/mainloop/mainloop.h"   // [rc4l] Stepped, a browser pacing the frames
 #include "cmdlib.h"   // [rc4l] CreatePath
 #include "features/framephase/framephase.h"   // [rc4l] the backend, upload, lights and present phases
 #include "c_dispatch.h"
@@ -683,7 +684,8 @@ static void SignalFrame(Diligent::IDeviceContext *ctx)
 
 static void PaceFrames()
 {
-	if (!g_frameFence) return;
+	// [rc4l] A stepped loop is paced by its driver (a browser's animation frame), where the CPU cannot wait on the GPU at all.
+	if (!g_frameFence || zx::mainloop::Stepped()) return;
 	const Diligent::Uint64 wait = zx::hwrender::ComputeFenceWaitValue(g_frameSignalled, fua_dg_frames_ahead);
 	if (wait != 0) g_frameFence->Wait(wait);
 }

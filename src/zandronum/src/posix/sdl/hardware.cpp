@@ -46,9 +46,7 @@
 #include "v_text.h"
 #include "doomstat.h"
 #include "m_argv.h"
-#ifndef NO_GL
 #include "sdlvideo.h"
-#endif
 // [rc4l] video-scale: faithful port of upstream's r_videoscale math. See features/video-scale.
 #include "features/video-scale/computation/videoscale_compute.h"
 #include "features/hwrender/backendonly.h"   // [rc4l] CreateLaunchRenderer
@@ -153,8 +151,8 @@ void I_CreateRenderer()
 #ifndef NO_GL
 		Renderer = zx::hwrender::CreateLaunchRenderer(gl_CreateInterface);
 #else
-		// [rc4l] Dedicated server (no OpenGL): use the trivial null renderer.
-		Renderer = new FNullRenderer;
+		// [rc4l] Without GL the backend draws alone (the browser's build); without it too, the dedicated server's trivial null renderer.
+		Renderer = zx::hwrender::BackendOnly() ? zx::hwrender::CreateLaunchRenderer(NULL) : new FNullRenderer;
 #endif
 		atterm(I_DeleteRenderer);
 	}
@@ -291,7 +289,8 @@ void I_ClosestResolution (int *width, int *height, int bits)
 EXTERN_CVAR(Int, vid_maxfps);
 EXTERN_CVAR(Bool, cl_capfps);
 
-#ifndef __APPLE__
+// [rc4l] A browser paces frames itself (its animation frame), and has no POSIX timers, so it takes the empty limiter below as Apple does.
+#if !defined(__APPLE__) && !defined(__EMSCRIPTEN__)
 Semaphore FPSLimitSemaphore;
 
 static void FPSLimitNotify(sigval val)

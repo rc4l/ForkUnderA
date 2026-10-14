@@ -26,7 +26,7 @@ void BeginBackendOnly();
 
 // [rc4l] The renderer the backend draws the world with, in a launch without GL or beside it.
 FRenderer *CreateBackendRenderer();
-
+// [rc4l] The renderer a launch draws with, which every platform's I_CreateRenderer asks for: GL's (from `createGL`, NULL in a build without GL) and the backend's under features/frame's driver, or the backend's alone in a launch without GL.
 // [rc4l] The renderer a launch draws with, which every platform's I_CreateRenderer asks for: GL's (from `createGL`) and the backend's under features/frame's driver, or the backend's alone in a launch without GL.
 FRenderer *CreateLaunchRenderer(FRenderer *(*createGL)());
 

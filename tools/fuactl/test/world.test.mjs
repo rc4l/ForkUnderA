@@ -108,3 +108,13 @@ test("true/false and 1/0 are the same answer, because Doom uses both", () => {
   assert.ok(!sameCvarValue("1", "2"), "a genuinely different value must still fail");
   assert.ok(!sameCvarValue(null, "0"), "silence is not agreement");
 });
+
+test("a launch that fails after the engine started stops the engine and rethrows", async () => {
+  const { stoppingOnFailure } = await import("../src/play.mjs");
+  const stopped = [];
+  const stop = async (inst) => { stopped.push(inst.port); };
+  await assert.rejects(stoppingOnFailure({ port: 7796 }, async () => { throw new Error("no playable level after 90s"); }, stop), /no playable level/);
+  assert.deepEqual(stopped, [7796]);
+  assert.equal(await stoppingOnFailure({ port: 7797 }, async (inst) => inst.port, stop), 7797);
+  assert.deepEqual(stopped, [7796]);
+});

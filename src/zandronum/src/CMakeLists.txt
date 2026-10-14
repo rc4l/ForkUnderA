@@ -949,6 +949,8 @@ if( NOT NO_GL )
 		features/sidebyside/sidebyside.cpp
 		features/sidebyside/glchecks.cpp
 		features/sidebyside/surfaceverify.cpp
+		# [rc4l] The hitbox overlay's GL drawing; its geometry and the backend's lines are features/hitboxviz/hitboxviz.cpp, which every build has.
+		features/hitboxviz/hitboxviz_gl.cpp
 	)
 else( NOT NO_GL )
 	set( GL_SOURCES posix/sdl/glstubs.cpp )
@@ -1900,7 +1902,8 @@ if( EMSCRIPTEN )
 		"SHELL: -s EXIT_RUNTIME=0"
 		"SHELL: -s INVOKE_RUN=0"
 		"SHELL: -s FORCE_FILESYSTEM=1"
-		"SHELL: -s EXPORTED_RUNTIME_METHODS=callMain,FS,IDBFS"
+		"SHELL: -s EXPORTED_RUNTIME_METHODS=callMain,ccall,FS,IDBFS"
+		"SHELL: -s EXPORTED_FUNCTIONS=_main,_fua_command"
 		"SHELL: -lidbfs.js" )
 endif()
 if( "${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU" )
