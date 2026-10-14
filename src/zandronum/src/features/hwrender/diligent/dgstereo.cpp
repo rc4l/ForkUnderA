@@ -30,15 +30,6 @@ Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_blendPSO;
 Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding> g_blendSRB;
 Diligent::RefCntAutoPtr<Diligent::IBuffer> g_blendCB;
 
-const char *kBlendVS =
-	"#version 450\n"
-	"layout(location = 0) out vec2 vUV;\n"
-	"void main() {\n"
-	"    vec2 p = vec2((gl_VertexIndex << 1) & 2, gl_VertexIndex & 2);\n"
-	"    vUV = vec2(p.x, 1.0 - p.y);\n"
-	"    gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);\n"
-	"}\n";
-
 // [rc4l] Each eye's channels through its mask, as GL's colour mask leaves them in the one frame.
 const char *kBlendPS =
 	"#version 450\n"
@@ -73,9 +64,6 @@ bool EnsureEyePictures(int w, int h)
 	}
 	if (!g_blendPSO)
 	{
-		auto vs = CompileShader(Diligent::SHADER_TYPE_VERTEX, "fua stereo blend VS", kBlendVS);
-		auto ps = CompileShader(Diligent::SHADER_TYPE_PIXEL, "fua stereo blend PS", kBlendPS);
-		if (!vs || !ps) return false;
 		Diligent::BufferDesc cbd;
 		cbd.Name = "fua stereo masks";
 		cbd.Size = sizeof(float) * 8;
@@ -84,32 +72,8 @@ bool EnsureEyePictures(int w, int h)
 		cbd.CPUAccessFlags = Diligent::CPU_ACCESS_WRITE;
 		dev->CreateBuffer(cbd, nullptr, &g_blendCB);
 		if (!g_blendCB) return false;
-		const Diligent::ShaderResourceVariableDesc vars[] = {
-			{ Diligent::SHADER_TYPE_PIXEL, "uLeft", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
-			{ Diligent::SHADER_TYPE_PIXEL, "uRight", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
-		};
-		Diligent::SamplerDesc samp;
-		samp.MinFilter = samp.MagFilter = samp.MipFilter = Diligent::FILTER_TYPE_POINT;
-		samp.AddressU = samp.AddressV = Diligent::TEXTURE_ADDRESS_CLAMP;
-		const Diligent::ImmutableSamplerDesc samplers[] = { { Diligent::SHADER_TYPE_PIXEL, "uLeft", samp }, { Diligent::SHADER_TYPE_PIXEL, "uRight", samp } };
-		Diligent::GraphicsPipelineStateCreateInfo pci;
-		pci.PSODesc.Name = "fua stereo blend PSO";
-		pci.PSODesc.PipelineType = Diligent::PIPELINE_TYPE_GRAPHICS;
-		pci.GraphicsPipeline.NumRenderTargets = 1;
-		pci.GraphicsPipeline.RTVFormats[0] = fd.Format;
-		pci.GraphicsPipeline.DSVFormat = Diligent::TEX_FORMAT_UNKNOWN;
-		pci.GraphicsPipeline.PrimitiveTopology = Diligent::PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-		pci.GraphicsPipeline.RasterizerDesc.CullMode = Diligent::CULL_MODE_NONE;
-		pci.GraphicsPipeline.DepthStencilDesc.DepthEnable = false;
-		pci.PSODesc.ResourceLayout.DefaultVariableType = Diligent::SHADER_RESOURCE_VARIABLE_TYPE_STATIC;
-		pci.PSODesc.ResourceLayout.Variables = vars;
-		pci.PSODesc.ResourceLayout.NumVariables = 2;
-		pci.PSODesc.ResourceLayout.ImmutableSamplers = samplers;
-		pci.PSODesc.ResourceLayout.NumImmutableSamplers = 2;
-		pci.pVS = vs;
-		pci.pPS = ps;
-		dev->CreateGraphicsPipelineState(pci, &g_blendPSO);
-		if (!g_blendPSO) return false;
+		static const char *const kEyes[] = { "uLeft", "uRight" };
+		if (!CreatePicturesPSO("fua stereo blend", kBlendPS, Diligent::FILTER_TYPE_POINT, Diligent::TEX_FORMAT_UNKNOWN, kEyes, 2, g_blendPSO)) return false;
 		if (auto *v = g_blendPSO->GetStaticVariableByName(Diligent::SHADER_TYPE_PIXEL, "Masks")) v->Set(g_blendCB);
 	}
 	if (!g_blendSRB)

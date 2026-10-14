@@ -104,4 +104,17 @@ int ComputeStoredDimension(int value, int maxSize)
 	return (maxSize > 0 && value > maxSize) ? maxSize : value;
 }
 
+MaterialDraw ComputeMaterialDraw(int warp, bool canvas, int shaderIndex, int firstUserShader)
+{
+	if (warp) return kDrawWarp;
+	if (canvas) return kDrawCanvas;
+	if (shaderIndex >= firstUserShader) return kDrawUserShader;
+	return kDrawPlain;
+}
+
+bool ComputeMaterialExpands(MaterialDraw draw, bool brightmapSizeDiffers)
+{
+	return draw == kDrawPlain && !brightmapSizeDiffers;
+}
+
 }} // namespace zx::materials

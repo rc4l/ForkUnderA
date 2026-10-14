@@ -271,23 +271,7 @@ extern SceneGeometry g_scene;
 // [rc4l] The world pipelines, one per blend mode and variant, and the two bindings the per-material path draws through.
 struct ScenePipelines
 {
-	// [rc4l] One per WorldPipeline, as ComputeWorldPipelineDesc describes it.
-	//
-	// The sprite pipelines have culling forced off:
-	//
-	// Backface culling is right for the world and wrong for billboards: a sprite quad is built facing
-	// the camera and nothing guarantees its winding survives every view angle, so a world-wide cull mode
-	// would silently eat some of them. The world's setting must not be able to reach them, so they get
-	// their own pipelines rather than a promise that the winding works out.
-	//
-	// The decal pipelines add a depth bias:
-	//
-	// A decal is a quad glued flat against the wall it marks, exactly coplanar with it, so it z-fights
-	// without help -- GL wraps its decal pass in glPolygonOffset(-1, -128) for the same reason. The bias
-	// belongs in the pipeline rather than in the geometry: nudging the vertices towards the camera would
-	// have to know where the camera is, which is exactly what a baked or streamed vertex must not.
-	//
-	// The red-alpha decal pipelines take kScenePSRedAlpha, for shaded decals.
+	// [rc4l] One per WorldPipeline (ComputeWorldPipelineDesc): sprites never cull, since a billboard's winding is not promised, and decals carry GL's depth bias against the wall they lie flat on.
 	Diligent::RefCntAutoPtr<Diligent::IPipelineState> world[kWorldPipelines];
 };
 extern ScenePipelines g_pso;
@@ -489,6 +473,9 @@ int SkyDraws();
 Diligent::IPipelineState *SkyPortalPicturePSO();
 bool CreatePicturePSO(const char *name, const char *ps, Diligent::FILTER_TYPE filter, Diligent::TEXTURE_FORMAT dsvFormat,
 	Diligent::RefCntAutoPtr<Diligent::IPipelineState> &pso);
+// [rc4l] CreatePicturePSO with `count` pictures named in `pictures`, each mutable and sampled with filter; any other resource of ps is static.
+bool CreatePicturesPSO(const char *name, const char *ps, Diligent::FILTER_TYPE filter, Diligent::TEXTURE_FORMAT dsvFormat,
+	const char *const *pictures, int count, Diligent::RefCntAutoPtr<Diligent::IPipelineState> &pso);
 Diligent::RefCntAutoPtr<Diligent::IPipelineState> CreateScreenSurfacePSO(const char *name,
 	Diligent::SHADER_RESOURCE_VARIABLE_TYPE texType, bool depthOnly = false);
 bool BindScreenSurfaces(Diligent::IDeviceContext *ctx, Diligent::RefCntAutoPtr<Diligent::IBuffer> &vb,

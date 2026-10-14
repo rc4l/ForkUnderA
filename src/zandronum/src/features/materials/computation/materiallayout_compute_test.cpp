@@ -112,3 +112,20 @@ TEST(StoredDimension, ASideIsCappedAtTheDevicesLargest)
 	EXPECT_EQ(64, ComputeStoredDimension(100, 64));
 	EXPECT_EQ(32, ComputeStoredDimension(32, 64));
 }
+
+// [rc4l] A warp is first, then a camera texture, then a hardware shader (12 and up here), else the material is plain.
+TEST(MaterialDraw, TheFirstThatAppliesWins)
+{
+	EXPECT_EQ(kDrawWarp, ComputeMaterialDraw(2, true, 13, 12));
+	EXPECT_EQ(kDrawCanvas, ComputeMaterialDraw(0, true, 13, 12));
+	EXPECT_EQ(kDrawUserShader, ComputeMaterialDraw(0, false, 12, 12));
+	EXPECT_EQ(kDrawPlain, ComputeMaterialDraw(0, false, 3, 12));
+}
+
+TEST(MaterialDraw, OnlyAPlainMaterialWithAMatchingBrightmapTakesTheFrame)
+{
+	EXPECT_TRUE(ComputeMaterialExpands(kDrawPlain, false));
+	EXPECT_FALSE(ComputeMaterialExpands(kDrawPlain, true));
+	EXPECT_FALSE(ComputeMaterialExpands(kDrawWarp, false));
+	EXPECT_FALSE(ComputeMaterialExpands(kDrawUserShader, false));
+}

@@ -136,10 +136,7 @@ set( ZDOOM_EXE_NAME "forkundera" CACHE STRING "Name of the executable to create"
 # features/mcp-bridge/README.md. Even when ON it is runtime opt-in (ZANDRONUM_BRIDGE_PORT) + loopback.
 option( FUA_MCP_BRIDGE "Build the in-engine MCP control bridge (DEV ONLY -- never ship it ON)" OFF )
 
-# [rc4l] DiligentCore (Apache-2.0, vendored at deps/DiligentCore) -- the Vulkan backend, the default
-# renderer with GL (Legacy) beside it, on Windows, Linux and macOS (through MoltenVK). ON by default
-# for every client build; a dedicated server has no renderer, so it stays OFF there. Vulkan only;
-# the other backends are disabled because the point is a portable modern backend, not a second D3D path.
+# [rc4l] DiligentCore (Apache-2.0, deps/DiligentCore), the default Vulkan renderer on every client build with GL (Legacy) beside it, off for a server, which has no renderer.
 if( SERVERONLY OR NO_GL )
 	set( FUA_DILIGENT_DEFAULT OFF )
 else()

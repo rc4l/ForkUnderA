@@ -67,7 +67,6 @@ PalEntry averageColor(const DWORD *data, int size, fixed_t maxout);
 unsigned char *gl_CreateUpsampledTextureBuffer ( const FTexture *inputTexture, unsigned char *inputBuffer, const int inWidth, const int inHeight, int &outWidth, int &outHeight, bool hasAlpha );
 int CheckDDPK3(FTexture *tex);
 int CheckExternalFile(FTexture *tex, bool & hascolorkey);
-PalEntry averageColor(const DWORD *data, int size, fixed_t maxout);
 
 #endif	// __GL_HQRESIZE_H__
 

@@ -58,6 +58,7 @@
 #include "c_cvars.h"
 #include "features/levelprep/levelprep.h"
 #include "features/rendersettings/rendersettings.h"   // [rc4l] fogdensity, outsidefogdensity, skyfog
+#include "features/rendersettings/computation/mapoptions_compute.h"   // [rc4l] ComputeGlobalFogParameter
 #include "features/stackportals/stackportals.h"   // [rc4l] gl_InitPortals, portals
 #include "features/dynlights/dynlight.h"   // [rc4l] ADynamicLight
 #include "features/materials/material.h"   // [rc4l] FMaterial::FlushAll
@@ -70,7 +71,7 @@ void InitGLRMapinfoData();
 //
 //-----------------------------------------------------------------------------
 
-void AdjustSpriteOffsets()
+static void AdjustSpriteOffsets()
 {
 	static bool done=false;
 	char name[30];
@@ -120,32 +121,12 @@ static int LS_SetGlobalFogParameter (line_t *ln, AActor *it, bool backSide,
 	int arg0, int arg1, int arg2, int arg3, int arg4)
 {
 // SetGlobalFogParameter (type, value)
-	switch(arg0)
-	{
-	case 0:
-		fogdensity = arg1>>1;
-		return true;
-
-	case 1:
-		outsidefogdensity = arg1>>1;
-		return true;
-
-	case 2:
-		skyfog = arg1;
-		return true;
-
-	default:
-		return false;
-	}
+	return zx::rendersettings::ComputeGlobalFogParameter(arg0, arg1, fogdensity, outsidefogdensity, skyfog);
 }
 
 
 
-//==========================================================================
-//
-// Once per game start: the light special GL's MAPINFO fog needs, and the IWAD's sprite offsets
-//
-//==========================================================================
+// [rc4l] Once per game start: the light special MAPINFO's fog needs, and the IWAD's sprite offsets.
 
 static void InitData()
 {
@@ -694,11 +675,7 @@ static void PrepareSegs()
 	}
 }
 
-//==========================================================================
-//
-// Initialize the level data for either renderer
-//
-//==========================================================================
+// [rc4l] Initialize the level data for either renderer.
 extern int restart;
 
 namespace zx { namespace levelprep {
@@ -759,11 +736,7 @@ void PrepareLevel()
 
 
 
-//==========================================================================
-//
-// Cleans up all the level data for the last level
-//
-//==========================================================================
+// [rc4l] Clean up all the level data for the last level.
 
 void CleanLevel()
 {

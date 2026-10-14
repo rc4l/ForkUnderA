@@ -39,6 +39,7 @@
 
 #import <Carbon/Carbon.h>
 #import <QuartzCore/CAMetalLayer.h>   // [rc4l] the Vulkan backend's view, drawn through MoltenVK
+#import "metalview.h"
 
 // Avoid collision between DObject class and Objective-C
 #define Class ObjectClass
@@ -65,8 +66,6 @@
 #include "features/fua-branding/computation/fua_version_compute.h"   // [rc4l] FUA title
 #include "features/hwrender/computation/glcontext_compute.h"        // [rc4l] GL profile chain
 #include "features/hwrender/backendonly.h"                         // [rc4l] a launch without GL
-#include "features/frame/framedriver.h"                            // [rc4l] the engine's renderer over GL and the backend
-#include <vector>
 
 // [rc4l] video-scale: client size vs render size (v_video.cpp).
 extern int zx_pendingClientWidth, zx_pendingClientHeight;
@@ -245,19 +244,7 @@ static void ZX_CocoaWindowResized();
 @end
 
 
-// [rc4l] The content view of a launch without GL: a CAMetalLayer the Vulkan backend's swapchain draws to through MoltenVK, with CocoaView's cursor.
-@interface CocoaMetalView : NSView
-{
-	NSCursor* m_cursor;
-}
-
-- (void)resetCursorRects;
-
-- (void)setCursor:(NSCursor*)cursor;
-
-@end
-
-
+// [rc4l] The content view of a launch without GL, and the backend's own window beside GL (features/hwrender/diligent/dgcocoa.mm).
 @implementation CocoaMetalView
 
 - (CALayer*)makeBackingLayer
@@ -1276,12 +1263,7 @@ void I_CreateRenderer()
 		extern FRenderer* gl_CreateInterface();
 
 #ifndef NO_GL
-		// [rc4l] GL and the backend under features/frame's driver, which draws each when it is wanted; a launch without GL (-vulkan) has the backend alone.
-		std::vector<zx::frame::DrivenRenderer> renderers;
-		if (zx::hwrender::BackendOnly()) zx::hwrender::BeginBackendOnly();
-		else renderers.push_back({ gl_CreateInterface(), zx::frame::kRendererGL });
-		renderers.push_back({ zx::hwrender::CreateBackendRenderer(), zx::frame::kRendererBackend });
-		Renderer = zx::frame::CreateFrameDriver(renderers);
+		Renderer = zx::hwrender::CreateLaunchRenderer(gl_CreateInterface);
 #else
 		// [rc4l] Dedicated server (no OpenGL): the trivial null renderer.
 		Renderer = new FNullRenderer;

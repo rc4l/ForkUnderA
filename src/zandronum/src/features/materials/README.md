@@ -13,12 +13,18 @@ warp, palette). GL and the Vulkan backend both read them from here; GL keeps onl
   own copy of the pixels off `FTexturePixels::mHwTexture` (`hardwaretexture.h`, `IHardwareTexture`),
   which a flush deletes.
 - `computation/materiallayout_compute`: the material's layout (`ComputeMaterialLayout`), a sprite's
-  trim (`ComputeTrimBorders`), and the device's texture size limit (`ComputeStoredDimension`).
+  trim (`ComputeTrimBorders`), the device's texture size limit (`ComputeStoredDimension`), how a material
+  draws (`ComputeMaterialDraw`: a warp, a camera texture, a hardware shader or plain) and whether a
+  sprite's may take the one-texel frame (`ComputeMaterialExpands`).
+- `computation/texturepixels_compute`: what a texture's pixels say about it: its average colour
+  (`ComputeAverageColor`, glows and sky caps), partial transparency (`ComputeTransparency`), its edges
+  smoothed (`ComputeSmoothEdges`), its bands of opaque rows (`ComputeTextureBands`) and the COLORMAP's
+  fullbright entries a default brightmap shows (`ComputeFullbrightEntries`).
 - `computation/texcoord_compute`: `FTexCoordInfo` and how a wall's texture coordinates scale on a
   material (`ComputeTexCoordInfo`).
-- `textureinfo.h/.cpp`: a texture's renderer data (`FTexture::gl_info`): brightmaps, glow and sky colours,
-  holes, transparency and edge smoothing, the GLDEFS `brightmap` and `detail` blocks, `gl_flush`,
-  `textureinfo` and `r_texture_usehires`.
+- `textureinfo.h/.cpp`: a texture's renderer data (`FTexture::gl_info`) over those helpers: brightmaps, glow
+  and sky colours, holes, transparency and edge smoothing, the GLDEFS `brightmap` and `detail` blocks,
+  `gl_flush`, `textureinfo` and `r_texture_usehires`.
 - `texturebitmap`, `translationpalette`, `skyboxtexture`, `hqresize`, `hirestex`, `hqnx`, `hqnx_asm`:
   moved from `gl/textures` and `gl/` unchanged but for their names (`FTextureBitmap` was
   `FGLBitmap`, `FTranslationPalette` was `GLTranslationPalette`).

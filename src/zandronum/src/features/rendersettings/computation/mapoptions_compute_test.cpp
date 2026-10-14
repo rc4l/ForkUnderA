@@ -48,3 +48,17 @@ TEST(MapOptions, ForcedDefaultsReplaceThePlayersLightMode)
 	const MapRenderOptions map = { 4, -1, -1, -1 };
 	EXPECT_EQ(4, ComputeMapRenderSettings(map, forced).lightmode);
 }
+
+// [rc4l] The special halves the two densities, sets the sky's fog as given, and refuses any other type.
+TEST(MapOptions, TheFogSpecialSetsOneParameterByType)
+{
+	int fog = 1, outside = 2, sky = 3;
+	EXPECT_TRUE(ComputeGlobalFogParameter(0, 64, fog, outside, sky));
+	EXPECT_EQ(32, fog);
+	EXPECT_TRUE(ComputeGlobalFogParameter(1, 100, fog, outside, sky));
+	EXPECT_EQ(50, outside);
+	EXPECT_TRUE(ComputeGlobalFogParameter(2, 7, fog, outside, sky));
+	EXPECT_EQ(7, sky);
+	EXPECT_FALSE(ComputeGlobalFogParameter(3, 9, fog, outside, sky));
+	EXPECT_EQ(32, fog); EXPECT_EQ(50, outside); EXPECT_EQ(7, sky);
+}

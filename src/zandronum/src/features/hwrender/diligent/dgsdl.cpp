@@ -73,7 +73,7 @@ bool Fua_RestoreEngineWindow()
 }
 
 // [rc4l] libvulkan.so.1 is the system's, which volk finds itself.
-bool Fua_PrepareVulkanLoader() { return true; }
+void Fua_PrepareVulkanLoader() {}
 
 }} // namespace zx::hwrender
 

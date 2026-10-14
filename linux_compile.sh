@@ -39,8 +39,8 @@ done
 
 # [rc4l] Deps mirror Dockerfile.linux-build so native and containerised builds match:
 # OpenSSL/Opus/zlib/bzip2/jpeg + Python3, SDL2 + OpenGL/GLU/GLEW + GME for the client,
-# and the OpenAL stack (libopenal + libsndfile + libmpg123) that replaces FMOD. The X11, XCB and
-# Wayland headers are the Vulkan backend's, whose surfaces Vulkan's headers declare against them.
+# and the OpenAL stack (libopenal + libsndfile + libmpg123) that replaces FMOD.
+# [rc4l] The X11, XCB and Wayland headers are the Vulkan backend's, since Vulkan's surface headers include them.
 DEPS=(
   build-essential cmake ninja-build git python3 pkg-config ca-certificates
   libssl-dev libopus-dev zlib1g-dev libbz2-dev libjpeg-dev

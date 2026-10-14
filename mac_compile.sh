@@ -367,11 +367,7 @@ _bundle_deps() {
     done < <(otool -L "$macho" | tail -n +2 | awk '{print $1}')
 }
 
-# [rc4l] The Vulkan backend's loader and MoltenVK, which nothing links: volk dlopens the loader by
-# bare name and the loader finds MoltenVK through its driver file, which the loader looks for in the
-# bundle's Resources/vulkan/icd.d. The engine also loads the loader by its path and points
-# VK_DRIVER_FILES at the driver file (features/hwrender/diligent/dgcocoa.mm), and an rpath at the
-# executable's directory is what a bare-name dlopen searches. Without them a launch falls back to GL.
+# [rc4l] The Vulkan loader and MoltenVK beside the executable, MoltenVK's driver file where the loader looks in a bundle, and an rpath for volk's dlopen by bare name, without which a launch falls back to GL.
 bundle_vulkan() {
     local macos="$1" resources="$2" loader mvk
     loader="$(brew --prefix vulkan-loader 2>/dev/null)/lib/libvulkan.1.dylib"

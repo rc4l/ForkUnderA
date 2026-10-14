@@ -148,11 +148,7 @@ bool ProbeVulkan(FString &report)
 
 	Diligent::SetDebugMessageCallback(DiligentDebugMessage);
 
-	if (!Fua_PrepareVulkanLoader())
-	{
-		report = "the Vulkan loader this build carries was not found";
-		return false;
-	}
+	Fua_PrepareVulkanLoader();
 	auto *factory = Diligent::GetEngineFactoryVk();
 	if (factory == nullptr)
 	{

@@ -51,9 +51,7 @@
 #endif
 // [rc4l] video-scale: faithful port of upstream's r_videoscale math. See features/video-scale.
 #include "features/video-scale/computation/videoscale_compute.h"
-#include "features/frame/framedriver.h"   // [rc4l] the engine's renderer over GL and the backend
-#include "features/hwrender/backendonly.h"   // [rc4l] -vulkan
-#include <vector>
+#include "features/hwrender/backendonly.h"   // [rc4l] CreateLaunchRenderer
 #include "r_renderer.h"
 // [rc4l] Software renderer removed (GL-only build); NO_GL server uses the null renderer.
 #ifdef NO_GL
@@ -153,12 +151,7 @@ void I_CreateRenderer()
 	if (Renderer == NULL)
 	{
 #ifndef NO_GL
-		// [rc4l] GL and the backend under features/frame's driver, which draws each when it is wanted; a launch without GL (-vulkan) has the backend alone.
-		std::vector<zx::frame::DrivenRenderer> renderers;
-		if (zx::hwrender::BackendOnly()) zx::hwrender::BeginBackendOnly();
-		else renderers.push_back({ gl_CreateInterface(), zx::frame::kRendererGL });
-		renderers.push_back({ zx::hwrender::CreateBackendRenderer(), zx::frame::kRendererBackend });
-		Renderer = zx::frame::CreateFrameDriver(renderers);
+		Renderer = zx::hwrender::CreateLaunchRenderer(gl_CreateInterface);
 #else
 		// [rc4l] Dedicated server (no OpenGL): use the trivial null renderer.
 		Renderer = new FNullRenderer;

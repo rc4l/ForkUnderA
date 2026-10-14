@@ -14,7 +14,8 @@ A loaded level readied for either renderer, moved from GL's `gl/data/gl_setup.cp
 - each sector's vertices, the stacked portals (`gl_InitPortals`) and MAPINFO's `gl_renderer` options
   (`InitGLRMapinfoData`, `features/rendersettings/mapoptions.cpp`).
 
-Once per game start it also sets the `SetGlobalFogParameter` special and applies the IWAD's
+Once per game start it also sets the `SetGlobalFogParameter` special (`ComputeGlobalFogParameter` in
+`features/rendersettings/computation/mapoptions_compute`) and applies the IWAD's
 `sprofs` sprite offsets (`AdjustSpriteOffsets`). `CleanLevel` frees what it built, the portals and the
 level's light actors. `listmapsections` and `dumpgeometry` print what it made.
 

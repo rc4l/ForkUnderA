@@ -457,3 +457,14 @@ TEST(WallGeom, SkyFloorsLeaveTheUpperUnclamped)
 	ComputeUpperSpan(h, h, a, b);
 	EXPECT_FLOAT_EQ(128.f, a.bottom);   // ...unless both floors are sky
 }
+
+// [rc4l] Where the back ceiling rises past the front's, a middle with an upper reaches the back's and the front plane clips the rest.
+TEST(WallGeom, AMiddleUnderCrossingCeilingsTakesTheBacks)
+{
+	const WallHeights h = TwoSided(288.f, 416.f, 288.f, 448.f);
+	WallPart p0, p1;
+	ComputeMiddleClip(h, h, Hanging(480.f, 288.f), p0, p1);
+	EXPECT_FLOAT_EQ(448.f, p0.top);
+	EXPECT_FLOAT_EQ(448.f, p1.top);
+	EXPECT_FLOAT_EQ(288.f, p0.bottom);
+}

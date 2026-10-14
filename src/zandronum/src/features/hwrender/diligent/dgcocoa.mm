@@ -6,35 +6,17 @@
 #ifdef FUA_DILIGENT
 
 #import <Cocoa/Cocoa.h>
-#import <QuartzCore/CAMetalLayer.h>
 
 #include <dlfcn.h>
 #include <stdlib.h>
 #include <string.h>
 
+#import "posix/cocoa/metalview.h"   // [rc4l] CocoaMetalView, which the engine's own window uses too
 #include "features/hwrender/diligent/dgplatform.h"
 #include "features/hwrender/backendonly.h"   // [rc4l] BackendOnly
 
 // [rc4l] The engine window's content view (posix/cocoa/i_video.mm), nil before there is one.
 void *I_EngineContentView();
-
-// [rc4l] A window of the backend's own beside GL's, backed by a CAMetalLayer.
-@interface FuaBackendMetalView : NSView
-@end
-
-@implementation FuaBackendMetalView
-
-- (CALayer*)makeBackingLayer
-{
-	return [CAMetalLayer layer];
-}
-
-- (BOOL)wantsUpdateLayer
-{
-	return YES;
-}
-
-@end
 
 namespace zx { namespace hwrender {
 
@@ -42,7 +24,7 @@ void *Fua_CreateBackendWindow(const char *title, int w, int h)
 {
 	// [rc4l] A launch without GL gave the engine's window a Metal-layered view, which the swapchain takes over whole.
 	if (BackendOnly() && I_EngineContentView() != NULL) return I_EngineContentView();
-	// [rc4l] Beside GL a window of its own, which never becomes key, so the keyboard stays with the game's.
+	// [rc4l] Beside GL a window of its own, since nothing here nests one view's swapchain inside GL's.
 	const NSRect rect = NSMakeRect(0, 0, w, h);
 	NSWindow *window = [[NSWindow alloc] initWithContentRect:rect
 		styleMask:(NSWindowStyleMaskTitled | NSWindowStyleMaskResizable | NSWindowStyleMaskMiniaturizable)
@@ -50,7 +32,7 @@ void *Fua_CreateBackendWindow(const char *title, int w, int h)
 		defer:NO];
 	if (window == nil) return NULL;
 	[window setReleasedWhenClosed:NO];
-	FuaBackendMetalView *view = [[FuaBackendMetalView alloc] initWithFrame:rect];
+	CocoaMetalView *view = [[CocoaMetalView alloc] initWithFrame:rect];
 	[view setWantsLayer:YES];
 	[window setContentView:view];
 	[view release];
@@ -89,7 +71,7 @@ bool Fua_RestoreEngineWindow()
 	return true;
 }
 
-bool Fua_PrepareVulkanLoader()
+void Fua_PrepareVulkanLoader()
 {
 	// [rc4l] The .app carries the Vulkan loader and MoltenVK beside the executable and MoltenVK's driver file in its resources (mac_compile.sh); a Vulkan SDK on the machine is used when there is none.
 	NSBundle *bundle = [NSBundle mainBundle];
@@ -100,7 +82,6 @@ bool Fua_PrepareVulkanLoader()
 	// [rc4l] Loaded by its path first, so volk's later dlopen by bare name finds it already in the process.
 	NSString *loader = [[[bundle executablePath] stringByDeletingLastPathComponent] stringByAppendingPathComponent:@"libvulkan.1.dylib"];
 	if ([files fileExistsAtPath:loader]) dlopen([loader fileSystemRepresentation], RTLD_NOW | RTLD_GLOBAL);
-	return true;
 }
 
 }} // namespace zx::hwrender

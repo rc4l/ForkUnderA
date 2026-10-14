@@ -10,7 +10,7 @@
 
 #include "features/frame/computation/frameroute_compute.h"   // [rc4l] RendererKind
 
-class FRenderer;
+struct FRenderer;   // [rc4l] a struct, as r_renderer.h defines it, or MSVC links a different name
 
 namespace zx { namespace frame {
 

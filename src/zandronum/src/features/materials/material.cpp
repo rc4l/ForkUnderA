@@ -255,31 +255,27 @@ FMaterial::FMaterial(FTexture * tx, bool expanded)
 	mShaderIndex = 0;
 	tex = tx;
 
-	if (tx->bWarped)
+	switch (zx::materials::ComputeMaterialDraw(tx->bWarped, !!tx->bHasCanvas, tx->gl_info.shaderindex, kFirstUserShader))
 	{
+	case zx::materials::kDrawWarp:
 		mShaderIndex = tx->bWarped;
 		tx->gl_info.shaderspeed = static_cast<FWarpTexture*>(tx)->GetSpeed();
-	}
-	else if (tx->bHasCanvas)
-	{
-	}
-	else
-	{
-		if (tx->gl_info.shaderindex >= kFirstUserShader)
+		break;
+	case zx::materials::kDrawCanvas:
+		break;
+	case zx::materials::kDrawUserShader:
+		mShaderIndex = tx->gl_info.shaderindex;
+		break;
+	case zx::materials::kDrawPlain:
+		tx->CreateDefaultBrightmap();
+		if (tx->gl_info.Brightmap != NULL)
 		{
-			mShaderIndex = tx->gl_info.shaderindex;
+			ValidateSysTexture(tx->gl_info.Brightmap, expanded);
+			FTextureLayer layer = {tx->gl_info.Brightmap, false};
+			mTextureLayers.Push(layer);
+			mShaderIndex = 3;
 		}
-		else
-		{
-			tx->CreateDefaultBrightmap();
-			if (tx->gl_info.Brightmap != NULL)
-			{
-				ValidateSysTexture(tx->gl_info.Brightmap, expanded);
-				FTextureLayer layer = {tx->gl_info.Brightmap, false};
-				mTextureLayers.Push(layer);
-				mShaderIndex = 3;
-			}
-		}
+		break;
 	}
 	mBaseLayer = ValidateSysTexture(tx, expanded);
 
@@ -347,12 +343,7 @@ bool FMaterial::TrimBorders(int *rect)
 	return trimmed;
 }
 
-//===========================================================================
-//
-// The pixels of an extra layer, an animated one through its animation
-//
-//===========================================================================
-
+// [rc4l] The pixels of an extra layer, an animated one through its animation.
 FTexturePixels *FMaterial::GetLayerPixels(int layer) const
 {
 	const FTextureLayer &l = mTextureLayers[layer - 1];
@@ -398,12 +389,7 @@ int FMaterial::GetAreas(FloatRect **pAreas) const
 	}
 }
 
-//===========================================================================
-//
-// Whether the texture has partly see-through texels; the first ask decodes it
-//
-//===========================================================================
-
+// [rc4l] Whether the texture has partly see-through texels, which the first ask decodes.
 bool FMaterial::GetTransparent() const
 {
 	if (mBaseLayer->bIsTransparent == -1)
@@ -429,38 +415,30 @@ bool FMaterial::GetTransparent() const
 //
 //==========================================================================
 
+FMaterial *FMaterial::Existing(FTexture *tex, bool expand)
+{
+	return tex->gl_info.Material[expand && !tex->gl_info.bNoExpand];
+}
+
 FMaterial * FMaterial::ValidateTexture(FTexture * tex, bool expand)
 {
-again:
-	if (tex	&& tex->UseType!=FTexture::TEX_Null)
+	if (tex == NULL || tex->UseType == FTexture::TEX_Null) return NULL;
+	FMaterial *mat = Existing(tex, expand);
+	if (mat != NULL) return mat;
+	// [rc4l] A texture the one-texel frame cannot apply to gives it up for good, as the first ask for it finds.
+	if (expand && !tex->gl_info.bNoExpand)
 	{
-		if (tex->gl_info.bNoExpand) expand = false;
-
-		FMaterial *gltex = tex->gl_info.Material[expand];
-		if (gltex == NULL)
+		FTexture *bright = tex->gl_info.Brightmap;
+		const bool sizeDiffers = bright != NULL && (tex->GetWidth() != bright->GetWidth() || tex->GetHeight() != bright->GetHeight());
+		const zx::materials::MaterialDraw draw = zx::materials::ComputeMaterialDraw(tex->bWarped, !!tex->bHasCanvas, tex->gl_info.shaderindex, kFirstUserShader);
+		if (!zx::materials::ComputeMaterialExpands(draw, sizeDiffers))
 		{
-			if (expand)
-			{
-				if (tex->bWarped || tex->bHasCanvas || tex->gl_info.shaderindex >= kFirstUserShader)
-				{
-					tex->gl_info.bNoExpand = true;
-					goto again;
-				}
-				if (tex->gl_info.Brightmap != NULL &&
-					(tex->GetWidth() != tex->gl_info.Brightmap->GetWidth() ||
-					tex->GetHeight() != tex->gl_info.Brightmap->GetHeight())
-					)
-				{
-					// do not expand if the brightmap's size differs.
-					tex->gl_info.bNoExpand = true;
-					goto again;
-				}
-			}
-			gltex = new FMaterial(tex, expand);
+			tex->gl_info.bNoExpand = true;
+			mat = Existing(tex, expand);
+			if (mat != NULL) return mat;
 		}
-		return gltex;
 	}
-	return NULL;
+	return new FMaterial(tex, expand && !tex->gl_info.bNoExpand);
 }
 
 unsigned char *FMaterial::TextureBuffer(FTexture *tex, int &w, int &h)

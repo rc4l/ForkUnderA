@@ -32,7 +32,7 @@ void CollectActor(AActor *thing);
 // where the 3D projection is still current and the depth buffer is writable again.
 void Draw();
 
-// --- a renderer that collects its own frame (the Vulkan backend) ------------
+// [rc4l] What a renderer that collects its own frame (the Vulkan backend) reads.
 
 // [rc4l] One colour's edges as world-space line pairs, and the colour as 0xRRGGBB.
 struct LineBatch

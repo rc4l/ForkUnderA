@@ -9,7 +9,7 @@
 // [rc4l] Diligent-free like hud2d.h, since the engine's video code includes it and every Diligent header drags in a windows.h that fights the engine's own.
 
 class DFrameBuffer;
-class FRenderer;
+struct FRenderer;   // [rc4l] a struct, as r_renderer.h defines it, or MSVC links a different name
 
 #include "features/frame/computation/frameroute_compute.h"
 
@@ -26,6 +26,9 @@ void BeginBackendOnly();
 
 // [rc4l] The renderer the backend draws the world with, in a launch without GL or beside it.
 FRenderer *CreateBackendRenderer();
+
+// [rc4l] The renderer a launch draws with, which every platform's I_CreateRenderer asks for: GL's (from `createGL`) and the backend's under features/frame's driver, or the backend's alone in a launch without GL.
+FRenderer *CreateLaunchRenderer(FRenderer *(*createGL)());
 
 // [rc4l] Which renderer draws this frame and whose picture shows, from the launch's renderers and the backend's state and cvars.
 zx::frame::FrameRoute FrameRouteNow(bool hasGL, bool hasBackend);

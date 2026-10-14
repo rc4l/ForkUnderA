@@ -22,12 +22,23 @@ bool MapOrPlayer(int map, bool player)
 ResolvedRenderSettings ComputeMapRenderSettings(const MapRenderOptions &map, const PlayerRenderSettings &player)
 {
 	ResolvedRenderSettings r;
-	// [rc4l] OVERRIDE_LIGHTMODE_IF_NECESSARY: forced defaults read the setting's default, its shader-model test always false since GL 3.
+	// [rc4l] Forced defaults read the setting's default, as GL's old override macro did with its shader-model test always false since GL 3.
 	r.lightmode = ComputeLightmodeValid(map.lightmode) ? map.lightmode : (player.forced ? player.lightmodeDefault : player.lightmode);
 	r.brightfog = MapOrPlayer(map.brightfog, player.brightfog);
 	r.nocoloredspritelighting = MapOrPlayer(map.nocoloredspritelighting, player.nocoloredspritelighting);
 	r.notexturefill = MapOrPlayer(map.notexturefill, player.notexturefill);
 	return r;
+}
+
+bool ComputeGlobalFogParameter(int type, int value, int &fogDensity, int &outsideFogDensity, int &skyFog)
+{
+	switch (type)
+	{
+	case 0: fogDensity = value >> 1; return true;
+	case 1: outsideFogDensity = value >> 1; return true;
+	case 2: skyFog = value; return true;
+	default: return false;
+	}
 }
 
 }} // namespace zx::rendersettings

@@ -265,3 +265,14 @@ TEST(DecalProject, FlippingMirrorsThePictureWithoutMovingIt)
 	EXPECT_NEAR(up[2], 1.f, 1e-6f);
 }
 
+// [rc4l] A missile travelling out of the surface has no skew to keep, so its mark faces the surface head on.
+TEST(DecalProject, AMissileLeavingTheSurfaceFacesItHeadOn)
+{
+	const float vel[3] = { 0.f, 0.f, 1.f };
+	const float floorN[3] = { 0.f, 0.f, 1.f };
+	float right[3], up[3], axis[3];
+	EXPECT_TRUE(BuildDecalBasis(vel, floorN, 0.5f, right, up, axis));
+	EXPECT_NEAR(axis[0], 0.f, 1e-5f);
+	EXPECT_NEAR(axis[1], 0.f, 1e-5f);
+	EXPECT_NEAR(axis[2], -1.f, 1e-5f);
+}

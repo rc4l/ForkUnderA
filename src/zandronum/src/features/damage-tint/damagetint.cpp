@@ -115,9 +115,8 @@ CVAR( Int, cl_damagetint_weapon_coverage, 50, CVAR_ARCHIVE )
 CVAR( Int, cl_damagetint_face, 65, CVAR_ARCHIVE )
 CVAR( Int, cl_damagetint_face_coverage, 50, CVAR_ARCHIVE )
 
-// Defined in gl/textures/gl_texture.cpp. NOTE: it reads GL-order RGBA; FBitmap stores BGRA, so
-// r/b come back swapped -- callers swap them back (learned the hard way in the sky-tint trial).
-PalEntry averageColor( const DWORD *data, int size, fixed_t maxout_factor );
+// [rc4l] averageColor reads RGBA and FBitmap stores BGRA, so its red and blue come back swapped and the callers swap them back.
+#include "features/materials/textureinfo.h"
 
 namespace
 {

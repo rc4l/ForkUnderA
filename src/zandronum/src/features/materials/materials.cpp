@@ -151,10 +151,8 @@ bool MaterialIfMade(const void *texture, bool expand, MaterialRef &out)
 {
 	FTexture *tex = (FTexture *)texture;
 	out = NULL;
-	// [rc4l] ValidateTexture's own tests, short of making the material it finds missing.
 	if (tex == NULL || tex->UseType == FTexture::TEX_Null) return true;
-	if (tex->gl_info.bNoExpand) expand = false;
-	out = tex->gl_info.Material[expand];
+	out = FMaterial::Existing(tex, expand);
 	return out != NULL;
 }
 

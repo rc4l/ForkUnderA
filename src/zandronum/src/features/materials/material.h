@@ -46,12 +46,7 @@
 #include "features/materials/computation/texcoord_compute.h"   // [rc4l] FTexCoordInfo
 #include "features/materials/computation/materiallayout_compute.h"
 
-//===========================================================================
-//
-// A texture's pixels on the CPU: composed, translated, hires-replaced and
-// upsampled. The renderer's copy of them hangs off it.
-//
-//===========================================================================
+// [rc4l] A texture's pixels on the CPU, composed, translated, hires-replaced and upsampled, with the renderer's copy of them hanging off it.
 
 class FTexturePixels
 {
@@ -77,12 +72,7 @@ public:
 	void Clean(bool all);
 };
 
-//===========================================================================
-//
-// A texture as it is drawn: its layers, its size and offsets, and where a
-// sprite of it sits.
-//
-//===========================================================================
+// [rc4l] A texture as it is drawn: its layers, its size and offsets, and where a sprite of it sits.
 
 class FMaterial
 {
@@ -223,6 +213,8 @@ public:
 
 	static void FlushAll();
 	static FMaterial *ValidateTexture(FTexture * tex, bool expand);
+	// [rc4l] The texture's material if it is made, without making it; the texture must be one that has a material.
+	static FMaterial *Existing(FTexture *tex, bool expand);
 	static FMaterial *ValidateTexture(FTextureID no, bool expand, bool trans);
 	// [rc4l] A texture's base layer as true-colour pixels the caller deletes, read on the CPU so it needs no GL; NULL when it has none.
 	static unsigned char *TextureBuffer(FTexture *tex, int &w, int &h);

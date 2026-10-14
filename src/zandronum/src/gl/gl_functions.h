@@ -18,16 +18,7 @@ bool IsLightmodeValid();
 	const int gl_fogmode_CVAR_value = r_fogmode; \
 	const int r_fogmode = ( ( zadmflags & ZADF_FORCE_VIDEO_DEFAULTS ) && ( gl_fogmode_CVAR_value == 0 ) ) ? 1 : gl_fogmode_CVAR_value;
 
-// [EP] Override r_lightmode in the same way as r_fogmode,
-// except that the MAPINFO lightmode option must be honored if present.
-#define OVERRIDE_LIGHTMODE_IF_NECESSARY \
-	const int gl_lightmode_CVAR_value = r_lightmode; \
-	const int gl_lightmode_CVAR_defaultvalue = ( ( IsLightmodeValid() == false ) || \
-		( ( glset.map_lightmode == 2 || glset.map_lightmode == 8 ) && gl.shadermodel < 4 )) ? r_lightmode.GetGenericRepDefault( CVAR_Int ).Int : glset.map_lightmode; \
-	const int r_lightmode = ( zadmflags & ZADF_FORCE_VIDEO_DEFAULTS ) ? gl_lightmode_CVAR_defaultvalue : gl_lightmode_CVAR_value;
-
-// [EP] Override r_light_ambient in the same way as r_lightmode
-// except there's no equivalent MAPINFO option.
+// [EP] Override r_light_ambient in the same way as r_fogmode.
 #define TEMP_CVAR( cvar ) cvar ## _CVAR_value
 #define TEMP_DEFAULT_CVAR( cvar ) cvar ## _CVAR_defaultvalue
 
@@ -36,6 +27,5 @@ bool IsLightmodeValid();
 	const int TEMP_DEFAULT_CVAR( cvar ) = cvar.GetGenericRepDefault( CVAR_Int ).Int; \
 	const int cvar = ( zadmflags & ZADF_FORCE_VIDEO_DEFAULTS ) ? TEMP_DEFAULT_CVAR( cvar ) : TEMP_CVAR( cvar )
 
-void gl_LinkLights();
 
 #endif

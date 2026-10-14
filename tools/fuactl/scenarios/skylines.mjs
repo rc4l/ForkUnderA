@@ -14,7 +14,7 @@ const MAPINFO = `map MAP01 "Skies"
 }
 `;
 
-// [rc4l] Room A takes the level's sky; B north of it is tagged for the transfer line on A's south wall, whose upper is SKY3; C east of it is a Sky2 sector. Each has walls of its own, since a sky shows above a sector's own walls.
+// [rc4l] Room A takes the level's sky, B north of it the transfer line on A's south wall (upper SKY3) and C east of it a Sky2 sector, each with walls of its own since a sky shows above its sector's walls.
 export function buildSkyLinesWad() {
   const m = new UdmfMap();
   const sky = { heightfloor: 0, heightceiling: 192, texturefloor: "FLOOR4_8", textureceiling: "F_SKY1", lightlevel: 192 };

@@ -214,3 +214,13 @@ TEST(LightSideCompute, AZeroNormalMeansTheCPUAlreadyDidThisSurface)
 	const float light[3] = { 0.f, 100.f, 0.f };
 	EXPECT_FALSE(ComputeShaderLightReaches(none, 0.f, light));
 }
+
+// [rc4l] A plane with no normal at all faces nowhere and sits at zero, rather than dividing by its length.
+TEST(LightSideCompute, ADegeneratePlaneHasNoNormal)
+{
+	const SecPlaneF p = { 0.f, 0.f, 0.f, 5.f };
+	float n[3] = { 1.f, 1.f, 1.f }, d = 1.f;
+	ComputeMeshPlane(p, false, n, &d);
+	EXPECT_EQ(0.f, n[0]); EXPECT_EQ(0.f, n[1]); EXPECT_EQ(0.f, n[2]);
+	EXPECT_EQ(0.f, d);
+}

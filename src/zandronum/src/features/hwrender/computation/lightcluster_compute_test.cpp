@@ -448,3 +448,14 @@ TEST(LightCluster, NdcLandsInTheTileTheShaderReads)
 	ComputeTileForNdc(g, 1e30f, -1e30f, &tx, &ty);
 	EXPECT_EQ(g.tilesX - 1, tx); EXPECT_EQ(g.tilesY - 1, ty);
 }
+
+// [rc4l] A grid with no slices has one depth range, the whole of its near to far.
+TEST(LightCluster, NoSlicesCoverTheWholeRange)
+{
+	ClusterGrid g = Grid();
+	g.slices = 0;
+	float n = 0.f, f = 0.f;
+	ComputeSliceDepthRange(g, 0, &n, &f);
+	EXPECT_FLOAT_EQ(g.zNear, n);
+	EXPECT_FLOAT_EQ(g.zFar, f);
+}

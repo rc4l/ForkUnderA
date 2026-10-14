@@ -61,11 +61,7 @@ void gl_RecalcVertexHeights(vertex_t * v)
 	zx::levelmesh::RecalcVertexHeights(v);
 }
 
-//==========================================================================
-//
-// GL's own data for a level the shared preparation has readied
-//
-//==========================================================================
+// [rc4l] GL's own data for a level the shared preparation has readied.
 
 void gl_PreprocessLevel()
 {

@@ -36,6 +36,13 @@ bool ComputeTrimBorders(const unsigned char *rgba, int w, int h, int rect[4]);
 // [rc4l] The size a texture side is stored at on a device whose largest is `maxSize` (none when 0 or less).
 int ComputeStoredDimension(int value, int maxSize);
 
+// [rc4l] How a material draws, in FMaterial's order: a warp, a camera texture, a GLDEFS hardware shader, or plain, which a brightmap may light.
+enum MaterialDraw { kDrawWarp, kDrawCanvas, kDrawUserShader, kDrawPlain };
+MaterialDraw ComputeMaterialDraw(int warp, bool canvas, int shaderIndex, int firstUserShader);
+
+// [rc4l] Whether a sprite's material may take the one-texel frame: only a plain one, and not when its brightmap is another size.
+bool ComputeMaterialExpands(MaterialDraw draw, bool brightmapSizeDiffers);
+
 }} // namespace zx::materials
 
 #endif // ZX_MATERIALLAYOUT_COMPUTE_H

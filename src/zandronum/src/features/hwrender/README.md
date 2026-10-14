@@ -82,9 +82,8 @@ ones. A build without the backend (`FUA_DILIGENT` off, a dedicated server) takes
 | `features/sidebyside/sidebyside.cpp` | `FrameRouteNow` | whether GL presents, which is whenever it draws |
 | `features/visibility/viswalk.cpp` | `SetSkyFog` | the sky's fade layer, derived from the walk |
 | `v_video.cpp` | `BackendRateLive`, `RendererRateShown`, `ComputeRateText`, `ComputeRateBox`, `Set2DTarget` | `vid_fps` shows each window its own renderer's frame time, `fua_fps_scale` times larger |
-| `win32/hardware.cpp` | `BackendOnly`, `BeginBackendOnly`, `CreateBackendRenderer` | the renderer of a launch without GL |
+| `win32/hardware.cpp`, `posix/sdl/hardware.cpp`, `posix/cocoa/i_video.mm` `I_CreateRenderer` | `CreateLaunchRenderer` | GL and the backend under the frame driver, or the backend alone in a launch without GL |
 | `win32/win32gliface.cpp` | `BackendOnly`, `CreateBackendFrameBuffer` | no pixel format or context, and the backend's frame buffer |
-| `posix/sdl/hardware.cpp`, `posix/cocoa/i_video.mm` `I_CreateRenderer` | `BackendOnly`, `BeginBackendOnly`, `CreateBackendRenderer` | the renderer of a launch without GL |
 | `posix/sdl/sdlglvideo.cpp` | `CreateBackendFrameBuffer`, `ForgetBackendWindow`, `I_EngineWindow` | a window with no GL context, the backend's frame buffer, and its swapchain dropped before a mode change destroys the window |
 | `posix/sdl/i_input.cpp` | `I_EngineWindow` | the window mouse warps and grabs, which has no GL context to find it by |
 | `posix/cocoa/i_video.mm` | `CreateBackendFrameBuffer`, `I_EngineContentView` | a CAMetalLayer content view and no GL context, and the backend's frame buffer |

@@ -48,6 +48,7 @@
 
 #include "features/materials/textureinfo.h"
 #include "features/materials/material.h"
+#include "features/materials/computation/texturepixels_compute.h"
 
 //==========================================================================
 //
@@ -89,23 +90,14 @@ void gl_GenerateGlobalBrightmapFromColormap()
 
 	const int black = 0;
 	const int white = ColorMatcher.Pick(255,255,255);
-
+	bool lit[256];
+	zx::materials::ComputeFullbrightEntries(cmapdata, paldata, lit);
 
 	GlobalBrightmap.MakeIdentity();
-	memset(GlobalBrightmap.Remap, white, 256);
-	for(int i=0;i<256;i++) GlobalBrightmap.Palette[i]=PalEntry(255,255,255,255);
-	for(int j=0;j<32;j++)
+	for(int i=0;i<256;i++)
 	{
-		for(int i=0;i<256;i++)
-		{
-			// the palette comparison should be for ==0 but that gives false positives with Heretic
-			// and Hexen.
-			if (cmapdata[i+j*256]!=i || (paldata[3*i]<10 && paldata[3*i+1]<10 && paldata[3*i+2]<10))
-			{
-				GlobalBrightmap.Remap[i]=black;
-				GlobalBrightmap.Palette[i] = PalEntry(255, 0, 0, 0);
-			}
-		}
+		GlobalBrightmap.Remap[i] = lit[i] ? white : black;
+		GlobalBrightmap.Palette[i] = lit[i] ? PalEntry(255,255,255,255) : PalEntry(255,0,0,0);
 	}
 	for(int i=0;i<256;i++)
 	{
@@ -124,38 +116,8 @@ void gl_GenerateGlobalBrightmapFromColormap()
 //===========================================================================
 PalEntry averageColor(const DWORD *data, int size, fixed_t maxout_factor)
 {
-	int				i;
-	unsigned int	r, g, b;
-
-
-
-	// First clear them.
-	r = g = b = 0;
-	if (size==0) 
-	{
-		return PalEntry(255,255,255);
-	}
-	for(i = 0; i < size; i++)
-	{
-		r += BPART(data[i]);
-		g += GPART(data[i]);
-		b += RPART(data[i]);
-	}
-
-	r = r/size;
-	g = g/size;
-	b = b/size;
-
-	int maxv=MAX(MAX(r,g),b);
-
-	if(maxv && maxout_factor)
-	{
-		maxout_factor = FixedMul(maxout_factor, 255);
-		r = Scale(r, zx::raw(maxout_factor), maxv);
-		g = Scale(g, zx::raw(maxout_factor), maxv);
-		b = Scale(b, zx::raw(maxout_factor), maxv);
-	}
-	return PalEntry(255,r,g,b);
+	return PalEntry(zx::materials::ComputeAverageColor((const unsigned char *)data, size, maxout_factor != 0,
+		(int)zx::raw(FixedMul(maxout_factor, 255))));
 }
 
 
@@ -324,71 +286,21 @@ PalEntry FTexture::GetSkyCapColor(bool bottom)
 
 bool FTexture::FindHoles(const unsigned char * buffer, int w, int h)
 {
-	const unsigned char * li;
-	int y,x;
-	int startdraw,lendraw;
-	int gaps[5][2];
-	int gapc=0;
-
-
 	// already done!
 	if (gl_info.areacount) return false;
 	if (UseType == TEX_Flat) return false;	// flats don't have transparent parts
 	gl_info.areacount=-1;	//whatever happens next, it shouldn't be done twice!
 
 	// large textures are excluded for performance reasons
-	if (h>512) return false;	
+	if (h>512) return false;
 
-	startdraw=-1;
-	lendraw=0;
-	for(y=0;y<h;y++)
-	{
-		li=buffer+w*y*4+3;
-
-		for(x=0;x<w;x++,li+=4)
-		{
-			if (*li!=0) break;
-		}
-
-		if (x!=w)
-		{
-			// non - transparent
-			if (startdraw==-1) 
-			{
-				startdraw=y;
-				// merge transparent gaps of less than 16 pixels into the last drawing block
-				if (gapc && y<=gaps[gapc-1][0]+gaps[gapc-1][1]+16)
-				{
-					gapc--;
-					startdraw=gaps[gapc][0];
-					lendraw=y-startdraw;
-				}
-				if (gapc==4) return false;	// too many splits - this isn't worth it
-			}
-			lendraw++;
-		}
-		else if (startdraw!=-1)
-		{
-			if (lendraw==1) lendraw=2;
-			gaps[gapc][0]=startdraw;
-			gaps[gapc][1]=lendraw;
-			gapc++;
-
-			startdraw=-1;
-			lendraw=0;
-		}
-	}
-	if (startdraw!=-1)
-	{
-		gaps[gapc][0]=startdraw;
-		gaps[gapc][1]=lendraw;
-		gapc++;
-	}
-	if (startdraw==0 && lendraw==h) return false;	// nothing saved so don't create a split list
+	int gaps[5][2];
+	const int gapc = zx::materials::ComputeTextureBands(buffer, w, h, gaps);
+	if (gapc == 0) return false;
 
 	FloatRect * rcs = new FloatRect[gapc];
 
-	for(x=0;x<gapc;x++)
+	for(int x=0;x<gapc;x++)
 	{
 		// gaps are stored as texture (u/v) coordinates
 		rcs[x].width=rcs[x].left=-1.0f;
@@ -409,29 +321,8 @@ bool FTexture::FindHoles(const unsigned char * buffer, int w, int h)
 
 void FTexture::CheckTrans(unsigned char * buffer, int size, int trans)
 {
-	if (gl_info.mIsTransparent == -1) 
-	{
-		gl_info.mIsTransparent = trans;
-		if (trans == -1)
-		{
-			DWORD * dwbuf = (DWORD*)buffer;
-			for(int i=0;i<size;i++)
-			{
-				DWORD alpha = dwbuf[i]>>24;
-
-				if (alpha != 0xff && alpha != 0)
-				{
-					gl_info.mIsTransparent = 1;
-					return;
-				}
-			}
-			// [rc4l] Latch the opaque outcome too (upstream texture.cpp does the same). Without this
-			// a fully-opaque or binary-alpha true-color image leaves the flag at -1 "unknown", so
-			// FMaterial::GetTransparent re-runs the ENTIRE image decode every frame for every
-			// visible sprite that uses it -- 3x whole-frame cost on PNG-heavy mods.
-			gl_info.mIsTransparent = 0;
-		}
-	}
+	// [rc4l] Latched either way, so a texture's transparency is decoded once rather than every frame its sprite is seen.
+	if (gl_info.mIsTransparent == -1) gl_info.mIsTransparent = zx::materials::ComputeTransparency(buffer, size, trans);
 }
 
 
@@ -441,60 +332,9 @@ void FTexture::CheckTrans(unsigned char * buffer, int size, int trans)
 //
 //===========================================================================
 
-#ifdef WORDS_BIGENDIAN
-#define MSB 0
-#define SOME_MASK 0xffffff00
-#else
-#define MSB 3
-#define SOME_MASK 0x00ffffff
-#endif
-
-#define CHKPIX(ofs) (l1[(ofs)*4+MSB]==255 ? (( ((DWORD*)l1)[0] = ((DWORD*)l1)[ofs]&SOME_MASK), trans=true ) : false)
-
 bool FTexture::SmoothEdges(unsigned char * buffer,int w, int h)
 {
-	int x,y;
-	bool trans=buffer[MSB]==0; // If I set this to false here the code won't detect textures 
-	// that only contain transparent pixels.
-	unsigned char * l1;
-
-	if (h<=1 || w<=1) return false;  // makes (a) no sense and (b) doesn't work with this code!
-
-	l1=buffer;
-
-
-	if (l1[MSB]==0 && !CHKPIX(1)) CHKPIX(w);
-	l1+=4;
-	for(x=1;x<w-1;x++, l1+=4)
-	{
-		if (l1[MSB]==0 &&  !CHKPIX(-1) && !CHKPIX(1)) CHKPIX(w);
-	}
-	if (l1[MSB]==0 && !CHKPIX(-1)) CHKPIX(w);
-	l1+=4;
-
-	for(y=1;y<h-1;y++)
-	{
-		if (l1[MSB]==0 && !CHKPIX(-w) && !CHKPIX(1)) CHKPIX(w);
-		l1+=4;
-		for(x=1;x<w-1;x++, l1+=4)
-		{
-			// [rc4l] uzdoom@e29fce695: the diagonal neighbours count too, or an upscaled texture keeps
-			// a transparent pixel whose only opaque neighbours are diagonal.
-			if (l1[MSB]==0 &&  !CHKPIX(-w) && !CHKPIX(-1) && !CHKPIX(1) && !CHKPIX(-w-1) && !CHKPIX(-w+1) && !CHKPIX(w-1) && !CHKPIX(w+1)) CHKPIX(w);
-		}
-		if (l1[MSB]==0 && !CHKPIX(-w) && !CHKPIX(-1)) CHKPIX(w);
-		l1+=4;
-	}
-
-	if (l1[MSB]==0 && !CHKPIX(-w)) CHKPIX(1);
-	l1+=4;
-	for(x=1;x<w-1;x++, l1+=4)
-	{
-		if (l1[MSB]==0 &&  !CHKPIX(-w) && !CHKPIX(-1)) CHKPIX(1);
-	}
-	if (l1[MSB]==0 && !CHKPIX(-w)) CHKPIX(-1);
-
-	return trans;
+	return zx::materials::ComputeSmoothEdges(buffer, w, h);
 }
 
 //===========================================================================

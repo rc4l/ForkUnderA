@@ -10,6 +10,8 @@
 #include "features/draw2d/draw2d.h"
 #include "features/display/display.h"
 #include "features/frame/playerview.h"   // [rc4l] ForgetCamera
+#include "features/frame/framedriver.h"   // [rc4l] CreateFrameDriver
+#include <vector>
 #include "features/hwrender/computation/imageresize_compute.h"
 #include "features/hwrender/computation/backendchoice_compute.h"
 #include "features/video-scale/videoscale.h"
@@ -56,6 +58,15 @@ void RestoreSavedSwitches()
 	fua_dg_embed = g_savedEmbed;
 }
 #endif
+}
+
+FRenderer *CreateLaunchRenderer(FRenderer *(*createGL)())
+{
+	std::vector<zx::frame::DrivenRenderer> renderers;
+	if (BackendOnly()) BeginBackendOnly();
+	else renderers.push_back({ createGL(), zx::frame::kRendererGL });
+	renderers.push_back({ CreateBackendRenderer(), zx::frame::kRendererBackend });
+	return zx::frame::CreateFrameDriver(renderers);
 }
 
 bool BackendOnly()

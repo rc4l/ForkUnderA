@@ -146,3 +146,22 @@ TEST(WallBands, TheOutputIsBounded)
 	const int n = ComputeWallBands(w.top, w.bottom, bands, 9, out, 3);
 	EXPECT_LE(n, 3);
 }
+
+// [rc4l] A wall with no light list at all is one piece in its own light.
+TEST(WallBands, NoLightsIsOnePieceInItsOwnLight)
+{
+	Wall w(0.f, 128.f);
+	WallBand out[8];
+	const float none[1][2] = { { 0.f, 0.f } };
+	ASSERT_EQ(1, ComputeWallBands(w.top, w.bottom, none, 0, out, 8));
+	EXPECT_FLOAT_EQ(128.f, out[0].ztop[0]);
+	EXPECT_EQ(0, out[0].lightIndex);
+}
+
+// [rc4l] Bands that all end above the wall cross none of it.
+TEST(WallBands, BandsAllAboveTheWallCrossNothing)
+{
+	Wall w(0.f, 128.f);
+	const float above[2][2] = { { 256.f, 256.f }, { 192.f, 192.f } };
+	EXPECT_FALSE(WallCrossesABand(w.top, w.bottom, above, 3));
+}

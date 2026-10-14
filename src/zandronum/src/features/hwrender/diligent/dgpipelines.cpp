@@ -762,8 +762,7 @@ bool EnsureScenePipeline(FString &err)
 		{ Diligent::SHADER_TYPE_PIXEL, "uMaterials", samp },
 	};
 
-	// [rc4l] Every world pipeline over the same vertex layout and resources, as ComputeWorldPipelineDesc describes it.
-	// Blended ones test depth and never write it, or a nearer translucent sprite would hide the one behind it.
+	// [rc4l] Every world pipeline over one vertex layout and set of resources, as ComputeWorldPipelineDesc describes it, the blended ones never writing depth.
 	Diligent::IShader *stages[] = { psOpaque, psMasked, psTrans, psRedAlpha, psGBuffer };
 	for (int pass = 0; pass < kWorldPipelines; pass++)
 	{

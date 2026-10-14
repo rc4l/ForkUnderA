@@ -4,6 +4,7 @@
 // [rc4l] The sky: GL's dome or skybox, the skybox portal rendered from its viewpoint, the fade, and the sky surfaces and occluders cut from the world.
 
 #include "features/hwrender/diligent/dgscene_internal.h"
+#include <vector>
 #include "features/viewsetup/viewsetup.h"   // [rc4l] the sky's scroll this frame
 #include "features/hwrender/computation/skylook_compute.h"   // [rc4l] which sky a sector shows, and its dome's constants
 #include "g_level.h"   // [rc4l] level.flags, the double and swapped skies
@@ -896,6 +897,13 @@ static const char *kSkyPortalPS =
 bool CreatePicturePSO(const char *name, const char *ps, Diligent::FILTER_TYPE filter, Diligent::TEXTURE_FORMAT dsvFormat,
 	Diligent::RefCntAutoPtr<Diligent::IPipelineState> &pso)
 {
+	static const char *const kPicture[] = { "uTex" };
+	return CreatePicturesPSO(name, ps, filter, dsvFormat, kPicture, 1, pso);
+}
+
+bool CreatePicturesPSO(const char *name, const char *ps, Diligent::FILTER_TYPE filter, Diligent::TEXTURE_FORMAT dsvFormat,
+	const char *const *pictures, int count, Diligent::RefCntAutoPtr<Diligent::IPipelineState> &pso)
+{
 	auto *dev = GetDevice();
 	auto *swap = GetSwapChain();
 	if (!dev || !swap) return false;
@@ -909,10 +917,13 @@ bool CreatePicturePSO(const char *name, const char *ps, Diligent::FILTER_TYPE fi
 	samp.MinFilter = samp.MagFilter = samp.MipFilter = filter;
 	samp.AddressU = Diligent::TEXTURE_ADDRESS_CLAMP;
 	samp.AddressV = Diligent::TEXTURE_ADDRESS_CLAMP;
-	Diligent::ImmutableSamplerDesc samplers[] = { { Diligent::SHADER_TYPE_PIXEL, "uTex", samp } };
-	Diligent::ShaderResourceVariableDesc vars[] = {
-		{ Diligent::SHADER_TYPE_PIXEL, "uTex", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
-	};
+	std::vector<Diligent::ImmutableSamplerDesc> samplers;
+	std::vector<Diligent::ShaderResourceVariableDesc> vars;
+	for (int i = 0; i < count; i++)
+	{
+		samplers.push_back(Diligent::ImmutableSamplerDesc(Diligent::SHADER_TYPE_PIXEL, pictures[i], samp));
+		vars.push_back(Diligent::ShaderResourceVariableDesc(Diligent::SHADER_TYPE_PIXEL, pictures[i], Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE));
+	}
 	Diligent::GraphicsPipelineStateCreateInfo pci;
 	pci.PSODesc.Name = psoName.GetChars();
 	pci.PSODesc.PipelineType = Diligent::PIPELINE_TYPE_GRAPHICS;
@@ -923,10 +934,10 @@ bool CreatePicturePSO(const char *name, const char *ps, Diligent::FILTER_TYPE fi
 	pci.GraphicsPipeline.RasterizerDesc.CullMode = Diligent::CULL_MODE_NONE;
 	pci.GraphicsPipeline.DepthStencilDesc.DepthEnable = false;
 	pci.GraphicsPipeline.DepthStencilDesc.DepthWriteEnable = false;
-	pci.PSODesc.ResourceLayout.Variables = vars;
-	pci.PSODesc.ResourceLayout.NumVariables = 1;
-	pci.PSODesc.ResourceLayout.ImmutableSamplers = samplers;
-	pci.PSODesc.ResourceLayout.NumImmutableSamplers = 1;
+	pci.PSODesc.ResourceLayout.Variables = vars.data();
+	pci.PSODesc.ResourceLayout.NumVariables = (Diligent::Uint32)vars.size();
+	pci.PSODesc.ResourceLayout.ImmutableSamplers = samplers.data();
+	pci.PSODesc.ResourceLayout.NumImmutableSamplers = (Diligent::Uint32)samplers.size();
 	pci.pVS = vs;
 	pci.pPS = fs;
 	pso.Release();

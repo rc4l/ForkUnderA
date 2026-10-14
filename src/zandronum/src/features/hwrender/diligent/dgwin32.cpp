@@ -204,7 +204,7 @@ bool Fua_BackendWindowHandles(void *window, BackendWindowHandles &out)
 }
 
 // [rc4l] The Vulkan loader is a system DLL here, found without help.
-bool Fua_PrepareVulkanLoader() { return true; }
+void Fua_PrepareVulkanLoader() {}
 
 // [rc4l] Un-minimizes the engine's own window without taking focus, since GL reads nothing back from a minimized one; true if it was minimized.
 bool Fua_RestoreEngineWindow()

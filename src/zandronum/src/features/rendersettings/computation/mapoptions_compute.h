@@ -42,6 +42,9 @@ struct ResolvedRenderSettings
 // [rc4l] What the level draws with: the map's choice where it makes one, else the player's (the light mode's default while forced).
 ResolvedRenderSettings ComputeMapRenderSettings(const MapRenderOptions &map, const PlayerRenderSettings &player);
 
+// [rc4l] The SetGlobalFogParameter special: type 0 sets the fog density and 1 the outside fog's, both halved, and 2 the sky's fog; false for any other type.
+bool ComputeGlobalFogParameter(int type, int value, int &fogDensity, int &outsideFogDensity, int &skyFog);
+
 }} // namespace zx::rendersettings
 
 #endif // ZX_MAPOPTIONS_COMPUTE_H

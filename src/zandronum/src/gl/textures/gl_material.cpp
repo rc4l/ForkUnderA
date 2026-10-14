@@ -121,16 +121,11 @@ static const FHardwareTexture *BindPixels(FTexturePixels *pixels, int texunit, i
 	return NULL;
 }
 
-//===========================================================================
-//
-//	Binds a material to the renderer
-//
-//===========================================================================
+// [rc4l] Bind a material's layers to GL's texture units, uploading their pixels the first time.
 
 static FMaterial *last;
 static int lastclamp;
 static int lasttrans;
-static int maxBound = -1;
 
 
 void gl_BindMaterial(FMaterial *mat, int clampmode, int translation)
@@ -142,7 +137,6 @@ void gl_BindMaterial(FMaterial *mat, int clampmode, int translation)
 	lasttrans = translation;
 
 	FTexture *tex = mat->tex;
-	int maxbound = 0;
 	bool allowhires = tex->xScale == FRACUNIT && tex->yScale == FRACUNIT && clampmode <= CLAMP_XY && !mat->IsExpanded();
 
 	if (tex->bHasCanvas) clampmode = CLAMP_CAMTEX;
@@ -154,14 +148,7 @@ void gl_BindMaterial(FMaterial *mat, int clampmode, int translation)
 		for(int i=1;i<mat->GetLayers();i++)
 		{
 			BindPixels(mat->GetLayerPixels(i), i, clampmode, 0, NULL);
-			maxbound = i;
 		}
-	}
-	// unbind everything from the last texture that's still active
-	for(int i=maxbound+1; i<=maxBound;i++)
-	{
-		FHardwareTexture::Unbind(i);
-		maxBound = maxbound;
 	}
 }
 

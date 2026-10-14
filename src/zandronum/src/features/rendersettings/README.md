@@ -19,7 +19,8 @@ GL's headers include this module.
 - `mapoptions.cpp`: MAPINFO's `gl_renderer` options (fog densities, light mode, bright fog, coloured sprite
   lighting, texture fill, sky rotation, pixel ratio), read into `glset` at level start (`InitGLRMapinfoData`,
   from `levelprep`) and again on `gl_resetmap`, with `r_notexturefill` and `r_nocoloredspritelighting`.
-  `computation/mapoptions_compute` decides between the map's choice and the player's setting.
+  `computation/mapoptions_compute` decides between the map's choice and the player's setting, and what the
+  `SetGlobalFogParameter` special sets.
 
 The names are GL's, kept so GL's code reads them unchanged.
 

@@ -37,8 +37,8 @@ void Fua_PumpBackendWindow(void *window);
 // [rc4l] Un-minimize the engine's window without taking focus; true if it was minimized.
 bool Fua_RestoreEngineWindow();
 
-// [rc4l] Make the Vulkan loader findable before the device is made, as a bundle that carries its own must; false when it cannot be.
-bool Fua_PrepareVulkanLoader();
+// [rc4l] Make the Vulkan loader findable before the device is made, as a bundle that carries its own must.
+void Fua_PrepareVulkanLoader();
 
 // [rc4l] Whether the backend draws inside the engine's window (fua_dg_embed), from dgframe.cpp.
 bool Fua_WantEmbeddedWindow();
