@@ -92,7 +92,9 @@ struct FBackendRenderer : public zx::frame::FLevelRenderer
 		}
 		// [rc4l] The view set up from the player's camera first, as GL's RenderViewpoint does, since a save can come before any frame has set it, as quitting straight after a level loads does.
 		const float fov = FieldOfView * 360.0f / FINEANGLES;
-		const bool savedMain = zx::frame::BeginViewpoint(player->camera, fov, 1.6f, false, false);
+		// [rc4l] A 1.6 ratio both ways, as GL's WriteSavePic hands RenderViewpoint.
+		const FViewLens lens = { fov, 1.6f, 1.6f };
+		const bool savedMain = zx::frame::BeginViewpoint(player->camera, lens, false, false);
 		WriteSavePicFromView(file, width, height, fov);
 		zx::frame::EndViewpoint(savedMain);
 	}
