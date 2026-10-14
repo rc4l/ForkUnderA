@@ -12799,7 +12799,7 @@ f4401d152553f86128b0dec0458baba6ab13f643	2019-03-26T16:30:44Z	- this option was 
 c4ef8ce465edb06f81061c3b6b9756c832a54450	2019-03-27T11:18:33Z	- fixed level progression of titan-426 map on easy skill	pending		/
 2766b5ab2b2ed56abe86c8cb32053633d1460b17	2019-03-28T17:55:32Z	- Fixed misplaced vertex on Community Chest MAP16	pending		/
 bd284cf337c61e443e1ee0377c322cc68314eb04	2019-03-29T08:53:10Z	Merge branch 'master' of https://github.com/coelckers/gzdoom into vulkan2	pending		/
-4619fc5622dd4e11d624c12f79d9f1abe30b6ea6	2019-03-29T18:10:10Z	- removed unused (now always active) gl_trimsprites option from the menu.	pending		/
+4619fc5622dd4e11d624c12f79d9f1abe30b6ea6	2019-03-29T18:10:10Z	- removed unused (now always active) gl_trimsprites option from the menu.	ported	menu line removed and the unread cvar with it	68a9ada3
 3e8395ddafd547c2446cf0ecb7bea78a0c9cc2d9	2019-03-29T21:29:59Z	- disabled the subtractive light for the spirits of Hexen's Wraithverge.	pending		/
 f48e0280d8131ad09ee4a2e0ff311b236924bf27	2019-03-30T08:25:48Z	- fixed: OptionMenuItemSafeCommand did not allow unsafe commands.	pending		/
 4724fdd389bf46438393f5f0106247b241693adc	2019-03-30T09:15:26Z	- updated Travis CI configuration to use Xcode 10.2	pending		/
