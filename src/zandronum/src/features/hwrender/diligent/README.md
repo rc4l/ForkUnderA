@@ -74,10 +74,9 @@ The world, sprites, models, the 2D layer, wipes, fixed colormaps (invulnerabilit
 torches, `fixedcolormap` and `lightamp`), mirrors, stacked sectors, skyboxes and horizons are ported, each
 with a GL-against-Vulkan scenario in `tools/fuactl/scenarios`. Still missing or different:
 
-- a model or decal in a subtract style, drawn translucent (a sprite subtracts), or a sprite in one over coloured fog, which GL draws in two layers;
 - another sky than the level's (a line's, `sky2`) seen in a mirror, stacked view or camera, which shows the level's sky;
 - a GLDEFS hardware shader's own `ProcessLight`, or one leaning on more of GL's `main.fp` than `getTexel`, `vTexCoord` and `timer`, which draws without it (see `features/hwshaders`);
-- nested line-mirror reflections past the first show only the sprites the player's walk through a mirror took, where GL walks every reflection; at most 16 reflective planes and 8 stacked views a frame, where GL has no limit;
+- nested line-mirror reflections past the first show only the sprites the player's walk through a mirror took, where GL walks every reflection;
 - Linux and macOS are built by CI and not yet run here: the window code (`dgsdl.cpp`, `dgcocoa.mm`) and the
   .app's MoltenVK bundle want a first launch on each before they are trusted. Beside GL there they open a
   window of their own, since neither nests one window in another.

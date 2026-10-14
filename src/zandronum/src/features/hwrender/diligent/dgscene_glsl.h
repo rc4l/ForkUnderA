@@ -6,11 +6,9 @@
 #ifndef ZX_DGSCENE_GLSL_H
 #define ZX_DGSCENE_GLSL_H
 
-// [rc4l] kWalkSlots and kMainWalkSlot spelled for the scene shader, which reads one bit per walk for every subsector and sidedef.
-#define FUA_WALK_SLOTS_STR "10"
-#define FUA_MAIN_WALK_SLOT_STR "8"
-static_assert(zx::levelmesh::kWalkSlots == 10, "FUA_WALK_SLOTS_STR spells kWalkSlots");
-static_assert(zx::levelmesh::kMainWalkSlot == 8, "FUA_MAIN_WALK_SLOT_STR spells kMainWalkSlot");
+// [rc4l] kMainWalkSlot spelled for the scene shader, which reads one bit per walk for every subsector and sidedef, the level's WalkSlots of them an id (uOptions.y).
+#define FUA_MAIN_WALK_SLOT_STR "0"
+static_assert(zx::levelmesh::kMainWalkSlot == 0, "FUA_MAIN_WALK_SLOT_STR spells kMainWalkSlot");
 static const char *kSceneVS =
 	"#version 450\n"
 	"layout(location = 0) in vec3 aPos;\n"
@@ -46,7 +44,7 @@ static const char *kSceneVS =
 	"layout(std430, binding = 11) readonly buffer SlotRemap { uint slotRemap[]; };\n"
 	// [rc4l] ComputeStackVisible, line for line: whether walk slot's walk drew id this frame.
 	"bool fuaWalked(int id, int slot) {\n"
-	"    int bit = id * " FUA_WALK_SLOTS_STR " + slot;\n"
+	"    int bit = id * int(uOptions.y + 0.5) + slot;\n"
 	"    return (stackVis[bit >> 5] & (1u << uint(bit & 31))) != 0u;\n"
 	"}\n"
 	"void main() {\n"

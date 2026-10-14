@@ -1530,7 +1530,7 @@ void WalkStack(const PortalView &p, const WalkHooks *hooks)
 	const int list = p.slot >= 0 ? zx::levelmesh::kSkyCaptureStack + p.slot : zx::levelmesh::kSkyCaptureNone;
 	if (list != zx::levelmesh::kSkyCaptureNone) zx::levelmesh::BeginViewSky(list);
 	std::vector<PortalView> skyboxes;
-	const WalkSpec spec = { p.slot, list, false, NULL, &skyboxes, numsubsectors > 0 ? &g_covered[0] : NULL,
+	const WalkSpec spec = { zx::levelmesh::ComputeStackWalkSlot(p.slot), list, false, NULL, &skyboxes, numsubsectors > 0 ? &g_covered[0] : NULL,
 		numnodes > 0 ? &g_nodeCovered[0] : NULL };
 	Walk(spec);
 
@@ -1598,7 +1598,7 @@ void CompareMain(const TArray<unsigned int> &glBits)
 	const long long words = glBits.Size();
 	for (int id = 0; id < ids; id++)
 	{
-		const long long bit = (long long)id * zx::levelmesh::kWalkSlots + zx::levelmesh::kMainWalkSlot;
+		const long long bit = (long long)id * zx::levelmesh::WalkSlots() + zx::levelmesh::kMainWalkSlot;
 		if (bit / 32 >= words) break;
 		const bool gl = (glBits[unsigned(bit / 32)] >> (bit % 32)) & 1;
 		const bool ours = id < numsubsectors ? g_subWalked.Load(id) == g_walkStamp : g_sideWalked.Load(id - numsubsectors) == g_walkStamp;
@@ -1649,7 +1649,7 @@ int SlotCount(const TArray<unsigned int> &bits, int slot)
 	const int ids = numsubsectors + numsides;
 	for (int id = 0; id < ids; id++)
 	{
-		const unsigned bit = unsigned(id * zx::levelmesh::kWalkSlots + slot);
+		const unsigned bit = unsigned(id * zx::levelmesh::WalkSlots() + slot);
 		if (bit / 32 < bits.Size() && ((bits[bit / 32] >> (bit % 32)) & 1)) count++;
 	}
 	return count;
@@ -1662,7 +1662,7 @@ int SlotDiffers(const TArray<unsigned int> &a, const TArray<unsigned int> &b, in
 	const int ids = numsubsectors + numsides;
 	for (int id = 0; id < ids; id++)
 	{
-		const unsigned bit = unsigned(id * zx::levelmesh::kWalkSlots + slot);
+		const unsigned bit = unsigned(id * zx::levelmesh::WalkSlots() + slot);
 		const bool inA = bit / 32 < a.Size() && ((a[bit / 32] >> (bit % 32)) & 1);
 		const bool inB = bit / 32 < b.Size() && ((b[bit / 32] >> (bit % 32)) & 1);
 		if (inA != inB) differ++;
@@ -1866,12 +1866,12 @@ void CheckPortalViews()
 			gl.info[i].ceiling != ours.info[i].ceiling) why.Format("stacked view %d: another portal", i);
 		else if (!SameVertices(gl.walls[i], ours.walls[i]))
 			why.Format("stacked view %d: walls, GL %u quads, ours %u", i, gl.walls[i].Size() / 6, ours.walls[i].Size() / 6);
-		else if (SlotCount(gl.bits, i) == 0 && gl.sky[i].Size() == 0) unwalked = true;
+		else if (SlotCount(gl.bits, zx::levelmesh::ComputeStackWalkSlot(i)) == 0 && gl.sky[i].Size() == 0) unwalked = true;
 		else if (!SameVertices(gl.sky[i], ours.sky[i]))
 			why.Format("stacked view %d: sky, GL %u quads, ours %u", i, gl.sky[i].Size() / 6, ours.sky[i].Size() / 6);
 		else
 		{
-			const int differ = SlotDiffers(gl.bits, ours.bits, i);
+			const int differ = SlotDiffers(gl.bits, ours.bits, zx::levelmesh::ComputeStackWalkSlot(i));
 			if (differ) why.Format("stacked view %d: %d ids walked by one and not the other", i, differ);
 		}
 	}

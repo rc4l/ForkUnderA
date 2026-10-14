@@ -92,9 +92,9 @@ CVAR(Bool, fua_dg_sky, true, 0)
 CVAR(Bool, fua_dg_rtmirrors, false, CVAR_ARCHIVE)
 // Planar mirror reflections. On by default; 0 takes the whole pass out, for bisecting a GPU hang.
 CVAR(Bool, fua_dg_mirrors_on, true, CVAR_ARCHIVE)
-// [rc4l] Reflective planes get their reflections, each a render of the world, up to kMaxPlaneMirrors; 0 turns them off.
+// [rc4l] Reflective planes get their reflections, each a render of the world, every plane the level has; 0 turns them off.
 CVAR(Int, fua_dg_planemirrors, 4, CVAR_ARCHIVE)
-// [rc4l] Stacked-sector views (GL's GLSectorStackPortal) get rendered, each a render of the world, up to kMaxStackViews; 0 turns them off.
+// [rc4l] Stacked-sector views (GL's GLSectorStackPortal) get rendered, each a render of the world, as many as the level has portals; 0 turns them off.
 CVAR(Int, fua_dg_stackportals, 2, CVAR_ARCHIVE)
 // [rc4l] Shows the first stacked view's picture over the whole frame, to see what it holds beyond the planes it is painted on.
 CVAR(Bool, fua_dg_stackshow, false, 0)
@@ -300,15 +300,26 @@ bool CreateColorTarget(int w, int h, const char *name, Diligent::RefCntAutoPtr<D
 bool CreateViewTextures(int w, int h, const char *name,
 	Diligent::RefCntAutoPtr<Diligent::ITexture> &color, Diligent::RefCntAutoPtr<Diligent::ITexture> &depth)
 {
-	if (!CreateColorTarget(w, h, name, color)) return false;
+	return CreateColorTarget(w, h, name, color) && CreateDepthTarget(w, h, name, depth);
+}
+
+// [rc4l] A w by h depth buffer in the swapchain's depth format, for a view rendered off screen.
+bool CreateDepthTarget(int w, int h, const char *name, Diligent::RefCntAutoPtr<Diligent::ITexture> &depth)
+{
+	auto *dev = GetDevice();
+	auto *swap = GetSwapChain();
+	if (!dev || !swap || w <= 0 || h <= 0) return false;
 	FString depthName;
 	depthName.Format("%s depth", name);
-	Diligent::TextureDesc dd = color->GetDesc();
+	Diligent::TextureDesc dd;
 	dd.Name = depthName.GetChars();
-	dd.Format = GetSwapChain()->GetDesc().DepthBufferFormat;
+	dd.Type = Diligent::RESOURCE_DIM_TEX_2D;
+	dd.Width = (Diligent::Uint32)w; dd.Height = (Diligent::Uint32)h;
+	dd.Format = swap->GetDesc().DepthBufferFormat;
+	dd.MipLevels = 1;
 	dd.BindFlags = Diligent::BIND_DEPTH_STENCIL;
 	depth.Release();
-	GetDevice()->CreateTexture(dd, nullptr, &depth);
+	dev->CreateTexture(dd, nullptr, &depth);
 	return depth.RawPtr() != nullptr;
 }
 

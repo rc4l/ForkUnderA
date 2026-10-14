@@ -19,6 +19,7 @@
 #include "features/levelprep/levelprep.h"
 #include "features/gldefs/gldefs.h"
 #include "features/stackportals/stackportals.h"   // [rc4l] gl_InitPortals
+#include "features/levelmesh/flatmesh.h"   // [rc4l] SetStackViewCapacity
 #include "features/fakeflat/fakeflat.h"   // [rc4l] gl_FakeFlat
 #include "features/rendersettings/rendersettings.h"   // [rc4l] gl_SetFogParams
 #include "features/materials/materials.h"
@@ -43,7 +44,11 @@ void FLevelRenderer::StartSerialize(FArchive &) { gl_DeleteAllAttachedLights(); 
 void FLevelRenderer::EndSerialize(FArchive &arc)
 {
 	gl_RecreateAllAttachedLights();
-	if (arc.IsLoading()) gl_InitPortals();
+	if (arc.IsLoading())
+	{
+		gl_InitPortals();
+		zx::levelmesh::SetStackViewCapacity(StackPortalsInUse());
+	}
 }
 
 sector_t *FLevelRenderer::FakeFlat(sector_t *sec, sector_t *tempsec, int *floorlightlevel, int *ceilinglightlevel, bool back)

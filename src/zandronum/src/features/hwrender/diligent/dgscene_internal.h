@@ -345,6 +345,7 @@ void GetSkyFog(float &r, float &g, float &b, float &density);
 
 // [rc4l] The world pass and frame composition (dgscene.cpp).
 bool CreateColorTarget(int w, int h, const char *name, Diligent::RefCntAutoPtr<Diligent::ITexture> &color);
+bool CreateDepthTarget(int w, int h, const char *name, Diligent::RefCntAutoPtr<Diligent::ITexture> &depth);
 zx::hwrender::BackendCamera CurrentCamera();
 void DrawSceneOnce(bool present = true, bool pump = true);
 // [rc4l] Whether the uploaded scene can be drawn: its geometry and pipelines are up.

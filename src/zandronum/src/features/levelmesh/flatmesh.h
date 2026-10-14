@@ -18,7 +18,7 @@
 
 #include "tarray.h"   // [rc4l] the moved sectors and changed sides RefreshFakePlanes takes
 #include "features/levelmesh/staticmesh.h"                   // [rc4l] MeshVertex, which PortalViewState holds
-#include "features/levelmesh/computation/flatmesh_compute.h" // [rc4l] kMaxStackViews and kWalkSlots
+#include "features/levelmesh/computation/flatmesh_compute.h" // [rc4l] the walk slots and sky lists
 #include "features/materials/materials.h"                    // [rc4l] MaterialRef
 
 struct subsector_t;
@@ -71,17 +71,22 @@ struct PortalViewState
 {
 	PortalViewState();
 	int stackUsed;
-	const void *portals[kMaxStackViews];
-	StackViewInfo info[kMaxStackViews];
-	TArray<MeshVertex> walls[kMaxStackViews], sky[kMaxStackViews];
+	TArray<const void *> portals;
+	TArray<StackViewInfo> info;
+	TArray<TArray<MeshVertex> > walls, sky;
 	TArray<unsigned int> bits;
-	TArray<int> marked[kWalkSlots];
-	bool needsClear[kWalkSlots];
+	TArray<TArray<int> > marked;
+	TArray<bool> needsClear;
 	bool skyboxWalked;
 	TArray<int> mirrors;
 	TArray<MirrorSheenShade> sheens;
 };
 void SwapPortalViews(PortalViewState &other);
+// [rc4l] At level load: how many stacked views the level can show at once, one per sector-stack portal it has, which sizes the walk bits, the sky lists and the views' slots.
+void SetStackViewCapacity(int views);
+int StackViewCapacity();
+// [rc4l] The walk slots each id has this level (ComputeWalkSlots), the stride the walk bits are read by.
+int WalkSlots();
 int StackViewCount();
 StackViewInfo StackView(int slot);
 const MeshVertex *StackViewVertices(int slot, int &count);

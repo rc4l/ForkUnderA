@@ -24,4 +24,7 @@ extern TArray<FPortal *> portals;
 void gl_InitPortals();
 void gl_BuildPortalCoverage(FPortalCoverage *coverage, subsector_t *subsector, FPortal *portal);
 
+// [rc4l] The portals some sector's floor or ceiling looks through, which is how many stacked views the level can show at once; gl_InitPortals also makes ones no sector takes.
+int StackPortalsInUse();
+
 #endif // ZX_STACKPORTALS_H

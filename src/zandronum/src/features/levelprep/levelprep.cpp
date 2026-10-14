@@ -60,6 +60,7 @@
 #include "features/rendersettings/rendersettings.h"   // [rc4l] fogdensity, outsidefogdensity, skyfog
 #include "features/rendersettings/computation/mapoptions_compute.h"   // [rc4l] ComputeGlobalFogParameter
 #include "features/stackportals/stackportals.h"   // [rc4l] gl_InitPortals, portals
+#include "features/levelmesh/flatmesh.h"   // [rc4l] SetStackViewCapacity
 #include "features/dynlights/dynlight.h"   // [rc4l] ADynamicLight
 #include "features/materials/material.h"   // [rc4l] FMaterial::FlushAll
 
@@ -730,6 +731,8 @@ void PrepareLevel()
 	delete[] checkmap;
 
 	gl_InitPortals();
+	// [rc4l] As many stacked views as the level has portals, so a view never waits for a slot.
+	zx::levelmesh::SetStackViewCapacity(StackPortalsInUse());
 
 	InitGLRMapinfoData();
 }

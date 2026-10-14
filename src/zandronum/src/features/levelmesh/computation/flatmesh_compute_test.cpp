@@ -460,7 +460,6 @@ TEST(FlatMeshCompute, TheWalkThroughAStackedViewFillsThatViewsSkyList)
 {
 	EXPECT_EQ(kSkyCaptureStack, ComputeSkyCaptureList(true, 2, 0));
 	EXPECT_EQ(kSkyCaptureStack + 1, ComputeSkyCaptureList(true, 2, 1));
-	EXPECT_EQ(kSkyCaptureNone, ComputeSkyCaptureList(true, 2, kMaxStackViews));  // [rc4l] a portal no slot took
 	EXPECT_EQ(kSkyCaptureNone, ComputeSkyCaptureList(true, 3, 0));               // [rc4l] the skybox inside the stack
 	EXPECT_EQ(kSkyCaptureNone, ComputeSkyCaptureList(false, 2, 0));              // [rc4l] a camera texture's portal
 	EXPECT_EQ(kSkyCaptureMain, ComputeSkyCaptureList(true, 1, 0));
@@ -473,7 +472,6 @@ TEST(FlatMeshCompute, WhatAStackedViewsWalkDrawsBelongsToThatView)
 	EXPECT_EQ(1, ComputeStackCaptureSlot(true, 2, 1));
 	EXPECT_EQ(-1, ComputeStackCaptureSlot(true, 1, 0));                // [rc4l] the player's own walk
 	EXPECT_EQ(-1, ComputeStackCaptureSlot(true, 2, -1));               // [rc4l] a mirror or skybox walk
-	EXPECT_EQ(-1, ComputeStackCaptureSlot(true, 2, kMaxStackViews));
 	EXPECT_EQ(-1, ComputeStackCaptureSlot(true, 3, 0));                // [rc4l] a portal inside the stacked view
 	EXPECT_EQ(-1, ComputeStackCaptureSlot(false, 2, 0));               // [rc4l] a camera texture's portal
 }
@@ -484,8 +482,7 @@ TEST(FlatMeshCompute, APassDrawsTheSkyListItsOwnWalkFilled)
 	EXPECT_EQ(kSkyCaptureCamera, ComputeSkyDrawList(true, -1));
 	EXPECT_EQ(kSkyCaptureCamera, ComputeSkyDrawList(true, 1));
 	EXPECT_EQ(kSkyCaptureStack + 1, ComputeSkyDrawList(false, 1));
-	EXPECT_EQ(kSkyCaptureMain, ComputeSkyDrawList(false, kMaxStackViews));
-	for (int slot = 0; slot < kMaxStackViews; slot++)
+	for (int slot = 0; slot < 8; slot++)
 		EXPECT_EQ(ComputeSkyCaptureList(true, 2, slot), ComputeSkyDrawList(false, slot));
 }
 
@@ -513,28 +510,44 @@ TEST(FlatMeshCompute, WhatAMirrorsWalkDrawsBelongsToThatMirror)
 // [rc4l] WDI01: the stacked view drew rooftops GL's walk through the stack never reached, as roof slabs over the courtyard's walls.
 TEST(FlatMeshCompute, AStackedViewMarksEachSubsectorItsWalkReached)
 {
-	EXPECT_EQ(0, ComputeStackVisWords(0));
-	static_assert(kWalkSlots == 10, "the bit positions below are ten slots an id");
-	EXPECT_EQ(1, ComputeStackVisWords(3));
-	EXPECT_EQ(2, ComputeStackVisWords(4));
+	// [rc4l] Eight stacked views make ten slots an id, which the bit positions below are counted in.
+	const int W = ComputeWalkSlots(8);
+	EXPECT_EQ(10, W);
+	EXPECT_EQ(0, ComputeStackVisWords(0, W));
+	EXPECT_EQ(1, ComputeStackVisWords(3, W));
+	EXPECT_EQ(2, ComputeStackVisWords(4, W));
 	unsigned int bits[4] = { 0u, 0u, 0u, 0u };
-	ComputeMarkStackVisible(bits, 0, 1);
-	ComputeMarkStackVisible(bits, 12, 0);
-	ComputeMarkStackVisible(bits, 12, 0);
-	EXPECT_EQ(2u, bits[0]);              // [rc4l] subsector 0, second view
-	EXPECT_EQ(1u << 24, bits[3]);        // [rc4l] subsector 12, first view (bit 120), set once
-	EXPECT_TRUE(ComputeStackVisible(bits, 4, 0, 1));
-	EXPECT_FALSE(ComputeStackVisible(bits, 4, 0, 0));
-	EXPECT_TRUE(ComputeStackVisible(bits, 4, 12, 0));
-	EXPECT_FALSE(ComputeStackVisible(bits, 4, 12, kMainWalkSlot));
-	EXPECT_FALSE(ComputeStackVisible(bits, 4, 40, 0));        // [rc4l] past the words
-	EXPECT_FALSE(ComputeStackVisible(bits, 4, -1, 0));
-	EXPECT_FALSE(ComputeStackVisible(nullptr, 4, 0, 1));
+	ComputeMarkStackVisible(bits, 0, 1, W);
+	ComputeMarkStackVisible(bits, 12, 0, W);
+	ComputeMarkStackVisible(bits, 12, 0, W);
+	EXPECT_EQ(2u, bits[0]);              // [rc4l] subsector 0, second slot
+	EXPECT_EQ(1u << 24, bits[3]);        // [rc4l] subsector 12, first slot (bit 120), set once
+	EXPECT_TRUE(ComputeStackVisible(bits, 4, 0, 1, W));
+	EXPECT_FALSE(ComputeStackVisible(bits, 4, 0, 0, W));
+	EXPECT_TRUE(ComputeStackVisible(bits, 4, 12, 0, W));
+	EXPECT_FALSE(ComputeStackVisible(bits, 4, 12, 8, W));
+	EXPECT_FALSE(ComputeStackVisible(bits, 4, 40, 0, W));        // [rc4l] past the words
+	EXPECT_FALSE(ComputeStackVisible(bits, 4, -1, 0, W));
+	EXPECT_FALSE(ComputeStackVisible(nullptr, 4, 0, 1, W));
 	// [rc4l] Clearing one slot leaves the others.
-	ComputeMarkStackVisible(bits, 12, 1);
-	ComputeClearStackVisible(bits, 12, 0);
-	EXPECT_FALSE(ComputeStackVisible(bits, 4, 12, 0));
-	EXPECT_TRUE(ComputeStackVisible(bits, 4, 12, 1));
+	ComputeMarkStackVisible(bits, 12, 1, W);
+	ComputeClearStackVisible(bits, 12, 0, W);
+	EXPECT_FALSE(ComputeStackVisible(bits, 4, 12, 0, W));
+	EXPECT_TRUE(ComputeStackVisible(bits, 4, 12, 1, W));
+}
+
+// [rc4l] A level's slots and sky lists follow its stacked views: a level with none has the player's and the skybox's walks alone.
+TEST(FlatMeshCompute, ALevelHasASlotAndASkyListPerStackedView)
+{
+	EXPECT_EQ(2, ComputeWalkSlots(0));
+	EXPECT_EQ(2, ComputeWalkSlots(-3));
+	EXPECT_EQ(35, ComputeWalkSlots(33));
+	EXPECT_EQ(kSkyCaptureStack, ComputeSkyCaptureLists(0));
+	EXPECT_EQ(kSkyCaptureStack, ComputeSkyCaptureLists(-1));
+	EXPECT_EQ(kSkyCaptureStack + 33, ComputeSkyCaptureLists(33));
+	EXPECT_EQ(kFirstStackWalkSlot, ComputeStackWalkSlot(0));
+	EXPECT_EQ(kFirstStackWalkSlot + 32, ComputeStackWalkSlot(32));
+	EXPECT_EQ(-1, ComputeStackWalkSlot(-1));
 }
 
 TEST(FlatMeshCompute, AWallsProbeStepsOntoItsOwnSideAndAFlatsStaysAtItsCentre)
@@ -733,21 +746,22 @@ TEST(FlatMeshCompute, APlaneTakesTheBandLightByProcessSectorsRule)
 // [rc4l] WDI18's forest: the player's walk marks its own slot, a stacked view's walk its view's, and a camera's or a mirror's none.
 TEST(FlatMeshCompute, EachWalkMarksItsOwnSlot)
 {
-	EXPECT_EQ(1, ComputeWalkSlot(false, true, 1, false));
+	EXPECT_EQ(ComputeStackWalkSlot(1), ComputeWalkSlot(false, true, 1, false));
 	EXPECT_EQ(-1, ComputeWalkSlot(false, true, -1, true));     // [rc4l] a stacked view no slot took
 	EXPECT_EQ(kMainWalkSlot, ComputeWalkSlot(false, false, -1, true));
 	EXPECT_EQ(-1, ComputeWalkSlot(false, false, -1, false));
 	EXPECT_EQ(kSkyboxWalkSlot, ComputeWalkSlot(true, true, 1, false));    // [rc4l] a stacked view's sky is the same skybox
 	unsigned int bits[1] = { 0u };
-	ComputeMarkStackVisible(bits, 1, kMainWalkSlot);
-	EXPECT_TRUE(ComputeStackVisible(bits, 1, 1, kMainWalkSlot));
-	EXPECT_FALSE(ComputeStackVisible(bits, 1, 1, 0));
+	const int W = ComputeWalkSlots(8);
+	ComputeMarkStackVisible(bits, 1, kMainWalkSlot, W);
+	EXPECT_TRUE(ComputeStackVisible(bits, 1, 1, kMainWalkSlot, W));
+	EXPECT_FALSE(ComputeStackVisible(bits, 1, 1, kSkyboxWalkSlot, W));
 }
 
 // [rc4l] AOW03's tower: the sky portal draws only what GL's skybox walk reached, a stacked view what its own walk did, any other pass everything.
 TEST(FlatMeshCompute, APassDrawsWhatItsOwnWalkDrew)
 {
-	EXPECT_EQ(1, ComputePassWalkSlot(true, 1, false, false));
+	EXPECT_EQ(ComputeStackWalkSlot(1), ComputePassWalkSlot(true, 1, false, false));
 	EXPECT_EQ(-1, ComputePassWalkSlot(true, -1, false, true));
 	EXPECT_EQ(kSkyboxWalkSlot, ComputePassWalkSlot(true, -1, true, true));
 	EXPECT_EQ(-1, ComputePassWalkSlot(true, -1, true, false));    // [rc4l] no skybox walk this frame, so the reach test stands in
@@ -762,7 +776,7 @@ TEST(FlatMeshCompute, APassDrawsWhatItsOwnWalkDrew)
 TEST(FlatMeshCompute, ThePlayersPassDrawsWhatTheVisibilityWalkReached)
 {
 	EXPECT_EQ(kMainWalkSlot, ComputePassWalkSlot(true, -1, false, false, true));
-	EXPECT_EQ(1, ComputePassWalkSlot(true, 1, false, false, true));          // [rc4l] a stacked view keeps its own walk
+	EXPECT_EQ(ComputeStackWalkSlot(1), ComputePassWalkSlot(true, 1, false, false, true));          // [rc4l] a stacked view keeps its own walk
 	EXPECT_EQ(-1, ComputePassWalkSlot(true, -1, true, false, true));         // [rc4l] and the sky portal its own rule
 	EXPECT_EQ(-1, ComputePassWalkSlot(false, -1, false, false, true));       // [rc4l] no bits uploaded, nothing culled
 	EXPECT_TRUE(ComputeWalkBitsNeeded(0, 0, false, true));

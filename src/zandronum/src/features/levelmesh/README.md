@@ -65,6 +65,10 @@ yet. Scenario `walldecal`.
 
 - `features/frame/levelrenderer.cpp` `FLevelRenderer::PreprocessLevel` and `CleanLevelData`: `AllocForLevel`,
   `MeshInitForLevel`, `FreeLevel` and `MeshFreeLevel`, the mesh and bake state for each level.
+- `features/levelprep/levelprep.cpp` `PrepareLevel` and `features/frame/levelrenderer.cpp` `EndSerialize`:
+  `SetStackViewCapacity`, one stacked view per portal the level has. The walk slots follow it (the player's walk
+  0, the skybox walk 1, the views from 2; `ComputeWalkSlots`), and so do the sky lists and the backend's pool of
+  stacked-view targets, all made at level start so no view waits on a slot or a target mid-game.
 - `features/sidebyside/glchecks.cpp`: what GL reports to its observer (`gl/scene/gl_observer.h`), for the
   checks against GL only, read off GL's types there and handed over through the same calls the walks use.
   That is GL's scenes (`EnterScene`/`LeaveScene`), walks (`BeginSkyWalk`, `NoteWalkedSubsector`/`NoteWalkedSide`,

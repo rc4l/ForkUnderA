@@ -148,10 +148,25 @@ PlaneUVAffine ComputePlaneUVAffine(const PlaneUVTransform &t)
 	return a;
 }
 
+int ComputeWalkSlots(int stackViews)
+{
+	return kFirstStackWalkSlot + (stackViews > 0 ? stackViews : 0);
+}
+
+int ComputeStackWalkSlot(int stackSlot)
+{
+	return stackSlot >= 0 ? kFirstStackWalkSlot + stackSlot : -1;
+}
+
+int ComputeSkyCaptureLists(int stackViews)
+{
+	return kSkyCaptureStack + (stackViews > 0 ? stackViews : 0);
+}
+
 int ComputeSkyCaptureList(bool mainView, int sceneNesting, int stackSlot)
 {
 	if (sceneNesting <= 1) return mainView ? kSkyCaptureMain : kSkyCaptureCamera;
-	if (sceneNesting == 2 && mainView && stackSlot >= 0 && stackSlot < kMaxStackViews) return kSkyCaptureStack + stackSlot;
+	if (sceneNesting == 2 && mainView && stackSlot >= 0) return kSkyCaptureStack + stackSlot;
 	return kSkyCaptureNone;
 }
 
@@ -164,7 +179,7 @@ int ComputeStackCaptureSlot(bool mainView, int sceneNesting, int stackSlot)
 int ComputeSkyDrawList(bool cameraPass, int stackSlot)
 {
 	if (cameraPass) return kSkyCaptureCamera;
-	return (stackSlot >= 0 && stackSlot < kMaxStackViews) ? kSkyCaptureStack + stackSlot : kSkyCaptureMain;
+	return stackSlot >= 0 ? kSkyCaptureStack + stackSlot : kSkyCaptureMain;
 }
 
 bool ComputeTakesSkyViewpoint(int list, bool haveOne)
@@ -172,27 +187,27 @@ bool ComputeTakesSkyViewpoint(int list, bool haveOne)
 	return list == kSkyCaptureMain || (list >= kSkyCaptureStack && !haveOne);
 }
 
-int ComputeStackVisWords(int ids)
+int ComputeStackVisWords(int ids, int walkSlots)
 {
-	return (ids * kWalkSlots + 31) / 32;
+	return (ids * walkSlots + 31) / 32;
 }
 
-void ComputeClearStackVisible(unsigned int *bits, int id, int slot)
+void ComputeClearStackVisible(unsigned int *bits, int id, int slot, int walkSlots)
 {
-	const int bit = id * kWalkSlots + slot;
+	const int bit = id * walkSlots + slot;
 	bits[bit >> 5] &= ~(1u << (bit & 31));
 }
 
-void ComputeMarkStackVisible(unsigned int *bits, int id, int slot)
+void ComputeMarkStackVisible(unsigned int *bits, int id, int slot, int walkSlots)
 {
-	const int bit = id * kWalkSlots + slot;
+	const int bit = id * walkSlots + slot;
 	bits[bit >> 5] |= 1u << (bit & 31);
 }
 
 int ComputeWalkSlot(bool skyboxWalk, bool stackWalk, int stackSlot, bool playerWalk)
 {
 	if (skyboxWalk) return kSkyboxWalkSlot;
-	if (stackWalk) return stackSlot;
+	if (stackWalk) return ComputeStackWalkSlot(stackSlot);
 	return playerWalk ? kMainWalkSlot : -1;
 }
 
@@ -201,7 +216,7 @@ int ComputePassWalkSlot(bool bitsReady, int stackPassSlot, bool skyPortalPass, b
 	if (!bitsReady) return -1;
 	if (skyPortalPass) return skyboxWalked ? kSkyboxWalkSlot : -1;
 	if (stackPassSlot < 0 && mainCull) return kMainWalkSlot;
-	return stackPassSlot;
+	return ComputeStackWalkSlot(stackPassSlot);
 }
 
 bool ComputeWalkBitsNeeded(int stackViews, int skyHoles, bool skyboxWalked, bool mainWalked)
@@ -289,9 +304,9 @@ void ComputeStackCapCorner(bool ceiling, int corner, float &x, float &y, float &
 	z = ceiling ? 32767.f : -32767.f;
 }
 
-bool ComputeStackVisible(const unsigned int *bits, int words, int id, int slot)
+bool ComputeStackVisible(const unsigned int *bits, int words, int id, int slot, int walkSlots)
 {
-	const int bit = id * kWalkSlots + slot;
+	const int bit = id * walkSlots + slot;
 	if (bits == nullptr || id < 0 || (bit >> 5) >= words) return false;
 	return (bits[bit >> 5] & (1u << (bit & 31))) != 0;
 }

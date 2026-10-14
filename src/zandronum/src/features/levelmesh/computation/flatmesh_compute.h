@@ -149,15 +149,20 @@ struct PlaneUVAffine
 };
 PlaneUVAffine ComputePlaneUVAffine(const PlaneUVTransform &t);
 
-// [rc4l] The most stacked-sector views (GL's GLSectorStackPortal) a frame renders; a further portal in sight is left undrawn.
-enum { kMaxStackViews = 8 };
+// [rc4l] The walk-visibility slots each id has: the player's own walk (what GL drew behind a sky hole), GL's walk from the skybox viewpoint, then one per stacked-sector view (GL's GLSectorStackPortal) the level can show.
+enum { kMainWalkSlot = 0, kSkyboxWalkSlot = 1, kFirstStackWalkSlot = 2 };
 
-// [rc4l] The walk-visibility slots each id has: one per stacked view, the player's own walk (what GL drew behind a sky hole), then GL's walk from the skybox viewpoint.
-enum { kMainWalkSlot = kMaxStackViews, kSkyboxWalkSlot = kMaxStackViews + 1, kWalkSlots = kMaxStackViews + 2 };
+// [rc4l] The walk slots an id has in a level that can show `stackViews` stacked views at once, which is how far apart the walk bits of two ids are.
+int ComputeWalkSlots(int stackViews);
 
-// [rc4l] The sky-surface lists a GL scene walk can fill: the player's view, a camera texture's, one per stacked view, or none.
-enum { kSkyCaptureNone = -1, kSkyCaptureMain = 0, kSkyCaptureCamera = 1, kSkyCaptureStack = 2,
-       kSkyCaptureLists = kSkyCaptureStack + kMaxStackViews };
+// [rc4l] The walk slot a stacked view's walk marks, -1 for a view no slot took.
+int ComputeStackWalkSlot(int stackSlot);
+
+// [rc4l] The sky-surface lists a GL scene walk can fill: the player's view, a camera texture's, one per stacked view from kSkyCaptureStack, or none.
+enum { kSkyCaptureNone = -1, kSkyCaptureMain = 0, kSkyCaptureCamera = 1, kSkyCaptureStack = 2 };
+
+// [rc4l] The sky lists a level with `stackViews` stacked views has.
+int ComputeSkyCaptureLists(int stackViews);
 
 // [rc4l] Which list a walk fills: an outer walk fills the main or camera one, and the player's walk through a stacked view it saw (stackSlot, else -1) fills that view's.
 int ComputeSkyCaptureList(bool mainView, int sceneNesting, int stackSlot);
@@ -171,22 +176,22 @@ int ComputeSkyDrawList(bool cameraPass, int stackSlot);
 // [rc4l] Whether a sky quad's skybox becomes the frame's: the player's own walk always, a stacked view's only while the player's named none.
 bool ComputeTakesSkyViewpoint(int list, bool haveOne);
 
-// [rc4l] The words of a frame's bit set holding, for every id (the subsectors, then the sidedefs), one bit per walk slot: whether that walk drew it.
-int ComputeStackVisWords(int ids);
+// [rc4l] The words of a frame's bit set holding, for every id (the subsectors, then the sidedefs), one bit per walk slot (`walkSlots` of them, ComputeWalkSlots): whether that walk drew it.
+int ComputeStackVisWords(int ids, int walkSlots);
 
 // [rc4l] Clears what ComputeMarkStackVisible set, for one walk's slot alone.
-void ComputeClearStackVisible(unsigned int *bits, int id, int slot);
+void ComputeClearStackVisible(unsigned int *bits, int id, int slot, int walkSlots);
 
-// [rc4l] Marks an id drawn by a walk, at bit id * kWalkSlots + slot, which is where the scene shader looks.
-void ComputeMarkStackVisible(unsigned int *bits, int id, int slot);
+// [rc4l] Marks an id drawn by a walk, at bit id * walkSlots + slot, which is where the scene shader looks.
+void ComputeMarkStackVisible(unsigned int *bits, int id, int slot, int walkSlots);
 
 // [rc4l] Whether a walk drew an id, read back as the scene shader reads it; an id outside the words is not drawn.
-bool ComputeStackVisible(const unsigned int *bits, int words, int id, int slot);
+bool ComputeStackVisible(const unsigned int *bits, int words, int id, int slot, int walkSlots);
 
-// [rc4l] The slot a walk's drawing is marked in: a skybox's kSkyboxWalkSlot wherever it was entered from, a stacked view's own (stackSlot, -1 for one no slot took), the player's walk kMainWalkSlot, any other none (-1).
+// [rc4l] The slot a walk's drawing is marked in: a skybox's kSkyboxWalkSlot wherever it was entered from, a stacked view's own (from stackSlot, -1 for one no slot took), the player's walk kMainWalkSlot, any other none (-1).
 int ComputeWalkSlot(bool skyboxWalk, bool stackWalk, int stackSlot, bool playerWalk);
 
-// [rc4l] The slot a backend pass draws only what that walk drew of: a stacked view's own, the sky portal's the skybox walk when GL made one this frame, else none (-1), and none at all without the frame's bits.
+// [rc4l] The slot a backend pass draws only what that walk drew of: a stacked view's own (from stackPassSlot), the sky portal's the skybox walk when GL made one this frame, else none (-1), and none at all without the frame's bits.
 int ComputePassWalkSlot(bool bitsReady, int stackPassSlot, bool skyPortalPass, bool skyboxWalked, bool mainCull = false);
 
 // [rc4l] Whether a frame's walk bits go to the backend: some pass reads them, a stacked view, a sky hole or the sky portal.

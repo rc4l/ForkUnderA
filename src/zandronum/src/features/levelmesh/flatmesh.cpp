@@ -697,18 +697,18 @@ int BakeFlatsForSector(int sectorIndex)
 // [rc4l] Particles among them, for fua_particles.
 static int g_particlesThisFrame = 0;
 static int g_skyQuadsCaptured = 0;
-static int g_skyWalks[kSkyCaptureLists];   // [rc4l] Walks per list, so a second walk per frame shows up as a count.
+static TArray<int> g_skyWalks;   // [rc4l] Walks per list, so a second walk per frame shows up as a count.
 static AActor *g_skyViewpoint = NULL;
 // [rc4l] The player's view was walked outside GL this frame (features/visibility), and its slot holds what that walk reached.
 static bool g_mainVisibility = false;
 // [rc4l] The portal views (stacked views, skybox walks, line mirrors) came from a visibility walk since GL last walked.
 static bool g_portalViewsDerived = false;
 // [rc4l] Per walk slot, GL's walks filled it since a visibility walk last did, so all of it must be cleared.
-static bool g_slotNeedsClear[kWalkSlots];
+static TArray<bool> g_slotNeedsClear;
 // [rc4l] Per walk slot, the ids a visibility walk marked last, so the next clears just those.
-static TArray<int> g_slotMarked[kWalkSlots];
+static TArray<TArray<int> > g_slotMarked;
 // [rc4l] One list per view the backend draws, indexed by the kSkyCapture* lists, and the one the walk in progress fills.
-static TArray<MeshVertex> g_skyVerts[kSkyCaptureLists];
+static TArray<TArray<MeshVertex> > g_skyVerts;
 static int g_skyList = kSkyCaptureNone;
 // [rc4l] The player's walk's sky holes this frame, kSkyHoleFloats each, for the scene shader.
 static TArray<float> g_skyHoles;
@@ -723,12 +723,48 @@ void EnterScene() { s_sceneNesting++; }
 void LeaveScene() { if (s_sceneNesting > 0) s_sceneNesting--; }
 
 // [rc4l] The stacked views the player's walk saw this frame, by slot, and the portal whose view GL is walking now.
-static const void *g_stackPortals[kMaxStackViews];
-static StackViewInfo g_stackInfo[kMaxStackViews];
-static TArray<MeshVertex> g_stackVerts[kMaxStackViews];
+static TArray<const void *> g_stackPortals;
+static TArray<StackViewInfo> g_stackInfo;
+static TArray<TArray<MeshVertex> > g_stackVerts;
 static int g_stackUsed = 0;
 static const void *s_stackWalk = NULL;
 static TArray<unsigned int> g_stackVis;
+// [rc4l] The views the level can show at once and the walk slots each id has with them, set at level load.
+static int g_stackCapacity = 0;
+static int g_walkSlots = kFirstStackWalkSlot;
+
+void SetStackViewCapacity(int views)
+{
+	g_stackCapacity = views > 0 ? views : 0;
+	g_walkSlots = ComputeWalkSlots(g_stackCapacity);
+	g_stackPortals.Resize(g_stackCapacity);
+	g_stackInfo.Resize(g_stackCapacity);
+	g_stackVerts.Resize(g_stackCapacity);
+	for (int i = 0; i < g_stackCapacity; i++)
+	{
+		g_stackPortals[i] = NULL;
+		g_stackInfo[i].dx = g_stackInfo[i].dy = 0.f;
+		g_stackInfo[i].ceiling = false;
+		g_stackVerts[i].Clear();
+	}
+	const int lists = ComputeSkyCaptureLists(g_stackCapacity);
+	g_skyVerts.Resize(lists);
+	g_skyWalks.Resize(lists);
+	for (int i = 0; i < lists; i++) { g_skyVerts[i].Clear(); g_skyWalks[i] = 0; }
+	g_slotNeedsClear.Resize(g_walkSlots);
+	g_slotMarked.Resize(g_walkSlots);
+	for (int s = 0; s < g_walkSlots; s++) { g_slotNeedsClear[s] = true; g_slotMarked[s].Clear(); }
+	g_stackUsed = 0;
+	g_stackVis.Clear();
+}
+// [rc4l] A level with no stacked views until the first load says otherwise.
+static const bool s_capacitySet = (SetStackViewCapacity(0), true);
+
+int StackViewCapacity() { return g_stackCapacity; }
+int WalkSlots() { return g_walkSlots; }
+
+// [rc4l] Whether a sky list is one this level has.
+static bool HasSkyList(int list) { return list >= 0 && list < (int)g_skyVerts.Size(); }
 
 StackWalk::StackWalk(const void *portal) : saved(s_stackWalk) { s_stackWalk = portal; }
 
@@ -790,7 +826,7 @@ static void NoteWalked(int id)
 	if (g_stackVis.Size() == 0) return;
 	const int slot = ComputeWalkSlot(s_skyboxWalk, s_stackWalk != NULL, StackCaptureSlot(), PlayerWalkActive());
 	if (slot < 0 || id < 0 || id >= numsubsectors + numsides) return;
-	ComputeMarkStackVisible(&g_stackVis[0], id, slot);
+	ComputeMarkStackVisible(&g_stackVis[0], id, slot, g_walkSlots);
 	if (slot == kSkyboxWalkSlot) g_skyboxWalked = true;
 }
 void NoteWalkedSubsector(int subsector) { if (subsector < numsubsectors) NoteWalked(subsector); }
@@ -846,7 +882,7 @@ const MeshVertex *StackViewVertices(int slot, int &count)
 static int StackSlotFor(const FPortal *portal)
 {
 	const int before = g_stackUsed;
-	const int slot = zx::hwrender::ComputeSlotFor<const void *>(g_stackPortals, g_stackUsed, kMaxStackViews, portal);
+	const int slot = zx::hwrender::ComputeSlotFor<const void *>(g_stackCapacity > 0 ? &g_stackPortals[0] : NULL, g_stackUsed, g_stackCapacity, portal);
 	if (slot >= 0 && slot == before)
 	{
 		StackViewInfo &v = g_stackInfo[slot];
@@ -878,21 +914,22 @@ static void ForgetFrameWalks()
 {
 	g_mainVisibility = false;
 	g_portalViewsDerived = false;
-	for (int s = 0; s < kWalkSlots; s++) g_slotNeedsClear[s] = true;
+	for (int s = 0; s < g_walkSlots; s++) g_slotNeedsClear[s] = true;
 	g_skyViewpoint = NULL;
 	g_skyHoles.Clear();
 	g_skyboxWalked = false;
 	g_stackUsed = 0;
 	g_walkedMirrors.Clear();
 	g_mirrorSheens.Clear();
-	for (int i = 0; i < kMaxStackViews; i++) { g_stackVerts[i].Clear(); g_skyVerts[kSkyCaptureStack + i].Clear(); }
-	g_stackVis.Resize((unsigned)ComputeStackVisWords(numsubsectors + numsides));
+	for (int i = 0; i < g_stackCapacity; i++) { g_stackVerts[i].Clear(); g_skyVerts[kSkyCaptureStack + i].Clear(); }
+	g_stackVis.Resize((unsigned)ComputeStackVisWords(numsubsectors + numsides, g_walkSlots));
 	if (g_stackVis.Size() > 0) memset(&g_stackVis[0], 0, g_stackVis.Size() * sizeof(unsigned int));
 }
 
 int BeginSkyWalk()
 {
 	g_skyList = ComputeSkyCaptureList(s_mainView, s_sceneNesting, StackWalkSlot());
+	if (!HasSkyList(g_skyList)) g_skyList = kSkyCaptureNone;
 	const SkyWalkNote note = { s_mainView, s_sceneNesting, g_skyList,
 		g_skyList == kSkyCaptureNone ? -1 : (int)g_skyVerts[g_skyList].Size() / 6 };
 	g_walkNotes[g_walkNoteCount++ % 8] = note;
@@ -915,28 +952,28 @@ void BeginSlotVisibility(int slot)
 {
 	// [rc4l] Only this slot: what GL's walks captured in the others before standalone (the mirrors' sheens) is all standalone has of them.
 	const int ids = numsubsectors + numsides;
-	const unsigned words = (unsigned)ComputeStackVisWords(ids);
+	const unsigned words = (unsigned)ComputeStackVisWords(ids, g_walkSlots);
 	if (g_stackVis.Size() != words)
 	{
 		g_stackVis.Resize(words);
 		if (words > 0) memset(&g_stackVis[0], 0, words * sizeof(unsigned int));
-		for (int s = 0; s < kWalkSlots; s++) { g_slotNeedsClear[s] = false; g_slotMarked[s].Clear(); }
+		for (int s = 0; s < g_walkSlots; s++) { g_slotNeedsClear[s] = false; g_slotMarked[s].Clear(); }
 	}
 	TArray<int> &marked = g_slotMarked[slot];
 	if (g_slotNeedsClear[slot])
 	{
-		for (int id = 0; id < ids; id++) ComputeClearStackVisible(&g_stackVis[0], id, slot);
+		for (int id = 0; id < ids; id++) ComputeClearStackVisible(&g_stackVis[0], id, slot, g_walkSlots);
 		g_slotNeedsClear[slot] = false;
 	}
 	else
-		for (unsigned i = 0; i < marked.Size(); i++) ComputeClearStackVisible(&g_stackVis[0], marked[i], slot);
+		for (unsigned i = 0; i < marked.Size(); i++) ComputeClearStackVisible(&g_stackVis[0], marked[i], slot, g_walkSlots);
 	marked.Clear();
 }
 
 void NoteSlotVisible(int slot, int id)
 {
 	if (g_stackVis.Size() == 0 || id < 0 || id >= numsubsectors + numsides) return;
-	ComputeMarkStackVisible(&g_stackVis[0], id, slot);
+	ComputeMarkStackVisible(&g_stackVis[0], id, slot, g_walkSlots);
 	g_slotMarked[slot].Push(id);
 	if (slot == kSkyboxWalkSlot) g_skyboxWalked = true;
 }
@@ -945,7 +982,7 @@ void MarkSlotBits(int slot, const int *ids, int count)
 {
 	if (g_stackVis.Size() == 0) return;
 	for (int i = 0; i < count; i++)
-		if (ids[i] >= 0 && ids[i] < numsubsectors + numsides) ComputeMarkStackVisible(&g_stackVis[0], ids[i], slot);
+		if (ids[i] >= 0 && ids[i] < numsubsectors + numsides) ComputeMarkStackVisible(&g_stackVis[0], ids[i], slot, g_walkSlots);
 }
 
 void NoteSlotMarked(int slot, const int *ids, int count)
@@ -962,11 +999,11 @@ bool MainVisibility() { return g_mainVisibility; }
 void BeginPortalViews()
 {
 	g_stackUsed = 0;
-	for (int i = 0; i < kMaxStackViews; i++)
+	for (int i = 0; i < g_stackCapacity; i++)
 	{
 		g_stackVerts[i].Clear();
 		g_skyVerts[kSkyCaptureStack + i].Clear();
-		BeginSlotVisibility(i);
+		BeginSlotVisibility(ComputeStackWalkSlot(i));
 	}
 	BeginSlotVisibility(kSkyboxWalkSlot);
 	g_skyboxWalked = false;
@@ -977,10 +1014,31 @@ void BeginPortalViews()
 
 bool PortalViewsDerived() { return g_portalViewsDerived; }
 
+// [rc4l] A held set of portal views fitted to this level's views and slots before it is exchanged with the live one.
+static void FitPortalViews(PortalViewState &s)
+{
+	const unsigned views = (unsigned)g_stackCapacity, slots = (unsigned)g_walkSlots;
+	if (s.portals.Size() != views)
+	{
+		s.portals.Resize(views);
+		s.info.Resize(views);
+		for (unsigned i = 0; i < views; i++) { s.portals[i] = NULL; s.info[i].dx = s.info[i].dy = 0.f; s.info[i].ceiling = false; }
+	}
+	s.walls.Resize(views);
+	s.sky.Resize(views);
+	if (s.needsClear.Size() != slots)
+	{
+		s.needsClear.Resize(slots);
+		for (unsigned i = 0; i < slots; i++) s.needsClear[i] = false;
+	}
+	s.marked.Resize(slots);
+}
+
 void SwapPortalViews(PortalViewState &other)
 {
+	FitPortalViews(other);
 	std::swap(g_stackUsed, other.stackUsed);
-	for (int i = 0; i < kMaxStackViews; i++)
+	for (int i = 0; i < g_stackCapacity; i++)
 	{
 		std::swap(g_stackPortals[i], other.portals[i]);
 		std::swap(g_stackInfo[i], other.info[i]);
@@ -988,7 +1046,7 @@ void SwapPortalViews(PortalViewState &other)
 		SwapArrays(g_skyVerts[kSkyCaptureStack + i], other.sky[i]);
 	}
 	SwapArrays(g_stackVis, other.bits);
-	for (int s = 0; s < kWalkSlots; s++)
+	for (int s = 0; s < g_walkSlots; s++)
 	{
 		SwapArrays(g_slotMarked[s], other.marked[s]);
 		std::swap(g_slotNeedsClear[s], other.needsClear[s]);
@@ -1000,16 +1058,14 @@ void SwapPortalViews(PortalViewState &other)
 
 PortalViewState::PortalViewState() : stackUsed(0), skyboxWalked(false)
 {
-	for (int i = 0; i < kMaxStackViews; i++) { portals[i] = NULL; info[i].dx = info[i].dy = 0.f; info[i].ceiling = false; }
-	for (int s = 0; s < kWalkSlots; s++) needsClear[s] = false;
 }
 
 void ForgetWalks()
 {
-	for (int i = 0; i < kSkyCaptureLists; i++) g_skyVerts[i].Clear();
+	for (unsigned i = 0; i < g_skyVerts.Size(); i++) g_skyVerts[i].Clear();
 	ForgetFrameWalks();
 }
-int SkyWalks(int list) { return g_skyWalks[list]; }
+int SkyWalks(int list) { return HasSkyList(list) ? g_skyWalks[list] : 0; }
 void PrintSkyWalkNotes()
 {
 	for (int i = g_walkNoteCount > 8 ? g_walkNoteCount - 8 : 0; i < g_walkNoteCount; i++)
@@ -1024,7 +1080,7 @@ AActor *SkyQuadViewpoint() { return g_skyViewpoint; }
 
 const MeshVertex *SkyQuadVertices(int &count, int list)
 {
-	count = (int)g_skyVerts[list].Size();
+	count = HasSkyList(list) ? (int)g_skyVerts[list].Size() : 0;
 	return count ? &g_skyVerts[list][0] : NULL;
 }
 
@@ -1087,7 +1143,7 @@ static void PushSkyQuad(int list, float x1, float y1, float x2, float y2, const 
 // linedefs where the map has thousands of sky segs. See docs/skybleed-scope.md.
 void AddViewSkyQuad(int list, float x1, float y1, float x2, float y2, const float *zb, const float *zt, AActor *viewpoint, int lineSpecial, int skyKey)
 {
-	if (!fua_mesh_sky || list == kSkyCaptureNone) return;
+	if (!fua_mesh_sky || !HasSkyList(list)) return;
 	if (viewpoint != NULL && ComputeTakesSkyViewpoint(list, g_skyViewpoint != NULL)) g_skyViewpoint = viewpoint;
 	// [rc4l] A horizon line's sky belongs to features/horizon, which builds it for every eye height.
 	if (zx::horizon::HorizonsActive() && zx::horizon::ComputeIsHorizonLine(lineSpecial)) return;
@@ -1098,7 +1154,7 @@ int WalkSkyList() { return g_skyList; }
 
 void AddViewSkyHole(int list, float x1, float y1, float x2, float y2, const float *zfloor, const float *zceil)
 {
-	if (!fua_mesh_sky || list == kSkyCaptureNone) return;
+	if (!fua_mesh_sky || !HasSkyList(list)) return;
 	// [rc4l] The player's own go to the scene shader, which drops only what GL's walk did not draw behind them; another view's, or one past the shader's room, still paints sky over everything behind it.
 	if (ComputeSkyHoleToShader(list, (int)g_skyHoles.Size() / kSkyHoleFloats))
 	{
@@ -1113,6 +1169,7 @@ void AddViewSkyHole(int list, float x1, float y1, float x2, float y2, const floa
 
 void BeginViewSky(int list)
 {
+	if (!HasSkyList(list)) return;
 	g_skyVerts[list].Clear();
 	if (list != kSkyCaptureMain) return;
 	g_skyViewpoint = NULL;

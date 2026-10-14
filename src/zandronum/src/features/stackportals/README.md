@@ -12,6 +12,7 @@ GL's stacked-sector portals and the backend's walks of the stacked views both re
 
 - `gl/data/gl_data.h`: includes `stackportals.h` in place of the declarations it held.
 - `features/levelprep/levelprep.cpp` `PrepareLevel` and `features/frame/levelrenderer.cpp` `EndSerialize`:
-  `gl_InitPortals` at level setup and on a loaded game.
+  `gl_InitPortals` at level setup and on a loaded game, then `StackPortalsInUse` (the portals some sector looks
+  through, since `gl_InitPortals` also makes ones none takes) into `zx::levelmesh::SetStackViewCapacity`.
 - `features/visibility/viswalk.cpp`, `features/levelmesh/flatmesh.cpp`, `features/sidebyside/glchecks.cpp`: the
   portals and their coverage.

@@ -980,7 +980,7 @@ CCMD( fua_look )
 		const int id = zx::levelmesh::PieceStackId( p );
 		int words = 0;
 		const unsigned int *bits = zx::levelmesh::StackVisibility( words );
-		const bool drawn = zx::levelmesh::ComputeStackVisible( bits, words, id, 0 );
+		const bool drawn = zx::levelmesh::ComputeStackVisible( bits, words, id, zx::levelmesh::ComputeStackWalkSlot( 0 ), zx::levelmesh::WalkSlots() );
 		Printf( "  stacked view: %s %d, %s\n", id >= numsubsectors ? "sidedef" : "subsector",
 				id >= numsubsectors ? id - numsubsectors : id, drawn ? "drawn by the view's walk" : "NOT drawn by it" );
 	}

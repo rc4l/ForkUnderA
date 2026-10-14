@@ -356,7 +356,7 @@ static bool BuildSceneBuffer(FString &err)
 				&g_scene.pieces[0], Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 	}
 	// [rc4l] The stacked views' bits follow the same rule: kept while this level's subsectors fit.
-	const unsigned int visWords = (unsigned int)zx::levelmesh::ComputeStackVisWords(numsubsectors + numsides);
+	const unsigned int visWords = (unsigned int)zx::levelmesh::ComputeStackVisWords(numsubsectors + numsides, zx::levelmesh::WalkSlots());
 	const bool stackVisKept = g_scene.stackVisBuf && visWords <= g_scene.stackVisCapacity;
 	if (!stackVisKept)
 	{

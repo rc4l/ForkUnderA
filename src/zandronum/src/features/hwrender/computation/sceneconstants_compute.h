@@ -36,6 +36,7 @@ struct SceneConstantInputs
 	float spriteAlphaCut;             // [rc4l] the texel alpha at or below which an alpha-tested sprite is dropped, GL's uAlphaThreshold for r_mask_sprite_threshold; uFrame.w
 	zx::viewsetup::FixedColormapShade fixedColormap;   // [rc4l] what the view's fixed colormap does to every texel, uFixedColormap and uFixedRange
 	bool lightsCheckSide;             // [rc4l] r_lights_checkside: a light behind a surface's plane does not reach it; uOptions.x
+	int walkSlots;                    // [rc4l] the walk slots each id has this level (ComputeWalkSlots), the stride the walk bits are read by; uOptions.y
 };
 
 // [rc4l] Fill `out` (kSceneConstantFloats floats) from `in`.

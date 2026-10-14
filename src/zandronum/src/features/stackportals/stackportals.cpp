@@ -422,6 +422,18 @@ void gl_InitPortals()
 	}
 }
 
+int StackPortalsInUse()
+{
+	TArray<FPortal *> used;
+	for (int i = 0; i < numsectors; i++)
+		for (int plane = 0; plane < 2; plane++)
+		{
+			FPortal *p = sectors[i].portals[plane];
+			if (p != NULL && used.Find(p) == used.Size()) used.Push(p);
+		}
+	return (int)used.Size();
+}
+
 CCMD(dumpportals)
 {
 	for(unsigned i=0;i<portals.Size(); i++)

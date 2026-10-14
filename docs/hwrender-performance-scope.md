@@ -25,8 +25,8 @@ culls on the GPU. The walk's answer is a bit per piece per walk slot, uploaded e
 vertex shader moves a piece the walk did not reach off screen (`fuaWalked`, `dgscene_glsl.h`). So
 **every pass runs the vertex shader over the whole level**, visible or not.
 
-**Every other view repeats the frame.** The sky portal, stacked portals (2 by default, up to 8),
-plane mirrors (up to 16), the line-mirror tree (up to 12 levels) and each visible camera texture each
+**Every other view repeats the frame.** The sky portal, stacked portals (as many as the level has),
+plane mirrors (one per reflective plane), the line-mirror tree (up to 12 levels) and each visible camera texture each
 run `DrawWorld` again into their own target: light clustering, constants, the whole batch loop,
 decals, and the translucent sort with its index upload. Line mirrors, plane mirrors and camera
 textures draw with walk slot -1, which is the whole level unculled.

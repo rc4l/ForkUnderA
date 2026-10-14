@@ -788,6 +788,7 @@ void WriteSceneConstants(float *cb, const float *clip, float targetW, float targ
 	// [rc4l] GL draws a camera texture with no fixed colormap (RenderTextureView), and every other view under the player's.
 	in.fixedColormap = zx::viewsetup::FixedColormapShadeFor(g_pass.inCameraPass ? CM_DEFAULT : (int)gl_fixedcolormap);
 	in.lightsCheckSide = r_lights_checkside;
+	in.walkSlots = zx::levelmesh::WalkSlots();
 	zx::hwrender::ComputeSceneConstants(in, cb);
 }
 
@@ -826,34 +827,60 @@ static void DrawMirrorSurface(Diligent::IDeviceContext *ctx, unsigned index, con
 // [rc4l] The world from another eye, at the window's size, and the binding that paints a surface from it: a reflective plane's reflection, a stacked view.
 struct ViewTarget
 {
-	Diligent::RefCntAutoPtr<Diligent::ITexture> color, depth;
+	Diligent::RefCntAutoPtr<Diligent::ITexture> color;
 	Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding> srb;
 	int w, h;
 	ViewTarget() : w(0), h(0) {}
-	void Release() { srb.Release(); depth.Release(); color.Release(); w = h = 0; }
+	void Release() { srb.Release(); color.Release(); w = h = 0; }
 };
 
-// [rc4l] Makes a target's pictures at the window's size, and its binding on pso's texture variable, whenever it has none at that size.
+// [rc4l] The depth every view target is rendered with, one view at a time, since a view's picture is all that outlives its render.
+static Diligent::RefCntAutoPtr<Diligent::ITexture> g_viewDepth;
+
+// [rc4l] Makes a target's picture at the window's size, and its binding on pso's texture variable, whenever it has none at that size.
 static bool EnsureViewTarget(ViewTarget &t, Diligent::IPipelineState *pso, const char *var, const char *name)
 {
 	auto *dev = GetDevice();
 	auto *swap = GetSwapChain();
 	if (!dev || !swap || !pso) return false;
 	const int w = FrameWidth(), h = FrameHeight();
-	if (t.color && t.depth && t.srb && t.w == w && t.h == h) return true;
+	if (t.color && t.srb && t.w == w && t.h == h) return true;
 	t.Release();
-	if (!CreateViewTextures(w, h, name, t.color, t.depth) ||
+	if (!CreateColorTarget(w, h, name, t.color) ||
 		!CreatePictureBinding(pso, var, t.color, t.srb)) return false;
 	t.w = w; t.h = h;
 	return true;
 }
 
+// [rc4l] Every target of a pool made at the window's size at once, the pool `size` long, so no view in sight waits on one being made; false when one cannot be.
+static bool FitViewPool(TArray<ViewTarget> &pool, unsigned size, Diligent::IPipelineState *pso, const char *var, const char *name)
+{
+	if (pool.Size() != size) pool.Resize(size);
+	for (unsigned k = 0; k < size; k++)
+		if (!EnsureViewTarget(pool[k], pso, var, name)) return false;
+	return true;
+}
+
+// [rc4l] The shared view depth at a target's size, made when it has none at that size.
+static Diligent::ITexture *ViewDepth(const ViewTarget &t)
+{
+	if (g_viewDepth)
+	{
+		const auto &d = g_viewDepth->GetDesc();
+		if ((int)d.Width == t.w && (int)d.Height == t.h) return g_viewDepth;
+	}
+	if (!CreateDepthTarget(t.w, t.h, "fua view", g_viewDepth)) return NULL;
+	return g_viewDepth;
+}
+
 // [rc4l] The world into a target, from the eye now in viewx/viewy/viewz/viewpitch and through g_pass.clipPlane.
 static void RenderWorldInto(Diligent::IDeviceContext *ctx, ViewTarget &t)
 {
+	Diligent::ITexture *depth = ViewDepth(t);
+	if (depth == NULL) return;
 	BuildMVP(g_mvp);
 	auto *rtv = t.color->GetDefaultView(Diligent::TEXTURE_VIEW_RENDER_TARGET);
-	auto *dsv = t.depth->GetDefaultView(Diligent::TEXTURE_VIEW_DEPTH_STENCIL);
+	auto *dsv = depth->GetDefaultView(Diligent::TEXTURE_VIEW_DEPTH_STENCIL);
 	ctx->SetRenderTargets(1, &rtv, dsv, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 	const float clear[4] = { 0.05f, 0.06f, 0.09f, 1.0f };
 	ctx->ClearRenderTarget(rtv, clear, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
@@ -871,21 +898,22 @@ static void HandOverViewTarget(Diligent::IDeviceContext *ctx, ViewTarget &t)
 
 // Render each mirror's reflection and draw its surface. Called after the world, before the 2D layer.
 // [rc4l] Reflective floors and ceilings as GL's GLPlaneMirrorPortal draws them: each visible plane gets the world rendered from the mirrored eye into a slot before the frame, and the world pass paints its pieces from that picture, flipped, under the translucent floor (decisions in planemirror_compute).
-// [rc4l] Distinct reflective planes a frame, each a render of the world; GL has no limit, and a target is made only for a plane in view.
-static const int kMaxPlaneMirrors = 16;
-static ViewTarget g_pm[kMaxPlaneMirrors];
+// [rc4l] One target per distinct reflective plane the level has now, as GL has no limit, all made before any comes into view.
+static TArray<ViewTarget> g_pm;
 static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_pmPSO;
 // [rc4l] Reflections rendered this frame.
 static int g_pmUsed = 0;
 
 void ReleasePlaneMirrors()
 {
-	for (int k = 0; k < kMaxPlaneMirrors; k++) g_pm[k].Release();
+	g_pm.Clear();
 	g_pmPSO.Release();
+	g_viewDepth.Release();
 	g_pmUsed = 0;
 }
 
-static bool EnsurePlaneMirrorResources()
+// [rc4l] The plane-mirror pipeline, and a target for each of the level's `planes` reflective planes.
+static bool EnsurePlaneMirrorResources(int planes)
 {
 	auto *dev = GetDevice();
 	auto *swap = GetSwapChain();
@@ -954,9 +982,7 @@ static bool EnsurePlaneMirrorResources()
 		if (!g_pmPSO) return false;
 		BindSceneConstants(g_pmPSO);
 	}
-	for (int k = 0; k < g_pmUsed; k++)
-		if (!EnsureViewTarget(g_pm[k], g_pmPSO, "uReflection", "fua plane mirror")) return false;
-	return true;
+	return FitViewPool(g_pm, (unsigned)planes, g_pmPSO, "uReflection", "fua plane mirror");
 }
 
 // [rc4l] Before the frame: pick the reflective planes the eye faces and can see, and render each one's reflection.
@@ -964,29 +990,34 @@ void RenderPlaneMirrors(Diligent::IDeviceContext *ctx)
 {
 	g_pmUsed = 0;
 	for (unsigned i = 0; i < g_scene.blendBatches.Size(); i++) g_scene.batches[g_scene.blendBatches[i]].mirrorSlot = -1;
-	const int maxSlots = fua_dg_planemirrors > 0 ? kMaxPlaneMirrors : 0;
-	if (maxSlots <= 0 || sectors == NULL || !g_scene.vb) return;
+	if (fua_dg_planemirrors <= 0 || sectors == NULL || !g_scene.vb) return;
 
 	float mvp[16];
 	BuildMVP(mvp);
 	const float vz = FIXED2FLOAT(viewz);
-	zx::hwrender::MirrorPlane slots[kMaxPlaneMirrors];
+	// [rc4l] Every reflective plane the level has now, and of those the ones the eye faces and can see, each the slot it is rendered into.
+	static TArray<zx::hwrender::MirrorPlane> planes, slots;
+	planes.Resize(g_scene.blendBatches.Size());
+	slots.Resize(g_scene.blendBatches.Size());
+	int planeCount = 0;
+	const int maxSlots = (int)planes.Size();
 	for (unsigned i = 0; i < g_scene.blendBatches.Size(); i++)
 	{
 		SceneBatch &b = g_scene.batches[g_scene.blendBatches[i]];
 		if (b.mirrorSector < 0 || b.mirrorSector >= numsectors || b.count == 0) continue;
 		const sector_t &s = sectors[b.mirrorSector];
-		const float z = FIXED2FLOAT((b.mirrorCeiling ? s.ceilingplane : s.floorplane).ZatPoint(viewx, viewy));
-		if (!zx::hwrender::ComputePlaneMirrorFaces(b.mirrorCeiling, z, vz)) continue;
-		const float mn[3] = { b.minX, b.minY, b.minZ }, mx[3] = { b.maxX, b.maxY, b.maxZ };
-		if (!zx::hwrender::ComputeBoxMayBeVisible(mvp, mn, mx)) continue;
 		zx::hwrender::MirrorPlane p;
 		p.ceiling = b.mirrorCeiling;
-		p.z = z;
-		b.mirrorSlot = zx::hwrender::ComputePlaneMirrorSlot(slots, g_pmUsed, maxSlots, p);
+		p.z = FIXED2FLOAT((b.mirrorCeiling ? s.ceilingplane : s.floorplane).ZatPoint(viewx, viewy));
+		zx::hwrender::ComputePlaneMirrorSlot(&planes[0], planeCount, maxSlots, p);
+		if (!zx::hwrender::ComputePlaneMirrorFaces(b.mirrorCeiling, p.z, vz)) continue;
+		const float mn[3] = { b.minX, b.minY, b.minZ }, mx[3] = { b.maxX, b.maxY, b.maxZ };
+		if (!zx::hwrender::ComputeBoxMayBeVisible(mvp, mn, mx)) continue;
+		b.mirrorSlot = zx::hwrender::ComputePlaneMirrorSlot(&slots[0], g_pmUsed, maxSlots, p);
 	}
+	if (planeCount == 0) return;
+	if (!EnsurePlaneMirrorResources(planeCount)) { g_pmUsed = 0; return; }
 	if (g_pmUsed == 0) return;
-	if (!EnsurePlaneMirrorResources()) { g_pmUsed = 0; return; }
 
 	const fixed_t sz = viewz;
 	const int sp = viewpitch;
@@ -1022,7 +1053,7 @@ void DrawPlaneMirrorSurfaces(Diligent::IDeviceContext *ctx)
 	for (unsigned i = 0; i < g_scene.blendBatches.Size(); i++)
 	{
 		const SceneBatch &b = g_scene.batches[g_scene.blendBatches[i]];
-		if (b.mirrorSlot < 0 || b.mirrorSlot >= g_pmUsed || !g_pm[b.mirrorSlot].srb) continue;
+		if (b.mirrorSlot < 0 || b.mirrorSlot >= g_pmUsed || b.mirrorSlot >= (int)g_pm.Size() || !g_pm[b.mirrorSlot].srb) continue;
 		if (b.mirrorSlot != bound)
 		{
 			ctx->CommitShaderResources(g_pm[b.mirrorSlot].srb, Diligent::RESOURCE_STATE_TRANSITION_MODE_VERIFY);
@@ -1036,13 +1067,15 @@ void DrawPlaneMirrorSurfaces(Diligent::IDeviceContext *ctx)
 }
 
 // [rc4l] Stacked sectors as GL's GLSectorStackPortal draws them: each view the player's walk saw is the world from the eye moved by its portal, clipped at its planes, and the planes are painted from that picture.
-static ViewTarget g_stack[zx::levelmesh::kMaxStackViews];
+// [rc4l] One target per stacked view the level can show (StackViewCapacity), all made before any comes into view.
+static TArray<ViewTarget> g_stack;
 static int g_stackDrawn = 0;   // [rc4l] Views rendered this frame.
 static Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding> g_stackShowSRB;   // [rc4l] fua_dg_stackshow's blit
 
 void ReleaseStackPortals()
 {
-	for (int k = 0; k < zx::levelmesh::kMaxStackViews; k++) g_stack[k].Release();
+	g_stack.Clear();
+	g_viewDepth.Release();
 	g_stackShowSRB.Release();
 	g_stackSurfPSO.Release();
 	g_stackDrawn = 0;
@@ -1070,12 +1103,14 @@ void UploadWalkVisibility(Diligent::IDeviceContext *ctx)
 void RenderStackPortals(Diligent::IDeviceContext *ctx)
 {
 	g_stackDrawn = 0;
-	int n = zx::levelmesh::StackViewCount();
-	if (fua_dg_stackportals <= 0) n = 0;
-	if (n <= 0 || !g_scene.vb || !g_cb) return;
+	const int capacity = zx::levelmesh::StackViewCapacity();
+	if (fua_dg_stackportals <= 0 || capacity <= 0 || !g_scene.vb || !g_cb) return;
 	if (!g_stackSurfPSO)
 		g_stackSurfPSO = CreateScreenSurfacePSO("fua stack surface", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE);
 	if (!g_stackSurfPSO) return;
+	if (!FitViewPool(g_stack, (unsigned)capacity, g_stackSurfPSO, "uSky", "fua stacked view")) return;
+	const int n = zx::levelmesh::StackViewCount() < capacity ? zx::levelmesh::StackViewCount() : capacity;
+	if (n <= 0) return;
 
 	const fixed_t sx = viewx, sy = viewy;
 	float savedMVP[16];
@@ -1084,7 +1119,6 @@ void RenderStackPortals(Diligent::IDeviceContext *ctx)
 	g_pass.gbufBound = false;
 	for (int k = 0; k < n; k++)
 	{
-		if (!EnsureViewTarget(g_stack[k], g_stackSurfPSO, "uSky", "fua stacked view")) break;
 		const zx::levelmesh::StackViewInfo v = zx::levelmesh::StackView(k);
 		// [rc4l] No clip plane: GL's stacked walk clips nothing, and the cull already keeps to what it drew.
 		viewx = sx + FLOAT2FIXED(v.dx);
@@ -1105,14 +1139,19 @@ void StackInfo(FString &out)
 {
 	int words = 0;
 	const unsigned int *bits = zx::levelmesh::StackVisibility(words);
-	int reached[zx::levelmesh::kWalkSlots] = {};
+	const int slots = zx::levelmesh::WalkSlots();
+	TArray<int> reached;
+	reached.Resize(slots);
+	for (int s = 0; s < slots; s++) reached[s] = 0;
 	for (int w = 0; w < words; w++)
 		for (int b = 0; b < 32; b++)
-			if (bits[w] & (1u << b)) reached[(w * 32 + b) % zx::levelmesh::kWalkSlots]++;
-	out.Format("stacked views: %d drawn, cull %s, %d words; subsectors and sidedefs drawn by view 0: %d, view 1: %d, "
-		"the player's walk: %d, the skybox walk: %d (of %d); %d sky holes",
-		g_stackDrawn, g_scene.stackVisReady ? "on" : "off", words, reached[0], reached[1], reached[zx::levelmesh::kMainWalkSlot],
-		reached[zx::levelmesh::kSkyboxWalkSlot], numsubsectors + numsides, g_scene.skyHoleCount);
+			if (bits[w] & (1u << b)) reached[(w * 32 + b) % slots]++;
+	const int view0 = zx::levelmesh::ComputeStackWalkSlot(0), view1 = zx::levelmesh::ComputeStackWalkSlot(1);
+	out.Format("stacked views: %d drawn of %d the level can show, cull %s, %d words; subsectors and sidedefs drawn by view 0: %d, view 1: %d, "
+		"the player's walk: %d, the skybox walk: %d (of %d); %d sky holes; plane mirrors: %d rendered of %d planes",
+		g_stackDrawn, zx::levelmesh::StackViewCapacity(), g_scene.stackVisReady ? "on" : "off", words,
+		view0 < slots ? reached[view0] : 0, view1 < slots ? reached[view1] : 0, reached[zx::levelmesh::kMainWalkSlot],
+		reached[zx::levelmesh::kSkyboxWalkSlot], numsubsectors + numsides, g_scene.skyHoleCount, g_pmUsed, (int)g_pm.Size());
 }
 
 // [rc4l] In the player's view, with the sky: each stacked plane painted from its view's picture, and depth-written so nothing behind it shows through.
@@ -1120,7 +1159,9 @@ void DrawStackSurfaces(Diligent::IDeviceContext *ctx)
 {
 	if (!g_pass.mainView || g_stackDrawn == 0 || !g_stackSurfPSO) return;
 	static TArray<SceneVertex> sv;
-	unsigned int first[zx::levelmesh::kMaxStackViews], count[zx::levelmesh::kMaxStackViews];
+	static TArray<unsigned int> first, count;
+	first.Resize(g_stackDrawn);
+	count.Resize(g_stackDrawn);
 	sv.Clear();
 	for (int k = 0; k < g_stackDrawn; k++)
 	{
