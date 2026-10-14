@@ -94,6 +94,17 @@ TEST(JobPool, SleepingWorkersWakeForTheNextJob)
 	EXPECT_EQ(31 * 32, sum.load());
 }
 
+// [rc4l] The spin reads back as set, and a negative one is no spin at all.
+TEST(JobPool, TheSpinReadsBackAndIsNeverNegative)
+{
+	JobPool pool(0, 50);
+	EXPECT_EQ(50, pool.SpinMicros());
+	pool.SetSpinMicros(300);
+	EXPECT_EQ(300, pool.SpinMicros());
+	pool.SetSpinMicros(-5);
+	EXPECT_EQ(0, pool.SpinMicros());
+}
+
 TEST(JobPool, BackToBackJobsEachFinishBeforeTheNext)
 {
 	JobPool pool(4, 100000);

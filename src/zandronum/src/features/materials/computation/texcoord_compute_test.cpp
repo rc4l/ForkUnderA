@@ -64,6 +64,19 @@ TEST(TexCoord, AScaledSideDividesTheSizeRoundingUp)
 	EXPECT_FALSE(tci.mWorldPanning);
 }
 
+// [rc4l] The info maps texture units over its drawn size, rows by its height's scale and columns by its width's.
+TEST(TexCoord, TheInfoMapsThroughItsOwnSizesAndScales)
+{
+	const TexCoordSource src = { 64, 128, 32, 64, kTwo, kHalf, false, false };
+	FTexCoordInfo tci;
+	ComputeTexCoordInfo(src, kOne, kOne, &tci);
+	EXPECT_FLOAT_EQ(0.5f, tci.FloatToTexU(16.f));
+	EXPECT_FLOAT_EQ(0.25f, tci.FloatToTexV(16.f));
+	EXPECT_EQ(Fx(32 * 65536), tci.RowOffset(kOffset));
+	EXPECT_EQ(Fx(8 * 65536), tci.TextureOffset(kOffset));
+	EXPECT_EQ(Fx(64), tci.TextureAdjustWidth());
+}
+
 // [rc4l] A camera texture is drawn upside down.
 TEST(TexCoord, ACameraTextureFlipsItsHeight)
 {
