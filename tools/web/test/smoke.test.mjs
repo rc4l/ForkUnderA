@@ -13,6 +13,8 @@ test('Chrome runs headless with WebGPU on the given port and profile', () => {
   assert.ok(args.includes('--enable-unsafe-webgpu'));
   assert.ok(!chromeArgs(9333, '/tmp/p', { headless: false }).includes('--headless=new'));
   assert.ok(chromeArgs(9333, '/tmp/p', { software: true }).includes('--use-webgpu-adapter=swiftshader'));
+  assert.ok(chromeArgs(9333, '/tmp/p', { software: true }).includes('--disable-gpu-watchdog'));
+  assert.ok(!chromeArgs(9333, '/tmp/p').includes('--disable-gpu-watchdog'));
   assert.ok(!chromeArgs(9333, '/tmp/p').includes('--use-webgpu-adapter=swiftshader'));
 });
 

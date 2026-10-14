@@ -14,11 +14,11 @@ export const CHROME_CANDIDATES = [
   '/usr/bin/chromium',
 ];
 
-// [rc4l] `software` puts WebGPU on SwiftShader, Chrome's CPU renderer, for a machine with no GPU such as a CI runner.
+// [rc4l] `software` puts WebGPU on SwiftShader, Chrome's CPU renderer, for a machine with no GPU such as a CI runner; its first frames of a level can outlast the GPU process's watchdog on a small runner, which then kills the process and loses the device.
 export function chromeArgs(port, profileDir, { headless = true, software = false } = {}) {
   return [
     ...(headless ? ['--headless=new'] : []),
-    ...(software ? ['--use-webgpu-adapter=swiftshader', '--enable-unsafe-swiftshader'] : []),
+    ...(software ? ['--use-webgpu-adapter=swiftshader', '--enable-unsafe-swiftshader', '--disable-gpu-watchdog', '--disable-dev-shm-usage'] : []),
     `--remote-debugging-port=${port}`,
     `--user-data-dir=${profileDir}`,
     '--enable-unsafe-webgpu',
