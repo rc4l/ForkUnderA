@@ -78,17 +78,27 @@ async function waitForJson(url, deadline) {
   }
 }
 
-// [rc4l] `init` runs in the page before its own scripts, the page may ask for input (inputAsked), and its downloads land in `downloadDir`.
-export async function smoke({ url, until, seconds = 30, shot, chrome, headless = true, software = false, port = 9333, onLine = console.log, evaluate, after = 10, profile, init, downloadDir }) {
+// [rc4l] Chrome's own log lines about its GPU process and devices, the last `count` of them, the page's console echoed there left out: why a page lost its device, which the page itself is never told.
+export function gpuLogLines(text, count = 15) {
+  return String(text).split(/\r?\n/)
+    .filter((l) => !/:CONSOLE[(:]/.test(l) &&/gpu|dawn|webgpu|swiftshader|vulkan|crash|lost|killed|terminat|exited|out of memory/i.test(l))
+    .slice(-count);
+}
+
+// [rc4l] `init` runs in the page before its own scripts, the page may ask for input (inputAsked), its downloads land in `downloadDir`, and Chrome's own log goes to `logFile`; the browser's version comes back too.
+export async function smoke({ url, until, seconds = 30, shot, chrome, headless = true, software = false, port = 9333, onLine = console.log, evaluate, after = 10, profile, init, downloadDir, logFile }) {
   const exe = chrome ?? CHROME_CANDIDATES.find(p => fs.existsSync(p));
   if (!exe) throw new Error('no Chrome found');
   // [rc4l] A named profile keeps the page's storage between runs, for checking what survives a reload; otherwise a fresh one each time.
   const dir = profile ?? fs.mkdtempSync(path.join(os.tmpdir(), 'fua-smoke-'));
-  const proc = spawn(exe, chromeArgs(port, dir, { headless, software }), { stdio: 'ignore' });
+  const log = logFile ? fs.openSync(logFile, 'w') : 'ignore';
+  const proc = spawn(exe, [...(logFile ? ['--enable-logging=stderr', '--v=0'] : []), ...chromeArgs(port, dir, { headless, software })], { stdio: ['ignore', 'ignore', log] });
+  if (logFile) fs.closeSync(log);
   const lines = [];
   try {
     const deadline = Date.now() + seconds * 1000;
     const targets = await waitForJson(`http://127.0.0.1:${port}/json/list`, deadline);
+    const version = (await waitForJson(`http://127.0.0.1:${port}/json/version`, deadline)).Browser;
     const page = targets.find(t => t.type === 'page');
     const ws = new WebSocket(page.webSocketDebuggerUrl);
     await new Promise((res, rej) => { ws.onopen = res; ws.onerror = rej; });
@@ -141,7 +151,7 @@ export async function smoke({ url, until, seconds = 30, shot, chrome, headless =
       if (r.result?.data) fs.writeFileSync(shot, Buffer.from(r.result.data, 'base64'));
     }
     ws.close();
-    return { matched, lines };
+    return { matched, lines, version };
   } finally {
     // [rc4l] Chrome is gone before this returns, so the next run can use the same profile and the last can remove it; its helper processes can take a moment longer, hence the retries.
     const exited = new Promise(res => { proc.once('exit', res); setTimeout(res, 5000).unref(); });

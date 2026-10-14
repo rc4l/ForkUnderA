@@ -3,7 +3,22 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { chromeArgs, downloadsSettled, formatConsole, formatEval, inputAsked } from '../smoke.mjs';
+import { chromeArgs, downloadsSettled, formatConsole, formatEval, gpuLogLines, inputAsked } from '../smoke.mjs';
+
+test("Chrome's log is read for what it says about its GPU process, not for the page's console", () => {
+  const log = [
+    '[1:2:INFO:CONSOLE(17)] "vulkan: uploaded 18948 verts", source: fua.js (17)',
+    '[1:2:INFO:CONSOLE:20] "vulkan sky: SKY1", source: fua.js (20)',
+    '[1:2:ERROR:gpu_process_host.cc(1000)] GPU process exited unexpectedly: exit_code=139',
+    '[1:2:INFO:other.cc(1)] nothing to see',
+    '[1:2:WARNING:dawn_context.cc(5)] Device lost',
+  ].join('\n');
+  assert.deepEqual(gpuLogLines(log), [
+    '[1:2:ERROR:gpu_process_host.cc(1000)] GPU process exited unexpectedly: exit_code=139',
+    '[1:2:WARNING:dawn_context.cc(5)] Device lost',
+  ]);
+  assert.deepEqual(gpuLogLines(log, 1), ['[1:2:WARNING:dawn_context.cc(5)] Device lost']);
+});
 
 test('Chrome runs headless with WebGPU on the given port and profile', () => {
   const args = chromeArgs(9333, '/tmp/p');

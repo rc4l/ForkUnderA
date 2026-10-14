@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from './serve.mjs';
-import { smoke } from './smoke.mjs';
+import { smoke, gpuLogLines } from './smoke.mjs';
 import { decodePNG, boxStats, px } from '../fuactl/src/pngcore.mjs';
 
 // [rc4l] JavaScript run in the page once the engine has started (fua.js sets fuaCommand just before main), its value the check's result.
@@ -326,13 +326,16 @@ export async function check({ url, checks = CHECKS, seconds = 60, software = fal
     for (const [i, c] of checks.entries()) {
       const shot = c.shot ? path.join(shots, `check-${i}.png`) : undefined;
       const downloadDir = c.download ? fs.mkdtempSync(path.join(shots, `check-${i}-`)) : undefined;
-      const { matched, lines } = await smoke({ url, profile, seconds, software, shot, downloadDir, until: c.until, evaluate: c.evaluate, after: 1, init: c.init, onLine: () => {} });
+      const logFile = path.join(shots, `check-${i}-chrome.log`);
+      const { matched, lines, version } = await smoke({ url, profile, seconds, software, shot, downloadDir, logFile, until: c.until, evaluate: c.evaluate, after: 1, init: c.init, onLine: () => {} });
+      if (i === 0) onResult(`browser: ${version}`);
       const picture = shot || (downloadDir && fs.readdirSync(downloadDir).filter((f) => f.endsWith('.png')).map((f) => path.join(downloadDir, f))[0]);
       const { ok, reason } = judge(c, matched, picture && fs.existsSync(picture) ? decodePNG(picture) : null, lines);
       onResult(`${ok ? 'PASS' : 'FAIL'} ${c.name}${ok ? '' : ': ' + reason}`);
       if (!ok) {
         failed++;
         for (const line of lines.slice(-20)) onResult(`  ${line}`);
+        for (const line of gpuLogLines(fs.readFileSync(logFile, 'utf8'))) onResult(`  [chrome] ${line}`);
         if (shot || downloadDir) onResult(`  screenshot: ${shot || downloadDir}`);
       }
     }
