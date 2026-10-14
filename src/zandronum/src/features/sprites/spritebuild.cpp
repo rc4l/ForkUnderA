@@ -94,6 +94,11 @@ static const int kMaxBands = 16;
 // [rc4l] A band and the fog layer GL draws over it.
 static const int kMaxPieces = kMaxBands * 2;
 
+int ActorModelCull(const AActor *actor, bool hud)
+{
+	return ComputeModelCull(actor->RenderStyle == LegacyRenderStyles[STYLE_Normal], hud);
+}
+
 SpriteStyle StyleOf(const FRenderStyle &s)
 {
 	SpriteStyle o = { s.BlendOp, s.SrcAlpha, s.DestAlpha, s.Flags };
@@ -347,7 +352,7 @@ static void DeriveModel(AActor *thing, const Subject &s, const Look &l, bool che
 		SpriteDrawLookAt(l.so.style, l.so.trans, cm, s.x, s.y, true),
 		ComputeSpriteBlendMode(l.so.style.blendOp, l.so.style.destAlpha, l.so.trans), s.x, s.y, s.z, look);
 	look.inverse = l.inverse;
-	look.cullFace = ComputeModelCull(thing->RenderStyle == LegacyRenderStyles[STYLE_Normal], false);
+	look.cullFace = ActorModelCull(thing, false);
 
 	ModelPose pose;
 	ModelPoseFor(thing, s.model, s.x, s.y, s.z, pose);
@@ -512,7 +517,7 @@ static int DeriveSprite(AActor *thing, const Subject &s, SpritePiece *out, int m
 		mp.range.offset = 0;
 		mp.range.count = 0;
 		mp.material = material;
-		mp.mirrorLine = zx::levelmesh::MirrorCaptureLine();
+		mp.mirrorView = zx::levelmesh::MirrorCaptureView();
 		mp.stackSlot = zx::levelmesh::StackCaptureSlot();
 		mp.dynLightIndex = -1;
 		mp.lightLevel = b.lightlevel;
@@ -610,14 +615,13 @@ static bool DeriveParticle(particle_t *particle, sector_t *sector, SpritePiece &
 	mp.range.offset = 0;
 	mp.range.count = 0;
 	mp.material = material;
-	mp.mirrorLine = zx::levelmesh::MirrorCaptureLine();
+	mp.mirrorView = zx::levelmesh::MirrorCaptureView();
 	mp.stackSlot = zx::levelmesh::StackCaptureSlot();
 	mp.dynLightIndex = -1;
 	mp.lightLevel = lightlevel;
 	mp.lightColor = cm.LightColor.d;
 	mp.fadeColor = cm.FadeColor.d;
-	const SpriteDrawLook plain = { false, false, false, trans };
-	zx::levelmesh::CaptureSpriteShading(lightlevel, getExtraLight(), cm, plain, color.d, mp);
+	zx::levelmesh::CaptureSpriteShading(lightlevel, getExtraLight(), cm, ComputePlainDrawLook(trans), color.d, mp);
 	float dyn[3] = { 0.f, 0.f, 0.f };
 	if (r_lights && view.DynamicLightCount() && !gl_fixedcolormap && r_light_particles)
 		PointLight(particle->x, particle->y, particle->z, particle->subsector, NULL, dyn);
@@ -687,7 +691,7 @@ static const char *Differs(const Noted &a, const Noted &b)
 	if (x.translation != y.translation) return "translation";
 	if (!Same(x.alpha, y.alpha) || x.blendMode != y.blendMode) return "style";
 	if (!Same(x.sortX, y.sortX) || !Same(x.sortY, y.sortY) || !Same(x.sortZ, y.sortZ)) return "sort point";
-	if (x.mirrorLine != y.mirrorLine || x.stackSlot != y.stackSlot) return "walk";
+	if (x.mirrorView != y.mirrorView || x.stackSlot != y.stackSlot) return "walk";
 	if (x.solid != y.solid) return "solid";
 	if (x.cullFace != y.cullFace) return "cull";
 	if (x.stencil != y.stencil) return "stencil";
@@ -700,7 +704,7 @@ void CheckFrameSprites()
 	if (!fua_sprite_check) { g_gl.clear(); g_ours.clear(); return; }
 	// [rc4l] Both lists are in actor order within an actor and a walk; match each actor's run of pieces in one walk against the other's in the same walk, so a mirror's view of an actor is not held against the player's.
 	typedef std::tuple<const void *, int, int> RunKey;
-	const auto keyOf = [](const Noted &n) { return RunKey(n.who, n.piece.mirrorLine, n.piece.stackSlot); };
+	const auto keyOf = [](const Noted &n) { return RunKey(n.who, n.piece.mirrorView, n.piece.stackSlot); };
 	std::map<RunKey, unsigned> glFirst;
 	for (unsigned i = 0; i < g_gl.size(); i++) glFirst.insert(std::make_pair(keyOf(g_gl[i]), i));
 	std::set<RunKey> seen;

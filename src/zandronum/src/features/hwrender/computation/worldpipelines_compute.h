@@ -47,6 +47,17 @@ int ComputeBatchPipeline(int blendMode);
 // [rc4l] A sprite's, model's or decal's pipeline in the translucent pass, from its blend mode (2 additive, 3 fuzz, 4 and 5 the subtract styles), whether its texture is a red-channel mask, whether it is a decal and whether it is a HUD model's; DECALDEF has no subtract style, so a decal never asks for one.
 int ComputeDynamicPipeline(int blendMode, bool redAlpha, bool depthBias, bool hud);
 
+// [rc4l] A blend's source and destination factors and its operation, apart from any graphics API.
+enum { kBlendFactorSrcAlpha, kBlendFactorInvSrcAlpha, kBlendFactorOne, kBlendFactorDestColor };
+enum { kBlendOpAdd, kBlendOpSubtract, kBlendOpRevSubtract };
+struct BlendEquation { int src, dst, op; };
+
+// [rc4l] GL's blend for a kWpBlend* value: the source's alpha over the screen, added whole for additive and the subtract styles, and fuzz as GL's DST_COLOR fallback, the screen times the source plus what the source leaves of it.
+BlendEquation ComputeBlendEquation(int blend);
+
+// [rc4l] The kWpBlend* a projected decal's pass draws with: fuzz's fallback, additive, or alpha over.
+int ComputeDecalPassBlend(bool fuzzPass, bool additivePass);
+
 }} // namespace zx::hwrender
 
 #endif // ZX_WORLDPIPELINES_COMPUTE_H

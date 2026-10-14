@@ -60,6 +60,17 @@ extern area_t			in_area;
 
 // [rc4l] The map sections the view's walks may enter.
 extern TArray<BYTE> currentmapsection;
+// [rc4l] No map section marked in currentmapsection.
+void ClearMapSections();
+// [rc4l] Map section `section` marked in currentmapsection beside those already there.
+void MarkMapSectionBit(int section);
+// [rc4l] currentmapsection cleared for a view's walk and put back when the scope ends, as GL's portals save and restore it.
+struct MapSectionScope
+{
+	MapSectionScope();
+	~MapSectionScope();
+	TArray<BYTE> saved;
+};
 
 // [rc4l] The frame's clock in milliseconds, which warps and glows run on.
 extern long gl_frameMS;

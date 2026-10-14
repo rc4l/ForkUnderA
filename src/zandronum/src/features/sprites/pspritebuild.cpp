@@ -147,8 +147,7 @@ void HUDModelLayer(player_t *player, pspdef_t *psp, fixed_t sx, fixed_t sy, cons
 	zx::levelmesh::MeshPiece look;
 	const int blend = StyleBlendMode(style, rgba[3]);
 	// [rc4l] Sorted at the eye, so a translucent one is drawn last.
-	const SpriteDrawLook plain = { false, false, false, rgba[3] };
-	zx::levelmesh::ModelPieceLook(255, 0, none, false, dyn, 0xffffff, plain, blend, cam.x, cam.y, cam.z, look);
+	zx::levelmesh::ModelPieceLook(255, 0, none, false, dyn, 0xffffff, ComputePlainDrawLook(rgba[3]), blend, cam.x, cam.y, cam.z, look);
 	look.colorR = rgba[0];
 	look.colorG = rgba[1];
 	look.colorB = rgba[2];
@@ -156,7 +155,7 @@ void HUDModelLayer(player_t *player, pspdef_t *psp, fixed_t sx, fixed_t sy, cons
 	look.fogDensity = 0.f;
 	look.fogMode = 0;
 	look.hud = true;
-	look.cullFace = ComputeModelCull(player->mo->RenderStyle == LegacyRenderStyles[STYLE_Normal], true);
+	look.cullFace = ActorModelCull(player->mo, true);
 	zx::levelmesh::ModelCaptureBegin(look, toMesh, player->mo, zx::levelmesh::kModelDraw);
 	CaptureModelFrames(smf, psp->state, psp->tics, weapon, 0);
 	zx::levelmesh::ModelCaptureEnd();

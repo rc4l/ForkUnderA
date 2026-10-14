@@ -93,9 +93,8 @@ void EndViewpoint(bool savedMainView)
 void MarkMapSection()
 {
 	if (currentmapsection.Size() == 0) return;
-	const int mapsection = R_PointInSubsector(viewx, viewy)->mapsection;
-	memset(&currentmapsection[0], 0, currentmapsection.Size());
-	currentmapsection[mapsection >> 3] |= 1 << (mapsection & 7);
+	ClearMapSections();
+	MarkMapSectionBit(R_PointInSubsector(viewx, viewy)->mapsection);
 }
 
 void RenderPlayerView(player_t *player, int paletteBrightness)

@@ -112,6 +112,22 @@ TEST(SkyLook, TheDomeDrawsAtItsScrollMirrorAndRaise)
 	EXPECT_EQ(0.f, c[3]);
 }
 
+// [rc4l] A pass's other skies share a picture when they draw alike, the level's own sky takes none, and past the room a sky is drawn as the level's.
+TEST(SkyLook, EachOtherSkyGetsOnePictureWhileThereIsRoom)
+{
+	const SkyLook level = { 10, 0.f, 0.f, false, -1, 0.f }, a = { 11, 0.f, 0.f, false, -1, 0.f }, b = { 12, 0.f, 0.f, false, -1, 0.f };
+	SkyLook looks[2];
+	int count = 0;
+	EXPECT_EQ(-1, ComputeSkyLookPicture(looks, count, 2, level, level));
+	EXPECT_EQ(0, ComputeSkyLookPicture(looks, count, 2, a, level));
+	EXPECT_EQ(1, ComputeSkyLookPicture(looks, count, 2, b, level));
+	EXPECT_EQ(0, ComputeSkyLookPicture(looks, count, 2, a, level));
+	const SkyLook c = { 13, 0.f, 0.f, false, -1, 0.f };
+	EXPECT_EQ(-1, ComputeSkyLookPicture(looks, count, 2, c, level));
+	EXPECT_EQ(2, count);
+	EXPECT_EQ(12, looks[1].texture);
+}
+
 TEST(SkyLook, TwoSkiesAreTheSameOnlyWhenEverythingDrawnMatches)
 {
 	const SkyLook a = { 10, 30.f, 0.f, false, -1, 0.f };

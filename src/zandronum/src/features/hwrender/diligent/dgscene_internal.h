@@ -7,6 +7,7 @@
 #define ZX_DGSCENE_INTERNAL_H
 
 #include "features/hwrender/computation/tracedsprite_compute.h"   // [rc4l] TracedSprite
+#include "features/hwrender/computation/texflags_compute.h"   // [rc4l] ComputePieceTexFlags, the bits the scene shaders test
 #include "c_dispatch.h"
 #include "c_console.h"
 
@@ -110,9 +111,9 @@ EXTERN_CVAR(Bool, fua_dg_embed)
 EXTERN_CVAR(Int, fua_dg_lightmode)
 EXTERN_CVAR(Bool, fua_dg_loopcommits)
 EXTERN_CVAR(Bool, fua_dg_mirrors_on)
-EXTERN_CVAR(Int, fua_dg_planemirrors)
+EXTERN_CVAR(Bool, fua_dg_planemirrors)
 EXTERN_CVAR(Bool, fua_dg_rtmirrors)
-EXTERN_CVAR(Int, fua_dg_stackportals)
+EXTERN_CVAR(Bool, fua_dg_stackportals)
 EXTERN_CVAR(Bool, fua_dg_stackshow)
 EXTERN_CVAR(Bool, fua_dg_standalone)
 EXTERN_CVAR(Bool, fua_diligent_live)
@@ -126,15 +127,15 @@ namespace zx { namespace hwrender {
 // [rc4l] What the pass being drawn is, and the state that follows from which: one record every pass sets and every draw reads, in place of eight globals.
 struct PassContext
 {
-	bool  mainView;          // [rc4l] the player's own view, the only one that dumps its order or paints plane reflections
-	bool  inSkyPortal;       // [rc4l] the skybox portal rendering its own view, whose sky is part of the skybox image and is drawn
-	bool  inCameraPass;      // [rc4l] a camera texture, whose sky quads are its own walk's
-	int   lineMirror;        // [rc4l] the line mirror whose reflection is being drawn, the one pass that shows its viewer, or -1
-	int   mirrorView;        // [rc4l] the mirror view (MirrorViewOf) whose walk's sprites, models and decals this pass draws, or -1
-	int   stackSlot;         // [rc4l] the stacked view being rendered, or -1
-	float skyCamX, skyCamY, skyCamZ;   // [rc4l] where the skybox camera stood, for the reach test in the world draw
-	float clipPlane[4];      // [rc4l] a mirror's clip plane in mesh space (nx, ny, nz, d), all zero for none
-	bool  gbufBound;         // [rc4l] drawing into the G-buffer, which a pipeline with one colour target cannot do
+	bool  mainView = false;          // [rc4l] the player's own view, the only one that dumps its order or paints plane reflections
+	bool  inSkyPortal = false;       // [rc4l] the skybox portal rendering its own view, whose sky is part of the skybox image and is drawn
+	bool  inCameraPass = false;      // [rc4l] a camera texture, whose sky quads are its own walk's
+	int   lineMirror = -1;           // [rc4l] the line mirror whose reflection is being drawn, the one pass that shows its viewer, or -1
+	int   mirrorView = -1;           // [rc4l] the mirror view (MirrorViewOf) whose walk's sprites, models and decals this pass draws, or -1
+	int   stackSlot = -1;            // [rc4l] the stacked view being rendered, or -1
+	float skyCamX = 0.f, skyCamY = 0.f, skyCamZ = 0.f;   // [rc4l] where the skybox camera stood, for the reach test in the world draw
+	float clipPlane[4] = { 0.f, 0.f, 0.f, 0.f };   // [rc4l] a mirror's clip plane in mesh space (nx, ny, nz, d), all zero for none
+	bool  gbufBound = false;         // [rc4l] drawing into the G-buffer, which a pipeline with one colour target cannot do
 };
 extern PassContext g_pass;
 
@@ -173,7 +174,7 @@ struct ScenePieceData
 	float glowTop[4], glowBottom[4], glowTopPlane[4], glowBottomPlane[4];
 	// [rc4l] A player's damage tint (MeshPiece::tint): colour and strength, then its texture-V span and 1 when it glows.
 	float tint[4], tintRange[4];
-	float desaturation, scrollU, scrollV, texFlags;   // [rc4l] the colormap's desaturation, 0..1, which main.fp mixes every texel toward grey by, the texture shift a scroller added since the bake, and 1 for a stencil plus 2 for an alpha-tested sprite plus 4 for a HUD model's surface plus 8 for a level surface, whose colour is its light alone, plus 16 for TM_INVERSE, 32 for a sprite blended by its own colour, 64 for a 3D fog layer's panel, 128 times its fuzz shader, 1024 for a fog boundary sheet, 2048 times the faces GL culls of a model and 8192 for a fog layer over a subtract sprite
+	float desaturation, scrollU, scrollV, texFlags;   // [rc4l] the colormap's desaturation, 0..1, which main.fp mixes every texel toward grey by, the texture shift a scroller added since the bake, and the piece's texture modes, styles and passes (ComputePieceTexFlags)
 };
 
 // [rc4l] One draw per material. Pieces arrive in bake order, so they are sorted by material first;
@@ -231,7 +232,7 @@ struct DynRun
 	// that draws the interior floor and seats straight through the bodywork.
 	bool         solid;
 	bool         hud;          // [rc4l] a HUD model's surface, whose blended pipelines write depth
-	int          mirrorLine;   // [rc4l] the viewer's own sprite, drawn only in this line mirror's reflection, or -1
+	int          mirrorView;   // [rc4l] the mirror view whose walk alone drew it (MirrorCaptureView), or -1 for the frame's
 	int          stackSlot;    // [rc4l] drawn only in this stacked view, whose walk took it, or -1 for every other pass
 	int          onMirror;     // [rc4l] a decal on this line mirror's face, drawn over its surface by DrawMirrorFaceDecals, or -1
 	float        cx, cy, cz;   // centroid, for the merged sort

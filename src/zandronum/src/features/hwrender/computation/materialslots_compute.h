@@ -26,6 +26,9 @@ unsigned ComputeMaterialSlotCapacity(const DescriptorLimits &limits);
 // [rc4l] GLSL `source` with `defines` inserted after its first line, the #version a shader must start with; a source with no line break is returned as it was.
 std::string ComputeShaderWithDefines(const char *source, const std::string &defines);
 
+// [rc4l] Where a material array's binding from slot `from` stops: every slot to its capacity the first time (from 0, the placeholder past the filled ones), else only the slots filled since.
+unsigned ComputeMaterialBindEnd(unsigned from, unsigned capacity, unsigned filled);
+
 }} // namespace zx::hwrender
 
 #endif // ZX_MATERIALSLOTS_COMPUTE_H

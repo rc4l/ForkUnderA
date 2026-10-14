@@ -49,6 +49,8 @@ void PointDynamicLight(fixed_t x, fixed_t y, fixed_t z, subsector_t *subsec, flo
 // [rc4l] An engine render style as spritestyle_compute takes it, and back.
 SpriteStyle StyleOf(const FRenderStyle &s);
 FRenderStyle RenderStyleOf(const SpriteStyle &s);
+// [rc4l] The faces GL culls of an actor's model (ComputeModelCull), drawn as the weapon or in the world.
+int ActorModelCull(const AActor *actor, bool hud);
 // [rc4l] The blend (MeshPiece::blendMode) an engine render style draws with at `alpha`.
 int StyleBlendMode(const FRenderStyle &s, float alpha);
 

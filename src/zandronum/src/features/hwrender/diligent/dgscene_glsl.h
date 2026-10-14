@@ -9,6 +9,12 @@
 // [rc4l] kMainWalkSlot spelled for the scene shader, which reads one bit per walk for every subsector and sidedef, the level's WalkSlots of them an id (uOptions.y).
 #define FUA_MAIN_WALK_SLOT_STR "0"
 static_assert(zx::levelmesh::kMainWalkSlot == 0, "FUA_MAIN_WALK_SLOT_STR spells kMainWalkSlot");
+// [rc4l] The texFlags values the shaders below test by number, held to ComputePieceTexFlags' layout.
+static_assert(zx::hwrender::kTexFlagStencil == 1 && zx::hwrender::kTexFlagAlphaTest == 2 && zx::hwrender::kTexFlagHud == 4 &&
+	zx::hwrender::kTexFlagLevel == 8 && zx::hwrender::kTexFlagInverse == 16 && zx::hwrender::kTexFlagColorBlend == 32 &&
+	zx::hwrender::kTexFlagFogLayer == 64 && zx::hwrender::kTexFlagFogBoundary == 1024 && zx::hwrender::kTexFlagFogPass == 8192 &&
+	zx::hwrender::kTexFlagFuzzShift == 7 && zx::hwrender::kTexFlagFuzzMask == 7 && zx::hwrender::kTexFlagCullShift == 11 &&
+	zx::hwrender::kTexFlagCullMask == 3, "the scene shaders test texFlags by these values");
 static const char *kSceneVS =
 	"#version 450\n"
 	"layout(location = 0) in vec3 aPos;\n"

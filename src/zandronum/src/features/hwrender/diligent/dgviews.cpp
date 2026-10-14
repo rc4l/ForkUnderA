@@ -84,28 +84,38 @@ void ReleaseAccelerationStructures()
 	ReleaseMirrorBinding();   // the mirror SRB holds a reference to the TLAS
 }
 
-// [rc4l] The top level over the level (custom index 0), the mirrors' faces (1) and this frame's sprites (2), each that exists.
+// [rc4l] The top level's instances, each's custom index its place here: the level, the mirrors' faces and this frame's sprites.
+static const Diligent::Uint32 kTlasInstances = 3;
+
+// [rc4l] A buffer the ray-tracing builds read or write: immutable with `data`, else default usage for a build to fill.
+static bool CreateRayTracingBuffer(const char *name, Diligent::Uint64 size, const void *data, Diligent::RefCntAutoPtr<Diligent::IBuffer> &out)
+{
+	Diligent::BufferDesc bd;
+	bd.Name = name;
+	bd.Usage = data != NULL ? Diligent::USAGE_IMMUTABLE : Diligent::USAGE_DEFAULT;
+	bd.BindFlags = Diligent::BIND_RAY_TRACING;
+	bd.Size = size;
+	Diligent::BufferData init(data, size);
+	out.Release();
+	GetDevice()->CreateBuffer(bd, data != NULL ? &init : nullptr, &out);
+	return out != nullptr;
+}
+
+// [rc4l] The top level over each of its instances that exists this frame.
 static void BuildTopLevel(Diligent::IDeviceContext *ctx)
 {
-	Diligent::TLASBuildInstanceData inst[3];
+	const struct { const char *name; Diligent::IBottomLevelAS *blas; bool present; } parts[kTlasInstances] = {
+		{ "level", g_blas, true }, { "mirrors", g_mirrorBlas, g_asMirrorFaces }, { "sprites", g_spriteBlas, g_spriteBlas && g_spriteCount > 0 },
+	};
+	Diligent::TLASBuildInstanceData inst[kTlasInstances];
 	Diligent::Uint32 count = 0;
-	inst[count].InstanceName = "level";
-	inst[count].pBLAS = g_blas;
-	inst[count].Mask = 0xFF;
-	inst[count++].CustomId = 0;
-	if (g_asMirrorFaces)
+	for (Diligent::Uint32 i = 0; i < kTlasInstances; i++)
 	{
-		inst[count].InstanceName = "mirrors";
-		inst[count].pBLAS = g_mirrorBlas;
+		if (!parts[i].present) continue;
+		inst[count].InstanceName = parts[i].name;
+		inst[count].pBLAS = parts[i].blas;
 		inst[count].Mask = 0xFF;
-		inst[count++].CustomId = 1;
-	}
-	if (g_spriteBlas && g_spriteCount > 0)
-	{
-		inst[count].InstanceName = "sprites";
-		inst[count].pBLAS = g_spriteBlas;
-		inst[count].Mask = 0xFF;
-		inst[count++].CustomId = 2;
+		inst[count++].CustomId = i;
 	}
 	Diligent::BuildTLASAttribs tlasAttribs;
 	tlasAttribs.pTLAS                        = g_tlas;
@@ -126,31 +136,14 @@ static bool BuildMirrorStructure(Diligent::IRenderDevice *dev, Diligent::IDevice
 {
 	const Diligent::Uint32 vertCount = verts.Size() / 6;
 	if (vertCount < 3) return false;
-	Diligent::BufferDesc vb;
-	vb.Name = "fua mirror AS VB";
-	vb.Usage = Diligent::USAGE_IMMUTABLE;
-	vb.BindFlags = Diligent::BIND_RAY_TRACING;
-	vb.Size = (Diligent::Uint64)verts.Size() * sizeof(float);
-	Diligent::BufferData vbData(&verts[0], vb.Size);
-	dev->CreateBuffer(vb, &vbData, &g_mirrorASVB);
-	if (!g_mirrorASVB) return false;
+	if (!CreateRayTracingBuffer("fua mirror AS VB", (Diligent::Uint64)verts.Size() * sizeof(float), &verts[0], g_mirrorASVB)) return false;
 	// [rc4l] Each face's normal, and its mirror's line for a ray that bounces off it to find the view it is in after.
-	TArray<float> planes;
-	for (Diligent::Uint32 v = 0; v < vertCount; v += 6)
-	{
-		const float *p = &verts[v * 6];
-		planes.Push(p[3]); planes.Push(p[4]); planes.Push(p[5]); planes.Push(v / 6 < g_mirrors.Size() ? (float)g_mirrors[v / 6].line : -1.f);
-	}
-	Diligent::BufferDesc pb;
-	pb.Name = "fua mirror planes";
-	pb.Usage = Diligent::USAGE_IMMUTABLE;
-	pb.BindFlags = Diligent::BIND_SHADER_RESOURCE;
-	pb.Mode = Diligent::BUFFER_MODE_STRUCTURED;
-	pb.ElementByteStride = sizeof(float) * 4;
-	pb.Size = (Diligent::Uint64)planes.Size() * sizeof(float);
-	Diligent::BufferData pbData(&planes[0], pb.Size);
-	dev->CreateBuffer(pb, &pbData, &g_mirrorPlanes);
-	if (!g_mirrorPlanes) return false;
+	const unsigned faces = verts.Size() / zx::hwrender::kMirrorFaceFloats;
+	std::vector<int> lines(faces, -1);
+	for (unsigned i = 0; i < faces && i < g_mirrors.Size(); i++) lines[i] = g_mirrors[i].line;
+	std::vector<float> planes((size_t)faces * zx::hwrender::kMirrorPlaneFloats);
+	zx::hwrender::ComputeMirrorPlaneRecords(&verts[0], faces, lines.data(), planes.data());
+	if (!CreateStructuredBuffer("fua mirror planes", sizeof(float) * zx::hwrender::kMirrorPlaneFloats, faces, planes.data(), g_mirrorPlanes)) return false;
 
 	Diligent::BLASTriangleDesc tri;
 	tri.GeometryName = "mirrors";
@@ -165,14 +158,8 @@ static bool BuildMirrorStructure(Diligent::IRenderDevice *dev, Diligent::IDevice
 	desc.TriangleCount = 1;
 	dev->CreateBLAS(desc, &g_mirrorBlas);
 	if (!g_mirrorBlas) return false;
-	Diligent::BufferDesc sb;
-	sb.Name = "fua mirror AS scratch";
-	sb.Usage = Diligent::USAGE_DEFAULT;
-	sb.BindFlags = Diligent::BIND_RAY_TRACING;
-	sb.Size = g_mirrorBlas->GetScratchBufferSizes().Build;
 	Diligent::RefCntAutoPtr<Diligent::IBuffer> scratch;
-	dev->CreateBuffer(sb, nullptr, &scratch);
-	if (!scratch) return false;
+	if (!CreateRayTracingBuffer("fua mirror AS scratch", g_mirrorBlas->GetScratchBufferSizes().Build, NULL, scratch)) return false;
 	Diligent::BLASBuildTriangleData data;
 	data.GeometryName = tri.GeometryName;
 	data.pVertexBuffer = g_mirrorASVB;
@@ -221,13 +208,8 @@ bool EnsureAccelerationStructure()
 	dev->CreateBLAS(blasDesc, &g_blas);
 	if (!g_blas) return false;
 
-	Diligent::BufferDesc sb;
-	sb.Name          = "fua AS scratch";
-	sb.Usage         = Diligent::USAGE_DEFAULT;
-	sb.BindFlags     = Diligent::BIND_RAY_TRACING;
-	sb.Size          = g_blas->GetScratchBufferSizes().Build;
-	dev->CreateBuffer(sb, nullptr, &g_asScratch);
-	if (!g_asScratch) return false;
+	const Diligent::Uint64 blasScratch = g_blas->GetScratchBufferSizes().Build;
+	if (!CreateRayTracingBuffer("fua AS scratch", blasScratch, NULL, g_asScratch)) return false;
 
 	// The scene VB is interleaved: position is the first three floats of each SceneVertex, and the
 	// stride carries the rest. No second copy of the level is needed.
@@ -255,27 +237,15 @@ bool EnsureAccelerationStructure()
 	g_asMirrorFaces = BuildMirrorStructure(dev, ctx, g_mirrorVerts);
 	Diligent::TopLevelASDesc tlasDesc;
 	tlasDesc.Name             = "fua level TLAS";
-	tlasDesc.MaxInstanceCount = 3;
+	tlasDesc.MaxInstanceCount = kTlasInstances;
 	tlasDesc.Flags            = Diligent::RAYTRACING_BUILD_AS_PREFER_FAST_TRACE;
 	dev->CreateTLAS(tlasDesc, &g_tlas);
 	if (!g_tlas) return false;
 
-	Diligent::BufferDesc ib;
-	ib.Name      = "fua TLAS instances";
-	ib.Usage     = Diligent::USAGE_DEFAULT;
-	ib.BindFlags = Diligent::BIND_RAY_TRACING;
-	ib.Size      = Diligent::TLAS_INSTANCE_DATA_SIZE * 3;
-	dev->CreateBuffer(ib, nullptr, &g_tlasInstances);
-	if (!g_tlasInstances) return false;
-
-	Diligent::BufferDesc sb2 = sb;
-	sb2.Size = g_tlas->GetScratchBufferSizes().Build;
-	if (sb2.Size > sb.Size)
-	{
-		g_asScratch.Release();
-		dev->CreateBuffer(sb2, nullptr, &g_asScratch);
-		if (!g_asScratch) return false;
-	}
+	if (!CreateRayTracingBuffer("fua TLAS instances", (Diligent::Uint64)Diligent::TLAS_INSTANCE_DATA_SIZE * kTlasInstances, NULL, g_tlasInstances)) return false;
+	// [rc4l] One scratch serves both builds, so it is grown when the top level wants more than the level did.
+	const Diligent::Uint64 tlasScratch = g_tlas->GetScratchBufferSizes().Build;
+	if (tlasScratch > blasScratch && !CreateRayTracingBuffer("fua AS scratch", tlasScratch, NULL, g_asScratch)) return false;
 
 	g_spriteCount = 0;
 	BuildTopLevel(ctx);
@@ -295,24 +265,10 @@ static bool EnsureSpriteBuffers(Diligent::IRenderDevice *dev, unsigned n, unsign
 	const unsigned cap = ComputeGrownCapacity(want, 64), stepCap = ComputeGrownCapacity(steps, 16);
 	g_spriteBlas.Release(); g_spriteBoxes.Release(); g_spriteRecords.Release(); g_spriteScratch.Release();
 	g_spriteCapacity = g_spriteStepCapacity = 0;
-	Diligent::BufferDesc bb;
-	bb.Name = "fua traced sprite boxes";
-	bb.Usage = Diligent::USAGE_DEFAULT;
-	bb.BindFlags = Diligent::BIND_RAY_TRACING;
-	bb.Size = (Diligent::Uint64)cap * 6 * sizeof(float);
-	dev->CreateBuffer(bb, nullptr, &g_spriteBoxes);
-	Diligent::BufferDesc rb;
-	rb.Name = "fua traced sprites";
-	rb.Usage = Diligent::USAGE_DEFAULT;
-	rb.BindFlags = Diligent::BIND_SHADER_RESOURCE;
-	rb.Mode = Diligent::BUFFER_MODE_STRUCTURED;
-	rb.ElementByteStride = sizeof(float) * 4;
-	rb.Size = (Diligent::Uint64)(ComputeTracedSpriteHeaderFloats(stepCap) + cap * kTracedSpriteFloats) * sizeof(float);
+	if (!CreateRayTracingBuffer("fua traced sprite boxes", (Diligent::Uint64)cap * 6 * sizeof(float), NULL, g_spriteBoxes)) return false;
 	// [rc4l] Zeroed, so a ray reads no steps and no sprites before the first frame's are written.
-	std::vector<float> zero((size_t)(rb.Size / sizeof(float)), 0.f);
-	Diligent::BufferData rbData(zero.data(), rb.Size);
-	dev->CreateBuffer(rb, &rbData, &g_spriteRecords);
-	if (!g_spriteBoxes || !g_spriteRecords) return false;
+	std::vector<float> zero(ComputeTracedSpriteHeaderFloats(stepCap) + cap * kTracedSpriteFloats, 0.f);
+	if (!CreateStructuredBuffer("fua traced sprites", sizeof(float) * 4, zero.size() / 4, zero.data(), g_spriteRecords)) return false;
 	Diligent::BLASBoundingBoxDesc box;
 	box.GeometryName = "sprites";
 	box.MaxBoxCount = cap;
@@ -323,13 +279,7 @@ static bool EnsureSpriteBuffers(Diligent::IRenderDevice *dev, unsigned n, unsign
 	desc.Flags = Diligent::RAYTRACING_BUILD_AS_PREFER_FAST_BUILD;
 	dev->CreateBLAS(desc, &g_spriteBlas);
 	if (!g_spriteBlas) return false;
-	Diligent::BufferDesc sb;
-	sb.Name = "fua traced sprite scratch";
-	sb.Usage = Diligent::USAGE_DEFAULT;
-	sb.BindFlags = Diligent::BIND_RAY_TRACING;
-	sb.Size = g_spriteBlas->GetScratchBufferSizes().Build;
-	dev->CreateBuffer(sb, nullptr, &g_spriteScratch);
-	if (!g_spriteScratch) return false;
+	if (!CreateRayTracingBuffer("fua traced sprite scratch", g_spriteBlas->GetScratchBufferSizes().Build, NULL, g_spriteScratch)) return false;
 	g_spriteCapacity = cap;
 	g_spriteStepCapacity = stepCap;
 	return true;
@@ -389,7 +339,6 @@ static void UpdateTracedSprites(Diligent::IDeviceContext *ctx)
 // because the reflected camera keeps the main camera's projection, so a point on the mirror surface
 // lands on exactly the pixel showing what it reflects -- no second projection to get wrong, and no
 // per-mirror texture coordinates.
-// [rc4l] MirrorSurface and g_mirrors are declared with the structures, whose planes carry each mirror's line.
 // [rc4l] Every mirror's face as two triangles, in g_mirrors' order: g_mirrorVerts, declared with the structure that is built from it.
 static Diligent::RefCntAutoPtr<Diligent::IBuffer> g_mirrorVB;
 static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_mirrorPSO;
@@ -522,6 +471,10 @@ static const char *kMirrorVS =
 // Not textured yet: a texture would need the material for that triangle, which means bindless. The
 // lit flat colour is the honest intermediate -- it proves the fetch and the interpolation before the
 // binding work that would hide a mistake in either.
+// [rc4l] kNoMirrorView spelled for the traced shader, which steps a ray into no view when no walk went its way.
+#define FUA_NO_MIRROR_VIEW_STR "-2"
+static_assert(zx::levelmesh::kNoMirrorView == -2, "FUA_NO_MIRROR_VIEW_STR spells kNoMirrorView");
+
 static const char *kMirrorPS =
 	"#version 460\n"
 	"#extension GL_EXT_ray_query : require\n"
@@ -572,7 +525,7 @@ static const char *kMirrorPS =
 	"int fuaNextView(int view, int line) {\n"
 	"    uint n = uint(tracedSprites[0].x);\n"
 	"    for (uint i = 1u; i <= n; i++) { vec4 e = tracedSprites[i]; if (int(e.x) == view && int(e.y) == line) return int(e.z); }\n"
-	"    return -2;\n"
+	"    return " FUA_NO_MIRROR_VIEW_STR ";\n"
 	"}\n"
 	// [rc4l] A piece's material slot, the whole array's worth: a mask left from a 512-slot array sent every slot past 511 to another texture.
 	"uint pieceMat(uint p)    { return min(uint(pieces[p].fogAlphaMat.w + 0.5), uint(FUA_MAT_SLOTS - 1)); }\n"
@@ -725,9 +678,9 @@ static bool BindMirrorMaterials(unsigned from, bool report)
 	}
 	unsigned fellBack = 0;
 	// [rc4l] A rebind replaces only the white placeholders under the new slots, which Diligent keeps unless told to overwrite.
-	const Diligent::Uint32 to = from == 0 ? (Diligent::Uint32)MaterialSlotCapacity() : (Diligent::Uint32)MaterialSlots().Size();
+	const Diligent::Uint32 to = zx::hwrender::ComputeMaterialBindEnd(from, MaterialSlotCapacity(), MaterialSlots().Size());
 	const Diligent::SET_SHADER_RESOURCE_FLAGS flags = from == 0 ? Diligent::SET_SHADER_RESOURCE_FLAG_NONE : Diligent::SET_SHADER_RESOURCE_FLAG_ALLOW_OVERWRITE;
-	for (Diligent::Uint32 mi = from; mi < to && mi < (Diligent::Uint32)MaterialSlotCapacity(); mi++)
+	for (Diligent::Uint32 mi = from; mi < to; mi++)
 	{
 		const void *mat = (mi < MaterialSlots().Size()) ? MaterialSlots()[mi].material : NULL;
 		const int tr = (mi < MaterialSlots().Size()) ? MaterialSlots()[mi].translation : 0;
@@ -742,6 +695,20 @@ static bool BindMirrorMaterials(unsigned from, bool report)
 	// this separates the two without reading it off a screenshot.
 	if (report) Printf("mirror: %u materials bound, %u fell back to white\n", (unsigned)MaterialSlots().Size(), fellBack);
 	return true;
+}
+
+// [rc4l] Whether materials were made since the traced pipeline's array was filled, which a ray meeting one would sample as white.
+static bool MirrorMaterialsStale()
+{
+	return g_mirrorPSO && g_mirrorPSOTraced && MaterialSlots().Size() > g_mirrorMaterialSlots;
+}
+
+// [rc4l] The sprites' records on the traced binding, whose buffer a growth may have replaced.
+static void BindTracedSprites()
+{
+	if (g_spriteRecords && g_mirrorSRB)
+		if (auto *v = g_mirrorSRB->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "TracedSprites"))
+			v->Set(g_spriteRecords->GetDefaultView(Diligent::BUFFER_VIEW_SHADER_RESOURCE));
 }
 
 // [rc4l] The deepest picture level, one past r_mirror_recursions' ceiling of 10, whose mirrors are cleared.
@@ -905,7 +872,7 @@ bool EnsureMirrorResources()
 	}
 
 	// [rc4l] Slots made since the array was filled (a sprite's, first drawn this frame), bound and a fresh binding taken so it copies them.
-	if (g_mirrorPSO && g_mirrorPSOTraced && MaterialSlots().Size() > g_mirrorMaterialSlots)
+	if (MirrorMaterialsStale())
 	{
 		BindMirrorMaterials(g_mirrorMaterialSlots, false);
 		g_mirrorSRB.Release();
@@ -938,8 +905,7 @@ bool EnsureMirrorResources()
 			if (auto *v = g_mirrorSRB->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "MirrorPlanes"))
 				v->Set((g_mirrorPlanes ? g_mirrorPlanes.RawPtr() : g_scene.vb.RawPtr())->GetDefaultView(Diligent::BUFFER_VIEW_SHADER_RESOURCE));
 			// [rc4l] The sprites' records, made now (zeroed) when no frame has made them yet.
-			if (auto *v = g_mirrorSRB->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "TracedSprites"))
-				if (EnsureSpriteBuffers(GetDevice(), 0, 0)) v->Set(g_spriteRecords->GetDefaultView(Diligent::BUFFER_VIEW_SHADER_RESOURCE));
+			if (EnsureSpriteBuffers(GetDevice(), 0, 0)) BindTracedSprites();
 			// [rc4l] The sky, resolved here rather than reused from EnsureSky: that runs mid-frame with
 			// a render pass open, and this may have to upload the texture.
 			if (auto *v2 = g_mirrorSRB->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "uSky"))
@@ -972,15 +938,14 @@ bool EnsureMirrorResources()
 
 void ReleaseMirrorBinding() { ReleaseMirrorLevels(); g_mirrorSRB.Release(); g_mirrorTraced = false; }
 
-// [rc4l] The scene constant block for this frame's camera; passes differ only in clip plane, target size and bindless.
 int PassWalkSlot()
 {
-	// [rc4l] The player's own pass, with no mirror plane, draws only what the visibility walk reached, as GL draws only what its walk reached.
-	const bool mainCull = g_pass.mainView && g_pass.lineMirror < 0 && !g_pass.inCameraPass && g_pass.clipPlane[0] == 0.f &&
-		g_pass.clipPlane[1] == 0.f && g_pass.clipPlane[2] == 0.f && g_pass.clipPlane[3] == 0.f && zx::levelmesh::MainVisibility();
+	const bool mainCull = zx::levelmesh::ComputeMainCull(g_pass.mainView, g_pass.lineMirror, g_pass.inCameraPass, g_pass.clipPlane,
+		zx::levelmesh::MainVisibility());
 	return zx::levelmesh::ComputePassWalkSlot(g_scene.stackVisReady, g_pass.stackSlot, g_pass.inSkyPortal, zx::levelmesh::SkyboxWalked(), mainCull);
 }
 
+// [rc4l] The scene constant block for this frame's camera; passes differ only in clip plane, target size and bindless.
 void WriteSceneConstants(float *cb, const float *clip, float targetW, float targetH, float materialSlots)
 {
 	zx::hwrender::SceneConstantInputs in;
@@ -1212,7 +1177,7 @@ void RenderPlaneMirrors(Diligent::IDeviceContext *ctx)
 {
 	g_pmUsed = 0;
 	for (unsigned i = 0; i < g_scene.blendBatches.Size(); i++) g_scene.batches[g_scene.blendBatches[i]].mirrorSlot = -1;
-	if (fua_dg_planemirrors <= 0 || sectors == NULL || !g_scene.vb) return;
+	if (!fua_dg_planemirrors || sectors == NULL || !g_scene.vb) return;
 
 	float mvp[16];
 	BuildMVP(mvp);
@@ -1326,7 +1291,7 @@ void RenderStackPortals(Diligent::IDeviceContext *ctx)
 {
 	g_stackDrawn = 0;
 	const int capacity = zx::levelmesh::StackViewCapacity();
-	if (fua_dg_stackportals <= 0 || capacity <= 0 || !g_scene.vb || !g_cb) return;
+	if (!fua_dg_stackportals || capacity <= 0 || !g_scene.vb || !g_cb) return;
 	if (!g_stackSurfPSO)
 		g_stackSurfPSO = CreateScreenSurfacePSO("fua stack surface", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE);
 	if (!g_stackSurfPSO) return;
@@ -1364,10 +1329,7 @@ void StackInfo(FString &out)
 	const int slots = zx::levelmesh::WalkSlots();
 	TArray<int> reached;
 	reached.Resize(slots);
-	for (int s = 0; s < slots; s++) reached[s] = 0;
-	for (int w = 0; w < words; w++)
-		for (int b = 0; b < 32; b++)
-			if (bits[w] & (1u << b)) reached[(w * 32 + b) % slots]++;
+	for (int s = 0; s < slots; s++) reached[s] = zx::levelmesh::ComputeSlotCount(bits, words, numsubsectors + numsides, s, slots);
 	const int view0 = zx::levelmesh::ComputeStackWalkSlot(0), view1 = zx::levelmesh::ComputeStackWalkSlot(1);
 	out.Format("stacked views: %d drawn of %d the level can show, cull %s, %d words; subsectors and sidedefs drawn by view 0: %d, view 1: %d, "
 		"the player's walk: %d, the skybox walk: %d (of %d); %d sky holes; plane mirrors: %d rendered of %d planes",
@@ -1535,13 +1497,13 @@ static void RenderMirrorNode(Diligent::IDeviceContext *ctx, unsigned i, int leve
 	ctx->ClearRenderTarget(rtv, clear, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 	ctx->ClearDepthStencil(dsv, Diligent::CLEAR_DEPTH_FLAG, 1.0f, 0, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 	// [rc4l] The view this reflection is, by its mirrors from the player outward, whose walk's sprites, models and decals it draws.
-	static TArray<int> path;
-	path.Clear();
-	for (int n = node; n >= 0; n = g_mirrorNodes[n].parent) path.Insert(0, g_mirrors[g_mirrorNodes[n].mirror].line);
+	static std::vector<int> path;
+	zx::hwrender::ComputeRootPath(node, [](int n) { return g_mirrorNodes[n].parent; }, path);
+	for (size_t k = 0; k < path.size(); k++) path[k] = g_mirrors[g_mirrorNodes[path[k]].mirror].line;
 	const int outer = g_mirrorPass;
 	g_mirrorPass = node;
 	g_pass.lineMirror = m.line;
-	g_pass.mirrorView = zx::levelmesh::MirrorViewOf(&path[0], (int)path.Size());
+	g_pass.mirrorView = zx::levelmesh::MirrorViewOf(path.data(), (int)path.size());
 	DrawWorld(ctx);
 	ForgetViewSkyLooks();
 	g_pass.mirrorView = -1;
@@ -1567,7 +1529,7 @@ void RenderMirrors(Diligent::IDeviceContext *ctx)
 	if (!r_mirrors) return;
 	if (g_mirrors.Size() == 0) return;
 	// [rc4l] Also when a sprite's material came after the traced array was filled, so a ray meeting it samples it rather than white.
-	if (!g_mirrorPSO || !g_mirrorSRB || !g_mirrorVB || (g_mirrorPSOTraced && MaterialSlots().Size() > g_mirrorMaterialSlots))
+	if (!g_mirrorPSO || !g_mirrorSRB || !g_mirrorVB || MirrorMaterialsStale())
 	{
 		if (!EnsureMirrorResources()) return;
 	}
@@ -1582,9 +1544,7 @@ void RenderMirrors(Diligent::IDeviceContext *ctx)
 	if (traced)
 	{
 		UpdateTracedSprites(ctx);
-		if (g_spriteRecords && g_mirrorSRB)
-			if (auto *v = g_mirrorSRB->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "TracedSprites"))
-				v->Set(g_spriteRecords->GetDefaultView(Diligent::BUFFER_VIEW_SHADER_RESOURCE));
+		BindTracedSprites();
 	}
 	{
 		static int said = -1;

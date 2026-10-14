@@ -41,6 +41,9 @@ SkyLook ComputeSkyLook(const SkyLookIn &in);
 // [rc4l] Whether two skies draw the same picture, so one picture serves both.
 bool ComputeSameSkyLook(const SkyLook &a, const SkyLook &b);
 
+// [rc4l] The picture of `count` in `looks` (at most `room`) that a pass's sky `look` paints from: -1 for the level's own sky, else an equal look's, else a new one appended while there is room, else -1.
+int ComputeSkyLookPicture(SkyLook *looks, int &count, int room, const SkyLook &look, const SkyLook &level);
+
 // [rc4l] A sector's sky as the small number its sky quads carry in their texture u: 0 the level's, 1 sky2, a line's that line plus 2; and back.
 int ComputeSkyQuadKey(int sectorSky);
 int ComputeSkyFromQuadKey(int key);

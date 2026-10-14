@@ -193,6 +193,12 @@ void ComputeMarkStackVisible(unsigned int *bits, int id, int slot, int walkSlots
 // [rc4l] Whether a walk drew an id, read back as the scene shader reads it; an id outside the words is not drawn.
 bool ComputeStackVisible(const unsigned int *bits, int words, int id, int slot, int walkSlots);
 
+// [rc4l] How many of ids [0, ids) walk slot `slot` marks in bits, read as ComputeStackVisible reads them.
+int ComputeSlotCount(const unsigned int *bits, int words, int ids, int slot, int walkSlots);
+
+// [rc4l] How many of ids [0, ids) walk slot `slot` marks in one of two sets of bits and not the other.
+int ComputeSlotDiffers(const unsigned int *a, int aWords, const unsigned int *b, int bWords, int ids, int slot, int walkSlots);
+
 // [rc4l] Whether a pass with walk slot passSlot draws a piece with walk id `id`, as the scene shader decides it: always for a pass with no slot or a piece with no id, else only when that walk drew the id.
 bool ComputePassDraws(const unsigned int *bits, int words, int id, int passSlot, int walkSlots);
 
@@ -201,6 +207,9 @@ int ComputeWalkSlot(bool skyboxWalk, bool stackWalk, int stackSlot, bool playerW
 
 // [rc4l] The slot a backend pass draws only what that walk drew of: a stacked view's own (from stackPassSlot), the sky portal's the skybox walk when GL made one this frame, else none (-1), and none at all without the frame's bits.
 int ComputePassWalkSlot(bool bitsReady, int stackPassSlot, bool skyPortalPass, bool skyboxWalked, bool mainCull = false);
+
+// [rc4l] Whether a pass draws only what the player's walk reached (ComputePassWalkSlot's mainCull): the player's own view, in no mirror or camera, with no clip plane, when that walk ran.
+bool ComputeMainCull(bool mainView, int lineMirror, bool cameraPass, const float clipPlane[4], bool mainWalked);
 
 // [rc4l] Whether a frame's walk bits go to the backend: some pass reads them, a stacked view, a sky hole or the sky portal.
 bool ComputeWalkBitsNeeded(int stackViews, int skyHoles, bool skyboxWalked, bool mainWalked = false);
@@ -270,6 +279,12 @@ bool ComputeMirrorCaptures(int depth, bool mainView, int sceneNesting);
 // [rc4l] A mirror view's id: a first reflection's is its own line, as the backend's mirror passes name it, any deeper one lineCount plus its place among the frame's deeper views (deeperIndex).
 int ComputeMirrorViewId(int depth, int line, int deeperIndex, int lineCount);
 
+// [rc4l] A mirror view no walk made this frame, which nothing is filed under.
+const int kNoMirrorView = -2;
+
+// [rc4l] The id of the mirror view down the path of `depth` lines from the player outward among this frame's `paths`, kNoMirrorView when no walk made it.
+int ComputeMirrorViewOf(const std::vector<std::vector<int> > &paths, const int *path, int depth, int lineCount);
+
 // [rc4l] Where the path of `depth` lines from the player outward stands among the frame's deeper mirror views, -1 when it is not there.
 int ComputeFindMirrorPath(const std::vector<std::vector<int> > &paths, const int *path, int depth);
 
@@ -280,7 +295,7 @@ int ComputeAddMirrorPath(std::vector<std::vector<int> > &paths, const int *path,
 void ComputeMirrorSteps(const std::vector<std::vector<int> > &paths, int lineCount, std::vector<int> &out);
 
 // [rc4l] Whether a pass draws a sprite, model or decal: only the pass whose walk took it, a line mirror's or a stacked view's (each -1 for the player's view), as GL draws each from its own walk, and a decal on a mirror's face only in the pass over that mirror's surface (-1 for every other).
-bool ComputeDrawsDynamicPiece(int pieceMirrorLine, int pieceStackSlot, int pieceOnMirror, int drawingMirrorLine, int drawingStackSlot, int drawingMirrorFace);
+bool ComputeDrawsDynamicPiece(int pieceMirrorView, int pieceStackSlot, int pieceOnMirror, int drawingMirrorView, int drawingStackSlot, int drawingMirrorFace);
 
 // [rc4l] Whether the backend renders a line mirror's reflection this frame: when GL's walk went through it, or in standalone, where nothing walks, when its quad is on screen.
 bool ComputeRendersMirror(bool walkedByGL, bool standalone, bool onScreen);

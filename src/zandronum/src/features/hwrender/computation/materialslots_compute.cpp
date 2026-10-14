@@ -28,4 +28,9 @@ std::string ComputeShaderWithDefines(const char *source, const std::string &defi
 	return out;
 }
 
+unsigned ComputeMaterialBindEnd(unsigned from, unsigned capacity, unsigned filled)
+{
+	return from == 0 ? capacity : (filled < capacity ? filled : capacity);
+}
+
 }} // namespace zx::hwrender

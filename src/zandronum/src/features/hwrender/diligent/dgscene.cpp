@@ -33,7 +33,7 @@ EXTERN_CVAR(Bool, vid_vsync)   // [rc4l] picks the present interval, FIFO when o
 // [rc4l] 0 flat multiply (pre-lighting-port behaviour), 1 the ported equation, 2 depth as grey,
 // 3 depth contours, 4 vertex colour only. Live per frame -- no rebake needed to switch.
 CVAR(Int, fua_dg_lightmode, 1, CVAR_ARCHIVE)
-namespace zx { namespace hwrender { PassContext g_pass = { false, false, false, -1, -1, -1, 0.f, 0.f, 0.f, { 0.f, 0.f, 0.f, 0.f }, false }; }}
+namespace zx { namespace hwrender { PassContext g_pass; }}
 using zx::hwrender::g_pass;
 // [rc4l] Mirror every engine frame into the backend window, from the live camera. Off by default:
 // it costs a second render of the scene, and while the backend is incomplete (no sky, no HUD, no
@@ -95,9 +95,9 @@ CVAR(Bool, fua_dg_rtsprites, true, CVAR_ARCHIVE)
 // Planar mirror reflections. On by default; 0 takes the whole pass out, for bisecting a GPU hang.
 CVAR(Bool, fua_dg_mirrors_on, true, CVAR_ARCHIVE)
 // [rc4l] Reflective planes get their reflections, each a render of the world, every plane the level has; 0 turns them off.
-CVAR(Int, fua_dg_planemirrors, 4, CVAR_ARCHIVE)
+CVAR(Bool, fua_dg_planemirrors, true, CVAR_ARCHIVE)
 // [rc4l] Stacked-sector views (GL's GLSectorStackPortal) get rendered, each a render of the world, as many as the level has portals; 0 turns them off.
-CVAR(Int, fua_dg_stackportals, 2, CVAR_ARCHIVE)
+CVAR(Bool, fua_dg_stackportals, true, CVAR_ARCHIVE)
 // [rc4l] Shows the first stacked view's picture over the whole frame, to see what it holds beyond the planes it is painted on.
 CVAR(Bool, fua_dg_stackshow, false, 0)
 // The sky that is a place: render the world from an ASkyViewpoint and use it as the background.

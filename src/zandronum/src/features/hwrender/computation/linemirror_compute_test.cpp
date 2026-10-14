@@ -35,6 +35,30 @@ TEST(LineMirror, ANegativeTurnWrapsAndAnEyeBehindSeesNothing)
 }
 
 // [rc4l] GL draws mirrors to r_mirror_recursions deep and clears the next; with 0 even the first is cleared.
+TEST(LineMirror, EachFaceRecordsItsNormalAndItsLine)
+{
+	float faces[2 * kMirrorFaceFloats] = {};
+	faces[3] = 0.f; faces[4] = 0.f; faces[5] = -1.f;
+	faces[kMirrorFaceFloats + 3] = 1.f; faces[kMirrorFaceFloats + 4] = 0.f; faces[kMirrorFaceFloats + 5] = 0.f;
+	const int lines[2] = { 7, 12 };
+	float out[2 * kMirrorPlaneFloats];
+	ComputeMirrorPlaneRecords(faces, 2, lines, out);
+	const float want[8] = { 0, 0, -1, 7, 1, 0, 0, 12 };
+	for (int i = 0; i < 8; i++) EXPECT_FLOAT_EQ(want[i], out[i]) << i;
+}
+
+// [rc4l] A reflection inside a reflection names its view by the mirrors from the player out, so the path runs root first.
+TEST(LineMirror, ThePathToANodeRunsFromTheRoot)
+{
+	const int parent[4] = { -1, 0, 1, 0 };
+	std::vector<int> path(1, 9);
+	ComputeRootPath(2, [&parent](int n) { return parent[n]; }, path);
+	ASSERT_EQ(3u, path.size());
+	EXPECT_EQ(0, path[0]); EXPECT_EQ(1, path[1]); EXPECT_EQ(2, path[2]);
+	ComputeRootPath(-1, [&parent](int n) { return parent[n]; }, path);
+	EXPECT_TRUE(path.empty());
+}
+
 TEST(LineMirror, MirrorsAreDrawnToTheirRecursionDepth)
 {
 	EXPECT_TRUE(ComputeMirrorLevelDrawn(1, 4));

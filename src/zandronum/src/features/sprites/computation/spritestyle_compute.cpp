@@ -111,6 +111,17 @@ int ComputeSpriteBlendMode(int blendOp, int destAlpha, float trans)
 	return trans < 1.f - 1.f / 256.f ? kBlendTranslucent : kBlendOpaque;
 }
 
+int ComputeModelBlendOp(int drawOp, int actorOp, int fuzzOp)
+{
+	return drawOp == fuzzOp ? actorOp : drawOp;
+}
+
+SpriteDrawLook ComputePlainDrawLook(float alpha)
+{
+	const SpriteDrawLook look = { false, false, false, alpha };
+	return look;
+}
+
 int ComputeModelCull(bool normalStyle, bool hud)
 {
 	if (normalStyle) return kCullNone;

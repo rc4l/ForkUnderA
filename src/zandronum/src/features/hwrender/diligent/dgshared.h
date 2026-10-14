@@ -97,6 +97,8 @@ void ReleaseFrameTarget();
 
 // [rc4l] GL draws its views with GL_DEPTH_CLAMP, keeping a surface nearer than the near plane at the near depth instead of cutting it away; a pipeline drawing the world asks for the same when the device can.
 void ClampDepthLikeGL(Diligent::GraphicsPipelineDesc &gp);
+// [rc4l] A render target blending as kWpBlend* `blend` (ComputeBlendEquation), its alpha accumulated over as GL's is.
+void SetBlendEquation(Diligent::RenderTargetBlendDesc &rt, int blend);
 
 // [rc4l] One GLSL stage compiled as written, or null when it fails (Diligent says why through its message callback).
 Diligent::RefCntAutoPtr<Diligent::IShader> CompileShader(Diligent::SHADER_TYPE type, const char *name, const char *source);

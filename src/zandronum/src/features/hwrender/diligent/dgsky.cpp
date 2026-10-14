@@ -4,6 +4,7 @@
 // [rc4l] The sky: GL's dome or skybox, the skybox portal rendered from its viewpoint, the fade, and the sky surfaces and occluders cut from the world.
 
 #include "features/hwrender/diligent/dgscene_internal.h"
+#include <memory>   // [rc4l] unique_ptr, the views' sky look sets
 #include <vector>
 #include "features/viewsetup/viewsetup.h"   // [rc4l] the sky's scroll this frame
 #include "features/hwrender/computation/skylook_compute.h"   // [rc4l] which sky a sector shows, and its dome's constants
@@ -1374,18 +1375,19 @@ static void DrawSkyOccluders(Diligent::IDeviceContext *ctx)
 // [rc4l] Skies other than the level's that a pass's sky surfaces show (a line's, sky2), each drawn into a picture of its own and painted onto its surfaces by screen position, as GL draws each GLSkyInfo through a portal of its own.
 struct SkyLookPicture
 {
-	zx::hwrender::SkyLook look;
-	Diligent::RefCntAutoPtr<Diligent::ITexture> color, depth;
+	Diligent::RefCntAutoPtr<Diligent::ITexture> color;
 	Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding> srb;
 	int w = 0, h = 0;
 };
 static const int kSkyLookPictures = 4;
 // [rc4l] A sky key a pass's sky surfaces carry, and the picture it paints from, -1 for the level's sky.
 struct SkyKeyPicture { int key, picture; };
-// [rc4l] One pass's pictures: the sky lists its surfaces come from, the looks they show, and which picture each key paints from.
+// [rc4l] One pass's pictures, their looks and the one depth buffer they are drawn with in turn, the sky lists its surfaces come from, and which picture each key paints from.
 struct SkyLookSet
 {
 	SkyLookPicture pictures[kSkyLookPictures];
+	zx::hwrender::SkyLook looks[kSkyLookPictures];
+	Diligent::RefCntAutoPtr<Diligent::ITexture> depth;
 	int count = 0;
 	TArray<SkyKeyPicture> keys;
 	int lists[2] = { zx::levelmesh::kSkyCaptureNone, zx::levelmesh::kSkyCaptureNone };
@@ -1394,7 +1396,7 @@ struct SkyLookSet
 };
 // [rc4l] The player's view's set, and the other views' (stacked views, mirrors, camera textures), one per target size, each made just before its view.
 static SkyLookSet g_mainLooks;
-static TArray<SkyLookSet *> g_viewLooks;
+static std::vector<std::unique_ptr<SkyLookSet> > g_viewLooks;
 static SkyLookSet *g_activeViewLooks = NULL;
 static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_lookSurfPSO;
 static Diligent::RefCntAutoPtr<Diligent::IBuffer> g_lookSurfVB;
@@ -1403,8 +1405,7 @@ static unsigned int g_lookSurfVBCapacity = 0;
 static void ReleaseSkyLookPictures()
 {
 	g_mainLooks = SkyLookSet();
-	for (unsigned i = 0; i < g_viewLooks.Size(); i++) delete g_viewLooks[i];
-	g_viewLooks.Clear();
+	g_viewLooks.clear();
 	g_activeViewLooks = NULL;
 	g_lookSurfPSO.Release();
 }
@@ -1434,14 +1435,7 @@ static bool RenderLookSet(Diligent::IDeviceContext *ctx, SkyLookSet &set, const 
 			const int key = (int)q[i].u;
 			if (key == 0 || FindSkyKey(set, key) >= 0) continue;
 			const zx::hwrender::SkyLook look = LookOfSky(zx::hwrender::ComputeSkyFromQuadKey(key));
-			int picture = -1;
-			if (!zx::hwrender::ComputeSameSkyLook(look, level))
-			{
-				for (int p = 0; p < set.count && picture < 0; p++)
-					if (zx::hwrender::ComputeSameSkyLook(look, set.pictures[p].look)) picture = p;
-				if (picture < 0 && set.count < kSkyLookPictures) { picture = set.count++; set.pictures[picture].look = look; }
-			}
-			const SkyKeyPicture kp = { key, picture };
+			const SkyKeyPicture kp = { key, zx::hwrender::ComputeSkyLookPicture(set.looks, set.count, kSkyLookPictures, look, level) };
 			set.keys.Push(kp);
 		}
 	}
@@ -1454,22 +1448,24 @@ static bool RenderLookSet(Diligent::IDeviceContext *ctx, SkyLookSet &set, const 
 		Diligent::MapHelper<float> cb(ctx, g_cb, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD);
 		WriteSceneConstants(&cb[0], nullptr, (float)w, (float)h, BindlessActive() ? (float)MaterialSlotCount() : 0.f);
 	}
+	const bool depthFits = set.depth && (int)set.depth->GetDesc().Width == w && (int)set.depth->GetDesc().Height == h;
+	if (!depthFits && !CreateDepthTarget(w, h, "fua sky look", set.depth)) { set.count = 0; return false; }
 	for (int p = 0; p < set.count; p++)
 	{
 		SkyLookPicture &pic = set.pictures[p];
 		if (!pic.color || pic.w != w || pic.h != h)
 		{
-			if (!CreateViewTextures(w, h, "fua sky look", pic.color, pic.depth) ||
+			if (!CreateColorTarget(w, h, "fua sky look", pic.color) ||
 				!CreatePictureBinding(g_lookSurfPSO, "uSky", pic.color, pic.srb)) { set.count = p; break; }
 			pic.w = w; pic.h = h;
 		}
 		auto *prtv = pic.color->GetDefaultView(Diligent::TEXTURE_VIEW_RENDER_TARGET);
-		auto *pdsv = pic.depth->GetDefaultView(Diligent::TEXTURE_VIEW_DEPTH_STENCIL);
+		auto *pdsv = set.depth->GetDefaultView(Diligent::TEXTURE_VIEW_DEPTH_STENCIL);
 		ctx->SetRenderTargets(1, &prtv, pdsv, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 		const float clearCol[4] = { 0.f, 0.f, 0.f, 1.f };
 		ctx->ClearRenderTarget(prtv, clearCol, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-		const SkyDome *second = pic.look.secondTexture >= 0 ? DomeFor(pic.look.secondTexture) : NULL;
-		DrawLook(ctx, pic.look, DomeFor(pic.look.texture), second);
+		const zx::hwrender::SkyLook &look = set.looks[p];
+		DrawLook(ctx, look, DomeFor(look.texture), look.secondTexture >= 0 ? DomeFor(look.secondTexture) : NULL);
 	}
 	return set.count > 0;
 }
@@ -1500,13 +1496,13 @@ void RenderViewSkyLooks(Diligent::IDeviceContext *ctx, bool cameraPass, int stac
 {
 	g_activeViewLooks = NULL;
 	SkyLookSet *set = NULL;
-	for (unsigned i = 0; i < g_viewLooks.Size() && set == NULL; i++)
-		if (g_viewLooks[i]->w == w && g_viewLooks[i]->h == h) set = g_viewLooks[i];
+	for (size_t i = 0; i < g_viewLooks.size() && set == NULL; i++)
+		if (g_viewLooks[i]->w == w && g_viewLooks[i]->h == h) set = g_viewLooks[i].get();
 	if (set == NULL)
 	{
-		set = new SkyLookSet;
+		g_viewLooks.emplace_back(new SkyLookSet);
+		set = g_viewLooks.back().get();
 		set->w = w; set->h = h;
-		g_viewLooks.Push(set);
 	}
 	int lists[2];
 	const int n = zx::levelmesh::ComputeSkyLookLists(cameraPass, stackSlot, mirrorPass, lists);

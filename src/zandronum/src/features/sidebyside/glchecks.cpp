@@ -56,7 +56,7 @@ void GLSpritePiece(const GLSprite &spr, const float *c1, const float *c2, const 
 	mp.range.offset = 0;
 	mp.range.count = 0;
 	mp.material = spr.gltexture;
-	mp.mirrorLine = MirrorCaptureLine();
+	mp.mirrorView = MirrorCaptureView();
 	mp.stackSlot = StackCaptureSlot();
 	// [rc4l] No light index: a sprite's dynamic light is worked out per actor on the CPU and carried in dynR/G/B below.
 	mp.dynLightIndex = -1;
@@ -171,12 +171,12 @@ struct FGLChecks : public FGLObserver
 		if (!spr->fullbright) gl_RenderState.GetDynLight(dyn[0], dyn[1], dyn[2]);
 		// [rc4l] Draw turns a subtract model's style to fuzz only after setting the subtract blend, so the blend GL draws it with is the actor's.
 		FRenderStyle blend = spr->RenderStyle;
-		if (blend.BlendOp == STYLEOP_Fuzz) blend.BlendOp = spr->actor->RenderStyle.BlendOp;
+		blend.BlendOp = (BYTE)zx::sprites::ComputeModelBlendOp(blend.BlendOp, spr->actor->RenderStyle.BlendOp, STYLEOP_Fuzz);
 		zx::levelmesh::MeshPiece look;
 		zx::levelmesh::ModelPieceLook(spr->lightlevel, spr->fullbright ? 0 : getExtraLight(), spr->Colormap, spr->fullbright, dyn,
 			spr->ThingColor.d, zx::sprites::SpriteDrawLookAt(zx::sprites::StyleOf(spr->RenderStyle), spr->trans, spr->Colormap, spr->x, spr->y, true),
 			zx::sprites::StyleBlendMode(blend, spr->trans), spr->x, spr->y, spr->z, look);
-		look.cullFace = zx::sprites::ComputeModelCull(spr->actor->RenderStyle == LegacyRenderStyles[STYLE_Normal], false);
+		look.cullFace = zx::sprites::ActorModelCull(spr->actor, false);
 		zx::levelmesh::ModelCaptureBegin(look, model.get(), spr->actor, zx::levelmesh::kModelFromGL);
 	}
 	void ModelSurface(const FModelGeometry *geometry, unsigned int base1, unsigned int base2, float inter,

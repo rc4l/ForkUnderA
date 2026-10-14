@@ -29,4 +29,14 @@ bool ComputeMirrorLevelDrawn(int level, int recursions)
 	return level <= recursions;
 }
 
+void ComputeMirrorPlaneRecords(const float *faceVerts, unsigned mirrors, const int *lines, float *out)
+{
+	for (unsigned i = 0; i < mirrors; i++)
+	{
+		const float *v = faceVerts + i * kMirrorFaceFloats;
+		float *o = out + i * kMirrorPlaneFloats;
+		o[0] = v[3]; o[1] = v[4]; o[2] = v[5]; o[3] = (float)lines[i];
+	}
+}
+
 }} // namespace zx::hwrender

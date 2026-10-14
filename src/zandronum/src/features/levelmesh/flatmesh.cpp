@@ -743,8 +743,7 @@ void SetStackViewCapacity(int views)
 	for (int i = 0; i < g_stackCapacity; i++)
 	{
 		g_stackPortals[i] = NULL;
-		g_stackInfo[i].dx = g_stackInfo[i].dy = 0.f;
-		g_stackInfo[i].ceiling = false;
+		g_stackInfo[i] = StackViewInfo();
 		g_stackVerts[i].Clear();
 	}
 	const int lists = ComputeSkyCaptureLists(g_stackCapacity);
@@ -774,7 +773,6 @@ SkyboxWalk::SkyboxWalk() : saved(s_skyboxWalk) { s_skyboxWalk = true; }
 SkyboxWalk::~SkyboxWalk() { s_skyboxWalk = saved; }
 bool SkyboxWalked() { return g_skyboxWalked; }
 
-static int s_mirrorLine = -1;
 // [rc4l] The line mirrors the walk in progress looks through, outermost first, and the id of the view they make.
 static TArray<int> s_mirrorPath;
 static int s_mirrorView = -1;
@@ -782,9 +780,8 @@ static int s_mirrorView = -1;
 static std::vector<std::vector<int> > g_mirrorPaths;
 // [rc4l] The line mirrors GL's walk went through since the player's walk began this frame.
 static TArray<int> g_walkedMirrors;
-MirrorWalk::MirrorWalk(int line) : saved(s_mirrorLine), savedView(s_mirrorView)
+MirrorWalk::MirrorWalk(int line) : savedView(s_mirrorView)
 {
-	s_mirrorLine = line;
 	s_mirrorPath.Push(line);
 	// [rc4l] Named once here, on the walk's own thread, so the lanes deriving its sprites only read it.
 	const int depth = (int)s_mirrorPath.Size();
@@ -794,9 +791,7 @@ MirrorWalk::MirrorWalk(int line) : saved(s_mirrorLine), savedView(s_mirrorView)
 
 int MirrorViewOf(const int *path, int depth)
 {
-	if (depth == 1) return path[0];
-	const int at = ComputeFindMirrorPath(g_mirrorPaths, path, depth);
-	return at < 0 ? -2 : ComputeMirrorViewId(depth, path[0], at, numlines);
+	return ComputeMirrorViewOf(g_mirrorPaths, path, depth, numlines);
 }
 void MirrorSteps(std::vector<int> &out)
 {
@@ -813,7 +808,6 @@ bool MirrorWalkedThisFrame(int line)
 }
 MirrorWalk::~MirrorWalk()
 {
-	s_mirrorLine = saved;
 	s_mirrorView = savedView;
 	s_mirrorPath.Resize(s_mirrorPath.Size() - 1);
 }
@@ -955,7 +949,7 @@ static void ForgetFrameWalks()
 
 int BeginSkyWalk()
 {
-	g_skyList = ComputeSkyCaptureList(s_mainView, s_sceneNesting, StackWalkSlot(), s_mirrorLine >= 0);
+	g_skyList = ComputeSkyCaptureList(s_mainView, s_sceneNesting, StackWalkSlot(), s_mirrorPath.Size() > 0);
 	if (!HasSkyList(g_skyList)) g_skyList = kSkyCaptureNone;
 	const SkyWalkNote note = { s_mainView, s_sceneNesting, g_skyList,
 		g_skyList == kSkyCaptureNone ? -1 : (int)g_skyVerts[g_skyList].Size() / 6 };
@@ -1052,7 +1046,7 @@ static void FitPortalViews(PortalViewState &s)
 	{
 		s.portals.Resize(views);
 		s.info.Resize(views);
-		for (unsigned i = 0; i < views; i++) { s.portals[i] = NULL; s.info[i].dx = s.info[i].dy = 0.f; s.info[i].ceiling = false; }
+		for (unsigned i = 0; i < views; i++) { s.portals[i] = NULL; s.info[i] = StackViewInfo(); }
 	}
 	s.walls.Resize(views);
 	s.sky.Resize(views);
@@ -1232,9 +1226,9 @@ bool PlayerWalkActive()
 	return ComputeOwnsFrameCapture(s_mainView, s_sceneNesting);
 }
 
-int MirrorCaptureLine() { return ComputeMirrorCaptures((int)s_mirrorPath.Size(), s_mainView, s_sceneNesting) ? s_mirrorView : -1; }
+int MirrorCaptureView() { return ComputeMirrorCaptures((int)s_mirrorPath.Size(), s_mainView, s_sceneNesting) ? s_mirrorView : -1; }
 
-bool DynamicCaptureActive() { return PlayerWalkActive() || StackCaptureSlot() >= 0 || MirrorCaptureLine() >= 0; }
+bool DynamicCaptureActive() { return PlayerWalkActive() || StackCaptureSlot() >= 0 || MirrorCaptureView() >= 0; }
 
 
 void RegisterDecal(const MeshVertex *quad, const void *material, int translation,
@@ -1257,7 +1251,7 @@ void RegisterDecal(const MeshVertex *quad, const void *material, int translation
 	mp.range.offset = 0;
 	mp.range.count = 0;
 	mp.material = material;
-	mp.mirrorLine = MirrorCaptureLine();
+	mp.mirrorView = MirrorCaptureView();
 	mp.stackSlot = StackCaptureSlot();
 	mp.onMirror = onMirror;
 	// [rc4l] A decal takes its dynamic light from the CPU, and its NORMAL is what says so.

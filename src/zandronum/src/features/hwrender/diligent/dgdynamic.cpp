@@ -94,11 +94,11 @@ static void GatherTracedSprites(const TArray<SceneVertex> &vb)
 	for (unsigned i = 0; i < g_scene.dynRuns.Size(); i++)
 	{
 		const DynRun &r = g_scene.dynRuns[i];
-		if (!zx::hwrender::ComputeTracesRun(r.count, r.solid, r.depthBias, r.hud, r.stackSlot, r.onMirror, r.mirrorLine, r.blend) || r.first + 2 >= vb.Size()) continue;
+		if (!zx::hwrender::ComputeTracesRun(r.count, r.solid, r.depthBias, r.hud, r.stackSlot, r.onMirror, r.mirrorView, r.blend) || r.first + 2 >= vb.Size()) continue;
 		const SceneVertex &a = vb[r.first], &b = vb[r.first + 1], &c = vb[r.first + 2];
 		const float tl[5] = { a.x, a.y, a.z, a.u, a.v }, tr[5] = { b.x, b.y, b.z, b.u, b.v }, bl[5] = { c.x, c.y, c.z, c.u, c.v };
 		zx::hwrender::TracedSprite s;
-		if (zx::hwrender::ComputeTracedSprite(tl, tr, bl, (unsigned)(a.pieceIndex + 0.5f), r.mirrorLine, s)) out.Push(s);
+		if (zx::hwrender::ComputeTracedSprite(tl, tr, bl, (unsigned)(a.pieceIndex + 0.5f), r.mirrorView, s)) out.Push(s);
 	}
 	zx::levelmesh::MirrorSteps(g_scene.tracedSteps);
 }
@@ -207,7 +207,7 @@ void BuildDynamic(Diligent::IDeviceContext *ctx)
 		{
 			const zx::levelmesh::MeshPiece &p = pieces[layout[k].piece];
 			slots[k] = PieceSlots(p, p.translation, false);
-			if (p.mirrorLine >= 0) g_stats.dynMirrorRuns++;
+			if (p.mirrorView >= 0) g_stats.dynMirrorRuns++;
 			if (layout[k].record >= 0) records++;
 		}
 		vb.Resize(nv);
@@ -275,7 +275,7 @@ void BuildDynamic(Diligent::IDeviceContext *ctx)
 					r.redAlpha = p.redToAlpha;
 					r.solid = p.solid;
 					r.hud = p.hud;
-					r.mirrorLine = p.mirrorLine;
+					r.mirrorView = p.mirrorView;
 					r.stackSlot = p.stackSlot;
 					r.onMirror = p.onMirror;
 					r.cx = p.sortX; r.cy = p.sortY; r.cz = p.sortZ;
@@ -362,7 +362,7 @@ void DrawSolidDyn(Diligent::IDeviceContext *ctx)
 	for (unsigned i = 0; i < g_scene.dynRuns.Size(); i++)
 	{
 		const DynRun &r = g_scene.dynRuns[i];
-		if (r.count == 0 || !r.solid || r.blend != 0 || !zx::levelmesh::ComputeDrawsDynamicPiece(r.mirrorLine, r.stackSlot, r.onMirror, g_pass.mirrorView, g_pass.stackSlot, -1)) continue;
+		if (r.count == 0 || !r.solid || r.blend != 0 || !zx::levelmesh::ComputeDrawsDynamicPiece(r.mirrorView, r.stackSlot, r.onMirror, g_pass.mirrorView, g_pass.stackSlot, -1)) continue;
 		auto *srb = WorldSRB(g_pso.world[kWpMaskedNoCull].RawPtr());
 		if (srb) g_stats.dynBindless++;
 		else { g_stats.dynPerMaterial++; srb = GetMaterialSRB(g_pso.world[kWpMaskedNoCull].RawPtr(), r.material, r.translation); }
@@ -395,7 +395,7 @@ void DrawMirrorFaceDecals(Diligent::IDeviceContext *ctx, int line)
 	for (unsigned i = 0; i < g_scene.dynRuns.Size(); i++)
 	{
 		const DynRun &r = g_scene.dynRuns[i];
-		if (r.count == 0 || !zx::levelmesh::ComputeDrawsDynamicPiece(r.mirrorLine, r.stackSlot, r.onMirror, -1, -1, line)) continue;
+		if (r.count == 0 || !zx::levelmesh::ComputeDrawsDynamicPiece(r.mirrorView, r.stackSlot, r.onMirror, -1, -1, line)) continue;
 		Diligent::IPipelineState *pso = g_pso.world[ComputeDynamicPipeline(r.blend, r.redAlpha, r.depthBias, r.hud)].RawPtr();
 		if (!pso) continue;
 		Diligent::IShaderResourceBinding *srb = WorldSRB(pso);
@@ -431,7 +431,8 @@ static int g_blendPlaneHeights = 0;
 
 void DrawBlended(Diligent::IDeviceContext *ctx)
 {
-	struct BlendDraw { bool dyn; unsigned first, count; int blend, translation; const void *material;
+	// [rc4l] `pipeline` is its world pipeline's index, chosen once where the draw is made and the key a run of draws merges on.
+	struct BlendDraw { bool dyn; unsigned first, count; int blend, translation, pipeline; const void *material;
 	                   Diligent::IShaderResourceBinding *srb; float dist; bool bias, red, hud;
 	                   float cx, cy, cz;      // [rc4l] the centre too: distance alone cannot tell two
 	                                          // marks on ONE spot from two marks on two walls
@@ -460,7 +461,7 @@ void DrawBlended(Diligent::IDeviceContext *ctx)
 		const float dx = b.sortX - cx, dy = b.sortY - cy, dz = b.sortZ - cz;
 		BlendDraw d;
 		d.dyn = false; d.first = b.first; d.count = b.count; d.blend = b.blend;
-		d.translation = 0; d.material = b.material; d.srb = b.srb;
+		d.translation = 0; d.pipeline = ComputeBatchPipeline(b.blend); d.material = b.material; d.srb = b.srb;
 		d.bias = false; d.red = false; d.hud = false;
 		d.cx = b.sortX; d.cy = b.sortY; d.cz = b.sortZ;
 		d.lo = b.minY; d.hi = b.maxY;   // [rc4l] SceneVertex y is height
@@ -473,7 +474,7 @@ void DrawBlended(Diligent::IDeviceContext *ctx)
 		for (unsigned i = 0; i < g_scene.dynRuns.Size(); i++)
 		{
 			const DynRun &r = g_scene.dynRuns[i];
-			if (r.count == 0 || !zx::levelmesh::ComputeDrawsDynamicPiece(r.mirrorLine, r.stackSlot, r.onMirror, g_pass.mirrorView, g_pass.stackSlot, -1)) continue;
+			if (r.count == 0 || !zx::levelmesh::ComputeDrawsDynamicPiece(r.mirrorView, r.stackSlot, r.onMirror, g_pass.mirrorView, g_pass.stackSlot, -1)) continue;
 			// [rc4l] An opaque solid is drawn with the world, not in this list. See DrawSolidDyn.
 			if (r.solid && r.blend == 0) continue;
 			// [rc4l] blend 0 takes the TRANSLUCENT pipeline, not the masked one.
@@ -483,13 +484,14 @@ void DrawBlended(Diligent::IDeviceContext *ctx)
 			// sprites live in one sorted list with depth writes off, and splitting them into an
 			// opaque depth-writing pass let an alpha-tested impact sprite occlude the additive glow
 			// behind it: black holes where a plasma burst's bright core should be.
-			Diligent::IPipelineState *pso = g_pso.world[ComputeDynamicPipeline(r.blend, r.redAlpha, r.depthBias, r.hud)].RawPtr();
+			const int pipeline = ComputeDynamicPipeline(r.blend, r.redAlpha, r.depthBias, r.hud);
+			Diligent::IPipelineState *pso = g_pso.world[pipeline].RawPtr();
 			auto *srb = WorldSRB(pso);
 			if (srb) g_stats.dynBindless++; else { g_stats.dynPerMaterial++; srb = GetMaterialSRB(pso, r.material, r.translation); }
 			if (!srb) continue;
 			BlendDraw d;
 			d.dyn = true; d.first = r.first; d.count = r.count; d.blend = r.blend;
-			d.translation = r.translation; d.material = r.material; d.srb = srb;
+			d.translation = r.translation; d.pipeline = pipeline; d.material = r.material; d.srb = srb;
 			d.bias = r.depthBias;
 			d.red = r.redAlpha;
 			d.hud = r.hud;
@@ -638,9 +640,7 @@ void DrawBlended(Diligent::IDeviceContext *ctx)
 				Diligent::SET_VERTEX_BUFFERS_FLAG_RESET);
 			boundVB = want;
 		}
-		Diligent::IPipelineState *pso = !d.dyn
-			? BatchPSO(d.blend)
-			: g_pso.world[ComputeDynamicPipeline(d.blend, d.red, d.bias, d.hud)].RawPtr();
+		Diligent::IPipelineState *pso = g_pso.world[d.pipeline].RawPtr();
 		if (!pso) { idxCursor += d.count; continue; }
 		if (pso != bound) { ctx->SetPipelineState(pso); bound = pso; boundSRB = NULL; }
 		// The pipeline is only known here -- the pass sorts by distance, not by material -- so this is
@@ -667,7 +667,7 @@ void DrawBlended(Diligent::IDeviceContext *ctx)
 		{
 			const BlendDraw &n = list[i + 1];
 			if ((n.dyn ? 1 : 0) != want) break;
-			if (n.blend != d.blend || n.red != d.red || n.bias != d.bias || n.hud != d.hud) break;
+			if (n.pipeline != d.pipeline) break;
 			// Without bindless the binding IS the material, so it has to match too.
 			if (!WorldSRB(pso) && n.srb != srb) break;
 			idxCount += n.count;

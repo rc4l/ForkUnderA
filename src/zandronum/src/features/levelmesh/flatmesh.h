@@ -45,7 +45,7 @@ bool PlayerWalkActive();
 // [rc4l] The stacked view whose walk GL is in now (ComputeStackCaptureSlot), or -1.
 int StackCaptureSlot();
 // [rc4l] The mirror view whose walk is in now (ComputeMirrorViewId: a first reflection's line, a deeper one's id past the lines), or -1.
-int MirrorCaptureLine();
+int MirrorCaptureView();
 // [rc4l] The id of the mirror view down the path of `depth` lines from the player outward, -2 when no walk made it this frame.
 int MirrorViewOf(const int *path, int depth);
 // [rc4l] This frame's steps between mirror views (ComputeMirrorSteps), for a traced ray to follow.
@@ -58,8 +58,8 @@ void CountParticle();
 // [rc4l] A stacked view the player's walk saw this frame: the eye's move into it in map units, and the plane it opens from.
 struct StackViewInfo
 {
-	float dx, dy;
-	bool ceiling;
+	float dx = 0.f, dy = 0.f;
+	bool ceiling = false;
 };
 
 // [rc4l] The same wall from a visibility walk (features/visibility); returns the portal's slot, or -1 once every slot is taken.
@@ -120,7 +120,7 @@ struct MirrorWalk
 {
 	explicit MirrorWalk(int line);
 	~MirrorWalk();
-	int saved, savedView;
+	int savedView;
 };
 
 // [rc4l] A scene entered for as long as it is in scope, as EnterScene and LeaveScene pair.

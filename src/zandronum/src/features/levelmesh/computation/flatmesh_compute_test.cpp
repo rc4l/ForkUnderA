@@ -553,6 +553,34 @@ TEST(FlatMeshCompute, AReflectionInAReflectionIsAViewOfItsOwn)
 	EXPECT_EQ(1, ComputeFindMirrorPath(paths, ba, 2));
 }
 
+// [rc4l] A first reflection is named by its line, a deeper one by its place among the frame's paths, and one no walk made by none.
+TEST(FlatMeshCompute, APathNamesItsMirrorView)
+{
+	std::vector<std::vector<int> > paths;
+	const int ab[2] = { 10, 20 }, ba[2] = { 20, 10 };
+	ComputeAddMirrorPath(paths, ab, 2);
+	EXPECT_EQ(10, ComputeMirrorViewOf(paths, ab, 1, 9000));
+	EXPECT_EQ(9000, ComputeMirrorViewOf(paths, ab, 2, 9000));
+	EXPECT_EQ(kNoMirrorView, ComputeMirrorViewOf(paths, ba, 2, 9000));
+	EXPECT_EQ(kNoMirrorView, ComputeMirrorViewOf(paths, ab, 0, 9000));
+}
+
+// [rc4l] Only the player's own pass, with nothing between it and the walk, culls by the player's walk.
+TEST(FlatMeshCompute, OnlyThePlayersPlainPassCullsByItsWalk)
+{
+	const float none[4] = { 0.f, 0.f, 0.f, 0.f }, plane[4] = { 1.f, 0.f, 0.f, 0.f }, offset[4] = { 0.f, 0.f, 0.f, 3.f };
+	const float ys[4] = { 0.f, 1.f, 0.f, 0.f }, zs[4] = { 0.f, 0.f, 1.f, 0.f };
+	EXPECT_TRUE(ComputeMainCull(true, -1, false, none, true));
+	EXPECT_FALSE(ComputeMainCull(false, -1, false, none, true));
+	EXPECT_FALSE(ComputeMainCull(true, 4, false, none, true));
+	EXPECT_FALSE(ComputeMainCull(true, -1, true, none, true));
+	EXPECT_FALSE(ComputeMainCull(true, -1, false, plane, true));
+	EXPECT_FALSE(ComputeMainCull(true, -1, false, ys, true));
+	EXPECT_FALSE(ComputeMainCull(true, -1, false, zs, true));
+	EXPECT_FALSE(ComputeMainCull(true, -1, false, offset, true));
+	EXPECT_FALSE(ComputeMainCull(true, -1, false, none, false));
+}
+
 // [rc4l] A traced ray in the first reflection of line 10 that bounces off line 20 is in view ab's walk, and off line 10 again in aba's.
 TEST(FlatMeshCompute, ATracedRayStepsFromViewToViewByTheMirrorItBouncesOff)
 {
@@ -596,6 +624,14 @@ TEST(FlatMeshCompute, AStackedViewMarksEachSubsectorItsWalkReached)
 	ComputeClearStackVisible(bits, 12, 0, W);
 	EXPECT_FALSE(ComputeStackVisible(bits, 4, 12, 0, W));
 	EXPECT_TRUE(ComputeStackVisible(bits, 4, 12, 1, W));
+	// [rc4l] Counted per slot, and set against another set of bits, as the walk check and fua_dg_stackinfo count them.
+	EXPECT_EQ(2, ComputeSlotCount(bits, 4, 13, 1, W));     // [rc4l] subsectors 0 and 12, second slot
+	EXPECT_EQ(0, ComputeSlotCount(bits, 4, 13, 0, W));
+	EXPECT_EQ(1, ComputeSlotCount(bits, 4, 12, 1, W));     // [rc4l] subsector 12 is past the ids asked about
+	unsigned int other[4] = { 2u, 0u, 0u, 0u };
+	EXPECT_EQ(1, ComputeSlotDiffers(bits, 4, other, 4, 13, 1, W));
+	EXPECT_EQ(2, ComputeSlotDiffers(bits, 4, nullptr, 0, 13, 1, W));
+	EXPECT_EQ(0, ComputeSlotDiffers(bits, 4, other, 4, 12, 1, W));
 	// [rc4l] A pass draws what its walk drew, and everything when it has no walk or the piece no id, as the scene shader culls.
 	EXPECT_TRUE(ComputePassDraws(bits, 4, 12, 1, W));
 	EXPECT_FALSE(ComputePassDraws(bits, 4, 12, 0, W));

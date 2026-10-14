@@ -4,7 +4,7 @@
 #include "features/levelmesh/modelmesh.h"
 #include "features/levelmesh/staticmesh.h"
 #include "features/levelmesh/captureshading.h"   // [rc4l] CaptureShading, the light model for a GL colormap
-#include "features/levelmesh/flatmesh.h"   // [rc4l] DynamicCaptureActive, StackCaptureSlot, MirrorCaptureLine
+#include "features/levelmesh/flatmesh.h"   // [rc4l] DynamicCaptureActive, StackCaptureSlot, MirrorCaptureView
 
 #include "features/models/modelgeometry.h"
 #include "features/rendersettings/rendersettings.h"   // [rc4l] the render settings it reads
@@ -205,7 +205,7 @@ void CaptureModelSurface(const FModelGeometry *geometry, unsigned int base1, uns
 	// resolves to its own texture, and it resolves it AS an FMaterial -- handing it the inner pointer
 	// type-checks, then faults inside CreateTexBuffer on the first frame that draws a model.
 	mp.material = material;
-	mp.mirrorLine = MirrorCaptureLine();
+	mp.mirrorView = MirrorCaptureView();
 	mp.stackSlot = StackCaptureSlot();
 	mp.translation = translation;
 	g_lastSort[0] = mp.sortX; g_lastSort[1] = mp.sortY; g_lastSort[2] = mp.sortZ;

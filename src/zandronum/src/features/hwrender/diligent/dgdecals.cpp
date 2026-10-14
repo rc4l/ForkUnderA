@@ -18,6 +18,7 @@
 #include "features/hwrender/computation/backendview_compute.h"   // [rc4l] ComputeInvertMatrix4
 #include "features/levelmesh/projdecals.h"
 #include "features/levelmesh/computation/decalproject_compute.h"   // [rc4l] ComputeDecalPass
+#include "features/hwrender/computation/worldpipelines_compute.h"   // [rc4l] ComputeDecalPassBlend, the blend a pass draws with
 
 #include "r_defs.h"                  // sector_t
 #include "r_state.h"                 // sectors, numsectors
@@ -500,17 +501,9 @@ static bool EnsureDeferredDecalPass()
 		pci.GraphicsPipeline.RasterizerDesc.CullMode = Diligent::CULL_MODE_NONE;
 		pci.GraphicsPipeline.DepthStencilDesc.DepthEnable = false;
 		pci.GraphicsPipeline.DepthStencilDesc.DepthWriteEnable = false;
-		{
-			auto &rt = pci.GraphicsPipeline.BlendDesc.RenderTargets[0];
-			rt.BlendEnable = true;
-			// [rc4l] A fuzzy mark is GL's DST_COLOR fallback, as a fuzzy decal on a wall is.
-			rt.SrcBlend  = pass == zx::levelmesh::kDecalPassFuzz ? Diligent::BLEND_FACTOR_DEST_COLOR : Diligent::BLEND_FACTOR_SRC_ALPHA;
-			rt.DestBlend = pass == zx::levelmesh::kDecalPassAdditive ? Diligent::BLEND_FACTOR_ONE : Diligent::BLEND_FACTOR_INV_SRC_ALPHA;
-			rt.BlendOp = Diligent::BLEND_OPERATION_ADD;
-			rt.SrcBlendAlpha  = Diligent::BLEND_FACTOR_ONE;
-			rt.DestBlendAlpha = Diligent::BLEND_FACTOR_INV_SRC_ALPHA;
-			rt.BlendOpAlpha = Diligent::BLEND_OPERATION_ADD;
-		}
+		// [rc4l] A fuzzy mark is GL's DST_COLOR fallback and an additive one adds, as a decal on a wall does.
+		SetBlendEquation(pci.GraphicsPipeline.BlendDesc.RenderTargets[0],
+			zx::hwrender::ComputeDecalPassBlend(pass == zx::levelmesh::kDecalPassFuzz, pass == zx::levelmesh::kDecalPassAdditive));
 		// No input layout: the quad comes from gl_VertexIndex and the mark from gl_InstanceIndex.
 		pci.PSODesc.ResourceLayout.DefaultVariableType = Diligent::SHADER_RESOURCE_VARIABLE_TYPE_STATIC;
 		pci.PSODesc.ResourceLayout.Variables = vars;
@@ -750,17 +743,7 @@ void DrawDeferredDecals(Diligent::IDeviceContext *ctx)
 	Diligent::ITextureView *rtv = GetSwapChain() ? FrameRTV() : NULL;
 	if (rtv) ctx->SetRenderTargets(1, &rtv, NULL, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
-	// [rc4l] One draw per blend for the whole level, whatever it is wearing.
-	//
-	// The instance record has carried its texture slot all along and the shader now indexes the
-	// sampler array with it, so a draw no longer has to be one material wide. What is left that can
-	// force a break is the BLEND MODE, because that is fixed-function state and not something an
-	// instance can choose. The array is built pass by pass above, so each group is already contiguous.
-	//
-	// Measured on dbab04 with a plasma load: 43 marks were 21 draws, and are now 2. It matters
-	// because this renderer is CPU-bound -- roughly 4 ms of CPU against 1.7 ms of GPU -- so a draw
-	// call is spent from the scarce budget and the pixels the box shades are spent from the spare
-	// one. The trade only goes one way.
+	// [rc4l] One draw per blend pass for the whole level, since each mark's record carries its texture slot and only the fixed-function blend breaks a draw (dbab04's 43 plasma marks were 21 draws).
 	for (int pass = 0; pass < kDecalPasses; pass++)
 	{
 		const unsigned first = passFirst[pass] < all.Size() ? passFirst[pass] : all.Size();

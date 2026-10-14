@@ -54,4 +54,18 @@ int ComputeDynamicPipeline(int blendMode, bool redAlpha, bool depthBias, bool hu
 	return kByBlend[(blendMode >= 0 && blendMode < 6) ? blendMode : 1][hud ? 1 : 0];
 }
 
+BlendEquation ComputeBlendEquation(int blend)
+{
+	BlendEquation e;
+	e.src = blend == kWpBlendFuzz ? kBlendFactorDestColor : kBlendFactorSrcAlpha;
+	e.dst = (blend == kWpBlendAlpha || blend == kWpBlendFuzz) ? kBlendFactorInvSrcAlpha : kBlendFactorOne;
+	e.op = blend == kWpBlendRevSub ? kBlendOpRevSubtract : blend == kWpBlendSub ? kBlendOpSubtract : kBlendOpAdd;
+	return e;
+}
+
+int ComputeDecalPassBlend(bool fuzzPass, bool additivePass)
+{
+	return fuzzPass ? kWpBlendFuzz : additivePass ? kWpBlendAdd : kWpBlendAlpha;
+}
+
 }} // namespace zx::hwrender

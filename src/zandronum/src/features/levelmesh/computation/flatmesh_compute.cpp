@@ -231,6 +231,12 @@ int ComputePassWalkSlot(bool bitsReady, int stackPassSlot, bool skyPortalPass, b
 	return ComputeStackWalkSlot(stackPassSlot);
 }
 
+bool ComputeMainCull(bool mainView, int lineMirror, bool cameraPass, const float clipPlane[4], bool mainWalked)
+{
+	return mainView && lineMirror < 0 && !cameraPass && clipPlane[0] == 0.f && clipPlane[1] == 0.f && clipPlane[2] == 0.f &&
+		clipPlane[3] == 0.f && mainWalked;
+}
+
 bool ComputeWalkBitsNeeded(int stackViews, int skyHoles, bool skyboxWalked, bool mainWalked)
 {
 	return stackViews > 0 || skyHoles > 0 || skyboxWalked || mainWalked;
@@ -323,6 +329,21 @@ bool ComputeStackVisible(const unsigned int *bits, int words, int id, int slot, 
 	return (bits[bit >> 5] & (1u << (bit & 31))) != 0;
 }
 
+int ComputeSlotCount(const unsigned int *bits, int words, int ids, int slot, int walkSlots)
+{
+	int count = 0;
+	for (int id = 0; id < ids; id++) if (ComputeStackVisible(bits, words, id, slot, walkSlots)) count++;
+	return count;
+}
+
+int ComputeSlotDiffers(const unsigned int *a, int aWords, const unsigned int *b, int bWords, int ids, int slot, int walkSlots)
+{
+	int differ = 0;
+	for (int id = 0; id < ids; id++)
+		if (ComputeStackVisible(a, aWords, id, slot, walkSlots) != ComputeStackVisible(b, bWords, id, slot, walkSlots)) differ++;
+	return differ;
+}
+
 bool ComputePassDraws(const unsigned int *bits, int words, int id, int passSlot, int walkSlots)
 {
 	return passSlot < 0 || id < 0 || ComputeStackVisible(bits, words, id, passSlot, walkSlots);
@@ -360,6 +381,14 @@ int ComputeMirrorViewId(int depth, int line, int deeperIndex, int lineCount)
 	return depth <= 1 ? line : lineCount + deeperIndex;
 }
 
+int ComputeMirrorViewOf(const std::vector<std::vector<int> > &paths, const int *path, int depth, int lineCount)
+{
+	if (depth < 1) return kNoMirrorView;
+	if (depth == 1) return path[0];
+	const int at = ComputeFindMirrorPath(paths, path, depth);
+	return at < 0 ? kNoMirrorView : ComputeMirrorViewId(depth, path[0], at, lineCount);
+}
+
 int ComputeFindMirrorPath(const std::vector<std::vector<int> > &paths, const int *path, int depth)
 {
 	for (size_t i = 0; i < paths.size(); i++)
@@ -391,9 +420,9 @@ void ComputeMirrorSteps(const std::vector<std::vector<int> > &paths, int lineCou
 	}
 }
 
-bool ComputeDrawsDynamicPiece(int pieceMirrorLine, int pieceStackSlot, int pieceOnMirror, int drawingMirrorLine, int drawingStackSlot, int drawingMirrorFace)
+bool ComputeDrawsDynamicPiece(int pieceMirrorView, int pieceStackSlot, int pieceOnMirror, int drawingMirrorView, int drawingStackSlot, int drawingMirrorFace)
 {
-	return pieceMirrorLine == drawingMirrorLine && pieceStackSlot == drawingStackSlot && pieceOnMirror == drawingMirrorFace;
+	return pieceMirrorView == drawingMirrorView && pieceStackSlot == drawingStackSlot && pieceOnMirror == drawingMirrorFace;
 }
 
 bool ComputeRendersMirror(bool walkedByGL, bool standalone, bool onScreen)

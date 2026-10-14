@@ -42,6 +42,15 @@ SkyLook ComputeSkyLook(const SkyLookIn &in)
 	return s;
 }
 
+int ComputeSkyLookPicture(SkyLook *looks, int &count, int room, const SkyLook &look, const SkyLook &level)
+{
+	if (ComputeSameSkyLook(look, level)) return -1;
+	for (int p = 0; p < count; p++) if (ComputeSameSkyLook(look, looks[p])) return p;
+	if (count >= room) return -1;
+	looks[count] = look;
+	return count++;
+}
+
 int ComputeSkyQuadKey(int sectorSky)
 {
 	if (!(sectorSky & kSkyFlatFlag)) return 0;

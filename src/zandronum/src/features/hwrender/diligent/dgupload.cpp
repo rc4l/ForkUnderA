@@ -77,8 +77,8 @@ void FillPieceDataWith(const zx::levelmesh::MeshPiece &p, const PieceSlotSet &sl
 	pd.tint[0] = p.tint.r; pd.tint[1] = p.tint.g; pd.tint[2] = p.tint.b; pd.tint[3] = p.tint.strength;
 	pd.tintRange[0] = p.tint.top; pd.tintRange[1] = p.tint.bottom; pd.tintRange[2] = p.tint.glow ? 1.f : 0.f; pd.tintRange[3] = 0.f;
 	pd.scrollU = p.scrollU; pd.scrollV = p.scrollV;
-	pd.texFlags = (p.stencil ? 1.f : 0.f) + (p.alphaTest ? 2.f : 0.f) + (p.hud ? 4.f : 0.f) + (inMesh ? 8.f : 0.f) +
-		(p.inverse ? 16.f : 0.f) + (p.colorBlend ? 32.f : 0.f) + (p.fogLayer ? 64.f : 0.f) + (float)(p.fuzz * 128) + (p.fogBoundary ? 1024.f : 0.f) + (float)(p.cullFace * 2048) + (p.fogPass ? 8192.f : 0.f);
+	const zx::hwrender::PieceTexInputs tex = { p.stencil, p.alphaTest, p.hud, inMesh, p.inverse, p.colorBlend, p.fogLayer, p.fuzz, p.fogBoundary, p.cullFace, p.fogPass };
+	pd.texFlags = (float)zx::hwrender::ComputePieceTexFlags(tex);
 }
 
 // [rc4l] Where each piece's vertices ended up, so a moved one can be patched instead of rebuilt.

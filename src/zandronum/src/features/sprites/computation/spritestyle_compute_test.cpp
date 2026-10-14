@@ -175,6 +175,22 @@ TEST(SpriteStyle, DrawLookIsGLSpritesTranslucentSetup)
 }
 
 // [rc4l] A subtract sprite in coloured fog takes GL's fog layer; in black fog, as a model or in another style it does not.
+// [rc4l] GL sets a subtract model's blend before turning its op to fuzz, so a fuzz op stands for the actor's own.
+TEST(SpriteStyle, AModelDrawsWithItsActorsOpWhereDrawSaysFuzz)
+{
+	EXPECT_EQ(5, ComputeModelBlendOp(9, 5, 9));
+	EXPECT_EQ(2, ComputeModelBlendOp(2, 5, 9));
+}
+
+TEST(SpriteStyle, APlainLookIsItsAlphaAlone)
+{
+	const SpriteDrawLook look = ComputePlainDrawLook(0.25f);
+	EXPECT_FALSE(look.additiveFog);
+	EXPECT_FALSE(look.shadow);
+	EXPECT_FALSE(look.fogLayer);
+	EXPECT_FLOAT_EQ(0.25f, look.alpha);
+}
+
 TEST(SpriteStyle, OnlyASubtractSpriteInColouredFogTakesTheFogLayer)
 {
 	const SpriteStyle sub = { kOpRevSub, kAlphaSrc, kAlphaOne, 0 };

@@ -92,6 +92,22 @@ Diligent::IShaderResourceBinding *GetMaterialSRB(Diligent::IPipelineState *pso,
 }
 
 // [rc4l] The scene pipeline a static batch draws with.
+void SetBlendEquation(Diligent::RenderTargetBlendDesc &rt, int blend)
+{
+	static const Diligent::BLEND_FACTOR kFactor[] = { Diligent::BLEND_FACTOR_SRC_ALPHA, Diligent::BLEND_FACTOR_INV_SRC_ALPHA,
+		Diligent::BLEND_FACTOR_ONE, Diligent::BLEND_FACTOR_DEST_COLOR };
+	static const Diligent::BLEND_OPERATION kOp[] = { Diligent::BLEND_OPERATION_ADD, Diligent::BLEND_OPERATION_SUBTRACT,
+		Diligent::BLEND_OPERATION_REV_SUBTRACT };
+	const zx::hwrender::BlendEquation e = zx::hwrender::ComputeBlendEquation(blend);
+	rt.BlendEnable = true;
+	rt.SrcBlend = kFactor[e.src];
+	rt.DestBlend = kFactor[e.dst];
+	rt.BlendOp = kOp[e.op];
+	rt.SrcBlendAlpha = Diligent::BLEND_FACTOR_ONE;
+	rt.DestBlendAlpha = Diligent::BLEND_FACTOR_INV_SRC_ALPHA;
+	rt.BlendOpAlpha = Diligent::BLEND_OPERATION_ADD;
+}
+
 Diligent::IPipelineState *BatchPSO(int blend)
 {
 	return g_pso.world[ComputeBatchPipeline(blend)].RawPtr();
@@ -790,20 +806,7 @@ bool EnsureScenePipeline(FString &err)
 			pci.GraphicsPipeline.RasterizerDesc.DepthBias = -128;
 			pci.GraphicsPipeline.RasterizerDesc.SlopeScaledDepthBias = -1.f;
 		}
-		if (blended)
-		{
-			auto &rt = pci.GraphicsPipeline.BlendDesc.RenderTargets[0];
-			rt.BlendEnable = true;
-			// [rc4l] Fuzz is GL's fallback for an op it has no equation for, the screen times the source plus the screen the source leaves.
-			rt.SrcBlend  = (d.blend == kWpBlendFuzz) ? Diligent::BLEND_FACTOR_DEST_COLOR : Diligent::BLEND_FACTOR_SRC_ALPHA;
-			// [rc4l] Additive and the subtract styles take the source onto the screen whole, as STYLE_Add and STYLE_Subtract's ONE does.
-			rt.DestBlend = (d.blend == kWpBlendAlpha || d.blend == kWpBlendFuzz) ? Diligent::BLEND_FACTOR_INV_SRC_ALPHA : Diligent::BLEND_FACTOR_ONE;
-			rt.BlendOp = (d.blend == kWpBlendRevSub) ? Diligent::BLEND_OPERATION_REV_SUBTRACT :
-				(d.blend == kWpBlendSub) ? Diligent::BLEND_OPERATION_SUBTRACT : Diligent::BLEND_OPERATION_ADD;
-			rt.SrcBlendAlpha  = Diligent::BLEND_FACTOR_ONE;
-			rt.DestBlendAlpha = Diligent::BLEND_FACTOR_INV_SRC_ALPHA;
-			rt.BlendOpAlpha = Diligent::BLEND_OPERATION_ADD;
-		}
+		if (blended) SetBlendEquation(pci.GraphicsPipeline.BlendDesc.RenderTargets[0], d.blend);
 		pci.GraphicsPipeline.InputLayout.LayoutElements = layout;
 		pci.GraphicsPipeline.InputLayout.NumElements = 3;
 		pci.PSODesc.ResourceLayout.DefaultVariableType = Diligent::SHADER_RESOURCE_VARIABLE_TYPE_STATIC;

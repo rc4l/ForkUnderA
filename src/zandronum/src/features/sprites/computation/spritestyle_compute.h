@@ -69,6 +69,9 @@ enum { kCullNone = 0, kCullFrontClockwise = 1, kCullFrontCounterClockwise = 2 };
 // [rc4l] gl_RenderModel's and gl_RenderHUDModel's culling, which covers every actor not in exactly STYLE_Normal to hide the far side GL cannot sort.
 int ComputeModelCull(bool normalStyle, bool hud);
 
+// [rc4l] The blend op GL draws a model with: Draw turns a subtract model's op to fuzz only after it set the blend, so fuzz there means the actor's own op.
+int ComputeModelBlendOp(int drawOp, int actorOp, int fuzzOp);
+
 // [rc4l] What GLSprite::Draw sets for a resolved style besides its blend.
 struct SpriteDrawLook
 {
@@ -77,6 +80,9 @@ struct SpriteDrawLook
 	bool  fogLayer;      // [rc4l] a subtract sprite in coloured fog, drawn without fog and then GL's CM_FOGLAYER pass over it
 	float alpha;
 };
+
+// [rc4l] The look of something drawn plainly at `alpha`: no black fog, no shadow colour, no fog layer.
+SpriteDrawLook ComputePlainDrawLook(float alpha);
 
 // [rc4l] The grey GL draws a shadow in.
 const float kShadowColor = 0.2f;

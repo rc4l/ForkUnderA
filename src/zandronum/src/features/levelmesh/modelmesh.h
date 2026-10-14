@@ -13,8 +13,8 @@
 #ifndef ZX_LEVELMESH_MODELMESH_H
 #define ZX_LEVELMESH_MODELMESH_H
 
-#include "features/levelmesh/staticmesh.h"
-#include "features/sprites/computation/spritestyle_compute.h"   // [rc4l] SpriteDrawLook   // [rc4l] MeshPiece
+#include "features/levelmesh/staticmesh.h"   // [rc4l] MeshPiece
+#include "features/sprites/computation/spritestyle_compute.h"   // [rc4l] SpriteDrawLook
 
 class FMaterial;
 struct FModelGeometry;

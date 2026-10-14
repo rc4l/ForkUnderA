@@ -67,6 +67,28 @@ TEST(WorldPipelines, ADynamicDrawTakesItsMaskDecalOrSpritePipeline)
 	EXPECT_EQ(kWpTransNoCull, ComputeDynamicPipeline(9, false, false, false));
 }
 
+// [rc4l] The world pipelines and the projected decals draw a style with one equation, the one GL's gl_GetRenderStyle sets.
+TEST(WorldPipelines, EachBlendIsGLsEquation)
+{
+	const struct { int blend, src, dst, op; } want[] = {
+		{ kWpBlendAlpha, kBlendFactorSrcAlpha, kBlendFactorInvSrcAlpha, kBlendOpAdd },
+		{ kWpBlendAdd, kBlendFactorSrcAlpha, kBlendFactorOne, kBlendOpAdd },
+		{ kWpBlendRevSub, kBlendFactorSrcAlpha, kBlendFactorOne, kBlendOpRevSubtract },
+		{ kWpBlendSub, kBlendFactorSrcAlpha, kBlendFactorOne, kBlendOpSubtract },
+		{ kWpBlendFuzz, kBlendFactorDestColor, kBlendFactorInvSrcAlpha, kBlendOpAdd },
+	};
+	for (const auto &w : want)
+	{
+		const BlendEquation e = ComputeBlendEquation(w.blend);
+		EXPECT_EQ(w.src, e.src) << w.blend;
+		EXPECT_EQ(w.dst, e.dst) << w.blend;
+		EXPECT_EQ(w.op, e.op) << w.blend;
+	}
+	EXPECT_EQ(kWpBlendFuzz, ComputeDecalPassBlend(true, false));
+	EXPECT_EQ(kWpBlendAdd, ComputeDecalPassBlend(false, true));
+	EXPECT_EQ(kWpBlendAlpha, ComputeDecalPassBlend(false, false));
+}
+
 // [rc4l] A blended HUD model writes depth in every blend, as GL's HUD step leaves glDepthMask on.
 TEST(WorldPipelines, AHudModelTakesItsDepthWritingBlend)
 {

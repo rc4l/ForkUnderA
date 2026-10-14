@@ -31,6 +31,14 @@ TEST(MaterialSlots, ASmallDeviceTurnsBindlessOff)
 	EXPECT_EQ((unsigned)kMinMaterialSlots, ComputeMaterialSlotCapacity({ kMinMaterialSlots + kOtherStageResources, 4096, 4096, 4096, 4096 }));
 }
 
+// [rc4l] A sprite's slot made after the traced array was filled is bound alone, never past the array.
+TEST(MaterialSlots, AFirstBindCoversTheArrayAndALaterOneOnlyTheNewSlots)
+{
+	EXPECT_EQ(4096u, ComputeMaterialBindEnd(0, 4096, 5));
+	EXPECT_EQ(9u, ComputeMaterialBindEnd(5, 4096, 9));
+	EXPECT_EQ(4096u, ComputeMaterialBindEnd(4000, 4096, 5000));
+}
+
 TEST(MaterialSlots, DefinesGoRightAfterTheVersionLine)
 {
 	EXPECT_EQ("#version 450\n#define N 7\nvoid main() {}\n", ComputeShaderWithDefines("#version 450\nvoid main() {}\n", "#define N 7\n"));

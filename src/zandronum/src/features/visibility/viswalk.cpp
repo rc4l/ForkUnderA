@@ -1491,13 +1491,12 @@ void WalkSkybox(const PortalView &p, long long seenX, long long seenY)
 	origin->flags |= MF_JUSTHIT;
 	zx::viewsetup::SetViewArea(origin);
 	ComputeSeedPortal(g_clip, seenX, seenY, &p.lines[0], int(p.lines.size() / 4), viewangle - sa, viewangle, zx::viewsetup::CurrentView().frustumAngle);
-	const int mapsection = R_PointInSubsector(viewx, viewy)->mapsection;
-	TArray<BYTE> sections(currentmapsection);
-	if (currentmapsection.Size() > 0) memset(&currentmapsection[0], 0, currentmapsection.Size());
-	currentmapsection[mapsection >> 3] |= 1 << (mapsection & 7);
-	const WalkSpec spec = { zx::levelmesh::kSkyboxWalkSlot, zx::levelmesh::kSkyCaptureNone, false, origin, NULL, NULL, NULL };
-	Walk(spec);
-	currentmapsection = sections;
+	{
+		const MapSectionScope sections;
+		MarkMapSectionBit(R_PointInSubsector(viewx, viewy)->mapsection);
+		const WalkSpec spec = { zx::levelmesh::kSkyboxWalkSlot, zx::levelmesh::kSkyCaptureNone, false, origin, NULL, NULL, NULL };
+		Walk(spec);
+	}
 	origin->flags &= ~MF_JUSTHIT;
 	viewx = sx; viewy = sy; viewz = sz;
 	viewangle = sa;
@@ -1510,8 +1509,7 @@ void WalkStack(const PortalView &p, const WalkHooks *hooks)
 {
 	FPortal *origin = p.stack;
 	const int plane = origin->plane;
-	TArray<BYTE> sections(currentmapsection);
-	if (currentmapsection.Size() > 0) memset(&currentmapsection[0], 0, currentmapsection.Size());
+	const MapSectionScope sections;
 	g_covered.assign(numsubsectors, 0);
 	for (size_t i = 0; i < p.subs.size(); i++)
 	{
@@ -1519,7 +1517,7 @@ void WalkStack(const PortalView &p, const WalkHooks *hooks)
 		for (int j = 0; j < cov.sscount; j++)
 		{
 			const subsector_t *covered = &subsectors[cov.subsectors[j]];
-			currentmapsection[covered->mapsection >> 3] |= 1 << (covered->mapsection & 7);
+			MarkMapSectionBit(covered->mapsection);
 			g_covered[covered - subsectors] = 1;
 		}
 	}
@@ -1549,12 +1547,11 @@ void WalkStack(const PortalView &p, const WalkHooks *hooks)
 	const long long ex = viewx.Raw(), ey = viewy.Raw();
 	for (size_t i = skyboxes.size(); i-- > 0; )
 		if (!skyboxes[i].lines.empty()) WalkSkybox(skyboxes[i], ex, ey);
-	currentmapsection = sections;
 	viewx = sx;
 	viewy = sy;
 }
 
-// [rc4l] GLMirrorPortal::DrawContents's walk: from the eye reflected in the line, turned to match, the frustum and the mirror's own span blocked and nothing behind the mirror walked; then its actors to `sprite` inside the reflection, and the skyboxes it looks into.
+// [rc4l] GLMirrorPortal::DrawContents's walk, `depth` mirrors deep: from the eye at (eyeX, eyeY) reflected in the line, turned to match, the frustum and the mirror's own span blocked and nothing behind it walked; then its actors to `sprite`, the skyboxes it looks into, and each mirror it shows walked in turn to r_mirror_recursions.
 void WalkMirror(const PortalView &p, const WalkHooks *hooks, long long eyeX, long long eyeY, int depth)
 {
 	line_t *line = p.mirror;
@@ -1607,9 +1604,9 @@ void CompareMain(const TArray<unsigned int> &glBits)
 	const long long words = glBits.Size();
 	for (int id = 0; id < ids; id++)
 	{
-		const long long bit = (long long)id * zx::levelmesh::WalkSlots() + zx::levelmesh::kMainWalkSlot;
-		if (bit / 32 >= words) break;
-		const bool gl = (glBits[unsigned(bit / 32)] >> (bit % 32)) & 1;
+		// [rc4l] GL's bits end before ours when GL published fewer ids, and what lies past them is not compared.
+		if (((long long)id * zx::levelmesh::WalkSlots() + zx::levelmesh::kMainWalkSlot) / 32 >= words) break;
+		const bool gl = zx::levelmesh::ComputeStackVisible(&glBits[0], (int)words, id, zx::levelmesh::kMainWalkSlot, zx::levelmesh::WalkSlots());
 		const bool ours = id < numsubsectors ? g_subWalked.Load(id) == g_walkStamp : g_sideWalked.Load(id - numsubsectors) == g_walkStamp;
 		if (gl && !ours) onlyGL++;
 		if (ours && !gl) onlyOurs++;
@@ -1651,32 +1648,17 @@ bool SameShade(const zx::levelmesh::MeshPiece &a, const zx::levelmesh::MeshPiece
 		a.fogDensity == b.fogDensity && a.fogColor == b.fogColor && a.fogMode == b.fogMode && a.desaturation == b.desaturation;
 }
 
-// [rc4l] How many ids a walk slot marks in a set of bits.
+// [rc4l] How many of the level's ids a walk slot marks in a set of bits (ComputeSlotCount).
 int SlotCount(const TArray<unsigned int> &bits, int slot)
 {
-	int count = 0;
-	const int ids = numsubsectors + numsides;
-	for (int id = 0; id < ids; id++)
-	{
-		const unsigned bit = unsigned(id * zx::levelmesh::WalkSlots() + slot);
-		if (bit / 32 < bits.Size() && ((bits[bit / 32] >> (bit % 32)) & 1)) count++;
-	}
-	return count;
+	return zx::levelmesh::ComputeSlotCount(bits.Size() ? &bits[0] : nullptr, (int)bits.Size(), numsubsectors + numsides, slot, zx::levelmesh::WalkSlots());
 }
 
-// [rc4l] How many ids a walk slot marks in one set of bits and not the other.
+// [rc4l] How many of the level's ids a walk slot marks in one set of bits and not the other (ComputeSlotDiffers).
 int SlotDiffers(const TArray<unsigned int> &a, const TArray<unsigned int> &b, int slot)
 {
-	int differ = 0;
-	const int ids = numsubsectors + numsides;
-	for (int id = 0; id < ids; id++)
-	{
-		const unsigned bit = unsigned(id * zx::levelmesh::WalkSlots() + slot);
-		const bool inA = bit / 32 < a.Size() && ((a[bit / 32] >> (bit % 32)) & 1);
-		const bool inB = bit / 32 < b.Size() && ((b[bit / 32] >> (bit % 32)) & 1);
-		if (inA != inB) differ++;
-	}
-	return differ;
+	return zx::levelmesh::ComputeSlotDiffers(a.Size() ? &a[0] : nullptr, (int)a.Size(), b.Size() ? &b[0] : nullptr, (int)b.Size(),
+		numsubsectors + numsides, slot, zx::levelmesh::WalkSlots());
 }
 
 } // namespace
@@ -1757,15 +1739,12 @@ void WalkCameraSky()
 {
 	zx::levelmesh::BeginViewSky(zx::levelmesh::kSkyCaptureCamera);
 	// [rc4l] Over the camera's own map section, as RenderViewpoint walks it, not the player's.
-	TArray<BYTE> sections(currentmapsection);
-	if (currentmapsection.Size() > 0) memset(&currentmapsection[0], 0, currentmapsection.Size());
-	const int mapsection = R_PointInSubsector(viewx, viewy)->mapsection;
-	currentmapsection[mapsection >> 3] |= 1 << (mapsection & 7);
+	const MapSectionScope sections;
+	MarkMapSectionBit(R_PointInSubsector(viewx, viewy)->mapsection);
 	g_clip.Clear();
 	ComputeSeedFrustum(g_clip, viewangle, zx::viewsetup::CurrentView().frustumAngle);
 	const WalkSpec spec = { -1, zx::levelmesh::kSkyCaptureCamera, false, zx::viewsetup::CurrentView().viewActor, NULL, NULL, NULL, NULL, NULL };
 	Walk(spec);
-	currentmapsection = sections;
 }
 
 void WalkPortalViews(const WalkHooks *hooks)

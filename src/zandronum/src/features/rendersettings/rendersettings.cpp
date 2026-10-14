@@ -6,6 +6,8 @@
 #include "doomstat.h"   // [rc4l] zadmflags
 #include "g_level.h"    // [rc4l] level.flags
 
+#include <string.h>   // [rc4l] memset, clearing the map sections
+
 GLRenderSettings glset;
 long gl_frameMS;
 long gl_frameCount;
@@ -17,6 +19,19 @@ int skyfog;
 DWORD gl_fixedcolormap;
 area_t in_area;
 TArray<BYTE> currentmapsection;
+
+void ClearMapSections()
+{
+	if (currentmapsection.Size() > 0) memset(&currentmapsection[0], 0, currentmapsection.Size());
+}
+
+void MarkMapSectionBit(int section)
+{
+	currentmapsection[section >> 3] |= 1 << (section & 7);
+}
+
+MapSectionScope::MapSectionScope() : saved(currentmapsection) { ClearMapSections(); }
+MapSectionScope::~MapSectionScope() { currentmapsection = saved; }
 
 CVAR(Int, r_weaponlight, 8, CVAR_ARCHIVE);
 
