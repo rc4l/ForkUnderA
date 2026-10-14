@@ -61,7 +61,8 @@ test('a check that wants a screenshot fails without one or with a blank one', ()
 });
 
 test('the sound check wants a context that waited for the click and ran after it', () => {
-  assert.equal(soundStarts({ before: ['suspended'], after: ['running'] }), '');
+  assert.equal(soundStarts({ before: ['suspended'], after: ['running'], played: 12 }), '');
+  assert.equal(soundStarts({ before: ['suspended'], after: ['running'], played: 0 }), 'nothing played in the two seconds after the click');
   assert.equal(soundStarts({ before: [], after: [] }), 'the engine made no audio context');
   assert.equal(soundStarts({ before: ['running'], after: ['running'] }), 'the sound did not wait for a click (running)');
   assert.equal(soundStarts({ before: ['suspended'], after: ['suspended'] }), 'the sound stayed suspended after a click');

@@ -50,6 +50,17 @@ export function formatEval(result) {
   return `[eval] ${JSON.stringify(result?.result?.value ?? null)}`;
 }
 
+// [rc4l] The keys a page may ask smoke to press, with the codes Chrome's input events want.
+export const KEYS = { Tab: { code: 'Tab', keyCode: 9 }, Escape: { code: 'Escape', keyCode: 27 }, Enter: { code: 'Enter', keyCode: 13 } };
+
+// [rc4l] Input a page asks for with a console line, since only input from outside it counts as a person's: "check: click" clicks its middle, "check: press KEY" presses one of KEYS; null for any other line.
+export function inputAsked(line) {
+  const m = /^\[log\] check: (click|press (\S+))$/.exec(line);
+  if (!m) return null;
+  if (!m[2]) return { click: true };
+  return KEYS[m[2]] ? { key: m[2], ...KEYS[m[2]] } : null;
+}
+
 // [rc4l] Until a download has landed in dir and none is still being written (Chrome's .crdownload), or ten seconds, since closing Chrome mid-download leaves only the partial file.
 export async function downloadsSettled(dir, { timeoutMs = 10000, pollMs = 100 } = {}) {
   for (const deadline = Date.now() + timeoutMs; Date.now() < deadline; await new Promise(r => setTimeout(r, pollMs))) {
@@ -66,8 +77,8 @@ async function waitForJson(url, deadline) {
   }
 }
 
-// [rc4l] `init` runs in the page before its own scripts, `clickOn` clicks the page's middle, as a person would, once a console line matches it, and the page's downloads land in `downloadDir`.
-export async function smoke({ url, until, seconds = 30, shot, chrome, headless = true, software = false, port = 9333, onLine = console.log, evaluate, after = 10, profile, init, clickOn, downloadDir }) {
+// [rc4l] `init` runs in the page before its own scripts, the page may ask for input (inputAsked), and its downloads land in `downloadDir`.
+export async function smoke({ url, until, seconds = 30, shot, chrome, headless = true, software = false, port = 9333, onLine = console.log, evaluate, after = 10, profile, init, downloadDir }) {
   const exe = chrome ?? CHROME_CANDIDATES.find(p => fs.existsSync(p));
   if (!exe) throw new Error('no Chrome found');
   // [rc4l] A named profile keeps the page's storage between runs, for checking what survives a reload; otherwise a fresh one each time.
@@ -84,12 +95,12 @@ export async function smoke({ url, until, seconds = 30, shot, chrome, headless =
     const pending = new Map();
     let matched = null;
     let wake = () => {};
-    let clicked = false;
     const take = line => {
       lines.push(line);
       onLine(line);
       if (until && new RegExp(until).test(line)) { matched = line; wake(); }
-      if (clickOn && !clicked && new RegExp(clickOn).test(line)) { clicked = true; click(); }
+      const asked = inputAsked(line);
+      if (asked) act(asked);
     };
     ws.onmessage = ev => {
       const msg = JSON.parse(ev.data);
@@ -98,8 +109,12 @@ export async function smoke({ url, until, seconds = 30, shot, chrome, headless =
       if (line !== null) take(line);
     };
     const send = (method, params = {}) => new Promise(res => { const n = ++id; pending.set(n, res); ws.send(JSON.stringify({ id: n, method, params })); });
-    const click = async () => {
-      for (const type of ['mousePressed', 'mouseReleased']) await send('Input.dispatchMouseEvent', { type, x: 640, y: 360, button: 'left', clickCount: 1 });
+    const act = async (asked) => {
+      if (asked.click) {
+        for (const type of ['mousePressed', 'mouseReleased']) await send('Input.dispatchMouseEvent', { type, x: 640, y: 360, button: 'left', clickCount: 1 });
+        return;
+      }
+      for (const type of ['keyDown', 'keyUp']) await send('Input.dispatchKeyEvent', { type, key: asked.key, code: asked.code, windowsVirtualKeyCode: asked.keyCode });
     };
     await send('Runtime.enable');
     await send('Log.enable');

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { chromeArgs, downloadsSettled, formatConsole, formatEval } from '../smoke.mjs';
+import { chromeArgs, downloadsSettled, formatConsole, formatEval, inputAsked } from '../smoke.mjs';
 
 test('Chrome runs headless with WebGPU on the given port and profile', () => {
   const args = chromeArgs(9333, '/tmp/p');
@@ -31,6 +31,13 @@ test('an evaluation prints its value as JSON, or what it threw', () => {
   assert.equal(formatEval(undefined), '[eval] null');
   assert.equal(formatEval({ exceptionDetails: { text: 'Uncaught', exception: { description: 'ReferenceError: x' } } }), '[eval] threw ReferenceError: x');
   assert.equal(formatEval({ exceptionDetails: { text: 'Uncaught' } }), '[eval] threw Uncaught');
+});
+
+test('a page asks for a click or a key it knows with a console line', () => {
+  assert.deepEqual(inputAsked('[log] check: click'), { click: true });
+  assert.deepEqual(inputAsked('[log] check: press Tab'), { key: 'Tab', code: 'Tab', keyCode: 9 });
+  assert.equal(inputAsked('[log] check: press F13'), null);
+  assert.equal(inputAsked('[log] something else'), null);
 });
 
 test('a download has settled once a file is there and none is still being written', async () => {

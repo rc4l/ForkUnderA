@@ -44,6 +44,7 @@ Loads a page in headless Chrome with WebGPU on and prints its console.
 - `--profile` keeps the browser profile in DIR between runs, so a second run sees what the first stored.
 - `--software true` puts WebGPU on SwiftShader, Chrome's CPU renderer.
 - `--downloadDir DIR` keeps the page's downloads in DIR, and the run waits for them to finish.
+- The page can ask for input a person would give by logging `check: click` (the page's middle) or `check: press Tab` (also `Escape`, `Enter`). Input from inside the page doesn't count as a person's, so a click can't start the sound that way.
 
 ## check.mjs
 
@@ -51,7 +52,7 @@ Loads a page in headless Chrome with WebGPU on and prints its console.
 node tools/web/check.mjs [dist-web] [--software]
 ```
 
-Serves a staged build and runs the browser checks in headless Chrome, in order on one profile: the game boots and its screenshot shows a level, the sound waits for a click and starts on one, the screenshot command downloads the frame, a save gets its picture, quitting stops the loop and offers to play again, a setting survives quitting, leaving the page and reloading, a recoverable error leaves the game running, and a fatal one stops it and shows on the page. It prints PASS or FAIL for each, with the console's last lines (and the screenshot, for the drawing check) for a failure, and exits 1 if any failed. `--software` runs WebGPU on SwiftShader, for a machine with no GPU; CI's `build-web` job runs it that way.
+Serves a staged build and runs the browser checks in headless Chrome, in order on one profile: the game boots and its screenshot shows a level, the sound waits for a click and plays after one, Tab stays in the game, the screenshot command downloads the frame, a save gets its picture, quitting stops the loop and offers to play again, a setting survives quitting, leaving the page and reloading, a recoverable error leaves the game running, and a fatal one stops it and shows on the page. It prints PASS or FAIL for each, with the console's last lines (and the screenshot, for the drawing check) for a failure, and exits 1 if any failed. `--software` runs WebGPU on SwiftShader, for a machine with no GPU; CI's `build-web` job runs it that way.
 
 ## webgpu-check
 

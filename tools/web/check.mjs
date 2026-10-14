@@ -31,11 +31,12 @@ export function blankGame(img) {
   return '';
 }
 
-// [rc4l] Why the sound check failed, or '': the engine's audio contexts held until a click (a page may not play before one) and all ran after it.
-export function soundStarts({ before, after }) {
+// [rc4l] Why the sound check failed, or '': the engine's audio contexts held until a click (a page may not play before one), all ran after it, and buffers went on playing (the level's music streams them).
+export function soundStarts({ before, after, played }) {
   if (!after.length) return 'the engine made no audio context';
   if (!before.includes('suspended')) return `the sound did not wait for a click (${before.join(', ')})`;
   if (after.some((s) => s !== 'running')) return `the sound stayed ${after.join(', ')} after a click`;
+  if (!played) return 'nothing played in the two seconds after the click';
   return '';
 }
 
@@ -50,16 +51,31 @@ export function savePicture({ found, width, height, range }) {
 export const CHECKS = [
   { name: 'boots and draws MAP01', evaluate: inPage(`${pause(3000)} return 'drawn';`), until: EVAL, shot: true, expectShot: blankGame },
   {
-    name: 'the sound waits for a click and starts on one',
-    init: `window.fuaAudio = []; { const AC = window.AudioContext; window.AudioContext = class extends AC { constructor(...a) { super(...a); window.fuaAudio.push(this); } }; }`,
-    clickOn: 'check: click now',
+    name: 'the sound waits for a click and plays after one',
+    init: `window.fuaAudio = []; window.fuaBuffers = 0; {
+      const AC = window.AudioContext; window.AudioContext = class extends AC { constructor(...a) { super(...a); window.fuaAudio.push(this); } };
+      const make = BaseAudioContext.prototype.createBufferSource; BaseAudioContext.prototype.createBufferSource = function (...a) { window.fuaBuffers++; return make.apply(this, a); };
+    }`,
     evaluate: inPage(`
       const before = window.fuaAudio.map((c) => c.state);
-      console.log('check: click now');
+      console.log('check: click');
       for (let i = 0; i < 50 && !window.fuaAudio.every((c) => c.state === 'running'); i++) ${pause(100)}
-      return { before, after: window.fuaAudio.map((c) => c.state) };`),
+      const buffers = window.fuaBuffers;
+      ${pause(2000)}
+      return { before, after: window.fuaAudio.map((c) => c.state), played: window.fuaBuffers - buffers };`),
     until: EVAL,
     expect: soundStarts,
+  },
+  // [rc4l] Tab is the automap's, so the page keeps the browser from moving the focus off the game with it.
+  {
+    name: 'game keys stay in the game',
+    evaluate: inPage(`
+      document.getElementById('canvas').focus();
+      console.log('check: press Tab');
+      ${pause(500)}
+      return document.activeElement ? document.activeElement.id || document.activeElement.tagName : null;`),
+    until: EVAL,
+    expect: (focused) => (focused === 'canvas' ? '' : `Tab moved the focus to ${focused}`),
   },
   // [rc4l] The screenshot command downloads the frame, since a browser's WebGPU reads nothing back at once and a file in the page's own storage would be out of the player's reach.
   {
@@ -137,7 +153,7 @@ export async function check({ url, checks = CHECKS, seconds = 60, software = fal
     for (const [i, c] of checks.entries()) {
       const shot = c.shot ? path.join(shots, `check-${i}.png`) : undefined;
       const downloadDir = c.download ? fs.mkdtempSync(path.join(shots, `check-${i}-`)) : undefined;
-      const { matched, lines } = await smoke({ url, profile, seconds, software, shot, downloadDir, until: c.until, evaluate: c.evaluate, after: 1, init: c.init, clickOn: c.clickOn, onLine: () => {} });
+      const { matched, lines } = await smoke({ url, profile, seconds, software, shot, downloadDir, until: c.until, evaluate: c.evaluate, after: 1, init: c.init, onLine: () => {} });
       const picture = shot || (downloadDir && fs.readdirSync(downloadDir).filter((f) => f.endsWith('.png')).map((f) => path.join(downloadDir, f))[0]);
       const { ok, reason } = judge(c, matched, picture && fs.existsSync(picture) ? decodePNG(picture) : null);
       onResult(`${ok ? 'PASS' : 'FAIL'} ${c.name}${ok ? '' : ': ' + reason}`);
