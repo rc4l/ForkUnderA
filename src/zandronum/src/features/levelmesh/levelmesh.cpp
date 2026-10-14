@@ -35,7 +35,7 @@ using zx::levelmesh::MeshVertex;
 namespace zx { namespace levelmesh {
 
 // [rc4l] Which end of the linedef this sidedef starts from. Mirrors GetSideVertices in
-// gl/data/gl_setup.cpp; side_t::V1/V2 are inline-private to po_man.cpp so they cannot be reused.
+// features/levelprep/levelprep.cpp; side_t::V1/V2 are inline-private to po_man.cpp so they cannot be reused.
 static void SideVertices(const side_t *side, const vertex_t *&v1, const vertex_t *&v2)
 {
 	const line_t *ln = side->linedef;
