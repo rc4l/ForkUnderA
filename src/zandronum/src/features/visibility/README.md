@@ -101,7 +101,9 @@ included, and GL's walk on all of them.
   from the view area GL started with, and `CheckPortalViews` when it reports its portal views done.
 - `features/frame/standaloneframe.cpp` `StandaloneScene`: `PO_LinkToSubsectors`, `WalkView` (publishing to
   the player's walk slot unless `fua_vis_cull` is off) and `WalkPortalViews`, with `WalkHooks` for the
-  particles, actors and decals they reach.
+  particles, actors and decals they reach; for a camera texture's view, `WalkCameraSky`, its sky surfaces
+  alone over its own map section, as GL's walk of `RenderViewpoint` captures them. A mirror's walk fills the
+  mirrors' sky list (`kSkyCaptureMirror`), which every mirror pass paints other skies from.
 - `features/frame/levelrenderer.cpp` `FLevelRenderer::CleanLevelData`: `ForgetWalk`.
 - `features/hwrender/hud2d.cpp` `SetSkyFog`: the sky's fog, which the sky pass lays over its dome.
 - `features/levelmesh/wallcache.cpp` `InvalidateMovedSectors`: with the walks' lists, only what they reached.

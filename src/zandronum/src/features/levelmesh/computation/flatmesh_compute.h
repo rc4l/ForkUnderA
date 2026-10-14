@@ -158,20 +158,23 @@ int ComputeWalkSlots(int stackViews);
 // [rc4l] The walk slot a stacked view's walk marks, -1 for a view no slot took.
 int ComputeStackWalkSlot(int stackSlot);
 
-// [rc4l] The sky-surface lists a GL scene walk can fill: the player's view, a camera texture's, one per stacked view from kSkyCaptureStack, or none.
-enum { kSkyCaptureNone = -1, kSkyCaptureMain = 0, kSkyCaptureCamera = 1, kSkyCaptureStack = 2 };
+// [rc4l] The sky-surface lists a GL scene walk can fill: the player's view, a camera texture's, every mirror walk's together, one per stacked view from kSkyCaptureStack, or none.
+enum { kSkyCaptureNone = -1, kSkyCaptureMain = 0, kSkyCaptureCamera = 1, kSkyCaptureMirror = 2, kSkyCaptureStack = 3 };
 
 // [rc4l] The sky lists a level with `stackViews` stacked views has.
 int ComputeSkyCaptureLists(int stackViews);
 
-// [rc4l] Which list a walk fills: an outer walk fills the main or camera one, and the player's walk through a stacked view it saw (stackSlot, else -1) fills that view's.
-int ComputeSkyCaptureList(bool mainView, int sceneNesting, int stackSlot);
+// [rc4l] Which list a walk fills: an outer walk fills the main or camera one, the player's walk through a stacked view it saw (stackSlot, else -1) that view's, and any walk through a line mirror the mirrors' one.
+int ComputeSkyCaptureList(bool mainView, int sceneNesting, int stackSlot, bool mirrorWalk = false);
 
 // [rc4l] The stacked view a capture belongs to: stackSlot while the player's walk is inside that view, by ComputeSkyCaptureList's rule, else -1.
 int ComputeStackCaptureSlot(bool mainView, int sceneNesting, int stackSlot);
 
 // [rc4l] The list a backend pass draws its sky from: a camera texture's, a stacked view's (stackSlot, else -1), or the player's.
 int ComputeSkyDrawList(bool cameraPass, int stackSlot);
+
+// [rc4l] The lists a pass paints other skies than the level's from, into lists: a camera texture's, a stacked view's (stackSlot), a mirror's the player's and every mirror walk's, since sky quads are where they are from any eye, else the player's; how many.
+int ComputeSkyLookLists(bool cameraPass, int stackSlot, bool mirrorPass, int lists[2]);
 
 // [rc4l] Whether a sky quad's skybox becomes the frame's: the player's own walk always, a stacked view's only while the player's named none.
 bool ComputeTakesSkyViewpoint(int list, bool haveOne);

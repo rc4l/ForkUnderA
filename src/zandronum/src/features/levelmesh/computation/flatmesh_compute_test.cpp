@@ -455,6 +455,32 @@ TEST(FlatMeshCompute, OnlyThePlayersOuterWalkFillsThePlayersSkyList)
 	EXPECT_EQ(kSkyCaptureNone, ComputeSkyCaptureList(false, 2, -1));
 }
 
+// [rc4l] A walk through a line mirror, however deep, fills the mirrors' list, unless it is a stacked view's or a camera texture's.
+TEST(FlatMeshCompute, AMirrorsWalkFillsTheMirrorsSkyList)
+{
+	EXPECT_EQ(kSkyCaptureMirror, ComputeSkyCaptureList(true, 2, -1, true));
+	EXPECT_EQ(kSkyCaptureMirror, ComputeSkyCaptureList(true, 4, -1, true));
+	EXPECT_EQ(kSkyCaptureStack, ComputeSkyCaptureList(true, 2, 0, true));
+	EXPECT_EQ(kSkyCaptureNone, ComputeSkyCaptureList(false, 2, -1, true));
+	EXPECT_EQ(kSkyCaptureMain, ComputeSkyCaptureList(true, 1, -1, true));
+	EXPECT_FALSE(ComputeTakesSkyViewpoint(kSkyCaptureMirror, false));
+}
+
+// [rc4l] A camera texture and a stacked view paint other skies from their own lists, a mirror from the player's and the mirrors', the player's view from its own.
+TEST(FlatMeshCompute, APassPaintsOtherSkiesFromTheListsItsViewSees)
+{
+	int lists[2] = { -9, -9 };
+	EXPECT_EQ(1, ComputeSkyLookLists(true, 2, true, lists));
+	EXPECT_EQ(kSkyCaptureCamera, lists[0]);
+	EXPECT_EQ(1, ComputeSkyLookLists(false, 2, true, lists));
+	EXPECT_EQ(kSkyCaptureStack + 2, lists[0]);
+	EXPECT_EQ(2, ComputeSkyLookLists(false, -1, true, lists));
+	EXPECT_EQ(kSkyCaptureMain, lists[0]);
+	EXPECT_EQ(kSkyCaptureMirror, lists[1]);
+	EXPECT_EQ(1, ComputeSkyLookLists(false, -1, false, lists));
+	EXPECT_EQ(kSkyCaptureMain, lists[0]);
+}
+
 // [rc4l] WDI01: looking up through the town's stacked ceiling, every sky quad came from the stack's walk and went nowhere, so the sky was black.
 TEST(FlatMeshCompute, TheWalkThroughAStackedViewFillsThatViewsSkyList)
 {

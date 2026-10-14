@@ -464,6 +464,9 @@ void EnsureSky();
 const std::string &UserShaderBlock();
 // [rc4l] Each sky other than the level's that the player's sky surfaces show this frame, drawn into a picture of its own before the frame, which DrawSkySurfaces paints them from.
 void RenderSkyLooks(Diligent::IDeviceContext *ctx);
+// [rc4l] The same for another view about to be drawn at w by h from the eye in g_mvp (a camera texture, a stacked view by slot, a mirror), before its target is bound; ForgetViewSkyLooks once it is drawn.
+void RenderViewSkyLooks(Diligent::IDeviceContext *ctx, bool cameraPass, int stackSlot, bool mirrorPass, int w, int h);
+void ForgetViewSkyLooks();
 bool EnsureSkyPortalResources();
 bool RenderSkyPortal(Diligent::IDeviceContext *ctx);
 void DrawSkyBackground(Diligent::IDeviceContext *ctx);

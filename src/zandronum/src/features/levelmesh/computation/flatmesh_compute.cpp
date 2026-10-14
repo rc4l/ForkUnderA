@@ -163,11 +163,21 @@ int ComputeSkyCaptureLists(int stackViews)
 	return kSkyCaptureStack + (stackViews > 0 ? stackViews : 0);
 }
 
-int ComputeSkyCaptureList(bool mainView, int sceneNesting, int stackSlot)
+int ComputeSkyCaptureList(bool mainView, int sceneNesting, int stackSlot, bool mirrorWalk)
 {
 	if (sceneNesting <= 1) return mainView ? kSkyCaptureMain : kSkyCaptureCamera;
 	if (sceneNesting == 2 && mainView && stackSlot >= 0) return kSkyCaptureStack + stackSlot;
-	return kSkyCaptureNone;
+	return (mainView && mirrorWalk) ? kSkyCaptureMirror : kSkyCaptureNone;
+}
+
+int ComputeSkyLookLists(bool cameraPass, int stackSlot, bool mirrorPass, int lists[2])
+{
+	if (cameraPass) { lists[0] = kSkyCaptureCamera; return 1; }
+	if (stackSlot >= 0) { lists[0] = kSkyCaptureStack + stackSlot; return 1; }
+	lists[0] = kSkyCaptureMain;
+	if (!mirrorPass) return 1;
+	lists[1] = kSkyCaptureMirror;
+	return 2;
 }
 
 int ComputeStackCaptureSlot(bool mainView, int sceneNesting, int stackSlot)

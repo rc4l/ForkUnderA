@@ -26,6 +26,9 @@ void WalkView(bool publish = false, bool derive = false, const WalkHooks *hooks 
 // [rc4l] Walk each stacked view, skybox and line mirror the last derived WalkView looked into, from its own eye, as GL's portals walk them: their walk bits and sky surfaces, and each stacked view's and mirror's actors and decals to `hooks` from inside that view.
 void WalkPortalViews(const WalkHooks *hooks);
 
+// [rc4l] A camera texture's walk from the view BeginViewpoint set up, for the sky surfaces GL's walk of RenderViewpoint captures into the camera's list, and nothing else of the frame's.
+void WalkCameraSky();
+
 // [rc4l] With fua_vis_check on, walk beside GL's own walk of the player's view and compare what the two reached and made; the stacked views, skyboxes and mirrors are compared once GL has walked them, by CheckPortalViews.
 void CheckAgainstGL();
 void CheckPortalViews();

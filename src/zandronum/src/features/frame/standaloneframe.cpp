@@ -138,6 +138,8 @@ void StandaloneScene()
 		zx::visibility::WalkView(fua_vis_cull, true, &hooks);
 		zx::visibility::WalkPortalViews(&hooks);
 	}
+	// [rc4l] A camera texture's view walks for its sky surfaces alone, so another sky than the level's shows on its screen.
+	else if (fua_vis_walk) zx::visibility::WalkCameraSky();
 	zx::levelmesh::WalkedThisFrame walkedSet;
 	walkedSet.sectors = zx::visibility::SectorsWalkedThisFrame(walkedSet.sectorCount);
 	walkedSet.sides = zx::visibility::SidesWalkedThisFrame(walkedSet.sideCount);

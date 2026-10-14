@@ -1567,7 +1567,7 @@ void WalkMirror(const PortalView &p, const WalkHooks *hooks)
 	g_clip.SafeAddClipRange(ComputePseudoAngle(double((line->v2->x - viewx).Raw()), double((line->v2->y - viewy).Raw())),
 		ComputePseudoAngle(double((line->v1->x - viewx).Raw()), double((line->v1->y - viewy).Raw())));
 	std::vector<PortalView> skyboxes;
-	WalkSpec spec = { -1, zx::levelmesh::kSkyCaptureNone, false, NULL, &skyboxes, NULL, NULL, line };
+	WalkSpec spec = { -1, zx::levelmesh::kSkyCaptureMirror, false, NULL, &skyboxes, NULL, NULL, line };
 	Walk(spec);
 	if (hooks != NULL)
 	{
@@ -1742,6 +1742,21 @@ void WalkView(bool publish, bool derive, const WalkHooks *hooks)
 	g_timedWalks++;
 	g_walkMs += clock.TimeMS();
 	if (clock.TimeMS() > g_walkMaxMs) g_walkMaxMs = clock.TimeMS();
+}
+
+void WalkCameraSky()
+{
+	zx::levelmesh::BeginViewSky(zx::levelmesh::kSkyCaptureCamera);
+	// [rc4l] Over the camera's own map section, as RenderViewpoint walks it, not the player's.
+	TArray<BYTE> sections(currentmapsection);
+	if (currentmapsection.Size() > 0) memset(&currentmapsection[0], 0, currentmapsection.Size());
+	const int mapsection = R_PointInSubsector(viewx, viewy)->mapsection;
+	currentmapsection[mapsection >> 3] |= 1 << (mapsection & 7);
+	g_clip.Clear();
+	ComputeSeedFrustum(g_clip, viewangle, zx::viewsetup::CurrentView().frustumAngle);
+	const WalkSpec spec = { -1, zx::levelmesh::kSkyCaptureCamera, false, zx::viewsetup::CurrentView().viewActor, NULL, NULL, NULL, NULL, NULL };
+	Walk(spec);
+	currentmapsection = sections;
 }
 
 void WalkPortalViews(const WalkHooks *hooks)

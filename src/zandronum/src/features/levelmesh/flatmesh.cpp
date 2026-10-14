@@ -922,19 +922,21 @@ static void ForgetFrameWalks()
 	g_walkedMirrors.Clear();
 	g_mirrorSheens.Clear();
 	for (int i = 0; i < g_stackCapacity; i++) { g_stackVerts[i].Clear(); g_skyVerts[kSkyCaptureStack + i].Clear(); }
+	g_skyVerts[kSkyCaptureMirror].Clear();
 	g_stackVis.Resize((unsigned)ComputeStackVisWords(numsubsectors + numsides, g_walkSlots));
 	if (g_stackVis.Size() > 0) memset(&g_stackVis[0], 0, g_stackVis.Size() * sizeof(unsigned int));
 }
 
 int BeginSkyWalk()
 {
-	g_skyList = ComputeSkyCaptureList(s_mainView, s_sceneNesting, StackWalkSlot());
+	g_skyList = ComputeSkyCaptureList(s_mainView, s_sceneNesting, StackWalkSlot(), s_mirrorLine >= 0);
 	if (!HasSkyList(g_skyList)) g_skyList = kSkyCaptureNone;
 	const SkyWalkNote note = { s_mainView, s_sceneNesting, g_skyList,
 		g_skyList == kSkyCaptureNone ? -1 : (int)g_skyVerts[g_skyList].Size() / 6 };
 	g_walkNotes[g_walkNoteCount++ % 8] = note;
 	if (g_skyList == kSkyCaptureNone) return g_skyList;
-	g_skyVerts[g_skyList].Clear();
+	// [rc4l] Every mirror walk of the frame adds to the mirrors' list, which the player's walk empties.
+	if (g_skyList != kSkyCaptureMirror) g_skyVerts[g_skyList].Clear();
 	// [rc4l] The player's walk starts the frame, so last frame's stacked views and their skies go with it.
 	if (g_skyList == kSkyCaptureMain) ForgetFrameWalks();
 	g_skyWalks[g_skyList]++;
@@ -1006,6 +1008,7 @@ void BeginPortalViews()
 		BeginSlotVisibility(ComputeStackWalkSlot(i));
 	}
 	BeginSlotVisibility(kSkyboxWalkSlot);
+	g_skyVerts[kSkyCaptureMirror].Clear();
 	g_skyboxWalked = false;
 	g_walkedMirrors.Clear();
 	g_mirrorSheens.Clear();

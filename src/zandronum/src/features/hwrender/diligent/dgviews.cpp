@@ -879,6 +879,8 @@ static void RenderWorldInto(Diligent::IDeviceContext *ctx, ViewTarget &t)
 	Diligent::ITexture *depth = ViewDepth(t);
 	if (depth == NULL) return;
 	BuildMVP(g_mvp);
+	// [rc4l] A stacked view's other skies from its own walk's, a plane mirror's from the player's and the mirrors'.
+	RenderViewSkyLooks(ctx, false, g_pass.stackSlot, g_pass.stackSlot < 0, t.w, t.h);
 	auto *rtv = t.color->GetDefaultView(Diligent::TEXTURE_VIEW_RENDER_TARGET);
 	auto *dsv = depth->GetDefaultView(Diligent::TEXTURE_VIEW_DEPTH_STENCIL);
 	ctx->SetRenderTargets(1, &rtv, dsv, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
@@ -886,6 +888,7 @@ static void RenderWorldInto(Diligent::IDeviceContext *ctx, ViewTarget &t)
 	ctx->ClearRenderTarget(rtv, clear, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 	ctx->ClearDepthStencil(dsv, Diligent::CLEAR_DEPTH_FLAG, 1.0f, 0, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 	DrawWorld(ctx);
+	ForgetViewSkyLooks();
 }
 
 // [rc4l] A rendered target changes hands here, outside the frame's render pass, for the reason RenderSkyPortal gives.
@@ -1301,6 +1304,7 @@ static void RenderMirrorNode(Diligent::IDeviceContext *ctx, unsigned i, int leve
 		RenderMirrorNode(ctx, k, level + 1, childSlot++, reflected, node);
 		WithEye(reflected, [] { BuildMVP(g_mvp); });
 	}
+	RenderViewSkyLooks(ctx, false, -1, true, g_mirrorW, g_mirrorH);
 	auto *rtv = pic->color->GetDefaultView(Diligent::TEXTURE_VIEW_RENDER_TARGET);
 	auto *dsv = pic->depth->GetDefaultView(Diligent::TEXTURE_VIEW_DEPTH_STENCIL);
 	// Clip to the mirror's own plane, in MESH space: x and z there are the map's x and y.
@@ -1315,6 +1319,7 @@ static void RenderMirrorNode(Diligent::IDeviceContext *ctx, unsigned i, int leve
 	g_mirrorPass = node;
 	g_pass.lineMirror = m.line;
 	DrawWorld(ctx);
+	ForgetViewSkyLooks();
 	g_pass.lineMirror = -1;
 	g_mirrorPass = outer;
 	g_pass.clipPlane[0] = g_pass.clipPlane[1] = g_pass.clipPlane[2] = g_pass.clipPlane[3] = 0.f;

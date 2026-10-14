@@ -133,6 +133,7 @@ void RenderCameraTexture(const void *material, int w, int h, float aspect,
 	BuildMVP(g_mvp);
 	g_frame.fovOverride = g_frame.aspectOverride = 0.f;
 	viewx = sx; viewy = sy; viewz = sz; viewangle = sa; viewpitch = sp;
+	RenderViewSkyLooks(ctx, true, -1, false, w, h);
 
 	Diligent::ITextureView *rtv = cam->scratch->GetDefaultView(Diligent::TEXTURE_VIEW_RENDER_TARGET);
 	ctx->SetRenderTargets(1, &rtv, cam->dsv, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
@@ -150,6 +151,7 @@ void RenderCameraTexture(const void *material, int w, int h, float aspect,
 	g_frame.serial++;
 	g_pass.inCameraPass = true;
 	DrawWorld(ctx);
+	ForgetViewSkyLooks();
 	g_pass.inCameraPass = false;
 	CopyCameraFlipped(ctx, *cam);
 

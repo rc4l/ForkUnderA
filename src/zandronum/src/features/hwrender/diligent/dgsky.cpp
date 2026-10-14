@@ -1371,7 +1371,7 @@ static void DrawSkyOccluders(Diligent::IDeviceContext *ctx)
 	DrawScreenSurfaceRun(ctx, g_skyOccluderSRB, 0, sv.Size());
 }
 
-// [rc4l] Skies other than the level's that this frame's sky surfaces show (a line's, sky2), each drawn into a picture of its own and painted onto its surfaces by screen position, as GL draws each GLSkyInfo through a portal of its own.
+// [rc4l] Skies other than the level's that a pass's sky surfaces show (a line's, sky2), each drawn into a picture of its own and painted onto its surfaces by screen position, as GL draws each GLSkyInfo through a portal of its own.
 struct SkyLookPicture
 {
 	zx::hwrender::SkyLook look;
@@ -1380,74 +1380,87 @@ struct SkyLookPicture
 	int w = 0, h = 0;
 };
 static const int kSkyLookPictures = 4;
-static SkyLookPicture g_lookPictures[kSkyLookPictures];
-static int g_lookPictureCount = 0;
-// [rc4l] Each sky key the player's sky surfaces carry this frame, and the picture it paints from, -1 for the level's sky.
+// [rc4l] A sky key a pass's sky surfaces carry, and the picture it paints from, -1 for the level's sky.
 struct SkyKeyPicture { int key, picture; };
-static TArray<SkyKeyPicture> g_keyPictures;
+// [rc4l] One pass's pictures: the sky lists its surfaces come from, the looks they show, and which picture each key paints from.
+struct SkyLookSet
+{
+	SkyLookPicture pictures[kSkyLookPictures];
+	int count = 0;
+	TArray<SkyKeyPicture> keys;
+	int lists[2] = { zx::levelmesh::kSkyCaptureNone, zx::levelmesh::kSkyCaptureNone };
+	int listCount = 0;
+	int w = 0, h = 0;
+};
+// [rc4l] The player's view's set, and the other views' (stacked views, mirrors, camera textures), one per target size, each made just before its view.
+static SkyLookSet g_mainLooks;
+static TArray<SkyLookSet *> g_viewLooks;
+static SkyLookSet *g_activeViewLooks = NULL;
 static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_lookSurfPSO;
 static Diligent::RefCntAutoPtr<Diligent::IBuffer> g_lookSurfVB;
 static unsigned int g_lookSurfVBCapacity = 0;
 
 static void ReleaseSkyLookPictures()
 {
-	for (int i = 0; i < kSkyLookPictures; i++) g_lookPictures[i] = SkyLookPicture();
-	g_lookPictureCount = 0;
-	g_keyPictures.Clear();
+	g_mainLooks = SkyLookSet();
+	for (unsigned i = 0; i < g_viewLooks.Size(); i++) delete g_viewLooks[i];
+	g_viewLooks.Clear();
+	g_activeViewLooks = NULL;
 	g_lookSurfPSO.Release();
 }
 
-// [rc4l] Where key stands in this frame's list, or -1 when no surface carries it.
-static int FindSkyKey(int key)
+// [rc4l] Where key stands in a set, or -1 when none of its surfaces carries it.
+static int FindSkyKey(const SkyLookSet &set, int key)
 {
-	for (unsigned i = 0; i < g_keyPictures.Size(); i++) if (g_keyPictures[i].key == key) return (int)i;
+	for (unsigned i = 0; i < set.keys.Size(); i++) if (set.keys[i].key == key) return (int)i;
 	return -1;
 }
 
-void RenderSkyLooks(Diligent::IDeviceContext *ctx)
+// [rc4l] The looks other than the level's that `lists` show, drawn into `set`'s pictures at w by h from the eye in g_mvp; false when there are none.
+static bool RenderLookSet(Diligent::IDeviceContext *ctx, SkyLookSet &set, const int *lists, int listCount, int w, int h)
 {
-	g_lookPictureCount = 0;
-	g_keyPictures.Clear();
-	if (!fua_dg_sky || g_skyPortalActive || !EnsureSkyPipeline()) return;
-	int nverts = 0;
-	const zx::levelmesh::MeshVertex *q = zx::levelmesh::SkyQuadVertices(nverts, zx::levelmesh::kSkyCaptureMain);
-	if (q == NULL) return;
+	set.count = 0;
+	set.keys.Clear();
+	set.listCount = listCount;
+	for (int l = 0; l < listCount; l++) set.lists[l] = lists[l];
+	if (!fua_dg_sky || g_skyPortalActive || !EnsureSkyPipeline()) return false;
 	const zx::hwrender::SkyLook level = LookOfSky(0);
-	for (int i = 0; i + 5 < nverts; i += 6)
+	for (int l = 0; l < listCount; l++)
 	{
-		const int key = (int)q[i].u;
-		if (key == 0 || FindSkyKey(key) >= 0) continue;
-		const zx::hwrender::SkyLook look = LookOfSky(zx::hwrender::ComputeSkyFromQuadKey(key));
-		int picture = -1;
-		if (!zx::hwrender::ComputeSameSkyLook(look, level))
+		int nverts = 0;
+		const zx::levelmesh::MeshVertex *q = zx::levelmesh::SkyQuadVertices(nverts, lists[l]);
+		for (int i = 0; q != NULL && i + 5 < nverts; i += 6)
 		{
-			for (int p = 0; p < g_lookPictureCount && picture < 0; p++)
-				if (zx::hwrender::ComputeSameSkyLook(look, g_lookPictures[p].look)) picture = p;
-			if (picture < 0 && g_lookPictureCount < kSkyLookPictures) { picture = g_lookPictureCount++; g_lookPictures[picture].look = look; }
+			const int key = (int)q[i].u;
+			if (key == 0 || FindSkyKey(set, key) >= 0) continue;
+			const zx::hwrender::SkyLook look = LookOfSky(zx::hwrender::ComputeSkyFromQuadKey(key));
+			int picture = -1;
+			if (!zx::hwrender::ComputeSameSkyLook(look, level))
+			{
+				for (int p = 0; p < set.count && picture < 0; p++)
+					if (zx::hwrender::ComputeSameSkyLook(look, set.pictures[p].look)) picture = p;
+				if (picture < 0 && set.count < kSkyLookPictures) { picture = set.count++; set.pictures[picture].look = look; }
+			}
+			const SkyKeyPicture kp = { key, picture };
+			set.keys.Push(kp);
 		}
-		const SkyKeyPicture kp = { key, picture };
-		g_keyPictures.Push(kp);
 	}
-	if (g_lookPictureCount == 0) return;
+	if (set.count == 0) return false;
 	if (!g_lookSurfPSO) g_lookSurfPSO = CreateScreenSurfacePSO("fua sky look surface", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE);
-	if (!g_lookSurfPSO) { g_lookPictureCount = 0; return; }
+	if (!g_lookSurfPSO) { set.count = 0; return false; }
 
-	auto *brtv = FrameRTV();
-	Diligent::ITextureView *bdsv = EnsureSceneDepth();
-	if (!bdsv) bdsv = FrameDSV();
-	const int w = FrameWidth(), h = FrameHeight();
-	// [rc4l] The player's matrix and the frame's colormap, which the dome shaders read from the scene block.
+	// [rc4l] The pass's matrix and the frame's colormap, which the dome shaders read from the scene block.
 	{
 		Diligent::MapHelper<float> cb(ctx, g_cb, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD);
 		WriteSceneConstants(&cb[0], nullptr, (float)w, (float)h, BindlessActive() ? (float)MaterialSlotCount() : 0.f);
 	}
-	for (int p = 0; p < g_lookPictureCount; p++)
+	for (int p = 0; p < set.count; p++)
 	{
-		SkyLookPicture &pic = g_lookPictures[p];
+		SkyLookPicture &pic = set.pictures[p];
 		if (!pic.color || pic.w != w || pic.h != h)
 		{
 			if (!CreateViewTextures(w, h, "fua sky look", pic.color, pic.depth) ||
-				!CreatePictureBinding(g_lookSurfPSO, "uSky", pic.color, pic.srb)) { g_lookPictureCount = p; break; }
+				!CreatePictureBinding(g_lookSurfPSO, "uSky", pic.color, pic.srb)) { set.count = p; break; }
 			pic.w = w; pic.h = h;
 		}
 		auto *prtv = pic.color->GetDefaultView(Diligent::TEXTURE_VIEW_RENDER_TARGET);
@@ -1458,41 +1471,85 @@ void RenderSkyLooks(Diligent::IDeviceContext *ctx)
 		const SkyDome *second = pic.look.secondTexture >= 0 ? DomeFor(pic.look.secondTexture) : NULL;
 		DrawLook(ctx, pic.look, DomeFor(pic.look.texture), second);
 	}
-	ctx->SetRenderTargets(1, &brtv, bdsv, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-	// [rc4l] Each picture changes hands here, outside the frame's render pass, for the reason RenderSkyPortal gives.
-	for (int p = 0; p < g_lookPictureCount; p++)
+	return set.count > 0;
+}
+
+// [rc4l] Each picture of a set changes hands here, outside the frame's render pass, for the reason RenderSkyPortal gives.
+static void HandOverLookSet(Diligent::IDeviceContext *ctx, const SkyLookSet &set)
+{
+	for (int p = 0; p < set.count; p++)
 	{
-		Diligent::StateTransitionDesc barrier(g_lookPictures[p].color, Diligent::RESOURCE_STATE_UNKNOWN,
+		Diligent::StateTransitionDesc barrier(set.pictures[p].color, Diligent::RESOURCE_STATE_UNKNOWN,
 			Diligent::RESOURCE_STATE_SHADER_RESOURCE, Diligent::STATE_TRANSITION_FLAG_UPDATE_STATE);
 		ctx->TransitionResourceStates(1, &barrier);
 	}
 }
 
-// [rc4l] The player's sky surfaces that show another sky than the level's, each run painted from its look's picture.
+void RenderSkyLooks(Diligent::IDeviceContext *ctx)
+{
+	const int lists[1] = { zx::levelmesh::kSkyCaptureMain };
+	if (!RenderLookSet(ctx, g_mainLooks, lists, 1, FrameWidth(), FrameHeight())) return;
+	auto *brtv = FrameRTV();
+	Diligent::ITextureView *bdsv = EnsureSceneDepth();
+	if (!bdsv) bdsv = FrameDSV();
+	ctx->SetRenderTargets(1, &brtv, bdsv, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	HandOverLookSet(ctx, g_mainLooks);
+}
+
+void RenderViewSkyLooks(Diligent::IDeviceContext *ctx, bool cameraPass, int stackSlot, bool mirrorPass, int w, int h)
+{
+	g_activeViewLooks = NULL;
+	SkyLookSet *set = NULL;
+	for (unsigned i = 0; i < g_viewLooks.Size() && set == NULL; i++)
+		if (g_viewLooks[i]->w == w && g_viewLooks[i]->h == h) set = g_viewLooks[i];
+	if (set == NULL)
+	{
+		set = new SkyLookSet;
+		set->w = w; set->h = h;
+		g_viewLooks.Push(set);
+	}
+	int lists[2];
+	const int n = zx::levelmesh::ComputeSkyLookLists(cameraPass, stackSlot, mirrorPass, lists);
+	if (!RenderLookSet(ctx, *set, lists, n, w, h)) return;
+	ctx->SetRenderTargets(0, nullptr, nullptr, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	HandOverLookSet(ctx, *set);
+	g_activeViewLooks = set;
+}
+
+void ForgetViewSkyLooks()
+{
+	g_activeViewLooks = NULL;
+}
+
+// [rc4l] A pass's sky surfaces that show another sky than the level's, each run painted from its look's picture: the player's view from its own set, any other view from the one made for it.
 static void DrawSkyLookSurfaces(Diligent::IDeviceContext *ctx)
 {
-	if (g_lookPictureCount == 0 || !g_lookSurfPSO) return;
-	if (!g_pass.mainView || g_pass.lineMirror >= 0 || g_pass.stackSlot >= 0 || g_pass.inCameraPass || g_pass.inSkyPortal) return;
-	int nverts = 0;
-	const zx::levelmesh::MeshVertex *q = zx::levelmesh::SkyQuadVertices(nverts, zx::levelmesh::kSkyCaptureMain);
-	if (q == NULL) return;
+	if (g_pass.inSkyPortal || !g_lookSurfPSO) return;
+	const bool playerPass = g_pass.mainView && g_pass.lineMirror < 0 && g_pass.stackSlot < 0 && !g_pass.inCameraPass;
+	const SkyLookSet *set = playerPass ? &g_mainLooks : g_activeViewLooks;
+	if (set == NULL || set->count == 0) return;
 	static TArray<SceneVertex> sv;
 	unsigned int first[kSkyLookPictures], count[kSkyLookPictures];
 	sv.Clear();
-	for (int p = 0; p < g_lookPictureCount; p++)
+	for (int p = 0; p < set->count; p++)
 	{
 		first[p] = sv.Size();
-		for (int i = 0; i + 5 < nverts; i += 6)
+		for (int l = 0; l < set->listCount; l++)
 		{
-			const int at = FindSkyKey((int)q[i].u);
-			if (at < 0 || g_keyPictures[at].picture != p) continue;
-			for (int k = 0; k < 6; k++) sv.Push(ToSceneVertex(q[i + k], 0));
+			int nverts = 0;
+			const zx::levelmesh::MeshVertex *q = zx::levelmesh::SkyQuadVertices(nverts, set->lists[l]);
+			for (int i = 0; q != NULL && i + 5 < nverts; i += 6)
+			{
+				const int at = FindSkyKey(*set, (int)q[i].u);
+				if (at < 0 || set->keys[at].picture != p) continue;
+				for (int k = 0; k < 6; k++) sv.Push(ToSceneVertex(q[i + k], 0));
+			}
 		}
 		count[p] = sv.Size() - first[p];
 	}
 	if (!BindScreenSurfaces(ctx, g_lookSurfVB, g_lookSurfVBCapacity, sv, g_lookSurfPSO, "fua sky look surface VB")) return;
-	for (int p = 0; p < g_lookPictureCount; p++)
-		if (count[p] > 0 && g_lookPictures[p].srb) DrawScreenSurfaceRun(ctx, g_lookPictures[p].srb, first[p], count[p]);
+	for (int p = 0; p < set->count; p++)
+		if (count[p] > 0 && set->pictures[p].srb) DrawScreenSurfaceRun(ctx, set->pictures[p].srb, first[p], count[p]);
 	g_skyDraws++;
 }
 
