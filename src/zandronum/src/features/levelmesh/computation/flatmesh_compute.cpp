@@ -370,6 +370,22 @@ int ComputeAddMirrorPath(std::vector<std::vector<int> > &paths, const int *path,
 	return (int)paths.size() - 1;
 }
 
+void ComputeMirrorSteps(const std::vector<std::vector<int> > &paths, int lineCount, std::vector<int> &out)
+{
+	out.clear();
+	for (size_t i = 0; i < paths.size(); i++)
+	{
+		const std::vector<int> &p = paths[i];
+		const int depth = (int)p.size();
+		if (depth < 2) continue;
+		const int outer = depth == 2 ? -1 : ComputeFindMirrorPath(paths, &p[0], depth - 1);
+		if (depth > 2 && outer < 0) continue;
+		out.push_back(ComputeMirrorViewId(depth - 1, p[0], outer, lineCount));
+		out.push_back(p[depth - 1]);
+		out.push_back(ComputeMirrorViewId(depth, p[0], (int)i, lineCount));
+	}
+}
+
 bool ComputeDrawsDynamicPiece(int pieceMirrorLine, int pieceStackSlot, int pieceOnMirror, int drawingMirrorLine, int drawingStackSlot, int drawingMirrorFace)
 {
 	return pieceMirrorLine == drawingMirrorLine && pieceStackSlot == drawingStackSlot && pieceOnMirror == drawingMirrorFace;

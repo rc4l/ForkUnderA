@@ -6,6 +6,7 @@
 #ifndef ZX_DGSCENE_INTERNAL_H
 #define ZX_DGSCENE_INTERNAL_H
 
+#include "features/hwrender/computation/tracedsprite_compute.h"   // [rc4l] TracedSprite
 #include "c_dispatch.h"
 #include "c_console.h"
 
@@ -267,6 +268,8 @@ struct SceneGeometry
 	int          skyHoleCount = 0;
 	TArray<DynRun> dynRuns;                         // [rc4l] this frame's sprite, model and decal draws
 	bool         dynReady = false;
+	TArray<zx::hwrender::TracedSprite> tracedSprites;   // [rc4l] this frame's sprites as a traced mirror's rays meet them
+	std::vector<int> tracedSteps;                       // [rc4l] and how a ray goes from one mirror view to the next (ComputeMirrorSteps)
 };
 extern SceneGeometry g_scene;
 

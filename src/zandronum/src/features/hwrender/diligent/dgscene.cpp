@@ -90,6 +90,8 @@ CVAR(Bool, fua_dg_sky, true, 0)
 // a cheaper mirror, so "off" was never a state worth being able to reach. It also falls back on its
 // own: an adapter without ray tracing gets the planar path whatever this says.
 CVAR(Bool, fua_dg_rtmirrors, false, CVAR_ARCHIVE)
+// [rc4l] Sprites in traced mirrors: each a box the ray query offers around the quad a mirror's walk faced to that reflection's eye; 0 leaves them out, to measure what they cost.
+CVAR(Bool, fua_dg_rtsprites, true, CVAR_ARCHIVE)
 // Planar mirror reflections. On by default; 0 takes the whole pass out, for bisecting a GPU hang.
 CVAR(Bool, fua_dg_mirrors_on, true, CVAR_ARCHIVE)
 // [rc4l] Reflective planes get their reflections, each a render of the world, every plane the level has; 0 turns them off.

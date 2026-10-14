@@ -553,6 +553,22 @@ TEST(FlatMeshCompute, AReflectionInAReflectionIsAViewOfItsOwn)
 	EXPECT_EQ(1, ComputeFindMirrorPath(paths, ba, 2));
 }
 
+// [rc4l] A traced ray in the first reflection of line 10 that bounces off line 20 is in view ab's walk, and off line 10 again in aba's.
+TEST(FlatMeshCompute, ATracedRayStepsFromViewToViewByTheMirrorItBouncesOff)
+{
+	std::vector<std::vector<int> > paths;
+	const int ab[2] = { 10, 20 }, aba[3] = { 10, 20, 10 }, orphan[3] = { 30, 40, 30 }, one[1] = { 50 };
+	ComputeAddMirrorPath(paths, ab, 2);
+	ComputeAddMirrorPath(paths, aba, 3);
+	ComputeAddMirrorPath(paths, orphan, 3);   // [rc4l] its outer view was never walked, so no ray reaches it
+	ComputeAddMirrorPath(paths, one, 1);      // [rc4l] a first reflection is where a ray starts, not a step
+	std::vector<int> steps(1, 99);
+	ComputeMirrorSteps(paths, 9000, steps);
+	const int want[6] = { 10, 20, 9000, 9000, 10, 9001 };
+	ASSERT_EQ(6u, steps.size());
+	for (int i = 0; i < 6; i++) EXPECT_EQ(want[i], steps[i]) << i;
+}
+
 // [rc4l] WDI01: the stacked view drew rooftops GL's walk through the stack never reached, as roof slabs over the courtyard's walls.
 TEST(FlatMeshCompute, AStackedViewMarksEachSubsectorItsWalkReached)
 {

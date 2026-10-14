@@ -46,7 +46,7 @@ void ComputeSphereMapUV(const float eyePos[3], const float eyeNormal[3], float &
 }
 
 void ComputeMirrorSheenConstants(const float view[16], float normX, float normZ, const float rgb[3], float softLight,
-	float fogMode, float fogDensity, bool drawn, int recursions, float out[kMirrorSheenFloats])
+	float fogMode, float fogDensity, bool drawn, int recursions, int traceView, float out[kMirrorSheenFloats])
 {
 	for (int i = 0; i < 16; i++) out[i] = view[i];
 	// [rc4l] The texture matrix RenderMirrorSurface loads is the view's normal matrix, and the normal it turns is the wall's, flat.
@@ -55,7 +55,7 @@ void ComputeMirrorSheenConstants(const float view[16], float normX, float normZ,
 	if (ComputeNormalMatrix(view, nm))
 		for (int r = 0; r < 3; r++) en[r] = nm[r] * normX + nm[6 + r] * normZ;
 	Normalize(en);
-	out[16] = en[0]; out[17] = en[1]; out[18] = en[2]; out[19] = 0.f;
+	out[16] = en[0]; out[17] = en[1]; out[18] = en[2]; out[19] = (float)traceView;
 	out[20] = rgb[0]; out[21] = rgb[1]; out[22] = rgb[2]; out[23] = drawn ? kMirrorSheenAlpha : 0.f;
 	out[24] = softLight; out[25] = fogMode; out[26] = fogDensity; out[27] = (float)recursions;
 }

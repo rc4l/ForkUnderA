@@ -25,6 +25,9 @@ CCMD( fua_dg_blendorder )
 	Printf( "fua_dg_blendorder: dumping the next translucent pass\n" );
 }
 
+EXTERN_CVAR(Bool, fua_dg_rtmirrors)
+EXTERN_CVAR(Bool, fua_dg_rtsprites)
+
 namespace zx { namespace hwrender {
 
 // [rc4l] Dynamic pieces a job writes at once.
@@ -81,6 +84,23 @@ static bool EnsureBlendIndexBuffer(Diligent::IRenderDevice *dev, unsigned int ne
 // world's translucent pass so the two sort against each other -- an item lying under a glass 3D floor
 // has to be composited before the floor, and it cannot be if sprites are a separate pass afterwards.
 
+// [rc4l] The quads a traced mirror's rays can meet, each sprite a mirror's walk took from its first three corners, and the steps between those walks' views.
+static void GatherTracedSprites(const TArray<SceneVertex> &vb)
+{
+	TArray<zx::hwrender::TracedSprite> &out = g_scene.tracedSprites;
+	if (!fua_dg_rtmirrors || !fua_dg_rtsprites) return;
+	for (unsigned i = 0; i < g_scene.dynRuns.Size(); i++)
+	{
+		const DynRun &r = g_scene.dynRuns[i];
+		if (!zx::hwrender::ComputeTracesRun(r.count, r.solid, r.depthBias, r.hud, r.stackSlot, r.onMirror, r.mirrorLine, r.blend) || r.first + 2 >= vb.Size()) continue;
+		const SceneVertex &a = vb[r.first], &b = vb[r.first + 1], &c = vb[r.first + 2];
+		const float tl[5] = { a.x, a.y, a.z, a.u, a.v }, tr[5] = { b.x, b.y, b.z, b.u, b.v }, bl[5] = { c.x, c.y, c.z, c.u, c.v };
+		zx::hwrender::TracedSprite s;
+		if (zx::hwrender::ComputeTracedSprite(tl, tr, bl, (unsigned)(a.pieceIndex + 0.5f), r.mirrorLine, s)) out.Push(s);
+	}
+	zx::levelmesh::MirrorSteps(g_scene.tracedSteps);
+}
+
 void BuildDynamic(Diligent::IDeviceContext *ctx)
 {
 	cycle_t dynClock;
@@ -98,7 +118,7 @@ void BuildDynamic(Diligent::IDeviceContext *ctx)
 	int nverts = 0, npieces = 0;
 	const zx::levelmesh::MeshVertex *src = zx::levelmesh::DynVertices(nverts);
 	const zx::levelmesh::MeshPiece *pieces = zx::levelmesh::DynPieces(npieces);
-	if (src == NULL || nverts <= 0 || pieces == NULL || npieces <= 0) { g_scene.dynRuns.Clear(); return; }
+	if (src == NULL || nverts <= 0 || pieces == NULL || npieces <= 0) { g_scene.dynRuns.Clear(); g_scene.tracedSprites.Clear(); g_scene.tracedSteps.clear(); return; }
 
 	static TArray<SceneVertex> vb;
 
@@ -117,6 +137,9 @@ void BuildDynamic(Diligent::IDeviceContext *ctx)
 	if (gen != builtGen)
 	{
 		builtGen = gen;
+		// [rc4l] Emptied with each refill, which a frame drawn again without a walk (a screenshot) does not get, so a frame with no sprites keeps none of the last fill's.
+		g_scene.tracedSprites.Clear();
+		g_scene.tracedSteps.clear();
 
 		// [rc4l] Order decides correctness here, not just batching.
 		//
@@ -287,6 +310,7 @@ void BuildDynamic(Diligent::IDeviceContext *ctx)
 		}
 	if (vb.Size() == 0) return;
 
+		GatherTracedSprites(vb);
 		if (!UploadGrowingVB(ctx, g_dynVB, g_dynVBCapacity, &vb[0], vb.Size(), sizeof(SceneVertex), 1024, "fua dynamic VB")) return;
 		// ...and the records they index, into the back of the shared piece buffer.
 		if (g_scene.pieceBuf && dynPieces.Size() > 0 &&

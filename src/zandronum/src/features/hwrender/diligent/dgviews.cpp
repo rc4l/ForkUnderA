@@ -7,6 +7,7 @@
 #include "features/hwrender/diligent/dgscene_glsl.h"   // [rc4l] the scene's light model, shared with the mirror pass
 #include "features/viewsetup/viewsetup.h"   // [rc4l] FixedColormapShadeFor
 #include "features/hwrender/computation/linemirror_compute.h"   // [rc4l] the reflected eye and how deep mirrors nest
+#include "features/hwrender/computation/growbuffer_compute.h"   // [rc4l] ComputeGrownCapacity
 
 EXTERN_CVAR(Bool, r_lights_checkside)
 
@@ -42,7 +43,19 @@ static bool g_asBuilt = false;
 static int  g_asVerts = 0;
 // [rc4l] The mirrors a structure was built with, so a new level's are built in.
 static int  g_asMirrors = -1;
+static bool g_asMirrorFaces = false;   // [rc4l] the mirrors' faces made it into a structure of their own
+struct MirrorSurface
+{
+	float corners[4][3];  // [rc4l] the whole line's face in mesh space (x, z-up, y), bottom and top at v1 then top and bottom at v2, for the visibility test
+	float nx, ny, d;      // [rc4l] plane in map space (nx*x + ny*y = d), for reflecting the camera; mesh space's normal is (nx, 0, ny), which the ray query and GL's sheen reflect about
+	int line;             // [rc4l] its linedef, which the sprites, models and decals GL's walk through it drew are filed under
+};
+static TArray<MirrorSurface> g_mirrors;
 static TArray<float> g_mirrorVerts;
+// [rc4l] The sprites a traced ray can meet, a box each (custom index 2) and their records for the shader, rebuilt every frame.
+static Diligent::RefCntAutoPtr<Diligent::IBottomLevelAS> g_spriteBlas;
+static Diligent::RefCntAutoPtr<Diligent::IBuffer>        g_spriteBoxes, g_spriteRecords, g_spriteScratch;
+static unsigned g_spriteCapacity = 0, g_spriteCount = 0, g_spriteStepCapacity = 0;
 
 bool RayTracingAvailable()
 {
@@ -56,6 +69,12 @@ void ReleaseAccelerationStructures()
 	g_blas.Release();
 	g_mirrorBlas.Release();
 	g_mirrorASVB.Release();
+	g_spriteBlas.Release();
+	g_spriteBoxes.Release();
+	g_spriteRecords.Release();
+	g_spriteScratch.Release();
+	g_spriteCapacity = g_spriteCount = g_spriteStepCapacity = 0;
+	g_asMirrorFaces = false;
 	g_mirrorPlanes.Release();
 	g_asMirrors = -1;
 	g_asScratch.Release();
@@ -63,6 +82,42 @@ void ReleaseAccelerationStructures()
 	g_asBuilt = false;
 	g_asVerts = 0;
 	ReleaseMirrorBinding();   // the mirror SRB holds a reference to the TLAS
+}
+
+// [rc4l] The top level over the level (custom index 0), the mirrors' faces (1) and this frame's sprites (2), each that exists.
+static void BuildTopLevel(Diligent::IDeviceContext *ctx)
+{
+	Diligent::TLASBuildInstanceData inst[3];
+	Diligent::Uint32 count = 0;
+	inst[count].InstanceName = "level";
+	inst[count].pBLAS = g_blas;
+	inst[count].Mask = 0xFF;
+	inst[count++].CustomId = 0;
+	if (g_asMirrorFaces)
+	{
+		inst[count].InstanceName = "mirrors";
+		inst[count].pBLAS = g_mirrorBlas;
+		inst[count].Mask = 0xFF;
+		inst[count++].CustomId = 1;
+	}
+	if (g_spriteBlas && g_spriteCount > 0)
+	{
+		inst[count].InstanceName = "sprites";
+		inst[count].pBLAS = g_spriteBlas;
+		inst[count].Mask = 0xFF;
+		inst[count++].CustomId = 2;
+	}
+	Diligent::BuildTLASAttribs tlasAttribs;
+	tlasAttribs.pTLAS                        = g_tlas;
+	tlasAttribs.pInstances                   = inst;
+	tlasAttribs.InstanceCount                = count;
+	tlasAttribs.pInstanceBuffer              = g_tlasInstances;
+	tlasAttribs.pScratchBuffer               = g_asScratch;
+	tlasAttribs.TLASTransitionMode           = Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
+	tlasAttribs.BLASTransitionMode           = Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
+	tlasAttribs.InstanceBufferTransitionMode = Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
+	tlasAttribs.ScratchBufferTransitionMode  = Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
+	ctx->BuildTLAS(tlasAttribs);
 }
 
 // Build (or rebuild) the level's acceleration structure from the scene vertex buffer.
@@ -79,11 +134,12 @@ static bool BuildMirrorStructure(Diligent::IRenderDevice *dev, Diligent::IDevice
 	Diligent::BufferData vbData(&verts[0], vb.Size);
 	dev->CreateBuffer(vb, &vbData, &g_mirrorASVB);
 	if (!g_mirrorASVB) return false;
+	// [rc4l] Each face's normal, and its mirror's line for a ray that bounces off it to find the view it is in after.
 	TArray<float> planes;
 	for (Diligent::Uint32 v = 0; v < vertCount; v += 6)
 	{
 		const float *p = &verts[v * 6];
-		planes.Push(p[3]); planes.Push(p[4]); planes.Push(p[5]); planes.Push(0.f);
+		planes.Push(p[3]); planes.Push(p[4]); planes.Push(p[5]); planes.Push(v / 6 < g_mirrors.Size() ? (float)g_mirrors[v / 6].line : -1.f);
 	}
 	Diligent::BufferDesc pb;
 	pb.Name = "fua mirror planes";
@@ -196,10 +252,10 @@ bool EnsureAccelerationStructure()
 	blasAttribs.ScratchBufferTransitionMode = Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
 	ctx->BuildBLAS(blasAttribs);
 
-	const bool mirrors = BuildMirrorStructure(dev, ctx, g_mirrorVerts);
+	g_asMirrorFaces = BuildMirrorStructure(dev, ctx, g_mirrorVerts);
 	Diligent::TopLevelASDesc tlasDesc;
 	tlasDesc.Name             = "fua level TLAS";
-	tlasDesc.MaxInstanceCount = 2;
+	tlasDesc.MaxInstanceCount = 3;
 	tlasDesc.Flags            = Diligent::RAYTRACING_BUILD_AS_PREFER_FAST_TRACE;
 	dev->CreateTLAS(tlasDesc, &g_tlas);
 	if (!g_tlas) return false;
@@ -208,7 +264,7 @@ bool EnsureAccelerationStructure()
 	ib.Name      = "fua TLAS instances";
 	ib.Usage     = Diligent::USAGE_DEFAULT;
 	ib.BindFlags = Diligent::BIND_RAY_TRACING;
-	ib.Size      = Diligent::TLAS_INSTANCE_DATA_SIZE * 2;
+	ib.Size      = Diligent::TLAS_INSTANCE_DATA_SIZE * 3;
 	dev->CreateBuffer(ib, nullptr, &g_tlasInstances);
 	if (!g_tlasInstances) return false;
 
@@ -221,33 +277,105 @@ bool EnsureAccelerationStructure()
 		if (!g_asScratch) return false;
 	}
 
-	Diligent::TLASBuildInstanceData inst[2];
-	inst[0].InstanceName = "level";
-	inst[0].pBLAS        = g_blas;
-	inst[0].Mask         = 0xFF;
-	inst[0].CustomId     = 0;
-	inst[1].InstanceName = "mirrors";
-	inst[1].pBLAS        = g_mirrorBlas;
-	inst[1].Mask         = 0xFF;
-	inst[1].CustomId     = 1;
-
-	Diligent::BuildTLASAttribs tlasAttribs;
-	tlasAttribs.pTLAS                        = g_tlas;
-	tlasAttribs.pInstances                   = inst;
-	tlasAttribs.InstanceCount                = mirrors ? 2 : 1;
-	tlasAttribs.pInstanceBuffer              = g_tlasInstances;
-	tlasAttribs.pScratchBuffer               = g_asScratch;
-	tlasAttribs.TLASTransitionMode           = Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
-	tlasAttribs.BLASTransitionMode           = Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
-	tlasAttribs.InstanceBufferTransitionMode = Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
-	tlasAttribs.ScratchBufferTransitionMode  = Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
-	ctx->BuildTLAS(tlasAttribs);
+	g_spriteCount = 0;
+	BuildTopLevel(ctx);
 
 	g_asBuilt = true;
 	g_asVerts = (int)g_scene.cpuVerts.Size();
 	g_asMirrors = (int)g_mirrorVerts.Size();
 	Printf("vulkan: acceleration structure built -- %u triangles\n", (unsigned)triCount);
 	return true;
+}
+
+// [rc4l] Room for `n` sprites and `steps` steps between mirror views, at least one sprite so the shader always has its buffer: boxes, records, their structure and its scratch, grown when short.
+static bool EnsureSpriteBuffers(Diligent::IRenderDevice *dev, unsigned n, unsigned steps)
+{
+	const unsigned want = n > 0 ? n : 1;
+	if (want <= g_spriteCapacity && steps <= g_spriteStepCapacity && g_spriteBlas) return true;
+	const unsigned cap = ComputeGrownCapacity(want, 64), stepCap = ComputeGrownCapacity(steps, 16);
+	g_spriteBlas.Release(); g_spriteBoxes.Release(); g_spriteRecords.Release(); g_spriteScratch.Release();
+	g_spriteCapacity = g_spriteStepCapacity = 0;
+	Diligent::BufferDesc bb;
+	bb.Name = "fua traced sprite boxes";
+	bb.Usage = Diligent::USAGE_DEFAULT;
+	bb.BindFlags = Diligent::BIND_RAY_TRACING;
+	bb.Size = (Diligent::Uint64)cap * 6 * sizeof(float);
+	dev->CreateBuffer(bb, nullptr, &g_spriteBoxes);
+	Diligent::BufferDesc rb;
+	rb.Name = "fua traced sprites";
+	rb.Usage = Diligent::USAGE_DEFAULT;
+	rb.BindFlags = Diligent::BIND_SHADER_RESOURCE;
+	rb.Mode = Diligent::BUFFER_MODE_STRUCTURED;
+	rb.ElementByteStride = sizeof(float) * 4;
+	rb.Size = (Diligent::Uint64)(ComputeTracedSpriteHeaderFloats(stepCap) + cap * kTracedSpriteFloats) * sizeof(float);
+	// [rc4l] Zeroed, so a ray reads no steps and no sprites before the first frame's are written.
+	std::vector<float> zero((size_t)(rb.Size / sizeof(float)), 0.f);
+	Diligent::BufferData rbData(zero.data(), rb.Size);
+	dev->CreateBuffer(rb, &rbData, &g_spriteRecords);
+	if (!g_spriteBoxes || !g_spriteRecords) return false;
+	Diligent::BLASBoundingBoxDesc box;
+	box.GeometryName = "sprites";
+	box.MaxBoxCount = cap;
+	Diligent::BottomLevelASDesc desc;
+	desc.Name = "fua traced sprite BLAS";
+	desc.pBoxes = &box;
+	desc.BoxCount = 1;
+	desc.Flags = Diligent::RAYTRACING_BUILD_AS_PREFER_FAST_BUILD;
+	dev->CreateBLAS(desc, &g_spriteBlas);
+	if (!g_spriteBlas) return false;
+	Diligent::BufferDesc sb;
+	sb.Name = "fua traced sprite scratch";
+	sb.Usage = Diligent::USAGE_DEFAULT;
+	sb.BindFlags = Diligent::BIND_RAY_TRACING;
+	sb.Size = g_spriteBlas->GetScratchBufferSizes().Build;
+	dev->CreateBuffer(sb, nullptr, &g_spriteScratch);
+	if (!g_spriteScratch) return false;
+	g_spriteCapacity = cap;
+	g_spriteStepCapacity = stepCap;
+	return true;
+}
+
+// [rc4l] This frame's sprites into their structure and the top level rebuilt over them, before any pass, since a build cannot run inside one.
+static void UpdateTracedSprites(Diligent::IDeviceContext *ctx)
+{
+	auto *dev = GetDevice();
+	if (!dev || !g_tlas || !g_blas) return;
+	const TArray<TracedSprite> &sprites = g_scene.tracedSprites;
+	const unsigned n = sprites.Size();
+	const unsigned steps = (unsigned)(g_scene.tracedSteps.size() / 3);
+	if (!EnsureSpriteBuffers(dev, n, steps)) { g_spriteCount = 0; return; }
+	static TArray<float> boxes, records;
+	const unsigned head = ComputeTracedSpriteHeaderFloats(steps);
+	records.Resize(head + n * kTracedSpriteFloats);
+	ComputeTracedSpriteHeader(steps > 0 ? &g_scene.tracedSteps[0] : NULL, steps, &records[0]);
+	for (unsigned i = 0; i < n; i++) ComputeTracedSpriteRecord(sprites[i], &records[head + i * kTracedSpriteFloats]);
+	ctx->UpdateBuffer(g_spriteRecords, 0, (Diligent::Uint64)records.Size() * sizeof(float), &records[0],
+		Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	if (n > 0)
+	{
+		boxes.Resize(n * 6);
+		for (unsigned i = 0; i < n; i++) ComputeTracedSpriteBox(sprites[i], &boxes[i * 6], &boxes[i * 6 + 3]);
+		ctx->UpdateBuffer(g_spriteBoxes, 0, (Diligent::Uint64)boxes.Size() * sizeof(float), &boxes[0],
+			Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+		Diligent::BLASBuildBoundingBoxData data;
+		data.GeometryName = "sprites";
+		data.pBoxBuffer = g_spriteBoxes;
+		data.BoxStride = 6 * sizeof(float);
+		data.BoxCount = n;
+		Diligent::BuildBLASAttribs attribs;
+		attribs.pBLAS = g_spriteBlas;
+		attribs.pBoxData = &data;
+		attribs.BoxDataCount = 1;
+		attribs.pScratchBuffer = g_spriteScratch;
+		attribs.BLASTransitionMode = Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
+		attribs.GeometryTransitionMode = Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
+		attribs.ScratchBufferTransitionMode = Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
+		ctx->BuildBLAS(attribs);
+	}
+	// [rc4l] Rebuilt even with none, so last frame's sprites leave the structure.
+	if (n == 0 && g_spriteCount == 0) return;
+	g_spriteCount = n;
+	BuildTopLevel(ctx);
 }
 
 // [rc4l] Mirrors (Line_Mirror, special 182).
@@ -261,13 +389,7 @@ bool EnsureAccelerationStructure()
 // because the reflected camera keeps the main camera's projection, so a point on the mirror surface
 // lands on exactly the pixel showing what it reflects -- no second projection to get wrong, and no
 // per-mirror texture coordinates.
-struct MirrorSurface
-{
-	float corners[4][3];  // [rc4l] the whole line's face in mesh space (x, z-up, y), bottom and top at v1 then top and bottom at v2, for the visibility test
-	float nx, ny, d;      // [rc4l] plane in map space (nx*x + ny*y = d), for reflecting the camera; mesh space's normal is (nx, 0, ny), which the ray query and GL's sheen reflect about
-	int line;             // [rc4l] its linedef, which the sprites, models and decals GL's walk through it drew are filed under
-};
-static TArray<MirrorSurface> g_mirrors;
+// [rc4l] MirrorSurface and g_mirrors are declared with the structures, whose planes carry each mirror's line.
 // [rc4l] Every mirror's face as two triangles, in g_mirrors' order: g_mirrorVerts, declared with the structure that is built from it.
 static Diligent::RefCntAutoPtr<Diligent::IBuffer> g_mirrorVB;
 static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_mirrorPSO;
@@ -411,6 +533,8 @@ static const char *kMirrorPS =
 	"layout(binding = 4) uniform sampler2D uMaterials[FUA_MAT_SLOTS];\n"
 	"layout(binding = 5) uniform sampler2D uSky;\n"
 	"layout(std430, binding = 7) readonly buffer MirrorPlanes { vec4 mirrorPlanes[]; };\n"
+	// [rc4l] This frame's steps between mirror views (ComputeTracedSpriteHeader), then its sprites, four vec4s each (ComputeTracedSpriteRecord), the boxes of the third instance.
+	"layout(std430, binding = 8) readonly buffer TracedSprites { vec4 tracedSprites[]; };\n"
 	"layout(location = 0) in vec3 vWorld;\n"
 	"layout(location = 1) in vec3 vNormal;\n"
 	FUA_MIRROR_SHEEN_PS_GLSL
@@ -422,6 +546,46 @@ static const char *kMirrorPS =
 	"uint vertPiece(uint v) { return uint(vtx[v * STRIDE + 5u] + 0.5); }\n"
 	"vec3 vertColor(uint v) { return pieces[vertPiece(v)].colorLight.rgb; }\n"
 	"vec2 vertUV(uint v)    { uint b = v * STRIDE + 3u; return vec2(vtx[b], vtx[b + 1u]); }\n"
+	// [rc4l] ComputeTracedSpriteHit, line for line: where the ray from o along d meets sprite s's quad from either side, between tMin and tMax, and its texture coordinate there.
+	"uint spriteAt(uint s) { return 1u + uint(tracedSprites[0].x) + s * 4u; }\n"
+	"bool fuaSpriteHit(uint s, vec3 o, vec3 d, float tMin, float tMax, out float t, out vec2 uv) {\n"
+	"    uint r = spriteAt(s);\n"
+	"    vec3 p0 = tracedSprites[r].xyz, eu = tracedSprites[r + 1u].xyz, ev = tracedSprites[r + 2u].xyz;\n"
+	"    vec4 tex = tracedSprites[r + 3u];\n"
+	"    t = 0.0; uv = vec2(0.0);\n"
+	"    vec3 n = cross(eu, ev);\n"
+	"    float den = dot(d, n);\n"
+	"    if (abs(den) < 1e-6) return false;\n"
+	"    t = dot(p0 - o, n) / den;\n"
+	"    if (t <= tMin || t >= tMax) return false;\n"
+	"    vec3 w = o + d * t - p0;\n"
+	"    float uu = dot(eu, eu), uv2 = dot(eu, ev), vv = dot(ev, ev), wu = dot(w, eu), wv = dot(w, ev);\n"
+	"    float det = uu * vv - uv2 * uv2;\n"
+	"    float a = (wu * vv - wv * uv2) / det, b = (wv * uu - wu * uv2) / det;\n"
+	"    if (a < 0.0 || a > 1.0 || b < 0.0 || b > 1.0) return false;\n"
+	"    uv = vec2(tex.x + (tex.y - tex.x) * a, tex.z + (tex.w - tex.z) * b);\n"
+	"    return true;\n"
+	"}\n"
+	"uint spritePiece(uint s) { return uint(tracedSprites[spriteAt(s)].w + 0.5); }\n"
+	"int spriteView(uint s)   { return int(tracedSprites[spriteAt(s) + 1u].w); }\n"
+	// [rc4l] The view a ray in `view` is in after bouncing off line mirror `line`, or none when no walk went that way.
+	"int fuaNextView(int view, int line) {\n"
+	"    uint n = uint(tracedSprites[0].x);\n"
+	"    for (uint i = 1u; i <= n; i++) { vec4 e = tracedSprites[i]; if (int(e.x) == view && int(e.y) == line) return int(e.z); }\n"
+	"    return -2;\n"
+	"}\n"
+	// [rc4l] A piece's material slot, the whole array's worth: a mask left from a 512-slot array sent every slot past 511 to another texture.
+	"uint pieceMat(uint p)    { return min(uint(pieces[p].fogAlphaMat.w + 0.5), uint(FUA_MAT_SLOTS - 1)); }\n"
+	"uint spriteMat(uint s)   { return pieceMat(spritePiece(s)); }\n"
+	// [rc4l] A traced hit lit and fogged as GL's reflected view does it, at `dist` along the eye's ray through the mirrors, where it appears.
+	"vec3 fuaTracedShade(vec3 texel, uint p, vec3 color, float dist) {\n"
+	"    vec3 seen = uCameraPos.xyz + normalize(vWorld - uCameraPos.xyz) * dist;\n"
+	"    vec4 clip = uMVP * vec4(seen, 1.0);\n"
+	"    float fogMode = pieces[p].fogAlphaMat.z;\n"
+	"    float fogfactor = fuaFogFactor(fogMode, pieces[p].fogAlphaMat.x, vec4(seen, clip.w), uCameraPos.xyz);\n"
+	"    vec3 light = fuaSectorLight(color, pieces[p].colorLight.w, fogMode, fogfactor, clip.z / clip.w);\n"
+	"    return fuaColouredFog(texel * light, pieces[p].fogColor.rgb, fogMode, fogfactor);\n"
+	"}\n"
 	"void main() {\n"
 	"    vec3 sheen = fuaMirrorSheen();\n"
 	// [rc4l] GL draws a mirror past r_mirror_recursions deep (uSheenLight.w) black under its sheen, ClearScreen's dim, and with 0 that is the first one.
@@ -434,16 +598,36 @@ static const char *kMirrorPS =
 	"    vec3 origin = vWorld + n * 0.5;\n"
 	// [rc4l] Each mirror the ray passes on the way adds its sheen, as each of GL's nested mirror surfaces does.
 	"    vec3 glaze = sheen;\n"
-	"    float travelled = 0.0;\n"
+	// [rc4l] How far the eye is along the ray once it leaves this mirror, which every bounce adds to.
+	"    float travelled = length(vWorld - uCameraPos.xyz);\n"
 	"    rayQueryEXT rq;\n"
+	"    uint hitSprite = 0u;\n"
+	// [rc4l] The mirror view the ray is in, whose walk's sprites are the ones it can meet: the drawn mirror's first reflection, then each bounce's.
+	"    int view = int(uSheenNormal.w);\n"
+	"    vec2 hitUV = vec2(0.0);\n"
 	"    for (int level = 1; ; level++) {\n"
 	"        rayQueryInitializeEXT(rq, uTLAS, gl_RayFlagsOpaqueEXT, 0xFF, origin, 0.1, dir, 20000.0);\n"
-	"        while (rayQueryProceedEXT(rq)) {}\n"
+	// [rc4l] A sprite's box is only a candidate: its quad has to be met, nearer than what was met so far, on a texel the alpha test keeps.
+	"        while (rayQueryProceedEXT(rq)) {\n"
+	"            if (rayQueryGetIntersectionTypeEXT(rq, false) != gl_RayQueryCandidateIntersectionAABBEXT) continue;\n"
+	"            uint s = uint(rayQueryGetIntersectionPrimitiveIndexEXT(rq, false));\n"
+	"            if (spriteView(s) != view) continue;\n"
+	"            float tMax = rayQueryGetIntersectionTypeEXT(rq, true) == gl_RayQueryCommittedIntersectionNoneEXT ? 20000.0 : rayQueryGetIntersectionTEXT(rq, true);\n"
+	"            float st;\n"
+	"            vec2 suv;\n"
+	"            if (!fuaSpriteHit(s, origin, dir, 0.1, tMax, st, suv)) continue;\n"
+	"            if (textureLod(uMaterials[nonuniformEXT(spriteMat(s))], suv, 0.0).a <= uFrame.w) continue;\n"
+	"            hitSprite = s;\n"
+	"            hitUV = suv;\n"
+	"            rayQueryGenerateIntersectionEXT(rq, st);\n"
+	"        }\n"
 	"        if (rayQueryGetIntersectionTypeEXT(rq, true) == gl_RayQueryCommittedIntersectionNoneEXT) break;\n"
 	"        if (rayQueryGetIntersectionInstanceCustomIndexEXT(rq, true) != 1) break;\n"
 	// [rc4l] Another mirror: GL renders it a level deeper, reflecting the view again, unless that is past its recursions.
 	"        if (level >= levels) { outColor = vec4(min(glaze, vec3(1.0)), 1.0); return; }\n"
-	"        vec3 m = mirrorPlanes[uint(rayQueryGetIntersectionPrimitiveIndexEXT(rq, true)) / 2u].xyz;\n"
+	"        vec4 mp = mirrorPlanes[uint(rayQueryGetIntersectionPrimitiveIndexEXT(rq, true)) / 2u];\n"
+	"        vec3 m = mp.xyz;\n"
+	"        view = fuaNextView(view, int(mp.w));\n"
 	"        float hit = rayQueryGetIntersectionTEXT(rq, true);\n"
 	"        travelled += hit;\n"
 	"        origin = origin + dir * hit + m * 0.5;\n"
@@ -466,6 +650,15 @@ static const char *kMirrorPS =
 	"        outColor = vec4(min(texture(uSky, vec2(su * uScreen.z, sv * uScreen.w)).rgb + glaze, vec3(1.0)), 1.0);\n"
 	"        return;\n"
 	"    }\n"
+	// [rc4l] A sprite: its texel in the light its own record carries, shaded as the level's surfaces are.
+	"    if (rayQueryGetIntersectionTypeEXT(rq, true) == gl_RayQueryCommittedIntersectionGeneratedEXT) {\n"
+	"        vec3 st = textureLod(uMaterials[nonuniformEXT(spriteMat(hitSprite))], hitUV, 0.0).rgb;\n"
+	"        if (uFixedColormap.w > 0.5) { outColor = vec4(min(fuaFixedColormap(st) + glaze, vec3(1.0)), 1.0); return; }\n"
+	"        uint sp = spritePiece(hitSprite);\n"
+	"        vec3 sc = fuaTracedShade(st, sp, pieces[sp].colorLight.rgb, travelled + rayQueryGetIntersectionTEXT(rq, true));\n"
+	"        outColor = vec4(min(sc + glaze, vec3(1.0)), 1.0);\n"
+	"        return;\n"
+	"    }\n"
 	"    uint prim = uint(rayQueryGetIntersectionPrimitiveIndexEXT(rq, true));\n"
 	"    vec2 bc = rayQueryGetIntersectionBarycentricsEXT(rq, true);\n"
 	"    uint i0 = prim * 3u, i1 = i0 + 1u, i2 = i0 + 2u;\n"
@@ -477,14 +670,11 @@ static const char *kMirrorPS =
 	// [rc4l] The MATERIAL slot, shared with the raster path -- it used to be a batch index masked to
 	// 127, which on any level with more than 128 batches reflected the wrong texture and could not
 	// say so.
-	"    uint mat = uint(pieces[vertPiece(i0)].fogAlphaMat.w + 0.5) & 511u;\n"
+	"    uint mat = pieceMat(vertPiece(i0));\n"
 	"    vec3 texel = texture(uMaterials[nonuniformEXT(mat)], uv).rgb;\n"
 	// [rc4l] A fixed colormap recolours what the ray hit in white light, as the raster path does a level surface.
 	"    if (uFixedColormap.w > 0.5) { outColor = vec4(min(fuaFixedColormap(texel) + glaze, vec3(1.0)), 1.0); return; }\n"
-	"    c *= texel;\n"
-	// Distance falls off the same way the raster path's fog does, so a far reflection reads as far.
-	"    float t = travelled + rayQueryGetIntersectionTEXT(rq, true);\n"
-	"    c *= clamp(1.0 - t / 4000.0, 0.15, 1.0);\n"
+	"    c = fuaTracedShade(texel, vertPiece(i0), c, travelled + rayQueryGetIntersectionTEXT(rq, true));\n"
 	"    outColor = vec4(min(c + glaze, vec3(1.0)), 1.0);\n"
 	"}\n";
 
@@ -507,6 +697,52 @@ static const char *kMirrorPlanarPS =
 
 // [rc4l] Which shader g_mirrorPSO was built with; the traced one only where the structure exists and fua_dg_rtmirrors asks for it.
 static bool g_mirrorPSOTraced = false;
+// [rc4l] The material slots the traced pipeline's array was last filled with, so a sprite's slot made since is bound before a ray meets it.
+static unsigned g_mirrorMaterialSlots = 0;
+
+// [rc4l] Every material the level uses, bound once on the PIPELINE.
+//
+// A rasterised draw binds one material and draws its batch; a ray can land on any triangle, so
+// the material has to be selectable inside the shader. It does not change between draws, which
+// makes it static -- and a static array is set on the PSO, where an SRB has no slot for it.
+// Slots past the batch list take the white placeholder: an unbound element of a descriptor
+// array is undefined, not merely unused.
+// [rc4l] EVERY slot bound, without exception.
+//
+// A descriptor array with a hole in it is not "mostly bound". Diligent copies a pipeline's
+// static resources into a binding and takes the process down if any element is missing, with
+// nothing in the log. So the white placeholder fills everything past the batch list AND
+// anything whose own upload failed, and if even the placeholder is unavailable the traced
+// path is abandoned rather than half-built.
+static bool BindMirrorMaterials(unsigned from, bool report)
+{
+	auto *v = g_mirrorPSO->GetStaticVariableByName(Diligent::SHADER_TYPE_PIXEL, "uMaterials");
+	Diligent::IDeviceObject *white = GetMaterialSRV(NULL, 0);
+	if (v == nullptr || white == nullptr)
+	{
+		Printf("mirror: %s -- reflections stay untraced\n", v ? "no placeholder texture" : "uMaterials not found");
+		return false;
+	}
+	unsigned fellBack = 0;
+	// [rc4l] A rebind replaces only the white placeholders under the new slots, which Diligent keeps unless told to overwrite.
+	const Diligent::Uint32 to = from == 0 ? (Diligent::Uint32)MaterialSlotCapacity() : (Diligent::Uint32)MaterialSlots().Size();
+	const Diligent::SET_SHADER_RESOURCE_FLAGS flags = from == 0 ? Diligent::SET_SHADER_RESOURCE_FLAG_NONE : Diligent::SET_SHADER_RESOURCE_FLAG_ALLOW_OVERWRITE;
+	for (Diligent::Uint32 mi = from; mi < to && mi < (Diligent::Uint32)MaterialSlotCapacity(); mi++)
+	{
+		const void *mat = (mi < MaterialSlots().Size()) ? MaterialSlots()[mi].material : NULL;
+		const int tr = (mi < MaterialSlots().Size()) ? MaterialSlots()[mi].translation : 0;
+		Diligent::IDeviceObject *obj = GetMaterialSRV(mat, tr);
+		if (obj == nullptr) obj = white;
+		if (mi < MaterialSlots().Size() && mat != NULL && obj == white) fellBack++;
+		v->SetArray(&obj, mi, 1, flags);
+	}
+	g_mirrorMaterialSlots = MaterialSlots().Size();
+	// [rc4l] Count how many came back as the white placeholder. A reflection showing flat white
+	// surfaces looks the same whether the texture failed to upload or the index is wrong, and
+	// this separates the two without reading it off a screenshot.
+	if (report) Printf("mirror: %u materials bound, %u fell back to white\n", (unsigned)MaterialSlots().Size(), fellBack);
+	return true;
+}
 
 // [rc4l] The deepest picture level, one past r_mirror_recursions' ceiling of 10, whose mirrors are cleared.
 static const int kMirrorLevels = 12;
@@ -572,6 +808,8 @@ bool EnsureMirrorResources()
 			{ Diligent::SHADER_TYPE_PIXEL, "uSky", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
 			{ Diligent::SHADER_TYPE_PIXEL, "uSheen", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
 			{ Diligent::SHADER_TYPE_PIXEL, "MirrorPlanes", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
+			// [rc4l] Dynamic, since its buffer is replaced when the sprites outgrow it, and Diligent keeps a mutable binding's first resource.
+			{ Diligent::SHADER_TYPE_PIXEL, "TracedSprites", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC },
 		};
 		Diligent::SamplerDesc samp;
 		samp.MinFilter = Diligent::FILTER_TYPE_LINEAR;
@@ -589,9 +827,10 @@ bool EnsureMirrorResources()
 		Diligent::SamplerDesc matSamp = samp;
 		matSamp.AddressU = Diligent::TEXTURE_ADDRESS_WRAP;
 		matSamp.AddressV = Diligent::TEXTURE_ADDRESS_WRAP;
-		// [rc4l] The sheen is filtered as GL filters any material (CLAMP_NONE), and a filter change rebuilds this pipeline with the scene's.
+		// [rc4l] What a ray meets is filtered as GL filters it, so a reflected sprite keeps its pixels instead of blurring, and a filter change rebuilds this pipeline with the scene's.
+		FillSamplerFromEngine(matSamp);
+		// [rc4l] The sheen is filtered as GL filters any material (CLAMP_NONE).
 		Diligent::SamplerDesc sheenSamp = matSamp;
-		FillSamplerFromEngine(sheenSamp);
 
 		const Diligent::ImmutableSamplerDesc samplers[] = {
 			{ Diligent::SHADER_TYPE_PIXEL, "uSheen", sheenSamp },
@@ -656,47 +895,19 @@ bool EnsureMirrorResources()
 		if (!g_sheenCB) { Printf("mirror: sheen buffer failed\n"); g_mirrorPSO.Release(); return false; }
 		for (Diligent::SHADER_TYPE st : { Diligent::SHADER_TYPE_VERTEX, Diligent::SHADER_TYPE_PIXEL })
 			if (auto *v = g_mirrorPSO->GetStaticVariableByName(st, "Sheen")) v->Set(g_sheenCB);
-		// [rc4l] Every material the level uses, bound once on the PIPELINE.
-		//
-		// A rasterised draw binds one material and draws its batch; a ray can land on any triangle, so
-		// the material has to be selectable inside the shader. It does not change between draws, which
-		// makes it static -- and a static array is set on the PSO, where an SRB has no slot for it.
-		// Slots past the batch list take the white placeholder: an unbound element of a descriptor
-		// array is undefined, not merely unused.
-		// [rc4l] EVERY slot bound, without exception.
-		//
-		// A descriptor array with a hole in it is not "mostly bound". Diligent copies a pipeline's
-		// static resources into a binding and takes the process down if any element is missing, with
-		// nothing in the log. So the white placeholder fills everything past the batch list AND
-		// anything whose own upload failed, and if even the placeholder is unavailable the traced
-		// path is abandoned rather than half-built.
-		if (wantTraced)
+		// [rc4l] Every material the level uses, on the pipeline (BindMirrorMaterials).
+		if (wantTraced && !BindMirrorMaterials(0, true))
 		{
-			auto *v = g_mirrorPSO->GetStaticVariableByName(Diligent::SHADER_TYPE_PIXEL, "uMaterials");
-			Diligent::IDeviceObject *white = GetMaterialSRV(NULL, 0);
-			if (v == nullptr || white == nullptr)
-			{
-				Printf("mirror: %s -- reflections stay untraced\n",
-					v ? "no placeholder texture" : "uMaterials not found");
-				g_mirrorPSO.Release();
-				return false;
-			}
-			unsigned fellBack = 0;
-			for (Diligent::Uint32 mi = 0; mi < (Diligent::Uint32)MaterialSlotCapacity(); mi++)
-			{
-				const void *mat = (mi < MaterialSlots().Size()) ? MaterialSlots()[mi].material : NULL;
-				const int tr = (mi < MaterialSlots().Size()) ? MaterialSlots()[mi].translation : 0;
-				Diligent::IDeviceObject *obj = GetMaterialSRV(mat, tr);
-				if (obj == nullptr) obj = white;
-				if (mi < MaterialSlots().Size() && mat != NULL && obj == white) fellBack++;
-				v->SetArray(&obj, mi, 1);
-			}
-			// [rc4l] Count how many came back as the white placeholder. A reflection showing flat white
-			// surfaces looks the same whether the texture failed to upload or the index is wrong, and
-			// this separates the two without reading it off a screenshot.
-			Printf("mirror: %u materials bound, %u fell back to white\n",
-				(unsigned)MaterialSlots().Size(), fellBack);
+			g_mirrorPSO.Release();
+			return false;
 		}
+		g_mirrorSRB.Release();
+	}
+
+	// [rc4l] Slots made since the array was filled (a sprite's, first drawn this frame), bound and a fresh binding taken so it copies them.
+	if (g_mirrorPSO && g_mirrorPSOTraced && MaterialSlots().Size() > g_mirrorMaterialSlots)
+	{
+		BindMirrorMaterials(g_mirrorMaterialSlots, false);
 		g_mirrorSRB.Release();
 	}
 
@@ -726,6 +937,9 @@ bool EnsureMirrorResources()
 			// [rc4l] The mirrors' planes, or the level's buffer standing in when there are no mirror faces to reflect off a second time.
 			if (auto *v = g_mirrorSRB->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "MirrorPlanes"))
 				v->Set((g_mirrorPlanes ? g_mirrorPlanes.RawPtr() : g_scene.vb.RawPtr())->GetDefaultView(Diligent::BUFFER_VIEW_SHADER_RESOURCE));
+			// [rc4l] The sprites' records, made now (zeroed) when no frame has made them yet.
+			if (auto *v = g_mirrorSRB->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "TracedSprites"))
+				if (EnsureSpriteBuffers(GetDevice(), 0, 0)) v->Set(g_spriteRecords->GetDefaultView(Diligent::BUFFER_VIEW_SHADER_RESOURCE));
 			// [rc4l] The sky, resolved here rather than reused from EnsureSky: that runs mid-frame with
 			// a render pass open, and this may have to upload the texture.
 			if (auto *v2 = g_mirrorSRB->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "uSky"))
@@ -799,7 +1013,7 @@ static void WriteMirrorSheen(Diligent::IDeviceContext *ctx, const MirrorSurface 
 	const float rgb[3] = { shade ? shade->colorR : 0.f, shade ? shade->colorG : 0.f, shade ? shade->colorB : 0.f };
 	Diligent::MapHelper<float> cb(ctx, g_sheenCB, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD);
 	zx::hwrender::ComputeMirrorSheenConstants(view, m.nx, m.ny, rgb, shade ? shade->softLight : -1.f,
-		shade ? (float)shade->fogMode : 0.f, shade ? shade->fogDensity : 0.f, shade != NULL, (int)r_mirror_recursions, &cb[0]);
+		shade ? (float)shade->fogMode : 0.f, shade ? shade->fogDensity : 0.f, shade != NULL, (int)r_mirror_recursions, m.line, &cb[0]);
 }
 
 // [rc4l] One mirror's face under the camera now, its sheen included: the traced path traces from it, the planar one samples the reflection just rendered.
@@ -1347,7 +1561,8 @@ void RenderMirrors(Diligent::IDeviceContext *ctx)
 	// [rc4l] GL draws a mirror's wall instead of its reflection with r_mirrors off, and the bake follows it (ComputeIsMirrorWall).
 	if (!r_mirrors) return;
 	if (g_mirrors.Size() == 0) return;
-	if (!g_mirrorPSO || !g_mirrorSRB || !g_mirrorVB)
+	// [rc4l] Also when a sprite's material came after the traced array was filled, so a ray meeting it samples it rather than white.
+	if (!g_mirrorPSO || !g_mirrorSRB || !g_mirrorVB || (g_mirrorPSOTraced && MaterialSlots().Size() > g_mirrorMaterialSlots))
 	{
 		if (!EnsureMirrorResources()) return;
 	}
@@ -1359,6 +1574,13 @@ void RenderMirrors(Diligent::IDeviceContext *ctx)
 	// without ray tracing, or with the cvar off, gets the planar reflection instead of nothing -- and
 	// a silent fallback is indistinguishable from a broken feature.
 	const bool traced = g_mirrorTraced;
+	if (traced)
+	{
+		UpdateTracedSprites(ctx);
+		if (g_spriteRecords && g_mirrorSRB)
+			if (auto *v = g_mirrorSRB->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "TracedSprites"))
+				v->Set(g_spriteRecords->GetDefaultView(Diligent::BUFFER_VIEW_SHADER_RESOURCE));
+	}
 	{
 		static int said = -1;
 		if (said != (int)traced)

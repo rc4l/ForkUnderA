@@ -273,6 +273,9 @@ int ComputeFindMirrorPath(const std::vector<std::vector<int> > &paths, const int
 // [rc4l] The same, the path added when it is new.
 int ComputeAddMirrorPath(std::vector<std::vector<int> > &paths, const int *path, int depth);
 
+// [rc4l] How a traced ray goes from one mirror view to the next, three ints a step: the view it is in, the line mirror it bounces off, and the view it is in after, for each deeper view whose outer view is among the paths.
+void ComputeMirrorSteps(const std::vector<std::vector<int> > &paths, int lineCount, std::vector<int> &out);
+
 // [rc4l] Whether a pass draws a sprite, model or decal: only the pass whose walk took it, a line mirror's or a stacked view's (each -1 for the player's view), as GL draws each from its own walk, and a decal on a mirror's face only in the pass over that mirror's surface (-1 for every other).
 bool ComputeDrawsDynamicPiece(int pieceMirrorLine, int pieceStackSlot, int pieceOnMirror, int drawingMirrorLine, int drawingStackSlot, int drawingMirrorFace);
 

@@ -798,6 +798,10 @@ int MirrorViewOf(const int *path, int depth)
 	const int at = ComputeFindMirrorPath(g_mirrorPaths, path, depth);
 	return at < 0 ? -2 : ComputeMirrorViewId(depth, path[0], at, numlines);
 }
+void MirrorSteps(std::vector<int> &out)
+{
+	ComputeMirrorSteps(g_mirrorPaths, numlines, out);
+}
 void AddWalkedMirror(int line)
 {
 	if (!MirrorWalkedThisFrame(line)) g_walkedMirrors.Push(line);

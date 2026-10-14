@@ -48,6 +48,8 @@ int StackCaptureSlot();
 int MirrorCaptureLine();
 // [rc4l] The id of the mirror view down the path of `depth` lines from the player outward, -2 when no walk made it this frame.
 int MirrorViewOf(const int *path, int depth);
+// [rc4l] This frame's steps between mirror views (ComputeMirrorSteps), for a traced ray to follow.
+void MirrorSteps(std::vector<int> &out);
 // [rc4l] Whether a sprite, model or decal GL draws now is captured: the player's walk's for the frame, a stacked view's or a line mirror's walk's for that pass alone.
 bool DynamicCaptureActive();
 // [rc4l] A particle handed to the backend this frame, for fua_particles.
