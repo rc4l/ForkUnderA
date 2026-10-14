@@ -312,19 +312,31 @@ export async function captureBurst(c, { side = "vk", count = 8, box = [0, 0, 1, 
   return out;
 }
 
-// [rc4l] Two captures intervalMs apart with the sim RUNNING, Vulkan and optionally GL, for what must move: a warp, a scroller, an animation.
-export async function captureOverTime(c, { at = null, engineBin, outDir, tag = "motion", intervalMs = 600, gl = false }) {
+// [rc4l] At `at` with the sim RUNNING, a capture after each step in turn, once its commands have run and its waitMs passed: Vulkan's, and GL's too when gl is set, by the step's name. A command is a console line, a number of ms to wait, or a camera ({x, y, z, angle, pitch}) to stand at.
+export async function captureSequence(c, { at = null, engineBin, outDir, tag = "sequence", steps, gl = false }) {
   outDir = outDir || sweepDirFor(engineBin);
   fs.mkdirSync(outDir, { recursive: true });
   if (at) await moveTo(c, at);
   await c.rpc("sim.resume", {}).catch(() => {});
-  const vk = [], glFiles = [];
-  for (let i = 0; i < 2; i++) {
-    if (i > 0) await sleep(intervalMs);
-    vk.push(await captureVulkan(c, path.posix.join(outDir, `${tag}_vk${i}.png`)));
-    if (gl) glFiles.push((await ui.screenshot(c, engineBin, `sweep/${tag}_gl${i}`).catch(() => ({ path: null }))).path);
+  const vk = {}, glFiles = {};
+  for (const step of steps) {
+    for (const command of step.commands || []) {
+      if (typeof command === "number") await sleep(command);
+      else if (typeof command === "object") await moveTo(c, command);
+      else await exec(c, command);
+    }
+    if (step.waitMs) await sleep(step.waitMs);
+    vk[step.name] = await captureVulkan(c, path.posix.join(outDir, `${tag}_${step.name}_vk.png`));
+    if (gl) glFiles[step.name] = (await ui.screenshot(c, engineBin, `sweep/${tag}_${step.name}_gl`).catch(() => ({ path: null }))).path;
   }
   return { vk, gl: gl ? glFiles : null };
+}
+
+// [rc4l] Two captures intervalMs apart with the sim RUNNING, Vulkan and optionally GL, for what must move: a warp, a scroller, an animation.
+export async function captureOverTime(c, { at = null, engineBin, outDir, tag = "motion", intervalMs = 600, gl = false }) {
+  const got = await captureSequence(c, { at, engineBin, outDir, tag, gl, steps: [{ name: "0" }, { name: "1", waitMs: intervalMs }] });
+  const pair = (files) => [files["0"], files["1"]];
+  return { vk: pair(got.vk), gl: gl ? pair(got.gl) : null };
 }
 
 // [rc4l] A cvar's two values in ONE paused frame, then the first again, so animated lights cannot pass for a difference; the cvar is left as found.

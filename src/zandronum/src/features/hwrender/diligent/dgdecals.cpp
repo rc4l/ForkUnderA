@@ -460,10 +460,11 @@ static bool EnsureDeferredDecalPass()
 		// zero and quietly dropped the rest, which is why slot 0 always drew correctly and nothing
 		// past it ever did.
 		{ Diligent::SHADER_TYPE_PIXEL, "uTex", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC },
+		// [rc4l] DYNAMIC too, since a resize or fullscreen rebuilds the scene's targets and a MUTABLE binding kept the first ones, so marks read a depth frozen at the change and vanished once the view moved.
 		// [rc4l] WebGPU binds a depth texture only as unfilterable float with a non-filtering sampler (its _sampler takes these flags); Firefox's device refused the decal pass otherwise.
-		{ Diligent::SHADER_TYPE_PIXEL, "uSceneDepth", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE,
+		{ Diligent::SHADER_TYPE_PIXEL, "uSceneDepth", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC,
 			Diligent::SHADER_VARIABLE_FLAG_UNFILTERABLE_FLOAT_TEXTURE_WEBGPU | Diligent::SHADER_VARIABLE_FLAG_NON_FILTERING_SAMPLER_WEBGPU },
-		{ Diligent::SHADER_TYPE_PIXEL, "uSceneNormal", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
+		{ Diligent::SHADER_TYPE_PIXEL, "uSceneNormal", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC },
 	};
 	// [rc4l] Per call, never static: a static array keeps the filter of the first build after the engine's changes.
 	Diligent::SamplerDesc samp;

@@ -43,10 +43,13 @@ export function judge(map, frames, boxes, size = [1280, 720], [a, b] = ["gl", "v
       failed++;
       continue;
     }
-    for (const [name, { box, ceiling, floor, block = 16, vantage: only }] of Object.entries(boxes)) {
+    for (const [name, { box, ceiling, floor, block = 16, vantage: only, pair }] of Object.entries(boxes)) {
       // [rc4l] A box naming a vantage is judged only there, for scenes whose vantages look at different parts of the frame.
       if (only && only !== vantage) continue;
-      const d = boxDiff(A, B, box, block);
+      // [rc4l] A box naming a pair of captures (compareSequence) is judged between those two.
+      const [P, Q] = pair ? [f[pair[0]], f[pair[1]]] : [A, B];
+      if (!P || !Q) { lines.push(`FAIL ${map} ${vantage} ${name}: no capture ${pair.join(" or ")}`); failed++; continue; }
+      const d = boxDiff(P, Q, box, block);
       const ok = boxWithin(d, { ceiling, floor });
       if (!ok) failed++;
       const limit = floor === undefined ? `ceiling ${ceiling}` : `floor ${floor}`;
@@ -166,7 +169,7 @@ export function webgpuOptions(opts, compare = compareTemplate) {
   const vk = (opts.sides || GL_VS_VULKAN).find((s) => !s.gl && s.frame !== "gl");
   if (!vk) return null;
   const { frame, glDraws, ...rest } = vk;
-  if (compare === compareCounter || compare === compareOverTime) return { ...opts, sides: [{ ...rest, name: "wgpu", noGl: true, webgpu: true }] };
+  if ([compareCounter, compareOverTime, compareSequence].includes(compare)) return { ...opts, sides: [{ ...rest, name: "wgpu", noGl: true, webgpu: true }] };
   const boxes = Object.fromEntries(Object.entries(opts.boxes).map(([map, bs]) => [map, Object.fromEntries(Object.entries(bs).map(
     ([n, b]) => [n, { box: b.box, block: b.block, vantage: b.vantage, ceiling: WEBGPU_CEILING }]))]));
   return { ...opts, sides: [{ ...rest, name: "vk", noGl: true }, { ...rest, name: "wgpu", noGl: true, webgpu: true }], boxes };
@@ -305,6 +308,20 @@ export async function compareSameFrame({ name, wad, maps, vantages, boxes, iwad 
       frames[v.name] = { gl: pair.gl ? decodePNG(pair.gl) : null, vk: pair.vk ? decodePNG(pair.vk) : null };
     }
     return judge(map, frames, boxes[map], size);
+  });
+}
+
+// [rc4l] One Vulkan launch per map; at each vantage a capture after each of `steps` (shot.captureSequence), and each box judged between the two captures its `pair` names: for what a command must change (a mark made) and what must survive one (a mode change).
+export async function compareSequence({ name, wad, maps, vantages, steps, boxes, iwad = FREEDOOM2, port = 7796, size = [1280, 720], sides = [] }) {
+  const exe = resolveEngine().split(path.sep).join("/");
+  return eachVulkanLaunch({ name, wad, maps, iwad, port, size, side: sides.find((s) => !s.gl) }, async (c, map) => {
+    const frames = {};
+    for (const v of vantages) {
+      const { vk } = await shot.captureSequence(c, { at: v.at, engineBin: exe, tag: `${name}_${map}_${v.name}`, steps });
+      frames[v.name] = Object.fromEntries(Object.entries(vk).map(([step, file]) => [step, file ? decodePNG(file) : null]));
+    }
+    const [first, second] = steps.map((s) => s.name);
+    return judge(map, frames, boxes[map], size, [first, second]);
   });
 }
 

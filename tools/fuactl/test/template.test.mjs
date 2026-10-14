@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { compareCounter, compareOverTime, compareSameFrame, judge, judgeCounter, scenarioOutcome, isMain, sideCommands, vantageCommands, boxWithin, runScenarioIfMain, scenarioOptions, scenarioRun, templateScenarioFiles, probeChoices, pairFrame, withSideCvars, launchRenderer, sideAdjust, standaloneOptions, webgpuOptions, launchBackendApi, WEBGPU_CEILING, GL_VS_VULKAN } from "../src/template.mjs";
+import { compareCounter, compareOverTime, compareSameFrame, compareSequence, judge, judgeCounter, scenarioOutcome, isMain, sideCommands, vantageCommands, boxWithin, runScenarioIfMain, scenarioOptions, scenarioRun, templateScenarioFiles, probeChoices, pairFrame, withSideCvars, launchRenderer, sideAdjust, standaloneOptions, webgpuOptions, launchBackendApi, WEBGPU_CEILING, GL_VS_VULKAN } from "../src/template.mjs";
 import { pathToFileURL } from "node:url";
 import fs from "node:fs";
 import os from "node:os";
@@ -240,4 +240,27 @@ test("a WebGPU run of a scenario judged against itself runs on WebGPU alone with
 test("a WebGPU run skips what WebGPU cannot do: GL beside it in one frame, or ray tracing", () => {
   assert.match(webgpuOptions({ name: "sameframe", boxes: {} }, compareSameFrame).skip, /a WebGPU launch has no GL/);
   assert.match(webgpuOptions({ name: "rt", boxes: {}, needs: ["raytracing"] }).skip, /needs ray tracing/);
+});
+
+// [rc4l] A capture sequence names its frames, and each box the two it is judged between.
+test("a box naming a pair of captures is judged between those two", () => {
+  const frames = { side: { clean: flat(32, 32, [10, 10, 10]), marked: flat(32, 32, [60, 60, 60]), resized: flat(32, 32, [10, 10, 10]) } };
+  const boxes = {
+    made: { box: [0, 0, 1, 1], pair: ["clean", "marked"], floor: 2 },
+    kept: { box: [0, 0, 1, 1], pair: ["marked", "resized"], ceiling: 1 },
+  };
+  const r = judge("MAP01", frames, boxes, [32, 32], ["clean", "marked"]);
+  assert.equal(r.failed, 1);
+  assert.match(r.lines[0], /^PASS MAP01 side\s+made/);
+  assert.match(r.lines[1], /^FAIL MAP01 side\s+kept/);
+  const missing = judge("MAP01", { side: { clean: frames.side.clean, marked: frames.side.marked } }, boxes, [32, 32], ["clean", "marked"]);
+  assert.equal(missing.failed, 1);
+  assert.equal(missing.lines[1], "FAIL MAP01 side kept: no capture marked or resized");
+});
+
+test("a WebGPU run of a capture sequence runs on WebGPU alone with its boxes as they are", () => {
+  const boxes = { MAP01: { kept: { box: [0, 0, 1, 1], pair: ["a", "b"], ceiling: 1 } } };
+  const w = webgpuOptions({ name: "sequence", boxes }, compareSequence);
+  assert.deepEqual(w.sides, [{ name: "wgpu", gl: false, noGl: true, webgpu: true }]);
+  assert.equal(w.boxes, boxes);
 });
