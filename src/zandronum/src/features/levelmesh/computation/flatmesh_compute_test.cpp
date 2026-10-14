@@ -596,6 +596,12 @@ TEST(FlatMeshCompute, AStackedViewMarksEachSubsectorItsWalkReached)
 	ComputeClearStackVisible(bits, 12, 0, W);
 	EXPECT_FALSE(ComputeStackVisible(bits, 4, 12, 0, W));
 	EXPECT_TRUE(ComputeStackVisible(bits, 4, 12, 1, W));
+	// [rc4l] A pass draws what its walk drew, and everything when it has no walk or the piece no id, as the scene shader culls.
+	EXPECT_TRUE(ComputePassDraws(bits, 4, 12, 1, W));
+	EXPECT_FALSE(ComputePassDraws(bits, 4, 12, 0, W));
+	EXPECT_TRUE(ComputePassDraws(bits, 4, 12, -1, W));
+	EXPECT_TRUE(ComputePassDraws(bits, 4, -1, 0, W));
+	EXPECT_FALSE(ComputePassDraws(nullptr, 0, 3, 0, W));   // [rc4l] a slot with no bits uploaded drew nothing
 }
 
 // [rc4l] A level's slots and sky lists follow its stacked views: a level with none has the player's and the skybox's walks alone.

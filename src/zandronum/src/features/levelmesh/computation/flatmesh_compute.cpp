@@ -323,6 +323,11 @@ bool ComputeStackVisible(const unsigned int *bits, int words, int id, int slot, 
 	return (bits[bit >> 5] & (1u << (bit & 31))) != 0;
 }
 
+bool ComputePassDraws(const unsigned int *bits, int words, int id, int passSlot, int walkSlots)
+{
+	return passSlot < 0 || id < 0 || ComputeStackVisible(bits, words, id, passSlot, walkSlots);
+}
+
 float ComputeSegmentDistance2(float px, float py, float x1, float y1, float x2, float y2)
 {
 	const float dx = x2 - x1, dy = y2 - y1;

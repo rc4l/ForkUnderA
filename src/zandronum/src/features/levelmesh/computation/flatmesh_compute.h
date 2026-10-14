@@ -193,6 +193,9 @@ void ComputeMarkStackVisible(unsigned int *bits, int id, int slot, int walkSlots
 // [rc4l] Whether a walk drew an id, read back as the scene shader reads it; an id outside the words is not drawn.
 bool ComputeStackVisible(const unsigned int *bits, int words, int id, int slot, int walkSlots);
 
+// [rc4l] Whether a pass with walk slot passSlot draws a piece with walk id `id`, as the scene shader decides it: always for a pass with no slot or a piece with no id, else only when that walk drew the id.
+bool ComputePassDraws(const unsigned int *bits, int words, int id, int passSlot, int walkSlots);
+
 // [rc4l] The slot a walk's drawing is marked in: a skybox's kSkyboxWalkSlot wherever it was entered from, a stacked view's own (from stackSlot, -1 for one no slot took), the player's walk kMainWalkSlot, any other none (-1).
 int ComputeWalkSlot(bool skyboxWalk, bool stackWalk, int stackSlot, bool playerWalk);
 

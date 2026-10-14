@@ -27,6 +27,8 @@ CCMD( fua_dg_blendorder )
 
 EXTERN_CVAR(Bool, fua_dg_rtmirrors)
 EXTERN_CVAR(Bool, fua_dg_rtsprites)
+// [rc4l] The translucent pass skips what the pass's walk did not reach; 0 sorts every translucent surface, to measure and compare against.
+CVAR(Bool, fua_dg_blendwalk, true, 0)
 
 namespace zx { namespace hwrender {
 
@@ -439,9 +441,15 @@ void DrawBlended(Diligent::IDeviceContext *ctx)
 
 	const float cx = FIXED2FLOAT(viewx), cy = FIXED2FLOAT(viewy), cz = FIXED2FLOAT(viewz);
 
+	// [rc4l] A translucent surface this pass's walk did not reach is one the scene shader would move off screen, so it is left out before the layering and the sort, as GL sorts only what its walk drew.
+	const int passSlot = fua_dg_blendwalk ? PassWalkSlot() : -1;
+	int visWords = 0;
+	const unsigned int *visBits = passSlot >= 0 ? zx::levelmesh::StackVisibility(visWords) : NULL;
+	const int walkSlots = zx::levelmesh::WalkSlots();
 	for (unsigned i = 0; i < g_scene.blendBatches.Size(); i++)
 	{
 		SceneBatch &b = g_scene.batches[g_scene.blendBatches[i]];
+		if (!zx::levelmesh::ComputePassDraws(visBits, visWords, b.walkId, passSlot, walkSlots)) continue;
 		// [rc4l] A blended batch with no binding is skipped whether or not bindless is on.
 		//
 		// Relaxing this looked harmless -- with the array carrying materials a batch needs no binding

@@ -222,6 +222,7 @@ static bool BuildSceneBuffer(FString &err)
 			b.normX = p.normX; b.normY = p.normY; b.normZ = p.normZ;
 			b.minX = b.minY = b.minZ =  1e30f;
 			b.maxX = b.maxY = b.maxZ = -1e30f;
+			b.walkId = -1;
 			g_scene.batches.Push(b);
 			if (b.blend != 0) g_scene.blendBatches.Push((int)g_scene.batches.Size() - 1);
 			cur = p.material;
@@ -238,6 +239,8 @@ static bool BuildSceneBuffer(FString &err)
 			ScenePieceData pd;
 			FillPieceData(p, 0, pd, true);
 			g_scene.pieces.Push(pd);
+			// [rc4l] A blended piece is a batch of its own, so the batch can be skipped by the walk that reached the piece.
+			if (p.blendMode != 0) g_scene.batches[g_scene.batches.Size() - 1].walkId = (int)(pd.stackId + 0.5f) - 1;
 		}
 		for (unsigned int v = 0; v < p.range.count; v++)
 		{
@@ -498,6 +501,7 @@ static bool AppendPiece(Diligent::IDeviceContext *ctx, const zx::levelmesh::Mesh
 	b.minX = b.minY = b.minZ =  1e30f;
 	b.maxX = b.maxY = b.maxZ = -1e30f;
 	b.srb = NULL;
+	b.walkId = -1;
 	if (BatchSRB(b) == NULL) return false;   // [rc4l] no binding, no draw -- and a rebuild will do it properly
 	g_scene.batches.Push(b);
 

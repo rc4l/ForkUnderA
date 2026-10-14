@@ -209,6 +209,7 @@ struct SceneBatch
 	int          mirrorSector;
 	bool         mirrorCeiling;
 	int          mirrorSlot;
+	int          walkId;   // [rc4l] a blended batch's one piece's PieceStackId, which the walk marks it reached by, or -1
 };
 
 // [rc4l] One dynamic draw: a contiguous span of this frame's sprite stream sharing a material, a
@@ -239,6 +240,9 @@ struct DynRun
 
 // [rc4l] The array's size on this device (ComputeMaterialSlotCapacity), which CompileShader hands every shader as FUA_MAT_SLOTS; 0 means a binding per material.
 unsigned MaterialSlotCapacity();
+
+// [rc4l] The walk slot the pass being drawn draws alone (ComputePassWalkSlot), which the scene shader culls by, or -1 for one that draws everything.
+int PassWalkSlot();
 
 struct MatSlot { const void *material; int translation; };
 // [rc4l] The translation a brightmap's slot is filed under: no real one is this, so a material and its brightmap never share a slot.
