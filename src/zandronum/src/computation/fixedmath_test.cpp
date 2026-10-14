@@ -72,6 +72,25 @@ TEST(FixedMath, EveryFixedShiftVariant)
 #endif // __SIZEOF_INT128__
 #undef ZX_CHECK_N
 
+// [rc4l] SafeDivScaleN divides as DivScaleN does, and a zero divisor gives the overflow of the numerator's sign.
+#define ZX_CHECK_SAFE(N) \
+	EXPECT_EQ(DivScale##N(1000, 7), SafeDivScale##N(zx::Fixed::FromRaw(1000), zx::Fixed::FromRaw(7)).Raw()); \
+	EXPECT_EQ(INT64_MAX, SafeDivScale##N(zx::Fixed::FromRaw(5), zx::Fixed::FromRaw(0)).Raw()); \
+	EXPECT_EQ(INT64_MIN, SafeDivScale##N(zx::Fixed::FromRaw(-5), zx::Fixed::FromRaw(0)).Raw());
+
+TEST(FixedMath, EverySafeDivideVariant)
+{
+	ZX_CHECK_SAFE(1)  ZX_CHECK_SAFE(2)  ZX_CHECK_SAFE(3)  ZX_CHECK_SAFE(4)
+	ZX_CHECK_SAFE(5)  ZX_CHECK_SAFE(6)  ZX_CHECK_SAFE(7)  ZX_CHECK_SAFE(8)
+	ZX_CHECK_SAFE(9)  ZX_CHECK_SAFE(10) ZX_CHECK_SAFE(11) ZX_CHECK_SAFE(12)
+	ZX_CHECK_SAFE(13) ZX_CHECK_SAFE(14) ZX_CHECK_SAFE(15) ZX_CHECK_SAFE(16)
+	ZX_CHECK_SAFE(17) ZX_CHECK_SAFE(18) ZX_CHECK_SAFE(19) ZX_CHECK_SAFE(20)
+	ZX_CHECK_SAFE(21) ZX_CHECK_SAFE(22) ZX_CHECK_SAFE(23) ZX_CHECK_SAFE(24)
+	ZX_CHECK_SAFE(25) ZX_CHECK_SAFE(26) ZX_CHECK_SAFE(27) ZX_CHECK_SAFE(28)
+	ZX_CHECK_SAFE(29) ZX_CHECK_SAFE(30) ZX_CHECK_SAFE(31) ZX_CHECK_SAFE(32)
+}
+#undef ZX_CHECK_SAFE
+
 #ifdef __SIZEOF_INT128__
 // [rc4l] The widened forms carry giant operands the old 32-bit intermediate would truncate.
 TEST(FixedMath, WidenedFormsCarryGiantOperands)
