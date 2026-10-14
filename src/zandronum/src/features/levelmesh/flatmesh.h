@@ -44,8 +44,10 @@ void LeaveScene();
 bool PlayerWalkActive();
 // [rc4l] The stacked view whose walk GL is in now (ComputeStackCaptureSlot), or -1.
 int StackCaptureSlot();
-// [rc4l] The line mirror whose walk GL is in now (ComputeMirrorCaptureLine), or -1.
+// [rc4l] The mirror view whose walk is in now (ComputeMirrorViewId: a first reflection's line, a deeper one's id past the lines), or -1.
 int MirrorCaptureLine();
+// [rc4l] The id of the mirror view down the path of `depth` lines from the player outward, -2 when no walk made it this frame.
+int MirrorViewOf(const int *path, int depth);
 // [rc4l] Whether a sprite, model or decal GL draws now is captured: the player's walk's for the frame, a stacked view's or a line mirror's walk's for that pass alone.
 bool DynamicCaptureActive();
 // [rc4l] A particle handed to the backend this frame, for fua_particles.
@@ -116,7 +118,7 @@ struct MirrorWalk
 {
 	explicit MirrorWalk(int line);
 	~MirrorWalk();
-	int saved;
+	int saved, savedView;
 };
 
 // [rc4l] A scene entered for as long as it is in scope, as EnterScene and LeaveScene pair.

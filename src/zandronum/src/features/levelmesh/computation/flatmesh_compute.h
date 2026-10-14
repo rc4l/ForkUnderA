@@ -21,6 +21,8 @@
 #ifndef ZX_FLATMESH_COMPUTE_H
 #define ZX_FLATMESH_COMPUTE_H
 
+#include <vector>
+
 namespace zx { namespace levelmesh {
 
 // [rc4l] Must this flat's triangles be wound in reverse?
@@ -259,8 +261,17 @@ bool ComputeCentroid(const V *verts, unsigned total, unsigned offset, unsigned c
 	return true;
 }
 
-// [rc4l] The line mirror a sprite, model or decal GL draws now is kept for: mirrorLine while GL walks that mirror from the player's view (nesting 2), else -1.
-int ComputeMirrorCaptureLine(int mirrorLine, bool mainView, int sceneNesting);
+// [rc4l] Whether a walk `depth` line mirrors deep keeps what it draws for that mirror view: a chain of mirrors entered from the player's view, each its own scene, and no other walk.
+bool ComputeMirrorCaptures(int depth, bool mainView, int sceneNesting);
+
+// [rc4l] A mirror view's id: a first reflection's is its own line, as the backend's mirror passes name it, any deeper one lineCount plus its place among the frame's deeper views (deeperIndex).
+int ComputeMirrorViewId(int depth, int line, int deeperIndex, int lineCount);
+
+// [rc4l] Where the path of `depth` lines from the player outward stands among the frame's deeper mirror views, -1 when it is not there.
+int ComputeFindMirrorPath(const std::vector<std::vector<int> > &paths, const int *path, int depth);
+
+// [rc4l] The same, the path added when it is new.
+int ComputeAddMirrorPath(std::vector<std::vector<int> > &paths, const int *path, int depth);
 
 // [rc4l] Whether a pass draws a sprite, model or decal: only the pass whose walk took it, a line mirror's or a stacked view's (each -1 for the player's view), as GL draws each from its own walk, and a decal on a mirror's face only in the pass over that mirror's surface (-1 for every other).
 bool ComputeDrawsDynamicPiece(int pieceMirrorLine, int pieceStackSlot, int pieceOnMirror, int drawingMirrorLine, int drawingStackSlot, int drawingMirrorFace);

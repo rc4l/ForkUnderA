@@ -119,7 +119,7 @@ struct MeshPiece
 	float         dynR, dynG, dynB;
 	// [rc4l] Lit by the CPU's light for the whole actor (dynR..dynB) rather than the shader's per-fragment loop, as GL lights sprites and models.
 	bool          cpuLight;
-	int           mirrorLine;   // [rc4l] the line mirror whose walk alone drew it (ComputeMirrorCaptureLine), or -1 for the frame's
+	int           mirrorLine;   // [rc4l] the mirror view whose walk alone drew it (MirrorCaptureLine), or -1 for the frame's
 	int           stackSlot;    // [rc4l] the stacked view whose walk alone drew it (ComputeStackCaptureSlot), or -1 for the frame's
 	int           onMirror;     // [rc4l] the line mirror whose face a decal is stuck to, drawn over that mirror's surface, or -1
 	int           linkId;       // [rc4l] numsubsectors plus the sidedef a wall was baked from, the id GL's light links name it by, or -1 to place it by geometry (PieceStackId)

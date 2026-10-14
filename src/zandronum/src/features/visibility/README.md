@@ -20,7 +20,9 @@ Each frame the player's walk also makes what GL's walk used to hand the backend:
   walls name, turned as GL turns it, into the skybox walk slot;
 - the line mirrors: each `Line_Mirror` wall reached, its sheen's light (the light band `SplitWall`
   gives its first piece), and a walk from the reflected eye that leaves out what lies behind the
-  mirror, giving the reflection's sprites;
+  mirror, giving the reflection's sprites; then each mirror that reflection shows, from its own reflected
+  eye, to `r_mirror_recursions` as GL's portals recurse, every reflection its own view
+  (`zx::levelmesh::MirrorWalk`, named by its mirrors from the player outward) with its own sprites;
 - the particles in each subsector reached, handed to `features/sprites` as GL's walk hands them over;
 - the sidedefs carrying decals each view saw (the player's, a stacked view's, a mirror's), handed over
   from inside that view so `features/levelmesh` glues their decals into its pass;

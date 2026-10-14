@@ -1315,11 +1315,17 @@ static void RenderMirrorNode(Diligent::IDeviceContext *ctx, unsigned i, int leve
 	const float clear[4] = { 0.05f, 0.06f, 0.09f, 1.0f };
 	ctx->ClearRenderTarget(rtv, clear, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 	ctx->ClearDepthStencil(dsv, Diligent::CLEAR_DEPTH_FLAG, 1.0f, 0, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	// [rc4l] The view this reflection is, by its mirrors from the player outward, whose walk's sprites, models and decals it draws.
+	static TArray<int> path;
+	path.Clear();
+	for (int n = node; n >= 0; n = g_mirrorNodes[n].parent) path.Insert(0, g_mirrors[g_mirrorNodes[n].mirror].line);
 	const int outer = g_mirrorPass;
 	g_mirrorPass = node;
 	g_pass.lineMirror = m.line;
+	g_pass.mirrorView = zx::levelmesh::MirrorViewOf(&path[0], (int)path.Size());
 	DrawWorld(ctx);
 	ForgetViewSkyLooks();
+	g_pass.mirrorView = -1;
 	g_pass.lineMirror = -1;
 	g_mirrorPass = outer;
 	g_pass.clipPlane[0] = g_pass.clipPlane[1] = g_pass.clipPlane[2] = g_pass.clipPlane[3] = 0.f;

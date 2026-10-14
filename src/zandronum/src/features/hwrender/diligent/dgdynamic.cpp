@@ -336,7 +336,7 @@ void DrawSolidDyn(Diligent::IDeviceContext *ctx)
 	for (unsigned i = 0; i < g_scene.dynRuns.Size(); i++)
 	{
 		const DynRun &r = g_scene.dynRuns[i];
-		if (r.count == 0 || !r.solid || r.blend != 0 || !zx::levelmesh::ComputeDrawsDynamicPiece(r.mirrorLine, r.stackSlot, r.onMirror, g_pass.lineMirror, g_pass.stackSlot, -1)) continue;
+		if (r.count == 0 || !r.solid || r.blend != 0 || !zx::levelmesh::ComputeDrawsDynamicPiece(r.mirrorLine, r.stackSlot, r.onMirror, g_pass.mirrorView, g_pass.stackSlot, -1)) continue;
 		auto *srb = WorldSRB(g_pso.world[kWpMaskedNoCull].RawPtr());
 		if (srb) g_stats.dynBindless++;
 		else { g_stats.dynPerMaterial++; srb = GetMaterialSRB(g_pso.world[kWpMaskedNoCull].RawPtr(), r.material, r.translation); }
@@ -441,7 +441,7 @@ void DrawBlended(Diligent::IDeviceContext *ctx)
 		for (unsigned i = 0; i < g_scene.dynRuns.Size(); i++)
 		{
 			const DynRun &r = g_scene.dynRuns[i];
-			if (r.count == 0 || !zx::levelmesh::ComputeDrawsDynamicPiece(r.mirrorLine, r.stackSlot, r.onMirror, g_pass.lineMirror, g_pass.stackSlot, -1)) continue;
+			if (r.count == 0 || !zx::levelmesh::ComputeDrawsDynamicPiece(r.mirrorLine, r.stackSlot, r.onMirror, g_pass.mirrorView, g_pass.stackSlot, -1)) continue;
 			// [rc4l] An opaque solid is drawn with the world, not in this list. See DrawSolidDyn.
 			if (r.solid && r.blend == 0) continue;
 			// [rc4l] blend 0 takes the TRANSLUCENT pipeline, not the masked one.

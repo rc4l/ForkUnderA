@@ -9,6 +9,7 @@
 #include "features/visibility/computation/coverage_compute.h"
 #include "features/hwrender/computation/skylook_compute.h"   // [rc4l] ComputeSkyQuadKey, which sky a sky wall shows
 #include "features/visibility/computation/mirrorview_compute.h"
+#include "features/hwrender/computation/linemirror_compute.h"   // [rc4l] ComputeMirrorLevelDrawn, how deep mirrors recurse
 #include "features/visibility/computation/walkslices_compute.h"
 #include "features/jobs/jobs.h"   // [rc4l] the pool a sliced walk runs on
 #include "features/jobs/computation/sharedarray_compute.h"   // [rc4l] the marks a walk's lanes share
@@ -65,6 +66,7 @@ CVAR(Bool, fua_vis_balance, true, 0)
 EXTERN_CVAR(Bool, r_noskyboxes)
 EXTERN_CVAR(Bool, r_mirrors)
 EXTERN_CVAR(Bool, r_mirror_envmap)
+EXTERN_CVAR(Int, r_mirror_recursions)
 
 namespace zx { namespace visibility {
 
@@ -328,7 +330,8 @@ void ApplySkyEvent(const SkyEvent &e)
 		break;
 	default:
 		AddPortalLine(PortalFor(NULL, NULL, e.mirror), e.x1, e.y1, e.x2, e.y2);
-		if (e.sheen) zx::levelmesh::AddMirrorSheen(int(e.mirror - lines), e.light, e.cm);
+		// [rc4l] GL takes a sheen's light from the player's walk alone.
+		if (e.sheen && g_spec.player) zx::levelmesh::AddMirrorSheen(int(e.mirror - lines), e.light, e.cm);
 		break;
 	}
 }
@@ -390,7 +393,8 @@ void DeriveSkyWalls(seg_t *seg, sector_t *fs, sector_t *bs, subsector_t *sub, st
 	const bool floorOut = fs->GetTexture(sector_t::floor) == skyflatnum || fs->portals[sector_t::floor] != NULL;
 	// [rc4l] An untextured one-sided wall is a hole GL's sky fills.
 	const bool hole = oneSided && special != Line_Horizon && !HasTexture(seg->sidedef, side_t::mid);
-	const bool mirror = oneSided && special == Line_Mirror && !hole && g_spec.player && r_mirrors;
+	// [rc4l] The player's walk and a mirror's, whose mirrors GL's portals recurse into.
+	const bool mirror = oneSided && special == Line_Mirror && !hole && (g_spec.player || g_spec.mirror != NULL) && r_mirrors;
 	if (!ceilingOut && !floorOut && !hole && !mirror) return;
 
 	vertex_t *v1, *v2;
@@ -618,7 +622,7 @@ bool SkyWallsPossible(seg_t *seg, sector_t *fs)
 	const int special = seg->linedef->special;
 	const bool oneSided = special == Line_Horizon || !seg->backsector || !(seg->linedef->flags & (ML_TWOSIDED | ML_3DMIDTEX));
 	if (!oneSided || special == Line_Horizon) return false;
-	return !HasTexture(seg->sidedef, side_t::mid) || (special == Line_Mirror && g_spec.player && r_mirrors);
+	return !HasTexture(seg->sidedef, side_t::mid) || (special == Line_Mirror && (g_spec.player || g_spec.mirror != NULL) && r_mirrors);
 }
 
 // [rc4l] A deriving walk saw a seg of `line` at `key`; the line keeps the earliest.
@@ -1551,13 +1555,13 @@ void WalkStack(const PortalView &p, const WalkHooks *hooks)
 }
 
 // [rc4l] GLMirrorPortal::DrawContents's walk: from the eye reflected in the line, turned to match, the frustum and the mirror's own span blocked and nothing behind the mirror walked; then its actors to `sprite` inside the reflection, and the skyboxes it looks into.
-void WalkMirror(const PortalView &p, const WalkHooks *hooks)
+void WalkMirror(const PortalView &p, const WalkHooks *hooks, long long eyeX, long long eyeY, int depth)
 {
 	line_t *line = p.mirror;
 	const fixed_t sx = viewx, sy = viewy;
 	const angle_t sa = viewangle;
 	long long mx, my;
-	ComputeMirrorEye(line->v1->x.Raw(), line->v1->y.Raw(), line->v2->x.Raw(), line->v2->y.Raw(), g_playerX, g_playerY, 1, mx, my);
+	ComputeMirrorEye(line->v1->x.Raw(), line->v1->y.Raw(), line->v2->x.Raw(), line->v2->y.Raw(), eyeX, eyeY, 1, mx, my);
 	viewx = fixed_t::FromRaw(mx);
 	viewy = fixed_t::FromRaw(my);
 	viewangle = 2 * ComputePointToAnglePrecise(double((line->v2->x - line->v1->x).Raw()), double((line->v2->y - line->v1->y).Raw())) - sa;
@@ -1566,24 +1570,29 @@ void WalkMirror(const PortalView &p, const WalkHooks *hooks)
 	if (half < 0x80000000u) ComputeSeedFrustum(g_clip, viewangle, half);
 	g_clip.SafeAddClipRange(ComputePseudoAngle(double((line->v2->x - viewx).Raw()), double((line->v2->y - viewy).Raw())),
 		ComputePseudoAngle(double((line->v1->x - viewx).Raw()), double((line->v1->y - viewy).Raw())));
-	std::vector<PortalView> skyboxes;
-	WalkSpec spec = { -1, zx::levelmesh::kSkyCaptureMirror, false, NULL, &skyboxes, NULL, NULL, line };
+	// [rc4l] The skyboxes and the mirrors this reflection looks into.
+	std::vector<PortalView> seen;
+	WalkSpec spec = { -1, zx::levelmesh::kSkyCaptureMirror, false, NULL, &seen, NULL, NULL, line };
 	Walk(spec);
-	if (hooks != NULL)
+	const long long ex = viewx.Raw(), ey = viewy.Raw();
 	{
-		// [rc4l] Billboarded to the reflected view, as GL's SetupView turns its view vector for the mirror.
-		zx::viewsetup::TurnView(viewangle);
+		const zx::levelmesh::SceneScope scene;
+		const zx::levelmesh::MirrorWalk walk(int(line - lines));
+		if (hooks != NULL)
 		{
-			const zx::levelmesh::SceneScope scene;
-			const zx::levelmesh::MirrorWalk walk(int(line - lines));
+			// [rc4l] Billboarded to the reflected view, as GL's SetupView turns its view vector for the mirror.
+			zx::viewsetup::TurnView(viewangle);
 			if (hooks->sprite != NULL) PortalSprites(hooks->sprite, line);
 			HandDecals(hooks);
+			zx::viewsetup::TurnView(sa);
 		}
-		zx::viewsetup::TurnView(sa);
+		// [rc4l] Each mirror it shows a reflection deeper, inside this one's view, to r_mirror_recursions as GL's portals recurse.
+		for (size_t i = seen.size(); i-- > 0; )
+			if (!seen[i].lines.empty() && seen[i].mirror != NULL && zx::hwrender::ComputeMirrorLevelDrawn(depth + 1, r_mirror_recursions))
+				WalkMirror(seen[i], hooks, ex, ey, depth + 1);
 	}
-	const long long ex = viewx.Raw(), ey = viewy.Raw();
-	for (size_t i = skyboxes.size(); i-- > 0; )
-		if (!skyboxes[i].lines.empty()) WalkSkybox(skyboxes[i], ex, ey);
+	for (size_t i = seen.size(); i-- > 0; )
+		if (!seen[i].lines.empty() && seen[i].mirror == NULL) WalkSkybox(seen[i], ex, ey);
 	viewx = sx;
 	viewy = sy;
 	viewangle = sa;
@@ -1773,7 +1782,7 @@ void WalkPortalViews(const WalkHooks *hooks)
 		else if (portals[i].mirror != NULL)
 		{
 			zx::levelmesh::AddWalkedMirror(int(portals[i].mirror - lines));
-			WalkMirror(portals[i], hooks);
+			WalkMirror(portals[i], hooks, g_playerX, g_playerY, 1);
 		}
 		else WalkSkybox(portals[i], g_playerX, g_playerY);
 	}

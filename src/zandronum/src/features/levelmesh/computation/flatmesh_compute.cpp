@@ -3,6 +3,8 @@
 
 #include "features/levelmesh/computation/flatmesh_compute.h"
 
+#include <algorithm>
+
 #include <math.h>
 
 namespace zx { namespace levelmesh {
@@ -343,9 +345,29 @@ bool ComputePieceProbe(float centreX, float centreY, float normX, float normUp, 
 	return true;
 }
 
-int ComputeMirrorCaptureLine(int mirrorLine, bool mainView, int sceneNesting)
+bool ComputeMirrorCaptures(int depth, bool mainView, int sceneNesting)
 {
-	return (mirrorLine >= 0 && mainView && sceneNesting == 2) ? mirrorLine : -1;
+	return depth >= 1 && mainView && sceneNesting == depth + 1;
+}
+
+int ComputeMirrorViewId(int depth, int line, int deeperIndex, int lineCount)
+{
+	return depth <= 1 ? line : lineCount + deeperIndex;
+}
+
+int ComputeFindMirrorPath(const std::vector<std::vector<int> > &paths, const int *path, int depth)
+{
+	for (size_t i = 0; i < paths.size(); i++)
+		if ((int)paths[i].size() == depth && std::equal(paths[i].begin(), paths[i].end(), path)) return (int)i;
+	return -1;
+}
+
+int ComputeAddMirrorPath(std::vector<std::vector<int> > &paths, const int *path, int depth)
+{
+	const int at = ComputeFindMirrorPath(paths, path, depth);
+	if (at >= 0) return at;
+	paths.push_back(std::vector<int>(path, path + depth));
+	return (int)paths.size() - 1;
 }
 
 bool ComputeDrawsDynamicPiece(int pieceMirrorLine, int pieceStackSlot, int pieceOnMirror, int drawingMirrorLine, int drawingStackSlot, int drawingMirrorFace)

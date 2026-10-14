@@ -33,7 +33,7 @@ EXTERN_CVAR(Bool, vid_vsync)   // [rc4l] picks the present interval, FIFO when o
 // [rc4l] 0 flat multiply (pre-lighting-port behaviour), 1 the ported equation, 2 depth as grey,
 // 3 depth contours, 4 vertex colour only. Live per frame -- no rebake needed to switch.
 CVAR(Int, fua_dg_lightmode, 1, CVAR_ARCHIVE)
-namespace zx { namespace hwrender { PassContext g_pass = { false, false, false, -1, -1, 0.f, 0.f, 0.f, { 0.f, 0.f, 0.f, 0.f }, false }; }}
+namespace zx { namespace hwrender { PassContext g_pass = { false, false, false, -1, -1, -1, 0.f, 0.f, 0.f, { 0.f, 0.f, 0.f, 0.f }, false }; }}
 using zx::hwrender::g_pass;
 // [rc4l] Mirror every engine frame into the backend window, from the live camera. Off by default:
 // it costs a second render of the scene, and while the backend is incomplete (no sky, no HUD, no

@@ -75,7 +75,6 @@ torches, `fixedcolormap` and `lightamp`), mirrors, stacked sectors, skyboxes and
 with a GL-against-Vulkan scenario in `tools/fuactl/scenarios`. Still missing or different:
 
 - a GLDEFS hardware shader's own `ProcessLight`, or one leaning on more of GL's `main.fp` than `getTexel`, `vTexCoord` and `timer`, which draws without it (see `features/hwshaders`);
-- nested line-mirror reflections past the first show only the sprites the player's walk through a mirror took, where GL walks every reflection;
 - Linux and macOS are built by CI and not yet run here: the window code (`dgsdl.cpp`, `dgcocoa.mm`) and the
   .app's MoltenVK bundle want a first launch on each before they are trusted. Beside GL there they open a
   window of their own, since neither nests one window in another.

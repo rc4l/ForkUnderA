@@ -526,11 +526,31 @@ TEST(FlatMeshCompute, AStackedViewsSkyboxStandsInOnlyForAPlayerWalkThatNamedNone
 // [rc4l] WDI01's bathroom mirror reflected the room and not the player standing in front of it, and WDI12's left out the hand dryer behind the player.
 TEST(FlatMeshCompute, WhatAMirrorsWalkDrawsBelongsToThatMirror)
 {
-	EXPECT_EQ(5776, ComputeMirrorCaptureLine(5776, true, 2));
-	EXPECT_EQ(-1, ComputeMirrorCaptureLine(-1, true, 2));     // [rc4l] a skybox or stacked view is no mirror
-	EXPECT_EQ(-1, ComputeMirrorCaptureLine(5776, true, 3));   // [rc4l] a mirror seen in a mirror
-	EXPECT_EQ(-1, ComputeMirrorCaptureLine(5776, true, 1));
-	EXPECT_EQ(-1, ComputeMirrorCaptureLine(5776, false, 2));  // [rc4l] a camera texture's mirror
+	EXPECT_TRUE(ComputeMirrorCaptures(1, true, 2));
+	EXPECT_FALSE(ComputeMirrorCaptures(0, true, 2));     // [rc4l] a skybox or stacked view is no mirror
+	EXPECT_FALSE(ComputeMirrorCaptures(1, true, 3));     // [rc4l] a mirror inside a stacked view or skybox
+	EXPECT_FALSE(ComputeMirrorCaptures(1, true, 1));
+	EXPECT_FALSE(ComputeMirrorCaptures(1, false, 2));    // [rc4l] a camera texture's mirror
+	EXPECT_EQ(5776, ComputeMirrorViewId(1, 5776, -1, 9000));
+}
+
+// [rc4l] A mirror seen in a mirror is a view of its own, as GL walks every reflection: named past the level's lines by its path from the player.
+TEST(FlatMeshCompute, AReflectionInAReflectionIsAViewOfItsOwn)
+{
+	EXPECT_TRUE(ComputeMirrorCaptures(2, true, 3));
+	EXPECT_TRUE(ComputeMirrorCaptures(4, true, 5));
+	EXPECT_FALSE(ComputeMirrorCaptures(2, true, 4));
+	EXPECT_EQ(9000, ComputeMirrorViewId(2, 5776, 0, 9000));
+	EXPECT_EQ(9003, ComputeMirrorViewId(3, 5776, 3, 9000));
+	std::vector<std::vector<int> > paths;
+	const int ab[2] = { 10, 20 }, ba[2] = { 20, 10 }, aba[3] = { 10, 20, 10 };
+	EXPECT_EQ(-1, ComputeFindMirrorPath(paths, ab, 2));
+	EXPECT_EQ(0, ComputeAddMirrorPath(paths, ab, 2));
+	EXPECT_EQ(1, ComputeAddMirrorPath(paths, ba, 2));
+	EXPECT_EQ(0, ComputeAddMirrorPath(paths, ab, 2));
+	EXPECT_EQ(2, ComputeAddMirrorPath(paths, aba, 3));
+	EXPECT_EQ(0, ComputeFindMirrorPath(paths, aba, 2));   // [rc4l] its first two lines are ab
+	EXPECT_EQ(1, ComputeFindMirrorPath(paths, ba, 2));
 }
 
 // [rc4l] WDI01: the stacked view drew rooftops GL's walk through the stack never reached, as roof slabs over the courtyard's walls.

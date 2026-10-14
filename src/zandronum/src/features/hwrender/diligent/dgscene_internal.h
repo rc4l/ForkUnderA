@@ -129,6 +129,7 @@ struct PassContext
 	bool  inSkyPortal;       // [rc4l] the skybox portal rendering its own view, whose sky is part of the skybox image and is drawn
 	bool  inCameraPass;      // [rc4l] a camera texture, whose sky quads are its own walk's
 	int   lineMirror;        // [rc4l] the line mirror whose reflection is being drawn, the one pass that shows its viewer, or -1
+	int   mirrorView;        // [rc4l] the mirror view (MirrorViewOf) whose walk's sprites, models and decals this pass draws, or -1
 	int   stackSlot;         // [rc4l] the stacked view being rendered, or -1
 	float skyCamX, skyCamY, skyCamZ;   // [rc4l] where the skybox camera stood, for the reach test in the world draw
 	float clipPlane[4];      // [rc4l] a mirror's clip plane in mesh space (nx, ny, nz, d), all zero for none

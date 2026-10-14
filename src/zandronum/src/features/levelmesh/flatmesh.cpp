@@ -775,12 +775,28 @@ SkyboxWalk::~SkyboxWalk() { s_skyboxWalk = saved; }
 bool SkyboxWalked() { return g_skyboxWalked; }
 
 static int s_mirrorLine = -1;
+// [rc4l] The line mirrors the walk in progress looks through, outermost first, and the id of the view they make.
+static TArray<int> s_mirrorPath;
+static int s_mirrorView = -1;
+// [rc4l] This frame's mirror views past the first reflection, by their paths.
+static std::vector<std::vector<int> > g_mirrorPaths;
 // [rc4l] The line mirrors GL's walk went through since the player's walk began this frame.
 static TArray<int> g_walkedMirrors;
-MirrorWalk::MirrorWalk(int line) : saved(s_mirrorLine)
+MirrorWalk::MirrorWalk(int line) : saved(s_mirrorLine), savedView(s_mirrorView)
 {
 	s_mirrorLine = line;
+	s_mirrorPath.Push(line);
+	// [rc4l] Named once here, on the walk's own thread, so the lanes deriving its sprites only read it.
+	const int depth = (int)s_mirrorPath.Size();
+	s_mirrorView = ComputeMirrorViewId(depth, line, depth > 1 ? ComputeAddMirrorPath(g_mirrorPaths, &s_mirrorPath[0], depth) : -1, numlines);
 	AddWalkedMirror(line);
+}
+
+int MirrorViewOf(const int *path, int depth)
+{
+	if (depth == 1) return path[0];
+	const int at = ComputeFindMirrorPath(g_mirrorPaths, path, depth);
+	return at < 0 ? -2 : ComputeMirrorViewId(depth, path[0], at, numlines);
 }
 void AddWalkedMirror(int line)
 {
@@ -791,7 +807,12 @@ bool MirrorWalkedThisFrame(int line)
 	for (unsigned i = 0; i < g_walkedMirrors.Size(); i++) if (g_walkedMirrors[i] == line) return true;
 	return false;
 }
-MirrorWalk::~MirrorWalk() { s_mirrorLine = saved; }
+MirrorWalk::~MirrorWalk()
+{
+	s_mirrorLine = saved;
+	s_mirrorView = savedView;
+	s_mirrorPath.Resize(s_mirrorPath.Size() - 1);
+}
 
 // [rc4l] The light GLWall::RenderMirrorSurface draws each line mirror's sheen in, from the player's walk this frame.
 static TArray<MirrorSheenShade> g_mirrorSheens;
@@ -923,6 +944,7 @@ static void ForgetFrameWalks()
 	g_mirrorSheens.Clear();
 	for (int i = 0; i < g_stackCapacity; i++) { g_stackVerts[i].Clear(); g_skyVerts[kSkyCaptureStack + i].Clear(); }
 	g_skyVerts[kSkyCaptureMirror].Clear();
+	g_mirrorPaths.clear();
 	g_stackVis.Resize((unsigned)ComputeStackVisWords(numsubsectors + numsides, g_walkSlots));
 	if (g_stackVis.Size() > 0) memset(&g_stackVis[0], 0, g_stackVis.Size() * sizeof(unsigned int));
 }
@@ -1009,6 +1031,7 @@ void BeginPortalViews()
 	}
 	BeginSlotVisibility(kSkyboxWalkSlot);
 	g_skyVerts[kSkyCaptureMirror].Clear();
+	g_mirrorPaths.clear();
 	g_skyboxWalked = false;
 	g_walkedMirrors.Clear();
 	g_mirrorSheens.Clear();
@@ -1205,7 +1228,7 @@ bool PlayerWalkActive()
 	return ComputeOwnsFrameCapture(s_mainView, s_sceneNesting);
 }
 
-int MirrorCaptureLine() { return ComputeMirrorCaptureLine(s_mirrorLine, s_mainView, s_sceneNesting); }
+int MirrorCaptureLine() { return ComputeMirrorCaptures((int)s_mirrorPath.Size(), s_mainView, s_sceneNesting) ? s_mirrorView : -1; }
 
 bool DynamicCaptureActive() { return PlayerWalkActive() || StackCaptureSlot() >= 0 || MirrorCaptureLine() >= 0; }
 
