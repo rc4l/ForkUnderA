@@ -10,7 +10,7 @@ what is not, and what was tried and failed -- so the next attempt starts from th
 one per observed failure -- seventeen in a ninety-minute window, each naming the dying process:
 
 ```
-NVIDIA OpenGL Driver: A TDR has been detected. The application must close.
+<vendor> OpenGL Driver: A TDR has been detected. The application must close.
 Error code: 7  (pid=77748 tid=25996 forkundera.exe 64bit)
 ```
 
@@ -27,7 +27,7 @@ and this one is killed.
 | `fua_vulkan=1`, with the ReviveSlot/free-list/thread fixes | failed 1 in 4 -- **unchanged** |
 | **`fua_vulkan=0`** (pure GL, no Diligent) | **survived 4/4 sequences** |
 
-A sequence is 24 consecutive map changes across the Whodunit set. The NVIDIA *OpenGL* component
+A sequence is 24 consecutive map changes across the Whodunit set. The driver's *OpenGL* component
 reports the TDR because the process holds a GL context, but the GPU reset is process-wide and the
 work that provokes it is the backend's.
 
@@ -114,7 +114,7 @@ Each of these was tested against the real failure, not reasoned about. None of t
 |---|---|---|
 | GL texture precaching | `cl_fua_caching=0` | still failed at load 22 |
 | `GenerateMips` (a render pass per level, ~12,600 per submit) | `fua_dg_mips=0`, no chain at all | still failed at load 22, 2 TDRs |
-| VRAM exhaustion | `nvidia-smi` after each of 23 loads | engine adds ~520 MiB once, then ~7 MiB/load; peaks at 11.8 of 16.3 GB with 4.5 GB free |
+| VRAM exhaustion | the driver's memory query after each of 23 loads | engine adds ~520 MiB once, then ~7 MiB/load; peaks with over a quarter of VRAM still free |
 | Unbounded light loop in the scene shader | clamped `count` and `li` | still failed at load 22, 3 TDRs |
 | Process memory | working set per load | ~30 MB/load, tops out ~1.6 GB, same with the backend off |
 | Thread leak | thread count per load | flat at ~124 |

@@ -91,7 +91,7 @@ test("checkExpectations enforces an upper bound and flags what it never saw", ()
   assert.deepEqual(checkExpectations({}, { anything: 1 }), []);
 });
 
-// [rc4l] Both Diligent modes read 2.081 ms on Sunder for an evening, which was the 480 Hz swapchain and not the frame.
+// [rc4l] A median sitting on a refresh interval is the swapchain's pace and not the frame's, which once read as two modes costing the same.
 test("a median on a display refresh names that rate, and one between rates names none", () => {
   assert.equal(refreshBoundHz(2.081), 480);
   assert.equal(refreshBoundHz(16.69), 60);

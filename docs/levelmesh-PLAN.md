@@ -20,7 +20,7 @@ lighting are all GL. The performance is architectural, not API. So this plan is 
 
 ## Baseline — measured, not assumed
 
-**Sunder MAP10 "The Hag's Finger", RTX 5080 (GL 4.5), 640x400, standing at the spawn.**
+**Sunder MAP10 "The Hag's Finger", GL 4.5, 640x400, standing at the spawn.**
 Captured with `fuactl capture` + `fuactl gl-timers`, 2026-08-15.
 
 | metric | value |
@@ -479,7 +479,7 @@ no backend API touches and only GPU culling removes.
 
 `features/hwrender/diligent/` — DiligentCore vendored at `deps/DiligentCore` (Apache-2.0, `bb821b7`),
 Vulkan only, behind `-DFUA_DILIGENT=ON` (default off). `fua_diligent_probe` creates a **Vulkan 1.4
-device on the RTX 5080 inside the running engine**, and the GL renderer keeps rendering afterwards.
+device on the GPU inside the running engine**, and the GL renderer keeps rendering afterwards.
 
 Three integration problems found and fixed: C++17 needed for Diligent's aligned-new (confined to the
 one TU), static-vs-dynamic CRT mismatch (`LNK2038`), and `CMAKE_MSVC_RUNTIME_LIBRARY` not applying
@@ -626,7 +626,7 @@ sub-ranges within the original rover's reserved budget, never new surfaces.
 
 ---
 
-## Measured: what the GPU actually costs (Diligent/Vulkan backend, RTX 5080, 624x361)
+## Measured: what the GPU actually costs (Diligent/Vulkan backend, 624x361)
 
 This is the section that changes the plan, so it leads with the numbers.
 

@@ -1,6 +1,6 @@
 # Why an old game is costing milliseconds, and what to do about it
 
-Measured at 1920x1200 on the Vulkan backend, with `fua_render_in_background 1` so the window can be
+Measured full screen on the Vulkan backend, with `fua_render_in_background 1` so the window can be
 out of focus without the numbers being a lie.
 
 **A correction, first, because it invalidates a set of numbers.** The first pass at this was measured
@@ -87,7 +87,7 @@ currently carries all of it except the sectors it hands back.
 
 ## Done, and what it came to
 
-Sunder MAP10, 1920x1200, alternating runs twice each. **Two vantages, because one is not a map:**
+Sunder MAP10, full screen, alternating runs twice each. **Two vantages, because one is not a map:**
 
 | | p50 | fps | p99 |
 |---|---|---|---|

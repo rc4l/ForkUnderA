@@ -106,7 +106,7 @@ Without clang/llvm-cov the `--auto` gate's authority is CI, but the same gate ru
 OpenCppCoverage over a Debug build of the tests (Release has no symbols):
 
 ```bash
-export FUACTL_OPENCPPCOVERAGE=F:/ShitDronum/zandronum-vscode-windows/deps/opencppcoverage/OpenCppCoverage.exe
+export FUACTL_OPENCPPCOVERAGE=<OpenCppCoverage install folder>/OpenCppCoverage.exe
 node tools/fuactl/src/cli.mjs coverage --since REF    # every unit whose source, header or test changed since REF, new files included
 node tools/fuactl/src/cli.mjs coverage                # every unit a *_test.cpp gates
 ```

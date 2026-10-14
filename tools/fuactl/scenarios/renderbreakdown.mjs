@@ -10,13 +10,14 @@
 //
 // usage:  node scenarios/renderbreakdown.mjs [map] [frames]
 import fs from 'node:fs';
-import { BridgeClient } from 'file:///F:/ForkUnderA/tools/fuactl/src/client.mjs';
-import * as cap from 'file:///F:/ForkUnderA/tools/fuactl/src/capture.mjs';
+import { BridgeClient } from '../src/client.mjs';
+import * as cap from '../src/capture.mjs';
+import { PLAY_SESSION } from '../src/scriptpaths.mjs';
 
 const MAP = process.argv[2] || 'map10';
 const FRAMES = Number(process.argv[3]) || 200;
 
-const sess = fs.readFileSync('F:/ForkUnderA/tools/fuactl/.play-session', 'utf8');
+const sess = fs.readFileSync(PLAY_SESSION, 'utf8');
 const c = new BridgeClient();
 await c.connect(Number(/PORT=(\d+)/.exec(sess)[1]), { token: /TOKEN=(\w+)/.exec(sess)[1] });
 await c.waitHello();

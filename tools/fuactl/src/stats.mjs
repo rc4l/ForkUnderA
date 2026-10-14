@@ -80,7 +80,7 @@ export function pluck(report, path) {
 // [rc4l] Display refresh rates a median frame can sit on when presentation, not the frame's cost, sets the pace.
 export const DISPLAY_RATES = [60, 75, 90, 100, 120, 144, 165, 170, 180, 200, 240, 280, 300, 360, 480, 500, 540];
 
-// [rc4l] The refresh rate a median frame time is within tolerance of, or null: 2.081 ms is 480 Hz, the swapchain's pace rather than the frame's.
+// [rc4l] The refresh rate a median frame time is within tolerance of, or null: 4.167 ms is 240 Hz, the swapchain's pace rather than the frame's.
 export function refreshBoundHz(p50Ms, { rates = DISPLAY_RATES, tolerance = 0.004 } = {}) {
   if (!(p50Ms > 0)) return null;
   return rates.find((hz) => Math.abs((p50Ms * hz) / 1000 - 1) <= tolerance) ?? null;

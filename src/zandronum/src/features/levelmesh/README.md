@@ -6,7 +6,7 @@ README covers what is actually in the tree and which engine hooks it touches.
 
 ## Why
 
-Measured on Sunder MAP10 (RTX 5080, 640x400, spawn): the frame is 5.83 ms p50, of which **0.28 ms is
+Measured on Sunder MAP10 (640x400, spawn): the frame is 5.83 ms p50, of which **0.28 ms is
 sim and 5.74 ms is render — but only 1.74 ms of that is GPU.** The remaining ~4 ms is CPU, spent
 building **8251 `GLWall` objects per frame** for a scene totalling 16,888 vertices. The engine is
 CPU-bound in the renderer by roughly 2.3x while the GPU idles.

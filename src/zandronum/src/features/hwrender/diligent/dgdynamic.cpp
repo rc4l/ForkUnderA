@@ -620,7 +620,7 @@ void DrawBlended(Diligent::IDeviceContext *ctx)
 	// want the one already there. Committing per draw costs a descriptor bind per sprite.
 	//
 	// This was tried once and reverted for measuring nothing, on a scene that turned out to be fill
-	// bound: 786 stacked lamps at 1920x1200, where the fragments swamped everything. On Sunder MAP10
+	// bound: 786 stacked lamps at full screen, where the fragments swamped everything. On Sunder MAP10
 	// with GL cut out the balance is the other way -- a ninth of the pixels still leaves 2.9 ms -- and
 	// the same change is worth having. The lesson kept is that this must be measured on a CPU-bound
 	// frame, because on a fill-bound one it is invisible.

@@ -13,13 +13,12 @@
 // usage:  node scenarios/meshincremental.mjs [map] [stops]
 import fs from 'node:fs';
 import { spawnSync } from 'node:child_process';
-import { BridgeClient } from 'file:///F:/ForkUnderA/tools/fuactl/src/client.mjs';
-import * as cap from 'file:///F:/ForkUnderA/tools/fuactl/src/capture.mjs';
+import { BridgeClient } from '../src/client.mjs';
+import * as cap from '../src/capture.mjs';
+import { STAGED_SWEEP as S, CLI, PLAY_SESSION } from '../src/scriptpaths.mjs';
 
 const MAP = process.argv[2] || 'map16';
 const STOPS = Number(process.argv[3]) || 6;
-const S = 'F:/ForkUnderA/dist-windows/sweep';
-const CLI = 'F:/ForkUnderA/tools/fuactl/src/cli.mjs';
 const run = (...a) => (spawnSync(process.execPath, [CLI, 'png', ...a], { encoding: 'utf8' }).stdout || '').trim();
 // [rc4l] The WORLD, not the console text over it.
 //
@@ -34,7 +33,7 @@ function diffPct(a, b) {
   return Number(/differ\s+([\d.]+)%/.exec(run('--diff', `${S}/inc_cmp_a.png`, `${S}/inc_cmp_b.png`))?.[1] ?? NaN);
 }
 
-const sess = fs.readFileSync('F:/ForkUnderA/tools/fuactl/.play-session', 'utf8');
+const sess = fs.readFileSync(PLAY_SESSION, 'utf8');
 const c = new BridgeClient();
 await c.connect(Number(/PORT=(\d+)/.exec(sess)[1]), { token: /TOKEN=(\w+)/.exec(sess)[1] });
 await c.waitHello();

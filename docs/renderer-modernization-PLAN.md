@@ -34,7 +34,7 @@ Everything else — how a frame is built, in what order, on which processor — 
 
 ## Why now, and in this order
 
-The measured baseline (Sunder MAP10, RTX 5080, 640x400): **4.0 ms CPU render, 1.74 ms GPU, 8251
+The measured baseline (Sunder MAP10, 640x400): **4.0 ms CPU render, 1.74 ms GPU, 8251
 walls/frame.** The GPU idles ~70% of the render window. We are CPU-bound in the renderer by ~2.3x,
 and every optimization we have added — the wall cache, batching, the mesh — is a bet against the one
 assumption the entire renderer rests on: *everything is rebuilt every frame, so nothing can go

@@ -11,8 +11,9 @@
 //
 // usage:  node scenarios/surfaceladder.mjs [--vshift] [map ...]
 import fs from 'node:fs';
-import { BridgeClient } from 'file:///F:/ForkUnderA/tools/fuactl/src/client.mjs';
-import * as cap from 'file:///F:/ForkUnderA/tools/fuactl/src/capture.mjs';
+import { BridgeClient } from '../src/client.mjs';
+import * as cap from '../src/capture.mjs';
+import { PLAY_SESSION } from '../src/scriptpaths.mjs';
 
 const args = process.argv.slice(2);
 const vshift = args.includes('--vshift');
@@ -20,7 +21,7 @@ const MAPS = args.filter(a => !a.startsWith('--'));
 const maps = MAPS.length ? MAPS : ['dbab01', 'dbab02', 'dbab04'];
 
 // The play session writes a KEY=VALUE file, not JSON -- so it is read as one.
-const sess = Object.fromEntries(fs.readFileSync('F:/ForkUnderA/tools/fuactl/.play-session', 'utf8')
+const sess = Object.fromEntries(fs.readFileSync(PLAY_SESSION, 'utf8')
   .split(/\r?\n/).filter(Boolean).map(l => l.split('=')).map(([k, ...v]) => [k.trim(), v.join('=').trim()]));
 const PORT = Number(process.env.PORT || sess.PORT || 7799);
 

@@ -122,7 +122,7 @@ the adapter. Measured on the dev machine:
 
 ```
 Diligent Vulkan device created
-  adapter: NVIDIA GeForce RTX 5080 (discrete)
+  adapter: <GPU name> (discrete)
   API version: 1.4
 ```
 
@@ -161,7 +161,7 @@ swapping anything.
 
 | milestone | state |
 |---|---|
-| 1 device creation | done — Vulkan 1.4 on RTX 5080, in-process, beside live GL |
+| 1 device creation | done — Vulkan 1.4, in-process, beside live GL |
 | 2 swapchain + present | done — 300 frames |
 | 3 pipeline + shaders | done — GLSL to SPIR-V via `GLSL_VERBATIM` |
 | 4 backend seam | skipped for now; went straight to geometry |

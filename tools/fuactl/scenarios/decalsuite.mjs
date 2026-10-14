@@ -10,14 +10,12 @@
 // before anyone plays it, rather than by whichever one happened to be on screen.
 import fs from 'node:fs';
 import { spawnSync } from 'node:child_process';
-import { BridgeClient } from 'file:///F:/ForkUnderA/tools/fuactl/src/client.mjs';
-import * as cap from 'file:///F:/ForkUnderA/tools/fuactl/src/capture.mjs';
-import * as shot from 'file:///F:/ForkUnderA/tools/fuactl/src/shot.mjs';
+import { BridgeClient } from '../src/client.mjs';
+import * as cap from '../src/capture.mjs';
+import * as shot from '../src/shot.mjs';
+import { scratchDir, STAGED_SWEEP as S, CLI, STAGED_ENGINE as EXE } from '../src/scriptpaths.mjs';
 
-const SP = 'C:/Users/username/AppData/Local/Temp/claude/F--ForkUnderA/acfbfdcd-395b-43bb-abbd-180365e9c4c7/scratchpad';
-const S = 'F:/ForkUnderA/dist-windows/sweep';
-const CLI = 'F:/ForkUnderA/tools/fuactl/src/cli.mjs';
-const EXE = 'F:/ForkUnderA/dist-windows/forkundera.exe';
+const SP = scratchDir();
 
 const sub = (a, b, o) => Number((spawnSync(process.execPath, [CLI, 'png', '--sub', a, b, o, '1'],
   { encoding: 'utf8' }).stdout || '').match(/mean ([\d.]+)/)?.[1] ?? NaN);

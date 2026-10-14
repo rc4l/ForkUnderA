@@ -237,12 +237,12 @@ async function main() {
         // [rc4l] --res WxH, because a stutter report is resolution-shaped.
         //
         // launch was pinned to 1024x640 with no way to say otherwise, so a frame-time tail reported
-        // on a 1920x1200 window could only be reproduced at a third of the pixels -- where it is
+        // on a full-screen window could only be reproduced at a third of the pixels -- where it is
         // milder, and where anything fill-bound hides entirely. `play` had --res; the measuring
         // command, which is the one that needs it, did not.
         ...(flags.res ? (() => {
           const m = String(flags.res).match(/^(\d+)x(\d+)$/i);
-          if (!m) throw new Error(`--res wants WxH, e.g. 1920x1200 (got ${flags.res})`);
+          if (!m) throw new Error(`--res wants WxH, e.g. 1280x800 (got ${flags.res})`);
           return { width: Number(m[1]), height: Number(m[2]) };
         })() : {}),
         // [rc4l] PWADs, comma-separated. Without this the only launchable thing was a bare IWAD, so
