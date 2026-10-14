@@ -14,6 +14,12 @@ The backend checks each shader compiles on its own before adding it, so one that
 GL's `main.fp` has and the backend does not draws plainly rather than breaking the world pipelines.
 A shader's own `ProcessLight` is not called: the backend lights every surface with its own model.
 
+## A snapshot, not an interface that grows
+
+What a shader may use is frozen at what GL's `main.fp` gave it: `ProcessTexel` (or the older
+`Process`), `getTexel`, `vTexCoord` and `timer`. Nothing is added to that set; mods written against it
+keep working on both renderers, and the whole mechanism is to be deprecated later rather than extended.
+
 ## In-engine hooks
 
 - `gl/shaders/gl_shader.cpp`: `gl_ParseHardwareShader` calls `ParseHardwareShader`, and
