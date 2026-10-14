@@ -1,7 +1,68 @@
 {
   "version": 3,
-  "cmakeMinimumRequired": { "major": 3, "minor": 21, "patch": 0 },
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 21,
+    "patch": 0
+  },
   "configurePresets": [
+    {
+      "name": "linux",
+      "hidden": true,
+      "displayName": "Linux base",
+      "description": "linux_compile.sh's switches, which every Linux profile shares: OpenAL rather than FMOD, no GTK dialogs, the bundled JPEG.",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/../../build-linux",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_POLICY_VERSION_MINIMUM": "3.5",
+        "NO_FMOD": "ON",
+        "NO_GTK": "ON",
+        "FORCE_INTERNAL_JPEG": "ON",
+        "FUA_MCP_BRIDGE": "OFF"
+      }
+    },
+    {
+      "name": "linux-desktop",
+      "inherits": "linux",
+      "displayName": "Linux: the desktop client",
+      "description": "The client players download: GL beside the Vulkan backend, online play, accounts and voice chat."
+    },
+    {
+      "name": "linux-server",
+      "inherits": "linux",
+      "displayName": "Linux: the dedicated server",
+      "description": "A headless server: no sound, GL or GTK (SERVERONLY sets them).",
+      "cacheVariables": {
+        "SERVERONLY": "ON"
+      }
+    },
+    {
+      "name": "linux-offline",
+      "inherits": "linux",
+      "displayName": "Linux: offline",
+      "description": "The client without the parts that need a service: no accounts (OpenSSL), voice chat or crash reporting.",
+      "cacheVariables": {
+        "ZX_ACCOUNTS": "OFF",
+        "ZX_VOIP": "OFF",
+        "ZX_ENABLE_SENTRY": "OFF"
+      }
+    },
+    {
+      "name": "linux-nogl-vulkan",
+      "inherits": "linux",
+      "displayName": "Linux: Vulkan only",
+      "description": "The client with no desktop GL at all, drawing only through the Vulkan backend.",
+      "cacheVariables": {
+        "NO_GL": "ON",
+        "FUA_DILIGENT": "ON"
+      }
+    },
     {
       "name": "web",
       "displayName": "Browser: Emscripten, the backend on WebGPU, offline",
