@@ -35,16 +35,19 @@ namespace zx { namespace viewsetup {
 static_assert(area_normal == kAreaNormal && area_below == kAreaBelow && area_above == kAreaAbove && area_default == kAreaDefault,
 	"area_t must match viewsetup_compute.h");
 
-static ViewSetup g_view = { NULL, NULL, 0.f, 0.f, 90.f, 0xffffffffu, 270.f, 1.f, 0.f, 0.f, 0.f, false };
+static ViewSetup g_view = { NULL, NULL, 0.f, 0.f, 90.f, 1.333333f, 1.333333f, 0xffffffffu, 270.f, 1.f, 0.f, 0.f, 0.f, false };
 
 // [rc4l] The sprite order index InstallSpriteView hands out, from zero each view as GL's CreateScene starts gl_spriteindex.
 static int g_spriteIndex = 0;
 
-void SetupView(AActor *camera, float fov, long frameMS)
+void SetupView(AActor *camera, const FViewLens &lens, long frameMS)
 {
+	const float fov = lens.fov;
 	g_spriteIndex = 0;
 	g_view.camera = camera;
 	g_view.fov = fov;
+	g_view.ratio = lens.ratio;
+	g_view.fovRatio = lens.fovRatio;
 	ComputeViewAngleVector(viewangle, g_view.yaw, g_view.vectorX, g_view.vectorY);
 	g_view.sky1Pos = ComputeSkyScroll(frameMS, level.skyspeed1);
 	g_view.sky2Pos = ComputeSkyScroll(frameMS, level.skyspeed2);

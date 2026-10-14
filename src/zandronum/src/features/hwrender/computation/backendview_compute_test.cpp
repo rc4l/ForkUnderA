@@ -4,6 +4,7 @@
 #include <gtest/gtest.h>
 #include <math.h>
 #include "features/hwrender/computation/backendview_compute.h"
+#include "features/viewsetup/computation/viewsetup_compute.h"   // [MobiusU9B] the walks' frustum the lens has to fit
 
 using namespace zx::hwrender;
 
@@ -204,4 +205,63 @@ TEST(ComputeEyeToMesh, TheEyesOriginIsTheCameraAndTheViewThenUndoesIt)
 	c.yaw = 0.f; c.pitch = 0.f;
 	const float none[16] = { 0 };
 	EXPECT_TRUE(ComputeEyeToMesh(c, none, m));
+}
+
+namespace {
+
+// [MobiusU9B] Each forced aspect ratio Display Options offers (4:3, 5:4, 16:10, 17:10, 16:9) and a 21:9 screen, with the AspectMultiplier v_video.cpp gives it.
+struct LensRatio { float ratio; int multiplier; };
+const LensRatio kRatios[] = { { 4.f / 3.f, 48 }, { 1.25f, 45 }, { 1.6f, 40 }, { 1.7f, 38 }, { 16.f / 9.f, 36 }, { 7.f / 3.f, 27 } };
+
+// [MobiusU9B] A level eye at the origin facing east, through the view's lens as BeginPlayerFrame sets it.
+BackendCamera LevelCamera(float fov, float ratio)
+{
+	BackendCamera c;
+	c.x = 0.f; c.y = 0.f; c.z = 0.f;
+	c.yaw = 0.f; c.pitch = 0.f;
+	c.pixelStretch = 1.2f;
+	ComputeCameraLens(0.f, 0.f, fov, ratio, zx::viewsetup::ComputeFovRatio(ratio, ratio < 1.333f), c);
+	return c;
+}
+
+// [MobiusU9B] Across the screen, as normalised device x, where a wall at the player's walk's frustum edge lands, the edge held short of square on so it stays ahead.
+float WalkEdgeX(const BackendCamera &c, float fov, int multiplier)
+{
+	const double walk = zx::viewsetup::ComputeFrustumAngle(0.f, fov, multiplier) / 2147483648.0 * 180.0;
+	const float edge = (float)(walk < 89.0 ? walk : 89.0) * kDeg;
+	float ndc[3];
+	Project(c, 1000.f * cosf(edge), 1000.f * sinf(edge), 0.f, ndc);
+	return fabsf(ndc[0]);
+}
+
+} // namespace
+
+TEST(ComputeCameraLens, TheViewsLensWithoutAnOverride)
+{
+	BackendCamera c;
+	ComputeCameraLens(0.f, 0.f, 90.f, 4.f / 3.f, 1.333333f, c);
+	EXPECT_NEAR(2.f * atanf(0.75f), c.fovY, 1e-5f);   // [MobiusU9B] GL's, as the Corner camera has it
+	EXPECT_FLOAT_EQ(4.f / 3.f, c.aspect);              // [MobiusU9B] the lens's, whatever the window's shape
+}
+
+TEST(ComputeCameraLens, ACameraTexturesOverridesWin)
+{
+	BackendCamera c;
+	ComputeCameraLens(1.1f, 2.f, 90.f, 4.f / 3.f, 1.333333f, c);
+	EXPECT_FLOAT_EQ(1.1f, c.fovY);
+	EXPECT_FLOAT_EQ(2.f, c.aspect);
+}
+
+// [MobiusU9B] Whatever the ratio and field of view, a wall at the walk's frustum edge lands on or past the screen's edge, so the walk never culls what the lens shows.
+TEST(ComputeCameraLens, TheWalksFrustumCoversThePicture)
+{
+	for (const LensRatio &r : kRatios)
+		for (float fov : { 75.f, 90.f, 110.f, 120.f })
+			EXPECT_GE(WalkEdgeX(LevelCamera(fov, r.ratio), fov, r.multiplier), 1.f) << r.ratio << " at " << fov;
+}
+
+// [MobiusU9B] The bug this lens fixed: a forced 4:3 walk (47 degrees) under a projection shaped like the 16:9 window stopped short of the screen's edges, and Vulkan drew sky there.
+TEST(ComputeCameraLens, AWindowShapedProjectionOutranAForcedWalk)
+{
+	EXPECT_LT(WalkEdgeX(LevelCamera(90.f, 16.f / 9.f), 90.f, 48), 0.85f);
 }
