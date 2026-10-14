@@ -83,18 +83,29 @@ struct FBackendRenderer : public zx::frame::FLevelRenderer
 	}
 
 	// [rc4l] The player's view drawn at the picture's size with the screen's tint over it, as GL's WriteSavePic draws it; the placeholder when there is no scene, and for now on a device that reads it back only later.
-	void WriteSavePic(player_t *, FILE *file, int width, int height)
+	void WriteSavePic(player_t *player, FILE *file, int width, int height)
 	{
+		if (player == NULL || player->camera == NULL)
+		{
+			M_CreateDummyPNG(file);
+			return;
+		}
+		// [rc4l] The view set up from the player's camera first, as GL's RenderViewpoint does, since a save can come before any frame has set it, as quitting straight after a level loads does.
 		const float fov = FieldOfView * 360.0f / FINEANGLES;
-		std::vector<zx::draw2d::ScreenFill> fills(2);
-		fills.resize(zx::draw2d::ScreenBlends(viewsector, in_area, gl_fixedcolormap != 0, zx::hwrender::BackendPaletteBrightness(), fills.data()));
+		const bool savedMain = zx::frame::BeginViewpoint(player->camera, fov, 1.6f, false, false);
+		WriteSavePicFromView(file, width, height, fov);
+		zx::frame::EndViewpoint(savedMain);
+	}
+
+	static void WriteSavePicFromView(FILE *file, int width, int height, float fov)
+	{
 		const unsigned serial = g_laterPicture.serial + 1;
 		if (zx::hwrender::RenderSavePictureLater(width, height, fov, [serial](const unsigned char *rgb, int w, int h) { FinishLaterPicture(serial, rgb, w, h); }))
 		{
 			g_laterPicture.serial = serial;
 			g_laterPicture.pending = true;
 			g_laterPicture.path.clear();
-			g_laterPicture.fills = fills;
+			g_laterPicture.fills = ScreenFills();
 			M_CreateDummyPNG(file);
 			return;
 		}
@@ -104,9 +115,17 @@ struct FBackendRenderer : public zx::frame::FLevelRenderer
 			M_CreateDummyPNG(file);
 			return;
 		}
-		TintPicture(fills, rgb, width * height);
+		TintPicture(ScreenFills(), rgb, width * height);
 		M_CreatePNG(file, rgb, NULL, SS_RGB, width, height, width * 3);
 		delete[] rgb;
+	}
+
+	// [rc4l] The screen's tint where the view stands, which only a view set up for the picture can say.
+	static std::vector<zx::draw2d::ScreenFill> ScreenFills()
+	{
+		std::vector<zx::draw2d::ScreenFill> fills(2);
+		fills.resize(zx::draw2d::ScreenBlends(viewsector, in_area, gl_fixedcolormap != 0, zx::hwrender::BackendPaletteBrightness(), fills.data()));
+		return fills;
 	}
 
 	// [rc4l] The save a picture still being read back belongs in.

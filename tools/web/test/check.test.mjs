@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CHECKS, blankGame, inPage, judge, savePicture, soundStarts } from '../check.mjs';
+import { CHECKS, blankGame, inPage, judge, saveLoads, savePicture, soundStarts } from '../check.mjs';
 
 test('page code waits for the engine to start before it runs', () => {
   const js = inPage('return 1;');
@@ -75,8 +75,15 @@ test('a save needs its own picture, not the placeholder', () => {
   assert.equal(savePicture({ found: true, width: 1, height: 1 }), 'the save kept its placeholder picture (1x1)');
 });
 
+test('a save comes back when the file is there and the engine takes it', () => {
+  assert.equal(saveLoads({ found: true, said: 'map01 - entryway\n' }), '');
+  assert.equal(saveLoads({ found: false }), 'the save was gone after the reload');
+  assert.equal(saveLoads({ found: true, said: 'Could not read savegame x\n' }), 'loading it said: Could not read savegame x');
+});
+
 test('the checks run in the order a profile carries state through', () => {
   const names = CHECKS.map((c) => c.name);
   assert.ok(names.indexOf('quitting stops the loop and offers to play again') < names.indexOf('a reload keeps what was set before quitting'));
   assert.ok(names.indexOf('leaving the page stores the config') < names.indexOf('a reload keeps what was set before leaving'));
+  assert.ok(names.indexOf('a save gets its picture') < names.indexOf('a save survives a reload and loads'));
 });

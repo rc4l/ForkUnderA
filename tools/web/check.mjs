@@ -48,6 +48,13 @@ export function savePicture({ found, width, height, range }) {
   return '';
 }
 
+// [rc4l] Why a save did not come back, or '': the file gone after the reload, or the engine refusing it.
+export function saveLoads({ found, said }) {
+  if (!found) return 'the save was gone after the reload';
+  const refusal = /(could not|couldn't|not a valid|different version|cannot).*/i.exec(said);
+  return refusal ? `loading it said: ${refusal[0].trim()}` : '';
+}
+
 export const CHECKS = [
   { name: 'boots and draws MAP01', evaluate: inPage(`${pause(3000)} return 'drawn';`), until: EVAL, shot: true, expectShot: blankGame },
   {
@@ -96,9 +103,24 @@ export const CHECKS = [
       const px = draw.getImageData(0, 0, image.width, image.height).data;
       let lo = 255, hi = 0;
       for (let i = 0; i < px.length; i += 4) { const v = (px[i] + px[i + 1] + px[i + 2]) / 3; lo = Math.min(lo, v); hi = Math.max(hi, v); }
+      window.dispatchEvent(new Event('pagehide'));
+      await Module.fuaSaving;
       return { found: true, width: image.width, height: image.height, range: Math.round(hi - lo) };`),
     until: EVAL,
     expect: savePicture,
+  },
+  // [rc4l] The save the check above stored, there after a reload and loading without complaint.
+  {
+    name: 'a save survives a reload and loads',
+    evaluate: inPage(`
+      if (!Module.FS.analyzePath('/home/web_user/checkpicture.zds').exists) return { found: false };
+      const log = document.getElementById('console');
+      const before = log.textContent.length;
+      Module.fuaCommand('load /home/web_user/checkpicture.zds');
+      ${pause(1500)}
+      return { found: true, said: log.textContent.slice(before) };`),
+    until: EVAL,
+    expect: saveLoads,
   },
   {
     name: 'quitting stops the loop and offers to play again',
