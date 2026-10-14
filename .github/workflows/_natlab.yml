@@ -42,8 +42,10 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: recursive   # [rc4l] DiligentCore brings its own (glslang, SPIRV, volk)
+
+      # [rc4l] DiligentCore alone, which the client configure requires: sentry-native stays out as before, since it needs libcurl that neither this job nor the peer image has.
+      - name: Fetch DiligentCore
+        run: git submodule update --init --recursive deps/DiligentCore
 
       # [rc4l] The peer image's runtime set (tools/natlab/Dockerfile.peer) without FFmpeg, plus the X11, XCB and Wayland headers the Vulkan backend compiles against.
       - name: Install build dependencies
@@ -97,8 +99,10 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: recursive   # [rc4l] DiligentCore brings its own (glslang, SPIRV, volk)
+
+      # [rc4l] DiligentCore alone, which the client configure requires: sentry-native stays out as before, since it needs libcurl that neither this job nor the peer image has.
+      - name: Fetch DiligentCore
+        run: git submodule update --init --recursive deps/DiligentCore
 
       # [rc4l] The peer image's runtime set (tools/natlab/Dockerfile.peer) without FFmpeg, plus the X11, XCB and Wayland headers the Vulkan backend compiles against.
       - name: Install build dependencies
