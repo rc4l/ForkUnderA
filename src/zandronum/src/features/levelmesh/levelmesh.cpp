@@ -1341,7 +1341,7 @@ CCMD( fua_decals )
 			{
 				FTexture *t = TexMan[d->PicNum];
 				Printf( "  additive decal on side %d: %s alpha %.3f%s\n", i,
-					( t != NULL && t->Name != NULL ) ? t->Name : "?",
+					t != NULL ? t->Name.GetChars() : "?",
 					FIXED2FLOAT( d->Alpha ), inv ? " INVISIBLE" : "" );
 				shown++;
 			}

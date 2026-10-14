@@ -3,6 +3,7 @@
 
 #include "features/dynlights/computation/nodeindex_compute.h"
 
+#include <stddef.h>
 #include <stdint.h>
 
 namespace zx { namespace dynlights {

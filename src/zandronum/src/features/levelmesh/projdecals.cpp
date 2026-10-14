@@ -422,7 +422,7 @@ void SpawnProjectedDecalHere(const FDecalTemplate *tpl, fixed_t x, fixed_t y, fi
 		{
 			FTexture *t = TexMan[chain[i]->PicNum];
 			names += (i ? ", " : "");
-			names += (t != NULL && t->Name != NULL) ? t->Name : "?";
+			names += t != NULL ? t->Name.GetChars() : "?";
 		}
 		Printf("projected chain: %d deep [%s]\n", depth, names.GetChars());
 	}
@@ -571,7 +571,7 @@ void PrintProjectedDecals(int limit)
 		const ProjDecal &d = g_decals[i];
 		FTexture *t = TexMan[d.pic];
 		Printf("  mark %u: %s alpha %.3f (base %.3f), fade %d/%d, age %d, owner %s\n",
-			i, (t != NULL && t->Name != NULL) ? t->Name : "?",
+			i, t != NULL ? t->Name.GetChars() : "?",
 			d.currentAlpha, d.baseAlpha, d.fadeStart, d.fadeTime, gametic - d.spawnTic,
 			(d.owner != NULL) ? "yes" : "no");
 	}

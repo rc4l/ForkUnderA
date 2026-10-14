@@ -3,6 +3,8 @@
 
 #include "features/hwrender/computation/slotremap_compute.h"
 
+#include <stddef.h>
+
 namespace zx { namespace hwrender {
 
 std::vector<int> ComputeAnimationOfTexture(int numTextures, const std::vector<AnimationDef> &anims)
