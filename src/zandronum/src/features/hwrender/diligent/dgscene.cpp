@@ -737,17 +737,42 @@ static void PrepareFrame(Diligent::IDeviceContext *ctx)
 	if (fua_dg_bindless) { ReserveDynamicSlots(); RefreshBindless(); }
 	g_phase.animation.Clock();
 	// [rc4l] Re-resolve animated textures, since a batch's material was resolved once at bake time and would freeze on its first frame.
+	// [rc4l] Each base texture asked once, its batches gathered by ComputeGroupByKey: wdiex01's 48,000 batches share about 700 textures, and asking per batch cost 0.06 ms a frame.
 	if (fua_dg_animate)
 	{
-		for (unsigned i = 0; i < g_scene.batches.Size(); i++)
+		static std::vector<int> order;
+		static std::vector<::hwrender::BatchRun> groups;
+		static std::vector<const void *> showing;
+		static unsigned int groupedFor = ~0u;
+		if (groupedFor != g_scene.batchesGen)
 		{
-			SceneBatch &b = g_scene.batches[i];
-			if (b.baseTex == NULL) continue;
-			const void *now = zx::materials::MaterialShowing(b.baseTex);
-			if (now == NULL || now == b.resolved) continue;
-			b.resolved = now;
-			g_stats.animSwaps++;
-			if (auto *srb = GetMaterialSRB(BatchPSO(b.blend), now)) b.srb = srb;
+			groupedFor = g_scene.batchesGen;
+			static std::vector<uint64_t> keys;
+			keys.resize(g_scene.batches.Size());
+			for (unsigned i = 0; i < g_scene.batches.Size(); i++) keys[i] = (uint64_t)(uintptr_t)g_scene.batches[i].baseTex;
+			::hwrender::ComputeGroupByKey(keys.empty() ? NULL : &keys[0], (int)keys.size(), order, groups);
+			showing.assign(groups.size(), NULL);
+		}
+		for (size_t g = 0; g < groups.size(); g++)
+		{
+			const void *base = g_scene.batches[order[groups[g].start]].baseTex;
+			if (base == NULL) continue;
+			const void *now = zx::materials::MaterialShowing(base);
+			if (now == NULL || now == showing[g]) continue;
+			showing[g] = now;
+			// [rc4l] One binding per pipeline the group's batches use, since they all show the same frame now.
+			Diligent::IPipelineState *psoAsked = NULL;
+			Diligent::IShaderResourceBinding *srbAsked = NULL;
+			for (int k = groups[g].start; k < groups[g].start + groups[g].count; k++)
+			{
+				SceneBatch &b = g_scene.batches[order[k]];
+				if (now == b.resolved) continue;
+				b.resolved = now;
+				g_stats.animSwaps++;
+				Diligent::IPipelineState *pso = BatchPSO(b.blend);
+				if (pso != psoAsked) { psoAsked = pso; srbAsked = GetMaterialSRB(pso, now); }
+				if (srbAsked) b.srb = srbAsked;
+			}
 		}
 	}
 	BuildDynamic(ctx);

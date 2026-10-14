@@ -178,6 +178,7 @@ static bool BuildSceneBuffer(FString &err)
 	g_scene.cpuVerts.Clear();
 	g_scene.pieces.Clear();
 	g_scene.batches.Clear();
+	g_scene.batchesGen++;
 	g_scene.blendBatches.Clear();
 	g_vbSlots.Clear();
 	// [rc4l] The slot table is NOT reset here, and that is the whole point of it.
@@ -504,6 +505,7 @@ static bool AppendPiece(Diligent::IDeviceContext *ctx, const zx::levelmesh::Mesh
 	b.walkId = -1;
 	if (BatchSRB(b) == NULL) return false;   // [rc4l] no binding, no draw -- and a rebuild will do it properly
 	g_scene.batches.Push(b);
+	g_scene.batchesGen++;
 
 	VBSlot slot;
 	slot.meshOffset = p.range.offset;

@@ -53,6 +53,25 @@ TEST(Batch, TruncatesToMaxRunsButReportsWritten)
 	EXPECT_EQ(runs[1].start, 1);
 }
 // [rc4l] WDI07's waterfall: re-baked at another WFALL frame, its base texture is still the batch's, so it is patched rather than rebuilding the scene four times a second.
+// [rc4l] Keys scattered through the list come together, each group in index order, so a base texture is asked once for all its batches.
+TEST(BatchCompute, GroupsGatherEqualKeysWhereverTheyStand)
+{
+	const uint64_t keys[6] = { 7, 3, 7, 9, 3, 7 };
+	std::vector<int> order;
+	std::vector<BatchRun> groups;
+	ComputeGroupByKey(keys, 6, order, groups);
+	const int want[6] = { 1, 4, 0, 2, 5, 3 };
+	ASSERT_EQ(6u, order.size());
+	for (int i = 0; i < 6; i++) EXPECT_EQ(want[i], order[i]) << i;
+	ASSERT_EQ(3u, groups.size());
+	EXPECT_EQ(0, groups[0].start); EXPECT_EQ(2, groups[0].count);
+	EXPECT_EQ(2, groups[1].start); EXPECT_EQ(3, groups[1].count);
+	EXPECT_EQ(5, groups[2].start); EXPECT_EQ(1, groups[2].count);
+	ComputeGroupByKey(keys, 0, order, groups);
+	EXPECT_TRUE(order.empty());
+	EXPECT_TRUE(groups.empty());
+}
+
 TEST(BatchCompute, AnotherFrameOfTheSameBaseStaysButANewTextureDoesNot)
 {
 	int frame1, frame2, base, other;

@@ -272,6 +272,7 @@ struct SceneGeometry
 	int          skyHoleCount = 0;
 	TArray<DynRun> dynRuns;                         // [rc4l] this frame's sprite, model and decal draws
 	bool         dynReady = false;
+	unsigned int batchesGen = 0;                        // [rc4l] bumped when the batches are rebuilt or one is appended, for what is cached per batch
 	TArray<zx::hwrender::TracedSprite> tracedSprites;   // [rc4l] this frame's sprites as a traced mirror's rays meet them
 	std::vector<int> tracedSteps;                       // [rc4l] and how a ray goes from one mirror view to the next (ComputeMirrorSteps)
 };
