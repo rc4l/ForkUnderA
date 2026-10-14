@@ -186,9 +186,32 @@ mesh, uploads, screenshots and runs the benchmark in the order they actually req
 
 Requires `gl_wallmesh 1` and a walked level, so the mesh has baked geometry to hand over.
 
+## Other backends: Metal and D3D12
+
+**Metal** is not in DiligentCore: `Graphics/GraphicsEngineMetal` holds only its interface headers, and
+Diligent's README offers the backend to commercial clients. macOS therefore draws through Vulkan on
+MoltenVK, which the .app bundles (`mac_compile.sh`, `dgcocoa.mm`).
+
+**D3D12** is in DiligentCore, open source, and switched off here (`DILIGENT_NO_DIRECT3D12`). It is not
+free, because of the shaders. Every one of the backend's shaders is GLSL compiled verbatim (37 sources:
+36 at `#version 450`, the traced mirrors' ray-query shader at 460, the
+scene shader alone 570 lines in `dgscene_glsl.h`), and Diligent compiles GLSL only for Vulkan and GL; its
+D3D12 backend takes HLSL or DXIL. A mod's GLDEFS hardware shaders are GLSL too. So D3D12 needs one of:
+
+- an HLSL twin of every shader, kept in step with the GLSL by hand; or
+- a cross-compile step, GLSL to SPIR-V (glslang, already linked) to HLSL (SPIRV-Cross, already linked) to
+  DXIL (DXC). Less code, but each shader then needs its bindings mapped to registers and spaces, its
+  combined image samplers split, `gl_VertexIndex` checked against `SV_VertexID` (which leaves out the base
+  vertex), and the ray-query shader taken to shader model 6.5, with what SPIRV-Cross cannot translate
+  written by hand.
+
+Either way every scenario would need a D3D12 side, since the harness compares GL against Vulkan only. What
+it would buy is Windows drivers whose Vulkan is poor, which Vulkan on Windows already covers otherwise.
+It stays off; if it is wanted, the cross-compile step is the way in.
+
 ## Repo note
 
-`deps/DiligentCore` is a shallow clone with submodules, 215 MB on disk. `deps/` is already in
-`.gitignore`, so nothing of it is tracked — which also means **a fresh checkout has no backend**.
-Before this is more than an experiment it needs to become a real submodule (with the rev pinned) or a
-documented fetch step, or `-DFUA_DILIGENT=ON` simply fails to configure for anyone else.
+`deps/DiligentCore` is a git submodule, its revision pinned by the superproject. A clone needs
+`git submodule update --init --recursive` (DiligentCore brings glslang, SPIRV-Tools, SPIRV-Cross and volk
+as its own submodules); CMake stops with that instruction when they are missing, and
+`-DFUA_DILIGENT=OFF` builds GL (Legacy) alone.
