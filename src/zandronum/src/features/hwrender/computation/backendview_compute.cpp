@@ -2,10 +2,17 @@
 // Copyright (C) 2026 rc4l
 
 #include "features/hwrender/computation/backendview_compute.h"
+#include "features/hwrender/computation/sceneview_compute.h"   // [MobiusU9B] ComputeSceneFovY
 
 #include <math.h>
 
 namespace zx { namespace hwrender {
+
+void ComputeCameraLens(float fovYOverride, float aspectOverride, float fov, float ratio, float fovRatio, BackendCamera &c)
+{
+	c.fovY = (fovYOverride > 0.f) ? fovYOverride : ::hwrender::ComputeSceneFovY(fov, fovRatio) * 3.14159265f / 180.0f;
+	c.aspect = (aspectOverride > 0.f) ? aspectOverride : ratio;
+}
 
 void ComputeBackendView(const BackendCamera &c, float v[16])
 {

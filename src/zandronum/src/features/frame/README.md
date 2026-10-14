@@ -28,7 +28,8 @@ is wider than the point it stands on.
 - `BeginPlayerFrame`: a new camera's interpolation reset, the tic fraction and clock, particles, last
   frame's camera textures, the fixed colormap and the lens;
 - `BeginViewpoint`/`EndViewpoint`: which view the walks belong to, the frame set up from the camera,
-  the view area and `features/viewsetup`'s view, then the frame count and interpolations;
+  the view area and `features/viewsetup`'s view through the viewpoint's lens, then the frame count and
+  interpolations;
 - `MarkMapSection`.
 
 `RenderPlayerView` is the backend's frame: those, then `StandaloneScene`, then the weapon, the targeter

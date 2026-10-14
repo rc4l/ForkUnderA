@@ -8,6 +8,7 @@
 
 struct player_t;
 class AActor;
+struct FViewLens;
 
 namespace zx { namespace frame {
 
@@ -17,8 +18,8 @@ void BeginPlayerFrame(player_t *player);
 // [rc4l] Forget the last camera, so the next frame starts uninterpolated (a new frame buffer, a game restart).
 void ForgetCamera();
 
-// [rc4l] Before a viewpoint's walks: which view they belong to, the backend's lens for the player's, the frame set up from the camera, its view area and features/viewsetup's view; returns what EndViewpoint restores.
-bool BeginViewpoint(AActor *camera, float fov, float fovRatio, bool mainview, bool toscreen);
+// [rc4l] Before a viewpoint's walks: which view they belong to, the frame set up from the camera, its view area and features/viewsetup's view through `lens`; returns what EndViewpoint restores.
+bool BeginViewpoint(AActor *camera, const FViewLens &lens, bool mainview, bool toscreen);
 
 // [rc4l] After it: the frame count, the interpolations restored, and the walks' view as it was.
 void EndViewpoint(bool savedMainView);
