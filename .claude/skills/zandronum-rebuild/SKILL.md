@@ -5,8 +5,9 @@ description: Recompile the ForkUnderA engine (forkundera) after a C++ change and
 
 # Rebuild the engine
 
-fuactl needs a **bridge-enabled** build (`FUA_MCP_BRIDGE=ON`); the Vulkan/Diligent backend also needs
-`FUA_DILIGENT=ON`, which is Windows-only today.
+fuactl needs a **bridge-enabled** build (`FUA_MCP_BRIDGE=ON`). The Vulkan/Diligent backend
+(`FUA_DILIGENT`) is ON by default for every client build on Windows, Linux and macOS, and OFF for a
+dedicated server; `-DFUA_DILIGENT=OFF` builds GL (Legacy) alone.
 
 | platform | build | staged binary fuactl runs |
 |---|---|---|
@@ -35,8 +36,10 @@ engine is running rather than killing them by name -- quit each by port first, o
   before `zzautozend.cpp` (see `features/README.md` for why it must not be a trailing `target_sources`).
 - A `*_compute.cpp` the engine calls must be listed there too: the test build globs them, the engine
   build does not.
-- A Diligent pass (`features/hwrender/diligent/*.cpp`) goes in the `FUA_DILIGENT` `target_sources` line
-  AND both `set_source_files_properties(... c++17 ...)` lines -- Diligent's headers need C++17.
+- A Diligent pass (`features/hwrender/diligent/*.cpp`) goes in the `FUA_DILIGENT_SOURCES` list, which also
+  gives it the C++17 that Diligent's headers need. A platform's window code (`dgwin32.cpp`, `dgsdl.cpp`,
+  `dgcocoa.mm`) goes in that platform's branch of `FUA_DILIGENT_PLATFORM_SOURCES` instead, and includes no
+  Diligent header (`dgplatform.h` is the seam).
 
 ## Getting the new binary running
 
@@ -67,4 +70,5 @@ a modal error box on the user's screen. fuactl refuses such a folder before laun
 ## Unit tests
 
 `tests/` builds separately; see the `writing-tests` skill (on Windows: `build --no-stage --tests` above,
-then `build-tests/Release/zandrox_tests.exe --gtest_filter=...` for one suite).
+then `build-tests/Release/zandrox_tests.exe --gtest_filter=...` for one suite, and `fuactl coverage --since
+main` for the 100% gate on what changed).

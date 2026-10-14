@@ -82,20 +82,21 @@ This tree has not always re-globbed a new `*_test.cpp` on build (`lookhits_compu
 cases), so after adding one, check its suite appears in `--gtest_list_tests`, and if not run
 `cmake build-tests` once to reconfigure.
 
-Without clang/llvm-cov the `--auto` gate runs in CI only, but line coverage can be read here with
-OpenCppCoverage (`F:/ShitDronum/zandronum-vscode-windows/deps/opencppcoverage`) on a **Debug** build of the
-tests, since Release has no symbols:
+Without clang/llvm-cov the `--auto` gate's authority is CI, but the same gate runs here with
+OpenCppCoverage over a Debug build of the tests (Release has no symbols):
 
 ```bash
-C="/c/Program Files/Microsoft Visual Studio/2022/Community/Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin/cmake.exe"
-"$C" --build build-tests --config Debug --target zandrox_tests -- -m
-OpenCppCoverage.exe --quiet --sources 'F:\ForkUnderA\src\zandronum\src\features' \
-  --export_type "cobertura:$(cygpath -w "$SCRATCH")\cov.xml" -- 'F:\ForkUnderA\build-tests\Debug\zandrox_tests.exe' --gtest_brief=1
+export FUACTL_OPENCPPCOVERAGE=F:/ShitDronum/zandronum-vscode-windows/deps/opencppcoverage/OpenCppCoverage.exe
+node tools/fuactl/src/cli.mjs coverage --since main   # every unit whose source, header or test changed, new files included
+node tools/fuactl/src/cli.mjs coverage                # every unit a *_test.cpp gates
 ```
 
-Then read each touched `*_compute` class's `line-rate` and its lines with `hits="0"` out of the XML. It
-measures no branches, so check every branch of a new `Compute*` function against its tests by reading
-them, and say so.
+It builds the Debug tests, runs them under OpenCppCoverage, and prints each gated unit under 100% with its
+missed lines (exit 1). A missed line that is only a loop's `}` or a `continue;` is MSVC putting the jump
+there, which llvm-cov counts as run, so it is not reported. Three units stay under 100% here and pass in
+CI: `fixed64`'s soft 128-bit path, whose tests compare against `__int128` that MSVC lacks, and two lines of
+`browserfocus_compute`. It measures no branches, so check every branch of a new `Compute*` function against
+its tests by reading them, and say so.
 
 ## CI
 

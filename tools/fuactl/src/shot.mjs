@@ -401,9 +401,9 @@ function refreshGlobs(cm, root, dir, suffixes, log) {
   fs.writeFileSync(file, stamp);
 }
 
-// [rc4l] One cmake build of the tree in dir (one target, or all of it), its log beside it, throwing with the first errors when it fails.
-function compile(cm, root, dir, target, log) {
-  const r = spawnSync(cm, ["--build", path.join(root, dir), "--config", "Release", ...(target ? ["--target", target] : []), "--", "-m"], {
+// [rc4l] One cmake build of the tree in dir (one target, or all of it) in config, its log beside it, throwing with the first errors when it fails.
+export function compile(cm, root, dir, target, log, config = "Release") {
+  const r = spawnSync(cm, ["--build", path.join(root, dir), "--config", config, ...(target ? ["--target", target] : []), "--", "-m"], {
     encoding: "utf8", env: { ...process.env, DXSDK_DIR: path.join(root, "dxsdk") },
   });
   const out = (r.stdout || "") + (r.stderr || "");

@@ -31,6 +31,7 @@ import * as screen from "./screen.mjs";
 import * as trace from "./trace.mjs";
 import * as present from "./present.mjs";
 import { refreshNote } from "./stats.mjs";
+import { runCoverage } from "./coverage.mjs";
 import { decodePNG, abDiff, boxDiff } from "./pngcore.mjs";
 import fs from "node:fs";
 import os from "node:os";
@@ -167,6 +168,7 @@ const USAGE = `fuactl <command>
   present [--seconds N] [--process NAME.exe] [--port P [--token T]] [--out FILE.csv]   what Windows put on screen, from PresentMon run as administrator (a UAC prompt): each app's frames handed over and shown a second and the compositor's own updates; with --port the instance's frames are recorded alongside and lined up second by second
   play [--restart] [--port P] [--token T] [--spot NAME | --unpark] [--map M] [--file a.pk3,b.pk3] [--cvar k=v,k2=v2] [--preset ID --variant V --store DIR] [--gl | --no-gl] [--side-by-side] [--rt] [--monsters] [--lock] [--res WxH]   a build to walk around in, Vulkan live in the window; stays up until Ctrl-C
   build [--root DIR] [--no-stage] [--tests]   compile the engine (with --tests the unit tests too, and run them) and stage it unless --no-stage, failing loudly instead of staging a stale binary
+  coverage [--since REF] [--tool PATH]   the 100% line-coverage gate on Windows: builds the Debug unit tests and runs them under OpenCppCoverage, then checks every unit a NAME_test.cpp gates, or with --since only those changed since REF (new files included); exit 1 on any miss
   mapdata <MAP> (--preset ID | --file a.pk3,b.wad) [--sector N,..] [--line N,..] [--special N] [--tag N] [--thing TYPE,..] [--scripts REGEX]   a UDMF level's summary, sectors, lines, things of the given types and ACS source lines, read from its files
   actors [--near x,y] [--radius R] [--toward YAW | --ahead] [--cone DEG] [--class REGEX]   actors near a point (default the player), nearest first, optionally only in a direction
   probe <scenario.mjs> [--map M] [--vantage V] [--side S] [--engine path/to/forkundera.exe] [<command> ...]   launch a template scenario's map at a vantage and run console commands there
@@ -703,35 +705,9 @@ async function main() {
       if (flags.texture && flags.texture !== true) parts.push(`texture=${flags.texture}`);
       parts.push(`limit=${flags.limit && flags.limit !== true ? flags.limit : 8}`);
 
-      // launchInstance writes to <tmp>/fuactl-XXXX/engine-<port>.log; the registry does not record
-      // the path, so find the newest one for this port.
-      const logPath = (() => {
-        const tmp = os.tmpdir();
-        let best = null, bestTime = -1;
-        for (const d of fs.readdirSync(tmp)) {
-          if (!d.startsWith("fuactl-")) continue;
-          const p = path.join(tmp, d, `engine-${flags.port}.log`);
-          try {
-            const st = fs.statSync(p);
-            if (st.mtimeMs > bestTime) { bestTime = st.mtimeMs; best = p; }
-          } catch { /* not this one */ }
-        }
-        return best;
-      })();
-      const before = logPath && fs.existsSync(logPath) ? fs.statSync(logPath).size : 0;
-
-      await withUi(flags, (c) => c.rpc("console.exec", { text: `fua_find_lines ${parts.join(" ")}` }));
-      await new Promise((r) => setTimeout(r, 1200));
-
-      if (!logPath || !fs.existsSync(logPath)) {
-        console.error("no log for that instance; run the CCMD directly and read its console");
-        break;
-      }
-      const fd = fs.openSync(logPath, "r");
-      const buf = Buffer.alloc(Math.max(0, fs.statSync(logPath).size - before));
-      fs.readSync(fd, buf, 0, buf.length, before);
-      fs.closeSync(fd);
-      for (const l of buf.toString("utf8").split(/\r?\n/)) {
+      // [rc4l] The bridge streams the console's output back, so the lines arrive with the answer rather than out of the engine's log.
+      const text = await withUi(flags, (c) => cap.exec(c, `fua_find_lines ${parts.join(" ")}`, { quietMs: 300, maxMs: 8000 }));
+      for (const l of text.split(/\r?\n/)) {
         if (/^line \d+:|^fua_find_lines:|^no level loaded/.test(l)) console.log(l);
       }
       break;
@@ -836,6 +812,13 @@ async function main() {
       const when = new Date(fs.statSync(r.staged).mtime).toTimeString().slice(0, 8);
       console.log(`build ok, staged ${when} (+${r.entries} catalogue entries)`);
       break;
+    }
+    case "coverage": {
+      const { results, report } = runCoverage({ root: fileURLToPath(new URL("../../../", import.meta.url)), tool: flags.tool, since: flags.since && flags.since !== true ? String(flags.since) : null });
+      const bad = results.filter((r) => !r.ok);
+      for (const r of bad) console.log(`${r.unit}: ${r.unseen ? "not in the report" : `${r.hit}/${r.total}, missed lines ${r.missed.slice(0, 25).join(",")}`}`);
+      console.log(`${results.length} unit(s) gated, ${bad.length} below 100% (report ${report})`);
+      process.exit(bad.length ? 1 : 0);
     }
     // [rc4l] `fuactl mapdata <MAP>` -- a level's sectors, lines, specials and ACS source read from its files, no engine needed.
     case "mapdata": {

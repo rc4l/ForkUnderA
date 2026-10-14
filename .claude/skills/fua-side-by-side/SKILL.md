@@ -6,8 +6,9 @@ description: Launch ForkUnderA with GL and the Diligent (Vulkan) backend in two 
 # Side-by-side GL / Vulkan for the user
 
 One process, two top-level windows: GL's own window plus the Diligent (Vulkan) window. The user drives
-it with mouse and keyboard and A/Bs the two. The Diligent backend is Windows-only today
-(`FUA_DILIGENT`); elsewhere there is only the GL window.
+it with mouse and keyboard and A/Bs the two. On Linux and macOS the backend opens its own window beside
+GL's rather than inside it, since neither nests one window in another; that path is built by CI and has
+not been run on those platforms yet.
 
 Everything goes through `fuactl`, run as `node src/cli.mjs <command>` from `tools/fuactl` (see the
 `zandronum-session` skill).
