@@ -403,7 +403,7 @@ function refreshGlobs(cm, root, dir, suffixes, log) {
 
 // [rc4l] One cmake build of the tree in dir (one target, or all of it) in config, its log beside it, throwing with the first errors when it fails.
 export function compile(cm, root, dir, target, log, config = "Release") {
-  const r = spawnSync(cm, ["--build", path.join(root, dir), "--config", config, ...(target ? ["--target", target] : []), "--", "-m"], {
+  const r = spawnSync(cm, ["--build", path.join(root, dir), "--config", config, ...(target ? ["--target", ...[].concat(target)] : []), "--", "-m"], {
     encoding: "utf8", env: { ...process.env, DXSDK_DIR: path.join(root, "dxsdk") },
   });
   const out = (r.stdout || "") + (r.stderr || "");
@@ -418,11 +418,15 @@ export function compile(cm, root, dir, target, log, config = "Release") {
   }
 }
 
+// [rc4l] The data pk3s the engine loads from beside its binary, as the build names their targets.
+export const PK3_TARGETS = ["pk3", "brightmaps_pk3", "skulltag_actors_pk3"];
+
 // [rc4l] Compile the engine, and with tests the unit tests too and run them; then stage it unless stage is false, which leaves the user's binary alone mid-investigation.
 export function build({ root = REPO_ROOT, cmake = null, log = console.error, stage = true, tests = false } = {}) {
   const cm = cmake || pickCmake();
   refreshGlobs(cm, root, "build-win", ["_compute.cpp"], log);
-  compile(cm, root, "build-win", "zdoom", log);
+  // [rc4l] The pk3 targets too: building only zdoom left the data pk3s beside it as old as the last full build.
+  compile(cm, root, "build-win", ["zdoom", ...PK3_TARGETS], log);
   let testRun = null;
   if (tests) {
     refreshGlobs(cm, root, "build-tests", ["_compute.cpp", "_test.cpp"], log);
@@ -451,6 +455,9 @@ export function build({ root = REPO_ROOT, cmake = null, log = console.error, sta
     catch (e) { lastErr = e; Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 250); }
   }
   if (lastErr) throw new Error(`could not stage over the running binary after 10s: ${lastErr.message}`);
+  for (const pk3 of fs.readdirSync(path.dirname(from)).filter((f) => f.endsWith(".pk3"))) {
+    fs.copyFileSync(path.join(path.dirname(from), pk3), path.join(root, "dist-windows", pk3));
+  }
 
   // [rc4l] The addon catalogue, alongside the binary, because the HOST tab reads it from progdir.
   // Staging only the exe meant every build had no catalogue at all -- the presets list drew empty

@@ -23,7 +23,9 @@ node tools/fuactl/src/cli.mjs build                      # when the fix is done:
 ```
 
 It finds Visual Studio's CMake itself (Git Bash has none on PATH; `FUACTL_CMAKE` overrides), sets
-`DXSDK_DIR`, writes `build-win/build.log`, and fails loudly with the first errors. A running engine that
+`DXSDK_DIR`, writes `build-win/build.log`, and fails loudly with the first errors. It also repacks the
+data pk3s from `wadsrc*/` (the `pk3` targets) and stages them with the exe; before 2026-10-13 it built
+`zdoom` alone, so a `wadsrc/static` change (a menu, a lump) never reached the binary beside it. A running engine that
 holds `build-win`'s binary is named as such instead of a bare LNK1104 -- quit your own instance by port.
 The tree reconfigures by itself when `CMakeLists.txt` changes; the `(dev) find_package` warning is
 harmless. Run it in the background -- an incremental build is a few minutes. Staging refuses while any
@@ -34,8 +36,10 @@ engine is running rather than killing them by name -- quit each by port first, o
 
 - A feature `.cpp` goes in the `add_executable( zdoom ... )` list in `src/zandronum/src/CMakeLists.txt`,
   before `zzautozend.cpp` (see `features/README.md` for why it must not be a trailing `target_sources`).
-- A `*_compute.cpp` the engine calls must be listed there too: the test build globs them, the engine
-  build does not.
+- A `*_compute.cpp` needs no list entry: the engine (`ZX_COMPUTE_SOURCES`) and the test build both glob them.
+- A source for one platform only goes in that platform's list (`PLAT_SDL_SOURCES`, ...). On Windows the
+  other platforms' lists are added as header-only, which wins over an entry in the main list too, so a
+  Linux-only file is never compiled here; to compile-check one, move it to the main list for one build.
 - A Diligent pass (`features/hwrender/diligent/*.cpp`) goes in the `FUA_DILIGENT_SOURCES` list, which also
   gives it the C++17 that Diligent's headers need. A platform's window code (`dgwin32.cpp`, `dgsdl.cpp`,
   `dgcocoa.mm`) goes in that platform's branch of `FUA_DILIGENT_PLATFORM_SOURCES` instead, and includes no
@@ -46,7 +50,7 @@ engine is running rather than killing them by name -- quit each by port first, o
 A build is not live until it is staged where fuactl looks (table above):
 
 ```bash
-cp build-win/Release/forkundera.exe build-win/Release/forkundera.pdb dist-windows/
+cp build-win/Release/forkundera.exe build-win/Release/forkundera.pdb build-win/Release/*.pk3 dist-windows/
 ```
 
 **A running engine holds that binary on Windows**, and the copy fails with "Device or resource busy" --
