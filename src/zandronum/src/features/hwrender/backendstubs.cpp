@@ -28,7 +28,6 @@ zx::frame::FrameRoute FrameRouteNow(bool hasGL, bool hasBackend)
 bool StandaloneActive() { return false; }
 const float *SceneMVP() { return NULL; }
 void LiveFrame() {}
-void SetMainViewLens(float, float) {}
 void RenderCameraTexture(const void *, int, int, float, fixed_t, fixed_t, fixed_t, unsigned int, int, float) {}
 
 void GetDeferredDecalStats(int &boxes, int &draws, int &textures, const char **bail)

@@ -16,6 +16,7 @@
 #ifdef FUA_DILIGENT
 
 #include "features/hwrender/diligent/dgscene_internal.h"
+#include "features/viewsetup/viewsetup.h"   // [MobiusU9B] the view's lens
 
 // [rc4l] Declared outside the namespace: EXTERN_CVAR builds a name from the identifier, so a
 // namespace-qualified one resolves to a symbol the engine never defines and fails only at link time.
@@ -448,22 +449,13 @@ bool UploadGrowingVB(Diligent::IDeviceContext *ctx, Diligent::RefCntAutoPtr<Dili
 // [rc4l] Column-major perspective * view, matching the GL renderer's convention in
 // FGLRenderer::SetProjection/SetViewMatrix: X east, Y up, Z south, with the pixel-stretch flip.
 
-// [rc4l] The player's lens as GL last rendered it, GL's own default until a frame says otherwise.
-static float g_lensFov = 90.f, g_lensRatio = 1.333333f;
-void SetMainViewLens(float fovDegrees, float fovRatio) { g_lensFov = fovDegrees; g_lensRatio = fovRatio; }
-
 // [rc4l] The camera the engine's view globals describe now, as the backend frames it.
 zx::hwrender::BackendCamera CurrentCamera()
 {
 	zx::hwrender::BackendCamera c;
-	// [rc4l] GL's vertical field of view, derived as SetProjection derives it, where a constant 74 degrees was half a percent off and never zoomed.
-	c.fovY = (g_frame.fovOverride > 0.f) ? g_frame.fovOverride : ::hwrender::ComputeSceneFovY(g_lensFov, g_lensRatio) * 3.14159265f / 180.0f;
-	// [rc4l] From the swapchain, not a constant. A hard-coded 16:10 meant the backend framed the
-	// world differently from the engine window, so a screenshot pair could never be compared
-	// pixel-for-pixel -- the same screen position was a different part of the level in each.
-	c.aspect = 16.0f / 10.0f;
-	if (g_frame.aspectOverride > 0.f) c.aspect = g_frame.aspectOverride;
-	else if (GetSwapChain() != NULL && FrameHeight() > 0) c.aspect = (float)FrameWidth() / (float)FrameHeight();
+	// [MobiusU9B] The view's own lens, as GL's SetProjection takes it, so a forced aspect ratio is stretched across the window and the walks' frustum covers the picture.
+	const zx::viewsetup::ViewSetup &view = zx::viewsetup::CurrentView();
+	zx::hwrender::ComputeCameraLens(g_frame.fovOverride, g_frame.aspectOverride, view.fov, view.ratio, view.fovRatio, c);
 	ViewCameraFromEngine(c);
 	return c;
 }

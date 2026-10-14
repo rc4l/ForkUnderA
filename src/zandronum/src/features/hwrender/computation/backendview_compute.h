@@ -17,6 +17,9 @@ struct BackendCamera
 	float fovY, aspect;   // [rc4l] the vertical field of view in radians, of the stretched world, and width over height
 };
 
+// [MobiusU9B] A camera's fovY and aspect: a camera texture's or the save picture's override when set, else the view's lens (fov degrees across, its ratio, and the fovRatio GL derives the height's field with), the shape GL projects and the walks are seeded for.
+void ComputeCameraLens(float fovYOverride, float aspectOverride, float fov, float ratio, float fovRatio, BackendCamera &c);
+
 // [rc4l] The column-major view alone, GL's ViewMatrix: mesh space into eye space, heights stretched by the pixel aspect before the pitch turns them.
 void ComputeBackendView(const BackendCamera &c, float out[16]);
 

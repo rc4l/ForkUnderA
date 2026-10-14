@@ -17,9 +17,6 @@ namespace zx { namespace hwrender {
 // uploaded (fua_diligent_scene) and fua_diligent_live is on.
 void LiveFrame();
 
-// [rc4l] The lens GL renders the player's view with (RenderViewpoint's fov and fovratio), so the backend frames the same picture and zooms with it.
-void SetMainViewLens(float fovDegrees, float fovRatio);
-
 }} // namespace zx::hwrender
 
 #endif // ZX_DGLIVE_H

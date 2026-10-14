@@ -9,7 +9,6 @@
 #include "features/viewsetup/computation/viewsetup_compute.h"
 #include "features/levelmesh/flatmesh.h"       // [rc4l] SetMainView, EnterScene, LeaveScene
 #include "features/hwrender/hud2d.h"           // [rc4l] StandaloneActive, Record2D
-#include "features/hwrender/diligent/dglive.h" // [rc4l] SetMainViewLens
 #include "features/sprites/pspritebuild.h"
 #include "features/sprites/spritebuild.h"      // [rc4l] CheckFrameSprites
 #include "features/draw2d/screenblend.h"
@@ -71,15 +70,14 @@ void BeginPlayerFrame(player_t *player)
 	r_viewLens.fov = FOV_InterpolatedForFrame(player);
 }
 
-bool BeginViewpoint(AActor *camera, float fov, float fovRatio, bool mainview, bool toscreen)
+bool BeginViewpoint(AActor *camera, const FViewLens &lens, bool mainview, bool toscreen)
 {
 	const bool saved = zx::levelmesh::MainView();
 	zx::levelmesh::SetMainView(mainview);
-	if (mainview && toscreen) zx::hwrender::SetMainViewLens(fov, fovRatio);
 	R_SetupFrame(camera);
 	if (mainview && toscreen) NoteMainView();   // [rc4l] fua_viewtrace
 	zx::viewsetup::SetViewArea(zx::viewsetup::CurrentView().viewActor);
-	zx::viewsetup::SetupView(camera, fov, gl_frameMS);
+	zx::viewsetup::SetupView(camera, lens, gl_frameMS);
 	return saved;
 }
 
@@ -99,7 +97,7 @@ void MarkMapSection()
 
 void RenderPlayerView(player_t *player, int paletteBrightness)
 {
-	const bool savedMain = BeginViewpoint(player->camera, r_viewLens.fov, r_viewLens.fovRatio, true, true);
+	const bool savedMain = BeginViewpoint(player->camera, r_viewLens, true, true);
 	zx::viewsetup::TurnView(viewangle);
 	sector_t *const sector = viewsector;
 	MarkMapSection();

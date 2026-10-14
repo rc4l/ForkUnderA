@@ -746,8 +746,9 @@ static void PrintViewStateIfArmed()
 
 sector_t * FGLRenderer::RenderViewpoint (AActor * camera, GL_IRECT * bounds, float fov, float ratio, float fovratio, bool mainview, bool toscreen)
 {
-	// [rc4l] features/frame sets the viewpoint up as a frame without GL does: which view the walks belong to, the backend's lens, the camera, the view area and features/viewsetup's view.
-	const bool savedMainview = zx::frame::BeginViewpoint(camera, fov, fovratio, mainview, toscreen);
+	// [rc4l] features/frame sets the viewpoint up as a frame without GL does: which view the walks belong to, the camera, the view area and features/viewsetup's view through GL's lens.
+	const FViewLens lens = { fov, ratio, fovratio };
+	const bool savedMainview = zx::frame::BeginViewpoint(camera, lens, mainview, toscreen);
 	sector_t * retval;
 	const zx::viewsetup::ViewSetup &view = zx::viewsetup::CurrentView();
 	mAngles.Pitch = view.pitch;

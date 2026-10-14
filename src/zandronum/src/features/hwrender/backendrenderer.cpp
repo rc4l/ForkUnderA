@@ -143,7 +143,9 @@ struct FBackendRenderer : public zx::frame::FLevelRenderer
 			int w, h;
 			zx::materials::MaterialRenderSize(mat, w, h);
 			const float ratio = (float)w / h;
-			const bool savedMain = zx::frame::BeginViewpoint(viewpoint, (float)fov, ratio, false, false);
+			// [MobiusU9B] The texture's own shape for both ratios, as GL's RenderTextureView hands RenderViewpoint.
+			const FViewLens lens = { (float)fov, ratio, ratio };
+			const bool savedMain = zx::frame::BeginViewpoint(viewpoint, lens, false, false);
 			zx::frame::StandaloneScene();
 			zx::frame::RenderBackendCamera(mat, viewpoint, fov);
 			zx::frame::EndViewpoint(savedMain);
