@@ -42,20 +42,14 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            build-essential cmake ninja-build python3 pkg-config \
-            libssl-dev libopus-dev zlib1g-dev libbz2-dev libjpeg-dev \
-            libsdl2-dev libgl1-mesa-dev libglu1-mesa-dev libglew-dev libgme-dev \
-            libopenal-dev libsndfile1-dev libmpg123-dev
+        with:
+          submodules: recursive   # [rc4l] DiligentCore brings its own (glslang, SPIRV, volk)
 
       # [rc4l] The bridge is what makes this assertable: without it the lab could only watch
       # processes stay alive, which is true of a client that never connected.
       - name: Build the engine with the control bridge
-        run: ZX_MCP_BRIDGE=1 ./linux_compile.sh --no-package
+        # [rc4l] --install-deps takes linux_compile.sh's own package list, the Vulkan backend's X11 headers included.
+        run: ZX_MCP_BRIDGE=1 ./linux_compile.sh --install-deps --no-package
 
       - name: Run the NAT lab
         run: |
@@ -93,18 +87,12 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            build-essential cmake ninja-build python3 pkg-config \
-            libssl-dev libopus-dev zlib1g-dev libbz2-dev libjpeg-dev \
-            libsdl2-dev libgl1-mesa-dev libglu1-mesa-dev libglew-dev libgme-dev \
-            libopenal-dev libsndfile1-dev libmpg123-dev
+        with:
+          submodules: recursive   # [rc4l] DiligentCore brings its own (glslang, SPIRV, volk)
 
       - name: Build the engine with the control bridge
-        run: ZX_MCP_BRIDGE=1 ./linux_compile.sh --no-package
+        # [rc4l] --install-deps takes linux_compile.sh's own package list, the Vulkan backend's X11 headers included.
+        run: ZX_MCP_BRIDGE=1 ./linux_compile.sh --install-deps --no-package
 
       - name: Prove a dual-stack server is one row, and a v6-only client can find it
         run: tools/natlab/run-dualstack.sh
