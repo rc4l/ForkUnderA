@@ -2164,7 +2164,15 @@ OptionMenu VideoModeMenu
 	{
 		Option "Renderer",			"vid_backend", "Backends"
 	}
-	StaticText "(the renderer changes on the next launch)"
+	// [rc4l] A browser draws only through its own WebGPU, so it has no renderer to choose.
+	IfOption(Web)
+	{
+		StaticText "Renderer: the browser's WebGPU"
+	}
+	else
+	{
+		StaticText "(the renderer changes on the next launch)"
+	}
 	Option "Force aspect ratio",	"vid_aspect", "ForceRatios"
 	Option "Enable 5:4 aspect ratio","vid_tft", "YesNo"
 	Option "Scale mode",			"vid_scalemode", "ScaleModes"
@@ -2172,12 +2180,21 @@ OptionMenu VideoModeMenu
 	// menu is drawn on, so applying mid-drag moves the thumb away from the cursor.
 	Slider "Scale factor",			"vid_scalefactor", 0.25, 2.0, 0.25, 2, 1
 	StaticText " "
-	StaticText "Windowed size", 1
-	TextField "Width",				"vid_defwidth"
-	TextField "Height",				"vid_defheight"
-	Command "Apply windowed size",	"vid_setsize"
-	StaticText " "
-	StaticText "(or drag the window edges to resize)"
+	// [rc4l] In a browser the page sizes the canvas and the game follows it, so there is no window to size.
+	IfOption(Web)
+	{
+		StaticText "The game fills the page; resize the browser"
+		StaticText "window or use Fullscreen to change its size."
+	}
+	else
+	{
+		StaticText "Windowed size", 1
+		TextField "Width",				"vid_defwidth"
+		TextField "Height",				"vid_defheight"
+		Command "Apply windowed size",	"vid_setsize"
+		StaticText " "
+		StaticText "(or drag the window edges to resize)"
+	}
 	class VideoModeMenu
 }
 

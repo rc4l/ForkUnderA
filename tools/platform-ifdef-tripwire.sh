@@ -13,6 +13,7 @@ WEB_SEAMS="
 cmdlib.cpp
 features/hwrender/diligent/dgdevice_wgpu.cpp
 features/hwrender/diligent/dgwindow.cpp
+menu/menudef.cpp
 posix/i_system.h
 posix/sdl/hardware.cpp
 posix/sdl/i_input.cpp

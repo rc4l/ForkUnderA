@@ -70,6 +70,7 @@
 #include "features/fua-caching/fua_caching.h"
 #include "features/hwrender/hud2d.h"                              // [rc4l] vid_fps per renderer
 #include "features/hwrender/computation/rendererrate_compute.h"
+#include "features/hwrender/backendonly.h"                         // [rc4l] BackendApiName, for the backend line's name
 
 // [TP] New includes.
 #include "cl_commands.h"
@@ -921,7 +922,7 @@ void DFrameBuffer::DrawRateStuff ()
 				{
 					int ms, fps;
 					zx::hwrender::RendererRateShown(line != 0, ms, fps);
-					chars = zx::hwrender::ComputeRateText(fpsbuff, countof(fpsbuff), line ? "VK" : "GL", ms, fps);
+					chars = zx::hwrender::ComputeRateText(fpsbuff, countof(fpsbuff), line ? zx::hwrender::ComputeBackendRateName(zx::hwrender::BackendApiName()) : "GL", ms, fps);
 					zx::hwrender::Set2DTarget(line ? zx::hwrender::k2DBackendOnly : zx::hwrender::k2DGLOnly);
 				}
 				else chars = mysnprintf (fpsbuff, countof(fpsbuff), "%2u ms (%3u fps)", howlong, LastCount);

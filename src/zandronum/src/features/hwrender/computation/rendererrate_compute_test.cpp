@@ -42,6 +42,15 @@ TEST(RendererRateCompute, ARendererIsLiveWhileItDrewWithinTheSecond)
 	EXPECT_FALSE(ComputeRateLive(r, 4000));
 }
 
+// [rc4l] In a browser the backend runs on WebGPU, which a "VK" line misnamed.
+TEST(RendererRateCompute, TheBackendIsNamedForItsDevice)
+{
+	EXPECT_STREQ("WebGPU", ComputeBackendRateName("WebGPU"));
+	EXPECT_STREQ("VK", ComputeBackendRateName("Vulkan"));
+	EXPECT_STREQ("VK", ComputeBackendRateName(""));
+	EXPECT_STREQ("VK", ComputeBackendRateName(NULL));
+}
+
 TEST(RendererRateCompute, TheLineNamesTheRendererAndFitsItsBuffer)
 {
 	char buf[40];

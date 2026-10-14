@@ -27,6 +27,8 @@ The browser build's glue: the page's arguments, its frame loop, its errors and c
   - `fullscreen` and `vid_winscale` ask for no mode change at game start, which rebuilt the window on the first frame and sized the canvas to zero.
   - In a page, `I_SetMode` never makes an SDL fullscreen window, and `fullscreen` calls `SetPageFullscreen` instead of rebuilding the window.
 - `d_main.cpp`: `D_RecoverFromError`, the loop's answer to a recoverable error, also handles one from a command the page runs (`fua_command`).
+- `menu/menudef.cpp`: IfOption's platform names match through `ComputeMenuPlatformMatches` (`menu/menuplatform_compute.h`), where a browser is `Web` and not `unix`. The video mode menu says the page sizes the game and names WebGPU, instead of offering a window's size and a renderer. Option menus take an IfOption's `else`.
+- `v_video.cpp`: the backend's vid_fps line is named for its device (`ComputeBackendRateName`), WebGPU in a browser.
 - `src/CMakeLists.txt`:
   - The browser module links with `--wrap=exit`.
   - It compiles `webcrash.cpp` in place of `zx_crashreport.cpp`, with the same `ZX_SENTRY_DSN`.

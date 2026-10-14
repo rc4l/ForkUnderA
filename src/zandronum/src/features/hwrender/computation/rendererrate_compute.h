@@ -30,6 +30,9 @@ void ComputeRateFrame(RendererRate &r, unsigned nowMs, double frameMs);
 // [rc4l] Whether the renderer drew a frame within the last second, which is when its window is up to show a rate.
 bool ComputeRateLive(const RendererRate &r, unsigned nowMs);
 
+// [rc4l] The backend's name on its vid_fps line, from its device's API (BackendApiName): "WebGPU" on WebGPU, else "VK".
+const char *ComputeBackendRateName(const char *apiName);
+
 // [rc4l] The vid_fps line for one renderer, "GL  3 ms (310 fps)", into out; returns its length.
 int ComputeRateText(char *out, size_t size, const char *name, int ms, int fps);
 
