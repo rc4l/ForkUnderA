@@ -43,6 +43,7 @@ jobs:
           # [rc4l] Same condition as the symbols, because it is the same fact: a build may report a
           # crash exactly when someone can read the report. See ZX_OFFICIAL_BUILD in CMakeLists.
           ZX_OFFICIAL_BUILD: ${{ inputs.upload_symbols && '1' || '0' }}
+          ZX_KEEP_GOING: "1"   # [rc4l] a red build lists every compile error, not the first
         run: |
           # Native OpenAL build (no FMOD, no Rosetta) — arm64 on Apple Silicon runners.
           set -o pipefail

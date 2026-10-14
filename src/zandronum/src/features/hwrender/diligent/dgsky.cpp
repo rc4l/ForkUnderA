@@ -705,15 +705,12 @@ void EnsureSky()
 		if (g_skyBoxFaces.Size() == 0) { g_skyIsBox = false; return; }
 		if (!sameBox)
 		{
+			// [rc4l] A face's name as the C string Printf takes, or "-" for a face the box lacks.
+			auto face = [sb](int i) { return sb->faces[i] != NULL ? sb->faces[i]->Name.GetChars() : "-"; };
 			Printf("vulkan sky: %s  [SKYBOX, %s: %s %s %s %s %s %s]\n",
 				info.name,
 				(sb->faces[5] != NULL) ? "six faces" : "wrapped",
-				(sb->faces[0] && sb->faces[0]->Name) ? sb->faces[0]->Name : "-",
-				(sb->faces[1] && sb->faces[1]->Name) ? sb->faces[1]->Name : "-",
-				(sb->faces[2] && sb->faces[2]->Name) ? sb->faces[2]->Name : "-",
-				(sb->faces[3] && sb->faces[3]->Name) ? sb->faces[3]->Name : "-",
-				(sb->faces[4] && sb->faces[4]->Name) ? sb->faces[4]->Name : "-",
-				(sb->faces[5] && sb->faces[5]->Name) ? sb->faces[5]->Name : "-");
+				face(0), face(1), face(2), face(3), face(4), face(5));
 		}
 		g_skyIsBox = true;
 		g_boxMaterial = mat;

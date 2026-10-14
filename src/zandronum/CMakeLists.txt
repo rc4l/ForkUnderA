@@ -176,6 +176,8 @@ if( FUA_DILIGENT )
 	set( DILIGENT_NO_DIRECT3D12    ON  CACHE BOOL "" FORCE )
 	set( DILIGENT_NO_OPENGL        ON  CACHE BOOL "" FORCE )
 	set( DILIGENT_NO_ARCHIVER      ON  CACHE BOOL "" FORCE )
+	# [rc4l] Super resolution is unused, and its NVIDIA library is built against the dynamic CRT, which a whole-solution build fails to link beside /MT.
+	set( DILIGENT_NO_SUPER_RESOLUTION ON CACHE BOOL "" FORCE )
 	add_subdirectory( "${CMAKE_SOURCE_DIR}/../../deps/DiligentCore" "${CMAKE_BINARY_DIR}/DiligentCore" )
 endif()
 if( MSVC )

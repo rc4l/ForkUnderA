@@ -29,10 +29,6 @@ void gl_PreprocessLevel()
 {
 }
 
-void gl_ParseDefs()
-{
-}
-
 void StartGLMenu (void)
 {
 }
@@ -44,17 +40,7 @@ void FTexture::PrecacheGL(int cache)
 {
 }
 
-FTexture::MiscGLInfo::MiscGLInfo() throw ()
-{
-}
-
-FTexture::MiscGLInfo::~MiscGLInfo()
-{
-}
-
-void AddStateLight(FState *, const char *)
-{
-}
+// [rc4l] gl_ParseDefs, AddStateLight and MiscGLInfo are features/gldefs and features/materials now, which a build without GL compiles too.
 // [rc4l] The two light settings whose callbacks reset GL's shader state stay in gl/, so a build without GL defines them plainly.
 CVAR(Bool, r_enhanced_nightvision, true, CVAR_ARCHIVE|CVAR_NOINITCALL)
 CVAR(Int, r_lightmode, 3, CVAR_ARCHIVE|CVAR_NOINITCALL)

@@ -285,7 +285,8 @@ configure() {
 
 build() {
     status "Building Zandronum..."
-    cmake --build "$BUILD_DIR" --config "$CONFIGURATION" --parallel "$NCPU"
+    # [rc4l] ZX_KEEP_GOING=1 compiles past a failing file, so one run reports every compile error.
+    cmake --build "$BUILD_DIR" --config "$CONFIGURATION" --parallel "$NCPU" ${ZX_KEEP_GOING:+-- -k}
 
     # [rc4l] Extract debug info into a .dSYM for symbol upload (kept out of the shipped binary).
     if [[ "${ZX_WITH_SYMBOLS:-0}" == "1" && -f "$BUILD_DIR/forkundera" ]]; then
