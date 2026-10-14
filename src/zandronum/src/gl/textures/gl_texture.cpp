@@ -81,8 +81,6 @@ CUSTOM_CVAR(Int, gl_texture_format, 0, CVAR_ARCHIVE|CVAR_GLOBALCONFIG|CVAR_NOINI
 
 CVAR(Bool, gl_precache, false, CVAR_ARCHIVE)
 
-CVAR(Bool, gl_trimsprites, true, CVAR_ARCHIVE);
-
 TexFilter_s TexFilter[]={
 	{GL_NEAREST,					GL_NEAREST,		false},
 	{GL_NEAREST_MIPMAP_NEAREST,		GL_NEAREST,		true},
