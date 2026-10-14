@@ -10,6 +10,12 @@ GL's viewport, and `ComputeNdcWindow`/`ComputeApplyNdcWindow` fold it into the p
 makes, so the target stays whole and every pass that reads `gl_FragCoord` against the MVP stays in step.
 Scenario `viewwindow`.
 
+Its shape is the view's lens, `features/viewsetup`'s `CurrentView()` (`fov`, `ratio`, `fovRatio`), as GL's
+`SetProjection` takes it, never the frame's own width over height: `ComputeCameraLens` picks it unless a
+camera texture or the save picture overrides it. A forced aspect ratio (`vid_aspect`) is then stretched
+across the window as GL stretches it, and the walks' frustum, seeded from the same ratio, covers the
+picture; framed from the frame's shape, the screen's edges past the walk drew sky.
+
 ## A launch without GL (the default)
 
 A launch draws with the backend alone, with no GL context at all (every client build), unless the
@@ -88,7 +94,7 @@ ones. A build without the backend (`FUA_DILIGENT` off, a dedicated server) takes
 | `posix/sdl/i_input.cpp` | `I_EngineWindow` | the window mouse warps and grabs, which has no GL context to find it by |
 | `posix/cocoa/i_video.mm` | `CreateBackendFrameBuffer`, `I_EngineContentView` | a CAMetalLayer content view and no GL context, and the backend's frame buffer |
 | `features/sidebyside/sidebyside.cpp` | `Record2DCanvas`, `Get2DTarget` | GL's frame buffer records every 2D draw for the backend, and GL leaves out one meant for the backend's window alone |
-| `features/frame/playerview.cpp` | `NoteWorldView`, `SetMainViewLens`, `StandaloneActive` | the frame drew the world, through the player's lens |
+| `features/frame/playerview.cpp` | `NoteWorldView`, `StandaloneActive` | the frame drew the world |
 | `features/hwrender/backendrenderer.cpp` | `SettleLevelScene`, `RenderSavePicture`, `RenderBackendCamera` | a level settled before its first view; the save picture; camera textures |
 | `features/hwrender/backendvideo.cpp` | `WipeStart`, `WipeEnd`, `WipeTic`, `WipeCleanup`, `PreparePoly` | the screen wipes and the textured automap |
 | `gl/data/gl_vertexbuffer.cpp`, `gl/models/gl_models.cpp`, `gl/system/gl_interface.h` | `gl_HasContext` | vertex buffers keep only their CPU copy without GL |

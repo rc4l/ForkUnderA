@@ -5,6 +5,9 @@ out for itself, and the walks read them back from `GLRenderer`; now both read `C
 
 - the pitch, stretched by the level's pixel ratio since the playsim treats it as 1:1;
 - the roll;
+- the lens it is seen through (`fov`, `ratio`, `fovRatio`, as `RenderViewpoint` takes them), which the
+  backend's projection reads, so a forced aspect ratio is stretched across the window as GL stretches it
+  and the walks' frustum covers the picture;
 - the actor the eye is in, which is not drawn (none in the chase camera or a dead player's death camera);
 - the walks' frustum half-angle (`FrustumAngle`), widened for a tilted view;
 - the yaw and the vector the view faces (`SetViewAngle`), which `TurnView` turns for a mirror's walk;
@@ -25,9 +28,11 @@ clamp and fixed colormap arithmetic, tested.
 
 ## In-engine hooks
 
-- `gl/scene/gl_scene.cpp` `FGLRenderer::RenderViewpoint`: `SetupView` after `R_SetupFrame` with
-  `gl_frameMS`, and GL's pitch, roll, view actor and sky scroll taken from it; `FGLRenderer::FrustumAngle`
+- `gl/scene/gl_scene.cpp` `FGLRenderer::RenderViewpoint`: `SetupView` after `R_SetupFrame` with GL's
+  lens and `gl_frameMS`, and GL's pitch, roll, view actor and sky scroll taken from it; `FGLRenderer::FrustumAngle`
   is `ComputeFrustumAngle`, `SetViewArea` is `SetViewArea`, and `SetViewAngle` is `ComputeViewAngleVector`.
+- `features/hwrender/diligent/dgscene.cpp` `CurrentCamera`: the lens, through `ComputeCameraLens`
+  (`features/hwrender/computation/backendview_compute`).
 - `features/visibility/viswalk.cpp`: the player's view actor, every walk's frustum, a skybox walk's
   `SetViewArea` and a mirror walk's `TurnView`, and the view vector and angles inside a portal view.
 - `features/hwrender/diligent/dgsky.cpp`: the sky's scroll.
