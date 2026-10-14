@@ -137,6 +137,8 @@ AActor			*camera;	// [RH] camera to draw from. doesn't have to be a player
 
 fixed_t			r_TicFrac;			// [RH] Fractional tic to render
 DWORD			r_FrameTime;		// [RH] Time this frame started drawing (in ms)
+FViewLens		r_viewLens = { 90.f, 4.f / 3.f, 1.f };
+unsigned		r_frameSerial;
 bool			r_NoInterpolate;
 bool			r_showviewer;
 
@@ -1244,4 +1246,33 @@ void FCanvasTextureInfo::UpdateToClient( ULONG ulClient )
 		// long names since this same commit. Truncating instead would hand the client a name that
 		// silently resolves to the WRONG texture, which is worse than one it cannot find.
 		SERVERCOMMANDS_SetCameraToTexture( pProbe->Viewpoint, pProbe->Texture->Name.GetChars(), pProbe->FOV, ulClient, SVCF_ONLYTHISCLIENT );
+}
+
+//==========================================================================
+//
+// fua_cameras
+//
+// [rc4l] What is actually registered as a camera texture, and whether it has a viewpoint.
+//
+// A camera texture that renders black has two completely different explanations: the backend cannot
+// draw it, or the map never pointed a camera at it. Only the second is the map working as intended,
+// and a screenshot cannot tell them apart. Cameras are wired by ACS (SetCameraToTexture), not by a
+// linedef, so this reads the registry rather than the map.
+//
+//==========================================================================
+
+CCMD( fua_cameras )
+{
+	int n = 0;
+	for ( FCanvasTextureInfo *probe = FCanvasTextureInfo::GetList( ); probe != NULL; probe = probe->Next )
+	{
+		const char *name = ( probe->Texture != NULL ) ? probe->Texture->Name : "?";
+		Printf( "camera %d: texture %s, viewpoint %s, fov %d, needsupdate %s\n",
+				n, name,
+				( probe->Viewpoint != NULL ) ? probe->Viewpoint->GetClass( )->TypeName.GetChars( ) : "NONE",
+				probe->FOV,
+				( probe->Texture != NULL ) ? "yes" : "no" );
+		n++;
+	}
+	Printf( "fua_cameras: %d camera texture(s) registered\n", n );
 }

@@ -5,7 +5,7 @@
 
 #include "tarray.h"
 #include "zstring.h"
-#include "gl/utility/gl_cycler.h"
+#include "features/dynlights/cycler.h"   // [rc4l] FCycler, which the light actors cycle by too
 
 
 enum

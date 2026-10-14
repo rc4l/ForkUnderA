@@ -23,6 +23,8 @@
 #include "c_console.h"    // Printf
 #include "d_player.h"     // players, consoleplayer
 #include "doomstat.h"     // gametic
+#include "r_defs.h"       // sector_t
+#include "r_state.h"      // sectors
 #include "network.h"      // NETWORK_GetState, NETWORK_InClientMode
 #include "r_utility.h"    // r_TicFrac
 #include "templates.h"
@@ -125,6 +127,12 @@ namespace
 // stay below the #endif; the drawing is called solely from gl/scene/ and so is guarded here.
 #ifndef NO_GL
 
+	// [rc4l] The backend's frame (CollectBackendFrame), in BackendLines' order, and whether it may draw.
+	TArray<Vertex3> s_backendVerts[kLineBatches];
+	bool s_backendActive = false;
+	// [rc4l] The widest line the backend draws, which has no driver range to ask since it draws quads.
+	const float BACKEND_MAX_LINE_WIDTH = 64.f;
+
 	// GL_ALIASED_LINE_WIDTH_RANGE, queried lazily on first draw.
 	bool  s_lineRangeKnown = false;
 	float s_lineWidthMin = 1.f;
@@ -176,7 +184,7 @@ namespace
 
 	// Turns the surviving blast records into wireframe: the outer region actually tested by
 	// P_RadiusAttack, the inner full-damage region, and a cross marking the blast's own height.
-	void BuildBlastGeometry()
+	void BuildBlastGeometry(TArray<Vertex3> &dest)
 	{
 		for (unsigned int i = 0; i < s_blasts.Count(); ++i)
 		{
@@ -184,18 +192,18 @@ namespace
 
 			const BlastPrism outer = ComputeBlastPrism(record.x, record.y, record.z,
 				static_cast<float>(record.distance));
-			AppendBox(s_blastVerts, outer.centerX, outer.centerY, outer.bottomZ, outer.radius, outer.height);
+			AppendBox(dest, outer.centerX, outer.centerY, outer.bottomZ, outer.radius, outer.height);
 
 			const int full = ClampFullDamageDistance(record.distance, record.fulldamagedistance);
 			if (full > 0)
 			{
 				const BlastPrism inner = ComputeBlastPrism(record.x, record.y, record.z,
 					static_cast<float>(full));
-				AppendBox(s_blastVerts, inner.centerX, inner.centerY, inner.bottomZ, inner.radius, inner.height);
+				AppendBox(dest, inner.centerX, inner.centerY, inner.bottomZ, inner.radius, inner.height);
 			}
 
 			Vertex3 marker[PLANE_MARKER_VERTS];
-			AppendVerts(s_blastVerts, marker, BuildPlaneMarker(record.x, record.y, record.z,
+			AppendVerts(dest, marker, BuildPlaneMarker(record.x, record.y, record.z,
 				outer.radius, marker));
 		}
 	}
@@ -222,17 +230,17 @@ void BeginFrame()
 	s_frameActive = ShouldDraw(!!cl_fua_hitbox, !!sv_cheats, IsOfflineGame());
 }
 
-void CollectActor(AActor *thing)
+namespace
 {
-	if (!s_frameActive || thing == NULL)
-		return;
-
+// [rc4l] One actor's boxes into `physical` and `attack`, viewActor being the one the camera is attached to.
+void AppendActor(AActor *thing, AActor *viewActor, TArray<Vertex3> &physical, TArray<Vertex3> &attack)
+{
 	// The actor the camera is attached to. Skipping it matches what the sprite path does, and in
 	// plain first person it only hides a wireframe you are standing inside -- but it also hides the
 	// box of whoever a spectator is following, since spectating attaches the camera to that
 	// player's body. That is precisely the box you want when watching someone, so this is a toggle
 	// rather than an unconditional skip.
-	if (thing == GLRenderer->mViewActor && !cl_fua_hitbox_self)
+	if (thing == viewActor && !cl_fua_hitbox_self)
 		return;
 
 	const bool isMissile = !!(thing->flags & MF_MISSILE);
@@ -248,7 +256,7 @@ void CollectActor(AActor *thing)
 	const float cy = FIXED2FLOAT(thingy);
 	const float cz = FIXED2FLOAT(thingz);
 
-	AppendBox(s_physicalVerts, cx, cy, cz,
+	AppendBox(physical, cx, cy, cz,
 		FIXED2FLOAT(thing->radius), FIXED2FLOAT(thing->height));
 
 	// The attack box is only worth drawing where it actually differs from the movement box --
@@ -260,10 +268,53 @@ void CollectActor(AActor *thing)
 
 		if (attackRadius != thing->radius || attackHeight != thing->height)
 		{
-			AppendBox(s_attackVerts, cx, cy, cz,
+			AppendBox(attack, cx, cy, cz,
 				FIXED2FLOAT(attackRadius), FIXED2FLOAT(attackHeight));
 		}
 	}
+}
+} // namespace
+
+void CollectActor(AActor *thing)
+{
+	if (!s_frameActive || thing == NULL)
+		return;
+	AppendActor(thing, GLRenderer->mViewActor, s_physicalVerts, s_attackVerts);
+}
+
+void CollectBackendFrame(AActor *viewActor, const int *sectorList, int count)
+{
+	for (int k = 0; k < kLineBatches; k++)
+		s_backendVerts[k].Clear();
+	s_backendActive = ShouldDraw(!!cl_fua_hitbox, !!sv_cheats, IsOfflineGame());
+	if (!s_backendActive)
+		return;
+	for (int i = 0; i < count; i++)
+		for (AActor *thing = sectors[sectorList[i]].thinglist; thing != NULL; thing = thing->snext)
+			AppendActor(thing, viewActor, s_backendVerts[0], s_backendVerts[1]);
+	s_blasts.ExpireBefore(gametic);
+	if (cl_fua_hitbox_explosions)
+		BuildBlastGeometry(s_backendVerts[2]);
+}
+
+int BackendLines(LineBatch *out, bool &xray, float &widthPx)
+{
+	xray = !!cl_fua_hitbox_xray;
+	widthPx = ResolveLineWidth(cl_fua_hitbox_linewidth, 1.f, BACKEND_MAX_LINE_WIDTH);
+	if (!s_backendActive)
+		return 0;
+	const unsigned int colours[kLineBatches] = { uint32(cl_fua_hitbox_color), uint32(cl_fua_hitbox_attackcolor), uint32(cl_fua_hitbox_blastcolor) };
+	int n = 0;
+	for (int k = 0; k < kLineBatches; k++)
+	{
+		if (s_backendVerts[k].Size() == 0)
+			continue;
+		out[n].verts = &s_backendVerts[k][0];
+		out[n].count = s_backendVerts[k].Size();
+		out[n].rgb = colours[k] & 0xffffff;
+		n++;
+	}
+	return n;
 }
 
 void Draw()
@@ -293,7 +344,7 @@ void Draw()
 
 	s_blasts.ExpireBefore(gametic);
 	if (cl_fua_hitbox_explosions)
-		BuildBlastGeometry();
+		BuildBlastGeometry(s_blastVerts);
 
 	if (s_physicalVerts.Size() == mark.physical &&
 		s_attackVerts.Size() == mark.attack &&

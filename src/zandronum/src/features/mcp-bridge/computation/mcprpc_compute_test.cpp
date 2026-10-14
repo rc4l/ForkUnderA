@@ -264,3 +264,40 @@ TEST(McpRpc, PerfSummaryJsonRoundsToThreeDecimals)
 	EXPECT_NE(j.find("\"fps_avg\":125.000"), std::string::npos);
 	EXPECT_NE(j.find("\"n\":4"), std::string::npos);
 }
+
+// [rc4l] The three ways a caller writes a flag, and the one that used to be misread.
+TEST(McpRpc, GetBoolReadsJsonBooleans)
+{
+	bool on = true;
+	EXPECT_TRUE(zx::mcp::GetBool("{\"on\":false}", "on", on));
+	EXPECT_FALSE(on);
+	on = false;
+	EXPECT_TRUE(zx::mcp::GetBool("{\"on\":true}", "on", on));
+	EXPECT_TRUE(on);
+}
+
+TEST(McpRpc, GetBoolReadsOneAndZero)
+{
+	bool on = true;
+	EXPECT_TRUE(zx::mcp::GetBool("{\"on\":0}", "on", on));
+	EXPECT_FALSE(on);
+	on = false;
+	EXPECT_TRUE(zx::mcp::GetBool("{\"on\":1}", "on", on));
+	EXPECT_TRUE(on);
+}
+
+TEST(McpRpc, GetBoolLeavesTheDefaultWhenTheKeyIsAbsent)
+{
+	bool on = true;
+	EXPECT_FALSE(zx::mcp::GetBool("{\"tics\":4}", "on", on));
+	EXPECT_TRUE(on);
+}
+
+// The bug itself: GetInt cannot read `false`, so a caller defaulting to true kept its default and
+// did the opposite of what was asked. Pinned so nobody wires a flag through GetInt again.
+TEST(McpRpc, GetIntCannotReadAJsonBoolean)
+{
+	long v = 1;
+	EXPECT_FALSE(zx::mcp::GetInt("{\"on\":false}", "on", v));
+	EXPECT_EQ(1, v);
+}

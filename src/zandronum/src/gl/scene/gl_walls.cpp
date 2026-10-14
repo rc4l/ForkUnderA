@@ -52,7 +52,7 @@
 #include "gl/renderer/gl_lightdata.h"
 #include "gl/data/gl_data.h"
 #include "gl/dynlights/gl_dynlight.h"
-#include "gl/dynlights/gl_glow.h"
+#include "features/gldefs/glow.h"
 #include "gl/scene/gl_drawinfo.h"
 #include "gl/scene/gl_portal.h"
 #include "gl/textures/gl_material.h"
@@ -60,6 +60,8 @@
 #include "gl/utility/gl_geometric.h"
 #include "gl/utility/gl_templates.h"
 #include "gl/shaders/gl_shader.h"
+#include "gl/scene/gl_wallcache.h"
+#include "gl/scene/gl_observer.h"
 
 
 //==========================================================================
@@ -141,6 +143,7 @@ void GLWall::PutWall(bool translucent)
 		viewdistance = P_AproxDistance( ((seg->linedef->v1->x+seg->linedef->v2->x)>>1) - viewx,
 											((seg->linedef->v1->y+seg->linedef->v2->y)>>1) - viewy);
 		gl_drawinfo->drawlists[GLDL_TRANSLUCENT].AddWall(this);
+		gl_WallCacheRecord(*this, GLDL_TRANSLUCENT);
 	}
 	else if (passflag[type]!=4)	// non-translucent walls
 	{
@@ -158,8 +161,11 @@ void GLWall::PutWall(bool translucent)
 			list = masked ? GLDL_MASKEDWALLS : GLDL_PLAINWALLS;
 		}
 		gl_drawinfo->drawlists[list].AddWall(this);
+		gl_WallCacheRecord(*this, list);
 
 	}
+	// [rc4l] Portal walls go to the portal manager, which keeps per-frame state, so the seg is marked never to be replayed; the branch itself is never taken.
+	else if (gl_WallCacheNoteUnreplayable(), false) {}
 	else switch (type)
 	{
 	case RENDERWALL_COLORLAYER:
@@ -176,12 +182,15 @@ void GLWall::PutWall(bool translucent)
 		break;
 
 	case RENDERWALL_SKYBOX:
+		// [rc4l] The quad GL stencils its sky through, for a check against GL's walk.
+		if (gl_observer) gl_observer->SkyQuad(*this, skybox);
 		portal=GLPortal::FindPortal(skybox);
 		if (!portal) portal=new GLSkyboxPortal(skybox);
 		portal->AddLine(this);
 		break;
 
 	case RENDERWALL_SECTORSTACK:
+		if (gl_observer) gl_observer->StackWall(*this, this->portal);	// [rc4l] for a check against GL's walk
 		portal = this->portal->GetGLPortal();
 		portal->AddLine(this);
 		break;
@@ -201,8 +210,9 @@ void GLWall::PutWall(bool translucent)
 		portal=GLPortal::FindPortal(seg->linedef);
 		if (!portal) portal=new GLMirrorPortal(seg->linedef);
 		portal->AddLine(this);
-		if (gl_mirror_envmap) 
+		if (r_mirror_envmap) 
 		{
+			if (gl_observer) gl_observer->MirrorSheen(*this);	// [rc4l] the sheen's light, for a check against GL's walk
 			// draw a reflective layer over the mirror
 			type=RENDERWALL_MIRRORSURFACE;
 			gl_drawinfo->drawlists[GLDL_TRANSLUCENTBORDER].AddWall(this);
@@ -210,6 +220,8 @@ void GLWall::PutWall(bool translucent)
 		break;
 
 	case RENDERWALL_SKY:
+		// [rc4l] The quad GL stencils its sky through, for a check against GL's walk; NULL, never `skybox`, since on a plain sky that union member is this wall's GLSkyInfo.
+		if (gl_observer) gl_observer->SkyQuad(*this, NULL);
 		portal=GLPortal::FindPortal(sky);
 		if (!portal) portal=new GLSkyPortal(sky);
 		portal->AddLine(this);
@@ -731,7 +743,7 @@ void GLWall::DoTexture(int _type,seg_t * seg, int peg,
 
 	gltexture->GetTexCoordInfo(&tci, seg->sidedef->GetTextureXScale(texpos), seg->sidedef->GetTextureYScale(texpos));
 
-	type = (seg->linedef->special == Line_Mirror && _type == RENDERWALL_M1S && gl_mirrors) ? RENDERWALL_MIRROR : _type;
+	type = (seg->linedef->special == Line_Mirror && _type == RENDERWALL_M1S && r_mirrors) ? RENDERWALL_MIRROR : _type;
 
 	float floatceilingref = FIXED2FLOAT(ceilingrefheight + tci.RowOffset(seg->sidedef->GetTextureYOffset(texpos)));
 	if (peg) floatceilingref += tci.mRenderHeight - FIXED2FLOAT(lh + v_offset);
@@ -1470,7 +1482,7 @@ void GLWall::Process(seg_t *seg, sector_t * frontsector, sector_t * backsector)
 	{
 		glseg.fracleft = 0;
 		glseg.fracright = 1;
-		if (gl_seamless)
+		if (r_seamless)
 		{
 			if (v1->dirty) gl_RecalcVertexHeights(v1);
 			if (v2->dirty) gl_RecalcVertexHeights(v2);
@@ -1580,6 +1592,12 @@ void GLWall::Process(seg_t *seg, sector_t * frontsector, sector_t * backsector)
 							  (int)(realfront->GetPlaneTexZ(sector_t::ceiling)),(int)(realfront->GetPlaneTexZ(sector_t::floor)),	// must come from the original!
 							  (int)(fch1),(int)(fch2),(int)(ffh1),(int)(ffh2),0);
 		}
+		// [rc4l] An untextured one-sided wall shows the sky GL fills the screen with first; its seg is never replayed, and a check against GL hears of it.
+		else
+		{
+			gl_WallCacheNoteUnreplayable();
+			if (gl_observer) gl_observer->SkyHole(*this);
+		}
 	}
 	else // two sided
 	{
@@ -1653,6 +1671,7 @@ void GLWall::Process(seg_t *seg, sector_t * frontsector, sector_t * backsector)
 					// skip processing if the back is a malformed subsector
 					if (seg->PartnerSeg != NULL && !(seg->PartnerSeg->Subsector->hacked & 4))
 					{
+						gl_WallCacheNoteUnreplayable();	// [rc4l] the fill is per-frame, so the cache must not replay this seg
 						gl_drawinfo->AddUpperMissingTexture(seg->sidedef, sub, bch1a);
 					}
 				}
@@ -1726,6 +1745,7 @@ void GLWall::Process(seg_t *seg, sector_t * frontsector, sector_t * backsector)
 				// skip processing if the back is a malformed subsector
 				if (seg->PartnerSeg != NULL && !(seg->PartnerSeg->Subsector->hacked & 4))
 				{
+					gl_WallCacheNoteUnreplayable();	// [rc4l] the fill is per-frame, so the cache must not replay this seg
 					gl_drawinfo->AddLowerMissingTexture(seg->sidedef, sub, bfh1);
 				}
 			}

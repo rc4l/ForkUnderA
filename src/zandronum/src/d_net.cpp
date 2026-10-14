@@ -76,6 +76,7 @@
 #include "chat.h"
 #include "mcp_ticprof.h" // [ForkUnderA] per-tic sim profiler anchors (no-op unless FUA_MCP_BRIDGE)
 #include "mcp_simtrace.h" // [ForkUnderA] sim tracer tic boundary (no-op unless FUA_MCP_BRIDGE)
+#include "decallib.h"                        // [rc4l] DecalLibrary, to resolve a decal by name
 
 EXTERN_CVAR (Int, disableautosave)
 EXTERN_CVAR (Int, autosavecount)

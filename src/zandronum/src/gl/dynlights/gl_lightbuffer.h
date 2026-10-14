@@ -33,6 +33,9 @@ public:
 	unsigned int GetIndexPtr() const { return mIndices.Size();	}
 	void StoreIndex(int index) { mIndices.Push(index); }
 	int GetIndex(int i) const { return mIndices[i];	}
+
+
+private:
 };
 
 #endif

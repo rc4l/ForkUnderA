@@ -23,12 +23,15 @@
 
 #include "gl/renderer/gl_renderer.h"
 #include "gl/system/gl_framebuffer.h"
+#include "features/materials/material.h"   // [rc4l] FMaterial::FlushAll
 #include "gl/shaders/gl_shader.h"
 #include "gl/utility/gl_templates.h"
 // [rc4l] borderless-video: single pure source of truth for what `fullscreen` means. See
 // features/borderless-video/computation/displaymode_compute.h. Backends ask it; never branch
 // on the raw CVAR. Easy to replace when upstream's video backend is cherry-picked wholesale.
 #include "features/borderless-video/computation/displaymode_compute.h"
+#include "features/hwrender/backendonly.h"   // [rc4l] -vulkan
+#include "features/sidebyside/sidebyside.h"   // [rc4l] GL's frame buffer, its 2D recorded for the backend too
 
 void gl_CalculateCPUSpeed();
 extern int NewWidth, NewHeight, NewBits, DisplayBits;
@@ -49,6 +52,7 @@ CVAR(Bool, gl_debug, false, 0)
 // [BB]
 CVAR(Bool, gl_quadbufferedstereo, false, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
 
+EXTERN_CVAR(Bool, fua_render_in_background)
 EXTERN_CVAR(Int, vid_refreshrate)
 
 //==========================================================================
@@ -57,7 +61,7 @@ EXTERN_CVAR(Int, vid_refreshrate)
 //
 //==========================================================================
 
-Win32GLVideo::Win32GLVideo(int parm) : m_Modes(NULL), m_IsFullscreen(false)
+Win32GLVideo::Win32GLVideo(int parm, bool gl) : m_hDC(NULL), m_gl(gl), m_Modes(NULL), m_IsFullscreen(false), m_hRC(NULL)
 {
 	#ifdef _WIN32
 		 if (CPU.bRDTSC) gl_CalculateCPUSpeed();
@@ -70,7 +74,7 @@ Win32GLVideo::Win32GLVideo(int parm) : m_Modes(NULL), m_IsFullscreen(false)
 
 	GetDisplayDeviceName();
 	MakeModesList();
-	SetPixelFormat();
+	if (m_gl) SetPixelFormat();
 
 }
 
@@ -83,7 +87,7 @@ Win32GLVideo::Win32GLVideo(int parm) : m_Modes(NULL), m_IsFullscreen(false)
 Win32GLVideo::~Win32GLVideo()
 {
 	FreeModes();
-	if (GLRenderer != NULL) GLRenderer->FlushTextures();
+	FMaterial::FlushAll();
 }
 
 //==========================================================================
@@ -383,7 +387,9 @@ DFrameBuffer *Win32GLVideo::CreateFrameBuffer(int width, int height, bool fs, DF
 		//old->GetFlash(flashColor, flashAmount);
 		delete old;
 	}
-	fb = new OpenGLFrameBuffer(m_hMonitor, m_DisplayWidth, m_DisplayHeight, m_DisplayBits, m_DisplayHz, fs);
+	// [rc4l] A launch without GL gets the backend's frame buffer on the same window and modes.
+	if (!m_gl) return zx::hwrender::CreateBackendFrameBuffer(m_hMonitor, m_DisplayWidth, m_DisplayHeight, m_DisplayBits, m_DisplayHz, fs);
+	fb = static_cast<Win32GLFrameBuffer *>(zx::sidebyside::CreateGLFrameBuffer(m_hMonitor, m_DisplayWidth, m_DisplayHeight, m_DisplayBits, m_DisplayHz, fs));
 	return fb;
 }
 
@@ -395,10 +401,10 @@ DFrameBuffer *Win32GLVideo::CreateFrameBuffer(int width, int height, bool fs, DF
 
 bool Win32GLVideo::SetResolution (int width, int height, int bits)
 {
-	if (GLRenderer != NULL) GLRenderer->FlushTextures();
+	FMaterial::FlushAll();
 	I_ShutdownGraphics();
 	
-	Video = new Win32GLVideo(0);
+	Video = new Win32GLVideo(0, m_gl);
 	if (Video == NULL) I_FatalError ("Failed to initialize display");
 	
 	bits=32;
@@ -882,7 +888,7 @@ IMPLEMENT_ABSTRACT_CLASS(Win32GLFrameBuffer)
 //
 //==========================================================================
 
-Win32GLFrameBuffer::Win32GLFrameBuffer(void *hMonitor, int width, int height, int bits, int refreshHz, bool fullscreen) : BaseWinFB(width, height) 
+Win32GLFrameBuffer::Win32GLFrameBuffer(void *hMonitor, int width, int height, int bits, int refreshHz, bool fullscreen, bool initGL) : BaseWinFB(width, height) 
 {
 	static int localmultisample=-1;
 	
@@ -994,13 +1000,16 @@ Win32GLFrameBuffer::Win32GLFrameBuffer(void *hMonitor, int width, int height, in
 		I_RestoreWindowedPos();
 	}
 
-	if (!static_cast<Win32GLVideo *>(Video)->InitHardware(Window, localmultisample))
+	vsyncfunc = NULL;
+	if (initGL)
 	{
-		vid_renderer = 0;
-		return;
+		if (!static_cast<Win32GLVideo *>(Video)->InitHardware(Window, localmultisample))
+		{
+			vid_renderer = 0;
+			return;
+		}
+		vsyncfunc = (PFNWGLSWAPINTERVALEXTPROC)wglGetProcAddress("wglSwapIntervalEXT");
 	}
-
-	vsyncfunc = (PFNWGLSWAPINTERVALEXTPROC)wglGetProcAddress("wglSwapIntervalEXT");
 
 	HDC hDC = GetDC(Window);
 	m_supportsGamma = !!GetDeviceGammaRamp(hDC, (void *)m_origGamma);
@@ -1012,6 +1021,15 @@ Win32GLFrameBuffer::Win32GLFrameBuffer(void *hMonitor, int width, int height, in
 // 
 //
 //==========================================================================
+
+bool Win32GLFrameBuffer::ClientSize(int &w, int &h) const
+{
+	RECT r;
+	if (Window == NULL || !GetClientRect(Window, &r)) return false;
+	w = int(r.right - r.left);
+	h = int(r.bottom - r.top);
+	return true;
+}
 
 Win32GLFrameBuffer::~Win32GLFrameBuffer()
 {
@@ -1080,7 +1098,11 @@ void Win32GLFrameBuffer::SetWindowSize (int w, int h)
 
 bool Win32GLFrameBuffer::CanUpdate()
 {
-	if (!AppActive) return false;
+	// [rc4l] Refusing here skips the 2D pass AND the buffer swap, so an inactive window keeps
+	// whatever image it had. That is the right default -- nobody is looking -- and exactly wrong for
+	// the cases fua_render_in_background exists for: a second monitor, a capture card, a recording,
+	// a benchmark. See the cvar's note in s_sound.cpp.
+	if (!AppActive && !fua_render_in_background) return false;
 	return true;
 }
 
@@ -1204,5 +1226,5 @@ void Win32GLFrameBuffer::NewRefreshRate ()
 
 IVideo *gl_CreateVideo()
 {
-	return new Win32GLVideo(0);
+	return new Win32GLVideo(0, !zx::hwrender::BackendOnly());
 }

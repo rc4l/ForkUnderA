@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   menuNav, click, rightClick, middleClick, drag, wheel, typeText,
-  padButton, padDpad, look, stick, stickHold, stickClear, readMenu, findLabel, clickLabel, screenshot, verifyMenu,
+  padButton, padDpad, look, stick, stickHold, stickClear, readMenu, findLabel, clickLabel, screenshot, commandShot, verifyMenu,
   warp, damagingSectors,
 } from "../src/ui.mjs";
 
@@ -124,6 +124,20 @@ test("screenshot polls while the PNG is absent, then throws if it never lands", 
   await assert.rejects(
     () => screenshot({ rpc: async () => ({}), onEvent: () => () => {} }, engineBin, "never_appears", { tries: 3, delay: 1 }),
     /screenshot did not appear/);
+});
+
+// [rc4l] fps saves the backend's swapchain with fua_diligent_shot, so a shot is any command that writes the file it names.
+test("commandShot runs its command, makes the folder, and reads back the file the command wrote", async () => {
+  const fs = await import("node:fs");
+  const os = await import("node:os");
+  const path = await import("node:path");
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "fuactl-cs-")), "sweep", "x.png");
+  const sent = [];
+  const c = { rpc: async (_m, args) => { sent.push(args.text); fs.writeFileSync(file, "png"); return {}; } };
+  const s = await commandShot(c, `fua_diligent_shot "${file}"`, file, { tries: 3, delay: 1 });
+  assert.deepEqual(sent, [`fua_diligent_shot "${file}"`]);
+  assert.equal(s.path, file);
+  assert.equal(Buffer.from(s.base64, "base64").toString(), "png");
 });
 
 test("verifyMenu opens, navigates, and screenshots", async () => {

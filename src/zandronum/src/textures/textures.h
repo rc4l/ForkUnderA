@@ -34,7 +34,7 @@ class FArchive;
 // Texture IDs
 class FTextureManager;
 class FTerrainTypeArray;
-class FGLTexture;
+class FTexturePixels;
 class FMaterial;
 
 class FTextureID
@@ -333,7 +333,7 @@ public:
 	struct MiscGLInfo
 	{
 		FMaterial *Material[2];
-		FGLTexture *SystemTexture[2];
+		FTexturePixels *SystemTexture[2];
 		FTexture *Brightmap;
 		PalEntry GlowColor;
 		PalEntry FloorSkyColor;
@@ -496,6 +496,8 @@ public:
 
 	FSwitchDef *FindSwitch (FTextureID texture);
 	FDoorAnimation *FindAnimatedDoor (FTextureID picnum);
+	// [rc4l] The ANIMDEFS animations, read-only, so the Vulkan backend can give every frame of one a material slot.
+	const TArray<FAnimDef *> &GetAnimations () const { return mAnimations; }
 
 private:
 

@@ -114,9 +114,9 @@ public:
 		{
 			if (mat->tex->UseBasePalette()) translation = TRANSLATION(TRANSLATION_Standard, 8);
 		}
-		mEffectState = overrideshader >= 0? overrideshader : mat->mShaderIndex;
+		mEffectState = overrideshader >= 0? overrideshader : mat->GetShaderIndex();
 		mShaderTimer = mat->tex->gl_info.shaderspeed;
-		mat->Bind(clampmode, translation);
+		gl_BindMaterial(mat, clampmode, translation);
 	}
 
 	void Apply();
@@ -293,6 +293,16 @@ public:
 		mDynColor.Set(r, g, b, 0);
 	}
 
+	// [rc4l] features/hwrender: the dynamic light the SHADER adds, which GetColorRGBA does not see.
+	//
+	// gl_SetDynSpriteLight puts a sprite's dynamic light here as a uniform and main.fp adds it after
+	// the vertex colour, so a HUD weapon captured by its vertex colour alone arrives unlit -- the
+	// muzzle flash lit the weapon in GL and left it dark in the backend.
+	void GetDynLight(float &r, float &g, float &b) const
+	{
+		r = mDynColor.vec[0]; g = mDynColor.vec[1]; b = mDynColor.vec[2];
+	}
+
 	void SetObjectColor(PalEntry pe)
 	{
 		mObjectColor = pe;
@@ -311,10 +321,59 @@ public:
 		mLightParms[0] = d;
 	}
 
+	// [rc4l] Every field gl_SetColor and gl_SetFog write, so a caller that only asks them can put them back.
+	struct ShadingSnapshot
+	{
+		FStateVec4 color;
+		int desaturation;
+		float lightParms[4];
+		bool fogEnabled;
+		PalEntry fogColor;
+	};
+
+	ShadingSnapshot SaveShading() const
+	{
+		ShadingSnapshot s;
+		s.color = mColor;
+		s.desaturation = mDesaturation;
+		for (int i = 0; i < 4; i++) s.lightParms[i] = mLightParms[i];
+		s.fogEnabled = mFogEnabled;
+		s.fogColor = mFogColor;
+		return s;
+	}
+
+	void RestoreShading(const ShadingSnapshot &s)
+	{
+		mColor = s.color;
+		mDesaturation = s.desaturation;
+		for (int i = 0; i < 4; i++) mLightParms[i] = s.lightParms[i];
+		mFogEnabled = s.fogEnabled;
+		mFogColor = s.fogColor;
+	}
+
 	void SetFixedColormap(int cm)
 	{
 		mColormapState = cm;
 	}
+
+	// [rc4l] features/levelmesh: read back the FINAL shading inputs after gl_SetColor/gl_SetFog.
+	//
+	// The level mesh records what the GL renderer would have sent, rather than recomputing it in the
+	// backend. Recomputing was tried and drifted: it silently dropped rellight (fake contrast),
+	// extralight, desaturation and blendfactor, and the Vulkan render came out visibly brighter and
+	// flatter than GL's with no single obvious culprit. Reading the values the engine just computed
+	// cannot drift, because there is only one computation.
+	const float *GetLightParms() const { return mLightParms; }
+	void GetColorRGB(float &r, float &g, float &b) const
+	{
+		r = mColor.vec[0]; g = mColor.vec[1]; b = mColor.vec[2];
+	}
+	void GetColorRGBA(float &r, float &g, float &b, float &a) const
+	{
+		r = mColor.vec[0]; g = mColor.vec[1]; b = mColor.vec[2]; a = mColor.vec[3];
+	}
+	bool IsFogEnabled() const { return mFogEnabled; }
+	int GetDesaturation() const { return mDesaturation; }
 
 	PalEntry GetFogColor() const
 	{

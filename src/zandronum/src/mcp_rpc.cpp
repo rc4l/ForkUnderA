@@ -25,6 +25,7 @@
 #include "m_joy.h"
 #include "network.h"
 #include "r_state.h"
+#include "r_utility.h"   // R_ResetViewInterpolation: snap the view after a camera move
 #include "m_random.h"
 #include "zstring.h"
 #include "m_cheat.h"
@@ -386,7 +387,7 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 			"\"sim.tic\",\"sim.hash\",\"sim.seed\",\"sim.pause\",\"sim.resume\",\"sim.step\",\"sim.cheatat\",\"sim.pauseat\",\"browser.refresh\",\"browser.list\",\"net.hostdiag\",\"net.clients\",\"sim.rngdump\",\"sim.trace\","
 			"\"sim.snapshot\",\"sim.restore\",\"state.player\",\"state.actors\",\"input.event\",\"input.axis\",\"input.look\","
 			"\"perf.capture\",\"perf.ticprof\",\"perf.counters\",\"net.bandwidth\",\"gl.timers\",\"renderer.info\","
-			"\"world.sectors\",\"player.setpos\""
+			"\"world.sectors\",\"player.setpos\",\"player.camera\""
 			"],\"events\":[\"out\",\"stepped\",\"perf\",\"glperf\",\"ticprof\",\"trace\"]}" );
 	}
 	else if ( cmd == "console.exec" )
@@ -433,8 +434,19 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 	else if ( cmd == "sim.pause" )
 	{
 		if ( IsNetInstance() ) { SendErr( id, "pause unsupported in a netgame (server/client sim runs on network tics, not the local paused flag)" ); return; }
-		paused = 1;
-		SendOk( id, "{\"paused\":1}" );
+		// [rc4l] Honour args.on, because {"on":false} meaning "pause" is a trap.
+		//
+		// sim.pause used to set paused=1 whatever it was handed, on the reasoning that sim.resume is
+		// the other half of the pair. But a caller that writes {"on":false} is plainly asking to
+		// UNPAUSE, and got the opposite plus a cheerful {"paused":1} confirming it. Nothing errors,
+		// the level clock simply stops -- and a frozen sim is exactly the state in which dynamic
+		// lights and moving sectors read as "no difference", so it silently invalidates whatever was
+		// being measured. Cost an hour of a profiling session before it was noticed.
+		bool on = true;
+		GetBool( args, "on", on );
+		paused = on ? 1 : 0;
+		if ( !paused ) g_stepping = false;
+		SendOk( id, paused ? "{\"paused\":1}" : "{\"paused\":0}" );
 	}
 	else if ( cmd == "sim.resume" )
 	{
@@ -789,7 +801,7 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 			return;
 		}
 
-		long seconds = 2, hz = 1000, top = 20, engineOnly = 0, ticMin = 0, ticMax = 0;
+		long seconds = 2, hz = 1000, top = 20, engineOnly = 0, ticMin = 0, ticMax = 0, stacks = 0;
 		GetInt( args, "seconds", seconds );
 		GetInt( args, "hz", hz );
 		GetInt( args, "top", top );
@@ -798,9 +810,11 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 		// perf.ticprof which tics were expensive, then ask here for exactly those.
 		GetInt( args, "tic_min", ticMin );
 		GetInt( args, "tic_max", ticMax );
+		// [rc4l] stacks 1 walks each sample's stack too, for an inclusive table of where the time went from.
+		GetInt( args, "stacks", stacks );
 
 		if ( !MCP_Sample_Arm( (double)seconds, (int)hz, engineOnly != 0, (int)top,
-			(int)ticMin, (int)ticMax ) )
+			(int)ticMin, (int)ticMax, stacks != 0 ) )
 		{
 			SendErr( id, "no in-engine sampler on this platform (macOS and Linux use fuactl's "
 				"external sample/perf backend)" );
@@ -881,6 +895,44 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 		arr += "]";
 		SendOk( id, "{\"count\":" + I( n ) + ",\"sectors\":" + arr + "}" );
 	}
+	else if ( cmd == "player.camera" )
+	{
+		// [rc4l] Where the player is and what they are looking at, in the units setpos takes.
+		//
+		// A bug report is a camera. Every other route to one loses the precision that decides whether
+		// a repro lands on the step someone is describing or the step above it: coordinates read off a
+		// screenshot are integers, and fua_look's direction vector is rounded to two decimals, which
+		// at three hundred units is fifteen units of miss. Reproducing the same reported fault in
+		// three slightly wrong places is what this is for.
+		//
+		// Read-only, so it is safe against an instance somebody is playing -- which is the point. The
+		// person who found the fault should not have to stop and read numbers off their own screen.
+		if ( !InLevel() )
+		{
+			SendErr( id, "not in a level" );
+			return;
+		}
+		AActor *mo = ( consoleplayer >= 0 && consoleplayer < MAXPLAYERS ) ? players[consoleplayer].mo : NULL;
+		if ( mo == NULL )
+		{
+			SendErr( id, "no player pawn" );
+			return;
+		}
+		const double yaw = (double)mo->angle * 360.0 / 4294967296.0;
+		// Positive is DOWNWARD, matching both the actor's own convention and setpos's.
+		const double pitch = (double)(signed int)mo->pitch * 360.0 / 4294967296.0;
+		const sector_t *sec = mo->Sector;
+		FString out;
+		out.Format( "{\"x\":%.3f,\"y\":%.3f,\"z\":%.3f,\"yaw\":%.4f,\"pitch\":%.4f,"
+					"\"viewz\":%.3f,\"floorz\":%.3f,\"ceilingz\":%.3f,\"sector\":%d,"
+					"\"map\":\"%s\"}",
+					FIXED2FLOAT( mo->x ), FIXED2FLOAT( mo->y ), FIXED2FLOAT( mo->z ),
+					yaw, pitch,
+					FIXED2FLOAT( viewz ), FIXED2FLOAT( mo->floorz ), FIXED2FLOAT( mo->ceilingz ),
+					sec != NULL ? (int)( sec - sectors ) : -1,
+					level.MapName.GetChars() );
+		SendOk( id, out.GetChars() );
+	}
 	else if ( cmd == "player.setpos" )
 	{
 		// Teleport the console player to (x, y) map units, snapped to the floor. Dev tool for
@@ -895,8 +947,12 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 			SendErr( id, "single-player instances only" );
 			return;
 		}
-		long x = 0, y = 0;
-		if ( !GetInt( args, "x", x ) || !GetInt( args, "y", y ))
+		// [rc4l] FRACTIONAL map units, for the same reason the angle is fractional. Whole units put a
+		// camera up to half a unit off the one being reproduced, which at any distance is enough to
+		// frame a different texel of the thing under examination -- and player.camera reports three
+		// decimals, so a position recorded from a live session could not be replayed exactly.
+		double x = 0, y = 0;
+		if ( !GetFloat( args, "x", x ) || !GetFloat( args, "y", y ))
 		{
 			SendErr( id, "need x and y (map units)" );
 			return;
@@ -907,15 +963,104 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 			SendErr( id, "no player pawn" );
 			return;
 		}
-		P_TeleportMove( mo, fixed_t( x ) << FRACBITS, fixed_t( y ) << FRACBITS, mo->z, true );
-		mo->z = mo->floorz;
+		// [rc4l] Refuse a destination the player could not stand in, rather than forcing it.
+		//
+		// This forced the move unconditionally, which is a noclip with extra steps: a warp to a spot
+		// inside a wall succeeded, reported success, and left the camera embedded in geometry looking
+		// at the inside of a column. A whole grid probe went through solid rock that way and reported
+		// every cell as reachable. Worse, the shots taken from those cameras look like renderer faults
+		// -- surfaces missing, geometry inside out -- when they are only a camera somewhere no camera
+		// can be, so they cost a diagnosis each.
+		//
+		// Callers that genuinely need the old behaviour ask for it; everyone else gets told the spot
+		// is solid and keeps their previous position, which is recoverable.
+		long force = 0;
+		GetInt( args, "force", force );
+		const fixed_t fx = FLOAT2FIXED( x ), fy = FLOAT2FIXED( y );
+		// P_TeleportMove is not the check: teleports deliberately ignore blocking lines, so it
+		// happily lands the player inside a wall and returns true. P_CheckPosition is the one that
+		// answers whether a body of this radius fits there.
+		// [rc4l] Read the height FIRST, because everything below depends on which one is used.
+		//
+		// With a 3D floor there is no single "the floor" at an (x, y): floorz is the slab's top if the
+		// actor is above it and the real floor if it is below. Both the fit check and the teleport
+		// resolve that from the actor's CURRENT z, so asking to stand under a 3D floor while the pawn
+		// is above one was answered with the slab -- the requested height was then discarded for being
+		// below "the floor", and the camera arrived on the roof of the very thing it was sent beneath.
+		// A spot recorded from a live session under a walkway could not be replayed at all.
+		double atZ = 0;
+		const bool haveZ = GetFloat( args, "z", atZ );
+		const fixed_t oldZ = mo->z;
+		if ( haveZ ) mo->z = FLOAT2FIXED( atZ );
+
+		if ( force == 0 && !P_CheckPosition( mo, fx, fy ))
+		{
+			mo->z = oldZ;   // refused, so leave the pawn exactly as it was
+			SendErr( id, "that spot is solid or occupied -- pass force:1 to go there anyway" );
+			return;
+		}
+		P_TeleportMove( mo, fx, fy, mo->z, true );   // mo->z is the requested height by now
+		// [rc4l] Stand on the floor, unless the caller asked for a specific height.
+		//
+		// Snapping is right for reproducing where somebody was standing, and wrong for looking at
+		// something from ABOVE -- which is the view that settles whether a mark creeping from a wall
+		// onto the floor actually lands under itself. There was no way to get a camera up there, so
+		// that check was being made from eye level at a shallow angle, where a smear and a correct
+		// continuation look the same.
+		// Now that the move has resolved the floor AT that height, a requested z above it stands, and
+		// one below it means "put me on the ground here" rather than "ignore what I asked for".
+		if ( haveZ && atZ > FIXED2DBL( mo->floorz ) )
+			mo->z = FLOAT2FIXED( atZ );
+		else
+			mo->z = mo->floorz;
+
+		// [rc4l] Optional facing, in degrees, 0 = east and 90 = north like every other angle a Doom
+		// tool prints. This used to be silently dropped: callers passed "angle" alongside x and y,
+		// got a success reply, and arrived pointing wherever they had been looking before. Every
+		// warp-and-compare that way faced a wall instead of the thing it was sent to look at, and the
+		// screenshots looked like a rendering bug rather than a tool that ignored an argument.
+		// [rc4l] FRACTIONAL degrees. These were whole numbers, which is coarser than it sounds: at
+		// three hundred units a degree of yaw is five units of miss, and a reported fault that lives
+		// on one step riser reproduces on the next one along. player.camera reports four decimals so
+		// a camera can be recorded and replayed onto the same texel; taking integers here would throw
+		// that away at the last step. Accepts "angle" or "yaw" for the same thing, since half the
+		// callers already wrote one and half the other.
+		double angleDeg = 0;
+		if ( GetFloat( args, "angle", angleDeg ) || GetFloat( args, "yaw", angleDeg ))
+		{
+			mo->angle = (angle_t)( angleDeg * 4294967296.0 / 360.0 );
+			if ( mo->player != NULL )
+			{
+				mo->player->mo->angle = mo->angle;
+				mo->player->cmd.ucmd.yaw = 0;
+			}
+		}
+		double pitchDeg = 0;
+		if ( GetFloat( args, "pitch", pitchDeg ) && mo->player != NULL )
+			mo->pitch = (int)( pitchDeg * 4294967296.0 / 360.0 );
+
+		// [rc4l] SNAP the view interpolator to the camera we just set.
+		//
+		// R_SetupFrame interpolates the view between the previous tic and this one, so a camera moved
+		// between frames is shown part of the way there -- and with the sim frozen for a capture it
+		// may not arrive at all. The two renderers then disagree about where the camera is, which is
+		// indistinguishable from a rendering fault: a matched GL/Vulkan pair taken at pitch -55 came
+		// back with Vulkan looking at the sky and GL looking straight down the corridor, and the
+		// difference was read as a sky bug rather than two different cameras.
+		R_ResetViewInterpolation();
 		mo->velx = mo->vely = mo->velz = 0;
 		mo->PrevX = mo->x;
 		mo->PrevY = mo->y;
 		mo->PrevZ = mo->z;
-		std::string body = "{\"x\":" + I( (long long)( mo->x >> FRACBITS )) + ",\"y\":" + I( (long long)( mo->y >> FRACBITS ))
-			+ ",\"z\":" + I( (long long)( mo->z >> FRACBITS )) + ",\"sector\":" + I( (int)( mo->Sector - sectors )) + "}";
-		SendOk( id, body );
+		// Reported back at the precision it was asked for, so a caller can confirm it landed
+		// where it meant to rather than half a unit away.
+		FString body;
+		body.Format( "{\"x\":%.3f,\"y\":%.3f,\"z\":%.3f,\"sector\":%d,\"angle\":%.4f,\"pitch\":%.4f}",
+			FIXED2FLOAT( mo->x ), FIXED2FLOAT( mo->y ), FIXED2FLOAT( mo->z ),
+			(int)( mo->Sector - sectors ),
+			(double)mo->angle * 360.0 / 4294967296.0,
+			(double)(signed int)mo->pitch * 360.0 / 4294967296.0 );
+		SendOk( id, body.GetChars() );
 	}
 	else if ( cmd == "gl.timers" )
 	{

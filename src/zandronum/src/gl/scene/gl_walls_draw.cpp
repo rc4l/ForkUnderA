@@ -52,7 +52,7 @@
 #include "gl/data/gl_data.h"
 #include "gl/data/gl_vertexbuffer.h"
 #include "gl/dynlights/gl_dynlight.h"
-#include "gl/dynlights/gl_glow.h"
+#include "features/gldefs/glow.h"
 #include "gl/dynlights/gl_lightbuffer.h"
 #include "gl/scene/gl_drawinfo.h"
 #include "gl/scene/gl_portal.h"
@@ -60,8 +60,10 @@
 #include "gl/textures/gl_material.h"
 #include "gl/utility/gl_clock.h"
 #include "gl/utility/gl_templates.h"
+#include "features/hwrender/computation/walllight_compute.h"
+#include "features/materials/materials.h"   // [rc4l] MirrorSheenTexture
 
-EXTERN_CVAR(Bool, gl_seamless)
+EXTERN_CVAR(Bool, r_seamless)
 
 //==========================================================================
 //
@@ -73,6 +75,15 @@ FDynLightData lightdata;
 
 void GLWall::SetupLights()
 {
+	// [rc4l] Nothing this wall was holding survives into this frame.
+	//
+	// A wall replayed from the cache is the SAME object every frame, so its light index is whatever
+	// was last written into it -- and every return below leaves it exactly as it was. Stock GL never
+	// had to think about that, because PutWall built a fresh wall each frame and cleared it there.
+	// Carried over, a wall goes on reading light data belonging to a light that has since died: a
+	// dead plasma bolt lighting the wall it hit, indefinitely. See walllight_compute.h.
+	dynlightindex = zx::hwrender::kNoWallLightIndex;
+
 	// check for wall types which cannot have dynamic lights on them (portal types never get here so they don't need to be checked.)
 	switch (type)
 	{
@@ -83,7 +94,7 @@ void GLWall::SetupLights()
 		return;
 	}
 
-	// [AK] Take care of gl_lights_size and ZADF_FORCE_VIDEO_DEFAULTS.
+	// [AK] Take care of r_lights_size and ZADF_FORCE_VIDEO_DEFAULTS.
 	OVERRIDE_LIGHTS_SIZE_IF_NECESSARY
 
 	float vtx[]={glseg.x1,zbottom[0],glseg.y1, glseg.x1,ztop[0],glseg.y1, glseg.x2,ztop[1],glseg.y2, glseg.x2,zbottom[1],glseg.y2};
@@ -125,7 +136,7 @@ void GLWall::SetupLights()
 			float y = FIXED2FLOAT(node->lightsource->y);
 			float z = FIXED2FLOAT(node->lightsource->z);
 			float dist = fabsf(p.DistToPoint(x, z, y));
-			float radius = (node->lightsource->GetRadius() * gl_lights_size);
+			float radius = (node->lightsource->GetRadius() * r_lights_size);
 			float scale = 1.0f / ((2.f * radius) - dist);
 
 			if (radius > 0.f && dist < radius)
@@ -166,7 +177,10 @@ void GLWall::SetupLights()
 		node = node->nextLight;
 	}
 
-	dynlightindex = GLRenderer->mLights->UploadLights(lightdata);
+	// The pass ran for this wall, so what it produced is the answer -- including the -1 an empty
+	// upload returns, which is how a wall that receives no light says so.
+	dynlightindex = zx::hwrender::ComputeWallLightIndex(true,
+		GLRenderer->mLights->UploadLights(lightdata), dynlightindex);
 }
 
 
@@ -180,7 +194,7 @@ void GLWall::SetupLights()
 void GLWall::RenderWall(int textured, unsigned int *store)
 {
 	static texcoord tcs[4]; // making this variable static saves us a relatively costly stack integrity check.
-	bool split = (gl_seamless && !(textured&RWF_NOSPLIT) && seg->sidedef != NULL && !(seg->sidedef->Flags & WALLF_POLYOBJ) && !(flags & GLWF_NOSPLIT));
+	bool split = (r_seamless && !(textured&RWF_NOSPLIT) && seg->sidedef != NULL && !(seg->sidedef->Flags & WALLF_POLYOBJ) && !(flags & GLWF_NOSPLIT));
 
 	tcs[0]=lolft;
 	tcs[1]=uplft;
@@ -229,13 +243,98 @@ void GLWall::RenderWall(int textured, unsigned int *store)
 
 //==========================================================================
 //
+// [rc4l] features/levelmesh wall batching -- build the same fan RenderWall would emit, but into a
+// caller-supplied array instead of straight into the mapped buffer, so a run of walls can be
+// fan-expanded into one triangle-list draw. Returns the vertex count, or 0 if the fan would not fit
+// (the caller then draws that wall on its own, exactly as before).
+//
+//==========================================================================
+
+int GLWall::BuildFanVertices(FFlatVertex *out, int maxOut)
+{
+	texcoord tcs[4];
+	const bool split = (r_seamless && seg->sidedef != NULL &&
+		!(seg->sidedef->Flags & WALLF_POLYOBJ) && !(flags & GLWF_NOSPLIT));
+
+	tcs[0] = lolft;
+	tcs[1] = uplft;
+	tcs[2] = uprgt;
+	tcs[3] = lorgt;
+
+	// [rc4l] The split helpers advance the pointer by an amount bounded only by map data, so give
+	// them the whole array and bail if they overran rather than trusting a computed bound.
+	FFlatVertex *ptr = out;
+	if (maxOut < 4) return 0;
+
+	ptr->Set(glseg.x1, zbottom[0], glseg.y1, tcs[0].u, tcs[0].v);
+	ptr++;
+	if (split && glseg.fracleft == 0) SplitLeftEdge(tcs, ptr);
+	ptr->Set(glseg.x1, ztop[0], glseg.y1, tcs[1].u, tcs[1].v);
+	ptr++;
+	if (split && !(flags & GLWF_NOSPLITUPPER)) SplitUpperEdge(tcs, ptr);
+	ptr->Set(glseg.x2, ztop[1], glseg.y2, tcs[2].u, tcs[2].v);
+	ptr++;
+	if (split && glseg.fracright == 1) SplitRightEdge(tcs, ptr);
+	ptr->Set(glseg.x2, zbottom[1], glseg.y2, tcs[3].u, tcs[3].v);
+	ptr++;
+	if (split && !(flags & GLWF_NOSPLITLOWER)) SplitLowerEdge(tcs, ptr);
+
+	const int count = (int)(ptr - out);
+	return (count <= maxOut) ? count : 0;
+}
+
+//==========================================================================
+//
+// [rc4l] The state GLWall::Draw's GLPASS_PLAIN/GLPASS_ALL arm sets before RenderWall, without the
+// draw. Kept beside that arm so the two cannot drift; anything added there must be added here.
+//
+//==========================================================================
+
+void GLWall::SetupBatchState(int pass)
+{
+	const int rel = rellight + getExtraLight();
+	gl_SetColor(lightlevel, rel, Colormap, 1.0f);
+	if (type != RENDERWALL_M2SNF) gl_SetFog(lightlevel, rel, &Colormap, false);
+	else gl_SetFog(255, 0, NULL, false);
+	gl_RenderState.EnableGlow(false);	// batched walls are never glowing; ComputeCanBatch refuses them
+	gl_RenderState.SetMaterial(gltexture, flags & 3, false, -1, false);
+	gl_RenderState.Apply();
+	gl_RenderState.ApplyLightIndex(dynlightindex);
+}
+
+//==========================================================================
+//
+// [rc4l] Everything that decides this wall's draw state, for the batching predicate.
+//
+//==========================================================================
+
+void GLWall::FillBatchKey(zx::levelmesh::WallBatchKey &out) const
+{
+	out.material      = gltexture;
+	out.clampFlags    = flags & 3;
+	out.lightLevel    = lightlevel;
+	out.relLight      = rellight;
+	out.type          = type;
+	out.lightColor    = Colormap.LightColor.d;
+	out.fadeColor     = Colormap.FadeColor.d;
+	out.desaturation  = Colormap.desaturation;
+	out.blendFactor   = Colormap.blendfactor;
+	out.dynLightIndex = dynlightindex;
+	out.glowing       = !!(flags & GLWF_GLOW);
+	// [rc4l] Mirrors the RENDERWALL_M2SNF arm of GLWall::Draw, which swaps in TM_CLAMPY for the
+	// duration of its own draw. SetupBatchState cannot reproduce a per-wall mode, so refuse it.
+	out.ownTextureMode = (type == RENDERWALL_M2SNF) && !!(flags & GLT_CLAMPY);
+}
+
+//==========================================================================
+//
 // 
 //
 //==========================================================================
 
 void GLWall::RenderFogBoundary()
 {
-	if (gl_fogmode && gl_fixedcolormap == 0)
+	if (r_fogmode && gl_fixedcolormap == 0)
 	{
 		int rel = rellight + getExtraLight();
 		gl_SetFog(lightlevel, rel, &Colormap, false);
@@ -258,7 +357,8 @@ void GLWall::RenderFogBoundary()
 //==========================================================================
 void GLWall::RenderMirrorSurface()
 {
-	if (GLRenderer->mirrortexture == NULL) return;
+	FTexture *const sheen = zx::materials::MirrorSheenTexture();   // [rc4l] features/materials keeps it, for GL and the backend
+	if (sheen == NULL) return;
 
 	// For the sphere map effect we need a normal of the mirror surface,
 	Vector v(glseg.y2-glseg.y1, 0 ,-glseg.x2+glseg.x1);
@@ -280,7 +380,7 @@ void GLWall::RenderMirrorSurface()
 	gl_RenderState.AlphaFunc(GL_GREATER,0);
 	glDepthFunc(GL_LEQUAL);
 
-	FMaterial * pat=FMaterial::ValidateTexture(GLRenderer->mirrortexture, false);
+	FMaterial * pat=FMaterial::ValidateTexture(sheen, false);
 	gl_RenderState.SetMaterial(pat, CLAMP_NONE, 0, -1, false);
 
 	flags &= ~GLWF_GLOW;
@@ -291,7 +391,7 @@ void GLWall::RenderMirrorSurface()
 
 	// Restore the defaults for the translucent pass
 	gl_RenderState.BlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-	gl_RenderState.AlphaFunc(GL_GEQUAL, gl_mask_sprite_threshold);
+	gl_RenderState.AlphaFunc(GL_GEQUAL, r_mask_sprite_threshold);
 	glDepthFunc(GL_LESS);
 
 	// This is drawn in the translucent pass which is done after the decal pass
@@ -325,7 +425,7 @@ void GLWall::RenderTranslucentWall()
 	// and until that changes I won't fix this code for the new blending modes!
 	bool isadditive = RenderStyle == STYLE_Add;
 
-	if (gl_fixedcolormap == CM_DEFAULT && gl_lights && (gl.flags & RFL_BUFFER_STORAGE))
+	if (gl_fixedcolormap == CM_DEFAULT && r_lights && (gl.flags & RFL_BUFFER_STORAGE))
 	{
 		SetupLights();
 	}
@@ -400,6 +500,15 @@ void GLWall::Draw(int pass)
 		SetupLights();
 		// fall through
 	case GLPASS_PLAIN:
+		// [rc4l] Reached with pass == GLPASS_ALL as well, by the fall-through above -- so only the
+		// plain pass clears, or this would throw away the index SetupLights just computed.
+		//
+		// The plain pass is what runs once the last dynamic light dies, and a wall replayed from the
+		// cache still holds the index it had while one was alive. Left alone it keeps reading that
+		// light out of the buffer for as long as nothing else spawns one.
+		if (pass == GLPASS_PLAIN)
+			dynlightindex = zx::hwrender::ComputeWallLightIndex(false,
+				zx::hwrender::kNoWallLightIndex, dynlightindex);
 		rel = rellight + getExtraLight();
 		gl_SetColor(lightlevel, rel, Colormap,1.0f);
 		tmode = gl_RenderState.GetTextureMode();

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { percentile, summarise, compare, pluck } from "../src/stats.mjs";
+import { percentile, summarise, compare, pluck, refreshBoundHz, refreshNote } from "../src/stats.mjs";
 import { checkExpectations } from "../src/scenario.mjs";
 
 test("summarise reports the band, not just an average", () => {
@@ -89,4 +89,16 @@ test("checkExpectations enforces an upper bound and flags what it never saw", ()
   assert.deepEqual(checkExpectations({ actorsSpawned: { min: 1 } }, {}),
     ["actorsSpawned was not observed"]);
   assert.deepEqual(checkExpectations({}, { anything: 1 }), []);
+});
+
+// [rc4l] A median sitting on a refresh interval is the swapchain's pace and not the frame's, which once read as two modes costing the same.
+test("a median on a display refresh names that rate, and one between rates names none", () => {
+  assert.equal(refreshBoundHz(2.081), 480);
+  assert.equal(refreshBoundHz(16.69), 60);
+  assert.equal(refreshBoundHz(1.03), null);
+  assert.equal(refreshBoundHz(6.33), null);
+  assert.equal(refreshBoundHz(0), null);
+  assert.equal(refreshBoundHz(undefined), null);
+  assert.match(refreshNote(2.082), /480 Hz refresh/);
+  assert.equal(refreshNote(1.03), "");
 });

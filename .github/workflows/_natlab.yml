@@ -43,6 +43,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # [rc4l] DiligentCore alone, which the client configure requires: sentry-native stays out as before, since it needs libcurl that neither this job nor the peer image has.
+      - name: Fetch DiligentCore
+        run: git submodule update --init --recursive deps/DiligentCore
+
+      # [rc4l] The peer image's runtime set (tools/natlab/Dockerfile.peer) without FFmpeg, plus the X11, XCB and Wayland headers the Vulkan backend compiles against.
       - name: Install build dependencies
         run: |
           sudo apt-get update
@@ -50,12 +55,13 @@ jobs:
             build-essential cmake ninja-build python3 pkg-config \
             libssl-dev libopus-dev zlib1g-dev libbz2-dev libjpeg-dev \
             libsdl2-dev libgl1-mesa-dev libglu1-mesa-dev libglew-dev libgme-dev \
+            libx11-dev libx11-xcb-dev libxcb1-dev libxrandr-dev libwayland-dev \
             libopenal-dev libsndfile1-dev libmpg123-dev
 
       # [rc4l] The bridge is what makes this assertable: without it the lab could only watch
       # processes stay alive, which is true of a client that never connected.
       - name: Build the engine with the control bridge
-        run: ZX_MCP_BRIDGE=1 ./linux_compile.sh --no-package
+        run: ZX_MCP_BRIDGE=1 ZX_KEEP_GOING=1 ./linux_compile.sh --no-package
 
       - name: Run the NAT lab
         run: |
@@ -94,6 +100,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # [rc4l] DiligentCore alone, which the client configure requires: sentry-native stays out as before, since it needs libcurl that neither this job nor the peer image has.
+      - name: Fetch DiligentCore
+        run: git submodule update --init --recursive deps/DiligentCore
+
+      # [rc4l] The peer image's runtime set (tools/natlab/Dockerfile.peer) without FFmpeg, plus the X11, XCB and Wayland headers the Vulkan backend compiles against.
       - name: Install build dependencies
         run: |
           sudo apt-get update
@@ -101,10 +112,11 @@ jobs:
             build-essential cmake ninja-build python3 pkg-config \
             libssl-dev libopus-dev zlib1g-dev libbz2-dev libjpeg-dev \
             libsdl2-dev libgl1-mesa-dev libglu1-mesa-dev libglew-dev libgme-dev \
+            libx11-dev libx11-xcb-dev libxcb1-dev libxrandr-dev libwayland-dev \
             libopenal-dev libsndfile1-dev libmpg123-dev
 
       - name: Build the engine with the control bridge
-        run: ZX_MCP_BRIDGE=1 ./linux_compile.sh --no-package
+        run: ZX_MCP_BRIDGE=1 ZX_KEEP_GOING=1 ./linux_compile.sh --no-package
 
       - name: Prove a dual-stack server is one row, and a v6-only client can find it
         run: tools/natlab/run-dualstack.sh

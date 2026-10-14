@@ -51,6 +51,7 @@
 #endif
 // [rc4l] video-scale: faithful port of upstream's r_videoscale math. See features/video-scale.
 #include "features/video-scale/computation/videoscale_compute.h"
+#include "features/hwrender/backendonly.h"   // [rc4l] CreateLaunchRenderer
 #include "r_renderer.h"
 // [rc4l] Software renderer removed (GL-only build); NO_GL server uses the null renderer.
 #ifdef NO_GL
@@ -150,8 +151,7 @@ void I_CreateRenderer()
 	if (Renderer == NULL)
 	{
 #ifndef NO_GL
-		// [rc4l] GL-only build: always use the OpenGL renderer.
-		Renderer = gl_CreateInterface();
+		Renderer = zx::hwrender::CreateLaunchRenderer(gl_CreateInterface);
 #else
 		// [rc4l] Dedicated server (no OpenGL): use the trivial null renderer.
 		Renderer = new FNullRenderer;

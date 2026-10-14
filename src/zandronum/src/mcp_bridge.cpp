@@ -212,6 +212,13 @@ namespace
 			if ( mcp_pid_alive( parentPid ) ) { misses = 0; continue; }
 			if ( ++misses >= 2 )
 			{
+				// [rc4l] SAY SO on the way out. TerminateProcess below is the quietest death there
+				// is -- exit code 0, no message, no crash dump, and the log stops mid-line -- and an
+				// engine reaped here is indistinguishable from one that crashed. A whole debugging
+				// session went into telling those two apart; this line settles it in one word.
+				fprintf( stderr, "fua: bridge watchdog -- supervising process %d is gone, quitting\n",
+					parentPid );
+				fflush( stderr );
 				// Ask for a CLEAN quit first (game thread runs GL/Cocoa teardown), then hard-exit as a
 				// last resort if the loop is wedged and doesn't honour the flag within a grace window.
 				g_quitRequested = 1;
@@ -350,6 +357,7 @@ void MCP_Bridge_Poll()
 		exit( 0 );
 	}
 
+	MCP_Crash_NoteAlive(); // proof of life for the hang watchdog
 	MCP_RPC_Tick(); // step re-freeze, event pump, HUD frame capture (engine-facing)
 
 	for ( ;; )

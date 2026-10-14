@@ -52,7 +52,7 @@
 #include "gl/renderer/gl_lightdata.h"
 #include "gl/renderer/gl_renderer.h"
 #include "gl/renderer/gl_renderstate.h"
-#include "gl/dynlights/gl_glow.h"
+#include "features/gldefs/glow.h"
 #include "gl/data/gl_data.h"
 #include "gl/data/gl_vertexbuffer.h"
 #include "gl/scene/gl_clipper.h"
@@ -67,6 +67,10 @@
 // [AK] New #includes.
 #include "c_console.h"
 #include "features/fixed64/computation/angle_interp_compute.h"
+#include "gl/scene/gl_observer.h"
+#include "features/glportal/computation/glportal_compute.h"
+
+static bool gl_portalinfo;
 
 //-----------------------------------------------------------------------------
 //-----------------------------------------------------------------------------
@@ -266,6 +270,7 @@ bool GLPortal::Start(bool usestencil, bool doquery)
 
 				if (sampleCount==0) 	// not visible
 				{
+					if (gl_portalinfo) Printf("    %s not visible\n", GetName());	// [rc4l] So a skipped portal reads as skipped, not drawn.
 					// restore default stencil op.
 					glStencilOp(GL_KEEP,GL_KEEP,GL_KEEP);
 					glStencilFunc(GL_EQUAL,recursion,~0);		// draw sky into stencil
@@ -499,8 +504,6 @@ void GLPortal::StartFrame()
 //
 //-----------------------------------------------------------------------------
 
-static bool gl_portalinfo;
-
 CCMD(gl_portalinfo)
 {
 	gl_portalinfo = true;
@@ -533,7 +536,7 @@ void GLPortal::EndFrame()
 	{
 		if (gl_portalinfo) 
 		{
-			Printf("%sProcessing %s, depth = %d, query = %d\n", indent.GetChars(), p->GetName(), renderdepth, usequery);
+			Printf("%sProcessing %s, depth = %d, query = %d, %d lines\n", indent.GetChars(), p->GetName(), renderdepth, usequery, p->lines.Size());
 		}
 		if (p->lines.Size() > 0)
 		{
@@ -574,7 +577,8 @@ bool GLPortal::RenderFirstSkyPortal(int recursion)
 		if (p->lines.Size() > 0 && p->IsSky())
 		{
 			// Cannot clear the depth buffer inside a portal recursion
-			if (recursion && p->NeedDepthBuffer()) continue;
+			// [rc4l] features/glportal: a portal drawn first nests without raising recursion, so the portal depth says it too.
+			if (!zx::glportal::ComputeDrawsSkyPortalFirst(p->NeedDepthBuffer(), recursion, renderdepth)) continue;
 
 			if (!best || p->lines.Size()>best->lines.Size())
 			{
@@ -693,7 +697,10 @@ void GLSkyboxPortal::DrawContents()
 	SaveMapSection();
 	currentmapsection[mapsection>>3] |= 1 << (mapsection & 7);
 
-	GLRenderer->DrawScene();
+	{
+		FGLObservedWalk walk(EObservedWalk::Skybox);	// [rc4l] a walk from the skybox's viewpoint, for a check against GL's
+		GLRenderer->DrawScene();
+	}
 	origin->flags&=~MF_JUSTHIT;
 	inskybox=false;
 	gl_RenderState.SetDepthClamp(oldclamp);
@@ -720,6 +727,13 @@ GLSectorStackPortal::~GLSectorStackPortal()
 	{
 		origin->glportal = NULL;
 	}
+}
+
+// [rc4l] Moved from gl_portaldata.cpp, now features/stackportals, which keeps the portal data.
+GLSectorStackPortal *FPortal::GetGLPortal()
+{
+	if (glportal == NULL) glportal = new GLSectorStackPortal(this);
+	return glportal;
 }
 
 //-----------------------------------------------------------------------------
@@ -787,7 +801,10 @@ void GLSectorStackPortal::DrawContents()
 	SaveMapSection();
 	SetupCoverage();
 	ClearClipper();
-	GLRenderer->DrawScene();
+	{
+		FGLObservedWalk walk(EObservedWalk::Stack, origin);	// [rc4l] a walk through the stacked view, for a check against GL's
+		GLRenderer->DrawScene();
+	}
 	RestoreMapSection();
 
 	if (origin->plane != -1) instack[origin->plane]--;
@@ -954,7 +971,10 @@ void GLMirrorPortal::DrawContents()
 	angle_t a1 = linedef->v2->GetClipAngle();
 	clipper.SafeAddClipRange(a1,a2);
 
-	GLRenderer->DrawScene();
+	{
+		FGLObservedWalk walk(EObservedWalk::Mirror, NULL, int(linedef - ::lines));	// [rc4l] a walk into the mirror, for a check against GL's
+		GLRenderer->DrawScene();
+	}
 
 	MirrorFlag--;
 }
@@ -1121,7 +1141,14 @@ void GLHorizonPortal::DrawContents()
 
 const char *GLSkyPortal::GetName() { return "Sky"; }
 const char *GLSkyboxPortal::GetName() { return "Skybox"; }
-const char *GLSectorStackPortal::GetName() { return "Sectorstack"; }
+// [rc4l] Named with its plane and displacement, so gl_portalinfo tells two stacks apart.
+const char *GLSectorStackPortal::GetName()
+{
+	static FString name;
+	name.Format("Sectorstack %s by %.0f,%.0f", origin->plane == sector_t::ceiling ? "ceiling" : "floor",
+		FIXED2FLOAT(origin->xDisplacement), FIXED2FLOAT(origin->yDisplacement));
+	return name.GetChars();
+}
 const char *GLPlaneMirrorPortal::GetName() { return "Planemirror"; }
 const char *GLMirrorPortal::GetName() { return "Mirror"; }
 const char *GLHorizonPortal::GetName() { return "Horizon"; }

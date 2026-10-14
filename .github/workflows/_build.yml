@@ -26,7 +26,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          submodules: true
+          submodules: recursive   # [rc4l] DiligentCore brings its own (glslang, SPIRV, volk)
 
       # [rc4l] On a real release, tag HEAD with the release version BEFORE building so updaterevision's
       # `git describe` bakes the correct version into GIT_DESCRIPTION. Otherwise the tag is created only
@@ -43,6 +43,7 @@ jobs:
           # [rc4l] Same condition as the symbols, because it is the same fact: a build may report a
           # crash exactly when someone can read the report. See ZX_OFFICIAL_BUILD in CMakeLists.
           ZX_OFFICIAL_BUILD: ${{ inputs.upload_symbols && '1' || '0' }}
+          ZX_KEEP_GOING: "1"   # [rc4l] a red build lists every compile error, not the first
         run: |
           # Native OpenAL build (no FMOD, no Rosetta) — arm64 on Apple Silicon runners.
           set -o pipefail
@@ -62,6 +63,16 @@ jobs:
           test -f build/ForkUnderA.app/Contents/MacOS/libopenal.1.dylib \
             || { echo "::error::libopenal is not bundled in the .app"; exit 1; }
           echo "sound OK"; otool -L "$bin" | grep -iE 'openal|sndfile|mpg123'
+
+      # [rc4l] The Vulkan backend's loader and MoltenVK travel in the .app, or every Mac launch falls back to GL.
+      - name: Verify Vulkan is bundled
+        run: |
+          set -euo pipefail
+          app=build/ForkUnderA.app/Contents
+          for f in MacOS/libvulkan.1.dylib MacOS/libMoltenVK.dylib Resources/vulkan/icd.d/MoltenVK_icd.json; do
+            test -f "$app/$f" || { echo "::error::$f is not bundled in the .app -- Vulkan would fall back to GL"; exit 1; }
+          done
+          echo "vulkan OK"
 
       # [rc4l] ditto preserves the bundle's permissions and symlinks; upload-artifact's own
       # zipping drops the executable bit and produces an .app macOS refuses to launch.
@@ -109,7 +120,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          submodules: true
+          submodules: recursive   # [rc4l] DiligentCore brings its own (glslang, SPIRV, volk)
 
       - name: Bake release version into git describe
         if: inputs.upload_symbols
@@ -125,6 +136,7 @@ jobs:
           # [rc4l] Same condition as the symbols, because it is the same fact: a build may report a
           # crash exactly when someone can read the report. See ZX_OFFICIAL_BUILD in CMakeLists.
           ZX_OFFICIAL_BUILD: ${{ inputs.upload_symbols && '1' || '0' }}
+          ZX_KEEP_GOING: "1"   # [rc4l] a red build lists every compile error, not the first
         run: |
           set -o pipefail
           ./linux_compile.sh --install-deps 2>&1 | tee build.log
@@ -175,7 +187,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          submodules: true
+          submodules: recursive   # [rc4l] DiligentCore brings its own (glslang, SPIRV, volk)
 
       - name: Bake release version into git describe
         if: inputs.upload_symbols
@@ -187,6 +199,7 @@ jobs:
           VERSION: ${{ inputs.version }}
           ZX_WITH_SYMBOLS: ${{ inputs.upload_symbols && '1' || '0' }}
           ZX_OFFICIAL_BUILD: ${{ inputs.upload_symbols && '1' || '0' }}
+          ZX_KEEP_GOING: "1"
         run: |
           set -o pipefail
           ./linux_compile.sh --install-deps --serveronly 2>&1 | tee build-server.log
@@ -235,7 +248,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          submodules: true
+          submodules: recursive   # [rc4l] DiligentCore brings its own (glslang, SPIRV, volk)
 
       - name: Bake release version into git describe
         if: inputs.upload_symbols

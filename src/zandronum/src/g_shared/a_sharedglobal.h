@@ -29,6 +29,9 @@ public:
 	void Destroy ();
 	FTextureID StickToWall (side_t *wall, fixed_t x, fixed_t y, F3DFloor * ffloor);
 	fixed_t GetRealZ (const side_t *wall) const;
+	// [rc4l] features/levelmesh: the same resolution without a decal object, so the backend can ask
+	// again every frame instead of once at spawn. See RealZOnWall.
+	static fixed_t RealZOnWall (const side_t *wall, fixed_t z, DWORD renderFlags);
 	void SetShade (DWORD rgb);
 	void SetShade (int r, int g, int b);
 	void Spread (const FDecalTemplate *tpl, side_t *wall, fixed_t x, fixed_t y, fixed_t z, F3DFloor * ffloor);

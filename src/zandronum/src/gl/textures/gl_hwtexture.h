@@ -10,6 +10,7 @@
 #define DIRECT_PALETTE -2
 
 #include "tarray.h"
+#include "features/materials/hardwaretexture.h"   // [rc4l] IHardwareTexture, as the texture system holds GL's copy
 
 class FCanvasTexture;
 class AActor;
@@ -26,7 +27,7 @@ enum
 	GLT_CLAMPY=2
 };
 
-class FHardwareTexture
+class FHardwareTexture : public IHardwareTexture
 {
 public:
 	enum
@@ -78,7 +79,7 @@ public:
 	unsigned int Bind(int texunit, int translation, bool needmipmap);
 	unsigned int CreateTexture(unsigned char * buffer, int w, int h, int texunit, bool mipmap, int translation);
 
-	void Clean(bool all);
+	void Clean(bool all) override;
 };
 
 #endif

@@ -35,6 +35,11 @@ extern float			WidescreenRatio;
 
 extern fixed_t			r_TicFrac;
 extern DWORD			r_FrameTime;
+// [rc4l] The lens the frame's player view is drawn with, worked out once a frame before any renderer draws it.
+struct FViewLens { float fov, ratio, fovRatio; };
+extern FViewLens		r_viewLens;
+// [rc4l] Counts frames, so what steps once a frame (the weapon bob's smoothing) steps once however many renderers ask.
+extern unsigned			r_frameSerial;
 extern int				extralight;
 extern unsigned int		R_OldBlend;
 
@@ -93,6 +98,9 @@ struct FCanvasTextureInfo
 	static void EmptyList ();
 	static void Serialize (FArchive &arc);
 	static void Mark();
+	// [rc4l] Read-only access for fua_cameras: whether a camera texture has a viewpoint at all is
+	// the difference between "the backend cannot draw it" and "the map never wired it".
+	static FCanvasTextureInfo *GetList() { return List; }
 
 	// [BC]
 	static void UpdateToClient( ULONG ulClient );

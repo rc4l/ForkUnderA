@@ -39,6 +39,7 @@
 #include "v_video.h"
 #include "p_trace.h"
 #include "decallib.h"
+#include "features/levelmesh/projdecals.h"   // [rc4l] projected mesh decals
 #include "statnums.h"
 #include "c_dispatch.h"
 #include "d_net.h"
@@ -107,6 +108,12 @@ DBaseDecal::DBaseDecal (const DBaseDecal *basis)
 
 void DBaseDecal::Destroy ()
 {
+	// [rc4l] features/levelmesh: the projection is owned by this decal, so it goes when this goes.
+	//
+	// Not a nicety: cl_maxdecals recycles the oldest decals as new ones are made, and a projection
+	// left behind would keep drawing a mark whose owner no longer exists -- and would be read off a
+	// freed pointer for its alpha.
+	zx::levelmesh::ForgetProjectedDecal (this);
 	Remove ();
 	Super::Destroy ();
 }
@@ -311,6 +318,18 @@ FTextureID DBaseDecal::StickToWall (side_t *wall, fixed_t x, fixed_t y, F3DFloor
 
 fixed_t DBaseDecal::GetRealZ (const side_t *wall) const
 {
+	return RealZOnWall (wall, Z, RenderFlags);
+}
+
+// [rc4l] The same answer without a decal object, because the backend needs it EVERY FRAME.
+//
+// A decal's stored Z is relative to a plane whenever RF_RELMASK is set, and that plane moves: a door
+// track, a lift's front. The engine re-resolves it each time it draws, so GL's decals ride doors for
+// free. The backend keeps its own record of the mark and was resolving this once, at spawn -- so its
+// decals stayed where the door had been. Splitting the lookup out is what lets it ask again without
+// holding a pointer to a thinker that may since have been destroyed.
+fixed_t DBaseDecal::RealZOnWall (const side_t *wall, fixed_t z, DWORD renderFlags)
+{
 	const line_t *line = wall->linedef;
 	const sector_t *front, *back;
 
@@ -329,36 +348,36 @@ fixed_t DBaseDecal::GetRealZ (const side_t *wall) const
 		back = front;
 	}
 
-	switch (RenderFlags & RF_RELMASK)
+	switch (renderFlags & RF_RELMASK)
 	{
 	default:
-		return Z;
+		return z;
 	case RF_RELUPPER:
 		if (line->flags & ML_DONTPEGTOP)
 		{
-			return Z + front->GetPlaneTexZ(sector_t::ceiling);
+			return z + front->GetPlaneTexZ(sector_t::ceiling);
 		}
 		else
 		{
-			return Z + back->GetPlaneTexZ(sector_t::ceiling);
+			return z + back->GetPlaneTexZ(sector_t::ceiling);
 		}
 	case RF_RELLOWER:
 		if (line->flags & ML_DONTPEGBOTTOM)
 		{
-			return Z + front->GetPlaneTexZ(sector_t::ceiling);
+			return z + front->GetPlaneTexZ(sector_t::ceiling);
 		}
 		else
 		{
-			return Z + back->GetPlaneTexZ(sector_t::floor);
+			return z + back->GetPlaneTexZ(sector_t::floor);
 		}
 	case RF_RELMID:
 		if (line->flags & ML_DONTPEGBOTTOM)
 		{
-			return Z + front->GetPlaneTexZ(sector_t::floor);
+			return z + front->GetPlaneTexZ(sector_t::floor);
 		}
 		else
 		{
-			return Z + front->GetPlaneTexZ(sector_t::ceiling);
+			return z + front->GetPlaneTexZ(sector_t::ceiling);
 		}
 	}
 }
@@ -696,6 +715,14 @@ DImpactDecal *DImpactDecal::StaticCreate (const FDecalTemplate *tpl, fixed_t x, 
 
 		if (!decal->StickToWall (wall, x, y, ffloor).isValid())
 		{
+			// [rc4l] features/levelmesh: the engine has nowhere to put this mark, but the world does.
+			//
+			// StickToWall fails when the hit lands in the OPEN SPAN of a two-sided line: there is no
+			// texture there to glue a quad to, so vanilla makes nothing. Aiming at the seam between
+			// two linedefs therefore leaves no mark at all, which is not obviously a rule -- it looks
+			// like the weapon missed. A projection is cut from geometry rather than glued to a
+			// texture, so it has everything it needs.
+			zx::levelmesh::SpawnProjectedDecalOnLine (tpl, x, y, z, wall != NULL ? wall->linedef : NULL);
 			return NULL;
 		}
 
@@ -704,6 +731,14 @@ DImpactDecal *DImpactDecal::StaticCreate (const FDecalTemplate *tpl, fixed_t x, 
 		{
 			decal->SetShade (color.r, color.g, color.b);
 		}
+
+		// [rc4l] features/levelmesh: mirror it into the projected decal pass.
+		//
+		// After ApplyToDecal, because that is where the decal gets its texture, its scale, its
+		// colour and its flips -- everything the projection needs in order to know what it is
+		// printing. The engine's decal stays the owner: it holds the fade, the lifetime and the
+		// cl_maxdecals recycling, and the projection reads its alpha rather than repeating any of it.
+		zx::levelmesh::SpawnProjectedDecal(decal, tpl, x, y, z, wall != NULL ? wall->linedef : NULL);
 
 		if (!cl_spreaddecals || !decal->PicNum.isValid())
 		{
@@ -802,6 +837,21 @@ DBaseDecal *ShootDecal(const FDecalTemplate *tpl, AActor *basisactor, sector_t *
 			wall = trace.Line->sidedef[trace.Side];
 			decal->StickToWall(wall, trace.X, trace.Y, trace.ffloor);
 			tpl->ApplyToDecal(decal, wall);
+
+			// [rc4l] features/levelmesh: a map-placed mark is projected too, like an impact one.
+			//
+			// The port had two decal paths and this was the reason for the second: an impact decal was
+			// projected while a decal the MAPPER placed -- the blood spatter beside a corpse, the scorch
+			// under a burnt-out light -- was still captured as a glued quad. Two implementations of one
+			// feature, and the pair of them is where the layering bugs kept coming from: a projection
+			// and a quad in the same frame do not agree about depth, and only one of them was ever
+			// being fixed.
+			//
+			// After ApplyToDecal for the same reason the impact path is: that is where the decal gets
+			// its texture, scale, colour and flips, which is everything the projection prints.
+			zx::levelmesh::SpawnProjectedDecal(decal, tpl, trace.X, trace.Y, trace.Z,
+				trace.Line != NULL ? trace.Line : NULL);
+
 			// Spread decal to nearby walls if it does not all fit on this one
 			if (cl_spreaddecals)
 			{

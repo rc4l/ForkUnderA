@@ -1,25 +1,26 @@
 ---
 name: in-engine-recording
-description: Record the running ZandroX engine to MP4 with the built-in FUA instant-replay recorder — for feature demos, before/after clips, and wad-swap montages. Use this instead of any screen-capture approach; the engine runs in its own macOS Space and external grabbers can't reach it reliably.
+description: Record the running ZandroX engine to MP4 with the built-in FUA instant-replay recorder (comma, fua_clip) — for feature demos, before/after clips, wad-swap montages, and checking that recording works on GL, Vulkan and -vulkan. Use this instead of any screen-capture approach.
 ---
 
 # Recording the engine (built-in FUA instant replay)
 
 ## When to use
 Producing a video of the running engine — a feature demo, a before/after, a
-wad-swap montage — driven over the MCP bridge (`mcp__zandronum__*`).
+wad-swap montage — driven with fuactl (`zandronum-session`).
 
 ## Golden rule: use the ENGINE recorder, never a screen grab
 The engine runs in its own macOS Space; Apple `screencapture` and ffmpeg
 `avfoundation` display capture can't reliably reach it. The engine has a
 built-in H.264 recorder — the FUA instant replay (`src/.../features/replay/`)
-that reads its own framebuffer via async PBO readback. **Always use that.** If
+that reads GL's framebuffer by async PBO readback and the Vulkan backend's swapchain by staging
+copies. **Always use that.** If
 you find yourself listing avfoundation devices, stop — you're on the wrong path.
 
 ## Controls
 CVARs (all `CVAR_ARCHIVE | CVAR_GLOBALCONFIG`, so they persist across restarts
 including `wad_reload`):
-- `cl_fua_replay 1` — enable the rolling recorder (off by default).
+- `cl_fua_replay` — the rolling recorder, on by default (a replay only helps if it was already running).
 - `cl_fua_replay_duration <secs>` — rolling-buffer length; `fua_clip` saves this many seconds.
 - `cl_fua_replay_fps` (30), `cl_fua_replay_maxheight` (720), `cl_fua_replay_bitrate` (Mbps),
   `cl_fua_replay_encoder` (0 = auto → VideoToolbox on macOS, else libx264), `cl_fua_replay_audio` (off).
@@ -29,15 +30,21 @@ Command **`fua_clip`** (bound to `,`) saves the last `duration` seconds to:
 - Linux `~/Videos/ZandroX/…`, Windows `%USERPROFILE%\Videos\ZandroX\…`
 
 `fua_clip` needs the buffer warm (a few seconds of rendered frames) — it prints
-"warming up" otherwise.
+"warming up" otherwise. Each renderer that is presenting records its own stream: a GL launch with the
+Vulkan backend writes `<name>.mp4` (GL) and `<name>_vk.mp4`, a stream not fed in the last second (GL's
+under standalone) is skipped, and a `-vulkan` launch records the backend as its only stream.
+Frames are captured as they are presented, so a `--lock` instance needs `fua_render_in_background 1`.
 
-## Recipe (via MCP)
-1. `launch_instance` windowed (e.g. 1280×720) with the map set.
-2. `run_command "cl_fua_replay 1; cl_fua_replay_duration <N>; cl_fua_replay_maxheight 720"`.
-3. Clear any first-run menu (`menu_key back`); let it render a few seconds.
-4. Do the thing you want captured.
-5. `run_command "fua_clip"`; grab the newest file from the clips dir.
-6. Trim/speed/concat with ffmpeg to the target length.
+## Recipe (fuactl)
+1. `play --map M [--file ...] --lock --port 7799 [--res 1280x720] [--gl | --no-gl]`, then
+   `ui exec "fua_render_in_background 1"`.
+2. `ui exec "cl_fua_replay_duration <N>; cl_fua_replay_maxheight 720"`; let it render a few seconds.
+3. Do the thing you want captured (`ui exec "+forward"`, `rpc player.setpos ...`).
+4. Press the bind, not just the command, when the key is what is being checked:
+   `rpc input.event '{"evtype":1,"subtype":0,"data1":51,"data2":0}'` then the same with `"evtype":2`
+   (51 is the comma's scancode); else `ui exec "fua_clip"`. The engine log says `Saved replay clip: <path>`.
+5. Check each new file with `ffprobe -count_frames` (codec, size, frames) and pull a frame with
+   `ffmpeg -sseof -1 -i clip.mp4 -frames:v 1 f.png`; then trim/speed/concat to the target length.
 
 ## Two shapes
 - **Continuous shot** — one long `cl_fua_replay_duration` (~60–90 s), do everything,

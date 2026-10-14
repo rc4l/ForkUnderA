@@ -2109,6 +2109,18 @@ OptionValue Renderers
 	1.0, "OpenGL"
 }
 
+// [rc4l] The renderer the next launch draws with (vid_backend, features/hwrender): on a Mac Vulkan runs on Metal through MoltenVK.
+OptionValue Backends
+{
+	1, "Vulkan (Recommended)"
+	0, "GL (Legacy)"
+}
+OptionValue BackendsMac
+{
+	1, "Vulkan on Metal (Recommended)"
+	0, "GL (Legacy)"
+}
+
 // [rc4l] video-scale: internal render resolution presets, faithful to upstream's ScaleModes
 // (r_videoscale vScaleTable). See features/video-scale. >>> SUPERSEDED-BY-UPSTREAM <<<
 OptionValue ScaleModes
@@ -2140,7 +2152,19 @@ OptionMenu VideoModeMenu
 		Option "Retina/HiDPI support", "vid_hidpi", "YesNo"
 	}
 	Option "Aspect ratio",			"menu_screenratios", "Ratios"
-	// [rc4l] Renderer option removed: ZandroX is OpenGL-only (software renderer dropped).
+	IfOption(Mac)
+	{
+		Option "Renderer",			"vid_backend", "BackendsMac"
+	}
+	IfOption(Windows)
+	{
+		Option "Renderer",			"vid_backend", "Backends"
+	}
+	IfOption(Unix)
+	{
+		Option "Renderer",			"vid_backend", "Backends"
+	}
+	StaticText "(the renderer changes on the next launch)"
 	Option "Force aspect ratio",	"vid_aspect", "ForceRatios"
 	Option "Enable 5:4 aspect ratio","vid_tft", "YesNo"
 	Option "Scale mode",			"vid_scalemode", "ScaleModes"

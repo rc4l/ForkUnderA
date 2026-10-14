@@ -8,6 +8,8 @@ enum GLDrawItemType
 	GLDIT_WALL,
 	GLDIT_FLAT,
 	GLDIT_SPRITE,
+	// [rc4l] A wall whose geometry the wall cache owns, an 8-byte reference (index into gl_WallCacheStaticWall()) instead of a ~200-byte GLWall copy.
+	GLDIT_STATICWALL,
 };
 
 enum DrawListType
@@ -103,6 +105,10 @@ public:
 	}
 
 	void AddWall(GLWall * wall);
+	// [rc4l] Reference a cache-owned wall without copying it.
+	void AddStaticWall(int staticIndex);
+	// [rc4l] Resolve either kind of wall item to the GLWall it draws.
+	GLWall *WallAt(unsigned i);
 	void AddFlat(GLFlat * flat);
 	void AddSprite(GLSprite * sprite);
 	void Reset();

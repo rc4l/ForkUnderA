@@ -659,10 +659,10 @@ endif( NOT NO_GL )
 
 # Start defining source files for ZDoom
 set( PLAT_WIN32_SOURCES
-	gl/hqnx_asm/hq2x_asm.cpp
-	gl/hqnx_asm/hq3x_asm.cpp
-	gl/hqnx_asm/hq4x_asm.cpp
-	gl/hqnx_asm/hqnx_asm_Image.cpp
+	features/materials/hqnx_asm/hq2x_asm.cpp
+	features/materials/hqnx_asm/hq3x_asm.cpp
+	features/materials/hqnx_asm/hq4x_asm.cpp
+	features/materials/hqnx_asm/hqnx_asm_Image.cpp
 	win32/eaxedit.cpp
 	win32/fb_d3d9.cpp
 	win32/fb_d3d9_wipe.cpp
@@ -708,7 +708,8 @@ set( PLAT_SDL_SOURCES
 	posix/sdl/i_main.cpp
 	posix/sdl/i_system.cpp
 	posix/sdl/sdlglvideo.cpp
-	posix/sdl/st_start.cpp )
+	posix/sdl/st_start.cpp
+	features/app-icon/appicon.cpp )
 
 # [rc4l] Instant-replay audio sink: AudioQueue on macOS (the Cocoa backend removed SDL from the
 # engine), SDL on Linux and Windows where SDL is the platform layer anyway.
@@ -877,38 +878,26 @@ endif( DYN_FLUIDSYNTH )
 if( NOT NO_GL )
 	set( GL_SOURCES
 		gl/data/gl_data.cpp
-		gl/data/gl_portaldata.cpp
-		gl/data/gl_setup.cpp
 	gl/data/gl_matrix.cpp
 		gl/data/gl_vertexbuffer.cpp
-		gl/dynlights/a_dynlight.cpp
 		gl/utility/gl_clock.cpp
-		gl/utility/gl_cycler.cpp
 		gl/utility/gl_geometric.cpp
 		gl/renderer/gl_renderer.cpp
 		gl/renderer/gl_renderstate.cpp
 		gl/renderer/gl_lightdata.cpp
-		gl/hqnx/init.cpp
-		gl/hqnx/hq2x.cpp
-		gl/hqnx/hq3x.cpp
-		gl/hqnx/hq4x.cpp
 		gl/textures/gl_hwtexture.cpp
 		gl/textures/gl_texture.cpp
 		gl/textures/gl_material.cpp
-		gl/textures/gl_hirestex.cpp
-		gl/textures/gl_bitmap.cpp
 	gl/textures/gl_samplers.cpp
-		gl/textures/gl_translate.cpp
-		gl/textures/gl_hqresize.cpp
-		gl/textures/gl_skyboxtexture.cpp
 		gl/scene/gl_bsp.cpp
-		gl/scene/gl_fakeflat.cpp
+		gl/scene/gl_wallcache.cpp
 		gl/scene/gl_clipper.cpp
 		gl/scene/gl_decal.cpp
 		gl/scene/gl_drawinfo.cpp
 		gl/scene/gl_flats.cpp
 		gl/scene/gl_walls.cpp
 		gl/scene/gl_sprite.cpp
+	gl/scene/gl_spriteview.cpp
 		gl/scene/gl_skydome.cpp
 		gl/scene/gl_renderhacks.cpp
 		gl/scene/gl_weapon.cpp
@@ -923,8 +912,6 @@ if( NOT NO_GL )
 		gl/stereo3d/gl_stereo_leftright.cpp
 		gl/stereo3d/scoped_view_shifter.cpp
 		gl/stereo3d/gl_anaglyph.cpp
-		gl/dynlights/gl_dynlight.cpp
-		gl/dynlights/gl_glow.cpp
 		gl/dynlights/gl_dynlight1.cpp
 	gl/dynlights/gl_lightbuffer.cpp
 			gl/shaders/gl_shader.cpp
@@ -933,10 +920,11 @@ if( NOT NO_GL )
 		gl/system/gl_framebuffer.cpp
 		gl/system/gl_menu.cpp
 		gl/system/gl_wipe.cpp
-		gl/models/gl_models_md3.cpp
-		gl/models/gl_models_md2.cpp
 		gl/models/gl_models.cpp
-		gl/models/gl_voxels.cpp
+		# [rc4l] Side by side compares against GL's own frame (its window is an OpenGLFrameBuffer), so it goes wherever GL does.
+		features/sidebyside/sidebyside.cpp
+		features/sidebyside/glchecks.cpp
+		features/sidebyside/surfaceverify.cpp
 	)
 else( NOT NO_GL )
 	set( GL_SOURCES posix/sdl/glstubs.cpp )
@@ -976,8 +964,8 @@ file( GLOB HEADER_FILES
 	gl/api/*.h
 	gl/data/*.h
 	gl/dynlights/*.h
-	gl/hqnx/*.h
-	gl/hqnx_asm/*.h
+	features/materials/hqnx/*.h
+	features/materials/hqnx_asm/*.h
 	gl/models/*.h
 	gl/renderer/*.h
 	gl/scene/*.h
@@ -1606,6 +1594,158 @@ add_executable( zdoom WIN32
 	features/hitboxviz/computation/boxedges_compute.cpp
 	features/hitboxviz/computation/blastrecords_compute.cpp
 	features/hitboxviz/computation/vizgate_compute.cpp
+	features/levelmesh/levelmesh.cpp
+	features/levelmesh/wallcache.cpp
+	features/levelmesh/walldecals.cpp
+	features/rendersettings/rendersettings.cpp
+	features/rendersettings/mapoptions.cpp
+	features/rendersettings/computation/mapoptions_compute.cpp
+	features/levelprep/levelprep.cpp
+	features/gldefs/gldefs.cpp
+	features/gldefs/glow.cpp
+	features/fakeflat/fakeflat.cpp
+	features/models/modeldef.cpp
+	features/models/md2model.cpp
+	features/models/md3model.cpp
+	features/models/voxelmodel.cpp
+	features/dynlights/a_dynlight.cpp
+	features/dynlights/lightsettings.cpp
+	features/dynlights/cycler.cpp
+	features/sprites/spriteframe.cpp
+	features/stackportals/stackportals.cpp
+	features/materials/computation/texcoord_compute.cpp
+	features/materials/computation/materiallayout_compute.cpp
+	features/hwrender/hud2d.cpp
+	features/hwrender/spriteview.cpp
+	features/levelmesh/staticmesh.cpp
+	features/levelmesh/flatmesh.cpp
+	features/levelmesh/fakeplanes.cpp
+	features/levelmesh/projdecals.cpp
+	features/levelmesh/modelmesh.cpp
+	features/levelmesh/captureshading.cpp
+	features/materials/materials.cpp
+	features/materials/material.cpp
+	features/materials/textureinfo.cpp
+	features/materials/texturebitmap.cpp
+	features/materials/translationpalette.cpp
+	features/materials/skyboxtexture.cpp
+	features/materials/hqresize.cpp
+	features/materials/hirestex.cpp
+	features/materials/hqnx/init.cpp
+	features/materials/hqnx/hq2x.cpp
+	features/materials/hqnx/hq3x.cpp
+	features/materials/hqnx/hq4x.cpp
+	features/hwshaders/hwshaders.cpp
+	features/hwshaders/computation/hwshader_compute.cpp
+	features/sprites/spritebuild.cpp
+	features/sprites/modelbuild.cpp
+	features/sprites/pspritebuild.cpp
+	features/frame/standaloneframe.cpp
+	features/frame/playerview.cpp
+	features/frame/levelrenderer.cpp
+	features/frame/framedriver.cpp
+	features/frame/viewtrace.cpp
+	features/frame/framestall.cpp
+	features/frame/debugorbit.cpp
+	features/framephase/framephase.cpp
+	features/display/display.cpp
+	features/hwrender/backendvideo.cpp
+	features/hwrender/record2d.cpp
+	features/hwrender/backendrenderer.cpp
+	features/visibility/viswalk.cpp
+	features/jobs/jobs.cpp
+	features/draw2d/draw2d.cpp
+	features/draw2d/screenblend.cpp
+	features/viewsetup/viewsetup.cpp
+	features/viewsetup/computation/viewsetup_compute.cpp
+	features/draw2d/computation/quad2d_compute.cpp
+	features/draw2d/computation/screenblend_compute.cpp
+	features/visibility/computation/clipranges_compute.cpp
+	features/visibility/computation/closedline_compute.cpp
+	features/visibility/computation/coverage_compute.cpp
+	features/visibility/computation/mirrorview_compute.cpp
+	features/visibility/computation/walkslices_compute.cpp
+	features/jobs/computation/jobpool_compute.cpp
+	features/wipe/computation/wipe_compute.cpp
+	features/surfaces/computation/skywall_compute.cpp
+	features/sprites/computation/spritestyle_compute.cpp
+	features/sprites/computation/spritequad_compute.cpp
+	features/sprites/computation/spritelight_compute.cpp
+	features/sprites/computation/spriteclip_compute.cpp
+	features/sprites/computation/spriteframe_compute.cpp
+	features/sprites/computation/modelpose_compute.cpp
+	features/sprites/computation/pspritequad_compute.cpp
+	features/frame/computation/actorcull_compute.cpp
+	features/frame/computation/cameraseen_compute.cpp
+	features/frame/computation/frameroute_compute.cpp
+	features/frame/computation/viewtrace_compute.cpp
+	features/frame/computation/framestall_compute.cpp
+	features/frame/computation/debugorbit_compute.cpp
+	features/framephase/computation/framephase_compute.cpp
+	features/dynlights/computation/nodeindex_compute.cpp
+	features/cvar-alias/computation/cvaralias_compute.cpp
+	features/rendersettings/computation/forcedvideo_compute.cpp
+	features/display/computation/display_compute.cpp
+	features/draw2d/computation/flatfill_compute.cpp
+	features/levelmesh/computation/shading_compute.cpp
+	features/levelmesh/computation/surfacebudget_compute.cpp
+	features/levelmesh/computation/lightband_compute.cpp
+	features/levelmesh/computation/wallbatch_compute.cpp
+	features/levelmesh/computation/flatmesh_compute.cpp
+	features/levelmesh/computation/fakeplane_compute.cpp
+	features/levelmesh/computation/linequery_compute.cpp
+	features/levelmesh/computation/lookhits_compute.cpp
+	features/udmf-desaturation/computation/udmfdesaturation_compute.cpp
+	features/levelmesh/computation/packedcolor_compute.cpp
+	features/levelmesh/computation/decalproject_compute.cpp
+	features/levelmesh/computation/walldecal_compute.cpp
+	features/levelmesh/computation/wallcache_compute.cpp
+	features/surfaces/computation/wallgeom_compute.cpp
+	features/surfaces/computation/wallbands_compute.cpp
+	features/surfaces/computation/ffblocks_compute.cpp
+	features/surfaces/computation/gapfill_compute.cpp
+	features/surfaces/computation/walluv_compute.cpp
+	features/surfaces/computation/planegeom_compute.cpp
+	features/surfaces/computation/surfacechange_compute.cpp
+	features/surfaces/surfacebuild.cpp
+	features/horizon/horizon.cpp
+	features/horizon/computation/horizon_compute.cpp
+	features/glportal/computation/glportal_compute.cpp
+	# [rc4l] The decisions the Diligent backend used to make inline, where they can be tested.
+	features/hwrender/computation/surfaceorder_compute.cpp
+	features/hwrender/computation/passname_compute.cpp
+	features/hwrender/computation/mirrorsheen_compute.cpp
+	features/hwrender/computation/desaturate_compute.cpp
+	features/hwrender/computation/lightside_compute.cpp
+	features/hwrender/computation/walllight_compute.cpp
+	features/hwrender/computation/lightcluster_compute.cpp
+	features/hwrender/computation/warp_compute.cpp
+	features/hwrender/computation/sceneconstants_compute.cpp
+	features/hwrender/computation/scenebinding_compute.cpp
+	features/hwrender/computation/worldpipelines_compute.cpp
+	features/hwrender/computation/materialslots_compute.cpp
+	features/hwrender/computation/backendchoice_compute.cpp
+	features/hwrender/computation/fuzz_compute.cpp
+	features/levelmesh/computation/wallglow_compute.cpp
+	features/levelmesh/computation/fogboundary_compute.cpp
+	features/levelmesh/computation/seamless_compute.cpp
+	features/hwrender/computation/flood_compute.cpp
+	features/hwrender/computation/planemirror_compute.cpp
+	features/hwrender/computation/skyportal_compute.cpp
+	features/hwrender/computation/batch_compute.cpp
+	features/hwrender/computation/growbuffer_compute.cpp
+	features/hwrender/computation/backendview_compute.cpp
+	features/hwrender/computation/wideline_compute.cpp
+	features/hwrender/computation/skylook_compute.cpp
+	features/hwrender/computation/linemirror_compute.cpp
+	features/hwrender/computation/stereo_compute.cpp
+	features/hwrender/computation/dynlayout_compute.cpp
+	features/hwrender/computation/skyfog_compute.cpp
+	features/hwrender/computation/framepacing_compute.cpp
+	features/hwrender/computation/texfilter_compute.cpp
+	features/hwrender/computation/slotremap_compute.cpp
+	features/hwrender/computation/rendererrate_compute.cpp
+	features/hwrender/computation/lighttouch_compute.cpp
 	features/fov-interp/fovinterp.cpp
 	features/fov-interp/fovcvar.cpp
 	features/quake-movement/quakemove.cpp
@@ -1806,8 +1946,8 @@ source_group("OpenGL Renderer" REGULAR_EXPRESSION "^${CMAKE_CURRENT_SOURCE_DIR}/
 source_group("OpenGL Renderer\\API" REGULAR_EXPRESSION "^${CMAKE_CURRENT_SOURCE_DIR}/gl/api/.+")
 source_group("OpenGL Renderer\\Data" REGULAR_EXPRESSION "^${CMAKE_CURRENT_SOURCE_DIR}/gl/data/.+")
 source_group("OpenGL Renderer\\Dynamic Lights" REGULAR_EXPRESSION "^${CMAKE_CURRENT_SOURCE_DIR}/gl/dynlights/.+")
-source_group("OpenGL Renderer\\HQ Resize" REGULAR_EXPRESSION "^${CMAKE_CURRENT_SOURCE_DIR}/gl/hqnx/.+")
-source_group("OpenGL Renderer\\HQ Resize Assembly version" REGULAR_EXPRESSION "^${CMAKE_CURRENT_SOURCE_DIR}/gl/hqnx_asm/.+")
+source_group("Materials\\HQ Resize" REGULAR_EXPRESSION "^${CMAKE_CURRENT_SOURCE_DIR}/features/materials/hqnx/.+")
+source_group("Materials\\HQ Resize Assembly version" REGULAR_EXPRESSION "^${CMAKE_CURRENT_SOURCE_DIR}/features/materials/hqnx_asm/.+")
 source_group("OpenGL Renderer\\Models" REGULAR_EXPRESSION "^${CMAKE_CURRENT_SOURCE_DIR}/gl/models/.+")
 source_group("OpenGL Renderer\\Renderer" REGULAR_EXPRESSION "^${CMAKE_CURRENT_SOURCE_DIR}/gl/renderer/.+")
 source_group("OpenGL Renderer\\Scene" REGULAR_EXPRESSION "^${CMAKE_CURRENT_SOURCE_DIR}/gl/scene/.+")
@@ -1843,6 +1983,59 @@ source_group("Network\\Protocol\\Generator" REGULAR_EXPRESSION "^${CMAKE_SOURCE_
 # release binaries ship without it (no remote-control surface). Enable with -DFUA_MCP_BRIDGE=ON.
 # mcp_bridge.cpp = transport/lifecycle (header-pure); mcp_rpc.cpp = typed RPC dispatch + determinism/
 # state/session handlers (engine-facing); the rest are reader/crash/input/hud backends.
+# [rc4l] Without the backend its entry points answer that there is none, so GL carries every frame.
+if( NOT FUA_DILIGENT )
+	target_sources( zdoom PRIVATE features/hwrender/backendstubs.cpp )
+endif()
+
+# [rc4l] Diligent (Vulkan) backend for the renderer swap -- see features/hwrender/diligent/.
+# The probe is the only consumer today; it proves the library links and a device creates in-process.
+if( FUA_DILIGENT )
+	# [rc4l] The sources that include Diligent's headers, listed once for the build and the C++17 flag below.
+	set( FUA_DILIGENT_SOURCES features/hwrender/diligent/dgprobe.cpp features/hwrender/diligent/dgwindow.cpp features/hwrender/diligent/dgscene.cpp features/hwrender/diligent/dg2d.cpp features/hwrender/diligent/dglights.cpp features/hwrender/diligent/dgsky.cpp features/hwrender/diligent/dgpipelines.cpp features/hwrender/diligent/dgdynamic.cpp features/hwrender/diligent/dgupload.cpp features/hwrender/diligent/dgviews.cpp features/hwrender/diligent/dgcamera.cpp features/hwrender/diligent/dgframe.cpp features/hwrender/diligent/dgdiag.cpp features/hwrender/diligent/dgdecals.cpp features/hwrender/diligent/dghorizon.cpp features/hwrender/diligent/dgtexture.cpp features/hwrender/diligent/dgtarget.cpp features/hwrender/diligent/dgwipe.cpp features/hwrender/diligent/dglines.cpp features/hwrender/diligent/dgstereo.cpp )
+	# [rc4l] Each platform's window for it: Win32, Cocoa with a Metal layer through MoltenVK, or SDL2 on X11 and Wayland.
+	if( WIN32 )
+		set( FUA_DILIGENT_PLATFORM_SOURCES features/hwrender/diligent/dgwin32.cpp )
+		set( FUA_DILIGENT_PLATFORM PLATFORM_WIN32=1 )
+		set( FUA_DILIGENT_PLATFORM_DIR Win32 )
+	elseif( APPLE )
+		if( NOT ZX_COCOA_BACKEND )
+			message( FATAL_ERROR "The Vulkan backend on macOS draws through the Cocoa backend: configure with -DZX_COCOA_BACKEND=ON, or -DFUA_DILIGENT=OFF for GL alone." )
+		endif()
+		set( FUA_DILIGENT_PLATFORM_SOURCES features/hwrender/diligent/dgcocoa.mm )
+		set( FUA_DILIGENT_PLATFORM PLATFORM_MACOS=1 PLATFORM_APPLE=1 )
+		set( FUA_DILIGENT_PLATFORM_DIR Apple )
+		set_source_files_properties( features/hwrender/diligent/dgcocoa.mm PROPERTIES COMPILE_OPTIONS "-fno-objc-arc" )
+		target_link_libraries( zdoom "-framework QuartzCore" "-framework Metal" )
+	else()
+		set( FUA_DILIGENT_PLATFORM_SOURCES features/hwrender/diligent/dgsdl.cpp )
+		set( FUA_DILIGENT_PLATFORM PLATFORM_LINUX=1 )
+		set( FUA_DILIGENT_PLATFORM_DIR Linux )
+	endif()
+	target_sources( zdoom PRIVATE ${FUA_DILIGENT_SOURCES} ${FUA_DILIGENT_PLATFORM_SOURCES} )
+	# [rc4l] Diligent's RefCountedObjectImpl.hpp uses std::align_val_t (aligned new), which is C++17.
+	# The engine compiles at C++14, and raising the whole tree for one dependency is exactly the kind
+	# of change that breaks something unrelated three files away -- so the bump is confined to the one
+	# translation unit that includes Diligent headers.
+	if( MSVC )
+		set_source_files_properties( ${FUA_DILIGENT_SOURCES} PROPERTIES COMPILE_FLAGS "/std:c++17" )
+	else()
+		set_source_files_properties( ${FUA_DILIGENT_SOURCES} PROPERTIES COMPILE_FLAGS "-std=c++17" )
+	endif()
+	target_compile_definitions( zdoom PRIVATE FUA_DILIGENT ${FUA_DILIGENT_PLATFORM} )
+	# [rc4l] volk for the Vulkan entry points Diligent loaded, which dgprobe.cpp reads the device's limits through.
+	target_link_libraries( zdoom Diligent-GraphicsEngineVk-static volk::volk Vulkan::Headers )
+	target_include_directories( zdoom PRIVATE
+		"${CMAKE_SOURCE_DIR}/../../deps/DiligentCore/Graphics/GraphicsEngineVulkan/interface"
+		"${CMAKE_SOURCE_DIR}/../../deps/DiligentCore/Graphics/GraphicsEngine/interface"
+		"${CMAKE_SOURCE_DIR}/../../deps/DiligentCore/Common/interface"
+		"${CMAKE_SOURCE_DIR}/../../deps/DiligentCore/Platforms/interface"
+		"${CMAKE_SOURCE_DIR}/../../deps/DiligentCore/Platforms/${FUA_DILIGENT_PLATFORM_DIR}/interface"
+		"${CMAKE_SOURCE_DIR}/../../deps/DiligentCore/Graphics/GraphicsAccessories/interface"
+		"${CMAKE_SOURCE_DIR}/../../deps/DiligentCore/Graphics/GraphicsTools/interface"
+		"${CMAKE_SOURCE_DIR}/../../deps/DiligentCore/Primitives/interface" )
+endif()
+
 if( FUA_MCP_BRIDGE )
 	target_sources( zdoom PRIVATE mcp_bridge.cpp mcp_rpc.cpp mcp_crash.cpp mcp_event.cpp mcp_renderinfo.cpp mcp_hud.cpp mcp_glperf.cpp mcp_ticprof.cpp mcp_simtrace.cpp mcp_sample.cpp )
 	target_compile_definitions( zdoom PRIVATE FUA_MCP_BRIDGE )

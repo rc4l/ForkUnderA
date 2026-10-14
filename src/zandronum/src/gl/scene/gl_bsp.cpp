@@ -53,14 +53,22 @@
 #include "gl/scene/gl_wall.h"
 #include "gl/utility/gl_clock.h"
 #include "features/hitboxviz/hitboxviz.h"
+#include "gl/scene/gl_wallcache.h"
+#include "gl/scene/gl_observer.h"
 
 EXTERN_CVAR(Bool, gl_render_segs)
+
+// [rc4l] GL's wall cache (gl_wallcache.h): 0 off, 1 replays a seg's walls while its fua_dirty stamp holds, 2 skips validation (stale geometry, diagnostic only).
+CUSTOM_CVAR(Int, gl_wallcache, 1, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
+{
+	gl_wallcacheMode = self;
+}
 
 Clipper clipper;
 
 
 // [BB] Don't allow this in release builds.
-CVAR(Bool, gl_render_things, true, CVAR_DEBUGONLY)
+EXTERN_CVAR(Bool, gl_render_things)
 CVAR(Bool, gl_render_walls, true, CVAR_DEBUGONLY)
 CVAR(Bool, gl_render_flats, true, CVAR_DEBUGONLY)
 
@@ -119,7 +127,7 @@ static void AddLine (seg_t *seg)
 	endAngle = seg->v1->GetClipAngle();
 
 	// Back side, i.e. backface culling	- read: endAngle >= startAngle!
-	if (startAngle-endAngle<ANGLE_180)  
+	if (startAngle-endAngle<ANGLE_180)
 	{
 		return;
 	}
@@ -141,6 +149,7 @@ static void AddLine (seg_t *seg)
 		return;
 	}
 	currentsubsector->flags |= SSECF_DRAWN;
+	if (gl_observer) gl_observer->WalkedSide(int(seg->sidedef - sides));	// [rc4l] for a check against GL's walk
 
 	if (!seg->backsector)
 	{
@@ -180,7 +189,7 @@ static void AddLine (seg_t *seg)
 
 	seg->linedef->flags |= ML_MAPPED;
 
-	if ((seg->sidedef->Flags & WALLF_POLYOBJ) || seg->linedef->validcount!=validcount) 
+	if ((seg->sidedef->Flags & WALLF_POLYOBJ) || (seg->linedef->validcount != validcount))
 	{
 		if (!(seg->sidedef->Flags & WALLF_POLYOBJ)) seg->linedef->validcount=validcount;
 
@@ -188,9 +197,41 @@ static void AddLine (seg_t *seg)
 		{
 			SetupWall.Clock();
 
-			GLWall wall;
-			wall.sub = currentsubsector;
-			wall.Process(seg, currentsector, backsector);
+			// [rc4l] Replay this seg's cached walls when their inputs are unchanged, otherwise regenerate and capture them for next frame.
+			bool done = false;
+			if (gl_wallcache != 0 && !(seg->sidedef->Flags & WALLF_POLYOBJ))
+			{
+				const int segidx = int(seg - segs);
+				zx::levelmesh::WallCacheStamp stamp;
+				zx::levelmesh::WallCacheEligibility elig;
+				// [rc4l] Mode 2 skips stamp construction as well as the compare, so the cost of
+				// gl_WallCacheBuildStamp itself is isolated. Mode 1 leaves it in. Renders stale geometry.
+				if (gl_wallcache != 2)
+				{
+					gl_WallCacheBuildStamp(seg, currentsector, backsector, stamp);
+				}
+				gl_WallCacheBuildEligibility(seg, currentsector, backsector, elig);
+
+				if (gl_WallCacheTryReplay(segidx, elig, stamp))
+				{
+					done = true;
+				}
+				else
+				{
+					gl_WallCacheBeginCapture(segidx);
+					GLWall wall;
+					wall.sub = currentsubsector;
+					wall.Process(seg, currentsector, backsector);
+					gl_WallCacheEndCapture(stamp, elig);
+					done = true;
+				}
+			}
+			if (!done)
+			{
+				GLWall wall;
+				wall.sub = currentsubsector;
+				wall.Process(seg, currentsector, backsector);
+			}
 			rendered_lines++;
 
 			SetupWall.Unclock();
@@ -393,6 +434,7 @@ static void DoSubsector(subsector_t * sub)
 		int clipres = GLRenderer->mCurrentPortal->ClipSubsector(sub);
 		if (clipres == GLPortal::PClip_InFront) return;
 	}
+	if (gl_observer) gl_observer->WalkedSubsector(int(sub - subsectors));	// [rc4l] for a check against GL's walk
 
 
 

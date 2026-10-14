@@ -81,7 +81,7 @@ void gl_SetDynSpriteLight(AActor *self, fixed_t x, fixed_t y, fixed_t z, subsect
 				(!(light->flags4&MF4_DONTLIGHTSELF) || light->target != self))
 			{
 				float dist = FVector3(FIXED2FLOAT(x - light->x), FIXED2FLOAT(y - light->y), FIXED2FLOAT(z - light->z)).Length();
-				radius = light->GetRadius() * gl_lights_size;
+				radius = light->GetRadius() * r_lights_size;
 
 				if (dist < radius)
 				{
@@ -89,9 +89,9 @@ void gl_SetDynSpriteLight(AActor *self, fixed_t x, fixed_t y, fixed_t z, subsect
 
 					if (frac > 0)
 					{
-						lr = light->GetRed() / 255.0f * gl_lights_intensity;
-						lg = light->GetGreen() / 255.0f * gl_lights_intensity;
-						lb = light->GetBlue() / 255.0f * gl_lights_intensity;
+						lr = light->GetRed() / 255.0f * r_lights_intensity;
+						lg = light->GetGreen() / 255.0f * r_lights_intensity;
+						lb = light->GetBlue() / 255.0f * r_lights_intensity;
 						if (light->IsSubtractive())
 						{
 							float bright = FVector3(lr, lg, lb).Length();

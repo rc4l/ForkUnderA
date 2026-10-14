@@ -88,6 +88,28 @@ bundles none of them.
                                       https://ffmpeg.org
   x264          GPL-2.0-or-later      https://www.videolan.org/developers/x264.html
 
+  MoltenVK      Apache-2.0            https://github.com/KhronosGroup/MoltenVK
+                (macOS only: the Vulkan backend's driver, drawn through Metal)
+  Vulkan-Loader Apache-2.0            https://github.com/KhronosGroup/Vulkan-Loader
+                (macOS only; Windows and Linux use the system's loader)
+
+Statically linked into the client, as the Vulkan render backend:
+
+  DiligentCore    Apache-2.0          https://github.com/DiligentGraphics/DiligentCore
+  glslang         BSD-3-clause and others listed in its LICENSE.txt
+                                      https://github.com/KhronosGroup/glslang
+  SPIRV-Tools     Apache-2.0          https://github.com/KhronosGroup/SPIRV-Tools
+  SPIRV-Cross     Apache-2.0          https://github.com/KhronosGroup/SPIRV-Cross
+  SPIRV-Headers   MIT-style           https://github.com/KhronosGroup/SPIRV-Headers
+  Vulkan-Headers  Apache-2.0 / MIT    https://github.com/KhronosGroup/Vulkan-Headers
+  volk            MIT                 https://github.com/zeux/volk
+  Abseil          Apache-2.0          https://github.com/abseil/abseil-cpp
+  xxHash          BSD-2-clause        https://github.com/Cyan4973/xxHash
+
+Their licence texts are in deps/DiligentCore and its ThirdParty directory in the
+source published under SOURCE CODE above. Apache-2.0 is compatible with this
+project's GPL-3.0-or-later.
+
 The LGPL components are dynamically linked and shipped unmodified, so they may
 be replaced by the user with compatible builds of their own, as the LGPL
 requires. Source for each is available from the URLs above.

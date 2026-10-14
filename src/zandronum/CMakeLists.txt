@@ -139,6 +139,47 @@ set( ZDOOM_EXE_NAME "forkundera" CACHE STRING "Name of the executable to create"
 # builds turn it on (-DFUA_MCP_BRIDGE=ON, or ZX_MCP_BRIDGE=1 for the compile scripts). See
 # features/mcp-bridge/README.md. Even when ON it is runtime opt-in (ZANDRONUM_BRIDGE_PORT) + loopback.
 option( FUA_MCP_BRIDGE "Build the in-engine MCP control bridge (DEV ONLY -- never ship it ON)" OFF )
+
+# [rc4l] DiligentCore (Apache-2.0, deps/DiligentCore), the default Vulkan renderer on every client build with GL (Legacy) beside it, off for a server, which has no renderer.
+if( SERVERONLY OR NO_GL )
+	set( FUA_DILIGENT_DEFAULT OFF )
+else()
+	set( FUA_DILIGENT_DEFAULT ON )
+endif()
+option( FUA_DILIGENT "Build the Diligent (Vulkan) render backend" ${FUA_DILIGENT_DEFAULT} )
+if( FUA_DILIGENT AND ( SERVERONLY OR NO_GL ) )
+	message( STATUS "FUA_DILIGENT: off for a build without a renderer" )
+	set( FUA_DILIGENT OFF CACHE BOOL "Build the Diligent (Vulkan) render backend" FORCE )
+endif()
+if( FUA_DILIGENT )
+	# [rc4l] DiligentCore is a submodule; a clone without its submodules gets told how to fetch them rather than a wall of missing-file errors.
+	if( NOT EXISTS "${CMAKE_SOURCE_DIR}/../../deps/DiligentCore/ThirdParty/glslang/CMakeLists.txt" )
+		message( FATAL_ERROR "deps/DiligentCore and its submodules are missing: run `git submodule update --init --recursive`, or configure with -DFUA_DILIGENT=OFF for GL alone." )
+	endif()
+	# [rc4l] The engine links the STATIC CRT (/MT, set in REL_C_FLAGS below); Diligent defaults to the
+	# dynamic one, and the two cannot link -- LNK2038 on RuntimeLibrary across every Diligent object.
+	# Exactly the failure the tests build documents for GoogleTest, and it must be set BEFORE
+	# add_subdirectory, since that is when Diligent's CMake reads it.
+	# CMAKE_MSVC_RUNTIME_LIBRARY does not work here: it needs CMP0091 NEW, and Diligent's own
+	# cmake_minimum_required resets the policy before its targets are defined. The pre-CMP0091 idiom
+	# -- rewriting /MD to /MT in the inherited flag variables -- does work, because subdirectory
+	# targets inherit these.
+	foreach( flag_var
+		CMAKE_C_FLAGS   CMAKE_C_FLAGS_RELEASE   CMAKE_C_FLAGS_DEBUG   CMAKE_C_FLAGS_RELWITHDEBINFO
+		CMAKE_CXX_FLAGS CMAKE_CXX_FLAGS_RELEASE CMAKE_CXX_FLAGS_DEBUG CMAKE_CXX_FLAGS_RELWITHDEBINFO )
+		string( REPLACE "/MDd" "/MTd" ${flag_var} "${${flag_var}}" )
+		string( REPLACE "/MD"  "/MT"  ${flag_var} "${${flag_var}}" )
+	endforeach()
+	set( DILIGENT_BUILD_TESTS      OFF CACHE BOOL "" FORCE )
+	set( DILIGENT_BUILD_SAMPLES    OFF CACHE BOOL "" FORCE )
+	set( DILIGENT_NO_DIRECT3D11    ON  CACHE BOOL "" FORCE )
+	set( DILIGENT_NO_DIRECT3D12    ON  CACHE BOOL "" FORCE )
+	set( DILIGENT_NO_OPENGL        ON  CACHE BOOL "" FORCE )
+	set( DILIGENT_NO_ARCHIVER      ON  CACHE BOOL "" FORCE )
+	# [rc4l] Super resolution is unused, and its NVIDIA library is built against the dynamic CRT, which a whole-solution build fails to link beside /MT.
+	set( DILIGENT_NO_SUPER_RESOLUTION ON CACHE BOOL "" FORCE )
+	add_subdirectory( "${CMAKE_SOURCE_DIR}/../../deps/DiligentCore" "${CMAKE_BINARY_DIR}/DiligentCore" )
+endif()
 if( MSVC )
 	# Allow the user to use ZDOOM_OUTPUT_DIR as a single release point.
 	# Use zdoom, zdoomd, zdoom64, and zdoomd64 for the binary names

@@ -72,6 +72,12 @@ export function classifyInstances(entries, isAlive) {
   return { dead, orphan, owned };
 }
 
+// [rc4l] The live instances registered on `port`, each marked whether it is an orphan (its launcher gone); dead entries are left out.
+export function liveOnPort(entries, port, isAlive) {
+  const { orphan, owned } = classifyInstances(entries.filter((e) => e && String(e.port) === String(port)), isAlive);
+  return [...owned.map((e) => ({ ...e, orphan: false })), ...orphan.map((e) => ({ ...e, orphan: true }))];
+}
+
 // Allocate a candidate bridge port deterministically from a base + offset, wrapping in the ephemeral
 // range. Kept pure so port selection is testable; the caller confirms the port is actually free.
 export function candidatePort(base, offset) {

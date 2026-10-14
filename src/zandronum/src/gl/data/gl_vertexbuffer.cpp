@@ -59,6 +59,8 @@
 FVertexBuffer::FVertexBuffer()
 {
 	vao_id = vbo_id = 0;
+	// [rc4l] Without GL the buffer is only its CPU copy, which a backend reads.
+	if (!gl_HasContext()) return;
 	glGenBuffers(1, &vbo_id);
 	glGenVertexArrays(1, &vao_id);
 

@@ -38,6 +38,8 @@
 #include "m_random.h"
 #include "doomdef.h"
 #include "p_local.h"
+#include "features/levelmesh/projdecals.h"   // [rc4l] projected mesh decals
+EXTERN_CVAR (Bool, fua_decal_log)
 #include "p_lnspec.h"
 #include "p_effect.h"
 #include "p_terrain.h"
@@ -1689,6 +1691,12 @@ bool AActor::Massacre ()
 
 void P_ExplodeMissile (AActor *mo, line_t *line, AActor *target, bool bExplodeOnClient ) // [RK] Added bExplodeOnClient
 {
+	// [rc4l] TEMPORARY: what line the explosion was handed, and where it came from.
+	if ( fua_decal_log && mo != NULL )
+		Printf( "explode: line %d  BlockingLine %d\n",
+			line != NULL ? (int)( line - lines ) : -1,
+			mo->BlockingLine != NULL ? (int)( mo->BlockingLine - lines ) : -1,
+			-1 );
 	if (mo->flags3 & MF3_EXPLOCOUNT)
 	{
 		if (++mo->special2 < mo->special1)
@@ -1696,6 +1704,14 @@ void P_ExplodeMissile (AActor *mo, line_t *line, AActor *target, bool bExplodeOn
 			return;
 		}
 	}
+	// [rc4l] features/levelmesh: keep the direction of travel before it is thrown away.
+	//
+	// The decal is created a hundred lines further on, by which time the velocity is zero, and a
+	// projected mark is nothing without the direction: it is what makes an angled hit leave an
+	// angled mark. PrevX/PrevY are not a substitute -- they are already synced to the final
+	// position, so their difference is zero and anything derived from it silently does nothing.
+	zx::levelmesh::SetImpactContext (mo->velx, mo->vely, mo->velz, mo->radius);
+
 	mo->velx = mo->vely = mo->velz = 0;
 	mo->effects = 0;		// [RH]
 	mo->flags &= ~MF_SHOOTABLE;
@@ -1735,6 +1751,31 @@ void P_ExplodeMissile (AActor *mo, line_t *line, AActor *target, bool bExplodeOn
 		// [RH] Don't explode missiles on horizon lines.
 		mo->Destroy ();
 		return;
+	}
+
+	// [rc4l] features/levelmesh: a missile that dies against a FLOOR or CEILING marks it too.
+	//
+	// The branch below only fires for `line != NULL`, so a rocket that lands on the ground has never
+	// left anything behind -- which is not a rendering gap, it is a gap in the game: Doom only ever
+	// decalled walls, because a glued quad has a sidedef to be glued to and a floor does not. A
+	// projection has no such requirement; it prints on whatever is inside its box.
+	//
+	// `line` is NULL both for a plane hit and for an actor hit, so the plane is identified by where
+	// the missile came to rest. A missile does not stop exactly on the plane it struck, so this is a
+	// proximity question rather than an equality one.
+	if (line == NULL && target == NULL && cl_missiledecals && mo->DecalGenerator != NULL &&
+		NETWORK_GetState( ) != NETSTATE_SERVER)
+	{
+		const fixed_t kSlack = 4 * FRACUNIT;
+		const bool onFloor = (mo->z <= mo->floorz + kSlack);
+		const bool onCeiling = (mo->z + mo->height >= mo->ceilingz - kSlack);
+		if (onFloor || onCeiling)
+		{
+			const float up[3] = { 0.f, 0.f, 1.f };
+			const float down[3] = { 0.f, 0.f, -1.f };
+			zx::levelmesh::SpawnProjectedDecalHere (mo->DecalGenerator->GetDecal (),
+				mo->x, mo->y, onCeiling ? mo->ceilingz : mo->floorz, onCeiling ? down : up);
+		}
 	}
 
 	if (line != NULL && cl_missiledecals)
@@ -1800,8 +1841,20 @@ void P_ExplodeMissile (AActor *mo, line_t *line, AActor *target, bool bExplodeOn
 					// [BC] Servers don't need to spawn decals.
 					if ( NETWORK_GetState( ) != NETSTATE_SERVER )
 					{
-						DImpactDecal::StaticCreate (base->GetDecal (),
+						// [rc4l] Whether a MISSILE managed to stick a mark, and where it tried.
+						//
+						// A missile decals from its own z, not from a traced hit point, so it can land in the
+						// open span of a two-sided line -- between the textures -- where StickToWall has
+						// nothing to stick to and vanilla makes no decal at all. A hitscan aimed at the same
+						// wall stops exactly on a texture and marks it, so the wall looks like it takes some
+						// weapons and refuses others.
+						DBaseDecal *fuaMade = DImpactDecal::StaticCreate (base->GetDecal (),
 							x, y, z, line->sidedef[side], ffloor);
+						if (fua_decal_log)
+							Printf ("missile decal: z %.1f  line %d side %d  ffloor %d  -> %s\n",
+								FIXED2FLOAT (z), (int)(line - lines), side, ffloor != NULL ? 1 : 0,
+								fuaMade != NULL ? "stuck" : "REFUSED (nothing to stick to at that height)");
+						zx::levelmesh::ClearImpactContext ();
 					}
 				}
 			}

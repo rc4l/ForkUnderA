@@ -49,6 +49,9 @@
 #include "gl/data/gl_data.h"
 #include "gl/data/gl_vertexbuffer.h"
 #include "gl/scene/gl_drawinfo.h"
+#include "features/hwrender/computation/surfaceorder_compute.h"
+#include "gl/scene/gl_wallcache.h"
+#include "features/hwrender/computation/walllight_compute.h"
 #include "gl/scene/gl_portal.h"
 #include "gl/renderer/gl_lightdata.h"
 #include "gl/renderer/gl_renderstate.h"
@@ -535,10 +538,18 @@ inline int GLDrawList::CompareSprites(SortNode * a,SortNode * b)
 	GLSprite * s1=&sprites[drawitems[a->itemindex].index];
 	GLSprite * s2=&sprites[drawitems[b->itemindex].index];
 
-	int res = s1->depth - s2->depth;
-
-	if (res != 0) return -res;
-	else return (i_compatflags & COMPATF_SPRITESORT)? s1->index-s2->index : s2->index-s1->index;
+	// [rc4l] GL's own rule, stated in surfaceorder_compute beside the port's.
+	//
+	// Unchanged in behaviour -- this is the oracle and its answer is the shipped one. What moves is
+	// where the rule is written: next to the port's distance sort, so the two can be read together
+	// and the places they disagree are visible instead of being three lines in two files.
+	zx::hwrender::GLSpriteOrder oa, ob;
+	oa.depth = s1->depth; oa.spawnIndex = s1->index;
+	ob.depth = s2->depth; ob.spawnIndex = s2->index;
+	const bool compat = !!(i_compatflags & COMPATF_SPRITESORT);
+	if (zx::hwrender::ComputeGLSpritesBefore(oa, ob, compat)) return -1;
+	if (zx::hwrender::ComputeGLSpritesBefore(ob, oa, compat)) return 1;
+	return 0;
 }
 
 //==========================================================================
@@ -793,13 +804,125 @@ void GLDrawList::Draw(int pass, bool trans)
 //
 //
 //==========================================================================
+// [rc4l] features/levelmesh: batch runs of identically-stated walls into one draw.
+//
+// Sunder MAP10 issues ~8250 wall draws a frame for 16,888 vertices -- about 400 ns of CPU per item
+// against 1.74 ms of total GPU, so the per-wall state set and draw call are the cost, not the
+// geometry. Walls are already sorted by material by SortWalls, so equal state arrives adjacent;
+// this collapses each run into one GL_TRIANGLES draw.
+//
+// Fans cannot simply be concatenated (a GL_TRIANGLE_FAN restarts at its own first vertex and this
+// GL floor has no primitive restart), so each fan is expanded to an independent triangle list. That
+// trades ~1.5x the vertices for 1/Nth the draw calls, which is the right way round at these counts.
+CVAR(Bool, gl_batch_walls, true, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
+
+// [rc4l] Draw the walls staged into the streaming buffer, when the batch staged any.
+static void FlushWallBatch(FFlatVertex *&ptr)
+{
+	unsigned int offset, count;
+	count = GLRenderer->mVBO->GetCount(ptr, &offset);
+	if (count > 0) GLRenderer->mVBO->RenderArray(GL_TRIANGLES, offset, count);
+}
+
 void GLDrawList::DrawWalls(int pass)
 {
 	RenderWall.Clock();
+
+	// [rc4l] Only the opaque passes batch, since the light pass collects lights and the translucent one sets blending per wall.
+	const zx::levelmesh::WallDrawPath path = zx::levelmesh::ComputeWallDrawPath(gl_batch_walls,
+		pass == GLPASS_PLAIN || pass == GLPASS_ALL);
+	if (path == zx::levelmesh::kWallsOneByOne)
+	{
+		for(unsigned i=0;i<drawitems.Size();i++)
+		{
+			GLWall *w = WallAt(i);
+			if (w) w->Draw(pass);
+		}
+		RenderWall.Unclock();
+		return;
+	}
+
+	static FFlatVertex fan[GLWall::MAX_BATCH_FAN_VERTICES];
+	zx::levelmesh::WallBatchKey curkey, key;
+	bool haveBatch = false;
+	FFlatVertex *ptr = NULL;
+	int batchVerts = 0;
+
 	for(unsigned i=0;i<drawitems.Size();i++)
 	{
-		walls[drawitems[i].index].Draw(pass);
+		GLWall *wp = WallAt(i);
+		if (wp == NULL) continue;
+		GLWall &w = *wp;
+		// [rc4l] The lights this wall receives, which nothing else on this path computes.
+		//
+		// GLPASS_ALL means "draw it lit", and GLWall::Draw answers that by calling SetupLights
+		// first. Batching replaced Draw with SetupBatchState, which applies dynlightindex but never
+		// fills it -- so every batched wall passed UINT_MAX and came out with no dynamic light at
+		// all. Flats were untouched because DrawFlats still draws them one at a time, which is why
+		// a torch lit the floor under it and left the wall behind it dark.
+		//
+		// Before FillBatchKey, because dynlightindex is part of the key.
+		//
+		// [rc4l] And on the other pass it is CLEARED, not left alone. GLPASS_PLAIN is what runs once
+		// the last dynamic light dies (gl_scene.cpp picks it when mLightCount is zero), and a
+		// replayed wall is the same object it was while the light was alive -- so leaving its index
+		// be means it keeps lighting itself from a light that no longer exists.
+		if (pass == GLPASS_ALL) w.SetupLights();
+		else w.dynlightindex = zx::hwrender::ComputeWallLightIndex(false,
+			zx::hwrender::kNoWallLightIndex, w.dynlightindex);
+		w.FillBatchKey(key);
+
+		// [rc4l] A wall that cannot join the open batch closes it first, so draw order within a
+		// run is preserved and the unbatchable wall still renders through its own Draw().
+		const bool joins = haveBatch && zx::levelmesh::ComputeCanBatch(curkey, key);
+		if (haveBatch && !joins)
+		{
+			FlushWallBatch(ptr);
+			haveBatch = false;
+		}
+
+		const int fanCount = w.BuildFanVertices(fan, GLWall::MAX_BATCH_FAN_VERTICES);
+		const int triVerts = zx::levelmesh::ComputeFanTriangleVertexCount(fanCount);
+		if (triVerts == 0 || !zx::levelmesh::ComputeCanBatch(key, key))
+		{
+			// Unbatchable (glowing, untextured, or a fan too large to stage): draw it alone.
+			w.Draw(pass);
+			continue;
+		}
+
+		// [rc4l] Cap a batch's size. The mapped buffer wraps at BUFFER_SIZE_TO_USE and RenderCurrent
+		// measures the run by pointer difference, so an unbounded batch could walk past the wrap.
+		// Flushing early costs one extra draw and keeps the write inside a single contiguous range.
+		enum { MAX_BATCH_VERTICES = 60000 };
+		if (haveBatch && batchVerts + triVerts > MAX_BATCH_VERTICES)
+		{
+			FlushWallBatch(ptr);
+			haveBatch = false;
+		}
+
+		if (!haveBatch)
+		{
+			w.SetupBatchState(pass);
+			curkey = key;
+			ptr = GLRenderer->mVBO->GetBuffer();
+			batchVerts = 0;
+			haveBatch = true;
+		}
+		batchVerts += triVerts;
+
+		for (int t = 0; t < fanCount - 2; t++)
+		{
+			for (int c = 0; c < 3; c++)
+			{
+				*ptr = fan[zx::levelmesh::ComputeFanTriangleVertex(fanCount, t, c)];
+				ptr++;
+			}
+		}
+		vertexcount += triVerts;
 	}
+
+	if (haveBatch) FlushWallBatch(ptr);
+
 	RenderWall.Unclock();
 }
 
@@ -827,7 +950,8 @@ void GLDrawList::DrawDecals()
 {
 	for(unsigned i=0;i<drawitems.Size();i++)
 	{
-		walls[drawitems[i].index].DoDrawDecals();
+		GLWall *w = WallAt(i);
+		if (w) w->DoDrawDecals();
 	}
 }
 
@@ -841,13 +965,31 @@ static GLDrawList * sortinfo;
 static int __cdecl diwcmp (const void *a, const void *b)
 {
 	const GLDrawItem * di1 = (const GLDrawItem *)a;
-	GLWall * w1=&sortinfo->walls[di1->index];
-
 	const GLDrawItem * di2 = (const GLDrawItem *)b;
-	GLWall * w2=&sortinfo->walls[di2->index];
+	// [rc4l] Either item may be cache-owned; resolve through the right store.
+	GLWall * w1 = (di1->rendertype == GLDIT_STATICWALL) ? gl_WallCacheStaticWall(di1->index) : &sortinfo->walls[di1->index];
+	GLWall * w2 = (di2->rendertype == GLDIT_STATICWALL) ? gl_WallCacheStaticWall(di2->index) : &sortinfo->walls[di2->index];
+	if (w1 == NULL || w2 == NULL) return 0;
 
-	if (w1->gltexture != w2->gltexture) return w1->gltexture - w2->gltexture;
-	return ((w1->flags & 3) - (w2->flags & 3));
+	// [rc4l] Sort by the whole batch key, not just texture and clamp flags. Batching in DrawWalls
+	// only merges *adjacent* equal-state walls, so two walls sharing a texture but differing in
+	// light or fog would otherwise interleave and break both their runs.
+	if (w1->gltexture != w2->gltexture) return w1->gltexture < w2->gltexture ? -1 : 1;
+	if ((w1->flags & 3) != (w2->flags & 3)) return (w1->flags & 3) - (w2->flags & 3);
+	if (w1->lightlevel != w2->lightlevel) return w1->lightlevel - w2->lightlevel;
+	if (w1->rellight != w2->rellight) return w1->rellight - w2->rellight;
+	if (w1->type != w2->type) return (int)w1->type - (int)w2->type;
+	if (w1->Colormap.LightColor.d != w2->Colormap.LightColor.d)
+		return w1->Colormap.LightColor.d < w2->Colormap.LightColor.d ? -1 : 1;
+	if (w1->Colormap.FadeColor.d != w2->Colormap.FadeColor.d)
+		return w1->Colormap.FadeColor.d < w2->Colormap.FadeColor.d ? -1 : 1;
+	if (w1->Colormap.desaturation != w2->Colormap.desaturation)
+		return w1->Colormap.desaturation - w2->Colormap.desaturation;
+	if (w1->Colormap.blendfactor != w2->Colormap.blendfactor)
+		return w1->Colormap.blendfactor - w2->Colormap.blendfactor;
+	if (w1->dynlightindex != w2->dynlightindex)
+		return w1->dynlightindex < w2->dynlightindex ? -1 : 1;
+	return 0;
 }
 
 static int __cdecl difcmp (const void *a, const void *b)
@@ -888,6 +1030,23 @@ void GLDrawList::SortFlats()
 void GLDrawList::AddWall(GLWall * wall)
 {
 	drawitems.Push(GLDrawItem(GLDIT_WALL,walls.Push(*wall)));
+}
+
+// [rc4l] features/levelmesh P2b: reference a cache-owned wall. No struct copy.
+void GLDrawList::AddStaticWall(int staticIndex)
+{
+	drawitems.Push(GLDrawItem(GLDIT_STATICWALL, staticIndex));
+}
+
+// [rc4l] Resolve a wall draw item whichever store owns it. Returns NULL for non-wall items so
+// callers that iterate a mixed list can skip rather than mis-index.
+GLWall *GLDrawList::WallAt(unsigned i)
+{
+	if (i >= drawitems.Size()) return NULL;
+	const GLDrawItem &di = drawitems[i];
+	if (di.rendertype == GLDIT_WALL) return &walls[di.index];
+	if (di.rendertype == GLDIT_STATICWALL) return gl_WallCacheStaticWall(di.index);
+	return NULL;
 }
 
 //==========================================================================

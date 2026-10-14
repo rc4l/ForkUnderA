@@ -71,7 +71,9 @@ as a parameter. No engine/GL/SDL/CVAR includes.
 - `videoscale.cpp` — the CVAR glue (`vid_scalemode`, `vid_scalefactor`, `vid_scale_custom*`,
   `vid_cropaspect`) + `vid_showcurrentscaling`. Faithful to upstream's `r_videoscale.cpp` surface.
   Listed in `src/CMakeLists.txt` (engine target only — it isn't a `*_compute.cpp`, so it's not in
-  the test build).
+  the test build). Also the per-frame reconcile's engine half (`videoscale.h`): `ReconcileRenderSize`
+  (the render size the cvars ask for and what reaching it takes) and `ResizeScreenInPlace` (the canvas,
+  the mode state, the status bar and the 3D view), shared by both frame buffers.
 
 ## In-place engine edits (enumerate every one — features/README.md law)
 
@@ -83,7 +85,10 @@ as a parameter. No engine/GL/SDL/CVAR includes.
 - `src/gl/system/gl_framebuffer.{h,cpp}` — the GL executor: `UpdateScaleBuffer` builds/binds the
   scale FBO (color + depth) and makes it the render target; `BlitScaleBuffer` upscales it to the
   client rect before `Swap`; `GetClientSize` reads the drawable. Inactive (Native/1.0) => backbuffer
-  path unchanged.
+  path unchanged. `MaybeResizeForScale` and `ResizeRenderInPlace` call `ReconcileRenderSize` and
+  `ResizeScreenInPlace`.
+- `src/features/hwrender/backendvideo.cpp` — `DiligentFrameBuffer::FollowClientSize`, the same
+  reconcile for a launch without GL; the backend draws at the window's size whatever the screen's.
 - `src/gl/renderer/gl_renderer.{h,cpp}` — `FGLRenderer::mOutputFB`: `EndOffscreen` restores the
   active screen target (scale FBO or backbuffer) so camera textures don't unbind the scale buffer.
 - `wadsrc/static/menudef.txt` — `VideoModeMenu`: "Render scale mode" + "Render scale factor" plus

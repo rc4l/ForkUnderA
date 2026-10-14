@@ -97,6 +97,55 @@ TEST(DamageTint, SliceTintFadesLinearlyToCoverageEdge)
 	EXPECT_EQ(SliceTintPct(1000, 0.0f, 1.0f), 100); // clamped to 100
 }
 
+// [rc4l] A sprite's gradient is full at the larger V whichever way round its span comes, and climbs coverageFrac of it.
+TEST(DamageTint, TheGradientIsFullAtTheBottomAndClimbsItsCoverage)
+{
+	const TintGradient g = ComputeTintGradient(1.0f, 0.5f, 0.25f, 0.8f, 0.2f, 1.0f, 0.5f, false);
+	EXPECT_FLOAT_EQ(g.bottom, 1.0f);
+	EXPECT_FLOAT_EQ(g.top, 0.6f);
+	EXPECT_FLOAT_EQ(g.strength, 0.8f);
+	EXPECT_FLOAT_EQ(g.g, 0.5f);
+	EXPECT_FALSE(g.glow);
+	const TintGradient flipped = ComputeTintGradient(0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.2f, 0.5f, true);
+	EXPECT_FLOAT_EQ(flipped.bottom, 1.0f);
+	EXPECT_FLOAT_EQ(flipped.top, 0.6f);
+	EXPECT_TRUE(flipped.glow);
+	// [rc4l] The status bar face: 0..1 down the graphic, gone at 1 - coverage.
+	EXPECT_FLOAT_EQ(ComputeTintGradient(1, 1, 1, 1, 0.0f, 1.0f, 0.25f, false).top, 0.75f);
+}
+
+TEST(DamageTint, AStainMultipliesInTowardTheBottomAndAGlowScreens)
+{
+	const TintGradient stain = { 0.5f, 1.0f, 0.0f, 1.0f, 0.0f, 1.0f, false };
+	float rgb[3] = { 0.8f, 0.8f, 0.8f };
+	ComputeTintTexel(stain, 1.0f, rgb);
+	EXPECT_FLOAT_EQ(rgb[0], 0.4f); EXPECT_FLOAT_EQ(rgb[1], 0.8f); EXPECT_FLOAT_EQ(rgb[2], 0.0f);
+	float half[3] = { 0.8f, 0.8f, 0.8f };
+	ComputeTintTexel(stain, 0.5f, half);
+	EXPECT_FLOAT_EQ(half[0], 0.6f);
+	// [rc4l] Above the top and below the bottom it is clamped: untouched and full.
+	float above[3] = { 0.8f, 0.8f, 0.8f };
+	ComputeTintTexel({ 0.5f, 0.5f, 0.5f, 1.0f, 0.5f, 1.0f, false }, 0.2f, above);
+	EXPECT_FLOAT_EQ(above[0], 0.8f);
+	float below[3] = { 0.8f, 0.8f, 0.8f };
+	ComputeTintTexel({ 0.5f, 0.5f, 0.5f, 1.0f, 0.5f, 1.0f, false }, 1.5f, below);
+	EXPECT_FLOAT_EQ(below[0], 0.4f);
+	float glow[3] = { 0.5f, 0.5f, 0.5f };
+	ComputeTintTexel({ 0.5f, 0.0f, 1.0f, 1.0f, 0.0f, 1.0f, true }, 1.0f, glow);
+	EXPECT_FLOAT_EQ(glow[0], 0.75f); EXPECT_FLOAT_EQ(glow[1], 0.5f); EXPECT_FLOAT_EQ(glow[2], 1.0f);
+}
+
+// [rc4l] No strength is no tint, and an empty span still divides safely.
+TEST(DamageTint, NoStrengthLeavesTheTexelAndAnEmptySpanIsAStep)
+{
+	float rgb[3] = { 0.3f, 0.6f, 0.9f };
+	ComputeTintTexel({ 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, false }, 1.0f, rgb);
+	EXPECT_FLOAT_EQ(rgb[0], 0.3f); EXPECT_FLOAT_EQ(rgb[2], 0.9f);
+	float step[3] = { 1.0f, 1.0f, 1.0f };
+	ComputeTintTexel({ 0.0f, 0.0f, 0.0f, 1.0f, 0.5f, 0.5f, false }, 0.6f, step);
+	EXPECT_FLOAT_EQ(step[0], 0.0f);
+}
+
 TEST(DamageTint, TintChannelBlendsFromWhite)
 {
 	EXPECT_EQ(TintChannel(0, 0), 255);      // no tint -> neutral white

@@ -1,0 +1,160 @@
+// [rc4l] Every decal case in one run, because fixing them one at a time keeps breaking the others.
+//
+//   floor      a mark on the floor appears at all
+//   ceiling    the same looking up
+//   wall       a wall mark appears, and the glow is not buried under its own scorch
+//   flash      the impact flash is not cut into by the mark underneath it
+//   occlusion  nothing marked is visible through solid geometry
+//
+// Each answers with a number, so a change to the ordering or the gating is judged against all five
+// before anyone plays it, rather than by whichever one happened to be on screen.
+import fs from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { BridgeClient } from '../src/client.mjs';
+import * as cap from '../src/capture.mjs';
+import * as shot from '../src/shot.mjs';
+import { scratchDir, STAGED_SWEEP as S, CLI, STAGED_ENGINE as EXE } from '../src/scriptpaths.mjs';
+
+const SP = scratchDir();
+
+const sub = (a, b, o) => Number((spawnSync(process.execPath, [CLI, 'png', '--sub', a, b, o, '1'],
+  { encoding: 'utf8' }).stdout || '').match(/mean ([\d.]+)/)?.[1] ?? NaN);
+
+const tok = fs.readFileSync(SP + '/mytoken', 'utf8').trim();
+const spot = JSON.parse(fs.readFileSync(SP + '/cfspot.json', 'utf8'));
+const c = new BridgeClient();
+await c.connect(7797, { token: tok });
+await c.waitHello();
+
+await cap.sandbox(c, { map: 'dbab04' });
+await cap.exec(c, 'r_drawplayersprites 0');
+
+// [rc4l] Selected by SLOT, and given under both names.
+//
+// The names differ between the stock game and a weapon mod, and `give` on a name that does not
+// exist fails quietly -- so with the mod absent every case here fired whatever was already in hand
+// and the suite reported four passes for one weapon. A slot number means the same thing in both.
+async function arm(weapon, slot) {
+  for (const n of [weapon, weapon + 'E']) await cap.exec(c, 'give ' + n);
+  await cap.exec(c, 'slot ' + slot);
+  await cap.waitTics(c, 22);
+}
+
+async function burst(weapon, slot, pitch, tics, settle) {
+  await arm(weapon, slot);
+  const at = { x: spot.x, y: spot.y, z: spot.z, angle: spot.yaw, pitch };
+  await c.rpc('player.setpos', at);
+  await cap.waitTics(c, 8);
+  await shot.shotPair(c, 'q_off', { engineBin: EXE });
+  await cap.exec(c, '+attack');
+  await cap.waitTics(c, tics);
+  await cap.exec(c, '-attack');
+  await cap.waitTics(c, settle);
+  await c.rpc('player.setpos', at);
+  await cap.waitTics(c, 4);
+  const r = await shot.shotPair(c, 'q_on', { engineBin: EXE, frozen: ['fua_projdecals_stats'] });
+  return {
+    vk: sub(`${S}/q_off_vk.png`, `${S}/q_on_vk.png`, `${SP}/q.png`),
+    gl: sub(`${S}/q_off_gl.png`, `${S}/q_on_gl.png`, `${SP}/q.png`),
+    stats: String(r.frozen[0]).trim().replace(/\s+/g, ' '),
+  };
+}
+
+const rows = [];
+// A mark on the floor, and on the ceiling, with everything transient long gone.
+rows.push(['floor  ', await burst('Chaingun', 4, 70, 18, 55)]);
+rows.push(['ceiling', await burst('Chaingun', 4, -70, 18, 55)]);
+// A wall mark, settled: scorch plus its glow.
+rows.push(['wall   ', await burst('PlasmaRifle', 6, 2, 16, 45)]);
+// And mid-burst, where the flash must not be cut into by the mark under it.
+rows.push(['flash  ', await burst('PlasmaRifle', 6, 2, 14, 0)]);
+
+for (const [name, r] of rows) {
+  console.log(`${name}  VK ${r.vk.toFixed(2).padStart(6)}   GL ${r.gl.toFixed(2).padStart(6)}   ${r.stats}`);
+}
+
+// [rc4l] A mark must have SHAPE, not merely be present.
+//
+// Every check above is a brightness, and a brightness cannot tell a decal from the solid rectangle
+// it lives in -- a mark and a block of its own average colour weigh the same. Projected marks did
+// render as solid boxes, for as long as the pass ran at default settings, and none of these numbers
+// noticed. The mask the shader itself computes does: a real mark has near-black and near-white in
+// it, and a flat wash has neither.
+// [rc4l] Every weapon, not one of them. A bullet mark is small and its graphic is nearly solid
+// anyway, so it was the one mark that looked plausible while the BFG's painted a slab the size of a
+// room -- and checking only the chaingun is exactly how that shipped.
+for (const [weapon, slot, pitch, tics] of [['Chaingun', 4, 50, 25], ['RocketLauncher', 5, 70, 3], ['BFG', 7, 70, 3]]) {
+  await arm(weapon === 'BFG' ? 'BFG9000' : weapon, slot);
+  const at = { x: spot.x, y: spot.y, z: spot.z, angle: spot.yaw, pitch };
+  await c.rpc('player.setpos', at);
+  await cap.waitTics(c, 8);
+  await cap.exec(c, '+attack');
+  await cap.waitTics(c, tics);
+  await cap.exec(c, '-attack');
+  await cap.waitTics(c, slot === 4 ? 60 : 70);
+  await c.rpc('player.setpos', at);
+  await cap.waitTics(c, 4);
+  await c.rpc('sim.pause', {}).catch(() => {});
+  await cap.exec(c, 'fua_dg_decaldebug 2');
+  const f = `${S}/shape_${weapon}_vk.png`;
+  try { fs.rmSync(f, { force: true }); } catch { /* fine */ }
+  await cap.exec(c, `fua_diligent_shot ${f}`);
+  for (let i = 0; i < 80 && !fs.existsSync(f); i++) await new Promise((r) => setTimeout(r, 100));
+  await cap.exec(c, 'fua_dg_decaldebug 0');
+  await c.rpc('sim.resume', {}).catch(() => {});
+  const out = spawnSync(process.execPath, [CLI, 'png', '--range', f, '0.40', '0.30', '0.60', '0.50'],
+    { encoding: 'utf8' }).stdout || '';
+  const spread = Number(out.match(/spread ([\d.]+)/)?.[1] ?? 0);
+  // [rc4l] The window sits INSIDE the mark on purpose, and the bar is low on purpose.
+  //
+  // A flat wash reads EXACTLY 0 there -- every pixel the same value is what "the mark is painting
+  // its own box" means, and that is the only thing this has to catch. Real marks read anywhere from
+  // the low tens to 250-odd depending on how much of the graphic's dense middle the window lands in,
+  // and that number moves whenever the mark's size changes: correcting the projection's stretch took
+  // the BFG's from 139 to 42 without anything being wrong. So the bar sits just above nothing. A bar
+  // placed near a real reading fails marks that are fine, and a check that cries wolf gets ignored.
+  console.log(`shape ${weapon.padEnd(16)} mask spread ${spread.toFixed(0)}  ${spread > 8
+    ? 'ok, the mark has shape' : 'FAIL: flat wash -- the mark is painting its whole box'}`);
+}
+// [rc4l] TWO GRAPHICS IN ONE FRAME must be drawn with their own textures.
+//
+// This is the case the reporter found and the one every other check here missed: fire plasma about
+// the place, swap to the BFG, mark a floor, and the BFG's mark came out wearing the plasma's
+// picture. Nothing above notices -- a mark IS present, it has shape, and it sits where it should.
+// Only its graphic is another mark's.
+//
+// The count of distinct textures the pass binds is the tell, and it needs no picture: two weapons
+// whose marks use four graphics between them must report four. It read two while the fault was
+// live, because a mutable shader variable binds once and every run after the first kept the first
+// run's texture.
+{
+  await cap.sandbox(c, { map: 'dbab04' });
+  await cap.exec(c, 'r_drawplayersprites 0');
+  await arm('PlasmaRifle', 6);
+  const at = { x: spot.x, y: spot.y, z: spot.z, angle: spot.yaw, pitch: 66 };
+  await c.rpc('player.setpos', at);
+  await cap.waitTics(c, 6);
+  await cap.exec(c, '+attack');
+  await cap.waitTics(c, 6);
+  await cap.exec(c, '-attack');
+  await cap.waitTics(c, 40);
+
+  await arm('BFG9000', 7);
+  await c.rpc('player.setpos', at);
+  await cap.waitTics(c, 6);
+  await cap.exec(c, '+attack');
+  await cap.waitTics(c, 2);
+  await cap.exec(c, '-attack');
+  // A BFG ball is slow: it needs about 55 tics to reach a floor. Reading sooner finds no mark at
+  // all, which is why several attempts to reproduce this by hand came back empty.
+  await cap.waitTics(c, 60);
+
+  const stats = String(await cap.exec(c, 'fua_projdecals_stats'));
+  const textures = Number(stats.match(/(\d+) textures/)?.[1] ?? 0);
+  const pics = new Set([...stats.matchAll(/mark \d+: (\S+)/g)].map((m) => m[1]));
+  console.log(`mixed    ${textures} textures bound for ${pics.size} graphics [${[...pics].join(' ')}]  ` +
+    `${textures >= pics.size && pics.size >= 2 ? 'ok' : 'FAIL: marks are sharing a texture'}`);
+}
+
+await cap.exec(c, 'r_drawplayersprites 1');
+c.close();

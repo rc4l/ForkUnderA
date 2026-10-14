@@ -49,6 +49,7 @@
 #include "gl/renderer/gl_renderstate.h"
 #include "gl/renderer/gl_colormap.h"
 #include "gl/dynlights//gl_lightbuffer.h"
+#include "features/viewsetup/viewsetup.h"   // [rc4l] FixedColormapShadeFor
 
 // [EP] New #includes.
 #include "gl/gl_functions.h"
@@ -113,7 +114,7 @@ void FRenderState::Reset()
 
 bool FRenderState::ApplyShader()
 {
-	// [BB/EP] Take care of gl_fogmode and ZADF_FORCE_VIDEO_DEFAULTS.
+	// [BB/EP] Take care of r_fogmode and ZADF_FORCE_VIDEO_DEFAULTS.
 	OVERRIDE_FOGMODE_IF_NECESSARY
 
 	if (mSpecialEffect > EFF_NONE)
@@ -132,11 +133,11 @@ bool FRenderState::ApplyShader()
 	{
 		if ((mFogColor & 0xffffff) == 0)
 		{
-			fogset = gl_fogmode;
+			fogset = r_fogmode;
 		}
 		else
 		{
-			fogset = -gl_fogmode;
+			fogset = -r_fogmode;
 		}
 	}
 
@@ -181,49 +182,14 @@ bool FRenderState::ApplyShader()
 
 	if (mColormapState != activeShader->currentfixedcolormap)
 	{
-		float r, g, b;
 		activeShader->currentfixedcolormap = mColormapState;
-		if (mColormapState == CM_DEFAULT)
-		{
-			activeShader->muFixedColormap.Set(0);
-		}
-		else if (mColormapState < CM_MAXCOLORMAP)
-		{
-			FSpecialColormap *scm = &SpecialColormaps[gl_fixedcolormap - CM_FIRSTSPECIALCOLORMAP];
-			float m[] = { scm->ColorizeEnd[0] - scm->ColorizeStart[0],
-				scm->ColorizeEnd[1] - scm->ColorizeStart[1], scm->ColorizeEnd[2] - scm->ColorizeStart[2], 0.f };
-
-			activeShader->muFixedColormap.Set(1);
-			activeShader->muColormapStart.Set(scm->ColorizeStart[0], scm->ColorizeStart[1], scm->ColorizeStart[2], 0.f);
-			activeShader->muColormapRange.Set(m);
-		}
-		else if (mColormapState == CM_FOGLAYER)
-		{
-			activeShader->muFixedColormap.Set(3);
-		}
-		else if (mColormapState == CM_LITE)
-		{
-			if (gl_enhanced_nightvision)
-			{
-				r = 0.375f, g = 1.0f, b = 0.375f;
-			}
-			else
-			{
-				r = g = b = 1.f;
-			}
-			activeShader->muFixedColormap.Set(2);
-			activeShader->muColormapStart.Set(r, g, b, 1.f);
-		}
-		else if (mColormapState >= CM_TORCH)
-		{
-			int flicker = mColormapState - CM_TORCH;
-			r = (0.8f + (7 - flicker) / 70.0f);
-			if (r > 1.0f) r = 1.0f;
-			b = g = r;
-			if (gl_enhanced_nightvision) b = g * 0.75f;
-			activeShader->muFixedColormap.Set(2);
-			activeShader->muColormapStart.Set(r, g, b, 1.f);
-		}
+		// [rc4l] features/viewsetup works the shade out, for GL and the backend alike.
+		const zx::viewsetup::FixedColormapShade s = zx::viewsetup::FixedColormapShadeFor(mColormapState);
+		activeShader->muFixedColormap.Set(s.mode);
+		if (s.mode == zx::viewsetup::kShadeRamp || s.mode == zx::viewsetup::kShadeTint)
+			activeShader->muColormapStart.Set(s.start[0], s.start[1], s.start[2], s.mode == zx::viewsetup::kShadeTint ? 1.f : 0.f);
+		if (s.mode == zx::viewsetup::kShadeRamp)
+			activeShader->muColormapRange.Set(s.range[0], s.range[1], s.range[2], 0.f);
 	}
 	if (mTextureMatrixEnabled)
 	{

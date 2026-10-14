@@ -140,54 +140,53 @@ OptionMenu "GLTextureGLOptions"
 {
 	Title "TEXTURE OPTIONS"
 	Option "Textures enabled",			gl_texture,						"YesNo"
-	Option "Texture Filter mode",		gl_texture_filter,				"FilterModes"
-	Option "Anisotropic filter",		gl_texture_filter_anisotropic,	"Anisotropy"
+	Option "Texture Filter mode",		r_texture_filter,				"FilterModes"
+	Option "Anisotropic filter",		r_texture_filter_anisotropic,	"Anisotropy"
 	Option "Texture Format",			gl_texture_format,				"TextureFormats"
-	Option "Enable hires textures",		gl_texture_usehires,			"YesNo"
-	Option "High Quality Resize mode",	gl_texture_hqresize,			"HqResizeModes"
-	Option "Resize textures",			gl_texture_hqresize_textures,	"OnOff"
-	Option "Resize sprites",			gl_texture_hqresize_sprites,	"OnOff"
-	Option "Resize fonts",				gl_texture_hqresize_fonts,		"OnOff"
+	Option "Enable hires textures",		r_texture_usehires,			"YesNo"
+	Option "High Quality Resize mode",	r_texture_hqresize,			"HqResizeModes"
+	Option "Resize textures",			r_texture_hqresize_textures,	"OnOff"
+	Option "Resize sprites",			r_texture_hqresize_sprites,	"OnOff"
+	Option "Resize fonts",				r_texture_hqresize_fonts,		"OnOff"
 	Option "Precache GL textures",		gl_precache,					"YesNo"
 	Option "Camera textures offscreen",	gl_usefb,						"OnOff"
-	Option "Trim sprite edges",			gl_trimsprites,					"OnOff"
 	Option "Sort draw lists by texture", gl_sort_textures,				"YesNo"
 }
 
 OptionMenu "GLLightOptions"
 {
 	Title "DYNAMIC LIGHTS"
-	Option "Dynamic Lights enabled",	gl_lights,						"YesNo"
-	Option "Enable light definitions",	gl_attachedlights,				"YesNo"
-	Option "Clip lights",				gl_lights_checkside,			"YesNo"
-	Option "Lights affect sprites",		gl_light_sprites,				"YesNo"
-	Option "Lights affect particles",	gl_light_particles,				"YesNo"
-	Option "Force additive lighting",	gl_lights_additive,				"YesNo"
-	Slider "Light intensity",			gl_lights_intensity, 			0.0, 1.0, 0.1
-	Slider "Light size",				gl_lights_size,					0.0, 2.0, 0.1
+	Option "Dynamic Lights enabled",	r_lights,						"YesNo"
+	Option "Enable light definitions",	r_attachedlights,				"YesNo"
+	Option "Clip lights",				r_lights_checkside,			"YesNo"
+	Option "Lights affect sprites",		r_light_sprites,				"YesNo"
+	Option "Lights affect particles",	r_light_particles,				"YesNo"
+	Option "Force additive lighting",	r_lights_additive,				"YesNo"
+	Slider "Light intensity",			r_lights_intensity, 			0.0, 1.0, 0.1
+	Slider "Light size",				r_lights_size,					0.0, 2.0, 0.1
 }
 
 OptionMenu "GLPrefOptions"
 {
 	Title "OPENGL PREFERENCES"
-	Option "Sector light mode",			gl_lightmode,					"LightingModes"
-	Option "Fog mode",					gl_fogmode,						"FogMode"
-	Option "Fog forces fullbright",		gl_brightfog,					"YesNo"
-	Slider "Weapon light strength",		gl_weaponlight,					0,32, 2
-	Option "Environment map on mirrors",gl_mirror_envmap,				"OnOff"
-	Option "Enhanced night vision mode",gl_enhanced_nightvision,		"OnOff"
-	Option "ENV shows stealth monsters",gl_enhanced_nv_stealth,			"EnhancedStealth"
+	Option "Sector light mode",			r_lightmode,					"LightingModes"
+	Option "Fog mode",					r_fogmode,						"FogMode"
+	Option "Fog forces fullbright",		r_brightfog,					"YesNo"
+	Slider "Weapon light strength",		r_weaponlight,					0,32, 2
+	Option "Environment map on mirrors",r_mirror_envmap,				"OnOff"
+	Option "Enhanced night vision mode",r_enhanced_nightvision,		"OnOff"
+	Option "ENV shows stealth monsters",r_enhanced_nv_stealth,			"EnhancedStealth"
 	Option "Force brightness in fog",	gl_spritebrightfog,				"OnOff"
-	Option "Adjust sprite clipping",	gl_spriteclip,					"SpriteclipModes"
-	Option "Smooth sprite edges",		gl_sprite_blend,				"OnOff"
-	Option "Fuzz Style",				gl_fuzztype,					"FuzzStyle"
-	Option "Sprite billboard",			gl_billboard_mode,				"BillboardModes"
-	Option "Particle style",			gl_particles_style,				"Particles"
-	Slider "Ambient light level",		gl_light_ambient,				1.0, 255.0, 5.0
+	Option "Adjust sprite clipping",	r_spriteclip,					"SpriteclipModes"
+	Option "Smooth sprite edges",		r_sprite_blend,				"OnOff"
+	Option "Fuzz Style",				r_fuzztype,					"FuzzStyle"
+	Option "Sprite billboard",			r_billboard_mode,				"BillboardModes"
+	Option "Particle style",			r_particles_style,				"Particles"
+	Slider "Ambient light level",		r_light_ambient,				1.0, 255.0, 5.0
 	Option "Rendering quality",			gl_render_precise,				"Precision"
 	Option "Stereo 3D VR",				vr_mode, 						"VRMode"
 	// [BB]
-	Option "Use models",				gl_use_models,					"OnOff"
+	Option "Use models",				r_use_models,					"OnOff"
 }
 
 // [rc4l] uzdoom@a65c9bec4 -- the OpenGL and Display option menus move to menudef.txt, so this

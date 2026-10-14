@@ -101,11 +101,13 @@ test("diagnoseHang: a gone process is not probed or sampled", async () => {
 
 // ---- doctorEngine ----------------------------------------------------------
 
+// [rc4l] Paths come in with the platform's separator, so Windows' backslashes are read as the slashes these keys use.
 function fakeFs({ files = {}, dirs = {} } = {}) {
+  const key = (p) => String(p).replace(/\\/g, "/");
   return {
-    readFileSync: (p) => { if (!(p in files)) throw new Error("ENOENT"); return Buffer.from(files[p].data); },
-    statSync: (p) => { if (p in files) return { mtimeMs: files[p].mtime }; throw new Error("ENOENT"); },
-    readdirSync: (d) => (dirs[d] || []),
+    readFileSync: (p) => { if (!(key(p) in files)) throw new Error("ENOENT"); return Buffer.from(files[key(p)].data); },
+    statSync: (p) => { if (key(p) in files) return { mtimeMs: files[key(p)].mtime }; throw new Error("ENOENT"); },
+    readdirSync: (d) => (dirs[key(d)] || []),
   };
 }
 

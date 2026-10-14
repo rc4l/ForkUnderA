@@ -2,40 +2,9 @@
 #include "r_state.h"
 #include "v_video.h"
 
-#include "gl/textures/gl_texture.h"
+#include "features/materials/textureinfo.h"
 
 #ifdef NO_GL
-// [BB] Having to declare dummy versions of all the dynamic lights is pretty awful...
-class ADynamicLight : public AActor
-{
-	DECLARE_CLASS (ADynamicLight, AActor)
-};
-
-class AVavoomLight : public ADynamicLight
-{
-   DECLARE_CLASS (AVavoomLight, ADynamicLight)
-};
-
-class AVavoomLightWhite : public AVavoomLight
-{
-   DECLARE_CLASS (AVavoomLightWhite, AVavoomLight)
-};
-
-class AVavoomLightColor : public AVavoomLight
-{
-   DECLARE_CLASS (AVavoomLightColor, AVavoomLight)
-};
-
-IMPLEMENT_CLASS (ADynamicLight)
-IMPLEMENT_CLASS (AVavoomLight)
-IMPLEMENT_CLASS (AVavoomLightWhite)
-IMPLEMENT_CLASS (AVavoomLightColor)
-
-DEFINE_CLASS_PROPERTY(type, S, DynamicLight)
-{
-	PROP_STRING_PARM(str, 0);
-}
-
 CVAR (Float, vid_brightness, 0.f, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 CVAR (Float, vid_contrast, 1.f, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 
@@ -60,14 +29,6 @@ void gl_PreprocessLevel()
 {
 }
 
-void gl_ParseDefs()
-{
-}
-
-void gl_InitModels()
-{
-}
-
 void StartGLMenu (void)
 {
 }
@@ -79,27 +40,15 @@ void FTexture::PrecacheGL(int cache)
 {
 }
 
-FTexture::MiscGLInfo::MiscGLInfo() throw ()
+// [rc4l] gl_ParseDefs, AddStateLight and MiscGLInfo are features/gldefs and features/materials now, which a build without GL compiles too.
+// [rc4l] The two light settings whose callbacks reset GL's shader state stay in gl/, so a build without GL defines them plainly.
+CVAR(Bool, r_enhanced_nightvision, true, CVAR_ARCHIVE|CVAR_NOINITCALL)
+CVAR(Int, r_lightmode, 3, CVAR_ARCHIVE|CVAR_NOINITCALL)
+// [rc4l] The engine's window lives in posix/sdl/sdlglvideo.cpp, which a build without GL leaves out, so input finds none.
+struct SDL_Window;
+SDL_Window *I_EngineWindow()
 {
-}
-
-FTexture::MiscGLInfo::~MiscGLInfo()
-{
-}
-
-void AddStateLight(FState *, const char *)
-{
-}
-
-size_t AActor::PropagateMark()
-{
-	// [MGOOOOOO] Mirrors gl/dynlights/a_dynlight.cpp's copy: the ripper's per-victim ledger holds
-	// TObjPtrs that must be marked in non-GL builds too (features/ripper).
-	for (unsigned i=0; i<RipVictims.Size(); i++)
-	{
-		GC::Mark(RipVictims[i].victim);
-	}
-	return Super::PropagateMark();
+	return NULL;
 }
 
 #endif

@@ -1,5 +1,6 @@
-# Build artifacts (fetched/built by mac_compile.sh)
-deps/
+# Build artifacts (fetched/built by mac_compile.sh), except DiligentCore, the Vulkan backend's submodule
+deps/*
+!deps/DiligentCore
 build/
 
 # Visual Studio outputs
@@ -65,3 +66,13 @@ ZandroX-dev-*/
 
 # [rc4l] Reference material for the mkiwad manifest, not ours to redistribute.
 tools/mm8bdm/
+
+# [rc4l] Standalone DiligentCore build used to verify the vendored tree compiles on its own.
+build-diligent/
+
+# fuactl play sessions (port/token of a running instance, and one per port) and the report queue
+tools/fuactl/.play-session*
+tools/fuactl/queue.json
+
+# fuactl screen capture helper build tree (tools/fuactl/native/screencap)
+tools/fuactl/native/screencap/build/

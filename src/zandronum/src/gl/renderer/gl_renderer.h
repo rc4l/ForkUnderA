@@ -6,6 +6,8 @@
 #include "vectors.h"
 #include "r_renderer.h"
 #include "gl/data/gl_matrix.h"
+#include "features/draw2d/computation/quad2d_compute.h"   // [rc4l] Quad2D
+#include <vector>
 
 struct particle_t;
 class FCanvasTexture;
@@ -64,9 +66,6 @@ public:
 	// this instead of hard-coding 0, so camera textures don't unbind the scale buffer.
 	unsigned int mOutputFB;
 
-	FTexture *glpart2;
-	FTexture *glpart;
-	FTexture *mirrortexture;
 	
 	float mSky1Pos, mSky2Pos;
 
@@ -76,6 +75,8 @@ public:
 	FFlatVertexBuffer *mVBO;
 	FSkyVertexBuffer *mSkyVBO;
 	FLightBuffer *mLights;
+	zx::draw2d::PolyDraw mPoly;                    // [rc4l] FillSimplePoly's points and texture coordinates, worked out by features/draw2d
+	std::vector<zx::hwrender::Quad2D> mPolyTris;   // [rc4l] and its fan, which PreparePoly works out with them
 
 
 	FGLRenderer(OpenGLFrameBuffer *fb);
@@ -86,6 +87,7 @@ public:
 	void ResetViewport();
 	void SetViewport(GL_IRECT *bounds);
 	sector_t *RenderViewpoint (AActor * camera, GL_IRECT * bounds, float fov, float ratio, float fovratio, bool mainview, bool toscreen);
+	void BeginFrame();
 	void RenderView(player_t *player);
 	void SetViewAngle(angle_t viewangle);
 	void SetupView(fixed_t viewx, fixed_t viewy, fixed_t viewz, angle_t viewangle, bool mirror, bool planemirror);
@@ -95,10 +97,12 @@ public:
 	void CreateScene();
 	void RenderScene(int recursion);
 	void RenderTranslucent();
+	// [rc4l] The same pass without the back-to-front sort, for the standalone path -- the backend
+	// sorts the sprites it is handed, so sorting them here twice is work thrown away.
 	void DrawScene(bool toscreen = false);
 	void DrawBlend(sector_t * viewsector);
 
-	void DrawPSprite (player_t * player,pspdef_t *psp,fixed_t sx, fixed_t sy, bool hudModelStep, int OverrideShader, bool alphatexture);
+	void DrawPSprite (player_t * player,pspdef_t *psp,fixed_t sx, fixed_t sy, bool hudModelStep, int OverrideShader, bool alphatexture, int blend2d);
 	void DrawPlayerSprites(sector_t * viewsector, bool hudModelStep);
 	void DrawTargeterSprites();
 
@@ -115,8 +119,6 @@ public:
 	void ProcessSprite(AActor *thing, sector_t *sector);
 	void ProcessParticle(particle_t *part, sector_t *sector);
 	void ProcessSector(sector_t *fakesector);
-	void FlushTextures();
-	unsigned char *GetTextureBuffer(FTexture *tex, int &w, int &h);
 	void SetupLevel();
 
 	void SetFixedColormap (player_t *player);
@@ -139,25 +141,8 @@ public:
 
 // Global functions. Make them members of GLRenderer later?
 void gl_RenderBSPNode (void *node);
-bool gl_CheckClip(side_t * sidedef, sector_t * frontsector, sector_t * backsector);
-void gl_CheckViewArea(vertex_t *v1, vertex_t *v2, sector_t *frontsector, sector_t *backsector);
 
-typedef enum
-{
-        area_normal,
-        area_below,
-        area_above,
-		area_default
-} area_t;
-
-extern area_t			in_area;
-
-
-sector_t * gl_FakeFlat(sector_t * sec, sector_t * dest, area_t in_area, bool back);
-inline sector_t * gl_FakeFlat(sector_t * sec, sector_t * dest, bool back)
-{
-	return gl_FakeFlat(sec, dest, in_area, back);
-}
+#include "features/fakeflat/fakeflat.h"   // [rc4l] gl_FakeFlat, gl_CheckViewArea, gl_CheckClip, area_t and in_area
 
 struct TexFilter_s
 {

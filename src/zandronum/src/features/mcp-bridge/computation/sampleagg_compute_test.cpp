@@ -202,3 +202,74 @@ TEST(SampleStructs, DefaultToEmpty)
 	EXPECT_EQ(0u, func.count);
 	EXPECT_NEAR(0.0, func.percent, 0.0001);
 }
+
+// ---------------------------------------------------------------- inclusive time
+
+namespace
+{
+
+std::vector<SampleHit> Stack(const char *a, const char *b = NULL, const char *c = NULL)
+{
+	std::vector<SampleHit> s;
+	s.push_back(SampleHit(a, "forkundera"));
+	if (b) s.push_back(SampleHit(b, "forkundera"));
+	if (c) s.push_back(SampleHit(c, "forkundera"));
+	return s;
+}
+
+} // namespace
+
+TEST(ComputeInclusiveRanks, AFunctionCountsForEverySampleItIsOnTheStackOf)
+{
+	// [rc4l] D_Display is on all three stacks, the walk under it in two, the present in one.
+	std::vector<std::vector<SampleHit> > stacks;
+	stacks.push_back(Stack("ClipAngle", "WalkView", "D_Display"));
+	stacks.push_back(Stack("AddLine", "WalkView", "D_Display"));
+	stacks.push_back(Stack("Present", "D_Display"));
+	const std::vector<SampleFunc> r = ComputeInclusiveRanks(stacks, 0);
+	ASSERT_EQ(5u, r.size());
+	EXPECT_EQ("D_Display", r[0].symbol);
+	EXPECT_EQ(3u, r[0].count);
+	EXPECT_DOUBLE_EQ(100.0, r[0].percent);
+	EXPECT_EQ("WalkView", r[1].symbol);
+	EXPECT_EQ(2u, r[1].count);
+	EXPECT_NEAR(66.67, r[1].percent, 0.01);
+}
+
+TEST(ComputeInclusiveRanks, RecursionCountsOncePerStackAndUnnamedFramesStillCount)
+{
+	std::vector<std::vector<SampleHit> > stacks;
+	stacks.push_back(Stack("Node", "Node", "Node"));
+	stacks.push_back(Stack("", "Node"));
+	const std::vector<SampleFunc> r = ComputeInclusiveRanks(stacks, 1);
+	ASSERT_EQ(1u, r.size());
+	EXPECT_EQ("Node", r[0].symbol);
+	EXPECT_EQ(2u, r[0].count);
+	EXPECT_EQ("[unknown]", ComputeInclusiveRanks(stacks, 0)[1].symbol);
+}
+
+TEST(ComputeInclusiveRanks, NoStacksIsAnEmptyTable)
+{
+	EXPECT_TRUE(ComputeInclusiveRanks(std::vector<std::vector<SampleHit> >(), 0).empty());
+}
+
+TEST(SampleReportJson, CarriesTheInclusiveTableBesideTheSelfOne)
+{
+	std::vector<SampleFunc> self, inclusive;
+	self.push_back(SampleFunc("ClipAngle", "forkundera", 1, 50.0));
+	inclusive.push_back(SampleFunc("D_Display", "forkundera", 2, 100.0));
+	const std::string json = SampleReportJson(self, inclusive, 1.0, 2);
+	EXPECT_NE(std::string::npos, json.find("\"functions\":[{\"symbol\":\"ClipAngle\""));
+	EXPECT_NE(std::string::npos, json.find("\"inclusive\":[{\"symbol\":\"D_Display\""));
+	EXPECT_NE(std::string::npos, SampleReportJson(self, 1.0, 1).find("\"inclusive\":[]"));
+}
+
+TEST(ComputeInTicWindow, EitherBoundZeroIsOpen)
+{
+	EXPECT_TRUE(ComputeInTicWindow(5, 0, 0));
+	EXPECT_TRUE(ComputeInTicWindow(5, 5, 5));
+	EXPECT_FALSE(ComputeInTicWindow(4, 5, 0));
+	EXPECT_FALSE(ComputeInTicWindow(6, 0, 5));
+	EXPECT_TRUE(ComputeInTicWindow(100, 5, 0));
+	EXPECT_TRUE(ComputeInTicWindow(1, 0, 5));
+}

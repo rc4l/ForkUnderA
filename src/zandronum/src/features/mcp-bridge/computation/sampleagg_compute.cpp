@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <map>
+#include <set>
 
 namespace zx
 {
@@ -103,22 +104,19 @@ SampleFunc::SampleFunc(const std::string &symbol, const std::string &dso, unsign
 {
 }
 
-std::vector<SampleFunc> RankSamples(const std::vector<SampleHit> &hits, std::size_t top)
+namespace
 {
-	std::map<FuncKey, unsigned long long> counts;
 
-	for (std::size_t i = 0; i < hits.size(); ++i)
-	{
-		// An address the symboliser could not name is still a sample that happened. It is counted
-		// under a placeholder rather than dropped, because dropping it would hand its share to
-		// everything else and overstate whatever we DID resolve.
-		const std::string symbol = hits[i].symbol.empty() ? std::string("[unknown]") : hits[i].symbol;
+// [rc4l] An address the symboliser could not name is counted under a placeholder, since dropping it would overstate every function it did name.
+FuncKey KeyOf(const SampleHit &hit)
+{
+	return FuncKey(hit.symbol.empty() ? std::string("[unknown]") : hit.symbol, hit.dso);
+}
 
-		counts[FuncKey(symbol, hits[i].dso)]++;
-	}
-
-	const unsigned long long total = static_cast<unsigned long long>(hits.size());
-
+// [rc4l] Counts out of `total` samples as ranked rows, hottest first, keeping at most `top` (0 keeps all).
+std::vector<SampleFunc> RankCounts(const std::map<FuncKey, unsigned long long> &counts, unsigned long long total,
+	std::size_t top)
+{
 	std::vector<SampleFunc> out;
 	out.reserve(counts.size());
 
@@ -142,6 +140,36 @@ std::vector<SampleFunc> RankSamples(const std::vector<SampleHit> &hits, std::siz
 	return out;
 }
 
+} // namespace
+
+bool ComputeInTicWindow(int tic, int ticMin, int ticMax)
+{
+	return !((ticMin > 0 && tic < ticMin) || (ticMax > 0 && tic > ticMax));
+}
+
+std::vector<SampleFunc> RankSamples(const std::vector<SampleHit> &hits, std::size_t top)
+{
+	std::map<FuncKey, unsigned long long> counts;
+	for (std::size_t i = 0; i < hits.size(); ++i)
+		counts[KeyOf(hits[i])]++;
+	return RankCounts(counts, static_cast<unsigned long long>(hits.size()), top);
+}
+
+std::vector<SampleFunc> ComputeInclusiveRanks(const std::vector<std::vector<SampleHit> > &stacks, std::size_t top)
+{
+	std::map<FuncKey, unsigned long long> counts;
+	std::set<FuncKey> onStack;
+	for (std::size_t s = 0; s < stacks.size(); ++s)
+	{
+		onStack.clear();
+		for (std::size_t f = 0; f < stacks[s].size(); ++f)
+			onStack.insert(KeyOf(stacks[s][f]));
+		for (std::set<FuncKey>::const_iterator it = onStack.begin(); it != onStack.end(); ++it)
+			counts[*it]++;
+	}
+	return RankCounts(counts, static_cast<unsigned long long>(stacks.size()), top);
+}
+
 std::vector<SampleHit> OnlyFrom(const std::vector<SampleHit> &hits, const std::string &dso)
 {
 	const std::string want = LowerCopy(dso);
@@ -157,14 +185,13 @@ std::vector<SampleHit> OnlyFrom(const std::vector<SampleHit> &hits, const std::s
 	return out;
 }
 
-std::string SampleReportJson(const std::vector<SampleFunc> &funcs, double seconds,
-	unsigned long long total)
+namespace
 {
-	std::string out = "{\"available\":true,\"backend\":\"bridge\",\"seconds\":";
-	out += Fixed(seconds, 3);
-	out += ",\"samples\":" + U(total);
-	out += ",\"functions\":[";
 
+// [rc4l] One ranked table as a JSON array.
+std::string RowsJson(const std::vector<SampleFunc> &funcs)
+{
+	std::string out = "[";
 	for (std::size_t i = 0; i < funcs.size(); ++i)
 	{
 		if (i > 0)
@@ -175,8 +202,26 @@ std::string SampleReportJson(const std::vector<SampleFunc> &funcs, double second
 		out += ",\"samples\":" + U(funcs[i].count);
 		out += ",\"percent\":" + Fixed(funcs[i].percent, 2) + "}";
 	}
+	return out + "]";
+}
 
-	return out + "]}";
+} // namespace
+
+std::string SampleReportJson(const std::vector<SampleFunc> &funcs, const std::vector<SampleFunc> &inclusive,
+	double seconds, unsigned long long total)
+{
+	std::string out = "{\"available\":true,\"backend\":\"bridge\",\"seconds\":";
+	out += Fixed(seconds, 3);
+	out += ",\"samples\":" + U(total);
+	out += ",\"functions\":" + RowsJson(funcs);
+	out += ",\"inclusive\":" + RowsJson(inclusive);
+	return out + "}";
+}
+
+std::string SampleReportJson(const std::vector<SampleFunc> &funcs, double seconds,
+	unsigned long long total)
+{
+	return SampleReportJson(funcs, std::vector<SampleFunc>(), seconds, total);
 }
 
 } // namespace zx

@@ -52,19 +52,33 @@ echo "== Coverage report =="
 $COV report "$BUILD/zandrox_tests" -instr-profile="$BUILD/cov.profdata" \
   -ignore-filename-regex='.*/_deps/.*'
 
+# [rc4l] One file's line percent, read from that file's own entry in the export: a header with no
+# code has no entry (clang maps even unused inline functions), so it has nothing left to cover.
+file_pct() {
+  python3 -c '
+import json, sys
+want = sys.argv[1]
+for d in json.load(sys.stdin)["data"]:
+    for f in d["files"]:
+        if f["filename"].replace(chr(92), "/").endswith(want):
+            lines = f["summary"]["lines"]
+            print(lines["percent"] if lines["count"] else 100)
+            sys.exit()
+print(100)' "$1"
+}
+
 # [rc4l] Every enforced file must be at 100% line coverage or the gate fails.
 status=0
 for f in "${enforce[@]:-}"; do
   [[ -z "$f" ]] && continue
-  pct="$($COV export "$BUILD/zandrox_tests" -instr-profile="$BUILD/cov.profdata" \
-        -sources "$ROOT/$f" 2>/dev/null \
-        | grep -o '"lines":{[^}]*"percent":[0-9.]*' | grep -o '[0-9.]*$' | head -1)"
+  pct="$($COV export "$BUILD/zandrox_tests" -instr-profile="$BUILD/cov.profdata" -summary-only \
+        -sources "$ROOT/$f" 2>/dev/null | file_pct "$f")"
   if [[ "$pct" != "100" && "$pct" != "100.0" ]]; then
     echo "COVERAGE GATE FAIL: $f is at ${pct:-0}% line coverage (need 100%)" >&2
     # [rc4l] Print the exact uncovered lines so a CI failure is diagnosable without re-running
     # locally -- especially useful when the miss is compiler-version specific (see issue #27).
     $COV show "$BUILD/zandrox_tests" -instr-profile="$BUILD/cov.profdata" "$ROOT/$f" 2>/dev/null \
-      | grep -E '^[[:space:]]*[0-9]+\|[[:space:]]*0\|' | sed 's/^/    uncovered| /' >&2
+      | grep -E '^[[:space:]]*[0-9]+\|[[:space:]]*0\|' | sed 's/^/    uncovered| /' >&2 || true
     status=1
   else
     echo "COVERAGE GATE OK:   $f 100%"

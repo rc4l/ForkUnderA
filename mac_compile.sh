@@ -139,7 +139,8 @@ install_native_deps() {
     # from Homebrew — none of these dlopen a sibling by leaf name, so they bundle
     # cleanly with the recursive @loader_path pass.
     # ffmpeg (libav*) powers the FUA instant-replay encoder; bundled via the @loader_path pass.
-    local pkgs=(glew openssl@3 opus ffmpeg) need=()
+    # [rc4l] molten-vk and vulkan-loader are the Vulkan backend's, bundled by bundle_vulkan below.
+    local pkgs=(glew openssl@3 opus ffmpeg molten-vk vulkan-loader) need=()
     if [[ "$WANT_SOUND" == "1" ]]; then
         pkgs+=(openal-soft libsndfile mpg123)
     fi
@@ -284,7 +285,8 @@ configure() {
 
 build() {
     status "Building Zandronum..."
-    cmake --build "$BUILD_DIR" --config "$CONFIGURATION" --parallel "$NCPU"
+    # [rc4l] ZX_KEEP_GOING=1 compiles past a failing file, so one run reports every compile error.
+    cmake --build "$BUILD_DIR" --config "$CONFIGURATION" --parallel "$NCPU" ${ZX_KEEP_GOING:+-- -k}
 
     # [rc4l] Extract debug info into a .dSYM for symbol upload (kept out of the shipped binary).
     if [[ "${ZX_WITH_SYMBOLS:-0}" == "1" && -f "$BUILD_DIR/forkundera" ]]; then
@@ -366,11 +368,40 @@ _bundle_deps() {
     done < <(otool -L "$macho" | tail -n +2 | awk '{print $1}')
 }
 
+# [rc4l] The Vulkan loader and MoltenVK beside the executable, MoltenVK's driver file where the loader looks in a bundle, and an rpath for volk's dlopen by bare name, without which a launch falls back to GL.
+bundle_vulkan() {
+    local macos="$1" resources="$2" loader mvk
+    loader="$(brew --prefix vulkan-loader 2>/dev/null)/lib/libvulkan.1.dylib"
+    mvk="$(brew --prefix molten-vk 2>/dev/null)/lib/libMoltenVK.dylib"
+    if [[ ! -f "$loader" || ! -f "$mvk" ]]; then
+        warn "Vulkan loader or MoltenVK not found; this bundle will draw with GL (Legacy) only"
+        return 0
+    fi
+    cp -L "$loader" "$macos/libvulkan.1.dylib"
+    cp -L "$mvk" "$macos/libMoltenVK.dylib"
+    chmod u+w "$macos/libvulkan.1.dylib" "$macos/libMoltenVK.dylib"
+    install_name_tool -id "@loader_path/libvulkan.1.dylib" "$macos/libvulkan.1.dylib" 2>/dev/null || true
+    install_name_tool -id "@loader_path/libMoltenVK.dylib" "$macos/libMoltenVK.dylib" 2>/dev/null || true
+    mkdir -p "$resources/vulkan/icd.d"
+    # [rc4l] library_path is relative to this file: Resources/vulkan/icd.d up three is Contents.
+    cat > "$resources/vulkan/icd.d/MoltenVK_icd.json" <<'JSON'
+{
+    "file_format_version": "1.0.0",
+    "ICD": {
+        "library_path": "../../../MacOS/libMoltenVK.dylib",
+        "api_version": "1.2.0",
+        "is_portability_driver": true
+    }
+}
+JSON
+    install_name_tool -add_rpath "@executable_path" "$macos/forkundera" 2>/dev/null || true
+}
+
 make_icon() {
     local resources="$1"
-    # Prefer Zandronum's square Windows app icon (a proper dock tile); fall back
+    # [rc4l] The app icon's master picture (the one the .ico is made from); fall back
     # to the wide wordmark logo if the source tree doesn't have it.
-    local logo="$ZAN_SRC_DIR/src/win32/zandronum.ico"
+    local logo="$ZAN_SRC_DIR/wadsrc/static/fua_appicon.png"
     [[ -f "$logo" ]] || logo="$SCRIPT_ROOT/docs/logo.png"
     have python3 && have iconutil && [[ -f "$logo" ]] || { warn "skipping icon (tooling/logo missing)"; return 0; }
     local iconset; iconset="$(mktemp -d)/$APP_NAME.iconset"; mkdir -p "$iconset"
@@ -427,6 +458,7 @@ make_app_bundle() {
         warn "libSDL2-2.0.0.dylib not found in $SDL_PREFIX; run build_sdl_from_source"
     fi
     _bundle_deps "$macos/forkundera" "$macos" "${search[@]}"
+    bundle_vulkan "$macos" "$resources"
 
     local icon; icon="$(make_icon "$resources")"
 

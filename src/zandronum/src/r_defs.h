@@ -290,6 +290,9 @@ struct secplane_t
 		return (double(d) + double(a)*x + double(b)*y) * double(ic) / (-65536.0 * 65536.0);
 	}
 
+	// [rc4l] 32-bit ints (FLOAT2FIXED's result) would silently take the double overload and come back in map units, not fixed.
+	double ZatPoint (SDWORD x, SDWORD y) const = delete;
+
 	// Returns the value of z at vertex v
 	fixed_t ZatPoint (const vertex_t *v) const
 	{
@@ -543,11 +546,13 @@ struct sector_t
 	void SetXOffset(int pos, fixed_t o)
 	{
 		planes[pos].xform.xoffs = o;
+		fua_placement++;	// [rc4l] features/levelmesh flat bake
 	}
 
 	void AddXOffset(int pos, fixed_t o)
 	{
 		planes[pos].xform.xoffs += o;
+		fua_placement++;	// [rc4l] features/levelmesh flat bake
 	}
 
 	fixed_t GetXOffset(int pos) const
@@ -558,11 +563,13 @@ struct sector_t
 	void SetYOffset(int pos, fixed_t o)
 	{
 		planes[pos].xform.yoffs = o;
+		fua_placement++;	// [rc4l] features/levelmesh flat bake
 	}
 
 	void AddYOffset(int pos, fixed_t o)
 	{
 		planes[pos].xform.yoffs += o;
+		fua_placement++;	// [rc4l] features/levelmesh flat bake
 	}
 
 	fixed_t GetYOffset(int pos, bool addbase = true) const
@@ -580,6 +587,7 @@ struct sector_t
 	void SetXScale(int pos, fixed_t o)
 	{
 		planes[pos].xform.xscale = o;
+		fua_placement++;	// [rc4l] features/levelmesh flat bake
 	}
 
 	fixed_t GetXScale(int pos) const
@@ -590,6 +598,7 @@ struct sector_t
 	void SetYScale(int pos, fixed_t o)
 	{
 		planes[pos].xform.yscale = o;
+		fua_placement++;	// [rc4l] features/levelmesh flat bake
 	}
 
 	fixed_t GetYScale(int pos) const
@@ -600,6 +609,7 @@ struct sector_t
 	void SetAngle(int pos, angle_t o)
 	{
 		planes[pos].xform.angle = o;
+		fua_placement++;	// [rc4l] features/levelmesh flat bake
 	}
 
 	angle_t GetAngle(int pos, bool addbase = true) const
@@ -618,6 +628,7 @@ struct sector_t
 	{
 		planes[pos].xform.base_yoffs = y;
 		planes[pos].xform.base_angle = fixed_t::FromUnsignedBits(o);
+		fua_placement++;	// [rc4l] features/levelmesh flat bake
 	}
 
 	void SetAlpha(int pos, fixed_t o)
@@ -660,6 +671,7 @@ struct sector_t
 	{
 		FTextureID old = planes[pos].Texture;
 		planes[pos].Texture = tex;
+		fua_dirty++;	// [rc4l] features/levelmesh wall cache
 		if (floorclip && pos == floor && tex != old) AdjustFloorClip();
 	}
 
@@ -689,12 +701,14 @@ struct sector_t
 	void SetPlaneTexZ(int pos, fixed_t val, bool dirtify = false)
 	{
 		planes[pos].TexZ = val;
+		fua_dirty++;	// [rc4l] features/levelmesh wall cache
 		if (dirtify) SetAllVerticesDirty();
 	}
 
 	void ChangePlaneTexZ(int pos, fixed_t val)
 	{
 		planes[pos].TexZ += val;
+		fua_dirty++;	// [rc4l] features/levelmesh wall cache
 		SetAllVerticesDirty();
 	}
 
@@ -706,11 +720,13 @@ struct sector_t
 	void ChangeLightLevel(int newval)
 	{
 		lightlevel = ClampLight(lightlevel + newval);
+		fua_dirty++;	// [rc4l] features/levelmesh wall cache
 	}
 
 	void SetLightLevel(int newval)
 	{
 		lightlevel = ClampLight(newval);
+		fua_dirty++;	// [rc4l] features/levelmesh wall cache
 	}
 
 	int GetLightLevel() const
@@ -732,6 +748,15 @@ struct sector_t
 
 	// [RH] store floor and ceiling planes instead of heights
 	secplane_t	floorplane, ceilingplane;
+
+	// [rc4l] features/levelmesh: bumped whenever anything a cached wall was generated from changes
+	// on this sector. Comparing two ints replaces hashing ~18 fields per seg per frame, which cost
+	// as much as the GLWall::Process it was meant to avoid. Plane equations are written raw in
+	// dsectoreffect.cpp, but always followed by ChangePlaneTexZ on a committed move, so this
+	// catches them; a rolled-back crush never reaches it.
+	int			fua_dirty;
+	// [rc4l] features/levelmesh: bumped by the plane texture placement setters (a scroller, its interpolation, a script), which re-bake this sector's flats and none of its walls.
+	int			fua_placement;
 
 	// [RH] give floor and ceiling even more properties
 	FDynamicColormap *ColorMap;	// [RH] Per-sector colormap
@@ -956,6 +981,7 @@ struct side_t
 	SWORD		Light;
 	BYTE		Flags;
 	int			Index;		// needed to access custom UDMF fields which are stored in loading order.
+	int			fua_dirty;	// [rc4l] features/levelmesh: bumped by any texture/offset/scale change
 
 	// [BC] Saved flags for when a map resets, or when we need to give updates
 	// to new clients connecting.
@@ -966,6 +992,7 @@ struct side_t
 	void SetLight(SWORD l)
 	{
 		Light = l;
+		fua_dirty++;	// [rc4l] features/levelmesh wall cache: Transfer_WallLight re-lights a side every time its source sector's light changes
 	}
 
 	FTextureID GetTexture(int which) const
@@ -975,11 +1002,13 @@ struct side_t
 	void SetTexture(int which, FTextureID tex)
 	{
 		textures[which].texture = tex;
+		fua_dirty++;	// [rc4l] features/levelmesh wall cache
 	}
 
 	void SetTextureXOffset(int which, fixed_t offset)
 	{
 		textures[which].xoffset = offset;
+		fua_dirty++;	// [rc4l] features/levelmesh wall cache
 	}
 	void SetTextureXOffset(fixed_t offset)
 	{
@@ -994,11 +1023,13 @@ struct side_t
 	void AddTextureXOffset(int which, fixed_t delta)
 	{
 		textures[which].xoffset += delta;
+		fua_dirty++;	// [rc4l] features/levelmesh wall cache
 	}
 
 	void SetTextureYOffset(int which, fixed_t offset)
 	{
 		textures[which].yoffset = offset;
+		fua_dirty++;	// [rc4l] features/levelmesh wall cache
 	}
 	void SetTextureYOffset(fixed_t offset)
 	{
@@ -1013,6 +1044,7 @@ struct side_t
 	void AddTextureYOffset(int which, fixed_t delta)
 	{
 		textures[which].yoffset += delta;
+		fua_dirty++;	// [rc4l] features/levelmesh wall cache
 	}
 
 	void SetTextureXScale(int which, fixed_t scale)

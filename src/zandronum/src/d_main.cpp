@@ -68,6 +68,8 @@
 #include "w_wad.h"
 #include "features/addon-catalogue/zx_catalogue.h" // [rc4l] validated at startup, not on first use
 #include "features/crashreport/zx_crashreport.h"
+#include "features/hwrender/diligent/dglive.h"   // [rc4l] one call, no Diligent headers -- see dglive.h
+#include "features/hwrender/hud2d.h"             // [rc4l] per-frame 2D capture
 #include "features/continue/zx_continue.h"
 #include "features/identity/zx_identity.h"
 #include "features/updater/zx_updater.h" // [rc4l] background auto-update check
@@ -165,6 +167,10 @@
 #include "po_man.h"
 #include "resourcefiles/resourcefile.h"
 #include "r_renderer.h"
+#include "features/frame/framestall.h"   // [rc4l] DebugFrameStall
+#include "features/frame/debugorbit.h"   // [rc4l] DebugOrbit
+#include "features/frame/viewtrace.h"   // [rc4l] NoteMouseEvent
+#include "features/framephase/framephase.h"   // [rc4l] FrameBoundary and the main loop's phases
 #include "p_local.h"
 
 
@@ -363,7 +369,11 @@ void D_PostEvent (const event_t *ev)
 		return;
 	}
 	events[eventhead] = *ev;
-	if (ev->type == EV_Mouse && !paused && menuactive == MENU_Off && ConsoleState != c_down && ConsoleState != c_falling)
+	// [rc4l] A mouse move turns the view unless the game is paused or a menu or the console is up.
+	const bool mouseTurnsView = !paused && menuactive == MENU_Off && ConsoleState != c_down && ConsoleState != c_falling;
+	if (ev->type == EV_Mouse)
+		zx::frame::NoteMouseEvent(mouseTurnsView);   // [rc4l] fua_viewtrace
+	if (ev->type == EV_Mouse && mouseTurnsView)
 	{
 		if (Button_Mlook.bDown || freelook)
 		{
@@ -605,8 +615,8 @@ CVAR (Flag, sv_shotgunstart,		dmflags2, DF2_SHOTGUNSTART);
 
 // [BB/EP] Only necessary to handle ZADF_FORCE_VIDEO_DEFAULTS.
 #ifndef NO_GL
-EXTERN_CVAR(Int, gl_lightmode)
-EXTERN_CVAR(Int, gl_distfog)
+EXTERN_CVAR(Int, r_lightmode)
+EXTERN_CVAR(Int, r_distfog)
 #endif
 
 // [AK] Added CVAR_CAMPAIGNLOCK and CVAR_GAMEPLAYFLAGSET.
@@ -652,12 +662,12 @@ CUSTOM_CVAR (Int, zadmflags, 0, CVAR_SERVERINFO | CVAR_CAMPAIGNLOCK | CVAR_GAMEP
 	SERVER_FlagsetChanged( self );
 
 #ifndef NO_GL
-	// [BB/EP] This makes gl_lightmode and gl_distfog handle ZADF_FORCE_VIDEO_DEFAULTS.
+	// [BB/EP] This makes r_lightmode and r_distfog handle ZADF_FORCE_VIDEO_DEFAULTS.
 	// [BB] Don't do this on startup since gl.flags is not properly initialized yet.
 	if ( gamestate != GS_STARTUP )
 	{
-		gl_lightmode.Callback();
-		gl_distfog.Callback();
+		r_lightmode.Callback();
+		r_distfog.Callback();
 	}
 #endif
 }
@@ -894,6 +904,12 @@ void D_Display ()
 
 	if (nodrawers || screen == NULL)
 		return; 				// for comparative timing / profiling
+
+	// [rc4l] features/hwrender: last frame's 2D is dead -- the HUD moves, text scrolls, menus open.
+	// Dropped here rather than after the render so that everything drawn this frame, including the
+	// console and menus which are drawn late, is captured. See hud2d.h.
+	zx::hwrender::Clear2D();
+	zx::hwrender::FrameTimingBegin();   // [rc4l] vid_fps per renderer, split at LiveFrame
 
 	cycle_t cycles;
 	
@@ -1191,7 +1207,10 @@ drawfullconsole:
 
 	if (!wipe || NoWipe < 0)
 	{
-		NetUpdate ();			// send out any new accumulation
+		{
+			const zx::framephase::Scope inputPhase( zx::framephase::kPhaseInput );   // [rc4l] it reads the window's messages, the mouse among them
+			NetUpdate ();			// send out any new accumulation
+		}
 		// normal update
 		C_DrawConsole (hw2d);	// draw console
 		M_Drawer ();			// menu is drawn even on top of everything
@@ -1202,7 +1221,21 @@ drawfullconsole:
 		// See features/server-browser/zx_joinserver.h.
 		zx::DrawJoinReadyNotice ( true );
 		FStat::PrintStat ();
-		screen->Update ();		// page flip or blit buffer
+		{
+			const zx::framephase::Scope flipPhase( zx::framephase::kPhaseFlip );
+			screen->Update ();		// page flip or blit buffer
+		}
+
+		// [rc4l] features/hwrender: mirror the frame into the Diligent backend window.
+		//
+		// Until now the backend drew a snapshot taken at upload time, which is enough to benchmark
+		// and to check a screenshot but is not a renderer -- you cannot tell whether geometry, depth
+		// or the camera are right from one still frame. Driving it from the real frame loop with the
+		// live camera is what turns it into something you can walk around in and see wrong.
+		//
+		// Deliberately AFTER screen->Update: the GL frame is the one the player is playing, and the
+		// backend must not be able to stall or corrupt it.
+		zx::hwrender::LiveFrame ();
 	}
 	else
 	{
@@ -1336,6 +1369,7 @@ void D_DoomLoop ()
 			zx::JoinTick(); // [rc4l] puts a failed join back in the server browser instead of a bare console
 			zx::Continue_Tick(); // [rc4l] finishes a Continue that had to reload the WAD set first
 			zx::HostTick(); // [rc4l] client side: drains our own server's output and watches it come up or fall over
+			zx::framephase::FrameBoundary();   // [rc4l] the last iteration's phases become the last frame's
 			MCP_Bridge_Poll();
 			switch ( NETWORK_GetState( ))
 			{
@@ -1356,7 +1390,12 @@ void D_DoomLoop ()
 				}
 
 				// Run at least 1 tick.
-				TryRunTics( );
+				{
+					const int ticBefore = gametic;
+					const zx::framephase::Scope simPhase( zx::framephase::kPhaseSim );
+					TryRunTics( );
+					zx::frame::DebugFrameStall( gametic != ticBefore );   // [rc4l] fua_debug_ticstall_us
+				}
 
 				// Move positional sounds.
 				// NOTE: .camera can be NULL if player has loaded the level but
@@ -1368,10 +1407,17 @@ void D_DoomLoop ()
 				// [AK] Don't call I_StartTic() if we're currently using the old
 				// Skulltag mouse behaviour.
 				if ( cl_useskulltagmouse == false )
+				{
+					const zx::framephase::Scope inputPhase( zx::framephase::kPhaseInput );
 					I_StartTic( );
+				}
+				zx::frame::DebugOrbit();   // [rc4l] fua_debug_orbit
 
 				MCP_RPC_MarkRender(); // [rc4l] coarse sim|render split for the MCP perf profiler (no-op when off)
-				D_Display( );
+				{
+					const zx::framephase::Scope displayPhase( zx::framephase::kPhaseDisplay );
+					D_Display( );
+				}
 				break;
 			case NETSTATE_SERVER:
 
@@ -1413,7 +1459,10 @@ void D_DoomLoop ()
 				}
 				else
 				{
+					const int ticBefore = gametic;
+					const zx::framephase::Scope simPhase( zx::framephase::kPhaseSim );
 					TryRunTics (); // will run at least one tic
+					zx::frame::DebugFrameStall( gametic != ticBefore );   // [rc4l] fua_debug_ticstall_us
 				}
 
 				// [rc4l] Asks the server registries once, a few seconds in, and pumps the browser's
@@ -1422,9 +1471,16 @@ void D_DoomLoop ()
 				BROWSER_BackgroundTick( );
 
 				// Update display, next frame, with current state.
-				I_StartTic ();
+				{
+					const zx::framephase::Scope inputPhase( zx::framephase::kPhaseInput );
+					I_StartTic ();
+				}
+				zx::frame::DebugOrbit();   // [rc4l] fua_debug_orbit
 				MCP_RPC_MarkRender(); // [rc4l] coarse sim|render split for the MCP perf profiler (no-op when off)
-				D_Display ();
+				{
+					const zx::framephase::Scope displayPhase( zx::framephase::kPhaseDisplay );
+					D_Display ();
+				}
 				break;
 			}
 		}

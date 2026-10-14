@@ -105,7 +105,6 @@ void SERVERCONSOLE_Print( char *pszString )
 #ifdef _WIN32
 
 #include "posix/sdl/glstubs.cpp"
-void FGLTexture::FlushAll() {}
 
 #endif //_WIN32
 #endif //NO_GL

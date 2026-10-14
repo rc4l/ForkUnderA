@@ -18,6 +18,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       build-essential cmake ninja-build git python3 pkg-config ca-certificates \
       libssl-dev libopus-dev zlib1g-dev libbz2-dev libjpeg-dev \
       libsdl2-dev libgl1-mesa-dev libglu1-mesa-dev libglew-dev libgme-dev \
+      libx11-dev libx11-xcb-dev libxcb1-dev libxrandr-dev libwayland-dev \
       libopenal-dev libsndfile1-dev libmpg123-dev \
   && rm -rf /var/lib/apt/lists/*
 

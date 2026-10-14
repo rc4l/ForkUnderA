@@ -71,6 +71,7 @@
 #include "gameconfigfile.h"
 #include "scoreboard.h"
 #include "name.h"
+#include "features/cvar-alias/computation/cvaralias_compute.h"   // [rc4l] the fua_ names other cvars answer to
 
 // [rc4l] Name-keyed cache in front of FindCVar's linked-list walk. ACS GetCVar resolves a
 // cvar by name on every script call, and mods poll cvars every tic, so the O(cvars) stricmp
@@ -1680,6 +1681,12 @@ FBaseCVar *FindCVar (const char *var_name, FBaseCVar **prev)
 	}
 	if (var != NULL && !wantsPrev)
 		CVarCache()[FName (var->GetName ())] = var;
+	// [rc4l] features/cvar-alias: a fua_ name for another cvar finds that cvar.
+	if (var == NULL)
+	{
+		const char *target = zx::cvaralias::ComputeCVarAliasTarget (var_name, strlen (var_name));
+		if (target != NULL) return FindCVar (target, wantsPrev ? prev : NULL);
+	}
 	return var;
 }
 
@@ -1701,6 +1708,12 @@ FBaseCVar *FindCVarSub (const char *var_name, int namelen)
 			break;
 		}
 		var = var->m_Next;
+	}
+	// [rc4l] features/cvar-alias: a fua_ name for another cvar finds that cvar.
+	if (var == NULL)
+	{
+		const char *target = zx::cvaralias::ComputeCVarAliasTarget (var_name, namelen);
+		if (target != NULL) return FindCVar (target, NULL);
 	}
 	return var;
 }

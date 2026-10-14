@@ -8,6 +8,7 @@
 #include "r_defs.h"
 #include "textures/textures.h"
 #include "gl/renderer/gl_colormap.h"
+#include "features/levelmesh/computation/wallbatch_compute.h"
 
 struct GLHorizonInfo;
 struct F3DFloor;
@@ -23,27 +24,7 @@ struct FPortal;
 struct FFlatVertex;
 
 
-enum WallTypes
-{
-	RENDERWALL_NONE,
-	RENDERWALL_TOP,
-	RENDERWALL_M1S,
-	RENDERWALL_M2S,
-	RENDERWALL_BOTTOM,
-	RENDERWALL_SKY,
-	RENDERWALL_FOGBOUNDARY,
-	RENDERWALL_HORIZON,
-	RENDERWALL_SKYBOX,
-	RENDERWALL_SECTORSTACK,
-	RENDERWALL_PLANEMIRROR,
-	RENDERWALL_MIRROR,
-	RENDERWALL_MIRRORSURFACE,
-	RENDERWALL_M2SNF,
-	RENDERWALL_COLOR,
-	RENDERWALL_FFBLOCK,
-	RENDERWALL_COLORLAYER,
-	// Insert new types at the end!
-};
+#include "features/surfaces/walltypes.h"   // [rc4l] WallTypes, which the bake parts walls by too
 
 struct GLSeg
 {
@@ -63,27 +44,7 @@ struct texcoord
 //
 //==========================================================================
 
-struct GLSectorPlane
-{
-	FTextureID texture;
-	secplane_t plane;
-	fixed_t texheight;
-	fixed_t xoffs,  yoffs;
-	fixed_t	xscale, yscale;
-	angle_t	angle;
-
-	void GetFromSector(sector_t * sec, int ceiling)
-	{
-		xoffs = sec->GetXOffset(ceiling);
-		yoffs = sec->GetYOffset(ceiling);
-		xscale = sec->GetXScale(ceiling);
-		yscale = sec->GetYScale(ceiling);
-		angle = sec->GetAngle(ceiling);
-		texture = sec->GetTexture(ceiling);
-		plane = sec->GetSecPlane(ceiling);
-		texheight = (ceiling == sector_t::ceiling)? plane.d : -plane.d;
-	}
-};
+#include "features/surfaces/sectorplane.h"   // [rc4l] GLSectorPlane, which the bake reads planes by too
 
 
 
@@ -165,7 +126,6 @@ private:
 	void PutWall(bool translucent);
 	void CheckTexturePosition();
 
-	void SetupLights();
 	bool PrepareLight(texcoord * tcs, ADynamicLight * light);
 	void RenderWall(int textured, unsigned int *store = NULL);
 
@@ -229,6 +189,24 @@ public:
 	void Process(seg_t *seg, sector_t *frontsector, sector_t *backsector);
 	void ProcessLowerMiniseg(seg_t *seg, sector_t *frontsector, sector_t *backsector);
 	void Draw(int pass);
+
+	// [rc4l] features/levelmesh wall batching. Sunder MAP10 issues ~8250 wall draws a frame for
+	// 16888 vertices, so the per-draw state set dominates; these let GLDrawList::DrawWalls set state
+	// once for a run of identically-stated walls and emit them as one triangle-list draw.
+	// Largest fan BuildFanVertices will emit; a wall needing more falls back to its own draw.
+	enum { MAX_BATCH_FAN_VERTICES = 128 };
+	// [rc4l] Public because BATCHING has to call it, where Draw() used to.
+	//
+	// SetupLights is what fills dynlightindex, and on the GLPASS_ALL path -- the one every machine
+	// with persistently mapped buffers takes -- the only caller was GLWall::Draw. A batched wall
+	// never reaches Draw, so it kept the UINT_MAX that PutWall left behind and told the shader it
+	// had no lights. It also has to run BEFORE FillBatchKey, since the light index is part of the
+	// batch key: computed afterwards, walls with different lights would group together and the run
+	// would apply one wall's lights to all of them.
+	void SetupLights();
+	void FillBatchKey(zx::levelmesh::WallBatchKey &out) const;
+	int  BuildFanVertices(FFlatVertex *out, int maxOut);
+	void SetupBatchState(int pass);
 
 	float PointOnSide(float x,float y)
 	{

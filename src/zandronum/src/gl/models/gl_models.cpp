@@ -55,6 +55,10 @@
 #include "gl/renderer/gl_renderer.h"
 #include "gl/scene/gl_drawinfo.h"
 #include "gl/models/gl_models.h"
+#include "gl/data/gl_vertexbuffer.h"
+#include "gl/scene/gl_observer.h"
+#include "features/sprites/modelbuild.h"   // [rc4l] the pose and frame blend the backend's derived models share
+#include "features/sprites/computation/modelpose_compute.h"
 #include "gl/textures/gl_material.h"
 #include "gl/utility/gl_geometric.h"
 #include "gl/utility/gl_convert.h"
@@ -64,54 +68,35 @@
 // [BB] New #includes. 
 #include "r_main.h"
 
-static inline float GetTimeFloat()
-{
-	return (float)I_MSTime() * (float)TICRATE / 1000.0f;
-}
+#include <unordered_map>
 
-CVAR(Bool, gl_interpolate_model_frames, true, CVAR_ARCHIVE)
 CVAR(Bool, gl_light_models, true, CVAR_ARCHIVE)
 // [BB] Allow the user disable the use of any kind of models.
-CVAR(Bool, gl_use_models, true, CVAR_ARCHIVE)
-EXTERN_CVAR(Int, gl_fogmode)
+EXTERN_CVAR(Int, r_fogmode)
 
-extern TDeletingArray<FVoxel *> Voxels;
-extern TDeletingArray<FVoxelDef *> VoxelDefs;
+// [rc4l] Each model's buffer, made on first draw from the geometry features/models keeps.
+static std::unordered_map<const FModel *, FModelVertexBuffer *> gl_modelBuffers;
 
-
-class DeletingModelArray : public TArray<FModel *>
+static FModelVertexBuffer *gl_ModelBuffer(FModel *model)
 {
-public:
-
-#if 1
-	~DeletingModelArray()
+	FModelVertexBuffer *&buffer = gl_modelBuffers[model];
+	if (buffer == NULL)
 	{
-		for(unsigned i=0;i<Size();i++)
-		{
-			delete (*this)[i];
-		}
-
+		model->BuildGeometry();
+		buffer = new FModelVertexBuffer(model->mGeometry);
 	}
-#endif
-};
-
-DeletingModelArray Models;
-
+	return buffer;
+}
 
 void gl_LoadModels()
 {
-	for (int i = Models.Size() - 1; i >= 0; i--)
-	{
-		Models[i]->BuildVertexBuffer();
-	}
+	for (int i = ModelCount() - 1; i >= 0; i--) gl_ModelBuffer(ModelAt(i));
 }
 
 void gl_FlushModels()
 {
-	for (int i = Models.Size() - 1; i >= 0; i--)
-	{
-		Models[i]->DestroyVertexBuffer();
-	}
+	for (auto &entry : gl_modelBuffers) delete entry.second;
+	gl_modelBuffers.clear();
 }
 
 //===========================================================================
@@ -120,18 +105,23 @@ void gl_FlushModels()
 //
 //===========================================================================
 
-FModelVertexBuffer::FModelVertexBuffer(bool needindex)
+FModelVertexBuffer::FModelVertexBuffer(const FModelGeometry &geometry)
 {
+	ibo_id = 0;
+	if (vao_id == 0) return;   // [rc4l] no GL, so nothing to upload
 	glBindVertexArray(vao_id);
 
-	ibo_id = 0;
-	if (needindex)
+	if (geometry.indexed)
 	{
 		glGenBuffers(1, &ibo_id);
 		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ibo_id);
+		glBufferData(GL_ELEMENT_ARRAY_BUFFER, geometry.indices.Size() * sizeof(unsigned int),
+			geometry.indices.Size() ? &geometry.indices[0] : NULL, GL_STATIC_DRAW);
 	}
 
 	glBindBuffer(GL_ARRAY_BUFFER, vbo_id);
+	glBufferData(GL_ARRAY_BUFFER, geometry.verts.Size() * sizeof(FModelVertex),
+		geometry.verts.Size() ? &geometry.verts[0] : NULL, GL_STATIC_DRAW);
 	glEnableVertexAttribArray(VATTR_VERTEX);
 	glEnableVertexAttribArray(VATTR_TEXCOORD);
 	glEnableVertexAttribArray(VATTR_VERTEX2);
@@ -154,64 +144,6 @@ FModelVertexBuffer::~FModelVertexBuffer()
 
 //===========================================================================
 //
-//
-//
-//===========================================================================
-
-FModelVertex *FModelVertexBuffer::LockVertexBuffer(unsigned int size)
-{
-	glBindBuffer(GL_ARRAY_BUFFER, vbo_id);
-	glBufferData(GL_ARRAY_BUFFER, size * sizeof(FModelVertex), NULL, GL_STATIC_DRAW);
-	return (FModelVertex*)glMapBufferRange(GL_ARRAY_BUFFER, 0, size * sizeof(FModelVertex), GL_MAP_WRITE_BIT|GL_MAP_INVALIDATE_BUFFER_BIT);
-}
-
-//===========================================================================
-//
-//
-//
-//===========================================================================
-
-void FModelVertexBuffer::UnlockVertexBuffer()
-{
-	glBindBuffer(GL_ARRAY_BUFFER, vbo_id);
-	glUnmapBuffer(GL_ARRAY_BUFFER); 
-}
-
-//===========================================================================
-//
-//
-//
-//===========================================================================
-
-unsigned int *FModelVertexBuffer::LockIndexBuffer(unsigned int size)
-{
-	if (ibo_id != 0)
-	{
-		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ibo_id);
-		glBufferData(GL_ELEMENT_ARRAY_BUFFER, size * sizeof(unsigned int), NULL, GL_STATIC_DRAW);
-		return (unsigned int*)glMapBufferRange(GL_ELEMENT_ARRAY_BUFFER, 0, size * sizeof(unsigned int), GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT);
-	}
-	else
-	{
-		return NULL;
-	}
-}
-
-//===========================================================================
-//
-//
-//
-//===========================================================================
-
-void FModelVertexBuffer::UnlockIndexBuffer()
-{
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ibo_id);
-	glUnmapBuffer(GL_ELEMENT_ARRAY_BUFFER); 
-}
-
-
-//===========================================================================
-//
 // Sets up the buffer starts for frame interpolation
 // This must be called after gl_RenderState.Apply!
 //
@@ -228,605 +160,32 @@ unsigned int FModelVertexBuffer::SetupFrame(unsigned int frame1, unsigned int fr
 
 //===========================================================================
 //
-// FModel::~FModel
+// [rc4l] One frame of a model, its surfaces as features/models works them out: drawn as consecutive
+// vertices (MD2) or by index (MD3, voxels), the keyframes blended unless the model has only one, and a
+// voxel's palette unfiltered -- the three RenderFrame overrides this replaces, in one.
 //
 //===========================================================================
 
-FModel::~FModel()
+static void gl_RenderModelFrame(FModel *mdl, FModelVertexBuffer *buffer, const FModelSurface *surfs, int n, float blend, int translation)
 {
-	if (mVBuf != NULL) delete mVBuf;
-}
-
-
-
-
-static TArray<FSpriteModelFrame> SpriteModelFrames;
-static int * SpriteModelHash;
-//TArray<FStateModelFrame> StateModelFrames;
-
-static void DeleteModelHash()
-{
-	if (SpriteModelHash != NULL) delete [] SpriteModelHash;
-	SpriteModelHash = NULL;
-}
-
-//===========================================================================
-//
-// FindGFXFile
-//
-//===========================================================================
-
-static int FindGFXFile(FString & fn)
-{
-	int best = -1;
-	int dot = fn.LastIndexOf('.');
-	int slash = fn.LastIndexOf('/');
-	if (dot > slash) fn.Truncate(dot);
-
-	static const char * extensions[] = { ".png", ".jpg", ".tga", ".pcx", NULL };
-
-	for (const char ** extp=extensions; *extp; extp++)
+	gl_RenderState.SetInterpolationFactor(blend);
+	for (int i = 0; i < n; i++)
 	{
-		int lump = Wads.CheckNumForFullName(fn + *extp);
-		if (lump >= best)  best = lump;
-	}
-	return best;
-}
+		const FModelSurface &surf = surfs[i];
+		FMaterial * tex = FMaterial::ValidateTexture(surf.skin, false);
+		gl_RenderState.SetMaterial(tex, mdl->NoFilter() ? CLAMP_NOFILTER : CLAMP_NONE, translation, -1, false);
 
-
-//===========================================================================
-//
-// LoadSkin
-//
-//===========================================================================
-
-FTexture * LoadSkin(const char * path, const char * fn)
-{
-	FString buffer;
-
-	buffer.Format("%s%s", path, fn);
-
-	int texlump = FindGFXFile(buffer);
-	if (texlump>=0)
-	{
-		return TexMan.FindTexture(Wads.GetLumpFullName(texlump), FTexture::TEX_Any, FTextureManager::TEXMAN_TryAny);
-	}
-	else 
-	{
-		return NULL;
-	}
-}
-
-//===========================================================================
-//
-// ModelFrameHash
-//
-//===========================================================================
-
-static int ModelFrameHash(FSpriteModelFrame * smf)
-{
-	const DWORD *table = GetCRCTable ();
-	DWORD hash = 0xffffffff;
-
-	const char * s = (const char *)(&smf->type);	// this uses type, sprite and frame for hashing
-	const char * se= (const char *)(&smf->hashnext);
-
-	for (; s<se; s++)
-	{
-		hash = CRC1 (hash, *s, table);
-	}
-	return hash ^ 0xffffffff;
-}
-
-//===========================================================================
-//
-// FindModel
-//
-//===========================================================================
-
-static FModel * FindModel(const char * path, const char * modelfile)
-{
-	FModel * model = NULL;
-	FString fullname;
-
-	fullname.Format("%s%s", path, modelfile);
-	int lump = Wads.CheckNumForFullName(fullname);
-
-	if (lump<0)
-	{
-		Printf("FindModel: '%s' not found\n", fullname.GetChars());
-		return NULL;
-	}
-
-	for(int i = 0; i< (int)Models.Size(); i++)
-	{
-		if (!Models[i]->mFileName.CompareNoCase(fullname)) return Models[i];
-	}
-
-	int len = Wads.LumpLength(lump);
-	FMemLump lumpd = Wads.ReadLump(lump);
-	char * buffer = (char*)lumpd.GetMem();
-
-	if (!memcmp(buffer, "DMDM", 4))
-	{
-		model = new FDMDModel;
-	}
-	else if (!memcmp(buffer, "IDP2", 4))
-	{
-		model = new FMD2Model;
-	}
-	else if (!memcmp(buffer, "IDP3", 4))
-	{
-		model = new FMD3Model;
-	}
-
-	if (model != NULL)
-	{
-		if (!model->Load(path, lump, buffer, len))
-		{
-			delete model;
-			return NULL;
-		}
-	}
-	else
-	{
-		// try loading as a voxel
-		FVoxel *voxel = R_LoadKVX(lump);
-		if (voxel != NULL)
-		{
-			model = new FVoxelModel(voxel, true);
-		}
+		// [rc4l] The surface, for a check against GL's models.
+		if (gl_observer) gl_observer->ModelSurface(&mdl->mGeometry, surf.base1, surf.base2, blend, surf.firstIndex, surf.count, tex, translation);
+		gl_RenderState.Apply();
+		buffer->SetupFrame(surf.base1, surf.base2);
+		if (mdl->mGeometry.indexed)
+			glDrawElements(GL_TRIANGLES, surf.count, GL_UNSIGNED_INT, (void*)(intptr_t)(surf.firstIndex * sizeof(unsigned int)));
 		else
-		{
-			Printf("LoadModel: Unknown model format in '%s'\n", fullname.GetChars());
-			return NULL;
-		}
+			glDrawArrays(GL_TRIANGLES, 0, surf.count);
 	}
-	// The vertex buffer cannot be initialized here because this gets called before OpenGL is initialized
-	model->mFileName = fullname;
-	Models.Push(model);
-	return model;
+	gl_RenderState.SetInterpolationFactor(0.f);
 }
-
-//===========================================================================
-//
-// gl_InitModels
-//
-//===========================================================================
-
-void gl_InitModels()
-{
-	int Lump, lastLump;
-	FString path;
-	int index, surface;
-	int i;
-
-	FSpriteModelFrame smf;
-
-	lastLump = 0;
-
-	for(unsigned i=0;i<Models.Size();i++)
-	{
-		delete Models[i];
-	}
-	Models.Clear();
-	SpriteModelFrames.Clear();
-	DeleteModelHash();
-
-	// First, create models for each voxel
-	for (unsigned i = 0; i < Voxels.Size(); i++)
-	{
-		FVoxelModel *md = new FVoxelModel(Voxels[i], false);
-		Voxels[i]->VoxelIndex = Models.Push(md);
-	}
-	// now create GL model frames for the voxeldefs
-	for (unsigned i = 0; i < VoxelDefs.Size(); i++)
-	{
-		FVoxelModel *md = (FVoxelModel*)Models[VoxelDefs[i]->Voxel->VoxelIndex];
-		memset(&smf, 0, sizeof(smf));
-		smf.models[0] = md;
-		smf.skins[0] = md->GetPaletteTexture();
-		smf.xscale = smf.yscale = smf.zscale = FIXED2FLOAT(VoxelDefs[i]->Scale);
-		smf.angleoffset = VoxelDefs[i]->AngleOffset;
-		if (VoxelDefs[i]->PlacedSpin != 0)
-		{
-			smf.yrotate = 1.f;
-			smf.rotationSpeed = VoxelDefs[i]->PlacedSpin / 55.55f;
-			smf.flags |= MDL_ROTATING;
-		}
-		VoxelDefs[i]->VoxeldefIndex = SpriteModelFrames.Push(smf);
-		if (VoxelDefs[i]->PlacedSpin != VoxelDefs[i]->DroppedSpin)
-		{
-			if (VoxelDefs[i]->DroppedSpin != 0)
-			{
-				smf.yrotate = 1.f;
-				smf.rotationSpeed = VoxelDefs[i]->DroppedSpin / 55.55f;
-				smf.flags |= MDL_ROTATING;
-			}
-			else
-			{
-				smf.yrotate = 0;
-				smf.rotationSpeed = 0;
-				smf.flags &= ~MDL_ROTATING;
-			}
-			SpriteModelFrames.Push(smf);
-		}
-	}
-
-	memset(&smf, 0, sizeof(smf));
-	while ((Lump = Wads.FindLump("MODELDEF", &lastLump)) != -1)
-	{
-		FScanner sc(Lump);
-		while (sc.GetString())
-		{
-			if (sc.Compare("model"))
-			{
-				path = "";
-				sc.MustGetString();
-				memset(&smf, 0, sizeof(smf));
-				smf.xscale=smf.yscale=smf.zscale=1.f;
-
-				smf.type = PClass::FindClass(sc.String);
-
-				// [rc4l] PROVENANCE: upstream errors here, ours warns and skips the block.
-				//   SUPERSEDED BY: nothing. Upstream keeps the error (r_data/models.cpp) and has no
-				//   reason not to, since it does not have to load the Zandronum library.
-				//   ON PORT: keep the warning, or DND and anything like it stops loading again.
-				//
-				// A model named for an actor that does not exist is the mod's mistake, not a reason
-				// to refuse the whole game: DND ships a model for PutrefierBullet and defines that
-				// actor nowhere. Skipping the block loses one model and keeps everything else.
-				if (!smf.type || smf.type->Defaults == NULL)
-				{
-					FScriptPosition(sc).Message(MSG_WARNING,
-						"MODELDEF: Unknown actor type '%s', so its model is ignored.", sc.String);
-
-					// Past the block, so its contents are not read as top-level keywords.
-					sc.MustGetStringName("{");
-					int depth = 1;
-					while (depth > 0 && sc.GetString())
-					{
-						if (sc.Compare("{")) depth++;
-						else if (sc.Compare("}")) depth--;
-					}
-					continue;
-				}
-
-				GetDefaultByType(smf.type)->hasmodel=true;
-				sc.MustGetStringName("{");
-				while (!sc.CheckString("}"))
-				{
-					sc.MustGetString();
-					if (sc.Compare("path"))
-					{
-						sc.MustGetString();
-						FixPathSeperator(sc.String);
-						path = sc.String;
-						if (path[(int)path.Len()-1]!='/') path+='/';
-					}
-					else if (sc.Compare("model"))
-					{
-						sc.MustGetNumber();
-						index=sc.Number;
-						if (index<0 || index>=MAX_MODELS_PER_FRAME)
-						{
-							sc.ScriptError("Too many models in %s", smf.type->TypeName.GetChars());
-						}
-						sc.MustGetString();
-						FixPathSeperator(sc.String);
-						smf.models[index] = FindModel(path.GetChars(), sc.String);
-						if (!smf.models[index])
-						{
-							Printf("%s: model not found in %s\n", sc.String, path.GetChars());
-						}
-					}
-					else if (sc.Compare("scale"))
-					{
-						sc.MustGetFloat();
-						smf.xscale=sc.Float;
-						sc.MustGetFloat();
-						smf.yscale=sc.Float;
-						sc.MustGetFloat();
-						smf.zscale=sc.Float;
-					}
-					// [BB] Added zoffset reading. 
-					// Now it must be considered deprecated.
-					else if (sc.Compare("zoffset"))
-					{
-						sc.MustGetFloat();
-						smf.zoffset=sc.Float;
-					}
-					// Offset reading.
-					else if (sc.Compare("offset"))
-					{
-						sc.MustGetFloat();
-						smf.xoffset = sc.Float;
-						sc.MustGetFloat();
-						smf.yoffset = sc.Float;
-						sc.MustGetFloat();
-						smf.zoffset = sc.Float;
-					}
-					// angleoffset, pitchoffset and rolloffset reading.
-					else if (sc.Compare("angleoffset"))
-					{
-						sc.MustGetFloat();
-						smf.angleoffset = FLOAT_TO_ANGLE(sc.Float);
-					}
-					else if (sc.Compare("pitchoffset"))
-					{
-						sc.MustGetFloat();
-						smf.pitchoffset = sc.Float;
-					}
-					else if (sc.Compare("rolloffset"))
-					{
-						sc.MustGetFloat();
-						smf.rolloffset = sc.Float;
-					}
-					// [BB] Added model flags reading.
-					else if (sc.Compare("ignoretranslation"))
-					{
-						smf.flags |= MDL_IGNORETRANSLATION;
-					}
-					else if (sc.Compare("pitchfrommomentum"))
-					{
-						smf.flags |= MDL_PITCHFROMMOMENTUM;
-					}
-					else if (sc.Compare("inheritactorpitch"))
-					{
-						smf.flags |= MDL_INHERITACTORPITCH;
-					}
-					else if (sc.Compare("inheritactorroll"))
-					{
-						smf.flags |= MDL_INHERITACTORROLL;
-					}
-					else if (sc.Compare("rotating"))
-					{
-						smf.flags |= MDL_ROTATING;
-						smf.xrotate = 0.;
-						smf.yrotate = 1.;
-						smf.zrotate = 0.;
-						smf.rotationCenterX = 0.;
-						smf.rotationCenterY = 0.;
-						smf.rotationCenterZ = 0.;
-						smf.rotationSpeed = 1.;
-					}
-					else if (sc.Compare("rotation-speed"))
-					{
-						sc.MustGetFloat();
-						smf.rotationSpeed = sc.Float;
-					}
-					else if (sc.Compare("rotation-vector"))
-					{
-						sc.MustGetFloat();
-						smf.xrotate = sc.Float;
-						sc.MustGetFloat();
-						smf.yrotate = sc.Float;
-						sc.MustGetFloat();
-						smf.zrotate = sc.Float;
-					}
-					else if (sc.Compare("rotation-center"))
-					{
-						sc.MustGetFloat();
-						smf.rotationCenterX = sc.Float;
-						sc.MustGetFloat();
-						smf.rotationCenterY = sc.Float;
-						sc.MustGetFloat();
-						smf.rotationCenterZ = sc.Float;
-					}
-					else if (sc.Compare("interpolatedoubledframes"))
-					{
-						smf.flags |= MDL_INTERPOLATEDOUBLEDFRAMES;
-					}
-					else if (sc.Compare("nointerpolation"))
-					{
-						smf.flags |= MDL_NOINTERPOLATION;
-					}
-					else if (sc.Compare("alignangle"))
-					{
-						smf.flags |= MDL_ALIGNANGLE;
-					}
-					else if (sc.Compare("alignpitch"))
-					{
-						smf.flags |= MDL_ALIGNPITCH;
-					}
-					else if (sc.Compare("rollagainstangle"))
-					{
-						smf.flags |= MDL_ROLLAGAINSTANGLE;
-					}
-					else if (sc.Compare("skin"))
-					{
-						sc.MustGetNumber();
-						index=sc.Number;
-						if (index<0 || index>=MAX_MODELS_PER_FRAME)
-						{
-							sc.ScriptError("Too many models in %s", smf.type->TypeName.GetChars());
-						}
-						sc.MustGetString();
-						FixPathSeperator(sc.String);
-						if (sc.Compare(""))
-						{
-							smf.skins[index]=NULL;
-						}
-						else
-						{
-							smf.skins[index]=LoadSkin(path.GetChars(), sc.String);
-							if (smf.skins[index] == NULL)
-							{
-								Printf("Skin '%s' not found in '%s'\n",
-									sc.String, smf.type->TypeName.GetChars());
-							}
-						}
-					}
-					else if (sc.Compare("surfaceskin"))
-					{
-						sc.MustGetNumber();
-						index = sc.Number;
-						sc.MustGetNumber();
-						surface = sc.Number;
-
-						if (index<0 || index >= MAX_MODELS_PER_FRAME)
-						{
-							sc.ScriptError("Too many models in %s", smf.type->TypeName.GetChars());
-						}
-
-						if (surface<0 || surface >= MD3_MAX_SURFACES)
-						{
-							sc.ScriptError("Invalid MD3 Surface %d in %s", MD3_MAX_SURFACES, smf.type->TypeName.GetChars());
-						}
-
-						sc.MustGetString();
-						FixPathSeperator(sc.String);
-						if (sc.Compare(""))
-						{
-							smf.surfaceskins[index][surface] = NULL;
-						}
-						else
-						{
-							smf.surfaceskins[index][surface] = LoadSkin(path.GetChars(), sc.String);
-							if (smf.surfaceskins[index][surface] == NULL)
-							{
-								Printf("Surface Skin '%s' not found in '%s'\n",
-									sc.String, smf.type->TypeName.GetChars());
-							}
-						}
-					}
-					else if (sc.Compare("frameindex") || sc.Compare("frame"))
-					{
-						bool isframe=!!sc.Compare("frame");
-
-						sc.MustGetString();
-						smf.sprite = -1;
-						for (i = 0; i < (int)sprites.Size (); ++i)
-						{
-							if (strnicmp (sprites[i].name, sc.String, 4) == 0)
-							{
-								if (sprites[i].numframes==0)
-								{
-									//sc.ScriptError("Sprite %s has no frames", sc.String);
-								}
-								smf.sprite = i;
-								break;
-							}
-						}
-						if (smf.sprite==-1)
-						{
-							sc.ScriptError("Unknown sprite %s in model definition for %s", sc.String, smf.type->TypeName.GetChars());
-						}
-
-						sc.MustGetString();
-						FString framechars = sc.String;
-
-						sc.MustGetNumber();
-						index=sc.Number;
-						if (index<0 || index>=MAX_MODELS_PER_FRAME)
-						{
-							sc.ScriptError("Too many models in %s", smf.type->TypeName.GetChars());
-						}
-						if (isframe)
-						{
-							sc.MustGetString();
-							if (smf.models[index]!=NULL) 
-							{
-								smf.modelframes[index] = smf.models[index]->FindFrame(sc.String);
-								if (smf.modelframes[index]==-1) sc.ScriptError("Unknown frame '%s' in %s", sc.String, smf.type->TypeName.GetChars());
-							}
-							else smf.modelframes[index] = -1;
-						}
-						else
-						{
-							sc.MustGetNumber();
-							smf.modelframes[index] = sc.Number;
-						}
-
-						for(i=0; framechars[i]>0; i++)
-						{
-							char map[29]={0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
-							int c = toupper(framechars[i])-'A';
-
-							if (c<0 || c>=29)
-							{
-								sc.ScriptError("Invalid frame character %c found", c+'A');
-							}
-							if (map[c]) continue;
-							smf.frame=c;
-							SpriteModelFrames.Push(smf);
-							map[c]=1;
-						}
-					}
-					else
-					{
-						sc.ScriptMessage("Unrecognized string \"%s\"", sc.String);
-					}
-				}
-			}
-		}
-	}
-
-	// create a hash table for quick access
-	SpriteModelHash = new int[SpriteModelFrames.Size ()];
-	atterm(DeleteModelHash);
-	memset(SpriteModelHash, 0xff, SpriteModelFrames.Size () * sizeof(int));
-
-	for (i = 0; i < (int)SpriteModelFrames.Size (); i++)
-	{
-		int j = ModelFrameHash(&SpriteModelFrames[i]) % SpriteModelFrames.Size ();
-
-		SpriteModelFrames[i].hashnext = SpriteModelHash[j];
-		SpriteModelHash[j]=i;
-	}
-}
-
-
-//===========================================================================
-//
-// gl_FindModelFrame
-//
-//===========================================================================
-EXTERN_CVAR (Bool, r_drawvoxels)
-
-FSpriteModelFrame * gl_FindModelFrame(const PClass * ti, int sprite, int frame, bool dropped)
-{
-	// [BB] The user doesn't want to use models, so just pretend that there is no model for this frame.
-	if ( gl_use_models == false )
-		return NULL;
-
-	if (GetDefaultByType(ti)->hasmodel)
-	{
-		FSpriteModelFrame smf;
-
-		memset(&smf, 0, sizeof(smf));
-		smf.type=ti;
-		smf.sprite=sprite;
-		smf.frame=frame;
-
-		int hash = SpriteModelHash[ModelFrameHash(&smf) % SpriteModelFrames.Size()];
-
-		while (hash>=0)
-		{
-			FSpriteModelFrame * smff = &SpriteModelFrames[hash];
-			if (smff->type==ti && smff->sprite==sprite && smff->frame==frame) return smff;
-			hash=smff->hashnext;
-		}
-	}
-
-	// Check for voxel replacements
-	if (r_drawvoxels)
-	{
-		spritedef_t *sprdef = &sprites[sprite];
-		if (frame < sprdef->numframes)
-		{
-			spriteframe_t *sprframe = &SpriteFrames[sprdef->spriteframes + frame];
-			if (sprframe->Voxel != NULL)
-			{
-				int index = sprframe->Voxel->VoxeldefIndex;
-				if (dropped && sprframe->Voxel->DroppedSpin !=sprframe->Voxel->PlacedSpin) index++;
-				return &SpriteModelFrames[index];
-			}
-		}
-	}
-	return NULL;
-}
-
 
 //===========================================================================
 //
@@ -843,50 +202,8 @@ void gl_RenderFrameModels( const FSpriteModelFrame *smf,
 {
 	// [BB] Frame interpolation: Find the FSpriteModelFrame smfNext which follows after smf in the animation
 	// and the scalar value inter ( element of [0,1) ), both necessary to determine the interpolated frame.
-	FSpriteModelFrame * smfNext = NULL;
 	double inter = 0.;
-	if( gl_interpolate_model_frames && !(smf->flags & MDL_NOINTERPOLATION) )
-	{
-		FState *nextState = curState->GetNextState( );
-		if( curState != nextState && nextState )
-		{
-			// [BB] To interpolate at more than 35 fps we take tic fractions into account.
-			float ticFraction = 0.;
-			// [BB] In case the tic counter is frozen we have to leave ticFraction at zero.
-			if ( ConsoleState == c_up && menuactive != MENU_On && !(level.flags2 & LEVEL2_FROZEN) )
-			{
-				ticFraction = FIXED2FLOAT(I_GetTimeFrac(NULL)); // [JM] Model Interp Fix
-			}
-			inter = static_cast<double>(curState->Tics - curTics + ticFraction) / static_cast<double>(curState->Tics); // [JM] Model Interp Fix
-
-			// [BB] For some actors (e.g. ZPoisonShroom) spr->actor->tics can be bigger than curState->Tics.
-			// In this case inter is negative and we need to set it to zero.
-			if (curState->Tics < curTics) // [JM] Model Interp Fix
-				inter = 0.;
-			else
-			{
-				// [BB] Workaround for actors that use the same frame twice in a row.
-				// Most of the standard Doom monsters do this in their see state.
-				if ( (smf->flags & MDL_INTERPOLATEDOUBLEDFRAMES) )
-				{
-					const FState *prevState = curState - 1;
-					// [AK] Make sure the previous state is valid before trying to use it.
-					if ( (ti->ActorInfo->OwnsState(prevState)) && (curState->sprite == prevState->sprite) && ( curState->Frame == prevState->Frame) )
-					{
-						inter /= 2.;
-						inter += 0.5;
-					}
-					if ( (curState->sprite == nextState->sprite) && ( curState->Frame == nextState->Frame) )
-					{
-						inter /= 2.;
-						nextState = nextState->GetNextState( );
-					}
-				}
-				if ( inter != 0.0 )
-					smfNext = gl_FindModelFrame(ti, nextState->sprite, nextState->GetFrame(), false);
-			}
-		}
-	}
+	FSpriteModelFrame * smfNext = zx::sprites::NextModelFrame(smf, curState, curTics, ti, inter);   // [rc4l] features/sprites works these out for GL and the backend's derived models alike
 
 	for(int i=0; i<MAX_MODELS_PER_FRAME; i++)
 	{
@@ -896,32 +213,18 @@ void gl_RenderFrameModels( const FSpriteModelFrame *smf,
 		{
 			mdl->PushSpriteMDLFrame(smf, i);
 
-			mdl->BuildVertexBuffer();
-			gl_RenderState.SetVertexBuffer(mdl->mVBuf);
+			FModelVertexBuffer *buffer = gl_ModelBuffer(mdl);
+			gl_RenderState.SetVertexBuffer(buffer);
 
-			if ( smfNext && smf->modelframes[i] != smfNext->modelframes[i] )
-				mdl->RenderFrame(smf->skins[i], smf->modelframes[i], smfNext->modelframes[i], inter, translation);
-			else
-				mdl->RenderFrame(smf->skins[i], smf->modelframes[i], smf->modelframes[i], 0.f, translation);
+			// [rc4l] The slot's surfaces and blend, as the backend's derived models take them.
+			FModelSurface surfs[MD3_MAX_SURFACES];
+			float blend;
+			const int n = zx::sprites::ModelSlotSurfaces(smf, i, smfNext, inter, surfs, blend);
+			gl_RenderModelFrame(mdl, buffer, surfs, n, blend, translation);
 
 			gl_RenderState.SetVertexBuffer(GLRenderer->mVBO);
 		}
 	}
-}
-
-// [BB] Small helper function for MDL_ROLLAGAINSTANGLE.
-float gl_RollAgainstAngleHelper ( const AActor *actor )
-{
-	float angleDiff = ANGLE_TO_FLOAT ( R_PointToAngle ( actor->x, actor->y ) ) - ANGLE_TO_FLOAT ( actor->angle );
-	if ( angleDiff > 180 )
-		angleDiff -= 360;
-	else if ( angleDiff < -180 )
-		angleDiff += 360;
-	if ( actor->z > viewz )
-		angleDiff *= -1;
-	if ( ( angleDiff < 90 ) && ( angleDiff > - 90 ) )
-		angleDiff *= -1;
-	return angleDiff;
 }
 
 void gl_RenderModel(GLSprite * spr)
@@ -946,101 +249,18 @@ void gl_RenderModel(GLSprite * spr)
 		translation = spr->actor->Translation;
 
 
-	// y scale for a sprite means height, i.e. z in the world!
-	float scaleFactorX = FIXED2FLOAT(spr->actor->scaleX) * smf->xscale;
-	float scaleFactorY = FIXED2FLOAT(spr->actor->scaleX) * smf->yscale;
-	float scaleFactorZ = FIXED2FLOAT(spr->actor->scaleY) * smf->zscale;
-	float pitch = 0;
-	float roll = 0;
-	float rotateOffset = 0;
-	float angle = ANGLE_TO_FLOAT(spr->actor->angle);
-
-	// [BB] Workaround for the missing pitch information.
-	if ( (smf->flags & MDL_PITCHFROMMOMENTUM) )
-	{
-		const double x = static_cast<double>(spr->actor->velx);
-		const double y = static_cast<double>(spr->actor->vely);
-		const double z = static_cast<double>(spr->actor->velz);
-		
-		// [BB] Calculate the pitch using spherical coordinates.
-		if(z || x || y) pitch = float(atan( z/sqrt(x*x+y*y) ) / M_PI * 180);
-				
-        // Correcting pitch if model is moving backwards
-        if(x || y) 
-		{
-			if((x * cos(angle * M_PI / 180) + y * sin(angle * M_PI / 180)) / sqrt(x * x + y * y) < 0) pitch *= -1;
-		}
-		else pitch = fabs(pitch);
-	}
-
-	if( smf->flags & MDL_ROTATING )
-	{
-		const float time = smf->rotationSpeed*GetTimeFloat()/200.f;
-		rotateOffset = float((time - xs_FloorToInt(time)) *360.f );
-	}
-
-	// Added MDL_INHERITACTORPITCH and MDL_INHERITACTORROLL flags processing.
-	// If both flags MDL_INHERITACTORPITCH and MDL_PITCHFROMMOMENTUM are set, the pitch sums up the actor pitch and the momentum vector pitch.
-	// This is rather crappy way to transfer fixet_t type into angle in degrees, but its works!
-	if(smf->flags & MDL_INHERITACTORPITCH) pitch += float(static_cast<double>(spr->actor->pitch >> 16) / (1 << 13) * 45 + static_cast<double>(spr->actor->pitch & 0x0000FFFF) / (1 << 29) * 45);
-	if(smf->flags & MDL_INHERITACTORROLL) roll += float(static_cast<double>(spr->actor->roll >> 16) / (1 << 13) * 45 + static_cast<double>(spr->actor->roll & 0x0000FFFF) / (1 << 29) * 45);
-		
-	gl_RenderState.mModelMatrix.loadIdentity();
-
-	// Model space => World space
-	gl_RenderState.mModelMatrix.translate(spr->x, spr->z, spr->y );	
-	
-	// Applying model transformations:
-	// 1) Applying actor angle, pitch and roll to the model
-	if ( !(smf->flags & MDL_ALIGNANGLE) )
-		gl_RenderState.mModelMatrix.rotate(-angle, 0, 1, 0);
-	// [BB] Change the angle so that the object is exactly facing the camera in the x/y plane.
-	else
-		gl_RenderState.mModelMatrix.rotate( -ANGLE_TO_FLOAT ( R_PointToAngle ( spr->actor->x, spr->actor->y ) ), 0, 1, 0);
-
-	// [BB] Change the pitch so that the object is vertically facing the camera (only makes sense combined with MDL_ALIGNANGLE).
-	if ( (smf->flags & MDL_ALIGNPITCH) )
-	{
-		const fixed_t distance = R_PointToDist2( spr->actor->x - viewx, spr->actor->y - viewy );
-		const float pitch = RAD2DEG ( atan2( FIXED2FLOAT ( spr->actor->z - viewz ), FIXED2FLOAT ( distance ) ) );
-		gl_RenderState.mModelMatrix.rotate(pitch, 0, 0, 1);
-	}
-	else
-		gl_RenderState.mModelMatrix.rotate(pitch, 0, 0, 1);
-
-	// [BB] Special flag for flat, beam like models.
-	if ( (smf->flags & MDL_ROLLAGAINSTANGLE) )
-		gl_RenderState.mModelMatrix.rotate( gl_RollAgainstAngleHelper ( spr->actor ), 1, 0, 0);
-	else
-		gl_RenderState.mModelMatrix.rotate(-roll, 1, 0, 0);
-	
-	// 2) Applying Doomsday like rotation of the weapon pickup models
-	// The rotation angle is based on the elapsed time.
-	
-	if( smf->flags & MDL_ROTATING )
-	{
-		gl_RenderState.mModelMatrix.translate(smf->rotationCenterX, smf->rotationCenterY, smf->rotationCenterZ);
-		gl_RenderState.mModelMatrix.rotate(rotateOffset, smf->xrotate, smf->yrotate, smf->zrotate);
-		gl_RenderState.mModelMatrix.translate(-smf->rotationCenterX, -smf->rotationCenterY, -smf->rotationCenterZ);
-	}
-
-	// 3) Scaling model.
-	gl_RenderState.mModelMatrix.scale(scaleFactorX, scaleFactorZ, scaleFactorY);
-
-	// 4) Aplying model offsets (model offsets do not depend on model scalings).
-	gl_RenderState.mModelMatrix.translate(smf->xoffset / smf->xscale, smf->zoffset / smf->zscale, smf->yoffset / smf->yscale);
-	
-	// 5) Applying model rotations.
-	gl_RenderState.mModelMatrix.rotate(-ANGLE_TO_FLOAT(smf->angleoffset), 0, 1, 0);
-	gl_RenderState.mModelMatrix.rotate(smf->pitchoffset, 0, 0, 1);
-	gl_RenderState.mModelMatrix.rotate(-smf->rolloffset, 1, 0, 0);
-
-	// consider the pixel stretching. For non-voxels this must be factored out here
-	float stretch = (smf->models[0] != NULL ? smf->models[0]->getAspectFactor() : 1.f) / glset.pixelstretch;
-	gl_RenderState.mModelMatrix.scale(1, stretch, 1);
+	// [rc4l] Model space to world space (turn, pitch, roll, MODELDEF spin, scale, offsets, rotations and pixel stretch) comes from features/sprites so the backend's derived models stand exactly where GL's do.
+	zx::sprites::ModelPose pose;
+	zx::sprites::ModelPoseFor(spr->actor, smf, spr->x, spr->y, spr->z, pose);
+	float modelToWorld[16];
+	zx::sprites::ComputeModelMatrix(pose, modelToWorld);
+	gl_RenderState.mModelMatrix.loadMatrix(modelToWorld);
 
 	gl_RenderState.EnableModelMatrix(true);
+	// [rc4l] The model's surfaces with the matrix above and the sprite's light, for a check against GL's models.
+	if (gl_observer) gl_observer->ModelBegins(spr, gl_RenderState.mModelMatrix);
 	gl_RenderFrameModels( smf, spr->actor->state, spr->actor->tics, RUNTIME_TYPE(spr->actor), NULL, translation );
+	if (gl_observer) gl_observer->ModelEnds();
 	gl_RenderState.EnableModelMatrix(false);
 
 	glDepthFunc(GL_LESS);
@@ -1103,21 +323,5 @@ void gl_RenderHUDModel(pspdef_t *psp, fixed_t ofsx, fixed_t ofsy)
 	glDepthFunc(GL_LESS);
 	if (!( playermo->RenderStyle == LegacyRenderStyles[STYLE_Normal] ))
 		glDisable(GL_CULL_FACE);
-}
-
-//===========================================================================
-//
-// gl_IsHUDModelForPlayerAvailable
-//
-//===========================================================================
-
-bool gl_IsHUDModelForPlayerAvailable (player_t * player)
-{
-	if ( (player == NULL) || (player->ReadyWeapon == NULL) || (player->psprites[ps_weapon].state == NULL) )
-		return false;
-
-	FState* state = player->psprites[ps_weapon].state;
-	FSpriteModelFrame *smf = gl_FindModelFrame(player->ReadyWeapon->GetClass(), state->sprite, state->GetFrame(), false);
-	return ( smf != NULL );
 }
 

@@ -85,7 +85,7 @@ top of each: *"If you change something above the rotation, change it in all of t
 Exec'd cfgs are not covered by the tests. After writing one:
 
 ```powershell
-./windows_build_run.ps1
+node tools/fuactl/src/cli.mjs build   # builds, stages the exe, pk3s and catalogue/
 ./dist-windows/forkundera.exe -iwad freedoom2.wad +logfile chk.log +fua_catalogue
 ```
 

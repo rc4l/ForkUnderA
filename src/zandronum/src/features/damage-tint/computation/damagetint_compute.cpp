@@ -72,4 +72,27 @@ int SliceTintPct(int basePct, float fracFromBottom, float coverageFrac)
 	return (int)(p + 0.5f);
 }
 
+TintGradient ComputeTintGradient(float r, float g, float b, float strength, float va, float vb, float coverageFrac, bool glow)
+{
+	const float bottom = vb > va ? vb : va;
+	const float top = vb > va ? va : vb;
+	const TintGradient t = { r, g, b, strength, bottom - (bottom - top) * coverageFrac, bottom, glow };
+	return t;
+}
+
+void ComputeTintTexel(const TintGradient &t, float v, float rgb[3])
+{
+	if (t.strength <= 0.0f) return;
+	const float span = t.bottom - t.top > 0.0001f ? t.bottom - t.top : 0.0001f;
+	float f = (v - t.top) / span;
+	if (f < 0.0f) f = 0.0f;
+	if (f > 1.0f) f = 1.0f;
+	const float tint[3] = { t.r, t.g, t.b };
+	for (int i = 0; i < 3; i++)
+	{
+		const float tinted = t.glow ? 1.0f - (1.0f - rgb[i]) * (1.0f - tint[i]) : rgb[i] * tint[i];
+		rgb[i] += (tinted - rgb[i]) * f * t.strength;
+	}
+}
+
 }} // namespace zx::damagetint

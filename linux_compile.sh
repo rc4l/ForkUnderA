@@ -40,10 +40,12 @@ done
 # [rc4l] Deps mirror Dockerfile.linux-build so native and containerised builds match:
 # OpenSSL/Opus/zlib/bzip2/jpeg + Python3, SDL2 + OpenGL/GLU/GLEW + GME for the client,
 # and the OpenAL stack (libopenal + libsndfile + libmpg123) that replaces FMOD.
+# [rc4l] The X11, XCB and Wayland headers are the Vulkan backend's, since Vulkan's surface headers include them.
 DEPS=(
   build-essential cmake ninja-build git python3 pkg-config ca-certificates
   libssl-dev libopus-dev zlib1g-dev libbz2-dev libjpeg-dev
   libsdl2-dev libgl1-mesa-dev libglu1-mesa-dev libglew-dev libgme-dev
+  libx11-dev libx11-xcb-dev libxcb1-dev libxrandr-dev libwayland-dev
   libopenal-dev libsndfile1-dev libmpg123-dev
   libavcodec-dev libavformat-dev libavutil-dev libswscale-dev
   libcurl4-openssl-dev
@@ -103,7 +105,8 @@ cmake -S src/zandronum -B build-linux -G Ninja \
   "${BRIDGE_ARGS[@]}" "${SYM_ARGS[@]}" "${OFFICIAL_ARGS[@]}"
 
 echo "==> Building"
-cmake --build build-linux -j"$(nproc)"
+# [rc4l] ZX_KEEP_GOING=1 compiles past a failing file, so one run reports every compile error.
+cmake --build build-linux -j"$(nproc)" ${ZX_KEEP_GOING:+-- -k 0}
 
 # [rc4l] Refuse to package a client that cannot make sound; this shipped once already.
 if [ "$SERVERONLY" != "ON" ]; then
@@ -143,6 +146,13 @@ if [ "$SERVERONLY" = "ON" ]; then BIN=forkundera-server; else BIN=forkundera; fi
 cp "build-linux/$BIN" "$STAGE"/
 cp build-linux/*.pk3 "$STAGE"/
 [ -f README.md ] && cp README.md "$STAGE"/ || true
+
+# [rc4l] The client's icon and a script that adds it to the desktop's application menu; the window icon itself comes from the core pk3.
+if [ "$SERVERONLY" != "ON" ]; then
+  cp src/zandronum/wadsrc/static/fua_appicon.png "$STAGE"/forkundera.png
+  cp tools/install-desktop-entry.sh "$STAGE"/
+  chmod +x "$STAGE"/install-desktop-entry.sh
+fi
 
 # [rc4l] Ship Freedoom so the tarball is playable without a separate IWAD. It is
 # BSD-3-clause, whose clause 2 requires the notice to accompany binary distributions.

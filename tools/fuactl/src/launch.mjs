@@ -1,5 +1,5 @@
 // Launch a bridge-enabled engine instance under fuactl's supervision.
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import net from "node:net";
 import crypto from "node:crypto";
 import path from "node:path";
@@ -33,6 +33,33 @@ export function resolveEngine() {
   throw new Error(`engine binary not found (set FUACTL_ENGINE). tried:\n  ${candidates.join("\n  ")}`);
 }
 
+// [rc4l] An engine exit code as words, since 3221225781 says nothing and "a DLL is missing" says what to do.
+const EXIT_NAMES = new Map([
+  [0xc0000135, "a DLL next to the binary is missing -- run the staged build, or copy dist-windows' DLLs beside it"],
+  [0xc0000005, "access violation -- the engine crashed; see the .crash file beside its log"],
+  [0xc00000fd, "stack overflow"],
+  [0xc0000409, "fail-fast / stack buffer overrun"],
+]);
+export function describeExit(code) {
+  if (code == null) return "still running";
+  const unsigned = code < 0 ? code + 0x100000000 : code;
+  const name = EXIT_NAMES.get(unsigned);
+  return name ? `${code} (0x${unsigned.toString(16)}: ${name})` : String(code);
+}
+
+// [rc4l] How many lines of a process listing (tasklist rows, or `ps -A -o comm=` names) are the engine.
+export function countEngineLines(listing) {
+  return String(listing).split(/\r?\n/).filter((l) => /^(.*[\\/])?forkundera(\.exe)?(\s|$)/i.test(l.trim())).length;
+}
+
+// [rc4l] Engines running on this machine, because GL readback under another engine's window is undefined.
+export function engineProcessCount() {
+  const out = process.platform === "win32"
+    ? spawnSync("tasklist", ["/FI", "IMAGENAME eq forkundera.exe", "/NH"], { encoding: "utf8" }).stdout
+    : spawnSync("ps", ["-A", "-o", "comm="], { encoding: "utf8" }).stdout;
+  return countEngineLines(out || "");
+}
+
 export function freePort() {
   return new Promise((resolve, reject) => {
     const srv = net.createServer();
@@ -47,6 +74,59 @@ export function freePort() {
 // The engine command line for one instance, given the per-instance config path. Split out from the
 // spawn so the argument list is testable without starting a process -- the cvars here decide what a
 // harness run can and cannot do, and one wrong value is invisible until a drive silently no-ops.
+// [rc4l] What size this instance renders at, in ONE place.
+//
+// A harness capture is only comparable to what someone reports if it frames the same thing, and
+// framing is aspect ratio: at an identical camera a 4:3 window and a 16:10 one show different
+// slices of the world. Reproducing a report at 640x480 against a 1280x800 window therefore looks
+// like the wrong position even when x, y, z, yaw and pitch match to three decimals -- which cost
+// several rounds of "that is not where I was standing", and it was the tool, not the position.
+//
+// opts.width/height override; otherwise a hands-on instance gets a window worth playing in and a
+// locked one gets a quarter of it -- the SAME SHAPE, at half the width in each direction.
+//
+// The shape is the part that matters and the part that was wrong. A locked instance rendered
+// 640x480 while a hands-on one rendered 1280x800: 4:3 against 16:10. At an identical camera those
+// two show different amounts of the world sideways, so a capture reproducing a report framed a
+// visibly different scene -- and the conclusion drawn from that, repeatedly, was that the POSITION
+// was wrong. It was the aspect ratio.
+//
+// 1024x640 rather than a smaller 16:10 size because the engine SNAPS to a mode it knows: asking
+// for 640x400 gets 640x480 back, silently, and the ini then says one thing while the captures say
+// another. Verified by reading the size out of the PNG, which is the only claim worth believing.
+export function resolutionOf(opts = {}) {
+  return {
+    w: Number(opts.width) || (opts.allowOsInput ? 1280 : 1024),
+    h: Number(opts.height) || (opts.allowOsInput ? 800 : 640),
+  };
+}
+
+// [rc4l] A --res WxH flag as the width and height a launch takes, both undefined when the flag is absent.
+export function resFlag(flag) {
+  if (!flag || flag === true) return { width: undefined, height: undefined };
+  const [width, height] = String(flag).split("x").map(Number);
+  return { width, height };
+}
+
+// [rc4l] Seed the per-instance ini, because +set is too late for the video mode.
+//
+// vid_defwidth and vid_defheight are CVAR_GLOBALCONFIG: the engine reads them out of the ini while
+// initialising video, which happens BEFORE the +set commands on the command line are executed. So
+// passing them as +set silently did nothing -- the harness asked for 640x400 for months and always
+// got 640x480, the engine default, and nobody noticed because both are small and 4:3.
+export function writeInstanceIni(configPath, opts = {}) {
+  const { w, h } = resolutionOf(opts);
+  const body = [
+    "[GlobalSettings]",
+    `vid_defwidth=${w}`,
+    `vid_defheight=${h}`,
+    "fullscreen=false",
+    "",
+  ].join("\n");
+  fs.writeFileSync(configPath, body, "utf8");
+  return { w, h };
+}
+
 export function engineArgs(opts = {}, configPath) {
   const args = ["-iwad", opts.iwad || "freedoom2.wad"];
   // Isolated config, per instance. Without -config the engine reads AND writes the user's shared
@@ -55,19 +135,22 @@ export function engineArgs(opts = {}, configPath) {
   // into that ini and break the user's real mouse. A fresh file starts from engine defaults, which is
   // identical across instances and never touches the user's config.
   args.push("-config", configPath);
-  // A client joins a server with +connect (and no local map); otherwise start in a local map.
-  if (opts.connect) args.push("+connect", opts.connect);
-  else args.push("+map", opts.map || "MAP01");
   args.push(
     "-skill", String(opts.skill ?? 3),
     "+set", "fullscreen", "0",
-    "+set", "vid_defwidth", "640",
-    "+set", "vid_defheight", "400",
+    // [rc4l] A hands-on instance gets a window worth looking at. 640x400 is the harness size because
+    // it makes screenshot pairs cheap to diff, and it is miserable to actually play in.
+    // [rc4l] Still passed, but the ini below is what actually decides it -- see writeInstanceIni.
+    "+set", "vid_defwidth", String(resolutionOf(opts).w),
+    "+set", "vid_defheight", String(resolutionOf(opts).h),
     // Bridge instances are driven by the harness, never by a human at the window. Disable OS mouse
     // and joystick so a stray cursor drifting over one instance's window can't turn its view (a live
     // level grabs the mouse) and silently diverge a deterministic run from its twin. All synthetic
     // input still arrives through the bridge (input.event / input.look / input.axis), untouched.
-    "+set", "use_mouse", "0",
+    //
+    // [rc4l] ...unless the human IS the driver. use_mouse 0 would leave --play with a keyboard-only
+    // instance, which is not what "let me run around and show you" means.
+    "+set", "use_mouse", opts.allowOsInput ? "1" : "0",
     "+set", "use_joystick", "0",
     // [rc4l] m_use_mouse is deliberately LEFT ALONE. It used to be forced to 0 here to silence the
     // menu cursor, but menu.cpp:859 drops every GUI mouse event when it is 0 -- including the ones
@@ -77,24 +160,70 @@ export function engineArgs(opts = {}, configPath) {
     // (ZANDRONUM_BRIDGE_INPUT_LOCK), not a cvar's.
   );
   if (opts.seed != null) args.push("-rngseed", String(opts.seed));
+  // [rc4l] Arbitrary cvars, applied BEFORE the map loads. Some only take effect at level start --
+  // sv_nomonsters is the obvious one -- so setting them over the bridge afterwards is too late and
+  // the instance comes up full of monsters shooting at whatever is being measured.
+  if (opts.cvars) {
+    for (const [k, v] of Object.entries(opts.cvars)) args.push("+set", k, String(v));
+  }
   if (opts.extraArgs) args.push(...opts.extraArgs);
+  // [rc4l] The engine's own default is now Vulkan alone (vid_backend 1), so a harness launch asks for GL unless it asked for -vulkan or for the engine's own choice (engineDefault).
+  if (!args.includes("-vulkan") && !opts.engineDefault) args.push("-gl");
+
+  // [rc4l] The map goes LAST, because the engine runs `+` commands in the order they appear.
+  //
+  // This used to sit above the cvars, directly under a comment promising they were applied first.
+  // They were not: +map ran, the level spawned, and only then did sv_nomonsters arrive -- so every
+  // instance came up full of monsters despite being asked for none, including the hands-on build.
+  // Monsters shove the player off a recorded position and shoot whatever is being measured, which
+  // is the one thing a measurement instance must not have.
+  if (opts.connect) args.push("+connect", opts.connect);
+  else args.push("+map", opts.map || "MAP01");
+
+  // [rc4l] ...and anything that only means something once a level EXISTS goes after it.
+  //
+  // Cheats are the case: `god` acts on a player pawn, so issued before the map it is either
+  // ignored or applied to nothing. That is the mirror of the cvar bug above -- same command line,
+  // opposite ordering requirement -- so both sides are stated here rather than left to whoever
+  // adds the next argument.
+  for (const c of opts.postMap || []) args.push(`+${c}`);
 
   return args;
+}
+
+// [rc4l] Why a binary's folder cannot start the engine, or null: without a fua_core_*.pk3 beside it the engine stops on a modal error box.
+export function missingCoreData(dir, listing = fs.readdirSync(dir)) {
+  if (listing.some((f) => /^fua_core_.+\.pk3$/i.test(f))) return null;
+  return `no fua_core_*.pk3 beside ${dir} -- copy the staged folder's *.pk3 next to the binary, or the engine stops on a modal error`;
 }
 
 // Spawn one instance. opts: { iwad, map, skill, seed, port, token, logDir, extraArgs, host }.
 export async function launchInstance(opts = {}) {
   const bin = opts.engine || resolveEngine();
   const dir = path.dirname(bin);
+  const missing = missingCoreData(dir);
+  if (missing) throw new Error(missing);
   const port = opts.port || (await freePort());
   const token = opts.token || crypto.randomBytes(12).toString("hex");
   const logDir = opts.logDir || fs.mkdtempSync(path.join(os.tmpdir(), "fuactl-"));
   const log = path.join(logDir, `engine-${port}.log`);
-  const args = engineArgs(opts, path.join(logDir, "fua-bridge.ini"));
+  const iniPath = path.join(logDir, "fua-bridge.ini");
+  // Written BEFORE the engine starts, or the video mode is already chosen by the time it is read.
+  writeInstanceIni(iniPath, opts);
+  const args = engineArgs(opts, iniPath);
 
+  // [rc4l] CAPTURE the engine's own stdout and stderr. This was "ignore".
+  //
+  // The bridge tees the CONSOLE to its log, which covers everything the engine prints on purpose --
+  // and nothing about how it died. An engine that hits a fatal error, an unhandled exception or a
+  // failed allocation says so on stderr and then exits, and with stdio ignored that message went
+  // nowhere: the log simply stopped mid-line and the process was gone. Chasing a crash that reports
+  // nothing was costing whole test runs to learn one bit ("it died").
+  const stdioLog = path.join(logDir, `engine-${port}.stdio.log`);
+  const stdioFd = fs.openSync(stdioLog, "a");
   const proc = spawn(bin, args, {
     cwd: dir,
-    stdio: "ignore",
+    stdio: ["ignore", stdioFd, stdioFd],
     env: {
       ...process.env,
       ZANDRONUM_BRIDGE_PORT: String(port),
@@ -105,7 +234,7 @@ export async function launchInstance(opts = {}) {
       ZANDRONUM_BRIDGE_INPUT_LOCK: opts.allowOsInput ? "" : "1",
     },
   });
-  return { proc, pid: proc.pid, port, token, host: opts.host || "127.0.0.1", log };
+  return { proc, pid: proc.pid, port, token, host: opts.host || "127.0.0.1", log, stdioLog, logDir, engine: bin };
 }
 
 // Ask an instance to quit cleanly (SIGTERM -> engine's clean-quit path), then hard-kill after grace.

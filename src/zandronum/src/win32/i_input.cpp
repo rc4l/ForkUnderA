@@ -108,6 +108,7 @@
 #include "version.h"
 #include "features/video-scale/computation/videoscale_compute.h" // [rc4l] VID_SCALE_UI_MIN_*
 #include "mcp_bridge.h" // [rc4l] MCP_InputLocked: drop OS input on a hands-off harness-driven instance
+#include "features/frame/viewtrace.h" // [rc4l] NoteAppActive
 
 // Prototypes and declarations.
 #include "rawinput.h"
@@ -163,6 +164,7 @@ extern BOOL paused;
 static bool noidle = false;
 
 EXTERN_CVAR (Bool, i_pauseinbackground)
+EXTERN_CVAR (Bool, fua_render_in_background)
 
 LPDIRECTINPUT8			g_pdi;
 LPDIRECTINPUT			g_pdi3;
@@ -643,6 +645,7 @@ LRESULT CALLBACK WndProc (HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
 	case WM_ACTIVATEAPP:
 		AppActive = wParam;
+		zx::frame::NoteAppActive(wParam != 0);   // [rc4l] fua_viewtrace
 		if (wParam)
 		{
 			SetPriorityClass (GetCurrentProcess (), INGAME_PRIORITY_CLASS);
@@ -650,7 +653,8 @@ LRESULT CALLBACK WndProc (HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		// [rc4l] Not idle priority when i_pauseinbackground is off: the game is deliberately still
 		// running back there, and starving it is the opposite of what was asked for. Ported from
 		// uzdoom@b044baf850eeb99f06835a223804e1d73994dc04.
-		else if (!noidle && NETWORK_GetState( ) != NETSTATE_CLIENT && i_pauseinbackground)
+		else if (!noidle && NETWORK_GetState( ) != NETSTATE_CLIENT && i_pauseinbackground
+			&& !fua_render_in_background)
 		{
 			SetPriorityClass (GetCurrentProcess (), IDLE_PRIORITY_CLASS);
 		}
@@ -849,6 +853,24 @@ bool I_InitInput (void *hwnd)
 
 
 // Free all input resources
+// [rc4l] The two questions cross-platform code asks about the window, answered from AppActive --
+// the same flag WM_ACTIVATEAPP maintains, so there is only ever one opinion about this.
+bool I_WindowIsActive ()
+{
+	return !!AppActive;
+}
+
+// Re-apply the priority for the window state and cvars as they are NOW. Without this, turning the
+// background-render switch on while already in the background leaves the idle priority that was set
+// on the way out, and nothing changes until the window is activated -- by which point the switch is
+// not doing anything you can see.
+void I_UpdateBackgroundPriority ()
+{
+	const bool wantIdle = !AppActive && !noidle && !fua_render_in_background
+		&& i_pauseinbackground && NETWORK_GetState( ) != NETSTATE_CLIENT;
+	SetPriorityClass (GetCurrentProcess (), wantIdle ? IDLE_PRIORITY_CLASS : INGAME_PRIORITY_CLASS);
+}
+
 void I_ShutdownInput ()
 {
 	if (Keyboard != NULL)

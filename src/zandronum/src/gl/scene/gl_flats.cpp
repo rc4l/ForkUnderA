@@ -55,7 +55,7 @@
 #include "gl/data/gl_data.h"
 #include "gl/data/gl_vertexbuffer.h"
 #include "gl/dynlights/gl_dynlight.h"
-#include "gl/dynlights/gl_glow.h"
+#include "features/gldefs/glow.h"
 #include "gl/dynlights/gl_lightbuffer.h"
 #include "gl/scene/gl_drawinfo.h"
 #include "gl/shaders/gl_shader.h"
@@ -142,7 +142,7 @@ void GLFlat::SetupSubsectorLights(int pass, subsector_t * sub, int *dli)
 		// we must do the side check here because gl_SetupLight needs the correct plane orientation
 		// which we don't have for Legacy-style 3D-floors
 		fixed_t planeh = plane.plane.ZatPoint(light->x, light->y);
-		if (gl_lights_checkside && ((planeh<light->z && ceiling) || (planeh>light->z && !ceiling)))
+		if (r_lights_checkside && ((planeh<light->z && ceiling) || (planeh>light->z && !ceiling)))
 		{
 			node=node->nextLight;
 			continue;

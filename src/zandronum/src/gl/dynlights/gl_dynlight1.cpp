@@ -56,29 +56,7 @@
 #include "gl/textures/gl_material.h"
 
 
-//==========================================================================
-//
-// Light related CVARs
-//
-//==========================================================================
-
-CUSTOM_CVAR (Bool, gl_lights, true, CVAR_ARCHIVE | CVAR_GLOBALCONFIG | CVAR_NOINITCALL)
-{
-	if (self) gl_RecreateAllAttachedLights();
-	else gl_DeleteAllAttachedLights();
-}
-
-CVAR (Bool, gl_attachedlights, true, CVAR_ARCHIVE | CVAR_GLOBALCONFIG);
-CVAR (Bool, gl_lights_checkside, true, CVAR_ARCHIVE | CVAR_GLOBALCONFIG);
-CVAR (Float, gl_lights_intensity, 1.0f, CVAR_ARCHIVE | CVAR_GLOBALCONFIG);
-CVAR (Float, gl_lights_size, 1.0f, CVAR_ARCHIVE | CVAR_GLOBALCONFIG);
-CVAR (Bool, gl_light_sprites, true, CVAR_ARCHIVE | CVAR_GLOBALCONFIG);
-CVAR (Bool, gl_light_particles, true, CVAR_ARCHIVE | CVAR_GLOBALCONFIG);
-CUSTOM_CVAR (Bool, gl_lights_additive, false,  CVAR_ARCHIVE | CVAR_GLOBALCONFIG | CVAR_NOINITCALL)
-{
-	gl_DeleteAllAttachedLights();
-	gl_RecreateAllAttachedLights();
-}
+// [rc4l] The light settings live in features/dynlights/lightsettings.cpp.
 
 //==========================================================================
 //
@@ -87,7 +65,7 @@ CUSTOM_CVAR (Bool, gl_lights_additive, false,  CVAR_ARCHIVE | CVAR_GLOBALCONFIG 
 //==========================================================================
 bool gl_GetLight(Plane & p, ADynamicLight * light, bool checkside, bool forceadditive, FDynLightData &ldata)
 {
-	// [AK] Take care of gl_lights_size and ZADF_FORCE_VIDEO_DEFAULTS.
+	// [AK] Take care of r_lights_size and ZADF_FORCE_VIDEO_DEFAULTS.
 	OVERRIDE_LIGHTS_SIZE_IF_NECESSARY
 
 	Vector fn, pos;
@@ -98,18 +76,18 @@ bool gl_GetLight(Plane & p, ADynamicLight * light, bool checkside, bool forceadd
 	float z = FIXED2FLOAT(light->z);
 	
 	float dist = fabsf(p.DistToPoint(x, z, y));
-	float radius = (light->GetRadius() * gl_lights_size);
+	float radius = (light->GetRadius() * r_lights_size);
 	
 	if (radius <= 0.f) return false;
 	if (dist > radius) return false;
-	if (checkside && gl_lights_checkside && p.PointOnSide(x, z, y))
+	if (checkside && r_lights_checkside && p.PointOnSide(x, z, y))
 	{
 		return false;
 	}
 
 
 	float cs;
-	if (gl_lights_additive || light->flags4&MF4_ADDITIVE || forceadditive) 
+	if (r_lights_additive || light->flags4&MF4_ADDITIVE || forceadditive) 
 	{
 		cs = 0.2f;
 		i = 2;
@@ -119,9 +97,9 @@ bool gl_GetLight(Plane & p, ADynamicLight * light, bool checkside, bool forceadd
 		cs = 1.0f;
 	}
 
-	float r = light->GetRed() / 255.0f * cs * gl_lights_intensity;
-	float g = light->GetGreen() / 255.0f * cs * gl_lights_intensity;
-	float b = light->GetBlue() / 255.0f * cs * gl_lights_intensity;
+	float r = light->GetRed() / 255.0f * cs * r_lights_intensity;
+	float g = light->GetGreen() / 255.0f * cs * r_lights_intensity;
+	float b = light->GetBlue() / 255.0f * cs * r_lights_intensity;
 
 	if (light->IsSubtractive())
 	{
