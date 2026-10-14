@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CHECKS, blankGame, inPage, judge, saveLoads, savePicture, soundStarts } from '../check.mjs';
+import { CHECKS, blankGame, crosshairCentred, inPage, judge, saveLoads, savePicture, soundStarts } from '../check.mjs';
 
 test('page code waits for the engine to start before it runs', () => {
   const js = inPage('return 1;');
@@ -50,6 +50,14 @@ test('a screenshot shows the game unless it is black or one flat colour', () => 
   assert.equal(blankGame(image((x) => x * 20)), '');
   assert.match(blankGame(image(() => 0)), /^the game is black/);
   assert.match(blankGame(image(() => 128)), /^the game is one flat colour/);
+});
+
+test('a resized frame keeps its crosshair in the middle', () => {
+  const at = (cx) => image((x) => (x === cx ? 0 : 60));
+  const green = (cx) => { const img = at(cx); for (let y = 0; y < 10; y++) img.data.set([0, 255, 0], (y * 10 + cx) * 3); return img; };
+  assert.equal(crosshairCentred(green(5)), '');
+  assert.equal(crosshairCentred(green(8)), 'the crosshair is at 80% across, not the middle');
+  assert.equal(crosshairCentred(image(() => 60)), 'no crosshair in the frame');
 });
 
 test('a check that wants a screenshot fails without one or with a blank one', () => {

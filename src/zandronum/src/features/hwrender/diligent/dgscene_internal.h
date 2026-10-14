@@ -345,6 +345,8 @@ unsigned char *ReadTextureRGB(Diligent::ITexture *tex, int &w, int &h, int &form
 bool ReadTextureLater(Diligent::ITexture *tex, std::function<void(const unsigned char *rgb, int w, int h)> done);
 // [rc4l] Once a frame: hand each later read-back the GPU has finished to its caller.
 void PollLaterReadbacks();
+// [rc4l] Before a frame is drawn: a swapchain whose surface does not resize it (a browser's canvas) takes the surface's size.
+void FollowBackendSurface();
 // [rc4l] The screen wipe (dgwipe.cpp): the new screen taken from the frame just drawn, whether one is under way, and its mix drawn into the bound frame target.
 void WipeTakeEnd();
 bool WipeActive();

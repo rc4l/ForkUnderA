@@ -379,6 +379,7 @@ void PresentBackendOnly(bool present)
 	if (!present) return;
 	zx::hwrender::GLFrameDone();
 	g_lastFrameWorld = world;
+	FollowBackendSurface();
 	DrawBackendFrame(true);
 	zx::hwrender::BackendFrameDone();
 }

@@ -225,13 +225,14 @@ Paths are relative to `src/zandronum/src/` unless noted. The order is deliberate
   - the config and saves are kept in IndexedDB, written every few seconds and when the page is hidden or left;
   - a restart stores them before it reloads.
 - **Quitting (4d):** a page runs no atexit handlers and kept calling the frame after `exit()`. Every exit now goes through `features/web`'s `--wrap=exit`, which ends the loop, runs the engine's shutdown (writing the config) and has the page store everything and offer to play again.
+- **Canvas size (10a):** Diligent's WebGPU swapchain does not follow its canvas, so the backend resizes it to the canvas before each frame (`Fua_BackendSurfaceSize`). **Decided:** the frame is drawn at the canvas's CSS size, not times `devicePixelRatio`, which keeps mouse and menus in one unit and draws a quarter of the pixels on a 2x screen.
 - **Read-backs (7m, 10e):** WebGPU in a browser maps buffers only asynchronously, so `CanWaitForGPU()` is false there.
   - A screenshot is the page's: the engine asks during the frame (`DCanvas::ScreenshotLater`), and the page downloads the canvas just after it (`Module.postMainLoop`).
   - A save picture is drawn at the save and read back on a later frame (`ReadTextureLater`, polled after each present). The save is written with the placeholder, and the picture is spliced in once it arrives (`FRenderer::SaveWritten`, `ComputeSpliceSavePicture`).
 - **Camera textures on a binding per material:** the binding was made before the camera's first render and kept the white placeholder. WebGPU always draws this way, as does Vulkan past the array's cap; `cameratexpermaterial` covers it.
 - **Checks (13a, 13c, 13d, 13e):**
   - The gtests build with Emscripten, threads and wasm exceptions, and pass in Node (`test-web` in CI).
-  - `tools/web/check.mjs` runs the page in headless Chrome: its screenshot shows MAP01, the sound waits for a click and plays after one (11b, 11c), Tab stays in the game rather than moving the page's focus (11e), the screenshot command downloads the frame, a save gets its picture and survives a reload (14d), quitting stops the loop, a setting survives quitting, leaving and reloading, and errors reach the console or the page. CI runs it after the web build, on SwiftShader's WebGPU.
+  - `tools/web/check.mjs` runs the page in headless Chrome: its screenshot shows MAP01, the sound waits for a click and plays after one (11b, 11c), the frame follows the page when it is resized (10a), Tab stays in the game rather than moving the page's focus (11e), the screenshot command downloads the frame, a save gets its picture and survives a reload (14d), quitting stops the loop, a setting survives quitting, leaving and reloading, and errors reach the console or the page. CI runs it after the web build, on SwiftShader's WebGPU.
   - CI builds the web module (`build-web`) and runs the tripwire.
   - `fuactl scenarios --webgpu` runs the suite on WebGPU against Vulkan.
 - **Next:**

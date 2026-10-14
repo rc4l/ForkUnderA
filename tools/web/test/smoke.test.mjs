@@ -38,6 +38,7 @@ test('a page asks for a click or a key it knows with a console line', () => {
   assert.deepEqual(inputAsked('[log] check: press Tab'), { key: 'Tab', code: 'Tab', keyCode: 9 });
   assert.equal(inputAsked('[log] check: press F13'), null);
   assert.equal(inputAsked('[log] something else'), null);
+  assert.deepEqual(inputAsked('[log] check: resize 900x700'), { resize: [900, 700] });
 });
 
 test('a download has settled once a file is there and none is still being written', async () => {

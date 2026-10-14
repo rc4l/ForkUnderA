@@ -35,6 +35,9 @@ void Fua_ShowBackendWindow(void *window, int visible);
 // [rc4l] Service a window the engine's event loop does not, once a presented frame.
 void Fua_PumpBackendWindow(void *window);
 
+// [rc4l] The size the window's swapchain should have now, where nothing tells the swapchain itself (a browser's canvas); false where it follows its surface on its own.
+bool Fua_BackendSurfaceSize(void *window, int &w, int &h);
+
 // [rc4l] Un-minimize the engine's window without taking focus; true if it was minimized.
 bool Fua_RestoreEngineWindow();
 

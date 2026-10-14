@@ -217,6 +217,14 @@ void ForgetBackendWindow(void *window)
 
 // [rc4l] Accessors for dgscene.cpp -- one swapchain and one window, shared.
 Diligent::ISwapChain *GetSwapChain() { return g_swap; }
+
+void FollowBackendSurface()
+{
+	int w = 0, h = 0;
+	if (!g_swap || !Fua_BackendSurfaceSize(g_hwnd, w, h)) return;
+	const Diligent::SwapChainDesc &d = g_swap->GetDesc();
+	if ((int)d.Width != w || (int)d.Height != h) g_swap->Resize((Diligent::Uint32)w, (Diligent::Uint32)h);
+}
 void *GetBackendWindow() { return g_hwnd; }
 
 }} // namespace zx::hwrender

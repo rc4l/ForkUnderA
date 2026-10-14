@@ -188,6 +188,9 @@ void Fua_ShowBackendWindow(void *hwnd, int visible)
 
 // [rc4l] The engine's own message pump does not service this window, so it would otherwise show as
 // "not responding" and never repaint. Called once per presented frame.
+// [rc4l] The swapchain follows the surface's size itself.
+bool Fua_BackendSurfaceSize(void *, int &, int &) { return false; }
+
 void Fua_PumpBackendWindow(void *hwnd)
 {
 	MSG msg;

@@ -53,10 +53,11 @@ export function formatEval(result) {
 // [rc4l] The keys a page may ask smoke to press, with the codes Chrome's input events want.
 export const KEYS = { Tab: { code: 'Tab', keyCode: 9 }, Escape: { code: 'Escape', keyCode: 27 }, Enter: { code: 'Enter', keyCode: 13 } };
 
-// [rc4l] Input a page asks for with a console line, since only input from outside it counts as a person's: "check: click" clicks its middle, "check: press KEY" presses one of KEYS; null for any other line.
+// [rc4l] Input a page asks for with a console line, since only input from outside it counts as a person's: "check: click" clicks its middle, "check: press KEY" presses one of KEYS, "check: resize WxH" makes the window that size; null for any other line.
 export function inputAsked(line) {
-  const m = /^\[log\] check: (click|press (\S+))$/.exec(line);
+  const m = /^\[log\] check: (click|press (\S+)|resize (\d+)x(\d+))$/.exec(line);
   if (!m) return null;
+  if (m[3]) return { resize: [Number(m[3]), Number(m[4])] };
   if (!m[2]) return { click: true };
   return KEYS[m[2]] ? { key: m[2], ...KEYS[m[2]] } : null;
 }
@@ -110,6 +111,10 @@ export async function smoke({ url, until, seconds = 30, shot, chrome, headless =
     };
     const send = (method, params = {}) => new Promise(res => { const n = ++id; pending.set(n, res); ws.send(JSON.stringify({ id: n, method, params })); });
     const act = async (asked) => {
+      if (asked.resize) {
+        await send('Emulation.setDeviceMetricsOverride', { width: asked.resize[0], height: asked.resize[1], deviceScaleFactor: 1, mobile: false });
+        return;
+      }
       if (asked.click) {
         for (const type of ['mousePressed', 'mouseReleased']) await send('Input.dispatchMouseEvent', { type, x: 640, y: 360, button: 'left', clickCount: 1 });
         return;

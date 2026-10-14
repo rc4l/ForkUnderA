@@ -6,7 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from './serve.mjs';
 import { smoke } from './smoke.mjs';
-import { decodePNG, boxStats } from '../fuactl/src/pngcore.mjs';
+import { decodePNG, boxStats, px } from '../fuactl/src/pngcore.mjs';
 
 // [rc4l] JavaScript run in the page once the engine has started (fua.js sets fuaCommand just before main), its value the check's result.
 export function inPage(body) {
@@ -55,6 +55,19 @@ export function saveLoads({ found, said }) {
   return refusal ? `loading it said: ${refusal[0].trim()}` : '';
 }
 
+// [rc4l] Why a resized page shows the frame wrongly, or '': its pure green crosshair missing, or away from the middle, as a frame drawn at the old size and cut to the new one put it.
+export function crosshairCentred(img) {
+  let n = 0, sx = 0, sy = 0;
+  for (let y = 0; y < img.h; y++)
+    for (let x = 0; x < img.w; x++) {
+      const [r, g, b] = px(img, x, y);
+      if (g > 200 && r < 80 && b < 80) { n++; sx += x; sy += y; }
+    }
+  if (!n) return 'no crosshair in the frame';
+  const cx = sx / n / img.w;
+  return Math.abs(cx - 0.5) > 0.05 ? `the crosshair is at ${Math.round(cx * 100)}% across, not the middle` : '';
+}
+
 export const CHECKS = [
   { name: 'boots and draws MAP01', evaluate: inPage(`${pause(3000)} return 'drawn';`), until: EVAL, shot: true, expectShot: blankGame },
   {
@@ -72,6 +85,19 @@ export const CHECKS = [
       return { before, after: window.fuaAudio.map((c) => c.state), played: window.fuaBuffers - buffers };`),
     until: EVAL,
     expect: soundStarts,
+  },
+  // [rc4l] The canvas follows the page's layout, and the frame follows the canvas rather than being cut to it.
+  {
+    name: 'the frame follows the page when it is resized',
+    evaluate: inPage(`
+      Module.fuaCommand('crosshair 1');
+      Module.fuaCommand('crosshaircolor "00 ff 00"');
+      console.log('check: resize 900x700');
+      ${pause(1500)}
+      return 'resized';`),
+    until: EVAL,
+    shot: true,
+    expectShot: crosshairCentred,
   },
   // [rc4l] Tab is the automap's, so the page keeps the browser from moving the focus off the game with it.
   {

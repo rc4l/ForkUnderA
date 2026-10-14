@@ -7,6 +7,7 @@
 
 #include <string.h>
 #include <SDL.h>
+#include <emscripten/html5.h>
 
 #include "features/hwrender/diligent/dgplatform.h"
 
@@ -35,6 +36,12 @@ void Fua_ShowBackendWindow(void *, int) {}
 
 // [rc4l] The browser delivers the canvas's events to SDL, which the engine already pumps.
 void Fua_PumpBackendWindow(void *) {}
+
+// [rc4l] The canvas's drawing buffer, which SDL keeps at the page's layout of it; the WebGPU swapchain does not follow it on its own.
+bool Fua_BackendSurfaceSize(void *, int &w, int &h)
+{
+	return emscripten_get_canvas_element_size("#canvas", &w, &h) == EMSCRIPTEN_RESULT_SUCCESS && w > 0 && h > 0;
+}
 
 bool Fua_RestoreEngineWindow() { return false; }
 
