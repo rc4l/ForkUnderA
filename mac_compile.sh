@@ -398,9 +398,9 @@ JSON
 
 make_icon() {
     local resources="$1"
-    # Prefer Zandronum's square Windows app icon (a proper dock tile); fall back
+    # [rc4l] The app icon's master picture (the one the .ico is made from); fall back
     # to the wide wordmark logo if the source tree doesn't have it.
-    local logo="$ZAN_SRC_DIR/src/win32/zandronum.ico"
+    local logo="$ZAN_SRC_DIR/wadsrc/static/fua_appicon.png"
     [[ -f "$logo" ]] || logo="$SCRIPT_ROOT/docs/logo.png"
     have python3 && have iconutil && [[ -f "$logo" ]] || { warn "skipping icon (tooling/logo missing)"; return 0; }
     local iconset; iconset="$(mktemp -d)/$APP_NAME.iconset"; mkdir -p "$iconset"

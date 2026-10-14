@@ -20,6 +20,7 @@
 #define _WIN32_WINNT 0x0500
 #define _WIN32_IE 0x0500
 #include <windows.h>
+#include "win32/resource.h"   // [rc4l] IDI_ICONST, the application icon
 
 // [rc4l] The engine's own window, declared at GLOBAL scope. Inside the namespace this names
 // zx::hwrender::Window, which nothing defines, and only the linker notices.
@@ -73,6 +74,7 @@ void *Fua_CreateBackendWindow(const char *title, int w, int h)
 		wc.lpfnWndProc = DgWndProc;
 		wc.hInstance = GetModuleHandle(NULL);
 		wc.hCursor = LoadCursor(NULL, IDC_ARROW);
+		wc.hIcon = LoadIcon(wc.hInstance, MAKEINTRESOURCE(IDI_ICONST));
 		wc.lpszClassName = "FuaDiligentWnd";
 		if (!RegisterClassExA(&wc)) return NULL;
 		registered = true;

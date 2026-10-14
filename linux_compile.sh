@@ -138,6 +138,13 @@ cp "build-linux/$BIN" "$STAGE"/
 cp build-linux/*.pk3 "$STAGE"/
 [ -f README.md ] && cp README.md "$STAGE"/ || true
 
+# [rc4l] The client's icon and a script that adds it to the desktop's application menu; the window icon itself comes from the core pk3.
+if [ "$SERVERONLY" != "ON" ]; then
+  cp src/zandronum/wadsrc/static/fua_appicon.png "$STAGE"/forkundera.png
+  cp tools/install-desktop-entry.sh "$STAGE"/
+  chmod +x "$STAGE"/install-desktop-entry.sh
+fi
+
 # [rc4l] Ship Freedoom so the tarball is playable without a separate IWAD. It is
 # BSD-3-clause, whose clause 2 requires the notice to accompany binary distributions.
 # Both phases: Phase 1 stands in for doom.wad and Phase 2 for doom2.wad, and the wildcard copy

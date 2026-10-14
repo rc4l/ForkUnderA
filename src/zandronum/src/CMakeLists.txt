@@ -708,7 +708,8 @@ set( PLAT_SDL_SOURCES
 	posix/sdl/i_main.cpp
 	posix/sdl/i_system.cpp
 	posix/sdl/sdlglvideo.cpp
-	posix/sdl/st_start.cpp )
+	posix/sdl/st_start.cpp
+	features/app-icon/appicon.cpp )
 
 # [rc4l] Instant-replay audio sink: AudioQueue on macOS (the Cocoa backend removed SDL from the
 # engine), SDL on Linux and Windows where SDL is the platform layer anyway.

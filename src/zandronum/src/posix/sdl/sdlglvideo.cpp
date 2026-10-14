@@ -32,6 +32,7 @@
 #include "features/materials/material.h"   // [rc4l] FMaterial::FlushAll
 #include "gl/system/gl_cvars.h"
 #include "features/hwrender/computation/glcontext_compute.h"
+#include "features/app-icon/appicon.h"   // [rc4l] the window icon
 
 // MACROS ------------------------------------------------------------------
 
@@ -370,6 +371,19 @@ bool SDLGLVideo::InitHardware (bool allowsoftware, int multisample)
 static SDL_Window *s_engineWindow = NULL;
 SDL_Window *I_EngineWindow() { return s_engineWindow; }
 
+// [rc4l] app-icon: the core pk3's picture becomes the window's icon (Linux; Windows and macOS compile theirs in).
+static void SetAppIcon(SDL_Window *window)
+{
+	const int size = 128;
+	std::vector<unsigned char> pixels;
+	if (!zx::appicon::LoadAppIcon(size, pixels)) return;
+	SDL_Surface *surf = SDL_CreateRGBSurfaceFrom(pixels.data(), size, size, 32, size * 4,
+		MAKEARGB(0,255,0,0), MAKEARGB(0,0,255,0), MAKEARGB(0,0,0,255), MAKEARGB(255,0,0,0));
+	if (surf == NULL) return;
+	SDL_SetWindowIcon(window, surf);
+	SDL_FreeSurface(surf);
+}
+
 SDLGLFB::SDLGLFB (void *, int width, int height, int, int, bool fullscreen, bool withGL)
 	: DFrameBuffer (width, height)
 {
@@ -426,6 +440,7 @@ SDLGLFB::SDLGLFB (void *, int width, int height, int, int, bool fullscreen, bool
 	if (Screen == NULL)
 		return;
 	s_engineWindow = Screen;
+	SetAppIcon(Screen);
 
 	if (!withGL)
 	{
