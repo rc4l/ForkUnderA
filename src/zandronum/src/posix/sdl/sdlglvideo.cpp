@@ -7,6 +7,7 @@
 #include <iostream>
 
 #include "doomtype.h"
+#include "version.h"   // [rc4l] GAMENAME
 
 #include "templates.h"
 #include "i_system.h"

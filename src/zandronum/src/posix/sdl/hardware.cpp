@@ -56,6 +56,9 @@
 #include "r_nullrenderer.h"
 #endif
 
+// [rc4l] GL's renderer, which a build with GL hands to CreateLaunchRenderer.
+FRenderer *gl_CreateInterface();
+
 EXTERN_CVAR (Bool, ticker)
 EXTERN_CVAR (Bool, fullscreen)
 EXTERN_CVAR (Float, vid_winscale)
