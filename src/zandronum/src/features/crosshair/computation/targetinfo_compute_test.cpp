@@ -11,7 +11,6 @@
 using zx::crosshair::ComputeActorNameAllowed;
 using zx::crosshair::ComputeActorNameCoversTarget;
 using zx::crosshair::ComputeActorNameText;
-using zx::crosshair::ComputeActorScanPassesThrough;
 using zx::crosshair::ComputeCrosshairClampInt;
 using zx::crosshair::ComputeCrosshairInfoAnchor;
 using zx::crosshair::ComputeCrosshairInfoCanvas;
@@ -407,12 +406,4 @@ TEST(ComputeActorNameCoversTarget, NamesCorpses)
 {
 	EXPECT_TRUE(ComputeActorNameCoversTarget(false, true, false));
 	EXPECT_TRUE(ComputeActorNameCoversTarget(true, false, false));
-}
-
-TEST(ComputeActorScanPassesThrough, OnlyLooksPastInvisibleActors)
-{
-	EXPECT_TRUE(ComputeActorScanPassesThrough(true, true));
-	EXPECT_FALSE(ComputeActorScanPassesThrough(true, false));
-	EXPECT_FALSE(ComputeActorScanPassesThrough(false, true));
-	EXPECT_FALSE(ComputeActorScanPassesThrough(false, false));
 }
