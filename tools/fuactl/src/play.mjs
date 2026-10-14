@@ -90,9 +90,7 @@ export function resolvePreset(catalogueDir, storeDir, id, variantId) {
 // appeared and it spun until something else timed out, with the reason already printed and going
 // nowhere. A launch that is not going to work should say so in seconds.
 //
-// [rc4l] Each probe's connection is closed whatever happens to it. The bridge serves one client at a
-// time, so a probe left open after its question timed out (a WebGPU pipeline compile holding the game
-// thread) kept every later probe waiting until the whole wait ran out.
+// [rc4l] Each probe's connection is closed whatever happens to it, since the bridge serves one client at a time and a probe left open after a timeout kept every later one waiting.
 export async function waitInLevel(inst, { timeoutMs = 90000, pollMs = 250, connect = (port, token) => bridgeConnect(port, token, { connectMs: 1500, helloMs: 3000 }) } = {}) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {

@@ -72,7 +72,9 @@ Every call takes `--port P --token T`:
 
 `npx fuactl hang --port P` tells apart the four cases that look the same from outside: the process
 died, it is stuck in one function (which it names), its tic is frozen, or it is simply paused.
-Don't blind-retry.
+On Windows the in-engine sampler can't answer for a wedged game thread, so it builds and runs
+`native/stackdump` instead and names the busiest thread's first engine frame (`report.stack` has the
+stacks). Don't blind-retry.
 
 ## Cleaning up
 

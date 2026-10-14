@@ -1,6 +1,7 @@
-// [MGOOOOOO] See hitboxviz.h. GL's half of the overlay: the boxes each GL scene collects, drawn as lines through the flat VBO.
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 MGOOOOOO
+//
+// [rc4l] GL's half of the hitbox overlay (hitboxviz.h): the boxes each GL scene collects, drawn as lines through the flat VBO.
 
 // [MGOOOOOO] gl_system.h must come first: it defines __GL_PCH_H, which is what exposes
 // FFlatVertexBuffer's drawing methods (they need the system GL includes and the header cannot pull
@@ -43,7 +44,7 @@ namespace
 	TArray<Vertex3> s_blastVerts;
 
 	// [MGOOOOOO] Scenes nest: DrawScene runs CreateScene, then GLPortal::EndFrame -- which re-enters
-	// DrawScene once per visible portal (gl_portal.cpp:696/790/845/957) -- and only then
+	// DrawScene once per visible portal (gl_portal.cpp) -- and only then
 	// RenderTranslucent. So collection for the outer view is already done when an inner view starts
 	// collecting, and a single flat buffer would let the outer view's boxes be drawn inside the
 	// portal (and then leave nothing for the outer view itself). Each scene instead marks where its

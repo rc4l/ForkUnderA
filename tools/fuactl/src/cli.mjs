@@ -29,6 +29,8 @@ import { abPerf } from "./abperf.mjs";
 import { measureCosts, formatCosts } from "./costs.mjs";
 import { runFps, fpsModes } from "./fps.mjs";
 import * as screen from "./screen.mjs";
+import { ensureNative } from "./native.mjs";
+import { nativeStacks } from "./stacks.mjs";
 import * as trace from "./trace.mjs";
 import * as present from "./present.mjs";
 import { refreshNote } from "./stats.mjs";
@@ -143,7 +145,7 @@ const USAGE = `fuactl <command>
   reap [--kill] [--all]              prune dead; --kill SIGTERMs ORPHANS only (other sessions safe); --all kills every live instance
   launch [--map M] [--seed S] [--port P] [--token T] [--iwad W] [--skill N] [--file a.wad,b.pk3] [--cvar k=v,k2=v2] [--arg "-host,+sv_hostname,X"] [--play]   launch one supervised bridge instance (stays up until Ctrl-C)
   sample --pid P | --port P [--seconds N] [--top N] [--engine] [--stacks]   hottest functions (macOS sample / Linux perf / Windows in-engine, which needs --port); --stacks adds each function's inclusive share on Windows
-  hang --port P [--token T] [--pid P] [--gap MS]   why an instance stopped answering: gone / unreachable / stalled / paused / healthy, plus the function it is stuck in
+  hang --port P [--token T] [--pid P] [--gap MS]   why an instance stopped answering: gone / unreachable / stalled / paused / healthy, plus the function it is stuck in (on Windows from its busiest threads' native stacks)
   doctor [--exe PATH] [--src DIR]      is the configured engine driveable at all (bridge compiled in?) and is it older than the source?
   net-bw [--seed S] [--map M] [--spawn CLS] [--count N] [--seconds N]   client/server bandwidth, baseline vs perturbation
   cycle --port P [--token T] [--count N] [--settle MS]   advance the map rotation N times, confirming intermissions
@@ -566,6 +568,10 @@ async function main() {
         token: flags.token || null,
         pid: num(flags.pid) ?? null,
         gapMs: num(flags.gap) ?? 1500,
+        // [rc4l] Windows has no sampler outside the engine, so the stack dump helper stands in for a wedged one.
+        _stacks: process.platform === "win32"
+          ? (pid) => nativeStacks(pid, { exe: ensureNative("stackdump", shot.pickCmake(), { log: (m) => console.error(`[hang] ${m}`) }) })
+          : null,
       });
       console.log(JSON.stringify(r, null, 2));
       if (!r.healthy) process.exitCode = 1;
@@ -638,7 +644,7 @@ async function main() {
       const session = shot.readSession(shot.sessionFileFor(SESSION(), Number(flags.port)));
       const pid = num(flags.pid) ?? (session && session.pid);
       if (!pid) { console.error("screen needs the engine's process: launch it with play (which records it) or pass --pid"); process.exit(2); }
-      const exe = screen.ensureScreencap(shot.pickCmake(), { log: (m) => console.error(`[screen] ${m}`) });
+      const exe = ensureNative("screencap", shot.pickCmake(), { log: (m) => console.error(`[screen] ${m}`) });
       const out = path.join(os.tmpdir(), `fuactl-screen-${pid}.csv`);
       const traceOut = path.join(os.tmpdir(), `fuactl-screen-trace-${pid}.csv`);
       const result = await withUi(flags, (c) => screen.captureScreen(c, {

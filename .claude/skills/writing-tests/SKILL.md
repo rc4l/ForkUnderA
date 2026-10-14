@@ -80,8 +80,21 @@ cmake --build build-tests --config Debug --target zandrox_tests zandrox_tests_ne
 .\build-tests\Debug\zandrox_tests_net.exe
 ```
 
-Add `--gtest_filter=Suite.*` to run one suite. `coverage.sh` and the sanitizers need Clang and a POSIX
-toolchain, so on Windows the 100% coverage gate is checked by CI.
+Add `--gtest_filter=Suite.*` to run one suite. The sanitizers need Clang and a POSIX toolchain; the
+100% coverage gate runs on Windows as `node tools/fuactl/src/cli.mjs coverage [--since REF]`
+(OpenCppCoverage over the Debug tests), and CI runs `coverage.sh --auto`.
+
+## Run it under Emscripten (the browser's runtime)
+
+The same tests build with Emscripten, threads and wasm exceptions, and run in Node; CI's `test-web`
+job does this, so a test that only passes natively (a thread it never joins, a path on the real disk)
+fails there:
+
+```bash
+emcmake cmake -S tests -B build-tests-web -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build-tests-web
+node build-tests-web/zandrox_tests.js
+```
 
 Notes:
 - **LeakSanitizer is Linux-only** — on macOS ASan/UBSan run but leaks aren't reported; CI

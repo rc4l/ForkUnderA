@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 rc4l
 //
-// [rc4l] See zx_filehash.h. The digests are the in-tree ones (computation/digest_compute.h), so a build without OpenSSL, the browser's, still identifies its wads; the engine's md5.cpp stays unused, as the header explains.
+// [rc4l] zx_filehash.h's hashing through the in-tree digests (computation/digest_compute.h), so a build without OpenSSL, the browser's, still identifies its wads.
 
 #include <cstdio>
 #include <cstring>

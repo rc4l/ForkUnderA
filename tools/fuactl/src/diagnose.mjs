@@ -18,6 +18,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { BridgeClient } from "./client.mjs";
+import { moduleFrame } from "./stacks.mjs";
 import { readRegistry, pidAlive } from "./registry.mjs";
 import { sampleProcess } from "./sample.mjs";
 
@@ -78,6 +79,7 @@ async function realProbe(port, token, gapMs, connectTimeoutMs) {
 
 // Probe an instance and, when it is not healthy, sample it so the report names the function the
 // game thread is stuck in. `_probe`/`_sample`/`_pidAlive` are test seams.
+// [rc4l] `_stacks(pid)`, the native stack dump (src/stacks.mjs), stands in on Windows when the in-engine sampler cannot answer.
 export async function diagnoseHang({
   port = null,
   token = null,
@@ -89,6 +91,7 @@ export async function diagnoseHang({
   _sample = sampleProcess,
   _pidAlive = pidAlive,
   _registry = readRegistry,
+  _stacks = null,
 } = {}) {
   let resolvedPid = pid;
   if (!resolvedPid && port) {
@@ -116,6 +119,15 @@ export async function diagnoseHang({
       // No samples is itself a finding -- it says "waiting", not "looping".
       report.stack.note = "no samples: the thread is blocked or stopped rather than spinning -- `lldb -p <pid> -b -o 'bt all'` for the wait it is parked on";
       report.summary += " -- no samples, so it is blocked rather than looping";
+    } else if (_stacks) {
+      const stacks = _stacks(resolvedPid);
+      report.stack = stacks;
+      const busiest = stacks.available ? stacks.threads[0] : null;
+      const fn = busiest ? moduleFrame(busiest.frames) : null;
+      if (fn) {
+        report.stuckIn = fn;
+        report.summary += ` -- busiest thread in: ${fn}`;
+      }
     }
   }
   return report;

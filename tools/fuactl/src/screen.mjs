@@ -1,34 +1,7 @@
 // [rc4l] fuactl screen: what reaches the screen of a running instance, judged from the compositor's own frames rather than the engine's.
 import fs from "node:fs";
-import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
 import { percentile } from "./stats.mjs";
-
-const HERE = fileURLToPath(new URL("../native/screencap/", import.meta.url));
-
-// [rc4l] Where the helper's source, build tree and executable live.
-export function screencapPaths(dir = HERE) {
-  return { source: path.join(dir, "screencap.cpp"), build: path.join(dir, "build"), exe: path.join(dir, "build", "Release", "screencap.exe") };
-}
-
-// [rc4l] Whether the helper must be built again: it is missing, or older than its source.
-export function needsBuild(paths, stat = (p) => (fs.existsSync(p) ? fs.statSync(p).mtimeMs : null)) {
-  const exe = stat(paths.exe);
-  return exe === null || exe < stat(paths.source);
-}
-
-// [rc4l] Build the helper with cmake when it needs it, and return its path.
-export function ensureScreencap(cmake, { paths = screencapPaths(), run = spawnSync, log = () => {} } = {}) {
-  if (!needsBuild(paths)) return paths.exe;
-  log("building the screen capture helper");
-  const dir = path.dirname(paths.source);
-  for (const args of [["-S", dir, "-B", paths.build], ["--build", paths.build, "--config", "Release"]]) {
-    const r = run(cmake, args, { encoding: "utf8" });
-    if (r.status !== 0) throw new Error(`screencap build failed: ${((r.stdout || "") + (r.stderr || "")).split(/\r?\n/).filter((l) => /error/i.test(l)).slice(0, 5).join(" | ")}`);
-  }
-  return paths.exe;
-}
 
 // [rc4l] The helper's rows, each a composed desktop frame: when it was presented, whether the window's patch changed, and how many desktop frames it stands for.
 export function parseCapture(csv) {

@@ -3,7 +3,7 @@
 #
 #   EMSDK=/path/to/emsdk ./web_run.sh [--no-build] [--no-open] [--port N] [query]
 #
-# The query goes on the page's address as it is, such as map=MAP01 or iwad=doom2.wad&warp=1%201. Ctrl+C stops the server.
+# The query goes on the page's address as it is, such as map=MAP01 or iwad=doom2.wad&warp=1%201, and Ctrl+C stops the server.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"

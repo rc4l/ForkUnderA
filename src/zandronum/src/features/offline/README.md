@@ -2,13 +2,7 @@
 
 A build that plays offline only: `ZX_ONLINE` off leaves out the features that reach other machines, and `offlinestubs.cpp` answers where shared code calls into them. `docs/web-port-design.md` (5e, 5f) has the plan. The browser build and the `linux-offline` preset are built this way.
 
-- `ONLINE_SOURCES` in `src/CMakeLists.txt` lists what is left out:
-  - accounts and their handshake (`features/identity`);
-  - the HTTP layer and IPv6 resolving (`features/net`, apart from `zx_offline`);
-  - wad downloads and serving, and the wad library;
-  - port mapping, hosting, the add-on catalogue;
-  - the server browser, its registry list and the launcher protocol;
-  - the updater.
+- `ONLINE_SOURCES` in `src/CMakeLists.txt` lists what is left out: accounts, the HTTP layer, wad downloads and serving, hosting, the server browser and the updater, among others.
 - `offlinestubs.cpp` gives each entry point shared code links against the answer of a build with nothing to reach: an empty server list, no host, no account, no download, no update. The list grows only from the linker's evidence, so a new call into an online feature fails the offline link until it gets an answer here.
 - The server browser's menu class, which MENUDEF names, is a stand-in saying the build plays offline.
 

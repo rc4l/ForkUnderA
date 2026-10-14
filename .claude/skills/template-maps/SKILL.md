@@ -107,9 +107,11 @@ cvar changed), compared Vulkan against Vulkan. `scenarios/pointlight.mjs` compar
 nothing is read back from a window, and the harness runs even with other engines open.
 A side with `frame: "gl"` keeps GL's half of a Vulkan launch's pair instead. GL there draws its own
 vertices and never the backend's wall mesh; `mapreload.mjs` (`commands: ["map MAP01"]`, a level change)
-checks it still draws after the level loads again, and `glplain.mjs` checks it never reads the mesh. A side's
-A ray-traced side needs `commands: ["fua_dg_rtmirrors 1", "fua_diligent_scene"]`, since tracing is chosen
-when the scene is uploaded (`rtsprites.mjs`). `atVantage` commands run once it stands at each vantage, for a change the view's own walk must see first
+checks it still draws after the level loads again, and `glplain.mjs` checks it never reads the mesh.
+A side's `launchCvars` go on the command line, for what must hold from the level's upload, where its
+`cvars` are set once the level is up (`cameratexpermaterial.mjs`: per-material bindings are made at the
+upload). A ray-traced side needs `commands: ["fua_dg_rtmirrors 1", "fua_diligent_scene"]`, since tracing
+is chosen when the scene is uploaded, and the scenario `needs: ["raytracing"]` (`rtsprites.mjs`). `atVantage` commands run once it stands at each vantage, for a change the view's own walk must see first
 (`fua_mesh_blank` empties the mesh the map bake filled). `fuactl scenarios <name> --side S --cvar k=v`
 adds cvars to one side, which is how a test shows it fails under the behaviour it guards against; a
 scenario without that side is skipped rather than ending the run. `standalonemove.mjs` runs its script
@@ -148,7 +150,15 @@ For a fault that lasts ONE frame (a sprite drawn white the frame its material fi
 capture can catch it: have the engine count it, and use `compareCounter`, which stands at each vantage
 with the sim running and holds a console command's number to a ceiling (`counter: { command, label,
 pattern, ceiling | floor }`, `pattern`'s first group the number), launched with the first non-GL side's
-cvars. `spriteslots.mjs` reads `fua_dg_dynstats`; `particles.mjs` holds a floor.
+cvars. `spriteslots.mjs` reads `fua_dg_dynstats`; `particles.mjs` holds a floor. `compareOverTime` and
+`compareCounter` both launch with the first non-GL side's settings.
+
+`scenarios --webgpu` runs the set on the WebGPU device, and how depends on how a scenario judges: one
+compared across launches runs its first Vulkan side on Vulkan and on WebGPU, every box at
+`WEBGPU_CEILING`; one judged against itself (`compareOverTime`, `compareCounter`) runs on WebGPU alone
+with its own limits; a `compareSameFrame` one (a WebGPU launch has no GL) and one that `needs:
+["raytracing"]` are skipped with that reason. A scenario that throws counts as one failure and the run
+goes on.
 
 `BOXES[map]` is `{ name: { box: [x0, y0, x1, y1], ceiling } }` in frame fractions. Set ceilings from
 measurement, not taste: run the FIXED build, take what it reads, add margin. A map with a known,
