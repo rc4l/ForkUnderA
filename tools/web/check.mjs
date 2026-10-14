@@ -74,6 +74,11 @@ export function gpuError(lines) {
   return line ? `the device reported: ${line.slice(line.indexOf('WebGPU error:') + 'WebGPU error:'.length).replace(/\s+/g, ' ').trim().slice(0, 300)}` : '';
 }
 
+// [rc4l] Why the canvas was configured wrongly, or '': never, or again after the first time with nothing resized.
+export function configuredOnce(n) {
+  return n === 1 ? '' : `the canvas was configured ${n} times`;
+}
+
 // [rc4l] Why firing at the floor went wrong, or '': the decal pass drawing no mark, which would leave it untried.
 export function marked({ draws }) {
   return draws > 0 ? '' : 'the decal pass drew no mark';
@@ -123,6 +128,17 @@ export const CHECKS = [
     evaluate: inPage(`${pause(3000)} Module.fuaCommand('fullscreen true'); ${pause(1000)} Module.fuaCommand('fullscreen false'); ${pause(1000)} return window.fuaZeroCanvas;`),
     until: EVAL,
     expect: (n) => (n ? `the canvas was sized to zero ${n} times` : ''),
+  },
+  // [rc4l] Each configure makes the browser new swap textures, which Chrome on Linux failed to give the page once the first frame configured it again.
+  {
+    name: 'the canvas is configured once through a level start',
+    init: `window.fuaConfigures = 0; {
+      const real = GPUCanvasContext.prototype.configure;
+      GPUCanvasContext.prototype.configure = function (c) { window.fuaConfigures++; return real.call(this, c); };
+    }`,
+    evaluate: inPage(`${pause(3000)} return window.fuaConfigures;`),
+    until: EVAL,
+    expect: configuredOnce,
   },
   // [rc4l] A bullet's mark on the floor goes through the decal pass, which samples the scene's depth.
   {

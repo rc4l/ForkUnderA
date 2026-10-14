@@ -21,6 +21,7 @@
 #ifdef FUA_DILIGENT
 
 #include "features/hwrender/diligent/dgdevice.h"
+#include "features/hwrender/computation/framepacing_compute.h"   // [rc4l] ComputePresentInterval
 #include "RenderDevice.h"
 #include "DeviceContext.h"
 #include "SwapChain.h"
@@ -196,7 +197,7 @@ bool DiligentFrame(int count, FString &report)
 		draw.Flags = Diligent::DRAW_FLAG_VERIFY_ALL;
 		ctx->Draw(draw);
 
-		g_swap->Present(0);
+		g_swap->Present(ComputePresentInterval(false, PagePaced()));
 		Fua_PumpBackendWindow(g_hwnd);
 	}
 	g_frames += count;

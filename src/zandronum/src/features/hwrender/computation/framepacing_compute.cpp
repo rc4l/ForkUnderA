@@ -11,4 +11,9 @@ unsigned long long ComputeFenceWaitValue(unsigned long long signalled, int maxAh
 	return signalled - (unsigned long long)maxAhead;
 }
 
+int ComputePresentInterval(bool vsync, bool pagePaced)
+{
+	return vsync || pagePaced ? 1 : 0;
+}
+
 }} // namespace zx::hwrender

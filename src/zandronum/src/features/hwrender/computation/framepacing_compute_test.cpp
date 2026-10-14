@@ -6,6 +6,7 @@
 #include <gtest/gtest.h>
 
 using zx::hwrender::ComputeFenceWaitValue;
+using zx::hwrender::ComputePresentInterval;
 
 TEST(FramePacing, TheFirstFramesWaitForNothing)
 {
@@ -27,4 +28,17 @@ TEST(FramePacing, NoneAheadMeansNoPacing)
 TEST(FramePacing, ANegativeAheadIsPacingOff)
 {
 	EXPECT_EQ(0ull, ComputeFenceWaitValue(10, -3));
+}
+
+TEST(FramePacing, VsyncPresentsEveryRefresh)
+{
+	EXPECT_EQ(1, ComputePresentInterval(true, false));
+	EXPECT_EQ(0, ComputePresentInterval(false, false));
+}
+
+// [rc4l] Asking a page's canvas for 0 changed nothing on screen and remade its swapchain on the first frame, which Chrome on Linux then failed to give a texture.
+TEST(FramePacing, APageAlwaysPresentsAtItsCompositorsPace)
+{
+	EXPECT_EQ(1, ComputePresentInterval(false, true));
+	EXPECT_EQ(1, ComputePresentInterval(true, true));
 }

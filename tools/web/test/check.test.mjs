@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CHECKS, blankGame, crashOffered, crosshairCentred, gpuError, inPage, judge, marked, reportSent, saveLoads, savePicture, selectChecks, soundStarts } from '../check.mjs';
+import { CHECKS, blankGame, configuredOnce, crashOffered, crosshairCentred, gpuError, inPage, judge, marked, reportSent, saveLoads, savePicture, selectChecks, soundStarts } from '../check.mjs';
 
 test('page code waits for the engine to start before it runs', () => {
   const js = inPage('return 1;');
@@ -144,4 +144,10 @@ test('a sent report needs the engine to have told the page its game and setting,
   assert.equal(reportSent({ ...good, event: { level: 'error', files: 'freedoom2.wad' } }), 'the report sent did not carry the game');
   assert.equal(reportSent({ ...good, event: { level: 'fatal', files: '' } }), 'the report sent did not carry the game');
   assert.equal(reportSent({ ...good, status: 'The report could not be sent' }), 'the page said: The report could not be sent');
+});
+
+test('the canvas is configured exactly once without a resize', () => {
+  assert.equal(configuredOnce(1), '');
+  assert.equal(configuredOnce(2), 'the canvas was configured 2 times');
+  assert.equal(configuredOnce(0), 'the canvas was configured 0 times');
 });

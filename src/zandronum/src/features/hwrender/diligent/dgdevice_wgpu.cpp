@@ -74,10 +74,12 @@ bool CaptureFrameLater(const char *) { return false; }
 const DeviceApi *WebGPUDeviceApi()
 {
 #if PLATFORM_WEB
-	static const DeviceApi api = { "WebGPU", CreateDevice, CreateSwapChain, false };
+	// [rc4l] A browser maps buffers only asynchronously, and paces the page's frames itself.
+	const bool inBrowser = true;
 #else
-	static const DeviceApi api = { "WebGPU", CreateDevice, CreateSwapChain, true };
+	const bool inBrowser = false;
 #endif
+	static const DeviceApi api = { "WebGPU", CreateDevice, CreateSwapChain, !inBrowser, inBrowser };
 	return &api;
 }
 

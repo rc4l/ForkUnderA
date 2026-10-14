@@ -64,7 +64,7 @@ static void CreateSwapChain(Diligent::IRenderDevice *device, Diligent::IDeviceCo
 
 const DeviceApi *VulkanDeviceApi()
 {
-	static const DeviceApi api = { "Vulkan", CreateDevice, CreateSwapChain, true };
+	static const DeviceApi api = { "Vulkan", CreateDevice, CreateSwapChain, true, false };
 	return &api;
 }
 

@@ -16,6 +16,7 @@
 #ifdef FUA_DILIGENT
 
 #include "features/hwrender/diligent/dgscene_internal.h"
+#include "features/hwrender/diligent/dgdevice.h"   // [rc4l] PagePaced
 #include "features/viewsetup/viewsetup.h"   // [MobiusU9B] the view's lens
 
 // [rc4l] Declared outside the namespace: EXTERN_CVAR builds a name from the identifier, so a
@@ -699,7 +700,7 @@ void PresentFrame(Diligent::IDeviceContext *ctx, Diligent::ISwapChain *swap, boo
 	SignalFrame(ctx);
 	{
 		const zx::framephase::Scope presentPhase(zx::framephase::kPhasePresent);
-		swap->Present(vid_vsync ? 1 : 0);
+		swap->Present(zx::hwrender::ComputePresentInterval(vid_vsync, PagePaced()));
 		PaceFrames();
 	}
 	RecordPresentInterval();

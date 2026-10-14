@@ -176,6 +176,8 @@ const char *BackendApiName() { return ChosenDeviceApi()->name; }
 
 bool CanWaitForGPU() { return ChosenDeviceApi()->canWaitForGPU; }
 
+bool PagePaced() { return ChosenDeviceApi()->pagePaced; }
+
 bool BackendDeviceStarts()
 {
 	FString report;

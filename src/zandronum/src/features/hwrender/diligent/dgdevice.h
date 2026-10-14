@@ -27,6 +27,8 @@ struct DeviceApi
 		const Diligent::NativeWindow &window, Diligent::ISwapChain **swap);
 	// [rc4l] Whether the CPU can wait for the GPU (an idle wait, a readback mapped at once), which a browser's WebGPU only does asynchronously.
 	bool canWaitForGPU;
+	// [rc4l] Whether a page's compositor paces the frames (a browser's canvas), which ComputePresentInterval presents at 1.
+	bool pagePaced;
 };
 
 const DeviceApi *VulkanDeviceApi();
@@ -37,6 +39,9 @@ const DeviceApi *ChosenDeviceApi();
 
 // [rc4l] ChosenDeviceApi's canWaitForGPU, for the readbacks and idle waits that need it.
 bool CanWaitForGPU();
+
+// [rc4l] ChosenDeviceApi's pagePaced, for the present interval.
+bool PagePaced();
 
 }} // namespace zx::hwrender
 
