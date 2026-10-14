@@ -106,12 +106,6 @@ EXTERN_CVAR (Int, screenblocks)
 EXTERN_CVAR (Bool, cl_capfps)
 EXTERN_CVAR (Bool, r_deathcamera)
 
-// [BB]
-CUSTOM_CVAR( Bool, cl_disallowfullpitch, false, CVAR_ARCHIVE )
-{
-	// [AK] Reimpose the new pitch limits for all active players.
-	P_ResetPlayerPitchLimits();
-}
 
 EXTERN_CVAR (Bool, cl_oldfreelooklimit)
 

@@ -149,7 +149,9 @@ void StandaloneScene()
 	}
 	if (walked) MarkSeenCameraTextures(walkedSet);
 	// [rc4l] The hitbox view's boxes for the player's view, from the sectors its walk reached as GL's RenderThings takes them.
+#ifndef NO_GL
 	if (zx::levelmesh::PlayerWalkActive()) zx::hitboxviz::CollectBackendFrame(camera, walkedSet.sectors, walkedSet.sectorCount);
+#endif
 	const zx::framephase::Scope actorsPhase(zx::framephase::kPhaseActors);
 	SweepActors();
 }

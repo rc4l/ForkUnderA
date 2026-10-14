@@ -55,7 +55,7 @@
 #include "gl/textures/gl_material.h"
 #include "gl/utility/gl_convert.h"
 
-CVAR(Bool,r_noskyboxes, false, 0)
+EXTERN_CVAR(Bool, r_noskyboxes)
 extern int skyfog;
 
 enum

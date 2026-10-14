@@ -5,6 +5,7 @@
 #include "features/levelmesh/computation/shading_compute.h"   // [rc4l] ShadingEnv
 #include "doomstat.h"   // [rc4l] zadmflags
 #include "g_level.h"    // [rc4l] level.flags
+#include "d_player.h"   // [rc4l] P_ResetPlayerPitchLimits
 
 #include <string.h>   // [rc4l] memset, clearing the map sections
 
@@ -34,6 +35,43 @@ MapSectionScope::MapSectionScope() : saved(currentmapsection) { ClearMapSections
 MapSectionScope::~MapSectionScope() { currentmapsection = saved; }
 
 CVAR(Int, r_weaponlight, 8, CVAR_ARCHIVE);
+
+// [rc4l] Settings both renderers read, defined here rather than in gl/ so a build without GL (the server) still links them.
+CVAR(Bool, r_mirrors, true, 0)	// This is for debugging only!
+CVAR(Bool, r_mirror_envmap, true, CVAR_GLOBALCONFIG|CVAR_ARCHIVE)
+CVAR(Bool, r_seamless, false, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
+CUSTOM_CVAR(Int, r_mirror_recursions, 4, CVAR_GLOBALCONFIG|CVAR_ARCHIVE)
+{
+	if (self<0) self=0;
+	if (self>10) self=10;
+}
+bool gl_plane_reflection_i;	// This is needed in a header that cannot include the CVAR stuff...
+CUSTOM_CVAR(Bool, gl_plane_reflection, true, CVAR_GLOBALCONFIG|CVAR_ARCHIVE)
+{
+	gl_plane_reflection_i = self;
+}
+CVAR(Bool, r_brightfog, false, CVAR_ARCHIVE);
+CVAR(Bool, r_usecolorblending, true, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
+CVAR(Bool, r_sprite_blend, false, CVAR_ARCHIVE|CVAR_GLOBALCONFIG);
+CVAR(Int, r_spriteclip, 1, CVAR_ARCHIVE)
+CVAR(Float, r_sclipthreshold, 10.0, CVAR_ARCHIVE)
+CVAR(Float, r_sclipfactor, 1.8, CVAR_ARCHIVE)
+CVAR(Int, r_particles_style, 2, CVAR_ARCHIVE | CVAR_GLOBALCONFIG) // 0 = square, 1 = round, 2 = smooth
+CVAR(Int, r_billboard_mode, 0, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
+CVAR(Bool, r_billboard_particles, true, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
+CVAR(Int, r_enhanced_nv_stealth, 3, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
+CUSTOM_CVAR(Int, r_fuzztype, 0, CVAR_ARCHIVE)
+{
+	if (self < 0 || self > 7) self = 0;
+}
+CVAR(Bool, r_noskyboxes, false, 0)
+CVAR(Bool, gl_render_things, true, CVAR_DEBUGONLY)
+// [BB]
+CUSTOM_CVAR( Bool, cl_disallowfullpitch, false, CVAR_ARCHIVE )
+{
+	// [AK] Reimpose the new pitch limits for all active players.
+	P_ResetPlayerPitchLimits();
+}
 
 // [rc4l] Whether the server forces video defaults (ZADF_FORCE_VIDEO_DEFAULTS).
 static bool VideoDefaultsForced()

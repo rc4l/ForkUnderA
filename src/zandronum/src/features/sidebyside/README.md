@@ -34,5 +34,6 @@ module talks to GL only through the renderer interface.
 - `gl/scene/gl_bsp.cpp`, `gl_walls.cpp`, `gl_portal.cpp`, `gl_scene.cpp`, `gl_sprite.cpp`, `gl_weapon.cpp`
   and `gl/models/gl_models.cpp`: what they report
   to `gl_observer` when it is set.
-- `CMakeLists.txt`: `sidebyside.cpp` uses `IMPLEMENT_CLASS`, so it is listed in `add_executable`
-  before `zzautozend.cpp`.
+- `CMakeLists.txt`: all three files are in `GL_SOURCES`, which a build without GL (the server) leaves out;
+  `sidebyside.cpp` uses `IMPLEMENT_CLASS`, and `GL_SOURCES` is expanded in `add_executable` before
+  `zzautozend.cpp`.

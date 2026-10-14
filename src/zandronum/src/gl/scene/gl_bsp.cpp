@@ -68,7 +68,7 @@ Clipper clipper;
 
 
 // [BB] Don't allow this in release builds.
-CVAR(Bool, gl_render_things, true, CVAR_DEBUGONLY)
+EXTERN_CVAR(Bool, gl_render_things)
 CVAR(Bool, gl_render_walls, true, CVAR_DEBUGONLY)
 CVAR(Bool, gl_render_flats, true, CVAR_DEBUGONLY)
 

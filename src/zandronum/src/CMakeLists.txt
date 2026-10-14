@@ -921,6 +921,10 @@ if( NOT NO_GL )
 		gl/system/gl_menu.cpp
 		gl/system/gl_wipe.cpp
 		gl/models/gl_models.cpp
+		# [rc4l] Side by side compares against GL's own frame (its window is an OpenGLFrameBuffer), so it goes wherever GL does.
+		features/sidebyside/sidebyside.cpp
+		features/sidebyside/glchecks.cpp
+		features/sidebyside/surfaceverify.cpp
 	)
 else( NOT NO_GL )
 	set( GL_SOURCES posix/sdl/glstubs.cpp )
@@ -1647,8 +1651,6 @@ add_executable( zdoom WIN32
 	features/display/display.cpp
 	features/hwrender/backendvideo.cpp
 	features/hwrender/record2d.cpp
-	features/sidebyside/sidebyside.cpp
-	features/sidebyside/glchecks.cpp
 	features/hwrender/backendrenderer.cpp
 	features/visibility/viswalk.cpp
 	features/jobs/jobs.cpp
@@ -1705,7 +1707,6 @@ add_executable( zdoom WIN32
 	features/surfaces/computation/walluv_compute.cpp
 	features/surfaces/computation/planegeom_compute.cpp
 	features/surfaces/computation/surfacechange_compute.cpp
-	features/sidebyside/surfaceverify.cpp
 	features/surfaces/surfacebuild.cpp
 	features/horizon/horizon.cpp
 	features/horizon/computation/horizon_compute.cpp

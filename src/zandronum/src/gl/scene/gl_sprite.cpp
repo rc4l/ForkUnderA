@@ -73,20 +73,17 @@ const zx::hwrender::SpriteViewProvider &gl_SpriteView();   // [rc4l] gl/scene/gl
 #include "features/sprites/computation/spritestyle_compute.h"	// [rc4l] kHw*, which hw_styleflags must match
 #include "features/damage-tint/damagetint.h"	// [rc4l] damaging-floor sprite glow
 
-CVAR(Bool, r_usecolorblending, true, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 CVAR(Bool, gl_spritebrightfog, false, CVAR_ARCHIVE|CVAR_GLOBALCONFIG);
-CVAR(Bool, r_sprite_blend, false, CVAR_ARCHIVE|CVAR_GLOBALCONFIG);
-CVAR(Int, r_spriteclip, 1, CVAR_ARCHIVE)
-CVAR(Float, r_sclipthreshold, 10.0, CVAR_ARCHIVE)
-CVAR(Float, r_sclipfactor, 1.8, CVAR_ARCHIVE)
-CVAR(Int, r_particles_style, 2, CVAR_ARCHIVE | CVAR_GLOBALCONFIG) // 0 = square, 1 = round, 2 = smooth
-CVAR(Int, r_billboard_mode, 0, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
-CVAR(Bool, r_billboard_particles, true, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
-CVAR(Int, r_enhanced_nv_stealth, 3, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
-CUSTOM_CVAR(Int, r_fuzztype, 0, CVAR_ARCHIVE)
-{
-	if (self < 0 || self > 7) self = 0;
-}
+EXTERN_CVAR(Bool, r_usecolorblending)
+EXTERN_CVAR(Bool, r_sprite_blend)
+EXTERN_CVAR(Int, r_spriteclip)
+EXTERN_CVAR(Float, r_sclipthreshold)
+EXTERN_CVAR(Float, r_sclipfactor)
+EXTERN_CVAR(Int, r_particles_style)
+EXTERN_CVAR(Int, r_billboard_mode)
+EXTERN_CVAR(Bool, r_billboard_particles)
+EXTERN_CVAR(Int, r_enhanced_nv_stealth)
+EXTERN_CVAR(Int, r_fuzztype)
 
 extern bool r_showviewer;
 EXTERN_CVAR (Float, transsouls)

@@ -69,7 +69,6 @@ CUSTOM_CVAR(Bool, r_enhanced_nightvision, true, CVAR_ARCHIVE|CVAR_NOINITCALL)
 		GLRenderer->mShaderManager->ResetFixedColormap();
 	}
 }
-CVAR(Bool, r_brightfog, false, CVAR_ARCHIVE);
 
 
 
