@@ -1171,8 +1171,6 @@ set( ONLINE_SOURCES
 	features/wad-serve/computation/ratebucket_compute.cpp
 	features/wad-serve/computation/httpreq_compute.cpp
 	features/wad-serve/computation/servepolicy_compute.cpp
-	# Generated; listed so the custom command above actually runs as part of this target.
-	${CMAKE_CURRENT_BINARY_DIR}/zx_waddownload_lists.h
 	features/server-browser/browser.cpp #ST
 	features/server-browser/zx_serverbrowsermenu.cpp
 	features/server-browser/zx_joinserver.cpp
@@ -1620,6 +1618,8 @@ add_executable( zdoom WIN32
 	# [rc4l] Wad hashing and the search of the player's own folders, which an offline build needs too.
 	features/wad-download/zx_filehash.cpp
 	features/wad-download/zx_wadsearch.cpp
+	# Generated; listed so the custom command above actually runs as part of this target, and kept by an offline build, whose wad search reads it.
+	${CMAKE_CURRENT_BINARY_DIR}/zx_waddownload_lists.h
 	features/damage-tint/damagetint.cpp
 	features/global-header/zx_globalheader.cpp
 	features/menu-focus/zx_focusglow.cpp
