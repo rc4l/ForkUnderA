@@ -213,8 +213,9 @@ Paths are relative to `src/zandronum/src/` unless noted. The order is deliberate
   - storage buffers carry no dynamic offset;
   - the 2D and sky pipelines match their passes' attachments.
 - **Loop (4a, 4c, 4d, 4g; 4b decided):** `features/mainloop` and `features/web`'s driver.
-- **Offline and online seams (5d, 5g, 5h):**
-  - `-offline`, which the page always passes;
+- **Offline and online seams (5d-5h):**
+  - `-offline`, which the page always passes; an offline launch greys "Play Online!" and asks the network nothing;
+  - `ZX_ONLINE` off leaves out `ONLINE_SOURCES` (95 files) for `features/offline/offlinestubs.cpp`, grown from the offline link's 77 undefined symbols; the browser build is built this way (0.9 MB less wasm) and so is `linux-offline`;
   - `ZX_VOIP` and `ZX_ACCOUNTS`;
   - hashing through the in-tree SHA-256 and MD5;
   - the accounts' crypto behind `zx_identitycrypto.h`.
@@ -230,13 +231,13 @@ Paths are relative to `src/zandronum/src/` unless noted. The order is deliberate
 - **Camera textures on a binding per material:** the binding was made before the camera's first render and kept the white placeholder. WebGPU always draws this way, as does Vulkan past the array's cap; `cameratexpermaterial` covers it.
 - **Checks (13a, 13c, 13d, 13e):**
   - The gtests build with Emscripten, threads and wasm exceptions, and pass in Node (`test-web` in CI).
-  - `tools/web/check.mjs` runs the page in headless Chrome: its screenshot shows MAP01, the sound waits for a click and starts on one (11b), the screenshot command downloads the frame, a save gets its picture, quitting stops the loop, a setting survives quitting, leaving and reloading, and errors reach the console or the page. CI runs it after the web build, on SwiftShader's WebGPU.
+  - `tools/web/check.mjs` runs the page in headless Chrome: its screenshot shows MAP01, the sound waits for a click and plays after one (11b, 11c), Tab stays in the game rather than moving the page's focus (11e), the screenshot command downloads the frame, a save gets its picture, quitting stops the loop, a setting survives quitting, leaving and reloading, and errors reach the console or the page. CI runs it after the web build, on SwiftShader's WebGPU.
   - CI builds the web module (`build-web`) and runs the tripwire.
   - `fuactl scenarios --webgpu` runs the suite on WebGPU against Vulkan.
 - **Next:**
-  - music, pointer lock and keyboard, checked by hand (11);
+  - music and pointer lock, checked by hand (11; headless Chrome has no pointer lock);
   - the build presets for the other profiles (3);
-  - the `ONLINE_SOURCES` list (5e, 5f).
+  - the `linux-offline` profile through the scenario suite with no socket opened (5j).
 
 ## 14. Done: playing locally
 

@@ -46,11 +46,12 @@
       "name": "linux-offline",
       "inherits": "linux",
       "displayName": "Linux: offline",
-      "description": "The client without the parts that need a service: no accounts (OpenSSL), voice chat or crash reporting.",
+      "description": "The client without the features that reach other machines (ZX_ONLINE off: hosting, the server browser, wad downloads, the updater, accounts), voice chat or crash reporting.",
       "cacheVariables": {
         "ZX_ACCOUNTS": "OFF",
         "ZX_VOIP": "OFF",
-        "ZX_ENABLE_SENTRY": "OFF"
+        "ZX_ENABLE_SENTRY": "OFF",
+        "ZX_ONLINE": "OFF"
       }
     },
     {
@@ -88,7 +89,8 @@
         "FORCE_INTERNAL_JPEG": "ON",
         "FORCE_INTERNAL_BZIP2": "ON",
         "FORCE_INTERNAL_GME": "ON",
-        "DYN_FLUIDSYNTH": "ON"
+        "DYN_FLUIDSYNTH": "ON",
+        "ZX_ONLINE": "OFF"
       }
     }
   ]

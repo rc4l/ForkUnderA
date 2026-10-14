@@ -13,6 +13,7 @@
 
 #include "features/global-header/computation/globalheader_compute.h"
 #include "features/global-header/computation/headerreach_compute.h"
+#include "features/net/zx_offline.h"   // [rc4l] OfflineLaunch
 #include "features/global-header/computation/menuresume_compute.h"
 #include "features/server-browser/browser.h"
 #include "features/server-browser/zx_joinserver.h" // IsServerBrowserOpen: which tab is lit
@@ -211,6 +212,11 @@ HeaderTab CurrentTab( )
 HeaderReach Reach( )
 {
 	ReachIn in;
+
+	// [rc4l] A launch that keeps off the network has no socket to ask with, and nothing to be told.
+	in.offlineLaunch = net::OfflineLaunch( );
+	if ( in.offlineLaunch )
+		return ComputeHeaderReach( in );
 
 	const unsigned int count = BROWSER_GetServerRegistryCount( );
 	for ( unsigned int i = 0; i < count; ++i )

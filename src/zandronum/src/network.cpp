@@ -1157,6 +1157,10 @@ NETADDRESS_s NETWORK_GetLocalAddress( void )
 	struct sockaddr_storage	SocketAddress;
 	int					iNameLength;
 
+	// [rc4l] An offline launch opened no socket to ask, and has no address worth reporting.
+	if ( zx::net::OfflineLaunch( ))
+		return NETADDRESS_s( );
+
 #ifndef __WINE__
 	gethostname( szBuffer, 512 );
 #endif

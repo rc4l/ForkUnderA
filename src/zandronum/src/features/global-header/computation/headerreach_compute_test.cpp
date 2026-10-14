@@ -93,6 +93,17 @@ TEST( HeaderReach, TheThreeVerdictsGetTheThreeColours )
 	EXPECT_EQ( ReachTint::Green, HeaderReachTint( HeaderReach::Internet ));
 	EXPECT_EQ( ReachTint::Orange, HeaderReachTint( HeaderReach::LanOnly ));
 	EXPECT_EQ( ReachTint::Grey, HeaderReachTint( HeaderReach::Offline ));
+	EXPECT_EQ( ReachTint::Grey, HeaderReachTint( HeaderReach::OfflineLaunch ));
+}
+
+// [rc4l] A launch that keeps off the network is offline by choice, whatever else the signals say.
+TEST( HeaderReach, AnOfflineLaunchOutranksEverySignal )
+{
+	ReachIn in = Signals( true, true, true );
+	in.offlineLaunch = true;
+	EXPECT_EQ( HeaderReach::OfflineLaunch, ComputeHeaderReach( in ));
+	EXPECT_FALSE( PlayOnlineSelectable( HeaderReach::OfflineLaunch ));
+	EXPECT_NE( std::string( HeaderReachTooltip( HeaderReach::OfflineLaunch )), std::string( HeaderReachTooltip( HeaderReach::Offline )));
 }
 
 // --------------------------------------------------------------- tooltips
@@ -100,9 +111,9 @@ TEST( HeaderReach, TheThreeVerdictsGetTheThreeColours )
 TEST( HeaderReach, EveryVerdictSaysSomething )
 {
 	const HeaderReach all[] = { HeaderReach::Checking, HeaderReach::Internet,
-		HeaderReach::LanOnly, HeaderReach::Offline };
+		HeaderReach::LanOnly, HeaderReach::Offline, HeaderReach::OfflineLaunch };
 
-	for ( int i = 0; i < 4; ++i )
+	for ( int i = 0; i < 5; ++i )
 	{
 		const std::string tip = HeaderReachTooltip( all[i] );
 		EXPECT_FALSE( tip.empty( )) << "verdict " << i;

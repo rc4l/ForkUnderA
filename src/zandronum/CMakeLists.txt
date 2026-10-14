@@ -150,6 +150,8 @@ option( FUA_DILIGENT "Build the Diligent (Vulkan) render backend" ${FUA_DILIGENT
 option( ZX_VOIP "Build voice chat (Opus, RNNoise)" ON )
 # [rc4l] Signed anonymous accounts (OpenSSL's Ed25519 and X25519); without them the identity reports failure and online play goes unsigned.
 option( ZX_ACCOUNTS "Build signed accounts (OpenSSL)" ON )
+# [rc4l] The features that reach other machines (src/CMakeLists.txt ONLINE_SOURCES); without them a build plays offline only, as the browser's does.
+option( ZX_ONLINE "Build hosting, the server browser, wad downloads, the updater and accounts" ON )
 # [rc4l] The same backend on WebGPU: Dawn beside Vulkan on the desktop (-webgpu), where the browser build's renderer is checked against Vulkan.
 option( FUA_WEBGPU "Build the Diligent backend's WebGPU device (Dawn on the desktop)" OFF )
 # [rc4l] Off only for a server: a build without GL may still ask for the backend alone (the browser's, -DFUA_DILIGENT=ON).

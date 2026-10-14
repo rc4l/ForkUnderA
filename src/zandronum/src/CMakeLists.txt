@@ -1118,6 +1118,107 @@ set( NOT_COMPILED_SOURCE_FILES
 # if it doesn't exist yet.
 set_source_files_properties( ${CMAKE_CURRENT_SOURCE_DIR}/network/servercommands.cpp PROPERTIES GENERATED TRUE )
 
+# [rc4l] The features that reach other machines (web-port-design 5e): accounts, the HTTP layer, wad downloads and serving, the wad library, port mapping, hosting, the
+# server browser and its registry, and the updater. A build with ZX_ONLINE off has features/offline/offlinestubs.cpp in their place, whose entry points say so.
+set( ONLINE_SOURCES
+	features/identity/zx_identity.cpp
+	${ZX_IDENTITY_CRYPTO}
+	features/identity/zx_identitynet.cpp
+	features/net/zx_httpsget.cpp
+	features/net/zx_resolve.cpp
+	features/net/zx_httpfile.cpp
+	features/net/zx_httpfile_win.cpp
+	features/wad-library/zx_wadlibrary.cpp
+	features/wad-library/computation/wadlibrary_compute.cpp
+	features/wad-library/computation/loadorder_compute.cpp
+	features/wad-library/computation/pathdisplay_compute.cpp
+	features/wad-download/zx_waddownload.cpp
+	features/wad-download/zx_resolvejob.cpp
+	features/wad-download/computation/jobstate_compute.cpp
+	features/wad-download/computation/downloadplan_compute.cpp
+	features/wad-download/computation/iwadallow_compute.cpp
+	features/wad-download/computation/iwadsubstitute_compute.cpp
+	features/wad-download/computation/fileresolve_compute.cpp
+	features/wad-download/computation/wadstore_compute.cpp
+	features/port-mapping/zx_portmap.cpp
+	features/port-mapping/computation/ssdp_compute.cpp
+	features/port-mapping/computation/upnpsoap_compute.cpp
+	features/port-mapping/computation/natpmp_compute.cpp
+	features/server-hosting/zx_hosting.cpp
+	features/server-hosting/zx_hostprocess.cpp
+	features/server-hosting/zx_hostwatchdog.cpp
+	features/server-hosting/computation/hostargs_compute.cpp
+	features/server-hosting/computation/hostlifecycle_compute.cpp
+	features/server-hosting/computation/hostport_compute.cpp
+	features/server-hosting/computation/hoststatus_compute.cpp
+	features/net/computation/v6mapped_compute.cpp
+	features/net/computation/v6prefix_compute.cpp
+	features/server-hosting/computation/punchbroker_compute.cpp
+	features/server-hosting/zx_punchclient.cpp
+	features/server-browser/computation/mapselect_compute.cpp
+	features/server-browser/computation/toolgrid_compute.cpp
+	features/server-hosting/computation/hostfocus_compute.cpp
+	features/server-hosting/computation/hostsettings_compute.cpp
+	features/server-hosting/computation/reachprobe_compute.cpp
+	features/server-hosting/zx_reachprobe.cpp
+	features/addon-catalogue/zx_catalogue.cpp
+	features/addon-catalogue/computation/addonfile_compute.cpp
+	features/addon-catalogue/computation/iwadpick_compute.cpp
+	features/addon-catalogue/computation/pickerview_compute.cpp
+	features/addon-catalogue/computation/hostplan_compute.cpp
+	features/addon-catalogue/computation/compat_compute.cpp
+	features/wad-serve/zx_wadserve.cpp
+	features/wad-serve/computation/ratebucket_compute.cpp
+	features/wad-serve/computation/httpreq_compute.cpp
+	features/wad-serve/computation/servepolicy_compute.cpp
+	# Generated; listed so the custom command above actually runs as part of this target.
+	${CMAKE_CURRENT_BINARY_DIR}/zx_waddownload_lists.h
+	features/server-browser/browser.cpp #ST
+	features/server-browser/zx_serverbrowsermenu.cpp
+	features/server-browser/zx_joinserver.cpp
+	features/server-browser/computation/serverbrowser_compute.cpp
+	features/server-browser/computation/registrystatus_compute.cpp
+	features/server-browser/computation/browserchrome_compute.cpp
+	features/server-browser/computation/choicerow_compute.cpp
+	features/server-browser/computation/pointerdrag_compute.cpp
+	features/server-browser/computation/browserfocus_compute.cpp
+	features/server-browser/computation/browserhit_compute.cpp
+	features/server-browser/computation/dialog_compute.cpp
+	features/server-browser/computation/pillflow_compute.cpp
+	features/server-browser/computation/flagset_compute.cpp
+	features/server-browser/computation/customsave_compute.cpp
+	features/server-browser/computation/flaghelp_compute.cpp
+	features/server-browser/computation/maplist_compute.cpp
+	features/server-browser/computation/servervar_compute.cpp
+	features/server-browser/zx_customstore.cpp
+	features/server-browser/zx_mapscan.cpp
+	features/server-browser/zx_flagtable.cpp
+	features/server-browser/computation/glowtravel_compute.cpp
+	features/server-browser/computation/bytesize_compute.cpp
+	features/server-browser/computation/colortext_compute.cpp
+	features/server-browser/computation/joinplan_compute.cpp
+	features/server-browser/computation/geoiptable_compute.cpp
+	features/server-browser/computation/joinintent_compute.cpp
+	features/server-browser/computation/joinresume_compute.cpp
+	features/server-browser/computation/scrollbar_compute.cpp
+	features/server-browser/computation/replyrouting_compute.cpp
+	features/server-browser/computation/scrollview_compute.cpp
+	features/server-browser/computation/serversearch_compute.cpp
+	features/server-browser/computation/serversort_compute.cpp
+	features/server-browser/computation/versionrelation_compute.cpp
+	features/server-browser/computation/textinput_compute.cpp
+	features/server-browser/computation/tooltip_compute.cpp
+	features/server-browser/computation/stableline_compute.cpp
+	features/server-browser/computation/launcherfields_compute.cpp
+	features/launcher-protocol/computation/segmentreassembly_compute.cpp
+	features/updater/zx_updater.cpp
+	features/updater/zx_updater_net_win.cpp
+	features/federated-server-registry/zx_serverregistrylist.cpp
+	features/federated-server-registry/computation/serverregistrylist_compute.cpp
+)
+if( NOT ZX_ONLINE )
+	set( ONLINE_SOURCES features/offline/offlinestubs.cpp )
+endif()
 add_executable( zdoom WIN32
 	${HEADER_FILES}
 	${NOT_COMPILED_SOURCE_FILES}
@@ -1514,110 +1615,18 @@ add_executable( zdoom WIN32
 	features/fua-caching/fua_caching.cpp
 	features/fua-caching/fua_warmup.cpp
 	features/iwad-registry/zx_iwadregistry.cpp
-	features/identity/zx_identity.cpp
-	${ZX_IDENTITY_CRYPTO}
-	features/identity/zx_identitynet.cpp
-	features/net/zx_httpsget.cpp
-	features/net/zx_resolve.cpp
+	${ONLINE_SOURCES}
 	features/net/zx_offline.cpp
-	features/net/zx_httpfile.cpp
-	features/net/zx_httpfile_win.cpp
-	features/wad-library/zx_wadlibrary.cpp
-	features/wad-library/computation/wadlibrary_compute.cpp
-	features/wad-library/computation/loadorder_compute.cpp
-	features/wad-library/computation/pathdisplay_compute.cpp
-	features/wad-download/zx_waddownload.cpp
-	features/wad-download/zx_resolvejob.cpp
+	# [rc4l] Wad hashing and the search of the player's own folders, which an offline build needs too.
 	features/wad-download/zx_filehash.cpp
 	features/wad-download/zx_wadsearch.cpp
-	features/wad-download/computation/jobstate_compute.cpp
-	features/wad-download/computation/downloadplan_compute.cpp
-	features/wad-download/computation/iwadallow_compute.cpp
-	features/wad-download/computation/iwadsubstitute_compute.cpp
-	features/wad-download/computation/fileresolve_compute.cpp
-	features/wad-download/computation/wadstore_compute.cpp
-	features/port-mapping/zx_portmap.cpp
-	features/port-mapping/computation/ssdp_compute.cpp
-	features/port-mapping/computation/upnpsoap_compute.cpp
-	features/port-mapping/computation/natpmp_compute.cpp
 	features/damage-tint/damagetint.cpp
-	features/server-hosting/zx_hosting.cpp
-	features/server-hosting/zx_hostprocess.cpp
-	features/server-hosting/zx_hostwatchdog.cpp
-	features/server-hosting/computation/hostargs_compute.cpp
-	features/server-hosting/computation/hostlifecycle_compute.cpp
-	features/server-hosting/computation/hostport_compute.cpp
-	features/server-hosting/computation/hoststatus_compute.cpp
-	features/net/computation/v6mapped_compute.cpp
-	features/net/computation/v6prefix_compute.cpp
-	features/server-hosting/computation/punchbroker_compute.cpp
-	features/server-hosting/zx_punchclient.cpp
-	features/server-browser/computation/mapselect_compute.cpp
-	features/server-browser/computation/toolgrid_compute.cpp
-	features/server-hosting/computation/hostfocus_compute.cpp
-	features/server-hosting/computation/hostsettings_compute.cpp
-	features/server-hosting/computation/reachprobe_compute.cpp
-	features/server-hosting/zx_reachprobe.cpp
-	features/addon-catalogue/zx_catalogue.cpp
-	features/addon-catalogue/computation/addonfile_compute.cpp
-	features/addon-catalogue/computation/iwadpick_compute.cpp
-	features/addon-catalogue/computation/pickerview_compute.cpp
-	features/addon-catalogue/computation/hostplan_compute.cpp
-	features/addon-catalogue/computation/compat_compute.cpp
-	features/wad-serve/zx_wadserve.cpp
-	features/wad-serve/computation/ratebucket_compute.cpp
-	features/wad-serve/computation/httpreq_compute.cpp
-	features/wad-serve/computation/servepolicy_compute.cpp
-	# Generated; listed so the custom command above actually runs as part of this target.
-	${CMAKE_CURRENT_BINARY_DIR}/zx_waddownload_lists.h
-	features/server-browser/browser.cpp #ST
-	features/server-browser/zx_serverbrowsermenu.cpp
-	features/server-browser/zx_joinserver.cpp
 	features/global-header/zx_globalheader.cpp
 	features/menu-focus/zx_focusglow.cpp
 	features/global-header/computation/globalheader_compute.cpp
 	features/global-header/computation/headerreach_compute.cpp
-	features/server-browser/computation/serverbrowser_compute.cpp
-	features/server-browser/computation/registrystatus_compute.cpp
-	features/server-browser/computation/browserchrome_compute.cpp
-	features/server-browser/computation/choicerow_compute.cpp
-	features/server-browser/computation/pointerdrag_compute.cpp
-	features/server-browser/computation/browserfocus_compute.cpp
-	features/server-browser/computation/browserhit_compute.cpp
-	features/server-browser/computation/dialog_compute.cpp
-	features/server-browser/computation/pillflow_compute.cpp
-	features/server-browser/computation/flagset_compute.cpp
-	features/server-browser/computation/customsave_compute.cpp
-	features/server-browser/computation/flaghelp_compute.cpp
-	features/server-browser/computation/maplist_compute.cpp
-	features/server-browser/computation/servervar_compute.cpp
-	features/server-browser/zx_customstore.cpp
-	features/server-browser/zx_mapscan.cpp
-	features/server-browser/zx_flagtable.cpp
-	features/server-browser/computation/glowtravel_compute.cpp
-	features/server-browser/computation/bytesize_compute.cpp
-	features/server-browser/computation/colortext_compute.cpp
-	features/server-browser/computation/joinplan_compute.cpp
-	features/server-browser/computation/geoiptable_compute.cpp
-	features/server-browser/computation/joinintent_compute.cpp
-	features/server-browser/computation/joinresume_compute.cpp
-	features/server-browser/computation/scrollbar_compute.cpp
-	features/server-browser/computation/replyrouting_compute.cpp
-	features/server-browser/computation/scrollview_compute.cpp
-	features/server-browser/computation/serversearch_compute.cpp
-	features/server-browser/computation/serversort_compute.cpp
-	features/server-browser/computation/versionrelation_compute.cpp
-	features/server-browser/computation/textinput_compute.cpp
-	features/server-browser/computation/tooltip_compute.cpp
-	features/server-browser/computation/stableline_compute.cpp
-	features/server-browser/computation/launcherfields_compute.cpp
-	features/launcher-protocol/computation/segmentreassembly_compute.cpp
 	features/panel-menu/panelmenu.cpp
 	features/panel-menu/computation/panelmenu_compute.cpp
-	features/updater/zx_updater.cpp
-	features/updater/zx_updater_net_win.cpp
-	features/federated-server-registry/zx_serverregistrylist.cpp
-	features/federated-server-registry/computation/serverregistrylist_compute.cpp
 	features/hitboxviz/hitboxviz.cpp
 	features/hitboxviz/computation/boxedges_compute.cpp
 	features/hitboxviz/computation/blastrecords_compute.cpp
