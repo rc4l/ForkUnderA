@@ -423,3 +423,15 @@ TArray<FString> I_GetGogPaths()
 	// GOG's Doom games are Windows only at the moment
 	return TArray<FString>();
 }
+
+
+// [rc4l] Whether the app has focus, which is when applicationDidBecomeActive: unpauses the sound.
+bool I_WindowIsActive()
+{
+	return [NSApp isActive];
+}
+
+// [rc4l] The Cocoa backend never lowers the process priority, so the background-render switch has none to restore.
+void I_UpdateBackgroundPriority()
+{
+}
