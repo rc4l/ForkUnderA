@@ -228,6 +228,7 @@ namespace
 #endif
 }
 
+#ifdef _WIN32
 // [rc4l] abort() and std::terminate DO NOT reach SetUnhandledExceptionFilter.
 //
 // That filter only sees structured exceptions -- an access violation gets a full symbolised stack in
@@ -437,11 +438,14 @@ void AbortHandler( int )
 	WriteAbortReport( "abort() / SIGABRT" );
 	_exit( 3 );
 }
+#endif // _WIN32
 
 // The game thread's proof of life. Cheap enough for the main loop: one interlocked increment.
 void MCP_Crash_NoteAlive()
 {
+#ifdef _WIN32
 	InterlockedIncrement( &g_heartbeat );
+#endif
 }
 
 // Arm the crash handler once. Safe to call repeatedly (cheap no-op after the

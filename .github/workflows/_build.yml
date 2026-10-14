@@ -135,6 +135,7 @@ jobs:
           # [rc4l] Same condition as the symbols, because it is the same fact: a build may report a
           # crash exactly when someone can read the report. See ZX_OFFICIAL_BUILD in CMakeLists.
           ZX_OFFICIAL_BUILD: ${{ inputs.upload_symbols && '1' || '0' }}
+          ZX_KEEP_GOING: "1"   # [rc4l] a red build lists every compile error, not the first
         run: |
           set -o pipefail
           ./linux_compile.sh --install-deps 2>&1 | tee build.log
@@ -197,6 +198,7 @@ jobs:
           VERSION: ${{ inputs.version }}
           ZX_WITH_SYMBOLS: ${{ inputs.upload_symbols && '1' || '0' }}
           ZX_OFFICIAL_BUILD: ${{ inputs.upload_symbols && '1' || '0' }}
+          ZX_KEEP_GOING: "1"
         run: |
           set -o pipefail
           ./linux_compile.sh --install-deps --serveronly 2>&1 | tee build-server.log

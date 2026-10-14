@@ -32,6 +32,16 @@ TEST(Display, GammaBendsTheCurveAndTheInputsAreClamped)
 	EXPECT_EQ(clamped[0], 0);                // [rc4l] cannot go below black
 }
 
+// [rc4l] High contrast pushes the low levels below black, which gamma's pow turns to NaN; they come out black, as on Windows, not as whatever casting NaN gives.
+TEST(Display, LevelsBelowBlackUnderGammaAreBlack)
+{
+	unsigned short ramp[768];
+	ComputeGammaRamp(2.f, 3.f, 0.f, ramp);
+	EXPECT_EQ(ramp[0], 0);
+	EXPECT_EQ(ramp[50 + 256], 0);
+	EXPECT_EQ(ramp[255], 0xffff);
+}
+
 TEST(Display, PaletteBrightnessIsTheWeightedAverage)
 {
 	unsigned white[256], grey[256];

@@ -284,7 +284,7 @@ void RenderDome(FMaterial * tex, float x_offset, float y_offset, bool mirror, in
 			{
 				lastW = texw; lastH = texh;
 				Printf("gl sky: %s %dx%d skyoffset %d%s\n",
-					(tex->tex != NULL && tex->tex->Name != NULL) ? tex->tex->Name : "?",
+					tex->tex != NULL ? tex->tex->Name.GetChars() : "?",
 					texw, texh, tex->tex ? tex->tex->SkyOffset : 0,
 					(tex->tex && tex->tex->gl_info.bSkybox) ? " [skybox]" : "");
 			}

@@ -105,7 +105,8 @@ cmake -S src/zandronum -B build-linux -G Ninja \
   "${BRIDGE_ARGS[@]}" "${SYM_ARGS[@]}" "${OFFICIAL_ARGS[@]}"
 
 echo "==> Building"
-cmake --build build-linux -j"$(nproc)"
+# [rc4l] ZX_KEEP_GOING=1 compiles past a failing file, so one run reports every compile error.
+cmake --build build-linux -j"$(nproc)" ${ZX_KEEP_GOING:+-- -k 0}
 
 # [rc4l] Refuse to package a client that cannot make sound; this shipped once already.
 if [ "$SERVERONLY" != "ON" ]; then

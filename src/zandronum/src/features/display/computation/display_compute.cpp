@@ -9,7 +9,8 @@ namespace zx { namespace display {
 
 namespace {
 
-template<class T> T Clamp(T v, T lo, T hi) { return v < lo ? lo : (v > hi ? hi : v); }
+// [rc4l] NaN reads as `lo`: a level below black after contrast is NaN under gamma's pow, and casting NaN to a ramp entry is undefined.
+template<class T> T Clamp(T v, T lo, T hi) { return v > lo ? (v > hi ? hi : v) : lo; }
 
 } // namespace
 

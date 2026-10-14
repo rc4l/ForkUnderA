@@ -49,7 +49,7 @@ jobs:
       # processes stay alive, which is true of a client that never connected.
       - name: Build the engine with the control bridge
         # [rc4l] --install-deps takes linux_compile.sh's own package list, the Vulkan backend's X11 headers included.
-        run: ZX_MCP_BRIDGE=1 ./linux_compile.sh --install-deps --no-package
+        run: ZX_MCP_BRIDGE=1 ZX_KEEP_GOING=1 ./linux_compile.sh --install-deps --no-package
 
       - name: Run the NAT lab
         run: |
@@ -92,7 +92,7 @@ jobs:
 
       - name: Build the engine with the control bridge
         # [rc4l] --install-deps takes linux_compile.sh's own package list, the Vulkan backend's X11 headers included.
-        run: ZX_MCP_BRIDGE=1 ./linux_compile.sh --install-deps --no-package
+        run: ZX_MCP_BRIDGE=1 ZX_KEEP_GOING=1 ./linux_compile.sh --install-deps --no-package
 
       - name: Prove a dual-stack server is one row, and a v6-only client can find it
         run: tools/natlab/run-dualstack.sh
