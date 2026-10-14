@@ -13,7 +13,7 @@ anywhere the repo does. The engine builds nodes itself for a UDMF map that has n
 It pays twice. The horizon template reproduced the reported bug AND crashed every plain-sky map under
 Vulkan on its first load, a bug wdiex02 could never show because its sky is a skybox.
 
-Worked example: `tools/fuactl/scenarios/horizon.mjs` (about 60 lines).
+Worked example: `tools/fuactl/scenarios/horizon.mjs` (about 45 lines).
 
 ## 1. Reproduce in the real content first, and name the ingredient
 
@@ -108,7 +108,8 @@ nothing is read back from a window, and the harness runs even with other engines
 A side with `frame: "gl"` keeps GL's half of a Vulkan launch's pair instead. GL there draws its own
 vertices and never the backend's wall mesh; `mapreload.mjs` (`commands: ["map MAP01"]`, a level change)
 checks it still draws after the level loads again, and `glplain.mjs` checks it never reads the mesh. A side's
-`atVantage` commands run once it stands at each vantage, for a change the view's own walk must see first
+A ray-traced side needs `commands: ["fua_dg_rtmirrors 1", "fua_diligent_scene"]`, since tracing is chosen
+when the scene is uploaded (`rtsprites.mjs`). `atVantage` commands run once it stands at each vantage, for a change the view's own walk must see first
 (`fua_mesh_blank` empties the mesh the map bake filled). `fuactl scenarios <name> --side S --cvar k=v`
 adds cvars to one side, which is how a test shows it fails under the behaviour it guards against; a
 scenario without that side is skipped rather than ending the run. `standalonemove.mjs` runs its script
@@ -173,73 +174,9 @@ Export the builder from the scenario; `runScenarioIfMain` keeps the import from 
 | `tools/fuactl/src/template.mjs` | `compareTemplate` (launch, capture, judge), `compareOverTime`, `compareCounter`, `compareSameFrame`, and the pure `judge` |
 | `tools/fuactl/src/pngcore.mjs` | PNG decode/encode, `boxDiff`; `fuactl png --boxdiff` on the CLI |
 | `tools/fuactl/scenarios/horizon.mjs` | the worked example |
-| `tools/fuactl/scenarios/pointlight.mjs` | two Vulkan sides, a light-grid switch against itself |
-| `tools/fuactl/scenarios/skymirror.mjs` | a reflective floor set by an OPEN script, reflection off against on |
-| `tools/fuactl/scenarios/skyzenith.mjs` | straight up where no sky wall reaches, sky surfaces off against on |
-| `tools/fuactl/scenarios/water3d.mjs` | a swimmable 3D floor's light band on the pool walls, bands on against off |
-| `tools/fuactl/scenarios/droppedbindings.mjs` | every binding dropped (`fua_dg_flushtextures`, what a minimise does) against kept, over still water |
-| `tools/fuactl/scenarios/waterseam.mjs` | two 3D-floor waters meeting at a sector line against one pool: the seam draws no wall |
-| `tools/fuactl/scenarios/underwatersprite.mjs` | a sprite under translucent water against no sprite: the plane-layer sort draws it first |
-| `tools/fuactl/scenarios/underwaterup.mjs` | a water's underside from below, its water lit dark blue against lit like the pool: a top plane takes the light above it |
-| `tools/fuactl/scenarios/floodgap.mjs` | steps with no lower or upper texture against the same hall with no steps; boxes name their `vantage` |
-| `tools/fuactl/scenarios/planemirror.mjs` | a reflective floor before a raised block, GL against Vulkan |
-| `tools/fuactl/scenarios/mirrorwalk.mjs` | a voxel model (`src/kvx.mjs`) in a room whose sky and floor are GL portals, against one with neither |
-| `tools/fuactl/scenarios/switchtex.mjs` | a switch pressed with `+use` against the same wall drawn pressed |
-| `tools/fuactl/scenarios/actorlight.mjs` | a sprite by a red point light, GL against Vulkan: the actor's own light |
-| `tools/fuactl/scenarios/warpwater.mjs` | a warp2 flat captured twice apart (`compareOverTime`): the water must move, the floor must not |
-| `tools/fuactl/scenarios/scrollfloor.mjs` | a floor scrolled by its sector type (`SECTOR_TYPE` in `src/doomnums.mjs`) captured twice apart: it must move, the floor beside it must not |
-| `tools/fuactl/scenarios/walllight.mjs` | a wall lit by `Transfer_WallLight` from a sector a script brightens after load, Vulkan against the same wall lit 255 from the start: GL's own wall cache had the fault too, so GL is no oracle here |
-| `tools/fuactl/scenarios/raised3dfloor.mjs` | a 3D floor platform a script raises after load (`FloorAndCeiling_RaiseByValue` on its control sector), GL against Vulkan |
-| `tools/fuactl/scenarios/desaturate.mjs` | a sector with UDMF `desaturation` 0.99 (MAP01) and an out-of-range 99 (MAP02), GL against Vulkan |
-| `tools/fuactl/scenarios/mirrorbehind.mjs` | a thing on its own block behind the player, which only GL's walk through the mirror reaches, GL against Vulkan |
-| `tools/fuactl/scenarios/horizondeep.mjs` | a horizon line under a sky ceiling seen from well above its floor, square-on and at an angle (only the oblique view shows the sky quad and floor half depth-fighting), GL against Vulkan |
-| `tools/fuactl/scenarios/skyboxopen.mjs` | a skybox room that is all sky (sky floor and ceiling, horizon walls) under a six-face GLDEFS skybox, GL against Vulkan |
-| `tools/fuactl/scenarios/skywallbelow.mjs` | a sky wall over a closed sky sector that starts below the eye, with a lit room behind it GL never walks, GL against Vulkan |
-| `tools/fuactl/scenarios/mirrorsky.mjs` | a mirror beside a window onto a low sky-roofed yard shallower than the player stands from the glass, so the sky GL sees through the window lies between the reflected eye and the mirror, GL against Vulkan |
-| `tools/fuactl/scenarios/missingupper.mjs` | a raised-ceiling island with untextured uppers, seen from inside, GL (wall cache off, the stock fill) against Vulkan: the map bake must draw the room's lower ceiling across it as GL's missing-texture fill does |
-| `tools/fuactl/scenarios/skyhole.mjs` | a one-sided wall with no texture under a sky, GL against Vulkan: on MAP01 a lit room behind it that nothing joins, which GL's walk clips, so the backend must show sky there rather than the room; on MAP02 (skybox) and MAP03 (plain sky) the yard's own sector reaches past it through a corridor, and GL draws a pillar in it and the field's floor and far wall through the hole, which the backend must keep |
-| `tools/fuactl/scenarios/spriteslots.mjs` | animated decorations ahead of and behind the player (`compareCounter`): no sprite frame may sample a material slot the bindless array was not yet filled with |
-| `tools/fuactl/scenarios/skyboxbeyond.mjs` | a skybox area with low walls and a tower in a sealed room beside it, GL against Vulkan: the sky over the skybox walls shows only what GL's walk from the skybox camera reached |
-| `tools/fuactl/scenarios/transferheights.mjs` | a lake whose surface is a Transfer_Heights control sector's floor, seen from the shore, from under it and from a step 2 under the eye: the surface at the control height, underwater its textures and blue light, and nearer than the near plane still drawn, as GL's depth clamp keeps it |
-| `tools/fuactl/scenarios/cameratex.mjs` | an ANIMDEFS camera texture twice as wide as tall, fitted smaller than its pixels, on a one-sided wall, set by an OPEN script's SetCameraToTexture: the screen must show the camera's room upright, framed and sharp as GL shows it |
-| `tools/fuactl/scenarios/missingfillcache.mjs` | the missing-upper map in GL alone, wall cache off against on: the cache must not cost GL its missing-texture fill |
-| `tools/fuactl/scenarios/missinglower.mjs` | a recess with untextured steps, GL against Vulkan: GL's missing-texture fill must run every frame under the wall cache. GL does not clear its framebuffer, so a missing fill shows stale pixels, and the map looks at a red wall first to put red there |
-| `tools/fuactl/scenarios/mapreload.mjs` | a room loaded a second time inside a Vulkan session (`commands: ["map MAP01"]`), GL alone against GL's frame there: GL must still draw the world after a level change rebuilds the wall mesh |
-| `tools/fuactl/scenarios/glplain.mjs` | a room in a Vulkan session, the mesh emptied at the vantage (`atVantage: ["fua_mesh_blank"]`), GL alone against GL's frame there: GL must draw its own vertices, not the backend's mesh (queue #42) |
-| `tools/fuactl/scenarios/standalonemove.mjs` | a platform a closed script raises (`puke 2`) after Vulkan has gone standalone, GL alone against the standalone frame: the move must show with no GL walk behind it |
-| `tools/fuactl/scenarios/invertedback.mjs` | a wall onto a sector whose floor is above its ceiling, GL against Vulkan: both must draw it whole |
-| `tools/fuactl/scenarios/watertint.mjs` | additive 3D-floor water whose control sector a puked script tints after the bake, over a grey pool floor, GL against Vulkan |
-| `tools/fuactl/scenarios/brightmap.mjs` | GLDEFS brightmaps on a wall and a sprite in a dark room, bindless against a binding per material; the brightmap PNG is a lump between `TX_START`/`TX_END` |
-| `tools/fuactl/scenarios/stackportal.mjs` | a ceiling that is a stacked sector (`UpperStackLookOnly`/`LowerStackLookOnly` paired by TID) onto a room off the map's side, GL against Vulkan |
-| `tools/fuactl/scenarios/stackwalls.mjs` | rays crossing a low stacked annex above its ceiling, which only GL's stack walls catch, GL against Vulkan |
-| `tools/fuactl/scenarios/stackslope.mjs` | a steep sloped floor seen through a stacked ceiling, which the stacked view must place by its subsector, not as a wall |
-| `tools/fuactl/scenarios/stacksprite.mjs` | things standing where only the stacked view's walk reaches, GL against Vulkan |
-| `tools/fuactl/scenarios/stackwide.mjs` | an upper room wider than the stacked room under it, which crashed GL with a stack overflow on load |
-| `tools/fuactl/scenarios/linemirror.mjs` | a one-sided `Line_Mirror` wall reflecting the room and the player under GL's sphere-mapped sheen, GL against Vulkan |
-| `tools/fuactl/scenarios/animdefs.mjs` | an ANIMDEFS lump whose discrete wall animation flips frame a second after the level is built and then holds, so a backend drawing its bake frame differs from GL in a still shot |
-| `tools/fuactl/scenarios/lightlinks.mjs` | a point light 16 units behind a solid wall with a radius reaching the next room, which GL leaves dark because a light's links stop at solid walls |
-| `tools/fuactl/scenarios/plainwall.mjs` | a one-sided wall wearing a see-through texture (`MIDGRATE`) with a lit room behind, which GL's solid pass draws without an alpha test; pressed against it (`close`, per pixel), the edge texels GL's `SmoothEdges` colours |
-| `tools/fuactl/scenarios/polyobjwall.mjs` | a polyobject (a counter-clockwise template box with `Polyobj_StartLine`, `ENGINE_THING.PolyAnchor` and `PolySpawn`) moved in front of the player, whose u has to span the face |
-| `tools/fuactl/scenarios/selfref.mjs` | a raised sector hidden by self-referencing lines (`selfRef`), which GL draws as the surrounding room's floor through the subsector's render sector |
-| `tools/fuactl/scenarios/skywall.mjs` | a plain-sky room with a taller room behind its wall, which GL's sky walls (up to 32768) hide |
-| `tools/fuactl/scenarios/skyboxseam.mjs` | a six-face GLDEFS skybox (faces between `TX_START`/`TX_END`, `sky1` set by a MAPINFO lump) seen at its corners: the seam and the filter, GL against Vulkan |
-| `tools/fuactl/scenarios/translucentmid.mjs` | a two-sided middle texture at half alpha (`block`'s `line(edge)` sets the linedef's `alpha`), GL against Vulkan |
-| `tools/fuactl/scenarios/pitchframing.mjs` | a tall sky room level and looking up: the camera's 1.2 pixel stretch, GL against Vulkan |
-| `tools/fuactl/scenarios/nogl.mjs` | modelstandalone's voxel box and its two reflections, GL against a `-vulkan` launch (`noGl: true`): it must render them as GL does rather than crash on the model's GL vertex buffer |
-| `tools/fuactl/scenarios/viewwindow.mjs` | modelstandalone's room at `screenblocks 8`, GL against Vulkan: the view must sit in the view window above the status bar as GL's `SetViewport` puts it |
-| `tools/fuactl/scenarios/scrollwall.mjs` | a scrolling wall over a scrolling floor from one engine frame (`compareSameFrame`): textures stand where GL's do after the scrollers ran |
-| `tools/fuactl/scenarios/particles.mjs` | a particle fountain in standalone (`compareCounter`, a floor): the backend must be handed the particles from its own walk |
-| `tools/fuactl/scenarios/particlecolor.mjs` | particles' red fountain from one engine frame: Vulkan's particles take the fountain's colour, not the texture's white |
-| `tools/fuactl/scenarios/skymove.mjs` | skywall's rooms, spawning away from the sky wall and turning to it, in standalone: the sky above the wall made that frame |
-| `tools/fuactl/scenarios/stackturn.mjs` | stackportal's rooms, turning to look up through the stacked ceiling, in standalone: the upper room walked that frame |
-| `tools/fuactl/scenarios/skyboxturn.mjs` | a sky yard over a skybox room with a different texture per wall, turning west, in standalone: the skybox walked that frame |
-| `tools/fuactl/scenarios/mirrorsprite.mjs` | a line mirror facing pillars behind the player, in standalone: the mirror's own walk each frame |
-| `tools/fuactl/scenarios/modelstandalone.mjs` | a voxel model ahead and two seen only in a line mirror, in standalone: solid models drawn as GL draws them |
-| `tools/fuactl/scenarios/movedbehind.mjs` | a platform raised while behind the player, in standalone: re-baked when a walk first reaches it |
-| `tools/fuactl/scenarios/stencilsprite.mjs` | a stencil-style actor: a flat silhouette in its stencil colour with GL's framed outline (TM_MASK) |
-| `tools/fuactl/scenarios/walldecal.mjs` | decal things glued to a wall by DECALDEF, a shaded scorch and an additive glow, from one frame: Vulkan draws the marks GL draws |
-| `tools/fuactl/scenarios/skyfog.mjs` | a sky-lit sector under MAPINFO `skyfog`, looking up, from one frame: Vulkan hazes the sky as GL does |
-| `tools/fuactl/scenarios/polyobjmove.mjs` | a polyobject a script slides after the bake, GL against Vulkan: drawn where it moved to |
+
+Every scenario opens with a one-line `// [rc4l]` summary of what it proves, so the list is generated
+rather than kept here: `head -qn1 tools/fuactl/scenarios/*.mjs`.
 | `tools/fuactl/src/mapdata.mjs` | read a real map's sectors, lines and scripts, to find the ingredient to template |
 | `tools/fuactl/src/acs.mjs` | ACS0 BEHAVIOR writer for scripted template maps |
 | `tools/fuactl/test/{udmf,template,pngcore}.test.mjs` | their tests |

@@ -15,8 +15,11 @@ ZandroX tests use **GoogleTest + GoogleMock**, built as a standalone project in 
 - **Testing one of our *feature* modules**: put the test **inside that feature folder**:
   `features/<name>/<thing>_test.cpp`, next to `<thing>.cpp`. See `features/README.md`.
 
-The engine build ignores every `*_test.cpp` (it compiles an explicit source list, not a
-glob), so test files never reach the shipped binary.
+The engine build never compiles a `*_test.cpp`, so test files never reach the shipped binary. It does
+glob `*_compute.cpp` (`ZX_COMPUTE_SOURCES` in `src/zandronum/src/CMakeLists.txt`), and the test binary
+compiles only `*_test.cpp` and `*_compute.cpp` (`tests/CMakeLists.txt`). So a `Compute*` helper lives in
+`<name>_compute.cpp` (by convention in the feature's `computation/` folder) with `<name>_compute_test.cpp`
+beside it: no CMake edit either side, and a helper defined in any other `.cpp` does not link into the tests.
 
 ## Naming — this is enforced by discovery, so get it right
 
@@ -78,20 +81,20 @@ LNK1104. One suite at a time:
 build-tests/Release/zandrox_tests.exe --gtest_filter='Suite.*'
 ```
 
-This tree has not always re-globbed a new `*_test.cpp` on build (`lookhits_compute_test.cpp` ran zero
-cases), so after adding one, check its suite appears in `--gtest_list_tests`, and if not run
-`cmake build-tests` once to reconfigure.
+`build --tests` reconfigures by itself when a new `*_test.cpp` or `*_compute.cpp` appears; `coverage` does
+not, so after adding a file run `build --no-stage --tests` before `coverage`.
 
 Without clang/llvm-cov the `--auto` gate's authority is CI, but the same gate runs here with
 OpenCppCoverage over a Debug build of the tests (Release has no symbols):
 
 ```bash
 export FUACTL_OPENCPPCOVERAGE=F:/ShitDronum/zandronum-vscode-windows/deps/opencppcoverage/OpenCppCoverage.exe
-node tools/fuactl/src/cli.mjs coverage --since main   # every unit whose source, header or test changed, new files included
+node tools/fuactl/src/cli.mjs coverage --since REF    # every unit whose source, header or test changed since REF, new files included
 node tools/fuactl/src/cli.mjs coverage                # every unit a *_test.cpp gates
 ```
 
-It builds the Debug tests, runs them under OpenCppCoverage, and prints each gated unit under 100% with its
+`--since` takes the commit the work started from (the last push, say): `--since main` gates every commit on
+the branch, and `--since HEAD` only what is uncommitted. It builds the Debug tests, runs them under OpenCppCoverage, and prints each gated unit under 100% with its
 missed lines (exit 1). A missed line that is only a loop's `}` or a `continue;` is MSVC putting the jump
 there, which llvm-cov counts as run, so it is not reported. Three units stay under 100% here and pass in
 CI: `fixed64`'s soft 128-bit path, whose tests compare against `__int128` that MSVC lacks, and two lines of
@@ -100,9 +103,9 @@ its tests by reading them, and say so.
 
 ## CI
 
-`.github/workflows/_test.yml` runs the same three steps (sanitized build+run, coverage
-`--auto`, clang-tidy) on every push/PR, and the macOS engine build is gated behind it
-(`needs: test`). Green tests are required before anything builds.
+`.github/workflows/_test.yml` runs on pull requests and pushes to `main`: sanitized tests plus
+`coverage.sh --auto` on Linux, sanitized tests on macOS, and a plain MSVC build and run on Windows.
+Every engine build is gated behind it (`needs: test`), so green tests come before anything builds.
 
 ## Misc
 

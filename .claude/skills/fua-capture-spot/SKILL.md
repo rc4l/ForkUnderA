@@ -16,10 +16,9 @@ is looking at: `.play-session` (`KEY=VALUE` lines) holds the last launch's, `.pl
 
 ```bash
 cd tools/fuactl
-P=$(grep -oE '^PORT=[0-9]+' .play-session | cut -d= -f2)
-T=$(grep -oE '^TOKEN=[a-f0-9]+' .play-session | cut -d= -f2)
-node src/cli.mjs here --port "$P" --token "$T" \
-  --save <short-kebab-name> --note "what is on screen and why it matters"
+# [rc4l] their port by name: the bare .play-session is whichever launch went last, often your own
+node src/cli.mjs here --port 7801 \
+  --save <short-kebab-name> --note "what is on screen and why it matters"   # token from .play-session-7801
 ```
 
 That writes one record into `tools/fuactl/spots.json` holding the camera at full precision

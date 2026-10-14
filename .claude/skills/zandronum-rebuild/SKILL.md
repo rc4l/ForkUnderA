@@ -1,6 +1,6 @@
 ---
 name: zandronum-rebuild
-description: Recompile the ForkUnderA engine (forkundera) after a C++ change and get the new binary running under fuactl. Use whenever engine source under src/zandronum/src changes -- features, the Diligent backend, the MCP bridge. On Windows do NOT use build.ps1 or windows_build*.ps1 for this; they throw on CMake dev warnings and do not pass the bridge flag. Use fuactl build.
+description: Recompile the ForkUnderA engine (forkundera) after a C++ change and get the new binary running under fuactl. Use whenever engine source under src/zandronum/src changes -- features, the Diligent backend, the MCP bridge. On Windows do NOT use windows_build*.ps1 for this; they throw on CMake dev warnings and do not pass the bridge flag. Use fuactl build.
 ---
 
 # Rebuild the engine
@@ -47,14 +47,13 @@ engine is running rather than killing them by name -- quit each by port first, o
 
 ## Getting the new binary running
 
-A build is not live until it is staged where fuactl looks (table above):
+A build is not live until it is staged where fuactl looks (table above). `node src/cli.mjs build` stages
+the exe, its `.pdb`, the data `*.pk3`s and `catalogue/`; after a `--no-stage` build, quit the engines and
+run `build` again rather than copying by hand, since a hand copy has missed the pk3s, the catalogue and the
+symbols before.
 
-```bash
-cp build-win/Release/forkundera.exe build-win/Release/forkundera.pdb build-win/Release/*.pk3 dist-windows/
-```
-
-**A running engine holds that binary on Windows**, and the copy fails with "Device or resource busy" --
-unchecked, the next run silently measures the OLD build. Quit every instance first, BY PORT
+**A running engine holds that binary on Windows**, and staging fails -- `build` refuses while any engine
+runs, so the next run never silently measures the OLD build. Quit every instance first, BY PORT
 (`node src/cli.mjs quit --port P [--token T]`), never by process name, which would also kill the
 user's own instance and other sessions' harnesses. Then confirm none are left: `tasklist /FI
 "IMAGENAME eq forkundera.exe"` on Windows, `pgrep -l forkundera` elsewhere.

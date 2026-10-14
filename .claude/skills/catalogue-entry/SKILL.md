@@ -111,7 +111,7 @@ or an overlay goes after the maps.
 ## Verify before committing
 
 ```powershell
-./windows_build_run.ps1
+node tools/fuactl/src/cli.mjs build   # builds, stages the exe, pk3s and catalogue/
 ./dist-windows/forkundera.exe -iwad freedoom2.wad +logfile chk.log +fua_catalogue
 ```
 

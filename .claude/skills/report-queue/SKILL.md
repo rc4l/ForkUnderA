@@ -73,10 +73,10 @@ its full spot record.
    `// [rc4l]` comments.
 7. **Verify, all of it:** `build --no-stage --tests` (the engine and `zandrox_tests`, run, the user's binary
    left alone), `node --test`, the
-   new scenario now passes, and `node src/cli.mjs scenarios --engine F:/ForkUnderA/build-win/Release/forkundera.exe`
-   is green (the suite already runs every Vulkan side standalone, as players do). Re-shoot the item's spot GL against Vulkan and look at it.
+   new scenario now passes, `coverage --since <ref>` holds every changed unit at 100% (`writing-tests`), and
+   `node src/cli.mjs scenarios --engine F:/ForkUnderA/build-win/Release/forkundera.exe` is green (the suite already runs every Vulkan side standalone, as players do). Re-shoot the item's spot GL against Vulkan and look at it.
 8. **Close it:** `queue done <id> --note "<cause>; <fix>; scenario <name>"`.
-9. **Hand the build back:** `build` stages it (or copy `forkundera.exe` and `.pdb` from `build-win/Release` to `dist-windows`),
+9. **Hand the build back:** `build` stages it (the exe, its `.pdb`, the pk3s and `catalogue/`),
    relaunch their session (`play --unpark --port 7801` if you parked it, else `fua-side-by-side`), then take the next item.
 
 ### When it will not reproduce

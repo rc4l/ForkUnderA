@@ -1,6 +1,6 @@
 ---
 name: crash-triage
-description: How to triage, fix, and close a native crash filed as a GitHub issue (auto-filed by crash-sync from GlitchTip) in ZandroX. Use whenever you're handed a symbolicated "[crash] ..." issue and need to explain it, find/port a fix, validate by reproducing, and write the Who/What/Where/Why. Also use when investigating any hard crash (EXC_BAD_ACCESS/SIGSEGV) from a stack trace.
+description: How to triage, fix, and close a native crash filed as a GitHub issue (auto-filed by crash-sync from GlitchTip) in ZandroX. Use whenever you're handed a symbolicated "[crash] ..." issue and need to explain it, find/port a fix, prove it with a failing test then the repro, and write the Who/What/Where/Why. Also use when investigating any hard crash (EXC_BAD_ACCESS/SIGSEGV) from a stack trace.
 ---
 
 # Triaging a native crash
@@ -33,9 +33,10 @@ defect**, even though the fault happens later. (For the canonical example, `AInv
 ## 3. Check whether upstream already fixed it — before writing anything
 ZandroX is an old Zandronum base, so the fix usually already exists in a tree you port from. Grep the
 **same function** in the local reference trees and diff it against ours:
-- `~/repos/Q-Zandronum` — a Zandronum fork; frequently has the exact one-line guard in the same file.
-- `~/repos/UZDoom` — modern GZDoom; the logic may have moved to ZScript, but the C++ still shows the
+- `F:/UZDoom` — modern GZDoom; the logic may have moved to ZScript, but the C++ still shows the
   guard *pattern* (e.g. `player->mo != nullptr` checks scattered through `p_saveg.cpp`, `g_level.cpp`).
+- Q-Zandronum, a Zandronum fork that often has the exact one-line guard in the same file, is not cloned
+  on this machine; fetch it when the UZDoom tree does not answer.
 The added guard/null-check in their version **is** the fix. Port it per the `upstream-port` and
 `provenance-links` skills; tag it `[rc4l]` with a one-line why and the source it matches.
 
@@ -46,15 +47,14 @@ a desync. A pure null-check that prevents the dereference is exempt; anything th
 not. (The lower frames in step 1 flag this: a crash reached via a net packet / thinker on the server is
 exactly where a naive guard desyncs.)
 
-## 4. Validate by REPRODUCING, not by a unit test
-A crash fix is proven by "it no longer crashes doing the thing that crashed it." The state is
-engine-wide (actors, sectors, players) and not extractable to a pure `Compute*` helper, so don't force
-one — reproduce instead:
-1. Apply the minimal guard and rebuild and stage it (see `zandronum-rebuild`).
-2. Drive the exact scenario that crashed with fuactl (see `zandronum-session`) — same iwad, map,
-   bots, sequence.
-3. Before the fix it died within seconds; after, confirm it **survives well past that point** (watch
-   `pgrep` for ~20s past the trigger).
+## 4. Prove the crash with a failing test, then the repro
+AGENTS.md: write a failing test that proves the crash, then fix it so the test passes.
+1. A `Compute*` unit test when the bad decision can be pulled out of the engine state; otherwise a
+   template scenario (`template-maps`) that crashes on the old binary and passes on the fix.
+2. Apply the minimal guard and rebuild and stage it (see `zandronum-rebuild`).
+3. Drive the exact scenario that crashed with fuactl (see `zandronum-session`) — same iwad, map,
+   bots, sequence — and confirm it **survives well past that point** (`node src/cli.mjs ls`, or
+   `Get-CimInstance Win32_Process -Filter "Name='forkundera.exe'"`, for ~20s past the trigger).
 4. A render crash that only a `--no-gl` launch shows is a GL-context dependency: model vertex buffers
    once called a null `glGenBuffers` there. Give it a scenario with a `noGl` side (`template-maps`).
 

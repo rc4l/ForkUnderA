@@ -87,6 +87,7 @@ The tail of the command line names the map, which is the quickest way to tell tw
 
 - `fua_vulkan 0` / `1` in the console — live A/B inside one window.
 - `fua_dg_skyportal 0` / `1` — sky portal against the plain dome.
+- `play --rt` for ray-traced mirrors: tracing is chosen when the scene is uploaded, so it is a launch flag (or `fua_dg_rtmirrors 1` then `fua_diligent_scene`).
 - `fuactl shot` does **not** work against a side-by-side instance: the un-embedded Vulkan window hands
   back a 1x1 PNG and the tool refuses it. For pixel work launch a SECOND instance without
   `--side-by-side`, with `--lock`, on your own port, and shoot there — theirs stays untouched to look

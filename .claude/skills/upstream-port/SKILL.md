@@ -111,12 +111,12 @@ after an upstream pull; it appends new commits as `pending` and preserves every 
    (see `zandronum-rebuild`) — never hand-roll `cmake --build --target zdoom` + manual copies.** That target does NOT
    rebuild the pk3s (`add_pk3` depends on the zipdir *tool*, not on `wadsrc/` content), so a
    hand-rolled build ships a stale or missing `zandronum.pk3` and a silently-failed link as if they
-   were fine — the exact trap that has burned whole sessions. Both scripts fail CLOSED: stop on a bad
-   build, repack any pk3 missing or older than its `wadsrc/`, sync into the launch directory
-   (`build/ForkUnderA.app/Contents/MacOS/` / `dist-windows/`), and hash-verify the staged binary + pk3
-   against the build tree before either says "safe to launch." The Windows one additionally builds
-   **all** targets and resolves `cmake` out of the VS install, so it does not need a Developer
-   PowerShell. Neither stages runtime deps (dylibs / DLLs, IWADs) — those come from a one-time
+   were fine — the exact trap that has burned whole sessions. `mac_build_run.sh` fails CLOSED: it stops
+   on a bad build, repacks any pk3 missing or older than its `wadsrc/`, syncs into
+   `build/ForkUnderA.app/Contents/MacOS/` and hash-verifies the staged binary + pk3 against the build
+   tree. `fuactl build` builds `zdoom` and the three pk3 targets (resolving `cmake` out of the VS install,
+   so no Developer PowerShell), refuses while an engine runs, and copies the exe, its `.pdb`, the pk3s and
+   `catalogue/` into `dist-windows/`; it does not hash-check them. Neither stages runtime deps (dylibs / DLLs, IWADs) — those come from a one-time
    `mac_compile.sh` / `windows_build.ps1`. Then drive with the `zandronum-session` skill. E2E must inspect the *artifacts an action leaves behind*,
    not just the action itself: fire at a wall and then WALK UP to the decals; kill and look at the
    corpse; open a door and look at the track (the white-decal miss — the muzzle flash verified,

@@ -28,18 +28,23 @@ the same on every OS; the few platform differences are called out where they mat
 ```bash
 cd tools/fuactl
 nohup node src/cli.mjs play --map MAP01 --lock --port 7799 --res 1280x720 > play.log 2>&1 &
-until [ -s .play-session ]; do sleep 0.5; done; cat .play-session    # PORT= and TOKEN=
-node src/cli.mjs ready                                               # returns once it answers
+node src/cli.mjs ready --port 7799 --timeout 120   # returns once it answers
+cat .play-session-7799                             # PORT= and TOKEN= of this launch
 ```
 
-Delete a stale `.play-session` before launching, or the wait above reads the previous launch's.
+Name the port everywhere: the bare `.play-session` belongs to whichever launch went last, which may be the
+user's. `play` refuses a port an engine still answers on (quit it, or launch with `--restart`), so a second
+launch can no longer wipe the first one's session file. `quit --port P` stops an instance whose launcher
+died and left no token, as `reap --kill` stops every such orphan; never stop engines by process name.
 
 - `play` is the launch to use: Vulkan on, freelook, no monsters, cheats verified. `--lock` keeps the
   engine off the user's mouse and keyboard — always on your own launches, never on one the user plays.
 - Pick a port of your own (7799, 7796, ...), never the one the user's instance is on.
 - `--file a.pk3,b.wad` for pwads, `--iwad` for another IWAD (an absolute path works), `--gl` for GL
   only, `--no-gl` for Vulkan with no GL context at all (`-vulkan`; `ui exec dumprenderer` says
-  `renderer=vulkan`), `--side-by-side` for the user's two-window session (see `fua-side-by-side`).
+  `renderer=vulkan`), `--side-by-side` for the user's two-window session (see `fua-side-by-side`), `--rt` for ray-traced
+  mirrors, which must be on when the scene is uploaded (or set `fua_dg_rtmirrors 1` and run
+  `fua_diligent_scene`).
 - A `--lock` launch is never focused, so it keeps its world running (`i_pauseinbackground 0`), but its
   window presents only with `fua_render_in_background 1`: set it before timing frames or recording clips.
 - `--preset ID [--variant V]` loads a `catalogue/<ID>/addon.json` wad set from the download store
@@ -83,6 +88,7 @@ Every command takes `--port P --token T`; `--port P` alone takes the token from 
 | what reaches the SCREEN of one window, by its pixels | `screen --port P [--seconds N] [--orbit DEG]`: new images shown and stalls a second from the compositor's output (DXGI Desktop Duplication), the aim orbiting via `fua_debug_orbit`, with the engine's frames lined up for how old each image was when shown. It reads the compositor, so a stalling one reads as the game's judder (check `present`), and the window must be on top. vid_fps counts frames drawn, not shown |
 | frame rate under GL alone, the backend in the GL launch, and `--no-gl` | `fps --map M [--iwad W] [--file ...] [--res WxH] [--modes gl,embed,vulkan] [--engine PATH]`: one locked launch per mode in turn, warmed, three rounds, and a shot of what each window shows |
 | what a setting costs | `abperf "<setting>" "<setting>" ... [--rounds N] [--spot S \| --at --face]`: p50/p99 under each console setting inside one session, the others' cvars put back before each, judged against the first within each round; separate launches drift 30% |
+| what a frame costs at a view (Vulkan) | `costs --port P [--spot S \| --at --face]`: frame p50/p99, GPU and submit time (`fua_diligent_bench`), the world passes and phases, the walk's clipping, batches and sprites; the step-0 table of `docs/hwrender-performance-scope.md` is these columns |
 | GPU ms per pass | `gl-timers` (GL only; check `renderer-info` first; no timer queries reads as zeros) |
 | where the main thread's time goes | `sample --port P [--seconds N] [--stacks]`: on Windows the engine samples itself; `--stacks` adds each function's inclusive share, which is how a frame waiting in `AcquireNextImage` or the walk's share shows |
 | pause / step the sim | `rpc sim.pause` · `rpc sim.step '{"tics":1}'` |
@@ -100,7 +106,9 @@ which walk drew them), `gl_portalinfo` (the portals GL ran last frame, a stacked
 and displacement), `fua_line_mesh <line>` (what the bake holds for a line), `fua_sector_at x y [x y ...]`
 (the subsector, sectors and plane heights under each point, for walking a ray past where `look`'s trace
 stops at a sky), `fua_dg_dynstats` (world passes last frame by kind and CPU time, and why a patch rebuilt
-the scene). `fua_dg_planemirrors N` caps the floor reflections Vulkan renders a frame.
+the scene). `fua_dg_planemirrors 0` turns the floor reflections off (one is rendered per reflective plane), as
+`fua_dg_stackportals 0` does the stacked views. A template scenario's own map at one of its vantages, with
+console commands run there, is `probe scenarios/<name>.mjs [--side S] [<command> ...]`.
 
 `png --boxdiff` compares in 16-pixel block means: the renderers frame the world a fraction of a pixel
 apart, which reads ~13 per pixel on a bright tiled floor while both are right.
