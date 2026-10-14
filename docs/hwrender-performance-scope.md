@@ -1,8 +1,8 @@
 # The Vulkan backend's frame cost — scope for later
 
-Written 2026-10-13, after the GL-parity program. Nothing here is built. It says what a frame costs
-today, what was measured and when, and the order to take the work in. Numbers older than the code
-they describe are marked as such; step 0 re-measures them before anything is changed.
+Written 2026-10-13, after the GL-parity program, and re-measured 2026-10-14 (step 0, below). It says
+what a frame costs, what was measured and when, and the order to take the work in. Numbers older than
+the code they describe are marked as such.
 
 ## What a frame does now
 
@@ -45,6 +45,40 @@ re-uploads its index buffer every pass. The walk bits, (subsectors + sides) × 1
 
 The Whodunit row predates the walk bits and the threaded walk. Its per-piece cost has probably moved
 from the CPU to the vertex stage, which is the next thing to find out.
+
+## Step 0, re-measured (2026-10-14)
+
+Vulkan only (`play --no-gl --lock`), 1024x640, sim running; frame p50 from `fuactl abperf` (round 3),
+the backend's submit and GPU time from `fua_diligent_bench 120`, the world pass from `fua_dg_dynstats`,
+the walk's clipping from `fua_vis_report`.
+
+| map, view | frame p50 | GPU | world pass CPU | walk clip | batches |
+|---|---|---|---|---|---|
+| Sunder MAP14, q43 | 1.22 ms | 0.19 ms (1.1M verts) | 0.12 ms | 0.54 ms | 52 |
+| wdiex01, start, before | 5.0 ms | 0.18 ms | 4.01 ms | 0.07 ms | 47,981 |
+| wdiex01, start, after | 0.9 ms | 0.10 ms | 0.31 ms | 0.05 ms | 47,981 |
+| wdi03, start | 1.05 ms | 0.13 ms | 0.19 ms | 0.07 ms | 835 |
+| wdi07, start | 1.88 ms | 0.39 ms | 0.41 ms (4 passes) | 0.17 ms | 1,046 |
+| wdiex02, start | 1.28 ms | 0.21 ms | 0.33 ms | 0.06 ms | 1,332 |
+| wdi01, start | 0.63 ms | 0.16 ms | 0.20 ms | 0.09 ms | 982 |
+
+What it said, and what was done:
+
+- **The GPU is not the cost.** It takes 0.1-0.4 ms on every map, the whole level's vertex stage
+  included, so step 1 (GPU culling and indirect draws) has nothing to win yet and was not built.
+- **wdiex01's cost was the translucent pass.** 47,608 of its batches are translucent pieces, one batch
+  each, and every pass layered, sorted and index-uploaded all of them for the ~700 the walk reached;
+  the sampler put 62% of the game thread there. The pass now leaves out what the pass's walk did not
+  reach before it sorts (`ComputePassDraws`, `fua_dg_blendwalk`), which the scene shader would have
+  moved off screen anyway, so the picture is the same (`fuactl ab fua_dg_blendwalk 0 1`: no change).
+- **Animated textures were re-resolved per batch,** 0.06 ms a frame on wdiex01; they are now asked once
+  per base texture (`ComputeGroupByKey`), and the A/B no longer tells the loop from no loop.
+- **Views without walks are cheap here.** A line mirror made on wdiex01 (`fua_make_mirror`) costs
+  0.19 ms of CPU for its pass; step 2 is not worth building until a map shows otherwise.
+- **What is left is the walk and the sprites.** At q43 `WalkView` is 63% of the game thread: the
+  clip 18%, the serial rank replay and candidates 12%, the wait on the slowest slice 10%. On wdi07 the
+  sprite build is 0.48 ms for 1,354 sprites. Steps 4 and 5 are where the next measured win is, and
+  frame pacing is not (`fua_dg_frames_ahead` 0, 2 and 3 measure the same).
 
 ## The work, in order
 
