@@ -91,6 +91,8 @@ struct SpritePiece
 };
 
 static const int kMaxBands = 16;
+// [rc4l] A band and the fog layer GL draws over it.
+static const int kMaxPieces = kMaxBands * 2;
 
 SpriteStyle StyleOf(const FRenderStyle &s)
 {
@@ -305,10 +307,10 @@ static void DrawFade(const SpriteStyleOut &so, int lightlevel, FColormap &cm)
 	if (so.style.flags & STYLEF_FadeToBlack) cm.FadeColor = 0;
 }
 
-SpriteDrawLook SpriteDrawLookAt(const SpriteStyle &style, float trans, const FColormap &cm, float x, float y)
+SpriteDrawLook SpriteDrawLookAt(const SpriteStyle &style, float trans, const FColormap &cm, float x, float y, bool model)
 {
 	const float dx = x - FIXED2FLOAT(viewx), dy = y - FIXED2FLOAT(viewy);
-	return ComputeSpriteDrawLook(style, trans, gl_isBlack(cm.FadeColor), cm.FadeColor.a, sqrtf(dx * dx + dy * dy));
+	return ComputeSpriteDrawLook(style, trans, gl_isBlack(cm.FadeColor), cm.FadeColor.a, sqrtf(dx * dx + dy * dy), model);
 }
 
 // [rc4l] GLSprite::Draw's dynamic light for an actor: its lights, unless it is a shadow, fullbright or under a fixed colormap.
@@ -342,7 +344,7 @@ static void DeriveModel(AActor *thing, const Subject &s, const Look &l, bool che
 	DrawLight(thing, l, dyn);
 	MeshPiece look;
 	zx::levelmesh::ModelPieceLook(lightlevel, l.fullbright ? 0 : getExtraLight(), cm, l.fullbright, dyn, ThingColorOf(thing).d,
-		SpriteDrawLookAt(l.so.style, l.so.trans, cm, s.x, s.y),
+		SpriteDrawLookAt(l.so.style, l.so.trans, cm, s.x, s.y, true),
 		ComputeSpriteBlendMode(l.so.style.blendOp, l.so.style.destAlpha, l.so.trans), s.x, s.y, s.z, look);
 	look.inverse = l.inverse;
 	look.cullFace = ComputeModelCull(thing->RenderStyle == LegacyRenderStyles[STYLE_Normal], false);
@@ -516,9 +518,11 @@ static int DeriveSprite(AActor *thing, const Subject &s, SpritePiece *out, int m
 		mp.lightLevel = b.lightlevel;
 		mp.lightColor = b.cm.LightColor.d;
 		mp.fadeColor = b.cm.FadeColor.d;
-		zx::levelmesh::CaptureSpriteShading(b.lightlevel, rel, b.cm, SpriteDrawLookAt(so.style, so.trans, b.cm, x, y), ThingColorOf(thing).d, mp);
+		const SpriteDrawLook drawLook = SpriteDrawLookAt(so.style, so.trans, b.cm, x, y, false);
+		zx::levelmesh::CaptureSpriteShading(b.lightlevel, rel, b.cm, drawLook, ThingColorOf(thing).d, mp);
 		mp.stencil = (so.style.flags & STYLEF_ColorIsFixed) != 0;
-		mp.alphaTest = so.hw != kHwNoAlphaTest;
+		// [rc4l] Under a fog layer GL lets every texel with any alpha through, both passes.
+		mp.alphaTest = so.hw != kHwNoAlphaTest && !drawLook.fogLayer;
 		mp.inverse = look.inverse;
 		mp.colorBlend = look.colorBlend;
 		mp.fuzz = zx::hwrender::ComputeFuzzKind(r_fuzztype, so.overrideShader >= 0);
@@ -531,6 +535,13 @@ static int DeriveSprite(AActor *thing, const Subject &s, SpritePiece *out, int m
 		mp.blendMode = ComputeSpriteBlendMode(so.style.blendOp, so.style.destAlpha, so.trans);
 		mp.sortX = x; mp.sortY = y; mp.sortZ = z;
 		mp.quad = true;
+		// [rc4l] Then the fog GL lays over it, the next piece so it sorts straight after.
+		if (drawLook.fogLayer && drawn < max)
+		{
+			SpritePiece &f = out[drawn++];
+			f = p;
+			zx::levelmesh::CaptureFogLayer(b.lightlevel, rel, b.cm, f.piece);
+		}
 	}
 	return drawn;
 }
@@ -605,7 +616,7 @@ static bool DeriveParticle(particle_t *particle, sector_t *sector, SpritePiece &
 	mp.lightLevel = lightlevel;
 	mp.lightColor = cm.LightColor.d;
 	mp.fadeColor = cm.FadeColor.d;
-	const SpriteDrawLook plain = { false, false, trans };
+	const SpriteDrawLook plain = { false, false, false, trans };
 	zx::levelmesh::CaptureSpriteShading(lightlevel, getExtraLight(), cm, plain, color.d, mp);
 	float dyn[3] = { 0.f, 0.f, 0.f };
 	if (r_lights && view.DynamicLightCount() && !gl_fixedcolormap && r_light_particles)
@@ -748,10 +759,11 @@ void BuildSprite(AActor *thing)
 		return;
 	}
 	// [rc4l] Kept between actors: constructing sixteen records an actor cost more than deriving it.
-	static SpritePiece pieces[kMaxBands];
-	const int n = DeriveSprite(thing, s, pieces, kMaxBands);
+	static SpritePiece pieces[kMaxPieces];
+	const int n = DeriveSprite(thing, s, pieces, kMaxPieces);
+	// [rc4l] GL reports a sprite once, before its fog layer, so the check compares that piece alone.
 	if (fua_sprite_check)
-		for (int i = 0; i < n; i++) Note(g_ours, thing, false, pieces[i].piece, pieces[i].quad, 4);
+		for (int i = 0; i < n; i++) if (!pieces[i].piece.fogPass) Note(g_ours, thing, false, pieces[i].piece, pieces[i].quad, 4);
 	if (!zx::levelmesh::DynamicCaptureActive()) return;
 	for (int i = 0; i < n; i++) zx::levelmesh::DynAppend(pieces[i].quad, 4, pieces[i].piece);
 }
@@ -789,8 +801,8 @@ static void DeriveChunk(AActor *const *things, int count, int chunk)
 			if (ComputeSpriteOnGameThread(s.model != NULL, things[i]->player != NULL)) ls.onGameThread = true;
 			else
 			{
-				c.pieces.resize(ls.first + kMaxBands);
-				const int n = DeriveSprite(things[i], s, &c.pieces[ls.first], kMaxBands, true);
+				c.pieces.resize(ls.first + kMaxPieces);
+				const int n = DeriveSprite(things[i], s, &c.pieces[ls.first], kMaxPieces, true);
 				ls.onGameThread = n < 0;
 				ls.count = n < 0 ? 0 : n;
 				c.pieces.resize(ls.first + ls.count);

@@ -541,6 +541,14 @@ static const char *kScenePSTrans =
 	"        outColor = vec4(vFog.rgb, 1.0 - fuaFogFactor(vFog.a, vLightParm.y, vPixelPos, uCameraPos.xyz));\n"
 	"        return;\n"
 	"    }\n"
+	/* [rc4l] GL's CM_FOGLAYER pass over a subtract sprite in coloured fog (texFlags 8192): the fog's colour at its opacity there, 0.75 of the texel's and the piece's alpha. */
+	"    if ((int(vTexFlags + 0.5) & 8192) != 0) {\n"
+	"        vec4 ft = fuaSurfaceTexel(vUV);\n"
+	"        if (ft.a <= 0.0 || fuaBehindSkyHole()) discard;\n"
+	FUA_MIRROR_CLIP_GLSL("vPixelPos.xyz")
+	"        outColor = vec4(vFog.rgb, (1.0 - fuaFogFactor(vFog.a, vLightParm.y, vPixelPos, uCameraPos.xyz)) * ft.a * 0.75 * vLightParm.z);\n"
+	"        return;\n"
+	"    }\n"
 	/* [rc4l] A fuzzy sprite under r_fuzztype takes GL's fuzz shader (texFlags / 128), the jagged one sampling a splat of its coordinate. */
 	"    int fuzz = (int(vTexFlags + 0.5) >> 7) & 7;\n"
 	"    vec4 t = fuzz == 5 ? fuaTexMode(fuaTexel(fuaFuzzSplat(vUV, uFrame.x))) : fuaSurfaceTexel(vUV);\n"

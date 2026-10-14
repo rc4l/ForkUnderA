@@ -64,11 +64,12 @@ void GLSpritePiece(const GLSprite &spr, const float *c1, const float *c2, const 
 	mp.lightColor = spr.Colormap.LightColor.d;
 	mp.fadeColor = spr.Colormap.FadeColor.d;
 	// [rc4l] GLSprite::Draw's own rel, none for fullbright, and ThingColor over it: a particle's own colour, a stencil actor's fill.
-	CaptureSpriteShading(spr.lightlevel, spr.fullbright ? 0 : getExtraLight(), spr.Colormap,
-		zx::sprites::SpriteDrawLookAt(zx::sprites::StyleOf(spr.RenderStyle), spr.trans, spr.Colormap, spr.x, spr.y), spr.ThingColor.d, mp);
+	const zx::sprites::SpriteDrawLook look = zx::sprites::SpriteDrawLookAt(zx::sprites::StyleOf(spr.RenderStyle), spr.trans, spr.Colormap, spr.x, spr.y, false);
+	CaptureSpriteShading(spr.lightlevel, spr.fullbright ? 0 : getExtraLight(), spr.Colormap, look, spr.ThingColor.d, mp);
 	// [rc4l] A fixed-colour style draws in TM_MASK, the texture only the shape.
 	mp.stencil = (spr.RenderStyle.Flags & STYLEF_ColorIsFixed) != 0;
-	mp.alphaTest = spr.hw_styleflags != zx::sprites::kHwNoAlphaTest;
+	// [rc4l] Draw's fog layer swaps the alpha test for one that passes any alpha.
+	mp.alphaTest = spr.hw_styleflags != zx::sprites::kHwNoAlphaTest && !look.fogLayer;
 
 	// [rc4l] The dynamic light gl_SetDynSpriteLight left in the render state (r_light_sprites and DONTLIGHTSELF applied), carried apart from vColor so the shader adds it after lighting as GL does.
 	if (!spr.fullbright)
@@ -173,7 +174,7 @@ struct FGLChecks : public FGLObserver
 		if (blend.BlendOp == STYLEOP_Fuzz) blend.BlendOp = spr->actor->RenderStyle.BlendOp;
 		zx::levelmesh::MeshPiece look;
 		zx::levelmesh::ModelPieceLook(spr->lightlevel, spr->fullbright ? 0 : getExtraLight(), spr->Colormap, spr->fullbright, dyn,
-			spr->ThingColor.d, zx::sprites::SpriteDrawLookAt(zx::sprites::StyleOf(spr->RenderStyle), spr->trans, spr->Colormap, spr->x, spr->y),
+			spr->ThingColor.d, zx::sprites::SpriteDrawLookAt(zx::sprites::StyleOf(spr->RenderStyle), spr->trans, spr->Colormap, spr->x, spr->y, true),
 			zx::sprites::StyleBlendMode(blend, spr->trans), spr->x, spr->y, spr->z, look);
 		look.cullFace = zx::sprites::ComputeModelCull(spr->actor->RenderStyle == LegacyRenderStyles[STYLE_Normal], false);
 		zx::levelmesh::ModelCaptureBegin(look, model.get(), spr->actor, zx::levelmesh::kModelFromGL);

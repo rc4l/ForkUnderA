@@ -24,7 +24,9 @@ spectre drew solid at the default fuzz type. A model whose actor is not in exact
 faces `gl_RenderModel` culls (clockwise front faces, counter-clockwise on the HUD; `ComputeModelCull`, tested
 against `gl_FrontFacing` in the shader), and a blended HUD model writes depth as GL's HUD step does. GL does
 subtract a subtract-style model: `Draw` turns its style to fuzz only after setting the subtract blend.
-Scenarios `shadowstyles` and `hudmodelcull`.
+A subtract sprite in coloured fog is drawn as GL draws it, in two pieces: the subtraction without fog,
+then `CM_FOGLAYER`'s fog colour at the fog's opacity over it (`CaptureFogLayer`, texFlags 8192); before
+this the backend subtracted the fog's colour. Scenarios `shadowstyles`, `hudmodelcull` and `subtract`.
 
 Models too (`modelbuild.cpp`): the actor's light and style as a single-band sprite's, the pose from
 `computation/modelpose_compute` (`ComputeModelMatrix`, `gl_RenderModel`'s VSMatrix calls; the momentum,

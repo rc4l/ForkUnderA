@@ -117,10 +117,11 @@ int ComputeModelCull(bool normalStyle, bool hud)
 	return hud ? kCullFrontCounterClockwise : kCullFrontClockwise;
 }
 
-SpriteDrawLook ComputeSpriteDrawLook(const SpriteStyle &style, float trans, bool blackFog, int fadeAlpha, float dist)
+SpriteDrawLook ComputeSpriteDrawLook(const SpriteStyle &style, float trans, bool blackFog, int fadeAlpha, float dist, bool model)
 {
 	SpriteDrawLook out;
 	out.shadow = style.blendOp == kOpShadow;
+	out.fogLayer = !model && !blackFog && (style.blendOp == kOpSub || style.blendOp == kOpRevSub);
 	out.additiveFog = out.shadow || (style.blendOp == kOpAdd && style.destAlpha == kAlphaOne) || (style.flags & kFlagFadeToBlack) != 0;
 	// [rc4l] The factor was found by trial in GL and is scale dependent, so it is GL's to the digit.
 	out.alpha = !out.shadow ? trans : blackFog ? 0.44f : 0.44f * (0.05f + expf(-fadeAlpha * dist / 62500.f));

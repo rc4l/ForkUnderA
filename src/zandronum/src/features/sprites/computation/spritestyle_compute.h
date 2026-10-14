@@ -74,14 +74,15 @@ struct SpriteDrawLook
 {
 	bool  additiveFog;   // [rc4l] fogged toward black: a shadow, an additive style or one that fades to black
 	bool  shadow;        // [rc4l] drawn in kShadowColor rather than its light
+	bool  fogLayer;      // [rc4l] a subtract sprite in coloured fog, drawn without fog and then GL's CM_FOGLAYER pass over it
 	float alpha;
 };
 
 // [rc4l] The grey GL draws a shadow in.
 const float kShadowColor = 0.2f;
 
-// [rc4l] GLSprite::Draw's translucent setup for `style` at alpha `trans`: a shadow is 0.44 alpha, thinned in coloured fog by its fade alpha over its distance from the eye.
-SpriteDrawLook ComputeSpriteDrawLook(const SpriteStyle &style, float trans, bool blackFog, int fadeAlpha, float dist);
+// [rc4l] GLSprite::Draw's translucent setup for `style` at alpha `trans`: a shadow is 0.44 alpha, thinned in coloured fog by its fade alpha over its distance from the eye; a model is never given the fog layer.
+SpriteDrawLook ComputeSpriteDrawLook(const SpriteStyle &style, float trans, bool blackFog, int fadeAlpha, float dist, bool model);
 
 // [rc4l] What GLSprite::Draw's allowcolorblending reads of an actor besides its style.
 struct ColorBlendIn

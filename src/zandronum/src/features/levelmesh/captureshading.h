@@ -18,9 +18,12 @@ namespace zx { namespace levelmesh {
 void CaptureShading(int lightlevel, int rellight, const FColormap &cm, MeshPiece &out,
                     bool noFog = false, bool additive = false);
 
-// [rc4l] Shade a sprite or model piece as GLSprite::Draw does under `look`: fogged to black when additive, a shadow's fixed grey for its light, the actor's ThingColor over either, and the look's alpha.
+// [rc4l] Shade a sprite or model piece as GLSprite::Draw does under `look`: fogged to black when additive and not at all under a fog layer, a shadow's fixed grey for its light, the actor's ThingColor over either, and the look's alpha.
 void CaptureSpriteShading(int lightlevel, int rellight, const FColormap &cm, const zx::sprites::SpriteDrawLook &look,
                           unsigned thingColor, MeshPiece &out);
+
+// [rc4l] Turn a copy of a fog-layer sprite's piece into GL's CM_FOGLAYER pass over it: fogged as gl_SetFog fogs it, drawn alpha-blended.
+void CaptureFogLayer(int lightlevel, int rellight, const FColormap &cm, MeshPiece &out);
 
 // [rc4l] A level surface's shading, as CaptureShading but with no fixed colormap: the cached mesh keeps its light through a power, and the shader applies the colormap over it, so a power starting, blinking or ending never re-bakes the level.
 void CaptureLevelShading(int lightlevel, int rellight, const FColormap &cm, MeshPiece &out, bool noFog = false);

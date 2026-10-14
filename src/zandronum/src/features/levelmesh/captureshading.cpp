@@ -89,6 +89,21 @@ void CaptureSpriteShading(int lightlevel, int rellight, const FColormap &cm, con
 	out.colorG *= color.g / 255.f;
 	out.colorB *= color.b / 255.f;
 	out.alpha = look.alpha;
+	// [rc4l] GL draws the subtraction itself with fog off, and lays the fog over it in a second pass.
+	if (look.fogLayer) { out.fogMode = 0; out.fogDensity = 0.f; }
+}
+
+void CaptureFogLayer(int lightlevel, int rellight, const FColormap &cm, MeshPiece &out)
+{
+	MeshPiece fogged = out;
+	Capture(lightlevel, rellight, cm, fogged, false, false, false);
+	out.fogMode = fogged.fogMode;
+	out.fogDensity = fogged.fogDensity;
+	out.fogColor = fogged.fogColor;
+	out.softLight = fogged.softLight;
+	out.blendMode = zx::sprites::kBlendTranslucent;
+	out.alphaTest = false;
+	out.fogPass = true;
 }
 
 void CaptureLevelShading(int lightlevel, int rellight, const FColormap &cm, MeshPiece &out, bool noFog)

@@ -52,8 +52,8 @@ FRenderStyle RenderStyleOf(const SpriteStyle &s);
 // [rc4l] The blend (MeshPiece::blendMode) an engine render style draws with at `alpha`.
 int StyleBlendMode(const FRenderStyle &s, float alpha);
 
-// [rc4l] GLSprite::Draw's translucent setup for a piece of `style` at (x, y), under the colormap Draw has already touched, measured from the eye as GL measures a shadow.
-SpriteDrawLook SpriteDrawLookAt(const SpriteStyle &style, float trans, const FColormap &cm, float x, float y);
+// [rc4l] GLSprite::Draw's translucent setup for a sprite or model piece of `style` at (x, y), under the colormap Draw has already touched, measured from the eye as GL measures a shadow.
+SpriteDrawLook SpriteDrawLookAt(const SpriteStyle &style, float trans, const FColormap &cm, float x, float y, bool model);
 
 // [rc4l] Whether sprites, the weapon and decals take dynamic light this frame: lights on and in the view, no fixed colormap, and r_light_sprites.
 bool SpritesTakeDynamicLight();

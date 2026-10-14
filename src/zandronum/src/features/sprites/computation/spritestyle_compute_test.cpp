@@ -149,28 +149,42 @@ TEST(SpriteStyle, AModelIsCulledUnlessItsActorIsNormal)
 TEST(SpriteStyle, DrawLookIsGLSpritesTranslucentSetup)
 {
 	const SpriteStyle shadow = { kOpShadow, kAlphaSrc, kAlphaInvSrc, 0 };
-	SpriteDrawLook l = ComputeSpriteDrawLook(shadow, 1.f, true, 0, 300.f);
+	SpriteDrawLook l = ComputeSpriteDrawLook(shadow, 1.f, true, 0, 300.f, false);
 	EXPECT_TRUE(l.shadow);
 	EXPECT_TRUE(l.additiveFog);
 	EXPECT_FLOAT_EQ(0.44f, l.alpha);
-	l = ComputeSpriteDrawLook(shadow, 1.f, false, 95, 350.f);
+	l = ComputeSpriteDrawLook(shadow, 1.f, false, 95, 350.f, false);
 	EXPECT_NEAR(0.44f * (0.05f + 0.587f), l.alpha, 1e-3f);
-	l = ComputeSpriteDrawLook(shadow, 1.f, false, 255, 1e6f);
+	l = ComputeSpriteDrawLook(shadow, 1.f, false, 255, 1e6f, false);
 	EXPECT_NEAR(0.44f * 0.05f, l.alpha, 1e-6f);
 
 	const SpriteStyle add = { kOpAdd, kAlphaSrc, kAlphaOne, 0 };
-	l = ComputeSpriteDrawLook(add, 0.7f, false, 95, 350.f);
+	l = ComputeSpriteDrawLook(add, 0.7f, false, 95, 350.f, false);
 	EXPECT_FALSE(l.shadow);
 	EXPECT_TRUE(l.additiveFog);
 	EXPECT_FLOAT_EQ(0.7f, l.alpha);
 
 	const SpriteStyle faded = { kOpAdd, kAlphaSrc, kAlphaInvSrc, kFlagFadeToBlack };
-	EXPECT_TRUE(ComputeSpriteDrawLook(faded, 1.f, true, 0, 0.f).additiveFog);
+	EXPECT_TRUE(ComputeSpriteDrawLook(faded, 1.f, true, 0, 0.f, false).additiveFog);
 	const SpriteStyle translucent = { kOpAdd, kAlphaSrc, kAlphaInvSrc, 0 };
-	l = ComputeSpriteDrawLook(translucent, 0.5f, false, 95, 350.f);
+	l = ComputeSpriteDrawLook(translucent, 0.5f, false, 95, 350.f, false);
 	EXPECT_FALSE(l.additiveFog);
 	EXPECT_FALSE(l.shadow);
+	EXPECT_FALSE(l.fogLayer);
 	EXPECT_FLOAT_EQ(0.5f, l.alpha);
+}
+
+// [rc4l] A subtract sprite in coloured fog takes GL's fog layer; in black fog, as a model or in another style it does not.
+TEST(SpriteStyle, OnlyASubtractSpriteInColouredFogTakesTheFogLayer)
+{
+	const SpriteStyle sub = { kOpRevSub, kAlphaSrc, kAlphaOne, 0 };
+	const SpriteStyle subFromScreen = { kOpSub, kAlphaSrc, kAlphaOne, 0 };
+	EXPECT_TRUE(ComputeSpriteDrawLook(sub, 1.f, false, 95, 300.f, false).fogLayer);
+	EXPECT_TRUE(ComputeSpriteDrawLook(subFromScreen, 1.f, false, 95, 300.f, false).fogLayer);
+	EXPECT_FALSE(ComputeSpriteDrawLook(sub, 1.f, true, 0, 300.f, false).fogLayer);
+	EXPECT_FALSE(ComputeSpriteDrawLook(sub, 1.f, false, 95, 300.f, true).fogLayer);
+	const SpriteStyle add = { kOpAdd, kAlphaSrc, kAlphaOne, 0 };
+	EXPECT_FALSE(ComputeSpriteDrawLook(add, 1.f, false, 95, 300.f, false).fogLayer);
 }
 
 TEST(SpriteStyle, TheWeaponTakesTheFuzzAndAlphaRulesWithoutBeingMadeSolid)

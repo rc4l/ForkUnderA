@@ -147,7 +147,7 @@ void HUDModelLayer(player_t *player, pspdef_t *psp, fixed_t sx, fixed_t sy, cons
 	zx::levelmesh::MeshPiece look;
 	const int blend = StyleBlendMode(style, rgba[3]);
 	// [rc4l] Sorted at the eye, so a translucent one is drawn last.
-	const SpriteDrawLook plain = { false, false, rgba[3] };
+	const SpriteDrawLook plain = { false, false, false, rgba[3] };
 	zx::levelmesh::ModelPieceLook(255, 0, none, false, dyn, 0xffffff, plain, blend, cam.x, cam.y, cam.z, look);
 	look.colorR = rgba[0];
 	look.colorG = rgba[1];
