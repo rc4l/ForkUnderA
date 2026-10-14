@@ -203,6 +203,41 @@ Paths are relative to `src/zandronum/src/` unless noted. The order is deliberate
   - an ACS-heavy map and a DECORATE mod;
   - the player's own `doom2.wad` through the file panel.
 
+## Progress (branch `web-port`)
+
+- **Running:** `web_compile.sh` builds the module (about 14 MB of wasm), and `web_run.sh` (12f) builds, serves `dist-web/` and opens it. Chrome draws Freedoom MAP01 through WebGPU with the HUD and weapon (`?map=MAP01`).
+- **Desktop WebGPU (7a-7d, 7f, 7h-7k, 7o):** `-webgpu` runs the backend on Dawn and matches Vulkan pixel for pixel on MAP01. `fuactl scenarios --webgpu` runs the suite on WebGPU against Vulkan.
+- **Shaders:**
+  - textures and samplers are declared apart, and the material array only exists under `FUA_BINDLESS`;
+  - storage blocks are named so WebGPU's reflection keeps their names;
+  - storage buffers carry no dynamic offset;
+  - the 2D and sky pipelines match their passes' attachments.
+- **Loop (4a, 4c, 4d, 4g; 4b decided):** `features/mainloop` and `features/web`'s driver.
+- **Offline and online seams (5d, 5g, 5h):**
+  - `-offline`, which the page always passes;
+  - `ZX_VOIP` and `ZX_ACCOUNTS`;
+  - hashing through the in-tree SHA-256 and MD5;
+  - the accounts' crypto behind `zx_identitycrypto.h`.
+- **No desktop GL (6a, 6b, 6c, part of 6e):** the SDL frame buffer split into window and GL halves, and the hitbox overlay's backend half split from GL's.
+- **The page (12a-12e):**
+  - the player's WADs are kept in IndexedDB and chosen in a panel;
+  - the config and saves are kept in IndexedDB, written every few seconds and when the page is hidden or left;
+  - a restart stores them before it reloads.
+- **Quitting (4d):** a page runs no atexit handlers and kept calling the frame after `exit()`. Every exit now goes through `features/web`'s `--wrap=exit`, which ends the loop, runs the engine's shutdown (writing the config) and has the page store everything and offer to play again.
+- **Read-backs (7m, 10e):** WebGPU in a browser maps buffers only asynchronously, so `CanWaitForGPU()` is false there.
+  - A screenshot is the page's: the engine asks during the frame (`DCanvas::ScreenshotLater`), and the page downloads the canvas just after it (`Module.postMainLoop`).
+  - A save picture is drawn at the save and read back on a later frame (`ReadTextureLater`, polled after each present). The save is written with the placeholder, and the picture is spliced in once it arrives (`FRenderer::SaveWritten`, `ComputeSpliceSavePicture`).
+- **Camera textures on a binding per material:** the binding was made before the camera's first render and kept the white placeholder. WebGPU always draws this way, as does Vulkan past the array's cap; `cameratexpermaterial` covers it.
+- **Checks (13a, 13c, 13d, 13e):**
+  - The gtests build with Emscripten, threads and wasm exceptions, and pass in Node (`test-web` in CI).
+  - `tools/web/check.mjs` runs the page in headless Chrome: its screenshot shows MAP01, the sound waits for a click and starts on one (11b), the screenshot command downloads the frame, a save gets its picture, quitting stops the loop, a setting survives quitting, leaving and reloading, and errors reach the console or the page. CI runs it after the web build, on SwiftShader's WebGPU.
+  - CI builds the web module (`build-web`) and runs the tripwire.
+  - `fuactl scenarios --webgpu` runs the suite on WebGPU against Vulkan.
+- **Next:**
+  - music, pointer lock and keyboard, checked by hand (11);
+  - the build presets for the other profiles (3);
+  - the `ONLINE_SOURCES` list (5e, 5f).
+
 ## 14. Done: playing locally
 
 - **14a.** `./web_compile.sh && ./web_run.sh` opens Chrome at `localhost`.

@@ -43,10 +43,12 @@ bool OpenBackendOutput(int, int) { return false; }
 void ForgetBackendWindow(void *) {}
 int BackendMaxTextureSize() { return 0; }
 const char *BackendApiName() { return ""; }
+bool CaptureFrameLater(const char *) { return false; }
 void NoteWorldView() {}
 void SettleLevelScene() {}
 void PresentBackendOnly(bool) {}
 unsigned char *ReadBackendFrame(int &, int &) { return NULL; }
 unsigned char *RenderSavePicture(int, int, float) { return NULL; }
+bool RenderSavePictureLater(int, int, float, std::function<void(const unsigned char *, int, int)>) { return false; }
 
 }} // namespace zx::hwrender

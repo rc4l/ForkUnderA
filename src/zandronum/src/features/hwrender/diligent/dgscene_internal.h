@@ -84,6 +84,7 @@
 #include "i_system.h"
 #include <math.h>
 #include <algorithm>
+#include <functional>
 #include <stdio.h>
 #include "m_png.h"
 #ifdef ZX_ENABLE_REPLAY
@@ -340,6 +341,10 @@ bool MaterialIsMasked(const void *materialPtr);
 Diligent::IDeviceContext *GetContext();
 // [rc4l] A texture read back top-down as RGB the caller deletes, its channel order taken from its format; NULL with a reason in `report`.
 unsigned char *ReadTextureRGB(Diligent::ITexture *tex, int &w, int &h, int &format, bool &bgra, FString &report);
+// [rc4l] The same without waiting, for a device that cannot: tex copied now, and done called with its RGB on a later frame's PollLaterReadbacks; false when the copy could not be made.
+bool ReadTextureLater(Diligent::ITexture *tex, std::function<void(const unsigned char *rgb, int w, int h)> done);
+// [rc4l] Once a frame: hand each later read-back the GPU has finished to its caller.
+void PollLaterReadbacks();
 // [rc4l] The screen wipe (dgwipe.cpp): the new screen taken from the frame just drawn, whether one is under way, and its mix drawn into the bound frame target.
 void WipeTakeEnd();
 bool WipeActive();
@@ -373,6 +378,8 @@ void CommitInLoop(Diligent::IDeviceContext *ctx, zx::hwrender::LoopCommits &loop
 void DirtyMaterialSlots();
 bool EnsureScenePipeline(FString &err);
 void FlushTextureCache();
+// [rc4l] Drop one material's per-material bindings and the batches' copies, so its next draw binds what it shows now.
+void ForgetMaterialSRBs(const void *material);
 void MaterialSRBCounts(int &cached, int &batch);
 int MaterialSlotCount();
 int MaterialSlotFor(const void *material, int translation);

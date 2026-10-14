@@ -10,6 +10,7 @@ src/zandronum/sqlite/sqlite-autoconf*
 
 # Test/coverage build trees (cmake -S tests -B build-*)
 build-tests/
+build-tests-web/
 build-san/
 build-coverage/
 build-cov-llvm/
@@ -81,3 +82,4 @@ tools/fuactl/native/screencap/build/
 build-web/
 build-webgpu-check/
 dist-web/
+build-hosttools/

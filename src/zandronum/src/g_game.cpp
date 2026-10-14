@@ -5118,6 +5118,8 @@ void G_DoSaveGame (bool okForQuicksave, FString filename, const char *descriptio
 	}
 	if (success) 
 	{
+		// [rc4l] A renderer that reads its picture back only later puts it in now that the save is there.
+		Renderer->SaveWritten (filename.GetChars());
 		if (longsavemessages) Printf ("%s (%s)\n", GStrings("GGSAVED"), filename.GetChars());
 		else Printf ("%s\n", GStrings("GGSAVED"));
 	}

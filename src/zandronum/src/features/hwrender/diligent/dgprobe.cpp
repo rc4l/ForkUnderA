@@ -174,6 +174,8 @@ bool ProbeVulkan(FString &report)
 
 const char *BackendApiName() { return ChosenDeviceApi()->name; }
 
+bool CanWaitForGPU() { return ChosenDeviceApi()->canWaitForGPU; }
+
 bool BackendDeviceStarts()
 {
 	FString report;

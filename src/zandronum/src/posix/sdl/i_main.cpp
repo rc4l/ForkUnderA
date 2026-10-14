@@ -249,7 +249,7 @@ int main (int argc, char **argv)
 #endif // !__APPLE__ && !__EMSCRIPTEN__
 #ifdef __EMSCRIPTEN__
 	// [rc4l] The page calls the loop once an animation frame, so D_DoomLoop hands its frames to the browser.
-	zx::web::InstallDriver();
+	zx::web::InstallDriver(call_terms);
 #endif
  	
 	// [SB] Moved ZDoom's version info down below for Zan's --version
@@ -275,7 +275,7 @@ int main (int argc, char **argv)
 
 	Args = new DArgs(argc, argv);
 #ifdef __EMSCRIPTEN__
-	zx::web::AppendQueryArgs(Args);
+	zx::web::AppendPageArgs(Args);
 #endif
 
 	// [SB] Zandronum version

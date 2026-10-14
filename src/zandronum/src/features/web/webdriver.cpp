@@ -16,6 +16,14 @@
 namespace zx { namespace web {
 
 static void (*g_frame)() = nullptr;
+static void (*g_terms)() = nullptr;
+
+// [rc4l] An engine error that escaped a call from the browser shows on the page and leaves through exit, as main does on the desktop, so the engine's shutdown still runs.
+static void FatalExit(CDoomError &error)
+{
+	Fatal(error.GetMessage());
+	exit(-1);
+}
 
 static void Frame()
 {
@@ -31,7 +39,7 @@ static void Frame()
 	}
 	catch (CDoomError &error)
 	{
-		Fatal(error.GetMessage());
+		FatalExit(error);
 	}
 }
 
@@ -42,13 +50,15 @@ static void Drive(void (*frame)())
 	emscripten_set_main_loop(Frame, 0, 0);
 }
 
-void InstallDriver()
+void InstallDriver(void (*terms)())
 {
+	g_terms = terms;
 	zx::mainloop::SetDriver(Drive);
 }
 
-void AppendQueryArgs(DArgs *args)
+void AppendPageArgs(DArgs *args)
 {
+	args->AppendArg("-offline");
 	char *query = (char *)EM_ASM_PTR({ return stringToNewUTF8(location.search); });
 	for (const std::string &arg : ComputeArgsFromQuery(query != nullptr ? query : ""))
 		args->AppendArg(arg.c_str());
@@ -60,7 +70,19 @@ extern "C" EMSCRIPTEN_KEEPALIVE void fua_command(const char *text)
 {
 	// [rc4l] AddCommandString edits the line as it splits it, so it gets a copy.
 	std::string line = text != nullptr ? text : "";
-	AddCommandString(&line[0]);
+	// [rc4l] Its errors are handled as the loop handles a console command's, since this runs between frames.
+	try
+	{
+		AddCommandString(&line[0]);
+	}
+	catch (CRecoverableError &error)
+	{
+		D_RecoverFromError(error);
+	}
+	catch (CDoomError &error)
+	{
+		FatalExit(error);
+	}
 }
 
 void Fatal(const char *message)
@@ -73,3 +95,19 @@ void Fatal(const char *message)
 }
 
 }} // namespace zx::web
+
+extern "C" void __real_exit(int code);
+
+// [rc4l] Every exit in the browser build lands here (linked with --wrap=exit), since a page runs no atexit handlers and keeps calling the frame: it ends the loop, runs the engine's shutdown (the config among it) and tells the page.
+extern "C" void __wrap_exit(int code)
+{
+	static bool exiting = false;
+	if (!exiting)
+	{
+		exiting = true;
+		emscripten_cancel_main_loop();
+		if (zx::web::g_terms != nullptr) zx::web::g_terms();
+		EM_ASM({ if (Module.fuaExit) Module.fuaExit($0); }, code);
+	}
+	__real_exit(code);
+}

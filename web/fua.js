@@ -8,6 +8,7 @@
   const consoleEl = document.getElementById('console');
   const errorEl = document.getElementById('error');
   const canvas = document.getElementById('canvas');
+  const again = document.getElementById('again');
 
   // [rc4l] Where the engine keeps its config and saves (posix's $HOME), stored in IndexedDB.
   const HOME = '/home/web_user';
@@ -72,17 +73,62 @@
     return new Promise((resolve) => FS.syncfs(true, (err) => { if (err) log('Saved data could not be read: ' + err); resolve(); }));
   }
 
-  // [rc4l] Config and saves go back to IndexedDB every few seconds and when the page is hidden or left.
+  // [rc4l] Whether the engine is still there to write its config, from main until it quits or fails.
+  let running = false;
+  let saveHome = () => Promise.resolve(true);
+
+  // [rc4l] Saves go back to IndexedDB every few seconds, and the config with them when the page is hidden or left, one sync at a time.
   function keepHome(FS) {
-    let busy = false;
-    const flush = () => {
-      if (busy) return;
-      busy = true;
-      FS.syncfs(false, (err) => { busy = false; if (err) log('Saving failed: ' + err); });
+    let last = Promise.resolve(true), queued = 0;
+    const sync = () => new Promise((resolve) => FS.syncfs(false, (err) => { if (err) log('Saving failed: ' + err); resolve(!err); }));
+    saveHome = (withConfig) => {
+      if (withConfig && running) Module.fuaCommand('writeini');
+      queued++;
+      last = last.then(sync).finally(() => queued--);
+      // [rc4l] The store in progress, or the last one, as a promise of whether it worked, for tests to wait on.
+      Module.fuaSaving = last;
+      return last;
     };
-    setInterval(flush, 5000);
-    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flush(); });
-    window.addEventListener('pagehide', flush);
+    setInterval(() => { if (!queued) saveHome(false); }, 5000);
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') saveHome(true); });
+    window.addEventListener('pagehide', () => saveHome(true));
+  }
+
+  // [rc4l] A restart is a page reload, once the config and saves are stored so it keeps them.
+  function restart() {
+    saveHome(true).finally(() => location.reload());
+  }
+
+  // [rc4l] The engine quit, having written its config: everything is stored and the page offers to start again, unless an error is showing.
+  function ended() {
+    running = false;
+    saveHome(false).finally(() => {
+      if (!errorEl.hidden) return;
+      setStatus('You quit the game.');
+      progress.hidden = true;
+      again.hidden = false;
+      statusEl.hidden = false;
+    });
+  }
+
+  // [rc4l] A screenshot: the canvas holds a frame only until the task that drew it ends, so the engine asks during the frame and the page saves the canvas just after it, as a download named as the engine named it.
+  let shotName = null;
+  function captureFrame(path) {
+    shotName = path.split('/').pop();
+  }
+  function afterFrame() {
+    if (shotName === null) return;
+    const name = shotName;
+    shotName = null;
+    canvas.toBlob((blob) => {
+      if (!blob) { log('The screenshot could not be made.'); return; }
+      log('Downloading ' + name);
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = name;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(link.href), 10000);
+    }, 'image/png');
   }
 
   let deviceReady, runtimeReady;
@@ -95,27 +141,38 @@
     printErr: log,
     setStatus: () => {},
     onRuntimeInitialized: () => runtimeReady(),
-    fuaFatal: (text) => fail(text),
-    fuaRestart: () => location.reload(),
+    fuaFatal: (text) => { running = false; fail(text); },
+    fuaRestart: restart,
+    fuaExit: ended,
+    fuaCaptureFrame: captureFrame,
+    postMainLoop: afterFrame,
     preRun: [() => {
       const FS = Module.FS;
       Module.addRunDependency('fua-data');
-      Promise.all([fetchData(FS), mountHome(FS, Module.IDBFS || FS.filesystems.IDBFS)])
+      Promise.all([fetchData(FS), mountHome(FS, Module.IDBFS || FS.filesystems.IDBFS), FuaWads.load(FS).then((a) => { wadArgs = a; })])
         .then(() => Module.removeRunDependency('fua-data'))
         .catch((e) => fail(String(e.message || e)));
     }],
   };
+  // [rc4l] -iwad and -file for the player's own WADs, which the panel chose.
+  let wadArgs = [];
+  FuaWads.panel(restart);
 
   makeDevice().then((d) => { Module.preinitializedWebGPUDevice = d; deviceReady(); }).catch((e) => fail(String(e.message || e)));
 
   Promise.all([device, runtime]).then(() => {
-    // [rc4l] A console command, for the page's controls and for tests driving the engine.
-    Module.fuaCommand = (text) => Module.ccall('fua_command', null, ['string'], [text]);
+    // [rc4l] A console command, for the page's controls and for tests driving the engine; one that quits ends the engine rather than failing.
+    Module.fuaCommand = (text) => {
+      try { Module.ccall('fua_command', null, ['string'], [text]); }
+      catch (e) { if (!e || e.name !== 'ExitStatus') throw e; }
+    };
     statusEl.hidden = true;
     keepHome(Module.FS);
     canvas.focus();
-    Module.callMain([]);
+    running = true;
+    Module.callMain(wadArgs);
   });
 
   document.getElementById('fullscreen').addEventListener('click', () => canvas.requestFullscreen());
+  again.addEventListener('click', () => location.reload());
 })();

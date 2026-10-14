@@ -4,6 +4,10 @@
 // [rc4l] Measurements and readbacks: the scene bench and scale probe, the statistics report, replay capture and screenshots, and their console commands.
 
 #include "features/hwrender/diligent/dgscene_internal.h"
+#include "features/hwrender/diligent/dgdevice.h"   // [rc4l] CanWaitForGPU
+#include "features/hwrender/computation/readback_compute.h"
+#include <functional>
+#include <vector>
 #include "features/hwrender/backendonly.h"   // [rc4l] BackendOnly
 
 namespace zx { namespace hwrender {
@@ -323,14 +327,11 @@ unsigned char *ReadBackBuffer(int &w, int &h, int &format, bool &bgra, FString &
 	return ReadTextureRGB(FrameTexture(), w, h, format, bgra, report);
 }
 
-unsigned char *ReadTextureRGB(Diligent::ITexture *backTex, int &w, int &h, int &format, bool &bgra, FString &report)
+// [rc4l] A copy of tex the CPU can map, recorded on the context; NULL with the reason in report.
+static Diligent::RefCntAutoPtr<Diligent::ITexture> CopyToStaging(Diligent::ITexture *tex, FString &report)
 {
 	auto *ctx = GetContext();
-	auto *dev = GetDevice();
-	if (!ctx || !dev || !backTex) { report = "no backend device"; return NULL; }
-	ctx->WaitForIdle();
-
-	const auto &bd = backTex->GetDesc();
+	const auto &bd = tex->GetDesc();
 
 	// Same as the replay path: unbind before copying from the back buffer, or Diligent does it for
 	// us and logs about it.
@@ -346,20 +347,26 @@ unsigned char *ReadTextureRGB(Diligent::ITexture *backTex, int &w, int &h, int &
 	sd.BindFlags = Diligent::BIND_NONE;
 	sd.MipLevels = 1;
 	Diligent::RefCntAutoPtr<Diligent::ITexture> staging;
-	dev->CreateTexture(sd, nullptr, &staging);
-	if (!staging) { report = "staging texture creation failed"; return NULL; }
+	GetDevice()->CreateTexture(sd, nullptr, &staging);
+	if (!staging) { report = "staging texture creation failed"; return staging; }
 
 	Diligent::CopyTextureAttribs cta;
-	cta.pSrcTexture = backTex;
+	cta.pSrcTexture = tex;
 	cta.SrcTextureTransitionMode = Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
 	cta.pDstTexture = staging;
 	cta.DstTextureTransitionMode = Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION;
 	ctx->CopyTexture(cta);
-	ctx->WaitForIdle();
+	return staging;
+}
 
+// [rc4l] A staging copy the GPU has finished, as top-down RGB the caller deletes; NULL when it maps nothing.
+static unsigned char *StagingRGB(Diligent::ITexture *staging, int &w, int &h, int &format, bool &bgra)
+{
+	auto *ctx = GetContext();
+	const auto &bd = staging->GetDesc();
 	Diligent::MappedTextureSubresource mapped;
 	ctx->MapTextureSubresource(staging, 0, 0, Diligent::MAP_READ, Diligent::MAP_FLAG_DO_NOT_WAIT, nullptr, mapped);
-	if (mapped.pData == nullptr) { report = "readback map failed"; return NULL; }
+	if (mapped.pData == nullptr) return NULL;
 
 	w = (int)bd.Width; h = (int)bd.Height;
 	format = (int)bd.Format;
@@ -372,22 +379,79 @@ unsigned char *ReadTextureRGB(Diligent::ITexture *backTex, int &w, int &h, int &
 	// hunting a lighting bug that did not exist.
 	bgra = (bd.Format == Diligent::TEX_FORMAT_BGRA8_UNORM ||
 	        bd.Format == Diligent::TEX_FORMAT_BGRA8_UNORM_SRGB);
-	const int ri = bgra ? 2 : 0, bi = bgra ? 0 : 2;
 
 	BYTE *rgb = new BYTE[w * h * 3];
-	for (int y = 0; y < h; y++)
-	{
-		const BYTE *srcRow = (const BYTE *)mapped.pData + (size_t)y * mapped.Stride;
-		BYTE *dstRow = rgb + (size_t)y * w * 3;
-		for (int x = 0; x < w; x++)
-		{
-			dstRow[x*3+0] = srcRow[x*4+ri];
-			dstRow[x*3+1] = srcRow[x*4+1];
-			dstRow[x*3+2] = srcRow[x*4+bi];
-		}
-	}
+	zx::ComputeRowsToRGB((const unsigned char *)mapped.pData, (size_t)mapped.Stride, w, h, bgra, rgb);
 	ctx->UnmapTextureSubresource(staging, 0, 0);
 	return rgb;
+}
+
+unsigned char *ReadTextureRGB(Diligent::ITexture *backTex, int &w, int &h, int &format, bool &bgra, FString &report)
+{
+	auto *ctx = GetContext();
+	auto *dev = GetDevice();
+	if (!ctx || !dev || !backTex) { report = "no backend device"; return NULL; }
+	if (!CanWaitForGPU()) { report = "this device reads the GPU back only asynchronously"; return NULL; }
+	ctx->WaitForIdle();
+	Diligent::RefCntAutoPtr<Diligent::ITexture> staging = CopyToStaging(backTex, report);
+	if (!staging) return NULL;
+	ctx->WaitForIdle();
+	unsigned char *rgb = StagingRGB(staging, w, h, format, bgra);
+	if (rgb == NULL) report = "readback map failed";
+	return rgb;
+}
+
+// [rc4l] Read-backs a device finishes later: each a staging copy and the fence value signalled after it, read once the fence has passed and one more frame has gone, since WebGPU fills the copy's bytes from a callback of its own.
+struct LaterRead
+{
+	Diligent::RefCntAutoPtr<Diligent::ITexture> staging;
+	Diligent::Uint64 value;
+	bool passed;
+	std::function<void(const unsigned char *rgb, int w, int h)> done;
+};
+static std::vector<LaterRead> g_laterReads;
+static Diligent::RefCntAutoPtr<Diligent::IFence> g_laterFence;
+static Diligent::Uint64 g_laterSignalled = 0;
+
+bool ReadTextureLater(Diligent::ITexture *tex, std::function<void(const unsigned char *rgb, int w, int h)> done)
+{
+	auto *ctx = GetContext();
+	auto *dev = GetDevice();
+	if (!ctx || !dev || !tex) return false;
+	if (!g_laterFence)
+	{
+		Diligent::FenceDesc fd;
+		fd.Name = "fua later readback";
+		fd.Type = Diligent::FENCE_TYPE_CPU_WAIT_ONLY;
+		dev->CreateFence(fd, &g_laterFence);
+		if (!g_laterFence) return false;
+	}
+	FString report;
+	Diligent::RefCntAutoPtr<Diligent::ITexture> staging = CopyToStaging(tex, report);
+	if (!staging) return false;
+	ctx->EnqueueSignal(g_laterFence, ++g_laterSignalled);
+	ctx->Flush();
+	g_laterReads.push_back({ staging, g_laterSignalled, false, std::move(done) });
+	return true;
+}
+
+void PollLaterReadbacks()
+{
+	if (g_laterReads.empty()) return;
+	const Diligent::Uint64 completed = g_laterFence->GetCompletedValue();
+	for (size_t i = 0; i < g_laterReads.size();)
+	{
+		LaterRead &r = g_laterReads[i];
+		if (!r.passed) { r.passed = r.value <= completed; i++; continue; }
+		int w = 0, h = 0, format = 0;
+		bool bgra = false;
+		unsigned char *rgb = StagingRGB(r.staging, w, h, format, bgra);
+		const std::function<void(const unsigned char *, int, int)> done = std::move(r.done);
+		g_laterReads.erase(g_laterReads.begin() + i);
+		if (rgb == NULL) continue;
+		done(rgb, w, h);
+		delete[] rgb;
+	}
 }
 
 bool SceneScreenshot(const char *path, FString &report)

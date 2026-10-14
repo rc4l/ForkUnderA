@@ -42,6 +42,10 @@ jobs:
       - name: Removed-API tripwire
         run: bash tools/removed-api-tripwire.sh
 
+      # [rc4l] The browser build's #ifs, and NO_GL in feature code, stay at their named seams.
+      - name: Platform-branch tripwire
+        run: bash tools/platform-ifdef-tripwire.sh
+
       # [rc4l] A .ps1 with non-ASCII bytes and no UTF-8 BOM fails to PARSE under Windows PowerShell
       # 5.1 (the default shell on a stock Windows box) because it decodes as ANSI. CI cannot notice
       # on its own -- our workflows run `shell: pwsh`, which reads UTF-8 regardless -- so this only
@@ -159,3 +163,26 @@ jobs:
       # the wrong directory and reports every test as NOT_BUILT rather than failing outright.
       - name: Run tests
         run: ctest --test-dir build-tests -C Release --output-on-failure
+
+  # [rc4l] The same tests built with Emscripten and run in Node, the browser build's runtime (web-port-design 13a).
+  test-web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Emscripten 4.0.0
+        uses: emscripten-core/setup-emsdk@v16
+        with:
+          version: 4.0.0
+
+      - name: Install Ninja
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
+
+      - name: Build for WebAssembly
+        run: |
+          emcmake cmake -S tests -B build-tests-web -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+          cmake --build build-tests-web
+
+      # [rc4l] One run of the whole binary: ctest would start Node once per test.
+      - name: Run tests in Node
+        run: node build-tests-web/zandrox_tests.js

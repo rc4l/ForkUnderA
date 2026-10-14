@@ -4,6 +4,7 @@
 // [rc4l] Camera textures: the world drawn from a camera's viewpoint into the texture a material samples.
 
 #include "features/hwrender/diligent/dgscene_internal.h"
+#include "features/hwrender/diligent/dgdevice.h"   // [rc4l] CanWaitForGPU
 
 namespace zx { namespace hwrender {
 
@@ -77,20 +78,35 @@ static CameraTarget *GetCameraTarget(const void *material, int w, int h)
 	c->srv = c->color->GetDefaultView(Diligent::TEXTURE_VIEW_SHADER_RESOURCE);
 	c->dsv = c->depth->GetDefaultView(Diligent::TEXTURE_VIEW_DEPTH_STENCIL);
 	g_cameraTargets.Push(c);
-	// [rc4l] Its material may already sit in the bindless array as white, filled before this first render, and the retries for that may be spent.
+	// [rc4l] Its material may already sit in the bindless array, or in a binding of its own, as white, made before this first render.
 	DirtyMaterialSlots();
+	ForgetMaterialSRBs(material);
 	return c;
 }
 
 // The rendered view for a canvas material, or NULL if it has never been rendered.
-unsigned char *RenderSavePicture(int w, int h, float fovDeg)
+// [rc4l] The save picture drawn into a camera target of its own, keyed by an address no material has; NULL when there is no scene.
+static CameraTarget *DrawSavePicture(int w, int h, float fovDeg)
 {
-	// [rc4l] A camera target of its own, keyed by an address no material has.
 	static const int key = 0;
 	if (!GetDevice() || !g_scene.vb || !g_pso.world[kWpOpaque] || w <= 0 || h <= 0) return NULL;
 	// [rc4l] GL draws it at a 1.6 ratio whatever its size, as RenderViewpoint is handed for a save.
 	RenderCameraTexture(&key, w, h, 1.6f, viewx, viewy, viewz, (unsigned int)viewangle, viewpitch, fovDeg);
-	CameraTarget *cam = GetCameraTarget(&key, w, h);
+	return GetCameraTarget(&key, w, h);
+}
+
+bool RenderSavePictureLater(int w, int h, float fovDeg, std::function<void(const unsigned char *rgb, int w, int h)> done)
+{
+	if (CanWaitForGPU()) return false;
+	CameraTarget *cam = DrawSavePicture(w, h, fovDeg);
+	return cam != NULL && ReadTextureLater(cam->scratch, std::move(done));
+}
+
+unsigned char *RenderSavePicture(int w, int h, float fovDeg)
+{
+	// [rc4l] A device that cannot read the picture back at once has RenderSavePictureLater instead.
+	if (!CanWaitForGPU()) return NULL;
+	CameraTarget *cam = DrawSavePicture(w, h, fovDeg);
 	if (cam == NULL) return NULL;
 	int rw = 0, rh = 0, format = 0;
 	bool bgra = false;

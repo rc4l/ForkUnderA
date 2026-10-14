@@ -92,6 +92,7 @@
 #include "sv_main.h"
 #include "m_random.h"
 #include "network.h"
+#include "features/net/zx_offline.h"   // [rc4l] OfflineLaunch
 #include "sbar.h"
 #include "v_video.h"
 #include "version.h"
@@ -278,13 +279,138 @@ static	void			network_ParseLumpAuthenticationMode( FScanner &sc, LumpAuthenticat
 //*****************************************************************************
 //	FUNCTIONS
 
-void NETWORK_Construct( USHORT usPort, bool bAllocateLANSocket )
+// [rc4l] The game socket bound to usPort (or the next free one), the LAN listener when asked for, and our local address.
+static void network_OpenSockets( USHORT usPort, bool bAllocateLANSocket )
 {
 	char			szString[128];
 	ULONG			ulArg;
 	USHORT			usNewPort;
 	bool			bSuccess;
 
+	ULONG ulInAddr = INADDR_ANY;
+	const char* pszIPAddress = Args->CheckValue( "-useip" );
+	// [BB] An IP was specfied. Check if it's valid and if it is, try to bind our socket to it.
+	if ( pszIPAddress )
+	{
+		ULONG requestedIP = inet_addr( pszIPAddress );
+		if ( requestedIP == INADDR_NONE )
+		{
+			sprintf( szString, "NETWORK_Construct: %s is not a valid IP address\n", pszIPAddress );
+			network_Error( szString );
+		}
+		else
+			ulInAddr = requestedIP;
+	}
+
+	g_usLocalPort = usPort;
+
+	// Allocate a socket, and attempt to bind it to the given port.
+	g_NetworkSocket = network_AllocateSocket( true, g_bSocketIsDualStack );
+	// [BB] If we can't allocate a socket, sending / receiving net packets won't work.
+	if ( g_NetworkSocket == INVALID_SOCKET )
+		network_Error( "NETWORK_Construct: Couldn't allocate socket. You will not be able to host or join servers.\n" );
+	else if ( network_BindSocketToPort( g_NetworkSocket, ulInAddr, g_usLocalPort, false, g_bSocketIsDualStack ) == false )
+	{
+		bSuccess = true;
+		bool bSuccessIP = true;
+		usNewPort = g_usLocalPort;
+		while ( network_BindSocketToPort( g_NetworkSocket, ulInAddr, ++usNewPort, false, g_bSocketIsDualStack ) == false )
+		{
+			// Didn't find an available port. Oh well...
+			if ( usNewPort == g_usLocalPort )
+			{
+				// [BB] We couldn't use the specified IP, so just try any.
+				if ( ulInAddr != INADDR_ANY )
+				{
+					ulInAddr = INADDR_ANY;
+					bSuccessIP = false;
+					continue;
+				}
+				bSuccess = false;
+				break;
+			}
+		}
+
+		if ( bSuccess == false )
+		{
+			sprintf( szString, "NETWORK_Construct: Couldn't bind socket to port: %d\n", g_usLocalPort );
+			network_Error( szString );
+		}
+		else if ( bSuccessIP == false )
+		{
+			sprintf( szString, "NETWORK_Construct: Couldn't bind socket to IP %s, using the default IP instead:\n", pszIPAddress );
+			network_Error( szString );
+		}
+		else
+		{
+			Printf( "NETWORK_Construct: Couldn't bind to %d. Binding to %d instead...\n", g_usLocalPort, usNewPort );
+			g_usLocalPort = usNewPort;
+		}
+	}
+
+	ulArg = true;
+	if ( ioctlsocket( g_NetworkSocket, FIONBIO, &ulArg ) == -1 )
+		printf( "network_AllocateSocket: ioctl FIONBIO: %s", strerror( errno ));
+
+	// If we're not starting a server, setup a socket to listen for LAN servers.
+	if ( bAllocateLANSocket )
+	{
+		// [rc4l] v4 ON PURPOSE. LAN discovery is a broadcast to 255.255.255.255, and IPv6 has no
+		// broadcast at all -- it has multicast instead, which is a different protocol and a
+		// different address. A dual-stack socket here simply never sees a LAN server.
+		bool bLANDualStack = false;
+		g_LANSocket = network_AllocateSocket( false, bLANDualStack );
+		if ( network_BindSocketToPort( g_LANSocket, ulInAddr, DEFAULT_BROADCAST_PORT, true, bLANDualStack ) == false )
+		{
+			sprintf( szString, "network_BindSocketToPort: Couldn't bind LAN socket to port: %d. You will not be able to see LAN servers in the browser.", DEFAULT_BROADCAST_PORT );
+			network_Error( szString );
+			// [BB] The socket won't work in this case, make sure not to use it.
+			g_bLANSocketInvalid = true;
+		}
+
+		if ( ioctlsocket( g_LANSocket, FIONBIO, &ulArg ) == -1 )
+			printf( "network_AllocateSocket: ioctl FIONBIO: %s", strerror( errno ));
+	}
+
+	// [rc4l] If we ARE a server and the game socket went dual-stack, open a dedicated v4 socket
+	// solely to broadcast this server onto the LAN. A dual-stack v6 socket cannot send a v4
+	// broadcast at all, which is why LAN discovery of a hosted server silently stopped working.
+	//
+	// Bound to an EPHEMERAL port on purpose. A second socket sharing the game port would, on
+	// BSD/macOS, steal inbound v4 game datagrams away from the dual-stack socket and break v4
+	// joiners -- a worse regression than the one being fixed. Since the source port is therefore
+	// not the game port, the real game port rides in the SERVER_LAUNCHER_LAN_CHALLENGE header and
+	// the client patches it back on (see NETWORK_LaunchBroadcast / the LAN pump in g_game.cpp).
+	if ( ( bAllocateLANSocket == false ) && g_bSocketIsDualStack )
+	{
+		bool bBroadcastDualStack = false;
+		g_LANBroadcastSocket = network_AllocateSocket( false, bBroadcastDualStack );
+		if ( network_BindSocketToPort( g_LANBroadcastSocket, INADDR_ANY, 0, true, bBroadcastDualStack ) == false )
+		{
+			Printf( "NETWORK_Construct: Couldn't bind LAN broadcast socket; this server will not be visible on the LAN.\n" );
+			closesocket( g_LANBroadcastSocket );
+			g_LANBroadcastSocket = INVALID_SOCKET;
+		}
+		else if ( ioctlsocket( g_LANBroadcastSocket, FIONBIO, &ulArg ) == -1 )
+			printf( "network_AllocateSocket: ioctl FIONBIO: %s", strerror( errno ));
+	}
+
+	// [BB] Get and save our local IP.
+	if ( ( ulInAddr == INADDR_ANY ) || ( pszIPAddress == NULL ) )
+		g_LocalAddress = NETWORK_GetLocalAddress( );
+	// [BB] We are using a specified IP, so we don't need to figure out what IP we have, but just use the specified one.
+	else
+	{
+		g_LocalAddress.LoadFromString( pszIPAddress );
+		g_LocalAddress.usPort = htons ( NETWORK_GetLocalPort() );
+	}
+
+	// Print out our local IP address.
+	Printf( "IP address %s\n", g_LocalAddress.ToString() );
+}
+
+void NETWORK_Construct( USHORT usPort, bool bAllocateLANSocket )
+{
 	// Initialize the Huffman buffer.
 	HUFFMAN_Construct( );
 
@@ -299,126 +425,14 @@ void NETWORK_Construct( USHORT usPort, bool bAllocateLANSocket )
 		Printf( "Winsock initialization succeeded!\n" );
 #endif
 
-		ULONG ulInAddr = INADDR_ANY;
-		const char* pszIPAddress = Args->CheckValue( "-useip" );
-		// [BB] An IP was specfied. Check if it's valid and if it is, try to bind our socket to it.
-		if ( pszIPAddress )
+		// [rc4l] An offline launch (-offline, which a browser's build always is) opens no socket, and every send and receive finds none.
+		if ( zx::net::OfflineLaunch( ))
 		{
-			ULONG requestedIP = inet_addr( pszIPAddress );
-			if ( requestedIP == INADDR_NONE )
-			{
-				sprintf( szString, "NETWORK_Construct: %s is not a valid IP address\n", pszIPAddress );
-				network_Error( szString );
-			}
-			else
-				ulInAddr = requestedIP;
+			g_NetworkSocket = INVALID_SOCKET;
+			g_bLANSocketInvalid = true;
 		}
-
-		g_usLocalPort = usPort;
-
-		// Allocate a socket, and attempt to bind it to the given port.
-		g_NetworkSocket = network_AllocateSocket( true, g_bSocketIsDualStack );
-		// [BB] If we can't allocate a socket, sending / receiving net packets won't work.
-		if ( g_NetworkSocket == INVALID_SOCKET )
-			network_Error( "NETWORK_Construct: Couldn't allocate socket. You will not be able to host or join servers.\n" );
-		else if ( network_BindSocketToPort( g_NetworkSocket, ulInAddr, g_usLocalPort, false, g_bSocketIsDualStack ) == false )
-		{
-			bSuccess = true;
-			bool bSuccessIP = true;
-			usNewPort = g_usLocalPort;
-			while ( network_BindSocketToPort( g_NetworkSocket, ulInAddr, ++usNewPort, false, g_bSocketIsDualStack ) == false )
-			{
-				// Didn't find an available port. Oh well...
-				if ( usNewPort == g_usLocalPort )
-				{
-					// [BB] We couldn't use the specified IP, so just try any.
-					if ( ulInAddr != INADDR_ANY )
-					{
-						ulInAddr = INADDR_ANY;
-						bSuccessIP = false;
-						continue;
-					}
-					bSuccess = false;
-					break;
-				}
-			}
-
-			if ( bSuccess == false )
-			{
-				sprintf( szString, "NETWORK_Construct: Couldn't bind socket to port: %d\n", g_usLocalPort );
-				network_Error( szString );
-			}
-			else if ( bSuccessIP == false )
-			{
-				sprintf( szString, "NETWORK_Construct: Couldn't bind socket to IP %s, using the default IP instead:\n", pszIPAddress );
-				network_Error( szString );
-			}
-			else
-			{
-				Printf( "NETWORK_Construct: Couldn't bind to %d. Binding to %d instead...\n", g_usLocalPort, usNewPort );
-				g_usLocalPort = usNewPort;
-			}
-		}
-
-		ulArg = true;
-		if ( ioctlsocket( g_NetworkSocket, FIONBIO, &ulArg ) == -1 )
-			printf( "network_AllocateSocket: ioctl FIONBIO: %s", strerror( errno ));
-
-		// If we're not starting a server, setup a socket to listen for LAN servers.
-		if ( bAllocateLANSocket )
-		{
-			// [rc4l] v4 ON PURPOSE. LAN discovery is a broadcast to 255.255.255.255, and IPv6 has no
-			// broadcast at all -- it has multicast instead, which is a different protocol and a
-			// different address. A dual-stack socket here simply never sees a LAN server.
-			bool bLANDualStack = false;
-			g_LANSocket = network_AllocateSocket( false, bLANDualStack );
-			if ( network_BindSocketToPort( g_LANSocket, ulInAddr, DEFAULT_BROADCAST_PORT, true, bLANDualStack ) == false )
-			{
-				sprintf( szString, "network_BindSocketToPort: Couldn't bind LAN socket to port: %d. You will not be able to see LAN servers in the browser.", DEFAULT_BROADCAST_PORT );
-				network_Error( szString );
-				// [BB] The socket won't work in this case, make sure not to use it.
-				g_bLANSocketInvalid = true;
-			}
-
-			if ( ioctlsocket( g_LANSocket, FIONBIO, &ulArg ) == -1 )
-				printf( "network_AllocateSocket: ioctl FIONBIO: %s", strerror( errno ));
-		}
-
-		// [rc4l] If we ARE a server and the game socket went dual-stack, open a dedicated v4 socket
-		// solely to broadcast this server onto the LAN. A dual-stack v6 socket cannot send a v4
-		// broadcast at all, which is why LAN discovery of a hosted server silently stopped working.
-		//
-		// Bound to an EPHEMERAL port on purpose. A second socket sharing the game port would, on
-		// BSD/macOS, steal inbound v4 game datagrams away from the dual-stack socket and break v4
-		// joiners -- a worse regression than the one being fixed. Since the source port is therefore
-		// not the game port, the real game port rides in the SERVER_LAUNCHER_LAN_CHALLENGE header and
-		// the client patches it back on (see NETWORK_LaunchBroadcast / the LAN pump in g_game.cpp).
-		if ( ( bAllocateLANSocket == false ) && g_bSocketIsDualStack )
-		{
-			bool bBroadcastDualStack = false;
-			g_LANBroadcastSocket = network_AllocateSocket( false, bBroadcastDualStack );
-			if ( network_BindSocketToPort( g_LANBroadcastSocket, INADDR_ANY, 0, true, bBroadcastDualStack ) == false )
-			{
-				Printf( "NETWORK_Construct: Couldn't bind LAN broadcast socket; this server will not be visible on the LAN.\n" );
-				closesocket( g_LANBroadcastSocket );
-				g_LANBroadcastSocket = INVALID_SOCKET;
-			}
-			else if ( ioctlsocket( g_LANBroadcastSocket, FIONBIO, &ulArg ) == -1 )
-				printf( "network_AllocateSocket: ioctl FIONBIO: %s", strerror( errno ));
-		}
-
-		// [BB] Get and save our local IP.
-		if ( ( ulInAddr == INADDR_ANY ) || ( pszIPAddress == NULL ) )
-			g_LocalAddress = NETWORK_GetLocalAddress( );
-		// [BB] We are using a specified IP, so we don't need to figure out what IP we have, but just use the specified one.
 		else
-		{
-			g_LocalAddress.LoadFromString( pszIPAddress );
-			g_LocalAddress.usPort = htons ( NETWORK_GetLocalPort() );
-		}
-
-		// Print out our local IP address.
-		Printf( "IP address %s\n", g_LocalAddress.ToString() );
+			network_OpenSockets( usPort, bAllocateLANSocket );
 	}
 
 	// Init our read buffer.
@@ -1004,6 +1018,10 @@ void NETWORK_LaunchPacket( NETBUFFER_s *pBuffer, NETADDRESS_s Address )
 
 	// Nothing to do.
 	if ( pBuffer->ulCurrentSize == 0 )
+		return;
+
+	// [rc4l] With no socket (an offline launch), there is nothing to send through.
+	if ( g_NetworkSocket == INVALID_SOCKET )
 		return;
 
 	// Convert the IP address to a socket address.

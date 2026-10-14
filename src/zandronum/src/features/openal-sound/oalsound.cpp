@@ -924,7 +924,8 @@ public:
         UserData = userdata;
         SampleRate = samplerate;
 
-        Format = ComputeStreamFormat(flags, !!alIsExtensionPresent("AL_EXT_FLOAT32"));
+        // [rc4l] The extension's own spelling: OpenAL Soft matches names in any case, Emscripten's OpenAL only exactly.
+        Format = ComputeStreamFormat(flags, !!alIsExtensionPresent("AL_EXT_float32"));
         if(Format == AL_NONE)
         {
             Printf("Unsupported format: 0x%x\n", flags);

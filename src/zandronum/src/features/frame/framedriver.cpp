@@ -58,6 +58,8 @@ struct FFrameDriver : public FLevelRenderer
 		if (!renderers.empty()) renderers[0].renderer->WriteSavePic(player, file, width, height);
 	}
 
+	void SaveWritten(const char *path) { Every([&](FRenderer *x) { x->SaveWritten(path); }); }
+
 	void RenderTextureView(FCanvasTexture *tex, AActor *viewpoint, int fov)
 	{
 		Drawing(Route(), [&](FRenderer *x) { x->RenderTextureView(tex, viewpoint, fov); });

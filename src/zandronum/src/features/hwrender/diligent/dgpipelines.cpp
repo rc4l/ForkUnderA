@@ -549,6 +549,18 @@ void MaterialSRBCounts(int &cached, int &batch)
 	batch = (int)g_batchSRBs.Size();
 }
 
+void ForgetMaterialSRBs(const void *material)
+{
+	for (unsigned i = g_matSRBs.Size(); i-- > 0;)
+		if (g_matSRBs[i].material == material)
+		{
+			if (g_matSRBs[i].srb) g_matSRBs[i].srb->Release();
+			g_matSRBs.Delete(i);
+		}
+	for (unsigned b = 0; b < g_scene.batches.Size(); b++)
+		if (g_scene.batches[b].resolved == material) g_scene.batches[b].srb = NULL;
+}
+
 void ReleaseMaterialSRBs()
 {
 	ForgetBatchSRBs();

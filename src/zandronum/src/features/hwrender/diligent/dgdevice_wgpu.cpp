@@ -4,12 +4,14 @@
 // [rc4l] The backend's device and swapchain on WebGPU: through Dawn on the desktop, and in a browser the device the page made before the engine started.
 
 #include "features/hwrender/diligent/dgdevice.h"
+#include "features/hwrender/backendonly.h"   // [rc4l] CaptureFrameLater
 #include "zstring.h"
 
 #ifdef FUA_WEBGPU
 
 #include "EngineFactoryWebGPU.h"
 #if PLATFORM_WEB
+#include <emscripten.h>
 #include <emscripten/html5_webgpu.h>
 #endif
 
@@ -55,9 +57,27 @@ static void CreateSwapChain(Diligent::IRenderDevice *device, Diligent::IDeviceCo
 	Diligent::GetEngineFactoryWebGPU()->CreateSwapChainWebGPU(device, context, desc, window, swap);
 }
 
+#if PLATFORM_WEB
+// [rc4l] The canvas holds the frame only until the page's task ends, so the page copies it after the frame (Module.postMainLoop) rather than now.
+bool CaptureFrameLater(const char *path)
+{
+	return EM_ASM_INT({
+		if (!Module.fuaCaptureFrame) return 0;
+		Module.fuaCaptureFrame(UTF8ToString($0));
+		return 1;
+	}, path) != 0;
+}
+#else
+bool CaptureFrameLater(const char *) { return false; }
+#endif
+
 const DeviceApi *WebGPUDeviceApi()
 {
-	static const DeviceApi api = { "WebGPU", CreateDevice, CreateSwapChain };
+#if PLATFORM_WEB
+	static const DeviceApi api = { "WebGPU", CreateDevice, CreateSwapChain, false };
+#else
+	static const DeviceApi api = { "WebGPU", CreateDevice, CreateSwapChain, true };
+#endif
 	return &api;
 }
 
@@ -67,6 +87,7 @@ const DeviceApi *WebGPUDeviceApi()
 
 namespace zx { namespace hwrender {
 const DeviceApi *WebGPUDeviceApi() { return nullptr; }
+bool CaptureFrameLater(const char *) { return false; }
 }} // namespace zx::hwrender
 
 #endif // FUA_WEBGPU

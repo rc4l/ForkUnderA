@@ -1519,6 +1519,7 @@ add_executable( zdoom WIN32
 	features/identity/zx_identitynet.cpp
 	features/net/zx_httpsget.cpp
 	features/net/zx_resolve.cpp
+	features/net/zx_offline.cpp
 	features/net/zx_httpfile.cpp
 	features/net/zx_httpfile_win.cpp
 	features/wad-library/zx_wadlibrary.cpp
@@ -1904,7 +1905,8 @@ if( EMSCRIPTEN )
 		"SHELL: -s FORCE_FILESYSTEM=1"
 		"SHELL: -s EXPORTED_RUNTIME_METHODS=callMain,ccall,FS,IDBFS"
 		"SHELL: -s EXPORTED_FUNCTIONS=_main,_fua_command"
-		"SHELL: -lidbfs.js" )
+		"SHELL: -lidbfs.js"
+		"-Wl,--wrap=exit" )
 endif()
 if( "${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU" )
 	# GCC misoptimizes this file

@@ -659,6 +659,10 @@ int I_PickIWad (WadStuff *wads, int numwads, bool showwin, int defaultiwad)
 {
 	int i;
 
+#ifdef __EMSCRIPTEN__
+	// [rc4l] A page has no dialog to ask with; it names the IWAD (-iwad) when the player picked one.
+	showwin = false;
+#endif
 	if (!showwin)
 	{
 		return defaultiwad;

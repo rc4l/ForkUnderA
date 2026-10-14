@@ -48,6 +48,7 @@
 //
 //-----------------------------------------------------------------------------
 
+#include "features/net/zx_offline.h"   // [rc4l] OfflineLaunch
 #include <map>
 #include "networkheaders.h"
 #include "features/server-browser/browser.h"
@@ -2135,7 +2136,8 @@ void BROWSER_BackgroundTick( void )
 		g_bBackgroundQuerySent = true;
 
 		// A server does not browse, and a client already has the list it is playing on.
-		if ( NETWORK_GetState( ) == NETSTATE_SINGLE )
+		// [rc4l] Nor does an offline launch, which has no socket to ask with.
+		if ( NETWORK_GetState( ) == NETSTATE_SINGLE && !zx::net::OfflineLaunch( ))
 			BROWSER_QueryServerRegistry( );
 	}
 

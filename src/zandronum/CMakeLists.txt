@@ -121,15 +121,8 @@ function( add_pk3 PK3_NAME PK3_DIR )
 	endif( NOT NO_GENERATOR_EXPRESSIONS )
 endfunction( add_pk3 )
 
-# Macro for building libraries without debugging information
-macro( make_release_only )
-	set( CMAKE_C_FLAGS_MINSIZEREL ${CMAKE_C_FLAGS_RELEASE} )
-	set( CMAKE_C_FLAGS_RELWITHDEBINFO ${CMAKE_C_FLAGS_RELEASE} )
-	string( REPLACE "/MT " "/MTd " CMAKE_C_FLAGS_DEBUG ${CMAKE_C_FLAGS_RELEASE} )
-	set( CMAKE_CXX_FLAGS_MINSIZEREL ${CMAKE_CXX_FLAGS_RELEASE} )
-	set( CMAKE_CXX_FLAGS_RELWITHDEBINFO ${CMAKE_CXX_FLAGS_RELEASE} )
-	string( REPLACE "/MT " "/MTd " CMAKE_CXX_FLAGS_DEBUG ${CMAKE_CXX_FLAGS_RELEASE} )
-endmacro( make_release_only )
+# [rc4l] make_release_only, shared with tools/web/hosttools.
+include( "${CMAKE_CURRENT_SOURCE_DIR}/ReleaseOnly.cmake" )
 
 IF( NOT CMAKE_BUILD_TYPE )
 	SET( CMAKE_BUILD_TYPE Debug CACHE STRING

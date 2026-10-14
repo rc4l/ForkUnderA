@@ -18,10 +18,58 @@
 
 #include "d_player.h"
 #include "m_png.h"
+#include "m_misc.h"                          // [rc4l] M_WriteFile
+#include "features/hwrender/computation/savepicture_compute.h"
+#include <string>
+#include <vector>
 #include "textures/textures.h"
 #include "features/materials/materials.h"
 
 namespace {
+
+// [rc4l] The screen's tint over a picture, as GL's WriteSavePic puts it there.
+static void TintPicture(const std::vector<zx::draw2d::ScreenFill> &fills, unsigned char *rgb, int pixels)
+{
+	for (const zx::draw2d::ScreenFill &f : fills)
+		zx::draw2d::ComputeApplyScreenFill(f.r, f.g, f.b, f.a, f.multiply, rgb, pixels);
+}
+
+// [rc4l] An open file's bytes from its start; false when it reads short.
+static bool ReadWhole(FILE *file, std::vector<unsigned char> &out)
+{
+	if (fseek(file, 0, SEEK_END) != 0) return false;
+	const long size = ftell(file);
+	if (size < 0 || fseek(file, 0, SEEK_SET) != 0) return false;
+	out.resize((size_t)size);
+	return fread(out.data(), 1, out.size(), file) == out.size();
+}
+
+// [rc4l] The save picture a device reads back only after its save is written: the request's number, the save it goes in once G_DoSaveGame names it, and the screen's tint at the save.
+struct LaterSavePicture
+{
+	unsigned serial = 0;
+	bool pending = false;
+	std::string path;
+	std::vector<zx::draw2d::ScreenFill> fills;
+};
+static LaterSavePicture g_laterPicture;
+
+// [rc4l] The picture is back: tinted, made a PNG and put in place of the save's placeholder, unless a newer save asked since or this one was never written.
+static void FinishLaterPicture(unsigned serial, const unsigned char *rgb, int w, int h)
+{
+	if (!g_laterPicture.pending || g_laterPicture.serial != serial || g_laterPicture.path.empty()) return;
+	g_laterPicture.pending = false;
+	std::vector<unsigned char> pixels(rgb, rgb + (size_t)w * h * 3), picture, save, out;
+	TintPicture(g_laterPicture.fills, pixels.data(), w * h);
+	FILE *png = tmpfile();
+	const bool made = png != NULL && M_CreatePNG(png, pixels.data(), NULL, SS_RGB, w, h, w * 3) && ReadWhole(png, picture);
+	if (png != NULL) fclose(png);
+	FILE *file = made ? fopen(g_laterPicture.path.c_str(), "rb") : NULL;
+	const bool read = file != NULL && ReadWhole(file, save);
+	if (file != NULL) fclose(file);
+	if (!read || !zx::ComputeSpliceSavePicture(save, picture, out) || !M_WriteFile(g_laterPicture.path.c_str(), out.data(), (int)out.size()))
+		Printf("save picture: could not put it in %s\n", g_laterPicture.path.c_str());
+}
 
 struct FBackendRenderer : public zx::frame::FLevelRenderer
 {
@@ -34,21 +82,37 @@ struct FBackendRenderer : public zx::frame::FLevelRenderer
 		zx::frame::RenderPlayerView(player, zx::hwrender::BackendPaletteBrightness());
 	}
 
-	// [rc4l] The player's view drawn at the picture's size with the screen's tint over it, as GL's WriteSavePic draws it; the placeholder only when there is no scene.
+	// [rc4l] The player's view drawn at the picture's size with the screen's tint over it, as GL's WriteSavePic draws it; the placeholder when there is no scene, and for now on a device that reads it back only later.
 	void WriteSavePic(player_t *, FILE *file, int width, int height)
 	{
-		unsigned char *rgb = zx::hwrender::RenderSavePicture(width, height, FieldOfView * 360.0f / FINEANGLES);
+		const float fov = FieldOfView * 360.0f / FINEANGLES;
+		std::vector<zx::draw2d::ScreenFill> fills(2);
+		fills.resize(zx::draw2d::ScreenBlends(viewsector, in_area, gl_fixedcolormap != 0, zx::hwrender::BackendPaletteBrightness(), fills.data()));
+		const unsigned serial = g_laterPicture.serial + 1;
+		if (zx::hwrender::RenderSavePictureLater(width, height, fov, [serial](const unsigned char *rgb, int w, int h) { FinishLaterPicture(serial, rgb, w, h); }))
+		{
+			g_laterPicture.serial = serial;
+			g_laterPicture.pending = true;
+			g_laterPicture.path.clear();
+			g_laterPicture.fills = fills;
+			M_CreateDummyPNG(file);
+			return;
+		}
+		unsigned char *rgb = zx::hwrender::RenderSavePicture(width, height, fov);
 		if (rgb == NULL)
 		{
 			M_CreateDummyPNG(file);
 			return;
 		}
-		zx::draw2d::ScreenFill fills[2];
-		const int n = zx::draw2d::ScreenBlends(viewsector, in_area, gl_fixedcolormap != 0, zx::hwrender::BackendPaletteBrightness(), fills);
-		for (int i = 0; i < n; i++)
-			zx::draw2d::ComputeApplyScreenFill(fills[i].r, fills[i].g, fills[i].b, fills[i].a, fills[i].multiply, rgb, width * height);
+		TintPicture(fills, rgb, width * height);
 		M_CreatePNG(file, rgb, NULL, SS_RGB, width, height, width * 3);
 		delete[] rgb;
+	}
+
+	// [rc4l] The save a picture still being read back belongs in.
+	void SaveWritten(const char *path)
+	{
+		if (g_laterPicture.pending && g_laterPicture.path.empty()) g_laterPicture.path = path;
 	}
 
 	// [rc4l] A camera texture is the backend's own view into its own target: the camera's viewpoint set up and its scene swept, as GL's RenderViewpoint does for it, then drawn.

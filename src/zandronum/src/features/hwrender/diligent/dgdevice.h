@@ -25,6 +25,8 @@ struct DeviceApi
 	// [rc4l] A swapchain on the window.
 	void (*createSwapChain)(Diligent::IRenderDevice *device, Diligent::IDeviceContext *context, const Diligent::SwapChainDesc &desc,
 		const Diligent::NativeWindow &window, Diligent::ISwapChain **swap);
+	// [rc4l] Whether the CPU can wait for the GPU (an idle wait, a readback mapped at once), which a browser's WebGPU only does asynchronously.
+	bool canWaitForGPU;
 };
 
 const DeviceApi *VulkanDeviceApi();
@@ -32,6 +34,9 @@ const DeviceApi *WebGPUDeviceApi();
 
 // [rc4l] The API this launch's device is made on (ComputeBackendApi over vid_backend, -vulkan and -webgpu), from those the build has.
 const DeviceApi *ChosenDeviceApi();
+
+// [rc4l] ChosenDeviceApi's canWaitForGPU, for the readbacks and idle waits that need it.
+bool CanWaitForGPU();
 
 }} // namespace zx::hwrender
 

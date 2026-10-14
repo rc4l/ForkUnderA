@@ -711,6 +711,7 @@ void PresentFrame(Diligent::IDeviceContext *ctx, Diligent::ISwapChain *swap, boo
 		PaceFrames();
 	}
 	RecordPresentInterval();
+	PollLaterReadbacks();
 	// [rc4l] The message pump costs more than the draw at these scales, so a benchmark pumps sparsely and a live frame once.
 	if (pump) Fua_PumpBackendWindow(GetBackendWindow());
 	// [rc4l] The embedded surface follows the engine's client area, which can change at runtime.

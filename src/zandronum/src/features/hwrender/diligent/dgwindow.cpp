@@ -208,8 +208,8 @@ bool DiligentFrame(int count, FString &report)
 void ForgetBackendWindow(void *window)
 {
 	if (window == NULL || window != g_hwnd) return;
-	// [rc4l] The device is done with the swapchain's images before the surface under them goes.
-	if (GetDevice() != NULL) GetDevice()->IdleGPU();
+	// [rc4l] The device is done with the swapchain's images before the surface under them goes; a browser's canvas outlives its swapchain, and its GPU cannot be waited on.
+	if (GetDevice() != NULL && CanWaitForGPU()) GetDevice()->IdleGPU();
 	g_pso.Release();
 	g_swap.Release();
 	g_hwnd = NULL;

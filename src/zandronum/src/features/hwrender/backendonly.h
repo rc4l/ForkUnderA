@@ -12,6 +12,7 @@ class DFrameBuffer;
 struct FRenderer;   // [rc4l] a struct, as r_renderer.h defines it, or MSVC links a different name
 
 #include "features/frame/computation/frameroute_compute.h"
+#include <functional>
 
 namespace zx { namespace hwrender {
 
@@ -48,6 +49,8 @@ void ForgetBackendWindow(void *window);
 int BackendMaxTextureSize();
 // [rc4l] The graphics API the backend's device is made on ("Vulkan" or "WebGPU"); "" in a build without the backend.
 const char *BackendApiName();
+// [rc4l] In a browser, has the page save this frame's picture as a PNG named like path once it is drawn; false where the frame is read back at once, or the page cannot.
+bool CaptureFrameLater(const char *path);
 
 // [rc4l] The engine drew a view of the world this frame, which the present draws under the 2D layer.
 void NoteWorldView();
@@ -61,6 +64,8 @@ void PresentBackendOnly(bool present);
 unsigned char *ReadBackendFrame(int &width, int &height);
 // [rc4l] The player's last view as a w by h savegame picture, `fovDeg` across, read back as top-down RGB the caller deletes; NULL when the scene is not up.
 unsigned char *RenderSavePicture(int w, int h, float fovDeg);
+// [rc4l] The same for a device that reads back only later (a browser's WebGPU): drawn now, and done called with the picture as RGB on a later frame; false where RenderSavePicture serves.
+bool RenderSavePictureLater(int w, int h, float fovDeg, std::function<void(const unsigned char *rgb, int w, int h)> done);
 // [rc4l] The screen wipe: the last frame kept as the old screen (false for a type there is none of), this frame drawn and kept as the new one with its 2D dropped, a tic's mix drawn under the 2D from then on (true once done), and the end of it.
 bool WipeStart(int type);
 void WipeEnd();

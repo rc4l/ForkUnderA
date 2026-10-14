@@ -10,14 +10,14 @@ class DArgs;
 
 namespace zx { namespace web {
 
-// [rc4l] Install the frame driver, before D_DoomMain, so D_DoomLoop hands its frames to the browser.
-void InstallDriver();
+// [rc4l] Install the frame driver, before D_DoomMain, so D_DoomLoop hands its frames to the browser; `terms` is the engine's shutdown, which an exit runs since a page has no atexit.
+void InstallDriver(void (*terms)());
 
 // [rc4l] Stop the loop and show `message` on the page, in place of a desktop's message box and exit.
 void Fatal(const char *message);
 
-// [rc4l] Add the page URL's query to the command line (ComputeArgsFromQuery), so a link can name the game, the wads and the map.
-void AppendQueryArgs(DArgs *args);
+// [rc4l] The page's arguments: -offline, since a page has no UDP to play or browse with, then the URL's query (ComputeArgsFromQuery), so a link can name the game, the wads and the map.
+void AppendPageArgs(DArgs *args);
 
 }} // namespace zx::web
 

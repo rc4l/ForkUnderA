@@ -91,5 +91,7 @@ ones. A build without the backend (`FUA_DILIGENT` off, a dedicated server) takes
 | `features/frame/playerview.cpp` | `NoteWorldView`, `SetMainViewLens`, `StandaloneActive` | the frame drew the world, through the player's lens |
 | `features/hwrender/backendrenderer.cpp` | `SettleLevelScene`, `RenderSavePicture`, `RenderBackendCamera` | a level settled before its first view; the save picture; camera textures |
 | `features/hwrender/backendvideo.cpp` | `WipeStart`, `WipeEnd`, `WipeTic`, `WipeCleanup`, `PreparePoly` | the screen wipes and the textured automap |
+| `m_misc.cpp` `M_ScreenShot`, `v_video.h` `DCanvas::ScreenshotLater` | `CaptureFrameLater` | in a browser, where WebGPU reads nothing back at once, the page downloads the canvas after the frame instead |
+| `g_game.cpp` `G_DoSaveGame`, `r_renderer.h` `FRenderer::SaveWritten`, `features/frame/framedriver.cpp` | `RenderSavePictureLater` | in a browser the save is written with the placeholder picture, and the picture goes into it once it is read back |
 | `gl/data/gl_vertexbuffer.cpp`, `gl/models/gl_models.cpp`, `gl/system/gl_interface.h` | `gl_HasContext` | vertex buffers keep only their CPU copy without GL |
 | `features/materials/textureinfo.cpp`, `material.cpp`, `hqresize.cpp`, `features/levelprep/levelprep.cpp` | `FMaterial::TextureBuffer`, `FMaterial::FlushAll` | texture reads and flushes that do not go through `GLRenderer` |

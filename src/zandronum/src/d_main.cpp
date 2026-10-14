@@ -1543,17 +1543,29 @@ void D_RunFrame ()
 		}
 		catch (CRecoverableError &error)
 		{
-			if (error.GetMessage ())
-			{
-				// [BC] Give this message a little more presence in server mode.
-				if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-					Printf( "*** ERROR: %s\n", error.GetMessage( ));
-				else
-					Printf (PRINT_BOLD, "\n%s\n", error.GetMessage());
-			}
-			D_ErrorCleanup ();
+			D_RecoverFromError (error);
 		}
 	}
+}
+
+//==========================================================================
+//
+// D_RecoverFromError
+//
+// [rc4l] The loop's answer to a recoverable error, shared with commands the page runs between frames.
+//==========================================================================
+
+void D_RecoverFromError (CRecoverableError &error)
+{
+	if (error.GetMessage ())
+	{
+		// [BC] Give this message a little more presence in server mode.
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			Printf( "*** ERROR: %s\n", error.GetMessage( ));
+		else
+			Printf (PRINT_BOLD, "\n%s\n", error.GetMessage());
+	}
+	D_ErrorCleanup ();
 }
 
 //==========================================================================
