@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { quitInstance, withLockedInstance, portStillAnswers, play } from "../src/play.mjs";
+import { quitInstance, withLockedInstance, portStillAnswers, play, waitInLevel } from "../src/play.mjs";
 
 // [rc4l] A second launch on a busy port cleared the first's session file, and that engine could no longer be quit by its token.
 test("a port an engine still answers on is in use, and one that closes within the grace is not", async () => {
@@ -96,4 +96,28 @@ test("a locked instance that crashed reports its crash log, and one that failed 
   fs.writeFileSync(`${log}.crash`, "boom");
   await assert.rejects(() => withLockedInstance({}, async () => { throw new Error("capture timed out"); }, deps), /engine crashed -- .*\.crash/);
   await assert.rejects(() => withLockedInstance({}, async () => 1, { ...deps, launch: async () => { throw new Error("no engine"); } }), /no engine/);
+});
+
+// [rc4l] The bridge serves one client at a time, and a probe left open after its question timed out kept every later one waiting until the launch gave up.
+test("waiting for a level closes every probe, the ones whose question failed too", async () => {
+  const open = new Set();
+  let n = 0;
+  const connect = async () => {
+    const id = n++;
+    open.add(id);
+    return {
+      rpc: async () => { if (id === 0) throw new Error("rpc timeout: sim.tic"); return { inlevel: id >= 2 }; },
+      close: () => open.delete(id),
+    };
+  };
+  const inst = { port: 7799, token: "t", proc: { exitCode: null } };
+  assert.equal(await waitInLevel(inst, { connect, pollMs: 1, timeoutMs: 5000 }), true);
+  assert.equal(n, 3);
+  assert.equal(open.size, 0);
+});
+
+test("waiting for a level gives up at its deadline and says so when the engine exits first", async () => {
+  const never = async () => { throw new Error("connect ECONNREFUSED"); };
+  await assert.rejects(waitInLevel({ port: 7799, proc: { exitCode: null } }, { connect: never, pollMs: 1, timeoutMs: 20 }), /no playable level after 0s/);
+  await assert.rejects(waitInLevel({ port: 7799, proc: { exitCode: 1 } }, { connect: never, pollMs: 1, timeoutMs: 20 }), /engine exited .* before reaching a level/);
 });

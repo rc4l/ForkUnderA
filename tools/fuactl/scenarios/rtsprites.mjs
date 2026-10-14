@@ -17,4 +17,4 @@ export const BOXES = { MAP01: {
 } };
 
 runScenarioIfMain(import.meta.url, () => ({ name: "rtsprites", wad: buildMirrorNestedWad(), maps: ["MAP01"],
-  vantages: VANTAGES, boxes: BOXES, sides: SIDES }));
+  vantages: VANTAGES, boxes: BOXES, sides: SIDES, needs: ["raytracing"] }));

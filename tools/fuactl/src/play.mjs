@@ -89,20 +89,22 @@ export function resolvePreset(catalogueDir, storeDir, id, variantId) {
 // the engine exited early -- port still held, a missing pk3, a bad map name -- the file never
 // appeared and it spun until something else timed out, with the reason already printed and going
 // nowhere. A launch that is not going to work should say so in seconds.
-async function waitInLevel(inst, { timeoutMs = 90000, log = () => {} } = {}) {
-  const { BridgeClient } = await import("./client.mjs");
+//
+// [rc4l] Each probe's connection is closed whatever happens to it. The bridge serves one client at a
+// time, so a probe left open after its question timed out (a WebGPU pipeline compile holding the game
+// thread) kept every later probe waiting until the whole wait ran out.
+export async function waitInLevel(inst, { timeoutMs = 90000, pollMs = 250, connect = (port, token) => bridgeConnect(port, token, { connectMs: 1500, helloMs: 3000 }) } = {}) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (inst.proc.exitCode != null) throw new Error(`engine exited ${describeExit(inst.proc.exitCode)} before reaching a level`);
+    let c = null;
     try {
-      const c = new BridgeClient();
-      await c.connect(inst.port, { token: inst.token, timeoutMs: 1500 });
-      await c.waitHello(3000);
+      c = await connect(inst.port, inst.token);
       const st = await c.rpc("sim.tic", {});
-      c.close();
       if (st && st.inlevel) return true;
     } catch { /* not up yet */ }
-    await sleep(250);
+    finally { if (c) c.close(); }
+    await sleep(pollMs);
   }
   throw new Error(`no playable level after ${Math.round(timeoutMs / 1000)}s`);
 }
@@ -284,10 +286,10 @@ export async function withLockedInstance(opts, body, { launch = play, connect = 
 }
 
 // [rc4l] A bridge connection that has said hello, or a throw when nothing answers on port.
-async function bridgeConnect(port, token) {
+async function bridgeConnect(port, token, { connectMs, helloMs } = {}) {
   const { BridgeClient } = await import("./client.mjs");
   const c = new BridgeClient();
-  try { await c.connect(port, { token }); await c.waitHello(); return c; } catch (e) { c.close(); throw e; }
+  try { await c.connect(port, { token, timeoutMs: connectMs }); await c.waitHello(helloMs); return c; } catch (e) { c.close(); throw e; }
 }
 
 // [rc4l] Quit the instance on port by its token and wait for the port to close: "stopped", "absent" when nothing answered, or "running" when it would not go.

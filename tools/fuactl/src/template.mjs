@@ -68,9 +68,9 @@ export function launchBackendApi(text) {
   return m ? m[1] : null;
 }
 
-// [rc4l] One locked launch of the wad with the side's settings applied, handed to `body` and always torn down.
+// [rc4l] One locked launch of the wad with the side's settings applied, handed to `body` and always torn down; its launchCvars go on the command line, for what must hold from the level's upload, where its cvars are set once the level is up.
 function withEngine({ port, map, iwad, wadPath, gl, side = {}, size }, body) {
-  return withLockedInstance({ port, map, iwad, file: wadPath, gl, noGl: !!side.noGl, webgpu: !!side.webgpu, width: size[0], height: size[1] }, async (c) => {
+  return withLockedInstance({ port, map, iwad, file: wadPath, gl, noGl: !!side.noGl, webgpu: !!side.webgpu, extra: side.launchCvars, width: size[0], height: size[1] }, async (c) => {
     // [rc4l] A side without GL must really have none: a binary that ignores -vulkan would pass as GL beside an embedded backend.
     if (side.noGl) {
       const report = await cap.exec(c, "dumprenderer");
@@ -159,11 +159,13 @@ export function standaloneOptions(opts) {
 // [rc4l] The mean |d| every box is held to when WebGPU is judged against Vulkan: the same backend over two APIs, so near the same picture.
 export const WEBGPU_CEILING = 1.5;
 
-// [rc4l] A scenario on WebGPU against Vulkan: its first Vulkan side launched on each without GL, each box at WEBGPU_CEILING with no floor; null for a scenario with no Vulkan side of its own.
-export function webgpuOptions(opts) {
+// [rc4l] A scenario on WebGPU, by how it judges: two launches compare its first Vulkan side on each without GL, each box at WEBGPU_CEILING with no floor; one launch judged against itself (a counter, a picture over time) runs on WebGPU alone with its own limits; null to skip one with no Vulkan side of its own, one judging GL and the backend in one frame (a WebGPU launch has no GL), or one needing ray tracing, which WebGPU lacks.
+export function webgpuOptions(opts, compare = compareTemplate) {
+  if (compare === compareSameFrame || (opts.needs || []).includes("raytracing")) return null;
   const vk = (opts.sides || GL_VS_VULKAN).find((s) => !s.gl && s.frame !== "gl");
   if (!vk) return null;
   const { frame, glDraws, ...rest } = vk;
+  if (compare === compareCounter || compare === compareOverTime) return { ...opts, sides: [{ ...rest, name: "wgpu", noGl: true, webgpu: true }] };
   const boxes = Object.fromEntries(Object.entries(opts.boxes).map(([map, bs]) => [map, Object.fromEntries(Object.entries(bs).map(
     ([n, b]) => [n, { box: b.box, block: b.block, vantage: b.vantage, ceiling: WEBGPU_CEILING }]))]));
   return { ...opts, sides: [{ ...rest, name: "vk", noGl: true }, { ...rest, name: "wgpu", noGl: true, webgpu: true }], boxes };
@@ -184,13 +186,13 @@ export function isMain(metaUrl, argv1 = process.argv[1]) {
 const registered = new Map();
 export function scenarioOptions(metaUrl) { const e = registered.get(metaUrl); return e ? e.options : null; }
 
-// [rc4l] An imported scenario as one call that runs its comparison (its options passed through adjust) and returns its outcome, or null if the module registered none; an adjust giving null skips it.
+// [rc4l] An imported scenario as one call that runs its comparison (its options passed through adjust, with the comparison) and returns its outcome, or null if the module registered none; an adjust giving null skips it.
 export function scenarioRun(metaUrl, adjust = (o) => o) {
   const e = registered.get(metaUrl);
   if (!e) return null;
   return async () => {
     const base = e.options();
-    const opts = adjust(base);
+    const opts = adjust(base, e.compare);
     if (!opts) return { lines: [`skipped: no side to run (${(base.sides || GL_VS_VULKAN).map((s) => s.name).join(", ")})`], code: 0, skipped: true };
     return scenarioOutcome(opts.name, await e.compare(opts));
   };
@@ -302,11 +304,11 @@ export async function compareSameFrame({ name, wad, maps, vantages, boxes, iwad 
   });
 }
 
-// [rc4l] One Vulkan launch per map, each vantage captured twice intervalMs apart, judged before against after: for what must move (a warp) or must not.
+// [rc4l] One Vulkan launch per map, each vantage captured twice intervalMs apart, judged before against after: for what must move (a warp) or must not; the launch takes the first non-GL side's settings.
 export async function compareOverTime({ name, wad, maps, vantages, boxes, intervalMs = 600, iwad = FREEDOOM2, port = 7796,
-  size = [1280, 720] }) {
+  size = [1280, 720], sides = [] }) {
   const exe = resolveEngine().split(path.sep).join("/");
-  return eachVulkanLaunch({ name, wad, maps, iwad, port, size }, async (c, map) => {
+  return eachVulkanLaunch({ name, wad, maps, iwad, port, size, side: sides.find((s) => !s.gl) }, async (c, map) => {
     const frames = {};
     for (const v of vantages) {
       const { vk: [before, after] } = await shot.captureOverTime(c, { at: v.at, engineBin: exe,

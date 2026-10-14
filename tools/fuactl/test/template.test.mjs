@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { judge, judgeCounter, scenarioOutcome, isMain, sideCommands, vantageCommands, boxWithin, runScenarioIfMain, scenarioOptions, scenarioRun, templateScenarioFiles, probeChoices, pairFrame, withSideCvars, launchRenderer, sideAdjust, standaloneOptions, webgpuOptions, launchBackendApi, WEBGPU_CEILING, GL_VS_VULKAN } from "../src/template.mjs";
+import { compareCounter, compareOverTime, compareSameFrame, judge, judgeCounter, scenarioOutcome, isMain, sideCommands, vantageCommands, boxWithin, runScenarioIfMain, scenarioOptions, scenarioRun, templateScenarioFiles, probeChoices, pairFrame, withSideCvars, launchRenderer, sideAdjust, standaloneOptions, webgpuOptions, launchBackendApi, WEBGPU_CEILING, GL_VS_VULKAN } from "../src/template.mjs";
 import { pathToFileURL } from "node:url";
 import fs from "node:fs";
 import os from "node:os";
@@ -223,4 +223,19 @@ test("a WebGPU run launches the Vulkan side on each API without GL, every box at
   assert.deepEqual(w.boxes.MAP01.wall, { box: [0, 0, 8, 8], block: 8, vantage: "a", ceiling: WEBGPU_CEILING });
   assert.equal(webgpuOptions({ name: "glonly", sides: [{ name: "gl", gl: true }, { name: "vk2", frame: "gl" }], boxes: {} }), null);
   assert.equal(webgpuOptions({ name: "pair", boxes: {} }).sides[0].name, "vk");
+});
+
+test("a WebGPU run of a scenario judged against itself runs on WebGPU alone with its own limits", () => {
+  const w = webgpuOptions({ name: "particles", counter: { command: "c" }, sides: [{ name: "standalone", cvars: { s: 1 } }] }, compareCounter);
+  assert.deepEqual(w.sides, [{ name: "wgpu", cvars: { s: 1 }, noGl: true, webgpu: true }]);
+  assert.equal(w.boxes, undefined);
+  const boxes = { MAP01: { moving: { box: [0, 0, 1, 1], floor: 1 } } };
+  const t = webgpuOptions({ name: "scroll", boxes }, compareOverTime);
+  assert.deepEqual(t.sides, [{ name: "wgpu", gl: false, noGl: true, webgpu: true }]);
+  assert.equal(t.boxes, boxes);
+});
+
+test("a WebGPU run skips what WebGPU cannot do: GL beside it in one frame, or ray tracing", () => {
+  assert.equal(webgpuOptions({ name: "sameframe", boxes: {} }, compareSameFrame), null);
+  assert.equal(webgpuOptions({ name: "rt", boxes: {}, needs: ["raytracing"] }), null);
 });

@@ -358,7 +358,9 @@ async function main() {
         await import(url);
         const run = scenarioRun(url, adjust);
         if (!run) continue;
-        const out = await run();
+        let out;
+        // [rc4l] A scenario that throws is one failure, not the end of the run.
+        try { out = await run(); } catch (e) { out = { lines: [`error: ${e.message}`], code: 1 }; }
         for (const l of out.lines.filter((x) => !x.startsWith("PASS"))) console.log(`${f.slice(0, -4).padEnd(18)} ${l}`);
         if (out.skipped) skipped++;
         if (out.code !== 0) failed++;
