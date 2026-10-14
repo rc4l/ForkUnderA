@@ -49,6 +49,8 @@ enum class VersionRelation
 // suffix or trailing text; only the dotted numbers and the presence of a suffix are read.
 //
 // Component counts may differ: the shorter is padded with zeroes, so "v0.2" and "v0.2.0" are Same.
+//
+// [MobiusU9B] An identical leading word is Same even when it does not parse, because a build from a checkout without tags is named by its bare commit hash.
 VersionRelation CompareFuaVersions(const std::string &theirs, const std::string &ours);
 
 // Whether a relation permits joining. Only Same does, and it is a function rather than a comparison
