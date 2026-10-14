@@ -603,8 +603,8 @@ CVAR (Flag, sv_shotgunstart,		dmflags2, DF2_SHOTGUNSTART);
 
 // [BB/EP] Only necessary to handle ZADF_FORCE_VIDEO_DEFAULTS.
 #ifndef NO_GL
-EXTERN_CVAR(Int, gl_lightmode)
-EXTERN_CVAR(Int, gl_distfog)
+EXTERN_CVAR(Int, r_lightmode)
+EXTERN_CVAR(Int, r_distfog)
 #endif
 
 // [AK] Added CVAR_CAMPAIGNLOCK and CVAR_GAMEPLAYFLAGSET.
@@ -650,12 +650,12 @@ CUSTOM_CVAR (Int, zadmflags, 0, CVAR_SERVERINFO | CVAR_CAMPAIGNLOCK | CVAR_GAMEP
 	SERVER_FlagsetChanged( self );
 
 #ifndef NO_GL
-	// [BB/EP] This makes gl_lightmode and gl_distfog handle ZADF_FORCE_VIDEO_DEFAULTS.
+	// [BB/EP] This makes r_lightmode and r_distfog handle ZADF_FORCE_VIDEO_DEFAULTS.
 	// [BB] Don't do this on startup since gl.flags is not properly initialized yet.
 	if ( gamestate != GS_STARTUP )
 	{
-		gl_lightmode.Callback();
-		gl_distfog.Callback();
+		r_lightmode.Callback();
+		r_distfog.Callback();
 	}
 #endif
 }

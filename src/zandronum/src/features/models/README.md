@@ -11,8 +11,8 @@ so the backend's model path read GL's vertex buffer class to find a model's vert
   whether its skin is sampled unfiltered (`NoFilter`, a voxel's palette). None of it calls GL.
 - `modeldef.cpp`: MODELDEF and the voxels VOXELDEF names (`gl_InitModels`), the sprite frame to model lookup
   (`gl_FindModelFrame`, `gl_IsHUDModelForPlayerAvailable`), the skins (`LoadSkin`), every model loaded
-  (`ModelCount`, `ModelAt`), and the cvars both renderers read (`gl_use_models`,
-  `gl_interpolate_model_frames`). The names are GL's, kept so GL's callers read them unchanged.
+  (`ModelCount`, `ModelAt`), and the cvars both renderers read (`r_use_models`,
+  `r_interpolate_model_frames`). The names are GL's, kept so GL's callers read them unchanged.
 
 GL's `gl/models/gl_models.cpp` keeps a vertex buffer per model, made from its geometry on first draw, and
 draws a frame's surfaces in one function for all three formats. The backend lerps the same geometry on the

@@ -28,7 +28,7 @@
 
 // [rc4l] GL's CheckTexturePosition in the derivation, a switch so it stays a measurement: it took dbab04's clamping faults from 75 to 0.
 CVAR(Bool, fua_surface_vshift, true, 0)
-EXTERN_CVAR(Bool, gl_mirrors)
+EXTERN_CVAR(Bool, r_mirrors)
 
 namespace zx { namespace surfaces {
 
@@ -171,7 +171,7 @@ bool BuildDerivedWallSpan(const seg_t *seg, int renderType, DerivedWallSpan &out
 	// [rc4l] A horizon line has no wall parts: GLWall::Process hands it to DoHorizon and returns.
 	if (zx::horizon::ComputeIsHorizonLine(seg->linedef->special)) return false;
 	// [rc4l] Nor has a mirror: GLWall::DoMidTexture makes its face RENDERWALL_MIRROR, which the backend's mirror pass draws.
-	if (!mirrorFace && renderType == RENDERWALL_M1S && zx::levelmesh::ComputeIsMirrorWall(seg->linedef->special, true, gl_mirrors)) return false;
+	if (!mirrorFace && renderType == RENDERWALL_M1S && zx::levelmesh::ComputeIsMirrorWall(seg->linedef->special, true, r_mirrors)) return false;
 
 	int texpos = side_t::mid;
 	if (!PartOf(renderType, texpos)) { g_fbSpecial++; g_fellBack++; return false; }

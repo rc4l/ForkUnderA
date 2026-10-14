@@ -51,7 +51,7 @@ FRenderStyle RenderStyleOf(const SpriteStyle &s);
 // [rc4l] The blend (MeshPiece::blendMode) an engine render style draws with at `alpha`.
 int StyleBlendMode(const FRenderStyle &s, float alpha);
 
-// [rc4l] Whether sprites, the weapon and decals take dynamic light this frame: lights on and in the view, no fixed colormap, and gl_light_sprites.
+// [rc4l] Whether sprites, the weapon and decals take dynamic light this frame: lights on and in the view, no fixed colormap, and r_light_sprites.
 bool SpritesTakeDynamicLight();
 
 }} // namespace zx::sprites

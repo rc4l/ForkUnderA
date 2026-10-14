@@ -11,7 +11,7 @@ namespace zx { namespace rendersettings {
 // [rc4l] An int video setting as read: its default while the server forces the defaults, else its own value.
 int ComputeForcedVideoInt(bool forced, int value, int def);
 
-// [rc4l] gl_fogmode as read: forced defaults never turn fog off, so 0 reads as 1 while the server forces them.
+// [rc4l] r_fogmode as read: forced defaults never turn fog off, so 0 reads as 1 while the server forces them.
 int ComputeForcedFogMode(bool forced, int mode);
 
 }} // namespace zx::rendersettings

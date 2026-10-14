@@ -91,8 +91,8 @@ yet. Scenario `walldecal`.
 - `features/frame/standaloneframe.cpp` `StandaloneScene`: `DynClear`, `ClearSprites`, `UpdateProjectedDecals`,
   `InvalidateMovedSectors` with what the walks reached, and `BuildWallDecals` as the walks' decal hook.
 - `gl/data/gl_data.cpp` `gl_RecalcVertexHeights`: calls `RecalcVertexHeights` (`ComputeVertexHeights`), so GL and
-  the bake split walls at the same heights under `gl_seamless`, which `ComputeSeamlessFan` ports from
-  `GLWall::SplitLeftEdge` and the rest; a change of `gl_seamless` re-bakes the level's walls.
+  the bake split walls at the same heights under `r_seamless`, which `ComputeSeamlessFan` ports from
+  `GLWall::SplitLeftEdge` and the rest; a change of `r_seamless` re-bakes the level's walls.
 - `hwrender/diligent/dgscene.cpp` `DrawSkySurfaces`: reads the list of the view it is drawing;
   `RenderStackPortals`/`DrawStackSurfaces` render each stacked view and paint its planes from it.
 

@@ -470,7 +470,7 @@ bool SceneUpload(FString &report)
 		(int)g_scene.pieces.Size(),
 		(double)g_scene.pieces.Size() * sizeof(ScenePieceData) / (1024.0 * 1024.0),
 		npieces, (int)g_scene.batches.Size(), (int)g_scene.blendBatches.Size(),
-		glset.lightmode, (int)gl_fogmode,
+		glset.lightmode, (int)r_fogmode,
 		g_scene.pieces.Size() ? softPieces * 100 / (int)g_scene.pieces.Size() : 0,
 		g_scene.pieces.Size() ? fogPieces * 100 / (int)g_scene.pieces.Size() : 0);
 	return true;

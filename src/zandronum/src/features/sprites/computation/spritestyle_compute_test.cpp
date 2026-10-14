@@ -155,7 +155,7 @@ TEST(SpriteStyle, TheWeaponTakesTheFuzzAndAlphaRulesWithoutBeingMadeSolid)
 	EXPECT_FLOAT_EQ(0.f, ComputeWeaponStyle(normal, false, 0.f, 0.5f, 0, translucent).trans);
 }
 
-// [rc4l] An imp's fireball: additive, opaque and fullbright from a sprite with no translucent texels, which gl_usecolorblending blends by its own colour.
+// [rc4l] An imp's fireball: additive, opaque and fullbright from a sprite with no translucent texels, which r_usecolorblending blends by its own colour.
 TEST(SpriteStyle, AnOpaqueFullbrightAdditiveSpriteBlendsByItsColour)
 {
 	const SpriteStyle add = { kOpAdd, kAlphaSrc, kAlphaOne, 0 };

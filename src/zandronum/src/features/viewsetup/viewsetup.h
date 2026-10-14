@@ -38,7 +38,7 @@ void SetViewArea(AActor *viewActor);
 // [rc4l] SetFixedColormap: the colormap the player's powers fix the view in (invulnerability's inverse, which also clears extralight, a special one, light amplification or a torch), or CM_DEFAULT.
 int FixedColormap(player_t *player);
 
-// [rc4l] What GL's shader and the backend's do to a texel under `colormap`, from its special colormap and gl_enhanced_nightvision.
+// [rc4l] What GL's shader and the backend's do to a texel under `colormap`, from its special colormap and r_enhanced_nightvision.
 FixedColormapShade FixedColormapShadeFor(int colormap);
 
 // [rc4l] Register the sprite view this view answers, for a frame GL is not drawing.

@@ -272,7 +272,7 @@ now.
    read as faults until the probe learned better -- 171 of them on dbab02, all nukage flowing);
    colormap; light level and fake contrast; the horizontal and vertical coordinates and the height on
    every compared surface; viewer-substituted sectors; segs the map bake does not own; sector
-   movement between load and capture; dynamic lights; `gl_seamless`; incomplete capture coverage
+   movement between load and capture; dynamic lights; `r_seamless`; incomplete capture coverage
    (`fua_levelmesh_bakeall` first, no change); and reload noise, whose floor is 0.0%.
 
 2. **Special surface kinds** -- done: 3D floor faces (`ffblocks_compute`, below), skies (a view's sky

@@ -98,7 +98,7 @@ static bool g_skyIsBox = false;
 // horizon, and every sky surface shows the world as seen from it -- so the sky is a rendered scene,
 // not a texture. Maps that use one set no sky texture at all, and this backend was falling back to
 // the null placeholder and drawing a blue-and-white checkerboard. Proved by turning GL's own support
-// off: `gl_noskyboxes 1` makes GL draw exactly the checkerboard this did.
+// off: `r_noskyboxes 1` makes GL draw exactly the checkerboard this did.
 //
 // Rendering it is the mirror pass again -- a second camera, an offscreen target, the same DrawWorld.
 // What this backend can do that GL cannot is skip the stencils: sky is drawn FIRST here, full-screen

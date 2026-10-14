@@ -14,7 +14,7 @@ export function buildFixedColormapWad() {
     lightlevel: 224 }, (edge) => ({ side: { texturemiddle: edge === "north" ? "COMPBLUE" : "STARTAN2" } }));
   m.block(128, 288, 384, 448, { heightfloor: 0, heightceiling: 192, texturefloor: "FLOOR4_8", textureceiling: "F_SKY1", lightlevel: 80 }, room);
   m.thing({ x: 256, y: 240, angle: 90, type: TECH_PILLAR });
-  // [rc4l] An item, which night vision (light amplification with gl_enhanced_nightvision) shows inverted.
+  // [rc4l] An item, which night vision (light amplification with r_enhanced_nightvision) shows inverted.
   m.thing({ x: 352, y: 208, angle: 90, type: MEDIKIT });
   m.thing({ x: 256, y: 64, angle: 90, type: 1 });
   return wad(mapLumps("MAP01", m));

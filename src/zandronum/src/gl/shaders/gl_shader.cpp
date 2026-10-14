@@ -546,7 +546,7 @@ FShader *FShaderManager::BindEffect(int effect)
 //
 //
 //==========================================================================
-EXTERN_CVAR(Int, gl_fuzztype)
+EXTERN_CVAR(Int, r_fuzztype)
 
 void FShaderManager::ApplyMatrices(VSMatrix *proj, VSMatrix *view)
 {
@@ -556,9 +556,9 @@ void FShaderManager::ApplyMatrices(VSMatrix *proj, VSMatrix *view)
 		mTextureEffectsNAT[i]->ApplyMatrices(proj, view);
 	}
 	mTextureEffects[4]->ApplyMatrices(proj, view);
-	if (gl_fuzztype != 0)
+	if (r_fuzztype != 0)
 	{
-		mTextureEffects[4+gl_fuzztype]->ApplyMatrices(proj, view);
+		mTextureEffects[4+r_fuzztype]->ApplyMatrices(proj, view);
 	}
 	for (unsigned i = 12; i < mTextureEffects.Size(); i++)
 	{

@@ -1,4 +1,4 @@
-// [rc4l] A light below a platform's edge with gl_lights_checkside off, GL against Vulkan: exit 0 when Vulkan lights the platform's top from below as GL does once the side test is off.
+// [rc4l] A light below a platform's edge with r_lights_checkside off, GL against Vulkan: exit 0 when Vulkan lights the platform's top from below as GL does once the side test is off.
 //
 // usage:  node scenarios/checkside.mjs [port]
 import { UdmfMap, wad, mapLumps } from "../src/udmf.mjs";
@@ -22,7 +22,7 @@ export const VANTAGES = [{ name: "platform", at: { x: 512, y: 760, z: 64, angle:
 // [rc4l] The platform's top near the edge, which the light below reaches only with the side test off.
 export const BOXES = { MAP01: { top: { box: [0.2, 0.55, 0.8, 0.95], ceiling: 3 } } };
 
-export const SIDES = GL_VS_VULKAN.map((s) => ({ ...s, cvars: { gl_lights_checkside: 0 } }));
+export const SIDES = GL_VS_VULKAN.map((s) => ({ ...s, cvars: { r_lights_checkside: 0 } }));
 
 runScenarioIfMain(import.meta.url, () => ({ name: "checkside", wad: buildCheckSideWad(), maps: ["MAP01"],
   vantages: VANTAGES, boxes: BOXES, sides: SIDES }));

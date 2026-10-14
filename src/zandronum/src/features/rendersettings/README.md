@@ -9,16 +9,16 @@ GL's headers include this module.
 - `rendersettings.h`: `glset` (MAPINFO's light mode, coloured sprite lighting, bright fog, pixel stretch),
   the fog densities, the outside fog's colour, black fog's distance table and the sky's fog strength
   (`gl_SetFogParams`), the view area (`area_t`, `in_area`) and map sections (`currentmapsection`), the
-  frame clock and count (`gl_frameMS`, `gl_frameCount`), the weapon flash's extra light (`getExtraLight`, `gl_weaponlight`), and the
+  frame clock and count (`gl_frameMS`, `gl_frameCount`), the weapon flash's extra light (`getExtraLight`, `r_weaponlight`), and the
   light helpers `gl_ClampLight`, `gl_isBlack` and `gl_isWhite`.
 - `RenderShadingEnv(inSkybox)`: what the light model (`levelmesh/computation/shading_compute`) reads besides
   the surface, with the server's forced video defaults applied as GL applies them. GL's `gl_ShadingEnv` is
   this with GL's skybox flag; the backend asks it directly.
-- The settings' cvars: `gl_light_ambient`, `gl_distfog` (which rebuilds the distance table), `gl_fogmode` and
-  `gl_weaponlight`.
+- The settings' cvars: `r_light_ambient`, `r_distfog` (which rebuilds the distance table), `r_fogmode` and
+  `r_weaponlight`.
 - `mapoptions.cpp`: MAPINFO's `gl_renderer` options (fog densities, light mode, bright fog, coloured sprite
   lighting, texture fill, sky rotation, pixel ratio), read into `glset` at level start (`InitGLRMapinfoData`,
-  from `levelprep`) and again on `gl_resetmap`, with `gl_notexturefill` and `gl_nocoloredspritelighting`.
+  from `levelprep`) and again on `gl_resetmap`, with `r_notexturefill` and `r_nocoloredspritelighting`.
   `computation/mapoptions_compute` decides between the map's choice and the player's setting.
 
 The names are GL's, kept so GL's code reads them unchanged.

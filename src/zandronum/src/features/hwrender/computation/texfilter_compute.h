@@ -14,10 +14,10 @@ struct TextureFilter
 	bool minLinear, magLinear, mipLinear, mipmapped;
 };
 
-// [rc4l] gl_texture_filter's mode, entry for entry, with anything outside 0..5 read as 0 (nearest, no mips).
+// [rc4l] r_texture_filter's mode, entry for entry, with anything outside 0..5 read as 0 (nearest, no mips).
 TextureFilter ComputeTextureFilter(int mode);
 
-// [rc4l] gl_texture_filter_anisotropic as a sampler's anisotropy: the setting rounded, at most 16, for a filter that is linear both ways and mipmapped, else 0 (off), since nearest filtering keeps its pixels.
+// [rc4l] r_texture_filter_anisotropic as a sampler's anisotropy: the setting rounded, at most 16, for a filter that is linear both ways and mipmapped, else 0 (off), since nearest filtering keeps its pixels.
 unsigned ComputeAnisotropy(const TextureFilter &filter, float setting);
 
 }} // namespace zx::hwrender

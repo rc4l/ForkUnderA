@@ -43,7 +43,7 @@
 #include "features/materials/hqnx_asm/hqnx_asm.h"
 #endif
 
-CUSTOM_CVAR(Int, gl_texture_hqresize, 0, CVAR_ARCHIVE | CVAR_GLOBALCONFIG | CVAR_NOINITCALL)
+CUSTOM_CVAR(Int, r_texture_hqresize, 0, CVAR_ARCHIVE | CVAR_GLOBALCONFIG | CVAR_NOINITCALL)
 {
 #ifdef _MSC_VER
 	if (self < 0 || self > 9)
@@ -54,20 +54,20 @@ CUSTOM_CVAR(Int, gl_texture_hqresize, 0, CVAR_ARCHIVE | CVAR_GLOBALCONFIG | CVAR
 	FMaterial::FlushAll();   // [rc4l] not through GLRenderer, which a launch without GL does not have
 }
 
-CUSTOM_CVAR(Int, gl_texture_hqresize_maxinputsize, 512, CVAR_ARCHIVE | CVAR_GLOBALCONFIG | CVAR_NOINITCALL)
+CUSTOM_CVAR(Int, r_texture_hqresize_maxinputsize, 512, CVAR_ARCHIVE | CVAR_GLOBALCONFIG | CVAR_NOINITCALL)
 {
 	if (self > 1024) self = 1024;
 	FMaterial::FlushAll();   // [rc4l] not through GLRenderer, which a launch without GL does not have
 }
 
-CUSTOM_CVAR(Int, gl_texture_hqresize_targets, 7, CVAR_ARCHIVE | CVAR_GLOBALCONFIG | CVAR_NOINITCALL)
+CUSTOM_CVAR(Int, r_texture_hqresize_targets, 7, CVAR_ARCHIVE | CVAR_GLOBALCONFIG | CVAR_NOINITCALL)
 {
 	FMaterial::FlushAll();   // [rc4l] not through GLRenderer, which a launch without GL does not have
 }
 
-CVAR (Flag, gl_texture_hqresize_textures, gl_texture_hqresize_targets, 1);
-CVAR (Flag, gl_texture_hqresize_sprites, gl_texture_hqresize_targets, 2);
-CVAR (Flag, gl_texture_hqresize_fonts, gl_texture_hqresize_targets, 4);
+CVAR (Flag, r_texture_hqresize_textures, r_texture_hqresize_targets, 1);
+CVAR (Flag, r_texture_hqresize_sprites, r_texture_hqresize_targets, 2);
+CVAR (Flag, r_texture_hqresize_fonts, r_texture_hqresize_targets, 4);
 
 
 static void scale2x ( uint32* inputBuffer, uint32* outputBuffer, int inWidth, int inHeight )
@@ -255,8 +255,8 @@ unsigned char *gl_CreateUpsampledTextureBuffer ( const FTexture *inputTexture, u
 	outWidth = inWidth;
 	outHeight = inHeight;
 
-	// [BB] Don't resample if the width or height of the input texture is bigger than gl_texture_hqresize_maxinputsize.
-	if ( ( inWidth > gl_texture_hqresize_maxinputsize ) || ( inHeight > gl_texture_hqresize_maxinputsize ) )
+	// [BB] Don't resample if the width or height of the input texture is bigger than r_texture_hqresize_maxinputsize.
+	if ( ( inWidth > r_texture_hqresize_maxinputsize ) || ( inHeight > r_texture_hqresize_maxinputsize ) )
 		return inputBuffer;
 
 	// [BB] Don't try to upsample textures based off FCanvasTexture.
@@ -271,15 +271,15 @@ unsigned char *gl_CreateUpsampledTextureBuffer ( const FTexture *inputTexture, u
 	{
 	case FTexture::TEX_Sprite:
 	case FTexture::TEX_SkinSprite:
-		if (!(gl_texture_hqresize_targets & 2)) return inputBuffer;
+		if (!(r_texture_hqresize_targets & 2)) return inputBuffer;
 		break;
 
 	case FTexture::TEX_FontChar:
-		if (!(gl_texture_hqresize_targets & 4)) return inputBuffer;
+		if (!(r_texture_hqresize_targets & 4)) return inputBuffer;
 		break;
 
 	default:
-		if (!(gl_texture_hqresize_targets & 1)) return inputBuffer;
+		if (!(r_texture_hqresize_targets & 1)) return inputBuffer;
 		break;
 	}
 
@@ -287,7 +287,7 @@ unsigned char *gl_CreateUpsampledTextureBuffer ( const FTexture *inputTexture, u
 	{
 		outWidth = inWidth;
 		outHeight = inHeight;
-		int type = gl_texture_hqresize;
+		int type = r_texture_hqresize;
 #ifdef _MSC_VER
 		// ASM-hqNx does not preserve the alpha channel so fall back to C-version for such textures
 		if (!hasAlpha && type > 3 && type <= 6)

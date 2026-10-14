@@ -1,4 +1,4 @@
-// [rc4l] gl_seamless on Vulkan: exit 0 when the bake splits a wall's fan where a third sector's planes meet its end, as GL's SplitRightEdge does, so no T-junction there can crack.
+// [rc4l] r_seamless on Vulkan: exit 0 when the bake splits a wall's fan where a third sector's planes meet its end, as GL's SplitRightEdge does, so no T-junction there can crack.
 //
 // usage:  node scenarios/seamless.mjs [port]
 import { UdmfMap, wad, mapLumps } from "../src/udmf.mjs";
@@ -27,7 +27,7 @@ export function buildSeamlessMap() {
 // [rc4l] In front of B's south face, where the walk reaches it.
 export const VANTAGES = [{ name: "facing", at: { x: 192, y: 32, z: 0, angle: 90, pitch: 0 } }];
 
-export const SIDES = [{ name: "vk", cvars: { gl_seamless: 1 } }];
+export const SIDES = [{ name: "vk", cvars: { r_seamless: 1 } }];
 
 // [rc4l] fua_line_mesh lists the line's pieces: its upper (piece 0) holds 6 vertices as a plain quad, and 9 once its right edge splits at C's ceiling.
 export function seamlessCounter(target) {

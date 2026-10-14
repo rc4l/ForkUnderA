@@ -46,7 +46,7 @@ std::vector<FlagField> FlagTable()
 		//
 		// The walk finds every flag in the build, which is the point -- and that includes ones with
 		// nothing to do with a server: paletteflash is how the player likes their screen to flash,
-		// cl_clientflags is their own connection, gl_texture_hqresize_targets is their renderer.
+		// cl_clientflags is their own connection, r_texture_hqresize_targets is their renderer.
 		// Offering those on a screen that configures a server would be offering to set somebody
 		// else's preferences.
 		//

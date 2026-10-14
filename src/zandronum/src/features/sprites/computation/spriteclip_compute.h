@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 rc4l
 //
-// [rc4l] GLSprite::PerformSpriteClipAdjustment: how far GL lifts a sprite out of the floor, or drops it from the ceiling, under gl_spriteclip.
+// [rc4l] GLSprite::PerformSpriteClipAdjustment: how far GL lifts a sprite out of the floor, or drops it from the ceiling, under r_spriteclip.
 
 #ifndef ZX_SPRITECLIP_COMPUTE_H
 #define ZX_SPRITECLIP_COMPUTE_H
@@ -13,9 +13,9 @@ struct SpriteClipIn
 {
 	bool  living;          // [rc4l] a player, monster or inventory item that is not a corpse (an ice corpse counts)
 	bool  monster, noGravity, corpse;
-	int   spriteClip;      // [rc4l] gl_spriteclip
-	float clipFactor;      // [rc4l] gl_sclipfactor
-	float clipThreshold;   // [rc4l] gl_sclipthreshold
+	int   spriteClip;      // [rc4l] r_spriteclip
+	float clipFactor;      // [rc4l] r_sclipfactor
+	float clipThreshold;   // [rc4l] r_sclipthreshold
 	float bottom, top;     // [rc4l] the floor and ceiling heights GL measures against
 	float spriteHeight;
 };

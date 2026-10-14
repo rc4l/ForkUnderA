@@ -51,8 +51,8 @@
 #include "features/models/models.h"
 
 // [rc4l] MODELDEF's switches, which the frame lookup and the frame blend read in either renderer.
-CVAR(Bool, gl_interpolate_model_frames, true, CVAR_ARCHIVE)
-CVAR(Bool, gl_use_models, true, CVAR_ARCHIVE)
+CVAR(Bool, r_interpolate_model_frames, true, CVAR_ARCHIVE)
+CVAR(Bool, r_use_models, true, CVAR_ARCHIVE)
 
 extern TDeletingArray<FVoxel *> Voxels;
 extern TDeletingArray<FVoxelDef *> VoxelDefs;
@@ -637,7 +637,7 @@ EXTERN_CVAR (Bool, r_drawvoxels)
 FSpriteModelFrame * gl_FindModelFrame(const PClass * ti, int sprite, int frame, bool dropped)
 {
 	// [BB] The user doesn't want to use models, so just pretend that there is no model for this frame.
-	if ( gl_use_models == false )
+	if ( r_use_models == false )
 		return NULL;
 
 	if (GetDefaultByType(ti)->hasmodel)

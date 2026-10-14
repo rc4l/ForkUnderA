@@ -55,7 +55,7 @@
 #include "gl/textures/gl_material.h"
 #include "gl/utility/gl_convert.h"
 
-CVAR(Bool,gl_noskyboxes, false, 0)
+CVAR(Bool,r_noskyboxes, false, 0)
 extern int skyfog;
 
 enum
@@ -90,7 +90,7 @@ void GLWall::SkyPlane(sector_t *sector, int plane, bool allowreflect)
 		// JUSTHIT is used as an indicator that a skybox is in use.
 		// This is to avoid recursion
 
-		if (!gl_noskyboxes && skyboxx && GLRenderer->mViewActor!=skyboxx && !(skyboxx->flags&MF_JUSTHIT))
+		if (!r_noskyboxes && skyboxx && GLRenderer->mViewActor!=skyboxx && !(skyboxx->flags&MF_JUSTHIT))
 		{
 			type=RENDERWALL_SKYBOX;
 			skybox=skyboxx;

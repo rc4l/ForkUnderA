@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 rc4l
 //
-// [rc4l] GL's sheen over a line mirror (GLWall::RenderMirrorSurface, gl_mirror_envmap): glstuff/mirror.png sphere-mapped and added at a tenth of the wall's light.
+// [rc4l] GL's sheen over a line mirror (GLWall::RenderMirrorSurface, r_mirror_envmap): glstuff/mirror.png sphere-mapped and added at a tenth of the wall's light.
 
 #ifndef ZX_MIRRORSHEEN_COMPUTE_H
 #define ZX_MIRRORSHEEN_COMPUTE_H

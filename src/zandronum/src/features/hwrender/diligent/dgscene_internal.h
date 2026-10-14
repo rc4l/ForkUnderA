@@ -92,14 +92,14 @@
 #endif
 
 
-EXTERN_CVAR(Int, gl_fogmode)
+EXTERN_CVAR(Int, r_fogmode)
 EXTERN_CVAR(Bool, gl_wallmesh)
-EXTERN_CVAR(Int, gl_texture_filter)
+EXTERN_CVAR(Int, r_texture_filter)
 EXTERN_CVAR(Float, skyoffset)
-EXTERN_CVAR(Float, gl_lights_size)
-EXTERN_CVAR(Float, gl_lights_intensity)
-EXTERN_CVAR(Bool, gl_lights_additive)
-EXTERN_CVAR(Bool, gl_mirrors)
+EXTERN_CVAR(Float, r_lights_size)
+EXTERN_CVAR(Float, r_lights_intensity)
+EXTERN_CVAR(Bool, r_lights_additive)
+EXTERN_CVAR(Bool, r_mirrors)
 EXTERN_CVAR(Bool, fua_dg_skyportal)
 EXTERN_CVAR(Int, fua_dg_skyportal_scale)
 EXTERN_CVAR(Float, fua_dg_skyportal_reach)

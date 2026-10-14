@@ -1,4 +1,4 @@
-// [rc4l] A long floor at a grazing angle under trilinear filtering and 16x anisotropy, GL against Vulkan: exit 0 when Vulkan's samplers take gl_texture_filter_anisotropic as GL's do.
+// [rc4l] A long floor at a grazing angle under trilinear filtering and 16x anisotropy, GL against Vulkan: exit 0 when Vulkan's samplers take r_texture_filter_anisotropic as GL's do.
 //
 // usage:  node scenarios/anisotropy.mjs [port]
 import { UdmfMap, wad, mapLumps } from "../src/udmf.mjs";
@@ -19,7 +19,7 @@ export const VANTAGES = [{ name: "floor", at: { x: 512, y: 64, z: 0, angle: 90, 
 // [rc4l] 0.03 against GL with the samplers taking it, 0.44 when Vulkan kept its first filter and no anisotropy.
 export const BOXES = { MAP01: { far: { box: [0.2, 0.52, 0.8, 0.66], ceiling: 0.2 } } };
 
-export const SIDES = GL_VS_VULKAN.map((s) => ({ ...s, cvars: { gl_texture_filter: 4, gl_texture_filter_anisotropic: 16 } }));
+export const SIDES = GL_VS_VULKAN.map((s) => ({ ...s, cvars: { r_texture_filter: 4, r_texture_filter_anisotropic: 16 } }));
 
 runScenarioIfMain(import.meta.url, () => ({ name: "anisotropy", wad: buildAnisotropyWad(), maps: ["MAP01"],
   vantages: VANTAGES, boxes: BOXES, sides: SIDES }));

@@ -32,7 +32,7 @@ EXTERN_CVAR(Bool, fua_vis_check)
 EXTERN_CVAR(Bool, fua_sprite_check)
 EXTERN_CVAR(Bool, fua_psprite_check)
 EXTERN_CVAR(Bool, fua_shading_check)
-EXTERN_CVAR(Int, gl_fogmode)
+EXTERN_CVAR(Int, r_fogmode)
 
 namespace {
 
@@ -73,7 +73,7 @@ void GLSpritePiece(const GLSprite &spr, const float *c1, const float *c2, const 
 	mp.stencil = (spr.RenderStyle.Flags & STYLEF_ColorIsFixed) != 0;
 	mp.alphaTest = spr.hw_styleflags != zx::sprites::kHwNoAlphaTest;
 
-	// [rc4l] The dynamic light gl_SetDynSpriteLight left in the render state (gl_light_sprites and DONTLIGHTSELF applied), carried apart from vColor so the shader adds it after lighting as GL does.
+	// [rc4l] The dynamic light gl_SetDynSpriteLight left in the render state (r_light_sprites and DONTLIGHTSELF applied), carried apart from vColor so the shader adds it after lighting as GL does.
 	if (!spr.fullbright)
 	{
 		float dyn[3] = { 0.f, 0.f, 0.f };
@@ -112,7 +112,7 @@ void GLShading(int lightlevel, int rellight, const FColormap &cm, bool noFog, bo
 	out.fogColor     = gl_RenderState.GetFogColor().d & 0xffffff;
 	out.desaturation = gl_RenderState.GetDesaturation();
 	if (!gl_RenderState.IsFogEnabled()) out.fogMode = 0;
-	else out.fogMode = (out.fogColor == 0) ? (int)gl_fogmode : -(int)gl_fogmode;
+	else out.fogMode = (out.fogColor == 0) ? (int)r_fogmode : -(int)r_fogmode;
 	gl_RenderState.RestoreShading(before);
 }
 

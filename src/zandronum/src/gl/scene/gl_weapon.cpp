@@ -65,7 +65,7 @@
 EXTERN_CVAR (Bool, r_drawplayersprites)
 EXTERN_CVAR(Float, transsouls)
 EXTERN_CVAR (Bool, st_scale)
-EXTERN_CVAR(Int, gl_fuzztype)
+EXTERN_CVAR(Int, r_fuzztype)
 EXTERN_CVAR (Bool, r_deathcamera)
 
 
@@ -261,7 +261,7 @@ void FGLRenderer::DrawPSprite (player_t * player,pspdef_t *psp,fixed_t sx, fixed
 //
 //==========================================================================
 
-EXTERN_CVAR(Bool, gl_brightfog)
+EXTERN_CVAR(Bool, r_brightfog)
 
 void FGLRenderer::DrawPlayerSprites(sector_t * viewsector, bool hudModelStep)
 {
@@ -413,11 +413,11 @@ void FGLRenderer::DrawPlayerSprites(sector_t * viewsector, bool hudModelStep)
 		vis.RenderStyle.CheckFuzz();
 		if (vis.RenderStyle.BlendOp == STYLEOP_Fuzz)
 		{
-			if (gl_fuzztype != 0)
+			if (r_fuzztype != 0)
 			{
 				// Todo: implement shader selection here
 				vis.RenderStyle = LegacyRenderStyles[STYLE_Translucent];
-				OverrideShader = gl_fuzztype + 4;
+				OverrideShader = r_fuzztype + 4;
 				trans = 0.99f;	// trans may not be 1 here
 			}
 			else
@@ -520,7 +520,7 @@ void FGLRenderer::DrawPlayerSprites(sector_t * viewsector, bool hudModelStep)
 		}
 		else
 		{
-			if (gl_lights && GLRenderer->mLightCount && !gl_fixedcolormap && gl_light_sprites)
+			if (r_lights && GLRenderer->mLightCount && !gl_fixedcolormap && r_light_sprites)
 			{
 				gl_SetDynSpriteLight(playermo, NULL);
 			}
@@ -572,7 +572,7 @@ void FGLRenderer::DrawTargeterSprites()
 
 	gl_RenderState.EnableBrightmap(false);
 	gl_RenderState.BlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-	gl_RenderState.AlphaFunc(GL_GEQUAL,gl_mask_sprite_threshold);
+	gl_RenderState.AlphaFunc(GL_GEQUAL,r_mask_sprite_threshold);
 	gl_RenderState.BlendEquation(GL_FUNC_ADD);
 	gl_RenderState.ResetColor();
 	gl_RenderState.SetTextureMode(TM_MODULATE);

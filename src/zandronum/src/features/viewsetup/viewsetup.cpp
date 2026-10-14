@@ -28,7 +28,7 @@
 #include "r_data/colormaps.h"            // [rc4l] INVERSECOLORMAP
 
 EXTERN_CVAR(Bool, r_deathcamera)
-EXTERN_CVAR(Bool, gl_enhanced_nightvision)
+EXTERN_CVAR(Bool, r_enhanced_nightvision)
 
 namespace zx { namespace viewsetup {
 
@@ -92,7 +92,7 @@ FixedColormapShade FixedColormapShadeFor(int colormap)
 	const int special = colormap - CM_FIRSTSPECIALCOLORMAP;
 	const bool isSpecial = special >= 0 && special < (int)SpecialColormaps.Size();
 	return ComputeFixedColormapShade(colormap, SpecialColormaps.Size(), isSpecial ? SpecialColormaps[special].ColorizeStart : none,
-		isSpecial ? SpecialColormaps[special].ColorizeEnd : none, gl_enhanced_nightvision);
+		isSpecial ? SpecialColormaps[special].ColorizeEnd : none, r_enhanced_nightvision);
 }
 
 void TurnView(unsigned viewAngle)

@@ -46,7 +46,7 @@
 #include "features/materials/texturebitmap.h"
 #include "features/hwshaders/computation/hwshader_compute.h"   // [rc4l] kFirstUserShader
 
-EXTERN_CVAR(Bool, gl_texture_usehires)
+EXTERN_CVAR(Bool, r_texture_usehires)
 
 using zx::hwshaders::kFirstUserShader;
 
@@ -165,7 +165,7 @@ unsigned char * FTexturePixels::CreateTexBuffer(int translation, int & w, int & 
 
 	// Textures that are already scaled in the texture lump will not get replaced
 	// by hires textures
-	if (gl_texture_usehires && hirescheck != NULL)
+	if (r_texture_usehires && hirescheck != NULL)
 	{
 		buffer = LoadHiresTexture (hirescheck, &w, &h);
 		if (buffer)

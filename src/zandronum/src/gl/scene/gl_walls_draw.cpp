@@ -63,7 +63,7 @@
 #include "features/hwrender/computation/walllight_compute.h"
 #include "features/materials/materials.h"   // [rc4l] MirrorSheenTexture
 
-EXTERN_CVAR(Bool, gl_seamless)
+EXTERN_CVAR(Bool, r_seamless)
 
 //==========================================================================
 //
@@ -94,7 +94,7 @@ void GLWall::SetupLights()
 		return;
 	}
 
-	// [AK] Take care of gl_lights_size and ZADF_FORCE_VIDEO_DEFAULTS.
+	// [AK] Take care of r_lights_size and ZADF_FORCE_VIDEO_DEFAULTS.
 	OVERRIDE_LIGHTS_SIZE_IF_NECESSARY
 
 	float vtx[]={glseg.x1,zbottom[0],glseg.y1, glseg.x1,ztop[0],glseg.y1, glseg.x2,ztop[1],glseg.y2, glseg.x2,zbottom[1],glseg.y2};
@@ -136,7 +136,7 @@ void GLWall::SetupLights()
 			float y = FIXED2FLOAT(node->lightsource->y);
 			float z = FIXED2FLOAT(node->lightsource->z);
 			float dist = fabsf(p.DistToPoint(x, z, y));
-			float radius = (node->lightsource->GetRadius() * gl_lights_size);
+			float radius = (node->lightsource->GetRadius() * r_lights_size);
 			float scale = 1.0f / ((2.f * radius) - dist);
 
 			if (radius > 0.f && dist < radius)
@@ -194,7 +194,7 @@ void GLWall::SetupLights()
 void GLWall::RenderWall(int textured, unsigned int *store)
 {
 	static texcoord tcs[4]; // making this variable static saves us a relatively costly stack integrity check.
-	bool split = (gl_seamless && !(textured&RWF_NOSPLIT) && seg->sidedef != NULL && !(seg->sidedef->Flags & WALLF_POLYOBJ) && !(flags & GLWF_NOSPLIT));
+	bool split = (r_seamless && !(textured&RWF_NOSPLIT) && seg->sidedef != NULL && !(seg->sidedef->Flags & WALLF_POLYOBJ) && !(flags & GLWF_NOSPLIT));
 
 	tcs[0]=lolft;
 	tcs[1]=uplft;
@@ -253,7 +253,7 @@ void GLWall::RenderWall(int textured, unsigned int *store)
 int GLWall::BuildFanVertices(FFlatVertex *out, int maxOut)
 {
 	texcoord tcs[4];
-	const bool split = (gl_seamless && seg->sidedef != NULL &&
+	const bool split = (r_seamless && seg->sidedef != NULL &&
 		!(seg->sidedef->Flags & WALLF_POLYOBJ) && !(flags & GLWF_NOSPLIT));
 
 	tcs[0] = lolft;
@@ -334,7 +334,7 @@ void GLWall::FillBatchKey(zx::levelmesh::WallBatchKey &out) const
 
 void GLWall::RenderFogBoundary()
 {
-	if (gl_fogmode && gl_fixedcolormap == 0)
+	if (r_fogmode && gl_fixedcolormap == 0)
 	{
 		int rel = rellight + getExtraLight();
 		gl_SetFog(lightlevel, rel, &Colormap, false);
@@ -391,7 +391,7 @@ void GLWall::RenderMirrorSurface()
 
 	// Restore the defaults for the translucent pass
 	gl_RenderState.BlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-	gl_RenderState.AlphaFunc(GL_GEQUAL, gl_mask_sprite_threshold);
+	gl_RenderState.AlphaFunc(GL_GEQUAL, r_mask_sprite_threshold);
 	glDepthFunc(GL_LESS);
 
 	// This is drawn in the translucent pass which is done after the decal pass
@@ -425,7 +425,7 @@ void GLWall::RenderTranslucentWall()
 	// and until that changes I won't fix this code for the new blending modes!
 	bool isadditive = RenderStyle == STYLE_Add;
 
-	if (gl_fixedcolormap == CM_DEFAULT && gl_lights && (gl.flags & RFL_BUFFER_STORAGE))
+	if (gl_fixedcolormap == CM_DEFAULT && r_lights && (gl.flags & RFL_BUFFER_STORAGE))
 	{
 		SetupLights();
 	}

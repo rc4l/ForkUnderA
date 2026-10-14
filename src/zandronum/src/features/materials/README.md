@@ -18,7 +18,7 @@ warp, palette). GL and the Vulkan backend both read them from here; GL keeps onl
   material (`ComputeTexCoordInfo`).
 - `textureinfo.h/.cpp`: a texture's renderer data (`FTexture::gl_info`): brightmaps, glow and sky colours,
   holes, transparency and edge smoothing, the GLDEFS `brightmap` and `detail` blocks, `gl_flush`,
-  `textureinfo` and `gl_texture_usehires`.
+  `textureinfo` and `r_texture_usehires`.
 - `texturebitmap`, `translationpalette`, `skyboxtexture`, `hqresize`, `hirestex`, `hqnx`, `hqnx_asm`:
   moved from `gl/textures` and `gl/` unchanged but for their names (`FTextureBitmap` was
   `FGLBitmap`, `FTranslationPalette` was `GLTranslationPalette`).

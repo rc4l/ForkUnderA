@@ -51,8 +51,8 @@
 #include "features/sprites/spriteframe.h"   // [rc4l] gl_GetSpriteFrame, for the light list's frame names
 #include "features/dynlights/computation/nodeindex_compute.h"   // [rc4l] a relinking light's nodes by what they link to
 
-EXTERN_CVAR (Float, gl_lights_size);
-EXTERN_CVAR (Bool, gl_lights_additive);
+EXTERN_CVAR (Float, r_lights_size);
+EXTERN_CVAR (Bool, r_lights_additive);
 EXTERN_CVAR(Int, vid_renderer)
 
 
@@ -372,10 +372,10 @@ void ADynamicLight::UpdateLocation()
 			intensity = m_currentIntensity;
 		}
 
-		// [AK] Take care of gl_lights_size and ZADF_FORCE_VIDEO_DEFAULTS.
+		// [AK] Take care of r_lights_size and ZADF_FORCE_VIDEO_DEFAULTS.
 		OVERRIDE_LIGHTS_SIZE_IF_NECESSARY
 
-		radius = FLOAT2FIXED(intensity * 2.0f * gl_lights_size);
+		radius = FLOAT2FIXED(intensity * 2.0f * r_lights_size);
 
 		if (x!=oldx || y!=oldy || radius!=oldradius) 
 		{

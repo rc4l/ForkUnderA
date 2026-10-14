@@ -20,7 +20,7 @@
 #include "features/models/models.h"   // [rc4l] gl_FindModelFrame and the models
 #include "features/rendersettings/rendersettings.h"   // [rc4l] the render settings it reads
 
-EXTERN_CVAR(Bool, gl_interpolate_model_frames)
+EXTERN_CVAR(Bool, r_interpolate_model_frames)
 
 namespace zx { namespace sprites {
 
@@ -65,7 +65,7 @@ void ModelPoseFor(const AActor *actor, const FSpriteModelFrame *smf, float x, fl
 FSpriteModelFrame *NextModelFrame(const FSpriteModelFrame *smf, const FState *curState, int curTics, const PClass *ti, double &inter)
 {
 	inter = 0.;
-	if (!gl_interpolate_model_frames || (smf->flags & MDL_NOINTERPOLATION)) return NULL;
+	if (!r_interpolate_model_frames || (smf->flags & MDL_NOINTERPOLATION)) return NULL;
 	FState *nextState = curState->GetNextState();
 	if (curState == nextState || !nextState) return NULL;
 	// [rc4l] [BB]/[JM] Tic fractions blend past 35 fps, but not while the tic counter is frozen.

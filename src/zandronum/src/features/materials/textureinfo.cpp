@@ -59,7 +59,7 @@ CCMD(gl_flush)
 	FMaterial::FlushAll();
 }
 
-CUSTOM_CVAR(Bool, gl_texture_usehires, true, CVAR_ARCHIVE|CVAR_NOINITCALL)
+CUSTOM_CVAR(Bool, r_texture_usehires, true, CVAR_ARCHIVE|CVAR_NOINITCALL)
 {
 	FMaterial::FlushAll();
 }

@@ -75,7 +75,7 @@ void ModelPieceLook(int lightLevel, int extraLight, const FColormap &cm, bool fu
 	mp.colorG *= color.g / 255.f;
 	mp.colorB *= color.b / 255.f;
 	// [rc4l] The light is the CPU's, exactly as it is for a sprite: gl_SetDynSpriteLight has already
-	// run for this actor and left its answer in the render state, having applied gl_light_sprites and
+	// run for this actor and left its answer in the render state, having applied r_light_sprites and
 	// DONTLIGHTSELF. A shader loop over the level's lights knows neither.
 	if (!fullbright) { mp.dynR = dyn[0]; mp.dynG = dyn[1]; mp.dynB = dyn[2]; }
 	mp.cpuLight = true;   // [rc4l] its dynamic light is the CPU's, as a sprite's is

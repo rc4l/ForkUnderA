@@ -19,8 +19,8 @@
 #include "c_cvars.h"
 #include "features/rendersettings/rendersettings.h"   // [rc4l] the render settings it reads
 
-EXTERN_CVAR(Bool, gl_lights)
-EXTERN_CVAR(Bool, gl_light_sprites)
+EXTERN_CVAR(Bool, r_lights)
+EXTERN_CVAR(Bool, r_light_sprites)
 
 namespace zx { namespace levelmesh {
 

@@ -97,7 +97,7 @@ CVAR(Bool, gl_texture, true, 0)
 CVAR(Bool, gl_no_skyclear, false, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 // [BB] Don't allow this in release builds.
 CVAR(Float, gl_mask_threshold, 0.5f,CVAR_ARCHIVE|CVAR_GLOBALCONFIG|CVAR_DEBUGONLY)
-CVAR(Float, gl_mask_sprite_threshold, 0.5f,CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
+CVAR(Float, r_mask_sprite_threshold, 0.5f,CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 CVAR(Bool, gl_sort_textures, false, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 EXTERN_CVAR(Bool, gl_batch_walls)  // [rc4l] features/levelmesh wall batching
 
@@ -391,7 +391,7 @@ void FGLRenderer::RenderScene(int recursion)
 
 	// if we don't have a persistently mapped buffer, we have to process all the dynamic lights up front,
 	// so that we don't have to do repeated map/unmap calls on the buffer.
-	if (mLightCount > 0 && gl_fixedcolormap == CM_DEFAULT && gl_lights && !(gl.flags & RFL_BUFFER_STORAGE))
+	if (mLightCount > 0 && gl_fixedcolormap == CM_DEFAULT && r_lights && !(gl.flags & RFL_BUFFER_STORAGE))
 	{
 		GLRenderer->mLights->Begin();
 		gl_drawinfo->drawlists[GLDL_PLAINWALLS].DrawWalls(GLPASS_LIGHTSONLY);
@@ -414,7 +414,7 @@ void FGLRenderer::RenderScene(int recursion)
 	// [AK] Take care of gl_texture and ZADF_FORCE_VIDEO_DEFAULTS.
 	OVERRIDE_GL_TEXTURE_IF_NECESSARY
 
-	if (mLightCount > 0 && gl_fixedcolormap == CM_DEFAULT && gl_lights && (gl.flags & RFL_BUFFER_STORAGE))
+	if (mLightCount > 0 && gl_fixedcolormap == CM_DEFAULT && r_lights && (gl.flags & RFL_BUFFER_STORAGE))
 	{
 		pass = GLPASS_ALL;
 	}
@@ -509,7 +509,7 @@ void FGLRenderer::RenderTranslucent()
 	gl_RenderState.SetCameraPos(FIXED2FLOAT(viewx), FIXED2FLOAT(viewy), FIXED2FLOAT(viewz));
 
 	// final pass: translucent stuff
-	gl_RenderState.AlphaFunc(GL_GEQUAL, gl_mask_sprite_threshold);
+	gl_RenderState.AlphaFunc(GL_GEQUAL, r_mask_sprite_threshold);
 	gl_RenderState.BlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
 	gl_RenderState.EnableBrightmap(true);

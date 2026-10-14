@@ -19,7 +19,7 @@
 #include "features/levelmesh/computation/wallbatch_compute.h"   // [rc4l] ComputeFanTriangleVertex
 #include "features/levelmesh/computation/wallglow_compute.h"   // [rc4l] ComputeWallTakesGlow
 #include "features/levelmesh/computation/fogboundary_compute.h"   // [rc4l] ComputeFogBoundary, ComputeFogSheetOpening
-#include "features/levelmesh/computation/seamless_compute.h"   // [rc4l] gl_seamless's splits
+#include "features/levelmesh/computation/seamless_compute.h"   // [rc4l] r_seamless's splits
 #include "features/materials/materials.h"
 #include "features/materials/computation/texcoord_compute.h"   // [rc4l] FTexCoordInfo
 #include "features/hwrender/computation/walllight_compute.h"
@@ -34,13 +34,13 @@ CUSTOM_CVAR(Bool, gl_wallmesh, false, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
 {
 	zx::levelmesh::InvalidateAll();
 }
-EXTERN_CVAR(Bool, gl_mirrors)
-EXTERN_CVAR(Bool, gl_seamless)
+EXTERN_CVAR(Bool, r_mirrors)
+EXTERN_CVAR(Bool, r_seamless)
 // [rc4l] Cut a wall at its 3D floor light bands (wallbands_compute), a switch so the banding can be A/B'd.
 CVAR(Bool, fua_surface_bands, true, 0)
 // [rc4l] Print each banded wall the map bake splits: its span, the first boundary and the band that lights its top.
 CVAR(Bool, fua_band_log, false, 0)
-EXTERN_CVAR(Int, gl_fogmode)
+EXTERN_CVAR(Int, r_fogmode)
 // [rc4l] Off bakes a scrolled wall or floor again instead of shifting its texture, the old cost, for an A/B in one session.
 CVAR(Bool, fua_mesh_rescroll, true, 0)
 
@@ -195,7 +195,7 @@ MidTextureBlend LineMidBlend(const line_t *line, zx::materials::MaterialRef mat)
 
 bool LineIsMirror(const seg_t *seg)
 {
-	return ComputeIsMirrorWall(seg->linedef->special, seg->backsector == NULL, gl_mirrors);
+	return ComputeIsMirrorWall(seg->linedef->special, seg->backsector == NULL, r_mirrors);
 }
 
 void RecalcVertexHeights(vertex_t *v)
@@ -211,7 +211,7 @@ void RecalcVertexHeights(vertex_t *v)
 	v->dirty = false;
 }
 
-// [rc4l] The level's walls were last baked with gl_seamless this way, so a change bakes them again.
+// [rc4l] The level's walls were last baked with r_seamless this way, so a change bakes them again.
 static bool g_bakedSeamless = false;
 
 // [rc4l] No splits, for a piece GL does not draw through RenderWall's split.
@@ -223,14 +223,14 @@ static SeamSplits NoSeams()
 	return s;
 }
 
-// [rc4l] Where gl_seamless splits a wall on seg over fracLeft..fracRight of its sidedef: its line's end vertices' heights and its sidedef's seg ends, on the edges `takes` and the band flags allow, as RenderWall decides.
+// [rc4l] Where r_seamless splits a wall on seg over fracLeft..fracRight of its sidedef: its line's end vertices' heights and its sidedef's seg ends, on the edges `takes` and the band flags allow, as RenderWall decides.
 static SeamSplits SeamSplitsOf(const seg_t *seg, float fracLeft, float fracRight, bool takes, bool upper, bool lower)
 {
 	static TArray<float> segX, segY, segFrac;
 	SeamSplits s = NoSeams();
 	s.fracLeft = fracLeft;
 	s.fracRight = fracRight;
-	if (!gl_seamless || !takes || (seg->sidedef->Flags & WALLF_POLYOBJ)) return s;
+	if (!r_seamless || !takes || (seg->sidedef->Flags & WALLF_POLYOBJ)) return s;
 	vertex_t *v1 = seg->linedef->v1, *v2 = seg->linedef->v2;
 	if (seg->sidedef != seg->linedef->sidedef[0]) { vertex_t *t = v1; v1 = v2; v2 = t; }
 	if (v1->dirty) RecalcVertexHeights(v1);
@@ -1072,7 +1072,7 @@ int BakeSegFromMap(int segIndex)
 int BakeLevelFromMap()
 {
 	if (segs == NULL || numsegs <= 0) return 0;
-	g_bakedSeamless = gl_seamless;
+	g_bakedSeamless = r_seamless;
 	int made = 0;
 	for (int i = 0; i < numsegs; i++) { const int m = BakeSegFromMap(i); if (m > 0) made += m; }
 	return made;
@@ -1312,8 +1312,8 @@ void InvalidateMovedSectors(const WalkedThisFrame *walked)
 		for (int i = 0; i < numsectors; i++) g_lastLook[i] = LookOf(sectors[i]);
 	}
 	if (!gl_wallmesh || g_sectorDirty.Size() == 0) return;
-	// [rc4l] gl_seamless reshapes every wall's fan, so a change bakes the level's walls again.
-	if (g_bakedSeamless != (bool)gl_seamless) BakeLevelFromMap();
+	// [rc4l] r_seamless reshapes every wall's fan, so a change bakes the level's walls again.
+	if (g_bakedSeamless != (bool)r_seamless) BakeLevelFromMap();
 	// [rc4l] GL's missing-texture fills hang on the heights and textures round them, so a move or a texture change works them out again below.
 	TArray<int> fillMoved, fillSides;
 	// [rc4l] With the walks' lists only what they reached is looked at, and the rest stays dirty until a walk reaches it.

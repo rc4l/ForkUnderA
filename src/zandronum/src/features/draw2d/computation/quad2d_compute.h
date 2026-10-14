@@ -34,7 +34,7 @@ struct Quad2D
 	int         target;
 	// [rc4l] The fixed colormap (gl_fixedcolormap) a weapon layer is drawn under, as GL draws the weapon before resetting it for the HUD; 0 for everything else.
 	int         fixedColormap;
-	// [rc4l] The fuzz shader a fuzzy weapon layer draws with under gl_fuzztype (fuzz_compute's kFuzz*), 0 for everything else.
+	// [rc4l] The fuzz shader a fuzzy weapon layer draws with under r_fuzztype (fuzz_compute's kFuzz*), 0 for everything else.
 	int         fuzz;
 	// [rc4l] The damage tint the weapon or status bar face is drawn with (features/damage-tint), strength 0 for none.
 	zx::damagetint::TintGradient tint;

@@ -49,16 +49,16 @@
 #include "features/rendersettings/rendersettings.h"
 #include "features/rendersettings/computation/mapoptions_compute.h"
 
-EXTERN_CVAR(Int, gl_lightmode)
-EXTERN_CVAR(Bool, gl_brightfog)
+EXTERN_CVAR(Int, r_lightmode)
+EXTERN_CVAR(Bool, r_brightfog)
 
-CUSTOM_CVAR(Bool, gl_notexturefill, false, 0)
+CUSTOM_CVAR(Bool, r_notexturefill, false, 0)
 {
 	glset.notexturefill = self;
 }
 
 
-CUSTOM_CVAR(Bool, gl_nocoloredspritelighting, false, 0)
+CUSTOM_CVAR(Bool, r_nocoloredspritelighting, false, 0)
 {
 	glset.nocoloredspritelighting = self;
 }
@@ -232,8 +232,8 @@ bool IsLightmodeValid()
 static void ApplyMapSettings()
 {
 	const zx::rendersettings::MapRenderOptions map = { glset.map_lightmode, glset.map_brightfog, glset.map_nocoloredspritelighting, glset.map_notexturefill };
-	const zx::rendersettings::PlayerRenderSettings player = { gl_lightmode, gl_lightmode.GetGenericRepDefault(CVAR_Int).Int,
-		gl_brightfog, gl_nocoloredspritelighting, gl_notexturefill, (zadmflags & ZADF_FORCE_VIDEO_DEFAULTS) != 0 };
+	const zx::rendersettings::PlayerRenderSettings player = { r_lightmode, r_lightmode.GetGenericRepDefault(CVAR_Int).Int,
+		r_brightfog, r_nocoloredspritelighting, r_notexturefill, (zadmflags & ZADF_FORCE_VIDEO_DEFAULTS) != 0 };
 	const zx::rendersettings::ResolvedRenderSettings r = zx::rendersettings::ComputeMapRenderSettings(map, player);
 	glset.lightmode = r.lightmode;
 	glset.brightfog = r.brightfog;

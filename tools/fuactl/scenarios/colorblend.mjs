@@ -1,4 +1,4 @@
-// [rc4l] A fullbright additive sprite at full opacity, GL against Vulkan: exit 0 when Vulkan blends it by its own colour as gl_usecolorblending makes GL do, colour squared onto the wall, not added at full strength.
+// [rc4l] A fullbright additive sprite at full opacity, GL against Vulkan: exit 0 when Vulkan blends it by its own colour as r_usecolorblending makes GL do, colour squared onto the wall, not added at full strength.
 //
 // usage:  node scenarios/colorblend.mjs [port]
 import { UdmfMap, wad, mapLumps } from "../src/udmf.mjs";

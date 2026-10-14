@@ -62,7 +62,7 @@ TEST(MirrorSheenCompute, TheBlockCarriesTheViewTheEyeNormalAndATenthOfTheLight)
 	EXPECT_FLOAT_EQ(4.f, out[27]);   // [rc4l] r_mirror_recursions, how many mirrors deep the reflections go
 	ComputeMirrorSheenConstants(kIdentity, 1.f, 0.f, rgb, -1.f, 0.f, 0.f, false, 4, out);
 	EXPECT_FLOAT_EQ(1.f, out[16]);
-	EXPECT_FLOAT_EQ(0.f, out[23]);   // [rc4l] gl_mirror_envmap off, or the mirror outside GL's walk
+	EXPECT_FLOAT_EQ(0.f, out[23]);   // [rc4l] r_mirror_envmap off, or the mirror outside GL's walk
 	const float flat[16] = { 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 };
 	ComputeMirrorSheenConstants(flat, 1.f, 0.f, rgb, -1.f, 0.f, 0.f, true, 4, out);
 	EXPECT_FLOAT_EQ(0.f, out[16]);

@@ -773,7 +773,7 @@ CCMD( fua_mesh_dupes )
 //
 //==========================================================================
 
-EXTERN_CVAR( Bool, gl_mirrors )
+EXTERN_CVAR( Bool, r_mirrors )
 
 CCMD( fua_make_mirror )
 {
@@ -814,10 +814,10 @@ CCMD( fua_make_mirror )
 	// backend. No map needs this: a real mirror carries its special at load, before anything is
 	// captured. Only changing one at runtime does, which is this command.
 	zx::levelmesh::InvalidateAll( );
-	if ( !gl_mirrors ) gl_mirrors = true;
-	Printf( "fua_make_mirror: linedef %d is now a mirror (gl_mirrors %d)\n"
+	if ( !r_mirrors ) r_mirrors = true;
+	Printf( "fua_make_mirror: linedef %d is now a mirror (r_mirrors %d)\n"
 			"  GL reflects in it immediately; run fua_dg_mirrors for the Vulkan backend to see it\n",
-			idx, gl_mirrors ? 1 : 0 );
+			idx, r_mirrors ? 1 : 0 );
 }
 
 // [rc4l] The lights a light list names, which are the only ones GL lets light the flat or wall it belongs to.

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 rc4l
 //
-// [rc4l] gl_seamless, as GL draws it (gl_RecalcVertexHeights, GLWall::SplitLeftEdge and the rest): the vertices a wall's fan gains where other surfaces meet its edges, so no T-junction leaves a crack.
+// [rc4l] r_seamless, as GL draws it (gl_RecalcVertexHeights, GLWall::SplitLeftEdge and the rest): the vertices a wall's fan gains where other surfaces meet its edges, so no T-junction leaves a crack.
 
 #ifndef ZX_SEAMLESS_COMPUTE_H
 #define ZX_SEAMLESS_COMPUTE_H
@@ -21,7 +21,7 @@ struct SeamSplits
 	const float *rightHeights; int rightCount;   // [rc4l] the right end vertex's
 	const float *segX, *segY, *segFrac; int segCount;   // [rc4l] where each of the sidedef's segs but the last ends, and how far along the sidedef, ascending
 	float fracLeft, fracRight;                   // [rc4l] the part of the sidedef the wall covers
-	bool left, right, upper, lower;              // [rc4l] which edges split: gl_seamless on, the end reached, and no GLWF_NOSPLITUPPER or LOWER
+	bool left, right, upper, lower;              // [rc4l] which edges split: r_seamless on, the end reached, and no GLWF_NOSPLITUPPER or LOWER
 };
 
 // [rc4l] Whether GL draws a wall through RenderWall's split: not one blended in its translucent pass (RWF_NOSPLIT) and not a middle between one sector on both sides (GLWF_NOSPLIT).

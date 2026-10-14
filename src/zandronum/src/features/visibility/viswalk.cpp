@@ -62,9 +62,9 @@ CVAR(Int, fua_vis_slices, -1, 0)
 CVAR(Bool, fua_vis_threadcheck, false, 0)
 // [rc4l] Move the player's walk's slice edges walk to walk so each slice has about the same work.
 CVAR(Bool, fua_vis_balance, true, 0)
-EXTERN_CVAR(Bool, gl_noskyboxes)
-EXTERN_CVAR(Bool, gl_mirrors)
-EXTERN_CVAR(Bool, gl_mirror_envmap)
+EXTERN_CVAR(Bool, r_noskyboxes)
+EXTERN_CVAR(Bool, r_mirrors)
+EXTERN_CVAR(Bool, r_mirror_envmap)
 
 namespace zx { namespace visibility {
 
@@ -293,7 +293,7 @@ void SkyPlane(sector_t *sector, int plane, float x1, float y1, float x2, float y
 	}
 	if (sector->GetTexture(plane) != skyflatnum) return;
 	ASkyViewpoint *skybox = sector->GetSkyBox(plane);
-	if (gl_noskyboxes || skybox == NULL || g_spec.viewActor == skybox || (skybox->flags & MF_JUSTHIT)) skybox = NULL;
+	if (r_noskyboxes || skybox == NULL || g_spec.viewActor == skybox || (skybox->flags & MF_JUSTHIT)) skybox = NULL;
 	SkyEvent &e = PushSkyEvent(out, SkyEvent::kSkyWall, x1, y1, x2, y2, q.zbottom, q.ztop);
 	e.skybox = skybox;
 	e.special = special;
@@ -364,7 +364,7 @@ void NoteMirror(seg_t *seg, sector_t *fs, subsector_t *sub, float x1, float y1, 
 	}
 	SkyEvent &e = PushSkyEvent(out, SkyEvent::kMirror, x1, y1, x2, y2, zfloor, zceil);
 	e.mirror = seg->linedef;
-	if (!gl_mirror_envmap) return;
+	if (!r_mirror_envmap) return;
 	if (gl_fixedcolormap) cm.Clear();
 	if (band >= 0)
 	{
@@ -390,7 +390,7 @@ void DeriveSkyWalls(seg_t *seg, sector_t *fs, sector_t *bs, subsector_t *sub, st
 	const bool floorOut = fs->GetTexture(sector_t::floor) == skyflatnum || fs->portals[sector_t::floor] != NULL;
 	// [rc4l] An untextured one-sided wall is a hole GL's sky fills.
 	const bool hole = oneSided && special != Line_Horizon && !HasTexture(seg->sidedef, side_t::mid);
-	const bool mirror = oneSided && special == Line_Mirror && !hole && g_spec.player && gl_mirrors;
+	const bool mirror = oneSided && special == Line_Mirror && !hole && g_spec.player && r_mirrors;
 	if (!ceilingOut && !floorOut && !hole && !mirror) return;
 
 	vertex_t *v1, *v2;
@@ -618,7 +618,7 @@ bool SkyWallsPossible(seg_t *seg, sector_t *fs)
 	const int special = seg->linedef->special;
 	const bool oneSided = special == Line_Horizon || !seg->backsector || !(seg->linedef->flags & (ML_TWOSIDED | ML_3DMIDTEX));
 	if (!oneSided || special == Line_Horizon) return false;
-	return !HasTexture(seg->sidedef, side_t::mid) || (special == Line_Mirror && g_spec.player && gl_mirrors);
+	return !HasTexture(seg->sidedef, side_t::mid) || (special == Line_Mirror && g_spec.player && r_mirrors);
 }
 
 // [rc4l] A deriving walk saw a seg of `line` at `key`; the line keeps the earliest.

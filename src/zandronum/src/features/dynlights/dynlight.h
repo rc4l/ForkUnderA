@@ -9,14 +9,14 @@
 #include "features/dynlights/cycler.h"
 
 
-EXTERN_CVAR(Bool, gl_lights)
-EXTERN_CVAR(Bool, gl_attachedlights)
-EXTERN_CVAR(Bool, gl_lights_checkside)
-EXTERN_CVAR(Float, gl_lights_intensity)
-EXTERN_CVAR(Float, gl_lights_size)
-EXTERN_CVAR(Bool, gl_light_sprites)
-EXTERN_CVAR(Bool, gl_light_particles)
-EXTERN_CVAR(Bool, gl_lights_additive)
+EXTERN_CVAR(Bool, r_lights)
+EXTERN_CVAR(Bool, r_attachedlights)
+EXTERN_CVAR(Bool, r_lights_checkside)
+EXTERN_CVAR(Float, r_lights_intensity)
+EXTERN_CVAR(Float, r_lights_size)
+EXTERN_CVAR(Bool, r_light_sprites)
+EXTERN_CVAR(Bool, r_light_particles)
+EXTERN_CVAR(Bool, r_lights_additive)
 
 class ADynamicLight;
 class FArchive;
@@ -158,9 +158,9 @@ enum
 	STAT_DLIGHT=64
 };
 
-// [AK] Override gl_lights_size in the same way as gl_fogmode.
+// [AK] Override r_lights_size in the same way as r_fogmode.
 #define OVERRIDE_LIGHTS_SIZE_IF_NECESSARY \
-	const float gl_lights_size_CVAR_value = gl_lights_size; \
-	const float gl_lights_size = ( zadmflags & ZADF_FORCE_VIDEO_DEFAULTS ) ? 1.0f : gl_lights_size_CVAR_value;
+	const float gl_lights_size_CVAR_value = r_lights_size; \
+	const float r_lights_size = ( zadmflags & ZADF_FORCE_VIDEO_DEFAULTS ) ? 1.0f : gl_lights_size_CVAR_value;
 
 #endif // ZX_DYNLIGHT_H

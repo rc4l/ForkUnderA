@@ -63,7 +63,7 @@ struct MeshPiece
 	float         softLight;                // uLightLevel: 0..1 in software lighting, else -1
 	float         fogDensity;               // uFogDensity, ready for exp2()
 	unsigned int  fogColor;                 // uFogColor, packed RGB
-	int           fogMode;                  // uFogEnabled: 0 off, +gl_fogmode plain, -n coloured
+	int           fogMode;                  // uFogEnabled: 0 off, +r_fogmode plain, -n coloured
 	int           desaturation;             // 0..255
 
 	// [rc4l] Blending. Walls and flats are always opaque here; sprites are not, and a Doom scene
@@ -149,10 +149,10 @@ struct MeshPiece
 	bool          redToAlpha;
 	// [rc4l] A stencil: GL's TM_MASK, the texture only its shape and the colour all the actor's fill, which the shading already carries.
 	bool          stencil;
-	// [rc4l] A sprite GL alpha-tests at gl_mask_sprite_threshold, which drops its soft edge texels rather than blending them.
+	// [rc4l] A sprite GL alpha-tests at r_mask_sprite_threshold, which drops its soft edge texels rather than blending them.
 	bool          alphaTest;
 	bool          inverse;      // [rc4l] GL's TM_INVERSE, the texel's colour inverted, as night vision shows monsters and items
-	bool          colorBlend;   // [rc4l] gl_usecolorblending's additive sprite, blended by its own colour (ComputeColorBlending)
+	bool          colorBlend;   // [rc4l] r_usecolorblending's additive sprite, blended by its own colour (ComputeColorBlending)
 	bool          fogLayer;     // [rc4l] a 3D fog floor's untextured panel, which GL leaves out under a fixed colormap
 	int           fuzz;         // [rc4l] the fuzz shader it draws with (fuzz_compute's kFuzz*), 0 for none
 	bool          fogBoundary;  // [rc4l] GL's fog boundary sheet, painted in its fog's colour at its density

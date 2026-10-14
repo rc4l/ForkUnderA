@@ -31,7 +31,7 @@ struct GLRenderSettings
 
 extern GLRenderSettings glset;
 
-// [rc4l] MAPINFO's fog densities and the sky's fog strength, the outside fog's colour, and black fog's distance table, which gl_distfog rebuilds.
+// [rc4l] MAPINFO's fog densities and the sky's fog strength, the outside fog's colour, and black fog's distance table, which r_distfog rebuilds.
 extern int fogdensity;
 extern int outsidefogdensity;
 extern int skyfog;
@@ -39,9 +39,9 @@ extern PalEntry outsidefogcolor;
 extern float distfogtable[2][256];
 void gl_SetFogParams(int _fogdensity, PalEntry _outsidefogcolor, int _outsidefogdensity, int _skyfog);
 
-EXTERN_CVAR(Int, gl_light_ambient)
-EXTERN_CVAR(Int, gl_distfog)
-EXTERN_CVAR(Int, gl_fogmode)
+EXTERN_CVAR(Int, r_light_ambient)
+EXTERN_CVAR(Int, r_distfog)
+EXTERN_CVAR(Int, r_fogmode)
 
 // [rc4l] What the light model reads besides the surface (light mode, ambient, fog rules, fixed colormap), the server's forced defaults applied; `inSkybox` says the surface is drawn inside a skybox.
 namespace zx { namespace levelmesh { struct ShadingEnv; } }
@@ -67,11 +67,11 @@ extern long gl_frameMS;
 extern long gl_frameCount;
 
 extern int extralight;
-EXTERN_CVAR(Int, gl_weaponlight);
+EXTERN_CVAR(Int, r_weaponlight);
 
 inline	int getExtraLight()
 {
-	return extralight * gl_weaponlight;
+	return extralight * r_weaponlight;
 }
 
 inline int gl_ClampLight(int lightlevel)

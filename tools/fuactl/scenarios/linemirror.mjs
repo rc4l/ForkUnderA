@@ -1,4 +1,4 @@
-// [rc4l] A room with a one-sided Line_Mirror wall, GL against Vulkan: exit 0 when Vulkan reflects the room and the player as GL does, under GL's sphere-mapped sheen (gl_mirror_envmap).
+// [rc4l] A room with a one-sided Line_Mirror wall, GL against Vulkan: exit 0 when Vulkan reflects the room and the player as GL does, under GL's sphere-mapped sheen (r_mirror_envmap).
 //
 // usage:  node scenarios/linemirror.mjs [port]
 import { UdmfMap, wad, mapLumps } from "../src/udmf.mjs";

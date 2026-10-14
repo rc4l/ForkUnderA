@@ -53,7 +53,7 @@
 #include "gl/textures/gl_material.h"
 #include "gl/utility/gl_templates.h"
 
-EXTERN_CVAR(Bool, gl_seamless)
+EXTERN_CVAR(Bool, r_seamless)
 
 //==========================================================================
 //

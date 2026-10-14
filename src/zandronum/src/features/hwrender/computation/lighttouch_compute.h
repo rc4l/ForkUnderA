@@ -22,7 +22,7 @@ static const unsigned kLightTouchesAll = 0xFFFFFFFFu;
 // [rc4l] One light's ids as the shader searches them: sorted, each once.
 void ComputeSortedTouches(std::vector<unsigned> &touched);
 
-// [rc4l] A dynamic light's colour as gl_GetLight scales it: each 0..255 channel times gl_lights_intensity, an additive light's a fifth of that.
+// [rc4l] A dynamic light's colour as gl_GetLight scales it: each 0..255 channel times r_lights_intensity, an additive light's a fifth of that.
 void ComputeDynLightColor(int r, int g, int b, bool additive, float intensity, float out[3]);
 
 // [rc4l] The tic, level and light switches the lights were last collected under.

@@ -28,3 +28,15 @@ TEST(CVarAlias, ANameThatIsNoAliasStandsForNothing)
 	EXPECT_EQ(NULL, ComputeCVarAliasTarget("", 0));
 	EXPECT_EQ(NULL, ComputeCVarAliasTarget(NULL, 0));
 }
+
+// [rc4l] Old configs, binds, menus and mods name the shared render settings by GL's gl_ names, which find their r_ names.
+TEST(CVarAlias, GlsSharedSettingsFindTheirRendererNames)
+{
+	EXPECT_STREQ("r_lights", ComputeCVarAliasTarget("gl_lights", strlen("gl_lights")));
+	EXPECT_STREQ("r_lights_size", ComputeCVarAliasTarget("GL_Lights_Size", strlen("GL_Lights_Size")));
+	EXPECT_STREQ("r_texture_filter_anisotropic", ComputeCVarAliasTarget("gl_texture_filter_anisotropic", strlen("gl_texture_filter_anisotropic")));
+	EXPECT_STREQ("r_seamless", ComputeCVarAliasTarget("gl_seamless", strlen("gl_seamless")));
+	// [rc4l] GL's own settings keep their names.
+	EXPECT_EQ(NULL, ComputeCVarAliasTarget("gl_wallmesh", strlen("gl_wallmesh")));
+	EXPECT_EQ(NULL, ComputeCVarAliasTarget("gl_texture_format", strlen("gl_texture_format")));
+}

@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 rc4l
 //
-// [rc4l] GL's fuzz shaders (wadsrc/static/shaders/glsl/fuzz_*.fp), which gl_fuzztype 1-7 swaps in for a fuzzy sprite or weapon, as the backend's shaders run them.
+// [rc4l] GL's fuzz shaders (wadsrc/static/shaders/glsl/fuzz_*.fp), which r_fuzztype 1-7 swaps in for a fuzzy sprite or weapon, as the backend's shaders run them.
 
 #ifndef ZX_FUZZ_COMPUTE_H
 #define ZX_FUZZ_COMPUTE_H
 
 namespace zx { namespace hwrender {
 
-// [rc4l] gl_fuzztype's shaders, in gl_shader.cpp's order: none, then standard, smooth, swirly, translucent, jagged, noise and smooth noise.
+// [rc4l] r_fuzztype's shaders, in gl_shader.cpp's order: none, then standard, smooth, swirly, translucent, jagged, noise and smooth noise.
 enum { kFuzzNone, kFuzzStandard, kFuzzSmooth, kFuzzSwirly, kFuzzTranslucent, kFuzzJagged, kFuzzNoise, kFuzzSmoothNoise, kFuzzKinds };
 
-// [rc4l] The fuzz a sprite or weapon draws with: gl_fuzztype's when its style resolved to a fuzz shader (GL's OverrideShader), else none.
+// [rc4l] The fuzz a sprite or weapon draws with: r_fuzztype's when its style resolved to a fuzz shader (GL's OverrideShader), else none.
 int ComputeFuzzKind(int fuzzType, bool fuzzShader);
 
 // [rc4l] Where the jagged kind samples its texture instead of at (u, v), `timer` seconds into the level.

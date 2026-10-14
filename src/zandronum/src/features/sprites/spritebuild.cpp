@@ -51,22 +51,22 @@
 #include <tuple>
 #include <vector>
 
-EXTERN_CVAR(Int, gl_spriteclip)
-EXTERN_CVAR(Float, gl_sclipfactor)
-EXTERN_CVAR(Float, gl_sclipthreshold)
-EXTERN_CVAR(Int, gl_fuzztype)
-EXTERN_CVAR(Bool, gl_sprite_blend)
-EXTERN_CVAR(Bool, gl_usecolorblending)
-EXTERN_CVAR(Bool, gl_enhanced_nightvision)
-EXTERN_CVAR(Int, gl_enhanced_nv_stealth)
-EXTERN_CVAR(Int, gl_billboard_mode)
-EXTERN_CVAR(Bool, gl_lights)
-EXTERN_CVAR(Bool, gl_light_sprites)
-EXTERN_CVAR(Bool, gl_light_particles)
-EXTERN_CVAR(Int, gl_particles_style)
-EXTERN_CVAR(Bool, gl_billboard_particles)
-EXTERN_CVAR(Float, gl_lights_size)
-EXTERN_CVAR(Float, gl_lights_intensity)
+EXTERN_CVAR(Int, r_spriteclip)
+EXTERN_CVAR(Float, r_sclipfactor)
+EXTERN_CVAR(Float, r_sclipthreshold)
+EXTERN_CVAR(Int, r_fuzztype)
+EXTERN_CVAR(Bool, r_sprite_blend)
+EXTERN_CVAR(Bool, r_usecolorblending)
+EXTERN_CVAR(Bool, r_enhanced_nightvision)
+EXTERN_CVAR(Int, r_enhanced_nv_stealth)
+EXTERN_CVAR(Int, r_billboard_mode)
+EXTERN_CVAR(Bool, r_lights)
+EXTERN_CVAR(Bool, r_light_sprites)
+EXTERN_CVAR(Bool, r_light_particles)
+EXTERN_CVAR(Int, r_particles_style)
+EXTERN_CVAR(Bool, r_billboard_particles)
+EXTERN_CVAR(Float, r_lights_size)
+EXTERN_CVAR(Float, r_lights_intensity)
 EXTERN_CVAR(Float, transsouls)
 
 // [rc4l] Derive every sprite beside GL's and compare them bit for bit, counting what differs for fua_sprite_report.
@@ -116,7 +116,7 @@ int StyleBlendMode(const FRenderStyle &s, float alpha)
 
 bool SpritesTakeDynamicLight()
 {
-	return gl_lights && zx::hwrender::SpriteView().DynamicLightCount() && !gl_fixedcolormap && gl_light_sprites;
+	return r_lights && zx::hwrender::SpriteView().DynamicLightCount() && !gl_fixedcolormap && r_light_sprites;
 }
 
 // [rc4l] The lower edge of each light list entry at the actor, as SplitSprite and SetSpriteColor measure it.
@@ -150,10 +150,10 @@ static void PointLight(fixed_t x, fixed_t y, fixed_t z, subsector_t *subsec, con
 		ADynamicLight *light = node->lightsource;
 		if ((light->flags2 & MF2_DORMANT) || ((light->flags4 & MF4_DONTLIGHTSELF) && light->target == self)) continue;
 		const float dist = FVector3(FIXED2FLOAT(x - light->x), FIXED2FLOAT(y - light->y), FIXED2FLOAT(z - light->z)).Length();
-		const float radius = light->GetRadius() * gl_lights_size;
+		const float radius = light->GetRadius() * r_lights_size;
 		// [rc4l] gl_SetDynSpriteLight takes the light's colour without the additive scaling a surface's light has.
 		float c[3];
-		zx::hwrender::ComputeDynLightColor(light->GetRed(), light->GetGreen(), light->GetBlue(), false, gl_lights_intensity, c);
+		zx::hwrender::ComputeDynLightColor(light->GetRed(), light->GetGreen(), light->GetBlue(), false, r_lights_intensity, c);
 		const float bright = light->IsSubtractive() ? (float)FVector3(c[0], c[1], c[2]).Length() : 0.f;
 		ComputeSpriteLightTerm(dist, radius, c[0], c[1], c[2], light->IsSubtractive(), bright, out);
 	}
@@ -208,7 +208,7 @@ static bool SubjectOf(AActor *thing, Subject &s)
 
 	if (thing->renderflags & RF_INVISIBLE || !thing->RenderStyle.IsVisible(thing->alpha))
 	{
-		if (!(thing->flags & MF_STEALTH) || !gl_fixedcolormap || !gl_enhanced_nightvision) return false;
+		if (!(thing->flags & MF_STEALTH) || !gl_fixedcolormap || !r_enhanced_nightvision) return false;
 	}
 	if (!(currentmapsection[thing->subsector->mapsection >> 3] & (1 << (thing->subsector->mapsection & 7)))) return false;
 	if (!view.PortalIsMirror() && !(players[consoleplayer].cheats & CF_CHASECAM) && players[consoleplayer].camera != nullptr &&
@@ -267,10 +267,10 @@ static bool LookOf(AActor *thing, const Subject &s, bool disableFullbright, bool
 	bool enhancedvision = false;
 	if (gl_fixedcolormap)
 	{
-		if ((gl_enhanced_nv_stealth > 0 && gl_fixedcolormap == CM_LITE) || (gl_enhanced_nv_stealth == 2 && gl_fixedcolormap >= CM_TORCH) ||
-		    (gl_enhanced_nv_stealth == 3)) enhancedvision = true;
+		if ((r_enhanced_nv_stealth > 0 && gl_fixedcolormap == CM_LITE) || (r_enhanced_nv_stealth == 2 && gl_fixedcolormap >= CM_TORCH) ||
+		    (r_enhanced_nv_stealth == 3)) enhancedvision = true;
 		l.cm.Clear();
-		if (gl_fixedcolormap == CM_LITE && gl_enhanced_nightvision &&
+		if (gl_fixedcolormap == CM_LITE && r_enhanced_nightvision &&
 		    (thing->IsKindOf(RUNTIME_CLASS(AInventory)) || thing->flags3 & MF3_ISMONSTER || thing->flags & MF_MISSILE || thing->flags & MF_CORPSE))
 			style.Flags |= STYLEF_InvertSource;
 	}
@@ -291,16 +291,16 @@ static bool LookOf(AActor *thing, const Subject &s, bool disableFullbright, bool
 	si.style = StyleOf(style);
 	si.alpha = FIXED2FLOAT(thing->alpha);
 	si.transSouls = transsouls;
-	si.fuzzType = gl_fuzztype;
-	si.spriteBlend = gl_sprite_blend;
+	si.fuzzType = r_fuzztype;
+	si.spriteBlend = r_sprite_blend;
 	si.model = s.model != NULL;
 	si.textureTransparent = textureTransparent;
-	si.enhancedVision = enhancedvision && gl_enhanced_nightvision;
+	si.enhancedVision = enhancedvision && r_enhanced_nightvision;
 	si.stealth = !!(thing->flags & MF_STEALTH);
 	si.translucent = StyleOf(LegacyRenderStyles[STYLE_Translucent]);
 	l.so = ComputeSpriteStyle(si);
 	l.inverse = zx::draw2d::ComputeTextureMode(l.so.style.flags, false) == zx::draw2d::kTexInverse;
-	const ColorBlendIn cb = { gl_usecolorblending, gl_fixedcolormap != CM_DEFAULT, s.model == NULL, l.fullbright, textureTransparent };
+	const ColorBlendIn cb = { r_usecolorblending, gl_fixedcolormap != CM_DEFAULT, s.model == NULL, l.fullbright, textureTransparent };
 	l.colorBlend = ComputeColorBlending(l.so.style, l.so.trans, cb);
 	return l.so.trans != 0.0f;
 }
@@ -393,8 +393,8 @@ static int DeriveSprite(AActor *thing, const Subject &s, SpritePiece *out, int m
 	const float spriteheight = FIXED2FLOAT(scaleY) * r.height;
 	const bool living = (thing->player || thing->flags3 & MF3_ISMONSTER || thing->IsKindOf(RUNTIME_CLASS(AInventory))) &&
 		(thing->flags & MF_ICECORPSE || !(thing->flags & MF_CORPSE));
-	if (spriteheight > 0 && gl_spriteclip > 0 && !(thing->flags2 & MF2_FLOATBOB) && type == RF_FACESPRITE &&
-	    ComputeSpriteClips(living, gl_spriteclip))
+	if (spriteheight > 0 && r_spriteclip > 0 && !(thing->flags2 & MF2_FLOATBOB) && type == RF_FACESPRITE &&
+	    ComputeSpriteClips(living, r_spriteclip))
 	{
 		// [rc4l] The floor and ceiling GL clips against: a 3D floor the actor stands on, a height transfer, or the sector's own.
 		float btm = 1000000.0f, top = -1000000.0f;
@@ -426,9 +426,9 @@ static int DeriveSprite(AActor *thing, const Subject &s, SpritePiece *out, int m
 		ci.monster = !!(thing->flags3 & MF3_ISMONSTER);
 		ci.noGravity = !!(thing->flags & MF_NOGRAVITY);
 		ci.corpse = !!(thing->flags & MF_CORPSE);
-		ci.spriteClip = gl_spriteclip;
-		ci.clipFactor = (float)gl_sclipfactor;
-		ci.clipThreshold = (float)gl_sclipthreshold;
+		ci.spriteClip = r_spriteclip;
+		ci.clipFactor = (float)r_sclipfactor;
+		ci.clipThreshold = (float)r_sclipthreshold;
 		ci.bottom = btm;
 		ci.top = top;
 		ci.spriteHeight = spriteheight;
@@ -448,7 +448,7 @@ static int DeriveSprite(AActor *thing, const Subject &s, SpritePiece *out, int m
 	int nbands = 0;
 	const TArray<lightlist_t> &lightlist = thing->Sector->e->XFloor.lightlist;
 	const bool xyProcess = !(thing->renderflags & RF_FORCEYBILLBOARD) && type == RF_FACESPRITE && players[consoleplayer].camera &&
-		(gl_billboard_mode == 1 || thing->renderflags & RF_FORCEXYBILLBOARD);
+		(r_billboard_mode == 1 || thing->renderflags & RF_FORCEXYBILLBOARD);
 	if (xyProcess || lightlist.Size() == 0 || gl_fixedcolormap || fullbright)
 	{
 		Band &b = bands[nbands++];
@@ -480,7 +480,7 @@ static int DeriveSprite(AActor *thing, const Subject &s, SpritePiece *out, int m
 	// [rc4l] Draw: the actor's dynamic light, and the corners an XY billboard or a roll turns.
 	float dyn[3];
 	DrawLight(thing, look, dyn);
-	const bool xyDraw = !(thing->renderflags & RF_FORCEYBILLBOARD) && (gl_billboard_mode == 1 || thing->renderflags & RF_FORCEXYBILLBOARD);
+	const bool xyDraw = !(thing->renderflags & RF_FORCEYBILLBOARD) && (r_billboard_mode == 1 || thing->renderflags & RF_FORCEXYBILLBOARD);
 	const bool roll = (thing->renderflags & RF_ROLLSPRITE) != 0;
 	float viewYaw = 0.f, viewPitch = 0.f;
 	if (xyDraw || roll) view.ViewAngles(viewYaw, viewPitch);
@@ -522,7 +522,7 @@ static int DeriveSprite(AActor *thing, const Subject &s, SpritePiece *out, int m
 		mp.alphaTest = so.hw != kHwNoAlphaTest;
 		mp.inverse = look.inverse;
 		mp.colorBlend = look.colorBlend;
-		mp.fuzz = zx::hwrender::ComputeFuzzKind(gl_fuzztype, so.overrideShader >= 0);
+		mp.fuzz = zx::hwrender::ComputeFuzzKind(r_fuzztype, so.overrideShader >= 0);
 		// [rc4l] GLSprite::Draw's damage tint, over this band's own texture span as GL takes each band's.
 		DamageTint_SpriteGradient(thing, so.style.blendOp, so.style.flags, b.vt, b.vb, mp.tint);
 		if (!fullbright) { mp.dynR = dyn[0]; mp.dynG = dyn[1]; mp.dynB = dyn[2]; }
@@ -544,7 +544,7 @@ static bool DeriveParticle(particle_t *particle, sector_t *sector, SpritePiece &
 	if (view.PortalRejectsPoint(particle->x, particle->y)) return false;
 	if (particle->trans == 0) return false;
 	// [rc4l] Only a round or smooth particle has a texture, and the backend draws no sprite without one.
-	FTexture *lump = gl_particles_style ? zx::materials::ParticleTexture(gl_particles_style) : NULL;
+	FTexture *lump = r_particles_style ? zx::materials::ParticleTexture(r_particles_style) : NULL;
 	const void *material = lump != NULL ? zx::materials::MaterialForTexture(lump, true) : NULL;
 	if (material == NULL) return false;
 
@@ -583,14 +583,14 @@ static bool DeriveParticle(particle_t *particle, sector_t *sector, SpritePiece &
 	const float x = FIXED2FLOAT(particle->x), y = FIXED2FLOAT(particle->y), z = FIXED2FLOAT(particle->z);
 	float scalefac = particle->size / 4.0f;
 	// [BB] The smooth particles are smaller than the other ones.
-	if (gl_particles_style == 2) scalefac *= 1.7;
+	if (r_particles_style == 2) scalefac *= 1.7;
 	float vx, vy;
 	view.ViewVector(vx, vy);
 	const SpriteEdges e = { x + vy * scalefac, y - vx * scalefac, x - vy * scalefac, y + vx * scalefac, z - scalefac, z + scalefac };
 	float viewYaw = 0.f, viewPitch = 0.f;
-	if (gl_billboard_particles) view.ViewAngles(viewYaw, viewPitch);
+	if (r_billboard_particles) view.ViewAngles(viewYaw, viewPitch);
 	float c[4][3];
-	ComputeSpriteCorners(e, gl_billboard_particles, false, viewYaw, viewPitch, 0.f, c);
+	ComputeSpriteCorners(e, r_billboard_particles, false, viewYaw, viewPitch, 0.f, c);
 
 	p.piece = MeshPiece();
 	p.quad[0].Set(c[0][0], c[0][1], c[0][2], ul, vt);
@@ -610,7 +610,7 @@ static bool DeriveParticle(particle_t *particle, sector_t *sector, SpritePiece &
 	zx::levelmesh::CaptureShading(lightlevel, getExtraLight(), cm, mp);
 	ApplyThingColor(color, mp);
 	float dyn[3] = { 0.f, 0.f, 0.f };
-	if (gl_lights && view.DynamicLightCount() && !gl_fixedcolormap && gl_light_particles)
+	if (r_lights && view.DynamicLightCount() && !gl_fixedcolormap && r_light_particles)
 		PointLight(particle->x, particle->y, particle->z, particle->subsector, NULL, dyn);
 	mp.dynR = dyn[0]; mp.dynG = dyn[1]; mp.dynB = dyn[2];
 	mp.cpuLight = true;
@@ -619,7 +619,7 @@ static bool DeriveParticle(particle_t *particle, sector_t *sector, SpritePiece &
 	mp.alpha = trans;
 	// [rc4l] STYLE_Translucent: blended unless it is fully opaque.
 	mp.blendMode = trans < 1.f - 1.f / 256.f ? 1 : 0;
-	mp.alphaTest = ComputeParticleAlphaTested(gl_particles_style, trans);
+	mp.alphaTest = ComputeParticleAlphaTested(r_particles_style, trans);
 	mp.sortX = x; mp.sortY = y; mp.sortZ = z;
 	mp.quad = true;
 	return true;

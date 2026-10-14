@@ -12,7 +12,7 @@ the particles in the subsectors it reaches. A sprite's `ThingColor` (a particle'
 actor's fill), which GL's shader multiplies it by, is folded into its shading here and in the copy of GL's
 sprite the check reads; without it every particle drew in its texture's white (scenario `particlecolor`).
 Night vision's inverted monsters and items take GL's `TM_INVERSE` (`ComputeTextureMode`, scenario `lightamp`), and
-`gl_usecolorblending` blends an opaque fullbright additive sprite by its own colour (`ComputeColorBlending`,
+`r_usecolorblending` blends an opaque fullbright additive sprite by its own colour (`ComputeColorBlending`,
 scenario `colorblend`), as `gl_GetRenderStyle` does.
 
 Models too (`modelbuild.cpp`): the actor's light and style as a single-band sprite's, the pose from
@@ -43,8 +43,8 @@ a voxel box on the pistol: beside GL, standalone and without GL it covers the pi
 `fua_sprite_check 1` derives every sprite and model beside GL's and compares the two bit for bit, every
 vertex of a model surface included, matching an actor's pieces within one walk; `fua_sprite_report`
 prints what differed and how many model surfaces were compared. It matched on about 1.6 million
-actor-frames across AOW03, wdiex02, WDI01, WDI09, WDI18 and dbab04, with XY billboards, `gl_spriteclip 2`
-and `3`, `gl_sprite_blend`, `gl_fuzztype`, dynamic sprite lights, invulnerability and light amplification;
+actor-frames across AOW03, wdiex02, WDI01, WDI09, WDI18 and dbab04, with XY billboards, `r_spriteclip 2`
+and `3`, `r_sprite_blend`, `r_fuzztype`, dynamic sprite lights, invulnerability and light amplification;
 and with models on about 4.2 million more actor-frames and 103,000 model surfaces across the Whodunit
 maps. In standalone the actors only a mirror or stacked view sees count as "only ours", since GL walks
 neither there.
@@ -69,6 +69,6 @@ neither there.
   the scene, then `BuildPlayerSprites`, `BuildTargeterSprites` and `CheckFramePSprites`.
 
 The render settings it reads (`glset`, `gl_fixedcolormap`, `currentmapsection`, `getExtraLight`) are
-`features/rendersettings`'; GL's sprite cvars (`gl_spriteclip`, `gl_sprite_blend` and the rest) are still GL's.
+`features/rendersettings`'; GL's sprite cvars (`r_spriteclip`, `r_sprite_blend` and the rest) are still GL's.
 Models are `features/models`: the loaders, MODELDEF and each model's geometry, which `CaptureModelSurface`
 lerps on the CPU.

@@ -14,7 +14,7 @@ void gl_ParseDefs();
 // [rc4l] Attach the lights an actor's sprite frame or state names, putting the rest to sleep.
 void gl_SetActorLights(AActor *actor);
 
-// [rc4l] Drop every actor's attached lights (before a save, or with gl_lights off), and attach them again.
+// [rc4l] Drop every actor's attached lights (before a save, or with r_lights off), and attach them again.
 void gl_DeleteAllAttachedLights();
 void gl_RecreateAllAttachedLights();
 

@@ -304,7 +304,7 @@ void GLWall::DrawDecal(DBaseDecal *decal)
 
 	// calculate dynamic light effect.
 	float decalDyn[3] = { 0.f, 0.f, 0.f };
-	if (gl_lights && GLRenderer->mLightCount && !gl_fixedcolormap && gl_light_sprites)
+	if (r_lights && GLRenderer->mLightCount && !gl_fixedcolormap && r_light_sprites)
 	{
 		// Note: This should be replaced with proper shader based lighting.
 		fixed_t x, y;
@@ -338,7 +338,7 @@ void GLWall::DrawDecal(DBaseDecal *decal)
 
 
 	// If srcalpha is one it looks better with a higher alpha threshold
-	if (decal->RenderStyle.SrcAlpha == STYLEALPHA_One) gl_RenderState.AlphaFunc(GL_GEQUAL, gl_mask_sprite_threshold);
+	if (decal->RenderStyle.SrcAlpha == STYLEALPHA_One) gl_RenderState.AlphaFunc(GL_GEQUAL, r_mask_sprite_threshold);
 	else gl_RenderState.AlphaFunc(GL_GREATER, 0.f);
 
 	gl_RenderState.Apply();

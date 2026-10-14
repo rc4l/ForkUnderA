@@ -44,10 +44,10 @@ MaterialRef MaterialForTexture(const void *texture, bool expand = false);
 // [rc4l] MaterialForTexture without making one, so a worker thread may ask: false when the material is not made yet, true with `out` the material or NULL for a texture that has none.
 bool MaterialIfMade(const void *texture, bool expand, MaterialRef &out);
 
-// [rc4l] The round (1) and smooth (2) particle pictures gl_particles_style picks, NULL for square ones; loaded once and kept.
+// [rc4l] The round (1) and smooth (2) particle pictures r_particles_style picks, NULL for square ones; loaded once and kept.
 FTexture *ParticleTexture(int style);
 
-// [rc4l] The sheen a mirror is drawn with (gl_mirror_envmap); loaded once and kept.
+// [rc4l] The sheen a mirror is drawn with (r_mirror_envmap); loaded once and kept.
 FTexture *MirrorSheenTexture();
 MaterialRef MaterialForTextureIndex(int index);
 // [rc4l] The material a texture name looks up to, through animation and switch translation.

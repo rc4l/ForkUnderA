@@ -26,11 +26,11 @@ struct SpriteStyleIn
 	SpriteStyle style;         // [rc4l] the actor's, after FRenderStyle::CheckFuzz for a fuzz style
 	float alpha;               // [rc4l] the actor's alpha, 0..1
 	float transSouls;          // [rc4l] transsouls
-	int   fuzzType;            // [rc4l] gl_fuzztype
-	bool  spriteBlend;         // [rc4l] gl_sprite_blend
+	int   fuzzType;            // [rc4l] r_fuzztype
+	bool  spriteBlend;         // [rc4l] r_sprite_blend
 	bool  model;               // [rc4l] drawn as a model
 	bool  textureTransparent;  // [rc4l] the frame's texture has translucent texels
-	bool  enhancedVision;      // [rc4l] gl_enhanced_nightvision with a fixed colormap that reveals this
+	bool  enhancedVision;      // [rc4l] r_enhanced_nightvision with a fixed colormap that reveals this
 	bool  stealth;             // [rc4l] MF_STEALTH
 	SpriteStyle translucent;   // [rc4l] LegacyRenderStyles[STYLE_Translucent]
 };
@@ -51,7 +51,7 @@ struct WeaponStyleOut
 	SpriteStyle style;
 	float trans;
 	bool noBright;   // [rc4l] a fuzz style is never drawn fullbright
-	bool fuzzShader; // [rc4l] it was a fuzz style and gl_fuzztype draws it with a fuzz shader, as GL's OverrideShader
+	bool fuzzShader; // [rc4l] it was a fuzz style and r_fuzztype draws it with a fuzz shader, as GL's OverrideShader
 };
 
 // [rc4l] DrawPlayerSprites' style and alpha: the sprites' fuzz, transsouls and alpha1 rules without their solid-sprite normalisation; `fuzzStyle` is whether the style was a fuzz one before FRenderStyle::CheckFuzz settled `style`.
@@ -66,7 +66,7 @@ int ComputeSpriteBlendMode(int blendOp, int destAlpha, float trans);
 // [rc4l] What GLSprite::Draw's allowcolorblending reads of an actor besides its style.
 struct ColorBlendIn
 {
-	bool enabled;              // [rc4l] gl_usecolorblending
+	bool enabled;              // [rc4l] r_usecolorblending
 	bool fixedColormap;        // [rc4l] a fixed colormap is on
 	bool sprite;               // [rc4l] drawn from a sprite texture, which a model is not
 	bool fullbright;
@@ -76,7 +76,7 @@ struct ColorBlendIn
 // [rc4l] gl_GetRenderStyle's colour blending: an opaque additive style (source alpha onto one) that blends by the source's own colour instead, colour squared onto the screen, when ColorBlendIn allows it.
 bool ComputeColorBlending(const SpriteStyle &style, float trans, const ColorBlendIn &in);
 
-// [rc4l] ProcessParticle's alpha test: a fully opaque particle that is not a smooth one (gl_particles_style 2).
+// [rc4l] ProcessParticle's alpha test: a fully opaque particle that is not a smooth one (r_particles_style 2).
 bool ComputeParticleAlphaTested(int particlesStyle, float trans);
 
 }} // namespace zx::sprites

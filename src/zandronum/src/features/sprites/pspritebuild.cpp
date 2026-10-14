@@ -51,9 +51,9 @@ EXTERN_CVAR(Bool, r_drawplayersprites)
 EXTERN_CVAR(Bool, r_deathcamera)
 EXTERN_CVAR(Bool, st_scale)
 EXTERN_CVAR(Float, transsouls)
-EXTERN_CVAR(Int, gl_fuzztype)
-EXTERN_CVAR(Bool, gl_lights)
-EXTERN_CVAR(Bool, gl_light_sprites)
+EXTERN_CVAR(Int, r_fuzztype)
+EXTERN_CVAR(Bool, r_lights)
+EXTERN_CVAR(Bool, r_light_sprites)
 
 // [rc4l] Derive the weapon beside GL's and compare the two quad for quad, for fua_psprite_report.
 CVAR(Bool, fua_psprite_check, false, 0)
@@ -272,7 +272,7 @@ static void BuildLayers(sector_t *viewsector, int viewArea, fixed_t bobX, fixed_
 	// [rc4l] The sprites' fuzz, transsouls and alpha1 rules, without their solid-sprite normalisation.
 	const bool fuzzStyle = vis.RenderStyle.BlendOp >= STYLEOP_Fuzz && vis.RenderStyle.BlendOp <= STYLEOP_FuzzOrRevSub;
 	if (fuzzStyle) vis.RenderStyle.CheckFuzz();
-	const WeaponStyleOut weaponStyle = ComputeWeaponStyle(StyleOf(vis.RenderStyle), fuzzStyle, FIXED2FLOAT(vis.alpha), transsouls, gl_fuzztype,
+	const WeaponStyleOut weaponStyle = ComputeWeaponStyle(StyleOf(vis.RenderStyle), fuzzStyle, FIXED2FLOAT(vis.alpha), transsouls, r_fuzztype,
 		StyleOf(LegacyRenderStyles[STYLE_Translucent]));
 	vis.RenderStyle = RenderStyleOf(weaponStyle.style);
 	const float trans = weaponStyle.trans;
@@ -339,7 +339,7 @@ static void BuildLayers(sector_t *viewsector, int viewArea, fixed_t bobX, fixed_
 		if (hudModels) HUDModelLayer(player, psp, layerx, layery, rgba, dyn, layerStyle);
 		else LayerQuad(player, psp, layerx, layery, LayerTranslation(player, psp), rgba, dyn,
 			zx::draw2d::ComputeQuadBlend(layerStyle.BlendOp, layerStyle.DestAlpha), zx::draw2d::ComputeTextureMode(layerStyle.Flags, false),
-			zx::hwrender::ComputeFuzzKind(gl_fuzztype, weaponStyle.fuzzShader));
+			zx::hwrender::ComputeFuzzKind(r_fuzztype, weaponStyle.fuzzShader));
 	}
 }
 

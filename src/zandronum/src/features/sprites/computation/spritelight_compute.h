@@ -11,7 +11,7 @@ namespace zx { namespace sprites {
 // [rc4l] gl_CheckSpriteGlow: a glowing floor brightens what stands within glowHeight of it; floorDiff is the 16.16 height above the floor.
 int ComputeSpriteGlow(int lightLevel, int floorDiff, int glowHeight);
 
-// [rc4l] One dynamic light's share of gl_SetDynSpriteLight, added to out; rgb already carry gl_lights_intensity, and bright is their length for a subtractive light.
+// [rc4l] One dynamic light's share of gl_SetDynSpriteLight, added to out; rgb already carry r_lights_intensity, and bright is their length for a subtractive light.
 void ComputeSpriteLightTerm(float dist, float radius, float r, float g, float b, bool subtractive, float bright, float out[3]);
 
 // [rc4l] FColormap::Decolorize, for glset.nocoloredspritelighting: grey, and lighter than the mean.

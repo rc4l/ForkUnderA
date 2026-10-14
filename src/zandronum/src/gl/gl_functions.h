@@ -10,23 +10,23 @@ void gl_CleanLevelData();
 
 // [BB] Export this.
 bool IsLightmodeValid();
-// [BB] This construction purposely overrides the CVAR gl_fogmode with a local variable of the same name.
+// [BB] This construction purposely overrides the CVAR r_fogmode with a local variable of the same name.
 // This allows to implement ZADF_FORCE_VIDEO_DEFAULTS by only putting this define at the beginning of a function
-// that uses gl_fogmode without any further changes in that function.
-// Note: gl_fogmode == 0 is treated as if gl_fogmode == 1.
+// that uses r_fogmode without any further changes in that function.
+// Note: r_fogmode == 0 is treated as if r_fogmode == 1.
 #define OVERRIDE_FOGMODE_IF_NECESSARY \
-	const int gl_fogmode_CVAR_value = gl_fogmode; \
-	const int gl_fogmode = ( ( zadmflags & ZADF_FORCE_VIDEO_DEFAULTS ) && ( gl_fogmode_CVAR_value == 0 ) ) ? 1 : gl_fogmode_CVAR_value;
+	const int gl_fogmode_CVAR_value = r_fogmode; \
+	const int r_fogmode = ( ( zadmflags & ZADF_FORCE_VIDEO_DEFAULTS ) && ( gl_fogmode_CVAR_value == 0 ) ) ? 1 : gl_fogmode_CVAR_value;
 
-// [EP] Override gl_lightmode in the same way as gl_fogmode,
+// [EP] Override r_lightmode in the same way as r_fogmode,
 // except that the MAPINFO lightmode option must be honored if present.
 #define OVERRIDE_LIGHTMODE_IF_NECESSARY \
-	const int gl_lightmode_CVAR_value = gl_lightmode; \
+	const int gl_lightmode_CVAR_value = r_lightmode; \
 	const int gl_lightmode_CVAR_defaultvalue = ( ( IsLightmodeValid() == false ) || \
-		( ( glset.map_lightmode == 2 || glset.map_lightmode == 8 ) && gl.shadermodel < 4 )) ? gl_lightmode.GetGenericRepDefault( CVAR_Int ).Int : glset.map_lightmode; \
-	const int gl_lightmode = ( zadmflags & ZADF_FORCE_VIDEO_DEFAULTS ) ? gl_lightmode_CVAR_defaultvalue : gl_lightmode_CVAR_value;
+		( ( glset.map_lightmode == 2 || glset.map_lightmode == 8 ) && gl.shadermodel < 4 )) ? r_lightmode.GetGenericRepDefault( CVAR_Int ).Int : glset.map_lightmode; \
+	const int r_lightmode = ( zadmflags & ZADF_FORCE_VIDEO_DEFAULTS ) ? gl_lightmode_CVAR_defaultvalue : gl_lightmode_CVAR_value;
 
-// [EP] Override gl_light_ambient in the same way as gl_lightmode
+// [EP] Override r_light_ambient in the same way as r_lightmode
 // except there's no equivalent MAPINFO option.
 #define TEMP_CVAR( cvar ) cvar ## _CVAR_value
 #define TEMP_DEFAULT_CVAR( cvar ) cvar ## _CVAR_defaultvalue

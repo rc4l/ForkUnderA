@@ -380,7 +380,7 @@ static const char *kSceneVS =
 	   below anything a player could see -- a light a tenth of a unit behind a surface lights it now.
 	   It is not an attempt to place the boundary exactly, which floats cannot do; it is to keep the
 	   case Doom actually produces on the same side of it as GL. */ \
-	/* [rc4l] ...and only while gl_lights_checkside asks for it (uOptions.x), as gl_GetLight and the flats' test do. */ \
+	/* [rc4l] ...and only while r_lights_checkside asks for it (uOptions.x), as gl_GetLight and the flats' test do. */ \
 	"        if (uOptions.x > 0.5 && dot(vPlane.xyz, lp.xyz) - vPlane.w < -0.1) continue;\n" \
 	"        float a = max(lp.w - length(d), 0.0) / lp.w;\n" \
 	"        if (a <= 0.0) continue;\n" \
@@ -538,7 +538,7 @@ static const char *kScenePSTrans =
 	"        outColor = vec4(vFog.rgb, 1.0 - fuaFogFactor(vFog.a, vLightParm.y, vPixelPos, uCameraPos.xyz));\n"
 	"        return;\n"
 	"    }\n"
-	/* [rc4l] A fuzzy sprite under gl_fuzztype takes GL's fuzz shader (texFlags / 128), the jagged one sampling a splat of its coordinate. */
+	/* [rc4l] A fuzzy sprite under r_fuzztype takes GL's fuzz shader (texFlags / 128), the jagged one sampling a splat of its coordinate. */
 	"    int fuzz = (int(vTexFlags + 0.5) >> 7) & 7;\n"
 	"    vec4 t = fuzz == 5 ? fuaTexMode(fuaTexel(fuaFuzzSplat(vUV, uFrame.x))) : fuaSurfaceTexel(vUV);\n"
 	"    if (fuzz > 0) t = fuaFuzz(fuzz, vUV, uFrame.x, t);\n"

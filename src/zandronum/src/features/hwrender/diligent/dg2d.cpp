@@ -107,7 +107,7 @@ static const char *k2DPS =
 	"layout(binding = 1) uniform sampler2D uTex;\n"
 	"layout(location = 0) out vec4 outColor;\n"
 	"void main() {\n"
-	// [rc4l] A fuzzy weapon under gl_fuzztype takes GL's fuzz shader on its texel, the jagged one sampling a splat of its coordinate.
+	// [rc4l] A fuzzy weapon under r_fuzztype takes GL's fuzz shader on its texel, the jagged one sampling a splat of its coordinate.
 	"    int fuzz = int(vFuzz + 0.5);\n"
 	"    vec4 t = texture(uTex, fuzz == 5 ? fuaFuzzSplat(vUV, uInvScreen.z) : vUV);\n"
 	"    if (vTexMode == 1)      t.rgb = vec3(1.0);\n"                       // TM_MASK

@@ -210,7 +210,7 @@ void GLWall::PutWall(bool translucent)
 		portal=GLPortal::FindPortal(seg->linedef);
 		if (!portal) portal=new GLMirrorPortal(seg->linedef);
 		portal->AddLine(this);
-		if (gl_mirror_envmap) 
+		if (r_mirror_envmap) 
 		{
 			if (gl_observer) gl_observer->MirrorSheen(*this);	// [rc4l] the sheen's light, for a check against GL's walk
 			// draw a reflective layer over the mirror
@@ -743,7 +743,7 @@ void GLWall::DoTexture(int _type,seg_t * seg, int peg,
 
 	gltexture->GetTexCoordInfo(&tci, seg->sidedef->GetTextureXScale(texpos), seg->sidedef->GetTextureYScale(texpos));
 
-	type = (seg->linedef->special == Line_Mirror && _type == RENDERWALL_M1S && gl_mirrors) ? RENDERWALL_MIRROR : _type;
+	type = (seg->linedef->special == Line_Mirror && _type == RENDERWALL_M1S && r_mirrors) ? RENDERWALL_MIRROR : _type;
 
 	float floatceilingref = FIXED2FLOAT(ceilingrefheight + tci.RowOffset(seg->sidedef->GetTextureYOffset(texpos)));
 	if (peg) floatceilingref += tci.mRenderHeight - FIXED2FLOAT(lh + v_offset);
@@ -1482,7 +1482,7 @@ void GLWall::Process(seg_t *seg, sector_t * frontsector, sector_t * backsector)
 	{
 		glseg.fracleft = 0;
 		glseg.fracright = 1;
-		if (gl_seamless)
+		if (r_seamless)
 		{
 			if (v1->dirty) gl_RecalcVertexHeights(v1);
 			if (v2->dirty) gl_RecalcVertexHeights(v2);

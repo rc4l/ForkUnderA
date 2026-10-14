@@ -22,9 +22,9 @@
 #include "c_dispatch.h"
 #include "tarray.h"
 
-EXTERN_CVAR(Float, gl_lights_size)
-EXTERN_CVAR(Float, gl_lights_intensity)
-EXTERN_CVAR(Bool, gl_lights_additive)
+EXTERN_CVAR(Float, r_lights_size)
+EXTERN_CVAR(Float, r_lights_intensity)
+EXTERN_CVAR(Bool, r_lights_additive)
 EXTERN_CVAR(Bool, fua_dg_dynlights)
 EXTERN_CVAR(Bool, fua_dg_lightlinks)
 EXTERN_CVAR(Bool, fua_dg_clusters)
@@ -168,7 +168,7 @@ CCMD( fua_dg_lights )
 	while ( ( light = it.Next( ) ) != NULL )
 	{
 		if ( !light->IsActive( ) ) continue;
-		const float radius = light->GetRadius( ) * gl_lights_size;
+		const float radius = light->GetRadius( ) * r_lights_size;
 		if ( radius <= 0.f ) continue;
 		const float lz = FIXED2FLOAT( light->z );
 		// [rc4l] DONTLIGHTSELF decides whether GL or the backend is the one in the wrong when an
@@ -255,13 +255,13 @@ void CollectDynamicLights(Diligent::IDeviceContext *ctx)
 		while ((light = it.Next()) != NULL)
 		{
 			if (!light->IsActive()) continue;
-			const float radius = light->GetRadius() * gl_lights_size;
+			const float radius = light->GetRadius() * r_lights_size;
 			if (radius <= 0.f) continue;
 			if ((unsigned)g_lightCount >= g_lightBufCapacity / 2) break;
 
 			float rgb[3];
 			zx::hwrender::ComputeDynLightColor(light->GetRed(), light->GetGreen(), light->GetBlue(),
-				gl_lights_additive || (light->flags4 & MF4_ADDITIVE), gl_lights_intensity, rgb);
+				r_lights_additive || (light->flags4 & MF4_ADDITIVE), r_lights_intensity, rgb);
 
 			// Same axis swap the mesh uses: (x, z, y).
 			g_lightData.Push(FIXED2FLOAT(light->x));

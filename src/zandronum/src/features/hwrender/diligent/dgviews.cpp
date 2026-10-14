@@ -8,9 +8,9 @@
 #include "features/viewsetup/viewsetup.h"   // [rc4l] FixedColormapShadeFor
 #include "features/hwrender/computation/linemirror_compute.h"   // [rc4l] the reflected eye and how deep mirrors nest
 
-EXTERN_CVAR(Bool, gl_lights_checkside)
+EXTERN_CVAR(Bool, r_lights_checkside)
 
-EXTERN_CVAR(Float, gl_mask_sprite_threshold)
+EXTERN_CVAR(Float, r_mask_sprite_threshold)
 EXTERN_CVAR(Int, r_mirror_recursions)
 
 namespace zx { namespace hwrender {
@@ -784,10 +784,10 @@ void WriteSceneConstants(float *cb, const float *clip, float targetW, float targ
 	in.playerPass = g_pass.mainView && g_pass.lineMirror < 0;
 	in.skyHoles = g_scene.skyHoleCount;
 	// [rc4l] AlphaFunc(GL_GEQUAL, t) keeps a texel only above t - 0.001, as FRenderState stores it.
-	in.spriteAlphaCut = gl_mask_sprite_threshold - 0.001f;
+	in.spriteAlphaCut = r_mask_sprite_threshold - 0.001f;
 	// [rc4l] GL draws a camera texture with no fixed colormap (RenderTextureView), and every other view under the player's.
 	in.fixedColormap = zx::viewsetup::FixedColormapShadeFor(g_pass.inCameraPass ? CM_DEFAULT : (int)gl_fixedcolormap);
-	in.lightsCheckSide = gl_lights_checkside;
+	in.lightsCheckSide = r_lights_checkside;
 	zx::hwrender::ComputeSceneConstants(in, cb);
 }
 
@@ -1292,8 +1292,8 @@ void RenderMirrors(Diligent::IDeviceContext *ctx)
 	// there was no way to take it out of the picture. Every other suspect has been ruled out by
 	// switching it off and measuring; this one could not be, which is reason enough for the cvar.
 	if (!fua_dg_mirrors_on) return;
-	// [rc4l] GL draws a mirror's wall instead of its reflection with gl_mirrors off, and the bake follows it (ComputeIsMirrorWall).
-	if (!gl_mirrors) return;
+	// [rc4l] GL draws a mirror's wall instead of its reflection with r_mirrors off, and the bake follows it (ComputeIsMirrorWall).
+	if (!r_mirrors) return;
 	if (g_mirrors.Size() == 0) return;
 	if (!g_mirrorPSO || !g_mirrorSRB || !g_mirrorVB)
 	{

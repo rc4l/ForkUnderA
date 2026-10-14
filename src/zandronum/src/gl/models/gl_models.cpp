@@ -72,7 +72,7 @@
 
 CVAR(Bool, gl_light_models, true, CVAR_ARCHIVE)
 // [BB] Allow the user disable the use of any kind of models.
-EXTERN_CVAR(Int, gl_fogmode)
+EXTERN_CVAR(Int, r_fogmode)
 
 // [rc4l] Each model's buffer, made on first draw from the geometry features/models keeps.
 static std::unordered_map<const FModel *, FModelVertexBuffer *> gl_modelBuffers;

@@ -114,7 +114,7 @@ void FRenderState::Reset()
 
 bool FRenderState::ApplyShader()
 {
-	// [BB/EP] Take care of gl_fogmode and ZADF_FORCE_VIDEO_DEFAULTS.
+	// [BB/EP] Take care of r_fogmode and ZADF_FORCE_VIDEO_DEFAULTS.
 	OVERRIDE_FOGMODE_IF_NECESSARY
 
 	if (mSpecialEffect > EFF_NONE)
@@ -133,11 +133,11 @@ bool FRenderState::ApplyShader()
 	{
 		if ((mFogColor & 0xffffff) == 0)
 		{
-			fogset = gl_fogmode;
+			fogset = r_fogmode;
 		}
 		else
 		{
-			fogset = -gl_fogmode;
+			fogset = -r_fogmode;
 		}
 	}
 

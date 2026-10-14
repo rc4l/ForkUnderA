@@ -106,7 +106,7 @@ TEST(WallCache, AOneSidedMirrorLineIsAMirrorNotAWall)
 {
 	EXPECT_TRUE(ComputeIsMirrorWall(kLineMirror, true, true));
 	EXPECT_FALSE(ComputeIsMirrorWall(kLineMirror, false, true));   // [rc4l] GL mirrors only a one-sided middle
-	EXPECT_FALSE(ComputeIsMirrorWall(kLineMirror, true, false));   // [rc4l] gl_mirrors off draws the wall
+	EXPECT_FALSE(ComputeIsMirrorWall(kLineMirror, true, false));   // [rc4l] r_mirrors off draws the wall
 	EXPECT_FALSE(ComputeIsMirrorWall(0, true, true));
 }
 

@@ -13,7 +13,7 @@
 
 // [rc4l] Off makes every commit in a draw loop check every resource again, the old cost, for an A/B in one session.
 CVAR(Bool, fua_dg_loopcommits, true, 0)
-EXTERN_CVAR(Float, gl_texture_filter_anisotropic)
+EXTERN_CVAR(Float, r_texture_filter_anisotropic)
 
 namespace zx { namespace hwrender {
 
@@ -576,7 +576,7 @@ void ReleaseScenePipelines()
 // best in isolation.
 //
 // This used to be hard-wired trilinear-with-point-mag, under a comment claiming that was "the same
-// shape the GL renderer uses". It is not: gl_texture_filter defaults to 0, which is GL_NEAREST with
+// shape the GL renderer uses". It is not: r_texture_filter defaults to 0, which is GL_NEAREST with
 // mipmapping off -- Doom's crunchy look. Filtering the Vulkan view instead put a difference on every
 // texture detail edge in the frame, which is diffuse rather than localised and therefore reads as
 // noise rather than a bug. It dominated the GL-vs-Vulkan measurement and hid whatever real feature
@@ -586,13 +586,13 @@ void ReleaseScenePipelines()
 // mipmapping off, which a sampler expresses by refusing to sample past mip 0.
 void FillSamplerFromEngine(Diligent::SamplerDesc &samp)
 {
-	const zx::hwrender::TextureFilter f = zx::hwrender::ComputeTextureFilter((int)gl_texture_filter);
+	const zx::hwrender::TextureFilter f = zx::hwrender::ComputeTextureFilter((int)r_texture_filter);
 	samp.MinFilter = f.minLinear ? Diligent::FILTER_TYPE_LINEAR : Diligent::FILTER_TYPE_POINT;
 	samp.MagFilter = f.magLinear ? Diligent::FILTER_TYPE_LINEAR : Diligent::FILTER_TYPE_POINT;
 	samp.MipFilter = f.mipLinear ? Diligent::FILTER_TYPE_LINEAR : Diligent::FILTER_TYPE_POINT;
 	samp.MaxLOD = f.mipmapped ? 1000.0f : 0.0f;
-	// [rc4l] gl_texture_filter_anisotropic, as GL's samplers take it.
-	const unsigned aniso = zx::hwrender::ComputeAnisotropy(f, gl_texture_filter_anisotropic);
+	// [rc4l] r_texture_filter_anisotropic, as GL's samplers take it.
+	const unsigned aniso = zx::hwrender::ComputeAnisotropy(f, r_texture_filter_anisotropic);
 	if (aniso > 0)
 	{
 		samp.MinFilter = samp.MagFilter = samp.MipFilter = Diligent::FILTER_TYPE_ANISOTROPIC;
@@ -649,9 +649,9 @@ const std::string &UserShaderBlock()
 bool EnsureScenePipeline(FString &err)
 {
 	// The sampler is immutable in the PSO, so a filter change means a new PSO. Cheap and rare.
-	if (g_pso.world[kWpOpaque] && (g_builtFilter != (int)gl_texture_filter || g_builtAniso != (float)gl_texture_filter_anisotropic)) ReleaseScenePipelines();
-	g_builtFilter = (int)gl_texture_filter;
-	g_builtAniso = gl_texture_filter_anisotropic;
+	if (g_pso.world[kWpOpaque] && (g_builtFilter != (int)r_texture_filter || g_builtAniso != (float)r_texture_filter_anisotropic)) ReleaseScenePipelines();
+	g_builtFilter = (int)r_texture_filter;
+	g_builtAniso = r_texture_filter_anisotropic;
 	if (g_pso.world[kWpOpaque] && g_builtCull != (int)fua_dg_cull) ReleaseScenePipelines();
 	g_builtCull = (int)fua_dg_cull;
 	// [rc4l] The shaders declare the array at its size, so a new size is new pipelines.

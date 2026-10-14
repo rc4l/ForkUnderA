@@ -19,7 +19,7 @@ export const VANTAGES = [{ name: "wall", at: { x: 256, y: 440, z: 0, angle: 90, 
 export const BOXES = { MAP01: { wall: { box: [0.1, 0.1, 0.9, 0.6], ceiling: 3 } } };
 
 // [rc4l] Set once the level is up, so the textures it already made must be flushed and remade.
-export const SIDES = GL_VS_VULKAN.map((s) => ({ ...s, cvars: { gl_texture_hqresize: 4 } }));
+export const SIDES = GL_VS_VULKAN.map((s) => ({ ...s, cvars: { r_texture_hqresize: 4 } }));
 
 runScenarioIfMain(import.meta.url, () => ({ name: "hqresize", wad: buildHqResizeWad(), maps: ["MAP01"],
   vantages: VANTAGES, boxes: BOXES, sides: SIDES }));

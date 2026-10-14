@@ -128,7 +128,7 @@ TEST(ComputeFixedColormapShade, ASpecialColormapIsItsRampFromStartToEnd)
 	EXPECT_EQ(kShadeNone, ComputeFixedColormapShade(kCmDefault, 2, start, end, false).mode);
 }
 
-// [rc4l] Light amplification is white, or night-vision green with gl_enhanced_nightvision; a fog layer is the sprite's mode 3.
+// [rc4l] Light amplification is white, or night-vision green with r_enhanced_nightvision; a fog layer is the sprite's mode 3.
 TEST(ComputeFixedColormapShade, LightAmplificationTintsAndAFogLayerIsItsOwnMode)
 {
 	const float z[3] = { 0.f, 0.f, 0.f };

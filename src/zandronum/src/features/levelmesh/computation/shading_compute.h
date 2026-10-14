@@ -12,9 +12,9 @@ namespace zx { namespace levelmesh {
 struct ShadingEnv
 {
 	int      lightMode;          // [rc4l] glset.lightmode
-	int      ambient;            // [rc4l] gl_light_ambient, after the server's forced defaults
-	int      fogMode;            // [rc4l] gl_fogmode, after the server's forced defaults
-	int      distFog;            // [rc4l] gl_distfog, after the server's forced defaults
+	int      ambient;            // [rc4l] r_light_ambient, after the server's forced defaults
+	int      fogMode;            // [rc4l] r_fogmode, after the server's forced defaults
+	int      distFog;            // [rc4l] r_distfog, after the server's forced defaults
 	bool     fixedColormap;      // [rc4l] a fixed colormap is on, as invulnerability and light amplification set
 	bool     fadeTable;          // [rc4l] the level has a fade table (LEVEL_HASFADETABLE)
 	bool     inSkybox;           // [rc4l] drawing inside a skybox, where fog is half as dense again
@@ -54,7 +54,7 @@ int ComputeLightLevel(int lightLevel, int relLight, bool weapon, const ShadingEn
 // [rc4l] gl_CalcLightColor: the light colour scaled by the light level, or mixed by the blend factor, as bytes.
 void ComputeLightColor(int light, unsigned color, int blendFactor, int lightMode, int &r, int &g, int &b);
 
-// [rc4l] One entry of gl_distfog's black-fog table, the software-light table when softTable is set.
+// [rc4l] One entry of r_distfog's black-fog table, the software-light table when softTable is set.
 float ComputeDistFog(int distFog, bool softTable, int light);
 
 // [rc4l] gl_GetFogDensity: the fog density a light level and fog colour get under the level's fog rules.
