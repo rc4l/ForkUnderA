@@ -15,6 +15,7 @@
 #endif
 
 #include "features/addon-catalogue/computation/addonfile_compute.h"
+#include "features/fileio/computation/readfile_compute.h"   // [rc4l] ComputeFileText
 #include "features/wad-download/zx_waddownload.h"
 #include "i_system.h"
 
@@ -38,27 +39,6 @@ namespace
 // different lists and only one of them is the CUSTOM tab.
 const char *const kLastFolder = ".last";
 
-std::string ReadWholeFile(const std::string &path)
-{
-	FILE *const fp = fopen(path.c_str(), "rb");
-	if (fp == NULL)
-		return std::string();
-
-	std::string out;
-	char buffer[4096];
-
-	for (;;)
-	{
-		const size_t read = fread(buffer, 1, sizeof(buffer), fp);
-		if (read == 0)
-			break;
-
-		out.append(buffer, read);
-	}
-
-	fclose(fp);
-	return out;
-}
 
 bool WriteWholeFile(const std::string &path, const std::string &text)
 {
@@ -88,7 +68,7 @@ CustomEntry LoadFolder(const std::string &folder, const std::string &id)
 {
 	CustomEntry out;
 
-	const std::string json = ReadWholeFile(folder + "addon.json");
+	const std::string json = zx::ComputeFileText((folder + "addon.json").c_str());
 	if (json.empty())
 		return out;
 
@@ -106,7 +86,7 @@ CustomEntry LoadFolder(const std::string &folder, const std::string &id)
 		out.files.push_back(CustomFile(parsed.files[i].name, parsed.files[i].md5));
 
 	// The settings and the rotation come from the cfg, which is where a server would read them.
-	ParseCustomCfg(ReadWholeFile(folder + "server.cfg"), out.cvars, out.maps);
+	ParseCustomCfg(zx::ComputeFileText((folder + "server.cfg").c_str()), out.cvars, out.maps);
 
 	// The gamemode is a cfg line like any other; lifting it out is what the NEW screen needs to
 	// put the mode pill back where it was.

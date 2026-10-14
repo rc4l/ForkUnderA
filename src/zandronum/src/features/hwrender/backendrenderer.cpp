@@ -20,6 +20,7 @@
 #include "m_png.h"
 #include "m_misc.h"                          // [rc4l] M_WriteFile
 #include "features/hwrender/computation/savepicture_compute.h"
+#include "features/fileio/computation/readfile_compute.h"
 #include <string>
 #include <vector>
 #include "textures/textures.h"
@@ -32,16 +33,6 @@ static void TintPicture(const std::vector<zx::draw2d::ScreenFill> &fills, unsign
 {
 	for (const zx::draw2d::ScreenFill &f : fills)
 		zx::draw2d::ComputeApplyScreenFill(f.r, f.g, f.b, f.a, f.multiply, rgb, pixels);
-}
-
-// [rc4l] An open file's bytes from its start; false when it reads short.
-static bool ReadWhole(FILE *file, std::vector<unsigned char> &out)
-{
-	if (fseek(file, 0, SEEK_END) != 0) return false;
-	const long size = ftell(file);
-	if (size < 0 || fseek(file, 0, SEEK_SET) != 0) return false;
-	out.resize((size_t)size);
-	return fread(out.data(), 1, out.size(), file) == out.size();
 }
 
 // [rc4l] The save picture a device reads back only after its save is written: the request's number, the save it goes in once G_DoSaveGame names it, and the screen's tint at the save.
@@ -59,15 +50,14 @@ static void FinishLaterPicture(unsigned serial, const unsigned char *rgb, int w,
 {
 	if (!g_laterPicture.pending || g_laterPicture.serial != serial || g_laterPicture.path.empty()) return;
 	g_laterPicture.pending = false;
-	std::vector<unsigned char> pixels(rgb, rgb + (size_t)w * h * 3), picture, save, out;
+	std::vector<unsigned char> pixels(rgb, rgb + (size_t)w * h * 3);
+	std::string picture, save, out;
 	TintPicture(g_laterPicture.fills, pixels.data(), w * h);
 	FILE *png = tmpfile();
-	const bool made = png != NULL && M_CreatePNG(png, pixels.data(), NULL, SS_RGB, w, h, w * 3) && ReadWhole(png, picture);
+	const bool made = png != NULL && M_CreatePNG(png, pixels.data(), NULL, SS_RGB, w, h, w * 3) && fseek(png, 0, SEEK_SET) == 0 && zx::ComputeReadWhole(png, picture);
 	if (png != NULL) fclose(png);
-	FILE *file = made ? fopen(g_laterPicture.path.c_str(), "rb") : NULL;
-	const bool read = file != NULL && ReadWhole(file, save);
-	if (file != NULL) fclose(file);
-	if (!read || !zx::ComputeSpliceSavePicture(save, picture, out) || !M_WriteFile(g_laterPicture.path.c_str(), out.data(), (int)out.size()))
+	const bool read = made && zx::ComputeReadWholeFile(g_laterPicture.path.c_str(), save);
+	if (!read || !zx::ComputeSpliceSavePicture(save, picture, out) || !M_WriteFile(g_laterPicture.path.c_str(), &out[0], (int)out.size()))
 		Printf("save picture: could not put it in %s\n", g_laterPicture.path.c_str());
 }
 

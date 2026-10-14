@@ -32,13 +32,12 @@ size_t ComputePngPictureLength(const unsigned char *bytes, size_t size)
 	return at == sizeof(kSignature) ? 0 : at;
 }
 
-bool ComputeSpliceSavePicture(const std::vector<unsigned char> &save, const std::vector<unsigned char> &picture, std::vector<unsigned char> &out)
+bool ComputeSpliceSavePicture(const std::string &save, const std::string &picture, std::string &out)
 {
-	const size_t oldPicture = ComputePngPictureLength(save.data(), save.size());
-	const size_t newPicture = ComputePngPictureLength(picture.data(), picture.size());
+	const size_t oldPicture = ComputePngPictureLength((const unsigned char *)save.data(), save.size());
+	const size_t newPicture = ComputePngPictureLength((const unsigned char *)picture.data(), picture.size());
 	if (oldPicture == 0 || newPicture == 0) return false;
-	out.assign(picture.begin(), picture.begin() + newPicture);
-	out.insert(out.end(), save.begin() + oldPicture, save.end());
+	out = picture.substr(0, newPicture) + save.substr(oldPicture);
 	return true;
 }
 

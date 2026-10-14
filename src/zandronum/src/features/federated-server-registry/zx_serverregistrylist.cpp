@@ -15,6 +15,7 @@
 #include "cmdlib.h"     // CreatePath
 #include "doomtype.h"   // Printf
 #include "m_misc.h"     // M_GetCachePath
+#include "features/fileio/computation/readfile_compute.h"   // [rc4l] ComputeFileText
 #include "zstring.h"
 #include "features/net/zx_httpsget.h"
 
@@ -61,20 +62,6 @@ FString CachePath( void )
 	return path;
 }
 
-std::string ReadWholeFile( const char *path )
-{
-	std::string out;
-	FILE *f = std::fopen( path, "rb" );
-	if ( f == NULL )
-		return out;
-
-	char buf[4096];
-	size_t n;
-	while (( n = std::fread( buf, 1, sizeof buf, f )) > 0 )
-		out.append( buf, n );
-	std::fclose( f );
-	return out;
-}
 
 // Age of the cache in seconds, or -1 when there is no cache at all.
 long CacheAgeSeconds( const char *path )
@@ -190,7 +177,7 @@ std::vector<ServerRegistryEntry> ServerRegistryList_Resolve( const char *userCSV
 	if (( cl_fua_serverregistrylist_fetch == false ) && ( user.empty( ) == false ))
 		return user;
 
-	std::vector<ServerRegistryEntry> shipped = ParseServerRegistryList( ReadWholeFile( CachePath( ).GetChars( )));
+	std::vector<ServerRegistryEntry> shipped = ParseServerRegistryList( ComputeFileText( CachePath( ).GetChars( )));
 	if ( shipped.empty( ))
 		shipped = ParseServerRegistryList( kBuiltinList );
 
