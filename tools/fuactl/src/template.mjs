@@ -159,9 +159,10 @@ export function standaloneOptions(opts) {
 // [rc4l] The mean |d| every box is held to when WebGPU is judged against Vulkan: the same backend over two APIs, so near the same picture.
 export const WEBGPU_CEILING = 1.5;
 
-// [rc4l] A scenario on WebGPU, by how it judges: two launches compare its first Vulkan side on each without GL, each box at WEBGPU_CEILING with no floor; one launch judged against itself (a counter, a picture over time) runs on WebGPU alone with its own limits; null to skip one with no Vulkan side of its own, one judging GL and the backend in one frame (a WebGPU launch has no GL), or one needing ray tracing, which WebGPU lacks.
+// [rc4l] A scenario on WebGPU, by how it judges: two launches compare its first Vulkan side on each without GL, each box at WEBGPU_CEILING with no floor; one launch judged against itself (a counter, a picture over time) runs on WebGPU alone with its own limits; skipped, with the reason, when it judges GL and the backend in one frame or needs ray tracing; null with no Vulkan side of its own.
 export function webgpuOptions(opts, compare = compareTemplate) {
-  if (compare === compareSameFrame || (opts.needs || []).includes("raytracing")) return null;
+  if (compare === compareSameFrame) return { skip: "it judges GL and the backend in one frame, and a WebGPU launch has no GL" };
+  if ((opts.needs || []).includes("raytracing")) return { skip: "it needs ray tracing, which WebGPU lacks" };
   const vk = (opts.sides || GL_VS_VULKAN).find((s) => !s.gl && s.frame !== "gl");
   if (!vk) return null;
   const { frame, glDraws, ...rest } = vk;
@@ -186,14 +187,17 @@ export function isMain(metaUrl, argv1 = process.argv[1]) {
 const registered = new Map();
 export function scenarioOptions(metaUrl) { const e = registered.get(metaUrl); return e ? e.options : null; }
 
-// [rc4l] An imported scenario as one call that runs its comparison (its options passed through adjust, with the comparison) and returns its outcome, or null if the module registered none; an adjust giving null skips it.
+// [rc4l] An imported scenario as one call that runs its comparison (its options passed through adjust, with the comparison) and returns its outcome, or null if the module registered none; an adjust giving null, or { skip: reason }, skips it.
 export function scenarioRun(metaUrl, adjust = (o) => o) {
   const e = registered.get(metaUrl);
   if (!e) return null;
   return async () => {
     const base = e.options();
     const opts = adjust(base, e.compare);
-    if (!opts) return { lines: [`skipped: no side to run (${(base.sides || GL_VS_VULKAN).map((s) => s.name).join(", ")})`], code: 0, skipped: true };
+    if (!opts || opts.skip) {
+      const why = opts ? opts.skip : `no side to run (${(base.sides || GL_VS_VULKAN).map((s) => s.name).join(", ")})`;
+      return { lines: [`skipped: ${why}`], code: 0, skipped: true };
+    }
     return scenarioOutcome(opts.name, await e.compare(opts));
   };
 }

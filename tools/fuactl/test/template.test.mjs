@@ -194,6 +194,8 @@ test("a run-wide side change skips a scenario without that side instead of endin
   assert.equal(out.skipped, true);
   assert.equal(out.code, 0);
   assert.match(out.lines[0], /skipped: no side to run \(flat, clustered\)/);
+  const why = await scenarioRun(url, () => ({ skip: "it needs ray tracing" }))();
+  assert.deepEqual(why, { lines: ["skipped: it needs ray tracing"], code: 0, skipped: true });
 });
 
 test("--standalone runs a scenario's own standalone side, else its Vulkan side with standalone on, else nothing", () => {
@@ -236,6 +238,6 @@ test("a WebGPU run of a scenario judged against itself runs on WebGPU alone with
 });
 
 test("a WebGPU run skips what WebGPU cannot do: GL beside it in one frame, or ray tracing", () => {
-  assert.equal(webgpuOptions({ name: "sameframe", boxes: {} }, compareSameFrame), null);
-  assert.equal(webgpuOptions({ name: "rt", boxes: {}, needs: ["raytracing"] }), null);
+  assert.match(webgpuOptions({ name: "sameframe", boxes: {} }, compareSameFrame).skip, /a WebGPU launch has no GL/);
+  assert.match(webgpuOptions({ name: "rt", boxes: {}, needs: ["raytracing"] }).skip, /needs ray tracing/);
 });
