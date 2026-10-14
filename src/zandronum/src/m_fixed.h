@@ -17,52 +17,7 @@
 #include "computation/fixedmath.h"
 #include "xs_Float.h"
 
-// [rc4l] Fixed-point division (widened to 64-bit fixed_t) that treats a zero divisor as an
-// overflow rather than crashing. The (a<<x)/b math is the tested zx::DivScale64 (with its
-// 32-bit fast-path and 128-bit wide path); a valid fixed_t result is already within
-// FIXED_MIN/FIXED_MAX, so no post-clamp is needed.
-#define ZX_MAKE_SAFEDIVSCALE(x) \
-	inline fixed_t SafeDivScale##x (fixed_t a, fixed_t b) \
-	{ \
-		if (b == 0) return (a < 0) ? FIXED_MIN : FIXED_MAX; \
-		return zx::DivScale64(zx::raw(a), (x), zx::raw(b)); \
-	}
-ZX_MAKE_SAFEDIVSCALE(1)
-ZX_MAKE_SAFEDIVSCALE(2)
-ZX_MAKE_SAFEDIVSCALE(3)
-ZX_MAKE_SAFEDIVSCALE(4)
-ZX_MAKE_SAFEDIVSCALE(5)
-ZX_MAKE_SAFEDIVSCALE(6)
-ZX_MAKE_SAFEDIVSCALE(7)
-ZX_MAKE_SAFEDIVSCALE(8)
-ZX_MAKE_SAFEDIVSCALE(9)
-ZX_MAKE_SAFEDIVSCALE(10)
-ZX_MAKE_SAFEDIVSCALE(11)
-ZX_MAKE_SAFEDIVSCALE(12)
-ZX_MAKE_SAFEDIVSCALE(13)
-ZX_MAKE_SAFEDIVSCALE(14)
-ZX_MAKE_SAFEDIVSCALE(15)
-ZX_MAKE_SAFEDIVSCALE(16)
-ZX_MAKE_SAFEDIVSCALE(17)
-ZX_MAKE_SAFEDIVSCALE(18)
-ZX_MAKE_SAFEDIVSCALE(19)
-ZX_MAKE_SAFEDIVSCALE(20)
-ZX_MAKE_SAFEDIVSCALE(21)
-ZX_MAKE_SAFEDIVSCALE(22)
-ZX_MAKE_SAFEDIVSCALE(23)
-ZX_MAKE_SAFEDIVSCALE(24)
-ZX_MAKE_SAFEDIVSCALE(25)
-ZX_MAKE_SAFEDIVSCALE(26)
-ZX_MAKE_SAFEDIVSCALE(27)
-ZX_MAKE_SAFEDIVSCALE(28)
-ZX_MAKE_SAFEDIVSCALE(29)
-ZX_MAKE_SAFEDIVSCALE(30)
-ZX_MAKE_SAFEDIVSCALE(31)
-ZX_MAKE_SAFEDIVSCALE(32)
-#undef ZX_MAKE_SAFEDIVSCALE
-
-#define FixedMul MulScale16
-#define FixedDiv SafeDivScale16
+// [rc4l] SafeDivScale and the FixedMul/FixedDiv aliases live in computation/fixedmath.h, so compute code reaches them without the engine headers.
 
 // Write count fixed-point values stepping by delta, taking the integer (>>16) part.
 inline void qinterpolatedown16 (SDWORD *out, DWORD count, fixed_t val, fixed_t delta)

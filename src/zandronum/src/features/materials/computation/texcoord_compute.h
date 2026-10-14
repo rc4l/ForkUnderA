@@ -6,7 +6,8 @@
 #ifndef ZX_TEXCOORD_COMPUTE_H
 #define ZX_TEXCOORD_COMPUTE_H
 
-#include "m_fixed.h"
+#include "basictypes.h"
+#include "computation/fixedmath.h"
 
 // [rc4l] A sidedef offset in texels once the texture's own scale (`scale`) and the sidedef's (`tempScale`) are applied; world panning keeps the offset in map units unless the sidedef scales it.
 fixed_t ComputeTexCoordOffset(fixed_t offset, fixed_t scale, fixed_t tempScale, bool worldPanning);

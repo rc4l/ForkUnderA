@@ -2,6 +2,7 @@
 // Copyright (C) 2026 rc4l
 
 #include <gtest/gtest.h>
+#include <cmath>
 #include "features/hwrender/computation/mirrorsheen_compute.h"
 
 using namespace zx::hwrender;
@@ -41,7 +42,7 @@ TEST(MirrorSheenCompute, TheSphereMapIsTheReflectedRaysProjection)
 	EXPECT_FLOAT_EQ(0.5f, t);
 	const float none[3] = { 0.f, 0.f, 0.f };   // [rc4l] a normal with no length reflects nothing
 	ComputeSphereMapUV(right, none, s, t);
-	EXPECT_NEAR(0.5f + 0.7071068f / (2.f * sqrtf(0.5f + 0.0857864f)), s, 1e-4f);
+	EXPECT_NEAR(0.5f + 0.7071068f / (2.f * std::sqrt(0.5f + 0.0857864f)), s, 1e-4f);
 }
 
 // [rc4l] WDI08's ward mirror: GL added the sheen at a tenth of the wall's light, and the backend drew the reflection bare.
