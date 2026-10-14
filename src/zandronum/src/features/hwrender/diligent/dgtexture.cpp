@@ -20,10 +20,6 @@
 
 #ifdef FUA_DILIGENT
 
-#ifndef PLATFORM_WIN32
-#define PLATFORM_WIN32 1
-#endif
-
 #include "RenderDevice.h"
 #include "DeviceContext.h"
 #include "Texture.h"

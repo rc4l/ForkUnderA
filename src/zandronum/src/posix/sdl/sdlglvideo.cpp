@@ -19,6 +19,7 @@
 #include "c_cvars.h"
 
 #include "sdlglvideo.h"
+#include "features/hwrender/backendonly.h"   // [rc4l] a launch without GL
 #include "gl/system/gl_system.h"
 #include "r_defs.h"
 #include "gl/gl_functions.h"
@@ -244,7 +245,10 @@ DFrameBuffer *SDLGLVideo::CreateFrameBuffer (int width, int height, bool fullscr
 //		flashAmount = 0;
 	}
 	
-	SDLGLFB *fb = new OpenGLFrameBuffer (0, width, height, 32, 60, fullscreen);
+	// [rc4l] A launch without GL draws the screen with the Vulkan backend's frame buffer (features/hwrender/backendvideo.cpp).
+	SDLGLFB *fb = zx::hwrender::BackendOnly ()
+		? static_cast<SDLGLFB *> (zx::hwrender::CreateBackendFrameBuffer (0, width, height, 32, 60, fullscreen))
+		: new OpenGLFrameBuffer (0, width, height, 32, 60, fullscreen);
 	retry = 0;
 	
 	// If we could not create the framebuffer, try again with slightly
@@ -362,10 +366,16 @@ bool SDLGLVideo::InitHardware (bool allowsoftware, int multisample)
 
 // FrameBuffer implementation -----------------------------------------------
 
-SDLGLFB::SDLGLFB (void *, int width, int height, int, int, bool fullscreen)
+// [rc4l] The window the frame buffer drew into, which the Vulkan backend takes over in a launch without GL (features/hwrender/diligent/dgsdl.cpp).
+static SDL_Window *s_engineWindow = NULL;
+SDL_Window *I_EngineWindow() { return s_engineWindow; }
+
+SDLGLFB::SDLGLFB (void *, int width, int height, int, int, bool fullscreen, bool withGL)
 	: DFrameBuffer (width, height)
 {
 	static int localmultisample=-1;
+	GLContext = NULL;
+	Screen = NULL;
 
 	if (localmultisample<0) localmultisample=gl_vid_multisample;
 
@@ -375,7 +385,8 @@ SDLGLFB::SDLGLFB (void *, int width, int height, int, int, bool fullscreen)
 
 	UpdatePending = false;
 	
-	if (!static_cast<SDLGLVideo*>(Video)->InitHardware(false, localmultisample))
+	// [rc4l] A frame buffer for the Vulkan backend wants the window alone, with no GL context in it.
+	if (withGL && !static_cast<SDLGLVideo*>(Video)->InitHardware(false, localmultisample))
 	{
 		vid_renderer = 0;
 		return;
@@ -405,7 +416,7 @@ SDLGLFB::SDLGLFB (void *, int width, int height, int, int, bool fullscreen)
 	// [rc4l] windowed-video: a normal window is freely resizable (drag the edges), matching upstream.
 	// The render target follows the drawable live via OpenGLFrameBuffer::MaybeResizeForScale, and the
 	// new size is persisted on the resize event (see i_input.cpp / features/windowed-video).
-	Uint32 windowFlags = SDL_WINDOW_OPENGL | (fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : SDL_WINDOW_RESIZABLE);
+	Uint32 windowFlags = (withGL ? SDL_WINDOW_OPENGL : 0) | (fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : SDL_WINDOW_RESIZABLE);
 
 	Screen = SDL_CreateWindow (caption,
 		SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
@@ -414,6 +425,13 @@ SDLGLFB::SDLGLFB (void *, int width, int height, int, int, bool fullscreen)
 
 	if (Screen == NULL)
 		return;
+	s_engineWindow = Screen;
+
+	if (!withGL)
+	{
+		m_supportsGamma = 0 == SDL_GetWindowGammaRamp(Screen, m_origGamma[0], m_origGamma[1], m_origGamma[2]);
+		return;
+	}
 
 	// [rc4l] The staircase summit (upstream fc0cf4f99): the renderer runs on a core profile,
 	// so request the core chain (4.1 -> 4.0 -> 3.3). This is the flip that gives macOS its
@@ -445,6 +463,7 @@ SDLGLFB::SDLGLFB (void *, int width, int height, int, int, bool fullscreen)
 		Printf ("Failed to create a GL context: %s\n", SDL_GetError ());
 		SDL_DestroyWindow (Screen);
 		Screen = NULL;
+		s_engineWindow = NULL;
 		return;
 	}
 
@@ -466,6 +485,8 @@ SDLGLFB::~SDLGLFB ()
 	}
 	if (Screen != NULL)
 	{
+		if (s_engineWindow == Screen) s_engineWindow = NULL;
+		zx::hwrender::ForgetBackendWindow (Screen);
 		SDL_DestroyWindow (Screen);
 		Screen = NULL;
 	}
@@ -554,8 +575,8 @@ bool SDLGLFB::IsValid ()
 
 void SDLGLFB::SetVSync( bool vsync )
 {
-	// [rc4l] SDL2 has a portable swap interval, so the CGL-specific path is gone.
-	SDL_GL_SetSwapInterval (vsync ? 1 : 0);
+	// [rc4l] SDL2 has a portable swap interval, so the CGL-specific path is gone; the Vulkan backend's swapchain keeps its own.
+	if (GLContext != NULL) SDL_GL_SetSwapInterval (vsync ? 1 : 0);
 }
 
 void SDLGLFB::NewRefreshRate ()
@@ -564,7 +585,14 @@ void SDLGLFB::NewRefreshRate ()
 
 void SDLGLFB::SwapBuffers()
 {
-	SDL_GL_SwapWindow (Screen);
+	if (GLContext != NULL) SDL_GL_SwapWindow (Screen);
+}
+
+bool SDLGLFB::ClientSize (int &w, int &h)
+{
+	if (Screen == NULL) return false;
+	SDL_GetWindowSize (Screen, &w, &h);
+	return w > 0 && h > 0;
 }
 
 

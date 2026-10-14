@@ -25,9 +25,7 @@
 // zx::hwrender::Window, which nothing defines, and only the linker notices.
 extern HWND Window;
 
-// [rc4l] Defined in dgscene.cpp, where the cvars live. Declared rather than included because this TU
-// deliberately never sees a Diligent header.
-namespace zx { namespace hwrender { bool Fua_WantEmbeddedWindow(); }}
+#include "features/hwrender/diligent/dgplatform.h"   // [rc4l] Diligent-free, so this TU still never sees a Diligent header
 using zx::hwrender::Fua_WantEmbeddedWindow;
 
 namespace zx { namespace hwrender {
@@ -197,6 +195,16 @@ void Fua_PumpBackendWindow(void *hwnd)
 		DispatchMessage(&msg);
 	}
 }
+
+bool Fua_BackendWindowHandles(void *window, BackendWindowHandles &out)
+{
+	memset(&out, 0, sizeof(out));
+	out.hwnd = window;
+	return window != NULL;
+}
+
+// [rc4l] The Vulkan loader is a system DLL here, found without help.
+bool Fua_PrepareVulkanLoader() { return true; }
 
 // [rc4l] Un-minimizes the engine's own window without taking focus, since GL reads nothing back from a minimized one; true if it was minimized.
 bool Fua_RestoreEngineWindow()

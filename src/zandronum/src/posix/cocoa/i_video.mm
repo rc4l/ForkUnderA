@@ -38,6 +38,7 @@
 #include "i_common.h"
 
 #import <Carbon/Carbon.h>
+#import <QuartzCore/CAMetalLayer.h>   // [rc4l] the Vulkan backend's view, drawn through MoltenVK
 
 // Avoid collision between DObject class and Objective-C
 #define Class ObjectClass
@@ -63,6 +64,9 @@
 #include "version.h"
 #include "features/fua-branding/computation/fua_version_compute.h"   // [rc4l] FUA title
 #include "features/hwrender/computation/glcontext_compute.h"        // [rc4l] GL profile chain
+#include "features/hwrender/backendonly.h"                         // [rc4l] a launch without GL
+#include "features/frame/framedriver.h"                            // [rc4l] the engine's renderer over GL and the backend
+#include <vector>
 
 // [rc4l] video-scale: client size vs render size (v_video.cpp).
 extern int zx_pendingClientWidth, zx_pendingClientHeight;
@@ -241,6 +245,51 @@ static void ZX_CocoaWindowResized();
 @end
 
 
+// [rc4l] The content view of a launch without GL: a CAMetalLayer the Vulkan backend's swapchain draws to through MoltenVK, with CocoaView's cursor.
+@interface CocoaMetalView : NSView
+{
+	NSCursor* m_cursor;
+}
+
+- (void)resetCursorRects;
+
+- (void)setCursor:(NSCursor*)cursor;
+
+@end
+
+
+@implementation CocoaMetalView
+
+- (CALayer*)makeBackingLayer
+{
+	return [CAMetalLayer layer];
+}
+
+- (BOOL)wantsUpdateLayer
+{
+	return YES;
+}
+
+- (void)resetCursorRects
+{
+	[super resetCursorRects];
+
+	NSCursor* const cursor = nil == m_cursor
+		? [NSCursor arrowCursor]
+		: m_cursor;
+
+	[self addCursorRect:[self bounds]
+				 cursor:cursor];
+}
+
+- (void)setCursor:(NSCursor*)cursor
+{
+	m_cursor = cursor;
+}
+
+@end
+
+
 @implementation CocoaView
 
 - (void)resetCursorRects
@@ -317,6 +366,7 @@ private:
 	int  m_height;
 	bool m_fullscreen;
 	bool m_hiDPI;
+	bool m_glView;   // [rc4l] false in a launch without GL, whose view is a Metal layer
 
 	void SetStyleMask(NSUInteger styleMask);
 	void SetFullscreenMode(int width, int height);
@@ -524,6 +574,7 @@ CocoaVideo::CocoaVideo()
 , m_height(-1)
 , m_fullscreen(false)
 , m_hiDPI(false)
+, m_glView(!zx::hwrender::BackendOnly())
 {
 	memset(&m_modeIterator, 0, sizeof m_modeIterator);
 
@@ -531,6 +582,22 @@ CocoaVideo::CocoaVideo()
 	// SetWindowedMode behind an "if the delegate is nil" guard, so it only ever attached during a
 	// mode set -- dragging a window edge fired nothing at all.
 	[m_window setDelegate:m_window];
+
+	// [rc4l] A launch without GL gets a Metal-layered view and no GL context at all.
+	if (!m_glView)
+	{
+		const NSRect contentRect = [m_window contentRectForFrameRect:[m_window frame]];
+		CocoaMetalView* metalView = [[CocoaMetalView alloc] initWithFrame:contentRect];
+		[metalView setWantsLayer:YES];
+		[m_window setContentView:metalView];
+		[metalView release];
+
+		if (FConsoleWindow::InstanceExists())
+		{
+			FConsoleWindow::GetInstance().Show(false);
+		}
+		return;
+	}
 
 	// Create OpenGL pixel format
 
@@ -640,9 +707,10 @@ DFrameBuffer* CocoaVideo::CreateFrameBuffer(const int width, const int height, c
 		delete old;
 	}
 
-	// [rc4l] GL-only build: there is no second renderer to choose between. Mirrors what
-	// posix/sdl/hardware.cpp already does for the SDL backend.
-	DFrameBuffer* fb = new OpenGLFrameBuffer(NULL, width, height, 32, 60, fullscreen);
+	// [rc4l] GL's frame buffer, or in a launch without GL the Vulkan backend's (features/hwrender/backendvideo.cpp).
+	DFrameBuffer* fb = m_glView
+		? static_cast<DFrameBuffer*>(new OpenGLFrameBuffer(NULL, width, height, 32, 60, fullscreen))
+		: zx::hwrender::CreateBackendFrameBuffer(NULL, width, height, 32, 60, fullscreen);
 
 	fb->SetFlash(flashColor, flashAmount);
 
@@ -822,10 +890,16 @@ void CocoaVideo::SetMode(const int width, const int height, const bool fullscree
 		return;
 	}
 
-	if (I_IsHiDPISupported())
+	if (I_IsHiDPISupported() && m_glView)
 	{
 		NSOpenGLView* const glView = [m_window contentView];
 		[glView setWantsBestResolutionOpenGLSurface:hiDPI];
+	}
+	else if (!m_glView)
+	{
+		// [rc4l] The Metal layer draws at the display's backing scale only when HiDPI is asked for, as GL's surface does.
+		CALayer* const layer = [[m_window contentView] layer];
+		[layer setContentsScale:(hiDPI && I_IsHiDPISupported()) ? [m_window backingScaleFactor] : 1.0];
 	}
 
 	if (fullscreen)
@@ -839,13 +913,16 @@ void CocoaVideo::SetMode(const int width, const int height, const bool fullscree
 
 	rbOpts.dirty = true;
 
-	const NSSize viewSize = I_GetContentViewSize(m_window);
+	if (m_glView)
+	{
+		const NSSize viewSize = I_GetContentViewSize(m_window);
 
-	glViewport(0, 0, static_cast<GLsizei>(viewSize.width), static_cast<GLsizei>(viewSize.height));
-	glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-	glClear(GL_COLOR_BUFFER_BIT);
+		glViewport(0, 0, static_cast<GLsizei>(viewSize.width), static_cast<GLsizei>(viewSize.height));
+		glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+		glClear(GL_COLOR_BUFFER_BIT);
 
-	[[NSOpenGLContext currentContext] flushBuffer];
+		[[NSOpenGLContext currentContext] flushBuffer];
+	}
 
 	// [rc4l] FUA branding: the window title carries OUR version, and for a non-stable build the
 	// commit hash too, so a screenshot of an experimental build always says which one it is. Same
@@ -932,9 +1009,13 @@ void CocoaVideo::OnWindowResized()
 
 	// The context must be told its view changed, or the drawable stays at the old size and the game
 	// keeps rendering into a stale buffer -- "the window resizes but the content doesn't".
-	[[NSOpenGLContext currentContext] update];
+	// [rc4l] A Metal layer follows its view itself, and the backend's swapchain follows the layer.
+	if (m_glView)
+	{
+		[[NSOpenGLContext currentContext] update];
 
-	glViewport(0, 0, static_cast<GLsizei>(viewSize.width), static_cast<GLsizei>(viewSize.height));
+		glViewport(0, 0, static_cast<GLsizei>(viewSize.width), static_cast<GLsizei>(viewSize.height));
+	}
 
 	vid_defwidth  = static_cast<int>(viewSize.width );
 	vid_defheight = static_cast<int>(viewSize.height);
@@ -951,6 +1032,12 @@ static void ZX_CocoaWindowResized()
 CocoaVideo* CocoaVideo::GetInstance()
 {
 	return static_cast<CocoaVideo*>(Video);
+}
+
+// [rc4l] The engine window's content view, which the Vulkan backend draws to in a launch without GL (features/hwrender/diligent/dgcocoa.mm).
+void* I_EngineContentView()
+{
+	return (void*)CocoaVideo::GetContentView();
 }
 
 
@@ -983,7 +1070,7 @@ bool SDLGLFB::IsCoreProfile()
 	return zx::kNSGLProfileLegacy != s_cocoaGLProfile;
 }
 
-SDLGLFB::SDLGLFB(void*, const int width, const int height, int, int, const bool fullscreen)
+SDLGLFB::SDLGLFB(void*, const int width, const int height, int, int, const bool fullscreen, bool)
 : DFrameBuffer(width, height)
 , m_lock(-1)
 , m_isUpdatePending(false)
@@ -1117,6 +1204,14 @@ int SDLGLFB::GetClientWidth()
 	return clientWidth > 0 ? clientWidth : Width;
 }
 
+bool SDLGLFB::ClientSize(int &w, int &h)
+{
+	if (nil == CocoaVideo::GetContentView()) return false;
+	w = GetClientWidth();
+	h = GetClientHeight();
+	return w > 0 && h > 0;
+}
+
 int SDLGLFB::GetClientHeight()
 {
 	// [rc4l] see GetClientWidth.
@@ -1181,8 +1276,12 @@ void I_CreateRenderer()
 		extern FRenderer* gl_CreateInterface();
 
 #ifndef NO_GL
-		// [rc4l] GL-only build: always the OpenGL renderer.
-		Renderer = gl_CreateInterface();
+		// [rc4l] GL and the backend under features/frame's driver, which draws each when it is wanted; a launch without GL (-vulkan) has the backend alone.
+		std::vector<zx::frame::DrivenRenderer> renderers;
+		if (zx::hwrender::BackendOnly()) zx::hwrender::BeginBackendOnly();
+		else renderers.push_back({ gl_CreateInterface(), zx::frame::kRendererGL });
+		renderers.push_back({ zx::hwrender::CreateBackendRenderer(), zx::frame::kRendererBackend });
+		Renderer = zx::frame::CreateFrameDriver(renderers);
 #else
 		// [rc4l] Dedicated server (no OpenGL): the trivial null renderer.
 		Renderer = new FNullRenderer;

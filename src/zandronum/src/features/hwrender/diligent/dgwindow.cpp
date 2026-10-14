@@ -20,27 +20,19 @@
 
 #ifdef FUA_DILIGENT
 
-#ifndef PLATFORM_WIN32
-#define PLATFORM_WIN32 1
-#endif
-
 #include "EngineFactoryVk.h"
 #include "RenderDevice.h"
 #include "DeviceContext.h"
 #include "SwapChain.h"
 #include "RefCntAutoPtr.hpp"
-#include "Win32NativeWindow.h"
+#include "NativeWindow.h"
+#include "features/hwrender/diligent/dgplatform.h"
 
 namespace zx { namespace hwrender {
 
 bool ProbeVulkan(FString &report);   // dgprobe.cpp
 Diligent::IRenderDevice  *GetDevice();
 Diligent::IDeviceContext *GetContext();
-
-// [rc4l] Opaque HWND. windows.h is deliberately not included here -- see dgwin32.cpp for why.
-void *Fua_CreateBackendWindow(const char *title, int w, int h);
-void  Fua_PumpBackendWindow(void *hwnd);
-bool  Fua_RestoreEngineWindow();
 
 static void                                          *g_hwnd = NULL;
 static int g_wantW = 0, g_wantH = 0;
@@ -148,7 +140,19 @@ bool DiligentShowWindow(FString &report)
 		scd.ColorBufferFormat = Diligent::TEX_FORMAT_RGBA8_UNORM;
 		// [rc4l] Three images, or mailbox has none free to draw into until the next vblank and runs no faster than the monitor.
 		scd.BufferCount = 3;
-		Diligent::Win32NativeWindow win(g_hwnd);
+		// [rc4l] The window as this platform's Vulkan surface takes it: an HWND, an X11 window or a Wayland surface, or a Metal-layered view.
+		BackendWindowHandles handles;
+		if (!Fua_BackendWindowHandles(g_hwnd, handles)) { report = "the backend window is on a window system Vulkan cannot draw to here"; return false; }
+		Diligent::NativeWindow win;
+#if PLATFORM_WIN32
+		win.hWnd = handles.hwnd;
+#elif PLATFORM_LINUX
+		win.WindowId = (Diligent::Uint32)handles.x11Window;
+		win.pDisplay = handles.x11Display != NULL ? handles.x11Display : handles.waylandDisplay;
+		win.pWaylandSurface = handles.waylandSurface;
+#elif PLATFORM_MACOS
+		win.pNSView = handles.nsView;
+#endif
 		factory->CreateSwapChainVk(GetDevice(), GetContext(), scd, win, &g_swap);
 		if (!g_swap) { report = "CreateSwapChainVk failed"; return false; }
 		// [rc4l] Say what depth format we actually got. Z-fighting the GL renderer does not have is
@@ -198,6 +202,16 @@ bool DiligentFrame(int count, FString &report)
 
 	report.Format("presented %d frame(s); %d total", count, g_frames);
 	return true;
+}
+
+void ForgetBackendWindow(void *window)
+{
+	if (window == NULL || window != g_hwnd) return;
+	// [rc4l] The device is done with the swapchain's images before the surface under them goes.
+	if (GetDevice() != NULL) GetDevice()->IdleGPU();
+	g_pso.Release();
+	g_swap.Release();
+	g_hwnd = NULL;
 }
 
 // [rc4l] Accessors for dgscene.cpp -- one swapchain and one window, shared.

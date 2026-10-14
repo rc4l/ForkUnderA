@@ -12,14 +12,16 @@ Scenario `viewwindow`.
 
 ## A launch without GL (the default)
 
-A launch draws with the backend alone, with no GL context at all (Windows builds with the backend), unless the
+A launch draws with the backend alone, with no GL context at all (every client build), unless the
 player chose GL: `vid_backend` (the video mode menu's Renderer, "Vulkan (Recommended)" or "GL (Legacy)", read
 at startup), with `-vulkan` and `-gl` overriding it for one launch (`computation/backendchoice_compute`). When
 Vulkan was chosen and its device does not start, the launch says why on the console and draws with GL instead
 (`BackendDeviceStarts`). `I_CreateRenderer`
 installs `FBackendRenderer` (`backendrenderer.cpp`), whose `RenderView` is `features/frame`'s
-`RenderPlayerView` and whose level, light and fake-flat work is GL's CPU-side code. `Win32GLVideo` keeps the
-window and modes but sets no pixel format, and makes `DiligentFrameBuffer` (`backendvideo.cpp`): the 2D draws
+`RenderPlayerView` and whose level, light and fake-flat work is shared with GL. Each platform's video keeps the
+window and modes but makes no GL context (`Win32GLVideo` sets no pixel format, SDL's window is made without
+`SDL_WINDOW_OPENGL`, Cocoa's content view is a CAMetalLayer), and makes `DiligentFrameBuffer` (`backendvideo.cpp`,
+over that platform's frame buffer): the 2D draws
 recorded through `features/draw2d`, the palette and gamma from `features/display`, `screenshot` read back from
 the frame, and every frame presented from its `Update` by `PresentBackendOnly`, with the world only under
 a frame that drew a view of it (the title, menus and console otherwise). The launch turns `fua_vulkan`,
@@ -66,7 +68,7 @@ chunks of 64. On Sunder MAP10 with the monsters awake that took `BuildDynamic` f
 
 `computation/levelsetup_compute` steps a level's set-up (bake from the map, upload, retry, give up);
 `PresentFrame` and `SceneDrawable` are shared by the world's frames and the 2D-only
-ones. A build without the backend (`FUA_DILIGENT` off, every non-Windows build) takes its entry points from
+ones. A build without the backend (`FUA_DILIGENT` off, a dedicated server) takes its entry points from
 `backendstubs.cpp`, each answering that there is none.
 
 ## Engine hooks
@@ -82,6 +84,10 @@ ones. A build without the backend (`FUA_DILIGENT` off, every non-Windows build) 
 | `v_video.cpp` | `BackendRateLive`, `RendererRateShown`, `ComputeRateText`, `ComputeRateBox`, `Set2DTarget` | `vid_fps` shows each window its own renderer's frame time, `fua_fps_scale` times larger |
 | `win32/hardware.cpp` | `BackendOnly`, `BeginBackendOnly`, `CreateBackendRenderer` | the renderer of a launch without GL |
 | `win32/win32gliface.cpp` | `BackendOnly`, `CreateBackendFrameBuffer` | no pixel format or context, and the backend's frame buffer |
+| `posix/sdl/hardware.cpp`, `posix/cocoa/i_video.mm` `I_CreateRenderer` | `BackendOnly`, `BeginBackendOnly`, `CreateBackendRenderer` | the renderer of a launch without GL |
+| `posix/sdl/sdlglvideo.cpp` | `CreateBackendFrameBuffer`, `ForgetBackendWindow`, `I_EngineWindow` | a window with no GL context, the backend's frame buffer, and its swapchain dropped before a mode change destroys the window |
+| `posix/sdl/i_input.cpp` | `I_EngineWindow` | the window mouse warps and grabs, which has no GL context to find it by |
+| `posix/cocoa/i_video.mm` | `CreateBackendFrameBuffer`, `I_EngineContentView` | a CAMetalLayer content view and no GL context, and the backend's frame buffer |
 | `features/sidebyside/sidebyside.cpp` | `Record2DCanvas`, `Get2DTarget` | GL's frame buffer records every 2D draw for the backend, and GL leaves out one meant for the backend's window alone |
 | `features/frame/playerview.cpp` | `NoteWorldView`, `SetMainViewLens`, `StandaloneActive` | the frame drew the world, through the player's lens |
 | `features/hwrender/backendrenderer.cpp` | `SettleLevelScene`, `RenderSavePicture`, `RenderBackendCamera` | a level settled before its first view; the save picture; camera textures |

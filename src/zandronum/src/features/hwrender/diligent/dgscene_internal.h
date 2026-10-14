@@ -10,10 +10,6 @@
 #include "c_console.h"
 
 
-#ifndef PLATFORM_WIN32
-#define PLATFORM_WIN32 1
-#endif
-
 #include "EngineFactoryVk.h"
 #include "RenderDevice.h"
 #include "DeviceContext.h"
@@ -31,6 +27,7 @@
 #include "TopLevelAS.h"
 
 #include "features/levelmesh/staticmesh.h"
+#include "features/hwrender/diligent/dgplatform.h"   // [rc4l] the backend window on this platform
 #include "features/hwrender/computation/stereo_compute.h"   // [rc4l] StereoMode
 #include "features/hwrender/computation/backendview_compute.h"   // [rc4l] BackendCamera
 #include "features/surfaces/surfacebuild.h"
@@ -354,9 +351,6 @@ bool WipeActive();
 void WipeDraw(Diligent::IDeviceContext *ctx);
 Diligent::ISwapChain     *GetSwapChain();
 bool DiligentShowWindow(FString &report);
-void  Fua_PumpBackendWindow(void *hwnd);
-void  Fua_SyncBackendWindowToParent(void *hwnd);
-void  Fua_ShowBackendWindow(void *hwnd, int visible);
 void *GetBackendWindow();
 void Fua_SetBackendWindowSize(int w, int h);
 

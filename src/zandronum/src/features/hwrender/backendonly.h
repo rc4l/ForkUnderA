@@ -38,6 +38,8 @@ int BackendPaletteBrightness();
 
 // [rc4l] Bring up the backend's device, window and swapchain at the frame buffer's size; false when Vulkan is not there.
 bool OpenBackendOutput(int width, int height);
+// [rc4l] A window is about to be destroyed (an SDL frame buffer's, on a mode change): the swapchain made on it goes first, and the next OpenBackendOutput makes one on the new window.
+void ForgetBackendWindow(void *window);
 
 // [rc4l] The largest 2D texture the device takes, which camera textures are sized against; 0 before the device is up.
 int BackendMaxTextureSize();

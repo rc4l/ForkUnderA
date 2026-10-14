@@ -136,11 +136,20 @@ set( ZDOOM_EXE_NAME "forkundera" CACHE STRING "Name of the executable to create"
 # features/mcp-bridge/README.md. Even when ON it is runtime opt-in (ZANDRONUM_BRIDGE_PORT) + loopback.
 option( FUA_MCP_BRIDGE "Build the in-engine MCP control bridge (DEV ONLY -- never ship it ON)" OFF )
 
-# [rc4l] DiligentCore (Apache-2.0, vendored at deps/DiligentCore) -- the backend for the renderer
-# swap. OFF by default: it is a large third-party tree and a normal build must not depend on it or
-# take its compile time. Enable with -DFUA_DILIGENT=ON. Vulkan only; the other backends are disabled
-# because the point is a portable modern backend, not a second D3D path.
-option( FUA_DILIGENT "Build the Diligent (Vulkan) render backend -- WIP renderer swap" OFF )
+# [rc4l] DiligentCore (Apache-2.0, vendored at deps/DiligentCore) -- the Vulkan backend, the default
+# renderer with GL (Legacy) beside it, on Windows, Linux and macOS (through MoltenVK). ON by default
+# for every client build; a dedicated server has no renderer, so it stays OFF there. Vulkan only;
+# the other backends are disabled because the point is a portable modern backend, not a second D3D path.
+if( SERVERONLY OR NO_GL )
+	set( FUA_DILIGENT_DEFAULT OFF )
+else()
+	set( FUA_DILIGENT_DEFAULT ON )
+endif()
+option( FUA_DILIGENT "Build the Diligent (Vulkan) render backend" ${FUA_DILIGENT_DEFAULT} )
+if( FUA_DILIGENT AND ( SERVERONLY OR NO_GL ) )
+	message( STATUS "FUA_DILIGENT: off for a build without a renderer" )
+	set( FUA_DILIGENT OFF CACHE BOOL "Build the Diligent (Vulkan) render backend" FORCE )
+endif()
 if( FUA_DILIGENT )
 	# [rc4l] DiligentCore is a submodule; a clone without its submodules gets told how to fetch them rather than a wall of missing-file errors.
 	if( NOT EXISTS "${CMAKE_SOURCE_DIR}/../../deps/DiligentCore/ThirdParty/glslang/CMakeLists.txt" )

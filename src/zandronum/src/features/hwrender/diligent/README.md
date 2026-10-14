@@ -3,8 +3,8 @@
 Vendored backend: **DiligentCore** (`deps/DiligentCore`, Apache-2.0, rev `bb821b7`), Vulkan only.
 Apache-2.0 is GPL-3 compatible, so this does not endanger the fork's licensing position.
 
-**Off by default.** Configure with `-DFUA_DILIGENT=ON`; a normal build compiles none of it, links none
-of it, and takes none of its build time.
+**On by default** for every client build, on Windows, Linux and macOS (through MoltenVK); a dedicated
+server builds without it. `-DFUA_DILIGENT=OFF` builds GL (Legacy) alone.
 
 ## Files
 
@@ -23,7 +23,8 @@ state lives in four records there: `g_scene` (buffers, batches, the frame's dyna
 | `dgcamera.cpp` | camera textures |
 | `dgframe.cpp` | the frame driver: level arming, the live frame, the present clock |
 | `dgdiag.cpp` | benches, statistics, replay capture, screenshots and their console commands |
-| `dgtexture.cpp`, `dgwindow.cpp`, `dgwin32.cpp`, `dgprobe.cpp` | textures, the window and swapchain, the device |
+| `dgtexture.cpp`, `dgwindow.cpp`, `dgprobe.cpp` | textures, the swapchain, the device |
+| `dgplatform.h`, `dgwin32.cpp`, `dgsdl.cpp`, `dgcocoa.mm` | each platform's window and the handles its Vulkan surface takes: an HWND; an X11 window or Wayland surface through SDL2; a CAMetalLayer view drawn through MoltenVK, with the .app's own Vulkan loader |
 
 ## Status: TEXTURED world rendering on Sunder, through Vulkan
 
@@ -77,7 +78,9 @@ with a GL-against-Vulkan scenario in `tools/fuactl/scenarios`. Still missing or 
 - another sky than the level's (a line's, `sky2`) seen in a mirror, stacked view or camera, which shows the level's sky;
 - a GLDEFS hardware shader's own `ProcessLight`, or one leaning on more of GL's `main.fp` than `getTexel`, `vTexCoord` and `timer`, which draws without it (see `features/hwshaders`);
 - nested line-mirror reflections past the first show only the sprites the player's walk through a mirror took, where GL walks every reflection; at most 16 reflective planes and 8 stacked views a frame, where GL has no limit;
-- no GL fallback when the Vulkan device fails, and Windows only.
+- Linux and macOS are built by CI and not yet run here: the window code (`dgsdl.cpp`, `dgcocoa.mm`) and the
+  .app's MoltenVK bundle want a first launch on each before they are trusted. Beside GL there they open a
+  window of their own, since neither nests one window in another.
 
 ## Earlier: untextured geometry, benchmarked
 

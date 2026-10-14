@@ -22,8 +22,15 @@
 
 #include "features/materials/materials.h"   // [rc4l] the texture system's setup without GL
 
-#if defined(_WIN32) && defined(FUA_DILIGENT)
+#if defined(FUA_DILIGENT)
+#ifdef _WIN32
 #include "win32gliface.h"
+// [rc4l] Each platform's frame buffer without its GL context: the window, the modes and the gamma ramp.
+typedef Win32GLFrameBuffer BackendFrameBufferBase;
+#else
+#include "sdlglvideo.h"   // [rc4l] posix/sdl's or posix/cocoa's, whichever backend the build uses
+typedef SDLGLFB BackendFrameBufferBase;
+#endif
 #endif
 
 // [rc4l] The renderer a launch draws with (ComputeWantsBackendOnly): 1 Vulkan (Recommended), 0 GL (Legacy); -vulkan and -gl override it for one launch.
@@ -38,7 +45,7 @@ namespace zx { namespace hwrender {
 namespace {
 int g_backendOnly = -1;
 
-#if defined(_WIN32) && defined(FUA_DILIGENT)
+#if defined(FUA_DILIGENT)
 // [rc4l] The switches as the user's config had them, put back before it is written so a -vulkan launch leaves no trace there.
 bool g_savedVulkan, g_savedStandalone, g_savedEmbed;
 
@@ -55,7 +62,7 @@ bool BackendOnly()
 {
 	if (g_backendOnly < 0)
 	{
-#if defined(_WIN32) && defined(FUA_DILIGENT)
+#if defined(FUA_DILIGENT)
 		const bool built = true;
 #else
 		const bool built = false;
@@ -68,7 +75,7 @@ bool BackendOnly()
 
 void BeginBackendOnly()
 {
-#if defined(_WIN32) && defined(FUA_DILIGENT)
+#if defined(FUA_DILIGENT)
 	g_savedVulkan = fua_vulkan;
 	g_savedStandalone = fua_dg_standalone;
 	g_savedEmbed = fua_dg_embed;
@@ -84,16 +91,16 @@ void BeginBackendOnly()
 
 }} // namespace zx::hwrender
 
-#if defined(_WIN32) && defined(FUA_DILIGENT)
+#if defined(FUA_DILIGENT)
 
-// [rc4l] Win32GLFrameBuffer without its context: the window, the modes and the gamma ramp, and nothing GL.
-class DiligentFrameBuffer : public Win32GLFrameBuffer
+// [rc4l] The platform's frame buffer without its context: the window, the modes and the gamma ramp, and nothing GL.
+class DiligentFrameBuffer : public BackendFrameBufferBase
 {
-	DECLARE_CLASS(DiligentFrameBuffer, Win32GLFrameBuffer)
+	DECLARE_CLASS(DiligentFrameBuffer, BackendFrameBufferBase)
 public:
 	DiligentFrameBuffer() {}
 	DiligentFrameBuffer(void *hMonitor, int width, int height, int bits, int refreshHz, bool fullscreen)
-		: Win32GLFrameBuffer(hMonitor, width, height, bits, refreshHz, fullscreen, false)
+		: BackendFrameBufferBase(hMonitor, width, height, bits, refreshHz, fullscreen, false)
 	{
 		mColors.Load();
 		zx::frame::ForgetCamera();

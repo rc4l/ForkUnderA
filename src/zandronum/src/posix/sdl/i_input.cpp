@@ -46,6 +46,9 @@ extern SDL_Rect cursorBlit;
 
 #include "computation/keymap_compute.h"
 
+// [rc4l] The engine's window (posix/sdl/sdlglvideo.cpp), which has no GL context to find it by in a launch without GL.
+SDL_Window *I_EngineWindow();
+
 // [rc4l] SDL2 keysyms for non-ASCII keys are >= 1<<30, so they cannot index a table; scancodes are a
 // dense, physically-positional enum, which is what DIK codes already are.
 static BYTE ScancodeToDIK[SDL_NUM_SCANCODES], DownState[SDL_NUM_SCANCODES];
@@ -146,7 +149,7 @@ void I_ReleaseMouseCapture()
 
 static void CenterMouse ()
 {
-	SDL_WarpMouseInWindow (SDL_GL_GetCurrentWindow (), screen->GetWidth()/2, screen->GetHeight()/2);
+	SDL_WarpMouseInWindow (I_EngineWindow (), screen->GetWidth()/2, screen->GetHeight()/2);
 	SDL_PumpEvents ();
 	SDL_GetRelativeMouseState (NULL, NULL);
 }
@@ -241,7 +244,7 @@ static bool inGame()
 
 static void I_CheckNativeMouse ()
 {
-	SDL_Window *window = SDL_GL_GetCurrentWindow ();
+	SDL_Window *window = I_EngineWindow ();
 	const Uint32 flags = window != NULL ? SDL_GetWindowFlags (window) : 0;
 	bool focus = (flags & (SDL_WINDOW_INPUT_FOCUS | SDL_WINDOW_SHOWN))
 			== (SDL_WINDOW_INPUT_FOCUS | SDL_WINDOW_SHOWN);
@@ -362,7 +365,7 @@ void MessagePump (const SDL_Event &sev)
 			// the drawable) also folds in any HiDPI point->pixel factor.
 			if (screen != NULL)
 			{
-				SDL_Window *win = SDL_GL_GetCurrentWindow ();
+				SDL_Window *win = I_EngineWindow ();
 				int ww = 0, wh = 0;
 				if (win != NULL) SDL_GetWindowSize (win, &ww, &wh);
 				if (ww > 0 && wh > 0)

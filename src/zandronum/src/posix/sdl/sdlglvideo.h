@@ -43,7 +43,7 @@ class SDLGLFB : public DFrameBuffer
 	DECLARE_CLASS(SDLGLFB, DFrameBuffer)
 public:
 	// this must have the same parameters as the Windows version, even if they are not used!
-	SDLGLFB (void *hMonitor, int width, int height, int, int, bool fullscreen); 
+	SDLGLFB (void *hMonitor, int width, int height, int, int, bool fullscreen, bool withGL = true); 
 	~SDLGLFB ();
 
 	void ForceBuffering (bool force);
@@ -62,6 +62,8 @@ public:
 	void SwapBuffers();
 	
 	void NewRefreshRate ();
+	// [rc4l] The window's size in pixels; false while it has none.
+	bool ClientSize (int &w, int &h);
 
 	friend class SDLGLVideo;
 

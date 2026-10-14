@@ -1979,7 +1979,26 @@ endif()
 if( FUA_DILIGENT )
 	# [rc4l] The sources that include Diligent's headers, listed once for the build and the C++17 flag below.
 	set( FUA_DILIGENT_SOURCES features/hwrender/diligent/dgprobe.cpp features/hwrender/diligent/dgwindow.cpp features/hwrender/diligent/dgscene.cpp features/hwrender/diligent/dg2d.cpp features/hwrender/diligent/dglights.cpp features/hwrender/diligent/dgsky.cpp features/hwrender/diligent/dgpipelines.cpp features/hwrender/diligent/dgdynamic.cpp features/hwrender/diligent/dgupload.cpp features/hwrender/diligent/dgviews.cpp features/hwrender/diligent/dgcamera.cpp features/hwrender/diligent/dgframe.cpp features/hwrender/diligent/dgdiag.cpp features/hwrender/diligent/dgdecals.cpp features/hwrender/diligent/dghorizon.cpp features/hwrender/diligent/dgtexture.cpp features/hwrender/diligent/dgtarget.cpp features/hwrender/diligent/dgwipe.cpp features/hwrender/diligent/dglines.cpp features/hwrender/diligent/dgstereo.cpp )
-	target_sources( zdoom PRIVATE ${FUA_DILIGENT_SOURCES} features/hwrender/diligent/dgwin32.cpp )
+	# [rc4l] Each platform's window for it: Win32, Cocoa with a Metal layer through MoltenVK, or SDL2 on X11 and Wayland.
+	if( WIN32 )
+		set( FUA_DILIGENT_PLATFORM_SOURCES features/hwrender/diligent/dgwin32.cpp )
+		set( FUA_DILIGENT_PLATFORM PLATFORM_WIN32=1 )
+		set( FUA_DILIGENT_PLATFORM_DIR Win32 )
+	elseif( APPLE )
+		if( NOT ZX_COCOA_BACKEND )
+			message( FATAL_ERROR "The Vulkan backend on macOS draws through the Cocoa backend: configure with -DZX_COCOA_BACKEND=ON, or -DFUA_DILIGENT=OFF for GL alone." )
+		endif()
+		set( FUA_DILIGENT_PLATFORM_SOURCES features/hwrender/diligent/dgcocoa.mm )
+		set( FUA_DILIGENT_PLATFORM PLATFORM_MACOS=1 PLATFORM_APPLE=1 )
+		set( FUA_DILIGENT_PLATFORM_DIR Apple )
+		set_source_files_properties( features/hwrender/diligent/dgcocoa.mm PROPERTIES COMPILE_OPTIONS "-fno-objc-arc" )
+		target_link_libraries( zdoom "-framework QuartzCore" "-framework Metal" )
+	else()
+		set( FUA_DILIGENT_PLATFORM_SOURCES features/hwrender/diligent/dgsdl.cpp )
+		set( FUA_DILIGENT_PLATFORM PLATFORM_LINUX=1 )
+		set( FUA_DILIGENT_PLATFORM_DIR Linux )
+	endif()
+	target_sources( zdoom PRIVATE ${FUA_DILIGENT_SOURCES} ${FUA_DILIGENT_PLATFORM_SOURCES} )
 	# [rc4l] Diligent's RefCountedObjectImpl.hpp uses std::align_val_t (aligned new), which is C++17.
 	# The engine compiles at C++14, and raising the whole tree for one dependency is exactly the kind
 	# of change that breaks something unrelated three files away -- so the bump is confined to the one
@@ -1989,7 +2008,7 @@ if( FUA_DILIGENT )
 	else()
 		set_source_files_properties( ${FUA_DILIGENT_SOURCES} PROPERTIES COMPILE_FLAGS "-std=c++17" )
 	endif()
-	target_compile_definitions( zdoom PRIVATE FUA_DILIGENT PLATFORM_WIN32=1 )
+	target_compile_definitions( zdoom PRIVATE FUA_DILIGENT ${FUA_DILIGENT_PLATFORM} )
 	# [rc4l] volk for the Vulkan entry points Diligent loaded, which dgprobe.cpp reads the device's limits through.
 	target_link_libraries( zdoom Diligent-GraphicsEngineVk-static volk::volk Vulkan::Headers )
 	target_include_directories( zdoom PRIVATE
@@ -1997,7 +2016,7 @@ if( FUA_DILIGENT )
 		"${CMAKE_SOURCE_DIR}/../../deps/DiligentCore/Graphics/GraphicsEngine/interface"
 		"${CMAKE_SOURCE_DIR}/../../deps/DiligentCore/Common/interface"
 		"${CMAKE_SOURCE_DIR}/../../deps/DiligentCore/Platforms/interface"
-		"${CMAKE_SOURCE_DIR}/../../deps/DiligentCore/Platforms/Win32/interface"
+		"${CMAKE_SOURCE_DIR}/../../deps/DiligentCore/Platforms/${FUA_DILIGENT_PLATFORM_DIR}/interface"
 		"${CMAKE_SOURCE_DIR}/../../deps/DiligentCore/Graphics/GraphicsAccessories/interface"
 		"${CMAKE_SOURCE_DIR}/../../deps/DiligentCore/Graphics/GraphicsTools/interface"
 		"${CMAKE_SOURCE_DIR}/../../deps/DiligentCore/Primitives/interface" )

@@ -40,6 +40,7 @@ void GetDeferredDecalStats(int &boxes, int &draws, int &textures, const char **b
 DFrameBuffer *CreateBackendFrameBuffer(void *, int, int, int, int, bool) { return NULL; }
 int BackendPaletteBrightness() { return 0; }
 bool OpenBackendOutput(int, int) { return false; }
+void ForgetBackendWindow(void *) {}
 int BackendMaxTextureSize() { return 0; }
 void NoteWorldView() {}
 void SettleLevelScene() {}

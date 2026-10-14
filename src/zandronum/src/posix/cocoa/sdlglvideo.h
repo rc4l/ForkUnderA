@@ -57,7 +57,7 @@ class SDLGLFB : public DFrameBuffer
 	DECLARE_CLASS(SDLGLFB, DFrameBuffer)
 public:
 	// This must have the same parameters as the Windows version, even if they are not used!
-	SDLGLFB(void *hMonitor, int width, int height, int, int, bool fullscreen);
+	SDLGLFB(void *hMonitor, int width, int height, int, int, bool fullscreen, bool withGL = true);
 
 	// [rc4l] uzdoom@c817979ea removed GetTrueHeight upstream; we do not take that commit, because
 	// gl/renderer/gl_renderer.cpp:270 and gl/system/gl_framebuffer.cpp:193,218 still call it --
@@ -83,6 +83,8 @@ public:
 
 	int GetClientWidth();
 	int GetClientHeight();
+	// [rc4l] The content view's size in backing pixels; false while it has none.
+	bool ClientSize(int &w, int &h);
 
 protected:
 	int                 m_lock;

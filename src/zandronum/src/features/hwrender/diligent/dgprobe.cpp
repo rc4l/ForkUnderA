@@ -22,11 +22,7 @@
 
 #ifdef FUA_DILIGENT
 
-// Diligent's headers want the platform macro before anything else.
-#ifndef PLATFORM_WIN32
-#define PLATFORM_WIN32 1
-#endif
-
+// [rc4l] Diligent's platform macro (PLATFORM_WIN32, _LINUX or _MACOS) comes from the build, as its own targets have it.
 #include "volk.h"   // [rc4l] the Vulkan entry points Diligent loaded, for the device's limits
 #include "EngineFactoryVk.h"
 #include "RenderDeviceVk.h"
@@ -35,6 +31,7 @@
 #include "RefCntAutoPtr.hpp"
 #include "DebugOutput.h"
 #include "features/hwrender/computation/materialslots_compute.h"
+#include "features/hwrender/diligent/dgplatform.h"   // [rc4l] Fua_PrepareVulkanLoader
 
 namespace zx { namespace hwrender {
 
@@ -151,6 +148,11 @@ bool ProbeVulkan(FString &report)
 
 	Diligent::SetDebugMessageCallback(DiligentDebugMessage);
 
+	if (!Fua_PrepareVulkanLoader())
+	{
+		report = "the Vulkan loader this build carries was not found";
+		return false;
+	}
 	auto *factory = Diligent::GetEngineFactoryVk();
 	if (factory == nullptr)
 	{
