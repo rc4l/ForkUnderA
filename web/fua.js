@@ -7,6 +7,9 @@
   const progress = document.getElementById('progress');
   const consoleEl = document.getElementById('console');
   const errorEl = document.getElementById('error');
+  const errorText = document.getElementById('error-text');
+  const reportEl = document.getElementById('report');
+  const reportStatus = document.getElementById('report-status');
   const canvas = document.getElementById('canvas');
   const again = document.getElementById('again');
 
@@ -22,8 +25,43 @@
   function fail(text) {
     statusEl.hidden = true;
     errorEl.hidden = false;
-    errorEl.textContent = text;
+    errorText.textContent = text;
   }
+
+  // [rc4l] Crash reports (crashreport.js): the engine tells the page about the game as it changes, and whatever stops the game is reported once, offered on the error panel to copy or save.
+  const crashes = FuaCrash.reporter({ send: FuaCrash.fetchSend, browser: navigator.userAgent, log: () => consoleEl.textContent.split('\n') });
+  let crashed = false;
+  function crash(kind, message, stack) {
+    if (crashed) return;
+    crashed = true;
+    running = false;
+    if (document.pointerLockElement) document.exitPointerLock();
+    fail(kind === 'fatal' ? message : 'The game crashed: ' + message);
+    reportStatus.textContent = 'Preparing a report…';
+    reportEl.hidden = false;
+    crashes.report(kind, message, stack).then((r) => { reportStatus.textContent = r.status; });
+  }
+  document.getElementById('report-copy').addEventListener('click', (e) => {
+    const last = crashes.last();
+    if (!last) return;
+    navigator.clipboard.writeText(last.text).then(() => { e.target.textContent = 'Copied'; }, () => { e.target.textContent = 'Copy failed'; });
+  });
+  document.getElementById('report-save').addEventListener('click', () => {
+    const last = crashes.last();
+    if (!last) return;
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(new Blob([last.text], { type: 'text/plain' }));
+    link.download = 'forkundera-crash-' + last.event.event_id.slice(0, 8) + '.txt';
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(link.href), 10000);
+  });
+  // [rc4l] An error that escapes the engine's frame stops its loop, so it is a crash once the engine is running; a quit's exit is not one.
+  function escaped(error, message) {
+    if (!running || (error && error.name === 'ExitStatus')) return;
+    crash('exception', (error && error.message) || message || String(error), error && error.stack);
+  }
+  window.addEventListener('error', (e) => escaped(e.error, e.message));
+  window.addEventListener('unhandledrejection', (e) => escaped(e.reason, ''));
 
   function setStatus(text, fraction) {
     statusText.textContent = text;
@@ -39,8 +77,17 @@
     const requiredLimits = {};
     for (const k in adapter.limits) requiredLimits[k] = adapter.limits[k];
     const device = await adapter.requestDevice({ requiredFeatures: want.filter((f) => adapter.features.has(f)), requiredLimits });
-    device.lost.then((info) => fail('The graphics device was lost: ' + info.message));
-    device.addEventListener('uncapturederror', (e) => log('WebGPU error: ' + e.error.message));
+    const info = adapter.info || {};
+    crashes.setAdapter([info.vendor, info.architecture, info.description, info.isFallbackAdapter ? '(software)' : ''].filter(Boolean).join(' '));
+    device.lost.then((lost) => crash('device lost', 'The graphics device was lost: ' + lost.message, ''));
+    // [rc4l] The first error the device reports is reported too, since a refused binding can stop the drawing for good while the game goes on.
+    let gpuReported = false;
+    device.addEventListener('uncapturederror', (e) => {
+      log('WebGPU error: ' + e.error.message);
+      if (gpuReported) return;
+      gpuReported = true;
+      crashes.report('webgpu', e.error.message, '').then((r) => { if (r.delivered) log('A report of it was sent to the developers.'); });
+    });
     return device;
   }
 
@@ -141,7 +188,11 @@
     printErr: log,
     setStatus: () => {},
     onRuntimeInitialized: () => runtimeReady(),
-    fuaFatal: (text) => { running = false; fail(text); },
+    onAbort: (what) => crash('abort', 'The engine stopped: ' + what, new Error().stack),
+    fuaFatal: (text) => crash('fatal', text, new Error().stack),
+    fuaCrashContext: (json) => crashes.setContext(json),
+    // [rc4l] The reporter itself, for checks that send a report or read what the engine told it.
+    fuaCrashReporter: crashes,
     fuaRestart: restart,
     fuaExit: ended,
     fuaCaptureFrame: captureFrame,

@@ -15,7 +15,12 @@ canvas { display: block; width: 100%; height: 100%; outline: none; background: #
 #progress { width: min(360px, 80vw); accent-color: var(--accent); }
 #progress[hidden], #again[hidden] { display: none; }
 #again { background: var(--panel); color: var(--fg); border: 1px solid #2a2f37; border-radius: 4px; padding: 6px 14px; cursor: pointer; }
-#error { position: absolute; inset: 16px; margin: 0; padding: 16px; overflow: auto; background: var(--panel); border-left: 4px solid var(--accent); white-space: pre-wrap; }
+#error { position: absolute; inset: 16px; display: flex; flex-direction: column; gap: 12px; padding: 16px; overflow: auto; background: var(--panel); border-left: 4px solid var(--accent); }
+#error[hidden], #report[hidden] { display: none; }
+#error-text { margin: 0; white-space: pre-wrap; }
+#report { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+#report p { flex-basis: 100%; margin: 0; color: var(--muted); }
+#report button { background: #20242b; color: var(--fg); border: 1px solid #2a2f37; border-radius: 4px; padding: 4px 10px; cursor: pointer; }
 footer { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 6px 16px; color: var(--muted); }
 footer a { color: var(--fg); }
 footer button { background: var(--panel); color: var(--fg); border: 1px solid #2a2f37; border-radius: 4px; padding: 4px 10px; cursor: pointer; }

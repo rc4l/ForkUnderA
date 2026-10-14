@@ -68,8 +68,88 @@ export function crosshairCentred(img) {
   return Math.abs(cx - 0.5) > 0.05 ? `the crosshair is at ${Math.round(cx * 100)}% across, not the middle` : '';
 }
 
+// [rc4l] The first error the WebGPU device reported (the page logs each one) as a reason, or ''; any one fails a check, since a refused binding stops drawing for good.
+export function gpuError(lines) {
+  const line = lines.find((l) => l.includes('WebGPU error:'));
+  return line ? `the device reported: ${line.slice(line.indexOf('WebGPU error:') + 'WebGPU error:'.length).replace(/\s+/g, ' ').trim().slice(0, 300)}` : '';
+}
+
+// [rc4l] Why firing at the floor went wrong, or '': the decal pass drawing no mark, which would leave it untried.
+export function marked({ draws }) {
+  return draws > 0 ? '' : 'the decal pass drew no mark';
+}
+
+// [rc4l] Why a crash in a frame was handled wrongly, or '': not shown, no report offered, the loop going on, a report with no frame in the engine, or a build that may not send saying otherwise.
+export function crashOffered({ frames, shown, offered, status, stack }) {
+  if (!shown.includes('checking a crash')) return 'the page did not show the crash';
+  if (!offered) return 'the page offered no report';
+  if (frames) return `${frames} frames ran after the crash`;
+  if (!stack) return "the report's stack has no frame in the engine";
+  return /does not send/.test(status) ? '' : `the page said: ${status}`;
+}
+
+// [rc4l] Why a report did not reach the tracker with its game, or '': the engine not telling the page its release, map, files or setting, or the report missing, misaddressed or without the game.
+export function reportSent({ release, map, files, off, on, url, event, status }) {
+  if (!release || !map) return `the engine told the page release "${release}" and map "${map}"`;
+  if (!files.includes('freedoom2.wad')) return `the engine told the page the files ${files.join(', ')}`;
+  if (off !== false || on !== true) return `cl_crashreports did not reach the page (off ${off}, on ${on})`;
+  if (url !== 'https://127.0.0.1/api/1/envelope/?sentry_key=checking&sentry_version=7') return url ? `the report went to ${url}` : 'no report was sent';
+  if (!event || event.level !== 'fatal' || !event.files.includes('freedoom2.wad')) return 'the report sent did not carry the game';
+  return /was sent/.test(status) ? '' : `the page said: ${status}`;
+}
+
+// [rc4l] An error thrown inside the engine's frame, as a WebGPU call refusing a buffer throws one: the page's screenshot hook, which the frame calls, made to throw, then a screenshot asked for.
+const CRASH_IN_FRAME = `Module.fuaCaptureFrame = () => { throw new RangeError('checking a crash'); };
+      Module.fuaCommand('screenshot');`;
+
+// [rc4l] Waits for the page's report of a crash, then holds its status line and the reporter's last report.
+const READ_REPORT = `const status = document.getElementById('report-status');
+      for (let i = 0; i < 50 && (document.getElementById('error').hidden || status.textContent.startsWith('Preparing')); i++) ${pause(100)}
+      const last = Module.fuaCrashReporter.last();`;
+
+// [rc4l] Counts the times the page's canvas is sized to zero, as SDL does to the canvas of a window it destroys.
+const COUNT_ZERO_CANVAS = `window.fuaZeroCanvas = 0;
+  for (const k of ['width', 'height']) {
+    const d = Object.getOwnPropertyDescriptor(HTMLCanvasElement.prototype, k);
+    Object.defineProperty(HTMLCanvasElement.prototype, k, { configurable: true, get: d.get, set(v) { if (this.id === 'canvas' && !Number(v)) window.fuaZeroCanvas++; d.set.call(this, v); } });
+  }`;
+
 export const CHECKS = [
   { name: 'boots and draws MAP01', evaluate: inPage(`${pause(3000)} return 'drawn';`), until: EVAL, shot: true, expectShot: blankGame },
+  // [rc4l] Firefox reconfigures its WebGPU context at every size the canvas takes, and refuses a zero one.
+  {
+    name: 'the canvas never goes to zero size, starting or switching fullscreen',
+    init: COUNT_ZERO_CANVAS,
+    evaluate: inPage(`${pause(3000)} Module.fuaCommand('fullscreen true'); ${pause(1000)} Module.fuaCommand('fullscreen false'); ${pause(1000)} return window.fuaZeroCanvas;`),
+    until: EVAL,
+    expect: (n) => (n ? `the canvas was sized to zero ${n} times` : ''),
+  },
+  // [rc4l] A bullet's mark on the floor goes through the decal pass, which samples the scene's depth.
+  {
+    name: 'a mark on the floor draws without a device error',
+    evaluate: inPage(`
+      const log = document.getElementById('console');
+      let seen = { boxes: 0, draws: 0 };
+      // [rc4l] A few tries, since a software adapter can be slow enough that the level is not in play yet.
+      for (let i = 0; i < 5 && !seen.draws; i++) {
+        ${pause(1000)}
+        Module.fuaCommand('+lookdown');
+        ${pause(700)}
+        Module.fuaCommand('-lookdown');
+        Module.fuaCommand('+attack');
+        ${pause(800)}
+        Module.fuaCommand('-attack');
+        ${pause(1000)}
+        const before = log.textContent.length;
+        Module.fuaCommand('fua_projdecals_stats');
+        ${pause(300)}
+        const pass = /deferred pass: (\\d+) boxes in (\\d+) draws/.exec(log.textContent.slice(before));
+        if (pass) seen = { boxes: Number(pass[1]), draws: Number(pass[2]) };
+      }
+      return seen;`),
+    until: EVAL,
+    expect: marked,
+  },
   {
     name: 'the sound waits for a click and plays after one',
     init: `window.fuaAudio = []; window.fuaBuffers = 0; {
@@ -182,15 +262,60 @@ export const CHECKS = [
     until: EVAL,
     expect: (v) => (!v.shown.includes('checking') ? 'the page did not show it' : v.frames ? `${v.frames} frames ran after it` : ''),
   },
+  {
+    name: 'a crash in a frame stops the game and offers its report',
+    evaluate: inPage(`
+      ${COUNT_FRAMES}
+      ${pause(1500)}
+      ${CRASH_IN_FRAME}
+      ${READ_REPORT}
+      frames = 0;
+      ${pause(500)}
+      return { frames, shown: document.getElementById('error-text').textContent, offered: !document.getElementById('report').hidden, status: status.textContent,
+        stack: !!last && last.event.exception.values[0].stacktrace.frames.some((f) => f.filename.endsWith('forkundera.wasm')) };`),
+    until: EVAL,
+    expect: crashOffered,
+  },
+  // [rc4l] The checks' build may not send, so this one hands the page a DSN, and keeps what would leave the page.
+  {
+    name: 'a crash report reaches the tracker with the game it happened in',
+    init: `window.fuaSent = []; {
+      const real = window.fetch;
+      window.fetch = (url, init) => String(url).includes('/envelope/') ? (window.fuaSent.push({ url: String(url), body: init.body }), Promise.resolve(new Response('{}'))) : real(url, init);
+    }`,
+    evaluate: inPage(`
+      ${pause(1500)}
+      const reporter = Module.fuaCrashReporter;
+      const told = reporter.context();
+      Module.fuaCommand('cl_crashreports 0');
+      const off = reporter.context().reporting;
+      Module.fuaCommand('cl_crashreports 1');
+      const on = reporter.context().reporting;
+      reporter.setContext({ ...reporter.context(), dsn: 'https://checking@127.0.0.1/1' });
+      ${CRASH_IN_FRAME}
+      ${READ_REPORT}
+      const sent = window.fuaSent[0];
+      const event = sent ? JSON.parse(sent.body.split('\\n')[2]) : null;
+      return { release: told.release || '', map: told.map || '', files: told.files || [], off, on, url: sent ? sent.url : '',
+        event: event && { level: event.level, files: event.extra.load_order }, status: status.textContent };`),
+    until: EVAL,
+    expect: reportSent,
+  },
 ];
 
-// [rc4l] Whether a check passed: its line matched, an evaluation returned what the check wants, and a screenshot (img, decoded) shows what it should.
-export function judge(check, matched, img = null) {
+// [rc4l] Whether a check passed: its line matched, an evaluation returned what the check wants, a screenshot (img, decoded) shows what it should, and its lines hold no device error.
+export function judge(check, matched, img = null, lines = []) {
   if (!matched) return { ok: false, reason: `no line matched /${check.until}/` };
   if (matched.startsWith('[eval] threw')) return { ok: false, reason: matched.slice('[eval] '.length) };
-  const reason = (check.expect && check.expect(JSON.parse(matched.replace(/^\[eval\] /, ''))))
+  const reason = gpuError(lines)
+    || (check.expect && check.expect(JSON.parse(matched.replace(/^\[eval\] /, ''))))
     || (check.expectShot && (img ? check.expectShot(img) : 'no screenshot'));
   return reason ? { ok: false, reason } : { ok: true };
+}
+
+// [rc4l] The checks whose names contain `only`, or all of them; a later check may need the state an earlier one left.
+export function selectChecks(checks, only) {
+  return only ? checks.filter((c) => c.name.includes(only)) : checks;
 }
 
 export async function check({ url, checks = CHECKS, seconds = 60, software = false, onResult = console.log }) {
@@ -203,7 +328,7 @@ export async function check({ url, checks = CHECKS, seconds = 60, software = fal
       const downloadDir = c.download ? fs.mkdtempSync(path.join(shots, `check-${i}-`)) : undefined;
       const { matched, lines } = await smoke({ url, profile, seconds, software, shot, downloadDir, until: c.until, evaluate: c.evaluate, after: 1, init: c.init, onLine: () => {} });
       const picture = shot || (downloadDir && fs.readdirSync(downloadDir).filter((f) => f.endsWith('.png')).map((f) => path.join(downloadDir, f))[0]);
-      const { ok, reason } = judge(c, matched, picture && fs.existsSync(picture) ? decodePNG(picture) : null);
+      const { ok, reason } = judge(c, matched, picture && fs.existsSync(picture) ? decodePNG(picture) : null, lines);
       onResult(`${ok ? 'PASS' : 'FAIL'} ${c.name}${ok ? '' : ': ' + reason}`);
       if (!ok) {
         failed++;
@@ -220,10 +345,18 @@ export async function check({ url, checks = CHECKS, seconds = 60, software = fal
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const args = process.argv.slice(2);
-  const root = args.find((a) => !a.startsWith('--')) ?? 'dist-web';
+  const only = args.includes('--only') ? args[args.indexOf('--only') + 1] : null;
+  const root = args.find((a, i) => !a.startsWith('--') && args[i - 1] !== '--only') ?? 'dist-web';
+  const checks = selectChecks(CHECKS, only);
+  if (!checks.length) { console.error(`no check's name contains "${only}"`); process.exit(2); }
   const server = createServer(root).listen(0, '127.0.0.1');
   await new Promise((r) => server.once('listening', r));
-  const failed = await check({ url: `http://127.0.0.1:${server.address().port}/?map=MAP01`, software: args.includes('--software'), seconds: args.includes('--software') ? 180 : 60 });
+  const failed = await check({
+    url: `http://127.0.0.1:${server.address().port}/?map=MAP01`,
+    checks,
+    software: args.includes('--software'),
+    seconds: args.includes('--software') ? 180 : 60,
+  });
   server.close();
   process.exit(failed ? 1 : 0);
 }

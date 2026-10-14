@@ -16,6 +16,9 @@ void InstallDriver(void (*terms)());
 // [rc4l] Stop the loop and show `message` on the page, in place of a desktop's message box and exit.
 void Fatal(const char *message);
 
+// [rc4l] The page's canvas fullscreen or back, which the browser allows only shortly after a key or click, as a menu's toggle is.
+void SetPageFullscreen(bool on);
+
 // [rc4l] The page's arguments: -offline, since a page has no UDP to play or browse with, then the URL's query (ComputeArgsFromQuery), so a link can name the game, the wads and the map.
 void AppendPageArgs(DArgs *args);
 

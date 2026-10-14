@@ -21,7 +21,7 @@ EMSDK=/path/to/emsdk ./web_compile.sh
 EMSDK=/path/to/emsdk ./web_run.sh [--no-build] [--no-open] [--port N] [query]
 ```
 
-`web_compile.sh` builds the `web` preset into `build-web/` and stages the page, module and data into `dist-web/`. `web_run.sh` builds when anything changed, serves `dist-web/` and opens the browser at it, with the query on the address (such as `map=MAP01`).
+`web_compile.sh` builds the `web` preset into `build-web/` and stages the page, module and data into `dist-web/`. `ZX_WITH_SYMBOLS=1` keeps function names in the wasm for readable crash stacks, `JOBS=N` caps the compile, and `ZX_KEEP_GOING=1` reports every compile error at once. `web_run.sh` builds when anything changed, serves `dist-web/` and opens the browser at it, with the query on the address (such as `map=MAP01`).
 
 ## serve.mjs
 
@@ -49,10 +49,14 @@ Loads a page in headless Chrome with WebGPU on and prints its console.
 ## check.mjs
 
 ```bash
-node tools/web/check.mjs [dist-web] [--software]
+node tools/web/check.mjs [dist-web] [--software] [--only TEXT]
 ```
 
-Serves a staged build and runs the browser checks in headless Chrome, in order on one profile: the game boots and its screenshot shows a level, the sound waits for a click and plays after one, the frame follows the page when it is resized, Tab stays in the game, the screenshot command downloads the frame, a save gets its picture and survives a reload, quitting stops the loop and offers to play again, a setting survives quitting, leaving the page and reloading, a recoverable error leaves the game running, and a fatal one stops it and shows on the page. It prints PASS or FAIL for each, with the console's last lines (and the screenshot, for the drawing check) for a failure, and exits 1 if any failed. `--software` runs WebGPU on SwiftShader, for a machine with no GPU; CI's `build-web` job runs it that way.
+Serves a staged build and runs `CHECKS` (in `check.mjs`, each named for what it proves) in headless Chrome, in order on one profile, since a later check can read what an earlier one stored.
+- It prints PASS or FAIL for each, with the console's last lines (and the screenshot, where the check judges one) for a failure, and exits 1 if any failed.
+- An error the page's WebGPU device reports fails whichever check it came in.
+- `--only TEXT` runs the checks whose names contain TEXT.
+- `--software` runs WebGPU on SwiftShader, for a machine with no GPU; CI's `build-web` job runs it that way.
 
 ## webgpu-check
 

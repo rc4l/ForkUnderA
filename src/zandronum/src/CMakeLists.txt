@@ -811,7 +811,7 @@ else( WIN32 )
 		# [rc4l] A browser has no signals to catch a crash with, and its frame loop is the page's (features/web).
 		if( EMSCRIPTEN )
 			list( REMOVE_ITEM SYSTEM_SOURCES posix/sdl/crashcatcher.c )
-			list( APPEND SYSTEM_SOURCES features/web/webdriver.cpp )
+			list( APPEND SYSTEM_SOURCES features/web/webdriver.cpp features/web/webcrash.cpp )
 		endif()
 		if( APPLE )
 			set( SYSTEM_SOURCES ${SYSTEM_SOURCES} ${PLAT_MAC_SOURCES} )
@@ -1118,8 +1118,7 @@ set( NOT_COMPILED_SOURCE_FILES
 # if it doesn't exist yet.
 set_source_files_properties( ${CMAKE_CURRENT_SOURCE_DIR}/network/servercommands.cpp PROPERTIES GENERATED TRUE )
 
-# [rc4l] The features that reach other machines (web-port-design 5e): accounts, the HTTP layer, wad downloads and serving, the wad library, port mapping, hosting, the
-# server browser and its registry, and the updater. A build with ZX_ONLINE off has features/offline/offlinestubs.cpp in their place, whose entry points say so.
+# [rc4l] The features that reach other machines, which a build with ZX_ONLINE off replaces with features/offline (see its README).
 set( ONLINE_SOURCES
 	features/identity/zx_identity.cpp
 	${ZX_IDENTITY_CRYPTO}
@@ -1618,7 +1617,7 @@ add_executable( zdoom WIN32
 	# [rc4l] Wad hashing and the search of the player's own folders, which an offline build needs too.
 	features/wad-download/zx_filehash.cpp
 	features/wad-download/zx_wadsearch.cpp
-	# Generated; listed so the custom command above actually runs as part of this target, and kept by an offline build, whose wad search reads it.
+	# [rc4l] Generated, and listed so the custom command above runs for this target, offline builds included, whose wad search reads it.
 	${CMAKE_CURRENT_BINARY_DIR}/zx_waddownload_lists.h
 	features/damage-tint/damagetint.cpp
 	features/global-header/zx_globalheader.cpp
@@ -1819,6 +1818,12 @@ endif(${CMAKE_SYSTEM_NAME} STREQUAL "SunOS")
 
 # [BB] Added GeoIP, huffman & sqlite
 target_link_libraries( zdoom ${ZDOOM_LIBS} gdtoa dumb lzma GeoIP sqlite3 )
+
+# [rc4l] A browser reports its crashes from the page (features/web/webcrash.cpp, web/crashreport.js) to the same tracker, whose DSN only an official build hands it.
+if( EMSCRIPTEN )
+	set_source_files_properties( features/crashreport/zx_crashreport.cpp PROPERTIES HEADER_FILE_ONLY TRUE )
+	target_compile_definitions( zdoom PRIVATE "ZX_SENTRY_DSN=\"${ZX_SENTRY_DSN}\"" )
+endif()
 
 # [rc4l] sentry-native crash reporting (the `sentry` target propagates its own include dirs).
 if( ZX_ENABLE_SENTRY )

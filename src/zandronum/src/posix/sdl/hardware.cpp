@@ -51,6 +51,9 @@
 #include "features/video-scale/computation/videoscale_compute.h"
 #include "features/hwrender/backendonly.h"   // [rc4l] CreateLaunchRenderer
 #include "r_renderer.h"
+#ifdef __EMSCRIPTEN__
+#include "features/web/webdriver.h"   // [rc4l] SetPageFullscreen
+#endif
 // [rc4l] Software renderer removed (GL-only build); NO_GL server uses the null renderer.
 #ifdef NO_GL
 #include "r_nullrenderer.h"
@@ -181,6 +184,10 @@ DFrameBuffer *I_SetMode (int &width, int &height, DFrameBuffer *old)
 		fs = fullscreen;
 		break;
 	}
+#ifdef __EMSCRIPTEN__
+	// [rc4l] A page's canvas is never an SDL fullscreen window; the page makes it fullscreen (fullscreen's callback below).
+	fs = false;
+#endif
 
 	// [rc4l] video-scale: split the window's CLIENT size from the RENDER (virtual) size.
 	//   - client size = the window's drawable: the desktop for fullscreen (borderless-desktop), or
@@ -371,12 +378,13 @@ CUSTOM_CVAR (Int, vid_maxfps, 500, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
 	}
 }
 
-#ifndef NO_GL
+// [rc4l] No call at game start in any build: the screen is already made in this mode, and a call then rebuilt the window and swapchain on the first frame, which zeroes a browser's canvas.
 CUSTOM_CVAR (Bool, fullscreen, false, CVAR_ARCHIVE|CVAR_GLOBALCONFIG|CVAR_NOINITCALL)
-#else
-CUSTOM_CVAR (Bool, fullscreen, false, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
-#endif
 {
+#ifdef __EMSCRIPTEN__
+	// [rc4l] The page's one canvas goes fullscreen or back, as the page's own button does, rather than the window being rebuilt.
+	zx::web::SetPageFullscreen(self);
+#else
 	if ( screen )
 	{
 		NewWidth = screen->GetWidth();
@@ -384,6 +392,7 @@ CUSTOM_CVAR (Bool, fullscreen, false, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 	}
 	NewBits = DisplayBits;
 	setmodeneeded = true;
+#endif
 }
 
 CUSTOM_CVAR (Float, vid_winscale, 1.f, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
@@ -398,11 +407,8 @@ CUSTOM_CVAR (Float, vid_winscale, 1.f, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 		NewWidth = screen->GetWidth();
 		NewHeight = screen->GetHeight();
 		NewBits = DisplayBits;
-#ifdef NO_GL
-		setmodeneeded = true;
-#else
+		// [rc4l] Not without GL either, where the software renderer that wanted it is gone and the call at game start rebuilt the window.
 		//setmodeneeded = true;	// This CVAR doesn't do anything and only causes problems!
-#endif
 	}
 }
 

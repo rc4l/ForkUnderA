@@ -19,12 +19,18 @@
 #include "s_sound.h"
 // [BB] New #includes.
 #include "chat.h"
+#include "features/web/computation/mousecapture_compute.h"
+#ifdef __EMSCRIPTEN__
+#include <emscripten/html5.h>
+#endif
 
 static void I_CheckGUICapture ();
 static void I_CheckNativeMouse ();
 
 bool GUICapture;
 static bool NativeMouse = true;
+// [rc4l] What the game does with the mouse this tic (ComputeMouseCapture), from I_CheckNativeMouse.
+static zx::MouseCapture MouseNow = { false, true, true };
 
 extern int paused;
 
@@ -182,8 +188,10 @@ static void MouseRead ()
 {
 	int x, y;
 
-	if (NativeMouse)
+	if (!MouseNow.readMotion)
 	{
+		// [rc4l] Motion while the window does not hold the mouse is dropped, so taking it back does not turn the view.
+		if (!NativeMouse) SDL_GetRelativeMouseState (NULL, NULL);
 		return;
 	}
 
@@ -242,6 +250,17 @@ static bool inGame()
 	}
 }
 
+// [rc4l] Whether the window holds the mouse: SDL's relative mode always does on a desktop, while a page's pointer lock can be gone (Escape drops it) with relative mode still on.
+static bool MouseHeld ()
+{
+#ifdef __EMSCRIPTEN__
+	EmscriptenPointerlockChangeEvent lock;
+	return emscripten_get_pointerlock_status (&lock) == EMSCRIPTEN_RESULT_SUCCESS && lock.isActive;
+#else
+	return true;
+#endif
+}
+
 static void I_CheckNativeMouse ()
 {
 	SDL_Window *window = I_EngineWindow ();
@@ -254,7 +273,6 @@ static void I_CheckNativeMouse ()
 	if (wantNative != NativeMouse)
 	{
 		NativeMouse = wantNative;
-		SDL_ShowCursor (wantNative ? cursorSurface == NULL : 0);
 		if (wantNative)
 		{
 			SDL_SetRelativeMouseMode (SDL_FALSE);
@@ -266,6 +284,11 @@ static void I_CheckNativeMouse ()
 			CenterMouse ();
 		}
 	}
+
+	const zx::MouseCapture now = zx::ComputeMouseCapture (!NativeMouse, !NativeMouse && MouseHeld ());
+	if (now.showCursor != MouseNow.showCursor)
+		SDL_ShowCursor (now.showCursor ? cursorSurface == NULL : 0);
+	MouseNow = now;
 }
 
 void MessagePump (const SDL_Event &sev)
@@ -322,7 +345,8 @@ void MessagePump (const SDL_Event &sev)
 	case SDL_MOUSEMOTION:
 		if (!GUICapture)
 		{
-			if(sev.type != SDL_MOUSEMOTION)
+			// [rc4l] Not while the window does not hold the mouse: that click is the one taking it back.
+			if(sev.type != SDL_MOUSEMOTION && MouseNow.takeClicks)
 			{
 				event.type = sev.type == SDL_MOUSEBUTTONDOWN ? EV_KeyDown : EV_KeyUp;
 				/* These button mappings work with my Gentoo system using the

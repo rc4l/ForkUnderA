@@ -15,7 +15,14 @@
     <progress id="progress" max="1" value="0"></progress>
     <button id="again" type="button" hidden>Play again</button>
   </div>
-  <pre id="error" hidden></pre>
+  <div id="error" hidden>
+    <pre id="error-text"></pre>
+    <div id="report" hidden>
+      <p id="report-status"></p>
+      <button id="report-copy" type="button">Copy report</button>
+      <button id="report-save" type="button">Save report</button>
+    </div>
+  </div>
 </main>
 <footer>
   <span>Freedoom is bundled under its own <a href="data/freedoom-license.txt">licence</a>.</span>
@@ -36,6 +43,7 @@
     <button id="wads-close" type="button">Close</button>
   </div>
 </dialog>
+<script src="crashreport.js"></script>
 <script src="wads.js"></script>
 <script src="fua.js"></script>
 <script src="forkundera.js"></script>

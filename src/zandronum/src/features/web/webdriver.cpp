@@ -94,6 +94,14 @@ void Fatal(const char *message)
 	}, message != nullptr ? message : "");
 }
 
+void SetPageFullscreen(bool on)
+{
+	EM_ASM({
+		if ($0 && !document.fullscreenElement) Module.canvas.requestFullscreen().catch(() => {});
+		else if (!$0 && document.fullscreenElement) document.exitFullscreen().catch(() => {});
+	}, on);
+}
+
 }} // namespace zx::web
 
 extern "C" void __real_exit(int code);

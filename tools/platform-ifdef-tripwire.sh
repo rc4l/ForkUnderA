@@ -4,7 +4,7 @@
 #
 # [rc4l] Platform-branch tripwire: the browser build's conditions (__EMSCRIPTEN__, PLATFORM_WEB), and NO_GL in feature code, stay in the named seam files below, so a port grows seams rather than a condition in every file.
 #
-# A new seam is added here on purpose, with the reason in its commit; anywhere else, put the platform's half behind its own file chosen by CMake.
+# [rc4l] A new seam is added here on purpose, with the reason in its commit; anywhere else, put the platform's half behind its own file chosen by CMake.
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SRC="$ROOT/src/zandronum/src"
@@ -15,6 +15,7 @@ features/hwrender/diligent/dgdevice_wgpu.cpp
 features/hwrender/diligent/dgwindow.cpp
 posix/i_system.h
 posix/sdl/hardware.cpp
+posix/sdl/i_input.cpp
 posix/sdl/i_main.cpp
 posix/sdl/i_system.cpp
 resourcefiles/file_directory.cpp

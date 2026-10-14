@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CHECKS, blankGame, crosshairCentred, inPage, judge, saveLoads, savePicture, soundStarts } from '../check.mjs';
+import { CHECKS, blankGame, crashOffered, crosshairCentred, gpuError, inPage, judge, marked, reportSent, saveLoads, savePicture, selectChecks, soundStarts } from '../check.mjs';
 
 test('page code waits for the engine to start before it runs', () => {
   const js = inPage('return 1;');
@@ -89,9 +89,59 @@ test('a save comes back when the file is there and the engine takes it', () => {
   assert.equal(saveLoads({ found: true, said: 'Could not read savegame x\n' }), 'loading it said: Could not read savegame x');
 });
 
+test('--only picks the checks whose names contain its text', () => {
+  assert.equal(selectChecks(CHECKS, null), CHECKS);
+  assert.deepEqual(selectChecks(CHECKS, 'save').map((c) => c.name), ['a save gets its picture', 'a save survives a reload and loads']);
+});
+
 test('the checks run in the order a profile carries state through', () => {
   const names = CHECKS.map((c) => c.name);
   assert.ok(names.indexOf('quitting stops the loop and offers to play again') < names.indexOf('a reload keeps what was set before quitting'));
   assert.ok(names.indexOf('leaving the page stores the config') < names.indexOf('a reload keeps what was set before leaving'));
   assert.ok(names.indexOf('a save gets its picture') < names.indexOf('a save survives a reload and loads'));
+});
+
+test('any device error fails a check, named by its first line', () => {
+  const lines = ['[log] map01', '[log] WebGPU error: Validation Error\n\nCaused by:\n  In Device::create_bind_group', '[log] WebGPU error: later'];
+  assert.equal(gpuError(lines), 'the device reported: Validation Error Caused by: In Device::create_bind_group');
+  assert.equal(gpuError(['[log] map01']), '');
+  assert.deepEqual(judge({ until: 'x' }, '[log] x', null, lines), { ok: false, reason: gpuError(lines) });
+  assert.deepEqual(judge({ until: 'x' }, '[log] x', null, ['[log] map01']), { ok: true });
+});
+
+test('firing at the floor has to put a mark through the decal pass', () => {
+  assert.equal(marked({ boxes: 3, draws: 1 }), '');
+  assert.equal(marked({ boxes: 0, draws: 0 }), 'the decal pass drew no mark');
+});
+
+test('the canvas check fails on any zero size', () => {
+  const zero = CHECKS.find((c) => c.name.startsWith('the canvas never'));
+  assert.deepEqual(judge(zero, '[eval] 0'), { ok: true });
+  assert.deepEqual(judge(zero, '[eval] 2'), { ok: false, reason: 'the canvas was sized to zero 2 times' });
+});
+
+test('a crash in a frame has to show, offer its report, stop the loop and reach the engine in its stack', () => {
+  const good = { frames: 0, shown: 'checking a crash', offered: true, status: 'This build does not send crash reports; copy or save the report to share it.', stack: true };
+  assert.equal(crashOffered(good), '');
+  assert.equal(crashOffered({ ...good, shown: '' }), 'the page did not show the crash');
+  assert.equal(crashOffered({ ...good, offered: false }), 'the page offered no report');
+  assert.equal(crashOffered({ ...good, frames: 4 }), '4 frames ran after the crash');
+  assert.equal(crashOffered({ ...good, stack: false }), "the report's stack has no frame in the engine");
+  assert.equal(crashOffered({ ...good, status: 'The report was sent to the developers.' }), 'the page said: The report was sent to the developers.');
+});
+
+test('a sent report needs the engine to have told the page its game and setting, and the tracker its address', () => {
+  const good = { release: 'ForkUnderA@v1', map: 'map01', files: ['fua_core.pk3', 'freedoom2.wad'], off: false, on: true, url: 'https://127.0.0.1/api/1/envelope/?sentry_key=checking&sentry_version=7', event: { level: 'fatal', files: 'fua_core.pk3, freedoom2.wad' }, status: 'The report was sent to the developers.' };
+  assert.equal(reportSent(good), '');
+  assert.equal(reportSent({ ...good, release: '' }), 'the engine told the page release "" and map "map01"');
+  assert.equal(reportSent({ ...good, map: '' }), 'the engine told the page release "ForkUnderA@v1" and map ""');
+  assert.equal(reportSent({ ...good, files: ['fua_core.pk3'] }), 'the engine told the page the files fua_core.pk3');
+  assert.equal(reportSent({ ...good, off: true }), 'cl_crashreports did not reach the page (off true, on true)');
+  assert.equal(reportSent({ ...good, on: false }), 'cl_crashreports did not reach the page (off false, on false)');
+  assert.equal(reportSent({ ...good, url: '' }), 'no report was sent');
+  assert.equal(reportSent({ ...good, url: 'https://elsewhere/' }), 'the report went to https://elsewhere/');
+  assert.equal(reportSent({ ...good, event: null }), 'the report sent did not carry the game');
+  assert.equal(reportSent({ ...good, event: { level: 'error', files: 'freedoom2.wad' } }), 'the report sent did not carry the game');
+  assert.equal(reportSent({ ...good, event: { level: 'fatal', files: '' } }), 'the report sent did not carry the game');
+  assert.equal(reportSent({ ...good, status: 'The report could not be sent' }), 'the page said: The report could not be sent');
 });
