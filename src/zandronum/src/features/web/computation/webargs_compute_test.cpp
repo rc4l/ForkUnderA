@@ -41,3 +41,18 @@ TEST(WebArgs, ValuesDecodeAsAFormEncodesThem)
 	EXPECT_EQ("%4g", ComputeDecodeQueryValue("%4g"));
 	EXPECT_EQ("\xff", ComputeDecodeQueryValue("%fF"));
 }
+
+// [rc4l] A wad_reload in a page reloads it, and the next load starts on the set the engine held, into the map it asked for.
+TEST(WebArgs, ARestartKeepsTheHeldArgumentsAndTheReloadsMap)
+{
+	const std::vector<std::string> held = { "-offline", "+map", "MAP01", "-iwad", "/freedoom1.wad", "-file", "/home/web_user/wads/a.pk3", "+map" };
+	EXPECT_EQ(zx::web::ComputeRestartArgs(held, ""), held);
+	EXPECT_EQ(zx::web::ComputeRestartArgs(held, "E1M1"),
+		(std::vector<std::string>{ "-offline", "-iwad", "/freedoom1.wad", "-file", "/home/web_user/wads/a.pk3", "+map", "E1M1" }));
+}
+
+TEST(WebArgs, ArgumentsAreAJsonArrayOfStrings)
+{
+	EXPECT_EQ(zx::web::ComputeArgsJson({ "-file", "my \"mod\".pk3" }), "[\"-file\",\"my \\\"mod\\\".pk3\"]");
+	EXPECT_EQ(zx::web::ComputeArgsJson({}), "[]");
+}

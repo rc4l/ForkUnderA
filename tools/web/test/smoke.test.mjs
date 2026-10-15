@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { chromeArgs, downloadsSettled, formatConsole, formatEval, gpuLogLines, inputAsked, removeQuietly } from '../smoke.mjs';
+import { chromeArgs, devToolsPort, downloadsSettled, formatConsole, formatEval, gpuLogLines, inputAsked, removeQuietly } from '../smoke.mjs';
 
 test("Chrome's log is read for what it says about its GPU process, not for the page's console", () => {
   const log = [
@@ -82,4 +82,12 @@ test('a scratch folder is removed, and one a process still holds is reported rat
   const busy = () => { const e = new Error('directory not empty'); e.code = 'ENOTEMPTY'; throw e; };
   assert.equal(removeQuietly('/tmp/held', busy, (m) => said.push(m)), false);
   assert.deepEqual(said, ['left /tmp/held behind: ENOTEMPTY']);
+});
+
+// [rc4l] A headless Chrome left running by an earlier check held port 9333, and every later check drove its stale tab and read its old console.
+test('a run reads the debugging port its own Chrome chose, waiting until it is written', async () => {
+  const reads = ['', 'not a port', '61234\n/devtools/browser/abc'];
+  const port = await devToolsPort('/p', Date.now() + 1000, { read: () => { const r = reads.shift(); if (r === '') throw new Error('ENOENT'); return r; }, wait: async () => {} });
+  assert.equal(port, 61234);
+  await assert.rejects(devToolsPort('/p', Date.now() - 1, { read: () => { throw new Error('ENOENT'); }, wait: async () => {} }), /wrote no DevToolsActivePort/);
 });

@@ -260,6 +260,15 @@ static void DumpShader(Diligent::SHADER_TYPE type, const char *name, const std::
 	fclose(f);
 }
 
+// [rc4l] Shaders and pipelines made since the start as features/telemetry gauges, since each is a compile the driver may keep and a frame may wait on.
+static double s_shadersMade = 0.0, s_pipelinesMade = 0.0;
+static double ShadersMade() { return s_shadersMade; }
+static double PipelinesMade() { return s_pipelinesMade; }
+static const bool s_madeCounted = (
+	zx::telemetry::Register(zx::telemetry::CounterSpec{ "gpu/made/shaders", "shaders", zx::telemetry::CounterKind::Gauge, 500 }, ShadersMade),
+	zx::telemetry::Register(zx::telemetry::CounterSpec{ "gpu/made/pipelines", "pipelines", zx::telemetry::CounterKind::Gauge, 500 }, PipelinesMade),
+	true);
+
 Diligent::RefCntAutoPtr<Diligent::IShader> CompileShader(Diligent::SHADER_TYPE type, const char *name, const char *source)
 {
 	Diligent::RefCntAutoPtr<Diligent::IShader> shader;
@@ -279,6 +288,7 @@ Diligent::RefCntAutoPtr<Diligent::IShader> CompileShader(Diligent::SHADER_TYPE t
 	ci.Desc.Name = name;
 	ci.Source = text.c_str();
 	dev->CreateShader(ci, &shader);
+	s_shadersMade += 1.0;
 	return shader;
 }
 
@@ -310,6 +320,7 @@ void CreatePipeline(const Diligent::GraphicsPipelineStateCreateInfo &pci, Dilige
 	flagged.PSODesc.ResourceLayout.Variables = descs.empty() ? nullptr : descs.data();
 	flagged.PSODesc.ResourceLayout.NumVariables = (Diligent::Uint32)descs.size();
 	GetDevice()->CreateGraphicsPipelineState(flagged, pso);
+	s_pipelinesMade += 1.0;
 }
 
 // [rc4l] The backend's own vertex, laid out BY MATERIAL rather than in bake order.

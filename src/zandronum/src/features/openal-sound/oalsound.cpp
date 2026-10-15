@@ -523,8 +523,9 @@ static void FindLoopTags(FileReader *fr, unsigned int *start, bool *startass, un
 
 static void FindLoopTags(const BYTE *data, size_t size, unsigned int *start, bool *startass, unsigned int *end, bool *endass)
 {
-	MemoryReader *reader = new MemoryReader((const char*)data, (long)size);
-	FindLoopTags(reader, start, startass, end, endass);
+	// [rc4l] On the stack, since the reader made with new here was never deleted, one leaked a sound loaded.
+	MemoryReader reader((const char*)data, (long)size);
+	FindLoopTags(&reader, start, startass, end, endass);
 }
 
 class OpenALSoundStream : public SoundStream

@@ -460,10 +460,56 @@ TEST(TelemetrySoak, AFlatSoakPassesOnceItHasEnoughMarks)
 	EXPECT_EQ(ComputeSoakJson(none).find("{\"pass\":false,\"marks\":0,\"judged\":0,\"grew\":[],\"report\":"), 0u);
 }
 
-TEST(TelemetryBudget, TheDevicesOwnHeapsAreSummed)
+TEST(TelemetryRegions, CommittedMemoryIsTotalledByKind)
 {
-	const HeapBudget sum = ComputeDeviceLocalBudget({ { true, 100.0, 1000.0 }, { false, 5.0, 50.0 }, { true, 20.0, 200.0 } });
-	EXPECT_TRUE(sum.deviceLocal);
-	EXPECT_DOUBLE_EQ(sum.used, 120.0);
-	EXPECT_DOUBLE_EQ(sum.budget, 1200.0);
+	const std::vector<Reading> r = ComputeRegionReadings({ { 100.0, RegionKind::Private, false, true }, { 30.0, RegionKind::Private, true, false },
+		{ 7.0, RegionKind::Private, false, false }, { 50.0, RegionKind::Mapped, false, false }, { 999.0, RegionKind::Image, true, false },
+		{ 20.0, RegionKind::Private, false, true } }, "mem/win/");
+	ASSERT_EQ(r.size(), 5u);
+	EXPECT_EQ(r[0].name, "mem/win/private_rw_bytes");
+	EXPECT_DOUBLE_EQ(r[0].value, 120.0);
+	EXPECT_DOUBLE_EQ(r[1].value, 30.0);
+	EXPECT_DOUBLE_EQ(r[2].value, 7.0);
+	EXPECT_DOUBLE_EQ(r[3].value, 50.0);
+	EXPECT_EQ(r[4].unit, "objects");
+	EXPECT_DOUBLE_EQ(r[4].value, 4.0);
+}
+
+// [rc4l] Host-visible memory a device allocates sits in the process's private bytes, so it is summed apart from the device's own.
+// [rc4l] A wad_reload soak leaves out what settles over the first restarts (the heap's commit) and still judges the rest.
+TEST(TelemetrySoak, IgnoredPrefixesAreNotJudged)
+{
+	std::vector<std::vector<Reading>> marks;
+	for (int i = 0; i < 6; i++) marks.push_back(Mark(1048576.0 * (10 + i), 50.0 + 10 * i, 0.0));
+	const SoakVerdict v = ComputeSoakVerdict(marks, 1, { "mem/" });
+	EXPECT_EQ(v.judged, 1);
+	ASSERT_EQ(v.grew.size(), 1u);
+	EXPECT_EQ(v.grew[0].name, "census/actors");
+	EXPECT_EQ(ComputeSoakVerdict(marks, 1, { "mem/", "census/" }).judged, 0);
+}
+
+TEST(TelemetrySoak, VerdictArgumentsComeInAnyOrder)
+{
+	const SoakVerdictArgs none = ComputeSoakVerdictArgs({});
+	EXPECT_EQ(none.warmup, 1);
+	EXPECT_FALSE(none.json);
+	EXPECT_TRUE(none.ignore.empty());
+	const SoakVerdictArgs all = ComputeSoakVerdictArgs({ "-mem/private_bytes", "3", "json", "-gpu/" });
+	EXPECT_EQ(all.warmup, 3);
+	EXPECT_TRUE(all.json);
+	EXPECT_EQ(all.ignore, (std::vector<std::string>{ "mem/private_bytes", "gpu/" }));
+	EXPECT_EQ(ComputeSoakVerdictArgs({ "-" }).warmup, 0);
+}
+
+TEST(TelemetryBudget, TheDevicesHeapsAndTheHostsAreSummedApart)
+{
+	const std::vector<HeapBudget> heaps = { { true, 100.0, 1000.0 }, { false, 5.0, 50.0 }, { true, 20.0, 200.0 }, { false, 1.0, 10.0 } };
+	const HeapBudget device = ComputeHeapBudget(heaps, true);
+	EXPECT_TRUE(device.deviceLocal);
+	EXPECT_DOUBLE_EQ(device.used, 120.0);
+	EXPECT_DOUBLE_EQ(device.budget, 1200.0);
+	const HeapBudget host = ComputeHeapBudget(heaps, false);
+	EXPECT_FALSE(host.deviceLocal);
+	EXPECT_DOUBLE_EQ(host.used, 6.0);
+	EXPECT_DOUBLE_EQ(host.budget, 60.0);
 }

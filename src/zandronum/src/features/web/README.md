@@ -10,11 +10,12 @@ The browser build's glue: the page's arguments, its frame loop, and its errors a
   - `AppendPageArgs()` adds `-offline` (`features/net/zx_offline.h`) and the page URL's query to the command line.
   - `fua_command` runs a console command from the page (`Module.fuaCommand`). Its errors are handled as the loop handles a console command's.
 - `webhost.cpp`, compiled only by the Emscripten build in place of `posix/sdl/sdlhost_desktop.cpp` and `posix/sdl/i_fpslimit.cpp`: the page as the SDL layer's host (`posix/sdl/sdlhost.h`). It starts the driver, adds the page's arguments, makes the canvas fullscreen, reads the pointer lock, shows a fatal error, asks no IWAD dialog, and has the page download a screenshot after the frame, and every file `features/telemetry` writes (`Module.fuaOfferFile`). The page paces the frames, so `I_SetFPSLimit` does nothing.
+- A restart (`wad_reload`) reloads the page: the engine hands it the arguments it now holds (`ComputeRestartArgs`, a `wad_reload`'s map in place of any `+map`), the page keeps them for the next load only (`web/wads.js` `keepRestartArgs`) and starts the engine on them, and `AppendPageArgs` adds nothing to arguments a restart gave.
 - `webcrash.cpp`, compiled only by the Emscripten build in place of `features/crashreport/zx_crashreport.cpp`:
   - It implements `zx_crashreport.h` for a page. The page catches a crash and builds, offers and sends its report (`web/crashreport.js`).
   - The engine tells the page what a report says about the game whenever it changes (`Module.fuaCrashContext`): release, map, load order, `cl_crashreports`, and the tracker's DSN on an official build only.
   - Each second it hands the page `features/telemetry`'s summary of the last minute (`fuaCrashReporter.setTelemetry`), which a report carries as "Last minute".
-- `computation/webargs_compute.h`: the query as arguments (`ComputeArgsFromQuery`), tested.
+- `computation/webargs_compute.h`: the query as arguments (`ComputeArgsFromQuery`) and a restart's arguments for the next load (`ComputeRestartArgs`, `ComputeArgsJson`), tested.
 - `computation/crashcontext_compute.h`: that context as JSON, with bare file names and the DSN only for an official build, tested.
 
 ## In-engine hooks

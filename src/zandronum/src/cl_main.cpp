@@ -511,6 +511,8 @@ void CLIENT_Construct( void )
 	// Set up a socket and network message buffer.
 	NETWORK_Construct( usPort, true );
 
+	// [rc4l] A restart (wad_reload) constructs the client again without destructing it, so the buffer the last start made is freed first.
+	g_LocalBuffer.Free( );
 	g_LocalBuffer.Init( MAX_UDP_PACKET * 8, BUFFERTYPE_WRITE );
 
 	// Initialize the stored packets buffer.

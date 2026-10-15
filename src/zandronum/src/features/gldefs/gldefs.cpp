@@ -1053,6 +1053,9 @@ TArray<FLightDefaults *> StateLights;
 
 void gl_InitializeActorLights()
 {
+	// [rc4l] A restart (wad_reload) makes every class again with no lights, so the lists the last start made are freed here instead of at exit.
+	for (unsigned int i = 0; i < AssoDeleter.Size(); i++) delete AssoDeleter[i];
+	AssoDeleter.Clear();
 	for(unsigned int i=0;i<LightAssociations.Size();i++)
 	{
 		const PClass * ti = PClass::FindClass(LightAssociations[i].ActorName());

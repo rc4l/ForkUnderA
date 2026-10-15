@@ -109,7 +109,11 @@ GrowthVerdict ComputeGrowthVerdict(const std::vector<double> &samples, int warmu
 struct SoakGrowth { std::string name, text; };
 // [rc4l] A soak's verdict over its marks: each reading of bytes, objects, handles or threads every mark holds is judged after warmup, and it passes when none grew over at least three marks past the warmup.
 struct SoakVerdict { bool pass; int marks, judged; std::vector<SoakGrowth> grew; };
-SoakVerdict ComputeSoakVerdict(const std::vector<std::vector<Reading>> &marks, int warmup);
+// [rc4l] A reading whose name starts with one of ignore is not judged, for a soak whose action makes a level settle rather than leak.
+SoakVerdict ComputeSoakVerdict(const std::vector<std::vector<Reading>> &marks, int warmup, const std::vector<std::string> &ignore = {});
+// [rc4l] What fua_soak verdict was asked, in any order: a number of warm-up marks (1 without one), json, and each prefix a leading '-' names to leave out.
+struct SoakVerdictArgs { int warmup; bool json; std::vector<std::string> ignore; };
+SoakVerdictArgs ComputeSoakVerdictArgs(const std::vector<std::string> &args);
 // [rc4l] The verdict as the console prints it, and as one line of JSON carrying that text as its report.
 std::string ComputeSoakText(const SoakVerdict &verdict);
 std::string ComputeSoakJson(const SoakVerdict &verdict);
@@ -151,10 +155,16 @@ private:
 struct TextureShape { int width, height, depth, layers, mips, samples; double bytesPerTexel; int blockWidth, blockHeight; double blockBytes; };
 double ComputeTextureBytes(const TextureShape &shape);
 
+// [rc4l] A committed region of the address space: its bytes, whether it is private, mapped from a file or an image, and whether it is executable or writable.
+enum class RegionKind { Private, Mapped, Image };
+struct MemoryRegion { double bytes; RegionKind kind; bool executable, writable; };
+// [rc4l] Committed memory by kind as readings named prefix + private_rw_bytes, private_exec_bytes, private_other_bytes, mapped_bytes and private_regions, so growth outside every heap shows what holds it (a driver's pools, compiled code, a mapped file).
+std::vector<Reading> ComputeRegionReadings(const std::vector<MemoryRegion> &regions, const std::string &prefix);
+
 // [rc4l] One memory heap a driver reports: whether it is the device's own, what the process uses of it and what it may.
 struct HeapBudget { bool deviceLocal; double used, budget; };
-// [rc4l] The device's own heaps summed, which is what a process holds in video memory and may hold.
-HeapBudget ComputeDeviceLocalBudget(const std::vector<HeapBudget> &heaps);
+// [rc4l] The device's own heaps summed (deviceLocal) or the host's the device reaches, which is what a process holds there and may hold.
+HeapBudget ComputeHeapBudget(const std::vector<HeapBudget> &heaps, bool deviceLocal);
 
 // [rc4l] An object's name as its memory tag: anything from a digit, '#' or '[' on dropped and trailing spaces trimmed, so numbered copies share a tag; unnamed ones are "unnamed".
 std::string ComputeMemoryTag(const std::string &name);

@@ -21,8 +21,11 @@ struct OsReadings
 	// [rc4l] Its pages in physical memory now, and the most there have been; a browser's wasm memory, which never shrinks.
 	double residentBytes = -1.0;
 	double peakBytes = -1.0;
-	// [rc4l] The C heap's bytes handed out and not freed.
+	// [rc4l] The C heap's bytes handed out and not freed, and on Windows every heap's in the process, which a driver's or library's own heap counts in.
 	double heapBytes = -1.0;
+	double allHeapsBytes = -1.0;
+	// [rc4l] What every heap holds committed, freed blocks it has not given back included, so its gap to the bytes handed out is fragmentation.
+	double heapsCommittedBytes = -1.0;
 	// [rc4l] Open handles or file descriptors, and threads.
 	double handles = -1.0;
 	double threads = -1.0;

@@ -35,18 +35,17 @@ test('page code hears the console until told to stop and reads the newest JSON l
   } finally { console.log = original; }
 });
 
-test('a soak in the page repeats the named action, or console text, and marks after each', () => {
+test('a soak in the page runs each cycle\'s steps, waits for the title of each level one starts, and marks after the cycle', () => {
   const reload = soakInPage('reload', 3, 100);
-  assert.match(reload, /fuaCommand\("map MAP01"\)/);
-  assert.match(reload, /startsWith\("map01 - "\)/);
+  assert.match(reload, /const steps = \[\{"text":"map MAP01","map":"MAP01"\}\];/);
+  assert.match(reload, /if \(step\.map\) await started\(from, step\.map\.toLowerCase\(\) \+ ' - '\);/);
   assert.match(reload, /i < 3;/);
   assert.match(reload, /fua_soak verdict 1 json/);
-  assert.match(reload, /await started\(from\);/);
   assert.match(reload, /window\.gc\(\)/);
-  const other = soakInPage('reload', 1, 10, 'MAP11');
-  assert.match(other, /fuaCommand\("map MAP11"\)/);
-  assert.match(other, /startsWith\("map11 - "\)/);
-  const text = soakInPage('vid_setmode 640 480', 1, 10);
-  assert.match(text, /fuaCommand\("vid_setmode 640 480"\)/);
-  assert.doesNotMatch(text, /await started\(from\);/);
+  assert.match(soakInPage('reload', 1, 10, 'MAP11'), /"text":"map MAP11","map":"MAP11"/);
+  assert.match(soakInPage('map MAP02|map MAP01', 1, 10), /\[\{"text":"map MAP02","map":"MAP02"\},\{"text":"map MAP01","map":"MAP01"\}\]/);
+  assert.match(soakInPage('vid_setmode 640 480', 1, 10), /\[\{"text":"vid_setmode 640 480","map":null\}\]/);
+  const resize = soakInPage('check: resize 900x700|check: resize 1280x900', 2, 10);
+  assert.match(resize, /if \(step\.text\.startsWith\('check: '\)\) console\.log\(step\.text\);\s+else Module\.fuaCommand\(step\.text\);/);
+  assert.match(resize, /"text":"check: resize 900x700","map":null/);
 });

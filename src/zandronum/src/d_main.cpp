@@ -3697,6 +3697,12 @@ void D_DoomMain (void)
 		{
 			G_InitNew( startmap, false );
 		}
+		// [rc4l] A restart makes a startup screen as a first boot does, but only a first boot's is deleted above.
+		if ( restart )
+		{
+			delete StartScreen;
+			StartScreen = NULL;
+		}
 
 		// Client mode starts off in the full console!
 		if ( NETWORK_GetState( ) == NETSTATE_CLIENT )

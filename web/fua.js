@@ -84,8 +84,9 @@
   let running = false;
   let saveHome = () => Promise.resolve(true);
 
-  // [rc4l] A restart is a page reload, once the config and saves are stored so it keeps them.
-  function restart() {
+  // [rc4l] A restart is a page reload, once the config and saves are stored so it keeps them, and the engine's arguments when it gives them start the next load.
+  function restart(args) {
+    if (args) FuaWads.keepRestartArgs(args);
     saveHome(true).finally(() => location.reload());
   }
 
@@ -151,8 +152,9 @@
         .catch((e) => fail(String(e.message || e)));
     }],
   };
-  // [rc4l] -iwad and -file for the player's own WADs, which the panel chose.
+  // [rc4l] -iwad and -file for the player's own WADs, which the panel chose, unless a restart handed this load the engine's own arguments.
   let wadArgs = [];
+  Module.fuaRestartArgs = FuaWads.takeRestartArgs();
   FuaWads.panel(restart);
 
   FuaGpu.makeDevice(navigator.gpu).then(({ device: d, adapter }) => {
@@ -175,7 +177,7 @@
     saveHome = FuaHome.keeper({ FS: Module.FS, log, writeConfig: () => { if (running) Module.fuaCommand('writeini'); }, onSaving: (p) => { Module.fuaSaving = p; } });
     canvas.focus();
     running = true;
-    Module.callMain(wadArgs);
+    Module.callMain(Module.fuaRestartArgs || wadArgs);
   });
 
   document.getElementById('fullscreen').addEventListener('click', () => canvas.requestFullscreen());

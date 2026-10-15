@@ -58,6 +58,18 @@ from a programmatic entry point.
   anything after `wad_reload` in the same command buffer is lost — you can't chain
   reloads (or append `; fua_clip`) in one string.
 
+## In a browser
+A restart is a page reload. The engine hands the page the arguments it now holds (`features/web/webdriver.cpp`,
+`ComputeRestartArgs`), the page keeps them for the next load only (`web/wads.js`) and starts the engine on them, so
+`wad_reload /freedoom2.wad map=MAP02` comes back on that set and map; the check "wad_reload reloads the page onto
+the new set and map" guards it. Files must be in the page's file system after the reload: the data files at `/`
+and the player's stored WADs, which every load writes.
+
+## Leaks
+Every restart runs startup again in the same process, so whatever startup makes and only exit frees leaks once a
+reload. The `wadsoak` and `wadsoaktitle` scenarios soak reloads into a map and to the title; `perf-telemetry` has
+the recipe and `soak --sites` names the stacks that grow.
+
 ## Pitfalls
 - IWAD is always the FIRST arg. A PWAD-magic file that a TC uses as its base
   (e.g. MM8BDM `megagame.wad`, which is `PWAD`) still goes in the IWAD slot.

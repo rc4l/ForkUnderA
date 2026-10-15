@@ -1,5 +1,5 @@
 // [rc4l] Code for a page, shared by the checks and the probe: the watches run before its own scripts, and what runs once the engine has started.
-import { soakStep } from '../fuactl/src/telemetry.mjs';
+import { soakSteps } from '../fuactl/src/telemetry.mjs';
 
 // [rc4l] JavaScript run in the page once the engine has started (fua.js sets fuaCommand just before main), its value the caller's result.
 export function inPage(body) {
@@ -16,19 +16,24 @@ export const HEAR_CONSOLE = `const said = [];
       const unhear = () => { console.log = print; };
       const lastJson = (start, none) => { const line = said.slice().reverse().find((l) => l.startsWith(start)); return line ? JSON.parse(line) : none; };`;
 
-// [rc4l] Page code that repeats a soak action (fuactl's SOAK_ACTIONS) cycles times on map, marking memory after each once a new level has printed its title and the page's garbage is collected (window.gc, with --expose-gc), and returns the engine's verdict.
+// [rc4l] Page code that repeats a soak action's steps (fuactl's soakSteps) cycles times on map, marking memory after each cycle once each level a step started has printed its title, or a moment has passed, and the page's garbage is collected (window.gc, with --expose-gc), and returns the engine's verdict.
 export function soakInPage(action, cycles, settleMs, map = 'MAP01') {
-  const step = soakStep(action, map);
   return inPage(`
       ${pause(2000)}
       ${HEAR_CONSOLE}
-      const started = async (from) => { for (let t = 0; t < 600 && !said.slice(from).some((l) => l.trim().toLowerCase().startsWith(${JSON.stringify(`${map.toLowerCase()} - `)})); t++) ${pause(100)} };
+      const started = async (from, title) => { for (let t = 0; t < 600 && !said.slice(from).some((l) => l.trim().toLowerCase().startsWith(title)); t++) ${pause(100)} };
       const collect = async () => { for (let k = 0; k < 2 && window.gc; k++) { window.gc(); ${pause(200)} } };
+      const steps = ${JSON.stringify(soakSteps(action, map))};
       Module.fuaCommand('fua_soak begin');
       for (let i = 0; i < ${cycles}; i++) {
-        const from = said.length;
-        Module.fuaCommand(${JSON.stringify(step.text)});
-        ${step.newLevel ? 'await started(from);' : ''}
+        for (const step of steps) {
+          const from = said.length;
+          // [rc4l] A "check:" step is asked of the browser (smoke.mjs's inputAsked, a resize or a click) rather than of the engine.
+          if (step.text.startsWith('check: ')) console.log(step.text);
+          else Module.fuaCommand(step.text);
+          if (step.map) await started(from, step.map.toLowerCase() + ' - ');
+          else ${pause(300)}
+        }
         ${pause(settleMs)}
         await collect();
         Module.fuaCommand('fua_soak mark');

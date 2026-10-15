@@ -883,7 +883,8 @@ void OpenGLFrameBuffer::ReleaseScreenshotBuffer()
 void OpenGLFrameBuffer::GameRestart()
 {
 	Colors.Load();
-	ScreenshotBuffer = NULL;
+	// [rc4l] Freed rather than forgotten, since a restart after a screenshot dropped its buffer.
+	ReleaseScreenshotBuffer();
 	zx::viewsetup::ForgetCamera();
 	gl_GenerateGlobalBrightmapFromColormap();
 }

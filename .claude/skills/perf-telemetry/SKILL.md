@@ -32,15 +32,19 @@ node src/cli.mjs stats --port 7799           # every counter there is; the group
 node src/cli.mjs memsnap before --port 7799
 # ...do the thing...
 node src/cli.mjs memdiff before --port 7799            # what changed, biggest first
-node src/cli.mjs soak --cycles 6 --port 7799           # reload the level six times; exit 1 if anything kept growing
-node src/cli.mjs console "fua_allocsites start" --port 7799
-node src/cli.mjs soak --cycles 3 --port 7799
-node src/cli.mjs console "fua_allocsites report 15" --port 7799   # the call stacks still holding the most
+node src/cli.mjs soak --cycles 6 --port 7799           # reload the level six times; exit 1 if anything kept growing or got slower
+node src/cli.mjs soak --cycles 8 --warmup 2 --sites --port 7799   # and the allocation stacks that grew from cycle 3 to cycle 8
 ```
 
-- `soak --action "<console text>"` repeats anything, not only a reload.
+- `soak --action "A|B|..."` repeats any console steps in order, waiting on each that starts a level (`map`, `changemap`, `wad_reload ... map=`, `fua_hostmap`, `connect`) and marking once a cycle, so every mark lands on the same map. Each cycle's step time and frame time print, and a later half slower than the earlier fails it.
+- Recipes the restart and hosting audit used:
+  - Rapid WAD changes: `--action "wad_reload <other iwad> map=E1M1|wad_reload <iwad> <pwad> map=MAP01"` (forward slashes); with no `map=`, the restarts stay at the title.
+  - Self-hosting: `--action "fua_hostmap MAP01"`. A server: launch one with `launch --arg "-host,-port,10670"`, then `soak --port <client> --judge-port <server> --judge-token T --action "connect 127.0.0.1:10670|disconnect"` judges the server while the client joins and leaves.
+  - Resizing: move the window from outside (`MoveWindow`), since `vid_setmode` leaves a window's size alone; fullscreen: `--action "fullscreen 1|fullscreen 0"`, which covers the user's screen while it runs.
+- Turn on `fua_render_in_background` for a soak (scenarios do): a window without focus presents nothing, and the backend frees what it released only after a present, so it reads as a leak.
+- Private bytes settle over the first sixty or so restarts (the heap's commit and the driver's caches) and level off; judge a restart soak with `--ignore mem/private_bytes` and live allocations, heap bytes, GPU memory and handles, or run eighty restarts and watch the plateau. `mem/win/` and `mem/heaps_committed_bytes` say whether growth sits in a heap or outside every one.
 - A soak judges every gauge and breakdown reading in bytes, objects, handles or threads, the backend's GPU memory by tag and in a browser what the page holds among them, except those registered with `soaked` false, such as a peak, which only ever grows. Its verdict names each counter that grew and by how much a cycle.
-- `fua_allocsites` lists the allocations of the current level too. A leak is a stack whose count is a multiple of the cycles run.
+- `fua_allocsites` lists the allocations of the current level too, so one report proves little; `--sites` diffs two, where a leak's stack grows with every cycle and the level's stay put.
 - GPU memory in three views:
   - `gpu/mem/tag/` is what the backend made.
   - `gpu/vk_budget_used_bytes` is what the driver says the process holds, Diligent's own allocations included.
@@ -52,7 +56,8 @@ node src/cli.mjs console "fua_allocsites report 15" --port 7799   # the call sta
 Headless Chrome (always muted) reproduces what the page holds:
 
 - `node tools/web/check.mjs dist-web --only "holds no more memory"` runs the reload soak.
-- `node tools/web/probe.mjs <staged dir> --query "iwad=...&file=...&map=MAP11" --soak reload --cycles 4 --settle 9000` soaks a player's own map, and `--run "map MAP11; wait 9000; fua_stats gpu/"` prints what the commands printed.
+- `node tools/web/probe.mjs <staged dir> --query "iwad=...&file=...&map=MAP11" --soak reload --cycles 4 --settle 9000` soaks a player's own map, and `--run "map MAP11; wait 9000; fua_stats gpu/"` prints what the commands printed. A soak step `check: resize 900x700` resizes the page; `fullscreen true|fullscreen false` switches it.
+- A `wad_reload` reloads the page; nothing in the engine survives that, so what to watch across reloads is the page's stored data (`navigator.storage.estimate()`), which holds the config and the player's WADs.
 - The check "lets go of" compares the page's view with the engine's.
 - Headless Firefox has no WebGPU. When a Firefox player reports a problem, ask them to type these in the console and paste what they print:
   - `fua_flightdump` writes the last frames, seconds and hitches as downloads and prints a summary.

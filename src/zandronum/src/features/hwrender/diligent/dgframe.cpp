@@ -39,6 +39,11 @@ void ReleaseLevelResources()
 	ReleaseAccelerationStructures();
 }
 
+void ForgetBackendTextures()
+{
+	if (GetDevice() != nullptr) ReleaseLevelResources();
+}
+
 // [rc4l] Bake this level from the map and upload it, once, without anyone typing anything.
 
 static bool AutoSetupForLevel()

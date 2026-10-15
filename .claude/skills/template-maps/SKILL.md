@@ -165,9 +165,10 @@ quit from its console as a player quits; a crash file beside its log, an engine 
 code other than 0 fails it (`judgeQuit`). `quitclean.mjs` quits the backend with Diligent's messages on.
 
 For a leak, which no frame shows either, use `compareSoak`: each side repeats the scenario's `action` (a
-reload unless it names console text) `cycles` times and passes when the engine's soak verdict says no
-memory, object, handle or thread count kept growing (`judgeSoak`). `soak.mjs` reloads a map with lights
-and monsters.
+reload unless it names console steps, or a function of the launch's `{ wadPath, iwad }` that builds them)
+`cycles` times and passes when the engine's soak verdict says no memory, object, handle or thread count
+kept growing past `warmup` (`judgeSoak`), leaving out readings under each `ignore` prefix. `soak.mjs` reloads
+a map with lights and monsters; `wadsoak.mjs` and `wadsoaktitle.mjs` swap WAD sets with `wad_reload`.
 
 `scenarios --webgpu` runs the set on the WebGPU device, and how depends on how a scenario judges: one
 compared across launches runs its first Vulkan side on Vulkan and on WebGPU, every box at

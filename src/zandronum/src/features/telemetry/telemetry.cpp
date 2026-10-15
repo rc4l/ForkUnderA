@@ -76,7 +76,8 @@ struct Registry
 	Slot slots[kMaxCounters];
 	std::atomic<int> count{ 0 };
 	std::mutex registerLock;
-	std::vector<std::pair<std::string, void (*)(std::vector<Reading> &)>> breakdowns;
+	struct Breakdown { std::string name; void (*read)(std::vector<Reading> &); bool soaked; };
+	std::vector<Breakdown> breakdowns;
 	FrameRing frames{ kFrameRows, kMaxCounters };
 	FrameRing seconds{ kSecondRows, kMaxCounters * 2 };
 	double secondSum[kMaxCounters] = {}, secondMax[kMaxCounters] = {};
@@ -199,7 +200,7 @@ std::vector<Reading> Snapshot(bool soak = false)
 	const int n = r.count.load(std::memory_order_acquire);
 	for (int i = 0; i < n; i++)
 		if (r.slots[i].kind == CounterKind::Gauge && r.slots[i].available && (!soak || r.slots[i].soaked)) out.push_back(Reading{ r.slots[i].name, r.slots[i].unit, r.slots[i].level });
-	for (auto &b : r.breakdowns) b.second(out);
+	for (auto &b : r.breakdowns) if (!soak || b.soaked) b.read(out);
 	return out;
 }
 
@@ -310,7 +311,7 @@ std::vector<StatsRow> StatsRows(const std::string &prefix)
 	}
 	// [rc4l] A breakdown is read when its readings can fall under the prefix, whichever of the two names the other starts with.
 	std::vector<Reading> extra;
-	for (auto &b : r.breakdowns) if (ComputeStartsWith(b.first, prefix) || ComputeStartsWith(prefix, b.first)) b.second(extra);
+	for (auto &b : r.breakdowns) if (ComputeStartsWith(b.name, prefix) || ComputeStartsWith(prefix, b.name)) b.read(extra);
 	const std::vector<StatsRow> readings = ComputeReadingRows(extra, prefix);
 	rows.insert(rows.end(), readings.begin(), readings.end());
 	return rows;
@@ -336,17 +337,21 @@ double OsPrivate() { return Os().privateBytes; }
 double OsResident() { return Os().residentBytes; }
 double OsPeak() { return Os().peakBytes; }
 double OsHeap() { return Os().heapBytes; }
+double OsAllHeaps() { return Os().allHeapsBytes; }
+double OsHeapsCommitted() { return Os().heapsCommittedBytes; }
 double OsHandles() { return Os().handles; }
 double OsThreads() { return Os().threads; }
 double OsGpu() { return Os().gpuProcessBytes; }
 double OsJsHeap() { return Os().jsHeapBytes; }
 
-// [rc4l] The probe's gauges, each read twice a second.
+// [rc4l] The probe's gauges, each read twice a second; a soak leaves out the working set, its peak and the heaps' committed bytes, which settle after a restart rather than leak.
 const bool s_osRegistered = (
 	Register(CounterSpec{ "mem/private_bytes", "bytes", CounterKind::Gauge, 500 }, OsPrivate),
 	Register(CounterSpec{ "mem/resident_bytes", "bytes", CounterKind::Gauge, 500, false }, OsResident),
 	Register(CounterSpec{ "mem/peak_bytes", "bytes", CounterKind::Gauge, 500, false }, OsPeak),
 	Register(CounterSpec{ "mem/heap_bytes", "bytes", CounterKind::Gauge, 500 }, OsHeap),
+	Register(CounterSpec{ "mem/all_heaps_bytes", "bytes", CounterKind::Gauge, 500 }, OsAllHeaps),
+	Register(CounterSpec{ "mem/heaps_committed_bytes", "bytes", CounterKind::Gauge, 500, false }, OsHeapsCommitted),
 	Register(CounterSpec{ "os/handles", "handles", CounterKind::Gauge, 500 }, OsHandles),
 	Register(CounterSpec{ "os/threads", "threads", CounterKind::Gauge, 500 }, OsThreads),
 	Register(CounterSpec{ "gpu/process_bytes", "bytes", CounterKind::Gauge, 500 }, OsGpu),
@@ -402,11 +407,11 @@ void Set(Counter c, double value)
 	}
 }
 
-void RegisterBreakdown(const char *name, void (*read)(std::vector<Reading> &out))
+void RegisterBreakdown(const char *name, void (*read)(std::vector<Reading> &out), bool soaked)
 {
 	Registry &r = R();
 	std::lock_guard<std::mutex> g(r.registerLock);
-	r.breakdowns.push_back({ name, read });
+	r.breakdowns.push_back(Registry::Breakdown{ name, read, soaked });
 }
 
 ZoneSite::ZoneSite(const char *n) : counter(Register(CounterSpec{ n, "ms", CounterKind::Time, 0 })), name(n)
@@ -590,11 +595,12 @@ CCMD(fua_soak)
 	const std::string what = argv.argc() > 1 ? argv[1] : "";
 	if (what == "begin") { r.soakMarks.clear(); Printf("telemetry: soak begun\n"); return; }
 	if (what == "mark") { r.soakMarks.push_back(Snapshot(true)); Printf("telemetry: soak mark %d\n", (int)r.soakMarks.size()); return; }
-	if (what != "verdict") { Printf("usage: fua_soak begin | mark | verdict [warmup] [json]\n"); return; }
-	const int warmup = argv.argc() > 2 && strcmp(argv[2], "json") != 0 ? atoi(argv[2]) : 1;
-	const bool json = argv.argc() > 2 && !strcmp(argv[argv.argc() - 1], "json");
-	const SoakVerdict verdict = ComputeSoakVerdict(r.soakMarks, warmup);
-	Printf("%s", json ? (ComputeSoakJson(verdict) + "\n").c_str() : ComputeSoakText(verdict).c_str());
+	if (what != "verdict") { Printf("usage: fua_soak begin | mark | verdict [warmup] [json] [-prefix ...]\n"); return; }
+	std::vector<std::string> args;
+	for (int i = 2; i < argv.argc(); i++) args.push_back(argv[i]);
+	const SoakVerdictArgs asked = ComputeSoakVerdictArgs(args);
+	const SoakVerdict verdict = ComputeSoakVerdict(r.soakMarks, asked.warmup, asked.ignore);
+	Printf("%s", asked.json ? (ComputeSoakJson(verdict) + "\n").c_str() : ComputeSoakText(verdict).c_str());
 }
 
 // [rc4l] The counters fua_stats watch picked, in the stat overlay's corner.

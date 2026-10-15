@@ -69,6 +69,7 @@ struct FFrameDriver : public FLevelRenderer
 
 	void Init()
 	{
+		zx::hwrender::ForgetBackendTextures();
 		FLevelRenderer::Init();
 		zx::viewsetup::InstallSpriteView();
 	}

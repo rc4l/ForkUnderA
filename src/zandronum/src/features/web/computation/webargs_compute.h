@@ -18,6 +18,12 @@ std::vector<std::string> ComputeArgsFromQuery(const std::string &query);
 // [rc4l] A query value decoded: %XX to its byte and '+' to a space, as a form encodes them; a malformed escape is kept as it was.
 std::string ComputeDecodeQueryValue(const std::string &value);
 
+// [rc4l] The arguments a page reloaded by a restart starts the engine with: those it held after the program name, and with a wad_reload's map, that map in place of any +map.
+std::vector<std::string> ComputeRestartArgs(const std::vector<std::string> &held, const std::string &map);
+
+// [rc4l] Arguments as a JSON array of strings, as the page keeps them across the reload.
+std::string ComputeArgsJson(const std::vector<std::string> &args);
+
 }} // namespace zx::web
 
 #endif // ZX_WEBARGS_COMPUTE_H

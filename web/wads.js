@@ -120,7 +120,21 @@
     document.getElementById('wads-apply').addEventListener('click', () => restart());
   }
 
-  const api = { load, panel, isIwad, argsFor, picked, without };
+  // [rc4l] The arguments a restart hands the next load (a wad_reload's new WAD set), kept for this tab only and taken once.
+  const RESTART = 'fua-restart-args';
+  function keepRestartArgs(json, store = root.sessionStorage) {
+    try { store.setItem(RESTART, json); } catch { /* no session storage: the next load starts as a fresh one */ }
+  }
+  function takeRestartArgs(store = root.sessionStorage) {
+    try {
+      const json = store.getItem(RESTART);
+      store.removeItem(RESTART);
+      const args = JSON.parse(json);
+      return Array.isArray(args) ? args : null;
+    } catch { return null; }
+  }
+
+  const api = { load, panel, isIwad, argsFor, picked, without, keepRestartArgs, takeRestartArgs };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.FuaWads = api;
 })(typeof window !== 'undefined' ? window : globalThis);

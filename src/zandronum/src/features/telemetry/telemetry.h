@@ -32,8 +32,8 @@ void Add(Counter c, double amount);
 // [rc4l] Sets this frame's value of a total or a timing, or a gauge's level until the next Set, from the game thread.
 void Set(Counter c, double value);
 
-// [rc4l] A breakdown snapshots and fua_stats list beside the counters: readings a feature makes on request, such as memory by tag.
-void RegisterBreakdown(const char *name, void (*read)(std::vector<Reading> &out));
+// [rc4l] A breakdown snapshots and fua_stats list beside the counters: readings a feature makes on request, such as memory by tag; soaked false keeps a diagnostic that restates another reading out of a soak's verdict.
+void RegisterBreakdown(const char *name, void (*read)(std::vector<Reading> &out), bool soaked = true);
 
 // [rc4l] Nanoseconds on the clock regions are timed with.
 int64_t NowNs();

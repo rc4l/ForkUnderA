@@ -184,7 +184,7 @@ export function judgeQuit(label, { gone, crashed }) {
   return { line: `PASS ${label}: quit cleanly`, failed: 0 };
 }
 
-// [rc4l] Runs judgeLaunch(c, inst, label) in a launch of each side on each map, collecting each { line, failed } verdict, and a launch that throws as a failure.
+// [rc4l] Runs judgeLaunch(c, inst, label, { wadPath, iwad }) in a launch of each side on each map, collecting each { line, failed } verdict, and a launch that throws as a failure.
 async function eachLaunch({ name, wad, maps, sides, iwad = FREEDOOM2, port = 7796, size = [1280, 720] }, judgeLaunch) {
   const wadPath = path.join(os.tmpdir(), `fua-${name}-template.wad`);
   fs.writeFileSync(wadPath, wad);
@@ -194,7 +194,7 @@ async function eachLaunch({ name, wad, maps, sides, iwad = FREEDOOM2, port = 779
     for (const side of sides) {
       const label = `${map} ${side.name}`;
       try {
-        const r = await withEngine({ port, map, iwad, wadPath, gl: !!side.gl, side, size }, (c, inst) => judgeLaunch(c, inst, label));
+        const r = await withEngine({ port, map, iwad, wadPath, gl: !!side.gl, side, size }, (c, inst) => judgeLaunch(c, inst, label, { wadPath, iwad }));
         lines.push(r.line);
         failed += r.failed;
       } catch (e) {
@@ -223,11 +223,14 @@ export function judgeSoak(label, { pass, marks, judged, grew = [] }) {
   return { line: `FAIL ${label}: ${grew.length ? `kept growing: ${grew.map((g) => g.text).join("; ")}` : `judged nothing (${marks} marks)`}`, failed: 1 };
 }
 
-// [rc4l] Each side launched on each map repeats the scenario's soak action (reload unless it names another) and passes when the engine judges that no memory, object, handle or thread count kept growing: for a leak, which no frame shows.
+// [rc4l] Each side launched on each map repeats the scenario's soak action (reload unless it names another, or builds one from the launch's { wadPath, iwad }) and passes when the engine judges that no memory, object, handle or thread count kept growing: for a leak, which no frame shows.
 export function compareSoak(opts) {
-  return eachLaunch(opts, async (c, inst, label) => {
+  return eachLaunch(opts, async (c, inst, label, files) => {
+    // [rc4l] A window without focus presents nothing, and the backend frees what it let go of only after a present, so an unfocused launch reads as a leak.
+    await cap.exec(c, "fua_render_in_background 1");
     await cap.waitTics(c, opts.settleTics ?? 35);
-    return judgeSoak(label, await runSoak(c, { action: opts.action ?? "reload", cycles: opts.cycles ?? 6, settleMs: opts.settleMs ?? 4000 }));
+    const action = typeof opts.action === "function" ? opts.action(files) : opts.action ?? "reload";
+    return judgeSoak(label, await runSoak(c, { action, cycles: opts.cycles ?? 6, warmup: opts.warmup ?? 1, settleMs: opts.settleMs ?? 4000, ignore: opts.ignore ?? [] }));
   });
 }
 

@@ -37,6 +37,7 @@ void ForgetBackendWindow(void *) {}
 int BackendMaxTextureSize() { return 0; }
 const char *BackendApiName() { return ""; }
 void NoteWorldView() {}
+void ForgetBackendTextures() {}
 void SettleLevelScene() {}
 void PresentBackendOnly(bool) {}
 unsigned char *ReadBackendFrame(int &, int &) { return NULL; }

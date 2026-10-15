@@ -278,6 +278,12 @@ export const CHECKS = [
     download: true,
     expectShot: blankGame,
   },
+  // [rc4l] A page has no restart of its own, so wad_reload reloads it, which started on the page's own arguments and quietly kept the old WAD set.
+  {
+    name: 'wad_reload reloads the page onto the new set and map',
+    evaluate: inPage(`${pause(2000)} Module.fuaCommand('wad_reload /freedoom2.wad map=MAP02'); return 'reloading';`),
+    until: '^\\[log\\] map02 - ',
+  },
   // [rc4l] A browser's OpenAL reports a finished sound's whole length, often a sample short, so the channel took it for cut off and played it again: Doom 2's rocket blast after every BFG ball, its doors, the shotgun's cock; Freedoom's brain cube is one such sound.
   {
     name: 'a sound plays once',

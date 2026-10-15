@@ -30,3 +30,17 @@ test('a removed WAD leaves the choice', () => {
   assert.deepEqual(FuaWads.without({ iwad: 'doom2.wad', files: ['a.wad'] }, 'doom2.wad'), { iwad: null, files: ['a.wad'] });
   assert.deepEqual(FuaWads.without({ iwad: 'doom2.wad', files: ['a.wad'] }, 'a.wad'), { iwad: 'doom2.wad', files: [] });
 });
+
+// [rc4l] A wad_reload in the page reloads it, and the next load alone starts on the arguments the engine handed over.
+test('a restart hands its arguments to the next load once', () => {
+  const kept = new Map();
+  const store = { setItem: (k, v) => kept.set(k, v), getItem: (k) => kept.get(k) ?? null, removeItem: (k) => kept.delete(k) };
+  FuaWads.keepRestartArgs('["-iwad","/freedoom1.wad","+map","E1M1"]', store);
+  assert.deepEqual(FuaWads.takeRestartArgs(store), ['-iwad', '/freedoom1.wad', '+map', 'E1M1']);
+  assert.equal(FuaWads.takeRestartArgs(store), null);
+  FuaWads.keepRestartArgs('{"not":"a list"}', store);
+  assert.equal(FuaWads.takeRestartArgs(store), null);
+  const broken = { setItem: () => { throw new Error('private window'); }, getItem: () => { throw new Error('private window'); } };
+  FuaWads.keepRestartArgs('["-x"]', broken);
+  assert.equal(FuaWads.takeRestartArgs(broken), null);
+});

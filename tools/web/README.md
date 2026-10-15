@@ -64,7 +64,7 @@ node tools/web/probe.mjs [dist-web] [--query Q] --soak reload|TEXT [--cycles N] 
 
 Plays a staged page through console lines (with `wait N` between them, in milliseconds) and reports what it did: what the lines printed, each sound it started, any started again, the screen textures it held before and after, and its WebGPU errors. `--autoplay` lets its audio run without a click.
 
-`--soak` instead repeats an action on the query's map (`reload` loads it again; any other text runs as a console line), marks memory after each, and prints the engine's `fua_soak` verdict, exiting 1 when something kept growing. Chrome runs with `--expose-gc`, so each mark comes after the page's garbage is collected.
+`--soak` instead repeats an action on the query's map (`reload` loads it again; other text is console lines separated by `|`, and a `check: resize WxH` line resizes the page), marks memory after each, and prints the engine's `fua_soak` verdict, exiting 1 when something kept growing. Chrome runs with `--expose-gc`, so each mark comes after the page's garbage is collected.
 
 The page code, the watches and the soak among it, is shared with the checks (`page.mjs`).
 

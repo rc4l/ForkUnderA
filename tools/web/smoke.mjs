@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // [rc4l] Loads a page in headless Chrome with WebGPU, prints its console, and saves a screenshot once a line matches or time runs out.
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -85,6 +85,18 @@ async function waitForJson(url, deadline) {
   }
 }
 
+// [rc4l] The debugging port a Chrome started with --remote-debugging-port=0 chose, from the DevToolsActivePort file it writes in its profile, so a run reaches its own Chrome and never one a stale run left on a fixed port.
+export async function devToolsPort(dir, deadline, { read = (f) => fs.readFileSync(f, 'utf8'), wait = () => new Promise((r) => setTimeout(r, 100)) } = {}) {
+  for (;;) {
+    try {
+      const port = Number(read(path.join(dir, 'DevToolsActivePort')).split(/\r?\n/)[0]);
+      if (port > 0) return port;
+    } catch { /* not written yet */ }
+    if (Date.now() > deadline) throw new Error(`Chrome wrote no DevToolsActivePort in ${dir}`);
+    await wait();
+  }
+}
+
 // [rc4l] Chrome's own log lines about its GPU process and devices, the last `count` of them, the page's console echoed there left out: why a page lost its device, which the page itself is never told.
 export function gpuLogLines(text, count = 15) {
   return String(text).split(/\r?\n/)
@@ -104,17 +116,20 @@ export function removeQuietly(dir, rm = fs.rmSync, warn = console.warn) {
   }
 }
 
-export async function smoke({ url, until, seconds = 30, shot, chrome, headless = true, software = false, autoplay = false, port = 9333, onLine = console.log, evaluate, after = 10, profile, init, downloadDir, logFile }) {
+export async function smoke({ url, until, seconds = 30, shot, chrome, headless = true, software = false, autoplay = false, port: askedPort = 0, onLine = console.log, evaluate, after = 10, profile, init, downloadDir, logFile }) {
   const exe = chrome ?? CHROME_CANDIDATES.find(p => fs.existsSync(p));
   if (!exe) throw new Error('no Chrome found');
   // [rc4l] A named profile keeps the page's storage between runs, for checking what survives a reload; otherwise a fresh one each time.
   const dir = profile ?? fs.mkdtempSync(path.join(os.tmpdir(), 'fua-smoke-'));
+  // [rc4l] The last run's port file goes first, so the port read back is this Chrome's.
+  fs.rmSync(path.join(dir, 'DevToolsActivePort'), { force: true });
   const log = logFile ? fs.openSync(logFile, 'w') : 'ignore';
-  const proc = spawn(exe, [...(logFile ? ['--enable-logging=stderr', '--v=0'] : []), ...chromeArgs(port, dir, { headless, software, autoplay })], { stdio: ['ignore', 'ignore', log] });
+  const proc = spawn(exe, [...(logFile ? ['--enable-logging=stderr', '--v=0'] : []), ...chromeArgs(askedPort, dir, { headless, software, autoplay })], { stdio: ['ignore', 'ignore', log] });
   if (logFile) fs.closeSync(log);
   const lines = [];
   try {
     const deadline = Date.now() + seconds * 1000;
+    const port = askedPort || await devToolsPort(dir, deadline);
     const targets = await waitForJson(`http://127.0.0.1:${port}/json/list`, deadline);
     const version = (await waitForJson(`http://127.0.0.1:${port}/json/version`, deadline)).Browser;
     const page = targets.find(t => t.type === 'page');
@@ -172,9 +187,12 @@ export async function smoke({ url, until, seconds = 30, shot, chrome, headless =
     return { matched, lines, version };
   } finally {
     // [rc4l] Chrome is gone before this returns, so the next run can use the same profile and the last can remove it; its helper processes can take a moment longer, hence the retries.
-    const exited = new Promise(res => { proc.once('exit', res); setTimeout(res, 5000).unref(); });
+    let gone = false;
+    const exited = new Promise(res => { proc.once('exit', () => { gone = true; res(); }); setTimeout(res, 5000).unref(); });
     proc.kill();
     await exited;
+    // [rc4l] A Chrome that outlives its kill took every later run on its port, so on Windows its whole tree goes.
+    if (!gone && process.platform === 'win32') spawnSync('taskkill', ['/pid', String(proc.pid), '/T', '/F'], { stdio: 'ignore' });
     if (!profile) removeQuietly(dir);
   }
 }

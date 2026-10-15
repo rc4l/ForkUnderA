@@ -323,12 +323,13 @@ GrowthVerdict ComputeGrowthVerdict(const std::vector<double> &samples, int warmu
 	return g;
 }
 
-SoakVerdict ComputeSoakVerdict(const std::vector<std::vector<Reading>> &marks, int warmup)
+SoakVerdict ComputeSoakVerdict(const std::vector<std::vector<Reading>> &marks, int warmup, const std::vector<std::string> &ignore)
 {
 	SoakVerdict v = { false, (int)marks.size(), 0, {} };
 	for (const Reading &first : marks.empty() ? std::vector<Reading>() : marks[0])
 	{
 		if (!SoakUnit(first.unit)) continue;
+		if (std::any_of(ignore.begin(), ignore.end(), [&](const std::string &p) { return ComputeStartsWith(first.name, p); })) continue;
 		std::vector<double> series;
 		for (const std::vector<Reading> &mark : marks)
 		{
@@ -348,6 +349,18 @@ SoakVerdict ComputeSoakVerdict(const std::vector<std::vector<Reading>> &marks, i
 	}
 	v.pass = v.grew.empty() && v.marks >= std::max(0, warmup) + 3;
 	return v;
+}
+
+SoakVerdictArgs ComputeSoakVerdictArgs(const std::vector<std::string> &args)
+{
+	SoakVerdictArgs a = { 1, false, {} };
+	for (const std::string &arg : args)
+	{
+		if (arg == "json") a.json = true;
+		else if (arg.size() > 1 && arg[0] == '-') a.ignore.push_back(arg.substr(1));
+		else a.warmup = std::atoi(arg.c_str());
+	}
+	return a;
 }
 
 std::string ComputeSoakText(const SoakVerdict &v)
@@ -461,12 +474,28 @@ double ComputeTextureBytes(const TextureShape &s)
 	return total * std::max(1, s.layers) * std::max(1, s.samples);
 }
 
-HeapBudget ComputeDeviceLocalBudget(const std::vector<HeapBudget> &heaps)
+std::vector<Reading> ComputeRegionReadings(const std::vector<MemoryRegion> &regions, const std::string &prefix)
 {
-	HeapBudget sum = { true, 0.0, 0.0 };
+	double rw = 0.0, exec = 0.0, other = 0.0, mapped = 0.0, count = 0.0;
+	for (const MemoryRegion &r : regions)
+	{
+		if (r.kind == RegionKind::Mapped) { mapped += r.bytes; continue; }
+		if (r.kind != RegionKind::Private) continue;
+		count += 1.0;
+		if (r.executable) exec += r.bytes;
+		else if (r.writable) rw += r.bytes;
+		else other += r.bytes;
+	}
+	return { { prefix + "private_rw_bytes", "bytes", rw }, { prefix + "private_exec_bytes", "bytes", exec }, { prefix + "private_other_bytes", "bytes", other },
+		{ prefix + "mapped_bytes", "bytes", mapped }, { prefix + "private_regions", "objects", count } };
+}
+
+HeapBudget ComputeHeapBudget(const std::vector<HeapBudget> &heaps, bool deviceLocal)
+{
+	HeapBudget sum = { deviceLocal, 0.0, 0.0 };
 	for (const HeapBudget &h : heaps)
 	{
-		if (!h.deviceLocal) continue;
+		if (h.deviceLocal != deviceLocal) continue;
 		sum.used += h.used;
 		sum.budget += h.budget;
 	}

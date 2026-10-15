@@ -9,7 +9,8 @@ route says for each kind (`computation/frameroute_compute`, which also decides w
 whose picture a save takes). The save picture, camera textures, `ClearBuffer` and `Init` go to whichever renderer
 draws them. So neither renderer drives the other, and the frame's shared state is set up once:
 `r_viewLens`, the player's field of view and aspect, and `r_frameSerial`, which `P_BobWeapon` steps
-`curbob` by, so a frame both renderers draw bobs once.
+`curbob` by, so a frame both renderers draw bobs once. Its `Init`, which every start runs (a `wad_reload` restart's too),
+first has the backend forget its textures (`ForgetBackendTextures`), since the start makes them all again.
 
 `StandaloneScene` is the backend's scene for the view set up now:
 

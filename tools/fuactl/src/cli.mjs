@@ -210,13 +210,15 @@ const USAGE = `fuactl <command>
   hitches [N] [--port P]             the last N slow frames, each with the timed regions it spent most in
   memsnap [NAME] [--port P]          keep every memory gauge and tag under NAME for memdiff
   memdiff [A] [B] [--port P]         what changed between snapshots A and B, or between A and now
-  soak [--action reload|TEXT] [--cycles N] [--warmup W] [--settle MS] [--port P]   repeat an action N times and fail if memory, objects, handles or threads kept growing after W warm-up cycles (fua_soak)
+  soak [--action reload|"TEXT|TEXT..."] [--cycles N] [--warmup W] [--settle MS] [--ignore PREFIX,...] [--judge-port P [--judge-token T]] [--sites] [--port P]   repeat an action N times, its steps separated by | and each one that starts a level (map, changemap, wad_reload ... map=) waited on, and fail if memory, objects, handles or threads kept growing after W warm-up cycles (fua_soak; --ignore leaves out readings under those prefixes; --judge-port judges another instance, a server this one joins and leaves; --sites records allocations from the first judged cycle and prints the stacks whose live count grew by the last), or the cycles or the frames after them got slower
   compare A.json B.json [--share F] [--floor MS]   two fua_stats json readings side by side; a timing whose p50 or p99 grew by over F (0.15) and FLOOR ms (0.1) is marked
   perfgate NAME [PREFIX] [--spot S | --at x,y,z --face yaw,pitch] [--settle MS] [--update] [--port P]   the counters at a view against this machine's saved baseline NAME, the first run saving it; exit 1 on a regression
   mcp                                run as an MCP stdio server for agents
 `;
 
 async function main() {
+  // [rc4l] A reader that stops early (`| head`) closes the pipe, which ends the command rather than crashing it.
+  process.stdout.on("error", (e) => { if (e.code === "EPIPE") process.exit(0); throw e; });
   const [cmd, ...argv] = process.argv.slice(2);
   const { flags, rest } = parseFlags(argv);
   // [rc4l] --help says what a command takes and does nothing else: `play --help` used to launch an engine.
@@ -986,13 +988,21 @@ async function main() {
       break;
     }
     case "soak": {
+      // [rc4l] --judge-port soaks a server: the action runs on this instance, a client joining and leaving it, and the server's memory is judged.
+      const judge = flags["judge-port"] ? await connectTarget({ port: flags["judge-port"], token: flags["judge-token"] }, usageFor(USAGE, "soak")) : null;
       const result = await withUi(flags, (c) => telemetry.runSoak(c, {
+        judge: judge ?? c,
         action: flags.action && flags.action !== true ? String(flags.action) : "reload",
         cycles: num(flags.cycles) ?? 6, warmup: num(flags.warmup) ?? 1, settleMs: num(flags.settle) ?? 4000,
+        ignore: flags.ignore && flags.ignore !== true ? String(flags.ignore).split(",") : [],
+        sites: !!flags.sites,
         log: (m) => console.error(`[soak] ${m}`),
       }));
+      if (judge) judge.close();
       process.stdout.write(result.report);
-      if (!result.pass) process.exit(1);
+      for (const line of result.slower) console.log(`  slower: ${line}`);
+      for (const s of result.sites) console.log(`  +${s.grew} (now ${s.count})  ${s.stack}`);
+      if (!result.pass || result.slower.length) process.exit(1);
       break;
     }
     case "compare": {

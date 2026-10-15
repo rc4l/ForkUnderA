@@ -2,6 +2,7 @@
 // Copyright (C) 2026 rc4l
 
 #include "features/web/computation/webargs_compute.h"
+#include "features/json/computation/json_compute.h"
 
 namespace zx { namespace web {
 
@@ -50,6 +51,25 @@ static std::vector<std::string> Split(const std::string &s, char sep)
 	}
 	if (!cur.empty()) parts.push_back(cur);
 	return parts;
+}
+
+std::vector<std::string> ComputeRestartArgs(const std::vector<std::string> &held, const std::string &map)
+{
+	std::vector<std::string> args;
+	for (size_t i = 0; i < held.size(); i++)
+	{
+		if (!map.empty() && held[i] == "+map") { i++; continue; }
+		args.push_back(held[i]);
+	}
+	if (!map.empty()) { args.push_back("+map"); args.push_back(map); }
+	return args;
+}
+
+std::string ComputeArgsJson(const std::vector<std::string> &args)
+{
+	std::string out = "[";
+	for (size_t i = 0; i < args.size(); i++) out += (i ? "," : "") + zx::json::ComputeJsonQuoted(args[i]);
+	return out + "]";
 }
 
 std::vector<std::string> ComputeArgsFromQuery(const std::string &query)

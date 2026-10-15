@@ -10,6 +10,7 @@
 #include "doomerrors.h"
 #include "m_argv.h"
 #include "c_dispatch.h"   // [rc4l] AddCommandString
+#include "features/wadreload/zx_wadreload.h"   // [rc4l] PendingReloadMap
 #include <stdlib.h>
 #include <string>
 
@@ -33,9 +34,12 @@ static void Frame()
 	}
 	catch (CRestartException &)
 	{
-		// [rc4l] A restart re-initialises everything, which a page reload does from the start with the page's own arguments.
+		// [rc4l] A restart is a page reload, which starts the engine again on the arguments it held, a wad_reload's new WAD set and map among them.
 		emscripten_cancel_main_loop();
-		EM_ASM({ if (Module.fuaRestart) Module.fuaRestart(); else location.reload(); });
+		std::vector<std::string> held;
+		for (int i = 1; i < Args->NumArgs(); i++) held.push_back(Args->GetArg(i));
+		const std::string json = ComputeArgsJson(ComputeRestartArgs(held, zx::wadreload::PendingReloadMap()));
+		EM_ASM({ if (Module.fuaRestart) Module.fuaRestart(UTF8ToString($0)); else location.reload(); }, json.c_str());
 	}
 	catch (CDoomError &error)
 	{
@@ -58,6 +62,8 @@ void InstallDriver(void (*terms)())
 
 void AppendPageArgs(DArgs *args)
 {
+	// [rc4l] A page a restart reloaded passes the arguments the engine held, which already carry the page's own.
+	if (EM_ASM_INT({ return Module.fuaRestartArgs ? 1 : 0; })) return;
 	args->AppendArg("-offline");
 	char *query = (char *)EM_ASM_PTR({ return stringToNewUTF8(location.search); });
 	for (const std::string &arg : ComputeArgsFromQuery(query != nullptr ? query : ""))

@@ -65,24 +65,26 @@ static bool ReadHeaps(std::vector<zx::telemetry::HeapBudget> &out)
 	return true;
 }
 
-// [rc4l] The device-local budget, read at most a few times a second for both gauges, negative where the device cannot say.
-static const zx::telemetry::HeapBudget &Budget()
+// [rc4l] The driver's heaps, read at most a few times a second for every gauge, empty where the device cannot say.
+static const std::vector<zx::telemetry::HeapBudget> &Heaps()
 {
-	static zx::telemetry::HeapBudget last = { true, -1.0, -1.0 };
+	static std::vector<zx::telemetry::HeapBudget> last;
 	static zx::telemetry::Throttle every(400);
 	if (every.Due(zx::telemetry::NowNs() / 1000000))
 	{
-		std::vector<zx::telemetry::HeapBudget> heaps;
-		last = ReadHeaps(heaps) ? zx::telemetry::ComputeDeviceLocalBudget(heaps) : zx::telemetry::HeapBudget{ true, -1.0, -1.0 };
+		last.clear();
+		if (!ReadHeaps(last)) last.clear();
 	}
 	return last;
 }
 
-static double BudgetUsed() { return Budget().used; }
-static double BudgetAvailable() { return Budget().budget; }
+static double BudgetUsed() { return Heaps().empty() ? -1.0 : zx::telemetry::ComputeHeapBudget(Heaps(), true).used; }
+static double BudgetAvailable() { return Heaps().empty() ? -1.0 : zx::telemetry::ComputeHeapBudget(Heaps(), true).budget; }
+static double HostUsed() { return Heaps().empty() ? -1.0 : zx::telemetry::ComputeHeapBudget(Heaps(), false).used; }
 static const bool s_budgetCounted = (
 	zx::telemetry::Register(zx::telemetry::CounterSpec{ "gpu/vk_budget_used_bytes", "bytes", zx::telemetry::CounterKind::Gauge, 500 }, BudgetUsed),
-	zx::telemetry::Register(zx::telemetry::CounterSpec{ "gpu/vk_budget_bytes", "bytes", zx::telemetry::CounterKind::Gauge, 500 }, BudgetAvailable),
+	zx::telemetry::Register(zx::telemetry::CounterSpec{ "gpu/vk_budget_bytes", "bytes", zx::telemetry::CounterKind::Gauge, 500, false }, BudgetAvailable),
+	zx::telemetry::Register(zx::telemetry::CounterSpec{ "gpu/vk_host_used_bytes", "bytes", zx::telemetry::CounterKind::Gauge, 500 }, HostUsed),
 	true);
 
 static bool CreateDevice(Diligent::IRenderDevice **device, Diligent::IDeviceContext **context, DescriptorLimits &limits, FString &report)

@@ -4,6 +4,7 @@
 // [rc4l] The Windows probe: the process's memory counters, its handle count, the process heap's summary, and the video memory DXGI says this process holds on each adapter, whatever API allocated it.
 
 #include "features/telemetry/osprobe.h"
+#include "features/telemetry/telemetry.h"
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -63,6 +64,27 @@ double DxgiProcessBytes()
 	return any ? total : -1.0;
 }
 
+// [rc4l] Every committed region of the process's address space, as features/telemetry's mem/win/ breakdown reads it on request.
+void CommittedRegions(std::vector<Reading> &out)
+{
+	std::vector<MemoryRegion> regions;
+	MEMORY_BASIC_INFORMATION mbi;
+	for (const char *at = NULL; VirtualQuery(at, &mbi, sizeof(mbi)) == sizeof(mbi); at = (const char *)mbi.BaseAddress + mbi.RegionSize)
+	{
+		if (mbi.State != MEM_COMMIT) continue;
+		const DWORD p = mbi.Protect & 0xff;
+		const bool exec = p == PAGE_EXECUTE || p == PAGE_EXECUTE_READ || p == PAGE_EXECUTE_READWRITE || p == PAGE_EXECUTE_WRITECOPY;
+		const bool write = p == PAGE_READWRITE || p == PAGE_WRITECOPY || p == PAGE_EXECUTE_READWRITE || p == PAGE_EXECUTE_WRITECOPY;
+		const RegionKind kind = mbi.Type == MEM_PRIVATE ? RegionKind::Private : mbi.Type == MEM_MAPPED ? RegionKind::Mapped : RegionKind::Image;
+		regions.push_back(MemoryRegion{ (double)mbi.RegionSize, kind, exec, write });
+	}
+	const std::vector<Reading> readings = ComputeRegionReadings(regions, "mem/win/");
+	out.insert(out.end(), readings.begin(), readings.end());
+}
+
+// [rc4l] Not judged by a soak: it restates mem/private_bytes by kind, and the heap's settling after a restart shows in it first.
+const bool s_regions = (RegisterBreakdown("mem/win/", CommittedRegions, false), true);
+
 // [rc4l] An address's function from the engine's .pdb, with its source file and line, inside an open dbghelp session.
 std::string SymbolName(HANDLE proc, void *address)
 {
@@ -104,6 +126,20 @@ void ReadOs(OsReadings &out)
 	HeapSummaryRecord heap = {};
 	heap.cb = sizeof(heap);
 	if (heapSummary != NULL && heapSummary(GetProcessHeap(), 0, &heap)) out.heapBytes = (double)heap.cbAllocated;
+	HANDLE heaps[256];
+	const DWORD heapCount = GetProcessHeaps(256, heaps);
+	if (heapSummary != NULL && heapCount > 0 && heapCount <= 256)
+	{
+		out.allHeapsBytes = out.heapsCommittedBytes = 0.0;
+		for (DWORD i = 0; i < heapCount; i++)
+		{
+			HeapSummaryRecord each = {};
+			each.cb = sizeof(each);
+			if (!heapSummary(heaps[i], 0, &each)) continue;
+			out.allHeapsBytes += (double)each.cbAllocated;
+			out.heapsCommittedBytes += (double)each.cbCommitted;
+		}
+	}
 	out.gpuProcessBytes = DxgiProcessBytes();
 }
 

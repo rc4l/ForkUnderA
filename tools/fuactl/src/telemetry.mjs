@@ -23,15 +23,42 @@ export function consoleTextFor(cmd, words, flags = {}) {
   return view ? view(words, flags) : null;
 }
 
-// [rc4l] What a soak repeats, by name, as the console text a cycle runs on the map the soak began on and whether it starts a new level; tools/web/check.mjs repeats the same ones.
+// [rc4l] What a soak repeats, by name, as the console text a cycle runs on the map the soak began on; tools/web/check.mjs repeats the same ones.
 export const SOAK_ACTIONS = {
-  reload: { text: (map) => `map ${map}`, newLevel: true },
+  reload: (map) => `map ${map}`,
 };
 
-// [rc4l] One cycle of a soak: a named action, else the console text as given.
-export function soakStep(action, map) {
-  const known = SOAK_ACTIONS[action];
-  return known ? { text: known.text(map), newLevel: known.newLevel } : { text: action, newLevel: false };
+// [rc4l] The map console text starts (map, changemap, a wad_reload's map=, or fua_hostmap's, which joins the server it starts), "*" for a connect, whose map the server names, or null for text that starts none.
+export function levelStarted(text) {
+  const m = /^\s*(?:map|changemap|fua_hostmap)\s+(\S+)/i.exec(text) || /^\s*wad_reload\b.*\smap=(\S+)/i.exec(text);
+  if (!m && /^\s*connect\s+\S/i.test(text)) return "*";
+  return m ? m[1] : null;
+}
+
+// [rc4l] One cycle of a soak as steps run in order: a named action, else console texts separated by "|", each with the map it starts (null for none), which the soak waits for.
+export function soakSteps(action, map) {
+  if (SOAK_ACTIONS[action] && !map) throw new Error(`soak: ${action} repeats the current map, and the instance is in none`);
+  const texts = SOAK_ACTIONS[action] ? [SOAK_ACTIONS[action](map)] : String(action).split("|").map((t) => t.trim()).filter(Boolean);
+  return texts.map((text) => ({ text, map: levelStarted(text) }));
+}
+
+// [rc4l] Whether a soak's cycles got slower: the later half's median against the earlier half's, past warmup, for the time a cycle's steps took and the frame time after them; each a line saying so.
+export function soakSlower(cycles, warmup, { share = 0.25, floors = { stepSeconds: 0.25, frameMs: 0.1 } } = {}) {
+  const judged = cycles.slice(Math.max(0, warmup));
+  if (judged.length < 4) return [];
+  const median = (v) => { const s = [...v].sort((a, b) => a - b); return s[Math.floor((s.length - 1) / 2)]; };
+  const half = Math.floor(judged.length / 2);
+  const out = [];
+  for (const [key, floor] of Object.entries(floors)) {
+    const before = median(judged.slice(0, half).map((c) => c[key])), after = median(judged.slice(half).map((c) => c[key]));
+    if (after - before > floor && after > before * (1 + share)) out.push(`${key} went from ${before.toFixed(2)} to ${after.toFixed(2)}`);
+  }
+  return out;
+}
+
+// [rc4l] The cycles a soak ran, a line each: the time its steps took and the frame time after them.
+export function soakCycleLines(cycles) {
+  return cycles.map((c, i) => `cycle ${i + 1}: steps ${c.stepSeconds.toFixed(2)} s, frame p50 ${c.frameMs.toFixed(3)} ms`);
 }
 
 // [rc4l] The first JSON value a console reply holds, which other output may surround.
@@ -51,33 +78,81 @@ export function parseConsoleJson(text) {
   throw new Error(`unterminated JSON in: ${s.trim().slice(0, 120)}`);
 }
 
-// [rc4l] Waits for the level a console command started: the level clock running backwards or the level left and entered again.
+// [rc4l] A fua_allocsites report's stacks, each with its live count and bytes.
+export function parseAllocReport(text) {
+  const units = { B: 1, KB: 1024, MB: 1048576, GB: 1073741824 };
+  const stacks = new Map();
+  for (const line of String(text).split("\n")) {
+    const m = /^\s+(\d+) \(([\d.]+) (B|KB|MB|GB)\)\s+(.+)$/.exec(line);
+    if (m) stacks.set(m[4].trim(), { count: Number(m[1]), bytes: Number(m[2]) * units[m[3]] });
+  }
+  return stacks;
+}
+
+// [rc4l] The stacks whose live count grew from one report to the next, most first: a leak's stack grows with every cycle while the current level's stay put.
+export function allocGrowth(before, after, limit = 12) {
+  const grew = [];
+  for (const [stack, now] of after) {
+    const was = before.get(stack) ?? { count: 0, bytes: 0 };
+    if (now.count > was.count) grew.push({ stack, grew: now.count - was.count, count: now.count, bytes: now.bytes });
+  }
+  return grew.sort((a, b) => b.grew - a.grew).slice(0, limit);
+}
+
+// [rc4l] The level clock once the level has run minTics, so a level started after it shows as the clock running backwards, or null outside a level (the title), after which any level is new.
+async function playedLevelTime(c, { sleep, minTics = 35, timeoutMs = 60000 }) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const t = await c.rpc("sim.tic").catch(() => ({}));
+    if (!t.inlevel) return null;
+    if ((t.leveltime ?? 0) >= minTics || Date.now() >= deadline) return t.leveltime ?? 0;
+    await sleep(100);
+  }
+}
+
+// [rc4l] Waits for the level a console command started: any level after none, the level clock running backwards, or the level left and entered again.
 async function awaitNewLevel(c, before, { sleep, timeoutMs = 60000 }) {
   const deadline = Date.now() + timeoutMs;
   let left = false;
   while (Date.now() < deadline) {
-    await sleep(250);
+    await sleep(100);
     const t = await c.rpc("sim.tic").catch(() => ({}));
     if (t.inlevel === false) left = true;
-    if (t.inlevel && (left || (t.leveltime ?? 0) < before)) return;
+    if (t.inlevel && (before === null || left || (t.leveltime ?? 0) < before)) return;
   }
   throw new Error("soak: the level never came back");
 }
 
-// [rc4l] Repeats an action cycles times, marking memory after each once it settles, and returns the engine's verdict (fua_soak verdict json): pass, marks, judged, grew as { name, text } and the report it prints.
-export async function runSoak(c, { action = "reload", cycles = 6, warmup = 1, settleMs = 4000, exec = execSlow, sleep = cap.sleep, log = () => {} }) {
-  const cam = await c.rpc("player.camera");
-  await exec(c, "fua_soak begin");
+// [rc4l] Repeats an action's steps on c cycles times, marking memory after each cycle once it settles on judge (c itself, or a server c joins and leaves), and returns judge's verdict (fua_soak verdict json: pass, marks, judged, grew as { name, text } and its report), leaving out readings under each ignore prefix, with each cycle's step time and judge's frame time, what got slower, and with sites the allocation stacks that grew from the first judged cycle to the last.
+export async function runSoak(c, { action = "reload", cycles = 6, warmup = 1, settleMs = 4000, ignore = [], judge = c, sites = false, exec = execSlow, sleep = cap.sleep, now = Date.now, log = () => {} }) {
+  const steps = soakSteps(action, (await c.rpc("player.camera").catch(() => ({}))).map);
+  const ran = [];
+  const record = sites && cycles - warmup >= 2;
+  let firstReport = null;
+  await exec(judge, "fua_soak begin");
   for (let i = 0; i < cycles; i++) {
-    const step = soakStep(action, cam.map);
-    const before = (await c.rpc("sim.tic")).leveltime ?? 0;
-    await exec(c, step.text);
-    if (step.newLevel) await awaitNewLevel(c, before, { sleep });
+    if (record && i === warmup) await exec(judge, "fua_allocsites start");
+    const started = now();
+    for (const step of steps) {
+      const before = step.map ? await playedLevelTime(c, { sleep }) : 0;
+      await exec(c, step.text);
+      if (step.map) await awaitNewLevel(c, before, { sleep });
+    }
+    const stepSeconds = (now() - started) / 1000;
     await sleep(settleMs);
-    await exec(c, "fua_soak mark");
-    log(`cycle ${i + 1}/${cycles}`);
+    await exec(judge, "fua_soak mark");
+    const frame = parseConsoleJson(await exec(judge, "fua_stats json frame/ms")).find((r) => r.name === "frame/ms");
+    ran.push({ stepSeconds, frameMs: frame ? frame.p50 : 0 });
+    log(soakCycleLines(ran).at(-1));
+    if (record && i === warmup) firstReport = parseAllocReport(await exec(judge, "fua_allocsites report 5000"));
   }
-  return parseConsoleJson(await exec(c, `fua_soak verdict ${warmup} json`));
+  const verdict = parseConsoleJson(await exec(judge, ["fua_soak verdict", warmup, ...ignore.map((p) => `-${p}`), "json"].join(" ")));
+  let grownSites = [];
+  if (record) {
+    grownSites = allocGrowth(firstReport, parseAllocReport(await exec(judge, "fua_allocsites report 5000")));
+    await exec(judge, "fua_allocsites stop");
+  }
+  return { ...verdict, cycles: ran, slower: soakSlower(ran, warmup), sites: grownSites };
 }
 
 // [rc4l] The rows of two fua_stats json readings side by side, by name, with what a gate judges: p50 and p99 of each timing, regressed when over both share of the before and floor in its unit.
