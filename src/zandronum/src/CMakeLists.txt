@@ -1752,6 +1752,7 @@ add_executable( zdoom WIN32
 	features/quake-movement/elevatorjump.cpp
 	features/speedometer/speedometer.cpp
 	features/crosshair/crosshair.cpp
+	features/damage-taken/damagetaken.cpp
 	zzautozend.cpp
 )
 

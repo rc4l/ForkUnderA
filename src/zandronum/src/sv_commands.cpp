@@ -89,6 +89,7 @@
 #include "voicechat.h"
 #include "d_netinf.h"
 #include "callvote.h"
+#include "features/damage-taken/damagetaken.h"
 #include <memory>
 
 CVAR (Bool, sv_showwarnings, false, CVAR_GLOBALCONFIG|CVAR_ARCHIVE)
@@ -443,6 +444,24 @@ void SERVERCOMMANDS_DamagePlayerWithType( ULONG ulPlayer, ULONG ulArmorPoints, U
 	command.SetAttacker( players[ulPlayer].attacker );
 
 	command.sendCommandToClients( ulPlayerExtra, SVCF_ONLYTHISCLIENT );
+}
+
+//*****************************************************************************
+//
+void SERVERCOMMANDS_FuaDamageTaken( ULONG ulPlayer, const zx::damagetaken::Report &report )
+{
+	ServerCommands::FuaDamageTaken command;
+	command.SetMapTime( report.mapTime );
+	command.SetDamage( report.damage );
+	command.SetArmorAbsorbed( report.armorAbsorbed );
+	command.SetHealthLost( report.healthLost );
+	command.SetAttackerPlayer( report.attackerPlayer );
+	command.SetAttackerClass( report.attackerClass );
+	command.SetWeaponClass( report.weaponClass );
+	command.SetDamageType( report.damageType );
+	command.SetLethal( report.lethal );
+
+	command.sendCommandToClients( ulPlayer, SVCF_ONLYTHISCLIENT );
 }
 
 //*****************************************************************************

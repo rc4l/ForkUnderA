@@ -63,6 +63,8 @@
 #include "tflags.h"
 
 class DLevelScript;
+// [MobiusU9B] See features/damage-taken/damagetaken.h.
+namespace zx { namespace damagetaken { struct Report; } }
 
 //*****************************************************************************
 //	DEFINES
@@ -93,6 +95,8 @@ void	SERVERCOMMANDS_SpawnPlayer( ULONG ulPlayer, LONG lPlayerState, ULONG ulPlay
 void	SERVERCOMMANDS_MovePlayer( ULONG ulPlayer, ULONG ulPlayerExtra = MAXPLAYERS, ServerCommandFlags flags = 0 );
 void	SERVERCOMMANDS_DamagePlayer( ULONG ulPlayer );
 void	SERVERCOMMANDS_DamagePlayerWithType( ULONG ulPlayer, ULONG ulArmorPoints, ULONG ulPlayerExtra );
+// [MobiusU9B] fua_damagetaken: sends one damage roll to the player who took it, and to no one else.
+void	SERVERCOMMANDS_FuaDamageTaken( ULONG ulPlayer, const zx::damagetaken::Report &report );
 void	SERVERCOMMANDS_KillPlayer( ULONG ulPlayer, AActor *pSource, AActor *pInflictor, FName MOD );
 void	SERVERCOMMANDS_SetPlayerHealth( ULONG ulPlayer, ULONG ulPlayerExtra = MAXPLAYERS, ServerCommandFlags flags = 0 );
 void	SERVERCOMMANDS_SetPlayerArmor( ULONG ulPlayer, ULONG ulPlayerExtra = MAXPLAYERS, ServerCommandFlags flags = 0 );

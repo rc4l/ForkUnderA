@@ -198,6 +198,7 @@
  40 SVC2_SETDOMINATIONPOINTSTATE           [Extended] : Byte Bool Byte
  41 SVC2_DEBUGEXPLOSION                    [Extended] : AproxFixed AproxFixed AproxFixed Short Short
  42 SVC2_SETTHINGSPRITEORIENTATION         [Extended] : Actor Byte AproxAngle?{orientflags & SPRITEORIENT_ROLL}
+ 43 SVC2_FUADAMAGETAKEN                    [Extended] : Variable Variable Variable Variable Byte Class Class String Bool
 ## wire ids (network_enums.h)
 # ServerConnectionCommand
   0 SVCC_AUTHENTICATE
@@ -510,7 +511,8 @@
  70 SVC2_SETTHINGSIZE
  71 SVC2_DEBUGEXPLOSION
  72 SVC2_SETTHINGSPRITEORIENTATION
- 73 NUM_SVC2_COMMANDS
+ 73 SVC2_FUADAMAGETAKEN
+ 74 NUM_SVC2_COMMANDS
 # CLCC
   0 CLCC_ATTEMPTCONNECTION
   1 CLCC_ATTEMPTAUTHENTICATION
