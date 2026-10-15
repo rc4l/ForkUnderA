@@ -66,9 +66,7 @@
 #include "doomstat.h"
 #include "za_misc.h"
 #include "features/mainloop/mainloop.h"   // [rc4l] SteppedLoopStarted
-#ifdef __EMSCRIPTEN__
-#include "features/web/webdriver.h"
-#endif
+#include "sdlhost.h"   // [rc4l] what a desktop and a page start differently
 
 // MACROS ------------------------------------------------------------------
 
@@ -79,7 +77,6 @@
 
 // EXTERNAL FUNCTION PROTOTYPES --------------------------------------------
 
-extern "C" int cc_install_handlers(int, char**, int, int*, const char*, int(*)(char*, char*));
 
 // PUBLIC FUNCTION PROTOTYPES ----------------------------------------------
 
@@ -241,16 +238,8 @@ void I_ShutdownJoysticks();
 
 int main (int argc, char **argv)
 {
-#if !defined (__APPLE__) && !defined (__EMSCRIPTEN__)
-	{
-		int s[4] = { SIGSEGV, SIGILL, SIGFPE, SIGBUS };
-		cc_install_handlers(argc, argv, 4, s, GAMENAMELOWERCASE "-crash.log", DoomSpecificInfo);
- 	}
-#endif // !__APPLE__ && !__EMSCRIPTEN__
-#ifdef __EMSCRIPTEN__
-	// [rc4l] The page calls the loop once an animation frame, so D_DoomLoop hands its frames to the browser.
-	zx::web::InstallDriver(call_terms);
-#endif
+	// [rc4l] A desktop's crash catcher, or a page's frame driver, which calls the loop once an animation frame.
+	zx::sdlhost::Start(argc, argv, call_terms, DoomSpecificInfo);
  	
 	// [SB] Moved ZDoom's version info down below for Zan's --version
 
@@ -274,9 +263,7 @@ int main (int argc, char **argv)
 	setlocale (LC_ALL, "C");
 
 	Args = new DArgs(argc, argv);
-#ifdef __EMSCRIPTEN__
-	zx::web::AppendPageArgs(Args);
-#endif
+	zx::sdlhost::AddArgs(Args);
 
 	// [SB] Zandronum version
 	if (ZA_PrintVersion())

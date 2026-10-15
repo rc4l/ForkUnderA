@@ -53,7 +53,7 @@ Paths are relative to `src/zandronum/src/` unless noted. The order is deliberate
 - **4c.** Turn the screen-wipe loop (`d_main.cpp`, `I_WaitVBL(2)` between passes) into a state the frame step advances.
 - **4d.** Make the quit sequence non-blocking: `I_WaitVBL(105)` for the quit sound (`menu/messagebox.cpp`), then `ST_Endoom` → `exit(0)` (`posix/sdl/st_start.cpp`), becomes a timed state ending in a driver-owned shutdown.
 - **4e.** Add a clock implementation beside the signal-based and polled ones in `I_SelectTimer` (`posix/sdl/i_system.cpp`), driven by a monotonic millisecond source. The tic arithmetic goes in a tested `ComputeTicsDue`.
-- **4f.** Replace the FPS limiter's `timer_create(SIGEV_THREAD)` (`posix/sdl/hardware.cpp`), whose semaphore nothing on SDL waits on, with a frame-skip decision in the driver (`ComputeFrameDue`, tested).
+- **4f.** Replace the FPS limiter's `timer_create(SIGEV_THREAD)` (`posix/sdl/i_fpslimit.cpp`), whose semaphore nothing on SDL waits on, with a frame-skip decision in the driver (`ComputeFrameDue`, tested).
 - **4g.** Make `TryRunTics`' waits (`d_net.cpp`) return to the driver instead of blocking when the clock says no tic is due.
 - **4h.** Done when the desktop driver behaves exactly as `D_DoomLoop` did, the full scenario suite passes, and `fuactl` timing shows no change.
 
@@ -111,7 +111,7 @@ Paths are relative to `src/zandronum/src/` unless noted. The order is deliberate
 ## 8. The Emscripten build
 
 - **8a.** Add a `web` branch to `CMakeLists.txt` for Emscripten.
-  - The platform is `posix/sdl/` (`i_input.cpp`, `i_joystick.cpp`, `i_main.cpp`, `i_system.cpp`, `hardware.cpp`) without `crashcatcher.c` (`CMakeLists.txt`), plus `features/web/`.
+  - The platform is `posix/sdl/` without `crashcatcher.c`, `i_fpslimit.cpp` and `sdlhost_desktop.cpp` (`CMakeLists.txt`), plus `features/web/`, whose `webhost.cpp` is the SDL layer's host (`posix/sdl/sdlhost.h`).
   - The Diligent platform source is `dgweb.cpp`, through `FUA_DILIGENT_PLATFORM_SOURCES` (`CMakeLists.txt`).
 - **8b.** Libraries:
   - Use `-sUSE_SDL=2` for SDL2 and `-lopenal` for Emscripten's OpenAL.

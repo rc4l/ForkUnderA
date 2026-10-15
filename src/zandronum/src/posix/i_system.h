@@ -169,8 +169,8 @@ int I_FindAttr (findstate_t *fileinfo);
 #define FA_DIREC	8
 #define FA_ARCH		16
 
-// [rc4l] Emscripten's libc has its own, which this would redeclare as static.
-#ifndef __EMSCRIPTEN__
+// [rc4l] Only where the C library has none (CMake's NEED_STRLWR): Emscripten's has its own, which this would redeclare as static.
+#ifdef NEED_STRLWR
 static inline char *strlwr(char *str)
 {
 	char *ptr = str;

@@ -33,8 +33,6 @@
 */
 
 #include <SDL.h>
-#include <signal.h>
-#include <time.h>
 
 #include "version.h"
 #include "hardware.h"
@@ -51,9 +49,7 @@
 #include "features/video-scale/computation/videoscale_compute.h"
 #include "features/hwrender/backendonly.h"   // [rc4l] CreateLaunchRenderer
 #include "r_renderer.h"
-#ifdef __EMSCRIPTEN__
-#include "features/web/webdriver.h"   // [rc4l] SetPageFullscreen
-#endif
+#include "sdlhost.h"   // [rc4l] fullscreen as the host has it
 // [rc4l] Software renderer removed (GL-only build); NO_GL server uses the null renderer.
 #ifdef NO_GL
 #include "r_nullrenderer.h"
@@ -184,10 +180,8 @@ DFrameBuffer *I_SetMode (int &width, int &height, DFrameBuffer *old)
 		fs = fullscreen;
 		break;
 	}
-#ifdef __EMSCRIPTEN__
 	// [rc4l] A page's canvas is never an SDL fullscreen window; the page makes it fullscreen (fullscreen's callback below).
-	fs = false;
-#endif
+	if (zx::sdlhost::OwnsFullscreen()) fs = false;
 
 	// [rc4l] video-scale: split the window's CLIENT size from the RENDER (virtual) size.
 	//   - client size = the window's drawable: the desktop for fullscreen (borderless-desktop), or
@@ -299,66 +293,6 @@ void I_ClosestResolution (int *width, int *height, int bits)
 EXTERN_CVAR(Int, vid_maxfps);
 EXTERN_CVAR(Bool, cl_capfps);
 
-// [rc4l] A browser paces frames itself (its animation frame), and has no POSIX timers, so it takes the empty limiter below as Apple does.
-#if !defined(__APPLE__) && !defined(__EMSCRIPTEN__)
-Semaphore FPSLimitSemaphore;
-
-static void FPSLimitNotify(sigval val)
-{
-	SEMAPHORE_SIGNAL(FPSLimitSemaphore)
-}
-
-void I_SetFPSLimit(int limit)
-{
-	static sigevent FPSLimitEvent;
-	static timer_t FPSLimitTimer;
-	static bool FPSLimitTimerEnabled = false;
-	static bool EventSetup = false;
-	if(!EventSetup)
-	{
-		EventSetup = true;
-		FPSLimitEvent.sigev_notify = SIGEV_THREAD;
-		FPSLimitEvent.sigev_signo = 0;
-		FPSLimitEvent.sigev_value.sival_int = 0;
-		FPSLimitEvent.sigev_notify_function = FPSLimitNotify;
-		FPSLimitEvent.sigev_notify_attributes = NULL;
-
-		SEMAPHORE_INIT(FPSLimitSemaphore, 0, 0)
-	}
-
-	if (limit < 0)
-	{
-		limit = vid_maxfps;
-	}
-	// Kill any leftover timer.
-	if (FPSLimitTimerEnabled)
-	{
-		timer_delete(FPSLimitTimer);
-		FPSLimitTimerEnabled = false;
-	}
-	if (limit == 0)
-	{ // no limit
-		DPrintf("FPS timer disabled\n");
-	}
-	else
-	{
-		FPSLimitTimerEnabled = true;
-		if(timer_create(CLOCK_REALTIME, &FPSLimitEvent, &FPSLimitTimer) == -1)
-			Printf("Failed to create FPS limitter event\n");
-		itimerspec period = { {0, 0}, {0, 0} };
-		period.it_value.tv_nsec = period.it_interval.tv_nsec = 1000000000 / limit;
-		if(timer_settime(FPSLimitTimer, 0, &period, NULL) == -1)
-			Printf("Failed to set FPS limitter timer\n");
-		DPrintf("FPS timer set to %u ms\n", (unsigned int) period.it_interval.tv_nsec / 1000000);
-	}
-}
-#else
-// So Apple doesn't support POSIX timers and I can't find a good substitute short of
-// having Objective-C Cocoa events or something like that.
-void I_SetFPSLimit(int limit)
-{
-}
-#endif
 
 // [rc4l] Default 500 to match upstream UZDoom/GZDoom (was 200). vsync and cl_capfps are already off
 // by default like upstream; this was the only framerate-cap divergence. 0 = uncapped, clamp [35,1000].
@@ -381,10 +315,12 @@ CUSTOM_CVAR (Int, vid_maxfps, 500, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
 // [rc4l] No call at game start in any build: the screen is already made in this mode, and a call then rebuilt the window and swapchain on the first frame, which zeroes a browser's canvas.
 CUSTOM_CVAR (Bool, fullscreen, false, CVAR_ARCHIVE|CVAR_GLOBALCONFIG|CVAR_NOINITCALL)
 {
-#ifdef __EMSCRIPTEN__
-	// [rc4l] The page's one canvas goes fullscreen or back, as the page's own button does, rather than the window being rebuilt.
-	zx::web::SetPageFullscreen(self);
-#else
+	// [rc4l] A page's one canvas goes fullscreen or back, as the page's own button does, rather than the window being rebuilt.
+	if (zx::sdlhost::OwnsFullscreen())
+	{
+		zx::sdlhost::SetFullscreen(self);
+		return;
+	}
 	if ( screen )
 	{
 		NewWidth = screen->GetWidth();
@@ -392,7 +328,6 @@ CUSTOM_CVAR (Bool, fullscreen, false, CVAR_ARCHIVE|CVAR_GLOBALCONFIG|CVAR_NOINIT
 	}
 	NewBits = DisplayBits;
 	setmodeneeded = true;
-#endif
 }
 
 CUSTOM_CVAR (Float, vid_winscale, 1.f, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)

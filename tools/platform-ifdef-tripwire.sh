@@ -14,11 +14,6 @@ cmdlib.cpp
 features/hwrender/diligent/dgdevice_wgpu.cpp
 features/hwrender/diligent/dgwindow.cpp
 menu/menudef.cpp
-posix/i_system.h
-posix/sdl/hardware.cpp
-posix/sdl/i_input.cpp
-posix/sdl/i_main.cpp
-posix/sdl/i_system.cpp
 resourcefiles/file_directory.cpp
 sound/music_midi_timidity.cpp
 "

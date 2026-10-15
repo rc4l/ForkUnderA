@@ -1,7 +1,7 @@
 // [rc4l] The player's own WADs: kept in IndexedDB between visits, listed in the page's panel, and written into the engine's file system with -iwad and -file for the ones chosen.
 'use strict';
 
-window.FuaWads = (function () {
+(function (root) {
   const DB = 'fua-wads', STORE = 'files', CHOICE = 'fua-wad-choice', DIR = '/wads';
 
   function open() {
@@ -32,6 +32,26 @@ window.FuaWads = (function () {
     return magic === 'IWAD' || /\.(iwad|ipk3)$/i.test(name);
   }
 
+  // [rc4l] -iwad and -file for the chosen WADs among those stored (names), each under dir.
+  function argsFor(c, names, dir) {
+    const args = [];
+    if (c.iwad && names.has(c.iwad)) args.push('-iwad', dir + '/' + c.iwad);
+    const pwads = c.files.filter((n) => names.has(n));
+    if (pwads.length) args.push('-file', ...pwads.map((n) => dir + '/' + n));
+    return args;
+  }
+
+  // [rc4l] The choice with a WAD picked or not: an IWAD is the one to play or none, a PWAD is loaded or not.
+  function picked(c, name, iwad, on) {
+    if (iwad) return { ...c, iwad: on ? name : null };
+    return { ...c, files: on ? [...new Set([...c.files, name])] : c.files.filter((n) => n !== name) };
+  }
+
+  // [rc4l] The choice without a WAD that was removed.
+  function without(c, name) {
+    return { iwad: c.iwad === name ? null : c.iwad, files: c.files.filter((n) => n !== name) };
+  }
+
   function choice() {
     try { return JSON.parse(localStorage.getItem(CHOICE)) || { iwad: null, files: [] }; }
     catch { return { iwad: null, files: [] }; }
@@ -47,13 +67,7 @@ window.FuaWads = (function () {
     if (files.length === 0) return [];
     FS.mkdirTree(DIR);
     for (const f of files) FS.writeFile(DIR + '/' + f.name, new Uint8Array(f.data));
-    const c = choice();
-    const names = new Set(files.map((f) => f.name));
-    const args = [];
-    if (c.iwad && names.has(c.iwad)) args.push('-iwad', DIR + '/' + c.iwad);
-    const pwads = c.files.filter((n) => names.has(n));
-    if (pwads.length) args.push('-file', ...pwads.map((n) => DIR + '/' + n));
-    return args;
+    return argsFor(choice(), new Set(files.map((f) => f.name)), DIR);
   }
 
   // [rc4l] The panel: the stored WADs with the IWAD to play and the PWADs to load, adding and removing files, and `restart` to apply.
@@ -79,19 +93,13 @@ window.FuaWads = (function () {
         pick.type = f.iwad ? 'radio' : 'checkbox';
         pick.name = f.iwad ? 'iwad' : '';
         pick.checked = f.iwad ? c.iwad === f.name : c.files.includes(f.name);
-        pick.addEventListener('change', () => {
-          const now = choice();
-          if (f.iwad) now.iwad = pick.checked ? f.name : null;
-          else now.files = pick.checked ? [...new Set([...now.files, f.name])] : now.files.filter((n) => n !== f.name);
-          setChoice(now);
-        });
+        pick.addEventListener('change', () => setChoice(picked(choice(), f.name, f.iwad, pick.checked)));
         const label = document.createElement('label');
         label.append(pick, ` ${f.name} `, Object.assign(document.createElement('small'), { textContent: f.iwad ? 'IWAD' : 'PWAD' }));
         const del = Object.assign(document.createElement('button'), { type: 'button', textContent: 'Remove' });
         del.addEventListener('click', async () => {
           await remove(f.name);
-          const now = choice();
-          setChoice({ iwad: now.iwad === f.name ? null : now.iwad, files: now.files.filter((n) => n !== f.name) });
+          setChoice(without(choice(), f.name));
           render();
         });
         row.append(label, del);
@@ -112,5 +120,7 @@ window.FuaWads = (function () {
     document.getElementById('wads-apply').addEventListener('click', () => restart());
   }
 
-  return { load, panel, isIwad };
-})();
+  const api = { load, panel, isIwad, argsFor, picked, without };
+  if (typeof module === 'object' && module.exports) module.exports = api;
+  else root.FuaWads = api;
+})(typeof window !== 'undefined' ? window : globalThis);

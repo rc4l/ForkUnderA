@@ -1,4 +1,4 @@
-// [rc4l] The page's half of the browser build: the WebGPU device the engine attaches to, its data in the file system, its config kept between visits, and main run once all three are ready.
+// [rc4l] The page's half of the browser build, wired together: the WebGPU device (gpu.js), the data (data.js), the player's home (home.js) and WADs (wads.js), crashes (crashreport.js), and main run once the device and the data are ready.
 'use strict';
 
 (function () {
@@ -13,13 +13,19 @@
   const canvas = document.getElementById('canvas');
   const again = document.getElementById('again');
 
-  // [rc4l] Where the engine keeps its config and saves (posix's $HOME), stored in IndexedDB.
-  const HOME = '/home/web_user';
-
   function log(text) {
     console.log(text);
     consoleEl.textContent += text + '\n';
     if (consoleEl.textContent.length > 200000) consoleEl.textContent = consoleEl.textContent.slice(-100000);
+  }
+
+  // [rc4l] A file the player saves from the page: a crash report or a screenshot.
+  function download(blob, name) {
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = name;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(link.href), 10000);
   }
 
   function fail(text) {
@@ -50,12 +56,7 @@
   });
   document.getElementById('report-save').addEventListener('click', () => {
     const last = crashes.last();
-    if (!last) return;
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(new Blob([last.text], { type: 'text/plain' }));
-    link.download = 'forkundera-crash-' + last.event.event_id.slice(0, 8) + '.txt';
-    link.click();
-    setTimeout(() => URL.revokeObjectURL(link.href), 10000);
+    if (last) download(new Blob([last.text], { type: 'text/plain' }), 'forkundera-crash-' + last.event.event_id.slice(0, 8) + '.txt');
   });
   // [rc4l] An error that escapes the engine's frame stops its loop, so it is a crash once the engine is running; a quit's exit is not one.
   function escaped(error, message) {
@@ -70,82 +71,18 @@
     if (fraction !== undefined) progress.value = fraction;
   }
 
-  // [rc4l] The engine's shaders use more than WebGPU's default limits, so the device asks for everything the adapter has.
-  async function makeDevice() {
-    if (!navigator.gpu) throw new Error('This browser has no WebGPU. Chrome or Edge 113 and later, Safari 26, and Firefox on Windows have it.');
-    const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
-    if (!adapter) throw new Error('WebGPU is present but found no usable graphics adapter.');
-    const want = ['depth-clip-control', 'depth32float-stencil8', 'texture-compression-bc', 'indirect-first-instance', 'float32-filterable'];
-    const requiredLimits = {};
-    for (const k in adapter.limits) requiredLimits[k] = adapter.limits[k];
-    const device = await adapter.requestDevice({ requiredFeatures: want.filter((f) => adapter.features.has(f)), requiredLimits });
-    const info = adapter.info || {};
-    crashes.setAdapter([info.vendor, info.architecture, info.description, info.isFallbackAdapter ? '(software)' : ''].filter(Boolean).join(' '));
-    device.lost.then((lost) => crash('device lost', 'The graphics device was lost: ' + lost.message, ''));
-    // [rc4l] The first error the device reports is reported too, since a refused binding can stop the drawing for good while the game goes on; one that leaves the game unable to draw (gpuErrorWatch) is a crash, which before left the last frame on the canvas with no panel.
-    let gpuReported = false, gpuRun = null;
-    device.addEventListener('uncapturederror', (e) => {
-      log('WebGPU error: ' + e.error.message);
-      const outOfMemory = typeof GPUOutOfMemoryError !== 'undefined' && e.error instanceof GPUOutOfMemoryError;
-      const watched = FuaCrash.gpuErrorWatch(gpuRun, { message: e.error.message, outOfMemory, now: performance.now() });
-      gpuRun = watched.state;
-      if (watched.stopped) { crash('drawing stopped', watched.stopped, ''); return; }
-      if (gpuReported) return;
-      gpuReported = true;
-      crashes.report('webgpu', e.error.message, '').then((r) => { if (r.delivered) log('A report of it was sent to the developers.'); });
-    });
-    return device;
-  }
-
-  // [rc4l] Every file the engine starts with (its pk3s and Freedoom), fetched with progress and written at the file system's root, where it looks first.
-  async function fetchData(FS) {
-    const list = await (await fetch('data/files.json')).json();
-    const total = list.reduce((n, f) => n + f.size, 0) || 1;
-    let done = 0;
-    for (const f of list) {
-      const res = await fetch('data/' + f.name);
-      if (!res.ok) throw new Error('Could not fetch ' + f.name + ' (' + res.status + ')');
-      const reader = res.body.getReader();
-      const bytes = new Uint8Array(f.size);
-      let at = 0;
-      for (;;) {
-        const { done: end, value } = await reader.read();
-        if (end) break;
-        bytes.set(value, at);
-        at += value.length;
-        done += value.length;
-        setStatus('Loading ' + f.name, done / total);
-      }
-      FS.writeFile('/' + f.name, bytes.subarray(0, at));
-    }
-  }
-
-  function mountHome(FS, IDBFS) {
-    FS.mkdirTree(HOME);
-    FS.mount(IDBFS, {}, HOME);
-    return new Promise((resolve) => FS.syncfs(true, (err) => { if (err) log('Saved data could not be read: ' + err); resolve(); }));
-  }
+  // [rc4l] The device's errors: each logged, the first reported, and one that leaves the game unable to draw a crash.
+  const gpuError = FuaCrash.gpuErrorHandler({
+    log,
+    report: (message) => crashes.report('webgpu', message, '').then((r) => { if (r.delivered) log('A report of it was sent to the developers.'); }),
+    stop: (why) => crash('drawing stopped', why, ''),
+    now: () => performance.now(),
+    isOutOfMemory: (error) => typeof GPUOutOfMemoryError !== 'undefined' && error instanceof GPUOutOfMemoryError,
+  });
 
   // [rc4l] Whether the engine is still there to write its config, from main until it quits or fails.
   let running = false;
   let saveHome = () => Promise.resolve(true);
-
-  // [rc4l] Saves go back to IndexedDB every few seconds, and the config with them when the page is hidden or left, one sync at a time.
-  function keepHome(FS) {
-    let last = Promise.resolve(true), queued = 0;
-    const sync = () => new Promise((resolve) => FS.syncfs(false, (err) => { if (err) log('Saving failed: ' + err); resolve(!err); }));
-    saveHome = (withConfig) => {
-      if (withConfig && running) Module.fuaCommand('writeini');
-      queued++;
-      last = last.then(sync).finally(() => queued--);
-      // [rc4l] The store in progress, or the last one, as a promise of whether it worked, for tests to wait on.
-      Module.fuaSaving = last;
-      return last;
-    };
-    setInterval(() => { if (!queued) saveHome(false); }, 5000);
-    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') saveHome(true); });
-    window.addEventListener('pagehide', () => saveHome(true));
-  }
 
   // [rc4l] A restart is a page reload, once the config and saves are stored so it keeps them.
   function restart() {
@@ -176,11 +113,7 @@
     canvas.toBlob((blob) => {
       if (!blob) { log('The screenshot could not be made.'); return; }
       log('Downloading ' + name);
-      const link = document.createElement('a');
-      link.href = URL.createObjectURL(blob);
-      link.download = name;
-      link.click();
-      setTimeout(() => URL.revokeObjectURL(link.href), 10000);
+      download(blob, name);
     }, 'image/png');
   }
 
@@ -206,7 +139,8 @@
     preRun: [() => {
       const FS = Module.FS;
       Module.addRunDependency('fua-data');
-      Promise.all([fetchData(FS), mountHome(FS, Module.IDBFS || FS.filesystems.IDBFS), FuaWads.load(FS).then((a) => { wadArgs = a; })])
+      const loading = FuaData.fetchAll({ FS, onProgress: (name, fraction) => setStatus('Loading ' + name, fraction) });
+      Promise.all([loading, FuaHome.mount(FS, Module.IDBFS || FS.filesystems.IDBFS, log), FuaWads.load(FS).then((a) => { wadArgs = a; })])
         .then(() => Module.removeRunDependency('fua-data'))
         .catch((e) => fail(String(e.message || e)));
     }],
@@ -215,7 +149,13 @@
   let wadArgs = [];
   FuaWads.panel(restart);
 
-  makeDevice().then((d) => { Module.preinitializedWebGPUDevice = d; deviceReady(); }).catch((e) => fail(String(e.message || e)));
+  FuaGpu.makeDevice(navigator.gpu).then(({ device: d, adapter }) => {
+    crashes.setAdapter(adapter);
+    d.lost.then((lost) => crash('device lost', 'The graphics device was lost: ' + lost.message, ''));
+    d.addEventListener('uncapturederror', (e) => gpuError(e.error));
+    Module.preinitializedWebGPUDevice = d;
+    deviceReady();
+  }).catch((e) => fail(String(e.message || e)));
 
   Promise.all([device, runtime]).then(() => {
     // [rc4l] A console command, for the page's controls and for tests driving the engine; one that quits ends the engine rather than failing.
@@ -224,7 +164,8 @@
       catch (e) { if (!e || e.name !== 'ExitStatus') throw e; }
     };
     statusEl.hidden = true;
-    keepHome(Module.FS);
+    // [rc4l] Module.fuaSaving is the store in progress, or the last one, for tests to wait on.
+    saveHome = FuaHome.keeper({ FS: Module.FS, log, writeConfig: () => { if (running) Module.fuaCommand('writeini'); }, onSaving: (p) => { Module.fuaSaving = p; } });
     canvas.focus();
     running = true;
     Module.callMain(wadArgs);

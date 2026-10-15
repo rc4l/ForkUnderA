@@ -53,6 +53,8 @@ public:
 	void NewRefreshRate ();
 	// [rc4l] The window's size in pixels; false while it has none.
 	bool ClientSize (int &w, int &h);
+	// [rc4l] A screenshot the host takes after the frame (zx::sdlhost::CaptureFrameLater), as a page must.
+	bool ScreenshotLater (const char *path);
 
 	friend class SDLVideo;
 

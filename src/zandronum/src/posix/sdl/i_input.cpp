@@ -20,9 +20,7 @@
 // [BB] New #includes.
 #include "chat.h"
 #include "features/web/computation/mousecapture_compute.h"
-#ifdef __EMSCRIPTEN__
-#include <emscripten/html5.h>
-#endif
+#include "sdlhost.h"   // [rc4l] MouseHeld
 
 static void I_CheckGUICapture ();
 static void I_CheckNativeMouse ();
@@ -250,17 +248,6 @@ static bool inGame()
 	}
 }
 
-// [rc4l] Whether the window holds the mouse: SDL's relative mode always does on a desktop, while a page's pointer lock can be gone (Escape drops it) with relative mode still on.
-static bool MouseHeld ()
-{
-#ifdef __EMSCRIPTEN__
-	EmscriptenPointerlockChangeEvent lock;
-	return emscripten_get_pointerlock_status (&lock) == EMSCRIPTEN_RESULT_SUCCESS && lock.isActive;
-#else
-	return true;
-#endif
-}
-
 static void I_CheckNativeMouse ()
 {
 	SDL_Window *window = I_EngineWindow ();
@@ -285,7 +272,7 @@ static void I_CheckNativeMouse ()
 		}
 	}
 
-	const zx::MouseCapture now = zx::ComputeMouseCapture (!NativeMouse, !NativeMouse && MouseHeld ());
+	const zx::MouseCapture now = zx::ComputeMouseCapture (!NativeMouse, !NativeMouse && zx::sdlhost::MouseHeld ());
 	if (now.showCursor != MouseNow.showCursor)
 		SDL_ShowCursor (now.showCursor ? cursorSurface == NULL : 0);
 	MouseNow = now;

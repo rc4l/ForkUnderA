@@ -49,8 +49,6 @@ void ForgetBackendWindow(void *window);
 int BackendMaxTextureSize();
 // [rc4l] The graphics API the backend's device is made on ("Vulkan" or "WebGPU"); "" in a build without the backend.
 const char *BackendApiName();
-// [rc4l] In a browser, has the page save this frame's picture as a PNG named like path once it is drawn; false where the frame is read back at once, or the page cannot.
-bool CaptureFrameLater(const char *path);
 
 // [rc4l] The engine drew a view of the world this frame, which the present draws under the 2D layer.
 void NoteWorldView();

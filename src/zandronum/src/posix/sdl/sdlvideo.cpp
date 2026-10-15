@@ -20,6 +20,7 @@
 #include "c_cvars.h"
 
 #include "sdlvideo.h"
+#include "sdlhost.h"   // [rc4l] CaptureFrameLater
 #include "v_palette.h"   // [rc4l] MAKEARGB
 #include "features/hwrender/backendonly.h"   // [rc4l] a launch without GL
 #include "features/materials/material.h"   // [rc4l] FMaterial::FlushAll
@@ -424,6 +425,11 @@ void SDLFB::Unlock ()
 bool SDLFB::IsLocked ()
 {
 	return m_Lock>0;// true;
+}
+
+bool SDLFB::ScreenshotLater (const char *path)
+{
+	return zx::sdlhost::CaptureFrameLater (path);
 }
 
 bool SDLFB::IsFullscreen ()

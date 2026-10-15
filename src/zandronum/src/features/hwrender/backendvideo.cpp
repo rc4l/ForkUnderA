@@ -240,7 +240,6 @@ public:
 		pitch = sw * 3;
 		color_type = SS_RGB;
 	}
-	bool ScreenshotLater(const char *path) { return zx::hwrender::CaptureFrameLater(path); }
 
 	void ReleaseScreenshotBuffer()
 	{

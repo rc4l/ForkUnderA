@@ -66,6 +66,20 @@
     return { state: run, stopped };
   }
 
+  // [rc4l] What the page does with each of a device's uncaptured errors: logs it, reports the first, since a refused binding can stop the drawing for good while the game goes on, and stops the game (stop(why)) once gpuErrorWatch says it can no longer draw.
+  function gpuErrorHandler({ log, report, stop, now, isOutOfMemory }) {
+    let reported = false, run = null;
+    return (error) => {
+      log('WebGPU error: ' + error.message);
+      const watched = gpuErrorWatch(run, { message: error.message, outOfMemory: isOutOfMemory(error), now: now() });
+      run = watched.state;
+      if (watched.stopped) { stop(watched.stopped); return; }
+      if (reported) return;
+      reported = true;
+      report(error.message);
+    };
+  }
+
   // [rc4l] One report as a Sentry event: kind is 'exception', 'abort', 'fatal', 'device lost', 'drawing stopped' or 'webgpu' (the only one the game may go on after), context the engine's last (crashcontext_compute.h).
   function buildEvent({ kind, message, stack = '', context = {}, browser = '', adapter = '', log = [], now = new Date(), id = eventId() }) {
     const fatal = kind !== 'webgpu';
@@ -158,7 +172,7 @@
     return fetch(url, { method: 'POST', body, keepalive: true, headers: { 'Content-Type': 'text/plain;charset=UTF-8' } }).then((r) => r.ok);
   }
 
-  const api = { MAX_SENT, STUCK_MS, RUN_GAP_MS, gpuErrorWatch, envelopeUrl, parseStack, eventId, buildEvent, envelope, decision, statusText, reportText, reporter, fetchSend };
+  const api = { MAX_SENT, STUCK_MS, RUN_GAP_MS, gpuErrorWatch, gpuErrorHandler, envelopeUrl, parseStack, eventId, buildEvent, envelope, decision, statusText, reportText, reporter, fetchSend };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.FuaCrash = api;
 })(typeof window !== 'undefined' ? window : globalThis);

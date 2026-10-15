@@ -191,3 +191,17 @@ test('errors with quiet between them start a new run, and the game goes on', () 
   assert.equal(w.stopped, '');
   assert.equal(w.state.cause, 'c');
 });
+
+test('a device error is logged, the first reported, and one that stops the drawing stops the game', () => {
+  const logged = [], reported = [], stopped = [];
+  let t = 0;
+  const handle = FuaCrash.gpuErrorHandler({ log: (m) => logged.push(m), report: (m) => reported.push(m), stop: (w) => stopped.push(w), now: () => t, isOutOfMemory: (e) => e.oom === true });
+  handle({ message: 'a' });
+  t = 1000;
+  handle({ message: 'b' });
+  assert.deepEqual(logged, ['WebGPU error: a', 'WebGPU error: b']);
+  assert.deepEqual(reported, ['a']);
+  assert.deepEqual(stopped, []);
+  handle({ message: 'Out of Memory', oom: true });
+  assert.deepEqual(stopped, ['out of graphics memory (Out of Memory)']);
+});
