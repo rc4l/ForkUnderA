@@ -62,7 +62,7 @@ test('a resized frame keeps its crosshair in the middle', () => {
 
 test('a check that wants a screenshot fails without one or with a blank one', () => {
   const draws = CHECKS[0];
-  assert.ok(draws.shot);
+  assert.ok(draws.download);
   assert.deepEqual(judge(draws, '[eval] "drawn"', image((x) => x * 20)), { ok: true });
   assert.deepEqual(judge(draws, '[eval] "drawn"', null), { ok: false, reason: 'no screenshot' });
   assert.equal(judge(draws, '[eval] "drawn"', image(() => 0)).ok, false);

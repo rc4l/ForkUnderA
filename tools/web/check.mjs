@@ -23,6 +23,9 @@ const COUNT_FRAMES = `let frames = 0;
 // [rc4l] The line smoke prints an evaluation's result on.
 const EVAL = '^\\[eval\\]';
 
+// [rc4l] The page's line once the engine's screenshot has been downloaded.
+const DOWNLOADED = '^\\[log\\] Downloading Screenshot_.*\\.png$';
+
 // [rc4l] Why a screenshot shows no game, or '': the canvas above the page's footer black or one flat colour.
 export function blankGame(img) {
   const s = boxStats(img, [0.05, 0.05, 0.95, 0.8]);
@@ -120,7 +123,14 @@ const COUNT_ZERO_CANVAS = `window.fuaZeroCanvas = 0;
   }`;
 
 export const CHECKS = [
-  { name: 'boots and draws MAP01', evaluate: inPage(`${pause(3000)} return 'drawn';`), until: EVAL, shot: true, expectShot: blankGame },
+  // [rc4l] Judged from the engine's screenshot, which the page downloads from the canvas just after a frame, since a browser's WebGPU reads nothing back at once; headless Chrome on Linux composites no WebGPU canvas into a screenshot of the page.
+  {
+    name: 'boots and draws MAP01, and a screenshot downloads the frame',
+    evaluate: inPage(`${pause(3000)} Module.fuaCommand('screenshot');`),
+    until: DOWNLOADED,
+    download: true,
+    expectShot: blankGame,
+  },
   // [rc4l] Firefox reconfigures its WebGPU context at every size the canvas takes, and refuses a zero one.
   {
     name: 'the canvas never goes to zero size, starting or switching fullscreen',
@@ -190,9 +200,9 @@ export const CHECKS = [
       Module.fuaCommand('crosshaircolor "00 ff 00"');
       console.log('check: resize 900x700');
       ${pause(1500)}
-      return 'resized';`),
-    until: EVAL,
-    shot: true,
+      Module.fuaCommand('screenshot');`),
+    until: DOWNLOADED,
+    download: true,
     expectShot: crosshairCentred,
   },
   // [rc4l] Tab is the automap's, so the page keeps the browser from moving the focus off the game with it.
@@ -206,20 +216,17 @@ export const CHECKS = [
     until: EVAL,
     expect: (focused) => (focused === 'canvas' ? '' : `Tab moved the focus to ${focused}`),
   },
-  // [rc4l] The screenshot command downloads the frame, since a browser's WebGPU reads nothing back at once and a file in the page's own storage would be out of the player's reach.
-  {
-    name: 'a screenshot downloads the frame',
-    evaluate: inPage(`${pause(2000)} Module.fuaCommand('screenshot');`),
-    until: '^\\[log\\] Downloading Screenshot_.*\\.png$',
-    download: true,
-    expectShot: blankGame,
-  },
-  // [rc4l] A save's picture reads back a frame or two after the save is written, and goes into it then.
+  // [rc4l] A save's picture reads back a frame or two after the save is written, and goes into it then; a software adapter can take several seconds, so the check waits for it.
   {
     name: 'a save gets its picture',
-    evaluate: inPage(`${pause(2000)} Module.fuaCommand('save /home/web_user/checkpicture.zds'); ${pause(2000)}
-      if (!Module.FS.analyzePath('/home/web_user/checkpicture.zds').exists) return { found: false };
-      const image = await createImageBitmap(new Blob([Module.FS.readFile('/home/web_user/checkpicture.zds')], { type: 'image/png' }));
+    evaluate: inPage(`${pause(2000)} Module.fuaCommand('save /home/web_user/checkpicture.zds');
+      const file = '/home/web_user/checkpicture.zds';
+      let image = null;
+      for (let i = 0; i < 40 && !(image && image.width > 1); i++) {
+        ${pause(250)}
+        if (Module.FS.analyzePath(file).exists) image = await createImageBitmap(new Blob([Module.FS.readFile(file)], { type: 'image/png' })).catch(() => null);
+      }
+      if (!image) return { found: false };
       const draw = new OffscreenCanvas(image.width, image.height).getContext('2d');
       draw.drawImage(image, 0, 0);
       const px = draw.getImageData(0, 0, image.width, image.height).data;
