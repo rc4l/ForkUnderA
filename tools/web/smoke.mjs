@@ -14,11 +14,14 @@ export const CHROME_CANDIDATES = [
   '/usr/bin/chromium',
 ];
 
-// [rc4l] `software` puts WebGPU on SwiftShader, Chrome's CPU renderer, for a machine with no GPU such as a CI runner; its first frames of a level can outlast the GPU process's watchdog on a small runner, which then kills the process and loses the device.
-export function chromeArgs(port, profileDir, { headless = true, software = false } = {}) {
+// [rc4l] Linux's Chrome without a GPU composites with GL, which has no texture it can share with WebGPU, so the canvas's swap textures could not be made and the device was lost; Chrome's own Vulkan and ANGLE go on SwiftShader there too.
+const LINUX_SOFTWARE = ['--enable-features=Vulkan', '--use-vulkan=swiftshader', '--use-angle=vulkan', '--disable-vulkan-surface', '--disable-dev-shm-usage'];
+
+// [rc4l] `software` puts WebGPU on SwiftShader, Chrome's CPU renderer, for a machine with no GPU such as a CI runner.
+export function chromeArgs(port, profileDir, { headless = true, software = false, platform = process.platform } = {}) {
   return [
     ...(headless ? ['--headless=new'] : []),
-    ...(software ? ['--use-webgpu-adapter=swiftshader', '--enable-unsafe-swiftshader', '--disable-gpu-watchdog', '--disable-dev-shm-usage'] : []),
+    ...(software ? ['--use-webgpu-adapter=swiftshader', '--enable-unsafe-swiftshader', ...(platform === 'linux' ? LINUX_SOFTWARE : [])] : []),
     `--remote-debugging-port=${port}`,
     `--user-data-dir=${profileDir}`,
     '--enable-unsafe-webgpu',
