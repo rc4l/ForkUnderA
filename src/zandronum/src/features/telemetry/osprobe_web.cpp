@@ -59,9 +59,9 @@ int CaptureStack(void **, int)
 	return 0;
 }
 
-std::string SymbolName(void *)
+std::vector<std::string> SymbolNames(const std::vector<void *> &addresses)
 {
-	return std::string();
+	return std::vector<std::string>(addresses.size());
 }
 
 }} // namespace zx::telemetry

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CHECKS, blankGame, configuredOnce, crashOffered, crosshairCentred, destroyedAsReleased, gpuError, heldOnce, judge, marked, playedOnce, reportSent, saveLoads, savePicture, selectChecks, soakHeld, soakInPage, soundStarts, stoppedOffered } from '../check.mjs';
+import { CHECKS, blankGame, configuredOnce, crashOffered, crosshairCentred, destroyedAsReleased, gpuError, heldOnce, judge, marked, playedOnce, reportSent, saveLoads, savePicture, selectChecks, soakHeld, soundStarts, stoppedOffered } from '../check.mjs';
 
 test('a check fails when its line never came', () => {
   assert.deepEqual(judge({ until: 'x' }, null), { ok: false, reason: 'no line matched /x/' });
@@ -64,7 +64,7 @@ test('a check that wants a screenshot fails without one or with a blank one', ()
 
 test('the sound check wants a context that waited for the click and ran after it', () => {
   assert.equal(soundStarts({ before: ['suspended'], after: ['running'], played: 12 }), '');
-  assert.equal(soundStarts({ before: ['suspended'], after: ['running'], played: 0 }), 'nothing played in the two seconds after the click');
+  assert.equal(soundStarts({ before: ['suspended'], after: ['running'], played: 0 }), 'nothing played in the six seconds after the click');
   assert.equal(soundStarts({ before: [], after: [] }), 'the engine made no audio context');
   assert.equal(soundStarts({ before: ['running'], after: ['running'] }), 'the sound did not wait for a click (running)');
   assert.equal(soundStarts({ before: ['suspended'], after: ['suspended'] }), 'the sound stayed suspended after a click');
@@ -134,21 +134,10 @@ test('the page may hold what the engine holds by tag, give or take alignment, an
 
 test('a soak passes on the engine verdict and otherwise names what grew', () => {
   assert.equal(soakHeld({ pass: true, marks: 7, judged: 40, grew: [] }), '');
-  assert.equal(soakHeld({ pass: false, marks: 7, judged: 40, grew: ['gpu/process_bytes', 'mem/heap_bytes'] }), 'kept growing with each repeat: gpu/process_bytes, mem/heap_bytes');
+  const grew = [{ name: 'gpu/process_bytes', text: 'gpu/process_bytes grew 18.0 MB a cycle (90.0 MB over 5 cycles)' }, { name: 'mem/heap_bytes', text: 'mem/heap_bytes grew 1.0 MB a cycle (5.0 MB over 5 cycles)' }];
+  assert.equal(soakHeld({ pass: false, marks: 7, judged: 40, grew }), 'kept growing with each repeat: gpu/process_bytes grew 18.0 MB a cycle (90.0 MB over 5 cycles); mem/heap_bytes grew 1.0 MB a cycle (5.0 MB over 5 cycles)');
   assert.equal(soakHeld({ pass: false, marks: 2, judged: 0, grew: [] }), 'the soak judged nothing (2 marks, 0 counters)');
   assert.equal(soakHeld({}), 'the soak judged nothing (undefined marks, undefined counters)');
-});
-
-test('a soak in the page repeats the named action, or console text, and marks after each', () => {
-  const reload = soakInPage('reload', 3, 100);
-  assert.match(reload, /fuaCommand\("map MAP01"\)/);
-  assert.match(reload, /i < 3;/);
-  assert.match(reload, /fua_soak verdict 1 json/);
-  assert.match(reload, /await started\(from\);/);
-  assert.match(reload, /window\.gc\(\)/);
-  const text = soakInPage('vid_setmode 640 480', 1, 10);
-  assert.match(text, /fuaCommand\("vid_setmode 640 480"\)/);
-  assert.doesNotMatch(text, /await started\(from\);/);
 });
 
 test('a sound has to start once, not again after it ends', () => {

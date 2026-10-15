@@ -157,10 +157,14 @@ CCMD(fua_allocsites)
 	}
 	Printf("telemetry: %u allocations (%s) made since fua_allocsites start are live%s; the stacks holding the most:\n", (unsigned)live,
 		zx::telemetry::ComputeBytesText(bytes).c_str(), dropped != 0 ? ", some not recorded (a table was full)" : "");
+	std::vector<void *> frames;
+	for (const AllocTable::Site &s : sites) frames.insert(frames.end(), s.frames.begin(), s.frames.end());
+	const std::vector<std::string> names = zx::telemetry::SymbolNames(frames);
+	size_t at = 0;
 	for (const AllocTable::Site &s : sites)
 	{
-		std::vector<std::string> names;
-		for (void *f : s.frames) names.push_back(zx::telemetry::SymbolName(f));
-		Printf("  %u (%s)  %s\n", (unsigned)s.count, zx::telemetry::ComputeBytesText(s.bytes).c_str(), zx::telemetry::ComputeAllocStackText(names, 6).c_str());
+		const std::vector<std::string> stack(names.begin() + at, names.begin() + at + s.frames.size());
+		at += s.frames.size();
+		Printf("  %u (%s)  %s\n", (unsigned)s.count, zx::telemetry::ComputeBytesText(s.bytes).c_str(), zx::telemetry::ComputeAllocStackText(stack, 6).c_str());
 	}
 }

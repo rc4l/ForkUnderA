@@ -63,6 +63,28 @@ double DxgiProcessBytes()
 	return any ? total : -1.0;
 }
 
+// [rc4l] An address's function from the engine's .pdb, with its source file and line, inside an open dbghelp session.
+std::string SymbolName(HANDLE proc, void *address)
+{
+	char buf[sizeof(SYMBOL_INFO) + 512];
+	SYMBOL_INFO *sym = (SYMBOL_INFO *)buf;
+	sym->SizeOfStruct = sizeof(SYMBOL_INFO);
+	sym->MaxNameLen = 511;
+	DWORD64 disp = 0;
+	if (!SymFromAddr(proc, (DWORD64)address, &disp, sym)) return std::string();
+	std::string out = sym->Name;
+	IMAGEHLP_LINE64 line = {};
+	line.SizeOfStruct = sizeof(line);
+	DWORD lineDisp = 0;
+	if (SymGetLineFromAddr64(proc, (DWORD64)address, &lineDisp, &line) && line.FileName != NULL)
+	{
+		const char *file = line.FileName;
+		for (const char *c = line.FileName; *c != 0; c++) if (*c == '\\' || *c == '/') file = c + 1;
+		out += " (" + std::string(file) + ":" + std::to_string(line.LineNumber) + ")";
+	}
+	return out;
+}
+
 } // namespace
 
 void ReadOs(OsReadings &out)
@@ -95,34 +117,23 @@ int CaptureStack(void **frames, int max)
 	return (int)RtlCaptureStackBackTrace(0, (DWORD)max, frames, NULL);
 }
 
-// [rc4l] Names from the engine's .pdb through dbghelp, which mcp_sample.cpp and mcp_crash.cpp also use but never while a console command runs.
-std::string SymbolName(void *address)
+std::mutex &DbgHelpLock()
 {
-	static bool ready = false;
+	static std::mutex lock;
+	return lock;
+}
+
+// [rc4l] A session of its own each call, since the bridge's sampler opens and closes dbghelp around its own.
+std::vector<std::string> SymbolNames(const std::vector<void *> &addresses)
+{
+	std::lock_guard<std::mutex> hold(DbgHelpLock());
 	HANDLE proc = GetCurrentProcess();
-	if (!ready)
-	{
-		SymSetOptions(SYMOPT_UNDNAME | SYMOPT_DEFERRED_LOADS | SYMOPT_LOAD_LINES);
-		SymInitialize(proc, NULL, TRUE);
-		ready = true;
-	}
-	char buf[sizeof(SYMBOL_INFO) + 512];
-	SYMBOL_INFO *sym = (SYMBOL_INFO *)buf;
-	sym->SizeOfStruct = sizeof(SYMBOL_INFO);
-	sym->MaxNameLen = 511;
-	DWORD64 disp = 0;
-	if (!SymFromAddr(proc, (DWORD64)address, &disp, sym)) return std::string();
-	std::string out = sym->Name;
-	IMAGEHLP_LINE64 line = {};
-	line.SizeOfStruct = sizeof(line);
-	DWORD lineDisp = 0;
-	if (SymGetLineFromAddr64(proc, (DWORD64)address, &lineDisp, &line) && line.FileName != NULL)
-	{
-		const char *file = line.FileName;
-		for (const char *c = line.FileName; *c != 0; c++) if (*c == '\\' || *c == '/') file = c + 1;
-		out += " (" + std::string(file) + ":" + std::to_string(line.LineNumber) + ")";
-	}
-	return out;
+	SymSetOptions(SYMOPT_UNDNAME | SYMOPT_DEFERRED_LOADS | SYMOPT_LOAD_LINES);
+	const bool open = SymInitialize(proc, NULL, TRUE) != FALSE;
+	std::vector<std::string> names;
+	for (void *address : addresses) names.push_back(open ? SymbolName(proc, address) : std::string());
+	if (open) SymCleanup(proc);
+	return names;
 }
 
 }} // namespace zx::telemetry

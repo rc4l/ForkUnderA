@@ -37,8 +37,8 @@ static DescriptorLimits ReadLimits(Diligent::IRenderDevice *device)
 // [rc4l] The device the memory budget is read from, which lives for the process once made.
 static Diligent::IRenderDevice *g_budgetDevice = nullptr;
 
-// [rc4l] The driver's own account of device-local memory, everything the process allocated there (Diligent's and the driver's own included) and what it may, through VK_EXT_memory_budget; false where the device lacks it.
-static bool ReadBudget(double &used, double &budget)
+// [rc4l] The driver's own account of each heap, everything the process allocated there (Diligent's and the driver's own included) and what it may, through VK_EXT_memory_budget; false where the device lacks it.
+static bool ReadHeaps(std::vector<zx::telemetry::HeapBudget> &out)
 {
 	Diligent::RefCntAutoPtr<Diligent::IRenderDeviceVk> vk(g_budgetDevice, Diligent::IID_RenderDeviceVk);
 	if (!vk || vkGetPhysicalDeviceMemoryProperties2 == NULL || vkEnumerateDeviceExtensionProperties == NULL) return false;
@@ -60,18 +60,26 @@ static bool ReadBudget(double &used, double &budget)
 	props.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_PROPERTIES_2;
 	props.pNext = &heaps;
 	vkGetPhysicalDeviceMemoryProperties2(phys, &props);
-	used = budget = 0.0;
 	for (uint32_t h = 0; h < props.memoryProperties.memoryHeapCount; h++)
-	{
-		if (!(props.memoryProperties.memoryHeaps[h].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT)) continue;
-		used += (double)heaps.heapUsage[h];
-		budget += (double)heaps.heapBudget[h];
-	}
+		out.push_back(zx::telemetry::HeapBudget{ (props.memoryProperties.memoryHeaps[h].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) != 0, (double)heaps.heapUsage[h], (double)heaps.heapBudget[h] });
 	return true;
 }
 
-static double BudgetUsed() { double used, budget; return ReadBudget(used, budget) ? used : -1.0; }
-static double BudgetAvailable() { double used, budget; return ReadBudget(used, budget) ? budget : -1.0; }
+// [rc4l] The device-local budget, read at most a few times a second for both gauges, negative where the device cannot say.
+static const zx::telemetry::HeapBudget &Budget()
+{
+	static zx::telemetry::HeapBudget last = { true, -1.0, -1.0 };
+	static zx::telemetry::Throttle every(400);
+	if (every.Due(zx::telemetry::NowNs() / 1000000))
+	{
+		std::vector<zx::telemetry::HeapBudget> heaps;
+		last = ReadHeaps(heaps) ? zx::telemetry::ComputeDeviceLocalBudget(heaps) : zx::telemetry::HeapBudget{ true, -1.0, -1.0 };
+	}
+	return last;
+}
+
+static double BudgetUsed() { return Budget().used; }
+static double BudgetAvailable() { return Budget().budget; }
 static const bool s_budgetCounted = (
 	zx::telemetry::Register(zx::telemetry::CounterSpec{ "gpu/vk_budget_used_bytes", "bytes", zx::telemetry::CounterKind::Gauge, 500 }, BudgetUsed),
 	zx::telemetry::Register(zx::telemetry::CounterSpec{ "gpu/vk_budget_bytes", "bytes", zx::telemetry::CounterKind::Gauge, 500 }, BudgetAvailable),

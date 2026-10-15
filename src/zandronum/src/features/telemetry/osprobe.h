@@ -7,6 +7,10 @@
 #define ZX_TELEMETRY_OSPROBE_H
 
 #include <string>
+#include <vector>
+#ifdef _WIN32
+#include <mutex>
+#endif
 
 namespace zx { namespace telemetry {
 
@@ -36,8 +40,13 @@ const char *OsProbeName();
 
 // [rc4l] The calling thread's return addresses, innermost first, at most max of them, allocating nothing; 0 where the platform cannot walk its stack (a browser).
 int CaptureStack(void **frames, int max);
-// [rc4l] The function an address is in, with its source file's bare name and line where the platform knows them; empty when it knows nothing.
-std::string SymbolName(void *address);
+// [rc4l] The function each address is in, with its source file's bare name and line where the platform knows them, empty for one it knows nothing of; the symbol tables are open for the call alone.
+std::vector<std::string> SymbolNames(const std::vector<void *> &addresses);
+
+#ifdef _WIN32
+// [rc4l] Held around every dbghelp session but a crash's (mcp_sample.cpp's too), since dbghelp is one per process and not thread-safe.
+std::mutex &DbgHelpLock();
+#endif
 
 }} // namespace zx::telemetry
 

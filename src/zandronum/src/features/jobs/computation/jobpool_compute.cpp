@@ -11,11 +11,6 @@ namespace {
 
 std::atomic<const JobObserver *> g_observer{ nullptr };
 
-long long NowNs()
-{
-	return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
-}
-
 } // namespace
 
 void SetJobObserver(const JobObserver *observer)
@@ -95,7 +90,7 @@ void JobPool::WorkerMain(int lane)
 void JobPool::RunItems(int lane)
 {
 	const JobObserver *o = g_observer.load(std::memory_order_acquire);
-	const long long start = o != nullptr ? NowNs() : 0;
+	const int64_t start = o != nullptr ? o->now() : 0;
 	int ran = 0;
 	for (int i = m_next.fetch_add(1); i < m_count; i = m_next.fetch_add(1))
 	{
@@ -103,7 +98,7 @@ void JobPool::RunItems(int lane)
 		m_done.fetch_add(1);
 		ran++;
 	}
-	if (o != nullptr && ran > 0) o->ranItems(lane, start, NowNs());
+	if (o != nullptr && ran > 0) o->ranItems(lane, start, o->now());
 }
 
 void JobPool::ParallelFor(int count, IndexFn fn, void *user)
@@ -125,11 +120,11 @@ void JobPool::ParallelFor(int count, IndexFn fn, void *user)
 	m_wake.notify_all();
 	RunItems(0);
 	const JobObserver *o = g_observer.load(std::memory_order_acquire);
-	const long long waitStart = o != nullptr ? NowNs() : 0;
+	const int64_t waitStart = o != nullptr ? o->now() : 0;
 	while (m_done.load() < count) std::this_thread::yield();
 	m_open.store(false);
 	while (m_active.load() != 0) std::this_thread::yield();
-	if (o != nullptr) o->waited(waitStart, NowNs());
+	if (o != nullptr) o->waited(waitStart, o->now());
 }
 
 int ComputeAutoWorkers(int hardwareThreads, int cap)

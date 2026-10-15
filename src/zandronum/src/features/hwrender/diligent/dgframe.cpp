@@ -23,16 +23,7 @@ static LevelSetup g_setup = ComputeLevelSetupStart();
 // [rc4l] Everything a level owned on the GPU, released for the next level, and at shutdown before what is still held is reported.
 void ReleaseLevelResources()
 {
-	// [rc4l] Drop everything keyed on a pointer the old level owned.
-	//
-	// The texture cache and the material SRBs are keyed on raw FMaterial*, and ReleaseMaterials
-	// was never called from anywhere -- so they survived every map change for the life of the
-	// process. That is fine until the engine frees a level's materials and the allocator hands
-	// the same addresses to a new level's, at which point the cache serves the PREVIOUS map's
-	// texture for a material that merely happens to live where the old one did. It needs several
-	// map changes to show up, which is exactly how it was found: a map that renders correctly on
-	// its own came up with black and wrong surfaces after cycling through the rotation to reach
-	// it. SRBs reference the textures, so they go first.
+	// [rc4l] The texture cache and material SRBs are keyed on raw FMaterial*, so a new level's materials at an old one's addresses wore its textures after a few map changes; SRBs reference the textures, so they go first.
 	ReleaseBatchSRBs();
 	ReleaseMaterialSRBs();
 	for (unsigned int b = 0; b < g_scene.batches.Size(); b++) g_scene.batches[b].srb = NULL;
@@ -40,17 +31,10 @@ void ReleaseLevelResources()
 	ResetMaterialSlots();
 	g_stats.dynSlotUnfilledTotal = 0;
 	ReleaseWorldSRBs();
-	// [rc4l] And the PIPELINES, because the material array lives on them.
-	//
-	// uMaterials is a STATIC variable, which means Diligent stores it on the pipeline and copies it
-	// into every binding made from that pipeline. A level change refills it -- and on a pipeline
-	// that has already handed out bindings, refilling does not take: the array keeps the PREVIOUS
-	// level's textures, so the new level renders with its geometry perfect and every surface
-	// wearing the wrong picture. A map loaded directly is fine because the array is filled before
-	// any binding exists, which is why this only ever showed up after a map change.
+	// [rc4l] The pipelines too, since uMaterials is a static variable Diligent copies into every binding, and refilling it on a pipeline that has handed out bindings keeps the old level's textures.
 	ReleaseScenePipelines();
 	ReleaseMaterials();
-	// Camera targets are keyed on FMaterial* too, and go stale for exactly the same reason.
+	// [rc4l] Camera targets are keyed on FMaterial* too and go stale the same way.
 	ReleaseCameraTargets();
 	ReleaseAccelerationStructures();
 }

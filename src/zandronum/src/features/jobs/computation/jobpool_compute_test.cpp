@@ -156,13 +156,15 @@ TEST(JobPool, AutoWorkersTakeHalfTheMachineLessTheCallerUpToTheCap)
 namespace {
 
 std::atomic<int> s_started{ 0 }, s_ran{ 0 }, s_waited{ 0 };
-std::atomic<long long> s_ranNs{ 0 };
+std::atomic<int64_t> s_ranTicks{ 0 }, s_clock{ 0 };
 
+// [rc4l] A clock that ticks once each time it is read, so every timed span is at least one tick.
+int64_t Ticks() { return ++s_clock; }
 void HeardStart(int) { s_started++; }
-void HeardRun(int, long long start, long long end) { s_ran++; s_ranNs += end - start; }
-void HeardWait(long long start, long long end) { if (end >= start) s_waited++; }
+void HeardRun(int, int64_t start, int64_t end) { s_ran++; s_ranTicks += end - start; }
+void HeardWait(int64_t start, int64_t end) { if (end >= start) s_waited++; }
 
-const zx::jobs::JobObserver kHeard = { HeardStart, HeardRun, HeardWait };
+const zx::jobs::JobObserver kHeard = { Ticks, HeardStart, HeardRun, HeardWait };
 
 } // namespace
 
@@ -178,7 +180,7 @@ TEST(JobPool, TheObserverHearsWorkersRunsAndTheWait)
 	pool.ParallelFor(24, slow);
 	EXPECT_EQ(s_waited.load(), 2);
 	EXPECT_GE(s_ran.load(), 2);
-	EXPECT_GT(s_ranNs.load(), 0);
+	EXPECT_GT(s_ranTicks.load(), 0);
 	EXPECT_GE(s_started.load(), 1);
 	EXPECT_LE(s_started.load(), 2);
 }

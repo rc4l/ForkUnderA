@@ -249,10 +249,10 @@ test("a quit passes only when the engine left cleanly", () => {
 // [rc4l] A new game leaked every player's userinfo cvars, about 1,400 allocations a level load, until a soak named them.
 test("a soak passes only when the engine judged counters and none kept growing", () => {
   assert.deepEqual(judgeSoak("MAP01 vk", { pass: true, marks: 6, judged: 44, grew: [] }), { line: "PASS MAP01 vk: 44 counters held over 6 marks", failed: 0 });
-  assert.deepEqual(judgeSoak("MAP01 vk", { pass: false, marks: 6, judged: 44, grew: ["mem/allocations_live"] }), { line: "FAIL MAP01 vk: kept growing: mem/allocations_live", failed: 1 });
   assert.deepEqual(judgeSoak("MAP01 vk", { pass: false, marks: 2, judged: 0 }), { line: "FAIL MAP01 vk: judged nothing (2 marks)", failed: 1 });
-  assert.deepEqual(judgeSoak("MAP01 vk", { pass: false, marks: 6, judged: 44, grew: ["mem/heap_bytes"], report: "SOAK FAIL: 6 marks\n  mem/heap_bytes grew 700 KB a cycle (3.4 MB over 5 cycles)\n" }),
-    { line: "FAIL MAP01 vk: kept growing: mem/heap_bytes grew 700 KB a cycle (3.4 MB over 5 cycles)", failed: 1 });
+  const grew = [{ name: "mem/heap_bytes", text: "mem/heap_bytes grew 700 KB a cycle (3.4 MB over 5 cycles)" }, { name: "census/actors", text: "census/actors grew 8.00 a cycle (40.00 over 5 cycles)" }];
+  assert.deepEqual(judgeSoak("MAP01 vk", { pass: false, marks: 6, judged: 44, grew }),
+    { line: "FAIL MAP01 vk: kept growing: mem/heap_bytes grew 700 KB a cycle (3.4 MB over 5 cycles); census/actors grew 8.00 a cycle (40.00 over 5 cycles)", failed: 1 });
 });
 
 test("only the comparisons that judge a launch against itself are marked so", () => {

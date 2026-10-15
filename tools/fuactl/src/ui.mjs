@@ -7,6 +7,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { parseHudDump, hudLines, findHudLabel } from "./proto.mjs";
+import { sleep } from "./capture.mjs";
 
 // d_event.h / d_gui.h (EGUIEvent enum)
 export const EV_GUI_EVENT = 4;
@@ -72,7 +73,6 @@ export function padDpadEvent(dir, down = true) {
 }
 
 // ---- Client-driving helpers ------------------------------------------------
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const post = (c, ev) => c.rpc("input.event", ev);
 
 export async function menuNav(c, steps, { delay = 60 } = {}) {

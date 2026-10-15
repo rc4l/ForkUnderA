@@ -36,6 +36,7 @@ import * as present from "./present.mjs";
 import { refreshNote } from "./stats.mjs";
 import { runCoverage } from "./coverage.mjs";
 import { changeSince, commentIssues } from "./comments.mjs";
+import { machinePatterns, patternsPath, privacyIssues } from "./privacy.mjs";
 import { recentCrashes, summarizeCrash } from "./crashes.mjs";
 import * as telemetry from "./telemetry.mjs";
 import { decodePNG, abDiff, boxDiff } from "./pngcore.mjs";
@@ -179,6 +180,7 @@ const USAGE = `fuactl <command>
   build [--root DIR] [--no-stage] [--tests]   compile the engine (with --tests the unit tests too, and run them) and stage it unless --no-stage, failing loudly instead of staging a stale binary
   crashes [--hours N]   the crash files fuactl's launches left in the last N hours (default 24), newest first, each with why it stopped and its first frames
   comments [--since REF]   the [rc4l] comments a change adds since REF (default HEAD, untracked files included) that run past one line or one sentence, as AGENTS.md has them; exit 1 on any
+  privacy [--since REF | --staged]   what a change adds since REF (default HEAD, untracked files included), or what is staged, that could identify its author: a home folder's path, an email address, this machine's user or host name, or a pattern in ~/.forkundera/private-patterns.txt; exit 1 on any
   coverage [--since REF] [--tool PATH]   the 100% line-coverage gate on Windows: builds the Debug unit tests and runs them under OpenCppCoverage, then checks every unit a NAME_test.cpp gates, or with --since only those changed since REF (new files included); exit 1 on any miss
   mapdata <MAP> (--preset ID | --file a.pk3,b.wad) [--sector N,..] [--line N,..] [--special N] [--tag N] [--thing TYPE,..] [--scripts REGEX]   a UDMF level's summary, sectors, lines, things of the given types and ACS source lines, read from its files
   actors [--near x,y] [--radius R] [--toward YAW | --ahead] [--cone DEG] [--class REGEX]   actors near a point (default the player), nearest first, optionally only in a direction
@@ -911,6 +913,14 @@ async function main() {
       console.log(`${issues.length} comment(s) past one line or one sentence`);
       process.exit(issues.length ? 1 : 0);
     }
+    // [rc4l] `fuactl privacy` -- what a change adds that could identify its author, run before every commit.
+    case "privacy": {
+      const since = flags.since && flags.since !== true ? String(flags.since) : "HEAD";
+      const issues = privacyIssues(changeSince(fileURLToPath(new URL("../../../", import.meta.url)), since, { staged: !!flags.staged }), machinePatterns());
+      for (const i of issues) console.log(`${i.file}:${i.line}: ${i.match}`);
+      console.log(`${issues.length} line(s) that could identify you (your own patterns: ${patternsPath()})`);
+      process.exit(issues.length ? 1 : 0);
+    }
     case "coverage": {
       const { results, report } = runCoverage({ root: fileURLToPath(new URL("../../../", import.meta.url)), tool: flags.tool, since: flags.since && flags.since !== true ? String(flags.since) : null });
       const bad = results.filter((r) => !r.ok);
@@ -959,11 +969,10 @@ async function main() {
       }
       break;
     }
-    // [rc4l] `fuactl goto` -- stand at a saved spot or a camera, for looking rather than capturing.
     // [rc4l] The views that are one console command each (telemetry.mjs), their output printed as the engine wrote it.
     case "console": case "stats": case "hitches": case "flight": case "memsnap": case "memdiff": {
       const text = telemetry.consoleTextFor(cmd, rest, flags);
-      process.stdout.write(await withUi(flags, (c) => cap.exec(c, text, { quietMs: 400, maxMs: 20000 })));
+      process.stdout.write(await withUi(flags, (c) => telemetry.execSlow(c, text)));
       break;
     }
     case "record": {
@@ -971,7 +980,7 @@ async function main() {
       const name = flags.name && flags.name !== true ? String(flags.name) : "";
       await withUi(flags, async (c) => {
         process.stdout.write(await cap.exec(c, `fua_capture start ${name}`.trim()));
-        await new Promise((r) => setTimeout(r, seconds * 1000));
+        await cap.sleep(seconds * 1000);
         process.stdout.write(await cap.exec(c, "fua_capture stop", { quietMs: 600, maxMs: 60000 }));
       });
       break;
@@ -980,8 +989,6 @@ async function main() {
       const result = await withUi(flags, (c) => telemetry.runSoak(c, {
         action: flags.action && flags.action !== true ? String(flags.action) : "reload",
         cycles: num(flags.cycles) ?? 6, warmup: num(flags.warmup) ?? 1, settleMs: num(flags.settle) ?? 4000,
-        exec: (cl, text) => cap.exec(cl, text, { quietMs: 400, maxMs: 20000 }),
-        sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
         log: (m) => console.error(`[soak] ${m}`),
       }));
       process.stdout.write(result.report);
@@ -1000,8 +1007,8 @@ async function main() {
       const at = shot.cameraFromFlags(flags, SPOTS);
       const readings = await withUi(flags, async (c) => {
         if (at) await shot.moveTo(c, at);
-        await new Promise((r) => setTimeout(r, num(flags.settle) ?? 4000));
-        return telemetry.parseConsoleJson(await cap.exec(c, `fua_stats json ${rest[1] ?? ""}`.trim(), { quietMs: 400, maxMs: 20000 }));
+        await cap.sleep(num(flags.settle) ?? 4000);
+        return telemetry.parseConsoleJson(await telemetry.execSlow(c, `fua_stats json ${rest[1] ?? ""}`.trim()));
       });
       const gate = telemetry.perfGate(rest[0], readings, { update: !!flags.update, share: num(flags.share), floor: num(flags.floor) });
       if (gate.saved) { console.log(`perfgate: saved ${readings.length} counters as the baseline ${gate.saved}`); break; }
@@ -1010,6 +1017,7 @@ async function main() {
       if (!gate.pass) process.exit(1);
       break;
     }
+    // [rc4l] `fuactl goto` -- stand at a saved spot or a camera, for looking rather than capturing.
     case "goto": {
       const at = shot.cameraFromFlags(flags, SPOTS);
       if (!at) { console.error("usage: fuactl goto (--spot NAME | --at x,y,z --face yaw,pitch) [--port P --token T]"); process.exit(2); }

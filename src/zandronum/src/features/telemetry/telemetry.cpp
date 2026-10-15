@@ -5,7 +5,6 @@
 
 #include "features/telemetry/telemetry.h"
 #include "features/telemetry/osprobe.h"
-#include "features/json/computation/json_compute.h"
 
 #include "c_cvars.h"
 #include "c_dispatch.h"
@@ -49,15 +48,16 @@ struct Slot
 {
 	std::string name, unit;
 	CounterKind kind = CounterKind::Gauge;
-	int intervalMs = 0;
+	// [rc4l] How often a gauge's read runs, in milliseconds.
+	Throttle every;
 	bool soaked = true;
 	double (*read)() = nullptr;
-	// [rc4l] Timings in nanoseconds and totals in thousandths, added from any thread.
+	// [rc4l] Timings in nanoseconds and totals in thousandths, added from any thread and never reset, a frame's value being what was added since the last sample.
 	std::atomic<int64_t> accum{ 0 };
+	int64_t sampled = 0;
 	double setValue = 0.0;
 	bool hasSet = false;
 	double level = 0.0;
-	int64_t lastReadMs = -1000000;
 	bool available = true;
 };
 
@@ -70,8 +70,6 @@ struct ThreadBuffer
 	std::mutex lock;
 	std::vector<RawEvent> events;
 };
-
-struct Hitch { int64_t frame; double ms; std::vector<std::pair<int, float>> top; };
 
 struct Registry
 {
@@ -109,7 +107,8 @@ struct Registry
 	void (*offer)(const char *) = nullptr;
 	void (*summaryListener)(const char *) = nullptr;
 	OsReadings os;
-	int64_t osReadMs = -1000000;
+	// [rc4l] The OS probe runs at most a few times a second however many gauges ask.
+	Throttle osEvery{ 400 };
 };
 
 Counter RegisterLocked(Registry &r, const std::string &name, const char *unit, CounterKind kind, int intervalMs, double (*read)(), bool soaked = true)
@@ -121,7 +120,7 @@ Counter RegisterLocked(Registry &r, const std::string &name, const char *unit, C
 	s.name = name;
 	s.unit = unit != nullptr ? unit : "";
 	s.kind = kind;
-	s.intervalMs = intervalMs;
+	s.every = Throttle(intervalMs);
 	s.soaked = soaked;
 	s.read = read;
 	r.count.store(n + 1, std::memory_order_release);
@@ -156,26 +155,34 @@ ThreadBuffer *CurrentBuffer()
 	return buffer;
 }
 
+// [rc4l] What was added to a timing or a total since its last sample.
+int64_t TakeAdded(Slot &s)
+{
+	const int64_t now = s.accum.load(std::memory_order_relaxed);
+	const int64_t added = now - s.sampled;
+	s.sampled = now;
+	return added;
+}
+
 double Sample(Slot &s, int64_t nowMs)
 {
 	double v = 0.0;
 	switch (s.kind)
 	{
 	case CounterKind::Time:
-		v = s.accum.exchange(0, std::memory_order_relaxed) / 1e6;
+		v = TakeAdded(s) / 1e6;
 		if (s.hasSet) v = s.setValue;
 		break;
 	case CounterKind::Total:
-		v = s.accum.exchange(0, std::memory_order_relaxed) / 1000.0;
+		v = TakeAdded(s) / 1000.0;
 		if (s.hasSet) v = s.setValue;
 		break;
 	case CounterKind::Gauge:
-		if (s.read != nullptr && (s.intervalMs <= 0 || nowMs - s.lastReadMs >= s.intervalMs))
+		if (s.read != nullptr && s.every.Due(nowMs))
 		{
 			const double x = s.read();
 			s.available = x >= 0.0;
 			s.level = s.available ? x : 0.0;
-			s.lastReadMs = nowMs;
 		}
 		v = s.level;
 		break;
@@ -194,12 +201,6 @@ std::vector<Reading> Snapshot(bool soak = false)
 		if (r.slots[i].kind == CounterKind::Gauge && r.slots[i].available && (!soak || r.slots[i].soaked)) out.push_back(Reading{ r.slots[i].name, r.slots[i].unit, r.slots[i].level });
 	for (auto &b : r.breakdowns) b.second(out);
 	return out;
-}
-
-// [rc4l] Counters a soak judges: levels of memory and of things held, not rates.
-bool SoakUnit(const std::string &unit)
-{
-	return unit == "bytes" || unit == "objects" || unit == "handles" || unit == "threads";
 }
 
 std::string Stamp()
@@ -255,12 +256,9 @@ void DetectHitch(Registry &r, int n, int64_t nowNs)
 	if (r.frameIndex % 32 == 0 && r.frames.Rows() >= 32) r.medianMs = ComputeColumnStats(r.frames, r.frameMs, 128).p50;
 	const double ms = r.row[r.frameMs];
 	if (r.medianMs <= 0.0 || !ComputeIsHitch(ms, r.medianMs, fua_telemetry_hitch_ms)) return;
-	Hitch h{ r.frameIndex, ms, {} };
-	for (int i = 0; i < n; i++)
-		if (i != r.frameMs && r.slots[i].kind == CounterKind::Time && r.row[i] >= 0.05f) h.top.push_back({ i, r.row[i] });
-	std::sort(h.top.begin(), h.top.end(), [](const std::pair<int, float> &a, const std::pair<int, float> &b) { return a.second > b.second; });
-	if (h.top.size() > 8) h.top.resize(8);
-	r.hitches.push_back(h);
+	std::vector<bool> timed((size_t)n);
+	for (int i = 0; i < n; i++) timed[(size_t)i] = r.slots[i].kind == CounterKind::Time;
+	r.hitches.push_back(Hitch{ r.frameIndex, ms, ComputeHitchTop(r.row, timed, r.frameMs, 0.05f, 8) });
 	r.hitchTimesNs.push_back(nowNs);
 	if (r.hitches.size() > kHitchKeep) r.hitches.erase(r.hitches.begin());
 	if (r.hitchTimesNs.size() > 4096) r.hitchTimesNs.erase(r.hitchTimesNs.begin());
@@ -284,17 +282,7 @@ void StopCapture(Registry &r)
 	r.capturing = false;
 	r.tracing = false;
 	DrainTrace(r);
-	const int n = r.count.load(std::memory_order_acquire);
-	std::string csv = ComputeCsvHeader(Names(n));
-	std::vector<float> row((size_t)n, 0.f);
-	size_t at = 0;
-	for (size_t f = 0; f < r.captureFrames.size(); f++)
-	{
-		std::fill(row.begin(), row.end(), 0.f);
-		for (int c = 0; c < r.captureWidths[f]; c++) row[(size_t)c] = r.captureRows[at + (size_t)c];
-		at += (size_t)r.captureWidths[f];
-		csv += ComputeCsvRow(r.captureFrames[f], r.captureTimes[f], row.data(), n);
-	}
+	const std::string csv = ComputeCaptureCsv(Names(r.count.load(std::memory_order_acquire)), r.captureFrames, r.captureTimes, r.captureWidths, r.captureRows);
 	std::vector<std::string> threadNames;
 	{
 		std::lock_guard<std::mutex> g(r.threadLock);
@@ -315,54 +303,31 @@ std::vector<StatsRow> StatsRows(const std::string &prefix)
 	for (int i = 0; i < n; i++)
 	{
 		const Slot &s = r.slots[i];
-		if (s.name.compare(0, prefix.size(), prefix) != 0) continue;
+		if (!ComputeStartsWith(s.name, prefix)) continue;
 		// [rc4l] A level reads as its last value, but a gauge in ms is a time measured late (a GPU pass), whose spread over the frames is what matters.
 		const bool level = s.kind == CounterKind::Gauge && s.unit != "ms";
 		rows.push_back(StatsRow{ s.name, s.unit, ComputeColumnStats(r.frames, i, level ? 1 : kStatsFrames), s.available });
 	}
+	// [rc4l] A breakdown is read when its readings can fall under the prefix, whichever of the two names the other starts with.
 	std::vector<Reading> extra;
-	for (auto &b : r.breakdowns) if (b.first.compare(0, prefix.size(), prefix) == 0 || prefix.compare(0, b.first.size(), b.first) == 0) b.second(extra);
-	for (const Reading &x : extra)
-	{
-		if (x.name.compare(0, prefix.size(), prefix) != 0) continue;
-		ColumnStats st = {};
-		st.n = 1; st.last = st.mean = st.min = st.max = st.p50 = st.p95 = st.p99 = x.value;
-		rows.push_back(StatsRow{ x.name, x.unit, st, true });
-	}
+	for (auto &b : r.breakdowns) if (ComputeStartsWith(b.first, prefix) || ComputeStartsWith(prefix, b.first)) b.second(extra);
+	const std::vector<StatsRow> readings = ComputeReadingRows(extra, prefix);
+	rows.insert(rows.end(), readings.begin(), readings.end());
 	return rows;
 }
 
 std::string HitchText(Registry &r, size_t limit)
 {
-	std::string out;
-	const size_t from = r.hitches.size() > limit ? r.hitches.size() - limit : 0;
-	char buf[96];
-	for (size_t i = from; i < r.hitches.size(); i++)
-	{
-		const Hitch &h = r.hitches[i];
-		std::snprintf(buf, sizeof(buf), "frame %lld: %.2f ms (%lld frames ago):", (long long)h.frame, h.ms, (long long)(r.frameIndex - h.frame));
-		out += buf;
-		for (const auto &t : h.top)
-		{
-			std::snprintf(buf, sizeof(buf), " %s %.2f,", r.slots[t.first].name.c_str(), t.second);
-			out += buf;
-		}
-		if (!h.top.empty()) out.pop_back();
-		out += "\n";
-	}
-	return out.empty() ? std::string("no hitches yet\n") : out;
+	return ComputeHitchText(r.hitches, Names(r.count.load(std::memory_order_acquire)), r.frameIndex, limit);
 }
 
-// [rc4l] The OS probe's readings, taken at most a few times a second however many gauges ask.
 const OsReadings &Os()
 {
 	Registry &r = R();
-	const int64_t nowMs = NowNs() / 1000000;
-	if (nowMs - r.osReadMs >= 400)
+	if (r.osEvery.Due(NowNs() / 1000000))
 	{
 		r.os = OsReadings();
 		ReadOs(r.os);
-		r.osReadMs = nowMs;
 	}
 	return r.os;
 }
@@ -408,6 +373,11 @@ Counter Find(const char *name)
 	const int n = r.count.load(std::memory_order_acquire);
 	for (int i = 0; i < n; i++) if (r.slots[i].name == name) return i;
 	return -1;
+}
+
+int64_t TimedNs(Counter c)
+{
+	return c < 0 ? 0 : R().slots[c].accum.load(std::memory_order_relaxed);
 }
 
 void Add(Counter c, double amount)
@@ -526,11 +496,6 @@ std::string StatsJson(const char *prefix)
 	return ComputeStatsJson(StatsRows(prefix != nullptr ? prefix : ""));
 }
 
-const char *CrashSummary()
-{
-	return R().crashSummary.c_str();
-}
-
 void SetSummaryListener(void (*listen)(const char *summary))
 {
 	R().summaryListener = listen;
@@ -584,15 +549,9 @@ CCMD(fua_flightdump)
 {
 	Registry &r = R();
 	const std::string name = argv.argc() > 1 ? argv[1] : "flight-" + Stamp();
-	const int n = r.count.load(std::memory_order_acquire);
-	std::string frames = ComputeCsvHeader(Names(n));
-	for (int ago = r.frames.Rows() - 1; ago >= 0; ago--) frames += ComputeCsvRow(r.frames.Frame(ago), 0.0, r.frames.Row(ago), n);
-	std::vector<std::string> pairNames;
-	for (const std::string &s : Names(n)) { pairNames.push_back(s + " mean"); pairNames.push_back(s + " max"); }
-	std::string seconds = ComputeCsvHeader(pairNames);
-	for (int ago = r.seconds.Rows() - 1; ago >= 0; ago--) seconds += ComputeCsvRow(r.seconds.Frame(ago), 0.0, r.seconds.Row(ago), n * 2);
-	WriteFile(FilePath(name + "-frames.csv"), frames);
-	WriteFile(FilePath(name + "-seconds.csv"), seconds);
+	const std::vector<std::string> names = Names(r.count.load(std::memory_order_acquire));
+	WriteFile(FilePath(name + "-frames.csv"), ComputeRingCsv(r.frames, names));
+	WriteFile(FilePath(name + "-seconds.csv"), ComputeRingCsv(r.seconds, ComputeSecondNames(names)));
 	WriteFile(FilePath(name + "-hitches.txt"), HitchText(r, kHitchKeep));
 	Printf("%s", r.crashSummary.c_str());
 }
@@ -634,59 +593,12 @@ CCMD(fua_soak)
 	if (what != "verdict") { Printf("usage: fua_soak begin | mark | verdict [warmup] [json]\n"); return; }
 	const int warmup = argv.argc() > 2 && strcmp(argv[2], "json") != 0 ? atoi(argv[2]) : 1;
 	const bool json = argv.argc() > 2 && !strcmp(argv[argv.argc() - 1], "json");
-	std::vector<std::string> grew;
-	std::string details;
-	int judged = 0;
-	if (!r.soakMarks.empty())
-	{
-		for (const Reading &first : r.soakMarks[0])
-		{
-			if (!SoakUnit(first.unit)) continue;
-			std::vector<double> series;
-			for (const std::vector<Reading> &mark : r.soakMarks)
-			{
-				const auto it = std::find_if(mark.begin(), mark.end(), [&](const Reading &x) { return x.name == first.name; });
-				if (it == mark.end()) break;
-				series.push_back(it->value);
-			}
-			if (series.size() != r.soakMarks.size()) continue;
-			judged++;
-			const double floor = first.unit == "bytes" ? 512.0 * 1024.0 : 4.0;
-			const GrowthVerdict v = ComputeGrowthVerdict(series, warmup, floor, 0.01);
-			if (!v.growing) continue;
-			grew.push_back(first.name);
-			char perCycle[32], total[32], buf[256];
-			std::snprintf(perCycle, sizeof(perCycle), "%.1f", v.perCycle);
-			std::snprintf(total, sizeof(total), "%.1f", v.total);
-			std::snprintf(buf, sizeof(buf), "  %s grew %s a cycle (%s over %d cycles)\n", first.name.c_str(),
-				first.unit == "bytes" ? ComputeBytesText(v.perCycle).c_str() : perCycle,
-				first.unit == "bytes" ? ComputeBytesText(v.total).c_str() : total, v.cycles);
-			details += buf;
-		}
-	}
-	const bool pass = grew.empty() && r.soakMarks.size() >= (size_t)warmup + 3;
-	if (json)
-	{
-		std::string list;
-		for (size_t i = 0; i < grew.size(); i++) list += (i ? "," : "") + zx::json::ComputeJsonQuoted(grew[i]);
-		Printf("{\"pass\":%s,\"marks\":%d,\"judged\":%d,\"grew\":[%s]}\n", pass ? "true" : "false", (int)r.soakMarks.size(), judged, list.c_str());
-		return;
-	}
-	Printf("SOAK %s: %d marks, %d counters judged, %d grew\n%s", pass ? "PASS" : "FAIL", (int)r.soakMarks.size(), judged, (int)grew.size(), details.c_str());
+	const SoakVerdict verdict = ComputeSoakVerdict(r.soakMarks, warmup);
+	Printf("%s", json ? (ComputeSoakJson(verdict) + "\n").c_str() : ComputeSoakText(verdict).c_str());
 }
 
 // [rc4l] The counters fua_stats watch picked, in the stat overlay's corner.
 ADD_STAT(telemetry)
 {
-	FString out;
-	int shown = 0;
-	for (const StatsRow &row : StatsRows(R().watchPrefix))
-	{
-		if (shown++ == 16) break;
-		char number[32];
-		std::snprintf(number, sizeof(number), "%.2f", row.stats.last);
-		const std::string last = row.unit == "bytes" ? ComputeBytesText(row.stats.last) : number;
-		out.AppendFormat("%s %s\n", row.name.c_str(), row.available ? last.c_str() : "n/a");
-	}
-	return out;
+	return FString(ComputeWatchText(StatsRows(R().watchPrefix), 16).c_str());
 }

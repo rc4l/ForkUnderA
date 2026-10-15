@@ -51,10 +51,10 @@
 
   // [rc4l] Counts every buffer and texture device makes, by tag, until it is destroyed or collected, which a browser does to a released one only when its garbage collector runs; the engine reads heldBytes as gpu/process_bytes and tagText as gpu/page/.
   function track(device, Registry = globalThis.FinalizationRegistry) {
-    let bytes = 0, objects = 0;
+    let bytes = 0;
     const tags = new Map();
     const count = (tag, n, k) => {
-      bytes += n; objects += k;
+      bytes += n;
       const t = tags.get(tag) || { bytes: 0, objects: 0 };
       t.bytes += n; t.objects += k;
       tags.set(tag, t);
@@ -75,11 +75,9 @@
     };
     device.createBuffer = wrap(device.createBuffer, (d) => d.size || 0);
     device.createTexture = wrap(device.createTexture, textureBytes);
-    // [rc4l] Each tag still holding an object, most bytes first.
-    const byTag = () => [...tags].filter(([, t]) => t.objects > 0).map(([tag, t]) => ({ tag, bytes: t.bytes, objects: t.objects })).sort((a, b) => b.bytes - a.bytes);
-    // [rc4l] The same as a line a tag, its name, a tab and its bytes, for the engine to read without parsing JSON.
-    const tagText = () => byTag().map((t) => `${t.tag}\t${t.bytes}\n`).join('');
-    return { heldBytes: () => bytes, heldObjects: () => objects, byTag, tagText };
+    // [rc4l] Each tag still holding an object, most bytes first, a line each of its name, a tab and its bytes, for the engine to read without parsing JSON.
+    const tagText = () => [...tags].filter(([, t]) => t.objects > 0).sort((a, b) => b[1].bytes - a[1].bytes).map(([tag, t]) => `${tag}\t${t.bytes}\n`).join('');
+    return { heldBytes: () => bytes, tagText };
   }
 
   const api = { WANTED, descriptor, adapterName, makeDevice, textureBytes, tagOf, track };

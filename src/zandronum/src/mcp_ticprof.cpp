@@ -1,52 +1,47 @@
 //
 // mcp_ticprof.cpp -- per-tic sim profiler for the native MCP bridge. See mcp_ticprof.h.
 //
-// Dormant until armed: the anchors cost one bool test per call when no capture is running.
+// [rc4l] Dormant until armed, and then it reads the sim zones' totals once a tic; ticprof_compute does the arithmetic.
 //
 
 #ifdef FUA_MCP_BRIDGE
 
 #include "mcp_ticprof.h"
-#include <chrono>
+#include "features/mcp-bridge/computation/ticprof_compute.h"
+#include "features/telemetry/telemetry.h"
 #include <vector>
 
 namespace
 {
-	using Clock = std::chrono::steady_clock;
-
 	bool g_armed;
 	int g_wantTics;
-	Clock::time_point g_zoneStart[MCP_TPZ_COUNT];
-	double g_zoneMs[MCP_TPZ_COUNT];
-
-	struct TicRecord { double ms[MCP_TPZ_COUNT]; };
-	std::vector<TicRecord> g_tics;
+	zx::telemetry::Counter g_zones[zx::mcp::kTicZoneCount];
+	int64_t g_last[zx::mcp::kTicZoneCount];
+	std::vector<zx::mcp::TicPhases> g_tics;
 	std::string g_report;
 	bool g_reportReady;
+
+	// [rc4l] Each zone's nanosecond total now, found by name the first time it has run.
+	void ReadZones( int64_t *out )
+	{
+		for ( int z = 0; z < zx::mcp::kTicZoneCount; ++z )
+		{
+			if ( g_zones[z] < 0 )
+				g_zones[z] = zx::telemetry::Find( zx::mcp::kTicZones[z] );
+			out[z] = zx::telemetry::TimedNs( g_zones[z] );
+		}
+	}
 }
 
 void MCP_TicProf_Arm( int tics )
 {
 	g_wantTics = tics < 1 ? 1 : ( tics > 2000 ? 2000 : tics );
 	g_tics.clear();
-	for ( int z = 0; z < MCP_TPZ_COUNT; ++z )
-		g_zoneMs[z] = 0.0;
+	for ( int z = 0; z < zx::mcp::kTicZoneCount; ++z )
+		g_zones[z] = -1;
+	ReadZones( g_last );
 	g_reportReady = false;
 	g_armed = true;
-}
-
-void MCP_TicProf_Begin( int zone )
-{
-	if ( !g_armed || zone < 0 || zone >= MCP_TPZ_COUNT )
-		return;
-	g_zoneStart[zone] = Clock::now();
-}
-
-void MCP_TicProf_End( int zone )
-{
-	if ( !g_armed || zone < 0 || zone >= MCP_TPZ_COUNT )
-		return;
-	g_zoneMs[zone] += std::chrono::duration<double, std::milli>( Clock::now() - g_zoneStart[zone] ).count();
 }
 
 void MCP_TicProf_TicDone()
@@ -54,30 +49,17 @@ void MCP_TicProf_TicDone()
 	if ( !g_armed )
 		return;
 
-	TicRecord r;
-	for ( int z = 0; z < MCP_TPZ_COUNT; ++z )
-	{
-		r.ms[z] = g_zoneMs[z];
-		g_zoneMs[z] = 0.0;
-	}
-	g_tics.push_back( r );
+	int64_t now[zx::mcp::kTicZoneCount];
+	ReadZones( now );
+	g_tics.push_back( zx::mcp::ComputeTicPhases( g_last, now ));
+	for ( int z = 0; z < zx::mcp::kTicZoneCount; ++z )
+		g_last[z] = now[z];
 
 	if ( (int)g_tics.size() < g_wantTics )
 		return;
 
 	g_armed = false;
-	std::string out = "{\"tics\":[";
-	for ( size_t i = 0; i < g_tics.size(); ++i )
-	{
-		if ( i ) out += ",";
-		out += "{\"total\":" + std::to_string( g_tics[i].ms[MCP_TPZ_GTICKER] );
-		out += ",\"pticker\":" + std::to_string( g_tics[i].ms[MCP_TPZ_PTICKER] );
-		out += ",\"thinkers\":" + std::to_string( g_tics[i].ms[MCP_TPZ_THINKERS] );
-		out += ",\"effects\":" + std::to_string( g_tics[i].ms[MCP_TPZ_EFFECTS] );
-		out += ",\"specials\":" + std::to_string( g_tics[i].ms[MCP_TPZ_SPECIALS] ) + "}";
-	}
-	out += "]}";
-	g_report = out;
+	g_report = zx::mcp::ComputeTicProfJson( g_tics );
 	g_reportReady = true;
 	g_tics.clear();
 }

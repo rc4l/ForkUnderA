@@ -22,6 +22,9 @@ Who/What/Where/Why on the issue, and close it.
   `engine crashed -- <log>.crash`.
 - **A crash someone saw but did not file:** `node tools/fuactl/src/cli.mjs crashes [--hours N]` lists the crash
   files fuactl's launches left, each with why it stopped and its first frames.
+- **What led up to it:** the event's `telemetry` extra (a browser report's "Last minute") is the engine's last
+  minute: frame times each second, memory and object counts first and last, and the hitch count. Memory climbing
+  toward the crash points at a leak to soak for (`perf-telemetry`).
 - **A crash on quit** whose stack runs through `common_exit` or `_execute_onexit_table` is static
   destruction: an object the engine owns outlived the console or the window it reports to. Release it in an
   `atterm` (which runs first), and prove it with a `compareQuit` scenario (`quitclean`).

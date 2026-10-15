@@ -27,7 +27,6 @@ public:
 		}
 		return n;
 	}
-	int Waiting() const { return m_waiting; }
 
 private:
 	int m_head = 0, m_tail = 0, m_waiting = 0;

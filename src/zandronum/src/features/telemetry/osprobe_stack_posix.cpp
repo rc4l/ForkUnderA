@@ -17,15 +17,19 @@ int CaptureStack(void **frames, int max)
 	return backtrace(frames, max);
 }
 
-std::string SymbolName(void *address)
+std::vector<std::string> SymbolNames(const std::vector<void *> &addresses)
 {
-	Dl_info info;
-	if (dladdr(address, &info) == 0 || info.dli_sname == nullptr) return std::string();
-	int status = 0;
-	char *demangled = abi::__cxa_demangle(info.dli_sname, nullptr, nullptr, &status);
-	const std::string out = status == 0 && demangled != nullptr ? demangled : info.dli_sname;
-	std::free(demangled);
-	return out;
+	std::vector<std::string> names;
+	for (void *address : addresses)
+	{
+		Dl_info info;
+		if (dladdr(address, &info) == 0 || info.dli_sname == nullptr) { names.push_back(std::string()); continue; }
+		int status = 0;
+		char *demangled = abi::__cxa_demangle(info.dli_sname, nullptr, nullptr, &status);
+		names.push_back(status == 0 && demangled != nullptr ? demangled : info.dli_sname);
+		std::free(demangled);
+	}
+	return names;
 }
 
 }} // namespace zx::telemetry

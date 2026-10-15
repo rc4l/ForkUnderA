@@ -127,15 +127,6 @@ static TArray<unsigned int> g_pendingRepaints;
 // Batches the last sorted build produced -- the figure appends are measured against.
 static int g_builtBatchCount = 0;
 
-// [rc4l] Build the backend vertex buffer from the level mesh, and upload it.
-//
-// Called at upload AND whenever geometry moves. A door does not merely nudge its vertices: the wall
-// cache re-bakes the seg, the piece can change vertex count, and MeshStore then hands it a NEW range
-// at the top of the arena. Any map from old mesh offsets to buffer slots is stale the moment that
-// happens -- which is why patching pieces in place left the shut door painted across an open doorway.
-//
-// So the whole thing is rebuilt. That is only affordable because the material sort is no longer
-// quadratic; it runs for the handful of frames a door is actually moving, and not at all otherwise.
 // [rc4l] Diligent's upload page, its EngineCreateInfo default, which a browser's device keeps every one of once made.
 static const size_t kUploadPageBytes = 1 << 20;
 
@@ -148,6 +139,15 @@ static void UpdateBufferInPages(Diligent::IDeviceContext *ctx, Diligent::IBuffer
 	});
 }
 
+// [rc4l] Build the backend vertex buffer from the level mesh, and upload it.
+//
+// Called at upload AND whenever geometry moves. A door does not merely nudge its vertices: the wall
+// cache re-bakes the seg, the piece can change vertex count, and MeshStore then hands it a NEW range
+// at the top of the arena. Any map from old mesh offsets to buffer slots is stale the moment that
+// happens -- which is why patching pieces in place left the shut door painted across an open doorway.
+//
+// So the whole thing is rebuilt. That is only affordable because the material sort is no longer
+// quadratic; it runs for the handful of frames a door is actually moving, and not at all otherwise.
 static bool BuildSceneBuffer(FString &err)
 {
 	ZX_COUNT("scene/rebuilds", "rebuilds", 1);   // [rc4l] whole scene buffer builds, which a level with moving sectors makes in play
@@ -313,12 +313,7 @@ static bool BuildSceneBuffer(FString &err)
 	{
 		Diligent::BufferDesc bd;
 		bd.Name = "fua scene VB";
-		// [rc4l] A quarter more room than the level needs right now.
-		//
-		// A piece that appears mid-game -- a seg baked the first time it is looked at, a surface re-baked
-		// at a different size -- can then be APPENDED rather than forcing the whole buffer to be rebuilt
-		// and re-uploaded. Without slack there is nowhere to put it and every new surface in the level
-		// costs a full rebuild, which is what Sunder MAP16 was doing 21 times a tic.
+		// [rc4l] A quarter more room than the level needs, so a piece that appears mid-game is appended rather than costing a whole rebuild (Sunder MAP16 made 21 a tic without it).
 		g_scene.vbCapacity = (unsigned int)(g_scene.cpuVerts.Size() + g_scene.cpuVerts.Size() / 4 + 1024);
 		bd.Size = (Diligent::Uint64)g_scene.vbCapacity * sizeof(SceneVertex);
 		// [rc4l] USAGE_DEFAULT rather than IMMUTABLE, since doors, lifts and crushers re-bake their segs and an immutable buffer froze every moving thing in the backend's view.
@@ -327,9 +322,7 @@ static bool BuildSceneBuffer(FString &err)
 		bd.BindFlags = Diligent::BIND_VERTEX_BUFFER;
 		if (RayTracingAvailable())
 		{
-			// Also readable as storage: a ray query returns a primitive index, so the shader has to fetch
-			// the triangle's own vertices to shade it. One float per element keeps the GLSL side a plain
-			// float array instead of matching a struct layout across two languages.
+			// [rc4l] Readable as storage too, as a float array, since a ray query returns a primitive index whose vertices the shader fetches itself.
 			bd.BindFlags |= Diligent::BIND_RAY_TRACING | Diligent::BIND_SHADER_RESOURCE;
 			bd.Mode = Diligent::BUFFER_MODE_STRUCTURED;
 			bd.ElementByteStride = sizeof(float);

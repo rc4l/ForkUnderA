@@ -14,15 +14,6 @@ namespace zx { namespace telemetry {
 
 namespace {
 
-// [rc4l] A number as a table shows it: bytes as their unit, large values whole, the rest to two places.
-std::string Number(double v, const std::string &unit)
-{
-	if (unit == "bytes") return ComputeBytesText(v);
-	char buf[64];
-	std::snprintf(buf, sizeof(buf), std::fabs(v) >= 1000.0 ? "%.0f" : "%.2f", v);
-	return buf;
-}
-
 // [rc4l] A number as JSON carries it.
 std::string JsonNumber(double v)
 {
@@ -46,7 +37,34 @@ std::string Pad(const std::string &text, size_t width)
 	return text.size() >= width ? text : text + std::string(width - text.size(), ' ');
 }
 
+// [rc4l] Units a soak judges: levels of memory and of things held, not rates.
+bool SoakUnit(const std::string &unit)
+{
+	return unit == "bytes" || unit == "objects" || unit == "handles" || unit == "threads";
+}
+
 } // namespace
+
+bool Throttle::Due(int64_t now)
+{
+	if (m_ran && now - m_last < m_interval) return false;
+	m_ran = true;
+	m_last = now;
+	return true;
+}
+
+bool ComputeStartsWith(const std::string &text, const std::string &prefix)
+{
+	return text.compare(0, prefix.size(), prefix) == 0;
+}
+
+std::string ComputeValueText(double v, const std::string &unit)
+{
+	if (unit == "bytes") return ComputeBytesText(v);
+	char buf[64];
+	std::snprintf(buf, sizeof(buf), std::fabs(v) >= 1000.0 ? "%.0f" : "%.2f", v);
+	return buf;
+}
 
 FrameRing::FrameRing(int rows, int columns)
 	: m_values((size_t)std::max(1, rows) * (size_t)std::max(1, columns), 0.f), m_frames((size_t)std::max(1, rows), 0),
@@ -79,11 +97,6 @@ int64_t FrameRing::Frame(int ago) const
 	return m_frames[(size_t)Index(ago)];
 }
 
-void FrameRing::Clear()
-{
-	m_head = m_size = 0;
-}
-
 ColumnStats ComputeColumnStats(const FrameRing &ring, int column, int rows)
 {
 	ColumnStats s = {};
@@ -114,9 +127,29 @@ std::string ComputeStatsTable(const std::vector<StatsRow> &rows)
 	{
 		out += Pad(r.name, width) + "  " + Pad(r.unit, unitWidth) + "  ";
 		if (!r.available) { out += "n/a\n"; continue; }
-		out += Pad(Number(r.stats.last, r.unit), 10) + "  " + Pad(Number(r.stats.mean, r.unit), 10) + "  " +
-			Pad(Number(r.stats.p99, r.unit), 10) + "  " + Number(r.stats.max, r.unit) + "\n";
+		out += Pad(ComputeValueText(r.stats.last, r.unit), 10) + "  " + Pad(ComputeValueText(r.stats.mean, r.unit), 10) + "  " +
+			Pad(ComputeValueText(r.stats.p99, r.unit), 10) + "  " + ComputeValueText(r.stats.max, r.unit) + "\n";
 	}
+	return out;
+}
+
+std::vector<StatsRow> ComputeReadingRows(const std::vector<Reading> &readings, const std::string &prefix)
+{
+	std::vector<StatsRow> rows;
+	for (const Reading &x : readings)
+	{
+		if (!ComputeStartsWith(x.name, prefix)) continue;
+		const ColumnStats st = { 1, x.value, x.value, x.value, x.value, x.value, x.value, x.value };
+		rows.push_back(StatsRow{ x.name, x.unit, st, true });
+	}
+	return rows;
+}
+
+std::string ComputeWatchText(const std::vector<StatsRow> &rows, size_t limit)
+{
+	std::string out;
+	for (size_t i = 0; i < rows.size() && i < limit; i++)
+		out += rows[i].name + " " + (rows[i].available ? ComputeValueText(rows[i].stats.last, rows[i].unit) : std::string("n/a")) + "\n";
 	return out;
 }
 
@@ -142,6 +175,36 @@ bool ComputeIsHitch(double frameMs, double medianMs, double floorMs)
 	return frameMs > floorMs && frameMs > 2.0 * medianMs;
 }
 
+std::vector<std::pair<int, float>> ComputeHitchTop(const float *row, const std::vector<bool> &timed, int skip, float floorMs, size_t keep)
+{
+	std::vector<std::pair<int, float>> top;
+	for (size_t i = 0; i < timed.size(); i++)
+		if ((int)i != skip && timed[i] && row[i] >= floorMs) top.push_back({ (int)i, row[i] });
+	std::stable_sort(top.begin(), top.end(), [](const std::pair<int, float> &a, const std::pair<int, float> &b) { return a.second > b.second; });
+	if (top.size() > keep) top.resize(keep);
+	return top;
+}
+
+std::string ComputeHitchText(const std::vector<Hitch> &hitches, const std::vector<std::string> &names, int64_t now, size_t limit)
+{
+	std::string out;
+	char buf[96];
+	for (size_t i = hitches.size() > limit ? hitches.size() - limit : 0; i < hitches.size(); i++)
+	{
+		const Hitch &h = hitches[i];
+		std::snprintf(buf, sizeof(buf), "frame %lld: %.2f ms (%lld frames ago):", (long long)h.frame, h.ms, (long long)(now - h.frame));
+		out += buf;
+		for (size_t t = 0; t < h.top.size(); t++)
+		{
+			const int c = h.top[t].first;
+			std::snprintf(buf, sizeof(buf), "%.2f", h.top[t].second);
+			out += std::string(t ? ", " : " ") + (c < (int)names.size() ? names[(size_t)c] : std::string("?")) + " " + buf;
+		}
+		out += "\n";
+	}
+	return out.empty() ? std::string("no hitches yet\n") : out;
+}
+
 std::string ComputeCsvHeader(const std::vector<std::string> &names)
 {
 	std::string out = "frame,time_ms";
@@ -156,6 +219,36 @@ std::string ComputeCsvRow(int64_t frame, double timeMs, const float *values, int
 	std::string out = buf;
 	for (int i = 0; i < count; i++) out += "," + JsonNumber(values[i]);
 	return out + "\n";
+}
+
+std::string ComputeCaptureCsv(const std::vector<std::string> &names, const std::vector<int64_t> &frames, const std::vector<double> &timesMs, const std::vector<int> &widths, const std::vector<float> &values)
+{
+	std::string out = ComputeCsvHeader(names);
+	std::vector<float> row(names.size(), 0.f);
+	size_t at = 0;
+	for (size_t f = 0; f < frames.size(); f++)
+	{
+		std::fill(row.begin(), row.end(), 0.f);
+		for (size_t c = 0; c < (size_t)widths[f]; c++) if (c < row.size()) row[c] = values[at + c];
+		at += (size_t)widths[f];
+		out += ComputeCsvRow(frames[f], timesMs[f], row.data(), (int)row.size());
+	}
+	return out;
+}
+
+std::string ComputeRingCsv(const FrameRing &ring, const std::vector<std::string> &names)
+{
+	const int columns = std::min((int)names.size(), ring.Columns());
+	std::string out = ComputeCsvHeader(std::vector<std::string>(names.begin(), names.begin() + columns));
+	for (int ago = ring.Rows() - 1; ago >= 0; ago--) out += ComputeCsvRow(ring.Frame(ago), 0.0, ring.Row(ago), columns);
+	return out;
+}
+
+std::vector<std::string> ComputeSecondNames(const std::vector<std::string> &names)
+{
+	std::vector<std::string> out;
+	for (const std::string &n : names) { out.push_back(n + " mean"); out.push_back(n + " max"); }
+	return out;
 }
 
 std::string ComputeChromeTrace(const std::vector<TraceEvent> &events, const std::vector<std::string> &threadNames)
@@ -198,8 +291,8 @@ std::string ComputeDiffTable(const std::vector<DiffRow> &rows, size_t limit)
 	{
 		if (r.delta == 0.0 || shown == limit) continue;
 		shown++;
-		out += Pad(r.name, width) + "  " + Pad(Number(r.before, r.unit), 10) + "  " + Pad(Number(r.after, r.unit), 10) + "  " +
-			(r.delta > 0 ? "+" : "") + Number(r.delta, r.unit) + "\n";
+		out += Pad(r.name, width) + "  " + Pad(ComputeValueText(r.before, r.unit), 10) + "  " + Pad(ComputeValueText(r.after, r.unit), 10) + "  " +
+			(r.delta > 0 ? "+" : "") + ComputeValueText(r.delta, r.unit) + "\n";
 	}
 	if (shown == 0) out += "(no change)\n";
 	return out;
@@ -228,6 +321,51 @@ GrowthVerdict ComputeGrowthVerdict(const std::vector<double> &samples, int warmu
 	const double limit = std::max(floor, share * std::fabs(my));
 	g.growing = g.perCycle > limit && g.total > limit;
 	return g;
+}
+
+SoakVerdict ComputeSoakVerdict(const std::vector<std::vector<Reading>> &marks, int warmup)
+{
+	SoakVerdict v = { false, (int)marks.size(), 0, {} };
+	for (const Reading &first : marks.empty() ? std::vector<Reading>() : marks[0])
+	{
+		if (!SoakUnit(first.unit)) continue;
+		std::vector<double> series;
+		for (const std::vector<Reading> &mark : marks)
+		{
+			const auto it = std::find_if(mark.begin(), mark.end(), [&](const Reading &x) { return x.name == first.name; });
+			if (it == mark.end()) break;
+			series.push_back(it->value);
+		}
+		if (series.size() != marks.size()) continue;
+		v.judged++;
+		// [rc4l] Bytes grow by allocator pages and caches settling, so less than half a megabyte a cycle is noise; a count must grow by more than four.
+		const GrowthVerdict g = ComputeGrowthVerdict(series, warmup, first.unit == "bytes" ? 512.0 * 1024.0 : 4.0, 0.01);
+		if (!g.growing) continue;
+		char cycles[16];
+		std::snprintf(cycles, sizeof(cycles), "%d", g.cycles);
+		v.grew.push_back(SoakGrowth{ first.name, first.name + " grew " + ComputeValueText(g.perCycle, first.unit) + " a cycle (" +
+			ComputeValueText(g.total, first.unit) + " over " + cycles + " cycles)" });
+	}
+	v.pass = v.grew.empty() && v.marks >= std::max(0, warmup) + 3;
+	return v;
+}
+
+std::string ComputeSoakText(const SoakVerdict &v)
+{
+	char buf[128];
+	std::snprintf(buf, sizeof(buf), "SOAK %s: %d marks, %d counters judged, %d grew\n", v.pass ? "PASS" : "FAIL", v.marks, v.judged, (int)v.grew.size());
+	std::string out = buf;
+	for (const SoakGrowth &g : v.grew) out += "  " + g.text + "\n";
+	return out;
+}
+
+std::string ComputeSoakJson(const SoakVerdict &v)
+{
+	std::string grew;
+	for (size_t i = 0; i < v.grew.size(); i++)
+		grew += std::string(i ? "," : "") + "{\"name\":" + zx::json::ComputeJsonQuoted(v.grew[i].name) + ",\"text\":" + zx::json::ComputeJsonQuoted(v.grew[i].text) + "}";
+	return std::string("{\"pass\":") + (v.pass ? "true" : "false") + ",\"marks\":" + std::to_string(v.marks) + ",\"judged\":" + std::to_string(v.judged) +
+		",\"grew\":[" + grew + "],\"report\":" + zx::json::ComputeJsonQuoted(ComputeSoakText(v)) + "}";
 }
 
 TagLedger::TagLedger(size_t maxTags) : m_maxTags(std::max<size_t>(1, maxTags))
@@ -310,7 +448,8 @@ double ComputeTextureBytes(const TextureShape &s)
 	double total = 0.0;
 	int w = std::max(1, s.width), h = std::max(1, s.height), d = std::max(1, s.depth);
 	const bool blocks = s.blockWidth > 0 && s.blockHeight > 0;
-	for (int m = 0; m < std::max(1, s.mips); m++)
+	const int mips = s.mips > 0 ? s.mips : (int)std::floor(std::log2((double)std::max(w, std::max(h, d)))) + 1;
+	for (int m = 0; m < mips; m++)
 	{
 		const double level = blocks ? std::ceil((double)w / s.blockWidth) * std::ceil((double)h / s.blockHeight) * s.blockBytes
 			: (double)w * h * s.bytesPerTexel;
@@ -320,6 +459,18 @@ double ComputeTextureBytes(const TextureShape &s)
 		d = std::max(1, d / 2);
 	}
 	return total * std::max(1, s.layers) * std::max(1, s.samples);
+}
+
+HeapBudget ComputeDeviceLocalBudget(const std::vector<HeapBudget> &heaps)
+{
+	HeapBudget sum = { true, 0.0, 0.0 };
+	for (const HeapBudget &h : heaps)
+	{
+		if (!h.deviceLocal) continue;
+		sum.used += h.used;
+		sum.budget += h.budget;
+	}
+	return sum;
 }
 
 std::string ComputeMemoryTag(const std::string &name)
@@ -399,7 +550,7 @@ std::string ComputeFlightSummary(const FrameRing &seconds, int frameColumn, cons
 	for (const SummaryGauge &g : gauges)
 	{
 		const double first = seconds.Row(n - 1)[g.column * 2], last = seconds.Row(0)[g.column * 2];
-		out += g.name + ": " + Number(first, g.unit) + " -> " + Number(last, g.unit) + " (" + (last >= first ? "+" : "") + Number(last - first, g.unit) + ")\n";
+		out += g.name + ": " + ComputeValueText(first, g.unit) + " -> " + ComputeValueText(last, g.unit) + " (" + (last >= first ? "+" : "") + ComputeValueText(last - first, g.unit) + ")\n";
 	}
 	return out;
 }

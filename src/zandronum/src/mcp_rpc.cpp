@@ -331,8 +331,8 @@ void MCP_RPC_Tick()
 			EmitEvent( "glperf", glperf );
 	}
 
-	// Per-tic sim profiler (perf.ticprof): the tic anchors accumulate phase times; when the armed
-	// tic count completes, the per-tic report goes out as a "ticprof" event.
+	// Per-tic sim profiler (perf.ticprof): when the armed tic count completes, the per-tic report
+	// goes out as a "ticprof" event.
 	{
 		std::string ticprof;
 		if ( MCP_TicProf_ReportReady( ticprof ) )
@@ -782,6 +782,12 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 		// sim.step to dissect a specific tic (e.g. the one that runs "kill monsters").
 		long tics = 35;
 		GetInt( args, "tics", tics );
+		// [rc4l] The phases are features/telemetry's sim zones, which time nothing while fua_telemetry is off.
+		if ( !zx::telemetry::g_enabled )
+		{
+			SendErr( id, "perf.ticprof reads features/telemetry's sim zones, and fua_telemetry is off" );
+			return;
+		}
 		MCP_TicProf_Arm( (int)tics );
 		SendOk( id, std::string( "{\"capturing\":true,\"tics\":" ) + I( tics ) + "}" );
 	}

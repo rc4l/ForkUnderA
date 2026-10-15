@@ -22,6 +22,7 @@
   #include <windows.h>
   #include <dbghelp.h>
   #pragma comment(lib, "dbghelp.lib")   // MSVC-only; ignored by GCC/Clang
+  #include "features/telemetry/osprobe.h"   // [rc4l] DbgHelpLock
 #endif
 
 namespace
@@ -43,11 +44,7 @@ std::atomic<int> g_publishedTic( 0 );
 
 #ifdef _WIN32
 
-// [rc4l] dbghelp is single-threaded per process. mcp_crash.cpp is the only other user and it runs
-// from the unhandled-exception filter, at which point nobody is sampling any more, so the two cannot
-// overlap in practice. Symbolising is done AFTER the run, never while the game thread is suspended:
-// resolving a symbol can take a page fault, and holding a suspended thread across one is how a
-// profiler deadlocks its own target.
+// [rc4l] Symbolising waits until the run ends, since resolving a symbol can take a page fault and a profiler holding its suspended target across one deadlocks it.
 std::string SymbolFor( HANDLE proc, DWORD64 addr, std::string &dsoOut )
 {
 	char symbuf[sizeof( SYMBOL_INFO ) + 512];
@@ -203,6 +200,8 @@ void SampleRun( HANDLE thread, double seconds, int hz, bool engineOnly, int top,
 		CloseHandle( timer );
 
 	// The game thread runs freely again from here; everything below is bookkeeping.
+	// [rc4l] dbghelp is one per process and not thread-safe, so the session holds the lock features/telemetry's SymbolNames takes on the game thread.
+	std::unique_lock<std::mutex> symbols( zx::telemetry::DbgHelpLock( ));
 	HANDLE proc = GetCurrentProcess( );
 	SymSetOptions( SYMOPT_UNDNAME | SYMOPT_DEFERRED_LOADS );
 	SymInitialize( proc, NULL, TRUE );
@@ -235,6 +234,7 @@ void SampleRun( HANDLE thread, double seconds, int hz, bool engineOnly, int top,
 	}
 
 	SymCleanup( proc );
+	symbols.unlock( );
 
 	// ModuleName has no extension, so the engine is "forkundera" whatever the binary is called.
 	if ( engineOnly )

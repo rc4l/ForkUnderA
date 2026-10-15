@@ -61,8 +61,6 @@ test('the ledger holds what is made until it is destroyed or collected, and once
   const texture = device.createTexture({ size: [4, 4], format: 'rgba8unorm', label: 'fua material 12' });
   const empty = device.createBuffer({});
   assert.equal(ledger.heldBytes(), 164);
-  assert.equal(ledger.heldObjects(), 3);
-  assert.deepEqual(ledger.byTag(), [{ tag: 'fua scene VB', bytes: 100, objects: 1 }, { tag: 'fua material', bytes: 64, objects: 1 }, { tag: 'unnamed', bytes: 0, objects: 1 }]);
   assert.equal(ledger.tagText(), 'fua scene VB\t100\nfua material\t64\nunnamed\t0\n');
   assert.equal(buffer.destroy(), 'gone');
   assert.ok(buffer.destroyed);
@@ -71,9 +69,9 @@ test('the ledger holds what is made until it is destroyed or collected, and once
   assert.equal(registry.held.size, 2);
   registry.collect(texture);
   assert.equal(ledger.heldBytes(), 0);
+  assert.equal(ledger.tagText(), 'unnamed\t0\n');
   empty.destroy();
-  assert.equal(ledger.heldObjects(), 0);
-  assert.deepEqual(ledger.byTag(), []);
+  assert.equal(ledger.tagText(), '');
 });
 
 test('a label is its tag without the number, list index or id that numbers its copies', () => {

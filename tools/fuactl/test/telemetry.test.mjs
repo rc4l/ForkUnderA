@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { consoleTextFor, soakStep, parseConsoleJson, runSoak, compareStats, formatCompare, baselinePath, perfGate } from "../src/telemetry.mjs";
+import { consoleTextFor, soakStep, parseConsoleJson, runSoak, compareStats, formatCompare, baselinePath, perfGate, execSlow } from "../src/telemetry.mjs";
 
 test("each view is the console command it names, built from its words and flags", () => {
   assert.equal(consoleTextFor("console", ["map", "MAP02"]), "map MAP02");
@@ -49,17 +49,16 @@ function fakeInstance({ verdict, leaveLevel = false, neverReturns = false }) {
     ran.push(text);
     if (text.startsWith("map ")) { if (leaveLevel) inlevel = false; else leveltime = 0; }
     if (text.endsWith("json")) return `telemetry\n${JSON.stringify(verdict)}\n`;
-    if (text.startsWith("fua_soak verdict")) return "SOAK PASS\n";
     return "";
   };
   return { c, exec, ran };
 }
 
 test("a soak repeats its action, waits for each new level, marks after each and returns the verdict", async () => {
-  const { c, exec, ran } = fakeInstance({ verdict: { pass: true, marks: 2, judged: 9, grew: [] } });
+  const { c, exec, ran } = fakeInstance({ verdict: { pass: true, marks: 2, judged: 9, grew: [], report: "SOAK PASS\n" } });
   const logged = [];
   const r = await runSoak(c, { cycles: 2, warmup: 0, settleMs: 0, exec, sleep: async () => {}, log: (m) => logged.push(m) });
-  assert.deepEqual(ran, ["fua_soak begin", "map MAP07", "fua_soak mark", "map MAP07", "fua_soak mark", "fua_soak verdict 0 json", "fua_soak verdict 0"]);
+  assert.deepEqual(ran, ["fua_soak begin", "map MAP07", "fua_soak mark", "map MAP07", "fua_soak mark", "fua_soak verdict 0 json"]);
   assert.deepEqual(logged, ["cycle 1/2", "cycle 2/2"]);
   assert.equal(r.pass, true);
   assert.equal(r.report, "SOAK PASS\n");
@@ -109,7 +108,7 @@ test("a comparison prints what changed, regressions marked, or says nothing chan
 });
 
 test("a baseline lives per machine under a plain name", () => {
-  assert.equal(baselinePath("sunder-map10", "/home/x"), path.join("/home/x", ".forkundera", "baselines", "sunder-map10.json"));
+  assert.equal(baselinePath("sunder-map10", "/somewhere"), path.join("/somewhere", ".forkundera", "baselines", "sunder-map10.json"));
   assert.throws(() => baselinePath("../escape"), /baseline names are/);
 });
 
@@ -126,4 +125,14 @@ test("the first gate saves its baseline, later ones pass or fail against it, and
     assert.ok(perfGate("g", [row("frame/ms", "ms", 3, 6)], { home, update: true }).saved);
     assert.equal(perfGate("g", [row("frame/ms", "ms", 3, 6)], { home }).pass, true);
   } finally { fs.rmSync(home, { recursive: true, force: true }); }
+});
+
+test("a slow command returns everything the console printed while it ran", async () => {
+  let listener = null;
+  const c = {
+    onEvent: (fn) => { listener = fn; return () => { listener = null; }; },
+    rpc: async (cmd, args) => { listener("out", { text: `ran ${args.text}.` }); return {}; },
+  };
+  assert.equal(await execSlow(c, "fua_stats json"), "ran fua_stats json.");
+  assert.equal(listener, null);
 });

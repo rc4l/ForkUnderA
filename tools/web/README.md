@@ -59,9 +59,14 @@ Copies the module, the page and the data the page writes into the engine's file 
 
 ```bash
 node tools/web/probe.mjs [dist-web] [--query Q] [--run "god; wait 1000; +attack"] [--autoplay] [--software] [--seconds N]
+node tools/web/probe.mjs [dist-web] [--query Q] --soak reload|TEXT [--cycles N] [--settle MS] [--seconds N]
 ```
 
-Plays a staged page through console lines (with `wait N` between them, in milliseconds) and reports what it did: each sound it started, any started again, the screen textures it held before and after, and its WebGPU errors. `--autoplay` lets its audio run without a click. The page code, the watches among it, is shared with the checks (`page.mjs`).
+Plays a staged page through console lines (with `wait N` between them, in milliseconds) and reports what it did: what the lines printed, each sound it started, any started again, the screen textures it held before and after, and its WebGPU errors. `--autoplay` lets its audio run without a click.
+
+`--soak` instead repeats an action on the query's map (`reload` loads it again; any other text runs as a console line), marks memory after each, and prints the engine's `fua_soak` verdict, exiting 1 when something kept growing. Chrome runs with `--expose-gc`, so each mark comes after the page's garbage is collected.
+
+The page code, the watches and the soak among it, is shared with the checks (`page.mjs`).
 
 ## check.mjs
 

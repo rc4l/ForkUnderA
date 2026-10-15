@@ -1,4 +1,5 @@
 // [rc4l] Code for a page, shared by the checks and the probe: the watches run before its own scripts, and what runs once the engine has started.
+import { soakStep } from '../fuactl/src/telemetry.mjs';
 
 // [rc4l] JavaScript run in the page once the engine has started (fua.js sets fuaCommand just before main), its value the caller's result.
 export function inPage(body) {
@@ -7,6 +8,35 @@ export function inPage(body) {
 
 // [rc4l] Page code that waits ms milliseconds.
 export const pause = (ms) => `await new Promise((r) => setTimeout(r, ${ms}));`;
+
+// [rc4l] Page code that keeps every console line from here on in said until unhear(), and lastJson(start, none) parses the newest one starting with start.
+export const HEAR_CONSOLE = `const said = [];
+      const print = console.log;
+      console.log = (...a) => { said.push(a.join(' ')); return print.apply(console, a); };
+      const unhear = () => { console.log = print; };
+      const lastJson = (start, none) => { const line = said.slice().reverse().find((l) => l.startsWith(start)); return line ? JSON.parse(line) : none; };`;
+
+// [rc4l] Page code that repeats a soak action (fuactl's SOAK_ACTIONS) cycles times on map, marking memory after each once a new level has printed its title and the page's garbage is collected (window.gc, with --expose-gc), and returns the engine's verdict.
+export function soakInPage(action, cycles, settleMs, map = 'MAP01') {
+  const step = soakStep(action, map);
+  return inPage(`
+      ${pause(2000)}
+      ${HEAR_CONSOLE}
+      const started = async (from) => { for (let t = 0; t < 600 && !said.slice(from).some((l) => l.trim().toLowerCase().startsWith(${JSON.stringify(`${map.toLowerCase()} - `)})); t++) ${pause(100)} };
+      const collect = async () => { for (let k = 0; k < 2 && window.gc; k++) { window.gc(); ${pause(200)} } };
+      Module.fuaCommand('fua_soak begin');
+      for (let i = 0; i < ${cycles}; i++) {
+        const from = said.length;
+        Module.fuaCommand(${JSON.stringify(step.text)});
+        ${step.newLevel ? 'await started(from);' : ''}
+        ${pause(settleMs)}
+        await collect();
+        Module.fuaCommand('fua_soak mark');
+      }
+      Module.fuaCommand('fua_soak verdict 1 json');
+      unhear();
+      return lastJson('{"pass"', {});`);
+}
 
 // [rc4l] Every audio buffer the page starts, in window.fuaSounds as { t, id, len }: the audio clock's time, the buffer's number by identity, and its length in seconds.
 export const WATCH_SOUNDS = `window.fuaSounds = []; {

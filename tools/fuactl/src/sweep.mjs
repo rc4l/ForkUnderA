@@ -4,11 +4,10 @@ import fs from "node:fs";
 import path from "node:path";
 import { BridgeClient } from "./client.mjs";
 import { launchInstance, stopInstance, resolveEngine } from "./launch.mjs";
-import { exec, waitTics, sandbox } from "./capture.mjs";
+import { exec, waitTics, sandbox, sleep } from "./capture.mjs";
 import { shotPair, sweepDirFor, moveTo } from "./shot.mjs";
 import * as ui from "./ui.mjs";
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // [rc4l] Wait for THIS map's upload, do not guess at it with a sleep.
 //

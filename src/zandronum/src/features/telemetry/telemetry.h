@@ -24,6 +24,8 @@ struct CounterSpec { const char *name; const char *unit; CounterKind kind; int i
 Counter Register(const CounterSpec &spec, double (*read)() = nullptr);
 // [rc4l] The counter registered under name, or -1.
 Counter Find(const char *name);
+// [rc4l] The nanoseconds a timing counter has gathered since it was registered, for a reader keeping its own intervals (the bridge's perf.ticprof); 0 for no counter.
+int64_t TimedNs(Counter c);
 
 // [rc4l] Adds amount to this frame's value of a total or a timing, from any thread.
 void Add(Counter c, double amount);
@@ -89,9 +91,7 @@ void SetFileOfferer(void (*offer)(const char *path));
 // [rc4l] The counters whose names start with prefix as fua_stats json prints them, for the bridge's perf.counters.
 std::string StatsJson(const char *prefix);
 
-// [rc4l] The last minute in a few lines, refreshed each second, for a crash report to carry.
-const char *CrashSummary();
-// [rc4l] Who hears that summary each time it is refreshed, which a crash report keeps to send with a crash; NULL hears nothing.
+// [rc4l] Who hears the last minute in a few lines each second, which a crash report keeps to send with a crash; NULL hears nothing.
 void SetSummaryListener(void (*listen)(const char *summary));
 
 }} // namespace zx::telemetry

@@ -38,3 +38,19 @@ test("a [rc4l] comment of two sentences, or one carried onto a second line, is a
   assert.deepEqual(commentIssues(added).map((i) => `${i.file}:${i.line} ${i.why}`),
     ["a.cpp:2 more than one sentence", "a.cpp:3 runs onto the next line", "a.sh:1 more than one sentence"]);
 });
+
+// [rc4l] A paragraph moved with its code kept its first line one sentence and ran on after a bare "//", which the check let through.
+test("prose past a bare comment line runs the [rc4l] comment on, and the next [rc4l] comment or code ends it", () => {
+  const added = [
+    { file: "c.cpp", line: 1, text: "\t// [rc4l] Drop what the old level owned." },
+    { file: "c.cpp", line: 2, text: "\t//" },
+    { file: "c.cpp", line: 3, text: "\t// The cache is keyed on pointers, so it goes stale" },
+    { file: "c.cpp", line: 4, text: "\t// after a map change." },
+    { file: "c.cpp", line: 5, text: "\tRelease();" },
+    { file: "c.cpp", line: 6, text: "\t// [rc4l] Fine." },
+    { file: "c.cpp", line: 7, text: "\t//" },
+    { file: "c.cpp", line: 8, text: "\t// [rc4l] Also fine." },
+    { file: "c.cpp", line: 9, text: "\tReleaseMore();" },
+  ];
+  assert.deepEqual(commentIssues(added).map((i) => `${i.file}:${i.line} ${i.why}`), ["c.cpp:1 runs on past a blank comment line"]);
+});

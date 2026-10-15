@@ -217,20 +217,17 @@ export function compareQuit(opts) {
   });
 }
 
-// [rc4l] A soak's verdict (telemetry.mjs runSoak) as a scenario line: what kept growing and by how much a cycle, as the engine's report says, or how many counters held.
-export function judgeSoak(label, { pass, marks, judged, grew = [], report = "" }) {
+// [rc4l] A soak's verdict (telemetry.mjs runSoak) as a scenario line: what kept growing and by how much a cycle, as the engine says, or how many counters held.
+export function judgeSoak(label, { pass, marks, judged, grew = [] }) {
   if (pass) return { line: `PASS ${label}: ${judged} counters held over ${marks} marks`, failed: 0 };
-  const amounts = report.split("\n").filter((l) => / grew /.test(l)).map((l) => l.trim()).join("; ");
-  return { line: `FAIL ${label}: ${grew.length ? `kept growing: ${amounts || grew.join(", ")}` : `judged nothing (${marks} marks)`}`, failed: 1 };
+  return { line: `FAIL ${label}: ${grew.length ? `kept growing: ${grew.map((g) => g.text).join("; ")}` : `judged nothing (${marks} marks)`}`, failed: 1 };
 }
 
 // [rc4l] Each side launched on each map repeats the scenario's soak action (reload unless it names another) and passes when the engine judges that no memory, object, handle or thread count kept growing: for a leak, which no frame shows.
 export function compareSoak(opts) {
   return eachLaunch(opts, async (c, inst, label) => {
     await cap.waitTics(c, opts.settleTics ?? 35);
-    const verdict = await runSoak(c, { action: opts.action ?? "reload", cycles: opts.cycles ?? 6, warmup: 1, settleMs: opts.settleMs ?? 4000,
-      exec: (cl, text) => cap.exec(cl, text, { quietMs: 400, maxMs: 20000 }), sleep: (ms) => new Promise((r) => setTimeout(r, ms)) });
-    return judgeSoak(label, verdict);
+    return judgeSoak(label, await runSoak(c, { action: opts.action ?? "reload", cycles: opts.cycles ?? 6, settleMs: opts.settleMs ?? 4000 }));
   });
 }
 

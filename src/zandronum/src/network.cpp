@@ -105,6 +105,7 @@
 
 #include "md5.h"
 #include "doomerrors.h"
+#include "features/telemetry/telemetry.h"
 
 enum LumpAuthenticationMode {
 	LAST_LUMP,
@@ -164,7 +165,6 @@ struct AUTHENTICATELUMP_s
 #include "network_enums.h"
 #define GENERATE_ENUM_STRINGS  // Start string generation
 #include "network_enums.h"
-#include "features/telemetry/telemetry.h"
 #undef GENERATE_ENUM_STRINGS   // Stop string generation
 
 void SERVERCONSOLE_UpdateIP( NETADDRESS_s LocalAddress );

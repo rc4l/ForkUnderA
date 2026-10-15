@@ -9,11 +9,10 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import * as ui from "./ui.mjs";
-import { exec, waitTics } from "./capture.mjs";
+import { exec, waitTics, sleep } from "./capture.mjs";
 import { engineProcessCount } from "./launch.mjs";
 import { decodePNG, isBlankImage, boxMean } from "./pngcore.mjs";
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // [rc4l] Find the running hands-on instance without depending on a pipe still existing.
 //

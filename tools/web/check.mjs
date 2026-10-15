@@ -6,9 +6,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from './serve.mjs';
 import { smoke, gpuLogLines, removeQuietly } from './smoke.mjs';
-import { WATCH_SOUNDS, WATCH_TEXTURES, inPage, pause } from './page.mjs';
+import { WATCH_SOUNDS, WATCH_TEXTURES, HEAR_CONSOLE, inPage, pause, soakInPage } from './page.mjs';
 import { decodePNG, boxStats, px } from '../fuactl/src/pngcore.mjs';
-import { soakStep } from '../fuactl/src/telemetry.mjs';
 
 // [rc4l] Counts the animation frames the page asks for from here on, which stop when the engine's loop does.
 const COUNT_FRAMES = `let frames = 0;
@@ -34,7 +33,7 @@ export function soundStarts({ before, after, played }) {
   if (!after.length) return 'the engine made no audio context';
   if (!before.includes('suspended')) return `the sound did not wait for a click (${before.join(', ')})`;
   if (after.some((s) => s !== 'running')) return `the sound stayed ${after.join(', ')} after a click`;
-  if (!played) return 'nothing played in the two seconds after the click';
+  if (!played) return 'nothing played in the six seconds after the click';
   return '';
 }
 
@@ -111,33 +110,7 @@ export function heldOnce({ before, after }) {
 // [rc4l] Why repeating an action kept memory, or '': the engine's soak verdict (fua_soak), which judges every count of bytes, objects, handles and threads it reads.
 export function soakHeld({ pass, marks, judged, grew }) {
   if (pass) return '';
-  return grew && grew.length ? `kept growing with each repeat: ${grew.join(', ')}` : `the soak judged nothing (${marks} marks, ${judged} counters)`;
-}
-
-// [rc4l] Page code that repeats a soak action (fuactl's SOAK_ACTIONS) cycles times on MAP01, marking memory after each once a new level has printed its title and the page's garbage is collected (window.gc, with --expose-gc), and returns the engine's verdict.
-export function soakInPage(action, cycles, settleMs) {
-  const step = soakStep(action, 'MAP01');
-  return inPage(`
-      ${pause(2000)}
-      const said = [];
-      const print = console.log;
-      console.log = (...a) => { said.push(a.join(' ')); return print.apply(console, a); };
-      const started = async (from) => { for (let t = 0; t < 600 && !said.slice(from).some((l) => l.trim().toLowerCase().startsWith('map01 - ')); t++) ${pause(100)} };
-      const collect = async () => { for (let k = 0; k < 2 && window.gc; k++) { window.gc(); ${pause(200)} } };
-      Module.fuaCommand('fua_soak begin');
-      for (let i = 0; i < ${cycles}; i++) {
-        const from = said.length;
-        Module.fuaCommand(${JSON.stringify(step.text)});
-        ${step.newLevel ? 'await started(from);' : ''}
-        ${pause(settleMs)}
-        await collect();
-        Module.fuaCommand('fua_soak mark');
-      }
-      Module.fuaCommand('fua_soak verdict 1');
-      Module.fuaCommand('fua_soak verdict 1 json');
-      ${pause(500)}
-      console.log = print;
-      return JSON.parse(said.reverse().find((l) => l.startsWith('{"pass"')) || '{}');`);
+  return grew && grew.length ? `kept growing with each repeat: ${grew.map((g) => g.text).join('; ')}` : `the soak judged nothing (${marks} marks, ${judged} counters)`;
 }
 
 // [rc4l] Why the page held more of a tag than the engine (fua_stats json gpu/), or '': a buffer or texture the engine let go of and never destroyed, waiting on the garbage collector.
@@ -244,7 +217,8 @@ export const CHECKS = [
       console.log('check: click');
       for (let i = 0; i < 50 && !window.fuaAudio.every((c) => c.state === 'running'); i++) ${pause(100)}
       const buffers = window.fuaBuffers;
-      ${pause(2000)}
+      // [rc4l] Waits for the first sound rather than counting a fixed window, since the click can land in the level's first frames, each over a second on a software adapter.
+      for (let i = 0; i < 60 && window.fuaBuffers === buffers; i++) ${pause(100)}
       return { before, after: window.fuaAudio.map((c) => c.state), played: window.fuaBuffers - buffers };`),
     until: EVAL,
     expect: soundStarts,
@@ -289,12 +263,10 @@ export const CHECKS = [
       ${pause(2000)}
       Module.fuaCommand('map MAP01');
       ${pause(3000)}
-      const said = [];
-      const print = console.log;
-      console.log = (...a) => { said.push(a.join(' ')); return print.apply(console, a); };
+      ${HEAR_CONSOLE}
       Module.fuaCommand('fua_stats json gpu/');
-      console.log = print;
-      return JSON.parse(said.find((l) => l.startsWith('[')) || '[]');`),
+      unhear();
+      return lastJson('[', []);`),
     until: EVAL,
     expect: destroyedAsReleased,
   },

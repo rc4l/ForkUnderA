@@ -61,7 +61,7 @@ jobs:
       - name: Device-creation tripwire
         run: bash tools/device-create-tripwire.sh
 
-      # [rc4l] Telemetry counters are named "group/name" literals, and no two timed regions share a name.
+      # [rc4l] Telemetry counters are named "group/name" literals, no two timed regions share a name, and every zone perf.ticprof reads is timed.
       - name: Telemetry tripwire
         run: bash tools/zone-tripwire.sh
 

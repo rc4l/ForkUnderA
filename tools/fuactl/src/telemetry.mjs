@@ -2,6 +2,10 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import * as cap from "./capture.mjs";
+
+// [rc4l] A console command on an instance, waited on as long as a telemetry command can take, its output returned.
+export const execSlow = (c, text) => cap.exec(c, text, cap.SLOW_COMMAND);
 
 // [rc4l] Each fuactl command that is one engine console command, built from its words and flags.
 export const CONSOLE_VIEWS = {
@@ -60,8 +64,8 @@ async function awaitNewLevel(c, before, { sleep, timeoutMs = 60000 }) {
   throw new Error("soak: the level never came back");
 }
 
-// [rc4l] Repeats an action cycles times, marking memory after each once it settles, and returns the engine's verdict on what kept growing.
-export async function runSoak(c, { action = "reload", cycles = 6, warmup = 1, settleMs = 4000, exec, sleep, log = () => {} }) {
+// [rc4l] Repeats an action cycles times, marking memory after each once it settles, and returns the engine's verdict (fua_soak verdict json): pass, marks, judged, grew as { name, text } and the report it prints.
+export async function runSoak(c, { action = "reload", cycles = 6, warmup = 1, settleMs = 4000, exec = execSlow, sleep = cap.sleep, log = () => {} }) {
   const cam = await c.rpc("player.camera");
   await exec(c, "fua_soak begin");
   for (let i = 0; i < cycles; i++) {
@@ -73,9 +77,7 @@ export async function runSoak(c, { action = "reload", cycles = 6, warmup = 1, se
     await exec(c, "fua_soak mark");
     log(`cycle ${i + 1}/${cycles}`);
   }
-  const verdict = parseConsoleJson(await exec(c, `fua_soak verdict ${warmup} json`));
-  const report = await exec(c, `fua_soak verdict ${warmup}`);
-  return { ...verdict, report };
+  return parseConsoleJson(await exec(c, `fua_soak verdict ${warmup} json`));
 }
 
 // [rc4l] The rows of two fua_stats json readings side by side, by name, with what a gate judges: p50 and p99 of each timing, regressed when over both share of the before and floor in its unit.

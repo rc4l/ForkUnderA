@@ -32,7 +32,7 @@ export function addedLines(diff) {
   return out;
 }
 
-// [rc4l] Where added [rc4l] comments break the rule: a second sentence, or a comment line with text carrying one on (a bare marker line only separates).
+// [rc4l] Where added [rc4l] comments break the rule: a second sentence, a comment line with text carrying one on, or prose past a bare marker line, which otherwise only separates it from a usage line.
 export function commentIssues(added) {
   const issues = [];
   const at = new Map(added.map((a) => [`${a.file}:${a.line}`, a]));
@@ -43,17 +43,20 @@ export function commentIssues(added) {
     const start = `${marker} [rc4l]`;
     if (!text.startsWith(start)) continue;
     if (sentenceCount(text.slice(start.length)) > 1) issues.push({ ...a, why: "more than one sentence" });
-    const next = at.get(`${a.file}:${a.line + 1}`);
-    const carried = next && next.text.trim().startsWith(marker) && next.text.trim() !== marker && !next.text.trim().startsWith(start);
-    if (carried) issues.push({ ...a, why: "runs onto the next line" });
+    // [rc4l] The comment lines after it up to the next [rc4l] comment or the first line of code.
+    const block = [];
+    for (let n = a.line + 1, next; (next = at.get(`${a.file}:${n}`)) && next.text.trim().startsWith(marker) && !next.text.trim().startsWith(start); n++) block.push(next.text.trim());
+    if (block.length && block[0] !== marker) issues.push({ ...a, why: "runs onto the next line" });
+    else if (block.some((t) => t !== marker && /[.!?](\s|$)/.test(t))) issues.push({ ...a, why: "runs on past a blank comment line" });
   }
   return issues;
 }
 
-// [rc4l] The lines a change adds since ref: the diff against it, and every line of a file git does not track yet.
-export function changeSince(root, ref) {
+// [rc4l] The lines a change adds since ref: the diff against it and every line of a file git does not track yet, or with staged only what is staged.
+export function changeSince(root, ref, { staged = false } = {}) {
   const git = (...args) => execFileSync("git", args, { cwd: root, encoding: "utf8", maxBuffer: 256 * 1024 * 1024 });
-  const added = addedLines(git("diff", "--no-color", "-U0", ref));
+  const added = addedLines(git("diff", "--no-color", "-U0", ...(staged ? ["--cached"] : []), ref));
+  if (staged) return added;
   for (const file of git("ls-files", "--others", "--exclude-standard").split("\n").filter(Boolean)) {
     if (!markerFor(file)) continue;
     fs.readFileSync(path.join(root, file), "utf8").split("\n").forEach((text, i) => added.push({ file, line: i + 1, text: text.replace(/\r$/, "") }));

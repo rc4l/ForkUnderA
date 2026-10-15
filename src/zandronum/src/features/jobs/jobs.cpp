@@ -29,19 +29,19 @@ void WorkerStarted(int lane)
 	zx::telemetry::NameThisThread(name);
 }
 
-void RanItems(int, long long start, long long end)
+void RanItems(int, int64_t start, int64_t end)
 {
 	static const zx::telemetry::Counter run = zx::telemetry::Register(zx::telemetry::CounterSpec{ "jobs/run", "ms", zx::telemetry::CounterKind::Time, 0 });
 	zx::telemetry::Region(run, start, end);
 }
 
-void Waited(long long start, long long end)
+void Waited(int64_t start, int64_t end)
 {
 	static const zx::telemetry::Counter wait = zx::telemetry::Register(zx::telemetry::CounterSpec{ "jobs/wait", "ms", zx::telemetry::CounterKind::Time, 0 });
 	zx::telemetry::Region(wait, start, end);
 }
 
-const JobObserver kTelemetry = { WorkerStarted, RanItems, Waited };
+const JobObserver kTelemetry = { zx::telemetry::NowNs, WorkerStarted, RanItems, Waited };
 const bool s_observed = (SetJobObserver(&kTelemetry), true);
 }
 

@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 rc4l
 #
-# [rc4l] Telemetry tripwire: every counter features/telemetry registers is named "group/name" in lower case, given as a string literal, and no two ZX_ZONE sites share a name, which would add two different scopes into one timing.
+# [rc4l] Telemetry tripwire: every counter features/telemetry registers is named "group/name" in lower case, given as a string literal, no two ZX_ZONE sites share a name, which would add two different scopes into one timing, and every zone perf.ticprof reads is still timed.
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ENGINE_SRC="$ROOT/src/zandronum/src"
@@ -29,6 +29,19 @@ if [ -n "$dupes" ]; then
     echo "$dupes" >&2
     failed=1
 fi
+
+# [rc4l] The bridge's perf.ticprof reads zones by name (kTicZones in ticprof_compute.cpp), so each must still be timed at a site.
+ticzones=$(grep -oE 'kTicZones\[kTicZoneCount\] = \{[^}]*\}' "$ENGINE_SRC/features/mcp-bridge/computation/ticprof_compute.cpp" 2>/dev/null | grep -oE "\"$NAME\"")
+if [ -z "$ticzones" ]; then
+    echo "TELEMETRY TRIPWIRE: cannot read perf.ticprof's zone names from ticprof_compute.cpp" >&2
+    failed=1
+fi
+for zone in $ticzones; do
+    if ! echo "$sites" | grep -qE "ZX_ZONE[[:space:]]*\([[:space:]]*$zone"; then
+        echo "TELEMETRY TRIPWIRE: perf.ticprof reads $zone, which no ZX_ZONE times" >&2
+        failed=1
+    fi
+done
 
 [ "$failed" -eq 0 ] && echo "zone-tripwire: clean."
 exit "$failed"

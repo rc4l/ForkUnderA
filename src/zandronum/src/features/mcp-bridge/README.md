@@ -37,6 +37,7 @@ byte-identical and simply vanish.
 | `mcp_glperf.{h,cpp}` | **GPU render profiler** (`gl.timers` / `renderer.info`). GL_TIMESTAMP timer queries around the render passes, read back through a multi-frame ring so the CPU never stalls on the pipeline. `mcp_glperf.h` is inline no-ops when the bridge is off; the GL glue also has a `NO_GL` (server) fallback. |
 | `computation/mcprpc_compute.{h,cpp,_test.cpp}` | Pure, unit-tested core: NDJSON framing, JSON field extraction, the FNV state-hash mixer, step planning. Strings are escaped by `features/json`, and frame times summed up by `features/perfstats`. |
 | `computation/glperf_compute.{h,cpp,_test.cpp}` | Pure, unit-tested core of the GPU profiler: ring-slot math, timestamp→ms + span validity, the all-zero "driver can't time" verdict, and report-JSON assembly. |
+| `computation/ticprof_compute.{h,cpp,_test.cpp}` | Pure, unit-tested core of `perf.ticprof`: which `features/telemetry` zones a tic is split into, each tic's phases from their totals, and the event's JSON. |
 
 ## In-place anchors (the only edits outside this feature)
 
@@ -71,14 +72,13 @@ hello    {"t":"hello","engine":"forkundera","bridge":"2.0.0","pid":N,"caps":[...
 - **Structured state**: `state.player`, `state.actors {limit}`
 - **Input**: `input.event {evtype,subtype,data1,data2}`
 - **Perf**: `perf.capture {frames}` → async `perf` event with p50/p95/p99 + 1%-low fps and the coarse
-  sim/render split; `perf.counters` → actor/segment counts. The sim|render boundary is one anchor
+  sim/render split; `perf.counters` → actor/segment counts and every `features/telemetry` counter. The sim|render boundary is one anchor
   before `D_Display` (no markers in the hot render path). Use `fuactl perf-ab` for a deterministic
   ablation — measure a scene, perturb it with everything else held constant, diff → a *causal*
   frametime delta attributed to CPU (sim) vs GPU-ish (render).
 - **Per-tic sim profiling**: `perf.ticprof {tics}` → async `ticprof` event with a per-tic array of
-  `{total, pticker, thinkers, effects, specials}` milliseconds (`mcp_ticprof.{h,cpp}`; anchors in
-  `d_net.cpp`/`g_game.cpp`/`p_tick.cpp` are inline no-ops when the bridge is off, one bool test when
-  disarmed). `total` is the whole `G_Ticker` including net-command execution, so a cheat like
+  `{total, pticker, thinkers, effects, specials}` milliseconds (`mcp_ticprof.{h,cpp}`), read once a tic from
+  `features/telemetry`'s `sim/` zones, so it errs while `fua_telemetry` is off. `total` is the whole `G_Ticker` including net-command execution, so a cheat like
   `kill monsters` shows up in the tic that runs it. Combine with `sim.pause` + `sim.step` to dissect
   a specific tic — this is how the kill-storm tic train was decomposed without external samplers.
 - **Sampling (Windows)**: `perf.sample {seconds, hz, top, engine, tic_min, tic_max, stacks}` → async

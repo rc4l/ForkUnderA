@@ -164,9 +164,14 @@ For a fault on the engine's way out, use `compareQuit`: each side is launched, p
 quit from its console as a player quits; a crash file beside its log, an engine still running or an exit
 code other than 0 fails it (`judgeQuit`). `quitclean.mjs` quits the backend with Diligent's messages on.
 
+For a leak, which no frame shows either, use `compareSoak`: each side repeats the scenario's `action` (a
+reload unless it names console text) `cycles` times and passes when the engine's soak verdict says no
+memory, object, handle or thread count kept growing (`judgeSoak`). `soak.mjs` reloads a map with lights
+and monsters.
+
 `scenarios --webgpu` runs the set on the WebGPU device, and how depends on how a scenario judges: one
 compared across launches runs its first Vulkan side on Vulkan and on WebGPU, every box at
-`WEBGPU_CEILING`; one judged against itself (`compareOverTime`, `compareCounter`, `compareSequence`, `compareQuit`) runs on WebGPU alone
+`WEBGPU_CEILING`; one judged against itself (a comparison marked `judgedAlone` in `template.mjs`) runs on WebGPU alone
 with its own limits; a `compareSameFrame` one (a WebGPU launch has no GL) and one that `needs:
 ["raytracing"]` are skipped with that reason. A scenario that throws counts as one failure and the run
 goes on.
@@ -192,7 +197,7 @@ Export the builder from the scenario; `runScenarioIfMain` keeps the import from 
 | file | role |
 |---|---|
 | `tools/fuactl/src/udmf.mjs` | UDMF map + PWAD writer |
-| `tools/fuactl/src/template.mjs` | `compareTemplate` (launch, capture, judge), `compareOverTime`, `compareCounter`, `compareSameFrame`, `compareSequence`, `compareQuit`, and the pure `judge` |
+| `tools/fuactl/src/template.mjs` | `compareTemplate` (launch, capture, judge), the other `compare*` comparisons, and the pure `judge*` verdicts |
 | `tools/fuactl/src/pngcore.mjs` | PNG decode/encode, `boxDiff`; `fuactl png --boxdiff` on the CLI |
 | `tools/fuactl/scenarios/horizon.mjs` | the worked example |
 

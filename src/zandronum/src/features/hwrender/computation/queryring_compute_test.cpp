@@ -19,7 +19,6 @@ TEST(QueryRing, SlotsAreReadOldestFirstAndOnlyOnceTheirResultIsIn)
 	// [rc4l] Slot 0 is in, slot 1 is not, so slot 2 waits behind it though it is in.
 	EXPECT_EQ(ring.Collect([&](int s) { if (s == 1) return false; read.push_back(s); return true; }), 1);
 	EXPECT_EQ(read, std::vector<int>{ 0 });
-	EXPECT_EQ(ring.Waiting(), 2);
 	EXPECT_EQ(ring.Collect([&](int s) { read.push_back(s); return true; }), 2);
 	EXPECT_EQ(read, (std::vector<int>{ 0, 1, 2 }));
 	EXPECT_EQ(ring.Collect([](int) { return true; }), 0);
@@ -32,7 +31,7 @@ TEST(QueryRing, AFullRingSkipsTimingUntilASlotIsReadAndWrapsAround)
 	EXPECT_EQ(ring.Begin(), -1);
 	EXPECT_EQ(ring.Collect([](int s) { return s == 0; }), 1);
 	EXPECT_EQ(ring.Begin(), 0);
-	EXPECT_EQ(ring.Waiting(), QueryRing::kSlots);
+	EXPECT_EQ(ring.Begin(), -1);
 }
 
 TEST(QueryRing, TicksAtTheirFrequencyAreMilliseconds)

@@ -222,11 +222,8 @@ static sentry_value_t zx_before_send(sentry_value_t event, void *hint, void *clo
 // [rc4l] The last minute's frame times and memory (features/telemetry) in the crash's extras, kept every ten seconds since each change is written to disk.
 static void KeepTelemetry(const char *summary)
 {
-	static int64_t lastNs = 0;
-	const int64_t now = zx::telemetry::NowNs();
-	if (lastNs != 0 && now - lastNs < 10000000000LL) return;
-	lastNs = now;
-	sentry_set_extra("telemetry", sentry_value_new_string(summary));
+	static zx::telemetry::Throttle every(10000000000LL);
+	if (every.Due(zx::telemetry::NowNs())) sentry_set_extra("telemetry", sentry_value_new_string(summary));
 }
 
 // The single init point. consentAction: 0 = use persisted consent, +1 = give, -1 = revoke.

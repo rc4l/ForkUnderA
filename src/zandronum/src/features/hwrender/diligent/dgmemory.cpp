@@ -10,8 +10,6 @@
 #include "RefCntAutoPtr.hpp"
 #include "doomtype.h"
 
-#include <algorithm>
-#include <cmath>
 #include <mutex>
 #include <vector>
 
@@ -89,7 +87,7 @@ double TextureBytes(const Diligent::TextureDesc &d)
 	s.height = (int)d.Height;
 	s.depth = volume ? (int)d.Depth : 1;
 	s.layers = volume ? 1 : (int)d.ArraySize;
-	s.mips = d.MipLevels != 0 ? (int)d.MipLevels : (int)std::floor(std::log2((double)std::max(1u, std::max(d.Width, d.Height)))) + 1;
+	s.mips = (int)d.MipLevels;
 	s.samples = (int)d.SampleCount;
 	if (fa.ComponentType == Diligent::COMPONENT_TYPE_COMPRESSED)
 	{

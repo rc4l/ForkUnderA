@@ -24,20 +24,12 @@ bool InLevel()
 	return gamestate == GS_LEVEL;
 }
 
-double Actors()
+// [rc4l] How many thinkers of class T the level holds.
+template <class T> double CountThinkers()
 {
 	if (!InLevel()) return 0.0;
 	int n = 0;
-	TThinkerIterator<AActor> it;
-	while (it.Next() != NULL) n++;
-	return n;
-}
-
-double Thinkers()
-{
-	if (!InLevel()) return 0.0;
-	int n = 0;
-	TThinkerIterator<DThinker> it;
+	TThinkerIterator<T> it;
 	while (it.Next() != NULL) n++;
 	return n;
 }
@@ -62,10 +54,10 @@ double SoundsLoaded()
 	return n;
 }
 
-// [rc4l] Counts that walk a list are read once a second, the rest twice.
+// [rc4l] What the level and the tables hold is read once a second, the heap and the channels twice.
 const bool s_registered = (
-	Register(CounterSpec{ "census/actors", "objects", CounterKind::Gauge, 1000 }, Actors),
-	Register(CounterSpec{ "census/thinkers", "objects", CounterKind::Gauge, 1000 }, Thinkers),
+	Register(CounterSpec{ "census/actors", "objects", CounterKind::Gauge, 1000 }, CountThinkers<AActor>),
+	Register(CounterSpec{ "census/thinkers", "objects", CounterKind::Gauge, 1000 }, CountThinkers<DThinker>),
 	Register(CounterSpec{ "census/sectors", "objects", CounterKind::Gauge, 1000 }, Sectors),
 	Register(CounterSpec{ "census/lines", "objects", CounterKind::Gauge, 1000 }, Lines),
 	Register(CounterSpec{ "census/subsectors", "objects", CounterKind::Gauge, 1000 }, Subsectors),

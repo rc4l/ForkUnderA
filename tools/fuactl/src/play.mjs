@@ -11,8 +11,8 @@ import os from "node:os";
 import path from "node:path";
 import { launchInstance, stopInstance, describeExit } from "./launch.mjs";
 import { sessionFileFor, clearPortSessions, standAt, holdingLaunchFile } from "./shot.mjs";
+import { sleep } from "./capture.mjs";
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // [rc4l] Every one of these is set at LAUNCH, not from the console afterwards.
 //

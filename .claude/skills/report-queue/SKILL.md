@@ -43,8 +43,8 @@ its full spot record.
 A report from the browser build reproduces in headless Chrome rather than an engine window:
 `node tools/web/stage.mjs build-web <dir> --wads <iwad>,<map>` stages a page with their wads, and
 `node tools/web/probe.mjs <dir> --query "iwad=...&file=...&map=..." --run "god; wait 1000; +attack"
-[--autoplay]` plays it, listing the sounds it started (and any started again), the screen textures it held
-and its WebGPU errors. The probe's Chrome is always muted, and a minimal template map isolates the fault
+[--autoplay]` plays it, listing what the commands printed, the sounds it started (and any started again), the
+screen textures it held and its WebGPU errors; `--soak reload` instead reloads the map and prints what kept growing. The probe's Chrome is always muted, and a minimal template map isolates the fault
 better than their mod's busy map.
 
 1. **Read it.** `queue next`. The spot's `loaded` says which wads the map needs; launching without them

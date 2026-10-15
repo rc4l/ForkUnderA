@@ -75,7 +75,7 @@
 #include "sv_commands.h"
 #include "team.h"
 #include "chat.h"
-#include "mcp_ticprof.h" // [ForkUnderA] per-tic sim profiler anchors (no-op unless FUA_MCP_BRIDGE)
+#include "mcp_ticprof.h" // [ForkUnderA] per-tic sim profiler (no-op unless FUA_MCP_BRIDGE)
 #include "mcp_simtrace.h" // [ForkUnderA] sim tracer tic boundary (no-op unless FUA_MCP_BRIDGE)
 #include "decallib.h"                        // [rc4l] DecalLibrary, to resolve a decal by name
 #include "features/telemetry/telemetry.h"
@@ -1922,12 +1922,10 @@ void TryRunTics (void)
 			M_Ticker ();
 			I_GetTime (true);
 			MCP_SimPreTic (); // [ForkUnderA] tic-scheduled bridge actions (sim.cheatat); no-op unless FUA_MCP_BRIDGE
-			MCP_TicProf_Begin (MCP_TPZ_GTICKER); // [ForkUnderA] per-tic sim profiler anchor (no-op unless FUA_MCP_BRIDGE)
 			{
-				ZX_ZONE ("sim/gticker"); // [rc4l] the whole tic in features/telemetry
+				ZX_ZONE ("sim/gticker"); // [rc4l] the whole tic in features/telemetry, which perf.ticprof reads too
 				G_Ticker ();
 			}
-			MCP_TicProf_End (MCP_TPZ_GTICKER);
 			MCP_TicProf_TicDone ();
 			zx::telemetry::TicMark ();
 			MCP_SimTrace_TicDone ();

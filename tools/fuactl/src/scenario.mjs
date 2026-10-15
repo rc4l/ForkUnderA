@@ -12,7 +12,7 @@
 //   `trigger`  -- fired AFTER the measurement is armed, so the spike lands inside the window rather
 //                 than before it.
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+import { sleep } from "./capture.mjs";
 
 // Steps are deliberately dumb: {exec} runs a console command, {wait} sleeps. Anything cleverer
 // belongs in the caller, not in a scenario file.
