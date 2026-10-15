@@ -97,6 +97,7 @@
 
 // [BB] New #includes..
 #include "features/dynlights/dynlight.h"
+#include "features/telemetry/telemetry.h"
 
 #define MISSING_TEXTURE_WARN_LIMIT		20
 
@@ -3921,6 +3922,7 @@ void P_FreeExtraLevelData()
 // [RH] position indicates the start spot to spawn at
 void P_SetupLevel (const char *lumpname, int position)
 {
+	ZX_ZONE("load/setup");   // [rc4l] the map read and set up
 	cycle_t times[20];
 	FMapThing *buildthings;
 	int numbuildthings;

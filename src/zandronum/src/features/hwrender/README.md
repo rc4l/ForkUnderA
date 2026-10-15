@@ -55,7 +55,11 @@ On WebGPU the backend frees its own GPU memory: each texture and buffer it makes
 `CreateDeviceBuffer`) and the swapchain's own two are kept by handle (`DeviceApi::keep`,
 `computation/keptobjects_compute`) and destroyed after the first present once nothing holds them
 (`FreeReleasedObjects`). A browser frees a released one only when its garbage collector runs, and a page resized a
-few times ran out of GPU memory first. Vulkan frees them itself.
+few times ran out of GPU memory first. Vulkan frees them itself. Textures' handles and buffers' are kept apart: a
+browser numbers each kind from one, and a buffer sharing a kept texture's number went unkept and waited on the
+collector, five level vertex buffers at once on Sunder (queue #48). Diligent's WebGPU device keeps every upload
+page it ever made, so the scene buffer is kept while the level fits it and its big writes go in 1 MB pieces.
+`features/telemetry` reads what the page holds by label (`gpu/page/`) beside the backend's own (`gpu/mem/tag/`).
 
 At exit the backend shuts down before the static destructors (`ShutdownBackend`, an `atterm` in
 `diligent/dgwindow.cpp`): the swapchain goes while its window is still there, the frame fence while the console

@@ -55,6 +55,7 @@
 #include <atomic>
 #include <map>
 #include <vector>
+#include "features/telemetry/telemetry.h"
 
 // [rc4l] Compare the walk against GL's own every frame GL walks, counting what differs for fua_vis_report.
 CVAR(Bool, fua_vis_check, false, 0)
@@ -967,7 +968,10 @@ void ScanStamped(const zx::jobs::SharedArray<unsigned> *a, int aCount, const zx:
 			if (slot >= 0 && !found.empty()) zx::levelmesh::MarkSlotBits(slot, &found[0], (int)found.size());
 		}
 	} scan = { a, b, aCount, ids, slot, stamp };
-	zx::jobs::Pool().ParallelFor(chunks, scan);
+	{
+		ZX_ZONE("vis/scan");   // [rc4l] the stamped scan's chunks across the pool
+		zx::jobs::Pool().ParallelFor(chunks, scan);
+	}
 	out.clear();
 	for (int c = 0; c < chunks; c++) out.insert(out.end(), g_chunkIds[c].begin(), g_chunkIds[c].end());
 }
@@ -1145,7 +1149,10 @@ void ClipSlices(int count, const unsigned *bounds)
 	}
 	if (count == 1) { ClipInto(g_slices[0], 0, true, ~0ull, in_area); return; }
 	struct Run { void operator()(int index, int lane) const { ClipInto(g_slices[index], lane, false, g_switchKey, g_switchTo); } } run;
-	zx::jobs::Pool().ParallelFor(count, run);
+	{
+		ZX_ZONE("vis/clip");   // [rc4l] every slice's clip across the pool
+		zx::jobs::Pool().ParallelFor(count, run);
+	}
 }
 
 // [rc4l] Every rank `count` slices reached, in walk order, to `visit`.
@@ -1357,7 +1364,10 @@ void Walk(const WalkSpec &spec, int count = 1, const unsigned *bounds = NULL)
 	// [rc4l] One slice keeps its own view area; slices end in the one they switched to.
 	const area_t after = count == 1 ? g_slices[0].area : g_switchKey != ~0ull ? g_switchTo : start;
 	for (int k = 0; k < count; k++) g_slices[k].cursor = 0;
-	ForEachRank(count, [count](int r) { ReplayRank(r, count); });
+	{
+		ZX_ZONE("vis/replay");   // [rc4l] the serial replay of what only walk order decides
+		ForEachRank(count, [count](int r) { ReplayRank(r, count); });
+	}
 	in_area = after;
 	g_decalSides.clear();
 	for (int k = 0; k < count; k++)

@@ -31,6 +31,9 @@ static bool CreateDevice(Diligent::IRenderDevice **device, Diligent::IDeviceCont
 	Diligent::EngineWebGPUCreateInfo ci;
 	// [rc4l] Depth clamp is WebGPU's optional depth-clip-control, which Diligent asks the adapter for under DepthBiasClamp; the rest of what Vulkan is asked for, WebGPU has none of.
 	ci.Features.DepthClamp = Diligent::DEVICE_FEATURE_STATE_OPTIONAL;
+	// [rc4l] Duration queries time the backend's passes for features/telemetry (dggputimer.cpp).
+	ci.Features.TimestampQueries = Diligent::DEVICE_FEATURE_STATE_OPTIONAL;
+	ci.Features.DurationQueries = Diligent::DEVICE_FEATURE_STATE_OPTIONAL;
 	ci.Features.DepthBiasClamp = Diligent::DEVICE_FEATURE_STATE_OPTIONAL;
 #if PLATFORM_WEB
 	// [rc4l] A browser makes its device asynchronously, so the page makes it first (Module.preinitializedWebGPUDevice) and the backend attaches to it.

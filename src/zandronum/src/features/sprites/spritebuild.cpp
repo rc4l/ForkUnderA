@@ -51,6 +51,7 @@
 #include <set>
 #include <tuple>
 #include <vector>
+#include "features/telemetry/telemetry.h"
 
 EXTERN_CVAR(Int, r_spriteclip)
 EXTERN_CVAR(Float, r_sclipfactor)
@@ -777,6 +778,7 @@ static void DeriveChunk(AActor *const *things, int count, int chunk)
 
 void BuildSprites(AActor *const *things, int count)
 {
+	ZX_ZONE("scene/sprites");   // [rc4l] the actors in view derived as sprites
 	if (count <= 0) return;
 	const int chunks = (count + kSpriteChunk - 1) / kSpriteChunk;
 	if ((int)g_spriteChunks.size() < chunks) g_spriteChunks.resize(chunks);

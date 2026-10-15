@@ -24,6 +24,7 @@ state lives in four records there: `g_scene` (buffers, batches, the frame's dyna
 | `dgframe.cpp` | the frame driver: level arming, the live frame, the present clock |
 | `dgdiag.cpp` | benches, statistics, replay capture, screenshots and their console commands |
 | `dgtexture.cpp`, `dgwindow.cpp`, `dgprobe.cpp` | textures, the swapchain, the device |
+| `dgmemory.cpp`, `dggputimer.cpp` | `features/telemetry`'s GPU memory by tag and its per-pass GPU times |
 | `dgplatform.h`, `dgwin32.cpp`, `dgsdl.cpp`, `dgcocoa.mm` | each platform's window and the handles its Vulkan surface takes: an HWND; an X11 window or Wayland surface through SDL2; a CAMetalLayer view drawn through MoltenVK (`posix/cocoa/metalview.h`'s `CocoaMetalView`, shared with the engine's window), with the .app's own Vulkan loader |
 
 ## Status: TEXTURED world rendering on Sunder, through Vulkan

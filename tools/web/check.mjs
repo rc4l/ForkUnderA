@@ -8,6 +8,7 @@ import { createServer } from './serve.mjs';
 import { smoke, gpuLogLines, removeQuietly } from './smoke.mjs';
 import { WATCH_SOUNDS, WATCH_TEXTURES, inPage, pause } from './page.mjs';
 import { decodePNG, boxStats, px } from '../fuactl/src/pngcore.mjs';
+import { soakStep } from '../fuactl/src/telemetry.mjs';
 
 // [rc4l] Counts the animation frames the page asks for from here on, which stop when the engine's loop does.
 const COUNT_FRAMES = `let frames = 0;
@@ -105,6 +106,42 @@ export function playedOnce(n) {
 // [rc4l] Why resizing held more of the GPU than one size does, or '': more screen-sized textures alive than before, past one more set of the screen's targets.
 export function heldOnce({ before, after }) {
   return after - before > 6 ? `${after - before} more screen-sized textures were held after the resizes (${before} before)` : '';
+}
+
+// [rc4l] Why repeating an action kept memory, or '': the engine's soak verdict (fua_soak), which judges every count of bytes, objects, handles and threads it reads.
+export function soakHeld({ pass, marks, judged, grew }) {
+  if (pass) return '';
+  return grew && grew.length ? `kept growing with each repeat: ${grew.join(', ')}` : `the soak judged nothing (${marks} marks, ${judged} counters)`;
+}
+
+// [rc4l] Page code that repeats a soak action (fuactl's SOAK_ACTIONS) cycles times on MAP01, marking memory after each, and returns the engine's verdict.
+export function soakInPage(action, cycles, settleMs) {
+  const step = soakStep(action, 'MAP01');
+  return inPage(`
+      ${pause(2000)}
+      const said = [];
+      const print = console.log;
+      console.log = (...a) => { said.push(a.join(' ')); return print.apply(console, a); };
+      Module.fuaCommand('fua_soak begin');
+      for (let i = 0; i < ${cycles}; i++) { Module.fuaCommand(${JSON.stringify(step.text)}); ${pause(settleMs)} Module.fuaCommand('fua_soak mark'); }
+      Module.fuaCommand('fua_soak verdict 1');
+      Module.fuaCommand('fua_soak verdict 1 json');
+      ${pause(500)}
+      console.log = print;
+      return JSON.parse(said.reverse().find((l) => l.startsWith('{"pass"')) || '{}');`);
+}
+
+// [rc4l] Why the page held more of a tag than the engine (fua_stats json gpu/), or '': a buffer or texture the engine let go of and never destroyed, waiting on the garbage collector.
+export function destroyedAsReleased(rows) {
+  const value = new Map(rows.map((r) => [r.name, r.last]));
+  const extra = [];
+  for (const r of rows) {
+    if (!r.name.startsWith('gpu/page/fua')) continue;
+    const engine = value.get('gpu/mem/tag/' + r.name.slice('gpu/page/'.length)) ?? 0;
+    if (r.last > engine * 1.1 + 65536) extra.push(`${r.name.slice('gpu/page/'.length)} ${Math.round(r.last / 1024)} KB held against the engine's ${Math.round(engine / 1024)} KB`);
+  }
+  if (!rows.length) return 'no GPU readings';
+  return extra.length ? `the page held what the engine let go of: ${extra.join('; ')}` : '';
 }
 
 // [rc4l] Why a report did not reach the tracker with its game, or '': the engine not telling the page its release, map, files or setting, or the report missing, misaddressed or without the game.
@@ -228,6 +265,29 @@ export const CHECKS = [
       return { before, after: window.fuaHeld.size };`),
     until: EVAL,
     expect: heldOnce,
+  },
+  // [rc4l] Each level load uploads the level and its textures again, and a browser frees a released buffer only when its garbage collector runs; Firefox ran out of GPU memory on a map loaded the third time.
+  {
+    name: 'reloading the level holds no more memory',
+    evaluate: soakInPage('reload', 7, 3000),
+    until: EVAL,
+    expect: soakHeld,
+  },
+  // [rc4l] Released buffers and textures are destroyed after the next frame rather than left to the garbage collector; a browser numbers buffers and textures apart, and a buffer sharing a kept texture's number went unkept (queue #48).
+  {
+    name: 'what a level change lets go of is destroyed, not left to the collector',
+    evaluate: inPage(`
+      ${pause(2000)}
+      Module.fuaCommand('map MAP01');
+      ${pause(3000)}
+      const said = [];
+      const print = console.log;
+      console.log = (...a) => { said.push(a.join(' ')); return print.apply(console, a); };
+      Module.fuaCommand('fua_stats json gpu/');
+      console.log = print;
+      return JSON.parse(said.find((l) => l.startsWith('[')) || '[]');`),
+    until: EVAL,
+    expect: destroyedAsReleased,
   },
   // [rc4l] A wipe draws the console and menu once a step; they piled up under one 2D generation and were drawn past the 2D's vertices, which WebGPU refused for the whole frame.
   {

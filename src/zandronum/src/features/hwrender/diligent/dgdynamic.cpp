@@ -6,6 +6,7 @@
 #include "features/hwrender/diligent/dgscene_internal.h"
 #include "features/hwrender/computation/dynlayout_compute.h"   // [rc4l] ComputeDynLayout
 #include "features/jobs/jobs.h"                                 // [rc4l] the pool the records are written on
+#include "features/telemetry/telemetry.h"
 
 // [rc4l] Dump the ORDER the translucent pass actually draws in, for one frame.
 //
@@ -105,6 +106,7 @@ static void GatherTracedSprites(const TArray<SceneVertex> &vb)
 
 void BuildDynamic(Diligent::IDeviceContext *ctx)
 {
+	ZX_ZONE("scene/dynamic");   // [rc4l] the frame's sprites, models and decals laid out and written
 	cycle_t dynClock;
 	dynClock.Reset();
 	dynClock.Clock();

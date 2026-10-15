@@ -46,6 +46,7 @@
 // [BB] New #includes.
 #include "cl_demo.h"
 #include "doomstat.h"
+#include "features/telemetry/telemetry.h"
 
 
 static cycle_t ThinkCycles;
@@ -432,6 +433,17 @@ void DThinker::RunThinkers ()
 	ThinkCycles.Unclock();
 }
 
+// [rc4l] fua_telemetry_thinkers times every thinker's tick by class, which fua_stats sim/thinker/ lists, at a clock read a thinker.
+CVAR (Bool, fua_telemetry_thinkers, false, 0)
+static zx::telemetry::KeyedTimer s_thinkerTimes;
+
+static void ThinkerReadings (std::vector<zx::telemetry::Reading> &out)
+{
+	const std::vector<zx::telemetry::Reading> top = s_thinkerTimes.Take ("sim/thinker/", 24);
+	out.insert (out.end (), top.begin (), top.end ());
+}
+static const bool s_thinkerBreakdown = (zx::telemetry::RegisterBreakdown ("sim/thinker/", ThinkerReadings), true);
+
 int DThinker::TickThinkers (FThinkerList *list, FThinkerList *dest)
 {
 	int count = 0;
@@ -469,7 +481,14 @@ int DThinker::TickThinkers (FThinkerList *list, FThinkerList *dest)
 				( node->IsKindOf( RUNTIME_CLASS( AActor )) == false ) ||
 				( static_cast<AActor *>( node ) != players[consoleplayer].mo ))
 			{
-				node->Tick();
+				if (fua_telemetry_thinkers)
+				{
+					const PClass *cls = node->GetClass();
+					const int64_t start = zx::telemetry::NowNs();
+					node->Tick();
+					s_thinkerTimes.Add (cls, cls->TypeName.GetChars(), zx::telemetry::NowNs() - start);
+				}
+				else node->Tick();
 			}
 			node->ObjectFlags &= ~OF_JustSpawned;
 			GC::CheckGC();

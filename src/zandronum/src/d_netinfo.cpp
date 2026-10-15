@@ -638,9 +638,8 @@ void D_SetupUserInfo ()
 	R_BuildPlayerTranslation(consoleplayer);
 }
 
-void userinfo_t::Reset()
+void userinfo_t::DeleteCVars()
 {
-	// Clear this player's userinfo.
 	TMapIterator<FName, FBaseCVar *> it(*this);
 	TMap<FName, FBaseCVar *>::Pair *pair;
 
@@ -649,6 +648,18 @@ void userinfo_t::Reset()
 		delete pair->Value;
 	}
 	Clear();
+}
+
+void userinfo_t::TransferFrom(userinfo_t &o)
+{
+	DeleteCVars();
+	TMap<FName, FBaseCVar *>::TransferFrom(o);
+}
+
+void userinfo_t::Reset()
+{
+	// Clear this player's userinfo.
+	DeleteCVars();
 
 	// Create userinfo vars for this player, initialized to their defaults.
 	for (FBaseCVar *cvar = CVars; cvar != NULL; cvar = cvar->GetNext())
@@ -1712,12 +1723,5 @@ CCMD (playerinfo)
 
 userinfo_t::~userinfo_t()
 {
-	TMapIterator<FName, FBaseCVar *> it(*this);
-	TMap<FName, FBaseCVar *>::Pair *pair;
-
-	while (it.NextPair(pair))
-	{
-		delete pair->Value;
-	}
-	this->Clear();
+	DeleteCVars();
 }

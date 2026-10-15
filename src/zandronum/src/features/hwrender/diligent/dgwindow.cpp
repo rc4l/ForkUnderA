@@ -28,7 +28,9 @@
 #include "RefCntAutoPtr.hpp"
 #include "NativeWindow.h"
 #include "features/hwrender/diligent/dgplatform.h"
-#include "features/hwrender/diligent/dgshared.h"   // [rc4l] ReleaseFrameFence
+#include "features/hwrender/diligent/dgshared.h"   // [rc4l] ReleaseFrameFence, ReleaseLevelResources
+#include "features/hwrender/diligent/dgmemory.h"   // [rc4l] ReportHeldDeviceObjects
+#include "features/hwrender/diligent/dggputimer.h"   // [rc4l] ReleaseGpuPasses
 #include "features/hwrender/backendonly.h"   // [rc4l] ForgetBackendWindow
 #include "DebugOutput.h"
 #include "i_system.h"   // [rc4l] atterm
@@ -128,6 +130,10 @@ static bool EnsurePipeline(FString &err)
 // [rc4l] At exit, ahead of the static destructors (atterm runs first) and while the window and the console are still there: the swapchain and the frame fence released and Diligent's messages kept off the console, since what is left is destroyed after both are gone; a quit crashed printing the fence's message to a freed console.
 static void ShutdownBackend()
 {
+	// [rc4l] What is still held once the level's resources are gone is the backend's own (targets, pipelines, constants) or a leak, which the console log keeps.
+	ReleaseLevelResources();
+	ReportHeldDeviceObjects("at shutdown, after the level's resources were released");
+	ReleaseGpuPasses();
 	ForgetBackendWindow(g_hwnd);
 	ReleaseFrameFence();
 	Diligent::SetDebugMessageCallback(nullptr);

@@ -126,6 +126,7 @@
 
 #include "g_hub.h"
 #include "mcp_ticprof.h" // [ForkUnderA] per-tic sim profiler anchor (no-op unless FUA_MCP_BRIDGE)
+#include "features/telemetry/telemetry.h"
 
 static FRandom pr_dmspawn ("DMSpawn");
 static FRandom pr_pspawn ("PlayerSpawn");
@@ -1980,7 +1981,10 @@ void G_Ticker ()
 		if ( ( NETWORK_GetState( ) != NETSTATE_SERVER ) || ( SERVER_CalcNumConnectedClients() > 0 ) )
 		{
 			MCP_TicProf_Begin (MCP_TPZ_PTICKER); // [ForkUnderA] per-tic sim profiler anchor (no-op unless FUA_MCP_BRIDGE)
-			P_Ticker ();
+			{
+				ZX_ZONE ("sim/pticker"); // [rc4l] the playsim's tic in features/telemetry
+				P_Ticker ();
+			}
 			MCP_TicProf_End (MCP_TPZ_PTICKER);
 		}
 		AM_Ticker ();

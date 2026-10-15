@@ -7,6 +7,7 @@
 #include "features/viewsetup/viewsetup.h"   // [rc4l] the sky's scroll this frame
 #include "g_level.h"   // [rc4l] level.flags, the double and swapped skies
 #include "r_sky.h"     // [rc4l] sky1texture and sky2texture
+#include "features/telemetry/telemetry.h"
 
 namespace zx { namespace hwrender {
 
@@ -880,6 +881,7 @@ void ResetSkyForLevel()
 // [rc4l] The sky behind the world, painted first with depth off: the skybox's picture, or the dome and its occluders.
 void DrawSkyBackground(Diligent::IDeviceContext *ctx)
 {
+	ZX_ZONE("draw/sky");   // [rc4l] the sky behind the world
 	// [rc4l] The level's sky scrolls with gl_frameMS, so its look is read every frame.
 	g_defaultLook = LookOfSky(0);
 	g_skyAngle = (-180.0f + g_defaultLook.xOffset) * 3.14159265f / 180.0f;

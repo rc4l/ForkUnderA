@@ -65,6 +65,26 @@ TEST(KeptObjects, AHandleIsKeptOnce)
 	EXPECT_EQ(1u, Held(kept));
 }
 
+// [rc4l] A browser numbers its textures and its buffers apart, so a buffer can share a kept texture's number; it went unkept and waited on the garbage collector, five level vertex buffers at once on Sunder (queue #48).
+TEST(KeptObjects, ATextureAndABufferWithOneHandleAreKeptApart)
+{
+	int a = 0;
+	auto texture = std::make_shared<int>(1), buffer = std::make_shared<int>(2);
+	KeptObjects<Owner> kept;
+	EXPECT_TRUE(kept.Keep(&a, true, texture));
+	EXPECT_TRUE(kept.Keep(&a, false, buffer));
+	EXPECT_FALSE(kept.Keep(&a, false, buffer));
+	EXPECT_EQ(2u, Held(kept));
+	std::vector<Freed> freed;
+	buffer.reset();
+	EXPECT_EQ(1u, kept.FreeReleased(Released, [&](void *h, bool t) { freed.push_back({ h, t }); }));
+	ASSERT_EQ(1u, freed.size());
+	EXPECT_FALSE(freed[0].texture);
+	auto again = std::make_shared<int>(3);
+	EXPECT_TRUE(kept.Keep(&a, false, again));
+	EXPECT_FALSE(kept.Keep(&a, true, texture));
+}
+
 TEST(KeptObjects, NoHandleIsNothingToKeep)
 {
 	KeptObjects<Owner> kept;

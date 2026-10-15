@@ -19,7 +19,7 @@
     if (consoleEl.textContent.length > 200000) consoleEl.textContent = consoleEl.textContent.slice(-100000);
   }
 
-  // [rc4l] A file the player saves from the page: a crash report or a screenshot.
+  // [rc4l] A file the player saves from the page: a crash report, a screenshot or a telemetry file.
   function download(blob, name) {
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
@@ -135,6 +135,12 @@
     fuaRestart: restart,
     fuaExit: ended,
     fuaCaptureFrame: captureFrame,
+    // [rc4l] A file the engine wrote for the player (features/telemetry), downloaded as it named it.
+    fuaOfferFile: (path) => {
+      const name = path.split('/').pop();
+      log('Downloading ' + name);
+      download(new Blob([Module.FS.readFile(path)], { type: 'text/plain' }), name);
+    },
     postMainLoop: afterFrame,
     preRun: [() => {
       const FS = Module.FS;
@@ -153,6 +159,7 @@
     crashes.setAdapter(adapter);
     d.lost.then((lost) => crash('device lost', 'The graphics device was lost: ' + lost.message, ''));
     d.addEventListener('uncapturederror', (e) => gpuError(e.error));
+    Module.fuaGpuLedger = FuaGpu.track(d);
     Module.preinitializedWebGPUDevice = d;
     deviceReady();
   }).catch((e) => fail(String(e.message || e)));

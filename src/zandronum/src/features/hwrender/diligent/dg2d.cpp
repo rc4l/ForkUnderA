@@ -16,6 +16,7 @@
 #include "v_video.h"
 #include "tarray.h"
 #include "c_cvars.h"
+#include "features/telemetry/telemetry.h"
 
 EXTERN_CVAR(Bool, fua_dg_hud)
 
@@ -249,6 +250,7 @@ static bool Ensure2DPipeline()
 
 void Draw2D(Diligent::IDeviceContext *ctx)
 {
+	ZX_ZONE("draw/2d");   // [rc4l] the frame's 2D layer
 	g_draws2D = g_quads2D = 0;
 	if (!fua_dg_hud) return;
 

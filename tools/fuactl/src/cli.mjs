@@ -37,6 +37,7 @@ import { refreshNote } from "./stats.mjs";
 import { runCoverage } from "./coverage.mjs";
 import { changeSince, commentIssues } from "./comments.mjs";
 import { recentCrashes, summarizeCrash } from "./crashes.mjs";
+import * as telemetry from "./telemetry.mjs";
 import { decodePNG, abDiff, boxDiff } from "./pngcore.mjs";
 import fs from "node:fs";
 import os from "node:os";
@@ -200,6 +201,16 @@ const USAGE = `fuactl <command>
   browser --port P [--token T] [--wait S] [--expect-lan] [--expect-country XXX]   refresh the server browser and report what it sees (LAN vs registry, country)
   hostdiag --port P [--token T] [--wait S] [--expect-listed]           ask the registry whether THIS server is reachable from outside (per family)
   continue --port P [--token T] [--expect shown|hidden]   what the Continue button is offering, and whether it is on the bar
+  console <text...> [--port P]       run one console command on an instance and print what it printed
+  stats [PREFIX] [--json | --watch] [--port P]   the engine's telemetry counters (fua_stats) whose names start with PREFIX: last, mean, p99 and max over the last frames; --watch puts them on screen
+  record [--seconds N] [--name NAME] [--port P]   every counter each frame and every timed region on every thread for N seconds (fua_capture), as a CSV and a trace Perfetto opens, under the engine's telemetry/
+  flight [NAME] [--port P]           write the flight recorder (the last frames, seconds and hitches) under the engine's telemetry/ and print its summary
+  hitches [N] [--port P]             the last N slow frames, each with the timed regions it spent most in
+  memsnap [NAME] [--port P]          keep every memory gauge and tag under NAME for memdiff
+  memdiff [A] [B] [--port P]         what changed between snapshots A and B, or between A and now
+  soak [--action reload|TEXT] [--cycles N] [--warmup W] [--settle MS] [--port P]   repeat an action N times and fail if memory, objects, handles or threads kept growing after W warm-up cycles (fua_soak)
+  compare A.json B.json [--share F] [--floor MS]   two fua_stats json readings side by side; a timing whose p50 or p99 grew by over F (0.15) and FLOOR ms (0.1) is marked
+  perfgate NAME [PREFIX] [--spot S | --at x,y,z --face yaw,pitch] [--settle MS] [--update] [--port P]   the counters at a view against this machine's saved baseline NAME, the first run saving it; exit 1 on a regression
   mcp                                run as an MCP stdio server for agents
 `;
 
@@ -949,6 +960,56 @@ async function main() {
       break;
     }
     // [rc4l] `fuactl goto` -- stand at a saved spot or a camera, for looking rather than capturing.
+    // [rc4l] The views that are one console command each (telemetry.mjs), their output printed as the engine wrote it.
+    case "console": case "stats": case "hitches": case "flight": case "memsnap": case "memdiff": {
+      const text = telemetry.consoleTextFor(cmd, rest, flags);
+      process.stdout.write(await withUi(flags, (c) => cap.exec(c, text, { quietMs: 400, maxMs: 20000 })));
+      break;
+    }
+    case "record": {
+      const seconds = num(flags.seconds) ?? 10;
+      const name = flags.name && flags.name !== true ? String(flags.name) : "";
+      await withUi(flags, async (c) => {
+        process.stdout.write(await cap.exec(c, `fua_capture start ${name}`.trim()));
+        await new Promise((r) => setTimeout(r, seconds * 1000));
+        process.stdout.write(await cap.exec(c, "fua_capture stop", { quietMs: 600, maxMs: 60000 }));
+      });
+      break;
+    }
+    case "soak": {
+      const result = await withUi(flags, (c) => telemetry.runSoak(c, {
+        action: flags.action && flags.action !== true ? String(flags.action) : "reload",
+        cycles: num(flags.cycles) ?? 6, warmup: num(flags.warmup) ?? 1, settleMs: num(flags.settle) ?? 4000,
+        exec: (cl, text) => cap.exec(cl, text, { quietMs: 400, maxMs: 20000 }),
+        sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+        log: (m) => console.error(`[soak] ${m}`),
+      }));
+      process.stdout.write(result.report);
+      if (!result.pass) process.exit(1);
+      break;
+    }
+    case "compare": {
+      if (rest.length < 2) { console.error(usageFor(USAGE, "compare")); process.exit(2); }
+      const read = (f) => telemetry.parseConsoleJson(fs.readFileSync(f, "utf8"));
+      const rows = telemetry.compareStats(read(rest[0]), read(rest[1]), { share: num(flags.share), floor: num(flags.floor) });
+      for (const line of telemetry.formatCompare(rows)) console.log(line);
+      break;
+    }
+    case "perfgate": {
+      if (!rest[0]) { console.error(usageFor(USAGE, "perfgate")); process.exit(2); }
+      const at = shot.cameraFromFlags(flags, SPOTS);
+      const readings = await withUi(flags, async (c) => {
+        if (at) await shot.moveTo(c, at);
+        await new Promise((r) => setTimeout(r, num(flags.settle) ?? 4000));
+        return telemetry.parseConsoleJson(await cap.exec(c, `fua_stats json ${rest[1] ?? ""}`.trim(), { quietMs: 400, maxMs: 20000 }));
+      });
+      const gate = telemetry.perfGate(rest[0], readings, { update: !!flags.update, share: num(flags.share), floor: num(flags.floor) });
+      if (gate.saved) { console.log(`perfgate: saved ${readings.length} counters as the baseline ${gate.saved}`); break; }
+      for (const line of telemetry.formatCompare(gate.rows)) console.log(line);
+      console.log(`perfgate ${rest[0]}: ${gate.pass ? "PASS" : "FAIL"}`);
+      if (!gate.pass) process.exit(1);
+      break;
+    }
     case "goto": {
       const at = shot.cameraFromFlags(flags, SPOTS);
       if (!at) { console.error("usage: fuactl goto (--spot NAME | --at x,y,z --face yaw,pitch) [--port P --token T]"); process.exit(2); }

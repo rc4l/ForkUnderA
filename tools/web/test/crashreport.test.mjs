@@ -116,6 +116,9 @@ test('the text a person copies names the crash, the game and the stack newest fi
   assert.equal(text[stack + 2], '  zx::hwrender::BuildSkyDome(SkyDome&, int, int) (/forkundera.wasm:0x777285)');
   assert.equal(text[stack + 4], '  ? (<anonymous>)');
   assert.equal(text[text.length - 1], 'last line');
+  assert.ok(!text.includes('Last minute:'));
+  const timed = FuaCrash.reportText(FuaCrash.buildEvent({ kind: 'fatal', message: 'x', telemetry: 'frame 1.0 ms\n', now: NOW, id: '1' })).split('\n');
+  assert.equal(timed[timed.indexOf('Last minute:') + 1], 'frame 1.0 ms');
   const bare = FuaCrash.reportText(FuaCrash.buildEvent({ kind: 'fatal', message: 'x', now: NOW, id: '0' })).split('\n');
   assert.ok(bare.includes('Release: unknown'));
   assert.ok(bare.includes('Map: none'));
@@ -130,6 +133,7 @@ test('the reporter sends when it may, keeps the last report and stops at the lim
   r.setContext(JSON.stringify(CONTEXT));
   assert.deepEqual(r.context(), CONTEXT);
   r.setAdapter('gpu');
+  r.setTelemetry('frame 2.0 ms');
   const first = await r.report('fatal', 'Bad WAD', '');
   assert.equal(first.why, 'send');
   assert.equal(first.delivered, true);
@@ -139,6 +143,7 @@ test('the reporter sends when it may, keeps the last report and stops at the lim
   const event = JSON.parse(sent[0].body.split('\n')[2]);
   assert.equal(event.contexts.gpu.name, 'gpu');
   assert.equal(event.extra.log, 'a\nb');
+  assert.equal(event.extra.telemetry, 'frame 2.0 ms');
   for (let i = 1; i < FuaCrash.MAX_SENT; i++) await r.report('fatal', 'again', '');
   assert.equal((await r.report('fatal', 'one too many', '')).why, 'limit');
   assert.equal(sent.length, FuaCrash.MAX_SENT);

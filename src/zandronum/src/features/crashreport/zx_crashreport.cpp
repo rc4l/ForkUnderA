@@ -35,6 +35,7 @@
 #include "v_text.h"       // TEXTCOLOR_* console color codes
 #include "features/crashreport/computation/crash_report_compute.h"
 #include "features/crashreport/computation/crash_symbolize_compute.h"
+#include "features/telemetry/telemetry.h"
 
 #ifndef _WIN32
 // [rc4l] POSIX crash naming: dyld has every loaded module's symbols at crash time, so dladdr names
@@ -218,6 +219,16 @@ static sentry_value_t zx_before_send(sentry_value_t event, void *hint, void *clo
 	return event;
 }
 
+// [rc4l] The last minute's frame times and memory (features/telemetry) in the crash's extras, kept every ten seconds since each change is written to disk.
+static void KeepTelemetry(const char *summary)
+{
+	static int64_t lastNs = 0;
+	const int64_t now = zx::telemetry::NowNs();
+	if (lastNs != 0 && now - lastNs < 10000000000LL) return;
+	lastNs = now;
+	sentry_set_extra("telemetry", sentry_value_new_string(summary));
+}
+
 // The single init point. consentAction: 0 = use persisted consent, +1 = give, -1 = revoke.
 // Giving consent here (right after sentry_init) is what actually uploads a stored crash.
 static void ZX_CrashReportDoInit(int consentAction)
@@ -267,6 +278,7 @@ static void ZX_CrashReportDoInit(int consentAction)
 	if (sentry_init(options) != 0)
 		return;
 	g_sentryInited = true;
+	zx::telemetry::SetSummaryListener(KeepTelemetry);
 
 	// [rc4l] WHICH BINARY this is, which is not the same question as which ROLE it is playing.
 	//

@@ -14,6 +14,17 @@
 
 namespace zx { namespace jobs {
 
+// [rc4l] Who hears every pool's work, which features/jobs points at features/telemetry: a worker's first job, a lane's run of items and the caller's wait for the rest, on the steady clock in nanoseconds.
+struct JobObserver
+{
+	void (*workerStarted)(int lane);
+	void (*ranItems)(int lane, long long startNs, long long endNs);
+	void (*waited)(long long startNs, long long endNs);
+};
+
+// [rc4l] Sets the observer every pool reports to, NULL for none.
+void SetJobObserver(const JobObserver *observer);
+
 class JobPool
 {
 public:

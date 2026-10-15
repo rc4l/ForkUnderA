@@ -9,6 +9,7 @@ import * as ui from "./ui.mjs";
 import { withLockedInstance } from "./play.mjs";
 import { resolveEngine, engineProcessCount, exited } from "./launch.mjs";
 import { decodePNG, boxDiff } from "./pngcore.mjs";
+import { runSoak } from "./telemetry.mjs";
 
 // [rc4l] The repo's own Freedoom 2, found from this file so the harness runs from any checkout.
 export const FREEDOOM2 = fileURLToPath(new URL("../../freedoom/freedoom2.wad", import.meta.url));
@@ -183,8 +184,8 @@ export function judgeQuit(label, { gone, crashed }) {
   return { line: `PASS ${label}: quit cleanly`, failed: 0 };
 }
 
-// [rc4l] Each side launched on each map, played a moment and quit from its console as a player quits, then judged by judgeQuit: for a fault on the engine's way out, which no frame shows.
-export async function compareQuit({ name, wad, maps, sides, iwad = FREEDOOM2, port = 7796, size = [1280, 720], settleTics = 70 }) {
+// [rc4l] Runs judgeLaunch(c, inst, label) in a launch of each side on each map, collecting each { line, failed } verdict, and a launch that throws as a failure.
+async function eachLaunch({ name, wad, maps, sides, iwad = FREEDOOM2, port = 7796, size = [1280, 720] }, judgeLaunch) {
   const wadPath = path.join(os.tmpdir(), `fua-${name}-template.wad`);
   fs.writeFileSync(wadPath, wad);
   const lines = [];
@@ -193,13 +194,7 @@ export async function compareQuit({ name, wad, maps, sides, iwad = FREEDOOM2, po
     for (const side of sides) {
       const label = `${map} ${side.name}`;
       try {
-        const r = await withEngine({ port, map, iwad, wadPath, gl: !!side.gl, side, size }, async (c, inst) => {
-          await cap.waitTics(c, settleTics);
-          // [rc4l] Over the scenario's own connection, the bridge's only one; the engine leaves before it answers.
-          await c.rpc("console.exec", { text: "quit" }).catch(() => {});
-          const gone = await exited(inst.proc, 15000);
-          return judgeQuit(label, { gone, crashed: fs.existsSync(`${inst.log}.crash`) });
-        });
+        const r = await withEngine({ port, map, iwad, wadPath, gl: !!side.gl, side, size }, (c, inst) => judgeLaunch(c, inst, label));
         lines.push(r.line);
         failed += r.failed;
       } catch (e) {
@@ -209,6 +204,34 @@ export async function compareQuit({ name, wad, maps, sides, iwad = FREEDOOM2, po
     }
   }
   return { lines, failed };
+}
+
+// [rc4l] Each side launched on each map, played a moment and quit from its console as a player quits, then judged by judgeQuit: for a fault on the engine's way out, which no frame shows.
+export function compareQuit(opts) {
+  return eachLaunch(opts, async (c, inst, label) => {
+    await cap.waitTics(c, opts.settleTics ?? 70);
+    // [rc4l] Over the scenario's own connection, the bridge's only one; the engine leaves before it answers.
+    await c.rpc("console.exec", { text: "quit" }).catch(() => {});
+    const gone = await exited(inst.proc, 15000);
+    return judgeQuit(label, { gone, crashed: fs.existsSync(`${inst.log}.crash`) });
+  });
+}
+
+// [rc4l] A soak's verdict (telemetry.mjs runSoak) as a scenario line: what kept growing and by how much a cycle, as the engine's report says, or how many counters held.
+export function judgeSoak(label, { pass, marks, judged, grew = [], report = "" }) {
+  if (pass) return { line: `PASS ${label}: ${judged} counters held over ${marks} marks`, failed: 0 };
+  const amounts = report.split("\n").filter((l) => / grew /.test(l)).map((l) => l.trim()).join("; ");
+  return { line: `FAIL ${label}: ${grew.length ? `kept growing: ${amounts || grew.join(", ")}` : `judged nothing (${marks} marks)`}`, failed: 1 };
+}
+
+// [rc4l] Each side launched on each map repeats the scenario's soak action (reload unless it names another) and passes when the engine judges that no memory, object, handle or thread count kept growing: for a leak, which no frame shows.
+export function compareSoak(opts) {
+  return eachLaunch(opts, async (c, inst, label) => {
+    await cap.waitTics(c, opts.settleTics ?? 35);
+    const verdict = await runSoak(c, { action: opts.action ?? "reload", cycles: opts.cycles ?? 6, warmup: 1, settleMs: opts.settleMs ?? 4000,
+      exec: (cl, text) => cap.exec(cl, text, { quietMs: 400, maxMs: 20000 }), sleep: (ms) => new Promise((r) => setTimeout(r, ms)) });
+    return judgeSoak(label, verdict);
+  });
 }
 
 // [rc4l] A scenario's verdict as printed lines and an exit code: 0 all under ceiling, 1 failed, 3 refused.
@@ -377,4 +400,4 @@ export async function compareOverTime({ name, wad, maps, vantages, boxes, interv
 }
 
 // [rc4l] The comparisons that judge a launch against itself rather than GL, which a WebGPU run runs on WebGPU alone (webgpuOptions).
-for (const compare of [compareCounter, compareOverTime, compareSequence, compareQuit]) compare.judgedAlone = true;
+for (const compare of [compareCounter, compareOverTime, compareSequence, compareQuit, compareSoak]) compare.judgedAlone = true;

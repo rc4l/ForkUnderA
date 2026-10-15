@@ -44,6 +44,7 @@
 #include "astar.h"
 #include "botpath.h"
 #include "mcp_ticprof.h" // [ForkUnderA] per-tic sim profiler anchors (no-op unless FUA_MCP_BRIDGE)
+#include "features/telemetry/telemetry.h"
 
 extern gamestate_t wipegamestate;
 
@@ -406,7 +407,10 @@ void P_Ticker (void)
 	{
 		P_ClearEffectRegistry ();	// [rc4l] actors re-register during their Tick below
 		MCP_TicProf_Begin (MCP_TPZ_THINKERS); // [ForkUnderA] per-tic sim profiler anchors (no-op unless FUA_MCP_BRIDGE)
-		DThinker::RunThinkers ();
+		{
+			ZX_ZONE ("sim/thinkers"); // [rc4l] actors, scripts and lights in features/telemetry
+			DThinker::RunThinkers ();
+		}
 		MCP_TicProf_End (MCP_TPZ_THINKERS);
 	}
 
@@ -428,13 +432,19 @@ void P_Ticker (void)
 		}
 
 		MCP_TicProf_Begin (MCP_TPZ_SPECIALS);
-		P_UpdateSpecials ();
+		{
+			ZX_ZONE ("sim/specials"); // [rc4l] in features/telemetry
+			P_UpdateSpecials ();
+		}
 		MCP_TicProf_End (MCP_TPZ_SPECIALS);
 
 		if ( NETWORK_GetState( ) != NETSTATE_SERVER )
 		{
 			MCP_TicProf_Begin (MCP_TPZ_EFFECTS);
-			P_RunEffects ();	// [RH] Run particle effects
+			{
+				ZX_ZONE ("sim/effects"); // [rc4l] in features/telemetry
+				P_RunEffects ();	// [RH] Run particle effects
+			}
 			MCP_TicProf_End (MCP_TPZ_EFFECTS);
 		}
 	}

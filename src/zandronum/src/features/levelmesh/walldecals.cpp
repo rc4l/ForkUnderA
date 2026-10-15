@@ -20,6 +20,7 @@
 #include "textures/textures.h"
 #include "c_cvars.h"
 #include "features/rendersettings/rendersettings.h"   // [rc4l] the render settings it reads
+#include "features/telemetry/telemetry.h"
 
 EXTERN_CVAR(Bool, r_lights)
 EXTERN_CVAR(Bool, r_light_sprites)
@@ -113,6 +114,7 @@ void BuildDecal(DBaseDecal *decal, side_t *side, const seg_t *seg, int part, con
 
 void BuildWallDecals(const int *sideList, int count)
 {
+	ZX_ZONE("scene/decals");   // [rc4l] the decals on the walls the walks saw
 	for (int i = 0; i < count; i++)
 	{
 		side_t *side = &sides[sideList[i]];

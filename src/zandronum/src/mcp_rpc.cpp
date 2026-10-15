@@ -52,6 +52,7 @@
 #include <chrono>
 #include <stdlib.h>
 #include "features/json/computation/json_compute.h"
+#include "features/telemetry/telemetry.h"
 
 // From mcp_bridge.cpp -- send one framed NDJSON line to the connected client (thread-safe).
 void MCP_Bridge_SendJson( const char *json );
@@ -829,7 +830,9 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 		}
 		std::string body = "{\"actors\":" + I( actors );
 		body += ",\"numsegs\":" + I( numsegs );
-		body += ",\"leveltime\":" + I( level.time ) + "}";
+		body += ",\"leveltime\":" + I( level.time );
+		// [rc4l] Every features/telemetry counter as fua_stats json gives it, so a driver reads the same numbers a player's console does.
+		body += ",\"telemetry\":" + zx::telemetry::StatsJson( "" ) + "}";
 		SendOk( id, body );
 	}
 	else if ( cmd == "world.sectors" )

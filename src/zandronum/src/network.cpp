@@ -164,6 +164,7 @@ struct AUTHENTICATELUMP_s
 #include "network_enums.h"
 #define GENERATE_ENUM_STRINGS  // Start string generation
 #include "network_enums.h"
+#include "features/telemetry/telemetry.h"
 #undef GENERATE_ENUM_STRINGS   // Stop string generation
 
 void SERVERCONSOLE_UpdateIP( NETADDRESS_s LocalAddress );
@@ -877,6 +878,10 @@ int NETWORK_GetPackets( void )
 	if ( lNumBytes <= 0 )
 		return ( 0 );
 
+	// [rc4l] Every packet in, for features/telemetry's net counters.
+	ZX_COUNT( "net/bytes_in", "bytes", lNumBytes );
+	ZX_COUNT( "net/packets_in", "packets", 1 );
+
 	// Record this for our statistics window.
 	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 		SERVER_STATISTIC_AddToInboundDataTransfer( lNumBytes );
@@ -1087,6 +1092,13 @@ return;
 		Printf( "NETWORK_LaunchPacket: Address %s\n", Address.ToString() );
 
 #endif
+	}
+
+	// [rc4l] Every packet out, for features/telemetry's net counters.
+	if ( lNumBytes > 0 )
+	{
+		ZX_COUNT( "net/bytes_out", "bytes", lNumBytes );
+		ZX_COUNT( "net/packets_out", "packets", 1 );
 	}
 
 	// Record this for our statistics window.

@@ -21,10 +21,10 @@ template <class Owner>
 class KeptObjects
 {
 public:
-	// [rc4l] Keeps handle under owner; false for a null handle or one kept already, which the glue then takes no reference on.
+	// [rc4l] Keeps handle under owner; false for a null handle or one of its kind kept already, which the glue then takes no reference on.
 	bool Keep(void *handle, bool texture, Owner owner)
 	{
-		if (handle == nullptr || !m_handles.insert(handle).second) return false;
+		if (handle == nullptr || !m_handles[texture].insert(handle).second) return false;
 		m_entries.push_back(Entry{ handle, texture, std::move(owner) });
 		return true;
 	}
@@ -38,7 +38,7 @@ public:
 		{
 			if (!released(m_entries[i].owner)) { i++; continue; }
 			free(m_entries[i].handle, m_entries[i].texture);
-			m_handles.erase(m_entries[i].handle);
+			m_handles[m_entries[i].texture].erase(m_entries[i].handle);
 			m_entries[i] = std::move(m_entries.back());
 			m_entries.pop_back();
 			freed++;
@@ -49,7 +49,8 @@ public:
 private:
 	struct Entry { void *handle; bool texture; Owner owner; };
 	std::vector<Entry> m_entries;
-	std::unordered_set<void *> m_handles;
+	// [rc4l] Buffers' handles and textures' apart, since a browser numbers each kind from one.
+	std::unordered_set<void *> m_handles[2];
 };
 
 }} // namespace zx::hwrender

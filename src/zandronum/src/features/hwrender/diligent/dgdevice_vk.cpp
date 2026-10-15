@@ -13,6 +13,10 @@
 #include "RenderDeviceVk.h"
 #include "RefCntAutoPtr.hpp"
 #include "features/hwrender/diligent/dgplatform.h"   // [rc4l] Fua_PrepareVulkanLoader
+#include "features/telemetry/telemetry.h"
+
+#include <cstring>
+#include <vector>
 
 namespace zx { namespace hwrender {
 
@@ -30,6 +34,49 @@ static DescriptorLimits ReadLimits(Diligent::IRenderDevice *device)
 	return got;
 }
 
+// [rc4l] The device the memory budget is read from, which lives for the process once made.
+static Diligent::IRenderDevice *g_budgetDevice = nullptr;
+
+// [rc4l] The driver's own account of device-local memory, everything the process allocated there (Diligent's and the driver's own included) and what it may, through VK_EXT_memory_budget; false where the device lacks it.
+static bool ReadBudget(double &used, double &budget)
+{
+	Diligent::RefCntAutoPtr<Diligent::IRenderDeviceVk> vk(g_budgetDevice, Diligent::IID_RenderDeviceVk);
+	if (!vk || vkGetPhysicalDeviceMemoryProperties2 == NULL || vkEnumerateDeviceExtensionProperties == NULL) return false;
+	const VkPhysicalDevice phys = vk->GetVkPhysicalDevice();
+	static int supported = -1;
+	if (supported < 0)
+	{
+		uint32_t n = 0;
+		vkEnumerateDeviceExtensionProperties(phys, nullptr, &n, nullptr);
+		std::vector<VkExtensionProperties> exts(n);
+		if (n > 0) vkEnumerateDeviceExtensionProperties(phys, nullptr, &n, exts.data());
+		supported = 0;
+		for (const VkExtensionProperties &e : exts) if (!std::strcmp(e.extensionName, VK_EXT_MEMORY_BUDGET_EXTENSION_NAME)) supported = 1;
+	}
+	if (!supported) return false;
+	VkPhysicalDeviceMemoryBudgetPropertiesEXT heaps = {};
+	heaps.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_BUDGET_PROPERTIES_EXT;
+	VkPhysicalDeviceMemoryProperties2 props = {};
+	props.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_PROPERTIES_2;
+	props.pNext = &heaps;
+	vkGetPhysicalDeviceMemoryProperties2(phys, &props);
+	used = budget = 0.0;
+	for (uint32_t h = 0; h < props.memoryProperties.memoryHeapCount; h++)
+	{
+		if (!(props.memoryProperties.memoryHeaps[h].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT)) continue;
+		used += (double)heaps.heapUsage[h];
+		budget += (double)heaps.heapBudget[h];
+	}
+	return true;
+}
+
+static double BudgetUsed() { double used, budget; return ReadBudget(used, budget) ? used : -1.0; }
+static double BudgetAvailable() { double used, budget; return ReadBudget(used, budget) ? budget : -1.0; }
+static const bool s_budgetCounted = (
+	zx::telemetry::Register(zx::telemetry::CounterSpec{ "gpu/vk_budget_used_bytes", "bytes", zx::telemetry::CounterKind::Gauge, 500 }, BudgetUsed),
+	zx::telemetry::Register(zx::telemetry::CounterSpec{ "gpu/vk_budget_bytes", "bytes", zx::telemetry::CounterKind::Gauge, 500 }, BudgetAvailable),
+	true);
+
 static bool CreateDevice(Diligent::IRenderDevice **device, Diligent::IDeviceContext **context, DescriptorLimits &limits, FString &report)
 {
 	Fua_PrepareVulkanLoader();
@@ -46,6 +93,9 @@ static bool CreateDevice(Diligent::IRenderDevice **device, Diligent::IDeviceCont
 	ci.Features.ShaderResourceStaticArrays = Diligent::DEVICE_FEATURE_STATE_OPTIONAL;
 	ci.Features.ShaderResourceRuntimeArrays = Diligent::DEVICE_FEATURE_STATE_OPTIONAL;
 	ci.Features.DepthClamp = Diligent::DEVICE_FEATURE_STATE_OPTIONAL;
+	// [rc4l] Duration queries time the backend's passes for features/telemetry (dggputimer.cpp).
+	ci.Features.TimestampQueries = Diligent::DEVICE_FEATURE_STATE_OPTIONAL;
+	ci.Features.DurationQueries = Diligent::DEVICE_FEATURE_STATE_OPTIONAL;
 	factory->CreateDeviceAndContextsVk(ci, device, context);
 	if (*device == nullptr)
 	{
@@ -53,6 +103,7 @@ static bool CreateDevice(Diligent::IRenderDevice **device, Diligent::IDeviceCont
 		return false;
 	}
 	limits = ReadLimits(*device);
+	g_budgetDevice = *device;
 	return true;
 }
 

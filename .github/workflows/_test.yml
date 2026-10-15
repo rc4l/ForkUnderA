@@ -61,6 +61,10 @@ jobs:
       - name: Device-creation tripwire
         run: bash tools/device-create-tripwire.sh
 
+      # [rc4l] Telemetry counters are named "group/name" literals, and no two timed regions share a name.
+      - name: Telemetry tripwire
+        run: bash tools/zone-tripwire.sh
+
       # [rc4l] Features include each other one way, and from outside only through their roots or pure computation/.
       - name: Layering tripwire
         run: |

@@ -81,7 +81,7 @@
   }
 
   // [rc4l] One report as a Sentry event: kind is 'exception', 'abort', 'fatal', 'device lost', 'drawing stopped' or 'webgpu' (the only one the game may go on after), context the engine's last (crashcontext_compute.h).
-  function buildEvent({ kind, message, stack = '', context = {}, browser = '', adapter = '', log = [], now = new Date(), id = eventId() }) {
+  function buildEvent({ kind, message, stack = '', context = {}, browser = '', adapter = '', log = [], telemetry = '', now = new Date(), id = eventId() }) {
     const fatal = kind !== 'webgpu';
     return {
       event_id: id,
@@ -95,7 +95,7 @@
       message: { formatted: message },
       exception: { values: [{ type: kind, value: message, stacktrace: { frames: parseStack(stack) } }] },
       tags: Object.assign({ map: context.map || undefined, iwad: context.iwad || undefined }, context.tags || {}, { build: 'web', kind }),
-      extra: { load_order: (context.files || []).join(', '), log: log.slice(-LOG_LINES).join('\n') },
+      extra: { load_order: (context.files || []).join(', '), log: log.slice(-LOG_LINES).join('\n'), telemetry: telemetry || undefined },
       contexts: { browser: { name: browser }, gpu: { name: adapter } },
       // [rc4l] A fatal or a device's error groups on its message, as the desktop's fatals do; an exception groups on its stack.
       fingerprint: kind === 'exception' || kind === 'abort' ? undefined : [kind, message],
@@ -122,7 +122,7 @@
     return 'This build does not send crash reports; copy or save the report to share it.';
   }
 
-  // [rc4l] The report as text for a person: the event's summary, its stack newest call first, then the console's last lines.
+  // [rc4l] The report as text for a person: the event's summary, its stack newest call first, the engine's last minute, then the console's last lines.
   function reportText(event) {
     const frames = event.exception.values[0].stacktrace.frames.slice().reverse();
     const at = (f) => `  ${f.function} (${f.filename}${f.lineno ? `:${f.lineno}:${f.colno}` : f.instruction_addr ? `:${f.instruction_addr}` : ''})`;
@@ -137,6 +137,7 @@
       `Graphics: ${event.contexts.gpu.name}`,
       'Stack:',
       ...(frames.length ? frames.map(at) : ['  (none)']),
+      ...(event.extra.telemetry ? ['Last minute:', event.extra.telemetry.trimEnd()] : []),
       'Console:',
       event.extra.log,
     ].join('\n');
@@ -146,6 +147,7 @@
   function reporter({ send, browser = '', log = () => [] }) {
     let context = {};
     let adapter = '';
+    let telemetry = '';
     let sent = 0;
     let last = null;
     return {
@@ -153,8 +155,10 @@
       setContext(json) { context = typeof json === 'string' ? JSON.parse(json) : json; },
       context() { return context; },
       setAdapter(text) { adapter = text; },
+      // [rc4l] The engine's summary of its last minute (features/telemetry), which it hands over each second.
+      setTelemetry(text) { telemetry = text; },
       async report(kind, message, stack) {
-        const event = buildEvent({ kind, message, stack, context, browser, adapter, log: log() });
+        const event = buildEvent({ kind, message, stack, context, browser, adapter, log: log(), telemetry });
         const why = decision(context, sent);
         let delivered = false;
         if (why === 'send') {

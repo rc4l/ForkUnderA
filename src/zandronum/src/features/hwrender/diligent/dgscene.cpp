@@ -16,6 +16,8 @@
 #ifdef FUA_DILIGENT
 
 #include "features/hwrender/diligent/dgscene_internal.h"
+#include "features/telemetry/telemetry.h"
+#include "features/hwrender/diligent/dggputimer.h"   // [rc4l] gpu/frame_ms, gpu/world_ms, gpu/2d_ms
 #include "features/hwrender/diligent/dgdevice.h"   // [rc4l] PagePaced
 #include "features/viewsetup/viewsetup.h"   // [MobiusU9B] the view's lens
 
@@ -35,6 +37,10 @@ EXTERN_CVAR(Bool, r_lights_additive)
 EXTERN_CVAR(Bool, r_mirrors)
 EXTERN_CVAR(Int, screenblocks)   // [rc4l] the view window the player's view is framed in
 EXTERN_CVAR(Bool, vid_vsync)   // [rc4l] picks the present interval, FIFO when on and mailbox when off
+
+// [rc4l] Whether the backend presents in step with the display, as features/telemetry's frame/vsync.
+static double VsyncOn() { return vid_vsync ? 1.0 : 0.0; }
+static const bool s_vsyncCounted = (zx::telemetry::Register(zx::telemetry::CounterSpec{ "frame/vsync", "on", zx::telemetry::CounterKind::Gauge, 500 }, VsyncOn), true);
 
 // [rc4l] 0 flat multiply (pre-lighting-port behaviour), 1 the ported equation, 2 depth as grey,
 // 3 depth contours, 4 vertex colour only. Live per frame -- no rebake needed to switch.
@@ -564,6 +570,7 @@ Diligent::ITextureView *SceneDepthSRV()
 
 void DrawSceneOnce(bool present, bool pump)
 {
+	ZX_ZONE("draw/scene");   // [rc4l] the backend frame, every pass
 	const zx::framephase::Scope backendPhase(zx::framephase::kPhaseBackend);
 	auto *ctx = GetContext();
 	auto *swap = GetSwapChain();
@@ -591,6 +598,8 @@ void DrawSceneOnce(bool present, bool pump)
 		}
 	}
 
+	CollectGpuPasses();
+	BeginGpuPass(ctx, kGpuFrame);
 	// The sky portal is a whole second view of the map, so it is rendered here, beside the frame
 	// rather than inside it -- DrawWorld cannot be re-entered while it is deriving this frame.
 	// [rc4l] Before any pass: a height transfer's planes follow the eye across its surface, and a re-bake must land before the geometry is refreshed.
@@ -633,7 +642,9 @@ void DrawSceneOnce(bool present, bool pump)
 			Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
 		g_pass.mainView = true;
+		if (eye == 0) BeginGpuPass(ctx, kGpuWorld);
 		DrawWorld(ctx);
+		if (eye == 0) EndGpuPass(ctx, kGpuWorld);
 		g_pass.mainView = false;
 		if (stereo.eyes > 1) KeepEyePicture(ctx, eye);
 	}
@@ -644,7 +655,10 @@ void DrawSceneOnce(bool present, bool pump)
 	DrawHitboxes(ctx);
 
 	// [rc4l] 2D last, over everything, with depth off entirely -- it is the frame's top layer.
+	BeginGpuPass(ctx, kGpu2D);
 	Draw2D(ctx);
+	EndGpuPass(ctx, kGpu2D);
+	EndGpuPass(ctx, kGpuFrame);
 
 	if (present) PresentFrame(ctx, swap, pump);
 }
@@ -843,6 +857,7 @@ static void BindWorldTargets(Diligent::IDeviceContext *ctx, bool normal)
 
 void DrawWorld(Diligent::IDeviceContext *ctx)
 {
+	ZX_ZONE("draw/world");   // [rc4l] the world pass, once per view it draws
 	cycle_t whole;
 	whole.Reset();
 	whole.Clock();

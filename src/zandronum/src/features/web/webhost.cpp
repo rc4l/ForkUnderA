@@ -8,13 +8,21 @@
 
 #include "posix/sdl/sdlhost.h"
 #include "features/web/webdriver.h"
+#include "features/telemetry/telemetry.h"
 
 namespace zx { namespace sdlhost {
+
+// [rc4l] A file the engine wrote for the player, such as a telemetry capture, leaves a browser only as a download from the page.
+static void OfferFile(const char *path)
+{
+	EM_ASM({ if (Module.fuaOfferFile) Module.fuaOfferFile(UTF8ToString($0)); }, path);
+}
 
 // [rc4l] A browser has no signals to catch a crash with; the page catches one (web/crashreport.js).
 void Start(int, char **, void (*terms)(), int (*)(char *, char *))
 {
 	zx::web::InstallDriver(terms);
+	zx::telemetry::SetFileOfferer(OfferFile);
 }
 
 void AddArgs(DArgs *args) { zx::web::AppendPageArgs(args); }

@@ -8,6 +8,7 @@
 #include "features/viewsetup/viewsetup.h"   // [rc4l] FixedColormapShadeFor
 #include "features/hwrender/computation/linemirror_compute.h"   // [rc4l] the reflected eye and how deep mirrors nest
 #include "features/hwrender/computation/growbuffer_compute.h"   // [rc4l] ComputeGrownCapacity
+#include "features/telemetry/telemetry.h"
 
 EXTERN_CVAR(Bool, r_lights_checkside)
 
@@ -1131,6 +1132,7 @@ static void RenderMirrorNode(Diligent::IDeviceContext *ctx, unsigned i, int leve
 
 void RenderMirrors(Diligent::IDeviceContext *ctx)
 {
+	ZX_ZONE("draw/mirrors");   // [rc4l] the line mirrors' pictures
 	g_mirrorNodes.Clear();
 	g_mirrorPass = -1;
 	// [rc4l] A switch, so the pass can be BISECTED against the TDR.

@@ -28,6 +28,7 @@
 #include "m_argv.h"
 #include "features/hwrender/computation/backendchoice_compute.h"
 #include "features/hwrender/diligent/dgdevice.h"
+#include "features/hwrender/diligent/dgmemory.h"   // [rc4l] every texture and buffer counted by tag
 
 EXTERN_CVAR(Int, vid_backend)
 
@@ -182,12 +183,14 @@ void CreateDeviceTexture(const Diligent::TextureDesc &desc, const Diligent::Text
 {
 	g_device->CreateTexture(desc, data, out);
 	if (ChosenDeviceApi()->keep != nullptr) ChosenDeviceApi()->keep(*out);
+	TrackDeviceTexture(*out, desc);
 }
 
 void CreateDeviceBuffer(const Diligent::BufferDesc &desc, const Diligent::BufferData *data, Diligent::IBuffer **out)
 {
 	g_device->CreateBuffer(desc, data, out);
 	if (ChosenDeviceApi()->keep != nullptr) ChosenDeviceApi()->keep(*out);
+	TrackDeviceBuffer(*out, desc);
 }
 
 void FreeReleasedObjects(Diligent::ISwapChain *swap)

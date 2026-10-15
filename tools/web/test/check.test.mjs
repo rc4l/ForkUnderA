@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CHECKS, blankGame, configuredOnce, crashOffered, crosshairCentred, gpuError, heldOnce, judge, marked, playedOnce, reportSent, saveLoads, savePicture, selectChecks, soundStarts, stoppedOffered } from '../check.mjs';
+import { CHECKS, blankGame, configuredOnce, crashOffered, crosshairCentred, destroyedAsReleased, gpuError, heldOnce, judge, marked, playedOnce, reportSent, saveLoads, savePicture, selectChecks, soakHeld, soakInPage, soundStarts, stoppedOffered } from '../check.mjs';
 
 test('a check fails when its line never came', () => {
   assert.deepEqual(judge({ until: 'x' }, null), { ok: false, reason: 'no line matched /x/' });
@@ -121,6 +121,30 @@ test('resizing may hold one more set of screen targets, not one per size', () =>
   assert.equal(heldOnce({ before: 6, after: 6 }), '');
   assert.equal(heldOnce({ before: 6, after: 12 }), '');
   assert.equal(heldOnce({ before: 6, after: 126 }), '120 more screen-sized textures were held after the resizes (6 before)');
+});
+
+test('the page may hold what the engine holds by tag, give or take alignment, and no more', () => {
+  const row = (name, last) => ({ name, last });
+  assert.equal(destroyedAsReleased([row('gpu/page/fua scene VB', 18_700_000), row('gpu/mem/tag/fua scene VB', 18_700_000), row('gpu/page/Upload memory page', 1e8)]), '');
+  assert.equal(destroyedAsReleased([row('gpu/page/fua material', 60_000)]), '');
+  assert.equal(destroyedAsReleased([row('gpu/page/fua scene VB', 56_100_000), row('gpu/mem/tag/fua scene VB', 18_700_000)]),
+    "the page held what the engine let go of: fua scene VB 54785 KB held against the engine's 18262 KB");
+  assert.equal(destroyedAsReleased([]), 'no GPU readings');
+});
+
+test('a soak passes on the engine verdict and otherwise names what grew', () => {
+  assert.equal(soakHeld({ pass: true, marks: 7, judged: 40, grew: [] }), '');
+  assert.equal(soakHeld({ pass: false, marks: 7, judged: 40, grew: ['gpu/process_bytes', 'mem/heap_bytes'] }), 'kept growing with each repeat: gpu/process_bytes, mem/heap_bytes');
+  assert.equal(soakHeld({ pass: false, marks: 2, judged: 0, grew: [] }), 'the soak judged nothing (2 marks, 0 counters)');
+  assert.equal(soakHeld({}), 'the soak judged nothing (undefined marks, undefined counters)');
+});
+
+test('a soak in the page repeats the named action, or console text, and marks after each', () => {
+  const reload = soakInPage('reload', 3, 100);
+  assert.match(reload, /fuaCommand\("map MAP01"\)/);
+  assert.match(reload, /i < 3;/);
+  assert.match(reload, /fua_soak verdict 1 json/);
+  assert.match(soakInPage('vid_setmode 640 480', 1, 10), /fuaCommand\("vid_setmode 640 480"\)/);
 });
 
 test('a sound has to start once, not again after it ends', () => {

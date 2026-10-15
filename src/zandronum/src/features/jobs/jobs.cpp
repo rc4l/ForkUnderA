@@ -5,7 +5,9 @@
 
 #include "c_cvars.h"
 
+#include <cstdio>
 #include <thread>
+#include "features/telemetry/telemetry.h"
 
 // [rc4l] Workers beside the game thread for a frame's parallel work: -1 picks by the machine, 0 runs everything on the game thread.
 CVAR(Int, fua_jobs_threads, -1, 0)
@@ -18,6 +20,29 @@ namespace {
 // [rc4l] Never destroyed, so no worker is joined while the process exits.
 JobPool *g_pool = NULL;
 const int kMaxWorkers = 63;
+
+// [rc4l] The pool's work in features/telemetry: each worker named in traces, every lane's runs summed as jobs/run, and the caller's wait for the rest as jobs/wait.
+void WorkerStarted(int lane)
+{
+	char name[16];
+	std::snprintf(name, sizeof(name), "job %d", lane);
+	zx::telemetry::NameThisThread(name);
+}
+
+void RanItems(int, long long start, long long end)
+{
+	static const zx::telemetry::Counter run = zx::telemetry::Register(zx::telemetry::CounterSpec{ "jobs/run", "ms", zx::telemetry::CounterKind::Time, 0 });
+	zx::telemetry::Region(run, start, end);
+}
+
+void Waited(long long start, long long end)
+{
+	static const zx::telemetry::Counter wait = zx::telemetry::Register(zx::telemetry::CounterSpec{ "jobs/wait", "ms", zx::telemetry::CounterKind::Time, 0 });
+	zx::telemetry::Region(wait, start, end);
+}
+
+const JobObserver kTelemetry = { WorkerStarted, RanItems, Waited };
+const bool s_observed = (SetJobObserver(&kTelemetry), true);
 }
 
 JobPool &Pool()

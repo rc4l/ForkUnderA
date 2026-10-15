@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { compareCounter, compareOverTime, compareQuit, compareSameFrame, compareSequence, judge, judgeCounter, judgeQuit, scenarioOutcome, isMain, sideCommands, vantageCommands, boxWithin, runScenarioIfMain, scenarioOptions, scenarioRun, templateScenarioFiles, probeChoices, pairFrame, withSideCvars, launchRenderer, sideAdjust, standaloneOptions, webgpuOptions, launchBackendApi, WEBGPU_CEILING, GL_VS_VULKAN } from "../src/template.mjs";
+import { compareCounter, compareOverTime, compareQuit, compareSameFrame, compareSequence, compareSoak, judge, judgeCounter, judgeQuit, judgeSoak, scenarioOutcome, isMain, sideCommands, vantageCommands, boxWithin, runScenarioIfMain, scenarioOptions, scenarioRun, templateScenarioFiles, probeChoices, pairFrame, withSideCvars, launchRenderer, sideAdjust, standaloneOptions, webgpuOptions, launchBackendApi, WEBGPU_CEILING, GL_VS_VULKAN } from "../src/template.mjs";
 import { pathToFileURL } from "node:url";
 import fs from "node:fs";
 import os from "node:os";
@@ -246,8 +246,17 @@ test("a quit passes only when the engine left cleanly", () => {
   assert.deepEqual(judgeQuit("MAP01 vk", { gone: { code: null, signal: "SIGKILL" }, crashed: false }), { line: "FAIL MAP01 vk: the engine exited with SIGKILL", failed: 1 });
 });
 
+// [rc4l] A new game leaked every player's userinfo cvars, about 1,400 allocations a level load, until a soak named them.
+test("a soak passes only when the engine judged counters and none kept growing", () => {
+  assert.deepEqual(judgeSoak("MAP01 vk", { pass: true, marks: 6, judged: 44, grew: [] }), { line: "PASS MAP01 vk: 44 counters held over 6 marks", failed: 0 });
+  assert.deepEqual(judgeSoak("MAP01 vk", { pass: false, marks: 6, judged: 44, grew: ["mem/allocations_live"] }), { line: "FAIL MAP01 vk: kept growing: mem/allocations_live", failed: 1 });
+  assert.deepEqual(judgeSoak("MAP01 vk", { pass: false, marks: 2, judged: 0 }), { line: "FAIL MAP01 vk: judged nothing (2 marks)", failed: 1 });
+  assert.deepEqual(judgeSoak("MAP01 vk", { pass: false, marks: 6, judged: 44, grew: ["mem/heap_bytes"], report: "SOAK FAIL: 6 marks\n  mem/heap_bytes grew 700 KB a cycle (3.4 MB over 5 cycles)\n" }),
+    { line: "FAIL MAP01 vk: kept growing: mem/heap_bytes grew 700 KB a cycle (3.4 MB over 5 cycles)", failed: 1 });
+});
+
 test("only the comparisons that judge a launch against itself are marked so", () => {
-  assert.ok(compareCounter.judgedAlone && compareOverTime.judgedAlone && compareSequence.judgedAlone && compareQuit.judgedAlone);
+  assert.ok(compareCounter.judgedAlone && compareOverTime.judgedAlone && compareSequence.judgedAlone && compareQuit.judgedAlone && compareSoak.judgedAlone);
   assert.ok(!compareSameFrame.judgedAlone);
 });
 

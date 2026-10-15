@@ -7,6 +7,7 @@
 
 #include "features/crashreport/zx_crashreport.h"
 #include "features/web/computation/crashcontext_compute.h"
+#include "features/telemetry/telemetry.h"
 #include "c_cvars.h"
 #include "c_console.h"
 #include "version.h"
@@ -35,7 +36,13 @@ CUSTOM_CVAR(Int, cl_crashreports, 1, CVAR_ARCHIVE | CVAR_GLOBALCONFIG | CVAR_NOI
 	TellPage();
 }
 
-void ZX_CrashReportInit() {}
+// [rc4l] Hands the page the engine's last minute each second, for a report it builds after a crash the engine can no longer answer.
+static void TellPageTelemetry(const char *summary)
+{
+	EM_ASM({ if (Module.fuaCrashReporter) Module.fuaCrashReporter.setTelemetry(UTF8ToString($0)); }, summary);
+}
+
+void ZX_CrashReportInit() { zx::telemetry::SetSummaryListener(TellPageTelemetry); }
 void ZX_CrashReportShutdown() {}
 
 void ZX_CrashReportCheckPreviousCrash()
