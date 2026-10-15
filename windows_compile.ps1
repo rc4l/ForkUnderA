@@ -217,7 +217,7 @@ if ($env:ZX_MCP_BRIDGE -eq "1") {
 }
 # [rc4l] Visual Studio takes its platform and toolset here; Ninja Multi-Config gets them from the developer shell and builds the one configuration asked for, since a Debug one breaks on a generated source.
 $isVS = $Generator -like "Visual Studio*"
-$genArgs = if ($isVS) { @("-A", "x64", "-T", "v143") } else { @("-DCMAKE_CONFIGURATION_TYPES=$Configuration") }
+$genArgs = @(if ($isVS) { "-A", "x64", "-T", "v143" } else { "-DCMAKE_CONFIGURATION_TYPES=$Configuration" })
 & cmake -S (Join-Path $ScriptRoot "src\zandronum") -B $BuildDir -G $Generator @genArgs `
     "-DCMAKE_POLICY_VERSION_MINIMUM=3.5" `
     "-DCMAKE_PREFIX_PATH=$dep" `
@@ -250,7 +250,7 @@ if (-not (Select-String -Path $ConfigureLog -Pattern "FUA replay: FFmpeg found" 
 
 # --- Build -----------------------------------------------------------------
 Write-Status "Building ($Configuration)"
-$buildArgs = if ($isVS) { @("--", "-m") } else { @() }
+$buildArgs = @(if ($isVS) { "--", "-m" })
 & cmake --build $BuildDir --config $Configuration @buildArgs
 if ($LASTEXITCODE -ne 0) { throw "cmake build failed" }
 
