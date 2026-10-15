@@ -160,9 +160,13 @@ between. `decalresize.mjs` makes a mark, changes a setting from one spot and jud
 since a stale depth binding matches only the view it was frozen in. Cheats are toggles and a locked
 launch already has `god` on, so a scenario asking for `god` turns it off.
 
+For a fault on the engine's way out, use `compareQuit`: each side is launched, plays `settleTics`, and is
+quit from its console as a player quits; a crash file beside its log, an engine still running or an exit
+code other than 0 fails it (`judgeQuit`). `quitclean.mjs` quits the backend with Diligent's messages on.
+
 `scenarios --webgpu` runs the set on the WebGPU device, and how depends on how a scenario judges: one
 compared across launches runs its first Vulkan side on Vulkan and on WebGPU, every box at
-`WEBGPU_CEILING`; one judged against itself (`compareOverTime`, `compareCounter`, `compareSequence`) runs on WebGPU alone
+`WEBGPU_CEILING`; one judged against itself (`compareOverTime`, `compareCounter`, `compareSequence`, `compareQuit`) runs on WebGPU alone
 with its own limits; a `compareSameFrame` one (a WebGPU launch has no GL) and one that `needs:
 ["raytracing"]` are skipped with that reason. A scenario that throws counts as one failure and the run
 goes on.
@@ -188,7 +192,7 @@ Export the builder from the scenario; `runScenarioIfMain` keeps the import from 
 | file | role |
 |---|---|
 | `tools/fuactl/src/udmf.mjs` | UDMF map + PWAD writer |
-| `tools/fuactl/src/template.mjs` | `compareTemplate` (launch, capture, judge), `compareOverTime`, `compareCounter`, `compareSameFrame`, `compareSequence`, and the pure `judge` |
+| `tools/fuactl/src/template.mjs` | `compareTemplate` (launch, capture, judge), `compareOverTime`, `compareCounter`, `compareSameFrame`, `compareSequence`, `compareQuit`, and the pure `judge` |
 | `tools/fuactl/src/pngcore.mjs` | PNG decode/encode, `boxDiff`; `fuactl png --boxdiff` on the CLI |
 | `tools/fuactl/scenarios/horizon.mjs` | the worked example |
 

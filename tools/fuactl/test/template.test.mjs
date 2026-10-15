@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { compareCounter, compareOverTime, compareSameFrame, compareSequence, judge, judgeCounter, scenarioOutcome, isMain, sideCommands, vantageCommands, boxWithin, runScenarioIfMain, scenarioOptions, scenarioRun, templateScenarioFiles, probeChoices, pairFrame, withSideCvars, launchRenderer, sideAdjust, standaloneOptions, webgpuOptions, launchBackendApi, WEBGPU_CEILING, GL_VS_VULKAN } from "../src/template.mjs";
+import { EventEmitter } from "node:events";
+import { compareCounter, compareOverTime, compareQuit, compareSameFrame, compareSequence, exitCodeOf, judge, judgeCounter, judgeQuit, scenarioOutcome, isMain, sideCommands, vantageCommands, boxWithin, runScenarioIfMain, scenarioOptions, scenarioRun, templateScenarioFiles, probeChoices, pairFrame, withSideCvars, launchRenderer, sideAdjust, standaloneOptions, webgpuOptions, launchBackendApi, WEBGPU_CEILING, GL_VS_VULKAN } from "../src/template.mjs";
 import { pathToFileURL } from "node:url";
 import fs from "node:fs";
 import os from "node:os";
@@ -235,6 +236,28 @@ test("a WebGPU run of a scenario judged against itself runs on WebGPU alone with
   const t = webgpuOptions({ name: "scroll", boxes }, compareOverTime);
   assert.deepEqual(t.sides, [{ name: "wgpu", gl: false, noGl: true, webgpu: true }]);
   assert.equal(t.boxes, boxes);
+});
+
+// [rc4l] Queue #46: a quit crashed in the frame fence's static destructor, which printed to a console already freed.
+test("a quit passes only when the engine left cleanly", () => {
+  assert.deepEqual(judgeQuit("MAP01 vk", { code: 0, crashed: false }), { line: "PASS MAP01 vk: quit cleanly", failed: 0 });
+  assert.deepEqual(judgeQuit("MAP01 vk", { code: 3221225477, crashed: true }), { line: "FAIL MAP01 vk: the engine crashed on its way out", failed: 1 });
+  assert.deepEqual(judgeQuit("MAP01 vk", { code: null, crashed: false }), { line: "FAIL MAP01 vk: the engine did not exit", failed: 1 });
+  assert.deepEqual(judgeQuit("MAP01 vk", { code: 1, crashed: false }), { line: "FAIL MAP01 vk: the engine exited with 1", failed: 1 });
+});
+
+test("an exit code is the process's once it has gone, or null while it runs on", async () => {
+  assert.equal(await exitCodeOf({ exitCode: 0 }), 0);
+  const proc = Object.assign(new EventEmitter(), { exitCode: null });
+  const later = exitCodeOf(proc, 1000);
+  proc.emit("exit", 7);
+  assert.equal(await later, 7);
+  assert.equal(await exitCodeOf(Object.assign(new EventEmitter(), { exitCode: null }), 10), null);
+});
+
+test("a WebGPU run of a quit runs on WebGPU alone", () => {
+  const w = webgpuOptions({ name: "quitclean", sides: [{ name: "vk", noGl: true, launchCvars: { v: 1 } }] }, compareQuit);
+  assert.deepEqual(w.sides, [{ name: "wgpu", noGl: true, webgpu: true, launchCvars: { v: 1 } }]);
 });
 
 test("a WebGPU run skips what WebGPU cannot do: GL beside it in one frame, or ray tracing", () => {

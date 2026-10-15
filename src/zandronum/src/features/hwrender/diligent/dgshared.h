@@ -95,6 +95,8 @@ int FrameWidth();
 int FrameHeight();
 void FinishFrame(Diligent::IDeviceContext *ctx);
 void ReleaseFrameTarget();
+// [rc4l] The frame fence released at the backend's shutdown (dgwindow.cpp), while the console its destructor reports to is still there.
+void ReleaseFrameFence();
 
 // [rc4l] GL draws its views with GL_DEPTH_CLAMP, keeping a surface nearer than the near plane at the near depth instead of cutting it away; a pipeline drawing the world asks for the same when the device can.
 void ClampDepthLikeGL(Diligent::GraphicsPipelineDesc &gp);

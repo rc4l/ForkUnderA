@@ -57,6 +57,11 @@ On WebGPU the backend frees its own GPU memory: each texture and buffer it makes
 (`FreeReleasedObjects`). A browser frees a released one only when its garbage collector runs, and a page resized a
 few times ran out of GPU memory first. Vulkan frees them itself.
 
+At exit the backend shuts down before the static destructors (`ShutdownBackend`, an `atterm` in
+`diligent/dgwindow.cpp`): the swapchain goes while its window is still there, the frame fence while the console
+its destructor reports to is still there, and Diligent's messages stop reaching the console. A quit crashed when
+the fence's message reached a console that had already been freed (scenario `quitclean`).
+
 Every 2D draw is recorded through `Record2DCanvas` (`record2d.cpp`), `features/draw2d` working it out: the
 backend's own frame buffer draws its 2D with it, and in a launch with GL the frame buffer `features/sidebyside`
 makes records GL's 2D with it beside GL drawing it, so GL's renderer records nothing itself.

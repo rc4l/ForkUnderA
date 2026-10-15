@@ -683,6 +683,12 @@ static void PaceFrames()
 	if (wait != 0) g_frameFence->Wait(wait);
 }
 
+void ReleaseFrameFence()
+{
+	g_frameFence.Release();
+	g_frameSignalled = 0;
+}
+
 void PresentFrame(Diligent::IDeviceContext *ctx, Diligent::ISwapChain *swap, bool pump)
 {
 #ifdef ZX_ENABLE_REPLAY

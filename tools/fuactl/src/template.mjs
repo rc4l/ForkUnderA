@@ -73,7 +73,7 @@ export function launchBackendApi(text) {
 
 // [rc4l] One locked launch of the wad with the side's settings applied, handed to `body` and always torn down; its launchCvars go on the command line, for what must hold from the level's upload, where its cvars are set once the level is up.
 function withEngine({ port, map, iwad, wadPath, gl, side = {}, size }, body) {
-  return withLockedInstance({ port, map, iwad, file: wadPath, gl, noGl: !!side.noGl, webgpu: !!side.webgpu, extra: side.launchCvars, width: size[0], height: size[1] }, async (c) => {
+  return withLockedInstance({ port, map, iwad, file: wadPath, gl, noGl: !!side.noGl, webgpu: !!side.webgpu, extra: side.launchCvars, width: size[0], height: size[1] }, async (c, inst) => {
     // [rc4l] A side without GL must really have none: a binary that ignores -vulkan would pass as GL beside an embedded backend.
     if (side.noGl) {
       const report = await cap.exec(c, "dumprenderer");
@@ -88,7 +88,7 @@ function withEngine({ port, map, iwad, wadPath, gl, side = {}, size }, body) {
     if (!gl && !side.noGl) await cap.exec(c, `fua_dg_standalone ${side.frame === "gl" || side.glDraws ? 0 : 1}`);
     for (const line of sideCommands(side)) await cap.exec(c, line);
     await cap.waitTics(c, 10);
-    return body(c);
+    return body(c, inst);
   });
 }
 
@@ -169,10 +169,55 @@ export function webgpuOptions(opts, compare = compareTemplate) {
   const vk = (opts.sides || GL_VS_VULKAN).find((s) => !s.gl && s.frame !== "gl");
   if (!vk) return null;
   const { frame, glDraws, ...rest } = vk;
-  if ([compareCounter, compareOverTime, compareSequence].includes(compare)) return { ...opts, sides: [{ ...rest, name: "wgpu", noGl: true, webgpu: true }] };
+  if ([compareCounter, compareOverTime, compareSequence, compareQuit].includes(compare)) return { ...opts, sides: [{ ...rest, name: "wgpu", noGl: true, webgpu: true }] };
   const boxes = Object.fromEntries(Object.entries(opts.boxes).map(([map, bs]) => [map, Object.fromEntries(Object.entries(bs).map(
     ([n, b]) => [n, { box: b.box, block: b.block, vantage: b.vantage, ceiling: WEBGPU_CEILING }]))]));
   return { ...opts, sides: [{ ...rest, name: "vk", noGl: true }, { ...rest, name: "wgpu", noGl: true, webgpu: true }], boxes };
+}
+
+// [rc4l] A quit judged: a crash file beside the engine's log, an engine still running (code null), or an exit code other than 0 fails it.
+export function judgeQuit(label, { code, crashed }) {
+  if (crashed) return { line: `FAIL ${label}: the engine crashed on its way out`, failed: 1 };
+  if (code == null) return { line: `FAIL ${label}: the engine did not exit`, failed: 1 };
+  if (code !== 0) return { line: `FAIL ${label}: the engine exited with ${code}`, failed: 1 };
+  return { line: `PASS ${label}: quit cleanly`, failed: 0 };
+}
+
+// [rc4l] proc's exit code once it has gone, or null when it is still running after timeoutMs.
+export function exitCodeOf(proc, timeoutMs = 15000) {
+  if (proc.exitCode != null) return Promise.resolve(proc.exitCode);
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(null), timeoutMs);
+    proc.once("exit", (code) => { clearTimeout(timer); resolve(code); });
+  });
+}
+
+// [rc4l] Each side launched on each map, played a moment and quit from its console as a player quits, then judged by judgeQuit: for a fault on the engine's way out, which no frame shows.
+export async function compareQuit({ name, wad, maps, sides, iwad = FREEDOOM2, port = 7796, size = [1280, 720], settleTics = 70 }) {
+  const wadPath = path.join(os.tmpdir(), `fua-${name}-template.wad`);
+  fs.writeFileSync(wadPath, wad);
+  const lines = [];
+  let failed = 0;
+  for (const map of maps) {
+    for (const side of sides) {
+      const label = `${map} ${side.name}`;
+      try {
+        const r = await withEngine({ port, map, iwad, wadPath, gl: !!side.gl, side, size }, async (c, inst) => {
+          await cap.waitTics(c, settleTics);
+          // [rc4l] Over the scenario's own connection, the bridge's only one; the engine leaves before it answers.
+          await c.rpc("console.exec", { text: "quit" }).catch(() => {});
+          const code = await exitCodeOf(inst.proc);
+          return judgeQuit(label, { code, crashed: fs.existsSync(`${inst.log}.crash`) });
+        });
+        lines.push(r.line);
+        failed += r.failed;
+      } catch (e) {
+        lines.push(`FAIL ${label}: ${e.message}`);
+        failed++;
+      }
+    }
+  }
+  return { lines, failed };
 }
 
 // [rc4l] A scenario's verdict as printed lines and an exit code: 0 all under ceiling, 1 failed, 3 refused.
