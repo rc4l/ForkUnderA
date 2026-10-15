@@ -4,9 +4,10 @@
 // [rc4l] The frame driver: arming a level for the backend, the per-frame entry point, and the present-to-present clock fua_frametimes reads.
 
 #include "features/hwrender/diligent/dgscene_internal.h"
+#include "features/draw2d/record.h"   // [rc4l] Clear2D
 #include "features/hwrender/backendonly.h"
 #include "features/hwrender/computation/levelsetup_compute.h"
-#include "features/mcp-bridge/computation/mcprpc_compute.h"   // [rc4l] SummarizeFrameTimes
+#include "features/perfstats/computation/perfstats_compute.h"   // [rc4l] ComputeFrameTimeSummary
 
 EXTERN_CVAR(Bool, fua_vis_check)
 EXTERN_CVAR(Bool, fua_sprite_check)
@@ -157,8 +158,8 @@ void ResetFrameTimes() { g_frameCount = 0; g_frameHead = 0; g_frameHavePrev = fa
 CCMD( fua_frametimes )
 {
 	if (g_frameCount < 8) { Printf( "fua_frametimes: not enough frames yet -- play for a second.\n" ); return; }
-	// [rc4l] The bridge's frame-time summary, so this and perf.capture agree on what a percentile is.
-	const zx::mcp::PerfSummary s = zx::mcp::SummarizeFrameTimes(std::vector<double>(g_frameMs, g_frameMs + g_frameCount));
+	// [rc4l] The shared frame-time summary, so this and perf.capture agree on what a percentile is.
+	const zx::perfstats::PerfSummary s = zx::perfstats::ComputeFrameTimeSummary(std::vector<double>(g_frameMs, g_frameMs + g_frameCount));
 	const double med = s.p50, p99 = s.p99;
 	// How many frames took more than twice the median -- that is what a stutter IS.
 	int hitches = 0; for (int i = 0; i < g_frameCount; i++) if (g_frameMs[i] > med * 2.0) hitches++;
@@ -235,7 +236,7 @@ CCMD( fua_frametimes )
 	ResetFrameTimes();
 }
 
-// [rc4l] See hud2d.h; it does not ask about fua_dg_standalone, since with the embedded window up GL's output is discarded either way.
+// [rc4l] See backendonly.h; it does not ask about fua_dg_standalone, since with the embedded window up GL's output is discarded either way.
 bool BackendPresenting()
 {
 	if (!fua_vulkan || !fua_dg_embed) return false;
@@ -275,7 +276,7 @@ void SettleLevelScene()
 		if (AdvanceLevelScene() && StandaloneActive()) return;
 }
 
-// [rc4l] One live frame from the current camera, its engine-side declaration in dglive.h.
+// [rc4l] One live frame from the current camera, declared for the engine in backendonly.h.
 void LiveFrame()
 {
 	// [rc4l] A launch without GL presents from its frame buffer's Update, where every path of D_Display passes.
@@ -368,7 +369,7 @@ void WipeEnd()
 	g_worldViewThisFrame = false;
 	DrawBackendFrame(false);
 	WipeTakeEnd();
-	zx::hwrender::Clear2D();
+	zx::draw2d::Clear2D();
 }
 
 void PresentBackendOnly(bool present)

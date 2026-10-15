@@ -4,7 +4,7 @@
 // [rc4l] GL's answers to its own sprite code's questions about the view, in one place so gl_sprite.cpp never references GLRenderer.
 
 #include "gl/system/gl_system.h"
-#include "features/hwrender/spriteview.h"
+#include "features/viewsetup/spriteview.h"
 #include "gl/renderer/gl_renderer.h"
 #include "gl/scene/gl_portal.h"
 #include "actor.h"
@@ -41,7 +41,7 @@ void GLViewAngles(float &yaw, float &pitch)
 	pitch = float(GLRenderer->mAngles.Pitch);
 }
 
-const zx::hwrender::SpriteViewProvider g_glProvider =
+const zx::viewsetup::SpriteViewProvider g_glProvider =
 {
 	GLViewActor, GLViewVector, GLNextSpriteIndex, GLPortalRejectsPoint, GLPortalIsMirror,
 	GLDynamicLightCount, GLViewAngles
@@ -49,4 +49,4 @@ const zx::hwrender::SpriteViewProvider g_glProvider =
 
 } // namespace
 
-const zx::hwrender::SpriteViewProvider &gl_SpriteView() { return g_glProvider; }
+const zx::viewsetup::SpriteViewProvider &gl_SpriteView() { return g_glProvider; }

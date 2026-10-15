@@ -1,6 +1,6 @@
 # web
 
-The browser build's glue: the page's arguments, its frame loop, its errors and crash reports, and the mouse. `docs/web-port-design.md` (section 9) has the plan, and `web/` at the repo root is the page.
+The browser build's glue: the page's arguments, its frame loop, and its errors and crash reports. `docs/web-port-design.md` (section 9) has the plan, and `web/` at the repo root is the page.
 
 - `webdriver.h`/`.cpp`, compiled only by the Emscripten build:
   - `InstallDriver()` installs `features/mainloop`'s frame driver. The browser then calls `D_RunFrame` once an animation frame. A restart reloads the page, and an escaped engine error shows on the page and leaves through `exit`.
@@ -15,14 +15,13 @@ The browser build's glue: the page's arguments, its frame loop, its errors and c
   - The engine tells the page what a report says about the game whenever it changes (`Module.fuaCrashContext`): release, map, load order, `cl_crashreports`, and the tracker's DSN on an official build only.
 - `computation/webargs_compute.h`: the query as arguments (`ComputeArgsFromQuery`), tested.
 - `computation/crashcontext_compute.h`: that context as JSON, with bare file names and the DSN only for an official build, tested.
-- `computation/mousecapture_compute.h`: what the game does with the mouse when a page's pointer lock comes and goes (`ComputeMouseCapture`), tested.
 
 ## In-engine hooks
 
 - The SDL layer asks its host (`posix/sdl/sdlhost.h`) wherever a page differs from a desktop, and holds no browser conditions itself:
   - `i_main.cpp`: `main` starts the host with `call_terms` (the driver here, the crash catcher on a desktop) and adds its arguments.
   - `i_system.cpp`: `I_FatalError` shows the error on the page before it exits, and `I_PickIWad` asks no dialog.
-  - `i_input.cpp`: the mouse follows `ComputeMouseCapture`, held while the page has the pointer.
+  - `i_input.cpp`: the mouse follows `features/mouse-capture`, held while the page has the pointer.
   - `hardware.cpp`: `I_SetMode` never makes an SDL fullscreen window, and `fullscreen` makes the canvas fullscreen instead of rebuilding the window. `fullscreen` and `vid_winscale` ask for no mode change at game start, which rebuilt the window on the first frame and sized the canvas to zero.
   - `sdlvideo.cpp`: `SDLFB::ScreenshotLater` has the page download the canvas after the frame, since WebGPU reads nothing back at once.
 - `d_main.cpp`: `D_RecoverFromError`, the loop's answer to a recoverable error, also handles one from a command the page runs (`fua_command`).

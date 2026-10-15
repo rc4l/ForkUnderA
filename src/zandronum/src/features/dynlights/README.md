@@ -18,9 +18,12 @@ so every module that lit a sprite or a wall included GL's headers to see a light
 - `cycler.h`, `cycler.cpp`: `FCycler`, the value a pulsing light (and a GL texture shader) cycles through,
   moved from `gl/utility/`.
 
-- `lightsettings.cpp`: the light settings both renderers read (`r_lights`, `r_attachedlights`,
-  `r_lights_checkside`, `r_lights_intensity`, `r_lights_size`, `r_light_sprites`, `r_light_particles`,
-  `r_lights_additive`), moved from `gl/dynlights/gl_dynlight1.cpp`; `dynlight.h` declares them.
+- `pointlight.h`/`.cpp`: the dynamic light on a point or an actor as GL's `gl_SetDynSpriteLight` sums it
+  (`PointLight`, `ActorLight`, `ActorDynamicLight`, `PointDynamicLight`), for sprites, particles, the weapon
+  and decals; moved from `features/sprites/spritebuild.cpp`, so a decal reads it without the sprites.
+
+The light settings both renderers read are `features/gldefs/lightsettings.cpp`, since changing one remakes the
+attached lights there; `dynlight.h` declares them.
 
 GLDEFS' light definitions and their attaching to actors are `features/gldefs`. GL keeps what is GL's: the
 light data it uploads (`FDynLightData`, `gl_GetLight`, `gl_lightbuffer`) and `gl_SetDynSpriteLight`. The backend reads the lights'

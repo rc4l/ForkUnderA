@@ -8,9 +8,9 @@
 
 namespace zx { namespace draw2d {
 
-zx::hwrender::Quad2D ComputeFillQuad(float x, float y, float w, float h, unsigned rgb, float alpha)
+zx::draw2d::Quad2D ComputeFillQuad(float x, float y, float w, float h, unsigned rgb, float alpha)
 {
-	zx::hwrender::Quad2D q;
+	zx::draw2d::Quad2D q;
 	memset(&q, 0, sizeof(q));
 	q.x = x; q.y = y; q.w = w; q.h = h;
 	q.u2 = 1.f; q.v2 = 1.f;
@@ -20,25 +20,25 @@ zx::hwrender::Quad2D ComputeFillQuad(float x, float y, float w, float h, unsigne
 	return q;
 }
 
-zx::hwrender::Quad2D ComputeLineQuad(int x1, int y1, int x2, int y2, unsigned rgb)
+zx::draw2d::Quad2D ComputeLineQuad(int x1, int y1, int x2, int y2, unsigned rgb)
 {
-	zx::hwrender::Quad2D q = ComputeFillQuad((float)x1, (float)y1, 0.f, 0.f, rgb, 1.f);
+	zx::draw2d::Quad2D q = ComputeFillQuad((float)x1, (float)y1, 0.f, 0.f, rgb, 1.f);
 	q.u2 = q.v2 = 0.f;
 	q.kind = kQuadLine;
 	q.lx2 = (float)x2; q.ly2 = (float)y2;
 	return q;
 }
 
-zx::hwrender::Quad2D ComputePixelQuad(int x, int y, unsigned rgb)
+zx::draw2d::Quad2D ComputePixelQuad(int x, int y, unsigned rgb)
 {
-	zx::hwrender::Quad2D q = ComputeFillQuad((float)x, (float)y, 1.f, 1.f, rgb, 1.f);
+	zx::draw2d::Quad2D q = ComputeFillQuad((float)x, (float)y, 1.f, 1.f, rgb, 1.f);
 	q.u2 = q.v2 = 0.f;
 	return q;
 }
 
-zx::hwrender::Quad2D ComputeScreenFillQuad(float w, float h, float r, float g, float b, float a, bool multiply)
+zx::draw2d::Quad2D ComputeScreenFillQuad(float w, float h, float r, float g, float b, float a, bool multiply)
 {
-	zx::hwrender::Quad2D q = ComputeFillQuad(0.f, 0.f, w, h, 0, a);
+	zx::draw2d::Quad2D q = ComputeFillQuad(0.f, 0.f, w, h, 0, a);
 	q.r = r; q.g = g; q.b = b;
 	q.blend = multiply ? kBlend2DMultiply : kBlend2DAlpha;
 	return q;
@@ -69,13 +69,13 @@ void ComputePolyTexCoords(const PolyTexIn &in, const float *points, int count, f
 	}
 }
 
-void ComputePolyTriangles(const zx::hwrender::Quad2D &base, const float *points, const float *uv, int count, std::vector<zx::hwrender::Quad2D> &out)
+void ComputePolyTriangles(const zx::draw2d::Quad2D &base, const float *points, const float *uv, int count, std::vector<zx::draw2d::Quad2D> &out)
 {
 	out.clear();
 	// [rc4l] GL draws it as a fan from the first point.
 	for (int i = 1; i + 1 < count; i++)
 	{
-		zx::hwrender::Quad2D q = base;
+		zx::draw2d::Quad2D q = base;
 		q.kind = kQuadTri;
 		q.x = points[0];              q.y = points[1];              q.u1 = uv[0];            q.v1 = uv[1];
 		q.lx2 = points[2 * i];        q.ly2 = points[2 * i + 1];    q.u2 = uv[2 * i];        q.v2 = uv[2 * i + 1];
@@ -144,9 +144,9 @@ void ComputeTextureQuad(const TextureQuadIn &in, TextureQuadOut &out)
 	out.a = (unsigned char)(in.alpha * 255.f);
 }
 
-zx::hwrender::Quad2D ComputeTextureQuadRecord(const TextureQuadOut &q)
+zx::draw2d::Quad2D ComputeTextureQuadRecord(const TextureQuadOut &q)
 {
-	zx::hwrender::Quad2D d = ComputeFillQuad(q.x, q.y, q.w, q.h, 0xffffffu, q.a / 255.f);
+	zx::draw2d::Quad2D d = ComputeFillQuad(q.x, q.y, q.w, q.h, 0xffffffu, q.a / 255.f);
 	d.u1 = q.u1; d.v1 = q.v1; d.u2 = q.u2; d.v2 = q.v2;
 	d.r = q.r / 255.f; d.g = q.g / 255.f; d.b = q.b / 255.f;
 	return d;
@@ -157,7 +157,7 @@ bool ComputeRebuild2DVertices(unsigned generation, unsigned builtGeneration, int
 	return generation != builtGeneration || quads != builtQuads;
 }
 
-bool ComputeOverlayQuad(const zx::hwrender::Quad2D &base, unsigned colorOverlay, zx::hwrender::Quad2D &out)
+bool ComputeOverlayQuad(const zx::draw2d::Quad2D &base, unsigned colorOverlay, zx::draw2d::Quad2D &out)
 {
 	if (colorOverlay == 0) return false;
 	out = base;

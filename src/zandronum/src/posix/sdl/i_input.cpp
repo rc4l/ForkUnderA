@@ -19,7 +19,7 @@
 #include "s_sound.h"
 // [BB] New #includes.
 #include "chat.h"
-#include "features/web/computation/mousecapture_compute.h"
+#include "features/mouse-capture/computation/mousecapture_compute.h"
 #include "sdlhost.h"   // [rc4l] MouseHeld
 
 static void I_CheckGUICapture ();

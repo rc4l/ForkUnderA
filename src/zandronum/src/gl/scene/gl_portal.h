@@ -132,7 +132,7 @@ public:
 	//
 	// [rc4l] It was a friend declaration naming GLSprite::Process, which meant the derivation could
 	// only ever live in a file that knew about GLPortal. Answering the question instead of exposing
-	// the two flags is what lets it move -- see features/hwrender/spriteview.h.
+	// the two flags is what lets it move -- see features/viewsetup/spriteview.h.
 	static bool IsMirroring() { return MirrorFlag != 0 || PlaneMirrorFlag != 0; }
 protected:
 

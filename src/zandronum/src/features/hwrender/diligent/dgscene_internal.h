@@ -60,7 +60,9 @@
 #include "features/hwrender/computation/mirrorsheen_compute.h"   // [rc4l] GL's sheen over a line mirror
 #include "features/hwrender/computation/desaturate_compute.h"   // [rc4l] a sector's desaturation, as main.fp applies it
 #include "features/levelmesh/computation/wallbatch_compute.h"   // [rc4l] ComputeFanTriangleVertex, a mirror quad split as GL fans it
-#include "features/hwrender/hud2d.h"
+#include "features/hwrender/backendonly.h"
+#include "features/viewsetup/viewsetup.h"
+#include "features/visibility/skyfog.h"
 #include "features/horizon/computation/horizon_compute.h"   // [rc4l] ComputeQuadMayBeVisible for mirrors out of sight, ComputeEyeFromViewProjection for the horizon sky
 #include "features/hwrender/diligent/dglight_glsl.h"   // [rc4l] the sector light, shared with the horizon pass
 #include "v_video.h"
@@ -356,9 +358,8 @@ bool DiligentShowWindow(FString &report);
 void *GetBackendWindow();
 void Fua_SetBackendWindowSize(int w, int h);
 
-// [rc4l] The texture cache (dgtexture.cpp) and the sky's fog (dgsky.cpp).
+// [rc4l] The texture cache (dgtexture.cpp).
 void ReleaseMaterials();
-void GetSkyFog(float &r, float &g, float &b, float &density);
 
 // [rc4l] The world pass and frame composition (dgscene.cpp).
 bool CreateColorTarget(int w, int h, const char *name, Diligent::RefCntAutoPtr<Diligent::ITexture> &color);
@@ -424,7 +425,7 @@ void RefreshMovedGeometry(Diligent::IDeviceContext *ctx);
 void ReserveDynamicSlots();
 bool SceneUpload(FString &report);
 
-// [rc4l] Mirrors, reflective planes and stacked views (dgviews.cpp).
+// [rc4l] Mirrors (dgviews.cpp), and reflective planes and stacked views (dgviewtargets.cpp).
 void CollectMirrors();
 void DrawPlaneMirrorSurfaces(Diligent::IDeviceContext *ctx);
 void DrawStackSurfaces(Diligent::IDeviceContext *ctx);
@@ -476,7 +477,7 @@ bool CreateViewTextures(int w, int h, const char *name,
 bool CreatePictureBinding(Diligent::IPipelineState *pso, const char *var, Diligent::ITexture *tex,
 	Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding> &srb);
 
-// [rc4l] The sky (dgsky.cpp).
+// [rc4l] The sky (dgsky.cpp, dgskyportal.cpp, dgskylooks.cpp).
 void EnsureSky();
 // [rc4l] The marker a scene shader takes GLDEFS' hardware shaders at, and the block that replaces it (dgpipelines.cpp), each shader checked to compile alone and all of them dropped if together they break the scene shaders.
 #define kUserShaderMarker "//FUA_USER_SHADERS"

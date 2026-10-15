@@ -4,8 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from './serve.mjs';
 import { smoke } from './smoke.mjs';
-import { inPage } from './check.mjs';
-import { WATCH_SOUNDS, WATCH_TEXTURES, repeatedSounds } from './watch.mjs';
+import { WATCH_SOUNDS, WATCH_TEXTURES, inPage, pause, repeatedSounds } from './page.mjs';
 
 // [rc4l] A run as steps: "god; give all; wait 1000; +attack" is console lines with waits in milliseconds between them.
 export function parseRun(text) {
@@ -15,7 +14,7 @@ export function parseRun(text) {
 
 // [rc4l] The page code a run is: each command through Module.fuaCommand, each wait a pause, then what the watches saw since the first step.
 export function runScript(steps) {
-  const body = steps.map((s) => (s.wait !== undefined ? `await new Promise((r) => setTimeout(r, ${s.wait}));` : `Module.fuaCommand(${JSON.stringify(s.command)});`)).join('\n');
+  const body = steps.map((s) => (s.wait !== undefined ? pause(s.wait) : `Module.fuaCommand(${JSON.stringify(s.command)});`)).join('\n');
   return inPage(`const from = window.fuaSounds.length, heldBefore = window.fuaHeld.size;
     ${body}
     return { sounds: window.fuaSounds.slice(from), heldBefore, heldAfter: window.fuaHeld.size };`);

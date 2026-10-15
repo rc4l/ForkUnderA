@@ -62,16 +62,16 @@ screen itself):
 
 ## In-engine hooks
 
-- `win32/hardware.cpp` and `posix/sdl/hardware.cpp` `I_CreateRenderer`: `CreateFrameDriver` over GL's
-  renderer and the backend's.
+- `win32/hardware.cpp`, `posix/sdl/hardware.cpp` and `posix/cocoa/i_video.mm` `I_CreateRenderer`:
+  `CreateLaunchRenderer` (`backendrenderer.cpp`), GL's renderer and the backend's under `CreateFrameDriver`,
+  or the backend's alone in a launch without GL.
 - `r_renderer.h` `FRenderer::BeginFrame`: GL's frame prologue, which the driver runs once a frame.
 - `r_utility.h`/`.cpp`: `r_viewLens` and `r_frameSerial`; `p_pspr.cpp` `P_BobWeapon` steps `curbob` once
   per `r_frameSerial`.
 - `gl/scene/gl_scene.cpp` `FGLRenderer::RenderView`, `RenderViewpoint` and `ProcessScene`: `BeginViewpoint`,
   `EndViewpoint` and `MarkMapSection`. `FGLInterface` derives from `FLevelRenderer`.
-- `gl/system/gl_framebuffer.cpp` and `features/hwrender/backendvideo.cpp`: `ForgetCamera` on a new frame
-  buffer and a game restart.
-- `features/hwrender/backendrenderer.cpp` `FBackendRenderer`: an `FLevelRenderer` whose `RenderView` is
+- `backendrenderer.cpp` `FBackendRenderer`, moved from `features/hwrender` so the backend does not call the
+  frame: an `FLevelRenderer` whose `RenderView` is
   `RenderPlayerView`. Its `RenderTextureView` is a camera's viewpoint, `StandaloneScene` and
   `RenderBackendCamera`.
 - `features/levelmesh/captureshading.cpp`, `features/sprites/spritebuild.cpp`, `pspritebuild.cpp` and

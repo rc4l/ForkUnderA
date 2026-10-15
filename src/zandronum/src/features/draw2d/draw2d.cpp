@@ -27,31 +27,31 @@ PalEntry DrawColor(int palcolor, uint32 color)
 	return ComputeDrawColorDirect(palcolor, color) ? PalEntry(color) : GPalette.BaseColors[palcolor];
 }
 
-zx::hwrender::Quad2D PrepareLine(int x1, int y1, int x2, int y2, PalEntry color)
+zx::draw2d::Quad2D PrepareLine(int x1, int y1, int x2, int y2, PalEntry color)
 {
 	// [rc4l] The automap is made of these, and a backend that only replays rects drew its background and nothing else.
 	return ComputeLineQuad(x1, y1, x2, y2, RGBOf(color));
 }
 
-zx::hwrender::Quad2D PreparePixel(int x, int y, PalEntry color)
+zx::draw2d::Quad2D PreparePixel(int x, int y, PalEntry color)
 {
 	return ComputePixelQuad(x, y, RGBOf(color));
 }
 
-zx::hwrender::Quad2D PrepareDim(PalEntry color, float amount, int x, int y, int w, int h)
+zx::draw2d::Quad2D PrepareDim(PalEntry color, float amount, int x, int y, int w, int h)
 {
 	// [rc4l] The menu's background dim and the pill behind every menu tab; material NULL means flat colour.
 	return ComputeFillQuad((float)x, (float)y, (float)w, (float)h, RGBOf(color), amount);
 }
 
-zx::hwrender::Quad2D PrepareClear(int left, int top, int right, int bottom, PalEntry color)
+zx::draw2d::Quad2D PrepareClear(int left, int top, int right, int bottom, PalEntry color)
 {
 	// [rc4l] A scissored glClear is still a filled rectangle as far as a backend is concerned: the console background and the menu backdrop.
 	return ComputeFillQuad((float)left, (float)top, (float)(right - left), (float)(bottom - top), RGBOf(color), 1.f);
 }
 
 bool PreparePoly(FTexture *tex, const FVector2 *points, int npoints, double originx, double originy, double scalex, double scaley,
-	angle_t rotation, FDynamicColormap *colormap, int lightlevel, PolyDraw &draw, std::vector<zx::hwrender::Quad2D> &tris)
+	angle_t rotation, FDynamicColormap *colormap, int lightlevel, PolyDraw &draw, std::vector<zx::draw2d::Quad2D> &tris)
 {
 	tris.clear();
 	if (npoints < 3) return false;
@@ -69,7 +69,7 @@ bool PreparePoly(FTexture *tex, const FVector2 *points, int npoints, double orig
 	}
 	const PolyTexIn in = { originx, originy, scalex, scaley, rotation, tex->GetScaledWidth(), tex->GetScaledHeight(), tex->bHasCanvas };
 	ComputePolyTexCoords(in, &draw.points[0], npoints, &draw.uv[0]);
-	zx::hwrender::Quad2D base = ComputeFillQuad(0.f, 0.f, 0.f, 0.f, 0xffffffu, 1.f);
+	zx::draw2d::Quad2D base = ComputeFillQuad(0.f, 0.f, 0.f, 0.f, 0xffffffu, 1.f);
 	base.material = draw.material;
 	base.r = draw.r;
 	base.g = draw.g;
@@ -78,7 +78,7 @@ bool PreparePoly(FTexture *tex, const FVector2 *points, int npoints, double orig
 	return true;
 }
 
-void PrepareFlatFill(int left, int top, int right, int bottom, FTexture *src, bool localOrigin, std::vector<zx::hwrender::Quad2D> &out)
+void PrepareFlatFill(int left, int top, int right, int bottom, FTexture *src, bool localOrigin, std::vector<zx::draw2d::Quad2D> &out)
 {
 	out.clear();
 	const zx::materials::MaterialRef mat = zx::materials::MaterialForTexture(src, false);
@@ -90,7 +90,7 @@ void PrepareFlatFill(int left, int top, int right, int bottom, FTexture *src, bo
 	for (size_t i = 0; i < tiles.size(); i++)
 	{
 		const FlatTile &t = tiles[i];
-		zx::hwrender::Quad2D q = ComputeFillQuad(t.x, t.y, t.w, t.h, 0xffffffu, 1.f);
+		zx::draw2d::Quad2D q = ComputeFillQuad(t.x, t.y, t.w, t.h, 0xffffffu, 1.f);
 		q.material = mat;
 		q.u1 = ul + t.u1 * (ur - ul); q.u2 = ul + t.u2 * (ur - ul);
 		q.v1 = vt + t.v1 * (vb - vt); q.v2 = vt + t.v2 * (vb - vt);
@@ -124,7 +124,7 @@ void PrepareTexture(FTexture *img, const DCanvas::DrawParms &parms, TextureDraw 
 	out.r = q.r; out.g = q.g; out.b = q.b; out.a = q.a;
 	out.x2 = q.x2; out.y2 = q.y2;
 
-	zx::hwrender::Quad2D &d = out.quad;
+	zx::draw2d::Quad2D &d = out.quad;
 	d = ComputeTextureQuadRecord(q);
 	d.material = mat;
 	d.clipL = parms.lclip; d.clipT = parms.uclip; d.clipR = parms.rclip; d.clipB = parms.dclip;

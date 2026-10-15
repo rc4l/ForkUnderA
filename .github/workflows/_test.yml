@@ -50,6 +50,12 @@ jobs:
       - name: Device-creation tripwire
         run: bash tools/device-create-tripwire.sh
 
+      # [rc4l] Features include each other one way, and from outside only through their roots or pure computation/.
+      - name: Layering tripwire
+        run: |
+          python3 tools/layering_tripwire_test.py
+          python3 tools/layering_tripwire.py
+
       # [rc4l] A .ps1 with non-ASCII bytes and no UTF-8 BOM fails to PARSE under Windows PowerShell
       # 5.1 (the default shell on a stock Windows box) because it decodes as ANSI. CI cannot notice
       # on its own -- our workflows run `shell: pwsh`, which reads UTF-8 regardless -- so this only

@@ -457,7 +457,7 @@ zx::hwrender::BackendCamera CurrentCamera()
 	// [MobiusU9B] The view's own lens, as GL's SetProjection takes it, so a forced aspect ratio is stretched across the window and the walks' frustum covers the picture.
 	const zx::viewsetup::ViewSetup &view = zx::viewsetup::CurrentView();
 	zx::hwrender::ComputeCameraLens(g_frame.fovOverride, g_frame.aspectOverride, view.fov, view.ratio, view.fovRatio, c);
-	ViewCameraFromEngine(c);
+	zx::viewsetup::ViewCameraFromEngine(c);
 	return c;
 }
 // [rc4l] The view window GL's SetViewport draws the player's view into, as a clip-space window over the whole target.

@@ -25,7 +25,7 @@
 class AActor;
 class FTexture;
 
-namespace zx { namespace hwrender {
+namespace zx { namespace viewsetup {
 
 struct SpriteViewProvider
 {
@@ -50,6 +50,6 @@ void SetSpriteViewProvider(const SpriteViewProvider *p);
 // Never NULL: before anyone registers, this answers "no camera actor, no portal".
 const SpriteViewProvider &SpriteView();
 
-}} // namespace zx::hwrender
+}} // namespace zx::viewsetup
 
 #endif // ZX_SPRITEVIEW_H

@@ -31,8 +31,6 @@ const int *FakeSubsModelledOn(int sector, int &count);
 // [rc4l] Forgets every fill, for a new level.
 void ClearFakePlanes();
 
-// [rc4l] Whether a sector takes another's heights (Transfer_Heights), whose planes then depend on where the viewer stands.
-bool ViewDependent(const sector_t *s);
 
 }} // namespace zx::levelmesh
 

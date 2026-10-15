@@ -13,6 +13,7 @@
 #include "features/visibility/computation/walkslices_compute.h"
 #include "features/jobs/jobs.h"   // [rc4l] the pool a sliced walk runs on
 #include "features/jobs/computation/sharedarray_compute.h"   // [rc4l] the marks a walk's lanes share
+#include "features/horizon/horizon.h"   // [rc4l] OwnsSky
 #include "features/levelmesh/wallcache.h"   // [rc4l] the backend's walk bits and sky surfaces
 #include "features/levelmesh/flatmesh.h"    // [rc4l] the stacked views, and the scene nesting a stacked view's sprites are captured in
 #include "features/levelmesh/staticmesh.h"
@@ -21,8 +22,8 @@
 #include "features/surfaces/computation/skywall_compute.h"
 #include "features/surfaces/computation/wallgeom_compute.h"   // [rc4l] where a pinched wall ends, as SetWallCoordinates moves it
 #include "features/materials/materials.h"     // [rc4l] whether a one-sided wall has a texture, as GL asks
-#include "features/hwrender/spriteview.h"   // [rc4l] the sprite view inside a portal view
-#include "features/hwrender/hud2d.h"        // [rc4l] SetSkyFog
+#include "features/viewsetup/spriteview.h"   // [rc4l] the sprite view inside a portal view
+#include "features/visibility/skyfog.h"
 #include "features/hwrender/computation/skyfog_compute.h"
 #include "features/viewsetup/viewsetup.h"    // [rc4l] the view's actor and frustum
 #include "features/fixed64/computation/angle_interp_compute.h"   // [rc4l] a skybox's turn, as GL interpolates it
@@ -323,7 +324,8 @@ void ApplySkyEvent(const SkyEvent &e)
 	case SkyEvent::kSkyWall:
 		if (e.skybox != NULL && g_spec.portals != NULL) AddPortalLine(PortalFor(NULL, e.skybox), e.x1, e.y1, e.x2, e.y2);
 		if (g_spec.player && e.skybox == NULL && !g_skyFadeSeen) { g_skyFadeSeen = true; g_skyFade = e.fade; }
-		zx::levelmesh::AddViewSkyQuad(g_spec.skyList, e.x1, e.y1, e.x2, e.y2, e.zb, e.zt, e.skybox, e.special, zx::hwrender::ComputeSkyQuadKey(e.sky));
+		// [rc4l] A horizon line's sky belongs to features/horizon, which builds it for every eye height.
+		if (!zx::horizon::OwnsSky(e.special)) zx::levelmesh::AddViewSkyQuad(g_spec.skyList, e.x1, e.y1, e.x2, e.y2, e.zb, e.zt, e.skybox, zx::hwrender::ComputeSkyQuadKey(e.sky));
 		break;
 	case SkyEvent::kSkyHole:
 		zx::levelmesh::AddViewSkyHole(g_spec.skyList, e.x1, e.y1, e.x2, e.y2, e.zb, e.zt);
@@ -1443,7 +1445,7 @@ void ProcessSectorStacks()
 }
 
 // [rc4l] The sprite view inside a derived portal view, standing in for GL's mCurrentPortal and mViewActor there: no actor of its own, and in a mirror the mirror's clip; the rest is the outer view's.
-const zx::hwrender::SpriteViewProvider *g_outerView = NULL;
+const zx::viewsetup::SpriteViewProvider *g_outerView = NULL;
 line_t *g_viewMirror = NULL;
 AActor *PortalViewActor() { return NULL; }
 void PortalViewVector(float &x, float &y) { x = zx::viewsetup::CurrentView().vectorX; y = zx::viewsetup::CurrentView().vectorY; }
@@ -1452,7 +1454,7 @@ bool PortalRejects(fixed_t x, fixed_t y) { return g_viewMirror != NULL && P_Poin
 bool PortalMirrors() { return g_viewMirror != NULL; }
 int PortalLightCount() { return g_outerView->DynamicLightCount(); }
 void PortalViewAngles(float &yaw, float &pitch) { yaw = zx::viewsetup::CurrentView().yaw; pitch = zx::viewsetup::CurrentView().pitch; }
-const zx::hwrender::SpriteViewProvider g_portalView =
+const zx::viewsetup::SpriteViewProvider g_portalView =
 {
 	PortalViewActor, PortalViewVector, PortalSpriteIndex, PortalRejects, PortalMirrors, PortalLightCount, PortalViewAngles
 };
@@ -1461,12 +1463,12 @@ const zx::hwrender::SpriteViewProvider g_portalView =
 void PortalSprites(void (*sprite)(AActor *thing), line_t *mirror)
 {
 	const std::vector<sector_t *> reached(g_sectorOrder);
-	g_outerView = &zx::hwrender::SpriteView();
+	g_outerView = &zx::viewsetup::SpriteView();
 	g_viewMirror = mirror;
-	zx::hwrender::SetSpriteViewProvider(&g_portalView);
+	zx::viewsetup::SetSpriteViewProvider(&g_portalView);
 	for (size_t i = 0; i < reached.size(); i++)
 		for (AActor *thing = reached[i]->thinglist; thing != NULL; thing = thing->snext) sprite(thing);
-	zx::hwrender::SetSpriteViewProvider(g_outerView);
+	zx::viewsetup::SetSpriteViewProvider(g_outerView);
 	g_viewMirror = NULL;
 }
 
@@ -1724,7 +1726,7 @@ void WalkView(bool publish, bool derive, const WalkHooks *hooks)
 	{
 		ProcessSectorStacks();
 		const zx::hwrender::SkyFog fog = zx::hwrender::ComputeSkyFog(skyfog, gl_fixedcolormap != CM_DEFAULT, g_skyFadeSeen ? g_skyFade : 0);
-		zx::hwrender::SetSkyFog(fog.r, fog.g, fog.b, fog.a);
+		zx::visibility::SetSkyFog(fog.r, fog.g, fog.b, fog.a);
 	}
 	zx::levelmesh::SetMainVisibility(publish);
 	clock.Unclock();

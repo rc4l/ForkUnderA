@@ -16,10 +16,11 @@
 
 #include "features/hwrender/diligent/dgshared.h"
 #include "features/hwrender/computation/backendview_compute.h"   // [rc4l] ComputeInvertMatrix4
-#include "features/levelmesh/projdecals.h"
+#include "features/levelmesh/projdecals.h"   // [rc4l] the marks fua_projdecals_stats lists
 #include "features/levelmesh/computation/decalproject_compute.h"   // [rc4l] ComputeDecalPass
 #include "features/hwrender/computation/worldpipelines_compute.h"   // [rc4l] ComputeDecalPassBlend, the blend a pass draws with
 
+#include "c_dispatch.h"              // CCMD
 #include "r_defs.h"                  // sector_t
 #include "r_state.h"                 // sectors, numsectors
 #include "m_fixed.h"                 // FIXED2FLOAT
@@ -391,10 +392,13 @@ static Diligent::RefCntAutoPtr<Diligent::IBuffer> g_ddCB;
 static int g_ddDrawn = 0, g_ddBoxes = 0, g_ddTextures = 0;
 static const char *g_ddBail = "";
 
-void GetDeferredDecalStats(int &boxes, int &draws, int &textures, const char **bail)
+// [rc4l] The projected decals live, what the deferred pass drew of them last frame, and the marks themselves, since a count cannot say which mark went missing.
+CCMD(fua_projdecals_stats)
 {
-	boxes = g_ddBoxes; draws = g_ddDrawn; textures = g_ddTextures;
-	if (bail) *bail = g_ddBail;
+	Printf("projected decals: %d live\n", zx::levelmesh::GetProjectedDecalCount());
+	Printf("deferred pass: %d boxes in %d draws, %d textures%s%s\n",
+		g_ddBoxes, g_ddDrawn, g_ddTextures, *g_ddBail ? ", stopped: " : "", g_ddBail);
+	zx::levelmesh::PrintProjectedDecals(12);
 }
 
 void ReleaseDecalPipelines()

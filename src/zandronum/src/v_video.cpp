@@ -68,7 +68,7 @@
 #include "menu/menu.h"
 #include "r_data/voxels.h"
 #include "features/fua-caching/fua_caching.h"
-#include "features/hwrender/hud2d.h"                              // [rc4l] vid_fps per renderer
+#include "features/draw2d/record.h"
 #include "features/hwrender/computation/rendererrate_compute.h"
 #include "features/hwrender/backendonly.h"                         // [rc4l] BackendApiName, for the backend line's name
 
@@ -923,7 +923,7 @@ void DFrameBuffer::DrawRateStuff ()
 					int ms, fps;
 					zx::hwrender::RendererRateShown(line != 0, ms, fps);
 					chars = zx::hwrender::ComputeRateText(fpsbuff, countof(fpsbuff), line ? zx::hwrender::ComputeBackendRateName(zx::hwrender::BackendApiName()) : "GL", ms, fps);
-					zx::hwrender::Set2DTarget(line ? zx::hwrender::k2DBackendOnly : zx::hwrender::k2DGLOnly);
+					zx::draw2d::Set2DTarget(line ? zx::draw2d::k2DBackendOnly : zx::draw2d::k2DGLOnly);
 				}
 				else chars = mysnprintf (fpsbuff, countof(fpsbuff), "%2u ms (%3u fps)", howlong, LastCount);
 				// [rc4l] Drawn on a canvas fua_fps_scale times smaller than the screen, so each glyph comes out that many times larger.
@@ -932,7 +932,7 @@ void DFrameBuffer::DrawRateStuff ()
 				DrawText (ConFont, CR_WHITE, box.x, 0, (char *)&fpsbuff[0],
 					DTA_VirtualWidth, box.virtualWidth, DTA_VirtualHeight, box.virtualHeight, DTA_KeepRatio, true, TAG_DONE);
 			}
-			zx::hwrender::Set2DTarget(zx::hwrender::k2DBoth);
+			zx::draw2d::Set2DTarget(zx::draw2d::k2DBoth);
 
 			DWORD thisSec = ms/1000;
 			if (LastSec < thisSec)

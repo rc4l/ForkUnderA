@@ -3,7 +3,6 @@
 
 #include "features/sprites/spritebuild.h"
 #include "features/levelmesh/levelmesh.h"   // [rc4l] LightListBottom
-#include "features/hwrender/computation/lighttouch_compute.h"   // [rc4l] ComputeDynLightColor
 #include "features/frame/computation/oracle_compute.h"   // [rc4l] OracleTally
 #include "features/jobs/jobs.h"   // [rc4l] the pool BuildSprites derives on
 
@@ -13,7 +12,7 @@
 #include "features/sprites/computation/spritequad_compute.h"
 #include "features/sprites/computation/spritelight_compute.h"
 #include "features/sprites/computation/spriteclip_compute.h"
-#include "features/sprites/spriteframe.h"   // [rc4l] gl_GetSpriteFrame
+#include "features/materials/spriteframe.h"   // [rc4l] gl_GetSpriteFrame
 #include "features/damage-tint/damagetint.h"   // [rc4l] DamageTint_SpriteGradient
 #include "features/sprites/computation/spriteframe_compute.h"   // [rc4l] ComputeSpriteOnGameThread
 #include "features/sprites/computation/modelpose_compute.h"
@@ -24,7 +23,8 @@
 #include "features/levelmesh/captureshading.h"
 #include "features/levelmesh/modelmesh.h"           // [rc4l] a derived model's capture
 #include "features/levelmesh/computation/flatmesh_compute.h"
-#include "features/hwrender/spriteview.h"
+#include "features/viewsetup/spriteview.h"
+#include "features/viewsetup/viewsetup.h"   // [rc4l] SpritesTakeDynamicLight
 #include "features/materials/materials.h"
 
 #include "p_local.h"
@@ -44,6 +44,7 @@
 #include "features/rendersettings/rendersettings.h"   // [rc4l] the render settings it reads
 #include "features/models/models.h"   // [rc4l] gl_FindModelFrame and the models
 #include "features/dynlights/dynlight.h"   // [rc4l] ADynamicLight, FLightNode
+#include "features/dynlights/pointlight.h"
 
 #include <string.h>
 #include <map>
@@ -65,8 +66,6 @@ EXTERN_CVAR(Bool, r_light_sprites)
 EXTERN_CVAR(Bool, r_light_particles)
 EXTERN_CVAR(Int, r_particles_style)
 EXTERN_CVAR(Bool, r_billboard_particles)
-EXTERN_CVAR(Float, r_lights_size)
-EXTERN_CVAR(Float, r_lights_intensity)
 EXTERN_CVAR(Float, transsouls)
 
 // [rc4l] Derive every sprite beside GL's and compare them bit for bit, counting what differs for fua_sprite_report.
@@ -121,11 +120,6 @@ int StyleBlendMode(const FRenderStyle &s, float alpha)
 	return ComputeSpriteBlendMode(s.BlendOp, s.DestAlpha, alpha);
 }
 
-bool SpritesTakeDynamicLight()
-{
-	return r_lights && zx::hwrender::SpriteView().DynamicLightCount() && !gl_fixedcolormap && r_light_sprites;
-}
-
 // [rc4l] The lower edge of each light list entry at the actor, as SplitSprite and SetSpriteColor measure it.
 static int LightListBottoms(const AActor *actor, const sector_t *sector, float *bottoms, int max)
 {
@@ -149,41 +143,6 @@ static void TakeListLight(const lightlist_t &entry, bool clampLight, int &lightl
 	}
 }
 
-// [rc4l] gl_SetDynSpriteLight: the dynamic light at a point in a subsector, but not from a light `self` carries that does not light it.
-static void PointLight(fixed_t x, fixed_t y, fixed_t z, subsector_t *subsec, const AActor *self, float out[3])
-{
-	for (FLightNode *node = subsec->lighthead; node; node = node->nextLight)
-	{
-		ADynamicLight *light = node->lightsource;
-		if ((light->flags2 & MF2_DORMANT) || ((light->flags4 & MF4_DONTLIGHTSELF) && light->target == self)) continue;
-		const float dist = FVector3(FIXED2FLOAT(x - light->x), FIXED2FLOAT(y - light->y), FIXED2FLOAT(z - light->z)).Length();
-		const float radius = light->GetRadius() * r_lights_size;
-		// [rc4l] gl_SetDynSpriteLight takes the light's colour without the additive scaling a surface's light has.
-		float c[3];
-		zx::hwrender::ComputeDynLightColor(light->GetRed(), light->GetGreen(), light->GetBlue(), false, r_lights_intensity, c);
-		const float bright = light->IsSubtractive() ? (float)FVector3(c[0], c[1], c[2]).Length() : 0.f;
-		ComputeSpriteLightTerm(dist, radius, c[0], c[1], c[2], light->IsSubtractive(), bright, out);
-	}
-}
-
-// [rc4l] gl_SetDynSpriteLight for an actor, summed the way GL sums it.
-static void ActorLight(const AActor *self, float out[3])
-{
-	PointLight(self->x, self->y, self->z + (self->height >> 1), self->subsector, self, out);
-}
-
-void ActorDynamicLight(const AActor *actor, float out[3])
-{
-	out[0] = out[1] = out[2] = 0.f;
-	ActorLight(actor, out);
-}
-
-void PointDynamicLight(fixed_t x, fixed_t y, fixed_t z, subsector_t *subsec, float out[3])
-{
-	out[0] = out[1] = out[2] = 0.f;
-	if (subsec != NULL) PointLight(x, y, z, subsec, NULL, out);
-}
-
 // [rc4l] An actor as GLSprite::Process first takes it: whether it is drawn from here at all, where, and the model it is drawn as, if any.
 struct Subject
 {
@@ -197,7 +156,7 @@ struct Subject
 
 static bool SubjectOf(AActor *thing, Subject &s)
 {
-	const zx::hwrender::SpriteViewProvider &view = zx::hwrender::SpriteView();
+	const zx::viewsetup::SpriteViewProvider &view = zx::viewsetup::SpriteView();
 	if (thing == view.ViewActor()) return false;
 	if (thing == NULL || thing->sprite == 0 || !thing->IsVisibleToPlayer()) return false;
 
@@ -322,7 +281,7 @@ SpriteDrawLook SpriteDrawLookAt(const SpriteStyle &style, float trans, const FCo
 static void DrawLight(AActor *thing, const Look &l, float dyn[3])
 {
 	dyn[0] = dyn[1] = dyn[2] = 0.f;
-	if (l.so.style.blendOp != kOpShadow && !l.fullbright && SpritesTakeDynamicLight()) ActorLight(thing, dyn);
+	if (l.so.style.blendOp != kOpShadow && !l.fullbright && zx::viewsetup::SpritesTakeDynamicLight()) zx::dynlights::ActorLight(thing, dyn);
 }
 
 // [rc4l] GL's ThingColor: a stencil actor's fill, else white.
@@ -366,7 +325,7 @@ static void DeriveModel(AActor *thing, const Subject &s, const Look &l, bool che
 // [rc4l] Derive an actor's sprite as GLSprite::Process and Draw do: the pieces drawn, 0 for none; on a worker thread (`lane`), -1 when its material is not made yet, which only the game thread may do.
 static int DeriveSprite(AActor *thing, const Subject &s, SpritePiece *out, int max, bool lane = false)
 {
-	const zx::hwrender::SpriteViewProvider &view = zx::hwrender::SpriteView();
+	const zx::viewsetup::SpriteViewProvider &view = zx::viewsetup::SpriteView();
 	const int spritenum = s.spritenum;
 	const fixed_t scaleX = s.scaleX, scaleY = s.scaleY, thingx = s.thingx, thingy = s.thingy, frac = s.frac;
 	const float x = s.x, y = s.y, z = s.z;
@@ -554,7 +513,7 @@ static int DeriveSprite(AActor *thing, const Subject &s, SpritePiece *out, int m
 // [rc4l] Derive a particle as GLSprite::ProcessParticle and Draw do: false when it draws nothing, as an untextured square does not reach the backend.
 static bool DeriveParticle(particle_t *particle, sector_t *sector, SpritePiece &p)
 {
-	const zx::hwrender::SpriteViewProvider &view = zx::hwrender::SpriteView();
+	const zx::viewsetup::SpriteViewProvider &view = zx::viewsetup::SpriteView();
 	if (view.PortalRejectsPoint(particle->x, particle->y)) return false;
 	if (particle->trans == 0) return false;
 	// [rc4l] Only a round or smooth particle has a texture, and the backend draws no sprite without one.
@@ -624,7 +583,7 @@ static bool DeriveParticle(particle_t *particle, sector_t *sector, SpritePiece &
 	zx::levelmesh::CaptureSpriteShading(lightlevel, getExtraLight(), cm, ComputePlainDrawLook(trans), color.d, mp);
 	float dyn[3] = { 0.f, 0.f, 0.f };
 	if (r_lights && view.DynamicLightCount() && !gl_fixedcolormap && r_light_particles)
-		PointLight(particle->x, particle->y, particle->z, particle->subsector, NULL, dyn);
+		zx::dynlights::PointLight(particle->x, particle->y, particle->z, particle->subsector, NULL, dyn);
 	mp.dynR = dyn[0]; mp.dynG = dyn[1]; mp.dynB = dyn[2];
 	mp.cpuLight = true;
 	mp.normX = mp.normY = mp.normZ = 0.f;
@@ -865,3 +824,15 @@ CCMD( fua_sprite_report )
 	zx::sprites::g_onlyOurs = zx::sprites::g_onlyGL = 0;
 	zx::sprites::g_checkedModelSurfaces = 0;
 }
+
+namespace zx { namespace sprites {
+
+// [rc4l] The model capture's pieces reach fua_sprite_check through its listener, since the capture is below the sprites.
+static void HearModelPiece(const void *who, bool fromGL, const MeshPiece &piece, const MeshVertex *verts, int count)
+{
+	if (fromGL) NoteGLSprite(who, false, piece, verts, count);
+	else NoteDerivedSprite(who, piece, verts, count);
+}
+static const bool s_hearingModels = (zx::levelmesh::SetModelPieceListener(&HearModelPiece), true);
+
+}} // namespace zx::sprites

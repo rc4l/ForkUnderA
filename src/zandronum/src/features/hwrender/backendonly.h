@@ -6,11 +6,12 @@
 #ifndef ZX_BACKENDONLY_H
 #define ZX_BACKENDONLY_H
 
-// [rc4l] Diligent-free like hud2d.h, since the engine's video code includes it and every Diligent header drags in a windows.h that fights the engine's own.
+// [rc4l] Diligent-free, since the engine's video code includes it and every Diligent header drags in a windows.h that fights the engine's own.
 
 class DFrameBuffer;
 struct FRenderer;   // [rc4l] a struct, as r_renderer.h defines it, or MSVC links a different name
 
+#include "basictypes.h"   // [rc4l] fixed_t
 #include "features/frame/computation/frameroute_compute.h"
 #include <functional>
 
@@ -24,12 +25,6 @@ bool BackendDeviceStarts();
 
 // [rc4l] Set the launch up for it before any video exists: the backend switched on, standalone and embedded, and GL's capability flags as a modern card has them.
 void BeginBackendOnly();
-
-// [rc4l] The renderer the backend draws the world with, in a launch without GL or beside it.
-FRenderer *CreateBackendRenderer();
-// [rc4l] The renderer a launch draws with, which every platform's I_CreateRenderer asks for: GL's (from `createGL`, NULL in a build without GL) and the backend's under features/frame's driver, or the backend's alone in a launch without GL.
-// [rc4l] The renderer a launch draws with, which every platform's I_CreateRenderer asks for: GL's (from `createGL`) and the backend's under features/frame's driver, or the backend's alone in a launch without GL.
-FRenderer *CreateLaunchRenderer(FRenderer *(*createGL)());
 
 // [rc4l] Which renderer draws this frame and whose picture shows, from the launch's renderers and the backend's state and cvars.
 zx::frame::FrameRoute FrameRouteNow(bool hasGL, bool hasBackend);
@@ -69,6 +64,30 @@ bool WipeStart(int type);
 void WipeEnd();
 bool WipeTic(int ticks);
 void WipeCleanup();
+
+// [rc4l] vid_fps per renderer: GL's frame runs from D_Display's start to the backend's LiveFrame, the backend's from there until it has drawn.
+void FrameTimingBegin();
+void GLFrameDone();
+void BackendFrameDone();
+// [rc4l] Whether the backend drew within the last second, and a renderer's last whole second as vid_fps shows it.
+bool BackendRateLive();
+void RendererRateShown(bool backend, int &ms, int &fps);
+
+// [rc4l] The backend's frame, drawn after GL's once the engine has drawn its own (D_Display).
+void LiveFrame();
+
+// [rc4l] One camera texture, the world from another viewpoint into the backend's own target, w by h in pixels framed to aspect.
+void RenderCameraTexture(const void *material, int w, int h, float aspect,
+                         fixed_t px, fixed_t py, fixed_t pz, unsigned int pangle, int ppitch, float fovDeg);
+
+// [rc4l] True once the backend's scene is up (switched on, the level baked and uploaded), whatever fua_dg_standalone says.
+bool StandaloneActive();
+
+// [rc4l] Whether the backend's window is the picture the player sees, which decides who presents, where StandaloneActive decides who builds.
+bool BackendPresenting();
+
+// [rc4l] The camera the backend draws with, column-major, so a standalone frame culls against the same matrix rather than deriving the camera again.
+const float *SceneMVP();
 
 }} // namespace zx::hwrender
 

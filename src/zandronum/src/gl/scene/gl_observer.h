@@ -42,7 +42,7 @@ struct FGLObserver
 	virtual void ModelSurface(const FModelGeometry *geometry, unsigned int base1, unsigned int base2, float inter,
 		unsigned int firstIndex, unsigned int count, FMaterial *tex, int translation) {}
 	virtual void ModelEnds() {}
-	virtual void WeaponQuad(const zx::hwrender::Quad2D &q) {}
+	virtual void WeaponQuad(const zx::draw2d::Quad2D &q) {}
 };
 
 // [rc4l] The observer GL reports to, NULL while nothing watches.

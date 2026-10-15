@@ -1,4 +1,12 @@
-// [rc4l] What a page can be watched doing, as scripts run before its own, shared by the checks and the probe.
+// [rc4l] Code for a page, shared by the checks and the probe: the watches run before its own scripts, and what runs once the engine has started.
+
+// [rc4l] JavaScript run in the page once the engine has started (fua.js sets fuaCommand just before main), its value the caller's result.
+export function inPage(body) {
+  return `(async () => { while (!(window.Module && Module.fuaCommand)) await new Promise((r) => setTimeout(r, 100)); ${body} })()`;
+}
+
+// [rc4l] Page code that waits ms milliseconds.
+export const pause = (ms) => `await new Promise((r) => setTimeout(r, ${ms}));`;
 
 // [rc4l] Every audio buffer the page starts, in window.fuaSounds as { t, id, len }: the audio clock's time, the buffer's number by identity, and its length in seconds.
 export const WATCH_SOUNDS = `window.fuaSounds = []; {

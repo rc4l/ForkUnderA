@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 rc4l
 
+#include "features/surfaces/planeuv.h"   // [rc4l] PlaneUVFor
 #include "features/horizon/horizon.h"
 #include "features/horizon/computation/horizon_compute.h"
 #include "features/levelmesh/flatmesh.h"     // MakeWallQuad
@@ -37,6 +38,8 @@ static TArray<HorizonWindow> g_windows;
 static TArray<zx::levelmesh::MeshVertex>   g_skyVerts;
 
 bool HorizonsActive() { return fua_dg_horizon; }
+
+bool OwnsSky(int lineSpecial) { return HorizonsActive() && ComputeIsHorizonLine(lineSpecial); }
 
 const HorizonWindow *HorizonWindows(int &count)
 {
@@ -104,7 +107,7 @@ static void BuildPlane(sector_t *sec, int which, HorizonPlane &out)
 	}
 
 	zx::levelmesh::PlaneUVTransform t;
-	zx::levelmesh::PlaneUVFor(sp, mat, t);
+	zx::surfaces::PlaneUVFor(sp, mat, t);
 	out.uv = zx::levelmesh::ComputePlaneUVAffine(t);
 
 	const bool ceiling = (which == sector_t::ceiling);

@@ -6,7 +6,9 @@
 #include "features/levelmesh/flatmesh.h"                       // [rc4l] RegisterDecal
 #include "features/levelmesh/wallcache.h"                      // [rc4l] the bake's parts and bands
 #include "features/materials/materials.h"
-#include "features/sprites/spritebuild.h"                      // [rc4l] PointDynamicLight, StyleBlendMode
+#include "features/dynlights/pointlight.h"   // [rc4l] PointDynamicLight
+#include "features/viewsetup/viewsetup.h"   // [rc4l] SpritesTakeDynamicLight
+#include "features/sprites/computation/spritestyle_compute.h"   // [rc4l] ComputeSpriteBlendMode
 
 #include "a_sharedglobal.h"   // [rc4l] DBaseDecal
 #include "actor.h"            // [rc4l] RF_*
@@ -91,18 +93,18 @@ void BuildDecal(DBaseDecal *decal, side_t *side, const seg_t *seg, int part, con
 	if (glset.nocoloredspritelighting) cm.Decolorize();
 
 	float dyn[3];
-	const bool lit = zx::sprites::SpritesTakeDynamicLight();
+	const bool lit = zx::viewsetup::SpritesTakeDynamicLight();
 	if (lit)
 	{
 		fixed_t x, y;
 		decal->GetXY(side, x, y);
-		zx::sprites::PointDynamicLight(x, y, FLOAT2FIXED(top), seg->Subsector, dyn);
+		zx::dynlights::PointDynamicLight(x, y, FLOAT2FIXED(top), seg->Subsector, dyn);
 	}
 	MeshVertex quad[4];
 	for (int i = 0; i < 4; i++) quad[i].Set(dv[i].x, dv[i].z, dv[i].y, dv[i].u, dv[i].v);
 	const FRenderStyle &style = decal->RenderStyle;
 	const bool redAlpha = (style.Flags & STYLEF_RedIsAlpha) != 0;
-	RegisterDecal(quad, mat, decal->Translation, zx::sprites::StyleBlendMode(style, FIXED2FLOAT(decal->Alpha)), FIXED2FLOAT(decal->Alpha),
+	RegisterDecal(quad, mat, decal->Translation, zx::sprites::ComputeSpriteBlendMode(style.BlendOp, style.DestAlpha, FIXED2FLOAT(decal->Alpha)), FIXED2FLOAT(decal->Alpha),
 		light, rel, cm, redAlpha, redAlpha ? (unsigned int)decal->AlphaColor : 0xffffffu,
 		(quad[0].x + quad[3].x) * 0.5f, (quad[0].z + quad[3].z) * 0.5f, (quad[0].y + quad[3].y) * 0.5f, lit ? dyn : NULL, onMirror);
 }

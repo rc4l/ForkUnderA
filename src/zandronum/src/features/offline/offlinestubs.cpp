@@ -5,6 +5,7 @@
 
 #include "features/server-browser/browser.h"
 #include "features/server-browser/zx_joinserver.h"
+#include "features/server-browser/zx_menuchrome.h"
 #include "features/identity/zx_identity.h"
 #include "features/identity/zx_identitynet.h"
 #include "features/server-hosting/zx_hosting.h"
@@ -81,6 +82,7 @@ bool HostOwnsAddress( const FString & ) { return false; }
 void HostChildEcho( const char * ) {}
 void HostChildAnnounceReachable( void ) {}
 void HostWatchdogInit( void ) {}
+void SetHostingListener( HostingListener ) {}
 bool PunchRequestFor( const NETADDRESS_s &, bool ) { return false; }
 void PunchCookieArrived( const char * ) {}
 void PunchResultArrived( int ) {}
@@ -97,6 +99,10 @@ bool ConsumeJoinReady( ) { return false; }
 void JoinTick( ) {}
 void NoteJoinFailed( const char * ) {}
 void DrawJoinReadyNotice( bool ) {}
+void SetLeavingLocalGameListener( void ( * )( void ) ) {}
+
+// [rc4l] The server browser's menu here is the stand-in below, which asks the bar above it nothing.
+void SetMenuChrome( const MenuChrome * ) {}
 
 namespace waddownload {
 void Tick( ) {}

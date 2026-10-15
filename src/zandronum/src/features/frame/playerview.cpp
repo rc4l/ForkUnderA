@@ -8,7 +8,7 @@
 #include "features/viewsetup/viewsetup.h"
 #include "features/viewsetup/computation/viewsetup_compute.h"
 #include "features/levelmesh/flatmesh.h"       // [rc4l] SetMainView, EnterScene, LeaveScene
-#include "features/hwrender/hud2d.h"           // [rc4l] StandaloneActive, Record2D
+#include "features/draw2d/record.h"
 #include "features/sprites/pspritebuild.h"
 #include "features/sprites/spritebuild.h"      // [rc4l] CheckFrameSprites
 #include "features/draw2d/screenblend.h"
@@ -39,22 +39,9 @@ CVAR(Int, fua_debug_frameclock, 0, 0)
 
 namespace zx { namespace frame {
 
-namespace {
-
-// [rc4l] The camera the last frame was drawn from, so a new one starts uninterpolated instead of sweeping across from it.
-AActor *g_lastCamera = NULL;
-
-} // namespace
-
-void ForgetCamera() { g_lastCamera = NULL; }
-
 void BeginPlayerFrame(player_t *player)
 {
-	if (player->camera != g_lastCamera)
-	{
-		R_ResetViewInterpolation();
-		g_lastCamera = player->camera;
-	}
+	if (zx::viewsetup::CameraChanged(player->camera)) R_ResetViewInterpolation();
 	if (cl_capfps || r_NoInterpolate) r_TicFrac = FRACUNIT;
 	else r_TicFrac = I_GetTimeFrac(&r_FrameTime);
 	r_frameSerial++;
@@ -111,7 +98,7 @@ void RenderPlayerView(player_t *player, int paletteBrightness)
 	zx::sprites::CheckFramePSprites();
 	zx::draw2d::ScreenFill fills[2];
 	const int n = zx::draw2d::ScreenBlends(sector, in_area, gl_fixedcolormap != 0, paletteBrightness, fills);
-	for (int i = 0; i < n; i++) zx::hwrender::Record2D(zx::draw2d::PrepareScreenFill(fills[i]));
+	for (int i = 0; i < n; i++) zx::draw2d::Record2D(zx::draw2d::PrepareScreenFill(fills[i]));
 
 	zx::hwrender::NoteWorldView();
 	EndViewpoint(savedMain);

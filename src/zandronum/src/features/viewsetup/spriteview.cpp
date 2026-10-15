@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 rc4l
 
-#include "features/hwrender/spriteview.h"
+#include "features/viewsetup/spriteview.h"
 
-namespace zx { namespace hwrender {
+namespace zx { namespace viewsetup {
 
 namespace {
 
@@ -35,4 +35,4 @@ void SetSpriteViewProvider(const SpriteViewProvider *p)
 
 const SpriteViewProvider &SpriteView() { return *g_provider; }
 
-}} // namespace zx::hwrender
+}} // namespace zx::viewsetup

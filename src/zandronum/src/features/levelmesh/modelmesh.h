@@ -50,6 +50,11 @@ void ModelStatsGet(int &models, int &surfaces, int &triangles, int &skipped);
 void ModelBoundsGet(float *mn, float *mx, float *lastSort);
 void ModelPieceGet(float &alpha, int &blend, int &light, float *rgb, const void *&material);
 
+
+// [rc4l] Who hears each model piece captured, GL's (fromGL) or the one derived for the same actor, which features/sprites' fua_sprite_check does; NULL for no one.
+typedef void (*ModelPieceListener)(const void *who, bool fromGL, const MeshPiece &piece, const MeshVertex *verts, int count);
+void SetModelPieceListener(ModelPieceListener listener);
+
 }} // namespace zx::levelmesh
 
 #endif

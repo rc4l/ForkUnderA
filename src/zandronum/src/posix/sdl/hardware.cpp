@@ -47,7 +47,8 @@
 #include "sdlvideo.h"
 // [rc4l] video-scale: faithful port of upstream's r_videoscale math. See features/video-scale.
 #include "features/video-scale/computation/videoscale_compute.h"
-#include "features/hwrender/backendonly.h"   // [rc4l] CreateLaunchRenderer
+#include "features/hwrender/backendonly.h"   // [rc4l] BackendOnly
+#include "features/frame/framedriver.h"   // [rc4l] CreateLaunchRenderer
 #include "r_renderer.h"
 #include "sdlhost.h"   // [rc4l] fullscreen as the host has it
 // [rc4l] Software renderer removed (GL-only build); NO_GL server uses the null renderer.
@@ -151,10 +152,10 @@ void I_CreateRenderer()
 	if (Renderer == NULL)
 	{
 #ifndef NO_GL
-		Renderer = zx::hwrender::CreateLaunchRenderer(gl_CreateInterface);
+		Renderer = zx::frame::CreateLaunchRenderer(gl_CreateInterface);
 #else
 		// [rc4l] Without GL the backend draws alone (the browser's build); without it too, the dedicated server's trivial null renderer.
-		Renderer = zx::hwrender::BackendOnly() ? zx::hwrender::CreateLaunchRenderer(NULL) : new FNullRenderer;
+		Renderer = zx::hwrender::BackendOnly() ? zx::frame::CreateLaunchRenderer(NULL) : new FNullRenderer;
 #endif
 		atterm(I_DeleteRenderer);
 	}

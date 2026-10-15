@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 rc4l
 
-#include "features/hwrender/record2d.h"
-#include "features/hwrender/hud2d.h"   // [rc4l] Record2D
+#include "features/draw2d/record2d.h"
+#include "features/draw2d/record.h"   // [rc4l] Record2D
 #include "features/damage-tint/damagetint.h"   // [rc4l] DamageTint_Armed2D
 
-namespace zx { namespace hwrender {
+namespace zx { namespace draw2d {
 
 void Record2DCanvas::Texture(FTexture *img, const DCanvas::DrawParms &parms)
 {
@@ -15,7 +15,7 @@ void Record2DCanvas::Texture(FTexture *img, const DCanvas::DrawParms &parms)
 	DamageTint_Armed2D(d.quad.tint);
 	Record2D(d.quad);
 	// [rc4l] A colour overlay (a greyed menu row) goes over it as a second pass, as GL's DrawTexture draws it.
-	zx::hwrender::Quad2D over;
+	zx::draw2d::Quad2D over;
 	if (zx::draw2d::ComputeOverlayQuad(d.quad, d.colorOverlay, over)) Record2D(over);
 }
 
@@ -52,4 +52,4 @@ void Record2DCanvas::Poly(FTexture *tex, FVector2 *points, int npoints, double o
 	for (size_t i = 0; i < mPolyTris.size(); i++) Record2D(mPolyTris[i]);
 }
 
-}} // namespace zx::hwrender
+}} // namespace zx::draw2d

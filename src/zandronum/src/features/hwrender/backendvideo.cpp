@@ -4,12 +4,10 @@
 // [rc4l] The frame buffer of a launch without GL: the engine's window as GL's sets it up, minus the context, with every 2D draw recorded for the backend and the frame presented by it.
 
 #include "features/hwrender/backendonly.h"
-#include "features/hwrender/hud2d.h"
-#include "features/hwrender/record2d.h"   // [rc4l] Record2DCanvas, the 2D recorded rather than drawn
+#include "features/draw2d/record2d.h"   // [rc4l] zx::draw2d::Record2DCanvas, the 2D recorded rather than drawn
 #include "features/draw2d/draw2d.h"
 #include "features/display/display.h"
-#include "features/frame/playerview.h"   // [rc4l] ForgetCamera
-#include "features/frame/framedriver.h"   // [rc4l] CreateFrameDriver
+#include "features/viewsetup/viewsetup.h"   // [rc4l] ForgetCamera
 #include <vector>
 #include "features/hwrender/computation/imageresize_compute.h"
 #include "features/hwrender/computation/backendchoice_compute.h"
@@ -77,14 +75,6 @@ void RestoreSavedSwitches()
 #endif
 }
 
-FRenderer *CreateLaunchRenderer(FRenderer *(*createGL)())
-{
-	std::vector<zx::frame::DrivenRenderer> renderers;
-	if (BackendOnly()) BeginBackendOnly();
-	else if (createGL != NULL) renderers.push_back({ createGL(), zx::frame::kRendererGL });
-	renderers.push_back({ CreateBackendRenderer(), zx::frame::kRendererBackend });
-	return zx::frame::CreateFrameDriver(renderers);
-}
 
 bool BackendOnly()
 {
@@ -132,7 +122,7 @@ public:
 		: BackendFrameBufferBase(hMonitor, width, height, bits, refreshHz, fullscreen, false)
 	{
 		mColors.Load();
-		zx::frame::ForgetCamera();
+		zx::viewsetup::ForgetCamera();
 		zx::materials::GenerateGlobalBrightmap();
 		DoSetGamma();
 		Accel2D = true;
@@ -174,7 +164,7 @@ public:
 	void GameRestart()
 	{
 		mColors.Load();
-		zx::frame::ForgetCamera();
+		zx::viewsetup::ForgetCamera();
 		zx::materials::GenerateGlobalBrightmap();
 	}
 
@@ -272,7 +262,7 @@ private:
 	zx::display::ScreenColors mColors;
 	BYTE *mShot = NULL;
 	int mClientW = 0, mClientH = 0;   // [rc4l] the client size last reconciled
-	zx::hwrender::Record2DCanvas m2D;   // [rc4l] the 2D, recorded rather than drawn
+	zx::draw2d::Record2DCanvas m2D;   // [rc4l] the 2D, recorded rather than drawn
 };
 
 IMPLEMENT_CLASS(DiligentFrameBuffer)

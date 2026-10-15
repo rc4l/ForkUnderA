@@ -51,6 +51,7 @@
 #include <algorithm>
 #include <chrono>
 #include <stdlib.h>
+#include "features/json/computation/json_compute.h"
 
 // From mcp_bridge.cpp -- send one framed NDJSON line to the connected client (thread-safe).
 void MCP_Bridge_SendJson( const char *json );
@@ -285,7 +286,7 @@ void MCP_RPC_Tick()
 				g_perfTics.push_back( g_ticsThisFrame );
 				if ( (int)g_perfTotal.size() >= g_perfWant )
 				{
-					std::string data = "{\"total\":" + PerfSummaryJson( SummarizeFrameTimes( g_perfTotal ) );
+					std::string data = "{\"total\":" + PerfSummaryJson( zx::perfstats::ComputeFrameTimeSummary( g_perfTotal ) );
 					data += ",\"sim_mean_ms\":" + std::to_string( MeanOf( g_perfSim ) );
 					data += ",\"render_mean_ms\":" + std::to_string( MeanOf( g_perfRender ) );
 					// Worst-frame composition: the top frames by total time, each split into
@@ -514,18 +515,16 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 			if ( !BROWSER_IsActive( i ) )
 				continue;
 			if ( n ) body += ",";
-			std::string name, addr, country;
-			JsonEscape( std::string( BROWSER_GetHostName( i ) ? BROWSER_GetHostName( i ) : "" ), name );
-			JsonEscape( std::string( BROWSER_GetAddress( i ).ToString() ), addr );
-			JsonEscape( std::string( BROWSER_GetCountryCode( i ) ? BROWSER_GetCountryCode( i ) : "" ), country );
+			const std::string name = zx::json::ComputeJsonEscape( BROWSER_GetHostName( i ) ? BROWSER_GetHostName( i ) : "" );
+			const std::string addr = zx::json::ComputeJsonEscape( BROWSER_GetAddress( i ).ToString() );
+			const std::string country = zx::json::ComputeJsonEscape( BROWSER_GetCountryCode( i ) ? BROWSER_GetCountryCode( i ) : "" );
 			body += "{\"name\":\"" + name + "\",\"address\":\"" + addr + "\"";
 			body += ",\"lan\":" + B( BROWSER_IsLAN( i ) );
 			// The reported code is blank whenever a server's own lookup failed (it sends XIP), and
 			// the browser then resolves the flag from the address itself. Report both: the claim
 			// and the flag actually drawn, or an assertion tests the wrong one.
-			std::string flag;
 			const char *fromindex = NETWORK_GetCountryCodeFromIndex( BROWSER_GetCountryIndex( i ), true );
-			JsonEscape( std::string( fromindex ? fromindex : "" ), flag );
+			const std::string flag = zx::json::ComputeJsonEscape( fromindex ? fromindex : "" );
 			body += ",\"country\":\"" + country + "\"";
 			body += ",\"flag\":\"" + flag + "\"";
 			body += ",\"countryIndex\":" + I( (long long)BROWSER_GetCountryIndex( i ) );
@@ -560,11 +559,8 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 		// question asked of this surface about one started from a false answer.
 		else if ( zx::Continue_RecordKind( ) == 3 ) kind = "hosted";
 
-		std::string escaped;
-		JsonEscape( std::string( zx::Continue_RecordTarget( ) ), escaped );
-
-		std::string tip;
-		JsonEscape( std::string( zx::Continue_Tooltip( ) ), tip );
+		const std::string escaped = zx::json::ComputeJsonEscape( zx::Continue_RecordTarget( ) );
+		const std::string tip = zx::json::ComputeJsonEscape( zx::Continue_Tooltip( ) );
 
 		std::string body = "{\"shown\":" + B( zx::Continue_IsShown( ) );
 		body += ",\"kind\":\"" + kind + "\"";
@@ -604,8 +600,7 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 				const bool possible = ( fam == 0 ) || SERVER_SERVERREGISTRY_HasV6Registry();
 				registryReplied = registryReplied || verified;
 
-				std::string describe;
-				JsonEscape( std::string( zx::DescribeListing( proof.state ) ), describe );
+				const std::string describe = zx::json::ComputeJsonEscape( zx::DescribeListing( proof.state ) );
 
 				body += std::string( fam ? ",\"ipv6\":{" : "\"ipv4\":{" );
 				// [rc4l] False means this family has nowhere to announce to, so an absent listing is
@@ -663,7 +658,7 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 		GetInt( args, "slot", slot );
 		FString path = G_BuildSaveName( "fua_mcp_snap", (int)slot );
 		G_SaveGame( path.GetChars(), "mcp snapshot" ); // deferred: runs at the next G_Ticker
-		std::string esc; JsonEscape( std::string( path.GetChars() ), esc );
+		const std::string esc = zx::json::ComputeJsonEscape( path.GetChars() );
 		SendOk( id, std::string( "{\"slot\":" ) + I( slot ) + ",\"path\":\"" + esc + "\",\"scheduled\":true}" );
 	}
 	else if ( cmd == "sim.restore" )
@@ -672,7 +667,7 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 		GetInt( args, "slot", slot );
 		FString path = G_BuildSaveName( "fua_mcp_snap", (int)slot );
 		G_LoadGame( path.GetChars(), true );
-		std::string esc; JsonEscape( std::string( path.GetChars() ), esc );
+		const std::string esc = zx::json::ComputeJsonEscape( path.GetChars() );
 		SendOk( id, std::string( "{\"slot\":" ) + I( slot ) + ",\"path\":\"" + esc + "\",\"scheduled\":true}" );
 	}
 	else if ( cmd == "state.player" )
@@ -883,8 +878,7 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 			}
 
 			FTexture *ft = TexMan[sectors[i].GetTexture( sector_t::floor )];
-			std::string tn;
-			JsonEscape( std::string( ft ? ft->Name : "" ), tn );
+			const std::string tn = zx::json::ComputeJsonEscape( ft ? ft->Name.GetChars() : "" );
 
 			if ( n ) arr += ",";
 			arr += "{\"i\":" + I( i ) + ",\"special\":" + I( sectors[i].special )

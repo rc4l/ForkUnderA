@@ -3,17 +3,11 @@
 
 #include "features/web/computation/crashcontext_compute.h"
 #include "features/crashreport/computation/crash_report_compute.h"
-#include "features/mcp-bridge/computation/mcprpc_compute.h"
+#include "features/json/computation/json_compute.h"
 
 namespace zx { namespace web {
 
-// [rc4l] A JSON string literal holding text.
-static std::string Quoted(const std::string &text)
-{
-	std::string escaped;
-	zx::mcp::JsonEscape(text, escaped);
-	return "\"" + escaped + "\"";
-}
+using zx::json::ComputeJsonQuoted;
 
 std::string ComputeCrashDsn(bool official, const char *dsn)
 {
@@ -37,11 +31,11 @@ void ComputeSetCrashTag(CrashContext &context, const std::string &key, const std
 std::string ComputeCrashContextJson(const CrashContext &c)
 {
 	std::string files, tags;
-	for (const std::string &f : c.files) files += (files.empty() ? "" : ",") + Quoted(f);
-	for (const auto &t : c.tags) tags += (tags.empty() ? "" : ",") + Quoted(t.first) + ":" + Quoted(t.second);
-	return "{\"release\":" + Quoted(c.release) + ",\"dist\":" + Quoted(c.dist) + ",\"dsn\":" + Quoted(c.dsn)
-		+ ",\"reporting\":" + (c.reporting ? "true" : "false") + ",\"map\":" + Quoted(c.map)
-		+ ",\"iwad\":" + Quoted(c.files.size() > 1 ? c.files[1] : "")
+	for (const std::string &f : c.files) files += (files.empty() ? "" : ",") + ComputeJsonQuoted(f);
+	for (const auto &t : c.tags) tags += (tags.empty() ? "" : ",") + ComputeJsonQuoted(t.first) + ":" + ComputeJsonQuoted(t.second);
+	return "{\"release\":" + ComputeJsonQuoted(c.release) + ",\"dist\":" + ComputeJsonQuoted(c.dist) + ",\"dsn\":" + ComputeJsonQuoted(c.dsn)
+		+ ",\"reporting\":" + (c.reporting ? "true" : "false") + ",\"map\":" + ComputeJsonQuoted(c.map)
+		+ ",\"iwad\":" + ComputeJsonQuoted(c.files.size() > 1 ? c.files[1] : "")
 		+ ",\"files\":[" + files + "],\"tags\":{" + tags + "}}";
 }
 

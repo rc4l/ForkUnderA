@@ -1157,3 +1157,6 @@ CCMD( fua_continue )
 	Printf( "fua_continue: %s\n", zx::Continue_Tooltip( ));
 	zx::Continue_Activate( );
 }
+
+// [rc4l] Hosting and the join, both below the continue tab, tell it when a local game ends or a server starts.
+static const bool g_bContinueListening = ( zx::SetHostingListener( zx::Continue_NoteHosting ), zx::SetLeavingLocalGameListener( zx::Continue_NoteLeavingLocalGame ), true );

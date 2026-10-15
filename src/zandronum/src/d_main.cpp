@@ -68,8 +68,8 @@
 #include "w_wad.h"
 #include "features/addon-catalogue/zx_catalogue.h" // [rc4l] validated at startup, not on first use
 #include "features/crashreport/zx_crashreport.h"
-#include "features/hwrender/diligent/dglive.h"   // [rc4l] one call, no Diligent headers -- see dglive.h
-#include "features/hwrender/hud2d.h"             // [rc4l] per-frame 2D capture
+#include "features/draw2d/record.h"
+#include "features/hwrender/backendonly.h"
 #include "features/continue/zx_continue.h"
 #include "features/identity/zx_identity.h"
 #include "features/updater/zx_updater.h" // [rc4l] background auto-update check
@@ -914,8 +914,8 @@ void D_Display ()
 
 	// [rc4l] features/hwrender: last frame's 2D is dead -- the HUD moves, text scrolls, menus open.
 	// Dropped here rather than after the render so that everything drawn this frame, including the
-	// console and menus which are drawn late, is captured. See hud2d.h.
-	zx::hwrender::Clear2D();
+	// console and menus which are drawn late, is captured. See features/draw2d/record.h.
+	zx::draw2d::Clear2D();
 	zx::hwrender::FrameTimingBegin();   // [rc4l] vid_fps per renderer, split at LiveFrame
 
 	cycle_t cycles;
@@ -1284,7 +1284,7 @@ bool D_WipeStep ()
 		return false;
 	s_wipeStart = nowtime;
 	// [rc4l] Each step is a frame of its own, so its 2D starts afresh as D_Display's does; the console and menu piled up under one generation and were drawn past the backend's vertices.
-	zx::hwrender::Clear2D();
+	zx::draw2d::Clear2D();
 	const bool done = screen->WipeDo (1);
 	C_DrawConsole (s_wipeHw2d);	// console and
 	M_Drawer ();			// menu are drawn even on top of wipes

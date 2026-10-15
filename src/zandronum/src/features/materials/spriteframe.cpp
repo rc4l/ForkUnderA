@@ -1,6 +1,6 @@
 // [rc4l] GL's sprite frame lookup, its rotation from the computation the derived sprites share.
 
-#include "features/sprites/spriteframe.h"
+#include "features/materials/spriteframe.h"
 #include "features/sprites/computation/spriteframe_compute.h"   // [rc4l] ComputeSpriteRotation
 #include "r_data/sprites.h"
 #include "r_state.h"   // [rc4l] sprites

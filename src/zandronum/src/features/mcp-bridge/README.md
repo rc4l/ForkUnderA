@@ -35,7 +35,7 @@ byte-identical and simply vanish.
 | `mcp_bridge.h` | Entry points; inline no-op stubs when `FUA_MCP_BRIDGE` is off. |
 | `mcp_crash.cpp` / `mcp_event.cpp` / `mcp_hud.cpp` / `mcp_renderinfo.cpp` | Backends: crash backtrace, input injection, HUD/frame capture, renderer info. |
 | `mcp_glperf.{h,cpp}` | **GPU render profiler** (`gl.timers` / `renderer.info`). GL_TIMESTAMP timer queries around the render passes, read back through a multi-frame ring so the CPU never stalls on the pipeline. `mcp_glperf.h` is inline no-ops when the bridge is off; the GL glue also has a `NO_GL` (server) fallback. |
-| `computation/mcprpc_compute.{h,cpp,_test.cpp}` | Pure, unit-tested core: NDJSON framing, JSON field extraction, the FNV state-hash mixer, step planning. |
+| `computation/mcprpc_compute.{h,cpp,_test.cpp}` | Pure, unit-tested core: NDJSON framing, JSON field extraction, the FNV state-hash mixer, step planning. Strings are escaped by `features/json`, and frame times summed up by `features/perfstats`. |
 | `computation/glperf_compute.{h,cpp,_test.cpp}` | Pure, unit-tested core of the GPU profiler: ring-slot math, timestamp→ms + span validity, the all-zero "driver can't time" verdict, and report-JSON assembly. |
 
 ## In-place anchors (the only edits outside this feature)

@@ -1,12 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CHECKS, blankGame, configuredOnce, crashOffered, crosshairCentred, gpuError, heldOnce, inPage, judge, marked, playedOnce, reportSent, saveLoads, savePicture, selectChecks, soundStarts, stoppedOffered } from '../check.mjs';
-
-test('page code waits for the engine to start before it runs', () => {
-  const js = inPage('return 1;');
-  assert.match(js, /^\(async \(\) => \{ while \(!\(window\.Module && Module\.fuaCommand\)\)/);
-  assert.match(js, /return 1; \}\)\(\)$/);
-});
+import { CHECKS, blankGame, configuredOnce, crashOffered, crosshairCentred, gpuError, heldOnce, judge, marked, playedOnce, reportSent, saveLoads, savePicture, selectChecks, soundStarts, stoppedOffered } from '../check.mjs';
 
 test('a check fails when its line never came', () => {
   assert.deepEqual(judge({ until: 'x' }, null), { ok: false, reason: 'no line matched /x/' });

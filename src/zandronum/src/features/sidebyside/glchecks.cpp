@@ -12,6 +12,7 @@
 #include "gl/data/gl_matrix.h"   // [rc4l] VSMatrix
 #include "gl/renderer/gl_lightdata.h"     // [rc4l] gl_SetColor and gl_SetFog, the shading GL's answer comes from
 #include "gl/renderer/gl_renderstate.h"   // [rc4l] the dynamic light GL left for a sprite, and the shading it set
+#include "features/horizon/horizon.h"   // [rc4l] OwnsSky
 #include "features/levelmesh/flatmesh.h"
 #include "features/levelmesh/wallcache.h"
 #include "features/levelmesh/modelmesh.h"
@@ -133,9 +134,10 @@ struct FGLChecks : public FGLObserver
 	// [rc4l] The skybox is passed in, never read off wall.skybox: that shares a union with wall.sky, so on a plain sky it is a GLSkyInfo.
 	void SkyQuad(const GLWall &wall, AActor *skybox)
 	{
+		// [rc4l] GL's own captured quads are only compared, so they keep the level's sky; a horizon line's is the horizon's.
+		if (zx::horizon::OwnsSky((wall.seg != NULL && wall.seg->linedef != NULL) ? wall.seg->linedef->special : 0)) return;
 		zx::levelmesh::AddViewSkyQuad(zx::levelmesh::WalkSkyList(), wall.glseg.x1, wall.glseg.y1, wall.glseg.x2, wall.glseg.y2,
-			wall.zbottom, wall.ztop, skybox, (wall.seg != NULL && wall.seg->linedef != NULL) ? wall.seg->linedef->special : 0,
-			0);   // [rc4l] GL's own captured quads are only compared, so they keep the level's sky
+			wall.zbottom, wall.ztop, skybox, 0);
 	}
 	void SkyHole(const GLWall &wall)
 	{
@@ -185,7 +187,7 @@ struct FGLChecks : public FGLObserver
 		zx::levelmesh::CaptureModelSurface(geometry, base1, base2, inter, firstIndex, count, tex, translation);
 	}
 	void ModelEnds() { zx::levelmesh::ModelCaptureEnd(); }
-	void WeaponQuad(const zx::hwrender::Quad2D &q) { zx::sprites::NoteGLPSprite(q); }
+	void WeaponQuad(const zx::draw2d::Quad2D &q) { zx::sprites::NoteGLPSprite(q); }
 };
 
 FGLChecks g_checks;

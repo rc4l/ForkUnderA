@@ -9,7 +9,8 @@
 #include "networkheaders.h"
 
 #include "features/server-hosting/zx_punchclient.h"
-#include "features/server-browser/browser.h"
+#include "features/server-hosting/zx_registrydirectory.h"
+#include "networkshared.h"   // [rc4l] NETADDRESS_s
 #include "features/server-hosting/computation/punchbroker_compute.h"
 #include "features/server-browser/computation/registrymemory_compute.h"
 
@@ -90,10 +91,10 @@ bool RegistryFor( const FString &target, NETADDRESS_s &out )
 {
 	NETADDRESS_s server;
 	const bool bHaveRemembered = server.LoadFromString( target.GetChars( ))
-		&& BROWSER_GetRegistryForServer( server, out );
+		&& zx::Registries( ).registryForServer( server, out );
 
 	NETADDRESS_s answering;
-	const bool bHaveAnswering = BROWSER_GetServerRegistryAddress( answering );
+	const bool bHaveAnswering = zx::Registries( ).address( answering );
 
 	switch ( ChooseRegistry( bHaveRemembered, bHaveAnswering ))
 	{
@@ -131,7 +132,7 @@ void Send( const FString &cookie, const FString &target )
 bool PunchRequestFor( const NETADDRESS_s &server, bool bFromList )
 {
 	NETADDRESS_s registry;
-	const bool bRegistryKnown = BROWSER_GetServerRegistryAddress( registry );
+	const bool bRegistryKnown = zx::Registries( ).address( registry );
 
 	if ( DecidePunchIntent( bFromList, IsLocalAddress( server ), bRegistryKnown ) != PunchIntent::Ask )
 		return false;
@@ -191,7 +192,7 @@ void PunchResultArrived( int verdict )
 	// packet are both in flight and neither has landed on the other's router to take the tuple the
 	// other needs. See BROWSER_PunchBrokered.
 	if ( static_cast<PunchVerdict>( verdict ) == PunchVerdict::Broker )
-		BROWSER_PunchBrokered( );
+		zx::Registries( ).punchBrokered( );
 }
 
 void PunchRequestForced( const NETADDRESS_s &server )

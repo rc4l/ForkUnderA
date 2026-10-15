@@ -6,15 +6,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from './serve.mjs';
 import { smoke, gpuLogLines } from './smoke.mjs';
-import { WATCH_SOUNDS, WATCH_TEXTURES } from './watch.mjs';
+import { WATCH_SOUNDS, WATCH_TEXTURES, inPage, pause } from './page.mjs';
 import { decodePNG, boxStats, px } from '../fuactl/src/pngcore.mjs';
-
-// [rc4l] JavaScript run in the page once the engine has started (fua.js sets fuaCommand just before main), its value the check's result.
-export function inPage(body) {
-  return `(async () => { while (!(window.Module && Module.fuaCommand)) await new Promise((r) => setTimeout(r, 100)); ${body} })()`;
-}
-
-const pause = (ms) => `await new Promise((r) => setTimeout(r, ${ms}));`;
 
 // [rc4l] Counts the animation frames the page asks for from here on, which stop when the engine's loop does.
 const COUNT_FRAMES = `let frames = 0;

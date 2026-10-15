@@ -61,7 +61,7 @@ Copies the module, the page and the data the page writes into the engine's file 
 node tools/web/probe.mjs [dist-web] [--query Q] [--run "god; wait 1000; +attack"] [--autoplay] [--software] [--seconds N]
 ```
 
-Plays a staged page through console lines (with `wait N` between them, in milliseconds) and reports what it did: each sound it started, any started again, the screen textures it held before and after, and its WebGPU errors. `--autoplay` lets its audio run without a click. The watches are shared with the checks (`watch.mjs`).
+Plays a staged page through console lines (with `wait N` between them, in milliseconds) and reports what it did: each sound it started, any started again, the screen textures it held before and after, and its WebGPU errors. `--autoplay` lets its audio run without a click. The page code, the watches among it, is shared with the checks (`page.mjs`).
 
 ## check.mjs
 

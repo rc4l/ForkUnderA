@@ -8,8 +8,6 @@
 
 #include "features/models/modelgeometry.h"
 #include "features/rendersettings/rendersettings.h"   // [rc4l] the render settings it reads
-#include "features/hwrender/hud2d.h"   // StandaloneActive, BackendPresenting
-#include "features/sprites/spritebuild.h"   // [rc4l] NoteGLSprite and NoteDerivedSprite, for fua_sprite_check
 #include "tarray.h"
 #include "c_dispatch.h"
 #include "c_cvars.h"
@@ -19,6 +17,11 @@
 CVAR(Bool, fua_mesh_models, true, CVAR_ARCHIVE)
 
 namespace zx { namespace levelmesh {
+
+// [rc4l] Who hears the captured pieces (SetModelPieceListener).
+static ModelPieceListener g_pieceListener = NULL;
+
+void SetModelPieceListener(ModelPieceListener listener) { g_pieceListener = listener; }
 
 namespace {
 
@@ -216,10 +219,10 @@ void CaptureModelSurface(const FModelGeometry *geometry, unsigned int base1, uns
 	// [rc4l] GL's surfaces are only compared: GL draws its frame before the backend's scene, which clears the stream they would go to.
 	if (g_kind == kModelFromGL)
 	{
-		zx::sprites::NoteGLSprite(g_who, false, mp, &g_tris[0], (int)indexCount);
+		if (g_pieceListener != NULL) g_pieceListener(g_who, true, mp, &g_tris[0], (int)indexCount);
 		return;
 	}
-	if (g_kind == kModelChecked) zx::sprites::NoteDerivedSprite(g_who, mp, &g_tris[0], (int)indexCount);
+	if (g_kind == kModelChecked && g_pieceListener != NULL) g_pieceListener(g_who, false, mp, &g_tris[0], (int)indexCount);
 	DynAppend(&g_tris[0], indexCount, mp);
 	g_surfaces++;
 	g_triangles += (int)(indexCount / 3);
@@ -253,6 +256,5 @@ CCMD(fua_models)
 		zx::levelmesh::ModelBeginsGet(begins, mainView);
 		Printf("  %d model draws started since the reset, the last in %s view\n", begins, mainView ? "the player's" : "a camera's");
 	}
-	Printf("  capture is %s; the backend %s presenting\n", fua_mesh_models ? "on" : "off",
-		zx::hwrender::BackendPresenting() ? "is" : "is not (GL's own window, or side by side)");
+	Printf("  capture is %s\n", fua_mesh_models ? "on" : "off");
 }

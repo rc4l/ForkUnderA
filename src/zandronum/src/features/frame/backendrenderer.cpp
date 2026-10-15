@@ -4,11 +4,11 @@
 // [rc4l] The renderer of a launch without GL: the engine's view through features/frame, on the level, light and fog half both renderers share.
 
 #include "features/hwrender/backendonly.h"
+#include "features/frame/framedriver.h"
 #include "features/frame/levelrenderer.h"
 #include "features/frame/playerview.h"
 #include "features/frame/standaloneframe.h"   // [rc4l] the camera's own scene
 #include "features/levelmesh/flatmesh.h"      // [rc4l] EnterScene, LeaveScene
-#include "features/hwrender/hud2d.h"          // [rc4l] StandaloneActive
 #include "features/viewsetup/viewsetup.h"   // [rc4l] InstallSpriteView
 #include "features/draw2d/screenblend.h"     // [rc4l] the screen's tint over the save picture
 #include "features/draw2d/computation/screenblend_compute.h"
@@ -158,8 +158,17 @@ struct FBackendRenderer : public zx::frame::FLevelRenderer
 
 } // namespace
 
-namespace zx { namespace hwrender {
+namespace zx { namespace frame {
 
 FRenderer *CreateBackendRenderer() { return new FBackendRenderer; }
 
-}} // namespace zx::hwrender
+FRenderer *CreateLaunchRenderer(FRenderer *(*createGL)())
+{
+	std::vector<DrivenRenderer> renderers;
+	if (zx::hwrender::BackendOnly()) zx::hwrender::BeginBackendOnly();
+	else if (createGL != NULL) renderers.push_back({ createGL(), kRendererGL });
+	renderers.push_back({ CreateBackendRenderer(), kRendererBackend });
+	return CreateFrameDriver(renderers);
+}
+
+}} // namespace zx::frame

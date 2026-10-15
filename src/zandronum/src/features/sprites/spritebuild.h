@@ -41,10 +41,6 @@ void NoteDerivedSprite(const void *who, const zx::levelmesh::MeshPiece &piece, c
 // [rc4l] Compare every actor GL drew this frame against the derivation; called once GL's sprites are in.
 void CheckFrameSprites();
 
-// [rc4l] gl_SetDynSpriteLight for an actor: the dynamic light at its middle, into `out`, which starts from nothing.
-void ActorDynamicLight(const AActor *actor, float out[3]);
-// [rc4l] gl_SetDynSpriteLight at a point of a subsector with no actor, as a decal takes it, into `out`, which starts from nothing.
-void PointDynamicLight(fixed_t x, fixed_t y, fixed_t z, subsector_t *subsec, float out[3]);
 
 // [rc4l] An engine render style as spritestyle_compute takes it, and back.
 SpriteStyle StyleOf(const FRenderStyle &s);
@@ -57,8 +53,6 @@ int StyleBlendMode(const FRenderStyle &s, float alpha);
 // [rc4l] GLSprite::Draw's translucent setup for a sprite or model piece of `style` at (x, y), under the colormap Draw has already touched, measured from the eye as GL measures a shadow.
 SpriteDrawLook SpriteDrawLookAt(const SpriteStyle &style, float trans, const FColormap &cm, float x, float y, bool model);
 
-// [rc4l] Whether sprites, the weapon and decals take dynamic light this frame: lights on and in the view, no fixed colormap, and r_light_sprites.
-bool SpritesTakeDynamicLight();
 
 }} // namespace zx::sprites
 

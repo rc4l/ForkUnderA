@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 rc4l
 //
-// [rc4l] The frame buffer's 2D draws as the backend records them, worked out by features/draw2d: what a launch without GL draws its 2D with, and what records GL's 2D for the backend beside it.
+// [rc4l] The frame buffer's 2D draws as they are recorded for the renderers: what a launch without GL draws its 2D with, and what records GL's 2D for the backend beside it.
 
 #ifndef ZX_RECORD2D_H
 #define ZX_RECORD2D_H
@@ -11,9 +11,9 @@
 
 #include <vector>
 
-namespace zx { namespace hwrender {
+namespace zx { namespace draw2d {
 
-// [rc4l] One frame buffer's 2D into the backend's list, its scratch kept so a busy screen settles at its high-water mark.
+// [rc4l] One frame buffer's 2D into the frame's list, its scratch kept so a busy screen settles at its high-water mark.
 class Record2DCanvas
 {
 public:
@@ -32,6 +32,6 @@ private:
 	std::vector<Quad2D> mPolyTris;
 };
 
-}} // namespace zx::hwrender
+}} // namespace zx::draw2d
 
 #endif // ZX_RECORD2D_H

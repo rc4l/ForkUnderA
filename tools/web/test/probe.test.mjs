@@ -1,7 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseRun, report, runScript } from '../probe.mjs';
-import { repeatedSounds } from '../watch.mjs';
 
 test('a run is console lines with waits between them', () => {
   assert.deepEqual(parseRun('god; give all ;wait 1000; +attack;'), [{ command: 'god' }, { command: 'give all' }, { wait: 1000 }, { command: '+attack' }]);
@@ -13,12 +12,6 @@ test('a run becomes page code that sends each command and waits, after the engin
   assert.match(js, /Module\.fuaCommand\("playsound \\"brain\/cube\\""\);/);
   assert.match(js, /setTimeout\(r, 50\)/);
   assert.match(js, /window\.fuaSounds\.slice\(from\)/);
-});
-
-test('a sound started more than once is found by its buffer', () => {
-  const sounds = [{ id: 1, len: 1.655, t: 6.4 }, { id: 2, len: 1.313, t: 7.7 }, { id: 2, len: 1.313, t: 9.1 }];
-  assert.deepEqual(repeatedSounds(sounds), [{ id: 2, len: 1.313, times: [7.7, 9.1] }]);
-  assert.deepEqual(repeatedSounds([]), []);
 });
 
 test('the report lists the sounds, flags the repeats, and gives the textures and the errors', () => {

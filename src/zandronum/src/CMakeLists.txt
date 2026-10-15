@@ -1167,6 +1167,7 @@ set( ONLINE_SOURCES
 	features/server-hosting/computation/hostsettings_compute.cpp
 	features/server-hosting/computation/reachprobe_compute.cpp
 	features/server-hosting/zx_reachprobe.cpp
+	features/server-hosting/zx_registrydirectory.cpp
 	features/addon-catalogue/zx_catalogue.cpp
 	features/addon-catalogue/computation/addonfile_compute.cpp
 	features/addon-catalogue/computation/iwadpick_compute.cpp
@@ -1652,14 +1653,17 @@ add_executable( zdoom WIN32
 	features/models/md3model.cpp
 	features/models/voxelmodel.cpp
 	features/dynlights/a_dynlight.cpp
-	features/dynlights/lightsettings.cpp
+	features/dynlights/pointlight.cpp
+	features/gldefs/lightsettings.cpp
 	features/dynlights/cycler.cpp
-	features/sprites/spriteframe.cpp
+	features/materials/spriteframe.cpp
 	features/stackportals/stackportals.cpp
 	features/materials/computation/texcoord_compute.cpp
 	features/materials/computation/materiallayout_compute.cpp
-	features/hwrender/hud2d.cpp
-	features/hwrender/spriteview.cpp
+	features/hwrender/rendererrate.cpp
+	features/draw2d/record.cpp
+	features/visibility/skyfog.cpp
+	features/viewsetup/spriteview.cpp
 	features/levelmesh/staticmesh.cpp
 	features/levelmesh/flatmesh.cpp
 	features/levelmesh/fakeplanes.cpp
@@ -1694,8 +1698,8 @@ add_executable( zdoom WIN32
 	features/mainloop/mainloop.cpp
 	features/display/display.cpp
 	features/hwrender/backendvideo.cpp
-	features/hwrender/record2d.cpp
-	features/hwrender/backendrenderer.cpp
+	features/draw2d/record2d.cpp
+	features/frame/backendrenderer.cpp
 	features/visibility/viswalk.cpp
 	features/jobs/jobs.cpp
 	features/draw2d/draw2d.cpp
@@ -1752,6 +1756,7 @@ add_executable( zdoom WIN32
 	features/surfaces/computation/planegeom_compute.cpp
 	features/surfaces/computation/surfacechange_compute.cpp
 	features/surfaces/surfacebuild.cpp
+	features/surfaces/planeuv.cpp
 	features/horizon/horizon.cpp
 	features/horizon/computation/horizon_compute.cpp
 	features/glportal/computation/glportal_compute.cpp
@@ -2059,7 +2064,7 @@ endif()
 # The probe is the only consumer today; it proves the library links and a device creates in-process.
 if( FUA_DILIGENT )
 	# [rc4l] The sources that include Diligent's headers, listed once for the build and the C++17 flag below.
-	set( FUA_DILIGENT_SOURCES features/hwrender/diligent/dgprobe.cpp features/hwrender/diligent/dgdevice_vk.cpp features/hwrender/diligent/dgdevice_wgpu.cpp features/hwrender/diligent/dgwindow.cpp features/hwrender/diligent/dgscene.cpp features/hwrender/diligent/dg2d.cpp features/hwrender/diligent/dglights.cpp features/hwrender/diligent/dgsky.cpp features/hwrender/diligent/dgpipelines.cpp features/hwrender/diligent/dgdynamic.cpp features/hwrender/diligent/dgupload.cpp features/hwrender/diligent/dgviews.cpp features/hwrender/diligent/dgcamera.cpp features/hwrender/diligent/dgframe.cpp features/hwrender/diligent/dgdiag.cpp features/hwrender/diligent/dgdecals.cpp features/hwrender/diligent/dghorizon.cpp features/hwrender/diligent/dgtexture.cpp features/hwrender/diligent/dgtarget.cpp features/hwrender/diligent/dgwipe.cpp features/hwrender/diligent/dglines.cpp features/hwrender/diligent/dgstereo.cpp )
+	set( FUA_DILIGENT_SOURCES features/hwrender/diligent/dgprobe.cpp features/hwrender/diligent/dgdevice_vk.cpp features/hwrender/diligent/dgdevice_wgpu.cpp features/hwrender/diligent/dgwindow.cpp features/hwrender/diligent/dgscene.cpp features/hwrender/diligent/dg2d.cpp features/hwrender/diligent/dglights.cpp features/hwrender/diligent/dgsky.cpp features/hwrender/diligent/dgskyportal.cpp features/hwrender/diligent/dgskylooks.cpp features/hwrender/diligent/dgpipelines.cpp features/hwrender/diligent/dgdynamic.cpp features/hwrender/diligent/dgupload.cpp features/hwrender/diligent/dgviews.cpp features/hwrender/diligent/dgviewtargets.cpp features/hwrender/diligent/dgcamera.cpp features/hwrender/diligent/dgframe.cpp features/hwrender/diligent/dgdiag.cpp features/hwrender/diligent/dgdecals.cpp features/hwrender/diligent/dghorizon.cpp features/hwrender/diligent/dgtexture.cpp features/hwrender/diligent/dgtarget.cpp features/hwrender/diligent/dgwipe.cpp features/hwrender/diligent/dglines.cpp features/hwrender/diligent/dgstereo.cpp )
 	# [rc4l] Each platform's window for it: Win32, Cocoa with a Metal layer through MoltenVK, or SDL2 on X11 and Wayland.
 	if( EMSCRIPTEN )
 		# [rc4l] The browser's canvas, drawn on through WebGPU alone.

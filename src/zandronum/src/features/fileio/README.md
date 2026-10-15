@@ -11,6 +11,6 @@ Reading a file whole into memory, which several features each did with their own
 
 - `addon-catalogue/zx_catalogue.cpp`: a catalogue entry, capped at 256 KB.
 - `federated-server-registry/zx_serverregistrylist.cpp` and `server-browser/zx_customstore.cpp`: their stored lists.
-- `hwrender/backendrenderer.cpp`: the save a later save picture goes into, and that picture's PNG.
+- `frame/backendrenderer.cpp`: the save a later save picture goes into, and that picture's PNG.
 
 It has no in-engine hooks of its own.

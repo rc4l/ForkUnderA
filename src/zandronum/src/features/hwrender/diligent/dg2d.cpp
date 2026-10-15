@@ -8,7 +8,7 @@
 #include "RefCntAutoPtr.hpp"
 
 #include "features/hwrender/diligent/dgshared.h"
-#include "features/hwrender/hud2d.h"
+#include "features/draw2d/record.h"
 #include "features/hwrender/computation/sceneconstants_compute.h"   // [rc4l] ComputeFixedColormapConstants
 #include "features/hwrender/computation/warp_compute.h"   // [rc4l] ComputeWarpTimer, the fuzz clock
 #include "features/rendersettings/rendersettings.h"   // [rc4l] gl_frameMS, the frame's clock
@@ -253,12 +253,12 @@ void Draw2D(Diligent::IDeviceContext *ctx)
 	if (!fua_dg_hud) return;
 
 	int nq = 0;
-	const zx::hwrender::Quad2D *quads = zx::hwrender::Quads2D(nq);
+	const zx::draw2d::Quad2D *quads = zx::draw2d::Quads2D(nq);
 	if (quads == NULL || nq <= 0) return;
 	if (!Ensure2DPipeline()) return;
 
 	int scrW = 0, scrH = 0;
-	zx::hwrender::GetScreen2D(scrW, scrH);
+	zx::draw2d::GetScreen2D(scrW, scrH);
 	if (scrW <= 0 || scrH <= 0) return;
 
 	// [rc4l] Rebuilt once per engine frame, gated on the generation counter -- same reason as the
@@ -269,7 +269,7 @@ void Draw2D(Diligent::IDeviceContext *ctx)
 	static int builtQuads2D = 0;
 	// [rc4l] The fixed colormap this frame's weapon was recorded under, one for the whole frame as GL's render state holds one.
 	static int fixed2D = 0;
-	const unsigned int gen = zx::hwrender::Generation2D();
+	const unsigned int gen = zx::draw2d::Generation2D();
 	if (zx::draw2d::ComputeRebuild2DVertices(gen, built2D, nq, builtQuads2D))
 	{
 		built2D = gen;
@@ -278,7 +278,7 @@ void Draw2D(Diligent::IDeviceContext *ctx)
 		fixed2D = 0;
 		for (int i = 0; i < nq; i++)
 		{
-			const zx::hwrender::Quad2D &q = quads[i];
+			const zx::draw2d::Quad2D &q = quads[i];
 			Vertex2D v[4];
 			if (q.kind == zx::draw2d::kQuadLine)
 			{
@@ -352,9 +352,9 @@ void Draw2D(Diligent::IDeviceContext *ctx)
 	int cl = -1, ctp = -1, cr = -1, cb2 = -1;
 	for (unsigned i = 0; i < (unsigned)nq; i++)
 	{
-		const zx::hwrender::Quad2D &q = quads[i];
-		// [rc4l] GL's own vid_fps line; this window shows the backend's (k2DBackendOnly).
-		if (q.target == zx::hwrender::k2DGLOnly) continue;
+		const zx::draw2d::Quad2D &q = quads[i];
+		// [rc4l] GL's own vid_fps line; this window shows the backend's (zx::draw2d::k2DBackendOnly).
+		if (q.target == zx::draw2d::k2DGLOnly) continue;
 		// [rc4l] A polygon's triangles take the repeating pipeline, numbered past the three blends.
 		const int blendMode = q.kind == zx::draw2d::kQuadTri ? 3 : (q.blend >= 0 && q.blend < 3) ? q.blend : 0;
 		Diligent::IPipelineState *pso = blendMode == 3 ? g_pso2DWrap.RawPtr() : g_pso2D[blendMode].RawPtr();
