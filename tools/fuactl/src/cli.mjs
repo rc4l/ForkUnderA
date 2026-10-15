@@ -35,6 +35,8 @@ import * as trace from "./trace.mjs";
 import * as present from "./present.mjs";
 import { refreshNote } from "./stats.mjs";
 import { runCoverage } from "./coverage.mjs";
+import { changeSince, commentIssues } from "./comments.mjs";
+import { recentCrashes, summarizeCrash } from "./crashes.mjs";
 import { decodePNG, abDiff, boxDiff } from "./pngcore.mjs";
 import fs from "node:fs";
 import os from "node:os";
@@ -150,7 +152,7 @@ const USAGE = `fuactl <command>
   net-bw [--seed S] [--map M] [--spawn CLS] [--count N] [--seconds N]   client/server bandwidth, baseline vs perturbation
   cycle --port P [--token T] [--count N] [--settle MS]   advance the map rotation N times, confirming intermissions
   rpc <cmd> [jsonArgs] --port P [--token T]   send one RPC to an instance and print the result
-  queue add <description> [--port P] [--name SPOT]   save the instance's vantage as a spot and queue the problem seen there (report-queue skill)
+  queue add <description> [--port P] [--name SPOT] [--no-instance [--map M]]   save the instance's vantage as a spot and queue the problem seen there (report-queue skill); --no-instance queues one seen where no engine answers (a browser page, an engine already gone), with its map when known and no spot
   queue list [--all] | next | note <id> <text> | done <id> [--unverified] [--note TEXT]   read and work the queue, oldest open item first
   burst <tag> [--side gl|vk] [--count N] [--box x0,y0,x1,y1] [--spot S | --at --face] [--port P]   timed captures with the sim running and each one's box brightness, for an animation's rate or a light a paused shot hides
   steps <tag> --hold +ACTION [--count N] [--spot S | --at --face] [--port P]   an action (+crouch) held and stepped one tic at a time, a GL/Vulkan pair and the eye height each tic, for a fault that shows only mid-transition
@@ -174,6 +176,8 @@ const USAGE = `fuactl <command>
   present [--seconds N] [--process NAME.exe] [--port P [--token T]] [--out FILE.csv]   what Windows put on screen, from PresentMon run as administrator (a UAC prompt): each app's frames handed over and shown a second and the compositor's own updates; with --port the instance's frames are recorded alongside and lined up second by second
   play [--restart] [--port P] [--token T] [--spot NAME | --unpark] [--map M] [--file a.pk3,b.pk3] [--cvar k=v,k2=v2] [--preset ID --variant V --store DIR] [--gl | --no-gl | --webgpu] [--side-by-side] [--rt] [--monsters] [--lock] [--res WxH]   a build to walk around in, Vulkan live in the window; stays up until Ctrl-C
   build [--root DIR] [--no-stage] [--tests]   compile the engine (with --tests the unit tests too, and run them) and stage it unless --no-stage, failing loudly instead of staging a stale binary
+  crashes [--hours N]   the crash files fuactl's launches left in the last N hours (default 24), newest first, each with why it stopped and its first frames
+  comments [--since REF]   the [rc4l] comments a change adds since REF (default HEAD, untracked files included) that run past one line or one sentence, as AGENTS.md has them; exit 1 on any
   coverage [--since REF] [--tool PATH]   the 100% line-coverage gate on Windows: builds the Debug unit tests and runs them under OpenCppCoverage, then checks every unit a NAME_test.cpp gates, or with --since only those changed since REF (new files included); exit 1 on any miss
   mapdata <MAP> (--preset ID | --file a.pk3,b.wad) [--sector N,..] [--line N,..] [--special N] [--tag N] [--thing TYPE,..] [--scripts REGEX]   a UDMF level's summary, sectors, lines, things of the given types and ACS source lines, read from its files
   actors [--near x,y] [--radius R] [--toward YAW | --ahead] [--cone DEG] [--class REGEX]   actors near a point (default the player), nearest first, optionally only in a direction
@@ -457,11 +461,14 @@ async function main() {
       const q = loadQueue();
       if (sub === "add" && words.length) {
         const description = words.join(" ");
-        const c = await connectTarget(flags, usage);
-        const cam = await captureSpot(c, flags.name ? String(flags.name) : spotNameFor(nextId(q), description), description);
-        c.close();
-        const r = addItem(q, { description, spot: flags.name ? String(flags.name) : undefined, map: cam.map,
-          at: shot.atFromCamera(cam) });
+        let where = { map: flags.map && flags.map !== true ? String(flags.map) : null, at: null };
+        if (!flags["no-instance"]) {
+          const c = await connectTarget(flags, usage);
+          const cam = await captureSpot(c, flags.name ? String(flags.name) : spotNameFor(nextId(q), description), description);
+          c.close();
+          where = { map: cam.map, at: shot.atFromCamera(cam) };
+        }
+        const r = addItem(q, { description, spot: flags.name ? String(flags.name) : undefined, ...where });
         saveQueue(r.queue);
         console.log(formatItem(r.item));
       } else if (sub === "list") {
@@ -874,6 +881,24 @@ async function main() {
       const when = new Date(fs.statSync(r.staged).mtime).toTimeString().slice(0, 8);
       console.log(`build ok, staged ${when} (+${r.entries} catalogue entries)`);
       break;
+    }
+    case "crashes": {
+      const hours = flags.hours && flags.hours !== true ? Number(flags.hours) : 24;
+      const found = recentCrashes(Date.now() - hours * 3600 * 1000);
+      for (const c of found) {
+        const { why, stack } = summarizeCrash(fs.readFileSync(c.file, "utf8"));
+        console.log(`${new Date(c.at).toISOString()} ${c.file}
+  ${why}`);
+        for (const f of stack) console.log(`    ${f}`);
+      }
+      console.log(`${found.length} crash file(s) in the last ${hours} hour(s)`);
+      break;
+    }
+    case "comments": {
+      const issues = commentIssues(changeSince(fileURLToPath(new URL("../../../", import.meta.url)), flags.since && flags.since !== true ? String(flags.since) : "HEAD"));
+      for (const i of issues) console.log(`${i.file}:${i.line}: ${i.why}: ${i.text.trim().slice(0, 140)}`);
+      console.log(`${issues.length} comment(s) past one line or one sentence`);
+      process.exit(issues.length ? 1 : 0);
     }
     case "coverage": {
       const { results, report } = runCoverage({ root: fileURLToPath(new URL("../../../", import.meta.url)), tool: flags.tool, since: flags.since && flags.since !== true ? String(flags.since) : null });

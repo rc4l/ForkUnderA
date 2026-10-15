@@ -7,7 +7,7 @@ import * as cap from "./capture.mjs";
 import * as shot from "./shot.mjs";
 import * as ui from "./ui.mjs";
 import { withLockedInstance } from "./play.mjs";
-import { resolveEngine, engineProcessCount } from "./launch.mjs";
+import { resolveEngine, engineProcessCount, exited } from "./launch.mjs";
 import { decodePNG, boxDiff } from "./pngcore.mjs";
 
 // [rc4l] The repo's own Freedoom 2, found from this file so the harness runs from any checkout.
@@ -169,27 +169,18 @@ export function webgpuOptions(opts, compare = compareTemplate) {
   const vk = (opts.sides || GL_VS_VULKAN).find((s) => !s.gl && s.frame !== "gl");
   if (!vk) return null;
   const { frame, glDraws, ...rest } = vk;
-  if ([compareCounter, compareOverTime, compareSequence, compareQuit].includes(compare)) return { ...opts, sides: [{ ...rest, name: "wgpu", noGl: true, webgpu: true }] };
+  if (compare.judgedAlone) return { ...opts, sides: [{ ...rest, name: "wgpu", noGl: true, webgpu: true }] };
   const boxes = Object.fromEntries(Object.entries(opts.boxes).map(([map, bs]) => [map, Object.fromEntries(Object.entries(bs).map(
     ([n, b]) => [n, { box: b.box, block: b.block, vantage: b.vantage, ceiling: WEBGPU_CEILING }]))]));
   return { ...opts, sides: [{ ...rest, name: "vk", noGl: true }, { ...rest, name: "wgpu", noGl: true, webgpu: true }], boxes };
 }
 
-// [rc4l] A quit judged: a crash file beside the engine's log, an engine still running (code null), or an exit code other than 0 fails it.
-export function judgeQuit(label, { code, crashed }) {
+// [rc4l] A quit judged by how the engine ended (launch.mjs's exited, null while it runs): a crash file beside its log, an engine still running, or an exit other than 0 fails it.
+export function judgeQuit(label, { gone, crashed }) {
   if (crashed) return { line: `FAIL ${label}: the engine crashed on its way out`, failed: 1 };
-  if (code == null) return { line: `FAIL ${label}: the engine did not exit`, failed: 1 };
-  if (code !== 0) return { line: `FAIL ${label}: the engine exited with ${code}`, failed: 1 };
+  if (!gone) return { line: `FAIL ${label}: the engine did not exit`, failed: 1 };
+  if (gone.code !== 0) return { line: `FAIL ${label}: the engine exited with ${gone.code ?? gone.signal}`, failed: 1 };
   return { line: `PASS ${label}: quit cleanly`, failed: 0 };
-}
-
-// [rc4l] proc's exit code once it has gone, or null when it is still running after timeoutMs.
-export function exitCodeOf(proc, timeoutMs = 15000) {
-  if (proc.exitCode != null) return Promise.resolve(proc.exitCode);
-  return new Promise((resolve) => {
-    const timer = setTimeout(() => resolve(null), timeoutMs);
-    proc.once("exit", (code) => { clearTimeout(timer); resolve(code); });
-  });
 }
 
 // [rc4l] Each side launched on each map, played a moment and quit from its console as a player quits, then judged by judgeQuit: for a fault on the engine's way out, which no frame shows.
@@ -206,8 +197,8 @@ export async function compareQuit({ name, wad, maps, sides, iwad = FREEDOOM2, po
           await cap.waitTics(c, settleTics);
           // [rc4l] Over the scenario's own connection, the bridge's only one; the engine leaves before it answers.
           await c.rpc("console.exec", { text: "quit" }).catch(() => {});
-          const code = await exitCodeOf(inst.proc);
-          return judgeQuit(label, { code, crashed: fs.existsSync(`${inst.log}.crash`) });
+          const gone = await exited(inst.proc, 15000);
+          return judgeQuit(label, { gone, crashed: fs.existsSync(`${inst.log}.crash`) });
         });
         lines.push(r.line);
         failed += r.failed;
@@ -384,3 +375,6 @@ export async function compareOverTime({ name, wad, maps, vantages, boxes, interv
     return judge(map, frames, boxes[map], size, ["before", "after"]);
   });
 }
+
+// [rc4l] The comparisons that judge a launch against itself rather than GL, which a WebGPU run runs on WebGPU alone (webgpuOptions).
+for (const compare of [compareCounter, compareOverTime, compareSequence, compareQuit]) compare.judgedAlone = true;

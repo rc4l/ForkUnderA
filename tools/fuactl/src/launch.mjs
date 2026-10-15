@@ -237,14 +237,21 @@ export async function launchInstance(opts = {}) {
   return { proc, pid: proc.pid, port, token, host: opts.host || "127.0.0.1", log, stdioLog, logDir, engine: bin };
 }
 
-// Ask an instance to quit cleanly (SIGTERM -> engine's clean-quit path), then hard-kill after grace.
-export function stopInstance(inst, graceMs = 4000) {
+// [rc4l] How proc ended ({ code, signal }) once it has, or null when it is still running after timeoutMs.
+export function exited(proc, timeoutMs) {
+  if (proc.exitCode != null || proc.signalCode) return Promise.resolve({ code: proc.exitCode, signal: proc.signalCode });
   return new Promise((resolve) => {
-    if (!inst.proc || inst.proc.exitCode != null || inst.proc.signalCode) return resolve("already-exited");
-    let done = false;
-    const finish = (how) => { if (!done) { done = true; resolve(how); } };
-    inst.proc.once("exit", () => finish("clean"));
-    try { inst.proc.kill("SIGTERM"); } catch { /* ignore */ }
-    setTimeout(() => { try { inst.proc.kill("SIGKILL"); } catch {} finish("forced"); }, graceMs);
+    const timer = setTimeout(() => resolve(null), timeoutMs);
+    proc.once("exit", (code, signal) => { clearTimeout(timer); resolve({ code, signal }); });
   });
+}
+
+// Ask an instance to quit cleanly (SIGTERM -> engine's clean-quit path), then hard-kill after grace.
+export async function stopInstance(inst, graceMs = 4000) {
+  if (!inst.proc || inst.proc.exitCode != null || inst.proc.signalCode) return "already-exited";
+  const gone = exited(inst.proc, graceMs);
+  try { inst.proc.kill("SIGTERM"); } catch { /* ignore */ }
+  if (await gone) return "clean";
+  try { inst.proc.kill("SIGKILL"); } catch { /* ignore */ }
+  return "forced";
 }

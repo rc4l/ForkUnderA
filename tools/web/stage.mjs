@@ -14,7 +14,8 @@ export function manifest(files) {
   return files.map((f) => ({ name: path.basename(f), size: fs.statSync(f).size }));
 }
 
-export function stage({ buildDir, outDir, pageDir, freedoomDir, module = 'forkundera' }) {
+// [rc4l] wads are more files for the page to write in, such as an IWAD and a map the query then names (?iwad=doom2.wad&file=map.wad).
+export function stage({ buildDir, outDir, pageDir, freedoomDir, module = 'forkundera', wads = [] }) {
   const data = path.join(outDir, 'data');
   fs.mkdirSync(data, { recursive: true });
   for (const ext of ['.js', '.wasm']) {
@@ -23,7 +24,7 @@ export function stage({ buildDir, outDir, pageDir, freedoomDir, module = 'forkun
     fs.copyFileSync(src, path.join(outDir, module + ext));
   }
   for (const f of fs.readdirSync(pageDir)) fs.copyFileSync(path.join(pageDir, f), path.join(outDir, f));
-  const files = [...engineData(buildDir), path.join(freedoomDir, 'freedoom2.wad')];
+  const files = [...engineData(buildDir), path.join(freedoomDir, 'freedoom2.wad'), ...wads];
   for (const f of files) fs.copyFileSync(f, path.join(data, path.basename(f)));
   fs.copyFileSync(path.join(freedoomDir, 'License.txt'), path.join(data, 'freedoom-license.txt'));
   fs.writeFileSync(path.join(data, 'files.json'), JSON.stringify(manifest(files), null, 1));
@@ -32,8 +33,11 @@ export function stage({ buildDir, outDir, pageDir, freedoomDir, module = 'forkun
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
-  const buildDir = path.resolve(process.argv[2] ?? path.join(root, 'build-web'));
-  const outDir = path.resolve(process.argv[3] ?? path.join(root, 'dist-web'));
-  const staged = stage({ buildDir, outDir, pageDir: path.join(root, 'web'), freedoomDir: path.join(root, 'tools', 'freedoom') });
+  const args = process.argv.slice(2);
+  const at = args.indexOf('--wads');
+  const wads = at >= 0 ? args.splice(at, 2)[1].split(',').map((w) => path.resolve(w)) : [];
+  const buildDir = path.resolve(args[0] ?? path.join(root, 'build-web'));
+  const outDir = path.resolve(args[1] ?? path.join(root, 'dist-web'));
+  const staged = stage({ buildDir, outDir, pageDir: path.join(root, 'web'), freedoomDir: path.join(root, 'tools', 'freedoom'), wads });
   console.log(`staged ${outDir}: ${staged.join(', ')}`);
 }

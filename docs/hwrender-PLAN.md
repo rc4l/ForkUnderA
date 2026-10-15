@@ -22,7 +22,7 @@ float sim + ZScript + FGameTexture, which would break deterministic netplay.
 
 ## Current state (done, committed, verified)
 
-- **8 `computation/` units at 100% coverage** (90 tests): `matrix`, `gammaramp`, `vertexconvert`,
+- **`computation/` units at 100% coverage**: `matrix`, `gammaramp`, `vertexconvert`,
   `frustum`, `vertexformat`, `batch`, `renderstate`, `quad`.
 - **`irenderbackend.h`** — the backend-agnostic seam; **`gl_backend.cpp`** — Core-profile GL
   implementation; **`renderer2d.cpp`** — 2D draw path; **`shaders.h`** — GLSL 330 base shaders.
@@ -323,7 +323,7 @@ lighting, the player weapon and the HUD. `vid_hwrender 0` is untouched throughou
 | Fog | — | **not ported** |
 | Dynamic lights | — | **not ported** |
 
-View and projection are rebuilt by `ComputeSceneProjection`/`ComputeSceneView` (8 tests), since core
+View and projection are rebuilt by `ComputeSceneProjection`/`ComputeSceneView` (tested), since core
 removes `glMatrixMode`/`gluPerspective`. The camera is captured in `SetViewMatrix`, not `SetupView` —
 the latter is portal/skydome only, and hooking it left the scene camera unset.
 

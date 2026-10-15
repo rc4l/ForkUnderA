@@ -31,11 +31,21 @@ node src/cli.mjs queue add "<their words, then what the screenshot shows>" --por
   what it shows, since it does not survive the conversation and the queue does.
 - Reply in one line (`#3 queued at q3-ceiling-over-the-stairs`). Then, unless they said to hold, keep
   working the queue; a new item never interrupts the one in progress.
+- Where no engine answers (a browser page, which has no bridge, or an engine that already crashed),
+  `queue add "<description>" --no-instance [--map M]` queues it without a spot. Ask them to type
+  `currentpos` in the game console if the place matters, and `queue note` what it prints.
 
 `queue list` shows open items (`--all` includes closed). `queue next` prints the oldest open item with
 its full spot record.
 
 ## Work an item
+
+A report from the browser build reproduces in headless Chrome rather than an engine window:
+`node tools/web/stage.mjs build-web <dir> --wads <iwad>,<map>` stages a page with their wads, and
+`node tools/web/probe.mjs <dir> --query "iwad=...&file=...&map=..." --run "god; wait 1000; +attack"
+[--autoplay]` plays it, listing the sounds it started (and any started again), the screen textures it held
+and its WebGPU errors. The probe's Chrome is always muted, and a minimal template map isolates the fault
+better than their mod's busy map.
 
 1. **Read it.** `queue next`. The spot's `loaded` says which wads the map needs; launching without them
    silently lands in the IWAD's MAP01 (`fua-side-by-side`, `fua-capture-spot`).

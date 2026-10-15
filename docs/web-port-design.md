@@ -244,7 +244,7 @@ Paths are relative to `src/zandronum/src/` unless noted. The order is deliberate
 - **Camera textures on a binding per material:** the binding was made before the camera's first render and kept the white placeholder. WebGPU always draws this way, as does Vulkan past the array's cap; `cameratexpermaterial` covers it.
 - **Checks (13a, 13c, 13d, 13e):**
   - The gtests build with Emscripten, threads and wasm exceptions, and pass in Node (`test-web` in CI).
-  - `tools/web/check.mjs` runs the page in headless Chrome against its `CHECKS`: drawing, sound after a click (11b, 11c), resizing (10a), game keys (11e), screenshots, saves surviving a reload (14d), quitting, the config's storage, errors, floor marks, the canvas's size and crash reports. Any WebGPU error fails a check, as do textures held across resizes and a map change's wipe. CI runs it after the web build, on SwiftShader's WebGPU.
+  - `tools/web/check.mjs` runs the page in headless Chrome against its `CHECKS`, each named for what it guards, and any WebGPU error fails a check that did not make it on purpose. CI runs it after the web build, on SwiftShader's WebGPU.
   - CI builds the web module (`build-web`) and runs the tripwire.
   - `fuactl scenarios --webgpu` runs the suite on WebGPU against Vulkan.
 - **Next:**

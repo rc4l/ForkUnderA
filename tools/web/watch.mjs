@@ -1,0 +1,39 @@
+// [rc4l] What a page can be watched doing, as scripts run before its own, shared by the checks and the probe.
+
+// [rc4l] Every audio buffer the page starts, in window.fuaSounds as { t, id, len }: the audio clock's time, the buffer's number by identity, and its length in seconds.
+export const WATCH_SOUNDS = `window.fuaSounds = []; {
+    const ids = new WeakMap();
+    let next = 0;
+    const start = AudioBufferSourceNode.prototype.start;
+    AudioBufferSourceNode.prototype.start = function (...a) {
+      const b = this.buffer;
+      if (b && !ids.has(b)) ids.set(b, ++next);
+      window.fuaSounds.push({ t: this.context.currentTime, id: b ? ids.get(b) : 0, len: b ? b.duration : 0 });
+      return start.apply(this, a);
+    };
+  }`;
+
+// [rc4l] The screen-sized textures the page holds, made and neither destroyed nor collected, in window.fuaHeld; the level's own, which a software adapter is still making, are far smaller.
+export const WATCH_TEXTURES = `window.fuaHeld = new Set(); {
+    const collected = new FinalizationRegistry((id) => window.fuaHeld.delete(id));
+    let next = 0;
+    const create = GPUDevice.prototype.createTexture;
+    GPUDevice.prototype.createTexture = function (d) {
+      const t = create.call(this, d);
+      const s = d.size, w = s.width ?? s[0], h = s.height ?? s[1] ?? 1;
+      if (w * h >= 200000) { t.fuaId = ++next; window.fuaHeld.add(t.fuaId); collected.register(t, t.fuaId); }
+      return t;
+    };
+    const destroy = GPUTexture.prototype.destroy;
+    GPUTexture.prototype.destroy = function () { window.fuaHeld.delete(this.fuaId); return destroy.call(this); };
+  }`;
+
+// [rc4l] Each sound started more than once, by buffer, with its length and the times it started: the tell of a sound played again.
+export function repeatedSounds(sounds) {
+  const byId = new Map();
+  for (const s of sounds) {
+    if (!byId.has(s.id)) byId.set(s.id, { id: s.id, len: s.len, times: [] });
+    byId.get(s.id).times.push(s.t);
+  }
+  return [...byId.values()].filter((b) => b.times.length > 1);
+}

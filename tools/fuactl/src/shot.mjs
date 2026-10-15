@@ -312,7 +312,7 @@ export async function captureBurst(c, { side = "vk", count = 8, box = [0, 0, 1, 
   return out;
 }
 
-// [rc4l] At `at` with the sim RUNNING, a capture after each step in turn, once its commands have run and its waitMs passed: Vulkan's, and GL's too when gl is set, by the step's name. A command is a console line, a number of ms to wait, or a camera ({x, y, z, angle, pitch}) to stand at.
+// [rc4l] At `at` with the sim RUNNING, a capture after each step in turn, once its commands have run and its waitMs passed: Vulkan's, and GL's too when gl is set, by the step's name; a command is a console line, a number of ms to wait, or a camera ({x, y, z, angle, pitch}) to stand at.
 export async function captureSequence(c, { at = null, engineBin, outDir, tag = "sequence", steps, gl = false }) {
   outDir = outDir || sweepDirFor(engineBin);
   fs.mkdirSync(outDir, { recursive: true });

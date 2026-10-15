@@ -20,6 +20,11 @@ Who/What/Where/Why on the issue, and close it.
 - **On Windows**, a fuactl launch that crashes leaves `<log>.crash` with a `fault stack:` walked from the
   exception's context (a call through a null pointer starts from its caller), and a template run prints
   `engine crashed -- <log>.crash`.
+- **A crash someone saw but did not file:** `node tools/fuactl/src/cli.mjs crashes [--hours N]` lists the crash
+  files fuactl's launches left, each with why it stopped and its first frames.
+- **A crash on quit** whose stack runs through `common_exit` or `_execute_onexit_table` is static
+  destruction: an object the engine owns outlived the console or the window it reports to. Release it in an
+  `atterm` (which runs first), and prove it with a `compareQuit` scenario (`quitclean`).
 - **Confirm with lldb** when you can reproduce: `lldb --batch -o run -o "bt" -o "register read" -- <bin> <args>`.
   `EXC_BAD_ACCESS (code=1, address=0x…)` + the faulting register tells you which pointer is bad and
   the offset tells you which field (e.g. `[x1, #0x143]` = the field at that struct offset off a null base).

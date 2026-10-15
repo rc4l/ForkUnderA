@@ -46,8 +46,6 @@ public:
 		return freed;
 	}
 
-	size_t Size() const { return m_entries.size(); }
-
 private:
 	struct Entry { void *handle; bool texture; Owner owner; };
 	std::vector<Entry> m_entries;

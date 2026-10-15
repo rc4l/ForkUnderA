@@ -43,8 +43,25 @@ Loads a page in headless Chrome with WebGPU on and prints its console.
 - `--evaluate` runs JavaScript in the page `--after` seconds in (10 by default), such as `Module.fuaCommand("map MAP02")`, and prints its result.
 - `--profile` keeps the browser profile in DIR between runs, so a second run sees what the first stored.
 - `--software true` puts WebGPU on SwiftShader, Chrome's CPU renderer.
+- Chrome always runs muted, since a headless Chrome still plays to the machine's speakers; a run's caller can let the page's audio start without a click (`smoke({ autoplay })`).
 - `--downloadDir DIR` keeps the page's downloads in DIR, and the run waits for them to finish.
 - The page can ask for input a person would give by logging `check: click` (the page's middle), `check: press Tab` (also `Escape`, `Enter`) or `check: resize 900x700` (the window). Input from inside the page doesn't count as a person's, so a click can't start the sound that way.
+
+## stage.mjs
+
+```bash
+node tools/web/stage.mjs [build-web] [dist-web] [--wads a.wad,b.wad]
+```
+
+Copies the module, the page and the data the page writes into the engine's file system, with its manifest. `--wads` adds files of your own, such as an IWAD and a map the query then names (`?iwad=doom2.wad&file=map.wad&map=MAP01`).
+
+## probe.mjs
+
+```bash
+node tools/web/probe.mjs [dist-web] [--query Q] [--run "god; wait 1000; +attack"] [--autoplay] [--software] [--seconds N]
+```
+
+Plays a staged page through console lines (with `wait N` between them, in milliseconds) and reports what it did: each sound it started, any started again, the screen textures it held before and after, and its WebGPU errors. `--autoplay` lets its audio run without a click. The watches are shared with the checks (`watch.mjs`).
 
 ## check.mjs
 

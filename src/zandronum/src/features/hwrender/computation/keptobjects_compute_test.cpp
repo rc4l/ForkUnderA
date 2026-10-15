@@ -21,6 +21,9 @@ struct Freed { void *handle; bool texture; };
 
 bool Released(const Owner &o) { return o.expired(); }
 
+// [rc4l] How many objects kept still holds, counted by freeing a copy of it as if nothing held any.
+unsigned Held(KeptObjects<Owner> kept) { return kept.FreeReleased([](const Owner &) { return true; }, [](void *, bool) {}); }
+
 } // namespace
 
 TEST(KeptObjects, OnlyTheReleasedAreFreed)
@@ -41,14 +44,14 @@ TEST(KeptObjects, OnlyTheReleasedAreFreed)
 	ASSERT_EQ(1u, freed.size());
 	EXPECT_EQ(&a, freed[0].handle);
 	EXPECT_TRUE(freed[0].texture);
-	EXPECT_EQ(1u, kept.Size());
+	EXPECT_EQ(1u, Held(kept));
 
 	holdB.reset();
 	EXPECT_EQ(1u, kept.FreeReleased(Released, free));
 	ASSERT_EQ(2u, freed.size());
 	EXPECT_EQ(&b, freed[1].handle);
 	EXPECT_FALSE(freed[1].texture);
-	EXPECT_EQ(0u, kept.Size());
+	EXPECT_EQ(0u, Held(kept));
 }
 
 // [rc4l] The swapchain's own textures are offered after every present, and kept once until they go.
@@ -59,14 +62,14 @@ TEST(KeptObjects, AHandleIsKeptOnce)
 	KeptObjects<Owner> kept;
 	EXPECT_TRUE(kept.Keep(&a, true, hold));
 	EXPECT_FALSE(kept.Keep(&a, true, hold));
-	EXPECT_EQ(1u, kept.Size());
+	EXPECT_EQ(1u, Held(kept));
 }
 
 TEST(KeptObjects, NoHandleIsNothingToKeep)
 {
 	KeptObjects<Owner> kept;
 	EXPECT_FALSE(kept.Keep(nullptr, true, Owner()));
-	EXPECT_EQ(0u, kept.Size());
+	EXPECT_EQ(0u, Held(kept));
 }
 
 // [rc4l] Freed handles are forgotten, so an object made later at the same address is kept again.
@@ -99,13 +102,13 @@ TEST(KeptObjects, FreeingSeveralAtOnceKeepsTheRest)
 	holds[2].reset();
 	std::vector<void *> freed;
 	EXPECT_EQ(2u, kept.FreeReleased(Released, [&](void *p, bool) { freed.push_back(p); }));
-	EXPECT_EQ(2u, kept.Size());
+	EXPECT_EQ(2u, Held(kept));
 	EXPECT_NE(freed.end(), std::find(freed.begin(), freed.end(), (void *)&h[0]));
 	EXPECT_NE(freed.end(), std::find(freed.begin(), freed.end(), (void *)&h[2]));
 	holds[1].reset();
 	holds[3].reset();
 	EXPECT_EQ(2u, kept.FreeReleased(Released, [](void *, bool) {}));
-	EXPECT_EQ(0u, kept.Size());
+	EXPECT_EQ(0u, Held(kept));
 }
 
 TEST(KeptObjects, OnlyABufferWithItsOwnMemoryIsKept)

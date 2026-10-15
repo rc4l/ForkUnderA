@@ -6,6 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from './serve.mjs';
 import { smoke, gpuLogLines } from './smoke.mjs';
+import { WATCH_SOUNDS, WATCH_TEXTURES } from './watch.mjs';
 import { decodePNG, boxStats, px } from '../fuactl/src/pngcore.mjs';
 
 // [rc4l] JavaScript run in the page once the engine has started (fua.js sets fuaCommand just before main), its value the check's result.
@@ -132,27 +133,6 @@ const READ_REPORT = `const status = document.getElementById('report-status');
       for (let i = 0; i < 50 && (document.getElementById('error').hidden || status.textContent.startsWith('Preparing')); i++) ${pause(100)}
       const last = Module.fuaCrashReporter.last();`;
 
-// [rc4l] Counts the screen-sized textures the page holds, made and neither destroyed nor collected, which is what a browser keeps in GPU memory; the level's own, which a software adapter is still making, are far smaller.
-const COUNT_HELD_TEXTURES = `window.fuaHeld = new Set(); {
-    const collected = new FinalizationRegistry((id) => window.fuaHeld.delete(id));
-    let next = 0;
-    const create = GPUDevice.prototype.createTexture;
-    GPUDevice.prototype.createTexture = function (d) {
-      const t = create.call(this, d);
-      const s = d.size, w = s.width ?? s[0], h = s.height ?? s[1] ?? 1;
-      if (w * h >= 200000) { t.fuaId = ++next; window.fuaHeld.add(t.fuaId); collected.register(t, t.fuaId); }
-      return t;
-    };
-    const destroy = GPUTexture.prototype.destroy;
-    GPUTexture.prototype.destroy = function () { window.fuaHeld.delete(this.fuaId); return destroy.call(this); };
-  }`;
-
-// [rc4l] Every audio buffer the page starts, kept to count one sound's plays by its buffer.
-const KEEP_SOUND_STARTS = `window.fuaStarted = []; {
-    const start = AudioBufferSourceNode.prototype.start;
-    AudioBufferSourceNode.prototype.start = function (...a) { window.fuaStarted.push(this.buffer); return start.apply(this, a); };
-  }`;
-
 // [rc4l] Counts the times the page's canvas is sized to zero, as SDL does to the canvas of a window it destroys.
 const COUNT_ZERO_CANVAS = `window.fuaZeroCanvas = 0;
   for (const k of ['width', 'height']) {
@@ -246,7 +226,7 @@ export const CHECKS = [
   // [rc4l] Each size makes the screen's targets again, and a browser frees the old ones only when its garbage collector runs; Firefox ran out of GPU memory part way through a window being dragged bigger.
   {
     name: 'resizing the page many times holds no more of the GPU than once',
-    init: COUNT_HELD_TEXTURES,
+    init: WATCH_TEXTURES,
     evaluate: inPage(`
       ${pause(2000)}
       const before = window.fuaHeld.size;
@@ -268,14 +248,14 @@ export const CHECKS = [
   {
     name: 'a sound plays once',
     autoplay: true,
-    init: KEEP_SOUND_STARTS,
+    init: WATCH_SOUNDS,
     evaluate: inPage(`
       ${pause(1500)}
-      const from = window.fuaStarted.length;
+      const from = window.fuaSounds.length;
       Module.fuaCommand('playsound brain/cube');
       ${pause(3500)}
-      const sounds = window.fuaStarted.slice(from).filter((b) => b && b.duration > 1);
-      return sounds.length ? sounds.filter((b) => b === sounds[0]).length : 0;`),
+      const sounds = window.fuaSounds.slice(from).filter((s) => s.len > 1);
+      return sounds.length ? sounds.filter((s) => s.id === sounds[0].id).length : 0;`),
     until: EVAL,
     expect: playedOnce,
   },

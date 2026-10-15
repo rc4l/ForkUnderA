@@ -40,3 +40,11 @@ test('staging copies the module, the page and the data, with Freedoom and its li
 test('staging without a build says to build first', () => {
   assert.throws(() => stage({ buildDir: scratch(), outDir: scratch(), pageDir: scratch(), freedoomDir: scratch() }), /build first/);
 });
+
+test('staging adds the wads it is given to the data and its manifest', () => {
+  const build = scratch(), out = path.join(scratch(), 'dist'), page = scratch(), freedoom = scratch(), extra = scratch();
+  for (const [dir, f] of [[build, 'forkundera.js'], [build, 'forkundera.wasm'], [freedoom, 'freedoom2.wad'], [freedoom, 'License.txt'], [extra, 'doom2.wad']]) fs.writeFileSync(path.join(dir, f), 'x');
+  const staged = stage({ buildDir: build, outDir: out, pageDir: page, freedoomDir: freedoom, wads: [path.join(extra, 'doom2.wad')] });
+  assert.deepEqual(staged, ['freedoom2.wad', 'doom2.wad']);
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(out, 'data', 'files.json'), 'utf8')).map((f) => f.name), ['freedoom2.wad', 'doom2.wad']);
+});

@@ -90,12 +90,17 @@ test("a locked instance that crashed reports its crash log, and one that failed 
   const fs = await import("node:fs");
   const os = await import("node:os");
   const path = await import("node:path");
-  const log = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "fuactl-wl-")), "engine-7799.log");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fuactl-wl-"));
+  const log = path.join(dir, "engine-7799.log");
   const deps = { launch: async () => ({ port: 7799, token: "t", log }), connect: async () => ({ close: () => {} }), stop: async () => {} };
-  await assert.rejects(() => withLockedInstance({}, async () => { throw new Error("capture timed out"); }, deps), /capture timed out/);
-  fs.writeFileSync(`${log}.crash`, "boom");
-  await assert.rejects(() => withLockedInstance({}, async () => { throw new Error("capture timed out"); }, deps), /engine crashed -- .*\.crash/);
-  await assert.rejects(() => withLockedInstance({}, async () => 1, { ...deps, launch: async () => { throw new Error("no engine"); } }), /no engine/);
+  try {
+    await assert.rejects(() => withLockedInstance({}, async () => { throw new Error("capture timed out"); }, deps), /capture timed out/);
+    fs.writeFileSync(`${log}.crash`, "boom");
+    await assert.rejects(() => withLockedInstance({}, async () => { throw new Error("capture timed out"); }, deps), /engine crashed -- .*\.crash/);
+    await assert.rejects(() => withLockedInstance({}, async () => 1, { ...deps, launch: async () => { throw new Error("no engine"); } }), /no engine/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 // [rc4l] The bridge serves one client at a time, and a probe left open after its question timed out kept every later one waiting until the launch gave up.
