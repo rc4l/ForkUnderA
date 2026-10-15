@@ -247,9 +247,8 @@ jobs:
         if: ${{ !inputs.upload_symbols }}
         run: |
           set -euo pipefail
-          rm -rf dist-prebuilt
-          cp -r dist-linux/ForkUnderA-*-server dist-prebuilt
-          docker build -f Dockerfile.game-server --build-arg ENGINE_FROM=prebuilt -t forkundera-game-server:ci .
+          tools/stage-game-server.sh
+          docker build -f Dockerfile.game-server -t forkundera-game-server:ci .
           tools/game-server-smoke.sh forkundera-game-server:ci
 
       # [rc4l] Its own artifact name: two jobs cannot upload to one name, v4 artifacts being
@@ -380,7 +379,7 @@ jobs:
           ZX_OFFICIAL_BUILD: ${{ inputs.upload_symbols && '1' || '0' }}
         run: |
           $ErrorActionPreference = "Stop"
-          ./windows_compile.ps1 -Version "${{ inputs.version }}" -Generator "Ninja Multi-Config" 2>&1 | Tee-Object -FilePath build.log
+          ./windows_compile.ps1 -Version "${{ inputs.version }}" 2>&1 | Tee-Object -FilePath build.log
           # [rc4l] Fail if a shipping feature silently didn't compile in.
           if (-not (Select-String -Path build.log -Pattern "FUA replay: FFmpeg found" -Quiet)) { Write-Error "instant replay / FFmpeg not enabled in this build" }
           if (-not (Select-String -Path build.log -Pattern "ZX crash reporting: sentry ENABLED" -Quiet)) { Write-Error "sentry crash reporting not enabled in this build" }
@@ -397,8 +396,8 @@ jobs:
         shell: pwsh
         run: |
           $sha = (git rev-parse HEAD).Substring(0,12)
-          $pdb = Get-ChildItem -Path build-win -Recurse -Filter forkundera.pdb | Select-Object -First 1
-          if (-not $pdb) { throw "no forkundera.pdb found under build-win" }
+          $pdb = Get-ChildItem -Path build-win-ninja -Recurse -Filter forkundera.pdb | Select-Object -First 1
+          if (-not $pdb) { throw "no forkundera.pdb found under build-win-ninja" }
           Compress-Archive -Path $pdb.FullName -DestinationPath "symbols-windows-$sha.zip" -Force
           Get-ChildItem symbols-windows-*.zip
 

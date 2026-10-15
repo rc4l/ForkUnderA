@@ -7,34 +7,8 @@
 # reason: this image needs republishing when the engine or the catalogue moves, which is a different
 # schedule from either an engine release or a registry release.
 #
-# WHY THIS DOES NOT BUILD ON EVERY ENGINE PR, unlike registry-image.yml.
-#
-# The registry compiles eight files out of the engine tree, so listing those eight paths is a complete
-# statement of the coupling and cheap to act on. This image compiles the WHOLE engine, so the honest
-# path filter would be src/zandronum/** -- which is nearly every pull request, each paying a full
-# from-scratch compile inside Docker.
-#
-# _build.yml already compiles Linux natively on every PR, so most source breakage fails there first and
-# fails faster. What is unique to this workflow is the PACKAGING: the Dockerfile, the dockerignore, the
-# entrypoint's catalogue resolution, and the runtime library set. Those are the paths listed below.
-#
-# KNOWN GAP, recorded rather than papered over: nothing in CI builds SERVERONLY at all today, and
-# SERVERONLY compiles genuinely different code (SERVER_ONLY=1, no GL, no sound). So a break confined to
-# a SERVER_ONLY branch passes every PR and is caught here only when this workflow is dispatched. The
-# fix is a cheap native SERVERONLY configure+compile in _build.yml, not a full Docker build per PR.
+# [rc4l] Pull requests check the image without publishing it, in _build.yml's build-linux-server job, which packages the server it compiled and starts it with tools/game-server-smoke.sh as this workflow does.
 name: Release Game Server Image
-
-# [rc4l] What a RUN is called, as opposed to what the workflow is called. On a pull request this
-# builds the image and stands a server up inside it, then stops: the version derives to "ci", publish
-# is false, and the login, push and tag steps are all gated on publish. Calling that run "Release Game
-# Server Image" invited exactly the question it should have answered, since nothing is released.
-#
-# The workflow keeps its name because releasing is what it is FOR; only the runs that are not
-# releases say so.
-run-name: >-
-  ${{ github.event_name == 'pull_request'
-      && 'Headless Server Build Validation'
-      || 'Release Game Server Image' }}
 
 on:
   workflow_dispatch:
@@ -64,23 +38,17 @@ on:
     workflows: ["Release ForkUnderA"]
     types: [completed]
 
-  # [rc4l] Pull requests check the image in _build.yml's build-linux-server job instead, packaged around the server that job compiled (ENGINE_FROM=prebuilt) and started by the same tools/game-server-smoke.sh, rather than compiling the engine again in Docker here.
+  # [rc4l] Pull requests check the image in _build.yml's build-linux-server job instead, packaged around the server that job compiled and started by the same tools/game-server-smoke.sh.
 
 env:
   IMAGE: ghcr.io/${{ github.repository_owner }}/forkundera-game-server
 
 jobs:
   image:
-    # [rc4l] Same distinction one level down, so the entry in a PR's check list reads as a check
-    # rather than as a release. Safe to rename: branch protection requires the test/* and build/*
-    # contexts, not this one, so no ruleset is pinned to the old name.
-    name: >-
-      ${{ github.event_name == 'pull_request'
-          && 'Headless Server Build Validation'
-          || 'Release game server image' }}
-    runs-on: ubuntu-latest
-    # [rc4l] A cold engine compile inside Docker is the long pole here; the default 360 is plenty but
-    # an explicit ceiling stops a hung configure burning a whole runner hour.
+    name: Release game server image
+    # [rc4l] 22.04, the glibc of the image's ubuntu:22.04 runtime, since the server is compiled here and copied in.
+    runs-on: ubuntu-22.04
+    # [rc4l] An explicit ceiling, so a hung configure cannot burn a whole runner hour.
     timeout-minutes: 90
     permissions:
       contents: write   # to push the release tag below
@@ -95,6 +63,7 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          submodules: recursive   # [rc4l] DiligentCore brings its own (glslang, SPIRV, volk)
 
       # [rc4l] Required for Dockerfile.game-server.dockerignore to be honoured; the legacy builder
       # only reads the root .dockerignore, which excludes everything and would empty the context.
@@ -197,6 +166,14 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           echo "version=${version} publish=${publish} engine=${engine}"
 
+      # [rc4l] The server compiled as build-linux-server compiles it, then staged for the Dockerfile to package.
+      - name: Build the server
+        if: steps.meta.outputs.skip != 'true'
+        run: |
+          set -o pipefail
+          ./linux_compile.sh --install-deps --serveronly 2>&1 | tee build-server.log
+          tools/stage-game-server.sh
+
       # [rc4l] load, never push, at this stage: the smoke test below must run the EXACT image that
       # gets published, so the build lands in the local daemon first and is pushed only once it has
       # been proven to start a server.
@@ -212,8 +189,6 @@ jobs:
           provenance: false
           build-args: |
             ENGINE_VERSION=${{ steps.meta.outputs.engine }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
 
       # [rc4l] Prove it HOSTS, not merely that it compiled (tools/game-server-smoke.sh, which the pull request check in _build.yml runs too).
       - name: Smoke test
@@ -239,7 +214,6 @@ jobs:
           provenance: false
           build-args: |
             ENGINE_VERSION=${{ steps.meta.outputs.engine }}
-          cache-from: type=gha
 
       # [rc4l] Tag the commit the published image was built from, so a running container can always be
       # traced back to source. Only for a real release off the default branch; an experimental image is
