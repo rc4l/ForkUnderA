@@ -5,6 +5,9 @@
 
 namespace zx { namespace hwrender {
 
+// [rc4l] Defined once here, since a test that takes it by reference needs it to exist outside the class.
+const int QueryRing::kSlots;
+
 int QueryRing::Begin()
 {
 	if (m_waiting == kSlots) return -1;

@@ -27,6 +27,8 @@ export function chromeArgs(port, profileDir, { headless = true, software = false
     `--remote-debugging-port=${port}`,
     `--user-data-dir=${profileDir}`,
     '--enable-unsafe-webgpu',
+    // [rc4l] window.gc, so a soak measures what the page keeps rather than what its collector has not reached yet.
+    '--js-flags=--expose-gc',
     '--no-first-run',
     '--no-default-browser-check',
     '--window-size=1280,900',

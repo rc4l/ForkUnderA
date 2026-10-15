@@ -33,6 +33,9 @@ bool IsAllocatorFrame(const std::string &name)
 
 } // namespace
 
+// [rc4l] Defined once here, since a test that takes it by reference needs it to exist outside the class.
+const int AllocTable::kFrames;
+
 size_t ComputeAllocHome(const void *ptr, size_t mask)
 {
 	const uint64_t x = ((uint64_t)(uintptr_t)ptr >> 4) * 0x9E3779B97F4A7C15ull;

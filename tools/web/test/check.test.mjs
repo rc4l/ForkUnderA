@@ -144,7 +144,11 @@ test('a soak in the page repeats the named action, or console text, and marks af
   assert.match(reload, /fuaCommand\("map MAP01"\)/);
   assert.match(reload, /i < 3;/);
   assert.match(reload, /fua_soak verdict 1 json/);
-  assert.match(soakInPage('vid_setmode 640 480', 1, 10), /fuaCommand\("vid_setmode 640 480"\)/);
+  assert.match(reload, /await started\(from\);/);
+  assert.match(reload, /window\.gc\(\)/);
+  const text = soakInPage('vid_setmode 640 480', 1, 10);
+  assert.match(text, /fuaCommand\("vid_setmode 640 480"\)/);
+  assert.doesNotMatch(text, /await started\(from\);/);
 });
 
 test('a sound has to start once, not again after it ends', () => {

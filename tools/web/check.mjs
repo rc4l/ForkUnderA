@@ -114,7 +114,7 @@ export function soakHeld({ pass, marks, judged, grew }) {
   return grew && grew.length ? `kept growing with each repeat: ${grew.join(', ')}` : `the soak judged nothing (${marks} marks, ${judged} counters)`;
 }
 
-// [rc4l] Page code that repeats a soak action (fuactl's SOAK_ACTIONS) cycles times on MAP01, marking memory after each, and returns the engine's verdict.
+// [rc4l] Page code that repeats a soak action (fuactl's SOAK_ACTIONS) cycles times on MAP01, marking memory after each once a new level has printed its title and the page's garbage is collected (window.gc, with --expose-gc), and returns the engine's verdict.
 export function soakInPage(action, cycles, settleMs) {
   const step = soakStep(action, 'MAP01');
   return inPage(`
@@ -122,8 +122,17 @@ export function soakInPage(action, cycles, settleMs) {
       const said = [];
       const print = console.log;
       console.log = (...a) => { said.push(a.join(' ')); return print.apply(console, a); };
+      const started = async (from) => { for (let t = 0; t < 600 && !said.slice(from).some((l) => l.trim().toLowerCase().startsWith('map01 - ')); t++) ${pause(100)} };
+      const collect = async () => { for (let k = 0; k < 2 && window.gc; k++) { window.gc(); ${pause(200)} } };
       Module.fuaCommand('fua_soak begin');
-      for (let i = 0; i < ${cycles}; i++) { Module.fuaCommand(${JSON.stringify(step.text)}); ${pause(settleMs)} Module.fuaCommand('fua_soak mark'); }
+      for (let i = 0; i < ${cycles}; i++) {
+        const from = said.length;
+        Module.fuaCommand(${JSON.stringify(step.text)});
+        ${step.newLevel ? 'await started(from);' : ''}
+        ${pause(settleMs)}
+        await collect();
+        Module.fuaCommand('fua_soak mark');
+      }
       Module.fuaCommand('fua_soak verdict 1');
       Module.fuaCommand('fua_soak verdict 1 json');
       ${pause(500)}
@@ -269,7 +278,7 @@ export const CHECKS = [
   // [rc4l] Each level load uploads the level and its textures again, and a browser frees a released buffer only when its garbage collector runs; Firefox ran out of GPU memory on a map loaded the third time.
   {
     name: 'reloading the level holds no more memory',
-    evaluate: soakInPage('reload', 7, 3000),
+    evaluate: soakInPage('reload', 7, 2500),
     until: EVAL,
     expect: soakHeld,
   },

@@ -26,6 +26,7 @@ test('Chrome runs headless with WebGPU on the given port and profile', () => {
   assert.ok(args.includes('--remote-debugging-port=9333'));
   assert.ok(args.includes('--user-data-dir=/tmp/p'));
   assert.ok(args.includes('--enable-unsafe-webgpu'));
+  assert.ok(args.includes('--js-flags=--expose-gc'));
   assert.ok(!chromeArgs(9333, '/tmp/p', { headless: false }).includes('--headless=new'));
   assert.ok(chromeArgs(9333, '/tmp/p', { software: true }).includes('--use-webgpu-adapter=swiftshader'));
   assert.ok(chromeArgs(9333, '/tmp/p', { software: true, platform: 'linux' }).includes('--use-vulkan=swiftshader'));
