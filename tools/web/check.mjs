@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from './serve.mjs';
-import { smoke, gpuLogLines } from './smoke.mjs';
+import { smoke, gpuLogLines, removeQuietly } from './smoke.mjs';
 import { WATCH_SOUNDS, WATCH_TEXTURES, inPage, pause } from './page.mjs';
 import { decodePNG, boxStats, px } from '../fuactl/src/pngcore.mjs';
 
@@ -425,8 +425,8 @@ export async function check({ url, checks = CHECKS, seconds = 60, software = fal
       }
     }
   } finally {
-    fs.rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
-    if (!failed) fs.rmSync(shots, { recursive: true, force: true });
+    removeQuietly(profile);
+    if (!failed) removeQuietly(shots);
   }
   return failed;
 }

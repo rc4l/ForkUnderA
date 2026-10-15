@@ -17,7 +17,56 @@ on:
         required: false
 
 jobs:
+  # [rc4l] The engine with the control bridge, built once for every case below rather than once in each.
+  engine:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      # [rc4l] CMake takes these as its compiler launcher, so every compile goes through the cache restored below.
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
+    steps:
+      - uses: actions/checkout@v4
+
+      # [rc4l] DiligentCore alone, which the client configure requires: sentry-native stays out as before, since it needs libcurl that neither this job nor the peer image has.
+      - name: Fetch DiligentCore
+        run: git submodule update --init --recursive deps/DiligentCore
+
+      # [rc4l] The peer image's runtime set (tools/natlab/Dockerfile.peer) without FFmpeg, plus the X11, XCB and Wayland headers the Vulkan backend compiles against.
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build python3 pkg-config \
+            libssl-dev libopus-dev zlib1g-dev libbz2-dev libjpeg-dev \
+            libsdl2-dev libgl1-mesa-dev libglu1-mesa-dev libglew-dev libgme-dev \
+            libx11-dev libx11-xcb-dev libxcb1-dev libxrandr-dev libwayland-dev \
+            libopenal-dev libsndfile1-dev libmpg123-dev
+
+      # [rc4l] Objects compiled by earlier runs of this job, so a run compiles what changed.
+      - name: Compiler cache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: natlab
+          max-size: 400M
+
+      # [rc4l] The bridge is what makes the lab assertable, since without it the lab could only watch processes stay alive, which a client that never connected also does.
+      - name: Build the engine with the control bridge
+        run: ZX_MCP_BRIDGE=1 ZX_KEEP_GOING=1 ./linux_compile.sh --no-package
+
+      # [rc4l] What tools/natlab/run.sh takes from build-linux/: the binary and its pk3s, the IWAD coming from the checkout's tools/freedoom/.
+      - name: Upload the engine
+        uses: actions/upload-artifact@v4
+        with:
+          name: natlab-engine
+          path: |
+            build-linux/forkundera
+            build-linux/*.pk3
+          if-no-files-found: error
+          retention-days: 1
+
   natlab:
+    needs: engine
     runs-on: ubuntu-latest
     timeout-minutes: 45
     strategy:
@@ -43,25 +92,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # [rc4l] DiligentCore alone, which the client configure requires: sentry-native stays out as before, since it needs libcurl that neither this job nor the peer image has.
-      - name: Fetch DiligentCore
-        run: git submodule update --init --recursive deps/DiligentCore
+      - name: Download the engine
+        uses: actions/download-artifact@v4
+        with:
+          name: natlab-engine
+          path: build-linux
 
-      # [rc4l] The peer image's runtime set (tools/natlab/Dockerfile.peer) without FFmpeg, plus the X11, XCB and Wayland headers the Vulkan backend compiles against.
-      - name: Install build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            build-essential cmake ninja-build python3 pkg-config \
-            libssl-dev libopus-dev zlib1g-dev libbz2-dev libjpeg-dev \
-            libsdl2-dev libgl1-mesa-dev libglu1-mesa-dev libglew-dev libgme-dev \
-            libx11-dev libx11-xcb-dev libxcb1-dev libxrandr-dev libwayland-dev \
-            libopenal-dev libsndfile1-dev libmpg123-dev
-
-      # [rc4l] The bridge is what makes this assertable: without it the lab could only watch
-      # processes stay alive, which is true of a client that never connected.
-      - name: Build the engine with the control bridge
-        run: ZX_MCP_BRIDGE=1 ZX_KEEP_GOING=1 ./linux_compile.sh --no-package
+      # [rc4l] An artifact keeps no file modes.
+      - name: Make the engine executable
+        run: chmod +x build-linux/forkundera
 
       - name: Run the NAT lab
         run: |
@@ -84,6 +123,7 @@ jobs:
   # bolting it onto a job that already runs the whole matrix pushed that job past its timeout and got
   # it killed -- which reads as a failed assertion and is not one.
   dualstack:
+    needs: engine
     runs-on: ubuntu-latest
     timeout-minutes: 45
     # [rc4l] On demand only until the fixture is settled. It has failed five times for five unrelated
@@ -100,23 +140,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # [rc4l] DiligentCore alone, which the client configure requires: sentry-native stays out as before, since it needs libcurl that neither this job nor the peer image has.
-      - name: Fetch DiligentCore
-        run: git submodule update --init --recursive deps/DiligentCore
+      - name: Download the engine
+        uses: actions/download-artifact@v4
+        with:
+          name: natlab-engine
+          path: build-linux
 
-      # [rc4l] The peer image's runtime set (tools/natlab/Dockerfile.peer) without FFmpeg, plus the X11, XCB and Wayland headers the Vulkan backend compiles against.
-      - name: Install build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            build-essential cmake ninja-build python3 pkg-config \
-            libssl-dev libopus-dev zlib1g-dev libbz2-dev libjpeg-dev \
-            libsdl2-dev libgl1-mesa-dev libglu1-mesa-dev libglew-dev libgme-dev \
-            libx11-dev libx11-xcb-dev libxcb1-dev libxrandr-dev libwayland-dev \
-            libopenal-dev libsndfile1-dev libmpg123-dev
-
-      - name: Build the engine with the control bridge
-        run: ZX_MCP_BRIDGE=1 ZX_KEEP_GOING=1 ./linux_compile.sh --no-package
+      # [rc4l] An artifact keeps no file modes.
+      - name: Make the engine executable
+        run: chmod +x build-linux/forkundera
 
       - name: Prove a dual-stack server is one row, and a v6-only client can find it
         run: tools/natlab/run-dualstack.sh

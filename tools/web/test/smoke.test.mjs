@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { chromeArgs, downloadsSettled, formatConsole, formatEval, gpuLogLines, inputAsked } from '../smoke.mjs';
+import { chromeArgs, downloadsSettled, formatConsole, formatEval, gpuLogLines, inputAsked, removeQuietly } from '../smoke.mjs';
 
 test("Chrome's log is read for what it says about its GPU process, not for the page's console", () => {
   const log = [
@@ -70,4 +70,15 @@ test('a download has settled once a file is there and none is still being writte
   setTimeout(() => fs.renameSync(path.join(dir, 'shot.png.crdownload'), path.join(dir, 'shot.png')), 20);
   assert.equal(await downloadsSettled(dir, { timeoutMs: 2000, pollMs: 5 }), true);
   fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('a scratch folder is removed, and one a process still holds is reported rather than thrown', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fua-remove-'));
+  fs.writeFileSync(path.join(dir, 'f'), 'x');
+  assert.equal(removeQuietly(dir), true);
+  assert.equal(fs.existsSync(dir), false);
+  const said = [];
+  const busy = () => { const e = new Error('directory not empty'); e.code = 'ENOTEMPTY'; throw e; };
+  assert.equal(removeQuietly('/tmp/held', busy, (m) => said.push(m)), false);
+  assert.deepEqual(said, ['left /tmp/held behind: ENOTEMPTY']);
 });

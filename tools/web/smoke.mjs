@@ -91,6 +91,17 @@ export function gpuLogLines(text, count = 15) {
 }
 
 // [rc4l] `init` runs in the page before its own scripts, the page may ask for input (inputAsked), its downloads land in `downloadDir`, and Chrome's own log goes to `logFile`; the browser's version comes back too.
+// [rc4l] Removes a scratch folder, and says so rather than throwing when Chrome's helper processes still hold it, since a leftover temp folder is no reason to fail a run; false when it stayed.
+export function removeQuietly(dir, rm = fs.rmSync, warn = console.warn) {
+  try {
+    rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    return true;
+  } catch (e) {
+    warn(`left ${dir} behind: ${e.code || e.message}`);
+    return false;
+  }
+}
+
 export async function smoke({ url, until, seconds = 30, shot, chrome, headless = true, software = false, autoplay = false, port = 9333, onLine = console.log, evaluate, after = 10, profile, init, downloadDir, logFile }) {
   const exe = chrome ?? CHROME_CANDIDATES.find(p => fs.existsSync(p));
   if (!exe) throw new Error('no Chrome found');
@@ -162,7 +173,7 @@ export async function smoke({ url, until, seconds = 30, shot, chrome, headless =
     const exited = new Promise(res => { proc.once('exit', res); setTimeout(res, 5000).unref(); });
     proc.kill();
     await exited;
-    if (!profile) fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    if (!profile) removeQuietly(dir);
   }
 }
 

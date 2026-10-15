@@ -134,9 +134,11 @@ node tools/fuactl/src/cli.mjs comments --since REF    # every [rc4l] comment add
 ## CI
 
 `.github/workflows/test-and-build.yml` runs `_test.yml` on pull requests and pushes to `main`: sanitized
-tests plus `coverage.sh --auto` on Linux, sanitized tests on macOS, and a plain MSVC build and run on
-Windows. The platform engine builds are gated behind it (`needs: test`), so green tests come before
-anything builds.
+tests on Linux and macOS, `coverage.sh --auto` as its own job, a plain MSVC build and run on Windows, the
+Emscripten build in Node, and the JS tests. Each test binary runs once (`tests/run_all.py`), since `ctest`
+starts it once per test. The platform builds and the browser build run beside the tests rather than after
+them, every compile through a cache (ccache, or sccache on Windows), so a run takes as long as its slowest
+job.
 
 clang-tidy no longer runs in CI (deleted in 48c1264); `.clang-tidy` stays for editors and clangd.
 On Windows, VS Build Tools ships `clang-tidy.exe` under `VC\Tools\Llvm\x64\bin` for running it by hand.

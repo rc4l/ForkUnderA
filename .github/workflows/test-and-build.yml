@@ -42,8 +42,8 @@ jobs:
   # Main is covered as well as PRs because an admin can push straight past the PR gate.
   # Advisory, not a required check: the Windows job depends on vcpkg and a pinned runner
   # image, and a hiccup there shouldn't block a merge that never touched Windows.
+  # [rc4l] Not `needs: test` either: the builds use nothing the tests make, so a run takes as long as its slowest job rather than the tests and then the slowest build.
   build:
-    needs: test
     if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
     uses: ./.github/workflows/_build.yml
     with:

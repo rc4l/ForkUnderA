@@ -18,7 +18,7 @@ jobs:
       CCACHE_BASEDIR: ${{ github.workspace }}
       # [rc4l] The compiler is known by its pinned version rather than its time stamp, which every fresh install changes.
       CCACHE_COMPILERCHECK: string:emscripten-4.0.0
-      CCACHE_MAXSIZE: 1500M
+      CCACHE_MAXSIZE: 1G
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4

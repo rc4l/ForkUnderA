@@ -16,6 +16,7 @@
 !tools
 !scripts/game-server-entrypoint.sh
 !linux_compile.sh
+!dist-prebuilt
 !LICENSE.txt
 !THIRD-PARTY-NOTICES.txt
 !README.md

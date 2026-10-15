@@ -22,11 +22,22 @@ on:
 jobs:
   build-macos:
     runs-on: macos-latest
+    env:
+      # [rc4l] CMake takes these as its compiler launcher, so every compile goes through the cache restored below.
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           submodules: recursive   # [rc4l] DiligentCore brings its own (glslang, SPIRV, volk)
+
+      # [rc4l] Objects compiled by earlier runs of this job, so a run compiles what changed.
+      - name: Compiler cache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: build-macos
+          max-size: 400M
 
       # [rc4l] On a real release, tag HEAD with the release version BEFORE building so updaterevision's
       # `git describe` bakes the correct version into GIT_DESCRIPTION. Otherwise the tag is created only
@@ -116,11 +127,22 @@ jobs:
     # cross-builds; CI just doesn't need it. Pin 22.04 (not ubuntu-latest) so the glibc floor is
     # explicit and can't drift up when the "latest" label moves to a newer release.
     runs-on: ubuntu-22.04
+    env:
+      # [rc4l] CMake takes these as its compiler launcher, so every compile goes through the cache restored below.
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           submodules: recursive   # [rc4l] DiligentCore brings its own (glslang, SPIRV, volk)
+
+      # [rc4l] Objects compiled by earlier runs of this job, so a run compiles what changed.
+      - name: Compiler cache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: build-linux
+          max-size: 400M
 
       - name: Bake release version into git describe
         if: inputs.upload_symbols
@@ -183,11 +205,22 @@ jobs:
   # branches passes every pull request.
   build-linux-server:
     runs-on: ubuntu-22.04
+    env:
+      # [rc4l] CMake takes these as its compiler launcher, so every compile goes through the cache restored below.
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           submodules: recursive   # [rc4l] DiligentCore brings its own (glslang, SPIRV, volk)
+
+      # [rc4l] Objects compiled by earlier runs of this job, so a run compiles what changed.
+      - name: Compiler cache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: build-linux-server
+          max-size: 400M
 
       - name: Bake release version into git describe
         if: inputs.upload_symbols
@@ -208,6 +241,16 @@ jobs:
           # to choose and not something CI should restate.
           ls -la dist-linux/
           ls dist-linux/*-server.tar.gz >/dev/null 2>&1             || { echo "::error::serveronly build produced no -server tarball"; exit 1; }
+
+      # [rc4l] The game server image around the server this job just built, started three ways (tools/game-server-smoke.sh); game-server-image.yml compiled the engine again inside Docker for every pull request, and its layers filled the Actions cache.
+      - name: Package and start the game server image
+        if: ${{ !inputs.upload_symbols }}
+        run: |
+          set -euo pipefail
+          rm -rf dist-prebuilt
+          cp -r dist-linux/ForkUnderA-*-server dist-prebuilt
+          docker build -f Dockerfile.game-server --build-arg ENGINE_FROM=prebuilt -t forkundera-game-server:ci .
+          tools/game-server-smoke.sh forkundera-game-server:ci
 
       # [rc4l] Its own artifact name: two jobs cannot upload to one name, v4 artifacts being
       # immutable. release.yml downloads with merge-multiple and no name filter, so both still land
@@ -244,6 +287,10 @@ jobs:
   build-linux-profiles:
     if: ${{ !inputs.upload_symbols }}
     runs-on: ubuntu-22.04
+    env:
+      # [rc4l] CMake takes these as its compiler launcher, so every compile goes through the cache restored below.
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
     strategy:
       fail-fast: false
       matrix:
@@ -253,6 +300,13 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: recursive   # [rc4l] DiligentCore brings its own (glslang, SPIRV, volk)
+
+      # [rc4l] Objects compiled by earlier runs of this job, so a run compiles what changed.
+      - name: Compiler cache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: build-linux-${{ matrix.profile }}
+          max-size: 400M
 
       - name: Build the ${{ matrix.profile }} profile (Linux, native)
         env:
@@ -266,11 +320,27 @@ jobs:
     # windows-2022 has Visual Studio 2022 (windows-latest moved to VS2026, whose
     # generator name differs and which CMake mis-detects). Matches the reference build.
     runs-on: windows-2022
+    env:
+      # [rc4l] CMake takes these as its compiler launcher, so every compile goes through the cache restored below.
+      CMAKE_C_COMPILER_LAUNCHER: sccache
+      CMAKE_CXX_COMPILER_LAUNCHER: sccache
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           submodules: recursive   # [rc4l] DiligentCore brings its own (glslang, SPIRV, volk)
+
+      # [rc4l] MSVC from a developer shell, for Ninja, which unlike the Visual Studio generator runs each compile through the launcher.
+      - name: MSVC developer shell
+        uses: ilammy/msvc-dev-cmd@v1
+
+      # [rc4l] Objects compiled by earlier runs of this job, so a run compiles what changed.
+      - name: Compiler cache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: build-windows
+          max-size: 500M
+          variant: sccache
 
       - name: Bake release version into git describe
         if: inputs.upload_symbols
@@ -310,7 +380,7 @@ jobs:
           ZX_OFFICIAL_BUILD: ${{ inputs.upload_symbols && '1' || '0' }}
         run: |
           $ErrorActionPreference = "Stop"
-          ./windows_compile.ps1 -Version "${{ inputs.version }}" 2>&1 | Tee-Object -FilePath build.log
+          ./windows_compile.ps1 -Version "${{ inputs.version }}" -Generator "Ninja Multi-Config" 2>&1 | Tee-Object -FilePath build.log
           # [rc4l] Fail if a shipping feature silently didn't compile in.
           if (-not (Select-String -Path build.log -Pattern "FUA replay: FFmpeg found" -Quiet)) { Write-Error "instant replay / FFmpeg not enabled in this build" }
           if (-not (Select-String -Path build.log -Pattern "ZX crash reporting: sentry ENABLED" -Quiet)) { Write-Error "sentry crash reporting not enabled in this build" }

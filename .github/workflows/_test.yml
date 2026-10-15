@@ -10,6 +10,10 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      # [rc4l] CMake takes these as its compiler launcher, so every compile goes through the cache restored below.
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
     steps:
       # [rc4l] Full history (not the default shallow depth-1): commit-tracker-check.sh verifies
       # every ported/adapted row's provenance sha exists as a commit, which needs full history.
@@ -22,6 +26,13 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y cmake ninja-build clang llvm
+
+      # [rc4l] Objects compiled by earlier runs of this job, so a run compiles what changed.
+      - name: Compiler cache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: test-linux
+          max-size: 300M
 
       - name: Configure (ASan + UBSan)
         run: >
@@ -102,15 +113,35 @@ jobs:
       - name: Wire-carried enum snapshot
         run: python3 tools/wire-enum-snapshot.py --check
 
-      # [rc4l] detect_leaks=1 turns on LeakSanitizer, which is supported here on Linux.
+      # [rc4l] detect_leaks=1 turns on LeakSanitizer, which is supported here on Linux; each test binary runs once (tests/run_all.py), not once per test as ctest starts it.
       - name: Run tests (ASan + UBSan + LeakSanitizer)
         env:
           ASAN_OPTIONS: detect_leaks=1
           UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
-        run: ctest --test-dir build-tests --output-on-failure
+        run: python3 tests/run_all.py build-tests
 
-      # [rc4l] Enforce 100% line coverage on every tested unit — --auto derives the list from
-      # each *_test.cpp's sibling, so new tests are gated automatically with no edit here.
+  # [rc4l] Enforce 100% line coverage on every tested unit, in a job of its own beside the sanitized run rather than after it; --auto derives the list from each *_test.cpp's sibling.
+  coverage:
+    runs-on: ubuntu-latest
+    env:
+      # [rc4l] CMake takes these as its compiler launcher, so every compile goes through the cache restored below.
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build clang llvm
+
+      # [rc4l] Objects compiled by earlier runs of this job, so a run compiles what changed.
+      - name: Compiler cache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: coverage
+          max-size: 300M
+
       - name: Coverage (100% gate on tested units)
         run: bash tests/coverage.sh --auto
 
@@ -118,16 +149,26 @@ jobs:
 
   # [rc4l] macOS ASan job. Its irreplaceable purpose is the Objective-C updater networking seam
   # (i_system_cocoa_net_test.mm), which guards the Mac_HttpsGet use-after-free — the Linux `test` job
-  # above can't compile Cocoa code. It ALSO runs the full portable suite (via ctest, which discovers
-  # every target): those tests are pure C++ and already run on Linux, but a second run under Apple
+  # above can't compile Cocoa code. It ALSO runs the full portable suite (every binary ctest lists): those tests are pure C++ and already run on Linux, but a second run under Apple
   # clang catches any macOS-specific compiler/ASan quirk in the helpers. This is free insurance — on a
   # public repo the macOS runner costs nothing, and the job runs in PARALLEL with `test` (no `needs:`),
   # finishing well inside the Linux job's window, so it adds ~0 to the gate's wall-clock. LeakSanitizer
   # is intentionally absent: macOS AddressSanitizer does not support detect_leaks (it aborts).
   test-macos:
     runs-on: macos-latest
+    env:
+      # [rc4l] CMake takes these as its compiler launcher, so every compile goes through the cache restored below.
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
     steps:
       - uses: actions/checkout@v4
+
+      # [rc4l] Objects compiled by earlier runs of this job, so a run compiles what changed.
+      - name: Compiler cache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: test-macos
+          max-size: 300M
 
       # [rc4l] cmake and the Xcode clang toolchain are preinstalled on GitHub macOS runners.
       - name: Configure (ASan + UBSan)
@@ -136,10 +177,11 @@ jobs:
       - name: Build
         run: cmake --build build-tests
 
+      # [rc4l] Each test binary once: ctest started the sanitized binary once per test, nine of this job's fifteen minutes.
       - name: Run tests (ASan + UBSan)
         env:
           UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
-        run: ctest --test-dir build-tests --output-on-failure
+        run: python3 tests/run_all.py build-tests
 
   # [rc4l] MSVC job. Its purpose is PORTABILITY, not coverage: the assertions here already run on
   # Linux, and the sanitizer/coverage options are GCC/Clang-only by design. What only this job can
@@ -158,21 +200,35 @@ jobs:
   # are the cost.
   test-windows:
     runs-on: windows-latest
+    env:
+      # [rc4l] CMake takes these as its compiler launcher, so every compile goes through the cache restored below.
+      CMAKE_C_COMPILER_LAUNCHER: sccache
+      CMAKE_CXX_COMPILER_LAUNCHER: sccache
     steps:
       - uses: actions/checkout@v4
+
+      # [rc4l] MSVC from a developer shell, for Ninja, which unlike the Visual Studio generator runs each compile through the launcher.
+      - name: MSVC developer shell
+        uses: ilammy/msvc-dev-cmd@v1
+
+      # [rc4l] Objects compiled by earlier runs of this job, so a run compiles what changed.
+      - name: Compiler cache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: test-windows
+          max-size: 300M
+          variant: sccache
 
       # [rc4l] cmake and the MSVC toolchain are preinstalled on GitHub Windows runners. No sanitizer
       # flags: ZANDROX_TESTS_SANITIZE wires GCC/Clang-style -fsanitize options that cl does not take.
       - name: Configure (MSVC)
-        run: cmake -S tests -B build-tests
+        run: cmake -S tests -B build-tests -G Ninja -DCMAKE_BUILD_TYPE=Release
 
       - name: Build
-        run: cmake --build build-tests --config Release
+        run: cmake --build build-tests
 
-      # [rc4l] --config matters here: MSVC is a multi-config generator, and without it ctest looks in
-      # the wrong directory and reports every test as NOT_BUILT rather than failing outright.
       - name: Run tests
-        run: ctest --test-dir build-tests -C Release --output-on-failure
+        run: python tests/run_all.py build-tests
 
   # [rc4l] The same tests built with Emscripten and run in Node, the browser build's runtime (web-port-design 13a).
   test-web:

@@ -495,10 +495,11 @@ endif( "${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU" OR "${CMAKE_CXX_COMPILER_ID}" S
 
 # MSVC Flags
 
-if( MSVC )
+# [rc4l] Only under Visual Studio, which hands cl many files at once; Ninja starts one cl per file already, and a compiler cache (sccache in CI) caches one file per call.
+if( MSVC AND CMAKE_GENERATOR MATCHES "Visual Studio" )
 	# [BB] Use object level parallelism for our main target.
 	set( CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /MP" )
-endif( MSVC )
+endif()
 
 # Check for functions that may or may not exist.
 

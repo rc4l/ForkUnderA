@@ -17,6 +17,9 @@
 # release cadence to keep in step, and the failure mode of getting it wrong is a server whose clients
 # cannot join it.
 
+# [rc4l] Where the server payload comes from: `build` compiles it here, and `prebuilt` takes dist-prebuilt/, a payload linux_compile.sh already staged from this same commit (the pull request check in _build.yml).
+ARG ENGINE_FROM=build
+
 # ---- build ---------------------------------------------------------------------------------------
 # [rc4l] Ubuntu 22.04 in BOTH stages, deliberately. The runtime stage has to supply the same glibc the
 # binary was linked against, and pinning one image for both makes that true by construction rather
@@ -54,8 +57,17 @@ RUN SERVERONLY=ON ./linux_compile.sh
 # name is a build-system decision this file has no business restating. Encoding a guess produced a
 # green compile and an image with nothing to run. Pick the one ELF file in the payload and give it a
 # fixed name from here on, failing loudly on none or several.
-RUN mkdir -p /stage && cp -r dist-linux/ForkUnderA-linux-*/. /stage/ \
-    && found=""; count=0; \
+RUN mkdir -p /payload && cp -r dist-linux/ForkUnderA-linux-*/. /payload/
+
+# [rc4l] The payload a CI job compiled and staged outside Docker.
+FROM ubuntu:22.04 AS prebuilt
+COPY dist-prebuilt/ /payload/
+
+FROM ${ENGINE_FROM} AS payload
+
+FROM ubuntu:22.04 AS stage
+COPY --from=payload /payload /stage
+RUN found=""; count=0; \
        for f in /stage/*; do \
          [ -f "$f" ] || continue; \
          case "$(head -c 4 "$f" | od -An -c | tr -d ' \n')" in \
@@ -102,7 +114,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # builds, so a persisted ini could only ever disagree with it.
 ENV HOME=/home/fua
 
-COPY --from=build /stage /opt/forkundera
+COPY --from=stage /stage /opt/forkundera
 
 # [rc4l] Which engine is in here, as a label rather than folklore. The image carries its own
 # game-server version in its tag, and that number says nothing about the engine inside it -- so

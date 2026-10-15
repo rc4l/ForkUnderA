@@ -37,6 +37,10 @@
 .PARAMETER NoPackage
     Stop after compiling; do not assemble or zip dist-windows/.
 
+.PARAMETER Generator
+    The CMake generator (default: Visual Studio 17 2022). CI passes "Ninja Multi-Config" from a
+    developer shell, which runs each compile through a launcher such as sccache.
+
 .EXAMPLE
     .\windows_compile.ps1
     .\windows_compile.ps1 -Configuration Debug -NoPackage
@@ -51,7 +55,9 @@ param(
 
     [switch]$Clean,
     [switch]$SkipDeps,
-    [switch]$NoPackage
+    [switch]$NoPackage,
+
+    [string]$Generator = "Visual Studio 17 2022"
 )
 
 Set-StrictMode -Version Latest
@@ -209,7 +215,10 @@ if ($env:ZX_MCP_BRIDGE -eq "1") {
     Write-Status "MCP bridge: ENABLED (dev build -- do not ship)"
     $bridgeArgs = @("-DFUA_MCP_BRIDGE=ON")
 }
-& cmake -S (Join-Path $ScriptRoot "src\zandronum") -B $BuildDir -G "Visual Studio 17 2022" -A x64 -T v143 `
+# [rc4l] Visual Studio takes its platform and toolset here; Ninja Multi-Config gets them from the developer shell and builds the one configuration asked for, since a Debug one breaks on a generated source.
+$isVS = $Generator -like "Visual Studio*"
+$genArgs = if ($isVS) { @("-A", "x64", "-T", "v143") } else { @("-DCMAKE_CONFIGURATION_TYPES=$Configuration") }
+& cmake -S (Join-Path $ScriptRoot "src\zandronum") -B $BuildDir -G $Generator @genArgs `
     "-DCMAKE_POLICY_VERSION_MINIMUM=3.5" `
     "-DCMAKE_PREFIX_PATH=$dep" `
     -DNO_FMOD=ON -DNO_OPENAL=OFF `
@@ -241,7 +250,8 @@ if (-not (Select-String -Path $ConfigureLog -Pattern "FUA replay: FFmpeg found" 
 
 # --- Build -----------------------------------------------------------------
 Write-Status "Building ($Configuration)"
-& cmake --build $BuildDir --config $Configuration -- -m
+$buildArgs = if ($isVS) { @("--", "-m") } else { @() }
+& cmake --build $BuildDir --config $Configuration @buildArgs
 if ($LASTEXITCODE -ne 0) { throw "cmake build failed" }
 
 $exe = Join-Path $BuildDir "$Configuration\forkundera.exe"

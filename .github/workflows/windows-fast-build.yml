@@ -17,9 +17,13 @@ on:
       # building fine and shipping the feature dead (ffmpeg did exactly that).
       # Not src/**, which would mean a Windows runner on every PR.
       - src/zandronum/CMakeLists.txt
-      - src/zandronum/src/CMakeLists.txt
       - windows_compile.ps1
       - .github/workflows/windows-export-deps.yml
+  # [rc4l] src/CMakeLists.txt can carry a new dependency too, but most pull requests touch it only to add a source file, so a change to it is checked once merged rather than on every pull request.
+  push:
+    branches: [main]
+    paths:
+      - src/zandronum/src/CMakeLists.txt
   workflow_dispatch:
 
 jobs:
