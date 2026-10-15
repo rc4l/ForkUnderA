@@ -2120,6 +2120,10 @@ OptionValue BackendsMac
 	1, "Vulkan on Metal (Recommended)"
 	0, "GL (Legacy)"
 }
+OptionValue BackendsWeb
+{
+	2, "WebGPU"
+}
 
 // [rc4l] video-scale: internal render resolution presets, faithful to upstream's ScaleModes
 // (r_videoscale vScaleTable). See features/video-scale. >>> SUPERSEDED-BY-UPSTREAM <<<
@@ -2164,10 +2168,10 @@ OptionMenu VideoModeMenu
 	{
 		Option "Renderer",			"vid_backend", "Backends"
 	}
-	// [rc4l] A browser draws only through its own WebGPU, so it has no renderer to choose.
+	// [rc4l] A browser draws only through its own WebGPU, so its renderer is shown greyed out.
 	IfOption(Web)
 	{
-		StaticText "Renderer: the browser's WebGPU"
+		Option "Renderer",			"vid_backend", "BackendsWeb", "vid_backend_choosable"
 	}
 	else
 	{

@@ -14,6 +14,9 @@ void Record2DCanvas::Texture(FTexture *img, const DCanvas::DrawParms &parms)
 	// [rc4l] The status bar face's tint, which GL's render state holds for this one draw.
 	DamageTint_Armed2D(d.quad.tint);
 	Record2D(d.quad);
+	// [rc4l] A colour overlay (a greyed menu row) goes over it as a second pass, as GL's DrawTexture draws it.
+	zx::hwrender::Quad2D over;
+	if (zx::draw2d::ComputeOverlayQuad(d.quad, d.colorOverlay, over)) Record2D(over);
 }
 
 void Record2DCanvas::Line(int x1, int y1, int x2, int y2, int palcolor, uint32 color)

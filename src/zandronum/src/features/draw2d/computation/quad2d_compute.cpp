@@ -152,4 +152,21 @@ zx::hwrender::Quad2D ComputeTextureQuadRecord(const TextureQuadOut &q)
 	return d;
 }
 
+bool ComputeOverlayQuad(const zx::hwrender::Quad2D &base, unsigned colorOverlay, zx::hwrender::Quad2D &out)
+{
+	if (colorOverlay == 0) return false;
+	out = base;
+	out.r = ((colorOverlay >> 16) & 0xff) / 255.f;
+	out.g = ((colorOverlay >> 8) & 0xff) / 255.f;
+	out.b = (colorOverlay & 0xff) / 255.f;
+	out.a = ((colorOverlay >> 24) & 0xff) / 255.f;
+	out.texMode = kTexMask;
+	out.blend = kBlend2DAlpha;
+	out.translation = 0;
+	out.fuzz = 0;
+	out.fixedColormap = 0;
+	memset(&out.tint, 0, sizeof(out.tint));
+	return true;
+}
+
 }} // namespace zx::draw2d

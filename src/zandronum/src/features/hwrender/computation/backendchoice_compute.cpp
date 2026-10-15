@@ -19,4 +19,16 @@ BackendApi ComputeBackendApi(int vidBackend, bool argVulkan, bool argWebGPU, boo
 	return (argWebGPU || vidBackend == kVidBackendWebGPU) ? kBackendApiWebGPU : kBackendApiVulkan;
 }
 
+int ComputeVidBackendFor(int wanted, bool vulkanBuilt, bool webgpuBuilt)
+{
+	if (!ComputeVidBackendChoosable(vulkanBuilt, webgpuBuilt)) return kVidBackendWebGPU;
+	if (wanted == kVidBackendWebGPU && !webgpuBuilt) return kVidBackendVulkan;
+	return wanted;
+}
+
+bool ComputeVidBackendChoosable(bool vulkanBuilt, bool webgpuBuilt)
+{
+	return vulkanBuilt || !webgpuBuilt;
+}
+
 }} // namespace zx::hwrender

@@ -9,6 +9,7 @@ is not GL can take the 2D layer from here directly (P5), and the two cannot drif
   partial draw shows, flips, a camera texture's upside-down coordinates, the colour and a black
   overlay's darkening), and `gl_GetRenderStyle`'s texture mode and blend (additive for a style that
   adds onto the screen whole; a subtracting style still draws as alpha).
+  `ComputeOverlayQuad` is the second pass GL draws for any other overlay (a greyed menu row), the glyph's coverage in the overlay's colour, which `features/hwrender/record2d.cpp` records too.
   It also holds `Quad2D`, the 2D capture's record, its blend and kind values, and the untextured records
   (`ComputeFillQuad`, `ComputeLineQuad`, `ComputePixelQuad`, `ComputeScreenFillQuad`); `ComputeDrawColorDirect`
   is the rule for a clear given palette entry -1.

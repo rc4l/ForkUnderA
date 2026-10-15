@@ -34,8 +34,26 @@ typedef Win32GLFrameBuffer BackendFrameBufferBase;
 #endif
 #endif
 
-// [rc4l] The renderer a launch draws with (ComputeWantsBackendOnly): 1 Vulkan (Recommended), 0 GL (Legacy), 2 the backend on WebGPU where built; -vulkan, -webgpu and -gl override it for one launch.
-CVAR(Int, vid_backend, zx::hwrender::kVidBackendVulkan, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
+#ifdef FUA_DILIGENT_VULKAN
+static const bool kVulkanBuilt = true;
+#else
+static const bool kVulkanBuilt = false;
+#endif
+#ifdef FUA_WEBGPU
+static const bool kWebGPUBuilt = true;
+#else
+static const bool kWebGPUBuilt = false;
+#endif
+
+// [rc4l] The renderer a launch draws with (ComputeWantsBackendOnly): 1 Vulkan (Recommended), 0 GL (Legacy), 2 the backend on WebGPU where built; -vulkan, -webgpu and -gl override it for one launch, and ComputeVidBackendFor keeps it to what the build can honour.
+CUSTOM_CVAR(Int, vid_backend, zx::hwrender::ComputeVidBackendFor(zx::hwrender::kVidBackendVulkan, kVulkanBuilt, kWebGPUBuilt), CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
+{
+	const int honoured = zx::hwrender::ComputeVidBackendFor(self, kVulkanBuilt, kWebGPUBuilt);
+	if (honoured != self) self = honoured;
+}
+
+// [rc4l] Whether the video menu's renderer can be changed, which a browser's build, drawing only with WebGPU, greys out.
+CVAR(Bool, vid_backend_choosable, zx::hwrender::ComputeVidBackendChoosable(kVulkanBuilt, kWebGPUBuilt), CVAR_NOSET)
 
 EXTERN_CVAR(Bool, fua_vulkan)
 EXTERN_CVAR(Bool, fua_dg_standalone)

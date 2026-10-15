@@ -20,6 +20,12 @@ bool ComputeWantsBackendOnly(int vidBackend, bool argVulkan, bool argGL, bool bu
 // [rc4l] WebGPU where the build has nothing else, or has both and -webgpu or the setting asks for it without -vulkan; Vulkan otherwise.
 BackendApi ComputeBackendApi(int vidBackend, bool argVulkan, bool argWebGPU, bool vulkanBuilt, bool webgpuBuilt);
 
+// [rc4l] vid_backend as this build can honour it: WebGPU in a build whose only renderer it is (a browser's), Vulkan for WebGPU where WebGPU is not built, else as asked.
+int ComputeVidBackendFor(int wanted, bool vulkanBuilt, bool webgpuBuilt);
+
+// [rc4l] Whether the player has a renderer to choose, which a build whose only renderer is WebGPU does not.
+bool ComputeVidBackendChoosable(bool vulkanBuilt, bool webgpuBuilt);
+
 }} // namespace zx::hwrender
 
 #endif // ZX_BACKENDCHOICE_COMPUTE_H

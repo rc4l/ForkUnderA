@@ -20,7 +20,9 @@ picture; framed from the frame's shape, the screen's edges past the walk drew sk
 
 A launch draws with the backend alone, with no GL context at all (every client build), unless the
 player chose GL: `vid_backend` (the video mode menu's Renderer, "Vulkan (Recommended)" or "GL (Legacy)", read
-at startup), with `-vulkan` and `-gl` overriding it for one launch (`computation/backendchoice_compute`). When
+at startup), with `-vulkan` and `-gl` overriding it for one launch (`computation/backendchoice_compute`).
+`ComputeVidBackendFor` keeps it to what the build can honour: a browser's build, whose only renderer is WebGPU,
+always reads WebGPU, and `vid_backend_choosable` is false there, which greys the menu's Renderer out. When
 Vulkan was chosen and its device does not start, the launch says why on the console and draws with GL instead
 (`BackendDeviceStarts`). `I_CreateRenderer`
 installs `FBackendRenderer` (`backendrenderer.cpp`), whose `RenderView` is `features/frame`'s

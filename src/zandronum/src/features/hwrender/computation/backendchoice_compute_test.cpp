@@ -44,3 +44,34 @@ TEST(BackendChoice, ABuildWithOneApiUsesIt)
 	EXPECT_EQ(kBackendApiWebGPU, ComputeBackendApi(kVidBackendVulkan, true, false, false, true));
 	EXPECT_EQ(kBackendApiVulkan, ComputeBackendApi(kVidBackendWebGPU, false, true, true, false));
 }
+
+// [rc4l] A browser's build draws only with WebGPU, so it starts there and a config from before reads WebGPU too.
+TEST(BackendChoice, ABuildWithOnlyWebGPUAlwaysReadsWebGPU)
+{
+	EXPECT_EQ(kVidBackendWebGPU, ComputeVidBackendFor(kVidBackendVulkan, false, true));
+	EXPECT_EQ(kVidBackendWebGPU, ComputeVidBackendFor(kVidBackendGL, false, true));
+	EXPECT_EQ(kVidBackendWebGPU, ComputeVidBackendFor(kVidBackendWebGPU, false, true));
+	EXPECT_FALSE(ComputeVidBackendChoosable(false, true));
+}
+
+TEST(BackendChoice, ADesktopBuildKeepsTheChoiceItCanHonour)
+{
+	EXPECT_EQ(kVidBackendVulkan, ComputeVidBackendFor(kVidBackendVulkan, true, false));
+	EXPECT_EQ(kVidBackendGL, ComputeVidBackendFor(kVidBackendGL, true, false));
+	EXPECT_EQ(kVidBackendWebGPU, ComputeVidBackendFor(kVidBackendWebGPU, true, true));
+	EXPECT_TRUE(ComputeVidBackendChoosable(true, false));
+	EXPECT_TRUE(ComputeVidBackendChoosable(true, true));
+}
+
+// [rc4l] WebGPU asked for where it is not built is Vulkan, as ComputeBackendApi already draws it.
+TEST(BackendChoice, WebGPUWithoutItIsVulkan)
+{
+	EXPECT_EQ(kVidBackendVulkan, ComputeVidBackendFor(kVidBackendWebGPU, true, false));
+}
+
+// [rc4l] A build without the backend at all has only GL, and nothing here changes its setting.
+TEST(BackendChoice, ABuildWithoutTheBackendLeavesTheSettingAlone)
+{
+	EXPECT_EQ(kVidBackendGL, ComputeVidBackendFor(kVidBackendGL, false, false));
+	EXPECT_TRUE(ComputeVidBackendChoosable(false, false));
+}

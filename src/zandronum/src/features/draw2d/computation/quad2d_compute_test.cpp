@@ -224,3 +224,32 @@ TEST(Quad2D, APolygonIsAFanOfTrianglesFromItsFirstPoint)
 	ComputePolyTriangles(base, points, uv, 2, tris);
 	EXPECT_TRUE(tris.empty());
 }
+
+// [rc4l] A greyed menu row is its glyphs under MAKEARGB(96,48,0,0), which GL draws as a second pass and the backend dropped.
+TEST(Quad2D, AnOverlayIsTheGlyphsCoverageInItsColour)
+{
+	zx::hwrender::Quad2D base = ComputeFillQuad(10.f, 20.f, 30.f, 40.f, 0xffffffu, 1.f);
+	base.material = &base;
+	base.u1 = 0.25f; base.v2 = 0.75f;
+	base.translation = 7; base.fuzz = 2; base.fixedColormap = 3; base.texMode = kTexModulate; base.blend = kBlend2DAdditive;
+	base.tint.strength = 0.5f;
+	zx::hwrender::Quad2D over;
+	ASSERT_TRUE(ComputeOverlayQuad(base, 0x60300000u, over));
+	EXPECT_EQ(over.material, base.material);
+	EXPECT_FLOAT_EQ(over.x, 10.f); EXPECT_FLOAT_EQ(over.w, 30.f); EXPECT_FLOAT_EQ(over.u1, 0.25f); EXPECT_FLOAT_EQ(over.v2, 0.75f);
+	EXPECT_FLOAT_EQ(over.r, 0x30 / 255.f); EXPECT_FLOAT_EQ(over.g, 0.f); EXPECT_FLOAT_EQ(over.b, 0.f);
+	EXPECT_FLOAT_EQ(over.a, 0x60 / 255.f);
+	EXPECT_EQ(over.texMode, kTexMask);
+	EXPECT_EQ(over.blend, kBlend2DAlpha);
+	EXPECT_EQ(over.translation, 0);
+	EXPECT_EQ(over.fuzz, 0);
+	EXPECT_EQ(over.fixedColormap, 0);
+	EXPECT_FLOAT_EQ(over.tint.strength, 0.f);
+}
+
+TEST(Quad2D, NoOverlayAddsNoPass)
+{
+	const zx::hwrender::Quad2D base = ComputeFillQuad(0.f, 0.f, 1.f, 1.f, 0xffffffu, 1.f);
+	zx::hwrender::Quad2D over = base;
+	EXPECT_FALSE(ComputeOverlayQuad(base, 0u, over));
+}
