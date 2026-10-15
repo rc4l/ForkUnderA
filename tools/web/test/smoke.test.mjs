@@ -32,6 +32,9 @@ test('Chrome runs headless with WebGPU on the given port and profile', () => {
   assert.ok(!chromeArgs(9333, '/tmp/p', { software: true, platform: 'win32' }).includes('--use-vulkan=swiftshader'));
   assert.ok(!chromeArgs(9333, '/tmp/p', { platform: 'linux' }).includes('--use-vulkan=swiftshader'));
   assert.ok(!chromeArgs(9333, '/tmp/p').includes('--use-webgpu-adapter=swiftshader'));
+  assert.ok(args.includes('--mute-audio'));
+  assert.ok(!args.includes('--autoplay-policy=no-user-gesture-required'));
+  assert.ok(chromeArgs(9333, '/tmp/p', { autoplay: true }).includes('--autoplay-policy=no-user-gesture-required'));
 });
 
 test('console calls, exceptions and log entries each become one line', () => {

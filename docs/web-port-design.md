@@ -162,6 +162,7 @@ Paths are relative to `src/zandronum/src/` unless noted. The order is deliberate
   - The device opens through Emscripten's OpenAL.
   - Every extension probe takes its false path cleanly: EFX, HRTF and the soft extensions (`features/openal-sound/oalsound.cpp`).
   - Streams update from the main loop (`UpdateSounds`, `oalsound.cpp`).
+  - A stopped source's position reads 0, as OpenAL Soft reports it (`ComputeSourcePosition`). Emscripten's OpenAL reports a finished sound's whole length, often a sample short, so the channel took the sound for cut off and played it again; Doom 2's BFG blast and doors did this.
 - **11b.** Autoplay: the page resumes the audio context on the first click or key press, before which the engine plays into a suspended context.
 - **11c.** Music: MIDI through the in-process OPL synth (the default device, `sound/computation/midi_device_compute.cpp`), with module and GME formats from the tree. FluidSynth (`dlopen`, `sound/music_fluidsynth_mididevice.cpp`) and Timidity (`sound/music_midi_timidity.cpp`) are compiled out.
 - **11d.** Mouse:

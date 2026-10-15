@@ -2039,10 +2039,12 @@ unsigned int OpenALSoundRenderer::GetPosition(FISoundChannel *chan)
     if(chan == NULL || chan->SysChannel == NULL)
         return 0;
 
-    ALint pos;
-    alGetSourcei(GET_PTRID(chan->SysChannel), AL_SAMPLE_OFFSET, &pos);
+    const ALuint source = GET_PTRID(chan->SysChannel);
+    ALint state = AL_INITIAL, pos = 0;
+    alGetSourcei(source, AL_SOURCE_STATE, &state);
+    alGetSourcei(source, AL_SAMPLE_OFFSET, &pos);
     if(getALError() == AL_NO_ERROR)
-        return pos;
+        return ComputeSourcePosition(state == AL_STOPPED, pos);
     return 0;
 }
 

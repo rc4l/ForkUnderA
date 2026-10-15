@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CHECKS, blankGame, configuredOnce, crashOffered, crosshairCentred, gpuError, heldOnce, inPage, judge, marked, reportSent, saveLoads, savePicture, selectChecks, soundStarts, stoppedOffered } from '../check.mjs';
+import { CHECKS, blankGame, configuredOnce, crashOffered, crosshairCentred, gpuError, heldOnce, inPage, judge, marked, playedOnce, reportSent, saveLoads, savePicture, selectChecks, soundStarts, stoppedOffered } from '../check.mjs';
 
 test('page code waits for the engine to start before it runs', () => {
   const js = inPage('return 1;');
@@ -127,6 +127,12 @@ test('resizing may hold one more set of screen targets, not one per size', () =>
   assert.equal(heldOnce({ before: 6, after: 6 }), '');
   assert.equal(heldOnce({ before: 6, after: 12 }), '');
   assert.equal(heldOnce({ before: 6, after: 126 }), '120 more screen-sized textures were held after the resizes (6 before)');
+});
+
+test('a sound has to start once, not again after it ends', () => {
+  assert.equal(playedOnce(1), '');
+  assert.equal(playedOnce(2), 'the sound started 2 times');
+  assert.equal(playedOnce(0), 'the sound never started');
 });
 
 test('firing at the floor has to put a mark through the decal pass', () => {

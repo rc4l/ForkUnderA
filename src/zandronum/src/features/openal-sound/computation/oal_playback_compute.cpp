@@ -63,6 +63,11 @@ bool ComputeShouldSetLoopPoints(unsigned int start, unsigned int end, bool softL
 	return (start > 0 || end > 0) && end > start && softLoopPoints;
 }
 
+unsigned int ComputeSourcePosition(bool stopped, int sampleOffset)
+{
+	return stopped || sampleOffset < 0 ? 0u : (unsigned int)sampleOffset;
+}
+
 int ComputeSourceCount(int numMono, int numStereo, int channels)
 {
 	const long long reported = (long long)(numMono > 0 ? numMono : 0) + (numStereo > 0 ? numStereo : 0);

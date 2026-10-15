@@ -17,10 +17,12 @@ export const CHROME_CANDIDATES = [
 // [rc4l] Linux's Chrome without a GPU composites with GL, which has no texture it can share with WebGPU, so the canvas's swap textures could not be made and the device was lost; Chrome's own Vulkan and ANGLE go on SwiftShader there too.
 const LINUX_SOFTWARE = ['--enable-features=Vulkan', '--use-vulkan=swiftshader', '--use-angle=swiftshader', '--disable-vulkan-surface', '--disable-dev-shm-usage'];
 
-// [rc4l] `software` puts WebGPU on SwiftShader, Chrome's CPU renderer, for a machine with no GPU such as a CI runner.
-export function chromeArgs(port, profileDir, { headless = true, software = false, platform = process.platform } = {}) {
+// [rc4l] `software` puts WebGPU on SwiftShader, Chrome's CPU renderer, for a machine with no GPU such as a CI runner; `autoplay` lets the page's audio run without a click. The audio is always muted, since a headless Chrome still plays to the machine's speakers.
+export function chromeArgs(port, profileDir, { headless = true, software = false, autoplay = false, platform = process.platform } = {}) {
   return [
     ...(headless ? ['--headless=new'] : []),
+    '--mute-audio',
+    ...(autoplay ? ['--autoplay-policy=no-user-gesture-required'] : []),
     ...(software ? ['--use-webgpu-adapter=swiftshader', '--enable-unsafe-swiftshader', ...(platform === 'linux' ? LINUX_SOFTWARE : [])] : []),
     `--remote-debugging-port=${port}`,
     `--user-data-dir=${profileDir}`,
@@ -89,13 +91,13 @@ export function gpuLogLines(text, count = 15) {
 }
 
 // [rc4l] `init` runs in the page before its own scripts, the page may ask for input (inputAsked), its downloads land in `downloadDir`, and Chrome's own log goes to `logFile`; the browser's version comes back too.
-export async function smoke({ url, until, seconds = 30, shot, chrome, headless = true, software = false, port = 9333, onLine = console.log, evaluate, after = 10, profile, init, downloadDir, logFile }) {
+export async function smoke({ url, until, seconds = 30, shot, chrome, headless = true, software = false, autoplay = false, port = 9333, onLine = console.log, evaluate, after = 10, profile, init, downloadDir, logFile }) {
   const exe = chrome ?? CHROME_CANDIDATES.find(p => fs.existsSync(p));
   if (!exe) throw new Error('no Chrome found');
   // [rc4l] A named profile keeps the page's storage between runs, for checking what survives a reload; otherwise a fresh one each time.
   const dir = profile ?? fs.mkdtempSync(path.join(os.tmpdir(), 'fua-smoke-'));
   const log = logFile ? fs.openSync(logFile, 'w') : 'ignore';
-  const proc = spawn(exe, [...(logFile ? ['--enable-logging=stderr', '--v=0'] : []), ...chromeArgs(port, dir, { headless, software })], { stdio: ['ignore', 'ignore', log] });
+  const proc = spawn(exe, [...(logFile ? ['--enable-logging=stderr', '--v=0'] : []), ...chromeArgs(port, dir, { headless, software, autoplay })], { stdio: ['ignore', 'ignore', log] });
   if (logFile) fs.closeSync(log);
   const lines = [];
   try {

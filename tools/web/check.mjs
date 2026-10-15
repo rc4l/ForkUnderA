@@ -103,6 +103,11 @@ export function stoppedOffered({ frames, shown, offered }) {
   return frames ? `${frames} frames ran after it` : '';
 }
 
+// [rc4l] Why a sound played wrongly, or '': never started, or started again after it ended.
+export function playedOnce(n) {
+  return n === 1 ? '' : n ? `the sound started ${n} times` : 'the sound never started';
+}
+
 // [rc4l] Why resizing held more of the GPU than one size does, or '': more screen-sized textures alive than before, past one more set of the screen's targets.
 export function heldOnce({ before, after }) {
   return after - before > 6 ? `${after - before} more screen-sized textures were held after the resizes (${before} before)` : '';
@@ -140,6 +145,12 @@ const COUNT_HELD_TEXTURES = `window.fuaHeld = new Set(); {
     };
     const destroy = GPUTexture.prototype.destroy;
     GPUTexture.prototype.destroy = function () { window.fuaHeld.delete(this.fuaId); return destroy.call(this); };
+  }`;
+
+// [rc4l] Every audio buffer the page starts, kept to count one sound's plays by its buffer.
+const KEEP_SOUND_STARTS = `window.fuaStarted = []; {
+    const start = AudioBufferSourceNode.prototype.start;
+    AudioBufferSourceNode.prototype.start = function (...a) { window.fuaStarted.push(this.buffer); return start.apply(this, a); };
   }`;
 
 // [rc4l] Counts the times the page's canvas is sized to zero, as SDL does to the canvas of a window it destroys.
@@ -252,6 +263,21 @@ export const CHECKS = [
     until: DOWNLOADED,
     download: true,
     expectShot: blankGame,
+  },
+  // [rc4l] A browser's OpenAL reports a finished sound's whole length, often a sample short, so the channel took it for cut off and played it again: Doom 2's rocket blast after every BFG ball, its doors, the shotgun's cock; Freedoom's brain cube is one such sound.
+  {
+    name: 'a sound plays once',
+    autoplay: true,
+    init: KEEP_SOUND_STARTS,
+    evaluate: inPage(`
+      ${pause(1500)}
+      const from = window.fuaStarted.length;
+      Module.fuaCommand('playsound brain/cube');
+      ${pause(3500)}
+      const sounds = window.fuaStarted.slice(from).filter((b) => b && b.duration > 1);
+      return sounds.length ? sounds.filter((b) => b === sounds[0]).length : 0;`),
+    until: EVAL,
+    expect: playedOnce,
   },
   // [rc4l] Tab is the automap's, so the page keeps the browser from moving the focus off the game with it.
   {
@@ -413,7 +439,7 @@ export async function check({ url, checks = CHECKS, seconds = 60, software = fal
       const shot = c.shot ? path.join(shots, `check-${i}.png`) : undefined;
       const downloadDir = c.download ? fs.mkdtempSync(path.join(shots, `check-${i}-`)) : undefined;
       const logFile = path.join(shots, `check-${i}-chrome.log`);
-      const { matched, lines, version } = await smoke({ url, profile, seconds, software, shot, downloadDir, logFile, until: c.until, evaluate: c.evaluate, after: 1, init: c.init, onLine: () => {} });
+      const { matched, lines, version } = await smoke({ url, profile, seconds, software, autoplay: !!c.autoplay, shot, downloadDir, logFile, until: c.until, evaluate: c.evaluate, after: 1, init: c.init, onLine: () => {} });
       if (i === 0) onResult(`browser: ${version}`);
       const picture = shot || (downloadDir && fs.readdirSync(downloadDir).filter((f) => f.endsWith('.png')).map((f) => path.join(downloadDir, f))[0]);
       const { ok, reason } = judge(c, matched, picture && fs.existsSync(picture) ? decodePNG(picture) : null, lines);
