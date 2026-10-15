@@ -15,7 +15,7 @@ export const CHROME_CANDIDATES = [
 ];
 
 // [rc4l] Linux's Chrome without a GPU composites with GL, which has no texture it can share with WebGPU, so the canvas's swap textures could not be made and the device was lost; Chrome's own Vulkan and ANGLE go on SwiftShader there too.
-const LINUX_SOFTWARE = ['--enable-features=Vulkan', '--use-vulkan=swiftshader', '--use-angle=vulkan', '--disable-vulkan-surface', '--disable-dev-shm-usage'];
+const LINUX_SOFTWARE = ['--enable-features=Vulkan', '--use-vulkan=swiftshader', '--use-angle=swiftshader', '--disable-vulkan-surface', '--disable-dev-shm-usage'];
 
 // [rc4l] `software` puts WebGPU on SwiftShader, Chrome's CPU renderer, for a machine with no GPU such as a CI runner.
 export function chromeArgs(port, profileDir, { headless = true, software = false, platform = process.platform } = {}) {
