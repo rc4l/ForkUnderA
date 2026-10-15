@@ -42,7 +42,7 @@ Paths are relative to `src/zandronum/src/` unless noted. The order is deliberate
 
 - **3a.** Add CMake presets (`CMakePresets.json` at the repo root) for named profiles: `desktop`, `server`, `offline`, `nogl-vulkan` and `web`. Each sets the switches (`NO_GL`, `FUA_DILIGENT`, `FUA_MCP_BRIDGE`, `NO_REPLAY`, `ZX_ENABLE_SENTRY`, `NO_GTK`, and the new gates below).
 - **3b.** Point `linux_compile.sh`, `mac_compile.sh` and the Windows scripts at their presets, so a profile is defined in one place.
-- **3c.** Build `offline` and `nogl-vulkan` in PR CI beside the existing jobs. Add `web` once section 6 links.
+- **3c.** Build `offline` and `nogl-vulkan` in PR CI beside the existing jobs. Add `web` once section 6 links. Since 2026-10-15 the native `offline` build is left out: no source checks `ZX_ONLINE`, so the profile only swaps the online sources for `features/offline/offlinestubs.cpp`, which the `web` build links too.
 
 ## 4. Desktop seams: loop, clock and quitting
 
@@ -245,7 +245,7 @@ Paths are relative to `src/zandronum/src/` unless noted. The order is deliberate
 - **Checks (13a, 13c, 13d, 13e):**
   - The gtests build with Emscripten, threads and wasm exceptions, and pass in Node (`test-web` in CI).
   - `tools/web/check.mjs` runs the page in headless Chrome against its `CHECKS`, each named for what it guards, and any WebGPU error fails a check that did not make it on purpose. CI runs it after the web build, on SwiftShader's WebGPU.
-  - CI builds the web module (`build-web`) and runs the tripwire.
+  - CI builds the web module (`build-web`, `_web.yml`) beside the tests rather than after them, its clang through ccache, and runs the tripwire. `test-js` runs the page modules' and tools' node tests.
   - `fuactl scenarios --webgpu` runs the suite on WebGPU against Vulkan.
 - **Next:**
   - music and pointer lock, checked by hand (11; headless Chrome has no pointer lock);

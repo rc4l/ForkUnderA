@@ -240,14 +240,14 @@ jobs:
           name: symbols-linux-server
           path: symbols-linux-server-*.zip
 
-  # [rc4l] The other Linux profiles (CMakePresets.json, web-port-design 3c), compiled so a break confined to their switches fails the pull request; a release ships neither, so it skips them.
+  # [rc4l] The no-GL Vulkan profile (CMakePresets.json, web-port-design 3c), compiled so a break confined to its switches fails the pull request; the offline profile's source swap is linked by the browser build (_web.yml), and a release ships neither, so it skips them.
   build-linux-profiles:
     if: ${{ !inputs.upload_symbols }}
     runs-on: ubuntu-22.04
     strategy:
       fail-fast: false
       matrix:
-        profile: [offline, nogl-vulkan]
+        profile: [nogl-vulkan]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -261,43 +261,6 @@ jobs:
           set -o pipefail
           ./linux_compile.sh --install-deps --no-package --profile ${{ matrix.profile }} 2>&1 | tee build-${{ matrix.profile }}.log
           test -x build-linux/forkundera || { echo "::error::the ${{ matrix.profile }} profile produced no forkundera"; exit 1; }
-
-  # [rc4l] The browser build (web_compile.sh): the pinned Emscripten, the engine's host tools built alone, and dist-web/ for serving.
-  build-web:
-    runs-on: ubuntu-22.04
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive   # [rc4l] DiligentCore and its tools; Dawn is fetched at configure time
-
-      - name: Install Emscripten 4.0.0
-        uses: emscripten-core/setup-emsdk@v16
-        with:
-          version: 4.0.0
-
-      - name: Install Ninja
-        run: sudo apt-get update && sudo apt-get install -y ninja-build
-
-      - name: Build for the browser
-        env:
-          ZX_KEEP_GOING: "1"
-        run: |
-          set -o pipefail
-          ./web_compile.sh 2>&1 | tee build-web.log
-          ls -la dist-web/ dist-web/data/
-          test -s dist-web/forkundera.wasm || { echo "::error::the web build produced no forkundera.wasm"; exit 1; }
-
-      # [rc4l] The page in the runner's headless Chrome, WebGPU on SwiftShader since the runner has no GPU (web-port-design 13d).
-      - name: Browser checks
-        run: node tools/web/check.mjs dist-web --software
-
-      - name: Upload the browser build
-        if: ${{ success() }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: ForkUnderA-web
-          path: dist-web/
 
   build-windows:
     # windows-2022 has Visual Studio 2022 (windows-latest moved to VS2026, whose

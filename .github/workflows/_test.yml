@@ -184,6 +184,7 @@ jobs:
         uses: emscripten-core/setup-emsdk@v16
         with:
           version: 4.0.0
+          actions-cache-folder: emsdk-cache
 
       - name: Install Ninja
         run: sudo apt-get update && sudo apt-get install -y ninja-build
@@ -196,3 +197,21 @@ jobs:
       # [rc4l] One run of the whole binary: ctest would start Node once per test.
       - name: Run tests in Node
         run: node build-tests-web/zandrox_tests.js
+
+  # [rc4l] The page's modules and the tools' own tests (tools/web, tools/fuactl), in Node with nothing to install.
+  test-js:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Browser tools and page modules
+        working-directory: tools/web
+        run: node --test test/*.test.mjs
+
+      - name: fuactl
+        working-directory: tools/fuactl
+        run: node --test test/*.test.mjs

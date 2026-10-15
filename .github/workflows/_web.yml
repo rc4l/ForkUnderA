@@ -1,0 +1,68 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 rc4l
+
+# [rc4l] The browser build and its checks, called by test-and-build.yml beside the test suite rather than after it, since it is the longest job and uses nothing the tests make; a release ships no browser build, so release.yml does not call it.
+name: web (reusable)
+
+on:
+  workflow_call:
+
+jobs:
+  # [rc4l] The browser build (web_compile.sh): the pinned Emscripten, the engine's host tools built alone, and dist-web/ for serving.
+  build-web:
+    runs-on: ubuntu-22.04
+    env:
+      # [rc4l] emcc runs its clang through ccache, so a run recompiles only what changed since the cache was saved.
+      EM_COMPILER_WRAPPER: ccache
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_BASEDIR: ${{ github.workspace }}
+      # [rc4l] The compiler is known by its pinned version rather than its time stamp, which every fresh install changes.
+      CCACHE_COMPILERCHECK: string:emscripten-4.0.0
+      CCACHE_MAXSIZE: 1500M
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive   # [rc4l] DiligentCore and its tools; Dawn is fetched at configure time
+
+      # [rc4l] Installed in the workspace and cached there, so the compiler's path, which ccache hashes, is the same every run.
+      - name: Install Emscripten 4.0.0
+        uses: emscripten-core/setup-emsdk@v16
+        with:
+          version: 4.0.0
+          actions-cache-folder: emsdk-cache
+
+      - name: Install Ninja and ccache
+        run: sudo apt-get update && sudo apt-get install -y ninja-build ccache
+
+      # [rc4l] Saved per commit and restored from the newest entry any run left, so main's runs seed every pull request.
+      - name: Restore the compiler cache
+        uses: actions/cache@v4
+        with:
+          path: .ccache
+          key: ccache-web-${{ github.sha }}
+          restore-keys: ccache-web-
+
+      - name: Build for the browser
+        env:
+          ZX_KEEP_GOING: "1"
+        run: |
+          set -o pipefail
+          ccache --zero-stats
+          ./web_compile.sh 2>&1 | tee build-web.log
+          ccache --show-stats
+          ls -la dist-web/ dist-web/data/
+          test -s dist-web/forkundera.wasm || { echo "::error::the web build produced no forkundera.wasm"; exit 1; }
+
+      # [rc4l] The page in the runner's headless Chrome, WebGPU on SwiftShader since the runner has no GPU (web-port-design 13d).
+      - name: Browser checks
+        run: node tools/web/check.mjs dist-web --software
+
+      # [rc4l] For trying a pull request's page by hand; nothing else reads it, so it is not kept long.
+      - name: Upload the browser build
+        if: ${{ success() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ForkUnderA-web
+          path: dist-web/
+          retention-days: 7

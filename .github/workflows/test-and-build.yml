@@ -30,6 +30,11 @@ jobs:
   natlab:
     uses: ./.github/workflows/_natlab.yml
 
+  # [rc4l] Not `needs: test`, as natlab: the browser build is the longest job and uses nothing the tests make, so it runs beside them instead of after.
+  web:
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/_web.yml
+
   # [rc4l] A clang-tidy job ran here and gated publish in release.yml. Deleted in 48c1264, which
   # has the measurements. .clang-tidy stays for editors and clangd.
 
