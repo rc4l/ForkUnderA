@@ -96,6 +96,18 @@ export function crashOffered({ frames, shown, offered, status, stack }) {
   return /does not send/.test(status) ? '' : `the page said: ${status}`;
 }
 
+// [rc4l] Why a game that can no longer draw was handled wrongly, or '': not shown as out of memory, no report offered, or the loop going on.
+export function stoppedOffered({ frames, shown, offered }) {
+  if (!shown.includes('out of graphics memory')) return `the page showed "${shown}"`;
+  if (!offered) return 'the page offered no report';
+  return frames ? `${frames} frames ran after it` : '';
+}
+
+// [rc4l] Why resizing held more of the GPU than one size does, or '': more screen-sized textures alive than before, past one more set of the screen's targets.
+export function heldOnce({ before, after }) {
+  return after - before > 6 ? `${after - before} more screen-sized textures were held after the resizes (${before} before)` : '';
+}
+
 // [rc4l] Why a report did not reach the tracker with its game, or '': the engine not telling the page its release, map, files or setting, or the report missing, misaddressed or without the game.
 export function reportSent({ release, map, files, off, on, url, event, status }) {
   if (!release || !map) return `the engine told the page release "${release}" and map "${map}"`;
@@ -114,6 +126,21 @@ const CRASH_IN_FRAME = `Module.fuaCaptureFrame = () => { throw new RangeError('c
 const READ_REPORT = `const status = document.getElementById('report-status');
       for (let i = 0; i < 50 && (document.getElementById('error').hidden || status.textContent.startsWith('Preparing')); i++) ${pause(100)}
       const last = Module.fuaCrashReporter.last();`;
+
+// [rc4l] Counts the screen-sized textures the page holds, made and neither destroyed nor collected, which is what a browser keeps in GPU memory; the level's own, which a software adapter is still making, are far smaller.
+const COUNT_HELD_TEXTURES = `window.fuaHeld = new Set(); {
+    const collected = new FinalizationRegistry((id) => window.fuaHeld.delete(id));
+    let next = 0;
+    const create = GPUDevice.prototype.createTexture;
+    GPUDevice.prototype.createTexture = function (d) {
+      const t = create.call(this, d);
+      const s = d.size, w = s.width ?? s[0], h = s.height ?? s[1] ?? 1;
+      if (w * h >= 200000) { t.fuaId = ++next; window.fuaHeld.add(t.fuaId); collected.register(t, t.fuaId); }
+      return t;
+    };
+    const destroy = GPUTexture.prototype.destroy;
+    GPUTexture.prototype.destroy = function () { window.fuaHeld.delete(this.fuaId); return destroy.call(this); };
+  }`;
 
 // [rc4l] Counts the times the page's canvas is sized to zero, as SDL does to the canvas of a window it destroys.
 const COUNT_ZERO_CANVAS = `window.fuaZeroCanvas = 0;
@@ -204,6 +231,27 @@ export const CHECKS = [
     until: DOWNLOADED,
     download: true,
     expectShot: crosshairCentred,
+  },
+  // [rc4l] Each size makes the screen's targets again, and a browser frees the old ones only when its garbage collector runs; Firefox ran out of GPU memory part way through a window being dragged bigger.
+  {
+    name: 'resizing the page many times holds no more of the GPU than once',
+    init: COUNT_HELD_TEXTURES,
+    evaluate: inPage(`
+      ${pause(2000)}
+      const before = window.fuaHeld.size;
+      for (let i = 0; i < 20; i++) { console.log('check: resize ' + (900 + i * 23) + 'x' + (600 + i * 17)); ${pause(250)} }
+      ${pause(1500)}
+      return { before, after: window.fuaHeld.size };`),
+    until: EVAL,
+    expect: heldOnce,
+  },
+  // [rc4l] A wipe draws the console and menu once a step; they piled up under one 2D generation and were drawn past the 2D's vertices, which WebGPU refused for the whole frame.
+  {
+    name: 'a map change wipes to the new map without a device error',
+    evaluate: inPage(`${pause(2000)} Module.fuaCommand('map MAP02'); ${pause(4000)} Module.fuaCommand('screenshot');`),
+    until: DOWNLOADED,
+    download: true,
+    expectShot: blankGame,
   },
   // [rc4l] Tab is the automap's, so the page keeps the browser from moving the focus off the game with it.
   {
@@ -299,6 +347,21 @@ export const CHECKS = [
     until: EVAL,
     expect: crashOffered,
   },
+  // [rc4l] Out of graphics memory, what was being made is unusable and every frame is refused, which left the last frame on the canvas with no panel; the device reports one as the page's own error does.
+  {
+    name: 'a game that can no longer draw stops and offers its report',
+    deviceError: true,
+    evaluate: inPage(`
+      ${COUNT_FRAMES}
+      ${pause(1500)}
+      Module.preinitializedWebGPUDevice.dispatchEvent(new GPUUncapturedErrorEvent('uncapturederror', { error: new GPUOutOfMemoryError('checking out of memory') }));
+      ${READ_REPORT}
+      frames = 0;
+      ${pause(500)}
+      return { frames, shown: document.getElementById('error-text').textContent, offered: !document.getElementById('report').hidden };`),
+    until: EVAL,
+    expect: stoppedOffered,
+  },
   // [rc4l] The checks' build may not send, so this one hands the page a DSN, and keeps what would leave the page.
   {
     name: 'a crash report reaches the tracker with the game it happened in',
@@ -326,11 +389,11 @@ export const CHECKS = [
   },
 ];
 
-// [rc4l] Whether a check passed: its line matched, an evaluation returned what the check wants, a screenshot (img, decoded) shows what it should, and its lines hold no device error.
+// [rc4l] Whether a check passed: its line matched, an evaluation returned what the check wants, a screenshot (img, decoded) shows what it should, and its lines hold no device error unless it makes one (deviceError).
 export function judge(check, matched, img = null, lines = []) {
   if (!matched) return { ok: false, reason: `no line matched /${check.until}/` };
   if (matched.startsWith('[eval] threw')) return { ok: false, reason: matched.slice('[eval] '.length) };
-  const reason = gpuError(lines)
+  const reason = (check.deviceError ? '' : gpuError(lines))
     || (check.expect && check.expect(JSON.parse(matched.replace(/^\[eval\] /, ''))))
     || (check.expectShot && (img ? check.expectShot(img) : 'no screenshot'));
   return reason ? { ok: false, reason } : { ok: true };

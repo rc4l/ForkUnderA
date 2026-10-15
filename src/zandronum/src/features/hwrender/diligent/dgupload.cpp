@@ -326,7 +326,7 @@ static bool BuildSceneBuffer(FString &err)
 	// It rejected this outright ("initial DataSize must be larger than the buffer size") and the
 	// backend then drew nothing at all, which is at least a loud way to fail.
 	g_scene.vb.Release();
-	GetDevice()->CreateBuffer(bd, nullptr, &g_scene.vb);
+	CreateDeviceBuffer(bd, nullptr, &g_scene.vb);
 	if (!g_scene.vb) { err = "vertex buffer creation failed"; return false; }
 
 	// [rc4l] The per-piece records, sized for this level with the same slack the vertices get.

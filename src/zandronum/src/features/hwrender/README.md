@@ -47,7 +47,15 @@ at the virtual size; screenshots and the replay read that target. It keeps the l
 console and menus. The save picture is the player's last view drawn at the picture's size through the camera
 texture path (`RenderSavePicture`), with the screen's tint applied on the CPU (`ComputeApplyScreenFill`). A level
 settles before its first view (`SettleLevelScene`), since the map bakes it whole, so that view and a wipe's new
-screen are drawn rather than black.
+screen are drawn rather than black. Each wipe step is a frame of its own and starts its 2D afresh (`D_WipeStep`);
+the console and menu piled up under one generation before, and a browser refused the frames drawn past the 2D's
+vertices (`ComputeRebuild2DVertices` now builds them for every quad recorded).
+
+On WebGPU the backend frees its own GPU memory: each texture and buffer it makes (`CreateDeviceTexture`,
+`CreateDeviceBuffer`) and the swapchain's own two are kept by handle (`DeviceApi::keep`,
+`computation/keptobjects_compute`) and destroyed after the first present once nothing holds them
+(`FreeReleasedObjects`). A browser frees a released one only when its garbage collector runs, and a page resized a
+few times ran out of GPU memory first. Vulkan frees them itself.
 
 Every 2D draw is recorded through `Record2DCanvas` (`record2d.cpp`), `features/draw2d` working it out: the
 backend's own frame buffer draws its 2D with it, and in a launch with GL the frame buffer `features/sidebyside`
@@ -83,7 +91,7 @@ ones. A build without the backend (`FUA_DILIGENT` off, a dedicated server) takes
 
 | file | hook | what for |
 |---|---|---|
-| `d_main.cpp` | `Clear2D`, `FrameTimingBegin`, `LiveFrame` | start the frame's 2D capture and renderer clock; draw the backend's frame after GL's |
+| `d_main.cpp` | `Clear2D`, `FrameTimingBegin`, `LiveFrame` | start the frame's 2D capture (and each wipe step's) and renderer clock; draw the backend's frame after GL's |
 | `gl/scene/gl_sprite.cpp`, `gl_spriteview.cpp` | `SpriteViewProvider` | GL's sprites ask GL's own view, the backend's ask `SpriteView()` |
 | `gl/scene/gl_drawinfo.cpp`, `gl_walls_draw.cpp` | `ComputeGLSpritesBefore`, `ComputeWallLightIndex` | GL's draw order and wall light lists, shared with the backend |
 | `features/frame/framedriver.cpp` | `FrameRouteNow` (`features/frame/computation/frameroute_compute`) | which renderers draw the frame |

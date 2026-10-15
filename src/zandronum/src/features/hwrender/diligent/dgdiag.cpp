@@ -270,7 +270,7 @@ void CaptureReplayFrame(Diligent::IDeviceContext *ctx, Diligent::ISwapChain *swa
 		sd.CPUAccessFlags = Diligent::CPU_ACCESS_READ;
 		sd.BindFlags = Diligent::BIND_NONE;
 		sd.MipLevels = 1;
-		for (int i = 0; i < 2; i++) dev->CreateTexture(sd, nullptr, &g_replayStaging[i]);
+		for (int i = 0; i < 2; i++) CreateDeviceTexture(sd, nullptr, &g_replayStaging[i]);
 		if (!g_replayStaging[0] || !g_replayStaging[1]) { ReleaseReplayStaging(); return; }
 		g_replayStagingW = (int)bd.Width; g_replayStagingH = (int)bd.Height;
 	}
@@ -347,7 +347,7 @@ static Diligent::RefCntAutoPtr<Diligent::ITexture> CopyToStaging(Diligent::IText
 	sd.BindFlags = Diligent::BIND_NONE;
 	sd.MipLevels = 1;
 	Diligent::RefCntAutoPtr<Diligent::ITexture> staging;
-	GetDevice()->CreateTexture(sd, nullptr, &staging);
+	CreateDeviceTexture(sd, nullptr, &staging);
 	if (!staging) { report = "staging texture creation failed"; return staging; }
 
 	Diligent::CopyTextureAttribs cta;

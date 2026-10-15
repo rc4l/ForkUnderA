@@ -165,3 +165,29 @@ test('a report goes out as plain text that outlives the page', async () => {
   }
   assert.deepEqual(calls[0], { url: 'https://host/api/1/envelope/', init: { method: 'POST', body: 'body', keepalive: true, headers: { 'Content-Type': 'text/plain;charset=UTF-8' } } });
 });
+
+// [rc4l] Firefox ran out of memory on a resize and refused every frame after it, and the page showed no panel, only the last frame.
+test('running out of graphics memory stops the game at once', () => {
+  const w = FuaCrash.gpuErrorWatch(null, { message: 'Out of Memory', outOfMemory: true, now: 10 });
+  assert.equal(w.stopped, 'out of graphics memory (Out of Memory)');
+});
+
+test('errors refusing every frame for a while stop the game, naming the first', () => {
+  let state = null, w;
+  for (let now = 0; now < FuaCrash.STUCK_MS; now += 16) {
+    w = FuaCrash.gpuErrorWatch(state, { message: now ? 'Invalid CommandBuffer' : 'BindGroup is invalid', now });
+    state = w.state;
+    assert.equal(w.stopped, '');
+  }
+  w = FuaCrash.gpuErrorWatch(state, { message: 'Invalid CommandBuffer', now: FuaCrash.STUCK_MS });
+  assert.equal(w.stopped, 'nothing it draws reaches the screen (BindGroup is invalid)');
+});
+
+test('errors with quiet between them start a new run, and the game goes on', () => {
+  let w = FuaCrash.gpuErrorWatch(null, { message: 'a', now: 0 });
+  w = FuaCrash.gpuErrorWatch(w.state, { message: 'b', now: FuaCrash.RUN_GAP_MS + 1 });
+  assert.equal(w.state.cause, 'b');
+  w = FuaCrash.gpuErrorWatch(w.state, { message: 'c', now: FuaCrash.STUCK_MS + 1 });
+  assert.equal(w.stopped, '');
+  assert.equal(w.state.cause, 'c');
+});

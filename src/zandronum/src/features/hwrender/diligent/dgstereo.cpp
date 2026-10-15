@@ -59,7 +59,7 @@ bool EnsureEyePictures(int w, int h)
 		td.Width = w; td.Height = h;
 		td.Format = fd.Format;
 		td.BindFlags = Diligent::BIND_SHADER_RESOURCE;
-		dev->CreateTexture(td, nullptr, &g_eyePicture[e]);
+		CreateDeviceTexture(td, nullptr, &g_eyePicture[e]);
 		if (!g_eyePicture[e]) return false;
 	}
 	if (!g_blendPSO)
@@ -70,7 +70,7 @@ bool EnsureEyePictures(int w, int h)
 		cbd.Usage = Diligent::USAGE_DYNAMIC;
 		cbd.BindFlags = Diligent::BIND_UNIFORM_BUFFER;
 		cbd.CPUAccessFlags = Diligent::CPU_ACCESS_WRITE;
-		dev->CreateBuffer(cbd, nullptr, &g_blendCB);
+		CreateDeviceBuffer(cbd, nullptr, &g_blendCB);
 		if (!g_blendCB) return false;
 		static const char *const kEyes[] = { "uLeft", "uRight" };
 		if (!CreatePicturesPSO("fua stereo blend", kBlendPS, Diligent::FILTER_TYPE_POINT, Diligent::TEX_FORMAT_UNKNOWN, kEyes, 2, g_blendPSO)) return false;

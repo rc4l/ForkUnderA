@@ -69,7 +69,7 @@ static bool EnsureBlendIndexBuffer(Diligent::IRenderDevice *dev, unsigned int ne
 	bd.Size = (Diligent::Uint64)cap * sizeof(Diligent::Uint32);
 	bd.BindFlags = Diligent::BIND_INDEX_BUFFER;
 	bd.Usage = Diligent::USAGE_DEFAULT;
-	dev->CreateBuffer(bd, NULL, &g_blendIB);
+	CreateDeviceBuffer(bd, NULL, &g_blendIB);
 	if (!g_blendIB) { g_blendIBCapacity = 0; return false; }
 	g_blendIBCapacity = cap;
 	return true;

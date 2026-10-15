@@ -46,6 +46,10 @@ jobs:
       - name: Platform-branch tripwire
         run: bash tools/platform-ifdef-tripwire.sh
 
+      # [rc4l] The backend's textures and buffers are made through the helpers that keep them for WebGPU to destroy.
+      - name: Device-creation tripwire
+        run: bash tools/device-create-tripwire.sh
+
       # [rc4l] A .ps1 with non-ASCII bytes and no UTF-8 BOM fails to PARSE under Windows PowerShell
       # 5.1 (the default shell on a stock Windows box) because it decodes as ANSI. CI cannot notice
       # on its own -- our workflows run `shell: pwsh`, which reads UTF-8 regardless -- so this only

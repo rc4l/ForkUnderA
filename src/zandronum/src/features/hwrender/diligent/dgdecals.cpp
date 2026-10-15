@@ -442,7 +442,7 @@ static bool EnsureDeferredDecalPass()
 		bd.Usage = Diligent::USAGE_DYNAMIC;
 		bd.BindFlags = Diligent::BIND_UNIFORM_BUFFER;
 		bd.CPUAccessFlags = Diligent::CPU_ACCESS_WRITE;
-		dev->CreateBuffer(bd, nullptr, &g_ddCB);
+		CreateDeviceBuffer(bd, nullptr, &g_ddCB);
 		if (!g_ddCB) { g_ddBail = "constant buffer creation failed"; return false; }
 	}
 

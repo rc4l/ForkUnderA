@@ -346,7 +346,7 @@ bool CreateColorTarget(int w, int h, const char *name, Diligent::RefCntAutoPtr<D
 	td.MipLevels = 1;
 	td.BindFlags = Diligent::BIND_RENDER_TARGET | Diligent::BIND_SHADER_RESOURCE;
 	color.Release();
-	dev->CreateTexture(td, nullptr, &color);
+	CreateDeviceTexture(td, nullptr, &color);
 	return color.RawPtr() != nullptr;
 }
 
@@ -373,7 +373,7 @@ bool CreateDepthTarget(int w, int h, const char *name, Diligent::RefCntAutoPtr<D
 	dd.MipLevels = 1;
 	dd.BindFlags = Diligent::BIND_DEPTH_STENCIL;
 	depth.Release();
-	dev->CreateTexture(dd, nullptr, &depth);
+	CreateDeviceTexture(dd, nullptr, &depth);
 	return depth.RawPtr() != nullptr;
 }
 
@@ -405,7 +405,7 @@ bool UploadGrowingVB(Diligent::IDeviceContext *ctx, Diligent::RefCntAutoPtr<Dili
 		bd.Usage = Diligent::USAGE_DEFAULT;
 		bd.BindFlags = Diligent::BIND_VERTEX_BUFFER;
 		vb.Release();
-		GetDevice()->CreateBuffer(bd, nullptr, &vb);
+		CreateDeviceBuffer(bd, nullptr, &vb);
 		if (!vb) { capacity = 0; return false; }
 	}
 	ctx->UpdateBuffer(vb, 0, (Diligent::Uint64)count * stride, data, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
@@ -524,7 +524,7 @@ Diligent::ITextureView *EnsureSceneDepth()
 	td.MipLevels = 1;
 	td.Format = sd.DepthBufferFormat;
 	td.BindFlags = Diligent::BIND_DEPTH_STENCIL | Diligent::BIND_SHADER_RESOURCE;
-	dev->CreateTexture(td, nullptr, &g_sceneDepth);
+	CreateDeviceTexture(td, nullptr, &g_sceneDepth);
 	if (!g_sceneDepth) { g_sceneDepthW = g_sceneDepthH = 0; return NULL; }
 	{
 		// The G-buffer shares the depth's lifetime and size: they are read together, one fragment at
@@ -536,7 +536,7 @@ Diligent::ITextureView *EnsureSceneDepth()
 		nd.MipLevels = 1;
 		nd.Format = Diligent::TEX_FORMAT_RGBA8_UNORM;
 		nd.BindFlags = Diligent::BIND_RENDER_TARGET | Diligent::BIND_SHADER_RESOURCE;
-		dev->CreateTexture(nd, nullptr, &g_sceneNormal);
+		CreateDeviceTexture(nd, nullptr, &g_sceneNormal);
 	}
 	g_sceneDepthW = fw; g_sceneDepthH = fh;
 	return g_sceneDepth->GetDefaultView(Diligent::TEXTURE_VIEW_DEPTH_STENCIL);
@@ -703,6 +703,7 @@ void PresentFrame(Diligent::IDeviceContext *ctx, Diligent::ISwapChain *swap, boo
 		swap->Present(zx::hwrender::ComputePresentInterval(vid_vsync, PagePaced()));
 		PaceFrames();
 	}
+	FreeReleasedObjects(swap);
 	RecordPresentInterval();
 	PollLaterReadbacks();
 	// [rc4l] The message pump costs more than the draw at these scales, so a benchmark pumps sparsely and a live frame once.
@@ -729,7 +730,7 @@ bool CreateStructuredBuffer(const char *name, unsigned stride, unsigned long lon
 	init.pData = data;
 	init.DataSize = bd.Size;
 	out.Release();
-	GetDevice()->CreateBuffer(bd, data != NULL ? &init : nullptr, &out);
+	CreateDeviceBuffer(bd, data != NULL ? &init : nullptr, &out);
 	return out != nullptr;
 }
 

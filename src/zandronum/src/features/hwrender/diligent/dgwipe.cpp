@@ -69,7 +69,7 @@ bool CreateCopyOfFrame(Diligent::IDeviceContext *ctx, const char *name, Diligent
 	td.BindFlags = Diligent::BIND_SHADER_RESOURCE;
 	td.Usage = Diligent::USAGE_DEFAULT;
 	out.Release();
-	GetDevice()->CreateTexture(td, nullptr, &out);
+	CreateDeviceTexture(td, nullptr, &out);
 	if (!out) return false;
 	ctx->SetRenderTargets(0, nullptr, nullptr, Diligent::RESOURCE_STATE_TRANSITION_MODE_NONE);
 	Diligent::CopyTextureAttribs cta;
@@ -101,7 +101,7 @@ bool CreateMaskTexture(const char *name, const unsigned char *alpha, int w, int 
 	data.pSubResources = &sub;
 	data.NumSubresources = 1;
 	out.Release();
-	GetDevice()->CreateTexture(td, &data, &out);
+	CreateDeviceTexture(td, &data, &out);
 	return out.RawPtr() != nullptr;
 }
 
@@ -120,7 +120,7 @@ bool EnsurePipeline()
 	cbd.Usage = Diligent::USAGE_DYNAMIC;
 	cbd.BindFlags = Diligent::BIND_UNIFORM_BUFFER;
 	cbd.CPUAccessFlags = Diligent::CPU_ACCESS_WRITE;
-	dev->CreateBuffer(cbd, nullptr, &g_wipeCB);
+	CreateDeviceBuffer(cbd, nullptr, &g_wipeCB);
 	if (!g_wipeCB) return false;
 	Diligent::LayoutElement layout[] = {
 		Diligent::LayoutElement{0, 0, 2, Diligent::VT_FLOAT32, false},

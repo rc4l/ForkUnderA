@@ -76,7 +76,7 @@ bool EnsureLinePipelines()
 		cbd.Usage = Diligent::USAGE_DYNAMIC;
 		cbd.BindFlags = Diligent::BIND_UNIFORM_BUFFER;
 		cbd.CPUAccessFlags = Diligent::CPU_ACCESS_WRITE;
-		dev->CreateBuffer(cbd, nullptr, &g_lineCB);
+		CreateDeviceBuffer(cbd, nullptr, &g_lineCB);
 		if (!g_lineCB) return false;
 	}
 	const Diligent::LayoutElement layout[] = {

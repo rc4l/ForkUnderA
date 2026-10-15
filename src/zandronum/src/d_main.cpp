@@ -1283,6 +1283,8 @@ bool D_WipeStep ()
 	if (zx::mainloop::ComputeWipeTicsDue(s_wipeStart, nowtime) < 1)
 		return false;
 	s_wipeStart = nowtime;
+	// [rc4l] Each step is a frame of its own, so its 2D starts afresh as D_Display's does; the console and menu piled up under one generation and were drawn past the backend's vertices.
+	zx::hwrender::Clear2D();
 	const bool done = screen->WipeDo (1);
 	C_DrawConsole (s_wipeHw2d);	// console and
 	M_Drawer ();			// menu are drawn even on top of wipes

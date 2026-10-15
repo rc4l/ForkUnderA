@@ -178,6 +178,30 @@ bool CanWaitForGPU() { return ChosenDeviceApi()->canWaitForGPU; }
 
 bool PagePaced() { return ChosenDeviceApi()->pagePaced; }
 
+void CreateDeviceTexture(const Diligent::TextureDesc &desc, const Diligent::TextureData *data, Diligent::ITexture **out)
+{
+	g_device->CreateTexture(desc, data, out);
+	if (ChosenDeviceApi()->keep != nullptr) ChosenDeviceApi()->keep(*out);
+}
+
+void CreateDeviceBuffer(const Diligent::BufferDesc &desc, const Diligent::BufferData *data, Diligent::IBuffer **out)
+{
+	g_device->CreateBuffer(desc, data, out);
+	if (ChosenDeviceApi()->keep != nullptr) ChosenDeviceApi()->keep(*out);
+}
+
+void FreeReleasedObjects(Diligent::ISwapChain *swap)
+{
+	const DeviceApi *api = ChosenDeviceApi();
+	if (api->keep == nullptr) return;
+	if (swap != nullptr)
+	{
+		if (Diligent::ITextureView *rtv = swap->GetCurrentBackBufferRTV()) api->keep(rtv->GetTexture());
+		if (Diligent::ITextureView *dsv = swap->GetDepthBufferDSV()) api->keep(dsv->GetTexture());
+	}
+	api->freeReleased();
+}
+
 bool BackendDeviceStarts()
 {
 	FString report;

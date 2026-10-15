@@ -29,6 +29,10 @@ struct DeviceApi
 	bool canWaitForGPU;
 	// [rc4l] Whether a page's compositor paces the frames (a browser's canvas), which ComputePresentInterval presents at 1.
 	bool pagePaced;
+	// [rc4l] Keeps a texture or buffer so freeReleased can free its GPU memory once nothing holds it; NULL where releasing it frees it, as on Vulkan.
+	void (*keep)(Diligent::IDeviceObject *object);
+	// [rc4l] Frees each kept object nothing holds any more, once a present has submitted the frame that last drew with it.
+	void (*freeReleased)();
 };
 
 const DeviceApi *VulkanDeviceApi();
@@ -42,6 +46,13 @@ bool CanWaitForGPU();
 
 // [rc4l] ChosenDeviceApi's pagePaced, for the present interval.
 bool PagePaced();
+
+// [rc4l] A texture or buffer made on the device and kept by its API (DeviceApi::keep); NULL in out when it could not be made.
+void CreateDeviceTexture(const Diligent::TextureDesc &desc, const Diligent::TextureData *data, Diligent::ITexture **out);
+void CreateDeviceBuffer(const Diligent::BufferDesc &desc, const Diligent::BufferData *data, Diligent::IBuffer **out);
+
+// [rc4l] After a present: keeps the swapchain's own textures, which a resize makes again, and frees every kept object nothing holds any more.
+void FreeReleasedObjects(Diligent::ISwapChain *swap);
 
 }} // namespace zx::hwrender
 

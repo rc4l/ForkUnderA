@@ -147,7 +147,7 @@ static bool Ensure2DPipeline()
 	cbd.Usage = Diligent::USAGE_DYNAMIC;
 	cbd.BindFlags = Diligent::BIND_UNIFORM_BUFFER;
 	cbd.CPUAccessFlags = Diligent::CPU_ACCESS_WRITE;
-	dev->CreateBuffer(cbd, nullptr, &g_cb2D);
+	CreateDeviceBuffer(cbd, nullptr, &g_cb2D);
 	if (!g_cb2D) return false;
 
 	Diligent::LayoutElement layout[] = {
@@ -266,12 +266,14 @@ void Draw2D(Diligent::IDeviceContext *ctx)
 	// is per frame, not per draw.
 	static TArray<Vertex2D> vb;
 	static unsigned int built2D = 0;
+	static int builtQuads2D = 0;
 	// [rc4l] The fixed colormap this frame's weapon was recorded under, one for the whole frame as GL's render state holds one.
 	static int fixed2D = 0;
 	const unsigned int gen = zx::hwrender::Generation2D();
-	if (gen != built2D)
+	if (zx::draw2d::ComputeRebuild2DVertices(gen, built2D, nq, builtQuads2D))
 	{
 		built2D = gen;
+		builtQuads2D = nq;
 		vb.Clear();
 		fixed2D = 0;
 		for (int i = 0; i < nq; i++)

@@ -64,7 +64,8 @@ static void CreateSwapChain(Diligent::IRenderDevice *device, Diligent::IDeviceCo
 
 const DeviceApi *VulkanDeviceApi()
 {
-	static const DeviceApi api = { "Vulkan", CreateDevice, CreateSwapChain, true, false };
+	// [rc4l] Diligent frees a released Vulkan object once the GPU is done with it, so nothing is kept.
+	static const DeviceApi api = { "Vulkan", CreateDevice, CreateSwapChain, true, false, nullptr, nullptr };
 	return &api;
 }
 

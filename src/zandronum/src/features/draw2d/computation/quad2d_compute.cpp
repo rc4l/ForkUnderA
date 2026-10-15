@@ -152,6 +152,11 @@ zx::hwrender::Quad2D ComputeTextureQuadRecord(const TextureQuadOut &q)
 	return d;
 }
 
+bool ComputeRebuild2DVertices(unsigned generation, unsigned builtGeneration, int quads, int builtQuads)
+{
+	return generation != builtGeneration || quads != builtQuads;
+}
+
 bool ComputeOverlayQuad(const zx::hwrender::Quad2D &base, unsigned colorOverlay, zx::hwrender::Quad2D &out)
 {
 	if (colorOverlay == 0) return false;

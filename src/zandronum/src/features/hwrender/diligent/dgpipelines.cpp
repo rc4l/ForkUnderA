@@ -734,7 +734,7 @@ bool EnsureScenePipeline(FString &err)
 		cbd.Usage = Diligent::USAGE_DYNAMIC;
 		cbd.BindFlags = Diligent::BIND_UNIFORM_BUFFER;
 		cbd.CPUAccessFlags = Diligent::CPU_ACCESS_WRITE;
-		dev->CreateBuffer(cbd, nullptr, &g_cb);
+		CreateDeviceBuffer(cbd, nullptr, &g_cb);
 	}
 	if (!g_cb) { err = "constant buffer creation failed"; return false; }
 

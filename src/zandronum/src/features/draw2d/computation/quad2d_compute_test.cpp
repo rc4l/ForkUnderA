@@ -253,3 +253,20 @@ TEST(Quad2D, NoOverlayAddsNoPass)
 	zx::hwrender::Quad2D over = base;
 	EXPECT_FALSE(ComputeOverlayQuad(base, 0u, over));
 }
+
+TEST(Quad2D, TheSameListKeepsItsVertices)
+{
+	EXPECT_FALSE(ComputeRebuild2DVertices(7u, 7u, 40, 40));
+}
+
+TEST(Quad2D, AClearedListIsBuiltAgain)
+{
+	EXPECT_TRUE(ComputeRebuild2DVertices(8u, 7u, 40, 40));
+}
+
+// [rc4l] A wipe step recorded its console again under the same generation, and the pass drew those quads past the end of the vertices, which a browser's WebGPU refused for the whole frame.
+TEST(Quad2D, QuadsRecordedAfterTheBuildAreBuiltToo)
+{
+	EXPECT_TRUE(ComputeRebuild2DVertices(7u, 7u, 912, 456));
+	EXPECT_TRUE(ComputeRebuild2DVertices(7u, 7u, 10, 40));
+}

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CHECKS, blankGame, configuredOnce, crashOffered, crosshairCentred, gpuError, inPage, judge, marked, reportSent, saveLoads, savePicture, selectChecks, soundStarts } from '../check.mjs';
+import { CHECKS, blankGame, configuredOnce, crashOffered, crosshairCentred, gpuError, heldOnce, inPage, judge, marked, reportSent, saveLoads, savePicture, selectChecks, soundStarts, stoppedOffered } from '../check.mjs';
 
 test('page code waits for the engine to start before it runs', () => {
   const js = inPage('return 1;');
@@ -107,6 +107,26 @@ test('any device error fails a check, named by its first line', () => {
   assert.equal(gpuError(['[log] map01']), '');
   assert.deepEqual(judge({ until: 'x' }, '[log] x', null, lines), { ok: false, reason: gpuError(lines) });
   assert.deepEqual(judge({ until: 'x' }, '[log] x', null, ['[log] map01']), { ok: true });
+});
+
+test('a check that makes a device error on purpose is not failed by it', () => {
+  const lines = ['[log] WebGPU error: checking out of memory'];
+  assert.deepEqual(judge({ until: 'x', deviceError: true }, '[log] x', null, lines), { ok: true });
+});
+
+test('a game that can no longer draw has to show it, offer its report and stop the loop', () => {
+  const good = { frames: 0, shown: 'The game crashed: out of graphics memory (checking out of memory)', offered: true };
+  assert.equal(stoppedOffered(good), '');
+  assert.equal(stoppedOffered({ ...good, shown: '' }), 'the page showed ""');
+  assert.equal(stoppedOffered({ ...good, offered: false }), 'the page offered no report');
+  assert.equal(stoppedOffered({ ...good, frames: 3 }), '3 frames ran after it');
+});
+
+// [rc4l] Twenty sizes held twenty sets of six screen textures before the backend destroyed what it let go of.
+test('resizing may hold one more set of screen targets, not one per size', () => {
+  assert.equal(heldOnce({ before: 6, after: 6 }), '');
+  assert.equal(heldOnce({ before: 6, after: 12 }), '');
+  assert.equal(heldOnce({ before: 6, after: 126 }), '120 more screen-sized textures were held after the resizes (6 before)');
 });
 
 test('firing at the floor has to put a mark through the decal pass', () => {

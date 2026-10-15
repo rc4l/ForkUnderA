@@ -35,6 +35,8 @@
     if (crashed) return;
     crashed = true;
     running = false;
+    // [rc4l] The game does not play on behind the panel, as it did when only its drawing had failed.
+    if (Module.pauseMainLoop) Module.pauseMainLoop();
     if (document.pointerLockElement) document.exitPointerLock();
     fail(kind === 'fatal' ? message : 'The game crashed: ' + message);
     reportStatus.textContent = 'Preparing a report…';
@@ -80,10 +82,14 @@
     const info = adapter.info || {};
     crashes.setAdapter([info.vendor, info.architecture, info.description, info.isFallbackAdapter ? '(software)' : ''].filter(Boolean).join(' '));
     device.lost.then((lost) => crash('device lost', 'The graphics device was lost: ' + lost.message, ''));
-    // [rc4l] The first error the device reports is reported too, since a refused binding can stop the drawing for good while the game goes on.
-    let gpuReported = false;
+    // [rc4l] The first error the device reports is reported too, since a refused binding can stop the drawing for good while the game goes on; one that leaves the game unable to draw (gpuErrorWatch) is a crash, which before left the last frame on the canvas with no panel.
+    let gpuReported = false, gpuRun = null;
     device.addEventListener('uncapturederror', (e) => {
       log('WebGPU error: ' + e.error.message);
+      const outOfMemory = typeof GPUOutOfMemoryError !== 'undefined' && e.error instanceof GPUOutOfMemoryError;
+      const watched = FuaCrash.gpuErrorWatch(gpuRun, { message: e.error.message, outOfMemory, now: performance.now() });
+      gpuRun = watched.state;
+      if (watched.stopped) { crash('drawing stopped', watched.stopped, ''); return; }
       if (gpuReported) return;
       gpuReported = true;
       crashes.report('webgpu', e.error.message, '').then((r) => { if (r.delivered) log('A report of it was sent to the developers.'); });

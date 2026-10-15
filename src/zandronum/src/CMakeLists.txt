@@ -2097,6 +2097,10 @@ if( FUA_DILIGENT )
 		target_compile_definitions( zdoom PRIVATE FUA_WEBGPU )
 		target_link_libraries( zdoom Diligent-GraphicsEngineWebGPU-static )
 		target_include_directories( zdoom PRIVATE "${CMAKE_SOURCE_DIR}/../../deps/DiligentCore/Graphics/GraphicsEngineWebGPU/interface" )
+		# [rc4l] webgpu.h for dgdevice_wgpu.cpp's own calls, which a browser build has from Emscripten.
+		if( NOT EMSCRIPTEN )
+			target_link_libraries( zdoom dawn_headers )
+		endif()
 	endif()
 	target_include_directories( zdoom PRIVATE
 		"${CMAKE_SOURCE_DIR}/../../deps/DiligentCore/Graphics/GraphicsEngineVulkan/interface"

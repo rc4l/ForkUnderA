@@ -125,6 +125,9 @@ void ComputeTextureQuad(const TextureQuadIn &in, TextureQuadOut &out);
 // [rc4l] A texture quad's 2D record: its rectangle, coordinates and colour, and every other field zero for the caller to fill, so none is ever stack garbage.
 zx::hwrender::Quad2D ComputeTextureQuadRecord(const TextureQuadOut &q);
 
+// [rc4l] Whether the backend's 2D vertices are built again: the list was cleared since they were (a new generation), or has more or fewer quads than they were built for.
+bool ComputeRebuild2DVertices(unsigned generation, unsigned builtGeneration, int quads, int builtQuads);
+
 // [rc4l] The pass GL draws over a texture quad for a colour overlay (a greyed menu row's, say): the glyph's coverage in the overlay's colour and alpha, untinted; false for no overlay.
 bool ComputeOverlayQuad(const zx::hwrender::Quad2D &base, unsigned colorOverlay, zx::hwrender::Quad2D &out);
 

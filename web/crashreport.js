@@ -6,6 +6,9 @@
   const MAX_SENT = 3;
   // [rc4l] The console lines a report keeps, the last of them.
   const LOG_LINES = 100;
+  // [rc4l] How long WebGPU errors may keep coming before the game counts as stopped, and the quiet between two that ends a run of them.
+  const STUCK_MS = 2000;
+  const RUN_GAP_MS = 500;
 
   // [rc4l] A DSN (https://KEY@HOST/PROJECT) as the envelope endpoint it names, or null when it is not one.
   function envelopeUrl(dsn) {
@@ -54,7 +57,16 @@
     return id;
   }
 
-  // [rc4l] One report as a Sentry event: kind is 'exception', 'abort', 'fatal', 'device lost' or 'webgpu' (the only one the game may go on after), context the engine's last (crashcontext_compute.h).
+  // [rc4l] A WebGPU error in its run of them (state, null before the first): the game has stopped, with why in `stopped`, once the device is out of memory, which leaves what it was making unusable for good, or once errors have kept coming for STUCK_MS, every frame refused.
+  function gpuErrorWatch(state, { message, outOfMemory = false, now }) {
+    const run = state && now - state.last <= RUN_GAP_MS ? { first: state.first, cause: state.cause, last: now } : { first: now, cause: message, last: now };
+    let stopped = '';
+    if (outOfMemory) stopped = `out of graphics memory (${message})`;
+    else if (now - run.first >= STUCK_MS) stopped = `nothing it draws reaches the screen (${run.cause})`;
+    return { state: run, stopped };
+  }
+
+  // [rc4l] One report as a Sentry event: kind is 'exception', 'abort', 'fatal', 'device lost', 'drawing stopped' or 'webgpu' (the only one the game may go on after), context the engine's last (crashcontext_compute.h).
   function buildEvent({ kind, message, stack = '', context = {}, browser = '', adapter = '', log = [], now = new Date(), id = eventId() }) {
     const fatal = kind !== 'webgpu';
     return {
@@ -146,7 +158,7 @@
     return fetch(url, { method: 'POST', body, keepalive: true, headers: { 'Content-Type': 'text/plain;charset=UTF-8' } }).then((r) => r.ok);
   }
 
-  const api = { MAX_SENT, envelopeUrl, parseStack, eventId, buildEvent, envelope, decision, statusText, reportText, reporter, fetchSend };
+  const api = { MAX_SENT, STUCK_MS, RUN_GAP_MS, gpuErrorWatch, envelopeUrl, parseStack, eventId, buildEvent, envelope, decision, statusText, reportText, reporter, fetchSend };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.FuaCrash = api;
 })(typeof window !== 'undefined' ? window : globalThis);

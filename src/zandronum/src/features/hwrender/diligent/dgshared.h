@@ -78,6 +78,7 @@
 #include "ShaderResourceBinding.h"
 #include "Shader.h"
 #include "RefCntAutoPtr.hpp"
+#include "features/hwrender/diligent/dgdevice.h"   // [rc4l] CreateDeviceTexture, CreateDeviceBuffer
 
 class FString;
 

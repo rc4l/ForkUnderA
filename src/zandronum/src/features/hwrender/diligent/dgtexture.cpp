@@ -25,6 +25,7 @@
 #include "Texture.h"
 #include "TextureView.h"
 #include "RefCntAutoPtr.hpp"
+#include "features/hwrender/diligent/dgdevice.h"   // [rc4l] CreateDeviceTexture
 
 #include "features/materials/materials.h"
 #include "tarray.h"
@@ -87,7 +88,7 @@ static Diligent::ITextureView *EnsureWhite()
 	data.pSubResources = &sub;
 	data.NumSubresources = 1;
 
-	dev->CreateTexture(td, &data, &g_white);
+	CreateDeviceTexture(td, &data, &g_white);
 	if (g_white) g_whiteSRV = g_white->GetDefaultView(Diligent::TEXTURE_VIEW_SHADER_RESOURCE);
 	return g_whiteSRV;
 }
@@ -122,7 +123,7 @@ static Diligent::ITextureView *EnsureBlack()
 		Diligent::TextureData data;
 		data.pSubResources = &sub;
 		data.NumSubresources = 1;
-		dev->CreateTexture(td, &data, &g_black);
+		CreateDeviceTexture(td, &data, &g_black);
 		if (!g_black) return NULL;
 	}
 	return g_black->GetDefaultView(Diligent::TEXTURE_VIEW_SHADER_RESOURCE);
@@ -233,7 +234,7 @@ Diligent::ITextureView *GetMaterialSRV(const void *materialPtr, int translation)
 	TexEntry e;
 	e.material = materialPtr;
 	e.translation = translation;
-	dev->CreateTexture(td, NULL, &e.tex);
+	CreateDeviceTexture(td, NULL, &e.tex);
 
 	if (e.tex)
 	{

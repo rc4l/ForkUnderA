@@ -323,7 +323,7 @@ static void BuildSkyDome(SkyDome &d, int texw, int texh)
 	Diligent::BufferData bdata;
 	bdata.pData = &verts[0];
 	bdata.DataSize = bd.Size;
-	GetDevice()->CreateBuffer(bd, &bdata, &d.vb);
+	CreateDeviceBuffer(bd, &bdata, &d.vb);
 }
 
 // [rc4l] One creator, two pipelines. The dome WRAPS horizontally -- a cylinder has to, the texture
@@ -402,7 +402,7 @@ static bool CreateSkyPipeline(Diligent::TEXTURE_ADDRESS_MODE addrU, const char *
 		cbd.Usage = Diligent::USAGE_DYNAMIC;
 		cbd.BindFlags = Diligent::BIND_UNIFORM_BUFFER;
 		cbd.CPUAccessFlags = Diligent::CPU_ACCESS_WRITE;
-		dev->CreateBuffer(cbd, nullptr, &g_skyDrawCB);
+		CreateDeviceBuffer(cbd, nullptr, &g_skyDrawCB);
 		if (!g_skyDrawCB) return false;
 	}
 	CreatePipeline(pci, &outPSO);
@@ -649,7 +649,7 @@ static void BuildSkyBox(const zx::materials::SkyBoxFaces &box)
 	Diligent::BufferData bdata;
 	bdata.pData = &verts[0];
 	bdata.DataSize = bd.Size;
-	GetDevice()->CreateBuffer(bd, &bdata, &g_skyBoxVB);
+	CreateDeviceBuffer(bd, &bdata, &g_skyBoxVB);
 	if (!g_skyBoxVB) return;
 
 	// A binding per face, from the same material path the world uses -- a face that cannot be
@@ -825,7 +825,7 @@ static void DrawSkyFade(Diligent::IDeviceContext *ctx)
 		bd.Size = sizeof(v);
 		bd.Usage = Diligent::USAGE_DEFAULT;
 		bd.BindFlags = Diligent::BIND_VERTEX_BUFFER;
-		GetDevice()->CreateBuffer(bd, nullptr, &g_skyFadeVB);
+		CreateDeviceBuffer(bd, nullptr, &g_skyFadeVB);
 		if (!g_skyFadeVB) return;
 	}
 	ctx->UpdateBuffer(g_skyFadeVB, 0, sizeof(v), v,

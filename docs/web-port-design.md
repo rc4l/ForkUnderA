@@ -230,6 +230,8 @@ Paths are relative to `src/zandronum/src/` unless noted. The order is deliberate
   - A screenshot is the page's: the engine asks during the frame (`DCanvas::ScreenshotLater`), and the page downloads the canvas just after it (`Module.postMainLoop`).
   - A save picture is drawn at the save and read back on a later frame (`ReadTextureLater`, polled after each present). The save is written with the placeholder, and the picture is spliced in once it arrives (`FRenderer::SaveWritten`, `ComputeSpliceSavePicture`).
 - **Crash reports:** the page reports what stops the game: an error escaping the frame, an abort, a lost device, an engine fatal, and the device's first WebGPU error.
+  - A device out of memory, or WebGPU errors refusing every frame for two seconds, is a crash too (`gpuErrorWatch`): the game had stopped drawing, and the page showed the last frame with no panel.
+  - A crash pauses the engine's loop, so the game does not play on behind the panel.
   - Each is offered on the error panel to copy or save (`web/crashreport.js`).
   - It is sent as a Sentry envelope to the desktop's GlitchTip only from an official build, with `cl_crashreports` on, as on the desktop.
   - The engine tells the page the release, map, load order and setting as they change (`features/web/webcrash.cpp`).
@@ -241,7 +243,7 @@ Paths are relative to `src/zandronum/src/` unless noted. The order is deliberate
 - **Camera textures on a binding per material:** the binding was made before the camera's first render and kept the white placeholder. WebGPU always draws this way, as does Vulkan past the array's cap; `cameratexpermaterial` covers it.
 - **Checks (13a, 13c, 13d, 13e):**
   - The gtests build with Emscripten, threads and wasm exceptions, and pass in Node (`test-web` in CI).
-  - `tools/web/check.mjs` runs the page in headless Chrome against its `CHECKS`: drawing, sound after a click (11b, 11c), resizing (10a), game keys (11e), screenshots, saves surviving a reload (14d), quitting, the config's storage, errors, floor marks, the canvas's size and crash reports. Any WebGPU error fails a check. CI runs it after the web build, on SwiftShader's WebGPU.
+  - `tools/web/check.mjs` runs the page in headless Chrome against its `CHECKS`: drawing, sound after a click (11b, 11c), resizing (10a), game keys (11e), screenshots, saves surviving a reload (14d), quitting, the config's storage, errors, floor marks, the canvas's size and crash reports. Any WebGPU error fails a check, as do textures held across resizes and a map change's wipe. CI runs it after the web build, on SwiftShader's WebGPU.
   - CI builds the web module (`build-web`) and runs the tripwire.
   - `fuactl scenarios --webgpu` runs the suite on WebGPU against Vulkan.
 - **Next:**

@@ -9,7 +9,12 @@
 
 #ifdef FUA_WEBGPU
 
+#include <webgpu/webgpu.h>
 #include "EngineFactoryWebGPU.h"
+#include "TextureWebGPU.h"
+#include "BufferWebGPU.h"
+#include "RefCntAutoPtr.hpp"
+#include "features/hwrender/computation/keptobjects_compute.h"
 #if PLATFORM_WEB
 #include <emscripten.h>
 #include <emscripten/html5_webgpu.h>
@@ -71,6 +76,57 @@ bool CaptureFrameLater(const char *path)
 bool CaptureFrameLater(const char *) { return false; }
 #endif
 
+#if PLATFORM_WEB
+// [rc4l] Emscripten's own WebGPU headers name AddRef Reference.
+static void HoldTexture(WGPUTexture t) { wgpuTextureReference(t); }
+static void HoldBuffer(WGPUBuffer b) { wgpuBufferReference(b); }
+#else
+static void HoldTexture(WGPUTexture t) { wgpuTextureAddRef(t); }
+static void HoldBuffer(WGPUBuffer b) { wgpuBufferAddRef(b); }
+#endif
+
+// [rc4l] Each texture and buffer the backend made, with a weak hold on the object that owns it; a browser frees a released one only when its garbage collector gets to it, which a page resized a few times outran until it was out of GPU memory.
+static KeptObjects<Diligent::RefCntWeakPtr<Diligent::IDeviceObject>> g_kept;
+
+static void Keep(Diligent::IDeviceObject *object)
+{
+	if (object == nullptr) return;
+	const Diligent::RefCntWeakPtr<Diligent::IDeviceObject> owner(object);
+	Diligent::RefCntAutoPtr<Diligent::ITextureWebGPU> texture(object, Diligent::IID_TextureWebGPU);
+	if (texture)
+	{
+		WGPUTexture handle = texture->GetWebGPUTexture();
+		if (g_kept.Keep(handle, true, owner)) HoldTexture(handle);
+		return;
+	}
+	Diligent::RefCntAutoPtr<Diligent::IBufferWebGPU> buffer(object, Diligent::IID_BufferWebGPU);
+	if (!buffer) return;
+	const Diligent::USAGE usage = buffer->GetDesc().Usage;
+	if (!ComputeBufferOwnsMemory(usage == Diligent::USAGE_DYNAMIC, usage == Diligent::USAGE_STAGING)) return;
+	WGPUBuffer handle = buffer->GetWebGPUBuffer();
+	if (g_kept.Keep(handle, false, owner)) HoldBuffer(handle);
+}
+
+// [rc4l] A present has submitted everything drawn with an object let go of before it, which WebGPU lets finish before destroying it.
+static void FreeReleased()
+{
+	g_kept.FreeReleased(
+		[](const Diligent::RefCntWeakPtr<Diligent::IDeviceObject> &owner) { return !owner.IsValid(); },
+		[](void *handle, bool texture)
+		{
+			if (texture)
+			{
+				wgpuTextureDestroy((WGPUTexture)handle);
+				wgpuTextureRelease((WGPUTexture)handle);
+			}
+			else
+			{
+				wgpuBufferDestroy((WGPUBuffer)handle);
+				wgpuBufferRelease((WGPUBuffer)handle);
+			}
+		});
+}
+
 const DeviceApi *WebGPUDeviceApi()
 {
 #if PLATFORM_WEB
@@ -79,7 +135,7 @@ const DeviceApi *WebGPUDeviceApi()
 #else
 	const bool inBrowser = false;
 #endif
-	static const DeviceApi api = { "WebGPU", CreateDevice, CreateSwapChain, !inBrowser, inBrowser };
+	static const DeviceApi api = { "WebGPU", CreateDevice, CreateSwapChain, !inBrowser, inBrowser, Keep, FreeReleased };
 	return &api;
 }
 

@@ -97,7 +97,7 @@ static bool CreateRayTracingBuffer(const char *name, Diligent::Uint64 size, cons
 	bd.Size = size;
 	Diligent::BufferData init(data, size);
 	out.Release();
-	GetDevice()->CreateBuffer(bd, data != NULL ? &init : nullptr, &out);
+	CreateDeviceBuffer(bd, data != NULL ? &init : nullptr, &out);
 	return out != nullptr;
 }
 
@@ -854,7 +854,7 @@ bool EnsureMirrorResources()
 			cbd.Usage = Diligent::USAGE_DYNAMIC;
 			cbd.BindFlags = Diligent::BIND_UNIFORM_BUFFER;
 			cbd.CPUAccessFlags = Diligent::CPU_ACCESS_WRITE;
-			dev->CreateBuffer(cbd, nullptr, &g_sheenCB);
+			CreateDeviceBuffer(cbd, nullptr, &g_sheenCB);
 		}
 		if (!g_sheenCB) { Printf("mirror: sheen buffer failed\n"); g_mirrorPSO.Release(); return false; }
 		for (Diligent::SHADER_TYPE st : { Diligent::SHADER_TYPE_VERTEX, Diligent::SHADER_TYPE_PIXEL })
@@ -927,7 +927,7 @@ bool EnsureMirrorResources()
 		Diligent::BufferData bdata;
 		bdata.pData = &verts[0];
 		bdata.DataSize = bd.Size;
-		dev->CreateBuffer(bd, &bdata, &g_mirrorVB);
+		CreateDeviceBuffer(bd, &bdata, &g_mirrorVB);
 		if (!g_mirrorVB) return false;
 	}
 	return g_mirrors.Size() == 0 || g_mirrorVB.RawPtr() != nullptr;

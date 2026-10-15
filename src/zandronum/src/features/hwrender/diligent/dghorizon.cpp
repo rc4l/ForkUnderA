@@ -291,7 +291,7 @@ void DrawHorizonPlanes(Diligent::IDeviceContext *ctx)
 		bd.BindFlags = Diligent::BIND_VERTEX_BUFFER;
 		bd.CPUAccessFlags = Diligent::CPU_ACCESS_WRITE;
 		g_hzVB.Release();
-		GetDevice()->CreateBuffer(bd, nullptr, &g_hzVB);
+		CreateDeviceBuffer(bd, nullptr, &g_hzVB);
 		if (!g_hzVB) { g_hzVBCapacity = 0; return; }
 	}
 	{
