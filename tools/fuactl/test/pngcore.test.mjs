@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { decodePNG, px, writePNG, encodePNG, cropImage, boxDiff, abDiff, samplePoints, isBlankImage, boxMean, boxStats, filesAndBox, boxArgs } from "../src/pngcore.mjs";
+import { decodePNG, px, writePNG, encodePNG, cropImage, boxDiff, boxDiffMax, blockDiffs, abDiff, samplePoints, isBlankImage, boxMean, boxStats, filesAndBox, boxArgs } from "../src/pngcore.mjs";
 
 // [rc4l] A w x h RGB image whose pixel colour is f(x, y), written and read back through the real codec.
 function image(w, h, f) {
@@ -117,4 +117,13 @@ test("a box reads as one comma list or as four numbers, with what follows it", (
   assert.deepEqual(boxArgs(["0.05,0.72,0.65,0.9", "8"]), { box: [0.05, 0.72, 0.65, 0.9], rest: ["8"] });
   assert.deepEqual(boxArgs(["0", "0.5", "1", "1", "4"]), { box: [0, 0.5, 1, 1], rest: ["4"] });
   assert.deepEqual(boxArgs(["0", "0", "1", "1"]).rest, []);
+});
+
+test("a fault in one block is the largest block difference however quiet it is in the mean", () => {
+  const a = image(64, 64, () => [100, 100, 100]);
+  const b = image(64, 64, (x, y) => (x < 16 && y < 16 ? [160, 100, 100] : [100, 100, 100]));
+  assert.equal(boxDiffMax(a, b, [0, 0, 1, 1], 16), 20);
+  assert.equal(boxDiff(a, b, [0, 0, 1, 1], 16), 20 / 16);
+  assert.equal(blockDiffs(a, b, [0, 0, 1, 1], 16).length, 16);
+  assert.equal(boxDiffMax(a, a, [0, 0, 1, 1]), 0);
 });

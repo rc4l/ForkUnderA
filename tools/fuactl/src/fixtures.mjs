@@ -9,7 +9,9 @@ import { launchInstance, resolveEngine, stopInstance } from "./launch.mjs";
 import { FREEDOOM2 } from "./template.mjs";
 import { fileURLToPath } from "node:url";
 import { attach } from "./session.mjs";
-import { sleep, waitInLevel } from "./capture.mjs";
+import { exec as execOut, sleep, waitInLevel } from "./capture.mjs";
+import { captureVulkan, standAt } from "./shot.mjs";
+import { boxDiff, boxDiffMax, decodePNG } from "./pngcore.mjs";
 import { describeSimTraceDiff, diffSimTraces, parseSimTrace } from "./simtrace.mjs";
 
 const ARENA = { heightfloor: 0, heightceiling: 256, texturefloor: "FLOOR4_8", textureceiling: "CEIL3_5", lightlevel: 160 };
@@ -208,16 +210,21 @@ export async function recordFixture(f, { engine, store, dir = fixtureDir(), log 
   }
 }
 
-// [rc4l] Plays a fixture's demo with the trace armed from its first tic and returns the trace file.
-export async function traceFixture(f, out, { engine, store, dir = fixtureDir(), cvars = {}, log = () => {} } = {}) {
+// [rc4l] Launches a fixture's demo on the wads it was recorded on, the Vulkan backend alone unless gl, the game running unfocused.
+async function launchDemo(f, { engine, store, dir, cvars = {}, gl = false, postMap = [] }) {
   const demo = path.join(dir, `${f.name}.lmp`);
   if (!fs.existsSync(demo)) throw new Error(`${f.name} has no demo yet: fuactl fixture record ${f.name}`);
   const { files, missing } = fixtureFiles(f, dir, store);
   if (missing.length) throw new Error(`${f.name} needs ${missing.join(", ")}, not in ${store}`);
-  fs.rmSync(out, { force: true });
   const iwad = fixtureIwad(f, store, path.dirname(engine || resolveEngine()));
-  const inst = await launchInstance({ engine, iwad, engineDefault: true, cvars: { ...RUN_UNFOCUSED, ...cvars }, extraArgs: files.length ? ["-file", ...files] : [],
-    playdemo: demo.replace(/\\/g, "/"), postMap: [`fua_simtrace ${f.tics} "${out.replace(/\\/g, "/")}"`] });
+  return launchInstance({ engine, iwad, engineDefault: !gl, cvars: { ...RUN_UNFOCUSED, ...cvars }, extraArgs: files.length ? ["-file", ...files] : [],
+    playdemo: demo.replace(/\\/g, "/"), postMap });
+}
+
+// [rc4l] Plays a fixture's demo with the trace armed from its first tic and returns the trace file.
+export async function traceFixture(f, out, { engine, store, dir = fixtureDir(), cvars = {}, log = () => {} } = {}) {
+  fs.rmSync(out, { force: true });
+  const inst = await launchDemo(f, { engine, store, dir, cvars, postMap: [`fua_simtrace ${f.tics} "${out.replace(/\\/g, "/")}"`] });
   try {
     log(`${f.name}: tracing ${f.tics} tics of its demo`);
     await waitForFile(out, 60000 + f.tics * 150, inst.proc);
@@ -243,4 +250,92 @@ export async function checkFixtures(list, { engine, store, dir = fixtureDir(), c
     results.push({ name: f.name, same: d.same, lines: describeSimTraceDiff(d), trace: out });
   }
   return results;
+}
+
+// [rc4l] The views each fixture's pictures are taken from at a tic of its demo: the demo's own player, or a camera stood at while paused.
+export const PICTURES = {
+  gtfix: { tic: 420, views: [{ name: "player" }, { name: "machines", at: { x: 600, y: 300, z: 0, angle: 45, pitch: 0 } },
+    { name: "screen", at: { x: 1300, y: 512, z: 0, angle: 0, pitch: 0 } }] },
+  "freedoom2-map01": { tic: 420, views: [{ name: "player" }] },
+  "freedoom2-map04": { tic: 420, views: [{ name: "player" }] },
+  "sunder-map11": { tic: 350, views: [{ name: "player" }] },
+};
+
+// [rc4l] A capture held to its baseline PNG by its block differences: saved when there is none or update asks, and differing when its largest block moved more than tolerance.
+export function comparePicture(file, baseline, { update = false, tolerance = 2 } = {}) {
+  if (update || !fs.existsSync(baseline)) {
+    fs.mkdirSync(path.dirname(baseline), { recursive: true });
+    fs.copyFileSync(file, baseline);
+    return { saved: true, line: `saved the baseline ${baseline}` };
+  }
+  const a = decodePNG(baseline), b = decodePNG(file);
+  if (a.w !== b.w || a.h !== b.h) return { same: false, line: `the frame is ${b.w}x${b.h}, its baseline ${a.w}x${a.h}` };
+  const box = [0, 0, 1, 1], mean = boxDiff(a, b, box), max = boxDiffMax(a, b, box);
+  const same = max <= tolerance;
+  return { same, mean, max, line: `${same ? "matches" : "differs from"} its baseline: largest block ${max.toFixed(2)}, mean ${mean.toFixed(3)} (tolerance ${tolerance})${same ? "" : `, ${file}`}` };
+}
+
+// [rc4l] The numbers fua_vis_report gives for walks checked against GL: how many frames each check compared and how many differed.
+export function parseVisReport(text) {
+  const num = (re) => { const m = re.exec(text); return m ? m.slice(1).map(Number) : null; };
+  const walk = num(/visibility: (\d+) frames walked beside GL, (\d+) differed/);
+  const sky = num(/sky: (\d+) frames derived beside GL, (\d+) differed/);
+  const portal = num(/portal views: (\d+) frames derived beside GL .*?\), (\d+) differed/);
+  return { walked: walk ? walk[0] : 0, differed: (walk ? walk[1] : 0) + (sky ? sky[1] : 0) + (portal ? portal[1] : 0), found: !!walk };
+}
+
+// [rc4l] Plays a fixture's demo with the frame clock pinned, so animations are at the same moment in every run, and attaches once its level is up.
+async function playTo(f, { engine, store, dir, cvars, gl = false }) {
+  // [rc4l] No console notices either, since a capture's own "wrote <file>" would land in the next one with its path and process id.
+  const inst = await launchDemo(f, { engine, store, dir, cvars: { fua_debug_frameclock: 1000, con_notifylines: 0, ...cvars }, gl });
+  const c = await attach(inst);
+  await waitInLevel(c, 60000);
+  return { inst, c };
+}
+
+async function waitLevelTime(c, tic, { paused = false, timeoutMs = 120000 } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const t = await c.rpc("sim.tic");
+    if (t.leveltime >= tic && (!paused || t.paused)) return t;
+    await sleep(100);
+  }
+  throw new Error(`the demo never reached tic ${tic}`);
+}
+
+// [rc4l] A fixture's views captured at its picture tic and held to their baselines under dir/pictures; one result per view.
+export async function pictureFixture(f, { engine, store, dir = fixtureDir(), cvars = {}, update = false, tolerance = 2, log = () => {} } = {}) {
+  const spec = PICTURES[f.name];
+  const { inst, c } = await playTo(f, { engine, store, dir, cvars });
+  try {
+    await c.rpc("sim.pauseat", { tic: spec.tic });
+    await waitLevelTime(c, spec.tic, { paused: true });
+    const results = [];
+    for (const v of spec.views) {
+      if (v.at) await standAt(c, { ...v.at, force: 1 }, log);
+      await sleep(600);
+      const file = path.join(os.tmpdir(), `fuactl-picture-${f.name}-${v.name}-${process.pid}.png`);
+      if (!(await captureVulkan(c, file))) throw new Error(`${f.name} ${v.name}: no Vulkan capture`);
+      results.push({ name: `${f.name} ${v.name}`, ...comparePicture(file, path.join(dir, "pictures", `${f.name}-${v.name}.png`), { update, tolerance }) });
+    }
+    return results;
+  } finally {
+    c.close();
+    await stopInstance(inst);
+  }
+}
+
+// [rc4l] A fixture's demo played with GL drawing beside the backend and every walk checked against GL's (fua_vis_check) up to its picture tic.
+export async function visCheckFixture(f, { engine, store, dir = fixtureDir(), cvars = {}, log = () => {} } = {}) {
+  const spec = PICTURES[f.name];
+  const { inst, c } = await playTo(f, { engine, store, dir, cvars: { fua_dg_standalone: 0, fua_vis_check: 1, ...cvars }, gl: true });
+  try {
+    await waitLevelTime(c, spec.tic);
+    const report = parseVisReport(await execOut(c, "fua_vis_report", { maxMs: 6000 }));
+    const same = report.found && report.walked > 0 && report.differed === 0;
+    return { name: f.name, same, line: report.found ? `${report.walked} frames walked beside GL, ${report.differed} differed` : "no walk was checked against GL" };
+  } finally {
+    c.close();
+    await stopInstance(inst);
+  }
 }

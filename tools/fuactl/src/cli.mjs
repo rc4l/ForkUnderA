@@ -25,7 +25,7 @@ import { png } from "./png.mjs";
 import { actorsNear } from "./actors.mjs";
 import { pixelToFace } from "./camera.mjs";
 import { sectorOf } from "./sectorof.mjs";
-import { scenarioOptions, scenarioRun, templateScenarioFiles, probeScenario, sideAdjust, standaloneOptions, webgpuOptions, launchRenderer } from "./template.mjs";
+import { scenarioOptions, scenarioRun, templateScenarioFiles, probeScenario, sideAdjust, standaloneOptions, matrixSets, matrixAdjust, webgpuOptions, launchRenderer } from "./template.mjs";
 import { abPerf } from "./abperf.mjs";
 import { measureCosts, formatCosts } from "./costs.mjs";
 import { runFps, fpsModes } from "./fps.mjs";
@@ -178,7 +178,7 @@ const USAGE = `fuactl <command>
   ticprof --port P [--tics N]          per-tic sim phase split (P_Ticker / thinkers / effects / specials)
   simtrace --port P [--token T] --out FILE [--tics N]   each tic's fingerprint and every damage, kill and spawn for the next N tics (sim.trace), into FILE; +fua_simtrace N FILE on a launch traces from its first tic
   tracediff A B   where two sim traces part: the first tic whose fingerprint differs and the first event that moved; exit 1 when they differ
-  fixture record|trace|check [NAME ...] [--engine PATH] [--store DIR] [--cvar k=v,...] [--update] [--out FILE]   the game-thread fixture set (fixtures.mjs: a generated map with every tricky ingredient, stock maps, Sunder MAP11): record each one's ticcmd demo, trace its playback tic by tic, or hold each trace to its saved baseline (the first check saves it), exit 1 on a difference; demos and baselines live in ~/.forkundera/fixtures
+  fixture record|trace|check|pictures|vischeck [NAME ...] [--engine PATH] [--store DIR] [--cvar k=v,...] [--update] [--out FILE] [--tolerance T]   the game-thread fixture set (fixtures.mjs: a generated map with every tricky ingredient, stock maps, Sunder MAP11): record each one's ticcmd demo, trace its playback tic by tic, hold each trace to its saved baseline, capture its views at a fixed tic and hold each to a saved PNG (largest 16-pixel block within T, default 2), or play it with GL beside the backend and every walk checked against GL's; the first check or pictures run saves the baseline, exit 1 on a difference; demos and baselines live in ~/.forkundera/fixtures
   bench --port P --scenario F.json [--runs N] [--metric total.p99_ms]   repeat a scenario, report median + spread, discard runs whose expectations failed
   lines --port P [--special N] [--door] [--use] [--cross] [--tag N] [--texture NAME] [--limit N]   query linedefs; prints a stand position and facing for each match
   here --port P [--token T] [--save NAME] [--note TEXT]   the live camera (position + facing, full precision) and what the crosshair is on; --save records it in spots.json as a named repro
@@ -196,7 +196,7 @@ const USAGE = `fuactl <command>
   mapdata <MAP> (--preset ID | --file a.pk3,b.wad) [--sector N,..] [--line N,..] [--special N] [--tag N] [--thing TYPE,..] [--scripts REGEX]   a UDMF level's summary, sectors, lines, things of the given types and ACS source lines, read from its files
   actors [--near x,y] [--radius R] [--toward YAW | --ahead] [--cone DEG] [--class REGEX]   actors near a point (default the player), nearest first, optionally only in a direction
   probe <scenario.mjs> [--map M] [--vantage V] [--side S] [--engine path/to/forkundera.exe] [<command> ...]   launch a template scenario's map at a vantage and run console commands there
-  scenarios [name ...] [--engine path/to/forkundera.exe] [--side S --cvar k=v,...] [--standalone | --webgpu]   run every template scenario (or the named ones) in turn and summarise; --engine picks the binary, as FUACTL_ENGINE does; --side/--cvar adds cvars to one side, to show a test fails under the old behaviour (scenarios without that side are skipped); --standalone runs each as players do: its own standalone side, else its vk side with fua_dg_standalone 1, else skipped; --webgpu runs each one's Vulkan side on WebGPU against Vulkan, every box at WEBGPU_CEILING
+  scenarios [name ...] [--engine path/to/forkundera.exe] [--side S --cvar k=v,...] [--standalone | --webgpu] [--matrix k=a,b]   run every template scenario (or the named ones) in turn and summarise; --engine picks the binary, as FUACTL_ENGINE does; --side/--cvar adds cvars to one side, to show a test fails under the old behaviour (scenarios without that side are skipped); --standalone runs each as players do: its own standalone side, else its vk side with fua_dg_standalone 1, else skipped; --webgpu runs each one's Vulkan side on WebGPU against Vulkan, every box at WEBGPU_CEILING; --matrix runs the suite once per value with the cvar on every side (fua_gamethread=0,1)
   ready [--port P --token T] [--timeout S]   wait until an instance answers (defaults to the last play session)
   goto (--spot NAME | --at x,y,z --face yaw,pitch) [--port P]   stand the player there
   motion [--spot NAME | --at x,y,z --face yaw,pitch] [--box x0,y0,x1,y1] [--interval MS]   per-pixel change between two captures apart, Vulkan and GL, sim running
@@ -385,17 +385,23 @@ async function main() {
         : flags.side ? sideAdjust(String(flags.side), shot.parseCvarFlag(flags.cvar) || {}) : undefined;
       console.log(`engine ${resolveEngine()}`);
       let failed = 0, skipped = 0;
-      for (const f of files) {
-        const url = pathToFileURL(path.join(dir, f)).href;
-        await import(url);
-        const run = scenarioRun(url, adjust);
-        if (!run) continue;
-        let out;
-        // [rc4l] A scenario that throws is one failure, not the end of the run.
-        try { out = await run(); } catch (e) { out = { lines: [`error: ${e.message}`], code: 1 }; }
-        for (const l of out.lines.filter((x) => !x.startsWith("PASS"))) console.log(`${f.slice(0, -4).padEnd(18)} ${l}`);
-        if (out.skipped) skipped++;
-        if (out.code !== 0) failed++;
+      // [rc4l] --matrix k=a,b runs the suite once per value with the cvar on every side, the label naming which run a line came from.
+      const runs = flags.matrix ? matrixSets(flags.matrix).map((set) => ({ label: Object.entries(set).map(([k, v]) => `${k}=${v}`).join(" "), adjust: matrixAdjust(set, adjust) }))
+        : [{ label: "", adjust }];
+      for (const r of runs) {
+        if (r.label) console.log(`-- ${r.label}`);
+        for (const f of files) {
+          const url = pathToFileURL(path.join(dir, f)).href;
+          await import(url);
+          const run = scenarioRun(url, r.adjust);
+          if (!run) continue;
+          let out;
+          // [rc4l] A scenario that throws is one failure, not the end of the run.
+          try { out = await run(); } catch (e) { out = { lines: [`error: ${e.message}`], code: 1 }; }
+          for (const l of out.lines.filter((x) => !x.startsWith("PASS"))) console.log(`${(r.label ? `${r.label} ` : "") + f.slice(0, -4).padEnd(18)} ${l}`);
+          if (out.skipped) skipped++;
+          if (out.code !== 0) failed++;
+        }
       }
       const ran = skipped ? ` (${skipped} skipped)` : "";
       console.log(failed ? `${failed} scenario(s) failed${ran}` : `every scenario within its limits${ran}`);
@@ -773,7 +779,7 @@ async function main() {
     }
     case "fixture": {
       const [what, ...names] = rest;
-      if (!["record", "trace", "check"].includes(what)) { console.error(usageFor(USAGE, "fixture")); process.exit(2); }
+      if (!["record", "trace", "check", "pictures", "vischeck"].includes(what)) { console.error(usageFor(USAGE, "fixture")); process.exit(2); }
       const list = fixtures.pickFixtures(names);
       const opts = { engine: engineOf(flags), store: presetDirs(flags).storeDir, cvars: shot.parseCvarFlag(flags.cvar) || {}, update: !!flags.update,
         log: (m) => console.error(`[fixture] ${m}`) };
@@ -784,10 +790,17 @@ async function main() {
           const out = flags.out && list.length === 1 ? path.resolve(String(flags.out)) : path.join(fixtures.fixtureDir(), `${f.name}.latest.trace`);
           console.log(`${f.name}: ${await fixtures.traceFixture(f, out, opts)}`);
         }
-      } else {
+      } else if (what === "check") {
         const results = await fixtures.checkFixtures(list, opts);
         for (const r of results) for (const line of r.lines) console.log(`${r.name}: ${line}`);
         if (results.some((r) => r.same === false)) process.exit(1);
+      } else {
+        // [rc4l] Pictures and the walk check run one fixture at a time, each its own launch.
+        const run = what === "pictures" ? (f) => fixtures.pictureFixture(f, { ...opts, tolerance: num(flags.tolerance) ?? 2 })
+          : async (f) => [await fixtures.visCheckFixture(f, opts)];
+        let failed = false;
+        for (const f of list) for (const r of await run(f)) { console.log(`${r.name}: ${r.line}`); if (r.same === false) failed = true; }
+        if (failed) process.exit(1);
       }
       break;
     }

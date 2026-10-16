@@ -150,6 +150,26 @@ export function withSideCvars(opts, sideName, cvars) {
   return { ...opts, sides: sides.map((s) => (s.name === sideName ? { ...s, cvars: { ...(s.cvars || {}), ...cvars } } : s)) };
 }
 
+// [rc4l] A scenario's options with cvars added to every side, for one setting of a matrix run.
+export function withEverySideCvars(opts, cvars) {
+  return { ...opts, sides: (opts.sides || GL_VS_VULKAN).map((s) => ({ ...s, cvars: { ...(s.cvars || {}), ...cvars } })) };
+}
+
+// [rc4l] The cvar sets a --matrix "k=a,b" names, one per value.
+export function matrixSets(text) {
+  const m = /^([A-Za-z_][\w]*)=(.+)$/.exec(String(text));
+  if (!m) throw new Error(`--matrix takes cvar=a,b, not ${text}`);
+  return m[2].split(",").map((v) => ({ [m[1]]: v }));
+}
+
+// [rc4l] An adjustment with one matrix setting laid over whatever the run adjusts, a skipped or absent scenario left as it is.
+export function matrixAdjust(cvars, adjust = (o) => o) {
+  return (opts) => {
+    const a = adjust(opts);
+    return a && !a.skip ? withEverySideCvars(a, cvars) : a;
+  };
+}
+
 // [rc4l] withSideCvars for a whole run: a scenario without that side gives null, to be skipped rather than end the run.
 export function sideAdjust(sideName, cvars) {
   return (opts) => ((opts.sides || GL_VS_VULKAN).some((s) => s.name === sideName) ? withSideCvars(opts, sideName, cvars) : null);

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { compareCounter, compareOverTime, compareQuit, compareSameFrame, compareSequence, compareSoak, judge, judgeCounter, judgeQuit, judgeSoak, scenarioOutcome, isMain, sideCommands, vantageCommands, boxWithin, runScenarioIfMain, scenarioOptions, scenarioRun, templateScenarioFiles, probeChoices, pairFrame, withSideCvars, launchRenderer, sideAdjust, standaloneOptions, webgpuOptions, launchBackendApi, WEBGPU_CEILING, GL_VS_VULKAN } from "../src/template.mjs";
+import { compareCounter, compareOverTime, compareQuit, compareSameFrame, compareSequence, compareSoak, judge, judgeCounter, judgeQuit, judgeSoak, scenarioOutcome, isMain, sideCommands, vantageCommands, boxWithin, runScenarioIfMain, scenarioOptions, scenarioRun, templateScenarioFiles, probeChoices, pairFrame, withSideCvars, withEverySideCvars, matrixSets, matrixAdjust, launchRenderer, sideAdjust, standaloneOptions, webgpuOptions, launchBackendApi, WEBGPU_CEILING, GL_VS_VULKAN } from "../src/template.mjs";
 import { pathToFileURL } from "node:url";
 import fs from "node:fs";
 import os from "node:os";
@@ -291,4 +291,18 @@ test("a WebGPU run of a capture sequence runs on WebGPU alone with its boxes as 
   const w = webgpuOptions({ name: "sequence", boxes }, compareSequence);
   assert.deepEqual(w.sides, [{ name: "wgpu", gl: false, noGl: true, webgpu: true }]);
   assert.equal(w.boxes, boxes);
+});
+
+test("a matrix names one cvar set per value, each laid on every side over the run's own adjustment", () => {
+  assert.deepEqual(matrixSets("fua_gamethread=0,1"), [{ fua_gamethread: "0" }, { fua_gamethread: "1" }]);
+  assert.throws(() => matrixSets("nonsense"), /cvar=a,b/);
+  const opts = { name: "t", sides: [{ name: "gl", gl: true }, { name: "vk", gl: false, cvars: { x: "2" } }] };
+  const every = withEverySideCvars(opts, { y: "1" });
+  assert.deepEqual(every.sides.map((s) => s.cvars), [{ y: "1" }, { x: "2", y: "1" }]);
+  assert.deepEqual(withEverySideCvars({ name: "d" }, { y: "1" }).sides.map((s) => s.cvars.y), GL_VS_VULKAN.map(() => "1"));
+  const run = matrixAdjust({ y: "1" }, sideAdjust("vk", { z: "3" }));
+  assert.deepEqual(run(opts).sides[1].cvars, { x: "2", z: "3", y: "1" });
+  assert.equal(matrixAdjust({ y: "1" }, () => null)(opts), null);
+  assert.deepEqual(matrixAdjust({ y: "1" }, () => ({ skip: "why" }))(opts), { skip: "why" });
+  assert.deepEqual(matrixAdjust({ y: "1" })(opts).sides[0].cvars, { y: "1" });
 });
