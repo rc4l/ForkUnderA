@@ -1,0 +1,33 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>fua webgpu check</title>
+<style>body{margin:0;background:#111;color:#ddd;font:14px monospace}canvas{width:640px;height:480px;display:block}</style>
+</head><body>
+<canvas id="canvas" width="640" height="480"></canvas>
+<pre id="log"></pre>
+<script>
+  const logEl = document.getElementById('log');
+  function log(t) { logEl.textContent += t + '\n'; console.log(t); }
+  let runtimeReady;
+  const runtime = new Promise(r => runtimeReady = r);
+  var Module = {
+    print: log, printErr: log,
+    canvas: document.getElementById('canvas'),
+    noInitialRun: true,
+    onRuntimeInitialized: () => runtimeReady(),
+  };
+  (async () => {
+    if (!navigator.gpu) { log('webgpu-check: no navigator.gpu'); return; }
+    const adapter = await navigator.gpu.requestAdapter();
+    const want = ['depth-clip-control', 'depth32float-stencil8', 'texture-compression-bc', 'indirect-first-instance', 'float32-filterable'];
+    // [rc4l] The adapter's full limits, as Diligent's native path asks for, since WebGPU's defaults are below what the engine's shaders use.
+    const requiredLimits = {};
+    for (const k in adapter.limits) requiredLimits[k] = adapter.limits[k];
+    const device = await adapter.requestDevice({ requiredFeatures: want.filter(f => adapter.features.has(f)), requiredLimits });
+    device.addEventListener('uncapturederror', e => log('webgpu-check: gpu error: ' + e.error.message));
+    Module.preinitializedWebGPUDevice = device;
+    await runtime;
+    Module.callMain([]);
+  })().catch(e => log('webgpu-check: ' + e));
+</script>
+{{{ SCRIPT }}}
+</body></html>

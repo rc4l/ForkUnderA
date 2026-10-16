@@ -210,6 +210,9 @@ public:
 	// points to the last row in the buffer, which will be the first row output.
 	virtual void GetScreenshotBuffer(const BYTE *&buffer, int &pitch, ESSType &color_type);
 
+	// [rc4l] A screen read back only asynchronously (a browser's WebGPU) has its PNG made once the frame is drawn, under path's name, and returns true; false keeps GetScreenshotBuffer.
+	virtual bool ScreenshotLater(const char *path) { return false; }
+
 	// Releases the screenshot buffer.
 	virtual void ReleaseScreenshotBuffer();
 

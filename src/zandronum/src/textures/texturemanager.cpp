@@ -56,6 +56,7 @@
 #include "features/fua-caching/fua_caching.h"
 // [BB] New #includes.
 #include "cl_demo.h"
+#include "features/telemetry/telemetry.h"
 
 FTextureManager TexMan;
 
@@ -1250,6 +1251,7 @@ int FTextureManager::CountLumpTextures (int lumpnum)
 
 void FTextureManager::PrecacheLevel (void)
 {
+	ZX_ZONE("load/precache_textures");   // [rc4l] the level's textures loaded ahead
 	BYTE *hitlist;
 	int cnt = NumTextures();
 

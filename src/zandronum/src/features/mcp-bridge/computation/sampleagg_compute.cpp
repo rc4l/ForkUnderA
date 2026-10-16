@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <map>
 #include <set>
+#include "features/json/computation/json_compute.h"
 
 namespace zx
 {
@@ -30,28 +31,6 @@ std::string LowerCopy(const std::string &s)
 	}
 
 	return out;
-}
-
-// A JSON string. A C++ symbol carries template arguments and operator names, so quotes and
-// backslashes have to survive the trip; nothing else in a symbol needs escaping.
-std::string JsonString(const std::string &value)
-{
-	std::string out = "\"";
-
-	for (std::size_t i = 0; i < value.size(); ++i)
-	{
-		const char c = value[i];
-
-		if ((c == '"') || (c == '\\'))
-			out += '\\';
-
-		// A control character cannot appear in a symbol or a module name, and would make the report
-		// unparseable if it somehow did.
-		if (static_cast<unsigned char>(c) >= 32)
-			out += c;
-	}
-
-	return out + "\"";
 }
 
 std::string Fixed(double value, int places)
@@ -197,8 +176,8 @@ std::string RowsJson(const std::vector<SampleFunc> &funcs)
 		if (i > 0)
 			out += ",";
 
-		out += "{\"symbol\":" + JsonString(funcs[i].symbol);
-		out += ",\"dso\":" + JsonString(funcs[i].dso);
+		out += "{\"symbol\":" + zx::json::ComputeJsonQuoted(funcs[i].symbol);
+		out += ",\"dso\":" + zx::json::ComputeJsonQuoted(funcs[i].dso);
 		out += ",\"samples\":" + U(funcs[i].count);
 		out += ",\"percent\":" + Fixed(funcs[i].percent, 2) + "}";
 	}

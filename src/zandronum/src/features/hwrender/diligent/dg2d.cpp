@@ -8,7 +8,7 @@
 #include "RefCntAutoPtr.hpp"
 
 #include "features/hwrender/diligent/dgshared.h"
-#include "features/hwrender/hud2d.h"
+#include "features/draw2d/record.h"
 #include "features/hwrender/computation/sceneconstants_compute.h"   // [rc4l] ComputeFixedColormapConstants
 #include "features/hwrender/computation/warp_compute.h"   // [rc4l] ComputeWarpTimer, the fuzz clock
 #include "features/rendersettings/rendersettings.h"   // [rc4l] gl_frameMS, the frame's clock
@@ -16,6 +16,7 @@
 #include "v_video.h"
 #include "tarray.h"
 #include "c_cvars.h"
+#include "features/telemetry/telemetry.h"
 
 EXTERN_CVAR(Bool, fua_dg_hud)
 
@@ -104,12 +105,12 @@ static const char *k2DPS =
 	FUA_FIXED_COLORMAP_GLSL
 	FUA_FUZZ_GLSL
 	FUA_DAMAGE_TINT_GLSL
-	"layout(binding = 1) uniform sampler2D uTex;\n"
+	"layout(binding = 1) uniform texture2D uTex; uniform sampler uTex_sampler;\n"
 	"layout(location = 0) out vec4 outColor;\n"
 	"void main() {\n"
 	// [rc4l] A fuzzy weapon under r_fuzztype takes GL's fuzz shader on its texel, the jagged one sampling a splat of its coordinate.
 	"    int fuzz = int(vFuzz + 0.5);\n"
-	"    vec4 t = texture(uTex, fuzz == 5 ? fuaFuzzSplat(vUV, uInvScreen.z) : vUV);\n"
+	"    vec4 t = texture(sampler2D(uTex, uTex_sampler), fuzz == 5 ? fuaFuzzSplat(vUV, uInvScreen.z) : vUV);\n"
 	"    if (vTexMode == 1)      t.rgb = vec3(1.0);\n"                       // TM_MASK
 	"    else if (vTexMode == 2) t.a = 1.0;\n"                               // TM_OPAQUE
 	"    else if (vTexMode == 3) t = vec4(1.0-t.r, 1.0-t.b, 1.0-t.g, t.a);\n"// TM_INVERSE
@@ -147,7 +148,7 @@ static bool Ensure2DPipeline()
 	cbd.Usage = Diligent::USAGE_DYNAMIC;
 	cbd.BindFlags = Diligent::BIND_UNIFORM_BUFFER;
 	cbd.CPUAccessFlags = Diligent::CPU_ACCESS_WRITE;
-	dev->CreateBuffer(cbd, nullptr, &g_cb2D);
+	CreateDeviceBuffer(cbd, nullptr, &g_cb2D);
 	if (!g_cb2D) return false;
 
 	Diligent::LayoutElement layout[] = {
@@ -182,7 +183,7 @@ static bool Ensure2DPipeline()
 	pci.PSODesc.PipelineType = Diligent::PIPELINE_TYPE_GRAPHICS;
 	pci.GraphicsPipeline.NumRenderTargets = 1;
 	pci.GraphicsPipeline.RTVFormats[0] = swap->GetDesc().ColorBufferFormat;
-	pci.GraphicsPipeline.DSVFormat = swap->GetDesc().DepthBufferFormat;
+	pci.GraphicsPipeline.DSVFormat = Diligent::TEX_FORMAT_UNKNOWN;
 	pci.GraphicsPipeline.PrimitiveTopology = Diligent::PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
 	pci.GraphicsPipeline.RasterizerDesc.CullMode = Diligent::CULL_MODE_NONE;
 	pci.GraphicsPipeline.RasterizerDesc.ScissorEnable = true;
@@ -223,7 +224,7 @@ static bool Ensure2DPipeline()
 			rt.DestBlend = (mode == 1) ? Diligent::BLEND_FACTOR_ONE
 			                           : Diligent::BLEND_FACTOR_INV_SRC_ALPHA;
 		}
-		dev->CreateGraphicsPipelineState(pci, &g_pso2D[mode]);
+		CreatePipeline(pci, &g_pso2D[mode]);
 		if (!g_pso2D[mode]) return false;
 		BindScreen2D(g_pso2D[mode]);
 	}
@@ -240,7 +241,7 @@ static bool Ensure2DPipeline()
 		};
 		pci.PSODesc.Name = "fua 2D polygon PSO";
 		pci.PSODesc.ResourceLayout.ImmutableSamplers = wrapSamplers;
-		dev->CreateGraphicsPipelineState(pci, &g_pso2DWrap);
+		CreatePipeline(pci, &g_pso2DWrap);
 		if (!g_pso2DWrap) return false;
 		BindScreen2D(g_pso2DWrap);
 	}
@@ -249,16 +250,17 @@ static bool Ensure2DPipeline()
 
 void Draw2D(Diligent::IDeviceContext *ctx)
 {
+	ZX_ZONE("draw/2d");   // [rc4l] the frame's 2D layer
 	g_draws2D = g_quads2D = 0;
 	if (!fua_dg_hud) return;
 
 	int nq = 0;
-	const zx::hwrender::Quad2D *quads = zx::hwrender::Quads2D(nq);
+	const zx::draw2d::Quad2D *quads = zx::draw2d::Quads2D(nq);
 	if (quads == NULL || nq <= 0) return;
 	if (!Ensure2DPipeline()) return;
 
 	int scrW = 0, scrH = 0;
-	zx::hwrender::GetScreen2D(scrW, scrH);
+	zx::draw2d::GetScreen2D(scrW, scrH);
 	if (scrW <= 0 || scrH <= 0) return;
 
 	// [rc4l] Rebuilt once per engine frame, gated on the generation counter -- same reason as the
@@ -266,17 +268,19 @@ void Draw2D(Diligent::IDeviceContext *ctx)
 	// is per frame, not per draw.
 	static TArray<Vertex2D> vb;
 	static unsigned int built2D = 0;
+	static int builtQuads2D = 0;
 	// [rc4l] The fixed colormap this frame's weapon was recorded under, one for the whole frame as GL's render state holds one.
 	static int fixed2D = 0;
-	const unsigned int gen = zx::hwrender::Generation2D();
-	if (gen != built2D)
+	const unsigned int gen = zx::draw2d::Generation2D();
+	if (zx::draw2d::ComputeRebuild2DVertices(gen, built2D, nq, builtQuads2D))
 	{
 		built2D = gen;
+		builtQuads2D = nq;
 		vb.Clear();
 		fixed2D = 0;
 		for (int i = 0; i < nq; i++)
 		{
-			const zx::hwrender::Quad2D &q = quads[i];
+			const zx::draw2d::Quad2D &q = quads[i];
 			Vertex2D v[4];
 			if (q.kind == zx::draw2d::kQuadLine)
 			{
@@ -324,6 +328,10 @@ void Draw2D(Diligent::IDeviceContext *ctx)
 	}
 	if (vb.Size() == 0 || !g_vb2D) return;
 
+	// [rc4l] The frame's colour alone, whichever pass this follows, since the 2D pipelines declare no depth and WebGPU holds a pipeline to its pass's attachments.
+	Diligent::ITextureView *rtv2D = FrameRTV();
+	ctx->SetRenderTargets(1, &rtv2D, NULL, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+
 	{
 		Diligent::MapHelper<float> cb(ctx, g_cb2D, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD);
 		cb[0] = 1.0f / scrW; cb[1] = 1.0f / scrH; cb[2] = ComputeWarpTimer((unsigned int)gl_frameMS, 1.f); cb[3] = 0.f;
@@ -346,9 +354,9 @@ void Draw2D(Diligent::IDeviceContext *ctx)
 	int cl = -1, ctp = -1, cr = -1, cb2 = -1;
 	for (unsigned i = 0; i < (unsigned)nq; i++)
 	{
-		const zx::hwrender::Quad2D &q = quads[i];
-		// [rc4l] GL's own vid_fps line; this window shows the backend's (k2DBackendOnly).
-		if (q.target == zx::hwrender::k2DGLOnly) continue;
+		const zx::draw2d::Quad2D &q = quads[i];
+		// [rc4l] GL's own vid_fps line; this window shows the backend's (zx::draw2d::k2DBackendOnly).
+		if (q.target == zx::draw2d::k2DGLOnly) continue;
 		// [rc4l] A polygon's triangles take the repeating pipeline, numbered past the three blends.
 		const int blendMode = q.kind == zx::draw2d::kQuadTri ? 3 : (q.blend >= 0 && q.blend < 3) ? q.blend : 0;
 		Diligent::IPipelineState *pso = blendMode == 3 ? g_pso2DWrap.RawPtr() : g_pso2D[blendMode].RawPtr();

@@ -152,3 +152,35 @@ TEST(JobPool, AutoWorkersTakeHalfTheMachineLessTheCallerUpToTheCap)
 	EXPECT_EQ(7, ComputeAutoWorkers(32, 7));
 	EXPECT_EQ(0, ComputeAutoWorkers(32, 0));
 }
+
+namespace {
+
+std::atomic<int> s_started{ 0 }, s_ran{ 0 }, s_waited{ 0 };
+std::atomic<int64_t> s_ranTicks{ 0 }, s_clock{ 0 };
+
+// [rc4l] A clock that ticks once each time it is read, so every timed span is at least one tick.
+int64_t Ticks() { return ++s_clock; }
+void HeardStart(int) { s_started++; }
+void HeardRun(int, int64_t start, int64_t end) { s_ran++; s_ranTicks += end - start; }
+void HeardWait(int64_t start, int64_t end) { if (end >= start) s_waited++; }
+
+const zx::jobs::JobObserver kHeard = { Ticks, HeardStart, HeardRun, HeardWait };
+
+} // namespace
+
+// [rc4l] features/telemetry hears each worker once, each lane's run of items with its time, and the caller's wait.
+TEST(JobPool, TheObserverHearsWorkersRunsAndTheWait)
+{
+	JobPool pool(2, 0);
+	zx::jobs::SetJobObserver(&kHeard);
+	struct Slow { void operator()(int, int) const { std::this_thread::sleep_for(std::chrono::milliseconds(2)); } } slow;
+	pool.ParallelFor(24, slow);
+	pool.ParallelFor(24, slow);
+	zx::jobs::SetJobObserver(nullptr);
+	pool.ParallelFor(24, slow);
+	EXPECT_EQ(s_waited.load(), 2);
+	EXPECT_GE(s_ran.load(), 2);
+	EXPECT_GT(s_ranTicks.load(), 0);
+	EXPECT_GE(s_started.load(), 1);
+	EXPECT_LE(s_started.load(), 2);
+}

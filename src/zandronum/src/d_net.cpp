@@ -39,6 +39,7 @@
 #include "c_console.h"
 #include "d_netinf.h"
 #include "d_net.h"
+#include "features/mainloop/mainloop.h"   // [rc4l] Stepped
 #include "cmdlib.h"
 #include "s_sound.h"
 #include "m_cheat.h"
@@ -74,9 +75,10 @@
 #include "sv_commands.h"
 #include "team.h"
 #include "chat.h"
-#include "mcp_ticprof.h" // [ForkUnderA] per-tic sim profiler anchors (no-op unless FUA_MCP_BRIDGE)
+#include "mcp_ticprof.h" // [ForkUnderA] per-tic sim profiler (no-op unless FUA_MCP_BRIDGE)
 #include "mcp_simtrace.h" // [ForkUnderA] sim tracer tic boundary (no-op unless FUA_MCP_BRIDGE)
 #include "decallib.h"                        // [rc4l] DecalLibrary, to resolve a decal by name
+#include "features/telemetry/telemetry.h"
 
 EXTERN_CVAR (Int, disableautosave)
 EXTERN_CVAR (Int, autosavecount)
@@ -1753,7 +1755,8 @@ void TryRunTics (void)
 	bool doWait = cl_capfps || r_NoInterpolate /*|| netgame*/;
 
 	// get real tics
-	if (doWait)
+	// [rc4l] A stepped loop never waits for a tic; its driver calls again next frame.
+	if (doWait && !zx::mainloop::Stepped())
 	{
 		entertic = I_WaitForTic (oldentertics);
 	}
@@ -1797,7 +1800,8 @@ void TryRunTics (void)
 		counts = availabletics;
 
 
-	if (counts == 0 && !doWait)
+	// [rc4l] Nor does it run a tic before one is due, which waiting would have made due.
+	if (counts == 0 && (!doWait || zx::mainloop::Stepped()))
 	{
 		// Check possible stall conditions
 		Net_CheckLastReceived(counts);
@@ -1918,10 +1922,12 @@ void TryRunTics (void)
 			M_Ticker ();
 			I_GetTime (true);
 			MCP_SimPreTic (); // [ForkUnderA] tic-scheduled bridge actions (sim.cheatat); no-op unless FUA_MCP_BRIDGE
-			MCP_TicProf_Begin (MCP_TPZ_GTICKER); // [ForkUnderA] per-tic sim profiler anchor (no-op unless FUA_MCP_BRIDGE)
-			G_Ticker ();
-			MCP_TicProf_End (MCP_TPZ_GTICKER);
+			{
+				ZX_ZONE ("sim/gticker"); // [rc4l] the whole tic in features/telemetry, which perf.ticprof reads too
+				G_Ticker ();
+			}
 			MCP_TicProf_TicDone ();
+			zx::telemetry::TicMark ();
 			MCP_SimTrace_TicDone ();
 			gametic++;
 

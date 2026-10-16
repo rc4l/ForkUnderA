@@ -5,7 +5,7 @@
 // -DFUA_MCP_BRIDGE=ON (ZX_MCP_BRIDGE=1 ./mac_compile.sh) and armed with ZANDRONUM_BRIDGE_PORT.
 import { reap, readRegistry, pidAlive } from "./registry.mjs";
 import { runDeterminismCheck, runPerfAblation, runNetBandwidth, runGlTimers } from "./session.mjs";
-import { launchInstance, stopInstance, resolveEngine, engineProcessCount, resFlag } from "./launch.mjs";
+import { launchInstance, stopInstance, resolveEngine, engineProcessCount, resFlag, slashed } from "./launch.mjs";
 import { BridgeClient } from "./client.mjs";
 import { diligentRun } from "./diligent.mjs";
 import { sampleProcess } from "./sample.mjs";
@@ -16,7 +16,7 @@ import * as cap from "./capture.mjs";
 import { play, quitInstance, defaultPwadStore, resolvePreset } from "./play.mjs";
 import { loadQueue, saveQueue, nextId, spotNameFor, addItem, noteItem, closeItem, nextOpen, formatItem } from "./queue.mjs";
 import { findMapLumps, mapReport } from "./mapdata.mjs";
-import { engineWindows } from "./window.mjs";
+import { engineWindows, resizeEngineWindow } from "./window.mjs";
 import * as shot from "./shot.mjs";
 import { sweepDirFor } from "./shot.mjs";
 import * as sweepMod from "./sweep.mjs";
@@ -24,15 +24,21 @@ import { png } from "./png.mjs";
 import { actorsNear } from "./actors.mjs";
 import { pixelToFace } from "./camera.mjs";
 import { sectorOf } from "./sectorof.mjs";
-import { scenarioOptions, scenarioRun, templateScenarioFiles, probeScenario, sideAdjust, standaloneOptions, launchRenderer } from "./template.mjs";
+import { scenarioOptions, scenarioRun, templateScenarioFiles, probeScenario, sideAdjust, standaloneOptions, webgpuOptions, launchRenderer } from "./template.mjs";
 import { abPerf } from "./abperf.mjs";
 import { measureCosts, formatCosts } from "./costs.mjs";
 import { runFps, fpsModes } from "./fps.mjs";
 import * as screen from "./screen.mjs";
+import { ensureNative } from "./native.mjs";
+import { nativeStacks } from "./stacks.mjs";
 import * as trace from "./trace.mjs";
 import * as present from "./present.mjs";
 import { refreshNote } from "./stats.mjs";
 import { runCoverage } from "./coverage.mjs";
+import { changeSince, commentIssues } from "./comments.mjs";
+import { machinePatterns, patternsPath, privacyIssues } from "./privacy.mjs";
+import { recentCrashes, summarizeCrash } from "./crashes.mjs";
+import * as telemetry from "./telemetry.mjs";
 import { decodePNG, abDiff, boxDiff } from "./pngcore.mjs";
 import fs from "node:fs";
 import os from "node:os";
@@ -45,6 +51,12 @@ const num = (v) => (v != null && v !== true ? Number(v) : undefined);
 
 const SPOTS = new URL("../spots.json", import.meta.url);
 const SESSION = () => path.resolve(process.cwd(), ".play-session");
+// [rc4l] The engine process of the instance on --port (else the last play), from its play session, which the bridge does not report.
+const sessionPid = (flags) => {
+  const pid = shot.readSession(shot.restartSessionFile(SESSION(), flags.port))?.pid;
+  if (!pid) throw new Error(`no play session names the engine's process${flags.port ? ` on port ${flags.port}` : ""}`);
+  return pid;
+};
 
 // [rc4l] The instance a command means: --port, else the last play session, else null.
 function sessionTarget(flags) {
@@ -143,12 +155,12 @@ const USAGE = `fuactl <command>
   reap [--kill] [--all]              prune dead; --kill SIGTERMs ORPHANS only (other sessions safe); --all kills every live instance
   launch [--map M] [--seed S] [--port P] [--token T] [--iwad W] [--skill N] [--file a.wad,b.pk3] [--cvar k=v,k2=v2] [--arg "-host,+sv_hostname,X"] [--play]   launch one supervised bridge instance (stays up until Ctrl-C)
   sample --pid P | --port P [--seconds N] [--top N] [--engine] [--stacks]   hottest functions (macOS sample / Linux perf / Windows in-engine, which needs --port); --stacks adds each function's inclusive share on Windows
-  hang --port P [--token T] [--pid P] [--gap MS]   why an instance stopped answering: gone / unreachable / stalled / paused / healthy, plus the function it is stuck in
+  hang --port P [--token T] [--pid P] [--gap MS]   why an instance stopped answering: gone / unreachable / stalled / paused / healthy, plus the function it is stuck in (on Windows from its busiest threads' native stacks)
   doctor [--exe PATH] [--src DIR]      is the configured engine driveable at all (bridge compiled in?) and is it older than the source?
   net-bw [--seed S] [--map M] [--spawn CLS] [--count N] [--seconds N]   client/server bandwidth, baseline vs perturbation
   cycle --port P [--token T] [--count N] [--settle MS]   advance the map rotation N times, confirming intermissions
   rpc <cmd> [jsonArgs] --port P [--token T]   send one RPC to an instance and print the result
-  queue add <description> [--port P] [--name SPOT]   save the instance's vantage as a spot and queue the problem seen there (report-queue skill)
+  queue add <description> [--port P] [--name SPOT] [--no-instance [--map M]]   save the instance's vantage as a spot and queue the problem seen there (report-queue skill); --no-instance queues one seen where no engine answers (a browser page, an engine already gone), with its map when known and no spot
   queue list [--all] | next | note <id> <text> | done <id> [--unverified] [--note TEXT]   read and work the queue, oldest open item first
   burst <tag> [--side gl|vk] [--count N] [--box x0,y0,x1,y1] [--spot S | --at --face] [--port P]   timed captures with the sim running and each one's box brightness, for an animation's rate or a light a paused shot hides
   steps <tag> --hold +ACTION [--count N] [--spot S | --at --face] [--port P]   an action (+crouch) held and stepped one tic at a time, a GL/Vulkan pair and the eye height each tic, for a fault that shows only mid-transition
@@ -170,13 +182,16 @@ const USAGE = `fuactl <command>
   diligent --port P [--frames N] [--shot FILE] [--sweep DIR]   drive the Diligent (Vulkan) backend: bake the level mesh, upload geometry, optional swapchain screenshot, optional debug-view sweep (lm0..lm4.png in DIR), the Diligent frame benchmark (fua_diligent_bench), and with --scale a GPU-time probe at 1x..100x the visible geometry
   trace --port P [--token T] [--seconds N] [--out FILE.csv]   every frame of a running instance for N seconds (fua_viewtrace): frame lengths apart from tic waits, what the slow frames spent more on, where it sat paused or unfocused, and the mouse input it got, gaps included
   present [--seconds N] [--process NAME.exe] [--port P [--token T]] [--out FILE.csv]   what Windows put on screen, from PresentMon run as administrator (a UAC prompt): each app's frames handed over and shown a second and the compositor's own updates; with --port the instance's frames are recorded alongside and lined up second by second
-  play [--restart] [--port P] [--token T] [--spot NAME | --unpark] [--map M] [--file a.pk3,b.pk3] [--cvar k=v,k2=v2] [--preset ID --variant V --store DIR] [--gl | --no-gl] [--side-by-side] [--rt] [--monsters] [--lock] [--res WxH]   a build to walk around in, Vulkan live in the window; stays up until Ctrl-C
+  play [--restart] [--port P] [--token T] [--spot NAME | --unpark] [--map M] [--file a.pk3,b.pk3] [--cvar k=v,k2=v2] [--preset ID --variant V --store DIR] [--gl | --no-gl | --webgpu] [--side-by-side] [--rt] [--monsters] [--lock] [--res WxH]   a build to walk around in, Vulkan live in the window; stays up until Ctrl-C
   build [--root DIR] [--no-stage] [--tests]   compile the engine (with --tests the unit tests too, and run them) and stage it unless --no-stage, failing loudly instead of staging a stale binary
+  crashes [--hours N]   the crash files fuactl's launches left in the last N hours (default 24), newest first, each with why it stopped and its first frames
+  comments [--since REF]   the [rc4l] comments a change adds since REF (default HEAD, untracked files included) that run past one line or one sentence, as AGENTS.md has them; exit 1 on any
+  privacy [--since REF | --staged]   what a change adds since REF (default HEAD, untracked files included), or what is staged, that could identify its author: a home folder's path, an email address, this machine's user or host name, or a pattern in ~/.forkundera/private-patterns.txt; exit 1 on any
   coverage [--since REF] [--tool PATH]   the 100% line-coverage gate on Windows: builds the Debug unit tests and runs them under OpenCppCoverage, then checks every unit a NAME_test.cpp gates, or with --since only those changed since REF (new files included); exit 1 on any miss
   mapdata <MAP> (--preset ID | --file a.pk3,b.wad) [--sector N,..] [--line N,..] [--special N] [--tag N] [--thing TYPE,..] [--scripts REGEX]   a UDMF level's summary, sectors, lines, things of the given types and ACS source lines, read from its files
   actors [--near x,y] [--radius R] [--toward YAW | --ahead] [--cone DEG] [--class REGEX]   actors near a point (default the player), nearest first, optionally only in a direction
   probe <scenario.mjs> [--map M] [--vantage V] [--side S] [--engine path/to/forkundera.exe] [<command> ...]   launch a template scenario's map at a vantage and run console commands there
-  scenarios [name ...] [--engine path/to/forkundera.exe] [--side S --cvar k=v,...] [--standalone]   run every template scenario (or the named ones) in turn and summarise; --engine picks the binary, as FUACTL_ENGINE does; --side/--cvar adds cvars to one side, to show a test fails under the old behaviour (scenarios without that side are skipped); --standalone runs each as players do: its own standalone side, else its vk side with fua_dg_standalone 1, else skipped
+  scenarios [name ...] [--engine path/to/forkundera.exe] [--side S --cvar k=v,...] [--standalone | --webgpu]   run every template scenario (or the named ones) in turn and summarise; --engine picks the binary, as FUACTL_ENGINE does; --side/--cvar adds cvars to one side, to show a test fails under the old behaviour (scenarios without that side are skipped); --standalone runs each as players do: its own standalone side, else its vk side with fua_dg_standalone 1, else skipped; --webgpu runs each one's Vulkan side on WebGPU against Vulkan, every box at WEBGPU_CEILING
   ready [--port P --token T] [--timeout S]   wait until an instance answers (defaults to the last play session)
   goto (--spot NAME | --at x,y,z --face yaw,pitch) [--port P]   stand the player there
   motion [--spot NAME | --at x,y,z --face yaw,pitch] [--box x0,y0,x1,y1] [--interval MS]   per-pixel change between two captures apart, Vulkan and GL, sim running
@@ -184,7 +199,7 @@ const USAGE = `fuactl <command>
   costs [--port P] [--spot NAME | --at x,y,z --face yaw,pitch] [--frames N] [--rounds N] [--bench N]   what a frame costs at one view of a running instance: frame p50/p99, GPU and submit time, the world passes and phases, the walk's clipping, batches and sprites (the performance scope's step 0)
   abperf "<setting>" "<setting>" ... [--rounds N] [--frames N] [--spot NAME | --at x,y,z --face yaw,pitch]   frame time (p50/p99) under each console setting in turn inside one running session, round by round, each judged against the first within its round (default 3 rounds)
   shot <tag> [--port P] [--spot NAME | --at x,y,z --face yaw,pitch] [--force] [--same-frame]   matched GL/Vulkan pair from a running instance, one camera, sim frozen; --same-frame takes both from one engine frame, for an animated texture
-  window [--shot gl|vk --out FILE]   the engine's windows as Windows sees them (minimized, hung, where), and with --shot what that window really shows, read from the compositor rather than GL's own buffer
+  window [--shot gl|vk --out FILE] [--resize WxH [--port P]]   the engine's windows as Windows sees them (minimized, hung, where), with --shot what that window really shows, read from the compositor rather than GL's own buffer, and with --resize the instance's game window sized as dragging its corner does
   shoot [--port P] --tag T --at x,y,z --face yaw,pitch [--look x,y,z] [--weapon W] [--map M] [--after TICS]   fire at a junction and capture a GL/Vulkan pair (--look frames a point, --after catches transient effects before they fade)
   sweep [--maps "MAP01 MAP07"] [--port P]   matched pairs across several maps, ranked by how much the renderers disagree
   doorshot <tag> [--port P] [--at x,y,z --face yaw] [--mid TICS]   a door caught MID-SWING in both renderers, plus a before pair
@@ -194,10 +209,22 @@ const USAGE = `fuactl <command>
   browser --port P [--token T] [--wait S] [--expect-lan] [--expect-country XXX]   refresh the server browser and report what it sees (LAN vs registry, country)
   hostdiag --port P [--token T] [--wait S] [--expect-listed]           ask the registry whether THIS server is reachable from outside (per family)
   continue --port P [--token T] [--expect shown|hidden]   what the Continue button is offering, and whether it is on the bar
+  console <text...> [--port P]       run one console command on an instance and print what it printed
+  stats [PREFIX] [--json | --watch] [--port P]   the engine's telemetry counters (fua_stats) whose names start with PREFIX: last, mean, p99 and max over the last frames; --watch puts them on screen
+  record [--seconds N] [--name NAME] [--port P]   every counter each frame and every timed region on every thread for N seconds (fua_capture), as a CSV and a trace Perfetto opens, under the engine's telemetry/
+  flight [NAME] [--port P]           write the flight recorder (the last frames, seconds and hitches) under the engine's telemetry/ and print its summary
+  hitches [N] [--port P]             the last N slow frames, each with the timed regions it spent most in
+  memsnap [NAME] [--port P]          keep every memory gauge and tag under NAME for memdiff
+  memdiff [A] [B] [--port P]         what changed between snapshots A and B, or between A and now
+  soak [--action reload|"STEP|STEP..."] [--cycles N] [--warmup W] [--settle MS] [--ignore PREFIX,...] [--judge-port P [--judge-token T]] [--sites] [--port P]   repeat an action's console steps N times, waiting on each that starts a level, and fail if memory, objects, handles or threads kept growing after W warm-up cycles (fua_soak) or the cycles got slower; a step "check: resize WxH" sizes the game window, --ignore leaves readings under those prefixes out, --judge-port judges a server this instance joins and leaves, and --sites prints the allocation stacks that grew
+  compare A.json B.json [--share F] [--floor MS]   two fua_stats json readings side by side; a timing whose p50 or p99 grew by over F (0.15) and FLOOR ms (0.1) is marked
+  perfgate NAME [PREFIX] [--spot S | --at x,y,z --face yaw,pitch] [--settle MS] [--update] [--port P]   the counters at a view against this machine's saved baseline NAME, the first run saving it; exit 1 on a regression
   mcp                                run as an MCP stdio server for agents
 `;
 
 async function main() {
+  // [rc4l] A reader that stops early (`| head`) closes the pipe, which ends the command rather than crashing it.
+  process.stdout.on("error", (e) => { if (e.code === "EPIPE") process.exit(0); throw e; });
   const [cmd, ...argv] = process.argv.slice(2);
   const { flags, rest } = parseFlags(argv);
   // [rc4l] --help says what a command takes and does nothing else: `play --help` used to launch an engine.
@@ -349,7 +376,7 @@ async function main() {
       const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "scenarios");
       const files = templateScenarioFiles(dir, rest);
       // [rc4l] --side S --cvar k=v runs a scenario with one side changed, to show a regression test fails under the behaviour it guards against.
-      const adjust = flags.standalone ? standaloneOptions
+      const adjust = flags.webgpu ? webgpuOptions : flags.standalone ? standaloneOptions
         : flags.side ? sideAdjust(String(flags.side), shot.parseCvarFlag(flags.cvar) || {}) : undefined;
       console.log(`engine ${resolveEngine()}`);
       let failed = 0, skipped = 0;
@@ -358,7 +385,9 @@ async function main() {
         await import(url);
         const run = scenarioRun(url, adjust);
         if (!run) continue;
-        const out = await run();
+        let out;
+        // [rc4l] A scenario that throws is one failure, not the end of the run.
+        try { out = await run(); } catch (e) { out = { lines: [`error: ${e.message}`], code: 1 }; }
         for (const l of out.lines.filter((x) => !x.startsWith("PASS"))) console.log(`${f.slice(0, -4).padEnd(18)} ${l}`);
         if (out.skipped) skipped++;
         if (out.code !== 0) failed++;
@@ -377,7 +406,7 @@ async function main() {
       const out = await shot.captureBurst(c, {
         side: flags.side === "gl" ? "gl" : "vk", count: Number(flags.count) || 8,
         box: flags.box ? String(flags.box).split(",").map(Number) : [0, 0, 1, 1],
-        engineBin: engineOf(flags).split(path.sep).join("/"), tag: rest[0] || "burst",
+        engineBin: slashed(engineOf(flags)), tag: rest[0] || "burst",
       });
       for (const r of out) console.log(`${r.i} t=${r.t}ms mean=${r.mean.toFixed(2)} ${r.file || "(no capture)"}`);
       c.close();
@@ -385,7 +414,15 @@ async function main() {
     }
     // [rc4l] `fuactl window` -- the windows as Windows sees them and what one shows, instead of PowerShell beside the tool.
     case "window": {
-      if (flags.shot && !["gl", "vk"].includes(String(flags.shot))) { console.error("usage: fuactl window [--shot gl|vk --out FILE]"); process.exit(2); }
+      if (flags.shot && !["gl", "vk"].includes(String(flags.shot))) { console.error(usageFor(USAGE, "window")); process.exit(2); }
+      if (flags.resize) {
+        const [w, h] = String(flags.resize).split("x").map(Number);
+        if (!(w > 0 && h > 0)) { console.error(usageFor(USAGE, "window")); process.exit(2); }
+        const sized = resizeEngineWindow(sessionPid(flags), w, h);
+        console.log(sized ? `sized the game window to ${w}x${h}` : "no game window for that instance");
+        if (!sized) process.exit(1);
+        break;
+      }
       const r = engineWindows({ shot: flags.shot ? String(flags.shot) : null,
         out: flags.shot ? path.resolve(String(flags.out || `window_${flags.shot}.png`)) : null });
       for (const w of r.windows)
@@ -402,7 +439,7 @@ async function main() {
         const at = shot.cameraFromFlags(flags, SPOTS);
         if (at) await shot.moveTo(c, at);
         const out = await shot.captureSteps(c, { tag: rest[0] || "steps", hold: String(flags.hold), count: Number(flags.count) || 8,
-          engineBin: engineOf(flags).split(path.sep).join("/") });
+          engineBin: slashed(engineOf(flags)) });
         for (const s of out) console.log(`${s.name} viewz ${s.viewz} ${s.gl || "(no GL)"} ${s.vk || "(no Vulkan)"}`);
       } finally { c.close(); }
       break;
@@ -417,7 +454,7 @@ async function main() {
         const at = shot.cameraFromFlags(flags, SPOTS);
         if (at) await shot.moveTo(c, at);
         const r = await sectorOf(c, { side: flags.side === "vk" ? "vk" : "gl", x, y,
-          engineBin: engineOf(flags).split(path.sep).join("/"), log: (m) => console.error(m) });
+          engineBin: slashed(engineOf(flags)), log: (m) => console.error(m) });
         console.log(r.sector === null ? `pixel ${x},${y} follows no sector's colour (sky, a fullbright, or a texel with no red or green)`
           : `sector ${r.sector} (of ${r.count}, ${r.frames} frames); the sectors stay painted until the map restarts`);
         process.exitCode = r.sector === null ? 1 : 0;
@@ -453,11 +490,14 @@ async function main() {
       const q = loadQueue();
       if (sub === "add" && words.length) {
         const description = words.join(" ");
-        const c = await connectTarget(flags, usage);
-        const cam = await captureSpot(c, flags.name ? String(flags.name) : spotNameFor(nextId(q), description), description);
-        c.close();
-        const r = addItem(q, { description, spot: flags.name ? String(flags.name) : undefined, map: cam.map,
-          at: shot.atFromCamera(cam) });
+        let where = { map: flags.map && flags.map !== true ? String(flags.map) : null, at: null };
+        if (!flags["no-instance"]) {
+          const c = await connectTarget(flags, usage);
+          const cam = await captureSpot(c, flags.name ? String(flags.name) : spotNameFor(nextId(q), description), description);
+          c.close();
+          where = { map: cam.map, at: shot.atFromCamera(cam) };
+        }
+        const r = addItem(q, { description, spot: flags.name ? String(flags.name) : undefined, ...where });
         saveQueue(r.queue);
         console.log(formatItem(r.item));
       } else if (sub === "list") {
@@ -564,6 +604,10 @@ async function main() {
         token: flags.token || null,
         pid: num(flags.pid) ?? null,
         gapMs: num(flags.gap) ?? 1500,
+        // [rc4l] Windows has no sampler outside the engine, so the stack dump helper stands in for a wedged one.
+        _stacks: process.platform === "win32"
+          ? (pid) => nativeStacks(pid, { exe: ensureNative("stackdump", shot.pickCmake(), { log: (m) => console.error(`[hang] ${m}`) }) })
+          : null,
       });
       console.log(JSON.stringify(r, null, 2));
       if (!r.healthy) process.exitCode = 1;
@@ -636,7 +680,7 @@ async function main() {
       const session = shot.readSession(shot.sessionFileFor(SESSION(), Number(flags.port)));
       const pid = num(flags.pid) ?? (session && session.pid);
       if (!pid) { console.error("screen needs the engine's process: launch it with play (which records it) or pass --pid"); process.exit(2); }
-      const exe = screen.ensureScreencap(shot.pickCmake(), { log: (m) => console.error(`[screen] ${m}`) });
+      const exe = ensureNative("screencap", shot.pickCmake(), { log: (m) => console.error(`[screen] ${m}`) });
       const out = path.join(os.tmpdir(), `fuactl-screen-${pid}.csv`);
       const traceOut = path.join(os.tmpdir(), `fuactl-screen-trace-${pid}.csv`);
       const result = await withUi(flags, (c) => screen.captureScreen(c, {
@@ -867,6 +911,32 @@ async function main() {
       console.log(`build ok, staged ${when} (+${r.entries} catalogue entries)`);
       break;
     }
+    case "crashes": {
+      const hours = flags.hours && flags.hours !== true ? Number(flags.hours) : 24;
+      const found = recentCrashes(Date.now() - hours * 3600 * 1000);
+      for (const c of found) {
+        const { why, stack } = summarizeCrash(fs.readFileSync(c.file, "utf8"));
+        console.log(`${new Date(c.at).toISOString()} ${c.file}
+  ${why}`);
+        for (const f of stack) console.log(`    ${f}`);
+      }
+      console.log(`${found.length} crash file(s) in the last ${hours} hour(s)`);
+      break;
+    }
+    case "comments": {
+      const issues = commentIssues(changeSince(fileURLToPath(new URL("../../../", import.meta.url)), flags.since && flags.since !== true ? String(flags.since) : "HEAD"));
+      for (const i of issues) console.log(`${i.file}:${i.line}: ${i.why}: ${i.text.trim().slice(0, 140)}`);
+      console.log(`${issues.length} comment(s) past one line or one sentence`);
+      process.exit(issues.length ? 1 : 0);
+    }
+    // [rc4l] `fuactl privacy` -- what a change adds that could identify its author, run before every commit.
+    case "privacy": {
+      const since = flags.since && flags.since !== true ? String(flags.since) : "HEAD";
+      const issues = privacyIssues(changeSince(fileURLToPath(new URL("../../../", import.meta.url)), since, { staged: !!flags.staged }), machinePatterns());
+      for (const i of issues) console.log(`${i.file}:${i.line}: ${i.match}`);
+      console.log(`${issues.length} line(s) that could identify you (your own patterns: ${patternsPath()})`);
+      process.exit(issues.length ? 1 : 0);
+    }
     case "coverage": {
       const { results, report } = runCoverage({ root: fileURLToPath(new URL("../../../", import.meta.url)), tool: flags.tool, since: flags.since && flags.since !== true ? String(flags.since) : null });
       const bad = results.filter((r) => !r.ok);
@@ -913,6 +983,63 @@ async function main() {
         }
         await new Promise((r) => setTimeout(r, 500));
       }
+      break;
+    }
+    // [rc4l] The views that are one console command each (telemetry.mjs), their output printed as the engine wrote it.
+    case "console": case "stats": case "hitches": case "flight": case "memsnap": case "memdiff": {
+      const text = telemetry.consoleTextFor(cmd, rest, flags);
+      process.stdout.write(await withUi(flags, (c) => telemetry.execSlow(c, text)));
+      break;
+    }
+    case "record": {
+      const seconds = num(flags.seconds) ?? 10;
+      const name = flags.name && flags.name !== true ? String(flags.name) : "";
+      await withUi(flags, async (c) => {
+        process.stdout.write(await cap.exec(c, `fua_capture start ${name}`.trim()));
+        await cap.sleep(seconds * 1000);
+        process.stdout.write(await cap.exec(c, "fua_capture stop", { quietMs: 600, maxMs: 60000 }));
+      });
+      break;
+    }
+    case "soak": {
+      // [rc4l] --judge-port soaks a server: the action runs on this instance, a client joining and leaving it, and the server's memory is judged.
+      const judge = flags["judge-port"] ? await connectTarget({ port: flags["judge-port"], token: flags["judge-token"] }, usageFor(USAGE, "soak")) : null;
+      const result = await withUi(flags, (c) => telemetry.runSoak(c, {
+        judge: judge ?? c,
+        resize: async (w, h) => { if (!resizeEngineWindow(sessionPid(flags), w, h)) throw new Error(`soak: no game window to size to ${w}x${h}`); },
+        action: flags.action && flags.action !== true ? String(flags.action) : "reload",
+        cycles: num(flags.cycles) ?? 6, warmup: num(flags.warmup) ?? 1, settleMs: num(flags.settle) ?? 4000,
+        ignore: flags.ignore && flags.ignore !== true ? String(flags.ignore).split(",") : [],
+        sites: !!flags.sites,
+        log: (m) => console.error(`[soak] ${m}`),
+      }));
+      if (judge) judge.close();
+      process.stdout.write(result.report);
+      for (const line of result.slower) console.log(`  slower: ${line}`);
+      for (const s of result.sites) console.log(`  +${s.grew} (now ${s.count})  ${s.stack}`);
+      if (!result.pass || result.slower.length) process.exit(1);
+      break;
+    }
+    case "compare": {
+      if (rest.length < 2) { console.error(usageFor(USAGE, "compare")); process.exit(2); }
+      const read = (f) => telemetry.parseConsoleJson(fs.readFileSync(f, "utf8"));
+      const rows = telemetry.compareStats(read(rest[0]), read(rest[1]), { share: num(flags.share), floor: num(flags.floor) });
+      for (const line of telemetry.formatCompare(rows)) console.log(line);
+      break;
+    }
+    case "perfgate": {
+      if (!rest[0]) { console.error(usageFor(USAGE, "perfgate")); process.exit(2); }
+      const at = shot.cameraFromFlags(flags, SPOTS);
+      const readings = await withUi(flags, async (c) => {
+        if (at) await shot.moveTo(c, at);
+        await cap.sleep(num(flags.settle) ?? 4000);
+        return telemetry.parseConsoleJson(await telemetry.execSlow(c, `fua_stats json ${rest[1] ?? ""}`.trim()));
+      });
+      const gate = telemetry.perfGate(rest[0], readings, { update: !!flags.update, share: num(flags.share), floor: num(flags.floor) });
+      if (gate.saved) { console.log(`perfgate: saved ${readings.length} counters as the baseline ${gate.saved}`); break; }
+      for (const line of telemetry.formatCompare(gate.rows)) console.log(line);
+      console.log(`perfgate ${rest[0]}: ${gate.pass ? "PASS" : "FAIL"}`);
+      if (!gate.pass) process.exit(1);
       break;
     }
     // [rc4l] `fuactl goto` -- stand at a saved spot or a camera, for looking rather than capturing.
@@ -1060,7 +1187,7 @@ async function main() {
         ...presetDirs(flags),
         // [rc4l] --res WxH, so a capture can be framed exactly like the window a report came from.
         ...resFlag(flags.res),
-        gl: !!flags.gl, noGl: !!flags["no-gl"], sideBySide: !!flags["side-by-side"], rt: !!flags.rt,
+        gl: !!flags.gl, noGl: !!flags["no-gl"] || !!flags.webgpu, webgpu: !!flags.webgpu, sideBySide: !!flags["side-by-side"], rt: !!flags.rt,
         monsters: !!flags.monsters, lock: !!flags.lock,
         extra: shot.parseCvarFlag(flags.cvar) || {},
         at: spotAt,

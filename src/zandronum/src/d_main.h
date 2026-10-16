@@ -59,6 +59,18 @@ void D_RequestRestart();
 
 void D_DoomMain (void);
 
+// [rc4l] One pass of the main loop, which D_DoomLoop repeats and a browser calls once an animation frame.
+void D_RunFrame ();
+
+class CRecoverableError;
+// [rc4l] Print a recoverable error and clean up after it, as the loop does.
+void D_RecoverFromError (CRecoverableError &error);
+
+// [rc4l] One tic of a running wipe once one is due, with the console and menu drawn over it; true once it has ended.
+bool D_WipeStep ();
+// [rc4l] Whether a wipe is running, which a stepped loop advances in place of a frame until it ends.
+bool D_WipeRunning ();
+
 
 void D_Display ();
 

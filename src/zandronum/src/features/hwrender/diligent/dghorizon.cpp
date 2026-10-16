@@ -77,8 +77,8 @@ static const char *kHorizonPS =
 	FUA_SECTOR_LIGHT_GLSL
 	FUA_CONSTANTS_GLSL
 	FUA_FIXED_COLORMAP_GLSL
-	"layout(binding = 1) uniform sampler2D uTex;\n"
-	"layout(binding = 5) uniform sampler2D uBrightmap;\n"
+	"layout(binding = 1) uniform texture2D uTex; uniform sampler uTex_sampler;\n"
+	"layout(binding = 5) uniform texture2D uBrightmap; uniform sampler uBrightmap_sampler;\n"
 	"layout(location = 0) in vec3 vWorld;\n"
 	"layout(location = 1) flat in vec3 vEye;\n"
 	"layout(location = 2) flat in vec4 vColorLight;\n"
@@ -99,8 +99,8 @@ static const char *kHorizonPS =
 	"    vec3 hit = vec3(vEye.x + o.x, vPlane.x, vEye.z + o.y);\n"
 	"    vec2 uv = vec2(dot(vUVu.xyz, vec3(hit.x, hit.z, 1.0)), dot(vUVv.xyz, vec3(hit.x, hit.z, 1.0)));\n"
 	// [rc4l] Sampled BEFORE any discard, so the derivatives that pick the mip stay defined.
-	"    vec3 texel = texture(uTex, uv).rgb;\n"
-	"    vec3 bright = texture(uBrightmap, uv).rgb;\n"
+	"    vec3 texel = texture(sampler2D(uTex, uTex_sampler), uv).rgb;\n"
+	"    vec3 bright = texture(sampler2D(uBrightmap, uBrightmap_sampler), uv).rgb;\n"
 	// [rc4l] ComputeHorizonSplit's rule, so a quad paints only its own half.
 	"    float split = clamp(vEye.y, vPlane.y, vPlane.z);\n"
 	// [rc4l] With a unit's slack, since the quad already stops at the split and the sky starts on that same edge: a fragment rounded across it must not leave a speck of what lies behind.
@@ -185,7 +185,7 @@ static bool EnsureHorizonPipeline()
 	pci.PSODesc.ResourceLayout.NumImmutableSamplers = (Diligent::Uint32)(sizeof(samplers) / sizeof(samplers[0]));
 	pci.pVS = vs;
 	pci.pPS = ps;
-	dev->CreateGraphicsPipelineState(pci, &g_hzPSO);
+	CreatePipeline(pci, &g_hzPSO);
 	if (!g_hzPSO) { g_hzFailed = true; Printf("vulkan horizons OFF: pipeline creation failed\n"); return false; }
 	BindSceneConstants(g_hzPSO);
 	return true;
@@ -291,7 +291,7 @@ void DrawHorizonPlanes(Diligent::IDeviceContext *ctx)
 		bd.BindFlags = Diligent::BIND_VERTEX_BUFFER;
 		bd.CPUAccessFlags = Diligent::CPU_ACCESS_WRITE;
 		g_hzVB.Release();
-		GetDevice()->CreateBuffer(bd, nullptr, &g_hzVB);
+		CreateDeviceBuffer(bd, nullptr, &g_hzVB);
 		if (!g_hzVB) { g_hzVBCapacity = 0; return; }
 	}
 	{

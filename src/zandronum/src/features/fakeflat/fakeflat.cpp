@@ -397,4 +397,29 @@ sector_t * gl_FakeFlat(sector_t * sec, sector_t * dest, area_t in_area, bool bac
 	return dest;
 }
 
+#include "features/levelmesh/computation/flatmesh_compute.h"   // [rc4l] kViewArea
 
+namespace zx { namespace fakeflat {
+
+// [rc4l] The view area the height transfers' planes were last drawn for.
+static int g_transferArea = zx::levelmesh::kViewAreaNormal;
+static_assert(area_normal == zx::levelmesh::kViewAreaNormal && area_below == zx::levelmesh::kViewAreaBelow && area_above == zx::levelmesh::kViewAreaAbove, "kViewArea spells GL's area_t");
+
+bool ViewDependent(const sector_t *s)
+{
+	return s->heightsec != NULL && s->heightsec != s && !(s->heightsec->MoreFlags & SECF_IGNOREHEIGHTSEC);
+}
+
+bool SetTransferArea(int area)
+{
+	if (area == g_transferArea) return false;
+	g_transferArea = area;
+	return true;
+}
+
+sector_t *TransferSector(sector_t *s, sector_t *scratch, bool back)
+{
+	return (s != NULL && ViewDependent(s)) ? gl_FakeFlat(s, scratch, (area_t)g_transferArea, back) : s;
+}
+
+}} // namespace zx::fakeflat

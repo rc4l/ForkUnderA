@@ -127,24 +127,6 @@ TEST(McpRpc, GetStrRejectsUnterminated)
 	EXPECT_FALSE(GetStr("{\"s\":\"oops", "s", out));
 }
 
-// ---- JsonEscape ------------------------------------------------------------
-
-TEST(McpRpc, JsonEscapeQuotesBackslashNewlineAndDropsCR)
-{
-	std::string out;
-	JsonEscape("he said \"hi\"\r\n\tpath\\x", out);
-	EXPECT_EQ(out, "he said \\\"hi\\\"\\n\\tpath\\\\x"); // CR dropped, LF/TAB/quote/backslash escaped
-}
-
-TEST(McpRpc, JsonEscapeControlCharToUnicode)
-{
-	std::string out;
-	std::string in;
-	in.push_back((char)0x01);
-	JsonEscape(in, out);
-	EXPECT_EQ(out, "\\u0001");
-}
-
 // ---- Framing ---------------------------------------------------------------
 
 TEST(McpRpc, BuildOkResponseWrapsBody)
@@ -221,45 +203,10 @@ TEST(McpRpc, StepCompleteWhenClockReachesTarget)
 
 // ---- Perf summary ----------------------------------------------------------
 
-TEST(McpRpc, PerfSummaryBasicStats)
-{
-	// 10 frames at 10ms + implied 100fps.
-	std::vector<double> f(10, 10.0);
-	PerfSummary s = SummarizeFrameTimes(f);
-	EXPECT_EQ(s.n, 10);
-	EXPECT_DOUBLE_EQ(s.mean, 10.0);
-	EXPECT_DOUBLE_EQ(s.min, 10.0);
-	EXPECT_DOUBLE_EQ(s.max, 10.0);
-	EXPECT_DOUBLE_EQ(s.fpsAvg, 100.0);
-	EXPECT_DOUBLE_EQ(s.fps1pctLow, 100.0);
-}
-
-TEST(McpRpc, PerfSummaryCatchesTheStutterInTheTail)
-{
-	// 99 smooth frames (10ms) + one 100ms spike: the mean barely moves, but the tail (p99 / 1% low)
-	// exposes the stutter -- exactly why we report percentiles, not average FPS.
-	std::vector<double> f(99, 10.0);
-	f.push_back(100.0);
-	PerfSummary s = SummarizeFrameTimes(f);
-	EXPECT_EQ(s.n, 100);
-	EXPECT_NEAR(s.mean, 10.9, 0.001);          // average hides it
-	EXPECT_GT(s.fpsAvg, 90.0);                  // ~91.7 fps avg looks perfectly fine...
-	EXPECT_DOUBLE_EQ(s.p99, 10.0);             // ...and even p99 misses a single spike (it's p100)
-	EXPECT_DOUBLE_EQ(s.max, 100.0);            // only max...
-	EXPECT_DOUBLE_EQ(s.fps1pctLow, 10.0);      // ...and the 1% low (10 fps) expose the stutter
-}
-
-TEST(McpRpc, PerfSummaryEmptyIsZeroed)
-{
-	PerfSummary s = SummarizeFrameTimes({});
-	EXPECT_EQ(s.n, 0);
-	EXPECT_DOUBLE_EQ(s.fpsAvg, 0.0);
-}
-
 TEST(McpRpc, PerfSummaryJsonRoundsToThreeDecimals)
 {
 	std::vector<double> f(4, 8.0);
-	std::string j = PerfSummaryJson(SummarizeFrameTimes(f));
+	std::string j = PerfSummaryJson(zx::perfstats::ComputeFrameTimeSummary(f));
 	EXPECT_NE(j.find("\"mean_ms\":8.000"), std::string::npos);
 	EXPECT_NE(j.find("\"fps_avg\":125.000"), std::string::npos);
 	EXPECT_NE(j.find("\"n\":4"), std::string::npos);

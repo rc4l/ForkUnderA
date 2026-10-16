@@ -6,7 +6,7 @@
 #ifndef ZX_SCREENBLEND_H
 #define ZX_SCREENBLEND_H
 
-#include "features/hwrender/hud2d.h"   // [rc4l] Quad2D
+#include "features/draw2d/computation/quad2d_compute.h"
 
 struct sector_t;
 
@@ -26,7 +26,7 @@ enum { kViewAreaNormal = 0, kViewAreaBelow = 1, kViewAreaAbove = 2 };
 int ScreenBlends(sector_t *viewsector, int viewArea, bool fixedColormap, int paletteBrightness, ScreenFill out[2]);
 
 // [rc4l] A fill as the 2D capture's untextured quad over the whole screen, multiplying (blend 2) or blended over (blend 0).
-zx::hwrender::Quad2D PrepareScreenFill(const ScreenFill &f);
+zx::draw2d::Quad2D PrepareScreenFill(const ScreenFill &f);
 
 }} // namespace zx::draw2d
 

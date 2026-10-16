@@ -581,24 +581,3 @@ int GetProjectedDecalCount() { return (int)g_decals.Size(); }
 
 }} // namespace zx::levelmesh
 
-namespace zx { namespace hwrender {
-void GetDeferredDecalStats(int &boxes, int &draws, int &textures, const char **bail);
-}}
-
-CCMD(fua_projdecals_stats)
-{
-	int boxes = 0, draws = 0, textures = 0;
-	const char *bail = "";
-	zx::hwrender::GetDeferredDecalStats(boxes, draws, textures, &bail);
-	Printf("projected decals: %d live\n", zx::levelmesh::GetProjectedDecalCount());
-	Printf("deferred pass: %d boxes in %d draws, %d textures%s%s\n",
-		boxes, draws, textures, (bail && *bail) ? ", stopped: " : "", (bail && *bail) ? bail : "");
-
-	// [rc4l] The marks themselves, because "10 live" cannot say WHICH ten.
-	//
-	// A mark that is made and then never drawn is invisible to every other instrument here: the
-	// spawn side reports it created one, the draw side reports what survived, and the difference
-	// between those two numbers is the whole question when a glow goes missing while the scorch
-	// beneath it stays. Alpha is the usual answer, so alpha is printed.
-	zx::levelmesh::PrintProjectedDecals(12);
-}

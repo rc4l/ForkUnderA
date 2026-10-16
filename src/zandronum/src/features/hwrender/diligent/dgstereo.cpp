@@ -35,11 +35,11 @@ const char *kBlendPS =
 	"#version 450\n"
 	"layout(location = 0) in vec2 vUV;\n"
 	"layout(binding = 0) uniform Masks { vec4 uLeftMask; vec4 uRightMask; };\n"
-	"layout(binding = 1) uniform sampler2D uLeft;\n"
-	"layout(binding = 2) uniform sampler2D uRight;\n"
+	"layout(binding = 1) uniform texture2D uLeft; uniform sampler uLeft_sampler;\n"
+	"layout(binding = 2) uniform texture2D uRight; uniform sampler uRight_sampler;\n"
 	"layout(location = 0) out vec4 outColor;\n"
 	"void main() {\n"
-	"    outColor = vec4(texture(uLeft, vUV).rgb * uLeftMask.rgb + texture(uRight, vUV).rgb * uRightMask.rgb, 1.0);\n"
+	"    outColor = vec4(texture(sampler2D(uLeft, uLeft_sampler), vUV).rgb * uLeftMask.rgb + texture(sampler2D(uRight, uRight_sampler), vUV).rgb * uRightMask.rgb, 1.0);\n"
 	"}\n";
 
 bool EnsureEyePictures(int w, int h)
@@ -59,7 +59,7 @@ bool EnsureEyePictures(int w, int h)
 		td.Width = w; td.Height = h;
 		td.Format = fd.Format;
 		td.BindFlags = Diligent::BIND_SHADER_RESOURCE;
-		dev->CreateTexture(td, nullptr, &g_eyePicture[e]);
+		CreateDeviceTexture(td, nullptr, &g_eyePicture[e]);
 		if (!g_eyePicture[e]) return false;
 	}
 	if (!g_blendPSO)
@@ -70,7 +70,7 @@ bool EnsureEyePictures(int w, int h)
 		cbd.Usage = Diligent::USAGE_DYNAMIC;
 		cbd.BindFlags = Diligent::BIND_UNIFORM_BUFFER;
 		cbd.CPUAccessFlags = Diligent::CPU_ACCESS_WRITE;
-		dev->CreateBuffer(cbd, nullptr, &g_blendCB);
+		CreateDeviceBuffer(cbd, nullptr, &g_blendCB);
 		if (!g_blendCB) return false;
 		static const char *const kEyes[] = { "uLeft", "uRight" };
 		if (!CreatePicturesPSO("fua stereo blend", kBlendPS, Diligent::FILTER_TYPE_POINT, Diligent::TEX_FORMAT_UNKNOWN, kEyes, 2, g_blendPSO)) return false;

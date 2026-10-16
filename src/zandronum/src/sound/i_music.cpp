@@ -511,8 +511,12 @@ retry_as_sndsys:
         {
             // Let FMOD figure out what it is.
             info = new StreamSong (reader);
+            reader = NULL;   // [rc4l] the stream owns it from here
         }
     }
+
+	// [rc4l] Every other song read its data while it was made, so the reader is done with here; it was never freed, and held its WAD open, one a music change.
+	delete reader;
 
 	if (info && !info->IsValid ())
 	{

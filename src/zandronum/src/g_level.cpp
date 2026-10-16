@@ -115,6 +115,7 @@
 
 #include "g_hub.h"
 #include "features/playerclass-fallback/zx_playerclassfallback.h" // [rc4l]
+#include "features/telemetry/telemetry.h"
 
 void STAT_StartNewGame(const char *lev);
 void STAT_ChangeLevel(const char *newl);
@@ -1169,6 +1170,7 @@ void SERVERCONSOLE_SetCurrentMapname( const char *pszString );
 void SERVERCONSOLE_UpdatePlayerInfo( LONG lPlayer, ULONG ulUpdateFlags );
 void G_DoLoadLevel (int position, bool autosave)
 {
+	ZX_ZONE("load/level");   // [rc4l] a level load, whole
 	static int lastposition = 0;
 	gamestate_t oldgs = gamestate;
 	unsigned int i;

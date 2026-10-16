@@ -7,11 +7,13 @@ import * as cap from "./capture.mjs";
 import * as shot from "./shot.mjs";
 import * as ui from "./ui.mjs";
 import { withLockedInstance } from "./play.mjs";
-import { resolveEngine, engineProcessCount } from "./launch.mjs";
+import { resolveEngine, engineProcessCount, exited, slashed } from "./launch.mjs";
 import { decodePNG, boxDiff } from "./pngcore.mjs";
+import { runSoak } from "./telemetry.mjs";
 
 // [rc4l] The repo's own Freedoom 2, found from this file so the harness runs from any checkout.
 export const FREEDOOM2 = fileURLToPath(new URL("../../freedoom/freedoom2.wad", import.meta.url));
+export const FREEDOOM1 = path.join(path.dirname(FREEDOOM2), "freedoom1.wad");
 
 // [rc4l] The console lines a side runs once its level is up: each cvar, then its own commands (a re-bake, say).
 export function sideCommands(side) {
@@ -43,10 +45,13 @@ export function judge(map, frames, boxes, size = [1280, 720], [a, b] = ["gl", "v
       failed++;
       continue;
     }
-    for (const [name, { box, ceiling, floor, block = 16, vantage: only }] of Object.entries(boxes)) {
+    for (const [name, { box, ceiling, floor, block = 16, vantage: only, pair }] of Object.entries(boxes)) {
       // [rc4l] A box naming a vantage is judged only there, for scenes whose vantages look at different parts of the frame.
       if (only && only !== vantage) continue;
-      const d = boxDiff(A, B, box, block);
+      // [rc4l] A box naming a pair of captures (compareSequence) is judged between those two.
+      const [P, Q] = pair ? [f[pair[0]], f[pair[1]]] : [A, B];
+      if (!P || !Q) { lines.push(`FAIL ${map} ${vantage} ${name}: no capture ${pair.join(" or ")}`); failed++; continue; }
+      const d = boxDiff(P, Q, box, block);
       const ok = boxWithin(d, { ceiling, floor });
       if (!ok) failed++;
       const limit = floor === undefined ? `ceiling ${ceiling}` : `floor ${floor}`;
@@ -62,20 +67,30 @@ export function launchRenderer(text) {
   return m ? m[1] : null;
 }
 
-// [rc4l] One locked launch of the wad with the side's settings applied, handed to `body` and always torn down.
+// [rc4l] The API `dumprenderer` says the backend's device runs on ("Vulkan", "WebGPU"), or null when it printed none.
+export function launchBackendApi(text) {
+  const m = /backend_api=(\w+)/.exec(String(text || ""));
+  return m ? m[1] : null;
+}
+
+// [rc4l] One locked launch of the wad with the side's settings applied, handed to `body` and always torn down; its launchCvars go on the command line, for what must hold from the level's upload, where its cvars are set once the level is up.
 function withEngine({ port, map, iwad, wadPath, gl, side = {}, size }, body) {
-  return withLockedInstance({ port, map, iwad, file: wadPath, gl, noGl: !!side.noGl, width: size[0], height: size[1] }, async (c) => {
+  return withLockedInstance({ port, map, iwad, file: wadPath, gl, noGl: !!side.noGl, webgpu: !!side.webgpu, extra: side.launchCvars, width: size[0], height: size[1] }, async (c, inst) => {
     // [rc4l] A side without GL must really have none: a binary that ignores -vulkan would pass as GL beside an embedded backend.
     if (side.noGl) {
-      const renderer = launchRenderer(await cap.exec(c, "dumprenderer"));
+      const report = await cap.exec(c, "dumprenderer");
+      const renderer = launchRenderer(report);
       if (renderer !== "vulkan") throw new Error(`side ${side.name} asked for no GL and the launch reports ${renderer || "no renderer"}`);
+      // [rc4l] And a WebGPU side really runs on WebGPU, since a device that fails falls back to Vulkan and would pass as itself.
+      const api = launchBackendApi(report);
+      if (side.webgpu && api !== "WebGPU") throw new Error(`side ${side.name} asked for WebGPU and the launch reports ${api || "no backend API"}`);
     }
     await cap.exec(c, "r_drawplayersprites 0");
     // [rc4l] A Vulkan side derives its own scene, as players run it, rather than taking GL's walk; one judged by GL's frame, or by both renderers' from one frame (glDraws), keeps GL drawing.
     if (!gl && !side.noGl) await cap.exec(c, `fua_dg_standalone ${side.frame === "gl" || side.glDraws ? 0 : 1}`);
     for (const line of sideCommands(side)) await cap.exec(c, line);
     await cap.waitTics(c, 10);
-    return body(c);
+    return body(c, inst);
   });
 }
 
@@ -100,7 +115,7 @@ export async function compareTemplate({ name, wad, maps, vantages, boxes, sides 
   // [rc4l] GL reads its frame back out of the window, so another engine on top can make it garbage.
   const others = sides.some((sd) => sd.gl) ? engineProcessCount() : 0;
   if (others > 0) return { lines: [`${others} other engine window(s) open -- close them first`], failed: 1, refused: true };
-  const exe = resolveEngine().split(path.sep).join("/");
+  const exe = slashed(resolveEngine());
   const wadPath = path.join(os.tmpdir(), `fua-${name}-template.wad`);
   fs.writeFileSync(wadPath, wad);
   const lines = [];
@@ -146,6 +161,80 @@ export function standaloneOptions(opts) {
   return sideAdjust("vk", { fua_dg_standalone: 1 })(opts);
 }
 
+// [rc4l] The mean |d| every box is held to when WebGPU is judged against Vulkan: the same backend over two APIs, so near the same picture.
+export const WEBGPU_CEILING = 1.5;
+
+// [rc4l] A scenario on WebGPU, by how it judges: two launches compare its first Vulkan side on each without GL, each box at WEBGPU_CEILING with no floor; one launch judged against itself (a counter, a picture over time) runs on WebGPU alone with its own limits; skipped, with the reason, when it judges GL and the backend in one frame or needs ray tracing; null with no Vulkan side of its own.
+export function webgpuOptions(opts, compare = compareTemplate) {
+  if (compare === compareSameFrame) return { skip: "it judges GL and the backend in one frame, and a WebGPU launch has no GL" };
+  if ((opts.needs || []).includes("raytracing")) return { skip: "it needs ray tracing, which WebGPU lacks" };
+  const vk = (opts.sides || GL_VS_VULKAN).find((s) => !s.gl && s.frame !== "gl");
+  if (!vk) return null;
+  const { frame, glDraws, ...rest } = vk;
+  if (compare.judgedAlone) return { ...opts, sides: [{ ...rest, name: "wgpu", noGl: true, webgpu: true }] };
+  const boxes = Object.fromEntries(Object.entries(opts.boxes).map(([map, bs]) => [map, Object.fromEntries(Object.entries(bs).map(
+    ([n, b]) => [n, { box: b.box, block: b.block, vantage: b.vantage, ceiling: WEBGPU_CEILING }]))]));
+  return { ...opts, sides: [{ ...rest, name: "vk", noGl: true }, { ...rest, name: "wgpu", noGl: true, webgpu: true }], boxes };
+}
+
+// [rc4l] A quit judged by how the engine ended (launch.mjs's exited, null while it runs): a crash file beside its log, an engine still running, or an exit other than 0 fails it.
+export function judgeQuit(label, { gone, crashed }) {
+  if (crashed) return { line: `FAIL ${label}: the engine crashed on its way out`, failed: 1 };
+  if (!gone) return { line: `FAIL ${label}: the engine did not exit`, failed: 1 };
+  if (gone.code !== 0) return { line: `FAIL ${label}: the engine exited with ${gone.code ?? gone.signal}`, failed: 1 };
+  return { line: `PASS ${label}: quit cleanly`, failed: 0 };
+}
+
+// [rc4l] Runs judgeLaunch(c, inst, label, { wadPath, iwad }) in a launch of each side on each map, collecting each { line, failed } verdict, and a launch that throws as a failure.
+async function eachLaunch({ name, wad, maps, sides, iwad = FREEDOOM2, port = 7796, size = [1280, 720] }, judgeLaunch) {
+  const wadPath = path.join(os.tmpdir(), `fua-${name}-template.wad`);
+  fs.writeFileSync(wadPath, wad);
+  const lines = [];
+  let failed = 0;
+  for (const map of maps) {
+    for (const side of sides) {
+      const label = `${map} ${side.name}`;
+      try {
+        const r = await withEngine({ port, map, iwad, wadPath, gl: !!side.gl, side, size }, (c, inst) => judgeLaunch(c, inst, label, { wadPath, iwad }));
+        lines.push(r.line);
+        failed += r.failed;
+      } catch (e) {
+        lines.push(`FAIL ${label}: ${e.message}`);
+        failed++;
+      }
+    }
+  }
+  return { lines, failed };
+}
+
+// [rc4l] Each side launched on each map, played a moment and quit from its console as a player quits, then judged by judgeQuit: for a fault on the engine's way out, which no frame shows.
+export function compareQuit(opts) {
+  return eachLaunch(opts, async (c, inst, label) => {
+    await cap.waitTics(c, opts.settleTics ?? 70);
+    // [rc4l] Over the scenario's own connection, the bridge's only one; the engine leaves before it answers.
+    await c.rpc("console.exec", { text: "quit" }).catch(() => {});
+    const gone = await exited(inst.proc, 15000);
+    return judgeQuit(label, { gone, crashed: fs.existsSync(`${inst.log}.crash`) });
+  });
+}
+
+// [rc4l] A soak's verdict (telemetry.mjs runSoak) as a scenario line: what kept growing and by how much a cycle, as the engine says, or how many counters held.
+export function judgeSoak(label, { pass, marks, judged, grew = [] }) {
+  if (pass) return { line: `PASS ${label}: ${judged} counters held over ${marks} marks`, failed: 0 };
+  return { line: `FAIL ${label}: ${grew.length ? `kept growing: ${grew.map((g) => g.text).join("; ")}` : `judged nothing (${marks} marks)`}`, failed: 1 };
+}
+
+// [rc4l] Each side launched on each map repeats the scenario's soak action (reload unless it names another, or builds one from the launch's { wadPath, iwad }) and passes when the engine judges that no memory, object, handle or thread count kept growing: for a leak, which no frame shows.
+export function compareSoak(opts) {
+  return eachLaunch(opts, async (c, inst, label, files) => {
+    // [rc4l] A window without focus presents nothing, and the backend frees what it let go of only after a present, so an unfocused launch reads as a leak.
+    await cap.exec(c, "fua_render_in_background 1");
+    await cap.waitTics(c, opts.settleTics ?? 35);
+    const action = typeof opts.action === "function" ? opts.action(files) : opts.action ?? "reload";
+    return judgeSoak(label, await runSoak(c, { action, cycles: opts.cycles ?? 6, warmup: opts.warmup ?? 1, settleMs: opts.settleMs ?? 4000, ignore: opts.ignore ?? [] }));
+  });
+}
+
 // [rc4l] A scenario's verdict as printed lines and an exit code: 0 all under ceiling, 1 failed, 3 refused.
 export function scenarioOutcome(name, r) {
   const summary = r.failed ? `${r.failed} failed` : `all ${name} boxes within their limits`;
@@ -161,14 +250,17 @@ export function isMain(metaUrl, argv1 = process.argv[1]) {
 const registered = new Map();
 export function scenarioOptions(metaUrl) { const e = registered.get(metaUrl); return e ? e.options : null; }
 
-// [rc4l] An imported scenario as one call that runs its comparison (its options passed through adjust) and returns its outcome, or null if the module registered none; an adjust giving null skips it.
+// [rc4l] An imported scenario as one call that runs its comparison (its options passed through adjust, with the comparison) and returns its outcome, or null if the module registered none; an adjust giving null, or { skip: reason }, skips it.
 export function scenarioRun(metaUrl, adjust = (o) => o) {
   const e = registered.get(metaUrl);
   if (!e) return null;
   return async () => {
     const base = e.options();
-    const opts = adjust(base);
-    if (!opts) return { lines: [`skipped: no side to run (${(base.sides || GL_VS_VULKAN).map((s) => s.name).join(", ")})`], code: 0, skipped: true };
+    const opts = adjust(base, e.compare);
+    if (!opts || opts.skip) {
+      const why = opts ? opts.skip : `no side to run (${(base.sides || GL_VS_VULKAN).map((s) => s.name).join(", ")})`;
+      return { lines: [`skipped: ${why}`], code: 0, skipped: true };
+    }
     return scenarioOutcome(opts.name, await e.compare(opts));
   };
 }
@@ -264,7 +356,7 @@ export async function compareCounter({ name, wad, maps, vantages, counter, sides
 export async function compareSameFrame({ name, wad, maps, vantages, boxes, iwad = FREEDOOM2, port = 7796, size = [1280, 720], settleTics = 70, commands = [] }) {
   const others = engineProcessCount();
   if (others > 0) return { lines: [`${others} other engine window(s) open -- close them first`], failed: 1, refused: true };
-  const exe = resolveEngine().split(path.sep).join("/");
+  const exe = slashed(resolveEngine());
   return eachVulkanLaunch({ name, wad, maps, iwad, port, size, side: { name: "pair", glDraws: true, commands } }, async (c, map) => {
     const frames = {};
     await cap.waitTics(c, settleTics);
@@ -279,11 +371,25 @@ export async function compareSameFrame({ name, wad, maps, vantages, boxes, iwad 
   });
 }
 
-// [rc4l] One Vulkan launch per map, each vantage captured twice intervalMs apart, judged before against after: for what must move (a warp) or must not.
+// [rc4l] One Vulkan launch per map; at each vantage a capture after each of `steps` (shot.captureSequence), and each box judged between the two captures its `pair` names: for what a command must change (a mark made) and what must survive one (a mode change).
+export async function compareSequence({ name, wad, maps, vantages, steps, boxes, iwad = FREEDOOM2, port = 7796, size = [1280, 720], sides = [] }) {
+  const exe = slashed(resolveEngine());
+  return eachVulkanLaunch({ name, wad, maps, iwad, port, size, side: sides.find((s) => !s.gl) }, async (c, map) => {
+    const frames = {};
+    for (const v of vantages) {
+      const { vk } = await shot.captureSequence(c, { at: v.at, engineBin: exe, tag: `${name}_${map}_${v.name}`, steps });
+      frames[v.name] = Object.fromEntries(Object.entries(vk).map(([step, file]) => [step, file ? decodePNG(file) : null]));
+    }
+    const [first, second] = steps.map((s) => s.name);
+    return judge(map, frames, boxes[map], size, [first, second]);
+  });
+}
+
+// [rc4l] One Vulkan launch per map, each vantage captured twice intervalMs apart, judged before against after: for what must move (a warp) or must not; the launch takes the first non-GL side's settings.
 export async function compareOverTime({ name, wad, maps, vantages, boxes, intervalMs = 600, iwad = FREEDOOM2, port = 7796,
-  size = [1280, 720] }) {
-  const exe = resolveEngine().split(path.sep).join("/");
-  return eachVulkanLaunch({ name, wad, maps, iwad, port, size }, async (c, map) => {
+  size = [1280, 720], sides = [] }) {
+  const exe = slashed(resolveEngine());
+  return eachVulkanLaunch({ name, wad, maps, iwad, port, size, side: sides.find((s) => !s.gl) }, async (c, map) => {
     const frames = {};
     for (const v of vantages) {
       const { vk: [before, after] } = await shot.captureOverTime(c, { at: v.at, engineBin: exe,
@@ -293,3 +399,6 @@ export async function compareOverTime({ name, wad, maps, vantages, boxes, interv
     return judge(map, frames, boxes[map], size, ["before", "after"]);
   });
 }
+
+// [rc4l] The comparisons that judge a launch against itself rather than GL, which a WebGPU run runs on WebGPU alone (webgpuOptions).
+for (const compare of [compareCounter, compareOverTime, compareSequence, compareQuit, compareSoak]) compare.judgedAlone = true;

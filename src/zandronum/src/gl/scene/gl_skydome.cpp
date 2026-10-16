@@ -64,7 +64,7 @@
 //
 //-----------------------------------------------------------------------------
 
-CVAR(Float, skyoffset, 0, 0)	// for testing
+EXTERN_CVAR(Float, skyoffset)   // [rc4l] features/rendersettings, which both renderers read
 
 extern int skyfog;
 

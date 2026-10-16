@@ -107,7 +107,8 @@ included, and GL's walk on all of them.
   alone over its own map section, as GL's walk of `RenderViewpoint` captures them. A mirror's walk fills the
   mirrors' sky list (`kSkyCaptureMirror`), which every mirror pass paints other skies from.
 - `features/frame/levelrenderer.cpp` `FLevelRenderer::CleanLevelData`: `ForgetWalk`.
-- `features/hwrender/hud2d.cpp` `SetSkyFog`: the sky's fog, which the sky pass lays over its dome.
+- `skyfog.cpp` `SetSkyFog`: the sky's fog the walk finds, which the backend's sky pass (`GetSkyFog`) lays over
+  its dome.
 - `features/levelmesh/wallcache.cpp` `InvalidateMovedSectors`: with the walks' lists, only what they reached.
 - `features/levelmesh/flatmesh.cpp`: `BeginSlotVisibility`/`NoteSlotVisible`, the walk slots;
   `BeginViewSky`/`AddViewSkyQuad`/`AddViewSkyHole`, a view's sky surfaces; `BeginPortalViews`,

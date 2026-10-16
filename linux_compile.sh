@@ -15,6 +15,7 @@
 #
 #   ./linux_compile.sh                     # full client build + tarball
 #   SERVERONLY=ON ./linux_compile.sh       # headless server build
+#   ./linux_compile.sh --profile offline   # another build profile: desktop, server, offline or nogl-vulkan
 #   VERSION=v0.1.0 ./linux_compile.sh      # stamp a version into the tarball name
 #   ./linux_compile.sh --install-deps      # apt-install the build dependencies first (uses sudo)
 #   ./linux_compile.sh --no-package        # compile only, skip the tarball
@@ -22,6 +23,7 @@ set -euo pipefail
 cd "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 SERVERONLY="${SERVERONLY:-OFF}"
+PROFILE="${PROFILE:-}"
 VERSION="${VERSION:-}"
 NO_PACKAGE=OFF
 INSTALL_DEPS=OFF
@@ -29,6 +31,7 @@ INSTALL_DEPS=OFF
 while [ $# -gt 0 ]; do
   case "$1" in
     --serveronly)   SERVERONLY=ON ;;
+    --profile)      PROFILE="${2:-}"; shift ;;
     --no-package)   NO_PACKAGE=ON ;;
     --install-deps) INSTALL_DEPS=ON ;;
     --version)      VERSION="${2:-}"; shift ;;
@@ -36,6 +39,13 @@ while [ $# -gt 0 ]; do
   esac
   shift
 done
+
+# [rc4l] A profile is a linux-<profile> preset in src/zandronum/CMakePresets.json, where its switches live; --serveronly is the server's.
+if [ -z "$PROFILE" ]; then
+  if [ "$SERVERONLY" = "ON" ]; then PROFILE=server; else PROFILE=desktop; fi
+fi
+if [ "$PROFILE" = "server" ]; then SERVERONLY=ON; fi
+if [ "$SERVERONLY" = "ON" ] && [ "$PROFILE" != "server" ]; then echo "--serveronly is the server profile, not $PROFILE" >&2; exit 2; fi
 
 # [rc4l] Deps mirror Dockerfile.linux-build so native and containerised builds match:
 # OpenSSL/Opus/zlib/bzip2/jpeg + Python3, SDL2 + OpenGL/GLU/GLEW + GME for the client,
@@ -67,7 +77,7 @@ for tool in cmake ninja git python3; do
   }
 done
 
-echo "==> Configuring (Release, OpenAL, NO_FMOD, SERVERONLY=$SERVERONLY)"
+echo "==> Configuring the linux-$PROFILE preset"
 # [rc4l] Drop the cache but keep object files: a cache written before libopenal-dev was present
 # keeps NO_OPENAL=OFF with no OPENAL_LIBRARY, silently producing a soundless binary.
 rm -f build-linux/CMakeCache.txt
@@ -99,9 +109,7 @@ if [ "${ZX_MCP_BRIDGE:-0}" = "1" ]; then
   echo "==> MCP bridge: ENABLED (dev build -- do not ship)"
 fi
 
-cmake -S src/zandronum -B build-linux -G Ninja \
-  -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
-  -DSERVERONLY="$SERVERONLY" -DNO_FMOD=ON -DNO_GTK=ON -DFORCE_INTERNAL_JPEG=ON \
+cmake -S src/zandronum --preset "linux-$PROFILE" \
   "${BRIDGE_ARGS[@]}" "${SYM_ARGS[@]}" "${OFFICIAL_ARGS[@]}"
 
 echo "==> Building"

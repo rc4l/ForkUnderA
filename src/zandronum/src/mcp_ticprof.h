@@ -4,29 +4,17 @@
 // e.g. "kill monsters" actually runs -- then P_Ticker, thinkers, particle effects, specials), so a
 // driver can ask "what is inside the 60 ms tics of this kill storm?" without external samplers.
 // Armed by the perf.ticprof RPC; results go out as a "ticprof" event. Compiled only when
-// FUA_MCP_BRIDGE is ON; when OFF every anchor below is an inline no-op and release builds are
-// byte-identical (same pattern as mcp_glperf.h).
+// FUA_MCP_BRIDGE is ON; when OFF every entry point below is an inline no-op.
+// [rc4l] The phases are features/telemetry's sim zones (computation/ticprof_compute.h names them), read once a tic.
 //
 #ifndef MCP_TICPROF_H
 #define MCP_TICPROF_H
 
 #include <string>
 
-enum
-{
-	MCP_TPZ_GTICKER  = 0, // whole G_Ticker: net commands (cheats, kill) + everything below
-	MCP_TPZ_PTICKER  = 1, // P_Ticker total
-	MCP_TPZ_THINKERS = 2, // DThinker::RunThinkers (actors, ACS scripts, lights)
-	MCP_TPZ_EFFECTS  = 3, // P_RunEffects
-	MCP_TPZ_SPECIALS = 4, // P_UpdateSpecials
-	MCP_TPZ_COUNT    = 5
-};
-
 #ifdef FUA_MCP_BRIDGE
 
 void MCP_TicProf_Arm( int tics );
-void MCP_TicProf_Begin( int zone );
-void MCP_TicProf_End( int zone );
 void MCP_TicProf_TicDone();                     // call once per completed game tic
 bool MCP_TicProf_ReportReady( std::string &json ); // true once when a capture finishes
 
@@ -40,8 +28,6 @@ void MCP_SimPreTic();
 #else
 
 inline void MCP_TicProf_Arm( int ) {}
-inline void MCP_TicProf_Begin( int ) {}
-inline void MCP_TicProf_End( int ) {}
 inline void MCP_TicProf_TicDone() {}
 inline bool MCP_TicProf_ReportReady( std::string & ) { return false; }
 inline void MCP_SimPreTic() {}

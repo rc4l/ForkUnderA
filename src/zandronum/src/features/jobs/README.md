@@ -8,11 +8,14 @@ The engine's one pool of worker threads, for work a frame splits across cores.
   spin and then sleeps, so a job a frame later wakes a spinning worker at once. A worker that wakes after a
   job has closed leaves without touching it, so the caller never waits on a sleeper.
   `ComputeAutoWorkers` is the default count: half the logical processors less the caller, at most 7.
+  A `JobObserver` (`SetJobObserver`) hears each worker start, each lane's run and the caller's wait, for
+  `features/telemetry`.
 - `computation/sharedarray_compute`: `SharedArray`, an array of relaxed atomics that a job's lanes mark at
   once (stamps, flags, the smallest key of a race with `LowerWithin`).
 - `jobs.cpp`: `Pool()`, sized by `fua_jobs_threads` (-1 picks by the machine, 0 runs every job on the
   game thread). It is resized on the next call after the cvar changes and is never destroyed, so no worker
-  is joined while the process exits.
+  is joined while the process exits. Its observer times `jobs/run` and `jobs/wait` into `features/telemetry`
+  and names each worker "job N" in its traces.
 
 ## In-engine hooks
 

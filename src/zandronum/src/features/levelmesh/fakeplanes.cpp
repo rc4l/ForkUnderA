@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 rc4l
 
+#include "features/fakeflat/fakeflat.h"   // [rc4l] ViewDependent
 #include "features/levelmesh/fakeplanes.h"
 #include "r_defs.h"
 #include "r_state.h"
@@ -22,11 +23,6 @@ static std::vector<FakePlane> g_planes;              // [rc4l] by subsector, sub
 static std::vector<int> g_planeStart;
 static std::vector<int> g_modelSubs, g_modelStart;   // [rc4l] the same by model sector, the subsectors carrying a plane modelled on it
 
-// [rc4l] A height transfer's planes depend on where the viewer stands, so a fill never crosses or starts from one.
-bool ViewDependent(const sector_t *s)
-{
-	return s->heightsec != NULL && s->heightsec != s && !(s->heightsec->MoreFlags & SECF_IGNOREHEIGHTSEC);
-}
 
 static bool IsSky(const sector_t *s, int plane) { return s->GetTexture(plane) == skyflatnum; }
 
@@ -87,7 +83,7 @@ static void BuildStatic()
 		FillSeg &f = g_fillSegs[i];
 		f = FillSeg();
 		const sector_t *front = sg.frontsector, *back = sg.backsector;
-		f.closed = back == NULL || sg.PartnerSeg == NULL || ViewDependent(back);
+		f.closed = back == NULL || sg.PartnerSeg == NULL || zx::fakeflat::ViewDependent(back);
 		if (f.closed) continue;
 		f.backSub = int(sg.PartnerSeg->Subsector - subsectors);
 		f.sectorEdge = front != back && sg.linedef != NULL;
@@ -99,7 +95,7 @@ static void BuildStatic()
 		const bool hasSideAndLine = sg.sidedef != NULL && sg.linedef != NULL && front != NULL && sub != NULL;
 		if (!ComputeIsFillCandidate(hasSideAndLine, hasSideAndLine && (sg.linedef->flags & (ML_TWOSIDED | ML_3DMIDTEX)) != 0,
 				hasSideAndLine && sg.linedef->special == Line_Horizon, hasSideAndLine && sub->render_sector == sub->sector,
-				hasSideAndLine && front == sub->sector, hasSideAndLine && ViewDependent(front)))
+				hasSideAndLine && front == sub->sector, hasSideAndLine && zx::fakeflat::ViewDependent(front)))
 			continue;
 		Candidate c = {};
 		c.seg = i;

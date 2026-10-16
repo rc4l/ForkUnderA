@@ -61,7 +61,7 @@
 #include "gamemode.h"		// [rc4l] GAMEMODE_GetFlags, so the GAMEPLAY box shows what the mode uses
 #include "features/server-browser/computation/openingtab_compute.h"
 #include "features/server-browser/computation/refreshgate_compute.h"
-#include "features/global-header/zx_globalheader.h" // [rc4l] the bar above owns the arrows sometimes
+#include "features/server-browser/zx_menuchrome.h" // [rc4l] the bar above owns the arrows sometimes
 #include "features/menu-focus/zx_focusglow.h"       // [rc4l] the focus orb, shared with that bar
 #include "features/server-browser/computation/timeago_compute.h"
 #include "features/server-browser/computation/liverow_compute.h"
@@ -108,6 +108,14 @@
 #include "features/wad-download/zx_waddownload.h"
 #include "features/wad-download/zx_resolvejob.h"
 #include "features/wad-download/computation/jobstate_compute.h"
+
+// [rc4l] The bar above the menu, as features/global-header installs it; no bar until then.
+static int NoBarBottom( void ) { return 0; }
+static bool NoBarFocus( void ) { return false; }
+static const zx::MenuChrome g_NoChrome = { NoBarBottom, NoBarFocus };
+static const zx::MenuChrome *g_MenuChrome = &g_NoChrome;
+
+void zx::SetMenuChrome( const MenuChrome *chrome ) { g_MenuChrome = ( chrome != NULL ) ? chrome : &g_NoChrome; }
 
 //*****************************************************************************
 //	CONSTANTS
@@ -2194,7 +2202,7 @@ static void serverbrowser_VirtSize( int &vw, int &vh )
 {
 	const int sw = screen->GetWidth( );
 	const int sh = screen->GetHeight( );
-	const int barPx = zx::GlobalHeader_ScreenBottom( );
+	const int barPx = g_MenuChrome->screenBottom( );
 
 	// Never let the bar claim the whole window, however odd the window gets.
 	int avail = sh - barPx;
@@ -2253,7 +2261,7 @@ static int serverbrowser_OriginY( void )
 	// whole window. Centring in the whole window would tuck the top of the browser under the bar by
 	// half the bar's height, which is the overlap this replaces.
 	const int sh = screen->GetHeight( );
-	const int barV = ( sh > 0 ) ? ( zx::GlobalHeader_ScreenBottom( ) * vh ) / sh : 0;
+	const int barV = ( sh > 0 ) ? ( g_MenuChrome->screenBottom( ) * vh ) / sh : 0;
 
 	const int room = vh - barV;
 	const int slack = ( room > SB_LAYOUT_H ) ? ( room - SB_LAYOUT_H ) / 2 : 0;
@@ -17742,7 +17750,7 @@ public:
 		// [rc4l] The bar above has the arrows, so the browser has no cursor to show. Leaving the glow
 		// lit puts two markers on screen at once, and only one of them is where the next keypress
 		// actually goes: the browser's would be pointing at the tab the player just left.
-		if ( zx::GlobalHeader_HasFocus( ))
+		if ( g_MenuChrome->hasFocus( ))
 			return;
 
 		if ( g_Focus != owner )

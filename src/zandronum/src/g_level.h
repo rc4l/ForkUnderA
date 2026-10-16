@@ -54,7 +54,8 @@ class FScanner;
 #define GCC_YSEG
 #else
 #define MSVC_YSEG
-#define GCC_YSEG __attribute__((section(SECTION_YREG)))
+// [rc4l] used, or a linker that collects unreferenced data (wasm-ld's --gc-sections) drops entries only the section walk reaches.
+#define GCC_YSEG __attribute__((section(SECTION_YREG))) __attribute__((used))
 #endif
 
 struct FIntermissionDescriptor;

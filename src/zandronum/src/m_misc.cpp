@@ -732,6 +732,14 @@ void M_ScreenShot (const char *filename)
 	int pitch;
 	ESSType color_type;
 
+	// [rc4l] The name the console reports, without the folder unless longsavemessages asks for it.
+	const char *shown = autoname.GetChars() + (longsavemessages ? 0 : autoname.LastIndexOfAny(":/\\") + 1);
+	if (!writepcx && screen->ScreenshotLater(autoname))
+	{
+		if (!screenshot_quiet) Printf ("Capturing %s\n", shown);
+		return;
+	}
+
 	screen->GetScreenshotBuffer(buffer, pitch, color_type);
 	if (buffer != NULL)
 	{
@@ -763,9 +771,7 @@ void M_ScreenShot (const char *filename)
 
 		if (!screenshot_quiet)
 		{
-			int slash = -1;
-			if (!longsavemessages) slash = autoname.LastIndexOfAny(":/\\");
-			Printf ("Captured %s\n", autoname.GetChars()+slash+1);
+			Printf ("Captured %s\n", shown);
 		}
 	}
 	else

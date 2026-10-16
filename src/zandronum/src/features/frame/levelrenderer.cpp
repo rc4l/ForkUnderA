@@ -3,7 +3,7 @@
 
 #include "gl/system/gl_system.h"
 #include "features/frame/levelrenderer.h"
-#include "features/hwrender/hud2d.h"                          // [rc4l] RenderCameraTexture
+#include "features/hwrender/backendonly.h"
 #include "features/viewsetup/computation/viewsetup_compute.h"  // [rc4l] ComputeMaxViewPitch
 #include "features/levelmesh/wallcache.h"                      // [rc4l] AllocForLevel, FreeLevel
 #include "features/levelmesh/staticmesh.h"                     // [rc4l] MeshInitForLevel, MeshFreeLevel

@@ -29,6 +29,7 @@ typedef SOCKET zx_socket_t;
 #define zx_close_socket closesocket
 #else
 #include <netinet/in.h>
+#include <sys/time.h>   // [rc4l] struct timeval, which glibc reaches through netinet/in.h and musl does not
 #include <unistd.h>
 typedef int zx_socket_t;
 #define ZX_INVALID_SOCKET (-1)

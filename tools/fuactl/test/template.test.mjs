@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { judge, judgeCounter, scenarioOutcome, isMain, sideCommands, vantageCommands, boxWithin, runScenarioIfMain, scenarioOptions, scenarioRun, templateScenarioFiles, probeChoices, pairFrame, withSideCvars, launchRenderer, sideAdjust, standaloneOptions, GL_VS_VULKAN } from "../src/template.mjs";
+import { compareCounter, compareOverTime, compareQuit, compareSameFrame, compareSequence, compareSoak, judge, judgeCounter, judgeQuit, judgeSoak, scenarioOutcome, isMain, sideCommands, vantageCommands, boxWithin, runScenarioIfMain, scenarioOptions, scenarioRun, templateScenarioFiles, probeChoices, pairFrame, withSideCvars, launchRenderer, sideAdjust, standaloneOptions, webgpuOptions, launchBackendApi, WEBGPU_CEILING, GL_VS_VULKAN } from "../src/template.mjs";
 import { pathToFileURL } from "node:url";
 import fs from "node:fs";
 import os from "node:os";
@@ -194,6 +194,8 @@ test("a run-wide side change skips a scenario without that side instead of endin
   assert.equal(out.skipped, true);
   assert.equal(out.code, 0);
   assert.match(out.lines[0], /skipped: no side to run \(flat, clustered\)/);
+  const why = await scenarioRun(url, () => ({ skip: "it needs ray tracing" }))();
+  assert.deepEqual(why, { lines: ["skipped: it needs ray tracing"], code: 0, skipped: true });
 });
 
 test("--standalone runs a scenario's own standalone side, else its Vulkan side with standalone on, else nothing", () => {
@@ -201,4 +203,92 @@ test("--standalone runs a scenario's own standalone side, else its Vulkan side w
   assert.equal(standaloneOptions(own), own);
   assert.deepEqual(standaloneOptions({ name: "pair" }).sides, [{ name: "gl", gl: true }, { name: "vk", gl: false, cvars: { fua_dg_standalone: 1 } }]);
   assert.equal(standaloneOptions({ name: "ab", sides: [{ name: "flat" }, { name: "clustered" }] }), null);
+});
+
+test("the backend's API is read from dumprenderer", () => {
+  assert.equal(launchBackendApi("MCP_RENDERER\nrenderer=vulkan\nbackend_api=WebGPU\n"), "WebGPU");
+  assert.equal(launchBackendApi("renderer=opengl\n"), null);
+  assert.equal(launchBackendApi(undefined), null);
+});
+
+test("a WebGPU run launches the Vulkan side on each API without GL, every box at one ceiling", () => {
+  const opts = {
+    name: "s",
+    sides: [{ name: "gl", gl: true }, { name: "vk", gl: false, glDraws: true, cvars: { r_x: 1 } }],
+    boxes: { MAP01: { wall: { box: [0, 0, 8, 8], ceiling: 9, floor: 3, block: 8, vantage: "a" } } },
+  };
+  const w = webgpuOptions(opts);
+  assert.deepEqual(w.sides, [
+    { name: "vk", gl: false, cvars: { r_x: 1 }, noGl: true },
+    { name: "wgpu", gl: false, cvars: { r_x: 1 }, noGl: true, webgpu: true },
+  ]);
+  assert.deepEqual(w.boxes.MAP01.wall, { box: [0, 0, 8, 8], block: 8, vantage: "a", ceiling: WEBGPU_CEILING });
+  assert.equal(webgpuOptions({ name: "glonly", sides: [{ name: "gl", gl: true }, { name: "vk2", frame: "gl" }], boxes: {} }), null);
+  assert.equal(webgpuOptions({ name: "pair", boxes: {} }).sides[0].name, "vk");
+});
+
+test("a WebGPU run of a scenario judged against itself runs on WebGPU alone with its own limits", () => {
+  const w = webgpuOptions({ name: "particles", counter: { command: "c" }, sides: [{ name: "standalone", cvars: { s: 1 } }] }, compareCounter);
+  assert.deepEqual(w.sides, [{ name: "wgpu", cvars: { s: 1 }, noGl: true, webgpu: true }]);
+  assert.equal(w.boxes, undefined);
+  const boxes = { MAP01: { moving: { box: [0, 0, 1, 1], floor: 1 } } };
+  const t = webgpuOptions({ name: "scroll", boxes }, compareOverTime);
+  assert.deepEqual(t.sides, [{ name: "wgpu", gl: false, noGl: true, webgpu: true }]);
+  assert.equal(t.boxes, boxes);
+});
+
+// [rc4l] Queue #46: a quit crashed in the frame fence's static destructor, which printed to a console already freed.
+test("a quit passes only when the engine left cleanly", () => {
+  assert.deepEqual(judgeQuit("MAP01 vk", { gone: { code: 0 }, crashed: false }), { line: "PASS MAP01 vk: quit cleanly", failed: 0 });
+  assert.deepEqual(judgeQuit("MAP01 vk", { gone: { code: 3221225477 }, crashed: true }), { line: "FAIL MAP01 vk: the engine crashed on its way out", failed: 1 });
+  assert.deepEqual(judgeQuit("MAP01 vk", { gone: null, crashed: false }), { line: "FAIL MAP01 vk: the engine did not exit", failed: 1 });
+  assert.deepEqual(judgeQuit("MAP01 vk", { gone: { code: 1 }, crashed: false }), { line: "FAIL MAP01 vk: the engine exited with 1", failed: 1 });
+  assert.deepEqual(judgeQuit("MAP01 vk", { gone: { code: null, signal: "SIGKILL" }, crashed: false }), { line: "FAIL MAP01 vk: the engine exited with SIGKILL", failed: 1 });
+});
+
+// [rc4l] A new game leaked every player's userinfo cvars, about 1,400 allocations a level load, until a soak named them.
+test("a soak passes only when the engine judged counters and none kept growing", () => {
+  assert.deepEqual(judgeSoak("MAP01 vk", { pass: true, marks: 6, judged: 44, grew: [] }), { line: "PASS MAP01 vk: 44 counters held over 6 marks", failed: 0 });
+  assert.deepEqual(judgeSoak("MAP01 vk", { pass: false, marks: 2, judged: 0 }), { line: "FAIL MAP01 vk: judged nothing (2 marks)", failed: 1 });
+  const grew = [{ name: "mem/heap_bytes", text: "mem/heap_bytes grew 700 KB a cycle (3.4 MB over 5 cycles)" }, { name: "census/actors", text: "census/actors grew 8.00 a cycle (40.00 over 5 cycles)" }];
+  assert.deepEqual(judgeSoak("MAP01 vk", { pass: false, marks: 6, judged: 44, grew }),
+    { line: "FAIL MAP01 vk: kept growing: mem/heap_bytes grew 700 KB a cycle (3.4 MB over 5 cycles); census/actors grew 8.00 a cycle (40.00 over 5 cycles)", failed: 1 });
+});
+
+test("only the comparisons that judge a launch against itself are marked so", () => {
+  assert.ok(compareCounter.judgedAlone && compareOverTime.judgedAlone && compareSequence.judgedAlone && compareQuit.judgedAlone && compareSoak.judgedAlone);
+  assert.ok(!compareSameFrame.judgedAlone);
+});
+
+test("a WebGPU run of a quit runs on WebGPU alone", () => {
+  const w = webgpuOptions({ name: "quitclean", sides: [{ name: "vk", noGl: true, launchCvars: { v: 1 } }] }, compareQuit);
+  assert.deepEqual(w.sides, [{ name: "wgpu", noGl: true, webgpu: true, launchCvars: { v: 1 } }]);
+});
+
+test("a WebGPU run skips what WebGPU cannot do: GL beside it in one frame, or ray tracing", () => {
+  assert.match(webgpuOptions({ name: "sameframe", boxes: {} }, compareSameFrame).skip, /a WebGPU launch has no GL/);
+  assert.match(webgpuOptions({ name: "rt", boxes: {}, needs: ["raytracing"] }).skip, /needs ray tracing/);
+});
+
+// [rc4l] A capture sequence names its frames, and each box the two it is judged between.
+test("a box naming a pair of captures is judged between those two", () => {
+  const frames = { side: { clean: flat(32, 32, [10, 10, 10]), marked: flat(32, 32, [60, 60, 60]), resized: flat(32, 32, [10, 10, 10]) } };
+  const boxes = {
+    made: { box: [0, 0, 1, 1], pair: ["clean", "marked"], floor: 2 },
+    kept: { box: [0, 0, 1, 1], pair: ["marked", "resized"], ceiling: 1 },
+  };
+  const r = judge("MAP01", frames, boxes, [32, 32], ["clean", "marked"]);
+  assert.equal(r.failed, 1);
+  assert.match(r.lines[0], /^PASS MAP01 side\s+made/);
+  assert.match(r.lines[1], /^FAIL MAP01 side\s+kept/);
+  const missing = judge("MAP01", { side: { clean: frames.side.clean, marked: frames.side.marked } }, boxes, [32, 32], ["clean", "marked"]);
+  assert.equal(missing.failed, 1);
+  assert.equal(missing.lines[1], "FAIL MAP01 side kept: no capture marked or resized");
+});
+
+test("a WebGPU run of a capture sequence runs on WebGPU alone with its boxes as they are", () => {
+  const boxes = { MAP01: { kept: { box: [0, 0, 1, 1], pair: ["a", "b"], ceiling: 1 } } };
+  const w = webgpuOptions({ name: "sequence", boxes }, compareSequence);
+  assert.deepEqual(w.sides, [{ name: "wgpu", gl: false, noGl: true, webgpu: true }]);
+  assert.equal(w.boxes, boxes);
 });

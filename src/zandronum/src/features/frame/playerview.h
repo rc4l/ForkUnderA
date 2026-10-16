@@ -15,8 +15,6 @@ namespace zx { namespace frame {
 // [rc4l] Before any view of a frame, once whichever renderers draw it: a new camera's interpolation reset, the tic fraction and clock, the frame's serial, particles, last frame's camera textures, the fixed colormap, and the lens in r_viewLens.
 void BeginPlayerFrame(player_t *player);
 
-// [rc4l] Forget the last camera, so the next frame starts uninterpolated (a new frame buffer, a game restart).
-void ForgetCamera();
 
 // [rc4l] Before a viewpoint's walks: which view they belong to, the frame set up from the camera, its view area and features/viewsetup's view through `lens`; returns what EndViewpoint restores.
 bool BeginViewpoint(AActor *camera, const FViewLens &lens, bool mainview, bool toscreen);

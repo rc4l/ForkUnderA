@@ -21,6 +21,7 @@ using namespace zx::mcp;
 #include "gl/system/gl_system.h"    // GLEW + GL types (same surface gl_portal.cpp uses for queries)
 #include "gl/system/gl_interface.h" // the `gl` RenderContext (vendor string, caps)
 #include "gl/utility/gl_clock.h"    // per-frame primitive counters (rendered_lines/flats/sprites/...)
+#include "features/json/computation/json_compute.h"
 
 namespace
 {
@@ -243,14 +244,13 @@ std::string MCP_GLPerf_RendererInfo()
 	if ( gl.vendorstring == NULL )
 		return "{\"available\":false,\"reason\":\"gl not initialised\"}";
 
-	std::string vendor, renderer, version, glsl;
-	JsonEscape( gl.vendorstring ? gl.vendorstring : "", vendor );
 	const char *r = (const char *)glGetString( GL_RENDERER );
 	const char *v = (const char *)glGetString( GL_VERSION );
 	const char *g = (const char *)glGetString( GL_SHADING_LANGUAGE_VERSION );
-	JsonEscape( r ? r : "", renderer );
-	JsonEscape( v ? v : "", version );
-	JsonEscape( g ? g : "", glsl );
+	const std::string vendor = zx::json::ComputeJsonEscape( gl.vendorstring );
+	const std::string renderer = zx::json::ComputeJsonEscape( r ? r : "" );
+	const std::string version = zx::json::ComputeJsonEscape( v ? v : "" );
+	const std::string glsl = zx::json::ComputeJsonEscape( g ? g : "" );
 
 	std::string out = "{\"available\":true";
 	out += ",\"vendor\":\"" + vendor + "\"";

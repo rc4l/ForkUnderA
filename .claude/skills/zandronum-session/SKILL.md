@@ -89,7 +89,8 @@ Every command takes `--port P --token T`; `--port P` alone takes the token from 
 | frame rate under GL alone, the backend in the GL launch, and `--no-gl` | `fps --map M [--iwad W] [--file ...] [--res WxH] [--modes gl,embed,vulkan] [--engine PATH]`: one locked launch per mode in turn, warmed, three rounds, and a shot of what each window shows |
 | what a setting costs | `abperf "<setting>" "<setting>" ... [--rounds N] [--spot S \| --at --face]`: p50/p99 under each console setting inside one session, the others' cvars put back before each, judged against the first within each round; separate launches drift 30% |
 | what a frame costs at a view (Vulkan) | `costs --port P [--spot S \| --at --face]`: frame p50/p99, GPU and submit time (`fua_diligent_bench`), the world passes and phases, the walk's clipping, batches and sprites; the step-0 table of `docs/hwrender-performance-scope.md` is these columns |
-| GPU ms per pass | `gl-timers` (GL only; check `renderer-info` first; no timer queries reads as zeros) |
+| any timing, count or memory reading the engine keeps, on any platform | `stats [PREFIX]`, `hitches`, `record`, `flight`, `memsnap`/`memdiff`, `soak`, `perfgate` (`features/telemetry`; the `perf-telemetry` skill says which to reach for) |
+| GPU ms per pass | `stats gpu/` on the backend (duration queries); `gl-timers` for GL (check `renderer-info` first; no timer queries reads as zeros) |
 | where the main thread's time goes | `sample --port P [--seconds N] [--stacks]`: on Windows the engine samples itself; `--stacks` adds each function's inclusive share, which is how a frame waiting in `AcquireNextImage` or the walk's share shows |
 | pause / step the sim | `rpc sim.pause` · `rpc sim.step '{"tics":1}'` |
 | a fault that shows only mid-transition (a crouch, a lift) | `steps <tag> --hold +crouch [--count N] [--spot NAME]`: a GL/Vulkan pair and the eye height each tic |

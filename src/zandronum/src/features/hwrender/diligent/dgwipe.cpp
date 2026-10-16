@@ -55,10 +55,10 @@ const char *kWipePS =
 	"layout(location = 0) in vec2 vUV;\n"
 	"layout(location = 1) in vec2 vMaskUV;\n"
 	"layout(location = 2) in float vAlpha;\n"
-	"layout(binding = 1) uniform sampler2D uScreen;\n"
-	"layout(binding = 2) uniform sampler2D uMask;\n"
+	"layout(binding = 1) uniform texture2D uScreen; uniform sampler uScreen_sampler;\n"
+	"layout(binding = 2) uniform texture2D uMask; uniform sampler uMask_sampler;\n"
 	"layout(location = 0) out vec4 outColor;\n"
-	"void main() { outColor = vec4(texture(uScreen, vUV).rgb, vAlpha * texture(uMask, vMaskUV).a); }\n";
+	"void main() { outColor = vec4(texture(sampler2D(uScreen, uScreen_sampler), vUV).rgb, vAlpha * texture(sampler2D(uMask, uMask_sampler), vMaskUV).a); }\n";
 
 bool CreateCopyOfFrame(Diligent::IDeviceContext *ctx, const char *name, Diligent::RefCntAutoPtr<Diligent::ITexture> &out)
 {
@@ -69,7 +69,7 @@ bool CreateCopyOfFrame(Diligent::IDeviceContext *ctx, const char *name, Diligent
 	td.BindFlags = Diligent::BIND_SHADER_RESOURCE;
 	td.Usage = Diligent::USAGE_DEFAULT;
 	out.Release();
-	GetDevice()->CreateTexture(td, nullptr, &out);
+	CreateDeviceTexture(td, nullptr, &out);
 	if (!out) return false;
 	ctx->SetRenderTargets(0, nullptr, nullptr, Diligent::RESOURCE_STATE_TRANSITION_MODE_NONE);
 	Diligent::CopyTextureAttribs cta;
@@ -101,7 +101,7 @@ bool CreateMaskTexture(const char *name, const unsigned char *alpha, int w, int 
 	data.pSubResources = &sub;
 	data.NumSubresources = 1;
 	out.Release();
-	GetDevice()->CreateTexture(td, &data, &out);
+	CreateDeviceTexture(td, &data, &out);
 	return out.RawPtr() != nullptr;
 }
 
@@ -120,7 +120,7 @@ bool EnsurePipeline()
 	cbd.Usage = Diligent::USAGE_DYNAMIC;
 	cbd.BindFlags = Diligent::BIND_UNIFORM_BUFFER;
 	cbd.CPUAccessFlags = Diligent::CPU_ACCESS_WRITE;
-	dev->CreateBuffer(cbd, nullptr, &g_wipeCB);
+	CreateDeviceBuffer(cbd, nullptr, &g_wipeCB);
 	if (!g_wipeCB) return false;
 	Diligent::LayoutElement layout[] = {
 		Diligent::LayoutElement{0, 0, 2, Diligent::VT_FLOAT32, false},
@@ -166,7 +166,7 @@ bool EnsurePipeline()
 	pci.PSODesc.ResourceLayout.NumImmutableSamplers = 2;
 	pci.pVS = vs;
 	pci.pPS = ps;
-	dev->CreateGraphicsPipelineState(pci, &g_wipePSO);
+	CreatePipeline(pci, &g_wipePSO);
 	if (!g_wipePSO) return false;
 	if (auto *v = g_wipePSO->GetStaticVariableByName(Diligent::SHADER_TYPE_VERTEX, "Screen")) v->Set(g_wipeCB);
 	const unsigned char opaque = 255;

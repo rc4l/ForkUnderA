@@ -44,7 +44,8 @@ an A/B. `fua_horizons` prints the windows.
 - `gl/scene/gl_scene.cpp`: `UpdateHorizons()` runs once per outer walk in `CreateScene` and once per
   frame in the standalone branch of `DrawScene`.
 - `gl/scene/gl_walls.cpp`: `RegisterSkyQuad` is passed the skybox explicitly (see below).
-- `features/levelmesh/flatmesh.cpp`: `RegisterSkyQuad` leaves a horizon line's sky to this feature.
+- `features/visibility/viswalk.cpp` and `features/sidebyside/glchecks.cpp`: `OwnsSky`, so a horizon line's
+  sky is left to this feature rather than added to a view's sky list.
 - `features/levelmesh/wallcache.cpp`: `BakeSegFromMap` builds no parts on a horizon line.
 - `features/surfaces/surfacebuild.cpp`: `BuildDerivedWallSpan` declines a horizon line.
 - `features/hwrender/diligent/dgscene.cpp`: `DrawWorld` calls `DrawHorizonPlanes`;

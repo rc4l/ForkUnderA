@@ -124,8 +124,15 @@ so existing traffic is byte-for-byte unchanged. See also
 - `vizgate_compute` — `ShouldDraw` (the full offline / `sv_cheats` truth table) and
   `ResolveLineWidth`.
 
-`hitboxviz.{h,cpp}` is the engine glue: cvars, the `fua_hitbox` CCMD, per-scene collection,
-and the GL draw.
+`hitboxviz.{h,cpp}` is the engine glue every build has:
+- the cvars and the `fua_hitbox` CCMD;
+- the boxes and blasts;
+- the backend's collection (`CollectBackendFrame`, `BackendLines`);
+- the server's side.
+
+`hitboxviz_gl.cpp` is GL's half: per-scene collection and the GL draw. Only builds with GL
+compile it, so a build without GL (the server, the browser) still has the backend's overlay.
+`hitboxviz_internal.h` is what the two files share.
 
 ### Scene nesting
 

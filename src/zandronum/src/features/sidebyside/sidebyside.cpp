@@ -8,8 +8,8 @@
 #include "gl/renderer/gl_renderer.h"   // [rc4l] GLRenderer, which draws GL's 2D
 
 #if defined(_WIN32) && defined(FUA_DILIGENT)
-#include "features/hwrender/hud2d.h"         // [rc4l] Get2DTarget
-#include "features/hwrender/record2d.h"      // [rc4l] Record2DCanvas
+#include "features/draw2d/record.h"
+#include "features/draw2d/record2d.h"      // [rc4l] Record2DCanvas
 #include "features/hwrender/backendonly.h"   // [rc4l] FrameRouteNow
 
 // [rc4l] GL's frame buffer, each 2D draw also recorded for the backend's window; GL leaves out one meant for the backend's window alone, and draws and presents nothing while its window is covered and not wanted.
@@ -71,9 +71,9 @@ public:
 	}
 
 private:
-	bool GLDraws() const { return GLRenderer != NULL && mPresents && zx::hwrender::Get2DTarget() != zx::hwrender::k2DBackendOnly; }
+	bool GLDraws() const { return GLRenderer != NULL && mPresents && zx::draw2d::Get2DTarget() != zx::draw2d::k2DBackendOnly; }
 
-	zx::hwrender::Record2DCanvas m2D;
+	zx::draw2d::Record2DCanvas m2D;
 };
 
 IMPLEMENT_CLASS(SideBySideFrameBuffer)

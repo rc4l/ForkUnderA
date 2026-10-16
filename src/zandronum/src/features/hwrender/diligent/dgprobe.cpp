@@ -23,15 +23,14 @@
 #ifdef FUA_DILIGENT
 
 // [rc4l] Diligent's platform macro (PLATFORM_WIN32, _LINUX or _MACOS) comes from the build, as its own targets have it.
-#include "volk.h"   // [rc4l] the Vulkan entry points Diligent loaded, for the device's limits
-#include "EngineFactoryVk.h"
-#include "RenderDeviceVk.h"
-#include "RenderDevice.h"
-#include "DeviceContext.h"
 #include "RefCntAutoPtr.hpp"
 #include "DebugOutput.h"
-#include "features/hwrender/computation/materialslots_compute.h"
-#include "features/hwrender/diligent/dgplatform.h"   // [rc4l] Fua_PrepareVulkanLoader
+#include "m_argv.h"
+#include "features/hwrender/computation/backendchoice_compute.h"
+#include "features/hwrender/diligent/dgdevice.h"
+#include "features/hwrender/diligent/dgmemory.h"   // [rc4l] every texture and buffer counted by tag
+
+EXTERN_CVAR(Int, vid_backend)
 
 namespace zx { namespace hwrender {
 
@@ -59,18 +58,12 @@ unsigned MaterialSlotCapacity()
 	return ComputeMaterialSlotCapacity(l);
 }
 
-// [rc4l] Size the material array from the device's own descriptor limits, so a GPU smaller than a desktop one draws with a binding per material instead of failing pipeline creation.
-static void SizeMaterialSlots()
+const DeviceApi *ChosenDeviceApi()
 {
-	Diligent::RefCntAutoPtr<Diligent::IRenderDeviceVk> vk(g_device, Diligent::IID_RenderDeviceVk);
-	if (!vk || !g_device->GetDeviceInfo().Features.BindlessResources || vkGetPhysicalDeviceProperties == NULL) return;
-	VkPhysicalDeviceProperties props;
-	vkGetPhysicalDeviceProperties(vk->GetVkPhysicalDevice(), &props);
-	const VkPhysicalDeviceLimits &l = props.limits;
-	g_limits = { l.maxPerStageDescriptorSampledImages, l.maxPerStageDescriptorSamplers, l.maxPerStageResources,
-		l.maxDescriptorSetSampledImages, l.maxDescriptorSetSamplers };
-	Printf("Diligent: %u material slots (stage limits %u images, %u samplers)\n", MaterialSlotCapacity(),
-		g_limits.perStageSampledImages, g_limits.perStageSamplers);
+	const DeviceApi *vulkan = VulkanDeviceApi(), *webgpu = WebGPUDeviceApi();
+	const BackendApi api = ComputeBackendApi(vid_backend, Args->CheckParm("-vulkan") != 0, Args->CheckParm("-webgpu") != 0,
+		vulkan != nullptr, webgpu != nullptr);
+	return api == kBackendApiWebGPU ? webgpu : vulkan;
 }
 
 // [rc4l] Route Diligent's own diagnostics to the engine console. Without this a shader that fails to
@@ -129,14 +122,14 @@ bool ProbeVulkan(FString &report)
 			const auto &f = g_device->GetDeviceInfo( ).Features;
 			const auto &rt = g_device->GetAdapterInfo( ).RayTracing;
 			const auto &ad = g_device->GetAdapterInfo( );
-			report.Format( "Diligent Vulkan device already created\n"
+			report.Format( "Diligent %s device already created\n"
 				"  adapter: %s\n"
 				"  ray tracing: %s (max recursion %u, caps 0x%x)\n"
 				"  bindless resources: %s\n"
 				"  shader resource static arrays: %s\n"
 				"  shader resource runtime arrays: %s\n"
 				"  material slots: %u",
-				ad.Description,
+				ChosenDeviceApi()->name, ad.Description,
 				f.RayTracing ? "AVAILABLE" : "unavailable",
 				(unsigned)rt.MaxRecursionDepth, (unsigned)rt.CapFlags,
 				f.BindlessResources ? "yes" : "NO",
@@ -148,43 +141,11 @@ bool ProbeVulkan(FString &report)
 
 	Diligent::SetDebugMessageCallback(DiligentDebugMessage);
 
-	Fua_PrepareVulkanLoader();
-	auto *factory = Diligent::GetEngineFactoryVk();
-	if (factory == nullptr)
-	{
-		report = "GetEngineFactoryVk returned null (no Vulkan runtime?)";
-		return false;
-	}
-
-	Diligent::EngineVkCreateInfo ci;
-	// [rc4l] Ask for ray tracing as OPTIONAL, never as required.
-	//
-	// Inline ray queries are what a mirror actually wants: no visibility list, recursion for free,
-	// and cost proportional to the mirror's pixels rather than a full-screen pass per mirror. But an
-	// RT-capable GPU cannot be assumed, and requesting a feature the device lacks fails device
-	// creation outright -- which would turn "no reflections on old hardware" into "the backend does
-	// not start". OPTIONAL means the device comes up either way and the code asks afterwards.
-	ci.Features.RayTracing = Diligent::DEVICE_FEATURE_STATE_OPTIONAL;
-	// [rc4l] And the features a traced reflection needs to pick its own texture.
-	//
-	// A rasterised draw binds one material and draws its batch; a ray can land on any triangle in the
-	// level, so the material must be selectable from inside the shader -- which is an indexed array of
-	// samplers. Both of these default to DISABLED, and using a sampler array without them killed the
-	// process on launch with nothing in the log, which reads as "bindless does not work" rather than
-	// "bindless was never asked for".
-	ci.Features.BindlessResources = Diligent::DEVICE_FEATURE_STATE_OPTIONAL;
-	ci.Features.ShaderResourceStaticArrays = Diligent::DEVICE_FEATURE_STATE_OPTIONAL;
-	ci.Features.ShaderResourceRuntimeArrays = Diligent::DEVICE_FEATURE_STATE_OPTIONAL;
-	// [rc4l] Depth clamp too (ClampDepthLikeGL), optional so a device without it still starts and only clips at the near plane.
-	ci.Features.DepthClamp = Diligent::DEVICE_FEATURE_STATE_OPTIONAL;
-	factory->CreateDeviceAndContextsVk(ci, &g_device, &g_context);
-	if (!g_device)
-	{
-		report = "CreateDeviceAndContextsVk failed -- no usable Vulkan device.";
-		return false;
-	}
-
-	SizeMaterialSlots();
+	const DeviceApi *api = ChosenDeviceApi();
+	if (!api->createDevice(&g_device, &g_context, g_limits, report)) return false;
+	if (MaterialSlotCapacity() > 0)
+		Printf("Diligent: %u material slots (stage limits %u images, %u samplers)\n", MaterialSlotCapacity(),
+			g_limits.perStageSampledImages, g_limits.perStageSamplers);
 
 	// [rc4l] Say whether inline ray tracing is actually available, and at what capability. Building a
 	// reflection path on an assumption about the device is how a backend ends up failing on someone
@@ -202,21 +163,53 @@ bool ProbeVulkan(FString &report)
 
 	const auto &info = g_device->GetDeviceInfo();
 	const auto &adapter = g_device->GetAdapterInfo();
-	report.Format("Diligent Vulkan device created\n"
+	report.Format("Diligent %s device created\n"
 		"  adapter: %s (%s)\n"
 		"  API version: %d.%d\n"
 		"  device memory: %llu MB",
-		adapter.Description, AdapterTypeName(adapter.Type),
+		api->name, adapter.Description, AdapterTypeName(adapter.Type),
 		(int)info.APIVersion.Major, (int)info.APIVersion.Minor,
 		(unsigned long long)(adapter.Memory.LocalMemory / (1024 * 1024)));
 	return true;
+}
+
+const char *BackendApiName() { return ChosenDeviceApi()->name; }
+
+bool CanWaitForGPU() { return ChosenDeviceApi()->canWaitForGPU; }
+
+bool PagePaced() { return ChosenDeviceApi()->pagePaced; }
+
+void CreateDeviceTexture(const Diligent::TextureDesc &desc, const Diligent::TextureData *data, Diligent::ITexture **out)
+{
+	g_device->CreateTexture(desc, data, out);
+	if (ChosenDeviceApi()->keep != nullptr) ChosenDeviceApi()->keep(*out);
+	TrackDeviceTexture(*out, desc);
+}
+
+void CreateDeviceBuffer(const Diligent::BufferDesc &desc, const Diligent::BufferData *data, Diligent::IBuffer **out)
+{
+	g_device->CreateBuffer(desc, data, out);
+	if (ChosenDeviceApi()->keep != nullptr) ChosenDeviceApi()->keep(*out);
+	TrackDeviceBuffer(*out, desc);
+}
+
+void FreeReleasedObjects(Diligent::ISwapChain *swap)
+{
+	const DeviceApi *api = ChosenDeviceApi();
+	if (api->keep == nullptr) return;
+	if (swap != nullptr)
+	{
+		if (Diligent::ITextureView *rtv = swap->GetCurrentBackBufferRTV()) api->keep(rtv->GetTexture());
+		if (Diligent::ITextureView *dsv = swap->GetDepthBufferDSV()) api->keep(dsv->GetTexture());
+	}
+	api->freeReleased();
 }
 
 bool BackendDeviceStarts()
 {
 	FString report;
 	if (ProbeVulkan(report)) return true;
-	Printf(TEXTCOLOR_ORANGE "Vulkan could not start (%s); drawing with GL (Legacy) instead.\n", report.GetChars());
+	Printf(TEXTCOLOR_ORANGE "%s could not start (%s); drawing with GL (Legacy) instead.\n", ChosenDeviceApi()->name, report.GetChars());
 	return false;
 }
 

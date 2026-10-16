@@ -73,7 +73,7 @@ Two more landed with it:
 
 ## Stage 1: sever the derivation from GL (DONE)
 
-Move sprite derivation to a backend-neutral module the way `hud2d` and `features/surfaces` are, so it
+Move sprite derivation to a backend-neutral module the way the 2D capture (`features/draw2d`) and `features/surfaces` are, so it
 compiles and runs without a GL context.
 
 - Replace the four `GLRenderer` fields with an explicit view context passed in.

@@ -7,6 +7,17 @@
 
 namespace zx { namespace jobs {
 
+namespace {
+
+std::atomic<const JobObserver *> g_observer{ nullptr };
+
+} // namespace
+
+void SetJobObserver(const JobObserver *observer)
+{
+	g_observer.store(observer, std::memory_order_release);
+}
+
 JobPool::JobPool(int workers, int spinMicros)
 	: m_spinMicros(spinMicros), m_fn(NULL), m_user(NULL), m_count(0), m_next(0), m_done(0), m_open(false),
 	  m_generation(0), m_active(0), m_sleeping(0), m_stop(false)
@@ -60,6 +71,7 @@ void JobPool::Sleep(unsigned seen)
 void JobPool::WorkerMain(int lane)
 {
 	unsigned seen = m_generation.load();
+	bool announced = false;
 	for (;;)
 	{
 		if (!SpinFor(seen)) Sleep(seen);
@@ -68,6 +80,8 @@ void JobPool::WorkerMain(int lane)
 		seen = g;
 		// [rc4l] Joining before looking at the job lets the caller wait for every worker that may still touch it; one that joins after the job closed leaves at once.
 		m_active.fetch_add(1);
+		const JobObserver *o = g_observer.load(std::memory_order_acquire);
+		if (o != nullptr && !announced) { o->workerStarted(lane); announced = true; }
 		if (m_open.load() && m_generation.load() == g) RunItems(lane);
 		m_active.fetch_sub(1);
 	}
@@ -75,11 +89,16 @@ void JobPool::WorkerMain(int lane)
 
 void JobPool::RunItems(int lane)
 {
+	const JobObserver *o = g_observer.load(std::memory_order_acquire);
+	const int64_t start = o != nullptr ? o->now() : 0;
+	int ran = 0;
 	for (int i = m_next.fetch_add(1); i < m_count; i = m_next.fetch_add(1))
 	{
 		m_fn(m_user, i, lane);
 		m_done.fetch_add(1);
+		ran++;
 	}
+	if (o != nullptr && ran > 0) o->ranItems(lane, start, o->now());
 }
 
 void JobPool::ParallelFor(int count, IndexFn fn, void *user)
@@ -100,9 +119,12 @@ void JobPool::ParallelFor(int count, IndexFn fn, void *user)
 	if (m_sleeping.load() > 0) { std::lock_guard<std::mutex> lock(m_mutex); }
 	m_wake.notify_all();
 	RunItems(0);
+	const JobObserver *o = g_observer.load(std::memory_order_acquire);
+	const int64_t waitStart = o != nullptr ? o->now() : 0;
 	while (m_done.load() < count) std::this_thread::yield();
 	m_open.store(false);
 	while (m_active.load() != 0) std::this_thread::yield();
+	if (o != nullptr) o->waited(waitStart, o->now());
 }
 
 int ComputeAutoWorkers(int hardwareThreads, int cap)

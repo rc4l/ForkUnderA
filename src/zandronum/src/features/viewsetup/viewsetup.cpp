@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 rc4l
 
+#include "tables.h"
 #include "features/viewsetup/viewsetup.h"
 #include "features/viewsetup/computation/viewsetup_compute.h"
 
@@ -18,7 +19,7 @@
 #include "r_defs.h"
 #include "p_local.h"     // [rc4l] R_PointInSubsector
 #include "r_state.h"
-#include "features/hwrender/spriteview.h"
+#include "features/viewsetup/spriteview.h"
 #include "features/materials/materials.h"   // [rc4l] the particle textures
 
 // [rc4l] GL's level settings and view state until they move out of gl/ (P5): the pixel stretch, the view's area, and the light class.
@@ -28,6 +29,8 @@
 #include "r_data/colormaps.h"            // [rc4l] INVERSECOLORMAP
 
 EXTERN_CVAR(Bool, r_deathcamera)
+EXTERN_CVAR(Bool, r_lights)
+EXTERN_CVAR(Bool, r_light_sprites)
 EXTERN_CVAR(Bool, r_enhanced_nightvision)
 
 namespace zx { namespace viewsetup {
@@ -129,13 +132,44 @@ bool NoPortalMirrors() { return false; }
 int DynamicLightCount() { return g_view.dynamicLights ? 1 : 0; }
 void ViewAngles(float &yaw, float &pitch) { yaw = g_view.yaw; pitch = g_view.pitch; }
 
-const zx::hwrender::SpriteViewProvider g_provider =
+const zx::viewsetup::SpriteViewProvider g_provider =
 {
 	ViewActor, ViewVector, NextSpriteIndex, NoPortalRejects, NoPortalMirrors, DynamicLightCount, ViewAngles
 };
 
 } // namespace
 
-void InstallSpriteView() { zx::hwrender::SetSpriteViewProvider(&g_provider); }
+void InstallSpriteView() { zx::viewsetup::SetSpriteViewProvider(&g_provider); }
+
+void ViewCameraFromEngine(zx::hwrender::BackendCamera &c)
+{
+	c.x = FIXED2FLOAT(viewx); c.y = FIXED2FLOAT(viewy); c.z = FIXED2FLOAT(viewz);
+	c.yaw = (float)(viewangle >> ANGLETOFINESHIFT) * 2.0f * 3.14159265f / 8192.0f;
+	double radPitch = bam2rad((angle_t)viewpitch);
+	if (radPitch > PI) radPitch -= 2 * PI;
+	// Not clamp(): inside this namespace that resolves to the Fixed-point overload.
+	if (radPitch < -PI / 2) radPitch = -PI / 2;
+	if (radPitch >  PI / 2) radPitch =  PI / 2;
+	c.pitch = (float)radPitch;
+	// [rc4l] GL draws the world 1.2 times taller than square at every pitch, and the camera must too, or every wall above or below the eye sits off GL's by a fifth.
+	c.pixelStretch = glset.pixelstretch;
+}
+
+// [rc4l] The camera the last frame was drawn from.
+static AActor *g_lastCamera = NULL;
+
+bool CameraChanged(AActor *camera)
+{
+	if (camera == g_lastCamera) return false;
+	g_lastCamera = camera;
+	return true;
+}
+
+void ForgetCamera() { g_lastCamera = NULL; }
+
+bool SpritesTakeDynamicLight()
+{
+	return r_lights && zx::viewsetup::SpriteView().DynamicLightCount() && !gl_fixedcolormap && r_light_sprites;
+}
 
 }} // namespace zx::viewsetup

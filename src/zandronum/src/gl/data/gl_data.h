@@ -10,7 +10,7 @@
 #include "c_cvars.h"
 
 void gl_RecalcVertexHeights(vertex_t * v);
-#include "features/sprites/spriteframe.h"   // [rc4l] gl_GetSpriteFrame
+#include "features/materials/spriteframe.h"   // [rc4l] gl_GetSpriteFrame
 
 class AStackPoint;
 #include "features/stackportals/stackportals.h"   // [rc4l] FPortal, portals, gl_InitPortals and gl_BuildPortalCoverage

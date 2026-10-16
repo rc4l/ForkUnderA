@@ -68,8 +68,8 @@
 #include "w_wad.h"
 #include "features/addon-catalogue/zx_catalogue.h" // [rc4l] validated at startup, not on first use
 #include "features/crashreport/zx_crashreport.h"
-#include "features/hwrender/diligent/dglive.h"   // [rc4l] one call, no Diligent headers -- see dglive.h
-#include "features/hwrender/hud2d.h"             // [rc4l] per-frame 2D capture
+#include "features/draw2d/record.h"
+#include "features/hwrender/backendonly.h"
 #include "features/continue/zx_continue.h"
 #include "features/identity/zx_identity.h"
 #include "features/updater/zx_updater.h" // [rc4l] background auto-update check
@@ -102,6 +102,8 @@
 #include "r_utility.h"
 #include "r_sky.h"
 #include "d_main.h"
+#include "features/mainloop/mainloop.h"
+#include "features/mainloop/computation/mainloop_compute.h"
 #include "features/wadreload/zx_wadreload.h" // [rc4l] ResetStartupStateForRestart()
 #include "d_dehacked.h"
 #include "cmdlib.h"
@@ -893,6 +895,11 @@ CVAR (Flag, compat_noobituaries, zacompatflags, ZACOMPATF_NO_OBITUARIES);
 //
 //==========================================================================
 
+// [rc4l] A running wipe: when its last tic was drawn, the 2D state it started with, and whether one is running.
+static unsigned int s_wipeStart;
+static bool s_wipeHw2d;
+static bool s_wiping;
+
 void D_Display ()
 {
 	bool wipe;
@@ -907,8 +914,8 @@ void D_Display ()
 
 	// [rc4l] features/hwrender: last frame's 2D is dead -- the HUD moves, text scrolls, menus open.
 	// Dropped here rather than after the render so that everything drawn this frame, including the
-	// console and menus which are drawn late, is captured. See hud2d.h.
-	zx::hwrender::Clear2D();
+	// console and menus which are drawn late, is captured. See features/draw2d/record.h.
+	zx::draw2d::Clear2D();
 	zx::hwrender::FrameTimingBegin();   // [rc4l] vid_fps per renderer, split at LiveFrame
 
 	cycle_t cycles;
@@ -1240,38 +1247,62 @@ drawfullconsole:
 	else
 	{
 		// wipe update
-		unsigned int wipestart, nowtime, diff;
-		bool done;
-
 		GSnd->SetSfxPaused(true, 1);
 		I_FreezeTime(true);
 		screen->WipeEndScreen ();
 
-		wipestart = I_MSTime();
+		s_wipeStart = I_MSTime();
+		s_wipeHw2d = hw2d;
+		s_wiping = true;
 		NetUpdate();		// send out any new accumulation
 
-		do
+		// [rc4l] Run to its end here, unless the loop is stepped a frame at a time, which advances it through D_WipeStep instead.
+		if (!zx::mainloop::Stepped())
 		{
 			do
-			{
 				I_WaitVBL(2);
-				nowtime = I_MSTime();
-				diff = (nowtime - wipestart) * 40 / 1000;	// Using 35 here feels too slow.
-			} while (diff < 1);
-			wipestart = nowtime;
-			done = screen->WipeDo (1);
-			C_DrawConsole (hw2d);	// console and
-			M_Drawer ();			// menu are drawn even on top of wipes
-			screen->Update ();		// page flip or blit buffer
-			NetUpdate ();			// [RH] not sure this is needed anymore
-		} while (!done);
-		screen->WipeCleanup();
-		I_FreezeTime(false);
-		GSnd->SetSfxPaused(false, 1);
+			while (!D_WipeStep ());
+		}
 	}
 
 	cycles.Unclock();
 	FrameCycles = cycles;
+}
+
+//==========================================================================
+//
+// D_WipeStep
+//
+// [rc4l] One tic of a running wipe once one is due, with the console and menu drawn over it; true once it has ended.
+//==========================================================================
+
+bool D_WipeStep ()
+{
+	const unsigned int nowtime = I_MSTime();
+	// Using 35 here feels too slow.
+	if (zx::mainloop::ComputeWipeTicsDue(s_wipeStart, nowtime) < 1)
+		return false;
+	s_wipeStart = nowtime;
+	// [rc4l] Each step is a frame of its own, so its 2D starts afresh as D_Display's does; the console and menu piled up under one generation and were drawn past the backend's vertices.
+	zx::draw2d::Clear2D();
+	const bool done = screen->WipeDo (1);
+	C_DrawConsole (s_wipeHw2d);	// console and
+	M_Drawer ();			// menu are drawn even on top of wipes
+	screen->Update ();		// page flip or blit buffer
+	NetUpdate ();			// [RH] not sure this is needed anymore
+	if (done)
+	{
+		screen->WipeCleanup();
+		I_FreezeTime(false);
+		GSnd->SetSfxPaused(false, 1);
+		s_wiping = false;
+	}
+	return done;
+}
+
+bool D_WipeRunning ()
+{
+	return s_wiping;
 }
 
 //==========================================================================
@@ -1337,9 +1368,12 @@ void D_ErrorCleanup ()
 //
 //==========================================================================
 
+// [rc4l] The last tic I_StartFrame ran for, reset each time the loop is entered.
+static int s_lastTic;
+
 void D_DoomLoop ()
 {
-	int lasttic = 0;
+	s_lastTic = 0;
 
 	// Clamp the timer to TICRATE until the playloop has been entered.
 	r_NoInterpolate = true;
@@ -1351,7 +1385,23 @@ void D_DoomLoop ()
 	// at the bottom of the log alongside the sound/VoIP init lines, not scrolled off mid-startup.
 	ZX_CrashReportLogStatus ();
 
+	// [rc4l] A browser's driver takes the frames from here, and D_DoomMain unwinds back to it.
+	if (zx::mainloop::Stepped ())
+		zx::mainloop::StartStepped (D_RunFrame);
+
 	for (;;)
+		D_RunFrame ();
+}
+
+//==========================================================================
+//
+// D_RunFrame
+//
+// [rc4l] One pass of the main loop, which D_DoomLoop repeats and a browser calls once an animation frame.
+//==========================================================================
+
+void D_RunFrame ()
+{
 	{
 		try
 		{
@@ -1361,6 +1411,15 @@ void D_DoomLoop ()
 			{
 				s_restartRequested = false;
 				throw CRestartException();
+			}
+
+			zx::mainloop::FinishPendingQuit ();
+
+			// [rc4l] A wipe a stepped loop is running takes the whole frame, as D_Display's own loop does on the desktop.
+			if (D_WipeRunning ())
+			{
+				D_WipeStep ();
+				return;
 			}
 
 			zx::updater::Tick(); // [rc4l] fires the deferred update check + drains its verdict log (main thread)
@@ -1383,9 +1442,9 @@ void D_DoomLoop ()
 					CLIENT_GetPackets( );
 
 				// frame syncronous IO operations
-				if (gametic > lasttic)
+				if (gametic > s_lastTic)
 				{
-					lasttic = gametic;
+					s_lastTic = gametic;
 					I_StartFrame ();
 				}
 
@@ -1432,9 +1491,9 @@ void D_DoomLoop ()
 			default:
 
 				// frame syncronous IO operations
-				if (gametic > lasttic)
+				if (gametic > s_lastTic)
 				{
-					lasttic = gametic;
+					s_lastTic = gametic;
 					I_StartFrame ();
 				}
 				
@@ -1486,17 +1545,29 @@ void D_DoomLoop ()
 		}
 		catch (CRecoverableError &error)
 		{
-			if (error.GetMessage ())
-			{
-				// [BC] Give this message a little more presence in server mode.
-				if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-					Printf( "*** ERROR: %s\n", error.GetMessage( ));
-				else
-					Printf (PRINT_BOLD, "\n%s\n", error.GetMessage());
-			}
-			D_ErrorCleanup ();
+			D_RecoverFromError (error);
 		}
 	}
+}
+
+//==========================================================================
+//
+// D_RecoverFromError
+//
+// [rc4l] The loop's answer to a recoverable error, shared with commands the page runs between frames.
+//==========================================================================
+
+void D_RecoverFromError (CRecoverableError &error)
+{
+	if (error.GetMessage ())
+	{
+		// [BC] Give this message a little more presence in server mode.
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			Printf( "*** ERROR: %s\n", error.GetMessage( ));
+		else
+			Printf (PRINT_BOLD, "\n%s\n", error.GetMessage());
+	}
+	D_ErrorCleanup ();
 }
 
 //==========================================================================
@@ -3625,6 +3696,12 @@ void D_DoomMain (void)
 		else
 		{
 			G_InitNew( startmap, false );
+		}
+		// [rc4l] A restart makes a startup screen as a first boot does, but only a first boot's is deleted above.
+		if ( restart )
+		{
+			delete StartScreen;
+			StartScreen = NULL;
 		}
 
 		// Client mode starts off in the full console!

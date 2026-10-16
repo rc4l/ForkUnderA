@@ -16,6 +16,12 @@ option(ZANDROX_TESTS_SANITIZE "Build tests with AddressSanitizer + UBSan" OFF)
 option(ZANDROX_TESTS_COVERAGE "Build tests with llvm-cov instrumentation" OFF)
 
 # [rc4l] Pull GoogleTest/GoogleMock via FetchContent, the canonical modern wiring.
+# [rc4l] Under Emscripten (web-port-design 13a) the tests run in Node, the browser build's runtime, with WebAssembly's own exceptions and threads on every object as the engine has them.
+if(EMSCRIPTEN)
+  add_compile_options(-fwasm-exceptions -pthread)
+  add_link_options(-fwasm-exceptions -pthread)
+endif()
+
 include(FetchContent)
 FetchContent_Declare(
   googletest
@@ -123,6 +129,12 @@ if(ZANDROX_TESTS_COVERAGE)
     -fprofile-instr-generate -fcoverage-mapping)
 endif()
 
+# [rc4l] The heap grows as the desktop's does, main runs on a worker so the job pool's threads can start while it waits, and the exit status is the tests' verdict; no test reads the disk, so the module keeps its in-memory file system.
+if(EMSCRIPTEN)
+  target_link_options(zandrox_tests PRIVATE "SHELL:-s ALLOW_MEMORY_GROWTH=1" "SHELL:-s EXIT_RUNTIME=1" "SHELL:-s STACK_SIZE=4MB"
+    "SHELL:-s PROXY_TO_PTHREAD=1" "SHELL:-s PTHREAD_POOL_SIZE=8")
+endif()
+
 gtest_discover_tests(zandrox_tests)
 
 # [rc4l] macOS-only Objective-C++ test target for the Cocoa updater networking seam. Kept SEPARATE
@@ -164,7 +176,8 @@ endif()
 # The shim header cannot colocate -- it would collide with the engine's real i_system.h in that
 # directory -- so it lives under tests/shims/. Portable C/C++: runs on Linux and macOS.
 file(GLOB_RECURSE NET_TEST_SOURCES CONFIGURE_DEPENDS "${ENGINE_SRC}/*_nettest.cpp")
-if(NET_TEST_SOURCES)
+# [rc4l] Not under Emscripten, whose sockets are no UDP to test.
+if(NET_TEST_SOURCES AND NOT EMSCRIPTEN)
   add_executable(zandrox_tests_net
     ${NET_TEST_SOURCES}
     "${ENGINE_SRC}/networkshared.cpp"

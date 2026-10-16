@@ -41,6 +41,8 @@ looking at a picture costs a day the first time it is wrong.
 - `computation/planegeom_compute` — the same questions for a floor or a ceiling: height at a point,
   sloped or not, which side it is seen from, and the normal that follows the viewed side rather than
   the plane.
+- `planeuv.h`/`.cpp` — `PlaneUVFor`, where a sector plane's texture sits on it, as the mesh's flats, the
+  walls' 3D faces and the horizons all lay it; moved from `features/levelmesh/flatmesh.cpp`.
 - `features/sidebyside/surfaceverify.cpp` — `fua_surface_verify`, `fua_surface_mapbake`, `fua_surface_bakediff`
   and `fua_surface_mapcover`, which compare all of it against the walls GL's wall cache recorded on a real
   level. It reads GL's types, so it lives with the other checks against GL.

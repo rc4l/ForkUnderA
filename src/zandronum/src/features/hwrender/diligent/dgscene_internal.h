@@ -12,7 +12,7 @@
 #include "c_console.h"
 
 
-#include "EngineFactoryVk.h"
+#include "EngineFactory.h"
 #include "RenderDevice.h"
 #include "DeviceContext.h"
 #include "SwapChain.h"
@@ -60,7 +60,9 @@
 #include "features/hwrender/computation/mirrorsheen_compute.h"   // [rc4l] GL's sheen over a line mirror
 #include "features/hwrender/computation/desaturate_compute.h"   // [rc4l] a sector's desaturation, as main.fp applies it
 #include "features/levelmesh/computation/wallbatch_compute.h"   // [rc4l] ComputeFanTriangleVertex, a mirror quad split as GL fans it
-#include "features/hwrender/hud2d.h"
+#include "features/hwrender/backendonly.h"
+#include "features/viewsetup/viewsetup.h"
+#include "features/visibility/skyfog.h"
 #include "features/horizon/computation/horizon_compute.h"   // [rc4l] ComputeQuadMayBeVisible for mirrors out of sight, ComputeEyeFromViewProjection for the horizon sky
 #include "features/hwrender/diligent/dglight_glsl.h"   // [rc4l] the sector light, shared with the horizon pass
 #include "v_video.h"
@@ -84,6 +86,7 @@
 #include "i_system.h"
 #include <math.h>
 #include <algorithm>
+#include <functional>
 #include <stdio.h>
 #include "m_png.h"
 #ifdef ZX_ENABLE_REPLAY
@@ -340,6 +343,12 @@ bool MaterialIsMasked(const void *materialPtr);
 Diligent::IDeviceContext *GetContext();
 // [rc4l] A texture read back top-down as RGB the caller deletes, its channel order taken from its format; NULL with a reason in `report`.
 unsigned char *ReadTextureRGB(Diligent::ITexture *tex, int &w, int &h, int &format, bool &bgra, FString &report);
+// [rc4l] The same without waiting, for a device that cannot: tex copied now, and done called with its RGB on a later frame's PollLaterReadbacks; false when the copy could not be made.
+bool ReadTextureLater(Diligent::ITexture *tex, std::function<void(const unsigned char *rgb, int w, int h)> done);
+// [rc4l] Once a frame: hand each later read-back the GPU has finished to its caller.
+void PollLaterReadbacks();
+// [rc4l] Before a frame is drawn: a swapchain whose surface does not resize it (a browser's canvas) takes the surface's size.
+void FollowBackendSurface();
 // [rc4l] The screen wipe (dgwipe.cpp): the new screen taken from the frame just drawn, whether one is under way, and its mix drawn into the bound frame target.
 void WipeTakeEnd();
 bool WipeActive();
@@ -349,9 +358,8 @@ bool DiligentShowWindow(FString &report);
 void *GetBackendWindow();
 void Fua_SetBackendWindowSize(int w, int h);
 
-// [rc4l] The texture cache (dgtexture.cpp) and the sky's fog (dgsky.cpp).
+// [rc4l] The texture cache (dgtexture.cpp).
 void ReleaseMaterials();
-void GetSkyFog(float &r, float &g, float &b, float &density);
 
 // [rc4l] The world pass and frame composition (dgscene.cpp).
 bool CreateColorTarget(int w, int h, const char *name, Diligent::RefCntAutoPtr<Diligent::ITexture> &color);
@@ -373,6 +381,8 @@ void CommitInLoop(Diligent::IDeviceContext *ctx, zx::hwrender::LoopCommits &loop
 void DirtyMaterialSlots();
 bool EnsureScenePipeline(FString &err);
 void FlushTextureCache();
+// [rc4l] Drop one material's per-material bindings and the batches' copies, so its next draw binds what it shows now.
+void ForgetMaterialSRBs(const void *material);
 void MaterialSRBCounts(int &cached, int &batch);
 int MaterialSlotCount();
 int MaterialSlotFor(const void *material, int translation);
@@ -415,7 +425,7 @@ void RefreshMovedGeometry(Diligent::IDeviceContext *ctx);
 void ReserveDynamicSlots();
 bool SceneUpload(FString &report);
 
-// [rc4l] Mirrors, reflective planes and stacked views (dgviews.cpp).
+// [rc4l] Mirrors (dgviews.cpp), and reflective planes and stacked views (dgviewtargets.cpp).
 void CollectMirrors();
 void DrawPlaneMirrorSurfaces(Diligent::IDeviceContext *ctx);
 void DrawStackSurfaces(Diligent::IDeviceContext *ctx);
@@ -467,7 +477,7 @@ bool CreateViewTextures(int w, int h, const char *name,
 bool CreatePictureBinding(Diligent::IPipelineState *pso, const char *var, Diligent::ITexture *tex,
 	Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding> &srb);
 
-// [rc4l] The sky (dgsky.cpp).
+// [rc4l] The sky (dgsky.cpp, dgskyportal.cpp, dgskylooks.cpp).
 void EnsureSky();
 // [rc4l] The marker a scene shader takes GLDEFS' hardware shaders at, and the block that replaces it (dgpipelines.cpp), each shader checked to compile alone and all of them dropped if together they break the scene shaders.
 #define kUserShaderMarker "//FUA_USER_SHADERS"

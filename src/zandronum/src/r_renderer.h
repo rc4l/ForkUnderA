@@ -42,6 +42,9 @@ struct FRenderer
 	// renders view to a savegame picture
 	virtual void WriteSavePic (player_t *player, FILE *file, int width, int height) = 0;
 
+	// [rc4l] The save WriteSavePic wrote its picture into is complete at path, for a renderer that puts the real picture in later.
+	virtual void SaveWritten (const char *path) {}
+
 	// draws player sprites with hardware acceleration (only useful for software rendering)
 	virtual void DrawRemainingPlayerSprites() {}
 

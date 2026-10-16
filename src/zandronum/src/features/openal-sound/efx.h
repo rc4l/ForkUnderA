@@ -1,6 +1,10 @@
 #ifndef AL_EFX_H
 #define AL_EFX_H
 
+/* [rc4l] Emscripten's al.h names no calling convention for its entry points. */
+#ifndef AL_APIENTRY
+#define AL_APIENTRY
+#endif
 
 #ifdef __cplusplus
 extern "C" {

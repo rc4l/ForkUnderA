@@ -58,7 +58,7 @@
 
 // [ZandroX] OpenAL handles capture and playback; Opus is the codec and RNNoise the
 // noise suppressor.
-#if !defined(NO_SOUND) && !defined(NO_OPENAL)
+#if !defined(NO_VOIP)
 #include "opus.h"
 #include "rnnoise.h"
 #include <al.h>
@@ -152,7 +152,8 @@ public:
 
 // [AK] Some of these functions only exist as stubs if compiling without sound.
 // [ZandroX] Full stubs when there is no VoIP backend at all, i.e. no sound or no OpenAL.
-#if defined(NO_SOUND) || defined(NO_OPENAL)
+// [rc4l] Or voice chat left out of the build on its own (ZX_VOIP off); CMake defines NO_VOIP for all three.
+#if defined(NO_VOIP)
 
 	void Tick( void ) { }
 	void StartRecording( void ) { }

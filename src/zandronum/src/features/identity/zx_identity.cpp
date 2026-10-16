@@ -11,9 +11,8 @@
 
 #include "features/identity/computation/identity_compute.h"
 
-#include <openssl/evp.h>
-#include <openssl/rand.h>
-#include <openssl/sha.h>
+#include "features/identity/zx_identitycrypto.h"
+#include "features/wad-download/computation/digest_compute.h"   // [rc4l] SHA-256 without a library
 
 #include <stdio.h>
 
@@ -107,30 +106,25 @@ void DeriveSeed( const zx::Bytes &master, const zx::Bytes &serverPublicKey, zx::
 {
 	static const char kTag[] = "FUA-IDENTITY-v1-account";
 
-	SHA256_CTX ctx;
-	SHA256_Init( &ctx );
-	SHA256_Update( &ctx, kTag, sizeof( kTag ) - 1 );
-	SHA256_Update( &ctx, &master[0], master.size( ));
+	zx::Sha256State ctx;
+	zx::ComputeSha256Init( ctx );
+	zx::ComputeSha256Update( ctx, kTag, sizeof( kTag ) - 1 );
+	zx::ComputeSha256Update( ctx, &master[0], master.size( ));
 	if ( !serverPublicKey.empty( ))
-		SHA256_Update( &ctx, &serverPublicKey[0], serverPublicKey.size( ));
+		zx::ComputeSha256Update( ctx, &serverPublicKey[0], serverPublicKey.size( ));
 
 	out.resize( 32 );
-	SHA256_Final( &out[0], &ctx );
+	zx::ComputeSha256Final( ctx, &out[0] );
 }
 
 // The public half of an Ed25519 key, given its 32-byte seed.
 bool PublicFromSeed( const zx::Bytes &seed, zx::Bytes &out )
 {
-	EVP_PKEY *pkey = EVP_PKEY_new_raw_private_key( EVP_PKEY_ED25519, NULL, &seed[0], seed.size( ));
-	if ( pkey == NULL )
+	if ( seed.size( ) != 32 )
 		return false;
 
-	size_t len = 32;
-	out.resize( len );
-	const bool bOk = ( EVP_PKEY_get_raw_public_key( pkey, &out[0], &len ) == 1 ) && ( len == 32 );
-
-	EVP_PKEY_free( pkey );
-	return bOk;
+	out.resize( 32 );
+	return zx::crypto::Ed25519PublicFromSeed( &seed[0], &out[0] );
 }
 
 // [rc4l] The key file is text so a player can back it up by copying the line out of it.
@@ -230,18 +224,18 @@ std::string Identity_ServerRegistryId( int port )
 	char szPort[16];
 	snprintf( szPort, sizeof( szPort ), "%d", port );
 
-	SHA256_CTX ctx;
-	SHA256_Init( &ctx );
-	SHA256_Update( &ctx, kTag, sizeof( kTag ) - 1 );
+	Sha256State ctx;
+	ComputeSha256Init( ctx );
+	ComputeSha256Update( ctx, kTag, sizeof( kTag ) - 1 );
 
 	// [rc4l] The SECRET, not the public key, which every player who joins already holds and could
 	// therefore recompute and claim.
-	SHA256_Update( &ctx, &g_ServerKey.privateKey[0], g_ServerKey.privateKey.size( ));
-	SHA256_Update( &ctx, szPort, strlen( szPort ));
+	ComputeSha256Update( ctx, &g_ServerKey.privateKey[0], g_ServerKey.privateKey.size( ));
+	ComputeSha256Update( ctx, szPort, strlen( szPort ));
 
 	Bytes digest;
 	digest.resize( 32 );
-	SHA256_Final( &digest[0], &ctx );
+	ComputeSha256Final( ctx, &digest[0] );
 
 	return ToHex( digest );
 }
@@ -249,7 +243,7 @@ std::string Identity_ServerRegistryId( int port )
 bool Identity_RandomBytes( size_t count, Bytes &out )
 {
 	out.resize( count );
-	return ( RAND_bytes( &out[0], static_cast<int>( count )) == 1 );
+	return ( count == 0 ) || crypto::RandomBytes( &out[0], count );
 }
 
 bool Identity_InitClient( const char *configRoot, int instance )
@@ -377,7 +371,10 @@ std::string Identity_AccountName( const Bytes &publicKey )
 		return std::string( );
 
 	Bytes digest( 32 );
-	SHA256( &publicKey[0], publicKey.size( ), &digest[0] );
+	Sha256State ctx;
+	ComputeSha256Init( ctx );
+	ComputeSha256Update( ctx, &publicKey[0], publicKey.size( ));
+	ComputeSha256Final( ctx, &digest[0] );
 
 	return AccountNameFromDigest( digest );
 }
@@ -387,30 +384,8 @@ bool Identity_Sign( const Bytes &privateKey, const std::string &message, Bytes &
 	if ( privateKey.size( ) != 32 )
 		return false;
 
-	EVP_PKEY *pkey = EVP_PKEY_new_raw_private_key( EVP_PKEY_ED25519, NULL, &privateKey[0], 32 );
-	if ( pkey == NULL )
-		return false;
-
-	EVP_MD_CTX *ctx = EVP_MD_CTX_new( );
-	bool bOk = false;
-
-	if ( ctx != NULL )
-	{
-		size_t len = 64;
-		signatureOut.resize( len );
-
-		bOk = ( EVP_DigestSignInit( ctx, NULL, NULL, NULL, pkey ) == 1 )
-			&& ( EVP_DigestSign( ctx, &signatureOut[0], &len,
-				reinterpret_cast<const unsigned char *>( message.data( )), message.size( )) == 1 );
-
-		if ( bOk )
-			signatureOut.resize( len );
-
-		EVP_MD_CTX_free( ctx );
-	}
-
-	EVP_PKEY_free( pkey );
-	return bOk;
+	signatureOut.resize( 64 );
+	return crypto::Ed25519Sign( &privateKey[0], reinterpret_cast<const unsigned char *>( message.data( )), message.size( ), &signatureOut[0] );
 }
 
 bool Identity_Verify( const Bytes &publicKey, const std::string &message, const Bytes &signature )
@@ -418,24 +393,8 @@ bool Identity_Verify( const Bytes &publicKey, const std::string &message, const 
 	if (( publicKey.size( ) != 32 ) || signature.empty( ))
 		return false;
 
-	EVP_PKEY *pkey = EVP_PKEY_new_raw_public_key( EVP_PKEY_ED25519, NULL, &publicKey[0], 32 );
-	if ( pkey == NULL )
-		return false;
-
-	EVP_MD_CTX *ctx = EVP_MD_CTX_new( );
-	bool bOk = false;
-
-	if ( ctx != NULL )
-	{
-		bOk = ( EVP_DigestVerifyInit( ctx, NULL, NULL, NULL, pkey ) == 1 )
-			&& ( EVP_DigestVerify( ctx, &signature[0], signature.size( ),
-				reinterpret_cast<const unsigned char *>( message.data( )), message.size( )) == 1 );
-
-		EVP_MD_CTX_free( ctx );
-	}
-
-	EVP_PKEY_free( pkey );
-	return bOk;
+	return crypto::Ed25519Verify( &publicKey[0], reinterpret_cast<const unsigned char *>( message.data( )), message.size( ),
+		&signature[0], signature.size( ));
 }
 
 bool Identity_SignAsServer( const std::string &message, Bytes &signatureOut )
@@ -448,28 +407,9 @@ bool Identity_SignAsServer( const std::string &message, Bytes &signatureOut )
 
 bool Identity_NewEphemeral( KeyPair &out )
 {
-	EVP_PKEY *pkey = NULL;
-	EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new_id( EVP_PKEY_X25519, NULL );
-	if ( ctx == NULL )
-		return false;
-
-	bool bOk = ( EVP_PKEY_keygen_init( ctx ) == 1 ) && ( EVP_PKEY_keygen( ctx, &pkey ) == 1 );
-	EVP_PKEY_CTX_free( ctx );
-
-	if ( bOk )
-	{
-		size_t lenPub = 32, lenPriv = 32;
-		out.publicKey.resize( lenPub );
-		out.privateKey.resize( lenPriv );
-
-		bOk = ( EVP_PKEY_get_raw_public_key( pkey, &out.publicKey[0], &lenPub ) == 1 )
-			&& ( EVP_PKEY_get_raw_private_key( pkey, &out.privateKey[0], &lenPriv ) == 1 );
-	}
-
-	if ( pkey != NULL )
-		EVP_PKEY_free( pkey );
-
-	return bOk;
+	out.publicKey.resize( 32 );
+	out.privateKey.resize( 32 );
+	return crypto::X25519NewKey( &out.publicKey[0], &out.privateKey[0] );
 }
 
 bool Identity_SharedSession( const Bytes &ourPrivate, const Bytes &theirPublic, Bytes &sessionIdOut )
@@ -477,39 +417,18 @@ bool Identity_SharedSession( const Bytes &ourPrivate, const Bytes &theirPublic, 
 	if (( ourPrivate.size( ) != 32 ) || ( theirPublic.size( ) != 32 ))
 		return false;
 
-	EVP_PKEY *ours = EVP_PKEY_new_raw_private_key( EVP_PKEY_X25519, NULL, &ourPrivate[0], 32 );
-	EVP_PKEY *theirs = EVP_PKEY_new_raw_public_key( EVP_PKEY_X25519, NULL, &theirPublic[0], 32 );
-	bool bOk = false;
+	unsigned char shared[32];
+	if ( !crypto::X25519Shared( &ourPrivate[0], &theirPublic[0], shared ))
+		return false;
 
-	if (( ours != NULL ) && ( theirs != NULL ))
-	{
-		EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new( ours, NULL );
-
-		if ( ctx != NULL )
-		{
-			Bytes shared( 32 );
-			size_t len = shared.size( );
-
-			bOk = ( EVP_PKEY_derive_init( ctx ) == 1 )
-				&& ( EVP_PKEY_derive_set_peer( ctx, theirs ) == 1 )
-				&& ( EVP_PKEY_derive( ctx, &shared[0], &len ) == 1 );
-
-			if ( bOk )
-			{
-				// [rc4l] Hashed rather than used raw, so the shared secret never appears in a
-				// signed message that could be logged.
-				sessionIdOut.resize( 32 );
-				SHA256( &shared[0], len, &sessionIdOut[0] );
-			}
-
-			EVP_PKEY_CTX_free( ctx );
-		}
-	}
-
-	if ( ours != NULL ) EVP_PKEY_free( ours );
-	if ( theirs != NULL ) EVP_PKEY_free( theirs );
-
-	return bOk;
+	// [rc4l] Hashed rather than used raw, so the shared secret never appears in a
+	// signed message that could be logged.
+	sessionIdOut.resize( 32 );
+	Sha256State ctx;
+	ComputeSha256Init( ctx );
+	ComputeSha256Update( ctx, shared, sizeof( shared ));
+	ComputeSha256Final( ctx, &sessionIdOut[0] );
+	return true;
 }
 
 namespace

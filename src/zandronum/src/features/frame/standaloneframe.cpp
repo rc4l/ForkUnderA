@@ -14,7 +14,7 @@
 #include "features/levelmesh/walldecals.h"     // [rc4l] BuildWallDecals
 #include "features/horizon/horizon.h"
 #include "features/visibility/viswalk.h"
-#include "features/hwrender/hud2d.h"           // [rc4l] SceneMVP
+#include "features/hwrender/backendonly.h"
 #include "features/sprites/spritebuild.h"
 
 #include "actor.h"

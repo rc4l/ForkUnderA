@@ -1,10 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { EventEmitter } from "node:events";
 import fs from "node:fs";
 import { spawnSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
-import { resolveEngine, engineArgs, describeExit, countEngineLines, missingCoreData, resFlag } from "../src/launch.mjs";
+import { resolveEngine, engineArgs, describeExit, countEngineLines, missingCoreData, resFlag, exited, stopInstance, slashed } from "../src/launch.mjs";
 import { sweepDirFor, pickCmake, resolveTarget, readSession, sessionFileFor, restartSessionFile, cameraFromFlags, cvarValueFrom, parseCvarFlag, spotLaunch, parkFileFor, parkedLaunch, PARKED, clearPortSessions, liveTarget, pidAlive, buildErrors, summarizeGtest, sourcesStamp, standAt, launchFileFor, holdingLaunchFile, launchInProgress, awaitLaunch, atFromCamera, releaseOf, stepTag, sameFrameCommand, stageCompanions } from "../src/shot.mjs";
 
 // Run `fn` with cwd moved to `dir` and FUACTL_ENGINE cleared, then put both back.
@@ -406,4 +407,37 @@ test("a launch draws with GL unless it asks for -vulkan, since the engine's defa
 test("the pk3s and the symbols are staged beside the exe, and nothing else from the build", () => {
   assert.deepEqual(stageCompanions(["forkundera.exe", "forkundera.pdb", "fua_core.pk3", "brightmaps.pk3", "zdoom.ilk", "other.pdb"]),
     ["forkundera.pdb", "fua_core.pk3", "brightmaps.pk3"]);
+});
+
+// [rc4l] A process that has not gone yet, which says what it was asked and leaves when told.
+function fakeProc() {
+  const proc = Object.assign(new EventEmitter(), { exitCode: null, signalCode: null, asked: [] });
+  proc.kill = (sig) => { proc.asked.push(sig); };
+  return proc;
+}
+
+test("how a process ended, once it has, or null while it runs on", async () => {
+  assert.deepEqual(await exited({ exitCode: 0, signalCode: null }, 10), { code: 0, signal: null });
+  const proc = fakeProc();
+  const later = exited(proc, 1000);
+  proc.emit("exit", 7, null);
+  assert.deepEqual(await later, { code: 7, signal: null });
+  assert.equal(await exited(fakeProc(), 10), null);
+});
+
+test("an instance asked to stop goes cleanly, or is killed when it will not", async () => {
+  assert.equal(await stopInstance({ proc: { exitCode: 0 } }), "already-exited");
+  const willing = fakeProc();
+  willing.kill = (sig) => { willing.asked.push(sig); willing.emit("exit", 0, null); };
+  assert.equal(await stopInstance({ proc: willing }, 1000), "clean");
+  assert.deepEqual(willing.asked, ["SIGTERM"]);
+  const stuck = fakeProc();
+  assert.equal(await stopInstance({ proc: stuck }, 10), "forced");
+  assert.deepEqual(stuck.asked, ["SIGTERM", "SIGKILL"]);
+});
+
+// [rc4l] The engine's console reads a backslash as an escape, so every path fuactl hands it goes forward.
+test("a path handed to the engine has forward slashes", () => {
+  assert.equal(slashed(["C:", "wads", "a.wad"].join(path.sep)), "C:/wads/a.wad");
+  assert.equal(slashed("/already/forward"), "/already/forward");
 });

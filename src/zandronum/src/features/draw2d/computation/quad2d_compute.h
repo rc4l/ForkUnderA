@@ -10,7 +10,7 @@
 
 #include "features/damage-tint/computation/damagetint_compute.h"   // [rc4l] TintGradient
 
-namespace zx { namespace hwrender {
+namespace zx { namespace draw2d {
 
 // [rc4l] The 2D capture's record, one quad in the engine's 2D space (origin top-left, y down, as Begin2D sets it): features/draw2d works it out and the backend draws it.
 struct Quad2D
@@ -40,10 +40,6 @@ struct Quad2D
 	zx::damagetint::TintGradient tint;
 };
 
-}} // namespace zx::hwrender
-
-namespace zx { namespace draw2d {
-
 // [rc4l] gl_interface.h's texture modes, which the glue checks these against.
 enum { kTexModulate = 0, kTexMask = 1, kTexOpaque = 2, kTexInverse = 3, kTexRedToAlpha = 4 };
 // [rc4l] renderstyle.h's STYLEF_ flags read here.
@@ -63,13 +59,13 @@ enum { kBlend2DAlpha = 0, kBlend2DAdditive = 1, kBlend2DMultiply = 2 };
 enum { kQuadRect = 0, kQuadLine = 1, kQuadTri = 2 };
 
 // [rc4l] An untextured rectangle at (x, y), w by h, in 0xRRGGBB at `alpha`, with no scissor.
-zx::hwrender::Quad2D ComputeFillQuad(float x, float y, float w, float h, unsigned rgb, float alpha);
+zx::draw2d::Quad2D ComputeFillQuad(float x, float y, float w, float h, unsigned rgb, float alpha);
 // [rc4l] An automap line from (x1, y1) to (x2, y2) in 0xRRGGBB.
-zx::hwrender::Quad2D ComputeLineQuad(int x1, int y1, int x2, int y2, unsigned rgb);
+zx::draw2d::Quad2D ComputeLineQuad(int x1, int y1, int x2, int y2, unsigned rgb);
 // [rc4l] One pixel in 0xRRGGBB.
-zx::hwrender::Quad2D ComputePixelQuad(int x, int y, unsigned rgb);
+zx::draw2d::Quad2D ComputePixelQuad(int x, int y, unsigned rgb);
 // [rc4l] The screen's tint over a w by h screen, multiplied or blended over.
-zx::hwrender::Quad2D ComputeScreenFillQuad(float w, float h, float r, float g, float b, float a, bool multiply);
+zx::draw2d::Quad2D ComputeScreenFillQuad(float w, float h, float r, float g, float b, float a, bool multiply);
 
 // [rc4l] A FillSimplePoly as GL draws it: the material, the colour, and each point (x, y pairs) with its texture coordinate (u, v pairs).
 struct PolyDraw
@@ -92,7 +88,7 @@ struct PolyTexIn
 void ComputePolyTexCoords(const PolyTexIn &in, const float *points, int count, float *uv);
 
 // [rc4l] A polygon's fan as triangles, each a copy of `base` with its corners from `points` and `uv`, into `out` (replaced): none under three points.
-void ComputePolyTriangles(const zx::hwrender::Quad2D &base, const float *points, const float *uv, int count, std::vector<zx::hwrender::Quad2D> &out);
+void ComputePolyTriangles(const zx::draw2d::Quad2D &base, const float *points, const float *uv, int count, std::vector<zx::draw2d::Quad2D> &out);
 
 // [rc4l] The 2D blend gl_GetRenderStyle sets for a style: additive when it adds onto the screen whole, alpha otherwise.
 int ComputeQuadBlend(int blendOp, int destAlpha);
@@ -123,7 +119,13 @@ struct TextureQuadOut
 void ComputeTextureQuad(const TextureQuadIn &in, TextureQuadOut &out);
 
 // [rc4l] A texture quad's 2D record: its rectangle, coordinates and colour, and every other field zero for the caller to fill, so none is ever stack garbage.
-zx::hwrender::Quad2D ComputeTextureQuadRecord(const TextureQuadOut &q);
+zx::draw2d::Quad2D ComputeTextureQuadRecord(const TextureQuadOut &q);
+
+// [rc4l] Whether the backend's 2D vertices are built again: the list was cleared since they were (a new generation), or has more or fewer quads than they were built for.
+bool ComputeRebuild2DVertices(unsigned generation, unsigned builtGeneration, int quads, int builtQuads);
+
+// [rc4l] The pass GL draws over a texture quad for a colour overlay (a greyed menu row's, say): the glyph's coverage in the overlay's colour and alpha, untinted; false for no overlay.
+bool ComputeOverlayQuad(const zx::draw2d::Quad2D &base, unsigned colorOverlay, zx::draw2d::Quad2D &out);
 
 }} // namespace zx::draw2d
 

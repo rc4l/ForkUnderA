@@ -42,6 +42,8 @@ enum class HeaderReach
 
 	// No network worth the name.
 	Offline,
+	// [rc4l] A launch that keeps off the network (-offline, as the browser's build always is): nothing to reach, by choice.
+	OfflineLaunch,
 };
 
 // How the tab should be painted. Kept separate from the verdict so the drawing does not have to
@@ -67,7 +69,9 @@ struct ReachIn
 	// the far side of it has spoken to us.
 	bool haveLocalNetwork;
 
-	ReachIn() : anyRegistryAnswered(false), anyRegistryPending(false), haveLocalNetwork(false) {}
+	// [rc4l] The launch keeps off the network, which outranks every signal above.
+	bool offlineLaunch;
+	ReachIn() : anyRegistryAnswered(false), anyRegistryPending(false), haveLocalNetwork(false), offlineLaunch(false) {}
 };
 
 HeaderReach ComputeHeaderReach(const ReachIn &in);

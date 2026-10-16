@@ -6,6 +6,7 @@
 #include "features/hwrender/diligent/dgscene_internal.h"
 #include "features/hwrender/computation/dynlayout_compute.h"   // [rc4l] ComputeDynLayout
 #include "features/jobs/jobs.h"                                 // [rc4l] the pool the records are written on
+#include "features/telemetry/telemetry.h"
 
 // [rc4l] Dump the ORDER the translucent pass actually draws in, for one frame.
 //
@@ -69,7 +70,7 @@ static bool EnsureBlendIndexBuffer(Diligent::IRenderDevice *dev, unsigned int ne
 	bd.Size = (Diligent::Uint64)cap * sizeof(Diligent::Uint32);
 	bd.BindFlags = Diligent::BIND_INDEX_BUFFER;
 	bd.Usage = Diligent::USAGE_DEFAULT;
-	dev->CreateBuffer(bd, NULL, &g_blendIB);
+	CreateDeviceBuffer(bd, NULL, &g_blendIB);
 	if (!g_blendIB) { g_blendIBCapacity = 0; return false; }
 	g_blendIBCapacity = cap;
 	return true;
@@ -105,6 +106,7 @@ static void GatherTracedSprites(const TArray<SceneVertex> &vb)
 
 void BuildDynamic(Diligent::IDeviceContext *ctx)
 {
+	ZX_ZONE("scene/dynamic");   // [rc4l] the frame's sprites, models and decals laid out and written
 	cycle_t dynClock;
 	dynClock.Reset();
 	dynClock.Clock();

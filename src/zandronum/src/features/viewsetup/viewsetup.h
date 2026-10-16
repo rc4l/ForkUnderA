@@ -7,6 +7,7 @@
 #define ZX_VIEWSETUP_H
 
 #include "features/viewsetup/computation/viewsetup_compute.h"   // [rc4l] FixedColormapShade
+#include "features/hwrender/computation/backendview_compute.h"   // [rc4l] BackendCamera
 
 class AActor;
 struct player_t;
@@ -48,6 +49,18 @@ void InstallSpriteView();
 
 // [rc4l] The view last set up.
 const ViewSetup &CurrentView();
+
+// [rc4l] The current view's eye and turn as a backend's camera takes them: where it stands, its yaw, its pitch as the playsim aims it, and GL's pixel stretch; the projection is left to the caller.
+void ViewCameraFromEngine(zx::hwrender::BackendCamera &c);
+
+// [rc4l] Whether the camera differs from the last frame's, remembering it, so a new one starts uninterpolated instead of sweeping across from the old.
+bool CameraChanged(AActor *camera);
+
+// [rc4l] Forget the last camera, so the next frame starts uninterpolated (a new frame buffer, a game restart).
+void ForgetCamera();
+
+// [rc4l] Whether sprites, the weapon and decals take dynamic light this frame: lights on and in the view, no fixed colormap, and r_light_sprites.
+bool SpritesTakeDynamicLight();
 
 }} // namespace zx::viewsetup
 

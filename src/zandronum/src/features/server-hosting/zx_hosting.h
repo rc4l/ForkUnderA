@@ -98,6 +98,10 @@ const char *HostRecentOutput( void );
 // Config of the running (or last) host, for the UI to show what it started.
 const HostConfig &HostCurrentConfig( void );
 
+// [rc4l] Who hears that a hosted server started with config, which the continue tab does to offer it again; NULL for no one.
+typedef void ( *HostingListener )( const HostConfig &config );
+void SetHostingListener( HostingListener listener );
+
 } // namespace zx
 
 namespace zx

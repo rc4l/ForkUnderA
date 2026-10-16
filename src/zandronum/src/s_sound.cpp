@@ -61,6 +61,7 @@
 #include "network.h"
 #include "sv_commands.h"
 #include "features/fua-caching/fua_caching.h"
+#include "features/telemetry/telemetry.h"
 
 // MACROS ------------------------------------------------------------------
 
@@ -530,6 +531,7 @@ void S_Start ()
 
 void S_PrecacheLevel ()
 {
+	ZX_ZONE("load/precache_sounds");   // [rc4l] the level's sounds loaded ahead
 	unsigned int i;
 
 	if (GSnd)
@@ -2206,6 +2208,7 @@ void S_RestoreEvictedChannels()
 
 void S_UpdateSounds (AActor *listenactor)
 {
+	ZX_ZONE("audio/update");   // [rc4l] positional sounds moved for the listener
 	FVector3 pos, vel;
 	SoundListener listener;
 
@@ -2856,6 +2859,8 @@ bool S_ChangeMusic (const char *musicname, int order, bool looping, bool force)
 		// Just record it if volume is 0
 		if (snd_musicvolume <= 0)
 		{
+			// [rc4l] Nothing plays the reader at volume 0, so it is closed here rather than left holding its WAD open, one a level.
+			delete reader;
 			mus_playing.loop = looping;
 			mus_playing.name = musicname;
 			mus_playing.baseorder = order;

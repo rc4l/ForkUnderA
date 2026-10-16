@@ -48,6 +48,7 @@
 //
 //-----------------------------------------------------------------------------
 
+#include "features/net/zx_offline.h"   // [rc4l] OfflineLaunch
 #include <map>
 #include "networkheaders.h"
 #include "features/server-browser/browser.h"
@@ -61,7 +62,8 @@
 #include "features/server-hosting/zx_punchclient.h"                   // [rc4l] PunchRequestFor
 #include "features/launcher-protocol/computation/segmentreassembly_compute.h"
 #include "features/server-hosting/zx_hosting.h" // [rc4l] which rows are the server WE started
-#include "features/server-hosting/zx_reachprobe.h" // [rc4l] ReachProbePublicIp
+#include "features/server-hosting/zx_reachprobe.h"
+#include "features/server-hosting/zx_registrydirectory.h" // [rc4l] ReachProbePublicIp
 #include "features/server-browser/computation/joinintent_compute.h" // [rc4l] RowIsOwnServer
 #include "c_dispatch.h"
 #include "cl_main.h"
@@ -2135,7 +2137,8 @@ void BROWSER_BackgroundTick( void )
 		g_bBackgroundQuerySent = true;
 
 		// A server does not browse, and a client already has the list it is playing on.
-		if ( NETWORK_GetState( ) == NETSTATE_SINGLE )
+		// [rc4l] Nor does an offline launch, which has no socket to ask with.
+		if ( NETWORK_GetState( ) == NETSTATE_SINGLE && !zx::net::OfflineLaunch( ))
 			BROWSER_QueryServerRegistry( );
 	}
 
@@ -2594,3 +2597,12 @@ CCMD( dumpserverlist )
 			( !directUrl.IsEmpty() && g_BrowserServerList[ulIdx].bPrefersMirrors ) ? " (prefers mirrors)" : "" );
 	}
 }
+
+//*****************************************************************************
+//
+// [rc4l] Hosting reaches the registries kept here through its directory, since hosting sits below the browser.
+static const zx::RegistryDirectory g_RegistryDirectory =
+{
+	BROWSER_GetServerRegistryAddress, BROWSER_GetServerRegistryAddressForFamily, BROWSER_GetRegistryForServer, BROWSER_PunchBrokered
+};
+static const bool g_bRegistryDirectoryInstalled = ( zx::SetRegistryDirectory( &g_RegistryDirectory ), true );

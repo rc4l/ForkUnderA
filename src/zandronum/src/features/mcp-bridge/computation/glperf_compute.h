@@ -81,7 +81,7 @@ GLTimingVerdict GLAssessTiming( const std::vector<double> &totalsMs );
 // Build the gl.timers report object. perZoneMs is indexed by GLZone (a vector of per-frame ms samples
 // for each zone; a zone with no samples is omitted). totalMs is the per-frame whole-GPU-frame vector.
 // countersJson, if non-empty, is a already-formed JSON object ("{...}") of last-frame draw counters and
-// is embedded verbatim under "counters". Percentile/1%-low stats reuse SummarizeFrameTimes so the
+// is embedded verbatim under "counters". Percentile/1%-low stats reuse ComputeFrameTimeSummary so the
 // numbers line up with perf.capture. When the verdict is unavailable the zones/total are still emitted
 // (as whatever was measured) but "available":false and "note" tell the caller not to trust them.
 std::string GLTimersJson( const GLTimingVerdict &verdict,

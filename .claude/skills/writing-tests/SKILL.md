@@ -69,41 +69,28 @@ ctest --test-dir build-tests --output-on-failure
 bash tests/coverage.sh --auto
 ```
 
-## Run it locally (Windows)
-
-Visual Studio picks the configuration at build time, so name it and run the binaries from under it:
-
-```powershell
-cmake -S tests -B build-tests
-cmake --build build-tests --config Debug --target zandrox_tests zandrox_tests_net
-.\build-tests\Debug\zandrox_tests.exe
-.\build-tests\Debug\zandrox_tests_net.exe
-```
-
-Add `--gtest_filter=Suite.*` to run one suite. `coverage.sh` and the sanitizers need Clang and a POSIX
-toolchain, so on Windows the 100% coverage gate is checked by CI.
-
-Notes:
-- **LeakSanitizer is Linux-only** — on macOS ASan/UBSan run but leaks aren't reported; CI
-  (Ubuntu) runs the full ASan+UBSan+LSan set, so rely on CI for leak checks.
-- Coverage requires the **Clang** toolchain (llvm-cov); `coverage.sh` forces it.
+- **LeakSanitizer is Linux-only**: on macOS ASan and UBSan run but leaks aren't reported, so rely on CI
+  (Ubuntu, the full ASan+UBSan+LSan set) for leak checks.
+- Coverage needs the **Clang** toolchain (llvm-cov); `coverage.sh` forces it.
 
 ## Run it locally (Windows)
 
-`build-tests/` is a Visual Studio tree. `node tools/fuactl/src/cli.mjs build --no-stage --tests` builds the
-engine and the tests with Visual Studio's own cmake (Git Bash has none on PATH), runs them, and prints the
-count or the failing names; a running engine holding the binary is named as such rather than left as an
-LNK1104. One suite at a time:
+`build-tests/` is a Visual Studio tree, which picks the configuration at build time.
+`node tools/fuactl/src/cli.mjs build --no-stage --tests` builds the engine and the tests with Visual Studio's
+own cmake (Git Bash has none on PATH), runs them, and prints the count or the failing names; a running engine
+holding the binary is named as such rather than left as an LNK1104. By hand:
 
 ```bash
-build-tests/Release/zandrox_tests.exe --gtest_filter='Suite.*'
+cmake --build build-tests --config Release --parallel 4
+build-tests/Release/zandrox_tests.exe --gtest_brief=1          # add --gtest_filter='Suite.*' for one suite
+build-tests/Release/zandrox_tests_net.exe
 ```
 
 `build --tests` reconfigures by itself when a new `*_test.cpp` or `*_compute.cpp` appears; `coverage` does
-not, so after adding a file run `build --no-stage --tests` before `coverage`.
+not, so after adding a file build the tests before `coverage`.
 
-Without clang/llvm-cov the `--auto` gate's authority is CI, but the same gate runs here with
-OpenCppCoverage over a Debug build of the tests (Release has no symbols):
+The sanitizers need Clang and a POSIX toolchain, so here the 100% gate runs with OpenCppCoverage over a Debug
+build of the tests (Release has no symbols):
 
 ```bash
 export FUACTL_OPENCPPCOVERAGE=<OpenCppCoverage install folder>/OpenCppCoverage.exe
@@ -111,20 +98,47 @@ node tools/fuactl/src/cli.mjs coverage --since REF    # every unit whose source,
 node tools/fuactl/src/cli.mjs coverage                # every unit a *_test.cpp gates
 ```
 
-`--since` takes the commit the work started from (the last push, say): `--since main` gates every commit on
-the branch, and `--since HEAD` only what is uncommitted. It builds the Debug tests, runs them under OpenCppCoverage, and prints each gated unit under 100% with its
-missed lines (exit 1). A missed line that is only a loop's `}` or a `continue;` is MSVC putting the jump
-there, which llvm-cov counts as run, so it is not reported. Three units stay under 100% here and pass in
-CI: `fixed64`'s soft 128-bit path, whose tests compare against `__int128` that MSVC lacks, and two lines of
-`browserfocus_compute`. It measures no branches, so check every branch of a new `Compute*` function against
-its tests by reading them, and say so.
+`--since` takes the commit the work started from: `--since main` gates every commit on the branch, and
+`--since HEAD` only what is uncommitted. It prints each gated unit under 100% with its missed lines (exit 1).
+A missed line that is only a loop's `}` or a `continue;` is MSVC putting the jump there, which llvm-cov counts
+as run, so it is not reported. A unit whose test needs what MSVC lacks (`fixed64`'s soft 128-bit path compares
+against `__int128`) stays under 100% here and passes in CI. It measures no branches, so check every branch of
+a new `Compute*` function against its tests by reading them, and say so.
+
+## Run it under Emscripten (the browser's runtime)
+
+The same tests build with Emscripten, threads and wasm exceptions, and run in Node; CI's `test-web`
+job does this, so a test that only passes natively (a thread it never joins, a path on the real disk)
+fails there:
+
+```bash
+emcmake cmake -S tests -B build-tests-web -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build-tests-web
+node build-tests-web/zandrox_tests.js
+```
+
+## Page and tool code (JavaScript)
+
+The page's modules in `web/` export their logic to Node (`module.exports` beside the page's global, as
+`crashreport.js` does) and are tested in `tools/web/test`; fuactl's are tested in `tools/fuactl/test`.
+`node --test` in either folder runs them. Keep the page's DOM wiring in `fua.js` thin and the decisions in
+the modules, where a test can reach them.
+
+## Before a commit
+
+```bash
+node tools/fuactl/src/cli.mjs coverage --since REF    # 100% on every changed unit
+node tools/fuactl/src/cli.mjs comments --since REF    # every [rc4l] comment added is one line of one sentence
+```
 
 ## CI
 
 `.github/workflows/test-and-build.yml` runs `_test.yml` on pull requests and pushes to `main`: sanitized
-tests plus `coverage.sh --auto` on Linux, sanitized tests on macOS, and a plain MSVC build and run on
-Windows. The platform engine builds are gated behind it (`needs: test`), so green tests come before
-anything builds.
+tests on Linux and macOS, `coverage.sh --auto` as its own job, a plain MSVC build and run on Windows, the
+Emscripten build in Node, and the JS tests. Each test binary runs once (`tests/run_all.py`), since `ctest`
+starts it once per test. The platform builds and the browser build run beside the tests rather than after
+them, every compile through a cache (ccache, or sccache on Windows), so a run takes as long as its slowest
+job.
 
 clang-tidy no longer runs in CI (deleted in 48c1264); `.clang-tidy` stays for editors and clangd.
 On Windows, VS Build Tools ships `clang-tidy.exe` under `VC\Tools\Llvm\x64\bin` for running it by hand.

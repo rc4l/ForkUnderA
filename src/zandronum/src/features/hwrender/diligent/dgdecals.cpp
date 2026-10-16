@@ -16,10 +16,11 @@
 
 #include "features/hwrender/diligent/dgshared.h"
 #include "features/hwrender/computation/backendview_compute.h"   // [rc4l] ComputeInvertMatrix4
-#include "features/levelmesh/projdecals.h"
+#include "features/levelmesh/projdecals.h"   // [rc4l] the marks fua_projdecals_stats lists
 #include "features/levelmesh/computation/decalproject_compute.h"   // [rc4l] ComputeDecalPass
 #include "features/hwrender/computation/worldpipelines_compute.h"   // [rc4l] ComputeDecalPassBlend, the blend a pass draws with
 
+#include "c_dispatch.h"              // CCMD
 #include "r_defs.h"                  // sector_t
 #include "r_state.h"                 // sectors, numsectors
 #include "m_fixed.h"                 // FIXED2FLOAT
@@ -105,7 +106,7 @@ static const char *kDeferredDecalVS =
 	/* One record per mark: where it landed, which way its picture is turned, how far it reaches,
 	   what to paint, and which texture to paint it with. */
 	"struct DecalRec { vec4 centre; vec4 axisU; vec4 axisV; vec4 axisN; vec4 color; vec4 params; vec4 anchor; };\n"
-	"layout(std430, binding = 9) readonly buffer Decals { DecalRec decals[]; };\n"
+	"layout(std430, binding = 9) readonly buffer Decals { DecalRec decals[]; } DecalsIn;\n"
 	/* [rc4l] Every sector's floor and ceiling height, refreshed once a frame.
 
 	   A projected mark is cut from geometry, which is what lets it mark a floor and also why it does
@@ -115,7 +116,7 @@ static const char *kDeferredDecalVS =
 	   Read on the GPU rather than folded in by the CPU so the cost follows the number of SECTORS,
 	   not the number of marks: the decal records stop changing once made, and only this small table
 	   is rewritten. Ten thousand marks cost the same as ten. */ \
-	"layout(std430, binding = 10) readonly buffer Planes { vec4 planes[]; };\n"
+	"layout(std430, binding = 10) readonly buffer Planes { vec4 planes[]; } PlanesIn;\n"
 	"layout(location = 0) out vec3 vCentre;\n"
 	"layout(location = 1) out vec3 vAxisU;\n"
 	"layout(location = 2) out vec3 vAxisV;\n"
@@ -129,7 +130,7 @@ static const char *kDeferredDecalVS =
 	"const vec2 kQuad[6] = vec2[6](\n"
 	"    vec2(0,0), vec2(1,0), vec2(1,1), vec2(0,0), vec2(1,1), vec2(0,1));\n"
 	"void main() {\n"
-	"    DecalRec d = decals[gl_InstanceIndex];\n"
+	"    DecalRec d = DecalsIn.decals[gl_InstanceIndex];\n"
 	/* Ride the plane: the stored height is an offset from it, so this is where the mark is NOW. */ \
 	"    vec3 c = d.centre.xyz;\n"
 	"    int aSec = int(d.anchor.x);\n"
@@ -140,7 +141,7 @@ static const char *kDeferredDecalVS =
 	   still catch the floor; a bullet puff, a plasma mark and the BFG's own glow all missed and
 	   vanished. Ax + By + Cz + D = 0, so z = -(Ax + By + D)/C, and w carries 1/C. */ \
 	"    if (aSec >= 0) {\n"
-	"        vec4 pl = planes[aSec * 2 + int(d.anchor.y)];\n"
+	"        vec4 pl = PlanesIn.planes[aSec * 2 + int(d.anchor.y)];\n"
 	"        c.y = -(pl.x * c.x + pl.y * c.z + pl.z) * pl.w + d.anchor.z;\n"
 	"    }\n"
 	"    vCentre = c;\n"
@@ -177,8 +178,8 @@ static const char *kDeferredDecalPS =
 	FUA_CONSTANTS_GLSL
 	FUA_FIXED_COLORMAP_GLSL
 	"layout(binding = 6) uniform Decal { mat4 uInvMVP; vec4 uDecalDebug; };\n"
-	"layout(binding = 7) uniform sampler2D uSceneDepth;\n"
-	"layout(binding = 8) uniform sampler2D uSceneNormal;\n"
+	"layout(binding = 7) uniform texture2D uSceneDepth; uniform sampler uSceneDepth_sampler;\n"
+	"layout(binding = 8) uniform texture2D uSceneNormal; uniform sampler uSceneNormal_sampler;\n"
 	/* [rc4l] An ARRAY, indexed per instance, so the level is two draws whatever it is wearing.
 
 	   This was tried once and parked, with the note that the array bound and reflected its 64 slots
@@ -192,7 +193,7 @@ static const char *kDeferredDecalPS =
 	   every mark to slot zero, which is the experiment that tells a bad index from a bad binding
 	   apart: pinned and visible means the array is bound and the index is wrong; pinned and blank
 	   means nothing is bound and the index was never the problem. */
-	"layout(binding = 1) uniform sampler2D uTex;\n"
+	"layout(binding = 1) uniform texture2D uTex; uniform sampler uTex_sampler;\n"
 	"layout(location = 0) in vec3 vCentre;\n"
 	"layout(location = 1) in vec3 vAxisU;\n"
 	"layout(location = 2) in vec3 vAxisV;\n"
@@ -203,7 +204,7 @@ static const char *kDeferredDecalPS =
 	"layout(location = 0) out vec4 outColor;\n"
 	"void main() {\n"
 	"    vec2 uv = gl_FragCoord.xy / vec2(uScreen.x, uScreen.y);\n"
-	"    float d = texture(uSceneDepth, uv).r;\n"
+	"    float d = texture(sampler2D(uSceneDepth, uSceneDepth_sampler), uv).r;\n"
 	/* Nothing was drawn here -- the far plane. There is no surface to paint. */
 	"    if (d >= 1.0) discard;\n"
 	/* Reconstruct the world position of whatever the depth buffer says is here. Clip space is x,y in
@@ -226,7 +227,7 @@ static const char *kDeferredDecalPS =
 	   wrong in every place that mattered: across a silhouette it straddled two surfaces, on a
 	   two-pixel sliver there was no neighbourhood to sample, and at a grazing angle it was a
 	   difference of nearly-equal large numbers. Alpha zero means nothing was drawn here. */
-	"    vec4 gbuf = texture(uSceneNormal, uv);\n"
+	"    vec4 gbuf = texture(sampler2D(uSceneNormal, uSceneNormal_sampler), uv);\n"
 	"    if (gbuf.a < 0.5) discard;\n"
 	"    vec3 nrm = normalize(gbuf.xyz * 2.0 - 1.0);\n"
 	/* [rc4l] How square-on a surface must be to receive any of the mark, as a cosine.
@@ -289,7 +290,7 @@ static const char *kDeferredDecalPS =
 	   dFdx/dFdy of t are uniform control flow, so they are well defined; textureGrad then uses them
 	   instead of guessing, and mipmapping still works. */ \
 	"    vec2 tdx = dFdx(t), tdy = dFdy(t);\n"
-	"    vec4 texel = textureGrad(uTex, t, tdx, tdy);\n"
+	"    vec4 texel = textureGrad(sampler2D(uTex, uTex_sampler), t, tdx, tdy);\n"
 	/* A shaded decal's texture is an alpha MASK: the red channel is the shape and the colour comes
 	   from the decal itself. Sampled as an ordinary image the red channel reads as brightness and a
 	   black burn paints a white blob. */
@@ -308,7 +309,7 @@ static const char *kDeferredDecalPS =
 	   CPU says which slot it wrote into every record; this says which one arrived. */ \
 	"    if (uDecalDebug.x > 3.5) {\n"
 	"        if (uDecalDebug.x > 6.5) outColor = vec4(vec3(float(vTex) * 0.25), 1.0);\n"
-	"        else if (uDecalDebug.x > 5.5) outColor = vec4(textureLod(uTex, t, 0.0).rgb, 1.0);\n"
+	"        else if (uDecalDebug.x > 5.5) outColor = vec4(textureLod(sampler2D(uTex, uTex_sampler), t, 0.0).rgb, 1.0);\n"
 	"        else outColor = (uDecalDebug.x < 4.5) ? vec4(texel.rgb, 1.0) : vec4(vec3(texel.a), 1.0);\n"
 	"        return;\n"
 	"    }\n"
@@ -391,10 +392,13 @@ static Diligent::RefCntAutoPtr<Diligent::IBuffer> g_ddCB;
 static int g_ddDrawn = 0, g_ddBoxes = 0, g_ddTextures = 0;
 static const char *g_ddBail = "";
 
-void GetDeferredDecalStats(int &boxes, int &draws, int &textures, const char **bail)
+// [rc4l] The projected decals live, what the deferred pass drew of them last frame, and the marks themselves, since a count cannot say which mark went missing.
+CCMD(fua_projdecals_stats)
 {
-	boxes = g_ddBoxes; draws = g_ddDrawn; textures = g_ddTextures;
-	if (bail) *bail = g_ddBail;
+	Printf("projected decals: %d live\n", zx::levelmesh::GetProjectedDecalCount());
+	Printf("deferred pass: %d boxes in %d draws, %d textures%s%s\n",
+		g_ddBoxes, g_ddDrawn, g_ddTextures, *g_ddBail ? ", stopped: " : "", g_ddBail);
+	zx::levelmesh::PrintProjectedDecals(12);
 }
 
 void ReleaseDecalPipelines()
@@ -442,7 +446,7 @@ static bool EnsureDeferredDecalPass()
 		bd.Usage = Diligent::USAGE_DYNAMIC;
 		bd.BindFlags = Diligent::BIND_UNIFORM_BUFFER;
 		bd.CPUAccessFlags = Diligent::CPU_ACCESS_WRITE;
-		dev->CreateBuffer(bd, nullptr, &g_ddCB);
+		CreateDeviceBuffer(bd, nullptr, &g_ddCB);
 		if (!g_ddCB) { g_ddBail = "constant buffer creation failed"; return false; }
 	}
 
@@ -460,8 +464,11 @@ static bool EnsureDeferredDecalPass()
 		// zero and quietly dropped the rest, which is why slot 0 always drew correctly and nothing
 		// past it ever did.
 		{ Diligent::SHADER_TYPE_PIXEL, "uTex", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC },
-		{ Diligent::SHADER_TYPE_PIXEL, "uSceneDepth", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
-		{ Diligent::SHADER_TYPE_PIXEL, "uSceneNormal", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
+		// [rc4l] DYNAMIC too, since a resize or fullscreen rebuilds the scene's targets and a MUTABLE binding kept the first ones, so marks read a depth frozen at the change and vanished once the view moved.
+		// [rc4l] WebGPU binds a depth texture only as unfilterable float with a non-filtering sampler (its _sampler takes these flags); Firefox's device refused the decal pass otherwise.
+		{ Diligent::SHADER_TYPE_PIXEL, "uSceneDepth", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC,
+			Diligent::SHADER_VARIABLE_FLAG_UNFILTERABLE_FLOAT_TEXTURE_WEBGPU | Diligent::SHADER_VARIABLE_FLAG_NON_FILTERING_SAMPLER_WEBGPU },
+		{ Diligent::SHADER_TYPE_PIXEL, "uSceneNormal", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_DYNAMIC },
 	};
 	// [rc4l] Per call, never static: a static array keeps the filter of the first build after the engine's changes.
 	Diligent::SamplerDesc samp;
@@ -514,7 +521,7 @@ static bool EnsureDeferredDecalPass()
 		pci.pPS = ps;
 
 		Diligent::RefCntAutoPtr<Diligent::IPipelineState> made;
-		dev->CreateGraphicsPipelineState(pci, &made);
+		CreatePipeline(pci, &made);
 		if (!made) { g_ddBail = "pipeline creation failed"; return false; }
 		BindSceneConstants(made);
 		for (int st = 0; st < 2; st++)

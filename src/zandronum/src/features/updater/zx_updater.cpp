@@ -1,6 +1,7 @@
 // [rc4l] See zx_updater.h. Update-notice state, the background GitHub-releases check, and the CCMDs.
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 rc4l
+#include "features/net/zx_offline.h"   // [rc4l] OfflineLaunch
 #include "features/updater/zx_updater.h"
 
 #include <atomic>
@@ -134,7 +135,9 @@ void Tick()
 		else if (now - firstMs >= 1500)
 		{
 			started = true;
-			StartCheck();
+			// [rc4l] An offline launch never asks.
+			if (!zx::net::OfflineLaunch())
+				StartCheck();
 		}
 	}
 	DrainLog();

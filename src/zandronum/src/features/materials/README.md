@@ -22,6 +22,9 @@ warp, palette). GL and the Vulkan backend both read them from here; GL keeps onl
   fullbright entries a default brightmap shows (`ComputeFullbrightEntries`).
 - `computation/texcoord_compute`: `FTexCoordInfo` and how a wall's texture coordinates scale on a
   material (`ComputeTexCoordInfo`).
+- `spriteframe.h/.cpp`: a sprite frame's texture for a rotation and whether it is drawn mirrored
+  (`gl_GetSpriteFrame`), moved from `features/sprites` so GL's sprites, the backend's and the light list read it
+  below the sprites.
 - `textureinfo.h/.cpp`: a texture's renderer data (`FTexture::gl_info`) over those helpers: brightmaps, glow
   and sky colours, holes, transparency and edge smoothing, the GLDEFS `brightmap` and `detail` blocks,
   `gl_flush`, `textureinfo` and `r_texture_usehires`.

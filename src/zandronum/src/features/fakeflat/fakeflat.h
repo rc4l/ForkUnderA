@@ -18,4 +18,18 @@ inline sector_t * gl_FakeFlat(sector_t * sec, sector_t * dest, bool back)
 	return gl_FakeFlat(sec, dest, in_area, back);
 }
 
+
+namespace zx { namespace fakeflat {
+
+// [rc4l] Whether a sector takes another's heights (Transfer_Heights), whose planes then depend on where the viewer stands.
+bool ViewDependent(const sector_t *s);
+
+// [rc4l] The view area the backend draws height transfers for (a kViewArea, GL's area_t); true when it changed.
+bool SetTransferArea(int area);
+
+// [rc4l] s as the backend's view sees it: through a height transfer for that view area (gl_FakeFlat), else s itself.
+sector_t *TransferSector(sector_t *s, sector_t *scratch, bool back);
+
+}} // namespace zx::fakeflat
+
 #endif // ZX_FAKEFLAT_H

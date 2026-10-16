@@ -5,7 +5,8 @@
 // types here -- only <string>/<vector>/<cstdint> and the sibling pure perf-summary helpers.
 
 #include "glperf_compute.h"
-#include "mcprpc_compute.h" // SummarizeFrameTimes / PerfSummaryJson -- shared, pure, already tested
+#include "mcprpc_compute.h" // PerfSummaryJson
+#include "features/json/computation/json_compute.h"
 
 namespace zx { namespace mcp {
 
@@ -75,13 +76,11 @@ std::string GLTimersJson( const GLTimingVerdict &verdict,
 
 	if ( !verdict.note.empty() )
 	{
-		std::string esc;
-		JsonEscape( verdict.note, esc );
-		out += ",\"note\":\"" + esc + "\"";
+		out += ",\"note\":" + zx::json::ComputeJsonQuoted( verdict.note );
 	}
 
 	// Whole-frame GPU time.
-	out += ",\"total\":" + PerfSummaryJson( SummarizeFrameTimes( totalMs ) );
+	out += ",\"total\":" + PerfSummaryJson( zx::perfstats::ComputeFrameTimeSummary( totalMs ) );
 
 	// Per-zone breakdown; a zone with no samples is skipped so absent passes don't masquerade as 0ms.
 	out += ",\"zones\":{";
@@ -93,7 +92,7 @@ std::string GLTimersJson( const GLTimingVerdict &verdict,
 		first = false;
 		out += "\"";
 		out += GLZoneName( z );
-		out += "\":" + PerfSummaryJson( SummarizeFrameTimes( perZoneMs[z] ) );
+		out += "\":" + PerfSummaryJson( zx::perfstats::ComputeFrameTimeSummary( perZoneMs[z] ) );
 	}
 	out += "}";
 

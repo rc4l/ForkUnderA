@@ -54,7 +54,7 @@
 #include "gl/system/gl_interface.h"
 #include "gl/system/gl_framebuffer.h"
 #include "features/display/display.h"   // [rc4l] the palette, flash and gamma ramp
-#include "features/frame/playerview.h"   // [rc4l] ForgetCamera
+#include "features/viewsetup/viewsetup.h"   // [rc4l] ForgetCamera
 #include "gl/renderer/gl_renderer.h"
 #include "gl/renderer/gl_renderstate.h"
 #include "gl/renderer/gl_lightdata.h"
@@ -96,7 +96,7 @@ OpenGLFrameBuffer::OpenGLFrameBuffer(void *hMonitor, int width, int height, int 
 	GLRenderer = new FGLRenderer(this);
 	Colors.Load();
 	ScreenshotBuffer = NULL;
-	zx::frame::ForgetCamera();
+	zx::viewsetup::ForgetCamera();
 
 	// [rc4l] video-scale: no scale buffer until UpdateScaleBuffer decides one is needed.
 	mScaleFB = mScaleColorTex = mScaleDepthRB = 0;
@@ -883,7 +883,8 @@ void OpenGLFrameBuffer::ReleaseScreenshotBuffer()
 void OpenGLFrameBuffer::GameRestart()
 {
 	Colors.Load();
-	ScreenshotBuffer = NULL;
-	zx::frame::ForgetCamera();
+	// [rc4l] Freed rather than forgotten, since a restart after a screenshot dropped its buffer.
+	ReleaseScreenshotBuffer();
+	zx::viewsetup::ForgetCamera();
 	gl_GenerateGlobalBrightmapFromColormap();
 }

@@ -72,8 +72,10 @@ neither there.
 - `features/levelmesh/flatmesh.cpp` `RegisterSprite`: `NoteGLSprite`, GL's piece for the check, and the
   `ThingColor` fold.
 - `features/levelmesh/modelmesh.cpp`: `ModelPieceLook`, a model's look for GL's capture and ours;
-  `CaptureModelSurface` notes GL's surfaces for the check (`NoteGLSprite`) and holds a checked derived
-  model's (`NoteDerivedSprite`).
+  `CaptureModelSurface` hands each piece to the listener `spritebuild.cpp` installs (`HearModelPiece`),
+  which notes GL's surfaces for the check (`NoteGLSprite`) and holds a checked derived model's
+  (`NoteDerivedSprite`). A sprite's frame is `features/materials/spriteframe`, and the dynamic light on it
+  `features/dynlights/pointlight`.
 - `gl/models/gl_models.cpp` `gl_RenderModel` and `gl_RenderFrameModels`: `ModelPoseFor` with
   `ComputeModelMatrix`, `NextModelFrame`, and each slot's surfaces and blend from `ModelSlotSurfaces`.
 - `features/models/md2model.cpp`, `md3model.cpp`, `voxelmodel.cpp`: `FrameSurfaces`, each model's

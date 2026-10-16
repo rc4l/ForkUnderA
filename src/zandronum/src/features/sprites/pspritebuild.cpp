@@ -4,7 +4,8 @@
 #include "features/sprites/pspritebuild.h"
 #include "features/frame/computation/oracle_compute.h"   // [rc4l] OracleTally
 
-#include "features/sprites/spritebuild.h"     // [rc4l] ActorDynamicLight
+#include "features/sprites/spritebuild.h"
+#include "features/dynlights/pointlight.h"   // [rc4l] ActorDynamicLight
 #include "features/sprites/computation/pspritequad_compute.h"
 #include "features/sprites/computation/spritelight_compute.h"
 #include "features/sprites/computation/spritestyle_compute.h"   // [rc4l] ComputeWeaponStyle
@@ -12,8 +13,9 @@
 #include "features/draw2d/computation/quad2d_compute.h"
 #include "features/hwrender/computation/fuzz_compute.h"   // [rc4l] ComputeFuzzKind
 #include "features/levelmesh/computation/shading_compute.h"
-#include "features/hwrender/hud2d.h"
-#include "features/hwrender/spriteview.h"
+#include "features/draw2d/record.h"
+#include "features/viewsetup/viewsetup.h"
+#include "features/viewsetup/spriteview.h"
 #include "features/materials/materials.h"
 #include "computation/psprite_overlay_compute.h"
 #include "features/sprites/modelbuild.h"                           // [rc4l] CaptureModelFrames, a HUD model's surfaces
@@ -40,7 +42,7 @@
 #include "features/fakeflat/fakeflat.h"   // [rc4l] gl_FakeFlat
 #include "features/rendersettings/rendersettings.h"   // [rc4l] RenderShadingEnv, gl_ClampLight, getExtraLight
 #include "features/rendersettings/colormap.h"   // [rc4l] FColormap
-#include "features/sprites/spriteframe.h"   // [rc4l] gl_GetSpriteFrame
+#include "features/materials/spriteframe.h"   // [rc4l] gl_GetSpriteFrame
 #include "features/damage-tint/damagetint.h"   // [rc4l] DamageTint_WeaponGradient
 EXTERN_CVAR(Int, screenblocks)
 
@@ -62,15 +64,15 @@ namespace zx { namespace sprites {
 
 namespace {
 
-std::vector<zx::hwrender::Quad2D> g_gl, g_ours;
+std::vector<zx::draw2d::Quad2D> g_gl, g_ours;
 zx::frame::OracleTally g_check;   // [rc4l] frames compared, and how many differed
 int g_checkedQuads = 0;
 
 // [rc4l] A derived quad, recorded for the backend or, with the check on, held for the comparison.
-void Emit(const zx::hwrender::Quad2D &q)
+void Emit(const zx::draw2d::Quad2D &q)
 {
 	if (fua_psprite_check) g_ours.push_back(q);
-	else zx::hwrender::Record2D(q);
+	else zx::draw2d::Record2D(q);
 }
 
 // [rc4l] DrawPSprite for one layer at (sx, sy): its frame, its screen rectangle, and the colour the caller worked out, with the dynamic light folded in as GL's record folds it.
@@ -106,7 +108,7 @@ void LayerQuad(player_t *player, pspdef_t *psp, fixed_t sx, fixed_t sy, int tran
 	PSpriteQuad r;
 	if (!ComputePSpriteQuad(in, r)) return;
 
-	zx::hwrender::Quad2D q;
+	zx::draw2d::Quad2D q;
 	memset(&q, 0, sizeof(q));
 	q.material = material;
 	q.x = r.x1; q.y = r.y1; q.w = r.x2 - r.x1; q.h = r.y2 - r.y1;
@@ -140,7 +142,7 @@ void HUDModelLayer(player_t *player, pspdef_t *psp, fixed_t sx, fixed_t sy, cons
 	float eye[16], toMesh[16];
 	ComputeHUDModelMatrix(pose, eye);
 	zx::hwrender::BackendCamera cam = {};
-	zx::hwrender::ViewCameraFromEngine(cam);
+	zx::viewsetup::ViewCameraFromEngine(cam);
 	if (!zx::hwrender::ComputeEyeToMesh(cam, eye, toMesh)) return;
 	FColormap none;
 	none.Clear();
@@ -161,7 +163,7 @@ void HUDModelLayer(player_t *player, pspdef_t *psp, fixed_t sx, fixed_t sy, cons
 	zx::levelmesh::ModelCaptureEnd();
 }
 
-bool SameQuad(const zx::hwrender::Quad2D &a, const zx::hwrender::Quad2D &b)
+bool SameQuad(const zx::draw2d::Quad2D &a, const zx::draw2d::Quad2D &b)
 {
 	const float fa[] = { a.x, a.y, a.w, a.h, a.u1, a.v1, a.u2, a.v2, a.r, a.g, a.b, a.a, a.lx2, a.ly2 };
 	const float fb[] = { b.x, b.y, b.w, b.h, b.u1, b.v1, b.u2, b.v2, b.r, b.g, b.b, b.a, b.lx2, b.ly2 };
@@ -313,7 +315,7 @@ static void BuildLayers(sector_t *viewsector, int viewArea, fixed_t bobX, fixed_
 		}
 		else
 		{
-			if (SpritesTakeDynamicLight()) ActorDynamicLight(playermo, dyn);
+			if (zx::viewsetup::SpritesTakeDynamicLight()) zx::dynlights::ActorDynamicLight(playermo, dyn);
 			// [rc4l] gl_SetColor for a weapon: white under a fixed colormap, else the light colour at the weapon's light level.
 			if (gl_fixedcolormap != CM_DEFAULT) rgba[0] = rgba[1] = rgba[2] = 1.f;
 			else
@@ -370,7 +372,7 @@ void BuildTargeterSprites(AActor *viewActor)
 	}
 }
 
-void NoteGLPSprite(const zx::hwrender::Quad2D &q)
+void NoteGLPSprite(const zx::draw2d::Quad2D &q)
 {
 	if (fua_psprite_check) g_gl.push_back(q);
 }
@@ -387,8 +389,8 @@ void CheckFramePSprites()
 	{
 		if (zx::frame::ComputeOracleDiffer(g_check, 8))
 		{
-			const zx::hwrender::Quad2D none = {};
-			const zx::hwrender::Quad2D &a = g_gl.empty() ? none : g_gl[0], &b = g_ours.empty() ? none : g_ours[0];
+			const zx::draw2d::Quad2D none = {};
+			const zx::draw2d::Quad2D &a = g_gl.empty() ? none : g_gl[0], &b = g_ours.empty() ? none : g_ours[0];
 			zx::frame::ComputeOracleNote(g_check, "  %s: GL %u quads at %.6g,%.6g %.6gx%.6g rgba %.6g %.6g %.6g %.6g blend %d tm %d tr %d; ours %u at %.6g,%.6g %.6gx%.6g rgba %.6g %.6g %.6g %.6g blend %d tm %d tr %d\n",
 				why, (unsigned)g_gl.size(), a.x, a.y, a.w, a.h, a.r, a.g, a.b, a.a, a.blend, a.texMode, a.translation,
 				(unsigned)g_ours.size(), b.x, b.y, b.w, b.h, b.r, b.g, b.b, b.a, b.blend, b.texMode, b.translation);

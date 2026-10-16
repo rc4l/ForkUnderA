@@ -168,14 +168,14 @@ TEST(SampleReportJson, SurvivesASymbolWithCharactersJsonCaresAbout)
 	EXPECT_NE(std::string::npos, json.find("op\\\"erator\\\\<>"));
 }
 
-TEST(SampleReportJson, DropsAControlCharacterRatherThanWritingItRaw)
+TEST(SampleReportJson, EscapesAControlCharacterRatherThanWritingItRaw)
 {
 	std::vector<SampleFunc> funcs;
 	funcs.push_back(SampleFunc(std::string("bad") + '\n' + "name", "m.dll", 1, 100.0));
 
 	const std::string json = SampleReportJson(funcs, 1.0, 1);
 
-	EXPECT_NE(std::string::npos, json.find("badname"));
+	EXPECT_NE(std::string::npos, json.find("bad\\nname"));
 	EXPECT_EQ(std::string::npos, json.find('\n'));
 }
 

@@ -483,6 +483,8 @@ enum
 struct userinfo_t : TMap<FName,FBaseCVar *>
 {
 	~userinfo_t();
+	// [rc4l] Takes o's cvars after deleting its own, which TMap's TransferFrom drops undeleted: G_NewInit leaked every player's userinfo on each new game (fua_allocsites).
+	void TransferFrom(userinfo_t &o);
 
 	int GetAimDist() const
 	{
@@ -553,6 +555,8 @@ struct userinfo_t : TMap<FName,FBaseCVar *>
 	}
 
 	void Reset();
+	// [rc4l] Deletes every cvar this userinfo owns and empties it.
+	void DeleteCVars();
 	// [BB] Zandronum still uses its own team code.
 	//int TeamChanged(int team);
 	int SkinChanged(const char *skinname, int playerclass);

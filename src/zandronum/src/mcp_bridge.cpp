@@ -43,6 +43,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include "features/json/computation/json_compute.h"
 
 // --- Engine entry points (implemented in mcp_rpc.cpp / mcp_crash.cpp) --------
 // Run one queued RPC request on the game thread and send its response. args is the raw JSON "args".
@@ -379,9 +380,7 @@ void MCP_Bridge_TeeOutput( const char *text )
 	MCP_Crash_Init();
 	LogWrite( text );
 	if ( !g_enabled || g_client == MCP_INVALID_SOCKET ) return;
-	std::string esc;
-	zx::mcp::JsonEscape( text, esc );
-	std::string data = "{\"text\":\"" + esc + "\"}";
+	std::string data = "{\"text\":" + zx::json::ComputeJsonQuoted( text ) + "}";
 	MCP_Bridge_SendJson( zx::mcp::BuildEvent( "out", data ).c_str() );
 }
 

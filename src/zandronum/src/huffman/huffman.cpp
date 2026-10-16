@@ -41,6 +41,9 @@ static HuffmanCodec * __codec = NULL;
 /** Creates and intitializes a HuffmanCodec Object. <br>
  * Also arranges for HUFFMAN_Destruct() to be called upon termination. */
 void HUFFMAN_Construct(){
+	// [rc4l] A restart constructs the network again, and the codec is a fixed table, so the one built already is kept rather than leaked with its exit hook added again.
+	if ( __codec != NULL )
+		return;
 	
 	// The exact structure description of a Huffman tree
 	static unsigned char const compatible_huffman_tree[] = {

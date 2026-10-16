@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 rc4l
 
+#include "features/fakeflat/fakeflat.h"   // [rc4l] TransferSector, ViewDependent
+#include "features/surfaces/planeuv.h"   // [rc4l] PlaneUVFor
 #include "features/levelmesh/flatmesh.h"
 #include "features/levelmesh/captureshading.h"   // [rc4l] CaptureShading, the light model for a GL colormap
 #include "features/hwrender/computation/lightside_compute.h"   // the plane bake, tested off-engine
@@ -13,7 +15,6 @@
 #include "features/levelmesh/computation/flatmesh_compute.h"
 #include "features/hwrender/computation/slot_compute.h"
 #include "features/levelmesh/computation/packedcolor_compute.h"
-#include "features/horizon/horizon.h"
 #include "features/horizon/computation/horizon_compute.h"
 
 #include "r_defs.h"
@@ -276,7 +277,7 @@ static void StoreFlat(const FlatSource &flat, subsector_t *sub, bool ceiling)
 	if (change == kFlatRescroll)
 	{
 		PlaneUVTransform t;
-		PlaneUVFor(flat.plane, flat.gltexture, t);
+		zx::surfaces::PlaneUVFor(flat.plane, flat.gltexture, t);
 		PlaneUVTransform t0 = t;
 		t0.xoffs = FIXED2FLOAT(fixed_t::FromRaw(slot->stamp.xoffs));
 		t0.yoffs = FIXED2FLOAT(fixed_t::FromRaw(slot->stamp.yoffs));
@@ -316,7 +317,7 @@ static void StoreFlat(const FlatSource &flat, subsector_t *sub, bool ceiling)
 		const float zc = sloped ? 0.0f : (FIXED2FLOAT(p.Zat0()) + flat.dz);
 
 		PlaneUVTransform uvt;
-		PlaneUVFor(flat.plane, flat.gltexture, uvt);
+		zx::surfaces::PlaneUVFor(flat.plane, flat.gltexture, uvt);
 
 		for (int k = 0; k < n; k++)
 		{
@@ -474,21 +475,6 @@ void ApplyFullbright(zx::materials::MaterialRef mat, FColormap &cm, int &lightLe
 	lightLevel = 255;
 }
 
-void PlaneUVFor(const GLSectorPlane &plane, zx::materials::MaterialRef mat, PlaneUVTransform &out)
-{
-	out = ComputeIdentityPlaneUV();
-	out.xoffs = FIXED2FLOAT(plane.xoffs);
-	out.yoffs = FIXED2FLOAT(plane.yoffs);
-	out.xscale = FIXED2FLOAT(plane.xscale);
-	out.yscale = FIXED2FLOAT(plane.yscale);
-	out.angleDegrees = ANGLE2FLOAT(plane.angle);
-	int w, h;
-	zx::materials::MaterialRenderSize(mat, w, h);
-	out.texWidth = (float)w;
-	out.texHeight = (float)h;
-	out.hasCanvas = zx::materials::MaterialIsCanvas(mat);
-}
-
 // One face of a 3D floor, by GLFlat::SetFrom3DFloor's rule with the viewer test taken out.
 static void Bake3DFace(subsector_t *sub, sector_t *real, F3DFloor *rover, bool top, bool ceiling)
 {
@@ -520,17 +506,13 @@ static void Bake3DFace(subsector_t *sub, sector_t *real, F3DFloor *rover, bool t
 	BakeOnePlane(sub, pr.model, pr.isceiling, ceiling, lightlevel, cm, alpha, style);
 }
 
-// [rc4l] The view area the height transfers' planes were last baked for, a kViewArea, which is GL's area_t.
-static int g_transferArea = kViewAreaNormal;
-static_assert(area_normal == kViewAreaNormal && area_below == kViewAreaBelow && area_above == kViewAreaAbove, "kViewArea spells GL's area_t");
-
 // [rc4l] A sector's own floor or ceiling as ProcessSector lights it, laid over sub: the sector's own subsector, or with fake another one GL's missing-texture fill covers with it.
 static int BakeSectorPlane(subsector_t *sub, sector_t *real, bool ceiling, bool fake)
 {
 	const int which = ceiling ? sector_t::ceiling : sector_t::floor;
 	// [rc4l] A height transfer draws its control sector's planes, and under or over them that sector's textures, light and colour.
 	sector_t transfer;
-	sector_t *src = fake ? real : TransferSector(real, &transfer, false);
+	sector_t *src = fake ? real : zx::fakeflat::TransferSector(real, &transfer, false);
 	int ll = gl_ClampLight(ceiling ? src->GetCeilingLight() : src->GetFloorLight());
 	FColormap cm;
 	cm = src->ColorMap;
@@ -550,11 +532,6 @@ static int BakeSectorPlane(subsector_t *sub, sector_t *real, bool ceiling, bool 
 	return 1;
 }
 
-sector_t *TransferSector(sector_t *s, sector_t *scratch, bool back)
-{
-	return (s != NULL && ViewDependent(s)) ? gl_FakeFlat(s, scratch, (area_t)g_transferArea, back) : s;
-}
-
 void RefreshTransferArea()
 {
 	if (sectors == NULL || numsectors <= 0 || subsectors == NULL) return;
@@ -564,10 +541,9 @@ void RefreshTransferArea()
 	const bool has = hs != NULL && !(hs->MoreFlags & SECF_IGNOREHEIGHTSEC);
 	const int area = ComputeViewArea(has, FIXED2FLOAT(viewz), has ? FIXED2FLOAT(hs->floorplane.ZatPoint(viewx, viewy)) : 0.f,
 		has ? FIXED2FLOAT(hs->ceilingplane.ZatPoint(viewx, viewy)) : 0.f, has && (hs->MoreFlags & SECF_FAKEFLOORONLY) != 0);
-	if (area == g_transferArea) return;
-	g_transferArea = area;
+	if (!zx::fakeflat::SetTransferArea(area)) return;
 	for (int i = 0; i < numsectors; i++)
-		if (ViewDependent(&sectors[i])) BakeFlatsForSector(i);
+		if (zx::fakeflat::ViewDependent(&sectors[i])) BakeFlatsForSector(i);
 	RebakeTransferSegs();
 }
 
@@ -1165,12 +1141,10 @@ static void PushSkyQuad(int list, float x1, float y1, float x2, float y2, const 
 // walk reaches, so the set carries GL VISIBILITY with it. Deriving them from the map was tried
 // three ways and every one over-emitted -- on the reported vantage GL produces sky quads for FOUR
 // linedefs where the map has thousands of sky segs. See docs/skybleed-scope.md.
-void AddViewSkyQuad(int list, float x1, float y1, float x2, float y2, const float *zb, const float *zt, AActor *viewpoint, int lineSpecial, int skyKey)
+void AddViewSkyQuad(int list, float x1, float y1, float x2, float y2, const float *zb, const float *zt, AActor *viewpoint, int skyKey)
 {
 	if (!fua_mesh_sky || !HasSkyList(list)) return;
 	if (viewpoint != NULL && ComputeTakesSkyViewpoint(list, g_skyViewpoint != NULL)) g_skyViewpoint = viewpoint;
-	// [rc4l] A horizon line's sky belongs to features/horizon, which builds it for every eye height.
-	if (zx::horizon::HorizonsActive() && zx::horizon::ComputeIsHorizonLine(lineSpecial)) return;
 	PushSkyQuad(list, x1, y1, x2, y2, zb, zt, skyKey);
 }
 

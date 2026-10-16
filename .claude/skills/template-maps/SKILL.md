@@ -107,9 +107,11 @@ cvar changed), compared Vulkan against Vulkan. `scenarios/pointlight.mjs` compar
 nothing is read back from a window, and the harness runs even with other engines open.
 A side with `frame: "gl"` keeps GL's half of a Vulkan launch's pair instead. GL there draws its own
 vertices and never the backend's wall mesh; `mapreload.mjs` (`commands: ["map MAP01"]`, a level change)
-checks it still draws after the level loads again, and `glplain.mjs` checks it never reads the mesh. A side's
-A ray-traced side needs `commands: ["fua_dg_rtmirrors 1", "fua_diligent_scene"]`, since tracing is chosen
-when the scene is uploaded (`rtsprites.mjs`). `atVantage` commands run once it stands at each vantage, for a change the view's own walk must see first
+checks it still draws after the level loads again, and `glplain.mjs` checks it never reads the mesh.
+A side's `launchCvars` go on the command line, for what must hold from the level's upload, where its
+`cvars` are set once the level is up (`cameratexpermaterial.mjs`: per-material bindings are made at the
+upload). A ray-traced side needs `commands: ["fua_dg_rtmirrors 1", "fua_diligent_scene"]`, since tracing
+is chosen when the scene is uploaded, and the scenario `needs: ["raytracing"]` (`rtsprites.mjs`). `atVantage` commands run once it stands at each vantage, for a change the view's own walk must see first
 (`fua_mesh_blank` empties the mesh the map bake filled). `fuactl scenarios <name> --side S --cvar k=v`
 adds cvars to one side, which is how a test shows it fails under the behaviour it guards against; a
 scenario without that side is skipped rather than ending the run. `standalonemove.mjs` runs its script
@@ -148,7 +150,32 @@ For a fault that lasts ONE frame (a sprite drawn white the frame its material fi
 capture can catch it: have the engine count it, and use `compareCounter`, which stands at each vantage
 with the sim running and holds a console command's number to a ceiling (`counter: { command, label,
 pattern, ceiling | floor }`, `pattern`'s first group the number), launched with the first non-GL side's
-cvars. `spriteslots.mjs` reads `fua_dg_dynstats`; `particles.mjs` holds a floor.
+cvars. `spriteslots.mjs` reads `fua_dg_dynstats`; `particles.mjs` holds a floor. `compareOverTime` and
+`compareCounter` both launch with the first non-GL side's settings.
+
+For what a command must CHANGE and what must SURVIVE one (a mark made, then a resize), use
+`compareSequence`: `steps` are captures taken in turn, each after its `commands` (console lines, a number
+of ms to wait, or a camera to stand at), and each box names the `pair` of captures it is judged
+between. `decalresize.mjs` makes a mark, changes a setting from one spot and judges it from another,
+since a stale depth binding matches only the view it was frozen in. Cheats are toggles and a locked
+launch already has `god` on, so a scenario asking for `god` turns it off.
+
+For a fault on the engine's way out, use `compareQuit`: each side is launched, plays `settleTics`, and is
+quit from its console as a player quits; a crash file beside its log, an engine still running or an exit
+code other than 0 fails it (`judgeQuit`). `quitclean.mjs` quits the backend with Diligent's messages on.
+
+For a leak, which no frame shows either, use `compareSoak`: each side repeats the scenario's `action` (a
+reload unless it names console steps, or a function of the launch's `{ wadPath, iwad }` that builds them)
+`cycles` times and passes when the engine's soak verdict says no memory, object, handle or thread count
+kept growing past `warmup` (`judgeSoak`), leaving out readings under each `ignore` prefix. `soak.mjs` reloads
+a map with lights and monsters; `wadsoak.mjs` and `wadsoaktitle.mjs` swap WAD sets with `wad_reload`.
+
+`scenarios --webgpu` runs the set on the WebGPU device, and how depends on how a scenario judges: one
+compared across launches runs its first Vulkan side on Vulkan and on WebGPU, every box at
+`WEBGPU_CEILING`; one judged against itself (a comparison marked `judgedAlone` in `template.mjs`) runs on WebGPU alone
+with its own limits; a `compareSameFrame` one (a WebGPU launch has no GL) and one that `needs:
+["raytracing"]` are skipped with that reason. A scenario that throws counts as one failure and the run
+goes on.
 
 `BOXES[map]` is `{ name: { box: [x0, y0, x1, y1], ceiling } }` in frame fractions. Set ceilings from
 measurement, not taste: run the FIXED build, take what it reads, add margin. A map with a known,
@@ -171,7 +198,7 @@ Export the builder from the scenario; `runScenarioIfMain` keeps the import from 
 | file | role |
 |---|---|
 | `tools/fuactl/src/udmf.mjs` | UDMF map + PWAD writer |
-| `tools/fuactl/src/template.mjs` | `compareTemplate` (launch, capture, judge), `compareOverTime`, `compareCounter`, `compareSameFrame`, and the pure `judge` |
+| `tools/fuactl/src/template.mjs` | `compareTemplate` (launch, capture, judge), the other `compare*` comparisons, and the pure `judge*` verdicts |
 | `tools/fuactl/src/pngcore.mjs` | PNG decode/encode, `boxDiff`; `fuactl png --boxdiff` on the CLI |
 | `tools/fuactl/scenarios/horizon.mjs` | the worked example |
 

@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 rc4l
 //
-// [rc4l] Views drawn into targets of their own: line mirrors, raster and ray-traced, reflective planes, and stacked sectors.
+// [rc4l] Line mirrors, raster and ray-traced, drawn into pictures of their own; reflective planes and stacked sectors are in dgviewtargets.cpp.
 
 #include "features/hwrender/diligent/dgscene_internal.h"
 #include "features/hwrender/diligent/dgscene_glsl.h"   // [rc4l] the scene's light model, shared with the mirror pass
 #include "features/viewsetup/viewsetup.h"   // [rc4l] FixedColormapShadeFor
 #include "features/hwrender/computation/linemirror_compute.h"   // [rc4l] the reflected eye and how deep mirrors nest
 #include "features/hwrender/computation/growbuffer_compute.h"   // [rc4l] ComputeGrownCapacity
+#include "features/telemetry/telemetry.h"
 
 EXTERN_CVAR(Bool, r_lights_checkside)
 
@@ -16,10 +17,6 @@ EXTERN_CVAR(Int, r_mirror_recursions)
 
 namespace zx { namespace hwrender {
 
-// [rc4l] The pipeline that paints a stacked plane from its view.
-static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_stackSurfPSO;
-static Diligent::RefCntAutoPtr<Diligent::IBuffer> g_stackSurfVB;
-static unsigned int g_stackSurfVBCapacity = 0;
 // [rc4l] Ray-traced reflections: the acceleration structure over the baked level.
 //
 // Why this rather than another planar pass. The planar mirror renders the whole world again per
@@ -97,7 +94,7 @@ static bool CreateRayTracingBuffer(const char *name, Diligent::Uint64 size, cons
 	bd.Size = size;
 	Diligent::BufferData init(data, size);
 	out.Release();
-	GetDevice()->CreateBuffer(bd, data != NULL ? &init : nullptr, &out);
+	CreateDeviceBuffer(bd, data != NULL ? &init : nullptr, &out);
 	return out != nullptr;
 }
 
@@ -423,10 +420,10 @@ int RecollectMirrors()
 	FUA_SECTOR_LIGHT_GLSL \
 	FUA_FIXED_COLORMAP_GLSL \
 	FUA_MIRROR_SHEEN_BLOCK_GLSL \
-	"layout(binding = 7) uniform sampler2D uSheen;\n" \
+	"layout(binding = 7) uniform texture2D uSheen; uniform sampler uSheen_sampler;\n" \
 	"layout(location = 2) in vec2 vSheenUV;\n" \
 	"vec3 fuaMirrorSheen() {\n" \
-	"    vec4 texel = texture(uSheen, vSheenUV);\n" \
+	"    vec4 texel = texture(sampler2D(uSheen, uSheen_sampler), vSheenUV);\n" \
 	/* [rc4l] Under a fixed colormap GL draws the sheen through main.fp in white light, recoloured by the colormap alone. */ \
 	"    if (uFixedColormap.w > 0.5) return fuaFixedColormap(texel.rgb) * (texel.a * uSheenColor.a);\n" \
 	"    vec4 clip = uMVP * vec4(vWorld, 1.0);\n" \
@@ -480,14 +477,14 @@ static const char *kMirrorPS =
 	"#extension GL_EXT_ray_query : require\n"
 	"#extension GL_EXT_nonuniform_qualifier : require\n"
 	FUA_CONSTANTS_GLSL
-	"layout(binding = 1) uniform sampler2D uTex;\n"
+	"layout(binding = 1) uniform texture2D uTex; uniform sampler uTex_sampler;\n"
 	"layout(binding = 2) uniform accelerationStructureEXT uTLAS;\n"
-	"layout(std430, binding = 3) readonly buffer Verts { float vtx[]; };\n"
-	"layout(binding = 4) uniform sampler2D uMaterials[FUA_MAT_SLOTS];\n"
-	"layout(binding = 5) uniform sampler2D uSky;\n"
-	"layout(std430, binding = 7) readonly buffer MirrorPlanes { vec4 mirrorPlanes[]; };\n"
+	"layout(std430, binding = 3) readonly buffer Verts { float vtx[]; } VertsIn;\n"
+	"layout(binding = 4) uniform texture2D uMaterials[FUA_MAT_SLOTS]; uniform sampler uMaterials_sampler;\n"
+	"layout(binding = 5) uniform texture2D uSky; uniform sampler uSky_sampler;\n"
+	"layout(std430, binding = 7) readonly buffer MirrorPlanes { vec4 mirrorPlanes[]; } MirrorPlanesIn;\n"
 	// [rc4l] This frame's steps between mirror views (ComputeTracedSpriteHeader), then its sprites, four vec4s each (ComputeTracedSpriteRecord), the boxes of the third instance.
-	"layout(std430, binding = 8) readonly buffer TracedSprites { vec4 tracedSprites[]; };\n"
+	"layout(std430, binding = 8) readonly buffer TracedSprites { vec4 tracedSprites[]; } TracedSpritesIn;\n"
 	"layout(location = 0) in vec3 vWorld;\n"
 	"layout(location = 1) in vec3 vNormal;\n"
 	FUA_MIRROR_SHEEN_PS_GLSL
@@ -496,15 +493,15 @@ static const char *kMirrorPS =
 	// that holds everything else. The colour and the material this ray hits come from there.
 	"const uint STRIDE = 6u;\n"
 	FUA_PIECEDATA_GLSL
-	"uint vertPiece(uint v) { return uint(vtx[v * STRIDE + 5u] + 0.5); }\n"
-	"vec3 vertColor(uint v) { return pieces[vertPiece(v)].colorLight.rgb; }\n"
-	"vec2 vertUV(uint v)    { uint b = v * STRIDE + 3u; return vec2(vtx[b], vtx[b + 1u]); }\n"
+	"uint vertPiece(uint v) { return uint(VertsIn.vtx[v * STRIDE + 5u] + 0.5); }\n"
+	"vec3 vertColor(uint v) { return PiecesIn.pieces[vertPiece(v)].colorLight.rgb; }\n"
+	"vec2 vertUV(uint v)    { uint b = v * STRIDE + 3u; return vec2(VertsIn.vtx[b], VertsIn.vtx[b + 1u]); }\n"
 	// [rc4l] ComputeTracedSpriteHit, line for line: where the ray from o along d meets sprite s's quad from either side, between tMin and tMax, and its texture coordinate there.
-	"uint spriteAt(uint s) { return 1u + uint(tracedSprites[0].x) + s * 4u; }\n"
+	"uint spriteAt(uint s) { return 1u + uint(TracedSpritesIn.tracedSprites[0].x) + s * 4u; }\n"
 	"bool fuaSpriteHit(uint s, vec3 o, vec3 d, float tMin, float tMax, out float t, out vec2 uv) {\n"
 	"    uint r = spriteAt(s);\n"
-	"    vec3 p0 = tracedSprites[r].xyz, eu = tracedSprites[r + 1u].xyz, ev = tracedSprites[r + 2u].xyz;\n"
-	"    vec4 tex = tracedSprites[r + 3u];\n"
+	"    vec3 p0 = TracedSpritesIn.tracedSprites[r].xyz, eu = TracedSpritesIn.tracedSprites[r + 1u].xyz, ev = TracedSpritesIn.tracedSprites[r + 2u].xyz;\n"
+	"    vec4 tex = TracedSpritesIn.tracedSprites[r + 3u];\n"
 	"    t = 0.0; uv = vec2(0.0);\n"
 	"    vec3 n = cross(eu, ev);\n"
 	"    float den = dot(d, n);\n"
@@ -519,25 +516,25 @@ static const char *kMirrorPS =
 	"    uv = vec2(tex.x + (tex.y - tex.x) * a, tex.z + (tex.w - tex.z) * b);\n"
 	"    return true;\n"
 	"}\n"
-	"uint spritePiece(uint s) { return uint(tracedSprites[spriteAt(s)].w + 0.5); }\n"
-	"int spriteView(uint s)   { return int(tracedSprites[spriteAt(s) + 1u].w); }\n"
+	"uint spritePiece(uint s) { return uint(TracedSpritesIn.tracedSprites[spriteAt(s)].w + 0.5); }\n"
+	"int spriteView(uint s)   { return int(TracedSpritesIn.tracedSprites[spriteAt(s) + 1u].w); }\n"
 	// [rc4l] The view a ray in `view` is in after bouncing off line mirror `line`, or none when no walk went that way.
 	"int fuaNextView(int view, int line) {\n"
-	"    uint n = uint(tracedSprites[0].x);\n"
-	"    for (uint i = 1u; i <= n; i++) { vec4 e = tracedSprites[i]; if (int(e.x) == view && int(e.y) == line) return int(e.z); }\n"
+	"    uint n = uint(TracedSpritesIn.tracedSprites[0].x);\n"
+	"    for (uint i = 1u; i <= n; i++) { vec4 e = TracedSpritesIn.tracedSprites[i]; if (int(e.x) == view && int(e.y) == line) return int(e.z); }\n"
 	"    return " FUA_NO_MIRROR_VIEW_STR ";\n"
 	"}\n"
 	// [rc4l] A piece's material slot, the whole array's worth: a mask left from a 512-slot array sent every slot past 511 to another texture.
-	"uint pieceMat(uint p)    { return min(uint(pieces[p].fogAlphaMat.w + 0.5), uint(FUA_MAT_SLOTS - 1)); }\n"
+	"uint pieceMat(uint p)    { return min(uint(PiecesIn.pieces[p].fogAlphaMat.w + 0.5), uint(FUA_MAT_SLOTS - 1)); }\n"
 	"uint spriteMat(uint s)   { return pieceMat(spritePiece(s)); }\n"
 	// [rc4l] A traced hit lit and fogged as GL's reflected view does it, at `dist` along the eye's ray through the mirrors, where it appears.
 	"vec3 fuaTracedShade(vec3 texel, uint p, vec3 color, float dist) {\n"
 	"    vec3 seen = uCameraPos.xyz + normalize(vWorld - uCameraPos.xyz) * dist;\n"
 	"    vec4 clip = uMVP * vec4(seen, 1.0);\n"
-	"    float fogMode = pieces[p].fogAlphaMat.z;\n"
-	"    float fogfactor = fuaFogFactor(fogMode, pieces[p].fogAlphaMat.x, vec4(seen, clip.w), uCameraPos.xyz);\n"
-	"    vec3 light = fuaSectorLight(color, pieces[p].colorLight.w, fogMode, fogfactor, clip.z / clip.w);\n"
-	"    return fuaColouredFog(texel * light, pieces[p].fogColor.rgb, fogMode, fogfactor);\n"
+	"    float fogMode = PiecesIn.pieces[p].fogAlphaMat.z;\n"
+	"    float fogfactor = fuaFogFactor(fogMode, PiecesIn.pieces[p].fogAlphaMat.x, vec4(seen, clip.w), uCameraPos.xyz);\n"
+	"    vec3 light = fuaSectorLight(color, PiecesIn.pieces[p].colorLight.w, fogMode, fogfactor, clip.z / clip.w);\n"
+	"    return fuaColouredFog(texel * light, PiecesIn.pieces[p].fogColor.rgb, fogMode, fogfactor);\n"
 	"}\n"
 	"void main() {\n"
 	"    vec3 sheen = fuaMirrorSheen();\n"
@@ -569,7 +566,7 @@ static const char *kMirrorPS =
 	"            float st;\n"
 	"            vec2 suv;\n"
 	"            if (!fuaSpriteHit(s, origin, dir, 0.1, tMax, st, suv)) continue;\n"
-	"            if (textureLod(uMaterials[nonuniformEXT(spriteMat(s))], suv, 0.0).a <= uFrame.w) continue;\n"
+	"            if (textureLod(sampler2D(uMaterials[nonuniformEXT(spriteMat(s))], uMaterials_sampler), suv, 0.0).a <= uFrame.w) continue;\n"
 	"            hitSprite = s;\n"
 	"            hitUV = suv;\n"
 	"            rayQueryGenerateIntersectionEXT(rq, st);\n"
@@ -578,7 +575,7 @@ static const char *kMirrorPS =
 	"        if (rayQueryGetIntersectionInstanceCustomIndexEXT(rq, true) != 1) break;\n"
 	// [rc4l] Another mirror: GL renders it a level deeper, reflecting the view again, unless that is past its recursions.
 	"        if (level >= levels) { outColor = vec4(min(glaze, vec3(1.0)), 1.0); return; }\n"
-	"        vec4 mp = mirrorPlanes[uint(rayQueryGetIntersectionPrimitiveIndexEXT(rq, true)) / 2u];\n"
+	"        vec4 mp = MirrorPlanesIn.mirrorPlanes[uint(rayQueryGetIntersectionPrimitiveIndexEXT(rq, true)) / 2u];\n"
 	"        vec3 m = mp.xyz;\n"
 	"        view = fuaNextView(view, int(mp.w));\n"
 	"        float hit = rayQueryGetIntersectionTEXT(rq, true);\n"
@@ -600,15 +597,15 @@ static const char *kMirrorPS =
 	"        float su = (atan(d.z, d.x) + uLightParams.y) / 6.28318531;\n"
 	// The dome spans the horizon to 60 degrees over its texture, so map elevation the same way.
 	"        float sv = clamp((1.0472 - el) / 1.0472, 0.0, 1.0);\n"
-	"        outColor = vec4(min(texture(uSky, vec2(su * uScreen.z, sv * uScreen.w)).rgb + glaze, vec3(1.0)), 1.0);\n"
+	"        outColor = vec4(min(texture(sampler2D(uSky, uSky_sampler), vec2(su * uScreen.z, sv * uScreen.w)).rgb + glaze, vec3(1.0)), 1.0);\n"
 	"        return;\n"
 	"    }\n"
 	// [rc4l] A sprite: its texel in the light its own record carries, shaded as the level's surfaces are.
 	"    if (rayQueryGetIntersectionTypeEXT(rq, true) == gl_RayQueryCommittedIntersectionGeneratedEXT) {\n"
-	"        vec3 st = textureLod(uMaterials[nonuniformEXT(spriteMat(hitSprite))], hitUV, 0.0).rgb;\n"
+	"        vec3 st = textureLod(sampler2D(uMaterials[nonuniformEXT(spriteMat(hitSprite))], uMaterials_sampler), hitUV, 0.0).rgb;\n"
 	"        if (uFixedColormap.w > 0.5) { outColor = vec4(min(fuaFixedColormap(st) + glaze, vec3(1.0)), 1.0); return; }\n"
 	"        uint sp = spritePiece(hitSprite);\n"
-	"        vec3 sc = fuaTracedShade(st, sp, pieces[sp].colorLight.rgb, travelled + rayQueryGetIntersectionTEXT(rq, true));\n"
+	"        vec3 sc = fuaTracedShade(st, sp, PiecesIn.pieces[sp].colorLight.rgb, travelled + rayQueryGetIntersectionTEXT(rq, true));\n"
 	"        outColor = vec4(min(sc + glaze, vec3(1.0)), 1.0);\n"
 	"        return;\n"
 	"    }\n"
@@ -624,7 +621,7 @@ static const char *kMirrorPS =
 	// 127, which on any level with more than 128 batches reflected the wrong texture and could not
 	// say so.
 	"    uint mat = pieceMat(vertPiece(i0));\n"
-	"    vec3 texel = texture(uMaterials[nonuniformEXT(mat)], uv).rgb;\n"
+	"    vec3 texel = texture(sampler2D(uMaterials[nonuniformEXT(mat)], uMaterials_sampler), uv).rgb;\n"
 	// [rc4l] A fixed colormap recolours what the ray hit in white light, as the raster path does a level surface.
 	"    if (uFixedColormap.w > 0.5) { outColor = vec4(min(fuaFixedColormap(texel) + glaze, vec3(1.0)), 1.0); return; }\n"
 	"    c = fuaTracedShade(texel, vertPiece(i0), c, travelled + rayQueryGetIntersectionTEXT(rq, true));\n"
@@ -637,15 +634,15 @@ static const char *kMirrorPS =
 static const char *kMirrorPlanarPS =
 	"#version 450\n"
 	FUA_CONSTANTS_GLSL
-	"layout(binding = 1) uniform sampler2D uTex;\n"
+	"layout(binding = 1) uniform texture2D uTex; uniform sampler uTex_sampler;\n"
 	"layout(location = 0) in vec3 vWorld;\n"
 	"layout(location = 1) in vec3 vNormal;\n"
 	FUA_MIRROR_SHEEN_PS_GLSL
 	"layout(location = 0) out vec4 outColor;\n"
 	"void main() {\n"
 	"    vec3 sheen = fuaMirrorSheen();\n"
-	"    vec2 uv = gl_FragCoord.xy / vec2(textureSize(uTex, 0));\n"
-	"    outColor = vec4(min(texture(uTex, vec2(1.0 - uv.x, uv.y)).rgb + sheen, vec3(1.0)), 1.0);\n"
+	"    vec2 uv = gl_FragCoord.xy / vec2(textureSize(sampler2D(uTex, uTex_sampler), 0));\n"
+	"    outColor = vec4(min(texture(sampler2D(uTex, uTex_sampler), vec2(1.0 - uv.x, uv.y)).rgb + sheen, vec3(1.0)), 1.0);\n"
 	"}\n";
 
 // [rc4l] Which shader g_mirrorPSO was built with; the traced one only where the structure exists and fua_dg_rtmirrors asks for it.
@@ -754,7 +751,7 @@ bool EnsureMirrorResources()
 	}
 
 	// [rc4l] A pipeline built for the other path is rebuilt, since the two shaders bind different resources.
-	const bool wantTraced = g_tlas && fua_dg_rtmirrors;
+	const bool wantTraced = g_tlas && fua_dg_rtmirrors && MaterialSlotCapacity() > 0;
 	if (g_mirrorPSO && g_mirrorPSOTraced != wantTraced) { ReleaseMirrorLevels(); g_mirrorSRB.Release(); g_mirrorPSO.Release(); }
 	if (!g_mirrorPSO)
 	{
@@ -802,10 +799,7 @@ bool EnsureMirrorResources()
 		const Diligent::ImmutableSamplerDesc samplers[] = {
 			{ Diligent::SHADER_TYPE_PIXEL, "uSheen", sheenSamp },
 			{ Diligent::SHADER_TYPE_PIXEL, "uTex", samp },
-			// [rc4l] uMaterials needs its own immutable sampler. A GLSL sampler2D is a COMBINED image
-			// sampler, so an array of them needs a sampler declared for the array too -- without it the
-			// binding is incomplete and the process dies inside CreateShaderResourceBinding with nothing
-			// in the log, which looks like the array size or the feature rather than a missing sampler.
+			// [rc4l] The material array's sampler, uMaterials_sampler, is immutable as well, or it is a variable nothing binds.
 			{ Diligent::SHADER_TYPE_PIXEL, "uMaterials", matSamp },
 			{ Diligent::SHADER_TYPE_PIXEL, "uSky", samp },
 		};
@@ -840,7 +834,7 @@ bool EnsureMirrorResources()
 		pci.PSODesc.ResourceLayout.NumImmutableSamplers =
 			(Diligent::Uint32)(sizeof(samplers) / sizeof(samplers[0]));
 		pci.pVS = vs; pci.pPS = ps;
-		dev->CreateGraphicsPipelineState(pci, &g_mirrorPSO);
+		CreatePipeline(pci, &g_mirrorPSO);
 		if (!g_mirrorPSO) { Printf("mirror: PSO failed\n"); return false; }
 		// The traced path reads the same per-piece records the raster path does, so a reflection can
 		// never disagree with the surface it reflects about what colour or texture that surface is.
@@ -857,7 +851,7 @@ bool EnsureMirrorResources()
 			cbd.Usage = Diligent::USAGE_DYNAMIC;
 			cbd.BindFlags = Diligent::BIND_UNIFORM_BUFFER;
 			cbd.CPUAccessFlags = Diligent::CPU_ACCESS_WRITE;
-			dev->CreateBuffer(cbd, nullptr, &g_sheenCB);
+			CreateDeviceBuffer(cbd, nullptr, &g_sheenCB);
 		}
 		if (!g_sheenCB) { Printf("mirror: sheen buffer failed\n"); g_mirrorPSO.Release(); return false; }
 		for (Diligent::SHADER_TYPE st : { Diligent::SHADER_TYPE_VERTEX, Diligent::SHADER_TYPE_PIXEL })
@@ -930,7 +924,7 @@ bool EnsureMirrorResources()
 		Diligent::BufferData bdata;
 		bdata.pData = &verts[0];
 		bdata.DataSize = bd.Size;
-		dev->CreateBuffer(bd, &bdata, &g_mirrorVB);
+		CreateDeviceBuffer(bd, &bdata, &g_mirrorVB);
 		if (!g_mirrorVB) return false;
 	}
 	return g_mirrors.Size() == 0 || g_mirrorVB.RawPtr() != nullptr;
@@ -1006,383 +1000,6 @@ static void DrawMirrorSurface(Diligent::IDeviceContext *ctx, unsigned index, con
 	d.NumVertices = 6;
 	d.Flags = Diligent::DRAW_FLAG_VERIFY_ALL;
 	ctx->Draw(d);
-}
-
-// [rc4l] The world from another eye, at the window's size, and the binding that paints a surface from it: a reflective plane's reflection, a stacked view.
-struct ViewTarget
-{
-	Diligent::RefCntAutoPtr<Diligent::ITexture> color;
-	Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding> srb;
-	int w, h;
-	ViewTarget() : w(0), h(0) {}
-	void Release() { srb.Release(); color.Release(); w = h = 0; }
-};
-
-// [rc4l] The depth every view target is rendered with, one view at a time, since a view's picture is all that outlives its render.
-static Diligent::RefCntAutoPtr<Diligent::ITexture> g_viewDepth;
-
-// [rc4l] Makes a target's picture at the window's size, and its binding on pso's texture variable, whenever it has none at that size.
-static bool EnsureViewTarget(ViewTarget &t, Diligent::IPipelineState *pso, const char *var, const char *name)
-{
-	auto *dev = GetDevice();
-	auto *swap = GetSwapChain();
-	if (!dev || !swap || !pso) return false;
-	const int w = FrameWidth(), h = FrameHeight();
-	if (t.color && t.srb && t.w == w && t.h == h) return true;
-	t.Release();
-	if (!CreateColorTarget(w, h, name, t.color) ||
-		!CreatePictureBinding(pso, var, t.color, t.srb)) return false;
-	t.w = w; t.h = h;
-	return true;
-}
-
-// [rc4l] Every target of a pool made at the window's size at once, the pool `size` long, so no view in sight waits on one being made; false when one cannot be.
-static bool FitViewPool(TArray<ViewTarget> &pool, unsigned size, Diligent::IPipelineState *pso, const char *var, const char *name)
-{
-	if (pool.Size() != size) pool.Resize(size);
-	for (unsigned k = 0; k < size; k++)
-		if (!EnsureViewTarget(pool[k], pso, var, name)) return false;
-	return true;
-}
-
-// [rc4l] The shared view depth at a target's size, made when it has none at that size.
-static Diligent::ITexture *ViewDepth(const ViewTarget &t)
-{
-	if (g_viewDepth)
-	{
-		const auto &d = g_viewDepth->GetDesc();
-		if ((int)d.Width == t.w && (int)d.Height == t.h) return g_viewDepth;
-	}
-	if (!CreateDepthTarget(t.w, t.h, "fua view", g_viewDepth)) return NULL;
-	return g_viewDepth;
-}
-
-// [rc4l] The world into a target, from the eye now in viewx/viewy/viewz/viewpitch and through g_pass.clipPlane.
-static void RenderWorldInto(Diligent::IDeviceContext *ctx, ViewTarget &t)
-{
-	Diligent::ITexture *depth = ViewDepth(t);
-	if (depth == NULL) return;
-	BuildMVP(g_mvp);
-	// [rc4l] A stacked view's other skies from its own walk's, a plane mirror's from the player's and the mirrors'.
-	RenderViewSkyLooks(ctx, false, g_pass.stackSlot, g_pass.stackSlot < 0, t.w, t.h);
-	auto *rtv = t.color->GetDefaultView(Diligent::TEXTURE_VIEW_RENDER_TARGET);
-	auto *dsv = depth->GetDefaultView(Diligent::TEXTURE_VIEW_DEPTH_STENCIL);
-	ctx->SetRenderTargets(1, &rtv, dsv, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-	const float clear[4] = { 0.05f, 0.06f, 0.09f, 1.0f };
-	ctx->ClearRenderTarget(rtv, clear, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-	ctx->ClearDepthStencil(dsv, Diligent::CLEAR_DEPTH_FLAG, 1.0f, 0, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-	DrawWorld(ctx);
-	ForgetViewSkyLooks();
-}
-
-// [rc4l] A rendered target changes hands here, outside the frame's render pass, for the reason RenderSkyPortal gives.
-static void HandOverViewTarget(Diligent::IDeviceContext *ctx, ViewTarget &t)
-{
-	Diligent::StateTransitionDesc barrier(t.color, Diligent::RESOURCE_STATE_UNKNOWN,
-		Diligent::RESOURCE_STATE_SHADER_RESOURCE, Diligent::STATE_TRANSITION_FLAG_UPDATE_STATE);
-	ctx->TransitionResourceStates(1, &barrier);
-}
-
-// Render each mirror's reflection and draw its surface. Called after the world, before the 2D layer.
-// [rc4l] Reflective floors and ceilings as GL's GLPlaneMirrorPortal draws them: each visible plane gets the world rendered from the mirrored eye into a slot before the frame, and the world pass paints its pieces from that picture, flipped, under the translucent floor (decisions in planemirror_compute).
-// [rc4l] One target per distinct reflective plane the level has now, as GL has no limit, all made before any comes into view.
-static TArray<ViewTarget> g_pm;
-static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_pmPSO;
-// [rc4l] Reflections rendered this frame.
-static int g_pmUsed = 0;
-
-void ReleasePlaneMirrors()
-{
-	g_pm.Clear();
-	g_pmPSO.Release();
-	g_viewDepth.Release();
-	g_pmUsed = 0;
-}
-
-// [rc4l] The plane-mirror pipeline, and a target for each of the level's `planes` reflective planes.
-static bool EnsurePlaneMirrorResources(int planes)
-{
-	auto *dev = GetDevice();
-	auto *swap = GetSwapChain();
-	if (!dev || !swap || !g_cb) return false;
-	const auto &sd = swap->GetDesc();
-	if (!g_pmPSO)
-	{
-		static const char *kPlaneMirrorVS =
-			"#version 450\n"
-			"layout(location = 0) in vec3 aPos;\n"
-			"layout(location = 1) in vec2 aUV;\n"
-			"layout(location = 2) in float aPiece;\n"
-			FUA_CONSTANTS_GLSL
-			"void main() { gl_Position = uMVP * vec4(aPos, 1.0); }\n";
-		// [rc4l] The mirrored eye sees the reflection upright, so the plane samples it upside down at its own screen position.
-		static const char *kPlaneMirrorPS =
-			"#version 450\n"
-			"layout(binding = 1) uniform sampler2D uReflection;\n"
-			"layout(location = 0) out vec4 outColor;\n"
-			"void main() {\n"
-			"    ivec2 size = textureSize(uReflection, 0);\n"
-			"    ivec2 p = ivec2(gl_FragCoord.xy);\n"
-			"    outColor = vec4(texelFetch(uReflection, ivec2(p.x, size.y - 1 - p.y), 0).rgb, 1.0);\n"
-			"}\n";
-		Diligent::RefCntAutoPtr<Diligent::IShader> vs, ps;
-		vs = CompileShader(Diligent::SHADER_TYPE_VERTEX, "fua plane mirror VS", kPlaneMirrorVS);
-		ps = CompileShader(Diligent::SHADER_TYPE_PIXEL, "fua plane mirror PS", kPlaneMirrorPS);
-		if (!vs || !ps) return false;
-		static Diligent::ShaderResourceVariableDesc vars[] = {
-			{ Diligent::SHADER_TYPE_VERTEX, "Constants", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_STATIC },
-			{ Diligent::SHADER_TYPE_PIXEL, "uReflection", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
-		};
-		Diligent::LayoutElement elems[] = {
-			Diligent::LayoutElement{0, 0, 3, Diligent::VT_FLOAT32, false},
-			Diligent::LayoutElement{1, 0, 2, Diligent::VT_FLOAT32, false},
-			Diligent::LayoutElement{2, 0, 1, Diligent::VT_FLOAT32, false},
-		};
-		Diligent::GraphicsPipelineStateCreateInfo pci;
-		pci.PSODesc.Name = "fua plane mirror PSO";
-		pci.PSODesc.PipelineType = Diligent::PIPELINE_TYPE_GRAPHICS;
-		ClampDepthLikeGL(pci.GraphicsPipeline);
-		pci.GraphicsPipeline.NumRenderTargets = 1;
-		pci.GraphicsPipeline.RTVFormats[0] = sd.ColorBufferFormat;
-		pci.GraphicsPipeline.DSVFormat = sd.DepthBufferFormat;
-		pci.GraphicsPipeline.PrimitiveTopology = Diligent::PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-		pci.GraphicsPipeline.RasterizerDesc.CullMode = Diligent::CULL_MODE_NONE;
-		// [rc4l] Tested so nearer walls hide it, never written, so the translucent floor drawn over it still passes on the same plane.
-		pci.GraphicsPipeline.DepthStencilDesc.DepthEnable = true;
-		pci.GraphicsPipeline.DepthStencilDesc.DepthWriteEnable = false;
-		pci.GraphicsPipeline.DepthStencilDesc.DepthFunc = Diligent::COMPARISON_FUNC_LESS_EQUAL;
-		pci.GraphicsPipeline.InputLayout.LayoutElements = elems;
-		pci.GraphicsPipeline.InputLayout.NumElements = 3;
-		pci.PSODesc.ResourceLayout.Variables = vars;
-		pci.PSODesc.ResourceLayout.NumVariables = 2;
-		// [rc4l] A combined image sampler needs a sampler in its descriptor even though texelFetch never uses it; without one the driver faults writing the binding.
-		Diligent::SamplerDesc samp;
-		samp.MinFilter = samp.MagFilter = Diligent::FILTER_TYPE_POINT;
-		samp.MipFilter = Diligent::FILTER_TYPE_POINT;
-		samp.AddressU = samp.AddressV = Diligent::TEXTURE_ADDRESS_CLAMP;
-		Diligent::ImmutableSamplerDesc samplers[] = { { Diligent::SHADER_TYPE_PIXEL, "uReflection", samp } };
-		pci.PSODesc.ResourceLayout.ImmutableSamplers = samplers;
-		pci.PSODesc.ResourceLayout.NumImmutableSamplers = 1;
-		pci.pVS = vs;
-		pci.pPS = ps;
-		dev->CreateGraphicsPipelineState(pci, &g_pmPSO);
-		if (!g_pmPSO) return false;
-		BindSceneConstants(g_pmPSO);
-	}
-	return FitViewPool(g_pm, (unsigned)planes, g_pmPSO, "uReflection", "fua plane mirror");
-}
-
-// [rc4l] Before the frame: pick the reflective planes the eye faces and can see, and render each one's reflection.
-void RenderPlaneMirrors(Diligent::IDeviceContext *ctx)
-{
-	g_pmUsed = 0;
-	for (unsigned i = 0; i < g_scene.blendBatches.Size(); i++) g_scene.batches[g_scene.blendBatches[i]].mirrorSlot = -1;
-	if (!fua_dg_planemirrors || sectors == NULL || !g_scene.vb) return;
-
-	float mvp[16];
-	BuildMVP(mvp);
-	const float vz = FIXED2FLOAT(viewz);
-	// [rc4l] Every reflective plane the level has now, and of those the ones the eye faces and can see, each the slot it is rendered into.
-	static TArray<zx::hwrender::MirrorPlane> planes, slots;
-	planes.Resize(g_scene.blendBatches.Size());
-	slots.Resize(g_scene.blendBatches.Size());
-	int planeCount = 0;
-	const int maxSlots = (int)planes.Size();
-	for (unsigned i = 0; i < g_scene.blendBatches.Size(); i++)
-	{
-		SceneBatch &b = g_scene.batches[g_scene.blendBatches[i]];
-		if (b.mirrorSector < 0 || b.mirrorSector >= numsectors || b.count == 0) continue;
-		const sector_t &s = sectors[b.mirrorSector];
-		zx::hwrender::MirrorPlane p;
-		p.ceiling = b.mirrorCeiling;
-		p.z = FIXED2FLOAT((b.mirrorCeiling ? s.ceilingplane : s.floorplane).ZatPoint(viewx, viewy));
-		zx::hwrender::ComputePlaneMirrorSlot(&planes[0], planeCount, maxSlots, p);
-		if (!zx::hwrender::ComputePlaneMirrorFaces(b.mirrorCeiling, p.z, vz)) continue;
-		const float mn[3] = { b.minX, b.minY, b.minZ }, mx[3] = { b.maxX, b.maxY, b.maxZ };
-		if (!zx::hwrender::ComputeBoxMayBeVisible(mvp, mn, mx)) continue;
-		b.mirrorSlot = zx::hwrender::ComputePlaneMirrorSlot(&slots[0], g_pmUsed, maxSlots, p);
-	}
-	if (planeCount == 0) return;
-	if (!EnsurePlaneMirrorResources(planeCount)) { g_pmUsed = 0; return; }
-	if (g_pmUsed == 0) return;
-
-	const fixed_t sz = viewz;
-	const int sp = viewpitch;
-	float savedMVP[16];
-	for (int k = 0; k < 16; k++) savedMVP[k] = g_mvp[k];
-	const bool savedGBuf = g_pass.gbufBound;
-	g_pass.gbufBound = false;
-	for (int k = 0; k < g_pmUsed; k++)
-	{
-		viewz = FLOAT2FIXED(zx::hwrender::ComputePlaneMirrorEyeZ(slots[k].z, vz));
-		viewpitch = -sp;
-		zx::hwrender::ComputePlaneMirrorClip(slots[k].ceiling, slots[k].z, g_pass.clipPlane);
-		RenderWorldInto(ctx, g_pm[k]);
-	}
-	viewz = sz;
-	viewpitch = sp;
-	for (int k = 0; k < 16; k++) g_mvp[k] = savedMVP[k];
-	g_pass.clipPlane[0] = g_pass.clipPlane[1] = g_pass.clipPlane[2] = g_pass.clipPlane[3] = 0.f;
-	g_pass.gbufBound = savedGBuf;
-	for (int k = 0; k < g_pmUsed; k++) HandOverViewTarget(ctx, g_pm[k]);
-}
-
-// [rc4l] In the player's view, before the translucent pass: each reflective piece painted from its plane's reflection.
-void DrawPlaneMirrorSurfaces(Diligent::IDeviceContext *ctx)
-{
-	if (!g_pass.mainView || g_pmUsed == 0 || !g_pmPSO || !g_scene.vb) return;
-	Diligent::IBuffer *vbs[] = { g_scene.vb };
-	const Diligent::Uint64 offsets[] = { 0 };
-	ctx->SetVertexBuffers(0, 1, vbs, offsets, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
-		Diligent::SET_VERTEX_BUFFERS_FLAG_RESET);
-	ctx->SetPipelineState(g_pmPSO);
-	int bound = -1;
-	for (unsigned i = 0; i < g_scene.blendBatches.Size(); i++)
-	{
-		const SceneBatch &b = g_scene.batches[g_scene.blendBatches[i]];
-		if (b.mirrorSlot < 0 || b.mirrorSlot >= g_pmUsed || b.mirrorSlot >= (int)g_pm.Size() || !g_pm[b.mirrorSlot].srb) continue;
-		if (b.mirrorSlot != bound)
-		{
-			ctx->CommitShaderResources(g_pm[b.mirrorSlot].srb, Diligent::RESOURCE_STATE_TRANSITION_MODE_VERIFY);
-			bound = b.mirrorSlot;
-		}
-		Diligent::DrawAttribs d;
-		d.NumVertices = b.count;
-		d.StartVertexLocation = b.first;
-		ctx->Draw(d);
-	}
-}
-
-// [rc4l] Stacked sectors as GL's GLSectorStackPortal draws them: each view the player's walk saw is the world from the eye moved by its portal, clipped at its planes, and the planes are painted from that picture.
-// [rc4l] One target per stacked view the level can show (StackViewCapacity), all made before any comes into view.
-static TArray<ViewTarget> g_stack;
-static int g_stackDrawn = 0;   // [rc4l] Views rendered this frame.
-static Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding> g_stackShowSRB;   // [rc4l] fua_dg_stackshow's blit
-
-void ReleaseStackPortals()
-{
-	g_stack.Clear();
-	g_viewDepth.Release();
-	g_stackShowSRB.Release();
-	g_stackSurfPSO.Release();
-	g_stackDrawn = 0;
-	g_scene.stackVisReady = false;
-}
-
-// [rc4l] What GL's walks drew this frame and the player's sky holes, uploaded before any pass, outside the frame's render pass, since the stacked views and the main pass both read them.
-void UploadWalkVisibility(Diligent::IDeviceContext *ctx)
-{
-	int visWords = 0;
-	const unsigned int *visBits = zx::levelmesh::StackVisibility(visWords);
-	g_scene.stackVisReady = visBits != NULL && g_scene.stackVisBuf && (unsigned int)visWords <= g_scene.stackVisCapacity;
-	if (g_scene.stackVisReady)
-		ctx->UpdateBuffer(g_scene.stackVisBuf, 0, (Diligent::Uint64)visWords * sizeof(unsigned int), visBits,
-			Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-	int holes = 0;
-	const float *hole = zx::levelmesh::SkyHoles(holes);
-	g_scene.skyHoleCount = (g_scene.stackVisReady && hole != NULL && g_scene.skyHoleBuf) ? holes : 0;
-	if (g_scene.skyHoleCount > 0)
-		ctx->UpdateBuffer(g_scene.skyHoleBuf, 0, (Diligent::Uint64)g_scene.skyHoleCount * zx::levelmesh::kSkyHoleFloats * sizeof(float), hole,
-			Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-}
-
-// [rc4l] Before the frame and after the sky's picture, which each view paints behind its own world.
-void RenderStackPortals(Diligent::IDeviceContext *ctx)
-{
-	g_stackDrawn = 0;
-	const int capacity = zx::levelmesh::StackViewCapacity();
-	if (!fua_dg_stackportals || capacity <= 0 || !g_scene.vb || !g_cb) return;
-	if (!g_stackSurfPSO)
-		g_stackSurfPSO = CreateScreenSurfacePSO("fua stack surface", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE);
-	if (!g_stackSurfPSO) return;
-	if (!FitViewPool(g_stack, (unsigned)capacity, g_stackSurfPSO, "uSky", "fua stacked view")) return;
-	const int n = zx::levelmesh::StackViewCount() < capacity ? zx::levelmesh::StackViewCount() : capacity;
-	if (n <= 0) return;
-
-	const fixed_t sx = viewx, sy = viewy;
-	float savedMVP[16];
-	for (int k = 0; k < 16; k++) savedMVP[k] = g_mvp[k];
-	const bool savedGBuf = g_pass.gbufBound;
-	g_pass.gbufBound = false;
-	for (int k = 0; k < n; k++)
-	{
-		const zx::levelmesh::StackViewInfo v = zx::levelmesh::StackView(k);
-		// [rc4l] No clip plane: GL's stacked walk clips nothing, and the cull already keeps to what it drew.
-		viewx = sx + FLOAT2FIXED(v.dx);
-		viewy = sy + FLOAT2FIXED(v.dy);
-		g_pass.stackSlot = k;
-		RenderWorldInto(ctx, g_stack[k]);
-		g_stackDrawn = k + 1;
-	}
-	g_pass.stackSlot = -1;
-	viewx = sx; viewy = sy;
-	for (int k = 0; k < 16; k++) g_mvp[k] = savedMVP[k];
-	g_pass.gbufBound = savedGBuf;
-	for (int k = 0; k < g_stackDrawn; k++) HandOverViewTarget(ctx, g_stack[k]);
-}
-
-// [rc4l] What the stacked views did last frame, for fua_dg_stackinfo: views drawn, whether the cull had its bits, and how many subsectors each view's walk reached.
-void StackInfo(FString &out)
-{
-	int words = 0;
-	const unsigned int *bits = zx::levelmesh::StackVisibility(words);
-	const int slots = zx::levelmesh::WalkSlots();
-	TArray<int> reached;
-	reached.Resize(slots);
-	for (int s = 0; s < slots; s++) reached[s] = zx::levelmesh::ComputeSlotCount(bits, words, numsubsectors + numsides, s, slots);
-	const int view0 = zx::levelmesh::ComputeStackWalkSlot(0), view1 = zx::levelmesh::ComputeStackWalkSlot(1);
-	out.Format("stacked views: %d drawn of %d the level can show, cull %s, %d words; subsectors and sidedefs drawn by view 0: %d, view 1: %d, "
-		"the player's walk: %d, the skybox walk: %d (of %d); %d sky holes; plane mirrors: %d rendered of %d planes",
-		g_stackDrawn, zx::levelmesh::StackViewCapacity(), g_scene.stackVisReady ? "on" : "off", words,
-		view0 < slots ? reached[view0] : 0, view1 < slots ? reached[view1] : 0, reached[zx::levelmesh::kMainWalkSlot],
-		reached[zx::levelmesh::kSkyboxWalkSlot], numsubsectors + numsides, g_scene.skyHoleCount, g_pmUsed, (int)g_pm.Size());
-}
-
-// [rc4l] In the player's view, with the sky: each stacked plane painted from its view's picture, and depth-written so nothing behind it shows through.
-void DrawStackSurfaces(Diligent::IDeviceContext *ctx)
-{
-	if (!g_pass.mainView || g_stackDrawn == 0 || !g_stackSurfPSO) return;
-	static TArray<SceneVertex> sv;
-	static TArray<unsigned int> first, count;
-	first.Resize(g_stackDrawn);
-	count.Resize(g_stackDrawn);
-	sv.Clear();
-	for (int k = 0; k < g_stackDrawn; k++)
-	{
-		int n = 0;
-		const zx::levelmesh::MeshVertex *src = zx::levelmesh::StackViewVertices(k, n);
-		first[k] = sv.Size();
-		for (int i = 0; i < n; i++) sv.Push(ToSceneVertex(src[i], 0));
-		// [rc4l] And the cap GL closes the stack's stencil with, so every unblocked ray past the plane sees the view, not only those through it.
-		const bool ceiling = zx::levelmesh::StackView(k).ceiling;
-		for (int c = 0; c < 6; c++)
-		{
-			float x, y, z;
-			zx::levelmesh::ComputeStackCapCorner(ceiling, c, x, y, z);
-			zx::levelmesh::MeshVertex fv;
-			fv.Set(x, z, y, 0.f, 0.f);
-			sv.Push(ToSceneVertex(fv, 0));
-		}
-		count[k] = sv.Size() - first[k];
-	}
-	if (!BindScreenSurfaces(ctx, g_stackSurfVB, g_stackSurfVBCapacity, sv, g_stackSurfPSO, "fua stack surface VB")) return;
-	for (int k = 0; k < g_stackDrawn; k++)
-		if (count[k] != 0 && g_stack[k].srb) DrawScreenSurfaceRun(ctx, g_stack[k].srb, first[k], count[k]);
-}
-
-// [rc4l] fua_dg_stackshow: the first stacked view's picture over the frame, through the sky portal's full-screen blit.
-void ShowStackView(Diligent::IDeviceContext *ctx)
-{
-	if (!fua_dg_stackshow || g_stackDrawn == 0 || !SkyPortalPicturePSO() || !g_stack[0].color) return;
-	if (!g_stackShowSRB) SkyPortalPicturePSO()->CreateShaderResourceBinding(&g_stackShowSRB, true);
-	if (!g_stackShowSRB) return;
-	if (auto *v = g_stackShowSRB->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "uTex"))
-		v->Set(g_stack[0].color->GetDefaultView(Diligent::TEXTURE_VIEW_SHADER_RESOURCE));
-	ctx->SetPipelineState(SkyPortalPicturePSO());
-	ctx->CommitShaderResources(g_stackShowSRB, Diligent::RESOURCE_STATE_TRANSITION_MODE_VERIFY);
-	Diligent::DrawAttribs dr;
-	dr.NumVertices = 3;
-	ctx->Draw(dr);
 }
 
 // [rc4l] An eye a mirror pass looks from.
@@ -1515,6 +1132,7 @@ static void RenderMirrorNode(Diligent::IDeviceContext *ctx, unsigned i, int leve
 
 void RenderMirrors(Diligent::IDeviceContext *ctx)
 {
+	ZX_ZONE("draw/mirrors");   // [rc4l] the line mirrors' pictures
 	g_mirrorNodes.Clear();
 	g_mirrorPass = -1;
 	// [rc4l] A switch, so the pass can be BISECTED against the TDR.

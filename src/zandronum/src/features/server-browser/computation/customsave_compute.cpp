@@ -4,6 +4,7 @@
 // [rc4l] See customsave_compute.h for why a preset is a catalogue entry and for the name question.
 
 #include "features/server-browser/computation/customsave_compute.h"
+#include "features/json/computation/json_compute.h"
 
 namespace zx
 {
@@ -11,39 +12,10 @@ namespace zx
 namespace
 {
 
-// [rc4l] A JSON string, escaped. Only the five things JSON actually requires plus control
-// characters: a path with a backslash in it is the common case here, and getting that wrong writes
-// a file nothing can read back.
-std::string JsonString(const std::string &value)
+// [rc4l] A JSON string the addon catalogue can read back, which refuses unicode escapes, so other control characters are dropped.
+std::string CatalogueString(const std::string &value)
 {
-	std::string out = "\"";
-
-	for (size_t i = 0; i < value.size(); ++i)
-	{
-		const char c = value[i];
-
-		switch (c)
-		{
-		case '"':	out += "\\\""; break;
-		case '\\':	out += "\\\\"; break;
-		case '\n':	out += "\\n"; break;
-		case '\r':	out += "\\r"; break;
-		case '\t':	out += "\\t"; break;
-		default:
-			if (static_cast<unsigned char>(c) < 32)
-			{
-				// Anything else unprintable is dropped rather than escaped: it has no business in
-				// a filename or a preset name, and \u escapes would be a parser this does not need.
-				break;
-			}
-
-			out += c;
-			break;
-		}
-	}
-
-	out += "\"";
-	return out;
+	return zx::json::ComputeJsonQuoted(value, zx::json::JsonControls::Drop);
 }
 
 // [rc4l] Only ever handed a TRIMMED line: ParseCustomCfg trims before it asks, which is what lets
@@ -82,25 +54,25 @@ std::string Trim(const std::string &s)
 std::string CustomAddonJson(const CustomEntry &entry)
 {
 	// [rc4l] Written by hand rather than through a writer, because this is nine fields and a list.
-	// The escaping is the part that has to be right, and it is one function above.
+	// The escaping is the part that has to be right, and it is CatalogueString above.
 	std::string out = "{\n";
 
-	out += "  \"name\": " + JsonString(entry.name) + ",\n";
+	out += "  \"name\": " + CatalogueString(entry.name) + ",\n";
 
 	// A preset the player built has no summary anybody wrote, and an invented one would be a lie
 	// in a list. The line says where it came from instead.
 	out += "  \"summary\": \"Saved from the NEW screen.\",\n";
-	out += "  \"iwad\": " + JsonString(entry.iwad) + ",\n";
+	out += "  \"iwad\": " + CatalogueString(entry.iwad) + ",\n";
 
 	// [rc4l] kind is REQUIRED of a catalogue entry, and only pve and pvp are kinds. Derived from the
 	// gamemode rather than asked about, because the mode already answers it.
 	out += entry.bPvP ? "  \"kind\": \"pvp\",\n" : "  \"kind\": \"pve\",\n";
 
 	if (!entry.gameMode.empty())
-		out += "  \"gamemode\": " + JsonString(entry.gameMode) + ",\n";
+		out += "  \"gamemode\": " + CatalogueString(entry.gameMode) + ",\n";
 
 	if (!entry.maps.empty())
-		out += "  \"map\": " + JsonString(entry.maps[0]) + ",\n";
+		out += "  \"map\": " + CatalogueString(entry.maps[0]) + ",\n";
 
 	out += "  \"files\": [";
 
@@ -108,13 +80,13 @@ std::string CustomAddonJson(const CustomEntry &entry)
 	{
 		out += (i == 0) ? "\n" : ",\n";
 		out += "    {\n";
-		out += "      \"name\": " + JsonString(entry.files[i].name);
+		out += "      \"name\": " + CatalogueString(entry.files[i].name);
 
 		// [rc4l] The md5 is what lets a missing file be FETCHED rather than merely missed: it is
 		// how the download path names a file. Left out when it could not be worked out, which is
 		// honest -- a wrong hash would refuse a file that was actually correct.
 		if (!entry.files[i].md5.empty())
-			out += ",\n      \"md5\": " + JsonString(entry.files[i].md5);
+			out += ",\n      \"md5\": " + CatalogueString(entry.files[i].md5);
 
 		out += "\n    }";
 	}

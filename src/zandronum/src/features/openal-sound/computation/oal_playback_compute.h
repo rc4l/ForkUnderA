@@ -40,4 +40,10 @@ ZxLoopPoints ComputeLoopPoints(unsigned int start, unsigned int end,
 // [rc4l] Whether a buffer's loop points are worth programming into an AL_SOFT loop buffer.
 bool ComputeShouldSetLoopPoints(unsigned int start, unsigned int end, bool softLoopPoints);
 
+// [rc4l] How many sources to make: the device's mono and stereo counts summed, or `channels` when it reports none, at most `channels`; a count past int's range (Emscripten's OpenAL reports INT_MAX for each) is just large, never negative.
+int ComputeSourceCount(int numMono, int numStereo, int channels);
+
+// [rc4l] A source's play position as the channels read it: 0 once it has stopped, as OpenAL Soft reports, since a browser's OpenAL reports a finished sound's whole length, often a sample short, and the sound counted as cut off and played again.
+unsigned int ComputeSourcePosition(bool stopped, int sampleOffset);
+
 #endif // ZX_OAL_PLAYBACK_COMPUTE_H
