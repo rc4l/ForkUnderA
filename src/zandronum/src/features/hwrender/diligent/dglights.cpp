@@ -197,7 +197,7 @@ CCMD( fua_dg_lights )
 		if ( players[consoleplayer].mo != NULL && players[consoleplayer].mo->Sector != NULL )
 		{
 			const sector_t *sec = players[consoleplayer].mo->Sector;
-			const float ph = FIXED2FLOAT( sec->floorplane.ZatPoint( light->x, light->y ) );
+			const float ph = FIXED2FLOAT( sec->rc.floorplane.ZatPoint( light->x, light->y ) );
 			Printf( "          floor plane under the light %.3f vs light z %.3f -> GL %s\n",
 				ph, lz, ( ph > lz ) ? "DROPS it" : "keeps it" );
 		}

@@ -13,12 +13,15 @@ export const SPECIAL = Object.freeze({
   Light_ChangeToValue: 112,
   Light_Glow: 114,
   Radius_Quake: 120,
+  Thing_Remove: 132,
   Sector_SetPlaneReflection: 159,
   Sector_Set3DFloor: 160,
   Line_Mirror: 182,
   Transfer_Heights: 209,
   Sector_SetColor: 212,
   Sector_SetFade: 213,
+  ChangeCamera: 237,
+  Exit_Normal: 243,
 });
 
 // [rc4l] PointLight comes from GL's light actors rather than the DECORATE tree, so it is the one number the test cannot check.
@@ -44,6 +47,7 @@ export const THING = Object.freeze({
   UpperStackLookOnly: 9077,
   LowerStackLookOnly: 9078,
   SkyViewpoint: 9080,
+  SkyPicker: 9081,
   PointLight: 9800,
 });
 

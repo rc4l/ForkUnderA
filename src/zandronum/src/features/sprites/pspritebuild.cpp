@@ -43,6 +43,8 @@
 #include "features/rendersettings/rendersettings.h"   // [rc4l] RenderShadingEnv, gl_ClampLight, getExtraLight
 #include "features/rendersettings/colormap.h"   // [rc4l] FColormap
 #include "features/materials/spriteframe.h"   // [rc4l] gl_GetSpriteFrame
+#include "features/gamecopy/players.h"   // [rc4l] the player records the weapon is drawn from
+#include "features/damage-tint/tintsubject.h"   // [rc4l] TintSubject
 #include "features/damage-tint/damagetint.h"   // [rc4l] DamageTint_WeaponGradient
 EXTERN_CVAR(Int, screenblocks)
 
@@ -62,6 +64,9 @@ CVAR(Bool, fua_psprite_check, false, 0)
 
 namespace zx { namespace sprites {
 
+using zx::gamecopy::ActorRecord;
+using zx::gamecopy::PlayerRecord;
+
 namespace {
 
 std::vector<zx::draw2d::Quad2D> g_gl, g_ours;
@@ -76,7 +81,7 @@ void Emit(const zx::draw2d::Quad2D &q)
 }
 
 // [rc4l] DrawPSprite for one layer at (sx, sy): its frame, its screen rectangle, and the colour the caller worked out, with the dynamic light folded in as GL's record folds it.
-void LayerQuad(player_t *player, pspdef_t *psp, fixed_t sx, fixed_t sy, int translation, const float rgba[4], const float dyn[3],
+void LayerQuad(const PlayerRecord *player, const pspdef_t *psp, fixed_t sx, fixed_t sy, int translation, const float rgba[4], const float dyn[3],
 	int blend, int texMode, int fuzz)
 {
 	bool mirror;
@@ -96,10 +101,9 @@ void LayerQuad(player_t *player, pspdef_t *psp, fixed_t sx, fixed_t sy, int tran
 	in.widescreenRatio = WidescreenRatio;
 	in.tallerThanWide = AspectTallerThanWide(WidescreenRatio);
 	in.yAdjust = 0.f;
-	AWeapon *wi = player->ReadyWeapon;
-	if (wi && wi->YAdjust)
+	if (player->hasWeapon && player->weaponYAdjust)
 	{
-		const float fYAd = FIXED2FLOAT(wi->YAdjust);
+		const float fYAd = FIXED2FLOAT(player->weaponYAdjust);
 		if (screenblocks >= 11) in.yAdjust = fYAd;
 		else if (!st_scale) in.yAdjust = FIXED2FLOAT(StatusBar->GetDisplacement()) * fYAd;
 	}
@@ -125,15 +129,22 @@ void LayerQuad(player_t *player, pspdef_t *psp, fixed_t sx, fixed_t sy, int tran
 	q.fixedColormap = (int)gl_fixedcolormap;
 	q.fuzz = fuzz;
 	// [rc4l] DrawPSprite's damage tint, by the player's own style over the frame's span.
-	DamageTint_WeaponGradient(player->mo, player->mo->RenderStyle.BlendOp, player->mo->RenderStyle.Flags, fi.vt, fi.vb, q.tint);
+	const ActorRecord *const mo = zx::gamecopy::Record(player->mo);
+	if (mo != NULL)
+	{
+		const zx::damagetint::TintSubject tint = { mo->who, mo->playerBody, mo->tintActive, mo->tintTexture };
+		DamageTint_WeaponGradient(tint, mo->RenderStyle.BlendOp, mo->RenderStyle.Flags, fi.vt, fi.vb, q.tint);
+	}
 	Emit(q);
 }
 
 // [rc4l] Every field the backend draws from, bit for bit; the window a quad is for is stamped later and left out.
 // [rc4l] gl_RenderHUDModel for one layer: the layer's model frame, when MODELDEF gives it one, captured over the world in the layer's colour and dynamic light and without fog, as GL draws it after clearing the depth buffer.
-void HUDModelLayer(player_t *player, pspdef_t *psp, fixed_t sx, fixed_t sy, const float rgba[4], const float dyn[3], const FRenderStyle &style)
+void HUDModelLayer(const PlayerRecord *player, const pspdef_t *psp, fixed_t sx, fixed_t sy, const float rgba[4], const float dyn[3], const FRenderStyle &style)
 {
-	const PClass *weapon = player->ReadyWeapon->GetClass();
+	const PClass *weapon = player->weaponType;
+	const ActorRecord *const mo = zx::gamecopy::Record(player->mo);
+	if (weapon == NULL || mo == NULL) return;
 	FSpriteModelFrame *smf = gl_FindModelFrame(weapon, psp->state->sprite, psp->state->GetFrame(), false);
 	if (smf == NULL) return;
 	const HUDModelPose pose = { { smf->xscale, smf->zscale, smf->yscale },
@@ -157,8 +168,8 @@ void HUDModelLayer(player_t *player, pspdef_t *psp, fixed_t sx, fixed_t sy, cons
 	look.fogDensity = 0.f;
 	look.fogMode = 0;
 	look.hud = true;
-	look.cullFace = ActorModelCull(player->mo, true);
-	zx::levelmesh::ModelCaptureBegin(look, toMesh, player->mo, zx::levelmesh::kModelDraw);
+	look.cullFace = ActorModelCull(mo->RenderStyle, true);
+	zx::levelmesh::ModelCaptureBegin(look, toMesh, mo->who, zx::levelmesh::kModelDraw);
 	CaptureModelFrames(smf, psp->state, psp->tics, weapon, 0);
 	zx::levelmesh::ModelCaptureEnd();
 }
@@ -173,35 +184,39 @@ bool SameQuad(const zx::draw2d::Quad2D &a, const zx::draw2d::Quad2D &b)
 }
 
 // [rc4l] PSPF_PLAYERTRANSLATED takes the player's own colours.
-int LayerTranslation(const player_t *player, const pspdef_t *psp)
+int LayerTranslation(const PlayerRecord *player, const pspdef_t *psp)
 {
-	return ((psp->Flags & PSPF_PLAYERTRANSLATED) && player->mo != NULL) ? (int)player->mo->Translation : 0;
+	const ActorRecord *const mo = zx::gamecopy::Record(player->mo);
+	return ((psp->Flags & PSPF_PLAYERTRANSLATED) && mo != NULL) ? (int)mo->Translation : 0;
 }
 
 } // namespace
 
 // [rc4l] The player whose weapon is drawn, or NULL: as the software renderer, none from a chase camera or a dead camera's eye.
-static player_t *WeaponPlayer()
+static const PlayerRecord *WeaponPlayer()
 {
-	player_t *player = players[consoleplayer].camera->player;
-	if (!player || !r_drawplayersprites || !camera->player || (players[consoleplayer].cheats & CF_CHASECAM) ||
-	    (r_deathcamera && camera->health <= 0)) return NULL;
+	const ActorRecord *const cam = zx::gamecopy::CameraOf(consoleplayer);
+	const PlayerRecord *const player = cam != NULL ? zx::gamecopy::Player(cam->playerIndex) : NULL;
+	const ActorRecord *const viewCamera = zx::gamecopy::ViewCamera();
+	const PlayerRecord *const me = zx::gamecopy::Player(consoleplayer);
+	if (!player || !r_drawplayersprites || viewCamera == NULL || viewCamera->playerIndex < 0 || (me != NULL && (me->cheats & CF_CHASECAM)) ||
+	    (r_deathcamera && viewCamera->health <= 0)) return NULL;
 	return player;
 }
 
 // [rc4l] The layers at the bob given, which P_BobWeapon steps once a frame.
 static void BuildLayers(sector_t *viewsector, int viewArea, fixed_t bobX, fixed_t bobY, bool hudModels)
 {
-	AActor *playermo = players[consoleplayer].camera;
-	player_t *player = WeaponPlayer();
-	if (player == NULL) return;
+	const ActorRecord *const playermo = zx::gamecopy::CameraOf(consoleplayer);
+	const PlayerRecord *const player = WeaponPlayer();
+	if (player == NULL || playermo == NULL) return;
 
 	// [rc4l] [overlay] The layers below the targeter in draw order, each fullbright unless its frame's GLDEFS says otherwise.
-	std::vector<pspdef_t *> layers;
+	std::vector<const pspdef_t *> layers;
 	std::vector<bool> stateBright;
-	for (unsigned i = 0; i < player->psprites.Size(); i++)
+	for (size_t i = 0; i < player->layers.size(); i++)
 	{
-		pspdef_t &pl = player->psprites.Element(i);
+		const pspdef_t &pl = player->layers[i];
 		if (pl.layer >= ps_targetcenter || pl.state == NULL) continue;
 		layers.push_back(&pl);
 		bool bright = false;
@@ -230,12 +245,12 @@ static void BuildLayers(sector_t *viewsector, int viewArea, fixed_t bobX, fixed_
 	}
 	else
 	{
-		fakesec = gl_FakeFlat(viewsector, &fs, false);
-		lightlevel = gl_ClampLight(fakesec->lightlevel);
+		fakesec = zx::fakeflat::RcFakeFlat(viewsector, &fs, false);
+		lightlevel = gl_ClampLight(fakesec->rc.lightlevel);
 		if (glset.lightmode == 8) lightlevel = ComputeSoftWeaponLight(zx::levelmesh::ComputeLightLevel(lightlevel, getExtraLight(), true, env));
-		FTexture *floortex = TexMan[viewsector->GetTexture(sector_t::floor)];
+		FTexture *floortex = TexMan[viewsector->rc.GetTexture(sector_t::floor)];
 		if (floortex != NULL && floortex->isGlowing())
-			lightlevel = ComputeSpriteGlow(lightlevel, (int)(playermo->z - viewsector->floorplane.ZatPoint(playermo->x, playermo->y)).Raw(),
+			lightlevel = ComputeSpriteGlow(lightlevel, (int)(playermo->z - viewsector->rc.floorplane.ZatPoint(playermo->x, playermo->y)).Raw(),
 				floortex->gl_info.GlowHeight);
 		if (viewsector->e->XFloor.ffloors.Size() && !glset.nocoloredspritelighting)
 		{
@@ -253,7 +268,7 @@ static void BuildLayers(sector_t *viewsector, int viewArea, fixed_t bobX, fixed_
 		}
 		else
 		{
-			cm = fakesec->ColorMap;
+			cm = fakesec->rc.ColorMap;
 			if (glset.nocoloredspritelighting) cm.ClearColor();
 		}
 	}
@@ -265,9 +280,11 @@ static void BuildLayers(sector_t *viewsector, int viewArea, fixed_t bobX, fixed_
 	vis.RenderStyle = playermo->RenderStyle;
 	vis.alpha = playermo->alpha;
 	vis.colormap = NULL;
-	if (playermo->Inventory)
+	// [rc4l] The inventory altered the style between tics.
+	const zx::gamecopy::ViewSource *const source = zx::gamecopy::ViewSourceOf(zx::gamecopy::IndexOf(playermo));
+	if (source != NULL && source->altersWeapon)
 	{
-		playermo->Inventory->AlterWeaponSprite(&vis);
+		vis = source->weaponVis;
 		// [rc4l] Strife's inverted weapon sprite.
 		if (vis.colormap >= SpecialColormaps[0].Colormap && vis.colormap < SpecialColormaps[SpecialColormaps.Size()].Colormap &&
 		    gl_fixedcolormap == CM_DEFAULT) vis.RenderStyle.Flags |= STYLEF_InvertSource;
@@ -289,10 +306,11 @@ static void BuildLayers(sector_t *viewsector, int viewArea, fixed_t bobX, fixed_
 
 	// [rc4l] GL's dynamic light persists from layer to layer, set only by a lit one, and the world's draws leave it at zero.
 	float dyn[3] = { 0.f, 0.f, 0.f };
-	const fixed_t weaponx = player->psprites[ps_weapon].sx, weapony = player->psprites[ps_weapon].sy;
+	const pspdef_t *const weaponLayer = zx::gamecopy::Layer(*player, ps_weapon);
+	const fixed_t weaponx = weaponLayer != NULL ? weaponLayer->sx : fixed_t(0), weapony = weaponLayer != NULL ? weaponLayer->sy : fixed_t(0);
 	for (size_t i = 0; i < layers.size(); i++)
 	{
-		pspdef_t *psp = layers[i];
+		const pspdef_t *psp = layers[i];
 		const bool bright = !nobright && (allbright || stateBright[i]);
 		FColormap cmc = cm;
 		if (bright)
@@ -315,7 +333,7 @@ static void BuildLayers(sector_t *viewsector, int viewArea, fixed_t bobX, fixed_
 		}
 		else
 		{
-			if (zx::viewsetup::SpritesTakeDynamicLight()) zx::dynlights::ActorDynamicLight(playermo, dyn);
+			if (zx::viewsetup::SpritesTakeDynamicLight()) { dyn[0] = dyn[1] = dyn[2] = 0.f; zx::dynlights::ActorLight(*playermo, dyn); }
 			// [rc4l] gl_SetColor for a weapon: white under a fixed colormap, else the light colour at the weapon's light level.
 			if (gl_fixedcolormap != CM_DEFAULT) rgba[0] = rgba[1] = rgba[2] = 1.f;
 			else
@@ -348,25 +366,25 @@ static void BuildLayers(sector_t *viewsector, int viewArea, fixed_t bobX, fixed_
 
 void BuildPlayerSprites(sector_t *viewsector, int viewArea, bool hudModels)
 {
-	player_t *player = WeaponPlayer();
+	const PlayerRecord *player = WeaponPlayer();
 	if (player == NULL) return;
 	fixed_t bobX, bobY;
-	P_BobWeapon(player, &player->psprites[ps_weapon], &bobX, &bobY);
+	WeaponBobFrom(player->bobIn, &bobX, &bobY);
 	BuildLayers(viewsector, viewArea, bobX, bobY, hudModels);
 }
 
-void BuildTargeterSprites(AActor *viewActor)
+void BuildTargeterSprites(const void *viewActor)
 {
-	AActor *playermo = players[consoleplayer].camera;
-	player_t *player = playermo->player;
-	if (!player || (playermo->renderflags & RF_INVISIBLE) || !r_drawplayersprites || viewActor != playermo) return;
+	const ActorRecord *const playermo = zx::gamecopy::CameraOf(consoleplayer);
+	const PlayerRecord *const player = playermo != NULL ? zx::gamecopy::Player(playermo->playerIndex) : NULL;
+	if (!player || (playermo->renderflags & RF_INVISIBLE) || !r_drawplayersprites || viewActor != playermo->who) return;
 	// [rc4l] The targeter is always drawn plain: white, unlit, alpha blended.
 	static const float white[4] = { 1.f, 1.f, 1.f, 1.f };
 	static const float none[3] = { 0.f, 0.f, 0.f };
 	static const int targetLayers[3] = { ps_targetcenter, ps_targetleft, ps_targetright };
 	for (int i = 0; i < 3; i++)
 	{
-		pspdef_t *psp = player->psprites.Find(targetLayers[i]);
+		const pspdef_t *psp = zx::gamecopy::Layer(*player, targetLayers[i]);
 		if (psp && psp->state)
 			LayerQuad(player, psp, psp->sx, psp->sy, LayerTranslation(player, psp), white, none, zx::draw2d::kBlend2DAlpha, zx::draw2d::kTexModulate, zx::hwrender::kFuzzNone);
 	}

@@ -13,7 +13,9 @@ from boundary_tripwire import (DOC_BEGIN, DOC_END, check, code_only, counts, doc
 
 RENDER = {'name': 'render', 'files': ['features/sprites/'], 'exclude': ['*/computation/*', '*_test.cpp'],
           'patterns': [{'name': 'actor', 'regex': r'\bAActor\b'}]}
-TABLE = 'ZX_COPY_FIELD(sector, floorplane, secplane_t)\nZX_COPY_FIELD(side, textures, part)\nZX_COPY_FIELD(actor, angle, angle_t)\n'
+TABLE = ('ZX_COPY_FIELD(sector, floorplane, secplane_t)\nZX_COPY_FIELD(side, textures, part)\nZX_COPY_FIELD(actor, angle, angle_t)\n'
+         '#define ZX_ACTOR_FIELD(member)\nZX_ACTOR_FIELD(sprite)\nZX_ACTOR_DERIVED(const void *, who)   // [rc4l] note\n'
+         'ZX_PLAYER_FIELD(viewz)\nZX_PLAYER_DERIVED(std::vector<pspdef_t>, layers)\n')
 
 
 class BoundaryTripwire(unittest.TestCase):
@@ -43,6 +45,16 @@ class BoundaryTripwire(unittest.TestCase):
         generic = dict(rule, fields=dict(rule['fields'], unpatterned=['textures']))
         self.assertEqual([p['name'] for p in field_patterns(generic, files)], ['live floorplane'])
 
+    def test_reads_through_a_templates_state_selector_are_copy_reads(self):
+        rule = dict(RENDER, patterns=[], fields={'table': 'features/gamecopy/fields.h', 'types': ['sector', 'side']})
+        body = ('template <class Sel> void F(sector_t *sec, sector_t *d) {\n'
+                ' const auto &S = Sel::Of(sec), &D = Sel::Of(f(d));\n'
+                ' g(S.floorplane, D.floorplane, Sel::Of(sec->heightsec).floorplane, sec->floorplane, Other::Of(sec).floorplane); }\n'
+                'void G(sector_t *sec) { auto &S = Sel::Of(sec); h(S.floorplane); }\n')
+        files = {'features/gamecopy/fields.h': TABLE, 'features/sprites/a.cpp': body,
+                 'features/sprites/b.cpp': 'void G(sector_t *sec) { auto &S = Sel::Of(sec); h(S.floorplane); }'}
+        self.assertEqual(counts([rule], files), {'render': {'features/sprites/a.cpp': 2, 'features/sprites/b.cpp': 1}})
+
     def test_a_crossing_beyond_its_allowance_fails_and_one_below_asks_to_lower_it(self):
         found = {'render': {'a.cpp': 3, 'b.cpp': 1, 'new.cpp': 1}}
         allow = {'render': {'a.cpp': 2, 'b.cpp': 4, 'gone.cpp': 1}}
@@ -69,7 +81,10 @@ class BoundaryTripwire(unittest.TestCase):
         files = {'features/gamecopy/fields.h': TABLE, 'a.cpp': 'ZX_SEAM("copy/fill", Handoff);'}
         text = doc(files, [rule, RENDER])
         self.assertIn('- sector: `floorplane`', text)
-        self.assertIn('- actor: `angle`', text)
+        self.assertIn('- actor: `angle`, `sprite`', text)
+        self.assertIn('- actor, worked out by the fill: `who`', text)
+        self.assertIn('- player: `viewz`', text)
+        self.assertIn('- player, worked out by the fill: `layers`', text)
         self.assertIn('- `copy/fill` (Handoff), `a.cpp`', text)
 
     def test_a_readme_with_markers_is_stale_until_rewritten(self):

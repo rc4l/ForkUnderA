@@ -22,13 +22,16 @@ class AActor;
 bool DamageTint_BeginSpriteGlow( AActor *actor, int blendOp, DWORD styleFlags, float vt, float vb );
 void DamageTint_EndSpriteGlow();
 
-namespace zx { namespace damagetint { struct TintGradient; } }
+namespace zx { namespace damagetint { struct TintGradient; struct TintSubject; } }
 
 // [rc4l] A body sprite's gradient over its texture span vt..vb when the actor qualifies, for whichever renderer draws it; false for none.
-bool DamageTint_SpriteGradient( AActor *actor, int blendOp, DWORD styleFlags, float vt, float vb, zx::damagetint::TintGradient &out );
+bool DamageTint_SpriteGradient( const zx::damagetint::TintSubject &s, int blendOp, DWORD styleFlags, float vt, float vb, zx::damagetint::TintGradient &out );
+
+// [rc4l] An actor's ramp as it stands, for fua_tintdebug; false before it has one.
+bool DamageTint_Ramp( const void *who, float &intensity, int &lastTic );
 
 // [rc4l] The first-person weapon's gradient over its frame's vt..vb, judged by the player's own style; false for none.
-bool DamageTint_WeaponGradient( AActor *playermo, int blendOp, DWORD styleFlags, float vt, float vb, zx::damagetint::TintGradient &out );
+bool DamageTint_WeaponGradient( const zx::damagetint::TintSubject &s, int blendOp, DWORD styleFlags, float vt, float vb, zx::damagetint::TintGradient &out );
 
 // [rc4l] The gradient DamageTint_Arm2D armed for the next 2D draw, for a renderer that records 2D; false while none is.
 bool DamageTint_Armed2D( zx::damagetint::TintGradient &out );

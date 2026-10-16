@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { UdmfMap, wad, mapLumps } from "./udmf.mjs";
-import { acs0, callSpecial, consoleCommand, gotoWord, hudMessage, PCD, printString } from "./acs.mjs";
+import { AcsScript, ACSF, acs0, callFunc, callSpecial, consoleCommand, gotoWord, hudMessage, PCD, printString } from "./acs.mjs";
 import { ENGINE_THING, SPECIAL, THING } from "./doomnums.mjs";
 import { launchInstance, resolveEngine, stopInstance } from "./launch.mjs";
 import { FREEDOOM2 } from "./template.mjs";
@@ -72,9 +72,84 @@ export function buildGameThreadFixtureWad() {
   return wad([{ name: "ANIMDEFS", data: ANIMDEFS }, ...mapLumps("MAP01", m, { behavior })]);
 }
 
-// [rc4l] Each fixture: its wads (the generated map built, the others found by name in the store), its map and how many tics its demo and traces run.
+// [rc4l] gtmod's lumps a mod brings, each one a thing the game thread could reorder: a mod cvar and a KEYCONF alias setting it, a lamp whose frames attach a GLDEFS light, a status bar that interpolates and draws the mugshot, two maps chained by MAPINFO, and a camera texture.
+const MOD_LUMPS = {
+  MAPINFO: 'map MAP01 "gtmod one"\n{\n\tnext = "MAP02"\n\tnointermission\n\tsky1 = "SKY1", 0\n}\nmap MAP02 "gtmod two"\n{\n\tnext = "MAP01"\n\tsky1 = "SKY1", 0\n}\n',
+  CVARINFO: "server int gtm_probe = 0;\n",
+  KEYCONF: 'alias gtm_alias "gtm_probe 7"\n',
+  DECORATE: 'actor GtmLamp : TechLamp 30001\n{\n\tstates\n\t{\n\tSpawn:\n\t\tTLMP A 5 bright\n\t\tTLMP B 5 bright A_Jump(128, "Spawn")\n\t\tTLMP C 5 bright\n\t\tloop\n\t}\n}\n',
+  GLDEFS: "pointlight GTMLIGHT\n{\n\tcolor 1.0 0.4 0.1\n\tsize 48\n}\nobject GtmLamp\n{\n\tframe TLMPA { light GTMLIGHT }\n\tframe TLMPC { light GTMLIGHT }\n}\n",
+  SBARINFO: 'base Doom;\nheight 32;\nstatusbar normal\n{\n\tdrawimage "STBAR", 0, 168;\n\tdrawnumber 3, BIGFONT, untranslated, health, interpolate(3), 90, 171;\n\tdrawmugshot "STF", 5, 143, 168;\n}\n',
+  ANIMDEFS: "cameratexture GTMCAM 256 128 fit 128 64\n",
+};
+// [rc4l] The things gtmod's script names by tid.
+const MOD_TID = { sky: 20, camera: 21, screen: 22, lamp: 23, quake: 24 };
+// [rc4l] The map variables gtmod's script keeps what it read in, which the trace's ACS fingerprint holds.
+const MOD_VAR = { tic: 0, set: 1, alias: 2, command: 3, screenWidth: 4, renderCvar: 5, justHit: 6, camera: 7, floorZ: 8, gravity: 9 };
+
+// [rc4l] gtmod's OPEN script: every tic it sets a mod cvar and runs console commands, reading each back in the same tic, reads the screen, a render cvar, the skybox's JUSTHIT, the player's camera, a moving floor and the gravity, and plays a looping sound; at set tics it removes the camera the player looks through, changes gravity from the console, quakes, sets the mugshot, fades a HUD message and exits the level.
+export function gtmodScript() {
+  const strings = ["gtm_probe", "gtm_alias", "gtm_probe 11", "r_drawfuzz", "JUSTHIT", "GTMCAM", "weapons/pistol", "sv_gravity 400", "gtm hud", "Grin", "sv_gravity"];
+  const s = new AcsScript();
+  const read = (cvar, v) => s.emit(PCD.PUSHNUMBER, cvar, PCD.GETCVAR, PCD.ASSIGNMAPVAR, v);
+  const at = (tic, words) => {
+    const skip = `skip${tic}`;
+    s.emit(PCD.PUSHMAPVAR, MOD_VAR.tic, PCD.PUSHNUMBER, tic, PCD.EQ).jump(PCD.IFNOTGOTO, skip).emit(...words).label(skip);
+  };
+  s.emit(PCD.PUSHNUMBER, MOD_TID.screen, PCD.PUSHNUMBER, 5, PCD.PUSHNUMBER, 90, PCD.SETCAMERATOTEXTURE,
+    ...callSpecial(SPECIAL.Plat_PerpetualRaise, [TAG.lift, 16, 35]), ...callSpecial(SPECIAL.ChangeCamera, [MOD_TID.camera, 1, 0]));
+  s.label("loop").emit(PCD.INCMAPVAR, MOD_VAR.tic);
+  s.emit(PCD.PUSHNUMBER, 0, PCD.PUSHMAPVAR, MOD_VAR.tic, PCD.CALLFUNC, 2, ACSF.SetCVar, PCD.DROP);
+  read(0, MOD_VAR.set);
+  s.emit(...consoleCommand(1));
+  read(0, MOD_VAR.alias);
+  s.emit(...consoleCommand(2));
+  read(0, MOD_VAR.command);
+  s.emit(PCD.GETSCREENWIDTH, PCD.ASSIGNMAPVAR, MOD_VAR.screenWidth);
+  read(3, MOD_VAR.renderCvar);
+  s.emit(...callFunc(ACSF.CheckFlag, [MOD_TID.sky, 4]), PCD.ASSIGNMAPVAR, MOD_VAR.justHit);
+  s.emit(PCD.PUSHNUMBER, 0, PCD.CHECKPLAYERCAMERA, PCD.ASSIGNMAPVAR, MOD_VAR.camera);
+  s.emit(PCD.PUSHNUMBER, TAG.lift, PCD.PUSHNUMBER, 0, PCD.PUSHNUMBER, 0, PCD.GETSECTORFLOORZ, PCD.ASSIGNMAPVAR, MOD_VAR.floorZ);
+  read(10, MOD_VAR.gravity);
+  s.emit(...callFunc(ACSF.PlaySound, [MOD_TID.lamp, 6, 2, 65536, 1]), PCD.DROP);
+  at(100, callSpecial(SPECIAL.Thing_Remove, [MOD_TID.camera]));
+  at(200, consoleCommand(7));
+  at(250, [...callSpecial(SPECIAL.Radius_Quake, [3, 30, 0, 12, MOD_TID.quake]), PCD.PUSHNUMBER, 9, PCD.SETMUGSHOTSTATE]);
+  at(300, hudMessage(8, { type: 1, id: 2, color: 4, x: 0.5, y: 0.3, hold: 1, fade: 2 }));
+  at(560, callSpecial(SPECIAL.Exit_Normal, [0]));
+  s.emit(PCD.DELAYDIRECT, 1).jump(PCD.GOTO, "loop");
+  return acs0(s.words(), strings);
+}
+
+// [rc4l] gtmod: a mod's content in one arena, its sky drawn through a skybox, a lamp, a moving floor, a camera texture, a camera the script removes, monsters, and a second map the script exits to.
+export function buildGameThreadModWad() {
+  const m = new UdmfMap();
+  const arena = m.room(0, 0, 2048, 1024, { ...ARENA, textureceiling: "F_SKY1", id: TAG.arena }, (edge) => ({
+    side: edge === "east" ? { texturemiddle: "GTMCAM" } : WALL }));
+  m.block(768, 704, 896, 832, { ...ARENA, textureceiling: "F_SKY1", heightfloor: 64, id: TAG.lift }, arena, () => ({ texturebottom: "STARTAN2" }));
+  // [rc4l] The skybox, sealed away, its viewpoint picked for the arena's sky.
+  m.room(4096, 0, 4352, 256, { ...ARENA, lightlevel: 255 }, () => ({ side: WALL }));
+  m.thing({ x: 4224, y: 128, height: 64, type: THING.SkyViewpoint, id: MOD_TID.sky });
+  m.thing({ x: 64, y: 64, type: THING.SkyPicker, arg0: MOD_TID.sky });
+  m.thing({ x: 128, y: 512, angle: 0, type: 1 });
+  m.thing({ x: 1000, y: 512, type: 30001, id: MOD_TID.lamp });
+  m.thing({ x: 600, y: 300, height: 96, angle: 0, type: THING.MapSpot, id: MOD_TID.camera });
+  m.thing({ x: 1900, y: 512, height: 160, angle: 180, type: THING.MapSpot, id: MOD_TID.screen });
+  m.thing({ x: 700, y: 512, type: THING.MapSpot, id: MOD_TID.quake });
+  for (const [x, y] of [[1600, 300], [1700, 700]]) m.thing({ x, y, angle: 180, type: THING.DoomImp });
+  for (const [x, y] of [[1500, 500], [1800, 500]]) m.thing({ x, y, angle: 180, type: THING.Zombieman });
+  const two = new UdmfMap();
+  two.room(0, 0, 1024, 1024, ARENA, () => ({ side: WALL }));
+  two.thing({ x: 128, y: 512, angle: 0, type: 1 });
+  two.thing({ x: 800, y: 512, angle: 180, type: THING.DoomImp });
+  const lumps = Object.entries(MOD_LUMPS).map(([name, data]) => ({ name, data }));
+  return wad([...lumps, ...mapLumps("MAP01", m, { behavior: gtmodScript() }), ...mapLumps("MAP02", two)]);
+}
+
+// [rc4l] Each fixture: its wads (the generated map built, the others found by name in the store), its map, how many tics its traces run, and how many its demo records when that is more.
 export const FIXTURES = [
   { name: "gtfix", iwad: "freedoom2.wad", build: buildGameThreadFixtureWad, map: "MAP01", tics: 1050 },
+  { name: "gtmod", iwad: "freedoom2.wad", build: buildGameThreadModWad, map: "MAP01", tics: 700, recordTics: 760 },
   { name: "freedoom2-map01", iwad: "freedoom2.wad", map: "MAP01", tics: 1050 },
   { name: "freedoom2-map04", iwad: "freedoom2.wad", map: "MAP04", tics: 1050 },
   { name: "sunder-map11", iwad: "doom2.wad", pwads: ["sunder_2512.wad"], map: "MAP11", tics: 700 },
@@ -145,16 +220,16 @@ async function exec(c, text) {
   await c.rpc("console.exec", { text });
 }
 
-// [rc4l] Plays the fight on a recording instance until tics of level time have passed.
+// [rc4l] Plays the fight on a recording instance until tics of game time have passed, which a level exit does not restart.
 async function driveFight(c, tics) {
   await exec(c, "god");
   await exec(c, "give all");
-  const start = (await c.rpc("sim.tic")).leveltime;
+  const start = (await c.rpc("sim.tic")).gametic;
   let applied = null;
   try {
     for (;;) {
       const t = await c.rpc("sim.tic");
-      const elapsed = t.leveltime - start;
+      const elapsed = t.gametic - start;
       if (elapsed >= tics) break;
       const step = stepAt(FIGHT, elapsed);
       if (step && step !== applied) {
@@ -200,7 +275,7 @@ export async function recordFixture(f, { engine, store, dir = fixtureDir(), log 
     c = await attach(inst);
     await waitInLevel(c, 60000);
     log(`${f.name}: recording ${f.tics} tics`);
-    await driveFight(c, f.tics);
+    await driveFight(c, f.recordTics || f.tics);
     await exec(c, "stop");
     await waitForFile(demo, 30000, inst.proc);
     return demo;
@@ -256,6 +331,7 @@ export async function checkFixtures(list, { engine, store, dir = fixtureDir(), c
 export const PICTURES = {
   gtfix: { tic: 420, views: [{ name: "player" }, { name: "machines", at: { x: 600, y: 300, z: 0, angle: 45, pitch: 0 } },
     { name: "screen", at: { x: 1300, y: 512, z: 0, angle: 0, pitch: 0 } }] },
+  gtmod: { tic: 320, views: [{ name: "player" }] },
   "freedoom2-map01": { tic: 420, views: [{ name: "player" }] },
   "freedoom2-map04": { tic: 420, views: [{ name: "player" }] },
   "sunder-map11": { tic: 350, views: [{ name: "player" }] },
@@ -345,13 +421,82 @@ export async function copyCheckFixture(f, opts = {}) {
     describe: (r) => (r.found ? `${r.walked} map structures and ${r.blends} blends compared with the live game, ${r.differed} differed` : "the copy was not checked") });
 }
 
-// [rc4l] A fixture's demo played with a check's cvars on to its picture tic, then judged by the report the check prints: clean when it compared something and nothing differed.
-async function reportCheck(f, { engine, store, dir = fixtureDir(), cvars = {}, check, gl = false, report, parse, describe }) {
+// [rc4l] The numbers fua_sprite_report gives: the actors derived beside GL's sprites and how many differed, an actor only one side drew not counting.
+export function parseSpriteReport(text) {
+  const m = /sprites: (\d+) actors derived beside GL \((\d+) model surfaces\), (\d+) differed/.exec(text);
+  return { walked: m ? Number(m[1]) : 0, models: m ? Number(m[2]) : 0, differed: m ? Number(m[3]) : 0, found: !!m, text };
+}
+
+// [rc4l] A fixture's demo played with the backend on and standalone, the check keeping GL drawing beside it, every actor's derived sprite or model held to GL's (fua_sprite_check) at its picture tic, paused since GL's frame and the backend's are set up a moment apart, and from the player's own view since a paused teleport turns GL's sprites and not ours (queue #50).
+export async function spriteCheckFixture(f, opts = {}) {
+  return reportCheck(f, { ...opts, check: { fua_vulkan: 1, fua_dg_standalone: 1, fua_sprite_check: 1 }, gl: true, paused: true, views: (spec) => spec.views.filter((v) => !v.at), report: "fua_sprite_report",
+    parse: parseSpriteReport,
+    describe: (r) => (r.found ? `${r.walked} actors derived beside GL (${r.models} model surfaces), ${r.differed} differed` : "no actor was checked against GL") });
+}
+
+// [rc4l] The numbers fua_psprite_report gives: the frames whose weapon was derived beside GL's and how many differed.
+export function parsePSpriteReport(text) {
+  const m = /weapon: (\d+) frames derived beside GL \((\d+) quads\), (\d+) differed/.exec(text);
+  return { walked: m ? Number(m[1]) : 0, quads: m ? Number(m[2]) : 0, differed: m ? Number(m[3]) : 0, found: !!m, text };
+}
+
+// [rc4l] The sprite check's launch for the weapon: every frame's weapon quads held to GL's (fua_psprite_check) at the picture tic.
+export async function pspriteCheckFixture(f, opts = {}) {
+  return reportCheck(f, { ...opts, check: { fua_vulkan: 1, fua_dg_standalone: 1, fua_psprite_check: 1 }, gl: true, paused: true, views: (spec) => spec.views.filter((v) => !v.at),
+    report: "fua_psprite_report", parse: parsePSpriteReport,
+    describe: (r) => (r.found ? `${r.walked} frames of the weapon derived beside GL (${r.quads} quads), ${r.differed} differed` : "no weapon was checked against GL") });
+}
+
+// [rc4l] The numbers fua_seen_count gives: the lines the walks have mapped and the sectors they have drawn on the live map.
+export function parseSeenReport(text) {
+  const m = /seen: (\d+) lines mapped, (\d+) sectors drawn/.exec(text);
+  return { walked: m ? Number(m[1]) : 0, sectors: m ? Number(m[2]) : 0, differed: 0, found: !!m, text };
+}
+
+// [rc4l] A fixture's demo played on Vulkan alone, where no GL walk sets the seen bits, judged by the backend's walk having set them on the live map, which the automap, saves and bots read.
+export async function seenCheckFixture(f, opts = {}) {
+  return reportCheck(f, { ...opts, check: {}, gl: false, report: "fua_seen_count", parse: parseSeenReport,
+    describe: (r) => (r.found ? `${r.walked} lines mapped and ${r.sectors} sectors drawn on the live map` : "the seen bits were not counted") });
+}
+
+// [rc4l] Reports added together, view by view.
+export function sumReports(reports) {
+  const out = { walked: 0, differed: 0, found: false, text: "" };
+  for (const r of reports) {
+    for (const [k, v] of Object.entries(r)) if (typeof v === "number") out[k] = (out[k] || 0) + v;
+    out.found = out.found || r.found;
+    out.text = [out.text, r.text].filter(Boolean).join("\n");
+  }
+  return out;
+}
+
+// [rc4l] The checks a fixture's demo can be played under, each judged by its own report.
+export const CHECKS = { vischeck: visCheckFixture, copycheck: copyCheckFixture, spritecheck: spriteCheckFixture, pspritecheck: pspriteCheckFixture, seencheck: seenCheckFixture };
+
+// [rc4l] A fixture's demo played with a check's cvars on to its picture tic, then judged by the report the check prints: clean when it compared something and nothing differed; `paused` judges only the frames drawn paused there, from each of the views `views` picks.
+async function reportCheck(f, { engine, store, dir = fixtureDir(), cvars = {}, check, gl = false, paused = false, views = (spec) => spec.views, report, parse, describe,
+  log = () => {} }) {
   const spec = PICTURES[f.name];
   const { inst, c } = await playTo(f, { engine, store, dir, cvars: { ...check, ...cvars }, gl });
   try {
-    await waitLevelTime(c, spec.tic);
-    const r = parse(await execOut(c, report, { maxMs: 6000 }));
+    let r;
+    if (!paused) {
+      await waitLevelTime(c, spec.tic);
+      r = parse(await execOut(c, report, { maxMs: 6000 }));
+    } else {
+      await c.rpc("sim.pauseat", { tic: spec.tic });
+      await waitLevelTime(c, spec.tic, { paused: true });
+      const reports = [];
+      for (const v of views(spec)) {
+        if (v.at) await standAt(c, { ...v.at, force: 1 }, log);
+        await sleep(600);
+        // [rc4l] The report clears what it printed, so the frames before the view settled are not judged.
+        await execOut(c, report, { maxMs: 6000 });
+        await sleep(1000);
+        reports.push(parse(await execOut(c, report, { maxMs: 6000 })));
+      }
+      r = sumReports(reports);
+    }
     return { name: f.name, same: r.found && r.walked > 0 && r.differed === 0, line: describe(r), report: r };
   } finally {
     c.close();

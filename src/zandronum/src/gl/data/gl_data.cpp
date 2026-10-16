@@ -58,7 +58,7 @@
 // [rc4l] Shared with the backend's bake, which splits its walls at the same heights (features/levelmesh, ComputeVertexHeights).
 void gl_RecalcVertexHeights(vertex_t * v)
 {
-	zx::levelmesh::RecalcVertexHeights(v);
+	zx::levelmesh::RecalcLiveVertexHeights(v);
 }
 
 // [rc4l] GL's own data for a level the shared preparation has readied.

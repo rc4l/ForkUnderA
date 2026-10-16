@@ -850,7 +850,7 @@ sector_t *sector_t::GetHeightSec() const
 }
 
 
-bool secplane_t::CopyPlaneIfValid (secplane_t *dest, const secplane_t *opp) const
+bool secplane_core_t::CopyPlaneIfValid (secplane_core_t *dest, const secplane_core_t *opp) const
 {
 	bool copy = false;
 
@@ -981,7 +981,8 @@ CUSTOM_CVAR(Int, r_fakecontrast, true, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 //
 //==========================================================================
 
-int side_t::GetLightLevel (bool foggy, int baselight, bool noabsolute, int *pfakecontrast) const
+// [rc4l] A side's light from its flags and light, live or its render copy's, and its line's slope.
+static int SideLightLevel (int Flags, int Light, const line_t *linedef, bool foggy, int baselight, bool noabsolute, int *pfakecontrast)
 {
 	if (!noabsolute && (Flags & WALLF_ABSLIGHTING))
 	{
@@ -1025,8 +1026,18 @@ int side_t::GetLightLevel (bool foggy, int baselight, bool noabsolute, int *pfak
 	}
 	if (!(Flags & WALLF_ABSLIGHTING) && (!foggy || (Flags & WALLF_LIGHT_FOG)))
 	{
-		baselight = clamp(baselight + this->Light, 0, 255);
+		baselight = clamp(baselight + Light, 0, 255);
 	}
 	return baselight;
+}
+
+int side_t::GetLightLevel (bool foggy, int baselight, bool noabsolute, int *pfakecontrast) const
+{
+	return SideLightLevel (Flags, Light, linedef, foggy, baselight, noabsolute, pfakecontrast);
+}
+
+int side_t::GetRcLightLevel (bool foggy, int baselight, bool noabsolute, int *pfakecontrast) const
+{
+	return SideLightLevel (rc.Flags, rc.Light, linedef, foggy, baselight, noabsolute, pfakecontrast);
 }
 

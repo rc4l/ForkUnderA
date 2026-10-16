@@ -294,7 +294,7 @@ void BuildProjection(const MarkStyle &style, DBaseDecal *owner, int fadeStart, i
 			{
 				const int plane = (upness > 0.f) ? 0 : 1;
 				const fixed_t planeZ = (plane == 0)
-					? sec->floorplane.ZatPoint(x, y) : sec->ceilingplane.ZatPoint(x, y);
+					? sec->rc.floorplane.ZatPoint(x, y) : sec->rc.ceilingplane.ZatPoint(x, y);
 				decal.anchorSector = (int)(sec - sectors);
 				decal.anchorPlane = plane;
 				decal.anchorOffset = FIXED2FLOAT(z) - FIXED2FLOAT(planeZ);

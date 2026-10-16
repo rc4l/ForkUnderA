@@ -207,6 +207,28 @@ void P_BringUpWeapon (player_t *player);
 void P_FireWeapon (player_t *player);
 void P_DropWeapon (player_t *player);
 void P_BobWeapon (player_t *player, pspdef_t *psp, fixed_t *x, fixed_t *y);
+// [rc4l] Everything P_BobWeapon reads of a player and its weapon, taken live for GL or between tics into features/gamecopy's player record.
+struct FWeaponBobIn
+{
+	bool spectating;
+	bool weapon;          // [rc4l] a ready weapon that bobs
+	int bobStyle;
+	fixed_t bobSpeed, bobRangeX, bobRangeY, stillBobRange, stillBobSpeed;
+	fixed_t viewSwaySpeed, motionSwaySpeed, jumpSwaySpeed;
+	int swayStyle, viewPitchStyle;
+	fixed_t viewPitchOffset;
+	int levelTime;
+	bool bobbing;
+	fixed_t bob;
+	bool swayRunning;     // [rc4l] neither paused, nor the ticker, nor the server lagging
+	fixed_t angleDelta, pitchDelta, jumpVelz, velz, z, prevZ, pitch;
+	bool onground;
+	int jumpTics;
+	fixed_t crouchViewDelta;
+};
+FWeaponBobIn P_WeaponBobInputs (player_t *player);
+// [rc4l] P_BobWeapon from its inputs, stepping its smoothing once a frame.
+void WeaponBobFrom (const FWeaponBobIn &in, fixed_t *x, fixed_t *y);
 angle_t P_BulletSlope (AActor *mo, AActor **pLineTarget = NULL);
 void P_GunShot (AActor *mo, bool accurate, const PClass *pufftype, angle_t pitch);
 

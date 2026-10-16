@@ -21,6 +21,7 @@ BLOCK_COMMENT = re.compile(r'/\*.*?\*/', re.S)
 LINE_COMMENT = re.compile(r'//[^\n]*')
 STRING = re.compile(r'"(?:\\.|[^"\\\n])*"')
 FIELD = re.compile(r'^\s*ZX_COPY_FIELD\(\s*(\w+)\s*,\s*(\w+)', re.M)
+RECORD_FIELD = re.compile(r'^\s*ZX_(ACTOR|PLAYER)_(FIELD|DERIVED)\((?:[^,()]+,)?\s*(\w+)\s*\)', re.M)
 SEAM = re.compile(r'ZX_SEAM(?:_UNTIMED)?\(\s*"([^"]+)"\s*,\s*(\w+)\s*\)')
 CODE = ('.cpp', '.h', '.c', '.mm')
 DOC_BEGIN = '<!-- boundary:begin (python3 tools/boundary_tripwire.py --doc writes this section) -->'
@@ -43,14 +44,31 @@ def in_set(rel, patterns):
     return False
 
 
+def table_rows(text):
+    """[rc4l] Every (kind, member) a field table declares: the map structures' lines, then the actor and player records' copied and worked-out members."""
+    rows = FIELD.findall(text)
+    return rows + [(kind.lower() if what == 'FIELD' else '%s, worked out by the fill' % kind.lower(), name) for kind, what, name in RECORD_FIELD.findall(text)]
+
+
 def field_patterns(rule, files):
     """[rc4l] For a rule naming a field table, one pattern per copied field: the live name read anywhere but through a copy's rc."""
     spec = rule.get('fields')
     if not spec:
         return []
     table = files.get(spec['table'], '')
-    names = sorted({name for kind, name in FIELD.findall(table) if kind in spec['types'] and name not in spec.get('unpatterned', [])})
+    names = sorted({name for kind, name in table_rows(table) if kind in spec['types'] and name not in spec.get('unpatterned', [])})
     return [{'name': 'live %s' % name, 'regex': r'(?<!\brc)(?:\.|->)\s*%s\b' % name} for name in names]
+
+
+def selected(text):
+    """[rc4l] The text with reads through a template's state selector (Sel::Of(x).f, or a reference bound to one) spelled as copy reads, since the copy is what the backend's instance selects."""
+    for param in set(re.findall(r'\btemplate\s*<\s*(?:class|typename)\s+(\w+)\s*>', text)):
+        of = r'\b%s::Of\s*\((?:[^()]|\([^()]*\))*\)' % param
+        bound = set(re.findall(r'&\s*(\w+)\s*=\s*' + of, text))
+        text = re.sub(of + r'\s*\.', 'rc.', text)
+        for name in bound:
+            text = re.sub(r'\b%s\s*\.' % name, 'rc.', text)
+    return text
 
 
 def counts(rules, files):
@@ -62,7 +80,7 @@ def counts(rules, files):
         for rel in sorted(files):
             if not rel.endswith(CODE) or not in_set(rel, rule['files']) or in_set(rel, rule.get('exclude', [])):
                 continue
-            text = code_only(files[rel])
+            text = selected(code_only(files[rel]))
             n = sum(len(p.findall(text)) for p in patterns)
             if n:
                 hits[rel] = n
@@ -110,7 +128,7 @@ def doc(files, rules):
     lines = ['## What crosses the boundary', '', 'Generated from the field tables and the `ZX_SEAM` declarations; do not edit by hand.', '']
     tables = sorted({r['fields']['table'] for r in rules if r.get('fields')})
     for table in tables:
-        rows = FIELD.findall(files.get(table, ''))
+        rows = table_rows(files.get(table, ''))
         lines.append('Copied by `%s`:' % table)
         lines.append('')
         for kind in sorted({k for k, _ in rows}):

@@ -24,21 +24,21 @@ static std::vector<int> g_planeStart;
 static std::vector<int> g_modelSubs, g_modelStart;   // [rc4l] the same by model sector, the subsectors carrying a plane modelled on it
 
 
-static bool IsSky(const sector_t *s, int plane) { return s->GetTexture(plane) == skyflatnum; }
+static bool IsSky(const sector_t *s, int plane) { return s->rc.GetTexture(plane) == skyflatnum; }
 
-static bool Sloped(const secplane_t &p) { return (p.a | p.b) != 0; }
+static bool Sloped(const secplane_core_t &p) { return (p.a | p.b) != 0; }
 
 static bool ClosedAtFloor(const sector_t *s)
 {
-	return ComputeClosedAtFloor(Sloped(s->floorplane) || Sloped(s->ceilingplane), s->GetPlaneTexZ(sector_t::floor).Raw(),
-		s->GetPlaneTexZ(sector_t::ceiling).Raw());
+	return ComputeClosedAtFloor(Sloped(s->rc.floorplane) || Sloped(s->rc.ceilingplane), s->rc.GetPlaneTexZ(sector_t::floor).Raw(),
+		s->rc.GetPlaneTexZ(sector_t::ceiling).Raw());
 }
 
 // [rc4l] DoOneSectorUpper's test for a texture on the edge it stops at.
 static bool HasTexture(const side_t *side, int part)
 {
 	if (side == NULL) return false;
-	FTexture *tex = TexMan[side->GetTexture(part)];
+	FTexture *tex = TexMan[side->rc.GetTexture(part)];
 	return tex != NULL && tex->UseType != FTexture::TEX_Null;
 }
 
@@ -60,7 +60,7 @@ static bool g_staticBuilt = false;
 static double g_stageMs[4];   // [rc4l] the last recompute's stages: candidates, filing, fills, grouping
 static int g_lastEvaluated = 0, g_lastEntries = 0;
 
-static bool Validates(const side_t *side, int part) { return zx::materials::MaterialForTextureId(side->GetTexture(part)) != NULL; }
+static bool Validates(const side_t *side, int part) { return zx::materials::MaterialForTextureId(side->rc.GetTexture(part)) != NULL; }
 
 // [rc4l] What the fill reads of the level that holds still: which segs join which subsectors, which could leave a gap at all, and which sectors each depends on, with textures read again when a side's change (RefreshSide).
 static void BuildStatic()
@@ -93,8 +93,8 @@ static void BuildStatic()
 
 		const subsector_t *sub = sg.Subsector;
 		const bool hasSideAndLine = sg.sidedef != NULL && sg.linedef != NULL && front != NULL && sub != NULL;
-		if (!ComputeIsFillCandidate(hasSideAndLine, hasSideAndLine && (sg.linedef->flags & (ML_TWOSIDED | ML_3DMIDTEX)) != 0,
-				hasSideAndLine && sg.linedef->special == Line_Horizon, hasSideAndLine && sub->render_sector == sub->sector,
+		if (!ComputeIsFillCandidate(hasSideAndLine, hasSideAndLine && (sg.linedef->rc.flags & (ML_TWOSIDED | ML_3DMIDTEX)) != 0,
+				hasSideAndLine && sg.linedef->rc.special == Line_Horizon, hasSideAndLine && sub->render_sector == sub->sector,
 				hasSideAndLine && front == sub->sector, hasSideAndLine && zx::fakeflat::ViewDependent(front)))
 			continue;
 		Candidate c = {};
@@ -112,8 +112,8 @@ static void BuildStatic()
 	g_sideBottom.Resize((unsigned)numsides);
 	for (int i = 0; i < numsides; i++)
 	{
-		g_sideTop[i] = sides[i].GetTexture(side_t::top).GetIndex();
-		g_sideBottom[i] = sides[i].GetTexture(side_t::bottom).GetIndex();
+		g_sideTop[i] = sides[i].rc.GetTexture(side_t::top).GetIndex();
+		g_sideBottom[i] = sides[i].rc.GetTexture(side_t::bottom).GetIndex();
 	}
 	g_staticBuilt = true;
 }
@@ -123,10 +123,10 @@ static void RefreshEdge(int seg)
 {
 	FillSeg &f = g_fillSegs[seg];
 	const sector_t *back = segs[seg].backsector;
-	f.farFloor = back->GetPlaneTexZ(sector_t::floor).Raw();
-	f.farCeil = ClosedAtFloor(back) ? f.farFloor : back->GetPlaneTexZ(sector_t::ceiling).Raw();
-	f.farCeilSloped = Sloped(back->ceilingplane);
-	f.farFloorSloped = Sloped(back->floorplane);
+	f.farFloor = back->rc.GetPlaneTexZ(sector_t::floor).Raw();
+	f.farCeil = ClosedAtFloor(back) ? f.farFloor : back->rc.GetPlaneTexZ(sector_t::ceiling).Raw();
+	f.farCeilSloped = Sloped(back->rc.ceilingplane);
+	f.farFloorSloped = Sloped(back->rc.floorplane);
 }
 
 // [rc4l] Whether GLWall::Process leaves a missing upper or lower on the candidate's wall as the heights stand, and at what height.
@@ -139,28 +139,28 @@ static void Evaluate(Candidate &c)
 	const bool closed = ClosedAtFloor(back);
 	for (int k = 0; k < 2; k++)
 	{
-		in.ffh[k] = front->floorplane.ZatPoint(ends[k]).Raw();
-		in.fch[k] = front->ceilingplane.ZatPoint(ends[k]).Raw();
-		in.bfh[k] = back->floorplane.ZatPoint(ends[k]).Raw();
-		in.bch[k] = closed ? in.bfh[k] : back->ceilingplane.ZatPoint(ends[k]).Raw();
+		in.ffh[k] = front->rc.floorplane.ZatPoint(ends[k]).Raw();
+		in.fch[k] = front->rc.ceilingplane.ZatPoint(ends[k]).Raw();
+		in.bfh[k] = back->rc.floorplane.ZatPoint(ends[k]).Raw();
+		in.bch[k] = closed ? in.bfh[k] : back->rc.ceilingplane.ZatPoint(ends[k]).Raw();
 	}
 	in.frontFloorSky = IsSky(front, sector_t::floor);
 	in.frontCeilSky = IsSky(front, sector_t::ceiling);
 	in.backFloorSky = IsSky(back, sector_t::floor);
 	in.backCeilSky = IsSky(back, sector_t::ceiling);
-	in.polyobj = !!(sg.sidedef->Flags & WALLF_POLYOBJ);
+	in.polyobj = !!(sg.sidedef->rc.Flags & WALLF_POLYOBJ);
 	in.partnerOk = !(sg.PartnerSeg->Subsector->hacked & 4);
 
 	in.textured = c.topTextured;
-	in.sloped = Sloped(front->ceilingplane) || Sloped(back->ceilingplane);
+	in.sloped = Sloped(front->rc.ceilingplane) || Sloped(back->rc.ceilingplane);
 	c.up = ComputeMissingUpper(in, c.upZ);
 
 	// [rc4l] AddLowerMissingTexture leaves a transparent door's lowered floor and an FF_FIX 3D floor's deliberate gap alone.
-	const bool doorHack = back->transdoor && back->transdoorheight == back->GetPlaneTexZ(sector_t::floor);
+	const bool doorHack = back->transdoor && back->transdoorheight == back->rc.GetPlaneTexZ(sector_t::floor);
 	const bool fixHack = back->e != NULL && back->e->XFloor.ffloors.Size() > 0 &&
 		(back->e->XFloor.ffloors[0]->flags & (FF_FIX | FF_SEETHROUGH)) == FF_FIX;
 	in.textured = c.bottomTextured;
-	in.sloped = Sloped(front->floorplane) || Sloped(back->floorplane);
+	in.sloped = Sloped(front->rc.floorplane) || Sloped(back->rc.floorplane);
 	c.down = !doorHack && !fixHack && ComputeMissingLower(in, c.downZ);
 }
 
@@ -207,7 +207,7 @@ static int RefreshFor(const TArray<int> *moved)
 bool SideTexturesChanged(int side)
 {
 	if (side < 0 || (unsigned)side >= g_sideTop.Size()) return false;
-	const int top = sides[side].GetTexture(side_t::top).GetIndex(), bottom = sides[side].GetTexture(side_t::bottom).GetIndex();
+	const int top = sides[side].rc.GetTexture(side_t::top).GetIndex(), bottom = sides[side].rc.GetTexture(side_t::bottom).GetIndex();
 	if (top == g_sideTop[side] && bottom == g_sideBottom[side]) return false;
 	g_sideTop[side] = top;
 	g_sideBottom[side] = bottom;

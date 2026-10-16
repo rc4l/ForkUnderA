@@ -2,8 +2,13 @@
 import { Buffer } from "node:buffer";
 
 // [rc4l] The p-codes templates use, numbered as in p_acs.h; ACS0 writes every code and argument as a 32-bit word.
-export const PCD = { TERMINATE: 1, PUSHNUMBER: 3, LSPEC1: 4, GOTO: 52, DELAYDIRECT: 56, BEGINPRINT: 85, ENDPRINT: 86, PRINTSTRING: 87,
-  CONSOLECOMMAND: 134, MOREHUDMESSAGE: 159, ENDHUDMESSAGE: 161, SETCAMERATOTEXTURE: 269 };
+export const PCD = { TERMINATE: 1, PUSHNUMBER: 3, LSPEC1: 4, ADD: 14, EQ: 19, ASSIGNMAPVAR: 26, PUSHMAPVAR: 29, INCMAPVAR: 47, GOTO: 52,
+  IFGOTO: 53, DROP: 54, DELAYDIRECT: 56, IFNOTGOTO: 79, BEGINPRINT: 85, ENDPRINT: 86, PRINTSTRING: 87, CONSOLECOMMAND: 134,
+  MOREHUDMESSAGE: 159, OPTHUDMESSAGE: 160, ENDHUDMESSAGE: 161, GETSCREENWIDTH: 250, GETSCREENHEIGHT: 251, GETCVAR: 255,
+  GETSECTORFLOORZ: 261, SETCAMERATOTEXTURE: 269, SETMUGSHOTSTATE: 341, CHECKPLAYERCAMERA: 344, CALLFUNC: 351 };
+
+// [rc4l] The ACS functions templates call through CALLFUNC, numbered as EACSFunctions in p_acs.cpp.
+export const ACSF = { SetCVar: 53, PlaySound: 61, CheckFlag: 75 };
 
 // [rc4l] OPEN script 1 running `code` (words), with `strings` indexed from 0 as the script's string arguments; `{ open: false, number }` makes it a closed script that `puke number` runs.
 export function acs0(code, strings = [], { open = true, number = 1 } = {}) {
@@ -39,11 +44,12 @@ export function printString(i) {
   return [PCD.BEGINPRINT, PCD.PUSHNUMBER, i, PCD.PRINTSTRING, PCD.ENDPRINT];
 }
 
-// [rc4l] The words of `HudMessage(s:strings[i]; type, id, color, x, y, holdTime)`, the last three in map units as 16.16 fixed point.
-export function hudMessage(i, { type = 0, id = 0, color = 0, x = 0.5, y = 0.5, hold = 1 } = {}) {
+// [rc4l] The words of `HudMessage(s:strings[i]; type, id, color, x, y, holdTime)`, the last three in map units as 16.16 fixed point, and with `fade` a fade-out of that many seconds.
+export function hudMessage(i, { type = 0, id = 0, color = 0, x = 0.5, y = 0.5, hold = 1, fade = null } = {}) {
   const fixed = (v) => Math.round(v * 65536);
   return [PCD.BEGINPRINT, PCD.PUSHNUMBER, i, PCD.PRINTSTRING, PCD.MOREHUDMESSAGE,
-    ...[type, id, color, fixed(x), fixed(y), fixed(hold)].flatMap((v) => [PCD.PUSHNUMBER, v]), PCD.ENDHUDMESSAGE];
+    ...[type, id, color, fixed(x), fixed(y), fixed(hold)].flatMap((v) => [PCD.PUSHNUMBER, v]),
+    ...(fade === null ? [] : [PCD.OPTHUDMESSAGE, PCD.PUSHNUMBER, fixed(fade)]), PCD.ENDHUDMESSAGE];
 }
 
 // [rc4l] The words of `ConsoleCommand(strings[i])`, which the engine pops as three words, the string first.
@@ -54,4 +60,28 @@ export function consoleCommand(i) {
 // [rc4l] The words that jump to word `index` of the script, which ACS0 addresses by its byte offset in the lump.
 export function gotoWord(index) {
   return [PCD.GOTO, 8 + 4 * index];
+}
+
+// [rc4l] The words of an ACS function called with these pushed arguments (string arguments as their string index), its result left on the stack.
+export function callFunc(fn, args) {
+  return [...args.flatMap((a) => [PCD.PUSHNUMBER, a]), PCD.CALLFUNC, args.length, fn];
+}
+
+// [rc4l] A script built word by word with named jump targets, resolved to ACS0 byte offsets by words().
+export class AcsScript {
+  constructor() { this.parts = []; this.labels = new Map(); }
+  // [rc4l] Words as they are, p-codes and their arguments.
+  emit(...words) { this.parts.push(...words); return this; }
+  // [rc4l] Names the next word as a jump target.
+  label(name) { this.labels.set(name, this.parts.length); return this; }
+  // [rc4l] A jump (GOTO, IFGOTO, IFNOTGOTO) to a named target, resolved once the script is done.
+  jump(pcd, name) { this.parts.push(pcd, { label: name }); return this; }
+  // [rc4l] The script's words, every jump target turned into its byte offset; a target never named throws.
+  words() {
+    return this.parts.map((w) => {
+      if (typeof w === "number") return w;
+      if (!this.labels.has(w.label)) throw new Error(`no label ${w.label}`);
+      return 8 + 4 * this.labels.get(w.label);
+    });
+  }
 }

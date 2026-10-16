@@ -624,8 +624,8 @@ void GLSprite::Process(AActor* thing,sector_t * sector)
 	}
 
 	// don't draw first frame of a player missile
-	AActor *const viewActor = gl_SpriteView().ViewActor();
-	if (thing->flags&MF_MISSILE && thing->target == viewActor && viewActor != NULL)
+	const void *const viewActor = gl_SpriteView().ViewActor();
+	if (thing->flags&MF_MISSILE && static_cast<AActor *>(thing->target) == viewActor && viewActor != NULL)
 	{
 		if (P_AproxDistance(thingx-viewx, thingy-viewy) < thing->Speed ) return;
 	}

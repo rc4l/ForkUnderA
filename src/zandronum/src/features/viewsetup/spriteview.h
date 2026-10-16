@@ -30,7 +30,7 @@ namespace zx { namespace viewsetup {
 struct SpriteViewProvider
 {
 	// The actor the view is attached to -- not drawn, because you are inside it.
-	AActor *(*ViewActor)();
+	const void *(*ViewActor)();   // [rc4l] who the eye is in, compared and never read
 	// Where the camera faces, in the plane, for turning a wall sprite side-on.
 	void    (*ViewVector)(float &x, float &y);
 	// A running count, which sprites use to keep a stable order among themselves.

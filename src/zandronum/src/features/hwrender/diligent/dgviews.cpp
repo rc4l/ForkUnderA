@@ -374,7 +374,7 @@ void CollectMirrors()
 		const vertex_t *ends[4] = { ln->v1, ln->v1, ln->v2, ln->v2 };
 		for (int k = 0; k < 4; k++)
 		{
-			const secplane_t &plane = (k == 0 || k == 3) ? ln->frontsector->floorplane : ln->frontsector->ceilingplane;
+			const secplane_core_t &plane = (k == 0 || k == 3) ? ln->frontsector->rc.floorplane : ln->frontsector->rc.ceilingplane;
 			m.corners[k][0] = FIXED2FLOAT(ends[k]->x);
 			m.corners[k][1] = FIXED2FLOAT(plane.ZatPoint(ends[k]->x, ends[k]->y));
 			m.corners[k][2] = FIXED2FLOAT(ends[k]->y);

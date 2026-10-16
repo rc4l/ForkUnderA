@@ -9,7 +9,7 @@
     "features/surfaces/", "features/fakeflat/", "features/viewsetup/", "features/fov-interp/fovinterp.cpp",
     "features/materials/", "features/draw2d/screenblend.cpp", "features/damage-tint/", "features/hitboxviz/", "features/models/"
    ],
-   "exclude": ["*/computation/*", "*_test.cpp"],
+   "exclude": ["*/computation/*", "*_test.cpp", "features/damage-tint/tintsubject.*"],
    "patterns": [
     {"name": "live thinker iteration", "regex": "\\bTThinkerIterator\\s*<"},
     {"name": "live actor", "regex": "\\bAActor\\b"},

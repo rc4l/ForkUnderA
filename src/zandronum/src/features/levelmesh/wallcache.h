@@ -90,8 +90,10 @@ MidTextureBlend LineMidBlend(const line_t *line, zx::materials::MaterialRef mat)
 // [rc4l] Whether seg's line draws no wall of its own, as a horizon or a line mirror does.
 bool LineDrawsNoWall(const seg_t *seg);
 
-// [rc4l] gl_RecalcVertexHeights: the heights of the planes meeting at v, which r_seamless splits wall ends at, worked out again.
+// [rc4l] gl_RecalcVertexHeights: the heights of the planes meeting at v, which r_seamless splits wall ends at, worked out again from the render copy.
 void RecalcVertexHeights(vertex_t *v);
+// [rc4l] The same from the live planes, for GL.
+void RecalcLiveVertexHeights(vertex_t *v);
 
 // [rc4l] Whether seg's line is a line mirror, which draws its reflection where the wall would be.
 bool LineIsMirror(const seg_t *seg);

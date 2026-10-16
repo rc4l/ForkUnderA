@@ -52,6 +52,7 @@
 #include "p_3dmidtex.h"
 #include "r_data/r_interpolate.h"
 #include "features/gamecopy/gamecopy.h"   // [rc4l] BlendMap
+#include "features/gamecopy/players.h"    // [rc4l] the records a view is set up from
 #include "v_palette.h"
 #include "features/fixed64/computation/finetable_compute.h"
 #include "features/fixed64/computation/angle_interp_compute.h"
@@ -81,7 +82,7 @@ extern FSpecialColormap*realfixedcolormap;
 
 struct InterpolationViewer
 {
-	AActor *ViewActor;
+	const void *ViewActor;	// [rc4l] the camera's identity, compared and never read
 	int otic;
 	fixed_t oviewx, oviewy, oviewz;
 	fixed_t nviewx, nviewy, nviewz;
@@ -593,7 +594,8 @@ static void R_Shutdown ()
 //CVAR (Int, tf, 0, 0)
 EXTERN_CVAR (Bool, cl_noprediction)
 
-void R_InterpolateView (player_t *player, fixed_t frac, InterpolationViewer *iview)
+// [rc4l] features/gamecopy: from the camera's and its player's records, cam the camera's record and camIndex its index.
+static void R_InterpolateView (const zx::gamecopy::PlayerRecord *player, const zx::gamecopy::ActorRecord *cam, int camIndex, fixed_t frac, InterpolationViewer *iview)
 {
 //	frac = tf;
 	if (NoInterpolateView)
@@ -608,16 +610,17 @@ void R_InterpolateView (player_t *player, fixed_t frac, InterpolationViewer *ivi
 	viewx = iview->oviewx + FixedMul (frac, iview->nviewx - iview->oviewx);
 	viewy = iview->oviewy + FixedMul (frac, iview->nviewy - iview->oviewy);
 	viewz = iview->oviewz + FixedMul (frac, iview->nviewz - iview->oviewz);
+	const zx::gamecopy::ActorRecord *body = player != NULL ? zx::gamecopy::Record(player->mo) : NULL;
 	if (player != NULL &&
 		!(player->cheats & CF_INTERPVIEW) &&
-		player - players == consoleplayer &&
-		camera == player->mo &&
+		player->number == consoleplayer &&
+		camIndex == player->mo &&
 		!demoplayback &&
-		iview->nviewx == camera->x &&
-		iview->nviewy == camera->y && 
+		iview->nviewx == cam->x &&
+		iview->nviewy == cam->y &&
 		!(player->cheats & (CF_TOTALLYFROZEN|CF_FROZEN)) &&
 		player->playerstate == PST_LIVE &&
-		player->mo->reactiontime == 0 &&
+		body != NULL && body->reactiontime == 0 &&
 		!NoInterpolateView &&
 		!paused &&
 		( NETWORK_GetState( ) != NETSTATE_CLIENT || !cl_noprediction) &&
@@ -707,7 +710,7 @@ void R_SetViewAngle ()
 //
 //==========================================================================
 
-static InterpolationViewer *FindPastViewer (AActor *actor)
+static InterpolationViewer *FindPastViewer (const void *actor)
 {
 	for (unsigned int i = 0; i < PastViewers.Size(); ++i)
 	{
@@ -796,30 +799,37 @@ void R_SetupFrame (AActor *actor)
 		I_Error ("Tried to render from a NULL actor.");
 	}
 
-	player_t *player = actor->player;
+	// [rc4l] features/gamecopy: the view comes from the render copy's records, the actor only naming whose; a view asked for before this level's first fill takes it now.
+	const zx::gamecopy::ActorRecord *actorRec = zx::gamecopy::RecordOf(actor);
+	if (actorRec == NULL)
+	{
+		zx::gamecopy::FillNow ();
+		actorRec = zx::gamecopy::RecordOf(actor);
+	}
+	if (actorRec == NULL)
+	{
+		I_Error ("Tried to render from an actor the render copy does not hold.");
+	}
+	const zx::gamecopy::PlayerRecord *player = zx::gamecopy::Player(actorRec->playerIndex);
 	unsigned int newblend;
 	InterpolationViewer *iview;
 	bool usingFreeChasecam = false; // [AK]
 
-	if (player != NULL && player->mo == actor)
-	{	// [RH] Use camera instead of viewplayer
-		camera = player->camera;
-		if (camera == NULL)
-		{
-			camera = player->camera = player->mo;
-		}
-	}
-	else
-	{
-		camera = actor;
-	}
+	// [RH] Use camera instead of viewplayer; the fill gave a player without one its body.
+	const int camIndex = (player != NULL && zx::gamecopy::Record(player->mo) == actorRec) ? player->camera : zx::gamecopy::IndexOf(actorRec);
+	const zx::gamecopy::ActorRecord *const cam = zx::gamecopy::Record(camIndex);
 
-	if (camera == NULL)
+	if (cam == NULL)
 	{
 		I_Error ("You lost your body. Bad dehacked work is likely to blame.");
 	}
+	camera = zx::gamecopy::LiveOf(cam);
+	zx::gamecopy::SetViewCamera(camIndex);
+	const zx::gamecopy::PlayerRecord *const camPlayer = zx::gamecopy::Player(cam->playerIndex);
+	const zx::gamecopy::PlayerRecord *const me = zx::gamecopy::Player(consoleplayer);
+	const zx::gamecopy::ViewSource *const source = zx::gamecopy::ViewSourceOf(camIndex);
 
-	iview = FindPastViewer (camera);
+	iview = FindPastViewer (cam->who);
 
 	int nowtic = I_GetTime (false);
 	if (iview->otic != -1 && nowtic > iview->otic)
@@ -835,12 +845,16 @@ void R_SetupFrame (AActor *actor)
 	// [BB] consoleplayer should be able to toggle the chase cam.
 	// [AK] Don't use the chase cam if they're in free spectate mode.
 	if (player != NULL && gamestate != GS_TITLELEVEL &&
-		(CLIENTDEMO_IsInFreeSpectateMode() == false) && 
-		(camera->player - players != consoleplayer || players[consoleplayer].bSpectating == false) &&
-		((/*player->*/players[consoleplayer].cheats & CF_CHASECAM) || (r_deathcamera && camera->health <= 0)))
+		(CLIENTDEMO_IsInFreeSpectateMode() == false) &&
+		(cam->playerIndex != consoleplayer || me == NULL || me->bSpectating == false) &&
+		((me != NULL && (me->cheats & CF_CHASECAM)) || (r_deathcamera && cam->health <= 0)) &&
+		source != NULL && source->chased)
 	{
-		// [RH] Use chasecam view
-		P_AimCamera (camera, iview->nviewx, iview->nviewy, iview->nviewz, viewsector);
+		// [RH] Use chasecam view, aimed between tics.
+		iview->nviewx = source->chaseX;
+		iview->nviewy = source->chaseY;
+		iview->nviewz = source->chaseZ;
+		viewsector = source->chaseSector;
 		r_showviewer = true;
 
 		// [AK] Check if we're supposed to be using the free chasecam.
@@ -848,10 +862,10 @@ void R_SetupFrame (AActor *actor)
 	}
 	else
 	{
-		iview->nviewx = camera->x;
-		iview->nviewy = camera->y;
-		iview->nviewz = camera->player ? camera->player->viewz : camera->z + camera->GetClass()->Meta.GetMetaFixed(AMETA_CameraHeight);
-		viewsector = camera->Sector;
+		iview->nviewx = cam->x;
+		iview->nviewy = cam->y;
+		iview->nviewz = camPlayer != NULL ? camPlayer->viewz : cam->z + cam->type->Meta.GetMetaFixed(AMETA_CameraHeight);
+		viewsector = cam->Sector;
 		r_showviewer = false;
 	}
 
@@ -859,11 +873,11 @@ void R_SetupFrame (AActor *actor)
 	// distance from the actor we're spying on.
 	if (usingFreeChasecam)
 	{
-		float fX = FIXED2FLOAT(camera->x - iview->nviewx);
-		float fY = FIXED2FLOAT(camera->y - iview->nviewy);
+		float fX = FIXED2FLOAT(cam->x - iview->nviewx);
+		float fY = FIXED2FLOAT(cam->y - iview->nviewy);
 		float fDist = sqrt(fX * fX + fY * fY);
 
-		fixed_t deltaZ = camera->z - camera->floorclip + camera->height + static_cast<fixed_t>(chase_height * FRACUNIT);
+		fixed_t deltaZ = cam->z - cam->floorclip + cam->height + static_cast<fixed_t>(chase_height * FRACUNIT);
 		deltaZ -= iview->nviewz;
 
 		// [AK] Calculate the angle. Keep in mind that the pitch's sign is reversed (i.e. up is negative)!
@@ -871,16 +885,16 @@ void R_SetupFrame (AActor *actor)
 	}
 	else
 	{
-		iview->nviewpitch = (int)(camera->pitch);
+		iview->nviewpitch = (int)(cam->pitch);
 	}
 
-	if (camera->player != 0)
+	if (camPlayer != NULL)
 	{
-		player = camera->player;
+		player = camPlayer;
 	}
 
 	// [AK] If we're using the free chasecam, use our own angle instead of the actor's who we're spying.
-	iview->nviewangle = usingFreeChasecam ? FreeChasecam::cameraAngle : camera->angle;
+	iview->nviewangle = usingFreeChasecam ? FreeChasecam::cameraAngle : cam->angle;
 
 	if (iview->otic == -1 || r_NoInterpolate)
 	{
@@ -894,7 +908,7 @@ void R_SetupFrame (AActor *actor)
 		r_TicFrac = FRACUNIT;
 	}
 
-	R_InterpolateView (player, r_TicFrac, iview);
+	R_InterpolateView (player, cam, camIndex, r_TicFrac, iview);
 
 #ifdef TEST_X
 	viewx = TEST_X;
@@ -911,15 +925,15 @@ void R_SetupFrame (AActor *actor)
 
 	// Keep the view within the sector's floor and ceiling
 	// [AK] Allow spectators without physical restrictions to pass through floors/ceilings.
-	if (P_IsSpectatorUnrestricted(camera) == false)
+	if (source == NULL || source->unrestricted == false)
 	{
-		fixed_t theZ = viewsector->ceilingplane.ZatPoint (viewx, viewy) - 4*FRACUNIT;
+		fixed_t theZ = viewsector->rc.ceilingplane.ZatPoint (viewx, viewy) - 4*FRACUNIT;
 		if (viewz > theZ)
 		{
 			viewz = theZ;
 		}
 
-		theZ = viewsector->floorplane.ZatPoint (viewx, viewy) + 4*FRACUNIT;
+		theZ = viewsector->rc.floorplane.ZatPoint (viewx, viewy) + 4*FRACUNIT;
 		if (viewz < theZ)
 		{
 			viewz = theZ;
@@ -927,25 +941,25 @@ void R_SetupFrame (AActor *actor)
 	}
 
 	// [AK] Don't apply earthquake effects to free-roaming spectators.
-	if (!paused && ((camera->player == nullptr) || (camera->player->bSpectating == false)))
+	if (!paused && ((camPlayer == nullptr) || (camPlayer->bSpectating == false)))
 	{
-		// [rc4l] uzdoom@e29b8b209 -- per-axis quakes with QF_WAVE. The [AK] spectator guard above is ours.
+		// [rc4l] uzdoom@e29b8b209's per-axis quakes with QF_WAVE, found between tics and summed at the frame's point through the tic, under our [AK] spectator guard.
 		FQuakeJiggers jiggers = { 0, };
 
-		if (DEarthquake::StaticGetQuakeIntensities(camera, jiggers) > 0)
+		if (source != NULL && DEarthquake::StaticQuakeIntensities(source->quakes, jiggers) > 0)
 		{
 			fixed_t quakefactor = FLOAT2FIXED(r_quakeintensity);
 
 			if ((jiggers.RelIntensityX | jiggers.RelOffsetX) != 0)
 			{
-				int ang = (camera->angle) >> ANGLETOFINESHIFT;
+				int ang = (cam->angle) >> ANGLETOFINESHIFT;
 				fixed_t power = QuakePower(quakefactor, jiggers.RelIntensityX, jiggers.RelOffsetX);
 				viewx += FixedMul(finecosine[ang], power);
 				viewy += FixedMul(finesine[ang], power);
 			}
 			if ((jiggers.RelIntensityY | jiggers.RelOffsetY) != 0)
 			{
-				int ang = (camera->angle + ANG90) >> ANGLETOFINESHIFT;
+				int ang = (cam->angle + ANG90) >> ANGLETOFINESHIFT;
 				fixed_t power = QuakePower(quakefactor, jiggers.RelIntensityY, jiggers.RelOffsetY);
 				viewx += FixedMul(finecosine[ang], power);
 				viewy += FixedMul(finesine[ang], power);
@@ -971,7 +985,7 @@ void R_SetupFrame (AActor *actor)
 		}
 	}
 
-	extralight = camera->player ? camera->player->extralight : 0;
+	extralight = camPlayer != NULL ? camPlayer->extralight : 0;
 
 	// killough 3/20/98, 4/4/98: select colormap based on player status
 	// [RH] Can also select a blend
@@ -1040,7 +1054,7 @@ void R_SetupFrame (AActor *actor)
 	}
 
 	Renderer->CopyStackedViewParameters();
-	Renderer->SetupFrame(player);
+	Renderer->SetupFrame(player != NULL ? &players[player->number] : NULL);
 
 	validcount++;
 

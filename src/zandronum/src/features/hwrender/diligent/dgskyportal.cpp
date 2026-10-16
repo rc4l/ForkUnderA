@@ -297,8 +297,8 @@ bool RenderSkyPortal(Diligent::IDeviceContext *ctx)
 	// [rc4l] The eye never sits inside the skybox room's floor or ceiling.
 	if (sb->Sector != NULL)
 	{
-		const fixed_t fl = sb->Sector->floorplane.ZatPoint(sb->x, sb->y);
-		const fixed_t ce = sb->Sector->ceilingplane.ZatPoint(sb->x, sb->y);
+		const fixed_t fl = sb->Sector->rc.floorplane.ZatPoint(sb->x, sb->y);
+		const fixed_t ce = sb->Sector->rc.ceilingplane.ZatPoint(sb->x, sb->y);
 		if (viewz < fl + 4 * FRACUNIT) viewz = fl + 4 * FRACUNIT;
 		if (viewz > ce - 4 * FRACUNIT) viewz = ce - 4 * FRACUNIT;
 	}

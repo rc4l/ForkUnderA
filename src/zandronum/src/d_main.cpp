@@ -907,13 +907,13 @@ void D_Display ()
 	bool wipe;
 	bool hw2d;
 
-	// [rc4l] The render copy taken from the tics just run, until the handoff takes it between tics.
-	zx::gamecopy::FillMap ();
-	zx::gamecopy::CheckBeforeViews ();
-
 	// [BC] No need for servers to do this.
 	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 		return;
+
+	// [rc4l] The render copy taken from the tics just run, until the handoff takes it between tics.
+	zx::gamecopy::FillMap ();
+	zx::gamecopy::CheckBeforeViews ();
 
 	if (nodrawers || screen == NULL)
 		return; 				// for comparative timing / profiling

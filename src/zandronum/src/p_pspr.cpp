@@ -669,7 +669,53 @@ void P_DropWeapon (player_t *player)
 //
 //============================================================================
 
+FWeaponBobIn P_WeaponBobInputs (player_t *player)
+{
+	FWeaponBobIn in = {};
+	in.spectating = player->bSpectating;
+	AWeapon *const weapon = player->ReadyWeapon;
+	in.weapon = weapon != NULL && !(weapon->WeaponFlags & WIF_DONTBOB);
+	if (weapon != NULL)
+	{
+		in.bobStyle = weapon->BobStyle;
+		in.bobSpeed = weapon->BobSpeed;
+		in.bobRangeX = weapon->BobRangeX;
+		in.bobRangeY = weapon->BobRangeY;
+		in.stillBobRange = weapon->StillBobRange;
+		in.stillBobSpeed = weapon->StillBobSpeed;
+		in.viewSwaySpeed = weapon->ViewSwaySpeed;
+		in.motionSwaySpeed = weapon->MotionSwaySpeed;
+		in.jumpSwaySpeed = weapon->JumpSwaySpeed;
+		in.swayStyle = weapon->SwayStyle;
+		in.viewPitchStyle = weapon->ViewPitchStyle;
+		in.viewPitchOffset = weapon->ViewPitchOffset;
+	}
+	in.levelTime = level.time;
+	in.bobbing = (player->WeaponState & WF_WEAPONBOBBING) != 0;
+	in.bob = player->bob;
+	in.swayRunning = (paused == false) && (P_CheckTickerPaused() == false) && (CLIENT_GetServerLagging() == false);
+	if (player->mo != NULL)
+	{
+		in.angleDelta = player->mo->AngleDelta;
+		in.pitchDelta = player->mo->PitchDelta;
+		in.jumpVelz = player->mo->CalcJumpVelz();
+		in.velz = player->mo->velz;
+		in.z = player->mo->z;
+		in.prevZ = player->mo->PrevZ;
+		in.pitch = player->mo->pitch;
+	}
+	in.onground = player->onground;
+	in.jumpTics = player->jumpTics;
+	in.crouchViewDelta = player->crouchviewdelta;
+	return in;
+}
+
 void P_BobWeapon (player_t *player, pspdef_t *psp, fixed_t *x, fixed_t *y)
+{
+	WeaponBobFrom (P_WeaponBobInputs (player), x, y);
+}
+
+void WeaponBobFrom (const FWeaponBobIn &in, fixed_t *x, fixed_t *y)
 {
 	static fixed_t curbob;
 	// [rc4l] The smoothing below steps once a frame, so GL and the backend drawing the same frame bob alike.
@@ -677,16 +723,13 @@ void P_BobWeapon (player_t *player, pspdef_t *psp, fixed_t *x, fixed_t *y)
 	const bool step = steppedFrame != r_frameSerial;
 	steppedFrame = r_frameSerial;
 
-	AWeapon *weapon;
 	fixed_t bobtarget;
 
 	// [BC] Don't bob weapon if the player is spectating.
-	if ( player->bSpectating )
+	if ( in.spectating )
 		return;
 
-	weapon = player->ReadyWeapon;
-
-	if (weapon == NULL || weapon->WeaponFlags & WIF_DONTBOB)
+	if (!in.weapon)
 	{
 		*x = *y = 0;
 		return;
@@ -694,19 +737,19 @@ void P_BobWeapon (player_t *player, pspdef_t *psp, fixed_t *x, fixed_t *y)
 
 	// [XA] Get the current weapon's bob properties.
 	// [AK] Adjust the bob style and speed to the client's preference if cl_usecustombob is enabled.
-	int bobstyle = cl_usecustombob ? cl_bobstyle : weapon->BobStyle;
-	int bobspeed = (int)(((cl_usecustombob ? FLOAT2FIXED(cl_bobspeed) : weapon->BobSpeed) * 128) >> 16);
-	fixed_t rangex = weapon->BobRangeX;
-	fixed_t rangey = weapon->BobRangeY;
+	int bobstyle = cl_usecustombob ? cl_bobstyle : in.bobStyle;
+	int bobspeed = (int)(((cl_usecustombob ? FLOAT2FIXED(cl_bobspeed) : in.bobSpeed) * 128) >> 16);
+	fixed_t rangex = in.bobRangeX;
+	fixed_t rangey = in.bobRangeY;
 
 	// Bob the weapon based on movement speed.
-	int angle = (bobspeed*35/TICRATE*level.time)&FINEMASK;
+	int angle = (bobspeed*35/TICRATE*in.levelTime)&FINEMASK;
 
 	// [RH] Smooth transitions between bobbing and not-bobbing frames.
 	// This also fixes the bug where you can "stick" a weapon off-center by
 	// shooting it when it's at the peak of its swing.
 	// [AK] Keep bobbing the weapon while firing if cl_alwaysbob is enabled.
-	bobtarget = ((player->WeaponState & WF_WEAPONBOBBING) || (cl_alwaysbob)) ? player->bob : 0;
+	bobtarget = (in.bobbing || (cl_alwaysbob)) ? in.bob : 0;
 	if (step && curbob != bobtarget)
 	{
 		if (abs (bobtarget - curbob) <= 1*FRACUNIT)
@@ -729,8 +772,8 @@ void P_BobWeapon (player_t *player, pspdef_t *psp, fixed_t *x, fixed_t *y)
 
 	if (curbob != 0)
 	{
-		fixed_t bobx = FixedMul(player->bob, rangex);
-		fixed_t boby = FixedMul(player->bob, rangey);
+		fixed_t bobx = FixedMul(in.bob, rangex);
+		fixed_t boby = FixedMul(in.bob, rangey);
 		switch (bobstyle)
 		{
 		case AWeapon::BobNormal:
@@ -776,14 +819,14 @@ void P_BobWeapon (player_t *player, pspdef_t *psp, fixed_t *x, fixed_t *y)
 		*y = 0;
 	}
 
-	const fixed_t stillBobRange = (cl_usecustombob ? FLOAT2FIXED(cl_stillbobrange) : weapon->StillBobRange) - bobtarget;
+	const fixed_t stillBobRange = (cl_usecustombob ? FLOAT2FIXED(cl_stillbobrange) : in.stillBobRange) - bobtarget;
 
 	// [AK] Also bob the weapon up and down while the player's standing still.
 	// Make the transition between "still" and "regular" bobbing smooth.
-	if (((player->WeaponState & WF_WEAPONBOBBING) || (cl_alwaysbob)) && (stillBobRange > 0))
+	if ((in.bobbing || (cl_alwaysbob)) && (stillBobRange > 0))
 	{
-		const fixed_t stillBobSpeed = ((cl_usecustombob ? FLOAT2FIXED(cl_stillbobspeed) : weapon->StillBobSpeed) * 128) >> FRACBITS;
-		const fixed_t stillBobAngle = (stillBobSpeed * level.time) & FINEMASK;
+		const fixed_t stillBobSpeed = ((cl_usecustombob ? FLOAT2FIXED(cl_stillbobspeed) : in.stillBobSpeed) * 128) >> FRACBITS;
+		const fixed_t stillBobAngle = (stillBobSpeed * in.levelTime) & FINEMASK;
 
 		*y += FixedMul(stillBobRange, finesine[(int)(stillBobAngle & (FINEANGLES / 2 - 1))]);
 	}
@@ -801,9 +844,9 @@ void P_BobWeapon (player_t *player, pspdef_t *psp, fixed_t *x, fixed_t *y)
 	}
 	else
 	{
-		viewSwaySpeed = FIXED2FLOAT(weapon->ViewSwaySpeed);
-		motionSwaySpeed = weapon->MotionSwaySpeed;
-		jumpSwaySpeed = weapon->JumpSwaySpeed;
+		viewSwaySpeed = FIXED2FLOAT(in.viewSwaySpeed);
+		motionSwaySpeed = in.motionSwaySpeed;
+		jumpSwaySpeed = in.jumpSwaySpeed;
 	}
 
 	// [AK] Sway the weapon if any of the multipliers are non-zero values.
@@ -811,32 +854,32 @@ void P_BobWeapon (player_t *player, pspdef_t *psp, fixed_t *x, fixed_t *y)
 	{
 		static fixed_t swaypos[2];
 		static int lastSwayTime = 0;
-		const int swayStyle = cl_usecustomsway ? cl_swaystyle : weapon->SwayStyle;
+		const int swayStyle = cl_usecustomsway ? cl_swaystyle : in.swayStyle;
 
 		// [AK] Don't reposition the sprite while the ticker is paused or while the server is lagging.
-		if ((lastSwayTime != level.time) && (paused == false) && (P_CheckTickerPaused() == false) && (CLIENT_GetServerLagging() == false))
+		if ((lastSwayTime != in.levelTime) && in.swayRunning)
 		{
 			fixed_t nswaypos[2] = {0, 0};
 
 			if (viewSwaySpeed != 0.0f)
 			{
-				nswaypos[0] += FLOAT2FIXED(FIXED2FLOAT(player->mo->AngleDelta) * viewSwaySpeed / 256.0f);
-				nswaypos[1] += FLOAT2FIXED(FIXED2FLOAT(player->mo->PitchDelta) * viewSwaySpeed / 256.0f);
+				nswaypos[0] += FLOAT2FIXED(FIXED2FLOAT(in.angleDelta) * viewSwaySpeed / 256.0f);
+				nswaypos[1] += FLOAT2FIXED(FIXED2FLOAT(in.pitchDelta) * viewSwaySpeed / 256.0f);
 			}
 
 			// [AK] Add additional vertical sway when the player jumps in the air. Don't do this after
 			// the player's speed in the z-axis is greater than their jump speed.
-			if ((jumpSwaySpeed != 0) && (player->onground == false) && (player->jumpTics != 0) && (abs(player->mo->velz) <= player->mo->CalcJumpVelz()))
+			if ((jumpSwaySpeed != 0) && (in.onground == false) && (in.jumpTics != 0) && (abs(in.velz) <= in.jumpVelz))
 			{
-				nswaypos[1] += FixedMul(player->mo->velz, jumpSwaySpeed);
+				nswaypos[1] += FixedMul(in.velz, jumpSwaySpeed);
 			}
 			// [AK] Add additional vertical sway when the player moves and/or crouches up or down.
 			else if (motionSwaySpeed != 0)
 			{
 				const fixed_t zDiffMax = FixedMul(10 << FRACBITS, motionSwaySpeed);
-				const fixed_t zDiff = clamp<fixed_t>(player->mo->z - player->mo->PrevZ, -zDiffMax, zDiffMax);
+				const fixed_t zDiff = clamp<fixed_t>(in.z - in.prevZ, -zDiffMax, zDiffMax);
 
-				nswaypos[1] += FixedMul(zDiff + player->crouchviewdelta / 2, motionSwaySpeed);
+				nswaypos[1] += FixedMul(zDiff + in.crouchViewDelta / 2, motionSwaySpeed);
 			}
 
 			for (int i = 0; i <= 1; i++)
@@ -852,7 +895,7 @@ void P_BobWeapon (player_t *player, pspdef_t *psp, fixed_t *x, fixed_t *y)
 				}
 			}
 
-			lastSwayTime = level.time;
+			lastSwayTime = in.levelTime;
 		}
 
 		*x += swaypos[0];
@@ -873,8 +916,8 @@ void P_BobWeapon (player_t *player, pspdef_t *psp, fixed_t *x, fixed_t *y)
 		}
 	}
 
-	int viewpitchstyle = cl_usecustompitch ? cl_viewpitchstyle : weapon->ViewPitchStyle;
-	float viewpitchoffset = cl_usecustompitch ? cl_viewpitchoffset : FIXED2FLOAT(weapon->ViewPitchOffset);
+	int viewpitchstyle = cl_usecustompitch ? cl_viewpitchstyle : in.viewPitchStyle;
+	float viewpitchoffset = cl_usecustompitch ? cl_viewpitchoffset : FIXED2FLOAT(in.viewPitchOffset);
 
 	// [AK] Offset the weapon based on the player's pitch if the multiplier is a non-zero value.
 	if (viewpitchoffset != 0.0f)
@@ -885,23 +928,23 @@ void P_BobWeapon (player_t *player, pspdef_t *psp, fixed_t *x, fixed_t *y)
 		switch (viewpitchstyle)
 		{
 		case WEAPON_PITCH_FULL:
-			value = FixedDiv(halfmin + player->mo->pitch, FIXED_MIN);
+			value = FixedDiv(halfmin + in.pitch, FIXED_MIN);
 			break;
 
 		case WEAPON_PITCH_UPONLY:
-			value = FixedDiv(MIN<fixed_t>(0, player->mo->pitch), halfmin);
+			value = FixedDiv(MIN<fixed_t>(0, in.pitch), halfmin);
 			break;
 
 		case WEAPON_PITCH_DOWNONLY:
-			value = -FixedDiv(MAX<fixed_t>(0, player->mo->pitch), halfmin);
+			value = -FixedDiv(MAX<fixed_t>(0, in.pitch), halfmin);
 			break;
 
 		case WEAPON_PITCH_DOWNANDUP:
-			value = -FixedDiv(abs(player->mo->pitch), halfmin);
+			value = -FixedDiv(abs(in.pitch), halfmin);
 			break;
 
 		case WEAPON_PITCH_CENTERED: // [JM] Dark Forces style, where facing forward is no offset.
-			value = -FixedDiv(player->mo->pitch, halfmin);
+			value = -FixedDiv(in.pitch, halfmin);
 			break;
 		}
 

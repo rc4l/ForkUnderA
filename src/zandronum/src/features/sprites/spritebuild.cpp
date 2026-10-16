@@ -2,6 +2,8 @@
 // Copyright (C) 2026 rc4l
 
 #include "features/sprites/spritebuild.h"
+#include "features/gamecopy/actors.h"   // [rc4l] ActorRecord
+#include "features/damage-tint/tintsubject.h"   // [rc4l] TintSubject
 #include "features/levelmesh/levelmesh.h"   // [rc4l] LightListBottom
 #include "features/frame/computation/oracle_compute.h"   // [rc4l] OracleTally
 #include "features/jobs/jobs.h"   // [rc4l] the pool BuildSprites derives on
@@ -84,6 +86,8 @@ static_assert(STYLEF_TransSoulsAlpha == zx::sprites::kFlagTransSouls && STYLEF_A
 
 namespace zx { namespace sprites {
 
+using zx::gamecopy::ActorRecord;
+
 struct SpritePiece
 {
 	MeshPiece  piece;
@@ -94,9 +98,9 @@ static const int kMaxBands = 16;
 // [rc4l] A band and the fog layer GL draws over it.
 static const int kMaxPieces = kMaxBands * 2;
 
-int ActorModelCull(const AActor *actor, bool hud)
+int ActorModelCull(const FRenderStyle &style, bool hud)
 {
-	return ComputeModelCull(actor->RenderStyle == LegacyRenderStyles[STYLE_Normal], hud);
+	return ComputeModelCull(style == LegacyRenderStyles[STYLE_Normal], hud);
 }
 
 SpriteStyle StyleOf(const FRenderStyle &s)
@@ -122,7 +126,7 @@ int StyleBlendMode(const FRenderStyle &s, float alpha)
 }
 
 // [rc4l] The lower edge of each light list entry at the actor, as SplitSprite and SetSpriteColor measure it.
-static int LightListBottoms(const AActor *actor, const sector_t *sector, float *bottoms, int max)
+static int LightListBottoms(const ActorRecord *actor, const sector_t *sector, float *bottoms, int max)
 {
 	const TArray<lightlist_t> &lightlist = actor->Sector->e->XFloor.lightlist;
 	int n = 0;
@@ -155,23 +159,21 @@ struct Subject
 	FSpriteModelFrame *model;
 };
 
-static bool SubjectOf(AActor *thing, Subject &s)
+static bool SubjectOf(const ActorRecord *thing, Subject &s)
 {
 	const zx::viewsetup::SpriteViewProvider &view = zx::viewsetup::SpriteView();
-	if (thing == view.ViewActor()) return false;
-	if (thing == NULL || thing->sprite == 0 || !thing->IsVisibleToPlayer()) return false;
+	if (thing->who == view.ViewActor()) return false;
+	if (thing->sprite == 0 || !thing->visible) return false;
 
-	s.spritenum = thing->sprite;
-	s.scaleX = thing->scaleX; s.scaleY = thing->scaleY;
-	if (thing->player != NULL) P_CheckPlayerSprite(thing, s.spritenum, s.scaleX, s.scaleY);
+	s.spritenum = thing->shownSprite;
+	s.scaleX = thing->shownScaleX; s.scaleY = thing->shownScaleY;
 
 	if (thing->renderflags & RF_INVISIBLE || !thing->RenderStyle.IsVisible(thing->alpha))
 	{
 		if (!(thing->flags & MF_STEALTH) || !gl_fixedcolormap || !r_enhanced_nightvision) return false;
 	}
 	if (!(currentmapsection[thing->subsector->mapsection >> 3] & (1 << (thing->subsector->mapsection & 7)))) return false;
-	if (!view.PortalIsMirror() && !(players[consoleplayer].cheats & CF_CHASECAM) && players[consoleplayer].camera != nullptr &&
-	    players[consoleplayer].camera->player != nullptr && thing == players[consoleplayer].camera->player->pIcon) return false;
+	if (!view.PortalIsMirror() && thing->cameraIcon) return false;
 
 	s.frac = C_ShouldForceInterpolation() ? FRACUNIT : r_TicFrac;
 	s.thingx = thing->PrevX + FixedMul(s.frac, thing->x - thing->PrevX);
@@ -180,8 +182,8 @@ static bool SubjectOf(AActor *thing, Subject &s)
 
 	// [rc4l] Too close to the camera to look like anything, unless it only moves up and down or is a model.
 	if (P_AproxDistance(s.thingx - viewx, s.thingy - viewy) < 2 * FRACUNIT && !(thing->velx == 0 && thing->vely == 0 && thing->velz != 0) &&
-	    !gl_FindModelFrame(RUNTIME_TYPE(thing), s.spritenum, thing->frame, false)) return false;
-	AActor *const viewActor = view.ViewActor();
+	    !gl_FindModelFrame(thing->type, s.spritenum, thing->frame, false)) return false;
+	const void *const viewActor = view.ViewActor();
 	if (thing->flags & MF_MISSILE && thing->target == viewActor && viewActor != NULL &&
 	    P_AproxDistance(s.thingx - viewx, s.thingy - viewy) < thing->Speed) return false;
 	if (view.PortalRejectsPoint(s.thingx, s.thingy)) return false;
@@ -191,8 +193,8 @@ static bool SubjectOf(AActor *thing, Subject &s)
 	s.x = FIXED2FLOAT(s.thingx);
 	s.z = FIXED2FLOAT(s.thingz - thing->floorclip);
 	s.y = FIXED2FLOAT(s.thingy);
-	if (thing->flags2 & MF2_FLOATBOB) s.z += FIXED2FLOAT(thing->GetBobOffset(r_TicFrac));
-	s.model = gl_FindModelFrame(RUNTIME_TYPE(thing), s.spritenum, thing->frame, !!(thing->flags & MF_DROPPED));
+	if (thing->flags2 & MF2_FLOATBOB) s.z += FIXED2FLOAT(zx::gamecopy::BobOffset(*thing, r_TicFrac));
+	s.model = gl_FindModelFrame(thing->type, s.spritenum, thing->frame, !!(thing->flags & MF_DROPPED));
 	return true;
 }
 
@@ -207,17 +209,17 @@ struct Look
 	bool colorBlend;   // [rc4l] blended by its own colour (ComputeColorBlending)
 };
 
-static bool LookOf(AActor *thing, const Subject &s, bool disableFullbright, bool textureTransparent, Look &l)
+static bool LookOf(const ActorRecord *thing, const Subject &s, bool disableFullbright, bool textureTransparent, Look &l)
 {
 	// [rc4l] Fullbright unless GLDEFS turns it off for this frame, the sky-aware sector light, and a glowing floor.
 	l.fullbright = (thing->flags5 & MF5_BRIGHT) || ((thing->renderflags & RF_FULLBRIGHT) && !disableFullbright);
 	sector_t *rendersector = s.rendersector;
-	l.lightlevel = l.fullbright ? 255 : gl_ClampLight(rendersector->GetTexture(sector_t::ceiling) == skyflatnum ?
-		rendersector->GetCeilingLight() : rendersector->GetFloorLight());
+	l.lightlevel = l.fullbright ? 255 : gl_ClampLight(rendersector->rc.GetTexture(sector_t::ceiling) == skyflatnum ?
+		rendersector->rc.GetCeilingLight() : rendersector->rc.GetFloorLight());
 	{
-		FTexture *floortex = TexMan[rendersector->GetTexture(sector_t::floor)];
+		FTexture *floortex = TexMan[rendersector->rc.GetTexture(sector_t::floor)];
 		if (floortex != NULL && floortex->isGlowing())
-			l.lightlevel = ComputeSpriteGlow(l.lightlevel, (s.thingz - rendersector->floorplane.ZatPoint(s.thingx, s.thingy)).Raw(),
+			l.lightlevel = ComputeSpriteGlow(l.lightlevel, (s.thingz - rendersector->rc.floorplane.ZatPoint(s.thingx, s.thingy)).Raw(),
 				floortex->gl_info.GlowHeight);
 		l.lightlevel = (BYTE)l.lightlevel;
 	}
@@ -230,12 +232,12 @@ static bool LookOf(AActor *thing, const Subject &s, bool disableFullbright, bool
 		    (r_enhanced_nv_stealth == 3)) enhancedvision = true;
 		l.cm.Clear();
 		if (gl_fixedcolormap == CM_LITE && r_enhanced_nightvision &&
-		    (thing->IsKindOf(RUNTIME_CLASS(AInventory)) || thing->flags3 & MF3_ISMONSTER || thing->flags & MF_MISSILE || thing->flags & MF_CORPSE))
+		    (thing->inventory || thing->flags3 & MF3_ISMONSTER || thing->flags & MF_MISSILE || thing->flags & MF_CORPSE))
 			style.Flags |= STYLEF_InvertSource;
 	}
 	else
 	{
-		l.cm = rendersector->ColorMap;
+		l.cm = rendersector->rc.ColorMap;
 		if (l.fullbright)
 		{
 			int cr = l.cm.LightColor.r, cg = l.cm.LightColor.g, cb = l.cm.LightColor.b;
@@ -279,20 +281,20 @@ SpriteDrawLook SpriteDrawLookAt(const SpriteStyle &style, float trans, const FCo
 }
 
 // [rc4l] GLSprite::Draw's dynamic light for an actor: its lights, unless it is a shadow, fullbright or under a fixed colormap.
-static void DrawLight(AActor *thing, const Look &l, float dyn[3])
+static void DrawLight(const ActorRecord *thing, const Look &l, float dyn[3])
 {
 	dyn[0] = dyn[1] = dyn[2] = 0.f;
-	if (l.so.style.blendOp != kOpShadow && !l.fullbright && zx::viewsetup::SpritesTakeDynamicLight()) zx::dynlights::ActorLight(thing, dyn);
+	if (l.so.style.blendOp != kOpShadow && !l.fullbright && zx::viewsetup::SpritesTakeDynamicLight()) zx::dynlights::ActorLight(*thing, dyn);
 }
 
 // [rc4l] GL's ThingColor: a stencil actor's fill, else white.
-static PalEntry ThingColorOf(const AActor *thing)
+static PalEntry ThingColorOf(const ActorRecord *thing)
 {
 	return (thing->RenderStyle.Flags & STYLEF_ColorIsFixed) ? PalEntry(thing->fillcolor) : PalEntry(0xffffff);
 }
 
 // [rc4l] A model as Process, Draw and gl_RenderModel take it: one band, lit from the light list entry at the actor's middle, its surfaces captured under the pose's matrix.
-static void DeriveModel(AActor *thing, const Subject &s, const Look &l, bool checked)
+static void DeriveModel(const ActorRecord *thing, const Subject &s, const Look &l, bool checked)
 {
 	int lightlevel = l.lightlevel;
 	FColormap cm = l.cm;
@@ -312,19 +314,19 @@ static void DeriveModel(AActor *thing, const Subject &s, const Look &l, bool che
 		SpriteDrawLookAt(l.so.style, l.so.trans, cm, s.x, s.y, true),
 		ComputeSpriteBlendMode(l.so.style.blendOp, l.so.style.destAlpha, l.so.trans), s.x, s.y, s.z, look);
 	look.inverse = l.inverse;
-	look.cullFace = ActorModelCull(thing, false);
+	look.cullFace = ActorModelCull(thing->RenderStyle, false);
 
 	ModelPose pose;
-	ModelPoseFor(thing, s.model, s.x, s.y, s.z, pose);
+	ModelPoseFor(*thing, s.model, s.x, s.y, s.z, pose);
 	float modelToWorld[16];
 	ComputeModelMatrix(pose, modelToWorld);
-	zx::levelmesh::ModelCaptureBegin(look, modelToWorld, thing, checked ? zx::levelmesh::kModelChecked : zx::levelmesh::kModelDraw);
-	CaptureModelFrames(s.model, thing->state, thing->tics, RUNTIME_TYPE(thing), (s.model->flags & MDL_IGNORETRANSLATION) ? 0 : int(thing->Translation));
+	zx::levelmesh::ModelCaptureBegin(look, modelToWorld, thing->who, checked ? zx::levelmesh::kModelChecked : zx::levelmesh::kModelDraw);
+	CaptureModelFrames(s.model, thing->state, thing->tics, thing->type, (s.model->flags & MDL_IGNORETRANSLATION) ? 0 : int(thing->Translation));
 	zx::levelmesh::ModelCaptureEnd();
 }
 
 // [rc4l] Derive an actor's sprite as GLSprite::Process and Draw do: the pieces drawn, 0 for none; on a worker thread (`lane`), -1 when its material is not made yet, which only the main thread may do.
-static int DeriveSprite(AActor *thing, const Subject &s, SpritePiece *out, int max, bool lane = false)
+static int DeriveSprite(const ActorRecord *thing, const Subject &s, SpritePiece *out, int max, bool lane = false)
 {
 	const zx::viewsetup::SpriteViewProvider &view = zx::viewsetup::SpriteView();
 	const int spritenum = s.spritenum;
@@ -358,7 +360,7 @@ static int DeriveSprite(AActor *thing, const Subject &s, SpritePiece *out, int m
 
 	// [rc4l] GL scales the already scaled height once more here.
 	const float spriteheight = FIXED2FLOAT(scaleY) * r.height;
-	const bool living = (thing->player || thing->flags3 & MF3_ISMONSTER || thing->IsKindOf(RUNTIME_CLASS(AInventory))) &&
+	const bool living = (thing->isPlayer || thing->flags3 & MF3_ISMONSTER || thing->inventory) &&
 		(thing->flags & MF_ICECORPSE || !(thing->flags & MF_CORPSE));
 	if (spriteheight > 0 && r_spriteclip > 0 && !(thing->flags2 & MF2_FLOATBOB) && type == RF_FACESPRITE &&
 	    ComputeSpriteClips(living, r_spriteclip))
@@ -378,16 +380,16 @@ static int DeriveSprite(AActor *thing, const Subject &s, SpritePiece *out, int m
 				if (btm != 1000000.0f && top != -1000000.0f) break;
 			}
 		}
-		else if (thing->Sector->heightsec && !(thing->Sector->heightsec->MoreFlags & SECF_IGNOREHEIGHTSEC))
+		else if (thing->Sector->heightsec && !(thing->Sector->heightsec->rc.MoreFlags & SECF_IGNOREHEIGHTSEC))
 		{
-			if (thing->flags2 & MF2_ONMOBJ && thing->floorz == thing->Sector->heightsec->floorplane.ZatPoint(thingx, thingy))
+			if (thing->flags2 & MF2_ONMOBJ && thing->floorz == thing->Sector->heightsec->rc.floorplane.ZatPoint(thingx, thingy))
 			{
 				btm = FIXED2FLOAT(thing->floorz);
 				top = FIXED2FLOAT(thing->ceilingz);
 			}
 		}
-		if (btm == 1000000.0f) btm = FIXED2FLOAT(thing->Sector->floorplane.ZatPoint(thingx, thingy) - thing->floorclip);
-		if (top == -1000000.0f) top = FIXED2FLOAT(thing->Sector->ceilingplane.ZatPoint(thingx, thingy));
+		if (btm == 1000000.0f) btm = FIXED2FLOAT(thing->Sector->rc.floorplane.ZatPoint(thingx, thingy) - thing->floorclip);
+		if (top == -1000000.0f) top = FIXED2FLOAT(thing->Sector->rc.ceilingplane.ZatPoint(thingx, thingy));
 		SpriteClipIn ci;
 		ci.living = living;
 		ci.monster = !!(thing->flags3 & MF3_ISMONSTER);
@@ -453,6 +455,7 @@ static int DeriveSprite(AActor *thing, const Subject &s, SpritePiece *out, int m
 	if (xyDraw || roll) view.ViewAngles(viewYaw, viewPitch);
 	const float rollDegrees = roll ? zx::ComputeSpriteRollDegrees(thing->PrevRoll, thing->roll, frac.Raw()) : 0.f;
 	const int rel = fullbright ? 0 : getExtraLight();
+	const zx::damagetint::TintSubject tint = { thing->who, thing->playerBody, thing->tintActive, thing->tintTexture };
 
 	int drawn = 0;
 	for (int i = 0; i < nbands && drawn < max; i++)
@@ -492,7 +495,7 @@ static int DeriveSprite(AActor *thing, const Subject &s, SpritePiece *out, int m
 		mp.colorBlend = look.colorBlend;
 		mp.fuzz = zx::hwrender::ComputeFuzzKind(r_fuzztype, so.overrideShader >= 0);
 		// [rc4l] GLSprite::Draw's damage tint, over this band's own texture span as GL takes each band's.
-		DamageTint_SpriteGradient(thing, so.style.blendOp, so.style.flags, b.vt, b.vb, mp.tint);
+		DamageTint_SpriteGradient(tint, so.style.blendOp, so.style.flags, b.vt, b.vb, mp.tint);
 		if (!fullbright) { mp.dynR = dyn[0]; mp.dynG = dyn[1]; mp.dynB = dyn[2]; }
 		mp.cpuLight = true;
 		mp.normX = mp.normY = mp.normZ = 0.f;
@@ -522,17 +525,17 @@ static bool DeriveParticle(particle_t *particle, sector_t *sector, SpritePiece &
 	const void *material = lump != NULL ? zx::materials::MaterialForTexture(lump, true) : NULL;
 	if (material == NULL) return false;
 
-	int lightlevel = gl_ClampLight(sector->GetTexture(sector_t::ceiling) == skyflatnum ? sector->GetCeilingLight() : sector->GetFloorLight());
+	int lightlevel = gl_ClampLight(sector->rc.GetTexture(sector_t::ceiling) == skyflatnum ? sector->rc.GetCeilingLight() : sector->rc.GetFloorLight());
 	FColormap cm;
 	if (gl_fixedcolormap) cm.Clear();
 	else if (!particle->bright)
 	{
 		const TArray<lightlist_t> &lightlist = sector->e->XFloor.lightlist;
-		cm = sector->ColorMap;
+		cm = sector->rc.ColorMap;
 		for (unsigned i = 0; i < lightlist.Size(); i++)
 		{
 			const int lightbottom = i < lightlist.Size() - 1 ? (int)(lightlist[i + 1].plane.ZatPoint(particle->x, particle->y))
-				: (int)(sector->floorplane.ZatPoint(particle->x, particle->y));
+				: (int)(sector->rc.floorplane.ZatPoint(particle->x, particle->y));
 			// [rc4l] Against the particle's y, not its z, as GL compares it.
 			if (lightbottom < particle->y)
 			{
@@ -545,7 +548,7 @@ static bool DeriveParticle(particle_t *particle, sector_t *sector, SpritePiece &
 	else
 	{
 		lightlevel = 255;
-		cm = sector->ColorMap;
+		cm = sector->rc.ColorMap;
 		cm.ClearColor();
 	}
 	const float trans = particle->trans / 255.0f;
@@ -659,6 +662,15 @@ static const char *Differs(const Noted &a, const Noted &b)
 	return NULL;
 }
 
+// [rc4l] The record of the actor the check noted, for its report.
+static const ActorRecord *RecordOf(const void *who)
+{
+	int count;
+	const ActorRecord *recs = zx::gamecopy::Actors(count);
+	for (int i = 0; i < count; i++) if (recs[i].who == who) return &recs[i];
+	return NULL;
+}
+
 void CheckFrameSprites()
 {
 	if (!fua_sprite_check) { g_gl.clear(); g_ours.clear(); return; }
@@ -697,10 +709,11 @@ void CheckFrameSprites()
 				const MeshVertex &gp = g_gl[first->second].verts.empty() ? none : g_gl[first->second].verts[0];
 				const MeshVertex &op = g_ours[i].verts.empty() ? none : g_ours[i].verts[0];
 				const bool part = g_ours[i].particle;
+				const ActorRecord *rec = part ? NULL : RecordOf(a);
 				zx::frame::ComputeOracleNote(g_check, "  %s at (%.0f, %.0f): %s; GL corner %.9g %.9g %.9g, ours %.9g %.9g %.9g\n",
-					part ? "particle" : ((const AActor *)a)->GetClass()->TypeName.GetChars(),
-					FIXED2FLOAT(part ? ((const particle_t *)a)->x : ((const AActor *)a)->x),
-					FIXED2FLOAT(part ? ((const particle_t *)a)->y : ((const AActor *)a)->y), why,
+					part ? "particle" : rec != NULL ? rec->type->TypeName.GetChars() : "actor",
+					FIXED2FLOAT(part ? ((const particle_t *)a)->x : rec != NULL ? rec->x : 0),
+					FIXED2FLOAT(part ? ((const particle_t *)a)->y : rec != NULL ? rec->y : 0), why,
 					gp.x, gp.z, gp.y, op.x, op.z, op.y);
 			}
 		}
@@ -712,8 +725,9 @@ void CheckFrameSprites()
 	g_ours.clear();
 }
 
-void BuildSprite(AActor *thing)
+void BuildSprite(const ActorRecord &record)
 {
+	const ActorRecord *thing = &record;
 	Subject s;
 	if (!SubjectOf(thing, s)) return;
 	if (s.model != NULL)
@@ -727,7 +741,7 @@ void BuildSprite(AActor *thing)
 	const int n = DeriveSprite(thing, s, pieces, kMaxPieces);
 	// [rc4l] GL reports a sprite once, before its fog layer, so the check compares that piece alone.
 	if (fua_sprite_check)
-		for (int i = 0; i < n; i++) if (!pieces[i].piece.fogPass) Note(g_ours, thing, false, pieces[i].piece, pieces[i].quad, 4);
+		for (int i = 0; i < n; i++) if (!pieces[i].piece.fogPass) Note(g_ours, thing->who, false, pieces[i].piece, pieces[i].quad, 4);
 	if (!zx::levelmesh::DynamicCaptureActive()) return;
 	for (int i = 0; i < n; i++) zx::levelmesh::DynAppend(pieces[i].quad, 4, pieces[i].piece);
 }
@@ -750,7 +764,7 @@ static std::vector<SpriteChunk> g_spriteChunks;
 // [rc4l] Actors a lane derives at a time: enough that a chunk outweighs taking it, few enough to spread a frame's actors.
 static const int kSpriteChunk = 32;
 
-static void DeriveChunk(AActor *const *things, int count, int chunk)
+static void DeriveChunk(const ActorRecord *const *things, int count, int chunk)
 {
 	SpriteChunk &c = g_spriteChunks[chunk];
 	c.pieces.clear();
@@ -762,7 +776,7 @@ static void DeriveChunk(AActor *const *things, int count, int chunk)
 		Subject s;
 		if (SubjectOf(things[i], s))
 		{
-			if (ComputeSpriteOnGameThread(s.model != NULL, things[i]->player != NULL)) ls.onGameThread = true;
+			if (ComputeSpriteOnGameThread(s.model != NULL, things[i]->isPlayer)) ls.onGameThread = true;
 			else
 			{
 				c.pieces.resize(ls.first + kMaxPieces);
@@ -776,7 +790,7 @@ static void DeriveChunk(AActor *const *things, int count, int chunk)
 	}
 }
 
-void BuildSprites(AActor *const *things, int count)
+void BuildSprites(const ActorRecord *const *things, int count)
 {
 	ZX_ZONE("scene/sprites");   // [rc4l] the actors in view derived as sprites
 	if (count <= 0) return;
@@ -784,7 +798,7 @@ void BuildSprites(AActor *const *things, int count)
 	if ((int)g_spriteChunks.size() < chunks) g_spriteChunks.resize(chunks);
 	struct Derive
 	{
-		AActor *const *things;
+		const ActorRecord *const *things;
 		int count;
 		void operator()(int chunk, int) const { DeriveChunk(things, count, chunk); }
 	} derive = { things, count };
@@ -796,7 +810,7 @@ void BuildSprites(AActor *const *things, int count)
 		for (size_t k = 0; k < chunk.sprites.size(); k++)
 		{
 			const LaneSprite &ls = chunk.sprites[k];
-			if (ls.onGameThread) BuildSprite(things[c * kSpriteChunk + (int)k]);
+			if (ls.onGameThread) BuildSprite(*things[c * kSpriteChunk + (int)k]);
 			else if (capture)
 				for (int i = 0; i < ls.count; i++) zx::levelmesh::DynAppend(chunk.pieces[ls.first + i].quad, 4, chunk.pieces[ls.first + i].piece);
 		}

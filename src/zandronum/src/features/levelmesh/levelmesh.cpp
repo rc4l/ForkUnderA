@@ -130,7 +130,7 @@ void CollectSideBudgets(Collected &out)
 fixed_t LightListBottom(const sector_t *sector, unsigned entry, fixed_t x, fixed_t y)
 {
 	const TArray<lightlist_t> &lightlist = sector->e->XFloor.lightlist;
-	return entry + 1 < lightlist.Size() ? lightlist[entry + 1].plane.ZatPoint(x, y) : sector->floorplane.ZatPoint(x, y);
+	return entry + 1 < lightlist.Size() ? lightlist[entry + 1].plane.ZatPoint(x, y) : sector->rc.floorplane.ZatPoint(x, y);
 }
 
 
@@ -185,7 +185,7 @@ static bool AnyLineTexture( const line_t *ln, bool midOnly, Pred pred )
 {
 	for ( int sd = 0; sd < 2; sd++ )
 		for ( int part = 0; part < 3 && ln->sidedef[sd] != NULL; part++ )
-			if ( ( !midOnly || part == side_t::mid ) && pred( ln->sidedef[sd]->GetTexture( part ) ) ) return true;
+			if ( ( !midOnly || part == side_t::mid ) && pred( ln->sidedef[sd]->rc.GetTexture( part ) ) ) return true;
 	return false;
 }
 
@@ -235,12 +235,12 @@ static void PrintOneLine( int idx )
 
 	if ( fs != NULL )
 		Printf( "  front sector %d: floor %.0f ceiling %.0f\n", (int)( fs - sectors ),
-			FIXED2FLOAT( fs->GetPlaneTexZ( sector_t::floor ) ),
-			FIXED2FLOAT( fs->GetPlaneTexZ( sector_t::ceiling ) ) );
+			FIXED2FLOAT( fs->rc.GetPlaneTexZ( sector_t::floor ) ),
+			FIXED2FLOAT( fs->rc.GetPlaneTexZ( sector_t::ceiling ) ) );
 	if ( bs != NULL )
 		Printf( "  back  sector %d: floor %.0f ceiling %.0f\n", (int)( bs - sectors ),
-			FIXED2FLOAT( bs->GetPlaneTexZ( sector_t::floor ) ),
-			FIXED2FLOAT( bs->GetPlaneTexZ( sector_t::ceiling ) ) );
+			FIXED2FLOAT( bs->rc.GetPlaneTexZ( sector_t::floor ) ),
+			FIXED2FLOAT( bs->rc.GetPlaneTexZ( sector_t::ceiling ) ) );
 	else
 		Printf( "  back  sector: NONE (one-sided)\n" );
 
@@ -258,15 +258,15 @@ static void PrintOneLine( int idx )
 		Printf( "  side %d (sector %d):\n", sd, (int)( side->sector - sectors ) );
 		for ( int t = 0; t < 3; t++ )
 		{
-			FTextureID tid = side->GetTexture( tiers[t] );
+			FTextureID tid = side->rc.GetTexture( tiers[t] );
 			FTexture *tx = tid.isValid( ) ? TexMan[tid] : NULL;
 			Printf( "    %-6s %-10s", names[t], tx ? tx->Name.GetChars( ) : "-" );
 			if ( fs != NULL && bs != NULL )
 			{
-				const float ff = FIXED2FLOAT( fs->GetPlaneTexZ( sector_t::floor ) );
-				const float fc = FIXED2FLOAT( fs->GetPlaneTexZ( sector_t::ceiling ) );
-				const float bf = FIXED2FLOAT( bs->GetPlaneTexZ( sector_t::floor ) );
-				const float bc = FIXED2FLOAT( bs->GetPlaneTexZ( sector_t::ceiling ) );
+				const float ff = FIXED2FLOAT( fs->rc.GetPlaneTexZ( sector_t::floor ) );
+				const float fc = FIXED2FLOAT( fs->rc.GetPlaneTexZ( sector_t::ceiling ) );
+				const float bf = FIXED2FLOAT( bs->rc.GetPlaneTexZ( sector_t::floor ) );
+				const float bc = FIXED2FLOAT( bs->rc.GetPlaneTexZ( sector_t::ceiling ) );
 				if ( t == 0 )      Printf( "  covers %.0f..%.0f", bc < fc ? bc : fc, bc < fc ? fc : bc );
 				else if ( t == 2 ) Printf( "  covers %.0f..%.0f", ff < bf ? ff : bf, ff < bf ? bf : ff );
 				else               Printf( "  open span %.0f..%.0f", ff > bf ? ff : bf, fc < bc ? fc : bc );
@@ -294,12 +294,12 @@ CCMD( fua_sector_at )
 		const fixed_t x = FLOAT2FIXED( atof( argv[a] ) ), y = FLOAT2FIXED( atof( argv[a + 1] ) );
 		const subsector_t *ss = R_PointInSubsector( x, y );
 		const sector_t *rs = ss->render_sector ? ss->render_sector : ss->sector;
-		FTexture *ft = TexMan[rs->GetTexture( sector_t::floor )], *ct = TexMan[rs->GetTexture( sector_t::ceiling )];
+		FTexture *ft = TexMan[rs->rc.GetTexture( sector_t::floor )], *ct = TexMan[rs->rc.GetTexture( sector_t::ceiling )];
 		Printf( "(%s, %s): subsector %d (%u segs), sector %d, render %d: floor %s at %.0f, ceiling %s at %.0f%s%s\n",
 				argv[a], argv[a + 1], (int)( ss - subsectors ), (unsigned)ss->numlines, ss->sector ? ss->sector->sectornum : -1,
-				rs->sectornum, ft ? ft->Name.GetChars( ) : "-", FIXED2FLOAT( rs->floorplane.ZatPoint( x, y ) ),
-				ct ? ct->Name.GetChars( ) : "-", FIXED2FLOAT( rs->ceilingplane.ZatPoint( x, y ) ),
-				rs->GetTexture( sector_t::ceiling ) == skyflatnum ? " (sky)" : "",
+				rs->sectornum, ft ? ft->Name.GetChars( ) : "-", FIXED2FLOAT( rs->rc.floorplane.ZatPoint( x, y ) ),
+				ct ? ct->Name.GetChars( ) : "-", FIXED2FLOAT( rs->rc.ceilingplane.ZatPoint( x, y ) ),
+				rs->rc.GetTexture( sector_t::ceiling ) == skyflatnum ? " (sky)" : "",
 				( rs->e != NULL && rs->e->XFloor.ffloors.Size( ) ) ? " [3D floors]" : "" );
 	}
 }
@@ -892,18 +892,18 @@ CCMD( fua_look )
 						ss->polys != NULL ? ", holds a polyobject" : "" );
 				if ( const sector_t *rs = ss->render_sector ? ss->render_sector : ss->sector )
 				{
-					FTexture *ft = TexMan[rs->GetTexture( sector_t::floor )], *ct = TexMan[rs->GetTexture( sector_t::ceiling )];
+					FTexture *ft = TexMan[rs->rc.GetTexture( sector_t::floor )], *ct = TexMan[rs->rc.GetTexture( sector_t::ceiling )];
 					Printf( "          floor %s at %.0f, ceiling %s at %.0f%s\n", ft ? ft->Name.GetChars( ) : "-",
-							FIXED2FLOAT( rs->floorplane.ZatPoint( res.X, res.Y ) ), ct ? ct->Name.GetChars( ) : "-",
-							FIXED2FLOAT( rs->ceilingplane.ZatPoint( res.X, res.Y ) ),
-							rs->GetTexture( sector_t::ceiling ) == skyflatnum ? " (sky)" : "" );
+							FIXED2FLOAT( rs->rc.floorplane.ZatPoint( res.X, res.Y ) ), ct ? ct->Name.GetChars( ) : "-",
+							FIXED2FLOAT( rs->rc.ceilingplane.ZatPoint( res.X, res.Y ) ),
+							rs->rc.GetTexture( sector_t::ceiling ) == skyflatnum ? " (sky)" : "" );
 				}
 				// [rc4l] The light-list band GL lights this plane with under a 3D floor, as the flat bake takes it now.
 				sector_t *ls = ss->render_sector ? ss->render_sector : ss->sector;
 				if ( ls != NULL && ls->e != NULL && ls->e->XFloor.ffloors.Size( ) > 0 )
 				{
 					const bool ceil = res.HitType == TRACE_HitCeiling;
-					lightlist_t *band = P_GetPlaneLight( ls, ceil ? &ls->ceilingplane : &ls->floorplane, ceil );
+					lightlist_t *band = P_GetPlaneLight(ls, ceil ? &ls->ceilingplane : &ls->floorplane, ceil );
 					const PalEntry bc = band->extra_colormap != NULL ? band->extra_colormap->Color : PalEntry( 0 );
 					Printf( "          3D floor band: light %d, colour %02x%02x%02x\n",
 							band->p_lightlevel != NULL ? *band->p_lightlevel : -1, bc.r, bc.g, bc.b );
@@ -1482,7 +1482,7 @@ CCMD( fua_light_field )
 		// under the floor lights nothing -- so the count would be honest and the picture would not.
 		sector_t *sec = R_PointInSubsector( x, y )->sector;
 		if ( sec == NULL ) continue;
-		const fixed_t z = sec->floorplane.ZatPoint( x, y ) + FLOAT2FIXED( dz );
+		const fixed_t z = sec->rc.floorplane.ZatPoint( x, y ) + FLOAT2FIXED( dz );
 
 		ADynamicLight *lt = Spawn<ADynamicLight>( x, y, z, NO_REPLACE );
 		if ( lt == NULL ) continue;
@@ -1513,15 +1513,15 @@ CCMD( fua_sector_lights )
 	const sector_t &sec = sectors[s];
 	if ( sec.e == NULL ) { Printf( "sector %d has no extended data\n", s ); return; }
 	const TArray<lightlist_t> &ll = sec.e->XFloor.lightlist;
-	Printf( "sector %d: %u lights, %u 3D floors, own light %d\n", s, ll.Size( ), sec.e->XFloor.ffloors.Size( ), sec.lightlevel );
+	Printf( "sector %d: %u lights, %u 3D floors, own light %d\n", s, ll.Size( ), sec.e->XFloor.ffloors.Size( ), sec.rc.lightlevel );
 	// [rc4l] Each plane's own light, which GL keeps over a 3D floor's band when it is absolute or the band is the sector's own, and the sector's colour.
-	const PalEntry own = sec.ColorMap != NULL ? sec.ColorMap->Color : PalEntry( 0 );
+	const PalEntry own = sec.rc.ColorMap != NULL ? sec.rc.ColorMap->Color : PalEntry( 0 );
 	// [rc4l] With the colour's alpha (GL's blend factor), its desaturation and its fade, what gl_CalcLightColor and gl_SetFog read beside it.
-	const PalEntry fade = sec.ColorMap != NULL ? sec.ColorMap->Fade : PalEntry( 0 );
+	const PalEntry fade = sec.rc.ColorMap != NULL ? sec.rc.ColorMap->Fade : PalEntry( 0 );
 	Printf( "  floor light %d%s, ceiling light %d%s, sector colour %02x%02x%02x blend %d desaturate %d fade %02x%02x%02x, heightsec %d\n",
-		sec.GetFloorLight( ), ( sec.GetFlags( sector_t::floor ) & PLANEF_ABSLIGHTING ) ? " (absolute)" : "",
-		sec.GetCeilingLight( ), ( sec.GetFlags( sector_t::ceiling ) & PLANEF_ABSLIGHTING ) ? " (absolute)" : "", own.r, own.g, own.b,
-		own.a, sec.ColorMap != NULL ? sec.ColorMap->Desaturate : 0, fade.r, fade.g, fade.b,
+		sec.rc.GetFloorLight( ), ( sec.rc.GetFlags( sector_t::floor ) & PLANEF_ABSLIGHTING ) ? " (absolute)" : "",
+		sec.rc.GetCeilingLight( ), ( sec.rc.GetFlags( sector_t::ceiling ) & PLANEF_ABSLIGHTING ) ? " (absolute)" : "", own.r, own.g, own.b,
+		own.a, sec.rc.ColorMap != NULL ? sec.rc.ColorMap->Desaturate : 0, fade.r, fade.g, fade.b,
 		sec.heightsec != NULL ? sec.heightsec->sectornum : -1 );
 	for ( unsigned i = 0; i < ll.Size( ); i++ )
 	{
@@ -1542,7 +1542,7 @@ CCMD( fua_sector_color )
 	if ( argv.argc( ) < 5 ) { Printf( "usage: fua_sector_color <sector> <r> <g> <b>\n" ); return; }
 	const int s = atoi( argv[1] );
 	if ( s < 0 || s >= numsectors ) { Printf( "no sector %d: the map has %d\n", s, numsectors ); return; }
-	sectors[s].SetColor( atoi( argv[2] ), atoi( argv[3] ), atoi( argv[4] ), sectors[s].ColorMap != NULL ? sectors[s].ColorMap->Desaturate : 0 );
+	sectors[s].SetColor( atoi( argv[2] ), atoi( argv[3] ), atoi( argv[4] ), sectors[s].rc.ColorMap != NULL ? sectors[s].rc.ColorMap->Desaturate : 0 );
 }
 
 CCMD( fua_light )
@@ -1573,7 +1573,7 @@ CCMD( fua_light )
 		const float dz = ( argv.argc( ) == 6 ) ? (float)atof( argv[5] ) : 16.f;
 		x = pmo->x;
 		y = pmo->y;
-		z = pmo->Sector->floorplane.ZatPoint( x, y ) + FLOAT2FIXED( dz );
+		z = pmo->Sector->rc.floorplane.ZatPoint( x, y ) + FLOAT2FIXED( dz );
 	}
 
 	ADynamicLight *lt = Spawn<ADynamicLight>( x, y, z, NO_REPLACE );
@@ -1626,14 +1626,14 @@ CCMD( fua_move_sector )
 
 	sector_t *sec = &sectors[idx];
 	const int part = ceiling ? (int)sector_t::ceiling : (int)sector_t::floor;
-	const fixed_t before = sec->GetPlaneTexZ( part );
+	const fixed_t before = sec->rc.GetPlaneTexZ( part );
 	// [rc4l] Both the plane and its texture Z, which is what every reader actually consults --
 	// moving one without the other leaves the surface drawn at the old height.
 	sec->SetPlaneTexZ( part, before + delta );
-	if ( ceiling ) sec->ceilingplane.ChangeHeight( delta );
-	else           sec->floorplane.ChangeHeight( delta );
+	if ( ceiling ) sec->rc.ceilingplane.ChangeHeight( delta );
+	else           sec->rc.floorplane.ChangeHeight( delta );
 	Printf( "fua_move_sector: sector %d %s %.0f -> %.0f\n", idx, ceiling ? "ceiling" : "floor",
-		FIXED2FLOAT( before ), FIXED2FLOAT( sec->GetPlaneTexZ( part ) ) );
+		FIXED2FLOAT( before ), FIXED2FLOAT( sec->rc.GetPlaneTexZ( part ) ) );
 }
 
 CCMD( fua_find_3dfloors )
@@ -1697,7 +1697,7 @@ CCMD( fua_find_sky )
 	for ( int i = 0; i < numsectors; i++ )
 	{
 		const sector_t *sec = &sectors[i];
-		if ( sec->GetTexture( sector_t::ceiling ) != skyflatnum ) continue;
+		if ( sec->rc.GetTexture( sector_t::ceiling ) != skyflatnum ) continue;
 		if ( sec->linecount <= 0 ) continue;
 
 		double minx = 1e30, maxx = -1e30, miny = 1e30, maxy = -1e30;

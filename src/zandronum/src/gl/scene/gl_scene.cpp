@@ -759,7 +759,7 @@ sector_t * FGLRenderer::RenderViewpoint (AActor * camera, GL_IRECT * bounds, flo
 	mSky2Pos = view.sky2Pos;
 
 
-	mViewActor = view.viewActor;
+	mViewActor = static_cast<AActor *>(const_cast<void *>(view.viewActor));   // [rc4l] the view names who it is in
 
 	// 'viewsector' will not survive the rendering so it cannot be used anymore below.
 	retval = viewsector;

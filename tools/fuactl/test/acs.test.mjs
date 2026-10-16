@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { acs0, callSpecial, consoleCommand, gotoWord, hudMessage, PCD, printString } from "../src/acs.mjs";
+import { AcsScript, ACSF, acs0, callFunc, callSpecial, consoleCommand, gotoWord, hudMessage, PCD, printString } from "../src/acs.mjs";
 
 // [rc4l] Read an ACS0 lump back the way FBehavior does: directory at the header's offset, string table right after it.
 function parse(buf) {
@@ -60,4 +60,19 @@ test("a print, a HUD message, a console command and a jump compile as the engine
   assert.deepEqual(hudMessage(0).slice(5, -1).filter((_, k) => k % 2 === 1), [0, 0, 0, 32768, 32768, 65536]);
   assert.deepEqual(consoleCommand(3), [PCD.PUSHNUMBER, 3, PCD.PUSHNUMBER, 0, PCD.PUSHNUMBER, 0, PCD.CONSOLECOMMAND]);
   assert.deepEqual(gotoWord(5), [PCD.GOTO, 28]);
+});
+
+test("a fading HUD message takes its fade time after the optional-arguments code", () => {
+  const hud = hudMessage(0, { type: 1, fade: 2 });
+  assert.deepEqual(hud.slice(-4), [PCD.OPTHUDMESSAGE, PCD.PUSHNUMBER, 131072, PCD.ENDHUDMESSAGE]);
+});
+
+test("an ACS function call pushes its arguments then CALLFUNC with their count and the function", () => {
+  assert.deepEqual(callFunc(ACSF.SetCVar, [0, 5]), [PCD.PUSHNUMBER, 0, PCD.PUSHNUMBER, 5, PCD.CALLFUNC, 2, ACSF.SetCVar]);
+});
+
+test("a script's named jump targets become byte offsets, and an unnamed one throws", () => {
+  const s = new AcsScript().label("top").emit(PCD.PUSHNUMBER, 1).jump(PCD.IFGOTO, "end").jump(PCD.GOTO, "top").label("end").emit(PCD.TERMINATE);
+  assert.deepEqual(s.words(), [PCD.PUSHNUMBER, 1, PCD.IFGOTO, 8 + 4 * 6, PCD.GOTO, 8, PCD.TERMINATE]);
+  assert.throws(() => new AcsScript().jump(PCD.GOTO, "nowhere").words(), /no label nowhere/);
 });

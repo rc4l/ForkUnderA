@@ -254,7 +254,7 @@ static void StoreFlat(const FlatSource &flat, subsector_t *sub, bool ceiling)
 	// rest of the time all of that arrives at the bytes already sitting in the buffer.
 	FlatStamp now;
 	{
-		const secplane_t &pl = flat.plane.plane;
+		const secplane_core_t &pl = flat.plane.plane;
 		now.pa = pl.a.Raw(); now.pb = pl.b.Raw(); now.pc = pl.c.Raw(); now.pd = pl.d.Raw();
 		now.dz = flat.dz;
 		now.xoffs = flat.plane.xoffs.Raw(); now.yoffs = flat.plane.yoffs.Raw();
@@ -312,7 +312,7 @@ static void StoreFlat(const FlatSource &flat, subsector_t *sub, bool ceiling)
 		// Mirrors GLFlat::DrawSubsector for the positions, and gl_SetPlaneTextureRotation for the texture
 		// coordinates -- which this used to skip entirely, baking the bare (x/64, -y/64) that is only
 		// right for an unoffset, unscaled, unrotated 64x64 flat.
-		const secplane_t &p = flat.plane.plane;
+		const secplane_core_t &p = flat.plane.plane;
 		const bool sloped = (p.a | p.b) != 0;
 		const float zc = sloped ? 0.0f : (FIXED2FLOAT(p.Zat0()) + flat.dz);
 
@@ -368,7 +368,7 @@ static void StoreFlat(const FlatSource &flat, subsector_t *sub, bool ceiling)
 	// exactly like a light that is out of range. Measured on dbab02 as a corridor ceiling that took
 	// no plasma light at all while GL lit it.
 	{
-		const secplane_t &pl = flat.plane.plane;
+		const secplane_core_t &pl = flat.plane.plane;
 		// [rc4l] Baked through lightside_compute, where the derivation is unit-tested against
 		// gl_flats.cpp's own form of the same test. The two have to agree exactly, including for a
 		// light lying ON the surface, and they did not.
@@ -446,7 +446,7 @@ static void BakeOnePlane(subsector_t *sub, sector_t *model, int whichPlane, bool
 	if (model == NULL || sub == NULL) return;
 	sector_t *from = planeFrom != NULL ? planeFrom : model;
 	FlatSource f;
-	f.plane.GetFromSector(from, whichPlane);
+	f.plane.GetFromCopy(from, whichPlane);
 	// The sky is not a surface: GLFlat::Process returns before making one, and the sky pass draws it.
 	if (f.plane.texture == skyflatnum) return;
 	f.gltexture = zx::materials::MaterialForTextureId(f.plane.texture);
@@ -486,11 +486,11 @@ static void Bake3DFace(subsector_t *sub, sector_t *real, F3DFloor *rover, bool t
 	int lightlevel = *light->p_lightlevel;
 
 	FColormap cm;
-	cm = real->ColorMap;
+	cm = real->rc.ColorMap;
 	if (rover->flags & FF_FOG) cm.LightColor = (light->extra_colormap)->Fade;
 	else cm.CopyLightColor(light->extra_colormap);
 	// ProcessSector overrides the fade with the sector's own for every 3D floor face it puts.
-	cm.FadeColor = real->ColorMap->Fade;
+	cm.FadeColor = real->rc.ColorMap->Fade;
 
 	float alpha = rover->alpha / 255.0f;
 	ERenderStyle style = (rover->flags & FF_ADDITIVETRANS) ? STYLE_Add : STYLE_Translucent;
@@ -499,7 +499,7 @@ static void Bake3DFace(subsector_t *sub, sector_t *real, F3DFloor *rover, bool t
 	// light list is not the answer.
 	if (fl.modelLight)
 	{
-		lightlevel = gl_ClampLight(rover->model->lightlevel);
+		lightlevel = gl_ClampLight(rover->model->rc.lightlevel);
 		cm = rover->GetColormap();
 	}
 
@@ -513,16 +513,16 @@ static int BakeSectorPlane(subsector_t *sub, sector_t *real, bool ceiling, bool 
 	// [rc4l] A height transfer draws its control sector's planes, and under or over them that sector's textures, light and colour.
 	sector_t transfer;
 	sector_t *src = fake ? real : zx::fakeflat::TransferSector(real, &transfer, false);
-	int ll = gl_ClampLight(ceiling ? src->GetCeilingLight() : src->GetFloorLight());
+	int ll = gl_ClampLight(ceiling ? src->rc.GetCeilingLight() : src->rc.GetFloorLight());
 	FColormap cm;
-	cm = src->ColorMap;
-	const float alpha = ComputePlaneAlpha(src->portals[which] != NULL, FIXED2FLOAT(src->GetAlpha(which)), src->GetReflect(which));
+	cm = src->rc.ColorMap;
+	const float alpha = ComputePlaneAlpha(src->portals[which] != NULL, FIXED2FLOAT(src->rc.GetAlpha(which)), src->rc.GetReflect(which));
 	// [rc4l] GL reflects a plane with no portal stack on it, and a fully reflective one still needs the surface the reflection is painted on.
-	const bool reflects = src->GetReflect(which) > 0 && src->portals[which] == NULL;
+	const bool reflects = src->rc.GetReflect(which) > 0 && src->portals[which] == NULL;
 	if (real->e != NULL && real->e->XFloor.ffloors.Size() != 0)
 	{
 		lightlist_t *light = P_GetPlaneLight(real, ceiling ? &real->ceilingplane : &real->floorplane, ceiling);
-		if (ComputePlaneTakesBandLight(ceiling, (real->GetFlags(which) & PLANEF_ABSLIGHTING) != 0, light->fromsector,
+		if (ComputePlaneTakesBandLight(ceiling, (real->rc.GetFlags(which) & PLANEF_ABSLIGHTING) != 0, light->fromsector,
 				light->p_lightlevel == &real->lightlevel))
 			ll = *light->p_lightlevel;
 		cm.CopyLightColor(light->extra_colormap);
@@ -538,9 +538,9 @@ void RefreshTransferArea()
 	// [rc4l] The render sector, as SetViewArea takes it.
 	sector_t *vs = R_PointInSubsector(viewx, viewy)->render_sector;
 	sector_t *hs = vs != NULL ? vs->heightsec : NULL;
-	const bool has = hs != NULL && !(hs->MoreFlags & SECF_IGNOREHEIGHTSEC);
-	const int area = ComputeViewArea(has, FIXED2FLOAT(viewz), has ? FIXED2FLOAT(hs->floorplane.ZatPoint(viewx, viewy)) : 0.f,
-		has ? FIXED2FLOAT(hs->ceilingplane.ZatPoint(viewx, viewy)) : 0.f, has && (hs->MoreFlags & SECF_FAKEFLOORONLY) != 0);
+	const bool has = hs != NULL && !(hs->rc.MoreFlags & SECF_IGNOREHEIGHTSEC);
+	const int area = ComputeViewArea(has, FIXED2FLOAT(viewz), has ? FIXED2FLOAT(hs->rc.floorplane.ZatPoint(viewx, viewy)) : 0.f,
+		has ? FIXED2FLOAT(hs->rc.ceilingplane.ZatPoint(viewx, viewy)) : 0.f, has && (hs->rc.MoreFlags & SECF_FAKEFLOORONLY) != 0);
 	if (!zx::fakeflat::SetTransferArea(area)) return;
 	for (int i = 0; i < numsectors; i++)
 		if (zx::fakeflat::ViewDependent(&sectors[i])) BakeFlatsForSector(i);

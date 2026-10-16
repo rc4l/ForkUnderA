@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { buildGameThreadFixtureWad, comparePicture, FIGHT, FIXTURES, fixtureDir, fixtureFiles, fixtureIwad, parseCopyReport, parseVisReport, pickFixtures, stepAt } from "../src/fixtures.mjs";
+import { buildGameThreadFixtureWad, buildGameThreadModWad, gtmodScript, CHECKS, comparePicture, FIGHT, FIXTURES, fixtureDir, fixtureFiles, fixtureIwad, parseCopyReport, parsePSpriteReport, parseSeenReport, parseSpriteReport, parseVisReport, pickFixtures, stepAt, sumReports } from "../src/fixtures.mjs";
 import { writePNG } from "../src/pngcore.mjs";
 import { FREEDOOM2 } from "../src/template.mjs";
 import { parseUdmf, readWad } from "../src/udmf.mjs";
@@ -84,4 +84,41 @@ test("a fixture's IWAD is Freedoom from the repo, or found by name in the store 
   assert.equal(fixtureIwad(sunder, "/s", "/e", (p) => p === path.join("/e", "doom2.wad")), path.join("/e", "doom2.wad"));
   assert.equal(fixtureIwad(sunder, "/s", "/e", (p) => p === path.join("/s", "doom2.wad")), path.join("/s", "doom2.wad"));
   assert.throws(() => fixtureIwad(sunder, "/s", "/e", () => false), /needs doom2.wad/);
+});
+
+test("the sprite report counts the actors derived beside GL and those that differed", () => {
+  const r = parseSpriteReport("sprites: 412 actors derived beside GL (36 model surfaces), 2 differed (5 only ours, 1 only GL's)\n  ZombieMan at (1, 2): light\n");
+  assert.deepEqual([r.walked, r.models, r.differed, r.found], [412, 36, 2, true]);
+  assert.deepEqual([parseSpriteReport("").found, parseSpriteReport("").walked], [false, 0]);
+});
+
+test("every fixture check is one entry the command line picks by name", () => {
+  assert.deepEqual(Object.keys(CHECKS).sort(), ["copycheck", "pspritecheck", "seencheck", "spritecheck", "vischeck"]);
+  for (const run of Object.values(CHECKS)) assert.equal(typeof run, "function");
+});
+
+test("reports from several views add up, any one finding something counting", () => {
+  const r = sumReports([{ walked: 3, models: 1, differed: 0, found: true, text: "a" }, { walked: 2, differed: 1, found: false, text: "" }]);
+  assert.deepEqual(r, { walked: 5, models: 1, differed: 1, found: true, text: "a" });
+  assert.deepEqual(sumReports([]), { walked: 0, differed: 0, found: false, text: "" });
+});
+
+test("the weapon report counts the frames derived beside GL and those that differed", () => {
+  const r = parsePSpriteReport("weapon: 120 frames derived beside GL (240 quads), 1 differed\n  quad: GL 2 quads\n");
+  assert.deepEqual([r.walked, r.quads, r.differed, r.found], [120, 240, 1, true]);
+  assert.equal(parsePSpriteReport("").found, false);
+});
+
+test("the seen report counts the lines and sectors the walks marked on the live map", () => {
+  const r = parseSeenReport("seen: 312 lines mapped, 40 sectors drawn");
+  assert.deepEqual([r.walked, r.sectors, r.differed, r.found], [312, 40, 0, true]);
+  assert.deepEqual([parseSeenReport("").found, parseSeenReport("").walked], [false, 0]);
+});
+
+test("gtmod carries a mod's lumps, two maps and its probe script", async () => {
+  const { readWad } = await import("../src/udmf.mjs");
+  const names = readWad(buildGameThreadModWad()).map((l) => l.name);
+  for (const n of ["MAPINFO", "CVARINFO", "KEYCONF", "DECORATE", "GLDEFS", "SBARINFO", "ANIMDEFS", "MAP01", "BEHAVIOR", "MAP02"]) assert.ok(names.includes(n), n);
+  assert.equal(gtmodScript().toString("latin1", 0, 4), "ACS\0");
+  assert.ok(FIXTURES.some((f) => f.name === "gtmod" && f.build === buildGameThreadModWad));
 });

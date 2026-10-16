@@ -16,6 +16,7 @@
 #include "c_cvars.h"
 #include "cl_demo.h"
 #include "network.h"
+#include "features/gamecopy/players.h"   // [rc4l] the players the zoom is read from
 
 EXTERN_CVAR (Float, cl_fovchangespeed)
 
@@ -36,15 +37,18 @@ float FOV_InterpolatedForFrame(player_t *player)
 
 	// Follow the camera when spying another player (chasecam, spectating, demos), matching how
 	// D_Display picks the FOV it feeds R_SetFOV.
-	player_t *cameraPlayer = (player->camera && player->camera->player) ? player->camera->player : player;
+	// [rc4l] features/gamecopy: the players as the last fill took them.
+	const zx::gamecopy::ActorRecord *const cam = zx::gamecopy::CameraOf(int(player - players));
+	const zx::gamecopy::PlayerRecord *const spied = cam != NULL ? zx::gamecopy::Player(cam->playerIndex) : NULL;
+	const zx::gamecopy::PlayerRecord *const cameraPlayer = spied != NULL ? spied : zx::gamecopy::Player(int(player - players));
 
-	if (gamestate == GS_TITLELEVEL)
+	if (gamestate == GS_TITLELEVEL || cameraPlayer == NULL)
 		return TITLE_FOV;
 
 	const float target = zx::FovTargetForWeapon (cameraPlayer->DesiredFOV,
 		cameraPlayer->playerstate != PST_DEAD,
-		cameraPlayer->ReadyWeapon != NULL,
-		cameraPlayer->ReadyWeapon != NULL ? cameraPlayer->ReadyWeapon->FOVScale : 0.f);
+		cameraPlayer->hasWeapon,
+		cameraPlayer->weaponFOVScale);
 
 	// While the simulation is stopped there is no next step to tween toward, so hold the view
 	// exactly where it is instead of drifting. A menu does not pause a client in a live game,

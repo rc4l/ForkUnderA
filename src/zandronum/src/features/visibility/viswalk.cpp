@@ -2,6 +2,7 @@
 // Copyright (C) 2026 rc4l
 
 #include "features/visibility/viswalk.h"
+#include "features/gamecopy/actors.h"   // [rc4l] the actor records a portal view hands out
 #include "features/frame/computation/oracle_compute.h"   // [rc4l] OracleTally
 
 #include "features/visibility/computation/clipranges_compute.h"
@@ -91,7 +92,7 @@ struct WalkSpec
 	int slot;                         // [rc4l] the walk-bit slot it marks, or -1
 	int skyList;                      // [rc4l] the kSkyCapture* list its sky surfaces fill
 	bool player;                      // [rc4l] the player's own walk: stacked walls, and the flats pass that gives stacked views their subsectors
-	AActor *viewActor;                // [rc4l] GL's mViewActor, whose own skybox is not entered
+	const void *viewActor;            // [rc4l] who GL's mViewActor is, whose own skybox is not entered
 	std::vector<PortalView> *portals; // [rc4l] where the skyboxes (and for the player the stacked views) it looks into go, or NULL
 	const unsigned char *covered;     // [rc4l] a stacked view's covered subsectors, unclipped on reaching them, or NULL
 	const unsigned char *nodeCovered; // [rc4l] and the nodes over them, entered whatever the clipper says
@@ -155,7 +156,7 @@ bool g_oursReady = false;
 
 bool HasTexture(side_t *side, int part)
 {
-	FTexture *tex = TexMan(side->GetTexture(part));
+	FTexture *tex = TexMan(side->rc.GetTexture(part));
 	return tex != NULL && tex->UseType != FTexture::TEX_Null;
 }
 
@@ -179,11 +180,11 @@ bool LineCloses(side_t *sidedef, sector_t *front, sector_t *back)
 		front->portals[sector_t::ceiling] != NULL || front->portals[sector_t::floor] != NULL;
 	if (in.stacked) return false;
 	line_t *linedef = sidedef->linedef;
-	const secplane_t *planes[4] = { &front->floorplane, &front->ceilingplane, &back->floorplane, &back->ceilingplane };
+	const secplane_core_t *planes[4] = { &front->rc.floorplane, &front->rc.ceilingplane, &back->rc.floorplane, &back->rc.ceilingplane };
 	long long *heights[4] = { in.fsFloor, in.fsCeiling, in.bsFloor, in.bsCeiling };
 	for (int p = 0; p < 4; p++)
 	{
-		const secplane_t &plane = *planes[p];
+		const secplane_core_t &plane = *planes[p];
 		if (plane.a | plane.b)
 		{
 			heights[p][0] = plane.ZatPoint(linedef->v1).Raw();
@@ -198,15 +199,15 @@ bool LineCloses(side_t *sidedef, sector_t *front, sector_t *back)
 	if (!ComputeLineMayClose(in)) return false;
 	in.topTexture = HasTexture(sidedef, side_t::top);
 	in.bottomTexture = HasTexture(sidedef, side_t::bottom);
-	in.bothCeilingsSky = back->GetTexture(sector_t::ceiling) == skyflatnum && front->GetTexture(sector_t::ceiling) == skyflatnum;
-	in.bothFloorsSky = back->GetTexture(sector_t::floor) == skyflatnum && front->GetTexture(sector_t::floor) == skyflatnum;
+	in.bothCeilingsSky = back->rc.GetTexture(sector_t::ceiling) == skyflatnum && front->rc.GetTexture(sector_t::ceiling) == skyflatnum;
+	in.bothFloorsSky = back->rc.GetTexture(sector_t::floor) == skyflatnum && front->rc.GetTexture(sector_t::floor) == skyflatnum;
 	return ComputeLineCloses(in);
 }
 
 // [rc4l] Whether a sector's height transfer is in force, as gl_FakeFlat and gl_CheckViewArea ask.
 bool TransfersHeight(const sector_t *s)
 {
-	return s->heightsec != NULL && !(s->heightsec->MoreFlags & SECF_IGNOREHEIGHTSEC);
+	return s->heightsec != NULL && !(s->heightsec->rc.MoreFlags & SECF_IGNOREHEIGHTSEC);
 }
 
 // [rc4l] Whether a seg leads from the open into a height transfer in force, the line gl_CheckViewArea decides the view area by.
@@ -219,8 +220,8 @@ bool EntersTransfer(const seg_t *seg)
 area_t AreaAcross(const seg_t *seg)
 {
 	const sector_t *front = seg->frontsector, *s = seg->backsector->heightsec;
-	return ComputeEyeBelowTransfer(front->ceilingplane.ZatPoint(seg->v1).Raw(), front->ceilingplane.ZatPoint(seg->v2).Raw(),
-		s->floorplane.ZatPoint(seg->v1).Raw(), s->floorplane.ZatPoint(seg->v2).Raw()) ? area_below : area_normal;
+	return ComputeEyeBelowTransfer(front->rc.ceilingplane.ZatPoint(seg->v1).Raw(), front->rc.ceilingplane.ZatPoint(seg->v2).Raw(),
+		s->rc.floorplane.ZatPoint(seg->v1).Raw(), s->rc.floorplane.ZatPoint(seg->v2).Raw()) ? area_below : area_normal;
 }
 
 // [rc4l] gl_CheckViewArea on a walk's own view area: the first line from the open into a height transfer decides whether the eye is below its water.
@@ -295,13 +296,13 @@ void SkyPlane(sector_t *sector, int plane, float x1, float y1, float x2, float y
 		if (g_spec.player) PushSkyEvent(out, SkyEvent::kStackWall, x1, y1, x2, y2, q.zbottom, q.ztop).portal = portal;
 		return;
 	}
-	if (sector->GetTexture(plane) != skyflatnum) return;
+	if (sector->rc.GetTexture(plane) != skyflatnum) return;
 	ASkyViewpoint *skybox = sector->GetSkyBox(plane);
 	if (r_noskyboxes || skybox == NULL || g_spec.viewActor == skybox || (skybox->flags & MF_JUSTHIT)) skybox = NULL;
 	SkyEvent &e = PushSkyEvent(out, SkyEvent::kSkyWall, x1, y1, x2, y2, q.zbottom, q.ztop);
 	e.skybox = skybox;
 	e.special = special;
-	e.fade = sector->ColorMap != NULL ? sector->ColorMap->Fade.d & 0xffffff : 0;
+	e.fade = sector->rc.ColorMap != NULL ? sector->rc.ColorMap->Fade.d & 0xffffff : 0;
 	e.sky = sector->sky;
 }
 
@@ -345,11 +346,11 @@ void NoteMirror(seg_t *seg, sector_t *fs, subsector_t *sub, float x1, float y1, 
 {
 	// [rc4l] GLWall::Process's light for the wall, before any light band.
 	FColormap cm;
-	cm = fs->ColorMap;
-	const int baseLight = gl_ClampLight(fs->lightlevel);
+	cm = fs->rc.ColorMap;
+	const int baseLight = gl_ClampLight(fs->rc.lightlevel);
 	const bool foggy = !gl_isBlack(cm.FadeColor) || (level.flags & LEVEL_HASFADETABLE);
 	int rel = 0;
-	int light = gl_ClampLight(seg->sidedef->GetLightLevel(foggy, baseLight, false, &rel));
+	int light = gl_ClampLight(seg->sidedef->GetRcLightLevel(foggy, baseLight, false, &rel));
 	TArray<lightlist_t> &bands = sub->sector->e->XFloor.lightlist;
 	int band = zx::visibility::kSheenOwnLight;
 	if (bands.Size() > 0 && !gl_fixedcolormap)
@@ -389,11 +390,11 @@ void NoteMirror(seg_t *seg, sector_t *fs, subsector_t *sub, float x1, float y1, 
 // [rc4l] The sky and stacked walls GLWall::Process raises from this seg in subsector `sub`, from front sector `fs` and back `bs` as GL's walk hands them over, and a mirror's portal, as events into `out`.
 void DeriveSkyWalls(seg_t *seg, sector_t *fs, sector_t *bs, subsector_t *sub, std::vector<SkyEvent> &out)
 {
-	const int special = seg->linedef->special;
-	const bool oneSided = special == Line_Horizon || !bs || !(seg->linedef->flags & (ML_TWOSIDED | ML_3DMIDTEX));
+	const int special = seg->linedef->rc.special;
+	const bool oneSided = special == Line_Horizon || !bs || !(seg->linedef->rc.flags & (ML_TWOSIDED | ML_3DMIDTEX));
 	// [rc4l] SkyPlane makes something only of a sky or a stacked plane, so a plane that is neither raises nothing, and with neither, no hole and no mirror the seg is done.
-	const bool ceilingOut = fs->GetTexture(sector_t::ceiling) == skyflatnum || fs->portals[sector_t::ceiling] != NULL;
-	const bool floorOut = fs->GetTexture(sector_t::floor) == skyflatnum || fs->portals[sector_t::floor] != NULL;
+	const bool ceilingOut = fs->rc.GetTexture(sector_t::ceiling) == skyflatnum || fs->portals[sector_t::ceiling] != NULL;
+	const bool floorOut = fs->rc.GetTexture(sector_t::floor) == skyflatnum || fs->portals[sector_t::floor] != NULL;
 	// [rc4l] An untextured one-sided wall is a hole GL's sky fills.
 	const bool hole = oneSided && special != Line_Horizon && !HasTexture(seg->sidedef, side_t::mid);
 	// [rc4l] The player's walk and a mirror's, whose mirrors GL's portals recurse into.
@@ -401,23 +402,23 @@ void DeriveSkyWalls(seg_t *seg, sector_t *fs, sector_t *bs, subsector_t *sub, st
 	if (!ceilingOut && !floorOut && !hole && !mirror) return;
 
 	vertex_t *v1, *v2;
-	if (seg->sidedef->Flags & WALLF_POLYOBJ) { v1 = seg->v1; v2 = seg->v2; }
+	if (seg->sidedef->rc.Flags & WALLF_POLYOBJ) { v1 = seg->v1; v2 = seg->v2; }
 	else if (seg->sidedef == seg->linedef->sidedef[0]) { v1 = seg->linedef->v1; v2 = seg->linedef->v2; }
 	else { v1 = seg->linedef->v2; v2 = seg->linedef->v1; }
 	const float x1 = FIXED2FLOAT(v1->x), y1 = FIXED2FLOAT(v1->y), x2 = FIXED2FLOAT(v2->x), y2 = FIXED2FLOAT(v2->y);
 	float zfloor[2], zceil[2];
-	if (fs->floorplane.a | fs->floorplane.b)
+	if (fs->rc.floorplane.a | fs->rc.floorplane.b)
 	{
-		zfloor[0] = FIXED2FLOAT(fs->floorplane.ZatPoint(v1));
-		zfloor[1] = FIXED2FLOAT(fs->floorplane.ZatPoint(v2));
+		zfloor[0] = FIXED2FLOAT(fs->rc.floorplane.ZatPoint(v1));
+		zfloor[1] = FIXED2FLOAT(fs->rc.floorplane.ZatPoint(v2));
 	}
-	else zfloor[0] = zfloor[1] = FIXED2FLOAT(-fs->floorplane.d);
-	if (fs->ceilingplane.a | fs->ceilingplane.b)
+	else zfloor[0] = zfloor[1] = FIXED2FLOAT(-fs->rc.floorplane.d);
+	if (fs->rc.ceilingplane.a | fs->rc.ceilingplane.b)
 	{
-		zceil[0] = FIXED2FLOAT(fs->ceilingplane.ZatPoint(v1));
-		zceil[1] = FIXED2FLOAT(fs->ceilingplane.ZatPoint(v2));
+		zceil[0] = FIXED2FLOAT(fs->rc.ceilingplane.ZatPoint(v1));
+		zceil[1] = FIXED2FLOAT(fs->rc.ceilingplane.ZatPoint(v2));
 	}
-	else zceil[0] = zceil[1] = FIXED2FLOAT(fs->ceilingplane.d);
+	else zceil[0] = zceil[1] = FIXED2FLOAT(fs->rc.ceilingplane.d);
 
 	if (oneSided)
 	{
@@ -427,8 +428,8 @@ void DeriveSkyWalls(seg_t *seg, sector_t *fs, sector_t *bs, subsector_t *sub, st
 		SkyPlane(fs, sector_t::floor, x1, y1, x2, y2, q[1], special, out);
 		if (special == Line_Horizon)
 		{
-			const int n = zx::surfaces::ComputeHorizonSky(viewz.Raw(), fs->GetPlaneTexZ(sector_t::ceiling).Raw(), fs->GetPlaneTexZ(sector_t::floor).Raw(),
-				fs->GetTexture(sector_t::ceiling) == skyflatnum, fs->GetTexture(sector_t::floor) == skyflatnum, q);
+			const int n = zx::surfaces::ComputeHorizonSky(viewz.Raw(), fs->rc.GetPlaneTexZ(sector_t::ceiling).Raw(), fs->rc.GetPlaneTexZ(sector_t::floor).Raw(),
+				fs->rc.GetTexture(sector_t::ceiling) == skyflatnum, fs->rc.GetTexture(sector_t::floor) == skyflatnum, q);
 			for (int i = 0; i < n; i++) SkyPlane(fs, q[i].ceiling ? sector_t::ceiling : sector_t::floor, x1, y1, x2, y2, q[i], special, out);
 		}
 		else if (hole) PushSkyEvent(out, SkyEvent::kSkyHole, x1, y1, x2, y2, zfloor, zceil);
@@ -436,34 +437,34 @@ void DeriveSkyWalls(seg_t *seg, sector_t *fs, sector_t *bs, subsector_t *sub, st
 		return;
 	}
 	// [rc4l] The back planes at the line's ends, read once for SkyTop and SkyBottom both.
-	const fixed_t backCeil1 = bs->ceilingplane.ZatPoint(v1), backCeil2 = bs->ceilingplane.ZatPoint(v2);
-	const fixed_t backFloor1 = bs->floorplane.ZatPoint(v1), backFloor2 = bs->floorplane.ZatPoint(v2);
+	const fixed_t backCeil1 = bs->rc.ceilingplane.ZatPoint(v1), backCeil2 = bs->rc.ceilingplane.ZatPoint(v2);
+	const fixed_t backFloor1 = bs->rc.floorplane.ZatPoint(v1), backFloor2 = bs->rc.floorplane.ZatPoint(v2);
 	const bool backOpen = backCeil1 > backFloor1 || backCeil2 > backFloor2;
-	const bool backNoSkyDraw = (bs->special & 0xff) == kNoSkyDraw;
+	const bool backNoSkyDraw = (bs->rc.special & 0xff) == kNoSkyDraw;
 	zx::surfaces::SkyWallQuad q;
 	if (ceilingOut)
 	{
 		zx::surfaces::SkyTopIn t = {};
-		t.frontSky = fs->GetTexture(sector_t::ceiling) == skyflatnum;
-		t.backSky = bs->GetTexture(sector_t::ceiling) == skyflatnum;
+		t.frontSky = fs->rc.GetTexture(sector_t::ceiling) == skyflatnum;
+		t.backSky = bs->rc.GetTexture(sector_t::ceiling) == skyflatnum;
 		t.backNoSkyDraw = backNoSkyDraw;
 		t.backOpen = backOpen || bs->transdoor;
-		t.icarus = bs->floorplane.a == 0 && bs->floorplane.b == 0 && fs->floorplane.a == 0 && fs->floorplane.b == 0 &&
-			bs->GetPlaneTexZ(sector_t::floor) == fs->GetPlaneTexZ(sector_t::floor) + FRACUNIT;
+		t.icarus = bs->rc.floorplane.a == 0 && bs->rc.floorplane.b == 0 && fs->rc.floorplane.a == 0 && fs->rc.floorplane.b == 0 &&
+			bs->rc.GetPlaneTexZ(sector_t::floor) == fs->rc.GetPlaneTexZ(sector_t::floor) + FRACUNIT;
 		// [rc4l] SkyTop reads the side's textures only for Icarus's door, so their lookups wait for one.
 		if (t.icarus)
 		{
 			t.hasBottom = HasTexture(seg->sidedef, side_t::bottom);
-			t.midExists = TexMan(seg->sidedef->GetTexture(side_t::mid)) != NULL;
-			t.dontPegTop = (seg->linedef->flags & ML_DONTPEGTOP) != 0;
-			t.midOffsetDown = seg->sidedef->GetTextureYOffset(side_t::mid) > 0;
-			t.backCeilingPlusMid = FIXED2FLOAT(backCeil2 + seg->sidedef->GetTextureYOffset(side_t::mid));
+			t.midExists = TexMan(seg->sidedef->rc.GetTexture(side_t::mid)) != NULL;
+			t.dontPegTop = (seg->linedef->rc.flags & ML_DONTPEGTOP) != 0;
+			t.midOffsetDown = seg->sidedef->rc.GetTextureYOffset(side_t::mid) > 0;
+			t.backCeilingPlusMid = FIXED2FLOAT(backCeil2 + seg->sidedef->rc.GetTextureYOffset(side_t::mid));
 		}
 		t.zceil[0] = zceil[0]; t.zceil[1] = zceil[1];
 		t.backCeiling[0] = FIXED2FLOAT(backCeil1);
 		t.backCeiling[1] = FIXED2FLOAT(backCeil2);
-		t.frontReflect = fs->GetReflect(sector_t::ceiling) > 0;
-		t.backReflectSameHeight = bs->GetReflect(sector_t::ceiling) > 0 && bs->ceilingplane.d == fs->ceilingplane.d;
+		t.frontReflect = fs->rc.GetReflect(sector_t::ceiling) > 0;
+		t.backReflectSameHeight = bs->rc.GetReflect(sector_t::ceiling) > 0 && bs->rc.ceilingplane.d == fs->rc.ceilingplane.d;
 		t.frontPortal = fs->portals[sector_t::ceiling] != NULL;
 		t.samePortal = fs->portals[sector_t::ceiling] == bs->portals[sector_t::ceiling];
 		if (zx::surfaces::ComputeSkyTop(t, q)) SkyPlane(fs, sector_t::ceiling, x1, y1, x2, y2, q, special, out);
@@ -471,17 +472,17 @@ void DeriveSkyWalls(seg_t *seg, sector_t *fs, sector_t *bs, subsector_t *sub, st
 	if (floorOut)
 	{
 		zx::surfaces::SkyBottomIn b;
-		b.frontSky = fs->GetTexture(sector_t::floor) == skyflatnum;
-		b.backSky = bs->GetTexture(sector_t::floor) == skyflatnum;
+		b.frontSky = fs->rc.GetTexture(sector_t::floor) == skyflatnum;
+		b.backSky = bs->rc.GetTexture(sector_t::floor) == skyflatnum;
 		b.backNoSkyDraw = backNoSkyDraw;
 		b.bottomNull = !HasTexture(seg->sidedef, side_t::bottom);
 		b.backOpen = backOpen;
-		b.eyeBelowBackFloor = bs->floorplane.ZatPoint(FIXED2FLOAT(viewx), FIXED2FLOAT(viewy)) > FIXED2FLOAT(viewz);
+		b.eyeBelowBackFloor = bs->rc.floorplane.ZatPoint(FIXED2FLOAT(viewx), FIXED2FLOAT(viewy)) > FIXED2FLOAT(viewz);
 		b.zfloor[0] = zfloor[0]; b.zfloor[1] = zfloor[1];
 		b.backFloor[0] = FIXED2FLOAT(backFloor1);
 		b.backFloor[1] = FIXED2FLOAT(backFloor2);
-		b.frontReflect = fs->GetReflect(sector_t::floor) > 0;
-		b.backReflectSameHeight = bs->GetReflect(sector_t::floor) > 0 && bs->floorplane.d == fs->floorplane.d;
+		b.frontReflect = fs->rc.GetReflect(sector_t::floor) > 0;
+		b.backReflectSameHeight = bs->rc.GetReflect(sector_t::floor) > 0 && bs->rc.floorplane.d == fs->rc.floorplane.d;
 		b.frontPortal = fs->portals[sector_t::floor] != NULL;
 		b.samePortal = fs->portals[sector_t::floor] == bs->portals[sector_t::floor];
 		if (zx::surfaces::ComputeSkyBottom(b, q)) SkyPlane(fs, sector_t::floor, x1, y1, x2, y2, q, special, out);
@@ -620,10 +621,10 @@ bool BoxVisible(const ClipRanges &clip, const fixed_t *bbox)
 // [rc4l] Whether DeriveSkyWalls makes anything of this seg seen from front sector `fs`: a sky or stacked plane on that side, an untextured one-sided wall, or the player's mirror.
 bool SkyWallsPossible(seg_t *seg, sector_t *fs)
 {
-	if (fs->GetTexture(sector_t::ceiling) == skyflatnum || fs->portals[sector_t::ceiling] != NULL ||
-		fs->GetTexture(sector_t::floor) == skyflatnum || fs->portals[sector_t::floor] != NULL) return true;
-	const int special = seg->linedef->special;
-	const bool oneSided = special == Line_Horizon || !seg->backsector || !(seg->linedef->flags & (ML_TWOSIDED | ML_3DMIDTEX));
+	if (fs->rc.GetTexture(sector_t::ceiling) == skyflatnum || fs->portals[sector_t::ceiling] != NULL ||
+		fs->rc.GetTexture(sector_t::floor) == skyflatnum || fs->portals[sector_t::floor] != NULL) return true;
+	const int special = seg->linedef->rc.special;
+	const bool oneSided = special == Line_Horizon || !seg->backsector || !(seg->linedef->rc.flags & (ML_TWOSIDED | ML_3DMIDTEX));
 	if (!oneSided || special == Line_Horizon) return false;
 	return !HasTexture(seg->sidedef, side_t::mid) || (special == Line_Mirror && (g_spec.player || g_spec.mirror != NULL) && r_mirrors);
 }
@@ -651,7 +652,7 @@ void ClipSeg(ClipWalk &w, seg_t *seg, bool polyPass, subsector_t *sub, sector_t 
 	// [rc4l] Backface culling: GL draws a seg only from its front.
 	if (startAngle - endAngle < 0x80000000u) return;
 	slice.facing++;
-	if (!polyPass && seg->sidedef != NULL && (seg->sidedef->Flags & WALLF_POLYOBJ)) return;
+	if (!polyPass && seg->sidedef != NULL && (seg->sidedef->rc.Flags & WALLF_POLYOBJ)) return;
 	if (seg->sidedef == NULL)
 	{
 		if (!drawn && slice.clip.SafeCheckRange(startAngle, endAngle)) { drawn = true; SetFlag(sub->flags, SSECF_DRAWN, w.direct, slice.drawnSubs); }
@@ -670,7 +671,7 @@ void ClipSeg(ClipWalk &w, seg_t *seg, bool polyPass, subsector_t *sub, sector_t 
 		SeeSector(seg->backsector);
 	}
 	if (w.direct && g_spec.slot >= 0) zx::levelmesh::NoteSlotVisible(g_spec.slot, numsubsectors + side);
-	const bool polyobj = (seg->sidedef->Flags & WALLF_POLYOBJ) != 0;
+	const bool polyobj = (seg->sidedef->rc.Flags & WALLF_POLYOBJ) != 0;
 	const unsigned long long key = WalkKey(rank, pos);
 	sector_t bs;
 	sector_t *back = NULL;
@@ -688,13 +689,13 @@ void ClipSeg(ClipWalk &w, seg_t *seg, bool polyPass, subsector_t *sub, sector_t 
 			}
 			slice.area = key >= w.switchKey ? w.switchTo : w.initial;
 		}
-		back = gl_FakeFlat(seg->backsector, &bs, slice.area, true);
+		back = zx::fakeflat::RcFakeFlat(seg->backsector, &bs, slice.area, true);
 		if (LineCloses(seg->sidedef, front, back)) slice.clip.SafeAddClipRange(startAngle, endAngle);
 	}
 	// [rc4l] A two-sided line inside one sector with no middle texture shows nothing, and GL leaves it unmapped.
 	if (seg->backsector != NULL && !polyobj && front->sectornum == seg->backsector->sectornum && !HasTexture(seg->sidedef, side_t::mid)) return;
 	// [rc4l] The automap reveals what the player has seen.
-	SetFlag(seg->linedef->flags, ML_MAPPED, w.direct, slice.mapLines);
+	SetFlag(seg->linedef->flags, ML_MAPPED, w.direct, slice.mapLines);   // [rc4l] the live line, which the automap, saves and bots read
 	if (!g_deriving) return;
 	if (!polyobj) NoteLineSeg(int(seg->linedef - lines), key, w.direct);
 	if (!SkyWallsPossible(seg, front)) return;
@@ -739,12 +740,12 @@ void ClipPolyNode(ClipWalk &w, void *node, subsector_t *sub, sector_t *front, in
 bool FlatsPassFirst(const ClipWalk &w, subsector_t *sub, sector_t *sector, sector_t *front)
 {
 	if (sub->numlines <= 2 && !(sub->hacked & 1)) return false;
-	if (sector->heightsec && !(sector->heightsec->MoreFlags & SECF_IGNOREHEIGHTSEC) && w.slice->area == area_default) return false;
+	if (sector->heightsec && !(sector->heightsec->rc.MoreFlags & SECF_IGNOREHEIGHTSEC) && w.slice->area == area_default) return false;
 	g_subProcessed.Store(sub - subsectors, 1);
 	// [rc4l] One slice's view area can change as it goes, so walk order decides which subsector processes a render sector first.
 	if (w.direct) return true;
 	sector_t fake;
-	const sector_t *flat = sector != sub->render_sector ? gl_FakeFlat(sub->render_sector, &fake, w.slice->area, false) : front;
+	const sector_t *flat = sector != sub->render_sector ? zx::fakeflat::RcFakeFlat(sub->render_sector, &fake, w.slice->area, false) : front;
 	return flat->portals[sector_t::ceiling] != NULL || flat->portals[sector_t::floor] != NULL;
 }
 
@@ -773,11 +774,11 @@ void ClipSubsector(ClipWalk &w, subsector_t *sub, int rank)
 		for (int k = 0; k < fills; k++) SeeSector(&sectors[fill[k].model]);
 	}
 	if (w.direct && g_spec.slot >= 0) zx::levelmesh::NoteSlotVisible(g_spec.slot, si);
-	SetFlag(sector->MoreFlags, SECF_DRAWN, w.direct, slice.drawnSectors);
+	SetFlag(sector->MoreFlags, SECF_DRAWN, w.direct, slice.drawnSectors);   // [rc4l] the live sector, which the automap reads
 	unsigned char flags = 0;
 	if (g_spec.particles != NULL && si < (int)ParticlesInSubsec.Size() && ParticlesInSubsec[si] != NO_PARTICLE) flags |= kSubParticles;
 	sector_t fake;
-	sector_t *front = gl_FakeFlat(sector, &fake, slice.area, false);
+	sector_t *front = zx::fakeflat::RcFakeFlat(sector, &fake, slice.area, false);
 	bool drawn = (sub->flags & SSECF_DRAWN) != 0;
 	if (sub->polys != NULL)
 	{
@@ -866,18 +867,18 @@ void ClipInto(Slice &slice, int lane, bool direct, unsigned long long switchKey,
 void FlatsPass(subsector_t *sub, sector_t *sector)
 {
 	if (sub->numlines <= 2 && !(sub->hacked & 1)) return;
-	if (sector->heightsec && !(sector->heightsec->MoreFlags & SECF_IGNOREHEIGHTSEC) && in_area == area_default) return;
+	if (sector->heightsec && !(sector->heightsec->rc.MoreFlags & SECF_IGNOREHEIGHTSEC) && in_area == area_default) return;
 	sector_t fake;
 	sector_t *flat = g_sector;
-	if (sector != sub->render_sector) flat = gl_FakeFlat(sub->render_sector, &fake, false);
+	if (sector != sub->render_sector) flat = zx::fakeflat::RcFakeFlat(sub->render_sector, &fake, false);
 	const int rs = sub->render_sector->sectornum;
 	if (!g_secProcessed[rs])
 	{
 		g_secProcessed[rs] = 1;
 		const float vx = FIXED2FLOAT(viewx), vy = FIXED2FLOAT(viewy), vz = FIXED2FLOAT(viewz);
 		sector_t *real = &sectors[flat->sectornum];
-		if (flat->portals[sector_t::floor] != NULL && flat->floorplane.ZatPoint(vx, vy) <= vz) g_planeStacks[sector_t::floor].push_back(real);
-		if (flat->portals[sector_t::ceiling] != NULL && flat->ceilingplane.ZatPoint(vx, vy) >= vz) g_planeStacks[sector_t::ceiling].push_back(real);
+		if (flat->portals[sector_t::floor] != NULL && flat->rc.floorplane.ZatPoint(vx, vy) <= vz) g_planeStacks[sector_t::floor].push_back(real);
+		if (flat->portals[sector_t::ceiling] != NULL && flat->rc.ceilingplane.ZatPoint(vx, vy) >= vz) g_planeStacks[sector_t::ceiling].push_back(real);
 	}
 	if (flat->portals[sector_t::ceiling] != NULL) PortalFor(flat->portals[sector_t::ceiling], NULL).subs.push_back(sub);
 	if (flat->portals[sector_t::floor] != NULL) PortalFor(flat->portals[sector_t::floor], NULL).subs.push_back(sub);
@@ -898,7 +899,7 @@ void TakeRankCandidates(int rank, int count)
 		for (; sl.cursor < sl.derive.size() && KeyRank(sl.derive[sl.cursor].key) == rank; sl.cursor++)
 		{
 			const DeriveCandidate &c = sl.derive[sl.cursor];
-			if (!(c.seg->sidedef->Flags & WALLF_POLYOBJ) && g_lineFirst.Load(c.seg->linedef - lines) != c.key) continue;
+			if (!(c.seg->sidedef->rc.Flags & WALLF_POLYOBJ) && g_lineFirst.Load(c.seg->linedef - lines) != c.key) continue;
 			// [rc4l] Slices hand in rising key order, so an insertion keeps the few here sorted and meets a repeat beside its twin.
 			const CandidateRef ref = { k, (int)sl.cursor };
 			size_t at = g_rankCandidates.size();
@@ -926,7 +927,7 @@ void ReplayRank(int rank, int count)
 	if (flags)
 	{
 		in_area = (area_t)g_subAreaIn.Load(si);
-		g_sector = gl_FakeFlat(sub->sector, &fake, false);
+		g_sector = zx::fakeflat::RcFakeFlat(sub->sector, &fake, false);
 		g_sub = sub;
 	}
 	if (flags & kSubParticles) g_spec.particles(sub, g_sector);
@@ -1217,7 +1218,7 @@ int RankOf(int si)
 // [rc4l] Whether a remembered seg can still be where the view area switches: a seg of the level's own into a height transfer in force.
 bool TransferStillHolds(const seg_t *seg)
 {
-	return seg != NULL && seg >= segs && seg < segs + numsegs && seg->sidedef != NULL && !(seg->sidedef->Flags & WALLF_POLYOBJ) &&
+	return seg != NULL && seg >= segs && seg < segs + numsegs && seg->sidedef != NULL && !(seg->sidedef->rc.Flags & WALLF_POLYOBJ) &&
 		seg->backsector != NULL && seg->frontsector != seg->backsector && seg->Subsector != NULL && seg->Subsector->polys == NULL &&
 		EntersTransfer(seg);
 }
@@ -1391,13 +1392,13 @@ void HandDecals(const WalkHooks *hooks)
 bool SameVisplane(sector_t *me, sector_t *anchor, int plane)
 {
 	const bool ceiling = plane == sector_t::ceiling;
-	return me->GetTexture(plane) == anchor->GetTexture(plane) &&
-		!(ceiling ? me->ceilingplane != anchor->ceilingplane : me->floorplane != anchor->floorplane) &&
-		(ceiling ? me->GetCeilingLight() == anchor->GetCeilingLight() : me->GetFloorLight() == anchor->GetFloorLight()) &&
-		me->ColorMap == anchor->ColorMap &&
-		me->GetXOffset(plane) == anchor->GetXOffset(plane) && me->GetYOffset(plane) == anchor->GetYOffset(plane) &&
-		me->GetXScale(plane) == anchor->GetXScale(plane) && me->GetYScale(plane) == anchor->GetYScale(plane) &&
-		me->GetAngle(plane) == anchor->GetAngle(plane);
+	return me->rc.GetTexture(plane) == anchor->rc.GetTexture(plane) &&
+		!(ceiling ? me->rc.ceilingplane != anchor->rc.ceilingplane : me->rc.floorplane != anchor->rc.floorplane) &&
+		(ceiling ? me->rc.GetCeilingLight() == anchor->rc.GetCeilingLight() : me->rc.GetFloorLight() == anchor->rc.GetFloorLight()) &&
+		me->rc.ColorMap == anchor->rc.ColorMap &&
+		me->rc.GetXOffset(plane) == anchor->rc.GetXOffset(plane) && me->rc.GetYOffset(plane) == anchor->rc.GetYOffset(plane) &&
+		me->rc.GetXScale(plane) == anchor->rc.GetXScale(plane) && me->rc.GetYScale(plane) == anchor->rc.GetYScale(plane) &&
+		me->rc.GetAngle(plane) == anchor->rc.GetAngle(plane);
 }
 
 void CollectStackSubs(subsector_t *sub, sector_t *anchor, int plane, std::vector<subsector_t *> &handled)
@@ -1406,7 +1407,7 @@ void CollectStackSubs(subsector_t *sub, sector_t *anchor, int plane, std::vector
 	if (sub->render_sector->portals[plane] != NULL) return;
 	if (sub->numlines > 2 && !g_subProcessed.Load(sub - subsectors)) return;
 	sector_t fake;
-	if (!SameVisplane(gl_FakeFlat(sub->render_sector, &fake, false), anchor, plane)) return;
+	if (!SameVisplane(zx::fakeflat::RcFakeFlat(sub->render_sector, &fake, false), anchor, plane)) return;
 	handled.push_back(sub);
 	for (DWORD j = 0; j < sub->numlines; j++)
 	{
@@ -1429,7 +1430,7 @@ void ProcessSectorStacks()
 		for (size_t i = 0; i < g_planeStacks[plane].size(); i++)
 		{
 			sector_t fake;
-			sector_t *sec = gl_FakeFlat(g_planeStacks[plane][i], &fake, false);
+			sector_t *sec = zx::fakeflat::RcFakeFlat(g_planeStacks[plane][i], &fake, false);
 			FPortal *portal = sec->portals[plane];
 			if (portal == NULL) continue;
 			for (int k = 0; k < sec->subsectorcount; k++)
@@ -1457,7 +1458,7 @@ void ProcessSectorStacks()
 // [rc4l] The sprite view inside a derived portal view, standing in for GL's mCurrentPortal and mViewActor there: no actor of its own, and in a mirror the mirror's clip; the rest is the outer view's.
 const zx::viewsetup::SpriteViewProvider *g_outerView = NULL;
 line_t *g_viewMirror = NULL;
-AActor *PortalViewActor() { return NULL; }
+const void *PortalViewActor() { return NULL; }
 void PortalViewVector(float &x, float &y) { x = zx::viewsetup::CurrentView().vectorX; y = zx::viewsetup::CurrentView().vectorY; }
 int PortalSpriteIndex() { return g_outerView->NextSpriteIndex(); }
 bool PortalRejects(fixed_t x, fixed_t y) { return g_viewMirror != NULL && P_PointOnLineSide(x, y, g_viewMirror) != 0; }
@@ -1470,14 +1471,16 @@ const zx::viewsetup::SpriteViewProvider g_portalView =
 };
 
 // [rc4l] The actors in the sectors the last walk reached, handed to `sprite` inside a portal view, as GL's walk hands them to ProcessSprite.
-void PortalSprites(void (*sprite)(AActor *thing), line_t *mirror)
+void PortalSprites(void (*sprite)(const zx::gamecopy::ActorRecord &thing), line_t *mirror)
 {
 	const std::vector<sector_t *> reached(g_sectorOrder);
 	g_outerView = &zx::viewsetup::SpriteView();
 	g_viewMirror = mirror;
 	zx::viewsetup::SetSpriteViewProvider(&g_portalView);
+	int count;
+	const zx::gamecopy::ActorRecord *records = zx::gamecopy::Actors(count);
 	for (size_t i = 0; i < reached.size(); i++)
-		for (AActor *thing = reached[i]->thinglist; thing != NULL; thing = thing->snext) sprite(thing);
+		for (int r = zx::gamecopy::FirstActorIn(reached[i]); r >= 0; r = records[r].nextInSector) sprite(records[r]);
 	zx::viewsetup::SetSpriteViewProvider(g_outerView);
 	g_viewMirror = NULL;
 }
@@ -1496,8 +1499,8 @@ void WalkSkybox(const PortalView &p, long long seenX, long long seenY)
 	viewz = origin->PrevZ + FixedMul(frac, origin->z - origin->PrevZ);
 	viewangle += zx::InterpolateAngleBAM(origin->PrevAngle, origin->angle, (int64_t)frac);
 	// [rc4l] Not too close to the viewpoint's floor or ceiling, as GL keeps it.
-	const fixed_t floorh = origin->Sector->floorplane.ZatPoint(origin->x, origin->y);
-	const fixed_t ceilh = origin->Sector->ceilingplane.ZatPoint(origin->x, origin->y);
+	const fixed_t floorh = origin->Sector->rc.floorplane.ZatPoint(origin->x, origin->y);
+	const fixed_t ceilh = origin->Sector->rc.ceilingplane.ZatPoint(origin->x, origin->y);
 	if (viewz < floorh + 4 * FRACUNIT) viewz = floorh + 4 * FRACUNIT;
 	if (viewz > ceilh - 4 * FRACUNIT) viewz = ceilh - 4 * FRACUNIT;
 	origin->flags |= MF_JUSTHIT;

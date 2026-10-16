@@ -16,6 +16,7 @@
 #include "features/visibility/viswalk.h"
 #include "features/hwrender/backendonly.h"
 #include "features/sprites/spritebuild.h"
+#include "features/gamecopy/actors.h"        // [rc4l] the actor records the sweep reads
 
 #include "actor.h"
 #include "c_cvars.h"
@@ -51,13 +52,13 @@ void WalkParticles(subsector_t *sub, sector_t *sector)
 }
 
 // [rc4l] An actor a stacked view's or mirror's walk reached, its sprite or model derived inside that view.
-void PortalActor(AActor *thing)
+void PortalActor(const zx::gamecopy::ActorRecord &thing)
 {
 	zx::sprites::BuildSprite(thing);
 }
 
 // [rc4l] The actors the sweep keeps, reused frame to frame.
-std::vector<AActor *> g_swept;
+std::vector<const zx::gamecopy::ActorRecord *> g_swept;
 
 // [rc4l] The actors the frustum may hold, derived; taken from the thinker list, which is where they live, rather than found by a walk.
 void SweepActors()
@@ -67,10 +68,11 @@ void SweepActors()
 	const bool batch = !fua_sprite_check && !fua_shading_check;
 	g_swept.clear();
 	const float *mvp = zx::hwrender::SceneMVP();
-	TThinkerIterator<AActor> it;
-	AActor *thing;
-	while ((thing = it.Next()) != NULL)
+	int count;
+	const zx::gamecopy::ActorRecord *records = zx::gamecopy::Actors(count);
+	for (int i = 0; i < count; i++)
 	{
+		const zx::gamecopy::ActorRecord *thing = &records[i];
 		seen++;
 		if (thing->Sector == NULL) { noSector++; continue; }
 		if (mvp != NULL)
@@ -84,7 +86,7 @@ void SweepActors()
 		}
 		processed++;
 		if (batch) g_swept.push_back(thing);
-		else zx::sprites::BuildSprite(thing);
+		else zx::sprites::BuildSprite(*thing);
 	}
 	if (!g_swept.empty()) zx::sprites::BuildSprites(&g_swept[0], (int)g_swept.size());
 	zx::levelmesh::RecordSpriteSweep(seen, noSector, behind, offScreen, processed);

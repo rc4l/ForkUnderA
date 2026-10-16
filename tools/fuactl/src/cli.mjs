@@ -178,7 +178,7 @@ const USAGE = `fuactl <command>
   ticprof --port P [--tics N]          per-tic sim phase split (P_Ticker / thinkers / effects / specials)
   simtrace --port P [--token T] --out FILE [--tics N]   each tic's fingerprint and every damage, kill and spawn for the next N tics (sim.trace), into FILE; +fua_simtrace N FILE on a launch traces from its first tic
   tracediff A B   where two sim traces part: the first tic whose fingerprint differs and the first event that moved; exit 1 when they differ
-  fixture record|trace|check|pictures|vischeck|copycheck [NAME ...] [--engine PATH] [--store DIR] [--cvar k=v,...] [--update] [--out FILE] [--tolerance T]   the game-thread fixture set (fixtures.mjs: a generated map with every tricky ingredient, stock maps, Sunder MAP11): record each one's ticcmd demo, trace its playback tic by tic, hold each trace to its saved baseline, capture its views at a fixed tic and hold each to a saved PNG (largest 16-pixel block within T, default 2), or play it with GL beside the backend and every walk checked against GL's, or with the render copy held to the live game (fua_copy_check); the first check or pictures run saves the baseline, exit 1 on a difference; demos and baselines live in ~/.forkundera/fixtures
+  fixture record|trace|check|pictures|vischeck|copycheck|spritecheck|pspritecheck|seencheck [NAME ...] [--engine PATH] [--store DIR] [--cvar k=v,...] [--update] [--out FILE] [--tolerance T]   the game-thread fixture set (fixtures.mjs: a generated map with every tricky ingredient, stock maps, Sunder MAP11): record each one's ticcmd demo, trace its playback tic by tic, hold each trace to its saved baseline, capture its views at a fixed tic and hold each to a saved PNG (largest 16-pixel block within T, default 2), or play it with GL beside the backend and every walk checked against GL's, or with the render copy held to the live game (fua_copy_check), or every actor's sprite or the weapon held to GL's (fua_sprite_check, fua_psprite_check); the first check or pictures run saves the baseline, exit 1 on a difference; demos and baselines live in ~/.forkundera/fixtures
   bench --port P --scenario F.json [--runs N] [--metric total.p99_ms]   repeat a scenario, report median + spread, discard runs whose expectations failed
   lines --port P [--special N] [--door] [--use] [--cross] [--tag N] [--texture NAME] [--limit N]   query linedefs; prints a stand position and facing for each match
   here --port P [--token T] [--save NAME] [--note TEXT]   the live camera (position + facing, full precision) and what the crosshair is on; --save records it in spots.json as a named repro
@@ -779,7 +779,7 @@ async function main() {
     }
     case "fixture": {
       const [what, ...names] = rest;
-      if (!["record", "trace", "check", "pictures", "vischeck", "copycheck"].includes(what)) { console.error(usageFor(USAGE, "fixture")); process.exit(2); }
+      if (!["record", "trace", "check", "pictures"].includes(what) && !fixtures.CHECKS[what]) { console.error(usageFor(USAGE, "fixture")); process.exit(2); }
       const list = fixtures.pickFixtures(names);
       const opts = { engine: engineOf(flags), store: presetDirs(flags).storeDir, cvars: shot.parseCvarFlag(flags.cvar) || {}, update: !!flags.update,
         log: (m) => console.error(`[fixture] ${m}`) };
@@ -797,7 +797,7 @@ async function main() {
       } else {
         // [rc4l] Pictures and the walk check run one fixture at a time, each its own launch.
         const run = what === "pictures" ? (f) => fixtures.pictureFixture(f, { ...opts, tolerance: num(flags.tolerance) ?? 2 })
-          : what === "vischeck" ? async (f) => [await fixtures.visCheckFixture(f, opts)] : async (f) => [await fixtures.copyCheckFixture(f, opts)];
+          : async (f) => [await fixtures.CHECKS[what](f, opts)];
         let failed = false;
         for (const f of list) for (const r of await run(f)) { console.log(`${r.name}: ${r.line}`); if (r.same === false) failed = true; }
         if (failed) process.exit(1);

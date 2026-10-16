@@ -40,13 +40,13 @@ DecalHeightIn HeightIn(const DBaseDecal *decal, const seg_t *seg, int part)
 	DecalHeightIn in;
 	in.rel = int((decal->RenderFlags & RF_RELMASK) >> 8);
 	in.part = part;
-	in.unpegTop = (seg->linedef->flags & ML_DONTPEGTOP) != 0;
-	in.unpegBottom = (seg->linedef->flags & ML_DONTPEGBOTTOM) != 0;
+	in.unpegTop = (seg->linedef->rc.flags & ML_DONTPEGTOP) != 0;
+	in.unpegBottom = (seg->linedef->rc.flags & ML_DONTPEGBOTTOM) != 0;
 	in.z = FIXED2DBL(decal->Z);
-	in.frontCeiling = FIXED2DBL(front->GetPlaneTexZ(sector_t::ceiling));
-	in.frontFloor = FIXED2DBL(front->GetPlaneTexZ(sector_t::floor));
-	in.backCeiling = back != NULL ? FIXED2DBL(back->GetPlaneTexZ(sector_t::ceiling)) : 0.0;
-	in.backFloor = back != NULL ? FIXED2DBL(back->GetPlaneTexZ(sector_t::floor)) : 0.0;
+	in.frontCeiling = FIXED2DBL(front->rc.GetPlaneTexZ(sector_t::ceiling));
+	in.frontFloor = FIXED2DBL(front->rc.GetPlaneTexZ(sector_t::floor));
+	in.backCeiling = back != NULL ? FIXED2DBL(back->rc.GetPlaneTexZ(sector_t::ceiling)) : 0.0;
+	in.backFloor = back != NULL ? FIXED2DBL(back->rc.GetPlaneTexZ(sector_t::floor)) : 0.0;
 	return in;
 }
 

@@ -2,6 +2,7 @@
 // Copyright (C) 2026 rc4l
 
 #include "features/frame/playerview.h"
+#include "features/gamecopy/players.h"   // [rc4l] the camera a view is set up from
 #include "features/frame/standaloneframe.h"
 #include "features/frame/viewtrace.h"
 
@@ -41,7 +42,8 @@ namespace zx { namespace frame {
 
 void BeginPlayerFrame(player_t *player)
 {
-	if (zx::viewsetup::CameraChanged(player->camera)) R_ResetViewInterpolation();
+	const zx::gamecopy::ActorRecord *const cam = zx::gamecopy::CameraOf(int(player - players));
+	if (zx::viewsetup::CameraChanged(cam != NULL ? cam->who : NULL)) R_ResetViewInterpolation();
 	if (cl_capfps || r_NoInterpolate) r_TicFrac = FRACUNIT;
 	else r_TicFrac = I_GetTimeFrac(&r_FrameTime);
 	r_frameSerial++;
@@ -64,7 +66,7 @@ bool BeginViewpoint(AActor *camera, const FViewLens &lens, bool mainview, bool t
 	R_SetupFrame(camera);
 	if (mainview && toscreen) NoteMainView();   // [rc4l] fua_viewtrace
 	zx::viewsetup::SetViewArea(zx::viewsetup::CurrentView().viewActor);
-	zx::viewsetup::SetupView(camera, lens, gl_frameMS);
+	zx::viewsetup::SetupView(zx::gamecopy::ViewCamera(), lens, gl_frameMS);
 	return saved;
 }
 
@@ -84,7 +86,7 @@ void MarkMapSection()
 
 void RenderPlayerView(player_t *player, int paletteBrightness)
 {
-	const bool savedMain = BeginViewpoint(player->camera, r_viewLens, true, true);
+	const bool savedMain = BeginViewpoint(zx::gamecopy::LiveOf(zx::gamecopy::CameraOf(int(player - players))), r_viewLens, true, true);
 	zx::viewsetup::TurnView(viewangle);
 	sector_t *const sector = viewsector;
 	MarkMapSection();
@@ -93,7 +95,9 @@ void RenderPlayerView(player_t *player, int paletteBrightness)
 	zx::sprites::CheckFrameSprites();
 
 	// [rc4l] EndDrawScene: the weapon unless a HUD model replaces it, the targeter, and the screen's tint.
-	zx::sprites::BuildPlayerSprites(sector, in_area, gl_IsHUDModelForPlayerAvailable(players[consoleplayer].camera->player));
+	const zx::gamecopy::ActorRecord *const eye = zx::gamecopy::CameraOf(consoleplayer);
+	const zx::gamecopy::PlayerRecord *const eyePlayer = eye != NULL ? zx::gamecopy::Player(eye->playerIndex) : NULL;
+	zx::sprites::BuildPlayerSprites(sector, in_area, eyePlayer != NULL && eyePlayer->hudModel);
 	zx::sprites::BuildTargeterSprites(zx::viewsetup::CurrentView().viewActor);
 	zx::sprites::CheckFramePSprites();
 	zx::draw2d::ScreenFill fills[2];

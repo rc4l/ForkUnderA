@@ -10,14 +10,15 @@
 
 class AActor;
 struct subsector_t;
+namespace zx { namespace gamecopy { struct ActorRecord; } }
 
 namespace zx { namespace dynlights {
 
 // [rc4l] The dynamic light at a point in a subsector, added to out, but not from a light self carries that does not light it.
-void PointLight(fixed_t x, fixed_t y, fixed_t z, subsector_t *subsec, const AActor *self, float out[3]);
+void PointLight(fixed_t x, fixed_t y, fixed_t z, subsector_t *subsec, const void *self, float out[3]);
 
 // [rc4l] The dynamic light at an actor's middle, added to out.
-void ActorLight(const AActor *self, float out[3]);
+void ActorLight(const zx::gamecopy::ActorRecord &self, float out[3]);
 
 // [rc4l] The dynamic light on an actor, from zero.
 void ActorDynamicLight(const AActor *actor, float out[3]);

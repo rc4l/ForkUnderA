@@ -4,6 +4,8 @@
 // [rc4l] The renderer of a launch without GL: the engine's view through features/frame, on the level, light and fog half both renderers share.
 
 #include "features/hwrender/backendonly.h"
+#include "features/gamecopy/gamecopy.h"   // [rc4l] FillNow
+#include "features/gamecopy/players.h"    // [rc4l] the camera a save picture is taken from
 #include "features/frame/framedriver.h"
 #include "features/frame/levelrenderer.h"
 #include "features/frame/playerview.h"
@@ -75,7 +77,14 @@ struct FBackendRenderer : public zx::frame::FLevelRenderer
 	// [rc4l] The player's view drawn at the picture's size with the screen's tint over it, as GL's WriteSavePic draws it; the placeholder when there is no scene, and for now on a device that reads it back only later.
 	void WriteSavePic(player_t *player, FILE *file, int width, int height)
 	{
-		if (player == NULL || player->camera == NULL)
+		// [rc4l] A save can come before this level's first fill, which it takes then.
+		const zx::gamecopy::ActorRecord *cam = player != NULL ? zx::gamecopy::CameraOf(int(player - players)) : NULL;
+		if (player != NULL && cam == NULL)
+		{
+			zx::gamecopy::FillNow();
+			cam = zx::gamecopy::CameraOf(int(player - players));
+		}
+		if (cam == NULL)
 		{
 			M_CreateDummyPNG(file);
 			return;
@@ -84,7 +93,7 @@ struct FBackendRenderer : public zx::frame::FLevelRenderer
 		const float fov = FieldOfView * 360.0f / FINEANGLES;
 		// [rc4l] A 1.6 ratio both ways, as GL's WriteSavePic hands RenderViewpoint.
 		const FViewLens lens = { fov, 1.6f, 1.6f };
-		const bool savedMain = zx::frame::BeginViewpoint(player->camera, lens, false, false);
+		const bool savedMain = zx::frame::BeginViewpoint(zx::gamecopy::LiveOf(cam), lens, false, false);
 		WriteSavePicFromView(file, width, height, fov);
 		zx::frame::EndViewpoint(savedMain);
 	}

@@ -333,6 +333,9 @@ struct secplane_core_t
 	}
 
 	// Returns true if 2 planes are different
+	// [rc4l] On the core so a sector's render copy clips its planes the same way; only the equation is copied.
+	bool CopyPlaneIfValid (secplane_core_t *dest, const secplane_core_t *opp) const;
+
 	bool operator!= (const secplane_core_t &other) const
 	{
 		return a != other.a || b != other.b || c != other.c || d != other.d;
@@ -382,8 +385,6 @@ struct secplane_t : secplane_core_t
 
 	// [AK] The old D of the plane before backtracing a player.
 	fixed_t		backtraceRestoreD;
-
-	bool CopyPlaneIfValid (secplane_t *dest, const secplane_t *opp) const;
 };
 
 FArchive &operator<< (FArchive &arc, secplane_t &plane);
@@ -1098,6 +1099,8 @@ struct side_t : SideReads<side_t>
 	BYTE		SavedFlags;
 
 	int GetLightLevel (bool foggy, int baselight, bool noabsolute=false, int *pfakecontrast_usedbygzdoom=NULL) const;
+	// [rc4l] features/gamecopy: GetLightLevel from the render copy.
+	int GetRcLightLevel (bool foggy, int baselight, bool noabsolute=false, int *pfakecontrast_usedbygzdoom=NULL) const;
 
 	void SetLight(SWORD l)
 	{

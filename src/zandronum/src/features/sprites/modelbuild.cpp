@@ -13,7 +13,7 @@
 #include "g_level.h"
 #include "i_system.h"
 #include "r_utility.h"
-#include "actor.h"
+#include "features/gamecopy/actors.h"   // [rc4l] ActorRecord
 #include "info.h"
 
 // [rc4l] GL's model data and settings the derivation still reads, until model data leaves gl/ (P5).
@@ -24,8 +24,9 @@ EXTERN_CVAR(Bool, r_interpolate_model_frames)
 
 namespace zx { namespace sprites {
 
-void ModelPoseFor(const AActor *actor, const FSpriteModelFrame *smf, float x, float y, float z, ModelPose &p)
+void ModelPoseFor(const zx::gamecopy::ActorRecord &a, const FSpriteModelFrame *smf, float x, float y, float z, ModelPose &p)
 {
+	const zx::gamecopy::ActorRecord *actor = &a;
 	const float angle = ANGLE2FLOAT(actor->angle);
 	float pitch = 0, roll = 0;
 	if (smf->flags & MDL_PITCHFROMMOMENTUM)

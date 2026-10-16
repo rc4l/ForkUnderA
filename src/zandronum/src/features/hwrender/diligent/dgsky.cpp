@@ -417,16 +417,16 @@ zx::hwrender::SkyLook LookOfSky(int sectorSky)
 	if ((sectorSky & zx::hwrender::kSkyFlatFlag) && line >= 0 && line < numlines && lines[line].sidedef[0] != NULL)
 	{
 		const side_t *s = lines[line].sidedef[0];
-		const FTextureID top = s->GetTexture(side_t::top), bottom = s->GetTexture(side_t::bottom);
+		const FTextureID top = s->rc.GetTexture(side_t::top), bottom = s->rc.GetTexture(side_t::bottom);
 		in.lineTop = top.GetIndex(); in.lineBottom = bottom.GetIndex();
 		in.lineTopDraws = SkyTextureDraws(top);
 		in.lineBottomValid = bottom.isValid();
 		in.lineBottomDraws = SkyTextureDraws(bottom);
 		// [rc4l] ANGLE_TO_FLOAT: the x offset read as an angle, in degrees.
-		in.lineTopX = (float)(s->GetTextureXOffset(side_t::top).Raw() * 180. / ANGLE_180);
-		in.lineBottomX = (float)(s->GetTextureXOffset(side_t::bottom).Raw() * 180. / ANGLE_180);
-		in.lineTopY = FIXED2FLOAT(s->GetTextureYOffset(side_t::top));
-		in.lineBottomY = FIXED2FLOAT(s->GetTextureYOffset(side_t::bottom));
+		in.lineTopX = (float)(s->rc.GetTextureXOffset(side_t::top).Raw() * 180. / ANGLE_180);
+		in.lineBottomX = (float)(s->rc.GetTextureXOffset(side_t::bottom).Raw() * 180. / ANGLE_180);
+		in.lineTopY = FIXED2FLOAT(s->rc.GetTextureYOffset(side_t::top));
+		in.lineBottomY = FIXED2FLOAT(s->rc.GetTextureYOffset(side_t::bottom));
 		in.lineMirrored = !lines[line].args[2];
 	}
 	in.swapSkies = (level.flags & LEVEL_SWAPSKIES) != 0;

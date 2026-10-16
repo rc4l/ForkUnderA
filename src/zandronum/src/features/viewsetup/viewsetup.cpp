@@ -3,6 +3,7 @@
 
 #include "tables.h"
 #include "features/viewsetup/viewsetup.h"
+#include "features/gamecopy/players.h"   // [rc4l] the records a view is set up from
 #include "features/viewsetup/computation/viewsetup_compute.h"
 
 #include <limits.h>
@@ -43,7 +44,7 @@ static ViewSetup g_view = { NULL, NULL, 0.f, 0.f, 90.f, 1.333333f, 1.333333f, 0x
 // [rc4l] The sprite order index InstallSpriteView hands out, from zero each view as GL's CreateScene starts gl_spriteindex.
 static int g_spriteIndex = 0;
 
-void SetupView(AActor *camera, const FViewLens &lens, long frameMS)
+void SetupView(const zx::gamecopy::ActorRecord *camera, const FViewLens &lens, long frameMS)
 {
 	const float fov = lens.fov;
 	g_spriteIndex = 0;
@@ -61,10 +62,12 @@ void SetupView(AActor *camera, const FViewLens &lens, long frameMS)
 	g_view.roll = (float)(camera->roll >> ANGLETOFINESHIFT) * 360.0f / FINEANGLES;
 	g_view.frustumAngle = ComputeFrustumAngle(g_view.pitch, fov, AspectMultiplier(WidescreenRatio));
 	// [rc4l] The chase camera (consoleplayer only, never in free spectate) and a dead player's death camera see the player's own body.
-	const bool outside = camera->player != NULL && ComputeSeesOwnBody(true, CLIENTDEMO_IsInFreeSpectateMode(), camera->player - players == consoleplayer,
-		players[consoleplayer].bSpectating, (players[consoleplayer].cheats & CF_CHASECAM) != 0, r_deathcamera, camera->health <= 0,
-		camera == camera->player->mo);
-	g_view.viewActor = outside ? NULL : camera;
+	const zx::gamecopy::PlayerRecord *const me = zx::gamecopy::Player(consoleplayer);
+	const zx::gamecopy::PlayerRecord *const its = zx::gamecopy::Player(camera->playerIndex);
+	const bool outside = its != NULL && ComputeSeesOwnBody(true, CLIENTDEMO_IsInFreeSpectateMode(), camera->playerIndex == consoleplayer,
+		me != NULL && me->bSpectating, me != NULL && (me->cheats & CF_CHASECAM) != 0, r_deathcamera, camera->health <= 0,
+		zx::gamecopy::IndexOf(camera) == its->mo);
+	g_view.viewActor = outside ? NULL : camera->who;
 }
 
 const ViewSetup &CurrentView() { return g_view; }
@@ -74,7 +77,8 @@ static_assert(CM_DEFAULT == kCmDefault && CM_FIRSTSPECIALCOLORMAP == kCmFirstSpe
 
 int FixedColormap(player_t *player)
 {
-	player_t *cplayer = player->camera->player;
+	const zx::gamecopy::ActorRecord *const camera = zx::gamecopy::CameraOf(int(player - players));
+	const zx::gamecopy::PlayerRecord *const cplayer = camera != NULL ? zx::gamecopy::Player(camera->playerIndex) : NULL;
 	FixedColormapIn in = { cplayer != NULL, false, kNoFixedColormap, -1, kNoLightPower };
 	if (cplayer != NULL)
 	{
@@ -83,11 +87,7 @@ int FixedColormap(player_t *player)
 		if (in.inverse) extralight = 0;
 		in.fixedColormap = cplayer->fixedcolormap;
 		in.fixedLightLevel = cplayer->fixedlightlevel;
-		for (AInventory *inv = cplayer->mo->Inventory; inv; inv = inv->Inventory)
-		{
-			if (inv->IsKindOf(RUNTIME_CLASS(APowerTorch))) in.lightPower = kTorchPower;
-			else if (inv->IsKindOf(RUNTIME_CLASS(APowerLightAmp))) in.lightPower = kLightAmpPower;
-		}
+		in.lightPower = cplayer->lightPower;
 	}
 	return ComputeFixedColormap(in);
 }
@@ -107,24 +107,26 @@ void TurnView(unsigned viewAngle)
 	R_SetViewAngle();
 }
 
-void SetViewArea(AActor *viewActor)
+void SetViewArea(const void *viewActor)
 {
 	// [rc4l] The render sector suits the eye's place in a hardware view better than the sector it stands in.
 	viewsector = R_PointInSubsector(viewx, viewy)->render_sector;
 	// [rc4l] [AK] A spectator without physical restrictions may pass through floors and ceilings.
-	if (!P_IsSpectatorUnrestricted(viewActor))
-		viewz = fixed_t::FromRaw(ComputeClampedViewZ(viewz.Raw(), viewsector->floorplane.ZatPoint(viewx, viewy).Raw(),
-			viewsector->ceilingplane.ZatPoint(viewx, viewy).Raw()));
+	const zx::gamecopy::ActorRecord *const viewRec = zx::gamecopy::RecordOf(static_cast<const AActor *>(viewActor));
+	const zx::gamecopy::ViewSource *const source = zx::gamecopy::ViewSourceOf(zx::gamecopy::IndexOf(viewRec));
+	if (source == NULL || !source->unrestricted)
+		viewz = fixed_t::FromRaw(ComputeClampedViewZ(viewz.Raw(), viewsector->rc.floorplane.ZatPoint(viewx, viewy).Raw(),
+			viewsector->rc.ceilingplane.ZatPoint(viewx, viewy).Raw()));
 	// [rc4l] The height transfer of the render sector, not the current one.
 	sector_t *hs = viewsector->heightsec;
-	const bool transfer = hs != NULL && !(hs->MoreFlags & SECF_IGNOREHEIGHTSEC);
-	in_area = (area_t)ComputeViewArea(transfer, viewz.Raw(), transfer ? hs->floorplane.ZatPoint(viewx, viewy).Raw() : 0,
-		transfer ? hs->ceilingplane.ZatPoint(viewx, viewy).Raw() : 0, transfer && (hs->MoreFlags & SECF_FAKEFLOORONLY));
+	const bool transfer = hs != NULL && !(hs->rc.MoreFlags & SECF_IGNOREHEIGHTSEC);
+	in_area = (area_t)ComputeViewArea(transfer, viewz.Raw(), transfer ? hs->rc.floorplane.ZatPoint(viewx, viewy).Raw() : 0,
+		transfer ? hs->rc.ceilingplane.ZatPoint(viewx, viewy).Raw() : 0, transfer && (hs->rc.MoreFlags & SECF_FAKEFLOORONLY));
 }
 
 namespace {
 
-AActor *ViewActor() { return g_view.viewActor; }
+const void *ViewActor() { return g_view.viewActor; }
 void ViewVector(float &x, float &y) { x = g_view.vectorX; y = g_view.vectorY; }
 int NextSpriteIndex() { return g_spriteIndex++; }
 bool NoPortalRejects(fixed_t, fixed_t) { return false; }
@@ -156,9 +158,9 @@ void ViewCameraFromEngine(zx::hwrender::BackendCamera &c)
 }
 
 // [rc4l] The camera the last frame was drawn from.
-static AActor *g_lastCamera = NULL;
+static const void *g_lastCamera = NULL;
 
-bool CameraChanged(AActor *camera)
+bool CameraChanged(const void *camera)
 {
 	if (camera == g_lastCamera) return false;
 	g_lastCamera = camera;
