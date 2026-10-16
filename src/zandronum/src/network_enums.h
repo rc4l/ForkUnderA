@@ -398,6 +398,8 @@ BEGIN_ENUM( SVC2 )
 	// [rc4l] Sprite orientation (+ROLLSPRITE roll now; SpriteAngle/SpriteRotation later share the
 	// same flag byte). Appended, never inserted -- an inserted id shifts every command after it.
 	ENUM_ELEMENT ( SVC2_SETTHINGSPRITEORIENTATION ),
+	// [MobiusU9B] fua_damagetaken: one damage roll, sent only to the player who took it.
+	ENUM_ELEMENT ( SVC2_FUADAMAGETAKEN ),
 
 	ENUM_ELEMENT ( NUM_SVC2_COMMANDS ),
 }

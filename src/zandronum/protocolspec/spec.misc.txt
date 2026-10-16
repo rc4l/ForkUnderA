@@ -119,3 +119,17 @@ Command SetThingSpriteOrientation
 		AproxAngle roll
 	EndIf
 EndCommand
+
+# [MobiusU9B] fua_damagetaken: one damage roll, sent only to the player who took it; appended last so no existing id moves.
+Command FuaDamageTaken
+	ExtendedCommand
+	Variable mapTime
+	Variable damage
+	Variable armorAbsorbed
+	Variable healthLost
+	Byte attackerPlayer
+	Class attackerClass with NullAllowed
+	Class weaponClass with NullAllowed
+	String damageType
+	Bool lethal
+EndCommand

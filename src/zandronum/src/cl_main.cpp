@@ -75,6 +75,7 @@
 #include "cl_statistics.h"
 #include "features/fixed64/computation/angle_interp_compute.h"
 #include "features/hitboxviz/hitboxviz.h"
+#include "features/damage-taken/damagetaken.h"
 #include "cooperative.h"
 #include "doomerrors.h"
 #include "doomtype.h"
@@ -4238,6 +4239,27 @@ void ServerCommands::DamagePlayerWithType::Execute()
 	player->mo->DamageTypeReceived = damageType;
 
 	client_DamagePlayer( player, health, armor, attacker );
+}
+
+//*****************************************************************************
+//
+void ServerCommands::FuaDamageTaken::Execute()
+{
+	// [MobiusU9B] Same guard as client_DamagePlayer: a roll that arrives between levels has nowhere to belong.
+	if ( gamestate != GS_LEVEL )
+		return;
+
+	zx::damagetaken::Report report;
+	report.mapTime = mapTime;
+	report.damage = damage;
+	report.armorAbsorbed = armorAbsorbed;
+	report.healthLost = healthLost;
+	report.attackerPlayer = static_cast<ULONG>( attackerPlayer );
+	report.attackerClass = attackerClass;
+	report.weaponClass = weaponClass;
+	report.damageType = damageType.GetChars( );
+	report.lethal = lethal;
+	zx::damagetaken::OnServerReport( report );
 }
 
 //*****************************************************************************

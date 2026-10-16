@@ -87,6 +87,7 @@
 #include "p_terrain.h"
 #include "mcp_simtrace.h" // [ForkUnderA] sim tracer anchors (no-op unless FUA_MCP_BRIDGE)
 #include "features/mbf21/computation/damage_groups_compute.h"
+#include "features/damage-taken/damagetaken.h"
 
 // [BC] Ugh.
 void SERVERCONSOLE_UpdatePlayerInfo( LONG lPlayer, ULONG ulUpdateFlags );
@@ -1169,6 +1170,8 @@ int P_DamageMobj (AActor *target, AActor *inflictor, AActor *source, int damage,
 	bool justhit = false;
 	// [BC]
 	LONG	lOldTargetHealth;
+	// [MobiusU9B] What this roll cost a player, for fua_damagetaken; declared up here so no goto below jumps its initialisation.
+	zx::damagetaken::HitAmounts fuaHit = { 0, 0, 0 };
 	// [rc4l] uzdoom pain cluster (2e085b231 ALLOWPAIN, b54b18c8c CAUSEPAIN, 7e579a0a2), taken as
 	// one settled form. When a hit would be refused outright, ALLOWPAIN/CAUSEPAIN instead jump to
 	// the `fakepain` label so the pain chance and infighting still run, then return the original
@@ -1575,6 +1578,7 @@ thrust:
 		{
 			damage = target->health - 1;
 		}
+		fuaHit.damage = damage; // [MobiusU9B]
 
 		if (!(flags & DMG_FORCED))
 		{
@@ -1604,6 +1608,7 @@ thrust:
 			// can be absorbed by their armor. If the event returns 0, don't do anything else.
 			if (GAMEMODE_HandleDamageEvent(target, inflictor, source, damage, mod, true) == false)
 				return -1;
+			fuaHit.damage = damage; // [MobiusU9B] The event above may have changed it.
 
 			if (!(flags & DMG_NO_ARMOR) && player->mo->Inventory != NULL)
 			{
@@ -1613,6 +1618,7 @@ thrust:
 				if (damage > 0)
 				{
 					player->mo->Inventory->AbsorbDamage (damage, mod, newdam);
+					fuaHit.armorAbsorbed = damage - newdam; // [MobiusU9B]
 				}
 				// [rc4l] uzdoom@83be901ad: if we are telefragging, do not let armour drag the damage
 				// below TELEFRAG_DAMAGE -- later checks compare against that exact value.
@@ -1626,6 +1632,8 @@ thrust:
 					// to tell the client about this.
 					if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 						SERVERCOMMANDS_SetPlayerArmor( player - players );
+					// [MobiusU9B] Armor took the whole roll; it still counts as a hit.
+					zx::damagetaken::OnPlayerHit( player, source, inflictor, mod, fuaHit );
 
 					// If MF6_FORCEPAIN is set, make the player enter the pain state.
 					if (MustForcePain(target, inflictor, flags))
@@ -1656,6 +1664,7 @@ thrust:
 		if (( bDamageEventHandled == false ) && ( GAMEMODE_HandleDamageEvent( target, inflictor, source, damage, mod ) == false ))
 			return -1;
 
+		const int fuaHealthBefore = player->health; // [MobiusU9B]
 		player->health -= damage;		// mirror mobj health here for Dave
 		// [RH] Make voodoo dolls and real players record the same health
 		target->health = player->mo->health -= damage;
@@ -1692,6 +1701,7 @@ thrust:
 				player->health = 0;
 			}
 		}
+		fuaHit.healthLost = fuaHealthBefore - player->health; // [MobiusU9B] After buddha, so a rescue reads as what was really lost.
 		player->LastDamageType = mod;
 
 		if ( player->pSkullBot )
@@ -1797,6 +1807,10 @@ thrust:
 		if ( player )
 			SERVERCOMMANDS_DamagePlayer( ULONG( player - players ));
 	}
+
+	// [MobiusU9B] After DamagePlayer, so a client applies the new health before it records the roll.
+	if ( player )
+		zx::damagetaken::OnPlayerHit( player, source, inflictor, mod, fuaHit );
 
 	if (target->health <= 0)
 	{
