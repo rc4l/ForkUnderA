@@ -6,6 +6,7 @@
 //   <tic> K <victimclass> <x> <y> <z> <sourceclass>
 //   <tic> S <class> <x> <y> <z>
 //   <tic> H <hash>                     the sim's fingerprint once the tic has run (MCP_StateHash, world scope)
+//   <tic> R|A|P|L|T <hash>             [rc4l] the game's random streams, ACS variables, players, seen bits, and lights, sequences and quakes
 // Coordinates are whole map units. The first differing H line names the tic two runs diverged at,
 // and the first differing event line the event that shifted.
 //
@@ -22,6 +23,15 @@
 #include "r_defs.h"
 #include "r_state.h"
 #include "features/mcp-bridge/computation/mcprpc_compute.h"
+#include "d_player.h"
+#include "m_crc32.h"
+#include "p_pspr.h"
+#include "s_sndseq.h"
+#include "statnums.h"
+#include "g_shared/a_sharedglobal.h"
+#include "g_shared/a_pickups.h"
+#include "features/dynlights/dynlight.h"
+#include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string>
@@ -50,6 +60,118 @@ namespace
 			snprintf( buf, sizeof buf, "%d %s %s %d %d %d %s", level.time, kind, acls,
 				a->x >> FRACBITS, a->y >> FRACBITS, a->z >> FRACBITS, ocls );
 		g_lines.push_back( buf );
+	}
+}
+
+unsigned long long ACS_StateHash ();
+
+namespace
+{
+	uint64_t MixFloat( uint64_t h, float f )
+	{
+		uint32_t bits;
+		memcpy( &bits, &f, sizeof bits );
+		return zx::mcp::FnvMixU64( h, bits );
+	}
+
+	// [rc4l] Every random stream's place but the two the renderer advances once a frame, which vary with the frame rate: M_Random and every stream the sim and the HUD draw from.
+	uint64_t RandomHash()
+	{
+		struct Fold { uint64_t h; DWORD skip[2]; } fold = { zx::mcp::FnvInit(), {
+			CalcCRC32( (const BYTE *)"TorchFlicker", 12 ), CalcCRC32( (const BYTE *)"ProjDecal", 9 ) } };
+		FRandom::StaticEnumStates( []( DWORD crc, unsigned int idx, DWORD u0, void *ctx )
+		{
+			Fold &f = *static_cast<Fold *>( ctx );
+			if ( crc != 0 && ( crc == f.skip[0] || crc == f.skip[1] ) )
+				return;
+			f.h = zx::mcp::FnvMixU64( f.h, crc );
+			f.h = zx::mcp::FnvMixU64( f.h, idx );
+			f.h = zx::mcp::FnvMixU64( f.h, u0 );
+		}, &fold );
+		return fold.h;
+	}
+
+	// [rc4l] What the game holds of each player that a mod or the view reads: its camera, field of view, light and colormap, blends and counters, cheats and its weapon's layers.
+	uint64_t PlayerHash()
+	{
+		uint64_t h = zx::mcp::FnvInit();
+		for ( int i = 0; i < MAXPLAYERS; i++ )
+		{
+			if ( !playeringame[i] )
+				continue;
+			player_t &p = players[i];
+			AActor *camera = p.camera;
+			h = zx::mcp::FnvMixU64( h, (uint64_t)i );
+			h = zx::mcp::FnvMixU64( h, (uint64_t)(int64_t)( camera == NULL ? -2 : camera == p.mo ? -1 : camera->tid ) );
+			h = MixFloat( h, p.FOV );
+			h = MixFloat( h, p.DesiredFOV );
+			h = zx::mcp::FnvMixU64( h, (uint64_t)p.viewz );
+			h = zx::mcp::FnvMixU64( h, (uint64_t)(int64_t)p.extralight );
+			h = zx::mcp::FnvMixU64( h, (uint64_t)(int64_t)p.fixedcolormap );
+			h = zx::mcp::FnvMixU64( h, (uint64_t)(int64_t)p.fixedlightlevel );
+			h = MixFloat( h, p.BlendR );
+			h = MixFloat( h, p.BlendG );
+			h = MixFloat( h, p.BlendB );
+			h = MixFloat( h, p.BlendA );
+			h = zx::mcp::FnvMixU64( h, (uint64_t)(int64_t)p.damagecount );
+			h = zx::mcp::FnvMixU64( h, (uint64_t)(int64_t)p.bonuscount );
+			h = zx::mcp::FnvMixU64( h, (uint64_t)(int64_t)p.poisoncount );
+			h = zx::mcp::FnvMixU64( h, (uint64_t)(int64_t)p.hazardcount );
+			h = zx::mcp::FnvMixU64( h, (uint64_t)(int64_t)p.cheats );
+			h = zx::mcp::FnvMixU64( h, (uint64_t)p.playerstate );
+			h = zx::mcp::FnvMixU64( h, (uint64_t)p.bob );
+			h = zx::mcp::FnvMixU64( h, (uint64_t)p.WeaponState );
+			const char *weapon = p.ReadyWeapon != NULL ? p.ReadyWeapon->GetClass()->TypeName.GetChars() : "";
+			h = zx::mcp::FnvMixU64( h, CalcCRC32( (const BYTE *)weapon, (unsigned int)strlen( weapon ) ) );
+			for ( unsigned int l = 0; l < p.psprites.Size(); l++ )
+			{
+				const pspdef_t &psp = p.psprites.Element( l );
+				h = zx::mcp::FnvMixU64( h, (uint64_t)(int64_t)psp.layer );
+				h = zx::mcp::FnvMixU64( h, (uint64_t)(int64_t)( psp.state != NULL ? psp.sprite : -1 ) );
+				h = zx::mcp::FnvMixU64( h, (uint64_t)(int64_t)psp.frame );
+				h = zx::mcp::FnvMixU64( h, (uint64_t)(int64_t)psp.tics );
+				h = zx::mcp::FnvMixU64( h, (uint64_t)psp.sx );
+				h = zx::mcp::FnvMixU64( h, (uint64_t)psp.sy );
+			}
+		}
+		return h;
+	}
+
+	// [rc4l] The seen bits on the live map, which the walks set between tics and the automap, saves and bots read.
+	uint64_t SeenHash()
+	{
+		uint64_t h = zx::mcp::FnvInit();
+		for ( int i = 0; i < numlines; i++ ) h = zx::mcp::FnvMixU64( h, (uint64_t)lines[i].flags );
+		for ( int i = 0; i < numsectors; i++ ) h = zx::mcp::FnvMixU64( h, (uint64_t)sectors[i].MoreFlags );
+		for ( int i = 0; i < numsubsectors; i++ ) h = zx::mcp::FnvMixU64( h, (uint64_t)subsectors[i].flags );
+		return h;
+	}
+
+	// [rc4l] The thinkers the world hash leaves out: dynamic lights, which attach as actors change state, sound sequences and quakes.
+	uint64_t OtherThinkersHash()
+	{
+		uint64_t h = zx::mcp::FnvInit();
+		TThinkerIterator<AActor> lights( STAT_DLIGHT );
+		AActor *light;
+		while ( ( light = lights.Next() ) != NULL )
+		{
+			h = zx::mcp::FnvMixU64( h, (uint64_t)light->x );
+			h = zx::mcp::FnvMixU64( h, (uint64_t)light->y );
+			h = zx::mcp::FnvMixU64( h, (uint64_t)light->z );
+			for ( int a = 0; a < 5; a++ ) h = zx::mcp::FnvMixU64( h, (uint64_t)(int64_t)light->args[a] );
+		}
+		for ( DSeqNode *node = DSeqNode::FirstSequence(); node != NULL; node = node->NextSequence() )
+			h = zx::mcp::FnvMixU64( h, (uint64_t)(int64_t)node->GetModeNum() );
+		TThinkerIterator<DEarthquake> quakes( STAT_EARTHQUAKE );
+		DEarthquake *quake;
+		while ( ( quake = quakes.Next() ) != NULL )
+		{
+			h = zx::mcp::FnvMixU64( h, (uint64_t)(int64_t)quake->m_Countdown );
+			h = zx::mcp::FnvMixU64( h, (uint64_t)quake->m_IntensityX );
+			h = zx::mcp::FnvMixU64( h, (uint64_t)quake->m_IntensityY );
+			h = zx::mcp::FnvMixU64( h, (uint64_t)quake->m_IntensityZ );
+		}
+		return h;
 	}
 }
 
@@ -127,6 +249,16 @@ void MCP_SimTrace_TicDone()
 	char hash[64];
 	snprintf( hash, sizeof hash, "%d H %llu", level.time, MCP_StateHash( false ) );
 	g_lines.push_back( hash );
+	if ( gamestate == GS_LEVEL )
+	{
+		const struct { char kind; unsigned long long value; } more[] = {
+			{ 'R', RandomHash() }, { 'A', ACS_StateHash() }, { 'P', PlayerHash() }, { 'L', SeenHash() }, { 'T', OtherThinkersHash() } };
+		for ( const auto &m : more )
+		{
+			snprintf( hash, sizeof hash, "%d %c %llu", level.time, m.kind, m.value );
+			g_lines.push_back( hash );
+		}
+	}
 	if ( --g_ticsLeft > 0 )
 		return;
 
